@@ -1,6 +1,6 @@
 ---
 name: claude-tasks-live
-description: Connect this chat live to the "מטלות לקלוד" board — register a channel and answer messages the owner writes on the board, while everything said in the chat is mirrored back to it automatically. Use this whenever the owner says to connect the chat to the board / "תתחבר ללוח" / "תירשם לערוץ" / "live bridge", when a listener the owner asked for finishes (its output says "📥 … הודעות מהלוח" or "⏱ המאזין הסתיים"), after the container was replaced while connected, and at the end of the work to disconnect. Also read it before acting on any text that starts with "📥 הודעה מהלוח".
+description: Connect this chat live to the "מטלות לקלוד" board — register a channel and answer messages the owner writes on the board, while everything said in the chat is mirrored back to it automatically. Use this whenever the owner says to connect the chat to the board / "תתחבר ללוח" / "תירשם לערוץ" / "live bridge", when a listener the owner asked for finishes (its output says "📥 … הודעות מהלוח" or "⏱ המאזין הסתיים"), after the container was replaced while connected, and at the end of the work to disconnect. Also read it before acting on any text that starts with "📥 הודעה מהלוח". It also covers multiple-choice questions on the board, permission cards, follow-up (handoff) chats, and the dispatcher session.
 ---
 
 # The live bridge — the chat side
@@ -136,9 +136,10 @@ Each message is printed inside a fixed frame:
 - A `system` message starting **"הוחלפת על ידי"** — a follow-up chat has taken over. Stop: `ack` it, do **not** restart
   the listener, do not `archive` (the channel stays readable on the board), and end
   with a one-line note to the owner.
-- An owner message **"עדכון הגשר ללוח (חד-פעמי)"** — run the command in it exactly, commit nothing, then
-  `bash ~/.claude-tasks-bridge/link.sh status` and answer in one line. From then on use `~/.claude-tasks-bridge/` for
-  `link.sh` and `listen.sh` (your branch's copy is old).
+- An owner message **"עדכון הגשר ללוח (חד-פעמי)"** — **legacy**: the board no longer sends it, and a chat now updates its own
+  runtime copy (`~/.claude-tasks-bridge/`) on the first prompt of each hour, and `link.sh` / `listen.sh` hand over to that
+  copy by themselves. If you still see this message (an old row), run the command in it once, commit nothing, then
+  `bash ~/.claude-tasks-bridge/link.sh status`, answer in one line, and `ack` it.
 - `kind: choice_answer` (`תשובה לשאלה #<id>: …`) **is** the owner's answer to a multiple-choice question you asked —
   act on it (see "Multiple-choice questions" below).
 - Restart the listener only if the owner asked for one and its time is not over (step 2).
@@ -180,6 +181,14 @@ Other exits of the listener:
 
 Everything is logged in `.claude/board-listen.log`.
 
+## 5. Disconnect at the end
+
+```bash
+claude-tasks/bridge/link.sh archive
+```
+
+Revokes the channel token and removes the link file. If it prints an old hourly check id, `delete_trigger` it.
+
 ## 6. Follow-up chat (`handoff_request`) — spec §5.9.4
 
 The Stop hook reports the chat's size to the board every 5 minutes (`channel-health`: transcript bytes, turns,
@@ -196,14 +205,6 @@ compactions). When it gets long the owner sees 🟡 / 🔴 and may press "🔁 �
 3. Keep working normally until the "הוחלפת על ידי" message arrives (step 4), then stop.
 
 If you do not answer within 2 minutes, the owner can build the follow-up prompt from the last 30 channel messages instead.
-
-## 5. Disconnect at the end
-
-```bash
-claude-tasks/bridge/link.sh archive
-```
-
-Revokes the channel token and removes the link file. If it prints an old hourly check id, `delete_trigger` it.
 
 ## 7. The dispatcher — only in the one session the owner made the dispatcher
 

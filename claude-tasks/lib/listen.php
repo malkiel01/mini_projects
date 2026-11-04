@@ -1,10 +1,11 @@
 <?php
 /**
- * שלב 24א (docs/spec.md §20.3, §20.7) — האמת על כל שורה: מה מצב ההאזנה של כל צ'אט ומתי הוא יבדוק את הלוח,
- * המתג "מאזינים" (⏸ עצורים · 🕐 בדיקה שעתית · 🎧 פעילים), תקרה של 5 מאזינים, ומד עומס.
+ * שלב 24א (docs/spec.md §20.3) — האמת על כל שורה: מה מצב ההאזנה של כל צ'אט, המתג "מאזינים", תקרה של 5 מאזינים, ומד עומס.
  *
- * הלוח לא יכול להעיר צ'אט קיים (§20.7, צעד 0). לכן כל צ'אט מתזמן לעצמו בדיקה חוזרת, ומדווח מתי היא (next_check_at);
- * השורה אומרת מתי הצ'אט יסתכל — לעולם לא "מעירים עכשיו".
+ * מצב נוכחי (אחרי ש1 ושלב 25): אין בדיקה עצמית שעתית — הוסרה (docs/audit-2026-11.md). צ'אט רגיל לא מאזין;
+ * הוא קורא את הלוח כשהוא עובד, או כשצ'אט המנהל מעיר אותו (docs/spec.md §21). המתג נשאר בקוד: 'hourly' = כבוי
+ * (השם נשאר מהעבר), 'on' = מותר להאזין, 'paused' = הבלם. עמודות next_check_at / check_trigger_id ומצבי
+ * 'checking' / 'no_check' משרתים רק צ'אטים ישנים שיצרו בדיקה לפני ש1 — ראו docs/known-issues.md, נושא 1.
  */
 declare(strict_types=1);
 
@@ -21,7 +22,7 @@ function migrateListen(PDO $pdo): void {
     addColumn($pdo, 'channels', 'check_trigger_id', "TEXT NOT NULL DEFAULT ''");
 }
 
-/** המתג. ‏paused — הבלם (bridge_paused); אחרת listeners_mode, ברירת מחדל hourly (§20.3.3). */
+/** המתג. ‏paused — הבלם (bridge_paused); אחרת listeners_mode. ברירת מחדל 'hourly' = כבוי: אין מאזינים בצ'אטים רגילים (השם נשאר מהעבר). */
 function listenersMode(?array $config = null): string {
     $config ??= config();
     if (!empty($config['bridge_paused'])) return 'paused';
@@ -63,7 +64,7 @@ function listenReport(array $channel, array $in): void {
 }
 
 /**
- * לפני channel-wait (שעבר את הבלמים): המתג לא "on" — המאזין יוצא לבדיקה השעתית; כבר 5 מאזינים — השישי יוצא.
+ * לפני channel-wait (שעבר את הבלמים): המתג לא "on" — המאזין יוצא (אין בדיקה שעתית; הצ'אט יקרא את הלוח כשיעבוד או יוער); כבר 5 מאזינים — השישי יוצא.
  * 503 עם קוד, כדי שגם מאזין ישן (שלא מכיר את הקודים) ייסוג ולא ימשיך לדפוק.
  */
 function listenGate(array $channel): void {

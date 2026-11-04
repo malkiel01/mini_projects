@@ -2,6 +2,7 @@
 # הגשר החי — הקישור של הצ'אט לערוץ בלוח (docs/spec.md §5.5–5.6).
 #
 #   link.sh register --project <id> [--name <שם>] [--role <תפקיד>] [--replaces <ערוץ>]
+#                    [--launch <launch_id>] [--replaces-dispatcher]   (--launch: פתיחה מ-➕ בלוח, §19; --replaces-dispatcher: החלפת צ'אט המנהל, §21)
 #                    רישום (או רישום מחדש עם אותו session_id). אסימון ההרשמה: $CLAUDE_TASKS_TOKEN —
 #                    של השורש, אחד לכל הסביבה. מספר הפרויקט מגיע רק מהפרומפט (§5.9.1);
 #                    CLAUDE_TASKS_PROJECT לא נקרא יותר. --replaces — צ'אט המשך (§5.9.4)
@@ -15,6 +16,7 @@
 #   link.sh ack <id>…   סימון "טופל" — רק אחרי שטופלו, לא לפני
 #   link.sh post <owner|chat|system> <טקסט>   שיקוף ידני
 #   link.sh archive  ניתוק: האסימון נפסל וקובץ הקישור נמחק
+#   link.sh checkin --clear   מוחק בדיקה עצמית ישנה (ש1: אין יותר בדיקות עצמיות). הצורה הישנה (checkin <trigger_id>) אסורה לשימוש
 #   link.sh dispatch-pending       צ'אט המנהל (שלב 25): בקשות ההעירה — לכל אחת session והטקסט הקבוע
 #   link.sh dispatch-done <id> ok|"<שגיאה>"   המנהל מדווח על בקשה
 set -u

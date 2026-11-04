@@ -13,7 +13,6 @@
 declare(strict_types=1);
 
 const TEMPLATE_FIELDS = ['name_pattern', 'roles', 'context_files', 'hierarchy', 'notify_session', 'extra'];
-/** ברירת המחדל להודעת ההצטרפות: צ'אט האפיון של "מטלות לקלוד" (§5.9.5). */
 /** ש1 (audit-2026-11): הודעת הצטרפות — רק בלוח. ריק = אין הודעה לשום צ'אט; הערך הישן (צ'אט האפיון) נחשב ריק. */
 const NOTIFY_SESSION_DEFAULT = '';
 const NOTIFY_SESSION_OLD_DEFAULT = 'session_018g4NYGkLv7LXXa1DqxwnRS';
@@ -431,7 +430,7 @@ function handoffPrompt(array $user, int $channelId, bool $fallback = false): arr
     $h->execute([$channelId, $r['id']]);
     $body = $h->fetchColumn();
     $source = 'handoff';
-    // צ'אט שלא מאזין לא יקבל את הבקשה עד הבדיקה השעתית שלו — אין טעם לחכות 2 דקות; "בלי תקציר" מיד
+    // צ'אט שלא מאזין לא יקרא את הבקשה עד שיעבוד או יוער — אין טעם לחכות 2 דקות; "בלי תקציר" מיד
     $listening = $channel['status'] === 'active' && (int) $channel['listening_until'] > nowTs();
     $canFallback = $waited >= HANDOFF_WAIT_SECONDS || !$listening;
     if ($body === false) {
