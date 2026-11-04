@@ -169,7 +169,7 @@ function migrate(PDO $pdo): void {
             UNIQUE (company_id, effective_from)
         );
 
-        -- ימי חג של החברה (גרסה 2): לכל הדתות או לחלקן. החגים היהודיים — מובנים (lib/holidays/jewish.json).
+        -- ימי חג של החברה (גרסה 2): לכל הדתות או לחלקן. הלוחות המובנים לכל דת — lib/holidays/<דת>.json (lib/holidays.php).
         CREATE TABLE IF NOT EXISTS company_holidays (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             company_id INTEGER NOT NULL REFERENCES companies(id),

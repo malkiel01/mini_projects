@@ -9,7 +9,6 @@ const main = $('#main');
 const IDLE_MS = 20000, DONE_MS = 2500;
 let data = null, idle = null;
 
-const time = (d = new Date()) => d.toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 const dateLong = () => new Date().toLocaleDateString('he-IL', { timeZone: TZ, weekday: 'long', day: 'numeric', month: 'long' });
 
 const api = (action, body = {}) => apiCall('../api.php?action=' + action, { body, fallback: 'אין חיבור לשרת' });
@@ -63,7 +62,7 @@ async function list() {
   if (!data) return;
   header();
   main.innerHTML = `
-    <div class="clock" id="clock">${time()}</div>
+    <div class="clock" id="clock">${clockTime()}</div>
     <p class="center muted" style="margin-bottom:16px">${dateLong()}</p>
     <input type="search" id="q" placeholder="חיפוש שם" aria-label="חיפוש שם" style="inline-size:100%;margin-bottom:12px">
     <div class="names" id="names"></div>`;
@@ -115,7 +114,7 @@ function chooseScreen(emp, pin, r) {
   const btn = (kind, main_) => `<button class="big ${kind === 'out' ? 'out' : ''}${main_ ? '' : ' ghost-big'}" type="button" data-kind="${kind}">${kind === 'in' ? 'כניסה' : 'יציאה'}</button>`;
   main.innerHTML = `
     <div class="center" style="padding-top:8px"><h2>שלום ${esc(r.name)}</h2>
-      <p class="hint">${r.open_since ? 'בעבודה מאז ' + time(new Date(r.open_since)) : 'לא בעבודה כרגע'}</p></div>
+      <p class="hint">${r.open_since ? 'בעבודה מאז ' + clockTime(new Date(r.open_since)) : 'לא בעבודה כרגע'}</p></div>
     <div id="kinds">${btn(r.next, true)}${btn(r.next === 'in' ? 'out' : 'in', false)}</div>
     <div class="row-btns"><button class="btn" type="button" id="cancel">ביטול</button></div>`;
   $('#cancel').addEventListener('click', list);
@@ -132,10 +131,10 @@ function chooseScreen(emp, pin, r) {
 function done(p) {
   clearTimeout(idle);
   main.innerHTML = `<div class="gate"><div class="logo" aria-hidden="true">✅</div>
-    <h2>${p.punch.kind === 'in' ? 'כניסה נרשמה' : 'יציאה נרשמה'} ${time(new Date(p.punch.at))}</h2><p class="hint">${esc(p.name)}</p></div>`;
+    <h2>${p.punch.kind === 'in' ? 'כניסה נרשמה' : 'יציאה נרשמה'} ${clockTime(new Date(p.punch.at))}</h2><p class="hint">${esc(p.name)}</p></div>`;
   setTimeout(list, DONE_MS);
 }
 
-setInterval(() => { const c = $('#clock'); if (c) c.textContent = time(); }, 10000);
+setInterval(() => { const c = $('#clock'); if (c) c.textContent = clockTime(); }, 10000);
 setInterval(() => { if ($('#clock')) list(); }, 5 * 60000);   // רשימה מעודכנת (עובד חדש, עובד שסיים)
 boot();

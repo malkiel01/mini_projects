@@ -68,6 +68,11 @@ function companyRow(int $id): array {
     return $c;
 }
 
+/** היום בשעון החברה. */
+function companyToday(int $companyId): string {
+    return todayIn(companyRow($companyId)['tz']);
+}
+
 /** פרטי החברה, הסניפים והצוות. כל מי שבצוות הניהול רואה; רק הבעלים משנה. */
 function companyGet(array $person, int $id): array {
     $me = requireMember($person, $id, MANAGE_ROLES);

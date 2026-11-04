@@ -66,7 +66,7 @@ function holidayOn(int $companyId, string $religion, string $date): ?string {
 function holidaysGet(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     $me = requireMember($person, $companyId, MANAGE_ROLES);
-    $year = intIn($in, 'year') ?: (int) substr(todayIn(companyRow($companyId)['tz']), 0, 4);
+    $year = intIn($in, 'year') ?: (int) substr(companyToday($companyId), 0, 4);
     if ($year < 2000 || $year > 2100) throw new AppError('שנה לא תקינה');
     $builtin = [];
     foreach (RELIGIONS as $rel => $_) {

@@ -109,12 +109,6 @@ function absTypeSave(array $person, array $in): array {
 
 /* ===== ימי עבודה וזיכוי ===== */
 
-function memberRow(int $memberId): array {
-    $st = db()->prepare('SELECT * FROM members WHERE id = ?');
-    $st->execute([$memberId]);
-    return $st->fetch() ?: throw new AppError('העובד לא נמצא', 404);
-}
-
 /** כמה דקות היעדרות זוקפת ביום: 0 ביום בלי תקן או בחג. */
 function absCredit(array $a, array $member, string $date): int {
     $std = standardMinutes((int) $member['id'], $date);
@@ -282,7 +276,7 @@ function absList(array $person, array $in): array {
     foreach ($list as &$a) {
         $kind = $types[$a['type']]['deducts'] ?? null;
         if (!$kind) continue;
-        $b = memberBalance(memberRow($a['member_id']), $kind, todayIn(companyRow($companyId)['tz']));
+        $b = memberBalance(memberRow($a['member_id']), $kind, companyToday($companyId));
         $a['balance'] = ['kind' => $kind, 'name' => BAL_KINDS[$kind], 'now' => $b['balance'], 'after' => round($b['balance'] - $b['planned'] - absDays($a), 2)];
     }
     unset($a);

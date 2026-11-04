@@ -38,6 +38,12 @@ function empScope(array $person, int $companyId, array $roles): array {
     return [$me, branchSite($me)];
 }
 
+function memberRow(int $memberId): array {
+    $st = db()->prepare('SELECT * FROM members WHERE id = ?');
+    $st->execute([$memberId]);
+    return $st->fetch() ?: throw new AppError('העובד לא נמצא', 404);
+}
+
 function empRow(int $companyId, int $id, ?int $siteOnly): array {
     $st = db()->prepare("SELECT m.*, p.name, p.phone, p.email FROM members m JOIN people p ON p.id = m.person_id
         WHERE m.id = ? AND m.company_id = ? AND m.role = 'employee'");
@@ -107,7 +113,7 @@ function empList(array $person, array $in): array {
             WHERE m.company_id = ? AND m.role = 'employee'" . ($site !== null ? ' AND m.site_id = ?' : '') . ' ORDER BY m.status, p.name';
     $st = db()->prepare($sql);
     $st->execute($site !== null ? [$companyId, $site] : [$companyId]);
-    $today = todayIn(companyRow($companyId)['tz']);
+    $today = companyToday($companyId);
     return ['employees' => array_map(fn($e) => empOut($e, $today), $st->fetchAll()),
             'can_edit' => in_array($me['role'], EMP_EDIT, true), 'site_only' => $site];
 }
@@ -118,7 +124,7 @@ function empGet(array $person, array $in): array {
     $e = empRow($companyId, intIn($in, 'id'), $site);
     $st = db()->prepare('SELECT * FROM work_terms WHERE member_id = ? ORDER BY effective_from DESC');
     $st->execute([$e['id']]);
-    return ['employee' => empOut($e, todayIn(companyRow($companyId)['tz'])),
+    return ['employee' => empOut($e, companyToday($companyId)),
             'terms_history' => array_map('termsOut', $st->fetchAll()),
             'can_edit' => in_array($me['role'], EMP_EDIT, true)];
 }

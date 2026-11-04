@@ -79,7 +79,7 @@ function nextStep(array $period, array $mine): ?int {
 function mayApprove(array $me, string $role, array $emp): bool {
     return match ($role) {
         'manager'  => in_array($me['role'], ['owner', 'manager'], true)
-                      || ($me['role'] === 'branch_manager' && (int) $me['site_id'] === (int) $emp['site_id']),
+                      || (branchSite($me) !== null && branchSite($me) === (int) $emp['site_id']),
         'payroll'  => in_array($me['role'], ['owner', 'payroll'], true),
         'owner'    => $me['role'] === 'owner',
         'employee' => in_array($me['role'], ['owner', 'manager'], true),   // רק "במקום העובד", עם הערה
