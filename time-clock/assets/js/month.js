@@ -5,8 +5,6 @@
  * החיצים ‹ › נכתבים לפי המשמעות (הקודם / הבא) — בעברית הדפדפן הופך אותם לבד.
  */
 function monthHtml(r) {
-  const TZ = 'Asia/Jerusalem';
-  const hm = m => (m < 0 ? '−' : '') + Math.floor(Math.abs(m) / 60) + ':' + String(Math.abs(m) % 60).padStart(2, '0');
   const t = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
   const [y, mo] = r.month.split('-').map(Number);
   const title = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -144,13 +142,12 @@ function otLine(d, r) {
 const ABS_PART = { full: '', half: ' ½', hours: ' (שעות)' };
 const ASTATUS = { pending: ['warn', 'ממתין'], approved: ['ok', 'אושר'], rejected: ['bad', 'נדחה'], cancelled: ['', 'בוטל'] };
 const dShort = d => new Date(d + 'T12:00:00Z').toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'UTC' });
-const hmA = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 
 /** "7.2–10.2 · 5 ימי עבודה" · "ב׳ 14.2 · חצי יום" · "ג׳ 15.2 · 2:00 שעות" */
 function absText(a) {
   const dm = d => +d.slice(8) + '.' + +d.slice(5, 7);
   const range = a.from === a.to ? dShort(a.from) : `${dm(a.from)}–${dm(a.to)}`;
-  const part = a.part === 'half' ? 'חצי יום' : a.part === 'hours' ? `${hmA(a.minutes)} שעות ביום` : '';
+  const part = a.part === 'half' ? 'חצי יום' : a.part === 'hours' ? `${hm(a.minutes)} שעות ביום` : '';
   const days = a.from !== a.to || a.part === 'full' ? `${a.workdays} ${a.workdays === 1 ? 'יום עבודה' : 'ימי עבודה'}` : '';
   return [range, part, days].filter(Boolean).join(' · ');
 }
