@@ -38,6 +38,7 @@
 ```
 api.php            כל הפעולות (POST עם JSON; GET רק ל-me)
 lib/db.php         SQLite, המיגרציות והיומן (audit)
+lib/util.php       עוזרים משותפים: str, intIn, validDate, todayIn ואזור הזמן (DEFAULT_TZ)
 lib/auth.php       הזהות מ-$_SERVER['PLATFORM_USER'] וקישור לאדם באפליקציה. כאן גם התפקידים (ROLES והקבוצות) ו-branchSite — מנהל סניף מוגבל לסניף שלו
 lib/company.php    חברות, סניפים וצוות ניהול
 lib/employees.php  עובדים, תנאים בגרסאות וקישורי הזמנה (צד הניהול)
