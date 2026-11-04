@@ -1092,15 +1092,15 @@ function renderBridgePaused() {
   $('#bridgePauseT').textContent = 'מאזינים';
   $('#bridgePauseSub').textContent = p
     ? `⏸ עצורים מאז ${new Date(state.bridgePaused * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`
-    : '⏸ עצורים · 🕐 בדיקה שעתית · 🎧 פעילים — נגיעה פותחת';
+    : '💤 כבויים (ברירת מחדל) · 🎧 מותרים · ⏸ עצורים — נגיעה פותחת';
 }
 
 /* ── שלב 24א (§20.3.3, §20.3.5): המתג בשלושה מצבים, המד, והיומן של כל הצ'אטים ── */
-const LS_MODES = [['paused', '⏸ עצורים'], ['hourly', '🕐 בדיקה שעתית'], ['on', '🎧 פעילים']];
+const LS_MODES = [['paused', '⏸ עצורים'], ['hourly', '💤 כבויים'], ['on', '🎧 מותרים']];
 const LS_HINT = {
   paused: "אף צ'אט לא שואל את הלוח. ההודעות ממתינות עד שתחזיר.",
-  hourly: "כל צ'אט בודק את הלוח בבדיקה העצמית שלו — עד שעה לתשובה. בלי עומס על השרת.",
-  on: "עד 5 צ'אטים מאזינים יחד — תשובה תוך ~דקה. השאר בבדיקה השעתית. כדאי להתחיל בצ'אט אחד, להסתכל על המד אחרי חצי שעה, ורק אז לשאר.",
+  hourly: "אף צ'אט לא מאזין ואין בדיקות חוזרות — בלי טוקנים ובלי עומס. כל צ'אט קורא את הלוח בפעם הבאה שהוא עובד.",
+  on: "צ'אט מאזין רק כשביקשת ממנו במפורש — עד 5 יחד, תשובה תוך ~דקה.",
 };
 async function openListeners() {
   let r;
@@ -1112,7 +1112,7 @@ async function openListeners() {
   $('#lsMeter').textContent = `עכשיו: ${info.listening}/${info.cap} מאזינים · ${info.per_min} בקשות לדקה (10 דק' אחרונות) · ${info.errors_hour} תשובות 429/503 בשעה האחרונה`;
   $('#lsRows').replaceChildren(...(r.channels.length ? r.channels.map((c) => el('li', { class: 'card is-static' }, [
     el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: `${c.name} · ${c.project}` })]),
-      el('div', { class: 'l2 l2-wrap', text: `${listenLine({ ...c, status: 'active' })} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}${c.has_check ? '' : ' · בלי בדיקה עצמית'}${c.bridge_version ? ' · גשר ' + c.bridge_version : ''}` })]),
+      el('div', { class: 'l2 l2-wrap', text: `${listenLine({ ...c, status: 'active' })} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}${c.has_check ? ' · ⚠ בדיקה שעתית ישנה — תימחק' : ''}${c.bridge_version ? ' · גשר ' + c.bridge_version : ''}` })]),
     c.session_url ? el('a', { class: 'btn ghost sm', href: c.session_url, target: '_blank', rel: 'noopener', text: 'פתיחה' }) : null,
   ])) : [el('li', { class: 'empty', text: "אין צ'אטים פעילים." })]));
   if (!$('#listenersSheet').open) $('#listenersSheet').showModal();
@@ -1123,7 +1123,7 @@ async function setListeners(mode) {
     const { listeners } = await api('listeners-mode', { mode });
     state.bridgePaused = listeners.mode === 'paused' ? Math.floor(Date.now() / 1000) : 0;
     renderBridgePaused();
-    toast({ paused: '⏸ המאזינים עצורים', hourly: '🕐 בדיקה שעתית', on: '🎧 המאזינים פעילים — עד 5 יחד' }[mode], 'ok');
+    toast({ paused: '⏸ המאזינים עצורים', hourly: '💤 המאזינים כבויים', on: '🎧 מאזינים מותרים — עד 5 יחד' }[mode], 'ok');
     openListeners();
   } catch (ex) { toast(ex.message, 'error'); }
 }
@@ -1131,7 +1131,7 @@ async function toggleBridgePause() {
   const pause = !state.bridgePaused;
   if (!confirm(pause
     ? "לעצור את כל המאזינים? כל צ'אט יפסיק לשאול את הלוח תוך כחצי דקה, ולא יחזור עד שתחזירו."
-    : "להחזיר את המאזינים? כל צ'אט יחזור בבדיקה השעתית שלו — לא כולם בבת אחת.")) return;
+    : "להחזיר את המאזינים?")) return;
   try {
     state.bridgePaused = (await api('bridge-pause', { paused: pause })).bridge_paused;
     renderBridgePaused();

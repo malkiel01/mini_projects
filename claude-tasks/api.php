@@ -1807,7 +1807,9 @@ try {
         // ‏link.sh pending: הצ'אט כאן — האפיזודה נסגרת; התקציר מודפס לפני ההודעות
         $digest = laneReturn($ch);
         listenReport($ch, $in);   // שלב 24א: מה הגשר מדווח — מצב ההאזנה והבדיקה הבאה
-        ok(['messages' => channelInbox(getChannel((int) $ch['id'])), 'digest' => $digest, 'listeners' => listenersMode()]);
+        $fresh = getChannel((int) $ch['id']);
+        // ש1: בדיקה שעתית ישנה שהצ'אט עוד מחזיק — הגשר מבקש ממנו למחוק אותה
+        ok(['messages' => channelInbox($fresh), 'digest' => $digest, 'listeners' => listenersMode(), 'old_check' => (string) $fresh['check_trigger_id']]);
     }
 
     case 'channel-ack': {
@@ -1833,7 +1835,8 @@ try {
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
         listenReport($ch, $in);
         touchChannel((int) $ch['id']);
-        ok(['listeners' => listenersMode(), 'listen' => channelListen(getChannel((int) $ch['id']))]);
+        $fresh = getChannel((int) $ch['id']);
+        ok(['listeners' => listenersMode(), 'listen' => channelListen($fresh), 'old_check' => (string) $fresh['check_trigger_id']]);
     }
 
     case 'listeners':

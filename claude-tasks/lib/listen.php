@@ -71,14 +71,14 @@ function listenGate(array $channel): void {
     if ($mode !== 'on') {
         listenReport($channel, ['listen_state' => 'off_policy']);
         if (!headers_sent()) header('Retry-After: 3600');
-        throw new AppError('המאזינים במצב "בדיקה שעתית" — המאזין יוצא, והצ\'אט בודק את הלוח בבדיקה שלו', 503, 'listeners_off');
+        throw new AppError('המאזינים כבויים — המאזין יוצא. הצ\'אט קורא את הלוח בתור הבא שלו', 503, 'listeners_off');
     }
     $st = db()->prepare('SELECT COUNT(*) FROM channels WHERE status = ? AND listening_until > ? AND id <> ?');
     $st->execute(['active', nowTs(), (int) $channel['id']]);
     if ((int) $st->fetchColumn() >= LISTENERS_CAP && (int) $channel['listening_until'] <= nowTs()) {
         listenReport($channel, ['listen_state' => 'slots_full']);
         if (!headers_sent()) header('Retry-After: 3600');
-        throw new AppError('כל ' . LISTENERS_CAP . ' המקומות למאזינים תפוסים — הצ\'אט עובר לבדיקה השעתית', 503, 'listener_slots_full');
+        throw new AppError('כל ' . LISTENERS_CAP . ' המקומות למאזינים תפוסים — המאזין יוצא', 503, 'listener_slots_full');
     }
     listenReport($channel, ['listen_state' => 'running']);
 }
