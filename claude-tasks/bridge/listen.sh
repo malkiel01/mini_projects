@@ -69,6 +69,17 @@ while [ "$(date +%s)" -lt "$END" ]; do
   if [ $rc = 0 ]; then
     [ -n "$(link_get backoff_level)" ] && link_set backoff_level 0
     n="$(echo "$out" | jq '.messages | length')"
+    # שלב 25: צ'אט המנהל — הוחלף (retired), או בקשות העירה בתור
+    if [ "$(echo "$out" | jq -r '.dispatcher // empty')" = retired ]; then
+      log "dispatcher retired"; listen_state ended
+      echo "🛰 retired — מנהל אחר החליף אותך. אל תפעיל את המאזין שוב; סיים את התור."; exit 3
+    fi
+    nd="$(echo "$out" | jq '.dispatch // 0')"
+    if [ "$nd" -gt 0 ]; then
+      log "dispatch=$nd"
+      echo "🛰 $nd בקשות העירה — הרץ: claude-tasks/bridge/link.sh dispatch-pending"
+      exit 0
+    fi
     if [ "$n" -gt 0 ]; then
       echo "$out" | jq '.messages' > "$BOARD_PENDING"
       link_set last_message_at "$(date +%s)"

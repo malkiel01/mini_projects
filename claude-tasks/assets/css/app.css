@@ -942,3 +942,10 @@ mark.hit { background: color-mix(in srgb, var(--star) 45%, transparent); color: 
 #lsModes { display: flex; width: 100%; }
 #lsModes button { flex: 1 1 auto; min-height: 42px; }
 .ls-meter { font-size: .82rem; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+
+/* ── שלב 25: צ'אט המנהל ── */
+.ds-state { font-weight: 600; margin: 0 0 8px; }
+.ds-state.is-on { color: var(--ok, #1b7f3b); }
+.ds-steps { padding-inline-start: 20px; display: grid; gap: 8px; margin: 0; }
+.ds-steps b { display: inline-block; margin-top: 4px; user-select: all; }
+.ds-replace { border-color: var(--warn, #b26a00); margin: 8px 0; }

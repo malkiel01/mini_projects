@@ -230,6 +230,7 @@ async function enterApp() {
   loadProviders().catch(() => {});
   refreshQuotaWarn();
   renderBridgePaused();
+  if (state.user?.role === 'admin') loadDispatcherSub();   // שלב 25: שורת 🛰 צ'אט המנהל
   monitorLazy();
   openFromHash();   // קישור להודעה (12b)
 }
@@ -1094,6 +1095,53 @@ function renderBridgePaused() {
     ? `⏸ עצורים מאז ${new Date(state.bridgePaused * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`
     : '💤 כבויים (ברירת מחדל) · 🎧 מותרים · ⏸ עצורים — נגיעה פותחת';
 }
+
+/* ── שלב 25 (§21, §21.7): צ'אט המנהל — מצב, עלות, פתיחה והחלפה ── */
+const dsTime = (ts) => ts ? new Date(ts * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+async function loadDispatcherSub() {
+  try {
+    const d = (await api('dispatcher-info')).dispatcher;
+    $('#dispatcherSub').textContent = d.active ? `🟢 פעיל${d.last_batch_at ? ' · אצווה אחרונה ' + dsTime(d.last_batch_at) : ''}${d.replace_due ? ' · 🔁 הגיע הזמן להחליף' : ''}`
+      : '⚪ לא פעיל — לא ניתן להעיר צ\'אטים';
+    return d;
+  } catch { return null; }
+}
+async function openDispatcher() {
+  const d = await loadDispatcherSub();
+  if (!d) return;
+  const copy = (txt, label) => el('button', { type: 'button', class: 'btn ghost sm', text: `📋 ${label}`, onclick: async () => {
+    try { await navigator.clipboard.writeText(txt); toast('הועתק', 'ok'); } catch { toast('לא הועתק — סמן והעתק ידנית', 'error'); } } });
+  const parts = [
+    el('p', { class: `ds-state${d.active ? ' is-on' : ''}`, role: 'status', text: d.active
+      ? `🟢 מנהל פעיל: ${d.name} · מאז ${dsTime(d.since)} · אצווה אחרונה ${dsTime(d.last_batch_at)} · ${d.handled} אצוות`
+      : d.channel_id ? `⚪ המנהל לא פעיל — המאזין שלו לא בדק את הלוח מאז ${dsTime(d.lease_until)}. פתח אותו ב-Claude וכתוב לו "הפעל את המאזין".` : '⚪ אין צ\'אט מנהל עדיין.' }),
+    d.active && d.session_url ? el('a', { class: 'btn ghost sm', href: d.session_url, target: '_blank', rel: 'noopener', text: 'פתיחה ב-Claude' }) : null,
+    el('p', { class: 'hint', text: `העירות בשעה האחרונה: ${d.wakes_hour} מתוך ${d.wakes_hour_cap} · בתור: ${d.queued}` }),
+    el('h3', { class: 'conn-group', text: 'מה הוא עושה, ומה זה עולה' }),
+    el('p', { class: 'hint', text: 'המנהל הוא הצ\'אט היחיד שמאזין ללוח. כשאתה כותב לצ\'אט ישן (או לוחץ ⏰), הלוח מבקש ממנו להעיר את הצ\'אט — והצ\'אט עונה כאן תוך כ-3 דקות. אין שעונים ואין בדיקות שעתיות.' }),
+    el('p', { class: 'hint', text: 'העלות: תור קצר אחד לכל אצוות העירות, ועוד כ-12 תורות קצרים ביום כשהמאזין שלו מתחדש (כל שעתיים). בקשה אחת לשרת כל ~30 שניות. צ\'אט אחד בלבד.' }),
+  ];
+  if (d.replace_due) parts.push(el('div', { class: 'card is-static ds-replace' }, [el('div', { class: 'body' }, [
+    el('div', { class: 'l1', text: '🔁 הגיע הזמן להחליף מנהל' }),
+    el('div', { class: 'l2', text: `${d.handled} אצוות או שבוע — צ'אט ארוך נהיה יקר. פותחים מנהל חדש, והישן נסגר לבד.` })])]));
+  if (d.active) parts.push(el('div', { class: 'row-btns' }, [el('button', { type: 'button', class: 'btn sm', text: '🔁 החלפת מנהל', onclick: async (e) => {
+    e.target.disabled = true;
+    try { await api('dispatcher-handover'); toast('ההחלפה פתוחה ל-30 דקות — פתח מנהל חדש לפי ההוראות למטה', 'ok'); openDispatcher(); }
+    catch (ex) { toast(ex.message, 'error'); e.target.disabled = false; } } })]));
+  if (!d.active || d.replace_due || d.handover_until > Date.now() / 1000) {
+    parts.push(el('h3', { class: 'conn-group', text: d.active ? 'פתיחת מנהל חדש (במקום הנוכחי)' : 'פתיחת צ\'אט מנהל — פעם אחת' }),
+      el('ol', { class: 'ds-steps' }, [
+        el('li', { text: 'ב-Claude Code: צ\'אט חדש על mini_projects, בסביבה שבה שמור האסימון של הלוח.' }),
+        el('li', {}, ['הדבק את הפרומפט: ', copy(d.prompt + (d.handover_until > Date.now() / 1000 ? '\n(Use --replaces-dispatcher.)' : ''), 'העתקת הפרומפט')]),
+        el('li', {}, ['כשהוא נרשם — הקלד בעצמך, בלי להדביק: ', el('b', { text: d.sentence })]),
+        el('li', { text: 'זהו. השורה כאן תהפוך ל-"🟢 פעיל" תוך דקה.' }),
+      ]));
+  }
+  $('#dsBody').replaceChildren(...parts.filter(Boolean));
+  $('#dispatcherSheet').open || $('#dispatcherSheet').showModal();
+}
+on('#dispatcherBtn', 'click', () => openDispatcher());
+on('#dispatcherBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDispatcher(); } });
 
 /* ── שלב 24א (§20.3.3, §20.3.5): המתג בשלושה מצבים, המד, והיומן של כל הצ'אטים ── */
 const LS_MODES = [['paused', '⏸ עצורים'], ['hourly', '💤 כבויים'], ['on', '🎧 מותרים']];
