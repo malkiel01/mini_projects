@@ -2081,3 +2081,37 @@ After his confirmation, your standing instruction from him is:
 - **Live:** the owner writes to a sleeping chat → the chat answers on the board within ~3 minutes, with no hourly check anywhere on the account.
 
 **Order:** **25 now** (the owner's top issue), then 21, 22b, 22c, 16. Until step 0 passes, the code writer sends **no** update instruction to old chats.
+
+### 21.6 Owner correction — a connection per **account**, API first, the dispatcher only as the fallback (2026-11-04 09:51)
+
+**The owner:** this is not about a project, nor about mini_projects. It is a connection **between the user's Claude account and his account in
+the app**, made **once per user**. The right way is **a key / an API** the app calls; a dispatcher chat is a workaround if no API exists.
+
+**What the documentation says (read 2026-11-04):** a routine's API trigger (`/fire`) **starts a new session** — documented for every kind of task;
+nothing documents a fire that lands in an existing session. But `create_trigger` accepts `persistent_session_id` and a **poke-only** task
+(no cron, no run time), and such tasks appear among the account's routines. Whether the web lets you add an API trigger to one of them, and
+whether its fire then lands **in that session**, is **undocumented — it is the new step 0.**
+
+**Design (replaces §21.2 #2–#3; the rest of §21 stays):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **User settings → "🔗 חיבור לחשבון Claude"** — per user, not per project. It holds the launcher (§19, moved here), and the **wake channel** below. Each user of the app sets it up once for his own Claude account; a user never wakes another user's sessions |
+| 2 | **Preferred path (if step 0 passes): fire → the user's dispatcher session, no listener at all.** The dispatcher is a **repo-less** cloud session (no sources), opened once and confirmed by the owner in person (§21.2 #2's sentence). In it, the dispatcher creates a **poke-only** trigger into itself; the owner adds an **API trigger** to that task on claude.ai/code/routines and pastes the Fire URL + token into "🔗 חיבור לחשבון Claude". From then on the board **fires** it when a wake is queued — the dispatcher wakes at once, reads `dispatch-pending` from the board, wakes each target with `create_trigger` (§21.4, fixed text), reports, ends its turn. **One token per user, no polling, no hourly checks** |
+| 3 | **Fallback (if the fire opens a new session instead):** the dispatcher of §21 as written — one listener in the repo-less dispatcher session. Same setup screen, same one sentence |
+| 4 | **Never a token per chat.** Tokens are per task and are copied by hand on the web — one per user is the most the owner should ever do |
+| 5 | **Repo-less bootstrap:** a session without a repository has no `claude-tasks/bridge/`. The board serves the bridge itself (`bridge-install`, authenticated with the user's registration token) and the dispatcher prompt installs it into `~/.claude-tasks-bridge` — the runtime copy the bridge already uses. The environment must hold `CLAUDE_TASKS_TOKEN` (the setup screen names it) |
+| 6 | **Why the F1 refusal does not apply on the preferred path:** the fire lands in the dispatcher **session the owner confirmed in person**; the fired text only says "check the board" — the targets come from the board's queue, and acting on them is the owner's standing instruction. If the dispatcher still declines, §21.2 #10 holds: no workaround |
+
+**Step 0 (replaces §21.5 step 0; owner present, no code before it):**
+1. The owner opens a **repo-less** cloud session in the environment that holds `CLAUDE_TASKS_TOKEN` and pastes the dispatcher prompt (the code writer
+   sends it); he types the confirmation sentence.
+2. The session creates a **poke-only** `create_trigger` into itself (no cron, no `run_once_at`) and prints its `trigger_id`.
+3. The owner opens that task on claude.ai/code/routines: **can an API trigger be added to it?** If yes — Generate token, copy the Fire URL and token
+   (to the code writer only through the board's form, never into a chat).
+4. One `POST …/fire` with `{"text":"wake-test"}`: **does the response's `claude_code_session_id` equal the dispatcher's session**, and does the
+   message appear in it?
+5. The dispatcher, on that wake, sends the fixed wake text to one test chat; the test chat answers on the board.
+
+**Outcomes:** (3) and (4) yes → preferred path (#2). (3) no, or (4) a new session → fallback (#3). (5) declined → §21.2 #10. Results into §14 the
+same day.
