@@ -1770,6 +1770,14 @@ try {
         ok(['launches' => pendingLaunches($me, $pid), 'launcher' => $l ? launcherPublic($l) : null]);
     }
 
+    /* תקלות אחרונות (בעל הלוח): "שגיאת שרת" במלואה — הפעולה, הסוג, ההודעה והמקום בקוד */
+    case 'server-errors': {
+        $me = requireUser($user);
+        if (authorRole($me) !== 'owner') fail('בעל הלוח בלבד', 403);
+        $rows = db()->query("SELECT id, target, detail, created_at FROM events WHERE action = 'server.error' ORDER BY id DESC LIMIT 30")->fetchAll();
+        ok(['errors' => array_map(fn ($r) => ['id' => (int) $r['id'], 'action' => $r['target'], 'detail' => $r['detail'], 'at' => (int) $r['created_at']], $rows)]);
+    }
+
     /* §18.3 (22א.2): מה Platform רואה בפרויקט */
     case 'project-check':
         ok(['check' => platformCheck(requireUser($user), (int) ($in['project_id'] ?? 0))]);

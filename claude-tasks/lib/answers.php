@@ -207,6 +207,12 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     $done->execute([$messageId]);
     if ($id = $done->fetchColumn()) return ['answered' => true, 'message' => messageRows('m.id = ?', [(int) $id])[0]];
 
+    // הוראה שרק הצ'אט מבצע (עדכון גשר, בקשת צ'אט המשך, הרשאה) שעברה ל-☁️ לפני התיקון — חוזרת לצ'אט בשקט, בלי קריאה לספק
+    if (in_array($m['kind'], ['handoff_request', 'handoff', 'permission'], true) || str_starts_with((string) $m['body'], 'עדכון הגשר ללוח (חד-פעמי)')) {
+        db()->prepare("UPDATE messages SET answered_by = '', handled_by = 'chat', lease_until = 0 WHERE id = ? AND delivered_at IS NULL")->execute([$messageId]);
+        channelStateRefresh((int) $channel['id']);
+        return ['answered' => false, 'handed_to_chat' => true, 'quiet' => true, 'reason' => 'הוראה לצ\'אט עצמו — ממתינה לו'];
+    }
     if (channelRoute($channel) !== 'platform') {
         if (str_starts_with((string) $m['answered_by'], 'platform')) return handToChat($messageId, (int) $channel['id'], 'הערוץ חזר למסלול הצ\'אטים');
         throw new AppError('הערוץ במסלול הצ\'אטים — הצ\'אט עונה', 409);

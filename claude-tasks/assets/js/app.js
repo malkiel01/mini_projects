@@ -1106,6 +1106,19 @@ async function toggleBridgePause() {
   } catch (ex) { toast(ex.message, 'error'); }
 }
 on('#bridgePauseBtn', 'click', toggleBridgePause);
+// 🧯 תקלות אחרונות — הטקסט המלא של כל "שגיאת שרת" (הטוסט חותך אותו)
+async function openServerErrors() {
+  try {
+    const { errors } = await api('server-errors', {});
+    $('#seRows').replaceChildren(...(errors.length ? errors.map((x) => el('li', { class: 'card is-static' }, [
+      el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: `#${x.id} · ${x.action} · ${new Date(x.at * 1000).toLocaleString('he-IL')}` })]),
+        el('div', { class: 'l2 l2-wrap', dir: 'ltr', text: x.detail })]),
+    ])) : [el('li', { class: 'empty', text: 'אין תקלות רשומות.' })]));
+    $('#serverErrs').showModal();
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+on('#serverErrBtn', 'click', openServerErrors);
+on('#serverErrBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openServerErrors(); } });
 on('#bridgePauseBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBridgePause(); } });
 on('#boardPolicyBtn', 'click', () => openPolicySheet(null));
 on('#boardPolicyBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPolicySheet(null); } });

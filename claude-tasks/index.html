@@ -499,6 +499,17 @@
 </dialog>
 
 <!-- ── שלב 17: "העבר ל…" והיומן (§15.6) ─────────────────────── -->
+<dialog id="serverErrs" aria-labelledby="seT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="serverErrs" aria-label="סגירה">✕</button>
+      <h2 id="seT">🧯 תקלות אחרונות</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body"><ul class="list" id="seRows"></ul></div>
+  </div>
+</dialog>
+
 <!-- ── שלב 23: ➕ צ'אט חדש מהלוח ── -->
 <dialog id="launchSheet" aria-labelledby="lnTitle">
   <form class="sheet-wrap" id="lnForm">
@@ -1103,6 +1114,11 @@
           <li class="card" tabindex="0" role="button" id="bridgePauseBtn" aria-label="עצירת המאזינים">
             <span class="ic" aria-hidden="true" id="bridgePauseIc">⏸</span>
             <div class="body"><div class="l1"><span id="bridgePauseT">עצירת המאזינים</span></div><div class="l2" id="bridgePauseSub">כל הצ'אטים מפסיקים לשאול את הלוח, תוך מחזור אחד</div></div>
+            <span class="go" aria-hidden="true">‹</span>
+          </li>
+          <li class="card" tabindex="0" role="button" id="serverErrBtn" aria-label="תקלות אחרונות">
+            <span class="ic" aria-hidden="true">🧯</span>
+            <div class="body"><div class="l1"><span>תקלות אחרונות</span></div><div class="l2">כל "שגיאת שרת" במלואה — לצילום ולשליחה לצ'אט</div></div>
             <span class="go" aria-hidden="true">‹</span>
           </li>
           <li class="card" tabindex="0" role="button" id="boardPolicyBtn" aria-label="אישורים כלליים">

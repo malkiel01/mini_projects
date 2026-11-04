@@ -463,8 +463,13 @@ async function platformAnswer(id) {
   conv.thinking.add(id);
   renderLog(true);
   try {
-    const r = await api('platform-reply', { message_id: id });
-    if (r.preflight) toast('💰 ' + r.reason, '');
+    const r = await api('platform-reply', { message_id: id }).catch((ex) => {
+      // שני מסכים (או לשונית והרצת הרקע) ביקשו יחד — אחד עונה, והשני פשוט מחכה לתשובה
+      if (/כבר עונה/.test(ex.message)) return { quiet: true };
+      throw ex;
+    });
+    if (r.quiet) { /* הוראה לצ'אט עצמו — חזרה אליו, אין מה להודיע */ }
+    else if (r.preflight) toast('💰 ' + r.reason, '');
     else if (r.handed_to_chat && !r.answered) toast(`Platform לא ענה — עבר לצ'אט: ${r.reason}`, '');
     else if (r.asked) toast('☁️ Platform שואל — בחר תשובה בבועה', '');
     else if (r.waiting) toast(r.reason, '');
