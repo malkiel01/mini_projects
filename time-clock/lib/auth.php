@@ -12,8 +12,19 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/util.php';
 
-const MANAGE_ROLES = ['owner', 'manager', 'branch_manager', 'payroll'];
+/**
+ * התפקידים, מהגבוה לנמוך. הרשימה גם ב-CHECK של members.role (lib/db.php) — בדיקה ב-tests/run.php מוודאת שהן זהות.
+ * שאר הקבוצות הן תתי-קבוצות שלה: מי רואה, מי עורך, ומי חבר צוות שהבעלים מוסיף.
+ */
+const ROLES = ['owner', 'manager', 'branch_manager', 'payroll', 'employee'];
+const MANAGE_ROLES = ['owner', 'manager', 'branch_manager', 'payroll'];   // צוות הניהול
+const EDIT_ROLES = ['owner', 'manager', 'branch_manager'];                // עורכים: עובדים, תיקונים, היעדרויות, עמדות
+const TEAM_ROLES = ['manager', 'branch_manager', 'payroll'];              // מה שהבעלים מוסיף לצוות
+const EMP_VIEW = MANAGE_ROLES;
+const EMP_EDIT = EDIT_ROLES;
+const CORR_EDIT = EDIT_ROLES;
 
 function platformIdentity(): ?array {
     $id = json_decode((string) ($_SERVER['PLATFORM_USER'] ?? ''), true);
@@ -26,6 +37,11 @@ function currentPerson(): array {
     $id = platformIdentity();
     if (!$id) throw new AppError('נכנסים דרך הכלים הדיגיטליים', 401);
     return personForIdentity($id);
+}
+
+/** מנהל סניף מוגבל לסניף שלו: מחזיר את מספר הסניף. לתפקיד אחר — null (כל החברה). */
+function branchSite(array $me): ?int {
+    return $me['role'] === 'branch_manager' ? (int) $me['site_id'] : null;
 }
 
 /**

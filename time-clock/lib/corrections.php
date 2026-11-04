@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/attendance.php';
 
-const CORR_EDIT = ['owner', 'manager', 'branch_manager'];
 
 /** "2026-10-21T17:30" בשעון החברה ← UTC. */
 function localToUtc(string $local, string $tz): string {

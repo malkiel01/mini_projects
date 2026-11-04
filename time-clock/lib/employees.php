@@ -14,8 +14,6 @@ declare(strict_types=1);
 require_once __DIR__ . '/company.php';
 
 const INVITE_DAYS = 7;
-const EMP_VIEW = ['owner', 'manager', 'branch_manager', 'payroll'];
-const EMP_EDIT = ['owner', 'manager', 'branch_manager'];
 
 function tokenHash(string $token): string {
     return hash('sha256', $token);
@@ -23,18 +21,6 @@ function tokenHash(string $token): string {
 
 function newToken(): string {
     return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-}
-
-function validDate(string $d, string $label): string {
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d) || !checkdate((int) substr($d, 5, 2), (int) substr($d, 8, 2), (int) substr($d, 0, 4))) {
-        throw new AppError($label . ' — תאריך לא תקין');
-    }
-    return $d;
-}
-
-/** היום בשעון החברה — "מאיזה תאריך" נקבע לפי ישראל, לא לפי UTC. */
-function todayIn(string $tz = 'Asia/Jerusalem'): string {
-    return (new DateTimeImmutable(nowIso()))->setTimezone(new DateTimeZone($tz))->format('Y-m-d');
 }
 
 /** טלפון ישראלי: ספרות בלבד, 05X → 9725X. ריק — מותר. */
@@ -49,7 +35,7 @@ function normPhone(string $p): string {
 /** החברוּת של המבקש, ואם הוא מנהל סניף — הסניף שאליו הוא מוגבל. */
 function empScope(array $person, int $companyId, array $roles): array {
     $me = requireMember($person, $companyId, $roles);
-    return [$me, $me['role'] === 'branch_manager' ? (int) $me['site_id'] : null];
+    return [$me, branchSite($me)];
 }
 
 function empRow(int $companyId, int $id, ?int $siteOnly): array {
