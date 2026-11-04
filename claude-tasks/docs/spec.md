@@ -1947,3 +1947,36 @@ listening channel or an archived one; **live:** the owner writes to a not-listen
   The board's job is to say which of these is true right now, and to offer the next step.
 
 **Order:** **24a now** (the owner's top complaint), then 21, 22b, 24b (after its step 0), 22c, 16.
+
+### 20.6 Amendment — the data says there is no hourly check either (code writer, 2026-11-04 08:28) — **24b moves up, into 24a**
+
+**New fact (from `list_triggers` on the account):** there is **no active recurring or pending check** for any chat. The skill's step 3
+(chain of hourly `send_later`) is not happening in practice — one missed or unscheduled link ends the chain silently. So when a chat's session
+goes idle, **nothing wakes it**: not the brake (it only *permits* listening), not a board message, not a lane switch. A chat listens only while
+the owner has it open. This also explains "⚠ גרסה ישנה" on most rows (an asleep chat cannot update) and the 📨 / "תשאל שוב" messages stuck at
+"⏳ ממתין לצ'אט" with one ✓. L1 stands, and is **worse** than §20.1 assumed: the fallback it relied on does not exist.
+
+**Decisions (replace §20.2 #4 and the order in §20.5):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **Waking on demand is the primary mechanism**, not polling and not hourly checks. Build it now, as part of **24a**, starting with step 0 of §20.4 |
+| 2 | **The wake routine** ("⏰ מעיר צ'אטים") is the code writer's design with one addition from §20.4: the board fires `CLAUDE-TASKS-WAKE v1 {session_id, channel_id, wake_id}`; the short session **verifies `wake_id` with the board** (`wake-verify`, one-time, ≤ 10 min) before acting, then sends the old session **one fixed message** via `create_trigger` + `persistent_session_id`: *"📥 בדיקת לוח: הרץ `claude-tasks/bridge/link.sh update`, `link.sh pending`, טפל במה שממתין, והפעל מאזין אם הלוח אומר `listeners: on`."* — and ends. It never forwards the owner's text |
+| 3 | **When the board wakes a chat:** (a) the owner presses **⏰ להעיר** on a row or in the conversation header; (b) **automatically** when the owner writes on the 💬 route to a channel that is not listening — channel setting "להעיר כשאני כותב", **default on**; (c) **⏰ להעיר את כל הישנים** (one button, for "⚠ גרסה ישנה" and stuck update instructions) — queued and fired one by one |
+| 4 | **Limits (the 429 lesson):** board-wide **one wake in flight at a time, at least 2 minutes apart, at most 20 per hour** (the routine allows 30); per channel at most once per 10 minutes; a channel already listening is never woken. A wake is a single short session — no load on mbe-plus.com beyond its two requests (`wake-verify`, then the woken chat's `pending`) |
+| 5 | **Hourly checks become optional, per channel, off by default.** When on (⚙ of the channel: "⏰ בדיקה שעתית"), the chat creates **one recurring** trigger (cron hourly, `persistent_session_id` = itself) at registration — not a chain — and reports its `trigger_id`; disconnect deletes it. Reason for off by default: every hourly fire is a turn on the owner's subscription even when nothing waits; waking on demand costs a turn only when something waits |
+| 6 | **Row line additions** (to §20.3.2): "⏰ הוערה ב-08:12 · ממתין שיענה" · "⏰ ההעירה נכשלה — <reason>" (with 🚀 continuation chat) · "💤 ישן — ⏰ להעיר". The chip **"✉️ 3" becomes "✉️ 3 ממתינות לצ'אט"** (the owner read it as messages sent to him) |
+| 7 | **"Does it work for both Platform and the chat?"** — ☁️ Platform answers on the server and never needs a listener or a wake. The wake is for 💬 chats only. A chat on the ☁️ route that is asleep still gets Platform's answers (and the digest when it wakes) |
+
+**Step 0 still decides it** (§20.4): if a routine-fired session lacks `create_trigger` with `persistent_session_id`, the wake falls back to
+"🚀 continuation chat" (§19) on every "💤" row, and the owner is told plainly that an existing chat cannot be woken from the board.
+
+**Setup for the owner (once):** the same guide as the launcher (§19.3), a second routine "⏰ מעיר צ'אטים" with its own saved prompt and token,
+under 🔌 חיבורים. The board shows both routines' state side by side.
+
+**Done when (24a, revised):** everything in §20.3, plus — tests: the wake record built by the server only; `wake-verify` one-time and expiring;
+the four limits; no wake for a listening or archived channel; auto-wake respects the channel setting; "wake all asleep" is queued and spaced;
+the optional hourly check creates exactly one recurring trigger and the row shows ⏰ ✓/✗. **Live, owner present:** a sleeping chat with
+"⚠ גרסה ישנה" is woken from its row, updates its bridge, and answers the waiting message on the board within ~3 minutes.
+
+**Order:** **24a (with the wake, step 0 first)** → 21 → 22b → 22c → 16. 24b as a separate stage is folded in.
