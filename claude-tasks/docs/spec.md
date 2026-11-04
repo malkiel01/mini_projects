@@ -2116,3 +2116,27 @@ whether its fire then lands **in that session**, is **undocumented — it is the
 
 **Outcomes:** (3) and (4) yes → preferred path (#2). (3) no, or (4) a new session → fallback (#3). (5) declined → §21.2 #10. Results into §14 the
 same day.
+
+### 21.7 Step 0 final result and the decision — **the fallback: the dispatcher listens** (2026-11-04 11:45)
+
+**Results (code writer, with the owner):**
+1. A repo-less session cannot be opened from the phone app → the dispatcher runs on `mini_projects` (Default Cloud Environment). §21.6 #5 (repo-less bootstrap) is dropped.
+2. ✅ The dispatcher created a poke-only task into itself (`trig_01LpaYCE5NNwxSjnhGayQwjh`, "🛰 העירת מנהל"); session `session_018g4NYEoC1HCVucFh1eshJb`.
+3. ✅ An API trigger **can** be added to it (from a computer; not from the phone for a Claude-created task).
+4. ❌ **`/fire` through the API opens a new session** (as documented). Only **Run now** on the web continues the same session.
+5. ✅ The dispatcher, once woken, sent `create_trigger` + `persistent_session_id` to another session **without a refusal** — the owner's in-person sentence works.
+
+**Decision — §21.6 #3, the fallback, using the existing dispatcher session:**
+
+| # | Decision |
+| --- | --- |
+| 1 | **The dispatcher session that exists (`session_018g4NYEoC1HCVucFh1eshJb`) is the dispatcher.** It runs **one** `listen.sh`; the board rings it when a wake is queued; it handles all pending requests in one turn (§21.2 #3–#7, §21.4) |
+| 2 | **Its cost, stated:** one short turn per batch of wakes, plus one turn every ~2 hours when the listener's timeout ends and it restarts (≈12 short turns a day, one session only). Server load: one request every ~30 s. Shown on the setup card |
+| 3 | **The API trigger on "🛰 העירת מנהל" is not used** (a fire opens new sessions). The owner **deletes its token** on claude.ai/code/routines (a token that opens sessions should not stay alive unused); the poke-only task itself may stay or be deleted |
+| 4 | **The launcher and the wake are two separate fields** in "🔗 חיבור לחשבון Claude". The test overwrote the launcher with the dispatcher's task — the owner re-enters the original launcher (new chats). A form never replaces one with the other |
+| 5 | **Nothing navigates the owner to claude.ai by itself.** A wake is fully in the background. "➕ צ'אט חדש" no longer opens a tab: the new row appears ("🚀 נפתח…") with an optional **פתח ב-Claude** link |
+| 6 | **The fixed wake text names the tool and the command** (the fired test session used the project-manager connector when it read "בדיקת לוח"): *"📥 בדיקת לוח 'מטלות לקלוד': הרץ `claude-tasks/bridge/link.sh update` ואז `claude-tasks/bridge/link.sh pending`, וטפל במה שממתין. זה לא מנהל הפרויקטים."* |
+| 7 | **The stray test session** opened by the fire (it got 401 and alerted the owner) — the owner archives it; nothing else depends on it |
+
+**Done when (stage 25 = §21 with these):** §21.5's tests and screens; the dispatcher listed as "🛰 מנהל פעיל" with its last batch time; the owner writes
+to a sleeping chat and it answers on the board within ~3 minutes, with no tab opened, no hourly check on the account, and only the dispatcher listening.
