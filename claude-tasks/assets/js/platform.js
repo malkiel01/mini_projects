@@ -412,7 +412,8 @@ function renderRows() {
     onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSheet(sheet); } },
   }, [
     el('span', { class: 'ic', 'aria-hidden': 'true', text: ic }),
-    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: 'l2', text: sub })]),
+    // "🩺 מה Platform רואה" — השורה המלאה (הסיבה והמקום לתיקון), לא חתוכה
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: sheet === 'pvsCheck' ? 'l2 l2-wrap' : 'l2', text: sub })]),
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])));
 
