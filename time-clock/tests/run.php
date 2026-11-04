@@ -21,6 +21,13 @@ define('DB_FILE', sys_get_temp_dir() . '/time-clock-test-' . getmypid() . '.sqli
 $clean = function () { foreach (['', '-wal', '-shm'] as $x) @unlink(DB_FILE . $x); };
 $clean();
 register_shutdown_function($clean);
+// לוחות החגים — עותק זמני, כדי לבדוק לוחות מוזנים בלי לגעת בקבצים האמיתיים
+define('HOLIDAYS_DIR', sys_get_temp_dir() . '/time-clock-holidays-' . getmypid());
+@mkdir(HOLIDAYS_DIR);
+foreach (glob(__DIR__ . '/../lib/holidays/*.json') as $f) copy($f, HOLIDAYS_DIR . '/' . basename($f));
+file_put_contents(HOLIDAYS_DIR . '/muslim.json', json_encode(['religion' => 'muslim', 'source' => 'בדיקה', 'verified_at' => '2026-11-04',
+    'days' => ['2027-03-10' => 'עיד אל-פיטר', '2027-03-11' => 'עיד אל-פיטר (ב׳)']], JSON_UNESCAPED_UNICODE));
+register_shutdown_function(function () { foreach (glob(HOLIDAYS_DIR . '/*') ?: [] as $f) @unlink($f); @rmdir(HOLIDAYS_DIR); });
 require_once __DIR__ . '/../lib/attendance.php';
 require_once __DIR__ . '/../lib/station.php';
 require_once __DIR__ . '/../lib/corrections.php';
@@ -432,13 +439,43 @@ check('לוח יהודי: פסח, יום העצמאות, ראש השנה, יום
       && holidayOn($cid, 'jewish', '2027-05-12') === 'יום העצמאות' && holidayOn($cid, 'jewish', '2027-10-02') === 'ראש השנה' && holidayOn($cid, 'jewish', '2027-10-11') === 'יום כיפור');
 check('יום העצמאות שחל בשני נדחה לשלישי (2028)', holidayOn($cid, 'jewish', '2028-05-02') === 'יום העצמאות' && holidayOn($cid, 'jewish', '2028-05-01') === null);
 check('לעובד מוסלמי אין את הלוח היהודי', holidayOn($cid, 'muslim', '2027-10-11') === null);
+check('לוח מוסלמי מובנה (מוזן): חל על מוסלמי בלבד', holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'jewish', '2027-03-10') === null
+      && holidayOn($cid, 'druze', '2027-03-10') === null && holidayOn($cid, 'other', '2027-03-10') === null);
+check('לוח ריק (נוצרי) — אין חגים, ולא נופל', holidayOn($cid, 'christian', '2027-12-25') === null);
 throws('מנהלת שכר לא מוסיפה חג', fn() => holidayAdd($sara, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'עיד אל-פיטר', 'religions' => ['muslim']]), 403);
 throws('חג בלי דתות', fn() => holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'x', 'religions' => []]));
-$hg = holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'עיד אל-פיטר', 'religions' => ['muslim', 'druze']]);
-check('יום של החברה למוסלמים ודרוזים', holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'druze', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'jewish', '2027-03-10') === null);
+$hg = holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-20', 'name' => 'יום חג של החברה', 'religions' => ['muslim', 'druze']]);
+check('יום של החברה למוסלמים ודרוזים', holidayOn($cid, 'muslim', '2027-03-20') === 'יום חג של החברה' && holidayOn($cid, 'druze', '2027-03-20') === 'יום חג של החברה' && holidayOn($cid, 'jewish', '2027-03-20') === null);
 holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-06-01', 'name' => 'יום החברה', 'religions' => 'all']);
 check('יום של החברה לכולם', holidayOn($cid, 'christian', '2027-06-01') === 'יום החברה' && holidayOn($cid, 'jewish', '2027-06-01') === 'יום החברה');
-check('הלוח של השנה: מובנה + של החברה', count(holidaysGet($owner, ['company_id' => $cid, 'year' => 2027])['company']) === 2 && count(holidaysGet($owner, ['company_id' => $cid, 'year' => 2027])['jewish']) === 9);
+$h27 = holidaysGet($owner, ['company_id' => $cid, 'year' => 2027]);
+check('הלוח של השנה: מובנה + של החברה', count($h27['company']) === 2 && count($h27['builtin']['jewish']) === 9 && count($h27['builtin']['muslim']) === 2 && $h27['builtin']['christian'] === []);
+$ci = $h27['calendars'];
+check('מצב הלוחות: טווח, מקור ואימות', $ci['muslim']['count'] === 2 && $ci['muslim']['first'] === '2027-03-10' && $ci['muslim']['last'] === '2027-03-11'
+      && $ci['muslim']['source'] === 'בדיקה' && $ci['muslim']['verified_at'] === '2026-11-04' && $ci['christian']['count'] === 0 && $ci['christian']['verified_at'] === null
+      && $ci['jewish']['count'] > 100 && $ci['other']['has_file'] === false);
+
+// כלי ההזנה (tools/import-holidays.php) — על עותק זמני
+$run = function (string $csv, string $args) {
+    $dir = HOLIDAYS_DIR . '-imp'; @mkdir($dir);
+    foreach (glob(HOLIDAYS_DIR . '/*.json') as $f) @copy($f, $dir . '/' . basename($f));
+    $f = tempnam(sys_get_temp_dir(), 'hol'); file_put_contents($f, $csv);
+    $cmd = 'TC_HOLIDAYS_DIR=' . escapeshellarg($dir) . ' php ' . escapeshellarg(__DIR__ . '/../tools/import-holidays.php') . ' ' . str_replace('{csv}', escapeshellarg($f), $args) . ' 2>&1';
+    exec($cmd, $out, $rc); @unlink($f);
+    $json = is_file($dir . '/christian.json') ? json_decode((string) file_get_contents($dir . '/christian.json'), true) : null;
+    foreach (glob($dir . '/*') as $x) @unlink($x); @rmdir($dir);
+    return [$rc, implode("\n", $out), $json];
+};
+[$rc, , $j] = $run("date,name\n2027-12-25,חג המולד\n2027-01-07,חג המולד האורתודוקסי\n", 'christian {csv} --source="חוזר נש״מ 2027" --verified=2026-11-04');
+check('כלי הזנה: נכתב לוח עם מקור, אימות וסדר תאריכים', $rc === 0 && array_keys($j['days']) === ['2027-01-07', '2027-12-25'] && $j['source'] === 'חוזר נש״מ 2027' && $j['verified_at'] === '2026-11-04');
+[$rc, , $j] = $run("2027-12-25,חג המולד\n2027-02-30,לא קיים\n", 'christian {csv} --source=x --verified=2026-11-04');
+check('כלי הזנה: תאריך לא תקין — לא נכתב כלום', $rc === 1 && ($j['days'] ?? []) === []);
+[$rc, , ] = $run("2027-12-25,חג המולד\n", 'christian {csv} --verified=2026-11-04');
+check('כלי הזנה: בלי מקור — נדחה', $rc === 2);
+[$rc, , ] = $run("2027-12-25,חג המולד\n", 'jewish {csv} --source=x --verified=2026-11-04');
+check('כלי הזנה: הלוח היהודי לא מוזן', $rc === 2);
+[$rc, , $j] = $run("2027-12-25,א\n2027-12-25,ב\n", 'christian {csv} --source=x --verified=2026-11-04');
+check('כלי הזנה: תאריך כפול בקובץ — נדחה', $rc === 1 && ($j['days'] ?? []) === []);
 
 // סיווג ביום חג: עובד יהודי עובד בפסח (חמישי 22.4.2027) — מנוחה/חג
 $P('2027-04-22 08:00', '2027-04-22 18:00');
@@ -453,7 +490,7 @@ otRulesSave($owner, ['company_id' => $cid, 'effective_from' => '2027-06-01', 'ru
 $c = classifyMonth($w, '2027-06', $tz)['days'];
 check('המעסיק בחר "מצטבר": סל נפרד', $B('2027-06-05', 'holiday_rest') === 240 && $B('2027-06-05', 'rest') === 0);
 holidayDelete($owner, ['company_id' => $cid, 'id' => $hg['company'][0]['id']]);
-check('מחיקת יום של החברה', holidayOn($cid, 'muslim', '2027-03-10') === null);
+check('מחיקת יום של החברה — הלוח המובנה נשאר', holidayOn($cid, 'muslim', '2027-03-20') === null && holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר');
 unset($GLOBALS['TC_NOW']);
 
 // ===== גרסה 2: תצוגה וייצוא =====
