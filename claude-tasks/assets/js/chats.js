@@ -55,12 +55,32 @@ function roleHue(role) {
   return h;
 }
 
+/* ── שלב 24א (§20.3.2, §20.7 #4): השורה אומרת את האמת — מתי הצ'אט יסתכל, לא רק "לא מאזין" ── */
+const hm = (ts) => new Date(ts * 1000).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+
+export function listenLine(c) {
+  const l = c.listen || { state: c.listening ? 'listening' : 'old_bridge' };
+  switch (l.state) {
+    case 'listening': return '🎧 מאזין · תשובה תוך ~דקה';
+    case 'checking': return `⏰ בודק כל שעה · הבא ${hm(l.at)}`;
+    case 'paused': return '⏸ המאזינים עצורים בלוח';
+    case 'backoff': return `🛑 בנסיגה עד ${hm(l.at)} — ${l.reason || 'עומס'}`;
+    case 'slots_full': return `🎧 כל 5 המקומות תפוסים${l.next ? ` · בדיקה ב-${hm(l.next)}` : ''}`;
+    case 'stale': return `💤 לא נבדק מאז ${hm(l.seen)} — כנראה נסגר`;
+    case 'no_check': return '✗ אין בדיקה שעתית — ⚠ לא יתעורר לבד';
+    case 'old_bridge': return 'ℹ️ גשר ישן — לא יתעורר לבד';
+    default: return '';
+  }
+}
+/** הצ'אט לא ישמע את הלוח בלי שבעל הלוח יפתח אותו — ל"🚀 צ'אט המשך" / "פתיחה ב-Claude". */
+const wontWakeState = (c) => ['stale', 'no_check', 'old_bridge'].includes(c.listen?.state);
+
 function channelSub(c) {
   const parts = [];
   // צ'אט המשך (§5.9.4): הישן נשאר קריא, מאפיר, עם מי החליף אותו
   if (c.status === 'replaced') parts.push(`הוחלף ← ${c.replaced_by_name || `#${c.replaced_by}`}`);
   else if (c.status !== 'active') parts.push('🔌 מנותק');
-  else parts.push(c.listening ? '🟢 מאזין' : '⚪ לא מאזין');
+  else parts.push(listenLine(c));
   // §5.10.1: חלון הרשאה פתוח באפליקציה; גשר ישן שצריך הוראת עדכון
   if (c.status === 'active' && c.waiting_at) parts.push(`⏸ ממתין לאישור באפליקציה${c.waiting_tool ? `: ${c.waiting_tool}` : ''}`);
   if (c.bridge_outdated) parts.push('⚠ גרסה ישנה — צריך עדכון');
@@ -90,8 +110,27 @@ setInterval(() => {
 document.addEventListener('ct:reload-channels', () => { if (state.projectId) loadChannels().catch(() => {}); });
 on('#chanNew', 'click', () => openLaunchSheet({ projectId: state.projectId, mode: 'template' }));
 
+/** "⚠ N צ'אטים לא יתעוררו לבד" (§20.7 #6) — לכל אחד: פתיחה ב-Claude, או 🚀 צ'אט המשך. */
+function renderWontWake(list) {
+  const box = $('#wontWake');
+  if (!box) return;
+  const bad = list.filter((c) => c.status === 'active' && !c.hidden && wontWakeState(c));
+  box.hidden = !bad.length || !isOwner();
+  if (box.hidden) return;
+  box.replaceChildren(el('details', { class: 'what' }, [
+    el('summary', { text: `⚠ ${bad.length} צ'אטים לא יתעוררו לבד` }),
+    el('p', { class: 'hint', text: 'הלוח לא יכול להעיר צ\'אט שישן. פותחים כל אחד פעם אחת ב-Claude וכותבים לו "בדוק את הלוח" — מאז הוא בודק את עצמו כל שעה. או 🚀 צ\'אט המשך במקומו.' }),
+    el('ul', { class: 'list' }, bad.map((c) => el('li', { class: 'card is-static' }, [
+      el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: c.name })]), el('div', { class: 'l2', text: listenLine(c) })]),
+      c.session_url ? el('a', { class: 'btn ghost sm', href: c.session_url, target: '_blank', rel: 'noopener', text: 'פתיחה ב-Claude' }) : null,
+      el('button', { type: 'button', class: 'btn ghost sm', text: '🚀', title: 'צ\'אט המשך', 'aria-label': `צ'אט המשך ל-${c.name}`, onclick: () => openHandoff(c) }),
+    ]))),
+  ]));
+}
+
 export function renderChannels() {
   const list = state.channels || [];
+  renderWontWake(list);
   // שלב 23: ➕ צ'אט חדש (בעל הלוח) ושורות "🚀 נפתח…"
   $('#chanNew').hidden = !isOwner();
   if (isOwner()) renderLaunchRows(state.projectId);
@@ -108,7 +147,7 @@ export function renderChannels() {
     ]),
     // "הצ'אט מתארך" (§5.9.3) — רק כשהצ'אט דיווח; בלי דיווח — בלי ניחוש
     c.status === 'active' && HEALTH[c.health] ? el('span', { class: `badge health health--${c.health}`, title: healthDetail(c), text: HEALTH[c.health].chip }) : null,
-    c.pending_in ? el('span', { class: 'badge', title: 'ממתינות לצ\'אט', text: `✉️ ${c.pending_in}` }) : null,
+    c.pending_in ? el('span', { class: 'badge', title: 'הודעות שלך שהצ\'אט עוד לא קרא', text: `✉️ ${c.pending_in} ממתינות לצ'אט` }) : null,
     // §15.12.1: הצ'אט לא עונה / הגיע למגבלה
     c.status === 'active' && c.unresponsive_since > 0 ? el('span', { class: 'badge badge--blocked', title: c.route_effective === 'platform' ? '☁️ Platform עונה במקומו' : 'ההודעות ממתינות',
       text: c.unresponsive_reason === 'limit' ? '🔴 מגבלה' : '🔴 לא עונה' }) : null,
@@ -184,6 +223,12 @@ function bubble(m) {
   // שלב 17: תג מסלול ומצב — מהשרת (handled_by / answered_by), לא מהטקסט
   const lt = laneTag(m);
   if (lt) meta.push(lt);
+  // שלב 24א (§20.7 #5): הודעה לצ'אט שלא מאזין — מתי היא תגיע אליו, לא רק "ממתין"
+  if (m.direction === 'in' && !m.delivered_at && m.lane_state === 'chat' && conv.channel && !conv.channel.listening) {
+    const l = conv.channel.listen || {};
+    meta.push(el('span', { class: 'b-eta', text: l.state === 'checking' ? `יגיע לצ'אט עד ${hm(l.at)}`
+      : wontWakeState(conv.channel) ? '⚠ יגיע רק כשהצ\'אט ייפתח' : '' }));
+  }
   // 📌 ותוויות (12c) — בשורת המטא, קטנים
   if (m.pinned?.shared || m.pinned?.mine) meta.push(el('span', { class: 'b-pin', title: m.pinned.shared ? 'מוצמדת לכולם' : 'מוצמדת לך', text: m.pinned.shared ? '📌' : '📌🔒' }));
   (m.labels || []).forEach((l) => meta.push(labelChip(l)));
@@ -429,7 +474,7 @@ on('#cvAi', 'click', () => openAiSheet({
 function renderHead() {
   const c = conv.channel;
   $('#cvTitle').textContent = c.name;
-  $('#cvSub').textContent = [c.role, c.status === 'active' ? (c.listening_until > Date.now() / 1000 ? '🟢 מאזין' : '⚪ לא מאזין')
+  $('#cvSub').textContent = [c.role, c.status === 'active' ? listenLine(c)
     : c.status === 'replaced' ? 'הוחלף' : '🔌 מנותק'].filter(Boolean).join(' · ');
   renderLaneStrip(c);
   renderAiChip();

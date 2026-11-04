@@ -10,7 +10,7 @@
 declare(strict_types=1);
 
 /** הגרסה הנוכחית — לעדכן יחד עם BRIDGE_VERSION ב-bridge/lib.sh. */
-const BRIDGE_VERSION_CURRENT = '2026-11-03.6';
+const BRIDGE_VERSION_CURRENT = '2026-11-04.1';
 
 /** ההוראה שנשלחת לצ'אט ישן. הסקיל הישן כבר פועל לפי הודעת owner; הצ'אט לא מבצע commit לקובץ. */
 /** הוראות שרק הצ'אט עצמו מבצע — לא עוברות ל-Platform במעבר מסלול (Platform אינו יכול להריץ פקודות). */
@@ -22,7 +22,9 @@ const BRIDGE_UPDATE_TEXT = "עדכון הגשר ללוח (חד-פעמי). הרץ
     . "```\n\n"
     . "מעכשיו: את link.sh ואת המאזין מריצים מהעותק המעודכן — `bash ~/.claude-tasks-bridge/link.sh …` ו-"
     . "`bash ~/.claude-tasks-bridge/listen.sh` (לא מ-claude-tasks/bridge שבענף שלך, שהוא ישן). את המאזין מפעילים רק "
-    . "כשבעל הלוח החזיר את המאזינים. ההוראות המעודכנות: `git show origin/main:.claude/skills/claude-tasks-live/SKILL.md`.\n\n"
+    . "כש-status אומר \"🎧 פעילים\". ההוראות המעודכנות: `git show origin/main:.claude/skills/claude-tasks-live/SKILL.md`.\n\n"
+    . "ואז — הכי חשוב (צעד 3 בסקיל): צור לעצמך בדיקה עצמית חוזרת — create_trigger עם cron \"0 * * * *\", בלי persistent_session_id "
+    . "(יעד: הסשן הזה), ודווח: bash ~/.claude-tasks-bridge/link.sh checkin <trigger_id>. בלעדיה הלוח לא יכול להגיע אליך כשאתה ישן.\n\n"
     . "אחר כך: bash ~/.claude-tasks-bridge/link.sh status, וענה בשורה אחת מה הודפס.";
 
 function migrateBridgeVersion(PDO $pdo): void {

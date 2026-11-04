@@ -127,15 +127,17 @@ case "$cmd" in
 
   status)
     [ -f "$BOARD_LINK" ] || silent_register || die "הצ'אט לא רשום — link.sh register --project <id>"
-    out="$(board_call channel-inbox '{}' "$(token)")" || die "הלוח לא ענה (HTTP $BOARD_HTTP) — אולי הערוץ נותק; link.sh register מחדש"
+    out="$(board_call channel-inbox "$(report_json)" "$(token)")" || die "הלוח לא ענה (HTTP $BOARD_HTTP) — אולי הערוץ נותק; link.sh register מחדש"
     echo "ערוץ #$(link_get channel_id) · $(link_get name) · $(board_url)"
     echo "ממתינות: $(echo "$out" | jq '.messages | length')"
+    listeners_hint "$(echo "$out" | jq -r '.listeners // empty')"
+    [ -n "$(link_get check_trigger_id)" ] || echo "⚠ אין לך בדיקה עצמית — צור אחת (הסקיל claude-tasks-live, צעד 3) ודווח: link.sh checkin <trigger_id>"
     ;;
 
   pending)
     need_link
     # מקור האמת הוא השרת (inbox לא מסמן); הקובץ של המאזין — גיבוי כשהרשת נופלת
-    if out="$(board_call channel-inbox '{}' "$(token)")"; then msgs="$(echo "$out" | jq '.messages')"
+    if out="$(board_call channel-inbox "$(report_json)" "$(token)")"; then msgs="$(echo "$out" | jq '.messages')"
     elif [ -f "$BOARD_PENDING" ]; then msgs="$(cat "$BOARD_PENDING")"
     else die "הלוח לא ענה (HTTP $BOARD_HTTP)"; fi
     # §15.5: התקציר קודם — מה שקרה במסלול אחר בזמן שהצ'אט לא ענה
@@ -191,12 +193,27 @@ case "$cmd" in
     echo "$out" | jq -r '.message | "#\(.id) · \(.author_role) · \(.kind)" + (if .reply_to then " · על #\(.reply_to)" else "" end) + "\n\(.body)"'
     ;;
 
+  # שלב 24א (§20.7): הבדיקה העצמית — trigger חוזר אחד לתוך הסשן הזה. ‏checkin <trigger_id> [דקות עד הבאה, ברירת מחדל 60]
+  checkin)
+    need_link
+    tid="${1:-}"; mins="${2:-60}"
+    [[ "$tid" =~ ^trig_[A-Za-z0-9]{8,64}$ ]] || die "שימוש: link.sh checkin <trigger_id> [דקות] — ה-trigger_id שקיבלת מ-create_trigger"
+    [[ "$mins" =~ ^[0-9]{1,3}$ ]] || die "דקות: מספר"
+    link_set check_trigger_id "$(jq -Rn --arg t "$tid" '$t')"
+    link_set next_check_at "$(( $(date +%s) + mins * 60 ))"
+    out="$(board_call channel-checkin "$(report_json)" "$(token)")" || die "הלוח לא אישר (HTTP $BOARD_HTTP)"
+    echo "✓ בדיקה עצמית רשומה בלוח: $tid · הבאה בעוד $mins דק'"
+    listeners_hint "$(echo "$out" | jq -r '.listeners // empty')"
+    ;;
+
   archive)
     need_link
     board_call channel-archive '{}' "$(token)" >/dev/null || echo "הלוח לא אישר (HTTP $BOARD_HTTP) — מוחק את הקישור בכל זאת" >&2
+    ct="$(link_get check_trigger_id)"
     rm -f "$BOARD_LINK" "$BOARD_PENDING"
     echo "✓ נותק"
+    [ -n "$ct" ] && echo "⚠ מחק עכשיו את הבדיקה העצמית: delete_trigger $ct (אחרת היא תמשיך להעיר את הסשן)"
     ;;
 
-  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | show | post | handoff | archive)" ;;
+  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | show | post | handoff | checkin | archive)" ;;
 esac

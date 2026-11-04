@@ -128,6 +128,7 @@
       <h2 class="sr-only" id="chatsTitle">צ'אטים</h2>
       <div class="row-btns chan-top"><button type="button" class="btn primary sm" id="chanNew" hidden>➕ צ'אט חדש</button></div>
       <ul class="list" id="launchRows" aria-label="צ'אטים שנפתחים"></ul>
+      <div id="wontWake" class="wont-wake" hidden></div>
       <ul class="list" id="chanRows"></ul>
       <div class="empty" id="chanEmpty" hidden>
         <p>אין צ'אטים מחוברים.</p>
@@ -499,6 +500,24 @@
 </dialog>
 
 <!-- ── שלב 17: "העבר ל…" והיומן (§15.6) ─────────────────────── -->
+<!-- ── שלב 24א: המתג "מאזינים", המד והיומן ── -->
+<dialog id="listenersSheet" aria-labelledby="lsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="listenersSheet" aria-label="סגירה">✕</button>
+      <h2 id="lsT">🎧 מאזינים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <div class="seg seg--wrap" id="lsModes" role="radiogroup" aria-label="מצב המאזינים"></div>
+      <p class="hint" id="lsHint"></p>
+      <p class="ls-meter" id="lsMeter" role="status"></p>
+      <h3 class="conn-group">כל הצ'אטים</h3>
+      <ul class="list" id="lsRows"></ul>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="serverErrs" aria-labelledby="seT">
   <div class="sheet-wrap">
     <header class="sheet-head">
@@ -1113,7 +1132,7 @@
         <ul class="list">
           <li class="card" tabindex="0" role="button" id="bridgePauseBtn" aria-label="עצירת המאזינים">
             <span class="ic" aria-hidden="true" id="bridgePauseIc">⏸</span>
-            <div class="body"><div class="l1"><span id="bridgePauseT">עצירת המאזינים</span></div><div class="l2" id="bridgePauseSub">כל הצ'אטים מפסיקים לשאול את הלוח, תוך מחזור אחד</div></div>
+            <div class="body"><div class="l1"><span id="bridgePauseT">מאזינים</span></div><div class="l2" id="bridgePauseSub">⏸ עצורים · 🕐 בדיקה שעתית · 🎧 פעילים</div></div>
             <span class="go" aria-hidden="true">‹</span>
           </li>
           <li class="card" tabindex="0" role="button" id="serverErrBtn" aria-label="תקלות אחרונות">
