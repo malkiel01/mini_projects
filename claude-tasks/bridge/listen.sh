@@ -86,7 +86,7 @@ while [ "$(date +%s)" -lt "$END" ]; do
       503) code="$(echo "$out" | jq -r '.code // empty' 2>/dev/null)"
            # שלב 24א: המתג לא "🎧" / כל המקומות תפוסים — לא תקלה: יוצאים לבדיקה העצמית, בלי נסיגה
            if [ "$code" = listeners_off ]; then listen_state off_policy; log "listeners_off"
-             echo "🕐 הלוח במצב \"בדיקה שעתית\" — המאזין יצא (לא תקלה). אל תפעיל אותו שוב; הבדיקה העצמית שלך תבדוק את הלוח"; exit 5
+             echo "💤 המאזינים כבויים בלוח — המאזין יצא (לא תקלה). אל תפעיל אותו שוב; אתה קורא את הלוח בתור הבא שלך"; exit 5
            elif [ "$code" = listener_slots_full ]; then listen_state slots_full; log "slots_full"
              echo "🎧 כל המקומות למאזינים תפוסים — המאזין יצא (לא תקלה). הבדיקה העצמית שלך תבדוק את הלוח"; exit 5
            elif [ "$code" = bridge_paused ]; then listen_state paused; back_off "המאזינים מושהים בלוח"

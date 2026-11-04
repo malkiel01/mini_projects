@@ -123,6 +123,7 @@ case "$cmd" in
 
   update)
     run_update
+    old_check_hint ""   # ש1: בדיקה שעתית ישנה (מהקישור המקומי) — לבקש למחוק; status בודק גם מול הלוח
     ;;
 
   status)
@@ -131,7 +132,7 @@ case "$cmd" in
     echo "ערוץ #$(link_get channel_id) · $(link_get name) · $(board_url)"
     echo "ממתינות: $(echo "$out" | jq '.messages | length')"
     listeners_hint "$(echo "$out" | jq -r '.listeners // empty')"
-    [ -n "$(link_get check_trigger_id)" ] || echo "⚠ אין לך בדיקה עצמית — צור אחת (הסקיל claude-tasks-live, צעד 3) ודווח: link.sh checkin <trigger_id>"
+    old_check_hint "$(echo "$out" | jq -r '.old_check // empty')"
     ;;
 
   pending)
@@ -193,9 +194,14 @@ case "$cmd" in
     echo "$out" | jq -r '.message | "#\(.id) · \(.author_role) · \(.kind)" + (if .reply_to then " · על #\(.reply_to)" else "" end) + "\n\(.body)"'
     ;;
 
-  # שלב 24א (§20.7): הבדיקה העצמית — trigger חוזר אחד לתוך הסשן הזה. ‏checkin <trigger_id> [דקות עד הבאה, ברירת מחדל 60]
+  # ‏checkin --clear — מחקת את הבדיקה השעתית הישנה (ש1, audit-2026-11); ‏checkin <trigger_id> [דקות] — מעקב שבעל הלוח ביקש
   checkin)
     need_link
+    if [ "${1:-}" = "--clear" ]; then
+      link_set check_trigger_id '""'; link_set next_check_at 0
+      board_call channel-checkin '{"check_trigger_id":"","next_check_at":0,"listen_state":"never"}' "$(token)" >/dev/null || die "הלוח לא אישר (HTTP $BOARD_HTTP)"
+      echo "✓ הבדיקה השעתית נמחקה מהלוח"; exit 0
+    fi
     tid="${1:-}"; mins="${2:-60}"
     [[ "$tid" =~ ^trig_[A-Za-z0-9]{8,64}$ ]] || die "שימוש: link.sh checkin <trigger_id> [דקות] — ה-trigger_id שקיבלת מ-create_trigger"
     [[ "$mins" =~ ^[0-9]{1,3}$ ]] || die "דקות: מספר"
@@ -212,7 +218,7 @@ case "$cmd" in
     ct="$(link_get check_trigger_id)"
     rm -f "$BOARD_LINK" "$BOARD_PENDING"
     echo "✓ נותק"
-    [ -n "$ct" ] && echo "⚠ מחק עכשיו את הבדיקה העצמית: delete_trigger $ct (אחרת היא תמשיך להעיר את הסשן)"
+    [ -n "$ct" ] && echo "⚠ מחק עכשיו את הבדיקה השעתית: delete_trigger $ct (אחרת היא תמשיך להעיר את הסשן)"
     ;;
 
   *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | show | post | handoff | checkin | archive)" ;;

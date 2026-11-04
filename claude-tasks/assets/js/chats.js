@@ -66,9 +66,8 @@ export function listenLine(c) {
     case 'paused': return '⏸ המאזינים עצורים בלוח';
     case 'backoff': return `🛑 בנסיגה עד ${hm(l.at)} — ${l.reason || 'עומס'}`;
     case 'slots_full': return `🎧 כל 5 המקומות תפוסים${l.next ? ` · בדיקה ב-${hm(l.next)}` : ''}`;
-    case 'stale': return `💤 לא נבדק מאז ${hm(l.seen)} — כנראה נסגר`;
-    case 'no_check': return '✗ אין בדיקה שעתית — ⚠ לא יתעורר לבד';
-    case 'old_bridge': return 'ℹ️ גשר ישן — לא יתעורר לבד';
+    // ש1: אין בדיקות שעתיות — צ'אט שלא מאזין פשוט ישן, וההודעות מחכות לו בלוח
+    case 'stale': case 'no_check': case 'old_bridge': return '💤 ישן — יקרא את הלוח בפעם הבאה שיעבוד';
     default: return '';
   }
 }
@@ -83,7 +82,7 @@ function channelSub(c) {
   else parts.push(listenLine(c));
   // §5.10.1: חלון הרשאה פתוח באפליקציה; גשר ישן שצריך הוראת עדכון
   if (c.status === 'active' && c.waiting_at) parts.push(`⏸ ממתין לאישור באפליקציה${c.waiting_tool ? `: ${c.waiting_tool}` : ''}`);
-  if (c.bridge_outdated) parts.push('⚠ גרסה ישנה — צריך עדכון');
+  if (c.bridge_outdated) parts.push('⚠ גרסה ישנה — תתעדכן לבד בתור הבא');
   // §5.13.3: Routine — יש לו את השער של הלוח? (מגרסת הגשר 2026-11-03.2, שמדווחת ב-channel-health)
   if (c.role === 'routine' && c.status === 'active') parts.push((c.bridge_version || '') >= '2026-11-03.2' ? '🛡 שער פעיל' : '⚠ בלי שער');
   const last = c.last_message_at || c.last_seen_at;
@@ -110,7 +109,7 @@ setInterval(() => {
 document.addEventListener('ct:reload-channels', () => { if (state.projectId) loadChannels().catch(() => {}); });
 on('#chanNew', 'click', () => openLaunchSheet({ projectId: state.projectId, mode: 'template' }));
 
-/** "⚠ N צ'אטים לא יתעוררו לבד" (§20.7 #6) — לכל אחד: פתיחה ב-Claude, או 🚀 צ'אט המשך. */
+/** "💤 N צ'אטים ישנים" (ש1) — לכל אחד: פתיחה ב-Claude, או 🚀 צ'אט המשך. בלי "לך לצ'אט ותכתוב לו". */
 function renderWontWake(list) {
   const box = $('#wontWake');
   if (!box) return;
@@ -118,8 +117,8 @@ function renderWontWake(list) {
   box.hidden = !bad.length || !isOwner();
   if (box.hidden) return;
   box.replaceChildren(el('details', { class: 'what' }, [
-    el('summary', { text: `⚠ ${bad.length} צ'אטים לא יתעוררו לבד` }),
-    el('p', { class: 'hint', text: 'הלוח לא יכול להעיר צ\'אט שישן. פותחים כל אחד פעם אחת ב-Claude וכותבים לו "בדוק את הלוח" — מאז הוא בודק את עצמו כל שעה. או 🚀 צ\'אט המשך במקומו.' }),
+    el('summary', { text: `💤 ${bad.length} צ'אטים ישנים` }),
+    el('p', { class: 'hint', text: 'הם יקראו את הלוח בפעם הבאה שיעבדו — ההודעות שלך מחכות להם. הלוח עוד לא יודע להעיר צ\'אט (בעבודה: חיבור לחשבון Claude).' }),
     el('ul', { class: 'list' }, bad.map((c) => el('li', { class: 'card is-static' }, [
       el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: c.name })]), el('div', { class: 'l2', text: listenLine(c) })]),
       c.session_url ? el('a', { class: 'btn ghost sm', href: c.session_url, target: '_blank', rel: 'noopener', text: 'פתיחה ב-Claude' }) : null,
@@ -227,7 +226,7 @@ function bubble(m) {
   if (m.direction === 'in' && !m.delivered_at && m.lane_state === 'chat' && conv.channel && !conv.channel.listening) {
     const l = conv.channel.listen || {};
     meta.push(el('span', { class: 'b-eta', text: l.state === 'checking' ? `יגיע לצ'אט עד ${hm(l.at)}`
-      : wontWakeState(conv.channel) ? '⚠ יגיע רק כשהצ\'אט ייפתח' : '' }));
+      : wontWakeState(conv.channel) ? '💤 יגיע כשהצ\'אט יעבוד שוב' : '' }));
   }
   // 📌 ותוויות (12c) — בשורת המטא, קטנים
   if (m.pinned?.shared || m.pinned?.mine) meta.push(el('span', { class: 'b-pin', title: m.pinned.shared ? 'מוצמדת לכולם' : 'מוצמדת לך', text: m.pinned.shared ? '📌' : '📌🔒' }));
@@ -761,10 +760,9 @@ function renderSettings() {
     isOwner() && ['🧭', 'מי עונה', `${c.route_own ? ROUTE_LABEL[c.route_own] : 'כמו הפרויקט'} · בפועל: ${ROUTE_LABEL[c.route_effective]}`, () => openRoute()],
     c.can_edit && active && ['🔘', 'שאלות בחירה', c.questions === 'app' ? 'באפליקציה' : 'בלוח', () => openQuestions()],
     isOwner() && active && ['🔐', 'אישורי הרשאות', c.permissions === 'app' ? 'באפליקציה בלבד' : 'בלוח — ובמקביל באפליקציה', () => openPerms()],
-    // גרסת הגשר (§5.10.1): צ'אט ישן — הוראת עדכון חד-פעמית, שהסקיל הישן כבר יודע לבצע
-    active && isOwner() && ['📨', 'גרסת הגשר', c.bridge_outdated
-      ? `⚠ ${c.bridge_version ? 'גרסה ' + c.bridge_version : 'מלפני התיקון'} · נגיעה שולחת הוראת עדכון` : `✓ עדכנית (${c.bridge_version})`,
-      c.bridge_outdated ? () => sendBridgeUpdate() : null, { sub2: c.bridge_outdated ? '📨 שלח הוראת עדכון' : '' }],
+    // גרסת הגשר (§5.10.1, ש2): מתעדכנת לבד בתחילת התור הבא של הצ'אט — אין מה לשלוח
+    active && isOwner() && ['🔧', 'גרסת הגשר', c.bridge_outdated
+      ? `⚠ ${c.bridge_version ? 'גרסה ' + c.bridge_version : 'מלפני התיקון'} · יתעדכן לבד בפעם הבאה שהצ'אט יעבוד` : `✓ עדכנית (${c.bridge_version})`, null],
     ['🔀', 'יומן המסלולים', 'כל מעבר בין 💬 / ☁️ — מתי, למה, ומי', () => { $('#chatSettings').close(); openLaneLog(); }],
     isOwner() && ['📝', 'סיכום חכם', 'קריאה אחת למודל, על חשבון המשלם · נשמר מוצמד בשיחה, ומזין את צ\'אט ההמשך', () => smartSummary()],
     active && ['📏', 'אורך הצ\'אט', c.health_at ? `${health ? health.chip + ' · ' : ''}${healthDetail(c)}` : 'עוד לא דיווח',
@@ -861,15 +859,6 @@ on('#csEditForm', 'submit', async (e) => {
   } catch (ex) { toast(ex.message, 'error'); }
 });
 
-async function sendBridgeUpdate() {
-  if (!confirm("לשלוח לצ'אט הוראת עדכון חד-פעמית לגשר? הוא יריץ אותה בתור הבא שלו, בלי commit בענף.")) return;
-  try {
-    await api('bridge-send-update', { channel_id: conv.id });
-    toast('ההוראה נשלחה — הצ\'אט יבצע אותה כשיקרא את ההודעה', 'ok');
-    $('#chatSettings').close();
-    reload();
-  } catch (ex) { toast(ex.message, 'error'); }
-}
 
 /** 📝 סיכום חכם (§15.5): קריאה אחת, נשמר מוצמד. שוב בלי הודעות חדשות — אותו סיכום, בלי לשלם שוב. */
 async function smartSummary() {

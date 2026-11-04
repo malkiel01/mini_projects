@@ -381,7 +381,7 @@ node claude-tasks/tests/markdown.mjs   # Markdown בבועות הצ'אט: עיצ
 - **שאלת בחירה — fail-safe:** המצב (בלוח / באפליקציה) נשמר בקובץ הקישור. כשהלוח לא עונה והמצב "בלוח", ה-hook
   דוחה את החלון בכל זאת; השאלה נשמרת מקומית, ונשלחת — עם התשובה שהוקלדה בינתיים — כשהלוח חוזר.
 - **hooks שמתעדכנים לבד:** `.claude/settings.json` רושם כל אירוע פעם אחת ל-`bridge/hook.sh <event>`, שמריץ את עותק
-  הריצה ב-`~/.claude-tasks-bridge/`. `link.sh update` (ברישום ובבדיקה השעתית) מרענן אותו מ-`origin/main` ב-`git show`
+  הריצה ב-`~/.claude-tasks-bridge/`. `link.sh update` (ברישום, ולבד בתחילת תור — לכל היותר פעם בשעה, ש2) מרענן אותו מ-`origin/main` ב-`git show`
   (`bridge/update.sh`), בלי לגעת בעץ העבודה. `link.sh` ו-`listen.sh` עוברים לעותק הזה מעצמם.
 - **צ'אט ישן:** מדווח `bridge_version` ב-`channel-health`; בלי גרסה נוכחית — "⚠ גרסה ישנה" בשורה, וב-⚙ "📨 שלח הוראת
   עדכון" (בעל הלוח) — הודעה חד-פעמית שהצ'אט מריץ בלי commit.
