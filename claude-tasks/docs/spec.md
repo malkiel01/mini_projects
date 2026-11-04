@@ -1859,3 +1859,91 @@ If the first line is anything else, do nothing except reply "not a board launch"
 
 **Order:** right after 22a, before 21 (the owner called it urgent; it also closes 22a's dead end in one tap). New order:
 **22a → 23 → 21 → 22b → 22c → 16**. The new table `launches` lives in the board's database — no new file under `data/`.
+
+---
+
+## 20. Diagnosis — "why aren't the chats listening???? we already asked this!!!!" (owner, 2026-11-04 08:09; **stages 24a–24b**)
+
+**The owner:** channel #12 "שעון נוכחות - צ'אט" — ⚪ not listening, "seen 33 minutes ago", bridge current (2026-11-03.6), route ☁️ —
+and "this is the permanent state of almost every chat".
+
+### 20.1 Findings
+
+| # | Finding | Where |
+| --- | --- | --- |
+| L1 | **The main cause is a rule in this spec.** After the 2026-11-02 incident §5.4 says: *"Before re-enabling: measure on the real board with one chat for 30 minutes, then three chats … Listeners stay off until the owner approves."* The measurement was never done and the owner was **never asked** to approve. The skill turned it into *"Start it only while the owner has the listeners on … if the owner said the listeners are off, rely on the hourly check"* — and a chat has **no way to know** what the owner said: the board exposes only the brake (`bridge_paused`), not an "approved" state. So every careful chat skips the listener and lives on the hourly `send_later`. **That is exactly "seen 33 minutes ago"**: `last_seen_at` moves once an hour with `link.sh status/pending`; `listening_until` (= now + 90 s per poll) is set only by a running `listen.sh`. | **Spec** (mine) + skill wording |
+| L2 | Secondary, possible per chat: a listener that exited 4 (429/503/5xx) stays down until the next hourly check (1–6 h back-off); the 2-hour `timeout` ends it and only the chat's next turn restarts it; a session that ended or was archived has no hourly check either. **None of these is visible** — the board shows one word, "לא מאזין". | Not built: no reason is reported |
+| L3 | **The board cannot wake an existing chat.** A routine's API trigger (§19) always starts a **new** session. Waking an existing session needs `create_trigger` / `send_later` with `persistent_session_id` — a tool that exists only **inside** a Claude Code session, not on the board's server. | Platform limit |
+| L4 | The board promises "מאזין" without saying what it means in time. The owner reads ⚪ as "broken". | Spec |
+
+**Proof the code writer adds (24a.1) — not guesses:** today the data cannot separate L1 from L2. After 24a every channel reports its state, and the
+admin log answers "why" per channel. Until then, the code writer runs one read-only query on the live DB through a deploy-time
+diagnostic (or an admin endpoint): per active channel — `last_seen_at`, `listening_until`, the last `channel-wait` time from
+`data/throttle/`, and `bridge_paused`. Expected (L1): no `channel-wait` from almost any token since 2026-11-02, `last_seen_at` hourly.
+
+### 20.2 Decisions (mine — the owner asked for a diagnosis that decides; the switch itself is his)
+
+| # | Decision |
+| --- | --- |
+| 1 | **The owner's approval becomes a switch the chats can read**, not a sentence in a skill: Settings → מערכת → **"מאזינים"**: ⏸ עצורים (the brake) · 🕐 בדיקה שעתית בלבד · 🎧 פעילים. The server returns it (`listeners: paused|hourly|on`) in `channel-register`, `status`, `pending`; the bridge starts `listen.sh` **only when it says `on`** — no chat guesses |
+| 2 | **Re-enable safely, by numbers:** `on` comes with a **server cap of 5 listening tokens at once** (a 6th gets `listener_slots_full` → exit to hourly, shown on its row). Load: 5 × ~2 requests/min, each answered at once (`long_poll_max = 0`) ≈ 10 short requests a minute — the incident was 13 chats holding PHP processes for 20 s each. A **live meter** next to the switch: requests/min in the last 10 min, 429/503 in the last hour, listeners now. That meter *is* the §5.4 measurement; the owner turns it on with one chat, looks after 30 minutes, then lets the rest in |
+| 3 | **Every channel says why, and what to do** (24a.2) |
+| 4 | **Waking an existing chat — a relay routine** (24b): the board fires a small routine (API trigger, like §19) whose only job is `create_trigger(persistent_session_id = <the chat>, run in 1 min, fixed text)`. The new short session ends; the old chat wakes and reads `link.sh pending`. **Verify first** (24b step 0) |
+| 5 | **What we promise (L4)** — written on the board, per channel, as an expected reply time, never as a bare "listening" |
+
+### 20.3 Stage 24a — the truth on every row, and the switch (urgent)
+
+1. **The bridge reports its state.** `link.sh status/pending` and every `channel-wait` send `listen_state`: `running` · `off_policy`
+   (switch not `on`) · `backoff:<until>:<reason>` · `paused` · `ended` (the 2-h timeout) · `never`, plus `next_check_at` (the scheduled
+   hourly check). Stored on the channel (`listen_state`, `listen_state_at`, `next_check_at`). `BRIDGE_VERSION` bumped.
+2. **The row and the conversation header** show one line from this table (no bare "⚪ לא מאזין"):
+
+   | State | Line | Action |
+   | --- | --- | --- |
+   | listening | "🎧 מאזין · תשובה תוך ~דקה" | — |
+   | switch hourly / off_policy | "🕐 בדיקה שעתית · הבאה ב-08:40" | **הפעלת מאזינים** (owner, goes to the switch) |
+   | paused (brake) | "⏸ המאזינים עצורים בלוח" | **החזרה** (owner) |
+   | backoff | "🛑 בנסיגה עד 08:30 — הלוח החזיר 429" | — (it returns by itself) · the reason |
+   | slots full | "🎧 כל 5 המקומות תפוסים — בדיקה שעתית" | **פנה מקום** (list of the 5) |
+   | no check scheduled for > 70 min | "💤 הצ'אט לא נבדק מאז 06:10 — כנראה נסגר" | **צ'אט המשך** (§19 🚀) · **העירה** (24b, when set up) |
+   | old bridge | "ℹ️ גשר ישן — אין מידע" | **📨 שלח הוראת עדכון** |
+
+3. **The switch, the cap and the meter** (20.2 #1, #2). Default after deploy: **🕐 hourly** (unchanged behavior) — the owner turns on 🎧
+   himself, with the meter in front of him. The red "paused" strip stays as it is.
+4. **The skill `claude-tasks-live`** reads `listeners` from the server: `on` → start `listen.sh` (once); `hourly` → do not, keep the
+   hourly check; `paused` → as today. The phrase "if the owner said" is removed.
+5. **Admin → log:** a "מאזינים" view: every channel, its `listen_state`, last request, last exit reason — the proof in 20.1, permanently.
+
+**Done when (24a):** tests — the server returns `listeners` in the three calls; a 6th token gets `listener_slots_full`; each row state from the
+table renders from its fixture; the meter counts from the throttle files; the bridge never starts `listen.sh` unless `on`. **Live, owner present:**
+switch to 🎧, one chat listens for 30 minutes, the meter shows no 429 — then the owner decides on the rest. The numbers go into §5.4.
+
+### 20.4 Stage 24b — waking an existing chat ("📣 העירה")
+
+**Step 0 — verify before code (result into §14):** (a) a session started by a routine's API trigger has the `create_trigger` tool with
+`persistent_session_id`; (b) a trigger into an idle session whose container was reclaimed wakes it with its context; (c) an archived
+session cannot be woken (expected) — then the row says so and offers 🚀 a follow-up chat. If (a) fails, 24b is dropped and the row's
+action stays "צ'אט המשך".
+
+**Design (if step 0 passes):**
+- A second routine, set up once like the launcher (§19.3 guide, same connection screen): **"📣 מעיר צ'אטים"**, API trigger only. Saved prompt:
+  act only on a record `CLAUDE-TASKS-WAKE v1` with `session_id` and `channel_id`; call `create_trigger` with that `persistent_session_id`,
+  `run_once_at` = now + 1 min, and **this fixed text only**: "📥 יש הודעות מהלוח בערוץ <channel_id> — הרץ `claude-tasks/bridge/link.sh pending`."
+  Then end. It never forwards the owner's text, so a leaked token can only cause wake-ups with that fixed sentence.
+- **When the board fires it:** a message on the 💬 route to a channel that is not listening, if the owner's setting allows it
+  (⚙ of the channel: "להעיר כשאני כותב" — default on for the owner's own chats), **at most once per channel per 10 minutes** and within
+  the 30/hour of the routine. The row shows "📣 נשלחה העירה · 08:12".
+- **The session id** is the one the chat registered with (`session_id` in `channel-register` — the bridge already knows it from the environment).
+
+**Done when (24b):** step 0's answers in §14; tests — the wake record is built by the server only, rate per channel and per hour, no wake for a
+listening channel or an archived one; **live:** the owner writes to a not-listening chat → it answers on the board within ~3 minutes.
+
+### 20.5 What the board may promise (L4)
+
+- **🎧 listening:** a reply in about a minute, while the chat's session is alive and the switch is on.
+- **📣 wake set up:** about 2–3 minutes for a chat that is not listening but not closed.
+- **Neither:** up to an hour (the hourly check), or never if the chat was closed — and then the row says so and offers 🚀.
+- **Never promised:** that every chat is always listening. A chat is a session on the owner's subscription; it ends, it is archived, it runs out.
+  The board's job is to say which of these is true right now, and to offer the next step.
+
+**Order:** **24a now** (the owner's top complaint), then 21, 22b, 24b (after its step 0), 22c, 16.
