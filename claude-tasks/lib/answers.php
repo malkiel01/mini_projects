@@ -8,7 +8,7 @@
  *
  * ‏answered_by על הודעה נכנסת: '' — לצ'אט; 'platform' — ממתינה ל-Platform;
  * ‏'platform-busy:<ts>' — Platform עונה עכשיו (נתפס, כדי ששני מסכים לא יענו פעמיים).
- * אחרי התשובה ההודעה המקורית מסומנת כנמסרה, והצ'אט מקבל הודעת status — בלי להתעורר.
+ * אחרי התשובה ההודעה המקורית מסומנת כנמסרה. (עד 22א הצ'אט קיבל גם העתק status; הוסר — הוא לומד על התשובה מה-digest.)
  */
 declare(strict_types=1);
 
@@ -28,7 +28,7 @@ function payerUser(int $projectId): ?array {
     return $st->fetch() ?: null;
 }
 
-/** ההקשר: 30 ההודעות האחרונות, המטלות הפתוחות בענף, וה-README של התיקייה. */
+/** ההקשר: תורות שיחה בלבד מתוך 30 ההודעות האחרונות (בלי system / status / כרטיסים — 22א), המטלות הפתוחות בענף, וה-README של התיקייה. */
 /**
  * §18.3 (22א.4): ההקשר של Platform = תורות של השיחה בלבד — בעל הלוח, הצ'אט, Platform, המנוע. לעולם לא system / status,
  * כרטיסים או צנרת של בחירות והרשאות (בחירה — פעם אחת, כשאלה ותשובה). כך העתקים ישנים ("📨 לצ'אט: …", "לא יכול לבצע…")
@@ -171,14 +171,6 @@ function handToChat(int $messageId, int $channelId, string $why): array {
 }
 
 /**
- * ‏platform-reply: עונה על הודעה נכנסת בערוץ ☁️. ‏$transport — לבדיקות.
- * מחזיר את הודעת התשובה (out, author_role platform, kind answer, reply_to).
- */
-/**
- * העתק לצ'אט של מה ש-Platform ענה בשמו (status, בלי פעמון). בלוח הוא מקופל לשורה אחת — התשובה עצמה
- * כבר בבועה של Platform. ("שאלה: … תשובה: …" הישן נראה כאילו בעל הלוח ענה על שאלה.)
- */
-/**
  * מה ש-Platform לא יכול לעשות — קריאה אחת למודל, בלי כלים (תקלות 4 ו-5, 2026-11-03). בשיחה יש הודעות של הצ'אט
  * האמיתי ("שלחתי לרסטר…"), והמודל חיקה אותן וכתב שעשה פעולה שלא קרתה.
  */
@@ -192,8 +184,13 @@ const PLATFORM_LIMITS = "אין לך שום כלי: אינך יכול לשלוח
 /** §9.1: לכל היותר 3 שאלות פתוחות ברצף — אחר כך Platform עונה עם מה שיש, או מציע מטלה. */
 const PLATFORM_MAX_OPEN_ASKS = 3;
 
+/** היסטורי (22א): קידומת ההעתק מסוג status שנשלח לצ'אט. כבר לא נכתב; נשאר לזיהוי שורות ישנות במסד ובבדיקה. */
 const PLATFORM_RELAY_PREFIX = '📨 לצ\'אט: Platform ענה בשמך בלוח.';
 
+/**
+ * ‏platform-reply: עונה על הודעה נכנסת בערוץ ☁️. ‏$transport — לבדיקות.
+ * מחזיר את הודעת התשובה (out, author_role platform, kind answer, reply_to).
+ */
 function platformReply(array $user, int $messageId, ?callable $transport = null): array {
     $st = db()->prepare('SELECT * FROM messages WHERE id = ?');
     $st->execute([$messageId]);
