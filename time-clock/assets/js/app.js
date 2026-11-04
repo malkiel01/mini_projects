@@ -866,7 +866,10 @@ function codeSheet(x, name) {
 /* ===== M3 · עובדים ===== */
 
 const siteName = id => state.data.sites.find(s => s.id === id)?.name ?? '';
-const termsLine = t => t ? `${t.days_per_week} ימים · ${hm(t.daily_minutes)} ליום · ${PAY[t.pay_type]}` : 'בלי תנאים';
+const WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+const DEFAULT_WORK_DAYS = { 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] };
+const isDefaultDays = t => (t.work_days ?? []).join() === DEFAULT_WORK_DAYS[t.days_per_week].join();
+const termsLine = t => t ? `${t.days_per_week} ימים${t.work_days && !isDefaultDays(t) ? ` (${t.work_days.map(d => WEEKDAYS[d]).join(' ')})` : ''} · ${hm(t.daily_minutes)} ליום · ${PAY[t.pay_type]}` : 'בלי תנאים';
 const isoToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 const dateHe = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '';
 
@@ -926,6 +929,11 @@ function termsFields(t) {
         </fieldset></div>
       <label class="f"><span>שעות תקן ליום</span><input name="daily" dir="ltr" inputmode="numeric" value="${hm(t.daily_minutes)}"></label>
     </div>
+    <div class="f" style="margin-top:8px"><span id="t-wd">ימי העבודה</span>
+      <div class="chips" role="group" aria-labelledby="t-wd">
+        ${WEEKDAYS.map((l, d) => `<label><input type="checkbox" name="wd" value="${d}"${(t.work_days ?? DEFAULT_WORK_DAYS[t.days_per_week] ?? DEFAULT_WORK_DAYS[5]).includes(d) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+      </div>
+      <p class="hint">שעות ביום המנוחה של העובד נחשבות מנוחה גם אם בחרתם אותו כיום עבודה.</p></div>
     <div class="f" style="margin-top:8px"><span id="t-pay">שכר</span>
       <fieldset class="seg" aria-labelledby="t-pay">
         ${Object.entries(PAY).map(([k, v]) => `<label><input type="radio" name="pay_type" value="${k}"${t.pay_type === k ? ' checked' : ''}><span>${v}</span></label>`).join('')}
@@ -935,8 +943,18 @@ function termsFields(t) {
 function readTerms(form) {
   const minutes = parseHm(form.daily.value);
   if (!(minutes >= 60 && minutes <= 720)) throw new Error('שעות תקן ליום — למשל 8:24 (בין 1 ל-12 שעות)');
-  return { days_per_week: +form.days_per_week.value, daily_minutes: minutes, pay_type: form.pay_type.value };
+  const n = +form.days_per_week.value;
+  const work_days = [...form.querySelectorAll('[name=wd]:checked')].map(x => +x.value);
+  if (work_days.length !== n) throw new Error(`בחרו בדיוק ${n} ימי עבודה (בחרתם ${work_days.length})`);
+  return { days_per_week: n, work_days, daily_minutes: minutes, pay_type: form.pay_type.value };
 }
+
+// החלפה בין 5 ל-6 ימים מחזירה את ימי העבודה לברירת המחדל של המספר החדש
+document.addEventListener('change', e => {
+  if (e.target.name !== 'days_per_week') return;
+  const boxes = e.target.form?.querySelectorAll('[name=wd]');
+  if (boxes?.length) boxes.forEach(b => { b.checked = DEFAULT_WORK_DAYS[+e.target.value].includes(+b.value); });
+});
 
 function addEmployeeSheet() {
   const c = state.data.company, siteOnly = state.emp?.site_only ?? null;

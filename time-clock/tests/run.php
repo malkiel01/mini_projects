@@ -654,5 +654,25 @@ foreach (glob(dirname(DB_FILE) . '/certs/*') as $f) @unlink($f);
 @rmdir(dirname(DB_FILE) . '/certs');
 unset($GLOBALS['TC_NOW']);
 
+// ===== גרסה 3ב: ימי עבודה גמישים =====
+$GLOBALS['TC_NOW'] = $z('2027-03-01 10:00');
+$o3 = as_(['sub' => 'u-owner']);
+$fx = empAdd($o3, ['company_id' => $cid, 'name' => 'שני עד שישי', 'start_date' => '2027-01-01', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3, 4, 5]]);
+$fxId = $fx['employee']['id'];
+check('ימי עבודה שנבחרו נשמרים ומוצגים', $fx['employee']['terms']['work_days'] === [1, 2, 3, 4, 5] && $fx['employee']['terms']['days_per_week'] === 5);
+check('תקן: שישי כן, ראשון לא (2027-01-03 ראשון, 2027-01-08 שישי)', standardMinutes($fxId, '2027-01-03') === 0 && standardMinutes($fxId, '2027-01-08') === 504 && standardMinutes($fxId, '2027-01-04') === 504);
+check('זיכוי היעדרות לפי ימי העבודה: שישי כן, ראשון לא', absCredit(['part' => 'full'], memberRow($fxId), '2027-01-08') === 504 && absCredit(['part' => 'full'], memberRow($fxId), '2027-01-03') === 0);
+$def = empAdd($o3, ['company_id' => $cid, 'name' => 'ברירת מחדל', 'start_date' => '2027-01-01', 'days_per_week' => 5, 'daily_minutes' => 504])['employee'];
+check('בלי בחירה — כמו קודם (א׳–ה׳)', $def['terms']['work_days'] === [0, 1, 2, 3, 4] && standardMinutes($def['id'], '2027-01-08') === 0 && standardMinutes($def['id'], '2027-01-03') === 504);
+$same = empAdd($o3, ['company_id' => $cid, 'name' => 'שווה לברירת המחדל', 'start_date' => '2027-01-01', 'days_per_week' => 6, 'daily_minutes' => 480, 'work_days' => [0, 1, 2, 3, 4, 5]])['employee'];
+check('בחירה השווה לברירת המחדל לא נשמרת בנפרד', db()->query("SELECT work_days FROM work_terms WHERE member_id = {$same['id']}")->fetchColumn() === null && $same['terms']['work_days'] === [0, 1, 2, 3, 4, 5]);
+throws('מספר ימים שלא תואם', fn() => empAdd($o3, ['company_id' => $cid, 'name' => 'x', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3]]));
+throws('יום לא תקין', fn() => empAdd($o3, ['company_id' => $cid, 'name' => 'x', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3, 4, 9]]));
+$r = empTermsAdd($o3, ['company_id' => $cid, 'id' => $def['id'], 'effective_from' => '2027-02-01', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3, 4, 6]]);
+check('גרסת תנאים חדשה מתאריך: ימים אחרים מאותו תאריך, והישנים נשארים', $r['employee']['terms']['work_days'] === [1, 2, 3, 4, 6]
+      && standardMinutes($def['id'], '2027-01-31') === 504 && standardMinutes($def['id'], '2027-02-07') === 0 && standardMinutes($def['id'], '2027-02-06') === 504);
+check('ימי העבודה ביומן', str_contains((string) db()->query("SELECT after FROM audit WHERE action = 'terms.save' ORDER BY id DESC LIMIT 1")->fetchColumn(), 'work_days'));
+unset($GLOBALS['TC_NOW']);
+
 echo "\n" . ($n - $fails) . "/$n עברו\n";
 exit($fails ? 1 : 0);
