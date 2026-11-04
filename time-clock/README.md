@@ -65,6 +65,8 @@ tests/run.php      בדיקות; רצות גם ב-CI (time-clock-tests.yml)
 - **כתובות ציבוריות** — `e/**`, `s/**`, `assets/**`, ופעולות העובד (`emp_invite_info|emp_activate|emp_state|emp_punch|emp_month|emp_correct|emp_correct_cancel|emp_corrections|emp_approve`) והעמדה (`station_pair|station_state|station_check|station_punch`).
 - **הגנה בעמדה:**
   - 5 קודים שגויים לאותו עובד נועלים אותו לדקה.
+  - בנוסף מכסה יומית: 15 קודים שגויים ב-24 שעות נועלים את העובד לשעה (מונע ניחוש איטי של קוד בן 4 ספרות). המונה לא מתאפס כשהעובד עצמו נכנס בהצלחה.
+  - בקשת POST שהדפדפן מסמן `Sec-Fetch-Site: cross-site` נחסמת ב-`api.php` (שכבה שנייה מעל SameSite=Lax).
   - 10 קודי הצמדה שגויים מאותה כתובת IP נועלים את ההצמדה לרבע שעה.
   - קוד ההצמדה תקף 10 דקות, ובשרת נשמר רק ה-hash שלו. פעולת עובד חדשה חייבת להיכנס ל-`public` ב-`app.json`, אחרת השער חוסם אותה בשקט. בודקים בחלון גלישה בסתר.
 - **כניסה כשהאפליקציה מנותקת** מהפלטפורמה — טרם.
