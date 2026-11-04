@@ -53,9 +53,19 @@ function termsAt(int $memberId, string $date): ?array {
     return $st->fetch() ?: null;
 }
 
+/** ימי העבודה כברירת מחדל לפי מספר הימים בשבוע (0 = ראשון … 6 = שבת). */
+const DEFAULT_WORK_DAYS = [5 => [0, 1, 2, 3, 4], 6 => [0, 1, 2, 3, 4, 5]];
+
+/** ימי העבודה של גרסת תנאים: מה שנקבע לעובד, או ברירת המחדל לפי days_per_week. */
+function workDaysOf(array $t): array {
+    $csv = $t['work_days'] ?? null;
+    if (is_string($csv) && $csv !== '') return array_map('intval', explode(',', $csv));
+    return DEFAULT_WORK_DAYS[(int) $t['days_per_week']] ?? DEFAULT_WORK_DAYS[5];
+}
+
 function termsOut(?array $t): ?array {
     return $t ? ['id' => (int) $t['id'], 'effective_from' => $t['effective_from'], 'days_per_week' => (int) $t['days_per_week'],
-                 'daily_minutes' => (int) $t['daily_minutes'], 'pay_type' => $t['pay_type']] : null;
+                 'work_days' => workDaysOf($t), 'daily_minutes' => (int) $t['daily_minutes'], 'pay_type' => $t['pay_type']] : null;
 }
 
 /** מצב ההזמנה: active (נכנס ממכשיר), pending (קישור בתוקף), expired, none. */
@@ -134,11 +144,31 @@ function empFields(int $companyId, array $in, ?int $siteOnly, ?int $selfId = nul
     return [$name, $phone ?: null, $email ?: null, $no ?: null, $siteId, $start];
 }
 
+/**
+ * ימי העבודה שנבחרו, כ-"0,1,2,3,4" — בדיוק days_per_week ימים. לא נשלח, או שווה לברירת המחדל — null
+ * (כך תנאים קיימים ותנאים חדשים בלי בחירה נשארים כמו שהיו). שעות ביום המנוחה השבועי של העובד
+ * מסווגות כמנוחה גם אם בחרו אותו כיום עבודה (lib/overtime.php).
+ */
+function workDaysFrom(array $in, int $days): ?string {
+    $v = $in['work_days'] ?? null;
+    if ($v === null || $v === '' || $v === []) return null;
+    if (!is_array($v)) throw new AppError('ימי העבודה: רשימת ימים');
+    $set = [];
+    foreach ($v as $d) {
+        if (!is_numeric($d) || (int) $d < 0 || (int) $d > 6) throw new AppError('ימי העבודה: יום לא תקין');
+        $set[(int) $d] = true;
+    }
+    $set = array_keys($set);
+    sort($set);
+    if (count($set) !== $days) throw new AppError("ימי העבודה: בדיוק $days ימים");
+    return $set === DEFAULT_WORK_DAYS[$days] ? null : implode(',', $set);
+}
+
 function termsFrom(array $in): array {
     [$days, $minutes] = standardFrom($in);
     $pay = str($in, 'pay_type', 10) ?: 'monthly';
     if (!in_array($pay, ['monthly', 'hourly'], true)) throw new AppError('סוג שכר: חודשי או שעתי');
-    return [$days, $minutes, $pay];
+    return [$days, $minutes, $pay, workDaysFrom($in, $days)];
 }
 
 /** הוספת עובד: אדם חדש, חברוּת, תנאים מתאריך ההתחלה (או מהיום) — וקישור הזמנה. */
@@ -146,7 +176,7 @@ function empAdd(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     [, $site] = empScope($person, $companyId, EMP_EDIT);
     [$name, $phone, $email, $no, $siteId, $start] = empFields($companyId, $in, $site);
-    [$days, $minutes, $pay] = termsFrom($in);
+    [$days, $minutes, $pay, $workDays] = termsFrom($in);
     $company = companyRow($companyId);
 
     $pdo = db();
@@ -156,8 +186,8 @@ function empAdd(array $person, array $in): array {
     $pdo->prepare("INSERT INTO members (company_id, person_id, role, site_id, employee_no, start_date, created_at) VALUES (?,?,'employee',?,?,?,?)")
         ->execute([$companyId, $pid, $siteId, $no, $start, nowIso()]);
     $mid = (int) $pdo->lastInsertId();
-    $pdo->prepare('INSERT INTO work_terms (member_id, effective_from, days_per_week, daily_minutes, pay_type, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
-        ->execute([$mid, $start ?? todayIn($company['tz']), $days, $minutes, $pay, $person['id'], nowIso()]);
+    $pdo->prepare('INSERT INTO work_terms (member_id, effective_from, days_per_week, work_days, daily_minutes, pay_type, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)')
+        ->execute([$mid, $start ?? todayIn($company['tz']), $days, $workDays, $minutes, $pay, $person['id'], nowIso()]);
     audit($companyId, (int) $person['id'], 'employee.add', 'members:' . $mid, null, ['name' => $name, 'site_id' => $siteId]);
     $token = createInvite($mid, (int) $person['id']);
     $pdo->commit();
@@ -188,16 +218,16 @@ function empTermsAdd(array $person, array $in): array {
     [, $site] = empScope($person, $companyId, EMP_EDIT);
     $e = empRow($companyId, intIn($in, 'id'), $site);
     $from = validDate(str($in, 'effective_from', 10), 'בתוקף מתאריך');
-    [$days, $minutes, $pay] = termsFrom($in);
+    [$days, $minutes, $pay, $workDays] = termsFrom($in);
     $st = db()->prepare('SELECT * FROM work_terms WHERE member_id = ? AND effective_from = ?');
     $st->execute([$e['id'], $from]);
     $before = $st->fetch() ?: null;
-    db()->prepare('INSERT INTO work_terms (member_id, effective_from, days_per_week, daily_minutes, pay_type, created_by, created_at) VALUES (?,?,?,?,?,?,?)
-        ON CONFLICT (member_id, effective_from) DO UPDATE SET days_per_week = excluded.days_per_week, daily_minutes = excluded.daily_minutes,
-        pay_type = excluded.pay_type, created_by = excluded.created_by, created_at = excluded.created_at')
-        ->execute([$e['id'], $from, $days, $minutes, $pay, $person['id'], nowIso()]);
+    db()->prepare('INSERT INTO work_terms (member_id, effective_from, days_per_week, work_days, daily_minutes, pay_type, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT (member_id, effective_from) DO UPDATE SET days_per_week = excluded.days_per_week, work_days = excluded.work_days,
+        daily_minutes = excluded.daily_minutes, pay_type = excluded.pay_type, created_by = excluded.created_by, created_at = excluded.created_at')
+        ->execute([$e['id'], $from, $days, $workDays, $minutes, $pay, $person['id'], nowIso()]);
     audit($companyId, (int) $person['id'], 'terms.save', 'members:' . $e['id'], termsOut($before),
-          ['effective_from' => $from, 'days_per_week' => $days, 'daily_minutes' => $minutes, 'pay_type' => $pay]);
+          ['effective_from' => $from, 'days_per_week' => $days, 'work_days' => $workDays, 'daily_minutes' => $minutes, 'pay_type' => $pay]);
     return empGet($person, ['company_id' => $companyId, 'id' => $e['id']]);
 }
 

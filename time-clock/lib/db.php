@@ -327,6 +327,8 @@ function migrate(PDO $pdo): void {
     // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת — ALTER, פעם אחת.
     addColumn($pdo, 'members', 'religion', "TEXT CHECK (religion IN ('jewish','muslim','christian','druze','other'))");
     addColumn($pdo, 'members', 'rest_day', 'INTEGER CHECK (rest_day BETWEEN 0 AND 6)');
+    // ימי העבודה בפועל (גרסה 3ב): "0,1,2,3,4" (0 = ראשון). ריק — ברירת המחדל לפי days_per_week (5 = א׳–ה׳, 6 = א׳–ו׳).
+    addColumn($pdo, 'work_terms', 'work_days', 'TEXT');
 }
 
 function addColumn(PDO $pdo, string $table, string $column, string $type): void {
