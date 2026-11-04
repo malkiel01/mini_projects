@@ -7,8 +7,13 @@
 <meta name="referrer" content="no-referrer">
 <title>שעון נוכחות</title>
 <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="שעון נוכחות">
+<link rel="apple-touch-icon" href="../assets/icons/icon-192.png">
 <link rel="stylesheet" href="../assets/css/app.css">
 <script src="../assets/js/common.js" defer></script>
+<script src="../assets/js/pwa.js" defer></script>
 <script src="../assets/js/month.js" defer></script>
 <script src="../assets/js/emp.js" defer></script>
 </head>
@@ -29,6 +34,7 @@
     <div class="sheet-body" id="sheet-body"></div>
   </form>
 </dialog>
+<p class="hint" style="text-align:center"><a href="../privacy.html">מדיניות פרטיות</a></p>
 <div class="toast" role="status" hidden></div>
 </body>
 </html>
