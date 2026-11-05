@@ -38,6 +38,7 @@
 ```
 api.php            כל הפעולות (POST עם JSON; GET רק ל-me)
 lib/db.php         SQLite, המיגרציות והיומן (audit)
+lib/errors.php     AppError: שגיאה שמיועדת למשתמש (הודעה ו-status); תקלה פנימית נרשמת ביומן ומוחזרת כ"שגיאת שרת"
 lib/auth.php       הזהות מ-$_SERVER['PLATFORM_USER'] וקישור לאדם באפליקציה
 lib/company.php    חברות, סניפים וצוות ניהול
 lib/employees.php  עובדים, תנאים בגרסאות וקישורי הזמנה (צד הניהול)
