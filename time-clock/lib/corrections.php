@@ -1,6 +1,6 @@
 <?php
 /**
- * תיקונים (האפיון: E4, M5; שלב 5).
+ * תיקונים (האפיון: E4, M5; גרסה 1).
  *
  * - עובד מבקש מהטלפון: הוספת דיווח, שינוי שעה, או ביטול דיווח — תמיד עם סיבה. הבקשה ממתינה.
  * - מנהל (בעלים, מנהל, מנהל סניף לסניף שלו) מאשר או דוחה; או מתקן ישירות — מאושר מיד, עם סיבה.
@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/attendance.php';
 
-const CORR_EDIT = ['owner', 'manager', 'branch_manager'];
 
 /** "2026-10-21T17:30" בשעון החברה ← UTC. */
 function localToUtc(string $local, string $tz): string {

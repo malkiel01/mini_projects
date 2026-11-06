@@ -1,5 +1,6 @@
 # בדיקות שעון הנוכחות — רצות על כל PR שנוגע בתיקייה, על מסד SQLite זמני.
-#   php time-clock/tests/run.php — זהות מהפלטפורמה, חברה, סניפים, צוות והפרדה בין חברות
+#   php time-clock/tests/run.php — כל הגרסאות: זהות, חברות וסניפים, עובדים ודיווח, עמדה, תיקונים,
+#   אישור חודשי, שעות נוספות וחגים, היעדרויות, יתרות ואישורי מחלה
 # אין כאן פריסה: הפריסה היחידה היא deploy.yml.
 name: time-clock tests
 
@@ -23,5 +24,10 @@ jobs:
           php-version: '8.2'
           extensions: pdo_sqlite, mbstring
           coverage: none
+      - name: תחביר PHP ו-JS
+        run: |
+          for f in $(find time-clock -name '*.php'); do php -l "$f" > /dev/null || exit 1; done
+          for f in $(find time-clock -name '*.js'); do node --check "$f" || exit 1; done
+          for f in $(find time-clock -name '*.webmanifest') time-clock/app.json; do python3 -m json.tool "$f" > /dev/null || exit 1; done
       - name: בדיקות
         run: php time-clock/tests/run.php
