@@ -14,8 +14,8 @@
 ## השלבים
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
-2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002) · PR 2 ענן החבילה · PR 3 ציור על
-   הגרף · PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח · PR 5 התראות · PR 6 חיבור ליומן.
+2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · PR 2 ענן החבילה
+   (⏳ חסום — ענן MBE כותב אפיון משלו) · ✅ PR 3 ציור על הגרף (TS-004) · PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח · PR 5 התראות · PR 6 חיבור ליומן.
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -35,6 +35,17 @@
   אינדיקטורים (SMA, EMA, RSI, ATR, נפח) — float, לתצוגה בלבד (עיקרון 6).
 - **ניווט**: שוק · יומן · עוד; היומן של שלב 1 — שלוש תת-לשוניות. "ניתוח" ו"התראות" — עם ה-PR-ים שלהם.
 - `"restricted": true` (✅6).
+
+## שלב א' — PR 3: ציור על הגרף (פרק 7)
+
+- **כלים:** קו מגמה, קו אופקי, קרן, מלבן, פיבונאצ'י (0 · 0.236 · 0.382 · 0.5 · 0.618 · 0.786 · 1), טקסט, חץ; 6 צבעים ועובי 1–4.
+- **עיגון בזמן ומחיר** (`assets/js/drawings.js`): הזמן ממופה לאינדקס על ציר הנרות הנוכחי — גם בין נרות וגם אחרי האחרון —
+  ולכן שרטוט נופל באותו מקום בכל מסגרת זמן. "רק במסגרת הזו" — `tf` של השרטוט.
+- **שמירה** (`lib/drawings.php`, טבלת `drawings`): רק בסוף שינוי (שחרור), לא בכל תזוזה. ביטול ושחזור (↶ ↷, וגם Ctrl+Z) —
+  בדפדפן, וכל צעד נשמר. עד 500 לנכס למשתמש. בייצוא המלא. אין שיתוף.
+- **מחשב:** לחיצה מניחה נקודה; גרירה מזיזה את הגרף. **טלפון:** גרירה מזיזה; **לחיצה ארוכה** מניחה נקודה, וממשיכים לגרור
+  לנקודה השנייה. הסרגל — צף, מעל הניווט. ✏️ בכותרת הגרף פותח וסוגר אותו.
+- הציור — Primitive של Lightweight Charts על הקנבס של הגרף: טקסט של משתמש מצויר על קנבס, אף פעם לא כ-HTML.
 
 ### הכרעות של כותב הקוד (PR 1)
 
@@ -66,8 +77,11 @@ lib/secret.php      הצפנת מפתחות וניקוי טקסט מהם
 lib/roles.php       מנהל ראשי ונוספים, יומן מנהל, תקרת 30 לדקה
 lib/http.php        כל ה-HTTP החוצה (בבדיקות — ספקים מדומים)
 assets/js/market.js לשונית שוק, גרף, ספקים, ממשק המנהל
+assets/js/drawings.js ציור על הגרף
+lib/drawings.php    שרטוטים — שמירה, בידוד, תקרה
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
-tests/              run.php · api.php · market.php · market-api.php · decimal-js.mjs · indicators-js.mjs · no-polling.mjs
+tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
+                    · no-polling.mjs · drawings-ui.mjs
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
 ```
@@ -99,7 +113,9 @@ php trading-strategies/tests/api.php     # API: הפרדה בין משתמשים
 php trading-strategies/tests/market.php        # ספקים, זמנים, מפתחות, מאגר (בלי רשת)
 php trading-strategies/tests/market-api.php    # בידוד, מנהל, מפתחות לא דולפים, רישוי, מתג ראשי, 429
 node trading-strategies/tests/decimal-js.mjs && node trading-strategies/tests/indicators-js.mjs
+php trading-strategies/tests/drawings-api.php  # שרטוטים: בידוד, CSRF, ולידציה, תקרת 500
 node trading-strategies/tests/no-polling.mjs   # Playwright: 20 שניות בלי פעולה — אף בקשה לשרת
+node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר ובמגע (לחיצה ארוכה), גרירה, ביטול/שחזור
 php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/dev-prepend.php
 #   ואז http://127.0.0.1:8123/trading-strategies/  (העוגייה dev_as=bob — משתמש אחר; owner — מנהל ראשי)
 ```

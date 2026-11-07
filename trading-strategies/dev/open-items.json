@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-07T23:15:00Z",
+  "updated": "2026-11-07T23:25:00Z",
   "note": "שלב א' המורחב של אסטרטגיות למסחר — לפי האפיון trading-strategies/docs/spec-stage-a.md. ❓ שאלה = מחכה להחלטה שלך; 🟡 פתוח = טרם התחיל; 🧪 ממתין לאימות = נפרס, לבדוק ולאשר.",
   "repo": "malkiel01/mini_projects",
   "items": [
@@ -57,8 +57,8 @@
     },
     {
       "code": "TS-004",
-      "status": "open",
-      "status_at": "2026-11-07T19:40:00Z",
+      "status": "verify",
+      "status_at": "2026-11-07T22:57:00Z",
       "kind": "feature",
       "priority": "normal",
       "area": "PR 3",
@@ -126,7 +126,7 @@
     {
       "code": "TS-008",
       "status": "open",
-      "status_at": "2026-11-07T23:15:00Z",
+      "status_at": "2026-11-07T23:25:00Z",
       "kind": "feature",
       "priority": "high",
       "area": "PR 4א",
