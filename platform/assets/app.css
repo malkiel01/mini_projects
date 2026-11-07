@@ -549,3 +549,75 @@ dialog.install .logo { width: 40px; height: 40px; }
 /* --- כניסה בתוך אפליקציית אנדרואיד: "כניסה עם הכלים הדיגיטליים" (handoff) --- */
 .handoff-box { display: grid; gap: 6px; margin-bottom: var(--s3); padding-bottom: var(--s3); border-bottom: 1px solid var(--line); }
 .handoff-box .btn { text-align: center; text-decoration: none; }
+
+/* ===== ניהול: ⚙️ מערכת, ומסך משתמש — אפליקציות ובתוך כל אחת מה הוא רואה ===== */
+.sys-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: var(--s2); margin-bottom: var(--s2); scrollbar-width: none; }
+.sys-tabs::-webkit-scrollbar { display: none; }
+.sys-tabs .btn.chip-btn { flex: none; min-height: 34px; border-radius: 99px; font-size: .85rem; padding: 0 var(--s3); }
+.sys-tabs .btn.chip-btn.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.fold { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.fold > summary { cursor: pointer; padding: var(--s2) var(--s3); font-weight: 600; font-size: .9rem; list-style: none; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::after { content: '⌄'; float: inline-end; color: var(--muted); }
+.fold[open] > summary { border-bottom: 1px solid var(--line); }
+.fold > :not(summary) { margin: var(--s2) var(--s3); }
+.uapps-wrap { display: grid; gap: var(--s2); }
+.uapps-wrap input[type=search] { min-height: var(--tap); padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.uapps { list-style: none; display: grid; gap: 6px; }
+.uapps > li { display: flex; align-items: flex-start; gap: var(--s2); min-width: 0; }
+.uapps-wrap, .uapps { min-width: 0; }
+.uapp { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.uapp.off { opacity: .6; }
+.uapp > summary { display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s2); cursor: pointer; list-style: none; }
+.uapp > summary::-webkit-details-marker { display: none; }
+.uapp-tx { flex: 1; min-width: 0; display: grid; }
+.uapp-tx b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .92rem; }
+.uapp-tx small { font-size: .76rem; }
+.uapp-chev { color: var(--muted); transition: transform .15s; }
+.uapp[open] .uapp-chev { transform: rotate(180deg); }
+.uapp-body { padding: 0 var(--s3) var(--s2); display: grid; gap: 6px; }
+.uin { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); font-size: .88rem; }
+input.switch, .user-sheet input.switch, .admin input.switch { appearance: none; -webkit-appearance: none; flex: none; width: 44px; height: 26px; border-radius: 99px; background: var(--line);
+    position: relative; cursor: pointer; transition: background .15s; margin-top: 10px; }
+.uin input.switch { margin-top: 0; }
+input.switch::after { content: ''; position: absolute; top: 3px; inset-inline-start: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: inset-inline-start .15s; }
+input.switch:checked { background: var(--brand); }
+input.switch:checked::after { inset-inline-start: 21px; }
+
+/* ===== ניהול → אפליקציות: 🌳 המבנה (קטגוריות → משפחות → אפליקציות), בגרירה ===== */
+.cat-tab { display: grid; gap: var(--s3); }
+.cat-tab .fold > .grant-cat { border: 0; padding: 0; margin: 0; }
+.struct { display: grid; gap: var(--s2); }
+.struct-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
+.struct-head h3 { margin: 0; }
+.struct input[type=search] { min-height: var(--tap); padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); width: 100%; }
+.catbox { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow); }
+.catbox > summary { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); cursor: pointer; list-style: none; }
+.catbox > summary::-webkit-details-marker { display: none; }
+.catbox > summary b { font-size: 1rem; }
+.catbox > summary small { flex: 1; font-size: .78rem; }
+.catbox-ic { font-size: 1.3rem; }
+.catbox[open] .uapp-chev { transform: rotate(180deg); }
+.catbox-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.zone-lbl { margin-bottom: -4px; }
+.dzone { display: flex; flex-wrap: wrap; gap: 6px; min-height: 44px; padding: 6px; border: 1px dashed transparent; border-radius: var(--r); transition: background .1s, border-color .1s; }
+.dragging .dzone { border-color: var(--line); background: var(--bg); }
+.dzone.over { border-color: var(--brand) !important; background: var(--brand-soft) !important; }
+.dz-empty { align-self: center; padding: 0 4px; }
+.fam { border-inline-start: 3px solid color-mix(in srgb, var(--brand) 45%, var(--line)); border-radius: 4px var(--r) var(--r) 4px;
+    background: color-mix(in srgb, var(--brand-soft) 45%, var(--surface)); padding: 4px 4px 2px var(--s2); }
+.fam-head { display: flex; gap: var(--s2); align-items: baseline; padding: 2px 4px; font-weight: 600; font-size: .88rem; }
+.fam.empty { opacity: .7; }
+.fam.empty .dzone { min-height: 30px; padding: 2px 6px; }
+.achip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 40px; padding: 3px 10px 3px 4px; border: 1px solid var(--line);
+    border-radius: 99px; background: var(--surface); cursor: pointer; font-size: .85rem; }
+.achip:hover { border-color: var(--brand); }
+.achip .app-ic.sm { width: 28px; height: 28px; font-size: .95rem; border-radius: 8px; }
+.achip-tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 11em; }
+.achip-badge { font-size: .75rem; }
+.achip.is-hidden { opacity: .55; }
+.drag-h { touch-action: none; cursor: grab; color: var(--muted); padding: 6px 2px 6px 4px; font-size: .9rem; letter-spacing: -2px; user-select: none; }
+.achip.drag-src { opacity: .3; }
+.achip.ghost { position: fixed; z-index: 1000; pointer-events: none; box-shadow: var(--shadow-pop); transform: rotate(-2deg); background: var(--surface); }
+.dragging, .dragging * { user-select: none; -webkit-user-select: none; }

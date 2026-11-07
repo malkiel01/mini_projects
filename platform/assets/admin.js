@@ -27,6 +27,7 @@ window.PlatformAdmin = (() => {
             const u = state.users.find(x => x.id === openUser);
             u ? fillSheet(u) : closeSheet();
         }
+        if (appDlg?.d.open) fillAppDlg();
     }
 
     // פעולה, ואחריה טעינה מחדש. התוצאה — בהודעה קופצת; שגיאה לא מפילה את המסך.
@@ -50,12 +51,9 @@ window.PlatformAdmin = (() => {
         const n = pendingCount();
         const tabs = el('div', { className: 'admin-tabs', role: 'tablist' }, [
             ['users', '👥', 'משתמשים', n],
-            ['usage', '📊', 'שימוש', 0],
             ['catalog', '🗂️', 'אפליקציות', 0],
-            ['plugins', '🧩', 'תוספים', 0],
-            ['sso', '🔗', 'חיבורים', 0],
-            ['diag', '📜', 'יומן', 0],
-            ['probe', '🩺', 'שרת', 0],
+            ['usage', '📊', 'שימוש', 0],
+            ['system', '⚙️', 'מערכת', 0],
         ].map(([id, icon, label, count]) => {
             const b = button('', () => { tab = id; render(); }, tab === id ? 'active' : '');
             // בטלפון האייקון מוסתר — ארבע לשוניות בשורה אחת.
@@ -66,8 +64,22 @@ window.PlatformAdmin = (() => {
             return b;
         }));
         const body = tab === 'users' ? renderUsers() : tab === 'usage' ? renderUsage()
-            : tab === 'catalog' ? renderCatalog() : tab === 'plugins' ? renderPlugins() : tab === 'sso' ? renderSso() : tab === 'diag' ? renderDiag() : renderProbe();
+            : tab === 'catalog' ? renderCatalog() : renderSystem();
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
+    }
+
+    // ⚙️ מערכת: הגדרות ההרשמה וההתראות, ומה שלא נוגעים בו כל יום — תוספים, חיבורים, יומן, שרת
+    let sysTab = 'settings';
+    function renderSystem() {
+        const SYS = [['settings', '⚙️ הגדרות'], ['plugins', '🧩 תוספים'], ['sso', '🔗 חיבורים'], ['diag', '📜 יומן'], ['probe', '🩺 שרת']];
+        const chips = el('div', { className: 'sys-tabs', role: 'tablist' }, SYS.map(([id, label]) => {
+            const b = button(label, () => { sysTab = id; render(); }, `chip-btn${sysTab === id ? ' on' : ''}`);
+            b.role = 'tab'; b.ariaSelected = String(sysTab === id);
+            return b;
+        }));
+        const body = sysTab === 'plugins' ? renderPlugins() : sysTab === 'sso' ? renderSso() : sysTab === 'diag' ? renderDiag()
+            : sysTab === 'probe' ? renderProbe() : el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard()]);
+        return el('div', {}, [chips, body]);
     }
 
     const pendingCount = () => state.users.filter(u => u.status === 'pending').length;
@@ -131,7 +143,7 @@ window.PlatformAdmin = (() => {
         }
         drawList();
 
-        return el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard(), invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+        return el('div', {}, [invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
     }
 
     // 🎁 הסל של מי שנרשם לבד: נפתח לו מיד כשהחשבון פעיל (אחרי אימות המייל, או אחרי האישור כשהוא נדרש).
@@ -538,22 +550,22 @@ window.PlatformAdmin = (() => {
 
         const body = [cells];
         if (u.must_change) body.push(el('p', { className: 'note', textContent: '🔑 קיבל/ה סיסמה זמנית — יתבקש/תתבקש לבחור סיסמה חדשה בכניסה הבאה.' }));
+        // מקופל — מה שלא צריך כל פעם
+        const fold = (title, ...kids) => el('details', { className: 'fold' }, [el('summary', { textContent: title }), ...kids]);
 
         if (u.self) {
             body.push(el('p', { className: 'muted small', textContent: 'זה החשבון שלך. את הסיסמה מחליפים מהתפריט האישי (האווטאר למעלה).' }));
         } else {
-            body.push(el('div', { className: 'sheet-sec', textContent: 'פעולות' }), el('div', { className: 'tiles' }, actionTiles(u)));
-            if (u.status !== 'pending') body.push(passwordBox(u));
-            if (u.status !== 'pending') body.push(el('div', { className: 'sheet-sec', textContent: 'שימוש באפליקציות · 30 יום' }), userUsage(u));
-            if (u.sso?.length) body.push(el('div', { className: 'sheet-sec', textContent: 'כניסה מאוחדת — אישר/ה ל' }), userSso(u));
-            if (u.status === 'active' && u.role !== 'admin') {
-                body.push(el('div', { className: 'sheet-sec', textContent: 'מה הוא/היא רואה' }), grantsEditor(u));
-            } else if (u.role === 'admin') {
-                body.push(el('p', { className: 'muted small', textContent: 'מנהל רואה את כל האפליקציות — אין צורך בהרשאות.' }));
-            }
+            if (u.status === 'pending') body.push(el('div', { className: 'tiles' }, actionTiles(u)));
+            // העיקר: אילו אפליקציות הוא רואה, ובתוך כל אחת — מה הוא רואה בה
+            if (u.status === 'active' && u.role !== 'admin') body.push(userApps(u));
+            else if (u.role === 'admin') body.push(el('p', { className: 'muted small', textContent: 'מנהל רואה את כל האפליקציות ואת כל הדשבורדים — אין צורך בהרשאות.' }));
+            if (u.status !== 'pending') body.push(fold('📊 שימוש · 30 יום', userUsage(u)));
+            if (u.devices?.length) body.push(fold('📱 מכשירים — מה מותקן', userDevices(u)));
+            if (u.sso?.length) body.push(fold('🔗 כניסה מאוחדת', userSso(u)));
+            if (u.status !== 'pending') body.push(fold('🔑 סיסמה, ניהול וחסימה', el('div', { className: 'tiles' }, actionTiles(u)), passwordBox(u)));
         }
-
-        if (u.devices?.length) body.push(el('div', { className: 'sheet-sec', textContent: 'מכשירים — מה מותקן' }), userDevices(u));
+        if (u.self && u.devices?.length) body.push(fold('📱 מכשירים — מה מותקן', userDevices(u)));
 
         sheet.replaceChildren(el('div', { className: 'sheet' }, [
             el('div', { className: 'sheet-head' }, [
@@ -620,6 +632,79 @@ window.PlatformAdmin = (() => {
             el('div', { className: 'sheet-sec', textContent: 'איפוס סיסמה' }),
             el('p', { className: 'muted small', textContent: 'קובעים סיסמה זמנית ומוסרים אותה. בכניסה הבאה המשתמש יחויב לבחור סיסמה משלו.' }),
             el('div', { className: 'toolbar' }, [input, copy, set]),
+        ]);
+    }
+
+    // 📱 האפליקציות של משתמש — מתג לכל אפליקציה (נשמר מיד), ובתוך אפליקציה: מה הוא רואה בה.
+    // "בתוך האפליקציה" הוא רשימה (INSIDE) — יכולת חדשה בעתיד = שורה חדשה כאן ופעולה אחת בשרת.
+    const INSIDE = [
+        {
+            id: 'devboard', label: '🛠️ דשבורד פיתוח',
+            available: app => !!state.devboards?.[app.id],
+            off: '—  הדשבורד כבוי לאפליקציה (מפעילים בלשונית אפליקציות)',
+            on: (app, u) => state.devboards[app.id].followers.includes(u.id),
+            set: (app, u, v) => P().api('admin_devboard_follow', { app: app.id, user: u.id, on: v }),
+            hint: 'עוקב — רואה את המשימות, מעיר ומצרף צילומים. לא משנה כלום.',
+        },
+    ];
+    let appsQuery = '';
+    const openApps = new Set();   // מה שפתוח נשאר פתוח אחרי שמירה
+    function userApps(u) {
+        const g = u.grants;
+        const cats = new Set(Object.keys(g.categories).filter(c => g.categories[c]));
+        const groups = new Set(Object.keys(g.groups || {}).filter(x => g.groups[x]));
+        const apps = { ...g.apps };
+        const via = app => app.placements.some(p => p.group && groups.has(p.group)) ? 'דרך קבוצה'
+            : !app.restricted && app.placements.some(p => cats.has(p.category)) ? 'דרך הקטגוריה' : '';
+        const sees = app => app.id in apps ? apps[app.id] : !!via(app);
+        const listed = state.apps.filter(a => !a.hidden && !a.plugin).sort((a, b) => (sees(b) - sees(a)) || a.name.localeCompare(b.name, 'he'));
+        const save = async (msg) => {
+            try { await P().api('admin_grants_set', { id: u.id, categories: [...cats], groups: [...groups], apps }); P().toast(msg); }
+            catch (err) { P().toast('⚠️ ' + err.message); }
+            await reload();
+        };
+        const list = el('ul', { className: 'uapps' });
+        function draw() {
+            const q = appsQuery.trim().toLowerCase();
+            list.replaceChildren(...listed.filter(a => !q || a.name.toLowerCase().includes(q)).map(app => {
+                const on = sees(app);
+                const sw = el('input', { type: 'checkbox', className: 'switch', checked: on, ariaLabel: `${app.name} — רואה` });
+                sw.addEventListener('change', () => {
+                    apps[app.id] = sw.checked;
+                    save(sw.checked ? `✓ ${u.display_name} רואה את ${app.name}` : `${app.name} הוסתרה מ${u.display_name}`);
+                });
+                const src = app.id in apps ? (apps[app.id] ? '' : 'חסום במפורש') : via(app);
+                const inside = INSIDE.map(c => {
+                    if (!c.available(app)) return el('div', { className: 'uin muted small' }, [el('span', { textContent: c.label }), el('span', { textContent: c.off })]);
+                    const box = el('input', { type: 'checkbox', className: 'switch', checked: c.on(app, u) });
+                    box.addEventListener('change', async () => {
+                        try { await c.set(app, u, box.checked); P().toast(box.checked ? `✓ ${c.label}: ${u.display_name} עוקב` : `${c.label}: הוסר`); }
+                        catch (err) { P().toast('⚠️ ' + err.message); box.checked = !box.checked; }
+                        await reload();
+                    });
+                    return el('label', { className: 'uin' }, [el('span', {}, [el('b', { textContent: c.label }), el('small', { className: 'muted', textContent: ' · ' + c.hint })]), box]);
+                });
+                const insideOn = INSIDE.filter(c => c.available(app) && c.on(app, u)).map(c => c.label);
+                const det = el('details', { className: 'uapp' + (on ? '' : ' off'), open: openApps.has(app.id) }, [
+                    el('summary', {}, [appIc(app.id), el('span', { className: 'uapp-tx' }, [
+                        el('b', { textContent: app.name }),
+                        el('small', { className: 'muted', textContent: [on ? 'רואה' : 'לא רואה', src, ...insideOn].filter(Boolean).join(' · ') }),
+                    ]), el('span', { className: 'uapp-chev', textContent: '⌄', ariaHidden: 'true' })]),
+                    el('div', { className: 'uapp-body' }, [el('div', { className: 'sheet-sec', textContent: 'בתוך האפליקציה' }), ...inside]),
+                ]);
+                det.addEventListener('toggle', () => { det.open ? openApps.add(app.id) : openApps.delete(app.id); });
+                return el('li', {}, [det, sw]);
+            }));
+        }
+        draw();
+        const search = el('input', { type: 'search', value: appsQuery, placeholder: 'חיפוש אפליקציה…', ariaLabel: 'חיפוש אפליקציה' });
+        search.addEventListener('input', () => { appsQuery = search.value; draw(); });
+        const n = listed.filter(sees).length;
+        return el('div', { className: 'uapps-wrap' }, [
+            el('div', { className: 'sheet-sec', textContent: `📱 אפליקציות · רואה ${n} מתוך ${listed.length}` }),
+            el('p', { className: 'muted small', textContent: 'המתג — האם הוא רואה את האפליקציה (נשמר מיד). לחיצה על אפליקציה — מה הוא רואה בתוכה.' }),
+            ...(listed.length > 8 ? [search] : []), list,
+            el('details', { className: 'fold' }, [el('summary', { textContent: '🗂️ מתקדם: קטגוריות וקבוצות שלמות' }), grantsEditor(u)]),
         ]);
     }
 
@@ -1083,20 +1168,150 @@ window.PlatformAdmin = (() => {
         const addGroup = el('div', { className: 'cat-row' }, [gIcon, gName,
             button('➕ הוספה', () => act('admin_group_save', { name: gName.value, icon: gIcon.value }, 'נוספה'), 'primary')]);
 
-        const apps = state.apps.filter(a => !a.plugin).map(appCard);
-
-        return el('div', {}, [
-            featuredEditor(),
-            el('h3', { textContent: 'קטגוריות' }), ...cats, add,
-            el('h3', { textContent: 'קבוצות' }),
-            el('p', { className: 'muted small', textContent: 'קבוצה מוצגת כשורה אחת שנפתחים ממנה הילדים (כמו חבילת היצירה). אותה קבוצה יכולה להופיע בכמה קטגוריות — בכל אחת רק מה שהונח בה.' }),
-            ...groups, addGroup,
-            el('h3', { textContent: 'אפליקציות' }),
-            el('p', { className: 'muted small', textContent: 'לוחצים על אפליקציה ומסמנים איפה היא מוצגת: כל שורה — קטגוריה (חובה), ובתוכה קבוצה או "ראשי". אפשר כמה שורות — אותה אפליקציה בכמה מקומות. ' +
-                'מוסתרת — לא מוצגת לאף אחד. "📲 התקנה והורדה" — מסומן כברירת מחדל; מורידים כדי להסתיר. ' +
-                '"🔌 מחוברת" — נכנסים רק עם חשבון בפלטפורמה והרשאה; מורידים כדי לנתק, ובוחרים איך עוד אפשר להיכנס.' }),
-            ...apps,
+        const fold = (title, kids, open = false) => el('details', { className: 'fold', open }, [el('summary', { textContent: title }), ...kids]);
+        const nFeat = (state.settings?.featured || []).length;
+        return el('div', { className: 'cat-tab' }, [
+            fold(`⭐ מומלצות בדף הבית · ${nFeat}`, [featuredEditor()]),
+            structureView(),
+            fold('✏️ עריכת קטגוריות ומשפחות — שם, אייקון, סדר', [
+                el('h3', { textContent: 'קטגוריות' }), ...cats, add,
+                el('h3', { textContent: 'משפחות' }),
+                el('p', { className: 'muted small', textContent: 'משפחה מוצגת בדף הבית כשורה אחת שנפתחים ממנה הילדים (כמו חבילת היצירה). אותה משפחה יכולה להופיע בכמה קטגוריות.' }),
+                ...groups, addGroup,
+            ]),
         ]);
+    }
+
+    // ---------- 🌳 המבנה: קטגוריות → משפחות → אפליקציות, בגרירה ----------
+    // גוררים אפליקציה (⋮⋮) לראשי של קטגוריה או למשפחה — היא עוברת לשם (admin_placements_set).
+    // לחיצה על אפליקציה — ההגדרות שלה. אותה אפליקציה בכמה מקומות — מההגדרות ("איפה מוצגת").
+    const openCats = new Set();
+    let structQ = '';
+    function structureView() {
+        const apps = state.apps.filter(a => !a.plugin);
+        const q = structQ.trim().toLowerCase();
+        const match = a => !q || a.name.toLowerCase().includes(q);
+        const chip = (a, from) => {
+            const handle = el('span', { className: 'drag-h', textContent: '⋮⋮', ariaHidden: 'true', title: 'גרירה' });
+            const b = el('button', { type: 'button', className: 'achip' + (a.hidden ? ' is-hidden' : ''), title: a.name }, [
+                handle, appIc(a.id), el('span', { className: 'achip-tx', textContent: a.name }),
+                ...(state.devboards?.[a.id] ? [el('span', { className: 'achip-badge', textContent: '🛠️', title: 'דשבורד פיתוח' })] : []),
+                ...(a.hidden ? [el('span', { className: 'achip-badge', textContent: '🚫', title: 'מוסתרת' })] : []),
+            ]);
+            b.dataset.app = a.id; b.dataset.from = from;
+            b.addEventListener('click', e => { if (!dragMoved) openAppSettings(a.id); });
+            handle.addEventListener('pointerdown', e => startDrag(e, b));
+            return b;
+        };
+        const zone = (cat, grp, list) => {
+            const z = el('div', { className: 'dzone' }, list.length ? list.map(a => chip(a, `${cat}|${grp || ''}`))
+                : [el('span', { className: 'dz-empty muted small', textContent: 'ריק — גוררים לכאן' })]);
+            z.dataset.drop = `${cat}|${grp || ''}`;
+            return z;
+        };
+        const cards = [...state.categories, ...(apps.some(a => a.placements.some(p => p.category === 'other')) ? [{ id: 'other', name: 'אחר', icon: '📦' }] : [])].map(cat => {
+            const inCat = apps.filter(a => a.placements.some(p => p.category === cat.id));
+            const main = inCat.filter(a => a.placements.some(p => p.category === cat.id && !p.group) && match(a));
+            const fams = state.groups.map(g => {
+                const kids = inCat.filter(a => a.placements.some(p => p.category === cat.id && p.group === g.id));
+                const shown = kids.filter(match);
+                const box = el('div', { className: 'fam' + (kids.length ? '' : ' empty') }, [
+                    el('div', { className: 'fam-head' }, [el('span', { textContent: `${g.icon} ${g.name}` }), el('small', { className: 'muted', textContent: `משפחה · ${kids.length}` })]),
+                    zone(cat.id, g.id, shown),
+                ]);
+                if (q && !shown.length) box.hidden = true;
+                return box;
+            });
+            const open = openCats.has(cat.id) || !!q;
+            const det = el('details', { className: 'catbox', open }, [
+                el('summary', {}, [el('span', { className: 'catbox-ic', textContent: cat.icon }), el('b', { textContent: cat.name }),
+                    el('small', { className: 'muted', textContent: `${inCat.length} אפליקציות${state.groups.some(g => inCat.some(a => a.placements.some(p => p.category === cat.id && p.group === g.id))) ? ' · עם משפחות' : ''}` }),
+                    el('span', { className: 'uapp-chev', textContent: '⌄', ariaHidden: 'true' })]),
+                el('div', { className: 'catbox-body' }, [el('div', { className: 'zone-lbl muted small', textContent: 'ראשי' }), zone(cat.id, null, main), ...fams]),
+            ]);
+            det.dataset.cat = cat.id;
+            det.addEventListener('toggle', () => { det.open ? openCats.add(cat.id) : openCats.delete(cat.id); });
+            if (q && !inCat.some(match)) det.hidden = true;
+            return det;
+        });
+        const search = el('input', { type: 'search', value: structQ, placeholder: 'חיפוש אפליקציה…', ariaLabel: 'חיפוש אפליקציה' });
+        search.addEventListener('input', () => { structQ = search.value; const pos = search.selectionStart; render(); const s2 = root.querySelector('.struct input[type=search]'); s2?.focus(); s2?.setSelectionRange(pos, pos); });
+        return el('section', { className: 'struct' }, [
+            el('div', { className: 'struct-head' }, [el('h3', { textContent: '🌳 המבנה' }),
+                el('small', { className: 'muted', textContent: `${apps.length} אפליקציות · ${state.categories.length} קטגוריות · ${state.groups.length} משפחות` })]),
+            el('p', { className: 'muted small', textContent: 'גוררים אפליקציה בידית ⋮⋮ לראשי של קטגוריה או למשפחה. לחיצה על אפליקציה — ההגדרות שלה.' }),
+            search, ...cards,
+        ]);
+    }
+
+    // גרירה במצביע — עובדת גם במגע (HTML5 drag לא עובד בטלפון)
+    let drag = null, dragMoved = false;
+    function startDrag(e, chipEl) {
+        e.preventDefault();
+        dragMoved = false;
+        const r = chipEl.getBoundingClientRect();
+        const ghost = chipEl.cloneNode(true);
+        ghost.className += ' ghost';
+        Object.assign(ghost.style, { width: r.width + 'px', left: r.left + 'px', top: r.top + 'px' });
+        document.body.append(ghost);
+        drag = { chipEl, ghost, dx: e.clientX - r.left, dy: e.clientY - r.top, over: null };
+        root.classList.add('dragging');
+        chipEl.classList.add('drag-src');
+        // קטגוריות סגורות נפתחות כשעוברים מעליהן
+        addEventListener('pointermove', onDrag);
+        addEventListener('pointerup', endDrag, { once: true });
+        addEventListener('pointercancel', endDrag, { once: true });
+    }
+    function onDrag(e) {
+        if (!drag) return;
+        dragMoved = true;
+        drag.ghost.style.left = (e.clientX - drag.dx) + 'px';
+        drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
+        const under = document.elementFromPoint(e.clientX, e.clientY);
+        const z = under?.closest('[data-drop]');
+        if (drag.over !== z) { drag.over?.classList.remove('over'); z?.classList.add('over'); drag.over = z; }
+        const cb = under?.closest('details.catbox');
+        if (cb && !cb.open) { cb.open = true; }
+        // גלילה אוטומטית ליד הקצוות
+        if (e.clientY < 70) scrollBy(0, -12); else if (e.clientY > innerHeight - 70) scrollBy(0, 12);
+    }
+    async function endDrag() {
+        removeEventListener('pointermove', onDrag);
+        if (!drag) return;
+        const { chipEl, ghost, over } = drag;
+        drag = null;
+        ghost.remove(); chipEl.classList.remove('drag-src'); root.classList.remove('dragging'); over?.classList.remove('over');
+        setTimeout(() => { dragMoved = false; }, 0);
+        if (!over || over.dataset.drop === chipEl.dataset.from) return;
+        const app = state.apps.find(a => a.id === chipEl.dataset.app);
+        const [fc, fg] = chipEl.dataset.from.split('|'), [tc, tg] = over.dataset.drop.split('|');
+        // "אחר" — לא קטגוריה אמיתית (מי שאין לה מקום); לשם לא גוררים
+        if (tc === 'other') return P().toast('"אחר" הוא למי שאין לה קטגוריה — גוררים לקטגוריה אמיתית');
+        const list = app.placements.map(p => ({ category: p.category, group: p.group || null }))
+            .filter(p => p.category !== 'other' && !(p.category === fc && (p.group || '') === fg));
+        if (!list.some(p => p.category === tc && (p.group || '') === tg)) list.push({ category: tc, group: tg || null });
+        openCats.add(tc);
+        const cat = state.categories.find(c => c.id === tc), grp = tg && state.groups.find(g => g.id === tg);
+        await act('admin_placements_set', { id: app.id, placements: list },
+            `${app.name} → ${cat ? cat.name : tc}${grp ? ' › ' + grp.name : ''}`);
+    }
+
+    // הגדרות אפליקציה — בחלון; מתרענן אחרי כל שמירה (reload)
+    let appDlg = null;
+    function openAppSettings(id) {
+        const app = state.apps.find(a => a.id === id);
+        appDlg = dialog(app.name, 'איפה מוצגת, נראות, חיבור ודשבורד פיתוח');
+        appDlg.id = id;
+        appDlg.d.addEventListener('close', () => { appDlg = null; });
+        fillAppDlg();
+    }
+    function fillAppDlg() {
+        const app = state.apps.find(a => a.id === appDlg.id);
+        if (!app) return appDlg.d.close();
+        openCards.add(app.id);
+        const card = appCard(app);
+        card.firstChild.remove();   // הכותרת — כבר בראש החלון
+        appDlg.body.replaceChildren(card);
     }
 
     // אייקון מצויר לקטגוריה / קבוצה: האייקון של אחת האפליקציות (icon_svg). ריק — האימוג'י.
