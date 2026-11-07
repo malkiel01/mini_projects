@@ -30,6 +30,13 @@ function devboard_migrate(): void
             prefix     TEXT NOT NULL,
             enabled_at TEXT NOT NULL
         );
+        -- מטלה שהמפתח הסתיר ממשתמש מסוים (ברירת המחדל: כל עוקב רואה כל מטלה)
+        CREATE TABLE IF NOT EXISTS devboard_hidden (
+            app_id  TEXT NOT NULL,
+            code    TEXT NOT NULL,
+            user_id INTEGER NOT NULL,
+            PRIMARY KEY (app_id, code, user_id)
+        );
         CREATE TABLE IF NOT EXISTS devboard_followers (
             app_id   TEXT NOT NULL,
             user_id  INTEGER NOT NULL,
@@ -166,3 +173,86 @@ function devboard_push_follower(string $appId, array $user, string $code, string
         error_log('devboard push: ' . $e->getMessage());
     }
 }
+
+// ── שלוש הרמות: 📋 משימות (לכולם, חוץ ממה שהוסתר), 👥 משתמשים ו-📜 לוגים (למפתח בלבד) ──────────
+
+/** הקודים שהוסתרו מהמשתמש באפליקציה. */
+function devboard_hidden_for(string $appId, int $userId): array
+{
+    devboard_migrate();
+    $st = db()->prepare('SELECT code FROM devboard_hidden WHERE app_id = ? AND user_id = ?');
+    $st->execute([$appId, $userId]);
+    return $st->fetchAll(PDO::FETCH_COLUMN);
+}
+
+/** המפתח: הסתרה / החזרה של מטלה ממשתמש. */
+function devboard_hide(string $appId, array $b): array
+{
+    devboard_migrate();
+    $code = (string)($b['code'] ?? '');
+    $uid = (int)($b['user_id'] ?? 0);
+    devloop_task_get($code);
+    $st = db()->prepare('SELECT 1 FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    if (!$st->fetchColumn()) throw new ApiError('המשתמש לא נמצא', 404);
+    db()->prepare(!empty($b['hidden']) ? 'INSERT OR IGNORE INTO devboard_hidden (app_id, code, user_id) VALUES (?,?,?)'
+                                       : 'DELETE FROM devboard_hidden WHERE app_id = ? AND code = ? AND user_id = ?')
+        ->execute([$appId, $code, $uid]);
+    return ['ok' => true];
+}
+
+/**
+ * 👥 המשתמשים — העוקבים, וכל מי שנכנס לאפליקציה ב-90 הימים האחרונים (visits, מהשער): כניסות, אחרונה,
+ * מכשיר, הערות והמלצות בדשבורד, ומה הוסתר ממנו.
+ */
+function devboard_users(string $appId): array
+{
+    $b = devboard_all()[$appId];
+    $since = gmdate('Y-m-d\TH:i:s\Z', time() - 90 * 86400);
+    $st = db()->prepare('SELECT user_id, COUNT(*) n, MAX(at) last_at FROM visits WHERE app = ? AND user_id IS NOT NULL AND at > ? GROUP BY user_id');
+    $st->execute([$appId, $since]);
+    $visits = [];
+    foreach ($st as $r) $visits[(int)$r['user_id']] = $r;
+    $dev = [];
+    foreach (devloop_db()->query("SELECT user_id, COUNT(*) n, MAX(at) last_at FROM dev_comments WHERE author = 'user' GROUP BY user_id") as $r) $dev[(int)$r['user_id']]['comments'] = $r;
+    foreach (devloop_db()->query('SELECT created_by, COUNT(*) n FROM dev_tasks GROUP BY created_by') as $r) $dev[(int)$r['created_by']]['tasks'] = (int)$r['n'];
+    $hidden = [];
+    $st = db()->prepare('SELECT user_id, code FROM devboard_hidden WHERE app_id = ?');
+    $st->execute([$appId]);
+    foreach ($st as $r) $hidden[(int)$r['user_id']][] = $r['code'];
+    $ids = array_unique(array_merge($b['followers'], array_keys($visits), array_keys($dev)));
+    if (!$ids) return ['users' => []];
+    $out = [];
+    foreach (db()->query('SELECT id, display_name, username, role, status FROM users WHERE id IN (' . implode(',', array_map('intval', $ids)) . ')') as $u) {
+        $id = (int)$u['id'];
+        $dv = db()->prepare('SELECT device FROM visits WHERE app = ? AND user_id = ? ORDER BY id DESC LIMIT 1');
+        $dv->execute([$appId, $id]);
+        $out[] = ['id' => $id, 'name' => $u['display_name'] ?: $u['username'], 'role' => $u['role'], 'status' => $u['status'],
+            'follower' => in_array($id, $b['followers'], true),
+            'visits' => (int)($visits[$id]['n'] ?? 0), 'last_visit' => $visits[$id]['last_at'] ?? null, 'device' => $dv->fetchColumn() ?: '',
+            'comments' => (int)($dev[$id]['comments']['n'] ?? 0), 'last_comment' => $dev[$id]['comments']['last_at'] ?? null,
+            'tasks' => $dev[$id]['tasks'] ?? 0, 'hidden' => $hidden[$id] ?? []];
+    }
+    usort($out, fn($a, $b) => strcmp((string)($b['last_visit'] ?? $b['last_comment'] ?? ''), (string)($a['last_visit'] ?? $a['last_comment'] ?? '')));
+    return ['users' => $out];
+}
+
+/** 📜 הלוגים של האפליקציה — יומן האבחון של הפלטפורמה (diag_log: ניווט, שגיאות דפדפן, התקנות), עד 300 שורות. */
+function devboard_logs(string $appId, array $q): array
+{
+    require_once __DIR__ . '/diag.php';
+    \Platform\Diag\ensure(db());
+    $where = ['d.app = ?'];
+    $args = [$appId];
+    if (($q['q'] ?? '') !== '') {
+        $where[] = '(d.event LIKE ? OR d.path LIKE ? OR d.info LIKE ? OR u.display_name LIKE ?)';
+        array_push($args, ...array_fill(0, 4, '%' . (string)$q['q'] . '%'));
+    }
+    if (($q['user'] ?? '') !== '') { $where[] = 'd.user_id = ?'; $args[] = (int)$q['user']; }
+    $st = db()->prepare('SELECT d.id, d.at, d.event, d.user_id, d.device, d.path, d.info, u.display_name AS user_name
+                           FROM diag_log d LEFT JOIN users u ON u.id = d.user_id
+                          WHERE ' . implode(' AND ', $where) . ' ORDER BY d.id DESC LIMIT 300');
+    $st->execute($args);
+    return ['rows' => array_map(fn($r) => ['info' => json_decode((string)$r['info'], true) ?: []] + $r, $st->fetchAll())];
+}
+

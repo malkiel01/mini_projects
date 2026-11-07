@@ -42,3 +42,18 @@ button.chip { cursor: pointer; background: var(--surface); }
 .db-toast { position: fixed; inset-inline: var(--s3); bottom: var(--s4); margin: 0 auto; max-width: 420px; z-index: 50; padding: var(--s2) var(--s3);
     border-radius: var(--r); background: var(--ink); color: var(--bg); text-align: center; box-shadow: var(--shadow-pop); }
 .db-toast.bad { background: var(--danger); color: #fff; }
+
+/* רמות: 📋 משימות · 👥 משתמשים · 📜 לוגים (למפתח) */
+.db-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.db-tabs button { min-height: 38px; border: 0; border-radius: 8px; background: none; cursor: pointer; font-size: .9rem; }
+.db-tabs button[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); }
+#users, #logs { display: grid; gap: var(--s2); }
+.db-users { list-style: none; display: grid; gap: var(--s2); }
+.db-user { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.db-user > summary { list-style: none; }
+.db-user > summary::-webkit-details-marker { display: none; }
+.db-user-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.db-hide-list { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.db-hide-list label { display: flex; gap: 6px; align-items: baseline; }
+.db-hide-list code { font-size: .78rem; white-space: nowrap; }
+#logs input[type=search] { flex: 1; min-height: var(--tap); padding: 6px var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
