@@ -323,3 +323,24 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .quote-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s2); }
 .quote-head .price { font-size: 1.5rem; }
 .chart-tools .chip, .toolbar .chip { min-height: 28px; }
+
+/* ===== ציור על הגרף (spec-stage-a 7; בטלפון — סרגל צף מעל הניווט) ===== */
+.draw-slot { position: sticky; bottom: calc(56px + env(safe-area-inset-bottom) + var(--s2)); z-index: 5; }
+@media (min-width: 961px) { .draw-slot { bottom: var(--s2); } }
+.draw-bar { display: grid; gap: 6px; margin-bottom: var(--s2); padding: 6px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 6px 20px rgba(10, 15, 30, .18); }
+.draw-row { display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.draw-row::-webkit-scrollbar { display: none; }
+.draw-row.wrap { flex-wrap: wrap; overflow: visible; }   /* האפשרויות — שוברות שורה, כדי שביטול/שחזור/מחיקה לא ייעלמו מהצד */
+.draw-btn { flex: none; display: grid; place-items: center; inline-size: 40px; block-size: 40px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--surface); font-size: 1.05rem; cursor: pointer; }
+.draw-btn[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.draw-btn:disabled { opacity: .4; cursor: default; }
+.draw-btn.swatch { inline-size: 32px; block-size: 32px; border-radius: 50%; background: var(--c); border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--line); }
+.draw-btn.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+.draw-width { flex: none; inline-size: auto; min-height: 36px; }
+.draw-only { flex: none; display: flex; align-items: center; gap: 4px; font-size: .8rem; white-space: nowrap; min-height: 40px; padding: 0 4px; }
+.draw-only input { inline-size: 18px; min-height: 18px; accent-color: var(--brand); }
+.draw-hint { margin: 0; font-size: .78rem; color: var(--muted); }
+.chart-box.drawing { cursor: crosshair; box-shadow: 0 0 0 2px var(--brand); }
