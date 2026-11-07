@@ -35,6 +35,7 @@ require_once __DIR__ . '/lib/email.php';
 require_once __DIR__ . '/lib/gate.php';
 require_once __DIR__ . '/lib/diag.php';
 require_once __DIR__ . '/lib/invites.php';
+require_once __DIR__ . '/lib/devboard.php';
 
 try {
     $action = $_GET['action'] ?? '';
@@ -118,7 +119,8 @@ function action_apps(): never
     $user = current_user();
     if (!$user) throw new ApiError('נדרשת כניסה', 401);
 
-    json_out(visible_for($user));
+    // 🛠️ דשבורדי הפיתוח שהמשתמש רואה (מפתח או עוקב) — שורה בראש דף הבית
+    json_out(visible_for($user) + ['devboards' => $user['status'] === 'active' ? devboards_for($user) : []]);
 }
 
 function action_login(array $body): never

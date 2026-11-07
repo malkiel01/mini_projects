@@ -1238,13 +1238,13 @@ async function clearFamilyCache() {
 }
 
 async function showApps() {
-    const [{ categories, groups = [], apps, recommended = [] }] = await Promise.all([api('apps'), loadInstalls()]);
+    const [{ categories, groups = [], apps, recommended = [], devboards = [] }] = await Promise.all([api('apps'), loadInstalls()]);
     // אפליקציה יכולה להופיע בכמה מקומות (placements): בכל קטגוריה — בראשי או בתוך קבוצה
     const at = (a, cat, grp) => (a.placements || []).find(p => p.category === cat && (p.group ?? null) === grp);
     currentApps = apps;
     relatedRotate(apps);
     if (takeHandoffRequest()) return;
-    if (!apps.length) {
+    if (!apps.length && !devboards.length) {
         showMessage('עוד אין כאן אפליקציות', 'המנהל עדיין לא הקצה לכם אפליקציות. כשיקצה — הן יופיעו כאן.', '📭');
         return;
     }
@@ -1339,6 +1339,15 @@ async function showApps() {
             }));
         parts.push(seg);
     }
+    // 🛠️ בפיתוח: הדשבורדים שהמנהל פתח לי (lib/devboard.php) — מפתח או עוקב
+    if (devboards.length) parts.push(el('section', { className: 'recs devboards' }, [
+        el('h2', { className: 'recs-title', textContent: '🛠️ בפיתוח' }),
+        el('div', { className: 'rec-row' }, devboards.map(d => el('a', { className: 'rec', href: `platform/devboard.php?app=${encodeURIComponent(d.app)}` }, [
+            appIcon({ id: d.app, icon: d.icon, icon_svg: d.icon_svg }),
+            el('span', { className: 'rec-name', textContent: d.name }),
+            el('span', { className: 'rec-sub', textContent: d.role === 'dev' ? 'דשבורד' : '👁️ עוקב' }),
+        ]))),
+    ]));
     if (recRow) parts.push(recRow);
     if (tabs) parts.push(tabs);
     view.replaceChildren(...parts, ...sections, empty);
