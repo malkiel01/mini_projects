@@ -232,8 +232,11 @@ signals(candles, params) → [{t, side, entry, stop, target}]   — כל האו�
   נבדק גם הוא (מהפתיחה שלו).
 - עמלה והחלקה — פרמטר אחד לכל שוק (ברירת מחדל קבועה, המנהל משנה).
 - התוצאה: מספר אותות N, אחוז הצלחה, תוחלת ב-R, ירידה מרבית, תקופה שנבדקה.
-- התוצאה נשמרת (`backtests`), ומחושבת מחדש **לכל היותר פעם ביום** לכל מפתח, או מיד כשגרסת השיטה או הפרמטרים
-  השתנו. רצה בשרת, בבקשה אחת, עם **תקרת זמן של 20 שניות ותקרה של 100,000 נרות** (✅5). חריגה מהזמן → "הבדיקה לאחור
+- התוצאה נשמרת (`backtests`). **חישוב מחדש רק לפי דרישה** — כשמשתמש פותח כרטיס ניתוח (או ריצת התראות צריכה אותה),
+  וחלף יותר מיום מאז החישוב הקודם, או שגרסת השיטה או הפרמטרים השתנו. **אין חישוב מחדש מתוזמן.**
+- **חישוב מצטבר** כשהשיטה והפרמטרים לא השתנו: התוצאה שומרת את מצב המנוע בסוף הטווח (`state(json)` — ערכי האינדיקטורים,
+  אות פתוח אם יש, הנר האחרון), וממשיכה **רק על הנרות החדשים** מאז — בלי למשוך שוב את כל ההיסטוריה. שיטה ש-`meta()` שלה
+  לא תומך במצב מצטבר — חישוב מלא, בכפוף לתקציב (ה). בבדיקות: מצטבר = מלא, על אותו סט. רצה בשרת, בבקשה אחת, עם **תקרת זמן של 20 שניות ותקרה של 100,000 נרות** (✅5). חריגה מהזמן → "הבדיקה לאחור
   לא הושלמה", בלי אחוז.
 
 ### 6.3 רמת הוודאות — ההגדרה המדויקת
@@ -381,7 +384,7 @@ provider_usage    cred_id, day, calls
 watchlist         user_id, asset, sort, preferred_provider
 candles           provider, symbol, tf, t, o, h, l, c, v, fetched_at, cred_scope   — (3.6)
 methods           id, enabled, markets(json), timeframes(json), params(json), note
-backtests         method_id, method_version, asset, tf, params_hash, n, wins, expectancy_r, max_dd, from_t, to_t, computed_at
+backtests         method_id, method_version, provider, asset, tf, params_hash, cred_scope, n, wins, expectancy_r, max_dd, from_t, to_t, state(json), computed_at
 drawings          id, user_id, asset, tf|null, kind, points(json), style(json), updated_at
 alerts            id, user_id, asset, tf, side, kind(method|blend|price), method_id|null, level|null,
                   status(active|paused|expired), last_state, last_fired_at, expires_at
