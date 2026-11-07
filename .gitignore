@@ -18,6 +18,7 @@ kol-maroko/data/secrets.json
 mailbox/data/*.sqlite*
 mailbox/data/secret.key
 mailbox/data/cache/
+trading-strategies/data/*.sqlite*
 
 # הגשר החי של "מטלות לקלוד" — קישור הצ׳אט לערוץ (אסימון!), הודעות ממתינות ויומן המאזין
 .claude/board-link.json
