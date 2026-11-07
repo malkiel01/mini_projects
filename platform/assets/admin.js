@@ -50,12 +50,9 @@ window.PlatformAdmin = (() => {
         const n = pendingCount();
         const tabs = el('div', { className: 'admin-tabs', role: 'tablist' }, [
             ['users', '👥', 'משתמשים', n],
-            ['usage', '📊', 'שימוש', 0],
             ['catalog', '🗂️', 'אפליקציות', 0],
-            ['plugins', '🧩', 'תוספים', 0],
-            ['sso', '🔗', 'חיבורים', 0],
-            ['diag', '📜', 'יומן', 0],
-            ['probe', '🩺', 'שרת', 0],
+            ['usage', '📊', 'שימוש', 0],
+            ['system', '⚙️', 'מערכת', 0],
         ].map(([id, icon, label, count]) => {
             const b = button('', () => { tab = id; render(); }, tab === id ? 'active' : '');
             // בטלפון האייקון מוסתר — ארבע לשוניות בשורה אחת.
@@ -66,8 +63,22 @@ window.PlatformAdmin = (() => {
             return b;
         }));
         const body = tab === 'users' ? renderUsers() : tab === 'usage' ? renderUsage()
-            : tab === 'catalog' ? renderCatalog() : tab === 'plugins' ? renderPlugins() : tab === 'sso' ? renderSso() : tab === 'diag' ? renderDiag() : renderProbe();
+            : tab === 'catalog' ? renderCatalog() : renderSystem();
         root.replaceChildren(el('div', { className: 'admin' }, [tabs, body]));
+    }
+
+    // ⚙️ מערכת: הגדרות ההרשמה וההתראות, ומה שלא נוגעים בו כל יום — תוספים, חיבורים, יומן, שרת
+    let sysTab = 'settings';
+    function renderSystem() {
+        const SYS = [['settings', '⚙️ הגדרות'], ['plugins', '🧩 תוספים'], ['sso', '🔗 חיבורים'], ['diag', '📜 יומן'], ['probe', '🩺 שרת']];
+        const chips = el('div', { className: 'sys-tabs', role: 'tablist' }, SYS.map(([id, label]) => {
+            const b = button(label, () => { sysTab = id; render(); }, `chip-btn${sysTab === id ? ' on' : ''}`);
+            b.role = 'tab'; b.ariaSelected = String(sysTab === id);
+            return b;
+        }));
+        const body = sysTab === 'plugins' ? renderPlugins() : sysTab === 'sso' ? renderSso() : sysTab === 'diag' ? renderDiag()
+            : sysTab === 'probe' ? renderProbe() : el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard()]);
+        return el('div', {}, [chips, body]);
     }
 
     const pendingCount = () => state.users.filter(u => u.status === 'pending').length;
@@ -131,7 +142,7 @@ window.PlatformAdmin = (() => {
         }
         drawList();
 
-        return el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard(), invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
+        return el('div', {}, [invitesCard(), seg, el('div', { className: 'toolbar' }, [search, sortSel]), list]);
     }
 
     // 🎁 הסל של מי שנרשם לבד: נפתח לו מיד כשהחשבון פעיל (אחרי אימות המייל, או אחרי האישור כשהוא נדרש).
@@ -538,22 +549,22 @@ window.PlatformAdmin = (() => {
 
         const body = [cells];
         if (u.must_change) body.push(el('p', { className: 'note', textContent: '🔑 קיבל/ה סיסמה זמנית — יתבקש/תתבקש לבחור סיסמה חדשה בכניסה הבאה.' }));
+        // מקופל — מה שלא צריך כל פעם
+        const fold = (title, ...kids) => el('details', { className: 'fold' }, [el('summary', { textContent: title }), ...kids]);
 
         if (u.self) {
             body.push(el('p', { className: 'muted small', textContent: 'זה החשבון שלך. את הסיסמה מחליפים מהתפריט האישי (האווטאר למעלה).' }));
         } else {
-            body.push(el('div', { className: 'sheet-sec', textContent: 'פעולות' }), el('div', { className: 'tiles' }, actionTiles(u)));
-            if (u.status !== 'pending') body.push(passwordBox(u));
-            if (u.status !== 'pending') body.push(el('div', { className: 'sheet-sec', textContent: 'שימוש באפליקציות · 30 יום' }), userUsage(u));
-            if (u.sso?.length) body.push(el('div', { className: 'sheet-sec', textContent: 'כניסה מאוחדת — אישר/ה ל' }), userSso(u));
-            if (u.status === 'active' && u.role !== 'admin') {
-                body.push(el('div', { className: 'sheet-sec', textContent: 'מה הוא/היא רואה' }), grantsEditor(u));
-            } else if (u.role === 'admin') {
-                body.push(el('p', { className: 'muted small', textContent: 'מנהל רואה את כל האפליקציות — אין צורך בהרשאות.' }));
-            }
+            if (u.status === 'pending') body.push(el('div', { className: 'tiles' }, actionTiles(u)));
+            // העיקר: אילו אפליקציות הוא רואה, ובתוך כל אחת — מה הוא רואה בה
+            if (u.status === 'active' && u.role !== 'admin') body.push(userApps(u));
+            else if (u.role === 'admin') body.push(el('p', { className: 'muted small', textContent: 'מנהל רואה את כל האפליקציות ואת כל הדשבורדים — אין צורך בהרשאות.' }));
+            if (u.status !== 'pending') body.push(fold('📊 שימוש · 30 יום', userUsage(u)));
+            if (u.devices?.length) body.push(fold('📱 מכשירים — מה מותקן', userDevices(u)));
+            if (u.sso?.length) body.push(fold('🔗 כניסה מאוחדת', userSso(u)));
+            if (u.status !== 'pending') body.push(fold('🔑 סיסמה, ניהול וחסימה', el('div', { className: 'tiles' }, actionTiles(u)), passwordBox(u)));
         }
-
-        if (u.devices?.length) body.push(el('div', { className: 'sheet-sec', textContent: 'מכשירים — מה מותקן' }), userDevices(u));
+        if (u.self && u.devices?.length) body.push(fold('📱 מכשירים — מה מותקן', userDevices(u)));
 
         sheet.replaceChildren(el('div', { className: 'sheet' }, [
             el('div', { className: 'sheet-head' }, [
@@ -620,6 +631,79 @@ window.PlatformAdmin = (() => {
             el('div', { className: 'sheet-sec', textContent: 'איפוס סיסמה' }),
             el('p', { className: 'muted small', textContent: 'קובעים סיסמה זמנית ומוסרים אותה. בכניסה הבאה המשתמש יחויב לבחור סיסמה משלו.' }),
             el('div', { className: 'toolbar' }, [input, copy, set]),
+        ]);
+    }
+
+    // 📱 האפליקציות של משתמש — מתג לכל אפליקציה (נשמר מיד), ובתוך אפליקציה: מה הוא רואה בה.
+    // "בתוך האפליקציה" הוא רשימה (INSIDE) — יכולת חדשה בעתיד = שורה חדשה כאן ופעולה אחת בשרת.
+    const INSIDE = [
+        {
+            id: 'devboard', label: '🛠️ דשבורד פיתוח',
+            available: app => !!state.devboards?.[app.id],
+            off: '—  הדשבורד כבוי לאפליקציה (מפעילים בלשונית אפליקציות)',
+            on: (app, u) => state.devboards[app.id].followers.includes(u.id),
+            set: (app, u, v) => P().api('admin_devboard_follow', { app: app.id, user: u.id, on: v }),
+            hint: 'עוקב — רואה את המשימות, מעיר ומצרף צילומים. לא משנה כלום.',
+        },
+    ];
+    let appsQuery = '';
+    const openApps = new Set();   // מה שפתוח נשאר פתוח אחרי שמירה
+    function userApps(u) {
+        const g = u.grants;
+        const cats = new Set(Object.keys(g.categories).filter(c => g.categories[c]));
+        const groups = new Set(Object.keys(g.groups || {}).filter(x => g.groups[x]));
+        const apps = { ...g.apps };
+        const via = app => app.placements.some(p => p.group && groups.has(p.group)) ? 'דרך קבוצה'
+            : !app.restricted && app.placements.some(p => cats.has(p.category)) ? 'דרך הקטגוריה' : '';
+        const sees = app => app.id in apps ? apps[app.id] : !!via(app);
+        const listed = state.apps.filter(a => !a.hidden && !a.plugin).sort((a, b) => (sees(b) - sees(a)) || a.name.localeCompare(b.name, 'he'));
+        const save = async (msg) => {
+            try { await P().api('admin_grants_set', { id: u.id, categories: [...cats], groups: [...groups], apps }); P().toast(msg); }
+            catch (err) { P().toast('⚠️ ' + err.message); }
+            await reload();
+        };
+        const list = el('ul', { className: 'uapps' });
+        function draw() {
+            const q = appsQuery.trim().toLowerCase();
+            list.replaceChildren(...listed.filter(a => !q || a.name.toLowerCase().includes(q)).map(app => {
+                const on = sees(app);
+                const sw = el('input', { type: 'checkbox', className: 'switch', checked: on, ariaLabel: `${app.name} — רואה` });
+                sw.addEventListener('change', () => {
+                    apps[app.id] = sw.checked;
+                    save(sw.checked ? `✓ ${u.display_name} רואה את ${app.name}` : `${app.name} הוסתרה מ${u.display_name}`);
+                });
+                const src = app.id in apps ? (apps[app.id] ? '' : 'חסום במפורש') : via(app);
+                const inside = INSIDE.map(c => {
+                    if (!c.available(app)) return el('div', { className: 'uin muted small' }, [el('span', { textContent: c.label }), el('span', { textContent: c.off })]);
+                    const box = el('input', { type: 'checkbox', className: 'switch', checked: c.on(app, u) });
+                    box.addEventListener('change', async () => {
+                        try { await c.set(app, u, box.checked); P().toast(box.checked ? `✓ ${c.label}: ${u.display_name} עוקב` : `${c.label}: הוסר`); }
+                        catch (err) { P().toast('⚠️ ' + err.message); box.checked = !box.checked; }
+                        await reload();
+                    });
+                    return el('label', { className: 'uin' }, [el('span', {}, [el('b', { textContent: c.label }), el('small', { className: 'muted', textContent: ' · ' + c.hint })]), box]);
+                });
+                const insideOn = INSIDE.filter(c => c.available(app) && c.on(app, u)).map(c => c.label);
+                const det = el('details', { className: 'uapp' + (on ? '' : ' off'), open: openApps.has(app.id) }, [
+                    el('summary', {}, [appIc(app.id), el('span', { className: 'uapp-tx' }, [
+                        el('b', { textContent: app.name }),
+                        el('small', { className: 'muted', textContent: [on ? 'רואה' : 'לא רואה', src, ...insideOn].filter(Boolean).join(' · ') }),
+                    ]), el('span', { className: 'uapp-chev', textContent: '⌄', ariaHidden: 'true' })]),
+                    el('div', { className: 'uapp-body' }, [el('div', { className: 'sheet-sec', textContent: 'בתוך האפליקציה' }), ...inside]),
+                ]);
+                det.addEventListener('toggle', () => { det.open ? openApps.add(app.id) : openApps.delete(app.id); });
+                return el('li', {}, [det, sw]);
+            }));
+        }
+        draw();
+        const search = el('input', { type: 'search', value: appsQuery, placeholder: 'חיפוש אפליקציה…', ariaLabel: 'חיפוש אפליקציה' });
+        search.addEventListener('input', () => { appsQuery = search.value; draw(); });
+        const n = listed.filter(sees).length;
+        return el('div', { className: 'uapps-wrap' }, [
+            el('div', { className: 'sheet-sec', textContent: `📱 אפליקציות · רואה ${n} מתוך ${listed.length}` }),
+            el('p', { className: 'muted small', textContent: 'המתג — האם הוא רואה את האפליקציה (נשמר מיד). לחיצה על אפליקציה — מה הוא רואה בתוכה.' }),
+            ...(listed.length > 8 ? [search] : []), list,
+            el('details', { className: 'fold' }, [el('summary', { textContent: '🗂️ מתקדם: קטגוריות וקבוצות שלמות' }), grantsEditor(u)]),
         ]);
     }
 

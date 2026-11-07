@@ -125,6 +125,21 @@ function admin_devboard_set(array $body): never
     json_out(['ok' => true, 'devboards' => devboard_all()]);
 }
 
+/** המנהל, ממסך המשתמש: הוספה / הסרה של עוקב אחד בדשבורד של אפליקציה. */
+function admin_devboard_follow(array $body): never
+{
+    $id = (string)($body['app'] ?? '');
+    if (!isset(devboard_all()[$id])) throw new ApiError('הדשבורד כבוי לאפליקציה הזו', 409);
+    $uid = (int)($body['user'] ?? 0);
+    $st = db()->prepare('SELECT 1 FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    if (!$st->fetchColumn()) throw new ApiError('המשתמש לא נמצא', 404);
+    db()->prepare(!empty($body['on']) ? 'INSERT OR IGNORE INTO devboard_followers (app_id, user_id, added_at) VALUES (?,?,?)'
+                                      : 'DELETE FROM devboard_followers WHERE app_id = ? AND user_id = ? AND ? IS NOT NULL')
+        ->execute([$id, $uid, now_iso()]);
+    json_out(['ok' => true]);
+}
+
 /** מחבר את DevLoop לדשבורד של אפליקציה אחת — לבקשה הנוכחית. */
 function devboard_setup(string $appId): void
 {
