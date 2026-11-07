@@ -1,4 +1,4 @@
-# בדיקות — לא נפרסות (מוחרג ב-deploy.yml), וחסומות ליתר ביטחון.
+# בדיקות — נפרסות לשרת (אין להן החרגה ב-deploy.yml), ולכן חסומות כאן מהדפדפן.
 <IfModule mod_authz_core.c>
     Require all denied
 </IfModule>

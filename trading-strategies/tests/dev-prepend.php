@@ -1,6 +1,7 @@
 <?php
 // פיתוח ובדיקות מקומיות בלבד (php -S): מדמה את השער — PLATFORM_USER לפי הכותרת X-Dev-As או העוגייה dev_as.
-// "none" — בלי זהות, כמו מי שאין לו הרשאה. tests/ מוחרגת מהפריסה, והקובץ הזה לא מגיע לשרת.
+// "none" — בלי זהות, כמו מי שאין לו הרשאה. בשרת הקובץ קיים אבל לא בשימוש: אף .user.ini לא מצביע עליו,
+// ו-tests/.htaccess חוסם גישה ישירה.
 define('TS_DEV', true);
 if ($p = getenv('TS_DB_PATH')) define('TS_DB_PATH', $p);
 $users = [

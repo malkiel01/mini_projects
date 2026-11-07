@@ -55,13 +55,16 @@ function ts_trade_calc(array $t): array
     $net = dec_sub($gross, $fees);
     $closed = dec_cmp($exitQty, $qty) === 0;
 
-    $risk = null; $r = null; $rr = null;
+    $risk = null; $r = null; $rFull = null; $rr = null;
     $stop = $t['planned_stop'] ?? null;
     if ($stop !== null && $stop !== '') {
         $dist = dec_abs(dec_sub($entry, $stop));
         if (dec_sign($dist) > 0) {
             $risk = dec_mul(dec_mul($dist, $qty), $mult);
-            if (dec_sign($risk) > 0) $r = dec_div($net, $risk, 2);
+            if (dec_sign($risk) > 0) {
+                $rFull = dec_div($net, $risk, 10);   // לממוצעים — בלי הטיית עיגול
+                $r = dec_round($rFull, 2);
+            }
             $target = $t['planned_target'] ?? null;
             if ($target !== null && $target !== '') $rr = dec_div(dec_abs(dec_sub($target, $entry)), $dist, 2);
         }
@@ -84,6 +87,7 @@ function ts_trade_calc(array $t): array
         'net' => $net,
         'risk' => $risk,
         'r' => $r,
+        'r_full' => $rFull,
         'rr_planned' => $rr,
         'return_pct' => dec_sign($cost) > 0 && dec_sign($exitQty) > 0 ? dec_div(dec_mul($net, '100'), $cost, 2) : null,
         'pips' => $pips,
@@ -118,7 +122,7 @@ function ts_summary(array $trades): array
     $wins = 0; $rs = [];
     foreach ($trades as $t) {
         if (ts_outcome($t['calc']['net']) === 'win') $wins++;
-        if ($t['calc']['r'] !== null) $rs[] = $t['calc']['r'];
+        if ($t['calc']['r_full'] !== null) $rs[] = $t['calc']['r_full'];
     }
     return ['count' => count($trades), 'win_rate' => ts_pct($wins, count($trades)), 'expectancy_r' => ts_avg($rs)];
 }
@@ -151,7 +155,7 @@ function ts_stats_one(array $trades, string $tz): array
         $c = $t['calc'];
         $o = ts_outcome($c['net']);
         if ($o === 'win') $wins[] = $c['net']; elseif ($o === 'loss') $losses[] = $c['net']; else $be++;
-        if ($c['r'] !== null) $rs[] = $c['r'];
+        if ($c['r_full'] !== null) $rs[] = $c['r_full'];
 
         $streak = $o === 'loss' ? $streak + 1 : 0;
         $maxStreak = max($maxStreak, $streak);

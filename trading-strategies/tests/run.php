@@ -161,5 +161,18 @@ $late['calc'] = ts_trade_calc($late);
 eq(ts_stats([$late], 'Asia/Jerusalem')[0]['breakdown']['month'][0]['key'], '2026-04', 'month by user timezone');
 eq(ts_stats([$late], 'UTC')[0]['breakdown']['month'][0]['key'], '2026-03', 'month in UTC');
 
+// תוחלת R מהערך המלא, לא מ-R מעוגל (ממצא בקרה #1259): R 0.006 ו-0 → ממוצע 0.003 → "0" (ולא 0.01 ו-0 → 0.01)
+$tiny = [];
+foreach (['100.06', '100'] as $k => $exit) {
+    $t = ['id' => 200 + $k, 'currency' => 'USD', 'followed_plan' => null, 'direction' => 'long', 'entry_price' => '100', 'quantity' => '100',
+        'multiplier' => '1', 'entry_fees' => '0', 'planned_stop' => '90', 'planned_target' => null, 'opened_at' => '2026-03-01T10:00:00Z',
+        'market' => 'stocks', 'symbol' => 'X', 'exits' => [ex($exit, '100', '0', '2026-03-0' . ($k + 2) . 'T10:00:00Z')]];
+    $t['calc'] = ts_trade_calc($t);
+    $tiny[] = $t;
+}
+eq([$tiny[0]['calc']['r'], $tiny[0]['calc']['r_full']], ['0.01', '0.006'], 'r rounded for display, r_full exact');
+eq(ts_stats($tiny, 'UTC')[0]['expectancy_r'], '0', 'expectancy from full R');
+eq(ts_summary($tiny)['expectancy_r'], '0', 'card expectancy from full R');
+
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

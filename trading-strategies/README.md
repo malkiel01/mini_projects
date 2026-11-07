@@ -29,7 +29,7 @@ lib/store.php       אסטרטגיות וגרסאות, נכסים, עסקאות,
 lib/calc.php        רווח, R, פיפים וסטטיסטיקה — פונקציות טהורות
 lib/decimal.php     מספרים עשרוניים מדויקים כמחרוזות (בשרת אין bcmath)
 assets/js/decimal.js  אותו דבר בדפדפן (BigInt) — למחשבון ולתצוגה המקדימה
-tests/              run.php (חישובים), api.php (מקצה לקצה), dev-prepend.php (שער מדומה). לא נפרס
+tests/              run.php (חישובים), api.php (מקצה לקצה), dev-prepend.php (שער מדומה). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
 ```
 

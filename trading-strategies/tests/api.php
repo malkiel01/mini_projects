@@ -189,6 +189,23 @@ call('alice', 'instrument_save', ['id' => $optInst, 'currency' => 'USD', 'multip
 eq(call('alice', 'trade', null, ['id' => $r['id']])[1]['trade']['calc']['net'], '221.1', 'instrument edit keeps old trade P/L');
 eq(call('alice', 'instrument_delete', ['id' => $optInst])[0], 422, 'instrument with trades cannot be deleted');
 
+// עריכה של עסקה ישנה לא משנה את ברירות המחדל ב"נכסים שלי" (ממצא בקרה #1259); עסקה חדשה — כן
+$spy = fn() => array_values(array_filter(call('alice', 'instruments')[1]['instruments'], fn($i) => $i['symbol'] === 'SPY 2026-12-18 500C'))[0];
+eq($spy()['multiplier'], '10', 'instrument default before');
+$old = call('alice', 'trade', null, ['id' => $r['id']])[1]['trade'];
+call('alice', 'trade_save', ['id' => $old['id'], 'symbol' => $old['symbol'], 'market' => 'options', 'currency' => 'USD', 'multiplier' => '100',
+    'direction' => 'long', 'option' => $old['option'], 'opened_at' => $old['opened_at'], 'entry_price' => '2.35', 'quantity' => '3',
+    'entry_fees' => '1.95', 'planned_stop' => '1.35', 'exits' => [['exited_at' => '2026-03-06T10:00', 'price' => '3.10', 'quantity' => '3', 'fees' => '1.95']],
+    'went_well' => 'נערך']);
+eq($spy()['multiplier'], '10', 'editing an old trade keeps instrument default');
+eq(call('alice', 'trade', null, ['id' => $old['id']])[1]['trade']['multiplier'], '100', 'edited trade keeps its own multiplier');
+
+// קריפטו: נטו בן 16 ספרות מגיע לדפדפן כמחרוזת מלאה (decimal.js צריך לפרש אותה — tests/decimal-js.mjs)
+[, $r2] = call('alice', 'trade_save', ['symbol' => 'BTC', 'market' => 'crypto', 'currency' => 'USDT', 'direction' => 'long',
+    'opened_at' => '2026-03-07T10:00', 'entry_price' => '0.00012345', 'quantity' => '1000.12345678',
+    'exits' => [['exited_at' => '2026-03-07T11:00', 'price' => '0.00013001', 'quantity' => '1000.12345678']]]);
+eq($r2['trade']['calc']['net'], '0.0065608098764768', 'crypto net with 16 decimals (scenario from review)');
+
 // ── סטטיסטיקה וייצוא ─────────────────────────────────
 [$c, $r] = call('alice', 'stats');
 eq([$c, array_column($r['by_currency'], 'currency')], [200, ['USD', 'USDT']], 'stats per currency');
@@ -196,9 +213,9 @@ eq([$c, array_column($r['by_currency'], 'currency')], [200, ['USD', 'USDT']], 's
 eq([$r['by_currency'][0]['count'], $r['by_currency'][0]['expectancy_r']], [1, '1.46'], 'stats by version');
 eq(call('alice', 'stats', null, ['version_id' => (string)$v2])[1]['by_currency'], [], 'v2 has no trades');
 eq(count(call('alice', 'trades', null, ['from' => '2026-03-05', 'to' => '2026-03-05'])[1]['trades']), 2, 'journal date filter');
-eq(count(call('alice', 'trades', null, ['result' => 'win', 'market' => 'crypto'])[1]['trades']), 1, 'journal result+market filter');
+eq(count(call('alice', 'trades', null, ['result' => 'win', 'market' => 'crypto'])[1]['trades']), 2, 'journal result+market filter (two crypto wins)');
 [$c, $csv] = call('alice', 'export', null, ['format' => 'csv']);
-eq([$c, substr_count($csv, "\n")], [200, 4], 'csv: header + 3 trades');
+eq([$c, substr_count($csv, "\n")], [200, 5], 'csv: header + 4 trades');
 eq(str_starts_with($csv, "\u{FEFF}id,"), true, 'csv BOM for Excel');
 
 // כתיבת טקסט עם נוסחה — מנוטרלת ב-CSV

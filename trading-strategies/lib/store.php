@@ -409,8 +409,11 @@ function ts_option_in(mixed $o, string $tz): ?array
     ];
 }
 
-/** נכס של המשתמש לפי שוק וסמל — נוצר או מתעדכן לערכים האחרונים שהוזנו. מחזיר id. */
-function ts_instrument_upsert(int $uid, array $in, string $tz): array
+/**
+ * נכס של המשתמש לפי שוק וסמל. נוצר אם אין; $defaults — גם מתעדכן לערכים שהוזנו (רק בעסקה חדשה: עריכה של
+ * עסקה ישנה לא דורסת את ברירות המחדל). מחזיר [שורת הנכס, הערכים שהוזנו — multiplier, currency].
+ */
+function ts_instrument_upsert(int $uid, array $in, string $tz, bool $defaults = true): array
 {
     $market = ts_enum($in['market'] ?? '', TS_MARKETS, 'שוק');
     $symbol = strtoupper(ts_text($in['symbol'] ?? '', 40));
@@ -424,12 +427,12 @@ function ts_instrument_upsert(int $uid, array $in, string $tz): array
     $opt = $market === 'options' ? ts_json(ts_option_in($in['option'] ?? null, $tz)) : null;
     $db = ts_db();
     $db->prepare('INSERT INTO instruments (user_id, symbol, market, currency, multiplier, unit_label, option_meta) VALUES (?, ?, ?, ?, ?, ?, ?)
-                  ON CONFLICT(user_id, market, symbol) DO UPDATE SET currency = excluded.currency, multiplier = excluded.multiplier,
-                      unit_label = excluded.unit_label, option_meta = excluded.option_meta')
+                  ON CONFLICT(user_id, market, symbol) DO ' . ($defaults ? 'UPDATE SET currency = excluded.currency, multiplier = excluded.multiplier,
+                      unit_label = excluded.unit_label, option_meta = excluded.option_meta' : 'NOTHING'))
         ->execute([$uid, $symbol, $market, $currency, $mult, $unit, $opt]);
     $st = $db->prepare('SELECT * FROM instruments WHERE user_id = ? AND market = ? AND symbol = ?');
     $st->execute([$uid, $market, $symbol]);
-    return $st->fetch();
+    return [$st->fetch(), ['multiplier' => $mult, 'currency' => $currency]];
 }
 
 function ts_instrument_out(array $i): array
@@ -666,7 +669,7 @@ function ts_trade_save(int $uid, array $in, string $tz): int
     $now = time();
     $db->beginTransaction();
     try {
-        $inst = ts_instrument_upsert($uid, $in, $tz);
+        [$inst, $entered] = ts_instrument_upsert($uid, $in, $tz, $existing === null);
         $vals = [
             'instrument_id' => (int)$inst['id'],
             'strategy_version_id' => $vid,
@@ -675,8 +678,8 @@ function ts_trade_save(int $uid, array $in, string $tz): int
             'entry_price' => $entry,
             'quantity' => $qty,
             'entry_fees' => $entryFees,
-            'multiplier' => $inst['multiplier'],
-            'currency' => $inst['currency'],
+            'multiplier' => $entered['multiplier'],   // מה שהוזן בעסקה — לא ברירת המחדל של הנכס
+            'currency' => $entered['currency'],
             'planned_stop' => $stop,
             'planned_target' => $target,
             'status' => $status,
