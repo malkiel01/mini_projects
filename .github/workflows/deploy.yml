@@ -258,6 +258,7 @@ jobs:
             --exclude='renovation-punchlist/data/store.json' \
             --exclude='renovation-punchlist/data/media/' \
             --exclude='claude-tasks/data/*.sqlite*' \
+            --include='/trading-strategies/data/.htaccess' --exclude='/trading-strategies/data/*' \
             --exclude='creative-suite/dashboard/data/cadence.json' \
             --exclude='recipes-app/data/*.sqlite*' \
             --include='recipes-app/data/media/.htaccess' \
@@ -323,7 +324,6 @@ jobs:
             --exclude='layout-studio/data/*.sqlite*' --exclude='layout-studio/data/files/' \
             --exclude='raster-studio/data/*.sqlite*' --exclude='raster-studio/data/files/' \
             --exclude='mailbox/data/*.sqlite*' --exclude='mailbox/data/secret.key' --exclude='mailbox/data/cache/' --exclude='/mailbox/tests/' \
-            --include='trading-strategies/data/.htaccess' --exclude='trading-strategies/data/*' --exclude='/trading-strategies/tests/' \
             --exclude='family-shopping/.env' --exclude='/family-shopping/tests/' \
             --include='family-shopping/uploads/.htaccess' --exclude='family-shopping/uploads/*' \
             --exclude='*.log' --exclude='error_log' \
