@@ -28,6 +28,7 @@ function ts_identity(): ?array
         'sub' => (string)$id['sub'],
         'name' => mb_substr(trim((string)($id['name'] ?? '')), 0, 120),
         'email' => $email,
+        'platform_admin' => ($id['platform_admin'] ?? false) === true,   // המנהל הראשי (spec-stage-a 1.1)
     ];
 }
 

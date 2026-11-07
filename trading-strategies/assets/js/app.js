@@ -1,6 +1,7 @@
 // אסטרטגיות למסחר — הממשק. אפיון: docs/spec.md, פרק 2.
 // כל טקסט של המשתמש נכנס כ-textContent (לעולם לא innerHTML). אין polling: פנייה לשרת רק בניווט ובשמירה.
 import * as D from './decimal.js';
+import { mountMarket } from './market.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -99,7 +100,7 @@ function setHead(title, sub = '', { back = false, actions = [] } = {}) {
   $('#head-actions').replaceChildren(...actions);
   document.title = title === 'אסטרטגיות למסחר' ? title : `${title} · אסטרטגיות למסחר`;
 }
-$('#back').addEventListener('click', () => (history.length > 1 ? history.back() : (location.hash = '#/strategies')));
+$('#back').addEventListener('click', () => (history.length > 1 ? history.back() : (location.hash = '#/market')));
 
 function setTab(tab) {
   document.querySelectorAll('.bottom-nav a').forEach(a => {
@@ -110,18 +111,35 @@ function setTab(tab) {
 const main = $('#main');
 function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); }
 
+// לשוניות: שוק · יומן · עוד (spec-stage-a 1). "ניתוח" ו"התראות" — ייכנסו עם ה-PR-ים שלהן (פרק 14).
+// היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
+const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
+  more: 'more', instruments: 'more', providers: 'more', admin: 'more' };
+const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
+function journalTabs(active) {
+  return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
+    h('a', { href: '#/' + k, class: 'seg-tab', 'aria-current': k === active ? 'page' : null }, l)));
+}
+
+let M = null;
 async function route() {
-  const [name = 'strategies', id] = location.hash.replace(/^#\/?/, '').split('/');
-  const tabOf = { strategy: 'strategies', instruments: 'more' };
-  setTab(tabOf[name] || name);
+  const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
+  const id = rest.join('/');
+  M?.teardown();
+  setTab(TAB_OF[name] || 'market');
   render(h('p', { class: 'loading' }, 'טוען…'));
   try {
     if (name === 'strategy' && id) await viewStrategy(+id);
+    else if (name === 'strategies') await viewStrategies();
     else if (name === 'journal') await viewJournal();
     else if (name === 'stats') await viewStats();
     else if (name === 'more') await viewMore();
     else if (name === 'instruments') await viewInstruments();
-    else await viewStrategies();
+    else if (name === 'providers') await M.viewProviders();
+    else if (name === 'admin') await M.viewAdmin();
+    else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
+    else await M.viewMarket();
+    if (['strategies', 'journal', 'stats'].includes(name)) main.prepend(journalTabs(name));
   } catch (e) {
     render(h('p', { class: 'error', role: 'alert' }, e.message));
   }
@@ -982,6 +1000,10 @@ async function viewMore() {
       err, h('div', {}, h('button', { class: 'btn primary', type: 'submit' }, 'שמירת ההגדרות'))),
     h('h2', { class: 'sec-title' }, 'נתונים'),
     h('ul', { class: 'list' },
+      h('li', {}, h('a', { class: 'use-row', href: '#/providers' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🔌'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
+      ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, ספקים לחלוקה, מנהלים, מאגר הנתונים')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'נכסים שלי'), h('small', {}, 'שוק, מטבע ומכפיל לכל נכס — נבנה לבד מהעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=json', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⬇️'),
@@ -1040,6 +1062,8 @@ function editInstrument(i) {
     render(h('p', { class: 'error', role: 'alert' }, e.message));
     return;
   }
-  if (!location.hash) history.replaceState(null, '', '#/strategies');
+  M = mountMarket({ h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME });
+  M.setRoute(route);
+  if (!location.hash) history.replaceState(null, '', '#/market');
   route();
 })();

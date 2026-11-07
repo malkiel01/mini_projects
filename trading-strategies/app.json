@@ -3,9 +3,10 @@
   "name": "אסטרטגיות למסחר",
   "icon": "📈",
   "icon_svg": "assets/icon.svg",
-  "description": "בניית ותיעוד אסטרטגיות מסחר, יומן עסקאות וסטטיסטיקה — לתכנון וניתוח בלבד, בלי חיבור לברוקר.",
+  "description": "גרפים מספקי נתונים, בניית ותיעוד אסטרטגיות מסחר, יומן עסקאות וסטטיסטיקה — לתכנון וניתוח בלבד, בלי חיבור לברוקר.",
   "category": "finance",
   "entry": "index.html",
-  "version": "1.0",
-  "gate": true
+  "version": "1.1",
+  "gate": true,
+  "restricted": true
 }

@@ -135,4 +135,95 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 2) {
+        // שלב א' (spec-stage-a.md): מנהלים, ספקי נתונים, מעקב, תקרות. הנרות — במסד נפרד (lib/cache.php)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן
+            CREATE TABLE app_roles (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('admin')),
+                granted_by INTEGER NOT NULL,
+                granted_at INTEGER NOT NULL
+            );
+            CREATE TABLE admin_log (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                action TEXT NOT NULL,
+                target TEXT NOT NULL DEFAULT '',
+                at INTEGER NOT NULL
+            );
+            CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+            -- הגדרות מנהל לכל מתאם (3.2): מופעל, ודריסות לתקרות
+            CREATE TABLE providers (
+                id TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                overrides TEXT NOT NULL DEFAULT '{}'
+            );
+            -- מפתחות (3.3–3.4): owner=user — ספק משלי; owner=admin — ספק לחלוקה (ב). secret — מוצפן תמיד
+            CREATE TABLE provider_creds (
+                id INTEGER PRIMARY KEY,
+                owner TEXT NOT NULL CHECK (owner IN ('user','admin')),
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                provider_id TEXT NOT NULL,
+                secret TEXT NOT NULL,
+                last4 TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                last_test_at INTEGER,
+                last_test_ok INTEGER
+            );
+            CREATE UNIQUE INDEX creds_user_provider ON provider_creds(user_id, provider_id) WHERE owner = 'user';
+            CREATE TABLE provider_grants (
+                cred_id INTEGER NOT NULL REFERENCES provider_creds(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                daily_limit INTEGER NOT NULL,
+                PRIMARY KEY (cred_id, user_id)
+            );
+            -- שימוש לפי יום: key = "cred:<id>" או "provider:<id>" (ספק בלי מפתח); user_id 0 = סך הכול
+            CREATE TABLE provider_usage (
+                key TEXT NOT NULL,
+                user_id INTEGER NOT NULL DEFAULT 0,
+                day TEXT NOT NULL,
+                calls INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (key, user_id, day)
+            );
+            CREATE TABLE watchlist (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                asset TEXT NOT NULL,
+                sort INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, asset)
+            );
+            -- הספק המועדף לכל סימול (2): norm = סימול מנורמל, בלי ספק
+            CREATE TABLE symbol_prefs (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                norm TEXT NOT NULL,
+                provider_id TEXT NOT NULL,
+                PRIMARY KEY (user_id, norm)
+            );
+            -- תקרת בקשות הנתונים לדקה (3.5, ✅3)
+            CREATE TABLE rate_hits (
+                user_id INTEGER NOT NULL,
+                minute INTEGER NOT NULL,
+                hits INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, minute)
+            );
+            PRAGMA user_version = 2;
+            COMMIT;
+            SQL);
+    }
+}
+
+/** הגדרה כללית של האפליקציה (טבלת settings) */
+function ts_setting(string $k, ?string $default = null): ?string
+{
+    $st = ts_db()->prepare('SELECT v FROM settings WHERE k = ?');
+    $st->execute([$k]);
+    $v = $st->fetchColumn();
+    return $v === false ? $default : (string)$v;
+}
+
+function ts_setting_set(string $k, string $v): void
+{
+    ts_db()->prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')->execute([$k, $v]);
 }
