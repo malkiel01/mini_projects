@@ -10,6 +10,9 @@ const DevLoop = (() => {
         // api ו-isDev — חובה מהאפליקציה (DevLoop.setup); api(action, {body, params}) מחזיר את ה-JSON או זורק Error
         api: () => Promise.reject(new Error('DevLoop.setup: חסר api')), toast: m => alert(m), isDev: () => false,
         endpoint: 'api.php', appName: 'האפליקציה', tasksHref: '', mountBefore: '#me-btn',
+        // role: 'dev' (ברירת המחדל) — הכול. 'follower' — עוקב: רואה הכול, מעיר ומצרף צילומים, ופותח 💡 המלצה;
+        // לא משנה מצב, לא מאמת, ואין לו אסימונים. השרת אוכף בעצמו — זה רק מה שמוצג.
+        role: 'dev',
         headers: () => ({}), lang: () => document.documentElement.lang || 'he', version: () => '',
         // trace — הבקשות והשגיאות האחרונות של האפליקציה, להקשר של 🐞. בלי trace — המודול אוסף לבד (שגיאות + noteRequest)
         trace: () => own,
@@ -25,7 +28,7 @@ const DevLoop = (() => {
     function onJsError(kind, message, extra) {
         push(own.errors, { kind, message: String(message).slice(0, 300), source: extra.source, line: extra.line, at: new Date().toISOString() });
         if (H.builtinLog) {
-            fetch(H.endpoint + '?action=devloop-client-error', { method: 'POST', credentials: 'same-origin', keepalive: true,
+            fetch(url('action=devloop-client-error'), { method: 'POST', credentials: 'same-origin', keepalive: true,
                 headers: { ...H.headers(), 'Content-Type': 'application/json' },
                 body: JSON.stringify({ kind, message: String(message).slice(0, 1000), page: location.hash || location.pathname, ...extra }) }).catch(() => {});
         }
@@ -42,10 +45,13 @@ const DevLoop = (() => {
     const PRIO = { high: ['🔺', 'דחוף'], normal: ['', 'רגיל'], low: ['▽', 'נמוך'] };
     const EV = { pr: '🔀 PR', commit: '📌 commit', deploy: '🚀 פריסה', version: '🏷️ גרסה', test: '🧪 בדיקה', note: '📝' };
     const dayTime = iso => iso ? new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    const fileUrl = (id, dl) => `${H.endpoint}?action=dev-file&id=${id}${dl ? '&download=1' : ''}`;
+    // endpoint יכול לשאת פרמטרים משלו (api.php?app=x) — הפעולה מצטרפת אליהם
+    const url = qs => H.endpoint + (H.endpoint.includes('?') ? '&' : '?') + qs;
+    const fileUrl = (id, dl) => url(`action=dev-file&id=${id}${dl ? '&download=1' : ''}`);
+    const follower = () => H.role === 'follower';
     // "לבירור" (שגיאה שנפתחה לבד) — לא נספרת כפתוחה ולא כממתינה לך עד שמחליטים: 👍 לטפל / 🙈 להתעלם
     const live = x => x.status !== 'closed' && x.status !== 'triage';
-    const needsYou = x => x.status === 'verify' || x.status === 'question' || (x.waiting === 'user' && live(x));
+    const needsYou = x => !follower() && (x.status === 'verify' || x.status === 'question' || (x.waiting === 'user' && live(x)));
     let box = null, list = [], meta = {}, filter = '', query = '', openCode = '';
 
     /** הטקסט שמדביקים לצ'אט — מטלות שממתינות ל-Claude (או כל הפתוחות). */
@@ -88,7 +94,7 @@ const DevLoop = (() => {
         }
         box.innerHTML = '<p class="hint">טוען…</p>';
         if (!await load()) return;
-        if (!filter) filter = list.some(needsYou) ? 'you' : 'pending';
+        if (!filter) filter = follower() ? 'pending' : list.some(needsYou) ? 'you' : 'pending';
         draw();
     }
 
@@ -101,18 +107,20 @@ const DevLoop = (() => {
 
     function draw() {
         const nTri = count(x => x.status === 'triage');
-        const filters = [['you', `ממתינות לך (${count(needsYou)})`], ['claude', `אצל Claude (${count(x => live(x) && !needsYou(x))})`],
+        const filters = [...(follower() ? [] : [['you', `ממתינות לך (${count(needsYou)})`]]), ['claude', `אצל Claude (${count(x => live(x) && !needsYou(x))})`],
             ['pending', `כל הפתוחות (${count(live)})`], ...(nTri ? [['triage', `⚠️ לבירור (${nTri})`]] : []), ['closed', `סגורות (${count(x => x.status === 'closed')})`], ['all', 'הכול']];
         box.innerHTML = `
             <div class="dt-stats"><b>${count(x => x.status === 'verify')}</b> לאימות · <b>${count(x => x.status === 'question')}</b> שאלות ·
                 <b>${count(x => x.status === 'in_progress')}</b> בעבודה · <b>${count(x => x.status === 'open')}</b> פתוחות · <b>${count(x => x.status === 'closed')}</b> סגורות${nTri ? ` · <b>${nTri}</b> שגיאות לבירור` : ''}
                 <small>· עודכן ${esc(meta.updated || '—')}</small></div>
             ${meta.note ? `<p class="hint">${esc(meta.note)}</p>` : ''}
-            <div class="row-btns wrap">
+            <div class="row-btns wrap">${follower() ? `
+                <button type="button" class="btn primary sm" data-dt="new">💡 המלצה חדשה</button>
+                <button type="button" class="btn ghost sm" data-dt="report">🐞 דיווח</button>` : `
                 <button type="button" class="btn primary sm" data-dt="new">+ מטלה חדשה</button>
                 <button type="button" class="btn ghost sm" data-dt="report">🐞 דיווח</button>
                 <button type="button" class="btn ghost sm" data-dt="chat">📋 העתקה לצ'אט</button>
-                <button type="button" class="btn ghost sm" data-dt="tokens">🔑 גישה ל-Claude</button>
+                <button type="button" class="btn ghost sm" data-dt="tokens">🔑 גישה ל-Claude</button>`}
             </div>
             <input type="search" id="dt-q" placeholder="קוד (PM-012) או מילה" aria-label="חיפוש מטלה" value="${esc(query)}" autocomplete="off">
             <div class="chip-row dt-filters" role="radiogroup" aria-label="סינון">${filters.map(([k, l]) =>
@@ -169,13 +177,13 @@ const DevLoop = (() => {
                 <span class="dt-badges">${x.waiting === 'claude' && live(x) ? '<span class="chip dt-warn">ממתין ל-Claude</span>' : ''}${x.waiting === 'user' && live(x) ? '<span class="chip dt-info">Claude ענה</span>' : ''}<span class="chip dt-${kind}">${esc(label)}</span></span>
             </summary>
             <div class="dt-body">
-                ${x.status === 'verify' ? `<div class="dt-verify"><b>🧪 נפרס — עובד אצלך?</b>
+                ${x.status === 'verify' && !follower() ? `<div class="dt-verify"><b>🧪 נפרס — עובד אצלך?</b>
                     <p class="hint">עברו על "איך בודקים" למטה. לא עובד — כתבו מה ראיתם (ואפשר לצרף צילום); המטלה חוזרת ל-Claude.</p>
                     <textarea rows="2" maxlength="4000" data-verify-note placeholder="מה ראיתם (חובה כשלא עובד)"></textarea>
                     <div class="row-btns"><button type="button" class="btn primary sm" data-dt-ok="${esc(x.code)}">✅ עובד אצלי</button>
                         <button type="button" class="btn ghost sm danger" data-dt-no="${esc(x.code)}">↩️ לא עובד</button></div>
                     <p class="error" role="alert" hidden></p></div>` : ''}
-                ${x.status === 'triage' ? `<div class="dt-verify"><b>⚠️ שגיאה שנפתחה לבד מהיומן${occ ? ` — קרתה ${occ.count} פעמים` : ''}</b>
+                ${x.status === 'triage' && !follower() ? `<div class="dt-verify"><b>⚠️ שגיאה שנפתחה לבד מהיומן${occ ? ` — קרתה ${occ.count} פעמים` : ''}</b>
                     <p class="hint">👍 לטפל — עוברת ל-Claude. 🙈 להתעלם — נסגרת, ומופעים חדשים רק נספרים.</p>
                     <div class="row-btns"><button type="button" class="btn primary sm" data-dt-tri="open" data-code="${esc(x.code)}">👍 לטפל</button>
                         <button type="button" class="btn ghost sm" data-dt-tri="ignore" data-code="${esc(x.code)}">🙈 להתעלם</button></div>
@@ -187,8 +195,8 @@ const DevLoop = (() => {
                     `<li><label><input type="checkbox" data-step="${esc(x.code)}:${i}"> <span>${esc(s)}</span></label></li>`).join('')}</ol></div>` : ''}
                 ${x.evidence?.length ? `<div class="dt-ev"><b>📦 ראיות</b><ul>${x.evidence.map(evRow).join('')}</ul></div>` : ''}
                 ${context(x.context)}
-                <details class="dt-log" data-log-code="${esc(x.code)}"><summary>📜 יומן — מה קרה סביב המטלה${x.occurrences ? ` (${x.occurrences.count} מופעים)` : ''}</summary><div class="dt-log-body"><p class="hint">טוען…</p></div></details>
-                ${x.source === 'user' ? `<label class="f dt-status"><span>מצב</span><select data-dt-status="${esc(x.code)}">${Object.entries(STATUS).map(([k, [l]]) =>
+                ${follower() ? '' : `<details class="dt-log" data-log-code="${esc(x.code)}"><summary>📜 יומן — מה קרה סביב המטלה${x.occurrences ? ` (${x.occurrences.count} מופעים)` : ''}</summary><div class="dt-log-body"><p class="hint">טוען…</p></div></details>`}
+                ${x.source === 'user' && !follower() ? `<label class="f dt-status"><span>מצב</span><select data-dt-status="${esc(x.code)}">${Object.entries(STATUS).map(([k, [l]]) =>
                     `<option value="${k}"${x.status === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>` : ''}
                 ${thumbs(loose)}
                 <div class="dt-thread"><b>💬 שיח</b>
@@ -227,7 +235,7 @@ const DevLoop = (() => {
         for (const f0 of files) {
             const f = await shrink(f0);
             const qs = new URLSearchParams({ action: 'dev-attach', code, name: f.name, comment_id: String(commentId || '') });
-            const res = await fetch(H.endpoint + '?' + qs, { method: 'POST', credentials: 'same-origin', body: f,
+            const res = await fetch(url(qs), { method: 'POST', credentials: 'same-origin', body: f,
                 headers: { ...H.headers(), Accept: 'application/json', 'Content-Type': f.type || 'application/octet-stream' } });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `תקלה (${res.status})`);
         }
@@ -315,13 +323,14 @@ const DevLoop = (() => {
     const opts = (map, val) => Object.entries(map).map(([k, [ic, l]]) => `<option value="${k}"${k === val ? ' selected' : ''}>${esc((ic ? ic + ' ' : '') + l)}</option>`).join('');
 
     function newTask() {
-        sheet('מטלה חדשה', `<label class="f"><span>כותרת *</span><input name="title" maxlength="200" placeholder="מה צריך לעשות"></label>
-            <div class="fields"><label class="f"><span>סוג</span><select name="kind">${opts(KINDS, 'task')}</select></label>
+        const f = follower();
+        sheet(f ? '💡 המלצה חדשה' : 'מטלה חדשה', `<label class="f"><span>כותרת *</span><input name="title" maxlength="200" placeholder="${f ? 'מה כדאי להוסיף או לשפר' : 'מה צריך לעשות'}"></label>
+            <div class="fields"${f ? ' hidden' : ''}><label class="f"><span>סוג</span><select name="kind">${opts(KINDS, f ? 'feature' : 'task')}</select></label>
                 <label class="f"><span>עדיפות</span><select name="priority">${opts(PRIO, 'normal')}</select></label></div>
             <label class="f"><span>תחום</span><input name="area" maxlength="40" placeholder="למשל: כספים, קבצים, קישור אישי"></label>
             <label class="f"><span>פירוט</span><textarea name="detail" rows="3" maxlength="4000"></textarea></label>
             <label class="f"><span>✔ איך יודעים שזה עובד (לא חובה)</span><textarea name="acceptance" rows="2" maxlength="2000" placeholder="למשל: הצילום מופיע גם אצל קבלן א' וגם אצל קבלן ב'"></textarea></label>
-            <p class="hint">המטלה מקבלת קוד מיד. Claude יוסיף "איך בודקים" כשיסיים, ותקבלו אותה לאימות.</p>`, 'פתיחה', async dlg => {
+            <p class="hint">${f ? 'ההמלצה נכנסת לרשימה עם קוד, והמפתח מחליט מה לעשות בה. צילומים — בשיח של ההמלצה אחרי הפתיחה.' : 'המטלה מקבלת קוד מיד. Claude יוסיף "איך בודקים" כשיסיים, ותקבלו אותה לאימות.'}</p>`, 'פתיחה', async dlg => {
             const el = dlg.querySelector('form').elements;
             try {
                 const r = await api('dev-task-create', { body: { title: el.title.value, kind: el.kind.value, priority: el.priority.value,
@@ -385,9 +394,10 @@ const DevLoop = (() => {
             <div class="dt-new-token"></div><div class="dt-tokens"></div>`, '+ אסימון חדש', async d => {
             try {
                 const r = await api('dev-token-create', { body: { label: 'Claude' } });
-                const say = `האסימון לקריאת המטלות של ${H.appName}: ${r.token}\nהכתובת: ${origin}?action=devapi-feed (בכותרת X-Dev-Token)`;
+                const feed = url('action=devapi-feed').replace(H.endpoint, origin);
+                const say = `האסימון לקריאת המטלות של ${H.appName}: ${r.token}\nהכתובת: ${feed} (בכותרת X-Dev-Token)`;
                 d.querySelector('.dt-new-token').innerHTML = `<p class="dt-ok">✓ נוצר. העתיקו עכשיו — הוא לא יוצג שוב.</p>
-                    <code class="dt-secret" dir="ltr">${esc(r.token)}</code><code class="dt-secret" dir="ltr">${esc(origin)}?action=devapi-feed</code>
+                    <code class="dt-secret" dir="ltr">${esc(r.token)}</code><code class="dt-secret" dir="ltr">${esc(feed)}</code>
                     <button type="button" class="btn ghost sm" data-copy>העתקה (שניהם יחד)</button>`;
                 d.querySelector('[data-copy]').onclick = async e => {
                     try { await navigator.clipboard.writeText(say); e.target.textContent = '✓ הועתק'; } catch { prompt('להעתקה:', say); }

@@ -1184,8 +1184,36 @@ window.PlatformAdmin = (() => {
             el('div', { className: 'small muted', textContent: 'איפה מוצגת' }), box,
             el('div', { className: 'place-actions' }, [addRow, save]),
             el('div', { className: 'app-row' }, opts),
+            devboardControl(app),
         ]));
         return card;
+    }
+
+    // 🛠️ דשבורד פיתוח (lib/devboard.php): המנהל = מפתח. עוקבים — רואים הכול, מעירים ומצרפים צילומים, לא משנים מטלות.
+    function devboardControl(app) {
+        const b = (state.devboards || {})[app.id];
+        const on = el('input', { type: 'checkbox', checked: !!b });
+        on.addEventListener('change', () => act('admin_devboard_set', { app: app.id, enabled: on.checked },
+            on.checked ? `${app.name}: נפתח דשבורד פיתוח` : `${app.name}: הדשבורד כובה (ההערות נשמרות)`));
+        const head = el('div', { className: 'app-row' }, [
+            el('label', { className: 'small', title: 'מטלות, מה פותח ומה בעבודה, הערות והמלצות עם צילומים' }, [on, ' 🛠️ דשבורד פיתוח']),
+            ...(b ? [el('a', { className: 'btn sm', href: `platform/devboard.php?app=${encodeURIComponent(app.id)}`, textContent: 'פתיחה' }),
+                     el('span', { className: 'muted small', textContent: `קודים ${b.prefix}… · מפת הדרכים: ${app.id}/dev/open-items.json` })] : []),
+        ]);
+        if (!b) return head;
+        const picked = new Set(b.followers);
+        const people = state.users.filter(u => u.role !== 'admin' && u.status === 'active');
+        const boxes = people.map(u => {
+            const c = el('input', { type: 'checkbox', checked: picked.has(u.id) });
+            c.addEventListener('change', () => { c.checked ? picked.add(u.id) : picked.delete(u.id); });
+            return el('label', { className: 'small' }, [c, ' ' + (u.display_name || u.username)]);
+        });
+        const saveF = button('💾 שמירת העוקבים', () => act('admin_devboard_set', { app: app.id, followers: [...picked] },
+            `${app.name}: ${picked.size} עוקבים`), 'sm');
+        return el('div', { className: 'devboard-box' }, [head,
+            el('div', { className: 'small muted', textContent: '👁️ עוקבים — רואים את הדשבורד, מעירים ופותחים 💡 המלצות. רק המנהל משנה מטלות.' }),
+            people.length ? el('div', { className: 'app-row devboard-people' }, [...boxes, saveF])
+                : el('p', { className: 'muted small', textContent: 'אין עדיין משתמשים פעילים (שאינם מנהלים) להוסיף.' })]);
     }
 
     // ---------- תוספים ----------
