@@ -1,4 +1,5 @@
 [
+  {"match": "#^https://finnhub\\.io/api/v1/quote\\?symbol=REDIRECT#", "status": 302, "body": ""},
   {"match": "#^https://data-api\\.binance\\.vision/api/v3/klines#", "php": "binance-klines.php"},
   {"match": "#^https://data-api\\.binance\\.vision/api/v3/exchangeInfo#", "file": "binance-exchangeinfo.json"},
   {"match": "#^https://api\\.twelvedata\\.com/#", "php": "twelvedata.php"},

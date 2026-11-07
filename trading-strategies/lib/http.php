@@ -13,6 +13,15 @@ declare(strict_types=1);
 
 final class TsHttpError extends RuntimeException {}
 
+/**
+ * האם לעקוב אחרי הפניה (3xx). רק בבקשה בלי כותרות משלנו: curl שולח כותרות מותאמות (Authorization, X-Finnhub-Token)
+ * גם למארח שהפנו אליו — ספק שמפנה, או מתקפה על ההפניה, היה מקבל את המפתח. בקשה עם מפתח — הפניה חוזרת כשגיאה.
+ */
+function ts_http_follow(array $headers): bool
+{
+    return $headers === [];
+}
+
 /** GET. מחזיר [status, body]. זורק TsHttpError על כשל רשת. */
 function ts_http_get(string $url, array $headers = [], int $timeout = 15): array
 {
@@ -21,7 +30,7 @@ function ts_http_get(string $url, array $headers = [], int $timeout = 15): array
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_FOLLOWLOCATION => ts_http_follow($headers),
         CURLOPT_MAXREDIRS => 3,
         CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
         CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,

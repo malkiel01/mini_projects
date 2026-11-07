@@ -53,6 +53,9 @@ abstract class TsProvider
             throw new TsProviderError($this->clean($e->getMessage(), $secret));
         }
         $json = json_decode($body, true);
+        if ($status >= 300 && $status < 400) {
+            throw new TsProviderError($this->meta()['name'] . ': הספק הפנה לכתובת אחרת — הבקשה לא נשלחה הלאה, כדי שהמפתח לא יגיע למקום אחר.');
+        }
         if ($status === 401 || $status === 403) throw new TsProviderError($this->clean($this->meta()['name'] . ': המפתח נדחה' . $this->detail($json), $secret));
         if ($status === 429) throw new TsProviderError($this->meta()['name'] . ': הספק הגביל את קצב הבקשות. נסו שוב בעוד דקה.');
         if ($status === 451) throw new TsProviderError($this->meta()['name'] . ': הספק חוסם בקשות מהאזור של השרת.');

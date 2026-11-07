@@ -72,6 +72,15 @@ try {
 $log = (string)file_get_contents("$tmp.http.log");
 eq(str_contains(implode("\n", array_map(fn($l) => json_decode($l, true)['url'], file("$tmp.http.log"))), 'good-key'), false, 'key never in a URL (header only)');
 
+// הפניה (3xx) בבקשה עם מפתח — לא עוקבים (המפתח בכותרת היה עובר למארח אחר); בלי כותרות — מותר (ממצא בקרה #1265)
+eq([ts_http_follow([]), ts_http_follow(['X-Finnhub-Token: x'])], [true, false], 'follow redirects only without our headers');
+try {
+    ts_provider('finnhub')->quote('REDIRECT', 'good-key-0002');
+    eq(true, false, 'redirect with a key should throw');
+} catch (TsProviderError $e) {
+    eq([str_contains($e->getMessage(), 'הפנה'), str_contains($e->getMessage(), 'good-key')], [true, false], 'redirect → clear error, no key');
+}
+
 // ── טווחים ──────────────────────────────────────────────
 eq(ts_range_subtract(0, 100, []), [[0, 100]], 'subtract: nothing covered');
 eq(ts_range_subtract(0, 100, [[10, 20], [50, 200]]), [[0, 9], [21, 49]], 'subtract: holes');

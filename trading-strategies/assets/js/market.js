@@ -78,7 +78,7 @@ export function mountMarket(ctx) {
     const [provs, { watchlist }] = await Promise.all([providers(), api('watchlist')]);
     const available = provs.filter(p => p.available);
     const results = h('div', { class: 'stack', 'aria-live': 'polite' });
-    const q = h('input', { type: 'search', name: 'q', placeholder: 'סימול או שם — BTC, AAPL, USDILS', 'aria-label': 'חיפוש נכס', maxlength: 40, autocomplete: 'off' });
+    const q = h('input', { type: 'search', name: 'q', placeholder: 'סימול או שם (BTC, AAPL)', 'aria-label': 'חיפוש נכס', maxlength: 40, autocomplete: 'off' });
     const go = async e => {
       e?.preventDefault();
       const v = q.value.trim();
