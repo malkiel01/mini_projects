@@ -212,6 +212,25 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 3) {
+        // ציור על הגרף (spec-stage-a פרק 7): לכל משתמש ונכס; tf NULL = בכל מסגרת זמן
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE drawings (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                asset TEXT NOT NULL,
+                tf TEXT,
+                kind TEXT NOT NULL,
+                points TEXT NOT NULL,
+                style TEXT NOT NULL DEFAULT '{}',
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX drawings_user_asset ON drawings(user_id, asset);
+            PRAGMA user_version = 3;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

@@ -2,6 +2,7 @@
 // בלי polling (✅13): פנייה לשרת רק מפעולה של המשתמש (פתיחת מסך, חיפוש, "רענן", שמירה). זמן אמת — רק WebSocket
 // ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף, ולא מתחבר מחדש לבד בלולאה.
 import * as D from './decimal.js';
+import { mountDrawings } from './drawings.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
 
@@ -184,7 +185,9 @@ export function mountMarket(ctx) {
       } catch (e) { toast(e.message, true); }
     } } }, inWl ? '⭐' : '☆');
     const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load(true) } }, '↻');
-    setHead(symbol, p.name, { back: true, actions: [refresh, star] });
+    const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
+      on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
+    setHead(symbol, p.name, { back: true, actions: [drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load(); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
@@ -205,8 +208,9 @@ export function mountMarket(ctx) {
     const box = h('div', { class: 'chart-box' });
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
+    const drawSlot = h('div', { class: 'draw-slot' });
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live)), custom,
-      h('div', { class: 'chart-wrap' }, box, oscBox), inds, info,
+      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -240,7 +244,11 @@ export function mountMarket(ctx) {
     const osc = LW.createChart(oscBox, { ...base, timeScale: { ...base.timeScale, visible: false } });
     const oscSeries = osc.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false });
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
-    onTeardown(() => { chart.remove(); osc.remove(); });
+    // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
+    const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet,
+      getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
+    drawSlot.append(draw.bar);
+    onTeardown(() => { draw.destroy(); chart.remove(); osc.remove(); });
 
     let data = [];
     let ws = null;
@@ -298,6 +306,7 @@ export function mountMarket(ctx) {
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
         chart.timeScale().fitContent();
+        draw.redraw();
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
@@ -340,7 +349,7 @@ export function mountMarket(ctx) {
     const vis = () => { if (document.hidden) { closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה'; } else if (streamSpec && !ws) openLive(...streamSpec); };
     document.addEventListener('visibilitychange', vis);
     onTeardown(() => { document.removeEventListener('visibilitychange', vis); streamSpec = null; closeLive(); });
-    await load();
+    await Promise.all([load(), draw.load()]);
   }
 
   // ── ספקי נתונים (המשתמש) ───────────────────────────────

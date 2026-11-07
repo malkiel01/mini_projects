@@ -21,6 +21,10 @@
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
  * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
  *
+ * ציור על הגרף (פרק 7):
+ * GET  ?action=drawings&asset=           השרטוטים שלי על הנכס (כל המסגרות; הדפדפן מסנן לפי tf)
+ * POST action=drawing_save | drawing_delete    יצירה/עדכון (עם id) ומחיקה — רק של המשתמש; עד 500 לנכס
+ *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
  * GET  ?action=admin_state
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
@@ -37,6 +41,7 @@ require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/store.php';
 require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
+require_once __DIR__ . '/lib/drawings.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -83,6 +88,7 @@ $tz = $user['timezone'];
 
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
+    'drawing_save', 'drawing_delete',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
@@ -230,6 +236,17 @@ try {
         case 'cred_delete':
             ts_cred_delete_mine($uid, $in['provider'] ?? '');
             out(['ok' => true, 'providers' => ts_providers_for($uid)]);
+
+        // ── ציור ──
+        case 'drawings':
+            out(['ok' => true, 'drawings' => ts_drawings_list($uid, $_GET['asset'] ?? '')]);
+
+        case 'drawing_save':
+            out(['ok' => true, 'drawing' => ts_drawing_save($uid, $in)]);
+
+        case 'drawing_delete':
+            ts_drawing_delete($uid, $in['id'] ?? null);
+            out(['ok' => true]);
 
         // ── מנהל (ts_require_admin כבר נבדק למעלה, לכל admin_*) ──
         case 'admin_state':
