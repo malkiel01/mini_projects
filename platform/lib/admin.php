@@ -91,6 +91,7 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_sso_toggle'      => admin_sso_toggle($body),
         'admin_sso_revoke'      => admin_sso_revoke($body),
         'admin_devboard_set'    => admin_devboard_set($body),
+        'admin_devboard_follow' => admin_devboard_follow($body),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };
 }
