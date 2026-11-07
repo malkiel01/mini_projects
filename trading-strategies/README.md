@@ -61,7 +61,11 @@ php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/de
 #   ואז http://127.0.0.1:8123/trading-strategies/  (העוגייה dev_as=bob — משתמש אחר)
 ```
 
+## הנתונים בשרת
+
+`trading-strategies/data/*` מוחרגת ב-`.github/workflows/deploy.yml` (חוץ מ-`.htaccess`, שחוסם גישה) — הפריסה
+לא דורסת אותם (#1257).
+
 ## מה טרם הוכרע
 
-- הקטגוריה "כספים" (`finance`) — עוד לא ב-`platform/categories.json` (צ'אט הפלטפורמה). עד אז `"category":
-  "daily"`, ואחרי שתמוזג — מחליפים ב-`app.json`.
+הוכרע הכול (פרק 10 באפיון). הקטגוריה "כספים" (`finance`) קיימת בפלטפורמה ובשימוש ב-`app.json`.
