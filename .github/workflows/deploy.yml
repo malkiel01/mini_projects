@@ -316,6 +316,7 @@ jobs:
             --exclude='word-processor/data/media/' \
             --exclude='time-clock/data/*.sqlite*' \
             --exclude='time-clock/data/certs/' \
+            --exclude='/time-clock/tests/' --exclude='/time-clock/tools/' \
             --exclude='payments/data/*.sqlite*' --exclude='payments/data/*.key' \
             --exclude='payments/data/config.json' --exclude='payments/data/backups/' \
             --exclude='payments/data/docs/' --exclude='payments/data/logs/' \
