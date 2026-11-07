@@ -738,6 +738,7 @@ function ts_export_json(int $uid, array $user): array
         'trades' => array_map(fn($t) => ts_trade_out($t, $tz), array_reverse(ts_trades_load($uid, $tz))),
         'watchlist' => function_exists('ts_watchlist') ? array_column(ts_watchlist($uid), 'asset') : [],
         'drawings' => function_exists('ts_drawing_out') ? ts_drawings_all($uid) : [],
+        'profile' => function_exists('ts_profile') ? ts_profile($uid) : null,
     ];
 }
 

@@ -231,6 +231,57 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 4) {
+        // פרופיל, שיטות ובדיקה לאחור (spec-stage-a פרקים 5–6, 11)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- הפרופיל (5). risk_pct נשמר גם ב-users.default_risk_pct (שלב 1) — שני המסכים כותבים את שניהם יחד
+            CREATE TABLE user_profile (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                horizon TEXT NOT NULL DEFAULT 'medium' CHECK (horizon IN ('short','medium','long')),
+                risk_level TEXT NOT NULL DEFAULT 'medium' CHECK (risk_level IN ('low','medium','high')),
+                risk_pct TEXT NOT NULL DEFAULT '1',
+                min_rr TEXT NOT NULL DEFAULT '2',
+                min_certainty INTEGER NOT NULL DEFAULT 55 CHECK (min_certainty BETWEEN 50 AND 80),
+                preferred_methods TEXT NOT NULL DEFAULT '[]',
+                alert_channels TEXT NOT NULL DEFAULT '["inbox"]',
+                quiet_hours TEXT,
+                max_alerts_per_day INTEGER NOT NULL DEFAULT 10,
+                updated_at INTEGER NOT NULL
+            );
+            -- הגדרות מנהל לכל שיטה שבקוד (6.7). שיטה בלי שורה — כבויה
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                markets TEXT NOT NULL DEFAULT '[]',
+                timeframes TEXT NOT NULL DEFAULT '[]',
+                params TEXT NOT NULL DEFAULT '{}',
+                note TEXT NOT NULL DEFAULT ''
+            );
+            -- תוצאות בדיקה לאחור (6.2). שורה אחת לכל (שיטה, ספק, נכס, מסגרת, היקף מפתח); גרסה או פרמטרים אחרים →
+            -- חישוב מלא שמחליף אותה. state — מצב המנוע, לחישוב מצטבר. ההיסטוריה עצמה לא נשמרת
+            CREATE TABLE backtests (
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                params_hash TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                n INTEGER NOT NULL,
+                wins INTEGER NOT NULL,
+                expectancy_r REAL,
+                max_dd REAL NOT NULL DEFAULT 0,
+                from_t INTEGER,
+                to_t INTEGER,
+                state TEXT NOT NULL,
+                computed_at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, provider, asset, tf, cred_scope)
+            );
+            PRAGMA user_version = 4;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

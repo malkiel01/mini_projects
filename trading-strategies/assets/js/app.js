@@ -2,6 +2,7 @@
 // כל טקסט של המשתמש נכנס כ-textContent (לעולם לא innerHTML). אין polling: פנייה לשרת רק בניווט ובשמירה.
 import * as D from './decimal.js';
 import { mountMarket } from './market.js';
+import { mountAnalysis } from './analysis.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -111,17 +112,17 @@ function setTab(tab) {
 const main = $('#main');
 function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); }
 
-// לשוניות: שוק · יומן · עוד (spec-stage-a 1). "ניתוח" ו"התראות" — ייכנסו עם ה-PR-ים שלהן (פרק 14).
+// לשוניות: שוק · ניתוח · יומן · עוד (spec-stage-a 1). "התראות" — תיכנס עם ה-PR שלה (פרק 14).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more' };
+  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
     h('a', { href: '#/' + k, class: 'seg-tab', 'aria-current': k === active ? 'page' : null }, l)));
 }
 
-let M = null;
+let M = null, A = null;
 async function route() {
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
@@ -138,6 +139,8 @@ async function route() {
     else if (name === 'providers') await M.viewProviders();
     else if (name === 'admin') await M.viewAdmin();
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
+    else if (name === 'analysis') await A.viewAnalysis(id ? decodeURIComponent(id) : null);
+    else if (name === 'profile') await A.viewProfile();
     else await M.viewMarket();
     if (['strategies', 'journal', 'stats'].includes(name)) main.prepend(journalTabs(name));
   } catch (e) {
@@ -967,43 +970,21 @@ function breakdownTable(title, rows, label, cur) {
 }
 
 // ── עוד: הגדרות, נכסים, ייצוא, אודות (אפיון 2.7) ────────
-function timezones() {
-  try { return Intl.supportedValuesOf('timeZone'); } catch { return ['Asia/Jerusalem', 'UTC', 'Europe/London', 'America/New_York']; }
-}
-
 async function viewMore() {
   setHead('עוד', ME.user.display_name || '');
-  const u = ME.user;
-  const f = {
-    base_currency: h('input', { name: 'base_currency', value: u.base_currency, maxlength: 6, dir: 'ltr' }),
-    timezone: select('timezone', timezones().map(z => [z, z]), u.timezone),
-    account_size: numInput('account_size', u.account_size, 'לחישוב גודל פוזיציה'),
-    default_risk_pct: numInput('default_risk_pct', u.default_risk_pct),
-  };
-  if (![...f.timezone.options].some(o => o.value === u.timezone)) f.timezone.prepend(h('option', { value: u.timezone, selected: true }, u.timezone));
-  const err = h('p', { class: 'error', role: 'alert', hidden: true });
-  const save = async e => {
-    e.preventDefault();
-    err.hidden = true;
-    try {
-      const body = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim()]));
-      await api('settings', body);
-      ME = await api('me');
-      toast('ההגדרות נשמרו');
-    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
-  };
+  const p = ME.profile;
   render(
-    h('h2', { class: 'sec-title' }, '⚙️ הגדרות'),
-    h('form', { class: 'block stack', on: { submit: save } },
-      h('div', { class: 'fields two' }, field('מטבע בסיס להצגה', f.base_currency), field('סיכון לעסקה ברירת מחדל (%)', f.default_risk_pct),
-        field('גודל חשבון', f.account_size), field('אזור זמן', f.timezone)),
-      err, h('div', {}, h('button', { class: 'btn primary', type: 'submit' }, 'שמירת ההגדרות'))),
+    h('ul', { class: 'list' },
+      h('li', {}, h('a', { class: 'use-row', href: '#/profile' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🎯'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'פרופיל והגדרות'),
+          h('small', {}, `טווח ${{ short: 'קצר', medium: 'בינוני', long: 'ארוך' }[p.horizon]} · סיכון ${D.fmt(p.risk_pct, 4)}% · ודאות מינימלית ${p.min_certainty}% · ${ME.user.base_currency}`)),
+        h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
     h('h2', { class: 'sec-title' }, 'נתונים'),
     h('ul', { class: 'list' },
       h('li', {}, h('a', { class: 'use-row', href: '#/providers' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🔌'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
-        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, ספקים לחלוקה, מנהלים, מאגר הנתונים')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, מנהלים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'נכסים שלי'), h('small', {}, 'שוק, מטבע ומכפיל לכל נכס — נבנה לבד מהעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=json', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⬇️'),
@@ -1062,7 +1043,10 @@ function editInstrument(i) {
     render(h('p', { class: 'error', role: 'alert' }, e.message));
     return;
   }
-  M = mountMarket({ h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME });
+  const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME,
+    setMe: v => { ME = v; }, reload: () => route() };
+  A = mountAnalysis(ctx);
+  M = mountMarket({ ...ctx, adminMethods: A.adminMethods });
   M.setRoute(route);
   if (!location.hash) history.replaceState(null, '', '#/market');
   route();
