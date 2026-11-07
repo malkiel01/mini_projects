@@ -145,7 +145,7 @@ function devboard_page(string $appId): never
 </head>
 <body class="devboard">
 <header class="db-head">
-    <a class="icon-btn" href="../" aria-label="לכלים הדיגיטליים">→</a>
+    <a class="icon-btn" href="../" data-home aria-label="חזרה">→</a>
     <div class="db-title">
         <?php if ($app): ?><span class="db-ic" aria-hidden="true"><?= $e($app['icon']) ?></span><?php endif ?>
         <h1><?= $app ? $e($app['name']) : 'דשבורד פיתוח' ?> <small>🛠️ פיתוח</small></h1>
@@ -173,10 +173,25 @@ function devboard_page(string $appId): never
 <?php else: ?>
     <div class="db-denied">
         <p><?= $user ? 'אין לך גישה לדשבורד הזה. המנהל מוסיף עוקבים לכל אפליקציה.' : 'צריך להתחבר כדי לראות את הדשבורד.' ?></p>
-        <a class="btn primary" href="../"><?= $user ? 'לכלים הדיגיטליים' : 'להתחברות' ?></a>
+        <a class="btn primary" href="../" data-home><?= $user ? 'לכלים הדיגיטליים' : 'להתחברות' ?></a>
     </div>
 <?php endif ?>
 </main>
+<script>
+// חזרה: באפליקציה המותקנת הבית הוא platform/home/ — שורש האתר שם נחשב "התקנה ישנה" ומציג "צריך להתקין
+// מחדש" (app.js, oldInstall). כשבאנו מהבית — אחורה בהיסטוריה, בלי טעינה מחדש.
+(() => {
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const home = standalone ? 'home/' : '../';
+    for (const a of document.querySelectorAll('[data-home]')) {
+        a.href = home;
+        a.addEventListener('click', e => {
+            let ref = null; try { ref = document.referrer && new URL(document.referrer); } catch { /* */ }
+            if (ref && ref.origin === location.origin && history.length > 1 && !/devboard\.php/.test(ref.pathname)) { e.preventDefault(); history.back(); }
+        });
+    }
+})();
+</script>
 </body>
 </html>
 <?php
