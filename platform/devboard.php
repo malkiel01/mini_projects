@@ -56,6 +56,23 @@ try {
     }
     $me = ['id' => (int)$user['id']];
 
+    // עוקב: מטלה שהמפתח הסתיר ממנו — כאילו אינה (ברשימה, בשיח, בצירוף ובקבצים)
+    $hidden = $role === 'follower' ? devboard_hidden_for($appId, $me['id']) : [];
+    if ($hidden) {
+        $code = (string)($body['code'] ?? $_GET['code'] ?? '');
+        if ($action === 'dev-file') {
+            $st = devloop_db()->prepare('SELECT code FROM dev_files WHERE id = ?');
+            $st->execute([(int)($_GET['id'] ?? 0)]);
+            $code = (string)$st->fetchColumn();
+        }
+        if ($action === 'dev-comment-delete') {
+            $st = devloop_db()->prepare('SELECT code FROM dev_comments WHERE id = ?');
+            $st->execute([(int)($body['id'] ?? 0)]);
+            $code = (string)$st->fetchColumn();
+        }
+        if (in_array($code, $hidden, true)) throw new ApiError('לא נמצא', 404);
+    }
+
     // עוקב: מה שהוא פותח הוא המלצה (או 🐞 דיווח) — סוג ועדיפות קבועים; המפתח מחליט מה הלאה
     if ($role === 'follower' && $action === 'dev-task-create') {
         $body['kind'] = 'feature'; $body['priority'] = 'normal'; $body['area'] = '💡 המלצה';
@@ -64,7 +81,14 @@ try {
     if ($role === 'follower' && $action === 'dev-report') { $body['priority'] = 'normal'; unset($body['steps']); }
 
     $out = match ($key) {
-        'GET dev-items'            => ['ok' => true, 'role' => $role] + devloop_task_list(),
+        'GET dev-items'            => (function () use ($role, $hidden) {
+            $l = devloop_task_list();
+            $l['items'] = array_values(array_filter($l['items'], fn($x) => !in_array($x['code'], $hidden, true)));
+            return ['ok' => true, 'role' => $role] + $l;
+        })(),
+        'GET db-users'             => ['ok' => true] + devboard_users($appId),
+        'GET db-logs'              => ['ok' => true] + devboard_logs($appId, $_GET),
+        'POST db-hide'             => devboard_hide($appId, $body),
         'GET dev-file'             => devloop_file_out((int)($_GET['id'] ?? 0)),
         'GET dev-item-log'         => ['ok' => true] + devloop_item_log((string)($_GET['code'] ?? '')),
         'GET dev-tokens'           => ['ok' => true] + devloop_token_list(),
@@ -133,6 +157,15 @@ function devboard_page(string $appId): never
     <p class="hint db-legend"><?= $role === 'dev'
         ? 'כל המטלות של האפליקציה — מה נעשה, מה בעבודה ומה מתוכנן. העוקבים רואים הכול, מעירים ופותחים 💡 המלצות; רק אתה משנה מצב.'
         : 'מה כבר פותח, מה בעבודה ומה מתוכנן. פותחים מטלה כדי להעיר או לצרף צילום מסך, או "💡 המלצה חדשה" לרעיון.' ?></p>
+    <?php if ($role === 'dev'): ?>
+    <nav class="db-tabs" role="tablist" aria-label="רמות">
+        <button type="button" role="tab" data-tab="board" aria-selected="true">📋 משימות</button>
+        <button type="button" role="tab" data-tab="users" aria-selected="false">👥 משתמשים</button>
+        <button type="button" role="tab" data-tab="logs" aria-selected="false">📜 לוגים</button>
+    </nav>
+    <section id="users" hidden></section>
+    <section id="logs" hidden></section>
+    <?php endif ?>
     <section id="board" aria-live="polite"></section>
     <script id="db-cfg" type="application/json"><?= $cfg ?></script>
     <script src="assets/devloop.js?v=<?= $v('devloop.js') ?>"></script>
