@@ -53,6 +53,7 @@ function admin_state(array $admin): never
         'sso'        => sso_clients_state(),
         'categories' => categories_list(),
         'groups'     => groups_list(),
+        'devboards'  => (object)devboard_all(),
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
             'category' => $a['category'], 'default_category' => $a['default_category'], 'placements' => $a['placements'],
@@ -89,6 +90,8 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_settings'        => admin_settings($body),
         'admin_sso_toggle'      => admin_sso_toggle($body),
         'admin_sso_revoke'      => admin_sso_revoke($body),
+        'admin_devboard_set'    => admin_devboard_set($body),
+        'admin_devboard_follow' => admin_devboard_follow($body),
         default => throw new ApiError('פעולה לא מוכרת', 404),
     };
 }

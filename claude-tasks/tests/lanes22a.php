@@ -100,7 +100,18 @@ echo "\n— 22א.2: מה Platform רואה בפרויקט —\n";
 $c = platformCheck($boss, $tc);
 check('שורת הבדיקה: התיקייה, והכשל של גיטהאב בשמו', [$c['path'], $c['github']['ok'], $c['github']['why'] !== '', $c['readme']['ok']], ['time-clock', false, true, false]);
 db()->exec("UPDATE projects SET path = '' WHERE id = $tc");
-check('תת-פרויקט בלי תיקייה — אומר איפה מתקנים', str_contains(platformCheck($boss, $tc)['readme']['why'], 'לתת-פרויקט אין תיקייה'), true);
+check('תת-פרויקט בלי תיקייה — אומר איפה מתקנים', str_contains(platformReadme(requireProject($tc, $boss, 'read'), payerUser($tc))[1]['why'], 'לא מוגדרת תיקייה'), true);
+
+echo "\n— הוראה שרק הצ'אט מבצע — לא עוברת ל-Platform —\n";
+$up = channelInsertIn($cid, 'owner', 1, BRIDGE_UPDATE_TEXT);
+$plain = channelInsertIn($cid, 'owner', 1, 'שאלה רגילה');
+db()->exec("UPDATE messages SET answered_by = '', handled_by = '' WHERE id IN ($up, $plain)");
+$hr = (int) handoffRequest($boss, $cid)["id"];
+db()->exec("UPDATE messages SET answered_by = '', handled_by = '', delivered_at = NULL WHERE id = $hr");
+laneMoveToPlatform($cid);
+check('…וגם בקשת צ\'אט ההמשך נשארת לצ\'אט', $col("SELECT answered_by FROM messages WHERE id = $hr"), '');
+check('מעבר ל-☁️: הוראת עדכון הגשר נשארת לצ\'אט, שאלה רגילה עוברת',
+      [$col("SELECT answered_by FROM messages WHERE id = $up"), $col("SELECT answered_by FROM messages WHERE id = $plain")], ['', 'platform']);
 
 echo "\n  ════ עברו: $pass · נכשלו: $fail ════\n";
 exec('rm -rf ' . escapeshellarg($tmp));

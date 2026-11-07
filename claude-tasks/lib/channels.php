@@ -78,6 +78,11 @@ function publicChannel(array $c): array {
     $c['icon'] = (string) ($c['icon'] ?? '');
     // גרסת הגשר והמתנה לאישור באפליקציה (§5.10.1)
     $c['bridge_version'] = (string) ($c['bridge_version'] ?? '');
+    // שלב 24א: מה מצב ההאזנה ומתי הצ'אט יבדוק את הלוח — השורה והכותרת בונות מזה את הטקסט
+    if (array_key_exists('listen_state', $c) && function_exists('channelListen')) $c['listen'] = channelListen($c);
+    // שלב 25: ⏰ — אפשר להעיר / נשלחה העירה / נכשלה / אין מנהל; ולמנהל עצמו — מצבו
+    if (array_key_exists('wake_on_write', $c) && function_exists('wakeInfo')) { $c['wake'] = wakeInfo($c); $c['wake_on_write'] = (bool) (int) $c['wake_on_write']; }
+    foreach (['listen_state_at', 'next_check_at'] as $k) if (isset($c[$k])) $c[$k] = (int) $c[$k];
     $c['bridge_outdated'] = bridgeOutdated($c);
     $c['waiting_tool'] = (string) ($c['waiting_tool'] ?? '');
     $c['waiting_at'] = (int) ($c['waiting_at'] ?? 0);
@@ -289,6 +294,7 @@ function channelSend(array $user, int $channelId, string $body, ?int $taskId = n
                           !$platform, $platform ? 'platform' : '');
     if ($pref) db()->prepare('UPDATE messages SET ai_pref = ? WHERE id = ?')->execute([json_encode($pref), $id]);
     if (!$platform) silenceCheck(getChannel($channelId));   // שלב 16: הגלאי העצל
+    if (!$platform && function_exists('autoWake')) autoWake($user, getChannel($channelId));   // שלב 25: הצ'אט ישן — המנהל מעיר אותו
     return $id;
 }
 

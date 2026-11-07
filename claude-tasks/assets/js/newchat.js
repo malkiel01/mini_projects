@@ -11,6 +11,7 @@
  * claude.ai/code לא מקבל פרומפט בכתובת (לא נמצאה דרך מתועדת) — לכן תמיד: העתקה, ואז פתיחה.
  */
 import { $, el, api, toast, state, on } from './core.js';
+import { openLaunchSheet } from './launch.js';
 
 const CODE_URL = 'https://claude.ai/code';
 const nc = { sheet: null, role: null };
@@ -132,7 +133,7 @@ const FIELDS = [
   ['name_pattern', 'תבנית השם', 'input', 'למשל: היצירה v2 - {role}. ‏{role} — שם התפקיד, {project} — שם הפרויקט.'],
   ['context_files', 'קבצים לקרוא קודם', 'textarea', 'נתיב בכל שורה. CLAUDE.md נקרא תמיד.'],
   ['hierarchy', 'ההיררכיה', 'textarea', 'כמה שורות: מי מעל מי.'],
-  ['notify_session', 'הודעת ההצטרפות אל', 'input', 'session_… — ריק: צ\'אט האפיון של "מטלות לקלוד".'],
+  ['notify_session', 'הודעת ההצטרפות אל', 'input', 'session_… — ריק (מומלץ): ההצטרפות מופיעה רק בלוח, בלי הודעה לשום צ\'אט.'],
   ['extra', 'הנחיות נוספות', 'textarea', 'מתווסף לסוף כל פרומפט.'],
 ];
 
@@ -356,6 +357,11 @@ async function showHandoffPrompt(fallback) {
     el('p', { class: 'hint', text: r.source === 'handoff'
       ? `התקציר הגיע. כשהצ'אט החדש יירשם, "${r.name}" יסומן "הוחלף" והמטלות שנשאלו בו יעברו אליו.`
       : 'בלי תקציר — הפרומפט כולל את ההודעות האחרונות בערוץ.' }),
+    // שלב 23: בלחיצה אחת — המשיק פותח את צ'אט ההמשך עם הפרומפט (בלי להעתיק ולהדביק)
+    el('div', { class: 'row-btns' }, [el('button', { type: 'button', class: 'btn primary', text: '🚀 לפתוח את צ\'אט ההמשך בלחיצה',
+      onclick: () => { const c = ho.channel; $('#handoffSheet').close();
+        openLaunchSheet({ projectId: c.project_id, name: r.name, mode: 'followup', replaces: c.id, replacesName: c.name }); } })]),
+    el('p', { class: 'hint', text: 'או ידנית:' }),
     promptBlock(r.prompt, 'הפרומפט לצ\'אט ההמשך', { collapsed: true }),
   );
   document.dispatchEvent(new CustomEvent('ct:reload-channels'));

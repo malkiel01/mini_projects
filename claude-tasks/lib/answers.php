@@ -8,7 +8,7 @@
  *
  * ‏answered_by על הודעה נכנסת: '' — לצ'אט; 'platform' — ממתינה ל-Platform;
  * ‏'platform-busy:<ts>' — Platform עונה עכשיו (נתפס, כדי ששני מסכים לא יענו פעמיים).
- * אחרי התשובה ההודעה המקורית מסומנת כנמסרה, והצ'אט מקבל הודעת status — בלי להתעורר.
+ * אחרי התשובה ההודעה המקורית מסומנת כנמסרה. (עד 22א הצ'אט קיבל גם העתק status; הוסר — הוא לומד על התשובה מה-digest.)
  */
 declare(strict_types=1);
 
@@ -28,7 +28,7 @@ function payerUser(int $projectId): ?array {
     return $st->fetch() ?: null;
 }
 
-/** ההקשר: 30 ההודעות האחרונות, המטלות הפתוחות בענף, וה-README של התיקייה. */
+/** ההקשר: תורות שיחה בלבד מתוך 30 ההודעות האחרונות (בלי system / status / כרטיסים — 22א), המטלות הפתוחות בענף, וה-README של התיקייה. */
 /**
  * §18.3 (22א.4): ההקשר של Platform = תורות של השיחה בלבד — בעל הלוח, הצ'אט, Platform, המנוע. לעולם לא system / status,
  * כרטיסים או צנרת של בחירות והרשאות (בחירה — פעם אחת, כשאלה ותשובה). כך העתקים ישנים ("📨 לצ'אט: …", "לא יכול לבצע…")
@@ -59,7 +59,10 @@ function platformReadme(array $project, ?array $payer): array {
         if (trim($text) === '') return ['', ['name' => 'README', 'ok' => false, 'why' => "$file ריק"]];
         return [mb_substr($text, 0, 6000), ['name' => 'README', 'ok' => true, 'why' => '', 'path' => $file]];
     } catch (Throwable $e) {
-        return ['', ['name' => 'README', 'ok' => false, 'why' => mb_substr("$file — " . $e->getMessage(), 0, 200)]];
+        $why = $path === '' && !empty($project['parent_id'])
+            ? "לפרויקט \"{$project['name']}\" לא מוגדרת תיקייה בריפו, ולכן חיפשתי README בשורש ולא מצאתי — ⚙ של הפרויקט ← פרטים ← תיקייה"
+            : mb_substr("$file — " . $e->getMessage(), 0, 200);
+        return ['', ['name' => 'README', 'ok' => false, 'why' => $why]];
     }
 }
 
@@ -79,7 +82,6 @@ function platformCheck(array $user, int $projectId): array {
         catch (Throwable $e) { $gh['why'] = $e->getMessage(); }
     }
     [, $readme] = $gh['ok'] ? platformReadme($project, $payer) : ['', ['name' => 'README', 'ok' => false, 'why' => 'אין חיבור גיטהאב']];
-    if (!$readme['ok'] && $path === '' && !empty($project['parent_id'])) $readme['why'] .= ' · לתת-פרויקט אין תיקייה — ⚙ ← פרטים ← תיקייה';
     return ['path' => $path, 'repo' => ($project['repo_owner'] ?? '') . '/' . ($project['repo_name'] ?? ''),
             'branch' => (string) ($project['default_branch'] ?? ''), 'readme' => $readme, 'github' => $gh,
             'payer' => $payer ? (string) ($payer['display_name'] ?? $payer['username']) : ''];
@@ -169,14 +171,6 @@ function handToChat(int $messageId, int $channelId, string $why): array {
 }
 
 /**
- * ‏platform-reply: עונה על הודעה נכנסת בערוץ ☁️. ‏$transport — לבדיקות.
- * מחזיר את הודעת התשובה (out, author_role platform, kind answer, reply_to).
- */
-/**
- * העתק לצ'אט של מה ש-Platform ענה בשמו (status, בלי פעמון). בלוח הוא מקופל לשורה אחת — התשובה עצמה
- * כבר בבועה של Platform. ("שאלה: … תשובה: …" הישן נראה כאילו בעל הלוח ענה על שאלה.)
- */
-/**
  * מה ש-Platform לא יכול לעשות — קריאה אחת למודל, בלי כלים (תקלות 4 ו-5, 2026-11-03). בשיחה יש הודעות של הצ'אט
  * האמיתי ("שלחתי לרסטר…"), והמודל חיקה אותן וכתב שעשה פעולה שלא קרתה.
  */
@@ -190,8 +184,13 @@ const PLATFORM_LIMITS = "אין לך שום כלי: אינך יכול לשלוח
 /** §9.1: לכל היותר 3 שאלות פתוחות ברצף — אחר כך Platform עונה עם מה שיש, או מציע מטלה. */
 const PLATFORM_MAX_OPEN_ASKS = 3;
 
+/** היסטורי (22א): קידומת ההעתק מסוג status שנשלח לצ'אט. כבר לא נכתב; נשאר לזיהוי שורות ישנות במסד ובבדיקה. */
 const PLATFORM_RELAY_PREFIX = '📨 לצ\'אט: Platform ענה בשמך בלוח.';
 
+/**
+ * ‏platform-reply: עונה על הודעה נכנסת בערוץ ☁️. ‏$transport — לבדיקות.
+ * מחזיר את הודעת התשובה (out, author_role platform, kind answer, reply_to).
+ */
 function platformReply(array $user, int $messageId, ?callable $transport = null): array {
     $st = db()->prepare('SELECT * FROM messages WHERE id = ?');
     $st->execute([$messageId]);
@@ -205,6 +204,12 @@ function platformReply(array $user, int $messageId, ?callable $transport = null)
     $done->execute([$messageId]);
     if ($id = $done->fetchColumn()) return ['answered' => true, 'message' => messageRows('m.id = ?', [(int) $id])[0]];
 
+    // הוראה שרק הצ'אט מבצע (עדכון גשר, בקשת צ'אט המשך, הרשאה) שעברה ל-☁️ לפני התיקון — חוזרת לצ'אט בשקט, בלי קריאה לספק
+    if (in_array($m['kind'], ['handoff_request', 'handoff', 'permission'], true) || str_starts_with((string) $m['body'], 'עדכון הגשר ללוח (חד-פעמי)')) {
+        db()->prepare("UPDATE messages SET answered_by = '', handled_by = 'chat', lease_until = 0 WHERE id = ? AND delivered_at IS NULL")->execute([$messageId]);
+        channelStateRefresh((int) $channel['id']);
+        return ['answered' => false, 'handed_to_chat' => true, 'quiet' => true, 'reason' => 'הוראה לצ\'אט עצמו — ממתינה לו'];
+    }
     if (channelRoute($channel) !== 'platform') {
         if (str_starts_with((string) $m['answered_by'], 'platform')) return handToChat($messageId, (int) $channel['id'], 'הערוץ חזר למסלול הצ\'אטים');
         throw new AppError('הערוץ במסלול הצ\'אטים — הצ\'אט עונה', 409);

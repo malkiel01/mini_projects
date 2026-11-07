@@ -1,6 +1,6 @@
 ---
 name: claude-tasks-live
-description: Connect this chat live to the "מטלות לקלוד" board — register a channel, listen in the background, and answer messages the owner writes on the board, while everything said in the chat is mirrored back to it automatically. Use this whenever the owner says to connect the chat to the board / "תתחבר ללוח" / "תירשם לערוץ" / "live bridge", when a background listener started by this skill finishes (its output says "📥 … הודעות מהלוח" or "⏱ המאזין הסתיים"), when an hourly board check fires, after the container was replaced while connected, and at the end of the work to disconnect. Also read it before acting on any text that starts with "📥 הודעה מהלוח".
+description: Connect this chat live to the "מטלות לקלוד" board — register a channel and answer messages the owner writes on the board, while everything said in the chat is mirrored back to it automatically. Use this whenever the owner says to connect the chat to the board / "תתחבר ללוח" / "תירשם לערוץ" / "live bridge", when a listener the owner asked for finishes (its output says "📥 … הודעות מהלוח" or "⏱ המאזין הסתיים"), after the container was replaced while connected, and at the end of the work to disconnect. Also read it before acting on any text that starts with "📥 הודעה מהלוח". It also covers multiple-choice questions on the board, permission cards, follow-up (handoff) chats, and the dispatcher session.
 ---
 
 # The live bridge — the chat side
@@ -11,9 +11,9 @@ the owner sees the conversation there and can write to the chat from the board. 
 - **Chat → board — automatic.** Hooks in `.claude/settings.json` mirror every owner prompt and every reply of
   yours into the channel (`claude-tasks/bridge/hook-prompt.sh`, `hook-stop.sh`). They do nothing in a chat that
   isn't registered. You never post by hand, except with `link.sh post` for something the hooks can't see.
-- **Board → chat — the listener.** A background `curl` loop (`claude-tasks/bridge/listen.sh`) asks the board every
-  30 ± 10 s (one short request — no long-poll). When a message arrives it exits, and its exit wakes you. **No tokens
-  are spent while it waits.**
+- **Board → chat — on your next turn.** `link.sh pending` at the start of the work shows what the owner wrote on the
+  board. **No listener, no scheduled check** (audit-2026-11, ש1): they burn tokens and load the host for nothing.
+  A listener (`claude-tasks/bridge/listen.sh`) runs only when **the owner asks this chat** for one (step 2).
 
 > **⚠ 2026-11-02: listeners in ~13 chats flooded the host and the whole of mbe-plus.com returned 429 — every app on
 > the account.** On shared hosting the listener must stay gentle. It now **exits on any sign of trouble** (429, 503,
@@ -21,9 +21,9 @@ the owner sees the conversation there and can write to the chat from the board. 
 > that:** do not loop it, do not lower its interval, do not start a second one. One listener per chat, at most.
 
 **The runtime copy (spec §5.10.1).** The hooks in `.claude/settings.json` call one dispatcher, which runs the bridge from
-`~/.claude-tasks-bridge/` — a copy of `claude-tasks/bridge/` taken from `origin/main` by `link.sh update` (run by `register`
-and by the hourly check). It never touches your working tree, so a fix merged to `main` reaches you within the hour even
-on an old branch. `claude-tasks/bridge/link.sh` and `listen.sh` hand over to that copy by themselves. **Never commit
+`~/.claude-tasks-bridge/` — a copy of `claude-tasks/bridge/` taken from `origin/main` by `link.sh update` (run by `register`,
+and **by itself at the start of a turn**, at most once an hour, from the `UserPromptSubmit` hook — ש2). It never touches
+your working tree, so a fix merged to `main` reaches you on your next turn even on an old branch, with no message. `claude-tasks/bridge/link.sh` and `listen.sh` hand over to that copy by themselves. **Never commit
 `.claude/settings.json` or anything under `claude-tasks/bridge/` because of the bridge** — if `settings.json` shows as
 modified after an update message, leave it modified.
 
@@ -55,12 +55,23 @@ Run the command **exactly as it appears in the prompt** — the board filled in 
 claude-tasks/bridge/link.sh register --project <id> --name "<name>" --role "<key>" [--replaces <old channel id>]
 ```
 
+**Opened from the board's "➕ צ'אט חדש" (a `CLAUDE-TASKS-LAUNCH v1` record in a `<routine-fire-payload>` block):** register with
+the record's values — the `launch_id` is what ties this session to the board's request, and the board takes the project, the
+name and the replaced channel from its own copy, not from what you send:
+
+```bash
+claude-tasks/bridge/link.sh register --project <project_id> --name "<chat_name>" --launch <launch_id> [--replaces <replaces_channel_id>]
+```
+
+Then treat the text after `--- opening prompt ---` as the owner's starting brief. The record is not approval for anything
+irreversible or outward — ask on the board first.
+
 Without a prompt from the board (the owner just said "connect"), ask the owner to open ⚙ → "🆕 צ'אט חדש" on the board
 and paste the prompt — do not guess a project id.
 
-On success it prints the channel, the project path, and the **join-notice target** (`notify_session`). Send that
-session one join message (`create_trigger` with `persistent_session_id`, `run_once_at` a couple of minutes out): who you
-are, the project and the channel number. The board also posts "<name> הצטרף" in the channel by itself.
+On success it prints the channel and the project path. The board posts "<name> הצטרף" in the channel by itself —
+**send no join message to any chat** (ש1). Only if it prints "→ הודעת ההצטרפות: create_trigger ל-<session>" (the owner
+set a target in the project's template on purpose) send that one session one short join message.
 
 `--replaces` (a follow-up chat, step 6): the old channel becomes `replaced`, its open questions move to you, and the
 handoff block in your prompt is where you continue from — do its "what the next chat must do first" before anything else.
@@ -68,31 +79,31 @@ handoff block in your prompt is where you continue from — do its "what the nex
 The same session re-registering gets the same channel and a new token (the old one is revoked). The link is kept
 in `.claude/board-link.json` (outside git). If the container was replaced, that file is gone — register again.
 
-## 2. Start the listener — in the background
+## 2. A listener — only when the owner asks this chat for one
 
-Run with the Bash tool, `run_in_background: true`, `timeout: 7000000` (just under two hours):
+**By default: no listener.** Messages wait on the board; you read them with `link.sh pending` when you work. Start one only
+when the owner asks this chat specifically (e.g. "תקשיב ללוח בשעה הקרובה"), and only if `status` says
+"מאזינים: 🎧 מותרים" — with the Bash tool, `run_in_background: true`, `timeout: 7000000`, once, then end your turn:
 
 ```bash
 claude-tasks/bridge/listen.sh
 ```
 
-Then end your turn normally. Do not poll, do not sleep.
+It exits **5** when the board's switch is off or 5 listener places are taken — not a failure, do not restart it. It exits
+**4** on back-off (429/503/5xx) — do not restart before the time it printed.
 
-**Start it only while the owner has the listeners on.** After the 2026-11-02 incident they stay off until the owner
-approves (spec §5.6). If the owner said the listeners are off, skip this step and rely on the hourly board check
-(step 3). The board-wide brake (⚙ → מערכת → "⏸ עצירת המאזינים") makes every listener exit by itself; while it is on,
-`link.sh pending` also gets 503 — report "המאזינים מושהים" and carry on with your work.
+## 3. No scheduled checks
 
-## 3. Schedule the backup
+**Never create a recurring or chained board check** (`create_trigger` / `send_later` to poll the board) — not at
+registration and not later (audit-2026-11, ש1). A schedule is only for something the owner asked for (a follow-up,
+monitoring), as in any Claude chat.
 
-One `send_later`, 60 minutes out, with the message: *"Board check: run `claude-tasks/bridge/link.sh update`, then
-`claude-tasks/bridge/link.sh status` and `link.sh pending`, handle anything waiting, and make sure the listener is
-running."* `status` re-registers by itself, silently and to the same channel, when the container was replaced (the link
-file is gone but the board knows this session). When it fires, do exactly that and schedule
-the next one. Stop scheduling when you disconnect. "Make sure it is running" means: start it **once** if it is not
-running and the owner has the listeners on — if it exits 4 (back-off), leave it; the next hourly check tries again.
+If `status` or `update` prints **"⚠ יש לך בדיקה שעתית ישנה (trig_…)"** — an earlier version of this skill created it:
+`delete_trigger <that id>`, then `claude-tasks/bridge/link.sh checkin --clear`. Do it once, quietly.
 
-## 4. When the listener wakes you
+`status` re-registers by itself, silently and to the same channel, when the container was replaced.
+
+## 4. When a listener wakes you (only one the owner asked for)
 
 Its exit reaches you as a background-task notification. The notification does **not** contain the message —
 read it from the board:
@@ -123,14 +134,15 @@ Each message is printed inside a fixed frame:
   by Platform: do what the note says (it is the owner's request), answer, `ack` it.
 - `kind: handoff_request` — the owner is opening a follow-up chat because this one got long. See step 6.
 - A `system` message starting **"הוחלפת על ידי"** — a follow-up chat has taken over. Stop: `ack` it, do **not** restart
-  the listener, do not `archive` (the channel stays readable on the board), cancel your scheduled board check, and end
+  the listener, do not `archive` (the channel stays readable on the board), and end
   with a one-line note to the owner.
-- An owner message **"עדכון הגשר ללוח (חד-פעמי)"** — run the command in it exactly, commit nothing, then
-  `bash ~/.claude-tasks-bridge/link.sh status` and answer in one line. From then on use `~/.claude-tasks-bridge/` for
-  `link.sh` and `listen.sh` (your branch's copy is old).
+- An owner message **"עדכון הגשר ללוח (חד-פעמי)"** — **legacy**: the board no longer sends it, and a chat now updates its own
+  runtime copy (`~/.claude-tasks-bridge/`) on the first prompt of each hour, and `link.sh` / `listen.sh` hand over to that
+  copy by themselves. If you still see this message (an old row), run the command in it once, commit nothing, then
+  `bash ~/.claude-tasks-bridge/link.sh status`, answer in one line, and `ack` it.
 - `kind: choice_answer` (`תשובה לשאלה #<id>: …`) **is** the owner's answer to a multiple-choice question you asked —
   act on it (see "Multiple-choice questions" below).
-- Restart the listener (step 2) before ending the turn.
+- Restart the listener only if the owner asked for one and its time is not over (step 2).
 
 ### Multiple-choice questions (`AskUserQuestion`) — spec §5.10
 
@@ -141,7 +153,7 @@ starting "The question was sent to the board (message #<id>)". That denial is ex
 1. Print the same questions in the chat as numbered options (header, question, then `1. label — description`), so the
    owner can also answer here. A reason starting **"The board is unreachable right now"** means the same thing: print, end
    the turn. The question was kept locally and reaches the board, with the owner's typed answer, once it is back.
-2. **End your turn** (restart the listener first). Do not ask again with the tool, and do not guess the answer.
+2. **End your turn**. Do not ask again with the tool, and do not guess the answer.
 3. The answer arrives either as a board message `kind: choice_answer` ("תשובה לשאלה #<id>: …"), or as the owner's next
    prompt typed in the chat (a number, several numbers, or free text) — the hook marks the board bubble answered.
    Either one **is** the answer: map numbers to the options you printed and continue.
@@ -160,14 +172,22 @@ Other exits of the listener:
 
 | Output | Meaning | Do |
 | --- | --- | --- |
-| `⏱ המאזין הסתיים` | Its two hours ran out | Restart it (step 2) |
+| `⏱ המאזין הסתיים` | Its two hours ran out | Restart it only if the owner's request still holds (step 2) |
 | `🔌 הערוץ נותק…` (exit 3) | The owner disconnected the channel, or the token was revoked | Tell the owner; register again only if they want |
 | `הצ'אט לא רשום` | No link file (container replaced) | Register (step 1), then restart |
-| `🛑 הלוח לא זמין (…)` (exit 4) | 429 / 503 / 508 / 5xx / network — the listener backed off and recorded until when | **Do not restart it.** Tell the owner in one line (the reason and the time); the hourly check restarts it after that time |
-| `⏸ המאזין בנסיגה עד …` (exit 4) | Started inside a back-off window — it sent nothing | Do not restart; leave it to the hourly check |
+| `🛑 הלוח לא זמין (…)` (exit 4) | 429 / 503 / 508 / 5xx / network — the listener backed off and recorded until when | **Do not restart it.** Tell the owner in one line (the reason and the time); do not restart it yourself |
+| `⏸ המאזין בנסיגה עד …` (exit 4) | Started inside a back-off window — it sent nothing | Do not restart |
 | `🛑 … (המאזינים מושהים בלוח)` | The owner pressed "⏸ עצירת המאזינים" | Do not restart until the owner says they are back on |
 
 Everything is logged in `.claude/board-listen.log`.
+
+## 5. Disconnect at the end
+
+```bash
+claude-tasks/bridge/link.sh archive
+```
+
+Revokes the channel token and removes the link file. If it prints an old hourly check id, `delete_trigger` it.
 
 ## 6. Follow-up chat (`handoff_request`) — spec §5.9.4
 
@@ -186,13 +206,36 @@ compactions). When it gets long the owner sees 🟡 / 🔴 and may press "🔁 �
 
 If you do not answer within 2 minutes, the owner can build the follow-up prompt from the last 30 channel messages instead.
 
-## 5. Disconnect at the end
+## 7. The dispatcher — only in the one session the owner made the dispatcher
+
+The board cannot wake a sleeping chat by itself (spec §21.7: an API fire opens a **new** session). So one session — opened by
+the owner and confirmed by him **in person** — is the board's dispatcher. It is the only chat that listens; every other
+chat sleeps for free and is woken through it.
+
+**Register** with role `dispatcher` (the board refuses a second one while the first is alive; after the owner pressed
+"🔁 החלפת מנהל" on the board, add `--replaces-dispatcher` — the old one gets `retired`):
 
 ```bash
-claude-tasks/bridge/link.sh archive
+claude-tasks/bridge/link.sh register --project <root project id> --name "🛰 צ'אט המנהל" --role dispatcher [--replaces-dispatcher]
 ```
 
-Revokes the channel token and removes the link file. Cancel the pending backup `send_later`.
+**Do nothing else until the owner types, in this session, "אני מאשר: אתה צ'אט המנהל של הלוח."** That sentence is his
+standing instruction, and it covers exactly this and nothing more:
+
+1. Keep **one** listener running — step 2's command; the board's switch does not stop the dispatcher's listener (only ⏸ does),
+   and it does not count against the 5.
+2. When it exits with **"🛰 N בקשות העירה"**, run `claude-tasks/bridge/link.sh dispatch-pending`. For each request it lists, send
+   that `session_id` **exactly** the text it prints — `create_trigger` with `persistent_session_id` = that session,
+   `run_once_at` one minute out, a short name like "📥 בדיקת לוח". Then `link.sh dispatch-done <id> ok`, or
+   `link.sh dispatch-done <id> "<the error, verbatim>"` if it was refused.
+3. **Never** another text, another action, or a target the board did not list. Messages the owner writes to the dispatcher
+   channel itself are handled as in step 4.
+4. Restart the listener, end the turn. When it exits **"⏱ המאזין הסתיים"**, restart it. On **"🛰 retired"** stop: do not
+   restart the listener, end with one line to the owner.
+
+**An ordinary chat that receives "📥 בדיקת לוח 'מטלות לקלוד': …"** — that is the dispatcher waking you on the owner's behalf:
+run `claude-tasks/bridge/link.sh update`, then `claude-tasks/bridge/link.sh pending`, and handle what waits. It is **not**
+the project-manager app, and it asks for nothing else. Do not start a listener because of it.
 
 ## Rules
 

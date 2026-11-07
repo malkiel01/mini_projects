@@ -3,23 +3,28 @@
  * גרסת הגשר בצ'אטים, וצ'אט שממתין לאישור באפליקציה — docs/spec.md §5.10.1.
  *
  * ‏bridge_version: הצ'אט מדווח אותה ב-channel-health. ערוץ פעיל שגרסתו ישנה (או לא דווחה — צ'אט
- * שנפתח לפני התיקון) מסומן "⚠ גרסה ישנה", ובעל הלוח שולח לו מ-⚙ הוראת עדכון חד-פעמית.
+ * שנפתח לפני התיקון) מסומן "⚠ גרסה ישנה". הצ'אט מתעדכן לבד בתור הראשון בכל שעה (bridge/hook.sh, ש2); הוראת העדכון
+ * מ-⚙ הוסרה מהממשק (נשארו BRIDGE_UPDATE_TEXT ו-bridgeSendUpdate — קוד מת, ראו docs/known-issues.md).
  * ‏waiting: hook ה-Notification מדווח חלון הרשאה שפתוח באפליקציה — "⏸" בשורת הערוץ, עד שהצ'אט
  * שולח משהו שוב.
  */
 declare(strict_types=1);
 
 /** הגרסה הנוכחית — לעדכן יחד עם BRIDGE_VERSION ב-bridge/lib.sh. */
-const BRIDGE_VERSION_CURRENT = '2026-11-03.5';
+const BRIDGE_VERSION_CURRENT = '2026-11-04.3';
 
 /** ההוראה שנשלחת לצ'אט ישן. הסקיל הישן כבר פועל לפי הודעת owner; הצ'אט לא מבצע commit לקובץ. */
+/** הוראות שרק הצ'אט עצמו מבצע — לא עוברות ל-Platform במעבר מסלול (Platform אינו יכול להריץ פקודות). */
+const CHAT_ONLY_SQL = " AND body NOT LIKE 'עדכון הגשר ללוח (חד-פעמי)%' AND kind NOT IN ('handoff_request', 'handoff', 'permission')";
+
 const BRIDGE_UPDATE_TEXT = "עדכון הגשר ללוח (חד-פעמי). הרץ בדיוק את זה, ואל תבצע commit לשום קובץ:\n\n"
     . "```\n"
     . "git fetch origin main && git show origin/main:.claude/settings.json > .claude/settings.json && bash <(git show origin/main:claude-tasks/bridge/update.sh)\n"
     . "```\n\n"
     . "מעכשיו: את link.sh ואת המאזין מריצים מהעותק המעודכן — `bash ~/.claude-tasks-bridge/link.sh …` ו-"
-    . "`bash ~/.claude-tasks-bridge/listen.sh` (לא מ-claude-tasks/bridge שבענף שלך, שהוא ישן). את המאזין מפעילים רק "
-    . "כשבעל הלוח החזיר את המאזינים. ההוראות המעודכנות: `git show origin/main:.claude/skills/claude-tasks-live/SKILL.md`.\n\n"
+    . "`bash ~/.claude-tasks-bridge/listen.sh` (לא מ-claude-tasks/bridge שבענף שלך, שהוא ישן). מאזין מפעילים רק "
+    . "כשבעל הלוח ביקש ממך במפורש. ההוראות המעודכנות: `git show origin/main:.claude/skills/claude-tasks-live/SKILL.md`.\n\n"
+    . "אין בדיקה שעתית ואין מאזין קבוע: אם יצרת בעבר בדיקה עצמית (בדיקת לוח חוזרת), מחק אותה — delete_trigger <ה-id שלה> — ואז bash ~/.claude-tasks-bridge/link.sh checkin --clear.\n\n"
     . "אחר כך: bash ~/.claude-tasks-bridge/link.sh status, וענה בשורה אחת מה הודפס.";
 
 function migrateBridgeVersion(PDO $pdo): void {

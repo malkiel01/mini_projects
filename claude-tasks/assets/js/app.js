@@ -1,7 +1,7 @@
 import { $, $$, el, toast, api, state, timeAgo, on, set, PLATFORM_HINT } from './core.js';
 import { loadConnections, loadProviders, runTask, openProject, modelPicker, renderUsersInto } from './platform.js';
 import { renderPlatformStrip, renderLanesPanel } from './lanes.js';
-import { loadChannels, openConversation, openFromHash } from './chats.js';
+import { loadChannels, openConversation, openFromHash, listenLine } from './chats.js';
 import { approvalCard, noteText } from './approvals.js';
 import { downloadModel as trDownload, removeModel as trRemove, availableFor as trAvailableFor, downloadedBytes as trHave, model as trModel, setLang as trSetLang, TRANSLATE_LANGS } from './translate.js';
 import { loadUsage, usageCard, usageMini } from './usage.js';
@@ -230,6 +230,7 @@ async function enterApp() {
   loadProviders().catch(() => {});
   refreshQuotaWarn();
   renderBridgePaused();
+  if (state.user?.role === 'admin') loadDispatcherSub();   // שלב 25: שורת 🛰 צ'אט המנהל
   monitorLazy();
   openFromHash();   // קישור להודעה (12b)
 }
@@ -1088,25 +1089,118 @@ on('#menuBtn', 'click', openDrawer);
 function renderBridgePaused() {
   const p = !!state.bridgePaused;
   set('#bridgePausedStrip', 'hidden', !p);
-  $('#bridgePauseIc').textContent = p ? '▶' : '⏸';
-  $('#bridgePauseT').textContent = p ? 'החזרת המאזינים' : 'עצירת המאזינים';
+  $('#bridgePauseIc').textContent = p ? '⏸' : '🎧';
+  $('#bridgePauseT').textContent = 'מאזינים';
   $('#bridgePauseSub').textContent = p
-    ? `מושהים מאז ${new Date(state.bridgePaused * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })} — כל צ'אט יחזור בבדיקה השעתית שלו`
-    : "כל הצ'אטים מפסיקים לשאול את הלוח, תוך מחזור אחד";
+    ? `⏸ עצורים מאז ${new Date(state.bridgePaused * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' })}`
+    : '💤 כבויים (ברירת מחדל) · 🎧 מותרים · ⏸ עצורים — נגיעה פותחת';
+}
+
+/* ── שלב 25 (§21, §21.7): צ'אט המנהל — מצב, עלות, פתיחה והחלפה ── */
+const dsTime = (ts) => ts ? new Date(ts * 1000).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+async function loadDispatcherSub() {
+  try {
+    const d = (await api('dispatcher-info')).dispatcher;
+    $('#dispatcherSub').textContent = d.active ? `🟢 פעיל${d.last_batch_at ? ' · אצווה אחרונה ' + dsTime(d.last_batch_at) : ''}${d.replace_due ? ' · 🔁 הגיע הזמן להחליף' : ''}`
+      : '⚪ לא פעיל — לא ניתן להעיר צ\'אטים';
+    return d;
+  } catch { return null; }
+}
+async function openDispatcher() {
+  const d = await loadDispatcherSub();
+  if (!d) return;
+  const copy = (txt, label) => el('button', { type: 'button', class: 'btn ghost sm', text: `📋 ${label}`, onclick: async () => {
+    try { await navigator.clipboard.writeText(txt); toast('הועתק', 'ok'); } catch { toast('לא הועתק — סמן והעתק ידנית', 'error'); } } });
+  const parts = [
+    el('p', { class: `ds-state${d.active ? ' is-on' : ''}`, role: 'status', text: d.active
+      ? `🟢 מנהל פעיל: ${d.name} · מאז ${dsTime(d.since)} · אצווה אחרונה ${dsTime(d.last_batch_at)} · ${d.handled} אצוות`
+      : d.channel_id ? `⚪ המנהל לא פעיל — המאזין שלו לא בדק את הלוח מאז ${dsTime(d.lease_until)}. פתח אותו ב-Claude וכתוב לו "הפעל את המאזין".` : '⚪ אין צ\'אט מנהל עדיין.' }),
+    d.active && d.session_url ? el('a', { class: 'btn ghost sm', href: d.session_url, target: '_blank', rel: 'noopener', text: 'פתיחה ב-Claude' }) : null,
+    el('p', { class: 'hint', text: `העירות בשעה האחרונה: ${d.wakes_hour} מתוך ${d.wakes_hour_cap} · בתור: ${d.queued}` }),
+    el('h3', { class: 'conn-group', text: 'מה הוא עושה, ומה זה עולה' }),
+    el('p', { class: 'hint', text: 'המנהל הוא הצ\'אט היחיד שמאזין ללוח. כשאתה כותב לצ\'אט ישן (או לוחץ ⏰), הלוח מבקש ממנו להעיר את הצ\'אט — והצ\'אט עונה כאן תוך כ-3 דקות. אין שעונים ואין בדיקות שעתיות.' }),
+    el('p', { class: 'hint', text: 'העלות: תור קצר אחד לכל אצוות העירות, ועוד כ-12 תורות קצרים ביום כשהמאזין שלו מתחדש (כל שעתיים). בקשה אחת לשרת כל ~30 שניות. צ\'אט אחד בלבד.' }),
+  ];
+  if (d.replace_due) parts.push(el('div', { class: 'card is-static ds-replace' }, [el('div', { class: 'body' }, [
+    el('div', { class: 'l1', text: '🔁 הגיע הזמן להחליף מנהל' }),
+    el('div', { class: 'l2', text: `${d.handled} אצוות או שבוע — צ'אט ארוך נהיה יקר. פותחים מנהל חדש, והישן נסגר לבד.` })])]));
+  if (d.active) parts.push(el('div', { class: 'row-btns' }, [el('button', { type: 'button', class: 'btn sm', text: '🔁 החלפת מנהל', onclick: async (e) => {
+    e.target.disabled = true;
+    try { await api('dispatcher-handover'); toast('ההחלפה פתוחה ל-30 דקות — פתח מנהל חדש לפי ההוראות למטה', 'ok'); openDispatcher(); }
+    catch (ex) { toast(ex.message, 'error'); e.target.disabled = false; } } })]));
+  if (!d.active || d.replace_due || d.handover_until > Date.now() / 1000) {
+    parts.push(el('h3', { class: 'conn-group', text: d.active ? 'פתיחת מנהל חדש (במקום הנוכחי)' : 'פתיחת צ\'אט מנהל — פעם אחת' }),
+      el('ol', { class: 'ds-steps' }, [
+        el('li', { text: 'ב-Claude Code: צ\'אט חדש על mini_projects, בסביבה שבה שמור האסימון של הלוח.' }),
+        el('li', {}, ['הדבק את הפרומפט: ', copy(d.prompt + (d.handover_until > Date.now() / 1000 ? '\n(Use --replaces-dispatcher.)' : ''), 'העתקת הפרומפט')]),
+        el('li', {}, ['כשהוא נרשם — הקלד בעצמך, בלי להדביק: ', el('b', { text: d.sentence })]),
+        el('li', { text: 'זהו. השורה כאן תהפוך ל-"🟢 פעיל" תוך דקה.' }),
+      ]));
+  }
+  $('#dsBody').replaceChildren(...parts.filter(Boolean));
+  $('#dispatcherSheet').open || $('#dispatcherSheet').showModal();
+}
+on('#dispatcherBtn', 'click', () => openDispatcher());
+on('#dispatcherBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDispatcher(); } });
+
+/* ── שלב 24א (§20.3.3, §20.3.5): המתג בשלושה מצבים, המד, והיומן של כל הצ'אטים ── */
+const LS_MODES = [['paused', '⏸ עצורים'], ['hourly', '💤 כבויים'], ['on', '🎧 מותרים']];
+const LS_HINT = {
+  paused: "אף צ'אט לא שואל את הלוח. ההודעות ממתינות עד שתחזיר.",
+  hourly: "אף צ'אט לא מאזין ואין בדיקות חוזרות — בלי טוקנים ובלי עומס. כל צ'אט קורא את הלוח בפעם הבאה שהוא עובד.",
+  on: "צ'אט מאזין רק כשביקשת ממנו במפורש — עד 5 יחד, תשובה תוך ~דקה.",
+};
+async function openListeners() {
+  let r;
+  try { r = await api('listeners-log', {}); } catch (ex) { toast(ex.message, 'error'); return; }
+  const info = r.listeners;
+  $('#lsModes').replaceChildren(...LS_MODES.map(([v, t]) => el('button', { type: 'button', role: 'radio', 'aria-checked': String(info.mode === v), text: t,
+    onclick: () => setListeners(v) })));
+  $('#lsHint').textContent = LS_HINT[info.mode] || '';
+  $('#lsMeter').textContent = `עכשיו: ${info.listening}/${info.cap} מאזינים · ${info.per_min} בקשות לדקה (10 דק' אחרונות) · ${info.errors_hour} תשובות 429/503 בשעה האחרונה`;
+  $('#lsRows').replaceChildren(...(r.channels.length ? r.channels.map((c) => el('li', { class: 'card is-static' }, [
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: `${c.name} · ${c.project}` })]),
+      el('div', { class: 'l2 l2-wrap', text: `${listenLine({ ...c, status: 'active' })} · נראה ${c.last_seen_at ? timeAgo(c.last_seen_at) : 'אף פעם'}${c.has_check ? ' · ⚠ בדיקה שעתית ישנה — תימחק' : ''}${c.bridge_version ? ' · גשר ' + c.bridge_version : ''}` })]),
+    c.session_url ? el('a', { class: 'btn ghost sm', href: c.session_url, target: '_blank', rel: 'noopener', text: 'פתיחה' }) : null,
+  ])) : [el('li', { class: 'empty', text: "אין צ'אטים פעילים." })]));
+  if (!$('#listenersSheet').open) $('#listenersSheet').showModal();
+}
+async function setListeners(mode) {
+  if (mode === 'paused' && !confirm("לעצור את כל המאזינים? כל צ'אט יפסיק לשאול את הלוח תוך כחצי דקה.")) return;
+  try {
+    const { listeners } = await api('listeners-mode', { mode });
+    state.bridgePaused = listeners.mode === 'paused' ? Math.floor(Date.now() / 1000) : 0;
+    renderBridgePaused();
+    toast({ paused: '⏸ המאזינים עצורים', hourly: '💤 המאזינים כבויים', on: '🎧 מאזינים מותרים — עד 5 יחד' }[mode], 'ok');
+    openListeners();
+  } catch (ex) { toast(ex.message, 'error'); }
 }
 async function toggleBridgePause() {
   const pause = !state.bridgePaused;
   if (!confirm(pause
     ? "לעצור את כל המאזינים? כל צ'אט יפסיק לשאול את הלוח תוך כחצי דקה, ולא יחזור עד שתחזירו."
-    : "להחזיר את המאזינים? כל צ'אט יחזור בבדיקה השעתית שלו — לא כולם בבת אחת.")) return;
+    : "להחזיר את המאזינים?")) return;
   try {
     state.bridgePaused = (await api('bridge-pause', { paused: pause })).bridge_paused;
     renderBridgePaused();
     toast(pause ? 'המאזינים מושהים' : 'המאזינים יחזרו בהדרגה', 'ok');
   } catch (ex) { toast(ex.message, 'error'); }
 }
-on('#bridgePauseBtn', 'click', toggleBridgePause);
-on('#bridgePauseBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBridgePause(); } });
+on('#bridgePauseBtn', 'click', () => openListeners());
+// 🧯 תקלות אחרונות — הטקסט המלא של כל "שגיאת שרת" (הטוסט חותך אותו)
+async function openServerErrors() {
+  try {
+    const { errors } = await api('server-errors', {});
+    $('#seRows').replaceChildren(...(errors.length ? errors.map((x) => el('li', { class: 'card is-static' }, [
+      el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: `#${x.id} · ${x.action} · ${new Date(x.at * 1000).toLocaleString('he-IL')}` })]),
+        el('div', { class: 'l2 l2-wrap', dir: 'ltr', text: x.detail })]),
+    ])) : [el('li', { class: 'empty', text: 'אין תקלות רשומות.' })]));
+    $('#serverErrs').showModal();
+  } catch (ex) { toast(ex.message, 'error'); }
+}
+on('#serverErrBtn', 'click', openServerErrors);
+on('#serverErrBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openServerErrors(); } });
+on('#bridgePauseBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openListeners(); } });
 on('#boardPolicyBtn', 'click', () => openPolicySheet(null));
 on('#boardPolicyBtn', 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openPolicySheet(null); } });
 

@@ -13,8 +13,9 @@
 declare(strict_types=1);
 
 const TEMPLATE_FIELDS = ['name_pattern', 'roles', 'context_files', 'hierarchy', 'notify_session', 'extra'];
-/** ברירת המחדל להודעת ההצטרפות: צ'אט האפיון של "מטלות לקלוד" (§5.9.5). */
-const NOTIFY_SESSION_DEFAULT = 'session_018g4NYGkLv7LXXa1DqxwnRS';
+/** ש1 (audit-2026-11): הודעת הצטרפות — רק בלוח. ריק = אין הודעה לשום צ'אט; הערך הישן (צ'אט האפיון) נחשב ריק. */
+const NOTIFY_SESSION_DEFAULT = '';
+const NOTIFY_SESSION_OLD_DEFAULT = 'session_018g4NYGkLv7LXXa1DqxwnRS';
 const DEFAULT_NAME_PATTERN = '{project} - {role}';
 const HANDOFF_WAIT_SECONDS = 120;
 const HANDOFF_FALLBACK_MESSAGES = 30;
@@ -77,7 +78,7 @@ function templateResolved(int $projectId): array {
         'roles'          => is_array($roles) && $roles ? $roles : [defaultRole()],
         'context_files'  => (string) ($values['context_files'] ?? ''),
         'hierarchy'      => (string) ($values['hierarchy'] ?? ''),
-        'notify_session' => (string) ($values['notify_session'] ?? (config()['chat_notify_session_default'] ?? NOTIFY_SESSION_DEFAULT)),
+        'notify_session' => (fn ($s) => $s === NOTIFY_SESSION_OLD_DEFAULT ? '' : $s)((string) ($values['notify_session'] ?? (config()['chat_notify_session_default'] ?? NOTIFY_SESSION_DEFAULT))),
         'extra'          => (string) ($values['extra'] ?? ''),
         'sources'        => $sources,
         'own'            => array_map(fn ($v) => $v === null ? null : ($v), $own),
@@ -132,7 +133,7 @@ function saveTemplate(array $user, int $projectId, array $fields): array {
             })($v),
             'notify_session' => (function ($s) {
                 $s = trim((string) $s);
-                if (!preg_match('/^session_[A-Za-z0-9]{10,60}$/', $s)) throw new InvalidArgumentException('notify_session: מזהה session_…');
+                if ($s !== '' && !preg_match('/^session_[A-Za-z0-9]{10,60}$/', $s)) throw new InvalidArgumentException('notify_session: מזהה session_…');
                 return $s;
             })($v),
             'context_files'  => implode("\n", array_slice(array_values(array_filter(array_map(
@@ -216,7 +217,7 @@ function chatPrompt(int $projectId, array $role, ?int $replaces = null, string $
         $lines[] = $n++ . '. ' . trim(($t['hierarchy'] !== '' ? 'ההיררכיה: ' . trim($t['hierarchy']) . '. ' : '')
                  . ($reports !== '' ? "אתה מדווח ל: $reports." : ''));
     }
-    $lines[] = $n . ". בסיום הרישום — שלח הודעת הצטרפות (create_trigger, persistent_session_id) ל-{$t['notify_session']}: מי אתה, הפרויקט, ומספר הערוץ.";
+    if ($t['notify_session'] !== '') $lines[] = $n . ". בסיום הרישום — שלח הודעת הצטרפות (create_trigger, persistent_session_id) ל-{$t['notify_session']}: מי אתה, הפרויקט, ומספר הערוץ.";
     if (trim((string) ($role['brief'] ?? '')) !== '') { $lines[] = ''; $lines[] = trim($role['brief']); }
     if (trim($t['extra']) !== '') { $lines[] = ''; $lines[] = trim($t['extra']); }
     if ($handoff !== '') { $lines[] = ''; $lines[] = $handoff; }
@@ -429,7 +430,7 @@ function handoffPrompt(array $user, int $channelId, bool $fallback = false): arr
     $h->execute([$channelId, $r['id']]);
     $body = $h->fetchColumn();
     $source = 'handoff';
-    // צ'אט שלא מאזין לא יקבל את הבקשה עד הבדיקה השעתית שלו — אין טעם לחכות 2 דקות; "בלי תקציר" מיד
+    // צ'אט שלא מאזין לא יקרא את הבקשה עד שיעבוד או יוער — אין טעם לחכות 2 דקות; "בלי תקציר" מיד
     $listening = $channel['status'] === 'active' && (int) $channel['listening_until'] > nowTs();
     $canFallback = $waited >= HANDOFF_WAIT_SECONDS || !$listening;
     if ($body === false) {

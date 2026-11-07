@@ -1527,10 +1527,19 @@ try {
         if ($pid === 0 && ($known = sessionChannelDefaults(str_field($in, 'session_id', 120)))) {
             $pid = $known['project_id']; $name = $name ?: $known['name']; $role = $role ?: $known['role'];
         }
-        $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url, int_or_null($in, 'replaces'));
+        // שלב 23 (§19.2, 5): צ'אט שנפתח מהלוח — הרשומה קובעת פרויקט, שם והחלפה (לא מה שהצ'אט שלח)
+        $launch = str_field($in, 'launch', 64) !== '' ? launchClaim($scope, str_field($in, 'launch', 64)) : null;
+        if ($launch) { $pid = $launch['project_id']; $name = $launch['name']; }
+        // שלב 25: צ'אט מנהל — אחד בכל רגע; מנהל שני נדחה, אלא בהחלפה שבעל הלוח פתח
+        if ($role === 'dispatcher') dispatcherPrecheck(str_field($in, 'session_id', 120), !empty($in['replaces_dispatcher']));
+        $reg = registerChannel($scope, $pid, $name, $role, str_field($in, 'session_id', 120), $url,
+                               $launch ? $launch['replaces'] : int_or_null($in, 'replaces'));
+        if ($launch) launchRegistered($launch['id'], (int) $reg['channel_id']);
+        if ($role === 'dispatcher') dispatcherClaim(getChannel((int) $reg['channel_id']));
+        listenReport(getChannel((int) $reg['channel_id']), $in);   // שלב 24א
         channelSetVersion(getChannel($reg['channel_id']), str_field($in, 'bridge_version', 40));
         // שלב 16: הצ'אט חזר — האפיזודה נסגרת, והתקציר "מה קרה בלעדיך" חוזר אליו
-        ok($reg + ['digest' => laneReturn(getChannel($reg['channel_id']))]);
+        ok($reg + ['digest' => laneReturn(getChannel($reg['channel_id'])), 'listeners' => listenersMode()]);
     }
 
     /* ── פתיחת צ'אטים (§5.9) ── */
@@ -1732,6 +1741,47 @@ try {
         ok(['connections' => userConnections((int) $me['id'])]);
     }
 
+    /* ── שלב 23: "➕ צ'אט חדש" מהלוח (lib/launcher.php) ── */
+    case 'launchers': {
+        $me = requireUser($user);
+        ok(['launchers' => userLaunchers((int) $me['id']), 'guide' => launcherGuide($me, (int) ($in['project_id'] ?? 0))]);
+    }
+
+    case 'launcher-save': {
+        $me = requireUser($user);
+        ok(['launcher' => launcherSave($me, $in), 'launchers' => userLaunchers((int) $me['id'])]);
+    }
+
+    case 'launcher-remove': {
+        $me = requireUser($user);
+        launcherRemove($me, (int) ($in['id'] ?? 0));
+        ok(['launchers' => userLaunchers((int) $me['id'])]);
+    }
+
+    case 'project-launcher':
+        setProjectLauncher(requireUser($user), (int) ($in['project_id'] ?? 0), int_or_null($in, 'launcher_id'));
+        ok();
+
+    case 'launch-chat':
+        ok(launchChat(requireUser($user), (int) ($in['project_id'] ?? 0), (string) ($in['name'] ?? ''),
+                      str_field($in, 'mode', 12), int_or_null($in, 'replaces_channel_id')));
+
+    case 'launches': {
+        $me = requireUser($user);
+        $pid = (int) ($in['project_id'] ?? 0);
+        requireProject($pid, $me, 'read');
+        $l = launcherFor($me, $pid);
+        ok(['launches' => pendingLaunches($me, $pid), 'launcher' => $l ? launcherPublic($l) : null]);
+    }
+
+    /* תקלות אחרונות (בעל הלוח): "שגיאת שרת" במלואה — הפעולה, הסוג, ההודעה והמקום בקוד */
+    case 'server-errors': {
+        $me = requireUser($user);
+        if (authorRole($me) !== 'owner') fail('בעל הלוח בלבד', 403);
+        $rows = db()->query("SELECT id, target, detail, created_at FROM events WHERE action = 'server.error' ORDER BY id DESC LIMIT 30")->fetchAll();
+        ok(['errors' => array_map(fn ($r) => ['id' => (int) $r['id'], 'action' => $r['target'], 'detail' => $r['detail'], 'at' => (int) $r['created_at']], $rows)]);
+    }
+
     /* §18.3 (22א.2): מה Platform רואה בפרויקט */
     case 'project-check':
         ok(['check' => platformCheck(requireUser($user), (int) ($in['project_id'] ?? 0))]);
@@ -1759,7 +1809,10 @@ try {
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
         // ‏link.sh pending: הצ'אט כאן — האפיזודה נסגרת; התקציר מודפס לפני ההודעות
         $digest = laneReturn($ch);
-        ok(['messages' => channelInbox(getChannel((int) $ch['id'])), 'digest' => $digest]);
+        listenReport($ch, $in);   // שלב 24א: מה הגשר מדווח — מצב ההאזנה והבדיקה הבאה
+        $fresh = getChannel((int) $ch['id']);
+        // ש1: בדיקה שעתית ישנה שהצ'אט עוד מחזיק — הגשר מבקש ממנו למחוק אותה
+        ok(['messages' => channelInbox($fresh), 'digest' => $digest, 'listeners' => listenersMode(), 'old_check' => (string) $fresh['check_trigger_id']]);
     }
 
     case 'channel-ack': {
@@ -1773,8 +1826,72 @@ try {
         if (!$ch) fail('נדרש אסימון ערוץ', 403);
         // הסשן נסגר לפני ההמתנה — אחרת הוא נועל את קובץ הסשן לכל משך ההמתנה
         if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
-        ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20))]);
+        // שלב 24א: רק כשהמתג "🎧 פעילים", ועד 5 מאזינים יחד; המד סופר
+        listenGate($ch);
+        meterBump('wait');
+        // שלב 25: המנהל — ה-lease מתחדש בכל בדיקה; בקשות העירה בתור מעירות אותו; מנהל שהוחלף — retired
+        if (isDispatcherChannel($ch)) {
+            $st = dispatcherRenew($ch);
+            ok(['messages' => $st === 'retired' ? [] : channelWait($ch, 0), 'listeners' => 'on', 'dispatcher' => $st,
+                'dispatch' => $st === 'retired' ? 0 : dispatchQueuedCount()]);
+        }
+        ok(['messages' => channelWait($ch, (int) ($in['wait'] ?? 20)), 'listeners' => 'on']);
     }
+
+    /* ── שלב 25: צ'אט המנהל (lib/dispatch.php) ── */
+    case 'dispatch-pending': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        touchChannel((int) $ch['id']);
+        ok(dispatchPending($ch));
+    }
+
+    case 'dispatch-done': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        ok(['request' => dispatchDone($ch, (int) ($in['id'] ?? 0), !empty($in['ok']), str_field($in, 'error', 200))]);
+    }
+
+    case 'wake':
+        ok(['request' => queueWake(requireUser($user), (int) ($in['channel_id'] ?? 0), str_field($in, 'reason', 80))]);
+
+    case 'wake-all':
+        ok(wakeAllSleeping(requireUser($user), (int) ($in['project_id'] ?? 0)));
+
+    case 'dispatcher-info':
+        requireUser($user);
+        ok(['dispatcher' => dispatcherInfo()]);
+
+    case 'dispatcher-handover':
+        ok(['dispatcher' => dispatcherStartHandover(requireUser($user))]);
+
+    case 'channel-wake-on-write':
+        setChannelWakeOnWrite(requireUser($user), (int) ($in['channel_id'] ?? 0), !empty($in['on']));
+        ok();
+
+    /* ── שלב 24א: הבדיקה העצמית של הצ'אט, המתג, המד, היומן ── */
+    case 'channel-checkin': {
+        $ch = $scope['channel'] ?? null;
+        if (!$ch) fail('נדרש אסימון ערוץ', 403);
+        listenReport($ch, $in);
+        touchChannel((int) $ch['id']);
+        $fresh = getChannel((int) $ch['id']);
+        ok(['listeners' => listenersMode(), 'listen' => channelListen($fresh), 'old_check' => (string) $fresh['check_trigger_id']]);
+    }
+
+    case 'listeners':
+        requireUser($user);
+        meterSweep();
+        ok(['listeners' => listenersInfo()]);
+
+    case 'listeners-mode':
+        ok(['listeners' => setListenersMode(requireUser($user), str_field($in, 'mode', 10))]);
+
+    case 'listeners-log':
+        ok(['channels' => listenersLog(requireUser($user)), 'listeners' => listenersInfo()]);
+
+    case 'wont-wake':
+        ok(['channels' => wontWake(requireUser($user), (int) ($in['project_id'] ?? 0))]);
 
     /* ── ⏸ עצירת המאזינים (§5.6, אחרי ה-429) ── */
     case 'bridge-pause':
@@ -1850,5 +1967,12 @@ try {
 } catch (Throwable $e) {
     // תקלה לא צפויה: נרשמת אצלנו, ולא נחשפת החוצה.
     error_log('claude-tasks: ' . $e->getMessage());
-    fail('שגיאת שרת', 500);
+    // 2026-11-04: "שגיאת שרת" קפצה אצל בעל הלוח בלי שום רמז, ואין גישה ליומן של השרת. עכשיו: הפעולה ומספר אירוע לכולם;
+    // לבעל הלוח בלבד — גם הסוג, ההודעה והמקום בקוד (בלי סודות: הודעות חריגה של PHP, לא קלט). נרשם גם ב-events
+    $where = basename($e->getFile()) . ':' . $e->getLine();
+    $detail = mb_substr(get_class($e) . ': ' . $e->getMessage(), 0, 300) . " @ $where";
+    try { logEvent($user ?? null, 'server.error', (string) $action, false, $detail); $ref = (int) db()->lastInsertId(); }
+    catch (Throwable) { $ref = 0; }
+    $owner = isset($user) && is_array($user) && ($user['role'] ?? '') === 'admin';
+    fail("שגיאת שרת ב-\"$action\"" . ($ref ? " · אירוע #$ref" : '') . ($owner ? " — $detail" : ''), 500);
 }

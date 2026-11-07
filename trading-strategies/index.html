@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
+<meta name="referrer" content="no-referrer">
+<title>אסטרטגיות למסחר</title>
+<link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+  <button class="icon-btn" id="back" type="button" aria-label="חזרה" hidden>→</button>
+  <div class="titles"><h1 id="title">אסטרטגיות למסחר</h1><div class="sub" id="subtitle">לתכנון וניתוח בלבד</div></div>
+  <span id="head-actions"></span>
+</header>
+
+<main id="main" tabindex="-1"><p class="loading">טוען…</p></main>
+
+<nav class="bottom-nav" aria-label="לשוניות">
+  <a href="#/market" data-tab="market"><span class="ic" aria-hidden="true">📈</span>שוק</a>
+  <a href="#/journal" data-tab="journal"><span class="ic" aria-hidden="true">📓</span>יומן</a>
+  <a href="#/more" data-tab="more"><span class="ic" aria-hidden="true">⋯</span>עוד</a>
+</nav>
+
+<div class="toast" role="status" aria-live="polite" hidden></div>
+<!-- TradingView Lightweight Charts 4.2.3 (Apache-2.0) — עותק מקומי, לא CDN (spec-stage-a 4) -->
+<script src="assets/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

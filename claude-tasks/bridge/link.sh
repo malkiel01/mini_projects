@@ -2,6 +2,7 @@
 # הגשר החי — הקישור של הצ'אט לערוץ בלוח (docs/spec.md §5.5–5.6).
 #
 #   link.sh register --project <id> [--name <שם>] [--role <תפקיד>] [--replaces <ערוץ>]
+#                    [--launch <launch_id>] [--replaces-dispatcher]   (--launch: פתיחה מ-➕ בלוח, §19; --replaces-dispatcher: החלפת צ'אט המנהל, §21)
 #                    רישום (או רישום מחדש עם אותו session_id). אסימון ההרשמה: $CLAUDE_TASKS_TOKEN —
 #                    של השורש, אחד לכל הסביבה. מספר הפרויקט מגיע רק מהפרומפט (§5.9.1);
 #                    CLAUDE_TASKS_PROJECT לא נקרא יותר. --replaces — צ'אט המשך (§5.9.4)
@@ -15,6 +16,9 @@
 #   link.sh ack <id>…   סימון "טופל" — רק אחרי שטופלו, לא לפני
 #   link.sh post <owner|chat|system> <טקסט>   שיקוף ידני
 #   link.sh archive  ניתוק: האסימון נפסל וקובץ הקישור נמחק
+#   link.sh checkin --clear   מוחק בדיקה עצמית ישנה (ש1: אין יותר בדיקות עצמיות). הצורה הישנה (checkin <trigger_id>) אסורה לשימוש
+#   link.sh dispatch-pending       צ'אט המנהל (שלב 25): בקשות ההעירה — לכל אחת session והטקסט הקבוע
+#   link.sh dispatch-done <id> ok|"<שגיאה>"   המנהל מדווח על בקשה
 set -u
 # עותק הריצה (§5.10.1) גובר על העותק שבריפו — כך צ'אט על ענף ישן מקבל את הגשר העדכני
 _rt="$HOME/.claude-tasks-bridge"
@@ -66,13 +70,15 @@ silent_register() {
 cmd="${1:-status}"; shift || true
 case "$cmd" in
   register)
-    project=""; name=""; role=""; replaces=""
+    project=""; name=""; role=""; replaces=""; launch=""; repdisp=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --project)  project="$2"; shift 2 ;;
         --name)     name="$2"; shift 2 ;;
         --role)     role="$2"; shift 2 ;;
         --replaces) replaces="$2"; shift 2 ;;
+        --launch)   launch="$2"; shift 2 ;;   # שלב 23: צ'אט שנפתח מהלוח — הרשומה קובעת פרויקט, שם והחלפה
+        --replaces-dispatcher) repdisp=1; shift ;;   # שלב 25: מנהל חדש במקום הקודם (אחרי "🔁 החלפת מנהל" בלוח)
         *) die "פרמטר לא מוכר: $1" ;;
       esac
     done
@@ -86,11 +92,15 @@ case "$cmd" in
     fi
     [[ "$project" =~ ^[0-9]+$ ]] || die "חסר מספר פרויקט (--project). הפרומפט מהלוח (⚙ ← 🆕 צ'אט חדש) כבר כולל אותו — העתיקו אותו משם."
     [ -z "$replaces" ] || [[ "$replaces" =~ ^[0-9]+$ ]] || die "--replaces: מספר הערוץ שמוחלף"
+    [ -z "$launch" ] || [[ "$launch" =~ ^L-[0-9a-f]{8,64}$ ]] || die "--launch: ה-launch_id מרשומת הפתיחה (L-…)"
     sid="$(session_id)"; [ -n "$sid" ] || die "אין מזהה סשן (CLAUDE_CODE_REMOTE_SESSION_ID)"
     [ -n "$name" ] || name="צ'אט ${sid: -6}"
     body="$(jq -n --argjson p "$project" --arg n "$name" --arg r "$role" --arg s "$sid" --arg u "$(session_url)" --arg x "$replaces" \
              --arg v "$BRIDGE_VERSION" \
-             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u, bridge_version:$v} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)')"
+             --arg l "$launch" \
+             '{project_id:$p, name:$n, role:$r, session_id:$s, session_url:$u, bridge_version:$v} + (if $x != "" then {replaces: ($x|tonumber)} else {} end)
+              + (if $l != "" then {launch: $l} else {} end)')"
+    [ -n "$repdisp" ] && body="$(echo "$body" | jq '. + {replaces_dispatcher: true}')"
     mkdir -p "$(dirname "$BOARD_LINK")"
     # בלי $( ) — כדי ש-BOARD_HTTP (שנקבע בתוך board_call) לא ילך לאיבוד בתת-מעטפת
     tmp_out="$(mktemp)"; board_call channel-register "$body" "$CLAUDE_TASKS_TOKEN" > "$tmp_out"; rc=$?
@@ -119,19 +129,22 @@ case "$cmd" in
 
   update)
     run_update
+    old_check_hint ""   # ש1: בדיקה שעתית ישנה (מהקישור המקומי) — לבקש למחוק; status בודק גם מול הלוח
     ;;
 
   status)
     [ -f "$BOARD_LINK" ] || silent_register || die "הצ'אט לא רשום — link.sh register --project <id>"
-    out="$(board_call channel-inbox '{}' "$(token)")" || die "הלוח לא ענה (HTTP $BOARD_HTTP) — אולי הערוץ נותק; link.sh register מחדש"
+    out="$(board_call channel-inbox "$(report_json)" "$(token)")" || die "הלוח לא ענה (HTTP $BOARD_HTTP) — אולי הערוץ נותק; link.sh register מחדש"
     echo "ערוץ #$(link_get channel_id) · $(link_get name) · $(board_url)"
     echo "ממתינות: $(echo "$out" | jq '.messages | length')"
+    listeners_hint "$(echo "$out" | jq -r '.listeners // empty')"
+    old_check_hint "$(echo "$out" | jq -r '.old_check // empty')"
     ;;
 
   pending)
     need_link
     # מקור האמת הוא השרת (inbox לא מסמן); הקובץ של המאזין — גיבוי כשהרשת נופלת
-    if out="$(board_call channel-inbox '{}' "$(token)")"; then msgs="$(echo "$out" | jq '.messages')"
+    if out="$(board_call channel-inbox "$(report_json)" "$(token)")"; then msgs="$(echo "$out" | jq '.messages')"
     elif [ -f "$BOARD_PENDING" ]; then msgs="$(cat "$BOARD_PENDING")"
     else die "הלוח לא ענה (HTTP $BOARD_HTTP)"; fi
     # §15.5: התקציר קודם — מה שקרה במסלול אחר בזמן שהצ'אט לא ענה
@@ -187,12 +200,59 @@ case "$cmd" in
     echo "$out" | jq -r '.message | "#\(.id) · \(.author_role) · \(.kind)" + (if .reply_to then " · על #\(.reply_to)" else "" end) + "\n\(.body)"'
     ;;
 
+  # ‏checkin --clear — מחקת את הבדיקה השעתית הישנה (ש1, audit-2026-11); ‏checkin <trigger_id> [דקות] — מעקב שבעל הלוח ביקש
+  checkin)
+    need_link
+    if [ "${1:-}" = "--clear" ]; then
+      link_set check_trigger_id '""'; link_set next_check_at 0
+      board_call channel-checkin '{"check_trigger_id":"","next_check_at":0,"listen_state":"never"}' "$(token)" >/dev/null || die "הלוח לא אישר (HTTP $BOARD_HTTP)"
+      echo "✓ הבדיקה השעתית נמחקה מהלוח"; exit 0
+    fi
+    tid="${1:-}"; mins="${2:-60}"
+    [[ "$tid" =~ ^trig_[A-Za-z0-9]{8,64}$ ]] || die "שימוש: link.sh checkin <trigger_id> [דקות] — ה-trigger_id שקיבלת מ-create_trigger"
+    [[ "$mins" =~ ^[0-9]{1,3}$ ]] || die "דקות: מספר"
+    link_set check_trigger_id "$(jq -Rn --arg t "$tid" '$t')"
+    link_set next_check_at "$(( $(date +%s) + mins * 60 ))"
+    out="$(board_call channel-checkin "$(report_json)" "$(token)")" || die "הלוח לא אישר (HTTP $BOARD_HTTP)"
+    echo "✓ בדיקה עצמית רשומה בלוח: $tid · הבאה בעוד $mins דק'"
+    listeners_hint "$(echo "$out" | jq -r '.listeners // empty')"
+    ;;
+
+  # שלב 25 (§21.4): צ'אט המנהל — מה להעיר. היעד נקבע בלוח; המנהל לא בוחר יעד ולא משנה את הטקסט
+  dispatch-pending)
+    need_link
+    out="$(board_call dispatch-pending '{}' "$(token)")" || die "הלוח לא ענה (HTTP $BOARD_HTTP)"
+    if [ "$(echo "$out" | jq -r '.retired')" = true ]; then
+      echo "🛰 retired — מנהל אחר החליף אותך. עצור את המאזין וסיים את התור."; exit 0
+    fi
+    n="$(echo "$out" | jq '.requests | length')"
+    [ "$n" = 0 ] && { echo "אין בקשות העירה."; exit 0; }
+    echo "🛰 $n בקשות העירה. לכל אחת: create_trigger עם persistent_session_id = ה-session, run_once_at בעוד דקה, והטקסט הזה בדיוק:"
+    echo "$out" | jq -r '.text'
+    echo "---"
+    echo "$out" | jq -r '.requests[] | "#\(.id) · \(.session_id) · \(.channel)"'
+    echo "---"
+    echo "אחרי כל אחת: link.sh dispatch-done <id> ok   (או: link.sh dispatch-done <id> \"<השגיאה>\")"
+    ;;
+
+  dispatch-done)
+    need_link
+    [[ "${1:-}" =~ ^[0-9]+$ ]] || die "שימוש: link.sh dispatch-done <id> ok|\"<שגיאה>\""
+    res="${2:-ok}"
+    if [ "$res" = ok ]; then b="$(jq -n --argjson i "$1" '{id:$i, ok:true}')"
+    else b="$(jq -n --argjson i "$1" --arg e "$res" '{id:$i, ok:false, error:$e}')"; fi
+    board_call dispatch-done "$b" "$(token)" >/dev/null || die "הלוח לא אישר (HTTP $BOARD_HTTP)"
+    echo "✓ #$1 · $res"
+    ;;
+
   archive)
     need_link
     board_call channel-archive '{}' "$(token)" >/dev/null || echo "הלוח לא אישר (HTTP $BOARD_HTTP) — מוחק את הקישור בכל זאת" >&2
+    ct="$(link_get check_trigger_id)"
     rm -f "$BOARD_LINK" "$BOARD_PENDING"
     echo "✓ נותק"
+    [ -n "$ct" ] && echo "⚠ מחק עכשיו את הבדיקה השעתית: delete_trigger $ct (אחרת היא תמשיך להעיר את הסשן)"
     ;;
 
-  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | show | post | handoff | archive)" ;;
+  *) die "פקודה לא מוכרת: $cmd (register | status | update | pending | ack | show | post | handoff | checkin | archive)" ;;
 esac

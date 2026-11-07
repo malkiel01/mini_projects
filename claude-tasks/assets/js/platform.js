@@ -6,6 +6,8 @@
  */
 
 import { $, $$, el, api, toast, state, on, PLATFORM_HINT } from './core.js';
+import { openLauncherGuide, renderLaunchers } from './launch.js';
+document.addEventListener('ct:launchers-changed', () => { if ($('#connLaunchers')) renderLaunchers($('#connLaunchers')); });
 import { openPolicySheet, policySubline } from './policy.js';
 import { loadChatSheet, chatSheetLine, openNewChat } from './newchat.js';
 import { renderProjectLanes } from './lanes.js';
@@ -48,6 +50,7 @@ function renderConnections() {
   const ai = list.filter((c) => c.ai).sort((a, b) => a.priority - b.priority);
   $('#connCount').textContent = list.length ? `מחוברים (${list.length})` : 'חיבורים';
   const box = $('#connList');
+  renderLaunchers($('#connLaunchers'));
   if (!list.length) {
     box.replaceChildren(el('p', { class: 'empty', text: 'אין חיבורים עדיין. ‎+ חיבור כדי להתחבר לגיטהאב או לספק בינה.' }));
     return;
@@ -161,6 +164,8 @@ on('#connAddBtn', 'click', () => {
 on('#caTiles', 'click', (e) => {
   const t = e.target.closest('[data-kind]');
   if (!t) return;
+  // שלב 23: משיק צ'אטים — מדריך וטופס משלו (לא ספק בינה)
+  if (t.dataset.kind === 'launcher') { $('#connAdd').close(); openLauncherGuide(); return; }
   addKind = t.dataset.kind;
   const meta = (state.providers || []).find((p) => p.provider === addKind);
   $('#caTitle').textContent = `חיבור ${KIND_NAME[addKind]}`;
@@ -407,7 +412,8 @@ function renderRows() {
     onkeydown: (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openSheet(sheet); } },
   }, [
     el('span', { class: 'ic', 'aria-hidden': 'true', text: ic }),
-    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: 'l2', text: sub })]),
+    // "🩺 מה Platform רואה" — השורה המלאה (הסיבה והמקום לתיקון), לא חתוכה
+    el('div', { class: 'body' }, [el('div', { class: 'l1' }, [el('span', { text: title })]), el('div', { class: sheet === 'pvsCheck' ? 'l2 l2-wrap' : 'l2', text: sub })]),
     el('span', { class: 'go', 'aria-hidden': 'true', text: '‹' }),
   ])));
 
@@ -458,7 +464,7 @@ function loadCheckLine() {
     .catch((ex) => { if (state.openProject?.id === id) { state.pv.check = { error: ex.message }; renderRows(); } });
 }
 
-function checkLine(c) {
+export function checkLine(c) {
   if (!c) return '…';
   if (c.error) return `⚠ ${c.error}`;
   const gh = c.github.ok ? `גיטהאב: ${c.github.login} ✓` : `⚠ גיטהאב: ${c.github.why}`;

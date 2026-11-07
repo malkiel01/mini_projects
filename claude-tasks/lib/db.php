@@ -293,6 +293,12 @@ function migrate(PDO $pdo): void {
     migrateLaneSettings($pdo);
     // שלב 20: מודל ורמת חשיבה (lib/aipref.php)
     migrateAiPref($pdo);
+    // שלב 23: משיק צ'אטים (lib/launcher.php)
+    migrateLauncher($pdo);
+    // שלב 24א: מצב ההאזנה והבדיקה העצמית (lib/listen.php)
+    migrateListen($pdo);
+    // שלב 25: צ'אט המנהל — lease, תור ההעירות (lib/dispatch.php)
+    migrateDispatch($pdo);
 }
 
 /** ALTER TABLE ADD COLUMN אינו מכיר IF NOT EXISTS ב-SQLite — בודקים לבד. */
@@ -487,3 +493,6 @@ require_once __DIR__ . '/silence.php';
 require_once __DIR__ . '/lanelog.php';
 require_once __DIR__ . '/lanesettings.php';
 require_once __DIR__ . '/aipref.php';
+require_once __DIR__ . '/launcher.php';
+require_once __DIR__ . '/listen.php';
+require_once __DIR__ . '/dispatch.php';

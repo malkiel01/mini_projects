@@ -11,7 +11,7 @@
 #   .claude/board-listen.log    יומן המאזין (חסימות, 508, שגיאות רשת)
 
 # גרסת הגשר — לעדכן יחד עם BRIDGE_VERSION_CURRENT ב-lib/bridgever.php (§5.10.1)
-BRIDGE_VERSION="2026-11-03.5"
+BRIDGE_VERSION="2026-11-04.3"
 # עותק הריצה: hook.sh ו-link.sh מריצים ממנו כשקיים. link.sh update מרענן אותו מ-origin/main
 # בלי לגעת בעץ העבודה של הצ'אט (update.sh)
 BRIDGE_RUNTIME="$HOME/.claude-tasks-bridge"
@@ -23,6 +23,30 @@ BOARD_DEFAULT_URL="https://mbe-plus.com/mini_projects/claude-tasks/api.php"
 
 link_get() {   # link_get <key>  → הערך מקובץ הקישור, או ריק
   [ -f "$BOARD_LINK" ] && jq -r --arg k "$1" '.[$k] // empty' "$BOARD_LINK" 2>/dev/null
+}
+
+# שלב 24א (§20.3): מה הגשר מדווח ללוח — מצב ההאזנה, מתי הבדיקה העצמית הבאה, ומזהה ה-trigger שלה
+report_json() {
+  jq -n --arg s "$(link_get listen_state)" --arg n "$(link_get next_check_at)" --arg t "$(link_get check_trigger_id)" \
+    '{listen_state: (if $s == "" then "never" else $s end)} + (if $n != "" then {next_check_at: ($n|tonumber)} else {} end)
+     + (if $t != "" then {check_trigger_id: $t} else {} end)'
+}
+listen_state() { link_set listen_state "$(jq -Rn --arg s "$1" '$s')"; }
+
+# מה לעשות לפי המתג שהלוח החזיר (listeners: on | hourly | paused) — הצ'אט לא מנחש
+listeners_hint() {
+  case "$1" in
+    on)     echo "מאזינים: 🎧 מותרים — הפעל מאזין רק אם בעל הלוח ביקש ממך" ;;
+    hourly) echo "מאזינים: 💤 כבויים — אל תפעיל מאזין; אתה קורא את הלוח בתור הבא שלך" ;;
+    paused) echo "מאזינים: ⏸ עצורים בידי בעל הלוח — אל תפעיל מאזין" ;;
+  esac
+}
+
+# ש1 (audit-2026-11): בדיקה שעתית ישנה — לבקש מהצ'אט למחוק אותה. ‏old_check_hint <id מהלוח>
+old_check_hint() {
+  local ct="${1:-}"; [ -n "$ct" ] || ct="$(link_get check_trigger_id)"
+  [ -n "$ct" ] && echo "⚠ יש לך בדיקה שעתית ישנה ($ct) — היא שורפת טוקנים ואינה נחוצה. מחק אותה: delete_trigger $ct, ואז link.sh checkin --clear"
+  return 0
 }
 
 link_set() {   # link_set <key> <json-value>

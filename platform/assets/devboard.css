@@ -1,0 +1,59 @@
+/* 🛠️ דשבורד פיתוח (devboard.php) — מה ש-devloop.css מניח שקיים, ולא קיים ב-app.css של הפלטפורמה. */
+:root { --star: #b26a00; }
+@media (prefers-color-scheme: dark) { :root { --star: #f5c26b; } }
+body.devboard { padding-bottom: var(--s5); }
+.db-head { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+    background: var(--surface); border-bottom: 1px solid var(--line); min-height: var(--head); }
+.db-head a.icon-btn { text-decoration: none; font-size: 1.2rem; }
+.db-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); }
+.db-title h1 { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.db-title h1 small { color: var(--muted); font-weight: 400; font-size: .8rem; }
+.db-ic { font-size: 1.4rem; }
+.db-main { max-width: 860px; margin: 0 auto; padding: var(--s3); display: grid; gap: var(--s3); }
+#board { display: grid; gap: var(--s3); }
+.db-legend { margin: 0; }
+.db-denied { text-align: center; display: grid; gap: var(--s3); justify-items: center; padding: var(--s5) var(--s3); }
+
+.hint { color: var(--muted); font-size: .85rem; }
+.empty { text-align: center; color: var(--muted); padding: var(--s4) var(--s2); }
+.error { color: var(--danger); background: var(--danger-soft); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.row-btns { display: flex; gap: var(--s2); }
+.row-btns.wrap { flex-wrap: wrap; }
+.row-btns.wrap .btn { flex: 1 1 auto; }
+.btn.ghost { background: var(--surface); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { cursor: default; }
+button.chip { cursor: pointer; background: var(--surface); }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: var(--s2); }
+.f { display: grid; gap: 2px; min-width: 0; }
+.f > span { font-size: .8rem; color: var(--muted); }
+#board input[type=search], .dt-dlg input:not([type=checkbox]):not([type=file]), .dt-dlg select, .dt-dlg textarea, #board textarea, #board select {
+    inline-size: 100%; min-height: var(--tap); padding: 6px var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+#board textarea, .dt-dlg textarea { resize: vertical; }
+.use-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); cursor: pointer; }
+.use-ic { font-size: 1.15rem; flex: none; }
+.use-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.use-tx small { color: var(--muted); font-size: .8rem; }
+.use-list { list-style: none; display: grid; gap: 4px; }
+.sheet-body { overflow-y: auto; padding: var(--s3); display: grid; gap: var(--s3); }
+.dt-dlg > form { display: flex; flex-direction: column; max-height: inherit; }
+.upload-btn { cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+
+.db-toast { position: fixed; inset-inline: var(--s3); bottom: var(--s4); margin: 0 auto; max-width: 420px; z-index: 50; padding: var(--s2) var(--s3);
+    border-radius: var(--r); background: var(--ink); color: var(--bg); text-align: center; box-shadow: var(--shadow-pop); }
+.db-toast.bad { background: var(--danger); color: #fff; }
+
+/* רמות: 📋 משימות · 👥 משתמשים · 📜 לוגים (למפתח) */
+.db-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.db-tabs button { min-height: 38px; border: 0; border-radius: 8px; background: none; cursor: pointer; font-size: .9rem; }
+.db-tabs button[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); }
+#users, #logs { display: grid; gap: var(--s2); }
+.db-users { list-style: none; display: grid; gap: var(--s2); }
+.db-user { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.db-user > summary { list-style: none; }
+.db-user > summary::-webkit-details-marker { display: none; }
+.db-user-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.db-hide-list { display: grid; gap: 4px; max-height: 260px; overflow-y: auto; }
+.db-hide-list label { display: flex; gap: 6px; align-items: baseline; }
+.db-hide-list code { font-size: .78rem; white-space: nowrap; }
+#logs input[type=search] { flex: 1; min-height: var(--tap); padding: 6px var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }

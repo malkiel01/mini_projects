@@ -126,6 +126,9 @@
     <!-- הצ'אטים שרשומים לענף הזה (הגשר החי, §5.7) -->
     <section id="chatsSection" aria-labelledby="chatsTitle" hidden>
       <h2 class="sr-only" id="chatsTitle">צ'אטים</h2>
+      <div class="row-btns chan-top"><button type="button" class="btn primary sm" id="chanNew" hidden>➕ צ'אט חדש</button></div>
+      <ul class="list" id="launchRows" aria-label="צ'אטים שנפתחים"></ul>
+      <div id="wontWake" class="wont-wake" hidden></div>
       <ul class="list" id="chanRows"></ul>
       <div class="empty" id="chanEmpty" hidden>
         <p>אין צ'אטים מחוברים.</p>
@@ -237,6 +240,7 @@
         <button type="button" class="tile" data-kind="anthropic"><span aria-hidden="true">✳️</span>Anthropic<small>Claude</small></button>
         <button type="button" class="tile" data-kind="openai"><span aria-hidden="true">⚪</span>OpenAI<small>GPT</small></button>
         <button type="button" class="tile" data-kind="google"><span aria-hidden="true">🔷</span>Gemini<small>Google</small></button>
+        <button type="button" class="tile" data-kind="launcher"><span aria-hidden="true">🚀</span>משיק צ'אטים<small>צ'אט חדש מהלוח</small></button>
       </div>
       <form class="stack" id="caForm" hidden>
         <label class="field"><span id="caSecretLabel">מפתח</span><input type="password" id="caSecret" dir="ltr" autocomplete="off" required></label>
@@ -496,6 +500,91 @@
 </dialog>
 
 <!-- ── שלב 17: "העבר ל…" והיומן (§15.6) ─────────────────────── -->
+<!-- ── שלב 24א: המתג "מאזינים", המד והיומן ── -->
+<dialog id="listenersSheet" aria-labelledby="lsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="listenersSheet" aria-label="סגירה">✕</button>
+      <h2 id="lsT">🎧 מאזינים</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <div class="seg seg--wrap" id="lsModes" role="radiogroup" aria-label="מצב המאזינים"></div>
+      <p class="hint" id="lsHint"></p>
+      <p class="ls-meter" id="lsMeter" role="status"></p>
+      <h3 class="conn-group">כל הצ'אטים</h3>
+      <ul class="list" id="lsRows"></ul>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="dispatcherSheet" aria-labelledby="dsT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="dispatcherSheet" aria-label="סגירה">✕</button>
+      <h2 id="dsT">🛰 צ'אט המנהל</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body" id="dsBody"></div>
+  </div>
+</dialog>
+
+<dialog id="serverErrs" aria-labelledby="seT">
+  <div class="sheet-wrap">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="serverErrs" aria-label="סגירה">✕</button>
+      <h2 id="seT">🧯 תקלות אחרונות</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body"><ul class="list" id="seRows"></ul></div>
+  </div>
+</dialog>
+
+<!-- ── שלב 23: ➕ צ'אט חדש מהלוח ── -->
+<dialog id="launchSheet" aria-labelledby="lnTitle">
+  <form class="sheet-wrap" id="lnForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="launchSheet" aria-label="סגירה">✕</button>
+      <h2 id="lnTitle">➕ צ'אט חדש</h2>
+      <span></span>
+    </header>
+    <div class="sheet-body">
+      <label class="field"><span>שם הצ'אט</span><input type="text" id="lnName" minlength="2" maxlength="60" required></label>
+      <div class="field"><span>להתחיל מ…</span><div class="seg seg--wrap" id="lnModes" role="radiogroup" aria-label="נקודת התחלה"></div></div>
+      <p class="hint" id="lnReplaces" hidden></p>
+      <p class="hint" id="lnLauncher" hidden></p>
+      <p class="hint">על חשבון המנוי שלך ב-Claude (לא קרדיט Platform). הצ'אט נפתח בלשונית חדשה ונרשם כאן לבד.</p>
+      <p class="b-warn" id="lnErr" role="alert" hidden></p>
+      <div class="row-btns"><button type="submit" class="btn primary" id="lnGo">🚀 פתיחה</button></div>
+      <div id="lnNoLauncher" hidden>
+        <p class="hint">עוד אין משיק — אז היום: 📋 העתקה ← פתיחת Claude Code ← הדבקה.</p>
+        <button type="button" class="btn ghost" id="lnSetup">רוצה בלחיצה אחת? 🚀 הגדרת משיק (3 דק')</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="launcherGuide" aria-labelledby="lgTitle">
+  <form class="sheet-wrap" id="lgForm">
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close="launcherGuide" aria-label="סגירה">✕</button>
+      <h2 id="lgTitle">🚀 משיק צ'אטים</h2>
+      <button type="submit" class="btn primary">שמירה</button>
+    </header>
+    <div class="sheet-body">
+      <p class="hint">פעם אחת, כ-3 דקות: משימה ב-claude.ai שהלוח מפעיל, וכל הפעלה פותחת צ'אט חדש עם הפרומפט — בלי להעתיק ולהדביק.</p>
+      <ol class="guide-steps" id="lgSteps"></ol>
+      <input type="hidden" id="lgId">
+      <label class="field"><span>Fire URL</span><input type="url" id="lgUrl" dir="ltr" autocomplete="off"></label>
+      <label class="field"><span>הטוקן (Token)</span><input type="password" id="lgToken" dir="ltr" autocomplete="off"></label>
+      <label class="field"><span>שם (לא חובה)</span><input type="text" id="lgLabel" maxlength="40" placeholder="משיק צ'אטים"></label>
+      <label class="field"><span>שם הסביבה (לתצוגה)</span><input type="text" id="lgEnv" maxlength="80"></label>
+      <label class="check"><input type="checkbox" id="lgConfirm"> הדבקתי במשימה את הפרומפט של צעד 3, כמו שהוא</label>
+      <p class="hint">הטוקן נשמר מוצפן בלוח ולא מוצג שוב. הוא יכול רק להפעיל את המשימה הזו, על החשבון שלך.</p>
+    </div>
+  </form>
+</dialog>
+
 <!-- ── שלב 20: מודל ורמת חשיבה ── -->
 <dialog id="aiSheet" aria-labelledby="aiSheetT">
   <div class="sheet-wrap">
@@ -1003,6 +1092,7 @@
           <button type="button" class="btn primary sm" id="connAddBtn"><span aria-hidden="true">+</span> חיבור</button>
         </div>
         <div id="connList"></div>
+        <div id="connLaunchers"></div>
       </section>
 
       <!-- ── מסלולים: מה קורה כשמסלול נעצר (§15.11) ── -->
@@ -1051,9 +1141,19 @@
 
       <section class="set-panel" data-panel="sys" hidden>
         <ul class="list">
+          <li class="card" tabindex="0" role="button" id="dispatcherBtn" aria-label="צ'אט המנהל">
+            <span class="ic" aria-hidden="true">🛰</span>
+            <div class="body"><div class="l1"><span>צ'אט המנהל</span></div><div class="l2" id="dispatcherSub">מעיר צ'אטים ישנים ברקע</div></div>
+            <span class="go" aria-hidden="true">‹</span>
+          </li>
           <li class="card" tabindex="0" role="button" id="bridgePauseBtn" aria-label="עצירת המאזינים">
             <span class="ic" aria-hidden="true" id="bridgePauseIc">⏸</span>
-            <div class="body"><div class="l1"><span id="bridgePauseT">עצירת המאזינים</span></div><div class="l2" id="bridgePauseSub">כל הצ'אטים מפסיקים לשאול את הלוח, תוך מחזור אחד</div></div>
+            <div class="body"><div class="l1"><span id="bridgePauseT">מאזינים</span></div><div class="l2" id="bridgePauseSub">💤 כבויים · 🎧 מותרים · ⏸ עצורים</div></div>
+            <span class="go" aria-hidden="true">‹</span>
+          </li>
+          <li class="card" tabindex="0" role="button" id="serverErrBtn" aria-label="תקלות אחרונות">
+            <span class="ic" aria-hidden="true">🧯</span>
+            <div class="body"><div class="l1"><span>תקלות אחרונות</span></div><div class="l2">כל "שגיאת שרת" במלואה — לצילום ולשליחה לצ'אט</div></div>
             <span class="go" aria-hidden="true">‹</span>
           </li>
           <li class="card" tabindex="0" role="button" id="boardPolicyBtn" aria-label="אישורים כלליים">

@@ -3,10 +3,26 @@
 **By:** the "מטלות לקלוד - אפיון" chat, 2026-11-01. **Implemented by:** "מטלות לקלוד – כותב הקוד".
 **Sources:** `creative-suite/docs/requests/claude-tasks-command-center.md` (14 items + the 7-PR plan),
 `creative-suite/docs/requests/claude-tasks-live-bridge.md`, and the owner's feedback on the board (#1053, #1069).
-**Status (2026-11-02):** approved 2026-11-01; **stages 1–10 built and deployed** (see §14). Still open — not code:
-(1) the live check of the bridge on the real board waits for `CLAUDE_TASKS_TOKEN` in the environment settings;
-(2) Platform answers and the Claude Code engine were tested only against fake providers; (3) every repo with the engine
-installed needs "התקנה מחדש" (cookie fix + usage reporting) — the owner postponed it. Decisions are marked ✅.
+**Status (2026-11-04):** approved 2026-11-01. **Built and deployed: stages 1–20, 22a, 23, 24a, 25 and the cleanup rows ש1+ש2** (see §14).
+**Not built:** stage 21 (§17), stage 22b (§18.4), stage 22c (§18.5), the per-user "🔗 חיבור לחשבון Claude" screen (§21.6 #1).
+Platform answers and the Claude Code engine were tested only against fake providers; the engine was never installed in this repo.
+Decisions are marked ✅.
+
+> **How to read this file (documentation audit, 2026-11-04).** The spec grew section by section and later sections replaced earlier
+> ones without editing them. Sections marked **⚠ SUPERSEDED** or **⚠ NOT BUILT** below say so at their heading. When a section
+> contradicts the code, the code is right; known problems are listed by topic in `known-issues.md`.
+>
+> | Section | State |
+> | --- | --- |
+> | §5.1 "Backup", §5.4 listener rows, §5.6 listener/backup paragraphs | superseded — no listener and no scheduled check in a normal chat (audit ש1); only the dispatcher listens (§21) |
+> | §5.9.5 join notice | superseded — board-only by default |
+> | §5.10.1 "update instruction" | superseded — `hook.sh` updates itself (ש2) |
+> | §9 context and chat sync | superseded in part by 22a (§18.3) |
+> | §15.4, §15.12.1 silence definition | built; its premise is wrong now (audit ש4 redefines it, pending) |
+> | §17, §18.4, §18.5 | not built |
+> | §19.1 #6, §19.2 step 4 (opening a tab) | superseded by §21.7 #5 |
+> | §20 (except the findings in §20.1) | superseded by §21 and the audit |
+> | §21.6 (except #1) | superseded by §21.7 |
 
 > **Language rule (owner, 2026-11-01):** this spec and every skill built from it are written in **English**.
 > UI strings stay Hebrew (the board is `lang="he" dir="rtl"`). Questions to the owner are asked in Hebrew.
@@ -142,6 +158,9 @@ project (temporary)" picker — so the 8 creative-suite projects created before 
 
 ### 5.1 The principle
 
+> ⚠ **SUPERSEDED (audit ש1):** the "Backup" bullet (an hourly `send_later`) no longer exists. A normal chat runs no listener and no scheduled check; see §21.
+
+
 > **Git is the record; the board is the conversation; the listener is the bell.**
 
 - **Chat → board:** Claude Code hooks mirror every prompt and every reply. We don't rely on the model "remembering".
@@ -185,6 +204,9 @@ makes that redundant: **everything a chat must receive is an `in` message in its
 
 ### 5.4 Actions
 
+> ⚠ **SUPERSEDED in part:** the `channel-wait` row and the 20-second default below were replaced by the incident rules further down (`long_poll_max` default **0**). Listener cadence now applies to the dispatcher only (§21).
+
+
 | Action | Caller | What |
 | --- | --- | --- |
 | `channel-register` | registration token | `{ project_id, name, role, session_id, session_url }` → `{ channel_id, channel_token }`. Same `session_id` → same channel, new token (the old one is revoked) |
@@ -192,7 +214,7 @@ makes that redundant: **everything a chat must receive is an `in` message in its
 | `channel-send` | human (`owner`, or `write` on a non-`owner_only` project) | board → chat: an `in` message |
 | `channel-inbox` | channel | Undelivered `in` messages. **Does not mark them** |
 | `channel-ack` | channel | `{ ids: [] }` → `delivered_at`. A chat that crashes mid-way loses nothing |
-| `channel-wait` | channel | Like `inbox`, but waits up to `wait` seconds (default 20, max `config.long_poll_max`) |
+| `channel-wait` | channel | Like `inbox`, but waits up to `wait` seconds (capped by `config.long_poll_max`, **default 0 since the 2026-11-02 incident** — it answers at once; the 20 s default is gone) |
 | `channels?project_id=` / `channel-messages?channel_id=&after=` | human | For the UI |
 | `channel-archive` | channel or `owner` | Disconnect. The channel token is revoked |
 
@@ -200,7 +222,7 @@ makes that redundant: **everything a chat must receive is an `in` message in its
 processes (typically 20–30), and 10 chats waiting all the time take a third. Therefore:
 - Inside the wait: check a **stamp file** once per second (`data/bell/<channel_id>`, mtime) — not a DB query.
   `channel-send` touches the file.
-- `long_poll_max` in `config.json` (default 20). If the site starts returning 508 — set it to 0 and it becomes plain polling.
+- `long_poll_max` in `config.json` (**default 0** after the 2026-11-02 incident; it was 20). A value above 0 turns on long-poll; 0 is plain polling.
 - The listener sleeps 3 seconds between requests. Expected latency: up to ~5 seconds.
 
 **⚠ Incident 2026-11-02 10:15 — the listeners flooded the host; the whole of mbe-plus.com returned 429 to everyone.**
@@ -238,6 +260,9 @@ Environment variables: `CLAUDE_TASKS_TOKEN=<token>` and `CLAUDE_TASKS_URL=https:
 The token is copied from the board: project "mini_projects" → ⚙ → "Token for chats" (added in stage 4; today it is only shown during engine install).
 
 ### 5.6 Stage 3 — what lives on the chat side
+
+> ⚠ **SUPERSEDED in part (audit ש1):** the listener and hourly-backup paragraphs describe a design that was removed. Today a normal chat reads the board only when it works (`bridge/hook.sh` auto-update, `link.sh pending`); only the dispatcher listens (§21).
+
 
 *Revised 2026-11-01 after the 5.8 checks (code writer, against the live board).*
 
@@ -425,6 +450,9 @@ token does not cover the project → (server, new error code) "האסימון ב
 
 #### 5.9.5 Join notice
 
+> ⚠ **SUPERSEDED (ש1):** no join notice is sent by default — `NOTIFY_SESSION_DEFAULT` is empty (`lib/templates.php`). A notice goes to a session only if the owner sets one in the template.
+
+
 The join notice goes to the template's `notify_session` — by default the board-wide one, set to **this chat
 ("מטלות לקלוד - אפיון")**, not to the creative suite's coordinator. The coordinator gets it only if its template says so.
 The board also posts a `system` message "<name> הצטרף" in the channel, so the notice is never the only record.
@@ -481,6 +509,9 @@ multi-question and multiSelect work; `questions: app` keeps the dialog and mirro
 Tests for `choice-answer`, the race, and the typed-answer path.
 
 ### 5.10.1 Fix — questions still open as a dialog in the app (owner report 2026-11-02 ~11:45)
+
+> ⚠ **The "update instruction" half is SUPERSEDED (ש2):** `bridge/hook.sh` refreshes the runtime copy itself on the first prompt of each hour, and the ⚙ button was removed (the server action `bridge-send-update` is dead code, see `known-issues.md`).
+
 
 **Symptom:** with "שאלות בחירה: בלוח" set, `AskUserQuestion` still opens the dialog in the Claude app and blocks the chat
 (board messages wait until it is answered). **Causes found in the code:**
@@ -558,7 +589,7 @@ command and its description), `permission_suggestions` (the "always" options the
   `always` is accepted only if one of the stored `suggestions` is session-scoped **and** passes the deny-list (checked again in the
   server, not only in the UI); else 422.
 - `permission-status { message_id }` (channel token) — what the hook polls. Counted in the §5.4 budget file.
-- On timeout the hook posts `permission-timeout` → status `moved_to_app`.
+- On timeout the hook posts `permission-close` with `how=timeout` → status `moved_to_app`.
 
 #### 5.12.2a Revised after the check (§5.12.6 answers, 2026-11-02) — decisions
 
@@ -923,6 +954,9 @@ The request asked for two caps **in the server settings only**. The owner decide
 
 ## 9. Stage 8 — Platform answers
 
+> ⚠ **SUPERSEDED in part (22a, §18.3):** Platform's context is conversation turns only (no `system` / `status` rows), and the chat no longer receives a `status` copy of Platform's answers; it learns of them from the digest.
+
+
 - **In the channel, on the ☁️ route:** `channel-send` stores the message; the UI immediately calls `platform-reply { message_id }`,
   which answers **within that request** (PHP has no background process) and shows "☁️ thinking…". If the screen is closed mid-way,
   the message is marked "waiting for Platform" and the next open completes it. Context: the last 30 messages in the channel, the
@@ -1126,9 +1160,9 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 | Stage | PR | Deployed | Notes |
 | --- | --- | --- | --- |
 | 1 | #1086 | `conclusion: success` checked after the merge — reported in the `עדכון` message | `subtree` defaults to 1 (the UI already relies on the whole branch); a task with no project — any signed-in user answers, as before; added a project check to `task` / `add-note` (`read`) and `update-task` (`write`); U1 — `owner` only |
-| 2 | #1096 | checked after the merge — reported in the `עדכון` message | `author_role` on `in` messages is `authorRole()` (`owner` or `member`) — a `member` with `write` may send on a non-`owner_only` project, so `member` was added to the roles; the skill still acts only on `owner`. An answer by anyone allowed to answer (not only `owner`) is delivered to the asking channel, with its role. A channel token also works as a worker token for its subtree (`claim`, `block` …). The general token may register channels too. `channel-wait` records `listening_until = now + wait + 30`. The engine cookie fix (5.8) |
+| 2 | #1096 | checked after the merge — reported in the `עדכון` message | `author_role` on `in` messages is `authorRole()` (`owner` or `member`) — a `member` with `write` may send on a non-`owner_only` project, so `member` was added to the roles; the skill still acts only on `owner`. An answer by anyone allowed to answer (not only `owner`) is delivered to the asking channel, with its role. A channel token also works as a worker token for its subtree (`claim`, `block` …). The general token may register channels too. `channel-wait` records `listening_until = now + 90 s` (historical: it was `now + wait + 30`). The engine cookie fix (5.8) |
 | 3a | #1101 | `conclusion: success` (run 1191) | The secrets are copied as ciphertext, never decrypted and re-encrypted; a `VACUUM INTO` backup comes first. The old columns stay read-only. GitHub chosen per project (inherited by sub-projects) → by repo owner → the first one. Each fallback writes a note on the task and an event. The test of a thinking model needs `MIN_OUTPUT_TOKENS` 2048 + `effort: low` (#1097) |
-| 3 | #1100 | `conclusion: success` | The bridge scripts (`link.sh`, `listen.sh`) and the hooks in `.claude/settings.json` — no-ops without `.claude/board-link.json`. Verified locally end to end (register, the listener wakes the chat in ~2 s, the reply is recorded with `reply_to`, `<task-notification>` is not mirrored). **The real-board test is still open** — it waits for the owner to set `CLAUDE_TASKS_TOKEN` |
+| 3 | #1100 | `conclusion: success` | The bridge scripts (`link.sh`, `listen.sh`) and the hooks in `.claude/settings.json` — no-ops without `.claude/board-link.json`. Verified locally end to end (register, the listener wakes the chat in ~2 s, the reply is recorded with `reply_to`, `<task-notification>` is not mirrored). **(historical: the real-board test later ran — stage 13-check)** — it waits for the owner to set `CLAUDE_TASKS_TOKEN` |
 | 3b | #1102 | `conclusion: success` (run 1192) | One sheet per row; rows hidden by the viewer's level, not disabled. Member level is a three-way switch that saves at once. Delete needs the project's name typed and is disabled with the reason while the project has tasks or sub-projects. The engine sheet has one primary button (install, or save the check command when installed) |
 | 4 | #1104 | `conclusion: success` (run 1195) | Inside a project the 💬 tab is always shown (its empty state is how a new chat gets connected); 📁 only when there are sub-projects. The default tab is 💬 when the project has chats, else 📋; the last one is remembered per device. `out` is the chat side (start/right), `in` the board side (end/left), system centered. The poll asks `after` the earliest undelivered `in`, so ✓ turns into ✓✓ without a second endpoint. Enter is a new line; Ctrl/⌘+Enter sends. Stages = topics with a `project_id`; the ✏️ sheet lists them and adds new ones. No server change |
 | 5 | #1105 | `conclusion: success` (run 1196) | `lib/approvals.php`: the catalog from command-center §1.3, plus `other` (no "always", no "never" — it has no policy). Who decides = `canAnswer` (owner always; only owner in `owner_only`; else `write`). `decide` on a task that is not `awaiting_approval` → 409. `policy` is open to workers and people; `policy-list` to people; `policy-revoke` owner only, logged with `prev`. `channel-messages` attaches the request to each 🔐 bubble with `pending` and `can_decide`. UI: a 6th status chip "🔐 אישור" appears only when there are requests. "Always" is hidden for `no`/`other`, "Never" for `other`; `warn` asks to type the type name (`prompt`), and the server checks it too. `n_blocked` on a project counts both kinds of waiting. Worker skill: section 3a (English) |
@@ -1139,8 +1173,8 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 | 9 | #1115 | owner asked directly ("תמשיך ל9") | Already done in earlier stages: Settings tabs + Usage first (7), Connections rows (3a), Project ⚙ rows (3b). Here: Settings tabs as a grid (`auto-fit`, wraps to two rows on a phone) with a "👥 משתמשים" tab for the admin (the same list as Admin → Users, quota field included); Admin is a `.sheet-wrap` with `.seg-tabs` + counters (users; failures in the last 24 h, red); the log is one row per event — icon and Hebrew label by action, detail as "old → new" when the event carries it, who · target · time — with day separators, failures on a red background, and an "all / failures only" switch. Stage editing is a `.sheet-wrap`, title "עריכת שלב" / "עריכת נושא" by `project_id`, keywords a visible textarea. Login: error `role=alert`, fields `aria-invalid` + `aria-describedby`, focus returns to the field to fix (password, selected). No server change |
 | 10 | #1118 | owner asked directly ("תמשיך ל10") | `projects.engine`: `loop` / `claude-code` / '' (inherit; root default `loop`); changing it resets `engine_at` (the repo needs the other files). `claude-code` installs `.github/workflows/claude-code-agent.yml` + `.github/claude-agent/finish.mjs` and the secrets `AGENT_BOARD_TOKEN` + `ANTHROPIC_API_KEY`; install and dispatch refuse a non-Anthropic connection. The workflow runs the Claude Code CLI (`npm i -g @anthropic-ai/claude-code`, `claude -p … --output-format json`) rather than `claude-code-action`, so the JSON report (`total_cost_usd`) is in hand; permissions `contents` + `pull-requests` only; `--disallowedTools` for `gh pr merge`, `gh workflow`, `gh run`, `gh api`, force / no-verify push; a `pre-push` hook rejects the base branch. `finish.mjs` runs `if: always()`: `report-usage` with `cost_usd` (recorded as given, `develop`, against `tasks.run_user_id`), then blocks the task with the reason and the run link if it is still `in_progress`. Verified end to end against the local board over HTTP. UI: a `.seg` "🔁 לולאה · 🤖 Claude Code" in ⚙ → engine, with what each does; the check-command field hides for Claude Code (the repo's CLAUDE.md drives checks) |
 | 10.1 | #1122 | owner asked directly (the chat's formatting looked like raw `#` and `**` on the board) | Chat bubbles render Markdown like the chat does: headings, bold / italic / strike, inline and fenced code, quotes (the `> **סיכום:**` line), bulleted / numbered / task lists with nesting, tables (alignment; a wide table scrolls inside the bubble), links and bare URLs. `assets/js/markdown.js`: `parseMarkdown` returns a plain tree and `renderMarkdown` builds nodes with `createElement` / `textContent` — no `innerHTML` anywhere, so chat text is never parsed as HTML; links only `http(s)` (`javascript:` / `data:` stay text). A single Enter stays a line break (chat style). `_` inside words (`CLAUDE_TASKS_TOKEN`) is not italic. Each block gets `dir="auto"`; inline code stays whole (an RTL line used to split `greeting-cards/` at the hyphen and swap the halves). Bubbles only — task notes are unchanged. `tests/markdown.mjs` (node): 36 |
-| 11b | #1133 | §5.10 as written | `lib/choices.php`: `messages.status` (open / answered) and `channels.questions` (board / app, default board). `channel-post` with `kind: choice` + `questions` → `choicePost` (normalized: ≤4 questions, ≤8 options, lengths capped; body = numbered text for search/export) and returns `{id, mode}`, so the hook knows whether to deny. `choice-answer` validates every question (label, list for multiSelect, or `{other}`), marks answered **atomically** (`UPDATE … WHERE status = 'open'`; the loser gets 409), and inserts an `in` `choice_answer` with `reply_to` that rings the bell. A typed answer: `hook-prompt.sh` sends the owner's prompt with `reply_to = pending_choice`; `channelPost` marks the open choice `answered_via: chat` (the chat's own replies never close it). `app` mode: the hook only mirrors; board answering is refused (409, answer in the dialog); `hook-choice-done.sh` (PostToolUse) posts `choice_answer` with the tool's `answers` → `answered_via: app`. `link.sh pending` clears `pending_choice` when a board answer arrives. Hooks fail open: if the board does not answer, the dialog runs as usual. UI: `assets/js/choices.js` — header chip, bold question, full-width option buttons with descriptions, ✓ toggles for multiSelect, "אחר…" field; one single-select question sends on tap, otherwise "שליחה" when complete; answered → collapsed "✓ נענתה (בלוח/בצ'אט/באפליקציה)" with the answers in a `<details>`. ⋯ in the conversation header opens "אפשרויות הצ'אט" with the board/app switch (the stage-11 ⚙ sheet will absorb it). Channel row: "🔘 N ממתינה לך"; `project-monitor` returns `choices` and "ממתין לך" lists them first, opening the conversation. Also fixed: the monitor card showed "nullnull" (`replaceChildren` turns `null` into text). `tests/choices.php`: 39; the hooks verified end to end over HTTP against a local board (deny, typed answer, board answer + `pending`, app mode, unregistered chat) |
-| 11 | #1137 | §5.9 as written | `lib/templates.php`: `chat_templates` with field-by-field inheritance through `projectChain` (each field reports its source; empty = inherit); defaults: pattern `{project} - {role}`, one role, `notify_session` = config `chat_notify_session_default` or this spec chat. `chatPrompt` fills the §5.9.2 skeleton — no placeholders (tested: no `[ ]`, `___`, `< >`); it also tells the chat to set its session title. Names and patterns lose `" ` $ \\` so `--name "…"` stays one argument. Template edit and the environment name (`config.chat_environment_name`) are owner-only. **Register:** `AppError` now carries a machine code (returned as `code`); `token_scope` says whose token it is and whose is needed; `no_project` for an unknown id. `link.sh` reads `--project` only, warns on `CLAUDE_TASKS_PROJECT`, and maps a missing token / unknown token (401) to Hebrew lines that name the environment (from a new **public** `chat-env` action — a name, not a secret). Also fixed: `link.sh` read `BOARD_HTTP` from inside `$( )`, so the status code was always lost. **Health:** `channel-health` (channel token) stores bytes/turns/compactions/at on `channels`; `hook-stop.sh` measures at most every 5 minutes (`compact_boundary` entries, falling back to `isCompactSummary`); levels from `chat_warn_*` / `chat_alert_*`. A channel that never reported shows nothing. **Follow-up:** `handoff-request` (owner) → `in` `handoff_request`; `link.sh handoff <file>` → `out` `handoff`; `handoff-prompt` returns `{requested, ready, waited, can_fallback}` or the prompt; `fallback` only after 120 s, from the last 30 messages. `replaces` is validated **before** anything is written (a refused registration leaves no channel); then `status: replaced`, `replaced_by`, tasks' `asked_channel_id` move, and the old chat gets "הוחלפת על ידי…". A replaced channel's token still reads (so the old chat receives that message) but the board cannot send to it. Join: a `system` message in the new channel; `register` returns `notify_session` and `project_path`. **UI:** ⚙ → "🆕 צ'אט חדש" (role tiles, the prompt with the command on its own LTR line, 📋 copy, "פתיחת Claude Code" = copy + open), ✏️ template editor ("יורש מ:" / "↺ חזרה לירושה", role rows), sub-projects' token row opens the root's; the token sheet now prints `CLAUDE_TASKS_TOKEN` only — it used to print `CLAUDE_TASKS_PROJECT`, the source of the stage-11 trap. `#id` in the ⚙ card and breadcrumbs. Channel row: 🟡/🔴 chip, "הוחלף ← …" greyed; conversation: health bar with "🔁 צ'אט המשך", also in ⋯. **§5.9.2 URL test:** claude.ai/code has no documented prompt-in-URL parameter, and it cannot be checked from the build environment (the page needs a signed-in browser) — so the button always copies, then opens, and the toast says so. `tests/templates.php`: 52; `link.sh` register/handoff/replaces and the health hook verified end to end over HTTP against a local board |
+| 11b | #1133 | §5.10 as written | `lib/choices.php`: `messages.status` (open / answered) and `channels.questions` (board / app, default board). `channel-post` with `kind: choice` + `questions` → `choicePost` (normalized: ≤4 questions, ≤8 options, lengths capped; body = numbered text for search/export) and returns `{id, mode}`, so the hook knows whether to deny. `choice-answer` validates every question (label, list for multiSelect, or `{other}`), marks answered **atomically** (`UPDATE … WHERE status = 'open'`; the loser gets 409), and inserts an `in` `choice_answer` with `reply_to` that rings the bell. A typed answer: `hook-prompt.sh` sends the owner's prompt with `reply_to = pending_choice`; `channelPost` marks the open choice `answered_via: chat` (the chat's own replies never close it). `app` mode: the hook only mirrors; board answering is refused (409, answer in the dialog); `hook-choice-done.sh` (PostToolUse) posts `choice_answer` with the tool's `answers` → `answered_via: app`. `link.sh pending` clears `pending_choice` when a board answer arrives. Hooks fail open (**superseded by §5.10.1: fail-safe**): if the board does not answer, the dialog runs as usual. UI: `assets/js/choices.js` — header chip, bold question, full-width option buttons with descriptions, ✓ toggles for multiSelect, "אחר…" field; one single-select question sends on tap, otherwise "שליחה" when complete; answered → collapsed "✓ נענתה (בלוח/בצ'אט/באפליקציה)" with the answers in a `<details>`. ⋯ in the conversation header opens "אפשרויות הצ'אט" with the board/app switch (the stage-11 ⚙ sheet will absorb it). Channel row: "🔘 N ממתינה לך"; `project-monitor` returns `choices` and "ממתין לך" lists them first, opening the conversation. Also fixed: the monitor card showed "nullnull" (`replaceChildren` turns `null` into text). `tests/choices.php`: 39; the hooks verified end to end over HTTP against a local board (deny, typed answer, board answer + `pending`, app mode, unregistered chat) |
+| 11 | #1137 | §5.9 as written | `lib/templates.php`: `chat_templates` with field-by-field inheritance through `projectChain` (each field reports its source; empty = inherit); defaults: pattern `{project} - {role}`, one role, `notify_session` = config `chat_notify_session_default` (**historical: the default is now empty, see ש1**). `chatPrompt` fills the §5.9.2 skeleton — no placeholders (tested: no `[ ]`, `___`, `< >`); it also tells the chat to set its session title. Names and patterns lose `" ` $ \\` so `--name "…"` stays one argument. Template edit and the environment name (`config.chat_environment_name`) are owner-only. **Register:** `AppError` now carries a machine code (returned as `code`); `token_scope` says whose token it is and whose is needed; `no_project` for an unknown id. `link.sh` reads `--project` only, warns on `CLAUDE_TASKS_PROJECT`, and maps a missing token / unknown token (401) to Hebrew lines that name the environment (from a new **public** `chat-env` action — a name, not a secret). Also fixed: `link.sh` read `BOARD_HTTP` from inside `$( )`, so the status code was always lost. **Health:** `channel-health` (channel token) stores bytes/turns/compactions/at on `channels`; `hook-stop.sh` measures at most every 5 minutes (`compact_boundary` entries, falling back to `isCompactSummary`); levels from `chat_warn_*` / `chat_alert_*`. A channel that never reported shows nothing. **Follow-up:** `handoff-request` (owner) → `in` `handoff_request`; `link.sh handoff <file>` → `out` `handoff`; `handoff-prompt` returns `{requested, ready, waited, can_fallback}` or the prompt; `fallback` only after 120 s, from the last 30 messages. `replaces` is validated **before** anything is written (a refused registration leaves no channel); then `status: replaced`, `replaced_by`, tasks' `asked_channel_id` move, and the old chat gets "הוחלפת על ידי…". A replaced channel's token still reads (so the old chat receives that message) but the board cannot send to it. Join: a `system` message in the new channel; `register` returns `notify_session` and `project_path`. **UI:** ⚙ → "🆕 צ'אט חדש" (role tiles, the prompt with the command on its own LTR line, 📋 copy, "פתיחת Claude Code" = copy + open), ✏️ template editor ("יורש מ:" / "↺ חזרה לירושה", role rows), sub-projects' token row opens the root's; the token sheet now prints `CLAUDE_TASKS_TOKEN` only — it used to print `CLAUDE_TASKS_PROJECT`, the source of the stage-11 trap. `#id` in the ⚙ card and breadcrumbs. Channel row: 🟡/🔴 chip, "הוחלף ← …" greyed; conversation: health bar with "🔁 צ'אט המשך", also in ⋯. **§5.9.2 URL test:** claude.ai/code has no documented prompt-in-URL parameter, and it cannot be checked from the build environment (the page needs a signed-in browser) — so the button always copies, then opens, and the toast says so. `tests/templates.php`: 52; `link.sh` register/handoff/replaces and the health hook verified end to end over HTTP against a local board |
 | 12a | #1138 | §5.11 as written (the 08:27 message predated §5.11.1; I followed §5.11.1 on main) | ⚙ replaces 🔌 and the 11b ⋯ menu in the conversation header. `lib/chatsettings.php`: `channels.color` (one of 8 fixed hues: blue/teal/green/olive/amber/orange/red/violet; '' = by role), `channels.hidden`, `channel_mutes(user_id, channel_id)`. Actions: `channel-info` (everything for the sheet, any viewer), `channel-update` (name/role/color = whoever may `channel-send`; `route` = owner; '' = like the project), `channel-mute` (per user, any viewer, for themselves), `channel-hide` (owner; an active chat is disconnected first; `false` restores), `channels` gains `include_hidden` + `hidden_count`. Mute = the chat is left out of "ממתין לך" for that user and the row shows 🔕 (the board has no push notifications to silence). Disconnect = the existing `channel-archive` (token revoked, row stays); archive = off the list into "🗄 N בארכיון". UI: summary card (name, ערוץ #, path · #project, status, 🔕), rows ℹ️ / ✏️ / 🔔 (toggles in place, `aria-pressed`) / 🧭 / 🔘 / 📏 + 🔁, red zone 🔌 / 🗄; sub-sheets about (a `<dl>`), edit (name, role, 8 swatches + auto), route seg, questions seg. Search, filter, pins, labels, translation and export rows arrive with 12b–e. `tests/chatsettings.php`: 26 |
 | 10.2 | #1139 | urgent fix (owner: "נשבר העיצוב" on the phone) | Cause — mine, from 10.1: inline code had `white-space: nowrap`, and both `.bubble` and `.b-body.md` are grids with an `auto` column, which grows to the widest unbreakable child — one long path in backticks pushed the whole message past the bubble and the start (heading, list text) was clipped. Fix: `grid-template-columns: minmax(0, 1fr)` on both grids, `min-width: 0; max-width: 100%` on their children; inline code stays `inline-block` (keeps the RTL fix) but wraps inside its box (`overflow-wrap: anywhere`); `pre` and the table wrapper scroll inside the bubble. Verified with a reproduction of the reported message (heading, list, long inline code, quote with a long URL) plus a table, a code block and a 70-char word, at 320 and 390, light and dark: no page or log horizontal scroll and no element outside the viewport (outside the scroll containers). The ⚙ in the header is already 12a |
 | 12b | #1140 | §5.11 as written | The message menu: **long press** (500 ms, no movement, not on links / buttons / code / tables; `contextmenu` too, so right-click works on desktop) or **⋯** in the meta line (shown on hover / focus; always reachable by keyboard, Enter opens, focus moves into the menu). A `.sheet-wrap` dialog with the message preview and four actions: 📋 copy (original Markdown), ↩ reply (a chip above the composer; `channel-send` with `reply_to`), ➕ make a task (`create-task` in the channel's project, body = the message + its origin), 🔗 copy link `#c<channel>-m<message>` — opening it (also on `hashchange`) opens the conversation, scrolls to the message and flashes it. A reply shows a one-line quote of the original in the bubble (tap = jump). Server: `channel-send` now drops a `reply_to` from another channel (it was stored as given); `link.sh pending` prints "תשובה להודעה #id" in the frame. Pin / label / translate join the same menu in 12c / 12e. Verified in the browser at 390/320 light/dark with touch: long press, keyboard, reply round trip, task created, link copied and opened in a new tab. **Also (owner: "מה עם האייקון"):** a per-chat icon — `channels.icon` ('' = guessed from the role); a new chat takes the icon of its role in the template (§5.9); ⚙ → "שם, סמל וצבע" offers 16 quick icons + any emoji (≤ 8 chars, no letters/digits/markup). `tests/chatsettings.php`: 34, `tests/templates.php`: 53 |
@@ -1181,6 +1215,10 @@ After approval: a `בקשה` message with **stage 1**. Every stage — branch, P
 | 15.3a | #1218 | Owner, 2026-11-03 22:58: "a follow-up chat waited over an hour and failed — in Claude itself it takes 5–10 seconds" | Cause: the board waits for the **old chat** to write the summary, and a chat that is not listening sees the request only at its hourly check — so it can take up to an hour, and here the request expired. The board cannot wake a chat that is not listening. Fix (no waiting on it): in the follow-up sheet, when the chat is not listening (and after an expired request) the primary button is **"📝 סיכום חכם עכשיו (כ-10 שניות)"** — the existing `channel-summary` (one model call, quota-checked, payer) and then the follow-up prompt built from it (`handoffPrompt` fallback already starts from the latest smart summary); **"⚡ לבקש מהצ'אט הישן ישירות"** copies the handoff instruction for the owner to paste in the old chat in Claude Code (seconds; the sheet keeps polling and picks it up); "בלי תקציר" stays as the free option. A listening chat keeps the old flow, with the smart summary as an extra option |
 | 15.3b | #1219 | Owner, 2026-11-03: "not a summary with '10 seconds' — one button that distills the whole conversation into a prompt I don't need to read: rules, methods, important points, open points, what is in the middle, key questions and answers, without the junk" | `handoffDistill` (`handoff-distill`, owner): one model call (payer, quota-checked, `answer`) over the conversation (≤ 60,000 chars from the end) with a fixed distillation instruction — keep rules/methods (verbatim when a rule), decisions and why, current state and key values, what is in the middle, open points, still-valid Q&A, what the owner said not to do; drop abandoned attempts, superseded decisions, chit-chat, long output; end with "what the next chat does first". The result is stored as the request's handoff (`out` / `system` / `kind handoff`, never in the old chat's inbox), so the sheet shows the follow-up prompt at once; the prompt is collapsed ("הצגת הפרומפט (לא חובה)") under 📋 העתקה / פתיחת Claude Code, and the bubble in the conversation is collapsed too. Button: "📝 לסכם את הצ'אט למעבר לצ'אט חדש" (no time estimate). `tests/lanes16.php` 62. **Fix (same day):** the first live use failed with "Operation timed out … 0 bytes received" — the provider call had the board-wide 25 s limit; a long conversation needs more. `withLongAi` gives the distill and the smart summary 150 s (and the PHP run time to match), and the input is capped at 45,000 chars |
 | 20 | #1224 | §16: model and thinking level — connection › chat › message | `lib/aipref.php` + `effortFor` in `lib/ai.php`. **Data:** `connections.effort`, `connections.models_cache` (daily), `channels.ai_pref`, `messages.ai_pref` / `ai_used`, `tasks.model` / `effort`. **Resolution** — one function `resolveAi` (message › channel › connection; `choice_answer` continues on the model that asked; a task's model): an override names provider + model, and the chain is only the payer's connections **of that provider** — none left ⇒ handed to the chat with the reason, never another provider. A saved choice that became invalid falls back with "המודל שנבחר כבר לא זמין — חזר לברירת המחדל". 422 in Hebrew for a model not in the payer's connections or an unsupported level. **Thinking** (checked against the providers' docs): Anthropic `output_config.effort` (Opus 4.5 low–high, Haiku 4.5 none), OpenAI `reasoning_effort` on gpt-5/o-series, Gemini 2.5 `thinkingBudget`; `max_tokens` grows with the level. **Pre-flight:** estimate > what is left of the quota ⇒ no call, an `ai_card` ("שלח ב-<the chat's model>" / "בטל"; the message is `platform-hold` meanwhile, out of the Platform queue and the chat inbox); an automatic switch is priced at the chat's model (`platformCanTakeOver`). Monitoring / catalog / digest stay on the connection default. **Engine:** a task made from a channel takes the chat's model; the thinking level is not passed to the engine (a new workflow input would break dispatch in repos with the old workflow — hidden, per §16.1 row 8). **UI:** effort segment in the connection sheet and the row subline; ⚙ "🧠 מודל לשיחה הזו"; a composer chip above the input (only when ☁️ answers; filled for a one-message choice, back after sending; "📌 השאר לשיחה הזו"); the bubble meta line "☁️ Opus 5.5 · חשיבה גבוהה · $0.02 · ⚡ להודעה הזו" → a sheet (connection, tokens, cost, fallback); usage → "לפי מודל" (bars per model, not yet a colour per family in the daily chart). `tests/lanes20.php` 51 |
+| 25 | #1249 | §21 + §21.7 (ש3): the dispatcher chat — one listener wakes every sleeping chat | `lib/dispatch.php`. **One dispatcher** (`dispatcher`, id 1): registers with `--role dispatcher`; a second is refused (`dispatcher_exists`) unless the owner pressed "🔁 החלפת מנהל" (30 min) and it registers with `--replaces-dispatcher` — the lease moves atomically, the old one gets `retired` on its next poll. Lease 90 s, renewed by every `channel-wait` of its listener; it is exempt from the switch (only ⏸) and from the cap of 5. **Queue** `dispatch_requests` (queued → sent → done/failed): ⏰ on a row / in the chat ⚙ / "⏰ להעיר את כל הישנים", and **auto-wake** when the owner writes to a sleeping chat (`wake_on_write`, default on). Limits: one per channel per 10 min (a second joins the open one), 20 per hour board-wide; never a listening, archived or dispatcher channel; queueing allowed while the dispatcher was seen in the last 15 min (between listener restarts). `channel-wait` of the dispatcher returns `dispatch: N` → `listen.sh` exits "🛰 N בקשות העירה"; `link.sh dispatch-pending` gives each target's `session_id` from the board's registration + the fixed text (§21.7 #6); `dispatch-done <id> ok|<error>`. **Rows:** "💤 ישן · ⏰ להעיר" · "⏰ נשלחה העירה · HH:MM · ממתין שיענה" · "⏰ ההעירה נכשלה — …" · "🛰 אין מנהל פעיל — לא ניתן להעיר"; the dispatcher row "🛰 צ'אט המנהל · פעיל · אצווה אחרונה HH:MM". **⚙ ← מערכת ← 🛰 צ'אט המנהל:** state, last batch, wakes this hour, the cost text (§21.7 #2), the replacement card (300 batches / 7 days), the setup steps (prompt `DISPATCHER_PROMPT_VERSION` 1 + the sentence typed in person). **"➕ צ'אט חדש" no longer opens a tab** (§21.7 #5). Skill `claude-tasks-live` §7. Bridge 2026-11-04.3. `tests/lanes25.php` 36 |
+| ש1+ש2 | #1246 | audit-2026-11 §6: stop the burn; the bridge updates itself | **ש1:** the skill `claude-tasks-live` has no listener and no scheduled check (step 2: a listener only when the owner asks this chat; step 3: "Never create a recurring or chained board check"); `BRIDGE_UPDATE_TEXT` asks to delete an old check; `link.sh status` / `update` print "⚠ יש לך בדיקה שעתית ישנה (trig_…)" (from the board's `old_check` / the link file) → `delete_trigger` + `link.sh checkin --clear`. Join message only on the board: `NOTIFY_SESSION_DEFAULT` = '' (the old spec-chat default counts as empty); the chat prompt has the join line only when the owner set a target. Rows: "💤 ישן — יקרא את הלוח בפעם הבאה שיעבוד"; the list "💤 N צ'אטים ישנים" without "go to the chat and write"; the switch "💤 כבויים (default) · 🎧 מותרים · ⏸ עצורים". **ש2:** `hook.sh prompt` in a registered chat runs `update.sh` in the background, quietly, at most once an hour (`~/.claude-tasks-bridge.updated`); the "📨 שלח הוראת עדכון" button is gone — the row says "תתעדכן לבד בתור הבא". Bridge 2026-11-04.2. Chats whose runtime copy predates this hook stay old until their next `link.sh update` (ש3's wake text runs it). `tests/audit-s1s2.php` 13 |
+| 24a | #1242 (**⚠ superseded by ש1: no self-check, the switch default is off**) | §20.3 + §20.7: the truth on every row, the listeners switch, a self-check per chat | `lib/listen.php`. **Switch** ⚙ ← מערכת ← מאזינים (owner): ⏸ עצורים (`bridge_paused`) · 🕐 בדיקה שעתית (default, `listeners_mode`) · 🎧 פעילים. `channel-wait` passes `listenGate`: not 🎧 → 503 `listeners_off` (Retry-After 3600, the listener exits 5 — not a failure); 🎧 with 5 listening → 503 `listener_slots_full` for the sixth; a listener already inside keeps going. **Meter:** requests / min (10 min), 429/503 in the last hour, listening now — small files `meter-*` in `data/throttle`. **Bridge report** (bridge 2026-11-04.1): `listen_state` (running / off_policy / paused / ended / never / slots_full / `backoff:<until>:<reason>`), `next_check_at` (−1h…+8h), `check_trigger_id` (`trig_…`) on status / pending / wait and the new `link.sh checkin <trig_id> [min]`; unexpected values dropped silently. **Row line** (`channelListen` → `listenLine`): 🎧 מאזין · ⏸ עצורים · 🛑 בנסיגה עד … · כל המקומות תפוסים · ⏰ בודק כל שעה · הבא HH:MM · 💤 הבדיקה הפסיקה · ✗ אין בדיקה עצמית · ℹ️ גשר ישן — לא יתעורר לבד. **"⚠ N צ'אטים לא יתעוררו לבד"** above the chat list (owner): old bridge / no check / stale, each with פתיחה ב-Claude and 🚀. The bubble: "יגיע לצ'אט עד HH:MM" / "⚠ יגיע רק כשהצ'אט ייפתח". **Self-check:** skill `claude-tasks-live` step 3 — at registration each chat creates a recurring `create_trigger` (cron `0 * * * *`, no `persistent_session_id`) and reports it with `checkin`; chain of `send_later` if refused; deleted on disconnect. `BRIDGE_UPDATE_TEXT` includes it. `tests/lanes24a.php` 27 |
+| 23 | #1233 | §19: "➕ צ'אט חדש" from the board — one tap | `lib/launcher.php`. **The launcher** is stored in its own table `launchers` (not `connections`: much code reads "kind ≠ github" as an AI provider — a launcher there would join the AI chain); in the UI it sits under 🔌 חיבורים ("🚀 משיק צ'אטים" tile + group). Fire URL shape and `sk-ant-` prefix checked; token encrypted, API returns 4 chars; owner only; a project uses its own / nearest ancestor's `projects.launcher_id`, else the user's first, never another user's. **`launch-chat`** (owner): name 2–60, one line, quotes and the record marker neutralised; modes empty / template (the project template without its `register` lines) / followup (the 15.3b prompt, needs a summary first — the error says so); the record `CLAUDE-TASKS-LAUNCH v1` built by the server only; POST with Bearer + `anthropic-beta: experimental-cc-routine-2026-04-01`, 20 s; 401/403 "הפקה מחדש…" (launcher → failing), 429 "30 פתיחות בשעה", 404, other with the body's message; 10 successful fires / hour / launcher, one pending per replaced channel. **`launches`** pending → registered / expired (30 min, lazy); the chat list shows "🚀 <name> · נפתח… · פתח", after 10 min the help line. **Registration** `link.sh register … --launch <id>` (bridge 2026-11-03.6): `launchClaim` — one-time, ≤ 30 min, inside the env token's tree; the board takes project, name and `replaces` from its own record. The user tie is the owner who fired (the env token has no user). **UI:** ➕ in the chat list (owner) → sheet (name, ריק / מהתבנית / המשך מצ'אט, launcher line, subscription note, error line); without a launcher today's path + "🚀 הגדרת משיק (3 דק')" → the 8-step guide with copy buttons, the saved prompt verbatim (`LAUNCHER_PROMPT_VERSION` 1, "⚠ הפרומפט השמור ישן"), form; the follow-up sheet gets "🚀 לפתוח את צ'אט ההמשך בלחיצה" (followup + replaces), which is also 22a's dead-end way out. Skill `claude-tasks-live` §1 has the launch registration. `tests/lanes23.php` 37. **Live** (stage 19's list): the owner creates the routine and the first 🚀 |
 | 22a | #1230 | §18.3: honesty and one bubble per turn | **Read failures named:** `platformReadme` returns `{name, ok, why}`; a failed fetch passes the model "README: לא נקרא — <why> (זה לא אומר שאין README)" and the instruction never to call an unread source missing; the answer's `meta.sources` → the bubble's author line "☁️ Platform · קרא: README" or "⚠ לא נקרא: README — <why>". **Project ⚙ "🩺 מה Platform רואה"** (`project-check`, `platformCheck`): "📁 <path>/ · README ✓ · גיטהאב: <login> ✓" or each failure by name with the place to fix it (a sub-project with no folder says so). Project #39 itself could not be checked from here (no live access) — the owner reads this line on the live board. **No copies as messages:** `platform-reply` inserts no `status` relay and no `text` system row; the chat learns from the digest (`link.sh pending`). `needs_chat` re-opens the **original** message for the chat (`handled_by=chat`, `answered_by=''`, bell) with `meta.platform_note`; `link.sh` prints the note above it (bridge 2026-11-03.5). **Context = turns only** (`platformContextMessages`): no `system`, `status`, cards, permissions or approvals — old relay rows never reach the model. **Not listening → ways out:** the needs_chat card offers "💬 צ'אט חדש עם הפרומפט" (the follow-up sheet) and "⏳ ימתין לצ'אט" (`needs-chat-wait`), only while the message still waits (🤖 joins in 22c). **Who wrote it:** chat bubbles "💬 <chat name>", system "⚙️ מערכת" (no longer ☁️). `tests/lanes22a.php` 16; `answers.php` / `platformask.php` updated from the old copies to the new behaviour |
 
 ---
@@ -1232,10 +1270,13 @@ exact body; the live check is stage 19.
 
 ### 15.4 Stage 16 — the chat runs out (req. ד)
 
+> ⚠ (a) `rate_limit_info` / a `limit` field in `channel-health` was **never built** (stage 16 step 0 found no such field; `hook-stopfail.sh` sends only an error code). (b) The silence definition below (message not acked and `listening_until` lapsed) is implemented, but it is the wrong premise now that a sleeping chat is the normal state; the audit's ש4 redefines it as "woken and did not answer" (pending).
+
+
 A chat out of tokens cannot report it, so detection comes from **two signals the server can see**:
 
 - **(a) A limit signal from the chat before it dies.** The Claude Code session exposes `rate_limit_info` (status `allowed_warning`, `resetsAt`) — visible in the session metadata. `channel-health` (already sent every 5 min by the Stop hook) gains `limit: {status, resets_at}`. `allowed_warning` → the row shows "🟡 הצ'אט קרוב למגבלה"; a `rejected` status → "🔴 נגמרו הטוקנים עד <שעה>". **To verify first (stage 16, step 0):** whether a hook receives the limit state, or whether the chat must read it from `get_session`; if neither works, only signal (b) remains.
-- **(b) Silence.** A chat-lane message not acked within `chat_silence_minutes` (default 10) while `listening_until` has lapsed → the chat is *unresponsive*. This also covers a closed tab, a dead container, and the 429 back-off of the listener.
+- **(b) Silence.** A chat-lane message not acked within `silence_minutes` (default 10) while `listening_until` has lapsed → the chat is *unresponsive*. This also covers a closed tab, a dead container, and the 429 back-off of the listener.
 
 **What happens when the chat is unresponsive** follows the user's own setting **"when the current lane stops"** (§15.11 — the same setting as for Platform, in the other direction): 🔁 automatic · ❓ ask (a card on the board, once per episode; the messages wait until the owner answers) · ⏳ wait.
 - **🔁 / the card's "☁️ שיענה Platform"** — the waiting messages move to the Platform lane; replies are answers only (cheap). Code needs → "📋 הפוך למטלה" for the engine, which needs approval (decision 3).
@@ -1319,6 +1360,9 @@ Stage by stage, each: branch, PR, merge, `conclusion: success`, a row in §14. E
 **Review of stage 15 / 15.1 (verified, runs 41657734518 and 41663220155 `conclusion: success`, `tests/lanes.php` 64).** Approved: only `platform-reply` and the connection test open the breaker (monitoring and the engine behave as before — their failures show in the ledger, stage 17, and do not trip it). The Anthropic 400 credit text is from documentation — **confirmed live in stage 19**.
 
 #### 15.12.1 Stage 16 — the chat does not answer, the digest, the return
+
+> ⚠ The silence definition here is implemented (`lib/silence.php`) but is to be redefined, see the note at §15.4.
+
 
 **Step 0 — spike (before any code; the result goes into §14):** what does a Claude Code session expose about its own usage limit? Check in this order: (a) the `Stop` / `StopFailure` hook payload — a rate-limit or billing reason?; (b) `get_session` → `external_metadata.rate_limit_info` (`status`, `resetsAt`, `rateLimitType`) — visible from another session, can the chat read its own?; (c) nothing — then only silence is used. Do not build `limit` before this answer.
 
@@ -1510,6 +1554,9 @@ under `data/` → `--exclude` in the same PR (none expected — columns only).
 
 ## 17. "Working…" — what the other side is doing right now (owner request 2026-11-03 21:19, via the code writer; **stage 21**)
 
+> ⚠ **NOT BUILT (stage 21).** This section is a design, not a description of the current system.
+
+
 **The owner:** after sending a message on the board — on ☁️ or on 💬 — show whether the system is in the middle of work and whether
 there is something to wait for. Best: see the steps the chat runs, as in Claude Code. At least: "typing…" dots, as in WhatsApp.
 
@@ -1687,6 +1734,9 @@ not-listening card shows the three ways out; #39's check line is green on the li
 
 ### 18.4 Stage 22b — Platform reads the code
 
+> ⚠ **NOT BUILT (stage 22b).**
+
+
 **Tools** (a tool loop in `lib/answers.php`, the model's native tool use; read-only; every call through `lib/github.php`):
 
 | Tool | Does | Bounds |
@@ -1716,6 +1766,9 @@ size cut), the 8-call and 120-s budgets end in a partial answer that says so, th
 live (stage 19 list): "📊 מצב הפרויקט" on שעון נוכחות matches the README table and the last PRs.
 
 ### 18.5 Stage 22c — Platform develops (the engine in the conversation)
+
+> ⚠ **NOT BUILT (stage 22c).**
+
 
 - **Trigger:** Platform's structured output gains `"develop": {"title", "plan", "estimate_usd"}` when the request needs a change to code.
   The board shows a **develop card**: the plan in three lines, the estimate, the payer, the remaining ceiling, and **🤖 לפתח** · **✏️ לשנות** ·
@@ -1750,6 +1803,9 @@ conversation → a PR with a description, tests run in the run's log, and the co
 ---
 
 ## 19. "➕ צ'אט חדש" from the board — open a real chat in one tap (owner request 2026-11-03 23:52, via the code writer; **stage 23**)
+
+> ⚠ §19.1 #6 and §19.2 step 4 (opening `session_url` in a tab) are **SUPERSEDED** by §21.7 #5: nothing opens claude.ai by itself.
+
 
 **The owner:** after "סכם את הצ'אט למעבר לצ'אט חדש" (15.3b) worked, there is no way to open the new chat **from the board**:
 *"there's no plus to add a chat, give it a name and send it the prompt… it ruins the whole user experience… there must be an option to
@@ -1858,3 +1914,288 @@ If the first line is anything else, do nothing except reply "not a board launch"
 
 **Order:** right after 22a, before 21 (the owner called it urgent; it also closes 22a's dead end in one tap). New order:
 **22a → 23 → 21 → 22b → 22c → 16**. The new table `launches` lives in the board's database — no new file under `data/`.
+
+---
+
+## 20. Diagnosis — "why aren't the chats listening???? we already asked this!!!!" (owner, 2026-11-04 08:09; **stages 24a–24b**)
+
+> ⚠ **SUPERSEDED by §21 and `audit-2026-11.md` (ש1–ש3).** Keep §20.1 as the history of the diagnosis; **do not build from §20.2–§20.7** — the hourly self-check, the 🕐 default and the self-checking chats were removed.
+
+
+**The owner:** channel #12 "שעון נוכחות - צ'אט" — ⚪ not listening, "seen 33 minutes ago", bridge current (2026-11-03.6), route ☁️ —
+and "this is the permanent state of almost every chat".
+
+### 20.1 Findings
+
+| # | Finding | Where |
+| --- | --- | --- |
+| L1 | **The main cause is a rule in this spec.** After the 2026-11-02 incident §5.4 says: *"Before re-enabling: measure on the real board with one chat for 30 minutes, then three chats … Listeners stay off until the owner approves."* The measurement was never done and the owner was **never asked** to approve. The skill turned it into *"Start it only while the owner has the listeners on … if the owner said the listeners are off, rely on the hourly check"* — and a chat has **no way to know** what the owner said: the board exposes only the brake (`bridge_paused`), not an "approved" state. So every careful chat skips the listener and lives on the hourly `send_later`. **That is exactly "seen 33 minutes ago"**: `last_seen_at` moves once an hour with `link.sh status/pending`; `listening_until` (= now + 90 s per poll) is set only by a running `listen.sh`. | **Spec** (mine) + skill wording |
+| L2 | Secondary, possible per chat: a listener that exited 4 (429/503/5xx) stays down until the next hourly check (1–6 h back-off); the 2-hour `timeout` ends it and only the chat's next turn restarts it; a session that ended or was archived has no hourly check either. **None of these is visible** — the board shows one word, "לא מאזין". | Not built: no reason is reported |
+| L3 | **The board cannot wake an existing chat.** A routine's API trigger (§19) always starts a **new** session. Waking an existing session needs `create_trigger` / `send_later` with `persistent_session_id` — a tool that exists only **inside** a Claude Code session, not on the board's server. | Platform limit |
+| L4 | The board promises "מאזין" without saying what it means in time. The owner reads ⚪ as "broken". | Spec |
+
+**Proof the code writer adds (24a.1) — not guesses:** today the data cannot separate L1 from L2. After 24a every channel reports its state, and the
+admin log answers "why" per channel. Until then, the code writer runs one read-only query on the live DB through a deploy-time
+diagnostic (or an admin endpoint): per active channel — `last_seen_at`, `listening_until`, the last `channel-wait` time from
+`data/throttle/`, and `bridge_paused`. Expected (L1): no `channel-wait` from almost any token since 2026-11-02, `last_seen_at` hourly.
+
+### 20.2 Decisions (mine — the owner asked for a diagnosis that decides; the switch itself is his)
+
+| # | Decision |
+| --- | --- |
+| 1 | **The owner's approval becomes a switch the chats can read**, not a sentence in a skill: Settings → מערכת → **"מאזינים"**: ⏸ עצורים (the brake) · 🕐 בדיקה שעתית בלבד · 🎧 פעילים. The server returns it (`listeners: paused|hourly|on`) in `channel-register`, `status`, `pending`; the bridge starts `listen.sh` **only when it says `on`** — no chat guesses |
+| 2 | **Re-enable safely, by numbers:** `on` comes with a **server cap of 5 listening tokens at once** (a 6th gets `listener_slots_full` → exit to hourly, shown on its row). Load: 5 × ~2 requests/min, each answered at once (`long_poll_max = 0`) ≈ 10 short requests a minute — the incident was 13 chats holding PHP processes for 20 s each. A **live meter** next to the switch: requests/min in the last 10 min, 429/503 in the last hour, listeners now. That meter *is* the §5.4 measurement; the owner turns it on with one chat, looks after 30 minutes, then lets the rest in |
+| 3 | **Every channel says why, and what to do** (24a.2) |
+| 4 | **Waking an existing chat — a relay routine** (24b): the board fires a small routine (API trigger, like §19) whose only job is `create_trigger(persistent_session_id = <the chat>, run in 1 min, fixed text)`. The new short session ends; the old chat wakes and reads `link.sh pending`. **Verify first** (24b step 0) |
+| 5 | **What we promise (L4)** — written on the board, per channel, as an expected reply time, never as a bare "listening" |
+
+### 20.3 Stage 24a — the truth on every row, and the switch (urgent)
+
+1. **The bridge reports its state.** `link.sh status/pending` and every `channel-wait` send `listen_state`: `running` · `off_policy`
+   (switch not `on`) · `backoff:<until>:<reason>` · `paused` · `ended` (the 2-h timeout) · `never`, plus `next_check_at` (the scheduled
+   hourly check). Stored on the channel (`listen_state`, `listen_state_at`, `next_check_at`). `BRIDGE_VERSION` bumped.
+2. **The row and the conversation header** show one line from this table (no bare "⚪ לא מאזין"):
+
+   | State | Line | Action |
+   | --- | --- | --- |
+   | listening | "🎧 מאזין · תשובה תוך ~דקה" | — |
+   | switch hourly / off_policy | "🕐 בדיקה שעתית · הבאה ב-08:40" | **הפעלת מאזינים** (owner, goes to the switch) |
+   | paused (brake) | "⏸ המאזינים עצורים בלוח" | **החזרה** (owner) |
+   | backoff | "🛑 בנסיגה עד 08:30 — הלוח החזיר 429" | — (it returns by itself) · the reason |
+   | slots full | "🎧 כל 5 המקומות תפוסים — בדיקה שעתית" | **פנה מקום** (list of the 5) |
+   | no check scheduled for > 70 min | "💤 הצ'אט לא נבדק מאז 06:10 — כנראה נסגר" | **צ'אט המשך** (§19 🚀) · **העירה** (24b, when set up) |
+   | old bridge | "ℹ️ גשר ישן — אין מידע" | **📨 שלח הוראת עדכון** |
+
+3. **The switch, the cap and the meter** (20.2 #1, #2). Default after deploy: **🕐 hourly** (unchanged behavior) — the owner turns on 🎧
+   himself, with the meter in front of him. The red "paused" strip stays as it is.
+4. **The skill `claude-tasks-live`** reads `listeners` from the server: `on` → start `listen.sh` (once); `hourly` → do not, keep the
+   hourly check; `paused` → as today. The phrase "if the owner said" is removed.
+5. **Admin → log:** a "מאזינים" view: every channel, its `listen_state`, last request, last exit reason — the proof in 20.1, permanently.
+
+**Done when (24a):** tests — the server returns `listeners` in the three calls; a 6th token gets `listener_slots_full`; each row state from the
+table renders from its fixture; the meter counts from the throttle files; the bridge never starts `listen.sh` unless `on`. **Live, owner present:**
+switch to 🎧, one chat listens for 30 minutes, the meter shows no 429 — then the owner decides on the rest. The numbers go into §5.4.
+
+### 20.4 Stage 24b — waking an existing chat ("📣 העירה")
+
+**Step 0 — verify before code (result into §14):** (a) a session started by a routine's API trigger has the `create_trigger` tool with
+`persistent_session_id`; (b) a trigger into an idle session whose container was reclaimed wakes it with its context; (c) an archived
+session cannot be woken (expected) — then the row says so and offers 🚀 a follow-up chat. If (a) fails, 24b is dropped and the row's
+action stays "צ'אט המשך".
+
+**Design (if step 0 passes):**
+- A second routine, set up once like the launcher (§19.3 guide, same connection screen): **"📣 מעיר צ'אטים"**, API trigger only. Saved prompt:
+  act only on a record `CLAUDE-TASKS-WAKE v1` with `session_id` and `channel_id`; call `create_trigger` with that `persistent_session_id`,
+  `run_once_at` = now + 1 min, and **this fixed text only**: "📥 יש הודעות מהלוח בערוץ <channel_id> — הרץ `claude-tasks/bridge/link.sh pending`."
+  Then end. It never forwards the owner's text, so a leaked token can only cause wake-ups with that fixed sentence.
+- **When the board fires it:** a message on the 💬 route to a channel that is not listening, if the owner's setting allows it
+  (⚙ of the channel: "להעיר כשאני כותב" — default on for the owner's own chats), **at most once per channel per 10 minutes** and within
+  the 30/hour of the routine. The row shows "📣 נשלחה העירה · 08:12".
+- **The session id** is the one the chat registered with (`session_id` in `channel-register` — the bridge already knows it from the environment).
+
+**Done when (24b):** step 0's answers in §14; tests — the wake record is built by the server only, rate per channel and per hour, no wake for a
+listening channel or an archived one; **live:** the owner writes to a not-listening chat → it answers on the board within ~3 minutes.
+
+### 20.5 What the board may promise (L4)
+
+- **🎧 listening:** a reply in about a minute, while the chat's session is alive and the switch is on.
+- **📣 wake set up:** about 2–3 minutes for a chat that is not listening but not closed.
+- **Neither:** up to an hour (the hourly check), or never if the chat was closed — and then the row says so and offers 🚀.
+- **Never promised:** that every chat is always listening. A chat is a session on the owner's subscription; it ends, it is archived, it runs out.
+  The board's job is to say which of these is true right now, and to offer the next step.
+
+**Order:** **24a now** (the owner's top complaint), then 21, 22b, 24b (after its step 0), 22c, 16.
+
+### 20.6 Amendment — the data says there is no hourly check either (code writer, 2026-11-04 08:28) — **24b moves up, into 24a**
+
+**New fact (from `list_triggers` on the account):** there is **no active recurring or pending check** for any chat. The skill's step 3
+(chain of hourly `send_later`) is not happening in practice — one missed or unscheduled link ends the chain silently. So when a chat's session
+goes idle, **nothing wakes it**: not the brake (it only *permits* listening), not a board message, not a lane switch. A chat listens only while
+the owner has it open. This also explains "⚠ גרסה ישנה" on most rows (an asleep chat cannot update) and the 📨 / "תשאל שוב" messages stuck at
+"⏳ ממתין לצ'אט" with one ✓. L1 stands, and is **worse** than §20.1 assumed: the fallback it relied on does not exist.
+
+**Decisions (replace §20.2 #4 and the order in §20.5):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **Waking on demand is the primary mechanism**, not polling and not hourly checks. Build it now, as part of **24a**, starting with step 0 of §20.4 |
+| 2 | **The wake routine** ("⏰ מעיר צ'אטים") is the code writer's design with one addition from §20.4: the board fires `CLAUDE-TASKS-WAKE v1 {session_id, channel_id, wake_id}`; the short session **verifies `wake_id` with the board** (`wake-verify`, one-time, ≤ 10 min) before acting, then sends the old session **one fixed message** via `create_trigger` + `persistent_session_id`: *"📥 בדיקת לוח: הרץ `claude-tasks/bridge/link.sh update`, `link.sh pending`, טפל במה שממתין, והפעל מאזין אם הלוח אומר `listeners: on`."* — and ends. It never forwards the owner's text |
+| 3 | **When the board wakes a chat:** (a) the owner presses **⏰ להעיר** on a row or in the conversation header; (b) **automatically** when the owner writes on the 💬 route to a channel that is not listening — channel setting "להעיר כשאני כותב", **default on**; (c) **⏰ להעיר את כל הישנים** (one button, for "⚠ גרסה ישנה" and stuck update instructions) — queued and fired one by one |
+| 4 | **Limits (the 429 lesson):** board-wide **one wake in flight at a time, at least 2 minutes apart, at most 20 per hour** (the routine allows 30); per channel at most once per 10 minutes; a channel already listening is never woken. A wake is a single short session — no load on mbe-plus.com beyond its two requests (`wake-verify`, then the woken chat's `pending`) |
+| 5 | **Hourly checks become optional, per channel, off by default.** When on (⚙ of the channel: "⏰ בדיקה שעתית"), the chat creates **one recurring** trigger (cron hourly, `persistent_session_id` = itself) at registration — not a chain — and reports its `trigger_id`; disconnect deletes it. Reason for off by default: every hourly fire is a turn on the owner's subscription even when nothing waits; waking on demand costs a turn only when something waits |
+| 6 | **Row line additions** (to §20.3.2): "⏰ הוערה ב-08:12 · ממתין שיענה" · "⏰ ההעירה נכשלה — <reason>" (with 🚀 continuation chat) · "💤 ישן — ⏰ להעיר". The chip **"✉️ 3" becomes "✉️ 3 ממתינות לצ'אט"** (the owner read it as messages sent to him) |
+| 7 | **"Does it work for both Platform and the chat?"** — ☁️ Platform answers on the server and never needs a listener or a wake. The wake is for 💬 chats only. A chat on the ☁️ route that is asleep still gets Platform's answers (and the digest when it wakes) |
+
+**Step 0 still decides it** (§20.4): if a routine-fired session lacks `create_trigger` with `persistent_session_id`, the wake falls back to
+"🚀 continuation chat" (§19) on every "💤" row, and the owner is told plainly that an existing chat cannot be woken from the board.
+
+**Setup for the owner (once):** the same guide as the launcher (§19.3), a second routine "⏰ מעיר צ'אטים" with its own saved prompt and token,
+under 🔌 חיבורים. The board shows both routines' state side by side.
+
+**Done when (24a, revised):** everything in §20.3, plus — tests: the wake record built by the server only; `wake-verify` one-time and expiring;
+the four limits; no wake for a listening or archived channel; auto-wake respects the channel setting; "wake all asleep" is queued and spaced;
+the optional hourly check creates exactly one recurring trigger and the row shows ⏰ ✓/✗. **Live, owner present:** a sleeping chat with
+"⚠ גרסה ישנה" is woken from its row, updates its bridge, and answers the waiting message on the board within ~3 minutes.
+
+**Order:** **24a (with the wake, step 0 first)** → 21 → 22b → 22c → 16. 24b as a separate stage is folded in.
+
+### 20.7 Step 0 result — the board cannot wake an existing chat; **each chat checks itself** (code writer, 2026-11-04 08:50)
+
+**Result:** (a) a session started by a routine **has** `create_trigger` / `send_later`, but **did not use them** to message another session —
+a fired routine treats its prompt as stored, not as the owner's live request, and declines an outward action the owner did not ask for in
+person. The tool exists; the policy refuses. This is by design and must not be worked around. (b) Waking an idle session **works**: the spec
+chat is woken between messages, and one channel (session_018g4NYDVSeAxRWZqzYUiTGG) has woken itself every hour all night through its own
+`send_later` chain, every run `SUCCEEDED`. (c) Archived — not tested (no real session touched).
+
+**Decisions (replace §20.6 #1–#4; #5–#7 stay, #5 changed):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **The relay wake ("⏰ מעיר צ'אטים") is dropped.** The board never fires a routine to message a chat |
+| 2 | **Each chat schedules its own check — the primary mechanism, on by default.** At registration (and on every hourly check, if missing) the chat creates **one recurring trigger into itself** (`create_trigger`, cron hourly, default target = this session) — **not a `send_later` chain**, which ends silently when one link is missed. If recurring creation is refused, it falls back to the chain. It reports `check_trigger_id` and `next_check_at` to the board; `disconnect` deletes the trigger |
+| 3 | **The check itself:** `link.sh update` → `status` → `pending` → handle → start the listener only if the server says `listeners: on`. No model work when nothing waits beyond reading the result |
+| 4 | **Rows:** "⏰ בודק כל שעה · הבא 07:36" · "✗ אין בדיקה שעתית — ⚠ הצ'אט לא יתעורר לבד" (with 🚀 continuation chat) · "💤 ישן · ייבדק ב-07:36". **No "⏰ להעיר עכשיו" button** — instead, the row says honestly when the chat will look, and offers 🚀 or "open the chat in Claude" (the session link) |
+| 5 | **An owner message to a sleeping chat** shows on its bubble "יגיע לצ'אט עד 07:36" (from `next_check_at`), never only "⏳ ממתין" |
+| 6 | **Old chats with "⚠ גרסה ישנה" and no check:** they cannot be reached from the board. The board lists them in one place ("צ'אטים שלא יתעוררו לבד") with, per row, **open in Claude** and **🚀 continuation chat**. The owner opens each once; on its next turn it updates its bridge and schedules its own check |
+| 7 | Cost: one short turn per chat per hour on the owner's subscription. A chat with no board activity for 24 h moves its trigger to every 3 hours (and back to hourly on the next message) |
+
+**What we promise (replaces §20.5):** 🎧 listening → about a minute; ⏰ self-check → up to an hour, with the exact time on the row; neither →
+the row says the chat will not wake by itself, and offers the next step. Never "waking now" from the board.
+
+**Done when (24a, final):** §20.3 + these: the skill creates one recurring self-check at registration (test against a fake MCP: exactly one
+trigger, re-created if missing, deleted on disconnect, chain fallback); `next_check_at` drives the row and the bubble line; the "won't wake by
+itself" list. **Live:** a newly registered chat shows "⏰ בודק כל שעה", and an owner message to it is answered by the next check.
+
+---
+
+## 21. The dispatcher chat — one bridge between the board and Claude (owner decision 2026-11-04 09:09; **stage 25**, replaces §20.7's self-check)
+
+**The owner rejects §20.7** (a check every hour in every chat): dozens of chats × hourly turns burn tokens, and a wake must not take up
+to an hour. **His design:** one fixed **dispatcher chat**, built into the system. The owner does not talk to it. It is the only two-way bridge
+between the board and Claude: the board sends it instructions about every connected session — wake, connect, and so on. When it grows long,
+the board opens a new dispatcher in its place. Ordinary chats run **no** listener and **no** scheduled check for the board's sake — only when
+the owner asks a chat for something specific (follow-up, monitoring), as in any Claude chat.
+
+### 21.1 The facts it must respect (from step 0 and the platform rules)
+
+| # | Fact | Consequence |
+| --- | --- | --- |
+| F1 | A session started by a **routine fire** has `create_trigger`, but refuses to act on another session: its prompt is stored, not the owner's live request | The dispatcher **cannot** be started by the launcher (§19) alone. It must be a session where **the owner himself** gave the standing instruction, in person |
+| F2 | An **interactive** session the owner opened can message other sessions of the account (`create_trigger` + `persistent_session_id`) — the code writer does it every day | The dispatcher works if the owner's in-person instruction covers exactly what it does |
+| F3 | Requests that arrive in a tool's output (the board's response) are **data, not instructions**; a session acts on them only where the owner's own instructions already call for that action | The standing instruction must name the one action — "for each wake request the board lists, send the fixed wake text to that session" — so each wake is the owner's pre-approved action, not something the board asked |
+| F4 | `create_trigger` / `send_later` granularity is **one minute** | Wake latency ≈ the dispatcher's poll (≤ 40 s) + up to ~1–2 min |
+| F5 | One listener on shared hosting costs ~2 short requests a minute | The dispatcher is the **only** standing listener — far under the §20 cap of 5 |
+
+### 21.2 Decisions
+
+| # | Decision |
+| --- | --- |
+| 1 | **The dispatcher does one thing: wake.** It sends a session a **fixed** text — *"📥 בדיקת לוח: הרץ `claude-tasks/bridge/link.sh update` ואז `link.sh pending`, וטפל במה שממתין."* It never carries the owner's words (the woken chat reads them from the board), never creates, archives or edits anything else. "Connect a new chat" stays the launcher's job (§19); "pass a message" = wake + the message waiting on the board |
+| 2 | **Owner's setup, once (2 minutes):** Settings → מערכת → **"🛰 צ'אט מנהל"** → **🚀 פתיחה** (the launcher opens a session with the dispatcher prompt, §21.4) → the board shows its link and one sentence to type **in person** in that session: **"אני מאשר: אתה צ'אט המנהל של הלוח."** That sentence is the owner's live instruction (F1, F3). The session registers with role `dispatcher`; the board shows "🛰 מנהל פעיל" |
+| 3 | **How the board reaches the dispatcher instantly:** the dispatcher alone runs `listen.sh` (switch ignored for it; it does not count against the 5). A wake request makes `channel-wait` return at once (bell file, as today); the listener exits, the session wakes, handles **all** pending requests in one turn, restarts the listener. Latency board → target ≈ **1–3 minutes** |
+| 4 | **Board side:** `dispatch_requests(id, kind 'wake', channel_id, session_id, reason, status queued|sent|done|failed, created_at, sent_at, error)`. The dispatcher reads them with `link.sh dispatch-pending` and reports with `dispatch-done {id, ok, error}`. The board resolves `session_id` from the channel's registration — the dispatcher never chooses targets |
+| 5 | **When the board queues a wake:** (a) the owner presses **⏰ להעיר** on a row / in the header; (b) the owner writes on the 💬 route to a chat that is not listening (channel setting "להעיר כשאני כותב", default on); (c) **⏰ להעיר את כל הישנים** (old bridges, stuck update instructions) |
+| 6 | **Cost limits:** per channel one wake per 10 minutes (a second request joins the open one); board-wide at most **20 wakes per hour**; never a listening or archived channel. The dispatcher's own cost is **one short turn per batch** of requests; polling is a shell loop, not turns. No hourly checks anywhere |
+| 7 | **One dispatcher at a time — a lease on the board:** `dispatcher(session_id, channel_id, since, lease_until, handled)`. Every poll renews the lease (90 s). A second session registering as `dispatcher` is refused ("כבר יש מנהל פעיל") unless the board started a **handover** (#8). If the lease lapses (dispatcher gone), the board shows "🛰 המנהל לא פעיל" with 🚀 to open a new one |
+| 8 | **Replacement (it grows long):** after **300 handled batches or 7 days**, whichever first, the board shows a card "🛰 הגיע הזמן להחליף מנהל" → 🚀 opens the new one (setup #2: the owner types the sentence once more). The new dispatcher registers with `--replaces-dispatcher`; the board moves the lease to it **atomically**; the old one gets `retired` on its next poll, stops its listener and ends. **What passes over: nothing from memory** — the queue and the list of sessions live on the board |
+| 9 | **What ordinary chats do:** no listener, no scheduled board check. The skill and the update instruction say so. A chat starts a listener or a schedule **only** when the owner asks that chat for something specific. On every turn the owner gives it (or a wake), it reads `link.sh pending` as today |
+| 10 | **If the dispatcher refuses in practice** (the step-0 refusal repeats even with the in-person sentence): no workaround. The rows say "אי אפשר להעיר מהלוח — פתח את הצ'אט" with the session link and 🚀, and the owner is told plainly |
+
+### 21.3 What happens to 24a (already merged, #1242)
+
+- **Keep:** the truth line on every row (now with the dispatcher states below), the "won't wake by itself" list (it becomes "⏰ להעיר" per row),
+  `listen_state`, the meter, "✉️ N ממתינות לצ'אט".
+- **Remove:** the hourly self-check from the skill and from the update instruction — **before** any update instruction is sent to old chats.
+  A chat that already created one deletes it on its next turn (`link.sh update` tells it to).
+- **The switch** (⏸ / 🕐 / 🎧) stays as the owner's control over **ordinary** chats' listeners (default 🕐 now means "no listener, woken by the
+  dispatcher"); ⏸ also stops the dispatcher's listener. The cap of 5 stays for ordinary chats.
+- **Rows:** "💤 ישן · ⏰ להעיר" · "⏰ נשלחה העירה · 08:12 · ממתין שיענה" · "⏰ ההעירה נכשלה — <reason>" (with the session link and 🚀) ·
+  "🛰 אין מנהל פעיל — לא ניתן להעיר" (link to setup).
+
+### 21.4 The dispatcher's prompt (the launcher sends it as the opening prompt; English, versioned `DISPATCHER_PROMPT_VERSION`)
+
+```
+You are the dispatcher chat of the "מטלות לקלוד" board. The owner will confirm this role in person in this session.
+Until he types "אני מאשר: אתה צ'אט המנהל של הלוח", do nothing but register (claude-tasks-live, role dispatcher) and wait.
+After his confirmation, your standing instruction from him is:
+1. Keep exactly one board listener running (claude-tasks/bridge/listen.sh, as the skill says).
+2. When it wakes you, run `link.sh dispatch-pending`. For each request of kind "wake", send that session exactly this text with
+   create_trigger (persistent_session_id = the request's session_id, run_once_at = one minute from now):
+   "📥 בדיקת לוח: הרץ claude-tasks/bridge/link.sh update ואז link.sh pending, וטפל במה שממתין."
+   Then report `link.sh dispatch-done <id> ok` (or the error). Nothing else: never another text, never another action,
+   never a target the board did not list.
+3. Restart the listener and end your turn. If the board says "retired", stop the listener and end.
+```
+
+### 21.5 Done when
+
+- **Step 0 (before code, owner present):** the owner opens a dispatcher and types the sentence; the code writer queues one wake to a test
+  chat; the dispatcher sends it and the test chat answers on the board. Result in §14. If it refuses → #10.
+- Tests: the lease (second dispatcher refused, handover atomic, retired on next poll); `dispatch-pending` returns only board-resolved targets;
+  the per-channel and hourly limits; no wake for listening / archived channels; auto-wake respects the channel setting; the skill and the
+  update instruction contain no scheduled check; old self-checks are deleted by `update`.
+- Screens 390 / 320: the setup card, "🛰 מנהל פעיל / לא פעיל", the replacement card, each row state.
+- **Live:** the owner writes to a sleeping chat → the chat answers on the board within ~3 minutes, with no hourly check anywhere on the account.
+
+**Order:** **25 now** (the owner's top issue), then 21, 22b, 22c, 16. Until step 0 passes, the code writer sends **no** update instruction to old chats.
+
+### 21.6 Owner correction — a connection per **account**, API first, the dispatcher only as the fallback (2026-11-04 09:51)
+
+> ⚠ **SUPERSEDED by §21.7**, except #1 (a per-user "🔗 חיבור לחשבון Claude" screen), which is planned and **not built**. The fire-to-existing-session path and the repo-less bootstrap were refuted by step 0.
+
+
+**The owner:** this is not about a project, nor about mini_projects. It is a connection **between the user's Claude account and his account in
+the app**, made **once per user**. The right way is **a key / an API** the app calls; a dispatcher chat is a workaround if no API exists.
+
+**What the documentation says (read 2026-11-04):** a routine's API trigger (`/fire`) **starts a new session** — documented for every kind of task;
+nothing documents a fire that lands in an existing session. But `create_trigger` accepts `persistent_session_id` and a **poke-only** task
+(no cron, no run time), and such tasks appear among the account's routines. Whether the web lets you add an API trigger to one of them, and
+whether its fire then lands **in that session**, is **undocumented — it is the new step 0.**
+
+**Design (replaces §21.2 #2–#3; the rest of §21 stays):**
+
+| # | Decision |
+| --- | --- |
+| 1 | **User settings → "🔗 חיבור לחשבון Claude"** — per user, not per project. It holds the launcher (§19, moved here), and the **wake channel** below. Each user of the app sets it up once for his own Claude account; a user never wakes another user's sessions |
+| 2 | **Preferred path (if step 0 passes): fire → the user's dispatcher session, no listener at all.** The dispatcher is a **repo-less** cloud session (no sources), opened once and confirmed by the owner in person (§21.2 #2's sentence). In it, the dispatcher creates a **poke-only** trigger into itself; the owner adds an **API trigger** to that task on claude.ai/code/routines and pastes the Fire URL + token into "🔗 חיבור לחשבון Claude". From then on the board **fires** it when a wake is queued — the dispatcher wakes at once, reads `dispatch-pending` from the board, wakes each target with `create_trigger` (§21.4, fixed text), reports, ends its turn. **One token per user, no polling, no hourly checks** |
+| 3 | **Fallback (if the fire opens a new session instead):** the dispatcher of §21 as written — one listener in the repo-less dispatcher session. Same setup screen, same one sentence |
+| 4 | **Never a token per chat.** Tokens are per task and are copied by hand on the web — one per user is the most the owner should ever do |
+| 5 | **Repo-less bootstrap:** a session without a repository has no `claude-tasks/bridge/`. The board serves the bridge itself (`bridge-install`, authenticated with the user's registration token) and the dispatcher prompt installs it into `~/.claude-tasks-bridge` — the runtime copy the bridge already uses. The environment must hold `CLAUDE_TASKS_TOKEN` (the setup screen names it) |
+| 6 | **Why the F1 refusal does not apply on the preferred path:** the fire lands in the dispatcher **session the owner confirmed in person**; the fired text only says "check the board" — the targets come from the board's queue, and acting on them is the owner's standing instruction. If the dispatcher still declines, §21.2 #10 holds: no workaround |
+
+**Step 0 (replaces §21.5 step 0; owner present, no code before it):**
+1. The owner opens a **repo-less** cloud session in the environment that holds `CLAUDE_TASKS_TOKEN` and pastes the dispatcher prompt (the code writer
+   sends it); he types the confirmation sentence.
+2. The session creates a **poke-only** `create_trigger` into itself (no cron, no `run_once_at`) and prints its `trigger_id`.
+3. The owner opens that task on claude.ai/code/routines: **can an API trigger be added to it?** If yes — Generate token, copy the Fire URL and token
+   (to the code writer only through the board's form, never into a chat).
+4. One `POST …/fire` with `{"text":"wake-test"}`: **does the response's `claude_code_session_id` equal the dispatcher's session**, and does the
+   message appear in it?
+5. The dispatcher, on that wake, sends the fixed wake text to one test chat; the test chat answers on the board.
+
+**Outcomes:** (3) and (4) yes → preferred path (#2). (3) no, or (4) a new session → fallback (#3). (5) declined → §21.2 #10. Results into §14 the
+same day.
+
+### 21.7 Step 0 final result and the decision — **the fallback: the dispatcher listens** (2026-11-04 11:45)
+
+**Results (code writer, with the owner):**
+1. A repo-less session cannot be opened from the phone app → the dispatcher runs on `mini_projects` (Default Cloud Environment). §21.6 #5 (repo-less bootstrap) is dropped.
+2. ✅ The dispatcher created a poke-only task into itself (`trig_01LpaYCE5NNwxSjnhGayQwjh`, "🛰 העירת מנהל"); session `session_018g4NYEoC1HCVucFh1eshJb`.
+3. ✅ An API trigger **can** be added to it (from a computer; not from the phone for a Claude-created task).
+4. ❌ **`/fire` through the API opens a new session** (as documented). Only **Run now** on the web continues the same session.
+5. ✅ The dispatcher, once woken, sent `create_trigger` + `persistent_session_id` to another session **without a refusal** — the owner's in-person sentence works.
+
+**Decision — §21.6 #3, the fallback, using the existing dispatcher session:**
+
+| # | Decision |
+| --- | --- |
+| 1 | **The dispatcher session that exists (`session_018g4NYEoC1HCVucFh1eshJb`) is the dispatcher.** It runs **one** `listen.sh`; the board rings it when a wake is queued; it handles all pending requests in one turn (§21.2 #3–#7, §21.4) |
+| 2 | **Its cost, stated:** one short turn per batch of wakes, plus one turn every ~2 hours when the listener's timeout ends and it restarts (≈12 short turns a day, one session only). Server load: one request every ~30 s. Shown on the setup card |
+| 3 | **The API trigger on "🛰 העירת מנהל" is not used** (a fire opens new sessions). The owner **deletes its token** on claude.ai/code/routines (a token that opens sessions should not stay alive unused); the poke-only task itself may stay or be deleted |
+| 4 | **The launcher and the wake are two separate fields** in "🔗 חיבור לחשבון Claude". The test overwrote the launcher with the dispatcher's task — the owner re-enters the original launcher (new chats). A form never replaces one with the other |
+| 5 | **Nothing navigates the owner to claude.ai by itself.** A wake is fully in the background. "➕ צ'אט חדש" no longer opens a tab: the new row appears ("🚀 נפתח…") with an optional **פתח ב-Claude** link |
+| 6 | **The fixed wake text names the tool and the command** (the fired test session used the project-manager connector when it read "בדיקת לוח"): *"📥 בדיקת לוח 'מטלות לקלוד': הרץ `claude-tasks/bridge/link.sh update` ואז `claude-tasks/bridge/link.sh pending`, וטפל במה שממתין. זה לא מנהל הפרויקטים."* |
+| 7 | **The stray test session** opened by the fire (it got 401 and alerted the owner) — the owner archives it; nothing else depends on it |
+
+**Done when (stage 25 = §21 with these):** §21.5's tests and screens; the dispatcher listed as "🛰 מנהל פעיל" with its last batch time; the owner writes
+to a sleeping chat and it answers on the board within ~3 minutes, with no tab opened, no hourly check on the account, and only the dispatcher listening.
