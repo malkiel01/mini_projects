@@ -71,6 +71,12 @@ function ts_drawing_save(int $uid, array $in): array
     $id = $in['id'] ?? null;
     if ($id !== null) {
         if (!is_int($id)) throw new TsInvalid('מזהה לא תקין');
+        // שרטוט שייך לנכס שלו: עדכון לא מעביר לנכס אחר (אחרת אפשר היה לעקוף את תקרת ה-500 — ממצא בקרה #1269)
+        $cur = $db->prepare('SELECT asset FROM drawings WHERE id = ? AND user_id = ?');
+        $cur->execute([$id, $uid]);
+        $was = $cur->fetchColumn();
+        if ($was === false) throw new TsNotFound('השרטוט לא נמצא');
+        if ($was !== $asset) throw new TsInvalid('אי אפשר להעביר שרטוט לנכס אחר');
         $st = $db->prepare('UPDATE drawings SET asset = ?, tf = ?, kind = ?, points = ?, style = ?, updated_at = ? WHERE id = ? AND user_id = ?');
         $st->execute([$asset, $tf, $kind, $points, $style, time(), $id, $uid]);
         if (!$st->rowCount()) throw new TsNotFound('השרטוט לא נמצא');

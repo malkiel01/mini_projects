@@ -97,6 +97,9 @@ eq(count(call('alice', 'drawings', null, ['asset' => $A])[1]['drawings']), 500, 
 eq([$c, str_contains((string)($r['error'] ?? ''), '500')], [422, true], 'the 501st on the same asset → refused with a clear message');
 eq(call('alice', 'drawing_save', ['id' => $id] + $trend)[0], 200, 'updating an existing one at the cap is fine');
 eq(call('alice', 'drawing_save', ['asset' => 'binance:ETHUSDT'] + $trend)[0], 200, 'the cap is per asset');
+$eth = call('alice', 'drawings', null, ['asset' => 'binance:ETHUSDT'])[1]['drawings'][0]['id'];
+eq(call('alice', 'drawing_save', ['id' => $eth, 'asset' => $A] + $trend)[0], 422, 'update cannot move a drawing to another (full) asset');
+eq(count(call('alice', 'drawings', null, ['asset' => $A])[1]['drawings']), 500, 'still 500 on the full asset');
 eq(call('bob', 'drawing_save', $trend)[0], 200, 'and per user — bob is not limited by alice\'s 500');
 eq(call('alice', 'drawing_delete', ['id' => $id])[0], 200, 'delete');
 eq(call('alice', 'drawing_save', $trend)[0], 200, 'after deleting one — room for a new one');
