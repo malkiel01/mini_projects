@@ -3,5 +3,6 @@
   { "id": "documents", "name": "מסמכים וקבצים",     "icon": "📄" },
   { "id": "design",    "name": "תכנון ותלת מימד",   "icon": "📐" },
   { "id": "web",       "name": "גלישה ותקשורת",     "icon": "🌐" },
-  { "id": "dev",       "name": "פיתוח וניהול",      "icon": "🛠️" }
+  { "id": "dev",       "name": "פיתוח וניהול",      "icon": "🛠️" },
+  { "id": "finance",   "name": "כספים",              "icon": "💰" }
 ]
