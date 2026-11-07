@@ -13,6 +13,20 @@
  * POST action=settings | strategy_save | strategy_duplicate | strategy_status | strategy_delete
  *      | trade_save | trade_delete | instrument_save | instrument_delete
  *
+ * שוק (spec-stage-a 2–3):
+ * GET  ?action=market_providers          הספקים כפי שהמשתמש רואה אותם (מחובר, זמין, מה צריך)
+ * GET  ?action=market_search&q=          חיפוש בכל הספקים שלו                     ← נספר בתקרת 30 לדקה
+ * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
+ * GET  ?action=watchlist                 "המעקב שלי"
+ * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
+ * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
+ *
+ * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
+ * GET  ?action=admin_state
+ * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
+ *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
+ *      | admin_cache_clear | admin_cache_cleanup
+ *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
  * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
  */
@@ -21,6 +35,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/store.php';
+require_once __DIR__ . '/lib/roles.php';
+require_once __DIR__ . '/lib/market.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -66,7 +82,12 @@ $uid = (int)$user['id'];
 $tz = $user['timezone'];
 
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
-    'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete'];
+    'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
+    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
+    'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
+    'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
+// בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
+const TS_DATA = ['market_search', 'market_candles', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -76,6 +97,21 @@ if (in_array($action, TS_WRITE, true)) {
 
 $in = in_array($action, TS_WRITE, true) ? input() : [];
 $id = (int)($in['id'] ?? $_GET['id'] ?? 0);
+if (str_starts_with($action, 'admin_')) {
+    try {
+        ts_require_admin($uid);
+    } catch (TsForbidden $e) {
+        fail($e->getMessage(), 403);
+    }
+}
+if (in_array($action, TS_DATA, true)) {
+    try {
+        ts_rate_hit($uid);
+    } catch (TsRateLimited $e) {
+        header('Retry-After: 60');
+        fail($e->getMessage(), 429);
+    }
+}
 
 /** מסננים מה-query string, רק המוכרים */
 function filters(): array
@@ -90,7 +126,8 @@ function filters(): array
 try {
     switch ($action) {
         case 'me':
-            out(['ok' => true, 'csrf' => $csrf, 'user' => ts_settings_out($user), 'lists' => [
+            out(['ok' => true, 'csrf' => $csrf, 'user' => ts_settings_out($user),
+                'is_admin' => ts_is_admin($uid), 'is_primary_admin' => ts_is_primary_admin(), 'lists' => [
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
             ]]);
@@ -153,6 +190,130 @@ try {
             ts_instrument_delete($uid, $id);
             out(['ok' => true]);
 
+        // ── שוק ──
+        case 'market_providers':
+            out(['ok' => true, 'providers' => ts_providers_for($uid), 'shared_enabled' => ts_shared_enabled()]);
+
+        case 'market_search':
+            out(['ok' => true] + ts_market_search($uid, $_GET['q'] ?? ''));
+
+        case 'market_candles':
+            out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
+
+        case 'watchlist':
+            out(['ok' => true, 'watchlist' => ts_watchlist($uid)]);
+
+        case 'watchlist_add':
+            ts_watchlist_add($uid, $in['asset'] ?? null);
+            out(['ok' => true, 'watchlist' => ts_watchlist($uid)]);
+
+        case 'watchlist_remove':
+            ts_watchlist_remove($uid, $in['asset'] ?? null);
+            out(['ok' => true, 'watchlist' => ts_watchlist($uid)]);
+
+        case 'watchlist_order':
+            ts_watchlist_order($uid, $in['assets'] ?? null);
+            out(['ok' => true]);
+
+        case 'symbol_pref':
+            ts_symbol_pref_set($uid, $in['asset'] ?? null);
+            out(['ok' => true]);
+
+        case 'cred_save':
+            ts_cred_save($uid, $in['provider'] ?? null, $in['secret'] ?? null, $in['label'] ?? '');
+            out(['ok' => true, 'providers' => ts_providers_for($uid)]);
+
+        case 'cred_test':
+            ts_cred_test_mine($uid, $in['provider'] ?? '');
+            out(['ok' => true, 'providers' => ts_providers_for($uid)]);
+
+        case 'cred_delete':
+            ts_cred_delete_mine($uid, $in['provider'] ?? '');
+            out(['ok' => true, 'providers' => ts_providers_for($uid)]);
+
+        // ── מנהל (ts_require_admin כבר נבדק למעלה, לכל admin_*) ──
+        case 'admin_state':
+            $providers = [];
+            foreach (array_keys(TS_PROVIDERS) as $pid) {
+                $m = ts_provider($pid)->meta();
+                $providers[] = ['id' => $pid, 'name' => $m['name'], 'needs_key' => $m['needs_key'], 'markets' => $m['markets'],
+                    'delay' => $m['delay'], 'share' => $m['share'], 'terms' => $m['terms'], 'default_limits' => $m['limits'],
+                    'limits' => ts_provider_limits($pid)] + ts_provider_settings($pid);
+            }
+            $log = ts_db()->query('SELECT l.action, l.target, l.at, u.display_name FROM admin_log l LEFT JOIN users u ON u.id = l.user_id
+                                   ORDER BY l.id DESC LIMIT 100')->fetchAll();
+            out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
+                'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
+                'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
+                'cache' => ts_cache_stats(), 'log' => $log]);
+
+        case 'admin_provider_save':
+            $pid = (string)($in['provider'] ?? '');
+            if (!isset(TS_PROVIDERS[$pid])) fail('ספק לא מוכר', 404);
+            $ov = [];
+            foreach (['per_min', 'per_day'] as $k) {
+                $v = $in[$k] ?? null;
+                if ($v === null || $v === '') continue;
+                if (!(is_int($v) || (is_string($v) && ctype_digit($v))) || (int)$v < 1 || (int)$v > 10_000_000) fail('תקרה — מספר שלם חיובי', 422);
+                $ov[$k] = (int)$v;
+            }
+            $enabled = ($in['enabled'] ?? true) === true;
+            ts_db()->prepare('INSERT INTO providers (id, enabled, overrides) VALUES (?, ?, ?)
+                              ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, overrides = excluded.overrides')
+                ->execute([$pid, $enabled ? 1 : 0, json_encode($ov)]);
+            ts_admin_log($uid, 'provider_save', "$pid enabled=" . ($enabled ? 1 : 0) . ' ' . json_encode($ov));
+            out(['ok' => true]);
+
+        case 'admin_shared_switch':
+            ts_require_primary_admin();
+            $on = ($in['on'] ?? false) === true;
+            ts_setting_set('shared_providers', $on ? '1' : '0');
+            ts_admin_log($uid, 'shared_switch', $on ? 'on' : 'off');
+            out(['ok' => true, 'shared_enabled' => $on]);
+
+        case 'admin_cred_save':
+            $cid = ts_cred_save($uid, $in['provider'] ?? null, $in['secret'] ?? null, $in['label'] ?? '', 'admin');
+            ts_admin_log($uid, 'cred_save', "cred:$cid " . (string)($in['provider'] ?? ''));
+            out(['ok' => true, 'creds' => ts_admin_creds()]);
+
+        case 'admin_cred_test':
+            ts_cred_test_row(ts_admin_cred_row($id));
+            out(['ok' => true, 'creds' => ts_admin_creds()]);
+
+        case 'admin_cred_delete':
+            ts_admin_cred_delete($id);
+            ts_admin_log($uid, 'cred_delete', "cred:$id");
+            out(['ok' => true, 'creds' => ts_admin_creds()]);
+
+        case 'admin_grant_save':
+            ts_grant_set((int)($in['cred_id'] ?? 0), $in['user_id'] ?? null, $in['daily_limit'] ?? null);
+            ts_admin_log($uid, 'grant_save', 'cred:' . (int)($in['cred_id'] ?? 0) . ' user:' . (int)($in['user_id'] ?? 0));
+            out(['ok' => true, 'creds' => ts_admin_creds()]);
+
+        case 'admin_grant_delete':
+            ts_grant_delete((int)($in['cred_id'] ?? 0), (int)($in['user_id'] ?? 0));
+            ts_admin_log($uid, 'grant_delete', 'cred:' . (int)($in['cred_id'] ?? 0) . ' user:' . (int)($in['user_id'] ?? 0));
+            out(['ok' => true, 'creds' => ts_admin_creds()]);
+
+        case 'admin_role_add':
+            ts_admin_grant($uid, (int)($in['user_id'] ?? 0));
+            out(['ok' => true, 'admins' => ts_admins_list()]);
+
+        case 'admin_role_remove':
+            ts_admin_revoke($uid, (int)($in['user_id'] ?? 0));
+            out(['ok' => true, 'admins' => ts_admins_list()]);
+
+        case 'admin_cache_clear':
+            $pv = isset($in['provider']) && is_string($in['provider']) && isset(TS_PROVIDERS[$in['provider']]) ? $in['provider'] : null;
+            $n = ts_cache_clear($pv);
+            ts_admin_log($uid, 'cache_clear', ($pv ?? 'all') . " candles=$n");
+            out(['ok' => true, 'deleted' => $n, 'cache' => ts_cache_stats()]);
+
+        case 'admin_cache_cleanup':
+            $n = ts_cache_cleanup();
+            ts_admin_log($uid, 'cache_cleanup', "candles=$n");
+            out(['ok' => true, 'deleted' => $n, 'cache' => ts_cache_stats()]);
+
         case 'export':
             $date = gmdate('Y-m-d');
             if (($_GET['format'] ?? '') === 'csv') {
@@ -169,6 +330,10 @@ try {
         default:
             fail('פעולה לא מוכרת', 404);
     }
+} catch (TsForbidden $e) {
+    fail($e->getMessage(), 403);
+} catch (TsProviderError $e) {
+    fail($e->getMessage(), 502);   // ההודעה כבר בלי המפתח (lib/market.php)
 } catch (TsInvalid $e) {
     fail($e->getMessage(), 422);
 } catch (TsNotFound $e) {
