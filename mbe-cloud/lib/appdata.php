@@ -155,12 +155,22 @@ function appdataQuota(array $ctx): int {
     return (int) setting($col);
 }
 
-/** תקרת המרחב, ובמרחב user — גם מכסת החשבון כשההגדרה appdata_counts_in_quota דלוקה (ש1). */
+/**
+ * התקרות (סעיף 5): של המרחב (user — לזוג; app — לאפליקציה), ובמרחב user גם של המשתמש בכל האפליקציות יחד (scope account).
+ * ש1 הוכרע — מקום נפרד: לא נספר במכסת הכונן. appdata_counts_in_quota נשאר מתג למנהל (ברירת מחדל כבוי).
+ */
 function appdataAssertRoom(array $ctx, int $add, int $replacing): void {
     $quota = appdataQuota($ctx);
     $used = appdataUsed($ctx);
     if ($used - $replacing + $add > $quota) {
         throw new AppError('אין מספיק מקום לנתוני האפליקציה', 413, 'quota_exceeded', ['quota' => $quota, 'used' => $used, 'scope' => $ctx['space']]);
+    }
+    if ($ctx['space'] === 'user') {
+        $all = appdataAccountBytes($ctx['account']);
+        $cap = (int) setting('appdata_account_quota');
+        if ($all - $replacing + $add > $cap) {
+            throw new AppError('אין מספיק מקום לנתוני האפליקציות שלך', 413, 'quota_exceeded', ['quota' => $cap, 'used' => $all, 'scope' => 'account']);
+        }
     }
     if ($ctx['space'] === 'user' && setting('appdata_counts_in_quota') === '1' && $add > $replacing) {
         assertRoom($ctx['acc'], $add, $replacing);

@@ -139,17 +139,31 @@ check('ב7: חריגה במרחב app — scope app', $e && $e->codeName === 'qu
 db()->exec("UPDATE clients SET appdata_app_quota = NULL WHERE id = 'ad-alpha'");
 check('usage: נפח ותקרה של המרחב', appdataUsage($cUA) === ['used' => appdataUsed($cUA), 'quota' => 20971520] && appdataUsage($sA)['quota'] === 52428800);
 
-// ש1 — מכסת החשבון
+// ש1 — הוכרע: מקום נפרד. ברירת המחדל — לא במכסת הכונן, ותקרה של 100MB למשתמש בכל האפליקציות
+check('ש1 (הכרעה): ברירת המחדל — appdata לא במכסת הכונן', setting('appdata_counts_in_quota') === '0'
+    && usedBytes($U['id']) === (int) db()->query("SELECT COALESCE(SUM(size),0) FROM nodes WHERE account = " . db()->quote($U['id']) . " AND kind = 'file'")->fetchColumn()
+        + (int) db()->query("SELECT COALESCE(SUM(size),0) FROM lib_items WHERE account = " . db()->quote($U['id']))->fetchColumn());
+adminAccount($owner, ['account' => $V['id'], 'quota' => 0]);
+$cVA = $asToken($tVA);
+$vUsed = usedBytes($V['id']);
+check('ש1 (הכרעה): משתמש עם מכסת כונן 0 שומר מסמך, ו-usedBytes של הכונן לא משתנה',
+    appdataPut($cVA, ['collection' => 's0', 'key' => 'k', 'value' => ['a' => 1]])['rev'] === 1 && usedBytes($V['id']) === $vUsed);
+appdataDelete($cVA, ['collection' => 's0', 'key' => 'k']);
+setSetting('appdata_account_quota', '300000');
+$e = null; try { appdataPut($asToken($tUB), ['collection' => 'big', 'key' => 'k', 'value' => str_repeat('d', 100000)]); } catch (AppError $x) { $e = $x; }
+check('ב7: חריגה מתקרת המשתמש בכל האפליקציות — 413 quota_exceeded עם scope account', $e && $e->codeName === 'quota_exceeded'
+    && $e->extra['scope'] === 'account' && $e->extra['quota'] === 300000);
+setSetting('appdata_account_quota', '104857600');
+// והמתג למנהל עדיין עובד בשני הכיוונים
 setSetting('appdata_counts_in_quota', '1');
 $usedBefore = usedBytes($U['id']);
 check('ש1 (דלוק): נתוני האפליקציות נספרים במכסת החשבון', $usedBefore >= appdataAccountBytes($U['id']) && appdataAccountBytes($U['id']) > 262142);
-adminAccount($owner, ['account' => $V['id'], 'quota' => 0]);
 $cVA = $asToken($tVA);
 check('ש1 (דלוק): משתמש עם מכסה 0 — לא שומר אפילו הגדרות', code(fn() => appdataPut($cVA, ['collection' => 's', 'key' => 'k', 'value' => 1])) === 'quota_exceeded');
 setSetting('appdata_counts_in_quota', '0');
 check('ש1 (כבוי): מכסה 0 — שומר, ולא נספר במכסת החשבון', appdataPut($cVA, ['collection' => 's', 'key' => 'k', 'value' => 1])['rev'] === 1
     && usedBytes($U['id']) === $usedBefore - appdataAccountBytes($U['id']));
-setSetting('appdata_counts_in_quota', '1');
+setSetting('appdata_counts_in_quota', '0');
 adminAccount($owner, ['account' => $V['id'], 'quota' => 100 * 1024 * 1024]);
 
 // ב8

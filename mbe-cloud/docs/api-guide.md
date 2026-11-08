@@ -150,11 +150,11 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
    📁 קבצים                                 [●━]
    📚 נתוני מערכת · גופנים, צבעים, תבניות     [━○]
    🗂️ נתוני משתמש · ההגדרות והנתונים שלך כאן  [━○]
-   🤖 בינה מלאכותית ⏳                        [●━]
+   🤖 בינה מלאכותית                          [●━]
 ```
 
 - **מוצגות רק השכבות ש-`layers` מצהיר עליהן** (סעיף 3.1). אפליקציה עם שכבה אחת מציגה שורה אחת.
-- **🤖 בינה מלאכותית** כמתג רביעי ממתינה להכרעת בעל המערכת. עד ההכרעה היא כתובה כאן כמתג רביעי.
+- **🤖 בינה מלאכותית** היא מתג רביעי ונפרד (הכרעת בעל המערכת, 2026-11-08).
 
 | מצב | מה מציגים | `drives.status()` |
 | --- | --- | --- |
@@ -222,7 +222,7 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 | `connect_exchange` | שרת, חתום | `{code, sub}` → `{connection, account: {name}, scope, cloud_id}`. `sub` שלא תואם את מה שנחתם במסך, או את החשבון שאישר, מחזיר `403 account_mismatch`, והקוד נשרף |
 | `access_token` | שרת, חתום | `{connection, sub}` → `{token, expires_in: 900, scope}`. `scope` הוא ההיקף הנוכחי של החיבור, וממנו המתגים באפליקציה מתעדכנים אחרי כיבוי בדף הענן. נבדק בכל פעם (`403 account_mismatch`). **חיבור מלפני הכלל, בלי `sub`:** אם הוא תואם — נרשם על החיבור. אם הוא שונה — אין אסימון, החיבור מסומן ומופיע בניהול (⚙️ ← לקוחות, "⚠️ לא אותו חשבון"), ולא מנותק אוטומטית |
 | `connection_scope` | שרת, חתום | `{connection, sub, scope: [...]}` → `{scope}`. **כיבוי שכבות.** קובע את הרשימה המלאה ורק מצמצם. היקף שלא אושר מחזיר `403 forbidden`, והרחבה עוברת רק דרך `connect.php`. `sub` נבדק כמו ב-`access_token`. רשימה ריקה משאירה חיבור בלי שכבות. המודול מנתק במקום זה כשהמתג האחרון נכבה |
-| `appdata_get`, `appdata_put`, `appdata_delete`, `appdata_list`, `appdata_get_many`, `appdata_changes`, `appdata_history`, `appdata_restore`, `appdata_usage`, `appdata_clear` | דפדפן (אסימון) או שרת (חתום) | **נתוני משתמש** (🗂️, ההיקף `appdata`). הגופים והתשובות: `spec-4-appdata.md` סעיף 7. בכל גוף אפשר `space`: `user` (ברירת המחדל) או `app`. ה-`client` נלקח תמיד מהחתימה או מהאסימון, ולעולם לא מהגוף. **מרחב `app`:** כותב רק השרת, בקריאה חתומה **בלי** `X-Cloud-Connection`; הדפדפן קורא בלבד. **מגבלות:** 256KB למסמך (`413 too_large`), ו-20MB לזוג אפליקציה ומשתמש או 50MB למרחב `app` (`413 quota_exceeded` עם `scope`). `if_rev` שגוי ← `409 conflict` עם `rev` ו-`value`. `changes` מ-`since` ישן ← `410 gone` |
+| `appdata_get`, `appdata_put`, `appdata_delete`, `appdata_list`, `appdata_get_many`, `appdata_changes`, `appdata_history`, `appdata_restore`, `appdata_usage`, `appdata_clear` | דפדפן (אסימון) או שרת (חתום) | **נתוני משתמש** (🗂️, ההיקף `appdata`). הגופים והתשובות: `spec-4-appdata.md` סעיף 7. בכל גוף אפשר `space`: `user` (ברירת המחדל) או `app`. ה-`client` נלקח תמיד מהחתימה או מהאסימון, ולעולם לא מהגוף. **מרחב `app`:** כותב רק השרת, בקריאה חתומה **בלי** `X-Cloud-Connection`; הדפדפן קורא בלבד. **מגבלות:** 256KB למסמך (`413 too_large`). 20MB לזוג אפליקציה ומשתמש, 100MB למשתמש בכל האפליקציות יחד, ו-50MB למרחב `app` (`413 quota_exceeded` עם `scope`: `user`, `account` או `app`). **לא נספר במכסת הכונן** (הכרעה ש1). `if_rev` שגוי ← `409 conflict` עם `rev` ו-`value`. `changes` מ-`since` ישן ← `410 gone` |
 | `appdata_apps`, `appdata_wipe` | דף הענן ("🔗 חיבורים" ← 🧩), בעל החשבון | הנפח של כל אפליקציה, בלי תוכן. `appdata_wipe {client}` = "🗑️ מחק נתונים" |
 | `disconnect` | שרת, חתום | `{connection}` → `{ok}` |
 | `connections`, `connection_layers`, `connection_revoke` | דף הענן ("🔗 חיבורים"), בעל החשבון | הרשימה עם `declared` (השכבות שהאפליקציה הצהירה) ו-`scope`. `connection_layers {id, scope}` מצמצם כמו `connection_scope`, ורשימה ריקה מנתקת. `connection_revoke {id}` מנתק |
@@ -257,7 +257,7 @@ msg = "<action>\n<time>\n<nonce>\n<sha256(hex) של הגוף>"
 | 📚 נתוני מערכת | `libs` | ספריות המשתמש: גופנים, ובהמשך צבעים, סגנונות ונכסים | ✅ |
 | 🗂️ נתוני משתמש | `appdata` | נתוני האפליקציה עצמה: מסמכי JSON לפי אוסף ומפתח, במרחבים `user` ו-`app` (`spec-4-appdata.md`) | ✅ שלב 4 |
 | 🗂️ נתוני משתמש | `prefs` | העדפות משותפות | 🗓️ שלב 6 |
-| 🤖 בינה מלאכותית ⏳ | `ai` | הבינה המלאכותית, במכסה של המשתמש | ✅ |
+| 🤖 בינה מלאכותית | `ai` | הבינה המלאכותית, במכסה של המשתמש | ✅ |
 | — | `shared.read` | **רק למפתח קריאה (סעיף 7).** לא ניתן לבקש אותו בחיבור, ואין לו מתג | ✅ שלב 2 (#1292) |
 
 **ספריות המערכת** (`sys/`, גופנים חופשיים ופלטות) 🗓️ שלב 5: ציבוריות, בלי היקף ובלי אסימון. הן נקראות גם כשהמתג
@@ -317,7 +317,7 @@ curl -sS -H "Authorization: Bearer $MBE_PAT" -H 'Range: bytes=0-1048575' -o part
 | 409 | `name_taken` | שם תפוס, ונשלח `on_conflict: "fail"` | — |
 | 410 | `gone` | `appdata_changes` מ-`since` ישן (אחרי `clear`, או אחרי 30 יום) | טוענים הכול מחדש ב-`appdata_list`, וממשיכים מה-`cursor` של `changes` |
 | 413 | `too_large`, `too-big` | קובץ מעל התקרה, או קלט ל-AI גדול מדי | — |
-| 413 | `quota_exceeded` | המכסה בכונן נגמרה, או התקרה של נתוני המשתמש (`scope: "user"` / `"app"`). מוחזרים גם `quota` ו-`used` | הודעה למשתמש |
+| 413 | `quota_exceeded` | המכסה בכונן נגמרה, או תקרה של נתוני המשתמש (`scope`: `"user"`, `"account"` או `"app"`). מוחזרים גם `quota` ו-`used` | הודעה למשתמש |
 | 429 | `quota` | המכסה החודשית של AI נגמרה | הודעה למשתמש |
 | 429 | `rate_limited` | מפתח קריאה: יותר מדי כישלונות | לחכות `Retry-After` שניות |
 | 502 / 503 | `provider`, `no-provider` | ספק ה-AI נכשל, או שלא הוגדר ספק | "לא זמין — דרך הצ'אט (סקיל)" |

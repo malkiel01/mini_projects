@@ -132,7 +132,7 @@ function usedBytes(string $account): int {
                               + (SELECT COALESCE(SUM(size), 0) FROM lib_items WHERE account = ?)");
     $st->execute([$account, $account]);
     $used = (int) $st->fetchColumn();
-    // נתוני אפליקציות (שלב 4) — במכסה רק כשההגדרה דלוקה (spec-4 ש1)
+    // נתוני אפליקציות (שלב 4) — לא במכסת הכונן (ש1 הוכרע: מקום נפרד). ההגדרה נשארת כמתג למנהל
     if (setting('appdata_counts_in_quota') === '1') {
         require_once __DIR__ . '/appdata.php';
         $used += appdataAccountBytes($account);
@@ -522,7 +522,8 @@ function adminSettings(array $in): array {
         setSetting('max_file', (string) $m);
     }
     // שלב 4: תקרות ברירת המחדל לנתוני אפליקציות, ו-ש1 (האם נספר במכסת החשבון)
-    foreach (['appdata_user_quota' => 'התקרה לנתוני משתמש', 'appdata_app_quota' => 'התקרה לנתוני אפליקציה'] as $k => $label) {
+    foreach (['appdata_user_quota' => 'התקרה לנתוני משתמש', 'appdata_account_quota' => 'התקרה לנתוני משתמש בכל האפליקציות',
+              'appdata_app_quota' => 'התקרה לנתוני אפליקציה'] as $k => $label) {
         if (array_key_exists($k, $in)) setSetting($k, (string) bytesIn($in[$k], $label));
     }
     if (array_key_exists('appdata_counts_in_quota', $in)) setSetting('appdata_counts_in_quota', $in['appdata_counts_in_quota'] ? '1' : '0');
