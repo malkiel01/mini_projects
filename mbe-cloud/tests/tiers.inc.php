@@ -158,6 +158,10 @@ check('ה11: רשימה סגורה — list, write, admin, connection_revoke →
     && code(fn() => meApi('connection_revoke', 'POST', $J, false, [])) === 'not_found');
 check('ה11: POST שאינו JSON — 400; GET לפעולת כתיבה — 400', code(fn() => meApi('appdata_wipe', 'POST', 'application/x-www-form-urlencoded', false, ['client' => 'tr-app'])) === 'bad_request'
     && code(fn() => meApi('appdata_wipe', 'GET', $J, false, ['client' => 'tr-app'])) === 'bad_request');
+check('ה11: GET על account_delete / account_export — 400 (כתיבה רק ב-POST עם JSON)', code(fn() => meApi('account_delete', 'GET', '', false, ['confirm' => 'DELETE'])) === 'bad_request'
+    && code(fn() => meApi('account_export', 'GET', '', false, [])) === 'bad_request' && getAccount($N['id'])['id'] === $N['id']);
+check('ה11: החשבון תמיד מהשער — account / client בגוף לא משנים את החשבון', meApi('me', 'GET', '', false, ['account' => $D['id']])['account']['id'] === $N['id']);
+check('platform_key — רק מפתח ציבורי (32 בתים), בלי sk', !str_contains(json_encode(platformKeyJson()), base64_encode(cloudSigningKey()['sk'])) && array_keys(platformKeyJson()['keys'][0]) === ['kid', 'alg', 'key']);
 check('ה11: Authorization / אסימון / חתימה — 400 (רק השער)', code(fn() => meApi('me', 'GET', '', true, [])) === 'bad_request');
 check('ה11: me-api.php לא עושה require ל-api.php', !preg_match('#require[^;]*api\.php#', (string) file_get_contents(__DIR__ . '/../me-api.php')));
 check('ה10: ייצוא', meApi('account_export', 'POST', $J, false, [])['user'] === $N['id']);
