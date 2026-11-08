@@ -21,8 +21,15 @@ try {
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 } });
   await ctx.addCookies([{ name: 'dev_as', value: 'alice', url: BASE }]);
+  // "עוד" קורא ל-drives.ensure() פעם אחת (spec-6): לא מחובר → הפניה ל-connect.php של הענן — מדומה, חוזר "לא אושר".
+  // שום דבר אחר לא יוצא לאתר החי
+  const connects = [];
+  await ctx.route(u => u.hostname === 'mbe-plus.com', r => {
+    if (new URL(r.request().url()).pathname.endsWith('/mbe-cloud/connect.php')) { connects.push(r.request().url()); return r.fulfill({ status: 302, headers: { Location: BASE + '?cloud=denied' } }); }
+    fail++; console.log('✗ live site:', r.request().url()); return r.abort();
+  });
   const p = await ctx.newPage();
-  for (const [name, hash, ready] of [['market', '#/market', 'main form'], ['chart', '#/chart/' + encodeURIComponent('binance:BTCUSDT'), '.chart-box canvas'], ['analysis', '#/analysis', 'main .disclaimer'], ['profile', '#/profile', 'main form'], ['alerts', '#/alerts', 'main .disclaimer'], ['more', '#/more', 'main .switch']]) {
+  for (const [name, hash, ready] of [['market', '#/market', 'main form'], ['chart', '#/chart/' + encodeURIComponent('binance:BTCUSDT'), '.chart-box canvas'], ['analysis', '#/analysis', 'main .disclaimer'], ['profile', '#/profile', 'main form'], ['alerts', '#/alerts', 'main .disclaimer'], ['more', '#/more', '[data-cloud-files]']]) {
     await p.goto(BASE + hash);
     await p.waitForSelector(ready);
     await p.waitForTimeout(1500);                       // הטעינה עצמה נגמרת
@@ -34,6 +41,8 @@ try {
     if (seen.length) { fail++; console.log(`✗ ${name}: ${seen.length} requests to our server without user action`, seen.slice(0, 3)); }
     else console.log(`✓ ${name}: no requests in 20s idle`);
   }
+  if (connects.length !== 1) { fail++; console.log(`✗ ensure(): ${connects.length} redirects to the cloud — expected exactly one (opening "עוד")`); }
+  else console.log('✓ ensure(): one redirect, only when "עוד" opened');
   await b.close();
 } finally {
   srv.kill();
