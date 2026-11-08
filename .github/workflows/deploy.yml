@@ -115,14 +115,14 @@ jobs:
           php creative-suite/text-core/tools/sync.php --check
           node --test creative-suite/text-core/tests/*.test.mjs
 
-      # מודול הכוננים של ענן החבילה (suite-cloud/drives/src) — מועתק לאפליקציות שב-suite-cloud/drives/apps.json.
+      # מודול הכוננים של ענן MBE (mbe-cloud/drives/src) — מועתק לאפליקציות שב-mbe-cloud/drives/apps.json.
       # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
-      - name: drives gate (every copy matches suite-cloud/drives/src)
-        run: php suite-cloud/drives/tools/sync.php --check
+      - name: drives gate (every copy matches mbe-cloud/drives/src)
+        run: php mbe-cloud/drives/tools/sync.php --check
 
-      # הגופנים המובנים של ענן החבילה: הקטלוג תואם לקבצים, ולכל גופן רישיון OFL
-      - name: fonts gate (suite-cloud/fonts/builtin/catalog.json)
-        run: php suite-cloud/tools/fonts-catalog.php --check
+      # הגופנים המובנים של ענן MBE: הקטלוג תואם לקבצים, ולכל גופן רישיון OFL
+      - name: fonts gate (mbe-cloud/fonts/builtin/catalog.json)
+        run: php mbe-cloud/tools/fonts-catalog.php --check
 
       # ערכת הממשק המשותפת (creative-suite/ui-core/src) — מועתקת לאפליקציות שב-creative-suite/ui-core/apps.json.
       # עותק ששונה בתוך אפליקציה — נעצר כאן. עורכים במקור ומריצים sync.php.
@@ -225,6 +225,58 @@ jobs:
         run: ssh-keygen -l -f ~/.ssh/deploy_key
              || echo "::warning::DEPLOY_SSH_KEY אינו מפתח פרטי קריא (נעול בסיסמה?)"
 
+      # ענן MBE (2026-11): ענן החבילה עבר מ-suite-cloud/ ל-mbe-cloud/ (mbe-cloud/docs/spec-0-vision.md §8.3).
+      # rsync לא מעביר נתונים, ולכן הם עוברים כאן, פעם אחת, ב-mv באותה מחיצה (אטומי, בלי עותק כפול) — **לפני** ה-rsync,
+      # שמחריג את mbe-cloud/data/*. **ההפניה (308) של suite-cloud/ נכתבת לפני ה-mv, באותו חיבור**: כך אין רגע שבו
+      # api.php הישן (שנשאר בשרת, rsync בלי --delete) רץ מול data/ שכבר הועבר ופותח מסד ריק. כשל אחרי ההפניה ולפני
+      # ה-mv משאיר 404 זמני — לא ענן ריק. התוכן זהה לקובץ בריפו (base64), וה-rsync הראשי דורס אותו באותו תוכן.
+      # app.json הישן בשרת מקבל שם אחר, אחרת הרישום (שסורק */app.json בשרת) מציג את הכלי פעמיים.
+      # חוזר על עצמו בלי נזק ("already moved"). שלב חובה: כשל כאן עוצר את הפריסה. mbe-cloud/data קיים בלי מסד —
+      # עצירה בלי לגעת בכלום, גם לא בהפניה (קוד 3): הענן הישן ממשיך לעבוד על הנתונים שלו.
+      - name: ענן MBE — העברת הנתונים מ-suite-cloud/ ל-mbe-cloud/ (חד-פעמי)
+        env:
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -uo pipefail
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          D="${DEPLOY_PATH%/}"
+          HT=$(base64 -w0 suite-cloud/.htaccess)
+          REMOTE=$(cat <<SH
+          set -eu
+          cd '$D'
+          redirect() {
+            mkdir -p suite-cloud
+            printf '%s' '$HT' | base64 -d > suite-cloud/.htaccess.new
+            mv -f suite-cloud/.htaccess.new suite-cloud/.htaccess
+            echo "redirect up"
+          }
+          if [ -f mbe-cloud/data/cloud.sqlite ]; then
+            redirect
+            echo "already moved"
+          elif [ -f suite-cloud/data/cloud.sqlite ]; then
+            if [ -e mbe-cloud/data ]; then echo "mbe-cloud/data קיים בלי cloud.sqlite — לא הועבר כלום" >&2; exit 3; fi
+            redirect
+            mkdir -p mbe-cloud
+            mv suite-cloud/data mbe-cloud/data
+            date -u +%FT%TZ > mbe-cloud/data/MOVED_FROM_SUITE_CLOUD
+            echo "moved"
+          else
+            redirect
+            echo "nothing to move (אין suite-cloud/data/cloud.sqlite)"
+          fi
+          if [ -f suite-cloud/app.json ]; then mv suite-cloud/app.json suite-cloud/app.json.moved-to-mbe-cloud; echo "suite-cloud/app.json renamed"; fi
+          SH
+          )
+          for w in 0 30 90 180; do
+            sleep $w
+            $SSH "$DEST" "$REMOTE"; code=$?
+            if [ $code -eq 3 ]; then echo "::error::mbe-cloud/data קיים בשרת בלי cloud.sqlite — צריך בדיקה ידנית לפני פריסה"; exit 3; fi
+            if [ $code -eq 0 ]; then exit 0; fi
+            echo "::warning::העברת הנתונים — נסיון נכשל (קוד $code), מנסה שוב"
+          done
+          echo "::error::העברת הנתונים של הענן לא רצה — הפריסה נעצרת"; exit 1
+
       # השרת סוגר מדי פעם את חיבור ה-SSH מיד אחרי שנפתח —
       # "Connection closed by <ip> port 22", ו-rsync יוצא עם 255 בלי
       # שהעביר בית אחד. זה אינו כשל אימות (אין Permission denied) ואינו
@@ -320,8 +372,9 @@ jobs:
             --exclude='payments/data/config.json' --exclude='payments/data/backups/' \
             --exclude='payments/data/docs/' --exclude='payments/data/logs/' \
             --exclude='vector-studio/data/*.sqlite*' --exclude='vector-studio/data/files/' \
-            --include='suite-cloud/data/.htaccess' --exclude='suite-cloud/data/*' \
-            --exclude='/suite-cloud/tests/' --exclude='/suite-cloud/tools/' --exclude='/suite-cloud/drives/tools/' --exclude='/suite-cloud/drives/tests/' \
+            --include='mbe-cloud/data/.htaccess' --exclude='mbe-cloud/data/*' \
+            --exclude='/mbe-cloud/tests/' --exclude='/mbe-cloud/tools/' --exclude='/mbe-cloud/drives/tools/' --exclude='/mbe-cloud/drives/tests/' \
+            --exclude='suite-cloud/data/*' \
             --exclude='layout-studio/data/*.sqlite*' --exclude='layout-studio/data/files/' \
             --exclude='raster-studio/data/*.sqlite*' --exclude='raster-studio/data/files/' \
             --exclude='mailbox/data/*.sqlite*' --exclude='mailbox/data/secret.key' --exclude='mailbox/data/cache/' --exclude='/mailbox/tests/' \
