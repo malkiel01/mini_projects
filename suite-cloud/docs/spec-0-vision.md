@@ -353,6 +353,7 @@ appdata (client, account, space, collection, key, value JSON, size, rev, updated
 | מה | למה | מי |
 | --- | --- | --- |
 | **ההרשאות בפלטפורמה** | ההרשאה לפתוח את הענן שמורה לפי `id`. `mbe-cloud` הוא `id` חדש, וגם `restricted` | **הוכרע (הכרעה 4):** בעל המערכת מעניק מחדש, ידנית, בממשק המנהל, לכמה האנשים שמורשים היום. לא נוגעים ב-`retired.json` |
+| **`deploy.yml`** (שלב ה-`mv`, החריגים של `mbe-cloud/data/*`, השערים) ו-`retired.json` | הם קבצים של הפלטפורמה | **ניהול פלטפורמה v2** (`session_018g4NYCRLZHgEgnCz21zPrV`, מסמך המסירה `platform/docs/handoff-v2.md`). צ'אט הקוד מתאם איתו לפני ה-PR של שלב 1 |
 | **`platform/retired.json` הקיים לא מתאים** | `retire-apps.php` **מוחק את התיקייה** (`rm_tree`). הוא היה מוחק את תיקיית ההפניה, ואם ירוץ לפני ה-`mv`, גם את הנתונים | לא משתמשים בו לשינוי הזה בלי מצב חדש |
 | **Dropbox** | כתובת החזרה `…/suite-cloud/oauth/dropbox.php` רשומה בקונסולה של Dropbox. הפניה לא עוזרת ב-OAuth | בעל המערכת: מוסיף ב-Dropbox App Console את הכתובת החדשה **לפני** הפריסה, ומוחק את הישנה אחרי |
 | **`creative-suite/` (roster, dashboard, `ui-core/apps.json`, מסמכים)** | מזכירים את `suite-cloud` | המתכלל של חבילת היצירה. צ'אט הענן לא נוגע (`CLAUDE.md`, "כמה צ'אטים") |
