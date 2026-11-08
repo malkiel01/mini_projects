@@ -80,7 +80,7 @@ function rejectTokenInUrl(): void {
     }
 }
 
-function isPat(string $token): bool {
+function isPat(#[\SensitiveParameter] string $token): bool {
     return str_starts_with($token, PAT_PREFIX);
 }
 
@@ -138,7 +138,7 @@ function purgeTokenLogMaybe(): void {
  * כל כישלון נרשם ב-token_log עם הקוד שלו. הסוד לא נרשם בשום מקום.
  * מחזיר ['account', 'app' => 'pat:<id>', 'pat' => row, 'scope' => ['shared.read'], 'client' => null].
  */
-function patActor(string $action, string $token): array {
+function patActor(string $action, #[\SensitiveParameter] string $token): array {
     static $cache = [];
     $key = $action . "\0" . hash('sha256', $token);
     if (isset($cache[$key])) return $cache[$key];
@@ -271,14 +271,19 @@ function sharedRoots(array $grantee): array {
     $st->execute([$grantee['id']]);
     $items = [];
     $seen = [];
+    $ctx = &patContext();
+    $logNode = $ctx['node'];
     foreach ($st->fetchAll() as $r) {
-        if (isset($seen[$r['id']]) || isTrashed($r)) continue;
+        if (isset($seen[$r['id']])) continue;
+        // אותה בדיקה כמו בכל קריאה (sharedNode): סל בכל מקום בשרשרת, שיתוף פעיל, בעלים לא חסום — מקור אמת אחד
+        try { sharedNode($grantee, $r['id']); } catch (AppError) { continue; }
         $seen[$r['id']] = true;
         $p = sharedPublic($r, $r);
         $items[] = ['id' => $p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'size' => $p['size'] ?? null, 'mime' => $p['mime'] ?? null,
                     'updated_at' => $p['updated_at'],
                     'share' => ['id' => $r['share_id'], 'owner_name' => $r['owner_name'], 'created_at' => $r['shared_at']]];
     }
+    $ctx['node'] = $logNode;   // shared_roots לא נרשם על צומת מסוים
     return ['items' => $items];
 }
 

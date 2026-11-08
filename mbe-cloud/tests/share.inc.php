@@ -251,6 +251,28 @@ try {
         && str_contains(json_encode(serviceList(), JSON_UNESCAPED_UNICODE), 'mbe_pat_' . $tok['id'] . '_…') && !str_contains(json_encode(serviceList()), $secret));
     check('ד7: במסד נשמר sha256 של הסוד', db()->query('SELECT hash FROM tokens WHERE id = ' . db()->quote($tok['id']))->fetchColumn() === hash('sha256', $secret));
 
+    // ד7 — חריגה בתוך patActor עם אסימון ידוע: ה-trace לא מכיל את הסוד, גם כשהשרת שומר ארגומנטים ארוכים
+    ini_set('zend.exception_ignore_args', '0');
+    ini_set('zend.exception_string_param_max_len', '1000000');
+    db()->exec('ALTER TABLE token_log RENAME TO token_log_off');
+    $trace = '';
+    try { patActor('shared_roots', $PAT); } catch (Throwable $e) { $trace = (string) $e; }
+    db()->exec('ALTER TABLE token_log_off RENAME TO token_log');
+    check('ד7: חריגה בתוך patActor — ה-trace לא מכיל את הסוד (#[\SensitiveParameter])', $trace !== '' && str_contains($trace, 'patActor')
+        && !str_contains($trace, $secret) && str_contains($trace, 'SensitiveParameterValue'));
+    ini_restore('zend.exception_ignore_args');
+    ini_restore('zend.exception_string_param_max_len');
+    check('ד7: api.php מכבה ארגומנטים ב-trace', str_contains((string) file_get_contents(__DIR__ . '/../api.php'), "ini_set('zend.exception_ignore_args', '1')"));
+
+    // shared_roots: הורה בסל מעל שורש השיתוף — השורש לא ברשימה; שורש שבסל בעצמו — לא; ובחזרה — כן
+    trashNode(getAccount($A['id']), ['id' => $main['id']]);
+    check('shared_roots — הורה בסל: השורש לא ברשימה', sharedRoots($S)['items'] === []);
+    restoreNode(getAccount($A['id']), ['id' => $main['id']]);
+    trashNode(getAccount($A['id']), ['id' => $methods['id']]);
+    check('shared_roots — השורש עצמו בסל: לא ברשימה', sharedRoots($S)['items'] === []);
+    restoreNode(getAccount($A['id']), ['id' => $methods['id']]);
+    check('shared_roots — אחרי שחזור: חוזר לרשימה', array_column(sharedRoots($S)['items'], 'id') === [$methods['id']]);
+
     // ת5 — מחיקת חשבון שירות
     serviceDelete($S['id']);
     check('ת5: אחרי service_delete — האסימון 401', $http('GET', 'action=shared_roots', $pat($PAT, '10.0.0.5'))[0] === 401);

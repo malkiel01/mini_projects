@@ -17,6 +17,10 @@
 
 declare(strict_types=1);
 
+// ה-trace של חריגה (error_log למטה) בלי ערכי הארגומנטים — אסימונים לא נכתבים ליומן גם אם השרת מגדיר
+// exception_string_param_max_len גבוה. בנוסף, #[\SensitiveParameter] על כל פונקציה שמקבלת אסימון.
+ini_set('zend.exception_ignore_args', '1');
+
 require_once __DIR__ . '/lib/drive.php';
 require_once __DIR__ . '/lib/clients.php';
 require_once __DIR__ . '/lib/ai.php';

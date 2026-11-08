@@ -370,7 +370,7 @@ function issueToken(array $client, array $conn): array {
 }
 
 /** בודק אסימון: חתימה, תוקף, והחיבור עדיין פעיל. מחזיר [חיבור, לקוח]. */
-function verifyToken(string $token): array {
+function verifyToken(#[\SensitiveParameter] string $token): array {
     [$p, $s] = array_pad(explode('.', $token, 2), 2, '');
     $sig = unb64u($s);
     $k = cloudSigningKey();
