@@ -358,9 +358,12 @@ function featured_apps(): array
     return is_array($v) ? array_values(array_filter($v, 'is_string')) : [];
 }
 
-/** אפליקציה שמוצגת בחנות לכולם — לא מוסתרת ולא תוסף. */
+/**
+ * אפליקציה שמוצגת בחנות לכולם — לא מוסתרת, לא תוסף ולא restricted. restricted נפתחת רק באישור ישיר של
+ * המנהל; אילו הייתה בחנות, get_app היה כותב לכל משתמש את האישור הזה בעצמו.
+ */
 function in_catalog(array $app): bool
 {
-    return $app['catalog'] && !$app['hidden'] && !$app['plugin'];
+    return $app['catalog'] && !$app['hidden'] && !$app['plugin'] && !$app['restricted'];
 }
 
