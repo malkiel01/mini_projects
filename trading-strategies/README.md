@@ -9,6 +9,7 @@
 
 - אפיון שלב 1: [`docs/spec.md`](docs/spec.md) — בנוי וממוזג (#1259).
 - אפיון שלב א' המורחב: [`docs/spec-stage-a.md`](docs/spec-stage-a.md) — גרסה 2.2, אושר (2026-11-07, #1262).
+- אפיונים בטיוטה: [`docs/spec-elliott-wave.md`](docs/spec-elliott-wave.md) (שיטת גלי אליוט) · [`docs/spec-method-builder.md`](docs/spec-method-builder.md) (בונה שיטות בהגדרות + תחזית על הגרף) — ממתינים לאישור.
 - המטלות: [`dev/open-items.json`](dev/open-items.json) (TS-001 … TS-007).
 
 ## השלבים
