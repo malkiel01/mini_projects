@@ -2,7 +2,7 @@
 
 import { $, h as el } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
-import { initDialogs, confirm, prompt } from './ui-core/dialog.js';
+import { initDialogs, confirm, prompt, sheet } from './ui-core/dialog.js';
 import { dropZone, pickFiles } from './ui-core/files.js';
 import { accountMenu, accountServer } from './ui-core/account.js';
 
@@ -10,7 +10,7 @@ initDialogs();   // [data-close], סגירה ברקע, --vvh
 const API = 'api.php';
 const CHUNK_HASH_MAX = 64 * 1024 * 1024;   // עד כאן — גיבוב בדפדפן (בלי העלאה חוזרת של תוכן קיים); מעל — השרת מחשב
 
-const state = { me: null, quota: null, folder: null, path: [], items: [], current: null, move: null, admin: null };
+const state = { me: null, quota: null, folder: null, path: [], items: [], current: null, move: null, admin: null, shared: new Set() };
 
 // ─── עזרים ──────────────────────────────────────────────────────────────
 
@@ -102,7 +102,18 @@ async function loadFolder(id) {
   $('#title').textContent = data.path.length ? data.path[data.path.length - 1].name : 'ענן MBE';
   renderCrumbs($('#crumbs'), data.path, f => { location.hash = f ? `#/files/${f}` : '#/files'; });
   $('#crumbs').hidden = !data.path.length;   // בשורש — כרטיס "הענן שלי" כבר אומר איפה אנחנו
+  $('#share-folder').hidden = !data.folder;    // משתפים תיקייה מתוכה; קובץ — מגיליון הפריט
   renderItems();
+  refreshShared();
+}
+
+/** אילו מהצמתים שלי משותפים — לסימון 👥. לא חוסם את הרשימה. */
+async function refreshShared() {
+  try {
+    const r = await api('share_list');
+    state.shared = new Set(r.shared_nodes);
+    renderItems();
+  } catch (e) { console.warn('share_list', e); }
 }
 
 function renderCrumbs(box, path, go) {
@@ -119,7 +130,7 @@ function row(n, onclick, extra) {
   return el('li', {}, el('button', { class: 'use-row', type: 'button', onclick },
     el('span', { class: 'use-ic' + (n.kind === 'folder' ? ' folder' : ''), 'aria-hidden': 'true' }, icon(n)),
     el('span', { class: 'use-tx' }, el('b', { class: 'one' }, n.name),
-      el('small', {}, [sub, when(n.trashed_at || n.updated_at), by].filter(Boolean).join(' · '))),
+      el('small', {}, [state.shared.has(n.id) ? '👥 משותף' : '', sub, when(n.trashed_at || n.updated_at), by].filter(Boolean).join(' · '))),
     extra || el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
 }
 
@@ -157,6 +168,7 @@ $('#item-dlg').addEventListener('click', async e => {
   $('#item-dlg').close();
   if (b.dataset.act === 'rename') askName('שינוי שם', n.name, name => api('rename', { id: n.id, name }));
   if (b.dataset.act === 'move') openMove([n]);
+  if (b.dataset.act === 'share') openShare(n);
   if (b.dataset.act === 'trash') {
     try { await api('trash', { id: n.id }); toast('הועבר לסל'); loadFolder(state.folder); } catch (err) { fail(err); }
   }
@@ -176,6 +188,11 @@ function askName(title, value, save) {
   const dot = value.lastIndexOf('.');
   f.name.focus(); f.name.setSelectionRange(0, dot > 0 ? dot : value.length);
 }
+
+$('#share-folder').addEventListener('click', () => {
+  const cur = state.path[state.path.length - 1];
+  if (cur) openShare({ id: cur.id, name: cur.name, kind: 'folder' });
+});
 
 $('#new-folder').addEventListener('click', () => askName('תיקייה חדשה', '', name => api('mkdir', { parent: state.folder, name, on_conflict: 'fail' })));
 
@@ -417,6 +434,7 @@ function renderAdmin(s) {
       el('small', {}, `${bytes(a.used)} מתוך ${a.effective_quota ? bytes(a.effective_quota) : '0'}${a.quota === null ? ' (ברירת מחדל)' : ''} · ${a.email}`)),
     a.blocked ? el('span', { class: 'chip bad' }, 'חסום') : el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))));
   renderClients(s.clients || []);
+  loadServices().catch(fail);
   loadAi().catch(fail);
   api('admin_drives', {}).then(renderDrives).catch(fail);
 }
@@ -561,6 +579,155 @@ async function initAccount() {
     admin: state.me?.role === 'admin' ? go('admin') : undefined,
     help: () => window.open('https://github.com/malkiel01/mini_projects/tree/main/mbe-cloud#readme', '_blank', 'noopener'),
     hide: ['units', 'autosave', 'font', 'cloudSync'],   // אין להן משמעות בדף של הענן
+  });
+}
+
+// ─── 👥 שיתוף לקריאה (docs/spec-2-share-token.md) ───────────────────────────
+
+/** גיליון השיתוף של צומת: מי רואה (עם ✕ לביטול), והוספה לפי מייל או חשבון שירות. רק "קריאה". */
+async function openShare(n) {
+  let data;
+  try { data = await api('share_list', undefined, { query: `&node=${encodeURIComponent(n.id)}` }); } catch (e) { fail(e); return; }
+  const list = el('ul', { class: 'list' });
+  const input = el('input', { name: 'grantee', type: 'email', inputmode: 'email', dir: 'ltr', autocomplete: 'off', placeholder: 'name@example.com' });
+  const draw = () => list.replaceChildren(...(data.items.length ? data.items.map(g => el('li', {}, el('div', { class: 'acc-row' },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, g.grantee.kind === 'service' ? '🔑' : '👤'),
+    el('div', { class: 'body' }, el('div', { class: 'l1' }, g.grantee.name),
+      el('div', { class: 'l2' }, [g.grantee.kind === 'service' ? 'חשבון שירות' : g.grantee.email, 'קריאה', `מ-${when(g.created_at)}`].join(' · '))),
+    el('button', { class: 'icon-btn', type: 'button', 'aria-label': `ביטול השיתוף עם ${g.grantee.name}`, onclick: () => revoke(g) }, '✕'))))
+    : [el('li', {}, el('p', { class: 'empty' }, 'עוד לא שותף עם אף אחד.'))]));
+  const reload = async () => {
+    data = await api('share_list', undefined, { query: `&node=${encodeURIComponent(n.id)}` });
+    state.shared = new Set(data.shared_nodes); draw(); renderItems();
+  };
+  const add = async grantee => {
+    if (!grantee) return;
+    try { await api('share_create', { node: n.id, grantee }); input.value = ''; await reload(); toast('שותף לקריאה'); } catch (e) { s.error(e.message); }
+  };
+  const revoke = async g => {
+    if (!await confirm(`לבטל את השיתוף עם "${g.grantee.name}"? הגישה נעצרת מיד.`, { ok: 'ביטול השיתוף', danger: true })) return;
+    try { await api('share_revoke', { id: g.id }); await reload(); toast('השיתוף בוטל'); } catch (e) { fail(e); }
+  };
+  const s = sheet({
+    title: `👥 ${n.name}`,
+    body: [
+      el('p', { class: 'hint' }, `${n.kind === 'folder' ? 'התיקייה וכל מה שבתוכה' : 'הקובץ'} — לקריאה בלבד. ביטול חל מיד.`),
+      list,
+      el('h3', { class: 'sec-title' }, 'הוספה'),
+      el('div', { class: 'share-add' }, el('label', { class: 'f' }, el('span', {}, 'מייל של חשבון בענן'), input),
+        el('button', { class: 'btn primary', type: 'button', onclick: () => add(input.value.trim()) }, 'שיתוף')),
+      data.services?.length ? el('div', { class: 'chips' }, ...data.services.map(sv =>
+        el('button', { class: 'chip', type: 'button', onclick: () => add(sv.id) }, `🔑 ${sv.name}`))) : null,
+    ],
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); add(input.value.trim()); } });
+  draw();
+}
+
+// ─── 🔑 חשבונות שירות ואסימונים (ניהול) ─────────────────────────────────
+
+async function loadServices() { renderServices((await api('service_list')).services); }
+
+function renderServices(list) {
+  state.services = list;
+  $('#services').replaceChildren(...(list.length ? list.map(sv => el('li', {}, el('button', { class: 'use-row', type: 'button', onclick: () => openService(sv.id) },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🔑'),
+    el('span', { class: 'use-tx' }, el('b', { class: 'one' }, sv.name),
+      el('small', {}, [`בעלים: ${sv.owner.name || '—'}`, `${sv.tokens.filter(t => t.active).length} אסימונים`, `${sv.shares.length} שיתופים`].join(' · '))),
+    el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))))
+    : [el('li', {}, el('p', { class: 'empty' }, 'אין חשבונות שירות.'))]));
+}
+
+$('#svc-new').addEventListener('click', async () => {
+  const name = await prompt('שם לחשבון השירות', { title: 'חשבון שירות חדש', value: 'Claude — ' }); if (!name) return;
+  const owner = await prompt('המייל של הבעלים (מי שאחראי עליו ומשתף איתו)', { title: 'הבעלים', value: state.me?.email || '', inputmode: 'email', dir: 'ltr' }); if (!owner) return;
+  try { renderServices((await api('service_create', { name, owner })).services); toast('נוצר'); } catch (e) { fail(e); }
+});
+
+function openService(id) {
+  const sv = state.services.find(x => x.id === id); if (!sv) return;
+  const s = sheet({
+    title: `🔑 ${sv.name}`,
+    wide: true,
+    body: [
+      el('dl', { class: 'cells' }, ...[['בעלים', `${sv.owner.name} · ${sv.owner.email}`], ['נוצר', when(sv.created_at)]]
+        .map(([k, v]) => el('div', {}, el('dt', {}, k), el('dd', { class: 'one' }, v)))),
+      el('h3', { class: 'sec-title' }, 'אסימונים'),
+      el('ul', { class: 'list' }, ...(sv.tokens.length ? sv.tokens.map(t => el('li', {}, el('div', { class: 'acc-row' },
+        el('div', { class: 'body' }, el('div', { class: 'l1' }, t.name),
+          el('div', { class: 'l2', dir: 'auto' }, [t.hint, t.active ? (t.expires_at ? `עד ${when(t.expires_at)}` : 'ללא תפוגה') : (t.revoked_at ? 'בוטל' : 'פג'),
+            t.used_at ? `שימוש אחרון ${when(t.used_at)}` : 'לא נעשה בו שימוש'].join(' · '))),
+        el('button', { class: 'btn ghost sm', type: 'button', onclick: () => openLog(t) }, '📜 יומן'),
+        t.active ? el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => revokeToken(t, s) }, 'בטל') : null)))
+        : [el('li', {}, el('p', { class: 'empty' }, 'אין אסימונים.'))])),
+      el('div', { class: 'row-btns' }, el('button', { class: 'btn primary', type: 'button', onclick: () => newToken(sv, s) }, '＋ אסימון')),
+      el('h3', { class: 'sec-title' }, 'שותף איתו'),
+      el('ul', { class: 'list' }, ...(sv.shares.length ? sv.shares.map(x => el('li', {}, el('div', { class: 'acc-row' },
+        el('span', { class: 'use-ic', 'aria-hidden': 'true' }, x.node_kind === 'folder' ? '📁' : '📄'),
+        el('div', { class: 'body' }, el('div', { class: 'l1' }, x.node_name), el('div', { class: 'l2' }, `מאת ${x.owner_name} · ${when(x.created_at)}`)))))
+        : [el('li', {}, el('p', { class: 'empty' }, 'עוד לא שותף איתו כלום. הבעלים משתף מגיליון "👥 שיתוף" של תיקייה.'))])),
+      el('div', { class: 'row-btns' }, el('button', { class: 'btn ghost danger', type: 'button', onclick: () => deleteService(sv, s) }, 'מחיקת חשבון השירות')),
+    ],
+  });
+}
+
+async function newToken(sv, parent) {
+  let name = 'Claude', days = 90;
+  const ok = await new Promise(resolve => {
+    let go = false;
+    sheet({
+      title: 'אסימון חדש', submit: 'יצירה',
+      body: (b) => b.append(
+        el('label', { class: 'f' }, el('span', {}, 'שם (למי הוא)'), el('input', { name: 'name', value: `${sv.name}`, required: true, autocomplete: 'off' })),
+        el('fieldset', { class: 'seg', 'aria-label': 'תוקף' },
+          el('label', {}, el('input', { type: 'radio', name: 'exp', value: '90', checked: true }), el('span', {}, '90 יום')),
+          el('label', {}, el('input', { type: 'radio', name: 'exp', value: 'none' }), el('span', {}, 'ללא תפוגה'))),
+        el('p', { class: 'hint' }, 'האסימון מאפשר רק קריאה של מה ששותף עם החשבון הזה. אפשר לבטל אותו בכל רגע.')),
+      onSubmit: f => { name = f.name.value.trim(); if (!name) throw new Error('חסר שם'); days = f.exp.value === 'none' ? null : 90; go = true; },
+      onClose: () => resolve(go),
+    });
+  });
+  if (!ok) return;
+  let res;
+  try { res = await api('token_create', { account: sv.id, name, expires_days: days }); } catch (e) { fail(e); return; }
+  parent.close();
+  const code = el('code', { class: 'secret', dir: 'ltr' }, res.token);
+  sheet({
+    title: '🔑 האסימון — פעם אחת',
+    body: [
+      el('p', {}, el('b', {}, 'לא יוצג שוב.'), ' העתיקו אותו עכשיו, ושמרו אותו רק כ-Network secret בסביבה של claude.ai — לא בצ\'אט, לא בקובץ ולא במייל.'),
+      el('div', { class: 'secret-box' }, code),
+      el('div', { class: 'row-btns' }, el('button', { class: 'btn primary', type: 'button', onclick: async () => {
+        try { await navigator.clipboard.writeText(res.token); toast('הועתק'); } catch { getSelection().selectAllChildren(code); toast('סמנו והעתיקו ידנית', true); }
+      } }, '📋 העתקה')),
+      el('p', { class: 'hint' }, `תוקף: ${res.expires_at ? when(res.expires_at) : 'ללא תפוגה'}.`),
+      el('p', { class: 'hint' }, 'נשלח בכותרת בלבד, לא בכתובת: ', el('code', { dir: 'ltr' }, 'Authorization: Bearer mbe_pat_…')),
+    ],
+    onClose: () => loadServices().catch(fail),
+  });
+}
+
+async function revokeToken(t, parent) {
+  if (!await confirm(`לבטל את האסימון "${t.name}"? כל קריאה איתו תיכשל מיד.`, { ok: 'ביטול האסימון', danger: true })) return;
+  try { await api('token_revoke', { id: t.id }); parent.close(); await loadServices(); toast('האסימון בוטל'); } catch (e) { fail(e); }
+}
+
+async function deleteService(sv, parent) {
+  if (!await confirm(`למחוק את "${sv.name}"? כל האסימונים שלו מתבטלים וכל השיתופים איתו נמחקים.`, { ok: 'מחיקה', danger: true })) return;
+  try { renderServices((await api('service_delete', { id: sv.id })).services); parent.close(); toast('נמחק'); } catch (e) { fail(e); }
+}
+
+async function openLog(t) {
+  let r;
+  try { r = await api('token_log', undefined, { query: `&token=${encodeURIComponent(t.id)}` }); } catch (e) { fail(e); return; }
+  const label = { 200: 'ok', 206: 'ok', 304: 'ok' };
+  sheet({
+    title: `📜 ${t.name}`, wide: true,
+    body: el('ul', { class: 'list' }, ...(r.items.length ? r.items.map(x => el('li', {}, el('div', { class: 'acc-row' },
+      el('div', { class: 'body' }, el('div', { class: 'l1' }, `${x.action}${x.node_name ? ' · ' + x.node_name : ''}`),
+        el('div', { class: 'l2', dir: 'auto' }, `${when(x.at)} · ${x.ip}`)),
+      el('span', { class: `chip ${label[x.status] || (x.status === 429 || x.status === 401 ? 'bad' : 'warn')}` }, String(x.status)))))
+      : [el('li', {}, el('p', { class: 'empty' }, 'עוד לא נעשה בו שימוש.'))])),
   });
 }
 
