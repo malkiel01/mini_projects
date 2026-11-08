@@ -7,11 +7,12 @@
  * כמה עולה כל בעל מקצוע / ספק, וכמה מזה על כל דירה (שלב משותף — לפי אחוזי החלוקה).
  */
 const Budget = (() => {
-    let project = null, data = null, editing = false, bound = false, assigning = false, supplierContacts = [];
+    let project = null, data = null, editing = false, bound = false, assigning = false, supplierContacts = [], ff = null, splitT = 0;
     const contactOf = id => project.team.find(m => m.id === id);
 
     async function show(p) {
         project = p;
+        ff = null;
         bind();
         try { [data, supplierContacts] = await Promise.all([api('budget', { params: { project_id: p.project.id } }), contactsOf('supplier').catch(() => [])]); }
         catch (e) { toast(e.message, true); return; }
@@ -30,12 +31,13 @@ const Budget = (() => {
                assign: () => rerender(() => { assigning = !assigning; }),
                cancel: cancelPending, manual: manualApprove, share: shareLink })[b.dataset.b]?.();
         });
-        root.addEventListener('input', e => { if (e.target.matches('[data-amt], [name=cont]')) { totals(); if (e.target.matches('[data-amt]')) breakdown(); } });
+        // הסה"כ — מיד; טבלת החלוקה — אחרי הפסקה קצרה בהקלדה, לא בכל הקשה
+        root.addEventListener('input', e => { if (e.target.matches('[data-amt], [name=cont]')) { totals(); if (e.target.matches('[data-amt]')) { clearTimeout(splitT); splitT = setTimeout(breakdown, 200); } } });
         root.addEventListener('change', e => {
             if (e.target.name === 'bd-vat') setVat(e.target.value);
             if (e.target.matches('[data-as]')) assign(e.target);
         });
-        FinFilter.bind(root, 'bd', () => project.project.id, () => { filterRows(); breakdown(); totals(); });
+        FinFilter.bind(root, 'bd', () => project.project.id, f => { ff = f; filterRows(); breakdown(); totals(); });
     }
 
     const canEdit = () => data.state === 'draft' || editing;
@@ -44,10 +46,13 @@ const Budget = (() => {
     const k = () => (data.vat_mode === 'net' ? 1 + data.vat_rate / 100 : 1);
     const fv = g => fmt(g / k());
     const r2 = n => Math.round(n * 100) / 100;
+    /** הסכום שבשדה — רק ספרות ונקודה. */
+    const digits = i => i.value.replace(/[^\d.]/g, '');
+    const num = i => Number(digits(i)) || 0;
 
     /** בנייה מחדש בלי לאבד מה שהוקלד ועוד לא נשמר: סכומים (נשמרים כולל מע"מ ומומרים), בלתי צפוי והערה. */
     function rerender(before) {
-        const typed = $$('#fin-budget [data-amt]').map(i => [i.dataset.amt, i.value.trim() === '' ? null : (Number(i.value.replace(/[^\d.]/g, '')) || 0) * k()]);
+        const typed = $$('#fin-budget [data-amt]').map(i => [i.dataset.amt, i.value.trim() === '' ? null : num(i) * k()]);
         const cont = $('#fin-budget [name=cont]')?.value, note = $('#fin-budget [name=note]')?.value;
         before?.();
         render();
@@ -114,8 +119,9 @@ const Budget = (() => {
     const tradesOf = l => FinFilter.tradesOf(stageOf(l), stageOf(l)?.supplier_id, supplierContacts);
     const supplierOf = l => stageOf(l)?.supplier_id || 0;
     const supplierName = id => (id ? project.stages.find(s => s.supplier_id === id)?.supplier_name || supplierContacts.find(c => c.id === id)?.name || '' : t('בלי ספק'));
-    const filter = () => FinFilter.get('bd', project.project.id);
-    const shownLines = () => { const f = filter(); return data.lines.filter(l => FinFilter.match(f, tradesOf(l), supplierOf(l))); };
+    /** הבחירה נקראת מ-sessionStorage פעם אחת, ומתעדכנת בכל שינוי בבורר. */
+    const filter = () => (ff ||= FinFilter.get('bd', project.project.id));
+    const shownLines = (f = filter()) => data.lines.filter(l => FinFilter.match(f, tradesOf(l), supplierOf(l)));
 
     /** מתחת לשם השלב: בעל המקצוע והספק — או, במצב "🏷️ שיוך", שני שדות בחירה ששומרים מיד. */
     function tag(l) {
@@ -139,29 +145,37 @@ const Budget = (() => {
     /** שיוך מהתקציב — אותו שמירה של חלון השלב (api stage), עם כל שאר השדות כמו שהם. */
     async function assign(sel) {
         const s = project.stages.find(x => x.id === Number(sel.dataset.stage));
+        // השרת מחליף את השלב כולו — שולחים כל שדה שלו כמו שהוא (בלי budget: הסכום לא משתנה)
         const body = { id: s.id, name: s.name, trade_id: s.trade_id || '', supplier_id: s.supplier_id || '', status: s.status,
-            needs_lawyer: s.needs_lawyer ? 1 : '', plan_start: s.plan_start, plan_end: s.plan_end };
+            needs_lawyer: s.needs_lawyer ? 1 : '', plan_start: s.plan_start, plan_end: s.plan_end, progress: s.progress || 0,
+            ...('unit_id' in s ? { unit_id: s.unit_id || '' } : {}) };
         body[sel.dataset.as === 'trade' ? 'trade_id' : 'supplier_id'] = sel.value;
         sel.disabled = true;
         try {
-            await api('stage', { body });
-            if (sel.dataset.as === 'trade') s.trade_id = Number(sel.value) || null;
+            const d = await api('stage', { body });
+            if (d?.stages) project.stages = d.stages; // התשובה של השרת — כולל סדר שלבים שהשתנה
+            else if (sel.dataset.as === 'trade') s.trade_id = Number(sel.value) || null;
             else { s.supplier_id = Number(sel.value) || null; s.supplier_name = supplierContacts.find(c => c.id === s.supplier_id)?.name || null; }
             rerender();
-            toast(t('נשמר'));
-        } catch (e) { toast(e.message, true); sel.disabled = false; }
+            toast(d?.notice || t('נשמר'));
+        } catch (e) {
+            toast(e.message, true);
+            sel.value = String((sel.dataset.as === 'trade' ? s.trade_id : s.supplier_id) || ''); // חוזר למה שבאמת שמור
+            sel.disabled = false;
+        }
     }
 
     /** הבורר מעל השורות, והסתרת השורות שלא עוברות (בעריכה — רק מוסתרות, הסכומים שלהן נשמרים). */
     function filterRows() {
-        const f = filter(), box = $('#bd-ff');
+        const box = $('#bd-ff');
         if (!box) return;
-        const uniq = (list, name) => [...new Map(list.map(x => [x, { id: x, name: name(x) }])).values()].sort((a, b) => a.name.localeCompare(b.name, I18n.locale()));
-        box.innerHTML = FinFilter.html('bd', f, {
-            trades: uniq(data.lines.flatMap(l => tradesOf(l).length ? tradesOf(l) : [0]), FinFilter.tradeName),
-            suppliers: uniq(data.lines.map(supplierOf), supplierName),
-        });
-        const ok = new Set(shownLines().map(l => l.stage_id));
+        const opts = {
+            trades: FinFilter.uniq(data.lines.flatMap(l => { const tr = tradesOf(l); return tr.length ? tr : [0]; }), FinFilter.tradeName),
+            suppliers: FinFilter.uniq(data.lines.map(supplierOf), supplierName),
+        };
+        const f = FinFilter.prune('bd', project.project.id, filter(), opts);
+        box.innerHTML = FinFilter.html('bd', f, opts);
+        const ok = new Set(shownLines(f).map(l => l.stage_id));
         $$('#fin-budget .bd-row').forEach(li => { li.hidden = !ok.has(Number(li.dataset.stage)); });
         $$('#fin-budget .bd-unit').forEach(h => { const ul = h.nextElementSibling; h.hidden = ul && !$$('.bd-row', ul).some(li => !li.hidden); });
     }
@@ -169,7 +183,7 @@ const Budget = (() => {
     /** הסכום של שורה כמו שמוצג עכשיו — בעריכה מהשדה, אחרת "היום". */
     const amountOf = l => {
         const i = $(`#fin-budget [data-amt="${l.stage_id}"]`);
-        return i ? Number(i.value.replace(/[^\d.]/g, '')) || 0 : l.today / k();
+        return i ? num(i) : l.today / k();
     };
 
     /** כמה עולה כל בעל מקצוע / ספק — וכמה מזה על כל דירה (שלב של דירה — שלה; משותף — לפי האחוזים). */
@@ -177,18 +191,17 @@ const Budget = (() => {
         const root = $('#bd-split');
         if (!root) return;
         const f = filter(), units = data.units || [];
-        const lines = shownLines();
         if (!data.lines.length) { root.hidden = true; return; }
         root.hidden = false;
-        const groups = new Map();
-        for (const l of lines) {
-            const id = f.by === 'supplier' ? supplierOf(l) : (tradesOf(l)[0] || 0);
-            const g = groups.get(id) || groups.set(id, { name: f.by === 'supplier' ? supplierName(id) : FinFilter.tradeName(id), total: 0, u: {} }).get(id);
-            const a = amountOf(l);
-            g.total += a;
-            if (units.length > 1) for (const u of units) g.u[u.id] = (g.u[u.id] || 0) + (l.unit_id ? (l.unit_id === u.id ? a : 0) : a * u.pct / 100);
-        }
-        const list = [...groups.values()].sort((a, b) => b.total - a.total);
+        const list = FinFilter.group(shownLines(f),
+            l => (f.by === 'supplier' ? supplierOf(l) : FinFilter.tradeKey(f, tradesOf(l))),
+            (l, id) => ({ name: f.by === 'supplier' ? supplierName(id) : FinFilter.tradeName(id), total: 0, u: {} }),
+            (g, l) => {
+                const a = amountOf(l);
+                g.total += a;
+                if (units.length > 1) for (const u of units) g.u[u.id] = (g.u[u.id] || 0) + (l.unit_id ? (l.unit_id === u.id ? a : 0) : a * u.pct / 100);
+            },
+            (a, b) => b.total - a.total);
         const multi = units.length > 1;
         const td = v => `<td class="n">${v ? esc(fmt(v)) : '—'}</td>`;
         const sum = fn => list.reduce((a, g) => a + fn(g), 0);
@@ -220,7 +233,7 @@ const Budget = (() => {
     function totals() {
         const B = data, editable = canEdit();
         // הכול כאן — בתצוגה שנבחרה (כולל / לפני מע"מ)
-        const vals = editable ? $$('#fin-budget [data-amt]').map(i => Number(i.value.replace(/[^\d.]/g, '')) || 0) : B.lines.map(l => l.today / k());
+        const vals = editable ? $$('#fin-budget [data-amt]').map(num) : B.lines.map(l => l.today / k());
         const stages = vals.reduce((a, b) => a + b, 0);
         const contPct = editable ? Number($('#fin-budget [name=cont]')?.value ?? B.contingency_pct) || 0 : B.contingency_pct;
         const fee = B.fee_type === 'percent' ? stages * B.fee_value / 100 : B.fee_type === 'fixed' ? B.fee_value / k() : 0;
@@ -232,7 +245,7 @@ const Budget = (() => {
         if (!root) return;
         const keep = document.activeElement?.name === 'cont';
         const f = filter();
-        const part = FinFilter.active(f) ? shownLines().reduce((a, l) => a + amountOf(l), 0) : null;
+        const part = FinFilter.active(f) ? shownLines(f).reduce((a, l) => a + amountOf(l), 0) : null;
         root.innerHTML = `<div><dt>${esc(t('שלבים'))}</dt><dd>${esc(fmt(stages))}</dd></div>
             ${part !== null ? `<div class="bd-part"><dt>${esc(t('מזה — מה שבסינון'))}</dt><dd>${esc(fmt(part))}</dd></div>` : ''}
             ${fee ? `<div><dt>${esc(B.fee_type === 'percent' ? t('שכר טרחה {n}%', { n: B.fee_value }) : t('שכר טרחה'))}</dt><dd>${esc(fmt(fee))}</dd></div>` : ''}
@@ -283,7 +296,7 @@ const Budget = (() => {
 
     // לשרת — תמיד כולל מע"מ: מה שהוקלד לפני מע"מ מוכפל בשיעור
     const lines = () => $$('#fin-budget [data-amt]').map(i => {
-        const v = i.value.replace(/[^\d.]/g, '');
+        const v = digits(i);
         return { stage_id: Number(i.dataset.amt), amount: v === '' ? '' : String(r2(Number(v) * k())) };
     });
     const err = msg => { const e = $('#fin-budget .error'); e.textContent = msg; e.hidden = !msg; };

@@ -252,8 +252,12 @@ const Finance = (() => {
 
     /** "👷 ספקים": הבורר, החלוקה לפי בעל מקצוע / ספק, והשלבים — רק השורות שעוברות את הסינון. */
     function renderStages() {
-        const f = FinFilter.get('fin', project.project.id);
         const all = data.stages.flatMap(s => s.rows.map(r => ({ s, r, trades: rowTrades(s, r) })));
+        const opts = {
+            trades: FinFilter.uniq(all.flatMap(x => x.trades.length ? x.trades : [0]), FinFilter.tradeName),
+            suppliers: FinFilter.uniq(all.map(x => x.r.supplier_id), id => all.find(x => x.r.supplier_id === id).r.name),
+        };
+        const f = FinFilter.prune('fin', project.project.id, FinFilter.get('fin', project.project.id), opts);
         const shown = all.filter(x => FinFilter.match(f, x.trades, x.r.supplier_id));
         const html = data.stages.map(s => {
             const mine = shown.filter(x => x.s === s);
@@ -267,7 +271,7 @@ const Finance = (() => {
                 ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}${budget}
                 <ul class="list fin-rows">${rows || `<li class="muted fin-empty">${esc(t('עוד אין הצעה שאושרה'))}</li>`}</ul></section>`;
         }).join('');
-        $('#fin-stages').innerHTML = (all.length ? filterBox(f, all, shown) : '')
+        $('#fin-stages').innerHTML = (all.length ? filterBox(f, opts, shown) : '')
             + (html || `<p class="empty">${esc(FinFilter.active(f) ? t('אין ספקים שמתאימים לסינון.') : t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`);
         $('#fin-extra').innerHTML = expensesSection() + feeSection();
         Deviations.show(project, data.settings.deviations_on);
@@ -276,19 +280,12 @@ const Finance = (() => {
     }
 
     /** הבורר, ומתחתיו טבלה: לכל בעל מקצוע / ספק — סוכם, שולם, יתרה (של מה שעבר את הסינון). */
-    function filterBox(f, all, shown) {
-        const uniq = (list, name) => [...new Map(list.map(x => [x, { id: x, name: name(x) }])).values()].sort((a, b) => a.name.localeCompare(b.name, I18n.locale()));
-        const opts = {
-            trades: uniq(all.flatMap(x => x.trades.length ? x.trades : [0]), FinFilter.tradeName),
-            suppliers: uniq(all.map(x => x.r.supplier_id), id => all.find(x => x.r.supplier_id === id).r.name),
-        };
-        const groups = new Map();
-        for (const x of shown) {
-            const id = f.by === 'supplier' ? x.r.supplier_id : (x.trades[0] || 0);
-            const g = groups.get(id) || groups.set(id, { name: f.by === 'supplier' ? x.r.name : FinFilter.tradeName(id), c: 0, p: 0, b: 0 }).get(id);
-            g.c += x.r.committed.g; g.p += x.r.paid.g; g.b += x.r.balance.g;
-        }
-        const list = [...groups.values()].sort((a, b) => b.c - a.c);
+    function filterBox(f, opts, shown) {
+        const list = FinFilter.group(shown,
+            x => (f.by === 'supplier' ? x.r.supplier_id : FinFilter.tradeKey(f, x.trades)),
+            (x, id) => ({ name: f.by === 'supplier' ? x.r.name : FinFilter.tradeName(id), c: 0, p: 0, b: 0 }),
+            (g, x) => { g.c += x.r.committed.g; g.p += x.r.paid.g; g.b += x.r.balance.g; },
+            (a, b) => b.c - a.c);
         const sum = k => list.reduce((a, g) => a + g[k], 0);
         const td = v => `<td class="n">${esc(money(Math.round(v)))}</td>`;
         return `<section class="fin-card ff-box">${FinFilter.html('fin', f, opts)}
