@@ -4,8 +4,11 @@
  *   import { createDrives } from './drives/drives.js';
  *   const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php של האפליקציה (שם רץ Drives.php)
  *
- *   await drives.status()          → { suite: { connected, name, cloud_id, scope } }
+ *   await drives.status()          → { suite: { connected, name, cloud_id, scope, pending? } }
  *   await drives.connect()         — מעבר למסך האישור בענן; חוזרים ל-back עם ?cloud=connected | denied
+ *   await drives.claim(code)       → status — השלמת חיבור שהתחיל בדפדפן החיצוני (APK): הקוד שהוצג שם.
+ *        לבד: ?cloud=claim&claim=<קוד> בכתובת (הקישור "חזרה לאפליקציה") — מאושר בטעינה, והכתובת מתנקה. ובלי הקישור —
+ *        status() עם suite.pending מציג חלון קטן "הקלידו את הקוד". אחרי שינוי: אירוע 'drives:changed' על window.
  *   await drives.disconnect()
  *
  *   const s = drives.suite;        — ענן MBE. בלי חיבור — כל קריאה זורקת DriveError עם code 'not-connected'.
@@ -48,6 +51,7 @@ const CHUNK_HASH_MAX = 64 * 1024 * 1024;
 export function createDrives({ endpoint = 'api.php' } = {}) {
     let tok = null;          // { token, api, until }
     let pending = null;
+    let asked = false;       // חלון הקוד — פעם אחת בטעינה
 
     async function app(action, body) {
         const res = await fetch(`${endpoint}?action=${action}`, body === undefined ? { credentials: 'same-origin' }
@@ -311,15 +315,81 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
+    const changed = detail => { try { window.dispatchEvent(new CustomEvent('drives:changed', { detail })); } catch { /* בלי window */ } };
+
+    /** השלמת חיבור שהתחיל בדפדפן החיצוני (APK, api-guide.md §10 פ1): הקוד שהוצג בדף של החזרה. */
+    async function claim(code) {
+        const s = await app('drives_claim', { code: String(code || '') });
+        tok = null;
+        changed(s);
+        return s;
+    }
+
+    /** חלון קטן, בלי תלות בעיצוב של האפליקציה: "הקלידו את הקוד". מחזיר status, או null אם בוטל. */
+    function askCode() {
+        return new Promise(resolve => {
+            if (typeof document === 'undefined' || !document.body) { resolve(null); return; }
+            const d = document.createElement('dialog');
+            d.setAttribute('dir', 'rtl');
+            d.style.cssText = 'max-width:340px;width:calc(100% - 32px);border:1px solid #c9ced8;border-radius:12px;padding:16px;font:16px/1.5 system-ui,sans-serif';
+            d.innerHTML = '<form method="dialog" style="display:grid;gap:10px;margin:0"><b>☁️ השלמת החיבור לענן</b>'
+                + '<span>הקלידו את הקוד שהופיע בדפדפן אחרי האישור.</span>'
+                + '<input name="code" autocomplete="one-time-code" autocapitalize="characters" dir="ltr" placeholder="XXXX-XXXX" '
+                + 'style="font:600 20px/1.4 ui-monospace,monospace;letter-spacing:3px;text-align:center;text-transform:uppercase;padding:8px;border:1px solid #c9ced8;border-radius:8px">'
+                + '<small data-err style="color:#b42318" hidden></small>'
+                + '<small style="color:#5d6475">🔒 רק באפליקציה שלכם. אל תמסרו את הקוד לאף אחד.</small>'
+                + '<div style="display:flex;gap:8px">'
+                + '<button value="ok" type="submit" style="flex:1;font:600 16px system-ui;padding:10px;border:0;border-radius:10px;background:#2d4a8a;color:#fff">חיבור</button>'
+                + '<button value="cancel" type="submit" style="font:16px system-ui;padding:10px 14px;border:1px solid #c9ced8;border-radius:10px;background:transparent;color:inherit">לא עכשיו</button>'
+                + '</div></form>';
+            document.body.append(d);
+            const f = d.querySelector('form'), err = d.querySelector('[data-err]');
+            f.addEventListener('submit', async e => {
+                if (e.submitter?.value !== 'ok') return;   // "לא עכשיו" — נסגר
+                e.preventDefault();
+                try { const s = await claim(f.code.value); d.close(); d.remove(); resolve(s); }
+                catch (x) {
+                    err.textContent = x.message; err.hidden = false;
+                    if (x.code === 'claim_locked' || x.code === 'no_pending') setTimeout(() => { d.close(); d.remove(); resolve(null); }, 2500);
+                }
+            });
+            d.addEventListener('close', () => { if (d.isConnected) { d.remove(); resolve(null); } });
+            d.showModal();
+        });
+    }
+
+    async function status() {
+        const s = await app('drives_status');
+        if (s.suite?.pending && !s.suite.connected && !asked) {
+            asked = true;
+            return (await askCode()) || s;
+        }
+        return s;
+    }
+
+    // הקישור "חזרה לאפליקציה" מהדף של החזרה: ?cloud=claim&claim=<קוד> — מאשרים מיד, ומנקים את הקוד מהכתובת
+    try {
+        const u = new URL(location.href);
+        const code = u.searchParams.get('claim');
+        if (u.searchParams.get('cloud') === 'claim' && code) {
+            u.searchParams.delete('claim');
+            u.searchParams.delete('cloud');   // ההצלחה — באירוע drives:changed, לא בכתובת (שלא תטעה לפני שהאישור עבר)
+            history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+            asked = true;
+            claim(code).catch(e => { asked = false; changed({ error: e.message, code: e.code }); });
+        }
+    } catch { /* בלי location (בדיקות) */ }
+
     return {
-        status: () => app('drives_status'),
+        status,
+        claim,
         async connect(scope) {
             const r = await app('drives_connect', scope ? { scope } : {});
             location.assign(r.url);
         },
         async disconnect() { tok = null; return app('drives_disconnect', {}); },
         async list() {
-            const s = await app('drives_status');
+            const s = await status();
             return Object.entries(s).map(([id, v]) => ({ id, name: NAMES[id] || id, connected: !!v.connected, ...(v.name ? { account: v.name } : {}) }));
         },
         async link(provider) {

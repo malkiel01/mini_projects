@@ -165,23 +165,41 @@ try {
         return $app->token('u1') === ['connected' => false] && $app->status('u1')['suite']['connected'] === false;
     })());
 
-    // ─── APK: החזרה בדפדפן החיצוני, בלי העוגייה של האפליקציה (api-guide.md §10 פ1) ───
+    // ─── APK: החזרה בדפדפן החיצוני, בלי העוגייה של האפליקציה (api-guide.md §10 פ1, פ1א) ───
     $app->disconnect('u1');
+    $pend = fn(string $u) => (fn() => $this->db()->query('SELECT * FROM pending WHERE user = ' . $this->db()->quote($u))->fetch())->call($app);
     $user = null;   // הדפדפן החיצוני — אין משתמש באפליקציה
     $url = $app->connectUrl('u1');   // נוצר בתוך האפליקציה, עם העוגייה של u1
     parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
     $r = $app->handle('drives_callback', $bq);
-    check('(א) חזרה בלי עוגייה — לא 401: החיבור נשמר "ממתין" ונראה דף הצלחה', isset($r['done']) && str_contains($r['done'], 'הושלם'));
-    check('(א) חזרה כפולה בלי עוגייה — עדיין הצלחה', isset($app->handle('drives_callback', $bq)['done']));
-    check('(ב) משתמש אחר באפליקציה לא מקבל את החיבור הממתין של u1', $app->status('u2')['suite']['connected'] === false
-        && $app->token('u2') === ['connected' => false]);
-    check('(א) בחזרה לאפליקציה (status עם העוגייה של u1) — מחובר', $app->status('u1')['suite']['connected'] === true
-        && $app->status('u1')['suite']['name'] === 'בעל המערכת');
+    $code = $r['claim'] ?? '';
+    check('(א) חזרה בלי עוגייה — לא 401: ממתין, וקוד בן 8 תווים לדף', isset($r['done']) && (bool) preg_match('/^[A-HJ-NP-Z2-9]{8}$/', $code));
+    check('הקוד נשמר רק כ-hash', ($p = $pend('u1')) && $p['claim'] === hash('sha256', $code) && !str_contains(json_encode($p), $code));
+    check('חזרה כפולה לאותו דף — לא מציגה את הקוד שוב (bad_state:used)', code(fn() => $app->handle('drives_callback', $bq)) === 'bad_state:used');
+    check('בלי קוד — לא מתחבר אוטומטית; status מסמן pending', $app->status('u1')['suite']['connected'] === false
+        && ($app->status('u1')['suite']['pending'] ?? false) === true && $app->token('u1') === ['connected' => false]);
+    check('(ב) משתמש אחר לא רואה את הממתין, ולא יכול לאשר אותו גם עם הקוד הנכון', !isset($app->status('u2')['suite']['pending'])
+        && code(fn() => $app->claim('u2', $code)) === 'no_pending' && $pend('u1') !== null);
+    check('קוד שגוי — bad_claim, וניסיון נספר', code(fn() => $app->claim('u1', 'AAAAAAAA')) === 'bad_claim' && (int) $pend('u1')['tries'] === 1);
+    $s = $app->claim('u1', strtolower(substr($code, 0, 4) . '-' . substr($code, 4)));   // כמו שמוקלד: עם מקף, באותיות קטנות
+    check('(א) הקוד הנכון, עם העוגייה של u1 — מחובר', $s['suite']['connected'] === true && $s['suite']['name'] === 'בעל המערכת' && $pend('u1') === false);
     $t = $app->token('u1');
     $_SERVER['HTTP_X_CLOUD_TOKEN'] = $t['token'];
     check('(א) והאסימון פותח את הענן', actor('list', 'files', '')['app'] === 'vector-studio');
     unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
-    check('(ב) u2 עדיין לא מחובר אחרי שגם u1 אישר', $app->status('u2')['suite']['connected'] === false);
+    check('קוד שכבר נוצל — no_pending', code(fn() => $app->claim('u1', $code)) === 'no_pending');
+
+    // 5 ניסיונות — ואז הממתין נמחק ומנותק בענן
+    $url = $app->connectUrl('u6');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $r6 = $app->handle('drives_callback', $bq);
+    $cid6 = $pend('u6')['connection'];
+    $codes = [];
+    for ($i = 0; $i < 4; $i++) $codes[] = code(fn() => $app->claim('u6', 'BBBBBBBB'));
+    $codes[] = code(fn() => $app->claim('u6', 'BBBBBBBB'));
+    check('ניסיון חמישי שגוי — claim_locked, והממתין נמחק', $codes === ['bad_claim', 'bad_claim', 'bad_claim', 'bad_claim', 'claim_locked'] && $pend('u6') === false);
+    check('ניסיון שישי, גם עם הקוד הנכון — נדחה, והחיבור בענן נותק', code(fn() => $app->claim('u6', $r6['claim'])) === 'no_pending'
+        && db()->query('SELECT revoked_at FROM connections WHERE id = ' . db()->quote($cid6))->fetchColumn() !== null);
 
     // (ג) state שפג — נדחה, גם בלי עוגייה
     $url = $app->connectUrl('u3');
@@ -191,22 +209,36 @@ try {
     check('(ג) state שלא קיים — bad_state:missing', code(fn() => $app->handle('drives_callback', ['state' => 'nope', 'code' => 'x'])) === 'bad_state:missing');
     check('(ג) ולא נוצר חיבור', $app->status('u3')['suite']['connected'] === false);
 
-    // חיבור ממתין שלא אושר תוך 10 דקות — נמחק, ומנותק גם בענן
+    // קוד שפג (10 דקות) — נדחה, הממתין נמחק ומנותק בענן
     $url = $app->connectUrl('u4');
     parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
-    $app->handle('drives_callback', $bq);
-    $pend = (fn() => $this->db()->query("SELECT connection FROM pending WHERE user = 'u4'")->fetchColumn())->call($app);
+    $r4 = $app->handle('drives_callback', $bq);
+    $cid4 = $pend('u4')['connection'];
     (fn() => $this->db()->exec("UPDATE pending SET expires = " . (time() - 1) . " WHERE user = 'u4'"))->call($app);
-    check('ממתין שפג — לא מאושר', $app->status('u4')['suite']['connected'] === false);
-    check('ממתין שפג — נמחק, והחיבור בענן נותק', !(fn() => $this->db()->query("SELECT 1 FROM pending WHERE user = 'u4'")->fetchColumn())->call($app)
-        && db()->query('SELECT revoked_at FROM connections WHERE id = ' . db()->quote((string) $pend))->fetchColumn() !== null);
+    check('קוד שפג — no_pending', code(fn() => $app->claim('u4', $r4['claim'])) === 'no_pending');
+    check('ממתין שפג — נמחק, והחיבור בענן נותק', $pend('u4') === false
+        && db()->query('SELECT revoked_at FROM connections WHERE id = ' . db()->quote($cid4))->fetchColumn() !== null);
 
-    // ביטול במסך האישור, בלי עוגייה — דף "בוטל", בלי חיבור
+    // בקשה חדשה מחליפה ממתין קודם של אותו משתמש
+    $url = $app->connectUrl('u7');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $r7a = $app->handle('drives_callback', $bq);
+    $url = $app->connectUrl('u7');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $r7b = $app->handle('drives_callback', $bq);
+    check('בקשה חדשה מחליפה את הקודמת — הקוד הישן לא עובד, החדש כן', code(fn() => $app->claim('u7', $r7a['claim'])) === 'bad_claim'
+        && $app->claim('u7', $r7b['claim'])['suite']['connected'] === true);
+
+    // ביטול במסך האישור, בלי עוגייה — דף "בוטל", בלי קוד ובלי חיבור
     $url = $app->connectUrl('u5');
     parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
     $q['error'] = 'access_denied';
-    check('ביטול בדפדפן החיצוני — דף "בוטל", ובלי חיבור', str_contains($app->handle('drives_callback', $q)['done'], 'בוטל')
+    $r5 = $app->handle('drives_callback', $q);
+    check('ביטול בדפדפן החיצוני — דף "בוטל", בלי קוד ובלי חיבור', str_contains($r5['done'], 'בוטל') && !isset($r5['claim']) && !empty($r5['denied'])
         && $app->status('u5')['suite']['connected'] === false);
+
+    $user = null;
+    check('drives_claim בלי משתמש באפליקציה — 401', code(fn() => $app->handle('drives_claim', ['code' => 'x'])) === 'unauthorized');
 
     // (ד) הזרימה הרגילה, עם העוגייה — לא השתנתה
     $user = 'u1';
