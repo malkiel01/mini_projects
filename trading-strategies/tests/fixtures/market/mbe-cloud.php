@@ -9,7 +9,8 @@ return function (string $url, array $headers): array {
     // רק אותו חשבון (api-guide 2): ה-sub שנשלח חייב להיות של מי שהחיבור שלו — כאן: c_<sub>
     if ($a === 'access_token' && $conn !== 'c_' . ($body['sub'] ?? '')) return [403, json_encode(['error' => 'החשבון בענן שונה', 'code' => 'account_mismatch'])];
     if ($a === 'client_register') return [200, json_encode(['status' => 'active'])];
-    if ($a === 'access_token') return [200, json_encode(['token' => 'tok-for-' . $conn, 'expires_in' => 900, 'scope' => ['files']])];
+    // בלי scope בתשובה — המודול שומר את ההיקף שבמסד (כך הבדיקה קובעת files או files.app)
+    if ($a === 'access_token') return [200, json_encode(['token' => 'tok-for-' . $conn, 'expires_in' => 900])];
     if ($a === 'disconnect') return [200, json_encode(['ok' => true])];
     return [404, json_encode(['error' => 'לא מוכר', 'code' => 'not_found'])];
 };
