@@ -188,8 +188,22 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
 
 ### האם למשתמש יש הרשאה — `grant_status` (PF-002)
 
-אותו לקוח, אותו מפתח ואותה חתימה. `action` = `grant_status`, גם ב-`?action=` וגם בהודעה החתומה, כך שחתימה של
-`provision` לא תקפה כאן:
+אותה חתימה. `action` = `grant_status`, גם ב-`?action=` וגם בהודעה החתומה, כך שחתימה של `provision` לא תקפה כאן.
+
+**המפתח — רק לשאלה הזו:**
+
+```json
+"grant_status": { "key_url": "https://mbe-plus.com/mini_projects/<app>/api.php?action=platform_key" }
+```
+
+- **`grant_status.key_url`:** החתימה שלו מתקבלת **רק** ב-`action=grant_status`. אפליקציה שהצהירה רק אותו מקבלת 403
+  בכל פעולה אחרת, כמו פתיחת חשבון או מתן הרשאה. כך דליפה של המפתח הזה לא נותנת לאף אחד גישה לשום דבר.
+- **אפליקציה עם `grant_status` וגם עם `provision`:** כל מפתח תקף רק לפעולה שלו.
+- **אפליקציה בלי `grant_status`:** grant_status מקבל את `provision.key_url`, כמו קודם (תאימות).
+- **המטמון של המפתחות:** נשמר לפי אפליקציה ולפי סוג, ולכן מפתח שהורד לסוג אחד לא משמש לשני.
+- **`key_url`:** מחזיר את אותו מבנה כמו ב-provision, וחייב להיות ב-`public`. `check-apps.php` דורש כתובת https.
+
+הבקשה:
 
 ```
 POST platform/provision.php?action=grant_status

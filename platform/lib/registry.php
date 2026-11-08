@@ -49,6 +49,8 @@ function registry_load(): array
             'gate'        => $app['gate'] ?? false,
             'sso_returns' => array_values($app['sso']['return'] ?? []),
             'provision_key_url' => $app['provision']['key_url'] ?? null,
+            // מפתח שמותר לו רק grant_status (PF-002) — כך דליפה שלו לא פותחת חשבונות או הרשאות
+            'grant_status_key_url' => $app['grant_status']['key_url'] ?? null,
             'category'    => !empty($app['plugin']) ? PLUGIN_CATEGORY : $app['category'],
             'href'        => registry_href($folder, $app['entry'] ?? ''),
             'external'    => registry_is_external($app['entry'] ?? ''),
@@ -178,6 +180,11 @@ function registry_validate(string $folder, $app, array $categoryIds): ?string
     if (isset($app['provision'])) {
         $k = $app['provision']['key_url'] ?? null;
         if (!is_string($k) || !preg_match('#^https://[^/?\#@\s]+(/[^\#\s]*)?$#i', $k)) return 'provision.key_url: כתובת https מלאה, בלי #';
+    }
+    // מפתח ל-grant_status בלבד (PF-002): "grant_status": {"key_url": "https://…"} — לא פותח את provision
+    if (isset($app['grant_status'])) {
+        $k = is_array($app['grant_status']) ? ($app['grant_status']['key_url'] ?? null) : null;
+        if (!is_string($k) || !preg_match('#^https://[^/?\#@\s]+(/[^\#\s]*)?$#i', $k)) return 'grant_status.key_url: כתובת https מלאה, בלי #';
     }
     $install = $app['install'] ?? [];
     if (!is_array($install)) return 'install חייב להיות אובייקט';

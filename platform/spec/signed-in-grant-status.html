@@ -54,7 +54,9 @@
         <tr><td>הרשאה</td><td><code>can_see</code> (<code>access.php</code>) / <code>can_use</code> (<code>gate.php</code>)</td><td>אותה לוגיקה בשתי כתיבות. מנהל — תמיד (ב-<code>can_use</code> וב-<code>visible_for</code>)</td></tr>
     </table></div>
     <div class="note warn">ל-<code>mbe-cloud/app.json</code> אין היום <code>"provision"</code>. כדי לקרוא ל-<code>grant_status</code> הענן צריך להוסיף
-        <code>"provision": {"key_url": …}</code> (והכתובת ב-<code>public</code>) — שינוי בתיקייה של הענן, אצל הצ'אט שלו.</div>
+        <code>"provision": {"key_url": …}</code> (והכתובת ב-<code>public</code>) — שינוי בתיקייה של הענן, אצל הצ'אט שלו.
+        <br><strong>עדכון (2026-11-08, אבטחה):</strong> במקום provision — <code>"grant_status": {"key_url": …}</code>, מפתח שהחתימה שלו
+        מתקבלת <strong>רק</strong> ב-<code>action=grant_status</code>. כל פעולה אחרת (provision) → 403. בלי <code>grant_status</code> — <code>provision.key_url</code>, כמו קודם.</div>
 
     <!-- ───────────────────────────── -->
     <h2 id="gs">3. חלק א׳: <code>grant_status</code></h2>
