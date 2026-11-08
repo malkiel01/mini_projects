@@ -38,6 +38,16 @@
  *   const x = drives.dropbox;      — list · stat · read · mkdir · rename · move · trash · write · upload · quota (כמו suite).
  *        id הוא מזהה של Dropbox ("id:…"), תיקיית השורש היא null, ו-rev הוא מחרוזת. בתיקיית האפליקציה (App folder) בלבד.
  *
+ * נתוני משתמש — 🗂️ (שלב 4, mbe-cloud/docs/spec-4-appdata.md). רק לאפליקציה שהצהירה "appdata" ב-layers:
+ *   const a = drives.appdata;                     // מרחב user. מרחב האפליקציה (קריאה בלבד מהדפדפן): drives.appdata.space('app')
+ *   await a.get('settings', 'chart')              → { value, rev, updated_at } | null
+ *   await a.put('settings', 'chart', value, { ifRev })   → { rev, seq }. התנגשות → DriveError 'conflict' עם rev ו-value
+ *   await a.delete('settings', 'chart', { ifRev })
+ *   await a.list({ collection, prefix, cursor, limit })  → { items: [{ collection, key, rev, size, updated_at }], cursor }
+ *   await a.getMany('watchlist', ['a', 'b'])      → { items: [{ key, value, rev, updated_at }] }
+ *   await a.changes(since)                        → { changes, cursor, more }. 'gone' (410) — טוענים הכול מחדש ב-list
+ *   await a.history(col, key) · a.restore(col, key, rev, { ifRev }) · a.usage() → { used, quota } · a.clear() (אחרי אישור)
+ *
  * שגיאות: DriveError עם code — not-connected, layer-off (עם layer: 'files' | 'libs' | 'ai' — השכבה כבויה), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
  * not-allowed, quota, too-big, provider, aborted. האסימון (15 דקות) מתחדש לבד, ונשמר בזיכרון בלבד.
  */
@@ -285,6 +295,28 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
+    /** נתוני משתמש (🗂️). כל קריאה — POST עם JSON, דרך האסימון. */
+    function appdataSpace(space) {
+        const call = (action, body = {}) => cloud(action, { body: space === 'user' ? body : { ...body, space } });
+        return {
+            async get(collection, key) {
+                try { return await call('appdata_get', { collection, key }); }
+                catch (e) { if (e.code === 'not_found') return null; throw e; }
+            },
+            put: (collection, key, value, { ifRev } = {}) => call('appdata_put', { collection, key, value, ...(ifRev != null ? { if_rev: ifRev } : {}) }),
+            delete: (collection, key, { ifRev } = {}) => call('appdata_delete', { collection, key, ...(ifRev != null ? { if_rev: ifRev } : {}) }),
+            list: (opts = {}) => call('appdata_list', opts),
+            getMany: (collection, keys) => call('appdata_get_many', { collection, keys }),
+            changes: (since = 0, { limit } = {}) => call('appdata_changes', { since, ...(limit ? { limit } : {}) }),
+            history: (collection, key) => call('appdata_history', { collection, key }),
+            restore: (collection, key, rev, { ifRev } = {}) => call('appdata_restore', { collection, key, rev, ...(ifRev != null ? { if_rev: ifRev } : {}) }),
+            usage: () => call('appdata_usage'),
+            clear: () => call('appdata_clear', { confirm: 'clear' }),
+            space: s => appdataSpace(s),
+        };
+    }
+    const appdata = appdataSpace('user');
+
     const NAMES = { suite: 'ענן MBE', dropbox: 'Dropbox' };
 
     const NONE = { connected: false, tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
@@ -342,5 +374,6 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         suite,
         fonts,
         ai,
+        appdata,
     };
 }

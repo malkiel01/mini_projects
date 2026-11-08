@@ -31,11 +31,12 @@ function drives_tree(string $dir): array {
     return $out;
 }
 
-const DRIVES_LAYERS = ['files', 'libs', 'ai'];   // appdata — שלב 4; files.readonly / files.app — שלב 3
+const DRIVES_LAYERS = ['files', 'libs', 'appdata', 'ai'];   // files.readonly / files.app — שלב 3
+const DRIVES_DEFAULT = ['files', 'libs', 'ai'];             // בלי layers — כמו לפני שלב 4
 
 foreach ($apps as $app => $map) {
     if (!is_dir("$root/$app")) { fwrite(STDERR, "✗ $app: אין תיקייה כזו\n"); $bad++; continue; }
-    $layers = $map['layers'] ?? DRIVES_LAYERS;
+    $layers = $map['layers'] ?? DRIVES_DEFAULT;
     $fscope = $map['files_scope'] ?? 'files';
     if (!is_array($layers) || !$layers || array_diff($layers, DRIVES_LAYERS) || $fscope !== 'files') {
         fwrite(STDERR, "✗ $app: layers חייב להיות מתוך " . implode(', ', DRIVES_LAYERS) . ", ו-files_scope רק files (השאר — שלב 3)\n"); $bad++; continue;

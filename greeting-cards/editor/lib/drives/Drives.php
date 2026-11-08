@@ -52,7 +52,9 @@ final class Drives {
     public const CLOUD = 'https://mbe-plus.com/mini_projects/mbe-cloud/';
     private const STATE_TTL = 600;
     /** שכבה → ההיקפים שלה (spec-0-vision.md 7.3). כמו LAYERS בענן. */
-    private const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'ai' => ['ai']];
+    private const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'appdata' => ['appdata'], 'ai' => ['ai']];
+    /** בלי layers ב-apps.json — כמו לפני שלב 4 (🗂️ appdata רק למי שהצהיר). */
+    private const DEFAULT_LAYERS = ['files', 'libs', 'ai'];
 
     private array $cfg;
     private ?\PDO $pdo = null;
@@ -69,7 +71,7 @@ final class Drives {
         $this->cfg = $cfg + ['cloud' => self::CLOUD, 'http' => null, 'sub' => null, 'layers' => null];
         if (!is_array($this->cfg['layers'])) {
             $j = json_decode((string) @file_get_contents(__DIR__ . '/layers.json'), true);
-            $this->cfg['layers'] = is_array($j['layers'] ?? null) ? $j['layers'] : array_keys(self::LAYERS);
+            $this->cfg['layers'] = is_array($j['layers'] ?? null) ? $j['layers'] : self::DEFAULT_LAYERS;
         }
         $this->cfg['layers'] = array_values(array_intersect(array_keys(self::LAYERS), $this->cfg['layers']));
         $this->cfg['cloud'] = rtrim($this->cfg['cloud'], '/') . '/';

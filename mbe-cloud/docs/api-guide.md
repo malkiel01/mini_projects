@@ -71,7 +71,7 @@
    הנתיבים הם יחסיים לתיקייה של האפליקציה. כל אחד מהם הוא תיקייה שכולה של המודול.
    **`layers`** — השכבות שהאפליקציה תומכת בהן (סעיף 4). **`files_scope`** — ההיקף של שכבת הקבצים.
    - **מה נתמך כרגע:**
-     - `layers`: `files`, `libs`, `ai`. `appdata` 🗓️ שלב 4.
+     - `layers`: `files`, `libs`, `appdata`, `ai`. **`appdata` (🗂️) רק למי שמצהיר עליו.** הוא לא בברירת המחדל.
      - `files_scope`: רק `files`. `files.readonly` ו-`files.app` 🗓️ שלב 3.
    - **ברירת המחדל** (בלי `layers`): `["files","libs","ai"]`, ו-`files_scope` הוא `files`.
    - **איך זה מגיע לאפליקציה:** ה-sync כותב את השכבות ל-`<php>/layers.json`, והמודול קורא אותו משם, בלי תלות בקובץ מחוץ לתיקייה שלכם.
@@ -200,7 +200,7 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 | **גופנים** ✅ `drives.fonts` | `list({builtin?})`, `load(item)` → `{face, bytes}`, `add(file, {family, weight, style})`, `license(item)` | `libs` |
 | **בינה מלאכותית** ✅ `drives.ai` | `capabilities()`, `run(task, input, {signal})`. המשימות: `remove-background`, `segment`, `generate-image`, `inpaint`, `complete` | `ai` |
 | **Dropbox** ✅ `drives.dropbox` | אותן פעולות כמו `suite`. הדפדפן מדבר עם Dropbox ישירות | — (חיבור נפרד: `link('dropbox')`) |
-| **נתוני אפליקציה** 🗓️ `drives.appdata` | `get`, `put` (`ifRev`), `delete`, `list`, `changes(since)`, במרחבים `user` ו-`app` | `appdata` |
+| **נתוני משתמש** ✅ `drives.appdata` | `get` (`null` כשאין), `put(col, key, value, {ifRev})`, `delete`, `list`, `getMany`, `changes(since)`, `history`, `restore`, `usage`, `clear`. מרחב האפליקציה: `drives.appdata.space('app')` — מהדפדפן **קריאה בלבד**. התנגשות ← `DriveError('conflict')` עם `rev` ו-`value`. `gone` ← טוענים הכול מחדש ב-`list`. `spec-4-appdata.md` | `appdata` |
 | **העדפות משותפות** 🗓️ `drives.prefs` | שפה, ערכת תצוגה, יחידות, שם תצוגה | `prefs` |
 
 **`ifRev`** פירושו "שמור רק אם הקובץ לא השתנה מאז שקראתי". אם הוא השתנה, חוזרת השגיאה `conflict` עם ה-`rev` הנוכחי,
@@ -222,6 +222,8 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 | `connect_exchange` | שרת, חתום | `{code, sub}` → `{connection, account: {name}, scope, cloud_id}`. `sub` שלא תואם את מה שנחתם במסך, או את החשבון שאישר, מחזיר `403 account_mismatch`, והקוד נשרף |
 | `access_token` | שרת, חתום | `{connection, sub}` → `{token, expires_in: 900, scope}`. `scope` הוא ההיקף הנוכחי של החיבור, וממנו המתגים באפליקציה מתעדכנים אחרי כיבוי בדף הענן. נבדק בכל פעם (`403 account_mismatch`). **חיבור מלפני הכלל, בלי `sub`:** אם הוא תואם — נרשם על החיבור. אם הוא שונה — אין אסימון, החיבור מסומן ומופיע בניהול (⚙️ ← לקוחות, "⚠️ לא אותו חשבון"), ולא מנותק אוטומטית |
 | `connection_scope` | שרת, חתום | `{connection, sub, scope: [...]}` → `{scope}`. **כיבוי שכבות.** קובע את הרשימה המלאה ורק מצמצם. היקף שלא אושר מחזיר `403 forbidden`, והרחבה עוברת רק דרך `connect.php`. `sub` נבדק כמו ב-`access_token`. רשימה ריקה משאירה חיבור בלי שכבות. המודול מנתק במקום זה כשהמתג האחרון נכבה |
+| `appdata_get`, `appdata_put`, `appdata_delete`, `appdata_list`, `appdata_get_many`, `appdata_changes`, `appdata_history`, `appdata_restore`, `appdata_usage`, `appdata_clear` | דפדפן (אסימון) או שרת (חתום) | **נתוני משתמש** (🗂️, ההיקף `appdata`). הגופים והתשובות: `spec-4-appdata.md` סעיף 7. בכל גוף אפשר `space`: `user` (ברירת המחדל) או `app`. ה-`client` נלקח תמיד מהחתימה או מהאסימון, ולעולם לא מהגוף. **מרחב `app`:** כותב רק השרת, בקריאה חתומה **בלי** `X-Cloud-Connection`; הדפדפן קורא בלבד. **מגבלות:** 256KB למסמך (`413 too_large`), ו-20MB לזוג אפליקציה ומשתמש או 50MB למרחב `app` (`413 quota_exceeded` עם `scope`). `if_rev` שגוי ← `409 conflict` עם `rev` ו-`value`. `changes` מ-`since` ישן ← `410 gone` |
+| `appdata_apps`, `appdata_wipe` | דף הענן ("🔗 חיבורים" ← 🧩), בעל החשבון | הנפח של כל אפליקציה, בלי תוכן. `appdata_wipe {client}` = "🗑️ מחק נתונים" |
 | `disconnect` | שרת, חתום | `{connection}` → `{ok}` |
 | `connections`, `connection_layers`, `connection_revoke` | דף הענן ("🔗 חיבורים"), בעל החשבון | הרשימה עם `declared` (השכבות שהאפליקציה הצהירה) ו-`scope`. `connection_layers {id, scope}` מצמצם כמו `connection_scope`, ורשימה ריקה מנתקת. `connection_revoke {id}` מנתק |
 | `quota`, `list`, `stat`, `read`, `mkdir`, `write`, `upload_start`, `upload_chunk`, `upload_finish`, `rename`, `move`, `trash`, `restore`, `trash_list`, `purge`, `trash_empty` | דפדפן (אסימון) או שרת (חתום) | הקבצים. הגופים בטבלה של `spec-1-skeleton.md` סעיף 6 |
@@ -253,7 +255,7 @@ msg = "<action>\n<time>\n<nonce>\n<sha256(hex) של הגוף>"
 | 📁 קבצים | `files.readonly` | כל הכונן, קריאה בלבד | 🗓️ שלב 3 |
 | 📁 קבצים | `files.app` | רק מה שהאפליקציה יצרה, או מה שהמשתמש בחר בבורר של הענן | 🗓️ שלב 3 |
 | 📚 נתוני מערכת | `libs` | ספריות המשתמש: גופנים, ובהמשך צבעים, סגנונות ונכסים | ✅ |
-| 🗂️ נתוני משתמש | `appdata` | נתוני האפליקציה עצמה | 🗓️ שלב 4 |
+| 🗂️ נתוני משתמש | `appdata` | נתוני האפליקציה עצמה: מסמכי JSON לפי אוסף ומפתח, במרחבים `user` ו-`app` (`spec-4-appdata.md`) | ✅ שלב 4 |
 | 🗂️ נתוני משתמש | `prefs` | העדפות משותפות | 🗓️ שלב 6 |
 | 🤖 בינה מלאכותית ⏳ | `ai` | הבינה המלאכותית, במכסה של המשתמש | ✅ |
 | — | `shared.read` | **רק למפתח קריאה (סעיף 7).** לא ניתן לבקש אותו בחיבור, ואין לו מתג | ✅ שלב 2 (#1292) |
@@ -313,8 +315,9 @@ curl -sS -H "Authorization: Bearer $MBE_PAT" -H 'Range: bytes=0-1048575' -o part
 | 404 | `not_found` | הפריט לא קיים, **או** שאין גישה אליו. השגיאה זהה בכוונה | — |
 | 409 | `conflict` | `if_rev` לא תואם. מוחזר גם ה-`rev` הנוכחי | להציע "שמור כעותק" |
 | 409 | `name_taken` | שם תפוס, ונשלח `on_conflict: "fail"` | — |
+| 410 | `gone` | `appdata_changes` מ-`since` ישן (אחרי `clear`, או אחרי 30 יום) | טוענים הכול מחדש ב-`appdata_list`, וממשיכים מה-`cursor` של `changes` |
 | 413 | `too_large`, `too-big` | קובץ מעל התקרה, או קלט ל-AI גדול מדי | — |
-| 413 | `quota_exceeded` | המכסה בכונן נגמרה. מוחזרים גם `quota` ו-`used` | הודעה למשתמש |
+| 413 | `quota_exceeded` | המכסה בכונן נגמרה, או התקרה של נתוני המשתמש (`scope: "user"` / `"app"`). מוחזרים גם `quota` ו-`used` | הודעה למשתמש |
 | 429 | `quota` | המכסה החודשית של AI נגמרה | הודעה למשתמש |
 | 429 | `rate_limited` | מפתח קריאה: יותר מדי כישלונות | לחכות `Retry-After` שניות |
 | 502 / 503 | `provider`, `no-provider` | ספק ה-AI נכשל, או שלא הוגדר ספק | "לא זמין — דרך הצ'אט (סקיל)" |

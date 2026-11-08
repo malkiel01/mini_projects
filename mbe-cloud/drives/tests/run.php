@@ -354,6 +354,13 @@ try {
         && $q2($one->connectUrl('u1', (fn() => $this->scopeOf([]))->call($one)))['scope'] === 'files'
         && code(fn() => $one->handle('drives_connect', ['layers' => ['libs']])) === 'bad_request');
 
+    check('🗂️ appdata — לא בברירת המחדל (רק למי שהצהיר)', !array_key_exists('appdata', $app->status('u1')['suite']['layers']));
+    $ad = new Drives(['client' => 'vector-studio', 'name' => 'וקטורי', 'dataDir' => "$tmp/app",
+        'endpoint' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php', 'back' => 'https://mbe-plus.com/mini_projects/vector-studio/',
+        'user' => fn() => 'u1', 'http' => $cloud, 'layers' => ['files', 'appdata']]);
+    check('🗂️ appdata — אפליקציה שהצהירה: מתג, ובקשה ל-files,appdata', array_keys($ad->status('u1')['suite']['layers']) === ['files', 'appdata']
+        && (fn() => $this->scopeOf([]))->call($ad) === 'files,appdata' && (fn() => $this->scopeOf(['layers' => ['appdata']]))->call($ad) === 'appdata');
+
     // ─── Dropbox ───
     check('בלי App key בענן — Dropbox לא מופיע', !isset($app->status('u1')['dropbox']) && code(fn() => $app->linkUrl('u1', 'dropbox')) === 'no-provider');
     setSetting('dropbox_app_key', 'dbxappkey123');
