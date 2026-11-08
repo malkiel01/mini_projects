@@ -8,7 +8,7 @@
  * להציג אותה. כאן, לכל אפליקציה ברשימה שעוד קיימת בשרת:
  *   1. הגישה עוברת: מי שרשאי לפתוח אותה ואינו רשאי לפתוח את merged_into — מקבל הרשאה ישירה ל-merged_into
  *      (גם אם היא נחסמה לו במפורש — הוכרע בכל מקרה לגופו לפני שנכנס לרשימה).
- *   2. ההרשאות, ההגדרות ורישומי ההתקנה שלה נמחקים.
+ *   2. ההרשאות, ההגדרות, רישומי ההתקנה, השורה בחנות והבקשות אליה נמחקים.
  *   3. התיקייה שלה ותיקיית החנות שלה (platform/downloads/<id>) נמחקות.
  * חוזר על עצמו בלי נזק: אפליקציה שכבר נמחקה — רק ניקוי שאריות במסד.
  */
@@ -59,7 +59,9 @@ foreach ($list as $r) {
     foreach (["DELETE FROM grants WHERE kind = 'app' AND target = ?", 'DELETE FROM app_overrides WHERE app_id = ?',
               'DELETE FROM app_detached WHERE app_id = ?', 'DELETE FROM install_hidden WHERE app_id = ?',
               'DELETE FROM app_login WHERE app_id = ?', 'DELETE FROM device_apps WHERE app_id = ?',
-              'DELETE FROM placements WHERE app_id = ?', 'DELETE FROM app_placed WHERE app_id = ?'] as $sql) {
+              'DELETE FROM placements WHERE app_id = ?', 'DELETE FROM app_placed WHERE app_id = ?',
+              // החנות: בלי זה יישארו אצל המנהל בקשות לאפליקציה שאינה קיימת (PF-001)
+              'DELETE FROM app_catalog WHERE app_id = ?', 'DELETE FROM app_requests WHERE app_id = ?'] as $sql) {
         try { db()->prepare($sql)->execute([$id]); } catch (PDOException) { /* הטבלה עוד לא קיימת */ }
     }
     if (is_dir($dir)) { rm_tree($dir); echo "$id: התיקייה נמחקה\n"; }

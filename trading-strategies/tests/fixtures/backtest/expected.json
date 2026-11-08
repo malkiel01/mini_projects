@@ -1,0 +1,11 @@
+{
+  "_": "sample-ma-cross על candles-h1.json (5,000 נרות שעה, סינתטיים ודטרמיניסטיים), ברירות מחדל. N ו-wins אומתו מול מימוש ייחוס נפרד (tests/backtest.php); Wilson 34/68 → 38% חושב גם ביד.",
+  "signals": 91,
+  "n": 68,
+  "wins": 34,
+  "skipped": 23,
+  "certainty": 38,
+  "expectancy_r": 0.4691329536172617,
+  "n_costs": 69,
+  "expectancy_r_costs": 0.30650499712629503
+}

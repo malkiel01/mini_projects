@@ -47,10 +47,36 @@ function ts_http_get(string $url, array $headers = [], int $timeout = 15): array
     return [$status, (string)$body];
 }
 
-function ts_http_fixture(string $dir, string $url, array $headers): array
+/**
+ * POST — לשירותי הפוש (פרק 8.3). בלי מעקב אחרי הפניה, תמיד: הכותרת Authorization (VAPID) לא עוברת הלאה.
+ * מחזיר [status, body]. זורק TsHttpError על כשל רשת.
+ */
+function ts_http_post(string $url, array $headers, string $body = '', int $timeout = 10): array
+{
+    if (defined('TS_DEV') && ($dir = getenv('TS_HTTP_FIXTURES'))) return ts_http_fixture($dir, $url, $headers, 'POST');
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $body,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_HTTPHEADER => array_merge(['User-Agent: trading-strategies/1.0'], $headers),
+    ]);
+    $res = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($res === false) throw new TsHttpError('שירות הפוש לא ענה');
+    return [$status, (string)$res];
+}
+
+function ts_http_fixture(string $dir, string $url, array $headers, string $method = 'GET'): array
 {
     if ($log = getenv('TS_HTTP_LOG')) {
-        file_put_contents($log, json_encode(['url' => $url, 'headers' => $headers]) . "\n", FILE_APPEND | LOCK_EX);
+        file_put_contents($log, json_encode(['url' => $url, 'headers' => $headers, 'method' => $method]) . "\n", FILE_APPEND | LOCK_EX);
     }
     $index = json_decode((string)@file_get_contents($dir . '/index.json'), true) ?: [];
     foreach ($index as $rule) {

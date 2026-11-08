@@ -1,0 +1,13 @@
+{
+  "name": "אסטרטגיות למסחר",
+  "short_name": "אסטרטגיות",
+  "description": "גרפים, ניתוח לפי שיטות עם ודאות, התראות ויומן עסקאות — לתכנון וניתוח בלבד, בלי ברוקר.",
+  "lang": "he",
+  "dir": "rtl",
+  "start_url": "./#/market",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#2d4a8a",
+  "icons": [{ "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

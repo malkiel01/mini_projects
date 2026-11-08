@@ -22,7 +22,7 @@ try {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 } });
   await ctx.addCookies([{ name: 'dev_as', value: 'alice', url: BASE }]);
   const p = await ctx.newPage();
-  for (const [name, hash, ready] of [['market', '#/market', 'main form'], ['chart', '#/chart/' + encodeURIComponent('binance:BTCUSDT'), '.chart-box canvas']]) {
+  for (const [name, hash, ready] of [['market', '#/market', 'main form'], ['chart', '#/chart/' + encodeURIComponent('binance:BTCUSDT'), '.chart-box canvas'], ['analysis', '#/analysis', 'main .disclaimer'], ['profile', '#/profile', 'main form'], ['alerts', '#/alerts', 'main .disclaimer']]) {
     await p.goto(BASE + hash);
     await p.waitForSelector(ready);
     await p.waitForTimeout(1500);                       // הטעינה עצמה נגמרת

@@ -504,19 +504,27 @@ function svgIcon(ic, app) {
     }, { once: true });
 }
 
-// אפליקציה עם כניסה אחת — קישור. עם כמה כניסות, או עם התקנה/הורדה — גיליון בחירה.
-// בחנות ועוד לא אצלו (owned=false): אפורה עם חץ הורדה. לחיצה — נוספת לאפליקציות שלו (get_app).
+// בחנות ועוד לא אצלו (owned=false): אפורה. לפי מצב החנות (store_mode, PF-001):
+//   instant — חץ הורדה; לחיצה מוסיפה לו אותה מיד (get_app).
+//   request — 📨; לחיצה שולחת בקשה למנהל. אחר כך "⏳ ממתין" (גיליון עם ביטול) או "✕ נדחתה" (גיליון עם בקשה חוזרת).
 function storeRow(app) {
-    const b = el('button', { type: 'button', className: 'app', ariaLabel: `הורדת ${app.name}` }, [
+    const req = app.store_mode === 'request' ? app.request : null;
+    const mark = req?.status === 'pending' ? el('span', { className: 'chip warn', textContent: '⏳ ממתין' })
+        : req?.status === 'rejected' ? el('span', { className: 'chip bad', textContent: '✕ נדחתה' })
+        : el('span', { className: 'get-ic', textContent: app.store_mode === 'request' ? '📨' : '⬇', ariaHidden: 'true' });
+    const label = req ? `${app.name} — ${req.status === 'pending' ? 'הבקשה ממתינה' : 'הבקשה נדחתה'}`
+        : app.store_mode === 'request' ? `בקשה לקבלת ${app.name}` : `הורדת ${app.name}`;
+    const b = el('button', { type: 'button', className: 'app', ariaLabel: label, ...(req ? { ariaHasPopup: 'dialog' } : {}) }, [
         appIcon(app),
         el('span', { className: 'app-tx' }, [el('b', { textContent: app.name }), el('small', { textContent: app.description })]),
-        el('span', { className: 'get-ic', textContent: '⬇', ariaHidden: 'true' }),
+        mark,
     ]);
     b.addEventListener('click', async () => {
+        if (req) return requestSheet(app, req);
         b.disabled = true;
         try {
-            await api('get_app', { app: app.id });
-            toast(`✓ ${app.name} נוספה לאפליקציות שלך`);
+            const r = await api('get_app', { app: app.id });
+            toast(r.requested ? '📨 נשלחה בקשה למנהל' : `✓ ${app.name} נוספה לאפליקציות שלך`);
             await showApps();
         } catch (err) { toast('⚠️ ' + err.message); b.disabled = false; }
     });
@@ -526,12 +534,65 @@ function storeRow(app) {
     return li;
 }
 
+const heDate = (iso) => new Date(iso).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
+// גיליון קטן לבקשה: ממתינה — מתי נשלחה, וביטול; נדחתה — בקשה חוזרת, פעילה רק אחרי ההמתנה (7 ימים).
+function requestSheet(app, req) {
+    const close = el('button', { type: 'button', className: 'icon-btn', textContent: '✕', ariaLabel: 'סגירה' });
+    const pending = req.status === 'pending';
+    const wait = !pending && req.retry_at && new Date(req.retry_at) > new Date();
+    const act = el('button', { type: 'button', className: `btn ${pending ? 'danger' : 'primary'}`, disabled: wait,
+        textContent: pending ? 'ביטול הבקשה' : wait ? `אפשר לבקש שוב מ-${heDate(req.retry_at)}` : '📨 בקשה חוזרת' });
+    const dlg = el('dialog', {}, [el('div', { className: 'sheet' }, [
+        el('div', { className: 'sheet-head' }, [appIcon(app), el('div', { className: 'tx' }, [
+            el('h2', { textContent: app.name }), el('small', { textContent: pending ? '⏳ הבקשה ממתינה' : '✕ הבקשה נדחתה' }),
+        ]), close]),
+        el('div', { className: 'sheet-body' }, [
+            el('p', { textContent: pending ? `הבקשה נשלחה ב-${heDate(req.at)}. נעדכן כאן כשהמנהל יחליט.` : 'המנהל לא אישר את הבקשה.' }),
+            act,
+        ]),
+    ])]);
+    act.addEventListener('click', async () => {
+        act.disabled = true;
+        try {
+            if (pending) { await api('cancel_request', { app: app.id }); toast('הבקשה בוטלה'); }
+            else { await api('get_app', { app: app.id }); toast('📨 נשלחה בקשה למנהל'); }
+            dlg.close();
+            await showApps();
+        } catch (err) { toast('⚠️ ' + err.message); act.disabled = false; }
+    });
+    close.addEventListener('click', () => dlg.close());
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+    dlg.addEventListener('close', () => dlg.remove());
+    document.body.append(dlg);
+    dlg.showModal();
+}
+
+// "חדש" — אפליקציה שהמנהל אישר לו, עד הפתיחה הראשונה (במכשיר הזה).
+const NEW_KEY = 'platform:new-apps';
+function newApps() { try { return new Set(JSON.parse(localStorage.getItem(NEW_KEY) || '[]')); } catch { return new Set(); } }
+function setNewApps(set) { try { localStorage.setItem(NEW_KEY, JSON.stringify([...set])); } catch { /* */ } }
+
+// החלטות על בקשות שעוד לא ראה (4.3) — טוסט אחד, ואז מסומנות כנראו.
+function announceDecisions(decisions) {
+    if (!decisions.length) return;
+    const ok = decisions.filter(d => d.status === 'approved');
+    const no = decisions.filter(d => d.status === 'rejected');
+    const parts = [];
+    if (ok.length) parts.push(ok.length === 1 ? `✓ המנהל אישר לך את ${ok[0].name}` : `✓ אושרו לך ${ok.length} אפליקציות`);
+    if (no.length) parts.push(no.length === 1 ? `המנהל לא אישר את ${no[0].name}` : `${no.length} בקשות לא אושרו`);
+    toast(parts.join(' · '));
+    if (ok.length) { const set = newApps(); ok.forEach(d => set.add(d.app)); setNewApps(set); }
+    api('requests_seen', { ids: decisions.map(d => d.id) }).catch(() => { /* יוצג שוב בפעם הבאה */ });
+}
+
 function appRow(app) {
     if (app.owned === false) return storeRow(app);
     const body = [
         appIcon(app),
         el('span', { className: 'app-tx' }, [
             el('b', {}, [app.name, ...(app.external ? [el('span', { className: 'ext', textContent: '↗', title: 'אתר חיצוני' })] : []),
+                ...(newApps().has(app.id) ? [el('span', { className: 'chip brand new-chip', textContent: 'חדש' })] : []),
                 el('span', { className: 'chip ok inst-chip', textContent: '✓ מותקנת', hidden: true })]),
             el('small', { textContent: app.description }),
         ]),
@@ -550,6 +611,11 @@ function appRow(app) {
     li.dataset.search = `${app.name} ${app.description}`.toLowerCase();
     li.dataset.app = app.id;
     if (extras.length) li.dataset.can = '1';
+    // הפתיחה הראשונה מורידה את "חדש"
+    node.addEventListener('click', () => {
+        const set = newApps();
+        if (set.delete(app.id)) { setNewApps(set); li.querySelector('.new-chip')?.remove(); }
+    });
     paintInstalled(li, app.id);
     return li;
 }
@@ -1238,7 +1304,8 @@ async function clearFamilyCache() {
 }
 
 async function showApps() {
-    const [{ categories, groups = [], apps, recommended = [], devboards = [] }] = await Promise.all([api('apps'), loadInstalls()]);
+    const [{ categories, groups = [], apps, recommended = [], devboards = [], decisions = [] }] = await Promise.all([api('apps'), loadInstalls()]);
+    announceDecisions(decisions);
     // אפליקציה יכולה להופיע בכמה מקומות (placements): בכל קטגוריה — בראשי או בתוך קבוצה
     const at = (a, cat, grp) => (a.placements || []).find(p => p.category === cat && (p.group ?? null) === grp);
     currentApps = apps;
@@ -1388,6 +1455,12 @@ async function start() {
             } catch { pendingContact = null; }
             history.replaceState(null, '', location.pathname + location.search + '#admin');
         }
+        // התראה על בקשה לאפליקציה (lib/requests.php) — ממשק הניהול, על הצ'יפ "📨 בקשות"
+        let openRequests = false;
+        if (location.hash === '#admin-requests') {
+            openRequests = true;
+            history.replaceState(null, '', location.pathname + location.search + '#admin');
+        }
         const invite = location.hash.match(/^#invite=([a-f0-9]{48})$/);
         if (invite) return showInvite(invite[1]);
         const join = location.hash.match(/^#join=([a-f0-9]{48})$/);
@@ -1412,6 +1485,7 @@ async function start() {
         if (inAdmin() && me.user.role === 'admin') {
             await window.PlatformAdmin.show(view);
             if (pendingContact) { window.PlatformAdmin.invite(pendingContact); pendingContact = null; }
+            if (openRequests) window.PlatformAdmin.requests();
             return;
         }
         await showApps();

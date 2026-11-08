@@ -80,30 +80,47 @@ function ts_access(int $uid, string $provider): ?array
     return null;
 }
 
-/** סופר פנייה לספק, ועוצר לפני התקרה היומית של הספק (או של המשתמש בספק מהמנהל) */
-function ts_usage_take(int $uid, string $provider, array $acc): void
+/** כמה פניות נשארו היום לספק (ולמשתמש, בספק מהמנהל) — לתקציב של הבדיקה לאחור (6.2 ה) */
+function ts_usage_left(int $uid, string $provider, array $acc): int
+{
+    $day = gmdate('Y-m-d');
+    $get = ts_db()->prepare('SELECT calls FROM provider_usage WHERE key = ? AND user_id = ? AND day = ?');
+    $get->execute([$acc['usage'], 0, $day]);
+    $left = ts_provider_limits($provider)['per_day'] - (int)$get->fetchColumn();
+    if ($acc['user_limit'] !== null) {
+        $get->execute([$acc['usage'], $uid, $day]);
+        $left = min($left, $acc['user_limit'] - (int)$get->fetchColumn());
+    }
+    return max(0, $left);
+}
+
+/**
+ * סופר פנייה לספק ($n פניות — משיכה ארוכה שהמתאם מחלק לכמה), ועוצר לפני התקרה היומית של הספק (או של המשתמש
+ * בספק מהמנהל)
+ */
+function ts_usage_take(int $uid, string $provider, array $acc, int $n = 1): void
 {
     $db = ts_db();
     $day = gmdate('Y-m-d');
     $get = $db->prepare('SELECT calls FROM provider_usage WHERE key = ? AND user_id = ? AND day = ?');
     $get->execute([$acc['usage'], 0, $day]);
-    if ((int)$get->fetchColumn() >= ts_provider_limits($provider)['per_day']) {
+    if ((int)$get->fetchColumn() + $n > ts_provider_limits($provider)['per_day']) {
         throw new TsProviderError(ts_provider($provider)->meta()['name'] . ': הגענו לתקרה היומית של הספק. נסו שוב מחר.');
     }
     if ($acc['user_limit'] !== null) {
         $get->execute([$acc['usage'], $uid, $day]);
-        if ((int)$get->fetchColumn() >= $acc['user_limit']) throw new TsProviderError('הגעתם לתקרה היומית שהמנהל קבע לספק הזה.');
+        if ((int)$get->fetchColumn() + $n > $acc['user_limit']) throw new TsProviderError('הגעתם לתקרה היומית שהמנהל קבע לספק הזה.');
     }
-    $add = $db->prepare('INSERT INTO provider_usage (key, user_id, day, calls) VALUES (?, ?, ?, 1)
-                         ON CONFLICT(key, user_id, day) DO UPDATE SET calls = calls + 1');
-    $add->execute([$acc['usage'], 0, $day]);
-    if ($acc['user_limit'] !== null) $add->execute([$acc['usage'], $uid, $day]);
+    $add = $db->prepare('INSERT INTO provider_usage (key, user_id, day, calls) VALUES (?, ?, ?, ?)
+                         ON CONFLICT(key, user_id, day) DO UPDATE SET calls = calls + excluded.calls');
+    $add->execute([$acc['usage'], 0, $day, $n]);
+    if ($acc['user_limit'] !== null) $add->execute([$acc['usage'], $uid, $day, $n]);
 }
 
 /** מריץ פנייה לספק; כל שגיאה יוצאת נקייה מהמפתח */
-function ts_provider_call(int $uid, string $provider, array $acc, callable $fn): mixed
+function ts_provider_call(int $uid, string $provider, array $acc, callable $fn, int $n = 1): mixed
 {
-    ts_usage_take($uid, $provider, $acc);
+    ts_usage_take($uid, $provider, $acc, $n);
     try {
         return $fn(ts_provider($provider), $acc['secret']);
     } catch (TsProviderError $e) {
@@ -409,7 +426,6 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $by = [];
     foreach ($out as $r) $by[$r['t']] = $r;
     ksort($by);
-    ts_cache_cleanup_daily($now);
     return [
         'asset' => "$provider:$symbol", 'provider' => $provider, 'symbol' => $symbol, 'tf' => $tf,
         'candles' => array_values($by), 'capped' => $capped, 'provider_calls' => $calls,
@@ -455,7 +471,7 @@ function ts_cache_cleanup(?int $now = null): int
     return $n;
 }
 
-/** פעם ביום, בבקשה הראשונה אחרי שעבר יום — עד שה-cron של פרק 8 ייבנה */
+/** פעם ביום — מה-cron של פרק 8 (bin/alerts-cron.php), בריצה הראשונה אחרי שעבר יום */
 function ts_cache_cleanup_daily(int $now): void
 {
     if ((int)ts_setting('cache_cleanup_at', '0') > $now - 86400) return;

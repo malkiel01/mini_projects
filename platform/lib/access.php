@@ -25,6 +25,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/registry.php';
+require_once __DIR__ . '/requests.php';
 
 function access_migrate(): void
 {
@@ -122,6 +123,24 @@ function access_migrate(): void
             if ($t === 'groups') db()->exec("UPDATE groups SET icon_app = id WHERE icon_app IS NULL");
         }
     }
+    // בחנות: מצב לכל אפליקציה (PF-001) — instant: לחיצה מוסיפה מיד (כמו קודם, ולכן ברירת המחדל); request: בקשה
+    $cols = array_column(db()->query('PRAGMA table_info(app_catalog)')->fetchAll(), 'name');
+    if (!in_array('mode', $cols, true)) db()->exec("ALTER TABLE app_catalog ADD COLUMN mode TEXT NOT NULL DEFAULT 'instant'");
+    // בקשות לאפליקציות בחנות (lib/requests.php). via_block — נדחתה בחסימה מפורשת: אחרי הסרת החסימה אין המתנה.
+    db()->exec(<<<SQL
+        CREATE TABLE IF NOT EXISTS app_requests (
+            id         INTEGER PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            app_id     TEXT NOT NULL,
+            status     TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','cancelled')),
+            created_at TEXT NOT NULL,
+            decided_at TEXT,
+            decided_by INTEGER,
+            via_block  INTEGER NOT NULL DEFAULT 0,
+            seen_at    TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS app_requests_one_pending ON app_requests (user_id, app_id) WHERE status = 'pending';
+        SQL);
     groups_seed();
 
     $seeded = db()->query('SELECT id FROM seeded_categories')->fetchAll(PDO::FETCH_COLUMN);
@@ -191,7 +210,7 @@ function apps_effective(): array
     foreach (db()->query('SELECT * FROM app_overrides') as $o) $overrides[$o['app_id']] = $o;
     $known = array_column(categories_list(), 'id');
     $installHidden = array_flip(db()->query('SELECT app_id FROM install_hidden')->fetchAll(PDO::FETCH_COLUMN));
-    $catalog = array_flip(db()->query('SELECT app_id FROM app_catalog')->fetchAll(PDO::FETCH_COLUMN));
+    $catalog = db()->query('SELECT app_id, mode FROM app_catalog')->fetchAll(PDO::FETCH_KEY_PAIR);
     $detached = array_flip(db()->query('SELECT app_id FROM app_detached')->fetchAll(PDO::FETCH_COLUMN));
     $login = [];
     foreach (db()->query('SELECT * FROM app_login') as $l) $login[$l['app_id']] = $l;
@@ -227,6 +246,8 @@ function apps_effective(): array
         $app['hidden'] = (bool)($o['hidden'] ?? false);
         $app['install_ok'] = !isset($installHidden[$app['id']]);
         $app['catalog'] = isset($catalog[$app['id']]);
+        // instant | request — או null, לא בחנות. restricted עם שורה ישנה: הערך נשמר, אבל in_catalog מחזיר false.
+        $app['store_mode'] = isset($catalog[$app['id']]) ? ($catalog[$app['id']] === 'request' ? 'request' : 'instant') : null;
         // מחוברת = השער פעיל: נכנסים רק עם חשבון בפלטפורמה והרשאה לאפליקציה.
         // מנותקת = עומדת לבד — אפליקציה חיצונית, בלי שער ב-app.json, או שהמנהל ניתק.
         $app['detached'] = isset($detached[$app['id']]);
@@ -278,13 +299,20 @@ function visible_for(array $user): array
     } elseif ($user['status'] !== 'active') {
         $apps = [];
     } else {
+        // בקשות ממתינות שכבר הוכרעו בפועל (נפתחה לו, נחסם, יצאה מהחנות) — נסגרות לפני שמציגים לו (7.3)
+        requests_settle([(int)$user['id']]);
         $grants = grants_of((int)$user['id']);
+        $latest = requests_latest((int)$user['id']);
         $owned = array_values(array_filter($apps, fn($a) => can_see($a, $grants)));
         $ids = array_column($owned, 'id');
         // בחנות: מה שעוד אין לו — מוצג אפור (owned=false). חסימה מפורשת של המנהל גוברת.
         $more = array_values(array_filter($apps, fn($a) => in_catalog($a) && !in_array($a['id'], $ids, true)
             && ($grants['apps'][$a['id']] ?? null) !== false));
-        foreach ($more as &$m) $m['owned'] = false;
+        foreach ($more as &$m) {
+            $m['owned'] = false;
+            // במצב בקשה: מה שהמשתמש רואה בשורה — אפשר לבקש / ממתין / נדחתה (4.1)
+            $m['request'] = $m['store_mode'] === 'request' ? request_view($latest[$m['id']] ?? null) : null;
+        }
         unset($m);
         $apps = array_merge($owned, $more);
     }
@@ -301,7 +329,9 @@ function visible_for(array $user): array
     foreach ($apps as $a) foreach ($a['placements'] as $p) if ($p['group'] !== null) $used[$p['group']] = true;
     $groups = array_values(array_filter(groups_list(), fn($g) => isset($used[$g['id']])));
     $out = ['categories' => $categories, 'groups' => $groups, 'apps' => array_map(fn($a) => app_public($a, $admin), $apps),
-        'recommended' => recommended_for((int)$user['id'], array_column(array_filter($apps, fn($a) => $a['owned'] ?? true), 'id'))];
+        'recommended' => recommended_for((int)$user['id'], array_column(array_filter($apps, fn($a) => $a['owned'] ?? true), 'id')),
+        // החלטות על בקשות שעוד לא ראה — טוסט אחד, ואז requests_seen (4.3)
+        'decisions' => $user['role'] !== 'admin' && $user['status'] === 'active' ? requests_decisions((int)$user['id'], apps_effective()) : []];
     if ($admin) $out['plugins'] = array_map(fn($a) => app_public($a, true), $plugins);
     return $out;
 }
@@ -316,6 +346,8 @@ function app_public(array $a, bool $admin = false): array
         'href' => $a['href'], 'links' => $a['links'], 'external' => $a['external'],
         // false — בחנות ועוד לא אצלו: מוצגת אפורה עם חץ הורדה
         'owned' => $a['owned'] ?? true,
+        // לשורת חנות: instant | request, ומצב הבקשה ({status, at, retry_at?} או null)
+        ...(($a['owned'] ?? true) ? [] : ['store_mode' => $a['store_mode'], 'request' => $a['request'] ?? null]),
         // מה שהמנהל לא אישר — לא נשלח לדפדפן בכלל. "הורדת המשפחה" אינה התקנה
         // של אפליקציה נפרדת, ולכן offline לא תלוי באישור.
         'install' => [
@@ -358,9 +390,12 @@ function featured_apps(): array
     return is_array($v) ? array_values(array_filter($v, 'is_string')) : [];
 }
 
-/** אפליקציה שמוצגת בחנות לכולם — לא מוסתרת ולא תוסף. */
+/**
+ * אפליקציה שמוצגת בחנות לכולם — לא מוסתרת, לא תוסף ולא restricted. restricted נפתחת רק באישור ישיר של
+ * המנהל; אילו הייתה בחנות, get_app היה כותב לכל משתמש את האישור הזה בעצמו.
+ */
 function in_catalog(array $app): bool
 {
-    return $app['catalog'] && !$app['hidden'] && !$app['plugin'];
+    return $app['catalog'] && !$app['hidden'] && !$app['plugin'] && !$app['restricted'];
 }
 
