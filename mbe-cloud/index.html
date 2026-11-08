@@ -36,6 +36,7 @@
     <nav class="crumbs" id="crumbs" aria-label="מיקום"></nav>
     <div class="toolbar">
       <button class="btn ghost" id="new-folder" type="button"><span aria-hidden="true">📁</span> תיקייה</button>
+      <button class="btn ghost" id="share-folder" type="button" hidden><span aria-hidden="true">👥</span> שיתוף</button>
       <span style="flex:1"></span>
       <button class="btn primary" id="upload-btn" type="button"><span aria-hidden="true">⬆️</span> העלאה</button>
       <input type="file" id="file-input" multiple hidden>
@@ -68,6 +69,9 @@
   <section id="v-links" hidden>
     <p class="hint">האפליקציות שאישרת להשתמש בענן שלך. ניתוק עוצר אותן מיד; הקבצים נשארים.</p>
     <ul class="list" id="links"></ul>
+    <h2 class="sec-title">למפתחים</h2>
+    <p class="hint">איך אפליקציה מתחברת לענן ומה אפשר לבקש ממנו — במסמך אחד.</p>
+    <div class="toolbar"><a class="btn ghost" href="api.php?action=api_guide" download="mbe-cloud-api-guide.md"><span aria-hidden="true">⬇️</span> הורדת מדריך API</a></div>
   </section>
 
   <!-- ניהול -->
@@ -85,6 +89,10 @@
     <h2 class="sec-title">אפליקציות</h2>
     <p class="hint">אפליקציות שנרשמו לענן. מאותו שרת — פעילות מיד; מדומיין אחר — ממתינות לאישור שלך.</p>
     <ul class="list" id="clients"></ul>
+    <h2 class="sec-title">🔑 חשבונות שירות</h2>
+    <p class="hint">חשבון בלי כניסה ובלי כונן משלו, לגישה מתוכנתת — למשל Claude שקורא תיקייה ששותפה איתו. הבעלים משתף איתו תיקייה, ואת האסימון יוצרים כאן. האסימון מאפשר רק קריאה של מה ששותף.</p>
+    <div class="toolbar"><span style="flex:1"></span><button class="btn ghost" id="svc-new" type="button"><span aria-hidden="true">＋</span> חשבון שירות</button></div>
+    <ul class="list" id="services"></ul>
     <h2 class="sec-title">🤖 בינה מלאכותית</h2>
     <div class="summary" id="ai-usage"></div>
     <p class="hint">מפתח לכל ספק — רק כאן, מוצפן בשרת, ולא נקרא בחזרה. למי מותר ובאיזו מכסה — בלחיצה על חשבון למעלה.</p>
@@ -110,6 +118,7 @@
         <button class="tile" type="button" data-act="download"><span class="tile-ic" aria-hidden="true">⬇️</span>הורדה</button>
         <button class="tile" type="button" data-act="rename"><span class="tile-ic" aria-hidden="true">✏️</span>שם</button>
         <button class="tile" type="button" data-act="move"><span class="tile-ic" aria-hidden="true">📂</span>העברה</button>
+        <button class="tile" type="button" data-act="share"><span class="tile-ic" aria-hidden="true">👥</span>שיתוף</button>
         <button class="tile" type="button" data-act="trash"><span class="tile-ic" aria-hidden="true">🗑️</span>לסל</button>
       </div>
       <dl class="cells" id="item-cells"></dl>

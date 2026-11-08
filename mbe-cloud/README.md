@@ -24,12 +24,14 @@
 | ספריית הגופנים | `fonts_list`, `font_add`, `font_file`, `font_update`, `font_delete` — פריט = קובץ (משפחה, משקל, סגנון), `rev` = sha256. הפרטים מטבלאות name / OS/2 / fvar (ttf, otf, woff), או משם הקובץ (woff2). נספר במכסה. ועוד 10 גופנים מובנים (OFL) ב-`fonts/builtin/` (`?builtin=1`, `font_license`). הקוד: `lib/fonts.php`. האפיון: `docs/spec-2-fonts.md` |
 | מודול הכוננים | `drives/` — JS + PHP, עותק מסונכרן בכל אפליקציה שמצטרפת: חיבור לענן, הקבצים בענן, `fonts`, `ai`, ו-Dropbox ישירות מהאפליקציה. ההצטרפות: `drives/README.md` |
 | Dropbox | App key אחד לכל החבילה (⚙️ ניהול ← 🗂️ כוננים חיצוניים), PKCE בלי secret, ו-redirect אחד: `oauth/dropbox.php`, שמעביר את החזרה לאפליקציה לפי ה-state |
+| 👥 שיתוף ואסימון אישי | שיתוף תיקייה או קובץ לחשבון אחר — **קריאה בלבד**, ביטול מיידי (`share_create` / `share_list` / `share_revoke`, 👥 בדף). **חשבון שירות** (`accounts.kind = 'service'`, בלי כניסה ובלי כונן) ו**אסימון אישי** `mbe_pat_<id>_<secret>` שמנהל הענן יוצר (⚙️ ניהול ← 🔑 חשבונות שירות; הסוד מוצג פעם אחת, במסד רק sha256). עם האסימון — רק `shared_roots`, `list`, `stat`, `read` על מה ששותף, לפי `id`; כל פעולה אחרת 403; פריט לא נגיש — תמיד 404. 429 אחרי 10 כישלונות מכתובת ב-10 דקות; יומן לכל אסימון (`token_log`). הקוד: `lib/share.php`. האפיון: `docs/spec-2-share-token.md` |
 | 👤 תפריט המשתמש | `accountMenu` של `ui-core` בסרגל; `account_*` ב-`api.php` דרך `lib/ui-core/account` (עותק מסונכרן): הגדרות אישיות במסד, ייצוא, ומחיקת חשבון מלאה (`lib/me.php`) |
 | הדף | `index.html`, בעיצוב `phone-first-design` (דרך `ui-core`), עם הלשוניות קבצים, גופנים, סל, חיבורים וניהול |
 
 ## מה עוד לא
 
 - צבעים, סגנונות, נכסים; Google Drive, OneDrive, SFTP / WebDAV; צוותים, גרסאות, חיפוש
+- שיתוף לעריכה, אסימון אישי לאדם, ו"שותף איתי" דרך אסימון של אפליקציה מחוברת (שלב 3)
 
 ## בשרת
 

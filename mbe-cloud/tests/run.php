@@ -17,6 +17,7 @@ require_once __DIR__ . '/../lib/clients.php';
 require_once __DIR__ . '/../lib/ai.php';
 require_once __DIR__ . '/../lib/fonts.php';
 require_once __DIR__ . '/../lib/me.php';
+require_once __DIR__ . '/../lib/share.php';
 require_once __DIR__ . '/../lib/ui-core/account/account.php';
 
 $fails = 0; $n = 0;
@@ -503,6 +504,9 @@ try {
         && !db()->query("SELECT 1 FROM uic_prefs WHERE user_id = " . db()->quote($r['id']))->fetchColumn());
     check('התוכן שרק שלו — נמחק מהדיסק; תוכן שגם של אחר — נשאר', !is_file(blobPath($only['sha256'])) && is_file(blobPath($shared['sha256'])));
     check('כניסה הבאה — חשבון חדש, ריק', ($n2 = requireAccount())['id'] !== $r['id'] && listFolder($n2, null)['items'] === []);
+
+    // ─── שלב 2: שיתוף לקריאה, חשבון שירות ואסימון אישי (docs/spec-2-share-token.md סעיף 8) ───
+    require __DIR__ . '/share.inc.php';
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

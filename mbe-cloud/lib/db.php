@@ -103,6 +103,8 @@ function migrate(PDO $pdo): void {
     migrateAi($pdo);
     require_once __DIR__ . '/fonts.php';
     migrateFonts($pdo);
+    require_once __DIR__ . '/share.php';
+    migrateShare($pdo);
 }
 
 const DEFAULTS = [

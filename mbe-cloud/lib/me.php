@@ -48,6 +48,9 @@ function accountDelete(array $a): void {
     if ($own) $pdo->beginTransaction();
     try {
         $pdo->prepare('DELETE FROM codes WHERE connection IN (SELECT id FROM connections WHERE account = ?)')->execute([$id]);
+        // שיתופים שלי ושיתופים איתי, ואסימונים — לפני הצמתים והחשבון (מפתחות זרים)
+        $pdo->prepare('DELETE FROM shares WHERE owner = ? OR grantee = ?')->execute([$id, $id]);
+        $pdo->prepare('DELETE FROM tokens WHERE account = ?')->execute([$id]);
         foreach (['connections', 'nodes', 'uploads', 'lib_items', 'ai_users', 'ai_usage'] as $t) {
             $pdo->prepare("DELETE FROM $t WHERE account = ?")->execute([$id]);
         }
