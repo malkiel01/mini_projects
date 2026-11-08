@@ -119,6 +119,13 @@
     `signed_in` הוא עובר עם `granted: false`, ולא מקבל `403`. כלומר הוא "בלי כונן" (סעיף 1): 🗂️ נתוני האפליקציות
     ממשיכים לעבוד, ו-📁 ו-🤖 לא. כך זה כבר במימוש של PF-002 (#1318).
 - **בכל נתיב אחר** אין שינוי. `index.html` ו-`picker.php` נשארים רק למי שיש לו הרשאה.
+- **`mbe-cloud` הוא `restricted`, וזה נשאר.** `signed_in` עוקף רק את בדיקת ההרשאה, ורק בנתיבים שברשימה. ב-`decide()`
+  (`platform/lib/gate.php`, #1318) הסדר הוא: `public` ← לא מחובר או לא פעיל: בחוץ ← `can_use` (שבתוכה `restricted`)
+  ← `signed_in` ← אחרת `403`. לכן משתמש בלי הרשאה מגיע ל-`connect.php` ול-`me.php`, וזה בדיוק מה שצריך כדי ש-🗂️
+  יעבוד לו "תמיד" (`spec-4`): רק ב-`connect.php` נוצר חיבור. שאר הענן נשאר סגור בפניו.
+- **בענן צריך להוסיף** `"signed_in": ["connect.php", "me.php"]` ל-`mbe-cloud/app.json` (צ'אט הקוד, עם ה-PR של
+  spec-5). בלי זה גם ה-PF-002 הפרוס לא פותח כלום. **לא** להוסיף לשם `index.html`, `picker.php` או `api.php`.
+  `api.php` נשאר כמו היום: הפעולות החתומות ב-`public`, וכל השאר מאחורי ההרשאה.
 - **בטוח:** `PLATFORM_USER` נשאר מפתח שאינו `HTTP_*`, ולכן לקוח לא יכול לזייף אותו.
 
 ### 4.2 שאילתת הרשאה, שרת-לשרת: `grant_status` ב-`platform/provision.php`
@@ -179,6 +186,7 @@ POST platform/provision.php   action: grant_status   (חתום ב-Ed25519 ביד
 | ה5 | `font_add` למשתמש בלי כונן מחזיר `403 no_drive`. `fonts_list` עם `builtin` עובד |
 | ה6 | "רק אותו חשבון": משתמש בלי כונן עם `sub` שונה ב-`connect.php` מקבל "החיבור נדחה" |
 | ה7 | `PLATFORM_USER.granted` לא ניתן לזיוף מכותרת (`HTTP_PLATFORM_USER` לא נקרא) |
+| ה11 | **`restricted` + `signed_in`:** משתמש פעיל בלי הרשאה ל-`mbe-cloud`. `connect.php` נפתח, עם `granted: false`. `me.php` נפתח. `index.html`, `picker.php` ו-`api.php?action=list` (עם עוגייה) ← `403`. אותו משתמש עם הרשאה לקטגוריה בלבד (בלי אישור ישיר) — אותה תוצאה, כי `restricted` |
 | ה8 | **בפלטפורמה:** נתיב `signed_in` למשתמש לא מחובר מפנה לכניסה. למחובר בלי הרשאה, `granted: false`. בנתיב שאינו `signed_in`, אין שינוי |
 
 ## 8. הכרעות בעל המערכת (2026-11-08, בכלי השאלות)
