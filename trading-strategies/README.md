@@ -54,7 +54,23 @@
   ו-`?cloud=pick-cancelled` → בלי שינוי), ונשמר רק ה-id. ההענקה על התיקייה חלה גם על מה שיתווסף אליה אחר כך (spec-3 §3).
   רשימה (שם, גודל, תאריך) והעלאה ישר לענן. `drives_pick*` מאחורי השער — ב-`public` רק `drives_key`. גישה שבוטלה או תיקייה שנמחקה — "בחרו שוב את תיקיית השיטות". אצלנו נשמר רק מזהה התיקייה — **אין נקודת קצה שמגישה תוכן**. צ'אט האפיון
   קורא דרך שיתוף לקריאה ומפתח קריאה בענן (api-guide 7), לא דרכנו.
-- **⏳ עוד לא:** הקריאה חזרה של העותק לגרף ולבדיקה לאחור (3.7, "שימוש חוזר").
+
+## שלב א' — PR 2ב: שימוש חוזר בעותק (3.7, ✅14)
+
+- **השרת לא קורא קבצים מהענן** — הכול בדפדפן (`drives.suite`), ובפעולה של המשתמש בלבד.
+- **בגרף — תצוגה בלבד** (`assets/js/market.js`): טווח ישן מ-60 יום נקרא מהעותק בדפדפן, ומהשרת מבקשים רק את מה שהעותק
+  לא מכסה (השרת גובר בחפיפה). הנרות של העותק לא נשלחים לשרת ולא נכנסים למאגר. בשורת המידע: "🧪 N מהעותק שלך בענן".
+- **"🧪 הרץ על העותק שלי"** בניתוח (מופיע רק כשיש עותק של הנכס והמסגרת): הדפדפן שולח את העותק בבקשה אחת
+  (`analysis_copy`, CSV ב-gzip+base64 — 100,000 נרות הם ~8MB טקסט ופחות מ-1MB מכווצים), ו**השרת לא סומך על מה שקיבל**
+  (`lib/copy.php`): עד 100,000 נרות וגוף עד 6MB; אותו ספק, סימול ומסגרת (שורת ההערה וההצהרה); `t` עולה ממש ומיושר
+  (`meta()['align']`: Binance ו-ECB — UTC; אחרים — דקה שלמה); מחרוזות עשרוניות לא שליליות ו-`l ≤ o,c ≤ h`; בלי נר עתידי או
+  פתוח. כל חריגה — **422** עם "שורה N: …", בלי התוכן, ובלי לכתוב דבר.
+- **איך זה רץ:** `cred_scope = u:<id>`, `source = copy` (מיגרציה 7: `source` במפתח של `backtests`), בלי state — חישוב מלא.
+  **אף נר לא נכתב ל-`candles`.** המאגר גובר בחפיפה; פער בין סוף העותק לתחילת המאגר — מהספק, בתקציב. נספר בתקרת 30 לדקה.
+- **בכרטיס:** התוצאה מהעותק לצד הרגילה — "🧪 מהעותק שלך · N נרות מהעותק + M מהספק · שנים". מתג "לשקלול — התוצאה
+  מהעותק" (`analysis_copy_use`, טבלת `copy_blend`; ברירת מחדל — הרגילה); כשנבחרה — "🧪 שקלול לפי העותק שלך".
+- **ה-cron של ההתראות לא משתמש בה:** `ts_analysis(..., $withCopy = false)` — רק `api.php` מבקש את העותק.
+
 
 ## שלב א' — PR 3: ציור על הגרף (פרק 7)
 
@@ -141,7 +157,7 @@
 - **הניתוח עצמו** (התנאים עכשיו) — על 300 הנרות הסגורים האחרונים מהמאגר, בכל פתיחה; הבדיקה לאחור — שמורה עד יום.
 - **רמת הסיכון בעסקה** — מרחק הסטופ ב-ATR(14): עד 1.5 נמוכה, עד 3 בינונית, מעל — גבוהה; ויחס סיכוי/סיכון מול המינימום שבפרופיל.
 - **אופק מרבי** (6.4) — מתוך הבדיקות לאחור השמורות בלבד (לא מריץ מסגרות נוספות על חשבון התקציב).
-- **העותק האישי בענן** (3.7) כמקור היסטוריה — ⏳ עוד לא: PR 2 שומר את העותק, אבל הקריאה חזרה (גם בבדיקה לאחור) ממתינה להכרעה.
+- **העותק האישי בענן** (3.7) כמקור היסטוריה — PR 2ב: תצוגה בגרף, ו"🧪 הרץ על העותק שלי" — התוצאה של המשתמש בלבד.
 
 ### הכרעות של כותב הקוד (PR 1)
 
@@ -191,7 +207,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -237,6 +253,8 @@ node trading-strategies/tests/journal-ui.mjs   # Playwright בטלפון: מכר
 php trading-strategies/tests/drives-api.php    # ענן MBE: drives_key פתוח, שאר drives_* דרך השער, בידוד, קובצי שיטות למנהל בלבד
 node trading-strategies/tests/cloud-csv.mjs    # ה-CSV של העותק בענן: עשרוני, מיזוג, נתיב
 node trading-strategies/tests/cloud-ui.mjs     # Playwright בטלפון עם ענן מדומה: מתג, "שמור לענן שלי", קובצי שיטות
+php trading-strategies/tests/copy-api.php      # העותק: נרות מזויפים לא נוגעים במאגר ובאחרים, 422 לכל מגבלה, צירוף, קצב ושקלול
+node trading-strategies/tests/copy-ui.mjs      # Playwright: "🧪 הרץ על העותק שלי", בחירת השקלול, הגרף מהעותק
 php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/dev-prepend.php
 #   ואז http://127.0.0.1:8123/trading-strategies/  (העוגייה dev_as=bob — משתמש אחר; owner — מנהל ראשי)
 ```

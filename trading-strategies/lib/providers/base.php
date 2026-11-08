@@ -23,7 +23,8 @@ abstract class TsProvider
     /**
      * id, name, markets[], tfs{tf: שם אצל הספק}, needs_key, key_help{label, url, note}, limits{per_min, per_day},
      * delay (realtime|15min|eod), share (מותר להגיש לכל המשתמשים מאותו מאגר), personal_copy (מותר לשמור עותק אישי),
-     * terms (מה בדקנו בתנאי השימוש), bounds (גבולות נר של יום/שבוע/חודש), max_per_call (נרות בקריאה אחת)
+     * terms (מה בדקנו בתנאי השימוש), bounds (גבולות נר של יום/שבוע/חודש), max_per_call (נרות בקריאה אחת),
+     * align ('utc' — הגבולות ב-UTC, ונבדקים בעותק האישי; אחרת — מושב מסחר, ובעותק נבדקת דקה שלמה בלבד)
      */
     abstract public function meta(): array;
 

@@ -357,6 +357,51 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 7) {
+        // בדיקה לאחור על העותק האישי בענן (spec-stage-a 3.7, ✅14): source במפתח התוצאה. source=copy — רק בתחום של
+        // המשתמש עצמו (u:<id>), בלי מצב מצטבר (חישוב מלא בכל ריצה), ועם כמה נרות מכל מקור לסימון
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE backtests_v7 (
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                params_hash TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                source TEXT NOT NULL DEFAULT 'provider' CHECK (source IN ('provider','copy')),
+                n INTEGER NOT NULL,
+                wins INTEGER NOT NULL,
+                expectancy_r REAL,
+                max_dd REAL NOT NULL DEFAULT 0,
+                from_t INTEGER,
+                to_t INTEGER,
+                state TEXT,
+                n_copy INTEGER,
+                n_provider INTEGER,
+                computed_at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, provider, asset, tf, cred_scope, source),
+                CHECK (source = 'provider' OR (cred_scope LIKE 'u:%' AND state IS NULL))
+            );
+            INSERT INTO backtests_v7 (method_id, method_version, provider, asset, tf, params_hash, cred_scope, n, wins, expectancy_r,
+                                      max_dd, from_t, to_t, state, computed_at)
+                SELECT method_id, method_version, provider, asset, tf, params_hash, cred_scope, n, wins, expectancy_r,
+                       max_dd, from_t, to_t, state, computed_at FROM backtests;
+            DROP TABLE backtests;
+            ALTER TABLE backtests_v7 RENAME TO backtests;
+            -- התוצאה מהעותק נכנסת לשקלול רק כשהמשתמש בחר בה (ברירת מחדל — הרגילה)
+            CREATE TABLE copy_blend (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                method_id TEXT NOT NULL,
+                PRIMARY KEY (user_id, asset, tf, method_id)
+            );
+            PRAGMA user_version = 7;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

@@ -31,6 +31,7 @@ final class TsProvEcb extends TsProvider
             'personal_copy' => true,
             'terms' => 'שערי ייחוס פומביים של ה-ECB, דרך Frankfurter (קוד פתוח, בלי מפתח). מאגר משותף (✅2, ✅4).',
             'bounds' => 'יום — תאריך השער, 00:00 UTC. ימי עסקים בלבד',
+            'align' => 'utc',   // יישור נרות בעותק (3.7): הגבולות של bounds, ב-UTC
             'max_per_call' => 5000,
         ];
     }
