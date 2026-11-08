@@ -391,22 +391,43 @@ async function deleteFont(f) {
 
 // ─── חיבורים ────────────────────────────────────────────────────────────
 
-const SCOPE_IC = { files: '📁', libs: '🔤', ai: '🤖' };
+const SCOPE_IC = { files: '📁', libs: '📚', ai: '🤖' };
+const LAYER_NAME = { files: 'קבצים', libs: 'נתוני מערכת', ai: 'בינה מלאכותית' };
 
+// מתג לכל שכבה שהאפליקציה הצהירה (spec-0-vision.md 7.3). כאן רק מכבים; מדליקים מתוך האפליקציה (מסך האישור)
 async function loadLinks() {
   $('#title').textContent = 'חיבורים';
   const data = await api('connections');
   $('#links').replaceChildren(...(data.items.length ? data.items.map(c => el('li', {}, el('div', { class: 'acc-row' },
     el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
     el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
-      el('div', { class: 'l2' }, [c.scope.map(s => SCOPE_IC[s] || s).join(' '), `מאז ${when(c.created_at)}`,
-        c.used_at ? `שימוש אחרון ${when(c.used_at)}` : 'עוד לא בשימוש'].join(' · '))),
+      el('div', { class: 'l2' }, [`מאז ${when(c.created_at)}`, c.used_at ? `שימוש אחרון ${when(c.used_at)}` : 'עוד לא בשימוש'].join(' · ')),
+      el('div', { class: 'layers' }, ...(c.declared || c.scope).map(s => {
+        const on = c.scope.includes(s);
+        const box = el('input', { type: 'checkbox', ...(on ? { checked: '' } : { disabled: '' }) });
+        box.addEventListener('change', () => layer(c, s, box));
+        return el('label', { class: 'switch', title: on ? '' : 'מדליקים מתוך האפליקציה' }, box,
+          el('span', {}, `${SCOPE_IC[s] || ''} ${LAYER_NAME[s] || s}`));
+      }))),
     el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => unlink(c) }, 'ניתוק'))))
     : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. באפליקציה: "☁️ חיבור לענן".'))]));
 }
 
+/** כיבוי שכבה — מיד, בלי שאלה. השכבה האחרונה = ניתוק, ולפניו שאלה (7.3 כלל 4). */
+async function layer(c, s, box) {
+  const rest = c.scope.filter(x => x !== s);
+  if (!rest.length) {
+    box.checked = true;
+    return unlink(c);
+  }
+  box.disabled = true;
+  try { await api('connection_layers', { id: c.id, scope: rest }); toast(`${SCOPE_IC[s] || ''} ${LAYER_NAME[s] || s} — כבוי`); }
+  catch (e) { fail(e); }
+  loadLinks();
+}
+
 async function unlink(c) {
-  if (!await confirm(`לנתק את ${c.name}? היא תפסיק לגשת לענן מיד. הקבצים נשארים.`, { ok: 'ניתוק', danger: true })) return;
+  if (!await confirm(`לנתק את ${c.name}? היא תפסיק לגשת לענן מיד. הקבצים והנתונים נשארים בענן, ואפשר לחבר שוב בכל רגע.`, { ok: 'ניתוק', danger: true })) return;
   try { await api('connection_revoke', { id: c.id }); toast('נותק'); loadLinks(); } catch (e) { fail(e); }
 }
 
