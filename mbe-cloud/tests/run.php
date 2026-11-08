@@ -249,6 +249,11 @@ try {
     $back = approveConnect($owner, $req);
     parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
     check('מ2: בלי טופס — חזרה עם code ו-state', ($bq['state'] ?? '') === 'st4te-1234' && strlen($bq['code'] ?? '') > 20 && ($bq['action'] ?? '') === 'cloud_callback');
+    // מ14 — CSRF: return שלא רשום — 400 לפני כל דבר אחר, בלי code, גם כשהמדיניות דלוקה וה-sub תואם (spec-6 3.5)
+    $codes0 = (int) db()->query('SELECT COUNT(*) FROM codes')->fetchColumn();
+    check('מ14: return שלא רשום — bad_request, ואין שורה חדשה ב-codes', code(fn() => connectRequest($idq(['client' => 'vector-studio', 'state' => 'csrf-st4te',
+            'return' => 'https://evil.example/steal'], $osub))) === 'bad_request'
+        && (int) db()->query('SELECT COUNT(*) FROM codes')->fetchColumn() === $codes0 && sameSub($owner, $osub) && effectiveScope(getClient('vector-studio')) !== []);
     check('connect: sub חתום של המשתמש באפליקציה', $req['sub'] === $osub && sameSub($owner, $req['sub']));
     check('connect: sub של אדם אחר — לא אותו חשבון', !sameSub($owner, connectRequest($idq(['state' => 'other-st4te'] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1]), '999'))['sub']));
     check('connect: sub ששונה אחרי החתימה — bad_identity', code(fn() => connectRequest(['sub' => '999'] + $q)) === 'bad_identity');
@@ -299,6 +304,17 @@ try {
         && $mine['layers'] === ['files' => 'on', 'libs' => 'off', 'ai' => 'on'] && $mine['files_scope'] === 'files');
     adminClient(['client' => 'vector-studio', 'policy' => ['libs' => true]]);
     check('client_policy — השכבות הדלוקות של הלקוח, בלי פרט על משתמשים', effectiveLayers($client) === ['ai', 'files', 'libs']);
+    // מ16 — client_policy: רק בחתימה. בלי חתימה / חתימה שגויה — 401. התשובה — בדיוק {layers}
+    $st401 = function (callable $fn): ?int { try { $fn(); return null; } catch (AppError $e) { return $e->status; } };
+    check('מ16: client_policy בלי חתימה — 401', $st401(fn() => verifySigned('client_policy', ['client' => 'vector-studio'], '{}')) === 401);
+    check('מ16: client_policy בחתימה על גוף אחר / פעולה אחרת — 401', $st401(fn() => verifySigned('client_policy', $sign('client_policy', '{"x":1}'), '{}')) === 401
+        && $st401(fn() => verifySigned('client_policy', $sign('access_token', '{}'), '{}')) === 401);
+    check('מ16: בחתימה תקינה — התשובה בדיוק {layers}, של הלקוח החותם בלבד', (function () use ($sign) {
+        $api = (string) file_get_contents(__DIR__ . '/../api.php');
+        $out = ['layers' => effectiveLayers(verifySigned('client_policy', $sign('client_policy', '{}'), '{}'))];
+        return str_contains($api, "case 'client_policy': reply(['layers' => effectiveLayers(verifySigned(\$action, signedHeaders(), \$raw))]);")
+            && array_keys($out) === ['layers'] && $out['layers'] === ['ai', 'files', 'libs'];
+    })());
     check('מ5: הדלקה מחדש — פותחת מיד, בלי שום פעולה של המשתמש', actorFrom($lconn(), $client, 'libs')['app'] === 'vector-studio');
     check('מ11: connections.scope לא קובע — חיבור עם [] (הבאג) מקבל את ההיקף לפי המדיניות',
         db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute(['[]', $lex['connection']]) && issueToken($client, $lconn())['scope'] === ['ai', 'files', 'libs']);

@@ -72,7 +72,8 @@ $cloud = function (string $url, array $headers, string $json) use ($dropbox): ar
     try {
         $out = match ($q['action']) {
             'client_register' => registerClient($in),
-            'connect_exchange' => exchangeCode(verifySigned('connect_exchange', $h, $json), $in),
+            'connect_exchange' => (function () use ($h, $json, $in) { $GLOBALS['XCHG'] = ($GLOBALS['XCHG'] ?? 0) + 1;
+                return exchangeCode(verifySigned('connect_exchange', $h, $json), $in); })(),
             'access_token' => (function () use ($h, $json, $in) {
                 $c = verifySigned('access_token', $h, $json);
                 $conn = connectionRow((string) ($in['connection'] ?? ''), $c['id']);
@@ -317,6 +318,20 @@ try {
     check('בלי משתמש — שאר הפעולות עדיין 401', code(fn() => $app->handle('drives_status', [])) === 'unauthorized'
         && code(fn() => $app->handle('drives_token', [])) === 'unauthorized' && code(fn() => $app->handle('drives_connect', [])) === 'unauthorized');
     $user = 'u1';
+
+    // ─── מ15 — CSRF: state של המודול (spec-6 3.5). בכל דחייה — בלי connect_exchange, ובלי שורה חדשה ב-conns ───
+    $user = 'u1';
+    $nConns = fn() => (int) (fn() => $this->db()->query('SELECT COUNT(*) FROM conns')->fetchColumn())->call($app);
+    $real = $q2(approve($app->connectUrl('u1')));   // code אמיתי מהענן, ו-state של u1
+    $x0 = $GLOBALS['XCHG'] ?? 0; $c0 = $nConns();
+    check('מ15: code אמיתי עם state שלא נוצר במודול — bad_state:missing', code(fn() => $app->callback('u1', ['state' => 'forged-state-1234', 'code' => $real['code']])) === 'bad_state:missing');
+    check('מ15: state של משתמש אחר — bad_state:user', code(fn() => $app->callback('u3', $real)) === 'bad_state:user');
+    (fn() => $this->db()->prepare('UPDATE states SET expires = ? WHERE state = ?')->execute([time() - 1, $real['state']]))->call($app);
+    check('מ15: state שפג — bad_state:expired', code(fn() => $app->callback('u1', $real)) === 'bad_state:expired');
+    $u3 = $q2(approve($app->connectUrl('u3')));
+    (fn() => $this->db()->prepare('UPDATE states SET used = 1 WHERE state = ?')->execute([$u3['state']]))->call($app);
+    check('מ15: state שנוצל (ואין חיבור) — bad_state:used', code(fn() => $app->callback('u3', $u3)) === 'bad_state:used');
+    check('מ15: בכל ארבעת המקרים — connect_exchange לא נקרא, ואין שורה חדשה ב-conns', $x0 > 0 && ($GLOBALS['XCHG'] ?? 0) === $x0 && $nConns() === $c0);
 
     // ─── שכבות — המנהל מחליט, לכל המשתמשים (spec-6) ───
     $user = 'u1';
