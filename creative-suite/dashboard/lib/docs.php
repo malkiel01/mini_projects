@@ -10,7 +10,7 @@ const ROOT = __DIR__ . '/../../..';
 const STAGE_WEIGHT = ['✅' => 1.0, '🟡' => 0.5, '⏳' => 0.5, '⬜' => 0.0];
 const KIND_ICON = ['text' => '📝', 'raster' => '🖌️', 'vector' => '✒️', 'layout' => '📰', 'design' => '🎨'];
 /** פרויקט בלי kind — לפי התיקייה. */
-const FOLDER_ICON = ['suite-cloud' => '☁️', 'creative-suite/ui-core' => '🧩'];
+const FOLDER_ICON = ['mbe-cloud' => '☁️', 'creative-suite/ui-core' => '🧩'];
 
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
 

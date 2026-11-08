@@ -1,6 +1,6 @@
 {
   "team": "חבילת היצירה",
-  "updated": "2026-11-07",
+  "updated": "2026-11-08",
   "note": "רשימת הצוות הקבועה. כל אחד שולח הודעות ישירות לאחרים לפי .claude/skills/creative-suite-team/SKILL.md. מוסיף או משנה חבר — רק הצ'אט המתכלל.",
   "members": [
     { "role": "coordinator", "name": "היצירה v2 - המתכלל", "session": "session_018g4NYGTwRc3D2GdQpuVLSc", "board": "פרויקט 10, ערוץ #13",
@@ -37,7 +37,8 @@
   "external": [
     { "role": "mbe-cloud", "name": "ענן MBE (לשעבר: היצירה v2 - ענן החבילה)", "session": "session_018g4NYGr8RCxFnWAMRxcGF8", "board": "פרויקט 10, ערוץ #23 (עד שייפתח פרויקט משלו)",
       "spec_chat": "session_018g4NYGEPMHtW29NVpbAQDG (ענן MBE - אפיון)",
-      "owns": ["suite-cloud/ (שם ומיקום חדשים לפי האפיון של הענן)"],
+      "control_chat": "session_018g4NYDqRAwAB47UJQpTTjj (ענן MBE - בקרה)",
+      "owns": ["mbe-cloud/ (עבר מ-suite-cloud/ ב-#1272; suite-cloud/ נשארה תיקיית הפניה ב-308)"],
       "does": "פרויקט עצמאי מ-2026-11-07 (הכרעת בעל המערכת): ענן לכל האפליקציות, וחבילת היצירה לקוח אחד שלו. העצירה של החבילה לא חלה עליו; החבילה מבקשת ממנו בהודעה ישירה." }
   ]
 }

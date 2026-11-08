@@ -29,7 +29,7 @@ export const KINDS = { create: 'נוצר', edit: 'עריכה', export: 'יצא',
 /** שמות האפליקציות בחבילה. "external:<שם>" — כלי חיצוני (Word, פוטושופ…). */
 export const APPS = {
     'layout-studio': 'עימוד', 'word-processor': 'עורך התמלילים', 'raster-studio': 'רסטר', 'vector-studio': 'וקטורי',
-    'greeting-cards': 'סטודיו העיצוב', 'suite-cloud': 'ענן החבילה',
+    'greeting-cards': 'סטודיו העיצוב', 'mbe-cloud': 'ענן MBE',
 };
 
 export const appLabel = app => {
