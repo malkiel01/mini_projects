@@ -54,10 +54,12 @@ function admin_state(array $admin): never
         'categories' => categories_list(),
         'groups'     => groups_list(),
         'devboards'  => (object)devboard_all(),
+        // בקשות ממתינות לאפליקציות בחנות (PF-001) — המונה, הצ'יפ "📨 בקשות", הפס במסך המשתמש והכרטיס
+        'requests'   => requests_for_admin(),
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
             'category' => $a['category'], 'default_category' => $a['default_category'], 'placements' => $a['placements'],
-            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'catalog' => $a['catalog'], 'restricted' => $a['restricted'], 'plugin' => $a['plugin'],
+            'hidden' => $a['hidden'], 'install_ok' => $a['install_ok'], 'catalog' => $a['catalog'], 'store_mode' => $a['store_mode'], 'restricted' => $a['restricted'], 'plugin' => $a['plugin'],
             'gate' => (bool)$a['gate'], 'external' => $a['external'], 'detached' => $a['detached'], 'connected' => $a['connected'],
             'login' => $a['login'],
             'can_install' => $a['install']['pwa'] || $a['install']['apk'] || $a['install']['store'],
@@ -80,6 +82,7 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_category_move'   => admin_category_move($body),
         'admin_category_delete' => admin_category_delete($body),
         'admin_app_update'      => admin_app_update($body),
+        'admin_request_decide'  => admin_request_decide($body, $admin),
         'admin_placements_set'  => admin_placements_set($body),
         'admin_group_save'      => admin_group_save($body),
         'admin_group_move'      => admin_group_move($body),
@@ -357,12 +360,19 @@ function admin_placements_set(array $body): never
 
 // ---------- אפליקציות ----------
 
-/** {id, category?, hidden?, install_ok?, detached?} */
+/** {id, category?, hidden?, install_ok?, detached?, catalog?: 'instant'|'request'|false (true = instant)} */
 function admin_app_update(array $body): never
 {
     $apps = array_column(apps_effective(), null, 'id');
     $app = $apps[$body['id'] ?? ''] ?? null;
     if (!$app) throw new ApiError('האפליקציה לא נמצאה', 404);
+    // החנות: נבדק לפני כל כתיבה. restricted לא בחנות בשום מצב (PF-001, 9.3) — האכיפה ב-in_catalog; זו נוחות בממשק.
+    $mode = false;
+    if (array_key_exists('catalog', $body)) {
+        $mode = match ($body['catalog']) { true, 'instant' => 'instant', 'request' => 'request', false => null,
+            default => throw new ApiError('מצב חנות לא מוכר', 422) };
+        if ($mode !== null && $app['restricted']) throw new ApiError('אפליקציה מוגבלת לא מוצגת בחנות', 422);
+    }
 
     $category = $body['category'] ?? $app['category'];
     if (!in_array($category, array_column(categories_list(), 'id'), true)) throw new ApiError('קטגוריה לא מוכרת', 422);
@@ -380,9 +390,17 @@ function admin_app_update(array $body): never
                        ON CONFLICT(app_id) DO UPDATE SET password = excluded.password, google = excluded.google')
             ->execute([$app['id'], (int)(bool)($body['login_password'] ?? $cur['password']), (int)(bool)($body['login_google'] ?? $cur['google'])]);
     }
-    if (isset($body['catalog'])) {
-        db()->prepare($body['catalog'] ? 'INSERT OR IGNORE INTO app_catalog (app_id) VALUES (?)'
-                                       : 'DELETE FROM app_catalog WHERE app_id = ?')->execute([$app['id']]);
+    if ($mode !== false) {
+        if ($mode !== null) {
+            db()->prepare('INSERT INTO app_catalog (app_id, mode) VALUES (?, ?) ON CONFLICT(app_id) DO UPDATE SET mode = excluded.mode')
+                ->execute([$app['id'], $mode]);
+        } else {
+            db()->prepare('DELETE FROM app_catalog WHERE app_id = ?')->execute([$app['id']]);
+            // הוצאה מהחנות: בקשות ממתינות נסגרות כ"בוטלה", בשקט
+            $now = now_iso();
+            db()->prepare("UPDATE app_requests SET status = 'cancelled', decided_at = ?, seen_at = ? WHERE app_id = ? AND status = 'pending'")
+                ->execute([$now, $now, $app['id']]);
+        }
     }
     if (isset($body['install_ok'])) {
         db()->prepare($body['install_ok'] ? 'DELETE FROM install_hidden WHERE app_id = ?'
@@ -393,6 +411,21 @@ function admin_app_update(array $body): never
     db()->prepare('INSERT INTO app_overrides (app_id, category, hidden) VALUES (?,?,?)
                    ON CONFLICT(app_id) DO UPDATE SET category = excluded.category, hidden = excluded.hidden')
         ->execute([$app['id'], $category === $app['default_category'] ? null : $category, $hidden ? 1 : 0]);
+    json_out(['ok' => true]);
+}
+
+// ---------- בקשות לאפליקציות בחנות (lib/requests.php) ----------
+
+/** הבקשות הממתינות, ו-30 הימים האחרונים של החלטות (היסטוריה). */
+function admin_requests(array $admin): never
+{
+    json_out(['requests' => requests_for_admin(30)]);
+}
+
+/** {id, decision: approve|reject|block} */
+function admin_request_decide(array $body, array $admin): never
+{
+    request_decide($body, $admin);
     json_out(['ok' => true]);
 }
 

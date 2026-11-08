@@ -8,6 +8,7 @@ window.PlatformAdmin = (() => {
     let filter = 'all';     // סינון לפי סטטוס
     let query = '';         // חיפוש בשם / שם משתמש
     let sort = 'recent';    // recent | login | name
+    let reqApp = null;      // בצ'יפ "📨 בקשות": רק לאפליקציה הזו (מכרטיס האפליקציה)
     let openUser = null;    // מזהה המשתמש שהגיליון שלו פתוח
     let sheet = null;
 
@@ -84,7 +85,10 @@ window.PlatformAdmin = (() => {
         return el('div', {}, [chips, body]);
     }
 
-    const pendingCount = () => state.users.filter(u => u.status === 'pending').length;
+    // בקשות ממתינות לאפליקציות בחנות (PF-001) — רק במצב בקשה; השרת כבר סינן וסגר מה שהוכרע בפועל
+    const pendingReqs = () => (state.requests || []).filter(r => r.status === 'pending');
+    // המונה על הלשונית ובכותרת: הרשמות ממתינות + בקשות
+    const pendingCount = () => state.users.filter(u => u.status === 'pending').length + pendingReqs().length;
 
     // ---------- זמנים ----------
 
@@ -105,7 +109,7 @@ window.PlatformAdmin = (() => {
     // ---------- משתמשים ----------
 
     const STATUS = { pending: ['ממתין לאישור', 'warn'], active: ['פעיל', 'ok'], blocked: ['חסום', 'bad'] };
-    const FILTERS = [['all', 'הכול'], ['pending', 'ממתינים'], ['active', 'פעילים'], ['blocked', 'חסומים']];
+    const FILTERS = [['all', 'הכול'], ['pending', 'ממתינים'], ['requests', '📨 בקשות'], ['active', 'פעילים'], ['blocked', 'חסומים']];
     const SORTS = [['recent', 'נרשמו לאחרונה'], ['login', 'כניסה אחרונה'], ['name', 'לפי שם']];
 
     function visibleUsers() {
@@ -123,10 +127,11 @@ window.PlatformAdmin = (() => {
     }
 
     function renderUsers() {
-        const count = (f) => f === 'all' ? state.users.length : state.users.filter(u => u.status === f).length;
-        const seg = el('div', { className: 'seg', role: 'radiogroup', ariaLabel: 'סינון לפי מצב' }, FILTERS.map(([id, label]) => {
+        const count = (f) => f === 'all' ? state.users.length : f === 'requests' ? pendingReqs().length
+            : state.users.filter(u => u.status === f).length;
+        const seg = el('div', { className: 'seg ufilter', role: 'radiogroup', ariaLabel: 'סינון לפי מצב' }, FILTERS.map(([id, label]) => {
             const input = el('input', { type: 'radio', name: 'ufilter', value: id, checked: filter === id });
-            input.addEventListener('change', () => { filter = id; drawList(); });
+            input.addEventListener('change', () => { filter = id; reqApp = null; drawList(); });
             const n = count(id);
             return el('label', {}, [input, el('span', {}, [label, ...(n ? [el('small', { textContent: String(n) })] : [])])]);
         }));
@@ -139,6 +144,7 @@ window.PlatformAdmin = (() => {
 
         const list = el('ul', { className: 'list' });
         function drawList() {
+            if (filter === 'requests') return list.replaceChildren(...requestRows());
             const users = visibleUsers();
             list.replaceChildren(...(users.length ? users.map(userRow)
                 : [el('li', { className: 'empty', textContent: query ? 'אין משתמש שמתאים לחיפוש' : 'אין משתמשים במצב הזה' })]));
@@ -399,6 +405,57 @@ window.PlatformAdmin = (() => {
         return el('li', { className: 'urow' }, [main, ...tail]);
     }
 
+    // ---------- 📨 בקשות לאפליקציות בחנות (lib/requests.php) ----------
+
+    function requestRows() {
+        const q = query.trim().toLowerCase();
+        const list = pendingReqs().filter(r => (!reqApp || r.app === reqApp)
+            && (!q || r.user_name.toLowerCase().includes(q) || r.username.toLowerCase().includes(q) || r.app_name.toLowerCase().includes(q)));
+        const head = reqApp ? [el('li', { className: 'empty' }, [
+            `רק ${state.apps.find(a => a.id === reqApp)?.name || reqApp} · `,
+            button('כל הבקשות', () => { reqApp = null; render(); }, 'sm link-btn')])] : [];
+        if (!list.length) return [...head, el('li', { className: 'empty', textContent: 'אין בקשות ממתינות' })];
+        return [...head, ...list.map(requestRow)];
+    }
+
+    function requestRow(r) {
+        const u = state.users.find(x => x.id === r.user_id);
+        const main = el('button', { type: 'button', className: 'u-main', ariaHasPopup: 'dialog' }, [
+            u ? P().avatar(u) : appIc(r.app),
+            el('span', { className: 'u-tx' }, [
+                el('span', { className: 'u-l1' }, [el('b', { textContent: r.user_name }), el('span', { className: 'chip', textContent: `📨 ${r.app_name}` })]),
+                el('small', {}, [el('bdi', { textContent: r.username }), ` · ביקש/ה ${relTime(r.created_at)}`]),
+            ]),
+        ]);
+        if (u) main.addEventListener('click', () => openSheet(u));
+        return el('li', { className: 'urow' }, [main, ...decideButtons(r)]);
+    }
+
+    // ✓ אישור · ✕ דחייה — הדחייה שואלת: דחייה בלבד (אפשר לבקש שוב אחרי 7 ימים), או דחייה וחסימה.
+    function decideButtons(r) {
+        const ok = el('button', { type: 'button', className: 'icon-btn ok-btn', textContent: '✓', ariaLabel: `אישור ${r.app_name} ל${r.user_name}`, title: 'אישור' });
+        ok.addEventListener('click', () => act('admin_request_decide', { id: r.id, decision: 'approve' }, `✓ ${r.user_name} קיבל/ה את ${r.app_name}`));
+        const no = el('button', { type: 'button', className: 'icon-btn no-btn', textContent: '✕', ariaLabel: `דחיית ${r.app_name} ל${r.user_name}`, title: 'דחייה' });
+        no.addEventListener('click', () => rejectRequest(r));
+        return [ok, no];
+    }
+
+    function rejectRequest(r) {
+        const { d, body } = dialog(`דחיית הבקשה של ${r.user_name}`, r.app_name);
+        const pick = (decision, msg) => { d.close(); act('admin_request_decide', { id: r.id, decision }, msg); };
+        body.append(
+            button('✕ דחייה — אפשר לבקש שוב אחרי 7 ימים', () => pick('reject', 'הבקשה נדחתה'), 'primary'),
+            button('🚫 דחייה וחסימה — האפליקציה נעלמת לו מהחנות', () => pick('block', 'הבקשה נדחתה, והאפליקציה חסומה לו'), 'danger'),
+        );
+    }
+
+    // מכרטיס האפליקציה: לשונית משתמשים, צ'יפ הבקשות — מסונן לאפליקציה (או הכול). גם מההתראה (#admin-requests).
+    function openRequests(appId = null) {
+        appDlg?.d.close();
+        tab = 'users'; filter = 'requests'; reqApp = appId; query = '';
+        render();
+    }
+
     // אישור פותח מיד את הגיליון — הצעד הבא הוא לבחור מה המשתמש יראה.
     async function approve(u) {
         openUser = u.id;
@@ -551,6 +608,14 @@ window.PlatformAdmin = (() => {
         ].map(([k, v]) => el('div', {}, [el('dt', { textContent: k }), el('dd', { textContent: v })])));
 
         const body = [cells];
+        // 📨 ביקש/ה — פס בראש המסך, עם ✓ / ✕ לכל בקשה
+        const asked = pendingReqs().filter(r => r.user_id === u.id);
+        if (asked.length) body.push(el('div', { className: 'notify' }, [
+            el('span', { className: 'notify-ic', textContent: '📨', ariaHidden: 'true' }),
+            el('div', { className: 'notify-tx' }, [el('b', { textContent: `ביקש/ה: ${asked.map(r => r.app_name).join(', ')}` }),
+                ...asked.map(r => el('div', { className: 'req-line' }, [el('span', { textContent: r.app_name }),
+                    el('span', { className: 'notify-btns' }, decideButtons(r))]))]),
+        ]));
         if (u.must_change) body.push(el('p', { className: 'note', textContent: '🔑 קיבל/ה סיסמה זמנית — יתבקש/תתבקש לבחור סיסמה חדשה בכניסה הבאה.' }));
         // מקופל — מה שלא צריך כל פעם
         const fold = (title, ...kids) => el('details', { className: 'fold' }, [el('summary', { textContent: title }), ...kids]);
@@ -690,7 +755,8 @@ window.PlatformAdmin = (() => {
                 const det = el('details', { className: 'uapp' + (on ? '' : ' off'), open: openApps.has(app.id) }, [
                     el('summary', {}, [appIc(app.id), el('span', { className: 'uapp-tx' }, [
                         el('b', { textContent: app.name }),
-                        el('small', { className: 'muted', textContent: [on ? 'רואה' : 'לא רואה', src, ...insideOn].filter(Boolean).join(' · ') }),
+                        el('small', { className: 'muted', textContent: [on ? 'רואה' : 'לא רואה', src,
+                            pendingReqs().some(r => r.user_id === u.id && r.app === app.id) ? '⏳ ביקש/ה' : '', ...insideOn].filter(Boolean).join(' · ') }),
                     ]), el('span', { className: 'uapp-chev', textContent: '⌄', ariaHidden: 'true' })]),
                     el('div', { className: 'uapp-body' }, [el('div', { className: 'sheet-sec', textContent: 'בתוך האפליקציה' }), ...inside]),
                 ]);
@@ -1199,6 +1265,8 @@ window.PlatformAdmin = (() => {
                 handle, appIc(a.id), el('span', { className: 'achip-tx', textContent: a.name }),
                 ...(state.devboards?.[a.id] ? [el('span', { className: 'achip-badge', textContent: '🛠️', title: 'דשבורד פיתוח' })] : []),
                 ...(a.hidden ? [el('span', { className: 'achip-badge', textContent: '🚫', title: 'מוסתרת' })] : []),
+                ...(a.store_mode && !a.restricted ? [el('span', { className: 'achip-badge', textContent: a.store_mode === 'request' ? '📨' : '🛍️',
+                    title: a.store_mode === 'request' ? 'בחנות — בבקשה' : 'בחנות — הורדה מיידית' })] : []),
             ]);
             b.dataset.app = a.id; b.dataset.from = from;
             b.addEventListener('click', e => { if (!dragMoved) openAppSettings(a.id); });
@@ -1299,6 +1367,25 @@ window.PlatformAdmin = (() => {
     }
 
     // הגדרות אפליקציה — בחלון; מתרענן אחרי כל שמירה (reload)
+    // 🛍️ בחנות לכולם (PF-001): לא בחנות / ⬇ הורדה מיידית / 📨 בקשה. מי שאין לו — אפורה; לפי המצב לחיצה מוסיפה
+    // מיד או שולחת בקשה. restricted — לא בחנות בשום מצב (9.3): הבורר מושבת, עם ההסבר.
+    function storeControl(app) {
+        const sel = el('select', { ariaLabel: 'בחנות לכולם', disabled: app.restricted }, [
+            ['', '— לא בחנות'], ['instant', '⬇ הורדה מיידית'], ['request', '📨 בקשה — באישור שלי'],
+        ].map(([v, t]) => el('option', { value: v, textContent: t })));
+        sel.value = app.restricted ? '' : app.store_mode || '';
+        sel.addEventListener('change', () => act('admin_app_update', { id: app.id, catalog: sel.value || false },
+            !sel.value ? `${app.name} הוסרה מהחנות` : sel.value === 'request' ? `${app.name}: בחנות, בבקשה` : `${app.name}: בחנות, הורדה מיידית`));
+        const kids = [el('label', { className: 'small store-sel' }, ['🛍️ בחנות לכולם: ', sel])];
+        if (app.restricted) {
+            kids.push(el('small', { className: 'muted', textContent: '🔒 מוגבלת: לא מוצגת בחנות. נפתחת רק באישור ישיר במסך המשתמש'
+                + (app.store_mode ? ' (רשומה בחנות, אבל לא מוצגת כי היא מוגבלת)' : '') }));
+        }
+        const n = pendingReqs().filter(r => r.app === app.id).length;
+        if (n) kids.push(button(`📨 ${n === 1 ? 'בקשה ממתינה' : `${n} בקשות ממתינות`}`, () => openRequests(app.id), 'sm link-btn'));
+        return el('div', { className: 'store-ctl' }, kids);
+    }
+
     let appDlg = null;
     function openAppSettings(id) {
         const app = state.apps.find(a => a.id === id);
@@ -1384,11 +1471,7 @@ window.PlatformAdmin = (() => {
         hidden.addEventListener('change', () => act('admin_app_update', { id: app.id, hidden: hidden.checked },
             hidden.checked ? `${app.name} מוסתרת מכולם` : `${app.name} גלויה שוב`));
         const opts = [el('label', { className: 'small' }, [hidden, ' מוסתרת'])];
-        // בחנות: כל משתמש רואה אותה בדף הבית — מי שאין לו, אפורה עם חץ הורדה; לחיצה מוסיפה לו אותה.
-        const cat = el('input', { type: 'checkbox', checked: app.catalog });
-        cat.addEventListener('change', () => act('admin_app_update', { id: app.id, catalog: cat.checked },
-            cat.checked ? `${app.name} מוצגת בחנות לכולם` : `${app.name} הוסרה מהחנות`));
-        opts.push(el('label', { className: 'small', title: 'כל משתמש רואה אותה; מי שאין לו — אפורה עם חץ הורדה' }, [cat, ' 🛍️ בחנות לכולם']));
+        opts.push(storeControl(app));
         // התקנה נפרדת / APK / חנות — מוצגים לכולם (כמו בחנות); כאן אפשר להסתיר.
         if (app.can_install) {
             const inst = el('input', { type: 'checkbox', checked: app.install_ok });
@@ -1577,5 +1660,5 @@ window.PlatformAdmin = (() => {
         ]);
     }
 
-    return { show, invite: inviteDialog };
+    return { show, invite: inviteDialog, requests: openRequests };
 })();
