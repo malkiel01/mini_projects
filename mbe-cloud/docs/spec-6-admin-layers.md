@@ -125,12 +125,7 @@
 | --- | --- | --- |
 | **`return` רשום** | `connect.php` מפנה רק לכתובת שברשימת `return` הרשומה של הלקוח (`client_register`). כתובת אחרת ← `400 bad_request`, **בלי** `code`. זה נבדק **לפני** שבודקים את החשבון ולפני `approveConnect` | `connectRequest()` |
 | **`state` של המודול** | המודול מקבל חזרה עם `code` רק אם ה-`state` נוצר אצלו, בשביל אותו משתמש, לא פג (10 דקות) ולא נוצל. `state` שלא נמצא ← `bad_state:missing`. ממשתמש אחר ← `bad_state:user`. פג ← `bad_state:expired`. נוצל ← `bad_state:used`. **בכל המקרים האלה לא מתבצעת החלפה** | `stateRow()`, `callback()` |
-| **החתימה על הבקשה** | `connect.php` לא מתחיל בלי חתימת הלקוח על `connect
-<client>
-<state>
-<sub>
-<exp>
-<return>`. דף זר לא יכול לבנות בקשה כזו. כל מה שהוא יכול לעשות הוא לנווט אל `drives_connect` של האפליקציה עצמה | 6.3 צעד 2 |
+| **החתימה על הבקשה** | `connect.php` לא מתחיל בלי חתימת הלקוח על `connect⏎client⏎state⏎sub⏎exp⏎return` (⏎ = ירידת שורה). דף זר לא יכול לבנות בקשה כזו. כל מה שהוא יכול לעשות הוא לנווט אל `drives_connect` של האפליקציה עצמה | 6.3 צעד 2 |
 
 **למה ניווט כפוי אל `drives_connect` לא מזיק:** הוא מחבר את המשתמש שכבר נמצא בדפדפן, רק לאפליקציה שהמנהל
 הדליק לו, ורק כאותו `sub`. זו בדיוק התוצאה של כניסה רגילה לאפליקציה. אין בו דרך לחבר **חשבון של אדם אחר**.
@@ -175,7 +170,7 @@
 | `actor()` / `actorFrom()` | ההיקף לפי סעיף 1, בכל קריאה. היקף חסר ← `403 forbidden` עם `{scope, layer}`, כמו היום |
 | `access_token` | מחזיר `scope` (ההיקף בפועל), ו-`available` (`spec-5`). בלי שינוי בקשירה ל-`sub` |
 | `connect.php` | סעיף 3.4 |
-| `client_policy` | **חדש**, סעיף 3.3. **חתום** (`verifySigned`), **לא** ב-`public` של `app.json` ולא ב-CORS. מחזיר `{layers}` של הלקוח החותם בלבד, בלי שום פרט על משתמשים, חיבורים או לקוחות אחרים |
+| `client_policy` | **חדש**, סעיף 3.3. **חתום** (`verifySigned`), וב-`public` של `mbe-cloud/app.json` כמו כל פעולה חתומה שרת-לשרת (`connect_exchange`, `access_token`). בלי זה השער חוסם אותה (#1299). ההגנה היא החתימה, לא השער. לא ב-CORS. מחזיר `{layers}` של הלקוח החותם בלבד, בלי שום פרט על משתמשים, חיבורים או לקוחות אחרים |
 | `admin_client` | `policy` (סעיף 2). `files_full` מתבטל |
 | `connection_scope` | **מבוטל.** מחזיר `403 admin_managed`, "השכבות נקבעות בידי מנהל הענן" |
 | `own_connection_scope` | **מבוטל.** אותו `403 admin_managed` |
@@ -237,7 +232,7 @@
 | מ13 | `pending`: השכבות נעולות במסך, ו-`connect.php` מציג "ממתין לאישור" |
 | מ14 | **CSRF, `return`:** `connect.php` עם `return` שלא רשום ללקוח ← `400 bad_request`, בלי `code` ובלי שורה ב-`codes`, גם כשהמדיניות דלוקה וה-`sub` תואם |
 | מ15 | **CSRF, `state`:** `drives_callback` עם `code` אמיתי ו-`state` שלא נוצר במודול ← `bad_state:missing`. עם `state` של משתמש אחר ← `bad_state:user`. פג ← `bad_state:expired`. פעם שנייה ← `bad_state:used`. בכל אחד מהם `connect_exchange` לא נקרא, ואין שורה חדשה ב-`conns` |
-| מ16 | **`client_policy`:** בלי חתימה, או בחתימה שגויה ← `401`. בחתימה תקינה, התשובה היא בדיוק `{layers}`, בלי מפתחות נוספים. היא לא מופיעה ב-`public` של `mbe-cloud/app.json` |
+| מ16 | **`client_policy`:** בלי חתימה, או בחתימה שגויה ← `401`. בחתימה תקינה, התשובה היא בדיוק `{layers}`, בלי מפתחות נוספים |
 
 ## 8. הכרעות בעל המערכת (2026-11-08, בכלי השאלות)
 
