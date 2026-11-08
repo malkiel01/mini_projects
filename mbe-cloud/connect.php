@@ -1,10 +1,11 @@
 <?php
 /**
- * "X מבקשת גישה לענן שלך" — המשתמש מאשר פעם אחת, והאפליקציה מקבלת קוד חד-פעמי (docs/spec-1-skeleton.md, סעיף 7.2).
+ * החיבור של משתמש לאפליקציה — בלי מסך אישור (docs/spec-6-admin-layers.md 3.1). המנהל כבר החליט אילו שכבות דלוקות.
  *
- *   GET  connect.php?client=<id>&scope=files&state=<אקראי>&return=<כתובת רשומה>
- *        → כבר אושר (אותן הרשאות או פחות) — ישר חזרה עם ?code&state. אחרת — מסך אישור.
- *   POST connect.php (אישור / ביטול, עם אסימון טופס) → <return>?code=…&state=…  או  ?error=access_denied&state=…
+ *   GET connect.php?client=<id>&state=<אקראי>&return=<כתובת רשומה>&sub&exp&sig
+ *       → <return>?code=…&state=…   (המדיניות לא ריקה)
+ *       → <return>?error=off&state=…   (המנהל לא הדליק כלום — בלי חיבור)
+ *   scope בבקשה — מתעלמים (ההיקף במדיניות). לקוח pending — "ממתין לאישור מנהל הענן", בלי כפתור.
  *
  * מאחורי השער: מי שלא מחובר מגיע לכניסה וחוזר לכאן (לכן הכתובת אינה ב-public).
  *
@@ -50,20 +51,10 @@ function fail(string $msg): never {
     page('שגיאה', '<p class="error" role="alert">' . htmlspecialchars($msg) . '</p>');
 }
 
-if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {
-    session_name('MBECLOUD');   // עוגייה משלנו — לא של הפלטפורמה ולא של אפליקציה אחרת
-    session_set_cookie_params(['path' => rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/', 'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
-    session_start();
-}
-
 try {
     $a = requireAccount();
-    $post = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
-    $q = $post ? ($_SESSION['connect'] ?? null) : $_GET;
-    if (!is_array($q)) fail('הבקשה פגה — חזרו לאפליקציה ונסו שוב.');
-    $req = connectRequest($q);
+    $req = connectRequest($_GET);
     if (!sameSub($a, $req['sub'])) {
-        unset($_SESSION['connect'], $_SESSION['connect_form']);
         error_log("mbe-cloud: connect.php account_mismatch (client {$req['client']['id']})");
         http_response_code(403);
         $name = htmlspecialchars($req['client']['name']);
@@ -77,52 +68,14 @@ try {
 HTML);
     }
 
-    if ($post) {
-        $form = (string) ($_POST['form'] ?? '');
-        if (!hash_equals((string) ($_SESSION['connect_form'] ?? ''), $form) || $form === '') fail('הבקשה פגה — חזרו לאפליקציה ונסו שוב.');
-        unset($_SESSION['connect'], $_SESSION['connect_form']);
-        $to = ($_POST['answer'] ?? '') === 'allow'
-            ? approveConnect($a, $req)
-            : withQuery($req['return'], ['error' => 'access_denied', 'state' => $req['state']]);
-        header('Location: ' . $to, true, 303);
+    // spec-6 3.1: אין טופס. כל הבדיקות של 6.3 כבר עברו (החתימה, ה-sub מול מי שנכנס דרך השער) — החיבור נוצר מיד.
+    // המדיניות ריקה (המנהל לא הדליק כלום) — חזרה בלי חיבור (?error=off → במודול cloud=off)
+    if (!$req['scope']) {
+        header('Location: ' . withQuery($req['return'], ['error' => 'off', 'state' => $req['state']]), true, 303);
         exit;
     }
-
-    if (alreadyGranted($a, $req)) {
-        header('Location: ' . approveConnect($a, $req), true, 303);
-        exit;
-    }
-
-    $_SESSION['connect'] = ['client' => $req['client']['id'], 'scope' => implode(',', $req['scope']), 'state' => $req['state'], 'return' => $req['return'],
-                            'sub' => $q['sub'], 'exp' => $q['exp'], 'sig' => $q['sig']];
-    $_SESSION['connect_form'] = $form = b64u(random_bytes(18));
-    $name = htmlspecialchars($req['client']['name']);
-    $host = htmlspecialchars((string) parse_url($req['return'], PHP_URL_HOST));
-    $who = htmlspecialchars($a['name']);
-    // חיבור קיים — רק השכבה החדשה (7.3 כלל 3). היא מתווספת לאותו חיבור
-    $live = liveConnection($a['id'], $req['client']['id']);
-    $ask = $live ? array_values(array_diff($req['scope'], json_decode($live['scope'], true) ?: [])) : $req['scope'];
-    $rows = '';
-    foreach ($ask as $s) {
-        $ic = ['files' => '📁', 'libs' => '📚', 'appdata' => '🗂️', 'ai' => '🤖'][scopeLayer($s)] ?? '•';
-        $rows .= '<li class="acc-row"><span class="use-ic" aria-hidden="true">' . $ic . '</span><div class="body"><div class="l1">'
-               . htmlspecialchars(SCOPE_NAMES[$s]) . '</div></div></li>';
-    }
-    $askTitle = $live ? 'מה עוד היא תוכל לעשות' : 'מה היא תוכל לעשות';
-    page("חיבור $name", <<<HTML
-<div class="summary">
-  <div class="line"><b>$name</b> <span class="muted">מבקשת גישה לענן שלך</span></div>
-  <div class="hint">מחובר בתור $who · חזרה אל $host</div>
-</div>
-<h2 class="sec-title">$askTitle</h2>
-<ul class="list">$rows</ul>
-<p class="hint">אפשר לנתק בכל רגע — בענן, בלשונית "🔗 חיבורים", או מתוך האפליקציה.</p>
-<form method="post" class="row-btns">
-  <input type="hidden" name="form" value="$form">
-  <button class="btn ghost" name="answer" value="deny" type="submit">ביטול</button>
-  <button class="btn primary" name="answer" value="allow" type="submit">אישור</button>
-</form>
-HTML);
+    header('Location: ' . approveConnect($a, $req), true, 303);
+    exit;
 } catch (AppError $e) {
     if ($e->status === 401 && $e->codeName === 'unauthorized') fail('נדרשת כניסה דרך הכלים הדיגיטליים.');
     fail($e->getMessage());
