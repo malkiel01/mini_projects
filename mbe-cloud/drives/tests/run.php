@@ -394,6 +394,36 @@ try {
     parse_str((string) parse_url($u, PHP_URL_QUERY), $lq);
     check('ביטול אצל Dropbox — חזרה עם drive=denied', $app->oauthCallback('u1', ['state' => $lq['state'], 'error' => 'access_denied', 'provider' => 'dropbox'])
         === 'https://mbe-plus.com/mini_projects/vector-studio/?drive=denied');
+    // ─── פ1ב: החזרה מ-Dropbox בדפדפן החיצוני (APK), בלי העוגייה של האפליקציה — רק אותו חשבון פלטפורמה ───
+    $plink = fn(string $u) => (fn() => $this->db()->query('SELECT * FROM links WHERE user = ' . $this->db()->quote($u) . " AND provider = 'dropbox'")->fetch())->call($app);
+    $app->unlink('u7', 'dropbox');
+    platformAs('2'); $user = 'u7';
+    $q7 = $q2($app->linkUrl('u7', 'dropbox'));   // u7 שייך לאדם 2
+    $pstateSub = fn(string $st) => (function () use ($st) { $q = $this->db()->prepare('SELECT sub FROM pstates WHERE state = ?'); $q->execute([$st]); return $q->fetchColumn(); })->call($app);
+    check('פ1ב: ה-sub של הפלטפורמה נשמר ב-state של Dropbox', $pstateSub($q7['state']) === '2');
+    $dbx['codes']['c7'] = $q7['code_challenge'];
+    $user = null; platformAs('1');   // הקישור נפתח בדפדפן של אדם אחר (1)
+    check('פ1ב: דפדפן של חשבון אחר — account_mismatch, והכונן לא נקשר', code(fn() => $app->handle('drives_oauth_callback', ['state' => $q7['state'], 'code' => 'c7', 'provider' => 'dropbox'])) === 'account_mismatch'
+        && $plink('u7') === false);
+    check('פ1ב: ה-state נשרף — גם הדפדפן הנכון לא יכול להשתמש בו שוב', (function () use ($app, $q7) { platformAs('2'); return code(fn() => $app->handle('drives_oauth_callback', ['state' => $q7['state'], 'code' => 'c7', 'provider' => 'dropbox'])); })() === 'bad_state:missing');
+    platformAs('2'); $user = 'u7';
+    $q7 = $q2($app->linkUrl('u7', 'dropbox'));
+    $dbx['codes']['c8'] = $q7['code_challenge'];
+    $user = null; platformAs(null);
+    check('פ1ב: בלי PLATFORM_USER — account_mismatch', code(fn() => $app->handle('drives_oauth_callback', ['state' => $q7['state'], 'code' => 'c8', 'provider' => 'dropbox'])) === 'account_mismatch');
+    platformAs('2'); $user = 'u7';
+    $q7 = $q2($app->linkUrl('u7', 'dropbox'));
+    $dbx['codes']['c9'] = $q7['code_challenge'];
+    $user = null;   // אותו אדם (2), בדפדפן החיצוני בלי העוגייה של האפליקציה
+    $r = $app->handle('drives_oauth_callback', ['state' => $q7['state'], 'code' => 'c9', 'provider' => 'dropbox']);
+    check('פ1ב: אותו אדם בדפדפן החיצוני — הכונן נקשר למשתמש של ה-state', ($r['done'] ?? '') !== '' && empty($r['denied']) && $plink('u7') !== false);
+    $user = 'u7'; $q7 = $q2($app->linkUrl('u7', 'dropbox')); $user = null;
+    $r = $app->handle('drives_oauth_callback', ['state' => $q7['state'], 'error' => 'access_denied', 'provider' => 'dropbox']);
+    check('פ1ב: ביטול בדפדפן החיצוני — דף "בוטל"', !empty($r['denied']));
+    $user = 'u7'; $q7 = $q2($app->linkUrl('u7', 'dropbox')); $user = null;
+    (fn() => $this->db()->prepare('UPDATE pstates SET expires = 0 WHERE state = ?')->execute([func_get_args()[0]]))->call($app, $q7['state']);
+    check('פ1ב: state שפג — bad_state:expired', code(fn() => $app->handle('drives_oauth_callback', ['state' => $q7['state'], 'code' => 'x', 'provider' => 'dropbox'])) === 'bad_state:expired');
+    $user = 'u1'; platformAs('1');
     $app->unlink('u1', 'dropbox');
     check('unlink — מבטל אצל Dropbox ומוחק כאן', $dbx['revoked'] === ['at2'] && $app->status('u1')['dropbox'] === ['connected' => false]);
     // הרשאה שבוטלה בצד של Dropbox: הרענון נכשל → לא מחובר
