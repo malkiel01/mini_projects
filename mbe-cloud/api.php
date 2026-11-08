@@ -27,6 +27,7 @@ require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/fonts.php';
 require_once __DIR__ . '/lib/me.php';
 require_once __DIR__ . '/lib/share.php';
+require_once __DIR__ . '/lib/appdata.php';
 require_once __DIR__ . '/lib/ui-core/account/account.php';
 
 header('X-Content-Type-Options: nosniff');
@@ -124,7 +125,8 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_scope', 'connection_revoke', 'connection_layers', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
+                'disconnect', 'connection_scope', 'connection_revoke', 'connection_layers',
+                'appdata_put', 'appdata_delete', 'appdata_restore', 'appdata_clear', 'appdata_wipe', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
                 'account_prefs', 'account_prefs_set', 'account_export', 'account_delete',
                 'share_create', 'share_revoke', 'service_create', 'service_delete', 'token_create', 'token_revoke'];
 
@@ -235,6 +237,18 @@ try {
             reply(issueToken($client, $conn));
         }
         case 'connection_scope': reply(connectionScope(verifySigned($action, signedHeaders(), $raw), $in));
+
+        // ── נתוני משתמש (שלב 4, docs/spec-4-appdata.md). client מהחתימה/האסימון, לעולם לא מהגוף ──
+        case 'appdata_get': case 'appdata_put': case 'appdata_delete': case 'appdata_list': case 'appdata_get_many':
+        case 'appdata_changes': case 'appdata_history': case 'appdata_restore': case 'appdata_usage': case 'appdata_clear': {
+            $ctx = appdataCtx($action, $raw, $in);
+            reply(match ($action) {
+                'appdata_get' => appdataGet($ctx, $in), 'appdata_put' => appdataPut($ctx, $in), 'appdata_delete' => appdataDelete($ctx, $in),
+                'appdata_list' => appdataList($ctx, $in), 'appdata_get_many' => appdataGetMany($ctx, $in),
+                'appdata_changes' => appdataChanges($ctx, $in), 'appdata_history' => appdataHistory($ctx, $in),
+                'appdata_restore' => appdataRestore($ctx, $in), 'appdata_usage' => appdataUsage($ctx), 'appdata_clear' => appdataClear($ctx, $in),
+            });
+        }
         case 'disconnect': {
             $client = verifySigned($action, signedHeaders(), $raw);
             $st = db()->prepare('SELECT id FROM connections WHERE id = ? AND client = ?');
@@ -339,6 +353,8 @@ try {
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);
         case 'connection_layers': reply(ownConnectionScope(requireAccount(), $in['id'] ?? null, $in['scope'] ?? null));
+        case 'appdata_apps':   reply(appdataApps(requireAccount()));                          // "🧩 נתוני אפליקציות"
+        case 'appdata_wipe':   reply(appdataWipeOwn(requireAccount(), $in['client'] ?? null));   // 🗑️ מחק נתונים
 
         case 'admin':          requireAdmin(); reply(adminFull(adminState()));
         case 'admin_settings': requireAdmin(); reply(adminFull(adminSettings($in)));
