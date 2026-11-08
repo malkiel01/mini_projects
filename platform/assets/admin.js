@@ -80,9 +80,24 @@ window.PlatformAdmin = (() => {
         }));
         const body = sysTab === 'plugins' ? renderPlugins() : sysTab === 'sso' ? renderSso() : sysTab === 'diag' ? renderDiag()
             : sysTab === 'probe' ? renderProbe() : el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard(),
-                el('div', { className: 'notify' }, [el('span', { className: 'notify-ic', textContent: '🔍' }), el('div', { className: 'notify-tx' }, [el('b', { textContent: 'מסך בדיקת הגישות החסומות' }), el('small', { textContent: 'זמני: הרשאות ישירות לאפליקציות restricted' })]), button('פתיחה', () => import('../admin/tmp-restricted-audit.js').then(m => m.open(P())).catch(e => P().toast('⚠️ ' + e.message)))]), // tmp-restricted-audit — להסרה: platform/admin/tmp-restricted-audit.php
+                restrictedAccessCard(),
             ]);
         return el('div', {}, [chips, body]);
+    }
+
+    // 🔒 גישות לאפליקציות חסומות (lib/restricted-access.php): כמה הרשאות ישירות לאפליקציות restricted ממתינות להחלטה.
+    // המסך עצמו — platform/admin/restricted-access.js, נטען בלחיצה.
+    function restrictedAccessCard() {
+        const n = state.restricted_pending || 0;
+        const open = button('פתיחה', () => import('../admin/restricted-access.js')
+            .then(m => m.open(P(), reload)).catch(e => P().toast('⚠️ ' + e.message)), 'sm');
+        if (n) open.append(' ', el('span', { className: 'chip bad', textContent: String(n), ariaLabel: `${n} ממתינות להחלטה` }));
+        return el('div', { className: 'notify' }, [
+            el('span', { className: 'notify-ic', textContent: '🔒', ariaHidden: 'true' }),
+            el('div', { className: 'notify-tx' }, [el('b', { textContent: 'גישות לאפליקציות חסומות' }),
+                el('small', { textContent: n ? `${n} ממתינות להחלטה` : 'מי קיבל הרשאה ישירה לאפליקציה מוגבלת' })]),
+            el('div', { className: 'notify-btns' }, [open]),
+        ]);
     }
 
     // בקשות ממתינות לאפליקציות בחנות (PF-001) — רק במצב בקשה; השרת כבר סינן וסגר מה שהוכרע בפועל
