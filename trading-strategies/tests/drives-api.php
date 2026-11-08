@@ -53,12 +53,12 @@ foreach (['drives_status', 'drives_token', 'drives_connect', 'drives_disconnect'
 eq(call('none', 'me')[0], 401, 'and the app itself without identity → 401');
 
 // ── חיבור: ה-sub מהשער בלבד ──────────────────────────────
-eq(call('alice', 'drives_status')[1]['suite'], ['connected' => false, 'layers' => ['files' => false], 'cloud' => 'https://mbe-plus.com/mini_projects/mbe-cloud/'],
-    'not connected — only the files layer (layers.json)');
+eq(call('alice', 'drives_status')[1]['suite'], ['connected' => false, 'layers' => ['files' => false], 'files_scope' => 'files.app', 'cloud' => 'https://mbe-plus.com/mini_projects/mbe-cloud/'],
+    'not connected — only the files layer, scope files.app (layers.json)');
 [$c, $r] = call('alice', 'drives_connect', ['layers' => ['files'], 'sub' => '999']);
 parse_str((string)parse_url($r['url'] ?? '', PHP_URL_QUERY), $q);
 eq([$c, parse_url($r['url'], PHP_URL_PATH), $q['client'] ?? null, $q['scope'] ?? null, $q['sub'] ?? null],
-    [200, '/mini_projects/mbe-cloud/connect.php', 'trading-strategies', 'files', '101'], 'connect URL: our client, files only, and the sub from the gate — a sub in the body is ignored');
+    [200, '/mini_projects/mbe-cloud/connect.php', 'trading-strategies', 'files.app', '101'], 'connect URL: our client, files.app only, and the sub from the gate — a sub in the body is ignored');
 eq(call('alice', 'drives_connect', ['layers' => ['libs']])[0], 400, 'a layer we did not declare → refused');
 parse_str((string)parse_url(call('bob', 'drives_connect', ['layers' => ['files']])[1]['url'], PHP_URL_QUERY), $qb);
 eq($qb['sub'] ?? null, '102', 'bob\'s request carries bob\'s sub');
