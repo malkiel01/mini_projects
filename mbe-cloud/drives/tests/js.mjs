@@ -9,8 +9,6 @@ const API = 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php';
 let dbxLinked = true, ptokens = 0, dbxExpire = false;
 const dbxCalls = [];
 let connected = true, tokens = 0, expireNext = false, chunks = [];
-let pendingClaim = false;
-const claims = [];
 const log = [];
 globalThis.fetch = async (url, init = {}) => {
   url = String(url);
@@ -18,11 +16,7 @@ globalThis.fetch = async (url, init = {}) => {
   const a = new URL(url, 'https://mbe-plus.com/mini_projects/vector-studio/').searchParams.get('action');
   if (!url.startsWith(API)) {
     if (a === 'drives_token') { tokens++; return json(connected ? { connected: true, token: 't' + tokens, expires_in: 900, api: API } : { connected: false }); }
-    if (a === 'drives_status') return json({ suite: pendingClaim ? { connected: false, pending: true } : { connected } });
-    if (a === 'drives_claim') {
-      claims.push(JSON.parse(init.body).code);
-      return JSON.parse(init.body).code === 'ABCD2345' ? json({ suite: { connected: true, name: 'מלכיאל' } }) : json({ error: 'הקוד לא נכון', code: 'bad_claim' }, 400);
-    }
+    if (a === 'drives_status') return json({ suite: { connected } });
     if (a === 'drives_disconnect') { connected = false; return json({ ok: true }); }
     if (a === 'drives_ptoken') { ptokens++; return json(dbxLinked ? { connected: true, token: 'd' + ptokens, expires_in: 14000 } : { connected: false }); }
     if (a === 'drives_unlink') { dbxLinked = false; return json({ ok: true }); }
@@ -129,29 +123,6 @@ try { await d2.suite.list(); } catch (e) { err = e; }
 check('בלי חיבור — DriveError not-connected', err instanceof DriveError && err.code === 'not-connected');
 const none = await d2.ai.capabilities();
 check('בלי חיבור — connected:false, והכול false (המסלול הידני)', none.connected === false && Object.values(none.tasks).every(v => v === false));
-
-// ─── APK: השלמת חיבור בקוד (api-guide.md §10 פ1) ───
-const events = [];
-globalThis.window = new EventTarget();
-window.addEventListener('drives:changed', e => events.push(e.detail));
-let replaced = null;
-globalThis.history = { state: null, replaceState: (_s, _t, url) => { replaced = url; } };
-globalThis.location = { href: 'https://mbe-plus.com/mini_projects/greeting-cards/editor/?cloud=claim&claim=ABCD2345&x=1#top' };
-const d3 = createDrives({ endpoint: 'https://mbe-plus.com/mini_projects/greeting-cards/editor/api.php' });
-await new Promise(r => setTimeout(r, 0));
-check('קישור "חזרה לאפליקציה" — הקוד נשלח ל-drives_claim בטעינה', claims.at(-1) === 'ABCD2345');
-check('והכתובת מתנקה מיד — בלי claim ובלי cloud, שאר הכתובת נשמרת', replaced === '/mini_projects/greeting-cards/editor/?x=1#top');
-check('ואירוע drives:changed עם המצב החדש', events.at(-1)?.suite?.connected === true);
-delete globalThis.location;
-let bad = null;
-try { await d3.claim('WRONG111'); } catch (e) { bad = e; }
-check('drives.claim — קוד שגוי: DriveError bad_claim', bad?.code === 'bad_claim');
-check('drives.claim — קוד נכון: מחזיר status', (await d3.claim('ABCD2345')).suite.connected === true);
-pendingClaim = true;
-const d4 = createDrives({ endpoint: 'https://mbe-plus.com/mini_projects/greeting-cards/editor/api.php' });
-const st = await d4.status();
-check('status עם pending ובלי DOM — לא נתקע, מחזיר את המצב (החלון רק בדפדפן)', st.suite.pending === true);
-pendingClaim = false;
 
 console.log(`\n${n - fails} / ${n} עברו`);
 process.exit(fails ? 1 : 0);

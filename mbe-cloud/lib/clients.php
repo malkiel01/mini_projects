@@ -60,6 +60,12 @@ function migrateClients(PDO $pdo): void {
             PRIMARY KEY (client, nonce)
         );
     ");
+    // רק אותו חשבון (spec-0-vision.md 6.3): ה-sub של הפלטפורמה של המשתמש באפליקציה — על הקוד ועל החיבור.
+    // mismatch_at — חיבור ישן שה-sub שלו התגלה שונה מהחשבון בענן: לא מקבל אסימון, ומופיע בניהול. לא מנותק אוטומטית.
+    foreach (['connections' => ['sub' => 'TEXT', 'mismatch_at' => 'TEXT'], 'codes' => ['sub' => 'TEXT']] as $t => $add) {
+        $cols = array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+        foreach ($add as $c => $type) if (!in_array($c, $cols, true)) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
+    }
 }
 
 // ─── הכתובת של הענן ───────────────────────────────────────────────────────
@@ -226,18 +232,7 @@ function verifySigned(string $action, array $h, string $body): array {
     $sig = base64_decode(strtr($sigB64, '-_', '+/'), true);
     if ($sig === false || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES) throw new AppError('חתימה לא תקינה', 401, 'bad_signature');
     $msg = "$action\n$time\n$nonce\n" . hash('sha256', $body);
-
-    $keys = json_decode((string) $c['keys'], true) ?: [];
-    $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
-    if (!$ok && (int) $c['keys_at'] < time() - 60) {
-        // החלפת מפתח אצל הלקוח — הורדה אחת מחדש, ואז דחייה (embed.md)
-        try {
-            $keys = fetchClientKeys($c['id'], $c['key_url']);
-            db()->prepare('UPDATE clients SET keys = ?, keys_at = ? WHERE id = ?')->execute([json_encode($keys), time(), $c['id']]);
-            $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
-        } catch (AppError) { $ok = false; }
-    }
-    if (!$ok) throw new AppError('חתימה לא תקינה', 401, 'bad_signature');
+    if (!clientSigOk($c, $kid, $sig, $msg)) throw new AppError('חתימה לא תקינה', 401, 'bad_signature');
 
     $pdo = db();
     $pdo->prepare('DELETE FROM nonces WHERE at < ?')->execute([time() - NONCE_TTL]);
@@ -245,6 +240,20 @@ function verifySigned(string $action, array $h, string $body): array {
     $st->execute([$c['id'], $nonce, time()]);
     if ($st->rowCount() === 0) throw new AppError('בקשה חוזרת', 401, 'replay');
     return $c;
+}
+
+/** חתימת Ed25519 של הלקוח על $msg. מפתח לא מוכר — הורדה אחת מחדש מ-key_url (החלפת מפתח, embed.md), ואז דחייה. */
+function clientSigOk(array $c, string $kid, string $sig, string $msg): bool {
+    $keys = json_decode((string) $c['keys'], true) ?: [];
+    $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
+    if (!$ok && (int) $c['keys_at'] < time() - 60) {
+        try {
+            $keys = fetchClientKeys($c['id'], $c['key_url']);
+            db()->prepare('UPDATE clients SET keys = ?, keys_at = ? WHERE id = ?')->execute([json_encode($keys), time(), $c['id']]);
+            $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
+        } catch (AppError) { $ok = false; }
+    }
+    return $ok;
 }
 
 /** הכותרות X-Cloud-* מהבקשה. */
@@ -280,7 +289,34 @@ function connectRequest(array $q): array {
     if (!in_array($return, json_decode($c['returns'], true) ?: [], true)) throw new AppError('כתובת החזרה לא רשומה ללקוח', 400, 'bad_request');
     $state = (string) ($q['state'] ?? '');
     if (!preg_match('/^[A-Za-z0-9_\-.~]{8,200}$/', $state)) throw new AppError('state לא תקין', 400, 'bad_request');
-    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => cleanScope($q['scope'] ?? 'files')];
+    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => cleanScope($q['scope'] ?? 'files'),
+            'sub' => connectSub($c, $q, $return, $state)];
+}
+
+const MISMATCH_MSG = 'החשבון בענן שונה מהחשבון שלך כאן. היכנסו לענן באותו חשבון';
+
+/**
+ * רק אותו חשבון (spec-0-vision.md 6.3): ה-sub של הפלטפורמה של המשתמש באפליקציה, חתום במפתח הלקוח.
+ * החתימה: "connect\n<client>\n<state>\n<sub>\n<exp>\n<return>". בלי sub, בלי חתימה, או חתימה שפגה — דחייה.
+ */
+function connectSub(array $c, array $q, string $return, string $state): string {
+    $sub = (string) ($q['sub'] ?? '');
+    $exp = (string) ($q['exp'] ?? '');
+    if ($sub === '' || strlen($sub) > 200 || !ctype_digit($exp) || (int) $exp < time() || (int) $exp > time() + 3600) {
+        throw new AppError('בקשת החיבור לא מזהה את המשתמש באפליקציה — עדכנו את האפליקציה ונסו שוב', 400, 'bad_identity');
+    }
+    [$kid, $sigB64] = array_pad(explode('.', (string) ($q['sig'] ?? ''), 2), 2, '');
+    $sig = unb64u($sigB64);
+    if ($sig === false || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES
+        || !clientSigOk($c, $kid, $sig, "connect\n{$c['id']}\n$state\n$sub\n$exp\n$return")) {
+        throw new AppError('בקשת החיבור לא חתומה כראוי', 400, 'bad_identity');
+    }
+    return $sub;
+}
+
+/** האם החשבון בענן הוא אותו חשבון פלטפורמה כמו המשתמש באפליקציה. */
+function sameSub(array $a, ?string $sub): bool {
+    return $sub !== null && $sub !== '' && ($a['platform_sub'] ?? null) !== null && hash_equals((string) $a['platform_sub'], $sub);
 }
 
 /** האם כבר אושר — חיבור פעיל שמכסה את ההרשאות שמבוקשות. */
@@ -297,17 +333,17 @@ function approveConnect(array $a, array $req): string {
     if ($conn) {
         $scope = array_values(array_unique(array_merge(json_decode($conn['scope'], true) ?: [], $req['scope'])));
         sort($scope);
-        $pdo->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode($scope), $conn['id']]);
+        $pdo->prepare('UPDATE connections SET scope = ?, sub = ? WHERE id = ?')->execute([json_encode($scope), $req['sub'], $conn['id']]);
         $cid = $conn['id'];
     } else {
         $cid = randomId('c_');
-        $pdo->prepare('INSERT INTO connections (id, account, client, scope, created_at) VALUES (?,?,?,?,?)')
-            ->execute([$cid, $a['id'], $req['client']['id'], json_encode($req['scope']), nowIso()]);
+        $pdo->prepare('INSERT INTO connections (id, account, client, scope, created_at, sub) VALUES (?,?,?,?,?,?)')
+            ->execute([$cid, $a['id'], $req['client']['id'], json_encode($req['scope']), nowIso(), $req['sub']]);
     }
     $code = b64u(random_bytes(24));
     $pdo->prepare('DELETE FROM codes WHERE expires < ?')->execute([time()]);
-    $pdo->prepare('INSERT INTO codes (code, connection, client, return_url, expires) VALUES (?,?,?,?,?)')
-        ->execute([$code, $cid, $req['client']['id'], $req['return'], time() + CODE_TTL]);
+    $pdo->prepare('INSERT INTO codes (code, connection, client, return_url, expires, sub) VALUES (?,?,?,?,?,?)')
+        ->execute([$code, $cid, $req['client']['id'], $req['return'], time() + CODE_TTL, $req['sub']]);
     return withQuery($req['return'], ['code' => $code, 'state' => $req['state']]);
 }
 
@@ -315,7 +351,10 @@ function withQuery(string $url, array $q): string {
     return $url . (str_contains($url, '?') ? '&' : '?') . http_build_query($q);
 }
 
-/** connect_exchange (חתום): קוד → חיבור. הקוד חד-פעמי, של הלקוח הזה בלבד, 2 דקות. */
+/**
+ * connect_exchange (חתום): {code, sub} → חיבור. הקוד חד-פעמי, של הלקוח הזה בלבד, 2 דקות.
+ * sub — של המשתמש באפליקציה. חייב להיות זה שנחתם במסך האישור, וזה של החשבון בענן. אחרת 403 account_mismatch, והקוד נשרף.
+ */
 function exchangeCode(array $client, array $in): array {
     $code = (string) ($in['code'] ?? '');
     $pdo = db();
@@ -326,6 +365,11 @@ function exchangeCode(array $client, array $in): array {
     if (!$row || $row['client'] !== $client['id'] || (int) $row['expires'] < time()) throw new AppError('קוד לא תקף', 400, 'bad_code');
     $conn = connectionRow((string) $row['connection'], $client['id']);
     $a = getAccount($conn['account']);
+    $sub = is_string($in['sub'] ?? null) ? $in['sub'] : null;
+    if (!sameSub($a, $sub) || $row['sub'] === null || !hash_equals((string) $row['sub'], (string) $sub)) {
+        error_log("mbe-cloud: connect_exchange account_mismatch (client {$client['id']})");
+        throw new AppError(MISMATCH_MSG, 403, 'account_mismatch');
+    }
     return ['connection' => $conn['id'], 'account' => ['name' => $a['name']], 'scope' => json_decode($conn['scope'], true), 'cloud_id' => setting('cloud_id')];
 }
 
@@ -367,6 +411,22 @@ function issueToken(array $client, array $conn): array {
     $p = b64u($payload);
     $k = cloudSigningKey();
     return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL];
+}
+
+/**
+ * access_token: לפני כל אסימון — רק אותו חשבון. sub של המשתמש באפליקציה מול החשבון בענן ומול מה שנרשם על החיבור.
+ * חיבור ישן בלי sub: תואם — נרשם עליו. שונה — אין אסימון, החיבור מסומן mismatch_at (מופיע בניהול), ולא מנותק.
+ */
+function bindConnection(array $conn, mixed $sub): void {
+    $sub = is_string($sub) ? $sub : null;
+    $a = getAccount($conn['account']);
+    $ok = $a && sameSub($a, $sub) && ($conn['sub'] === null || hash_equals((string) $conn['sub'], (string) $sub));
+    if (!$ok) {
+        db()->prepare('UPDATE connections SET mismatch_at = COALESCE(mismatch_at, ?) WHERE id = ?')->execute([nowIso(), $conn['id']]);
+        error_log("mbe-cloud: access_token account_mismatch (connection {$conn['id']})");
+        throw new AppError(MISMATCH_MSG, 403, 'account_mismatch');
+    }
+    if ($conn['sub'] === null) db()->prepare('UPDATE connections SET sub = ? WHERE id = ? AND sub IS NULL')->execute([$sub, $conn['id']]);
 }
 
 /** בודק אסימון: חתימה, תוקף, והחיבור עדיין פעיל. מחזיר [חיבור, לקוח]. */
@@ -440,10 +500,11 @@ function corsHeaders(): void {
 // ─── ניהול ────────────────────────────────────────────────────────────────
 
 function adminClients(): array {
-    $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users
+    $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users,
+                                (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL AND c.mismatch_at IS NOT NULL) AS mismatch
                          FROM clients k ORDER BY k.status = 'pending' DESC, k.name")->fetchAll();
     return array_map(fn($r) => ['id' => $r['id'], 'name' => $r['name'], 'status' => $r['status'], 'origins' => json_decode($r['origins'], true),
-        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'created_at' => $r['created_at']], $rows);
+        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at']], $rows);
 }
 
 function adminClient(array $in): array {

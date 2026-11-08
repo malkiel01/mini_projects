@@ -75,7 +75,9 @@ $cloud = function (string $url, array $headers, string $json) use ($dropbox): ar
             'connect_exchange' => exchangeCode(verifySigned('connect_exchange', $h, $json), $in),
             'access_token' => (function () use ($h, $json, $in) {
                 $c = verifySigned('access_token', $h, $json);
-                return issueToken($c, connectionRow((string) ($in['connection'] ?? ''), $c['id']));
+                $conn = connectionRow((string) ($in['connection'] ?? ''), $c['id']);
+                bindConnection($conn, $in['sub'] ?? null);   // כמו ב-api.php
+                return issueToken($c, $conn);
             })(),
             'drives_config' => (function () use ($h, $json) {
                 verifySigned('drives_config', $h, $json);
@@ -104,13 +106,32 @@ $app = new Drives([
     'http' => $cloud,
 ]);
 
-/** בעל החשבון בענן מאשר את מסך החיבור — מחזיר את כתובת החזרה. */
-function approve(string $connectUrl): string {
-    parse_str((string) parse_url($connectUrl, PHP_URL_QUERY), $q);
-    $_SERVER['PLATFORM_USER'] = json_encode(['sub' => '1', 'name' => 'בעל המערכת', 'email' => 'owner@example.com', 'platform_admin' => true]);
-    $req = connectRequest($q);
-    return approveConnect(requireAccount(), $req);
+/** מי מחובר לפלטפורמה בבקשה הזו (השער כותב PLATFORM_USER). sub 1 — בעל המערכת; sub 2 — אדם אחר. null — אין. */
+function platformAs(?string $sub): void {
+    if ($sub === null) { unset($_SERVER['PLATFORM_USER']); return; }
+    $_SERVER['PLATFORM_USER'] = json_encode($sub === '1'
+        ? ['sub' => '1', 'name' => 'בעל המערכת', 'email' => 'owner@example.com', 'platform_admin' => true]
+        : ['sub' => $sub, 'name' => "אדם $sub", 'email' => "p$sub@example.com", 'platform_admin' => false]);
 }
+
+/**
+ * מסך החיבור בענן, בדיוק כמו connect.php: מי שנכנס לענן ($sub) — ואם הוא לא אותו חשבון כמו המשתמש באפליקציה, החיבור נדחה
+ * בלי כפתור (חוזר עם error=account_mismatch). $force — מדלג על המסך (כמו תוקף שמנסה לעקוף), כדי לבדוק את ההחלפה עצמה.
+ */
+function approve(string $connectUrl, string $sub = '1', bool $force = false): string {
+    parse_str((string) parse_url($connectUrl, PHP_URL_QUERY), $q);
+    $appPlatform = $_SERVER['PLATFORM_USER'] ?? null;
+    platformAs($sub);
+    try {
+        $req = connectRequest($q);
+        $a = requireAccount();
+        if (!$force && !sameSub($a, $req['sub'])) return withQuery($req['return'], ['error' => 'account_mismatch', 'state' => $req['state']]);
+        return approveConnect($a, $req);
+    } finally {
+        if ($appPlatform === null) unset($_SERVER['PLATFORM_USER']); else $_SERVER['PLATFORM_USER'] = $appPlatform;
+    }
+}
+platformAs('1');   // האפליקציה: המשתמשים u1… שייכים לבעל המערכת, אלא אם נקבע אחרת
 
 try {
     check('המפתח הציבורי של האפליקציה', $app->keyJson()['client'] === 'vector-studio' && strlen(base64_decode($app->keyJson()['keys'][0]['key'])) === 32);
@@ -165,80 +186,106 @@ try {
         return $app->token('u1') === ['connected' => false] && $app->status('u1')['suite']['connected'] === false;
     })());
 
-    // ─── APK: החזרה בדפדפן החיצוני, בלי העוגייה של האפליקציה (api-guide.md §10 פ1, פ1א) ───
+    // ─── רק אותו חשבון (spec-0-vision.md 6.3) ───
     $app->disconnect('u1');
-    $pend = fn(string $u) => (fn() => $this->db()->query('SELECT * FROM pending WHERE user = ' . $this->db()->quote($u))->fetch())->call($app);
-    $user = null;   // הדפדפן החיצוני — אין משתמש באפליקציה
-    $url = $app->connectUrl('u1');   // נוצר בתוך האפליקציה, עם העוגייה של u1
-    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $conns = fn(string $u) => (fn() => $this->db()->query('SELECT * FROM conns WHERE user = ' . $this->db()->quote($u))->fetch())->call($app);
+    $cloudConn = fn(string $id) => db()->query('SELECT * FROM connections WHERE id = ' . db()->quote($id))->fetch();
+    $q2 = fn(string $url) => (function () use ($url) { parse_str((string) parse_url($url, PHP_URL_QUERY), $q); return $q; })();
+
+    $url = $app->connectUrl('u1');
+    $q = $q2($url);
+    check('הבקשה ל-connect.php נושאת sub, exp וחתימה', $q['sub'] === '1' && ctype_digit($q['exp']) && str_contains($q['sig'], '.'));
+    check('connect.php מזהה את המשתמש באפליקציה מהחתימה', connectRequest($q)['sub'] === '1');
+    check('sub מזויף בכתובת (החתימה על sub אחר) — bad_identity', code(fn() => connectRequest(['sub' => '2'] + $q)) === 'bad_identity');
+    check('בלי חתימה — bad_identity', code(fn() => connectRequest(array_diff_key($q, ['sig' => 1]))) === 'bad_identity');
+    check('בלי sub — bad_identity', code(fn() => connectRequest(array_diff_key($q, ['sub' => 1]))) === 'bad_identity');
+    check('exp שפג — bad_identity', code(fn() => connectRequest(['exp' => (string) (time() - 1)] + $q)) === 'bad_identity');
+    check('חתימה של return אחר — bad_identity', code(fn() => connectRequest(['sig' => $q2($app->connectUrl('u1'))['sig']] + $q)) === 'bad_identity');
+
+    platformAs(null);
+    check('בלי חשבון פלטפורמה באפליקציה — אין הפניה לענן (no_platform_account)', code(fn() => $app->connectUrl('u1')) === 'no_platform_account');
+    platformAs('1');
+
+    // אדם אחר (sub 2) יוצר בקשה באפליקציה, ושולח את הקישור לבעל המערכת (sub 1), שמאשר בענן שלו
+    platformAs('2');
+    $url = $app->connectUrl('u2');
+    platformAs('1');
+    $q = $q2($url);
+    platformAs('1');
+    check('connect.php: החשבון בענן (1) אינו המשתמש באפליקציה (2) — נדחה במסך', !sameSub(requireAccount(), connectRequest($q)['sub']));
+    $user = null;   // הדפדפן החיצוני
+    $back = approve($url);
+    check('המסך מחזיר error=account_mismatch, בלי קוד', str_contains($back, 'error=account_mismatch') && !str_contains($back, 'code='));
+    check('והחזרה מציגה "החשבון בענן שונה", בלי חיבור', code(fn() => $app->handle('drives_callback', $q2($back))) === 'account_mismatch'
+        && $conns('u2') === false);
+    // ואם מדלגים על המסך — ההחלפה עצמה דוחה
+    $url = (function () use ($app) { platformAs('2'); $u = $app->connectUrl('u2'); platformAs('1'); return $u; })();
+    $bq = $q2(approve($url, '1', true));
+    check('גם בעקיפת המסך: connect_exchange דוחה (account_mismatch), ואין חיבור', code(fn() => $app->handle('drives_callback', $bq)) === 'account_mismatch'
+        && $conns('u2') === false);
+    check('והקוד נשרף', !db()->query('SELECT 1 FROM codes WHERE code = ' . db()->quote($bq['code']))->fetchColumn());
+    // sub נכון בחתימה, אבל ב-connect_exchange נשלח sub אחר
+    $url = $app->connectUrl('u1');
+    $bq = $q2(approve($url));
+    check('connect_exchange עם sub שונה מזה שנחתם — account_mismatch', code(fn() => exchangeCode(activeClient('vector-studio'), ['code' => $bq['code'], 'sub' => '2'])) === 'account_mismatch');
+    $bq = $q2(approve($app->connectUrl('u1')));
+    check('connect_exchange בלי sub — account_mismatch', code(fn() => exchangeCode(activeClient('vector-studio'), ['code' => $bq['code']])) === 'account_mismatch');
+
+    // ─── APK: החזרה בדפדפן החיצוני, בלי העוגייה של האפליקציה (api-guide.md §10 פ1) ───
+    $user = 'u1';
+    $url = $app->connectUrl('u1');   // נוצר בתוך האפליקציה, עם העוגייה של u1 (sub 1)
+    $user = null;
+    $bq = $q2(approve($url));
     $r = $app->handle('drives_callback', $bq);
-    $code = $r['claim'] ?? '';
-    check('(א) חזרה בלי עוגייה — לא 401: ממתין, וקוד בן 8 תווים לדף', isset($r['done']) && (bool) preg_match('/^[A-HJ-NP-Z2-9]{8}$/', $code));
-    check('הקוד נשמר רק כ-hash', ($p = $pend('u1')) && $p['claim'] === hash('sha256', $code) && !str_contains(json_encode($p), $code));
-    check('חזרה כפולה לאותו דף — לא מציגה את הקוד שוב (bad_state:used)', code(fn() => $app->handle('drives_callback', $bq)) === 'bad_state:used');
-    check('בלי קוד — לא מתחבר אוטומטית; status מסמן pending', $app->status('u1')['suite']['connected'] === false
-        && ($app->status('u1')['suite']['pending'] ?? false) === true && $app->token('u1') === ['connected' => false]);
-    check('(ב) משתמש אחר לא רואה את הממתין, ולא יכול לאשר אותו גם עם הקוד הנכון', !isset($app->status('u2')['suite']['pending'])
-        && code(fn() => $app->claim('u2', $code)) === 'no_pending' && $pend('u1') !== null);
-    check('קוד שגוי — bad_claim, וניסיון נספר', code(fn() => $app->claim('u1', 'AAAAAAAA')) === 'bad_claim' && (int) $pend('u1')['tries'] === 1);
-    $s = $app->claim('u1', strtolower(substr($code, 0, 4) . '-' . substr($code, 4)));   // כמו שמוקלד: עם מקף, באותיות קטנות
-    check('(א) הקוד הנכון, עם העוגייה של u1 — מחובר', $s['suite']['connected'] === true && $s['suite']['name'] === 'בעל המערכת' && $pend('u1') === false);
+    check('(א) אותו אדם, בלי עוגייה — החיבור הושלם ישר', ($r['done'] ?? '') !== '' && empty($r['denied'])
+        && $app->status('u1')['suite']['connected'] === true && $conns('u1')['sub'] === '1');
+    check('(א) והחיבור בענן רשום עם ה-sub', $cloudConn($conns('u1')['connection'])['sub'] === '1');
+    check('חזרה כפולה לאותו דף — "כבר הושלם", לא שגיאה', str_contains($app->handle('drives_callback', $bq)['done'] ?? '', 'כבר הושלם'));
     $t = $app->token('u1');
     $_SERVER['HTTP_X_CLOUD_TOKEN'] = $t['token'];
     check('(א) והאסימון פותח את הענן', actor('list', 'files', '')['app'] === 'vector-studio');
     unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
-    check('קוד שכבר נוצל — no_pending', code(fn() => $app->claim('u1', $code)) === 'no_pending');
 
-    // 5 ניסיונות — ואז הממתין נמחק ומנותק בענן
-    $url = $app->connectUrl('u6');
-    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
-    $r6 = $app->handle('drives_callback', $bq);
-    $cid6 = $pend('u6')['connection'];
-    $codes = [];
-    for ($i = 0; $i < 4; $i++) $codes[] = code(fn() => $app->claim('u6', 'BBBBBBBB'));
-    $codes[] = code(fn() => $app->claim('u6', 'BBBBBBBB'));
-    check('ניסיון חמישי שגוי — claim_locked, והממתין נמחק', $codes === ['bad_claim', 'bad_claim', 'bad_claim', 'bad_claim', 'claim_locked'] && $pend('u6') === false);
-    check('ניסיון שישי, גם עם הקוד הנכון — נדחה, והחיבור בענן נותק', code(fn() => $app->claim('u6', $r6['claim'])) === 'no_pending'
-        && db()->query('SELECT revoked_at FROM connections WHERE id = ' . db()->quote($cid6))->fetchColumn() !== null);
+    // ביטול במסך האישור, בלי עוגייה — דף "בוטל", בלי חיבור
+    $user = 'u5';
+    $q = $q2($app->connectUrl('u5'));
+    $user = null;
+    $r5 = $app->handle('drives_callback', ['error' => 'access_denied'] + $q);
+    check('ביטול בדפדפן החיצוני — דף "בוטל", בלי חיבור', str_contains($r5['done'], 'בוטל') && !empty($r5['denied'])
+        && $app->status('u5')['suite']['connected'] === false);
 
     // (ג) state שפג — נדחה, גם בלי עוגייה
     $url = $app->connectUrl('u3');
-    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $bq = $q2(approve($url));
     (fn() => $this->db()->prepare('UPDATE states SET expires = ? WHERE state = ?')->execute([time() - 1, $bq['state']]))->call($app);
     check('(ג) state שפג — bad_state:expired', code(fn() => $app->handle('drives_callback', $bq)) === 'bad_state:expired');
     check('(ג) state שלא קיים — bad_state:missing', code(fn() => $app->handle('drives_callback', ['state' => 'nope', 'code' => 'x'])) === 'bad_state:missing');
     check('(ג) ולא נוצר חיבור', $app->status('u3')['suite']['connected'] === false);
 
-    // קוד שפג (10 דקות) — נדחה, הממתין נמחק ומנותק בענן
-    $url = $app->connectUrl('u4');
-    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
-    $r4 = $app->handle('drives_callback', $bq);
-    $cid4 = $pend('u4')['connection'];
-    (fn() => $this->db()->exec("UPDATE pending SET expires = " . (time() - 1) . " WHERE user = 'u4'"))->call($app);
-    check('קוד שפג — no_pending', code(fn() => $app->claim('u4', $r4['claim'])) === 'no_pending');
-    check('ממתין שפג — נמחק, והחיבור בענן נותק', $pend('u4') === false
-        && db()->query('SELECT revoked_at FROM connections WHERE id = ' . db()->quote($cid4))->fetchColumn() !== null);
+    // ─── access_token — בכל פעם. חיבורים מלפני הכלל (בלי sub) ───
+    $user = 'u1';
+    $cid = $conns('u1')['connection'];
+    db()->prepare('UPDATE connections SET sub = NULL WHERE id = ?')->execute([$cid]);
+    (fn() => $this->db()->exec("UPDATE conns SET sub = NULL WHERE user = 'u1'"))->call($app);
+    check('חיבור ישן, אותו אדם — אסימון, וה-sub נרשם בשני הצדדים', $app->token('u1')['connected'] === true
+        && $cloudConn($cid)['sub'] === '1' && $conns('u1')['sub'] === '1' && $cloudConn($cid)['mismatch_at'] === null);
+    db()->prepare('UPDATE connections SET sub = NULL WHERE id = ?')->execute([$cid]);
+    (fn() => $this->db()->exec("UPDATE conns SET sub = NULL WHERE user = 'u1'"))->call($app);
+    platformAs('2');   // באפליקציה מחובר עכשיו אדם אחר, והחיבור הישן מוביל לענן של בעל המערכת
+    check('חיבור ישן של אדם אחר — אין אסימון (account_mismatch)', code(fn() => $app->token('u1')) === 'account_mismatch');
+    check('— מסומן mismatch_at, לא מנותק, ומופיע בניהול', $cloudConn($cid)['mismatch_at'] !== null && $cloudConn($cid)['revoked_at'] === null
+        && array_values(array_filter(adminClients(), fn($c) => $c['id'] === 'vector-studio'))[0]['mismatch'] === 1);
+    platformAs('1');
+    db()->prepare("UPDATE connections SET sub = '2' WHERE id = ?")->execute([$cid]);
+    check('חיבור שנרשם ל-sub אחר — אין אסימון גם כשה-sub של הבקשה תואם', code(fn() => $app->token('u1')) === 'account_mismatch');
+    db()->prepare("UPDATE connections SET sub = '1', mismatch_at = NULL WHERE id = ?")->execute([$cid]);
+    check('ושוב תקין — אסימון', $app->token('u1')['connected'] === true);
 
-    // בקשה חדשה מחליפה ממתין קודם של אותו משתמש
-    $url = $app->connectUrl('u7');
-    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
-    $r7a = $app->handle('drives_callback', $bq);
-    $url = $app->connectUrl('u7');
-    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
-    $r7b = $app->handle('drives_callback', $bq);
-    check('בקשה חדשה מחליפה את הקודמת — הקוד הישן לא עובד, החדש כן', code(fn() => $app->claim('u7', $r7a['claim'])) === 'bad_claim'
-        && $app->claim('u7', $r7b['claim'])['suite']['connected'] === true);
-
-    // ביטול במסך האישור, בלי עוגייה — דף "בוטל", בלי קוד ובלי חיבור
-    $url = $app->connectUrl('u5');
-    parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
-    $q['error'] = 'access_denied';
-    $r5 = $app->handle('drives_callback', $q);
-    check('ביטול בדפדפן החיצוני — דף "בוטל", בלי קוד ובלי חיבור', str_contains($r5['done'], 'בוטל') && !isset($r5['claim']) && !empty($r5['denied'])
-        && $app->status('u5')['suite']['connected'] === false);
-
-    $user = null;
-    check('drives_claim בלי משתמש באפליקציה — 401', code(fn() => $app->handle('drives_claim', ['code' => 'x'])) === 'unauthorized');
+    // cfg['sub'] — האפליקציה יכולה לקבוע את ה-sub בעצמה (לא חובה)
+    $own = new Drives(['client' => 'vector-studio', 'name' => 'וקטורי', 'dataDir' => "$tmp/app",
+        'endpoint' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php', 'back' => 'https://mbe-plus.com/mini_projects/vector-studio/',
+        'user' => fn() => 'u9', 'http' => $cloud, 'sub' => fn(string $u) => $u === 'u9' ? '2' : null]);
+    check("cfg['sub'] — גובר על PLATFORM_USER", $q2($own->connectUrl('u9'))['sub'] === '2' && code(fn() => $own->connectUrl('u8')) === 'no_platform_account');
 
     // (ד) הזרימה הרגילה, עם העוגייה — לא השתנתה
     $user = 'u1';
@@ -250,6 +297,7 @@ try {
     $user = 'u2';
     check('(ד) עם עוגייה של משתמש אחר — עדיין bad_state:user', code(fn() => $app->handle('drives_callback', $bq)) === 'bad_state:user');
     $user = null;
+    check('drives_claim (מהגרסה עם הקוד) כבר לא קיים', code(fn() => $app->handle('drives_claim', ['code' => 'x'])) === 'unauthorized');
     check('בלי משתמש — שאר הפעולות עדיין 401', code(fn() => $app->handle('drives_status', [])) === 'unauthorized'
         && code(fn() => $app->handle('drives_token', [])) === 'unauthorized' && code(fn() => $app->handle('drives_connect', [])) === 'unauthorized');
     $user = 'u1';

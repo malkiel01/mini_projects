@@ -230,7 +230,9 @@ try {
         case 'connect_exchange': reply(exchangeCode(verifySigned($action, signedHeaders(), $raw), $in));
         case 'access_token': {
             $client = verifySigned($action, signedHeaders(), $raw);
-            reply(issueToken($client, connectionRow((string) ($in['connection'] ?? ''), $client['id'])));
+            $conn = connectionRow((string) ($in['connection'] ?? ''), $client['id']);
+            bindConnection($conn, $in['sub'] ?? null);   // רק אותו חשבון — בכל אסימון
+            reply(issueToken($client, $conn));
         }
         case 'disconnect': {
             $client = verifySigned($action, signedHeaders(), $raw);

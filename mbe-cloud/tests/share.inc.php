@@ -212,9 +212,10 @@ try {
     check('ת2: שורת ה-429 נכנסת ליומן של בעל האסימון', $n429 === 1);
 
     // ת6 — אסימון אפליקציה של 15 דקות לא נשבר
-    $req = connectRequest(['client' => 'vector-studio', 'scope' => 'files', 'state' => 'st2state1', 'return' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback']);
+    $aSub = (string) getAccount($A['id'])['platform_sub'];
+    $req = connectRequest($GLOBALS['idq'](['client' => 'vector-studio', 'scope' => 'files', 'state' => 'st2state1', 'return' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback'], $aSub));
     parse_str((string) parse_url(approveConnect(getAccount($A['id']), $req), PHP_URL_QUERY), $q);
-    $ex = exchangeCode(activeClient('vector-studio'), ['code' => $q['code']]);
+    $ex = exchangeCode(activeClient('vector-studio'), ['code' => $q['code'], 'sub' => $aSub]);
     $appTok = issueToken(activeClient('vector-studio'), connectionRow($ex['connection'], 'vector-studio'))['token'];
     $r = $http('GET', 'action=list&folder=' . $main['id'], ['Authorization' => "Bearer $appTok", 'X-Test-IP' => '10.0.0.3']);
     check('ת6: אסימון אפליקציה (בלי mbe_pat_) — list עובד כמו קודם, גם מכתובת חסומה ל-PAT',
