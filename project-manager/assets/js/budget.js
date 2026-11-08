@@ -27,7 +27,7 @@ const Budget = (() => {
             const b = e.target.closest('[data-b]');
             if (!b) return;
             ({ save, send, edit: () => { editing = true; render(); }, stop: () => { editing = false; render(); },
-               assign: () => { assigning = !assigning; render(); },
+               assign: () => rerender(() => { assigning = !assigning; }),
                cancel: cancelPending, manual: manualApprove, share: shareLink })[b.dataset.b]?.();
         });
         root.addEventListener('input', e => { if (e.target.matches('[data-amt], [name=cont]')) { totals(); if (e.target.matches('[data-amt]')) breakdown(); } });
@@ -45,16 +45,21 @@ const Budget = (() => {
     const fv = g => fmt(g / k());
     const r2 = n => Math.round(n * 100) / 100;
 
-    /** החלפת התצוגה. בעריכה — מה שכבר הוקלד נשאר באותו ערך (מומר), לא נמחק. */
-    async function setVat(mode) {
-        const typed = canEdit() ? $$('#fin-budget [data-amt]').map(i => [i.dataset.amt, (Number(i.value.replace(/[^\d.]/g, '')) || 0) * k()]) : [];
+    /** בנייה מחדש בלי לאבד מה שהוקלד ועוד לא נשמר: סכומים (נשמרים כולל מע"מ ומומרים), בלתי צפוי והערה. */
+    function rerender(before) {
+        const typed = $$('#fin-budget [data-amt]').map(i => [i.dataset.amt, i.value.trim() === '' ? null : (Number(i.value.replace(/[^\d.]/g, '')) || 0) * k()]);
         const cont = $('#fin-budget [name=cont]')?.value, note = $('#fin-budget [name=note]')?.value;
-        data.vat_mode = mode;
+        before?.();
         render();
-        for (const [id, g] of typed) { const i = $(`#fin-budget [data-amt="${id}"]`); if (i) i.value = g ? String(r2(g / k())) : ''; }
+        for (const [id, g] of typed) { const i = $(`#fin-budget [data-amt="${id}"]`); if (i) i.value = g === null ? '' : String(r2(g / k())); }
         if (cont !== undefined && $('#fin-budget [name=cont]')) $('#fin-budget [name=cont]').value = cont;
         if (note && $('#fin-budget [name=note]')) $('#fin-budget [name=note]').value = note;
-        totals();
+        if (typed.length || cont !== undefined) { breakdown(); totals(); }
+    }
+
+    /** החלפת התצוגה. בעריכה — מה שכבר הוקלד נשאר באותו ערך (מומר), לא נמחק. */
+    async function setVat(mode) {
+        rerender(() => { data.vat_mode = mode; });
         api('budget-vat', { body: { project_id: project.project.id, mode } }).catch(e => toast(e.message, true));
     }
 
@@ -142,7 +147,7 @@ const Budget = (() => {
             await api('stage', { body });
             if (sel.dataset.as === 'trade') s.trade_id = Number(sel.value) || null;
             else { s.supplier_id = Number(sel.value) || null; s.supplier_name = supplierContacts.find(c => c.id === s.supplier_id)?.name || null; }
-            render();
+            rerender();
             toast(t('נשמר'));
         } catch (e) { toast(e.message, true); sel.disabled = false; }
     }
