@@ -87,11 +87,14 @@ final class Drives {
                 header('Location: ' . $r['redirect'], true, 303);
                 exit;
             }
-            if (isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'connected' : 'denied', 200, true);
+            $key = $action === 'drives_oauth_callback' ? 'drive' : 'cloud';
+            if (isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'connected' : 'denied', 200, true, $key);
             $this->json($r);
         } catch (DrivesError $e) {
             // החזרה מהענן היא ניווט של הדפדפן — דף ברור עם דרך חזרה, לא JSON
-            if (in_array($action, ['drives_callback', 'drives_oauth_callback'], true)) $this->page($e->getMessage(), $e->codeName, $e->status);
+            if (in_array($action, ['drives_callback', 'drives_oauth_callback'], true)) {
+                $this->page($e->getMessage(), $e->codeName, $e->status, false, $action === 'drives_oauth_callback' ? 'drive' : 'cloud');
+            }
             $this->json(['error' => $e->getMessage(), 'code' => $e->codeName], $e->status);
         } catch (\Throwable $e) {
             error_log('drives: ' . $e);
@@ -105,6 +108,7 @@ final class Drives {
         $user = ($this->cfg['user'])();
         $user = is_string($user) && $user !== '' ? $user : null;
         // החזרה מהענן בדפדפן בלי העוגייה של האפליקציה (APK) — לפי ה-state. הענן כבר וידא שזה אותו חשבון פלטפורמה
+        if ($action === 'drives_oauth_callback' && $user === null) return $this->oauthCallbackExternal($in);
         if ($action === 'drives_callback' && $user === null) return $this->callbackExternal($in);
         if ($user === null) throw new DrivesError('נדרשת כניסה', 401, 'unauthorized');
         return match ($action) {
@@ -188,8 +192,9 @@ final class Drives {
         $state = $this->cfg['client'] . '.' . rtrim(strtr(base64_encode(random_bytes(24)), '+/', '-_'), '=');
         $db = $this->db();
         $db->prepare('DELETE FROM pstates WHERE expires < ?')->execute([time()]);
-        $db->prepare('INSERT INTO pstates (state, user, provider, verifier, expires) VALUES (?,?,?,?,?)')
-            ->execute([$state, $user, $p, $verifier, time() + self::STATE_TTL]);
+        // ה-sub של הפלטפורמה — כדי שחזרה בלי העוגייה (APK) תתקבל רק בדפדפן של אותו אדם (פ1ב)
+        $db->prepare('INSERT INTO pstates (state, user, provider, verifier, expires, sub) VALUES (?,?,?,?,?,?)')
+            ->execute([$state, $user, $p, $verifier, time() + self::STATE_TTL, $this->sub($user)]);
         $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
         return self::PROVIDERS[$p]['authorize'] . '?' . http_build_query([
             'client_id' => $c['app_key'], 'response_type' => 'code', 'redirect_uri' => $c['redirect'], 'state' => $state,
@@ -212,8 +217,43 @@ final class Drives {
             error_log("drives oauth ({$this->cfg['client']}): state $why");
             throw new DrivesError('החיבור לכונן פג או נפתח בחשבון אחר — נסו שוב מהאפליקציה', 400, "bad_state:$why");
         }
+        return $back . ($this->finishOauth($row, $in) ? 'drive=connected' : 'drive=denied');
+    }
+
+    /**
+     * החזרה מ-Dropbox בדפדפן בלי העוגייה של האפליקציה (APK — הדפדפן החיצוני). פ1ב, באותו עיקרון כמו #1293:
+     * מתקבלת רק כשה-sub של הפלטפורמה בדפדפן הזה (PLATFORM_USER — הכתובת מאחורי השער) הוא ה-sub שנשמר ב-state.
+     * אחרת — account_mismatch, והכונן לא נקשר. אין עקיפה.
+     */
+    public function oauthCallbackExternal(array $in): array {
+        $state = (string) ($in['state'] ?? '');
+        $db = $this->db();
+        $st = $db->prepare('SELECT * FROM pstates WHERE state = ?');
+        $st->execute([$state]);
+        $row = $st->fetch();
+        $db->prepare('DELETE FROM pstates WHERE state = ?')->execute([$state]);
+        if (!$row || (int) $row['expires'] < time()) {
+            $why = !$row ? 'missing' : 'expired';
+            error_log("drives oauth ({$this->cfg['client']}): state $why (external)");
+            throw new DrivesError('החיבור לכונן פג — נסו שוב מהאפליקציה', 400, "bad_state:$why");
+        }
+        $p = json_decode((string) ($_SERVER['PLATFORM_USER'] ?? ''), true);
+        $here = is_array($p) && is_scalar($p['sub'] ?? null) ? (string) $p['sub'] : '';
+        if ($here === '' || ($row['sub'] ?? null) === null || !hash_equals((string) $row['sub'], $here)) {
+            error_log("drives oauth ({$this->cfg['client']}): account_mismatch (external)");
+            throw new DrivesError('החשבון בדפדפן הזה שונה מהחשבון שלך באפליקציה. היכנסו באותו חשבון ונסו שוב', 403, 'account_mismatch');
+        }
+        return $this->finishOauth($row, $in)
+            ? ['done' => 'הכונן חובר. אפשר לחזור לאפליקציה.']
+            : ['done' => 'החיבור לכונן בוטל. אפשר לסגור את הדף ולחזור לאפליקציה.', 'denied' => true];
+    }
+
+    /** ההחלפה אצל הספק ושמירת הכונן למשתמש של ה-state. false — המשתמש ביטל אצל הספק. */
+    private function finishOauth(array $row, array $in): bool {
+        $db = $this->db();
+        $user = $row['user'];
         $p = $row['provider'];
-        if (isset($in['error'])) return $back . 'drive=denied';
+        if (isset($in['error'])) return false;
         $c = $this->needProvider($p);
         $t = $this->form(self::PROVIDERS[$p]['token'], ['grant_type' => 'authorization_code', 'code' => (string) ($in['code'] ?? ''),
             'client_id' => $c['app_key'], 'code_verifier' => $row['verifier'], 'redirect_uri' => $c['redirect']]);
@@ -227,7 +267,7 @@ final class Drives {
                       ON CONFLICT(user, provider) DO UPDATE SET refresh = excluded.refresh, name = excluded.name, access = excluded.access,
                       access_until = excluded.access_until, created_at = excluded.created_at')
             ->execute([$user, $p, $t['refresh_token'], $name, $t['access_token'], time() + (int) ($t['expires_in'] ?? 14400) - 120, gmdate('c')]);
-        return $back . 'drive=connected';
+        return true;
     }
 
     /** אסימון גישה קצר לדפדפן (מתחדש מאסימון הרענון). הרשאה שבוטלה אצל הספק → מוחקים ומחזירים connected:false. */
@@ -536,13 +576,13 @@ final class Drives {
             CREATE TABLE IF NOT EXISTS conns (user TEXT PRIMARY KEY, connection TEXT NOT NULL, name TEXT NOT NULL,
                                               cloud_id TEXT NOT NULL, scope TEXT NOT NULL, created_at TEXT NOT NULL, sub TEXT);
             CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, sub TEXT);
-            CREATE TABLE IF NOT EXISTS pstates (state TEXT PRIMARY KEY, user TEXT NOT NULL, provider TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS pstates (state TEXT PRIMARY KEY, user TEXT NOT NULL, provider TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL, sub TEXT);
             CREATE TABLE IF NOT EXISTS links (user TEXT NOT NULL, provider TEXT NOT NULL, refresh TEXT NOT NULL, name TEXT NOT NULL,
                                               access TEXT, access_until INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
                                               PRIMARY KEY (user, provider));
         ");
         // מסד מגרסה קודמת — בלי used / sub
-        foreach (['states' => ['used' => 'INTEGER NOT NULL DEFAULT 0', 'sub' => 'TEXT'], 'conns' => ['sub' => 'TEXT']] as $t => $add) {
+        foreach (['states' => ['used' => 'INTEGER NOT NULL DEFAULT 0', 'sub' => 'TEXT'], 'conns' => ['sub' => 'TEXT'], 'pstates' => ['sub' => 'TEXT']] as $t => $add) {
             $cols = array_column($this->pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
             foreach ($add as $c => $type) if (!in_array($c, $cols, true)) $this->pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
         }
@@ -598,15 +638,16 @@ final class Drives {
     }
 
     /** דף קצר בעברית, עם כפתור חזרה לאפליקציה — לחזרה מהענן. $ok — הצלחה (החזרה בדפדפן החיצוני, APK). */
-    private function page(string $msg, string $code, int $status, bool $ok = false): never {
+    /** $key — הפרמטר בקישור החזרה: cloud (ענן MBE) או drive (כונן חיצוני — Dropbox). */
+    private function page(string $msg, string $code, int $status, bool $ok = false, string $key = 'cloud'): never {
         http_response_code($status);
         header('Content-Type: text/html; charset=utf-8');
         header('Cache-Control: no-store');
         $m = htmlspecialchars($msg);
         $c = htmlspecialchars($code);
         $sep = str_contains($this->cfg['back'], '?') ? '&' : '?';
-        $b = htmlspecialchars($this->cfg['back'] . $sep . ($code === 'denied' ? 'cloud=denied' : ($ok ? 'cloud=connected' : 'cloud=error')));
-        $head = $ok ? '☁️ החיבור לענן' : '☁️ החיבור לענן לא הושלם';
+        $b = htmlspecialchars($this->cfg['back'] . $sep . $key . '=' . ($code === 'denied' ? 'denied' : ($ok ? 'connected' : 'error')));
+        $head = $key === 'drive' ? ($ok ? '💾 החיבור לכונן' : '💾 החיבור לכונן לא הושלם') : ($ok ? '☁️ החיבור לענן' : '☁️ החיבור לענן לא הושלם');
         $foot = $ok ? '' : "קוד: $c";
         echo <<<HTML
 <!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
