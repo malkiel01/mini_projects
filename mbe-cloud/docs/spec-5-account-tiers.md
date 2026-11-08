@@ -106,7 +106,7 @@
 ### 4.1 נתיבים לכל משתמש מחובר: `signed_in` ב-`app.json`
 
 ```json
-"signed_in": ["connect.php", "me.php"]
+"signed_in": ["connect.php", "me.php", "me-api.php"]
 ```
 
 - **התחביר** זהה לזה של `public`.
@@ -123,10 +123,37 @@
   (`platform/lib/gate.php`, #1318) הסדר הוא: `public` ← לא מחובר או לא פעיל: בחוץ ← `can_use` (שבתוכה `restricted`)
   ← `signed_in` ← אחרת `403`. לכן משתמש בלי הרשאה מגיע ל-`connect.php` ול-`me.php`, וזה בדיוק מה שצריך כדי ש-🗂️
   יעבוד לו "תמיד" (`spec-4`): רק ב-`connect.php` נוצר חיבור. שאר הענן נשאר סגור בפניו.
-- **בענן צריך להוסיף** `"signed_in": ["connect.php", "me.php"]` ל-`mbe-cloud/app.json` (צ'אט הקוד, עם ה-PR של
+- **בענן צריך להוסיף** `"signed_in": ["connect.php", "me.php", "me-api.php"]` ל-`mbe-cloud/app.json` (צ'אט הקוד, עם ה-PR של
   spec-5). בלי זה גם ה-PF-002 הפרוס לא פותח כלום. **לא** להוסיף לשם `index.html`, `picker.php` או `api.php`.
   `api.php` נשאר כמו היום: הפעולות החתומות ב-`public`, וכל השאר מאחורי ההרשאה.
 - **בטוח:** `PLATFORM_USER` נשאר מפתח שאינו `HTTP_*`, ולכן לקוח לא יכול לזייף אותו.
+
+### 4.1א `me-api.php` — השרת של `me.php`, ורק שלו
+
+**הבעיה (הערת הבקרה):** `me.php` נפתח בזכות `signed_in`, אבל כל מה שהוא מציג מגיע מ-`api.php`, ו-`api.php` לא ב-`signed_in`.
+לכן כל קריאה שלו הייתה חוזרת `403` מהשער. **פתיחת `api.php` ב-`signed_in` אסורה**: היא הייתה חושפת למשתמש בלי
+הרשאה את כל פעולות הכונן, ומשאירה את ההגנה רק ל-`actor()`.
+
+**ההחלטה: נקודת קצה נפרדת, `me-api.php`, ב-`signed_in`, עם רשימה סגורה.**
+
+| פעולה | מה | שיטה |
+| --- | --- | --- |
+| `me` | החשבון, `granted`, השימוש ב-🗂️ (בלי מכסת כונן כשאין כונן) | GET |
+| `connections` | החיבורים, **לקריאה בלבד** (`spec-6` 4.1) | GET |
+| `appdata_apps` | נתוני האפליקציות: נפח לכל אפליקציה | GET |
+| `appdata_wipe {client}` | מחיקת הנתונים של אפליקציה אחת (`spec-4`) | POST, JSON |
+| `account_prefs` | ההגדרות האישיות של `ui-core` (`uic_account_api`) | GET / POST, JSON |
+| `account_export` | ⬇️ ייצוא. בלי כונן, הייצוא כולל רק את מה שיש (`appdata`, חיבורים, הגדרות) | POST, JSON |
+| `account_delete` | מחיקת החשבון, עם אישור | POST, JSON |
+
+- **רשימה סגורה.** כל `action` אחר ← `404 not_found`. אין `require` של הניתוב של `api.php`. הקובץ קורא לאותן פונקציות
+  ב-`lib/`, ולא מעביר בקשות הלאה.
+- **מי:** רק החשבון שנכנס דרך השער (`PLATFORM_USER`). אין אסימון, אין חתימת לקוח ואין PAT. `Authorization` בבקשה ←
+  `400 bad_request`.
+- **כתיבה:** POST עם `Content-Type: application/json` בלבד, כמו `WRITES` ב-`api.php`. אחרת `400 bad_request`. זה
+  מונע CSRF מטופס של דף זר.
+- **בלי CORS.** רק `me.php`, מאותו origin.
+- **`index.html` לא משתמש בו.** הוא נשאר עם `api.php`, למי שיש לו הרשאה. אותם רכיבים, שתי נקודות קצה.
 
 ### 4.2 שאילתת הרשאה, שרת-לשרת: `grant_status` ב-`platform/provision.php`
 
@@ -164,7 +191,7 @@ POST platform/provision.php   action: grant_status   (חתום ב-Ed25519 ביד
 | **`connect.php`** | ב-`signed_in` (סעיף 4.1). מציג שורה אפורה ל-📁 כש-`granted = false` (סעיף 3.1) |
 | **`picker.php`** | נשאר רק למי שיש לו הרשאה. בלי הרשאה, השער חוסם |
 | **🤖 `ai_*`** | למשתמש בלי כונן: `403 no_drive` (ש1). המשתמש גם לא מופיע ברשימת המשתמשים בניהול ה-AI, ולכן אי אפשר לתת לו ספק בטעות |
-| **`me.php`** | ב-`signed_in`. "🔗 חיבורים" (ניתוק, ומתג לכל שכבה זמינה), "🧩 נתוני אפליקציות" (נפח ו-🗑️), ⬇️ ייצוא, ומחיקת חשבון. אותם רכיבים של `index.html`, בלי הכונן, בלי הגופנים ובלי הניהול |
+| **`me.php`** | ב-`signed_in`, ומדבר רק עם `me-api.php` (4.1א). "🔗 חיבורים" (לקריאה בלבד, `spec-6`), "🧩 נתוני אפליקציות" (נפח ו-🗑️), ⬇️ ייצוא, ומחיקת חשבון. אותם רכיבים של `index.html`, בלי הכונן, בלי הגופנים ובלי הניהול |
 
 ## 6. המודול והאפליקציות
 
@@ -186,7 +213,7 @@ POST platform/provision.php   action: grant_status   (חתום ב-Ed25519 ביד
 | ה5 | `font_add` למשתמש בלי כונן מחזיר `403 no_drive`. `fonts_list` עם `builtin` עובד |
 | ה6 | "רק אותו חשבון": משתמש בלי כונן עם `sub` שונה ב-`connect.php` מקבל "החיבור נדחה" |
 | ה7 | `PLATFORM_USER.granted` לא ניתן לזיוף מכותרת (`HTTP_PLATFORM_USER` לא נקרא) |
-| ה11 | **`restricted` + `signed_in`:** משתמש פעיל בלי הרשאה ל-`mbe-cloud`. `connect.php` נפתח, עם `granted: false`. `me.php` נפתח. `index.html`, `picker.php` ו-`api.php?action=list` (עם עוגייה) ← `403`. אותו משתמש עם הרשאה לקטגוריה בלבד (בלי אישור ישיר) — אותה תוצאה, כי `restricted` |
+| ה11 | **`restricted` + `signed_in`:** משתמש פעיל בלי הרשאה ל-`mbe-cloud`. `connect.php` נפתח, עם `granted: false`. `me.php` נפתח, ו-`me-api.php?action=connections` עונה. `me-api.php?action=list` ← `404`. `index.html`, `picker.php` ו-`api.php?action=list` (עם עוגייה) ← `403`. `me-api.php` עם POST שאינו JSON ← `400`, ועם `Authorization` ← `400`. אותו משתמש עם הרשאה לקטגוריה בלבד (בלי אישור ישיר) — אותה תוצאה, כי `restricted` |
 | ה8 | **בפלטפורמה:** נתיב `signed_in` למשתמש לא מחובר מפנה לכניסה. למחובר בלי הרשאה, `granted: false`. בנתיב שאינו `signed_in`, אין שינוי |
 
 ## 8. הכרעות בעל המערכת (2026-11-08, בכלי השאלות)
