@@ -187,7 +187,8 @@ export function mountMarket(ctx) {
     const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load(true) } }, '↻');
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
-    setHead(symbol, p.name, { back: true, actions: [drawBtn, refresh, star] });
+    const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
+    setHead(symbol, p.name, { back: true, actions: [analyze, drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load(); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
@@ -401,12 +402,12 @@ export function mountMarket(ctx) {
 
   // ── ממשק המנהל (1.1) — השרת בודק בכל פעולה; כאן רק התצוגה ──────
   async function viewAdmin() {
-    setHead('ניהול', 'ספקים, מנהלים ומאגר', { back: true });
+    setHead('ניהול', 'ספקים, שיטות, מנהלים ומאגר', { back: true });
     const S = await api('admin_state');
     let tab = sessionStorage.getItem('ts-admin-tab') || 'providers';
-    const tabs = [['providers', '🔌 ספקים'], ['shared', '🤝 לחלוקה'], ['admins', '👤 מנהלים'], ['cache', '🗄️ מאגר'], ['log', '📜 יומן']];
+    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['admins', '👤 מנהלים'], ['cache', '🗄️ מאגר'], ['log', '📜 יומן']];
     const bar = h('div', { class: 'seg-tabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === tab), on: { click: () => { sessionStorage.setItem('ts-admin-tab', k); route(); } } }, l)));
-    const body = { providers: adminProviders, shared: adminShared, admins: adminAdmins, cache: adminCache, log: adminLog }[tab](S);
+    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, admins: adminAdmins, cache: adminCache, log: adminLog }[tab](S);
     render(bar, body);
   }
   const reload = () => route();

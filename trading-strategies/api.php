@@ -25,11 +25,17 @@
  * GET  ?action=drawings&asset=           השרטוטים שלי על הנכס (כל המסגרות; הדפדפן מסנן לפי tf)
  * POST action=drawing_save | drawing_delete    יצירה/עדכון (עם id) ומחיקה — רק של המשתמש; עד 500 לנכס
  *
+ * פרופיל, שיטות וניתוח (פרקים 5–6):
+ * GET  ?action=profile                   הפרופיל שלי
+ * POST action=profile_save
+ * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
+ * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
+ *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
- * GET  ?action=admin_state
+ * GET  ?action=admin_state | admin_methods
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
- *      | admin_cache_clear | admin_cache_cleanup
+ *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
  * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
@@ -42,6 +48,7 @@ require_once __DIR__ . '/lib/store.php';
 require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
+require_once __DIR__ . '/lib/analysis.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -88,12 +95,12 @@ $tz = $user['timezone'];
 
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
-    'drawing_save', 'drawing_delete',
+    'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'analysis', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -136,11 +143,26 @@ try {
                 'is_admin' => ts_is_admin($uid), 'is_primary_admin' => ts_is_primary_admin(), 'lists' => [
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
-            ]]);
+            ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
+                'disclaimer' => TS_ANALYSIS_DISCLAIMER]);
 
         case 'settings':
             ts_settings_save($uid, $in);
+            ts_profile_sync_risk($uid);
             out(['ok' => true]);
+
+        // ── פרופיל, שיטות, ניתוח ──
+        case 'profile':
+            out(['ok' => true, 'profile' => ts_profile($uid)]);
+
+        case 'profile_save':
+            out(['ok' => true, 'profile' => ts_profile_save($uid, $in)]);
+
+        case 'methods':
+            out(['ok' => true, 'methods' => ts_methods_visible($uid)]);
+
+        case 'analysis':
+            out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? ''));
 
         case 'strategies':
             out(['ok' => true, 'strategies' => ts_strategies_list($uid, $tz)]);
@@ -263,6 +285,16 @@ try {
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
                 'cache' => ts_cache_stats(), 'log' => $log]);
+
+        case 'admin_methods':
+            out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
+
+        case 'admin_method_save':
+            ts_admin_method_save($uid, $in);
+            out(['ok' => true, 'methods' => ts_admin_methods()]);
+
+        case 'admin_costs_save':
+            out(['ok' => true, 'costs' => ts_costs_save($uid, $in['costs'] ?? null)]);
 
         case 'admin_provider_save':
             $pid = (string)($in['provider'] ?? '');
