@@ -36,15 +36,15 @@ jobs:
         run: |
           cat > pub.pem <<'KEY'
           -----BEGIN PUBLIC KEY-----
-          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAvWV6SopVjM8vMFRDR8qG
-          zYlsVMqg+Vh3xBfMfAupgt1ApHEGs3+EZ7vCR8Dh50Mc/PNM6zGRznls3hv0Qjcj
-          HWPR86A1/XshwrgNsYFvk3yoDoWQEGUxBjWZF0Jf8zJTF258xMTsOIEGZVLeQAIH
-          VKWgsMBWXPqnLYFqqnnUMtMxzve6B733VXytLVIo/QpNEBXVGxNlJdDS+7uxwjZN
-          jouWoSzT1r/+Iu2KMQrb8Kmk5wfN1JjomVN2p5QkgLh9pvodismlNpk8u1TSS2Uy
-          RBY0FCoCnuWKJ8FEC5BdewcSt7kjDEUP8px5GOGNRWGhJqs4sHeFblazda/VKXhn
-          wRbfevrDECPkxxRFBpGRCNWIZlBuF94ZsvMlnEQqmQpFc4gn6toiDfsyo7c4/Vp4
-          x3aUbaWOPWqwrf738BUC4tZQkaSPnPSu/v/2Hl2s9w8+NWZJQwAhRKClGPqPtubt
-          aoi4wd/UkzRTgrRMX+eidDigHmZVSpwV9/KK9iTGajeJAgMBAAE=
+          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAvGEsJoXw8akY+mu2/MgE
+          TJCsDT8avspkljw+GV2vZ1p4wnRDDxc05e5+YMUm/xfoOLXsQot/yfHzB+SLu7cM
+          NqAHVIqFvVaXS4raJFpEa36E7lZEjqyfIXRCGldJiAsS3hqrvoPA85q2mSzSvZRG
+          gsc+WB78MQbIxfzUn2YMlk1d7RdBhQw5IIM5Sh8dvH1v7Kem1ebkX+9dAiZnw4u+
+          0p0nqMi9eyyEq3L4eNKInKTdPrxqm2fCr0rafAYEfUYIi44qjubLrzBNYFCPs8SZ
+          8EeQ5LiLkOGl0cryDGhXba+6LCjyumPma+KKO2/kTbMQ+IiArnxcZVvYNIiu6gb0
+          CzJ3c0axZBfD1aQElfhAwho+Cn45C6+OxiOYrzc7KmEshFYFuuQAV9bX2okLlQ6O
+          0neBT4FfPyshwdzfrMEV5CtkU6xD+SbAUCN27QYtRXJvjFM2negXbg86u2V8uyZ0
+          J72kLciwfqMF640/H0k/+2tgM0fJSa/EY/Sk1oToZzoDAgMBAAE=
           -----END PUBLIC KEY-----
           KEY
           sed -i 's/^ *//' pub.pem
