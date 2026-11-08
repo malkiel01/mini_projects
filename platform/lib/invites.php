@@ -226,6 +226,8 @@ function invite_join(string $token, ?array $user, array $body): array
         $pdo->exec('ROLLBACK');
         throw $e;
     }
+    // בקשה ממתינה לאפליקציה שההזמנה פתחה — נסגרת כ"אושרה", בלי טוסט: הוא כבר ראה אותה בהזמנה (PF-001, סעיף 6)
+    requests_settle([$id], true);
     return ['user_id' => $id, 'created' => !$user, 'email' => $email ?? null, 'name' => $name ?? null];
 }
 
