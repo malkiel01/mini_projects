@@ -84,6 +84,11 @@ function currentAccount(): ?array {
     if (!$pid) return null;
     $a = platformAccount($pid);
     if ((int) $a['blocked'] === 1) throw new AppError('החשבון חסום — פנו למנהל', 403, 'forbidden');
+    // spec-5: עם כונן / בלי כונן, כפי שהשער אמר בבקשה הזו (לתצוגה בניהול; ההחלטה — tier.php)
+    if (array_key_exists('granted', $pid) && (int) ($a['drive'] ?? -1) !== ($pid['granted'] === true ? 1 : 0)) {
+        db()->prepare('UPDATE accounts SET drive = ? WHERE id = ?')->execute([$pid['granted'] === true ? 1 : 0, $a['id']]);
+        $a['drive'] = $pid['granted'] === true ? 1 : 0;
+    }
     if ($a['last_login_at'] === null || $a['last_login_at'] < nowIso(time() - 3600)) {
         db()->prepare('UPDATE accounts SET last_login_at = ? WHERE id = ?')->execute([nowIso(), $a['id']]);
     }

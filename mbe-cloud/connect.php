@@ -16,6 +16,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/clients.php';
+require_once __DIR__ . '/lib/tier.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -73,6 +74,17 @@ HTML);
     if (!$req['scope']) {
         header('Location: ' . withQuery($req['return'], ['error' => 'off', 'state' => $req['state']]), true, 303);
         exit;
+    }
+    // spec-5 3.1: משתמש בלי כונן (connect.php ב-signed_in — השער כתב granted:false). כל מה שהודלק דורש כונן — בלי חיבור
+    if (!accountScope($req['client'], $a)) {
+        http_response_code(403);
+        $name = htmlspecialchars($req['client']['name']);
+        $back = htmlspecialchars(withQuery($req['return'], ['error' => 'no_drive', 'state' => $req['state']]));
+        page('נדרש כונן בענן', <<<HTML
+<p class="error" role="alert"><b>לאפליקציה $name נדרש כונן בענן, ואין לך.</b></p>
+<p class="hint">פנו למנהל כדי לקבל כונן. ההגדרות והנתונים של אפליקציות אחרות ממשיכים לעבוד.</p>
+<div class="row-btns"><a class="btn ghost" href="$back">חזרה לאפליקציה</a></div>
+HTML);
     }
     header('Location: ' . approveConnect($a, $req), true, 303);
     exit;

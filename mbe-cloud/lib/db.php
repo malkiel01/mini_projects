@@ -111,6 +111,8 @@ function migrate(PDO $pdo): void {
     migrateGrants($pdo);
     require_once __DIR__ . '/policy.php';
     migratePolicy($pdo);   // spec-6: אחרי migrateGrants (files_full)
+    require_once __DIR__ . '/tier.php';
+    migrateTier($pdo);     // spec-5: עם כונן / בלי כונן
 }
 
 const DEFAULTS = [

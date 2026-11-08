@@ -9,7 +9,7 @@ const API = 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php';
 let dbxLinked = true, ptokens = 0, dbxExpire = false;
 const dbxCalls = [];
 let statusExtra = {};
-let connected = true, tokens = 0, expireNext = false, chunks = [], layerOff = false, readOnly = false;
+let connected = true, tokens = 0, expireNext = false, chunks = [], layerOff = false, readOnly = false, noDrive = false;
 const appBodies = {};
 const adCalls = [];
 const log = [];
@@ -62,6 +62,7 @@ globalThis.fetch = async (url, init = {}) => {
     return json({ ok: true, rev: 2, seq: 7, items: [], changes: [], cursor: 7, more: false, used: 10, quota: 20 });
   }
   if (readOnly && a === 'mkdir') return json({ error: 'קריאה בלבד', code: 'read_only' }, 403);
+  if (noDrive && ['list', 'ai_capabilities'].includes(a)) return json({ error: 'אין לך כונן בענן — פנו למנהל', code: 'no_drive', layer: a === 'list' ? 'files' : 'ai' }, 403);
   if (a === 'stat' && url.includes('id=n_gone')) return json({ error: 'לא נמצא', code: 'not_found' }, 404);
   if (a === 'stat' && url.includes('id=n_ok')) return json({ id: 'n_ok', kind: 'file', name: 'שיטה.txt', parent: null });
   if (layerOff && a === 'list') return json({ error: 'אין לאפליקציה הרשאה לזה', code: 'forbidden', scope: 'files', layer: 'files' }, 403);
@@ -170,6 +171,15 @@ let ro = null;
 try { await d.suite.mkdir('x'); } catch (e) { ro = e; }
 check('files.readonly — כתיבה: DriveError read-only (לא layer-off)', ro?.code === 'read-only');
 readOnly = false;
+// spec-5: בלי כונן — no-drive (לא layer-off, לא "חבר"), ו-ai.capabilities מחזיר "אין"
+noDrive = true;
+let nd = null;
+try { await d.suite.list(); } catch (e) { nd = e; }
+check('spec-5: בלי כונן — DriveError no-drive עם layer, וההודעה "אין לך כונן בענן — פנו למנהל"', nd?.code === 'no-drive' && nd.layer === 'files'
+  && nd.message === 'אין לך כונן בענן — פנו למנהל');
+const capN = await d.ai.capabilities();
+check('spec-5: ai.capabilities בלי כונן — connected:false, הכול false (לא זורק)', capN.connected === false && Object.values(capN.tasks).every(v => v === false));
+noDrive = false;
 {
   let assigned2 = null;
   globalThis.location = { href: 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=picked&x=1', assign: u => { assigned2 = u; } };

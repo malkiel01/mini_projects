@@ -12,6 +12,7 @@
  *   await drives.ensure()          — פעם אחת בטעינת הדף: לא מחובר והמדיניות לא ריקה → הפניה אחת לענן, בלי מסך, וחזרה
  *                                    מחוברת. אחרת כלום → { redirected: false, why, status }. בלי לולאות (spec-6 3.3)
  *   await drives.ensure({ apk: true }) — באפליקציית אנדרואיד: לא מפנה לבד (why: 'apk'). התפריט מציג "☁️ חיבור לענן MBE"
+ *        available — spec-5: {files, libs, appdata, ai} — מה זמין לחשבון. בלי כונן: files ו-ai false → 🔒 "אין לך כונן בענן — פנו למנהל"
  *   await drives.connect()         — "נסו שוב" אחרי שגיאה, והלחיצה האחת ב-APK. layers / scope — לא משנים כלום (תאימות)
  *   await drives.disconnect()      — מבוטל: DriveError 'admin-managed' (השכבות נקבעות בידי מנהל הענן)
  *
@@ -59,7 +60,8 @@
  *   status().suite.files_scope     → 'files' | 'files.readonly' | 'files.app'
  *
  * שגיאות: DriveError עם code — not-connected, read-only (files.readonly — קריאה בלבד), layer-off (עם layer: 'files' | 'libs' | 'ai' —
- * "השכבה הזו לא פעילה באפליקציה הזו", בלי "הפעל": רק המנהל מדליק), admin-managed (disconnect), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
+ * "השכבה הזו לא פעילה באפליקציה הזו", בלי "הפעל": רק המנהל מדליק), admin-managed (disconnect),
+ * no-drive (spec-5: 📁 / 🤖 למשתמש בלי כונן — "אין לך כונן בענן — פנו למנהל", לא "חבר"), unavailable (הפלטפורמה לא ענתה), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
  * not-allowed, quota, too-big, provider, aborted. האסימון (15 דקות) מתחדש לבד, ונשמר בזיכרון בלבד.
  */
 
@@ -69,6 +71,7 @@ export class DriveError extends Error {
 
 const CHUNK_HASH_MAX = 64 * 1024 * 1024;
 const LAYER_OFF = 'השכבה הזו לא פעילה באפליקציה הזו';
+const NO_DRIVE = 'אין לך כונן בענן — פנו למנהל';
 const ADMIN_MANAGED = 'השכבות נקבעות בידי מנהל הענן';
 const ENSURE_KEY = 'mbe-cloud:ensure';   // sessionStorage: מתי הפנינו לאחרונה — שתי הפניות ברצף בלי חיבור = לולאה
 const ENSURE_GAP = 120000;
@@ -121,6 +124,8 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         // השכבה כבויה (כיבוי באפליקציה או בדף הענן) — layer-off, כדי להציע להדליק את המתג הנכון
         if (res.status === 403 && j.code === 'forbidden' && j.layer) throw new DriveError(LAYER_OFF, 'layer-off', { layer: j.layer, scope: j.scope });
         if (res.status === 403 && j.code === 'read_only') throw new DriveError(j.error || 'קריאה בלבד', 'read-only');
+        if (res.status === 403 && j.code === 'no_drive') throw new DriveError(NO_DRIVE, 'no-drive', { layer: j.layer });
+        if (res.status === 503 && j.code === 'platform_unavailable') throw new DriveError(j.error || 'הענן לא זמין כרגע — נסו שוב בעוד רגע', 'unavailable', { layer: j.layer });
         if (!res.ok) throw new DriveError(j.error || 'תקלה', j.code || 'cloud', j);
         return j;
     }
@@ -346,7 +351,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
     const ai = {
         async capabilities() {
             try { return { connected: true, ...(await cloud('ai_capabilities')) }; }
-            catch (e) { if (e.code === 'not-connected' || e.code === 'layer-off' || e.code === 'forbidden') return NONE; throw e; }
+            catch (e) { if (['not-connected', 'layer-off', 'forbidden', 'no-drive', 'unavailable'].includes(e.code)) return NONE; throw e; }
         },
         async run(task, input = {}, { signal } = {}) {
             const fd = new FormData();

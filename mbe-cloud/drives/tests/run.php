@@ -12,6 +12,8 @@ $tmp = sys_get_temp_dir() . '/drives-test-' . getmypid();
 define('DATA_DIR', "$tmp/cloud");
 define('CLOUD_ORIGIN', 'https://mbe-plus.com');
 define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/mbe-cloud/');
+// spec-5: grant_status בפלטפורמה — כל משתמש עם כונן, אלא אם נקבע אחרת ($GLOBALS['NO_DRIVE'][sub] = true)
+$GLOBALS['PLATFORM_GRANT'] = fn(string $sub) => empty($GLOBALS['NO_DRIVE'][$sub]);
 require_once __DIR__ . '/../../lib/drive.php';
 require_once __DIR__ . '/../../lib/clients.php';
 require_once __DIR__ . '/../src/php/Drives.php';
@@ -69,6 +71,9 @@ $cloud = function (string $url, array $headers, string $json) use ($dropbox): ar
         if (str_starts_with($k, 'X-Cloud-')) $h[strtolower(substr($k, 8))] = $v;
     }
     $in = json_decode($json, true) ?: [];
+    // שרת-לשרת: בלי העוגייה של המשתמש — השער לא כותב PLATFORM_USER (spec-5: הסוג מ-grant_status)
+    $pu = $_SERVER['PLATFORM_USER'] ?? null;
+    unset($_SERVER['PLATFORM_USER']);
     try {
         $out = match ($q['action']) {
             'client_register' => registerClient($in),
@@ -94,7 +99,9 @@ $cloud = function (string $url, array $headers, string $json) use ($dropbox): ar
         };
         return [200, json_encode($out)];
     } catch (AppError $e) {
-        return [$e->status, json_encode(['error' => $e->getMessage(), 'code' => $e->codeName])];
+        return [$e->status, json_encode(['error' => $e->getMessage(), 'code' => $e->codeName] + $e->extra)];
+    } finally {
+        if ($pu !== null) $_SERVER['PLATFORM_USER'] = $pu;
     }
 };
 
@@ -332,6 +339,23 @@ try {
     (fn() => $this->db()->prepare('UPDATE states SET used = 1 WHERE state = ?')->execute([$u3['state']]))->call($app);
     check('מ15: state שנוצל (ואין חיבור) — bad_state:used', code(fn() => $app->callback('u3', $u3)) === 'bad_state:used');
     check('מ15: בכל ארבעת המקרים — connect_exchange לא נקרא, ואין שורה חדשה ב-conns', $x0 > 0 && ($GLOBALS['XCHG'] ?? 0) === $x0 && $nConns() === $c0);
+
+    // ─── spec-5: בלי כונן — available ב-status, 📁 / 🤖 no_drive ───
+    $user = 'u1';
+    $GLOBALS['NO_DRIVE']['1'] = true;
+    db()->exec('DELETE FROM grant_cache');
+    $st5 = $app->status('u1')['suite'];
+    check('spec-5: status — available: 📁 ו-🤖 false, 🗂️ ו-📚 true (מ-access_token)', $st5['connected']
+        && $st5['available'] === ['files' => false, 'libs' => true, 'appdata' => true, 'ai' => false] && $st5['layers']['files'] === false);
+    $_SERVER['HTTP_X_CLOUD_TOKEN'] = $app->token('u1')['token'];
+    platformAs(null);
+    $e = null; try { actor('list', 'files', ''); } catch (AppError $x) { $e = $x; }
+    check('spec-5: 📁 בלי כונן — 403 no_drive עם layer (במודול: no-drive)', $e && $e->status === 403 && $e->codeName === 'no_drive' && ($e->extra['layer'] ?? '') === 'files');
+    unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
+    platformAs('1');
+    unset($GLOBALS['NO_DRIVE']['1']);
+    db()->exec('DELETE FROM grant_cache');
+    check('spec-5: ההרשאה חזרה — available.files true', $app->status('u1')['suite']['available']['files'] === true);
 
     // ─── שכבות — המנהל מחליט, לכל המשתמשים (spec-6) ───
     $user = 'u1';

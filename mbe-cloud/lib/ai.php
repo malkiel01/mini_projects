@@ -325,6 +325,10 @@ function aiAdminApp(array $in): array {
 /** הרשאה למשתמש: ספקים מותרים ומכסה חודשית בדולר. */
 function aiAdminUser(array $in): array {
     $a = getAccount((string) ($in['account'] ?? ''));
+    // spec-5 ש1: בלי כונן אין AI — אי אפשר לתת לו ספק, גם לא בטעות. ריק (הסרה) — מותר
+    if (($a['drive'] ?? null) !== null && (int) $a['drive'] === 0 && ($in['providers'] ?? []) !== []) {
+        throw new AppError('למשתמש הזה אין כונן בענן, ולכן גם לא בינה מלאכותית', 403, 'no_drive');
+    }
     $providers = $in['providers'] ?? [];
     if (!is_array($providers) || array_diff($providers, array_keys(AI_PROVIDERS))) throw new AppError('ספק לא מוכר', 400, 'bad_request');
     $monthly = $in['monthly'] ?? 0;

@@ -12,6 +12,8 @@ $tmpDir = sys_get_temp_dir() . '/mbe-cloud-test-' . getmypid();
 define('DATA_DIR', $tmpDir);
 define('CLOUD_ORIGIN', 'https://mbe-plus.com');
 define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/mbe-cloud/');
+// spec-5: grant_status בפלטפורמה — בבדיקות, כל משתמש עם כונן אלא אם נקבע אחרת ($GLOBALS['NO_DRIVE'][sub] = true / null — לא עונה)
+$GLOBALS['PLATFORM_GRANT'] = fn(string $sub) => array_key_exists($sub, $GLOBALS['NO_DRIVE'] ?? []) ? ($GLOBALS['NO_DRIVE'][$sub] === null ? null : false) : true;
 require_once __DIR__ . '/../lib/drive.php';
 require_once __DIR__ . '/../lib/clients.php';
 require_once __DIR__ . '/../lib/ai.php';
@@ -624,6 +626,7 @@ try {
     require __DIR__ . '/share.inc.php';
     require __DIR__ . '/appdata.inc.php';
     require __DIR__ . '/files-scopes.inc.php';
+    require __DIR__ . '/tiers.inc.php';
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

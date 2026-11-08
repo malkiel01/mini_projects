@@ -401,8 +401,8 @@ function exchangeCode(array $client, array $in): array {
         error_log("mbe-cloud: connect_exchange account_mismatch (client {$client['id']})");
         throw new AppError(MISMATCH_MSG, 403, 'account_mismatch');
     }
-    require_once __DIR__ . '/policy.php';
-    return ['connection' => $conn['id'], 'account' => ['name' => $a['name']], 'scope' => effectiveScope($client), 'cloud_id' => setting('cloud_id')];
+    require_once __DIR__ . '/tier.php';
+    return ['connection' => $conn['id'], 'account' => ['name' => $a['name']], 'scope' => accountScope($client, $a), 'cloud_id' => setting('cloud_id')];
 }
 
 function connectionRow(string $id, string $client): array {
@@ -427,9 +427,13 @@ function accountConnections(array $a): array {
     $st = db()->prepare('SELECT c.*, k.name AS client_name FROM connections c JOIN clients k ON k.id = c.client
                          WHERE c.account = ? AND c.revoked_at IS NULL ORDER BY c.created_at DESC');
     $st->execute([$a['id']]);
-    return array_map(function ($r) {
+    require_once __DIR__ . '/tier.php';
+    $av = accountAvailable($a);   // spec-5: שכבה שהודלקה אבל לא זמינה לחשבון הזה (בלי כונן) — 🔒 locked
+    return array_map(function ($r) use ($av) {
         $c = getClient($r['client']);
-        return ['id' => $r['id'], 'client' => $r['client'], 'name' => $r['client_name'], 'layers' => connectionLayers($c),
+        $layers = connectionLayers($c);
+        foreach ($layers as $l => $st) if ($st === 'on' && !($av[$l] ?? true)) $layers[$l] = 'locked';
+        return ['id' => $r['id'], 'client' => $r['client'], 'name' => $r['client_name'], 'layers' => $layers,
                 'files_scope' => clientPolicy($c)['files'], 'scope' => effectiveScope($c), 'active' => $c['status'] === 'active',
                 'created_at' => $r['created_at'], 'used_at' => $r['used_at']];
     }, $st->fetchAll());
@@ -438,16 +442,17 @@ function accountConnections(array $a): array {
 // ─── אסימון לדפדפן ────────────────────────────────────────────────────────
 
 function issueToken(array $client, array $conn): array {
-    require_once __DIR__ . '/policy.php';
+    require_once __DIR__ . '/tier.php';
     $now = time();
-    $scope = effectiveScope($client);   // spec-6: המדיניות, לא connections.scope
+    $acc = getAccount($conn['account']);
+    $scope = accountScope($client, $acc);   // spec-6: המדיניות, לא connections.scope; spec-5: ∩ סוג המשתמש
     $payload = json_encode(['iss' => cloudIssuer(), 'aud' => $client['id'], 'conn' => $conn['id'], 'acc' => $conn['account'],
         'scope' => $scope, 'iat' => $now, 'exp' => $now + TOKEN_TTL, 'jti' => b64u(random_bytes(12))],
         JSON_UNESCAPED_SLASHES);
     $p = b64u($payload);
     $k = cloudSigningKey();
     return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL,
-            'scope' => $scope];   // השכבות באפליקציה מתעדכנות מכאן (המנהל הדליק או כיבה)
+            'scope' => $scope, 'available' => accountAvailable($acc)];   // השכבות באפליקציה מתעדכנות מכאן; available — 🔒 (spec-5 3.2)
 }
 
 /**
@@ -503,7 +508,11 @@ function actor(string $action, string $scope, string $body): array {
         $client = verifySigned($action, $h, $body);
         return actorFrom(connectionRow((string) ($h['connection'] ?? ''), $client['id']), $client, $scope);
     }
-    return ['account' => requireAccount(), 'app' => '', 'client' => null];
+    // הדף של הענן (השער): api.php לא ב-signed_in, ולכן מי שמגיע לכאן — עם הרשאה. ובכל זאת: 📁 / 🤖 רק עם כונן (spec-5)
+    $a = requireAccount();
+    require_once __DIR__ . '/tier.php';
+    if (in_array(scopeLayer($scope), DRIVE_LAYERS, true)) requireDrive($a, scopeLayer($scope));
+    return ['account' => $a, 'app' => '', 'client' => null];
 }
 
 function actorFrom(array $conn, array $client, string $scope): array {
@@ -522,6 +531,9 @@ function actorFrom(array $conn, array $client, string $scope): array {
     }
     $a = getAccount($conn['account']);
     if ((int) $a['blocked'] === 1) throw new AppError('החשבון חסום', 403, 'forbidden');
+    // spec-5: 📁 ו-🤖 רק למשתמש עם כונן — בכל קריאה (grant_status, מטמון 60 שניות). 🗂️ ו-📚 — לכולם
+    require_once __DIR__ . '/tier.php';
+    if (in_array(scopeLayer($scope), DRIVE_LAYERS, true)) requireDrive($a, scopeLayer($scope));
     if ($conn['used_at'] === null || $conn['used_at'] < nowIso(time() - 600)) {
         db()->prepare('UPDATE connections SET used_at = ? WHERE id = ?')->execute([nowIso(), $conn['id']]);
     }
