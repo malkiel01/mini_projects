@@ -104,7 +104,7 @@ HTML);
     $ask = $live ? array_values(array_diff($req['scope'], json_decode($live['scope'], true) ?: [])) : $req['scope'];
     $rows = '';
     foreach ($ask as $s) {
-        $ic = ['files' => '📁', 'libs' => '📚', 'appdata' => '🗂️', 'ai' => '🤖'][$s];
+        $ic = ['files' => '📁', 'libs' => '📚', 'appdata' => '🗂️', 'ai' => '🤖'][scopeLayer($s)] ?? '•';
         $rows .= '<li class="acc-row"><span class="use-ic" aria-hidden="true">' . $ic . '</span><div class="body"><div class="l1">'
                . htmlspecialchars(SCOPE_NAMES[$s]) . '</div></div></li>';
     }

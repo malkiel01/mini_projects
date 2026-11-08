@@ -162,7 +162,7 @@ function ts_providers_for(int $uid): array
         $out[] = [
             'id' => $id, 'name' => $m['name'], 'markets' => $m['markets'], 'tfs' => array_keys($m['tfs']),
             'needs_key' => $m['needs_key'], 'key_help' => $m['key_help'], 'delay' => $m['delay'], 'terms' => $m['terms'],
-            'bounds' => $m['bounds'], 'enabled' => $settings['enabled'],
+            'bounds' => $m['bounds'], 'enabled' => $settings['enabled'], 'personal_copy' => (bool)($m['personal_copy'] ?? true),
             'available' => $acc !== null, 'source' => $acc['source'] ?? null,
             'stream' => $acc && $acc['source'] === 'public' ? $p->stream() : null,
             'own' => $own ? ['last4' => $own['last4'], 'label' => $own['label'], 'last_test_at' => $own['last_test_at'] !== null ? (int)$own['last_test_at'] : null,

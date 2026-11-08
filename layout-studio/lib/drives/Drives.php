@@ -53,6 +53,7 @@ final class Drives {
     private const STATE_TTL = 600;
     /** שכבה → ההיקפים שלה (spec-0-vision.md 7.3). כמו LAYERS בענן. */
     private const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'appdata' => ['appdata'], 'ai' => ['ai']];
+    private const FILES_SCOPES = ['files', 'files.readonly', 'files.app'];
     /** בלי layers ב-apps.json — כמו לפני שלב 4 (🗂️ appdata רק למי שהצהיר). */
     private const DEFAULT_LAYERS = ['files', 'libs', 'ai'];
 
@@ -68,11 +69,12 @@ final class Drives {
         foreach (['client', 'name', 'dataDir', 'endpoint', 'user', 'back'] as $k) {
             if (empty($cfg[$k])) throw new \InvalidArgumentException("Drives: חסר $k");
         }
-        $this->cfg = $cfg + ['cloud' => self::CLOUD, 'http' => null, 'sub' => null, 'layers' => null];
-        if (!is_array($this->cfg['layers'])) {
-            $j = json_decode((string) @file_get_contents(__DIR__ . '/layers.json'), true);
-            $this->cfg['layers'] = is_array($j['layers'] ?? null) ? $j['layers'] : self::DEFAULT_LAYERS;
-        }
+        $this->cfg = $cfg + ['cloud' => self::CLOUD, 'http' => null, 'sub' => null, 'layers' => null, 'files_scope' => null];
+        $j = json_decode((string) @file_get_contents(__DIR__ . '/layers.json'), true);
+        if (!is_array($this->cfg['layers'])) $this->cfg['layers'] = is_array($j['layers'] ?? null) ? $j['layers'] : self::DEFAULT_LAYERS;
+        // שלב 3: היקף שכבת הקבצים — files | files.readonly | files.app (מ-apps.json דרך ה-sync)
+        $fs = $this->cfg['files_scope'] ?? ($j['files_scope'] ?? 'files');
+        $this->cfg['files_scope'] = in_array($fs, self::FILES_SCOPES, true) ? $fs : 'files';
         $this->cfg['layers'] = array_values(array_intersect(array_keys(self::LAYERS), $this->cfg['layers']));
         $this->cfg['cloud'] = rtrim($this->cfg['cloud'], '/') . '/';
     }
@@ -87,15 +89,19 @@ final class Drives {
                 header('Location: ' . $r['redirect'], true, 303);
                 exit;
             }
-            if (isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'connected' : 'denied', 200, true);
+            $key = $action === 'drives_oauth_callback' ? 'drive' : 'cloud';
+            if ($action === 'drives_pick_callback' && isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'picked' : 'pick-cancelled', 200, true, 'cloud');
+            if (isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'connected' : 'denied', 200, true, $key);
             $this->json($r);
         } catch (DrivesError $e) {
             // החזרה מהענן היא ניווט של הדפדפן — דף ברור עם דרך חזרה, לא JSON
-            if (in_array($action, ['drives_callback', 'drives_oauth_callback'], true)) $this->page($e->getMessage(), $e->codeName, $e->status);
+            if (in_array($action, ['drives_callback', 'drives_oauth_callback', 'drives_pick_callback'], true)) {
+                $this->page($e->getMessage(), $e->codeName, $e->status, false, $action === 'drives_oauth_callback' ? 'drive' : 'cloud');
+            }
             $this->json(['error' => $e->getMessage(), 'code' => $e->codeName], $e->status);
         } catch (\Throwable $e) {
             error_log('drives: ' . $e);
-            if (in_array($action, ['drives_callback', 'drives_oauth_callback'], true)) $this->page('תקלה בחיבור לענן', 'server', 500);
+            if (in_array($action, ['drives_callback', 'drives_oauth_callback', 'drives_pick_callback'], true)) $this->page('תקלה בחיבור לענן', 'server', 500);
             $this->json(['error' => 'תקלה בחיבור לענן', 'code' => 'server'], 500);
         }
     }
@@ -105,7 +111,9 @@ final class Drives {
         $user = ($this->cfg['user'])();
         $user = is_string($user) && $user !== '' ? $user : null;
         // החזרה מהענן בדפדפן בלי העוגייה של האפליקציה (APK) — לפי ה-state. הענן כבר וידא שזה אותו חשבון פלטפורמה
+        if ($action === 'drives_oauth_callback' && $user === null) return $this->oauthCallbackExternal($in);
         if ($action === 'drives_callback' && $user === null) return $this->callbackExternal($in);
+        if ($action === 'drives_pick_callback' && $user === null) return $this->pickCallbackExternal($in);
         if ($user === null) throw new DrivesError('נדרשת כניסה', 401, 'unauthorized');
         return match ($action) {
             'drives_status'     => $this->status($user),
@@ -117,6 +125,9 @@ final class Drives {
             'drives_oauth_callback' => ['redirect' => $this->oauthCallback($user, $in)],
             'drives_ptoken'     => $this->providerToken($user, (string) ($in['provider'] ?? '')),
             'drives_unlink'     => $this->unlink($user, (string) ($in['provider'] ?? '')),
+            'drives_pick'       => ['url' => $this->pickUrl($user, $in)],
+            'drives_pick_callback' => ['redirect' => $this->pickCallback($user, $in)],
+            'drives_picked'     => $this->picked($user),
             default             => throw new DrivesError('פעולה לא מוכרת', 404, 'unknown_action'),
         };
     }
@@ -133,9 +144,11 @@ final class Drives {
         $c = $this->conn($user);
         $scope = $c ? (json_decode($c['scope'], true) ?: []) : [];
         $layers = [];
-        foreach ($this->cfg['layers'] as $l) $layers[$l] = $c !== null && !array_diff(self::LAYERS[$l], $scope);
+        foreach ($this->cfg['layers'] as $l) {
+            $layers[$l] = $c !== null && ($l === 'files' ? (bool) array_intersect(self::FILES_SCOPES, $scope) : !array_diff(self::LAYERS[$l], $scope));
+        }
         $out = ['suite' => ($c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => $scope]
-                               : ['connected' => false]) + ['layers' => $layers, 'cloud' => $this->cfg['cloud']]];
+                               : ['connected' => false]) + ['layers' => $layers, 'files_scope' => $this->cfg['files_scope'], 'cloud' => $this->cfg['cloud']]];
         foreach (array_keys(self::PROVIDERS) as $p) {
             if (!$this->providerConfig($p)) continue;   // בלי App key — הכונן לא מופיע
             $l = $this->link($user, $p);
@@ -188,8 +201,9 @@ final class Drives {
         $state = $this->cfg['client'] . '.' . rtrim(strtr(base64_encode(random_bytes(24)), '+/', '-_'), '=');
         $db = $this->db();
         $db->prepare('DELETE FROM pstates WHERE expires < ?')->execute([time()]);
-        $db->prepare('INSERT INTO pstates (state, user, provider, verifier, expires) VALUES (?,?,?,?,?)')
-            ->execute([$state, $user, $p, $verifier, time() + self::STATE_TTL]);
+        // ה-sub של הפלטפורמה — כדי שחזרה בלי העוגייה (APK) תתקבל רק בדפדפן של אותו אדם (פ1ב)
+        $db->prepare('INSERT INTO pstates (state, user, provider, verifier, expires, sub) VALUES (?,?,?,?,?,?)')
+            ->execute([$state, $user, $p, $verifier, time() + self::STATE_TTL, $this->sub($user)]);
         $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
         return self::PROVIDERS[$p]['authorize'] . '?' . http_build_query([
             'client_id' => $c['app_key'], 'response_type' => 'code', 'redirect_uri' => $c['redirect'], 'state' => $state,
@@ -212,8 +226,43 @@ final class Drives {
             error_log("drives oauth ({$this->cfg['client']}): state $why");
             throw new DrivesError('החיבור לכונן פג או נפתח בחשבון אחר — נסו שוב מהאפליקציה', 400, "bad_state:$why");
         }
+        return $back . ($this->finishOauth($row, $in) ? 'drive=connected' : 'drive=denied');
+    }
+
+    /**
+     * החזרה מ-Dropbox בדפדפן בלי העוגייה של האפליקציה (APK — הדפדפן החיצוני). פ1ב, באותו עיקרון כמו #1293:
+     * מתקבלת רק כשה-sub של הפלטפורמה בדפדפן הזה (PLATFORM_USER — הכתובת מאחורי השער) הוא ה-sub שנשמר ב-state.
+     * אחרת — account_mismatch, והכונן לא נקשר. אין עקיפה.
+     */
+    public function oauthCallbackExternal(array $in): array {
+        $state = (string) ($in['state'] ?? '');
+        $db = $this->db();
+        $st = $db->prepare('SELECT * FROM pstates WHERE state = ?');
+        $st->execute([$state]);
+        $row = $st->fetch();
+        $db->prepare('DELETE FROM pstates WHERE state = ?')->execute([$state]);
+        if (!$row || (int) $row['expires'] < time()) {
+            $why = !$row ? 'missing' : 'expired';
+            error_log("drives oauth ({$this->cfg['client']}): state $why (external)");
+            throw new DrivesError('החיבור לכונן פג — נסו שוב מהאפליקציה', 400, "bad_state:$why");
+        }
+        $p = json_decode((string) ($_SERVER['PLATFORM_USER'] ?? ''), true);
+        $here = is_array($p) && is_scalar($p['sub'] ?? null) ? (string) $p['sub'] : '';
+        if ($here === '' || ($row['sub'] ?? null) === null || !hash_equals((string) $row['sub'], $here)) {
+            error_log("drives oauth ({$this->cfg['client']}): account_mismatch (external)");
+            throw new DrivesError('החשבון בדפדפן הזה שונה מהחשבון שלך באפליקציה. היכנסו באותו חשבון ונסו שוב', 403, 'account_mismatch');
+        }
+        return $this->finishOauth($row, $in)
+            ? ['done' => 'הכונן חובר. אפשר לחזור לאפליקציה.']
+            : ['done' => 'החיבור לכונן בוטל. אפשר לסגור את הדף ולחזור לאפליקציה.', 'denied' => true];
+    }
+
+    /** ההחלפה אצל הספק ושמירת הכונן למשתמש של ה-state. false — המשתמש ביטל אצל הספק. */
+    private function finishOauth(array $row, array $in): bool {
+        $db = $this->db();
+        $user = $row['user'];
         $p = $row['provider'];
-        if (isset($in['error'])) return $back . 'drive=denied';
+        if (isset($in['error'])) return false;
         $c = $this->needProvider($p);
         $t = $this->form(self::PROVIDERS[$p]['token'], ['grant_type' => 'authorization_code', 'code' => (string) ($in['code'] ?? ''),
             'client_id' => $c['app_key'], 'code_verifier' => $row['verifier'], 'redirect_uri' => $c['redirect']]);
@@ -227,7 +276,7 @@ final class Drives {
                       ON CONFLICT(user, provider) DO UPDATE SET refresh = excluded.refresh, name = excluded.name, access = excluded.access,
                       access_until = excluded.access_until, created_at = excluded.created_at')
             ->execute([$user, $p, $t['refresh_token'], $name, $t['access_token'], time() + (int) ($t['expires_in'] ?? 14400) - 120, gmdate('c')]);
-        return $back . 'drive=connected';
+        return true;
     }
 
     /** אסימון גישה קצר לדפדפן (מתחדש מאסימון הרענון). הרשאה שבוטלה אצל הספק → מוחקים ומחזירים connected:false. */
@@ -317,13 +366,18 @@ final class Drives {
         return $list;
     }
 
+    /** ההיקפים של שכבה. 📁 — ההיקף שהוצהר בלבד (שלב 3). */
+    private function layerScopes(string $l): array {
+        return $l === 'files' ? [$this->cfg['files_scope']] : self::LAYERS[$l];
+    }
+
     /** ההיקפים לבקשת חיבור: layers (הדלקת שכבות), scope (התאמה לאחור), או כל השכבות שהוצהרו. */
     private function scopeOf(array $in): string {
         if (isset($in['layers'])) $layers = $this->layerList($in['layers']);
         elseif (is_string($in['scope'] ?? null) && $in['scope'] !== '') return $in['scope'];
         else $layers = $this->cfg['layers'];
         $scope = [];
-        foreach ($layers as $l) array_push($scope, ...self::LAYERS[$l]);
+        foreach ($layers as $l) array_push($scope, ...$this->layerScopes($l));
         return implode(',', $scope);
     }
 
@@ -346,9 +400,82 @@ final class Drives {
         ]);
     }
 
+    // ─── בורר הקבצים של הענן (שלב 3, files.app) ─────────────────────────────
+
+    /** הכתובת של הבורר בענן. kind: file | folder | any; multiple; mime. state + sub חתום (purpose "pick"). */
+    public function pickUrl(string $user, array $in): string {
+        if ($this->cfg['files_scope'] !== 'files.app') throw new DrivesError('הבורר — רק לאפליקציה עם files.app', 400, 'bad_request');
+        $sub = $this->sub($user);
+        if ($sub === null) throw new DrivesError('כדי להתחבר לענן, קשרו קודם את החשבון לחשבון הפלטפורמה', 403, 'no_platform_account');
+        $this->register();
+        $kind = in_array($in['kind'] ?? 'file', ['file', 'folder', 'any'], true) ? (string) ($in['kind'] ?? 'file') : 'file';
+        $mime = is_array($in['mime'] ?? null) ? implode(',', array_map('strval', $in['mime'])) : (string) ($in['mime'] ?? '');
+        $state = rtrim(strtr(base64_encode(random_bytes(24)), '+/', '-_'), '=');
+        $exp = time() + self::STATE_TTL;
+        $db = $this->db();
+        $db->prepare('DELETE FROM states WHERE expires < ?')->execute([time()]);
+        $db->prepare("INSERT INTO states (state, user, expires, sub, purpose) VALUES (?,?,?,?,'pick')")->execute([$state, $user, $exp, $sub]);
+        $k = $this->keys();
+        $sig = sodium_crypto_sign_detached("pick\n{$this->cfg['client']}\n$state\n$sub\n$exp\n" . $this->pickReturnUrl(), $k['sk']);
+        return $this->cfg['cloud'] . 'picker.php?' . http_build_query([
+            'client' => $this->cfg['client'], 'state' => $state, 'return' => $this->pickReturnUrl(), 'sub' => $sub, 'exp' => $exp,
+            'sig' => $k['kid'] . '.' . rtrim(strtr(base64_encode($sig), '+/', '-_'), '='),
+            'kind' => $kind, 'multiple' => !empty($in['multiple']) ? '1' : '0', 'mime' => $mime,
+        ]);
+    }
+
+    /** ה-state של הבורר — חד-פעמי, של המשתמש הזה (או בלי עוגייה: לפי ה-sub של הדפדפן). מחזיר את השורה. */
+    private function pickState(array $in, ?string $user): array {
+        $state = (string) ($in['state'] ?? '');
+        $st = $this->db()->prepare("SELECT * FROM states WHERE state = ? AND purpose = 'pick'");
+        $st->execute([$state]);
+        $row = $st->fetch();
+        if (!$row || (int) $row['expires'] < time() || (int) $row['used'] === 1 || ($user !== null && $row['user'] !== $user)) {
+            throw new DrivesError('הבחירה פגה או נפתחה בחשבון אחר — פתחו את הבורר שוב מהאפליקציה', 400, 'bad_state');
+        }
+        if ($user === null) {   // APK: הדפדפן החיצוני — רק אותו חשבון פלטפורמה
+            $p = json_decode((string) ($_SERVER['PLATFORM_USER'] ?? ''), true);
+            $here = is_array($p) && is_scalar($p['sub'] ?? null) ? (string) $p['sub'] : '';
+            if ($here === '' || ($row['sub'] ?? null) === null || !hash_equals((string) $row['sub'], $here)) {
+                throw new DrivesError('החשבון בדפדפן הזה שונה מהחשבון שלך באפליקציה', 403, 'account_mismatch');
+            }
+        }
+        if (($in['pick'] ?? '') === 'account_mismatch') throw new DrivesError('החשבון בענן שונה מהחשבון שלך כאן. היכנסו לענן באותו חשבון', 403, 'account_mismatch');
+        $picked = ($in['pick'] ?? '') === 'cancelled' ? '' : implode(',', array_filter(explode(',', (string) ($in['picked'] ?? '')),
+            fn($id) => (bool) preg_match('/^n_[A-Za-z0-9]{1,64}$/', $id)));
+        $this->db()->prepare('UPDATE states SET used = 1, picked = ? WHERE state = ?')->execute([$picked, $state]);
+        return array_merge($row, ['picked' => $picked]);   // לא + : לשורה כבר יש עמודה picked (null)
+    }
+
+    /** החזרה מהבורר (עם עוגייה) → back?cloud=picked | pick-cancelled. */
+    public function pickCallback(string $user, array $in): string {
+        $row = $this->pickState($in, $user);
+        $back = $this->cfg['back'] . (str_contains($this->cfg['back'], '?') ? '&' : '?');
+        return $back . ($row['picked'] === '' ? 'cloud=pick-cancelled' : 'cloud=picked');
+    }
+
+    /** החזרה מהבורר בדפדפן החיצוני (APK) — דף, וכפתור חזרה לאפליקציה. */
+    public function pickCallbackExternal(array $in): array {
+        $row = $this->pickState($in, null);
+        return $row['picked'] === '' ? ['done' => 'הבחירה בוטלה. אפשר לחזור לאפליקציה.', 'denied' => true]
+                                     : ['done' => 'הבחירה נשמרה. אפשר לחזור לאפליקציה.'];
+    }
+
+    /** ה-ids מהבחירה האחרונה של המשתמש — פעם אחת. האפליקציה בודקת אותם ב-stat (רק מה שבאמת נגיש). */
+    public function picked(string $user): array {
+        $db = $this->db();
+        $st = $db->prepare("SELECT state, picked FROM states WHERE user = ? AND purpose = 'pick' AND used = 1 AND picked IS NOT NULL AND picked != ''
+                            ORDER BY expires DESC LIMIT 1");
+        $st->execute([$user]);
+        $r = $st->fetch();
+        if (!$r) return ['ids' => []];
+        $db->prepare("UPDATE states SET picked = NULL WHERE user = ? AND purpose = 'pick'")->execute([$user]);
+        return ['ids' => explode(',', $r['picked'])];
+    }
+
     /** השורה של state, או חריגה עם הסיבה (missing / user / expired). $user null — בלי עוגייה, בלי בדיקת משתמש. */
     private function stateRow(string $state, ?string $user): array {
-        $st = $this->db()->prepare('SELECT * FROM states WHERE state = ?');
+        $st = $this->db()->prepare("SELECT * FROM states WHERE state = ? AND purpose = 'connect'");   // state של הבורר — לא כאן
         $st->execute([$state]);
         $row = $st->fetch();
         $why = match (true) {
@@ -455,7 +582,7 @@ final class Drives {
         $c = $this->conn($user);
         if ($c && $layers !== null) {
             $drop = [];
-            foreach ($layers as $l) array_push($drop, ...self::LAYERS[$l]);
+            foreach ($layers as $l) array_push($drop, ...($l === 'files' ? self::FILES_SCOPES : self::LAYERS[$l]));
             $rest = array_values(array_diff(json_decode($c['scope'], true) ?: [], $drop));
             if ($rest) {
                 $sub = ($c['sub'] ?? null) ?: $this->sub($user);
@@ -476,7 +603,7 @@ final class Drives {
     /** רישום בענן — פעם אחת, ושוב רק כשהפרטים משתנים. */
     private function register(): void {
         $payload = ['client' => $this->cfg['client'], 'name' => $this->cfg['name'], 'key_url' => $this->cfg['endpoint'] . '?action=drives_key',
-                    'origins' => [$this->origin($this->cfg['endpoint'])], 'return' => [$this->returnUrl()]];
+                    'origins' => [$this->origin($this->cfg['endpoint'])], 'return' => [$this->returnUrl(), $this->pickReturnUrl()]];
         $sig = hash('sha256', json_encode($payload));
         if ($this->meta('registered') === $sig) return;
         $r = $this->post('client_register', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), []);
@@ -536,13 +663,13 @@ final class Drives {
             CREATE TABLE IF NOT EXISTS conns (user TEXT PRIMARY KEY, connection TEXT NOT NULL, name TEXT NOT NULL,
                                               cloud_id TEXT NOT NULL, scope TEXT NOT NULL, created_at TEXT NOT NULL, sub TEXT);
             CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0, sub TEXT);
-            CREATE TABLE IF NOT EXISTS pstates (state TEXT PRIMARY KEY, user TEXT NOT NULL, provider TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS pstates (state TEXT PRIMARY KEY, user TEXT NOT NULL, provider TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL, sub TEXT);
             CREATE TABLE IF NOT EXISTS links (user TEXT NOT NULL, provider TEXT NOT NULL, refresh TEXT NOT NULL, name TEXT NOT NULL,
                                               access TEXT, access_until INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
                                               PRIMARY KEY (user, provider));
         ");
         // מסד מגרסה קודמת — בלי used / sub
-        foreach (['states' => ['used' => 'INTEGER NOT NULL DEFAULT 0', 'sub' => 'TEXT'], 'conns' => ['sub' => 'TEXT']] as $t => $add) {
+        foreach (['states' => ['used' => 'INTEGER NOT NULL DEFAULT 0', 'sub' => 'TEXT', 'purpose' => "TEXT NOT NULL DEFAULT 'connect'", 'picked' => 'TEXT'], 'conns' => ['sub' => 'TEXT'], 'pstates' => ['sub' => 'TEXT']] as $t => $add) {
             $cols = array_column($this->pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
             foreach ($add as $c => $type) if (!in_array($c, $cols, true)) $this->pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
         }
@@ -585,6 +712,7 @@ final class Drives {
     // ─── עזרים ───────────────────────────────────────────────────────────
 
     private function returnUrl(): string { return $this->cfg['endpoint'] . '?action=drives_callback'; }
+    private function pickReturnUrl(): string { return $this->cfg['endpoint'] . '?action=drives_pick_callback'; }
 
     private function origin(string $url): string {
         $p = parse_url($url);
@@ -598,15 +726,17 @@ final class Drives {
     }
 
     /** דף קצר בעברית, עם כפתור חזרה לאפליקציה — לחזרה מהענן. $ok — הצלחה (החזרה בדפדפן החיצוני, APK). */
-    private function page(string $msg, string $code, int $status, bool $ok = false): never {
+    /** $key — הפרמטר בקישור החזרה: cloud (ענן MBE) או drive (כונן חיצוני — Dropbox). */
+    private function page(string $msg, string $code, int $status, bool $ok = false, string $key = 'cloud'): never {
         http_response_code($status);
         header('Content-Type: text/html; charset=utf-8');
         header('Cache-Control: no-store');
         $m = htmlspecialchars($msg);
         $c = htmlspecialchars($code);
         $sep = str_contains($this->cfg['back'], '?') ? '&' : '?';
-        $b = htmlspecialchars($this->cfg['back'] . $sep . ($code === 'denied' ? 'cloud=denied' : ($ok ? 'cloud=connected' : 'cloud=error')));
-        $head = $ok ? '☁️ החיבור לענן' : '☁️ החיבור לענן לא הושלם';
+        $v = in_array($code, ['picked', 'pick-cancelled'], true) ? $code : ($code === 'denied' ? 'denied' : ($ok ? 'connected' : 'error'));
+        $b = htmlspecialchars($this->cfg['back'] . $sep . $key . '=' . $v);
+        $head = $key === 'drive' ? ($ok ? '💾 החיבור לכונן' : '💾 החיבור לכונן לא הושלם') : ($ok ? '☁️ החיבור לענן' : '☁️ החיבור לענן לא הושלם');
         $foot = $ok ? '' : "קוד: $c";
         echo <<<HTML
 <!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
