@@ -7,7 +7,8 @@
  * GET  ?action=strategy&id=               אסטרטגיה וכל הגרסאות שלה (2.2)
  * GET  ?action=trades&from&to&strategy_id&version_id&market&symbol&result&plan    היומן (2.4)
  * GET  ?action=trade&id=                  עסקה (2.5)
- * GET  ?action=stats&strategy_id&version_id&market&from&to   הסטטיסטיקה (2.6), לפי תאריך סגירה
+ * GET  ?action=stats&strategy_id&version_id&method_id&market&from&to   הסטטיסטיקה (2.6), לפי תאריך סגירה; ועוד במטבע הבסיס (ECB, ✅12) ולפי שיטה
+ * GET  ?action=trade_prefill&asset=      "פתח עסקה מזה": הנכס ביומן לפי סימול מנורמל (spec-stage-a 11)
  * GET  ?action=instruments                "נכסים שלי" (3.2)
  * GET  ?action=export&format=json|csv     ייצוא מלא / היומן (2.7)
  * POST action=settings | strategy_save | strategy_duplicate | strategy_status | strategy_delete
@@ -21,11 +22,27 @@
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
  * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
  *
+ * ציור על הגרף (פרק 7):
+ * GET  ?action=drawings&asset=           השרטוטים שלי על הנכס (כל המסגרות; הדפדפן מסנן לפי tf)
+ * POST action=drawing_save | drawing_delete    יצירה/עדכון (עם id) ומחיקה — רק של המשתמש; עד 500 לנכס
+ *
+ * פרופיל, שיטות וניתוח (פרקים 5–6):
+ * GET  ?action=profile                   הפרופיל שלי
+ * POST action=profile_save
+ * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
+ * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
+ *
+ * התראות (פרק 8) — הבדיקה עצמה רק ב-cron (bin/alerts-cron.php, CLI); כאן רק ניהול ותיבה:
+ * GET  ?action=alerts                    ההתראות שלי והשיטות שמותרות בהן
+ * GET  ?action=inbox | inbox_peek        התיבה; האחרונה שלא נקראה (ל-Service Worker כשמגיע פוש)
+ * GET  ?action=push_key                  המפתח הציבורי של VAPID
+ * POST action=alert_save | alert_status | alert_delete | inbox_read | push_subscribe | push_unsubscribe
+ *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
- * GET  ?action=admin_state
+ * GET  ?action=admin_state | admin_methods
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
- *      | admin_cache_clear | admin_cache_cleanup
+ *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
  * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
@@ -37,6 +54,10 @@ require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/store.php';
 require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
+require_once __DIR__ . '/lib/drawings.php';
+require_once __DIR__ . '/lib/analysis.php';
+require_once __DIR__ . '/lib/alerts.php';
+require_once __DIR__ . '/lib/fx.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -83,11 +104,13 @@ $tz = $user['timezone'];
 
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
+    'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
+    'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'analysis', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -117,7 +140,7 @@ if (in_array($action, TS_DATA, true)) {
 function filters(): array
 {
     $f = [];
-    foreach (['from', 'to', 'strategy_id', 'version_id', 'market', 'symbol', 'result', 'plan', 'currency'] as $k) {
+    foreach (['from', 'to', 'strategy_id', 'version_id', 'method_id', 'market', 'symbol', 'result', 'plan', 'currency'] as $k) {
         if (isset($_GET[$k]) && is_string($_GET[$k]) && $_GET[$k] !== '') $f[$k] = mb_substr($_GET[$k], 0, 40);
     }
     return $f;
@@ -130,11 +153,63 @@ try {
                 'is_admin' => ts_is_admin($uid), 'is_primary_admin' => ts_is_primary_admin(), 'lists' => [
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
-            ]]);
+            ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
+                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'unread' => ts_inbox_unread($uid)]);
 
         case 'settings':
             ts_settings_save($uid, $in);
+            ts_profile_sync_risk($uid);
             out(['ok' => true]);
+
+        // ── פרופיל, שיטות, ניתוח ──
+        case 'profile':
+            out(['ok' => true, 'profile' => ts_profile($uid)]);
+
+        case 'profile_save':
+            out(['ok' => true, 'profile' => ts_profile_save($uid, $in)]);
+
+        case 'methods':
+            out(['ok' => true, 'methods' => ts_methods_visible($uid)]);
+
+        // ── התראות ──
+        case 'alerts':
+            out(['ok' => true, 'alerts' => ts_alerts_list($uid), 'methods' => ts_alert_methods($uid),
+                'per_user' => TS_ALERTS_PER_USER, 'push_devices' => ts_push_count($uid)]);
+
+        case 'alert_save':
+            out(['ok' => true, 'alert' => ts_alert_save($uid, $in)]);
+
+        case 'alert_status':
+            out(['ok' => true, 'alert' => ts_alert_status($uid, $in['id'] ?? null, $in['status'] ?? null)]);
+
+        case 'alert_delete':
+            ts_alert_delete($uid, $in['id'] ?? null);
+            out(['ok' => true]);
+
+        case 'inbox':
+            out(['ok' => true, 'events' => ts_inbox($uid), 'unread' => ts_inbox_unread($uid)]);
+
+        case 'inbox_peek':
+            $ev = array_values(array_filter(ts_inbox($uid, 5), fn($e) => !$e['read']));
+            out(['ok' => true, 'event' => $ev[0] ?? null, 'unread' => ts_inbox_unread($uid)]);
+
+        case 'inbox_read':
+            ts_inbox_read($uid, $in['ids'] ?? null);
+            out(['ok' => true, 'unread' => ts_inbox_unread($uid)]);
+
+        case 'push_key':
+            out(['ok' => true, 'key' => ts_vapid()['public']]);
+
+        case 'push_subscribe':
+            ts_push_subscribe($uid, $in);
+            out(['ok' => true, 'push_devices' => ts_push_count($uid)]);
+
+        case 'push_unsubscribe':
+            ts_push_unsubscribe($uid, $in['endpoint'] ?? null);
+            out(['ok' => true, 'push_devices' => ts_push_count($uid)]);
+
+        case 'analysis':
+            out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? ''));
 
         case 'strategies':
             out(['ok' => true, 'strategies' => ts_strategies_list($uid, $tz)]);
@@ -177,7 +252,17 @@ try {
             unset($f['result']);
             $closed = array_filter(ts_trades_load($uid, $tz, $f), fn($t) => $t['calc']['status'] === 'closed');
             $noStop = count(array_filter($closed, fn($t) => $t['calc']['r'] === null));
-            out(['ok' => true, 'by_currency' => ts_stats(array_values($closed), $tz), 'no_stop' => $noStop]);
+            // שמות רק לשיטות שהמשתמש רואה, ולשיטות שכבר בעסקאות שלו (ממצא בקרה #1282)
+            $methodNames = array_column(ts_methods_visible($uid), 'name', 'id');
+            $mine = ts_db()->prepare('SELECT DISTINCT method_id FROM trades WHERE user_id = ? AND method_id IS NOT NULL');
+            $mine->execute([$uid]);
+            foreach ($mine->fetchAll(PDO::FETCH_COLUMN) as $mid) if (ts_method_exists($mid)) $methodNames[$mid] = ts_method($mid)->meta()['name'];
+            out(['ok' => true, 'by_currency' => ts_stats(array_values($closed), $tz), 'no_stop' => $noStop,
+                'in_base' => $closed ? ts_stats_in_base($uid, array_values($closed), $user['base_currency'], $tz) : null,
+                'method_names' => $methodNames]);
+
+        case 'trade_prefill':
+            out(['ok' => true, 'prefill' => ts_trade_prefill($uid, $_GET['asset'] ?? '')]);
 
         case 'instruments':
             out(['ok' => true, 'instruments' => ts_instruments_list($uid)]);
@@ -231,6 +316,17 @@ try {
             ts_cred_delete_mine($uid, $in['provider'] ?? '');
             out(['ok' => true, 'providers' => ts_providers_for($uid)]);
 
+        // ── ציור ──
+        case 'drawings':
+            out(['ok' => true, 'drawings' => ts_drawings_list($uid, $_GET['asset'] ?? '')]);
+
+        case 'drawing_save':
+            out(['ok' => true, 'drawing' => ts_drawing_save($uid, $in)]);
+
+        case 'drawing_delete':
+            ts_drawing_delete($uid, $in['id'] ?? null);
+            out(['ok' => true]);
+
         // ── מנהל (ts_require_admin כבר נבדק למעלה, לכל admin_*) ──
         case 'admin_state':
             $providers = [];
@@ -245,7 +341,17 @@ try {
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
-                'cache' => ts_cache_stats(), 'log' => $log]);
+                'cache' => ts_cache_stats(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
+
+        case 'admin_methods':
+            out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
+
+        case 'admin_method_save':
+            ts_admin_method_save($uid, $in);
+            out(['ok' => true, 'methods' => ts_admin_methods()]);
+
+        case 'admin_costs_save':
+            out(['ok' => true, 'costs' => ts_costs_save($uid, $in['costs'] ?? null)]);
 
         case 'admin_provider_save':
             $pid = (string)($in['provider'] ?? '');

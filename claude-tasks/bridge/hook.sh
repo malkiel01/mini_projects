@@ -6,6 +6,11 @@
 # מריץ את העותק שב-‎$HOME/.claude-tasks-bridge‎ (link.sh update מרענן אותו מ-origin/main), ואם אין —
 # את העותק שבריפו. כך תיקון ב-hooks מגיע לצ'אט רץ בלי שהענף שלו ישתנה.
 # תמיד יוצא 0: hook שנכשל לא יעצור את הצ'אט.
+#
+# 2026-11-08 — בעל הלוח ניתק את mini_projects מהלוח: אין hooks ב-.claude/settings.json, ואף צ'אט לא נחסם
+# בשער ולא מדווח ללוח. צ'אט על ענף ישן (שעוד רושם את ה-hooks) או עם עותק ריצה ישן מגיע לכאן — ויוצא מיד.
+# חיבור מחדש רק בהחלטה של בעל הלוח: CLAUDE_TASKS_BRIDGE=on בסביבה, וה-hooks חוזרים ל-settings.json.
+[ "${CLAUDE_TASKS_BRIDGE:-}" = on ] || exit 0
 event="${1:-}"
 case "$event" in
   prompt)      f=hook-prompt.sh ;;

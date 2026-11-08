@@ -212,6 +212,151 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 3) {
+        // ציור על הגרף (spec-stage-a פרק 7): לכל משתמש ונכס; tf NULL = בכל מסגרת זמן
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE drawings (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                asset TEXT NOT NULL,
+                tf TEXT,
+                kind TEXT NOT NULL,
+                points TEXT NOT NULL,
+                style TEXT NOT NULL DEFAULT '{}',
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX drawings_user_asset ON drawings(user_id, asset);
+            PRAGMA user_version = 3;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 4) {
+        // פרופיל, שיטות ובדיקה לאחור (spec-stage-a פרקים 5–6, 11)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- הפרופיל (5). risk_pct נשמר גם ב-users.default_risk_pct (שלב 1) — שני המסכים כותבים את שניהם יחד
+            CREATE TABLE user_profile (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                horizon TEXT NOT NULL DEFAULT 'medium' CHECK (horizon IN ('short','medium','long')),
+                risk_level TEXT NOT NULL DEFAULT 'medium' CHECK (risk_level IN ('low','medium','high')),
+                risk_pct TEXT NOT NULL DEFAULT '1',
+                min_rr TEXT NOT NULL DEFAULT '2',
+                min_certainty INTEGER NOT NULL DEFAULT 55 CHECK (min_certainty BETWEEN 50 AND 80),
+                preferred_methods TEXT NOT NULL DEFAULT '[]',
+                alert_channels TEXT NOT NULL DEFAULT '["inbox"]',
+                quiet_hours TEXT,
+                max_alerts_per_day INTEGER NOT NULL DEFAULT 10,
+                updated_at INTEGER NOT NULL
+            );
+            -- הגדרות מנהל לכל שיטה שבקוד (6.7). שיטה בלי שורה — כבויה
+            CREATE TABLE methods (
+                id TEXT PRIMARY KEY,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                markets TEXT NOT NULL DEFAULT '[]',
+                timeframes TEXT NOT NULL DEFAULT '[]',
+                params TEXT NOT NULL DEFAULT '{}',
+                note TEXT NOT NULL DEFAULT ''
+            );
+            -- תוצאות בדיקה לאחור (6.2). שורה אחת לכל (שיטה, ספק, נכס, מסגרת, היקף מפתח); גרסה או פרמטרים אחרים →
+            -- חישוב מלא שמחליף אותה. state — מצב המנוע, לחישוב מצטבר. ההיסטוריה עצמה לא נשמרת
+            CREATE TABLE backtests (
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                params_hash TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                n INTEGER NOT NULL,
+                wins INTEGER NOT NULL,
+                expectancy_r REAL,
+                max_dd REAL NOT NULL DEFAULT 0,
+                from_t INTEGER,
+                to_t INTEGER,
+                state TEXT NOT NULL,
+                computed_at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, provider, asset, tf, cred_scope)
+            );
+            PRAGMA user_version = 4;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 5) {
+        // התראות (spec-stage-a פרק 8): ההתראה, האירועים (התיבה), מנויי פוש
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- last_state: המצב בבדיקה הקודמת ('0'/'1', ובמחיר 'above'/'below') — נשלח רק במעבר, לא שוב עד שהתנאי
+            -- התבטל והתקיים מחדש (8.2)
+            CREATE TABLE alerts (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                side TEXT NOT NULL CHECK (side IN ('long','short','both')),
+                kind TEXT NOT NULL CHECK (kind IN ('method','blend','price')),
+                method_id TEXT,
+                methods TEXT NOT NULL DEFAULT '[]',
+                level TEXT,
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','expired')),
+                last_state TEXT,
+                last_checked_at INTEGER,
+                last_fired_at INTEGER,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX alerts_user ON alerts(user_id);
+            CREATE INDEX alerts_status ON alerts(status);
+            CREATE TABLE alert_events (
+                id INTEGER PRIMARY KEY,
+                alert_id INTEGER REFERENCES alerts(id) ON DELETE SET NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                fired_at INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                delivered TEXT NOT NULL DEFAULT '{}',
+                read_at INTEGER
+            );
+            CREATE INDEX alert_events_user ON alert_events(user_id, fired_at);
+            CREATE TABLE push_subs (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL UNIQUE,
+                keys TEXT NOT NULL DEFAULT '{}',
+                created_at INTEGER NOT NULL
+            );
+            PRAGMA user_version = 5;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 6) {
+        // חיבור הניתוח ליומן (spec-stage-a פרק 11) והמרת מטבע לפי ECB (✅12)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- עסקה שנפתחה מכרטיס ניתוח: השיטה, ותמונת הניתוח (כולל provider:symbol המקורי)
+            ALTER TABLE trades ADD COLUMN method_id TEXT;
+            ALTER TABLE trades ADD COLUMN analysis_snapshot TEXT;
+            CREATE INDEX trades_method ON trades(user_id, method_id);
+            -- שערי ECB: כמה יחידות quote ליחידת base ביום (ימי עסקים). נשמרים — שער של יום שעבר לא משתנה
+            CREATE TABLE fx_rates (
+                base TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                day TEXT NOT NULL,
+                rate TEXT NOT NULL,
+                PRIMARY KEY (base, quote, day)
+            );
+            -- איזה טווח ימים כבר נמשך לכל זוג (כדי לא לפנות שוב על ימים בלי שער — סופי שבוע, חגים)
+            CREATE TABLE fx_cover (
+                base TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                from_day TEXT NOT NULL,
+                to_day TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL,
+                PRIMARY KEY (base, quote)
+            );
+            PRAGMA user_version = 6;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

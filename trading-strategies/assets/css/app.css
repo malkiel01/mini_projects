@@ -204,7 +204,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ניווט תחתון: ארבע לשוניות (אפיון פרק 2) */
 body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
     background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; text-decoration: none;
     color: var(--muted); font-size: .75rem; }
@@ -323,3 +323,52 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .quote-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s2); }
 .quote-head .price { font-size: 1.5rem; }
 .chart-tools .chip, .toolbar .chip { min-height: 28px; }
+
+/* ===== ציור על הגרף (spec-stage-a 7; בטלפון — סרגל צף מעל הניווט) ===== */
+.draw-slot { position: sticky; bottom: calc(56px + env(safe-area-inset-bottom) + var(--s2)); z-index: 5; }
+@media (min-width: 961px) { .draw-slot { bottom: var(--s2); } }
+.draw-bar { display: grid; gap: 6px; margin-bottom: var(--s2); padding: 6px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 6px 20px rgba(10, 15, 30, .18); }
+.draw-row { display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.draw-row::-webkit-scrollbar { display: none; }
+.draw-row.wrap { flex-wrap: wrap; overflow: visible; }   /* האפשרויות — שוברות שורה, כדי שביטול/שחזור/מחיקה לא ייעלמו מהצד */
+.draw-btn { flex: none; display: grid; place-items: center; inline-size: 40px; block-size: 40px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--surface); font-size: 1.05rem; cursor: pointer; }
+.draw-btn[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.draw-btn:disabled { opacity: .4; cursor: default; }
+.draw-btn.swatch { inline-size: 32px; block-size: 32px; border-radius: 50%; background: var(--c); border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1px var(--line); }
+.draw-btn.swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+.draw-width { flex: none; inline-size: auto; min-height: 36px; }
+.draw-only { flex: none; display: flex; align-items: center; gap: 4px; font-size: .8rem; white-space: nowrap; min-height: 40px; padding: 0 4px; }
+.draw-only input { inline-size: 18px; min-height: 18px; accent-color: var(--brand); }
+.draw-hint { margin: 0; font-size: .78rem; color: var(--muted); }
+.chart-box.drawing { cursor: crosshair; box-shadow: 0 0 0 2px var(--brand); }
+
+/* ===== ניתוח לפי שיטות (spec-stage-a 6) ===== */
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.analysis-card .verdict { display: flex; align-items: center; gap: var(--s2); white-space: normal; }
+.analysis-card .verdict b { font-weight: 600; }
+.conds { list-style: none; padding: 0 !important; display: grid; gap: 4px; }
+.conds li { display: grid; grid-template-columns: 1.2em minmax(0, 1fr) auto; gap: var(--s1); align-items: baseline; color: var(--muted); }
+.conds li.met { color: var(--ink); }
+.conds li.met > span:first-child { color: var(--ok); font-weight: 700; }
+.line-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.score-bar { position: relative; block-size: 10px; border-radius: 99px;
+    background: linear-gradient(to left, color-mix(in srgb, var(--ok) 55%, transparent), var(--bg) 50%, color-mix(in srgb, var(--danger) 55%, transparent)); }
+.score-bar .mid { position: absolute; inset-block: -3px; inset-inline-start: 50%; inline-size: 1px; background: var(--muted); }
+.score-bar .dot { position: absolute; inset-block-start: -3px; inline-size: 14px; block-size: 14px; border-radius: 50%; background: var(--ink);
+    border: 2px solid var(--surface); }
+.score-ends { display: flex; justify-content: space-between; font-size: .75rem; }
+.analysis-card .chip, .list .card p.chip { white-space: normal; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.toolbar.pick select { flex: 1; max-width: none; }
+
+/* ===== התראות (spec-stage-a 8) ===== */
+.bottom-nav a { position: relative; }
+.bottom-nav .badge { position: absolute; inset-block-start: 4px; inset-inline-end: calc(50% - 22px); min-inline-size: 18px; block-size: 18px; padding: 0 5px;
+    border-radius: 99px; background: var(--danger); color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }
+.use-row.unread b { color: var(--brand); }
+.use-row.unread .use-ic { box-shadow: 0 0 0 2px var(--brand); }
+.use-tx small.wrap, .card .l2.wrap { white-space: normal; overflow: visible; }
+a.use-row { text-decoration: none; color: inherit; }

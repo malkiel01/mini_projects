@@ -1,5 +1,5 @@
 /**
- * מודול הכוננים — צד הדפדפן של האפליקציה. עותק מסונכרן: לא לערוך כאן. המקור: suite-cloud/drives/src/js/.
+ * מודול הכוננים — צד הדפדפן של האפליקציה. עותק מסונכרן: לא לערוך כאן. המקור: mbe-cloud/drives/src/js/.
  *
  *   import { createDrives } from './drives/drives.js';
  *   const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php של האפליקציה (שם רץ Drives.php)
@@ -8,14 +8,14 @@
  *   await drives.connect()         — מעבר למסך האישור בענן; חוזרים ל-back עם ?cloud=connected | denied
  *   await drives.disconnect()
  *
- *   const s = drives.suite;        — ענן החבילה. בלי חיבור — כל קריאה זורקת DriveError עם code 'not-connected'.
+ *   const s = drives.suite;        — ענן MBE. בלי חיבור — כל קריאה זורקת DriveError עם code 'not-connected'.
  *   await s.list(folder?)          → { folder, path, items:[node] }
  *   await s.stat(id) · s.read(id) → Blob · s.mkdir(name, parent?) · s.rename(id, name) · s.move(id, parent) · s.trash(id)
  *   await s.write(name, blob, { parent, ifRev, onConflict })                  → node  (עד 4MB)
  *   await s.upload(file, { parent, ifRev, onConflict, onProgress, signal })  → node  (בחלקים, כל גודל)
  *   await s.quota()                → { quota, used, max_file }
  *
- *   drives.fonts — ספריית הגופנים של המשתמש (suite-cloud/docs/spec-2-fonts.md):
+ *   drives.fonts — ספריית הגופנים של המשתמש (mbe-cloud/docs/spec-2-fonts.md):
  *   await drives.fonts.list()      → { fonts: [{ id, family, weight, style, format, rev, source, … }], families: [{ family, source, items }] }
  *   await drives.fonts.list({ builtin: true }) — גם הגופנים המובנים (OFL, source: 'builtin', id שמתחיל ב-b_). גופן משתנה —
  *        axes: { wght: [min, max] }, ו-weight הוא ברירת המחדל. license — יש רישיון: drives.fonts.license(item) → טקסט.
@@ -23,7 +23,7 @@
  *                                      bytes: Uint8Array — להטמעה בקובץ }
  *   await drives.fonts.add(file, { family, weight, style })   → פריט (replaced: true אם החליף)
  *
- *   drives.ai — שכבת הבינה המלאכותית של הענן (suite-cloud/docs/spec-3-ai.md):
+ *   drives.ai — שכבת הבינה המלאכותית של הענן (mbe-cloud/docs/spec-3-ai.md):
  *   await drives.ai.capabilities() → { connected, tasks: {…: bool}, providers, default, quota }  (בלי חיבור — connected:false והכול false)
  *   await drives.ai.run('inpaint', { image, mask, prompt }, { signal })
  *        → { png: Blob, size: [w, h], transparent, provider } | { masks: [{ png: Blob, label, box }] } | { json } | { text }
@@ -64,7 +64,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
             return tok;
         }).finally(() => { pending = null; });
         const t = await pending;
-        if (!t) throw new DriveError('לא מחובר לענן החבילה', 'not-connected');
+        if (!t) throw new DriveError('לא מחובר לענן MBE', 'not-connected');
         return t;
     }
 
@@ -280,7 +280,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
-    const NAMES = { suite: 'ענן החבילה', dropbox: 'Dropbox' };
+    const NAMES = { suite: 'ענן MBE', dropbox: 'Dropbox' };
 
     const NONE = { connected: false, tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
 

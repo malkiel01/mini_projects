@@ -501,6 +501,10 @@ function ts_trades_load(int $uid, string $tz, array $f = []): array
         else { $sql .= ' AND v.strategy_id = :sid'; $p[':sid'] = (int)$f['strategy_id']; }
     }
     if (!empty($f['version_id'])) { $sql .= ' AND t.strategy_version_id = :vid'; $p[':vid'] = (int)$f['version_id']; }
+    if (!empty($f['method_id']) && is_string($f['method_id'])) {
+        if ($f['method_id'] === 'none') $sql .= ' AND t.method_id IS NULL';
+        else { $sql .= ' AND t.method_id = :mid'; $p[':mid'] = $f['method_id']; }
+    }
     if (!empty($f['market']) && is_string($f['market'])) { $sql .= ' AND i.market = :m'; $p[':m'] = $f['market']; }
     if (!empty($f['symbol']) && is_string($f['symbol'])) { $sql .= ' AND i.symbol = :sym'; $p[':sym'] = strtoupper($f['symbol']); }
     if (!empty($f['currency']) && is_string($f['currency'])) { $sql .= ' AND t.currency = :cur'; $p[':cur'] = strtoupper($f['currency']); }
@@ -579,6 +583,9 @@ function ts_trade_out(array $t, string $tz): array
         'went_well' => $t['went_well'],
         'to_improve' => $t['to_improve'],
         'rating' => $t['rating'] !== null ? (int)$t['rating'] : null,
+        'method_id' => $t['method_id'] ?? null,
+        'method_name' => isset($t['method_id']) && function_exists('ts_method_exists') && ts_method_exists($t['method_id']) ? ts_method($t['method_id'])->meta()['name'] : null,
+        'analysis_snapshot' => isset($t['analysis_snapshot']) ? ts_unjson($t['analysis_snapshot'], null) : null,
         'calc' => array_merge($t['calc'], ['closed_at' => ts_time_out($t['calc']['closed_at'], $tz)]),
     ];
 }
@@ -596,6 +603,27 @@ function ts_version_owned(int $uid, int $vid): array
     $st = ts_db()->prepare('SELECT v.* FROM strategy_versions v JOIN strategies s ON s.id = v.strategy_id WHERE v.id = ? AND s.user_id = ?');
     $st->execute([$vid, $uid]);
     return $st->fetch() ?: throw new TsNotFound('גרסת האסטרטגיה לא נמצאה');
+}
+
+/**
+ * השיטה ותמונת הניתוח של עסקה שנפתחה מכרטיס ניתוח (spec-stage-a 11). השיטה — רק אחת שהמשתמש רואה; התמונה — אובייקט
+ * קטן (עד 8KB) עם הנכס המקורי provider:symbol. מחזיר [method_id|null, snapshot json|null].
+ */
+function ts_trade_analysis_in(int $uid, array $in): array
+{
+    $mid = $in['method_id'] ?? null;
+    if ($mid === null || $mid === '') return [null, null];
+    if (!function_exists('ts_methods_visible') || !in_array($mid, array_column(ts_methods_visible($uid), 'id'), true)) {
+        throw new TsInvalid('השיטה לא זמינה');
+    }
+    $snap = $in['analysis_snapshot'] ?? null;
+    if ($snap === null) return [$mid, null];
+    if (!is_array($snap) || array_is_list($snap)) throw new TsInvalid('תמונת הניתוח לא תקינה');
+    $asset = $snap['asset'] ?? null;
+    ts_asset_split($asset);
+    $json = json_encode($snap, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json === false || strlen($json) > 8192) throw new TsInvalid('תמונת הניתוח גדולה מדי');
+    return [$mid, $json];
 }
 
 /** שמירת עסקה (אפיון 2.5). מחזיר id. */
@@ -666,6 +694,11 @@ function ts_trade_save(int $uid, array $in, string $tz): int
         $rating = null;
     }
 
+    // נפתחה מכרטיס ניתוח (פרק 11): השיטה ותמונת הניתוח נקבעות ביצירה; עריכה בלי השדות — לא מוחקת אותם
+    $fromAnalysis = $existing === null || array_key_exists('method_id', $in) || array_key_exists('analysis_snapshot', $in);
+    [$methodId, $snapshot] = $fromAnalysis ? ts_trade_analysis_in($uid, $in)
+        : [$existing['method_id'] ?? null, $existing['analysis_snapshot'] ?? null];
+
     $now = time();
     $db->beginTransaction();
     try {
@@ -689,6 +722,8 @@ function ts_trade_save(int $uid, array $in, string $tz): int
             'went_well' => ts_text($in['went_well'] ?? '', TS_MAX_TEXT, true),
             'to_improve' => ts_text($in['to_improve'] ?? '', TS_MAX_TEXT, true),
             'rating' => $rating,
+            'method_id' => $methodId,
+            'analysis_snapshot' => $snapshot,
         ];
         if ($existing) {
             $set = implode(', ', array_map(fn($k) => "$k = :$k", array_keys($vals)));
@@ -736,6 +771,11 @@ function ts_export_json(int $uid, array $user): array
         'strategies' => $strategies,
         'instruments' => ts_instruments_list($uid),
         'trades' => array_map(fn($t) => ts_trade_out($t, $tz), array_reverse(ts_trades_load($uid, $tz))),
+        'watchlist' => function_exists('ts_watchlist') ? array_column(ts_watchlist($uid), 'asset') : [],
+        'drawings' => function_exists('ts_drawing_out') ? ts_drawings_all($uid) : [],
+        'profile' => function_exists('ts_profile') ? ts_profile($uid) : null,
+        'alerts' => function_exists('ts_alerts_list') ? ts_alerts_list($uid) : [],
+        'inbox' => function_exists('ts_inbox') ? ts_inbox($uid, 1000) : [],
     ];
 }
 
