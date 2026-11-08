@@ -110,8 +110,8 @@
     },
     {
       "code": "TS-007",
-      "status": "open",
-      "status_at": "2026-11-07T19:40:00Z",
+      "status": "verify",
+      "status_at": "2026-11-08T06:00:00Z",
       "kind": "feature",
       "priority": "low",
       "area": "PR 6",

@@ -122,10 +122,15 @@ function ts_push_subscribe(int $uid, array $in): void
     $st = ts_db()->prepare('SELECT COUNT(*) FROM push_subs WHERE user_id = ?');
     $st->execute([$uid]);
     if ((int)$st->fetchColumn() >= 10) throw new TsInvalid('עד 10 מכשירים לפוש');
-    // מנוי שייך למכשיר: אם הכתובת כבר רשומה (גם למשתמש אחר באותו דפדפן) — עוברת למשתמש הנוכחי
-    ts_db()->prepare('INSERT INTO push_subs (user_id, endpoint, keys, created_at) VALUES (?, ?, ?, ?)
-                      ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, keys = excluded.keys, created_at = excluded.created_at')
+    // כתובת שכבר רשומה למשתמש אחר (למשל דפדפן משותף): המנוי הישן נמחק ונוצר חדש — לא מעבירים בעלות על שורה קיימת
+    // (ממצא בקרה #1275). של אותו משתמש — רק המפתחות מתעדכנים.
+    $db = ts_db();
+    $db->beginTransaction();
+    $db->prepare('DELETE FROM push_subs WHERE endpoint = ? AND user_id != ?')->execute([$endpoint, $uid]);
+    $db->prepare('INSERT INTO push_subs (user_id, endpoint, keys, created_at) VALUES (?, ?, ?, ?)
+                  ON CONFLICT(endpoint) DO UPDATE SET keys = excluded.keys WHERE push_subs.user_id = excluded.user_id')
         ->execute([$uid, $endpoint, json_encode($keys), time()]);
+    $db->commit();
 }
 
 function ts_push_unsubscribe(int $uid, mixed $endpoint): void
