@@ -129,7 +129,8 @@ function provision_verify(string $action, string $body, array $h): array
 
 /**
  * grant_status (PF-002): "למשתמש הזה יש הרשאה לאפליקציה שלי?" → {allowed}. רק לאפליקציה החותמת (אין פרמטר app),
- * ורק boolean — שום פרט אישי. sub — מחרוזת ספרות, כמו ב-identity (השער, sso.php). sub שלא קיים, ממתין או חסום →
+ * ורק boolean — שום פרט אישי. sub — מחרוזת ספרות כמו ב-identity (השער, sso.php), או מספר שלם חיובי — שניהם מתקבלים
+ * ומנורמלים למחרוזת (האפיון, 3.1). sub שלא קיים, ממתין או חסום →
  * false, באותה תשובה בדיוק (200), כדי שאי אפשר יהיה לגלות אילו מזהים קיימים.
  *
  * אותה תשובה כמו PLATFORM_USER.granted בשער (can_use ב-lib/gate.php): מנהל פעיל — תמיד true; משתמש פעיל — can_see
@@ -139,8 +140,9 @@ function provision_verify(string $action, string $body, array $h): array
 function provision_grant_status(array $client, array $body): array
 {
     $sub = $body['sub'] ?? null;
+    if (is_int($sub) && $sub > 0) $sub = (string)$sub;
     if (!is_string($sub) || !preg_match('/^[0-9]{1,12}$/', $sub)) {
-        throw new ApiError('sub לא תקין — מחרוזת ספרות, כמו ב-identity', 400);
+        throw new ApiError('sub לא תקין — מחרוזת ספרות או מספר שלם חיובי', 400);
     }
     $st = db()->prepare('SELECT id, role, status FROM users WHERE id = ?');
     $st->execute([(int)$sub]);
