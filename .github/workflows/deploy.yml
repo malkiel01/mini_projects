@@ -387,7 +387,7 @@ jobs:
           DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           CRONS: |
-            trading-strategies-alerts|*/15 * * * *|trading-strategies/bin/alerts-cron.php
+            trading-strategies-alerts|*/15 * * * *|trading-strategies/bin/alerts-cron.php|trading-strategies/data/alerts-cron.log
         run: |
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
           REMOTE=$(cat <<'EOS'
@@ -402,18 +402,26 @@ jobs:
               TAB=""
             fi
           }
-          while IFS='|' read -r id sched script; do
+          # שורות עבודה בלבד — בלי הערות, שורות ריקות ו-SHELL=/MAILTO= (cPanel מוסיף SHELL= לפני כל עבודה).
+          jobs() { grep -vE '^[[:space:]]*(#|$)' | grep -vE '^[A-Za-z_][A-Za-z0-9_]*=' | grep -vF "$1" || true; }
+          while IFS='|' read -r id sched script log; do
             [ -n "$id" ] || continue
             tag="# mini_projects:$id"
+            out=/dev/null; [ -n "$log" ] && out="$ROOT/$log"
+            line="$sched $PHP $ROOT/$script >> $out 2>&1 $tag"
+            [ "$out" = /dev/null ] && line="$sched $PHP $ROOT/$script >/dev/null 2>&1 $tag"
             read_tab || exit 1
-            if grep -qF "$tag" <<<"$TAB"; then echo "$id: כבר מותקן"; continue; fi
+            if grep -qxF "$line" <<<"$TAB"; then echo "$id: כבר מותקן"; continue; fi
             [ -f "$ROOT/$script" ] || { echo "$id: הסקריפט לא נמצא — מדלג"; continue; }
-            before=$(grep -c . <<<"$TAB" || true)
-            { [ -n "$TAB" ] && printf '%s\n' "$TAB"; echo "$sched $PHP $ROOT/$script >/dev/null 2>&1 $tag"; } | crontab -
+            had=$(grep -cF "$tag" <<<"$TAB" || true)
+            others=$(jobs "$tag" <<<"$TAB")
+            # השורה המסומנת (אם קיימת בגרסה אחרת) מוחלפת; כל שאר השורות נשארות כמו שהן.
+            [ "$out" = /dev/null ] || mkdir -p "$(dirname "$out")"
+            { [ -z "$TAB" ] || grep -vF "$tag" <<<"$TAB" || true; echo "$line"; } | crontab -
             read_tab || exit 1
-            after=$(grep -c . <<<"$TAB" || true)
-            if grep -qF "$tag" <<<"$TAB" && [ "$after" -eq $((before + 1)) ]; then echo "$id: הותקן ($sched)"
-            else echo "$id: ההתקנה לא אומתה (לפני $before, אחרי $after)"; exit 1; fi
+            if [ "$(grep -cxF "$line" <<<"$TAB")" = 1 ] && [ "$(grep -cF "$tag" <<<"$TAB")" = 1 ] && [ "$(jobs "$tag" <<<"$TAB")" = "$others" ]; then
+              [ "$had" = 0 ] && echo "$id: הותקן ($sched)" || echo "$id: עודכן ($sched)"
+            else echo "$id: ההתקנה לא אומתה — שאר העבודות השתנו או שהשורה חסרה"; exit 1; fi
             echo "$id: ריצה ראשונה ←"; timeout 300 "$PHP" "$ROOT/$script" </dev/null; echo "$id: קוד יציאה $?"
           done
           echo "--- crontab -l (שורות mini_projects) ---"
