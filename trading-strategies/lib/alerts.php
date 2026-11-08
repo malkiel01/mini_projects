@@ -249,6 +249,34 @@ function ts_alert_deliver(array $a, string $state, array $d, int $now): array
     return $delivered;
 }
 
+const TS_CRON_LOG_MAX = 1_000_000;   // ~1MB
+const TS_CRON_LOG_KEEP = 1000;       // שורות שנשארות אחרי קיצוץ
+
+/** הלוג של ה-cron — נתיב קבוע ב-data/ (ההפניה ב-crontab כותבת אליו) */
+function ts_cron_log_path(): string
+{
+    return defined('TS_DB_PATH') ? TS_DB_PATH . '.alerts-cron.log' : dirname(__DIR__) . '/data/alerts-cron.log';
+}
+
+/** מעל ~1MB — משאיר רק את 1,000 השורות האחרונות. בלי לגעת בקובץ כשהוא קטן */
+function ts_cron_log_trim(): bool
+{
+    $f = ts_cron_log_path();
+    clearstatcache(true, $f);
+    if (!is_file($f) || filesize($f) <= TS_CRON_LOG_MAX) return false;
+    $h = fopen($f, 'c+');
+    if (!$h || !flock($h, LOCK_EX)) return false;
+    $lines = preg_split('/(?<=\n)/', (string)stream_get_contents($h), -1, PREG_SPLIT_NO_EMPTY);
+    $lines = array_slice($lines, -TS_CRON_LOG_KEEP);
+    ftruncate($h, 0);
+    rewind($h);
+    fwrite($h, implode('', $lines));
+    fflush($h);
+    flock($h, LOCK_UN);
+    fclose($h);
+    return true;
+}
+
 function ts_cron_lock_path(): string
 {
     return defined('TS_DB_PATH') ? TS_DB_PATH . '.alerts.lock' : dirname(__DIR__) . '/data/alerts.lock';

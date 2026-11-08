@@ -114,6 +114,20 @@ export function mountAnalysis(ctx) {
     return h('div', { class: 'summary' }, h('div', { class: 'line' }, h('b', {}, bt.message || 'הבדיקה לאחור לא זמינה')), h('div', { class: 'line muted' }, 'בלי אחוז ודאות'));
   }
 
+  /** "פתח עסקה מזה" (פרק 11): הנכס ביומן לפי סימול מנורמל; הרמות — המחרוזות המעוגלות מהשרת; וגודל הפוזיציה מהפרופיל */
+  async function openTrade(c, r) {
+    try {
+      const { prefill: p } = await api('trade_prefill', null, { asset: r.asset });
+      const snapshot = { asset: r.asset, tf: c.tf, method_id: c.method.id, method_version: c.method.version, bias: c.bias,
+        levels: c.levels, certainty: c.certainty, n: c.backtest?.n ?? null, win_pct: c.backtest?.win_pct ?? null, as_of: c.as_of };
+      await ctx.openTrade({
+        trade: { symbol: p.symbol, market: p.market, currency: p.currency, multiplier: p.multiplier ?? '', option: p.option, direction: c.bias,
+          entry_price: c.levels.entry, planned_stop: c.levels.stop, planned_target: c.levels.target, quantity: c.risk?.position_qty || '' },
+        method_id: c.method.id, method_name: c.method.name, snapshot, existing: p.existing,
+      });
+    } catch (e) { toast(e.message, true); }
+  }
+
   const alertBtn = pre => h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => ctx.newAlert(pre) } }, '🔔 התראה מזה');
 
   function methodCard(c, r, alertable = false) {
@@ -152,7 +166,9 @@ export function mountAnalysis(ctx) {
       h('p', { class: 'muted', style: 'margin:0' }, 'אופק: ' + c.horizon_text.replace(/^עד /, 'עד '),
         c.max_horizon && c.max_horizon.tf !== c.tf ? [sep(), 'הארוך ביותר שנבדק: ' + c.max_horizon.text] : null),
       h('p', { class: 'hint', style: 'margin:0' }, 'נכון לנר שנסגר ב-' + when(c.as_of)),
-      alertable ? h('div', {}, alertBtn({ asset: r.asset, tf: c.tf, kind: 'method', method_id: c.method.id, side: c.bias === 'none' ? 'both' : c.bias })) : null);
+      h('div', { class: 'row-btns wrap' },
+        c.levels && c.bias !== 'none' ? h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => openTrade(c, r) } }, '📓 פתח עסקה מזה') : null,
+        alertable ? alertBtn({ asset: r.asset, tf: c.tf, kind: 'method', method_id: c.method.id, side: c.bias === 'none' ? 'both' : c.bias }) : null));
     return box;
   }
 

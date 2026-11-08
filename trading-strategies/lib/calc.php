@@ -149,7 +149,7 @@ function ts_stats_one(array $trades, string $tz): array
     $wins = []; $losses = []; $rs = []; $be = 0;
     $cum = '0'; $peak = '0'; $dd = '0'; $equity = [];
     $streak = 0; $maxStreak = 0;
-    $groups = ['month' => [], 'weekday' => [], 'plan' => []];
+    $groups = ['month' => [], 'weekday' => [], 'plan' => [], 'method' => []];
 
     foreach ($trades as $t) {
         $c = $t['calc'];
@@ -171,6 +171,7 @@ function ts_stats_one(array $trades, string $tz): array
             'month' => $local->format('Y-m'),
             'weekday' => $local->format('w'),                    // 0 = ראשון
             'plan' => $t['followed_plan'] ?: 'none',
+            'method' => ($t['method_id'] ?? null) ?: 'none',   // spec-stage-a 11: פילוח לפי שיטה
         ];
         foreach ($keys as $g => $k) $groups[$g][$k][] = $t;
     }
@@ -180,7 +181,7 @@ function ts_stats_one(array $trades, string $tz): array
     $n = count($trades);
     $breakdown = [];
     foreach ($groups as $g => $rows) {
-        if ($g !== 'plan') ksort($rows);
+        if ($g !== 'plan' && $g !== 'method') ksort($rows);
         $breakdown[$g] = [];
         foreach ($rows as $k => $list) {
             $nets = array_map(fn($t) => $t['calc']['net'], $list);

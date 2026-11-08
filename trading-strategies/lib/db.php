@@ -328,6 +328,35 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 6) {
+        // חיבור הניתוח ליומן (spec-stage-a פרק 11) והמרת מטבע לפי ECB (✅12)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- עסקה שנפתחה מכרטיס ניתוח: השיטה, ותמונת הניתוח (כולל provider:symbol המקורי)
+            ALTER TABLE trades ADD COLUMN method_id TEXT;
+            ALTER TABLE trades ADD COLUMN analysis_snapshot TEXT;
+            CREATE INDEX trades_method ON trades(user_id, method_id);
+            -- שערי ECB: כמה יחידות quote ליחידת base ביום (ימי עסקים). נשמרים — שער של יום שעבר לא משתנה
+            CREATE TABLE fx_rates (
+                base TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                day TEXT NOT NULL,
+                rate TEXT NOT NULL,
+                PRIMARY KEY (base, quote, day)
+            );
+            -- איזה טווח ימים כבר נמשך לכל זוג (כדי לא לפנות שוב על ימים בלי שער — סופי שבוע, חגים)
+            CREATE TABLE fx_cover (
+                base TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                from_day TEXT NOT NULL,
+                to_day TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL,
+                PRIMARY KEY (base, quote)
+            );
+            PRAGMA user_version = 6;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

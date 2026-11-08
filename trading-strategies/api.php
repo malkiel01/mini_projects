@@ -7,7 +7,8 @@
  * GET  ?action=strategy&id=               אסטרטגיה וכל הגרסאות שלה (2.2)
  * GET  ?action=trades&from&to&strategy_id&version_id&market&symbol&result&plan    היומן (2.4)
  * GET  ?action=trade&id=                  עסקה (2.5)
- * GET  ?action=stats&strategy_id&version_id&market&from&to   הסטטיסטיקה (2.6), לפי תאריך סגירה
+ * GET  ?action=stats&strategy_id&version_id&method_id&market&from&to   הסטטיסטיקה (2.6), לפי תאריך סגירה; ועוד במטבע הבסיס (ECB, ✅12) ולפי שיטה
+ * GET  ?action=trade_prefill&asset=      "פתח עסקה מזה": הנכס ביומן לפי סימול מנורמל (spec-stage-a 11)
  * GET  ?action=instruments                "נכסים שלי" (3.2)
  * GET  ?action=export&format=json|csv     ייצוא מלא / היומן (2.7)
  * POST action=settings | strategy_save | strategy_duplicate | strategy_status | strategy_delete
@@ -56,6 +57,7 @@ require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
 require_once __DIR__ . '/lib/alerts.php';
+require_once __DIR__ . '/lib/fx.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -138,7 +140,7 @@ if (in_array($action, TS_DATA, true)) {
 function filters(): array
 {
     $f = [];
-    foreach (['from', 'to', 'strategy_id', 'version_id', 'market', 'symbol', 'result', 'plan', 'currency'] as $k) {
+    foreach (['from', 'to', 'strategy_id', 'version_id', 'method_id', 'market', 'symbol', 'result', 'plan', 'currency'] as $k) {
         if (isset($_GET[$k]) && is_string($_GET[$k]) && $_GET[$k] !== '') $f[$k] = mb_substr($_GET[$k], 0, 40);
     }
     return $f;
@@ -250,7 +252,14 @@ try {
             unset($f['result']);
             $closed = array_filter(ts_trades_load($uid, $tz, $f), fn($t) => $t['calc']['status'] === 'closed');
             $noStop = count(array_filter($closed, fn($t) => $t['calc']['r'] === null));
-            out(['ok' => true, 'by_currency' => ts_stats(array_values($closed), $tz), 'no_stop' => $noStop]);
+            $methodNames = [];
+            foreach (array_keys(ts_methods_all()) as $mid) $methodNames[$mid] = ts_method($mid)->meta()['name'];
+            out(['ok' => true, 'by_currency' => ts_stats(array_values($closed), $tz), 'no_stop' => $noStop,
+                'in_base' => $closed ? ts_stats_in_base($uid, array_values($closed), $user['base_currency'], $tz) : null,
+                'method_names' => $methodNames]);
+
+        case 'trade_prefill':
+            out(['ok' => true, 'prefill' => ts_trade_prefill($uid, $_GET['asset'] ?? '')]);
 
         case 'instruments':
             out(['ok' => true, 'instruments' => ts_instruments_list($uid)]);

@@ -487,3 +487,42 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
         'profile' => ['min_certainty' => $profile['min_certainty'], 'min_rr' => $profile['min_rr'], 'risk_pct' => $profile['risk_pct']],
         'account_size' => $account, 'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'provider_calls' => $calls];
 }
+
+// ── "פתח עסקה מזה" (פרק 11) ─────────────────────────────
+
+/** שוק של ספק → שוק של היומן (שלב 1). מדד — כמו מניה; סחורה — חוזה עתידי (המכפיל ממולא בטופס) */
+const TS_JOURNAL_MARKET = ['crypto' => 'crypto', 'forex' => 'forex', 'stocks' => 'stocks', 'indices' => 'stocks',
+    'commodities' => 'futures', 'futures' => 'futures', 'options' => 'options'];
+
+/**
+ * המילוי של טופס העסקה מכרטיס ניתוח. ביומן הנכס הוא **הסימול, לא הספק**: מחפשים ב"נכסים שלי" לפי סימול מנורמל (בלי
+ * ספק, אותיות גדולות, בלי '/'). נמצא — משתמשים בו, כולל המכפיל שהמשתמש קבע. לא נמצא — שוק ומטבע מה-meta של הספק,
+ * מכפיל ברירת מחדל לפי השוק; הוא נוצר רק כשהמשתמש מאשר בטופס ושומר.
+ */
+function ts_trade_prefill(int $uid, mixed $asset): array
+{
+    [$provider, $symbol] = ts_asset_split($asset);
+    $norm = ts_norm_symbol($symbol);
+    $meta = ts_asset_meta("$provider:$symbol");
+    $pmarket = $meta['market'] ?? (ts_provider($provider)->meta()['markets'][0] ?? 'stocks');
+    $market = TS_JOURNAL_MARKET[$pmarket] ?? 'stocks';
+    $currency = $meta['currency'] ?? null;
+    if (!$currency) {
+        foreach (['USDT', 'USDC', 'FDUSD', 'BTC', 'EUR', 'ETH', 'BNB', 'TRY', 'USD', 'ILS'] as $q) {
+            if (strlen($norm) > strlen($q) && str_ends_with($norm, $q)) { $currency = $q; break; }
+        }
+    }
+    $currency = strtoupper((string)($currency ?: 'USD'));
+    $st = ts_db()->prepare('SELECT * FROM instruments WHERE user_id = ?');
+    $st->execute([$uid]);
+    $found = null;
+    foreach ($st->fetchAll() as $i) {
+        if (ts_norm_symbol($i['symbol']) !== $norm) continue;
+        if ($found === null || ($i['market'] === $market && $found['market'] !== $market)) $found = $i;
+    }
+    if ($found) {
+        return ['asset' => "$provider:$symbol", 'existing' => true] + ts_instrument_out($found);
+    }
+    return ['asset' => "$provider:$symbol", 'existing' => false, 'symbol' => $norm, 'market' => $market, 'currency' => $currency,
+        'multiplier' => TS_MARKETS[$market]['multiplier'], 'unit_label' => TS_MARKETS[$market]['unit'], 'option' => null];
+}

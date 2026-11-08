@@ -549,7 +549,7 @@ function tradeRow(t) {
     h('span', { class: 'dir-ic ' + t.direction, 'aria-label': t.direction === 'long' ? 'לונג' : 'שורט' }, t.direction === 'long' ? '▲' : '▼'),
     h('div', { class: 'body' },
       h('div', { class: 'l1' }, h('span', { class: 'num' }, t.symbol), h('span', { class: 't' }, fmtTime(t.opened_at))),
-      h('div', { class: 'l2' }, strat, plan ? [sep(), plan] : null)),
+      h('div', { class: 'l2' }, strat, t.method_name ? [sep(), '🧭 ' + t.method_name] : null, plan ? [sep(), plan] : null)),
     h('div', { class: 'res' },
       c.status === 'open' && D.sign(D.parse(c.exited_qty)) === 0
         ? h('span', { class: 'chip warn' }, 'פתוחה')
@@ -604,7 +604,8 @@ async function editTrade(id = null, pre = {}) {
   const versionCache = {};
   const versionsOf = async sid => (versionCache[sid] ??= (await api('strategy', null, { id: sid })).strategy.versions);
 
-  const v = t || {};
+  // pre.trade — מילוי מכרטיס ניתוח ("פתח עסקה מזה", spec-stage-a 11): נכס, שוק, מטבע, מכפיל, כיוון ורמות
+  const v = t || pre.trade || {};
   const market0 = v.market || 'stocks';
   const fld = {
     symbol: h('input', { name: 'symbol', value: v.symbol || '', maxlength: 40, dir: 'ltr', list: 'ts-insts', autocomplete: 'off', placeholder: 'AAPL' }),
@@ -755,6 +756,7 @@ async function editTrade(id = null, pre = {}) {
         rating: segVal(sh.body, 'rating') ? +segVal(sh.body, 'rating') : null,
         went_well: fld.went_well.value, to_improve: fld.to_improve.value,
       };
+      if (!t && pre.method_id) { body.method_id = pre.method_id; body.analysis_snapshot = pre.snapshot || null; }
       if (market === 'options') body.option = { type: segVal(sh.body, 'opt_type'), strike: fld.opt_strike.value.trim(), expiry: fld.opt_expiry.value, underlying: fld.opt_underlying.value };
       const r = await api('trade_save', body);
       const c = r.trade.calc;
@@ -763,8 +765,11 @@ async function editTrade(id = null, pre = {}) {
       if (location.hash.startsWith('#/journal')) route(); else location.hash = '#/journal';
     },
   });
+  const fromAnalysis = !t && pre.method_id ? h('p', { class: 'chip', style: 'white-space:normal' },
+    `🧭 מכרטיס ניתוח: ${pre.method_name || pre.method_id} · ${pre.snapshot?.asset || ''}`,
+    pre.existing === false ? ' · הנכס חדש ב"נכסים שלי" — בדקו שוק, מטבע ומכפיל לפני שמירה' : '') : null;
   sh.body.append(datalist,
-    result,
+    result, fromAnalysis,
     group('בסיס', '',
       h('div', { class: 'fields two' }, field('נכס', fld.symbol), field('מטבע', fld.currency)),
       h('div', { class: 'f' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'שוק'), marketSeg),
@@ -787,7 +792,7 @@ async function editTrade(id = null, pre = {}) {
       field('מה עבד', fld.went_well), field('מה לשפר', fld.to_improve),
       h('div', { class: 'f' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'דירוג ביצוע'), ratingSeg)));
   onMarket(market0);
-  if (t || v.market) fld.multiplier.dataset.touched = '1';
+  if (t || pre.trade?.multiplier) fld.multiplier.dataset.touched = '1';
   if (t) fld.multiplier.value = t.multiplier;
   await loadVersions();
 }
@@ -832,16 +837,40 @@ async function viewStats() {
   to.addEventListener('change', () => apply({ ...f, to: to.value }));
   const q = Object.fromEntries(Object.entries(f).filter(([, v]) => v));
   const data = await api('stats', null, q);
+  const meth = select('method_id', [['', 'כל השיטות'], ['none', 'בלי שיטה'], ...Object.entries(data.method_names || {}).map(([k, n]) => [k, n])], f.method_id, { 'aria-label': 'שיטה' });
+  meth.addEventListener('change', () => apply({ ...f, method_id: meth.value }));
+  METHOD_NAMES = data.method_names || {};
 
   const filters = h('div', { class: 'fields two' }, field('אסטרטגיה', strat), ver.hidden ? field('שוק', mk) : field('גרסה', ver),
-    ver.hidden ? null : field('שוק', mk), field('מתאריך', from), field('עד תאריך', to));
+    ver.hidden ? null : field('שוק', mk), field('שיטה', meth), field('מתאריך', from), field('עד תאריך', to));
   const body = data.by_currency.length ? data.by_currency.map(statsBlock) : [h('p', { class: 'empty' }, 'אין עסקאות סגורות בסינון הזה.')];
-  render(h('p', { class: 'hint' }, 'כל המדדים לכל מטבע בנפרד — אין המרת מטבעות.'), filters,
+  render(h('p', { class: 'hint' }, 'למעלה — הכול במטבע הבסיס, לפי שער ECB של יום הסגירה. מתחת — כל מטבע בנפרד, בלי המרה.'), filters,
+    baseBlock(data.in_base, data.by_currency.length),
     data.no_stop ? h('p', { class: 'hint' }, `${data.no_stop} עסקאות בלי סטופ מתוכנן — נספרות ברווח ובאחוז ההצלחה, אבל לא בתוחלת ה-R.`) : null,
     ...body, h('p', { class: 'disclaimer' }, '⚖️ ' + DISCLAIMER));
 }
 
-function statsBlock(s) {
+let METHOD_NAMES = {};
+
+/** הסטטיסטיקה במטבע הבסיס (✅12): שער ECB של יום הסגירה; יום בלי שער — האחרון שלפניו, מסומן */
+function baseBlock(b, currencies) {
+  if (!b) return null;
+  const notes = [];
+  if (b.approx) notes.push(`${b.approx} עסקאות הומרו בשער של יום עסקים קודם (אין שער ליום הסגירה) — מסומן ≈`);
+  if (b.pegged) notes.push(`${b.pegged} עסקאות במטבע יציב (USDT וכד׳) חושבו כשווה-ערך לדולר`);
+  const skipped = Object.entries(b.skipped || {});
+  if (skipped.length) notes.push('לא הומרו (אין שער ECB): ' + skipped.map(([c, n]) => `${c} (${n})`).join(', '));
+  (b.errors || []).forEach(e => notes.push(e));
+  if (!b.count) return h('section', { class: 'stack' }, h('p', { class: 'hint' }, 'אין עסקאות שאפשר להמיר למטבע הבסיס. ', notes.join(' · ')));
+  if (currencies <= 1 && !b.approx && !b.pegged && !skipped.length && b.currency === b.rates?.[0]?.currency) return null;   // מטבע אחד = הבסיס — אותו בלוק כמו למטה
+  const s = { ...b, currency: b.currency };
+  const block = statsBlock(s, true);
+  block.prepend(h('p', { class: 'chip ok', style: 'white-space:normal' }, `💱 במטבע הבסיס ${b.currency} · ${b.converted} עסקאות · שער ECB של יום הסגירה` + (b.approx ? ' · ≈ חלק ביום קודם' : '')));
+  if (notes.length) block.append(h('ul', { class: 'hint' }, notes.map(n => h('li', {}, n))));
+  return block;
+}
+
+function statsBlock(s, inBase = false) {
   const cur = s.currency;
   const cell = (dt, dd, c = '') => h('div', {}, h('dt', {}, dt), h('dd', { class: c }, dd));
   const R = v => (v == null ? '—' : rText(v));
@@ -865,7 +894,8 @@ function statsBlock(s) {
     monthChart(s.breakdown.month, cur),
     breakdownTable('לפי חודש', s.breakdown.month, k => k.slice(5) + '/' + k.slice(0, 4), cur),
     breakdownTable('לפי יום בשבוע', s.breakdown.weekday, k => WEEKDAYS[+k], cur),
-    breakdownTable('שמר על הכללים?', s.breakdown.plan, k => ({ yes: 'שמר', partial: 'חלקית', no: 'לא שמר', none: 'לא סומן' }[k]), cur));
+    breakdownTable('שמר על הכללים?', s.breakdown.plan, k => ({ yes: 'שמר', partial: 'חלקית', no: 'לא שמר', none: 'לא סומן' }[k]), cur),
+    s.breakdown.method?.some(r => r.key !== 'none') ? breakdownTable('לפי שיטה', s.breakdown.method, k => (k === 'none' ? 'בלי שיטה' : METHOD_NAMES[k] || k), cur) : null);
 }
 
 /** עקומת הון: קו אחד, צבע המותג, קו אפס, ועכבר/מגע מראה את הערך בנקודה הקרובה */
@@ -1046,7 +1076,8 @@ function editInstrument(i) {
     return;
   }
   const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME,
-    setMe: v => { ME = v; }, reload: () => route() };
+    setMe: v => { ME = v; }, reload: () => route(),
+    openTrade: pre => editTrade(null, pre) };
   N = mountAlerts(ctx);
   ctx.newAlert = N.newAlert;
   A = mountAnalysis(ctx);

@@ -15,7 +15,7 @@
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
 2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · PR 2 ענן החבילה
-   (⏳ חסום — ענן MBE כותב אפיון משלו) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א השיטה מהספר (TS-008, ⏳ ממתינה לספר) · ✅ PR 5 התראות (TS-006) · PR 6 חיבור ליומן.
+   (⏳ חסום — ענן MBE כותב אפיון משלו) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א השיטה מהספר (TS-008, ⏳ ממתינה לספר) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -83,8 +83,27 @@
   שעות שקטות — בלי פוש; מקסימום ליום — מעבר לו לא נשלח. **בלי מייל** (✅8). כל הודעה — "לפי שיטה X", ההסתייגות בקצרה וקישור לכרטיס.
 - **לשונית "🔔 התראות"**: תיבה (עם תג "לא נקראו" מ-`me` — בלי polling) וההתראות שלי (השהיה, מחיקה); "🔔 התראה מזה" בכרטיס ניתוח
   ובשקלול. `manifest.webmanifest` — האפליקציה ניתנת להתקנה.
-- **⚠️ צעד ידני של בעל המערכת — ב-cPanel:** Cron Job כל 15 דקות (`*/15 * * * *`):
-  `php <נתיב התיקייה בשרת>/trading-strategies/bin/alerts-cron.php >/dev/null 2>&1`. בלעדיו — אין התראות ואין ניקוי יומי.
+- **⚠️ צעד ידני של בעל המערכת — ב-cPanel:** Cron Job כל 15 דקות — הותקן דרך הפריסה (#1278); הפלט ל-`data/alerts-cron.log`.
+
+## שלב א' — PR 6: חיבור הניתוח ליומן (פרק 11, ✅12)
+
+- **"📓 פתח עסקה מזה"** בכרטיס ניתוח עם רמות: הנכס ביומן הוא **הסימול, לא הספק** — מחפשים ב"נכסים שלי" לפי סימול מנורמל
+  (`BTC/USDT` = `BTCUSDT`); נמצא — עם המכפיל של המשתמש; לא נמצא — שוק ומטבע מהספק ומכפיל ברירת מחדל, והמשתמש מאשר בטופס
+  (`trade_prefill`). הכיוון, הכניסה, הסטופ והיעד — המחרוזות המעוגלות מהכרטיס; הכמות — מגודל הפוזיציה שבפרופיל, אם יש גודל חשבון.
+- **בעסקה** (`trades.method_id`, `trades.analysis_snapshot`): השיטה, ותמונת הניתוח עם `provider:symbol` המקורי (עד 8KB). רק שיטה
+  שהמשתמש רואה. עריכה בלי השדות — לא מוחקת אותם.
+- **סטטיסטיקה**: פילוח לפי שיטה, מסנן שיטה (גם ביומן). **במטבע הבסיס** (`lib/fx.php`): כל עסקה סגורה בשער ECB של יום הסגירה
+  (היום המקומי); יום בלי שער — האחרון שלפניו, מסומן ≈. השערים נשמרים (`fx_rates`, `fx_cover`) — פונים ל-ECB רק על ימים חדשים.
+  הסטטיסטיקה לכל מטבע בנפרד (שלב 1) נשארת כמו שהייתה. ECB כבוי — ההמרה אומרת למה היא חסרה.
+- **מהבקרה:** מנוי פוש של משתמש אחר — נמחק ונוצר חדש, לא עובר בעלות בשקט (#1275). הלוג של ה-cron
+  (`data/alerts-cron.log`, ההפניה ב-crontab) מתקצר לבד: מעל ~1MB — 1,000 השורות האחרונות.
+
+### הכרעות של כותב הקוד (PR 6)
+
+- **מטבעות יציבים** (USDT, USDC, FDUSD, BUSD, TUSD, DAI, USDP) — ה-ECB לא מפרסם להם שער; מחושבים כשווה-ערך לדולר, ומסומנים.
+  מטבע אחר בלי שער ECB (למשל BTC) — לא מומר, ומוצג ברשימת "לא הומרו".
+- **שוק ביומן** לפי שוק הספק: מדד → מניות, סחורה → חוזה עתידי (המכפיל — בטופס).
+- **יום הסגירה** להמרה — באזור הזמן של המשתמש, כמו הפילוח לפי חודש ויום בשבוע של שלב 1.
 
 ### הכרעות של כותב הקוד (PR 5)
 
@@ -141,6 +160,7 @@ lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
 lib/alerts.php      התראות: ניהול, תיבה, והריצה של ה-cron
+lib/fx.php          המרת מטבע לפי ECB לסטטיסטיקה
 lib/push.php        Web Push עם VAPID (בלי תוכן)
 bin/alerts-cron.php ה-cron — CLI בלבד (bin/.htaccess חוסם)
 sw.js, manifest.webmanifest   Service Worker לפוש בלבד; התקנה
@@ -149,7 +169,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -190,6 +210,8 @@ php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיט�
 node trading-strategies/tests/analysis-ui.mjs  # Playwright בטלפון: ניתוח, פרופיל, ניהול שיטות, RTL, בלי polling
 php trading-strategies/tests/alerts-api.php    # cron כ-CLI עם זמן מדומה: בלי כפילות, נעילה, תקציב, דרך הרשת נכשל, פוש/VAPID, תקרות
 node trading-strategies/tests/alerts-ui.mjs    # Playwright בטלפון: התראות, תיבה, תג, "התראה מזה", בלי polling
+php trading-strategies/tests/journal-api.php   # "פתח עסקה מזה", שיטה ותמונה בעסקה, פילוח לפי שיטה, המרה לפי ECB, פוש, לוג ה-cron
+node trading-strategies/tests/journal-ui.mjs   # Playwright בטלפון: מכרטיס ניתוח לטופס העסקה ליומן, סטטיסטיקה לפי שיטה
 php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/dev-prepend.php
 #   ואז http://127.0.0.1:8123/trading-strategies/  (העוגייה dev_as=bob — משתמש אחר; owner — מנהל ראשי)
 ```
