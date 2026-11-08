@@ -78,7 +78,9 @@ window.PlatformAdmin = (() => {
             return b;
         }));
         const body = sysTab === 'plugins' ? renderPlugins() : sysTab === 'sso' ? renderSso() : sysTab === 'diag' ? renderDiag()
-            : sysTab === 'probe' ? renderProbe() : el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard()]);
+            : sysTab === 'probe' ? renderProbe() : el('div', {}, [notifyCard(), approvalCard(), defaultGrantsCard(),
+                el('div', { className: 'notify' }, [el('span', { className: 'notify-ic', textContent: '🔍' }), el('div', { className: 'notify-tx' }, [el('b', { textContent: 'מסך בדיקת הגישות החסומות' }), el('small', { textContent: 'זמני: הרשאות ישירות לאפליקציות restricted' })]), button('פתיחה', () => import('../admin/tmp-restricted-audit.js').then(m => m.open(P())).catch(e => P().toast('⚠️ ' + e.message)))]), // tmp-restricted-audit — להסרה: platform/admin/tmp-restricted-audit.php
+            ]);
         return el('div', {}, [chips, body]);
     }
 
