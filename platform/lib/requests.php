@@ -169,6 +169,12 @@ function request_decide(array $body, array $admin): void
 {
     $decision = $body['decision'] ?? '';
     if (!in_array($decision, ['approve', 'reject', 'block'], true)) throw new ApiError('החלטה לא מוכרת', 422);
+    // קודם סוגרים מה שכבר הוכרע בפועל (יצאה מהחנות, נחסם, כבר נפתחה לו) — כך החלטה מרשימה ישנה לא כותבת הרשאה
+    // לבקשה שכבר לא רלוונטית, ומקבלת 409 "כבר טופלה" למטה.
+    $st = db()->prepare('SELECT user_id FROM app_requests WHERE id = ?');
+    $st->execute([(int)($body['id'] ?? 0)]);
+    $uid = $st->fetchColumn();
+    if ($uid !== false) requests_settle([(int)$uid]);
     $pdo = db();
     $pdo->exec('BEGIN IMMEDIATE');
     try {
