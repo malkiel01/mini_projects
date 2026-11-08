@@ -71,6 +71,7 @@ async function mockCloud(route) {
     return json({ folder, path: [], items: [...files.values()].filter(n => n.parent === folder).map(pub) });
   }
   if (a === 'mkdir') { const n = node({ kind: 'folder', name: body.name, parent: parentOf(body.parent) }); files.set(n.id, n); return json(pub(n)); }
+  if (a === 'stat') { const n = files.get(u.searchParams.get('id')); return n ? json(pub(n)) : json({ error: 'לא נמצא', code: 'not_found' }, 404); }
   if (a === 'read') { const n = files.get(u.searchParams.get('id')); return route.fulfill({ status: 200, headers: cors, body: n.content }); }
   if (a === 'upload_start') { const id = 'u' + (++seq); uploads.set(id, { ...body, parent: parentOf(body.parent), parts: [] }); return json({ upload: id, chunk: 8388608, received: 0 }); }
   if (a === 'upload_chunk') { const up = uploads.get(u.searchParams.get('upload')); up.parts.push(req.postDataBuffer()); return json({ received: up.size }); }
@@ -87,6 +88,16 @@ async function mockCloud(route) {
   }
   return json({ error: 'לא מוכר', code: 'not_found' }, 404);
 }
+// הבורר של הענן (picker.php) — מדומה: קורא ל-drives_pick_callback שלנו (בשרת המקומי, עם העוגיות של הדפדפן) עם הבחירה
+// או ביטול, כמו spec-3 4, ומחזיר את הדפדפן לאן שה-callback הפנה — אבל לשרת המקומי (back ב-api.php הוא האתר החי).
+const picker = { pick: null };   // null = ביטול; אחרת id
+const pickerRoute = ctx => async route => {
+  const u = new URL(route.request().url());
+  const q = new URLSearchParams({ action: 'drives_pick_callback', state: u.searchParams.get('state'), ...(picker.pick ? { picked: picker.pick } : { pick: 'cancelled' }) });
+  const r = await ctx.request.get(BASE + 'api.php?' + q, { maxRedirects: 0 });
+  const back = new URL(r.headers()['location'] || BASE);
+  return route.fulfill({ status: 302, headers: { Location: BASE + back.search } });
+};
 const pathOf = (files, n) => { const p = []; for (let x = n?.parent; x; x = files.get(x).parent) p.unshift(files.get(x).name); return p.join('/'); };
 const connect = (sub, scope) => spawnSync('php', ['-r', `$d = new PDO('sqlite:${DB}.drives/drives.sqlite'); $u = (new PDO('sqlite:${DB}'))->query("SELECT id FROM users WHERE platform_sub = '${sub}'")->fetchColumn();
     $d->prepare("INSERT OR REPLACE INTO conns (user, connection, name, cloud_id, scope, created_at, sub) VALUES (?, 'c_${sub}', 'משתמש', 'cloud-1', ?, '2026-11-08', '${sub}')")->execute([(string)$u, '${JSON.stringify(scope)}']);`]);
@@ -178,19 +189,31 @@ try {
   connect('100', ['files.app']);
   APP_TOKENS.add('tok-for-c_100');
   await o.context().route('https://mbe-plus.com/mini_projects/mbe-cloud/api.php**', mockCloud);
+  await o.context().route('https://mbe-plus.com/mini_projects/mbe-cloud/picker.php**', pickerRoute(o.context()));
+  // שום ניווט לא יוצא לאתר החי
+  await o.context().route(u => u.hostname === 'mbe-plus.com' && !/\/mbe-cloud\/(api|picker)\.php/.test(u.pathname), r => { errors.push('live site: ' + r.request().url()); return r.abort(); });
+  const folderNow = () => o.evaluate(async () => (await (await fetch('api.php?action=admin_method_files')).json()).folder?.id ?? null);
+  // ביטול בבורר → בלי שינוי
+  await o.reload();
+  await o.getByRole('button', { name: '📁 בחירת תיקיית השיטות בענן' }).click();
+  await o.waitForFunction(() => /הבחירה בוטלה/.test(document.querySelector('.toast')?.textContent || ''), null, { timeout: 15000 });
+  eq([await folderNow(), new URL(o.url()).search, new URL(o.url()).hash], [null, '', '#/method-files'], 'picker cancelled → nothing changes, ?cloud cleaned, back on "📚 קובצי שיטות"');
+  await o.waitForSelector('text=עוד לא נבחרה תיקייה');
+  // תיקייה שנמחקה / גישה שבוטלה → "בחרו שוב"
   await post(o, 'admin_method_files_folder', { id: 'n_gone', path: 'שיטות' });
   await o.reload();
   await o.waitForSelector('text=בחרו שוב את תיקיית השיטות');
   eq(await o.getByRole('button', { name: '📁 בחירה מחדש' }).count(), 1, 'the folder is gone / access revoked → "בחרו שוב", no raw error');
   eq(await o.locator('main .error').count(), 0, 'no error box');
   await shot(o, 'cloud-method-files');
-  // התיקייה בענן קיימת ונגישה (נבחרה בבורר): רשימה
+  // בחירה מחדש בבורר → נשמר רק ה-id, ואז רשימה
   const of = driveOf('tok-for-c_100').files;
   const mdir = node({ kind: 'folder', name: 'שיטות', parent: null }); of.set(mdir.id, mdir);
   const book = node({ kind: 'file', name: 'ספר השיטה.pdf', parent: mdir.id, size: 2400000 }); of.set(book.id, book);
-  await post(o, 'admin_method_files_folder', { id: mdir.id, path: 'שיטות' });
-  await o.reload();
-  await o.waitForSelector('text=ספר השיטה.pdf');
+  picker.pick = mdir.id;
+  await o.getByRole('button', { name: '📁 בחירה מחדש' }).click();
+  await o.waitForSelector('text=ספר השיטה.pdf', { timeout: 15000 });
+  eq([await folderNow(), new URL(o.url()).search, new URL(o.url()).hash], [mdir.id, '', '#/method-files'], 'picked in the cloud\'s picker → only its id is saved, ?cloud=picked cleaned');
   eq((await o.locator('main .card').first().textContent()).includes('2.3 MB'), true, 'the list: name and size (and date)');
   eq(await o.getByRole('button', { name: '⬆️ העלאה לענן' }).count(), 1, 'upload straight to the cloud');
 } catch (e) {
