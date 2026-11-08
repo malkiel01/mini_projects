@@ -30,11 +30,12 @@ function migrateGrants(PDO $pdo): void {
         -- התיקייה של כל אפליקציה אצל כל משתמש (כתיבה בלי parent ב-files.app). לפי id — שינוי שם או העברה לא יוצרים חדשה
         CREATE TABLE IF NOT EXISTS appfolders (client TEXT NOT NULL, account TEXT NOT NULL, node TEXT NOT NULL, PRIMARY KEY (client, account));
     ");
-    // files_full — "📁 גישה לכל הכונן", באישור מנהל. הגירה: הלקוחות שכבר רשומים (שלוש אפליקציות החבילה) — 1
+    // files_full — "📁 גישה לכל הכונן", באישור מנהל. הגירה: רק שלוש אפליקציות החבילה (שהיו רשומות לפני שלב 3) — 1.
+    // לקוח אחר שכבר רשום (למשל "אסטרטגיות") נשאר 0 — files המלא שלו רק באישור מנהל
     $cols = array_column($pdo->query('PRAGMA table_info(clients)')->fetchAll(), 'name');
     if (!in_array('files_full', $cols, true)) {
         $pdo->exec('ALTER TABLE clients ADD COLUMN files_full INTEGER NOT NULL DEFAULT 0');
-        $pdo->exec('UPDATE clients SET files_full = 1');
+        $pdo->exec("UPDATE clients SET files_full = 1 WHERE id IN ('greeting-cards','layout-studio','raster-studio')");
     }
 }
 

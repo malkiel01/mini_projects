@@ -100,6 +100,16 @@ check('ג3: stat על קובץ שלא הוענק — 404, בדיוק כמו פר
 check('ג3: read ו-list על מה שלא הוענק — 404', code(fn() => $fsDo($tApp, 'read', [], ['id' => $pdf['id']])) === 'not_found'
     && code(fn() => $fsDo($tApp, 'list', [], ['folder' => $rep['id']])) === 'not_found');
 
+// הגירת files_full — רק שלוש אפליקציות החבילה מקבלות 1; לקוח אחר שקיים בזמן ההגירה נשאר 0
+$mig = new PDO('sqlite::memory:');
+$mig->exec('CREATE TABLE clients (id TEXT PRIMARY KEY)');
+$mig->exec("INSERT INTO clients (id) VALUES ('greeting-cards'),('layout-studio'),('raster-studio'),('trading-strategies')");
+migrateGrants($mig);
+check('הגירה: files_full=1 רק לשלוש אפליקציות החבילה; trading-strategies שכבר רשומה — 0',
+    $mig->query('SELECT id, files_full FROM clients ORDER BY id')->fetchAll(PDO::FETCH_KEY_PAIR) === ['greeting-cards' => 1, 'layout-studio' => 1, 'raster-studio' => 1, 'trading-strategies' => 0]);
+migrateGrants($mig);
+check('הגירה: ריצה שנייה לא משנה כלום', (int) $mig->query('SELECT SUM(files_full) FROM clients')->fetchColumn() === 3);
+
 // ג4 + ג8 — הבורר
 $pq = function (array $acc, string $client, array $extra = []) use ($fsSk, $fsRet): array {
     $state = 'pk' . bin2hex(random_bytes(6));
