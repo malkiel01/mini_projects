@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>signed_in ו-grant_status</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="spec.css">
+</head>
+<body>
+<div class="wrap">
+    <header class="top">
+        <a href="index.html" aria-label="חזרה לאפיונים">‹</a>
+        <h1>🔑 משתמש מחובר בלי הרשאה — <code>signed_in</code> ו-<code>grant_status</code></h1>
+    </header>
+    <p class="sub">אפיון · 2026-11-08 · טיוטה, ממתין לבקרה · אפיון v2 · מטלה <strong>PF-002</strong> · לבקשת ענן MBE</p>
+
+    <nav class="toc" aria-label="תוכן">
+        <ol>
+            <li><a href="#goal">ההכרעה והמטרה</a></li>
+            <li><a href="#now">מה קיים היום</a></li>
+            <li><a href="#gs">חלק א׳: <code>grant_status</code></a></li>
+            <li><a href="#si">חלק ב׳: <code>"signed_in"</code> ב-app.json</a></li>
+            <li><a href="#states">מחוברת, מנותקת, בלי שער — מאיפה יודעים <code>granted</code></a></li>
+            <li><a href="#apk">APK ו-handoff</a></li>
+            <li><a href="#sec">אבטחה ופרטיות</a></li>
+            <li><a href="#docs">מה מתעדכן</a></li>
+            <li><a href="#test">איך בודקים</a></li>
+            <li><a href="#dec">מה האפיון קבע (לבדיקת הבקרה)</a></li>
+        </ol>
+    </nav>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="goal">1. ההכרעה והמטרה</h2>
+    <div class="note info"><strong>הכרעת בעל המערכת (2026-11-08), ענן MBE:</strong> משתמש עם הרשאה ל-<code>mbe-cloud</code> — כונן קבצים
+        + נתוני אפליקציות. משתמש <strong>בלי</strong> הרשאה — רק נתוני האפליקציות שלו בענן; בלי קבצים ובלי דף הענן.</div>
+    <p>כדי שענן MBE (אפליקציה <code>restricted</code>, מאחורי השער) יוכל לממש את זה, הפלטפורמה נותנת שני כלים כלליים — לא תפורים לענן:</p>
+    <ol>
+        <li><strong><code>grant_status {sub}</code></strong> — שאלה שרת-לשרת, חתומה: "למשתמש הזה יש הרשאה לאפליקציה שלי?" → <code>{allowed}</code>.</li>
+        <li><strong><code>"signed_in": [...]</code></strong> ב-app.json — כתובות שכל משתמש <em>מחובר ופעיל</em> מגיע אליהן, גם בלי הרשאה,
+            והאפליקציה מקבלת בהן את הזהות שלו עם <code>granted: true|false</code>.</li>
+    </ol>
+    <p>מה הענן עושה עם זה — שלו (צ'אט האפיון של ענן MBE, <code>session_018g4NYGEPMHtW29NVpbAQDG</code>). כאן — רק החוזה של הפלטפורמה.</p>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="now">2. מה קיים היום</h2>
+    <div class="table"><table>
+        <tr><th>רכיב</th><th>איפה</th><th>היום</th></tr>
+        <tr><td>שער: <code>decide</code></td><td><code>lib/gate.php</code></td><td>לא רשום / בלי שער / מנותקת / <code>public</code> → עובר. אחרת: לא מחובר → 401 <code>login</code>; בלי הרשאה → 403 <code>forbidden</code></td></tr>
+        <tr><td>הזהות: <code>PLATFORM_USER</code></td><td><code>gate-prepend.php</code></td><td>נכתבת רק כש-<code>gate</code> && לא מנותקת && מחובר && <code>can_use</code>. בכל נתיב שעבר, גם ציבורי</td></tr>
+        <tr><td><code>identity()</code></td><td><code>lib/gate.php</code></td><td><code>{sub, name, email, email_verified, platform_admin}</code></td></tr>
+        <tr><td>בקשה חתומה מאפליקציה</td><td><code>provision.php</code>, <code>lib/provision.php</code></td><td><code>provision_verify(action, body, headers)</code> — Ed25519 מ-<code>provision.key_url</code>, nonce, סטייה 300 שנ׳. פעולה אחת: <code>provision</code></td></tr>
+        <tr><td>אימות <code>public</code></td><td><code>lib/registry.php</code> (<code>check-apps.php</code>)</td><td><code>registry_safe_path</code> על החלק שלפני <code>?</code></td></tr>
+        <tr><td>הרשאה</td><td><code>can_see</code> (<code>access.php</code>) / <code>can_use</code> (<code>gate.php</code>)</td><td>אותה לוגיקה בשתי כתיבות. מנהל — תמיד (ב-<code>can_use</code> וב-<code>visible_for</code>)</td></tr>
+    </table></div>
+    <div class="note warn">ל-<code>mbe-cloud/app.json</code> אין היום <code>"provision"</code>. כדי לקרוא ל-<code>grant_status</code> הענן צריך להוסיף
+        <code>"provision": {"key_url": …}</code> (והכתובת ב-<code>public</code>) — שינוי בתיקייה של הענן, אצל הצ'אט שלו.</div>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="gs">3. חלק א׳: <code>grant_status</code></h2>
+    <h3>3.1 הבקשה</h3>
+<pre><code>POST platform/provision.php?action=grant_status
+X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
+{"sub":"123"}</code></pre>
+    <ul>
+        <li><strong>אותה חתימה בדיוק</strong> כמו <code>provision</code> (<code>docs/sso.md</code> §6, <code>docs/embed.md</code> §2), עם
+            <code>action = "grant_status"</code> בהודעה החתומה: <code>"grant_status\n&lt;time&gt;\n&lt;nonce&gt;\n&lt;sha256 של הגוף&gt;"</code>.
+            כך חתימה של פעולה אחת לא תקפה לשנייה.</li>
+        <li>בלי <code>?action</code> — <code>provision</code>, כמו היום (תאימות). <code>action</code> לא מוכר → 400.</li>
+        <li>הלקוח = <code>X-Embed-Client</code>, ורק אפליקציה עם <code>provision.key_url</code> (<code>provision_clients</code>). אחרת 401.</li>
+    </ul>
+    <h3>3.2 התשובה</h3>
+<pre><code>200 {"allowed": true}     // או false</code></pre>
+    <p><strong>רק</strong> <code>allowed</code>, ורק <strong>לאפליקציה של הקורא</strong> — אין פרמטר <code>app</code>. שום פרט אישי (שם, מייל, סטטוס, תפקיד).</p>
+    <div class="table"><table>
+        <tr><th>מצב</th><th><code>allowed</code></th></tr>
+        <tr><td>מנהל פעיל</td><td>true — תמיד, כמו בשער</td></tr>
+        <tr><td>משתמש פעיל</td><td><code>can_see(app, grants_of(user))</code> — הרשאה ישירה גוברת; קבוצה; קטגוריה (לא ל-<code>restricted</code>); מוסתרת / תוסף → false</td></tr>
+        <tr><td>ממתין לאישור / חסום</td><td>false</td></tr>
+        <tr><td><code>sub</code> לא קיים</td><td>false — <strong>אותה תשובה בדיוק</strong> (200), כדי שאי אפשר יהיה לגלות אילו מזהים קיימים</td></tr>
+        <tr><td><code>sub</code> לא מספר (לא <code>^[0-9]{1,12}$</code>)</td><td>400 "sub לא תקין" — זו תקלה בקוד של הקורא, לא מידע</td></tr>
+        <tr><td>האפליקציה מנותקת</td><td>לפי ההרשאה, כרגיל — הניתוק לא משנה מי מורשה (סעיף 5)</td></tr>
+        <tr><td>"מצב בחנות" (PF-001), <code>owned=false</code></td><td>false — שורה אפורה בחנות אינה הרשאה</td></tr>
+    </table></div>
+    <h3>3.3 קצב</h3>
+    <ul>
+        <li>כל קריאה = חתימה + שאילתה אחת; המפתח הציבורי במטמון שעה (קיים). אין מגבלה נוספת בצד הפלטפורמה.</li>
+        <li><strong>לאפליקציה:</strong> לשאול בזמן פעולה (למשל כשמשתמש פותח את הכונן), לשמור את התשובה עד 5 דקות, ולא לסרוק משתמשים
+            ולא לשאול בלולאה (הלקח של ה-429 — <code>handoff-v2.md</code> §6). שאלה על כמה משתמשים יחד — לא עכשיו; אם יידרש, <code>{subs:[…]}</code> כהרחבה.</li>
+    </ul>
+    <h3>3.4 הקוד</h3>
+    <p><code>provision.php</code> — מפצל לפי <code>?action</code>; <code>lib/provision.php</code> — <code>provision_grant_status(array $client, array $body): array</code>.
+        משתמש ב-<code>can_see</code> וב-<code>apps_effective</code> (הלוגיקה המלאה של <code>access.php</code>), ולא בכתיבה של השער.</p>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="si">4. חלק ב׳: <code>"signed_in"</code> ב-app.json</h2>
+    <h3>4.1 ההצהרה</h3>
+<pre><code>"gate": true,
+"public":    ["api.php?action=cloud_key|…"],
+"signed_in": ["connect.php", "api.php?action=my_appdata|…", "assets/**"]</code></pre>
+    <p>תחביר זהה ל-<code>public</code> (<code>is_public</code>): <code>*</code> לא חוצה <code>/</code>, <code>**</code> כן, <code>?key=a|b</code> מ-GET/POST/גוף JSON.</p>
+
+    <h3>4.2 מה השער עושה — הסדר</h3>
+    <ol>
+        <li>לא רשום / בלי שער / מנותקת → עובר (כמו היום).</li>
+        <li><code>public</code> → עובר, בלי כניסה (כמו היום).</li>
+        <li><strong>חדש:</strong> <code>signed_in</code> → משתמש מחובר ופעיל (<code>current_user</code>) — עובר, <strong>בלי בדיקת הרשאה</strong>.
+            לא מחובר → 401 <code>login</code> (דף: הפניה לכניסה עם <code>?next=</code>; בתוך WebView — handoff), כמו היום.</li>
+        <li>אחרת — כמו היום: הרשאה, או 403.</li>
+    </ol>
+    <p>חל גם על קבצים סטטיים (<code>gate.php</code>) וגם על PHP (<code>gate-prepend.php</code>) — שניהם עוברים דרך <code>decide</code>. החתימה של
+        <code>decide</code> לא משתנה; הבדיקה נוספת בתוכה, אחרי <code>is_public</code>.</p>
+
+    <h3>4.3 הזהות — <code>PLATFORM_USER</code></h3>
+    <div class="table"><table>
+        <tr><th>הבקשה</th><th><code>PLATFORM_USER</code></th></tr>
+        <tr><td>משתמש עם הרשאה, בכל נתיב שעבר</td><td>כמו היום, ועכשיו גם <code>"granted": true</code></td></tr>
+        <tr><td>משתמש פעיל <strong>בלי</strong> הרשאה, בנתיב <code>signed_in</code></td><td><strong>חדש:</strong> הזהות עם <code>"granted": false</code></td></tr>
+        <tr><td>משתמש בלי הרשאה, בנתיב <code>public</code> שאינו <code>signed_in</code></td><td>לא נכתבת (כמו היום) — <strong>אין דליפה</strong></td></tr>
+        <tr><td>לא מחובר</td><td>לא נכתבת</td></tr>
+        <tr><td>מנותקת / בלי שער</td><td>לא נכתבת (כמו היום) — סעיף 5</td></tr>
+    </table></div>
+<pre><code>{"sub":"123","name":"…","email":"…","email_verified":true,"platform_admin":false,"granted":false}</code></pre>
+    <ul>
+        <li><code>granted</code> = <code>can_use(user, app, cfg)</code> — אותה בדיקה שהשער כבר עושה. מנהל → true.</li>
+        <li>נתיב שגם ב-<code>public</code> וגם ב-<code>signed_in</code>: עובר בלי כניסה (public), ומשתמש מחובר בלי הרשאה מקבל בו זהות עם <code>granted:false</code>.
+            מותר — לנתיב שלקוח בלי חשבון וגם משתמש מחובר ניגשים אליו.</li>
+        <li><code>granted</code> נוסף לכל הזהויות של השער — כך אפליקציה קוראת שדה אחד ולא מסיקה מנוכחות הזהות. אפליקציות קיימות שלא קוראות אותו — לא נפגעות.
+            לזהות החתומה של <code>sso.php</code> (דומיין אחר) — <strong>לא</strong> נוסף (שם ניתנת זהות רק למי שמורשה, כמו היום).</li>
+    </ul>
+
+    <h3>4.4 מה לא קורה למשתמש בלי הרשאה בנתיב <code>signed_in</code></h3>
+    <ul>
+        <li><strong>בלי מעקב כניסות</strong> (<code>record_visit</code>) — זו לא "כניסה לאפליקציה"; לשונית 📊 שימוש לא תציג אותו כמשתמש של הענן.</li>
+        <li><strong>בלי הזרקת PWA</strong> (<code>lib/pwa.php</code>: סקריפט, manifest, פס "התקנה") — האפליקציה לא שלו, לא מציעים להתקין אותה.</li>
+        <li>הארכת ההתחברות (<code>touch_session</code>) — כן, כמו בכל בקשה של משתמש מחובר.</li>
+    </ul>
+
+    <h3>4.5 אימות ב-<code>check-apps.php</code> (<code>registry_validate</code>)</h3>
+    <ul>
+        <li><code>signed_in</code> — מערך מחרוזות; כל תבנית עוברת <code>registry_safe_path</code> על החלק שלפני <code>?</code> (כמו <code>public</code>).</li>
+        <li><code>signed_in</code> בלי <code>"gate": true</code> → שגיאה "signed_in בלי שער — אין לו משמעות". (רישום פגום עוצר את הפריסה.)</li>
+        <li>לא נבדק (ולא אפשרי): שהאפליקציה באמת מסננת לפי <code>granted</code>. ראו האזהרה בסעיף 7.</li>
+    </ul>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="states">5. מחוברת, מנותקת, בלי שער — מאיפה יודעים <code>granted</code></h2>
+    <div class="table"><table>
+        <tr><th>מצב האפליקציה</th><th><code>PLATFORM_USER.granted</code></th><th><code>grant_status</code></th></tr>
+        <tr><td>מחוברת (<code>gate:true</code>, לא מנותקת)</td><td>✓ נכון בכל בקשה (4.3)</td><td>✓</td></tr>
+        <tr><td>מנותקת (<code>is_detached</code>)</td><td>✕ אין <code>PLATFORM_USER</code> בכלל — השער מעביר הכול (<code>sso.md</code> §0)</td><td>✓ נכון — לפי ההרשאה, הניתוק לא משנה אותה</td></tr>
+        <tr><td>בלי שער (<code>gate:false</code>)</td><td>✕ ה-prepend לא רץ (או רואה שהשער כבוי)</td><td>✓ נכון</td></tr>
+    </table></div>
+    <p><strong>לכן:</strong> <code>grant_status</code> הוא מקור האמת שעובד בכל המצבים; <code>PLATFORM_USER.granted</code> — קיצור בלי קריאה לשרת, רק כשהאפליקציה מחוברת.
+        אפליקציה מנותקת מזהה את המשתמש ב-<code>sso.php</code> (כמו היום) ושואלת <code>grant_status</code> על ה-<code>sub</code>.
+        <code>signed_in</code> באפליקציה מנותקת — לא פעיל (השער מעביר הכול), ונשאר בקובץ לחיבור הבא.</p>
+    <div class="note info">ההחלטה <strong>לא</strong> לכתוב <code>PLATFORM_USER</code> במנותקת היא מכוונת: "מנותקת" = עומדת לבד, והשער לא נוגע בה (README, "הרשאה תלויה בהרשאה").
+        שינוי שם היה משנה את המשמעות של הניתוק לכל האפליקציות.</div>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="apk">6. APK ו-handoff</h2>
+    <ul>
+        <li><strong>לא מחובר, בתוך WebView, בנתיב <code>signed_in</code>:</strong> אותה זרימה כמו היום — <code>deny</code> עם <code>login</code> מפנה ל-<code>platform/handoff.php?app=</code>.</li>
+        <li><strong>handoff לאפליקציה שאין לו הרשאה אליה</strong> — <code>handoff.php</code> דורש שהאפליקציה תהיה ב-<code>visible_for</code>, ולכן נכשל ("אין לך הרשאה").
+            זה בסדר: למשתמש בלי הרשאה לענן אין את ה-APK של הענן (restricted — לא בחנות, PF-001 9.3). <strong>לא משנים את handoff</strong>.</li>
+        <li><strong>APK של אפליקציה אחרת</strong> שמפנה לדף <code>signed_in</code> של הענן (למשל מסך חיבור): לפי CLAUDE.md, אפליקציית אנדרואיד פותחת כתובת מחוץ
+            לתיקייה שלה <strong>בחוץ</strong> (כרום) — שם יש עוגיית הפלטפורמה, והזרימה רגילה. אין צורך בשינוי.</li>
+        <li>בקשות API מתוך APK (לא ניווט) לנתיב <code>signed_in</code> בלי עוגייה → JSON 401 <code>{"gate":"login"}</code>, כמו היום.</li>
+    </ul>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="sec">7. אבטחה ופרטיות</h2>
+    <div class="note warn"><strong>⚠️ <code>signed_in</code> פותח את הנתיב לכל משתמש פעיל בפלטפורמה</strong> — וההרשמה פתוחה בלי אישור (#925). השער כבר לא מגן
+        על הנתיב הזה; <strong>האפליקציה חייבת</strong> לבדוק <code>granted</code> (או את ה-<code>sub</code> מול הנתונים שלה) בכל פעולה שנותנת משהו מעבר
+        לנתונים של המשתמש עצמו. בענן: קבצים ודף הענן — רק ב-<code>granted:true</code>. להכניס ל-<code>signed_in</code> רק מה שבאמת נבדק כך.</div>
+    <ul>
+        <li><strong>אין דליפת זהות:</strong> משתמש בלי הרשאה מקבל זהות רק בנתיב שהאפליקציה הצהירה עליו ב-<code>signed_in</code> (4.3).</li>
+        <li><strong>אין זיוף:</strong> <code>PLATFORM_USER</code> אינו <code>HTTP_*</code>, ו-<code>unset</code> בתחילת ה-prepend נשאר.</li>
+        <li><strong><code>grant_status</code> לא חושף:</strong> רק boolean, רק לאפליקציה החותמת, ו-<code>sub</code> לא קיים = false. אפליקציה לא יכולה לשאול על אפליקציה אחרת.</li>
+        <li><strong>שידור חוזר:</strong> nonce חד-פעמי + חלון 300 שנ׳ (קיים); action בתוך ההודעה החתומה (3.1).</li>
+        <li><strong>יומנים:</strong> בלי <code>sub</code> ובלי מייל ביומן השגיאות של <code>grant_status</code> — רק הלקוח והשגיאה.</li>
+    </ul>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="docs">8. מה מתעדכן</h2>
+    <div class="table"><table>
+        <tr><th>קובץ</th><th>מה</th></tr>
+        <tr><td><code>platform/lib/gate.php</code></td><td><code>is_signed_in($cfg,$path,$params)</code> (אותו מנוע כמו <code>is_public</code> — פונקציה משותפת לתבניות); בדיקה ב-<code>decide</code>; <code>granted</code> ב-<code>identity()</code></td></tr>
+        <tr><td><code>platform/gate-prepend.php</code></td><td>הזהות גם ל-<code>signed_in</code> בלי הרשאה; בלי <code>record_visit</code> ובלי PWA למשתמש כזה</td></tr>
+        <tr><td><code>platform/gate.php</code></td><td>קבצים סטטיים: בלי <code>record_visit</code> ובלי הזרקת PWA למשתמש בלי הרשאה בנתיב <code>signed_in</code></td></tr>
+        <tr><td><code>platform/provision.php</code>, <code>lib/provision.php</code></td><td><code>?action=grant_status</code>, <code>provision_grant_status</code></td></tr>
+        <tr><td><code>platform/lib/registry.php</code></td><td>אימות <code>signed_in</code> (4.5)</td></tr>
+        <tr><td><code>platform/README.md</code>, "השער"</td><td><code>signed_in</code>, הסדר, והאזהרה מסעיף 7 — ליד האזהרה של <code>public</code></td></tr>
+        <tr><td><code>platform/docs/auth.md</code> §7</td><td>שורות: "מחובר בלי הרשאה" (<code>signed_in</code>) ו"האם יש לו הרשאה" (<code>grant_status</code>)</td></tr>
+        <tr><td><code>platform/docs/sso.md</code> §0, §6</td><td><code>granted</code> בזהות; <code>grant_status</code> בסעיף 6 (אותה חתימה)</td></tr>
+    </table></div>
+    <p>אין טבלה חדשה ואין החרגה חדשה ב-<code>deploy.yml</code>.</p>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="test">9. איך בודקים</h2>
+    <p>מקומית (<code>php -S</code>) — אפליקציית בדיקה עם <code>"gate": true</code>, <code>"restricted": true</code>,
+        <code>"signed_in": ["me.php"]</code>, ו-<code>me.php</code> שמחזיר את <code>$_SERVER['PLATFORM_USER']</code>:</p>
+    <ol>
+        <li>לא מחובר → <code>me.php</code>: דף → הפניה לכניסה; JSON → 401 <code>login</code>.</li>
+        <li>משתמש פעיל בלי הרשאה → <code>me.php</code>: 200, זהות עם <code>granted:false</code>. <code>index.html</code> של אותה אפליקציה: 403.</li>
+        <li>אותו משתמש, אחרי "✓ מותר" ישיר → <code>me.php</code>: <code>granted:true</code>.</li>
+        <li>משתמש בלי הרשאה בנתיב <code>public</code> שאינו <code>signed_in</code> → אין <code>PLATFORM_USER</code>.</li>
+        <li>משתמש בלי הרשאה ב-<code>me.php</code> → לא נרשמה כניסה בלשונית 📊, ואין סקריפט PWA בדף.</li>
+        <li>מנותקת → <code>me.php</code> עובר לכולם, בלי <code>PLATFORM_USER</code>.</li>
+        <li><code>grant_status</code> חתום: עם הרשאה → true; בלי → false; חסום / ממתין → false; <code>sub</code> לא קיים → false (200); <code>sub="abc"</code> → 400;
+            חתימה שנעשתה עם action <code>provision</code> → 401; nonce שחוזר → 401; מנותקת עם הרשאה → true.</li>
+        <li><code>check-apps.php</code>: <code>signed_in</code> בלי <code>gate</code> → שגיאה; <code>"../x"</code> ב-<code>signed_in</code> → שגיאה.</li>
+        <li>אפליקציות קיימות (בלי <code>signed_in</code>) — אותה התנהגות; בזהות שלהן נוסף <code>granted:true</code> בלבד.</li>
+    </ol>
+
+    <!-- ───────────────────────────── -->
+    <h2 id="dec">10. מה האפיון קבע (לבדיקת הבקרה)</h2>
+    <p>אין שאלות לבעל המערכת — ההכרעה העקרונית כבר ניתנה. ההחלטות הטכניות שהאפיון לקח:</p>
+    <div class="table"><table>
+        <tr><th>#</th><th>החלטה</th><th>למה</th></tr>
+        <tr><td>10.1</td><td><code>grant_status</code> ב-<code>provision.php?action=</code>, עם action בחתימה</td><td>אותו לקוח ואותו מפתח; חתימה של פעולה אחת לא תקפה לשנייה</td></tr>
+        <tr><td>10.2</td><td><code>sub</code> לא קיים = <code>false</code>, 200</td><td>לא לחשוף אילו מזהים קיימים</td></tr>
+        <tr><td>10.3</td><td>במנותקת ובלי שער — אין <code>PLATFORM_USER</code>; <code>grant_status</code> הוא המקור</td><td>לא לשנות את המשמעות של "מנותקת" לכל האפליקציות</td></tr>
+        <tr><td>10.4</td><td>בלי מעקב כניסות ובלי PWA למשתמש בלי הרשאה ב-<code>signed_in</code></td><td>זו לא כניסה לאפליקציה, והיא לא שלו</td></tr>
+        <tr><td>10.5</td><td><code>granted</code> בכל זהות של השער, לא בזהות של <code>sso.php</code></td><td>שדה אחד לקרוא; ב-sso זהות ניתנת רק למורשה ממילא</td></tr>
+        <tr><td>10.6</td><td>handoff לא משתנה</td><td>למשתמש בלי הרשאה אין את ה-APK; APK אחר פותח בחוץ</td></tr>
+        <tr><td>10.7</td><td>בלי שאלה על כמה <code>sub</code> יחד</td><td>לא נדרש; הרחבה פשוטה אם יידרש</td></tr>
+    </table></div>
+</div>
+</body>
+</html>
