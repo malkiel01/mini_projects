@@ -127,6 +127,31 @@ function provision_verify(string $action, string $body, array $h): array
     return $client;
 }
 
+/**
+ * grant_status (PF-002): "למשתמש הזה יש הרשאה לאפליקציה שלי?" → {allowed}. רק לאפליקציה החותמת (אין פרמטר app),
+ * ורק boolean — שום פרט אישי. sub — מחרוזת ספרות, כמו ב-identity (השער, sso.php). sub שלא קיים, ממתין או חסום →
+ * false, באותה תשובה בדיוק (200), כדי שאי אפשר יהיה לגלות אילו מזהים קיימים.
+ *
+ * אותה תשובה כמו PLATFORM_USER.granted בשער (can_use ב-lib/gate.php): מנהל פעיל — תמיד true; משתמש פעיל — can_see
+ * (הרשאה ישירה גוברת; קבוצה; קטגוריה, לא ל-restricted; מוסתרת / תוסף → false). שורה אפורה בחנות (PF-001) אינה הרשאה.
+ * הניתוק לא משנה מי מורשה — במנותקת זה מקור האמת היחיד (אין שם PLATFORM_USER).
+ */
+function provision_grant_status(array $client, array $body): array
+{
+    $sub = $body['sub'] ?? null;
+    if (!is_string($sub) || !preg_match('/^[0-9]{1,12}$/', $sub)) {
+        throw new ApiError('sub לא תקין — מחרוזת ספרות, כמו ב-identity', 400);
+    }
+    $st = db()->prepare('SELECT id, role, status FROM users WHERE id = ?');
+    $st->execute([(int)$sub]);
+    $user = $st->fetch();
+    if (!$user || $user['status'] !== 'active') return ['allowed' => false];
+    $app = array_column(apps_effective(), null, 'id')[$client['id']] ?? null;
+    if (!$app) return ['allowed' => false];
+    if ($user['role'] === 'admin') return ['allowed' => true];
+    return ['allowed' => can_see($app, grants_of((int)$user['id']))];
+}
+
 /** הרשאה ישירה לאפליקציה אחת (מותר / חסום) — בלי לגעת בשאר ההרשאות של המשתמש. */
 function provision_set_grant(int $userId, string $app, bool $allowed): void
 {
