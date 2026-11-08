@@ -237,7 +237,10 @@ try {
     $ex = exchangeCode($client, ['code' => $bq['code'], 'sub' => $osub]);
     check('connect_exchange — חיבור, שם וענן', str_starts_with($ex['connection'], 'c_') && $ex['account']['name'] === 'בעל המערכת' && $ex['scope'] === ['files'] && $ex['cloud_id'] === setting('cloud_id'));
     check('קוד חד-פעמי', code(fn() => exchangeCode($client, ['code' => $bq['code'], 'sub' => $osub])) === 'bad_code');
-    check('connect_exchange עם sub אחר — account_mismatch', code(fn() => exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, $req)), 'sub' => '999'])) === 'account_mismatch');
+    check('state חד-פעמי גם בענן — אותה כתובת חתומה לא מאשרת פעמיים', code(fn() => approveConnect($owner, $req)) === 'bad_state');
+    $req2 = connectRequest($idq(['state' => 'st4te-5678'] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1, 'state' => 1]), $osub));
+    check('connect_exchange עם sub אחר — account_mismatch', code(fn() => exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, $req2)), 'sub' => '999'])) === 'account_mismatch');
+    check('connect: exp רחוק מ-10 דקות — bad_identity', code(fn() => connectRequest(['exp' => (string) (time() + 3600)] + $q)) === 'bad_identity');
     check('access_token: sub של אדם אחר — account_mismatch, והחיבור מסומן ולא מנותק', code(fn() => bindConnection(connectionRow($ex['connection'], 'vector-studio'), '999')) === 'account_mismatch'
         && connectionRow($ex['connection'], 'vector-studio')['mismatch_at'] !== null);
     db()->prepare('UPDATE connections SET mismatch_at = NULL WHERE id = ?')->execute([$ex['connection']]);

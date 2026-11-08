@@ -298,11 +298,12 @@ const MISMATCH_MSG = 'החשבון בענן שונה מהחשבון שלך כא�
 /**
  * רק אותו חשבון (spec-0-vision.md 6.3): ה-sub של הפלטפורמה של המשתמש באפליקציה, חתום במפתח הלקוח.
  * החתימה: "connect\n<client>\n<state>\n<sub>\n<exp>\n<return>". בלי sub, בלי חתימה, או חתימה שפגה — דחייה.
+ * exp — עד 10 דקות קדימה (NONCE_TTL), כדי שה-state החד-פעמי (approveConnect) נזכר עד שהחתימה פגה.
  */
 function connectSub(array $c, array $q, string $return, string $state): string {
     $sub = (string) ($q['sub'] ?? '');
     $exp = (string) ($q['exp'] ?? '');
-    if ($sub === '' || strlen($sub) > 200 || !ctype_digit($exp) || (int) $exp < time() || (int) $exp > time() + 3600) {
+    if ($sub === '' || strlen($sub) > 200 || !ctype_digit($exp) || (int) $exp < time() || (int) $exp > time() + NONCE_TTL) {
         throw new AppError('בקשת החיבור לא מזהה את המשתמש באפליקציה — עדכנו את האפליקציה ונסו שוב', 400, 'bad_identity');
     }
     [$kid, $sigB64] = array_pad(explode('.', (string) ($q['sig'] ?? ''), 2), 2, '');
@@ -329,6 +330,11 @@ function alreadyGranted(array $a, array $req): ?array {
 /** אישור: חיבור (חדש, או הרחבת הקיים) + קוד חד-פעמי. מחזיר את כתובת החזרה. */
 function approveConnect(array $a, array $req): string {
     $pdo = db();
+    // ה-state חד-פעמי גם בענן: כתובת חתומה מאשרת פעם אחת (נשמר כמו nonce, עד שהחתימה פגה)
+    $pdo->prepare('DELETE FROM nonces WHERE at < ?')->execute([time() - NONCE_TTL]);
+    $once = $pdo->prepare('INSERT OR IGNORE INTO nonces (client, nonce, at) VALUES (?,?,?)');
+    $once->execute([$req['client']['id'], 'state:' . $req['state'], time()]);
+    if ($once->rowCount() === 0) throw new AppError('בקשת החיבור כבר נוצלה — התחילו מחדש מהאפליקציה', 400, 'bad_state');
     $conn = liveConnection($a['id'], $req['client']['id']);
     if ($conn) {
         $scope = array_values(array_unique(array_merge(json_decode($conn['scope'], true) ?: [], $req['scope'])));

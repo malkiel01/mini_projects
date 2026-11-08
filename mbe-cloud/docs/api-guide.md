@@ -89,7 +89,7 @@ if (str_starts_with($action, 'drives_')) (new \SuiteCloud\Drives([
 ```
 
 - **שם המחלקה `\SuiteCloud\Drives`** נשאר מהשם הקודם של הענן. הוא לא משתנה, כדי שעותקים קיימים לא יישברו.
-- **`sub`** — **לא חובה.**
+- **`sub`** — **ה-`sub` עצמו חובה. בלעדיו אין חיבור. המפתח בהגדרות — לא חובה.**
   - **ברירת המחדל:** המודול לוקח את ה-`sub` מ-`$_SERVER['PLATFORM_USER']`, שהשער כותב לכל בקשה של אפליקציה עם `"gate": true`. לכן אפליקציה רגילה **לא צריכה שום שורה**.
   - **מתי מגדירים אותו:** רק באפליקציה שמנהלת את הקישור בעצמה. מחזיר את ה-`sub` שכל חשבון אפליקציה מקושר אליו (`platform/docs/auth.md` סעיף 4), או `null`.
   - **בלי `sub`:** למשל חשבון ישן בסיסמה, שעוד לא קושר, או אפליקציה מנותקת מהשער. אין הפניה לענן: `drives_connect` מחזיר `403 no_platform_account` עם ההודעה "כדי להתחבר לענן, קשרו קודם את החשבון לחשבון הפלטפורמה".
@@ -191,7 +191,7 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 | --- | --- | --- |
 | `cloud_key` | כל אחד | המפתח הציבורי של הענן, לאימות האסימונים |
 | `client_register` | שרת האפליקציה | `{client, name, key_url, origins, return}` → `{status: active\|pending}`. שינוי ב-`key_url`, ב-`origins` או ב-`return` מחזיר את הלקוח ל-`pending` |
-| `connect.php` (דף) | דפדפן המשתמש | `?client&scope&state&return&sub&exp&sig` (`sig` = Ed25519 של הלקוח על `"connect\n<client>\n<state>\n<sub>\n<exp>\n<return>"`, `kid.base64url`) → מסך אישור, או "החיבור נדחה" וחזרה עם `?error=account_mismatch` → `‹return›?code&state` (הקוד תקף 2 דקות, פעם אחת), או `?error=access_denied` |
+| `connect.php` (דף) | דפדפן המשתמש | `?client&scope&state&return&sub&exp&sig` (`sub` חובה; `exp` עד 10 דקות קדימה; ה-`state` חד-פעמי גם בענן; `sig` = Ed25519 של הלקוח על `"connect\n<client>\n<state>\n<sub>\n<exp>\n<return>"`, `kid.base64url`) → מסך אישור, או "החיבור נדחה" וחזרה עם `?error=account_mismatch` → `‹return›?code&state` (הקוד תקף 2 דקות, פעם אחת), או `?error=access_denied` |
 | `connect_exchange` | שרת, חתום | `{code, sub}` → `{connection, account: {name}, scope, cloud_id}`. `sub` שלא תואם את מה שנחתם במסך, או את החשבון שאישר, מחזיר `403 account_mismatch`, והקוד נשרף |
 | `access_token` | שרת, חתום | `{connection, sub}` → `{token, expires_in: 900}`. נבדק בכל פעם (`403 account_mismatch`). **חיבור מלפני הכלל, בלי `sub`:** אם הוא תואם — נרשם על החיבור. אם הוא שונה — אין אסימון, החיבור מסומן ומופיע בניהול (⚙️ ← לקוחות, "⚠️ לא אותו חשבון"), ולא מנותק אוטומטית |
 | `disconnect` | שרת, חתום | `{connection}` → `{ok}` |
