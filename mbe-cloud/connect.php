@@ -99,18 +99,22 @@ HTML);
     $name = htmlspecialchars($req['client']['name']);
     $host = htmlspecialchars((string) parse_url($req['return'], PHP_URL_HOST));
     $who = htmlspecialchars($a['name']);
+    // חיבור קיים — רק השכבה החדשה (7.3 כלל 3). היא מתווספת לאותו חיבור
+    $live = liveConnection($a['id'], $req['client']['id']);
+    $ask = $live ? array_values(array_diff($req['scope'], json_decode($live['scope'], true) ?: [])) : $req['scope'];
     $rows = '';
-    foreach ($req['scope'] as $s) {
-        $ic = ['files' => '📁', 'libs' => '🔤', 'ai' => '🤖'][$s];
+    foreach ($ask as $s) {
+        $ic = ['files' => '📁', 'libs' => '📚', 'ai' => '🤖'][$s];
         $rows .= '<li class="acc-row"><span class="use-ic" aria-hidden="true">' . $ic . '</span><div class="body"><div class="l1">'
                . htmlspecialchars(SCOPE_NAMES[$s]) . '</div></div></li>';
     }
+    $askTitle = $live ? 'מה עוד היא תוכל לעשות' : 'מה היא תוכל לעשות';
     page("חיבור $name", <<<HTML
 <div class="summary">
   <div class="line"><b>$name</b> <span class="muted">מבקשת גישה לענן שלך</span></div>
   <div class="hint">מחובר בתור $who · חזרה אל $host</div>
 </div>
-<h2 class="sec-title">מה היא תוכל לעשות</h2>
+<h2 class="sec-title">$askTitle</h2>
 <ul class="list">$rows</ul>
 <p class="hint">אפשר לנתק בכל רגע — בענן, בלשונית "🔗 חיבורים", או מתוך האפליקציה.</p>
 <form method="post" class="row-btns">

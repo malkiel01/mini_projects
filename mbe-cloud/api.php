@@ -124,7 +124,7 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
+                'disconnect', 'connection_scope', 'connection_revoke', 'connection_layers', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
                 'account_prefs', 'account_prefs_set', 'account_export', 'account_delete',
                 'share_create', 'share_revoke', 'service_create', 'service_delete', 'token_create', 'token_revoke'];
 
@@ -234,6 +234,7 @@ try {
             bindConnection($conn, $in['sub'] ?? null);   // רק אותו חשבון — בכל אסימון
             reply(issueToken($client, $conn));
         }
+        case 'connection_scope': reply(connectionScope(verifySigned($action, signedHeaders(), $raw), $in));
         case 'disconnect': {
             $client = verifySigned($action, signedHeaders(), $raw);
             $st = db()->prepare('SELECT id FROM connections WHERE id = ? AND client = ?');
@@ -337,6 +338,7 @@ try {
         }
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);
+        case 'connection_layers': reply(ownConnectionScope(requireAccount(), $in['id'] ?? null, $in['scope'] ?? null));
 
         case 'admin':          requireAdmin(); reply(adminFull(adminState()));
         case 'admin_settings': requireAdmin(); reply(adminFull(adminSettings($in)));

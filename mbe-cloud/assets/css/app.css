@@ -46,3 +46,7 @@ main.connect .row-btns { margin-top: var(--s2); }
 .share-add { display: flex; gap: var(--s2); align-items: flex-end; }
 .share-add .f { flex: 1; min-width: 0; margin: 0; }
 .share-add .btn { flex: none; }
+
+/* מתג לכל שכבה ב"🔗 חיבורים" */
+.acc-row .layers { display: flex; flex-wrap: wrap; gap: 0 var(--s3); }
+.acc-row .layers .switch { min-height: 36px; font-size: .9em; }

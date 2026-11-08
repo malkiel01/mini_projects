@@ -246,6 +246,36 @@ try {
     db()->prepare('UPDATE connections SET mismatch_at = NULL WHERE id = ?')->execute([$ex['connection']]);
     bindConnection(connectionRow($ex['connection'], 'vector-studio'), $osub);
     check('access_token: אותו אדם — עובר', true);
+
+    // ── שכבות (spec-0-vision.md 7.3) ──
+    check('שכבות: לקוח בלי layers — ברירת המחדל files, libs, ai', clientScopes('vector-studio') === ['files', 'libs', 'ai']);
+    $GLOBALS['CLOUD_APPS'] = ['vector-studio' => ['layers' => ['files']]];
+    $lq = fn(string $st, string $scope) => $idq(['state' => $st, 'scope' => $scope] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1, 'state' => 1, 'scope' => 1]), $osub);
+    check('שכבות: היקף של שכבה שלא הוצהרה — bad_request', code(fn() => connectRequest($lq('layerst-1', 'files,libs'))) === 'bad_request');
+    check('שכבות: שכבה שהוצהרה — עובר', connectRequest($lq('layerst-2', 'files'))['scope'] === ['files']);
+    unset($GLOBALS['CLOUD_APPS']);
+    // חיבור עם files, libs ו-ai — ואז כיבוי
+    $lreq = connectRequest($lq('layerst-3', 'files,libs,ai'));
+    $lex = exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, $lreq)), 'sub' => $osub]);
+    check('שכבות: חיבור קיים — אותו חיבור, ההיקף הורחב', $lex['connection'] === $ex['connection'] && $lex['scope'] === ['ai', 'files', 'libs']);
+    $lconn = fn() => connectionRow($lex['connection'], 'vector-studio');
+    check('connection_scope: כיבוי libs', connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => ['files', 'ai']])['scope'] === ['ai', 'files']);
+    $e = null; try { actorFrom($lconn(), $client, 'libs'); } catch (AppError $x) { $e = $x; }
+    check('שכבה כבויה — 403 forbidden עם scope ו-layer, מיד (גם לאסימון שכבר הונפק)', $e && $e->codeName === 'forbidden' && $e->extra === ['scope' => 'libs', 'layer' => 'libs']);
+    check('connection_scope: הדלקה — לא (403)', code(fn() => connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => ['files', 'libs', 'ai']])) === 'forbidden');
+    check('connection_scope: sub של אדם אחר — account_mismatch', code(fn() => connectionScope($client, ['connection' => $lex['connection'], 'sub' => '999', 'scope' => ['files']])) === 'account_mismatch');
+    db()->prepare('UPDATE connections SET mismatch_at = NULL WHERE id = ?')->execute([$lex['connection']]);
+    check('connection_scope: היקף לא מוכר — bad_request', code(fn() => connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => ['root']])) === 'bad_request');
+    check('access_token מחזיר את ההיקף הנוכחי (המתגים באפליקציה)', issueToken($client, $lconn())['scope'] === ['ai', 'files']);
+    check('"🔗 חיבורים": מתג לכל שכבה שהוצהרה', ($mine = array_values(array_filter(accountConnections($owner), fn($c) => $c['id'] === $lex['connection']))[0])
+        && $mine['declared'] === ['files', 'libs', 'ai'] && $mine['scope'] === ['ai', 'files']);
+    check('"🔗 חיבורים": כיבוי שכבה של בעל החשבון', ownConnectionScope($owner, $lex['connection'], ['files'])['scope'] === ['files']);
+    check('"🔗 חיבורים": חיבור של חשבון אחר — not_found', code(fn() => ownConnectionScope(getAccount($dana['id']), $lex['connection'], ['files'])) === 'not_found');
+    check('connection_scope: רשימה ריקה — חיבור בלי שכבות, לא מנותק', connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => []])['scope'] === []
+        && $lconn()['revoked_at'] === null);
+    check('"🔗 חיבורים": כיבוי הכול — ניתוק', !empty(ownConnectionScope($owner, $lex['connection'], [])['revoked']) && code($lconn) === 'disconnected');
+    // חיבור מחדש — כדי שהבדיקות שאחרי ימשיכו עם חיבור פעיל
+    $ex = exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, connectRequest($lq('layerst-4', 'files')))), 'sub' => $osub]);
     $h = $sign('x', '{}', 'aaaaaaaaaaaaaaaa');
     verifySigned('x', $h, '{}');
     check('אותו nonce פעמיים — replay', code(fn() => verifySigned('x', $h, '{}')) === 'replay');

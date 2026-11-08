@@ -16,6 +16,12 @@ require_once __DIR__ . '/account.php';
 
 const SCOPES = ['files', 'libs', 'ai'];
 const SCOPE_NAMES = ['files' => 'הקבצים שלך בענן', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך'];
+/**
+ * שכבות (spec-0-vision.md 7.3): מתג לכל שכבה, וכל שכבה היא היקפים של אותו חיבור. היום: שכבה = היקף אחד.
+ * appdata (שלב 4) ו-files.readonly / files.app (שלב 3) — עוד לא. ברירת המחדל לאפליקציה בלי "layers" ב-apps.json.
+ */
+const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'ai' => ['ai']];
+const DEFAULT_LAYERS = ['files', 'libs', 'ai'];
 const TOKEN_TTL = 900;
 const CODE_TTL = 120;
 const SIG_SKEW = 300;
@@ -275,6 +281,23 @@ function cleanScope(mixed $s): array {
     return $list;
 }
 
+/** השכבה של היקף (files → files). */
+function scopeLayer(string $scope): string {
+    foreach (LAYERS as $layer => $scopes) if (in_array($scope, $scopes, true)) return $layer;
+    return $scope;
+}
+
+/** ההיקפים שהלקוח רשאי לבקש — לפי "layers" שלו ב-mbe-cloud/drives/apps.json (רשימה בגיט). אחר — ברירת המחדל. */
+function clientScopes(string $clientId): array {
+    static $file = null;
+    $file ??= json_decode((string) @file_get_contents(__DIR__ . '/../drives/apps.json'), true) ?: [];
+    $apps = $GLOBALS['CLOUD_APPS'] ?? $file;   // CLOUD_APPS — לבדיקות
+    $layers = $apps[$clientId]['layers'] ?? DEFAULT_LAYERS;
+    $out = [];
+    foreach ((array) $layers as $l) foreach (LAYERS[$l] ?? [] as $sc) $out[] = $sc;
+    return $out;
+}
+
 /** חיבור פעיל של חשבון ללקוח (אחד לכל זוג). */
 function liveConnection(string $account, string $client): ?array {
     $st = db()->prepare('SELECT * FROM connections WHERE account = ? AND client = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1');
@@ -289,7 +312,10 @@ function connectRequest(array $q): array {
     if (!in_array($return, json_decode($c['returns'], true) ?: [], true)) throw new AppError('כתובת החזרה לא רשומה ללקוח', 400, 'bad_request');
     $state = (string) ($q['state'] ?? '');
     if (!preg_match('/^[A-Za-z0-9_\-.~]{8,200}$/', $state)) throw new AppError('state לא תקין', 400, 'bad_request');
-    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => cleanScope($q['scope'] ?? 'files'),
+    $scope = cleanScope($q['scope'] ?? 'files');
+    // רק שכבות שהאפליקציה הצהירה עליהן (7.3 כלל 1)
+    if (array_diff($scope, clientScopes($c['id']))) throw new AppError('האפליקציה לא הצהירה על השכבה הזו', 400, 'bad_request');
+    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => $scope,
             'sub' => connectSub($c, $q, $return, $state)];
 }
 
@@ -397,7 +423,37 @@ function accountConnections(array $a): array {
                          WHERE c.account = ? AND c.revoked_at IS NULL ORDER BY c.created_at DESC');
     $st->execute([$a['id']]);
     return array_map(fn($r) => ['id' => $r['id'], 'client' => $r['client'], 'name' => $r['client_name'],
-        'scope' => json_decode($r['scope'], true), 'created_at' => $r['created_at'], 'used_at' => $r['used_at']], $st->fetchAll());
+        'scope' => json_decode($r['scope'], true), 'declared' => clientScopes($r['client']),   // מתג לכל שכבה שהאפליקציה הצהירה
+        'created_at' => $r['created_at'], 'used_at' => $r['used_at']], $st->fetchAll());
+}
+
+/**
+ * כיבוי שכבות (7.3 כלל 4): קובע את הרשימה המלאה של ההיקפים — ורק מצמצם. היקף שלא אושר — 403; הרחבה רק דרך connect.php.
+ * רשימה ריקה משאירה חיבור בלי שכבות (ניתוק מלא — disconnect / connection_revoke).
+ */
+function narrowScope(array $conn, mixed $scope): array {
+    $want = $scope === [] ? [] : cleanScope($scope);
+    $have = json_decode($conn['scope'], true) ?: [];
+    if (array_diff($want, $have)) throw new AppError('אפשר רק לכבות שכבות. הדלקה — דרך מסך האישור בענן', 403, 'forbidden');
+    db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode(array_values($want)), $conn['id']]);
+    return ['scope' => array_values($want)];
+}
+
+/** connection_scope (חתום, שרת האפליקציה): {connection, sub, scope}. אותו חשבון — כמו access_token. */
+function connectionScope(array $client, array $in): array {
+    $conn = connectionRow((string) ($in['connection'] ?? ''), $client['id']);
+    bindConnection($conn, $in['sub'] ?? null);
+    return narrowScope($conn, $in['scope'] ?? null);
+}
+
+/** מתג שכבה בדף הענן ("🔗 חיבורים"), של בעל החשבון. כיבוי של כל השכבות — ניתוק. */
+function ownConnectionScope(array $a, mixed $id, mixed $scope): array {
+    $st = db()->prepare('SELECT * FROM connections WHERE id = ? AND account = ? AND revoked_at IS NULL');
+    $st->execute([is_string($id) ? $id : '', $a['id']]);
+    $conn = $st->fetch();
+    if (!$conn) throw new AppError('לא נמצא', 404, 'not_found');
+    if ($scope === [] ) { revokeConnection($conn['id']); return ['scope' => [], 'revoked' => true]; }
+    return narrowScope($conn, $scope);
 }
 
 function revokeOwnConnection(array $a, mixed $id): void {
@@ -416,7 +472,8 @@ function issueToken(array $client, array $conn): array {
         JSON_UNESCAPED_SLASHES);
     $p = b64u($payload);
     $k = cloudSigningKey();
-    return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL];
+    return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL,
+            'scope' => json_decode($conn['scope'], true)];   // המתגים באפליקציה מתעדכנים מכאן (כיבוי מדף הענן)
 }
 
 /**
@@ -476,7 +533,10 @@ function actor(string $action, string $scope, string $body): array {
 }
 
 function actorFrom(array $conn, array $client, string $scope): array {
-    if (!in_array($scope, json_decode($conn['scope'], true) ?: [], true)) throw new AppError('אין לאפליקציה הרשאה לזה', 403, 'forbidden');
+    // השכבה כבויה — עם ההיקף, כדי שהאפליקציה תציע להדליק את המתג הנכון (7.3 כלל 6). נבדק בכל קריאה: כיבוי חל מיד
+    if (!in_array($scope, json_decode($conn['scope'], true) ?: [], true)) {
+        throw new AppError('אין לאפליקציה הרשאה לזה', 403, 'forbidden', ['scope' => $scope, 'layer' => scopeLayer($scope)]);
+    }
     $a = getAccount($conn['account']);
     if ((int) $a['blocked'] === 1) throw new AppError('החשבון חסום', 403, 'forbidden');
     if ($conn['used_at'] === null || $conn['used_at'] < nowIso(time() - 600)) {

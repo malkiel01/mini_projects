@@ -69,9 +69,13 @@
                "layers": ["files", "libs"], "files_scope": "files.app" }
    ```
    הנתיבים הם יחסיים לתיקייה של האפליקציה. כל אחד מהם הוא תיקייה שכולה של המודול.
-   🛠️ **`layers`** הן השכבות שהאפליקציה תומכת בהן (סעיף 4): `files`, `libs`, `appdata`, `ai`. **`files_scope`** הוא
-   ההיקף של שכבת הקבצים: `files`, `files.readonly` או `files.app`. בלי `layers`, ברירת המחדל היא `["files","libs","ai"]`
-   ו-`files`, כמו היום.
+   **`layers`** — השכבות שהאפליקציה תומכת בהן (סעיף 4). **`files_scope`** — ההיקף של שכבת הקבצים.
+   - **מה נתמך כרגע:**
+     - `layers`: `files`, `libs`, `ai`. `appdata` 🗓️ שלב 4.
+     - `files_scope`: רק `files`. `files.readonly` ו-`files.app` 🗓️ שלב 3.
+   - **ברירת המחדל** (בלי `layers`): `["files","libs","ai"]`, ו-`files_scope` הוא `files`.
+   - **איך זה מגיע לאפליקציה:** ה-sync כותב את השכבות ל-`<php>/layers.json`, והמודול קורא אותו משם, בלי תלות בקובץ מחוץ לתיקייה שלכם.
+   - **מה הענן דוחה:** בקשה להיקף של שכבה שלא הוצהרה מחזירה `bad_request`. ערך לא נתמך עוצר את `sync.php --check`, שהוא שער בפריסה.
 2. `php mbe-cloud/drives/tools/sync.php` מעתיק את `drives.js` ואת `Drives.php` לשם.
 3. **לא עורכים את העותק.** השער בפריסה (`sync.php --check`) עוצר עותק ששונה. צריך שינוי? מבקשים אותו מצ'אט הקוד של
    הענן, והוא משנה במקור.
@@ -135,7 +139,7 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 
 ## 4. המתגים — מתג לכל שכבה, אותו דבר בכל אפליקציה
 
-🛠️ **הכרעת בעל המערכת (2026-11-08):** החיבור אחד, ולכל שכבה מתג משלה (`spec-0-vision.md` סעיף 7.3). אפליקציה יכולה
+**הכרעת בעל המערכת (2026-11-08):** החיבור אחד, ולכל שכבה מתג משלה (`spec-0-vision.md` סעיף 7.3). אפליקציה יכולה
 להתחבר לשכבה אחת בלבד, למשל רק לקבצים, או לכולן.
 
 **איפה:** בתפריט המשתמש (👤) של `ui-core` ← "☁️ עננים מחוברים". אפליקציה בלי `ui-core` מציגה אותו מבנה בדיוק בהגדרות
@@ -191,7 +195,7 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 
 | קבוצה | פעולות | היקף |
 | --- | --- | --- |
-| **חיבור** ✅ | `status()`, `connect({layers?})` 🛠️, `disconnect({layers?})` 🛠️, `list()` (כל הכוננים) | — |
+| **חיבור** ✅ | `status()` (עם `suite.layers`), `connect({layers?})`, `disconnect({layers?})`, `list()` (כל הכוננים) | — |
 | **קבצים** ✅ `drives.suite` | `list(folder?)`, `stat(id)`, `read(id)` → `Blob`, `write(name, blob, {parent, ifRev, onConflict})` (עד 4MB), `upload(file, {parent, ifRev, onConflict, onProgress, signal})` (בחלקים של 8MB, כל גודל), `mkdir(name, parent?)`, `rename(id, name)`, `move(id, parent)`, `trash(id)`, `quota()` | `files` |
 | **גופנים** ✅ `drives.fonts` | `list({builtin?})`, `load(item)` → `{face, bytes}`, `add(file, {family, weight, style})`, `license(item)` | `libs` |
 | **בינה מלאכותית** ✅ `drives.ai` | `capabilities()`, `run(task, input, {signal})`. המשימות: `remove-background`, `segment`, `generate-image`, `inpaint`, `complete` | `ai` |
@@ -216,8 +220,10 @@ const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php שלכם
 | `client_register` | שרת האפליקציה | `{client, name, key_url, origins, return}` → `{status: active\|pending}`. שינוי ב-`key_url`, ב-`origins` או ב-`return` מחזיר את הלקוח ל-`pending` |
 | `connect.php` (דף) | דפדפן המשתמש | `?client&scope&state&return&sub&exp&sig` (`sub` חובה; `exp` עד 10 דקות קדימה; ה-`state` חד-פעמי גם בענן; `sig` = Ed25519 של הלקוח על `"connect\n<client>\n<state>\n<sub>\n<exp>\n<return>"`, `kid.base64url`) → מסך אישור, או "החיבור נדחה" וחזרה עם `?error=account_mismatch` → `‹return›?code&state` (הקוד תקף 2 דקות, פעם אחת), או `?error=access_denied` |
 | `connect_exchange` | שרת, חתום | `{code, sub}` → `{connection, account: {name}, scope, cloud_id}`. `sub` שלא תואם את מה שנחתם במסך, או את החשבון שאישר, מחזיר `403 account_mismatch`, והקוד נשרף |
-| `access_token` | שרת, חתום | `{connection, sub}` → `{token, expires_in: 900}`. נבדק בכל פעם (`403 account_mismatch`). **חיבור מלפני הכלל, בלי `sub`:** אם הוא תואם — נרשם על החיבור. אם הוא שונה — אין אסימון, החיבור מסומן ומופיע בניהול (⚙️ ← לקוחות, "⚠️ לא אותו חשבון"), ולא מנותק אוטומטית |
+| `access_token` | שרת, חתום | `{connection, sub}` → `{token, expires_in: 900, scope}`. `scope` הוא ההיקף הנוכחי של החיבור, וממנו המתגים באפליקציה מתעדכנים אחרי כיבוי בדף הענן. נבדק בכל פעם (`403 account_mismatch`). **חיבור מלפני הכלל, בלי `sub`:** אם הוא תואם — נרשם על החיבור. אם הוא שונה — אין אסימון, החיבור מסומן ומופיע בניהול (⚙️ ← לקוחות, "⚠️ לא אותו חשבון"), ולא מנותק אוטומטית |
+| `connection_scope` | שרת, חתום | `{connection, sub, scope: [...]}` → `{scope}`. **כיבוי שכבות.** קובע את הרשימה המלאה ורק מצמצם. היקף שלא אושר מחזיר `403 forbidden`, והרחבה עוברת רק דרך `connect.php`. `sub` נבדק כמו ב-`access_token`. רשימה ריקה משאירה חיבור בלי שכבות. המודול מנתק במקום זה כשהמתג האחרון נכבה |
 | `disconnect` | שרת, חתום | `{connection}` → `{ok}` |
+| `connections`, `connection_layers`, `connection_revoke` | דף הענן ("🔗 חיבורים"), בעל החשבון | הרשימה עם `declared` (השכבות שהאפליקציה הצהירה) ו-`scope`. `connection_layers {id, scope}` מצמצם כמו `connection_scope`, ורשימה ריקה מנתקת. `connection_revoke {id}` מנתק |
 | `quota`, `list`, `stat`, `read`, `mkdir`, `write`, `upload_start`, `upload_chunk`, `upload_finish`, `rename`, `move`, `trash`, `restore`, `trash_list`, `purge`, `trash_empty` | דפדפן (אסימון) או שרת (חתום) | הקבצים. הגופים בטבלה של `spec-1-skeleton.md` סעיף 6 |
 | `fonts_list`, `font_file`, `font_add`, `font_update`, `font_delete`, `font_license` | כנ"ל | הגופנים (`spec-2-fonts.md` סעיף 4) |
 | `ai_capabilities`, `ai_run` | כנ"ל | הבינה המלאכותית (`spec-3-ai.md` סעיף 4) |
