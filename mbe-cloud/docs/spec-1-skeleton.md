@@ -19,7 +19,7 @@
 ## 2. מבנה התיקייה
 
 ```
-suite-cloud/
+mbe-cloud/
   app.json            הרישום בפלטפורמה
   index.html          הדף: כוננים, קבצים, חיבורים, ניהול (lang="he" dir="rtl")
   api.php             כל הפעולות — ?action=<פעולה>
@@ -42,17 +42,17 @@ suite-cloud/
 `recipes-app/data/media/`):
 
 ```
---include='suite-cloud/data/.htaccess' \
---exclude='suite-cloud/data/*' \
+--include='mbe-cloud/data/.htaccess' \
+--exclude='mbe-cloud/data/*' \
 ```
 
-ובנוסף `--exclude='/suite-cloud/client/tools/' --exclude='/suite-cloud/tests/'` — כלים של הריפו, לא של השרת.
+ובנוסף `--exclude='/mbe-cloud/client/tools/' --exclude='/mbe-cloud/tests/'` — כלים של הריפו, לא של השרת.
 
 ## 3. `app.json`
 
 ```json
 {
-  "id": "suite-cloud",
+  "id": "mbe-cloud",
   "name": "ענן החבילה",
   "icon": "☁️",
   "description": "הענן של חבילת היצירה — חשבון אחד, כוננים זה לצד זה וספריות משותפות לכל האפליקציות.",
@@ -67,7 +67,7 @@ suite-cloud/
 - **`public` לפעולות ה-API** — כי אפליקציה מתקשרת שרת-לשרת, בלי עוגיית הפלטפורמה. הכתובת ציבורית אבל לא פרוצה:
   כל פעולה דורשת חתימה של לקוח רשום או אסימון של הענן (סעיף 7). בלי אחד מהם — 401.
 - **`connect.php` אינו ציבורי** (שונה במימוש, 2026-10-31): השער עצמו מפנה מי שלא מחובר לכניסה (`?next=`) ומחזיר
-  לכאן, ובודק שיש לו הרשאה לענן. כך אין צורך בבדיקה כפולה. אסימון הטופס — ב-session בעוגייה משלנו (`SUITECLOUD`).
+  לכאן, ובודק שיש לו הרשאה לענן. כך אין צורך בבדיקה כפולה. אסימון הטופס — ב-session בעוגייה משלנו (`MBECLOUD`).
 - **בטוח ש-`public` לא פותח את הדף לכולם:** השער כותב `PLATFORM_USER` רק למי שיש לו הרשאה לענן (`gate-prepend.php`).
   בכתובת ציבורית בלי הרשאה — אין זהות, ולכן נדרשת חתימה או אסימון.
 - **`restricted`** — עד שהשלד נבדק (הכרעה 3).
@@ -149,7 +149,7 @@ suite-cloud/
 ### 7.1 רישום לקוח — פעם אחת, אוטומטית
 
 ```
-POST suite-cloud/api.php?action=client_register
+POST mbe-cloud/api.php?action=client_register
 {"client":"vector-studio","name":"וקטורי",
  "key_url":"https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_key",
  "origins":["https://mbe-plus.com"],
@@ -165,7 +165,7 @@ POST suite-cloud/api.php?action=client_register
 ```
 אפליקציה                                      ענן החבילה
  "☁️ חיבור לענן החבילה"
-  │ ── redirect ──▶ suite-cloud/connect.php?client=<id>&scope=files&state=<אקראי>&return=<כתובת>
+  │ ── redirect ──▶ mbe-cloud/connect.php?client=<id>&scope=files&state=<אקראי>&return=<כתובת>
   │                  לא מחובר → כניסה (השער) וחזרה
   │                  "וקטורי מבקשת גישה לקבצים שלך בענן — אשר / בטל"
   │ ◀── redirect ── <return>?code=<חד-פעמי, 2 דקות>&state=…       (או ?error=access_denied)
@@ -208,7 +208,7 @@ POST (חתום) access_token {connection}  →  {token, expires_in:900}
 
 ## 8. לקוח הענן — מודול מסונכרן
 
-כמו `creative-suite/mbe-core`: מקור אחד ב-`suite-cloud/client/src/{js,php}`, `client/apps.json`
+כמו `creative-suite/mbe-core`: מקור אחד ב-`mbe-cloud/client/src/{js,php}`, `client/apps.json`
 (`{"<app>":{"js":"…","php":"…"}}`), `client/tools/sync.php` (בונה ומעתיק; `--check` — שער בפריסה, צעד חדש ב-
 `deploy.yml` ליד השערים של הליבה). **`apps.json` מתחיל ריק** — אפליקציה נכנסת רק בהסכמת הצ'אט שלה.
 
@@ -237,7 +237,7 @@ POST (חתום) access_token {connection}  →  {token, expires_in:900}
 3. **חיבור אפליקציה:** `client_register`, `connect.php`, `connect_exchange`, חתימות, `access_token`, CORS, ניתוק.
 4. **לקוח הענן:** `client/` + `sync.php` + שער בפריסה. אחר כך — הזמנה לכל צ'אט להצטרף (בלי לגעת בתיקייה שלו).
 
-כל PR — `php platform/check-apps.php` ו-`php suite-cloud/tests/run.php` לפני push; `[x]` במסמך הפרויקט אחרי
+כל PR — `php platform/check-apps.php` ו-`php mbe-cloud/tests/run.php` לפני push; `[x]` במסמך הפרויקט אחרי
 `conclusion: success`.
 
 ## 11. הכרעות בעל המערכת (2026-10-30)

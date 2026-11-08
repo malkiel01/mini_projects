@@ -54,7 +54,7 @@ function aiRunAnthropic(string $task, array $in, string $key, string $model): ar
     }
     $j = aiJson($res, 'Claude');
     if (($j['stop_reason'] ?? '') === 'refusal') {
-        error_log('suite-cloud ai Claude refusal: ' . json_encode($j['stop_details'] ?? null));
+        error_log('mbe-cloud ai Claude refusal: ' . json_encode($j['stop_details'] ?? null));
         throw new AppError('Claude סירב לבקשה הזו', 502, 'provider');
     }
     $text = implode('', array_map(fn($b) => (string) $b['text'], array_filter($j['content'] ?? [], fn($b) => ($b['type'] ?? '') === 'text')));

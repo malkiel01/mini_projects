@@ -1,8 +1,8 @@
 <?php
 /**
- * החזרה מ-Dropbox — כתובת אחת לכל האפליקציות (מודול הכוננים, suite-cloud/drives).
+ * החזרה מ-Dropbox — כתובת אחת לכל האפליקציות (מודול הכוננים, mbe-cloud/drives).
  *
- * בקונסולה של Dropbox רושמים redirect URI אחד: https://mbe-plus.com/mini_projects/suite-cloud/oauth/dropbox.php.
+ * בקונסולה של Dropbox רושמים redirect URI אחד: https://mbe-plus.com/mini_projects/mbe-cloud/oauth/dropbox.php.
  * ה-state הוא "<client>.<אקראי>": הדף מעביר את ?code&state הלאה ל-api.php של אותו לקוח (רשום ופעיל בענן),
  * ושם המודול מחליף את הקוד בעזרת ה-code_verifier שרק הוא מחזיק (PKCE) — כך שהקוד לבדו חסר ערך כאן.
  * ציבורי (בלי השער): Dropbox מפנה לכאן, והמשתמש לא בהכרח מורשה לענן עצמו.

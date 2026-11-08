@@ -77,7 +77,7 @@ function aiJson(array $res, string $who): array {
     $j = json_decode($body, true);
     if ($status >= 200 && $status < 300 && is_array($j)) return $j;
     $msg = is_array($j) ? (string) ($j['error']['message'] ?? $j['detail'] ?? $j['error'] ?? '') : '';
-    error_log("suite-cloud ai $who $status: " . mb_substr($msg !== '' ? $msg : $body, 0, 500));
+    error_log("mbe-cloud ai $who $status: " . mb_substr($msg !== '' ? $msg : $body, 0, 500));
     if ($status === 401 || $status === 403) throw new AppError("$who: המפתח נדחה — בדקו אותו בניהול", 502, 'provider');
     if ($status === 429) throw new AppError("$who: עומס או מכסה אצל הספק — נסו שוב בעוד רגע", 502, 'provider');
     if ($status === 400 && $msg !== '') throw new AppError("$who דחה את הבקשה: " . mb_substr($msg, 0, 200), 502, 'provider');
@@ -215,7 +215,7 @@ function aiReplicate(string $model, string $key, array $input): mixed {
     }
     if (($p['status'] ?? '') !== 'succeeded') {
         if (in_array($p['status'] ?? '', ['starting', 'processing'], true)) throw new AppError('Replicate לא סיים בזמן — נסו שוב', 504, 'provider');
-        error_log('suite-cloud ai Replicate: ' . json_encode($p['error'] ?? $p['status'] ?? ''));
+        error_log('mbe-cloud ai Replicate: ' . json_encode($p['error'] ?? $p['status'] ?? ''));
         throw new AppError('Replicate נכשל בהרצת המודל', 502, 'provider');
     }
     return $p['output'] ?? null;

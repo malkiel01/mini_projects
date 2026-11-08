@@ -1,9 +1,9 @@
 <?php
 /**
- * מודול הכוננים — סנכרון. המקור: suite-cloud/drives/src/{js,php}; היעדים: suite-cloud/drives/apps.json.
+ * מודול הכוננים — סנכרון. המקור: mbe-cloud/drives/src/{js,php}; היעדים: mbe-cloud/drives/apps.json.
  *
- *   php suite-cloud/drives/tools/sync.php            מעתיק לכל האפליקציות
- *   php suite-cloud/drives/tools/sync.php --check    רק בודק (שער בפריסה): עותק ששונה — נכשל
+ *   php mbe-cloud/drives/tools/sync.php            מעתיק לכל האפליקציות
+ *   php mbe-cloud/drives/tools/sync.php --check    רק בודק (שער בפריסה): עותק ששונה — נכשל
  *
  * apps.json: { "<תיקיית האפליקציה>": { "js": "assets/js/drives", "php": "lib/drives" } } — תיקיות יעד שכולן של המודול:
  * הסנכרון מעתיק לתוכן ומוחק שם קבצים שאינם במקור. אפליקציה נכנסת רק בהסכמת הצ'אט שלה.
@@ -18,7 +18,7 @@ $check = in_array('--check', $argv, true);
 $bad = 0;
 
 $apps = json_decode((string) file_get_contents("$mod/apps.json"), true);
-if (!is_array($apps)) { fwrite(STDERR, "suite-cloud/drives/apps.json פגום\n"); exit(1); }
+if (!is_array($apps)) { fwrite(STDERR, "mbe-cloud/drives/apps.json פגום\n"); exit(1); }
 
 function drives_tree(string $dir): array {
     $out = [];
@@ -41,7 +41,7 @@ foreach ($apps as $app => $map) {
         foreach ($from as $rel => $src) {
             $dst = "$toDir/$rel";
             if (isset($to[$rel]) && hash_file('sha256', $dst) === hash_file('sha256', $src)) continue;
-            if ($check) { fwrite(STDERR, "✗ $app/$target/$rel שונה מ-suite-cloud/drives/src/$kind/$rel — עורכים במקור ומריצים sync\n"); $bad++; continue; }
+            if ($check) { fwrite(STDERR, "✗ $app/$target/$rel שונה מ-mbe-cloud/drives/src/$kind/$rel — עורכים במקור ומריצים sync\n"); $bad++; continue; }
             if (!is_dir(dirname($dst))) mkdir(dirname($dst), 0755, true);
             copy($src, $dst);
             echo "→ $app/$target/$rel\n";

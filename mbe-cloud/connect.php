@@ -28,13 +28,13 @@ function page(string $title, string $body): never {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2d4a8a">
-<title>$t — ענן החבילה</title>
+<title>$t — ענן MBE</title>
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="assets/css/ui-core/ui.css">
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
-<header class="top"><div class="titles"><h1>☁️ ענן החבילה</h1></div></header>
+<header class="top"><div class="titles"><h1>☁️ ענן MBE</h1></div></header>
 <main id="main" class="connect">$body</main>
 </body>
 </html>
@@ -48,7 +48,7 @@ function fail(string $msg): never {
 }
 
 if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {
-    session_name('SUITECLOUD');   // עוגייה משלנו — לא של הפלטפורמה ולא של אפליקציה אחרת
+    session_name('MBECLOUD');   // עוגייה משלנו — לא של הפלטפורמה ולא של אפליקציה אחרת
     session_set_cookie_params(['path' => rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/') . '/', 'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', 'httponly' => true, 'samesite' => 'Lax']);
     session_start();
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * בדיקות מודול הכוננים מול הענן עצמו, באותו תהליך: php suite-cloud/drives/tests/run.php
+ * בדיקות מודול הכוננים מול הענן עצמו, באותו תהליך: php mbe-cloud/drives/tests/run.php
  * "הרשת" בין האפליקציה לענן היא פונקציה שמריצה את קוד הענן ישירות — כל המסלול אמיתי, בלי שרת.
  */
 
@@ -11,7 +11,7 @@ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $tmp = sys_get_temp_dir() . '/drives-test-' . getmypid();
 define('DATA_DIR', "$tmp/cloud");
 define('CLOUD_ORIGIN', 'https://mbe-plus.com');
-define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/suite-cloud/');
+define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/mbe-cloud/');
 require_once __DIR__ . '/../../lib/drive.php';
 require_once __DIR__ . '/../../lib/clients.php';
 require_once __DIR__ . '/../src/php/Drives.php';
@@ -43,7 +43,7 @@ $dropbox = function (string $url, array $headers, string $body) use (&$dbx): arr
                 $c = $dbx['codes'][$f['code']] ?? null;
                 unset($dbx['codes'][$f['code']]);
                 $ch = rtrim(strtr(base64_encode(hash('sha256', (string) ($f['code_verifier'] ?? ''), true)), '+/', '-_'), '=');
-                if (!$c || $c !== $ch || $f['redirect_uri'] !== 'https://mbe-plus.com/mini_projects/suite-cloud/oauth/dropbox.php') return [400, '{"error":"invalid_grant"}'];
+                if (!$c || $c !== $ch || $f['redirect_uri'] !== 'https://mbe-plus.com/mini_projects/mbe-cloud/oauth/dropbox.php') return [400, '{"error":"invalid_grant"}'];
                 $dbx['refresh']['r1'] = true;
                 return [200, json_encode(['access_token' => 'at' . (++$dbx['n']), 'expires_in' => 14400, 'refresh_token' => 'r1', 'token_type' => 'bearer'])];
             }
@@ -118,7 +118,7 @@ try {
 
     $url = $app->connectUrl('u1');
     check('connect — נרשמה בענן, פעילה (אותו origin)', activeClient('vector-studio')['status'] === 'active');
-    check('connect — לכתובת האישור של הענן, עם files,libs,ai', str_starts_with($url, 'https://mbe-plus.com/mini_projects/suite-cloud/connect.php?') && str_contains($url, 'scope=files%2Clibs%2Cai'));
+    check('connect — לכתובת האישור של הענן, עם files,libs,ai', str_starts_with($url, 'https://mbe-plus.com/mini_projects/mbe-cloud/connect.php?') && str_contains($url, 'scope=files%2Clibs%2Cai'));
     $back = approve($url);
     parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
     check('משתמש אחר באפליקציה לא יכול להשתמש ב-state — והסיבה ידועה', code(fn() => $app->callback('u2', $bq)) === 'bad_state:user');
@@ -133,7 +133,7 @@ try {
     check('status — מחובר, שם בעל החשבון, cloud_id', $st['connected'] && $st['name'] === 'בעל המערכת' && $st['cloud_id'] === setting('cloud_id'));
 
     $t = $app->token('u1');
-    check('token — אסימון לדפדפן וכתובת ה-API', $t['connected'] && $t['api'] === 'https://mbe-plus.com/mini_projects/suite-cloud/api.php' && $t['expires_in'] === 900);
+    check('token — אסימון לדפדפן וכתובת ה-API', $t['connected'] && $t['api'] === 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php' && $t['expires_in'] === 900);
     $_SERVER['HTTP_X_CLOUD_TOKEN'] = $t['token'];
     $x = actor('list', 'files', '');
     check('האסימון פותח את הקבצים בענן בשם בעל החשבון והאפליקציה', $x['app'] === 'vector-studio' && $x['account']['name'] === 'בעל המערכת');

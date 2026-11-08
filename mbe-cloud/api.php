@@ -1,6 +1,6 @@
 <?php
 /**
- * API של ענן החבילה. בקשה אחת = action אחד (ב-query או בגוף ה-JSON).
+ * API של ענן MBE. בקשה אחת = action אחד (ב-query או בגוף ה-JSON).
  *
  * me, quota — מי נכנס וכמה מקום.
  * קבצים: list, stat, read (GET), mkdir, write, upload_start, upload_chunk (PUT, גוף בינארי), upload_finish,
@@ -142,7 +142,7 @@ try {
     if (str_starts_with($action, 'account_')) {
         try {
             reply(uic_account_api($action, $in, [
-                'app' => 'suite-cloud',
+                'app' => 'suite-cloud',   // מפתח הנתונים של ההגדרות במסד — לא נתיב. נשאר כמו שהוא, אחרת ההגדרות השמורות אובדות
                 'pdo' => fn() => db(),
                 'user' => fn() => currentAccount()['id'] ?? null,
                 'export' => fn($uid) => accountExport(requireAccount()),
@@ -292,6 +292,6 @@ try {
 } catch (AppError $e) {
     reply(['error' => $e->getMessage(), 'code' => $e->codeName] + $e->extra, $e->status);
 } catch (Throwable $e) {
-    error_log('suite-cloud: ' . $e);
+    error_log('mbe-cloud: ' . $e);
     reply(['error' => 'תקלה בשרת', 'code' => 'server'], 500);
 }

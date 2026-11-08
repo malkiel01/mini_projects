@@ -1,8 +1,8 @@
 # מודול הכוננים — חיבור אפליקציה לענן החבילה (ובהמשך לכל ענן)
 
 **הבעלים:** ענן החבילה. **מקור אחד, ועותק מסונכרן בכל אפליקציה** — כמו `mbe-core` ו-`ui-core`.
-**הרקע:** `creative-suite/docs/requests/account-menu.md` (החוזה עם `ui-core`), `suite-cloud/docs/spec-1-skeleton.md` סעיף 7
-(הפרוטוקול), `suite-cloud/docs/spec-3-ai.md` (הבינה המלאכותית).
+**הרקע:** `creative-suite/docs/requests/account-menu.md` (החוזה עם `ui-core`), `mbe-cloud/docs/spec-1-skeleton.md` סעיף 7
+(הפרוטוקול), `mbe-cloud/docs/spec-3-ai.md` (הבינה המלאכותית).
 
 ## מה יש עכשיו
 
@@ -19,7 +19,7 @@
 
 - **App key אחד לכל החבילה**, שבעל המערכת שם ב"ניהול" של הענן (🗂️ כוננים חיצוניים). אין App secret: OAuth עם PKCE.
   המודול מקבל אותו מהענן (`drives_config`, חתום) ושומר במטמון. בלי App key — Dropbox פשוט לא מופיע ב-`status` / `list`.
-- **redirect URI אחד** בקונסולה של Dropbox: `https://mbe-plus.com/mini_projects/suite-cloud/oauth/dropbox.php`. הדף מעביר את
+- **redirect URI אחד** בקונסולה של Dropbox: `https://mbe-plus.com/mini_projects/mbe-cloud/oauth/dropbox.php`. הדף מעביר את
   החזרה ל-`api.php` של האפליקציה לפי ה-state (`<client>.<אקראי>`), ושם המודול מחליף את הקוד עם ה-verifier שרק הוא מחזיק.
 - **אסימון הרענון נשמר רק אצל האפליקציה** (`drives.sqlite`), והדפדפן מקבל אסימון גישה של כמה שעות (`drives_ptoken`).
   הרשאה שבוטלה אצל Dropbox → `not-connected`.
@@ -29,12 +29,12 @@
 
 ## איך אפליקציה מצטרפת — PR אחד, בתיקייה שלה
 
-1. **הסכמה:** הצ'אט של האפליקציה מוסיף שורה ל-`suite-cloud/drives/apps.json` (שורה לכל אפליקציה, לפי א"ב; למזג main לפני
+1. **הסכמה:** הצ'אט של האפליקציה מוסיף שורה ל-`mbe-cloud/drives/apps.json` (שורה לכל אפליקציה, לפי א"ב; למזג main לפני
    ה-PR):
    ```json
    "vector-studio": { "js": "assets/js/drives", "php": "lib/drives" }
    ```
-   ואז `php suite-cloud/drives/tools/sync.php`. התיקיות האלה **כולן של המודול** — לא עורכים בהן (שער בפריסה).
+   ואז `php mbe-cloud/drives/tools/sync.php`. התיקיות האלה **כולן של המודול** — לא עורכים בהן (שער בפריסה).
 
 2. **השרת — שלוש שורות ב-`api.php`**, לפני הבדיקה הרגילה של הפעולות:
    ```php

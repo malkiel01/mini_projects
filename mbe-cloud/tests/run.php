@@ -1,6 +1,6 @@
 <?php
 /**
- * בדיקות השרת: php suite-cloud/tests/run.php
+ * בדיקות השרת: php mbe-cloud/tests/run.php
  * רצות על תיקיית נתונים זמנית; הזהות של השער מדומה ב-$_SERVER['PLATFORM_USER'].
  */
 
@@ -8,10 +8,10 @@ declare(strict_types=1);
 
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
-$tmpDir = sys_get_temp_dir() . '/suite-cloud-test-' . getmypid();
+$tmpDir = sys_get_temp_dir() . '/mbe-cloud-test-' . getmypid();
 define('DATA_DIR', $tmpDir);
 define('CLOUD_ORIGIN', 'https://mbe-plus.com');
-define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/suite-cloud/');
+define('CLOUD_ISSUER', 'https://mbe-plus.com/mini_projects/mbe-cloud/');
 require_once __DIR__ . '/../lib/drive.php';
 require_once __DIR__ . '/../lib/clients.php';
 require_once __DIR__ . '/../lib/ai.php';
@@ -409,7 +409,7 @@ try {
 
     // ── ספריית הגופנים ──
     $alef = file_get_contents(__DIR__ . '/../../document-templates/assets/fonts/Alef-Regular.ttf');
-    $heebo = file_get_contents(__DIR__ . '/../../greeting-cards/editor/fonts/heebo-hebrew-100-normal.woff2');
+    $heebo = file_get_contents(__DIR__ . '/../../creative-suite/ui-core/src/fonts/heebo-hebrew-100-normal.woff2');
     // WOFF מתוך Alef: רק name ו-OS/2, דחוסים — מספיק כדי לבדוק את הקריאה
     $woff = (function (string $ttf) {
         $u16 = fn($o) => unpack('n', substr($ttf, $o, 2))[1]; $u32 = fn($o) => unpack('N', substr($ttf, $o, 4))[1];

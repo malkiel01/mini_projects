@@ -1,10 +1,10 @@
 <?php
 /**
- * מודול הכוננים — צד השרת של האפליקציה (PHP). עותק מסונכרן: לא לערוך כאן. המקור: suite-cloud/drives/src/php/.
+ * מודול הכוננים — צד השרת של האפליקציה (PHP). עותק מסונכרן: לא לערוך כאן. המקור: mbe-cloud/drives/src/php/.
  *
- * מה הוא עושה בשביל האפליקציה (suite-cloud/docs/spec-1-skeleton.md סעיף 7, ו-requests/account-menu.md):
+ * מה הוא עושה בשביל האפליקציה (mbe-cloud/docs/spec-1-skeleton.md סעיף 7, ו-requests/account-menu.md):
  *   - זוג מפתחות Ed25519 של האפליקציה — נוצר בפעם הראשונה ונשמר ב-<dataDir>/drives.sqlite (לא בגיט, ומוחרג כמו כל *.sqlite).
- *   - רישום אוטומטי בענן החבילה (client_register), חיבור משתמש (connect → callback → connect_exchange),
+ *   - רישום אוטומטי בענן MBE (client_register), חיבור משתמש (connect → callback → connect_exchange),
  *     אסימון קצר לדפדפן (access_token), ניתוק. כל קריאה לענן — חתומה.
  *   - הדפדפן מדבר עם הענן ישירות, עם האסימון. המפתח הפרטי לא יוצא מהשרת.
  *
@@ -25,7 +25,7 @@
  * כוננים חיצוניים (requests/account-menu.md סעיף 2 — חיבור ישיר מהאפליקציה):
  *   drives_link?provider=dropbox → { url } (OAuth עם PKCE) · drives_oauth_callback (החזרה) · drives_ptoken?provider=dropbox
  *   → { token, expires_in } לדפדפן, שמדבר עם Dropbox ישירות · drives_unlink?provider=dropbox.
- *   ה-App key של Dropbox מגיע מענן החבילה (drives_config, שבעל המערכת ממלא בניהול), או מ-cfg['dropbox'] ⇒ ['app_key', 'redirect']
+ *   ה-App key של Dropbox מגיע מענן MBE (drives_config, שבעל המערכת ממלא בניהול), או מ-cfg['dropbox'] ⇒ ['app_key', 'redirect']
  *   לאפליקציה בדומיין משלה. בלי App key — Dropbox פשוט לא מופיע. אסימון הרענון נשמר רק ב-drives.sqlite של האפליקציה.
  */
 
@@ -40,7 +40,7 @@ final class DrivesError extends \RuntimeException {
 }
 
 final class Drives {
-    public const CLOUD = 'https://mbe-plus.com/mini_projects/suite-cloud/';
+    public const CLOUD = 'https://mbe-plus.com/mini_projects/mbe-cloud/';
     private const STATE_TTL = 600;
 
     private array $cfg;
@@ -127,7 +127,7 @@ final class Drives {
         ],
     ];
 
-    /** {app_key, redirect} — מהגדרות האפליקציה, או מענן החבילה (במטמון שעה). null — הספק לא מוגדר. */
+    /** {app_key, redirect} — מהגדרות האפליקציה, או מענן MBE (במטמון שעה). null — הספק לא מוגדר. */
     private function providerConfig(string $p): ?array {
         if (!isset(self::PROVIDERS[$p])) return null;
         if (isset($this->cfg[$p]['app_key'])) return $this->cfg[$p] + ['redirect' => $this->endpointOnly() . '?action=drives_oauth_callback&provider=' . $p];
@@ -385,11 +385,11 @@ final class Drives {
             $body = curl_exec($ch);
             $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             curl_close($ch);
-            if ($body === false) throw new DrivesError('ענן החבילה לא ענה', 502, 'cloud');
+            if ($body === false) throw new DrivesError('ענן MBE לא ענה', 502, 'cloud');
         }
         $j = json_decode((string) $body, true);
         if ($status >= 200 && $status < 300 && is_array($j)) return $j;
-        throw new DrivesError(is_array($j) && isset($j['error']) ? (string) $j['error'] : "ענן החבילה החזיר שגיאה ($status)",
+        throw new DrivesError(is_array($j) && isset($j['error']) ? (string) $j['error'] : "ענן MBE החזיר שגיאה ($status)",
                               $status >= 400 && $status < 500 ? $status : 502, is_array($j) ? (string) ($j['code'] ?? 'cloud') : 'cloud');
     }
 
@@ -476,7 +476,7 @@ final class Drives {
         $b = htmlspecialchars($this->cfg['back'] . (str_contains($this->cfg['back'], '?') ? '&' : '?') . 'cloud=error');
         echo <<<HTML
 <!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>חיבור לענן החבילה</title>
+<title>חיבור לענן MBE</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:24px 16px;background:#f4f5f7;color:#16192b}
 .box{max-width:420px;margin:auto;background:#fff;border:1px solid #e3e6eb;border-radius:10px;padding:16px;display:grid;gap:12px}
 a{display:block;text-align:center;background:#2d4a8a;color:#fff;border-radius:10px;padding:10px;text-decoration:none}

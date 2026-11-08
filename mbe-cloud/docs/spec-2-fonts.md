@@ -34,8 +34,8 @@
 
 - **10 קבצים, 9 משפחות, OFL:** Rubik, Heebo, Assistant, Frank Ruhl Libre, Noto Serif Hebrew (משתנים), Amatic SC, David
   Libre (רגיל ומודגש), Secular One. קבצי TTF שלמים (לא תת-קבוצה) — מתאימים גם להטמעה ב-PDF ול-HarfBuzz.
-- **איפה:** `suite-cloud/fonts/builtin/` בגיט, עם `OFL-<משפחה>.txt` לכל אחד. הקטלוג `catalog.json` נבנה מהקבצים
-  (`php suite-cloud/tools/fonts-catalog.php`), ושער בפריסה עוצר קטלוג לא מעודכן או גופן בלי רישיון.
+- **איפה:** `mbe-cloud/fonts/builtin/` בגיט, עם `OFL-<משפחה>.txt` לכל אחד. הקטלוג `catalog.json` נבנה מהקבצים
+  (`php mbe-cloud/tools/fonts-catalog.php`), ושער בפריסה עוצר קטלוג לא מעודכן או גופן בלי רישיון.
 - **הפריט:** כמו של המשתמש, ועוד `license` (שם קובץ הרישיון) ו-`axes` לגופן משתנה (`{"wght": [300, 900]}`; `weight` הוא
   ברירת המחדל, 400). מזהה יציב: `b_<משפחה>-<משקל>` או `b_<משפחה>-var`.
 - **לא נוגעים באפליקציות:** `fonts_list` בלי `builtin=1` מחזיר רק את של המשתמש, כמו קודם. עם `builtin=1` (ב-JS:
@@ -55,7 +55,7 @@
 
 ## 4. ה-API
 
-כל הפעולות ב-`suite-cloud/api.php`. לאפליקציה מחוברת נדרשת ההרשאה `libs` (`spec-1-skeleton.md` סעיף 7).
+כל הפעולות ב-`mbe-cloud/api.php`. לאפליקציה מחוברת נדרשת ההרשאה `libs` (`spec-1-skeleton.md` סעיף 7).
 
 | פעולה | גוף | תשובה |
 | --- | --- | --- |

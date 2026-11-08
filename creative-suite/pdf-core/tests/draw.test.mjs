@@ -156,7 +156,7 @@ await same('תמונות: PNG עם שקיפות (SMask), PNG אטום, JPEG, ח�
 
 // glyphs (מ6): טקסט אמיתי מ-text-core — shapeLine עם ניקוד וטעמים ו-bidi, גופן חלופי ב-op נפרד (כמו בעימוד)
 const { loadFont, shapeLine, fontMetrics } = await import('../../text-core/src/js/shaper.js');
-const fontsDir = join(here, '../../../suite-cloud/fonts/builtin/');
+const fontsDir = join(here, '../../../mbe-cloud/fonts/builtin/');
 const fontBytes = name => readFileSync(fontsDir + name);
 const ab = b => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 const fmedia = { 'media/noto.ttf': fontBytes('NotoSerifHebrew.ttf'), 'media/frank.ttf': fontBytes('FrankRuhlLibre.ttf'), 'media/Heebo.ttf': fontBytes('Heebo.ttf') };

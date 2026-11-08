@@ -1,11 +1,11 @@
-// בדיקות צד הדפדפן של מודול הכוננים, ב-Node עם fetch מדומה: node suite-cloud/drives/tests/js.mjs
+// בדיקות צד הדפדפן של מודול הכוננים, ב-Node עם fetch מדומה: node mbe-cloud/drives/tests/js.mjs
 import { createDrives, DriveError } from '../src/js/drives.js';
 
 let fails = 0, n = 0;
 const check = (name, ok) => { n++; if (!ok) { fails++; console.log('✗ ' + name); } else console.log('✓ ' + name); };
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 
-const API = 'https://mbe-plus.com/mini_projects/suite-cloud/api.php';
+const API = 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php';
 let dbxLinked = true, ptokens = 0, dbxExpire = false;
 const dbxCalls = [];
 let connected = true, tokens = 0, expireNext = false, chunks = [];

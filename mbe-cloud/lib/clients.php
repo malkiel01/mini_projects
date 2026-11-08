@@ -73,7 +73,7 @@ function cloudOrigin(): string {
 
 function cloudIssuer(): string {
     if (defined('CLOUD_ISSUER')) return CLOUD_ISSUER;
-    return cloudOrigin() . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/suite-cloud/api.php')), '/') . '/';
+    return cloudOrigin() . rtrim(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/mbe-cloud/api.php')), '/') . '/';
 }
 
 function originOf(string $url): ?string {

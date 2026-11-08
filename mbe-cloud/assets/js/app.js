@@ -1,4 +1,4 @@
-// ענן החבילה — הדף: קבצים, סל וניהול. כל מה שבשרת — דרך api.php (האפיון: docs/spec-1-skeleton.md).
+// ענן MBE — הדף: קבצים, סל וניהול. כל מה שבשרת — דרך api.php (האפיון: docs/spec-1-skeleton.md).
 
 import { $, h as el } from './ui-core/dom.js';
 import { toast } from './ui-core/toast.js';
@@ -99,7 +99,7 @@ async function loadFolder(id) {
   });
   if (!data) return;
   Object.assign(state, { folder: data.folder, path: data.path, items: data.items });
-  $('#title').textContent = data.path.length ? data.path[data.path.length - 1].name : 'ענן החבילה';
+  $('#title').textContent = data.path.length ? data.path[data.path.length - 1].name : 'ענן MBE';
   renderCrumbs($('#crumbs'), data.path, f => { location.hash = f ? `#/files/${f}` : '#/files'; });
   $('#crumbs').hidden = !data.path.length;   // בשורש — כרטיס "הענן שלי" כבר אומר איפה אנחנו
   renderItems();
@@ -385,7 +385,7 @@ async function loadLinks() {
       el('div', { class: 'l2' }, [c.scope.map(s => SCOPE_IC[s] || s).join(' '), `מאז ${when(c.created_at)}`,
         c.used_at ? `שימוש אחרון ${when(c.used_at)}` : 'עוד לא בשימוש'].join(' · '))),
     el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => unlink(c) }, 'ניתוק'))))
-    : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. באפליקציה של החבילה: "☁️ חיבור לענן החבילה".'))]));
+    : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. באפליקציה: "☁️ חיבור לענן".'))]));
 }
 
 async function unlink(c) {
@@ -559,7 +559,7 @@ async function initAccount() {
     server,
     docs: go('files'),                     // 📁 "המסמכים שלי" — הכונן עצמו (הענן הוא המקור של suiteSource באפליקציות)
     admin: state.me?.role === 'admin' ? go('admin') : undefined,
-    help: () => window.open('https://github.com/malkiel01/mini_projects/tree/main/suite-cloud#readme', '_blank', 'noopener'),
+    help: () => window.open('https://github.com/malkiel01/mini_projects/tree/main/mbe-cloud#readme', '_blank', 'noopener'),
     hide: ['units', 'autosave', 'font', 'cloudSync'],   // אין להן משמעות בדף של הענן
   });
 }

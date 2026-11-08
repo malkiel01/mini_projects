@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { loadFont, shapeLine, advance, fontMetrics, measure, glyphOutline, glyphsToPath, textToPath } from '../src/js/shaper.js';
 
-const buf = name => { const b = readFileSync(new URL('../../../suite-cloud/fonts/builtin/' + name, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
+const buf = name => { const b = readFileSync(new URL('../../../mbe-cloud/fonts/builtin/' + name, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };
 const noto = await loadFont(buf('NotoSerifHebrew.ttf'), 'noto');
 const frank = await loadFont(buf('FrankRuhlLibre.ttf'), 'frank');
 

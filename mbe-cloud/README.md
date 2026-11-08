@@ -1,11 +1,16 @@
-# ענן החבילה (`suite-cloud/`)
+# ענן MBE (`mbe-cloud/`)
 
-ה-Creative Cloud של חבילת היצירה: חשבון אחד, כוננים זה לצד זה, וספריות משותפות לכל האפליקציות. זו אפליקציה
-עצמאית, עם חשבונות, מסד ונתונים משלה. האפליקציות מתחברות אליה ב-HTTPS בלבד, ובלעדיה עובדות כמו היום.
+הענן של כל האפליקציות, הקיימות והעתידיות. חשבון אחד, ובו קבצים, ספריות מערכת (כמו גופנים) ונתוני אפליקציה. חבילת
+היצירה היא לקוח אחד שלו. זו אפליקציה עצמאית, עם חשבונות, מסד ונתונים משלה. האפליקציות מתחברות אליה ב-HTTPS בלבד,
+ובלעדיה עובדות כמו היום.
 
-- **האפיון הכללי:** `creative-suite/docs/spec/shared.md` · **ההכרעה:** `creative-suite/docs/requests/spec-shared.md`
+> **עד 2026-11 נקרא "ענן החבילה", בתיקייה `suite-cloud/`.** זו נשארה כתיקיית הפניה בלבד (308, [`../suite-cloud/README.md`](../suite-cloud/README.md)).
+> הנתונים בשרת הועברו בשלב חד-פעמי בפריסה.
+
+- **החזון והמפה (אושר 2026-11-07):** [`docs/spec-0-vision.md`](docs/spec-0-vision.md)
+- **האפיון הכללי (מימי החבילה):** `creative-suite/docs/spec/shared.md` · **ההכרעה:** `creative-suite/docs/requests/spec-shared.md`
 - **שלב 1, השלד:** [`docs/spec-1-skeleton.md`](docs/spec-1-skeleton.md)
-- **ההתקדמות:** `creative-suite/docs/projects/suite-cloud.md`
+- **ההתקדמות עד היציאה מהחבילה:** `creative-suite/docs/projects/suite-cloud.md`
 
 ## מה יש
 
@@ -34,8 +39,8 @@
 ## בדיקות
 
 ```
-php suite-cloud/tests/run.php
-php suite-cloud/tools/fonts-catalog.php --check
-php suite-cloud/drives/tests/run.php
-node suite-cloud/drives/tests/js.mjs
+php mbe-cloud/tests/run.php
+php mbe-cloud/tools/fonts-catalog.php --check
+php mbe-cloud/drives/tests/run.php
+node mbe-cloud/drives/tests/js.mjs
 ```
