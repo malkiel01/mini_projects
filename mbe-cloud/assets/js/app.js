@@ -468,11 +468,18 @@ function renderAdmin(s) {
   const f = $('#settings-form');
   f.default_quota.value = Math.round(s.settings.default_quota / MB);
   f.max_file.value = Math.round(s.settings.max_file / MB);
-  $('#accounts').replaceChildren(...s.accounts.map(a => el('li', {}, el('button', { class: 'use-row', type: 'button', onclick: () => openQuota(a) },
+  // spec-5: משתמשי הכונן — ברשימה. "בלי כונן" (רק 🗂️ נתוני אפליקציות) — בסינון נפרד, מקופל
+  const row = a => el('li', {}, el('button', { class: 'use-row', type: 'button', onclick: () => openQuota(a) },
     el('span', { class: 'use-ic', 'aria-hidden': 'true' }, a.role === 'admin' ? '🛡️' : '👤'),
     el('span', { class: 'use-tx' }, el('b', { class: 'one' }, a.name),
-      el('small', {}, `${bytes(a.used)} מתוך ${a.effective_quota ? bytes(a.effective_quota) : '0'}${a.quota === null ? ' (ברירת מחדל)' : ''} · ${a.email}`)),
-    a.blocked ? el('span', { class: 'chip bad' }, 'חסום') : el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))));
+      el('small', {}, a.drive === false ? `בלי כונן · ${a.email}`
+        : `${bytes(a.used)} מתוך ${a.effective_quota ? bytes(a.effective_quota) : '0'}${a.quota === null ? ' (ברירת מחדל)' : ''} · ${a.email}`)),
+    a.blocked ? el('span', { class: 'chip bad' }, 'חסום') : el('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
+  const noDrive = s.accounts.filter(a => a.drive === false);
+  $('#accounts').replaceChildren(...s.accounts.filter(a => a.drive !== false).map(row));
+  $('#accounts-nodrive-sec').hidden = !noDrive.length;
+  $('#accounts-nodrive-n').textContent = String(noDrive.length);
+  $('#accounts-nodrive').replaceChildren(...noDrive.map(row));
   renderClients(s.clients || []);
   loadServices().catch(fail);
   loadAi().catch(fail);
@@ -613,6 +620,7 @@ function openQuota(a) {
   const self = a.id === state.me.id;
   f.admin.disabled = self; f.blocked.disabled = self;
   const ai = a.ai || { providers: [], monthly: 0, spent: 0 };
+  $('#ai-h').closest('section').hidden = a.drive === false;   // spec-5 ש1: בלי כונן אין AI
   $('#ai-spent').textContent = `החודש $${(ai.spent || 0).toFixed(2)}`;
   $('#ai-allowed').replaceChildren(...(state.ai?.providers || []).map(p => el('label', {},
     el('input', { type: 'checkbox', value: p.id, checked: ai.providers.includes(p.id) }), el('span', {}, p.name))));
@@ -630,7 +638,7 @@ function openQuota(a) {
     if (!Number.isFinite(monthly) || monthly < 0) { err.textContent = 'מכסה לא תקינה'; err.hidden = false; return; }
     const providers = [...$('#ai-allowed').querySelectorAll('input:checked')].map(i => i.value);
     try {
-      await api('ai_user', { account: a.id, providers, monthly });
+      if (a.drive !== false) await api('ai_user', { account: a.id, providers, monthly });
       renderAdmin(await api('admin_account', body)); dlg.close(); toast('נשמר'); if (self) refreshQuota();
     }
     catch (x) { err.textContent = x.message; err.hidden = false; }

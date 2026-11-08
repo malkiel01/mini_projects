@@ -506,6 +506,8 @@ function adminState(): array {
         'accounts' => array_map(fn($r) => publicAccount($r) + [
             'quota' => $r['quota'] !== null ? (int) $r['quota'] : null, 'effective_quota' => accountQuota($r),
             'used' => (int) $r['used'], 'blocked' => (int) $r['blocked'] === 1, 'last_login_at' => $r['last_login_at'],
+            // spec-5: עם כונן / בלי כונן, כפי שידוע לאחרונה (null — עוד לא ידוע). "בלי כונן" — בסינון נפרד, ובלי 🤖
+            'drive' => ($r['drive'] ?? null) === null ? null : (int) $r['drive'] === 1,
         ], $rows),
     ];
 }

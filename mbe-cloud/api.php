@@ -27,6 +27,7 @@ require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/fonts.php';
 require_once __DIR__ . '/lib/me.php';
 require_once __DIR__ . '/lib/policy.php';
+require_once __DIR__ . '/lib/tier.php';
 require_once __DIR__ . '/lib/share.php';
 require_once __DIR__ . '/lib/appdata.php';
 require_once __DIR__ . '/lib/grants.php';
@@ -214,6 +215,7 @@ try {
 
         // ── חיבור אפליקציה (docs/spec-1-skeleton.md, סעיף 7) ──
         case 'cloud_key':      reply(cloudKeyPublic());
+        case 'platform_key':   reply(platformKeyJson());   // spec-5: הפלטפורמה מאמתת מולו את grant_status ("provision.key_url")
         case 'client_register': reply(registerClient($in));
         case 'connect_exchange': reply(exchangeCode(verifySigned($action, signedHeaders(), $raw), $in));
         case 'access_token': {
@@ -282,6 +284,7 @@ try {
                 || !empty($_SERVER['HTTP_X_CLOUD_SIGNATURE']);
             if (!$bearer && ($_SERVER['HTTP_X_CLOUD_REQUEST'] ?? '') !== '1') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
             $x = actor($action, 'libs', $raw);
+            requireDrive($x['account'], 'files');   // spec-5 3.3: גופן הוא קובץ — בלי כונן אין שמירת קבצים
             $f = $_POST ?: $in;
             if (isset($_FILES['file']) && is_uploaded_file($_FILES['file']['tmp_name'] ?? '')) {
                 $bytes = (string) file_get_contents($_FILES['file']['tmp_name']);

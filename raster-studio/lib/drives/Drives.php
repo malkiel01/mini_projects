@@ -153,7 +153,9 @@ final class Drives {
         $out = ['suite' => ($c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => $scope]
                                : ['connected' => false]) + ['layers' => $layers, 'files_scope' => $this->cfg['files_scope'], 'cloud' => $this->cfg['cloud'],
                                                             'managed' => true, 'policy' => $policy, 'policy_empty' => $policy === [],
-                                                            'hold' => $c ? null : $this->hold($user, $policy)]];
+                                                            'hold' => $c ? null : $this->hold($user, $policy),
+                                                            // spec-5 3.2: {files, libs, appdata, ai} — מה זמין לחשבון. null — עוד לא ידוע (לא מחובר)
+                                                            'available' => $c ? (json_decode((string) $this->meta("avail:$user"), true) ?: null) : null]];
         foreach (array_keys(self::PROVIDERS) as $p) {
             if (!$this->providerConfig($p)) continue;   // בלי App key — הכונן לא מופיע
             $l = $this->link($user, $p);
@@ -585,6 +587,11 @@ final class Drives {
             if (($c['sub'] ?? null) === null && $sub !== null) {
                 $this->db()->prepare('UPDATE conns SET sub = ? WHERE user = ? AND sub IS NULL')->execute([$sub, $user]);
             }
+            // spec-5: מה זמין לחשבון (בלי כונן — 📁 ו-🤖 false). נשמר ל-status (🔒 בתפריט)
+            if (is_array($r['available'] ?? null)) {
+                $avail = array_map('boolval', $r['available']);
+                $this->setMeta("avail:$user", json_encode($avail));
+            }
             // ההיקף הנוכחי מהענן — המתגים (שכבה שכובתה בדף הענן)
             if (is_array($r['scope'] ?? null) && json_encode($r['scope']) !== $c['scope']) {
                 $this->db()->prepare('UPDATE conns SET scope = ? WHERE user = ?')->execute([json_encode($r['scope']), $user]);
@@ -595,7 +602,7 @@ final class Drives {
             throw $e;
         }
         return ['connected' => true, 'token' => $r['token'], 'expires_in' => $r['expires_in'], 'api' => $this->cfg['cloud'] . 'api.php',
-                'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true)];
+                'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true)] + (isset($avail) ? ['available' => $avail] : []);
     }
 
     /** אין ניתוק למשתמש (spec-6 4.2, ש2): המנהל מחליט, לכולם. החיבור המקומי לא נמחק. */
