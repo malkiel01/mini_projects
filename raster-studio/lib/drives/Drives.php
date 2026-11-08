@@ -22,6 +22,11 @@
  * וב-app.json של האפליקציה: "api.php?action=drives_key" ב-public (הענן מוריד משם את המפתח הציבורי).
  * הפעולות: drives_key (ציבורי), drives_status, drives_connect, drives_callback, drives_token, drives_disconnect.
  *
+ * החזרה בלי העוגייה של האפליקציה (APK: connect.php נפתח בדפדפן החיצוני, ו-drives_callback חוזר לשם):
+ *   ה-state מאומת (קיים, בתוקף, חד-פעמי), הקוד מוחלף בחיבור, והחיבור נשמר "ממתין" למשתמש שה-state נוצר בשבילו —
+ *   10 דקות. drives_status / drives_token הבא, עם העוגייה של אותו משתמש, מאשר אותו. "ממתין" שלא אושר — נמחק.
+ *   משתמש אחר באפליקציה לא רואה אותו לעולם (החיפוש הוא לפי המשתמש של ה-state). mbe-cloud/docs/api-guide.md §10 פ1.
+ *
  * כוננים חיצוניים (requests/account-menu.md סעיף 2 — חיבור ישיר מהאפליקציה):
  *   drives_link?provider=dropbox → { url } (OAuth עם PKCE) · drives_oauth_callback (החזרה) · drives_ptoken?provider=dropbox
  *   → { token, expires_in } לדפדפן, שמדבר עם Dropbox ישירות · drives_unlink?provider=dropbox.
@@ -68,6 +73,7 @@ final class Drives {
                 header('Location: ' . $r['redirect'], true, 303);
                 exit;
             }
+            if (isset($r['done'])) $this->page($r['done'], 'connected', 200, true);
             $this->json($r);
         } catch (DrivesError $e) {
             // החזרה מהענן היא ניווט של הדפדפן — דף ברור עם דרך חזרה, לא JSON
@@ -83,7 +89,10 @@ final class Drives {
     public function handle(string $action, array $in): array {
         if ($action === 'drives_key') return $this->keyJson();
         $user = ($this->cfg['user'])();
-        if (!is_string($user) || $user === '') throw new DrivesError('נדרשת כניסה', 401, 'unauthorized');
+        $user = is_string($user) && $user !== '' ? $user : null;
+        // החזרה מהענן בדפדפן בלי העוגייה של האפליקציה (APK) — לפי ה-state בלבד, ונשמר "ממתין"
+        if ($action === 'drives_callback' && $user === null) return ['done' => $this->callbackExternal($in)];
+        if ($user === null) throw new DrivesError('נדרשת כניסה', 401, 'unauthorized');
         return match ($action) {
             'drives_status'     => $this->status($user),
             'drives_connect'    => ['url' => $this->connectUrl($user, $in['scope'] ?? null)],
@@ -105,6 +114,7 @@ final class Drives {
     }
 
     public function status(string $user): array {
+        $this->claimPending($user);
         $c = $this->conn($user);
         $out = ['suite' => $c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true),
                                  'cloud' => $this->cfg['cloud']] : ['connected' => false, 'cloud' => $this->cfg['cloud']]];
@@ -284,17 +294,14 @@ final class Drives {
         ]);
     }
 
-    /** החזרה מהענן: בודק state, מחליף קוד בחיבור, שומר. מחזיר לאן להפנות (back, עם ?cloud=connected|denied). */
-    public function callback(string $user, array $in): string {
-        $state = (string) ($in['state'] ?? '');
-        $back = $this->cfg['back'];
-        $db = $this->db();
-        $st = $db->prepare('SELECT * FROM states WHERE state = ?');
+    /** השורה של state, או חריגה עם הסיבה (missing / user / expired). $user null — בלי עוגייה, בלי בדיקת משתמש. */
+    private function stateRow(string $state, ?string $user): array {
+        $st = $this->db()->prepare('SELECT * FROM states WHERE state = ?');
         $st->execute([$state]);
         $row = $st->fetch();
         $why = match (true) {
             !$row => 'missing',
-            $row['user'] !== $user => 'user',
+            $user !== null && $row['user'] !== $user => 'user',
             (int) $row['expires'] < time() => 'expired',
             default => null,
         };
@@ -303,6 +310,15 @@ final class Drives {
             throw new DrivesError(['missing' => 'בקשת החיבור לא נמצאה', 'user' => 'בקשת החיבור נפתחה בחשבון אחר באפליקציה',
                                    'expired' => 'בקשת החיבור פגה (10 דקות)'][$why] . ' — נסו שוב מהאפליקציה', 400, "bad_state:$why");
         }
+        return $row;
+    }
+
+    /** החזרה מהענן: בודק state, מחליף קוד בחיבור, שומר. מחזיר לאן להפנות (back, עם ?cloud=connected|denied). */
+    public function callback(string $user, array $in): string {
+        $state = (string) ($in['state'] ?? '');
+        $back = $this->cfg['back'];
+        $db = $this->db();
+        $this->stateRow($state, $user);
         // חזרה כפולה (רענון, או דפדפן ששולח את הבקשה פעמיים): הראשונה כבר חיברה — לא שגיאה, פשוט חוזרים
         $mark = $db->prepare('UPDATE states SET used = 1 WHERE state = ? AND used = 0');
         $mark->execute([$state]);
@@ -319,8 +335,63 @@ final class Drives {
         return $back . (str_contains($back, '?') ? '&' : '?') . 'cloud=connected';
     }
 
+    /**
+     * החזרה בלי העוגייה של האפליקציה (APK — הדפדפן החיצוני). ה-state מאומת וננעל (חד-פעמי), הקוד מוחלף בחיבור,
+     * והחיבור נשמר "ממתין" למשתמש של ה-state, ל-10 דקות. מחזיר את הטקסט לדף. האישור — claimPending, עם העוגייה.
+     */
+    public function callbackExternal(array $in): string {
+        $state = (string) ($in['state'] ?? '');
+        $row = $this->stateRow($state, null);
+        $db = $this->db();
+        $mark = $db->prepare('UPDATE states SET used = 1 WHERE state = ? AND used = 0');
+        $mark->execute([$state]);
+        if ($mark->rowCount() === 0) {
+            // חזרה כפולה: הראשונה כבר שמרה — לא שגיאה
+            $p = $db->prepare('SELECT 1 FROM pending WHERE state = ?');
+            $p->execute([$state]);
+            if ($p->fetchColumn() || $this->conn($row['user'])) return 'החיבור לענן הושלם. חזרו לאפליקציה — הוא יופיע שם.';
+            throw new DrivesError('בקשת החיבור כבר נוצלה — נסו שוב מהאפליקציה', 400, 'bad_state:used');
+        }
+        if (isset($in['error'])) return 'החיבור בוטל. אפשר לסגור את הדף ולחזור לאפליקציה.';
+        $r = $this->call('connect_exchange', ['code' => (string) ($in['code'] ?? '')]);
+        $db->prepare('DELETE FROM pending WHERE expires < ?')->execute([time()]);
+        $db->prepare('INSERT INTO pending (state, user, connection, name, cloud_id, scope, expires) VALUES (?,?,?,?,?,?,?)')
+            ->execute([$state, $row['user'], $r['connection'], (string) ($r['account']['name'] ?? ''), (string) ($r['cloud_id'] ?? ''),
+                       json_encode($r['scope'] ?? []), time() + self::STATE_TTL]);
+        return 'החיבור לענן הושלם. חזרו לאפליקציה — הוא יופיע שם.';
+    }
+
+    /**
+     * מאשר חיבור "ממתין" של המשתמש הזה (שה-state שלו נוצר בשבילו), אם לא פג. חיבור ממתין שפג — מנותק גם בענן ונמחק.
+     * נקרא מ-status ו-token, כלומר רק עם העוגייה של האפליקציה.
+     */
+    private function claimPending(string $user): void {
+        $db = $this->db();
+        $old = $db->prepare('SELECT connection FROM pending WHERE expires < ?');
+        $old->execute([time()]);
+        foreach ($old->fetchAll(\PDO::FETCH_COLUMN) as $cid) {
+            try { $this->call('disconnect', ['connection' => $cid]); } catch (\Throwable) { /* כבר נותק — מוחקים בכל מקרה */ }
+        }
+        $db->prepare('DELETE FROM pending WHERE expires < ?')->execute([time()]);
+        $st = $db->prepare('SELECT * FROM pending WHERE user = ? ORDER BY expires DESC LIMIT 1');
+        $st->execute([$user]);
+        $p = $st->fetch();
+        if (!$p) return;
+        $prev = $this->conn($user);
+        $db->prepare('INSERT INTO conns (user, connection, name, cloud_id, scope, created_at) VALUES (?,?,?,?,?,?)
+                      ON CONFLICT(user) DO UPDATE SET connection = excluded.connection, name = excluded.name, cloud_id = excluded.cloud_id,
+                      scope = excluded.scope, created_at = excluded.created_at')
+            ->execute([$user, $p['connection'], $p['name'], $p['cloud_id'], $p['scope'], gmdate('c')]);
+        $db->prepare('DELETE FROM pending WHERE user = ?')->execute([$user]);
+        // חיבור קודם שהוחלף — מנותק בענן, כדי שלא יישאר חיבור יתום פעיל שם
+        if ($prev && $prev['connection'] !== $p['connection']) {
+            try { $this->call('disconnect', ['connection' => $prev['connection']]); } catch (\Throwable) {}
+        }
+    }
+
     /** אסימון לדפדפן (15 דקות) + כתובת ה-API של הענן. נותק בענן → מוחקים כאן ומחזירים connected:false. */
     public function token(string $user): array {
+        $this->claimPending($user);
         $c = $this->conn($user);
         if (!$c) return ['connected' => false];
         try {
@@ -407,6 +478,8 @@ final class Drives {
             CREATE TABLE IF NOT EXISTS conns (user TEXT PRIMARY KEY, connection TEXT NOT NULL, name TEXT NOT NULL,
                                               cloud_id TEXT NOT NULL, scope TEXT NOT NULL, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS states (state TEXT PRIMARY KEY, user TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE IF NOT EXISTS pending (state TEXT PRIMARY KEY, user TEXT NOT NULL, connection TEXT NOT NULL, name TEXT NOT NULL,
+                                                cloud_id TEXT NOT NULL, scope TEXT NOT NULL, expires INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS pstates (state TEXT PRIMARY KEY, user TEXT NOT NULL, provider TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS links (user TEXT NOT NULL, provider TEXT NOT NULL, refresh TEXT NOT NULL, name TEXT NOT NULL,
                                               access TEXT, access_until INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
@@ -466,14 +539,16 @@ final class Drives {
         return is_array($j) ? $j : null;
     }
 
-    /** דף שגיאה קצר בעברית, עם כפתור חזרה לאפליקציה — לחזרה מהענן. */
-    private function page(string $msg, string $code, int $status): never {
+    /** דף קצר בעברית, עם כפתור חזרה לאפליקציה — לחזרה מהענן. $ok — הצלחה (החזרה בדפדפן החיצוני, APK). */
+    private function page(string $msg, string $code, int $status, bool $ok = false): never {
         http_response_code($status);
         header('Content-Type: text/html; charset=utf-8');
         header('Cache-Control: no-store');
         $m = htmlspecialchars($msg);
         $c = htmlspecialchars($code);
-        $b = htmlspecialchars($this->cfg['back'] . (str_contains($this->cfg['back'], '?') ? '&' : '?') . 'cloud=error');
+        $b = htmlspecialchars($this->cfg['back'] . (str_contains($this->cfg['back'], '?') ? '&' : '?') . ($ok ? 'cloud=connected' : 'cloud=error'));
+        $head = $ok ? '☁️ החיבור לענן הושלם' : '☁️ החיבור לענן לא הושלם';
+        $foot = $ok ? 'באפליקציה המותקנת — פשוט חזרו אליה. החיבור יופיע בפתיחה הבאה (עד 10 דקות).' : "קוד: $c";
         echo <<<HTML
 <!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>חיבור לענן MBE</title>
@@ -481,7 +556,7 @@ final class Drives {
 .box{max-width:420px;margin:auto;background:#fff;border:1px solid #e3e6eb;border-radius:10px;padding:16px;display:grid;gap:12px}
 a{display:block;text-align:center;background:#2d4a8a;color:#fff;border-radius:10px;padding:10px;text-decoration:none}
 small{color:#5d6475}@media(prefers-color-scheme:dark){body{background:#111318;color:#e8eaf0}.box{background:#1b1e26;border-color:#2c303b}}</style>
-</head><body><div class="box"><b>☁️ החיבור לענן לא הושלם</b><div>$m</div><a href="$b">חזרה לאפליקציה</a><small>קוד: $c</small></div></body></html>
+</head><body><div class="box"><b>$head</b><div>$m</div><a href="$b">חזרה לאפליקציה</a><small>$foot</small></div></body></html>
 HTML;
         exit;
     }

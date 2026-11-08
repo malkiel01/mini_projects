@@ -165,6 +165,63 @@ try {
         return $app->token('u1') === ['connected' => false] && $app->status('u1')['suite']['connected'] === false;
     })());
 
+    // ─── APK: החזרה בדפדפן החיצוני, בלי העוגייה של האפליקציה (api-guide.md §10 פ1) ───
+    $app->disconnect('u1');
+    $user = null;   // הדפדפן החיצוני — אין משתמש באפליקציה
+    $url = $app->connectUrl('u1');   // נוצר בתוך האפליקציה, עם העוגייה של u1
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $r = $app->handle('drives_callback', $bq);
+    check('(א) חזרה בלי עוגייה — לא 401: החיבור נשמר "ממתין" ונראה דף הצלחה', isset($r['done']) && str_contains($r['done'], 'הושלם'));
+    check('(א) חזרה כפולה בלי עוגייה — עדיין הצלחה', isset($app->handle('drives_callback', $bq)['done']));
+    check('(ב) משתמש אחר באפליקציה לא מקבל את החיבור הממתין של u1', $app->status('u2')['suite']['connected'] === false
+        && $app->token('u2') === ['connected' => false]);
+    check('(א) בחזרה לאפליקציה (status עם העוגייה של u1) — מחובר', $app->status('u1')['suite']['connected'] === true
+        && $app->status('u1')['suite']['name'] === 'בעל המערכת');
+    $t = $app->token('u1');
+    $_SERVER['HTTP_X_CLOUD_TOKEN'] = $t['token'];
+    check('(א) והאסימון פותח את הענן', actor('list', 'files', '')['app'] === 'vector-studio');
+    unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
+    check('(ב) u2 עדיין לא מחובר אחרי שגם u1 אישר', $app->status('u2')['suite']['connected'] === false);
+
+    // (ג) state שפג — נדחה, גם בלי עוגייה
+    $url = $app->connectUrl('u3');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    (fn() => $this->db()->prepare('UPDATE states SET expires = ? WHERE state = ?')->execute([time() - 1, $bq['state']]))->call($app);
+    check('(ג) state שפג — bad_state:expired', code(fn() => $app->handle('drives_callback', $bq)) === 'bad_state:expired');
+    check('(ג) state שלא קיים — bad_state:missing', code(fn() => $app->handle('drives_callback', ['state' => 'nope', 'code' => 'x'])) === 'bad_state:missing');
+    check('(ג) ולא נוצר חיבור', $app->status('u3')['suite']['connected'] === false);
+
+    // חיבור ממתין שלא אושר תוך 10 דקות — נמחק, ומנותק גם בענן
+    $url = $app->connectUrl('u4');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $app->handle('drives_callback', $bq);
+    $pend = (fn() => $this->db()->query("SELECT connection FROM pending WHERE user = 'u4'")->fetchColumn())->call($app);
+    (fn() => $this->db()->exec("UPDATE pending SET expires = " . (time() - 1) . " WHERE user = 'u4'"))->call($app);
+    check('ממתין שפג — לא מאושר', $app->status('u4')['suite']['connected'] === false);
+    check('ממתין שפג — נמחק, והחיבור בענן נותק', !(fn() => $this->db()->query("SELECT 1 FROM pending WHERE user = 'u4'")->fetchColumn())->call($app)
+        && db()->query('SELECT revoked_at FROM connections WHERE id = ' . db()->quote((string) $pend))->fetchColumn() !== null);
+
+    // ביטול במסך האישור, בלי עוגייה — דף "בוטל", בלי חיבור
+    $url = $app->connectUrl('u5');
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
+    $q['error'] = 'access_denied';
+    check('ביטול בדפדפן החיצוני — דף "בוטל", ובלי חיבור', str_contains($app->handle('drives_callback', $q)['done'], 'בוטל')
+        && $app->status('u5')['suite']['connected'] === false);
+
+    // (ד) הזרימה הרגילה, עם העוגייה — לא השתנתה
+    $user = 'u1';
+    $url = $app->connectUrl('u1');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    check('(ד) עם עוגייה — הפניה רגילה ל-?cloud=connected', $app->handle('drives_callback', $bq) === ['redirect' => 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=connected']);
+    $url = $app->connectUrl('u1');
+    parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
+    $user = 'u2';
+    check('(ד) עם עוגייה של משתמש אחר — עדיין bad_state:user', code(fn() => $app->handle('drives_callback', $bq)) === 'bad_state:user');
+    $user = null;
+    check('בלי משתמש — שאר הפעולות עדיין 401', code(fn() => $app->handle('drives_status', [])) === 'unauthorized'
+        && code(fn() => $app->handle('drives_token', [])) === 'unauthorized' && code(fn() => $app->handle('drives_connect', [])) === 'unauthorized');
+    $user = 'u1';
+
     // ─── Dropbox ───
     check('בלי App key בענן — Dropbox לא מופיע', !isset($app->status('u1')['dropbox']) && code(fn() => $app->linkUrl('u1', 'dropbox')) === 'no-provider');
     setSetting('dropbox_app_key', 'dbxappkey123');
