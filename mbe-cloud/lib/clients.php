@@ -206,13 +206,13 @@ function registerClient(array $in): array {
             db()->prepare('UPDATE clients SET keys = ?, keys_at = ?, name = ? WHERE id = ?')->execute([json_encode($keys), time(), $name, $id]);
             return ['status' => $old['status']];
         }
-        $status = $old['status'] === 'disabled' ? 'disabled' : ($same && !clientNeedsFullApproval($id) ? 'active' : 'pending');
+        $status = $old['status'] === 'disabled' ? 'disabled' : ($same ? 'active' : 'pending');
         db()->prepare('UPDATE clients SET name = ?, key_url = ?, origins = ?, returns = ?, status = ?, keys = ?, keys_at = ?, updated_at = ? WHERE id = ?')
             ->execute([$name, $keyUrl, $originsJ, $returnsJ, $status, json_encode($keys), time(), $now, $id]);
         return ['status' => $status];
     }
-    require_once __DIR__ . '/grants.php';
-    $status = $same && !clientNeedsFullApproval($id) ? 'active' : 'pending';   // files המלא — באישור מנהל (הכרעה 5)
+    // spec-6 סעיף 2: לקוח חדש — כל השכבות כבויות (policy NULL) עד שהמנהל מדליק. pending רק כשהמפתח מ-origin אחר
+    $status = $same ? 'active' : 'pending';
     db()->prepare('INSERT INTO clients (id, name, key_url, origins, returns, status, keys, keys_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
         ->execute([$id, $name, $keyUrl, $originsJ, $returnsJ, $status, json_encode($keys), time(), $now, $now]);
     return ['status' => $status];
@@ -312,17 +312,15 @@ function liveConnection(string $account, string $client): ?array {
     return $st->fetch() ?: null;
 }
 
-/** בודק את בקשת connect.php: לקוח פעיל, כתובת חזרה רשומה, state, הרשאות. */
+/** בודק את בקשת connect.php: לקוח פעיל, כתובת חזרה רשומה, state, ה-sub החתום. scope בבקשה — מתעלמים (spec-6 3.4). */
 function connectRequest(array $q): array {
     $c = activeClient(cleanClientId($q['client'] ?? null));
     $return = (string) ($q['return'] ?? '');
     if (!in_array($return, json_decode($c['returns'], true) ?: [], true)) throw new AppError('כתובת החזרה לא רשומה ללקוח', 400, 'bad_request');
     $state = (string) ($q['state'] ?? '');
     if (!preg_match('/^[A-Za-z0-9_\-.~]{8,200}$/', $state)) throw new AppError('state לא תקין', 400, 'bad_request');
-    $scope = cleanScope($q['scope'] ?? 'files');
-    // רק שכבות שהאפליקציה הצהירה עליהן (7.3 כלל 1)
-    if (array_diff($scope, clientScopes($c['id']))) throw new AppError('האפליקציה לא הצהירה על השכבה הזו', 400, 'bad_request');
-    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => $scope,
+    require_once __DIR__ . '/policy.php';
+    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => effectiveScope($c),
             'sub' => connectSub($c, $q, $return, $state)];
 }
 
@@ -353,14 +351,10 @@ function sameSub(array $a, ?string $sub): bool {
     return $sub !== null && $sub !== '' && ($a['platform_sub'] ?? null) !== null && hash_equals((string) $a['platform_sub'], $sub);
 }
 
-/** האם כבר אושר — חיבור פעיל שמכסה את ההרשאות שמבוקשות. */
-function alreadyGranted(array $a, array $req): ?array {
-    $conn = liveConnection($a['id'], $req['client']['id']);
-    if ($conn && !array_diff($req['scope'], json_decode($conn['scope'], true) ?: [])) return $conn;
-    return null;
-}
-
-/** אישור: חיבור (חדש, או הרחבת הקיים) + קוד חד-פעמי. מחזיר את כתובת החזרה. */
+/**
+ * החיבור (חדש, או הקיים) + קוד חד-פעמי. מחזיר את כתובת החזרה. בלי טופס (spec-6 3.1): נקרא רק מ-connect.php, אחרי
+ * כל הבדיקות — החתימה, ה-sub מול מי שנכנס דרך השער. connections.scope — לתיעוד בלבד (ההיקף בפועל: effectiveScope).
+ */
 function approveConnect(array $a, array $req): string {
     $pdo = db();
     // ה-state חד-פעמי גם בענן: כתובת חתומה מאשרת פעם אחת (נשמר כמו nonce, עד שהחתימה פגה)
@@ -370,9 +364,7 @@ function approveConnect(array $a, array $req): string {
     if ($once->rowCount() === 0) throw new AppError('בקשת החיבור כבר נוצלה — התחילו מחדש מהאפליקציה', 400, 'bad_state');
     $conn = liveConnection($a['id'], $req['client']['id']);
     if ($conn) {
-        $scope = array_values(array_unique(array_merge(json_decode($conn['scope'], true) ?: [], $req['scope'])));
-        sort($scope);
-        $pdo->prepare('UPDATE connections SET scope = ?, sub = ? WHERE id = ?')->execute([json_encode($scope), $req['sub'], $conn['id']]);
+        $pdo->prepare('UPDATE connections SET sub = ? WHERE id = ?')->execute([$req['sub'], $conn['id']]);
         $cid = $conn['id'];
     } else {
         $cid = randomId('c_');
@@ -409,7 +401,8 @@ function exchangeCode(array $client, array $in): array {
         error_log("mbe-cloud: connect_exchange account_mismatch (client {$client['id']})");
         throw new AppError(MISMATCH_MSG, 403, 'account_mismatch');
     }
-    return ['connection' => $conn['id'], 'account' => ['name' => $a['name']], 'scope' => json_decode($conn['scope'], true), 'cloud_id' => setting('cloud_id')];
+    require_once __DIR__ . '/policy.php';
+    return ['connection' => $conn['id'], 'account' => ['name' => $a['name']], 'scope' => effectiveScope($client), 'cloud_id' => setting('cloud_id')];
 }
 
 function connectionRow(string $id, string $client): array {
@@ -428,63 +421,33 @@ function revokeConnection(string $id): void {
     if ($r = $c->fetch()) { require_once __DIR__ . '/grants.php'; grantsOnDisconnect($r['client'], $r['account']); }
 }
 
-/** החיבורים של חשבון — לדף "🔗 חיבורים". */
+/** החיבורים של חשבון — לדף "🔗 חיבורים", לקריאה בלבד (spec-6 4.1): לכל שכבה שהוצהרה — on / off לפי המדיניות. */
 function accountConnections(array $a): array {
+    require_once __DIR__ . '/policy.php';
     $st = db()->prepare('SELECT c.*, k.name AS client_name FROM connections c JOIN clients k ON k.id = c.client
                          WHERE c.account = ? AND c.revoked_at IS NULL ORDER BY c.created_at DESC');
     $st->execute([$a['id']]);
-    return array_map(fn($r) => ['id' => $r['id'], 'client' => $r['client'], 'name' => $r['client_name'],
-        'scope' => json_decode($r['scope'], true), 'declared' => clientScopes($r['client']),   // מתג לכל שכבה שהאפליקציה הצהירה
-        'created_at' => $r['created_at'], 'used_at' => $r['used_at']], $st->fetchAll());
-}
-
-/**
- * כיבוי שכבות (7.3 כלל 4): קובע את הרשימה המלאה של ההיקפים — ורק מצמצם. היקף שלא אושר — 403; הרחבה רק דרך connect.php.
- * רשימה ריקה משאירה חיבור בלי שכבות (ניתוק מלא — disconnect / connection_revoke).
- */
-function narrowScope(array $conn, mixed $scope): array {
-    $want = $scope === [] ? [] : cleanScope($scope);
-    $have = json_decode($conn['scope'], true) ?: [];
-    if (array_diff($want, $have)) throw new AppError('אפשר רק לכבות שכבות. הדלקה — דרך מסך האישור בענן', 403, 'forbidden');
-    db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode(array_values($want)), $conn['id']]);
-    return ['scope' => array_values($want)];
-}
-
-/** connection_scope (חתום, שרת האפליקציה): {connection, sub, scope}. אותו חשבון — כמו access_token. */
-function connectionScope(array $client, array $in): array {
-    $conn = connectionRow((string) ($in['connection'] ?? ''), $client['id']);
-    bindConnection($conn, $in['sub'] ?? null);
-    return narrowScope($conn, $in['scope'] ?? null);
-}
-
-/** מתג שכבה בדף הענן ("🔗 חיבורים"), של בעל החשבון. כיבוי של כל השכבות — ניתוק. */
-function ownConnectionScope(array $a, mixed $id, mixed $scope): array {
-    $st = db()->prepare('SELECT * FROM connections WHERE id = ? AND account = ? AND revoked_at IS NULL');
-    $st->execute([is_string($id) ? $id : '', $a['id']]);
-    $conn = $st->fetch();
-    if (!$conn) throw new AppError('לא נמצא', 404, 'not_found');
-    if ($scope === [] ) { revokeConnection($conn['id']); return ['scope' => [], 'revoked' => true]; }
-    return narrowScope($conn, $scope);
-}
-
-function revokeOwnConnection(array $a, mixed $id): void {
-    $st = db()->prepare('SELECT id FROM connections WHERE id = ? AND account = ?');
-    $st->execute([is_string($id) ? $id : '', $a['id']]);
-    if (!$st->fetchColumn()) throw new AppError('לא נמצא', 404, 'not_found');
-    revokeConnection((string) $id);
+    return array_map(function ($r) {
+        $c = getClient($r['client']);
+        return ['id' => $r['id'], 'client' => $r['client'], 'name' => $r['client_name'], 'layers' => connectionLayers($c),
+                'files_scope' => clientPolicy($c)['files'], 'scope' => effectiveScope($c), 'active' => $c['status'] === 'active',
+                'created_at' => $r['created_at'], 'used_at' => $r['used_at']];
+    }, $st->fetchAll());
 }
 
 // ─── אסימון לדפדפן ────────────────────────────────────────────────────────
 
 function issueToken(array $client, array $conn): array {
+    require_once __DIR__ . '/policy.php';
     $now = time();
+    $scope = effectiveScope($client);   // spec-6: המדיניות, לא connections.scope
     $payload = json_encode(['iss' => cloudIssuer(), 'aud' => $client['id'], 'conn' => $conn['id'], 'acc' => $conn['account'],
-        'scope' => json_decode($conn['scope'], true), 'iat' => $now, 'exp' => $now + TOKEN_TTL, 'jti' => b64u(random_bytes(12))],
+        'scope' => $scope, 'iat' => $now, 'exp' => $now + TOKEN_TTL, 'jti' => b64u(random_bytes(12))],
         JSON_UNESCAPED_SLASHES);
     $p = b64u($payload);
     $k = cloudSigningKey();
     return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL,
-            'scope' => json_decode($conn['scope'], true)];   // המתגים באפליקציה מתעדכנים מכאן (כיבוי מדף הענן)
+            'scope' => $scope];   // השכבות באפליקציה מתעדכנות מכאן (המנהל הדליק או כיבה)
 }
 
 /**
@@ -544,23 +507,16 @@ function actor(string $action, string $scope, string $body): array {
 }
 
 function actorFrom(array $conn, array $client, string $scope): array {
-    $have = json_decode($conn['scope'], true) ?: [];
+    // spec-6 סעיף 1: מדיניות ∩ הצהרה, בכל קריאה — המנהל מכבה או מדליק, וזה חל מיד, בלי אסימון חדש
+    require_once __DIR__ . '/policy.php';
+    $have = effectiveScope($client);
     $mode = null;
     if ($scope === 'files') {
-        // שלב 3: אחת משלוש הרמות. הצהרה מצמצמת (files → files.readonly / files.app) חלה מיד, גם על חיבור קיים
-        require_once __DIR__ . '/grants.php';
-        $declared = clientFilesScope($client['id']);
+        // שלב 3: אחת משלוש הרמות — זו שהמנהל בחר (עד מה שהוצהר)
         $mine = array_values(array_intersect($have, array_keys(FILES_SCOPES)));
-        if ($mine && $declared !== 'files' && $mine[0] !== $declared) {
-            $have = array_values(array_diff($have, array_keys(FILES_SCOPES)));
-            $have[] = $declared;
-            sort($have);
-            db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode($have), $conn['id']]);
-            $mine = [$declared];
-        }
-        if ($mine) { $mode = FILES_SCOPES[$mine[0]]; $scope = $mine[0]; } else { $scope = $declared; }
+        if ($mine) { $mode = FILES_SCOPES[$mine[0]]; $scope = $mine[0]; } else { $scope = clientFilesScope($client['id']); }
     }
-    // השכבה כבויה — עם ההיקף, כדי שהאפליקציה תציע להדליק את המתג הנכון (7.3 כלל 6). נבדק בכל קריאה: כיבוי חל מיד
+    // השכבה כבויה — עם ההיקף והשכבה (layer-off במודול). נבדק בכל קריאה
     if (!in_array($scope, $have, true)) {
         throw new AppError('אין לאפליקציה הרשאה לזה', 403, 'forbidden', ['scope' => $scope, 'layer' => scopeLayer($scope)]);
     }
@@ -594,13 +550,15 @@ function corsHeaders(): void {
 
 function adminClients(): array {
     require_once __DIR__ . '/appdata.php';
-    require_once __DIR__ . '/grants.php';
+    require_once __DIR__ . '/policy.php';
     $usage = appdataAdminUsage();
     $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users,
                                 (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL AND c.mismatch_at IS NOT NULL) AS mismatch
                          FROM clients k ORDER BY k.status = 'pending' DESC, k.name")->fetchAll();
     return array_map(fn($r) => ['id' => $r['id'], 'name' => $r['name'], 'status' => $r['status'], 'origins' => json_decode($r['origins'], true),
-        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'files_full' => (int) ($r['files_full'] ?? 0),
+        'key_url' => $r['key_url'], 'users' => (int) $r['users'],
+        // spec-6 סעיף 2: מה שהמנהל הדליק, ומה שהאפליקציה הצהירה (התקרה)
+        'policy' => clientPolicy($r), 'declared' => clientDeclared($r['id']),
         'files_scope' => clientFilesScope($r['id']), 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at'],
         // נתוני אפליקציות (שלב 4): נפח ותקרות — בלי תוכן
         'appdata' => ['used' => $usage[$r['id']] ?? [], 'user_quota' => $r['appdata_user_quota'] === null ? null : (int) $r['appdata_user_quota'],
@@ -617,12 +575,11 @@ function adminClient(array $in): array {
                 ->execute([$in[$k] === null ? null : bytesIn($in[$k], $label), nowIso(), $c['id']]);
         }
     }
-    // "📁 גישה לכל הכונן" (הכרעה 5). הדלקה מאשרת לקוח שהמתין רק בגללה
-    if (array_key_exists('files_full', $in)) {
-        db()->prepare('UPDATE clients SET files_full = ?, updated_at = ? WHERE id = ?')->execute([$in['files_full'] ? 1 : 0, nowIso(), $c['id']]);
-        if ($in['files_full'] && $c['status'] === 'pending' && originOf($c['key_url']) === cloudOrigin()) {
-            db()->prepare("UPDATE clients SET status = 'active' WHERE id = ?")->execute([$c['id']]);
-        }
+    // spec-6 סעיף 2: אילו שכבות דלוקות, לכל המשתמשים. "files" (כל הכונן) — הבחירה בו היא האישור של הכרעה 5
+    if (array_key_exists('policy', $in)) {
+        require_once __DIR__ . '/policy.php';
+        if ($c['status'] === 'pending') throw new AppError('קודם מאשרים את הלקוח', 409, 'pending');
+        setClientPolicy($c, $in['policy']);
     }
     if (!array_key_exists('status', $in)) return adminClients();
     $status = $in['status'];

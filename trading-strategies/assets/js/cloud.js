@@ -52,11 +52,21 @@ export function cloudPath(provider, symbol, tf) {
   return { folders: ['אסטרטגיות למסחר', 'נתונים', safe(provider), safe(symbol)], file: `${safe(tf)}.csv` };
 }
 
+/** טקסט → gzip → base64 (הגוף של "🧪 הרץ על העותק שלי": 100,000 נרות הם ~8MB טקסט, ומכווצים — מעט) */
+export async function gzipB64(text) {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'));
+  const buf = new Uint8Array(await new Response(stream).arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 export const METHODS_PATH = ['אסטרטגיות למסחר', 'שיטות'];
 export const APP_FOLDER = 'אסטרטגיות למסחר';   // = name ב-Drives (api.php): ב-files.app זו "התיקייה של האפליקציה" בענן
 
-/** 📁 דלוק — files המלא, או files.app (mbe-cloud/docs/spec-3-files-scopes.md) */
-export const filesOn = st => !!(st?.connected && (st.layers?.files || (st.scope || []).some(x => x === 'files' || x === 'files.app')));
+/** 📁 דלוק — המודול מחשב: כל היקף קבצים (files / files.app) = layers.files (mbe-cloud/docs/spec-3-files-scopes.md) */
+export const filesOn = st => !!(st?.connected && st.layers?.files);
+/** חיבור files.app (בלי files המלא) — כתיבה בלי parent נכנסת לתיקייה של האפליקציה */
 export const appScoped = st => (st?.scope || []).includes('files.app') && !(st?.scope || []).includes('files');
 
 // ── המודול והממשק ────────────────────────────────────────────────
@@ -112,6 +122,43 @@ export function mountCloud(ctx) {
     s.body.append(h('p', {}, why), h('p', { class: 'hint' }, 'החיבור הוא לענן שלכם, באותו חשבון. אפשר לנתק בכל רגע — הקבצים נשארים בענן.'));
   }
 
+  /**
+   * העותק של נכס ומסגרת (3.7) — הקובץ בענן, או null: לא מחובר, אין עותק, או שאין גישה. **לא יוצר תיקיות** ולא כותב.
+   * רק בפעולה של המשתמש (פתיחת גרף בטווח ארוך, ניתוח) — לא ברקע.
+   */
+  async function findCopy({ provider, symbol, tf }) {
+    try {
+      const st = await status();
+      if (!filesOn(st)) return null;
+      const s = (await getDrives()).suite;
+      const { folders, file } = cloudPath(provider, symbol, tf);
+      let parent = null, path = folders;
+      if (appScoped(st)) {
+        const app = (await s.list(null)).items.find(n => n.kind === 'folder' && n.name === APP_FOLDER);
+        if (!app) return null;
+        parent = app.id; path = folders.slice(1);
+      }
+      for (const name of path) {
+        const hit = (await s.list(parent)).items.find(n => n.kind === 'folder' && n.name === name);
+        if (!hit) return null;
+        parent = hit.id;
+      }
+      return (await s.list(parent)).items.find(n => n.kind === 'file' && n.name === file) || null;
+    } catch { return null; }
+  }
+
+  /** הטקסט של העותק — פעם אחת לכל גרסה (rev) בזמן שהדף פתוח */
+  const copyText = new Map();
+  async function readCopy(node) {
+    const key = node.id + ':' + node.rev;
+    if (!copyText.has(key)) {
+      const text = await (await (await getDrives()).suite.read(node.id)).text();
+      copyText.clear();
+      copyText.set(key, text);
+    }
+    return copyText.get(key);
+  }
+
   /** 💾 שמור לענן שלי (3.7): ממזג עם העותק הקיים, בלי לשנות נר קיים */
   async function saveCandles({ provider, symbol, tf, sec, rows }) {
     let st;
@@ -165,18 +212,26 @@ export function mountCloud(ctx) {
     return box;
   }
 
-  /** החזרה מהענן: ?cloud=connected | denied (api-guide 4) */
+  /** החזרה מהענן: ?cloud=connected | denied (api-guide 4), ?cloud=picked | pick-cancelled (spec-3 4) */
   function handleReturn() {
     const u = new URL(location.href);
     const v = u.searchParams.get('cloud');
     if (!v) return;
-    // מהבורר (spec-3 4): drives.picked() קורא את הבחירה ומנקה את ?cloud=picked בעצמו — לכן קודם הוא, ואחר כך הכתובת
-    if (v === 'picked' && sessionStorage.getItem('ts-pick') === 'methods') {
-      sessionStorage.removeItem('ts-pick');
+    const fromPicker = v === 'picked' || v === 'pick-cancelled';
+    const ours = sessionStorage.getItem('ts-pick') === 'methods';
+    if (fromPicker) sessionStorage.removeItem('ts-pick');
+    // ביטול בבורר — בלי שינוי: התיקייה שנבחרה קודם (אם יש) נשארת
+    if (fromPicker && (v === 'pick-cancelled' || !ours)) {
+      u.searchParams.delete('cloud');
+      history.replaceState(null, '', u.pathname + (u.search || '') + (ours ? '#/method-files' : location.hash));
+      if (ours) { toast('הבחירה בוטלה — לא שונה דבר'); ctx.reload(); }
+      return;
+    }
+    // מהבורר: drives.picked() קורא את הבחירה (פעם אחת, אחרי stat) ומנקה את ?cloud=picked בעצמו — לכן קודם הוא
+    if (fromPicker) {
       (async () => {
         try {
-          const d = await getDrives();
-          const [node] = typeof d.picked === 'function' ? await d.picked() : [];
+          const [node] = await (await getDrives()).picked();
           const clean = new URL(location.href);
           clean.searchParams.delete('cloud');
           history.replaceState(null, '', clean.pathname + (clean.search || '') + '#/method-files');
@@ -209,11 +264,9 @@ export function mountCloud(ctx) {
     const s = (await getDrives()).suite;
     // ב-files.app האפליקציה לא בוחרת לבד: המנהל בוחר את התיקייה בבורר של הענן (spec-3 4), ושומרים רק את ה-id
     const choose = async () => {
-      const d = await getDrives();
-      if (typeof d.pick !== 'function') { toast('בורר התיקיות עוד לא זמין במודול הכוננים — ממתינים לסנכרון מהענן', true); return; }
       try {
         sessionStorage.setItem('ts-pick', 'methods');
-        await d.pick({ kind: 'folder', multiple: false });
+        await (await getDrives()).pick({ kind: 'folder', multiple: false });
       } catch (e) { sessionStorage.removeItem('ts-pick'); toast(e.message, true); }
     };
     if (!folder) {
@@ -252,5 +305,5 @@ export function mountCloud(ctx) {
       h('p', { class: 'hint' }, 'אין כאן הורדה או תצוגה של התוכן — הקבצים נשארים בענן. לשיתוף עם Claude: בדף הענן, שיתוף לקריאה של התיקייה לחשבון השירות.'));
   }
 
-  return { saveCandles, section, handleReturn, viewMethodFiles };
+  return { saveCandles, section, handleReturn, viewMethodFiles, findCopy, readCopy };
 }

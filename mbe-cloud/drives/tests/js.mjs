@@ -205,18 +205,57 @@ check('שכבה כבויה — DriveError layer-off עם layer', lo instanceof D
 layerOff = false;
 let assigned = null;
 globalThis.location = { assign: u => { assigned = u; } };
+check('layer-off — ההודעה האחידה, בלי "הפעל" (spec-6 5.2)', lo.message === 'השכבה הזו לא פעילה באפליקציה הזו');
 await d.connect({ layers: ['libs'] });
-check('connect({layers}) — שולח layers ועובר למסך האישור', JSON.stringify(appBodies.drives_connect) === '{"layers":["libs"]}' && assigned.includes('connect.php'));
-await d.connect();
-check('connect() — בלי layers (כל השכבות שהוצהרו)', JSON.stringify(appBodies.drives_connect) === '{}');
+check('connect({layers}) — "נסו שוב": layers לא נשלח (המנהל מחליט), ועובר לענן', JSON.stringify(appBodies.drives_connect) === '{}' && assigned.includes('connect.php'));
 await d.connect('files,ai');
-check('connect(\'files,ai\') — התאמה לאחור (scope)', JSON.stringify(appBodies.drives_connect) === '{"scope":"files,ai"}');
-const off = await d.disconnect({ layers: ['libs'] });
-check('disconnect({layers}) — כיבוי שכבה, ומחזיר status', JSON.stringify(appBodies.drives_disconnect) === '{"layers":["libs"]}' && off.suite.layers.libs === false && off.suite.connected);
+check('connect(\'files,ai\') — גם scope לא נשלח (תאימות: לא נשבר)', JSON.stringify(appBodies.drives_connect) === '{}');
+delete appBodies.drives_disconnect;
+let dm = null;
+try { await d.disconnect({ layers: ['libs'] }); } catch (e) { dm = e; }
+let dm2 = null;
+try { await d.disconnect(); } catch (e) { dm2 = e; }
+check('מ9: disconnect() — admin-managed, בלי קריאה לשרת (החיבור נשאר)', dm?.code === 'admin-managed' && dm2?.code === 'admin-managed'
+  && appBodies.drives_disconnect === undefined && dm.message === 'השכבות נקבעות בידי מנהל הענן');
 delete globalThis.location;
 
-await d.disconnect();
-check('disconnect() — ניתוק מלא, בלי layers', JSON.stringify(appBodies.drives_disconnect) === '{}');
+// ── מ12: ensure() — הפניה אחת, בלי לולאות (spec-6 3.3) ──
+{
+  const store = {};
+  globalThis.sessionStorage = { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
+  globalThis.window = {}; window.top = window; window.self = window; window.opener = null;
+  let to = null;
+  const page = href => { to = null; globalThis.location = { href, assign: u => { to = u; } }; };
+  const ens = async (suite, href = 'https://mbe-plus.com/mini_projects/vector-studio/', opts) => {
+    connected = !!suite.connected; statusExtra = suite; page(href); return d.ensure(opts);
+  };
+  let r = await ens({ connected: true });
+  check('ensure — מחובר: כלום', !r.redirected && r.why === 'connected' && to === null);
+  r = await ens({ policy_empty: true, policy: [] });
+  check('ensure — המדיניות ריקה: כלום (בלי הפניה ובלי הודעה)', !r.redirected && r.why === 'off' && to === null);
+  r = await ens({ policy: ['files'], hold: 'no_drive' });
+  check('ensure — hold no_drive (24 שעות בשרת): לא מפנה', !r.redirected && r.why === 'no_drive' && to === null);
+  r = await ens({ policy: ['files'] }, 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=error');
+  check('ensure — אחרי ?cloud=error: לא מפנה שוב', !r.redirected && r.why === 'error' && to === null);
+  r = await ens({ policy: ['files'] }, 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=denied');
+  check('ensure — אחרי ?cloud=denied: לא מפנה שוב', !r.redirected && r.why === 'error' && to === null);
+  r = await ens({ policy: ['files'] }, undefined, { apk: true });
+  check('ensure({apk:true}) — לא מפנה לבד', !r.redirected && r.why === 'apk' && to === null);
+  window.top = {};
+  r = await ens({ policy: ['files'] });
+  check('ensure — בתוך iframe: לא מפנה', !r.redirected && r.why === 'frame' && to === null);
+  window.top = window;
+  r = await ens({ policy: ['files'] });
+  check('ensure — לא מחובר והמדיניות לא ריקה: הפניה אחת לענן, בלי גוף', r.redirected && to?.includes('connect.php') && JSON.stringify(appBodies.drives_connect) === '{}');
+  r = await ens({ policy: ['files'] });
+  check('ensure — שוב תוך שתי דקות, עדיין לא מחובר: לא מפנה (לולאה)', !r.redirected && r.why === 'loop' && to === null);
+  store['mbe-cloud:ensure'] = String(Date.now() - 200000);
+  r = await ens({ policy: null });
+  check('ensure — policy לא ידוע (null), אחרי זמן: מנסה (השרת מחזיק hold אם נכשל)', r.redirected && to?.includes('connect.php'));
+  statusExtra = {}; connected = false;
+  delete globalThis.location; delete globalThis.sessionStorage; delete globalThis.window;
+}
+
 const d2 = createDrives({ endpoint: 'https://mbe-plus.com/mini_projects/vector-studio/api.php' });
 let err = null;
 try { await d2.suite.list(); } catch (e) { err = e; }

@@ -31,6 +31,9 @@
  * POST action=profile_save
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
+ * POST action=analysis_copy {asset, tf, methods, csv_gz}   "🧪 הרץ על העותק שלי" (3.7): העותק מהענן, מאומת בשרת (422),
+ *                                        בתחום שלי בלבד, לא נכתב למאגר ← נספר בתקרת 30 לדקה
+ * POST action=analysis_copy_use {asset, tf, method_id, use}   איזו תוצאה נכנסת לשקלול — מהעותק או הרגילה
  *
  * התראות (פרק 8) — הבדיקה עצמה רק ב-cron (bin/alerts-cron.php, CLI); כאן רק ניהול ותיבה:
  * GET  ?action=alerts                    ההתראות שלי והשיטות שמותרות בהן
@@ -59,6 +62,7 @@ require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
+require_once __DIR__ . '/lib/copy.php';
 require_once __DIR__ . '/lib/alerts.php';
 require_once __DIR__ . '/lib/fx.php';
 
@@ -79,12 +83,15 @@ function fail(string $msg, int $code = 400): never
     out(['ok' => false, 'error' => $msg], $code);
 }
 
-function input(): array
+function input(int $max = 1_000_000, int $tooBig = 413): array
 {
     static $in = null;
     if ($in === null) {
-        $raw = (string)file_get_contents('php://input', false, null, 0, 1_000_001);
-        if (strlen($raw) > 1_000_000) fail('הבקשה גדולה מדי', 413);
+        // גוף גדול מהתקרה — נדחה לפני הקריאה; ואם השרת עצמו זרק אותו (post_max_size) — php://input ריק
+        $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($len > $max) fail('הבקשה גדולה מדי', $tooBig);
+        $raw = (string)file_get_contents('php://input', false, null, 0, $max + 1);
+        if (strlen($raw) > $max || ($len > 0 && $raw === '')) fail('הבקשה גדולה מדי', $tooBig);
         $in = json_decode($raw, true);
         if (!is_array($in)) $in = [];
     }
@@ -131,9 +138,10 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe', 'admin_method_files_folder',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
-    'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
+    'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
+    'analysis_copy', 'analysis_copy_use'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'analysis', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'analysis', 'analysis_copy', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -141,7 +149,8 @@ if (in_array($action, TS_WRITE, true)) {
     if (!hash_equals($csrf, (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) fail('פג תוקף הדף — רעננו ונסו שוב', 403);
 }
 
-$in = in_array($action, TS_WRITE, true) ? input() : [];
+// העותק (3.7) — גוף גדול יותר, וחריגה היא 422 (מה שנכשל — לא התוכן)
+$in = !in_array($action, TS_WRITE, true) ? [] : ($action === 'analysis_copy' ? input(TS_COPY_MAX_BODY, 422) : input());
 $id = (int)($in['id'] ?? $_GET['id'] ?? 0);
 if (str_starts_with($action, 'admin_')) {
     try {
@@ -232,7 +241,14 @@ try {
             out(['ok' => true, 'push_devices' => ts_push_count($uid)]);
 
         case 'analysis':
-            out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? ''));
+            out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? '', null, true));
+
+        case 'analysis_copy':
+            out(['ok' => true] + ts_analysis_copy($uid, $in));
+
+        case 'analysis_copy_use':
+            ts_copy_use($uid, $in);
+            out(['ok' => true]);
 
         case 'strategies':
             out(['ok' => true, 'strategies' => ts_strategies_list($uid, $tz)]);

@@ -21,7 +21,7 @@ $adRet = fn(string $c) => "https://mbe-plus.com/mini_projects/$c/api.php?action=
 foreach (['ad-alpha', 'ad-beta', 'ad-plain'] as $c) {
     registerClient(['client' => $c, 'name' => "אפליקציה $c", 'key_url' => "https://mbe-plus.com/mini_projects/$c/api.php?action=drives_key",
                     'origins' => ['https://mbe-plus.com'], 'return' => [$adRet($c)]]);
-    adminClient(['client' => $c, 'files_full' => true]);   // שלב 3: files המלא — באישור מנהל
+    policyAll($c);   // spec-6: המנהל מדליק את מה שהוצהר
 }
 as_platform(['sub' => 'ad-u', 'name' => 'אורי', 'email' => 'uri@example.com']);
 $U = requireAccount();
@@ -100,12 +100,11 @@ $tPlain = $adToken($U, 'ad-plain', 'files');
 $e = null; try { $asToken($tPlain); } catch (AppError $x) { $e = $x; }
 check('ב5: בלי ההיקף appdata — 403 עם scope appdata (layer-off במודול)', $e && $e->status === 403 && ($e->extra['scope'] ?? '') === 'appdata'
     && ($e->extra['layer'] ?? '') === 'appdata');
-check('ב5: אפליקציה שלא הצהירה על 🗂️ — לא יכולה לבקש אותו (bad_request)', code(fn() => $adToken($U, 'ad-plain', 'files,appdata')) === 'bad_request');
-// כיבוי 🗂️ בחיבור קיים — מיד
-$conn = connectionRow((string) json_decode((string) unb64u(explode('.', $tUA)[0]), true)['conn'], 'ad-alpha');
-narrowScope($conn, ['files']);
+check('ב5: אפליקציה שלא הצהירה על 🗂️ — המנהל לא יכול להדליק אותו (bad_request)', code(fn() => adminClient(['client' => 'ad-plain', 'policy' => ['appdata' => true]])) === 'bad_request');
+// המנהל מכבה 🗂️ — מיד, גם לאסימון שכבר הונפק (spec-6 מ5)
+adminClient(['client' => 'ad-alpha', 'policy' => ['appdata' => false]]);
 check('ב5: כיבוי 🗂️ — האסימון שכבר הונפק נחסם מיד', code(fn() => $asToken($tUA)) === 'forbidden');
-narrowScope(connectionRow($conn['id'], 'ad-alpha'), []);   // ומחזירים: היקף מורחב רק דרך connect — חיבור מחדש
+adminClient(['client' => 'ad-alpha', 'policy' => ['appdata' => true]]);
 $tUA = $adToken($U, 'ad-alpha');
 $cUA = $asToken($tUA);
 
