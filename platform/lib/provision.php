@@ -48,13 +48,19 @@ function provision_migrate(): void
 }
 
 /** האפליקציות שמותר להן להזמין: {id: {id, name, key_url, href}}. */
-function provision_clients(): array
+/**
+ * האפליקציות שרשאיות לחתום על פעולה מסוג $kind, עם המפתח שלה לפעולה הזו.
+ *   provision    — רק "provision": {"key_url"} (יצירת חשבון, מתן / הסרה של הרשאה).
+ *   grant_status — "grant_status": {"key_url"} (מפתח לשאלה בלבד, PF-002), ואם אין — provision.key_url (תאימות).
+ * כך מפתח שהוצהר רק ל-grant_status, גם אם ידלוף, לא פותח חשבונות והרשאות.
+ */
+function provision_clients(string $kind = 'provision'): array
 {
     $out = [];
     foreach (registry_load()['apps'] as $app) {
-        if (!$app['provision_key_url']) continue;
-        $out[$app['id']] = ['id' => $app['id'], 'name' => $app['name'],
-            'key_url' => $app['provision_key_url'], 'href' => $app['href']];
+        $url = $kind === 'grant_status' ? ($app['grant_status_key_url'] ?? null ?: $app['provision_key_url']) : $app['provision_key_url'];
+        if (!$url) continue;
+        $out[$app['id']] = ['id' => $app['id'], 'name' => $app['name'], 'key_url' => $url, 'href' => $app['href'], 'kind' => $kind];
     }
     return $out;
 }
@@ -63,8 +69,10 @@ function provision_clients(): array
 function provision_keys(array $client, bool $refresh = false): array
 {
     provision_migrate();
+    // המטמון לפי לקוח וגם לפי סוג: מפתח שהורד ל-grant_status לא משמש לעולם ל-provision (ולהפך)
+    $cacheKey = ($client['kind'] ?? 'provision') === 'provision' ? $client['id'] : $client['id'] . '#' . $client['kind'];
     $st = db()->prepare('SELECT * FROM provision_keys WHERE client = ?');
-    $st->execute([$client['id']]);
+    $st->execute([$cacheKey]);
     $row = $st->fetch();
     if (!$refresh && $row && $row['key_url'] === $client['key_url'] && $row['fetched_at'] > time() - PROVISION_KEY_CACHE) {
         $raw = json_decode($row['keys'], true);
@@ -82,7 +90,7 @@ function provision_keys(array $client, bool $refresh = false): array
         if (!$raw) throw new ApiError('המפתח הציבורי של האפליקציה לא נמצא ב-key_url', 502);
         db()->prepare('INSERT INTO provision_keys (client, key_url, keys, fetched_at) VALUES (?,?,?,?)
                        ON CONFLICT(client) DO UPDATE SET key_url = excluded.key_url, keys = excluded.keys, fetched_at = excluded.fetched_at')
-            ->execute([$client['id'], $client['key_url'], json_encode($raw), time()]);
+            ->execute([$cacheKey, $client['key_url'], json_encode($raw), time()]);
     }
     return array_map(fn($k) => base64_decode($k, true), (array)$raw);
 }
@@ -94,8 +102,16 @@ function provision_keys(array $client, bool $refresh = false): array
 function provision_verify(string $action, string $body, array $h): array
 {
     provision_migrate();
-    $client = provision_clients()[(string)($h['client'] ?? '')] ?? null;
-    if (!$client) throw new ApiError('האפליקציה לא רשומה להזמנת משתמשים', 401);
+    $id = (string)($h['client'] ?? '');
+    $kind = $action === 'grant_status' ? 'grant_status' : 'provision';
+    $client = provision_clients($kind)[$id] ?? null;
+    if (!$client) {
+        // הצהירה רק על מפתח ל-grant_status — מזוהה, אבל לא רשאית לשום פעולה אחרת
+        if ($kind === 'provision' && isset(provision_clients('grant_status')[$id])) {
+            throw new ApiError('האפליקציה רשאית רק ל-grant_status', 403);
+        }
+        throw new ApiError('האפליקציה לא רשומה להזמנת משתמשים', 401);
+    }
     $time = (string)($h['time'] ?? '');
     $nonce = (string)($h['nonce'] ?? '');
     if (!ctype_digit($time) || abs(time() - (int)$time) > PROVISION_SKEW) throw new ApiError('השעה בבקשה לא תקינה', 401);
