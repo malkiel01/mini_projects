@@ -8,6 +8,7 @@ const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(b
 const API = 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php';
 let dbxLinked = true, ptokens = 0, dbxExpire = false;
 const dbxCalls = [];
+let statusExtra = {};
 let connected = true, tokens = 0, expireNext = false, chunks = [], layerOff = false, readOnly = false;
 const appBodies = {};
 const adCalls = [];
@@ -23,7 +24,7 @@ globalThis.fetch = async (url, init = {}) => {
     if (a === 'drives_picked') return json({ ids: ['n_ok', 'n_gone'] });
     if (a === 'drives_disconnect' && appBodies[a]?.layers) return json({ ok: true, suite: { connected: true, layers: { files: true, libs: false } } });
     if (a === 'drives_token') { tokens++; return json(connected ? { connected: true, token: 't' + tokens, expires_in: 900, api: API } : { connected: false }); }
-    if (a === 'drives_status') return json({ suite: { connected } });
+    if (a === 'drives_status') return json({ suite: { connected, ...statusExtra } });
     if (a === 'drives_disconnect') { connected = false; return json({ ok: true }); }
     if (a === 'drives_ptoken') { ptokens++; return json(dbxLinked ? { connected: true, token: 'd' + ptokens, expires_in: 14000 } : { connected: false }); }
     if (a === 'drives_unlink') { dbxLinked = false; return json({ ok: true }); }
@@ -180,6 +181,19 @@ readOnly = false;
   const got = await d.picked();
   check('picked — רק מה שבאמת נגיש (n_gone נשמט), והכתובת מתנקה מ-cloud=picked', got.length === 1 && got[0].id === 'n_ok'
     && replaced === '/mini_projects/vector-studio/?x=1');
+  delete globalThis.location; delete globalThis.history;
+}
+{
+  // בקשת "אסטרטגיות": layers.files דלוק גם ב-files.app / files.readonly — status מעביר כמו שהשרת מחזיר
+  statusExtra = { layers: { files: true }, files_scope: 'files.app' };
+  const st = await d.status();
+  check('status — layers.files דלוק עם files_scope files.app', st.suite.layers.files === true && st.suite.files_scope === 'files.app');
+  statusExtra = {};
+  // החזרה מהבורר בלי ?cloud=picked בכתובת (למשל מ-APK, אחרי "נשמרה") — picked עדיין מחזיר מהשרת
+  globalThis.location = { href: 'https://mbe-plus.com/mini_projects/vector-studio/', assign() {} };
+  globalThis.history = { state: null, replaceState() { throw new Error('לא אמור לנקות'); } };
+  const got2 = await d.picked();
+  check('picked — גם בלי cloud=picked בכתובת (APK): מה שנבחר, והכתובת לא נוגעים בה', got2.length === 1 && got2[0].id === 'n_ok');
   delete globalThis.location; delete globalThis.history;
 }
 

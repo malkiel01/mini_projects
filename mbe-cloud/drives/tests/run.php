@@ -414,6 +414,25 @@ try {
         && $pa->picked('u1') === ['ids' => []]);
     $pq = $q2($pa->pickUrl('u1', []));
     check('state של הבורר לא עובר ב-drives_callback (purpose)', code(fn() => $pa->callback('u1', ['state' => $pq['state'], 'code' => 'x'])) === 'bad_state:missing');
+    // בקשת "אסטרטגיות": pick({kind:'folder'}) והחזרה מ-APK (בלי עוגייה) — picked מחזיר את התיקייה
+    $pfo = makeFolder($acc, ['name' => 'שיטות']);
+    $pq = $q2($pa->pickUrl('u1', ['kind' => 'folder']));
+    $pback = $q2(pickApprove($acc, pickRequest($pq), [$pfo['id']]));
+    $user = null;
+    $r = $pa->handle('drives_pick_callback', $pback);
+    $user = 'u1';
+    check('pick({kind:folder}) מ-APK — kind נחתם, "נשמרה", ו-picked מחזיר את התיקייה', $pq['kind'] === 'folder' && str_contains($r['done'] ?? '', 'נשמרה')
+        && $pa->picked('u1') === ['ids' => [$pfo['id']]]);
+    // בקשת "אסטרטגיות": layers.files דלוק גם כשהרמה מצומצמת (files.readonly)
+    $GLOBALS['CLOUD_APPS']['ro-app'] = ['layers' => ['files'], 'files_scope' => 'files.readonly'];
+    $ra = new Drives(['client' => 'ro-app', 'name' => 'קוראת', 'dataDir' => "$tmp/ro",
+        'endpoint' => 'https://mbe-plus.com/mini_projects/ro-app/api.php', 'back' => 'https://mbe-plus.com/mini_projects/ro-app/',
+        'user' => function () use (&$user) { return $user; }, 'http' => $cloud, 'files_scope' => 'files.readonly', 'layers' => ['files']]);
+    $GLOBALS['CLOUD_FETCH'] = fn(string $url) => str_contains($url, '/pick-app/') ? json_encode($pa->keyJson()) : (str_contains($url, '/ro-app/') ? json_encode($ra->keyJson()) : $prevFetch($url));
+    check('files.readonly — לפני חיבור: layers.files כבוי', $ra->status('u1')['suite']['layers'] === ['files' => false]);
+    $ra->callback('u1', $q2(approve($ra->connectUrl('u1', (fn() => $this->scopeOf([]))->call($ra)))));
+    check('files.readonly — מחוברת: layers.files דלוק, ו-files_scope = files.readonly', $ra->status('u1')['suite']['layers'] === ['files' => true]
+        && $ra->status('u1')['suite']['files_scope'] === 'files.readonly');
     unset($GLOBALS['CLOUD_APPS']);
     $GLOBALS['CLOUD_FETCH'] = $prevFetch;
 
