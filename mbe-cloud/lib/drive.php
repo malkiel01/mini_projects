@@ -131,7 +131,13 @@ function usedBytes(string $account): int {
     $st = db()->prepare("SELECT (SELECT COALESCE(SUM(size), 0) FROM nodes WHERE account = ? AND kind = 'file')
                               + (SELECT COALESCE(SUM(size), 0) FROM lib_items WHERE account = ?)");
     $st->execute([$account, $account]);
-    return (int) $st->fetchColumn();
+    $used = (int) $st->fetchColumn();
+    // נתוני אפליקציות (שלב 4) — לא במכסת הכונן (ש1 הוכרע: מקום נפרד). ההגדרה נשארת כמתג למנהל
+    if (setting('appdata_counts_in_quota') === '1') {
+        require_once __DIR__ . '/appdata.php';
+        $used += appdataAccountBytes($account);
+    }
+    return $used;
 }
 
 function quotaInfo(array $a): array {
@@ -515,6 +521,12 @@ function adminSettings(array $in): array {
         if ($m < 1 << 20) throw new AppError('תקרה לקובץ — לפחות 1MB', 400, 'bad_request');
         setSetting('max_file', (string) $m);
     }
+    // שלב 4: תקרות ברירת המחדל לנתוני אפליקציות, ו-ש1 (האם נספר במכסת החשבון)
+    foreach (['appdata_user_quota' => 'התקרה לנתוני משתמש', 'appdata_account_quota' => 'התקרה לנתוני משתמש בכל האפליקציות',
+              'appdata_app_quota' => 'התקרה לנתוני אפליקציה'] as $k => $label) {
+        if (array_key_exists($k, $in)) setSetting($k, (string) bytesIn($in[$k], $label));
+    }
+    if (array_key_exists('appdata_counts_in_quota', $in)) setSetting('appdata_counts_in_quota', $in['appdata_counts_in_quota'] ? '1' : '0');
     return adminState();
 }
 

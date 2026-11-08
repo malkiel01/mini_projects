@@ -105,11 +105,18 @@ function migrate(PDO $pdo): void {
     migrateFonts($pdo);
     require_once __DIR__ . '/share.php';
     migrateShare($pdo);
+    require_once __DIR__ . '/appdata.php';
+    migrateAppdata($pdo);
 }
 
 const DEFAULTS = [
     'default_quota' => '0',                 // הכרעה 1: 0 עד שהמנהל מאשר
     'max_file'      => '524288000',         // הכרעה 2: 500MB
+    // שלב 4 (spec-4-appdata.md סעיפים 5, 9): תקרות לנתוני אפליקציות. ש1 הוכרע — מקום נפרד, לא במכסת הכונן
+    'appdata_user_quota'      => '20971520',   // 20MB לכל זוג (אפליקציה, משתמש)
+    'appdata_account_quota'   => '104857600',  // 100MB למשתמש, בכל האפליקציות יחד
+    'appdata_app_quota'       => '52428800',   // 50MB למרחב app של כל אפליקציה
+    'appdata_counts_in_quota' => '0',
 ];
 
 function setting(string $key): string {

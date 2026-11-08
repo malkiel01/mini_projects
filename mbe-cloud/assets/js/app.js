@@ -66,7 +66,7 @@ function route() {
   if (t === 'files') loadFolder(arg || null).catch(fail);
   if (t === 'trash') loadTrash().catch(fail);
   if (t === 'fonts') loadFonts().catch(fail);
-  if (t === 'links') loadLinks().catch(fail);
+  if (t === 'links') { loadLinks().catch(fail); loadAppdata().catch(fail); }
   if (t === 'admin') loadAdmin().catch(fail);
 }
 
@@ -391,8 +391,8 @@ async function deleteFont(f) {
 
 // ─── חיבורים ────────────────────────────────────────────────────────────
 
-const SCOPE_IC = { files: '📁', libs: '📚', ai: '🤖' };
-const LAYER_NAME = { files: 'קבצים', libs: 'נתוני מערכת', ai: 'בינה מלאכותית' };
+const SCOPE_IC = { files: '📁', libs: '📚', appdata: '🗂️', ai: '🤖' };
+const LAYER_NAME = { files: 'קבצים', libs: 'נתוני מערכת', appdata: 'נתוני משתמש', ai: 'בינה מלאכותית' };
 
 // מתג לכל שכבה שהאפליקציה הצהירה (spec-0-vision.md 7.3). כאן רק מכבים; מדליקים מתוך האפליקציה (מסך האישור)
 async function loadLinks() {
@@ -424,6 +424,23 @@ async function layer(c, s, box) {
   try { await api('connection_layers', { id: c.id, scope: rest }); toast(`${SCOPE_IC[s] || ''} ${LAYER_NAME[s] || s} — כבוי`); }
   catch (e) { fail(e); }
   loadLinks();
+}
+
+// ─── 🧩 נתוני אפליקציות (שלב 4) — נפח ועדכון אחרון, בלי תוכן. 🗑️ מוחק הכול של אפליקציה אחת ───
+
+async function loadAppdata() {
+  const data = await api('appdata_apps');
+  $('#appdata-sec').hidden = !data.items.length;
+  $('#appdata').replaceChildren(...data.items.map(d => el('li', {}, el('div', { class: 'acc-row' },
+    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🗂️'),
+    el('div', { class: 'body' }, el('div', { class: 'l1' }, d.name),
+      el('div', { class: 'l2' }, [bytes(d.used), `${d.docs} פריטים`, `עודכן ${when(d.updated_at)}`].join(' · '))),
+    el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => wipeAppdata(d) }, '🗑️ מחק נתונים')))));
+}
+
+async function wipeAppdata(d) {
+  if (!await confirm(`למחוק את כל הנתונים של ${d.name} בענן? אי אפשר לשחזר.`, { ok: 'מחיקה', danger: true })) return;
+  try { await api('appdata_wipe', { client: d.client }); toast('נמחק'); loadAppdata(); } catch (e) { fail(e); }
 }
 
 async function unlink(c) {

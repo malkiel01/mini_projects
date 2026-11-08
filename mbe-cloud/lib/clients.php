@@ -14,13 +14,15 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/account.php';
 
-const SCOPES = ['files', 'libs', 'ai'];
-const SCOPE_NAMES = ['files' => 'הקבצים שלך בענן', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך'];
+const SCOPES = ['files', 'libs', 'ai', 'appdata'];
+const SCOPE_NAMES = ['files' => 'הקבצים שלך בענן', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך',
+                     'appdata' => 'ההגדרות והנתונים שלך באפליקציה הזו'];
 /**
  * שכבות (spec-0-vision.md 7.3): מתג לכל שכבה, וכל שכבה היא היקפים של אותו חיבור. היום: שכבה = היקף אחד.
- * appdata (שלב 4) ו-files.readonly / files.app (שלב 3) — עוד לא. ברירת המחדל לאפליקציה בלי "layers" ב-apps.json.
+ * appdata — שלב 4 (spec-4-appdata.md); רק לאפליקציה שהצהירה עליו. files.readonly / files.app (שלב 3) — עוד לא.
+ * ברירת המחדל לאפליקציה בלי "layers" ב-apps.json — בלי appdata, כמו לפני שלב 4.
  */
-const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'ai' => ['ai']];
+const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'appdata' => ['appdata'], 'ai' => ['ai']];
 const DEFAULT_LAYERS = ['files', 'libs', 'ai'];
 const TOKEN_TTL = 900;
 const CODE_TTL = 120;
@@ -566,17 +568,30 @@ function corsHeaders(): void {
 // ─── ניהול ────────────────────────────────────────────────────────────────
 
 function adminClients(): array {
+    require_once __DIR__ . '/appdata.php';
+    $usage = appdataAdminUsage();
     $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users,
                                 (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL AND c.mismatch_at IS NOT NULL) AS mismatch
                          FROM clients k ORDER BY k.status = 'pending' DESC, k.name")->fetchAll();
     return array_map(fn($r) => ['id' => $r['id'], 'name' => $r['name'], 'status' => $r['status'], 'origins' => json_decode($r['origins'], true),
-        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at']], $rows);
+        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at'],
+        // נתוני אפליקציות (שלב 4): נפח ותקרות — בלי תוכן
+        'appdata' => ['used' => $usage[$r['id']] ?? [], 'user_quota' => $r['appdata_user_quota'] === null ? null : (int) $r['appdata_user_quota'],
+                      'app_quota' => $r['appdata_app_quota'] === null ? null : (int) $r['appdata_app_quota']]], $rows);
 }
 
 function adminClient(array $in): array {
     $c = getClient(cleanClientId($in['client'] ?? null));
     if (!$c) throw new AppError('לא נמצא', 404, 'not_found');
-    $status = $in['status'] ?? null;
+    // תקרות נתוני האפליקציה (שלב 4). null — ברירת המחדל מההגדרות
+    foreach (['appdata_user_quota' => 'התקרה לנתוני משתמש', 'appdata_app_quota' => 'התקרה לנתוני אפליקציה'] as $k => $label) {
+        if (array_key_exists($k, $in)) {
+            db()->prepare("UPDATE clients SET $k = ?, updated_at = ? WHERE id = ?")
+                ->execute([$in[$k] === null ? null : bytesIn($in[$k], $label), nowIso(), $c['id']]);
+        }
+    }
+    if (!array_key_exists('status', $in)) return adminClients();
+    $status = $in['status'];
     if (!in_array($status, ['active', 'disabled'], true)) throw new AppError('מצב לא מוכר', 400, 'bad_request');
     db()->prepare('UPDATE clients SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, nowIso(), $c['id']]);
     return adminClients();
