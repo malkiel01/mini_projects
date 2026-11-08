@@ -458,6 +458,7 @@ function deleteTree(string $root): void {
     $pdo->beginTransaction();
     // מהעלים לשורש — כך מפתח ההורה לא נשבר באמצע
     $pdo->prepare("DELETE FROM shares WHERE node IN ($in)")->execute($ids);   // שיתוף של צומת שנמחק לצמיתות — נעלם איתו
+    $pdo->prepare("DELETE FROM grants WHERE node IN ($in)")->execute($ids);   // וגם הענקה (שלב 3)
     foreach (array_reverse($ids) as $id) $pdo->prepare('DELETE FROM nodes WHERE id = ?')->execute([$id]);
     $pdo->commit();
     foreach ($shas as $sha) dropBlobIfUnused($sha);

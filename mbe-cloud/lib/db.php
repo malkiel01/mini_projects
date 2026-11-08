@@ -107,6 +107,8 @@ function migrate(PDO $pdo): void {
     migrateShare($pdo);
     require_once __DIR__ . '/appdata.php';
     migrateAppdata($pdo);
+    require_once __DIR__ . '/grants.php';
+    migrateGrants($pdo);
 }
 
 const DEFAULTS = [
