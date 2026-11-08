@@ -2,6 +2,7 @@
 // בלי polling (✅13): פנייה לשרת רק מפעולה של המשתמש — פתיחת המסך ולחיצה על "נתח". הבדיקה לאחור רצה בשרת
 // לפי דרישה, באותה בקשה. הניסוח — 6.6: "לפי כללי השיטה", "ציון כיוון"; לא הוראה ולא הבטחה. כל טקסט — textContent.
 import * as D from './decimal.js';
+import { gzipB64 } from './cloud.js';
 
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const SIDE = { long: 'לונג', short: 'שורט', none: 'אין כיוון' };
@@ -19,6 +20,8 @@ export function mountAnalysis(ctx) {
   };
   const when = t => { try { return new Date(t * 1000).toLocaleString('he-IL', { timeZone: ME().user.timezone, day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
   const disclaimer = () => h('p', { class: 'disclaimer' }, '⚖️ ' + ME().disclaimer);
+  const nf = x => Number(x).toLocaleString('he-IL');
+  let onCopyUse = null;   // בחירת השקלול בכרטיס (נקבע במסך הניתוח)
 
   // ── ניתוח ─────────────────────────────────────────────
   async function viewAnalysis(assetArg) {
@@ -75,18 +78,49 @@ export function mountAnalysis(ctx) {
     assetSel.addEventListener('change', () => { st.asset = assetSel.value; save(); drawTfs(); out.replaceChildren(); });
     drawTfs();
 
+    const alertable = id => methods.find(m => m.id === id)?.alerts;
+    async function show(r) {
+      const copyBar = h('div', { class: 'toolbar wrap' });
+      out.replaceChildren(copyBar, ...(r.cards.length > 1 ? [blendCard(r, r.cards.every(c => alertable(c.method.id)))] : []), ...r.cards.map(c => methodCard(c, r, alertable(c.method.id))));
+      // 🧪 (3.7) — רק כשיש עותק של הנכס והמסגרת בענן של המשתמש. בלי חיבור — אין כפתור, והבדיקה הרגילה עובדת
+      const node = ctx.cloud ? await ctx.cloud.findCopy({ provider: r.provider, symbol: r.symbol, tf: r.tf }) : null;
+      if (!node) return;
+      const btn = h('button', { class: 'btn ghost sm', type: 'button' }, '🧪 הרץ על העותק שלי');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'קורא את העותק מהענן…';
+        try {
+          const csv_gz = await gzipB64(await ctx.cloud.readCopy(node));
+          btn.textContent = 'בדיקה לאחור על העותק…';
+          const r2 = await api('analysis_copy', { asset: r.asset, tf: r.tf, methods: st.methods.join(','), csv_gz });
+          const run = r2.copy_run;
+          toast(`🧪 על העותק שלך: ${nf(run.n_copy)} נרות מהעותק + ${nf(run.n_provider)} מהספק`);
+          await show(r2);
+        } catch (e) {
+          toast(e.message, true);
+          btn.disabled = false;
+          btn.textContent = '🧪 הרץ על העותק שלי';
+        }
+      });
+      copyBar.append(btn, h('small', { class: 'muted' }, 'בדיקה לאחור גם על העותק שלך בענן — התוצאה שלך בלבד'));
+    }
     go.addEventListener('click', async () => {
       if (!st.tf || !st.methods.length) return;
       go.disabled = true;
       out.replaceChildren(h('p', { class: 'loading' }, 'מנתח… בפעם הראשונה הבדיקה לאחור יכולה לקחת כמה שניות'));
       try {
-        const r = await api('analysis', null, { asset: st.asset, tf: st.tf, methods: st.methods.join(',') });
-        const alertable = id => methods.find(m => m.id === id)?.alerts;
-        out.replaceChildren(...(r.cards.length > 1 ? [blendCard(r, r.cards.every(c => alertable(c.method.id)))] : []), ...r.cards.map(c => methodCard(c, r, alertable(c.method.id))));
+        await show(await api('analysis', null, { asset: st.asset, tf: st.tf, methods: st.methods.join(',') }));
       } catch (e) {
         out.replaceChildren(h('p', { class: 'error', role: 'alert' }, e.message));
       } finally { go.disabled = false; }
     });
+    onCopyUse = async (c, use, input) => {
+      input.disabled = true;
+      try {
+        await api('analysis_copy_use', { asset: st.asset, tf: c.tf, method_id: c.method.id, use });
+        go.click();
+      } catch (e) { toast(e.message, true); input.checked = !use; input.disabled = false; }
+    };
 
     render(
       h('div', { class: 'block stack' },
@@ -94,6 +128,24 @@ export function mountAnalysis(ctx) {
         tfBox, h('p', { class: 'hint' }, 'מסגרות הזמן — לפי טווח ההשקעה בפרופיל. ', h('a', { href: '#/profile' }, 'פרופיל')),
         methodBox, h('div', {}, go)),
       out, disclaimer());
+  }
+
+  /** התוצאה מהעותק (3.7) — לצד הרגילה, עם המקור ליד המספר (6.3), ובחירה מה נכנס לשקלול (ברירת מחדל — הרגילה) */
+  function copyBlock(c) {
+    const bt = c.backtest_copy;
+    if (!bt) return null;
+    const use = h('input', { type: 'checkbox', 'aria-label': 'לשקלול — התוצאה מהעותק' });
+    use.checked = !!c.copy_used;
+    use.disabled = bt.certainty == null;
+    use.addEventListener('change', () => onCopyUse?.(c, use.checked, use));
+    return h('div', { class: 'summary copy' },
+      h('div', { class: 'line' }, h('b', {}, `🧪 מהעותק שלך · ${nf(bt.n_copy)} נרות מהעותק + ${nf(bt.n_provider)} מהספק`), sep(), years(bt.from_t, bt.to_t)),
+      bt.status === 'ok'
+        ? h('div', { class: 'line' }, h('span', { class: 'muted' }, 'ודאות'), h('b', { class: 'num' }, bt.certainty + '%'),
+          h('span', { class: 'muted' }, `${bt.win_pct}% הצלחה ב-${nf(bt.n)} אותות`), sep(), h('span', { class: 'muted' }, 'חושב ' + when(bt.computed_at)))
+        : h('div', { class: 'line muted' }, `אין מספיק נתונים (${bt.n} אותות) — בלי אחוז ודאות`),
+      h('label', { class: 'switch' }, use, h('span', {}, 'לשקלול — התוצאה מהעותק'), h('small', { class: 'muted' }, ' (ברירת מחדל — הרגילה)')),
+      h('p', { class: 'hint', style: 'margin:0' }, 'התוצאה שלך בלבד: הנרות מהעותק לא נשמרים באתר ולא משפיעים על אחרים. ההתראות משתמשות רק בתוצאה הרגילה.'));
   }
 
   function certaintyBlock(c, r) {
@@ -131,7 +183,8 @@ export function mountAnalysis(ctx) {
   const alertBtn = pre => h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => ctx.newAlert(pre) } }, '🔔 התראה מזה');
 
   function methodCard(c, r, alertable = false) {
-    const head = h('div', { class: 'card-head' }, h('b', {}, c.method.name), h('small', { class: 'muted' }, 'גרסה ' + c.method.version));
+    const head = h('div', { class: 'card-head' }, h('b', {}, c.method.name), h('small', { class: 'muted' }, 'גרסה ' + c.method.version),
+      c.copy_used ? h('span', { class: 'chip warn' }, '🧪 שקלול לפי העותק שלך') : null);
     const label = c.method.label ? h('p', { class: 'chip warn', style: 'margin:4px 0' }, c.method.label) : null;
     const box = h('section', { class: 'block stack analysis-card', 'aria-label': c.method.name }, head, label);
     if (c.status !== 'ok') {
@@ -162,13 +215,14 @@ export function mountAnalysis(ctx) {
         rk.position_qty ? h('p', { class: 'hint', style: 'margin:0' }, 'גודל פוזיציה לפי הסיכון שבפרופיל (', num(D.fmt(rk.risk_pct, 4) + '%'), '): ', num(D.fmt(rk.position_qty, 8)), ' יחידות')
           : h('p', { class: 'hint', style: 'margin:0' }, 'לגודל פוזיציה — גודל חשבון ב', h('a', { href: '#/profile' }, 'פרופיל'), '.'));
     }
-    box.append(certaintyBlock(c, r),
+    box.append(...[certaintyBlock(c, r), copyBlock(c),
       h('p', { class: 'muted', style: 'margin:0' }, 'אופק: ' + c.horizon_text.replace(/^עד /, 'עד '),
         c.max_horizon && c.max_horizon.tf !== c.tf ? [sep(), 'הארוך ביותר שנבדק: ' + c.max_horizon.text] : null),
       h('p', { class: 'hint', style: 'margin:0' }, 'נכון לנר שנסגר ב-' + when(c.as_of)),
       h('div', { class: 'row-btns wrap' },
         c.levels && c.bias !== 'none' ? h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => openTrade(c, r) } }, '📓 פתח עסקה מזה') : null,
-        alertable ? alertBtn({ asset: r.asset, tf: c.tf, kind: 'method', method_id: c.method.id, side: c.bias === 'none' ? 'both' : c.bias }) : null));
+        alertable ? alertBtn({ asset: r.asset, tf: c.tf, kind: 'method', method_id: c.method.id, side: c.bias === 'none' ? 'both' : c.bias }) : null)]
+      .filter(Boolean));   // Element.append כותב null כטקסט "null"
     return box;
   }
 
@@ -182,7 +236,7 @@ export function mountAnalysis(ctx) {
     }
     const lean = b.lean === 'long' ? 'נוטה ללונג' : b.lean === 'short' ? 'נוטה לשורט' : 'בלי נטייה';
     const pos = (b.score + 1) / 2 * 100;   // −1 … +1 → 0 … 100
-    box.append(
+    box.append(...[
       h('div', { class: 'line' }, h('span', {}, 'ציון כיוון: ', h('b', {}, lean), ', ', num((b.score >= 0 ? '+' : '') + b.score.toFixed(2)))),
       h('div', { class: 'score-bar', role: 'img', 'aria-label': `ציון כיוון ${b.score.toFixed(2)} מתוך טווח מינוס 1 עד פלוס 1` },
         h('span', { class: 'mid' }), h('span', { class: 'dot', style: `inset-inline-start:calc(${100 - pos}% - 7px)` })),
@@ -191,7 +245,8 @@ export function mountAnalysis(ctx) {
       b.strong_disagreement ? h('p', { class: 'chip bad' }, '⚠️ מחלוקת חזקה בין השיטות — גם הלונג וגם השורט מחזיקים 30% מהמשקל או יותר') : null,
       b.excluded.length ? h('p', { class: 'hint', style: 'margin:0' }, 'לא בשקלול (פחות מ-30 אותות): ' + b.excluded.map(name).join(', ')) : null,
       h('p', { class: 'hint', style: 'margin:0' }, 'משקל = ודאות × העדפה (הסדר ב"שיטות מועדפות" בפרופיל).'),
-      alertable ? h('div', {}, alertBtn({ asset: r.asset, tf: r.tf, kind: 'blend', methods: r.cards.map(c => c.method.id) })) : null);
+      alertable ? h('div', {}, alertBtn({ asset: r.asset, tf: r.tf, kind: 'blend', methods: r.cards.map(c => c.method.id) })) : null]
+      .filter(Boolean));   // Element.append כותב null כטקסט "null"
     return box;
   }
 

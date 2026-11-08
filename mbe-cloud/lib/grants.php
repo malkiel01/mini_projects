@@ -2,7 +2,7 @@
 /**
  * ענן MBE — שלב 3: היקפי קבצים. האפיון: docs/spec-3-files-scopes.md.
  *
- *   files           — כל הכונן, קריאה וכתיבה (כמו קודם). דורש אישור מנהל (files_full, הכרעה 5).
+ *   files           — כל הכונן, קריאה וכתיבה (כמו קודם). רק כשהמנהל בחר בו במדיניות של הלקוח (spec-6, הכרעה 5).
  *   files.readonly  — כל הכונן, קריאה בלבד. כתיבה — 403 read_only.
  *   files.app       — רק מה שהוענק לאפליקציה: מה שיצרה (created) ומה שהמשתמש בחר בבורר של הענן (picked).
  *                     הענקה על תיקייה חלה על כל מה שבתוכה. מחוץ להענקה — 404, אף פעם לא 403.
@@ -30,7 +30,7 @@ function migrateGrants(PDO $pdo): void {
         -- התיקייה של כל אפליקציה אצל כל משתמש (כתיבה בלי parent ב-files.app). לפי id — שינוי שם או העברה לא יוצרים חדשה
         CREATE TABLE IF NOT EXISTS appfolders (client TEXT NOT NULL, account TEXT NOT NULL, node TEXT NOT NULL, PRIMARY KEY (client, account));
     ");
-    // files_full — "📁 גישה לכל הכונן", באישור מנהל. הגירה: רק שלוש אפליקציות החבילה (שהיו רשומות לפני שלב 3) — 1.
+    // files_full — "📁 גישה לכל הכונן", באישור מנהל (עד spec-6: אחרי migratePolicy העמודה לא נקראת). הגירה: רק שלוש אפליקציות החבילה (שהיו רשומות לפני שלב 3) — 1.
     // לקוח אחר שכבר רשום (למשל "אסטרטגיות") נשאר 0 — files המלא שלו רק באישור מנהל
     $cols = array_column($pdo->query('PRAGMA table_info(clients)')->fetchAll(), 'name');
     if (!in_array('files_full', $cols, true)) {
@@ -48,13 +48,6 @@ function clientFilesScope(string $clientId): string {
     $apps = $GLOBALS['CLOUD_APPS'] ?? $file;
     $s = $apps[$clientId]['files_scope'] ?? 'files';
     return isset(FILES_SCOPES[$s]) ? $s : 'files';
-}
-
-/** לקוח שמצהיר files המלא בלי אישור מנהל — pending (הכרעה 5). */
-function clientNeedsFullApproval(string $clientId): bool {
-    if (!in_array('files', clientScopes($clientId), true)) return false;
-    $c = getClient($clientId);
-    return !$c || (int) ($c['files_full'] ?? 0) !== 1;
 }
 
 // ─── הענקות ──────────────────────────────────────────────────────────────
@@ -281,9 +274,9 @@ function pickRequest(array $q): array {
 
 /** הבורר רק לאפליקציה ב-files.app עם חיבור פעיל של המשתמש הזה. אחרת 400 — היא כבר רואה הכול, או לא מחוברת. */
 function pickAllowed(array $a, array $req): void {
+    require_once __DIR__ . '/policy.php';
     $conn = liveConnection($a['id'], $req['client']['id']);
-    $scope = $conn ? (json_decode($conn['scope'], true) ?: []) : [];
-    if (clientFilesScope($req['client']['id']) !== 'files.app' || !in_array('files.app', $scope, true)) {
+    if (!$conn || !in_array('files.app', effectiveScope($req['client']), true)) {
         throw new AppError('הבורר זמין רק לאפליקציה מחוברת עם גישה לקבצים שבוחרים (files.app)', 400, 'bad_request');
     }
 }

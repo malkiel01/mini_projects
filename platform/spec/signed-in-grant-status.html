@@ -78,7 +78,8 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
         <tr><td>משתמש פעיל</td><td><code>can_see(app, grants_of(user))</code> — הרשאה ישירה גוברת; קבוצה; קטגוריה (לא ל-<code>restricted</code>); מוסתרת / תוסף → false</td></tr>
         <tr><td>ממתין לאישור / חסום</td><td>false</td></tr>
         <tr><td><code>sub</code> לא קיים</td><td>false — <strong>אותה תשובה בדיוק</strong> (200), כדי שאי אפשר יהיה לגלות אילו מזהים קיימים</td></tr>
-        <tr><td><code>sub</code> לא מספר (לא <code>^[0-9]{1,12}$</code>)</td><td>400 "sub לא תקין" — זו תקלה בקוד של הקורא, לא מידע</td></tr>
+        <tr><td><code>sub</code> — מחרוזת או מספר</td><td>שניהם מתקבלים ומנורמלים למחרוזת: <code>"123"</code> ו-<code>123</code> זהים (הזהות מחזירה מחרוזת, ו-JSON של לקוח עלול לשלוח מספר)</td></tr>
+        <tr><td><code>sub</code> אחר (לא מספר שלם חיובי, אחרי הנרמול לא <code>^[0-9]{1,12}$</code>) (לא <code>^[0-9]{1,12}$</code>)</td><td>400 "sub לא תקין" — זו תקלה בקוד של הקורא, לא מידע</td></tr>
         <tr><td>האפליקציה מנותקת</td><td>לפי ההרשאה, כרגיל — הניתוק לא משנה מי מורשה (סעיף 5)</td></tr>
         <tr><td>"מצב בחנות" (PF-001), <code>owned=false</code></td><td>false — שורה אפורה בחנות אינה הרשאה</td></tr>
     </table></div>
@@ -213,6 +214,10 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
         <li>מנותקת → <code>me.php</code> עובר לכולם, בלי <code>PLATFORM_USER</code>.</li>
         <li><code>grant_status</code> חתום: עם הרשאה → true; בלי → false; חסום / ממתין → false; <code>sub</code> לא קיים → false (200); <code>sub="abc"</code> → 400;
             חתימה שנעשתה עם action <code>provision</code> → 401; nonce שחוזר → 401; מנותקת עם הרשאה → true.</li>
+        <li><strong>התאמה בין שתי הכתיבות:</strong> <code>granted</code> מחושב ב-<code>can_use</code> (<code>lib/gate.php</code>) ו-<code>allowed</code> ב-<code>can_see</code>
+            (<code>lib/access.php</code>). לאותו משתמש ואותה אפליקציה — <code>PLATFORM_USER.granted == grant_status.allowed</code>, בכל אחד מהמקרים:
+            הרשאה ישירה (מותר / חסום), קבוצה, קטגוריה לאפליקציה רגילה, קטגוריה לאפליקציה <code>restricted</code>, מוסתרת, תוסף, ומנהל.
+            בדיקה אוטומטית אחת שעוברת על המטריצה — אחרת אי-התאמה תתגלה רק בייצור.</li>
         <li><code>check-apps.php</code>: <code>signed_in</code> בלי <code>gate</code> → שגיאה; <code>"../x"</code> ב-<code>signed_in</code> → שגיאה.</li>
         <li>אפליקציות קיימות (בלי <code>signed_in</code>) — אותה התנהגות; בזהות שלהן נוסף <code>granted:true</code> בלבד.</li>
     </ol>

@@ -9,7 +9,7 @@
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=cloud_key|client_register|connect_exchange|access_token|connection_scope|disconnect|appdata_get|appdata_put|appdata_delete|appdata_list|appdata_get_many|appdata_changes|appdata_history|appdata_restore|appdata_usage|appdata_clear|quota|list|stat|read|shared_roots|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty|ai_capabilities|ai_run|fonts_list|font_add|font_file|font_update|font_delete|font_license|drives_config",
+    "api.php?action=cloud_key|client_register|connect_exchange|access_token|client_policy|connection_scope|disconnect|appdata_get|appdata_put|appdata_delete|appdata_list|appdata_get_many|appdata_changes|appdata_history|appdata_restore|appdata_usage|appdata_clear|quota|list|stat|read|shared_roots|mkdir|write|upload_start|upload_chunk|upload_finish|rename|move|trash|restore|trash_list|purge|trash_empty|ai_capabilities|ai_run|fonts_list|font_add|font_file|font_update|font_delete|font_license|drives_config",
     "oauth/dropbox.php"
   ]
 }

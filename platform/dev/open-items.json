@@ -1,13 +1,13 @@
 {
-  "updated": "2026-11-08T09:37:22Z",
+  "updated": "2026-11-08T09:44:58Z",
   "note": "מטלות הפלטפורמה (כלים דיגיטליים). 🧪 ממתין לאימות = נפרס, תבדקו ותאשרו (✅) או תחזירו (↩️); ❓ שאלה = מחכה להחלטה שלך; 🔵 בעבודה / 🟡 פתוח = אצל Claude; ✅ סגור = אומת.",
   "items": [
     {
       "code": "PF-001",
       "id": "store-request-mode",
       "area": "חנות",
-      "status": "open",
-      "status_at": "2026-11-08T05:09:37Z",
+      "status": "verify",
+      "status_at": "2026-11-08T09:44:58Z",
       "kind": "feature",
       "priority": "normal",
       "opened": "2026-11-08",
@@ -45,7 +45,7 @@
         "check-apps: signed_in בלי gate ← שגיאה"
       ],
       "questions": [],
-      "pr": null
+      "pr": 1314
     }
   ],
   "repo": "malkiel01/mini_projects"

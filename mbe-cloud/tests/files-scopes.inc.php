@@ -21,10 +21,10 @@ $fsRet = fn(string $c, string $a = 'drives_callback') => "https://mbe-plus.com/m
 foreach (['fs-full', 'fs-ro', 'fs-app'] as $c) {
     $st = registerClient(['client' => $c, 'name' => "אפליקציה $c", 'key_url' => "https://mbe-plus.com/mini_projects/$c/api.php?action=drives_key",
                           'origins' => ['https://mbe-plus.com'], 'return' => [$fsRet($c), $fsRet($c, 'drives_pick_callback')]])['status'];
-    if ($c !== 'fs-full') check("ג10: $c (מצהירה " . clientFilesScope($c) . ') — active בלי אישור מנהל', $st === 'active');
+    check("ג10 (spec-6): $c (מצהירה " . clientFilesScope($c) . ') — active, והשכבות כבויות עד שהמנהל מדליק', $st === 'active' && effectiveScope(getClient($c)) === []);
+    policyAll($c);
 }
-check('ג10: fs-full מצהירה files בלי files_full — pending', getClient('fs-full')['status'] === 'pending');
-adminClient(['client' => 'fs-full', 'files_full' => true]);
+check('ג10 (spec-6): "כל הכונן" — רק כשהמנהל בחר בו', effectiveScope(getClient('fs-full')) === ['files']);
 
 as_platform(['sub' => 'fs-p', 'name' => 'פנינה', 'email' => 'pnina@example.com']);
 $P = requireAccount();
@@ -109,6 +109,22 @@ check('הגירה: files_full=1 רק לשלוש אפליקציות החבילה;
     $mig->query('SELECT id, files_full FROM clients ORDER BY id')->fetchAll(PDO::FETCH_KEY_PAIR) === ['greeting-cards' => 1, 'layout-studio' => 1, 'raster-studio' => 1, 'trading-strategies' => 0]);
 migrateGrants($mig);
 check('הגירה: ריצה שנייה לא משנה כלום', (int) $mig->query('SELECT SUM(files_full) FROM clients')->fetchColumn() === 3);
+// מ11 — הגירת המדיניות (spec-6 סעיף 6, ש1): כל מה שהוצהר דלוק. files_full=1 ← files; הצהרה צרה ← ההיקף שהוצהר
+$mig->exec("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+$mig->exec("INSERT INTO clients (id, files_full) VALUES ('fs-full', 0)");
+$GLOBALS['CLOUD_APPS'] += ['greeting-cards' => ['layers' => ['files', 'libs', 'ai']], 'layout-studio' => ['layers' => ['files', 'libs', 'ai']],
+                           'raster-studio' => ['layers' => ['files', 'libs', 'ai', 'appdata']], 'trading-strategies' => ['layers' => ['files'], 'files_scope' => 'files.app']];
+migratePolicy($mig);
+$pol = array_map(fn($j) => json_decode($j, true), $mig->query('SELECT id, policy FROM clients ORDER BY id')->fetchAll(PDO::FETCH_KEY_PAIR));
+check('מ11: הגירה — החבילה: 📁 files ו-📚 🤖 (ו-🗂️ אם הוצהר); אסטרטגיות: files.app בלבד; files בלי files_full — 📁 כבוי',
+    $pol['greeting-cards'] === ['files' => 'files', 'libs' => true, 'appdata' => false, 'ai' => true]
+    && $pol['raster-studio'] === ['files' => 'files', 'libs' => true, 'appdata' => true, 'ai' => true]
+    && $pol['trading-strategies'] === ['files' => 'files.app', 'libs' => false, 'appdata' => false, 'ai' => false]
+    && $pol['fs-full'] === ['files' => null, 'libs' => false, 'appdata' => false, 'ai' => false]);
+$mig->exec("UPDATE clients SET policy = NULL WHERE id = 'greeting-cards'");
+migratePolicy($mig);
+check('מ11: ההגירה חד-פעמית (policy_migrated) — לא דורסת מה שהמנהל שינה', $mig->query("SELECT policy FROM clients WHERE id = 'greeting-cards'")->fetchColumn() === null);
+foreach (['greeting-cards', 'layout-studio', 'raster-studio', 'trading-strategies'] as $k) unset($GLOBALS['CLOUD_APPS'][$k]);
 
 // ג4 + ג8 — הבורר
 $pq = function (array $acc, string $client, array $extra = []) use ($fsSk, $fsRet): array {
@@ -175,11 +191,10 @@ check('ג7: grant_revoke על התיקייה — מיד 404 על מה שבתוכ
 grantRevoke($P, 'fs-app', $pdf['id']);
 check('ג7: grant_revoke על הקובץ — read מיד 404', code(fn() => $fsDo($tApp, 'read', [], ['id' => $pdf['id']])) === 'not_found');
 pickApprove($P, pickRequest($pq($P, 'fs-app', ['mime' => 'application/pdf'])), [$pdf['id']]);   // שוב, להמשך
-$cApp = connectionRow((string) json_decode((string) unb64u(explode('.', $tApp)[0]), true)['conn'], 'fs-app');
-narrowScope($cApp, []);
+adminClient(['client' => 'fs-app', 'policy' => ['files' => null]]);   // spec-6: המנהל מכבה 📁
 check('ג7: כיבוי 📁 — הפעולות נחסמות (layer-off)', code(fn() => $fsDo($tApp, 'list')) === 'forbidden');
-$tApp = $fsToken($P, 'fs-app');
-check('ג7: הדלקה מחדש — ההענקות נשמרו, read עובד', isset($fsDo($tApp, 'read', [], ['id' => $pdf['id']])['__read']));
+adminClient(['client' => 'fs-app', 'policy' => ['files' => 'files.app']]);
+check('ג7: הדלקה מחדש — ההענקות נשמרו, read עובד (אותו אסימון)', isset($fsDo($tApp, 'read', [], ['id' => $pdf['id']])['__read']));
 check('grants_list — שורשים עם הסוג', ($gl = array_column(grantsList($P, 'fs-app')['items'], 'via', 'name')) && $gl['מאזן.pdf'] === 'picked' && $gl['המסחר שלי'] === 'created');
 
 // ג8 — בורר עם sub אחר, ובלי files.app
@@ -209,6 +224,7 @@ $GLOBALS['CLOUD_APPS']['fs-full']['files_scope'] = 'files.app';
 check('הצהרה מצמצמת (files → files.app) — חלה מיד על חיבור קיים', ($_SERVER['HTTP_X_CLOUD_TOKEN'] = $tFull) && actor('list', 'files', '')['files_mode'] === 'app');
 unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
 $GLOBALS['CLOUD_APPS']['fs-full']['files_scope'] = 'files';
+$cApp = connectionRow((string) json_decode((string) unb64u(explode('.', $tApp)[0]), true)['conn'], 'fs-app');
 revokeConnection($cApp['id']);
 check('ניתוק מלא — הענקות picked נמחקות, created נשארות',
     (int) db()->query("SELECT COUNT(*) FROM grants WHERE client = 'fs-app' AND account = " . db()->quote($P['id']) . " AND via = 'picked'")->fetchColumn() === 0

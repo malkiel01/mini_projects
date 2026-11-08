@@ -394,25 +394,26 @@ async function deleteFont(f) {
 const SCOPE_IC = { files: '📁', 'files.readonly': '📁', 'files.app': '📁', libs: '📚', appdata: '🗂️', ai: '🤖' };
 const LAYER_NAME = { files: 'קבצים', 'files.readonly': 'קבצים · קריאה בלבד', 'files.app': 'קבצים שבחרת', libs: 'נתוני מערכת', appdata: 'נתוני משתמש', ai: 'בינה מלאכותית' };
 
-// מתג לכל שכבה שהאפליקציה הצהירה (spec-0-vision.md 7.3). כאן רק מכבים; מדליקים מתוך האפליקציה (מסך האישור)
+const LAYER_IC = { files: '📁', libs: '📚', appdata: '🗂️', ai: '🤖' };
+const LAYER_TITLE = { files: 'קבצים', libs: 'נתוני מערכת', appdata: 'נתוני משתמש', ai: 'בינה מלאכותית' };
+const FILES_LABEL = { 'files.app': 'רק מה שהאפליקציה יצרה או שבחרת', 'files.readonly': 'קריאה בלבד', files: 'כל הכונן' };
+
+// לקריאה בלבד (spec-6 4.1): המנהל מחליט אילו שכבות דלוקות, לכולם. אין מתגים ואין ניתוק — ✅ פעיל, — לא פעיל באפליקציה
 async function loadLinks() {
   $('#title').textContent = 'חיבורים';
   const data = await api('connections');
   $('#links').replaceChildren(...(data.items.length ? data.items.map(c => el('li', {}, el('div', { class: 'acc-row' },
     el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
     el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
-      el('div', { class: 'l2' }, [`מאז ${when(c.created_at)}`, c.used_at ? `שימוש אחרון ${when(c.used_at)}` : 'עוד לא בשימוש'].join(' · ')),
-      el('div', { class: 'layers' }, ...(c.declared || c.scope).map(s => {
-        const on = c.scope.includes(s);
-        const box = el('input', { type: 'checkbox', ...(on ? { checked: '' } : { disabled: '' }) });
-        box.addEventListener('change', () => layer(c, s, box));
-        return el('label', { class: 'switch', title: on ? '' : 'מדליקים מתוך האפליקציה' }, box,
-          el('span', {}, `${SCOPE_IC[s] || ''} ${LAYER_NAME[s] || s}`));
-      })),
+      el('div', { class: 'l2' }, [`מחובר מ-${when(c.created_at)}`, c.used_at ? `שימוש אחרון ${when(c.used_at)}` : 'עוד לא בשימוש'].join(' · ')),
+      el('ul', { class: 'layer-list' }, ...Object.entries(c.layers || {}).map(([l, st]) => el('li', { class: st === 'on' ? '' : 'off' },
+        el('span', { class: 'mark', 'aria-hidden': 'true' }, st === 'on' ? '✅' : st === 'locked' ? '🔒' : '—'),
+        el('span', {}, `${LAYER_IC[l] || ''} ${LAYER_TITLE[l] || l}`
+          + (st === 'on' && l === 'files' && c.files_scope ? ` · ${FILES_LABEL[c.files_scope]}` : '')
+          + (st === 'off' ? ' · לא פעיל באפליקציה הזו' : st === 'locked' ? ' · לא זמין בחשבון שלך' : ''))))),
       // שלב 3: files.app — מה האפליקציה רואה (שורשי ההענקות), עם ✕ לביטול
-      c.scope.includes('files.app') ? el('button', { class: 'btn ghost sm', type: 'button', onclick: e => showGrants(c, e.currentTarget) }, '📁 מה היא רואה') : ''),
-    el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => unlink(c) }, 'ניתוק'))))
-    : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. באפליקציה: "☁️ חיבור לענן".'))]));
+      c.scope.includes('files.app') ? el('button', { class: 'btn ghost sm', type: 'button', onclick: e => showGrants(c, e.currentTarget) }, '📁 מה היא רואה') : ''))))
+    : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. אפליקציה שמנהל הענן הפעיל מתחברת לבד בכניסה הראשונה.'))]));
 }
 
 /** הענקות של files.app: מה שהאפליקציה יצרה ומה שבחרת לה בבורר. ✕ — היא מפסיקה לראות את זה מיד. */
@@ -432,19 +433,6 @@ async function showGrants(c, btn) {
   } catch (e) { fail(e); }
 }
 
-/** כיבוי שכבה — מיד, בלי שאלה. השכבה האחרונה = ניתוק, ולפניו שאלה (7.3 כלל 4). */
-async function layer(c, s, box) {
-  const rest = c.scope.filter(x => x !== s);
-  if (!rest.length) {
-    box.checked = true;
-    return unlink(c);
-  }
-  box.disabled = true;
-  try { await api('connection_layers', { id: c.id, scope: rest }); toast(`${SCOPE_IC[s] || ''} ${LAYER_NAME[s] || s} — כבוי`); }
-  catch (e) { fail(e); }
-  loadLinks();
-}
-
 // ─── 🧩 נתוני אפליקציות (שלב 4) — נפח ועדכון אחרון, בלי תוכן. 🗑️ מוחק הכול של אפליקציה אחת ───
 
 async function loadAppdata() {
@@ -460,11 +448,6 @@ async function loadAppdata() {
 async function wipeAppdata(d) {
   if (!await confirm(`למחוק את כל הנתונים של ${d.name} בענן? אי אפשר לשחזר.`, { ok: 'מחיקה', danger: true })) return;
   try { await api('appdata_wipe', { client: d.client }); toast('נמחק'); loadAppdata(); } catch (e) { fail(e); }
-}
-
-async function unlink(c) {
-  if (!await confirm(`לנתק את ${c.name}? היא תפסיק לגשת לענן מיד. הקבצים והנתונים נשארים בענן, ואפשר לחבר שוב בכל רגע.`, { ok: 'ניתוק', danger: true })) return;
-  try { await api('connection_revoke', { id: c.id }); toast('נותק'); loadLinks(); } catch (e) { fail(e); }
 }
 
 // ─── ניהול ──────────────────────────────────────────────────────────────
@@ -560,25 +543,48 @@ async function setDefault(task, provider) {
   try { renderAi(await api('ai_default', { task, provider })); toast('נשמר'); } catch (e) { fail(e); }
 }
 
+// spec-6 סעיף 2: כרטיס לכל אפליקציה — אילו שכבות דלוקות, לכל המשתמשים. רק מה שהוצהר מוצג; 📁 — בורר עד מה שהוצהר
+const FILES_ORDER = ['files.app', 'files.readonly', 'files'];
 function renderClients(list) {
-  const label = { active: ['פעילה', 'ok'], pending: ['ממתינה', 'warn'], disabled: ['כבויה', 'bad'] };
-  $('#clients').replaceChildren(...(list.length ? list.map(c => el('li', {}, el('div', { class: 'acc-row' },
-    el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
-    el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
-      el('div', { class: 'l2' }, `${c.origins.join(' ')} · ${c.users} מחוברים${c.mismatch ? ` · ⚠️ ${c.mismatch} לא אותו חשבון (חסומים, לא מנותקים)` : ''}`)),
-    el('span', { class: `chip ${label[c.status][1]}` }, label[c.status][0]),
-    // שלב 3 (הכרעה 5): files המלא — רק באישור מנהל
-    c.files_scope === 'files' ? el('label', { class: 'switch', title: 'גישה לכל הכונן של המשתמש' },
-      (b => { b.addEventListener('change', () => setFilesFull(c, b.checked)); return b; })(el('input', { type: 'checkbox', ...(c.files_full ? { checked: '' } : {}) })),
-      el('span', {}, '📁 כל הכונן')) : el('span', { class: 'muted' }, c.files_scope === 'files.app' ? '📁 שבוחרים' : '📁 קריאה'),
-    el('button', { class: 'btn ghost sm', type: 'button', onclick: () => setClient(c, c.status === 'active' ? 'disabled' : 'active') },
-      c.status === 'active' ? 'כיבוי' : 'אישור'))))
-    : [el('li', {}, el('p', { class: 'empty' }, 'עוד אין אפליקציות רשומות.'))]));
+  const label = { active: ['פעילה', 'ok'], pending: ['ממתינה לאישור', 'warn'], disabled: ['כבויה', 'bad'] };
+  $('#clients').replaceChildren(...(list.length ? list.map(c => {
+    const locked = c.status === 'pending';
+    const rows = (c.declared?.layers || []).map(l => {
+      if (l === 'files') {
+        const top = FILES_ORDER.indexOf(c.declared.files);
+        const sel = el('select', { 'aria-label': `📁 קבצים ב-${c.name}`, ...(locked ? { disabled: true } : {}) },
+          el('option', { value: '', selected: !c.policy.files }, 'כבוי'),
+          ...FILES_ORDER.slice(0, top + 1).map(f => el('option', { value: f, selected: c.policy.files === f }, FILES_LABEL[f])));
+        sel.addEventListener('change', () => setPolicy(c, 'files', sel.value || null));
+        return el('label', { class: 'f layer-pick' }, el('span', {}, `${LAYER_IC.files} ${LAYER_TITLE.files}`), sel);
+      }
+      const box = el('input', { type: 'checkbox', ...(c.policy[l] ? { checked: true } : {}), ...(locked ? { disabled: true } : {}) });
+      box.addEventListener('change', () => setPolicy(c, l, box.checked));
+      return el('label', { class: 'switch' }, box, el('span', {}, `${LAYER_IC[l]} ${LAYER_TITLE[l]}`));
+    });
+    return el('li', {}, el('div', { class: 'client-card' },
+      el('div', { class: 'acc-row' },
+        el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
+        el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name), el('div', { class: 'l2' }, `${c.origins.join(' ')} · ${c.users} משתמשים`)),
+        el('span', { class: `chip ${label[c.status][1]}` }, label[c.status][0])),
+      locked ? el('p', { class: 'hint' }, `המפתח: ${c.key_url}. השכבות נעולות עד האישור.`) : '',
+      c.mismatch ? el('p', { class: 'hint warn' }, `⚠️ ${c.mismatch} חיבורים עם חשבון לא תואם (חסומים, לא מנותקים)`) : '',
+      el('div', { class: 'client-layers' }, ...rows),
+      el('div', { class: 'row-btns' }, el('button', { class: `btn ${locked ? 'primary' : 'ghost'} sm`, type: 'button',
+        onclick: () => setClient(c, c.status === 'active' ? 'disabled' : 'active') },
+        c.status === 'active' ? 'כיבוי האפליקציה' : c.status === 'pending' ? '✅ אישור הלקוח' : 'הפעלה'))));
+  }) : [el('li', {}, el('p', { class: 'empty' }, 'עוד אין אפליקציות רשומות.'))]));
 }
 
-async function setFilesFull(c, on) {
-  if (on && !await confirm(`לאשר ל-${c.name} גישה לכל הכונן של כל משתמש שיתחבר?`, { ok: 'אישור' })) { renderClients((await api('admin')).clients || []); return; }
-  try { renderClients((await api('admin_client', { client: c.id, files_full: on })).clients); toast('נשמר'); } catch (e) { fail(e); }
+/** שינוי אחד, נשמר מיד. כיבוי — שאלה אחת. "כל הכונן" — הבחירה בו היא האישור (הכרעה 5), עם שאלה לפני. */
+async function setPolicy(c, layer, value) {
+  const name = `${LAYER_IC[layer]} ${LAYER_TITLE[layer]}`;
+  const off = value === false || value === null;
+  const q = off ? `לכבות את ${name} ב-${c.name} לכל ${c.users} המשתמשים? ${layer === 'files' ? 'הקבצים' : 'הנתונים'} נשארים בענן.`
+    : value === 'files' ? `${c.name} תוכל לקרוא ולשנות את כל הקבצים של כל המשתמשים שלה. להמשיך?` : null;
+  if (q && !await confirm(q, { ok: off ? 'כיבוי' : 'אישור', danger: off })) { renderClients((await api('admin')).clients || []); return; }
+  try { renderClients((await api('admin_client', { client: c.id, policy: { [layer]: value } })).clients); toast(off ? `${name} — כבוי` : `${name} — פעיל`); }
+  catch (e) { fail(e); renderClients((await api('admin')).clients || []); }
 }
 
 async function setClient(c, status) {

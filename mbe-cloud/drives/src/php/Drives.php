@@ -91,7 +91,7 @@ final class Drives {
             }
             $key = $action === 'drives_oauth_callback' ? 'drive' : 'cloud';
             if ($action === 'drives_pick_callback' && isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'picked' : 'pick-cancelled', 200, true, 'cloud');
-            if (isset($r['done'])) $this->page($r['done'], empty($r['denied']) ? 'connected' : 'denied', 200, true, $key);
+            if (isset($r['done'])) $this->page($r['done'], $r['code'] ?? (empty($r['denied']) ? 'connected' : 'denied'), 200, true, $key);
             $this->json($r);
         } catch (DrivesError $e) {
             // החזרה מהענן היא ניווט של הדפדפן — דף ברור עם דרך חזרה, לא JSON
@@ -117,10 +117,11 @@ final class Drives {
         if ($user === null) throw new DrivesError('נדרשת כניסה', 401, 'unauthorized');
         return match ($action) {
             'drives_status'     => $this->status($user),
-            'drives_connect'    => ['url' => $this->connectUrl($user, $this->scopeOf($in))],
+            // spec-6: "נסו שוב" אחרי שגיאה, והלחיצה האחת ב-APK. layers / scope — לא משנים כלום (המנהל מחליט), נשארים לתאימות
+            'drives_connect'    => $this->retry($user) + ['url' => $this->connectUrl($user, $this->scopeOf([]))],
             'drives_callback'   => ['redirect' => $this->callback($user, $in)],
             'drives_token'      => $this->token($user),
-            'drives_disconnect' => $this->disconnect($user, isset($in['layers']) ? $this->layerList($in['layers']) : null),
+            'drives_disconnect' => $this->disconnect($user),
             'drives_link'       => ['url' => $this->linkUrl($user, (string) ($in['provider'] ?? ''))],
             'drives_oauth_callback' => ['redirect' => $this->oauthCallback($user, $in)],
             'drives_ptoken'     => $this->providerToken($user, (string) ($in['provider'] ?? '')),
@@ -139,7 +140,7 @@ final class Drives {
     }
 
     public function status(string $user): array {
-        // ההיקפים מהענן — כיבוי שכבה בדף הענן ("🔗 חיבורים") או ניתוק שם מופיעים כאן מיד. ענן שלא עונה — מה שנשמר כאן
+        // ההיקפים מהענן — המנהל הדליק או כיבה שכבה: מופיע כאן מיד. ענן שלא עונה — מה שנשמר כאן
         if ($this->conn($user)) { try { $this->token($user); } catch (\Throwable) {} }
         $c = $this->conn($user);
         $scope = $c ? (json_decode($c['scope'], true) ?: []) : [];
@@ -147,8 +148,12 @@ final class Drives {
         foreach ($this->cfg['layers'] as $l) {
             $layers[$l] = $c !== null && ($l === 'files' ? (bool) array_intersect(self::FILES_SCOPES, $scope) : !array_diff(self::LAYERS[$l], $scope));
         }
+        // spec-6: המנהל מחליט. policy — השכבות שהמנהל הדליק לאפליקציה (null — לא ידוע: הענן לא ענה, או שעוד לא נרשמה)
+        $policy = $this->policy();
         $out = ['suite' => ($c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => $scope]
-                               : ['connected' => false]) + ['layers' => $layers, 'files_scope' => $this->cfg['files_scope'], 'cloud' => $this->cfg['cloud']]];
+                               : ['connected' => false]) + ['layers' => $layers, 'files_scope' => $this->cfg['files_scope'], 'cloud' => $this->cfg['cloud'],
+                                                            'managed' => true, 'policy' => $policy, 'policy_empty' => $policy === [],
+                                                            'hold' => $c ? null : $this->hold($user, $policy)]];
         foreach (array_keys(self::PROVIDERS) as $p) {
             if (!$this->providerConfig($p)) continue;   // בלי App key — הכונן לא מופיע
             $l = $this->link($user, $p);
@@ -505,18 +510,27 @@ final class Drives {
             if ($this->conn($user)) return $back . (str_contains($back, '?') ? '&' : '?') . 'cloud=connected';
             throw new DrivesError('בקשת החיבור כבר נוצלה — נסו שוב מהאפליקציה', 400, 'bad_state:used');
         }
-        return $back . (str_contains($back, '?') ? '&' : '?') . ($this->finish($row, $in) ? 'cloud=connected' : 'cloud=denied');
+        try {
+            $r = $this->finish($row, $in);
+        } catch (DrivesError $e) {
+            $this->setHold($user, 'error');   // "החיבור נדחה" או שגיאה — לא מפנים שוב עד "נסו שוב" (אף פעם לא לולאה)
+            throw $e;
+        }
+        if ($r !== 'connected') $this->setHold($user, $r === 'denied' ? 'error' : $r);
+        return $back . (str_contains($back, '?') ? '&' : '?') . 'cloud=' . $r;
     }
 
     /**
      * ההחלפה בענן ושמירת החיבור למשתמש של ה-state — עם ה-sub שלו, שהענן משווה לחשבון שאישר. false — בוטל.
      * הענן דחה חשבון אחר (error=account_mismatch, או 403 בהחלפה) — חריגה account_mismatch.
      */
-    private function finish(array $row, array $in): bool {
+    private function finish(array $row, array $in): string {
         if (($in['error'] ?? '') === 'account_mismatch') {
             throw new DrivesError('החשבון בענן שונה מהחשבון שלך כאן. היכנסו לענן באותו חשבון', 403, 'account_mismatch');
         }
-        if (isset($in['error'])) return false;
+        // spec-6: off — המנהל לא הדליק כלום; no_drive — כל מה שהודלק דורש כונן (spec-5). בלי חיבור
+        if (in_array($in['error'] ?? '', ['off', 'no_drive'], true)) return $in['error'];
+        if (isset($in['error'])) return 'denied';
         $r = $this->call('connect_exchange', ['code' => (string) ($in['code'] ?? ''), 'sub' => (string) ($row['sub'] ?? '')]);
         $prev = $this->conn($row['user']);
         $this->db()->prepare('INSERT INTO conns (user, connection, name, cloud_id, scope, created_at, sub) VALUES (?,?,?,?,?,?,?)
@@ -528,7 +542,7 @@ final class Drives {
         if ($prev && $prev['connection'] !== $r['connection']) {
             try { $this->call('disconnect', ['connection' => $prev['connection']]); } catch (\Throwable) {}
         }
-        return true;
+        return 'connected';
     }
 
     /**
@@ -545,9 +559,19 @@ final class Drives {
             if ($this->conn($row['user'])) return ['done' => 'החיבור לענן כבר הושלם. אפשר לחזור לאפליקציה.'];
             throw new DrivesError('בקשת החיבור כבר נוצלה — נסו שוב מהאפליקציה', 400, 'bad_state:used');
         }
-        return $this->finish($row, $in)
-            ? ['done' => 'החיבור לענן הושלם. אפשר לחזור לאפליקציה.']
-            : ['done' => 'החיבור בוטל. אפשר לסגור את הדף ולחזור לאפליקציה.', 'denied' => true];
+        try {
+            $r = $this->finish($row, $in);
+        } catch (DrivesError $e) {
+            $this->setHold($row['user'], 'error');
+            throw $e;
+        }
+        if ($r !== 'connected') $this->setHold($row['user'], $r === 'denied' ? 'error' : $r);
+        return match ($r) {
+            'connected' => ['done' => 'החיבור לענן הושלם. אפשר לחזור לאפליקציה.'],
+            'off' => ['done' => 'ענן MBE לא פעיל באפליקציה הזו. אפשר לחזור לאפליקציה.', 'denied' => true, 'code' => 'off'],
+            'no_drive' => ['done' => 'לאפליקציה הזו נדרש כונן בענן, ואין לך. אפשר לחזור לאפליקציה.', 'denied' => true, 'code' => 'no_drive'],
+            default => ['done' => 'החיבור בוטל. אפשר לסגור את הדף ולחזור לאפליקציה.', 'denied' => true],
+        };
     }
 
     /** אסימון לדפדפן (15 דקות) + כתובת ה-API של הענן. נותק בענן → מוחקים כאן ומחזירים connected:false. */
@@ -574,28 +598,50 @@ final class Drives {
                 'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true)];
     }
 
-    /**
-     * ניתוק, או כיבוי שכבות ($layers). כיבוי מיד ובלי מחיקה: connection_scope בענן מצמצם את ההיקף של אותו חיבור.
-     * כיבוי של השכבה האחרונה = ניתוק (spec-0-vision.md 7.3 כלל 4). מחזיר status.
-     */
-    public function disconnect(string $user, ?array $layers = null): array {
-        $c = $this->conn($user);
-        if ($c && $layers !== null) {
-            $drop = [];
-            foreach ($layers as $l) array_push($drop, ...($l === 'files' ? self::FILES_SCOPES : self::LAYERS[$l]));
-            $rest = array_values(array_diff(json_decode($c['scope'], true) ?: [], $drop));
-            if ($rest) {
-                $sub = ($c['sub'] ?? null) ?: $this->sub($user);
-                $r = $this->call('connection_scope', ['connection' => $c['connection'], 'sub' => (string) $sub, 'scope' => $rest]);
-                $this->db()->prepare('UPDATE conns SET scope = ? WHERE user = ?')->execute([json_encode($r['scope'] ?? $rest), $user]);
-                return ['ok' => true] + $this->status($user);
-            }
+    /** אין ניתוק למשתמש (spec-6 4.2, ש2): המנהל מחליט, לכולם. החיבור המקומי לא נמחק. */
+    public function disconnect(string $user): never {
+        throw new DrivesError('השכבות נקבעות בידי מנהל הענן', 403, 'admin_managed');
+    }
+
+    // ─── המדיניות, וההגנה מלולאות (spec-6 3.3) ───────────────────────────────
+
+    private const POLICY_TTL = 60;
+    private const HOLD_TTL = ['no_drive' => 86400, 'off' => 600, 'error' => 0];   // 0 — עד "נסו שוב"
+
+    /** השכבות שהמנהל הדליק (client_policy), ∩ מה שהוצהר כאן. במטמון 60 שניות. null — לא ידוע. */
+    private function policy(): ?array {
+        $mine = fn(array $l) => array_values(array_intersect($this->cfg['layers'], array_map('strval', $l)));
+        $j = json_decode((string) $this->meta('policy'), true);
+        if (is_array($j) && ($j['at'] ?? 0) > time() - self::POLICY_TTL) return $mine($j['layers']);
+        try {
+            $this->register();
+            $layers = (array) ($this->call('client_policy', [])['layers'] ?? []);
+        } catch (\Throwable) {
+            return is_array($j) ? $mine($j['layers']) : null;   // ענן שלא עונה — מה שנשמר
         }
-        if ($c) {
-            try { $this->call('disconnect', ['connection' => $c['connection']]); } catch (DrivesError) { /* כבר נותק בענן — מוחקים כאן בכל מקרה */ }
-            $this->forget($user);
-        }
-        return ['ok' => true] + $this->status($user);
+        $this->setMeta('policy', json_encode(['at' => time(), 'layers' => array_values($layers)]));
+        return $mine($layers);
+    }
+
+    /** למה לא להפנות עכשיו את המשתמש הזה: no_drive (24 שעות), off (10 דקות), error (עד "נסו שוב"). null — אפשר. */
+    private function hold(string $user, ?array $policy = null): ?string {
+        $j = json_decode((string) $this->meta("hold:$user"), true);
+        if (!is_array($j)) return null;
+        if ($j['why'] === 'off' && $policy) return null;   // המנהל הדליק בינתיים — אפשר שוב
+        if (($j['until'] ?? 0) !== 0 && $j['until'] < time()) return null;
+        return (string) $j['why'];
+    }
+
+    private function setHold(string $user, string $why): void {
+        $ttl = self::HOLD_TTL[$why] ?? 0;
+        $this->setMeta("hold:$user", json_encode(['why' => $why, 'until' => $ttl ? time() + $ttl : 0]));
+        if ($why === 'off') $this->setMeta('policy', '');   // המדיניות כנראה השתנתה — לא לחכות למטמון
+    }
+
+    /** "נסו שוב": מבטל את ההמתנה. */
+    private function retry(string $user): array {
+        $this->setMeta("hold:$user", '');
+        return [];
     }
 
     // ─── הענן ────────────────────────────────────────────────────────────
@@ -734,7 +780,7 @@ final class Drives {
         $m = htmlspecialchars($msg);
         $c = htmlspecialchars($code);
         $sep = str_contains($this->cfg['back'], '?') ? '&' : '?';
-        $v = in_array($code, ['picked', 'pick-cancelled'], true) ? $code : ($code === 'denied' ? 'denied' : ($ok ? 'connected' : 'error'));
+        $v = in_array($code, ['picked', 'pick-cancelled', 'denied', 'off', 'no_drive'], true) ? $code : ($ok ? 'connected' : 'error');
         $b = htmlspecialchars($this->cfg['back'] . $sep . $key . '=' . $v);
         $head = $key === 'drive' ? ($ok ? '💾 החיבור לכונן' : '💾 החיבור לכונן לא הושלם') : ($ok ? '☁️ החיבור לענן' : '☁️ החיבור לענן לא הושלם');
         $foot = $ok ? '' : "קוד: $c";
