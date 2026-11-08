@@ -7,6 +7,8 @@
  *         rename, move, trash, restore, trash_list, purge, trash_empty.
  * ניהול (רק admin): admin, admin_settings, admin_account.
  *
+ * שיתוף ואסימון אישי (docs/spec-2-share-token.md): shared_roots (+ list/stat/read) עם PAT; share_create / share_list /
+ *   share_revoke לבעלים; service_* ו-token_* למנהל.
  * חיבור אפליקציה: cloud_key, client_register, connect_exchange / access_token / disconnect (חתומים), connections.
  * מי קורא לפעולת קבצים — actor() ב-lib/clients.php: הדף של הענן (השער), אסימון (Bearer) או חתימה (X-Cloud-*).
  * כתיבה רק ב-POST עם Content-Type: application/json (או PUT לחלק) — טופס מאתר אחר לא יכול לשלוח כזה בלי preflight.
@@ -15,11 +17,17 @@
 
 declare(strict_types=1);
 
+// ה-trace של חריגה (error_log למטה) בלי ערכי הארגומנטים — אסימונים לא נכתבים ליומן גם אם השרת מגדיר
+// exception_string_param_max_len גבוה. בנוסף, #[\SensitiveParameter] על כל פונקציה שמקבלת אסימון.
+ini_set('zend.exception_ignore_args', '1');
+
 require_once __DIR__ . '/lib/drive.php';
 require_once __DIR__ . '/lib/clients.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/fonts.php';
 require_once __DIR__ . '/lib/me.php';
+require_once __DIR__ . '/lib/share.php';
+require_once __DIR__ . '/lib/appdata.php';
 require_once __DIR__ . '/lib/ui-core/account/account.php';
 
 header('X-Content-Type-Options: nosniff');
@@ -117,8 +125,10 @@ function sendFile(string $path, array $n): never {
 
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
-                'disconnect', 'connection_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
-                'account_prefs', 'account_prefs_set', 'account_export', 'account_delete'];
+                'disconnect', 'connection_scope', 'connection_revoke', 'connection_layers',
+                'appdata_put', 'appdata_delete', 'appdata_restore', 'appdata_clear', 'appdata_wipe', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
+                'account_prefs', 'account_prefs_set', 'account_export', 'account_delete',
+                'share_create', 'share_revoke', 'service_create', 'service_delete', 'token_create', 'token_revoke'];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $action = (string) ($_GET['action'] ?? '');
@@ -132,6 +142,14 @@ if ($action !== 'upload_chunk') {
 try {
     corsHeaders();
     if ($method === 'OPTIONS') { http_response_code(204); exit; }
+    rejectTokenInUrl();
+    // אסימון אישי: 429 / 401 / 403 לכל פעולה שאינה ברשימה הסגורה — לפני כל דבר אחר, גם לפעולות שלא עוברות דרך actor().
+    // כל בקשה כזו נרשמת ב-token_log עם הקוד שהוחזר (בסוף הבקשה, גם בהצלחה).
+    $patToken = requestBearer();
+    if (isPat($patToken)) {
+        register_shutdown_function(fn() => patLogFinish((int) (http_response_code() ?: 200)));
+        patActor($action, $patToken);
+    }
     if (in_array($action, WRITES, true)
         && ($method !== 'POST' || !str_starts_with(strtolower($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json'))) {
         throw new AppError('בקשה לא תקינה', 400, 'bad_request');
@@ -158,12 +176,40 @@ try {
             reply(['account' => publicAccount($a), 'quota' => quotaInfo($a), 'cloud_id' => setting('cloud_id')]);
         }
         case 'quota':          reply(quotaInfo($files()['account']));
-        case 'list':           reply(listFolder($files()['account'], $_GET['folder'] ?? $in['folder'] ?? null));
-        case 'stat':           reply(publicNode(liveNode($files()['account'], $_GET['id'] ?? $in['id'] ?? null)));
+        case 'list': {
+            $x = $files();
+            $folder = $_GET['folder'] ?? $in['folder'] ?? null;
+            reply(isset($x['pat']) ? sharedList($x['account'], $folder) : listFolder($x['account'], $folder));
+        }
+        case 'stat': {
+            $x = $files();
+            $id = $_GET['id'] ?? $in['id'] ?? null;
+            reply(isset($x['pat']) ? sharedStat($x['account'], $id) : publicNode(liveNode($x['account'], $id)));
+        }
         case 'read': {
-            [$path, $n] = readTarget($files()['account'], $_GET['id'] ?? null);
+            $x = $files();
+            [$path, $n] = isset($x['pat']) ? sharedReadTarget($x['account'], $_GET['id'] ?? null) : readTarget($x['account'], $_GET['id'] ?? null);
             sendFile($path, $n);
         }
+        // ── שיתוף לקריאה (docs/spec-2-share-token.md) ──
+        case 'shared_roots': {
+            $x = $files();
+            if (!isset($x['pat'])) throw new AppError('הפעולה הזו — רק עם אסימון אישי', 403, 'forbidden');
+            reply(sharedRoots($x['account']));
+        }
+        case 'share_create':   reply(shareCreate(requireAccount(), $in));
+        case 'share_list': {
+            $a = requireAccount();
+            reply(shareList($a, $_GET['node'] ?? $in['node'] ?? null) + ['shared_nodes' => sharedNodeIds($a), 'services' => shareableServices($a)]);
+        }
+        case 'share_revoke':   reply(shareRevoke(requireAccount(), $in['id'] ?? null));
+        case 'service_create': reply(serviceCreate(requireAdmin(), $in));
+        case 'service_list':   requireAdmin(); reply(serviceList());
+        case 'service_delete': requireAdmin(); reply(serviceDelete($in['id'] ?? null));
+        case 'token_create':   reply(tokenCreate(requireAdmin(), $in));
+        case 'token_list':     requireAdmin(); reply(tokenList($_GET['account'] ?? $in['account'] ?? null));
+        case 'token_revoke':   requireAdmin(); reply(tokenRevoke($in['id'] ?? null));
+        case 'token_log':      requireAdmin(); reply(tokenLog($_GET['token'] ?? $in['token'] ?? null, $_GET['cursor'] ?? $in['cursor'] ?? null));
         case 'mkdir':          { $x = $files(); reply(makeFolder($x['account'], $in, $x['app'])); }
         case 'write':          { $x = $files(); reply(writeFile($x['account'], $in, $x['app'])); }
         case 'upload_start':   reply(uploadStart($files()['account'], $in));
@@ -186,7 +232,22 @@ try {
         case 'connect_exchange': reply(exchangeCode(verifySigned($action, signedHeaders(), $raw), $in));
         case 'access_token': {
             $client = verifySigned($action, signedHeaders(), $raw);
-            reply(issueToken($client, connectionRow((string) ($in['connection'] ?? ''), $client['id'])));
+            $conn = connectionRow((string) ($in['connection'] ?? ''), $client['id']);
+            bindConnection($conn, $in['sub'] ?? null);   // רק אותו חשבון — בכל אסימון
+            reply(issueToken($client, $conn));
+        }
+        case 'connection_scope': reply(connectionScope(verifySigned($action, signedHeaders(), $raw), $in));
+
+        // ── נתוני משתמש (שלב 4, docs/spec-4-appdata.md). client מהחתימה/האסימון, לעולם לא מהגוף ──
+        case 'appdata_get': case 'appdata_put': case 'appdata_delete': case 'appdata_list': case 'appdata_get_many':
+        case 'appdata_changes': case 'appdata_history': case 'appdata_restore': case 'appdata_usage': case 'appdata_clear': {
+            $ctx = appdataCtx($action, $raw, $in);
+            reply(match ($action) {
+                'appdata_get' => appdataGet($ctx, $in), 'appdata_put' => appdataPut($ctx, $in), 'appdata_delete' => appdataDelete($ctx, $in),
+                'appdata_list' => appdataList($ctx, $in), 'appdata_get_many' => appdataGetMany($ctx, $in),
+                'appdata_changes' => appdataChanges($ctx, $in), 'appdata_history' => appdataHistory($ctx, $in),
+                'appdata_restore' => appdataRestore($ctx, $in), 'appdata_usage' => appdataUsage($ctx), 'appdata_clear' => appdataClear($ctx, $in),
+            });
         }
         case 'disconnect': {
             $client = verifySigned($action, signedHeaders(), $raw);
@@ -279,8 +340,21 @@ try {
             reply(drivesConfig());
         }
 
+        case 'api_guide': {   // ⬇️ "הורדת מדריך API" בלשונית החיבורים. docs/ לא מוגש דרך השער (אין שם md), ולכן מכאן
+            requireAccount();
+            $f = __DIR__ . '/docs/api-guide.md';
+            if (!is_file($f)) throw new AppError('המדריך עוד לא פורסם', 404, 'not_found');
+            header('Content-Type: text/markdown; charset=utf-8');
+            header("Content-Disposition: attachment; filename=\"mbe-cloud-api-guide.md\"");
+            header('Content-Length: ' . filesize($f));
+            readfile($f);
+            exit;
+        }
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);
+        case 'connection_layers': reply(ownConnectionScope(requireAccount(), $in['id'] ?? null, $in['scope'] ?? null));
+        case 'appdata_apps':   reply(appdataApps(requireAccount()));                          // "🧩 נתוני אפליקציות"
+        case 'appdata_wipe':   reply(appdataWipeOwn(requireAccount(), $in['client'] ?? null));   // 🗑️ מחק נתונים
 
         case 'admin':          requireAdmin(); reply(adminFull(adminState()));
         case 'admin_settings': requireAdmin(); reply(adminFull(adminSettings($in)));

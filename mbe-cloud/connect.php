@@ -7,6 +7,9 @@
  *   POST connect.php (אישור / ביטול, עם אסימון טופס) → <return>?code=…&state=…  או  ?error=access_denied&state=…
  *
  * מאחורי השער: מי שלא מחובר מגיע לכניסה וחוזר לכאן (לכן הכתובת אינה ב-public).
+ *
+ * רק אותו חשבון (spec-0-vision.md 6.3, הכרעת בעל המערכת): הבקשה נושאת את ה-sub של הפלטפורמה של המשתמש באפליקציה, חתום
+ * במפתח הלקוח (&sub&exp&sig). sub שונה מזה של מי שנכנס לענן — "החיבור נדחה", בלי כפתור אישור ובלי עקיפה, גם למנהל.
  */
 
 declare(strict_types=1);
@@ -59,6 +62,20 @@ try {
     $q = $post ? ($_SESSION['connect'] ?? null) : $_GET;
     if (!is_array($q)) fail('הבקשה פגה — חזרו לאפליקציה ונסו שוב.');
     $req = connectRequest($q);
+    if (!sameSub($a, $req['sub'])) {
+        unset($_SESSION['connect'], $_SESSION['connect_form']);
+        error_log("mbe-cloud: connect.php account_mismatch (client {$req['client']['id']})");
+        http_response_code(403);
+        $name = htmlspecialchars($req['client']['name']);
+        $who = htmlspecialchars($a['name']);
+        $back = htmlspecialchars(withQuery($req['return'], ['error' => 'account_mismatch', 'state' => $req['state']]));
+        page('החיבור נדחה', <<<HTML
+<p class="error" role="alert"><b>החיבור נדחה: החשבון באפליקציה אינו החשבון שלך.</b></p>
+<p class="hint">נכנסת לענן בתור <b>$who</b>, אבל באפליקציה <b>$name</b> מחובר חשבון אחר. הענן מתחבר רק לאפליקציה של אותו אדם.</p>
+<p class="hint">אם גם החשבון באפליקציה שלך — היכנסו לשניהם באותו חשבון ונסו שוב.</p>
+<div class="row-btns"><a class="btn ghost" href="$back">חזרה לאפליקציה</a></div>
+HTML);
+    }
 
     if ($post) {
         $form = (string) ($_POST['form'] ?? '');
@@ -76,23 +93,28 @@ try {
         exit;
     }
 
-    $_SESSION['connect'] = ['client' => $req['client']['id'], 'scope' => implode(',', $req['scope']), 'state' => $req['state'], 'return' => $req['return']];
+    $_SESSION['connect'] = ['client' => $req['client']['id'], 'scope' => implode(',', $req['scope']), 'state' => $req['state'], 'return' => $req['return'],
+                            'sub' => $q['sub'], 'exp' => $q['exp'], 'sig' => $q['sig']];
     $_SESSION['connect_form'] = $form = b64u(random_bytes(18));
     $name = htmlspecialchars($req['client']['name']);
     $host = htmlspecialchars((string) parse_url($req['return'], PHP_URL_HOST));
     $who = htmlspecialchars($a['name']);
+    // חיבור קיים — רק השכבה החדשה (7.3 כלל 3). היא מתווספת לאותו חיבור
+    $live = liveConnection($a['id'], $req['client']['id']);
+    $ask = $live ? array_values(array_diff($req['scope'], json_decode($live['scope'], true) ?: [])) : $req['scope'];
     $rows = '';
-    foreach ($req['scope'] as $s) {
-        $ic = ['files' => '📁', 'libs' => '🔤', 'ai' => '🤖'][$s];
+    foreach ($ask as $s) {
+        $ic = ['files' => '📁', 'libs' => '📚', 'appdata' => '🗂️', 'ai' => '🤖'][$s];
         $rows .= '<li class="acc-row"><span class="use-ic" aria-hidden="true">' . $ic . '</span><div class="body"><div class="l1">'
                . htmlspecialchars(SCOPE_NAMES[$s]) . '</div></div></li>';
     }
+    $askTitle = $live ? 'מה עוד היא תוכל לעשות' : 'מה היא תוכל לעשות';
     page("חיבור $name", <<<HTML
 <div class="summary">
   <div class="line"><b>$name</b> <span class="muted">מבקשת גישה לענן שלך</span></div>
   <div class="hint">מחובר בתור $who · חזרה אל $host</div>
 </div>
-<h2 class="sec-title">מה היא תוכל לעשות</h2>
+<h2 class="sec-title">$askTitle</h2>
 <ul class="list">$rows</ul>
 <p class="hint">אפשר לנתק בכל רגע — בענן, בלשונית "🔗 חיבורים", או מתוך האפליקציה.</p>
 <form method="post" class="row-btns">

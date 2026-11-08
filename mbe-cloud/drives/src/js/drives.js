@@ -4,8 +4,11 @@
  *   import { createDrives } from './drives/drives.js';
  *   const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php של האפליקציה (שם רץ Drives.php)
  *
- *   await drives.status()          → { suite: { connected, name, cloud_id, scope } }
- *   await drives.connect()         — מעבר למסך האישור בענן; חוזרים ל-back עם ?cloud=connected | denied
+ *   await drives.status()          → { suite: { connected, name, cloud_id, scope, layers: { files: true, libs: false, … } } }
+ *        layers — רק השכבות שהאפליקציה הצהירה (apps.json), ולכל אחת: דלוקה או לא. מתג לכל שכבה (spec-0-vision.md 7.3).
+ *   await drives.connect()         — מעבר למסך האישור בענן, לכל השכבות שהוצהרו; חוזרים ל-back עם ?cloud=connected | denied
+ *   await drives.connect({ layers: ['libs'] }) — הדלקת שכבה: מסך האישור מציג רק אותה, והיא נוספת לאותו חיבור
+ *   await drives.disconnect({ layers: ['libs'] }) → status — כיבוי שכבה, מיד. כיבוי של השכבה האחרונה = ניתוק
  *   await drives.disconnect()
  *
  *   const s = drives.suite;        — ענן MBE. בלי חיבור — כל קריאה זורקת DriveError עם code 'not-connected'.
@@ -35,7 +38,17 @@
  *   const x = drives.dropbox;      — list · stat · read · mkdir · rename · move · trash · write · upload · quota (כמו suite).
  *        id הוא מזהה של Dropbox ("id:…"), תיקיית השורש היא null, ו-rev הוא מחרוזת. בתיקיית האפליקציה (App folder) בלבד.
  *
- * שגיאות: DriveError עם code — not-connected, conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
+ * נתוני משתמש — 🗂️ (שלב 4, mbe-cloud/docs/spec-4-appdata.md). רק לאפליקציה שהצהירה "appdata" ב-layers:
+ *   const a = drives.appdata;                     // מרחב user. מרחב האפליקציה (קריאה בלבד מהדפדפן): drives.appdata.space('app')
+ *   await a.get('settings', 'chart')              → { value, rev, updated_at } | null
+ *   await a.put('settings', 'chart', value, { ifRev })   → { rev, seq }. התנגשות → DriveError 'conflict' עם rev ו-value
+ *   await a.delete('settings', 'chart', { ifRev })
+ *   await a.list({ collection, prefix, cursor, limit })  → { items: [{ collection, key, rev, size, updated_at }], cursor }
+ *   await a.getMany('watchlist', ['a', 'b'])      → { items: [{ key, value, rev, updated_at }] }
+ *   await a.changes(since)                        → { changes, cursor, more }. 'gone' (410) — טוענים הכול מחדש ב-list
+ *   await a.history(col, key) · a.restore(col, key, rev, { ifRev }) · a.usage() → { used, quota } · a.clear() (אחרי אישור)
+ *
+ * שגיאות: DriveError עם code — not-connected, layer-off (עם layer: 'files' | 'libs' | 'ai' — השכבה כבויה), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
  * not-allowed, quota, too-big, provider, aborted. האסימון (15 דקות) מתחדש לבד, ונשמר בזיכרון בלבד.
  */
 
@@ -84,6 +97,8 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         }
         if (raw && res.ok) return res;
         const j = await res.json().catch(() => ({ error: 'תשובה לא תקינה מהענן' }));
+        // השכבה כבויה (כיבוי באפליקציה או בדף הענן) — layer-off, כדי להציע להדליק את המתג הנכון
+        if (res.status === 403 && j.code === 'forbidden' && j.layer) throw new DriveError(j.error || 'השכבה כבויה', 'layer-off', { layer: j.layer, scope: j.scope });
         if (!res.ok) throw new DriveError(j.error || 'תקלה', j.code || 'cloud', j);
         return j;
     }
@@ -280,6 +295,28 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         },
     };
 
+    /** נתוני משתמש (🗂️). כל קריאה — POST עם JSON, דרך האסימון. */
+    function appdataSpace(space) {
+        const call = (action, body = {}) => cloud(action, { body: space === 'user' ? body : { ...body, space } });
+        return {
+            async get(collection, key) {
+                try { return await call('appdata_get', { collection, key }); }
+                catch (e) { if (e.code === 'not_found') return null; throw e; }
+            },
+            put: (collection, key, value, { ifRev } = {}) => call('appdata_put', { collection, key, value, ...(ifRev != null ? { if_rev: ifRev } : {}) }),
+            delete: (collection, key, { ifRev } = {}) => call('appdata_delete', { collection, key, ...(ifRev != null ? { if_rev: ifRev } : {}) }),
+            list: (opts = {}) => call('appdata_list', opts),
+            getMany: (collection, keys) => call('appdata_get_many', { collection, keys }),
+            changes: (since = 0, { limit } = {}) => call('appdata_changes', { since, ...(limit ? { limit } : {}) }),
+            history: (collection, key) => call('appdata_history', { collection, key }),
+            restore: (collection, key, rev, { ifRev } = {}) => call('appdata_restore', { collection, key, rev, ...(ifRev != null ? { if_rev: ifRev } : {}) }),
+            usage: () => call('appdata_usage'),
+            clear: () => call('appdata_clear', { confirm: 'clear' }),
+            space: s => appdataSpace(s),
+        };
+    }
+    const appdata = appdataSpace('user');
+
     const NAMES = { suite: 'ענן MBE', dropbox: 'Dropbox' };
 
     const NONE = { connected: false, tasks: { 'remove-background': false, segment: false, 'generate-image': false, inpaint: false, complete: false }, providers: [], default: {}, quota: null };
@@ -287,7 +324,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
     const ai = {
         async capabilities() {
             try { return { connected: true, ...(await cloud('ai_capabilities')) }; }
-            catch (e) { if (e.code === 'not-connected' || e.code === 'forbidden') return NONE; throw e; }
+            catch (e) { if (e.code === 'not-connected' || e.code === 'layer-off' || e.code === 'forbidden') return NONE; throw e; }
         },
         async run(task, input = {}, { signal } = {}) {
             const fd = new FormData();
@@ -313,11 +350,17 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
 
     return {
         status: () => app('drives_status'),
-        async connect(scope) {
-            const r = await app('drives_connect', scope ? { scope } : {});
+        /** connect() — כל השכבות שהוצהרו; connect({ layers }) — הדלקת שכבות; connect('files,ai') — היקפים (התאמה לאחור). */
+        async connect(arg) {
+            const body = Array.isArray(arg?.layers) ? { layers: arg.layers } : typeof arg === 'string' && arg ? { scope: arg } : {};
+            const r = await app('drives_connect', body);
             location.assign(r.url);
         },
-        async disconnect() { tok = null; return app('drives_disconnect', {}); },
+        /** disconnect() — ניתוק מלא; disconnect({ layers }) — כיבוי שכבות (האחרונה = ניתוק). מחזיר status. */
+        async disconnect(arg) {
+            tok = null;
+            return app('drives_disconnect', Array.isArray(arg?.layers) ? { layers: arg.layers } : {});
+        },
         async list() {
             const s = await app('drives_status');
             return Object.entries(s).map(([id, v]) => ({ id, name: NAMES[id] || id, connected: !!v.connected, ...(v.name ? { account: v.name } : {}) }));
@@ -331,5 +374,6 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         suite,
         fonts,
         ai,
+        appdata,
     };
 }

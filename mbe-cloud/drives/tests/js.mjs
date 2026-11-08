@@ -8,13 +8,18 @@ const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(b
 const API = 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php';
 let dbxLinked = true, ptokens = 0, dbxExpire = false;
 const dbxCalls = [];
-let connected = true, tokens = 0, expireNext = false, chunks = [];
+let connected = true, tokens = 0, expireNext = false, chunks = [], layerOff = false;
+const appBodies = {};
+const adCalls = [];
 const log = [];
 globalThis.fetch = async (url, init = {}) => {
   url = String(url);
   log.push(url);
   const a = new URL(url, 'https://mbe-plus.com/mini_projects/vector-studio/').searchParams.get('action');
   if (!url.startsWith(API)) {
+    if (init.body && typeof init.body === 'string') appBodies[a] = JSON.parse(init.body);
+    if (a === 'drives_connect') return json({ url: 'https://mbe-plus.com/mini_projects/mbe-cloud/connect.php?x=1' });
+    if (a === 'drives_disconnect' && appBodies[a]?.layers) return json({ ok: true, suite: { connected: true, layers: { files: true, libs: false } } });
     if (a === 'drives_token') { tokens++; return json(connected ? { connected: true, token: 't' + tokens, expires_in: 900, api: API } : { connected: false }); }
     if (a === 'drives_status') return json({ suite: { connected } });
     if (a === 'drives_disconnect') { connected = false; return json({ ok: true }); }
@@ -44,6 +49,16 @@ globalThis.fetch = async (url, init = {}) => {
   const tok = init.headers?.['X-Cloud-Token'];
   if (!tok) return json({ error: 'no token', code: 'unauthorized' }, 401);
   if (expireNext) { expireNext = false; return json({ error: 'expired', code: 'expired' }, 401); }
+  if (a?.startsWith('appdata_')) {
+    const b = init.body ? JSON.parse(init.body) : {};
+    adCalls.push({ a, b, method: init.method });
+    if (a === 'appdata_get') return b.key === 'none' ? json({ error: 'לא נמצא', code: 'not_found' }, 404) : json({ value: { zoom: 2 }, rev: 1, updated_at: 'x' });
+    if (a === 'appdata_put' && b.if_rev === 9) return json({ error: 'המסמך השתנה', code: 'conflict', rev: 2, value: { zoom: 3 } }, 409);
+    if (a === 'appdata_put' && b.space === 'app') return json({ error: 'במרחב app כותב רק השרת', code: 'forbidden' }, 403);
+    if (a === 'appdata_changes' && b.since === 999) return json({ error: 'gone', code: 'gone' }, 410);
+    return json({ ok: true, rev: 2, seq: 7, items: [], changes: [], cursor: 7, more: false, used: 10, quota: 20 });
+  }
+  if (layerOff && a === 'list') return json({ error: 'אין לאפליקציה הרשאה לזה', code: 'forbidden', scope: 'files', layer: 'files' }, 403);
   if (a === 'list') return json({ folder: null, path: [], items: [{ id: 'n_1', name: 'ספר.mbe', tok }] });
   if (a === 'upload_start') return json({ upload: 'u_1', chunk: 4, received: 0 });
   if (a === 'upload_chunk') { chunks.push(new URL(url).searchParams.get('index')); return json({ received: Math.min(10, (chunks.length) * 4) }); }
@@ -116,7 +131,53 @@ let nc = null;
 try { await d.dropbox.list(); } catch (e) { nc = e; }
 check('dropbox אחרי unlink — not-connected', nc?.code === 'not-connected');
 
+// ── נתוני משתמש — 🗂️ (spec-4-appdata.md) ──
+const ad = d.appdata;
+check('appdata.get — ערך ו-rev, ב-POST עם JSON', (await ad.get('settings', 'chart')).value.zoom === 2
+  && adCalls.at(-1).method === 'POST' && JSON.stringify(adCalls.at(-1).b) === '{"collection":"settings","key":"chart"}');
+check('appdata.get של מפתח שלא קיים — null', (await ad.get('settings', 'none')) === null);
+await ad.put('settings', 'chart', { zoom: 4 }, { ifRev: 1 });
+check('appdata.put — if_rev בגוף, בלי space במרחב user', JSON.stringify(adCalls.at(-1).b) === '{"collection":"settings","key":"chart","value":{"zoom":4},"if_rev":1}');
+let cf = null;
+try { await ad.put('settings', 'chart', {}, { ifRev: 9 }); } catch (e) { cf = e; }
+check('appdata.put עם if_rev ישן — DriveError conflict עם rev ו-value', cf?.code === 'conflict' && cf.rev === 2 && cf.value.zoom === 3);
+await ad.put('settings', 'new', 1, { ifRev: 0 });
+check('appdata.put עם ifRev 0 (יצירה בלבד) — נשלח', adCalls.at(-1).b.if_rev === 0);
+const app = ad.space('app');
+await app.get('catalog', 'v1');
+check('appdata.space(\'app\') — space app בגוף', adCalls.at(-1).b.space === 'app');
+let fb = null;
+try { await app.put('catalog', 'v1', 1); } catch (e) { fb = e; }
+check('מרחב app מהדפדפן — כתיבה נדחית (forbidden, לא layer-off)', fb?.code === 'forbidden');
+let gone = null;
+try { await ad.changes(999); } catch (e) { gone = e; }
+check('appdata.changes ישן — gone (טוענים מחדש ב-list)', gone?.code === 'gone');
+await ad.clear();
+check('appdata.clear — confirm: clear', JSON.stringify(adCalls.at(-1).b) === '{"confirm":"clear"}' && adCalls.at(-1).a === 'appdata_clear');
+await ad.getMany('watch', ['a', 'b']); await ad.list({ collection: 'watch', prefix: '2026/' }); await ad.history('h', 'doc'); await ad.restore('h', 'doc', 3);
+check('getMany, list, history, restore — הפעולות והגופים', adCalls.slice(-4).map(c => c.a).join() === 'appdata_get_many,appdata_list,appdata_history,appdata_restore'
+  && adCalls.at(-1).b.rev === 3 && adCalls.at(-3).b.prefix === '2026/');
+
+// ── שכבות (spec-0-vision.md 7.3) ──
+layerOff = true;
+let lo = null;
+try { await d.suite.list(); } catch (e) { lo = e; }
+check('שכבה כבויה — DriveError layer-off עם layer', lo instanceof DriveError && lo.code === 'layer-off' && lo.layer === 'files');
+layerOff = false;
+let assigned = null;
+globalThis.location = { assign: u => { assigned = u; } };
+await d.connect({ layers: ['libs'] });
+check('connect({layers}) — שולח layers ועובר למסך האישור', JSON.stringify(appBodies.drives_connect) === '{"layers":["libs"]}' && assigned.includes('connect.php'));
+await d.connect();
+check('connect() — בלי layers (כל השכבות שהוצהרו)', JSON.stringify(appBodies.drives_connect) === '{}');
+await d.connect('files,ai');
+check('connect(\'files,ai\') — התאמה לאחור (scope)', JSON.stringify(appBodies.drives_connect) === '{"scope":"files,ai"}');
+const off = await d.disconnect({ layers: ['libs'] });
+check('disconnect({layers}) — כיבוי שכבה, ומחזיר status', JSON.stringify(appBodies.drives_disconnect) === '{"layers":["libs"]}' && off.suite.layers.libs === false && off.suite.connected);
+delete globalThis.location;
+
 await d.disconnect();
+check('disconnect() — ניתוק מלא, בלי layers', JSON.stringify(appBodies.drives_disconnect) === '{}');
 const d2 = createDrives({ endpoint: 'https://mbe-plus.com/mini_projects/vector-studio/api.php' });
 let err = null;
 try { await d2.suite.list(); } catch (e) { err = e; }

@@ -131,7 +131,13 @@ function usedBytes(string $account): int {
     $st = db()->prepare("SELECT (SELECT COALESCE(SUM(size), 0) FROM nodes WHERE account = ? AND kind = 'file')
                               + (SELECT COALESCE(SUM(size), 0) FROM lib_items WHERE account = ?)");
     $st->execute([$account, $account]);
-    return (int) $st->fetchColumn();
+    $used = (int) $st->fetchColumn();
+    // נתוני אפליקציות (שלב 4) — לא במכסת הכונן (ש1 הוכרע: מקום נפרד). ההגדרה נשארת כמתג למנהל
+    if (setting('appdata_counts_in_quota') === '1') {
+        require_once __DIR__ . '/appdata.php';
+        $used += appdataAccountBytes($account);
+    }
+    return $used;
 }
 
 function quotaInfo(array $a): array {
@@ -451,6 +457,7 @@ function deleteTree(string $root): void {
     $shas = $sh->fetchAll(PDO::FETCH_COLUMN);
     $pdo->beginTransaction();
     // מהעלים לשורש — כך מפתח ההורה לא נשבר באמצע
+    $pdo->prepare("DELETE FROM shares WHERE node IN ($in)")->execute($ids);   // שיתוף של צומת שנמחק לצמיתות — נעלם איתו
     foreach (array_reverse($ids) as $id) $pdo->prepare('DELETE FROM nodes WHERE id = ?')->execute([$id]);
     $pdo->commit();
     foreach ($shas as $sha) dropBlobIfUnused($sha);
@@ -489,7 +496,7 @@ function readTarget(array $a, mixed $id): array {
 
 function adminState(): array {
     $rows = db()->query("SELECT a.*, COALESCE((SELECT SUM(size) FROM nodes n WHERE n.account = a.id AND n.kind = 'file'), 0) AS used
-                         FROM accounts a ORDER BY a.name COLLATE NOCASE")->fetchAll();
+                         FROM accounts a WHERE a.kind = 'person' ORDER BY a.name COLLATE NOCASE")->fetchAll();   // חשבונות שירות — ב-service_list
     $disk = 0;
     foreach (db()->query("SELECT DISTINCT sha256, size FROM nodes WHERE kind = 'file'")->fetchAll() as $r) $disk += (int) $r['size'];
     return [
@@ -514,6 +521,12 @@ function adminSettings(array $in): array {
         if ($m < 1 << 20) throw new AppError('תקרה לקובץ — לפחות 1MB', 400, 'bad_request');
         setSetting('max_file', (string) $m);
     }
+    // שלב 4: תקרות ברירת המחדל לנתוני אפליקציות, ו-ש1 (האם נספר במכסת החשבון)
+    foreach (['appdata_user_quota' => 'התקרה לנתוני משתמש', 'appdata_account_quota' => 'התקרה לנתוני משתמש בכל האפליקציות',
+              'appdata_app_quota' => 'התקרה לנתוני אפליקציה'] as $k => $label) {
+        if (array_key_exists($k, $in)) setSetting($k, (string) bytesIn($in[$k], $label));
+    }
+    if (array_key_exists('appdata_counts_in_quota', $in)) setSetting('appdata_counts_in_quota', $in['appdata_counts_in_quota'] ? '1' : '0');
     return adminState();
 }
 

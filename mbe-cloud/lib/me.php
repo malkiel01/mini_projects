@@ -10,6 +10,7 @@ require_once __DIR__ . '/drive.php';
 require_once __DIR__ . '/fonts.php';
 require_once __DIR__ . '/clients.php';
 require_once __DIR__ . '/ai.php';
+require_once __DIR__ . '/appdata.php';
 
 /** מה שיש לחשבון בענן, כ-JSON: העץ (בלי התוכן — הקבצים עצמם יורדים מהכונן), הגופנים, החיבורים והשימוש ב-AI. */
 function accountExport(array $a): array {
@@ -27,6 +28,7 @@ function accountExport(array $a): array {
         'fonts' => fontsList($a)['fonts'],
         'connections' => accountConnections($a),
         'ai_usage' => $q('SELECT * FROM ai_usage WHERE account = ? ORDER BY id'),
+        'appdata' => appdataExport($a['id']),   // שלב 4: מרחב user בלבד, לפי אפליקציה
     ];
 }
 
@@ -48,9 +50,13 @@ function accountDelete(array $a): void {
     if ($own) $pdo->beginTransaction();
     try {
         $pdo->prepare('DELETE FROM codes WHERE connection IN (SELECT id FROM connections WHERE account = ?)')->execute([$id]);
+        // שיתופים שלי ושיתופים איתי, ואסימונים — לפני הצמתים והחשבון (מפתחות זרים)
+        $pdo->prepare('DELETE FROM shares WHERE owner = ? OR grantee = ?')->execute([$id, $id]);
+        $pdo->prepare('DELETE FROM tokens WHERE account = ?')->execute([$id]);
         foreach (['connections', 'nodes', 'uploads', 'lib_items', 'ai_users', 'ai_usage'] as $t) {
             $pdo->prepare("DELETE FROM $t WHERE account = ?")->execute([$id]);
         }
+        appdataDeleteAccount($id);   // שלב 4: נתוני האפליקציות של המשתמש, בכל האפליקציות
         $pdo->prepare('DELETE FROM accounts WHERE id = ?')->execute([$id]);
         if ($own) $pdo->commit();
     } catch (Throwable $e) {

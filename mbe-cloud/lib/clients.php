@@ -14,8 +14,16 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/account.php';
 
-const SCOPES = ['files', 'libs', 'ai'];
-const SCOPE_NAMES = ['files' => 'הקבצים שלך בענן', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך'];
+const SCOPES = ['files', 'libs', 'ai', 'appdata'];
+const SCOPE_NAMES = ['files' => 'הקבצים שלך בענן', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך',
+                     'appdata' => 'ההגדרות והנתונים שלך באפליקציה הזו'];
+/**
+ * שכבות (spec-0-vision.md 7.3): מתג לכל שכבה, וכל שכבה היא היקפים של אותו חיבור. היום: שכבה = היקף אחד.
+ * appdata — שלב 4 (spec-4-appdata.md); רק לאפליקציה שהצהירה עליו. files.readonly / files.app (שלב 3) — עוד לא.
+ * ברירת המחדל לאפליקציה בלי "layers" ב-apps.json — בלי appdata, כמו לפני שלב 4.
+ */
+const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'appdata' => ['appdata'], 'ai' => ['ai']];
+const DEFAULT_LAYERS = ['files', 'libs', 'ai'];
 const TOKEN_TTL = 900;
 const CODE_TTL = 120;
 const SIG_SKEW = 300;
@@ -60,6 +68,12 @@ function migrateClients(PDO $pdo): void {
             PRIMARY KEY (client, nonce)
         );
     ");
+    // רק אותו חשבון (spec-0-vision.md 6.3): ה-sub של הפלטפורמה של המשתמש באפליקציה — על הקוד ועל החיבור.
+    // mismatch_at — חיבור ישן שה-sub שלו התגלה שונה מהחשבון בענן: לא מקבל אסימון, ומופיע בניהול. לא מנותק אוטומטית.
+    foreach (['connections' => ['sub' => 'TEXT', 'mismatch_at' => 'TEXT'], 'codes' => ['sub' => 'TEXT']] as $t => $add) {
+        $cols = array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+        foreach ($add as $c => $type) if (!in_array($c, $cols, true)) $pdo->exec("ALTER TABLE $t ADD COLUMN $c $type");
+    }
 }
 
 // ─── הכתובת של הענן ───────────────────────────────────────────────────────
@@ -226,18 +240,7 @@ function verifySigned(string $action, array $h, string $body): array {
     $sig = base64_decode(strtr($sigB64, '-_', '+/'), true);
     if ($sig === false || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES) throw new AppError('חתימה לא תקינה', 401, 'bad_signature');
     $msg = "$action\n$time\n$nonce\n" . hash('sha256', $body);
-
-    $keys = json_decode((string) $c['keys'], true) ?: [];
-    $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
-    if (!$ok && (int) $c['keys_at'] < time() - 60) {
-        // החלפת מפתח אצל הלקוח — הורדה אחת מחדש, ואז דחייה (embed.md)
-        try {
-            $keys = fetchClientKeys($c['id'], $c['key_url']);
-            db()->prepare('UPDATE clients SET keys = ?, keys_at = ? WHERE id = ?')->execute([json_encode($keys), time(), $c['id']]);
-            $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
-        } catch (AppError) { $ok = false; }
-    }
-    if (!$ok) throw new AppError('חתימה לא תקינה', 401, 'bad_signature');
+    if (!clientSigOk($c, $kid, $sig, $msg)) throw new AppError('חתימה לא תקינה', 401, 'bad_signature');
 
     $pdo = db();
     $pdo->prepare('DELETE FROM nonces WHERE at < ?')->execute([time() - NONCE_TTL]);
@@ -245,6 +248,20 @@ function verifySigned(string $action, array $h, string $body): array {
     $st->execute([$c['id'], $nonce, time()]);
     if ($st->rowCount() === 0) throw new AppError('בקשה חוזרת', 401, 'replay');
     return $c;
+}
+
+/** חתימת Ed25519 של הלקוח על $msg. מפתח לא מוכר — הורדה אחת מחדש מ-key_url (החלפת מפתח, embed.md), ואז דחייה. */
+function clientSigOk(array $c, string $kid, string $sig, string $msg): bool {
+    $keys = json_decode((string) $c['keys'], true) ?: [];
+    $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
+    if (!$ok && (int) $c['keys_at'] < time() - 60) {
+        try {
+            $keys = fetchClientKeys($c['id'], $c['key_url']);
+            db()->prepare('UPDATE clients SET keys = ?, keys_at = ? WHERE id = ?')->execute([json_encode($keys), time(), $c['id']]);
+            $ok = isset($keys[$kid]) && sodium_crypto_sign_verify_detached($sig, $msg, base64_decode($keys[$kid]));
+        } catch (AppError) { $ok = false; }
+    }
+    return $ok;
 }
 
 /** הכותרות X-Cloud-* מהבקשה. */
@@ -266,6 +283,23 @@ function cleanScope(mixed $s): array {
     return $list;
 }
 
+/** השכבה של היקף (files → files). */
+function scopeLayer(string $scope): string {
+    foreach (LAYERS as $layer => $scopes) if (in_array($scope, $scopes, true)) return $layer;
+    return $scope;
+}
+
+/** ההיקפים שהלקוח רשאי לבקש — לפי "layers" שלו ב-mbe-cloud/drives/apps.json (רשימה בגיט). אחר — ברירת המחדל. */
+function clientScopes(string $clientId): array {
+    static $file = null;
+    $file ??= json_decode((string) @file_get_contents(__DIR__ . '/../drives/apps.json'), true) ?: [];
+    $apps = $GLOBALS['CLOUD_APPS'] ?? $file;   // CLOUD_APPS — לבדיקות
+    $layers = $apps[$clientId]['layers'] ?? DEFAULT_LAYERS;
+    $out = [];
+    foreach ((array) $layers as $l) foreach (LAYERS[$l] ?? [] as $sc) $out[] = $sc;
+    return $out;
+}
+
 /** חיבור פעיל של חשבון ללקוח (אחד לכל זוג). */
 function liveConnection(string $account, string $client): ?array {
     $st = db()->prepare('SELECT * FROM connections WHERE account = ? AND client = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1');
@@ -280,7 +314,38 @@ function connectRequest(array $q): array {
     if (!in_array($return, json_decode($c['returns'], true) ?: [], true)) throw new AppError('כתובת החזרה לא רשומה ללקוח', 400, 'bad_request');
     $state = (string) ($q['state'] ?? '');
     if (!preg_match('/^[A-Za-z0-9_\-.~]{8,200}$/', $state)) throw new AppError('state לא תקין', 400, 'bad_request');
-    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => cleanScope($q['scope'] ?? 'files')];
+    $scope = cleanScope($q['scope'] ?? 'files');
+    // רק שכבות שהאפליקציה הצהירה עליהן (7.3 כלל 1)
+    if (array_diff($scope, clientScopes($c['id']))) throw new AppError('האפליקציה לא הצהירה על השכבה הזו', 400, 'bad_request');
+    return ['client' => $c, 'return' => $return, 'state' => $state, 'scope' => $scope,
+            'sub' => connectSub($c, $q, $return, $state)];
+}
+
+const MISMATCH_MSG = 'החשבון בענן שונה מהחשבון שלך כאן. היכנסו לענן באותו חשבון';
+
+/**
+ * רק אותו חשבון (spec-0-vision.md 6.3): ה-sub של הפלטפורמה של המשתמש באפליקציה, חתום במפתח הלקוח.
+ * החתימה: "connect\n<client>\n<state>\n<sub>\n<exp>\n<return>". בלי sub, בלי חתימה, או חתימה שפגה — דחייה.
+ * exp — עד 10 דקות קדימה (NONCE_TTL), כדי שה-state החד-פעמי (approveConnect) נזכר עד שהחתימה פגה.
+ */
+function connectSub(array $c, array $q, string $return, string $state): string {
+    $sub = (string) ($q['sub'] ?? '');
+    $exp = (string) ($q['exp'] ?? '');
+    if ($sub === '' || strlen($sub) > 200 || !ctype_digit($exp) || (int) $exp < time() || (int) $exp > time() + NONCE_TTL) {
+        throw new AppError('בקשת החיבור לא מזהה את המשתמש באפליקציה — עדכנו את האפליקציה ונסו שוב', 400, 'bad_identity');
+    }
+    [$kid, $sigB64] = array_pad(explode('.', (string) ($q['sig'] ?? ''), 2), 2, '');
+    $sig = unb64u($sigB64);
+    if ($sig === false || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES
+        || !clientSigOk($c, $kid, $sig, "connect\n{$c['id']}\n$state\n$sub\n$exp\n$return")) {
+        throw new AppError('בקשת החיבור לא חתומה כראוי', 400, 'bad_identity');
+    }
+    return $sub;
+}
+
+/** האם החשבון בענן הוא אותו חשבון פלטפורמה כמו המשתמש באפליקציה. */
+function sameSub(array $a, ?string $sub): bool {
+    return $sub !== null && $sub !== '' && ($a['platform_sub'] ?? null) !== null && hash_equals((string) $a['platform_sub'], $sub);
 }
 
 /** האם כבר אושר — חיבור פעיל שמכסה את ההרשאות שמבוקשות. */
@@ -293,21 +358,26 @@ function alreadyGranted(array $a, array $req): ?array {
 /** אישור: חיבור (חדש, או הרחבת הקיים) + קוד חד-פעמי. מחזיר את כתובת החזרה. */
 function approveConnect(array $a, array $req): string {
     $pdo = db();
+    // ה-state חד-פעמי גם בענן: כתובת חתומה מאשרת פעם אחת (נשמר כמו nonce, עד שהחתימה פגה)
+    $pdo->prepare('DELETE FROM nonces WHERE at < ?')->execute([time() - NONCE_TTL]);
+    $once = $pdo->prepare('INSERT OR IGNORE INTO nonces (client, nonce, at) VALUES (?,?,?)');
+    $once->execute([$req['client']['id'], 'state:' . $req['state'], time()]);
+    if ($once->rowCount() === 0) throw new AppError('בקשת החיבור כבר נוצלה — התחילו מחדש מהאפליקציה', 400, 'bad_state');
     $conn = liveConnection($a['id'], $req['client']['id']);
     if ($conn) {
         $scope = array_values(array_unique(array_merge(json_decode($conn['scope'], true) ?: [], $req['scope'])));
         sort($scope);
-        $pdo->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode($scope), $conn['id']]);
+        $pdo->prepare('UPDATE connections SET scope = ?, sub = ? WHERE id = ?')->execute([json_encode($scope), $req['sub'], $conn['id']]);
         $cid = $conn['id'];
     } else {
         $cid = randomId('c_');
-        $pdo->prepare('INSERT INTO connections (id, account, client, scope, created_at) VALUES (?,?,?,?,?)')
-            ->execute([$cid, $a['id'], $req['client']['id'], json_encode($req['scope']), nowIso()]);
+        $pdo->prepare('INSERT INTO connections (id, account, client, scope, created_at, sub) VALUES (?,?,?,?,?,?)')
+            ->execute([$cid, $a['id'], $req['client']['id'], json_encode($req['scope']), nowIso(), $req['sub']]);
     }
     $code = b64u(random_bytes(24));
     $pdo->prepare('DELETE FROM codes WHERE expires < ?')->execute([time()]);
-    $pdo->prepare('INSERT INTO codes (code, connection, client, return_url, expires) VALUES (?,?,?,?,?)')
-        ->execute([$code, $cid, $req['client']['id'], $req['return'], time() + CODE_TTL]);
+    $pdo->prepare('INSERT INTO codes (code, connection, client, return_url, expires, sub) VALUES (?,?,?,?,?,?)')
+        ->execute([$code, $cid, $req['client']['id'], $req['return'], time() + CODE_TTL, $req['sub']]);
     return withQuery($req['return'], ['code' => $code, 'state' => $req['state']]);
 }
 
@@ -315,7 +385,10 @@ function withQuery(string $url, array $q): string {
     return $url . (str_contains($url, '?') ? '&' : '?') . http_build_query($q);
 }
 
-/** connect_exchange (חתום): קוד → חיבור. הקוד חד-פעמי, של הלקוח הזה בלבד, 2 דקות. */
+/**
+ * connect_exchange (חתום): {code, sub} → חיבור. הקוד חד-פעמי, של הלקוח הזה בלבד, 2 דקות.
+ * sub — של המשתמש באפליקציה. חייב להיות זה שנחתם במסך האישור, וזה של החשבון בענן. אחרת 403 account_mismatch, והקוד נשרף.
+ */
 function exchangeCode(array $client, array $in): array {
     $code = (string) ($in['code'] ?? '');
     $pdo = db();
@@ -326,6 +399,11 @@ function exchangeCode(array $client, array $in): array {
     if (!$row || $row['client'] !== $client['id'] || (int) $row['expires'] < time()) throw new AppError('קוד לא תקף', 400, 'bad_code');
     $conn = connectionRow((string) $row['connection'], $client['id']);
     $a = getAccount($conn['account']);
+    $sub = is_string($in['sub'] ?? null) ? $in['sub'] : null;
+    if (!sameSub($a, $sub) || $row['sub'] === null || !hash_equals((string) $row['sub'], (string) $sub)) {
+        error_log("mbe-cloud: connect_exchange account_mismatch (client {$client['id']})");
+        throw new AppError(MISMATCH_MSG, 403, 'account_mismatch');
+    }
     return ['connection' => $conn['id'], 'account' => ['name' => $a['name']], 'scope' => json_decode($conn['scope'], true), 'cloud_id' => setting('cloud_id')];
 }
 
@@ -347,7 +425,37 @@ function accountConnections(array $a): array {
                          WHERE c.account = ? AND c.revoked_at IS NULL ORDER BY c.created_at DESC');
     $st->execute([$a['id']]);
     return array_map(fn($r) => ['id' => $r['id'], 'client' => $r['client'], 'name' => $r['client_name'],
-        'scope' => json_decode($r['scope'], true), 'created_at' => $r['created_at'], 'used_at' => $r['used_at']], $st->fetchAll());
+        'scope' => json_decode($r['scope'], true), 'declared' => clientScopes($r['client']),   // מתג לכל שכבה שהאפליקציה הצהירה
+        'created_at' => $r['created_at'], 'used_at' => $r['used_at']], $st->fetchAll());
+}
+
+/**
+ * כיבוי שכבות (7.3 כלל 4): קובע את הרשימה המלאה של ההיקפים — ורק מצמצם. היקף שלא אושר — 403; הרחבה רק דרך connect.php.
+ * רשימה ריקה משאירה חיבור בלי שכבות (ניתוק מלא — disconnect / connection_revoke).
+ */
+function narrowScope(array $conn, mixed $scope): array {
+    $want = $scope === [] ? [] : cleanScope($scope);
+    $have = json_decode($conn['scope'], true) ?: [];
+    if (array_diff($want, $have)) throw new AppError('אפשר רק לכבות שכבות. הדלקה — דרך מסך האישור בענן', 403, 'forbidden');
+    db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode(array_values($want)), $conn['id']]);
+    return ['scope' => array_values($want)];
+}
+
+/** connection_scope (חתום, שרת האפליקציה): {connection, sub, scope}. אותו חשבון — כמו access_token. */
+function connectionScope(array $client, array $in): array {
+    $conn = connectionRow((string) ($in['connection'] ?? ''), $client['id']);
+    bindConnection($conn, $in['sub'] ?? null);
+    return narrowScope($conn, $in['scope'] ?? null);
+}
+
+/** מתג שכבה בדף הענן ("🔗 חיבורים"), של בעל החשבון. כיבוי של כל השכבות — ניתוק. */
+function ownConnectionScope(array $a, mixed $id, mixed $scope): array {
+    $st = db()->prepare('SELECT * FROM connections WHERE id = ? AND account = ? AND revoked_at IS NULL');
+    $st->execute([is_string($id) ? $id : '', $a['id']]);
+    $conn = $st->fetch();
+    if (!$conn) throw new AppError('לא נמצא', 404, 'not_found');
+    if ($scope === [] ) { revokeConnection($conn['id']); return ['scope' => [], 'revoked' => true]; }
+    return narrowScope($conn, $scope);
 }
 
 function revokeOwnConnection(array $a, mixed $id): void {
@@ -366,11 +474,28 @@ function issueToken(array $client, array $conn): array {
         JSON_UNESCAPED_SLASHES);
     $p = b64u($payload);
     $k = cloudSigningKey();
-    return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL];
+    return ['token' => $p . '.' . b64u(sodium_crypto_sign_detached($p, $k['sk'])), 'expires_in' => TOKEN_TTL,
+            'scope' => json_decode($conn['scope'], true)];   // המתגים באפליקציה מתעדכנים מכאן (כיבוי מדף הענן)
+}
+
+/**
+ * access_token: לפני כל אסימון — רק אותו חשבון. sub של המשתמש באפליקציה מול החשבון בענן ומול מה שנרשם על החיבור.
+ * חיבור ישן בלי sub: תואם — נרשם עליו. שונה — אין אסימון, החיבור מסומן mismatch_at (מופיע בניהול), ולא מנותק.
+ */
+function bindConnection(array $conn, mixed $sub): void {
+    $sub = is_string($sub) ? $sub : null;
+    $a = getAccount($conn['account']);
+    $ok = $a && sameSub($a, $sub) && ($conn['sub'] === null || hash_equals((string) $conn['sub'], (string) $sub));
+    if (!$ok) {
+        db()->prepare('UPDATE connections SET mismatch_at = COALESCE(mismatch_at, ?) WHERE id = ?')->execute([nowIso(), $conn['id']]);
+        error_log("mbe-cloud: access_token account_mismatch (connection {$conn['id']})");
+        throw new AppError(MISMATCH_MSG, 403, 'account_mismatch');
+    }
+    if ($conn['sub'] === null) db()->prepare('UPDATE connections SET sub = ? WHERE id = ? AND sub IS NULL')->execute([$sub, $conn['id']]);
 }
 
 /** בודק אסימון: חתימה, תוקף, והחיבור עדיין פעיל. מחזיר [חיבור, לקוח]. */
-function verifyToken(string $token): array {
+function verifyToken(#[\SensitiveParameter] string $token): array {
     [$p, $s] = array_pad(explode('.', $token, 2), 2, '');
     $sig = unb64u($s);
     $k = cloudSigningKey();
@@ -392,9 +517,11 @@ function verifyToken(string $token): array {
  * $scope — ההרשאה שהפעולה דורשת מאפליקציה מחוברת.
  */
 function actor(string $action, string $scope, string $body): array {
-    $auth = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    require_once __DIR__ . '/share.php';
     // X-Cloud-Token — אותו אסימון, למקרה ששרת בדרך מוריד את Authorization לפני PHP
-    $token = preg_match('/^Bearer\s+(\S+)$/i', $auth, $m) ? $m[1] : (string) ($_SERVER['HTTP_X_CLOUD_TOKEN'] ?? '');
+    $token = requestBearer();
+    // אסימון אישי (שלב 2) — מזוהה לפי התחילית, לפני כל ניסיון לפענח אותו כאסימון של אפליקציה
+    if ($token !== '' && isPat($token)) return patActor($action, $token);
     if ($token !== '') {
         [$conn, $client] = verifyToken($token);
         return actorFrom($conn, $client, $scope);
@@ -408,7 +535,10 @@ function actor(string $action, string $scope, string $body): array {
 }
 
 function actorFrom(array $conn, array $client, string $scope): array {
-    if (!in_array($scope, json_decode($conn['scope'], true) ?: [], true)) throw new AppError('אין לאפליקציה הרשאה לזה', 403, 'forbidden');
+    // השכבה כבויה — עם ההיקף, כדי שהאפליקציה תציע להדליק את המתג הנכון (7.3 כלל 6). נבדק בכל קריאה: כיבוי חל מיד
+    if (!in_array($scope, json_decode($conn['scope'], true) ?: [], true)) {
+        throw new AppError('אין לאפליקציה הרשאה לזה', 403, 'forbidden', ['scope' => $scope, 'layer' => scopeLayer($scope)]);
+    }
     $a = getAccount($conn['account']);
     if ((int) $a['blocked'] === 1) throw new AppError('החשבון חסום', 403, 'forbidden');
     if ($conn['used_at'] === null || $conn['used_at'] < nowIso(time() - 600)) {
@@ -438,16 +568,30 @@ function corsHeaders(): void {
 // ─── ניהול ────────────────────────────────────────────────────────────────
 
 function adminClients(): array {
-    $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users
+    require_once __DIR__ . '/appdata.php';
+    $usage = appdataAdminUsage();
+    $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users,
+                                (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL AND c.mismatch_at IS NOT NULL) AS mismatch
                          FROM clients k ORDER BY k.status = 'pending' DESC, k.name")->fetchAll();
     return array_map(fn($r) => ['id' => $r['id'], 'name' => $r['name'], 'status' => $r['status'], 'origins' => json_decode($r['origins'], true),
-        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'created_at' => $r['created_at']], $rows);
+        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at'],
+        // נתוני אפליקציות (שלב 4): נפח ותקרות — בלי תוכן
+        'appdata' => ['used' => $usage[$r['id']] ?? [], 'user_quota' => $r['appdata_user_quota'] === null ? null : (int) $r['appdata_user_quota'],
+                      'app_quota' => $r['appdata_app_quota'] === null ? null : (int) $r['appdata_app_quota']]], $rows);
 }
 
 function adminClient(array $in): array {
     $c = getClient(cleanClientId($in['client'] ?? null));
     if (!$c) throw new AppError('לא נמצא', 404, 'not_found');
-    $status = $in['status'] ?? null;
+    // תקרות נתוני האפליקציה (שלב 4). null — ברירת המחדל מההגדרות
+    foreach (['appdata_user_quota' => 'התקרה לנתוני משתמש', 'appdata_app_quota' => 'התקרה לנתוני אפליקציה'] as $k => $label) {
+        if (array_key_exists($k, $in)) {
+            db()->prepare("UPDATE clients SET $k = ?, updated_at = ? WHERE id = ?")
+                ->execute([$in[$k] === null ? null : bytesIn($in[$k], $label), nowIso(), $c['id']]);
+        }
+    }
+    if (!array_key_exists('status', $in)) return adminClients();
+    $status = $in['status'];
     if (!in_array($status, ['active', 'disabled'], true)) throw new AppError('מצב לא מוכר', 400, 'bad_request');
     db()->prepare('UPDATE clients SET status = ?, updated_at = ? WHERE id = ?')->execute([$status, nowIso(), $c['id']]);
     return adminClients();
