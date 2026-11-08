@@ -109,6 +109,8 @@ function migrate(PDO $pdo): void {
     migrateAppdata($pdo);
     require_once __DIR__ . '/grants.php';
     migrateGrants($pdo);
+    require_once __DIR__ . '/policy.php';
+    migratePolicy($pdo);   // spec-6: אחרי migrateGrants (files_full)
 }
 
 const DEFAULTS = [

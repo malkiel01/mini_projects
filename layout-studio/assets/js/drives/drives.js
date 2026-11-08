@@ -4,12 +4,16 @@
  *   import { createDrives } from './drives/drives.js';
  *   const drives = createDrives({ endpoint: 'api.php' });     // ה-api.php של האפליקציה (שם רץ Drives.php)
  *
- *   await drives.status()          → { suite: { connected, name, cloud_id, scope, layers: { files: true, libs: false, … } } }
- *        layers — רק השכבות שהאפליקציה הצהירה (apps.json), ולכל אחת: דלוקה או לא. מתג לכל שכבה (spec-0-vision.md 7.3).
- *   await drives.connect()         — מעבר למסך האישור בענן, לכל השכבות שהוצהרו; חוזרים ל-back עם ?cloud=connected | denied
- *   await drives.connect({ layers: ['libs'] }) — הדלקת שכבה: מסך האישור מציג רק אותה, והיא נוספת לאותו חיבור
- *   await drives.disconnect({ layers: ['libs'] }) → status — כיבוי שכבה, מיד. כיבוי של השכבה האחרונה = ניתוק
- *   await drives.disconnect()
+ * המנהל מחליט אילו שכבות דלוקות — בענן, לכל המשתמשים (mbe-cloud/docs/spec-6-admin-layers.md). למשתמש אין מתגים ואין ניתוק.
+ *   await drives.status()          → { suite: { connected, name, cloud_id, scope, layers: { files: true, libs: false, … },
+ *                                               managed: true, policy: ['files', …] | null, policy_empty, hold } }
+ *        layers — רק השכבות שהאפליקציה הצהירה (apps.json), ולכל אחת: פעילה עכשיו או לא. policy — מה שהמנהל הדליק.
+ *        hold — למה לא מפנים עכשיו: 'error' (עד "נסו שוב"), 'off', 'no_drive' (24 שעות). null — אפשר.
+ *   await drives.ensure()          — פעם אחת בטעינת הדף: לא מחובר והמדיניות לא ריקה → הפניה אחת לענן, בלי מסך, וחזרה
+ *                                    מחוברת. אחרת כלום → { redirected: false, why, status }. בלי לולאות (spec-6 3.3)
+ *   await drives.ensure({ apk: true }) — באפליקציית אנדרואיד: לא מפנה לבד (why: 'apk'). התפריט מציג "☁️ חיבור לענן MBE"
+ *   await drives.connect()         — "נסו שוב" אחרי שגיאה, והלחיצה האחת ב-APK. layers / scope — לא משנים כלום (תאימות)
+ *   await drives.disconnect()      — מבוטל: DriveError 'admin-managed' (השכבות נקבעות בידי מנהל הענן)
  *
  *   const s = drives.suite;        — ענן MBE. בלי חיבור — כל קריאה זורקת DriveError עם code 'not-connected'.
  *   await s.list(folder?)          → { folder, path, items:[node] }
@@ -54,7 +58,8 @@
  *   await drives.picked()          → [node] — מה שנבחר (אחרי stat; רק מה שבאמת נגיש). מנקה את ?cloud=picked מהכתובת
  *   status().suite.files_scope     → 'files' | 'files.readonly' | 'files.app'
  *
- * שגיאות: DriveError עם code — not-connected, read-only (files.readonly — קריאה בלבד), layer-off (עם layer: 'files' | 'libs' | 'ai' — השכבה כבויה), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
+ * שגיאות: DriveError עם code — not-connected, read-only (files.readonly — קריאה בלבד), layer-off (עם layer: 'files' | 'libs' | 'ai' —
+ * "השכבה הזו לא פעילה באפליקציה הזו", בלי "הפעל": רק המנהל מדליק), admin-managed (disconnect), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
  * not-allowed, quota, too-big, provider, aborted. האסימון (15 דקות) מתחדש לבד, ונשמר בזיכרון בלבד.
  */
 
@@ -63,6 +68,16 @@ export class DriveError extends Error {
 }
 
 const CHUNK_HASH_MAX = 64 * 1024 * 1024;
+const LAYER_OFF = 'השכבה הזו לא פעילה באפליקציה הזו';
+const ADMIN_MANAGED = 'השכבות נקבעות בידי מנהל הענן';
+const ENSURE_KEY = 'mbe-cloud:ensure';   // sessionStorage: מתי הפנינו לאחרונה — שתי הפניות ברצף בלי חיבור = לולאה
+const ENSURE_GAP = 120000;
+const BACK_HOLD = { error: 'error', denied: 'error', account_mismatch: 'error', off: 'off', no_drive: 'no_drive' };
+
+/** ניווט רגיל של דף — לא בתוך iframe ולא בחלון קופץ. */
+function topNavigation() {
+    try { return typeof window !== 'undefined' && window.top === window.self && !window.opener; } catch { return false; }
+}
 
 export function createDrives({ endpoint = 'api.php' } = {}) {
     let tok = null;          // { token, api, until }
@@ -72,7 +87,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         const res = await fetch(`${endpoint}?action=${action}`, body === undefined ? { credentials: 'same-origin' }
             : { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const j = await res.json().catch(() => ({}));
-        if (!res.ok) throw new DriveError(j.error || 'תקלה בחיבור לענן', j.code || 'cloud');
+        if (!res.ok) throw new DriveError(j.error || 'תקלה בחיבור לענן', j.code === 'admin_managed' ? 'admin-managed' : (j.code || 'cloud'));
         return j;
     }
 
@@ -104,7 +119,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         if (raw && res.ok) return res;
         const j = await res.json().catch(() => ({ error: 'תשובה לא תקינה מהענן' }));
         // השכבה כבויה (כיבוי באפליקציה או בדף הענן) — layer-off, כדי להציע להדליק את המתג הנכון
-        if (res.status === 403 && j.code === 'forbidden' && j.layer) throw new DriveError(j.error || 'השכבה כבויה', 'layer-off', { layer: j.layer, scope: j.scope });
+        if (res.status === 403 && j.code === 'forbidden' && j.layer) throw new DriveError(LAYER_OFF, 'layer-off', { layer: j.layer, scope: j.scope });
         if (res.status === 403 && j.code === 'read_only') throw new DriveError(j.error || 'קריאה בלבד', 'read-only');
         if (!res.ok) throw new DriveError(j.error || 'תקלה', j.code || 'cloud', j);
         return j;
@@ -357,16 +372,39 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
 
     return {
         status: () => app('drives_status'),
-        /** connect() — כל השכבות שהוצהרו; connect({ layers }) — הדלקת שכבות; connect('files,ai') — היקפים (התאמה לאחור). */
-        async connect(arg) {
-            const body = Array.isArray(arg?.layers) ? { layers: arg.layers } : typeof arg === 'string' && arg ? { scope: arg } : {};
-            const r = await app('drives_connect', body);
+        /**
+         * spec-6 3.3: הפניה אחת לענן כשצריך, ואחרת כלום. נקרא פעם אחת בטעינת הדף. לעולם לא לולאה:
+         * לא אחרי ?cloud=error / denied / off / no_drive, לא כשהשרת מחזיק hold, לא ב-APK, לא בתוך iframe או חלון קופץ,
+         * ולא שוב תוך שתי דקות מההפניה הקודמת.
+         */
+        async ensure({ apk = false } = {}) {
+            const status = await app('drives_status');
+            const su = status.suite || {};
+            let why = null, back = null;
+            try { back = new URL(location.href).searchParams.get('cloud'); } catch { /* בלי location */ }
+            let last = 0;
+            try { last = Number(sessionStorage.getItem(ENSURE_KEY) || 0); } catch { /* בלי sessionStorage */ }
+            if (su.connected) why = 'connected';
+            else if (su.policy_empty) why = 'off';
+            else if (su.hold) why = su.hold;
+            else if (BACK_HOLD[back]) why = BACK_HOLD[back];
+            else if (apk) why = 'apk';
+            else if (!topNavigation()) why = 'frame';
+            else if (Date.now() - last < ENSURE_GAP) why = 'loop';
+            if (why) return { redirected: false, why, status };
+            try { sessionStorage.setItem(ENSURE_KEY, String(Date.now())); } catch { /* בלי sessionStorage — עדיין מוגן ב-hold של השרת */ }
+            const r = await app('drives_connect', {});
+            location.assign(r.url);
+            return { redirected: true, why: null, status };
+        },
+        /** "נסו שוב" אחרי שגיאה, והלחיצה האחת ב-APK. ההיקף נקבע בענן — layers / scope לא משנים כלום (תאימות לקוד קיים). */
+        async connect() {
+            const r = await app('drives_connect', {});
             location.assign(r.url);
         },
-        /** disconnect() — ניתוק מלא; disconnect({ layers }) — כיבוי שכבות (האחרונה = ניתוק). מחזיר status. */
-        async disconnect(arg) {
-            tok = null;
-            return app('drives_disconnect', Array.isArray(arg?.layers) ? { layers: arg.layers } : {});
+        /** מבוטל (spec-6 4.2, ש2): אין ניתוק למשתמש. החיבור המקומי לא נמחק. */
+        async disconnect() {
+            throw new DriveError(ADMIN_MANAGED, 'admin-managed');
         },
         async list() {
             const s = await app('drives_status');

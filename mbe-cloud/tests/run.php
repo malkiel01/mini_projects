@@ -30,6 +30,15 @@ function as_platform(?array $id): void {
     if ($id === null) unset($_SERVER['PLATFORM_USER']);
     else $_SERVER['PLATFORM_USER'] = json_encode($id);
 }
+/** spec-6: המנהל מדליק את כל מה שהלקוח הצהיר (כמו ההגירה, ש1). */
+function policyAll(string $client): void {
+    require_once __DIR__ . '/../lib/policy.php';
+    $d = clientDeclared($client);
+    $p = ['files' => $d['files']];
+    foreach (['libs', 'appdata', 'ai'] as $l) if (in_array($l, $d['layers'], true)) $p[$l] = true;
+    adminClient(['client' => $client, 'policy' => $p]);
+}
+
 function code(callable $fn): string {
     try { $fn(); return 'ok'; } catch (AppError $e) { return $e->codeName; }
 }
@@ -207,11 +216,10 @@ try {
                                                                        : $keyJson('far-app', sodium_crypto_sign_publickey($pair));
     $reg = ['client' => 'vector-studio', 'name' => 'וקטורי', 'key_url' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_key',
             'origins' => ['https://mbe-plus.com'], 'return' => ['https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback']];
-    // ג10 (שלב 3, הכרעה 5): files המלא — pending עד שמנהל מדליק "📁 גישה לכל הכונן", גם מאותו origin
-    check('ג10: רישום שמצהיר files בלי files_full — pending, גם מאותו origin', registerClient($reg)['status'] === 'pending');
-    adminClient(['client' => 'vector-studio', 'files_full' => true]);
-    check('ג10: המנהל מדליק 📁 גישה לכל הכונן — active', activeClient('vector-studio')['status'] === 'active'
-        && array_values(array_filter(adminClients(), fn($c) => $c['id'] === 'vector-studio'))[0]['files_full'] === 1);
+    // spec-6: מאותו origin — active. files המלא כבר לא pending: כל השכבות כבויות עד שהמנהל מדליק (סעיף 2)
+    check('רישום מאותו origin — active (גם כשמצהיר files המלא)', registerClient($reg)['status'] === 'active');
+    check('מ1: לקוח חדש — המדיניות ריקה, client_policy בלי שכבות', effectiveScope(getClient('vector-studio')) === []
+        && effectiveLayers(getClient('vector-studio')) === [] && adminClients()[0]['policy'] === ['files' => null, 'libs' => false, 'appdata' => false, 'ai' => false]);
     check('רישום חוזר זהה — בלי שינוי', registerClient($reg)['status'] === 'active');
     $far = ['client' => 'far-app', 'name' => 'רחוקה', 'key_url' => 'https://far.example/key', 'origins' => ['https://far.example'],
             'return' => ['https://far.example/cb']];
@@ -220,6 +228,8 @@ try {
     check('כתובת חזרה מחוץ ל-origins — נדחה', code(fn() => registerClient(['return' => ['https://evil.example/cb']] + $reg)) === 'bad_request');
     check('מפתח של לקוח אחר ב-key_url — נדחה', code(fn() => registerClient(['client' => 'other-app'] + $reg)) === 'bad_key_url');
     check('לקוח pending — לא מתחבר', code(fn() => connectRequest(['client' => 'far-app', 'state' => 'abcdefgh', 'return' => 'https://far.example/cb'])) === 'pending');
+    check('מ13: pending — השכבות נעולות עד אישור הלקוח (409)', code(fn() => adminClient(['client' => 'far-app', 'policy' => ['files' => 'files']])) === 'pending'
+        && effectiveScope(getClient('far-app')) === []);
 
     // רק אותו חשבון: האפליקציה חותמת על ה-sub של המשתמש שלה (Drives::connectUrl). $GLOBALS — גם לפונקציות בהמשך
     $GLOBALS['idq'] = $idq = function (array $q, string $sub) use ($sk): array {
@@ -230,14 +240,15 @@ try {
     $osub = (string) $owner['platform_sub'];
     $q = $idq(['client' => 'vector-studio', 'scope' => 'files', 'state' => 'st4te-1234', 'return' => $reg['return'][0]], $osub);
     check('כתובת חזרה לא רשומה — נדחה', code(fn() => connectRequest(['return' => 'https://mbe-plus.com/other'] + $q)) === 'bad_request');
-    check('הרשאה לא מוכרת — נדחה', code(fn() => connectRequest(['scope' => 'root'] + $q)) === 'bad_request');
+    check('scope בבקשה — מתעלמים (spec-6 3.4)', connectRequest(['scope' => 'root'] + $q)['scope'] === []);
+    check('מ1: המדיניות ריקה — connect בלי היקף (connect.php חוזר ?error=off), ואין חיבור', connectRequest($q)['scope'] === []
+        && liveConnection($owner['id'], 'vector-studio') === null);
+    check('מ6: files למי שהצהיר files — מותר, ו-"כל הכונן" הוא האישור', adminClient(['client' => 'vector-studio', 'policy' => ['files' => 'files']]) !== []);
     $req = connectRequest($q);
-    check('בפעם הראשונה — צריך אישור', alreadyGranted($owner, $req) === null);
+    check('מ2: המנהל הדליק — ההיקף לפי המדיניות, גם בלי scope בבקשה', $req['scope'] === ['files']);
     $back = approveConnect($owner, $req);
     parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
-    check('אישור — חזרה עם code ו-state', ($bq['state'] ?? '') === 'st4te-1234' && strlen($bq['code'] ?? '') > 20 && ($bq['action'] ?? '') === 'cloud_callback');
-    check('אחרי אישור — בפעם הבאה בלי מסך', alreadyGranted($owner, $req) !== null);
-    check('הרשאה נוספת — שוב מסך', alreadyGranted($owner, connectRequest(['scope' => 'files,ai'] + $q)) === null);
+    check('מ2: בלי טופס — חזרה עם code ו-state', ($bq['state'] ?? '') === 'st4te-1234' && strlen($bq['code'] ?? '') > 20 && ($bq['action'] ?? '') === 'cloud_callback');
     check('connect: sub חתום של המשתמש באפליקציה', $req['sub'] === $osub && sameSub($owner, $req['sub']));
     check('connect: sub של אדם אחר — לא אותו חשבון', !sameSub($owner, connectRequest($idq(['state' => 'other-st4te'] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1]), '999'))['sub']));
     check('connect: sub ששונה אחרי החתימה — bad_identity', code(fn() => connectRequest(['sub' => '999'] + $q)) === 'bad_identity');
@@ -265,35 +276,55 @@ try {
     bindConnection(connectionRow($ex['connection'], 'vector-studio'), $osub);
     check('access_token: אותו אדם — עובר', true);
 
-    // ── שכבות (spec-0-vision.md 7.3) ──
+    // ── שכבות: המנהל מחליט, לכל המשתמשים (spec-6) ──
     check('שכבות: לקוח בלי layers — ברירת המחדל files, libs, ai', clientScopes('vector-studio') === ['files', 'libs', 'ai']);
+    $lq = fn(string $st) => $idq(['state' => $st] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1, 'state' => 1, 'scope' => 1]), $osub);
     $GLOBALS['CLOUD_APPS'] = ['vector-studio' => ['layers' => ['files']]];
-    $lq = fn(string $st, string $scope) => $idq(['state' => $st, 'scope' => $scope] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1, 'state' => 1, 'scope' => 1]), $osub);
-    check('שכבות: היקף של שכבה שלא הוצהרה — bad_request', code(fn() => connectRequest($lq('layerst-1', 'files,libs'))) === 'bad_request');
-    check('שכבות: שכבה שהוצהרה — עובר', connectRequest($lq('layerst-2', 'files'))['scope'] === ['files']);
+    check('מ6: שכבה שלא הוצהרה — bad_request', code(fn() => adminClient(['client' => 'vector-studio', 'policy' => ['libs' => true]])) === 'bad_request');
+    check('מ6: שכבה לא מוכרת — bad_request', code(fn() => adminClient(['client' => 'vector-studio', 'policy' => ['root' => true]])) === 'bad_request');
+    $GLOBALS['CLOUD_APPS'] = ['vector-studio' => ['layers' => ['files'], 'files_scope' => 'files.app']];
+    check('מ6: תקרה — files ו-files.readonly ללקוח שהצהיר files.app — bad_request', code(fn() => adminClient(['client' => 'vector-studio', 'policy' => ['files' => 'files']])) === 'bad_request'
+        && code(fn() => adminClient(['client' => 'vector-studio', 'policy' => ['files' => 'files.readonly']])) === 'bad_request');
+    check('תקרה: הצהרה שצומצמה בגיט אחרי הבחירה — חלה מיד (files → files.app)', effectiveScope(getClient('vector-studio')) === ['files.app']);
     unset($GLOBALS['CLOUD_APPS']);
-    // חיבור עם files, libs ו-ai — ואז כיבוי
-    $lreq = connectRequest($lq('layerst-3', 'files,libs,ai'));
-    $lex = exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, $lreq)), 'sub' => $osub]);
-    check('שכבות: חיבור קיים — אותו חיבור, ההיקף הורחב', $lex['connection'] === $ex['connection'] && $lex['scope'] === ['ai', 'files', 'libs']);
+    adminClient(['client' => 'vector-studio', 'policy' => ['libs' => true, 'ai' => true]]);
+    $lex = exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, connectRequest($lq('layerst-3')))), 'sub' => $osub]);
+    check('חיבור קיים — אותו חיבור; ההיקף לפי המדיניות', $lex['connection'] === $ex['connection'] && $lex['scope'] === ['ai', 'files', 'libs']);
     $lconn = fn() => connectionRow($lex['connection'], 'vector-studio');
-    check('connection_scope: כיבוי libs', connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => ['files', 'ai']])['scope'] === ['ai', 'files']);
+    adminClient(['client' => 'vector-studio', 'policy' => ['libs' => false]]);
     $e = null; try { actorFrom($lconn(), $client, 'libs'); } catch (AppError $x) { $e = $x; }
-    check('שכבה כבויה — 403 forbidden עם scope ו-layer, מיד (גם לאסימון שכבר הונפק)', $e && $e->codeName === 'forbidden' && $e->extra === ['scope' => 'libs', 'layer' => 'libs']);
-    check('connection_scope: הדלקה — לא (403)', code(fn() => connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => ['files', 'libs', 'ai']])) === 'forbidden');
-    check('connection_scope: sub של אדם אחר — account_mismatch', code(fn() => connectionScope($client, ['connection' => $lex['connection'], 'sub' => '999', 'scope' => ['files']])) === 'account_mismatch');
-    db()->prepare('UPDATE connections SET mismatch_at = NULL WHERE id = ?')->execute([$lex['connection']]);
-    check('connection_scope: היקף לא מוכר — bad_request', code(fn() => connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => ['root']])) === 'bad_request');
-    check('access_token מחזיר את ההיקף הנוכחי (המתגים באפליקציה)', issueToken($client, $lconn())['scope'] === ['ai', 'files']);
-    check('"🔗 חיבורים": מתג לכל שכבה שהוצהרה', ($mine = array_values(array_filter(accountConnections($owner), fn($c) => $c['id'] === $lex['connection']))[0])
-        && $mine['declared'] === ['files', 'libs', 'ai'] && $mine['scope'] === ['ai', 'files']);
-    check('"🔗 חיבורים": כיבוי שכבה של בעל החשבון', ownConnectionScope($owner, $lex['connection'], ['files'])['scope'] === ['files']);
-    check('"🔗 חיבורים": חיבור של חשבון אחר — not_found', code(fn() => ownConnectionScope(getAccount($dana['id']), $lex['connection'], ['files'])) === 'not_found');
-    check('connection_scope: רשימה ריקה — חיבור בלי שכבות, לא מנותק', connectionScope($client, ['connection' => $lex['connection'], 'sub' => $osub, 'scope' => []])['scope'] === []
-        && $lconn()['revoked_at'] === null);
-    check('"🔗 חיבורים": כיבוי הכול — ניתוק', !empty(ownConnectionScope($owner, $lex['connection'], [])['revoked']) && code($lconn) === 'disconnected');
-    // חיבור מחדש — כדי שהבדיקות שאחרי ימשיכו עם חיבור פעיל
-    $ex = exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, connectRequest($lq('layerst-4', 'files')))), 'sub' => $osub]);
+    check('מ5: המנהל מכבה — 403 forbidden עם scope ו-layer, מיד (בלי אסימון חדש)', $e && $e->codeName === 'forbidden' && $e->extra === ['scope' => 'libs', 'layer' => 'libs']);
+    check('מ5: access_token מחזיר את ההיקף בפועל', issueToken($client, $lconn())['scope'] === ['ai', 'files']);
+    check('"🔗 חיבורים": לקריאה בלבד — on / off לכל שכבה שהוצהרה', ($mine = array_values(array_filter(accountConnections($owner), fn($c) => $c['id'] === $lex['connection']))[0])
+        && $mine['layers'] === ['files' => 'on', 'libs' => 'off', 'ai' => 'on'] && $mine['files_scope'] === 'files');
+    adminClient(['client' => 'vector-studio', 'policy' => ['libs' => true]]);
+    check('client_policy — השכבות הדלוקות של הלקוח, בלי פרט על משתמשים', effectiveLayers($client) === ['ai', 'files', 'libs']);
+    check('מ5: הדלקה מחדש — פותחת מיד, בלי שום פעולה של המשתמש', actorFrom($lconn(), $client, 'libs')['app'] === 'vector-studio');
+    check('מ11: connections.scope לא קובע — חיבור עם [] (הבאג) מקבל את ההיקף לפי המדיניות',
+        db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute(['[]', $lex['connection']]) && issueToken($client, $lconn())['scope'] === ['ai', 'files', 'libs']);
+    check('מ9 + מ10: connection_scope, connection_layers, connection_revoke — 403 admin_managed', (function () {
+        $api = (string) file_get_contents(__DIR__ . '/../api.php');
+        foreach (['connection_scope', 'connection_layers', 'connection_revoke'] as $a) {
+            if (!preg_match("/case '$a':[^\n]*adminManaged\(\)/", $api)) return false;
+        }
+        return code(fn() => adminManaged()) === 'admin_managed' && !function_exists('ownConnectionScope') && !function_exists('connectionScope');
+    })());
+    check('מ4: רק connect.php יוצר חיבור — INSERT INTO connections רק ב-approveConnect', (function () {
+        $hits = [];
+        foreach (array_merge(glob(__DIR__ . '/../lib/*.php'), glob(__DIR__ . '/../*.php')) as $f) {
+            if (preg_match_all('/INSERT (OR \w+ )?INTO connections/i', (string) file_get_contents($f)) > 0) $hits[] = basename($f);
+        }
+        $cl = (string) file_get_contents(__DIR__ . '/../lib/clients.php');
+        $fn = substr($cl, strpos($cl, 'function approveConnect'), strpos($cl, 'function withQuery') - strpos($cl, 'function approveConnect'));
+        $callers = [];
+        foreach (array_merge(glob(__DIR__ . '/../lib/*.php'), glob(__DIR__ . '/../*.php')) as $f) {
+            if (preg_match('/approveConnect\(/', (string) file_get_contents($f))) $callers[] = basename($f);
+        }
+        sort($callers);
+        return $hits === ['clients.php'] && str_contains($fn, 'INSERT INTO connections') && $callers === ['clients.php', 'connect.php']
+            && substr_count($cl, 'INSERT INTO connections') === 1;
+    })());
+    adminClient(['client' => 'vector-studio', 'policy' => ['libs' => false, 'ai' => false]]);   // הבדיקות שאחרי — 📁 בלבד, כמו קודם
     $h = $sign('x', '{}', 'aaaaaaaaaaaaaaaa');
     verifySigned('x', $h, '{}');
     check('אותו nonce פעמיים — replay', code(fn() => verifySigned('x', $h, '{}')) === 'replay');
@@ -323,10 +354,9 @@ try {
     foreach (['CLIENT', 'TIME', 'NONCE', 'SIGNATURE', 'CONNECTION'] as $k) unset($_SERVER['HTTP_X_CLOUD_' . $k]);
 
     check('החיבור מופיע ב"חיבורים"', count(accountConnections($owner)) === 1);
-    check('ניתוק של חיבור של חשבון אחר — 404', code(fn() => revokeOwnConnection($dana, $conn['id'])) === 'not_found');
-    revokeOwnConnection($owner, $conn['id']);
+    revokeConnection($conn['id']);   // ניתוק בצד הענן (מחיקת חשבון, או "disconnect" של שרת האפליקציה)
     check('ניתוק — אסימון שעוד בתוקף נדחה מיד', code(fn() => verifyToken($tok['token'])) === 'disconnected');
-    check('אחרי ניתוק — שוב מסך אישור', alreadyGranted($owner, $req) === null);
+    check('אחרי ניתוק — אין חיבור פעיל (בכניסה הבאה נוצר שוב, דרך connect.php)', liveConnection($owner['id'], 'vector-studio') === null);
     adminClient(['client' => 'far-app', 'status' => 'active']);
     check('מנהל מאשר לקוח ממתין', activeClient('far-app')['status'] === 'active');
     $far2 = ['key_url' => 'https://far.example/key2'] + $far;
