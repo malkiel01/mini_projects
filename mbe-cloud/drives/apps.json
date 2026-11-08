@@ -10,5 +10,10 @@
   "raster-studio": {
     "js": "assets/js/drives",
     "php": "lib/drives"
+  },
+  "trading-strategies": {
+    "js": "assets/js/drives",
+    "php": "lib/drives",
+    "layers": ["files"]
   }
 }
