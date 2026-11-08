@@ -204,7 +204,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ניווט תחתון: ארבע לשוניות (אפיון פרק 2) */
 body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
     background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; text-decoration: none;
     color: var(--muted); font-size: .75rem; }
@@ -363,3 +363,12 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .analysis-card .chip, .list .card p.chip { white-space: normal; }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
 .toolbar.pick select { flex: 1; max-width: none; }
+
+/* ===== התראות (spec-stage-a 8) ===== */
+.bottom-nav a { position: relative; }
+.bottom-nav .badge { position: absolute; inset-block-start: 4px; inset-inline-end: calc(50% - 22px); min-inline-size: 18px; block-size: 18px; padding: 0 5px;
+    border-radius: 99px; background: var(--danger); color: #fff; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }
+.use-row.unread b { color: var(--brand); }
+.use-row.unread .use-ic { box-shadow: 0 0 0 2px var(--brand); }
+.use-tx small.wrap, .card .l2.wrap { white-space: normal; overflow: visible; }
+a.use-row { text-decoration: none; color: inherit; }

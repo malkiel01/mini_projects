@@ -15,7 +15,7 @@
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
 2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · PR 2 ענן החבילה
-   (⏳ חסום — ענן MBE כותב אפיון משלו) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א השיטה מהספר (TS-008, ⏳ ממתינה לספר) · PR 5 התראות · PR 6 חיבור ליומן.
+   (⏳ חסום — ענן MBE כותב אפיון משלו) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א השיטה מהספר (TS-008, ⏳ ממתינה לספר) · ✅ PR 5 התראות (TS-006) · PR 6 חיבור ליומן.
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -69,6 +69,30 @@
 - **השיטה היחידה — `sample-ma-cross`** (פרק 10): 🧪 שיטת דוגמה, לא מהספר. גם כשמופעלת — רק מנהלים רואים ומריצים אותה
   (משתמש רגיל מקבל 404 גם בקריאה ישירה), עם התווית בכל כרטיס, ו-`alerts: false`.
 
+## שלב א' — PR 5: התראות (פרק 8)
+
+- **התראה** (`lib/alerts.php`, טבלאות `alerts`, `alert_events`, `push_subs`): נכס + מסגרת + כיוון (לונג / שורט / שניהם) + תנאי —
+  שיטה, שקלול (2–10 שיטות) או מחיר שחצה רמה. תוקף 1–90 יום (ברירת מחדל 30). **20 למשתמש, 500 במערכת** (✅7).
+  שיטה עם `alerts: false` — ובכלל זה שיטת הדוגמה — לא נכנסת, גם למנהל.
+- **ה-cron** — `bin/alerts-cron.php`, **CLI בלבד** (`PHP_SAPI`, ו-`bin/.htaccess` חוסם): נעילה (flock), תפוגה, קיבוץ לפי
+  (נכס, מסגרת, היקף מפתח) ופנייה אחת לספק לכל קבוצה, תקציב לספק בריצה (התקרה לדקה שלו — השאר נדחה, ונבדק ראשון בריצה הבאה),
+  עצירה אחרי 4 דקות. **בלי כפילות:** נשלח רק במעבר מ"לא מתקיים" ל"מתקיים"; הבדיקה הראשונה רק קובעת נקודת התחלה.
+  גם **ניקוי המאגר היומי** עבר לכאן (✅4) — כבר לא בבקשת גרף.
+- **מסירה:** תמיד לתיבה; פוש — Web Push עם VAPID (`lib/push.php`, המפתחות ב-`data/vapid.json`), **בלי תוכן**: ה-Service Worker
+  (`sw.js`) מושך את ההודעה מהתיבה כשמגיע פוש. כתובת מנוי — רק שירות פוש מוכר (בלי SSRF); מנוי שנעלם (404/410) נמחק.
+  שעות שקטות — בלי פוש; מקסימום ליום — מעבר לו לא נשלח. **בלי מייל** (✅8). כל הודעה — "לפי שיטה X", ההסתייגות בקצרה וקישור לכרטיס.
+- **לשונית "🔔 התראות"**: תיבה (עם תג "לא נקראו" מ-`me` — בלי polling) וההתראות שלי (השהיה, מחיקה); "🔔 התראה מזה" בכרטיס ניתוח
+  ובשקלול. `manifest.webmanifest` — האפליקציה ניתנת להתקנה.
+- **⚠️ צעד ידני של בעל המערכת — ב-cPanel:** Cron Job כל 15 דקות (`*/15 * * * *`):
+  `php <נתיב התיקייה בשרת>/trading-strategies/bin/alerts-cron.php >/dev/null 2>&1`. בלעדיו — אין התראות ואין ניקוי יומי.
+
+### הכרעות של כותב הקוד (PR 5)
+
+- **"עברה לכיוון" / "חצה"** — מעבר בין שתי בדיקות. ההתראה לא נשלחת על מצב שכבר התקיים כשנוצרה (או כשחזרה מהשהיה).
+- **ודאות של שקלול** — ממוצע הוודאויות של השיטות שבשקלול, לפי המשקל שלהן.
+- **פוש בלי תוכן** — כך אין הצפנת תוכן (RFC 8291), ושום טקסט לא עובר דרך שירות הפוש. המחיר: בקשה אחת לתיבה כשמגיע פוש.
+- **מקסימום ליום** — לפי היום באזור הזמן של המשתמש; מה שמעבר לו לא נכנס גם לתיבה (נספר בסיכום הריצה).
+
 ### הכרעות של כותב הקוד (PR 4)
 
 - **30 דקות** — האפיון לא קבע טווח; חצי שנה.
@@ -116,10 +140,16 @@ lib/indicators.php  SMA, EMA, RSI, ATR במנוע (float)
 lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.php — הרשימה)
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
+lib/alerts.php      התראות: ניהול, תיבה, והריצה של ה-cron
+lib/push.php        Web Push עם VAPID (בלי תוכן)
+bin/alerts-cron.php ה-cron — CLI בלבד (bin/.htaccess חוסם)
+sw.js, manifest.webmanifest   Service Worker לפוש בלבד; התקנה
+assets/js/alerts.js לשונית התראות
 assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיטות
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
+                    · alerts-api.php · alerts-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -158,6 +188,8 @@ node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
 php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיטת דוגמה רק למנהל, שמור/מצטבר/מלא, תקציב, 100,000, בידוד
 node trading-strategies/tests/analysis-ui.mjs  # Playwright בטלפון: ניתוח, פרופיל, ניהול שיטות, RTL, בלי polling
+php trading-strategies/tests/alerts-api.php    # cron כ-CLI עם זמן מדומה: בלי כפילות, נעילה, תקציב, דרך הרשת נכשל, פוש/VAPID, תקרות
+node trading-strategies/tests/alerts-ui.mjs    # Playwright בטלפון: התראות, תיבה, תג, "התראה מזה", בלי polling
 php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/dev-prepend.php
 #   ואז http://127.0.0.1:8123/trading-strategies/  (העוגייה dev_as=bob — משתמש אחר; owner — מנהל ראשי)
 ```

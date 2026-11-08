@@ -426,7 +426,6 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $by = [];
     foreach ($out as $r) $by[$r['t']] = $r;
     ksort($by);
-    ts_cache_cleanup_daily($now);
     return [
         'asset' => "$provider:$symbol", 'provider' => $provider, 'symbol' => $symbol, 'tf' => $tf,
         'candles' => array_values($by), 'capped' => $capped, 'provider_calls' => $calls,
@@ -472,7 +471,7 @@ function ts_cache_cleanup(?int $now = null): int
     return $n;
 }
 
-/** פעם ביום, בבקשה הראשונה אחרי שעבר יום — עד שה-cron של פרק 8 ייבנה */
+/** פעם ביום — מה-cron של פרק 8 (bin/alerts-cron.php), בריצה הראשונה אחרי שעבר יום */
 function ts_cache_cleanup_daily(int $now): void
 {
     if ((int)ts_setting('cache_cleanup_at', '0') > $now - 86400) return;

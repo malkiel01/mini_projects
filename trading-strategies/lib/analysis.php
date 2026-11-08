@@ -146,7 +146,7 @@ function ts_methods_visible(int $uid): array
 {
     $admin = ts_is_admin($uid);
     $out = [];
-    foreach (array_keys(TS_METHODS) as $id) {
+    foreach (array_keys(ts_methods_all()) as $id) {
         $m = ts_method($id);
         $meta = $m->meta();
         $set = ts_method_settings($id);
@@ -163,7 +163,7 @@ function ts_methods_visible(int $uid): array
 /** שיטה למשתמש — רק אם הוא רואה אותה; אחרת "לא נמצאה" (כמו שיטה שלא קיימת) */
 function ts_method_for(int $uid, mixed $id): array
 {
-    if (!is_string($id) || !isset(TS_METHODS[$id]) || !in_array($id, array_column(ts_methods_visible($uid), 'id'), true)) {
+    if (!is_string($id) || !ts_method_exists($id) || !in_array($id, array_column(ts_methods_visible($uid), 'id'), true)) {
         throw new TsNotFound('השיטה לא זמינה');
     }
     $m = ts_method($id);
@@ -174,7 +174,7 @@ function ts_method_for(int $uid, mixed $id): array
 function ts_admin_methods(): array
 {
     $out = [];
-    foreach (array_keys(TS_METHODS) as $id) {
+    foreach (array_keys(ts_methods_all()) as $id) {
         $m = ts_method($id);
         $meta = $m->meta();
         $st = ts_db()->prepare('SELECT COUNT(*) AS n, MAX(computed_at) AS at FROM backtests WHERE method_id = ?');
@@ -192,7 +192,7 @@ function ts_admin_methods(): array
 function ts_admin_method_save(int $uid, array $in): void
 {
     $id = $in['id'] ?? null;
-    if (!is_string($id) || !isset(TS_METHODS[$id])) throw new TsNotFound('שיטה לא מוכרת');
+    if (!is_string($id) || !ts_method_exists($id)) throw new TsNotFound('שיטה לא מוכרת');
     $m = ts_method($id);
     $meta = $m->meta();
     $enabled = ($in['enabled'] ?? false) === true;

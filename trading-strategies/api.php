@@ -31,6 +31,12 @@
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
  *
+ * התראות (פרק 8) — הבדיקה עצמה רק ב-cron (bin/alerts-cron.php, CLI); כאן רק ניהול ותיבה:
+ * GET  ?action=alerts                    ההתראות שלי והשיטות שמותרות בהן
+ * GET  ?action=inbox | inbox_peek        התיבה; האחרונה שלא נקראה (ל-Service Worker כשמגיע פוש)
+ * GET  ?action=push_key                  המפתח הציבורי של VAPID
+ * POST action=alert_save | alert_status | alert_delete | inbox_read | push_subscribe | push_unsubscribe
+ *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
  * GET  ?action=admin_state | admin_methods
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
@@ -49,6 +55,7 @@ require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
+require_once __DIR__ . '/lib/alerts.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -96,6 +103,7 @@ $tz = $user['timezone'];
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
+    'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
@@ -144,7 +152,7 @@ try {
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
             ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
-                'disclaimer' => TS_ANALYSIS_DISCLAIMER]);
+                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'unread' => ts_inbox_unread($uid)]);
 
         case 'settings':
             ts_settings_save($uid, $in);
@@ -160,6 +168,43 @@ try {
 
         case 'methods':
             out(['ok' => true, 'methods' => ts_methods_visible($uid)]);
+
+        // ── התראות ──
+        case 'alerts':
+            out(['ok' => true, 'alerts' => ts_alerts_list($uid), 'methods' => ts_alert_methods($uid),
+                'per_user' => TS_ALERTS_PER_USER, 'push_devices' => ts_push_count($uid)]);
+
+        case 'alert_save':
+            out(['ok' => true, 'alert' => ts_alert_save($uid, $in)]);
+
+        case 'alert_status':
+            out(['ok' => true, 'alert' => ts_alert_status($uid, $in['id'] ?? null, $in['status'] ?? null)]);
+
+        case 'alert_delete':
+            ts_alert_delete($uid, $in['id'] ?? null);
+            out(['ok' => true]);
+
+        case 'inbox':
+            out(['ok' => true, 'events' => ts_inbox($uid), 'unread' => ts_inbox_unread($uid)]);
+
+        case 'inbox_peek':
+            $ev = array_values(array_filter(ts_inbox($uid, 5), fn($e) => !$e['read']));
+            out(['ok' => true, 'event' => $ev[0] ?? null, 'unread' => ts_inbox_unread($uid)]);
+
+        case 'inbox_read':
+            ts_inbox_read($uid, $in['ids'] ?? null);
+            out(['ok' => true, 'unread' => ts_inbox_unread($uid)]);
+
+        case 'push_key':
+            out(['ok' => true, 'key' => ts_vapid()['public']]);
+
+        case 'push_subscribe':
+            ts_push_subscribe($uid, $in);
+            out(['ok' => true, 'push_devices' => ts_push_count($uid)]);
+
+        case 'push_unsubscribe':
+            ts_push_unsubscribe($uid, $in['endpoint'] ?? null);
+            out(['ok' => true, 'push_devices' => ts_push_count($uid)]);
 
         case 'analysis':
             out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? ''));
@@ -284,7 +329,7 @@ try {
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
-                'cache' => ts_cache_stats(), 'log' => $log]);
+                'cache' => ts_cache_stats(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
