@@ -8,7 +8,7 @@ const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(b
 const API = 'https://mbe-plus.com/mini_projects/mbe-cloud/api.php';
 let dbxLinked = true, ptokens = 0, dbxExpire = false;
 const dbxCalls = [];
-let connected = true, tokens = 0, expireNext = false, chunks = [], layerOff = false;
+let connected = true, tokens = 0, expireNext = false, chunks = [], layerOff = false, readOnly = false;
 const appBodies = {};
 const adCalls = [];
 const log = [];
@@ -19,6 +19,8 @@ globalThis.fetch = async (url, init = {}) => {
   if (!url.startsWith(API)) {
     if (init.body && typeof init.body === 'string') appBodies[a] = JSON.parse(init.body);
     if (a === 'drives_connect') return json({ url: 'https://mbe-plus.com/mini_projects/mbe-cloud/connect.php?x=1' });
+    if (a === 'drives_pick') return json({ url: 'https://mbe-plus.com/mini_projects/mbe-cloud/picker.php?x=1' });
+    if (a === 'drives_picked') return json({ ids: ['n_ok', 'n_gone'] });
     if (a === 'drives_disconnect' && appBodies[a]?.layers) return json({ ok: true, suite: { connected: true, layers: { files: true, libs: false } } });
     if (a === 'drives_token') { tokens++; return json(connected ? { connected: true, token: 't' + tokens, expires_in: 900, api: API } : { connected: false }); }
     if (a === 'drives_status') return json({ suite: { connected } });
@@ -58,6 +60,9 @@ globalThis.fetch = async (url, init = {}) => {
     if (a === 'appdata_changes' && b.since === 999) return json({ error: 'gone', code: 'gone' }, 410);
     return json({ ok: true, rev: 2, seq: 7, items: [], changes: [], cursor: 7, more: false, used: 10, quota: 20 });
   }
+  if (readOnly && a === 'mkdir') return json({ error: 'קריאה בלבד', code: 'read_only' }, 403);
+  if (a === 'stat' && url.includes('id=n_gone')) return json({ error: 'לא נמצא', code: 'not_found' }, 404);
+  if (a === 'stat' && url.includes('id=n_ok')) return json({ id: 'n_ok', kind: 'file', name: 'שיטה.txt', parent: null });
   if (layerOff && a === 'list') return json({ error: 'אין לאפליקציה הרשאה לזה', code: 'forbidden', scope: 'files', layer: 'files' }, 403);
   if (a === 'list') return json({ folder: null, path: [], items: [{ id: 'n_1', name: 'ספר.mbe', tok }] });
   if (a === 'upload_start') return json({ upload: 'u_1', chunk: 4, received: 0 });
@@ -157,6 +162,26 @@ check('appdata.clear — confirm: clear', JSON.stringify(adCalls.at(-1).b) === '
 await ad.getMany('watch', ['a', 'b']); await ad.list({ collection: 'watch', prefix: '2026/' }); await ad.history('h', 'doc'); await ad.restore('h', 'doc', 3);
 check('getMany, list, history, restore — הפעולות והגופים', adCalls.slice(-4).map(c => c.a).join() === 'appdata_get_many,appdata_list,appdata_history,appdata_restore'
   && adCalls.at(-1).b.rev === 3 && adCalls.at(-3).b.prefix === '2026/');
+
+// ── שלב 3: קריאה בלבד והבורר ──
+readOnly = true;
+let ro = null;
+try { await d.suite.mkdir('x'); } catch (e) { ro = e; }
+check('files.readonly — כתיבה: DriveError read-only (לא layer-off)', ro?.code === 'read-only');
+readOnly = false;
+{
+  let assigned2 = null;
+  globalThis.location = { href: 'https://mbe-plus.com/mini_projects/vector-studio/?cloud=picked&x=1', assign: u => { assigned2 = u; } };
+  let replaced = null;
+  globalThis.history = { state: null, replaceState: (s, t, u) => { replaced = u; } };
+  await d.pick({ kind: 'folder', multiple: true, mime: ['application/pdf'] });
+  check('pick — שולח kind, multiple, mime, ועובר לבורר', JSON.stringify(appBodies.drives_pick) === '{"kind":"folder","multiple":true,"mime":["application/pdf"]}'
+    && assigned2.includes('picker.php'));
+  const got = await d.picked();
+  check('picked — רק מה שבאמת נגיש (n_gone נשמט), והכתובת מתנקה מ-cloud=picked', got.length === 1 && got[0].id === 'n_ok'
+    && replaced === '/mini_projects/vector-studio/?x=1');
+  delete globalThis.location; delete globalThis.history;
+}
 
 // ── שכבות (spec-0-vision.md 7.3) ──
 layerOff = true;

@@ -365,6 +365,58 @@ try {
     check('🗂️ appdata — אפליקציה שהצהירה: מתג, ובקשה ל-files,appdata', array_keys($ad->status('u1')['suite']['layers']) === ['files', 'appdata']
         && (fn() => $this->scopeOf([]))->call($ad) === 'files,appdata' && (fn() => $this->scopeOf(['layers' => ['appdata']]))->call($ad) === 'appdata');
 
+    // ─── שלב 3: הבורר (files.app) ───
+    $GLOBALS['CLOUD_APPS'] = ['pick-app' => ['layers' => ['files'], 'files_scope' => 'files.app']];
+    platformAs('1');
+    $pa = new Drives(['client' => 'pick-app', 'name' => 'בוחרת', 'dataDir' => "$tmp/pick",
+        'endpoint' => 'https://mbe-plus.com/mini_projects/pick-app/api.php', 'back' => 'https://mbe-plus.com/mini_projects/pick-app/',
+        'user' => function () use (&$user) { return $user; }, 'http' => $cloud, 'files_scope' => 'files.app', 'layers' => ['files']]);
+    $prevFetch = $GLOBALS['CLOUD_FETCH'];
+    $GLOBALS['CLOUD_FETCH'] = fn(string $url) => str_contains($url, '/pick-app/') ? json_encode($pa->keyJson()) : $prevFetch($url);
+    $user = 'u1';
+    check('שלב 3: status — files_scope', $pa->status('u1')['suite']['files_scope'] === 'files.app');
+    check('שלב 3: connect מבקש files.app (מה שהוצהר)', $q2($pa->connectUrl('u1', (fn() => $this->scopeOf([]))->call($pa)))['scope'] === 'files.app');
+    check('שלב 3: אפליקציה ב-files.app — active בלי אישור מנהל', getClient('pick-app')['status'] === 'active');
+    $pa->callback('u1', $q2(approve($pa->connectUrl('u1', 'files.app'))));
+    check('שלב 3: מחוברת, 📁 דלוק', $pa->status('u1')['suite']['layers'] === ['files' => true]);
+    check('בורר באפליקציה עם files המלא — 400 (לא צריך)', code(fn() => $app->pickUrl('u1', [])) === 'bad_request');
+    $pu = $pa->pickUrl('u1', ['kind' => 'file', 'mime' => ['text/plain']]);
+    $pq = $q2($pu);
+    check('pickUrl — picker.php בענן, עם sub חתום ו-return של drives_pick_callback', str_starts_with($pu, CLOUD_ISSUER . 'picker.php?')
+        && $pq['sub'] === '1' && $pq['return'] === 'https://mbe-plus.com/mini_projects/pick-app/api.php?action=drives_pick_callback' && $pq['mime'] === 'text/plain');
+    // המשתמש בוחר בענן (picker.php) — כמו שם: pickRequest → pickAllowed → pickApprove
+    $acc = requireAccount();
+    db()->prepare('UPDATE accounts SET quota = ? WHERE id = ?')->execute([10 << 20, $acc['id']]);
+    $acc = getAccount($acc['id']);
+    $pf = writeFile($acc, ['name' => 'שיטה.txt', 'content_b64' => base64_encode('s'), 'mime' => 'text/plain']);
+    $preq = pickRequest($pq);
+    pickAllowed($acc, $preq);
+    $pback = $q2(pickApprove($acc, $preq, [$pf['id']]));
+    $to = $pa->pickCallback('u1', $pback);
+    check('pick_callback עם עוגייה — חזרה ל-back עם ?cloud=picked', $to === 'https://mbe-plus.com/mini_projects/pick-app/?cloud=picked');
+    check('picked — ה-ids, פעם אחת', $pa->picked('u1') === ['ids' => [$pf['id']]] && $pa->picked('u1') === ['ids' => []]);
+    check('pick_callback שנוצל — bad_state', code(fn() => $pa->pickCallback('u1', $pback)) === 'bad_state');
+    check('pick_callback ממשתמש אחר — bad_state', (function () use ($pa, $q2) { $u = $q2($pa->pickUrl('u1', [])); return code(fn() => $pa->pickCallback('u2', ['state' => $u['state'], 'picked' => 'n_x'])); })() === 'bad_state');
+    // APK: בלי עוגייה — רק אותו חשבון פלטפורמה
+    $pq = $q2($pa->pickUrl('u1', []));
+    $user = null; platformAs('2');
+    check('pick_callback בדפדפן החיצוני, חשבון אחר — account_mismatch', code(fn() => $pa->handle('drives_pick_callback', ['state' => $pq['state'], 'picked' => $pf['id']])) === 'account_mismatch');
+    $user = 'u1'; platformAs('1');
+    $pq = $q2($pa->pickUrl('u1', []));
+    $user = null;
+    $r = $pa->handle('drives_pick_callback', ['state' => $pq['state'], 'picked' => $pf['id'] . ',not-an-id']);
+    $user = 'u1';
+    check('pick_callback בדפדפן החיצוני, אותו אדם — "נשמרה", ו-picked מסנן ids לא תקינים', str_contains($r['done'] ?? '', 'נשמרה')
+        && $pa->picked('u1') === ['ids' => [$pf['id']]]);
+    $pq = $q2($pa->pickUrl('u1', []));
+    $cx = $pa->pickCallback('u1', ['state' => $pq['state'], 'pick' => 'cancelled']);
+    check('ביטול בבורר — cloud=pick-cancelled, ואין picked', $cx === 'https://mbe-plus.com/mini_projects/pick-app/?cloud=pick-cancelled'
+        && $pa->picked('u1') === ['ids' => []]);
+    $pq = $q2($pa->pickUrl('u1', []));
+    check('state של הבורר לא עובר ב-drives_callback (purpose)', code(fn() => $pa->callback('u1', ['state' => $pq['state'], 'code' => 'x'])) === 'bad_state:missing');
+    unset($GLOBALS['CLOUD_APPS']);
+    $GLOBALS['CLOUD_FETCH'] = $prevFetch;
+
     // ─── Dropbox ───
     check('בלי App key בענן — Dropbox לא מופיע', !isset($app->status('u1')['dropbox']) && code(fn() => $app->linkUrl('u1', 'dropbox')) === 'no-provider');
     setSetting('dropbox_app_key', 'dbxappkey123');

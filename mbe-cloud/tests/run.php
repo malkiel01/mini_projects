@@ -577,6 +577,7 @@ try {
     // ─── שלב 2: שיתוף לקריאה, חשבון שירות ואסימון אישי (docs/spec-2-share-token.md סעיף 8) ───
     require __DIR__ . '/share.inc.php';
     require __DIR__ . '/appdata.inc.php';
+    require __DIR__ . '/files-scopes.inc.php';
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

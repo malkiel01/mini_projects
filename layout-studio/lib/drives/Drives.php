@@ -444,7 +444,7 @@ final class Drives {
         $picked = ($in['pick'] ?? '') === 'cancelled' ? '' : implode(',', array_filter(explode(',', (string) ($in['picked'] ?? '')),
             fn($id) => (bool) preg_match('/^n_[A-Za-z0-9]{1,64}$/', $id)));
         $this->db()->prepare('UPDATE states SET used = 1, picked = ? WHERE state = ?')->execute([$picked, $state]);
-        return $row + ['picked' => $picked];
+        return array_merge($row, ['picked' => $picked]);   // לא + : לשורה כבר יש עמודה picked (null)
     }
 
     /** החזרה מהבורר (עם עוגייה) → back?cloud=picked | pick-cancelled. */

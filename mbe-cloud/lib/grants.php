@@ -100,24 +100,27 @@ function grantCreated(array $x, array $node): array {
     return $node;
 }
 
-/** publicNode בעיני האפליקציה: מעל שורש ההענקה לא נחשף — parent של השורש הוא null. */
+/** האם ההורה של הצומת מכוסה בהענקה — כלומר הצומת אינו שורש בעיני האפליקציה. */
+function parentCovered(array $x, array $n): bool {
+    if ($n['parent'] === null) return false;
+    $p = db()->query('SELECT * FROM nodes WHERE id = ' . db()->quote($n['parent']))->fetch();
+    return $p && grantRootOf($x['app'], $x['account'], $p) !== null;
+}
+
+/** publicNode בעיני האפליקציה: מעל שורש ההענקה לא נחשף — parent של השורש (ההענקה העליונה) הוא null. */
 function appNode(array $x, array $n): array {
     $p = publicNode($n);
-    $st = db()->prepare('SELECT 1 FROM grants WHERE client = ? AND account = ? AND node = ?');
-    $st->execute([$x['app'], $x['account']['id'], $n['id']]);
-    if ($st->fetchColumn()) $p['parent'] = null;
+    if (!parentCovered($x, $n)) $p['parent'] = null;
     return $p;
 }
 
-/** הנתיב מהשורש של ההענקה בלבד. */
+/** הנתיב מהשורש העליון של ההענקה בלבד. */
 function appPath(array $x, string $folder): array {
     $path = [];
-    $st = db()->prepare('SELECT 1 FROM grants WHERE client = ? AND account = ? AND node = ?');
     for ($id = $folder, $guard = 0; $id !== null && $guard < 1000; $guard++) {
         $n = nodeRow($x['account'], $id);
         array_unshift($path, ['id' => $n['id'], 'name' => $n['name']]);
-        $st->execute([$x['app'], $x['account']['id'], $n['id']]);
-        if ($st->fetchColumn()) break;
+        if (!parentCovered($x, $n)) break;
         $id = $n['parent'];
     }
     return $path;
