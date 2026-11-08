@@ -3,6 +3,7 @@
 // ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף, ולא מתחבר מחדש לבד בלולאה.
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
+import { parseCsv } from './cloud.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
 
@@ -305,10 +306,32 @@ export function mountMarket(ctx) {
       info.textContent = 'טוען…';
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
-        const r = await api('market_candles', null, { asset, tf: st.tf, ...rangeQuery() });
+        // העותק האישי בענן (3.7) — תצוגה בלבד: טווח ישן מ-60 יום נקרא מהעותק בדפדפן, לפני פנייה לספק. הנרות שלו לא נשלחים
+        // לשרת ולא נכנסים למאגר; מהשרת מבקשים רק את מה שהעותק לא מכסה, והשרת גובר בחפיפה
+        const rq = rangeQuery();
+        const sec = TF_SEC[st.tf];
+        const edge = Math.floor(Date.now() / 1000) - 60 * 86400;
+        let copy = [];
+        if (rq.from < edge && ctx.cloud) {
+          const node = await ctx.cloud.findCopy({ provider, symbol, tf: st.tf });
+          if (node) {
+            const { meta, rows } = parseCsv(await ctx.cloud.readCopy(node));
+            if (meta.provider === provider && meta.symbol === symbol && meta.tf === st.tf) copy = rows.filter(x => x.t >= rq.from && x.t < edge && x.t <= rq.to);
+          }
+        }
+        const q = { ...rq };
+        if (copy.length && copy[0].t <= rq.from + sec) q.from = Math.min(copy.at(-1).t + sec, edge);
+        const r = await api('market_candles', null, { asset, tf: st.tf, ...q });
         raw = r.candles;
-        data = r.candles.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
-        candle.applyOptions({ priceFormat: priceFormat(r.candles) });
+        const byT = new Map(copy.map(x => [x.t, x]));
+        for (const x of r.candles) byT.set(x.t, x);
+        let rows = [...byT.values()].sort((a, b) => a.t - b.t);
+        const capped = r.capped || rows.length > 5000;
+        if (rows.length > 5000) rows = rows.slice(-5000);
+        const fromServer = new Set(r.candles.map(x => x.t));
+        const nCopy = rows.filter(x => !fromServer.has(x.t)).length;
+        data = rows.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
+        candle.applyOptions({ priceFormat: priceFormat(rows) });
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
         chart.timeScale().fitContent();
@@ -316,7 +339,8 @@ export function mountMarket(ctx) {
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
-          r.capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
+          nCopy ? ` · 🧪 ${nCopy.toLocaleString('he-IL')} מהעותק שלך בענן (תצוגה בלבד)` : '',
+          capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
           r.stream ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
           n ? '' : ' · אין נתונים בטווח הזה');
         if (isRefresh) toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');

@@ -6,7 +6,7 @@
   "description": "גרפים מספקי נתונים, ניתוח לפי שיטות מסחר עם ודאות מבדיקה לאחור, התראות, ויומן עסקאות וסטטיסטיקה — לתכנון וניתוח בלבד, בלי חיבור לברוקר.",
   "category": "finance",
   "entry": "index.html",
-  "version": "1.5",
+  "version": "1.6",
   "gate": true,
   "restricted": true,
   "public": [
