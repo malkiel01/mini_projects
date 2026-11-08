@@ -1,5 +1,9 @@
 [
   {
+    "match": "#^https://mbe-plus\\.com/mini_projects/mbe-cloud/api\\.php#",
+    "php": "mbe-cloud.php"
+  },
+  {
     "match": "#^https://push\\.test/gone/#",
     "status": 410,
     "body": ""

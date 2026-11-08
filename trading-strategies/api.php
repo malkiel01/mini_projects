@@ -38,11 +38,14 @@
  * GET  ?action=push_key                  המפתח הציבורי של VAPID
  * POST action=alert_save | alert_status | alert_delete | inbox_read | push_subscribe | push_unsubscribe
  *
+ * ענן MBE (spec-stage-a 3.7, 9): drives_* — מודול הכוננים (lib/drives, מסונכרן). השמירה והקריאה — מהדפדפן ישירות לענן
+ *      של המשתמש עצמו (drives.suite). אין כאן נקודת קצה שמגישה תוכן של קבצים.
+ *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
- * GET  ?action=admin_state | admin_methods
+ * GET  ?action=admin_state | admin_methods | admin_method_files (התיקייה של קובצי השיטות בענן של המנהל — מזהה בלבד)
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
- *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
+ *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save | admin_method_files_folder
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
  * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
@@ -91,6 +94,26 @@ function input(): array
 $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// ענן MBE — מודול הכוננים (mbe-cloud/docs/api-guide.md 3.2). עותק מסונכרן: לא עורכים את lib/drives/ ואת assets/js/drives/.
+// לפני ה-session שלנו: drives_key נקרא מהענן בלי עוגייה (ב-public של app.json); כל השאר — המשתמש מהשער, ורק הוא.
+// drives.sqlite (המפתח הפרטי של האפליקציה והחיבורים) ב-data/ — מוחרג בפריסה (trading-strategies/data/*).
+if (str_starts_with($action, 'drives_')) {
+    require_once __DIR__ . '/lib/drives/Drives.php';
+    (new \SuiteCloud\Drives([
+        'client'   => 'trading-strategies',
+        'name'     => 'אסטרטגיות למסחר',
+        'dataDir'  => defined('TS_DB_PATH') ? TS_DB_PATH . '.drives' : __DIR__ . '/data',
+        'endpoint' => 'https://mbe-plus.com/mini_projects/trading-strategies/api.php',
+        'user'     => function (): ?string {
+            $id = ts_identity();
+            return $id ? (string)ts_user_for($id)['id'] : null;
+        },
+        'back'     => 'https://mbe-plus.com/mini_projects/trading-strategies/',
+        // בבדיקות בלבד (TS_DEV) — ענן מדומה מ-tests/fixtures; בשרת: הענן האמיתי
+        'http'     => defined('TS_DEV') && ($fx = getenv('TS_HTTP_FIXTURES')) ? fn(string $url, array $h, string $body) => ts_http_fixture($fx, $url, [...$h, 'X-Test-Body: ' . $body], 'POST') : null,
+    ]))->serve($action);
+}
+
 try {
     $session = ts_session();
 } catch (Throwable $e) {
@@ -105,7 +128,7 @@ $tz = $user['timezone'];
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
-    'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
+    'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe', 'admin_method_files_folder',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup'];
@@ -345,6 +368,18 @@ try {
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
+
+        // 📚 קובצי שיטות (spec-stage-a 9.3): הקבצים בענן של המנהל; כאן רק איזו תיקייה נבחרה — לא תוכן
+        case 'admin_method_files':
+            out(['ok' => true, 'folder' => json_decode((string)ts_setting('method_files_folder', 'null'), true)]);
+
+        case 'admin_method_files_folder':
+            $fid = $in['id'] ?? null; $fpath = $in['path'] ?? null;
+            if (!is_string($fid) || !preg_match('/^[A-Za-z0-9_:.-]{1,80}$/', $fid)) fail('מזהה תיקייה לא תקין', 422);
+            $fpath = ts_text($fpath, 300);
+            ts_setting_set('method_files_folder', json_encode(['id' => $fid, 'path' => $fpath, 'by' => $uid, 'at' => time()], JSON_UNESCAPED_UNICODE));
+            ts_admin_log($uid, 'method_files_folder', "$fid $fpath");
+            out(['ok' => true]);
 
         case 'admin_method_save':
             ts_admin_method_save($uid, $in);
