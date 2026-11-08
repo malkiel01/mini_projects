@@ -60,6 +60,11 @@ function restricted_access_apps(): array
 function restricted_access_rows(): array
 {
     restricted_access_migrate();
+    // "נבדקה" שייכת להרשאה מסוימת. הרשאה שבוטלה ממקום אחר (מתג "רואה", הזמנה, גיליון המשתמש) — הסימון שלה נמחק,
+    // כך שאם תינתן שוב היא חוזרת ל"⚠️ ממתינות" ולא מופיעה כנבדקה בלי שמישהו בדק אותה.
+    db()->exec("DELETE FROM restricted_access_review WHERE NOT EXISTS (SELECT 1 FROM grants g
+                 WHERE g.user_id = restricted_access_review.user_id AND g.kind = 'app'
+                   AND g.target = restricted_access_review.app_id AND g.allowed = 1)");
     $apps = restricted_access_apps();
     if (!$apps) return [];
     $in = implode(',', array_fill(0, count($apps), '?'));
