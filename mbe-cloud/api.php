@@ -319,6 +319,16 @@ try {
             reply(drivesConfig());
         }
 
+        case 'api_guide': {   // ⬇️ "הורדת מדריך API" בלשונית החיבורים. docs/ לא מוגש דרך השער (אין שם md), ולכן מכאן
+            requireAccount();
+            $f = __DIR__ . '/docs/api-guide.md';
+            if (!is_file($f)) throw new AppError('המדריך עוד לא פורסם', 404, 'not_found');
+            header('Content-Type: text/markdown; charset=utf-8');
+            header("Content-Disposition: attachment; filename=\"mbe-cloud-api-guide.md\"");
+            header('Content-Length: ' . filesize($f));
+            readfile($f);
+            exit;
+        }
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);
 

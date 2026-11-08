@@ -222,6 +222,15 @@ try {
     $r = $http('POST', 'action=mkdir', ['Authorization' => "Bearer $appTok"], ['name' => 'מהאפליקציה', 'parent' => $main['id']]);
     check('ת6: ואפליקציה עם files עדיין כותבת', $r[0] === 200);
 
+    // ⬇️ מדריך ה-API (לשונית החיבורים): רק למי שנכנס דרך השער; עם PAT — 403; בלי הקובץ — 404
+    check('api_guide בלי כניסה — 401', $http('GET', 'action=api_guide', $ip('10.0.0.6'))[0] === 401);
+    check('api_guide עם PAT — 403', $http('GET', 'action=api_guide', $pat($PAT, '10.0.0.6'))[0] === 403);
+    $g = $http('GET', 'action=api_guide', ['X-Test-User' => json_encode(['sub' => 's2a', 'name' => 'אבי הבעלים', 'email' => 'avi@example.com']), 'X-Test-IP' => '10.0.0.6']);
+    $guide = __DIR__ . '/../docs/api-guide.md';
+    check('api_guide מחובר — הקובץ כהורדה, או 404 כשעוד לא פורסם', is_file($guide)
+        ? $g[0] === 200 && str_contains($g[1]['content-disposition'] ?? '', 'attachment') && $g[2] === file_get_contents($guide)
+        : $g[0] === 404 && ($j($g)['code'] ?? '') === 'not_found');
+
     // היומן
     $log = tokenLog($tok['id'])['items'];
     check('token_log — פעולה, צומת, כתובת וקוד; read עם 206 ועם הצומת',
