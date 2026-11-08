@@ -51,19 +51,27 @@ final class DrivesError extends \RuntimeException {
 final class Drives {
     public const CLOUD = 'https://mbe-plus.com/mini_projects/mbe-cloud/';
     private const STATE_TTL = 600;
+    /** שכבה → ההיקפים שלה (spec-0-vision.md 7.3). כמו LAYERS בענן. */
+    private const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'ai' => ['ai']];
 
     private array $cfg;
     private ?\PDO $pdo = null;
 
     /**
      * client, name, dataDir, endpoint (כתובת https מלאה של api.php של האפליקציה), user (callable → ?string),
-     * back (לאן חוזרים אחרי חיבור), sub? (callable(string $user) → ?string; ברירת המחדל — PLATFORM_USER של השער), cloud? (כתובת הענן), scope? (['files','libs','ai'] ברירת מחדל), http? (callable — לבדיקות).
+     * back (לאן חוזרים אחרי חיבור), sub? (callable(string $user) → ?string; ברירת המחדל — PLATFORM_USER של השער),
+     * layers? (השכבות של האפליקציה; ברירת המחדל — layers.json שה-sync כותב מ-mbe-cloud/drives/apps.json), cloud? (כתובת הענן), scope? (['files','libs','ai'] ברירת מחדל), http? (callable — לבדיקות).
      */
     public function __construct(array $cfg) {
         foreach (['client', 'name', 'dataDir', 'endpoint', 'user', 'back'] as $k) {
             if (empty($cfg[$k])) throw new \InvalidArgumentException("Drives: חסר $k");
         }
-        $this->cfg = $cfg + ['cloud' => self::CLOUD, 'scope' => ['files', 'libs', 'ai'], 'http' => null, 'sub' => null];
+        $this->cfg = $cfg + ['cloud' => self::CLOUD, 'http' => null, 'sub' => null, 'layers' => null];
+        if (!is_array($this->cfg['layers'])) {
+            $j = json_decode((string) @file_get_contents(__DIR__ . '/layers.json'), true);
+            $this->cfg['layers'] = is_array($j['layers'] ?? null) ? $j['layers'] : array_keys(self::LAYERS);
+        }
+        $this->cfg['layers'] = array_values(array_intersect(array_keys(self::LAYERS), $this->cfg['layers']));
         $this->cfg['cloud'] = rtrim($this->cfg['cloud'], '/') . '/';
     }
 
@@ -99,10 +107,10 @@ final class Drives {
         if ($user === null) throw new DrivesError('נדרשת כניסה', 401, 'unauthorized');
         return match ($action) {
             'drives_status'     => $this->status($user),
-            'drives_connect'    => ['url' => $this->connectUrl($user, $in['scope'] ?? null)],
+            'drives_connect'    => ['url' => $this->connectUrl($user, $this->scopeOf($in))],
             'drives_callback'   => ['redirect' => $this->callback($user, $in)],
             'drives_token'      => $this->token($user),
-            'drives_disconnect' => $this->disconnect($user),
+            'drives_disconnect' => $this->disconnect($user, isset($in['layers']) ? $this->layerList($in['layers']) : null),
             'drives_link'       => ['url' => $this->linkUrl($user, (string) ($in['provider'] ?? ''))],
             'drives_oauth_callback' => ['redirect' => $this->oauthCallback($user, $in)],
             'drives_ptoken'     => $this->providerToken($user, (string) ($in['provider'] ?? '')),
@@ -118,9 +126,14 @@ final class Drives {
     }
 
     public function status(string $user): array {
+        // ההיקפים מהענן — כיבוי שכבה בדף הענן ("🔗 חיבורים") או ניתוק שם מופיעים כאן מיד. ענן שלא עונה — מה שנשמר כאן
+        if ($this->conn($user)) { try { $this->token($user); } catch (\Throwable) {} }
         $c = $this->conn($user);
-        $out = ['suite' => $c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true),
-                                 'cloud' => $this->cfg['cloud']] : ['connected' => false, 'cloud' => $this->cfg['cloud']]];
+        $scope = $c ? (json_decode($c['scope'], true) ?: []) : [];
+        $layers = [];
+        foreach ($this->cfg['layers'] as $l) $layers[$l] = $c !== null && !array_diff(self::LAYERS[$l], $scope);
+        $out = ['suite' => ($c ? ['connected' => true, 'name' => $c['name'], 'cloud_id' => $c['cloud_id'], 'scope' => $scope]
+                               : ['connected' => false]) + ['layers' => $layers, 'cloud' => $this->cfg['cloud']]];
         foreach (array_keys(self::PROVIDERS) as $p) {
             if (!$this->providerConfig($p)) continue;   // בלי App key — הכונן לא מופיע
             $l = $this->link($user, $p);
@@ -295,12 +308,29 @@ final class Drives {
         return is_scalar($s) && (string) $s !== '' ? (string) $s : null;
     }
 
+    /** רשימת שכבות מהבקשה — רק שכבות שהאפליקציה הצהירה. */
+    private function layerList(mixed $v): array {
+        $list = array_values(array_unique(array_map('strval', is_array($v) ? $v : preg_split('/[\s,]+/', (string) $v, -1, PREG_SPLIT_NO_EMPTY))));
+        if (!$list || array_diff($list, $this->cfg['layers'])) throw new DrivesError('שכבה לא מוכרת לאפליקציה הזו', 400, 'bad_request');
+        return $list;
+    }
+
+    /** ההיקפים לבקשת חיבור: layers (הדלקת שכבות), scope (התאמה לאחור), או כל השכבות שהוצהרו. */
+    private function scopeOf(array $in): string {
+        if (isset($in['layers'])) $layers = $this->layerList($in['layers']);
+        elseif (is_string($in['scope'] ?? null) && $in['scope'] !== '') return $in['scope'];
+        else $layers = $this->cfg['layers'];
+        $scope = [];
+        foreach ($layers as $l) array_push($scope, ...self::LAYERS[$l]);
+        return implode(',', $scope);
+    }
+
     /** הכתובת של מסך האישור בענן. state — חד-פעמי, של המשתמש הזה ושל ה-sub שלו, 10 דקות. ה-sub נחתם במפתח האפליקציה. */
     public function connectUrl(string $user, mixed $scope = null): string {
         $sub = $this->sub($user);
         if ($sub === null) throw new DrivesError('כדי להתחבר לענן, קשרו קודם את החשבון לחשבון הפלטפורמה', 403, 'no_platform_account');
         $this->register();
-        $scope = is_string($scope) && $scope !== '' ? $scope : implode(',', $this->cfg['scope']);
+        $scope = is_string($scope) && $scope !== '' ? $scope : $this->scopeOf([]);
         $state = rtrim(strtr(base64_encode(random_bytes(24)), '+/', '-_'), '=');
         $db = $this->db();
         $db->prepare('DELETE FROM states WHERE expires < ?')->execute([time()]);
@@ -402,6 +432,11 @@ final class Drives {
             if (($c['sub'] ?? null) === null && $sub !== null) {
                 $this->db()->prepare('UPDATE conns SET sub = ? WHERE user = ? AND sub IS NULL')->execute([$sub, $user]);
             }
+            // ההיקף הנוכחי מהענן — המתגים (שכבה שכובתה בדף הענן)
+            if (is_array($r['scope'] ?? null) && json_encode($r['scope']) !== $c['scope']) {
+                $this->db()->prepare('UPDATE conns SET scope = ? WHERE user = ?')->execute([json_encode($r['scope']), $user]);
+                $c['scope'] = json_encode($r['scope']);
+            }
         } catch (DrivesError $e) {
             if ($e->codeName === 'disconnected') { $this->forget($user); return ['connected' => false]; }
             throw $e;
@@ -410,13 +445,28 @@ final class Drives {
                 'cloud_id' => $c['cloud_id'], 'scope' => json_decode($c['scope'], true)];
     }
 
-    public function disconnect(string $user): array {
+    /**
+     * ניתוק, או כיבוי שכבות ($layers). כיבוי מיד ובלי מחיקה: connection_scope בענן מצמצם את ההיקף של אותו חיבור.
+     * כיבוי של השכבה האחרונה = ניתוק (spec-0-vision.md 7.3 כלל 4). מחזיר status.
+     */
+    public function disconnect(string $user, ?array $layers = null): array {
         $c = $this->conn($user);
+        if ($c && $layers !== null) {
+            $drop = [];
+            foreach ($layers as $l) array_push($drop, ...self::LAYERS[$l]);
+            $rest = array_values(array_diff(json_decode($c['scope'], true) ?: [], $drop));
+            if ($rest) {
+                $sub = ($c['sub'] ?? null) ?: $this->sub($user);
+                $r = $this->call('connection_scope', ['connection' => $c['connection'], 'sub' => (string) $sub, 'scope' => $rest]);
+                $this->db()->prepare('UPDATE conns SET scope = ? WHERE user = ?')->execute([json_encode($r['scope'] ?? $rest), $user]);
+                return ['ok' => true] + $this->status($user);
+            }
+        }
         if ($c) {
             try { $this->call('disconnect', ['connection' => $c['connection']]); } catch (DrivesError) { /* כבר נותק בענן — מוחקים כאן בכל מקרה */ }
             $this->forget($user);
         }
-        return ['ok' => true];
+        return ['ok' => true] + $this->status($user);
     }
 
     // ─── הענן ────────────────────────────────────────────────────────────

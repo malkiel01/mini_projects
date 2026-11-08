@@ -84,6 +84,7 @@ $cloud = function (string $url, array $headers, string $json) use ($dropbox): ar
                 $key = setting('dropbox_app_key');
                 return $key === '' ? [] : ['dropbox' => ['app_key' => $key, 'redirect' => CLOUD_ISSUER . 'oauth/dropbox.php']];
             })(),
+            'connection_scope' => connectionScope(verifySigned('connection_scope', $h, $json), $in),
             'disconnect' => (function () use ($h, $json, $in) {
                 $c = verifySigned('disconnect', $h, $json);
                 revokeConnection((string) ($in['connection'] ?? ''));
@@ -301,6 +302,57 @@ try {
     check('בלי משתמש — שאר הפעולות עדיין 401', code(fn() => $app->handle('drives_status', [])) === 'unauthorized'
         && code(fn() => $app->handle('drives_token', [])) === 'unauthorized' && code(fn() => $app->handle('drives_connect', [])) === 'unauthorized');
     $user = 'u1';
+
+    // ─── שכבות — מתג לכל שכבה (spec-0-vision.md 7.3) ───
+    $user = 'u1';
+    $app->disconnect('u1');
+    $st = $app->status('u1')['suite'];
+    check('שכבות: לא מחובר — כל המתגים כבויים, רק השכבות שהוצהרו', $st['connected'] === false && $st['layers'] === ['files' => false, 'libs' => false, 'ai' => false]);
+    $q = $q2($app->connectUrl('u1', (fn() => $this->scopeOf(['layers' => ['files']]))->call($app)));
+    check('connect({layers:[files]}) — מבקש רק files', $q['scope'] === 'files');
+    $app->callback('u1', $q2(approve($app->connectUrl('u1', 'files'))));
+    $st = $app->status('u1')['suite'];
+    check('שכבות: אחרי חיבור לקבצים — רק 📁 דלוק', $st['connected'] && $st['layers'] === ['files' => true, 'libs' => false, 'ai' => false]);
+    $cid = $conns('u1')['connection'];
+    $q = $q2($app->connectUrl('u1', (fn() => $this->scopeOf(['layers' => ['libs']]))->call($app)));
+    check('הדלקת 📚 — מבקש רק libs', $q['scope'] === 'libs');
+    platformAs('1');
+    check('מסך האישור בחיבור קיים — מציג רק את השכבה החדשה', ($live = liveConnection(requireAccount()['id'], 'vector-studio'))
+        && array_values(array_diff(connectRequest($q)['scope'], json_decode($live['scope'], true))) === ['libs']);
+    $app->callback('u1', $q2(approve($app->connectUrl('u1', 'libs'))));
+    $st = $app->status('u1')['suite'];
+    check('הדלקת שכבה — אותו חיבור, 📁 ו-📚 דלוקים', $conns('u1')['connection'] === $cid && $st['layers'] === ['files' => true, 'libs' => true, 'ai' => false]);
+    $_SERVER['HTTP_X_CLOUD_TOKEN'] = $app->token('u1')['token'];
+    check('שכבה דלוקה — הפעולה שלה עובדת', actor('fonts_list', 'libs', '')['app'] === 'vector-studio');
+    $e = null; try { actor('ai_capabilities', 'ai', ''); } catch (AppError $x) { $e = $x; }
+    check('שכבה כבויה — 403 עם layer (המודול: layer-off)', $e && $e->status === 403 && ($e->extra['layer'] ?? '') === 'ai');
+    $r = $app->handle('drives_disconnect', ['layers' => ['libs']]);
+    check('כיבוי 📚 — מיד, החיבור נשאר', $r['suite']['connected'] && $r['suite']['layers'] === ['files' => true, 'libs' => false, 'ai' => false]
+        && $conns('u1')['connection'] === $cid);
+    $e = null; try { actor('fonts_list', 'libs', ''); } catch (AppError $x) { $e = $x; }
+    check('— גם האסימון שכבר הונפק לא פותח את 📚', $e && ($e->extra['layer'] ?? '') === 'libs');
+    unset($_SERVER['HTTP_X_CLOUD_TOKEN']);
+    check('כיבוי שכבה שלא הוצהרה — bad_request', code(fn() => $app->handle('drives_disconnect', ['layers' => ['appdata']])) === 'bad_request');
+    // כיבוי בדף הענן ("🔗 חיבורים") — המתג באפליקציה מתעדכן ב-status הבא
+    $app->callback('u1', $q2(approve($app->connectUrl('u1', 'libs,ai'))));
+    platformAs('1');
+    ownConnectionScope(requireAccount(), $cid, ['files', 'ai']);
+    check('כיבוי בדף הענן — המתג באפליקציה כבוי ב-status הבא', $app->status('u1')['suite']['layers'] === ['files' => true, 'libs' => false, 'ai' => true]);
+    $r = $app->handle('drives_disconnect', ['layers' => ['files', 'ai']]);
+    check('כיבוי השכבה האחרונה — ניתוק, גם בענן', $r['suite']['connected'] === false && $conns('u1') === false
+        && code(fn() => connectionRow($cid, 'vector-studio')) === 'disconnected');
+    // ניתוק בדף הענן — status מתעדכן
+    $app->callback('u1', $q2(approve($app->connectUrl('u1'))));
+    platformAs('1');
+    ownConnectionScope(requireAccount(), $conns('u1')['connection'], []);
+    check('ניתוק בדף הענן — status הבא: לא מחובר', $app->status('u1')['suite']['connected'] === false && $conns('u1') === false);
+    // אפליקציה שהצהירה רק על קבצים
+    $one = new Drives(['client' => 'vector-studio', 'name' => 'וקטורי', 'dataDir' => "$tmp/app",
+        'endpoint' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php', 'back' => 'https://mbe-plus.com/mini_projects/vector-studio/',
+        'user' => fn() => 'u1', 'http' => $cloud, 'layers' => ['files']]);
+    check('אפליקציה עם שכבה אחת — מתג אחד, וחיבור רק אליה', $one->status('u1')['suite']['layers'] === ['files' => false]
+        && $q2($one->connectUrl('u1', (fn() => $this->scopeOf([]))->call($one)))['scope'] === 'files'
+        && code(fn() => $one->handle('drives_connect', ['layers' => ['libs']])) === 'bad_request');
 
     // ─── Dropbox ───
     check('בלי App key בענן — Dropbox לא מופיע', !isset($app->status('u1')['dropbox']) && code(fn() => $app->linkUrl('u1', 'dropbox')) === 'no-provider');
