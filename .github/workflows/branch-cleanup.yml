@@ -1,0 +1,41 @@
+name: Branch cleanup
+
+# מחיקת ענפים ממוזגים שרשומים ב-.github/branch-cleanup.txt (לצ'אטים אין הרשאה למחוק ענפים — 403).
+# רץ כשהקובץ משתנה ב-main. ענף נמחק רק אם:
+#   - אין לו PR פתוח, וגם
+#   - יש לו PR ממוזג שה-head שלו זהה לראש הענף היום (אין בו commits שלא מוזגו).
+# אחרת — מדלג ומדווח. ענף שכבר לא קיים — מדווח ומדלג. בטוח להרצה חוזרת.
+#
+# מכאן והלאה ענפים נמחקים לבד אחרי מיזוג: Settings ← General ← "Automatically delete head branches".
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/branch-cleanup.txt']
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: מחיקת ענפים ממוזגים
+        env:
+          GH_TOKEN: ${{ github.token }}
+          R: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          OWNER="${R%%/*}"
+          grep -vE '^\s*(#|$)' .github/branch-cleanup.txt | while read -r b; do
+            cur=$(gh api "repos/$R/git/ref/heads/$b" -q .object.sha 2>/dev/null) || { echo "$b: לא קיים — מדלג"; continue; }
+            prs=$(gh api "repos/$R/pulls?head=$OWNER:$b&state=all&per_page=100")
+            open=$(jq '[.[] | select(.state == "open")] | length' <<<"$prs")
+            merged=$(jq -r --arg s "$cur" '[.[] | select(.merged_at != null and .head.sha == $s)] | .[0].number // empty' <<<"$prs")
+            if [ "$open" != 0 ]; then echo "::warning::$b: יש PR פתוח — לא נמחק"; continue; fi
+            if [ -z "$merged" ]; then echo "::warning::$b: אין PR ממוזג שזהה לראש הענף — לא נמחק"; continue; fi
+            if gh api -X DELETE "repos/$R/git/refs/heads/$b" >/dev/null; then echo "$b: נמחק (#$merged)"
+            else echo "::warning::$b: המחיקה נכשלה"; fi
+          done
