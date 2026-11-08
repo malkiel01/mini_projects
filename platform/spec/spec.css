@@ -55,3 +55,4 @@ nav.toc ol { margin: 4px 0; }
 .list a.card { display: block; color: inherit; text-decoration: none; }
 .list a.card:hover { border-color: var(--accent); }
 .list .meta { color: var(--muted); font-size: .88rem; }
+.muted { color: var(--muted); font-size: .9rem; }
