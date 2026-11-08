@@ -4,8 +4,11 @@
 if (PHP_SAPI !== 'cli') exit;
 
 $root = dirname(__DIR__, 2);
-$tmp = sys_get_temp_dir() . '/ts-copy-api-' . getmypid();
-$port = 25000 + getmypid() % 1000;
+// שם ייחודי ופורט פנוי מהמערכת — לא לפי ה-pid: ריצות במקביל (worktree נוסף) לא נופלות על שרת או קבצים של ריצה אחרת
+$tmp = sys_get_temp_dir() . '/ts-copy-api-' . getmypid() . '-' . bin2hex(random_bytes(4));
+$probe = stream_socket_server('tcp://127.0.0.1:0');
+$port = (int)substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
+fclose($probe);
 $env = ['TS_DB_PATH' => "$tmp.sqlite", 'TS_HTTP_FIXTURES' => __DIR__ . '/fixtures/market', 'TS_HTTP_LOG' => "$tmp.http.log",
     'TS_TEST_METHODS' => __DIR__ . '/fixtures/methods/alertable.php'] + getenv();
 $srv = proc_open(['php', '-S', "127.0.0.1:$port", '-t', $root, '-d', 'auto_prepend_file=' . __DIR__ . '/dev-prepend.php', '-d', 'log_errors=1',
