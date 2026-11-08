@@ -203,7 +203,14 @@ try {
     check('מפתח של לקוח אחר ב-key_url — נדחה', code(fn() => registerClient(['client' => 'other-app'] + $reg)) === 'bad_key_url');
     check('לקוח pending — לא מתחבר', code(fn() => connectRequest(['client' => 'far-app', 'state' => 'abcdefgh', 'return' => 'https://far.example/cb'])) === 'pending');
 
-    $q = ['client' => 'vector-studio', 'scope' => 'files', 'state' => 'st4te-1234', 'return' => $reg['return'][0]];
+    // רק אותו חשבון: האפליקציה חותמת על ה-sub של המשתמש שלה (Drives::connectUrl). $GLOBALS — גם לפונקציות בהמשך
+    $GLOBALS['idq'] = $idq = function (array $q, string $sub) use ($sk): array {
+        $exp = (string) (time() + 600);
+        return $q + ['sub' => $sub, 'exp' => $exp,
+                     'sig' => 'k1.' . b64u(sodium_crypto_sign_detached("connect\n{$q['client']}\n{$q['state']}\n$sub\n$exp\n{$q['return']}", $sk))];
+    };
+    $osub = (string) $owner['platform_sub'];
+    $q = $idq(['client' => 'vector-studio', 'scope' => 'files', 'state' => 'st4te-1234', 'return' => $reg['return'][0]], $osub);
     check('כתובת חזרה לא רשומה — נדחה', code(fn() => connectRequest(['return' => 'https://mbe-plus.com/other'] + $q)) === 'bad_request');
     check('הרשאה לא מוכרת — נדחה', code(fn() => connectRequest(['scope' => 'root'] + $q)) === 'bad_request');
     $req = connectRequest($q);
@@ -213,7 +220,12 @@ try {
     check('אישור — חזרה עם code ו-state', ($bq['state'] ?? '') === 'st4te-1234' && strlen($bq['code'] ?? '') > 20 && ($bq['action'] ?? '') === 'cloud_callback');
     check('אחרי אישור — בפעם הבאה בלי מסך', alreadyGranted($owner, $req) !== null);
     check('הרשאה נוספת — שוב מסך', alreadyGranted($owner, connectRequest(['scope' => 'files,ai'] + $q)) === null);
+    check('connect: sub חתום של המשתמש באפליקציה', $req['sub'] === $osub && sameSub($owner, $req['sub']));
+    check('connect: sub של אדם אחר — לא אותו חשבון', !sameSub($owner, connectRequest($idq(['state' => 'other-st4te'] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1]), '999'))['sub']));
+    check('connect: sub ששונה אחרי החתימה — bad_identity', code(fn() => connectRequest(['sub' => '999'] + $q)) === 'bad_identity');
+    check('connect: בלי חתימה — bad_identity', code(fn() => connectRequest(array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1]))) === 'bad_identity');
 
+    $GLOBALS['codeOf'] = function (string $url): string { parse_str((string) parse_url($url, PHP_URL_QUERY), $q); return (string) $q['code']; };
     $sign = function (string $action, string $body, ?string $nonce = null, ?int $t = null) use ($sk) {
         $t ??= time(); $nonce ??= bin2hex(random_bytes(16));
         return ['client' => 'vector-studio', 'time' => (string) $t, 'nonce' => $nonce,
@@ -222,9 +234,18 @@ try {
     $body = json_encode(['code' => $bq['code']]);
     $client = verifySigned('connect_exchange', $sign('connect_exchange', $body), $body);
     check('חתימה תקינה — הלקוח', $client['id'] === 'vector-studio');
-    $ex = exchangeCode($client, ['code' => $bq['code']]);
+    $ex = exchangeCode($client, ['code' => $bq['code'], 'sub' => $osub]);
     check('connect_exchange — חיבור, שם וענן', str_starts_with($ex['connection'], 'c_') && $ex['account']['name'] === 'בעל המערכת' && $ex['scope'] === ['files'] && $ex['cloud_id'] === setting('cloud_id'));
-    check('קוד חד-פעמי', code(fn() => exchangeCode($client, ['code' => $bq['code']])) === 'bad_code');
+    check('קוד חד-פעמי', code(fn() => exchangeCode($client, ['code' => $bq['code'], 'sub' => $osub])) === 'bad_code');
+    check('state חד-פעמי גם בענן — אותה כתובת חתומה לא מאשרת פעמיים', code(fn() => approveConnect($owner, $req)) === 'bad_state');
+    $req2 = connectRequest($idq(['state' => 'st4te-5678'] + array_diff_key($q, ['sig' => 1, 'sub' => 1, 'exp' => 1, 'state' => 1]), $osub));
+    check('connect_exchange עם sub אחר — account_mismatch', code(fn() => exchangeCode($client, ['code' => $GLOBALS['codeOf'](approveConnect($owner, $req2)), 'sub' => '999'])) === 'account_mismatch');
+    check('connect: exp רחוק מ-10 דקות — bad_identity', code(fn() => connectRequest(['exp' => (string) (time() + 3600)] + $q)) === 'bad_identity');
+    check('access_token: sub של אדם אחר — account_mismatch, והחיבור מסומן ולא מנותק', code(fn() => bindConnection(connectionRow($ex['connection'], 'vector-studio'), '999')) === 'account_mismatch'
+        && connectionRow($ex['connection'], 'vector-studio')['mismatch_at'] !== null);
+    db()->prepare('UPDATE connections SET mismatch_at = NULL WHERE id = ?')->execute([$ex['connection']]);
+    bindConnection(connectionRow($ex['connection'], 'vector-studio'), $osub);
+    check('access_token: אותו אדם — עובר', true);
     $h = $sign('x', '{}', 'aaaaaaaaaaaaaaaa');
     verifySigned('x', $h, '{}');
     check('אותו nonce פעמיים — replay', code(fn() => verifySigned('x', $h, '{}')) === 'replay');
@@ -473,9 +494,9 @@ try {
     fontDelete($acc, $f3['id']);
     check('ואחרי האחרון — נמחק מהדיסק', !is_file(blobPath(hash('sha256', $heebo))));
     $_SERVER['HTTP_X_CLOUD_TOKEN'] = (function () use ($acc) {
-        $req = connectRequest(['client' => 'vector-studio', 'scope' => 'files', 'state' => 'fontstate1', 'return' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback']);
+        $req = connectRequest($GLOBALS['idq'](['client' => 'vector-studio', 'scope' => 'files', 'state' => 'fontstate1', 'return' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback'], (string) $acc['platform_sub']));
         parse_str((string) parse_url(approveConnect($acc, $req), PHP_URL_QUERY), $q);
-        $ex = exchangeCode(activeClient('vector-studio'), ['code' => $q['code']]);
+        $ex = exchangeCode(activeClient('vector-studio'), ['code' => $q['code'], 'sub' => (string) $acc['platform_sub']]);
         return issueToken(activeClient('vector-studio'), connectionRow($ex['connection'], 'vector-studio'))['token'];
     })();
     check('אפליקציה בלי הרשאת libs — לא רואה את הגופנים', code(fn() => actor('fonts_list', 'libs', '')) === 'forbidden');

@@ -7,6 +7,9 @@
  *   POST connect.php (אישור / ביטול, עם אסימון טופס) → <return>?code=…&state=…  או  ?error=access_denied&state=…
  *
  * מאחורי השער: מי שלא מחובר מגיע לכניסה וחוזר לכאן (לכן הכתובת אינה ב-public).
+ *
+ * רק אותו חשבון (spec-0-vision.md 6.3, הכרעת בעל המערכת): הבקשה נושאת את ה-sub של הפלטפורמה של המשתמש באפליקציה, חתום
+ * במפתח הלקוח (&sub&exp&sig). sub שונה מזה של מי שנכנס לענן — "החיבור נדחה", בלי כפתור אישור ובלי עקיפה, גם למנהל.
  */
 
 declare(strict_types=1);
@@ -59,6 +62,20 @@ try {
     $q = $post ? ($_SESSION['connect'] ?? null) : $_GET;
     if (!is_array($q)) fail('הבקשה פגה — חזרו לאפליקציה ונסו שוב.');
     $req = connectRequest($q);
+    if (!sameSub($a, $req['sub'])) {
+        unset($_SESSION['connect'], $_SESSION['connect_form']);
+        error_log("mbe-cloud: connect.php account_mismatch (client {$req['client']['id']})");
+        http_response_code(403);
+        $name = htmlspecialchars($req['client']['name']);
+        $who = htmlspecialchars($a['name']);
+        $back = htmlspecialchars(withQuery($req['return'], ['error' => 'account_mismatch', 'state' => $req['state']]));
+        page('החיבור נדחה', <<<HTML
+<p class="error" role="alert"><b>החיבור נדחה: החשבון באפליקציה אינו החשבון שלך.</b></p>
+<p class="hint">נכנסת לענן בתור <b>$who</b>, אבל באפליקציה <b>$name</b> מחובר חשבון אחר. הענן מתחבר רק לאפליקציה של אותו אדם.</p>
+<p class="hint">אם גם החשבון באפליקציה שלך — היכנסו לשניהם באותו חשבון ונסו שוב.</p>
+<div class="row-btns"><a class="btn ghost" href="$back">חזרה לאפליקציה</a></div>
+HTML);
+    }
 
     if ($post) {
         $form = (string) ($_POST['form'] ?? '');
@@ -76,7 +93,8 @@ try {
         exit;
     }
 
-    $_SESSION['connect'] = ['client' => $req['client']['id'], 'scope' => implode(',', $req['scope']), 'state' => $req['state'], 'return' => $req['return']];
+    $_SESSION['connect'] = ['client' => $req['client']['id'], 'scope' => implode(',', $req['scope']), 'state' => $req['state'], 'return' => $req['return'],
+                            'sub' => $q['sub'], 'exp' => $q['exp'], 'sig' => $q['sig']];
     $_SESSION['connect_form'] = $form = b64u(random_bytes(18));
     $name = htmlspecialchars($req['client']['name']);
     $host = htmlspecialchars((string) parse_url($req['return'], PHP_URL_HOST));

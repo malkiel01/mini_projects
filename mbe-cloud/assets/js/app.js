@@ -508,7 +508,7 @@ function renderClients(list) {
   $('#clients').replaceChildren(...(list.length ? list.map(c => el('li', {}, el('div', { class: 'acc-row' },
     el('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧩'),
     el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
-      el('div', { class: 'l2' }, `${c.origins.join(' ')} · ${c.users} מחוברים`)),
+      el('div', { class: 'l2' }, `${c.origins.join(' ')} · ${c.users} מחוברים${c.mismatch ? ` · ⚠️ ${c.mismatch} לא אותו חשבון (חסומים, לא מנותקים)` : ''}`)),
     el('span', { class: `chip ${label[c.status][1]}` }, label[c.status][0]),
     el('button', { class: 'btn ghost sm', type: 'button', onclick: () => setClient(c, c.status === 'active' ? 'disabled' : 'active') },
       c.status === 'active' ? 'כיבוי' : 'אישור'))))
