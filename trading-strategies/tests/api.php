@@ -4,8 +4,11 @@
 if (PHP_SAPI !== 'cli') exit;
 
 $root = dirname(__DIR__, 2);
-$db = sys_get_temp_dir() . '/ts-api-test-' . getmypid() . '.sqlite';
-$port = 18000 + getmypid() % 1000;
+$db = sys_get_temp_dir() . '/ts-api-test-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.sqlite';
+// פורט פנוי מהמערכת ושם ייחודי — לא לפי ה-pid: ריצות במקביל לא נופלות על שרת או קבצים של ריצה אחרת (#1333)
+$probe = stream_socket_server('tcp://127.0.0.1:0');
+$port = (int)substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
+fclose($probe);
 $srv = proc_open(['php', '-S', "127.0.0.1:$port", '-t', $root, '-d', 'auto_prepend_file=' . __DIR__ . '/dev-prepend.php'],
     [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, $root, ['TS_DB_PATH' => $db] + getenv());
 register_shutdown_function(function () use ($srv, $db) {

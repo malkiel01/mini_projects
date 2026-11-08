@@ -3,7 +3,7 @@
 // php trading-strategies/tests/market.php — בלי רשת: הספקים עונים מ-tests/fixtures/market.
 if (PHP_SAPI !== 'cli') exit;
 
-$tmp = sys_get_temp_dir() . '/ts-market-unit-' . getmypid();
+$tmp = sys_get_temp_dir() . '/ts-market-unit-' . getmypid() . '-' . bin2hex(random_bytes(4));
 define('TS_DEV', true);
 define('TS_DB_PATH', "$tmp.sqlite");
 define('TS_CACHE_PATH', "$tmp.cache.sqlite");
