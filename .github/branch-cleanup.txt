@@ -1,0 +1,14 @@
+# ענפים ממוזגים למחיקה — branch-cleanup.yml רץ כשהקובץ הזה משתנה ב-main.
+# נמחק רק ענף בלי PR פתוח, שראשו זהה ל-head של PR ממוזג. שורה לכל ענף.
+
+# אסטרטגיות למסחר (בקשת הבקרה שלהם, 2026-11-08). לא כולל את pr5-alerts (#1275) — עד אישורם.
+claude/trading-strategies-stage1
+claude/trading-strategies-market
+claude/trading-strategies-drawings
+claude/trading-strategies-pr4-methods
+claude/trading-strategies-spec
+claude/trading-strategies-spec-finance
+claude/trading-strategies-spec-v2
+claude/trading-strategies-spec-mbe-cloud
+claude/trading-strategies-spec-sample-method
+claude/trading-strategies-spec-mbe-cloud-path

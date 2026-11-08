@@ -377,6 +377,55 @@ jobs:
           done
           echo "::warning::retire-apps.php לא רץ — ינסה שוב בפריסה הבאה"
 
+      # משימות מתוזמנות בשרת (crontab של משתמש הפריסה). כל שורה מסומנת "# mini_projects:<id>": מוסיפים
+      # רק שורה שחסרה, ולא נוגעים בשום שורה אחרת. שורה שנוספה עכשיו — מורצת פעם אחת מיד, והפלט בלוג.
+      # רשימה: <id>|<תזמון>|<סקריפט יחסי ל-DEPLOY_PATH>. לא מפיל את הפריסה.
+      - name: משימות מתוזמנות בשרת — crontab
+        if: success()
+        continue-on-error: true
+        env:
+          DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          CRONS: |
+            trading-strategies-alerts|*/15 * * * *|trading-strategies/bin/alerts-cron.php
+        run: |
+          SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          REMOTE=$(cat <<'EOS'
+          set -u
+          ROOT="$1"; PHP=$(command -v php || true)
+          [ -n "$PHP" ] || { echo "php לא נמצא בשרת — לא נוגע ב-crontab"; exit 1; }
+          # קריאה שנכשלה (לא "no crontab") אסור שתיחשב כ-crontab ריק — ההתקנה הייתה מוחקת את כל השורות.
+          read_tab() {
+            TAB=$(crontab -l 2>&1); local rc=$?
+            if [ $rc -ne 0 ]; then
+              grep -qi 'no crontab' <<<"$TAB" || { echo "crontab -l נכשל — לא נוגע: $TAB"; return 1; }
+              TAB=""
+            fi
+          }
+          while IFS='|' read -r id sched script; do
+            [ -n "$id" ] || continue
+            tag="# mini_projects:$id"
+            read_tab || exit 1
+            if grep -qF "$tag" <<<"$TAB"; then echo "$id: כבר מותקן"; continue; fi
+            [ -f "$ROOT/$script" ] || { echo "$id: הסקריפט לא נמצא — מדלג"; continue; }
+            before=$(grep -c . <<<"$TAB" || true)
+            { [ -n "$TAB" ] && printf '%s\n' "$TAB"; echo "$sched $PHP $ROOT/$script >/dev/null 2>&1 $tag"; } | crontab -
+            read_tab || exit 1
+            after=$(grep -c . <<<"$TAB" || true)
+            if grep -qF "$tag" <<<"$TAB" && [ "$after" -eq $((before + 1)) ]; then echo "$id: הותקן ($sched)"
+            else echo "$id: ההתקנה לא אומתה (לפני $before, אחרי $after)"; exit 1; fi
+            echo "$id: ריצה ראשונה ←"; timeout 300 "$PHP" "$ROOT/$script" </dev/null; echo "$id: קוד יציאה $?"
+          done
+          echo "--- crontab -l (שורות mini_projects) ---"
+          read_tab && { grep -F '# mini_projects:' <<<"$TAB" || echo "(אין)"; }
+          EOS
+          )
+          for w in 0 30 90; do
+            sleep $w
+            if printf '%s\n' "$CRONS" | $SSH "$DEST" "bash -c $(printf '%q' "$REMOTE") _ '${DEPLOY_PATH%/}'"; then exit 0; fi
+          done
+          echo "::warning::התקנת ה-crontab לא רצה — תנסה שוב בפריסה הבאה"
+
       # אפליקציית אנדרואיד (TWA) נפתחת עם שורת כתובת. הקובץ יושב בשורש הדומיין, מחוץ ל-DEPLOY_PATH (הותר
       # במפורש, 2026-10-19). מאוחד מהקיים בשרת (שום רשומה לא נמחקת), מתיקיית החנות של כל אפליקציה
       # ("install.release") ומ-<app>/.well-known/assetlinks.json — platform/tools/assetlinks.php.
