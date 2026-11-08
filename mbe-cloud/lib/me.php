@@ -57,6 +57,8 @@ function accountDelete(array $a): void {
             $pdo->prepare("DELETE FROM $t WHERE account = ?")->execute([$id]);
         }
         appdataDeleteAccount($id);   // שלב 4: נתוני האפליקציות של המשתמש, בכל האפליקציות
+        $pdo->prepare('DELETE FROM grants WHERE account = ?')->execute([$id]);   // שלב 3: הענקות קבצים לאפליקציות
+        $pdo->prepare('DELETE FROM appfolders WHERE account = ?')->execute([$id]);
         $pdo->prepare('DELETE FROM accounts WHERE id = ?')->execute([$id]);
         if ($own) $pdo->commit();
     } catch (Throwable $e) {

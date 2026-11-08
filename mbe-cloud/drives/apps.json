@@ -14,6 +14,7 @@
   "trading-strategies": {
     "js": "assets/js/drives",
     "php": "lib/drives",
-    "layers": ["files"]
+    "layers": ["files"],
+    "files_scope": "files.app"
   }
 }

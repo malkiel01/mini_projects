@@ -207,7 +207,11 @@ try {
                                                                        : $keyJson('far-app', sodium_crypto_sign_publickey($pair));
     $reg = ['client' => 'vector-studio', 'name' => 'וקטורי', 'key_url' => 'https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_key',
             'origins' => ['https://mbe-plus.com'], 'return' => ['https://mbe-plus.com/mini_projects/vector-studio/api.php?action=cloud_callback']];
-    check('רישום מאותו origin — active', registerClient($reg)['status'] === 'active');
+    // ג10 (שלב 3, הכרעה 5): files המלא — pending עד שמנהל מדליק "📁 גישה לכל הכונן", גם מאותו origin
+    check('ג10: רישום שמצהיר files בלי files_full — pending, גם מאותו origin', registerClient($reg)['status'] === 'pending');
+    adminClient(['client' => 'vector-studio', 'files_full' => true]);
+    check('ג10: המנהל מדליק 📁 גישה לכל הכונן — active', activeClient('vector-studio')['status'] === 'active'
+        && array_values(array_filter(adminClients(), fn($c) => $c['id'] === 'vector-studio'))[0]['files_full'] === 1);
     check('רישום חוזר זהה — בלי שינוי', registerClient($reg)['status'] === 'active');
     $far = ['client' => 'far-app', 'name' => 'רחוקה', 'key_url' => 'https://far.example/key', 'origins' => ['https://far.example'],
             'return' => ['https://far.example/cb']];
@@ -573,6 +577,7 @@ try {
     // ─── שלב 2: שיתוף לקריאה, חשבון שירות ואסימון אישי (docs/spec-2-share-token.md סעיף 8) ───
     require __DIR__ . '/share.inc.php';
     require __DIR__ . '/appdata.inc.php';
+    require __DIR__ . '/files-scopes.inc.php';
 } catch (Throwable $e) {
     $fails++;
     echo "✗ חריגה: " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";

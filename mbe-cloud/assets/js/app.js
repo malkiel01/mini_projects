@@ -391,8 +391,8 @@ async function deleteFont(f) {
 
 // ─── חיבורים ────────────────────────────────────────────────────────────
 
-const SCOPE_IC = { files: '📁', libs: '📚', appdata: '🗂️', ai: '🤖' };
-const LAYER_NAME = { files: 'קבצים', libs: 'נתוני מערכת', appdata: 'נתוני משתמש', ai: 'בינה מלאכותית' };
+const SCOPE_IC = { files: '📁', 'files.readonly': '📁', 'files.app': '📁', libs: '📚', appdata: '🗂️', ai: '🤖' };
+const LAYER_NAME = { files: 'קבצים', 'files.readonly': 'קבצים · קריאה בלבד', 'files.app': 'קבצים שבחרת', libs: 'נתוני מערכת', appdata: 'נתוני משתמש', ai: 'בינה מלאכותית' };
 
 // מתג לכל שכבה שהאפליקציה הצהירה (spec-0-vision.md 7.3). כאן רק מכבים; מדליקים מתוך האפליקציה (מסך האישור)
 async function loadLinks() {
@@ -408,9 +408,28 @@ async function loadLinks() {
         box.addEventListener('change', () => layer(c, s, box));
         return el('label', { class: 'switch', title: on ? '' : 'מדליקים מתוך האפליקציה' }, box,
           el('span', {}, `${SCOPE_IC[s] || ''} ${LAYER_NAME[s] || s}`));
-      }))),
+      })),
+      // שלב 3: files.app — מה האפליקציה רואה (שורשי ההענקות), עם ✕ לביטול
+      c.scope.includes('files.app') ? el('button', { class: 'btn ghost sm', type: 'button', onclick: e => showGrants(c, e.currentTarget) }, '📁 מה היא רואה') : ''),
     el('button', { class: 'btn ghost sm danger', type: 'button', onclick: () => unlink(c) }, 'ניתוק'))))
     : [el('li', {}, el('p', { class: 'empty' }, 'אין אפליקציות מחוברות. באפליקציה: "☁️ חיבור לענן".'))]));
+}
+
+/** הענקות של files.app: מה שהאפליקציה יצרה ומה שבחרת לה בבורר. ✕ — היא מפסיקה לראות את זה מיד. */
+async function showGrants(c, btn) {
+  const box = btn.nextElementSibling?.classList.contains('grants') ? btn.nextElementSibling : el('ul', { class: 'list grants' });
+  if (!box.isConnected) btn.after(box);
+  try {
+    const { items } = await api('grants_list', { client: c.client });
+    btn.textContent = `📁 רואה ${items.length} פריטים`;
+    box.replaceChildren(...(items.length ? items.map(g => el('li', {}, el('div', { class: 'acc-row' },
+      el('span', { class: 'use-ic', 'aria-hidden': 'true' }, g.kind === 'folder' ? '📁' : '📄'),
+      el('div', { class: 'body' }, el('div', { class: 'l1' }, g.name), el('div', { class: 'l2' }, g.via === 'picked' ? 'בחרת' : 'האפליקציה יצרה')),
+      el('button', { class: 'btn ghost sm', type: 'button', 'aria-label': `ביטול הגישה ל-${g.name}`, onclick: async () => {
+        try { await api('grant_revoke', { client: c.client, node: g.node }); toast('בוטל'); showGrants(c, btn); } catch (e) { fail(e); }
+      } }, '✕'))))
+      : [el('li', {}, el('p', { class: 'empty' }, 'האפליקציה לא רואה אף פריט.'))]));
+  } catch (e) { fail(e); }
 }
 
 /** כיבוי שכבה — מיד, בלי שאלה. השכבה האחרונה = ניתוק, ולפניו שאלה (7.3 כלל 4). */
@@ -548,9 +567,18 @@ function renderClients(list) {
     el('div', { class: 'body' }, el('div', { class: 'l1' }, c.name),
       el('div', { class: 'l2' }, `${c.origins.join(' ')} · ${c.users} מחוברים${c.mismatch ? ` · ⚠️ ${c.mismatch} לא אותו חשבון (חסומים, לא מנותקים)` : ''}`)),
     el('span', { class: `chip ${label[c.status][1]}` }, label[c.status][0]),
+    // שלב 3 (הכרעה 5): files המלא — רק באישור מנהל
+    c.files_scope === 'files' ? el('label', { class: 'switch', title: 'גישה לכל הכונן של המשתמש' },
+      (b => { b.addEventListener('change', () => setFilesFull(c, b.checked)); return b; })(el('input', { type: 'checkbox', ...(c.files_full ? { checked: '' } : {}) })),
+      el('span', {}, '📁 כל הכונן')) : el('span', { class: 'muted' }, c.files_scope === 'files.app' ? '📁 שבוחרים' : '📁 קריאה'),
     el('button', { class: 'btn ghost sm', type: 'button', onclick: () => setClient(c, c.status === 'active' ? 'disabled' : 'active') },
       c.status === 'active' ? 'כיבוי' : 'אישור'))))
     : [el('li', {}, el('p', { class: 'empty' }, 'עוד אין אפליקציות רשומות.'))]));
+}
+
+async function setFilesFull(c, on) {
+  if (on && !await confirm(`לאשר ל-${c.name} גישה לכל הכונן של כל משתמש שיתחבר?`, { ok: 'אישור' })) { renderClients((await api('admin')).clients || []); return; }
+  try { renderClients((await api('admin_client', { client: c.id, files_full: on })).clients); toast('נשמר'); } catch (e) { fail(e); }
 }
 
 async function setClient(c, status) {

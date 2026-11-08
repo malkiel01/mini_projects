@@ -14,15 +14,16 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/account.php';
 
-const SCOPES = ['files', 'libs', 'ai', 'appdata'];
-const SCOPE_NAMES = ['files' => 'הקבצים שלך בענן', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך',
+const SCOPES = ['files', 'files.readonly', 'files.app', 'libs', 'ai', 'appdata'];
+const SCOPE_NAMES = ['files' => 'לקרוא ולשנות את כל הקבצים שלך', 'files.readonly' => 'לקרוא את כל הקבצים שלך',
+                     'files.app' => 'קבצים שהיא יוצרת, וקבצים שתבחר לפתוח בה', 'libs' => 'הספריות שלך (גופנים, צבעים, סגנונות)', 'ai' => 'בינה מלאכותית בשמך, במכסה שלך',
                      'appdata' => 'ההגדרות והנתונים שלך באפליקציה הזו'];
 /**
  * שכבות (spec-0-vision.md 7.3): מתג לכל שכבה, וכל שכבה היא היקפים של אותו חיבור. היום: שכבה = היקף אחד.
  * appdata — שלב 4 (spec-4-appdata.md); רק לאפליקציה שהצהירה עליו. files.readonly / files.app (שלב 3) — עוד לא.
  * ברירת המחדל לאפליקציה בלי "layers" ב-apps.json — בלי appdata, כמו לפני שלב 4.
  */
-const LAYERS = ['files' => ['files'], 'libs' => ['libs'], 'appdata' => ['appdata'], 'ai' => ['ai']];
+const LAYERS = ['files' => ['files', 'files.readonly', 'files.app'], 'libs' => ['libs'], 'appdata' => ['appdata'], 'ai' => ['ai']];
 const DEFAULT_LAYERS = ['files', 'libs', 'ai'];
 const TOKEN_TTL = 900;
 const CODE_TTL = 120;
@@ -205,12 +206,13 @@ function registerClient(array $in): array {
             db()->prepare('UPDATE clients SET keys = ?, keys_at = ?, name = ? WHERE id = ?')->execute([json_encode($keys), time(), $name, $id]);
             return ['status' => $old['status']];
         }
-        $status = $old['status'] === 'disabled' ? 'disabled' : ($same ? 'active' : 'pending');
+        $status = $old['status'] === 'disabled' ? 'disabled' : ($same && !clientNeedsFullApproval($id) ? 'active' : 'pending');
         db()->prepare('UPDATE clients SET name = ?, key_url = ?, origins = ?, returns = ?, status = ?, keys = ?, keys_at = ?, updated_at = ? WHERE id = ?')
             ->execute([$name, $keyUrl, $originsJ, $returnsJ, $status, json_encode($keys), time(), $now, $id]);
         return ['status' => $status];
     }
-    $status = $same ? 'active' : 'pending';
+    require_once __DIR__ . '/grants.php';
+    $status = $same && !clientNeedsFullApproval($id) ? 'active' : 'pending';   // files המלא — באישור מנהל (הכרעה 5)
     db()->prepare('INSERT INTO clients (id, name, key_url, origins, returns, status, keys, keys_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
         ->execute([$id, $name, $keyUrl, $originsJ, $returnsJ, $status, json_encode($keys), time(), $now, $now]);
     return ['status' => $status];
@@ -296,7 +298,10 @@ function clientScopes(string $clientId): array {
     $apps = $GLOBALS['CLOUD_APPS'] ?? $file;   // CLOUD_APPS — לבדיקות
     $layers = $apps[$clientId]['layers'] ?? DEFAULT_LAYERS;
     $out = [];
-    foreach ((array) $layers as $l) foreach (LAYERS[$l] ?? [] as $sc) $out[] = $sc;
+    foreach ((array) $layers as $l) {
+        if ($l === 'files') { require_once __DIR__ . '/grants.php'; $out[] = clientFilesScope($clientId); continue; }   // שלב 3: ההיקף שהוצהר בלבד
+        foreach (LAYERS[$l] ?? [] as $sc) $out[] = $sc;
+    }
     return $out;
 }
 
@@ -328,7 +333,7 @@ const MISMATCH_MSG = 'החשבון בענן שונה מהחשבון שלך כא�
  * החתימה: "connect\n<client>\n<state>\n<sub>\n<exp>\n<return>". בלי sub, בלי חתימה, או חתימה שפגה — דחייה.
  * exp — עד 10 דקות קדימה (NONCE_TTL), כדי שה-state החד-פעמי (approveConnect) נזכר עד שהחתימה פגה.
  */
-function connectSub(array $c, array $q, string $return, string $state): string {
+function connectSub(array $c, array $q, string $return, string $state, string $purpose = 'connect'): string {
     $sub = (string) ($q['sub'] ?? '');
     $exp = (string) ($q['exp'] ?? '');
     if ($sub === '' || strlen($sub) > 200 || !ctype_digit($exp) || (int) $exp < time() || (int) $exp > time() + NONCE_TTL) {
@@ -337,7 +342,7 @@ function connectSub(array $c, array $q, string $return, string $state): string {
     [$kid, $sigB64] = array_pad(explode('.', (string) ($q['sig'] ?? ''), 2), 2, '');
     $sig = unb64u($sigB64);
     if ($sig === false || strlen($sig) !== SODIUM_CRYPTO_SIGN_BYTES
-        || !clientSigOk($c, $kid, $sig, "connect\n{$c['id']}\n$state\n$sub\n$exp\n$return")) {
+        || !clientSigOk($c, $kid, $sig, "$purpose\n{$c['id']}\n$state\n$sub\n$exp\n$return")) {
         throw new AppError('בקשת החיבור לא חתומה כראוי', 400, 'bad_identity');
     }
     return $sub;
@@ -417,6 +422,10 @@ function connectionRow(string $id, string $client): array {
 
 function revokeConnection(string $id): void {
     db()->prepare('UPDATE connections SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')->execute([nowIso(), $id]);
+    // ניתוק מלא — ההענקות שהמשתמש בחר נמחקות; מה שהאפליקציה יצרה נשאר (spec-3 3.1)
+    $c = db()->prepare('SELECT client, account FROM connections WHERE id = ?');
+    $c->execute([$id]);
+    if ($r = $c->fetch()) { require_once __DIR__ . '/grants.php'; grantsOnDisconnect($r['client'], $r['account']); }
 }
 
 /** החיבורים של חשבון — לדף "🔗 חיבורים". */
@@ -535,8 +544,24 @@ function actor(string $action, string $scope, string $body): array {
 }
 
 function actorFrom(array $conn, array $client, string $scope): array {
+    $have = json_decode($conn['scope'], true) ?: [];
+    $mode = null;
+    if ($scope === 'files') {
+        // שלב 3: אחת משלוש הרמות. הצהרה מצמצמת (files → files.readonly / files.app) חלה מיד, גם על חיבור קיים
+        require_once __DIR__ . '/grants.php';
+        $declared = clientFilesScope($client['id']);
+        $mine = array_values(array_intersect($have, array_keys(FILES_SCOPES)));
+        if ($mine && $declared !== 'files' && $mine[0] !== $declared) {
+            $have = array_values(array_diff($have, array_keys(FILES_SCOPES)));
+            $have[] = $declared;
+            sort($have);
+            db()->prepare('UPDATE connections SET scope = ? WHERE id = ?')->execute([json_encode($have), $conn['id']]);
+            $mine = [$declared];
+        }
+        if ($mine) { $mode = FILES_SCOPES[$mine[0]]; $scope = $mine[0]; } else { $scope = $declared; }
+    }
     // השכבה כבויה — עם ההיקף, כדי שהאפליקציה תציע להדליק את המתג הנכון (7.3 כלל 6). נבדק בכל קריאה: כיבוי חל מיד
-    if (!in_array($scope, json_decode($conn['scope'], true) ?: [], true)) {
+    if (!in_array($scope, $have, true)) {
         throw new AppError('אין לאפליקציה הרשאה לזה', 403, 'forbidden', ['scope' => $scope, 'layer' => scopeLayer($scope)]);
     }
     $a = getAccount($conn['account']);
@@ -544,7 +569,7 @@ function actorFrom(array $conn, array $client, string $scope): array {
     if ($conn['used_at'] === null || $conn['used_at'] < nowIso(time() - 600)) {
         db()->prepare('UPDATE connections SET used_at = ? WHERE id = ?')->execute([nowIso(), $conn['id']]);
     }
-    return ['account' => $a, 'app' => $client['id'], 'client' => $client];
+    return ['account' => $a, 'app' => $client['id'], 'client' => $client] + ($mode !== null ? ['files_mode' => $mode] : []);
 }
 
 /** CORS לבקשה עם אסימון: רק ל-origins של לקוח פעיל, ובלי עוגיות (Allow-Credentials לא נשלח לעולם). */
@@ -569,12 +594,14 @@ function corsHeaders(): void {
 
 function adminClients(): array {
     require_once __DIR__ . '/appdata.php';
+    require_once __DIR__ . '/grants.php';
     $usage = appdataAdminUsage();
     $rows = db()->query("SELECT k.*, (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL) AS users,
                                 (SELECT COUNT(*) FROM connections c WHERE c.client = k.id AND c.revoked_at IS NULL AND c.mismatch_at IS NOT NULL) AS mismatch
                          FROM clients k ORDER BY k.status = 'pending' DESC, k.name")->fetchAll();
     return array_map(fn($r) => ['id' => $r['id'], 'name' => $r['name'], 'status' => $r['status'], 'origins' => json_decode($r['origins'], true),
-        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at'],
+        'key_url' => $r['key_url'], 'users' => (int) $r['users'], 'files_full' => (int) ($r['files_full'] ?? 0),
+        'files_scope' => clientFilesScope($r['id']), 'mismatch' => (int) $r['mismatch'], 'created_at' => $r['created_at'],
         // נתוני אפליקציות (שלב 4): נפח ותקרות — בלי תוכן
         'appdata' => ['used' => $usage[$r['id']] ?? [], 'user_quota' => $r['appdata_user_quota'] === null ? null : (int) $r['appdata_user_quota'],
                       'app_quota' => $r['appdata_app_quota'] === null ? null : (int) $r['appdata_app_quota']]], $rows);
@@ -588,6 +615,13 @@ function adminClient(array $in): array {
         if (array_key_exists($k, $in)) {
             db()->prepare("UPDATE clients SET $k = ?, updated_at = ? WHERE id = ?")
                 ->execute([$in[$k] === null ? null : bytesIn($in[$k], $label), nowIso(), $c['id']]);
+        }
+    }
+    // "📁 גישה לכל הכונן" (הכרעה 5). הדלקה מאשרת לקוח שהמתין רק בגללה
+    if (array_key_exists('files_full', $in)) {
+        db()->prepare('UPDATE clients SET files_full = ?, updated_at = ? WHERE id = ?')->execute([$in['files_full'] ? 1 : 0, nowIso(), $c['id']]);
+        if ($in['files_full'] && $c['status'] === 'pending' && originOf($c['key_url']) === cloudOrigin()) {
+            db()->prepare("UPDATE clients SET status = 'active' WHERE id = ?")->execute([$c['id']]);
         }
     }
     if (!array_key_exists('status', $in)) return adminClients();
