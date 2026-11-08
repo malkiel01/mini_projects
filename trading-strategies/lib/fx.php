@@ -36,19 +36,32 @@ function ts_fx_ensure(int $uid, string $from, string $to, string $dayMin, string
     // היום (שאולי עוד לא פורסם) — נמשך שוב אחרי שעה
     $fresh = $cov && ($cov['to_day'] < $today || (int)$cov['fetched_at'] > time() - 3600);
     if ($cov && $cov['from_day'] <= $need0 && $cov['to_day'] >= $need1 && $fresh) return;
-    $a = $cov ? min($cov['from_day'], $need0) : $need0;
-    $b = $cov ? max($cov['to_day'], $need1) : $need1;
+    // רק מה שחסר (ממצא בקרה #1282): הראש לפני הכיסוי, והזנב מהיום האחרון שבכיסוי — לא כל הטווח מחדש
+    $parts = [];
+    if (!$cov) {
+        $parts[] = [$need0, $need1];
+    } else {
+        if ($need0 < $cov['from_day']) $parts[] = [$need0, gmdate('Y-m-d', strtotime($cov['from_day'] . ' UTC') - 86400)];
+        if ($need1 > $cov['to_day'] || !$fresh) $parts[] = [$cov['to_day'], max($need1, $cov['to_day'])];
+    }
     $acc = ts_access($uid, 'ecb') ?? throw new TsProviderError('ECB כבוי — אין המרת מטבע');
-    $rows = ts_provider_call($uid, 'ecb', $acc, fn($p, $s) => $p->candles("$from$to", 'd1', (int)strtotime("$a UTC"), (int)strtotime("$b 23:59:59 UTC"), $s));
     $ins = $db->prepare('INSERT OR REPLACE INTO fx_rates (base, quote, day, rate) VALUES (?, ?, ?, ?)');
-    $db->beginTransaction();
-    foreach ($rows as $r) {
-        $rate = dec_parse($r['c'], 10);
-        if ($rate !== null && dec_sign($rate) > 0) $ins->execute([$from, $to, gmdate('Y-m-d', $r['t']), $rate]);
+    foreach ($parts as [$a, $b]) {
+        $rows = ts_provider_call($uid, 'ecb', $acc, fn($p, $s) => $p->candles("$from$to", 'd1', (int)strtotime("$a UTC"), (int)strtotime("$b 23:59:59 UTC"), $s));
+        $db->beginTransaction();
+        try {
+            foreach ($rows as $r) {
+                $rate = dec_parse($r['c'], 10);
+                if ($rate !== null && dec_sign($rate) > 0) $ins->execute([$from, $to, gmdate('Y-m-d', $r['t']), $rate]);
+            }
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
     }
     $db->prepare('INSERT OR REPLACE INTO fx_cover (base, quote, from_day, to_day, fetched_at) VALUES (?, ?, ?, ?, ?)')
-        ->execute([$from, $to, $a, $b, time()]);
-    $db->commit();
+        ->execute([$from, $to, $cov ? min($cov['from_day'], $need0) : $need0, $cov ? max($cov['to_day'], $need1) : $need1, time()]);
 }
 
 /** השער של יום, או האחרון שלפניו: ['rate', 'day', 'exact'] — או null */

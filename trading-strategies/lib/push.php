@@ -126,11 +126,16 @@ function ts_push_subscribe(int $uid, array $in): void
     // (ממצא בקרה #1275). של אותו משתמש — רק המפתחות מתעדכנים.
     $db = ts_db();
     $db->beginTransaction();
-    $db->prepare('DELETE FROM push_subs WHERE endpoint = ? AND user_id != ?')->execute([$endpoint, $uid]);
-    $db->prepare('INSERT INTO push_subs (user_id, endpoint, keys, created_at) VALUES (?, ?, ?, ?)
-                  ON CONFLICT(endpoint) DO UPDATE SET keys = excluded.keys WHERE push_subs.user_id = excluded.user_id')
-        ->execute([$uid, $endpoint, json_encode($keys), time()]);
-    $db->commit();
+    try {
+        $db->prepare('DELETE FROM push_subs WHERE endpoint = ? AND user_id != ?')->execute([$endpoint, $uid]);
+        $db->prepare('INSERT INTO push_subs (user_id, endpoint, keys, created_at) VALUES (?, ?, ?, ?)
+                      ON CONFLICT(endpoint) DO UPDATE SET keys = excluded.keys WHERE push_subs.user_id = excluded.user_id')
+            ->execute([$uid, $endpoint, json_encode($keys), time()]);
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
 }
 
 function ts_push_unsubscribe(int $uid, mixed $endpoint): void
