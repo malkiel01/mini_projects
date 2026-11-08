@@ -1,0 +1,20 @@
+{
+  "team": "ענן MBE",
+  "folder": "mbe-cloud/",
+  "updated": "2026-11-08",
+  "owner_note": "הקובץ של צ'אט הבקרה. רק הבקרה משנה אותו.",
+  "how_to_message": "create_trigger עם persistent_session_id, בלי זמן, ומיד fire_trigger. פותחים ב-'📨 מ: <שם> אל: <שם>' ומסיימים ב-'לענות אל: <session>'. הגיט הוא הרשומה, וההודעה היא הפעמון.",
+  "members": [
+    { "role": "בקרה", "name": "ענן MBE - בקרה", "session": "session_018g4NYDqRAwAB47UJQpTTjj",
+      "owns": ["mbe-cloud/team/roster.json"], "does": "סדר עבודה, בדיקה ומיזוג של PR, קשר מול בעל המערכת והפרויקטים האחרים" },
+    { "role": "קוד", "name": "ענן MBE - קוד", "session": "session_018g4NYGr8RCxFnWAMRxcGF8",
+      "owns": ["mbe-cloud/ (קוד)", "mbe-cloud/drives/src"], "does": "כותב קוד ובדיקות, ומאמת פריסה" },
+    { "role": "אפיון", "name": "ענן MBE - אפיון", "session": "session_018g4NYGEPMHtW29NVpbAQDG",
+      "owns": ["mbe-cloud/docs/"], "does": "אפיון ומדריך ה-API" }
+  ],
+  "contacts": [
+    { "name": "המתכלל של חבילת היצירה", "session": "session_018g4NYGTwRc3D2GdQpuVLSc", "when": "לפני מיזוג שמשנה עותקים של מודול הכוננים באפליקציות שלה" },
+    { "name": "ניהול פלטפורמה v2", "session": "session_018g4NYCRLZHgEgnCz21zPrV", "when": "הרשאות, retired.json, החרגות ושערים בפריסה" },
+    { "name": "הבקרה של אסטרטגיות למסחר", "session": "session_018g4NYDg85fHMWcDQxPaLFD", "when": "שיתוף, אסימון, ובדיקה של PR שנוגע בהם לפני מיזוג" }
+  ]
+}
