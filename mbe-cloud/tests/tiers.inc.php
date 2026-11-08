@@ -130,12 +130,12 @@ $cN = connectionRow($exN['connection'], 'tr-app');
 $e = $trErr(fn() => actorFrom($cN, activeClient('tr-app'), 'ai'));
 check('ה9: ai — 403 no_drive (גם כשהמנהל הדליק 🤖)', $e && $e->codeName === 'no_drive' && ($e->extra['layer'] ?? '') === 'ai');
 
-// platform_key — המפתח שהפלטפורמה מאמתת מולו (provision.key_url), ב-public
+// platform_key — המפתח שהפלטפורמה מאמתת מולו ("grant_status": {key_url} — לא provision), ב-public
 $pk = platformKeyJson();
 $app = json_decode((string) file_get_contents(__DIR__ . '/../app.json'), true);
-check('platform_key — {client: mbe-cloud, keys:[Ed25519]}, ב-public, ו-provision.key_url מצביע עליו', $pk['client'] === 'mbe-cloud'
+check('platform_key — {client: mbe-cloud, keys:[Ed25519]}, ב-public, ו-grant_status.key_url מצביע עליו (בלי provision — לא הזמנת משתמשים)', $pk['client'] === 'mbe-cloud'
     && strlen(base64_decode($pk['keys'][0]['key'])) === 32 && str_contains($app['public'][0], '|platform_key|')
-    && str_ends_with($app['provision']['key_url'], 'api.php?action=platform_key'));
+    && str_ends_with($app['grant_status']['key_url'], 'api.php?action=platform_key') && !isset($app['provision']));
 check('grant_status — חתימה לפי docs/sso.md §6 (X-Embed-*, "grant_status\\n<time>\\n<nonce>\\n<sha256>")', (function () {
     $src = (string) file_get_contents(__DIR__ . '/../lib/tier.php');
     return str_contains($src, '"grant_status\\n$time\\n$nonce\\n" . hash(\'sha256\', $body)') && str_contains($src, "'X-Embed-Client: mbe-cloud'")

@@ -112,7 +112,7 @@ function platformBase(): string {
     return preg_replace('#[^/]+/$#', '', cloudIssuer()) . 'platform/';
 }
 
-/** platform_key (ב-public): המפתח הציבורי שהפלטפורמה מאמתת מולו את grant_status ("provision.key_url" ב-app.json). */
+/** platform_key (ב-public): המפתח הציבורי שהפלטפורמה מאמתת מולו את grant_status ("grant_status": {key_url} ב-app.json — רק grant_status, לא provision). */
 function platformKeyJson(): array {
     $k = cloudSigningKey();
     return ['client' => 'mbe-cloud', 'keys' => [['kid' => $k['kid'], 'alg' => 'Ed25519', 'key' => base64_encode($k['pk'])]]];

@@ -215,7 +215,7 @@ try {
 
         // ── חיבור אפליקציה (docs/spec-1-skeleton.md, סעיף 7) ──
         case 'cloud_key':      reply(cloudKeyPublic());
-        case 'platform_key':   reply(platformKeyJson());   // spec-5: הפלטפורמה מאמתת מולו את grant_status ("provision.key_url")
+        case 'platform_key':   reply(platformKeyJson());   // spec-5: הפלטפורמה מאמתת מולו את grant_status ("grant_status.key_url" ב-app.json)
         case 'client_register': reply(registerClient($in));
         case 'connect_exchange': reply(exchangeCode(verifySigned($action, signedHeaders(), $raw), $in));
         case 'access_token': {

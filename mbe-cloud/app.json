@@ -17,7 +17,7 @@
     "me.php",
     "me-api.php"
   ],
-  "provision": {
+  "grant_status": {
     "key_url": "https://mbe-plus.com/mini_projects/mbe-cloud/api.php?action=platform_key"
   }
 }
