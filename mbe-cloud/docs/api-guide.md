@@ -104,6 +104,9 @@ if (str_starts_with($action, 'drives_')) (new \SuiteCloud\Drives([
 - **אפליקציה בדומיין אחר:** אותו קוד. `endpoint` ו-`back` הם בכתובת שלכם, וה-origin שלכם נרשם אוטומטית ל-CORS.
   **בלי השער אין `PLATFORM_USER`:** בלי `cfg['sub']`, המתג מחזיר `no_platform_account`. לפי הכרעה 10, אפליקציה כזו תיתמך בשלב 12.
   **רישום מ-origin שאינו `mbe-plus.com` נכנס ל-`pending`** עד שמנהל הענן מאשר (⚙️ ניהול ← לקוחות).
+- **השער:** **רק** `drives_key` נכנס ל-`public`. כל שאר הפעולות `drives_*` נשארות מאחורי השער, ובהן גם
+  `drives_callback`, `drives_pick` ו-`drives_pick_callback`. הסיבה: הזהות מגיעה מ-`PLATFORM_USER`, והשער לא כותב
+  אותו בנתיב ציבורי. גם החזרה מהענן בדפדפן החיצוני של APK עוברת דרך השער, ושם המשתמש נכנס לפלטפורמה.
 
 ### 3.3 `app.json`
 
@@ -115,6 +118,9 @@ if (str_starts_with($action, 'drives_')) (new \SuiteCloud\Drives([
 
 הענן מוריד משם את המפתח הציבורי שרת-לשרת, בלי עוגייה. **זו הכתובת היחידה שצריך לפתוח.** כל שאר הפעולות `drives_*`
 נקראות מהדפדפן שלכם עם העוגייה שלכם.
+
+**רק `drives_key` נכנס ל-`public`.** כל שאר `drives_*` נשארות מאחורי השער, ובהן גם `drives_callback`, `drives_pick` ו-`drives_pick_callback`,
+כי הזהות מגיעה מ-`PLATFORM_USER` (§3.2). פעולה מהן שתיכנס ל-`public` תאבד את הזהות, והחזרה מהענן תיכשל עם `account_mismatch`.
 
 ### 3.4 `deploy.yml` — הנתונים לא נדרסים
 
