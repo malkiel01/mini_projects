@@ -392,9 +392,11 @@ function verifyToken(string $token): array {
  * $scope — ההרשאה שהפעולה דורשת מאפליקציה מחוברת.
  */
 function actor(string $action, string $scope, string $body): array {
-    $auth = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    require_once __DIR__ . '/share.php';
     // X-Cloud-Token — אותו אסימון, למקרה ששרת בדרך מוריד את Authorization לפני PHP
-    $token = preg_match('/^Bearer\s+(\S+)$/i', $auth, $m) ? $m[1] : (string) ($_SERVER['HTTP_X_CLOUD_TOKEN'] ?? '');
+    $token = requestBearer();
+    // אסימון אישי (שלב 2) — מזוהה לפי התחילית, לפני כל ניסיון לפענח אותו כאסימון של אפליקציה
+    if ($token !== '' && isPat($token)) return patActor($action, $token);
     if ($token !== '') {
         [$conn, $client] = verifyToken($token);
         return actorFrom($conn, $client, $scope);

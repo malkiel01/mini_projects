@@ -37,3 +37,12 @@
 .font-row .l2 { flex: 1; min-width: 0; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 main.connect { max-width: 480px; padding-top: var(--s4); display: grid; gap: var(--s3); }
 main.connect .row-btns { margin-top: var(--s2); }
+
+/* 🔑 אסימון שמוצג פעם אחת — נבחר כולו בלחיצה, נשבר בכל מקום (43 תווים בלי רווח) */
+.secret-box { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: var(--s3); margin: var(--s2) 0; }
+.secret-box .secret { display: block; font: 600 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; user-select: all; color: var(--ink); }
+
+/* 👥 הוספה בגיליון השיתוף: השדה מתמתח, הכפתור בגובה השדה ומיושר לתחתיתו */
+.share-add { display: flex; gap: var(--s2); align-items: flex-end; }
+.share-add .f { flex: 1; min-width: 0; margin: 0; }
+.share-add .btn { flex: none; }

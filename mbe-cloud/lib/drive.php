@@ -451,6 +451,7 @@ function deleteTree(string $root): void {
     $shas = $sh->fetchAll(PDO::FETCH_COLUMN);
     $pdo->beginTransaction();
     // מהעלים לשורש — כך מפתח ההורה לא נשבר באמצע
+    $pdo->prepare("DELETE FROM shares WHERE node IN ($in)")->execute($ids);   // שיתוף של צומת שנמחק לצמיתות — נעלם איתו
     foreach (array_reverse($ids) as $id) $pdo->prepare('DELETE FROM nodes WHERE id = ?')->execute([$id]);
     $pdo->commit();
     foreach ($shas as $sha) dropBlobIfUnused($sha);
@@ -489,7 +490,7 @@ function readTarget(array $a, mixed $id): array {
 
 function adminState(): array {
     $rows = db()->query("SELECT a.*, COALESCE((SELECT SUM(size) FROM nodes n WHERE n.account = a.id AND n.kind = 'file'), 0) AS used
-                         FROM accounts a ORDER BY a.name COLLATE NOCASE")->fetchAll();
+                         FROM accounts a WHERE a.kind = 'person' ORDER BY a.name COLLATE NOCASE")->fetchAll();   // חשבונות שירות — ב-service_list
     $disk = 0;
     foreach (db()->query("SELECT DISTINCT sha256, size FROM nodes WHERE kind = 'file'")->fetchAll() as $r) $disk += (int) $r['size'];
     return [

@@ -2,6 +2,17 @@
 # 308 ולא 301: 301 הופך POST ל-GET ומאבד את הגוף, ו-308 שומר שיטה, גוף וכותרות. כך עותק ישן של מודול הכוננים
 # וסימניות ממשיכים לעבוד. ההפניה תופסת כל בקשה לפני ש-PHP רץ, ולכן api.php הישן שנשאר בשרת (rsync בלי --delete)
 # לעולם לא רץ — ולא יפתח מסד ריק במקום הנתונים שהועברו.
+#
+# בקשה עם אסימון (Authorization / X-Cloud-Token) לא מופנית: 400 ב-JSON (errors/moved.json). לקוח שעוקב
+# אחרי הפניות היה מעביר את האסימון הלאה בלי לדעת (docs/spec-2-share-token.md סעיף 7, ד1). ErrorDocument כבר בשימוש
+# בשרת הזה (family-shopping/.htaccess), ולכן מותר כאן. אם בכל זאת לא — 400 בגוף ריק, ואף פעם לא 3xx.
+# הקובץ כאן ולא ב-mbe-cloud/: שם הוא היה עובר דרך השער (gate.php), שקורא את הנתיב מ-REQUEST_URI — וב-ErrorDocument
+# זו עדיין הכתובת המקורית (suite-cloud/api.php), כך שהשער היה מחזיר 404 במקום 400. errors/ מוחרגת מהכללים שלמטה.
+ErrorDocument 400 /mini_projects/suite-cloud/errors/moved.json
 RewriteEngine On
 RewriteRule ^data(/|$) - [F,L]
+RewriteRule ^errors/[a-z]+\.json$ - [L]
+RewriteCond %{HTTP:Authorization} . [OR]
+RewriteCond %{HTTP:X-Cloud-Token} .
+RewriteRule ^ - [R=400,L]
 RewriteRule ^(.*)$ /mini_projects/mbe-cloud/$1 [R=308,L]
