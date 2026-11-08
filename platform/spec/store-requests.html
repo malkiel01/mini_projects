@@ -13,7 +13,7 @@
         <a href="index.html" aria-label="חזרה לאפיונים">‹</a>
         <h1>🛍️ בחנות לכולם — הורדה מיידית או בקשה</h1>
     </header>
-    <p class="sub">אפיון · 2026-11-08 · טיוטה · עבר סבב בקרה ראשון (restricted בזמן ריצה, סגירה בקריאה, retire) · ממתין להכרעות (סעיף 9) · אפיון v2 · מטלה <strong>PF-001</strong></p>
+    <p class="sub">אפיון · 2026-11-08 · טיוטה · עבר בקרה · <strong>הוכרע</strong> בידי בעל המערכת (סעיף 9, 2026-11-08) · אפיון v2 · מטלה <strong>PF-001</strong></p>
 
     <nav class="toc" aria-label="תוכן">
         <ol>
@@ -25,7 +25,7 @@
             <li><a href="#rules">שילוב עם ההרשאות הקיימות</a></li>
             <li><a href="#tech">נתונים ו-API</a></li>
             <li><a href="#test">איך בודקים</a></li>
-            <li><a href="#q">שאלות פתוחות ❓</a></li>
+            <li><a href="#q">ההכרעות</a></li>
         </ol>
     </nav>
 
@@ -45,14 +45,14 @@
     <div class="table"><table>
         <tr><th>רכיב</th><th>איפה</th><th>מה הוא עושה</th></tr>
         <tr><td><code>app_catalog</code></td><td><code>lib/access.php</code></td><td>טבלה עם עמודה אחת (<code>app_id</code>) — מה שבחנות</td></tr>
-        <tr><td><code>in_catalog</code></td><td><code>lib/access.php</code></td><td>בחנות, לא מוסתרת, לא תוסף. <strong>לא בודקת <code>restricted</code></strong> (סעיף 6)</td></tr>
+        <tr><td><code>in_catalog</code></td><td><code>lib/access.php</code></td><td>בחנות, לא מוסתרת, לא תוסף. <strong>לא בודקת <code>restricted</code></strong> — נסגר בתיקון מהיר נפרד של כתיבת הקוד (סעיף 6)</td></tr>
         <tr><td><code>visible_for</code></td><td><code>lib/access.php</code></td><td>משתמש פעיל: מה שיש לו + מה שבחנות (<code>owned=false</code>), חוץ מחסימה מפורשת</td></tr>
         <tr><td><code>action_get_app</code></td><td><code>api.php</code></td><td>כותב <code>grants: app=true</code> מיד</td></tr>
         <tr><td><code>storeRow</code></td><td><code>assets/app.js</code></td><td>שורה אפורה עם ⬇; לחיצה → <code>get_app</code> → טוסט ורענון</td></tr>
         <tr><td>תיבת "🛍️ בחנות לכולם"</td><td><code>assets/admin.js</code>, כרטיס האפליקציה (🌳 ← לחיצה)</td><td>מוסיפה/מסירה מ-<code>app_catalog</code></td></tr>
         <tr><td><code>push_send</code></td><td><code>lib/push.php</code></td><td>ברירת מחדל — לכל המנהלים הפעילים. <strong>רק מנהלים נרשמים להתראות</strong> (<code>admin_push_subscribe</code>)</td></tr>
     </table></div>
-    <div class="note warn">משמעות: למשתמש רגיל אין היום Push. לכן "מה המשתמש רואה אחרי אישור" — בתוך הכלים, בכניסה הבאה (סעיף 4.3), ולא בהתראה. ראו ❓4.</div>
+    <div class="note warn">משמעות: למשתמש רגיל אין היום Push. לכן "מה המשתמש רואה אחרי אישור" — בתוך הכלים, בכניסה הבאה (סעיף 4.3), ולא בהתראה. הוכרע כך (9.4).</div>
 
     <!-- ───────────────────────────── -->
     <h2 id="modes">3. שני מצבים לכל אפליקציה</h2>
@@ -63,11 +63,12 @@
         <tr><td><span class="chip info">📨 בקשה</span></td><td>📨 בקשה — באישור שלי</td><td>נשלחת בקשה; האפליקציה נשארת אפורה עם "⏳ ממתין"</td></tr>
     </table></div>
     <p><strong>ברירת מחדל:</strong> כל מה שכבר בחנות היום — <em>הורדה מיידית</em>. שום דבר לא משתנה למשתמשים עד שהמנהל בוחר אחרת —
-        <strong>חוץ מאפליקציה <code>restricted</code></strong>, שמתנהגת תמיד כבקשה (למטה).</p>
-    <p><strong>המצב בפועל מחושב בזמן ריצה</strong>, לא נקרא כמו שהוא מהמסד:
-        <code>store_mode = restricted ? 'request' : app_catalog.mode</code>. <code>restricted</code> מגיע מ-app.json ולא מהמסד, ולכן
-        אפליקציה restricted שכבר בחנות (ותקבל במיגרציה <code>mode='instant'</code>), או שתסומן restricted בעתיד — עדיין לא נפתחת בלחיצה.
-        האכיפה ב-<code>get_app</code> וב-<code>visible_for</code>; ה-422 ב-<code>admin_app_update</code> הוא רק נוחות בממשק.</p>
+        <strong>חוץ מאפליקציה <code>restricted</code></strong>, שלא מופיעה בחנות בכלל (למטה).</p>
+    <p><strong>restricted — לא בחנות, בשום מצב</strong> (הכרעה 9.3): לא בהורדה ולא בבקשה. נפתחת רק באישור ישיר של המנהל, כמו היום.
+        האכיפה בזמן ריצה, ב-<code>in_catalog</code> (מחזיר false ל-restricted), ולכן היא חלה ב-<code>visible_for</code> וב-<code>get_app</code> גם על
+        אפליקציה restricted שיש לה שורה ב-<code>app_catalog</code> מלפני כן, וגם על אפליקציה שתסומן restricted בעתיד. <code>restricted</code> מגיע
+        מ-app.json ולא מהמסד, ולכן השורה ב-<code>app_catalog</code> לא נמחקת — היא פשוט לא פעילה, וחוזרת לפעול אם יוסר ה-restricted.
+        ה-422 ב-<code>admin_app_update</code> הוא רק נוחות בממשק.</p>
     <p><strong>מעבר בין מצבים:</strong></p>
     <ul>
         <li><em>מיידית → בקשה</em>: חל רק על לחיצות מעכשיו. מי שכבר הוריד — נשאר עם האפליקציה.</li>
@@ -83,7 +84,7 @@
         <tr><th>מצב</th><th>איך השורה נראית</th><th>לחיצה</th></tr>
         <tr><td>אפשר לבקש</td><td>אפורה, בצד השמאלי <strong>📨</strong> (במקום ⬇) · aria-label "בקשה לקבלת X"</td><td>שולחת בקשה ← טוסט "📨 נשלחה בקשה למנהל"</td></tr>
         <tr><td>ממתין</td><td>אפורה, צ'יפ <span class="chip warn">⏳ ממתין</span> במקום החץ</td><td>גיליון קטן: "הבקשה נשלחה ב-&lt;תאריך&gt;. נעדכן כאן כשהמנהל יחליט." + כפתור <em>ביטול הבקשה</em></td></tr>
-        <tr><td>נדחתה</td><td>אפורה, צ'יפ <span class="chip bad">✕ נדחתה</span></td><td>גיליון: "המנהל לא אישר את הבקשה." + <em>בקשה חוזרת</em> — פעיל רק אחרי ההמתנה (❓2)</td></tr>
+        <tr><td>נדחתה</td><td>אפורה, צ'יפ <span class="chip bad">✕ נדחתה</span></td><td>גיליון: "המנהל לא אישר את הבקשה." + <em>בקשה חוזרת</em> — פעיל רק אחרי ההמתנה (9.2)</td></tr>
         <tr><td>אושרה</td><td>לא שורת חנות — אפליקציה רגילה שלו (owned), עם צ'יפ <span class="chip ok">חדש</span> עד הפתיחה הראשונה</td><td>פותחת, כמו כל אפליקציה</td></tr>
     </table></div>
     <h3>4.2 איפה זה מוצג</h3>
@@ -104,7 +105,8 @@
     <h3>5.1 ההגדרה — בכרטיס האפליקציה (🌳 ← לחיצה)</h3>
     <p>תיבת הסימון "🛍️ בחנות לכולם" מתחלפת בבורר אחד:</p>
     <div class="card">🛍️ בחנות לכולם: <strong>[ לא בחנות ▾ | ⬇ הורדה מיידית | 📨 בקשה — באישור שלי ]</strong><br>
-        <span class="muted">באפליקציה <code>restricted</code>: האפשרות "הורדה מיידית" מושבתת, עם הסבר "🔒 נפתחת רק באישור ישיר" (❓3).</span><br>
+        <span class="muted">באפליקציה <code>restricted</code>: הבורר מושבת, ובמקומו הסבר — "🔒 מוגבלת: לא מוצגת בחנות. נפתחת רק באישור ישיר במסך המשתמש" (9.3).
+        אם יש לה שורה ישנה ב-<code>app_catalog</code> — "(רשומה בחנות, אבל לא מוצגת כי היא מוגבלת)".</span><br>
         <span class="muted">מתחת — אם יש: "📨 3 בקשות ממתינות" (קישור לרשימה, 5.2).</span></div>
     <p>בעץ (🌳) — תג קטן ליד האפליקציה: 🛍️ במיידית, 📨 בבקשה, כמו התגים 🛠️ / 🚫 שכבר יש שם.</p>
 
@@ -141,8 +143,10 @@
             לא עוברים דרך <code>grants_write</code>, ולא צריך לחבר אותם: הסגירה נעשית בקריאה (7.3).</td></tr>
         <tr><td>חסימה מפורשת (מתג "רואה" ← ✕ חסום)</td><td>בקשה ממתינה נסגרת כ"נדחתה"; האפליקציה נעלמת לו מהחנות (כמו היום).</td></tr>
         <tr><td>הסרת החסימה</td><td>חוזר לחנות במצב "אפשר לבקש" — בלי המתנה.</td></tr>
-        <tr><td><code>restricted</code></td><td><strong>היום — פרצה:</strong> אפליקציה restricted שהוכנסה לחנות נפתחת לכל אחד בלחיצה (<code>get_app</code> כותב הרשאה ישירה,
-            ו-<code>in_catalog</code> לא בודק restricted). <strong>המלצה:</strong> restricted בחנות — תמיד במצב בקשה, באכיפה בזמן ריצה (סעיף 3), גם אם במסד רשום <code>instant</code> (❓3).</td></tr>
+        <tr><td><code>restricted</code></td><td><strong>היה פרצה:</strong> אפליקציה restricted שהוכנסה לחנות נפתחה לכל אחד בלחיצה (<code>get_app</code> כותב הרשאה ישירה,
+            ו-<code>in_catalog</code> לא בדק restricted). <strong>הוכרע (9.3):</strong> restricted לא בחנות בכלל — <code>in_catalog</code> מחזיר false
+            (תיקון מהיר נפרד של כתיבת הקוד). אין שורת חנות, אין בקשה; <code>get_app</code> מחזיר 404 כמו לכל אפליקציה שלא בחנות.
+            בקשה ממתינה לאפליקציה שסומנה restricted אחר כך — נסגרת כ"בוטלה" (7.3, "לא בחנות").</td></tr>
         <tr><td>מוסתרת / תוסף</td><td>לא בחנות בכלל (כמו היום). בקשות ממתינות נסגרות כ"בוטלה".</td></tr>
         <tr><td>אפליקציה שנסגרה (<code>tools/retire-apps.php</code>)</td><td>הסקריפט מוחק גם את שורות <code>app_requests</code> שלה (ואת השורה ב-<code>app_catalog</code>, שגם היום לא נמחקת) — כדי שלא יישארו אצל המנהל בקשות לאפליקציה שאינה קיימת.</td></tr>
         <tr><td>חשבון נחסם</td><td>הבקשות שלו נסגרות כ"בוטלה" ונעלמות מהרשימה.</td></tr>
@@ -175,14 +179,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS app_requests_one_pending
     <h3>7.2 API</h3>
     <div class="table"><table>
         <tr><th>פעולה</th><th>שינוי</th></tr>
-        <tr><td><code>get_app {app}</code></td><td>לפי <code>store_mode</code> המחושב (סעיף 3 — restricted תמיד בקשה). מיידית — כמו היום (וסוגרת בקשה ממתינה כ"אושרה"). בקשה — יוצרת שורה <code>pending</code>
+        <tr><td><code>get_app {app}</code></td><td>לפי <code>app_catalog.mode</code>, ורק אם <code>in_catalog</code> (restricted — 404, סעיף 3). מיידית — כמו היום (וסוגרת בקשה ממתינה כ"אושרה"). בקשה — יוצרת שורה <code>pending</code>
             ומחזירה <code>{ok, requested: true}</code>. כבר ממתינה — 200 בלי כפילות. נדחתה ועוד בהמתנה — 409 עם התאריך.</td></tr>
         <tr><td><code>cancel_request {app}</code> — חדש</td><td>המשתמש מבטל בקשה ממתינה שלו (CSRF).</td></tr>
         <tr><td><code>requests_seen {ids}</code> — חדש</td><td>מסמן החלטות כנראו אחרי הטוסט.</td></tr>
         <tr><td><code>visible_for</code> / <code>app_public</code></td><td>לשורת חנות: <code>store_mode</code> (<code>instant|request</code>) ו-<code>request</code> = <code>{status, at, retry_at?}</code> או null.
             בנוסף ברמה העליונה: <code>decisions</code> — החלטות שלא נראו.</td></tr>
         <tr><td><code>admin_app_update</code></td><td><code>catalog</code> מקבל גם <code>'instant' | 'request' | false</code> (true נשאר = instant, לתאימות).
-            restricted + instant → 422.</td></tr>
+            <code>catalog</code> לא-false לאפליקציה restricted → 422 "אפליקציה מוגבלת לא מוצגת בחנות".</td></tr>
         <tr><td><code>admin_requests</code> — חדש</td><td>הבקשות הממתינות (ו-30 הימים האחרונים של החלטות, להיסטוריה).</td></tr>
         <tr><td><code>admin_request_decide {id, decision}</code> — חדש</td><td><code>approve</code> → <code>grants_write(app=true)</code>; <code>reject</code>;
             <code>block</code> → <code>grants_write(app=false)</code>. שורה שכבר לא <code>pending</code> → 409 "כבר טופלה".</td></tr>
@@ -214,25 +218,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS app_requests_one_pending
         <li>בקשה לאפליקציה אחרת → ✕ דחייה → אצל המשתמש "✕ נדחתה"; בקשה חוזרת חסומה עד תום ההמתנה.</li>
         <li>בקשה → המנהל מדליק "רואה" במסך המשתמש → הבקשה נעלמת מהרשימה כ"אושרה".</li>
         <li>בקשה → ביטול הבקשה אצל המשתמש → נעלמת אצל המנהל.</li>
-        <li>אפליקציה restricted: "⬇ הורדה מיידית" מושבתת בבורר. ואם היא כבר הייתה בחנות לפני השינוי (<code>mode='instant'</code> במסד) —
-            אצל משתמש היא מופיעה עם 📨, ו-<code>get_app</code> יוצר בקשה ולא פותח.</li>
+        <li>אפליקציה restricted: הבורר מושבת, עם ההסבר "🔒 מוגבלת". ואם היא כבר הייתה בחנות לפני השינוי (שורה ב-<code>app_catalog</code>) —
+            משתמש רגיל לא רואה אותה בכלל, ו-<code>get_app</code> עליה מחזיר 404.</li>
         <li>בקשה ממתינה → נותנים למשתמש את הקטגוריה של האפליקציה (לא דרך מסך הבקשות) → ברשימת הבקשות היא כבר לא מופיעה, והמונה ירד.</li>
         <li>בקשה ממתינה → מעבירים את האפליקציה למצב מיידי → נעלמת מרשימת המנהל ומהמונה.</li>
         <li>אפליקציה שהייתה בחנות לפני השינוי — עדיין ⬇ מיידית (ברירת המחדל לא שברה כלום).</li>
     </ol>
 
     <!-- ───────────────────────────── -->
-    <h2 id="q">9. שאלות פתוחות ❓ — לבעל המערכת, דרך הניהול</h2>
+    <h2 id="q">9. ההכרעות — בעל המערכת, 2026-11-08 (דרך הניהול)</h2>
     <div class="table"><table>
-        <tr><th>#</th><th>שאלה</th><th>המלצה</th></tr>
-        <tr><td>❓1</td><td>איפה רואים את הבקשות?</td><td><strong>בלשונית 👥 משתמשים</strong> — צ'יפ "📨 בקשות" עם מונה, והמונה האדום של הלשונית כולל אותן;
-            ובנוסף פס במסך המשתמש. לא לשונית חמישית (בטלפון ארבע הלשוניות כבר בשורה אחת).</td></tr>
-        <tr><td>❓2</td><td>אחרי דחייה — מותר לבקש שוב?</td><td><strong>כן, אחרי 7 ימים.</strong> למנהל יש בנוסף "🚫 דחייה וחסימה" כשלא רוצים לשמוע שוב. (חלופות: מיד / אף פעם.)</td></tr>
-        <tr><td>❓3</td><td>אפליקציה <code>restricted</code> בחנות</td><td><strong>רק במצב בקשה.</strong> היום הורדה מיידית שלה עוקפת את ה-restricted — לסגור את זה כחלק מהמטלה.</td></tr>
-        <tr><td>❓4</td><td>להודיע למשתמש בהתראה (Push) כשאושר?</td><td><strong>לא עכשיו.</strong> היום רק מנהלים נרשמים להתראות; Push למשתמשים הוא פיצ'ר בפני עצמו (הרשמה, הסכמה, מכשירים).
-            בינתיים — טוסט בכניסה הבאה (4.3). אם רוצים — מטלה נפרדת.</td></tr>
-        <tr><td>❓5</td><td>שדה "למה אני צריך" בבקשה?</td><td><strong>לא.</strong> ההוראה היא לחיצה אחת; הערה מוסיפה חלון. אפשר להוסיף בהמשך אם יחסר.</td></tr>
-        <tr><td>❓6</td><td>המשתמש יכול לבטל בקשה ממתינה?</td><td><strong>כן</strong> — מהגיליון של "⏳ ממתין".</td></tr>
+        <tr><th>#</th><th>שאלה</th><th>הכרעה</th></tr>
+        <tr><td>9.1</td><td>איפה רואים את הבקשות?</td><td><span class="chip ok">כהמלצה</span> בלשונית 👥 משתמשים — צ'יפ "📨 בקשות" עם מונה, והמונה האדום של הלשונית כולל אותן;
+            ובנוסף פס במסך המשתמש. לא לשונית חמישית.</td></tr>
+        <tr><td>9.2</td><td>אחרי דחייה — מותר לבקש שוב?</td><td><span class="chip ok">כהמלצה</span> כן, 7 ימים אחרי הדחייה. ולמנהל גם "🚫 דחייה וחסימה".</td></tr>
+        <tr><td>9.3</td><td>אפליקציה <code>restricted</code> בחנות</td><td><span class="chip warn">שונה מההמלצה</span> <strong>לא מופיעה בחנות בכלל</strong> — לא בבקשה ולא בהורדה.
+            נפתחת רק באישור ישיר של המנהל, כמו היום. בממשק המנהל מוצג למה היא לא בחנות (5.1). (ההמלצה הייתה: רק במצב בקשה.)</td></tr>
+        <tr><td>9.4</td><td>להודיע למשתמש בהתראה (Push) כשאושר?</td><td><span class="chip ok">כהמלצה</span> לא עכשיו — טוסט בכניסה הבאה (4.3). Push למשתמשים — מטלה נפרדת בהמשך.</td></tr>
+        <tr><td>9.5</td><td>שדה "למה אני צריך" בבקשה?</td><td><span class="chip ok">כהמלצה</span> אין — לחיצה אחת.</td></tr>
+        <tr><td>9.6</td><td>המשתמש יכול לבטל בקשה ממתינה?</td><td><span class="chip ok">כהמלצה</span> כן — מהגיליון של "⏳ ממתין".</td></tr>
     </table></div>
     <div class="note ok">מחוץ לתחום: דף החסימה של השער (<code>gate.php</code>) כשנכנסים ישירות לאפליקציה בלי הרשאה — לא מציע היום "בקשה".
         אפשר להוסיף שם "📨 לבקש גישה" בהמשך, אם בעל המערכת ירצה.</div>
