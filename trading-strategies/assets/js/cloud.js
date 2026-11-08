@@ -55,8 +55,9 @@ export function cloudPath(provider, symbol, tf) {
 export const METHODS_PATH = ['אסטרטגיות למסחר', 'שיטות'];
 export const APP_FOLDER = 'אסטרטגיות למסחר';   // = name ב-Drives (api.php): ב-files.app זו "התיקייה של האפליקציה" בענן
 
-/** 📁 דלוק — files המלא, או files.app (mbe-cloud/docs/spec-3-files-scopes.md) */
-export const filesOn = st => !!(st?.connected && (st.layers?.files || (st.scope || []).some(x => x === 'files' || x === 'files.app')));
+/** 📁 דלוק — המודול מחשב: כל היקף קבצים (files / files.app) = layers.files (mbe-cloud/docs/spec-3-files-scopes.md) */
+export const filesOn = st => !!(st?.connected && st.layers?.files);
+/** חיבור files.app (בלי files המלא) — כתיבה בלי parent נכנסת לתיקייה של האפליקציה */
 export const appScoped = st => (st?.scope || []).includes('files.app') && !(st?.scope || []).includes('files');
 
 // ── המודול והממשק ────────────────────────────────────────────────
@@ -165,18 +166,26 @@ export function mountCloud(ctx) {
     return box;
   }
 
-  /** החזרה מהענן: ?cloud=connected | denied (api-guide 4) */
+  /** החזרה מהענן: ?cloud=connected | denied (api-guide 4), ?cloud=picked | pick-cancelled (spec-3 4) */
   function handleReturn() {
     const u = new URL(location.href);
     const v = u.searchParams.get('cloud');
     if (!v) return;
-    // מהבורר (spec-3 4): drives.picked() קורא את הבחירה ומנקה את ?cloud=picked בעצמו — לכן קודם הוא, ואחר כך הכתובת
-    if (v === 'picked' && sessionStorage.getItem('ts-pick') === 'methods') {
-      sessionStorage.removeItem('ts-pick');
+    const fromPicker = v === 'picked' || v === 'pick-cancelled';
+    const ours = sessionStorage.getItem('ts-pick') === 'methods';
+    if (fromPicker) sessionStorage.removeItem('ts-pick');
+    // ביטול בבורר — בלי שינוי: התיקייה שנבחרה קודם (אם יש) נשארת
+    if (fromPicker && (v === 'pick-cancelled' || !ours)) {
+      u.searchParams.delete('cloud');
+      history.replaceState(null, '', u.pathname + (u.search || '') + (ours ? '#/method-files' : location.hash));
+      if (ours) { toast('הבחירה בוטלה — לא שונה דבר'); ctx.reload(); }
+      return;
+    }
+    // מהבורר: drives.picked() קורא את הבחירה (פעם אחת, אחרי stat) ומנקה את ?cloud=picked בעצמו — לכן קודם הוא
+    if (fromPicker) {
       (async () => {
         try {
-          const d = await getDrives();
-          const [node] = typeof d.picked === 'function' ? await d.picked() : [];
+          const [node] = await (await getDrives()).picked();
           const clean = new URL(location.href);
           clean.searchParams.delete('cloud');
           history.replaceState(null, '', clean.pathname + (clean.search || '') + '#/method-files');
@@ -209,11 +218,9 @@ export function mountCloud(ctx) {
     const s = (await getDrives()).suite;
     // ב-files.app האפליקציה לא בוחרת לבד: המנהל בוחר את התיקייה בבורר של הענן (spec-3 4), ושומרים רק את ה-id
     const choose = async () => {
-      const d = await getDrives();
-      if (typeof d.pick !== 'function') { toast('בורר התיקיות עוד לא זמין במודול הכוננים — ממתינים לסנכרון מהענן', true); return; }
       try {
         sessionStorage.setItem('ts-pick', 'methods');
-        await d.pick({ kind: 'folder', multiple: false });
+        await (await getDrives()).pick({ kind: 'folder', multiple: false });
       } catch (e) { sessionStorage.removeItem('ts-pick'); toast(e.message, true); }
     };
     if (!folder) {

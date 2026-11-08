@@ -33,10 +33,12 @@ function call(string $as, string $action, ?array $body = null, array $query = []
     if (!empty($jar[$as])) $h[] = 'Cookie: ts_session=' . $jar[$as];
     if ($body !== null) { $h[] = 'Content-Type: application/json'; $h[] = 'X-CSRF: ' . ($tokens[$as] ?? ''); }
     $ctx = stream_context_create(['http' => ['method' => $body !== null ? 'POST' : 'GET', 'header' => implode("\r\n", $h),
-        'content' => $body !== null ? json_encode($body) : '', 'ignore_errors' => true, 'timeout' => 60]]);
+        'content' => $body !== null ? json_encode($body) : '', 'ignore_errors' => true, 'follow_location' => 0, 'timeout' => 60]]);
     $raw = (string)file_get_contents("http://127.0.0.1:$port/trading-strategies/api.php?" . http_build_query(['action' => $action] + $query), false, $ctx);
     foreach ($http_response_header as $line) if (preg_match('/^Set-Cookie: ts_session=([a-f0-9]+)/i', $line, $m)) $jar[$as] = $m[1];
-    return [(int)explode(' ', $http_response_header[0])[1], json_decode($raw, true) ?? $raw];
+    $loc = null;
+    foreach ($http_response_header as $line) if (preg_match('/^Location: (.+)$/i', $line, $m)) $loc = trim($m[1]);
+    return [(int)explode(' ', $http_response_header[0])[1], json_decode($raw, true) ?? $raw, $loc];
 }
 foreach (['alice', 'bob', 'owner'] as $u) $tokens[$u] = call($u, 'me')[1]['csrf'];
 $db = new PDO('sqlite:' . "$tmp.sqlite");
@@ -49,7 +51,7 @@ eq([$app['gate'], $app['public']], [true, ['api.php?action=drives_key']], 'app.j
 eq([$c, $r['client'] ?? null, $r['keys'][0]['alg'] ?? null, strlen(base64_decode($r['keys'][0]['key'] ?? ''))], [200, 'trading-strategies', 'Ed25519', 32],
     'drives_key without identity and without a cookie → the public key (Ed25519)');
 eq(isset($r['keys'][0]['sk']) || str_contains(json_encode($r), 'private'), false, 'only the public key goes out');
-foreach (['drives_status', 'drives_token', 'drives_connect', 'drives_disconnect'] as $a) eq(call('none', $a)[0], 401, "$a without identity → 401");
+foreach (['drives_status', 'drives_token', 'drives_connect', 'drives_disconnect', 'drives_pick', 'drives_picked'] as $a) eq(call('none', $a)[0], 401, "$a without identity → 401");
 eq(call('none', 'me')[0], 401, 'and the app itself without identity → 401');
 
 // ── חיבור: ה-sub מהשער בלבד ──────────────────────────────
@@ -76,6 +78,23 @@ $ins->execute([(string)$uidOf('102'), 'c_101', 'בוב', '102']);
 eq(call('bob', 'drives_token')[0], 403, 'a connection of another account → the cloud refuses (account_mismatch); bob cannot write into alice\'s drive');
 eq(str_contains(json_encode(call('bob', 'drives_token')[1]), 'tok-for'), false, 'and no token leaks to bob');
 eq(file_exists("$tmp.sqlite.drives/drives.sqlite") && !file_exists(dirname(__DIR__) . '/tests/drives.sqlite'), true, 'drives.sqlite is in the data dir');
+
+// ── הבורר (files.app, spec-3-files-scopes 4): מאחורי השער, state חד-פעמי של המשתמש, הבחירה רק שלו ────
+[$c, $r] = call('alice', 'drives_pick', ['kind' => 'folder', 'sub' => '999']);
+parse_str((string)parse_url($r['url'] ?? '', PHP_URL_QUERY), $pq);
+eq([$c, parse_url($r['url'], PHP_URL_PATH), $pq['client'] ?? null, $pq['sub'] ?? null, $pq['kind'] ?? null, $pq['return'] ?? null],
+    [200, '/mini_projects/mbe-cloud/picker.php', 'trading-strategies', '101', 'folder', 'https://mbe-plus.com/mini_projects/trading-strategies/api.php?action=drives_pick_callback'],
+    'drives_pick → the cloud\'s picker, signed, with the sub from the gate (a sub in the body is ignored)');
+eq(call('bob', 'drives_pick_callback', null, ['state' => $pq['state'], 'picked' => 'n_7'])[0], 400, 'bob cannot complete alice\'s pick (state of another user)');
+[$c, , $loc] = call('alice', 'drives_pick_callback', null, ['state' => $pq['state'], 'picked' => 'n_7,../x']);
+eq([$c, $loc], [303, 'https://mbe-plus.com/mini_projects/trading-strategies/?cloud=picked'], 'pick callback → back to the app with ?cloud=picked');
+eq(call('alice', 'drives_pick_callback', null, ['state' => $pq['state'], 'picked' => 'n_8'])[0], 400, 'the state is one-time');
+eq(call('bob', 'drives_picked')[1], ['ids' => []], 'bob does not see alice\'s pick');
+eq(call('alice', 'drives_picked')[1], ['ids' => ['n_7']], 'alice reads her pick — only valid ids');
+eq(call('alice', 'drives_picked')[1], ['ids' => []], 'and only once');
+parse_str((string)parse_url(call('alice', 'drives_pick', ['kind' => 'folder'])[1]['url'], PHP_URL_QUERY), $pq);
+eq(call('alice', 'drives_pick_callback', null, ['state' => $pq['state'], 'pick' => 'cancelled'])[2], 'https://mbe-plus.com/mini_projects/trading-strategies/?cloud=pick-cancelled', 'cancel → ?cloud=pick-cancelled');
+eq(call('alice', 'drives_picked')[1], ['ids' => []], 'cancel → nothing picked (no change)');
 
 // ── 📚 קובצי שיטות: מנהל בלבד, בשרת ─────────────────────
 eq(call('alice', 'admin_method_files')[0], 403, 'method files → 403 for a regular user (server-side, not just hidden)');
