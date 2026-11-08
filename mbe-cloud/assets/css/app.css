@@ -50,3 +50,11 @@ main.connect .row-btns { margin-top: var(--s2); }
 /* מתג לכל שכבה ב"🔗 חיבורים" */
 .acc-row .layers { display: flex; flex-wrap: wrap; gap: 0 var(--s3); }
 .acc-row .layers .switch { min-height: 36px; font-size: .9em; }
+
+/* בורר הקבצים (picker.php, שלב 3) */
+.picker label.acc-row { cursor: pointer; }
+.picker label.acc-row input { inline-size: 20px; block-size: 20px; flex: none; accent-color: var(--brand); }
+.picker .pick-gap { inline-size: 20px; flex: none; }
+.picker .acc-row.muted { opacity: .55; }
+.picker .pick-crumbs a { color: var(--brand); text-decoration: none; padding: 0 var(--s1); }
+.picker .pick-bar { position: sticky; bottom: 0; background: var(--bg); padding-block: var(--s2); }

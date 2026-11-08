@@ -28,6 +28,7 @@ require_once __DIR__ . '/lib/fonts.php';
 require_once __DIR__ . '/lib/me.php';
 require_once __DIR__ . '/lib/share.php';
 require_once __DIR__ . '/lib/appdata.php';
+require_once __DIR__ . '/lib/grants.php';
 require_once __DIR__ . '/lib/ui-core/account/account.php';
 
 header('X-Content-Type-Options: nosniff');
@@ -126,7 +127,7 @@ function sendFile(string $path, array $n): never {
 const WRITES = ['mkdir', 'write', 'upload_start', 'upload_finish', 'rename', 'move', 'trash', 'restore', 'purge', 'trash_empty',
                 'admin_settings', 'admin_account', 'admin_client', 'client_register', 'connect_exchange', 'access_token',
                 'disconnect', 'connection_scope', 'connection_revoke', 'connection_layers',
-                'appdata_put', 'appdata_delete', 'appdata_restore', 'appdata_clear', 'appdata_wipe', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
+                'appdata_put', 'appdata_delete', 'appdata_restore', 'appdata_clear', 'appdata_wipe', 'grant_revoke', 'ai_provider', 'ai_test', 'ai_default', 'ai_app', 'ai_user', 'font_update', 'font_delete', 'drives_config', 'admin_drives',
                 'account_prefs', 'account_prefs_set', 'account_export', 'account_delete',
                 'share_create', 'share_revoke', 'service_create', 'service_delete', 'token_create', 'token_revoke'];
 
@@ -175,21 +176,20 @@ try {
             $a = requireAccount();
             reply(['account' => publicAccount($a), 'quota' => quotaInfo($a), 'cloud_id' => setting('cloud_id')]);
         }
-        case 'quota':          reply(quotaInfo($files()['account']));
-        case 'list': {
+        // ── הקבצים. שלב 3 (docs/spec-3-files-scopes.md): לפי הרמה — files / files.readonly / files.app ──
+        case 'quota': case 'list': case 'stat': case 'read': case 'mkdir': case 'write': case 'upload_start': case 'upload_chunk':
+        case 'upload_finish': case 'rename': case 'move': case 'trash': case 'restore': case 'trash_list': case 'purge': case 'trash_empty': {
+            if ($action === 'upload_chunk' && $method !== 'PUT') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
             $x = $files();
-            $folder = $_GET['folder'] ?? $in['folder'] ?? null;
-            reply(isset($x['pat']) ? sharedList($x['account'], $folder) : listFolder($x['account'], $folder));
-        }
-        case 'stat': {
-            $x = $files();
-            $id = $_GET['id'] ?? $in['id'] ?? null;
-            reply(isset($x['pat']) ? sharedStat($x['account'], $id) : publicNode(liveNode($x['account'], $id)));
-        }
-        case 'read': {
-            $x = $files();
-            [$path, $n] = isset($x['pat']) ? sharedReadTarget($x['account'], $_GET['id'] ?? null) : readTarget($x['account'], $_GET['id'] ?? null);
-            sendFile($path, $n);
+            if (isset($x['pat'])) {   // אסימון אישי — רק מה ששותף, קריאה בלבד (PAT_ACTIONS)
+                $id = $_GET['id'] ?? $in['id'] ?? null;
+                if ($action === 'read') sendFile(...sharedReadTarget($x['account'], $_GET['id'] ?? null));
+                reply(match ($action) { 'list' => sharedList($x['account'], $_GET['folder'] ?? $in['folder'] ?? null),
+                                        'stat' => sharedStat($x['account'], $id), default => quotaInfo($x['account']) });
+            }
+            $r = filesAction($action, $x, $in, $_GET);
+            if (isset($r['__read'])) sendFile(...$r['__read']);
+            reply($r);
         }
         // ── שיתוף לקריאה (docs/spec-2-share-token.md) ──
         case 'shared_roots': {
@@ -210,21 +210,6 @@ try {
         case 'token_list':     requireAdmin(); reply(tokenList($_GET['account'] ?? $in['account'] ?? null));
         case 'token_revoke':   requireAdmin(); reply(tokenRevoke($in['id'] ?? null));
         case 'token_log':      requireAdmin(); reply(tokenLog($_GET['token'] ?? $in['token'] ?? null, $_GET['cursor'] ?? $in['cursor'] ?? null));
-        case 'mkdir':          { $x = $files(); reply(makeFolder($x['account'], $in, $x['app'])); }
-        case 'write':          { $x = $files(); reply(writeFile($x['account'], $in, $x['app'])); }
-        case 'upload_start':   reply(uploadStart($files()['account'], $in));
-        case 'upload_chunk': {
-            if ($method !== 'PUT') throw new AppError('בקשה לא תקינה', 400, 'bad_request');
-            reply(uploadChunk($files()['account'], $_GET['upload'] ?? null, (int) ($_GET['index'] ?? -1), 'php://input'));
-        }
-        case 'upload_finish':  { $x = $files(); reply(uploadFinish($x['account'], $in['upload'] ?? null, $x['app'])); }
-        case 'rename':         { $x = $files(); reply(renameNode($x['account'], $in, $x['app'])); }
-        case 'move':           { $x = $files(); reply(moveNode($x['account'], $in, $x['app'])); }
-        case 'trash':          reply(trashNode($files()['account'], $in));
-        case 'restore':        reply(restoreNode($files()['account'], $in));
-        case 'trash_list':     reply(trashList($files()['account']));
-        case 'purge':          purgeNode($files()['account'], $in); reply(['ok' => true]);
-        case 'trash_empty':    reply(['removed' => emptyTrash($files()['account'])]);
 
         // ── חיבור אפליקציה (docs/spec-1-skeleton.md, סעיף 7) ──
         case 'cloud_key':      reply(cloudKeyPublic());
@@ -353,6 +338,8 @@ try {
         case 'connections':    reply(['items' => accountConnections(requireAccount()), 'scopes' => SCOPE_NAMES]);
         case 'connection_revoke': revokeOwnConnection(requireAccount(), $in['id'] ?? null); reply(['ok' => true]);
         case 'connection_layers': reply(ownConnectionScope(requireAccount(), $in['id'] ?? null, $in['scope'] ?? null));
+        case 'grants_list':    reply(grantsList(requireAccount(), $_GET['client'] ?? $in['client'] ?? null));   // 🔗 — מה האפליקציה רואה
+        case 'grant_revoke':   reply(grantRevoke(requireAccount(), $in['client'] ?? null, $in['node'] ?? null));
         case 'appdata_apps':   reply(appdataApps(requireAccount()));                          // "🧩 נתוני אפליקציות"
         case 'appdata_wipe':   reply(appdataWipeOwn(requireAccount(), $in['client'] ?? null));   // 🗑️ מחק נתונים
 

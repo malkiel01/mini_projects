@@ -48,7 +48,13 @@
  *   await a.changes(since)                        → { changes, cursor, more }. 'gone' (410) — טוענים הכול מחדש ב-list
  *   await a.history(col, key) · a.restore(col, key, rev, { ifRev }) · a.usage() → { used, quota } · a.clear() (אחרי אישור)
  *
- * שגיאות: DriveError עם code — not-connected, layer-off (עם layer: 'files' | 'libs' | 'ai' — השכבה כבויה), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
+ * קבצים שבוחרים — 📁 files.app (שלב 3, mbe-cloud/docs/spec-3-files-scopes.md). האפליקציה רואה רק מה שיצרה ומה שהמשתמש בחר:
+ *   await drives.pick({ kind: 'file' | 'folder' | 'any', multiple, mime: ['application/pdf'] }) — מעבר לבורר בענן; חוזרים ל-back
+ *        עם ?cloud=picked (או pick-cancelled)
+ *   await drives.picked()          → [node] — מה שנבחר (אחרי stat; רק מה שבאמת נגיש). מנקה את ?cloud=picked מהכתובת
+ *   status().suite.files_scope     → 'files' | 'files.readonly' | 'files.app'
+ *
+ * שגיאות: DriveError עם code — not-connected, read-only (files.readonly — קריאה בלבד), layer-off (עם layer: 'files' | 'libs' | 'ai' — השכבה כבויה), conflict (if_rev), quota_exceeded, too_large, not_found, no-provider,
  * not-allowed, quota, too-big, provider, aborted. האסימון (15 דקות) מתחדש לבד, ונשמר בזיכרון בלבד.
  */
 
@@ -99,6 +105,7 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         const j = await res.json().catch(() => ({ error: 'תשובה לא תקינה מהענן' }));
         // השכבה כבויה (כיבוי באפליקציה או בדף הענן) — layer-off, כדי להציע להדליק את המתג הנכון
         if (res.status === 403 && j.code === 'forbidden' && j.layer) throw new DriveError(j.error || 'השכבה כבויה', 'layer-off', { layer: j.layer, scope: j.scope });
+        if (res.status === 403 && j.code === 'read_only') throw new DriveError(j.error || 'קריאה בלבד', 'read-only');
         if (!res.ok) throw new DriveError(j.error || 'תקלה', j.code || 'cloud', j);
         return j;
     }
@@ -364,6 +371,27 @@ export function createDrives({ endpoint = 'api.php' } = {}) {
         async list() {
             const s = await app('drives_status');
             return Object.entries(s).map(([id, v]) => ({ id, name: NAMES[id] || id, connected: !!v.connected, ...(v.name ? { account: v.name } : {}) }));
+        },
+        /** הבורר של הענן (files.app): המשתמש בוחר שם, והענן מעניק לאפליקציה רק את מה שנבחר. */
+        async pick(opts = {}) {
+            const r = await app('drives_pick', { kind: opts.kind || 'file', multiple: !!opts.multiple, mime: opts.mime || [] });
+            location.assign(r.url);
+        },
+        /** מה שנבחר בפעם האחרונה — nodes אחרי stat. מנקה את ?cloud=picked. */
+        async picked() {
+            try {
+                const u = new URL(location.href);
+                if (['picked', 'pick-cancelled'].includes(u.searchParams.get('cloud'))) {
+                    u.searchParams.delete('cloud');
+                    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+                }
+            } catch { /* בלי location */ }
+            const { ids = [] } = await app('drives_picked');
+            const out = [];
+            for (const id of ids) {
+                try { out.push(await suite.stat(id)); } catch (e) { if (e.code !== 'not_found') throw e; }
+            }
+            return out;
         },
         async link(provider) {
             const r = await app('drives_link', { provider });

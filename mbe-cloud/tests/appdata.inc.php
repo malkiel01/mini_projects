@@ -21,6 +21,7 @@ $adRet = fn(string $c) => "https://mbe-plus.com/mini_projects/$c/api.php?action=
 foreach (['ad-alpha', 'ad-beta', 'ad-plain'] as $c) {
     registerClient(['client' => $c, 'name' => "אפליקציה $c", 'key_url' => "https://mbe-plus.com/mini_projects/$c/api.php?action=drives_key",
                     'origins' => ['https://mbe-plus.com'], 'return' => [$adRet($c)]]);
+    adminClient(['client' => $c, 'files_full' => true]);   // שלב 3: files המלא — באישור מנהל
 }
 as_platform(['sub' => 'ad-u', 'name' => 'אורי', 'email' => 'uri@example.com']);
 $U = requireAccount();

@@ -139,7 +139,9 @@ try {
     check('בהתחלה — לא מחובר', $app->status('u1')['suite']['connected'] === false && $app->token('u1') === ['connected' => false]);
 
     $url = $app->connectUrl('u1');
-    check('connect — נרשמה בענן, פעילה (אותו origin)', activeClient('vector-studio')['status'] === 'active');
+    check('connect — נרשמה בענן; files המלא — ממתינה לאישור מנהל (שלב 3)', getClient('vector-studio')['status'] === 'pending');
+    adminClient(['client' => 'vector-studio', 'files_full' => true]);
+    check('connect — אחרי אישור המנהל: פעילה (אותו origin)', activeClient('vector-studio')['status'] === 'active');
     check('connect — לכתובת האישור של הענן, עם files,libs,ai', str_starts_with($url, 'https://mbe-plus.com/mini_projects/mbe-cloud/connect.php?') && str_contains($url, 'scope=files%2Clibs%2Cai'));
     $back = approve($url);
     parse_str((string) parse_url($back, PHP_URL_QUERY), $bq);
@@ -170,7 +172,9 @@ try {
 
     // הענן איבד את רישום האפליקציה (מסד חדש) — נרשמים שוב לבד; החיבור הישן כבר לא קיים שם → מנותק כאן
     db()->exec("DELETE FROM connections; DELETE FROM clients;");
-    check('ענן ששכח את האפליקציה — רישום מחדש, והחיבור נמחק', $app->token('u1') === ['connected' => false] && activeClient('vector-studio')['status'] === 'active');
+    check('ענן ששכח את האפליקציה — נרשמת מחדש, וממתינה שוב לאישור files המלא (pending)', code(fn() => $app->token('u1')) === 'pending');
+    adminClient(['client' => 'vector-studio', 'files_full' => true]);
+    check('— אחרי האישור: החיבור הישן לא קיים שם, ולכן נמחק כאן', $app->token('u1') === ['connected' => false] && activeClient('vector-studio')['status'] === 'active');
 
     $url = $app->connectUrl('u1');
     parse_str((string) parse_url(approve($url), PHP_URL_QUERY), $bq);
