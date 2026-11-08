@@ -182,6 +182,20 @@ try {
     purgeTrashMaybe(true);
     check('אחרי 30 יום — נמחק עם כל מה שבתוכו', code(fn() => nodeRow($dana, $f['id'])) === 'not_found');
 
+    // פעולה חתומה מגיעה משרת של אפליקציה — בלי כניסה לפלטפורמה. בלי "public" ב-app.json, השער מחזיר 401 לפני הענן
+    check('כל פעולה חתומה (verifySigned) — ב-public של app.json', (function () {
+        $api = (string) file_get_contents(__DIR__ . '/../api.php');
+        $signed = [];
+        foreach (preg_split("/\n\s*case '/", $api) as $seg) {
+            if (preg_match("/^([a-z_]+)':/", $seg, $m) && str_contains($seg, 'verifySigned($action')) $signed[] = $m[1];
+        }
+        $pub = json_decode((string) file_get_contents(__DIR__ . '/../app.json'), true)['public'] ?? [];
+        $open = [];
+        foreach ($pub as $p) if (preg_match('/^api\.php\?action=(.+)$/', $p, $m)) $open = array_merge($open, explode('|', $m[1]));
+        $missing = array_diff($signed, $open);
+        if ($missing) echo '  חסרות ב-public: ' . implode(', ', $missing) . "\n";
+        return count($signed) >= 5 && !$missing;
+    })());
     check('cloud_id — קבוע ואקראי', str_starts_with(setting('cloud_id'), 'cl_') && setting('cloud_id') === setting('cloud_id'));
     check('ניהול — רשימת חשבונות עם שימוש', count(adminState()['accounts']) === 3);
 
