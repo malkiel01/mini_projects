@@ -124,6 +124,19 @@ pickApprove($P, $req2, [$rep['id']]);
 $inside = $fsDo($tApp, 'write', ['name' => 'חדש.txt', 'parent' => $y26['id'], 'content_b64' => $b64('n')]);
 check('ג4: בחירת תיקייה — list בתוכה ו-write לתוכה עובדים', in_array('מאזן.pdf', array_column($fsDo($tApp, 'list', [], ['folder' => $y26['id']])['items'], 'name'), true)
     && $inside['parent'] === $y26['id']);
+// ג4א — הבדיקה שביקשה "אסטרטגיות": תיקייה שנבחרה, ואחר כך מעלים לתוכה מדף הענן (לא מהאפליקציה)
+$meth = makeFolder($P, ['name' => 'שיטות']);
+pickApprove($P, pickRequest($pq($P, 'fs-app', ['kind' => 'folder'])), [$meth['id']]);
+$later = writeFile($P, ['name' => 'שיטה א.json', 'parent' => $meth['id'], 'content_b64' => $b64('{"a":1}')]);
+check('ג4א: קובץ שהועלה מדף הענן אחרי הבחירה — מופיע ב-list ונקרא', in_array($later['id'], array_column($fsDo($tApp, 'list', [], ['folder' => $meth['id']])['items'], 'id'), true)
+    && $fsDo($tApp, 'read', [], ['id' => $later['id']])['__read'] !== null);
+$sub = makeFolder($P, ['name' => 'ישנות', 'parent' => $meth['id']]);
+$deep = writeFile($P, ['name' => 'שיטה ב.json', 'parent' => $sub['id'], 'content_b64' => $b64('{"b":2}')]);
+check('ג4א: תת-תיקייה שנוצרה בדף הענן אחר כך — נראית, ומה שבתוכה נקרא', in_array($sub['id'], array_column($fsDo($tApp, 'list', [], ['folder' => $meth['id']])['items'], 'id'), true)
+    && array_column($fsDo($tApp, 'list', [], ['folder' => $sub['id']])['items'], 'id') === [$deep['id']]
+    && isset($fsDo($tApp, 'read', [], ['id' => $deep['id']])['__read']));
+check('ג4א: בלי grant חדש — הכיסוי מהתיקייה שנבחרה', (int) db()->query("SELECT COUNT(*) FROM grants WHERE client = 'fs-app' AND node IN (" . db()->quote($later['id']) . ',' . db()->quote($sub['id']) . ',' . db()->quote($deep['id']) . ')')->fetchColumn() === 0);
+
 check('ג4: multiple:0 עם שני פריטים — 400', code(fn() => pickApprove($P, pickRequest($pq($P, 'fs-app', ['kind' => 'any'])), [$txt['id'], $pdf['id']])) === 'bad_request');
 
 // ג5 — הנתיב מתחיל בשורש ההענקה
