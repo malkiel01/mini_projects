@@ -441,6 +441,13 @@ button.tile { cursor: pointer; text-align: start; font: inherit; font-size: .88r
 /* --- שימוש --- */
 .hint-line { margin: 0 0 var(--s2); }
 .seg.days { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* משתמשים: הכול · ממתינים · 📨 בקשות · פעילים · חסומים (PF-001) */
+.seg.ufilter { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 480px) { .seg.ufilter span { font-size: .76rem; padding: 0 2px; gap: 2px; } }
+/* בקשה לאפליקציה: שורה בפס של מסך המשתמש, ובורר החנות בכרטיס האפליקציה */
+.req-line { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); margin-top: 6px; font-size: .85rem; }
+.store-ctl { display: grid; gap: 4px; }
+.store-ctl select { max-width: 100%; }
 .admin .cells { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .cells dd { font-size: 1.05rem; }
 .chart { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s2) var(--s2) 2px; }
