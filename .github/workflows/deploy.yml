@@ -227,10 +227,12 @@ jobs:
 
       # ענן MBE (2026-11): ענן החבילה עבר מ-suite-cloud/ ל-mbe-cloud/ (mbe-cloud/docs/spec-0-vision.md §8.3).
       # rsync לא מעביר נתונים, ולכן הם עוברים כאן, פעם אחת, ב-mv באותה מחיצה (אטומי, בלי עותק כפול) — **לפני** ה-rsync,
-      # שמחריג את mbe-cloud/data/*. מיד אחרי ה-mv עולה ההפניה (308) של suite-cloud/, כדי ש-api.php הישן, שנשאר בשרת,
-      # לא ירוץ ולא יפתח מסד ריק. app.json הישן בשרת מקבל שם אחר, אחרת הרישום (שסורק */app.json בשרת) מציג את הכלי פעמיים.
-      # חוזר על עצמו בלי נזק: אחרי הפעם הראשונה מודפס "already moved". שלב חובה: כשל כאן עוצר את הפריסה,
-      # כי rsync בלי ההעברה היה מעלה ענן בלי נתונים. mbe-cloud/data קיים בלי מסד — עצירה בלי לגעת בכלום (קוד 3).
+      # שמחריג את mbe-cloud/data/*. **ההפניה (308) של suite-cloud/ נכתבת לפני ה-mv, באותו חיבור**: כך אין רגע שבו
+      # api.php הישן (שנשאר בשרת, rsync בלי --delete) רץ מול data/ שכבר הועבר ופותח מסד ריק. כשל אחרי ההפניה ולפני
+      # ה-mv משאיר 404 זמני — לא ענן ריק. התוכן זהה לקובץ בריפו (base64), וה-rsync הראשי דורס אותו באותו תוכן.
+      # app.json הישן בשרת מקבל שם אחר, אחרת הרישום (שסורק */app.json בשרת) מציג את הכלי פעמיים.
+      # חוזר על עצמו בלי נזק ("already moved"). שלב חובה: כשל כאן עוצר את הפריסה. mbe-cloud/data קיים בלי מסד —
+      # עצירה בלי לגעת בכלום, גם לא בהפניה (קוד 3): הענן הישן ממשיך לעבוד על הנתונים שלו.
       - name: ענן MBE — העברת הנתונים מ-suite-cloud/ ל-mbe-cloud/ (חד-פעמי)
         env:
           DEST: ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}
@@ -239,37 +241,41 @@ jobs:
           set -uo pipefail
           SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
           D="${DEPLOY_PATH%/}"
+          HT=$(base64 -w0 suite-cloud/.htaccess)
           REMOTE=$(cat <<SH
           set -eu
           cd '$D'
+          redirect() {
+            mkdir -p suite-cloud
+            printf '%s' '$HT' | base64 -d > suite-cloud/.htaccess.new
+            mv -f suite-cloud/.htaccess.new suite-cloud/.htaccess
+            echo "redirect up"
+          }
           if [ -f mbe-cloud/data/cloud.sqlite ]; then
+            redirect
             echo "already moved"
           elif [ -f suite-cloud/data/cloud.sqlite ]; then
             if [ -e mbe-cloud/data ]; then echo "mbe-cloud/data קיים בלי cloud.sqlite — לא הועבר כלום" >&2; exit 3; fi
+            redirect
             mkdir -p mbe-cloud
             mv suite-cloud/data mbe-cloud/data
             date -u +%FT%TZ > mbe-cloud/data/MOVED_FROM_SUITE_CLOUD
             echo "moved"
           else
+            redirect
             echo "nothing to move (אין suite-cloud/data/cloud.sqlite)"
           fi
           if [ -f suite-cloud/app.json ]; then mv suite-cloud/app.json suite-cloud/app.json.moved-to-mbe-cloud; echo "suite-cloud/app.json renamed"; fi
           SH
           )
-          ok=0
           for w in 0 30 90 180; do
             sleep $w
             $SSH "$DEST" "$REMOTE"; code=$?
             if [ $code -eq 3 ]; then echo "::error::mbe-cloud/data קיים בשרת בלי cloud.sqlite — צריך בדיקה ידנית לפני פריסה"; exit 3; fi
-            if [ $code -eq 0 ]; then ok=1; break; fi
+            if [ $code -eq 0 ]; then exit 0; fi
             echo "::warning::העברת הנתונים — נסיון נכשל (קוד $code), מנסה שוב"
           done
-          [ $ok -eq 1 ] || { echo "::error::העברת הנתונים של הענן לא רצה — הפריסה נעצרת"; exit 1; }
-          for w in 0 30 90 180; do
-            sleep $w
-            if rsync -lptz -e "$SSH" suite-cloud/.htaccess "$DEST:$D/suite-cloud/.htaccess"; then echo "redirect up"; exit 0; fi
-          done
-          echo "::error::ההפניה של suite-cloud/ לא עלתה — הפריסה נעצרת"; exit 1
+          echo "::error::העברת הנתונים של הענן לא רצה — הפריסה נעצרת"; exit 1
 
       # השרת סוגר מדי פעם את חיבור ה-SSH מיד אחרי שנפתח —
       # "Connection closed by <ip> port 22", ו-rsync יוצא עם 255 בלי
