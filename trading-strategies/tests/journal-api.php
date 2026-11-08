@@ -82,6 +82,8 @@ $bm = array_column($usdt['breakdown']['method'], 'count', 'key');
 ksort($bm);
 eq($bm, ['none' => 1, 'test-cross-a' => 1], 'breakdown by method (and "no method")');
 eq($s['method_names']['test-cross-a'] ?? null, 'בדיקה א', 'method names for the breakdown');
+eq(array_key_exists('sample-ma-cross', $s['method_names']), false, 'a regular user does not get the sample method\'s name');
+eq(array_key_exists('sample-ma-cross', call('owner', 'stats')[1]['method_names']), true, 'an admin does');
 eq(count(call('alice', 'stats', null, ['method_id' => 'test-cross-a'])[1]['by_currency']), 1, 'filter by method');
 eq(call('alice', 'trades', null, ['method_id' => 'none'])[1]['trades'][0]['symbol'], 'BTC/USDT', 'journal filter: trades without a method');
 eq(call('bob', 'stats')[1]['by_currency'], [], 'bob\'s stats have none of alice\'s trades');
@@ -108,6 +110,13 @@ eq($ecbCalls() - $before, 2, 'one ECB request per pair (ILS→USD, and BTC→USD
 call('bob', 'stats');
 eq($ecbCalls() - $before, 2, 'second time — from the stored rates (and the remembered "no rate"), no request');
 eq((int)$db->query("SELECT COUNT(*) FROM fx_rates WHERE base = 'ILS' AND quote = 'USD'")->fetchColumn() > 0, true, 'rates stored');
+// עסקה שנסגרה מאוחר יותר → רק הזנב נמשך, לא כל הטווח
+$log0 = count(is_file("$tmp.http.log") ? file("$tmp.http.log") : []);
+call('bob', 'trade_save', $trade(['symbol' => 'LATE', 'currency' => 'ILS', 'exits' => [['exited_at' => '2026-03-20T12:00', 'price' => '110', 'quantity' => '10']]]));
+call('bob', 'stats');
+$urls = array_map(fn($l) => json_decode($l, true)['url'], array_slice(file("$tmp.http.log"), $log0));
+$ils = array_values(array_filter($urls, fn($u) => str_contains($u, 'from=ILS')));
+eq([count($ils), (bool)preg_match('#/v1/2026-03-08\.\.2026-03-20#', $ils[0] ?? '')], [1, true], 'a later closing day → only the missing tail is fetched (from the last covered day)');
 call('bob', 'settings', ['base_currency' => 'ILS', 'timezone' => 'Asia/Jerusalem', 'account_size' => '', 'default_risk_pct' => '1']);
 $bi = call('bob', 'stats')[1]['in_base'];
 eq([$bi['currency'], $bi['skipped']], ['ILS', ['BTC' => 1]], 'base currency from the settings (ILS): USD/USDT converted to ILS');

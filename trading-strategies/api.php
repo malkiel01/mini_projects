@@ -252,8 +252,11 @@ try {
             unset($f['result']);
             $closed = array_filter(ts_trades_load($uid, $tz, $f), fn($t) => $t['calc']['status'] === 'closed');
             $noStop = count(array_filter($closed, fn($t) => $t['calc']['r'] === null));
-            $methodNames = [];
-            foreach (array_keys(ts_methods_all()) as $mid) $methodNames[$mid] = ts_method($mid)->meta()['name'];
+            // שמות רק לשיטות שהמשתמש רואה, ולשיטות שכבר בעסקאות שלו (ממצא בקרה #1282)
+            $methodNames = array_column(ts_methods_visible($uid), 'name', 'id');
+            $mine = ts_db()->prepare('SELECT DISTINCT method_id FROM trades WHERE user_id = ? AND method_id IS NOT NULL');
+            $mine->execute([$uid]);
+            foreach ($mine->fetchAll(PDO::FETCH_COLUMN) as $mid) if (ts_method_exists($mid)) $methodNames[$mid] = ts_method($mid)->meta()['name'];
             out(['ok' => true, 'by_currency' => ts_stats(array_values($closed), $tz), 'no_stop' => $noStop,
                 'in_base' => $closed ? ts_stats_in_base($uid, array_values($closed), $user['base_currency'], $tz) : null,
                 'method_names' => $methodNames]);
