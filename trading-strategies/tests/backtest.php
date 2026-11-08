@@ -2,7 +2,7 @@
 // בדיקות המנוע (spec-stage-a 6.1–6.5, פרק 15: בדיקה לאחור, שקלול, אינדיקטורים, כסף). טהור — בלי מסד, בלי רשת.
 // php trading-strategies/tests/backtest.php
 if (PHP_SAPI !== 'cli') exit;
-define('TS_DB_PATH', sys_get_temp_dir() . '/ts-bt-unused-' . getmypid() . '.sqlite');   // לא נפתח; רק כדי שלא ייגע ב-data/
+define('TS_DB_PATH', sys_get_temp_dir() . '/ts-bt-unused-' . getmypid() . '-' . bin2hex(random_bytes(4)) . '.sqlite');   // לא נפתח; רק כדי שלא ייגע ב-data/
 require_once dirname(__DIR__) . '/lib/analysis.php';
 
 $fail = 0; $n = 0;

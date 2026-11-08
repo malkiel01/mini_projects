@@ -3,14 +3,17 @@
 import { createRequire } from 'module';
 import { spawn, spawnSync } from 'child_process';
 import { tmpdir } from 'os';
+import { createServer } from 'net';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
-const port = 24500 + (process.pid % 400);
-const DB = join(tmpdir(), `ts-cloud-ui-${process.pid}.sqlite`);
+// פורט פנוי מהמערכת — לא לפי ה-pid: ריצות במקביל לא נופלות על שרת של ריצה אחרת (#1333)
+const port = await new Promise(r => { const s = createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
+const RUN = `${process.pid}-${Math.random().toString(16).slice(2, 10)}`;
+const DB = join(tmpdir(), `ts-cloud-ui-${RUN}.sqlite`);
 const srv = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', root, '-d', `auto_prepend_file=${join(here, 'dev-prepend.php')}`],
   { env: { ...process.env, TS_DB_PATH: DB, TS_HTTP_FIXTURES: join(here, 'fixtures', 'market'),
     TS_TEST_METHODS: join(here, 'fixtures', 'methods', 'alertable.php') }, stdio: 'ignore' });
