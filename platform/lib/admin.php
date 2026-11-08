@@ -16,6 +16,7 @@ require_once __DIR__ . '/sso.php';
 require_once __DIR__ . '/installs.php';
 require_once __DIR__ . '/email.php';
 require_once __DIR__ . '/invites.php';
+require_once __DIR__ . '/restricted-access.php';
 
 function require_admin(bool $mutating = false): array
 {
@@ -56,6 +57,8 @@ function admin_state(array $admin): never
         'devboards'  => (object)devboard_all(),
         // בקשות ממתינות לאפליקציות בחנות (PF-001) — המונה, הצ'יפ "📨 בקשות", הפס במסך המשתמש והכרטיס
         'requests'   => requests_for_admin(),
+        // 🔒 גישות לאפליקציות חסומות — כמה ממתינות להחלטה (המונה על הכפתור)
+        'restricted_pending' => restricted_access_pending(),
         'apps'       => array_map(fn($a) => [
             'id' => $a['id'], 'name' => $a['name'], 'icon' => $a['icon'], 'icon_svg' => $a['icon_svg'] ?? null,
             'category' => $a['category'], 'default_category' => $a['default_category'], 'placements' => $a['placements'],
@@ -83,6 +86,7 @@ function admin_dispatch(string $action, array $body, array $admin): never
         'admin_category_delete' => admin_category_delete($body),
         'admin_app_update'      => admin_app_update($body),
         'admin_request_decide'  => admin_request_decide($body, $admin),
+        'admin_restricted_decide' => admin_restricted_decide($body, $admin),
         'admin_placements_set'  => admin_placements_set($body),
         'admin_group_save'      => admin_group_save($body),
         'admin_group_move'      => admin_group_move($body),
@@ -420,6 +424,19 @@ function admin_app_update(array $body): never
 function admin_requests(array $admin): never
 {
     json_out(['requests' => requests_for_admin(30)]);
+}
+
+// ---------- 🔒 גישות לאפליקציות חסומות (lib/restricted-access.php) ----------
+
+function admin_restricted(array $admin): never
+{
+    json_out(['rows' => restricted_access_rows()]);
+}
+
+/** {decisions: [{user_id, app, decision: keep|revoke}]} */
+function admin_restricted_decide(array $body, array $admin): never
+{
+    json_out(['ok' => true] + restricted_access_decide(is_array($body['decisions'] ?? null) ? $body['decisions'] : [], $admin));
 }
 
 /** {id, decision: approve|reject|block} */

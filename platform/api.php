@@ -55,6 +55,7 @@ try {
             'admin_diag'  => admin_diag(require_admin(), $_GET),
             // הבקשות הממתינות ו-30 הימים האחרונים של החלטות (היסטוריה)
             'admin_requests' => admin_requests(require_admin()),
+            'admin_restricted' => admin_restricted(require_admin()),
             default => throw new ApiError('פעולה לא מוכרת', 404),
         };
     }
