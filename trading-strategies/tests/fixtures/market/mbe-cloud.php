@@ -12,5 +12,7 @@ return function (string $url, array $headers): array {
     // בלי scope בתשובה — המודול שומר את ההיקף שבמסד (כך הבדיקה קובעת files או files.app)
     if ($a === 'access_token') return [200, json_encode(['token' => 'tok-for-' . $conn, 'expires_in' => 900])];
     if ($a === 'disconnect') return [200, json_encode(['ok' => true])];
+    // spec-6: המנהל הדליק 📁 לאפליקציה הזו (לכל המשתמשים)
+    if ($a === 'client_policy') return [200, json_encode(['layers' => ['files']])];
     return [404, json_encode(['error' => 'לא מוכר', 'code' => 'not_found'])];
 };

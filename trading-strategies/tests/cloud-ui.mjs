@@ -25,10 +25,18 @@ async function open(as) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true });
   await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }]);
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
+  // שום דבר לא יוצא לאתר החי. connect.php של הענן — מדומה: נספר, וחוזר לאפליקציה כמו "לא אושר" (spec-6 3.3)
+  await ctx.route(u => u.hostname === 'mbe-plus.com' && !/\/mbe-cloud\/(api|picker)\.php/.test(u.pathname), r => {
+    const u = new URL(r.request().url());
+    if (u.pathname.endsWith('/mbe-cloud/connect.php')) { connects.push(as + ':' + u.searchParams.get('scope')); return r.fulfill({ status: 302, headers: { Location: BASE + '?cloud=denied' } }); }
+    errors.push('live site: ' + r.request().url()); return r.abort();
+  });
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message));
+  p.on('request', r => { if (/[?&]action=drives_disconnect\b/.test(r.url())) disconnects.push(as); });
   return p;
 }
+const connects = [], disconnects = [];
 const noHScroll = p => p.evaluate(() => document.scrollingElement.scrollWidth <= window.innerWidth + 1);
 const shot = async (p, name) => { if (SHOTS) await p.screenshot({ path: join(SHOTS, name + '.png'), fullPage: true }); };
 const post = (p, action, body) => p.evaluate(async ([a, bd]) => {
@@ -103,20 +111,32 @@ const connect = (sub, scope) => spawnSync('php', ['-r', `$d = new PDO('sqlite:${
     $d->prepare("INSERT OR REPLACE INTO conns (user, connection, name, cloud_id, scope, created_at, sub) VALUES (?, 'c_${sub}', 'משתמש', 'cloud-1', ?, '2026-11-08', '${sub}')")->execute([(string)$u, '${JSON.stringify(scope)}']);`]);
 
 try {
-  // ── לא מחובר: הממשק מציע חיבור, וכל השאר עובד ──
+  // ── לא מחובר (spec-6): פתיחת "עוד" → drives.ensure() → הפניה אחת לענן (המנהל הדליק 📁). חוזרים "לא אושר" — ולא שוב ──
   const a = await open('alice');
+  const seenA = [];
+  a.on('request', r => { const u = new URL(r.url()); if (u.searchParams.get('action')) seenA.push(u.searchParams.get('action')); });
+  await a.goto(BASE + '#/market');
+  await a.waitForSelector('main form');
+  eq([connects.length, seenA.filter(x => x.startsWith('drives_')).length], [0, 0], 'app load (not the cloud screen) → no ensure, no drives request');
   await a.goto(BASE + '#/more');
-  await a.waitForSelector('text=☁️ ענן MBE');
-  await a.waitForFunction(() => /לא מחובר|מחובר כ-/.test(document.querySelector('main')?.textContent || ''));
-  eq((await a.locator('main').textContent()).includes('לא מחובר'), true, '"עוד": ☁️ ענן MBE — לא מחובר');
-  eq(await a.locator('input[aria-label="📁 קבצים בענן MBE"]').isChecked(), false, 'the 📁 files switch is off');
+  await a.waitForFunction(() => /לא מחובר|מחובר כ-/.test(document.querySelector('main')?.textContent || ''), null, { timeout: 20000 });
+  await a.waitForTimeout(500);
+  eq(connects, ['alice:files.app'], 'opening "עוד" → ensure() redirects once to the cloud, files.app only');
+  eq([(await a.locator('main').textContent()).includes('לא מחובר'), new URL(a.url()).search], [true, ''], 'back with ?cloud=denied → "לא מחובר", the URL is cleaned');
+  eq([await a.locator('main .switch').count(), await a.locator('input[aria-label="📁 קבצים בענן MBE"]').count()], [0, 0], 'no switch (the cloud admin decides the layers)');
+  eq(await a.locator('[data-cloud-files]').textContent(), '📁 קבצים · לא מחובר🔒 נקבע בידי מנהל הענן', 'a read-only line instead: 📁 · not connected · 🔒 managed');
+  eq(await a.getByRole('button', { name: '☁️ חיבור לענן MBE' }).count(), 1, 'not connected → "☁️ חיבור לענן MBE" (drives.connect)');
+  await a.reload();
+  await a.waitForFunction(() => /לא מחובר/.test(document.querySelector('main')?.textContent || ''), null, { timeout: 20000 });
+  await a.waitForTimeout(500);
+  eq(connects.length, 1, 'reopening within 2 minutes → no second redirect (no loop)');
   eq(await noHScroll(a), true, '"עוד": no horizontal scroll on a phone');
   await shot(a, 'cloud-more');
   await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
   await a.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint')?.textContent || ''), null, { timeout: 20000 });
   await a.getByRole('button', { name: '💾 שמור לענן שלי' }).click();
   await a.waitForSelector('dialog');
-  eq((await a.locator('dialog').textContent()).includes('חברו את 📁 הקבצים'), true, 'not connected → "💾" offers "☁️ חיבור לענן MBE"');
+  eq((await a.locator('dialog').textContent()).includes('חברו את הענן MBE'), true, 'not connected → "💾" offers "☁️ חיבור לענן MBE"');
   await a.locator('dialog button[aria-label="סגירה"]').click();
   await a.goto(BASE + '#/method-files');
   await a.waitForSelector('main .error');
@@ -127,7 +147,8 @@ try {
   await a.context().route('https://mbe-plus.com/mini_projects/mbe-cloud/api.php**', mockCloud);
   await a.goto(BASE + '#/more');
   await a.waitForFunction(() => /מחובר כ-/.test(document.querySelector('main')?.textContent || ''));
-  eq(await a.locator('input[aria-label="📁 קבצים בענן MBE"]').isChecked(), true, 'connected → the 📁 files switch is on, "מחובר כ-…"');
+  eq(await a.locator('[data-cloud-files]').getAttribute('data-cloud-files'), 'on', 'connected → "📁 קבצים · פעיל", "מחובר כ-…"');
+  eq((await a.locator('[data-cloud-files]').textContent()).startsWith('📁 קבצים · פעיל'), true, 'the read-only line says active');
   await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
   await a.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint')?.textContent || ''), null, { timeout: 20000 });
   await a.getByRole('button', { name: '💾 שמור לענן שלי' }).click();
@@ -165,7 +186,7 @@ try {
   await bb.context().route('https://mbe-plus.com/mini_projects/mbe-cloud/api.php**', mockCloud);
   await bb.goto(BASE + '#/more');
   await bb.waitForFunction(() => /מחובר כ-/.test(document.querySelector('main')?.textContent || ''));
-  eq(await bb.locator('input[aria-label="📁 קבצים בענן MBE"]').isChecked(), true, 'files.app → the 📁 switch shows on');
+  eq(await bb.locator('[data-cloud-files]').getAttribute('data-cloud-files'), 'on', 'files.app → "📁 קבצים · פעיל"');
   for (let k = 0; k < 2; k++) {
     await bb.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
     await bb.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint')?.textContent || ''), null, { timeout: 20000 });
@@ -179,6 +200,22 @@ try {
     'files.app: saved inside the app folder (אסטרטגיות למסחר/נתונים/…), once, and re-saved to the same file');
   eq([...bf.values()].filter(n => n.name === 'אסטרטגיות למסחר').length, 1, 'no nested duplicate "אסטרטגיות למסחר" folder');
   eq(driveOf('tok-for-c_101').files.has(bfile[0].id), false, 'bob\'s file is in bob\'s drive only');
+
+  // ── מחובר, אבל 📁 לא פעיל באפליקציה הזו (המנהל כיבה): שורה לקריאה בלבד והודעה — בלי כפתור ──
+  const cc = await open('carol');
+  await cc.goto(BASE + '#/market');
+  await cc.waitForSelector('main form');
+  connect('103', ['libs']);
+  await cc.context().route('https://mbe-plus.com/mini_projects/mbe-cloud/api.php**', mockCloud);
+  await cc.goto(BASE + '#/more');
+  await cc.waitForFunction(() => /מחובר כ-/.test(document.querySelector('main')?.textContent || ''), null, { timeout: 20000 });
+  eq([await cc.locator('[data-cloud-files]').textContent(), await cc.getByRole('button', { name: '☁️ חיבור לענן MBE' }).count()],
+    ['📁 קבצים · לא פעיל באפליקציה הזו🔒 נקבע בידי מנהל הענן', 0], 'layer off → "לא פעיל באפליקציה הזו", no button');
+  await cc.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
+  await cc.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint')?.textContent || ''), null, { timeout: 20000 });
+  await cc.getByRole('button', { name: '💾 שמור לענן שלי' }).click();
+  await cc.waitForFunction(() => /לא פעילים באפליקציה הזו/.test(document.querySelector('.toast')?.textContent || ''), null, { timeout: 15000 });
+  eq(await cc.locator('dialog[open]').count(), 0, '"💾" with the layer off → a message, no "connect" sheet');
 
   // ── 📚 קובצי שיטות (מנהל) ──
   const o = await open('owner');
@@ -216,6 +253,7 @@ try {
   eq([await folderNow(), new URL(o.url()).search, new URL(o.url()).hash], [mdir.id, '', '#/method-files'], 'picked in the cloud\'s picker → only its id is saved, ?cloud=picked cleaned');
   eq((await o.locator('main .card').first().textContent()).includes('2.3 MB'), true, 'the list: name and size (and date)');
   eq(await o.getByRole('button', { name: '⬆️ העלאה לענן' }).count(), 1, 'upload straight to the cloud');
+  eq(disconnects, [], 'nothing ever calls drives_disconnect (no user disconnect)');
 } catch (e) {
   fail++; console.log('✗', e.message);
 } finally {

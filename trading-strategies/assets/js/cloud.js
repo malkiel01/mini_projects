@@ -112,14 +112,26 @@ export function mountCloud(ctx) {
     return (await d.status()).suite;
   }
 
-  /** "☁️ חיבור לענן MBE" — מעבר למסך האישור בענן (שכבת הקבצים בלבד) */
+  /**
+   * "☁️ חיבור לענן MBE" — רק כשלא מחובר (ו"נסו שוב" אחרי שגיאה). אילו שכבות — נקבע בענן בידי המנהל
+   * (mbe-cloud/docs/spec-6-admin-layers.md): לאפליקציה אין מה לבקש, ולמשתמש אין מתגים ואין ניתוק.
+   */
   async function connect() {
-    try { await (await getDrives()).connect({ layers: ['files'] }); } catch (e) { toast(e.message, true); }
+    try { await (await getDrives()).connect(); } catch (e) { toast(e.message, true); }
   }
 
   function offerConnect(why) {
     const s = sheet('☁️ ענן MBE', { saveLabel: 'חיבור', onSave: async () => { await connect(); return false; } });
-    s.body.append(h('p', {}, why), h('p', { class: 'hint' }, 'החיבור הוא לענן שלכם, באותו חשבון. אפשר לנתק בכל רגע — הקבצים נשארים בענן.'));
+    s.body.append(h('p', {}, why), h('p', { class: 'hint' }, 'החיבור הוא לענן שלכם, באותו חשבון. בלי חיבור — כל האפליקציה עובדת כרגיל.'));
+  }
+
+  /** 📁 כבוי באפליקציה הזו — בידי מנהל הענן. הודעה בלבד, בלי כפתור (אין למשתמש מה להדליק) */
+  const LAYER_OFF_MSG = '📁 הקבצים בענן MBE לא פעילים באפליקציה הזו — מנהל הענן קובע את זה.';
+
+  /** לא אפשר לכתוב לענן: לא מחובר — מציעים חיבור; מחובר והשכבה כבויה — הודעה בלי כפתור */
+  function cannotUse(st, why) {
+    if (!st?.connected) offerConnect(why);
+    else toast(LAYER_OFF_MSG, true);
   }
 
   /**
@@ -163,7 +175,7 @@ export function mountCloud(ctx) {
   async function saveCandles({ provider, symbol, tf, sec, rows }) {
     let st;
     try { st = await status(); } catch (e) { toast(e.message, true); return; }
-    if (!filesOn(st)) { offerConnect('כדי לשמור עותק אישי של הנרות — חברו את 📁 הקבצים בענן MBE.'); return; }
+    if (!filesOn(st)) { cannotUse(st, 'כדי לשמור עותק אישי של הנרות — חברו את הענן MBE.'); return; }
     const d = await getDrives();
     const s = d.suite;
     const { folders, file } = cloudPath(provider, symbol, tf);
@@ -177,38 +189,50 @@ export function mountCloud(ctx) {
       await s.upload(new File([csv], file, { type: 'text/csv' }), { parent, ...(cur ? { ifRev: cur.rev, onConflict: 'replace' } : { onConflict: 'fail' }) });
       toast(cur ? `נשמר לענן · ${added} נרות חדשים · ${merged.length} בסך הכול` : `נשמר לענן · ${merged.length} נרות`);
     } catch (e) {
-      if (e.code === 'layer-off' || e.code === 'not-connected') offerConnect('📁 הקבצים בענן MBE כבויים. חברו אותם כדי לשמור.');
+      if (e.code === 'not-connected') offerConnect('הענן MBE לא מחובר. חברו אותו כדי לשמור.');
+      else if (e.code === 'layer-off') toast(LAYER_OFF_MSG, true);
       else if (e.code === 'conflict') toast('הקובץ בענן השתנה בינתיים — נסו לשמור שוב', true);
       else toast(e.message, true);
     }
   }
 
-  /** "☁️ ענן MBE" במסך "עוד" — מתג לשכבת הקבצים (api-guide 4). נטען רק כשנפתח המסך */
+  /** שורה לקריאה בלבד: מה מצב 📁 באפליקציה הזו (spec-6 §5.3). אין מתג — המנהל קובע לכל המשתמשים */
+  function filesLine(st) {
+    const off = { error: 'החיבור לענן נכשל', no_drive: 'אין לך כונן בענן MBE' }[st.hold];
+    const text = filesOn(st) ? '📁 קבצים · פעיל' : st.connected || st.policy_empty || st.hold === 'off' ? '📁 קבצים · לא פעיל באפליקציה הזו'
+      : off ? '📁 קבצים · ' + off : '📁 קבצים · לא מחובר';
+    return h('div', { class: 'line', 'data-cloud-files': filesOn(st) ? 'on' : 'off' }, h('span', {}, text),
+      st.managed ? h('small', { class: 'muted' }, '🔒 נקבע בידי מנהל הענן') : null);
+  }
+
+  /**
+   * "☁️ ענן MBE" במסך "עוד" — לקריאה בלבד. בפתיחת המסך — drives.ensure() פעם אחת: לא מחובר והמנהל הדליק משהו → הפניה
+   * אחת לענן וחזרה מחוברת (spec-6 3.3; המודול מגן מלולאות). לא בכל טעינה של האפליקציה, ובלי polling.
+   */
   function section() {
     const box = h('div', { class: 'block stack', 'aria-live': 'polite' }, h('p', { class: 'loading', style: 'padding:0' }, 'בודק את החיבור…'));
-    const draw = async () => {
+    const draw = async (first = false) => {
       let st;
-      try { st = await status(); } catch (e) {
+      try {
+        if (first) {
+          const r = await (await getDrives()).ensure();
+          if (r.redirected) { box.replaceChildren(h('p', { class: 'loading', style: 'padding:0' }, 'מתחבר לענן MBE…')); return; }
+          st = r.status.suite;
+        } else st = await status();
+      } catch (e) {
         box.replaceChildren(h('div', { class: 'line' }, h('b', {}, '☁️ ענן MBE')), h('p', { class: 'error', style: 'margin:0' }, e.message),
-          h('div', {}, h('button', { class: 'btn ghost sm', type: 'button', on: { click: draw } }, 'נסו שוב')));
+          h('div', {}, h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => draw() } }, 'נסו שוב')));
         return;
       }
-      const sw = h('input', { type: 'checkbox', 'aria-label': '📁 קבצים בענן MBE' });
-      sw.checked = filesOn(st);
-      sw.addEventListener('change', async () => {
-        sw.disabled = true;
-        try {
-          if (sw.checked) await connect();
-          else ctx.confirmSheet('ניתוק ענן MBE', 'לנתק את ענן MBE? הקבצים והנתונים נשארים בענן, ואפשר לחבר שוב בכל רגע.', 'ניתוק',
-            async () => { await (await getDrives()).disconnect({ layers: ['files'] }); toast('נותק'); draw(); });
-        } finally { sw.disabled = false; sw.checked = filesOn(st); }
-      });
-      box.replaceChildren(
+      // חיבור ידני — רק כשלא מחובר ויש מה לחבר (המנהל הדליק שכבה): אחרי שגיאה ("נסו שוב"), או כשההפניה האוטומטית לא קרתה
+      const canConnect = !st.connected && !st.policy_empty && st.hold !== 'off' && st.hold !== 'no_drive';
+      box.replaceChildren(...[   // Element.replaceChildren כותב null כטקסט — מסננים
         h('div', { class: 'line' }, h('b', {}, '☁️ ענן MBE'), h('span', { class: 'muted' }, st.connected ? ' · מחובר כ-' + (st.name || '') : ' · לא מחובר')),
-        h('label', { class: 'switch' }, sw, h('span', {}, '📁 קבצים'), h('small', { class: 'muted' }, ' — "💾 שמור לענן שלי" בגרף')),
-        h('p', { class: 'hint', style: 'margin:0' }, 'החיבור לענן שלכם, באותו חשבון. בלי חיבור — כל האפליקציה עובדת כרגיל.'));
+        filesLine(st),
+        canConnect ? h('div', {}, h('button', { class: 'btn ghost sm', type: 'button', on: { click: connect } }, st.hold === 'error' ? 'נסו שוב' : '☁️ חיבור לענן MBE')) : null,
+        h('p', { class: 'hint', style: 'margin:0' }, '"💾 שמור לענן שלי" בגרף — לענן שלכם, באותו חשבון. בלי חיבור — כל האפליקציה עובדת כרגיל.')].filter(Boolean));
     };
-    draw();
+    draw(true);
     return box;
   }
 
@@ -245,8 +269,9 @@ export function mountCloud(ctx) {
     }
     u.searchParams.delete('cloud');
     history.replaceState(null, '', u.pathname + (u.search || '') + '#/more');
-    if (v === 'connected') toast('☁️ 📁 הקבצים בענן MBE מחוברים');
-    else if (v === 'denied') toast('לא אושר', true);
+    if (v === 'connected') toast('☁️ הענן MBE מחובר');
+    else if (v === 'no_drive') toast('אין לך כונן בענן MBE', true);
+    else if (v === 'denied' || v === 'error' || v === 'account_mismatch') toast('החיבור לענן MBE לא הושלם', true);
   }
 
   /** 📚 קובצי שיטות (9.3) — מנהל בלבד (השרת מחזיר 403 לאחרים). הקבצים בענן של המנהל; אצלנו רק מזהה התיקייה */
@@ -258,7 +283,8 @@ export function mountCloud(ctx) {
     let st;
     try { st = await status(); } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     if (!filesOn(st)) {
-      out.replaceChildren(h('p', { class: 'empty' }, 'הענן לא מחובר.'), h('div', {}, h('button', { class: 'btn primary', type: 'button', on: { click: connect } }, '☁️ חיבור לענן MBE')));
+      out.replaceChildren(...(st.connected ? [h('p', { class: 'empty' }, LAYER_OFF_MSG)]
+        : [h('p', { class: 'empty' }, 'הענן לא מחובר.'), h('div', {}, h('button', { class: 'btn primary', type: 'button', on: { click: connect } }, '☁️ חיבור לענן MBE'))]));
       return;
     }
     const s = (await getDrives()).suite;
@@ -287,8 +313,10 @@ export function mountCloud(ctx) {
     });
     let list;
     try { list = await s.list(folder.id); } catch (e) {
+      // 📁 כובה בידי המנהל — הודעה בלבד
+      if (e.code === 'layer-off') { out.replaceChildren(h('p', { class: 'empty' }, LAYER_OFF_MSG)); return; }
       // הגישה בוטלה ב"🔗 חיבורים", או שהתיקייה נמחקה — בלי שגיאה גולמית
-      const lost = ['not_found', 'forbidden', 'layer-off'].includes(e.code);
+      const lost = ['not_found', 'forbidden'].includes(e.code);
       out.replaceChildren(h('p', { class: lost ? 'empty' : 'error' }, lost ? 'אין גישה לתיקיית השיטות שנבחרה (הגישה בוטלה או שהיא נמחקה). בחרו שוב את תיקיית השיטות.' : e.message),
         h('div', {}, h('button', { class: 'btn primary', type: 'button', on: { click: choose } }, '📁 בחירה מחדש')));
       return;

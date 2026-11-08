@@ -40,7 +40,23 @@ function app_config(string $app): ?array
  */
 function is_public(array $cfg, string $path, array $params): bool
 {
-    foreach ($cfg['public'] ?? [] as $pattern) {
+    return path_matches($cfg['public'] ?? [], $path, $params);
+}
+
+/**
+ * האם הנתיב ב-signed_in של app.json (PF-002): כל משתמש מחובר ופעיל מגיע אליו, גם בלי הרשאה לאפליקציה, והיא
+ * מקבלת בו את הזהות שלו עם granted: false. אותו תחביר כמו public. השער מוותר רק על בדיקת ההרשאה — לא על
+ * הכניסה: לא מחובר, חסום או ממתין לאישור נשארים בחוץ (current_user מחזיר null לכל מי שאינו active).
+ */
+function is_signed_in(array $cfg, string $path, array $params): bool
+{
+    return path_matches($cfg['signed_in'] ?? [], $path, $params);
+}
+
+/** התאמה לרשימת תבניות (public / signed_in). */
+function path_matches(mixed $patterns, string $path, array $params): bool
+{
+    foreach (is_array($patterns) ? $patterns : [] as $pattern) {
         if (!is_string($pattern)) continue;
         [$glob, $query] = array_pad(explode('?', $pattern, 2), 2, null);
         $re = '#^' . strtr(preg_quote($glob, '#'), ['\*\*' => '.*', '\*' => '[^/]*']) . '$#';
@@ -94,7 +110,7 @@ function touch_session(string $base): void
  * הזהות שהשער מעביר לאפליקציה מחוברת (docs/auth.md, סעיף 7): מי המשתמש, בלי redirect ובלי מסך.
  * רק למשתמש שיש לו הרשאה לאפליקציה. אותם שדות כמו בזהות החתומה של הכניסה המאוחדת (lib/sso.php).
  */
-function identity(array $user): array
+function identity(array $user, bool $granted = true): array
 {
     $verified = !empty($user['email']) && !empty($user['email_verified_at']);
     $email = $verified ? $user['email'] : filter_var((string)$user['username'], FILTER_VALIDATE_EMAIL);
@@ -106,6 +122,9 @@ function identity(array $user): array
         // מנהל הפלטפורמה — כדי שאפליקציה תדע מי הבעלים שלה (למשל: מי מקבל את מסך התפקידים בפעם הראשונה).
         // רק בזהות של השער (אותו שרת); לא בזהות החתומה של הכניסה המאוחדת לדומיין אחר.
         'platform_admin' => ($user['role'] ?? '') === 'admin',
+        // יש לו הרשאה לאפליקציה (can_use). false — רק בנתיב signed_in (PF-002); האפליקציה חייבת לבדוק את זה
+        // בכל פעולה שנותנת משהו מעבר לנתונים של המשתמש עצמו. אותה תשובה כמו grant_status (lib/provision.php).
+        'granted'        => $granted,
     ];
 }
 
@@ -193,10 +212,28 @@ function decide(string $app, string $path, array $params): ?array
     try {
         $user = current_user();
         if (!$user) return [401, 'login'];
-        return can_use($user, $app, $cfg) ? null : [403, 'forbidden'];
+        if (can_use($user, $app, $cfg)) return null;
+        // signed_in: מחובר ופעיל — עובר גם בלי הרשאה; האפליקציה מקבלת granted: false (PF-002)
+        return is_signed_in($cfg, $path, $params) ? null : [403, 'forbidden'];
     } catch (\Throwable $e) {
         error_log('platform gate: ' . $e->getMessage());
         return [503, 'error']; // נכשל סגור: תקלה במסד אינה פותחת את הכלי
+    }
+}
+
+/**
+ * משתמש שעבר את השער רק בזכות signed_in — מחובר, בלי הרשאה לאפליקציה, בנתיב שאינו ציבורי. זו לא "כניסה
+ * לאפליקציה" והיא לא שלו: בלי מעקב כניסות ובלי הזרקת PWA (PF-002, 4.4).
+ */
+function signed_in_only(string $app, string $path, array $params): bool
+{
+    try {
+        $cfg = app_config($app);
+        if ($cfg === null || empty($cfg['gate']) || is_detached($app) || is_public($cfg, $path, $params)) return false;
+        $user = current_user();
+        return $user !== null && !can_use($user, $app, $cfg);
+    } catch (\Throwable) {
+        return false;
     }
 }
 

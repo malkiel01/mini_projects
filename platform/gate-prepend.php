@@ -35,20 +35,25 @@
         \Platform\Gate\diag_nav('gate:' . $verdict[1], $app);
         \Platform\Gate\deny($verdict, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel), $app);
     }
-    \Platform\Gate\record_visit($app);
+    // עבר רק בזכות signed_in (מחובר, בלי הרשאה) — לא נספר ככניסה ולא מקבל PWA (PF-002)
+    $signedInOnly = \Platform\Gate\signed_in_only($app, $path, $params);
+    if (!$signedInOnly) \Platform\Gate\record_visit($app);
     \Platform\Gate\diag_nav('gate:ok', $app);
     $base = \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel);
     \Platform\Gate\touch_session($base);
 
     // אפליקציה מחוברת: מי המשתמש — בלי redirect ובלי מסך (docs/auth.md, סעיף 7; docs/sso.md).
-    // רק כשיש לו הרשאה אליה. מפתח שאינו HTTP_* — לקוח לא יכול לזייף אותו בכותרת.
+    // כשיש לו הרשאה אליה (granted: true), או בנתיב signed_in גם בלי (granted: false, PF-002). מפתח שאינו
+    // HTTP_* — לקוח לא יכול לזייף אותו בכותרת.
     unset($_SERVER['PLATFORM_USER']);
     try {
         $cfg = \Platform\Gate\app_config($app);
         $user = \Platform\Gate\current_user();
-        if ($cfg && !empty($cfg['gate']) && !\Platform\Gate\is_detached($app) && $user
-            && \Platform\Gate\can_use($user, $app, $cfg)) {
-            $_SERVER['PLATFORM_USER'] = json_encode(\Platform\Gate\identity($user), JSON_UNESCAPED_UNICODE);
+        if ($cfg && !empty($cfg['gate']) && !\Platform\Gate\is_detached($app) && $user) {
+            $granted = \Platform\Gate\can_use($user, $app, $cfg);
+            if ($granted || \Platform\Gate\is_signed_in($cfg, $path, $params)) {
+                $_SERVER['PLATFORM_USER'] = json_encode(\Platform\Gate\identity($user, $granted), JSON_UNESCAPED_UNICODE);
+            }
         }
     } catch (\Throwable $e) {
         error_log('platform identity: ' . $e->getMessage());
@@ -58,7 +63,7 @@
     try {
         require_once __DIR__ . '/lib/pwa.php';
         $cfg = \Platform\Gate\app_config($app);
-        if (\Platform\Pwa\applies($app, $cfg)) {
+        if (!$signedInOnly && \Platform\Pwa\applies($app, $cfg)) {
             \Platform\Pwa\inject_php_page($app, $cfg, \Platform\Gate\base_url($_SERVER['SCRIPT_NAME'] ?? '/', $rel), $path, $params);
         }
     } catch (\Throwable $e) {

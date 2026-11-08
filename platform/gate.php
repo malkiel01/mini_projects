@@ -68,8 +68,10 @@ if ($verdict !== null) {
     deny($verdict, $base, $app);
 }
 \Platform\Gate\touch_session($base);
+// עבר רק בזכות signed_in (מחובר, בלי הרשאה) — לא נספר ככניסה ולא מקבל PWA (PF-002)
+$signedInOnly = \Platform\Gate\signed_in_only($app, $rel, $params);
 if (in_array($ext, ['html', 'htm'], true)) {
-    record_visit($app);
+    if (!$signedInOnly) record_visit($app);
     \Platform\Gate\diag_nav('gate:ok', $app);
 }
 
@@ -78,7 +80,7 @@ if (in_array($ext, ['html', 'htm'], true)) {
 // ב-manifest. קטנים — נקראים לזיכרון.
 $cfg = \Platform\Gate\app_config($app);
 $patched = null;
-if (\Platform\Pwa\applies($app, $cfg) && filesize($file) < 2_000_000) {
+if (!$signedInOnly && \Platform\Pwa\applies($app, $cfg) && filesize($file) < 2_000_000) {
     if (in_array($ext, ['html', 'htm'], true)) {
         $patched = \Platform\Pwa\inject_html((string)file_get_contents($file), $app, $cfg, $base,
             \Platform\Pwa\wanted($app, $cfg, $rel, $params));
