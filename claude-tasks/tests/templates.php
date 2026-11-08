@@ -225,7 +225,8 @@ echo "\n— Routine: בדיקת השער בצעד 0 (§5.13.3) —\n";
 $rp = routinePrompt($root, ['key' => 'dev', 'label' => 'קוד']);
 preg_match("/grep -qF '([^']+)' \\.claude\/settings\\.json/", $rp, $gm);
 check('צעד 0 בודק את השער לפני הרישום', strpos($rp, 'GATE-OK') < strpos($rp, 'link.sh register'), true);
-check('…והבדיקה באמת מוצאת את השער ב-settings.json של הריפו', isset($gm[1]) && str_contains((string) file_get_contents(__DIR__ . '/../../.claude/settings.json'), $gm[1]), true);
+// 2026-11-08: mini_projects נותק מהלוח — אין שער ב-settings.json, ולכן Routine של הלוח עוצר בצעד 0 (כמתוכנן)
+check('…ובריפו המנותק השער לא רשום — צעד 0 עוצר', isset($gm[1]) && str_contains((string) file_get_contents(__DIR__ . '/../../.claude/settings.json'), $gm[1]), false);
 check('…ובלי השער — דיווח ב-routine-alert', str_contains($rp, 'action=routine-alert'), true);
 check('הגיליון נותן את הריפו והענף ל-Routine', array_keys(chatSheet($boss, $root)['repo']), ['url', 'branch']);
 
