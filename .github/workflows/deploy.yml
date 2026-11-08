@@ -403,7 +403,10 @@ jobs:
             fi
           }
           # שורות עבודה בלבד — בלי הערות, שורות ריקות ו-SHELL=/MAILTO= (cPanel מוסיף SHELL= לפני כל עבודה).
-          jobs() { grep -vE '^[[:space:]]*(#|$)' | grep -vE '^[A-Za-z_][A-Za-z0-9_]*=' | grep -vF "$1" || true; }
+          # "שלנו" = השורה מסתיימת בתג בדיוק (לא מחרוזת חלקית: ...-alerts לא תופס את ...-alerts-daily).
+          ours()    { awk -v t="$1" 'length($0) >= length(t) && substr($0, length($0) - length(t) + 1) == t'; }
+          notours() { awk -v t="$1" '!(length($0) >= length(t) && substr($0, length($0) - length(t) + 1) == t)'; }
+          jobs() { grep -vE '^[[:space:]]*(#|$)' | grep -vE '^[A-Za-z_][A-Za-z0-9_]*=' | notours "$1" || true; }
           while IFS='|' read -r id sched script log; do
             [ -n "$id" ] || continue
             tag="# mini_projects:$id"
@@ -413,13 +416,13 @@ jobs:
             read_tab || exit 1
             if grep -qxF "$line" <<<"$TAB"; then echo "$id: כבר מותקן"; continue; fi
             [ -f "$ROOT/$script" ] || { echo "$id: הסקריפט לא נמצא — מדלג"; continue; }
-            had=$(grep -cF "$tag" <<<"$TAB" || true)
+            had=$(ours "$tag" <<<"$TAB" | grep -c . || true)
             others=$(jobs "$tag" <<<"$TAB")
             # השורה המסומנת (אם קיימת בגרסה אחרת) מוחלפת; כל שאר השורות נשארות כמו שהן.
             [ "$out" = /dev/null ] || mkdir -p "$(dirname "$out")"
-            { [ -z "$TAB" ] || grep -vF "$tag" <<<"$TAB" || true; echo "$line"; } | crontab -
+            { [ -z "$TAB" ] || notours "$tag" <<<"$TAB"; echo "$line"; } | crontab -
             read_tab || exit 1
-            if [ "$(grep -cxF "$line" <<<"$TAB")" = 1 ] && [ "$(grep -cF "$tag" <<<"$TAB")" = 1 ] && [ "$(jobs "$tag" <<<"$TAB")" = "$others" ]; then
+            if [ "$(grep -cxF "$line" <<<"$TAB")" = 1 ] && [ "$(ours "$tag" <<<"$TAB" | grep -c .)" = 1 ] && [ "$(jobs "$tag" <<<"$TAB")" = "$others" ]; then
               [ "$had" = 0 ] && echo "$id: הותקן ($sched)" || echo "$id: עודכן ($sched)"
             else echo "$id: ההתקנה לא אומתה — שאר העבודות השתנו או שהשורה חסרה"; exit 1; fi
             echo "$id: ריצה ראשונה ←"; timeout 300 "$PHP" "$ROOT/$script" </dev/null; echo "$id: קוד יציאה $?"
