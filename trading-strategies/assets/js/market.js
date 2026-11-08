@@ -210,8 +210,11 @@ export function mountMarket(ctx) {
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
+    // 💾 שמור לענן שלי (3.7) — רק כשתנאי הספק מתירים עותק אישי
+    const saveBtn = p.personal_copy === false ? null : h('button', { class: 'btn ghost sm', type: 'button',
+      on: { click: async e => { e.target.disabled = true; try { await ctx.cloud.saveCandles({ provider, symbol, tf: st.tf, sec: TF_SEC[st.tf], rows: raw }); } finally { e.target.disabled = false; } } } }, '💾 שמור לענן שלי');
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live)), custom,
-      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, inds, info,
+      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, inds, info, saveBtn ? h('div', {}, saveBtn) : null,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -252,6 +255,7 @@ export function mountMarket(ctx) {
     onTeardown(() => { draw.destroy(); chart.remove(); osc.remove(); });
 
     let data = [];
+    let raw = [];   // הנרות כמו מהשרת (מחרוזות) — לעותק בענן, בלי float
     let ws = null;
     function drawIndicators() {
       const c = data.map(x => x.close), hh = data.map(x => x.high), ll = data.map(x => x.low);
@@ -302,6 +306,7 @@ export function mountMarket(ctx) {
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
         const r = await api('market_candles', null, { asset, tf: st.tf, ...rangeQuery() });
+        raw = r.candles;
         data = r.candles.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
         candle.applyOptions({ priceFormat: priceFormat(r.candles) });
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
