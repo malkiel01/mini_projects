@@ -3,6 +3,12 @@
 **By:** the "מטלות לקלוד - אפיון" chat, 2026-11-01. **Implemented by:** "מטלות לקלוד – כותב הקוד".
 **Sources:** `creative-suite/docs/requests/claude-tasks-command-center.md` (14 items + the 7-PR plan),
 `creative-suite/docs/requests/claude-tasks-live-bridge.md`, and the owner's feedback on the board (#1053, #1069).
+> ⏸ **PAUSED (owner decision, 2026-11-08).** mini_projects is disconnected from the board (#1285: no hooks, no gate, no bridge), and
+> the owner stopped further development of the board itself. The bridge, the gate, the listeners, the dispatcher (stage 25) and the
+> Platform code stay in the repository **dormant and documented**: nothing in them runs here. **No stage in this file is scheduled**;
+> sections marked NOT BUILT will not be built unless the owner decides otherwise, and `known-issues.md` is a record, not a work list.
+> Reconnecting needs the owner's explicit decision (see the note at the top of `.claude/skills/claude-tasks-live/SKILL.md`).
+
 **Status (2026-11-04):** approved 2026-11-01. **Built and deployed: stages 1–20, 22a, 23, 24a, 25 and the cleanup rows ש1+ש2** (see §14).
 **Not built:** stage 21 (§17), stage 22b (§18.4), stage 22c (§18.5), the per-user "🔗 חיבור לחשבון Claude" screen (§21.6 #1).
 Platform answers and the Claude Code engine were tested only against fake providers; the engine was never installed in this repo.
