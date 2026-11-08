@@ -9,6 +9,7 @@
 
 - אפיון שלב 1: [`docs/spec.md`](docs/spec.md) — בנוי וממוזג (#1259).
 - אפיון שלב א' המורחב: [`docs/spec-stage-a.md`](docs/spec-stage-a.md) — גרסה 2.2, אושר (2026-11-07, #1262).
+- אפיונים בטיוטה: [`docs/spec-elliott-wave.md`](docs/spec-elliott-wave.md) (שיטת גלי אליוט) · [`docs/spec-method-builder.md`](docs/spec-method-builder.md) (בונה שיטות בהגדרות + תחזית על הגרף) — ממתינים לאישור.
 - המטלות: [`dev/open-items.json`](dev/open-items.json) (TS-001 … TS-007).
 
 ## השלבים
@@ -43,7 +44,11 @@
 - **`app.json`:** `"public": ["api.php?action=drives_key"]` — רק המפתח הציבורי, שהענן מוריד בלי עוגייה. כל השאר — דרך השער.
 - **`data/drives.sqlite`** — המפתח הפרטי של האפליקציה והחיבורים של המשתמשים. בתוך `trading-strategies/data/*`, **מוחרג
   בפריסה** (deploy.yml) ונעול ב-`.htaccess`. מפתח שנדרס = כל המשתמשים מנותקים.
-- **"☁️ ענן MBE"** במסך "עוד": מתג 📁 קבצים (חיבור / ניתוק), וטיפול בחזרה `?cloud=connected|denied`. בלי חיבור — הכול עובד.
+- **"☁️ ענן MBE"** במסך "עוד" — **לקריאה בלבד** (PR 2ג, `mbe-cloud/docs/spec-6-admin-layers.md` §5.3): מנהל הענן קובע
+  אילו שכבות פעילות, לכל המשתמשים. אין מתג ואין ניתוק (`disconnect` מחזיר `admin-managed`). שורה: "📁 קבצים · פעיל" /
+  "לא פעיל באפליקציה הזו" / "לא מחובר", עם "🔒 נקבע בידי מנהל הענן". בפתיחת המסך — `drives.ensure()` **פעם אחת** (לא
+  בכל טעינה של האפליקציה): לא מחובר והמנהל הדליק — הפניה אחת לענן וחזרה מחוברת; המודול מגן מלולאות. "☁️ חיבור לענן
+  MBE" (`drives.connect()`) נשאר רק כשלא מחובר; `layer-off` — הודעה בלי כפתור. בלי חיבור — הכול עובד.
 - **"💾 שמור לענן שלי"** בגרף (`assets/js/cloud.js`): `אסטרטגיות למסחר/נתונים/<ספק>/<סימול>/<מסגרת>.csv` בענן של המשתמש עצמו,
   ישירות מהדפדפן. CSV לפי 3.7 — המחרוזות של הספק כמו שהן (בלי float), ממוין, בלי כפילויות, בלי הנר הפתוח; שמירה חוזרת
   ממזגת ולא משנה נר קיים (`ifRev`). ספק ש-`personal_copy` שלו כבוי — בלי הכפתור.
@@ -201,7 +206,7 @@ lib/push.php        Web Push עם VAPID (בלי תוכן)
 bin/alerts-cron.php ה-cron — CLI בלבד (bin/.htaccess חוסם)
 sw.js, manifest.webmanifest   Service Worker לפוש בלבד; התקנה
 assets/js/alerts.js לשונית התראות
-assets/js/cloud.js  ענן MBE: "שמור לענן שלי", קובצי שיטות, המתג
+assets/js/cloud.js  ענן MBE: "שמור לענן שלי", קובצי שיטות, העותק, השורה לקריאה בלבד
 lib/drives/, assets/js/drives/  מודול הכוננים — עותק מסונכרן מ-mbe-cloud/drives/ (לא עורכים)
 assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיטות
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
@@ -252,7 +257,7 @@ php trading-strategies/tests/journal-api.php   # "פתח עסקה מזה", שי�
 node trading-strategies/tests/journal-ui.mjs   # Playwright בטלפון: מכרטיס ניתוח לטופס העסקה ליומן, סטטיסטיקה לפי שיטה
 php trading-strategies/tests/drives-api.php    # ענן MBE: drives_key פתוח, שאר drives_* דרך השער, בידוד, קובצי שיטות למנהל בלבד
 node trading-strategies/tests/cloud-csv.mjs    # ה-CSV של העותק בענן: עשרוני, מיזוג, נתיב
-node trading-strategies/tests/cloud-ui.mjs     # Playwright בטלפון עם ענן מדומה: מתג, "שמור לענן שלי", קובצי שיטות
+node trading-strategies/tests/cloud-ui.mjs     # Playwright בטלפון עם ענן מדומה: ensure פעם אחת, בלי מתג וניתוק, "שמור לענן שלי", קובצי שיטות
 php trading-strategies/tests/copy-api.php      # העותק: נרות מזויפים לא נוגעים במאגר ובאחרים, 422 לכל מגבלה, צירוף, קצב ושקלול
 node trading-strategies/tests/copy-ui.mjs      # Playwright: "🧪 הרץ על העותק שלי", בחירת השקלול, הגרף מהעותק
 php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/dev-prepend.php

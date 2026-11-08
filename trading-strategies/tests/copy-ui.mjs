@@ -76,8 +76,8 @@ const ASSET = 'binance:BTCUSDT';
 
 try {
   const o = await open('owner');
-  await o.goto(BASE + '#/more');
-  await o.waitForSelector('main');
+  await o.goto(BASE + '#/market');   // לא "עוד": שם drives.ensure() מפנה לענן (spec-6) — לא נושא הבדיקה הזו
+  await o.waitForSelector('main form');
   for (const id of ['test-cross-a', 'test-cross-b']) await post(o, 'admin_method_save', { id, enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] });
 
   // ── בלי חיבור לענן: אין כפתור, והבדיקה הרגילה עובדת ──
