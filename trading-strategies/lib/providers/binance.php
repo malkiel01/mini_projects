@@ -33,6 +33,7 @@ final class TsProvBinance extends TsProvider
             'personal_copy' => true,
             'terms' => 'נתוני שוק ציבוריים בלי מפתח. מאגר משותף לכל המשתמשים — לפי הכרעת בעל המערכת (✅2, ✅4).',
             'bounds' => 'יום — 00:00 UTC; שבוע — מיום שני 00:00 UTC; חודש — ה-1 בחודש',
+            'align' => 'utc',   // יישור נרות בעותק (3.7): הגבולות של bounds, ב-UTC
             'max_per_call' => self::PER_CALL,
         ];
     }
