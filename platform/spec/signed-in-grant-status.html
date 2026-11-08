@@ -86,7 +86,7 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
     <ul>
         <li>כל קריאה = חתימה + שאילתה אחת; המפתח הציבורי במטמון שעה (קיים). אין מגבלה נוספת בצד הפלטפורמה.</li>
         <li><strong>לאפליקציה:</strong> לשאול בזמן פעולה (למשל כשמשתמש פותח את הכונן), לשמור את התשובה עד 5 דקות, ולא לסרוק משתמשים
-            ולא לשאול בלולאה (הלקח של ה-429 — <code>handoff-v2.md</code> §6). שאלה על כמה משתמשים יחד — לא עכשיו; אם יידרש, <code>{subs:[…]}</code> כהרחבה.</li>
+            ולא לשאול בלולאה. <strong>ענן MBE:</strong> מטמון עד 60 שניות, ו<strong>נכשל סגור</strong> — כשהפלטפורמה לא עונה (שגיאה, timeout, 5xx), אין גישה לקבצים. זה ההתנהגות הנכונה, ומומלצת לכל אפליקציה (הלקח של ה-429 — <code>handoff-v2.md</code> §6). שאלה על כמה משתמשים יחד — לא עכשיו; אם יידרש, <code>{subs:[…]}</code> כהרחבה.</li>
     </ul>
     <h3>3.4 הקוד</h3>
     <p><code>provision.php</code> — מפצל לפי <code>?action</code>; <code>lib/provision.php</code> — <code>provision_grant_status(array $client, array $body): array</code>.
@@ -97,7 +97,8 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
     <h3>4.1 ההצהרה</h3>
 <pre><code>"gate": true,
 "public":    ["api.php?action=cloud_key|…"],
-"signed_in": ["connect.php", "api.php?action=my_appdata|…", "assets/**"]</code></pre>
+"signed_in": ["connect.php", "me.php"]</code></pre>
+    <p>זו ההצהרה שענן MBE מתכנן (<code>mbe-cloud/docs/spec-5-account-tiers.md</code> §4, PR #1313 — קיבלו את החוזה בלי שינויים).</p>
     <p>תחביר זהה ל-<code>public</code> (<code>is_public</code>): <code>*</code> לא חוצה <code>/</code>, <code>**</code> כן, <code>?key=a|b</code> מ-GET/POST/גוף JSON.</p>
 
     <h3>4.2 מה השער עושה — הסדר</h3>
@@ -105,7 +106,9 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
         <li>לא רשום / בלי שער / מנותקת → עובר (כמו היום).</li>
         <li><code>public</code> → עובר, בלי כניסה (כמו היום).</li>
         <li><strong>חדש:</strong> <code>signed_in</code> → משתמש מחובר ופעיל (<code>current_user</code>) — עובר, <strong>בלי בדיקת הרשאה</strong>.
-            לא מחובר → 401 <code>login</code> (דף: הפניה לכניסה עם <code>?next=</code>; בתוך WebView — handoff), כמו היום.</li>
+            לא מחובר → 401 <code>login</code> (דף: הפניה לכניסה עם <code>?next=</code>; בתוך WebView — handoff), כמו היום.<br>
+            <strong>רק <code>status = active</code> עובר.</strong> חשבון חסום או ממתין לאישור — נשאר בחוץ כמו היום: <code>current_user()</code> בשער מחזיר null לכל מי שאינו active,
+            ולכן הוא מקבל אותה תשובה כמו לא מחובר (401 / הפניה לכניסה). <code>signed_in</code> מוותר רק על בדיקת ההרשאה לאפליקציה — לא על בדיקת החשבון.</li>
         <li>אחרת — כמו היום: הרשאה, או 403.</li>
     </ol>
     <p>חל גם על קבצים סטטיים (<code>gate.php</code>) וגם על PHP (<code>gate-prepend.php</code>) — שניהם עוברים דרך <code>decide</code>. החתימה של
@@ -204,6 +207,7 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
         <li>לא מחובר → <code>me.php</code>: דף → הפניה לכניסה; JSON → 401 <code>login</code>.</li>
         <li>משתמש פעיל בלי הרשאה → <code>me.php</code>: 200, זהות עם <code>granted:false</code>. <code>index.html</code> של אותה אפליקציה: 403.</li>
         <li>אותו משתמש, אחרי "✓ מותר" ישיר → <code>me.php</code>: <code>granted:true</code>.</li>
+        <li>משתמש חסום / ממתין → <code>me.php</code>: כמו לא מחובר (401 / הפניה לכניסה).</li>
         <li>משתמש בלי הרשאה בנתיב <code>public</code> שאינו <code>signed_in</code> → אין <code>PLATFORM_USER</code>.</li>
         <li>משתמש בלי הרשאה ב-<code>me.php</code> → לא נרשמה כניסה בלשונית 📊, ואין סקריפט PWA בדף.</li>
         <li>מנותקת → <code>me.php</code> עובר לכולם, בלי <code>PLATFORM_USER</code>.</li>
@@ -224,6 +228,7 @@ X-Embed-Client / X-Embed-Time / X-Embed-Nonce / X-Embed-Signature
         <tr><td>10.4</td><td>בלי מעקב כניסות ובלי PWA למשתמש בלי הרשאה ב-<code>signed_in</code></td><td>זו לא כניסה לאפליקציה, והיא לא שלו</td></tr>
         <tr><td>10.5</td><td><code>granted</code> בכל זהות של השער, לא בזהות של <code>sso.php</code></td><td>שדה אחד לקרוא; ב-sso זהות ניתנת רק למורשה ממילא</td></tr>
         <tr><td>10.6</td><td>handoff לא משתנה</td><td>למשתמש בלי הרשאה אין את ה-APK; APK אחר פותח בחוץ</td></tr>
+        <tr><td>10.6א</td><td>חסום / ממתין בנתיב <code>signed_in</code> — בחוץ, כמו לא מחובר</td><td><code>signed_in</code> מוותר רק על ההרשאה לאפליקציה</td></tr>
         <tr><td>10.7</td><td>בלי שאלה על כמה <code>sub</code> יחד</td><td>לא נדרש; הרחבה פשוטה אם יידרש</td></tr>
     </table></div>
 </div>
