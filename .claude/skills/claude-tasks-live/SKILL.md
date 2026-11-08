@@ -5,6 +5,12 @@ description: Connect this chat live to the "מטלות לקלוד" board — reg
 
 # The live bridge — the chat side
 
+> **⛔ 2026-11-08: the owner disconnected mini_projects from the board.** `.claude/settings.json` registers no hooks,
+> and `bridge/hook.sh` exits at once unless `CLAUDE_TASKS_BRIDGE=on`. No chat in this repository is gated, mirrored,
+> registered or woken by the board. **Do not register, start a listener, or send board messages** unless the owner,
+> in this chat, explicitly asks to reconnect — and then tell him it needs his decision (the hooks and the variable).
+
+
 The board (`claude-tasks/`, spec: `claude-tasks/docs/spec.md` §5) gives every connected chat a **channel**:
 the owner sees the conversation there and can write to the chat from the board. Two directions:
 
