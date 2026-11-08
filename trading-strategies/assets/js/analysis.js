@@ -81,7 +81,8 @@ export function mountAnalysis(ctx) {
       out.replaceChildren(h('p', { class: 'loading' }, 'מנתח… בפעם הראשונה הבדיקה לאחור יכולה לקחת כמה שניות'));
       try {
         const r = await api('analysis', null, { asset: st.asset, tf: st.tf, methods: st.methods.join(',') });
-        out.replaceChildren(...(r.cards.length > 1 ? [blendCard(r)] : []), ...r.cards.map(c => methodCard(c, r)));
+        const alertable = id => methods.find(m => m.id === id)?.alerts;
+        out.replaceChildren(...(r.cards.length > 1 ? [blendCard(r, r.cards.every(c => alertable(c.method.id)))] : []), ...r.cards.map(c => methodCard(c, r, alertable(c.method.id))));
       } catch (e) {
         out.replaceChildren(h('p', { class: 'error', role: 'alert' }, e.message));
       } finally { go.disabled = false; }
@@ -113,7 +114,9 @@ export function mountAnalysis(ctx) {
     return h('div', { class: 'summary' }, h('div', { class: 'line' }, h('b', {}, bt.message || 'הבדיקה לאחור לא זמינה')), h('div', { class: 'line muted' }, 'בלי אחוז ודאות'));
   }
 
-  function methodCard(c, r) {
+  const alertBtn = pre => h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => ctx.newAlert(pre) } }, '🔔 התראה מזה');
+
+  function methodCard(c, r, alertable = false) {
     const head = h('div', { class: 'card-head' }, h('b', {}, c.method.name), h('small', { class: 'muted' }, 'גרסה ' + c.method.version));
     const label = c.method.label ? h('p', { class: 'chip warn', style: 'margin:4px 0' }, c.method.label) : null;
     const box = h('section', { class: 'block stack analysis-card', 'aria-label': c.method.name }, head, label);
@@ -148,11 +151,12 @@ export function mountAnalysis(ctx) {
     box.append(certaintyBlock(c, r),
       h('p', { class: 'muted', style: 'margin:0' }, 'אופק: ' + c.horizon_text.replace(/^עד /, 'עד '),
         c.max_horizon && c.max_horizon.tf !== c.tf ? [sep(), 'הארוך ביותר שנבדק: ' + c.max_horizon.text] : null),
-      h('p', { class: 'hint', style: 'margin:0' }, 'נכון לנר שנסגר ב-' + when(c.as_of)));
+      h('p', { class: 'hint', style: 'margin:0' }, 'נכון לנר שנסגר ב-' + when(c.as_of)),
+      alertable ? h('div', {}, alertBtn({ asset: r.asset, tf: c.tf, kind: 'method', method_id: c.method.id, side: c.bias === 'none' ? 'both' : c.bias })) : null);
     return box;
   }
 
-  function blendCard(r) {
+  function blendCard(r, alertable = false) {
     const b = r.blend;
     const name = id => r.cards.find(c => c.method.id === id)?.method.name || id;
     const box = h('section', { class: 'block stack', 'aria-label': 'שקלול' }, h('div', { class: 'card-head' }, h('b', {}, '⚖️ שקלול השיטות')));
@@ -170,7 +174,8 @@ export function mountAnalysis(ctx) {
       h('p', { style: 'margin:0' }, `${b.counts.long} מ-${b.total} שיטות לונג`, sep(), `${b.counts.short} שורט`, sep(), `${b.counts.none} בלי כיוון`),
       b.strong_disagreement ? h('p', { class: 'chip bad' }, '⚠️ מחלוקת חזקה בין השיטות — גם הלונג וגם השורט מחזיקים 30% מהמשקל או יותר') : null,
       b.excluded.length ? h('p', { class: 'hint', style: 'margin:0' }, 'לא בשקלול (פחות מ-30 אותות): ' + b.excluded.map(name).join(', ')) : null,
-      h('p', { class: 'hint', style: 'margin:0' }, 'משקל = ודאות × העדפה (הסדר ב"שיטות מועדפות" בפרופיל).'));
+      h('p', { class: 'hint', style: 'margin:0' }, 'משקל = ודאות × העדפה (הסדר ב"שיטות מועדפות" בפרופיל).'),
+      alertable ? h('div', {}, alertBtn({ asset: r.asset, tf: r.tf, kind: 'blend', methods: r.cards.map(c => c.method.id) })) : null);
     return box;
   }
 

@@ -28,7 +28,9 @@ $jar = []; $tokens = []; $bodies = [];
 function call(string $as, string $action, ?array $body = null, array $query = [], array $extra = []): array
 {
     global $port, $jar, $tokens, $bodies;
+    global $NOW;
     $h = ["X-Dev-As: $as", ...$extra];
+    if (!array_filter($extra, fn($x) => str_starts_with($x, 'X-Dev-Now:'))) $h[] = "X-Dev-Now: $NOW";
     if (!empty($jar[$as])) $h[] = 'Cookie: ts_session=' . $jar[$as];
     if ($body !== null) { $h[] = 'Content-Type: application/json'; $h[] = 'X-CSRF: ' . ($tokens[$as] ?? ''); }
     $ctx = stream_context_create(['http' => ['method' => $body !== null ? 'POST' : 'GET', 'header' => implode("\r\n", $h),
@@ -43,7 +45,9 @@ $db = new PDO('sqlite:' . "$tmp.sqlite");
 $cache = new PDO('sqlite:' . "$tmp.sqlite.cache");
 $uidOf = fn(string $sub) => (int)$db->query("SELECT id FROM users WHERE platform_sub = '$sub'")->fetchColumn();
 $SAMPLE = 'sample-ma-cross';
-$now = time();
+// "עכשיו" קבוע (X-Dev-Now): הנרות המדומים תלויים בזמן, ולכן כל ריצה של הבדיקה רואה בדיוק אותם נתונים ואותן תוצאות
+$NOW = 1794094200;
+$now = $NOW;
 
 // ── פרופיל (5) ───────────────────────────────────────────
 $p = call('alice', 'profile')[1]['profile'];
@@ -115,14 +119,11 @@ eq($cache->query('SELECT COUNT(*) FROM candles WHERE t < ' . ($now - 60 * 86400 
 $row = $db->query("SELECT * FROM backtests WHERE method_id = '$SAMPLE' AND tf = 'h1'")->fetch(PDO::FETCH_ASSOC);
 eq([(int)$row['n'], $row['cred_scope'], (int)$row['method_version']], [$bt['n'], '', 1], 'the result is stored (shared scope for a keyless provider)');
 eq(strlen($row['state']) < 20000, true, 'stored state is small (no candles in it)');
-$forced = $card['levels'] ?? null;
-if ($forced) {
-    $dec = $r['decimals'];
-    eq(array_map(fn($v) => $v === null || preg_match('/^-?\d+(\.\d{1,' . max(1, $dec) . '})?$/', $v) === 1, $forced), ['entry' => true, 'stop' => true, 'target' => true], 'levels are decimal strings rounded to the tick');
-    eq(is_string($card['risk']['position_qty'] ?? null), true, 'position size from the profile risk — a decimal string');
-} else {
-    eq($card['bias'], 'none', 'no active signal → no levels');
-}
+$lv = $card['levels'] ?? null;
+eq([$card['bias'], is_array($lv)], ['long', true], 'at this fixed time the method has an active long signal → levels');
+$dec = $r['decimals'];
+eq(array_map(fn($v) => $v === null || preg_match('/^-?\d+(\.\d{1,' . max(1, $dec) . '})?$/', $v) === 1, $lv ?? []), ['entry' => true, 'stop' => true, 'target' => true], 'levels are decimal strings rounded to the tick');
+eq(is_string($card['risk']['position_qty'] ?? null), true, 'position size from the profile risk — a decimal string');
 $words = '/קנה|מכור|המלצ|כדאי/u';
 eq(preg_match($words, json_encode($r, JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend" wording in the analysis (6.6)');
 

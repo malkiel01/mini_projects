@@ -3,6 +3,7 @@
 import * as D from './decimal.js';
 import { mountMarket } from './market.js';
 import { mountAnalysis } from './analysis.js';
+import { mountAlerts } from './alerts.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -112,17 +113,17 @@ function setTab(tab) {
 const main = $('#main');
 function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); }
 
-// לשוניות: שוק · ניתוח · יומן · עוד (spec-stage-a 1). "התראות" — תיכנס עם ה-PR שלה (פרק 14).
+// לשוניות: שוק · ניתוח · התראות · יומן · עוד (spec-stage-a 1).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more' };
+  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
     h('a', { href: '#/' + k, class: 'seg-tab', 'aria-current': k === active ? 'page' : null }, l)));
 }
 
-let M = null, A = null;
+let M = null, A = null, N = null;
 async function route() {
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
@@ -141,6 +142,7 @@ async function route() {
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
     else if (name === 'analysis') await A.viewAnalysis(id ? decodeURIComponent(id) : null);
     else if (name === 'profile') await A.viewProfile();
+    else if (name === 'alerts') await N.viewAlerts();
     else await M.viewMarket();
     if (['strategies', 'journal', 'stats'].includes(name)) main.prepend(journalTabs(name));
   } catch (e) {
@@ -1045,7 +1047,10 @@ function editInstrument(i) {
   }
   const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME,
     setMe: v => { ME = v; }, reload: () => route() };
+  N = mountAlerts(ctx);
+  ctx.newAlert = N.newAlert;
   A = mountAnalysis(ctx);
+  N.setBadge(ME.unread);
   M = mountMarket({ ...ctx, adminMethods: A.adminMethods });
   M.setRoute(route);
   if (!location.hash) history.replaceState(null, '', '#/market');

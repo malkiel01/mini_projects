@@ -739,6 +739,8 @@ function ts_export_json(int $uid, array $user): array
         'watchlist' => function_exists('ts_watchlist') ? array_column(ts_watchlist($uid), 'asset') : [],
         'drawings' => function_exists('ts_drawing_out') ? ts_drawings_all($uid) : [],
         'profile' => function_exists('ts_profile') ? ts_profile($uid) : null,
+        'alerts' => function_exists('ts_alerts_list') ? ts_alerts_list($uid) : [],
+        'inbox' => function_exists('ts_inbox') ? ts_inbox($uid, 1000) : [],
     ];
 }
 

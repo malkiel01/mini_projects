@@ -282,6 +282,52 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 5) {
+        // התראות (spec-stage-a פרק 8): ההתראה, האירועים (התיבה), מנויי פוש
+        $db->exec(<<<'SQL'
+            BEGIN;
+            -- last_state: המצב בבדיקה הקודמת ('0'/'1', ובמחיר 'above'/'below') — נשלח רק במעבר, לא שוב עד שהתנאי
+            -- התבטל והתקיים מחדש (8.2)
+            CREATE TABLE alerts (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                side TEXT NOT NULL CHECK (side IN ('long','short','both')),
+                kind TEXT NOT NULL CHECK (kind IN ('method','blend','price')),
+                method_id TEXT,
+                methods TEXT NOT NULL DEFAULT '[]',
+                level TEXT,
+                status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','expired')),
+                last_state TEXT,
+                last_checked_at INTEGER,
+                last_fired_at INTEGER,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX alerts_user ON alerts(user_id);
+            CREATE INDEX alerts_status ON alerts(status);
+            CREATE TABLE alert_events (
+                id INTEGER PRIMARY KEY,
+                alert_id INTEGER REFERENCES alerts(id) ON DELETE SET NULL,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                fired_at INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                delivered TEXT NOT NULL DEFAULT '{}',
+                read_at INTEGER
+            );
+            CREATE INDEX alert_events_user ON alert_events(user_id, fired_at);
+            CREATE TABLE push_subs (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL UNIQUE,
+                keys TEXT NOT NULL DEFAULT '{}',
+                created_at INTEGER NOT NULL
+            );
+            PRAGMA user_version = 5;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
