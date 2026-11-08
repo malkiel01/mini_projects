@@ -30,12 +30,13 @@ jobs:
           set -uo pipefail
           OWNER="${R%%/*}"
           grep -vE '^\s*(#|$)' .github/branch-cleanup.txt | while read -r b; do
-            cur=$(gh api "repos/$R/git/ref/heads/$b" -q .object.sha 2>/dev/null) || { echo "$b: לא קיים — מדלג"; continue; }
-            prs=$(gh api "repos/$R/pulls?head=$OWNER:$b&state=all&per_page=100")
+            case "$b" in main|master|gh-pages|diag-read) echo "::warning::$b: ענף מוגן — לא נמחק"; continue ;; esac
+            cur=$(gh api "repos/$R/git/ref/heads/$b" -q .object.sha 2>/dev/null </dev/null) || { echo "$b: לא קיים — מדלג"; continue; }
+            prs=$(gh api "repos/$R/pulls?head=$OWNER:$b&state=all&per_page=100" </dev/null)
             open=$(jq '[.[] | select(.state == "open")] | length' <<<"$prs")
             merged=$(jq -r --arg s "$cur" '[.[] | select(.merged_at != null and .head.sha == $s)] | .[0].number // empty' <<<"$prs")
             if [ "$open" != 0 ]; then echo "::warning::$b: יש PR פתוח — לא נמחק"; continue; fi
             if [ -z "$merged" ]; then echo "::warning::$b: אין PR ממוזג שזהה לראש הענף — לא נמחק"; continue; fi
-            if gh api -X DELETE "repos/$R/git/refs/heads/$b" >/dev/null; then echo "$b: נמחק (#$merged)"
+            if gh api -X DELETE "repos/$R/git/refs/heads/$b" >/dev/null </dev/null; then echo "$b: נמחק (#$merged)"
             else echo "::warning::$b: המחיקה נכשלה"; fi
           done
