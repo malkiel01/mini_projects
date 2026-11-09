@@ -388,3 +388,10 @@ a.use-row { text-decoration: none; color: inherit; }
 .conds li.manual > span:first-child { color: var(--star); font-weight: 700; }
 .param-notes summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .param-notes ul { padding-inline-start: var(--s4); font-size: .85rem; color: var(--muted); }
+
+/* ===== 🧩 בונה השיטות (spec-stage-a 17.2) ===== */
+.code-edit { inline-size: 100%; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: left; tab-size: 2; }
+.builder-out { display: grid; gap: var(--s2); margin-top: var(--s2); min-width: 0; overflow-x: auto; }
+.builder-out .ok { color: var(--ok); }
+.toolbar.wrap { flex-wrap: wrap; }
+.toolbar input[dir="ltr"] { min-width: 0; flex: 1 1 140px; }
