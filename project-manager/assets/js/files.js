@@ -570,6 +570,7 @@ const Files = (() => {
     }
 
     /** התיקייה הראשית שמעל תיקייה. */
+    const SUPPLIER_KINDS = ['contact', 'trade', 'tgroup', 'ssup'];
     const rootOf = f => { while (f?.parent_id) f = folderById(f.parent_id); return f; };
 
     /** "🔗 להציג גם ב…": בחירה מרובה — מסמכי הנכס / הפרויקט, ספקים, תיקיות שנוצרו. */
@@ -583,7 +584,8 @@ const Files = (() => {
         const pick = folders.filter(f => f.id !== home && f.kind !== 'inbox')
             .map(f => ({ f, root: rootOf(f), label: path(f.id) }))
             .sort((a, b) => (order.get(a.root?.id) ?? 0) - (order.get(b.root?.id) ?? 0) || a.label.localeCompare(b.label, I18n.locale()));
-        const space = x => !x.root?.system ? CREATED : x.root.kind === 'contact' ? SUPPLIER_SPACE : PROJECT_SPACE;
+        // לפי התיקייה עצמה, כמו בפורטל (lib/portal.php): תיקייה של ספק — הספק רואה בפורטל גם קובץ פנימי
+        const space = x => x.f.kind === 'custom' ? CREATED : SUPPLIER_KINDS.includes(x.f.kind) && x.f.contact_id ? SUPPLIER_SPACE : PROJECT_SPACE;
         $('#place-list').innerHTML = [PROJECT_SPACE, SUPPLIER_SPACE, CREATED].map(g => {
             const list = pick.filter(x => space(x) === g);
             if (!list.length) return '';
@@ -595,9 +597,13 @@ const Files = (() => {
     }
 
     async function savePlaces() {
-        const ids = [...$('#place-list').querySelectorAll('input:checked')].map(i => Number(i.value));
+        // רק ההפרש מול מה שהוצג: קישור שלא בבורר (נוסף במקביל, תיקייה חדשה) — לא נמחק
+        const boxes = [...$('#place-list').querySelectorAll('input')];
+        const add = boxes.filter(i => i.checked && !i.defaultChecked).map(i => Number(i.value));
+        const remove = boxes.filter(i => !i.checked && i.defaultChecked).map(i => Number(i.value));
+        if (!add.length && !remove.length) { openPlaces(false); return; }
         await busy($('#place-save'), $('#file-dlg form'), async () => {
-            ({ file: current } = await api('file-places', { body: { id: current.id, folder_ids: ids } }));
+            ({ file: current } = await api('file-places', { body: { id: current.id, add, remove } }));
             renderLinks();
             toast(t('נשמר'));
             await loadFolders();

@@ -586,33 +586,38 @@ function pm_file_link(array $user, int $id, int $folderId, bool $add): array
 }
 
 /**
- * PM-045 — "🔗 להציג גם ב…": קבוצת המקומות הנוספים של הקובץ (קיצורי דרך, לא העתק) נקבעת בבת אחת.
- * $folderIds — כל התיקיות שהקובץ יופיע בהן מלבד התיקייה שלו; מה שלא ברשימה — מוסר. התיקייה שלו לא נוגעת.
+ * PM-045 — "🔗 להציג גם ב…": מוסיפים ומסירים מקומות (קיצורי דרך, לא העתק) בבת אחת.
+ * נשלח ההפרש בלבד ($add / $remove) — קישור שלא הוצג בבורר (נוסף במקביל, או לתיקייה שנוצרה אחרי שהחלון נפתח)
+ * לא נמחק. התיקייה של הקובץ (is_home) לא נוגעת.
  */
-function pm_file_places(array $user, int $id, array $folderIds): array
+function pm_file_places(array $user, int $id, array $add, array $remove): array
 {
-    $x = pm_file_row($user, $id);
+    $x = pm_file_row($user, $id); // בודק גם הרשאה לפרויקט
     $pid = (int)$x['project_id'];
     $db = pm_db();
-    $want = [];
-    foreach (array_unique(array_filter(array_map('intval', $folderIds))) as $fid) {
-        if ((int)pm_folder_row($user, $fid)['project_id'] !== $pid) throw new PmError('רק בתוך אותו פרויקט', 422);
-        $want[$fid] = true;
+    $ids = fn(array $a) => array_values(array_unique(array_filter(array_map('intval', $a))));
+    $add = $ids($add);
+    $remove = array_values(array_diff($ids($remove), $add));
+    if ($all = array_merge($add, $remove)) {
+        // כל התיקיות — של אותו פרויקט, בשאילתה אחת
+        $q = $db->prepare('SELECT COUNT(*) FROM folders WHERE project_id = ? AND id IN (' . implode(',', array_fill(0, count($all), '?')) . ')');
+        $q->execute([$pid, ...$all]);
+        if ((int)$q->fetchColumn() !== count($all)) throw new PmError('רק בתוך אותו פרויקט', 422);
     }
-    $cur = $db->prepare('SELECT folder_id, is_home FROM file_links WHERE file_id = ?');
-    $cur->execute([$id]);
-    $have = [];
-    foreach ($cur->fetchAll() as $r) $have[(int)$r['folder_id']] = (bool)$r['is_home'];
     $added = $removed = [];
-    $db->beginTransaction();
+    $db->exec('BEGIN IMMEDIATE'); // הקריאה והכתיבה יחד — קישור שנוסף במקביל נלקח בחשבון
     try {
-        $ins = $db->prepare('INSERT OR IGNORE INTO file_links (file_id, folder_id, is_home) VALUES (?,?,0)');
-        foreach (array_keys($want) as $fid) if (!isset($have[$fid])) { $ins->execute([$id, $fid]); $added[] = $fid; }
+        $cur = $db->prepare('SELECT folder_id, is_home FROM file_links WHERE file_id = ?');
+        $cur->execute([$id]);
+        $have = [];
+        foreach ($cur->fetchAll() as $r) $have[(int)$r['folder_id']] = (bool)$r['is_home'];
+        $ins = $db->prepare('INSERT INTO file_links (file_id, folder_id, is_home) VALUES (?,?,0)');
+        foreach ($add as $fid) if (!isset($have[$fid])) { $ins->execute([$id, $fid]); $added[] = $fid; }
         $del = $db->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ? AND is_home = 0');
-        foreach ($have as $fid => $home) if (!$home && !isset($want[$fid])) { $del->execute([$id, $fid]); $removed[] = $fid; }
-        $db->commit();
+        foreach ($remove as $fid) if (isset($have[$fid]) && !$have[$fid]) { $del->execute([$id, $fid]); $removed[] = $fid; }
+        $db->exec('COMMIT');
     } catch (Throwable $e) {
-        $db->rollBack();
+        $db->exec('ROLLBACK');
         throw $e;
     }
     if ($added || $removed) pm_audit("user:{$user['id']}", 'file.places', 'file', $id, ['added' => $added, 'removed' => $removed]);
