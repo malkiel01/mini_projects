@@ -125,7 +125,7 @@ function pm_payment_proofs(array $ids): array
 function pm_payments(array $user, int $projectId): array
 {
     pm_project_row($user, $projectId);
-    // 💡 הצעות לאבני דרך — מה שסוכם / תוקצב ועוד לא מתוכנן לתשלום (pm_milestone_suggestions)
+    // 💡 הצעות לאבני דרך — מה שסוכם ועוד לא מתוכנן לתשלום (לא התקציב — PM-040) (pm_milestone_suggestions)
     return pm_payments_of($projectId) + ['suggest' => pm_milestone_suggestions($projectId)];
 }
 

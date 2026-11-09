@@ -206,7 +206,7 @@ const Projects = (() => {
             <label class="f"><span>${esc(t('לקוח'))}</span><select name="client_id">${options(clients.filter(mine).map(c => ({ value: c.id, label: c.name })), p.client_id, t('בחירה'))}<option value="__new">${esc(t('+ לקוח חדש'))}</option></select></label>
             <label class="f"><span>${esc(t('עורך דין'))}</span><select name="lawyer_id">${options(lawyers.filter(mine).map(c => ({ value: c.id, label: c.name })), p.lawyer_id, p.id ? t('ללא') : t('לפי הלקוח'))}</select></label>
             <label class="f"><span>${esc(t('סוג'))}</span><select name="kind">${options(kinds, p.kind)}</select></label>
-            <label class="f"><span>${esc(t('תקציב ₪'))} <small>${esc(t('כולל מע"מ'))}</small></span><input name="budget" type="number" inputmode="numeric" min="0" step="1" value="${p.budget || ''}"${p.id && cur?.finance?.budget_broken ? ` disabled title="${esc(t('התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 תקציב".'))}"` : ''}></label>
+            <label class="f"><span>${esc(t('תקציב ₪'))} <small>${esc(t('כולל מע"מ'))}</small></span><input name="budget" type="number" inputmode="numeric" min="0" step="1" value="${p.budget || ''}"${p.id && cur?.finance?.budget_broken ? ` disabled title="${esc(t('התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 צפי".'))}"` : ''}></label>
             <label class="f wide"><span>${esc(t('כתובת הנכס'))}</span><input name="address" maxlength="200" value="${esc(p.address || '')}"></label>
             <label class="f"><span>${esc(t('התחלה'))}</span><input name="start_date" type="date" value="${esc(p.start_date || '')}"></label>
             <label class="f"><span>${esc(t('יעד מסירה'))}</span><input name="due_date" type="date" value="${esc(p.due_date || '')}"></label>
@@ -463,7 +463,7 @@ const Projects = (() => {
         el.budget.value = u?.budget || '';
         // תקציב שפורק לשלבים — תקציב הדירה מחושב (השלבים שלה + חלקה במשותפים)
         el.budget.disabled = !!cur.finance?.budget_broken;
-        el.budget.title = el.budget.disabled ? t('התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 תקציב".') : '';
+        el.budget.title = el.budget.disabled ? t('התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 צפי".') : '';
         el.notes.value = u?.notes || '';
         // לקוח ועו"ד ליחידה — ריק = של הפרויקט
         const [clients, lawyers] = await Promise.all([contactsOf('client'), contactsOf('lawyer')]).catch(() => [[], []]);
@@ -592,7 +592,7 @@ const Projects = (() => {
         // אגף הכספים: התקדמות ("בוצע" = 100, נעול) ותקציב לשלב
         el.progress.value = s.progress || 0;
         el.budget.value = s.budget || '';
-        // הצעת תקציב שאושרה — נעולה: תקציב השלב משתנה רק ב"📐 תקציב" ← "שינוי תקציב"
+        // הצעת תקציב שאושרה — נעולה: תקציב השלב משתנה רק ב"📐 צפי" ← "שינוי תקציב"
         const bLocked = !!cur.finance?.budget_locked;
         el.budget.disabled = bLocked;
         el.budget.title = bLocked ? t('הצעת התקציב אושרה ונעולה — שינוי דרך "שינוי תקציב"') : '';

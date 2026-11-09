@@ -1,5 +1,5 @@
 /**
- * הצעת תקציב לפי שלבים — "💰 כספים" ← "📐 תקציב" (lib/budget.php, README: "הצעת תקציב").
+ * 📐 צפי — הצעת תקציב לפי שלבים, וצפי מול סוכם — "💰 כספים" ← "📐 צפי". לא נכנס לתזרים (PM-040) (lib/budget.php, README: "הצעת תקציב").
  * טיוטה: סכום לכל שלב, "בלתי צפוי" באחוזים, שמירה ושליחה לאישור. ממתינה: מה נשלח, רישום אישור ידני, ביטול.
  * נעולה: ראשוני · היום · סוכם · חריגה לכל שלב, "✏️ שינוי תקציב" (שוב לאישור), ויומן כל הגרסאות.
  * מע"מ: בורר "כולל מע"מ / לפני מע"מ" — איך רואים ועורכים. בשרת הכול נשמר כולל מע"מ (כמו שאר הכספים), וההמרה כאן.
@@ -104,6 +104,7 @@ const Budget = (() => {
                 <div class="row-btns wrap">${buttons()}</div>
             </section>
             ${B.state === 'locked' && !editing ? `<p class="hint">${esc(t('ראשוני — מה שאושר בהצעה. היום — אחרי השינויים שאושרו. סוכם — הצעות ותוספות שאושרו בפועל. חריגה — סוכם מעל התקציב של השלב.'))}</p>` : ''}
+            <section class="fin-card" id="bd-vs"></section>
             <section class="fin-card" id="bd-split"></section>
             ${units.length > 1 ? `<section class="fin-card"><h3 class="sec-title">🏢 ${esc(t('לפי דירות'))}</h3><ul class="list bd-units">${units.map(u => `<li><span>${esc(u.name)} <small class="muted">${esc(t('{n}% מהמשותף', { n: u.pct }))}</small></span><b>${esc(fv(u.budget))}</b></li>`).join('')}</ul>
                 <p class="hint">${esc(t('כל דירה — השלבים שלה, וחלקה בשלבים המשותפים לפי האחוזים ב"⚙️ הגדרות" שבסיכום הכספים.'))}</p></section>` : ''}
@@ -191,6 +192,7 @@ const Budget = (() => {
         const root = $('#bd-split');
         if (!root) return;
         const f = filter(), units = data.units || [];
+        vsCommitted(f);
         if (!data.lines.length) { root.hidden = true; return; }
         root.hidden = false;
         const list = FinFilter.group(shownLines(f),
@@ -213,6 +215,49 @@ const Budget = (() => {
                 <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ שלבים'))}</th>${td(sum(g => g.total))}${multi ? units.map(u => td(sum(g => g.u[u.id] || 0))).join('') : ''}</tr></tfoot></table></div>
             <p class="hint">${esc([data.vat_mode === 'net' ? t('לפני מע"מ') : t('כולל מע"מ'), t('בלי שכר טרחה ו"בלתי צפוי"'),
                 multi ? t('שלב משותף — לפי אחוזי החלוקה בין הדירות') : ''].filter(Boolean).join(' · '))}</p></div>`;
+    }
+
+    /**
+     * ⚖️ צפי מול סוכם — לכל שלב: הצפי (התקציב), מה שסוכם בפועל, והפער. בלי תשלומים (אלה בתזרים).
+     * הערכת סוף: לכל שלב — הגבוה מבין הסוכם לצפי (הכרעת בעל המערכת, 09/11), ועוד מה שסוכם מחוץ לשלבים.
+     */
+    function vsCommitted(f) {
+        const root = $('#bd-vs');
+        if (!root) return;
+        if (!data.lines.length) { root.hidden = true; return; }
+        root.hidden = false;
+        const net = data.vat_mode === 'net';
+        const amt = new Map(data.lines.map(l => [l.stage_id, amountOf(l)])); // פעם אחת לכל שלב
+        // הסוכם לפי התצוגה — "לפני מע״מ" לוקח את הנטו של כל פריט מהשרת (פטור ממע״מ לא מחולק ב-1.18)
+        const doneOf = l => (net ? l.committed_net : l.committed);
+        const rows = shownLines(f).map(l => ({ l, plan: amt.get(l.stage_id), done: doneOf(l) }));
+        // הערכת סוף: לכל שלב — הגבוה מבין הסוכם לצפי (שלב שסוכם בחלקו לא "מעלים" את שאר הצפי),
+        // ועוד מה שסוכם מחוץ לשלבים (הוצאות, שכר טרחה, בלי שלב)
+        const outside = (net ? data.committed_total_net : data.committed_total) - data.lines.reduce((a, l) => a + doneOf(l), 0);
+        const estimate = outside + data.lines.reduce((a, l) => a + Math.max(doneOf(l), amt.get(l.stage_id)), 0);
+        const sum = key => rows.reduce((a, r) => a + r[key], 0);
+        // פער: סוכם מעל הצפי — חריגה (אדום). מתחת — "נותר בצפי", לא חיסכון: אולי עוד לא סוכם הכול
+        const gapCell = (plan, done) => {
+            if (!done) return `<td class="n muted">${esc(t('עוד לא סוכם'))}</td>`;
+            const g = plan - done;
+            if (Math.abs(g) < 0.5) return '<td class="n">0</td>';
+            return g < 0 ? `<td class="n fin-late"><bdi dir="ltr">${esc('−' + fmt(-g))}</bdi></td>`
+                : `<td class="n muted">${esc(t('נותר {amount}', { amount: fmt(g) }))}</td>`;
+        };
+        const agreed = rows.filter(r => r.done);
+        const td = v => `<td class="n">${v ? esc(fmt(v)) : '—'}</td>`;
+        root.innerHTML = `<h3 class="sec-title">⚖️ ${esc(t('צפי מול סוכם'))}</h3>
+            <dl class="fin-kpis bd-vs-kpis">
+                <div><dt>${esc(t('צפי לשלבים'))}</dt><dd>${esc(fmt(sum('plan')))}</dd></div>
+                <div><dt>${esc(t('סוכם בשלבים'))}</dt><dd>${esc(fmt(sum('done')))}</dd></div>
+                ${FinFilter.active(f) ? '' : `<div class="bd-est"><dt>${esc(t('הערכת סוף'))}</dt><dd>${esc(fmt(estimate))}<small class="kpi-x">${esc(t('לכל שלב — הגבוה מבין הסוכם לצפי, ועוד הוצאות ושכר טרחה'))}</small></dd></div>`}
+            </dl>
+            <div class="fin-units"><div class="tbl-wrap"><table>
+                <thead><tr><th>${esc(t('שלב'))}</th><th class="n">${esc(t('צפי'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('פער'))}</th></tr></thead>
+                <tbody>${rows.map(r => `<tr><th>${esc(t(r.l.name))}${r.l.unit_name ? `<small>${esc(r.l.unit_name)}</small>` : ''}</th>${td(r.plan)}${td(r.done)}${gapCell(r.plan, r.done)}</tr>`).join('')}</tbody>
+                <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ שלבים'))}</th>${td(sum('plan'))}${td(sum('done'))}${gapCell(agreed.reduce((a, r) => a + r.plan, 0), sum('done'))}</tr></tfoot></table></div>
+            <p class="hint">${esc([net ? t('לפני מע"מ') : t('כולל מע"מ'), t('פער — רק בשלבים שסוכמו: במינוס — סוכם יותר מהצפי; "נותר" — מה שנשאר בצפי, לא חיסכון'),
+                t('הצפי לא נכנס לתזרים: שם רק חוזים, תוספות, אבני דרך ותשלומים')].join(' · '))}</p></div>`;
     }
 
     function line(l, editable) {
