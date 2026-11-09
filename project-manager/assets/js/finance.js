@@ -28,7 +28,8 @@ const Finance = (() => {
             const c = e.target.closest('[data-sup-chip]');
             if (!c) return;
             const [sid, key] = c.dataset.supChip.split(':');
-            supOpen.set(Number(sid), supOpen.get(Number(sid)) === key ? '' : key);
+            // לפי מה שפתוח בפועל (גם ברירת המחדל — ספק עם מקצוע אחד): פתוח — נסגר, סגור — נפתח
+            supOpen.set(Number(sid), c.getAttribute('aria-expanded') === 'true' ? '' : key);
             renderStages();
         });
         $('#fin-body').addEventListener('click', e => {
@@ -133,6 +134,7 @@ const Finance = (() => {
 
     async function show(p) {
         bind();
+        if (project?.project?.id !== p.project.id) supOpen.clear(); // צ'יפים פתוחים — לכל פרויקט מחדש
         project = p;
         finTab(finTabNow());
         try { [data, supplierContacts] = await Promise.all([api('finance', { params: { project_id: p.project.id } }), contactsOf('supplier').catch(() => [])]); }
@@ -302,7 +304,9 @@ const Finance = (() => {
             const chips = [...g.chips.values()];
             const sum = k => chips.reduce((a, c) => a + c[k], 0);
             const committed = sum('committed'), paid = sum('paid'), late = sum('late');
-            const open = supOpen.get(g.id) ?? (chips.length === 1 ? chips[0].key : null);
+            // הצ'יפ הפתוח: מה שנבחר — אם עדיין קיים (אחרי שמירת חוזה המפתח משתנה); '' — נסגר במכוון; אחרת ברירת המחדל
+            const saved = supOpen.get(g.id);
+            const open = saved === '' ? null : chips.some(c => c.key === saved) ? saved : (chips.length === 1 ? chips[0].key : null);
             const cur = chips.find(c => c.key === open);
             const detail = cur ? `<div class="sup-detail">${cur.items.map(({ s, r }) => `<section class="fin-stage">
                     <header class="q-head"><h4 class="one">${esc(s.stage_id ? stageName(s) : t('בלי שלב'))}</h4>${s.stage_id ? stageChip(s.status) : ''}</header>
