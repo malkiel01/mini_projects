@@ -243,7 +243,9 @@ const Payments = (() => {
         const dlg = $('#payment-dlg'), form = $('form', dlg), el = form.elements;
         formError(form, '');
         current = id ? data.payments.find(p => p.id === id) : null;
-        contractCtx = current ? null : preset.contract || null;
+        // אבן דרך של חוזה עם סכום (גם בעריכה) — האחוז והרמז מסכום החוזה, כמו בשרת
+        contractCtx = current ? (current.contract_id ? { id: current.contract_id, supplier_id: current.supplier_id, amount: current.contract_amount, title: current.contract_title } : null)
+            : preset.contract || null;
         const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer(), due_kind: 'date', ...preset };
         $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.due_amount + (current.kind === 'retention' ? 0 : current.retention || 0))}` : t('אבן דרך לתשלום');
         // "💰 מקדמה" — בראש הרשימה, אחרי "בלי שלב": תשלום בתחילת העבודה, בלי שלב ובלי תאריך

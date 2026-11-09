@@ -363,7 +363,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
                 'changes' => $r['changes'] ?? [], 'index' => pm_m($acc['index'][0] ?? 0, $acc['index'][1] ?? 0),
                 // החוזה עם הספק (מועדים, אבני דרך, קנס) — תקציר לשורה
                 // לספק יכולים להיות כמה חוזים — של השלב הזה (pm_contract_for); contracts — כמה יש לו בפרויקט
-                'contract' => ($k = pm_contract_for($contracts, $cid, $sid ?: null)) ? array_intersect_key($k, array_flip(['id', 'title', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days', 'money']))
+                'contract' => ($k = $ck) ? array_intersect_key($k, array_flip(['id', 'title', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days', 'money']))
                     + ['late_milestones' => count(array_filter($k['milestones'], fn($m) => in_array($m['status'], ['late', 'breach'], true)))] : null,
                 'contracts' => count(array_filter($contracts, fn($k) => $k['supplier_id'] === $cid)),
             ];
