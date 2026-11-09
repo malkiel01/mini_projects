@@ -114,8 +114,9 @@ const Payments = (() => {
     }
 
     /** "+ אבן דרך" מהמצב הכספי — עם השלב והספק. */
-    function add(stageId, supplierId) {
-        open(null, { stage_id: stageId, supplier_id: supplierId });
+    /** contract — PM-043: אבן דרך מתוך חוזה עם סכום ({id, amount, title}); אחוז — מסכום החוזה. */
+    function add(stageId, supplierId, contract = null) {
+        open(null, { stage_id: stageId, supplier_id: supplierId, contract });
     }
 
     // ================= 💡 הצעות לאבני דרך =================
@@ -242,6 +243,9 @@ const Payments = (() => {
         const dlg = $('#payment-dlg'), form = $('form', dlg), el = form.elements;
         formError(form, '');
         current = id ? data.payments.find(p => p.id === id) : null;
+        // אבן דרך של חוזה עם סכום (גם בעריכה) — האחוז והרמז מסכום החוזה, כמו בשרת
+        contractCtx = current ? (current.contract_id ? { id: current.contract_id, supplier_id: current.supplier_id, amount: current.contract_amount, title: current.contract_title } : null)
+            : preset.contract || null;
         const p = current || { stage_id: guessStage(), payer: defaultPayer(), needs_lawyer: hasLawyer(), due_kind: 'date', ...preset };
         $('#payment-dlg-title').textContent = current ? `${current.title} — ${money(current.due_amount + (current.kind === 'retention' ? 0 : current.retention || 0))}` : t('אבן דרך לתשלום');
         // "💰 מקדמה" — בראש הרשימה, אחרי "בלי שלב": תשלום בתחילת העבודה, בלי שלב ובלי תאריך
@@ -329,6 +333,7 @@ const Payments = (() => {
     }
 
     let approvedQuote = null;
+    let contractCtx = null; // PM-043: אבן דרך חדשה מתוך חוזה — {id, amount, title}
 
     /** שלב נבחר: הספק — מההצעה שאושרה בו (או של השלב); ואחוז — רק כשיש הצעה כזו. */
     async function stageChanged(supplierId) {
@@ -341,7 +346,8 @@ const Payments = (() => {
                 approvedQuote = quotes.find(q => q.stage_id === st.id && q.status === 'approved') || null;
             } catch { /* בלי אחוז */ }
         }
-        const value = supplierId ?? approvedQuote?.supplier_id ?? st?.supplier_id ?? null;
+        // אבן דרך מתוך חוזה — הספק של החוזה, גם כשמחליפים שלב (למשל ל"מקדמה", בלי שלב)
+        const value = supplierId ?? contractCtx?.supplier_id ?? approvedQuote?.supplier_id ?? st?.supplier_id ?? null;
         // מי שמקבל כסף בתיק — מוגדר בתיק: רק ספקי הפרויקט, ו"+ ספק שלא בפרויקט…" מגדיר אותו בצוות וחוזר
         await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, value, teamOf(project), { projectOnly: true });
         el.supplier_id.onchange = () => {
@@ -350,8 +356,9 @@ const Payments = (() => {
             Projects.openMember(0, { after: async id => { await Projects.fillSuppliers(el.supplier_id, st?.trade_id || 0, id, teamOf(project), { projectOnly: true }); el.supplier_id.value = String(id); } });
         };
         el.supplier_id.options[0].textContent = t('בחירת ספק');
-        $('#pay-mode-box').hidden = !approvedQuote;
-        if (!approvedQuote) $('#payment-dlg [name=mode][value=amount]').checked = true;
+        const pctBase = contractCtx?.amount || approvedQuote; // אחוז — מסכום החוזה, ובלי חוזה — מההצעה שאושרה
+        $('#pay-mode-box').hidden = !pctBase;
+        if (!pctBase) $('#payment-dlg [name=mode][value=amount]').checked = true;
         modeChanged();
     }
 
@@ -427,10 +434,15 @@ const Payments = (() => {
 
     function quoteHint() {
         const h = $('#pay-quote-hint');
-        h.hidden = !approvedQuote;
-        if (!approvedQuote) return;
         const pct = Number($('#payment-dlg form').elements.percent.value) || 0;
         const pctMode = $('#payment-dlg [name=mode]:checked').value === 'percent';
+        if (contractCtx?.amount) {
+            h.hidden = false;
+            h.textContent = t('החוזה: {name} — {amount}', { name: contractCtx.title || t('חוזה'), amount: money(contractCtx.amount) }) + (pctMode && pct ? ` · ${pct}% = ${money(Math.round(contractCtx.amount * pct) / 100)}` : '');
+            return;
+        }
+        h.hidden = !approvedQuote;
+        if (!approvedQuote) return;
         h.textContent = t('ההצעה שאושרה: {name} — {amount}', { name: approvedQuote.supplier_name, amount: money(approvedQuote.amount) }) + ` (${vatLine(vatOf(approvedQuote.amount, approvedQuote.vat_rate))})` + (pctMode && pct ? ` · ${pct}% = ${money(Math.round(approvedQuote.amount * pct) / 100)}` : '');
     }
 
@@ -489,6 +501,7 @@ const Payments = (() => {
             due_date: $('#payment-dlg [name=due_kind]:checked').value === 'date' ? el.due_date.value : '', payer: $('#payment-dlg [name=payer]:checked').value,
             needs_lawyer: el.needs_lawyer.checked, notes: el.notes.value,
         };
+        if (contractCtx) body.contract_id = contractCtx.id;
         if (project.finance?.index_on) body.index_value = el.index_value.value.trim();
         if (!body.supplier_id) { formError(form, t('ספק: שדה חובה')); return; }
         if (!body.title) { formError(form, t('שם: שדה חובה (למשל "מקדמה")')); return; }

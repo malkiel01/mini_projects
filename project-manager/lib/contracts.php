@@ -35,7 +35,8 @@ function pm_contracts_of(int $projectId, ?int $supplierId = null): array
     $st = pm_db()->prepare('SELECT c.*, f.name AS file_name, f.deleted_at AS file_deleted FROM contracts c LEFT JOIN files f ON f.id = c.file_id
                              WHERE c.project_id = ?' . ($supplierId ? ' AND c.supplier_id = ' . (int)$supplierId : '') . ' ORDER BY c.id');
     $st->execute([$projectId]);
-    return array_map('pm_contract_out', $st->fetchAll());
+    $pre = pm_contract_preload($projectId, $supplierId); // הכסף של כל החוזים — בטעינה אחת
+    return array_map(fn($c) => pm_contract_out($c, $pre), $st->fetchAll());
 }
 
 /**
@@ -51,7 +52,133 @@ function pm_contract_for(array $contracts, int $supplierId, ?int $stageId): ?arr
     return $stageId ? null : $mine[0];
 }
 
-function pm_contract_out(array $c): array
+/**
+ * PM-043 — הכסף של החוזה: הסכום, תוספות שאושרו (מגדילות אותו), ואבני הדרך לתשלום שנבנו ממנו.
+ * תוספת שייכת לחוזה לפי השלב שלה: חוזה שהשלב רשום בו, או חוזה "לכל השלבים" כשאף חוזה אחר לא לוקח אותו.
+ * state: ok — חולק בדיוק · short — חוסר · over — עודף · none — לחוזה אין סכום.
+ */
+function pm_contract_money(array $c, ?array $pre = null): array
+{
+    // $pre — טעינה אחת לפרויקט (pm_contract_preload, מ-pm_contracts_of): בלי שאילתות לכל חוזה
+    $pre ??= pm_contract_preload((int)$c['project_id'], (int)$c['supplier_id']);
+    $amount = (int)($c['amount'] ?? 0);
+    $sids = ($c['stage_ids'] ?? '') === '' ? null : array_map('intval', json_decode($c['stage_ids'], true) ?: []);
+    $taken = [];
+    if ($sids === null) foreach ($pre['contracts'] as $x) {
+        if ((int)$x['supplier_id'] === (int)$c['supplier_id'] && (int)$x['id'] !== (int)$c['id'] && $x['stage_ids'] !== '') $taken = array_merge($taken, array_map('intval', json_decode($x['stage_ids'], true) ?: []));
+    }
+    $changes = 0;
+    foreach ($pre['changes'][(int)$c['supplier_id']] ?? [] as $x) {
+        $sid = (int)$x['stage_id'];
+        if ($sids === null ? !in_array($sid, $taken, true) : in_array($sid, $sids, true)) $changes += (int)$x['amount'];
+    }
+    $rows = $pre['payments'][(int)$c['id']] ?? [];
+    $allocated = array_sum(array_map(fn($p) => (int)$p['amount'], $rows));
+    $total = $amount + $changes;
+    $diff = $allocated - $total;
+    return [
+        'amount' => $amount / 100, 'changes' => $changes / 100, 'total' => $total / 100, 'allocated' => $allocated / 100, 'diff' => $diff / 100,
+        'state' => $total <= 0 ? 'none' : (abs($diff) < 100 ? 'ok' : ($diff < 0 ? 'short' : 'over')),
+        'payments' => array_map(fn($p) => ['id' => (int)$p['id'], 'title' => $p['title'], 'amount' => (int)$p['amount'] / 100,
+            'percent' => $p['percent'] !== null ? (float)$p['percent'] : null, 'is_balance' => (bool)$p['is_balance'], 'status' => $p['status'],
+            'change_order_id' => $p['change_order_id'] ? (int)$p['change_order_id'] : null], $rows),
+    ];
+}
+
+/** הכול לכסף של החוזים — פעם אחת: החוזים, תוספות שאושרו (לפי ספק), ואבני הדרך שלהם (לפי חוזה; היתרה אחרונה). */
+function pm_contract_preload(int $projectId, ?int $supplierId = null): array
+{
+    $db = pm_db();
+    $and = $supplierId ? ' AND supplier_id = ' . $supplierId : '';
+    $k = $db->prepare("SELECT id, supplier_id, stage_ids FROM contracts WHERE project_id = ?$and");
+    $k->execute([$projectId]);
+    $co = $db->prepare("SELECT supplier_id, stage_id, amount FROM change_orders WHERE project_id = ? AND status = 'approved'$and");
+    $co->execute([$projectId]);
+    $changes = [];
+    foreach ($co->fetchAll() as $x) $changes[(int)$x['supplier_id']][] = $x;
+    $ps = $db->prepare("SELECT id, contract_id, title, amount, percent, is_balance, status, due_kind, due_date, stage_id, change_order_id FROM payments
+                        WHERE project_id = ? AND contract_id IS NOT NULL AND kind = 'milestone' AND status != 'cancelled'$and
+                        ORDER BY is_balance, CASE due_kind WHEN 'advance' THEN 0 ELSE 1 END, id");
+    $ps->execute([$projectId]);
+    $payments = [];
+    foreach ($ps->fetchAll() as $x) $payments[(int)$x['contract_id']][] = $x;
+    return ['contracts' => $k->fetchAll(), 'changes' => $changes, 'payments' => $payments];
+}
+
+/**
+ * PM-043 — "יתרה" מחושבת מחדש: סכום החוזה (עם התוספות) פחות שאר אבני הדרך שלו, לא פחות מ-0.
+ * רק כל עוד היא "יתרה" (סכום ידני מבטל) ועוד לא דווח עליה תשלום. כמו כל שינוי סכום (pm_payment_save):
+ * העיכבון והפרשי ההצמדה מחושבים מחדש, אישור עו"ד שניתן על הסכום הקודם מתבטל, ונרשם ביומן.
+ * לחוזה בלי סכום (נמחק) — היתרה שנוצרה לבד מתבטלת.
+ */
+function pm_contract_rebalance(array $user, int $projectId, ?int $cid): void
+{
+    if (!$cid) return;
+    $db = pm_db();
+    $st = $db->prepare('SELECT * FROM contracts WHERE project_id = ? AND id = ?');
+    $st->execute([$projectId, $cid]);
+    $c = $st->fetch();
+    if (!$c) return;
+    $b = $db->prepare("SELECT * FROM payments WHERE contract_id = ? AND is_balance = 1 AND kind = 'milestone' AND status IN ('planned','requested') ORDER BY id DESC LIMIT 1");
+    $b->execute([$cid]);
+    $bal = $b->fetch();
+    if (!$bal) return;
+    $now = pm_now();
+    $supplier = pm_contact_name((int)$bal['supplier_id']);
+    if ((int)$c['amount'] <= 0) {
+        $db->prepare("UPDATE payments SET status = 'cancelled', updated_at = ? WHERE id = ?")->execute([$now, $bal['id']]);
+        pm_event($user, $projectId, 'payment', 'היתרה בוטלה — לחוזה עם {supplier} אין סכום', ['payment' => (int)$bal['id']], ['supplier' => $supplier]); // i18n-ok
+        if ($bal['stage_id']) pm_retention_sync($user, $projectId, (int)$bal['stage_id'], (int)$bal['supplier_id']);
+        return;
+    }
+    $m = pm_contract_money($c);
+    $others = (int)round($m['allocated'] * 100) - (int)$bal['amount'];
+    $want = max(0, (int)round($m['total'] * 100) - $others);
+    if ($want === (int)$bal['amount']) return;
+    $ret = pm_payment_retention($projectId, (int)$bal['supplier_id'], (int)$bal['id'], $want, $bal['due_kind']);
+    $p = $db->query('SELECT index_on, index_base FROM projects WHERE id = ' . $projectId)->fetch();
+    $diff = $p['index_on'] && $bal['index_value'] !== null && (float)$p['index_base'] > 0
+        ? (int)round(($want - $ret) * ((float)$bal['index_value'] / (float)$p['index_base'] - 1)) : (int)($bal['index_diff'] ?? 0);
+    $resetLawyer = !empty($bal['lawyer_approved_at']);
+    $db->prepare('UPDATE payments SET amount = ?, percent = NULL, retention = ?, index_diff = ?, updated_at = ?'
+        . ($resetLawyer ? ", lawyer_approved_at = NULL, lawyer_by = '', lawyer_method = '', lawyer_note = ''" : '') . ' WHERE id = ?')
+       ->execute([$want, $ret, $diff, $now, $bal['id']]);
+    pm_event($user, $projectId, 'payment', $resetLawyer ? 'היתרה חושבה מחדש: {supplier} — {amount}. נדרש אישור עו"ד מחדש' : 'היתרה חושבה מחדש: {supplier} — {amount}', // i18n-ok
+        ['payment' => (int)$bal['id']], ['supplier' => $supplier, 'amount' => pm_money($want)]);
+    if ($bal['stage_id']) pm_retention_sync($user, $projectId, (int)$bal['stage_id'], (int)$bal['supplier_id']);
+}
+
+/**
+ * PM-043 — חוזה שקיבל סכום: אבני דרך של הספק שכבר קיימות בשלבים של החוזה (למשל מההצעה) עוברות אליו, כדי שלא
+ * ייווצר תשלום כפול; ואם עדיין אין "יתרה" — נוצרת על מה שנשאר (כשנשאר). רץ בתוך הטרנזקציה של שמירת החוזה.
+ */
+function pm_contract_adopt(array $user, array $p, int $cid, int $supplierId, ?array $stageIds, int $amount, string $endDate): void
+{
+    $db = pm_db();
+    $projectId = (int)$p['id'];
+    $contracts = pm_contracts_of($projectId, $supplierId);
+    $free = $db->prepare("SELECT id, stage_id FROM payments WHERE project_id = ? AND supplier_id = ? AND contract_id IS NULL AND kind = 'milestone' AND status != 'cancelled'");
+    $free->execute([$projectId, $supplierId]);
+    $up = $db->prepare('UPDATE payments SET contract_id = ? WHERE id = ?');
+    foreach ($free->fetchAll() as $x) {
+        $k = pm_contract_for($contracts, $supplierId, $x['stage_id'] ? (int)$x['stage_id'] : null);
+        if ($k && $k['id'] === $cid) $up->execute([$cid, $x['id']]);
+    }
+    $has = $db->prepare("SELECT COUNT(*) FROM payments WHERE contract_id = ? AND is_balance = 1 AND kind = 'milestone' AND status != 'cancelled'");
+    $has->execute([$cid]);
+    if ((int)$has->fetchColumn()) return;
+    $c = $db->query('SELECT * FROM contracts WHERE id = ' . $cid)->fetch();
+    $m = pm_contract_money($c);
+    $left = (int)round(($m['total'] - $m['allocated']) * 100);
+    if ($m['payments'] && $left <= 0) return; // כבר מחולק במלואו (או בעודף) — אין יתרה להוסיף
+    $one = $stageIds && count($stageIds) === 1 ? $stageIds[0] : null;
+    $saved = pm_payment_save($user, ['project_id' => $projectId, 'supplier_id' => $supplierId, 'stage_id' => $one, 'contract_id' => $cid,
+        'title' => pm_t('יתרה'), 'amount' => $left / 100, 'due_kind' => $one ? 'stage_done' : 'date', 'due_date' => $one ? '' : $endDate,
+        'payer' => 'client', 'needs_lawyer' => (bool)$p['lawyer_id']])['saved'];
+    $db->prepare('UPDATE payments SET is_balance = 1 WHERE id = ?')->execute([$saved]);
+}
+
+function pm_contract_out(array $c, ?array $pre = null): array
 {
     $today = pm_today();
     $m = pm_db()->prepare('SELECT * FROM contract_milestones WHERE contract_id = ? ORDER BY sort, due_date, id');
@@ -101,6 +228,7 @@ function pm_contract_out(array $c): array
         'milestones' => $milestones,
         'unit_ids' => array_map('intval', json_decode($c['unit_ids'] ?? '[]', true) ?: []), 'split' => pm_split_of($c['split'] ?? ''),
         'delay_days' => $delay, 'penalty_days' => $penaltyDays, 'penalty' => $penalty / 100,
+        'money' => pm_contract_money($c, $pre), // PM-043: סכום, תוספות, כמה חולק לאבני דרך, ומה מצב החלוקה
         'worst_deviation' => $worst,
         'days_left' => $c['end_date'] !== '' && $c['completed_on'] === '' ? pm_days_between($today, $c['end_date']) : null,
     ];
@@ -145,6 +273,9 @@ function pm_contract_save(array $user, array $in): array
         'max_deviation_days' => $int('max_deviation_days', 365, 'סטייה מרבית מאבן דרך') ?: 30, // i18n-ok
         'notes'              => pm_str($in, 'notes', 2000, false, 'הערות'),
         'title'              => pm_str($in, 'title', 120, false, 'שם החוזה'), // i18n-ok
+        // PM-043: סכום החוזה, ₪ כולל מע"מ — נשמר באגורות; ריק — חוזה בלי סכום (מועדים וקנס בלבד)
+        // 0 או ריק — מוחק את הסכום (והיתרה שנוצרה לבד מתבטלת)
+        'amount'             => ($in['amount'] ?? '') === '' || $in['amount'] === null || (is_numeric($in['amount']) && (float)$in['amount'] == 0) ? 0 : pm_quote_amount($in['amount']),
     ];
     // על אילו שלבים החוזה חל — שלב שנרשם כאן יוצא מחוזים אחרים של אותו ספק (לשלב — חוזה אחד)
     $stageIds = null;
@@ -215,6 +346,10 @@ function pm_contract_save(array $user, array $in): array
                 if ($left !== $ids) $db->prepare('UPDATE contracts SET stage_ids = ? WHERE id = ?')->execute([json_encode($left), $x['id']]);
             }
         }
+        // PM-043 (בתוך הטרנזקציה — נכשל? גם החוזה לא נשמר): עם סכום — אבני הדרך הקיימות של הספק עוברות לחוזה,
+        // ו"יתרה" על מה שנשאר; בלי סכום — היתרה שנוצרה לבד מתבטלת. ואחר כך — היתרה מחושבת מחדש
+        if ($f['amount'] > 0) pm_contract_adopt($user, $p, $cid, $supplierId, $stageIds, $f['amount'], $f['end_date']);
+        pm_contract_rebalance($user, $projectId, $cid);
         pm_event($user, $projectId, 'finance', $old ? 'עודכן החוזה עם {supplier}' : '📄 נרשם חוזה עם {supplier} — סיום עד {date}', ['contract' => $cid],
             ['supplier' => pm_contact_name($supplierId), 'date' => $f['end_date'] !== '' ? pm_short_date($f['end_date']) : '—']);
         $db->commit();

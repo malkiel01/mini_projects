@@ -330,8 +330,11 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
             $flags = [];
             if ($gap > 100) $flags[] = 'behind';
             if ($s && $committed > 0 && $paidPct > $progress + $overpay) $flags[] = 'overpaid';
-            if ($hasQuote && abs($scheduled - $committed) > 100) $flags[] = $scheduled < $committed ? 'uncovered' : 'overscheduled';
-            if (!$hasQuote && $scheduled > 0) $flags[] = 'no_quote';
+            // PM-043: חוזה עם סכום הוא המחייב — ההשוואה מול החוזה (המד "חולק מתוך"), לא מול ההצעה, ואינן "בלי הצעה"
+            $ck = pm_contract_for($contracts, $cid, $sid ?: null);
+            $byContract = $ck && $ck['money']['amount'] > 0;
+            if ($hasQuote && !$byContract && abs($scheduled - $committed) > 100) $flags[] = $scheduled < $committed ? 'uncovered' : 'overscheduled';
+            if (!$hasQuote && $scheduled > 0 && !$byContract) $flags[] = 'no_quote';
             if ($credit > 100) $flags[] = 'credit';
             // נטו — לפי השיעור של כל רשומה (הצעה ותוספת יכולות להיות בשיעורים שונים); יתרה וזיכוי — באותו יחס
             $n = fn(int $g, string $k) => $k === 'committed' ? $committedN : ($acc[$k][1] ?? pm_net($g, $rate));
@@ -360,7 +363,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
                 'changes' => $r['changes'] ?? [], 'index' => pm_m($acc['index'][0] ?? 0, $acc['index'][1] ?? 0),
                 // החוזה עם הספק (מועדים, אבני דרך, קנס) — תקציר לשורה
                 // לספק יכולים להיות כמה חוזים — של השלב הזה (pm_contract_for); contracts — כמה יש לו בפרויקט
-                'contract' => ($k = pm_contract_for($contracts, $cid, $sid ?: null)) ? array_intersect_key($k, array_flip(['id', 'title', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days']))
+                'contract' => ($k = $ck) ? array_intersect_key($k, array_flip(['id', 'title', 'end_date', 'completed_on', 'delay_days', 'penalty', 'days_left', 'worst_deviation', 'max_deviation_days', 'money']))
                     + ['late_milestones' => count(array_filter($k['milestones'], fn($m) => in_array($m['status'], ['late', 'breach'], true)))] : null,
                 'contracts' => count(array_filter($contracts, fn($k) => $k['supplier_id'] === $cid)),
             ];
@@ -1082,6 +1085,8 @@ function pm_milestone_suggestions(int $projectId): array
         $sid = (int)($s['stage_id'] ?? 0);
         if (!$sid || !isset($stages[$sid]) || in_array($stages[$sid]['status'], ['paid'], true)) continue;
         foreach ($s['rows'] as $r) {
+            // PM-043: חוזה עם סכום — אבני הדרך נבנות ממנו, והיתרה שלו נכנסת לבד; אין מה להציע כאן
+            if (($r['contract']['money']['amount'] ?? 0) > 0) continue;
             $gap = round($r['committed']['g'] - $r['scheduled']['g'], 2);
             if ($gap < 100) continue; // פחות מ-₪100 — לא שווה אבן דרך
             $out[] = ['stage_id' => $sid, 'stage' => $s['name'], 'supplier_id' => (int)$r['supplier_id'], 'supplier' => $r['name'],
