@@ -2671,9 +2671,9 @@
     "סוכם + צפי לשלבים שעוד לא סוכמו": "Convenu + prévision des étapes pas encore convenues",
     "צפי": "Prévision",
     "פער": "Écart",
-    "פער — הצפי פחות מה שסוכם; במינוס — סוכם יותר מהצפי": "Écart — prévision moins convenu ; négatif : plus a été convenu que prévu",
     "הצפי לא נכנס לתזרים: שם רק חוזים, תוספות, אבני דרך ותשלומים": "La prévision n'entre pas dans la trésorerie : elle ne contient que contrats, avenants, jalons et paiements",
     "מה שסוכם עם ספק ועוד לא מתוכנן באבני דרך. לחיצה על הצעה — נפתח החלון ממולא, ומאשרים.": "Ce qui a été convenu avec un fournisseur et n'est pas encore planifié en jalons. Touchez une suggestion — la fenêtre s'ouvre pré-remplie, et vous confirmez.",
     "התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב\"📐 צפי\".": "Le budget est calculé à partir de la proposition par étapes — les montants se modifient dans « 📐 Prévision ».",
-    "📐 צפי": "📐 Prévision"
+    "📐 צפי": "📐 Prévision",
+    "פער — הצפי פחות מה שסוכם, רק בשלבים שסוכמו; במינוס — סוכם יותר מהצפי": "Écart — prévision moins convenu, seulement pour les étapes convenues ; négatif : plus a été convenu que prévu"
 }

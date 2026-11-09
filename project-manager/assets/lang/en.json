@@ -2653,9 +2653,9 @@
     "סוכם + צפי לשלבים שעוד לא סוכמו": "Agreed + forecast for stages not yet agreed",
     "צפי": "Forecast",
     "פער": "Gap",
-    "פער — הצפי פחות מה שסוכם; במינוס — סוכם יותר מהצפי": "Gap — forecast minus agreed; negative means more was agreed than forecast",
     "הצפי לא נכנס לתזרים: שם רק חוזים, תוספות, אבני דרך ותשלומים": "The forecast is not part of the cash flow: that holds only contracts, additions, milestones and payments",
     "מה שסוכם עם ספק ועוד לא מתוכנן באבני דרך. לחיצה על הצעה — נפתח החלון ממולא, ומאשרים.": "What was agreed with a supplier and isn't yet scheduled as milestones. Tap a suggestion — the window opens pre-filled, and you confirm.",
     "התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב\"📐 צפי\".": "The budget is calculated from the stage budget proposal — amounts are edited in \"📐 Forecast\".",
-    "📐 צפי": "📐 Forecast"
+    "📐 צפי": "📐 Forecast",
+    "פער — הצפי פחות מה שסוכם, רק בשלבים שסוכמו; במינוס — סוכם יותר מהצפי": "Gap — forecast minus agreed, only for agreed stages; negative means more was agreed than forecast"
 }

@@ -233,8 +233,10 @@ const Budget = (() => {
         const gapCell = (plan, done) => {
             if (!done) return `<td class="n muted">${esc(t('עוד לא סוכם'))}</td>`;
             const g = plan - done;
-            return `<td class="n${g < -0.5 ? ' fin-late' : ''}">${Math.abs(g) < 0.5 ? '0' : esc((g < 0 ? '−' : '+') + fmt(Math.abs(g)))}</td>`;
+            return `<td class="n${g < -0.5 ? ' fin-late' : ''}">${Math.abs(g) < 0.5 ? '0' : `<bdi dir="ltr">${esc((g < 0 ? '−' : '+') + fmt(Math.abs(g)))}</bdi>`}</td>`;
         };
+        // הפער בסה"כ — רק על שלבים שכבר סוכמו (שלב שלא סוכם אינו "חיסכון")
+        const agreed = rows.filter(r => r.done);
         const td = v => `<td class="n">${v ? esc(fmt(v)) : '—'}</td>`;
         root.innerHTML = `<h3 class="sec-title">⚖️ ${esc(t('צפי מול סוכם'))}</h3>
             <dl class="fin-kpis bd-vs-kpis">
@@ -245,8 +247,8 @@ const Budget = (() => {
             <div class="fin-units"><div class="tbl-wrap"><table>
                 <thead><tr><th>${esc(t('שלב'))}</th><th class="n">${esc(t('צפי'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('פער'))}</th></tr></thead>
                 <tbody>${rows.map(r => `<tr><th>${esc(t(r.l.name))}${r.l.unit_name ? `<small>${esc(r.l.unit_name)}</small>` : ''}</th>${td(r.plan)}${td(r.done)}${gapCell(r.plan, r.done)}</tr>`).join('')}</tbody>
-                <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ שלבים'))}</th>${td(sum('plan'))}${td(sum('done'))}${gapCell(sum('plan'), sum('done'))}</tr></tfoot></table></div>
-            <p class="hint">${esc([data.vat_mode === 'net' ? t('לפני מע"מ') : t('כולל מע"מ'), t('פער — הצפי פחות מה שסוכם; במינוס — סוכם יותר מהצפי'),
+                <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ שלבים'))}</th>${td(sum('plan'))}${td(sum('done'))}${gapCell(agreed.reduce((a, r) => a + r.plan, 0), sum('done'))}</tr></tfoot></table></div>
+            <p class="hint">${esc([data.vat_mode === 'net' ? t('לפני מע"מ') : t('כולל מע"מ'), t('פער — הצפי פחות מה שסוכם, רק בשלבים שסוכמו; במינוס — סוכם יותר מהצפי'),
                 t('הצפי לא נכנס לתזרים: שם רק חוזים, תוספות, אבני דרך ותשלומים')].join(' · '))}</p></div>`;
     }
 
