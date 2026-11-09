@@ -98,7 +98,7 @@ const Files = (() => {
         // סגירה: עוצרים ציור של עמודים וסרטון שרץ
         $('#file-dlg').addEventListener('close', () => { stopPreview?.(); stopPreview = null; $('#file-preview').innerHTML = ''; });
         $('#file-open').addEventListener('click', () => Viewer.open(current));
-        $('#add-link').addEventListener('click', () => openPlaces(!$('#place-pick').hidden ? false : true));
+        $('#add-link').addEventListener('click', () => openPlaces($('#place-pick').hidden));
         $('#place-cancel').addEventListener('click', () => openPlaces(false));
         $('#place-save').addEventListener('click', savePlaces);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
@@ -184,7 +184,7 @@ const Files = (() => {
         // 🏠 מסמכי הפרויקט / הנכס, ו-👷 מסמכים לכל ספק
         const groups = folderGroups(subs, !folderId);
         $('#folder-list').innerHTML = groups.map(([title, list]) =>
-            (groups.length > 1 || title === CREATED ? `<li class="fgroup" role="presentation">${esc(t(title))}</li>` : '') + list.map(card).join('')).join('');
+            (groups.length > 1 || title === CREATED ? `<li class="fgroup" role="heading" aria-level="3">${esc(t(title))}</li>` : '') + list.map(card).join('')).join('');
         $('#folder-list').hidden = !subs.length;
 
         $('#files-title').hidden = false;
@@ -581,7 +581,8 @@ const Files = (() => {
         const home = current.folders.find(l => l.home)?.folder_id;
         const linked = new Set(current.folders.filter(l => !l.home).map(l => l.folder_id));
         const order = new Map(folders.filter(f => !f.parent_id).map((f, i) => [f.id, i]));
-        const pick = folders.filter(f => f.id !== home && f.kind !== 'inbox')
+        // בלי "ממתין למיון", ובלי המכלים המחושבים (לפי שלבים, קבוצות) — קישור אליהם גם נועל אותם בעץ
+        const pick = folders.filter(f => f.id !== home && !['inbox', 'stages', 'sgroup', 'tgroup'].includes(f.kind))
             .map(f => ({ f, root: rootOf(f), label: path(f.id) }))
             .sort((a, b) => (order.get(a.root?.id) ?? 0) - (order.get(b.root?.id) ?? 0) || a.label.localeCompare(b.label, I18n.locale()));
         // לפי התיקייה עצמה, כמו בפורטל (lib/portal.php): תיקייה של ספק — הספק רואה בפורטל גם קובץ פנימי
@@ -606,10 +607,12 @@ const Files = (() => {
             ({ file: current } = await api('file-places', { body: { id: current.id, add, remove } }));
             renderLinks();
             toast(t('נשמר'));
-            await loadFolders();
-            await loadFiles();
         });
+        refresh();
     }
+
+    /** רענון העץ והרשימה אחרי שינוי — מחוץ ל-busy: כשל בטעינה לא נראה ככשל של השמירה. */
+    const refresh = () => loadFolders().then(loadFiles).catch(() => {});
 
     async function saveFile() {
         const form = $('#file-dlg form'), el = form.elements;
@@ -628,14 +631,14 @@ const Files = (() => {
         await busy(null, $('#file-dlg form'), async () => {
             ({ file: current } = await api('file-link', { body: { id: current.id, folder_id: folder, add: false } }));
             renderLinks();
-            await loadFolders();
-            await loadFiles();
         });
+        refresh();
     }
 
     async function deleteFile() {
         // PM-045: האישור מונה את המקומות שהקובץ מופיע בהם
-        const places = current.folders.map(l => path(l.folder_id));
+        // התיקיות (📍 / 🔗) ועוד המקומות שהוא מופיע בהם דרך רשומה (הצעה, חוזה, תשלום… — אצל הספק / בשלב)
+        const places = [...new Set([...current.folders.map(l => path(l.folder_id)), ...(current.uses || []).map(useLabel)])];
         const msg = places.length > 1
             ? t('למחוק את "{name}"? הוא מופיע ב-{n} מקומות ({places}) — וייעלם מכולם.', { name: current.name, n: places.length, places: places.join(', ') })
             : t('למחוק את "{name}"? הוא ייעלם מכל התיקיות.', { name: current.name });
