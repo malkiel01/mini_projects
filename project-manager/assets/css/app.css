@@ -1288,6 +1288,6 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .sup-nums dt { font-size: .8rem; color: var(--muted); }
 .sup-nums dd { margin: 0; font-weight: 700; }
 .sup-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.sup-chips button.chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; min-height: 32px; }
+.sup-chips button.chip { white-space: normal; flex: 0 1 auto; max-width: 100%; text-align: start; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; min-height: 32px; }
 .sup-chips button.chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .sup-detail { margin-block-start: var(--s3); }

@@ -273,11 +273,10 @@ const Finance = (() => {
         credit: r => ({ cls: 'fin-ok', text: t('זיכוי {amount} — שולם מעל הסוכם', { amount: money(r.credit.g) }) }),
     };
 
-    /** בעל המקצוע של ספק בשלב — התחום של השלב, ובלעדיו התחומים של הספק. */
     /**
      * 👷 ספקים (PM-041) — שורה אחת לכל ספק: סוכם · שולם · יתרה · בפיגור, והמקצועות שלו כצ'יפים; צ'יפ פותח את הפירוט.
-     * צ'יפ = שלב (מקצוע) של הספק; חוזה עם סכום (PM-043) הוא צ'יפ אחד על כל השלבים שלו, בסכום החוזה (עם התוספות) —
-     * "הצעת המחיר נכנסת לחוזה רק כשאין חוזה". הסכום בשורה = סכום הצ'יפים. מקצוע עם שני ספקים — מופיע אצל כל אחד.
+     * צ'יפ = שלב (מקצוע) של הספק; חוזה עם סכום (PM-043) — צ'יפ אחד על כל השלבים שלו, וסכום החוזה לידו.
+     * "סוכם" ו"יתרה" — אותם מספרים כמו בשורות ובסיכום (לפי ההצעה והתוספות), עד שיוכרע איך מחלקים חוזה של כמה מקצועות.
      */
     const supOpen = new Map(); // ספק → הצ'יפ הפתוח
     function supplierGroups() {
@@ -288,11 +287,10 @@ const Finance = (() => {
             const key = m?.amount > 0 ? `c${r.contract.id}` : `s${s.stage_id || 0}`;
             const c = g.chips.get(key) || g.chips.set(key, { key, items: [], contract: m?.amount > 0 ? r.contract : null, committed: 0, paid: 0, late: 0 }).get(key);
             c.items.push({ s, r });
-            if (!c.contract) c.committed += r.committed.g;
+            c.committed += r.committed.g; // כמו "סוכם" בשורת השלב ובסיכום — אחיד בכל הלשונית
             c.paid += r.paid.g;
             c.late += Math.max(0, r.gap.g);
         }
-        for (const g of map.values()) for (const c of g.chips.values()) if (c.contract) c.committed = c.contract.money.total;
         return [...map.values()];
     }
     const chipName = c => c.contract ? `📄 ${c.contract.title || c.items.map(x => x.s.stage_id ? stageName(x.s) : t('בלי שלב')).join(' · ')}`
@@ -304,6 +302,7 @@ const Finance = (() => {
             const chips = [...g.chips.values()];
             const sum = k => chips.reduce((a, c) => a + c[k], 0);
             const committed = sum('committed'), paid = sum('paid'), late = sum('late');
+            const balance = chips.reduce((a, c) => a + c.items.reduce((b, x) => b + x.r.balance.g, 0), 0); // כמו "יתרה" בשורות
             // הצ'יפ הפתוח: מה שנבחר — אם עדיין קיים (אחרי שמירת חוזה המפתח משתנה); '' — נסגר במכוון; אחרת ברירת המחדל
             const saved = supOpen.get(g.id);
             const open = saved === '' ? null : chips.some(c => c.key === saved) ? saved : (chips.length === 1 ? chips[0].key : null);
@@ -316,11 +315,11 @@ const Finance = (() => {
                 <dl class="sup-nums">
                     <div><dt>${esc(t('סוכם'))}</dt><dd>${esc(money(Math.round(committed)))}</dd></div>
                     <div><dt>${esc(t('שולם'))}</dt><dd>${esc(money(Math.round(paid)))}</dd></div>
-                    <div><dt>${esc(t('יתרה'))}</dt><dd>${esc(money(Math.round(Math.max(0, committed - paid))))}</dd></div>
+                    <div><dt>${esc(t('יתרה'))}</dt><dd>${esc(money(Math.round(balance)))}</dd></div>
                 </dl>
                 <div class="chips sup-chips" role="group" aria-label="${esc(t('המקצועות של {name}', { name: g.name }))}">${chips.map(c =>
                     `<button type="button" class="chip${c.key === open ? ' on' : ''}" data-sup-chip="${g.id}:${c.key}" aria-expanded="${c.key === open}">
-                        ${esc(chipName(c))} · ${esc(money(Math.round(c.committed)))}${c.late > 100 ? ' ⚠️' : ''}</button>`).join('')}</div>
+                        ${esc(chipName(c))} · ${esc(money(Math.round(c.committed)))}${c.contract ? ` <small>(${esc(t('חוזה {amount}', { amount: money(c.contract.money.total) }))})</small>` : ''}${c.late > 100 ? ' ⚠️' : ''}</button>`).join('')}</div>
                 ${detail}</section>`;
         }).join('');
         $('#fin-stages').innerHTML = html || `<p class="empty">${esc(t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`;
