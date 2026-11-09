@@ -279,6 +279,18 @@
   נספרים ב"X מתוך Y" (ז); "הפרמטרים — מה מהספר ומה הגדרה שלנו". **בניהול** — "· לפי הספר" / "· הגדרה שלנו" ליד כל פרמטר.
 - **שינוי לכל השיטות:** `label` של שיטה עובר לכרטיס גם כשהיא לא שיטת דוגמה, ו-`met: null` לא נהפך ל-false.
 
+## שלב א' — 4א/4: אליוט בגרף (17.1.7, 17.2.2, ✅15, ✅16)
+
+- **`TsMethodElliottW3::overlay()`** — במקום ברירת המחדל של 4ב/2: השכבה החזותית של אליוט (`ts_ew_overlay`) — קו הספירה
+  ותוויות 1–5, אזור לגל הבא לצד הכלל, קו ביטול אדום והקרנה מקווקוות. הרגישות ואורך ה-ATR — מהפרמטרים של השיטה (המנהל
+  משנה); השאר — ברירות המחדל של 17.1.6. `counts` (הפירוט הפנימי) לא נשלח; `check` — כן.
+- **בגרף** ("🔮 תחזית שיטה" ← "גלי אליוט — כניסה לגל 3"): הספירות כתרחישים בפאנל — **הציון במילים** ("התאמה גבוהה /
+  בינונית", ✅16); לחיצה על ספירה חלופית מדגישה אותה, והשאר עמומות (17.1.7). "🔎 בדוק בעצמך" — ההנחיות שהמחשב לא מודד.
+  בלי ספירה — הפאנל אומר למה.
+- **הזמנים העתידיים — מהנר האחרון** (`as_of + k·tf`), לא מנקודת המפנה: אורך הגל הבא פחות מה שכבר עבר מאז סוף הגל, עד
+  `forecast_bars`. כך הם מיושרים למסגרת גם כשיש פערים בנתונים (סופי שבוע במניות). (שינוי קטן ב-`ts_ew_overlay` של 4א/2;
+  הבדיקות שלו עודכנו בהתאם.)
+
 ## המבנה
 
 ```
@@ -321,7 +333,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-chart.php · elliott-chart-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -361,6 +373,8 @@ php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בל�
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
 php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספירות חלופיות, הקרנה, רמת ביטול, החוזה של ה-overlay, בלי הצצה
 php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_overlay: מי רואה, סגורים בלבד, זמנים מיושרים, בלי ודאות, 429
+php trading-strategies/tests/elliott-chart.php  # אליוט בגרף: החוזה על כל חלון, מילים בלי אחוז, פערים בנתונים, method_overlay
+node trading-strategies/tests/elliott-chart-ui.mjs # Playwright בטלפון: 🔮 ← גלי אליוט, ספירות במילים, "בדוק בעצמך"
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, "↻" בלבד, 20 שניות בלי בקשה
 php trading-strategies/tests/elliott-card-api.php # elliott-w3: כבויה עד הפעלה, tick ב-hash, הכרטיס ממצב המנוע (ו1), "בדוק בעצמך", ז0
 node trading-strategies/tests/elliott-card-ui.mjs # Playwright בטלפון: כרטיס אליוט, "בדוק בעצמך", "הגדרה שלנו", בניהול

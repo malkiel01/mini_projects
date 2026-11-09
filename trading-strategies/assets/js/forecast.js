@@ -144,6 +144,9 @@ export function mountForecast({ chart, series, asset, api, h, sheet, toast, getT
       : h('p', { class: 'hint' }, res.overlay.note || 'אין כרגע תרחיש לפי כללי השיטה');
     panel.replaceChildren(head, chips,
       stale ? h('p', { class: 'hint warn' }, 'הטווח או מסגרת הזמן השתנו — "↻" מרענן גם את התרחיש') : list,
+      // אליוט: ההנחיות שהמחשב לא מודד (17.1.3) — "בדוק בעצמך"
+      res.overlay.check?.length ? h('details', { class: 'param-notes' }, h('summary', {}, '🔎 בדוק בעצמך — מה שהמחשב כאן לא מודד'),
+        h('ul', {}, res.overlay.check.map(x => h('li', {}, x)))) : null,
       h('p', { class: 'disclaimer' }, '⚖️ ' + res.disclaimer));
   }
 
