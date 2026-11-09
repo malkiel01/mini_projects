@@ -11,6 +11,9 @@
  *   (ז) אות חדש לא נפתח כל עוד הקודם פתוח (או ממתין לכניסה).
  *   נר שנוגע ביעד וגם בסטופ — הפסד (שמרני). יש יעד: הצלחה = היעד הושג לפני הסטופ, בתוך האופק; תום האופק — לא הצלחה.
  *   פער (gap) מעבר לרמה — היציאה בפתיחה, המחיר שהיה בפועל.
+ *   (ח) שיטה שב-meta() שלה levels: 'absolute' — הסטופ והיעד הם המחירים שהאות החזיר, לא מרחקים; ופתיחת i+1 מעבר
+ *       לסטופ או ליעד → האות לא נפתח, ונספר ב-skipped_gap (לא ב-skipped). בלי הדגל — שום שינוי: גם המצב (JSON) של
+ *       שיטה relative נשאר בדיוק כמו קודם, ומצב מצטבר ישן שלה תקף. skipped_gap נוסף למצב רק כשהוא קורה.
  *
  * המצב (JSON) שומר הכול: מצב השיטה, אות ממתין, עסקה פתוחה והמצטברים. ts_bt_run($state) ממשיך מאותה נקודה —
  * ולכן מצטבר על [0..k] ואחריו (k..N] נותן בדיוק את התוצאה של [0..N] (נבדק ב-tests/backtest.php).
@@ -49,6 +52,7 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
 {
     $s = $state ?? ts_bt_init($m, $p);
     $H = $m->horizon($p);
+    $abs = ($m->meta()['levels'] ?? 'relative') === 'absolute';   // (ח)
     $fee = (float)($cost['fee'] ?? 0); $slip = (float)($cost['slip'] ?? 0);
     $k = 0;
     foreach ($candles as $c) {
@@ -61,9 +65,21 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
             $q = $s['pend'];
             $dir = $q['side'] === 'long' ? 1 : -1;
             $entry = $c['o'] * (1 + $dir * $slip);
-            $s['pos'] = ['side' => $q['side'], 'entry' => $entry, 'risk' => $q['stop_d'],
-                'stop' => $entry - $dir * $q['stop_d'], 'target' => $q['target_d'] === null ? null : $entry + $dir * $q['target_d'],
-                'bars' => 0, 'sig_t' => $q['sig_t'], 'entry_t' => $c['t']];
+            if (isset($q['stop'])) {
+                // (ח) רמות מוחלטות: פתיחה מעבר לסטופ או ליעד — האות לא נפתח
+                $gap = $dir > 0 ? $c['o'] <= $q['stop'] || ($q['target'] !== null && $c['o'] >= $q['target'])
+                    : $c['o'] >= $q['stop'] || ($q['target'] !== null && $c['o'] <= $q['target']);
+                if ($gap) {
+                    $s['skipped_gap'] = ($s['skipped_gap'] ?? 0) + 1;
+                } else {
+                    $s['pos'] = ['side' => $q['side'], 'entry' => $entry, 'risk' => $dir * ($entry - $q['stop']),
+                        'stop' => $q['stop'], 'target' => $q['target'], 'bars' => 0, 'sig_t' => $q['sig_t'], 'entry_t' => $c['t']];
+                }
+            } else {
+                $s['pos'] = ['side' => $q['side'], 'entry' => $entry, 'risk' => $q['stop_d'],
+                    'stop' => $entry - $dir * $q['stop_d'], 'target' => $q['target_d'] === null ? null : $entry + $dir * $q['target_d'],
+                    'bars' => 0, 'sig_t' => $q['sig_t'], 'entry_t' => $c['t']];
+            }
             $s['pend'] = null;
         }
 
@@ -108,6 +124,9 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
             $risk = abs($sig['entry'] - $sig['stop']);
             if ($s['pos'] !== null || $s['pend'] !== null) {
                 $s['skipped']++;   // (ז)
+            } elseif ($risk > 0 && $abs) {
+                $s['pend'] = ['side' => $sig['side'], 'stop' => (float)$sig['stop'],
+                    'target' => $sig['target'] === null ? null : (float)$sig['target'], 'sig_t' => $c['t']];
             } elseif ($risk > 0) {
                 $s['pend'] = ['side' => $sig['side'], 'stop_d' => $risk,
                     'target_d' => $sig['target'] === null ? null : abs($sig['target'] - $sig['entry']), 'sig_t' => $c['t']];
@@ -126,7 +145,7 @@ function ts_bt_result(array $s): array
     return ['n' => $n, 'wins' => (int)$s['wins'], 'win_rate' => $n ? $s['wins'] / $n : null,
         'expectancy_r' => $n ? $s['sum_r'] / $n : null, 'max_dd' => (float)$s['dd'],
         'from_t' => $s['first_t'], 'to_t' => $s['last_t'], 'bars' => (int)$s['bars'],
-        'signals' => (int)$s['raw'], 'skipped' => (int)$s['skipped'], 'open' => $s['pos'] !== null || $s['pend'] !== null];
+        'signals' => (int)$s['raw'], 'skipped' => (int)$s['skipped'], 'skipped_gap' => (int)($s['skipped_gap'] ?? 0), 'open' => $s['pos'] !== null || $s['pend'] !== null];
 }
 
 /** הגבול התחתון של רווח הסמך של Wilson (95%) — 6.3. null כש-N = 0 */

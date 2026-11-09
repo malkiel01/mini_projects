@@ -175,6 +175,29 @@
 - **התוקף של הנר הפתוח**: 60 שניות לדקה, וחסום ב-5 דקות למסגרות גדולות (אחרת נר יומי היה "קפוא" יום שלם).
 - **ספק מועדף לסימול** — טבלה נפרדת `symbol_prefs` (ולא עמודה ב-`watchlist`), כי הנכס כבר נושא את הספק.
 
+## שלב א' — 4א/1: מנוע אליוט (פרק 17.1, טהור, בלי UI)
+
+- **`lib/elliott.php`:** ATR של Wilder בזרימה; נקודות מפנה — zigzag לפי `pivot_atr_mult × ATR` (ה-ATR בנר הקיצון),
+  ונקודה קיימת **רק מנר האישור שלה** (17.1.9 א); הכללים הקשיחים 1–6 של דחף (17.1.1), כולל `overlap_tolerance`
+  (שבר מטווח גל 1, 0–0.25); וחיפוש ספירות דחף על רצף נקודות המפנה. הציון, היחסים וההקרנה — 4א/2.
+- **`lib/methods/elliott-w3.php`:** "גלי אליוט — כניסה לגל 3" (17.1.9) — `meta`, `init`, `step`, `conditions`,
+  `levels: 'absolute'`. כל פרמטר [שלנו] — בטווח, לא קבוע בקוד. **עוד לא ברשימת השיטות** (`registry.php`) — היא נרשמת
+  כשהכרטיס מתחבר (4א/3), כדי שה-PR יישאר בלי UI.
+- **המנוע (`lib/backtest.php`, 6.2(ח)):** שיטה `absolute` — הסטופ והיעד הם המחירים שהאות החזיר; פתיחה מעבר להם — לא נפתח,
+  `skipped_gap`. שיטה `relative` — שום שינוי: המצב (JSON) של `sample-ma-cross` זהה בייט-בייט לזה שלפני (ה-hash מוקפא
+  בבדיקה), ומצב מצטבר ישן ממשיך.
+
+### הכרעות של כותב הקוד (4א/1)
+
+- **ה-zigzag מתחיל בנר הראשון שיש לו ATR.** בהתחלה עוקבים אחרי שיא ושפל יחד; אם שניהם מאושרים באותו נר — המוקדם מביניהם.
+- **שיא חדש מחליף את הפתוח רק כשהוא גבוה ממש** (שוויון — לא זז). **אישור — כולל שוויון לסף** (`l_c ≤ H − סף`).
+- **כלל 3:** גל 3 נפסל רק כשהוא קצר **ממש** משני האחרים, באחוזים. **כלל 5:** חדירה ≤ הסבולת — לא נפסל (נגיעה בסוף גל 1
+  עם סבולת 0 — לא חפיפה). **כלל 6:** לפי סימון "מורחב" בספירה; המחשב עוד לא מסמן הרחבות (4א/2).
+- **טווח סגור ב-float** (עומק גל 2, חדירה): סבולת `1e-9`, כדי ש-0.382 "בדיוק" ייכנס גם כשה-float יוצא 0.38199999….
+- **tick:** השיטה טהורה ואינה יודעת אותו — מי שמריץ מעביר `$p['tick']`; בלי — 0 ("יעד ≤ 0 → אין אות"). החיבור מ-`lib/analysis.php` — ב-4א/3.
+- **`alerts: false`** — האפיון לא קבע אם `elliott-w3` נכנסת להתראות.
+- **תנאי "בדוק בעצמך"** (`manual-*`) — `side: 'both'`, `met: null`.
+
 ## המבנה
 
 ```
@@ -199,6 +222,7 @@ lib/drawings.php    שרטוטים — שמירה, בידוד, תקרה
 lib/indicators.php  SMA, EMA, RSI, ATR במנוע (float)
 lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.php — הרשימה)
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
+lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag), הכללים הקשיחים וחיפוש ספירות — טהור
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
 lib/alerts.php      התראות: ניהול, תיבה, והריצה של ה-cron
 lib/fx.php          המרת מטבע לפי ECB לסטטיסטיקה
@@ -212,7 +236,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -249,6 +273,7 @@ php trading-strategies/tests/drawings-api.php  # שרטוטים: בידוד, CSR
 node trading-strategies/tests/no-polling.mjs   # Playwright: 20 שניות בלי פעולה — אף בקשה לשרת
 node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר ובמגע (לחיצה ארוכה), גרירה, ביטול/שחזור
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
+php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
 php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיטת דוגמה רק למנהל, שמור/מצטבר/מלא, תקציב, 100,000, בידוד
 node trading-strategies/tests/analysis-ui.mjs  # Playwright בטלפון: ניתוח, פרופיל, ניהול שיטות, RTL, בלי polling
 php trading-strategies/tests/alerts-api.php    # cron כ-CLI עם זמן מדומה: בלי כפילות, נעילה, תקציב, דרך הרשת נכשל, פוש/VAPID, תקרות
