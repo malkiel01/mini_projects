@@ -1966,7 +1966,6 @@
     "👷 ספקים": "👷 Suppliers",
     "💳 אבני דרך": "💳 Milestones",
     "🧾 הוצאות": "🧾 Expenses",
-    "לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.": "For each supplier — what was agreed, what should have been paid by today and what was paid; and from there: contract, change order, milestone and ledger.",
     "חלקי הכספים": "Finance sections",
     "נרשמה {date}": "Recorded {date}",
     "פתיחה: {what}": "Open: {what}",
@@ -2677,5 +2676,8 @@
     "לא נוצרה אבן דרך לתוספת: {error}": "No milestone was created for the addition: {error}",
     "היתרה בוטלה — לחוזה עם {supplier} אין סכום": "Balance cancelled — the contract with {supplier} has no amount",
     "היתרה חושבה מחדש: {supplier} — {amount}. נדרש אישור עו\"ד מחדש": "Balance recalculated: {supplier} — {amount}. Lawyer approval needed again",
-    "היתרה חושבה מחדש: {supplier} — {amount}": "Balance recalculated: {supplier} — {amount}"
+    "היתרה חושבה מחדש: {supplier} — {amount}": "Balance recalculated: {supplier} — {amount}",
+    "בפיגור {amount}": "Overdue {amount}",
+    "המקצועות של {name}": "{name}'s trades",
+    "לכל ספק — שורה אחת: סוכם, שולם, יתרה ובפיגור, והמקצועות שלו. לחיצה על מקצוע — הפירוט: חוזה, תוספת, אבן דרך וכרטסת.": "One row per supplier: agreed, paid, balance and overdue, plus their trades. Tap a trade for the details: contract, addition, milestone and ledger."
 }

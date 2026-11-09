@@ -1282,3 +1282,12 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .bd-as { display: flex; gap: 6px; margin-top: 4px; }
 .bd-as select { flex: 1 1 0; min-width: 0; font-size: 16px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
 .bd-tot .bd-part dt, .bd-tot .bd-part dd { color: var(--brand); font-weight: 600; }
+/* PM-041: 👷 ספקים — שורה אחת לכל ספק, המקצועות כצ'יפים, והפירוט של הצ'יפ הפתוח */
+.sup-card { margin-block-end: var(--s3); }
+.sup-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); margin: var(--s2) 0; }
+.sup-nums dt { font-size: .8rem; color: var(--muted); }
+.sup-nums dd { margin: 0; font-weight: 700; }
+.sup-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sup-chips button.chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; min-height: 32px; }
+.sup-chips button.chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.sup-detail { margin-block-start: var(--s3); }

@@ -97,7 +97,9 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
     $fin = pm_finance_of($projectId, $portal, PM_OVERPAY_MARGIN, $scope);
     $committed = [];
     $committedN = []; // אותו סוכם בלי מע"מ — לפי כל פריט (פטור — כמו שהוא)
+    $suppliers = []; // PM-041: כמה ספקים בשלב — "2 ספקים" בצפי
     foreach ($fin['stages'] as $s) if ($s['stage_id']) {
+        $suppliers[$s['stage_id']] = count(array_unique(array_column($s['rows'], 'supplier_id')));
         $committed[$s['stage_id']] = (int)round($s['committed']['g'] * 100);
         $committedN[$s['stage_id']] = (int)round($s['committed']['n'] * 100);
     }
@@ -116,7 +118,7 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
         $today = (int)round((int)$s['budget'] * $k);
         $lines[] = ['stage_id' => (int)$s['id'], 'name' => $s['name'], 'unit_id' => $s['unit_id'] !== null ? (int)$s['unit_id'] : null,
             'unit_name' => $s['unit_name'], 'initial' => (int)round((int)$s['budget_initial'] * $k) / 100, 'today' => $today / 100, 'committed' => $c / 100,
-            'committed_net' => ($committedN[(int)$s['id']] ?? 0) / 100,
+            'committed_net' => ($committedN[(int)$s['id']] ?? 0) / 100, 'suppliers' => $suppliers[(int)$s['id']] ?? 0,
             'share' => $k < 1 ? round($k * 100, 1) : null,
             // חריגה: מה שסוכם בפועל מעבר לתקציב השלב (רק כשיש תקציב לשלב)
             'over' => $today > 0 && $c > $today ? ($c - $today) / 100 : 0];

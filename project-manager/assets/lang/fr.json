@@ -1984,7 +1984,6 @@
     "👷 ספקים": "👷 Fournisseurs",
     "💳 אבני דרך": "💳 Échéances",
     "🧾 הוצאות": "🧾 Dépenses",
-    "לכל ספק — מה סוכם, מה היה צריך להיות משולם עד היום ומה שולם; ומשם: חוזה, תוספת, אבן דרך וכרטסת.": "Pour chaque fournisseur — le convenu, ce qui aurait dû être payé à ce jour et ce qui a été payé ; et de là : contrat, avenant, échéance et relevé.",
     "חלקי הכספים": "Sections financières",
     "נרשמה {date}": "Enregistrée le {date}",
     "פתיחה: {what}": "Ouvrir : {what}",
@@ -2695,5 +2694,8 @@
     "לא נוצרה אבן דרך לתוספת: {error}": "Aucun jalon créé pour l'avenant : {error}",
     "היתרה בוטלה — לחוזה עם {supplier} אין סכום": "Solde annulé — le contrat avec {supplier} n'a pas de montant",
     "היתרה חושבה מחדש: {supplier} — {amount}. נדרש אישור עו\"ד מחדש": "Solde recalculé : {supplier} — {amount}. Nouvelle approbation de l'avocat requise",
-    "היתרה חושבה מחדש: {supplier} — {amount}": "Solde recalculé : {supplier} — {amount}"
+    "היתרה חושבה מחדש: {supplier} — {amount}": "Solde recalculé : {supplier} — {amount}",
+    "בפיגור {amount}": "En retard {amount}",
+    "המקצועות של {name}": "Les métiers de {name}",
+    "לכל ספק — שורה אחת: סוכם, שולם, יתרה ובפיגור, והמקצועות שלו. לחיצה על מקצוע — הפירוט: חוזה, תוספת, אבן דרך וכרטסת.": "Une ligne par fournisseur : convenu, payé, solde et en retard, et ses métiers. Touchez un métier pour le détail : contrat, avenant, jalon et grand livre."
 }
