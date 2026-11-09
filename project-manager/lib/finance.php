@@ -306,6 +306,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     $T = [];
     $outStages = [];
     $forecast = [0, 0];
+    $budgetInForecast = []; // שלב → התקציב שנספר בהערכת הסוף (בלי הצעה)
     $suppliersCommitted = [0, 0];
     foreach ($stages + [0 => null] as $sid => $s) {
         if (!$s && empty($rows[0])) continue;
@@ -372,6 +373,7 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         $budgetStage = $s ? (int)$s['budget'] : 0;
         // צפי: מה שסוכם, ובשלב בלי הצעה — התקציב שלו
         $fc = $committedStage ?: $budgetStage;
+        if (!$committedStage && $budgetStage && $s) $budgetInForecast[(int)$s['id']] = $budgetStage; // PM-041: לחוזה עם סכום — לא פעמיים
         $forecast[0] += $fc;
         $forecast[1] += $committedStage ? ($S['committed'][1] ?? 0) : pm_net($budgetStage, $vat);
         foreach ($S as $k => [$g, $n]) { $T[$k][0] = ($T[$k][0] ?? 0) + $g; $T[$k][1] = ($T[$k][1] ?? 0) + $n; }
@@ -388,15 +390,27 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
     // ולא סכום ההצעות של המקצועות שלו. השורות נשארות לפי שלב; הסה"כ (סוכם, יתרה, זיכוי, הערכת סוף) — מתוקן כאן.
     if ($scope === null) {
         $byContract = [];
+        $contractStages = []; // חוזה → השלבים שהוא חל עליהם (כל שלבי הספק, או הרשומים בו)
         foreach ($outStages as $st) foreach ($st['rows'] as $r) {
             if (($r['contract']['money']['amount'] ?? 0) <= 0) continue;
             $k = &$byContract[$r['contract']['id']];
             $k['total'] ??= (int)round($r['contract']['money']['total'] * 100);
+            $cid = (int)$r['contract']['id'];
+            if (!isset($contractStages[$cid])) {
+                $full = array_values(array_filter($contracts, fn($x) => $x['id'] === $cid))[0] ?? null;
+                $contractStages[$cid] = $full && $full['stage_ids'] !== null ? $full['stage_ids'] : pm_supplier_stages($projectId, (int)$r['supplier_id']);
+            }
             foreach (['committed', 'paid', 'balance', 'credit', 'index'] as $f) {
                 $k[$f][0] = ($k[$f][0] ?? 0) + (int)round($r[$f]['g'] * 100);
                 $k[$f][1] = ($k[$f][1] ?? 0) + (int)round($r[$f]['n'] * 100);
             }
             unset($k);
+        }
+        // שלב בחוזה שעוד אין בו הצעה נספר בהערכת הסוף לפי התקציב שלו — והחוזה כבר כולל אותו: התקציב יוצא
+        foreach ($contractStages as $sids) foreach ($sids as $sid) if (isset($budgetInForecast[$sid])) {
+            $forecast[0] -= $budgetInForecast[$sid];
+            $forecast[1] -= pm_net($budgetInForecast[$sid], $vat);
+            unset($budgetInForecast[$sid]);
         }
         foreach ($byContract as $k) {
             $target = $k['total'] + $k['index'][0];
