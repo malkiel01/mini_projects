@@ -21,7 +21,6 @@ const Finance = (() => {
             const p = e.target.closest('[data-sc-pay]');
             if (p) { $('#sup-card-dlg').close(); Payments.openPayment(Number(p.dataset.scPay)); }
         });
-        $('#sup-card-dlg [data-close]').addEventListener('click', () => $('#sup-card-dlg').close());
         $('#fin-alerts-pane').addEventListener('click', e => {
             const a = e.target.closest('[data-alert-pay]');
             if (a) Payments.openPayment(Number(a.dataset.alertPay));
@@ -327,17 +326,22 @@ const Finance = (() => {
         const late = chips.reduce((a, c) => a + c.late, 0), balance = chips.reduce((a, c) => a + c.balance, 0);
         const contracts = [...new Map(chips.filter(c => c.contract).map(c => [c.contract.id, c.contract])).values()];
         const contractSum = contracts.reduce((a, k) => a + k.money.amount, 0), changes = contracts.reduce((a, k) => a + k.money.changes, 0);
-        // בוצע — ממוצע ההתקדמות של השלבים שלו, משוקלל לפי מה שסוכם בכל אחד (בלי סכומים — ממוצע פשוט)
+        // בוצע — ממוצע פשוט של השלבים שלו (רק שלבים אמיתיים; בחוזה עם סכום לשלב בלי הצעה אין משקל לפי סכום)
         const rows = chips.flatMap(c => c.items);
-        const w = rows.reduce((a, x) => a + Math.max(0, x.r.committed.g), 0);
-        const done = rows.length ? Math.round(w ? rows.reduce((a, x) => a + x.s.progress * Math.max(0, x.r.committed.g), 0) / w : rows.reduce((a, x) => a + x.s.progress, 0) / rows.length) : 0;
+        const stages = rows.filter(x => x.s.stage_id);
+        const done = stages.length ? Math.round(stages.reduce((a, x) => a + x.s.progress, 0) / stages.length) : 0;
         const paidPct = total > 0 ? Math.round(paid * 100 / total) : 0;
-        const risk = paidPct > done + 10;
+        // סיכון — מהדגל של השרת (overpaid, לפי הסף שבהגדרות), כמו בשורות
+        const ahead = rows.filter(x => x.r.flags.includes('overpaid')).map(x => x.s.stage_id ? stageName(x.s) : t('בלי שלב'));
+        const risk = ahead.length > 0;
         const stageOf = id => data.stages.find(s => s.stage_id === id);
-        const sched = mine.reduce((a, p) => a + p.amount, 0);
+        const sched = mine.reduce((a, p) => a + p.amount + (p.index_diff || 0), 0); // כמו "סך הכול" — עם הפרשי ההצמדה
         const contractOf = p => contracts.find(k => k.id === p.contract_id);
-        const today = new Date().toISOString().slice(0, 10);
-        const stateOf = p => p.status === 'received' ? ['✅', t('שולם'), 'fin-ok'] : (p.payable || (p.due_kind === 'date' && p.due_date && p.due_date <= today)) ? ['⏰', t('הגיע מועד'), 'fin-warn'] : ['🕓', t('עתידי'), 'muted'];
+        const n = new Date(), today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; // תאריך מקומי
+        // מצב: שולם; דווח / שולם חלקית / נדרש — לפי התווית מהשרת; אחרת — הגיע מועד או עתידי
+        const stateOf = p => p.status === 'received' ? ['✅', t('שולם'), 'fin-ok']
+            : ['paid', 'partial', 'requested'].includes(p.status) ? ['⏳', p.label, 'fin-warn']
+            : (p.due_kind === 'date' && p.due_date && p.due_date <= today) ? ['⏰', t('הגיע מועד'), 'fin-warn'] : ['🕓', t('עתידי'), 'muted'];
         const whenOf = p => p.due_kind === 'advance' ? t('מקדמה') : p.due_kind === 'stage_done' ? t('בגמר השלב') : p.due_kind === 'progress' ? t('בהתקדמות {n}%', { n: p.due_pct }) : p.due_kind === 'handover' ? t('במסירה') : p.due_date ? shortDateL(p.due_date) : '—';
         const kpi = (label, v, cls = '') => `<div><dt>${esc(label)}</dt><dd class="${cls}">${esc(money(Math.round(v)))}</dd></div>`;
         $('#sup-card-title').textContent = t('🗂️ {name} — כל המקצועות', { name: g.name });
@@ -348,17 +352,17 @@ const Finance = (() => {
             </dl>
             <div class="sc-vs${risk ? ' sc-risk' : ''}">
                 ${meter(paidPct, t('שולם'), 'paid')}${meter(done, t('בוצע'))}
-                ${risk ? `<p class="fin-late">⚠️ ${esc(t('התשלום מקדים את הביצוע: שולם {p}%, בוצע {d}%', { p: paidPct, d: done }))}</p>` : ''}
+                ${risk ? `<p class="fin-late">⚠️ ${esc(t('התשלום מקדים את הביצוע: {stages}', { stages: ahead.join(', ') }))}</p>` : ''}
             </div>
             <p class="hint">${esc(Math.abs(sched - total) < 1 ? t('אבני הדרך: {x} — כמו סך הכול', { x: money(sched) })
                 : t('אבני הדרך: {x} מתוך {y} — {gap}', { x: money(sched), y: money(Math.round(total)), gap: sched < total ? t('חוסר {amount}', { amount: money(Math.round(total - sched)) }) : t('עודף {amount}', { amount: money(Math.round(sched - total)) }) }))}</p>
             <h3 class="sec-title">💳 ${esc(t('אבני הדרך — מכל המקצועות'))}</h3>
             <ul class="list sc-list">${mine.map(p => {
                 const st = stageOf(p.stage_id), k = contractOf(p), [ic, label, cls] = stateOf(p);
-                const paidOf = p.amount > 0 ? Math.round(p.received * 100 / p.amount) : 0;
+                const paidOf = p.due_amount > 0 ? Math.round(p.received * 100 / p.due_amount) : 0; // מה שמשלמים בפועל (בלי עיכבון, עם הצמדה)
                 return `<li><button type="button" class="linkish sc-row" data-sc-pay="${p.id}">
                     <span class="sc-l1"><b class="one">${esc(p.title)}${p.is_balance ? ` <small class="chip">${esc(t('מחושבת'))}</small>` : ''}</b><b>${esc(money(p.amount))}</b></span>
-                    <span class="sc-l2 muted">${esc([k?.money?.total ? t('{n}% מהחוזה', { n: Math.round(p.amount * 1000 / k.money.total) / 10 }) : '', whenOf(p)].filter(Boolean).join(' · '))} · <span class="${cls}">${ic} ${esc(label)}</span></span>
+                    <span class="sc-l2 muted">${esc([k?.money?.amount ? t('{n}% מהחוזה', { n: Math.round(p.amount * 1000 / k.money.amount) / 10 }) : '', whenOf(p)].filter(Boolean).join(' · '))} · <span class="${cls}">${ic} ${esc(label)}</span></span>
                     <span class="sc-l2">${esc(st?.stage_id ? t('{stage} — {d}% בוצע · שולם {p}%', { stage: stageName(st), d: st.progress, p: paidOf }) : t('בלי שלב — שולם {p}%', { p: paidOf }))}</span>
                 </button></li>`;
             }).join('') || `<li class="muted">${esc(t('עוד אין אבני דרך לספק הזה.'))}</li>`}</ul>`;

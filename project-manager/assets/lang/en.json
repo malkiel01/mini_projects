@@ -2687,7 +2687,6 @@
     "🗂️ {name} — כל המקצועות": "🗂️ {name} — all trades",
     "תוספות": "Additions",
     "סך הכול": "Total",
-    "התשלום מקדים את הביצוע: שולם {p}%, בוצע {d}%": "Payment is ahead of the work: paid {p}%, done {d}%",
     "אבני הדרך: {x} — כמו סך הכול": "Milestones: {x} — same as the total",
     "אבני הדרך: {x} מתוך {y} — {gap}": "Milestones: {x} of {y} — {gap}",
     "אבני הדרך — מכל המקצועות": "Milestones — all trades",
@@ -2696,5 +2695,6 @@
     "בלי שלב — שולם {p}%": "No stage — {p}% paid",
     "עוד אין אבני דרך לספק הזה.": "No milestones for this supplier yet.",
     "כרטיס": "Card",
-    "כרטיס ספק": "Supplier card"
+    "כרטיס ספק": "Supplier card",
+    "התשלום מקדים את הביצוע: {stages}": "Payment is ahead of the work: {stages}"
 }
