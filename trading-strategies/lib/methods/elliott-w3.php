@@ -16,8 +16,8 @@
  * הרמות מוחלטות (meta.levels = 'absolute', 6.2(ח)): המנוע לא מזיז אותן לפי הכניסה בפועל, ופער בפתיחה מעבר לסטופ
  * או ליעד — האות לא נפתח (skipped_gap).
  *
- * tick: השיטה טהורה ואינה יודעת את ה-tick של הנכס. מי שמריץ אותה מעביר אותו כ-$p['tick'] (לא פרמטר של מנהל);
- * בלי — 0, כלומר "יעד ≤ 0 → אין אות". [פתוח לחיבור ב-4א/3: העברת ה-tick מ-lib/analysis.php]
+ * tick: השיטה טהורה ואינה יודעת את ה-tick של הנכס. מי שמריץ אותה מעביר אותו כ-$p['tick'] (לא פרמטר של מנהל —
+ * meta.tick = true, וראו ts_params_for_asset ב-lib/analysis.php); בלי — 0, כלומר "יעד ≤ 0 → אין אות".
  *
  * בלי הצצה לעתיד (6.2(א)): נקודת מפנה קיימת רק מנר האישור שלה (lib/elliott.php), והאות נקבע רק בנר הזה.
  */
@@ -53,6 +53,8 @@ final class TsMethodElliottW3 extends TsMethod
             'horizon_bars' => 60,
             'warmup' => 500,
             'levels' => 'absolute',   // 6.2(ח)
+            'tick' => true,           // צריכה את ה-tick של הנכס ($p['tick']) — "יעד ≤ tick → אין אות"
+            'analyze_from_state' => true,   // ו1: הכרטיס ממשיך ממצב המנוע של הבדיקה לאחור
             'version' => 1,
             'incremental' => true,
             'alerts' => false,        // לא נקבע באפיון — כבוי עד שיוכרע

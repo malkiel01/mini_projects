@@ -383,3 +383,8 @@ a.use-row { text-decoration: none; color: inherit; }
 .forecast-scenarios .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
 .hint.warn { color: var(--ink); background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-radius: var(--r); padding: var(--s2); }
 .btn.block { inline-size: 100%; justify-content: flex-start; margin-bottom: var(--s1); white-space: normal; text-align: start; }
+.manual-conds { display: grid; gap: 4px; padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); }
+.manual-conds b { font-size: .85rem; }
+.conds li.manual > span:first-child { color: var(--star); font-weight: 700; }
+.param-notes summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.param-notes ul { padding-inline-start: var(--s4); font-size: .85rem; color: var(--muted); }

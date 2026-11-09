@@ -191,15 +191,24 @@ export function mountAnalysis(ctx) {
       box.append(h('p', { class: 'hint' }, c.message), h('p', { class: 'muted' }, c.horizon_text));
       return box;
     }
-    const met = side => c.conditions.filter(x => x.side === side);
+    // תנאי עם met: null — "בדוק בעצמך" (17.1.9 ז): המחשב לא בודק אותו, ולכן הוא לא נספר
+    const met = side => c.conditions.filter(x => x.side === side && x.met !== null);
     const count = side => `${met(side).filter(x => x.met).length} מתוך ${met(side).length}`;
+    const manual = c.conditions.filter(x => x.met === null);
+    const auto = c.conditions.filter(x => x.met !== null);
     const verdict = c.bias === 'none'
       ? `לפי ${c.method.name} — אין כרגע כיוון לפי כללי השיטה (לונג ${count('long')}, שורט ${count('short')})`
       : `לפי ${c.method.name} — תנאי ה${SIDE[c.bias]} מתקיימים (${count(c.bias)})` + (c.signal_ago != null ? ` · האות לפני ${c.signal_ago} נרות` : '');
     box.append(
       h('p', { class: 'verdict ' + c.bias }, h('span', { class: 'dir-ic ' + c.bias, 'aria-hidden': 'true' }, c.bias === 'long' ? '↗' : c.bias === 'short' ? '↘' : '–'), h('b', {}, verdict)),
-      h('ul', { class: 'conds' }, c.conditions.map(x => h('li', { class: x.met ? 'met' : '' }, h('span', { 'aria-hidden': 'true' }, x.met ? '✓' : '○'),
-        h('span', {}, x.text), h('small', { class: 'muted' }, SIDE[x.side]), h('span', { class: 'sr-only' }, x.met ? 'מתקיים' : 'לא מתקיים')))));
+      h('ul', { class: 'conds' }, auto.map(x => h('li', { class: x.met ? 'met' : '' }, h('span', { 'aria-hidden': 'true' }, x.met ? '✓' : '○'),
+        h('span', {}, x.text), h('small', { class: 'muted' }, SIDE[x.side]), h('span', { class: 'sr-only' }, x.met ? 'מתקיים' : 'לא מתקיים')))),
+      manual.length ? h('div', { class: 'manual-conds' }, h('b', {}, '🔎 בדוק בעצמך — מה שהמחשב כאן לא בודק'),
+        h('ul', { class: 'conds' }, manual.map(x => h('li', { class: 'manual' }, h('span', { 'aria-hidden': 'true' }, '?'), h('span', {}, x.text),
+          h('small', { class: 'muted' }, 'לא נבדק במחשב'))))) : '',
+      c.basis === 'warmup' ? h('p', { class: 'hint warn' }, 'חושב בלי בדיקה לאחור — מחלון הנרות האחרון, ולא ממצב המנוע. האותות בכרטיס עלולים להיות שונים מאלה שבבדיקה לאחור.') : '',
+      c.param_notes ? h('details', { class: 'param-notes' }, h('summary', {}, 'הפרמטרים — מה מהספר ומה הגדרה שלנו'),
+        h('ul', {}, Object.values(c.param_notes).map(x => h('li', {}, x.label, ' — ', h('b', {}, x.note))))) : '');
     if (c.levels) {
       box.append(h('dl', { class: 'cells' },
         h('div', {}, h('dt', {}, 'כניסה (לפי השיטה)'), h('dd', { class: 'num' }, D.fmt(c.levels.entry, 10))),
@@ -352,7 +361,7 @@ export function mountAnalysis(ctx) {
           m.sample ? h('p', { class: 'hint' }, 'שיטת דוגמה: גם כשהיא מופעלת — רק מנהלים רואים אותה, ולא נכנסת להתראות.') : null,
           h('label', { class: 'switch' }, on, h('span', {}, 'מופעלת')),
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
-          h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})`, inputs[k]))),
+          h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})` + (d.ours === true ? ' · הגדרה שלנו' : d.ours === false ? ' · לפי הספר' : ''), inputs[k]))),
           field('הערה', note, true),
           h('p', { class: 'hint' }, 'שינוי פרמטרים — הבדיקות לאחור של השיטה מחושבות מחדש בפתיחה הבאה.'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
