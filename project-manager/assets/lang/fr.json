@@ -2676,5 +2676,8 @@
     "נותר {amount}": "Reste {amount}",
     "לכל שלב — הגבוה מבין הסוכם לצפי, ועוד הוצאות ושכר טרחה": "Par étape — le plus élevé entre convenu et prévision, plus dépenses et honoraires",
     "פער — רק בשלבים שסוכמו: במינוס — סוכם יותר מהצפי; \"נותר\" — מה שנשאר בצפי, לא חיסכון": "Écart — seulement pour les étapes convenues : négatif = plus convenu que prévu ; « Reste » = ce qui reste de la prévision, pas une économie",
-    "מייל ללקוח ולעו\"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו\"ד)": "E-mail au client et à l'avocat en cas de dépassement du budget, de hausse du budget et de paiement au-delà du réalisé (avocat)"
+    "מייל ללקוח ולעו\"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו\"ד)": "E-mail au client et à l'avocat en cas de dépassement du budget, de hausse du budget et de paiement au-delà du réalisé (avocat)",
+    "💰 תזרים": "💰 Trésorerie",
+    "אין התראות כרגע ✅": "Aucune alerte pour le moment ✅",
+    "🔔 התראות": "🔔 Alertes"
 }

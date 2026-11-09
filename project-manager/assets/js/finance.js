@@ -18,6 +18,10 @@ const Finance = (() => {
             const a = e.target.closest('[data-alert-pay]');
             if (a) Payments.openPayment(Number(a.dataset.alertPay));
         });
+        $('#fin-alerts-pane').addEventListener('click', e => {
+            const a = e.target.closest('[data-alert-pay]');
+            if (a) Payments.openPayment(Number(a.dataset.alertPay));
+        });
         $('#fin-tabs').addEventListener('click', e => { const b = e.target.closest('[data-fin-tab]'); if (b) finTab(b.dataset.finTab); });
         FinFilter.bind($('#fin-stages'), 'fin', () => project.project.id, () => renderStages());
         $('#fin-body').addEventListener('click', e => {
@@ -98,7 +102,7 @@ const Finance = (() => {
     }
 
     // ---- לשוניות הכספים ----
-    const FIN_TABS = ['sum', 'suppliers', 'milestones', 'expenses', 'budget'];
+    const FIN_TABS = ['sum', 'suppliers', 'milestones', 'expenses', 'budget', 'alerts'];
     function finTab(k) {
         if (!FIN_TABS.includes(k)) k = 'sum';
         try { sessionStorage.setItem('pm.fintab', k); } catch { /* מצב פרטי */ }
@@ -163,7 +167,6 @@ const Finance = (() => {
                 <span class="row-btns"><button type="button" class="btn ghost sm" data-fin-report>📄 ${esc(t('דוח'))}</button>
                 <button type="button" class="btn ghost sm" data-fin-settings>⚙️ ${esc(t('הגדרות'))}</button></span></header>
             <p class="fin-sentence">${sentence}${status ? ` — ${status}` : ''}</p>
-            ${alerts()}
             ${bar(T)}
             <dl class="fin-kpis">
                 ${kpi(t('סוכם (התחייבויות)'), T.committed)}
@@ -173,6 +176,7 @@ const Finance = (() => {
             <p class="fin-terms">${terms(S, T)}</p>
             ${unitsTable()}`;
         renderStages();
+        renderAlerts();
     }
 
     /** מתחם: הכספים לפי יחידה — סוכם, שולם, יתרה. שלב משותף — לפי החלוקה בחוזה. (התקציב — ב"📐 צפי", לא בתזרים) */
@@ -186,14 +190,21 @@ const Finance = (() => {
             <p class="hint">${esc(t('שלב של דירה — כולו שלה. שלב משותף — לפי החלוקה שבחוזה עם הספק ("📄 חוזה"); בלי חלוקה — "משותף".'))}</p></div>`;
     }
 
-    /** ההתראות של הפרויקט (כ2) — מהדחוף; תשלום — פותח את אבן הדרך. */
-    function alerts() {
-        const list = (data.alerts || []).filter(a => a.scope !== 'forecast') // התראות התקציב — ב"📐 צפי", לא בתזרים (PM-040);
-        if (!list.length) return '';
+    /**
+     * 🔔 ההתראות של הפרויקט (כ2) — בלשונית משלהן, לא בראש הסיכום (בעל המערכת, 09/11): קודם התזרים (תשלומים,
+     * אבני דרך), ואחר כך מה שמקורו בתקציב (📐 צפי). מהדחוף; תשלום — פותח את אבן הדרך. על הלשונית — כמה דחופות.
+     */
+    function renderAlerts() {
+        const all = data.alerts || [];
         const ICON = { late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' };
-        return `<ul class="fin-alerts" aria-label="${esc(t('דורש טיפול'))}">${list.map(a => `<li class="fa-${a.level}">
+        const list = (items, title) => items.length ? `${title ? `<h3 class="sec-title">${esc(title)}</h3>` : ''}
+            <ul class="fin-alerts" aria-label="${esc(title || t('דורש טיפול'))}">${items.map(a => `<li class="fa-${a.level}">
             <span aria-hidden="true">${ICON[a.level]}</span><span class="fa-text">${esc(a.text)}</span>
-            ${a.payment_id ? `<button type="button" class="btn ghost sm" data-alert-pay="${a.payment_id}">${esc(t('לטיפול'))}</button>` : ''}</li>`).join('')}</ul>`;
+            ${a.payment_id ? `<button type="button" class="btn ghost sm" data-alert-pay="${a.payment_id}">${esc(t('לטיפול'))}</button>` : ''}</li>`).join('')}</ul>` : '';
+        const cash = all.filter(a => a.scope !== 'forecast'), fc = all.filter(a => a.scope === 'forecast');
+        $('#fin-alerts-pane').innerHTML = `<header class="fin-head"><h2>🔔 ${esc(t('התראות'))}</h2></header>
+            ${all.length ? list(cash, fc.length ? t('💰 תזרים') : '') + list(fc, t('📐 צפי')) : `<p class="empty">${esc(t('אין התראות כרגע ✅'))}</p>`}`;
+        $('#fin-n-alerts').textContent = all.filter(a => a.level === 'late' || a.level === 'soon').length || '';
     }
 
     /** סרגל אחד: שולם · הגיע מועד ולא שולם · עוד לא הגיע מועד — מתוך מה שסוכם (בלי תקציב). */

@@ -900,6 +900,8 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 
 /* כספים בפרויקט — לשוניות: סיכום · ספקים · אבני דרך · הוצאות */
 .fin-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-bottom: var(--s3); }
+/* כספים — 6 לשוניות (כולל 🔔 התראות): שתי שורות של 3, בלי לשונית יתומה בשורה משלה */
+#fin-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .fin-tabs button { min-height: 40px; padding: 4px 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); font: inherit; font-size: .82rem; line-height: 1.15; cursor: pointer; }
 .fin-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
 .fin-tabs button small:empty { display: none; }

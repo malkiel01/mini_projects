@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=101">
+    <link rel="stylesheet" href="assets/css/app.css?v=102">
     <link rel="stylesheet" href="assets/css/devloop.css?v=100">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
@@ -181,6 +181,7 @@
                     <button type="button" role="tab" data-fin-tab="milestones">💳 אבני דרך <small id="fin-n-milestones"></small></button>
                     <button type="button" role="tab" data-fin-tab="expenses">🧾 הוצאות <small id="fin-n-expenses"></small></button>
                     <button type="button" role="tab" data-fin-tab="budget">📐 צפי</button>
+                    <button type="button" role="tab" data-fin-tab="alerts">🔔 התראות <small id="fin-n-alerts"></small></button>
                 </nav>
                 <div class="fin-body" id="fin-body">
                     <div data-fin-pane="sum"><section class="fin-card" id="fin-sum" aria-labelledby="fin-title"></section></div>
@@ -200,6 +201,8 @@
                     <div data-fin-pane="expenses" hidden><div id="fin-extra"></div></div>
                     <!-- 📐 צפי: הצעת תקציב לפי שלבים, וצפי מול סוכם — לא נכנס לתזרים (PM-040; assets/js/budget.js, lib/budget.php) -->
                     <div data-fin-pane="budget" hidden><div id="fin-budget"></div></div>
+                    <!-- 🔔 כל ההתראות במקום אחד — לא בראש הסיכום (בעל המערכת, 09/11) -->
+                    <div data-fin-pane="alerts" hidden><section class="fin-card" id="fin-alerts-pane"></section></div>
                 </div>
             </div>
 
@@ -1541,10 +1544,10 @@
     <script src="assets/js/payments.js?v=101"></script>
     <script src="assets/js/fin-report.js?v=100"></script>
     <script src="assets/js/fin-filter.js?v=2"></script>
-    <script src="assets/js/budget.js?v=105"></script>
+    <script src="assets/js/budget.js?v=106"></script>
     <script src="assets/js/deviations.js?v=100"></script>
     <script src="assets/js/rejects.js?v=100"></script>
-    <script src="assets/js/finance.js?v=103"></script>
+    <script src="assets/js/finance.js?v=104"></script>
     <script src="assets/js/finance-all.js?v=100"></script>
     <script src="assets/js/hebcal.js?v=100"></script>
     <script src="assets/js/calendar.js?v=100"></script>

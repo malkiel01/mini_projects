@@ -246,10 +246,7 @@ const Budget = (() => {
         };
         const agreed = rows.filter(r => r.done);
         const td = v => `<td class="n">${v ? esc(fmt(v)) : '—'}</td>`;
-        const ICON = { late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' };
-        const alerts = (data.alerts || []).length ? `<ul class="fin-alerts" aria-label="${esc(t('דורש טיפול'))}">${data.alerts.map(a =>
-            `<li class="fa-${a.level}"><span aria-hidden="true">${ICON[a.level] || ''}</span><span class="fa-text">${esc(a.text)}</span></li>`).join('')}</ul>` : '';
-        root.innerHTML = `<h3 class="sec-title">⚖️ ${esc(t('צפי מול סוכם'))}</h3>${alerts}
+        root.innerHTML = `<h3 class="sec-title">⚖️ ${esc(t('צפי מול סוכם'))}</h3>
             <dl class="fin-kpis bd-vs-kpis">
                 <div><dt>${esc(t('צפי לשלבים'))}</dt><dd>${esc(fmt(sum('plan')))}</dd></div>
                 <div><dt>${esc(t('סוכם בשלבים'))}</dt><dd>${esc(fmt(sum('done')))}</dd></div>
