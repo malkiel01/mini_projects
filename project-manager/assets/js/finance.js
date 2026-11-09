@@ -158,7 +158,6 @@ const Finance = (() => {
         const sentence = T.committed.g
             ? esc(t('סוכם {committed} · היה צריך להיות משולם עד היום {due} · שולם {paid}', { committed: money(T.committed.g), due: money(T.due.g), paid: money(T.paid.g) }))
             : esc(t('עוד אין הצעות שאושרו — כשתאושר הצעה, היא נכנסת לכאן כהתחייבות.'));
-        const growth = Math.round(T.budget_growth.g);
         $('#fin-sum').innerHTML = `
             <header class="fin-head"><h2 id="fin-title">${esc(t('המצב הכספי'))}</h2>
                 <span class="row-btns"><button type="button" class="btn ghost sm" data-fin-report>📄 ${esc(t('דוח'))}</button>
@@ -167,33 +166,32 @@ const Finance = (() => {
             ${alerts()}
             ${bar(T)}
             <dl class="fin-kpis">
-                ${kpi(t('תקציב ראשוני'), T.budget_initial)}
-                ${kpi(t('תקציב היום'), T.budget_today, growth > 0 ? `<span class="fin-late">${esc(t('גדל ב-{amount}', { amount: money(growth) }))}</span>` : '')}
-                ${kpi(t('סוכם (התחייבויות)'), T.committed, T.over_budget ? `<span class="fin-late">${esc(t('מעל התקציב'))}</span>` : '')}
+                ${kpi(t('סוכם (התחייבויות)'), T.committed)}
                 ${kpi(t('שולם'), T.paid, T.committed.g ? esc(t('{n}% מהסוכם · בוצע {p}%', { n: T.paid_pct, p: T.progress })) : '')}
                 ${kpi(t('יתרה לתשלום'), T.balance, T.credit?.g ? `<span class="fin-ok">${esc(t('זיכוי אצל ספקים {amount}', { amount: money(T.credit.g) }))}</span>` : '')}
-                ${kpi(t('צפי סופי'), T.forecast, esc(t('סוכם, ותקציב השלבים שעוד אין להם הצעה')))}
             </dl>
             <p class="fin-terms">${terms(S, T)}</p>
             ${unitsTable()}`;
         renderStages();
     }
 
-    /** מתחם: הכספים לפי יחידה — תקציב, סוכם, שולם, יתרה. שלב משותף — לפי החלוקה בחוזה. */
+    /** מתחם: הכספים לפי יחידה — סוכם, שולם, יתרה. שלב משותף — לפי החלוקה בחוזה. (התקציב — ב"📐 צפי", לא בתזרים) */
     function unitsTable() {
         const U = data.units || [];
         if (!U.length) return '';
         const td = m => `<td class="n">${esc(money(Math.round(m.g)))}</td>`;
         return `<div class="fin-units"><h3>${esc(t('🏢 לפי יחידות'))}</h3><div class="tbl-wrap"><table>
-            <thead><tr><th>${esc(t('יחידה'))}</th><th class="n">${esc(t('תקציב'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('שולם'))}</th><th class="n">${esc(t('יתרה'))}</th></tr></thead>
-            <tbody>${U.map(u => `<tr${u.id ? '' : ' class="muted"'}><th>${esc(u.name)}${u.area ? `<small>${esc(t('{n} מ"ר', { n: u.area }))}</small>` : ''}</th>
-                <td class="n">${u.budget ? esc(money(u.budget)) : '—'}</td>${td(u.committed)}${td(u.paid)}${td(u.balance)}</tr>`).join('')}</tbody></table></div>
+            <thead><tr><th>${esc(t('יחידה'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('שולם'))}</th><th class="n">${esc(t('יתרה'))}</th></tr></thead>
+            <tbody>${U.map(u => `<tr${u.id ? '' : ' class="muted"'}><th>${esc(u.name)}${u.area ? `<small>${esc(t('{n} מ"ר', { n: u.area }))}</small>` : ''}</th>${td(u.committed)}${td(u.paid)}${td(u.balance)}</tr>`).join('')}</tbody></table></div>
             <p class="hint">${esc(t('שלב של דירה — כולו שלה. שלב משותף — לפי החלוקה שבחוזה עם הספק ("📄 חוזה"); בלי חלוקה — "משותף".'))}</p></div>`;
     }
 
+    /** התראות שמקורן בתקציב — לא בתזרים (PM-040): החריגות מהצפי מוצגות ב"📐 צפי". */
+    const BUDGET_ALERTS = new Set(['over_budget', 'budget_warn', 'budget_grew', 'stage_over']);
+
     /** ההתראות של הפרויקט (כ2) — מהדחוף; תשלום — פותח את אבן הדרך. */
     function alerts() {
-        const list = data.alerts || [];
+        const list = (data.alerts || []).filter(a => !BUDGET_ALERTS.has(a.kind));
         if (!list.length) return '';
         const ICON = { late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' };
         return `<ul class="fin-alerts" aria-label="${esc(t('דורש טיפול'))}">${list.map(a => `<li class="fa-${a.level}">
@@ -201,20 +199,19 @@ const Finance = (() => {
             ${a.payment_id ? `<button type="button" class="btn ghost sm" data-alert-pay="${a.payment_id}">${esc(t('לטיפול'))}</button>` : ''}</li>`).join('')}</ul>`;
     }
 
-    /** סרגל אחד: שולם · הגיע מועד ולא שולם · עוד לא הגיע מועד · נותר מהתקציב. */
+    /** סרגל אחד: שולם · הגיע מועד ולא שולם · עוד לא הגיע מועד — מתוך מה שסוכם (בלי תקציב). */
     function bar(T) {
-        const max = Math.max(T.budget_today.g, T.forecast.g, T.committed.g, 1);
+        const max = Math.max(T.committed.g, T.paid.g, 1);
         const paid = Math.min(T.paid.g, T.committed.g || T.paid.g);
         const lateAmt = Math.max(0, T.due.g - T.paid.g);
         const later = Math.max(0, T.committed.g - paid - lateAmt);
         const w = v => `${Math.max(0, v / max * 100).toFixed(2)}%`;
-        const marker = T.budget_today.g ? `<i class="fin-mark" style="inset-inline-start:${w(T.budget_today.g)}" title="${esc(t('תקציב'))}"></i>` : '';
         return `<div class="fin-bar" role="img" aria-label="${esc(t('שולם {paid}, בפיגור {late}, בהמשך {later}', { paid: money(paid), late: money(lateAmt), later: money(later) }))}">
-                <span class="fb-paid" style="inline-size:${w(paid)}"></span><span class="fb-late" style="inline-size:${w(lateAmt)}"></span><span class="fb-later" style="inline-size:${w(later)}"></span>${marker}
+                <span class="fb-paid" style="inline-size:${w(paid)}"></span><span class="fb-late" style="inline-size:${w(lateAmt)}"></span><span class="fb-later" style="inline-size:${w(later)}"></span>
             </div>
             <ul class="fin-legend">
                 <li><i class="fb-paid"></i>${esc(t('שולם'))}</li><li><i class="fb-late"></i>${esc(t('הגיע מועד ולא שולם'))}</li>
-                <li><i class="fb-later"></i>${esc(t('בהמשך'))}</li>${T.budget_today.g ? `<li><i class="fin-mark-key"></i>${esc(t('תקציב'))}</li>` : ''}
+                <li><i class="fb-later"></i>${esc(t('בהמשך'))}</li>
             </ul>`;
     }
 
@@ -266,9 +263,8 @@ const Finance = (() => {
             const head = s.stage_id
                 ? `<h3 class="one">${esc(stageName(s))}</h3>${stageChip(s.status)}`
                 : `<h3 class="one">${esc(t('בלי שלב'))}</h3>`;
-            const budget = s.budget.g ? `<p class="fin-stage-budget">${esc(t('תקציב לשלב {amount}', { amount: money(s.budget.g) }))}${s.over_budget ? ` · <span class="fin-late">${esc(t('ההתחייבות מעל תקציב השלב'))}</span>` : ''}</p>` : '';
             return `<section class="fin-stage"><header class="q-head">${head}</header>
-                ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}${budget}
+                ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}
                 <ul class="list fin-rows">${rows || `<li class="muted fin-empty">${esc(t('עוד אין הצעה שאושרה'))}</li>`}</ul></section>`;
         }).join('');
         $('#fin-stages').innerHTML = (all.length ? filterBox(f, opts, shown) : '')
@@ -936,7 +932,7 @@ const Finance = (() => {
         formError(f, '');
         el.budget_initial.value = S.budget_initial || '';
         el.budget.value = S.budget || '';
-        // פורק לשלבים — התקציב מחושב ("📐 תקציב"), לא נערך כאן
+        // פורק לשלבים — התקציב מחושב ("📐 צפי"), לא נערך כאן
         $('#fin-budget-fields').hidden = !!S.budget_broken;
         $('#fin-budget-broken').hidden = !S.budget_broken;
         el.budget_approver.value = S.budget_approver || 'client';

@@ -1037,7 +1037,7 @@ function pm_finance_export(array $user, array $in): never
  *     מחולק ביניהן שווה בשווה.
  *   • אין חוזה, ואין עדיין אבני דרך — חצי באמצע העבודה (התקדמות 50%) וחצי בגמר השלב.
  *   • כבר יש אבני דרך — היתרה בגמר השלב.
- *   • שלב עם תקציב בלי הצעה מאושרת — לפי התקציב, לספק של השלב (אם יש); בלי ספק — רק תזכורת ("תקציב שטרם מומש").
+ *   • התקציב (📐 צפי) לא מוצע כאן — הוא לא נכנס לתזרים (PM-040). רק מה שסוכם: חוזה, הצעה מאושרת, תוספות.
  * המנהל מאשר כל הצעה בחלון אבן הדרך (נפתח ממולא) — שום דבר לא נוצר לבד.
  */
 function pm_milestone_suggestions(int $projectId): array
@@ -1045,20 +1045,10 @@ function pm_milestone_suggestions(int $projectId): array
     $db = pm_db();
     $fin = pm_finance_of($projectId);
     $contracts = pm_contracts_of($projectId);
-    $st = $db->prepare('SELECT id, name, supplier_id, budget, status FROM stages WHERE project_id = ?');
+    $st = $db->prepare('SELECT id, name, status FROM stages WHERE project_id = ?');
     $st->execute([$projectId]);
     $stages = array_column($st->fetchAll(), null, 'id');
-    $mem = $db->prepare("SELECT contact_id, role_key FROM project_members WHERE project_id = ? AND role_key LIKE 'stage:%'");
-    $mem->execute([$projectId]);
-    $stageSup = [];
-    foreach ($mem->fetchAll() as $m) $stageSup[(int)substr($m['role_key'], 6)][] = (int)$m['contact_id'];
-    $names = [];
-    $nameOf = function (int $id) use (&$names, $db): string {
-        if (!isset($names[$id])) { $q = $db->prepare('SELECT name FROM contacts WHERE id = ?'); $q->execute([$id]); $names[$id] = (string)$q->fetchColumn(); }
-        return $names[$id];
-    };
     $out = [];
-    $unassigned = [];
     // אבני דרך לתשלום שכבר קיימות — אבן דרך של החוזה שכבר יש לה תשלום (באותו שם או מועד) לא מוצעת שוב
     $ex = $db->prepare("SELECT supplier_id, stage_id, title, due_date FROM payments WHERE project_id = ? AND status != 'cancelled' AND kind != 'retention'");
     $ex->execute([$projectId]);
@@ -1087,31 +1077,16 @@ function pm_milestone_suggestions(int $projectId): array
     foreach ($fin['stages'] as $s) {
         $sid = (int)($s['stage_id'] ?? 0);
         if (!$sid || !isset($stages[$sid]) || in_array($stages[$sid]['status'], ['paid'], true)) continue;
-        $committedStage = 0.0;
         foreach ($s['rows'] as $r) {
-            $committedStage += $r['committed']['g'];
             $gap = round($r['committed']['g'] - $r['scheduled']['g'], 2);
             if ($gap < 100) continue; // פחות מ-₪100 — לא שווה אבן דרך
             $out[] = ['stage_id' => $sid, 'stage' => $s['name'], 'supplier_id' => (int)$r['supplier_id'], 'supplier' => $r['name'],
                 'committed' => $r['committed']['g'], 'scheduled' => $r['scheduled']['g'], 'gap' => $gap]
                 + $plan($sid, (int)$r['supplier_id'], $gap, $r['by_milestones'] ? 'agreed' : 'quote', $r['milestones'] > 0);
         }
-        // תקציב שעוד לא מכוסה בהצעה / בסיכום עם ספק
-        $budget = $s['budget']['g'];
-        $left = round($budget - $committedStage, 2);
-        if ($budget > 0 && $committedStage <= 0 && $left >= 100) {
-            $sups = array_values(array_unique(array_filter(array_merge($stages[$sid]['supplier_id'] ? [(int)$stages[$sid]['supplier_id']] : [], $stageSup[$sid] ?? []))));
-            if (count($sups) === 1) {
-                $out[] = ['stage_id' => $sid, 'stage' => $s['name'], 'supplier_id' => $sups[0], 'supplier' => $nameOf($sups[0]),
-                    'committed' => 0, 'scheduled' => 0, 'gap' => $left, 'by_budget' => true] + $plan($sid, $sups[0], $left, 'budget', false);
-            } else {
-                $unassigned[] = ['stage_id' => $sid, 'stage' => $s['name'], 'budget' => $budget, 'suppliers' => count($sups)];
-            }
-        }
     }
-    $L = ['contract' => 'לפי החוזה', 'quote' => 'לפי ההצעה המאושרת', 'agreed' => 'לפי מה שסוכם', 'budget' => 'לפי התקציב — עוד אין הצעה מאושרת']; // i18n-ok
+    $L = ['contract' => 'לפי החוזה', 'quote' => 'לפי ההצעה המאושרת', 'agreed' => 'לפי מה שסוכם']; // i18n-ok
     foreach ($out as &$o) $o['source_label'] = pm_t($L[$o['source']]);
     unset($o);
-    return ['suggestions' => $out, 'unassigned' => $unassigned,
-        'gap_total' => round(array_sum(array_column($out, 'gap')), 2), 'unassigned_total' => round(array_sum(array_column($unassigned, 'budget')), 2)];
+    return ['suggestions' => $out, 'gap_total' => round(array_sum(array_column($out, 'gap')), 2)];
 }

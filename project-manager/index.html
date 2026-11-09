@@ -180,7 +180,7 @@
                     <button type="button" role="tab" data-fin-tab="suppliers">👷 ספקים <small id="fin-n-suppliers"></small></button>
                     <button type="button" role="tab" data-fin-tab="milestones">💳 אבני דרך <small id="fin-n-milestones"></small></button>
                     <button type="button" role="tab" data-fin-tab="expenses">🧾 הוצאות <small id="fin-n-expenses"></small></button>
-                    <button type="button" role="tab" data-fin-tab="budget">📐 תקציב</button>
+                    <button type="button" role="tab" data-fin-tab="budget">📐 צפי</button>
                 </nav>
                 <div class="fin-body" id="fin-body">
                     <div data-fin-pane="sum"><section class="fin-card" id="fin-sum" aria-labelledby="fin-title"></section></div>
@@ -198,7 +198,7 @@
                         <div id="pay-suggest"></div>
                         <div id="payment-list"></div></div>
                     <div data-fin-pane="expenses" hidden><div id="fin-extra"></div></div>
-                    <!-- הצעת תקציב לפי שלבים (assets/js/budget.js, lib/budget.php) -->
+                    <!-- 📐 צפי: הצעת תקציב לפי שלבים, וצפי מול סוכם — לא נכנס לתזרים (PM-040; assets/js/budget.js, lib/budget.php) -->
                     <div data-fin-pane="budget" hidden><div id="fin-budget"></div></div>
                 </div>
             </div>
@@ -789,7 +789,7 @@
             </header>
             <div class="sheet-body">
                 <h3 class="sec-title">תקציב (₪, כולל מע"מ)</h3>
-                <p class="hint" id="fin-budget-broken" hidden>התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 תקציב".</p>
+                <p class="hint" id="fin-budget-broken" hidden>התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב"📐 צפי".</p>
                 <div class="fields" id="fin-budget-fields">
                     <label class="f"><span>תקציב ראשוני</span><input name="budget_initial" inputmode="decimal" dir="ltr" maxlength="14"></label>
                     <label class="f"><span>תקציב היום</span><input name="budget" inputmode="decimal" dir="ltr" maxlength="14"></label>
@@ -1538,13 +1538,13 @@
     <script src="assets/js/share.js?v=100"></script>
     <script src="assets/js/projects.js?v=100"></script>
     <script src="assets/js/quotes.js?v=100"></script>
-    <script src="assets/js/payments.js?v=100"></script>
+    <script src="assets/js/payments.js?v=101"></script>
     <script src="assets/js/fin-report.js?v=100"></script>
     <script src="assets/js/fin-filter.js?v=2"></script>
-    <script src="assets/js/budget.js?v=101"></script>
+    <script src="assets/js/budget.js?v=102"></script>
     <script src="assets/js/deviations.js?v=100"></script>
     <script src="assets/js/rejects.js?v=100"></script>
-    <script src="assets/js/finance.js?v=101"></script>
+    <script src="assets/js/finance.js?v=102"></script>
     <script src="assets/js/finance-all.js?v=100"></script>
     <script src="assets/js/hebcal.js?v=100"></script>
     <script src="assets/js/calendar.js?v=100"></script>

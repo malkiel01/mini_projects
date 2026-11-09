@@ -128,11 +128,11 @@ const Payments = (() => {
     function renderSuggest() {
         const S = data.suggest;
         const box = $('#pay-suggest');
-        if (!S || (!S.suggestions.length && !S.unassigned.length)) { box.innerHTML = ''; return; }
+        if (!S || !S.suggestions.length) { box.innerHTML = ''; return; }
         const open_ = (() => { try { return localStorage.getItem('pm.sgOpen') !== '0'; } catch { return true; } })();
         box.innerHTML = `<details class="fin-card sg"${open_ ? ' open' : ''}><summary class="sg-head"><b>💡 ${esc(t('הצעות לאבני דרך'))}</b>
                 <span class="chip fin-warn">${esc(t('חסר לתכנן {amount}', { amount: money(S.gap_total) }))}</span></summary>
-            <p class="hint">${esc(t('מה שסוכם עם ספק (או תוקצב לשלב) ועוד לא מתוכנן באבני דרך. לחיצה על הצעה — נפתח החלון ממולא, ומאשרים.'))}</p>
+            <p class="hint">${esc(t('מה שסוכם עם ספק ועוד לא מתוכנן באבני דרך. לחיצה על הצעה — נפתח החלון ממולא, ומאשרים.'))}</p>
             ${S.suggestions.map((g, gi) => `<section class="sg-group">
                 <div class="sg-top"><span class="one"><b>${esc(t(g.stage))}</b> · ${esc(g.supplier)}</span><span class="chip">${esc(g.source_label)}</span></div>
                 <div class="muted sg-nums">${esc([g.committed ? t('סוכם {amount}', { amount: money(g.committed) }) : '', g.scheduled ? t('מתוכנן {amount}', { amount: money(g.scheduled) }) : '',
@@ -141,9 +141,6 @@ const Payments = (() => {
                     <span class="one">＋ ${esc(it.title.startsWith(t(g.stage) + ' — ') ? it.title.slice(t(g.stage).length + 3) : it.title)}</span><span class="muted">${esc(whenOf(it))}</span><b>${esc(money(it.amount))}</b></button></li>`).join('')}</ul>
                 ${g.items.length > 1 ? `<button type="button" class="btn ghost sm" data-sg-all="${gi}">${esc(t('➕ הוספת {n} אבני הדרך', { n: g.items.length }))}</button>` : ''}
             </section>`).join('')}
-            ${S.unassigned.length ? `<section class="sg-group sg-un"><div class="sg-top"><b>${esc(t('תקציב שטרם מומש'))}</b><span class="muted">${esc(money(S.unassigned_total))}</span></div>
-                <ul class="sg-items">${S.unassigned.map(u => `<li class="sg-line"><span class="one">${esc(t(u.stage))}</span><span class="muted">${esc(u.suppliers ? t('כמה ספקים — בוחרים אבן דרך לכל אחד') : t('אין עדיין ספק או הצעה מאושרת'))}</span><b>${esc(money(u.budget))}</b></li>`).join('')}</ul>
-                <p class="hint">${esc(t('כדי לתכנן תשלום צריך ספק: מבקשים הצעות בלשונית "הצעות", או משייכים ספק לשלב.'))}</p></section>` : ''}
         </details>`;
         $('details', box).addEventListener('toggle', e => { try { localStorage.setItem('pm.sgOpen', e.target.open ? '1' : '0'); } catch { /* מצב פרטי */ } });
     }
