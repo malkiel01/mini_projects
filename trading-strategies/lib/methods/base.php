@@ -67,6 +67,53 @@ abstract class TsMethod
         return $this->conditions($s, $p) + ['horizon_bars' => $this->horizon($p), 'as_of' => $last];
     }
 
+    /** אורך ההקרנה קדימה בנרות (17.2.2) — meta.forecast_bars, ובלעדיו האופק של השיטה */
+    public function forecastBars(array $p): int
+    {
+        return (int)($this->meta()['forecast_bars'] ?? $this->horizon($p));
+    }
+
+    /**
+     * "🔮 תחזית שיטה" (17.2.2, החוזה — lib/overlay.php): התרחיש לפי כללי השיטה על הנרות המוצגים. $tf — אורך הנר בשניות.
+     * ברירת המחדל לכל שיטה: מהאות האחרון שעוד בתוקף (analyze) — סימון על נר האות, קווי הסטופ ורמת היציאה ברווח, אזור
+     * ביניהם, וקו מקווקו מהסגירה האחרונה אל רמת היציאה, עד סוף האופק (ולא יותר מ-forecastBars). בלי אות בתוקף — ריק.
+     * שיטה עם תצוגה משלה (אליוט — 4א/4) דורסת. float לתצוגה בלבד.
+     */
+    public function overlay(array $candles, array $p, int $tf): array
+    {
+        require_once dirname(__DIR__) . '/overlay.php';
+        $bars = $this->forecastBars($p);
+        if (!$candles) return ts_overlay_empty($candles, $bars, 'אין נרות בטווח');
+        $a = $this->analyze($candles, $p);
+        $lv = $a['levels'];
+        $ago = $a['signal_ago'] ?? null;
+        if ($a['bias'] === 'none' || !$lv || $ago === null || $ago >= count($candles)) {
+            return ts_overlay_empty($candles, $bars, 'אין כרגע תרחיש פעיל לפי כללי השיטה');
+        }
+        $last = $candles[count($candles) - 1];
+        $sigT = $candles[count($candles) - 1 - $ago]['t'];
+        $k = max(1, min($bars, $this->horizon($p) - $ago));
+        $end = $last['t'] + $k * $tf;
+        $side = $a['bias'];
+        $items = [
+            ['kind' => 'marker', 't' => $sigT, 'side' => $side, 'text' => ($side === 'long' ? 'אות לונג' : 'אות שורט') . ' לפי כללי השיטה'],
+            ['kind' => 'hline', 'price' => (float)$lv['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה'],
+        ];
+        $points = [['t' => $last['t'], 'price' => (float)$last['c']]];
+        if ($lv['target'] !== null) {
+            $items[] = ['kind' => 'hline', 'price' => (float)$lv['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה'];
+            $items[] = ['kind' => 'zone', 't1' => $sigT, 't2' => $end, 'p1' => (float)min($lv['entry'], $lv['target']), 'p2' => (float)max($lv['entry'], $lv['target']),
+                'text' => 'מהכניסה עד רמת היציאה ברווח, עד סוף האופק'];
+            $points[] = ['t' => $end, 'price' => (float)$lv['target']];
+        } else {
+            $points[] = ['t' => $end, 'price' => (float)$last['c']];
+        }
+        $items[] = ['kind' => 'polyline', 'points' => $points, 'style' => 'dashed'];
+        return ['as_of' => $last['t'], 'range' => ['from' => $candles[0]['t'], 'to' => $last['t']], 'items' => $items,
+            'projection' => ['bars' => $bars, 'scenarios' => [['id' => 's1', 'score' => null, 'points' => $points,
+                'label' => 'לפי כללי השיטה — ' . ($side === 'long' ? 'צד לונג' : 'צד שורט') . ", עד $k נרות"]]]];
+    }
+
     /** בדיקה של צירוף פרמטרים (מעבר לטווח של כל אחד). מחזירה הודעה, או null כשתקין */
     public function validate(array $p): ?string
     {

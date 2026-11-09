@@ -3,6 +3,7 @@
 // ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף, ולא מתחבר מחדש לבד בלולאה.
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
+import { mountForecast } from './forecast.js';
 import { parseCsv } from './cloud.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
@@ -189,7 +190,9 @@ export function mountMarket(ctx) {
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
     const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
-    setHead(symbol, p.name, { back: true, actions: [analyze, drawBtn, refresh, star] });
+    // "🔮 תחזית שיטה" (17.2.2) — הכפתור כאן, וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
+    const forecastBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'תחזית שיטה', 'aria-pressed': 'false' }, '🔮');
+    setHead(symbol, p.name, { back: true, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load(); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
@@ -211,11 +214,12 @@ export function mountMarket(ctx) {
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
+    const forecastSlot = h('div', {});
     // 💾 שמור לענן שלי (3.7) — רק כשתנאי הספק מתירים עותק אישי
     const saveBtn = p.personal_copy === false ? null : h('button', { class: 'btn ghost sm', type: 'button',
       on: { click: async e => { e.target.disabled = true; try { await ctx.cloud.saveCandles({ provider, symbol, tf: st.tf, sec: TF_SEC[st.tf], rows: raw }); } finally { e.target.disabled = false; } } } }, '💾 שמור לענן שלי');
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live)), custom,
-      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, inds, info, saveBtn ? h('div', {}, saveBtn) : null,
+      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, forecastSlot, inds, info, saveBtn ? h('div', {}, saveBtn) : null,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -253,7 +257,10 @@ export function mountMarket(ctx) {
     const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet,
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
     drawSlot.append(draw.bar);
-    onTeardown(() => { draw.destroy(); chart.remove(); osc.remove(); });
+    const forecast = mountForecast({ chart, series: candle, asset, api, h, sheet, toast, col, button: forecastBtn,
+      getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
+    forecastSlot.append(forecast.panel);
+    onTeardown(() => { forecast.destroy(); draw.destroy(); chart.remove(); osc.remove(); });
 
     let data = [];
     let raw = [];   // הנרות כמו מהשרת (מחרוזות) — לעותק בענן, בלי float
@@ -336,6 +343,7 @@ export function mountMarket(ctx) {
         drawIndicators();
         chart.timeScale().fitContent();
         draw.redraw();
+        forecast.onLoad(isRefresh);
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,

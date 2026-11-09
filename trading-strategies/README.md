@@ -15,7 +15,7 @@
 ## השלבים
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
-2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
+2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352 · ✅ 4א/2 #1356) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -240,9 +240,32 @@
 - **`crosses_above`:** בנר הקודם `a ≤ b`, ועכשיו `a > b` (`crosses_below` — במראה), כמו `sample-ma-cross`. בנר הראשון — לא.
 - **שני הצדדים מתקיימים באותו נר** — לונג (כמו `sample-ma-cross`).
 - **`bias`** — הצד של האות האחרון, כל עוד לא עברו `horizon_bars` מאז; התנאים בכרטיס — כל כלל כטקסט, והאם התקיים בנר האחרון.
-- **תנאי `{left, op, right}`** — נהפך לביטוי `(left) op (right)`. **`forecast`, `display`** — נשמרים, לא בשימוש עד 4ב/2.
+- **תנאי `{left, op, right}`** — נהפך לביטוי `(left) op (right)`. **`forecast`, `display`** — נשמרים; שיטה מוגדרת מקבלת את ה-overlay של ברירת המחדל (4ב/2), ושימוש בשדות האלה — במסך הבונה (4ב/3).
 - **תקרות ההגדרה:** 20 פרמטרים, 20 אינדיקטורים (אורך 1–1000), 10 תנאים לצד, אופק 1–500, 20KB.
 - **`volume`** — מהנר (`v`) כשיש; במנוע הבדיקה לאחור הנרות עוד בלי נפח (`ts_bt_floats`), ולכן `null`.
+
+## שלב א' — 4ב/2: חוזה ה-overlay ושכבת התחזית בגרף (פרק 17.2.2–17.2.3, ✅15)
+
+- **החוזה** — `lib/overlay.php`: `{as_of, range, items[], projection{bars, scenarios[]}}`, חמישה סוגי פריטים בלבד
+  (`label`, `polyline`, `zone`, `hline`, `marker`). `ts_overlay_check` דוחה כל דבר אחר: סוג לא מוכר, זמן עתידי שאינו
+  `t + k·tf` או מעבר ל-`projection.bars`, NaN, טקסט ארוך. השרת לא מגיש לגרף פריט שהגרף לא יודע לצייר.
+- **ברירת המחדל לכל שיטה** — `TsMethod::overlay()`: מהאות האחרון שעוד בתוקף — סימון על נר האות, קו הסטופ וקו רמת היציאה
+  ברווח, אזור ביניהם, וקו מקווקו מהסגירה האחרונה, עד סוף האופק (ולא יותר מ-`forecast_bars`). בלי אות בתוקף — ריק. אליוט
+  ידרוס אותה ב-4א/4.
+- **`method_overlay`** (`lib/forecast.php`): על הנרות המוצגים, רק סגורים, רק שיטה שהמשתמש רואה. בלי ודאות, לא בשקלול
+  ולא בהתראות; לא מריץ ולא שומר בדיקה לאחור. נספר בתקרת 30 לדקה.
+- **בגרף** — `assets/js/forecast.js`, כפתור 🔮 בכותרת: בוחרים שיטה ← פאנל מתחת לגרף עם "תרחיש לפי שיטת X — לא ייעוץ",
+  "לפי כללי השיטה, לא נבדק לאחור", "לא נבדקה לאחור" כשאין תוצאה שמורה, התרחישים, וההסתייגות הקבועה. **הציור — על
+  הקנבס** (Primitive, כמו הציור על הגרף); הזמנים העתידיים — נקודות ריקות בסדרה נפרדת, כך שציר הזמן מתרחב בלי לגעת בנרות.
+- **רענון — רק בפעולה** (✅13): שינוי טווח או מסגרת מסתיר את התרחיש ומבקש "↻"; "↻" מרענן נרות ותרחיש.
+
+### הכרעות של כותב הקוד (4ב/2)
+
+- **הניסוח בברירת המחדל:** "סטופ לפי כללי השיטה", "רמת היציאה ברווח לפי כללי השיטה" — לא "יעד" (✅15).
+- **"לא נבדקה לאחור"** = אין תוצאה שמורה של גרסת השיטה על הנכס והמסגרת, באותו היקף מפתח כמו בניתוח. התחזית לא מחשבת.
+- **סימון על נר** — `setMarkers` של הספרייה (גם הוא על הקנבס). **תרחישים חלופיים** — כפתורים בפאנל; המודגש מלא, האחרים
+  ב-30% שקיפות.
+- **מחיר בתוויות** — לפי ה-tick של הנכס (מהשרת), float לתצוגה בלבד.
 
 ## המבנה
 
@@ -270,6 +293,9 @@ lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
 lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag), הכללים הקשיחים, ציון, ספירות חלופיות והקרנה → overlay — טהור
 lib/expr.php        מנתח ביטויים בשפה סגורה לשיטות מוגדרות — בלי eval
+lib/overlay.php     חוזה ה-overlay (17.2.3) ובדיקתו
+lib/forecast.php    "🔮 תחזית שיטה" — method_overlay
+assets/js/forecast.js  שכבת התחזית בגרף — ציור על הקנבס, פאנל, "↻" בלבד
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
 lib/alerts.php      התראות: ניהול, תיבה, והריצה של ה-cron
 lib/fx.php          המרת מטבע לפי ECB לסטטיסטיקה
@@ -283,7 +309,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -322,6 +348,8 @@ node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
 php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספירות חלופיות, הקרנה, רמת ביטול, החוזה של ה-overlay, בלי הצצה
+php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_overlay: מי רואה, סגורים בלבד, זמנים מיושרים, בלי ודאות, 429
+node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, "↻" בלבד, 20 שניות בלי בקשה
 php trading-strategies/tests/defined.php       # מנתח הביטויים (קלט זדוני, תקרות) ו-TsDefinedMethod: שוויון ל-sample-ma-cross, בלי הצצה, מצטבר = מלא
 php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיטת דוגמה רק למנהל, שמור/מצטבר/מלא, תקציב, 100,000, בידוד
 node trading-strategies/tests/analysis-ui.mjs  # Playwright בטלפון: ניתוח, פרופיל, ניהול שיטות, RTL, בלי polling
