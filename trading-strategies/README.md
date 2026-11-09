@@ -8,14 +8,14 @@
 ## מצב
 
 - אפיון שלב 1: [`docs/spec.md`](docs/spec.md) — בנוי וממוזג (#1259).
-- אפיון שלב א' המורחב: [`docs/spec-stage-a.md`](docs/spec-stage-a.md) — גרסה 2.2, אושר (2026-11-07, #1262).
-- אפיונים בטיוטה: [`docs/spec-elliott-wave.md`](docs/spec-elliott-wave.md) (שיטת גלי אליוט) · [`docs/spec-method-builder.md`](docs/spec-method-builder.md) (בונה שיטות בהגדרות + תחזית על הגרף) — ממתינים לאישור.
-- המטלות: [`dev/open-items.json`](dev/open-items.json) (TS-001 … TS-007).
+- אפיון שלב א' המורחב: [`docs/spec-stage-a.md`](docs/spec-stage-a.md) — גרסה 2.7 (פרק 17: גלי אליוט, בונה השיטות ושכבת התחזית; ✅15–✅21).
+- מקורות פרק 17: [`docs/spec-elliott-wave.md`](docs/spec-elliott-wave.md) · [`docs/spec-method-builder.md`](docs/spec-method-builder.md).
+- המטלות: [`dev/open-items.json`](dev/open-items.json) (TS-001 … TS-008).
 
 ## השלבים
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
-2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א השיטה מהספר (TS-008, ⏳ ממתינה לספר) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
+2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352 · ✅ 4א/2 #1356) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -198,6 +198,30 @@
 - **`alerts: false`** — האפיון לא קבע אם `elliott-w3` נכנסת להתראות.
 - **תנאי "בדוק בעצמך"** (`manual-*`) — `side: 'both'`, `met: null`.
 
+## שלב א' — 4א/2: אליוט — ציון, ספירות חלופיות והקרנה (פרק 17.1.3–17.1.7, טהור, בלי UI)
+
+- **`ts_ew_overlay($candles, $tf, $params)`** (`lib/elliott.php`) מחזיר את החוזה של 17.2.3: `{as_of, range, items[], projection{bars,
+  scenarios[]}}`, ועוד `counts` (הפירוט) ו-`check` (ההנחיות שלא נמדדות — "בדוק בעצמך"). כל פריט מסומן ב-`scenario`
+  וב-`primary` — הספירה המובילה מודגשת, החלופות עמומות (17.1.7). הגרף עצמו — 4א/4.
+- **הספירות:** תמיד של הגלים האחרונים — לכל k = 2…5 גלים שהושלמו, k+1 נקודות המפנה המאושרות האחרונות; ספירה שמפרה כלל
+  קשיח נפסלת. עד `max_counts`, ציון ≥ `min_score`, לפי הציון (ואז יותר גלים קודם).
+- **הגל הבא:** אזור (לא מחיר בודד) לצד הכלל שממנו נגזר, טווח זמן, ורמת ביטול: גל 3 — 1–1.618 × גל 1 באחוזים, ביטול בתחילת
+  גל 1 · גל 4 — 38.2% מגל 3 ± הסבולת, ביטול בסוף גל 1 (פחות `overlap_tolerance`) · גל 5 — שוויון לגל 1 עד 0.618 × (1→3)
+  · אחרי 5 — תיקון אל טווח גל 4, ביטול מעבר לסוף גל 5.
+- **הציון במילים** (✅16): "התאמה גבוהה" (≥ 0.75), "התאמה בינונית" (0.5–0.75). המספר נשאר בחוזה, ולא מוצג.
+
+### הכרעות של כותב הקוד (4א/2) — כולן [שלנו]
+
+- **הציון** = Σ משקל × התאמה ÷ Σ משקל, על היחסים של 17.1.4 שיש להם נקודות: גל 2 (50% / 61.8%), גל 3 (1 / 1.618 / 2.618 ×
+  גל 1 באחוזים), גל 4 (38.2% מגל 3), גל 4 מול גל 2 (0.618 / 1 / 1.618), גל 5 (שוויון לגל 1, או 0.382 / 0.618 / 1.618 ×
+  (1→3)). **כפולות — משקל 2, תיקונים — 1** (17.1.4: הכפולות אמינות יותר).
+- **התאמה:** 1 בתוך `fib_tolerance` מהיחס הקרוב, ויורדת בקו ישר עד 0 בשלוש פעמים הסבולת.
+- **הנחיות שלא בציון:** חילופיות, ערוץ ו-throw-over, נפח, עומק בתוך גל 4 של הדרגה הקטנה — אין להן הגדרה מספרית מלאה באפיון
+  (ולנפח — גם אין משקל, 17.1.3), ולכן הן ב-`check`. אלכסוני ו-flat לא מזוהים — רק דחפים.
+- **טווח הזמן:** גל דחף (3, 5) — כאורך גל 1; גל 4 — כאורך גל 2; התיקון אחרי 5 — גלים 2 + 4. תמיד 1…`forecast_bars`.
+- **טווחי הפרמטרים:** `pivot_atr_mult` 1–10 · `max_counts` 1–5 · `fib_tolerance` 0.01–0.2 · `forecast_bars` 5–200 ·
+  `min_score` 0.5–0.95 (מתחת ל-0.5 אין מילה לציון). **`pivot_mode: percent` עוד לא נתמך** — האפיון לא מגדיר את הסף באחוזים.
+
 ## שלב א' — 4ב/1: מנתח ביטויים ושיטה מוגדרת (פרק 17.2, בלי UI)
 
 - **`lib/expr.php`:** שפה סגורה — מספרים, שמות מוכרים, `$param`, `+ - * /`, השוואות, `crosses_above`/`crosses_below`,
@@ -267,7 +291,7 @@ lib/drawings.php    שרטוטים — שמירה, בידוד, תקרה
 lib/indicators.php  SMA, EMA, RSI, ATR במנוע (float)
 lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.php — הרשימה)
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
-lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag), הכללים הקשיחים וחיפוש ספירות — טהור
+lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag), הכללים הקשיחים, ציון, ספירות חלופיות והקרנה → overlay — טהור
 lib/expr.php        מנתח ביטויים בשפה סגורה לשיטות מוגדרות — בלי eval
 lib/overlay.php     חוזה ה-overlay (17.2.3) ובדיקתו
 lib/forecast.php    "🔮 תחזית שיטה" — method_overlay
@@ -285,7 +309,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · defined.php · forecast-api.php · forecast-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -323,6 +347,7 @@ node trading-strategies/tests/no-polling.mjs   # Playwright: 20 שניות בל�
 node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר ובמגע (לחיצה ארוכה), גרירה, ביטול/שחזור
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
+php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספירות חלופיות, הקרנה, רמת ביטול, החוזה של ה-overlay, בלי הצצה
 php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_overlay: מי רואה, סגורים בלבד, זמנים מיושרים, בלי ודאות, 429
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, "↻" בלבד, 20 שניות בלי בקשה
 php trading-strategies/tests/defined.php       # מנתח הביטויים (קלט זדוני, תקרות) ו-TsDefinedMethod: שוויון ל-sample-ma-cross, בלי הצצה, מצטבר = מלא

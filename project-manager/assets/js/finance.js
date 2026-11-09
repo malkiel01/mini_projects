@@ -23,7 +23,15 @@ const Finance = (() => {
             if (a) Payments.openPayment(Number(a.dataset.alertPay));
         });
         $('#fin-tabs').addEventListener('click', e => { const b = e.target.closest('[data-fin-tab]'); if (b) finTab(b.dataset.finTab); });
-        FinFilter.bind($('#fin-stages'), 'fin', () => project.project.id, () => renderStages());
+        // צ'יפ של מקצוע בשורת הספק — פותח (או סוגר) את הפירוט שלו
+        $('#fin-stages').addEventListener('click', e => {
+            const c = e.target.closest('[data-sup-chip]');
+            if (!c) return;
+            const [sid, key] = c.dataset.supChip.split(':');
+            // לפי מה שפתוח בפועל (גם ברירת המחדל — ספק עם מקצוע אחד): פתוח — נסגר, סגור — נפתח
+            supOpen.set(Number(sid), c.getAttribute('aria-expanded') === 'true' ? '' : key);
+            renderStages();
+        });
         $('#fin-body').addEventListener('click', e => {
             const b = e.target.closest('[data-split]');
             if (b) { openSplit(Number(b.dataset.split), Number(b.dataset.supplier)); return; }
@@ -126,6 +134,7 @@ const Finance = (() => {
 
     async function show(p) {
         bind();
+        if (project?.project?.id !== p.project.id) supOpen.clear(); // צ'יפים פתוחים — לכל פרויקט מחדש
         project = p;
         finTab(finTabNow());
         try { [data, supplierContacts] = await Promise.all([api('finance', { params: { project_id: p.project.id } }), contactsOf('supplier').catch(() => [])]); }
@@ -264,54 +273,68 @@ const Finance = (() => {
         credit: r => ({ cls: 'fin-ok', text: t('זיכוי {amount} — שולם מעל הסוכם', { amount: money(r.credit.g) }) }),
     };
 
-    /** בעל המקצוע של ספק בשלב — התחום של השלב, ובלעדיו התחומים של הספק. */
-    const rowTrades = (s, r) => FinFilter.tradesOf(project.stages.find(x => x.id === s.stage_id), r.supplier_id, supplierContacts);
+    /**
+     * 👷 ספקים (PM-041) — שורה אחת לכל ספק: סוכם · שולם · יתרה · בפיגור, והמקצועות שלו כצ'יפים; צ'יפ פותח את הפירוט.
+     * צ'יפ = שלב (מקצוע) של הספק. חוזה עם סכום (PM-043) — צ'יפ אחד על כל השלבים שלו, ו"סוכם" שלו הוא החוזה כולו
+     * (הכרעת בעל המערכת): ברמת הספק, לא מחולק בין המקצועות — בפירוט, למקצוע של החוזה אין "סוכם" משלו.
+     * הסה"כ בסיכום (pm_finance_of) מחושב באותה דרך. הסכום בשורה = סכום הצ'יפים.
+     */
+    const supOpen = new Map(); // ספק → הצ'יפ הפתוח
+    function supplierGroups() {
+        const map = new Map();
+        for (const s of data.stages) for (const r of s.rows) {
+            const g = map.get(r.supplier_id) || map.set(r.supplier_id, { id: r.supplier_id, name: r.name, chips: new Map() }).get(r.supplier_id);
+            const m = r.contract?.money;
+            const key = m?.amount > 0 ? `c${r.contract.id}` : `s${s.stage_id || 0}`;
+            const c = g.chips.get(key) || g.chips.set(key, { key, items: [], contract: m?.amount > 0 ? r.contract : null, committed: 0, paid: 0, late: 0 }).get(key);
+            c.items.push({ s, r });
+            if (!c.contract) c.committed += r.committed.g;
+            else c.index = (c.index || 0) + r.index.g; // הפרשי הצמדה — נוספים לסכום החוזה
+            c.paid += r.paid.g;
+            c.balance = (c.balance || 0) + r.balance.g;
+            c.late += Math.max(0, r.gap.g);
+        }
+        // חוזה עם סכום — "סוכם" הוא החוזה כולו (הכרעת בעל המערכת), כמו בסה"כ בשרת; היתרה — ממנו
+        for (const g of map.values()) for (const c of g.chips.values()) if (c.contract) {
+            c.committed = c.contract.money.total + (c.index || 0);
+            c.balance = Math.max(0, c.committed - c.paid);
+        }
+        return [...map.values()];
+    }
+    const chipName = c => c.contract ? `📄 ${c.contract.title || c.items.map(x => x.s.stage_id ? stageName(x.s) : t('בלי שלב')).join(' · ')}`
+        : (c.items[0].s.stage_id ? stageName(c.items[0].s) : t('בלי שלב'));
 
-    /** "👷 ספקים": הבורר, החלוקה לפי בעל מקצוע / ספק, והשלבים — רק השורות שעוברות את הסינון. */
     function renderStages() {
-        const all = data.stages.flatMap(s => s.rows.map(r => ({ s, r, trades: rowTrades(s, r) })));
-        const opts = {
-            trades: FinFilter.uniq(all.flatMap(x => x.trades.length ? x.trades : [0]), FinFilter.tradeName),
-            suppliers: FinFilter.uniq(all.map(x => x.r.supplier_id), id => all.find(x => x.r.supplier_id === id).r.name),
-        };
-        const f = FinFilter.prune('fin', project.project.id, FinFilter.get('fin', project.project.id), opts);
-        const shown = all.filter(x => FinFilter.match(f, x.trades, x.r.supplier_id));
-        const html = data.stages.map(s => {
-            const mine = shown.filter(x => x.s === s);
-            if (FinFilter.active(f) && !mine.length) return '';
-            if (!s.rows.length) return ''; // שלב בלי הצעה — מופיע בשרת רק בגלל התקציב שלו; בתזרים אין לו מקום (PM-040)
-            const rows = mine.map(x => supplierRow(s, x.r)).join('');
-            const head = s.stage_id
-                ? `<h3 class="one">${esc(stageName(s))}</h3>${stageChip(s.status)}`
-                : `<h3 class="one">${esc(t('בלי שלב'))}</h3>`;
-            return `<section class="fin-stage"><header class="q-head">${head}</header>
-                ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}
-                <ul class="list fin-rows">${rows || `<li class="muted fin-empty">${esc(t('עוד אין הצעה שאושרה'))}</li>`}</ul></section>`;
+        const groups = supplierGroups();
+        const html = groups.map(g => {
+            const chips = [...g.chips.values()];
+            const sum = k => chips.reduce((a, c) => a + c[k], 0);
+            const committed = sum('committed'), paid = sum('paid'), late = sum('late');
+            const balance = sum('balance');
+            // הצ'יפ הפתוח: מה שנבחר — אם עדיין קיים (אחרי שמירת חוזה המפתח משתנה); '' — נסגר במכוון; אחרת ברירת המחדל
+            const saved = supOpen.get(g.id);
+            const open = saved === '' ? null : chips.some(c => c.key === saved) ? saved : (chips.length === 1 ? chips[0].key : null);
+            const cur = chips.find(c => c.key === open);
+            const detail = cur ? `<div class="sup-detail">${cur.items.map(({ s, r }) => `<section class="fin-stage">
+                    <header class="q-head"><h4 class="one">${esc(s.stage_id ? stageName(s) : t('בלי שלב'))}</h4>${s.stage_id ? stageChip(s.status) : ''}</header>
+                    ${s.stage_id ? meter(s.progress, t('בוצע')) : ''}<ul class="list fin-rows">${supplierRow(s, r)}</ul></section>`).join('')}</div>` : '';
+            return `<section class="fin-card sup-card" data-sup="${g.id}">
+                <header class="q-head"><h3 class="one">${esc(g.name)}</h3>${late > 100 ? `<span class="chip fin-late">${esc(t('בפיגור {amount}', { amount: money(Math.round(late)) }))}</span>` : ''}</header>
+                <dl class="sup-nums">
+                    <div><dt>${esc(t('סוכם'))}</dt><dd>${esc(money(Math.round(committed)))}</dd></div>
+                    <div><dt>${esc(t('שולם'))}</dt><dd>${esc(money(Math.round(paid)))}</dd></div>
+                    <div><dt>${esc(t('יתרה'))}</dt><dd>${esc(money(Math.round(balance)))}</dd></div>
+                </dl>
+                <div class="chips sup-chips" role="group" aria-label="${esc(t('המקצועות של {name}', { name: g.name }))}">${chips.map(c =>
+                    `<button type="button" class="chip${c.key === open ? ' on' : ''}" data-sup-chip="${g.id}:${c.key}" aria-expanded="${c.key === open}">
+                        ${esc(chipName(c))} · ${esc(money(Math.round(c.committed)))}${c.late > 100 ? ' ⚠️' : ''}</button>`).join('')}</div>
+                ${detail}</section>`;
         }).join('');
-        $('#fin-stages').innerHTML = (all.length ? filterBox(f, opts, shown) : '')
-            + (html || `<p class="empty">${esc(FinFilter.active(f) ? t('אין ספקים שמתאימים לסינון.') : t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`);
+        $('#fin-stages').innerHTML = html || `<p class="empty">${esc(t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`;
         $('#fin-extra').innerHTML = expensesSection() + feeSection();
         Deviations.show(project, data.settings.deviations_on);
-        $('#fin-n-suppliers').textContent = new Set(data.stages.flatMap(s => s.rows.map(r => r.supplier_id))).size || '';
+        $('#fin-n-suppliers').textContent = groups.length || '';
         $('#fin-n-expenses').textContent = data.expenses?.items?.length || '';
-    }
-
-    /** הבורר, ומתחתיו טבלה: לכל בעל מקצוע / ספק — סוכם, שולם, יתרה (של מה שעבר את הסינון). */
-    function filterBox(f, opts, shown) {
-        const list = FinFilter.group(shown,
-            x => (f.by === 'supplier' ? x.r.supplier_id : FinFilter.tradeKey(f, x.trades)),
-            (x, id) => ({ name: f.by === 'supplier' ? x.r.name : FinFilter.tradeName(id), c: 0, p: 0, b: 0 }),
-            (g, x) => { g.c += x.r.committed.g; g.p += x.r.paid.g; g.b += x.r.balance.g; },
-            (a, b) => b.c - a.c);
-        const sum = k => list.reduce((a, g) => a + g[k], 0);
-        const td = v => `<td class="n">${esc(money(Math.round(v)))}</td>`;
-        return `<section class="fin-card ff-box">${FinFilter.html('fin', f, opts)}
-            ${FinFilter.byHtml('fin', f)}
-            <div class="fin-units"><div class="tbl-wrap"><table>
-                <thead><tr><th>${esc(f.by === 'supplier' ? t('ספק') : t('בעל מקצוע'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('שולם'))}</th><th class="n">${esc(t('יתרה'))}</th></tr></thead>
-                <tbody>${list.map(g => `<tr><th>${esc(g.name)}</th>${td(g.c)}${td(g.p)}${td(g.b)}</tr>`).join('')}</tbody>
-                <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ'))}</th>${td(sum('c'))}${td(sum('p'))}${td(sum('b'))}</tr></tfoot></table></div>
-            <p class="hint">${esc(t('כולל מע"מ. בעל המקצוע — התחום של השלב; שלב בלי תחום — התחום של הספק.'))}</p></div></section>`;
     }
 
     /** הוצאות ישירות (כ5) — מה שהלקוח קנה בעצמו. */
@@ -357,7 +380,7 @@ const Finance = (() => {
         return `<li class="fin-row">
             <div class="fin-row-head"><b class="one">${esc(r.name)}</b>${flags}</div>
             <dl class="fin-cells">
-                ${cell(t('סוכם'), r.committed)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${r.credit?.g ? cell(t('זיכוי'), { g: -r.credit.g, n: -r.credit.n }) : cell(t('יתרה'), r.balance)}
+                ${r.contract?.money?.amount > 0 ? `<div><dt>${esc(t('סוכם'))}</dt><dd class="muted">${esc(t('בחוזה'))}</dd></div>` : cell(t('סוכם'), r.committed)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${r.contract?.money?.amount > 0 ? '' /* יתרה — של החוזה כולו, בכרטיס הספק */ : r.credit?.g ? cell(t('זיכוי'), { g: -r.credit.g, n: -r.credit.n }) : cell(t('יתרה'), r.balance)}
             </dl>
             ${changes ? `<div class="chip-row co-row">${changes}</div>` : ''}
             ${r.index.g ? `<p class="fin-stage-budget">${esc(t('כולל הפרשי הצמדה {amount}', { amount: money(r.index.g) }))}</p>` : ''}
