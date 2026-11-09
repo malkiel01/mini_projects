@@ -196,6 +196,7 @@ function ts_analysis_copy(int $uid, array $in, ?int $now = null): array
         throw new TsInvalid($e->getMessage());
     }
     $fl = ts_bt_floats($rows);
+    $dec = ts_tick_decimals($rows);
     unset($rows, $copy);
     $db = ts_db();
     $ins = $db->prepare("INSERT OR REPLACE INTO backtests (method_id, method_version, provider, asset, tf, params_hash, cred_scope, source,
@@ -205,6 +206,7 @@ function ts_analysis_copy(int $uid, array $in, ?int $now = null): array
     foreach (array_unique($ids) as $id) {
         [$m, $set, $p] = ts_method_for($uid, $id);
         if (!in_array($tf, $set['timeframes'], true) || !in_array($market, $set['markets'], true)) continue;
+        $p = ts_params_for_asset($m, $p, $dec);   // כמו בניתוח — אותו hash
         $mm = $m->meta();
         try {
             $s = ts_bt_run($m, $p, $fl, $cost, null, microtime(true) + TS_BT_MAX_SECONDS);

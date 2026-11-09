@@ -87,8 +87,10 @@ eq([call('carol', 'admin_methods')[0], call('carol', 'admin_method_save', $mset)
 
 // ── שיטות (6.7): חדשה = כבויה; דוגמה — רק למנהלים ─────────
 $am = call('owner', 'admin_methods')[1];
-eq([count($am['methods']), $am['methods'][0]['id'], $am['methods'][0]['enabled'], $am['methods'][0]['sample'], $am['methods'][0]['version'], $am['methods'][0]['alerts']],
-    [1, $SAMPLE, false, true, 1, false], 'the code method is listed, OFF by default, sample, version 1, not for alerts');
+$smp = array_values(array_filter($am['methods'], fn($x) => $x['id'] === $SAMPLE))[0] ?? [];
+// מ-4א/3 גם elliott-w3 ברשימה (כבויה) — ולכן לפי מזהה, לא לפי מקום
+eq([array_column($am['methods'], 'id'), $smp['enabled'], $smp['sample'], $smp['version'], $smp['alerts'], array_unique(array_column($am['methods'], 'enabled'))],
+    [[$SAMPLE, 'elliott-w3'], false, true, 1, false, [false]], 'the code methods are listed, all OFF by default; the sample: sample, version 1, not for alerts');
 eq(call('owner', 'methods')[1]['methods'], [], 'off → not offered even to the admin');
 eq(call('owner', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $SAMPLE])[0], 404, 'off → analysis refuses it');
 foreach ([['params' => ['fast' => 60]], ['params' => ['fast' => 1]], ['params' => ['fast' => 2.5]], ['params' => ['zzz' => 1]], ['markets' => ['options']], ['timeframes' => ['mn1']], ['timeframes' => []]] as $bad) {

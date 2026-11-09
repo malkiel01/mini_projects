@@ -10,9 +10,11 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/sample-ma-cross.php';
+require_once __DIR__ . '/elliott-w3.php';
 
 const TS_METHODS = [
     'sample-ma-cross' => TsMethodSampleMaCross::class,
+    'elliott-w3' => TsMethodElliottW3::class,   // spec-stage-a 17.1.9 — כבויה עד שמנהל מפעיל
 ];
 
 /** id → מחלקה */
