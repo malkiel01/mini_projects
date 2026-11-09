@@ -178,6 +178,7 @@ try {
         'POST file-thumb'  => pm_file_thumb($user, (int)($in['id'] ?? 0), (string)($in['thumb'] ?? '')),
         'POST file-move'   => pm_file_move($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0)),
         'POST file-link'   => pm_file_link($user, (int)($in['id'] ?? 0), (int)($in['folder_id'] ?? 0), !empty($in['add'])),
+        'POST file-places' => pm_file_places($user, (int)($in['id'] ?? 0), (array)($in['add'] ?? []), (array)($in['remove'] ?? [])),
         'POST file-delete' => pm_file_delete($user, (int)($in['id'] ?? 0)),
 
         // הצעות מחיר (שלב 5)

@@ -2696,5 +2696,19 @@
     "עוד אין אבני דרך לספק הזה.": "No milestones for this supplier yet.",
     "כרטיס": "Card",
     "כרטיס ספק": "Supplier card",
-    "התשלום מקדים את הביצוע: {stages}": "Payment is ahead of the work: {stages}"
+    "התשלום מקדים את הביצוע: {stages}": "Payment is ahead of the work: {stages}",
+    "📁 תיקיות שנוצרו": "📁 Created folders",
+    "🏠 מסמכי הפרויקט והנכס": "🏠 Project & property documents",
+    "👷 מסמכים לכל ספק": "👷 Documents per supplier",
+    "🔒 תיקיות מערכת": "🔒 System folders",
+    "תיקיית מערכת — בלי מחיקה ושינוי שם": "System folder — cannot be deleted or renamed",
+    "תיקיית מערכת": "System folder",
+    "התיקייה של הקובץ": "The file's folder",
+    "הסרה מ{folder}": "Remove from {folder}",
+    "הספק יראה את הקובץ גם בפורטל שלו": "The supplier will also see the file in their portal",
+    "למחוק את \"{name}\"? הוא מופיע ב-{n} מקומות ({places}) — וייעלם מכולם.": "Delete \"{name}\"? It appears in {n} places ({places}) and will disappear from all of them.",
+    "מופיע ב…": "Appears in…",
+    "קובץ אחד — קישורים, לא העתק": "One file — links, not copies",
+    "🔗 להציג גם ב…": "🔗 Also show in…",
+    "מסמכי הנכס": "Property documents"
 }

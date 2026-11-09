@@ -1015,7 +1015,7 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .fd-grid .wide { grid-column: 1 / -1; }
 .fd-more { display: grid; gap: var(--s2); }
 .fd-more .sec-title { margin: var(--s2) 0 0; }
-.fd-more .sec-title small { font-weight: 400; color: var(--muted); font-size: .75rem; }
+.fd-more .sec-title small, .file-places .sec-title small { font-weight: 400; color: var(--muted); font-size: .75rem; }
 
 /* ===== צפייה במסך מלא בתוך האפליקציה (viewer.js — Viewer.open) ===== */
 #viewer-dlg { inline-size: 100vw; max-inline-size: 100vw; block-size: var(--vvh, 100dvh); max-block-size: none; margin: 0; inset: 0; padding: 0; border: 0; border-radius: 0;
@@ -1300,3 +1300,16 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .sc-row { display: grid; gap: 2px; width: 100%; padding: var(--s2) 0; background: none; border: 0; color: inherit; font: inherit; text-align: start; cursor: pointer; }
 .sc-l1 { display: flex; justify-content: space-between; gap: var(--s2); }
 .sc-l2 { font-size: .85rem; }
+
+/* PM-045: קבוצות תיקיות (מערכת למעלה, שנוצרו מתחת), ו"🔗 להציג גם ב…" בחלון הקובץ */
+#folder-list .fgroup { list-style: none; padding: var(--s2) var(--s1) 0; font-size: .82rem; font-weight: 600; color: var(--muted); background: none; border: 0; box-shadow: none; }
+#folder-list .lock { font-size: .8rem; opacity: .7; margin-inline-start: var(--s1); }
+.file-places #add-link { margin-top: var(--s2); }
+.place-pick { margin-top: var(--s2); padding: var(--s2); border: 1px solid var(--line); border-radius: 10px; max-height: 50vh; overflow: auto; }
+.pl-group { border: 0; margin: 0 0 var(--s2); padding: 0; }
+.pl-group legend { font-size: .82rem; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: var(--s1); }
+.pl-group .hint { margin: 0 0 var(--s1); font-size: .78rem; }
+.pl-row { display: flex; align-items: center; gap: var(--s2); min-height: 40px; padding: 0 var(--s1); border-radius: 8px; cursor: pointer; }
+.pl-row.sub { padding-inline-start: var(--s4); font-size: .92rem; }
+.pl-row:hover { background: var(--bg); }
+.pl-row input { width: 20px; height: 20px; flex: none; }
