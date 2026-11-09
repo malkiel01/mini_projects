@@ -198,6 +198,28 @@
 - **`alerts: false`** — האפיון לא קבע אם `elliott-w3` נכנסת להתראות.
 - **תנאי "בדוק בעצמך"** (`manual-*`) — `side: 'both'`, `met: null`.
 
+## שלב א' — 4ב/1: מנתח ביטויים ושיטה מוגדרת (פרק 17.2, בלי UI)
+
+- **`lib/expr.php`:** שפה סגורה — מספרים, שמות מוכרים, `$param`, `+ - * /`, השוואות, `crosses_above`/`crosses_below`,
+  `and`/`or` וסוגריים. הטקסט הופך לעץ (מערכים) ומחושב בפונקציה אחת; **אין `eval`**, אין קוד, קבצים או רשת. נדחים: כל תו
+  מחוץ לרשימה (מחרוזות, `;`, `` ` ``, סוגריים מסולסלים/מרובעים, עברית, שורה חדשה), שם לא מוכר, קריאה לפונקציה, השוואה
+  בשרשרת. תקרות: 500 תווים, 200 אסימונים, עומק 32. הודעת השגיאה לא מחזירה את הקלט.
+- **`lib/methods/defined.php` (`TsDefinedMethod`):** מממש את 6.1 מתוך JSON (spec-method-builder.md 3): פרמטרים, אינדיקטורים
+  (`sma`, `ema`, `rsi`, `atr`, `volume`), כללי לונג/שורט (`all`/`any`), רמות (`entry`, `dir`), אופק ו-`validate`. האינדיקטורים
+  בזרימה — אותו סדר פעולות כמו `lib/indicators.php`. `sample-ma-cross` כהגדרה נותנת **אותם אותות ואותה בדיקה לאחור בדיוק**.
+- **עוד לא נטען מהמסד ולא ברשימת השיטות** — מסך המנהל, `methods.definition`, `method_versions` וההתנגשות עם מזהה של
+  שיטת קוד — 4ב/3. אין מיגרציה ב-PR הזה.
+
+### הכרעות של כותב הקוד (4ב/1)
+
+- **`null`** (אינדיקטור שעוד לא התחמם, חלוקה באפס): בחשבון → `null`, בהשוואה → `false`; רמה `null` → אין אות.
+- **`crosses_above`:** בנר הקודם `a ≤ b`, ועכשיו `a > b` (`crosses_below` — במראה), כמו `sample-ma-cross`. בנר הראשון — לא.
+- **שני הצדדים מתקיימים באותו נר** — לונג (כמו `sample-ma-cross`).
+- **`bias`** — הצד של האות האחרון, כל עוד לא עברו `horizon_bars` מאז; התנאים בכרטיס — כל כלל כטקסט, והאם התקיים בנר האחרון.
+- **תנאי `{left, op, right}`** — נהפך לביטוי `(left) op (right)`. **`forecast`, `display`** — נשמרים, לא בשימוש עד 4ב/2.
+- **תקרות ההגדרה:** 20 פרמטרים, 20 אינדיקטורים (אורך 1–1000), 10 תנאים לצד, אופק 1–500, 20KB.
+- **`volume`** — מהנר (`v`) כשיש; במנוע הבדיקה לאחור הנרות עוד בלי נפח (`ts_bt_floats`), ולכן `null`.
+
 ## המבנה
 
 ```
@@ -223,6 +245,7 @@ lib/indicators.php  SMA, EMA, RSI, ATR במנוע (float)
 lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.php — הרשימה)
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
 lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag), הכללים הקשיחים וחיפוש ספירות — טהור
+lib/expr.php        מנתח ביטויים בשפה סגורה לשיטות מוגדרות — בלי eval
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
 lib/alerts.php      התראות: ניהול, תיבה, והריצה של ה-cron
 lib/fx.php          המרת מטבע לפי ECB לסטטיסטיקה
@@ -236,7 +259,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · defined.php; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -274,6 +297,7 @@ node trading-strategies/tests/no-polling.mjs   # Playwright: 20 שניות בל�
 node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר ובמגע (לחיצה ארוכה), גרירה, ביטול/שחזור
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
+php trading-strategies/tests/defined.php       # מנתח הביטויים (קלט זדוני, תקרות) ו-TsDefinedMethod: שוויון ל-sample-ma-cross, בלי הצצה, מצטבר = מלא
 php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיטת דוגמה רק למנהל, שמור/מצטבר/מלא, תקציב, 100,000, בידוד
 node trading-strategies/tests/analysis-ui.mjs  # Playwright בטלפון: ניתוח, פרופיל, ניהול שיטות, RTL, בלי polling
 php trading-strategies/tests/alerts-api.php    # cron כ-CLI עם זמן מדומה: בלי כפילות, נעילה, תקציב, דרך הרשת נכשל, פוש/VAPID, תקרות
