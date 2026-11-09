@@ -300,8 +300,20 @@
   בה אף פעם — בשקט. (`TsDefinedMethod` עצמו עדיין יודע לקרוא נפח מנר שיש בו.)
 - **הגרסה — של השרת:** `version` שמגיע מהדפדפן נמחק. שינוי הגדרה שומר את הפרמטרים, השווקים והמסגרות שהמנהל קבע — מה שעדיין
   קיים בהגדרה החדשה; שיטה מופעלת נשארת מופעלת.
-- **העורך — JSON.** בונה חזותי של תנאים (spec-method-builder.md 4) — **עוד לא**: מוצע כ-PR המשך.
+- **העורך — JSON.** בונה חזותי של תנאים (spec-method-builder.md 4) — **4ב/4**, PR המשך (הכרעת הבקרה).
 - **אין מחיקה** של שיטה מוגדרת — האפיון לא מגדיר; מכבים אותה.
+
+## שלב א' — 4א/4: אליוט בגרף (17.1.7, 17.2.2, ✅15, ✅16)
+
+- **`TsMethodElliottW3::overlay()`** — במקום ברירת המחדל של 4ב/2: השכבה החזותית של אליוט (`ts_ew_overlay`) — קו הספירה
+  ותוויות 1–5, אזור לגל הבא לצד הכלל, קו ביטול אדום והקרנה מקווקוות. הרגישות ואורך ה-ATR — מהפרמטרים של השיטה (המנהל
+  משנה); השאר — ברירות המחדל של 17.1.6. `counts` (הפירוט הפנימי) לא נשלח; `check` — כן.
+- **בגרף** ("🔮 תחזית שיטה" ← "גלי אליוט — כניסה לגל 3"): הספירות כתרחישים בפאנל — **הציון במילים** ("התאמה גבוהה /
+  בינונית", ✅16); לחיצה על ספירה חלופית מדגישה אותה, והשאר עמומות (17.1.7). "🔎 בדוק בעצמך" — ההנחיות שהמחשב לא מודד.
+  בלי ספירה — הפאנל אומר למה.
+- **הזמנים העתידיים — מהנר האחרון** (`as_of + k·tf`), לא מנקודת המפנה: אורך הגל הבא פחות מה שכבר עבר מאז סוף הגל, עד
+  `forecast_bars`. כך הם מיושרים למסגרת גם כשיש פערים בנתונים (סופי שבוע במניות). (שינוי קטן ב-`ts_ew_overlay` של 4א/2;
+  הבדיקות שלו עודכנו בהתאם.)
 
 ## המבנה
 
@@ -347,7 +359,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-chart.php · elliott-chart-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -389,6 +401,8 @@ php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספי�
 php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_overlay: מי רואה, סגורים בלבד, זמנים מיושרים, בלי ודאות, 429
 php trading-strategies/tests/builder-api.php   # בונה השיטות: 403, admin_log, גרסאות, "🧪 נסה" לא שומר, נפח נדחה, מיגרציה 8
 node trading-strategies/tests/builder-ui.mjs   # Playwright בטלפון: ➕, בדיקה, נסה, JSON שבור, שמירה, עריכה → גרסה 2
+php trading-strategies/tests/elliott-chart.php  # אליוט בגרף: החוזה על כל חלון, מילים בלי אחוז, פערים בנתונים, method_overlay
+node trading-strategies/tests/elliott-chart-ui.mjs # Playwright בטלפון: 🔮 ← גלי אליוט, ספירות במילים, "בדוק בעצמך"
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, "↻" בלבד, 20 שניות בלי בקשה
 php trading-strategies/tests/elliott-card-api.php # elliott-w3: כבויה עד הפעלה, tick ב-hash, הכרטיס ממצב המנוע (ו1), "בדוק בעצמך", ז0
 node trading-strategies/tests/elliott-card-ui.mjs # Playwright בטלפון: כרטיס אליוט, "בדוק בעצמך", "הגדרה שלנו", בניהול
@@ -415,4 +429,7 @@ php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/de
 
 ## מה טרם הוכרע
 
-הוכרע הכול (פרק 10 באפיון). הקטגוריה "כספים" (`finance`) קיימת בפלטפורמה ובשימוש ב-`app.json`.
+- **פרק 17 — פתוחים לאפיון v3:** `pivot_mode: percent` (הסף באחוזים לא מוגדר); זיהוי אלכסוני ו-flat (היום — רק דחפים).
+- **מה עוד (בקוד):** 4ב/4 — בונה חזותי של תנאים (spec-method-builder.md 4), בנוסף לעורך ה-JSON של 4ב/3.
+
+שאר שלב א' — הוכרע (פרק 10 באפיון). הקטגוריה "כספים" (`finance`) קיימת בפלטפורמה ובשימוש ב-`app.json`.

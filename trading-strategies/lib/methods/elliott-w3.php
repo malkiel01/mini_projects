@@ -132,6 +132,22 @@ final class TsMethodElliottW3 extends TsMethod
             'stop' => $P0, 'target' => $target, 'ok' => $w1ok && $r1 && $depth && $tgtOk];
     }
 
+    /**
+     * "🔮 תחזית שיטה" (17.1.7, 17.2.2; 4א/4): במקום ברירת המחדל — השכבה החזותית של אליוט (lib/elliott.php,
+     * ts_ew_overlay): הספירות של הגלים האחרונים, אזור לגל הבא לצד הכלל, רמת ביטול והקרנה. הרגישות ואורך ה-ATR —
+     * מהפרמטרים של השיטה; השאר — ברירות המחדל של 17.1.6. המפתח check — ההנחיות שהמחשב לא מודד ("בדוק בעצמך").
+     */
+    public function overlay(array $candles, array $p, int $tf): array
+    {
+        require_once dirname(__DIR__) . '/overlay.php';
+        $prm = ['pivot_atr_mult' => (float)$p['pivot_atr_mult'], 'atr_len' => (int)$p['atr_len']];
+        if (!$candles) return ts_overlay_empty($candles, ts_ew_params($prm)['forecast_bars'], 'אין נרות בטווח');
+        $ov = ts_ew_overlay($candles, $tf, $prm);
+        unset($ov['counts']);   // הפירוט הפנימי לא נשלח לגרף — רק החוזה (17.2.3) וההנחיות
+        if (!$ov['items']) $ov['note'] = 'אין כרגע ספירה שעומדת בכללים הקשיחים ובציון המינימלי';
+        return $ov;
+    }
+
     public function conditions(array $s, array $p): array
     {
         $piv = $s['piv'];

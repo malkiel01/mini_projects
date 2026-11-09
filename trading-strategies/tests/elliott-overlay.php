@@ -133,8 +133,10 @@ eq([$o['as_of'], $o['range']], [end($C4)['t'], ['from' => 0, 'to' => end($C4)['t
 $end = end($c[0]['pivots'])['t'];
 $t2 = end($sc['points'])['t'];
 $w1bars = intdiv($c[0]['pivots'][1]['t'] - $c[0]['pivots'][0]['t'], $H);
-eq([($t2 - $end) % $H, ($t2 - $end) / $H, $t2 > $o['as_of']], [0, min(30, $w1bars), true], "future times aligned to the timeframe (t + k·tf); wave 5 ≈ wave 1 in time ($w1bars bars), capped at forecast_bars");
-eq(($t2 - end($c[0]['pivots'])['t']) / $H <= 30 && (ts_ew_overlay($C4, $H, ['forecast_bars' => 5])['projection']['scenarios'][0]['points'][1]['t'] - $end) / $H === 5, true, 'projection length capped by forecast_bars');
+// 4א/4: הזמן העתידי נספר מהנר האחרון (as_of) — אורך הגל הבא פחות מה שכבר עבר מאז סוף הגל, עד forecast_bars
+$since = ($o['as_of'] - $end) / $H;
+eq([($t2 - $o['as_of']) % $H, ($t2 - $o['as_of']) / $H, $t2 > $o['as_of']], [0, max(1, min(30, $w1bars - $since)), true], "future times = as_of + k·tf; wave 5 ≈ wave 1 in time ($w1bars bars, $since already passed), capped at forecast_bars");
+eq((ts_ew_overlay($C4, $H, ['forecast_bars' => 5])['projection']['scenarios'][0]['points'][1]['t'] - $o['as_of']) / $H, 5, 'projection length capped by forecast_bars');
 $o4h = ts_ew_overlay(ew_bars(105.5, $imp, 133, 14400), 14400);
 eq(($o4h['projection']['scenarios'][0]['points'][1]['t'] - end($o4h['counts'][0]['pivots'])['t']) % 14400, 0, 'aligned on 4h as well');
 // הניסוח: בלי אחוז לציון (✅16), בלי "קנה/מכור/המלצה/יעד" (6.6)

@@ -344,6 +344,7 @@ function ts_ew_next(array $p, int $k, array $bars, array $prm): array
             $out = ['wave' => 'A-B-C', 'zone' => [min($p[3], $p[4]), max($p[3], $p[4])], 'center' => ($p[3] + $p[4]) / 2, 'rule' => 'התיקון אחרי דחף מגיע בדרך כלל לטווח גל 4 (הנחיה)',
                 'invalidation' => $p[5], 'invalidation_rule' => 'מחיר מעבר לסוף גל 5 — הדחף עוד לא הסתיים', 'bars' => $bars[2] + $bars[4]];
     }
+    $out['bars_full'] = max(1, (int)$out['bars']);   // אורך הגל הבא כולו, בנרות — לפני התקרה
     $out['bars'] = max(1, min((int)$prm['forecast_bars'], (int)$out['bars']));
     return $out;
 }
@@ -410,8 +411,12 @@ function ts_ew_overlay(array $candles, int $tf, array $in = []): array
         }
         $nx = $c['next'];
         $end = end($c['pivots']);
-        $t2 = $end['t'] + $nx['bars'] * $tf;
-        $items[] = ['kind' => 'zone', 't1' => $end['t'] + $tf, 't2' => $t2, 'p1' => $nx['zone'][0], 'p2' => $nx['zone'][1],
+        // הזמן העתידי — מהנר האחרון (as_of), ולא מנקודת המפנה: כך הוא תמיד t + k·tf (17.2.2), גם כשיש פערים בנתונים
+        // (סופי שבוע). אורך הגל הבא בנרות, פחות הנרות שכבר עברו מאז סוף הגל; לפחות 1, ולא יותר מ-forecast_bars
+        $since = 0;
+        for ($j = count($candles) - 1; $j >= 0 && $candles[$j]['t'] > $end['t']; $j--) $since++;
+        $t2 = $last + max(1, min($prm['forecast_bars'], $nx['bars_full'] - $since)) * $tf;
+        $items[] = ['kind' => 'zone', 't1' => $end['t'], 't2' => $t2, 'p1' => $nx['zone'][0], 'p2' => $nx['zone'][1],
             'text' => 'אזור לגל ' . $nx['wave'] . ' — ' . $nx['rule']] + $tag;
         $items[] = ['kind' => 'hline', 'price' => (float)$nx['invalidation'], 'role' => 'invalidation',
             'text' => 'רמת ביטול — ' . $nx['invalidation_rule']] + $tag;
