@@ -137,6 +137,7 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
         'lines' => $lines,
         'stages_total' => $sum / 100, 'fee' => $fee / 100, 'contingency' => $cont / 100, 'total' => ($sum + $fee + $cont) / 100,
         'initial_total' => (int)$p['budget_initial'], 'committed_total' => $fin['totals']['committed']['g'],
+        'committed_total_net' => $fin['totals']['committed']['n'], // להערכת הסוף ב"לפני מע"מ" — פריטים בלי מע"מ לא מחולקים
         'over_total' => (float)array_sum(array_column($lines, 'over')),
         'pending' => $pending, 'versions' => $versions,
         'units' => array_values(array_map(fn($u) => ['id' => $u['id'], 'name' => $u['name'], 'pct' => round(($split[$u['id']] ?? 0) * 100, 2), 'budget' => $u['budget']],

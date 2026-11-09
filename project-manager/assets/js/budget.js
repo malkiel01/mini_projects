@@ -226,9 +226,11 @@ const Budget = (() => {
         if (!root) return;
         if (!data.lines.length) { root.hidden = true; return; }
         root.hidden = false;
-        const rows = shownLines(f).map(l => ({ l, plan: amountOf(l), done: l.committed / k() }));
-        const notYet = data.lines.filter(l => !l.committed).reduce((a, l) => a + amountOf(l), 0);
-        const estimate = data.committed_total / k() + notYet;
+        const amt = new Map(data.lines.map(l => [l.stage_id, amountOf(l)])); // פעם אחת לכל שלב
+        const rows = shownLines(f).map(l => ({ l, plan: amt.get(l.stage_id), done: l.committed / k() }));
+        const notYet = data.lines.filter(l => !l.committed).reduce((a, l) => a + amt.get(l.stage_id), 0);
+        // הסוכם — מהשרת, לפי התצוגה: "לפני מע״מ" לוקח את הנטו של כל פריט (הוצאה בלי מע״מ לא מחולקת ב-1.18)
+        const estimate = (data.vat_mode === 'net' ? data.committed_total_net : data.committed_total) + notYet;
         const sum = key => rows.reduce((a, r) => a + r[key], 0);
         const gapCell = (plan, done) => {
             if (!done) return `<td class="n muted">${esc(t('עוד לא סוכם'))}</td>`;

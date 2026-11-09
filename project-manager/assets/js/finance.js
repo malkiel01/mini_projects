@@ -186,12 +186,9 @@ const Finance = (() => {
             <p class="hint">${esc(t('שלב של דירה — כולו שלה. שלב משותף — לפי החלוקה שבחוזה עם הספק ("📄 חוזה"); בלי חלוקה — "משותף".'))}</p></div>`;
     }
 
-    /** התראות שמקורן בתקציב — לא בתזרים (PM-040): החריגות מהצפי מוצגות ב"📐 צפי". */
-    const BUDGET_ALERTS = new Set(['over_budget', 'budget_warn', 'budget_grew', 'stage_over']);
-
     /** ההתראות של הפרויקט (כ2) — מהדחוף; תשלום — פותח את אבן הדרך. */
     function alerts() {
-        const list = (data.alerts || []).filter(a => !BUDGET_ALERTS.has(a.kind));
+        const list = (data.alerts || []).filter(a => a.scope !== 'forecast') // התראות התקציב — ב"📐 צפי", לא בתזרים (PM-040);
         if (!list.length) return '';
         const ICON = { late: '⚠️', soon: '⏰', wait: '⏳', info: 'ℹ️' };
         return `<ul class="fin-alerts" aria-label="${esc(t('דורש טיפול'))}">${list.map(a => `<li class="fa-${a.level}">
@@ -201,7 +198,7 @@ const Finance = (() => {
 
     /** סרגל אחד: שולם · הגיע מועד ולא שולם · עוד לא הגיע מועד — מתוך מה שסוכם (בלי תקציב). */
     function bar(T) {
-        const max = Math.max(T.committed.g, T.paid.g, 1);
+        const max = Math.max(T.committed.g, T.due.g, T.paid.g, 1);
         const paid = Math.min(T.paid.g, T.committed.g || T.paid.g);
         const lateAmt = Math.max(0, T.due.g - T.paid.g);
         const later = Math.max(0, T.committed.g - paid - lateAmt);
@@ -259,6 +256,7 @@ const Finance = (() => {
         const html = data.stages.map(s => {
             const mine = shown.filter(x => x.s === s);
             if (FinFilter.active(f) && !mine.length) return '';
+            if (!s.rows.length) return ''; // שלב בלי הצעה — מופיע בשרת רק בגלל התקציב שלו; בתזרים אין לו מקום (PM-040)
             const rows = mine.map(x => supplierRow(s, x.r)).join('');
             const head = s.stage_id
                 ? `<h3 class="one">${esc(stageName(s))}</h3>${stageChip(s.status)}`

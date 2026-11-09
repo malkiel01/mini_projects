@@ -27,6 +27,8 @@ const PM_FEE_TYPES = ['', 'percent', 'fixed'];
 const PM_DUE_KINDS = ['date', 'stage_done', 'progress'];
 /** שולם יותר מהביצוע ביותר מזה (נקודות אחוז) — מסומן. */
 const PM_OVERPAY_MARGIN = 10;
+/** התראות שמקורן בתקציב — שייכות ל"📐 צפי", לא לתזרים (PM-040). */
+const PM_FORECAST_ALERTS = ['over_budget', 'budget_warn', 'budget_grew', 'stage_over'];
 
 /**
  * שיעור המע"מ לסכומים חדשים. לפרויקט — מהגדרות הפרויקט (projects.vat_rate) אם נקבע שם; אחרת — הכללי
@@ -652,7 +654,9 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
     $mgr = $audience === 'manager';
     $out = [];
     $add = function (string $level, string $kind, string $key, string $tpl, array $vars, string $sort, ?int $payment = null) use (&$out, $lang) {
-        $out[] = ['level' => $level, 'kind' => $kind, 'key' => $key, 'text' => pm_t($tpl, $vars, $lang), 'sort' => $sort, 'payment_id' => $payment];
+        // scope: 'forecast' — התראה שמקורה בתקציב (📐 צפי); לא חלק מהתזרים ולא נספרת בו (PM-040)
+        $out[] = ['level' => $level, 'kind' => $kind, 'key' => $key, 'text' => pm_t($tpl, $vars, $lang), 'sort' => $sort, 'payment_id' => $payment,
+            'scope' => in_array($kind, PM_FORECAST_ALERTS, true) ? 'forecast' : 'cashflow'];
     };
 
     $st = $db->prepare('SELECT * FROM stages WHERE project_id = ?');
@@ -898,7 +902,7 @@ function pm_finance_all(array $user, array $in): array
             'committed' => $m('committed'), 'due' => $m('due'), 'paid' => $m('paid'), 'balance' => $m('balance'), 'overdue' => $m('overdue'),
             // מתוך מה שצריך לשלם בסך הכול (שולם + יתרה) — גם כשאבני הדרך בלי הצעה שאושרה
             'paid_pct' => (($P['paid'][0] ?? 0) + ($P['balance'][0] ?? 0)) > 0 ? (int)round(($P['paid'][0] ?? 0) * 100 / (($P['paid'][0] ?? 0) + ($P['balance'][0] ?? 0))) : 0,
-            'alerts' => count(array_filter($pa, fn($a) => in_array($a['level'], ['late', 'soon'], true))),
+            'alerts' => count(array_filter($pa, fn($a) => in_array($a['level'], ['late', 'soon'], true) && $a['scope'] !== 'forecast')),
         ];
         foreach (['committed', 'paid', 'balance', 'overdue'] as $k) { $sum[$k][0] = ($sum[$k][0] ?? 0) + ($P[$k][0] ?? 0); $sum[$k][1] = ($sum[$k][1] ?? 0) + ($P[$k][1] ?? 0); }
     }
