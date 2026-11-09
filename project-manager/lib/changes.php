@@ -161,6 +161,19 @@ function pm_change_decide(array $user, int $id, string $role, string $decision, 
     }
     // אחרי הלקוח — לעו"ד
     if ($status === 'client_approved' && $p['lawyer_id']) pm_change_notify($user, $id, (int)$p['lawyer_id'], 'change_order_lawyer');
+    // PM-043: תוספת שאושרה מגדילה את החוזה (pm_contract_money) ומוסיפה אבן דרך משלה — כשלספק יש חוזה עם סכום בשלב הזה
+    if ($status === 'approved') {
+        $k = pm_contract_for(pm_contracts_of((int)$o['project_id'], (int)$o['supplier_id']), (int)$o['supplier_id'], (int)$o['stage_id']);
+        if ($k && $k['money']['amount'] > 0) try {
+            $saved = pm_payment_save($user, ['project_id' => (int)$o['project_id'], 'supplier_id' => (int)$o['supplier_id'], 'stage_id' => (int)$o['stage_id'],
+                'contract_id' => $k['id'], 'title' => mb_substr(pm_t('תוספת: {reason}', ['reason' => $o['reason']]), 0, 100), 'amount' => (int)$o['amount'] / 100,
+                'due_kind' => 'stage_done', 'payer' => 'client', 'needs_lawyer' => (bool)$o['needs_lawyer']], $actor)['saved'];
+            pm_db()->prepare('UPDATE payments SET change_order_id = ? WHERE id = ?')->execute([$id, $saved]);
+        } catch (PmError $e) {
+            // האישור כבר נרשם (גם מהפורטל) — לא נכשל בגלל אבן הדרך; החוזה גדל, והמד מראה "חוסר" עד שמוסיפים אותה
+            pm_event($actor, (int)$o['project_id'], 'payment', 'לא נוצרה אבן דרך לתוספת: {error}', ['change' => $id], ['error' => $e->getMessage()]); // i18n-ok
+        }
+    }
     return pm_finance($user, (int)$o['project_id']) + pm_changes($user, (int)$o['project_id']);
 }
 

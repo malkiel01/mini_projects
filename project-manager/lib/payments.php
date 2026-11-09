@@ -82,6 +82,9 @@ function pm_payment_out(array $p, array $proofs): array
         'kind' => $p['kind'] ?? 'milestone', 'retention' => (int)($p['retention'] ?? 0) / 100, 'due_amount' => pm_payment_due_amount($p) / 100,
         'index_value' => isset($p['index_value']) ? (float)$p['index_value'] : null, 'index_diff' => (int)($p['index_diff'] ?? 0) / 100,
         'change_order_id' => isset($p['change_order_id']) ? (int)$p['change_order_id'] ?: null : null,
+        // PM-043: של איזה חוזה, והאם זו "יתרה" (מחושבת לבד)
+        'contract_id' => !empty($p['contract_id']) ? (int)$p['contract_id'] : null, 'is_balance' => !empty($p['is_balance']),
+        'contract_amount' => !empty($p['contract_id']) ? (int)($p['contract_amount'] ?? 0) / 100 : null, 'contract_title' => $p['contract_title'] ?? null,
         'invoice' => !empty($p['invoice_at']) ? ['file_id' => isset($p['invoice_file_id']) ? (int)$p['invoice_file_id'] ?: null : null, 'no' => $p['invoice_no'] ?? '', 'at' => $p['invoice_at']] : null,
         'proofs' => $proofs,
         'unit_id' => !empty($p['unit_id']) ? (int)$p['unit_id'] : null, 'unit_name' => !empty($p['unit_id']) ? pm_unit_name((int)$p['unit_id']) : null,
@@ -131,7 +134,8 @@ function pm_payments(array $user, int $projectId): array
 
 function pm_payments_of(int $projectId, bool $portal = false): array
 {
-    $st = pm_db()->prepare('SELECT p.*, c.name AS supplier_name FROM payments p JOIN contacts c ON c.id = p.supplier_id
+    $st = pm_db()->prepare('SELECT p.*, c.name AS supplier_name, k.amount AS contract_amount, k.title AS contract_title FROM payments p JOIN contacts c ON c.id = p.supplier_id
+                             LEFT JOIN contracts k ON k.id = p.contract_id
                              WHERE p.project_id = ?' . ($portal ? " AND p.status NOT IN ('planned','cancelled')" : '') . '
                              ORDER BY p.stage_id IS NULL, p.stage_id, CASE WHEN p.due_date = \'\' THEN 1 ELSE 0 END, p.due_date, p.id');
     $st->execute([$projectId]);
@@ -159,6 +163,18 @@ function pm_stage_approved_quote(int $stageId): ?array
     return $st->fetch() ?: null;
 }
 
+/**
+ * העיכבון של אבן דרך: החלק שנשאר אצל הלקוח עד המסירה — לפי חריגה מהחוזה שכולם הסכימו לה (lib/deviations.php),
+ * אחרת לפי הגדרות הפרויקט. מקדמה ושחרור העיכבון עצמו — בלי. משותף ל-pm_payment_save ול"יתרה" (pm_contract_rebalance).
+ */
+function pm_payment_retention(int $projectId, int $supplierId, int $paymentId, int $amount, string $dueKind, string $kind = 'milestone'): int
+{
+    if ($kind === 'retention' || $dueKind === 'advance') return 0;
+    $pct = pm_deviation_retention_pct($projectId, $supplierId, $paymentId);
+    if ($pct === null) $pct = (float)pm_db()->query('SELECT retention_pct FROM projects WHERE id = ' . $projectId)->fetchColumn();
+    return (int)round($amount * $pct / 100);
+}
+
 function pm_payment_save(array $user, array $in, ?array $actor = null): array
 {
     $actor ??= $user;
@@ -178,14 +194,24 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         ?? throw new PmError('ספק: שדה חובה', 422);
     pm_supplier_require($projectId, $supplierId); // מי שמקבל כסף בתיק — מוגדר בתיק (צוות + פרטי ספק)
 
-    // סכום, או אחוז מההצעה שאושרה בשלב
+    // PM-043: אבן דרך של חוזה — נבנית מסכום החוזה (שלב לא חובה, למשל בחוזה של כמה מקצועות)
+    $contract = null;
+    $contractId = (int)($in['contract_id'] ?? ($old['contract_id'] ?? 0)) ?: null;
+    if ($contractId) {
+        $cs = pm_db()->prepare('SELECT * FROM contracts WHERE id = ? AND project_id = ?');
+        $cs->execute([$contractId, $projectId]);
+        $contract = $cs->fetch() ?: throw new PmError('החוזה לא נמצא', 404);
+        if ((int)$contract['supplier_id'] !== $supplierId) throw new PmError('החוזה של ספק אחר', 422);
+    }
+    // סכום, או אחוז — מסכום החוזה, ובלי חוזה עם סכום — מההצעה שאושרה בשלב
     $quote = $stageId ? pm_stage_approved_quote($stageId) : null;
     $percent = null;
     if (($in['percent'] ?? '') !== '' && $in['percent'] !== null) {
         $percent = (float)$in['percent'];
         if ($percent <= 0 || $percent > 100) throw new PmError('אחוז: בין 0 ל-100', 422);
-        if (!$quote) throw new PmError('אחוז — רק כשיש בשלב הצעה שאושרה', 422);
-        $amount = (int)round($quote['amount'] * $percent / 100);
+        if ($contract && (int)$contract['amount'] > 0) $amount = (int)round((int)$contract['amount'] * $percent / 100);
+        elseif (!$quote) throw new PmError('אחוז — רק כשיש בשלב הצעה שאושרה', 422);
+        else $amount = (int)round($quote['amount'] * $percent / 100);
     } else {
         $amount = pm_quote_amount($in['amount'] ?? null);
     }
@@ -210,6 +236,7 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'stage_id'     => $stageId,
         'supplier_id'  => $supplierId,
         'quote_id'     => $quote ? (int)$quote['id'] : null,
+        'contract_id'  => $contractId,
         'title'        => pm_str($in, 'title', 100, true, 'שם אבן הדרך'),
         'amount'       => $amount,
         'percent'      => $percent,
@@ -223,8 +250,7 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         // עיכבון (לפי הגדרות הפרויקט): החלק מהתשלום שנשאר אצל הלקוח עד המסירה
         // מקדמה — בלי עיכבון (העיכבון נעצר מחשבונות הביצוע)
         // העיכבון — לפי החוזה, או לפי חריגה מהחוזה שכל הצדדים הסכימו לה (lib/deviations.php)
-        'retention'    => $kind === 'retention' || $dueKind === 'advance' ? 0
-            : (int)round($amount * (pm_deviation_retention_pct($projectId, $supplierId, $id) ?? (float)$p['retention_pct']) / 100),
+        'retention'    => pm_payment_retention($projectId, $supplierId, $id, $amount, $dueKind, $kind),
         // "במסירה" — של איזו יחידה (מתחם); בלי — כל המתחם. ברירת מחדל: היחידה של השלב
         'unit_id'      => $dueKind === 'handover' ? (array_key_exists('unit_id', $in) ? pm_unit_of_project((int)($in['unit_id'] ?? 0) ?: null, $projectId)
                           : ($old['unit_id'] ?? ($stageId ? pm_stage_unit($stageId) : null))) : null,
@@ -266,6 +292,10 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         pm_event($actor, $projectId, 'payment', $f['due_date'] ? 'אבן דרך לתשלום: {title} — {supplier}, {amount} עד {date}' : 'אבן דרך לתשלום: {title} — {supplier}, {amount}',
             ['payment' => $id], $ev);
     }
+    // PM-043: סכום שהוקלד ל"יתרה" מבטל את החישוב שלה; ואחר כך — היתרה של החוזה (הישן והחדש) מחושבת מחדש
+    if ($old && !empty($old['is_balance']) && (int)$old['amount'] !== $f['amount']) pm_db()->prepare('UPDATE payments SET is_balance = 0 WHERE id = ?')->execute([$id]);
+    pm_contract_rebalance($user, $projectId, $contractId);
+    if ($old && !empty($old['contract_id']) && (int)$old['contract_id'] !== (int)$contractId) pm_contract_rebalance($user, $projectId, (int)$old['contract_id']);
     if ($stageId && $kind === 'milestone') pm_retention_sync($user, $projectId, $stageId, $supplierId);
     if ($old && $old['stage_id'] && ((int)$old['stage_id'] !== (int)$stageId || (int)$old['supplier_id'] !== $supplierId)) {
         pm_retention_sync($user, $projectId, (int)$old['stage_id'], (int)$old['supplier_id']);
@@ -480,6 +510,7 @@ function pm_payment_cancel(array $user, int $id, string $note): array
     if ($p['status'] === 'cancelled') return pm_payments($user, (int)$p['project_id']);
     if (pm_payment_received($id) > 0) throw new PmError('כבר התקבל כסף באבן הדרך הזו — אי אפשר לבטל', 422);
     pm_db()->prepare("UPDATE payments SET status = 'cancelled', updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
+    if (!empty($p['contract_id'])) pm_contract_rebalance($user, (int)$p['project_id'], (int)$p['contract_id']); // PM-043: היתרה מתעדכנת
     $note = mb_substr(trim($note), 0, 500);
     pm_event($user, (int)$p['project_id'], 'payment', 'בוטלה אבן דרך: {title} — {amount}{note}', ['payment' => $id],
         ['title' => $p['title'], 'amount' => pm_money((int)$p['amount']), 'note' => $note !== '' ? ": $note" : '']);

@@ -50,6 +50,18 @@ const Finance = (() => {
         });
         $('#exp-dlg form').addEventListener('submit', e => { e.preventDefault(); saveExpense(); });
         $('#ct-dlg form').addEventListener('submit', e => { e.preventDefault(); saveContract(); });
+        $('#ct-dlg form').elements.amount.addEventListener('input', ctAmountVat);
+        // PM-043: "＋ אבן דרך" מתוך החוזה — חלון אבן הדרך, עם החוזה (אחוז — מסכום החוזה)
+        // קודם שומרים את החוזה (שינויים שלא נשמרו לא הולכים לאיבוד, והאחוז — מהסכום שהוקלד), ואז — חלון אבן הדרך
+        $('#ct-pay').addEventListener('click', e => {
+            const b = e.target.closest('[data-ct-add], [data-ct-payment]');
+            if (!b) return;
+            saveContract(c => {
+                if (b.dataset.ctPayment) { Payments.openPayment(Number(b.dataset.ctPayment)); return; }
+                const one = c.stage_ids?.length === 1 ? c.stage_ids[0] : (ct.stageId || null);
+                Payments.add(one, ct.supplierId, { id: c.id, supplier_id: ct.supplierId, amount: c.money.amount, title: ctLabel(c) });
+            });
+        });
         $('#ledger-print').addEventListener('click', ledgerPrint);
         $('#ledger-body').addEventListener('click', e => {
             if (e.target.closest('a')) return; // קובץ — נפתח בלשונית
@@ -332,7 +344,7 @@ const Finance = (() => {
     const shortDateL = ymd => (ymd ? new Date(ymd + 'T12:00:00').toLocaleDateString(I18n.locale()) : '');
 
     function supplierRow(s, r) {
-        const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('') + contractChip(r.contract);
+        const flags = r.flags.map(f => FLAG[f](r)).map(x => `<span class="chip ${x.cls}">${esc(x.text)}</span>`).join('') + contractChip(r.contract) + ctGauge(r.contract?.money);
         const act = [`<button type="button" class="btn ghost sm" data-engage="${r.supplier_id}" data-stage="${s.stage_id || ''}">🗂️ ${esc(t('תיק'))}</button>`];
         if (r.flags.includes('uncovered') && !r.milestones && r.quote_id) act.push(`<button type="button" class="btn ghost sm" data-split="${s.stage_id}" data-supplier="${r.supplier_id}">✂️ ${esc(t('חלוקה לתשלומים'))}</button>`);
         else if (r.flags.includes('uncovered')) act.push(`<button type="button" class="btn ghost sm" data-milestone="${s.stage_id}" data-supplier="${r.supplier_id}">+ ${esc(t('אבן דרך'))}</button>`);
@@ -710,7 +722,7 @@ const Finance = (() => {
         $('#ct-which-box').hidden = !ct.list.length;
         sel.value = c ? String(c.id) : 'new';
         await ctFill(c);
-        $('#ct-dlg').showModal();
+        if (!$('#ct-dlg').open) $('#ct-dlg').showModal(); // אחרי שמירה עם סכום — כבר פתוח
     }
 
     /** שם החוזה ברשימה: השם שניתן לו, או המסמך, או מתי נחתם — ועל אילו שלבים הוא חל. */
@@ -741,6 +753,9 @@ const Finance = (() => {
             status: m.status, late: m.late_days, by_stage: m.by_stage, stages_done: m.stages_done }));
         for (const k of ['title', 'signed_on', 'start_date', 'end_date', 'completed_on', 'notes']) el[k].value = c?.[k] || '';
         el.penalty_per_day.value = c?.penalty_per_day || '';
+        el.amount.value = c?.money?.amount || '';
+        ctAmountVat();
+        ctPay(c);
         el.grace_days.value = c?.grace_days ?? '';
         el.max_deviation_days.value = c?.max_deviation_days ?? 30;
         // על אילו שלבים: חוזה ראשון — כל השלבים; חוזה נוסף — השלב של השורה; חוזה אחר שנבחר — מצרפים אליו את השלב
@@ -896,7 +911,38 @@ const Finance = (() => {
         $('#ct-split-hint').textContent = txt;
     }
 
-    async function saveContract() {
+    /** PM-043: שיקוף המע"מ של סכום החוזה (נשמר כולל מע"מ). */
+    function ctAmountVat() {
+        const g = Number($('#ct-dlg form').elements.amount.value.replace(/[^\d.]/g, '')) || 0;
+        const h = $('#ct-amount-vat');
+        h.textContent = g ? vatLine(vatOf(g, data.settings.vat_rate ?? 18)) : '';
+        h.hidden = !h.textContent;
+    }
+
+    /** מד "חולק ₪X מתוך ₪Y" ומצב החלוקה (מתאים / חוסר / עודף) — לשורת הספק ולחלון החוזה. */
+    function ctGauge(m) {
+        if (!m || m.state === 'none') return '';
+        const mark = { ok: ['✅', t('מתאים'), 'fin-ok'], short: ['🟡', t('חוסר {amount}', { amount: money(-m.diff) }), 'fin-warn'],
+            over: ['🔴', t('עודף {amount}', { amount: money(m.diff) }), 'fin-late'] }[m.state];
+        return `<span class="ct-gauge ${mark[2]}">${esc(t('חולק {x} מתוך {y}', { x: money(m.allocated), y: money(m.total) }))} · ${mark[0]} ${esc(mark[1])}</span>`;
+    }
+
+    /** PM-043: בחלון החוזה — אבני הדרך שנבנו ממנו (היתרה אחרונה), המד, ו"＋ אבן דרך". רק לחוזה שנשמר עם סכום. */
+    function ctPay(c) {
+        const box = $('#ct-pay'), m = c?.money;
+        box.hidden = !m || m.state === 'none';
+        if (box.hidden) return;
+        box.innerHTML = `<h3 class="sec-title">💳 ${esc(t('אבני דרך לתשלום מהחוזה'))}</h3>
+            <p>${ctGauge(m)}${m.changes ? ` <small class="muted">${esc(t('כולל תוספות {amount}', { amount: money(m.changes) }))}</small>` : ''}</p>
+            <ul class="list ct-pay-list">${m.payments.map(p => `<li><button type="button" class="linkish" data-ct-payment="${p.id}">
+                <span class="one">${esc(p.title)}${p.is_balance ? ` <small class="chip">${esc(t('מחושבת'))}</small>` : ''}${p.percent ? ` <small class="muted">${p.percent}%</small>` : ''}</span>
+                <b>${esc(money(p.amount))}</b></button></li>`).join('')}</ul>
+            <button type="button" class="btn ghost sm" data-ct-add>＋ ${esc(t('אבן דרך'))}</button>
+            <p class="hint">${esc(t('היתרה תמיד האחרונה ומחושבת מחדש בכל שינוי; סכום שמקלידים לה מבטל את החישוב. מותר לשמור עם עודף — מופיעה אזהרה.'))}</p>`;
+    }
+
+    /** then(c) — אחרי שמירה מוצלחת: החלון נסגר וממשיכים (למשל לאבן דרך מתוך החוזה). */
+    async function saveContract(then = null) {
         readMs();
         const f = $('#ct-dlg form'), el = f.elements;
         if (ct.ms.some(m => m.title.trim() && !m.due_date && m.months === null)) { formError(f, t('לכל אבן דרך — מועד')); return; }
@@ -906,11 +952,18 @@ const Finance = (() => {
         const body = { id: ct.id || undefined, project_id: project.project.id, supplier_id: ct.supplierId, file_id: Number(el.file_id.value) || null, title: el.title.value.trim(), stage_ids,
             milestones: ct.ms.filter(m => m.title.trim()).map(m => ({ title: m.title.trim(), due_date: m.due_date, months: m.months, stage_ids: m.stage_ids, done_on: m.done_on })) };
         for (const k of ['signed_on', 'start_date', 'end_date', 'completed_on', 'notes', 'penalty_per_day', 'grace_days', 'max_deviation_days']) body[k] = el[k].value.trim();
+        body.amount = el.amount.value.replace(/[^\d.]/g, '');
         if ((project.units || []).length) Object.assign(body, ctUnitsRead());
         await busy($('button[type=submit]', f), f, async () => {
-            take(await api('contract', { body }));
-            $('#ct-dlg').close();
+            const d = await api('contract', { body });
+            take(d);
+            // היתרה (ואבני דרך שעברו לחוזה) — גם ברשימת אבני הדרך
+            Payments.refreshList(await api('payments', { params: { project_id: project.project.id } }));
             toast(t('נשמר'));
+            if (then) { $('#ct-dlg').close(); then(d.contract); return; }
+            // PM-043: חוזה עם סכום — החלון נשאר פתוח עם אבני הדרך שנבנו ממנו (היתרה נוצרה לבד)
+            if (d.contract?.money?.amount) { await openContract(ct.supplierId, ct.stageId, { id: d.contract.id }); return; }
+            $('#ct-dlg').close();
         });
     }
 

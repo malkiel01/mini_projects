@@ -808,6 +808,11 @@ function pm_contracts_multi(PDO $pdo): void
     }
     pm_add_column($pdo, 'contracts', 'stage_ids', "TEXT NOT NULL DEFAULT ''");
     pm_add_column($pdo, 'contracts', 'title', "TEXT NOT NULL DEFAULT ''");
+    // PM-043: סכום החוזה (אגורות, כולל מע"מ) — המחייב; אבני הדרך לתשלום נבנות ממנו (payments.contract_id).
+    // is_balance — אבן הדרך "יתרה": תמיד האחרונה, מחושבת מחדש בכל שינוי; סכום ידני מבטל את החישוב.
+    pm_add_column($pdo, 'contracts', 'amount', 'INTEGER NOT NULL DEFAULT 0');
+    pm_add_column($pdo, 'payments', 'contract_id', 'INTEGER');
+    pm_add_column($pdo, 'payments', 'is_balance', 'INTEGER NOT NULL DEFAULT 0');
     // מסמך שהועלה בקישור האישי ("📎 העלאת מסמך") — של מי (portal_links.id); "מסמכים ששלחתי" בפורטל
     pm_add_column($pdo, 'files', 'portal_id', 'INTEGER');
     // איש צוות: תפקיד מתוך רשימה (PM_MEMBER_ROLES / trade:<id>) והערה חופשית — רק למנהלים. role הישן — מוצג כהערה
