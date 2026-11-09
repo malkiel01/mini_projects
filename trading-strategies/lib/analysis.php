@@ -141,19 +141,29 @@ function ts_method_settings(string $id): array
     ];
 }
 
+/** "מוגדרת ידנית" עד שיש לשיטה המוגדרת (בגרסה הנוכחית) בדיקה לאחור עם N ≥ 30 (17.2.1). לשיטת קוד — התווית שלה */
+function ts_method_label(TsMethod $m): ?string
+{
+    $meta = $m->meta();
+    if (($meta['kind'] ?? 'code') !== 'defined') return $meta['label'] ?? null;
+    $st = ts_db()->prepare("SELECT 1 FROM backtests WHERE method_id = ? AND method_version = ? AND n >= ? AND source = 'provider' LIMIT 1");
+    $st->execute([$meta['id'], $meta['version'], TS_MIN_SIGNALS]);
+    return $st->fetchColumn() ? null : 'מוגדרת ידנית';
+}
+
 /** השיטות שהמשתמש רואה: מופעלות, ושיטת דוגמה — רק למנהל */
 function ts_methods_visible(int $uid): array
 {
     $admin = ts_is_admin($uid);
     $out = [];
-    foreach (array_keys(ts_methods_all()) as $id) {
+    foreach (ts_method_ids() as $id) {
         $m = ts_method($id);
         $meta = $m->meta();
         $set = ts_method_settings($id);
         if (!$set['enabled'] || (!empty($meta['sample']) && !$admin)) continue;
         $p = $m->params($set['params']);
         $out[] = ['id' => $id, 'name' => $meta['name'], 'source' => $meta['source'], 'sample' => !empty($meta['sample']),
-            'label' => $meta['label'] ?? null, 'version' => $meta['version'], 'markets' => $set['markets'],
+            'label' => ts_method_label($m), 'kind' => $meta['kind'] ?? 'code', 'version' => $meta['version'], 'markets' => $set['markets'],
             'timeframes' => $set['timeframes'], 'horizon_bars' => $m->horizon($p), 'note' => $set['note'],
             'alerts' => !empty($meta['alerts']) && empty($meta['sample'])];
     }
@@ -174,14 +184,16 @@ function ts_method_for(int $uid, mixed $id): array
 function ts_admin_methods(): array
 {
     $out = [];
-    foreach (array_keys(ts_methods_all()) as $id) {
+    foreach (ts_method_ids() as $id) {
         $m = ts_method($id);
         $meta = $m->meta();
+        $kind = $meta['kind'] ?? 'code';
         $st = ts_db()->prepare('SELECT COUNT(*) AS n, MAX(computed_at) AS at FROM backtests WHERE method_id = ?');
         $st->execute([$id]);
         $bt = $st->fetch();
         $out[] = ['id' => $id, 'name' => $meta['name'], 'source' => $meta['source'], 'sample' => !empty($meta['sample']),
-            'label' => $meta['label'] ?? null, 'version' => $meta['version'], 'all_markets' => $meta['markets'],
+            'label' => ts_method_label($m), 'kind' => $kind, 'definition' => $kind === 'defined' ? (ts_defined_rows()[$id][0] ?? null) : null,
+            'version' => $meta['version'], 'all_markets' => $meta['markets'],
             'all_timeframes' => $meta['timeframes'], 'param_defs' => $meta['params'], 'horizon_bars' => $meta['horizon_bars'],
             'alerts' => !empty($meta['alerts']) && empty($meta['sample']), 'incremental' => !empty($meta['incremental']),
             'backtests' => (int)$bt['n'], 'last_backtest_at' => $bt['at'] !== null ? (int)$bt['at'] : null] + ts_method_settings($id);
@@ -455,7 +467,7 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
     foreach ($prepared as $id => [$m, $set, $p]) {
         $meta = $m->meta();
         $card = ['method' => ['id' => $id, 'name' => $meta['name'], 'source' => $meta['source'], 'version' => $meta['version'],
-            'sample' => !empty($meta['sample']), 'label' => !empty($meta['sample']) ? $meta['label'] : null],
+            'sample' => !empty($meta['sample']), 'label' => ts_method_label($m)],
             'tf' => $tf, 'horizon_bars' => $m->horizon($p), 'horizon_text' => ts_horizon_text($m->horizon($p), $tf)];
         if (!in_array($tf, $set['timeframes'], true) || !in_array($market, $set['markets'], true)) {
             $cards[] = $card + ['status' => 'unsupported', 'message' => 'השיטה לא מוגדרת לשוק או למסגרת הזמן הזו', 'bias' => 'none', 'certainty' => null];

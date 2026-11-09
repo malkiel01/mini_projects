@@ -383,3 +383,10 @@ a.use-row { text-decoration: none; color: inherit; }
 .forecast-scenarios .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
 .hint.warn { color: var(--ink); background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-radius: var(--r); padding: var(--s2); }
 .btn.block { inline-size: 100%; justify-content: flex-start; margin-bottom: var(--s1); white-space: normal; text-align: start; }
+
+/* ===== 🧩 בונה השיטות (spec-stage-a 17.2) ===== */
+.code-edit { inline-size: 100%; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: left; tab-size: 2; }
+.builder-out { display: grid; gap: var(--s2); margin-top: var(--s2); min-width: 0; overflow-x: auto; }
+.builder-out .ok { color: var(--ok); }
+.toolbar.wrap { flex-wrap: wrap; }
+.toolbar input[dir="ltr"] { min-width: 0; flex: 1 1 140px; }

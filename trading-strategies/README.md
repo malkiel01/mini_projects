@@ -267,6 +267,30 @@
   ב-30% שקיפות.
 - **מחיר בתוויות** — לפי ה-tick של הנכס (מהשרת), float לתצוגה בלבד.
 
+## שלב א' — 4ב/3: בונה השיטות — מנהל בלבד (פרק 17.2, ✅19)
+
+- **מיגרציה 8** (`data/app.sqlite`, מוחרג מהפריסה): `methods` + `kind` (`code|defined`), `definition`, `definition_version`;
+  טבלה `method_versions`. שורות קיימות — `kind = 'code'`, בלי שינוי.
+- **`registry.php`:** השיטות המוגדרות נטענות מהמסד לצד שיטות הקוד (`ts_method_ids`) — רק כשמבקשים שיטה שאינה בקוד, כך
+  שבדיקות טהורות לא נוגעות במסד. מזהה של שיטת קוד — נדחה.
+- **`lib/builder.php` + `api.php`** (כולן `admin_*` — 403 למשתמש רגיל): `admin_method_save {definition}` (חדשה = **כבויה**,
+  גרסה 1; שינוי = גרסה חדשה ב-`method_versions`; אותה הגדרה — בלי גרסה; ב-`admin_log`), `admin_method_validate`,
+  `admin_method_dry_run` ("🧪 נסה" על עד 1,000 הנרות האחרונים — **לא נשמר דבר**; נספר בתקרת 30), `admin_method_list`,
+  `admin_method_versions`. גרסה חדשה → הבדיקות לאחור מחושבות מחדש (לפי `method_version`, 6.7).
+- **"מוגדרת ידנית"** — עד שיש לגרסה הנוכחית בדיקה לאחור עם N ≥ 30 (`ts_method_label`), בכל מקום שהתווית מוצגת.
+- **המסך** (`assets/js/builder.js`, "עוד ← ניהול ← 🧪 שיטות"): "➕ שיטה מוגדרת" — עורך JSON מתבנית שעובדת, "✔ בדיקה",
+  "🧪 נסה" על נכס ומסגרת, שמירה; בכל שיטה מוגדרת — "✏️ עריכת ההגדרה" ו"🕘 גרסאות" (גרסה ישנה נפתחת בעורך; שמירה שלה =
+  גרסה חדשה).
+
+### הכרעות של כותב הקוד (4ב/3)
+
+- **נפח — נדחה בשמירה ובבדיקה**, עם הסבר: הבדיקה לאחור מקבלת נרות בלי נפח (`ts_bt_floats`), ותנאי על נפח לא היה מתקיים
+  בה אף פעם — בשקט. (`TsDefinedMethod` עצמו עדיין יודע לקרוא נפח מנר שיש בו.)
+- **הגרסה — של השרת:** `version` שמגיע מהדפדפן נמחק. שינוי הגדרה שומר את הפרמטרים, השווקים והמסגרות שהמנהל קבע — מה שעדיין
+  קיים בהגדרה החדשה; שיטה מופעלת נשארת מופעלת.
+- **העורך — JSON.** בונה חזותי של תנאים (spec-method-builder.md 4) — **עוד לא**: מוצע כ-PR המשך.
+- **אין מחיקה** של שיטה מוגדרת — האפיון לא מגדיר; מכבים אותה.
+
 ## המבנה
 
 ```
@@ -295,6 +319,8 @@ lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag)
 lib/expr.php        מנתח ביטויים בשפה סגורה לשיטות מוגדרות — בלי eval
 lib/overlay.php     חוזה ה-overlay (17.2.3) ובדיקתו
 lib/forecast.php    "🔮 תחזית שיטה" — method_overlay
+lib/builder.php     בונה השיטות — שמירה וגרסאות, בדיקה, "🧪 נסה" (מנהל בלבד)
+assets/js/builder.js  מסך בונה השיטות — עורך JSON, בדיקה, ניסיון, גרסאות
 assets/js/forecast.js  שכבת התחזית בגרף — ציור על הקנבס, פאנל, "↻" בלבד
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
 lib/alerts.php      התראות: ניהול, תיבה, והריצה של ה-cron
@@ -309,7 +335,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -349,6 +375,8 @@ php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בל�
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
 php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספירות חלופיות, הקרנה, רמת ביטול, החוזה של ה-overlay, בלי הצצה
 php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_overlay: מי רואה, סגורים בלבד, זמנים מיושרים, בלי ודאות, 429
+php trading-strategies/tests/builder-api.php   # בונה השיטות: 403, admin_log, גרסאות, "🧪 נסה" לא שומר, נפח נדחה, מיגרציה 8
+node trading-strategies/tests/builder-ui.mjs   # Playwright בטלפון: ➕, בדיקה, נסה, JSON שבור, שמירה, עריכה → גרסה 2
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, "↻" בלבד, 20 שניות בלי בקשה
 php trading-strategies/tests/defined.php       # מנתח הביטויים (קלט זדוני, תקרות) ו-TsDefinedMethod: שוויון ל-sample-ma-cross, בלי הצצה, מצטבר = מלא
 php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיטת דוגמה רק למנהל, שמור/מצטבר/מלא, תקציב, 100,000, בידוד

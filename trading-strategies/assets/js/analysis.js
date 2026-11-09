@@ -3,6 +3,7 @@
 // לפי דרישה, באותה בקשה. הניסוח — 6.6: "לפי כללי השיטה", "ציון כיוון"; לא הוראה ולא הבטחה. כל טקסט — textContent.
 import * as D from './decimal.js';
 import { gzipB64 } from './cloud.js';
+import { openBuilder, openVersions } from './builder.js';
 
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const SIDE = { long: 'לונג', short: 'שורט', none: 'אין כיוון' };
@@ -350,6 +351,9 @@ export function mountAnalysis(ctx) {
           h('p', { class: 'hint', style: 'margin:4px 0' }, m.source, sep(), `אופק ${m.horizon_bars} נרות`, sep(), m.alerts ? 'נכנסת להתראות' : 'לא בהתראות',
             sep(), `${m.backtests} בדיקות לאחור שמורות`),
           m.sample ? h('p', { class: 'hint' }, 'שיטת דוגמה: גם כשהיא מופעלת — רק מנהלים רואים אותה, ולא נכנסת להתראות.') : null,
+          m.kind === 'defined' ? h('div', { class: 'row-btns wrap' }, h('span', { class: 'chip' }, '🧩 מוגדרת'),
+            h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => openBuilder(ctx, m.definition, () => ctx.reload()) } }, '✏️ עריכת ההגדרה'),
+            h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => openVersions(ctx, m.id, () => ctx.reload()) } }, '🕘 גרסאות')) : null,
           h('label', { class: 'switch' }, on, h('span', {}, 'מופעלת')),
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
           h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})`, inputs[k]))),
@@ -366,7 +370,8 @@ export function mountAnalysis(ctx) {
       };
       const costIn = Object.fromEntries(Object.entries(S.costs).map(([mk, c]) => [mk, [numInput('fee', c.fee), numInput('slip', c.slip)]]));
       box.replaceChildren(
-        h('p', { class: 'hint' }, 'השיטות שבקוד. שיטה חדשה מופיעה כבויה עד שמפעילים אותה. שינוי בקוד של שיטה מעלה את הגרסה, והבדיקות לאחור שלה מחושבות מחדש.'),
+        h('p', { class: 'hint' }, 'השיטות שבקוד, והשיטות המוגדרות (🧩). שיטה חדשה מופיעה כבויה עד שמפעילים אותה. שינוי בקוד או בהגדרה מעלה את הגרסה, והבדיקות לאחור שלה מחושבות מחדש.'),
+        h('div', {}, h('button', { class: 'btn ghost', type: 'button', on: { click: () => openBuilder(ctx, null, () => ctx.reload()) } }, '➕ שיטה מוגדרת')),
         h('ul', { class: 'list' }, S.methods.map(card)),
         h('h2', { class: 'sec-title' }, 'עמלה והחלקה לבדיקה לאחור (% לכל צד)'),
         h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'שוק'), h('th', {}, 'עמלה'), h('th', {}, 'החלקה'))),
