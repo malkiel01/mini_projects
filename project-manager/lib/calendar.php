@@ -126,7 +126,7 @@ function pm_reminders(array $user, ?string $lang = null): array
     // מהתקציב, שולם מעל הביצוע, כיסוי — לפי הספים של המנהל (הגדרות ← התראות)
     $cfg = pm_fin_alert_settings((int)$user['id']);
     foreach (array_keys($projects) as $pid) {
-        foreach (pm_fin_alerts((int)$pid, $cfg, $lang) as $a) if ($a['scope'] !== 'forecast') $r($a['level'], $a['text'], (int)$pid, 'payments', $a['sort']);
+        foreach (pm_fin_alerts((int)$pid, $cfg, $lang) as $a) $r($a['level'], $a['text'], (int)$pid, 'payments', $a['sort']);
     }
     // ממתין ללקוח / לעו"ד יותר מ-X ימים
     foreach ($db->query("SELECT q.project_id, q.status, q.sent_at, q.updated_at, s.name AS stage FROM quotes q JOIN stages s ON s.id = q.stage_id

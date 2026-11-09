@@ -145,7 +145,7 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
         'committed_total_net' => $fin['totals']['committed']['n'], // להערכת הסוף ב"לפני מע"מ" — פריטים בלי מע"מ לא מחולקים
         'over_total' => (float)array_sum(array_column($lines, 'over')),
         'pending' => $pending, 'versions' => $versions,
-        // התראות התקציב (חריגה, אזהרה) — מוצגות רק כאן, ב"📐 צפי"; לא בתזרים, לא במייל ולא בפורטל (PM-040)
+        // התראות התקציב (חריגה, אזהרה) — בתוך הכספים מוצגות כאן, ב"📐 צפי", ולא בתזרים (PM-040). במייל, ביומן ובפורטל — נשארות
         'alerts' => $portal ? [] : array_values(array_filter(pm_fin_alerts($projectId, pm_fin_alert_settings((int)$p['owner_id'])),
             fn($a) => $a['scope'] === 'forecast')),
         'units' => array_values(array_map(fn($u) => ['id' => $u['id'], 'name' => $u['name'], 'pct' => round(($split[$u['id']] ?? 0) * 100, 2), 'budget' => $u['budget']],
