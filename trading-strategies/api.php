@@ -34,6 +34,8 @@
  * POST action=analysis_copy {asset, tf, methods, csv_gz}   "🧪 הרץ על העותק שלי" (3.7): העותק מהענן, מאומת בשרת (422),
  *                                        בתחום שלי בלבד, לא נכתב למאגר ← נספר בתקרת 30 לדקה
  * POST action=analysis_copy_use {asset, tf, method_id, use}   איזו תוצאה נכנסת לשקלול — מהעותק או הרגילה
+ * GET  ?action=method_overlay&asset=&tf=&method=&from=&to=   "🔮 תחזית שיטה" (17.2.2): תרחיש לפי כללי השיטה על הנרות
+ *                                        המוצגים — overlay (17.2.3), בלי ודאות, לא בשקלול ולא בהתראות ← נספר בתקרת 30 לדקה
  *
  * התראות (פרק 8) — הבדיקה עצמה רק ב-cron (bin/alerts-cron.php, CLI); כאן רק ניהול ותיבה:
  * GET  ?action=alerts                    ההתראות שלי והשיטות שמותרות בהן
@@ -63,6 +65,7 @@ require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
 require_once __DIR__ . '/lib/copy.php';
+require_once __DIR__ . '/lib/forecast.php';
 require_once __DIR__ . '/lib/alerts.php';
 require_once __DIR__ . '/lib/fx.php';
 
@@ -141,7 +144,7 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'analysis_copy', 'analysis_copy_use'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'analysis', 'analysis_copy', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'analysis', 'method_overlay', 'analysis_copy', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -242,6 +245,9 @@ try {
 
         case 'analysis':
             out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? '', null, true));
+
+        case 'method_overlay':
+            out(['ok' => true] + ts_method_overlay($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['method'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
 
         case 'analysis_copy':
             out(['ok' => true] + ts_analysis_copy($uid, $in));
