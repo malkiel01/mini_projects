@@ -2691,5 +2691,9 @@
     "החוזה: {name} — {amount}": "Contrat : {name} — {amount}",
     "סכום החוזה (₪, כולל מע\"מ)": "Montant du contrat (₪, TVA incluse)",
     "למשל 100000": "p. ex. 100000",
-    "תוספת: {reason}": "Avenant : {reason}"
+    "תוספת: {reason}": "Avenant : {reason}",
+    "לא נוצרה אבן דרך לתוספת: {error}": "Aucun jalon créé pour l'avenant : {error}",
+    "היתרה בוטלה — לחוזה עם {supplier} אין סכום": "Solde annulé — le contrat avec {supplier} n'a pas de montant",
+    "היתרה חושבה מחדש: {supplier} — {amount}. נדרש אישור עו\"ד מחדש": "Solde recalculé : {supplier} — {amount}. Nouvelle approbation de l'avocat requise",
+    "היתרה חושבה מחדש: {supplier} — {amount}": "Solde recalculé : {supplier} — {amount}"
 }

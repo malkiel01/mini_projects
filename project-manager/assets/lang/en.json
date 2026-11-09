@@ -2673,5 +2673,9 @@
     "החוזה: {name} — {amount}": "Contract: {name} — {amount}",
     "סכום החוזה (₪, כולל מע\"מ)": "Contract amount (₪, incl. VAT)",
     "למשל 100000": "e.g. 100000",
-    "תוספת: {reason}": "Addition: {reason}"
+    "תוספת: {reason}": "Addition: {reason}",
+    "לא נוצרה אבן דרך לתוספת: {error}": "No milestone was created for the addition: {error}",
+    "היתרה בוטלה — לחוזה עם {supplier} אין סכום": "Balance cancelled — the contract with {supplier} has no amount",
+    "היתרה חושבה מחדש: {supplier} — {amount}. נדרש אישור עו\"ד מחדש": "Balance recalculated: {supplier} — {amount}. Lawyer approval needed again",
+    "היתרה חושבה מחדש: {supplier} — {amount}": "Balance recalculated: {supplier} — {amount}"
 }
