@@ -2679,5 +2679,17 @@
     "מייל ללקוח ולעו\"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו\"ד)": "E-mail au client et à l'avocat en cas de dépassement du budget, de hausse du budget et de paiement au-delà du réalisé (avocat)",
     "💰 תזרים": "💰 Trésorerie",
     "אין התראות כרגע ✅": "Aucune alerte pour le moment ✅",
-    "🔔 התראות": "🔔 Alertes"
+    "🔔 התראות": "🔔 Alertes",
+    "מתאים": "Correspond",
+    "חוסר {amount}": "Manque {amount}",
+    "עודף {amount}": "Excédent {amount}",
+    "חולק {x} מתוך {y}": "Réparti {x} sur {y}",
+    "אבני דרך לתשלום מהחוזה": "Jalons de paiement du contrat",
+    "כולל תוספות {amount}": "Avenants inclus {amount}",
+    "מחושבת": "Calculé",
+    "היתרה תמיד האחרונה ומחושבת מחדש בכל שינוי; סכום שמקלידים לה מבטל את החישוב. מותר לשמור עם עודף — מופיעה אזהרה.": "Le solde est toujours le dernier et recalculé à chaque modification ; saisir un montant annule le calcul. Enregistrer avec un excédent est permis — un avertissement s'affiche.",
+    "החוזה: {name} — {amount}": "Contrat : {name} — {amount}",
+    "סכום החוזה (₪, כולל מע\"מ)": "Montant du contrat (₪, TVA incluse)",
+    "למשל 100000": "p. ex. 100000",
+    "תוספת: {reason}": "Avenant : {reason}"
 }

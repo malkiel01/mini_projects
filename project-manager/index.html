@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=102">
+    <link rel="stylesheet" href="assets/css/app.css?v=103">
     <link rel="stylesheet" href="assets/css/devloop.css?v=100">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
@@ -1014,6 +1014,10 @@
                 </div>
                 <div class="ct-sum" id="ct-sum" hidden></div>
                 <div class="fields"><label class="f wide"><span>שם החוזה (להבחנה)</span><input name="title" maxlength="120" placeholder="למשל: אינסטלציה וחשמל"></label></div>
+                <!-- PM-043: סכום החוזה — המחייב; אבני הדרך לתשלום נבנות ממנו, והיתרה נכנסת לבד כאחרונה -->
+                <div class="fields"><label class="f wide"><span>סכום החוזה (₪, כולל מע"מ)</span><input name="amount" inputmode="decimal" dir="ltr" maxlength="14" autocomplete="off" placeholder="למשל 100000"></label></div>
+                <p class="hint" id="ct-amount-vat" hidden></p>
+                <section class="ct-pay" id="ct-pay" hidden></section>
                 <fieldset class="opt" id="ct-scope"><legend>החוזה חל על</legend>
                     <div class="chips"><label><input type="checkbox" id="ct-all"><span>כל השלבים של הספק (גם שיתווספו)</span></label></div>
                     <div class="chips" id="ct-stages"></div>
@@ -1541,13 +1545,13 @@
     <script src="assets/js/share.js?v=100"></script>
     <script src="assets/js/projects.js?v=100"></script>
     <script src="assets/js/quotes.js?v=100"></script>
-    <script src="assets/js/payments.js?v=101"></script>
+    <script src="assets/js/payments.js?v=103"></script>
     <script src="assets/js/fin-report.js?v=100"></script>
     <script src="assets/js/fin-filter.js?v=2"></script>
     <script src="assets/js/budget.js?v=106"></script>
     <script src="assets/js/deviations.js?v=100"></script>
     <script src="assets/js/rejects.js?v=100"></script>
-    <script src="assets/js/finance.js?v=104"></script>
+    <script src="assets/js/finance.js?v=106"></script>
     <script src="assets/js/finance-all.js?v=100"></script>
     <script src="assets/js/hebcal.js?v=100"></script>
     <script src="assets/js/calendar.js?v=100"></script>

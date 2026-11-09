@@ -82,6 +82,8 @@ function pm_payment_out(array $p, array $proofs): array
         'kind' => $p['kind'] ?? 'milestone', 'retention' => (int)($p['retention'] ?? 0) / 100, 'due_amount' => pm_payment_due_amount($p) / 100,
         'index_value' => isset($p['index_value']) ? (float)$p['index_value'] : null, 'index_diff' => (int)($p['index_diff'] ?? 0) / 100,
         'change_order_id' => isset($p['change_order_id']) ? (int)$p['change_order_id'] ?: null : null,
+        // PM-043: של איזה חוזה, והאם זו "יתרה" (מחושבת לבד)
+        'contract_id' => !empty($p['contract_id']) ? (int)$p['contract_id'] : null, 'is_balance' => !empty($p['is_balance']),
         'invoice' => !empty($p['invoice_at']) ? ['file_id' => isset($p['invoice_file_id']) ? (int)$p['invoice_file_id'] ?: null : null, 'no' => $p['invoice_no'] ?? '', 'at' => $p['invoice_at']] : null,
         'proofs' => $proofs,
         'unit_id' => !empty($p['unit_id']) ? (int)$p['unit_id'] : null, 'unit_name' => !empty($p['unit_id']) ? pm_unit_name((int)$p['unit_id']) : null,
@@ -178,14 +180,24 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         ?? throw new PmError('ספק: שדה חובה', 422);
     pm_supplier_require($projectId, $supplierId); // מי שמקבל כסף בתיק — מוגדר בתיק (צוות + פרטי ספק)
 
-    // סכום, או אחוז מההצעה שאושרה בשלב
+    // PM-043: אבן דרך של חוזה — נבנית מסכום החוזה (שלב לא חובה, למשל בחוזה של כמה מקצועות)
+    $contract = null;
+    $contractId = (int)($in['contract_id'] ?? ($old['contract_id'] ?? 0)) ?: null;
+    if ($contractId) {
+        $cs = pm_db()->prepare('SELECT * FROM contracts WHERE id = ? AND project_id = ?');
+        $cs->execute([$contractId, $projectId]);
+        $contract = $cs->fetch() ?: throw new PmError('החוזה לא נמצא', 404);
+        if ((int)$contract['supplier_id'] !== $supplierId) throw new PmError('החוזה של ספק אחר', 422);
+    }
+    // סכום, או אחוז — מסכום החוזה, ובלי חוזה עם סכום — מההצעה שאושרה בשלב
     $quote = $stageId ? pm_stage_approved_quote($stageId) : null;
     $percent = null;
     if (($in['percent'] ?? '') !== '' && $in['percent'] !== null) {
         $percent = (float)$in['percent'];
         if ($percent <= 0 || $percent > 100) throw new PmError('אחוז: בין 0 ל-100', 422);
-        if (!$quote) throw new PmError('אחוז — רק כשיש בשלב הצעה שאושרה', 422);
-        $amount = (int)round($quote['amount'] * $percent / 100);
+        if ($contract && (int)$contract['amount'] > 0) $amount = (int)round((int)$contract['amount'] * $percent / 100);
+        elseif (!$quote) throw new PmError('אחוז — רק כשיש בשלב הצעה שאושרה', 422);
+        else $amount = (int)round($quote['amount'] * $percent / 100);
     } else {
         $amount = pm_quote_amount($in['amount'] ?? null);
     }
@@ -210,6 +222,7 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         'stage_id'     => $stageId,
         'supplier_id'  => $supplierId,
         'quote_id'     => $quote ? (int)$quote['id'] : null,
+        'contract_id'  => $contractId,
         'title'        => pm_str($in, 'title', 100, true, 'שם אבן הדרך'),
         'amount'       => $amount,
         'percent'      => $percent,
@@ -266,6 +279,10 @@ function pm_payment_save(array $user, array $in, ?array $actor = null): array
         pm_event($actor, $projectId, 'payment', $f['due_date'] ? 'אבן דרך לתשלום: {title} — {supplier}, {amount} עד {date}' : 'אבן דרך לתשלום: {title} — {supplier}, {amount}',
             ['payment' => $id], $ev);
     }
+    // PM-043: סכום שהוקלד ל"יתרה" מבטל את החישוב שלה; ואחר כך — היתרה של החוזה (הישן והחדש) מחושבת מחדש
+    if ($old && !empty($old['is_balance']) && (int)$old['amount'] !== $f['amount']) pm_db()->prepare('UPDATE payments SET is_balance = 0 WHERE id = ?')->execute([$id]);
+    pm_contract_rebalance($user, $projectId, $contractId);
+    if ($old && !empty($old['contract_id']) && (int)$old['contract_id'] !== (int)$contractId) pm_contract_rebalance($user, $projectId, (int)$old['contract_id']);
     if ($stageId && $kind === 'milestone') pm_retention_sync($user, $projectId, $stageId, $supplierId);
     if ($old && $old['stage_id'] && ((int)$old['stage_id'] !== (int)$stageId || (int)$old['supplier_id'] !== $supplierId)) {
         pm_retention_sync($user, $projectId, (int)$old['stage_id'], (int)$old['supplier_id']);
@@ -480,6 +497,7 @@ function pm_payment_cancel(array $user, int $id, string $note): array
     if ($p['status'] === 'cancelled') return pm_payments($user, (int)$p['project_id']);
     if (pm_payment_received($id) > 0) throw new PmError('כבר התקבל כסף באבן הדרך הזו — אי אפשר לבטל', 422);
     pm_db()->prepare("UPDATE payments SET status = 'cancelled', updated_at = ? WHERE id = ?")->execute([pm_now(), $id]);
+    if (!empty($p['contract_id'])) pm_contract_rebalance($user, (int)$p['project_id'], (int)$p['contract_id']); // PM-043: היתרה מתעדכנת
     $note = mb_substr(trim($note), 0, 500);
     pm_event($user, (int)$p['project_id'], 'payment', 'בוטלה אבן דרך: {title} — {amount}{note}', ['payment' => $id],
         ['title' => $p['title'], 'amount' => pm_money((int)$p['amount']), 'note' => $note !== '' ? ": $note" : '']);
