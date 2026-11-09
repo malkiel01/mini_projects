@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=105">
+    <link rel="stylesheet" href="assets/css/app.css?v=106">
     <link rel="stylesheet" href="assets/css/devloop.css?v=100">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
@@ -1084,6 +1084,18 @@
     </dialog>
 
     <!-- ===== חלון: חלוקת ההצעה לתשלומים (finance.js) ===== -->
+    <!-- PM-042: 🗂️ כרטיס ספק — כל אבני הדרך שלו מכל המקצועות, הסכום הכולל וההתקדמות היחסית (finance.js, openSupplierCard) -->
+    <dialog id="sup-card-dlg" aria-labelledby="sup-card-title">
+        <form method="dialog" novalidate>
+            <header class="sheet-head">
+                <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+                <h2 id="sup-card-title">כרטיס ספק</h2>
+                <span></span>
+            </header>
+            <div class="sheet-body" id="sup-card-body"></div>
+        </form>
+    </dialog>
+
     <dialog id="split-dlg" aria-labelledby="split-dlg-title">
         <form method="dialog" novalidate>
             <header class="sheet-head">
@@ -1551,7 +1563,7 @@
     <script src="assets/js/budget.js?v=107"></script>
     <script src="assets/js/deviations.js?v=100"></script>
     <script src="assets/js/rejects.js?v=100"></script>
-    <script src="assets/js/finance.js?v=112"></script>
+    <script src="assets/js/finance.js?v=113"></script>
     <script src="assets/js/finance-all.js?v=100"></script>
     <script src="assets/js/hebcal.js?v=100"></script>
     <script src="assets/js/calendar.js?v=100"></script>

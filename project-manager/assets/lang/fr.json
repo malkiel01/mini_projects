@@ -2699,5 +2699,20 @@
     "המקצועות של {name}": "Les métiers de {name}",
     "לכל ספק — שורה אחת: סוכם, שולם, יתרה ובפיגור, והמקצועות שלו. לחיצה על מקצוע — הפירוט: חוזה, תוספת, אבן דרך וכרטסת.": "Une ligne par fournisseur : convenu, payé, solde et en retard, et ses métiers. Touchez un métier pour le détail : contrat, avenant, jalon et grand livre.",
     "חוזה {amount}": "Contrat {amount}",
-    "בחוזה": "Dans le contrat"
+    "בחוזה": "Dans le contrat",
+    "הגיע מועד": "Échu",
+    "עתידי": "À venir",
+    "🗂️ {name} — כל המקצועות": "🗂️ {name} — tous les métiers",
+    "תוספות": "Avenants",
+    "סך הכול": "Total",
+    "התשלום מקדים את הביצוע: שולם {p}%, בוצע {d}%": "Le paiement devance l'exécution : payé {p}%, exécuté {d}%",
+    "אבני הדרך: {x} — כמו סך הכול": "Jalons : {x} — égal au total",
+    "אבני הדרך: {x} מתוך {y} — {gap}": "Jalons : {x} sur {y} — {gap}",
+    "אבני הדרך — מכל המקצועות": "Jalons — tous les métiers",
+    "{n}% מהחוזה": "{n}% du contrat",
+    "{stage} — {d}% בוצע · שולם {p}%": "{stage} — {d}% exécuté · {p}% payé",
+    "בלי שלב — שולם {p}%": "Sans étape — {p}% payé",
+    "עוד אין אבני דרך לספק הזה.": "Pas encore de jalons pour ce fournisseur.",
+    "כרטיס": "Fiche",
+    "כרטיס ספק": "Fiche fournisseur"
 }

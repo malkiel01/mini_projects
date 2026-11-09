@@ -1291,3 +1291,12 @@ select.need { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-so
 .sup-chips button.chip { white-space: normal; flex: 0 1 auto; max-width: 100%; text-align: start; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; cursor: pointer; min-height: 32px; }
 .sup-chips button.chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
 .sup-detail { margin-block-start: var(--s3); }
+/* PM-042: 🗂️ כרטיס ספק — הסכומים, שולם מול בוצע, וכל אבני הדרך */
+.sc-nums { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sc-vs { display: grid; gap: 6px; margin: var(--s2) 0; padding: var(--s2); border-radius: 8px; }
+.sc-vs.sc-risk { background: color-mix(in srgb, var(--danger, #c62828) 8%, transparent); }
+.sc-vs p { margin: 0; font-size: .85rem; }
+.sc-list li { border-block-end: 1px solid var(--line); }
+.sc-row { display: grid; gap: 2px; width: 100%; padding: var(--s2) 0; background: none; border: 0; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.sc-l1 { display: flex; justify-content: space-between; gap: var(--s2); }
+.sc-l2 { font-size: .85rem; }

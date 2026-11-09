@@ -2681,5 +2681,20 @@
     "המקצועות של {name}": "{name}'s trades",
     "לכל ספק — שורה אחת: סוכם, שולם, יתרה ובפיגור, והמקצועות שלו. לחיצה על מקצוע — הפירוט: חוזה, תוספת, אבן דרך וכרטסת.": "One row per supplier: agreed, paid, balance and overdue, plus their trades. Tap a trade for the details: contract, addition, milestone and ledger.",
     "חוזה {amount}": "Contract {amount}",
-    "בחוזה": "In the contract"
+    "בחוזה": "In the contract",
+    "הגיע מועד": "Due",
+    "עתידי": "Upcoming",
+    "🗂️ {name} — כל המקצועות": "🗂️ {name} — all trades",
+    "תוספות": "Additions",
+    "סך הכול": "Total",
+    "התשלום מקדים את הביצוע: שולם {p}%, בוצע {d}%": "Payment is ahead of the work: paid {p}%, done {d}%",
+    "אבני הדרך: {x} — כמו סך הכול": "Milestones: {x} — same as the total",
+    "אבני הדרך: {x} מתוך {y} — {gap}": "Milestones: {x} of {y} — {gap}",
+    "אבני הדרך — מכל המקצועות": "Milestones — all trades",
+    "{n}% מהחוזה": "{n}% of the contract",
+    "{stage} — {d}% בוצע · שולם {p}%": "{stage} — {d}% done · {p}% paid",
+    "בלי שלב — שולם {p}%": "No stage — {p}% paid",
+    "עוד אין אבני דרך לספק הזה.": "No milestones for this supplier yet.",
+    "כרטיס": "Card",
+    "כרטיס ספק": "Supplier card"
 }
