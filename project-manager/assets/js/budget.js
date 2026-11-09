@@ -254,7 +254,7 @@ const Budget = (() => {
             </dl>
             <div class="fin-units"><div class="tbl-wrap"><table>
                 <thead><tr><th>${esc(t('שלב'))}</th><th class="n">${esc(t('צפי'))}</th><th class="n">${esc(t('סוכם'))}</th><th class="n">${esc(t('פער'))}</th></tr></thead>
-                <tbody>${rows.map(r => `<tr><th>${esc(t(r.l.name))}${r.l.unit_name ? `<small>${esc(r.l.unit_name)}</small>` : ''}</th>${td(r.plan)}${td(r.done)}${gapCell(r.plan, r.done)}</tr>`).join('')}</tbody>
+                <tbody>${rows.map(r => `<tr><th>${esc(t(r.l.name))}${r.l.suppliers > 1 ? ` <small class="chip">${esc(t('{n} ספקים', { n: r.l.suppliers }))}</small>` : ''}${r.l.unit_name ? `<small>${esc(r.l.unit_name)}</small>` : ''}</th>${td(r.plan)}${td(r.done)}${gapCell(r.plan, r.done)}</tr>`).join('')}</tbody>
                 <tfoot><tr><th>${esc(FinFilter.active(f) ? t('סה"כ מסונן') : t('סה"כ שלבים'))}</th>${td(sum('plan'))}${td(sum('done'))}${gapCell(agreed.reduce((a, r) => a + r.plan, 0), sum('done'))}</tr></tfoot></table></div>
             <p class="hint">${esc([net ? t('לפני מע"מ') : t('כולל מע"מ'), t('פער — רק בשלבים שסוכמו: במינוס — סוכם יותר מהצפי; "נותר" — מה שנשאר בצפי, לא חיסכון'),
                 t('הצפי לא נכנס לתזרים: שם רק חוזים, תוספות, אבני דרך ותשלומים')].join(' · '))}</p></div>`;
