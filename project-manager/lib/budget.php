@@ -96,7 +96,11 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
     $p = $db->query('SELECT * FROM projects WHERE id = ' . $projectId)->fetch() ?: throw new PmError('הפרויקט לא נמצא', 404);
     $fin = pm_finance_of($projectId, $portal, PM_OVERPAY_MARGIN, $scope);
     $committed = [];
-    foreach ($fin['stages'] as $s) if ($s['stage_id']) $committed[$s['stage_id']] = (int)round($s['committed']['g'] * 100);
+    $committedN = []; // אותו סוכם בלי מע"מ — לפי כל פריט (פטור — כמו שהוא)
+    foreach ($fin['stages'] as $s) if ($s['stage_id']) {
+        $committed[$s['stage_id']] = (int)round($s['committed']['g'] * 100);
+        $committedN[$s['stage_id']] = (int)round($s['committed']['n'] * 100);
+    }
     $st = $db->prepare('SELECT s.id, s.name, s.unit_id, s.budget, s.budget_initial, u.name AS unit_name FROM stages s LEFT JOIN units u ON u.id = s.unit_id
                          WHERE s.project_id = ? ORDER BY s.sort, s.id');
     $st->execute([$projectId]);
@@ -112,6 +116,7 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
         $today = (int)round((int)$s['budget'] * $k);
         $lines[] = ['stage_id' => (int)$s['id'], 'name' => $s['name'], 'unit_id' => $s['unit_id'] !== null ? (int)$s['unit_id'] : null,
             'unit_name' => $s['unit_name'], 'initial' => (int)round((int)$s['budget_initial'] * $k) / 100, 'today' => $today / 100, 'committed' => $c / 100,
+            'committed_net' => ($committedN[(int)$s['id']] ?? 0) / 100,
             'share' => $k < 1 ? round($k * 100, 1) : null,
             // חריגה: מה שסוכם בפועל מעבר לתקציב השלב (רק כשיש תקציב לשלב)
             'over' => $today > 0 && $c > $today ? ($c - $today) / 100 : 0];
@@ -140,6 +145,9 @@ function pm_budget_of(int $projectId, bool $portal = false, ?array $scope = null
         'committed_total_net' => $fin['totals']['committed']['n'], // להערכת הסוף ב"לפני מע"מ" — פריטים בלי מע"מ לא מחולקים
         'over_total' => (float)array_sum(array_column($lines, 'over')),
         'pending' => $pending, 'versions' => $versions,
+        // התראות התקציב (חריגה, אזהרה) — מוצגות רק כאן, ב"📐 צפי"; לא בתזרים, לא במייל ולא בפורטל (PM-040)
+        'alerts' => $portal ? [] : array_values(array_filter(pm_fin_alerts($projectId, pm_fin_alert_settings((int)$p['owner_id'])),
+            fn($a) => $a['scope'] === 'forecast')),
         'units' => array_values(array_map(fn($u) => ['id' => $u['id'], 'name' => $u['name'], 'pct' => round(($split[$u['id']] ?? 0) * 100, 2), 'budget' => $u['budget']],
             $scope === null ? $units : array_filter($units, fn($u) => in_array($u['id'], $scope['units'], true)))),
     ];

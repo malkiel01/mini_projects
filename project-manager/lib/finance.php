@@ -793,13 +793,13 @@ function pm_fin_alerts(int $projectId, array $cfg, ?string $lang = null, string 
 }
 
 /**
- * מייל ללקוח ולעו"ד — פעם אחת לכל התראה (fin_alert_sent): חריגה מהתקציב, התקציב גדל, ולעו"ד גם שולם
- * מעל הביצוע. רץ עם מייל הבוקר (pm_digest_tick), לכל פרויקט פעיל שהמנהל שלו לא כיבה את זה.
+ * מייל ללקוח ולעו"ד — פעם אחת לכל התראה (fin_alert_sent): לעו"ד — שולם מעל הביצוע. (התראות התקציב — רק ב"📐 צפי", PM-040)
+ * רץ עם מייל הבוקר (pm_digest_tick), לכל פרויקט פעיל שהמנהל שלו לא כיבה את זה.
  */
 function pm_fin_contact_tick(): void
 {
     $db = pm_db();
-    $kinds = ['over_budget', 'budget_warn', 'budget_grew', 'overpaid'];
+    $kinds = ['overpaid']; // התראות התקציב — רק ב"📐 צפי", לא במייל (PM-040)
     foreach ($db->query("SELECT id, owner_id, name, client_id, lawyer_id FROM projects WHERE status = 'active'")->fetchAll() as $p) {
         $cfg = pm_fin_alert_settings((int)$p['owner_id']);
         if (!$cfg['notify_contacts']) continue;

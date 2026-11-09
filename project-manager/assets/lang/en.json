@@ -1482,7 +1482,6 @@
     "אסמכתא שלא אושרה — \"באיחור\" אחרי (ימים)": "Unconfirmed payment proof — overdue after (days)",
     "שולם מעל הביצוע — ביותר מ- (נקודות אחוז)": "Paid more than done — by over (percentage points)",
     "אזהרת תקציב — כשסוכם (% מהתקציב)": "Budget warning — when agreed reaches (% of budget)",
-    "מייל ללקוח ולעו\"ד על חריגה מהתקציב, גידול בתקציב, ושולם מעל הביצוע (לעו\"ד)": "Email the client and lawyer about budget overruns, budget growth, and paid-more-than-done (lawyer)",
     "כל התראה נשלחת להם פעם אחת, עם מייל הבוקר, בשפה שלהם ועם הקישור האישי. בפורטל הם רואים אותן תמיד.": "Each alert is sent to them once, with the morning email, in their language and with their personal link. In the portal they always see them.",
     "{field}: בין {min} ל-{max}": "{field}: between {min} and {max}",
     "ימים לפני תשלום": "Days before payment",
@@ -2650,12 +2649,14 @@
     "צפי לשלבים": "Stages forecast",
     "סוכם בשלבים": "Agreed in stages",
     "הערכת סוף": "Final estimate",
-    "סוכם + צפי לשלבים שעוד לא סוכמו": "Agreed + forecast for stages not yet agreed",
     "צפי": "Forecast",
     "פער": "Gap",
     "הצפי לא נכנס לתזרים: שם רק חוזים, תוספות, אבני דרך ותשלומים": "The forecast is not part of the cash flow: that holds only contracts, additions, milestones and payments",
     "מה שסוכם עם ספק ועוד לא מתוכנן באבני דרך. לחיצה על הצעה — נפתח החלון ממולא, ומאשרים.": "What was agreed with a supplier and isn't yet scheduled as milestones. Tap a suggestion — the window opens pre-filled, and you confirm.",
     "התקציב מחושב מהצעת התקציב לפי שלבים — הסכומים נערכים ב\"📐 צפי\".": "The budget is calculated from the stage budget proposal — amounts are edited in \"📐 Forecast\".",
     "📐 צפי": "📐 Forecast",
-    "פער — הצפי פחות מה שסוכם, רק בשלבים שסוכמו; במינוס — סוכם יותר מהצפי": "Gap — forecast minus agreed, only for agreed stages; negative means more was agreed than forecast"
+    "נותר {amount}": "{amount} left",
+    "לכל שלב — הגבוה מבין הסוכם לצפי, ועוד הוצאות ושכר טרחה": "Per stage — the higher of agreed and forecast, plus expenses and fee",
+    "פער — רק בשלבים שסוכמו: במינוס — סוכם יותר מהצפי; \"נותר\" — מה שנשאר בצפי, לא חיסכון": "Gap — only for agreed stages: negative means more was agreed than forecast; \"left\" is what remains of the forecast, not a saving",
+    "מייל לעו\"ד כששולם מעל הביצוע": "Email the lawyer when payments exceed the work done"
 }

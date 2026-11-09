@@ -317,7 +317,7 @@ function pm_portal_view(array $a): array
         // מתחם — רק של היחידות שלו; התראות — רק על התשלומים שלו
         'finance' => pm_finance_of($pid, true, PM_OVERPAY_MARGIN, $scope) + ['alerts' => array_values(array_map(fn($x) => array_diff_key($x, ['key' => 1, 'sort' => 1]),
             array_filter(pm_fin_alerts($pid, pm_fin_alert_settings((int)$a['owner']['id']), pm_lang(), $role),
-                fn($x) => $scope === null || in_array($x['payment_id'], $payIds, true))))],
+                fn($x) => $x['scope'] !== 'forecast' && ($scope === null || in_array($x['payment_id'], $payIds, true)))))], // התקציב — רק ב"📐 צפי" (PM-040)
         'deviations' => pm_portal_deviations($a), // חריגה מהחוזה בהסכמת כולם
         'rejects' => pm_portal_rejects($a, $scope), // 🔧 ריג'קטים
         // הצעת התקציב לפי שלבים (lib/budget.php) — כשפורקה; מאשר מי שמוגדר (לקוח / עו"ד), ורק בקישור של כל הפרויקט
