@@ -402,6 +402,27 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 8) {
+        // בונה השיטות (spec-stage-a 17.2.4, ✅19): שיטה מוגדרת — הגדרת JSON במסד, לצד שיטות הקוד. כל שמירה של הגדרה
+        // מעלה את definition_version (והבדיקות לאחור שלה מחושבות מחדש — 6.7), וההיסטוריה ב-method_versions.
+        // שורות קיימות — kind = 'code', בלי הגדרה: שום שינוי בהן.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE methods ADD COLUMN kind TEXT NOT NULL DEFAULT 'code' CHECK (kind IN ('code','defined'));
+            ALTER TABLE methods ADD COLUMN definition TEXT;
+            ALTER TABLE methods ADD COLUMN definition_version INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE method_versions (
+                method_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                definition TEXT NOT NULL,
+                saved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                saved_at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, version)
+            );
+            PRAGMA user_version = 8;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
