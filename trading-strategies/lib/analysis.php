@@ -397,6 +397,58 @@ function ts_tick_decimals(array $rows): int
     return min($d, 10);
 }
 
+/**
+ * הפרמטרים של שיטה על נכס: שיטה ש-meta.tick שלה true (אליוט — "יעד ≤ tick → אין אות", 17.1.9 ג) מקבלת גם את ה-tick של
+ * הנכס, $p['tick'] = 10^−decimals. הוא נכנס גם ל-hash של הבדיקה לאחור — tick אחר, תוצאה אחרת.
+ */
+function ts_params_for_asset(TsMethod $m, array $p, int $decimals): array
+{
+    return empty($m->meta()['tick']) ? $p : $p + ['tick' => 10 ** -$decimals];
+}
+
+/**
+ * ו1 (17.1.9): הכרטיס של שיטה שתלויה במצב פנימי ארוך ממשיך **ממצב המנוע של הבדיקה לאחור** — על הנרות החדשים בלבד —
+ * כדי שהכרטיס והבדיקה לאחור לא יראו אותות שונים. בלי מצב שמור (הבדיקה לא רצה או נכשלה) — מהחלון האחרון, שמתחיל
+ * warmup_bars לפני הנרות המוצגים, ומסומן "חושב בלי בדיקה לאחור". מחזיר [ניתוח, basis: state|warmup].
+ */
+function ts_analyze_for_card(TsMethod $m, array $p, array $fl, ?array $btState): array
+{
+    if (empty($m->meta()['analyze_from_state']) || !$btState || !isset($btState['m'], $btState['last_t'])) {
+        return [$m->analyze($fl, $p), empty($m->meta()['analyze_from_state']) ? null : 'warmup'];
+    }
+    $s = $btState['m'];
+    $asOf = $btState['last_t'];
+    foreach ($fl as $c) {
+        if ($c['t'] <= $btState['last_t']) continue;
+        [$s] = $m->step($s, $c, $p);
+        $asOf = $c['t'];
+    }
+    return [$m->conditions($s, $p) + ['horizon_bars' => $m->horizon($p), 'as_of' => $asOf], 'state'];
+}
+
+/** ז0: ליד כל פרמטר [שלנו] — "הגדרה שלנו"; ליד פרמטר מהספר — "לפי הספר". רק לשיטה שמסמנת (ours) */
+function ts_param_notes(TsMethod $m): ?array
+{
+    $defs = $m->meta()['params'] ?? [];
+    if (!array_filter($defs, fn($d) => array_key_exists('ours', $d))) return null;
+    $out = [];
+    foreach ($defs as $k => $d) $out[$k] = ['label' => $d['label'], 'note' => !empty($d['ours']) ? 'הגדרה שלנו' : 'לפי הספר'];
+    return $out;
+}
+
+/** המצב השמור של הבדיקה לאחור של הכרטיס (אותה גרסה ואותם פרמטרים) — או null */
+function ts_bt_state(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market): ?array
+{
+    [$provider] = ts_asset_split($asset);
+    $scope = ts_access($uid, $provider)['scope'] ?? null;
+    $meta = $m->meta();
+    $st = ts_db()->prepare("SELECT state FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
+        AND cred_scope = ? AND params_hash = ? AND source = 'provider'");
+    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, (string)$scope, ts_bt_hash($p, ts_cost_for($market))]);
+    $raw = $st->fetchColumn();
+    return $raw ? json_decode($raw, true) : null;
+}
+
 /** רמה מהמנוע (float) → מחרוזת עשרונית מעוגלת ל-tick (עיקרון 6). רק מכאן היא נוגעת בכסף */
 function ts_level_str(?float $v, int $decimals): ?string
 {
@@ -450,7 +502,7 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
     foreach (array_unique($ids) as $id) {
         [$m, $set, $p] = ts_method_for($uid, $id);
         $prepared[$id] = [$m, $set, $p];
-        $warm = max($warm, (int)($m->meta()['warmup'] ?? 0) + $m->horizon($p) + 10);
+        $warm = max($warm, (int)($p['warmup_bars'] ?? $m->meta()['warmup'] ?? 0) + $m->horizon($p) + 10);
     }
     $recent = ts_market_candles($uid, $asset, $tf, $now - min($warm, TS_MAX_CANDLES) * $sec, $now, $now);
     $rows = array_values(array_filter($recent['candles'], fn($c) => $c['t'] + $sec <= $now));
@@ -473,10 +525,12 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
             $cards[] = $card + ['status' => 'unsupported', 'message' => 'השיטה לא מוגדרת לשוק או למסגרת הזמן הזו', 'bias' => 'none', 'certainty' => null];
             continue;
         }
-        $a = $m->analyze($fl, $p);
+        $p = ts_params_for_asset($m, $p, $dec);
+        // הבדיקה לאחור קודם — הכרטיס של שיטה עם מצב ארוך ממשיך מהמצב שלה (ו1)
+        $bt = ts_backtest($uid, $m, $p, $asset, $tf, $market, $now);
+        [$a, $basis] = ts_analyze_for_card($m, $p, $fl, !empty($meta['analyze_from_state']) ? ts_bt_state($uid, $m, $p, $asset, $tf, $market) : null);
         $lv = $a['levels'];
         $levels = $lv ? ['entry' => ts_level_str($lv['entry'], $dec), 'stop' => ts_level_str($lv['stop'], $dec), 'target' => ts_level_str($lv['target'], $dec)] : null;
-        $bt = ts_backtest($uid, $m, $p, $asset, $tf, $market, $now);
         $calls += $bt['provider_calls'] ?? 0;
         $cert = $bt['certainty'] ?? null;
         $risk = null;
@@ -492,8 +546,10 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
         }
         $copy = $withCopy ? ts_bt_copy_row($uid, $m, $p, $asset, $tf, $market) : null;
         $useCopy = $copy !== null && $copy['certainty'] !== null && ts_copy_used($uid, $asset, $tf, $id);
+        // met: null — "בדוק בעצמך" (תנאי שהמחשב לא בודק, 17.1.9 ז); לא נהפך ל-false
         $cards[] = $card + ['status' => 'ok', 'bias' => $a['bias'], 'conditions' => array_map(fn($c) => ['id' => $c['id'], 'text' => $c['text'],
-            'side' => $c['side'], 'met' => (bool)$c['met']], $a['conditions']), 'signal_ago' => $a['signal_ago'] ?? null,
+            'side' => $c['side'], 'met' => $c['met'] === null ? null : (bool)$c['met']], $a['conditions']), 'signal_ago' => $a['signal_ago'] ?? null,
+            'basis' => $basis, 'param_notes' => ts_param_notes($m),
             'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,
             'max_horizon' => ts_max_horizon($m, $p, $asset, $acc['scope'])]

@@ -15,7 +15,7 @@
 ## השלבים
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
-2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352 · ✅ 4א/2 #1356) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
+2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352 · ✅ 4א/2 #1356 · ✅ 4ב/2 #1357 · ✅ 4א/3 #1359) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -267,6 +267,18 @@
   ב-30% שקיפות.
 - **מחיר בתוויות** — לפי ה-tick של הנכס (מהשרת), float לתצוגה בלבד.
 
+## שלב א' — 4א/3: elliott-w3 בניהול, בכרטיס ובבדיקה לאחור (17.1.9, ✅17)
+
+- **ברשימת השיטות** (`registry.php`) — מופיעה בניהול **כבויה** עד שמנהל מפעיל (6.7). לא שיטת דוגמה (משתמשים רגילים רואים
+  אותה אחרי הפעלה), **לא בהתראות** (`alerts: false`, הכרעת בעל המערכת). מסגרות: שעה ומעלה (✅18).
+- **tick** (17.1.9 ג): `ts_params_for_asset` — שיטה ש-`meta.tick` שלה true מקבלת `$p['tick'] = 10^−decimals` של הנכס,
+  בניתוח, בבדיקה לאחור ובעותק. הוא בתוך ה-hash של הבדיקה לאחור. לשיטות אחרות — שום שינוי.
+- **ו1:** שיטה עם `meta.analyze_from_state` — הכרטיס ממשיך **ממצב המנוע של הבדיקה לאחור** (אותה גרסה ואותם פרמטרים),
+  רק על הנרות החדשים. אין מצב — מהחלון האחרון (`warmup_bars` לפני), והכרטיס אומר "חושב בלי בדיקה לאחור".
+- **הכרטיס:** "שיטה שלנו על בסיס כללי הספר (Frost & Prechter)" (ז0); תנאי "בדוק בעצמך" ב-`met: null` — בבלוק נפרד, לא
+  נספרים ב"X מתוך Y" (ז); "הפרמטרים — מה מהספר ומה הגדרה שלנו". **בניהול** — "· לפי הספר" / "· הגדרה שלנו" ליד כל פרמטר.
+- **שינוי לכל השיטות:** `label` של שיטה עובר לכרטיס גם כשהיא לא שיטת דוגמה, ו-`met: null` לא נהפך ל-false.
+
 ## שלב א' — 4ב/3: בונה השיטות — מנהל בלבד (פרק 17.2, ✅19)
 
 - **מיגרציה 8** (`data/app.sqlite`, מוחרג מהפריסה): `methods` + `kind` (`code|defined`), `definition`, `definition_version`;
@@ -335,7 +347,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -378,6 +390,8 @@ php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_ove
 php trading-strategies/tests/builder-api.php   # בונה השיטות: 403, admin_log, גרסאות, "🧪 נסה" לא שומר, נפח נדחה, מיגרציה 8
 node trading-strategies/tests/builder-ui.mjs   # Playwright בטלפון: ➕, בדיקה, נסה, JSON שבור, שמירה, עריכה → גרסה 2
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, "↻" בלבד, 20 שניות בלי בקשה
+php trading-strategies/tests/elliott-card-api.php # elliott-w3: כבויה עד הפעלה, tick ב-hash, הכרטיס ממצב המנוע (ו1), "בדוק בעצמך", ז0
+node trading-strategies/tests/elliott-card-ui.mjs # Playwright בטלפון: כרטיס אליוט, "בדוק בעצמך", "הגדרה שלנו", בניהול
 php trading-strategies/tests/defined.php       # מנתח הביטויים (קלט זדוני, תקרות) ו-TsDefinedMethod: שוויון ל-sample-ma-cross, בלי הצצה, מצטבר = מלא
 php trading-strategies/tests/analysis-api.php  # פרופיל, מנהל, שיטת דוגמה רק למנהל, שמור/מצטבר/מלא, תקציב, 100,000, בידוד
 node trading-strategies/tests/analysis-ui.mjs  # Playwright בטלפון: ניתוח, פרופיל, ניהול שיטות, RTL, בלי polling
