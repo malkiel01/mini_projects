@@ -275,8 +275,9 @@ const Finance = (() => {
 
     /**
      * 👷 ספקים (PM-041) — שורה אחת לכל ספק: סוכם · שולם · יתרה · בפיגור, והמקצועות שלו כצ'יפים; צ'יפ פותח את הפירוט.
-     * צ'יפ = שלב (מקצוע) של הספק; חוזה עם סכום (PM-043) — צ'יפ אחד על כל השלבים שלו, וסכום החוזה לידו.
-     * "סוכם" ו"יתרה" — אותם מספרים כמו בשורות ובסיכום (לפי ההצעה והתוספות), עד שיוכרע איך מחלקים חוזה של כמה מקצועות.
+     * צ'יפ = שלב (מקצוע) של הספק. חוזה עם סכום (PM-043) — צ'יפ אחד על כל השלבים שלו, ו"סוכם" שלו הוא החוזה כולו
+     * (הכרעת בעל המערכת): ברמת הספק, לא מחולק בין המקצועות — בפירוט, למקצוע של החוזה אין "סוכם" משלו.
+     * הסה"כ בסיכום (pm_finance_of) מחושב באותה דרך. הסכום בשורה = סכום הצ'יפים.
      */
     const supOpen = new Map(); // ספק → הצ'יפ הפתוח
     function supplierGroups() {
@@ -287,9 +288,16 @@ const Finance = (() => {
             const key = m?.amount > 0 ? `c${r.contract.id}` : `s${s.stage_id || 0}`;
             const c = g.chips.get(key) || g.chips.set(key, { key, items: [], contract: m?.amount > 0 ? r.contract : null, committed: 0, paid: 0, late: 0 }).get(key);
             c.items.push({ s, r });
-            c.committed += r.committed.g; // כמו "סוכם" בשורת השלב ובסיכום — אחיד בכל הלשונית
+            if (!c.contract) c.committed += r.committed.g;
+            else c.index = (c.index || 0) + r.index.g; // הפרשי הצמדה — נוספים לסכום החוזה
             c.paid += r.paid.g;
+            c.balance = (c.balance || 0) + r.balance.g;
             c.late += Math.max(0, r.gap.g);
+        }
+        // חוזה עם סכום — "סוכם" הוא החוזה כולו (הכרעת בעל המערכת), כמו בסה"כ בשרת; היתרה — ממנו
+        for (const g of map.values()) for (const c of g.chips.values()) if (c.contract) {
+            c.committed = c.contract.money.total + (c.index || 0);
+            c.balance = Math.max(0, c.committed - c.paid);
         }
         return [...map.values()];
     }
@@ -302,7 +310,7 @@ const Finance = (() => {
             const chips = [...g.chips.values()];
             const sum = k => chips.reduce((a, c) => a + c[k], 0);
             const committed = sum('committed'), paid = sum('paid'), late = sum('late');
-            const balance = chips.reduce((a, c) => a + c.items.reduce((b, x) => b + x.r.balance.g, 0), 0); // כמו "יתרה" בשורות
+            const balance = sum('balance');
             // הצ'יפ הפתוח: מה שנבחר — אם עדיין קיים (אחרי שמירת חוזה המפתח משתנה); '' — נסגר במכוון; אחרת ברירת המחדל
             const saved = supOpen.get(g.id);
             const open = saved === '' ? null : chips.some(c => c.key === saved) ? saved : (chips.length === 1 ? chips[0].key : null);
@@ -319,7 +327,7 @@ const Finance = (() => {
                 </dl>
                 <div class="chips sup-chips" role="group" aria-label="${esc(t('המקצועות של {name}', { name: g.name }))}">${chips.map(c =>
                     `<button type="button" class="chip${c.key === open ? ' on' : ''}" data-sup-chip="${g.id}:${c.key}" aria-expanded="${c.key === open}">
-                        ${esc(chipName(c))} · ${esc(money(Math.round(c.committed)))}${c.contract ? ` <small>(${esc(t('חוזה {amount}', { amount: money(c.contract.money.total) }))})</small>` : ''}${c.late > 100 ? ' ⚠️' : ''}</button>`).join('')}</div>
+                        ${esc(chipName(c))} · ${esc(money(Math.round(c.committed)))}${c.late > 100 ? ' ⚠️' : ''}</button>`).join('')}</div>
                 ${detail}</section>`;
         }).join('');
         $('#fin-stages').innerHTML = html || `<p class="empty">${esc(t('עוד אין ספקים עם הצעה או אבן דרך.'))}</p>`;
@@ -372,7 +380,7 @@ const Finance = (() => {
         return `<li class="fin-row">
             <div class="fin-row-head"><b class="one">${esc(r.name)}</b>${flags}</div>
             <dl class="fin-cells">
-                ${cell(t('סוכם'), r.committed)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${r.credit?.g ? cell(t('זיכוי'), { g: -r.credit.g, n: -r.credit.n }) : cell(t('יתרה'), r.balance)}
+                ${r.contract?.money?.amount > 0 ? `<div><dt>${esc(t('סוכם'))}</dt><dd class="muted">${esc(t('בחוזה'))}</dd></div>` : cell(t('סוכם'), r.committed)}${cell(t('היה צריך עד היום'), r.due)}${cell(t('שולם'), r.paid)}${r.contract?.money?.amount > 0 ? '' /* יתרה — של החוזה כולו, בכרטיס הספק */ : r.credit?.g ? cell(t('זיכוי'), { g: -r.credit.g, n: -r.credit.n }) : cell(t('יתרה'), r.balance)}
             </dl>
             ${changes ? `<div class="chip-row co-row">${changes}</div>` : ''}
             ${r.index.g ? `<p class="fin-stage-budget">${esc(t('כולל הפרשי הצמדה {amount}', { amount: money(r.index.g) }))}</p>` : ''}

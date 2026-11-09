@@ -384,6 +384,33 @@ function pm_finance_of(int $projectId, bool $portal = false, int $overpay = PM_O
         ] + pm_acc_out($S, ['committed', 'scheduled', 'due', 'paid', 'balance', 'credit', 'gap']);
     }
 
+    // PM-041 (הכרעת בעל המערכת, 09/11): חוזה עם סכום — "סוכם" הוא החוזה כולו, ברמת הספק (עם התוספות והפרשי ההצמדה),
+    // ולא סכום ההצעות של המקצועות שלו. השורות נשארות לפי שלב; הסה"כ (סוכם, יתרה, זיכוי, הערכת סוף) — מתוקן כאן.
+    if ($scope === null) {
+        $byContract = [];
+        foreach ($outStages as $st) foreach ($st['rows'] as $r) {
+            if (($r['contract']['money']['amount'] ?? 0) <= 0) continue;
+            $k = &$byContract[$r['contract']['id']];
+            $k['total'] ??= (int)round($r['contract']['money']['total'] * 100);
+            foreach (['committed', 'paid', 'balance', 'credit', 'index'] as $f) {
+                $k[$f][0] = ($k[$f][0] ?? 0) + (int)round($r[$f]['g'] * 100);
+                $k[$f][1] = ($k[$f][1] ?? 0) + (int)round($r[$f]['n'] * 100);
+            }
+            unset($k);
+        }
+        foreach ($byContract as $k) {
+            $target = $k['total'] + $k['index'][0];
+            $targetN = pm_net($k['total'], $vat) + $k['index'][1];
+            $new = ['committed' => [$target, $targetN], 'balance' => [max(0, $target - $k['paid'][0]), max(0, $targetN - $k['paid'][1])],
+                    'credit' => [max(0, $k['paid'][0] - $target), max(0, $k['paid'][1] - $targetN)]];
+            foreach ($new as $f => [$g, $n]) { $T[$f][0] = ($T[$f][0] ?? 0) + $g - $k[$f][0]; $T[$f][1] = ($T[$f][1] ?? 0) + $n - $k[$f][1]; }
+            $suppliersCommitted[0] += $target - $k['committed'][0];
+            $suppliersCommitted[1] += $targetN - $k['committed'][1];
+            $forecast[0] += $target - $k['committed'][0];
+            $forecast[1] += $targetN - $k['committed'][1];
+        }
+    }
+
     // הוצאות ישירות (כ5) — הלקוח כבר שילם: נכנסות לסוכם, למתוכנן, ל"עד היום" ולשולם (בלי פיגור ובלי יתרה)
     $expenses = array_values(array_filter(pm_expenses_of($projectId), fn($x) => $scope === null || ($x['stage_id'] ? $in($x['stage_id']) : $scope['shared'])));
     $E = [0, 0];

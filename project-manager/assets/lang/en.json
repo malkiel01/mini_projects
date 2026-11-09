@@ -2680,5 +2680,6 @@
     "בפיגור {amount}": "Overdue {amount}",
     "המקצועות של {name}": "{name}'s trades",
     "לכל ספק — שורה אחת: סוכם, שולם, יתרה ובפיגור, והמקצועות שלו. לחיצה על מקצוע — הפירוט: חוזה, תוספת, אבן דרך וכרטסת.": "One row per supplier: agreed, paid, balance and overdue, plus their trades. Tap a trade for the details: contract, addition, milestone and ledger.",
-    "חוזה {amount}": "Contract {amount}"
+    "חוזה {amount}": "Contract {amount}",
+    "בחוזה": "In the contract"
 }

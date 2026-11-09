@@ -2698,5 +2698,6 @@
     "בפיגור {amount}": "En retard {amount}",
     "המקצועות של {name}": "Les métiers de {name}",
     "לכל ספק — שורה אחת: סוכם, שולם, יתרה ובפיגור, והמקצועות שלו. לחיצה על מקצוע — הפירוט: חוזה, תוספת, אבן דרך וכרטסת.": "Une ligne par fournisseur : convenu, payé, solde et en retard, et ses métiers. Touchez un métier pour le détail : contrat, avenant, jalon et grand livre.",
-    "חוזה {amount}": "Contrat {amount}"
+    "חוזה {amount}": "Contrat {amount}",
+    "בחוזה": "Dans le contrat"
 }
