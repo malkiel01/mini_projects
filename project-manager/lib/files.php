@@ -31,6 +31,7 @@ const PM_CHUNK = 2 * 1024 * 1024;
 const PM_SYSTEM_FOLDERS = [
     // kind => [שם, אייקון, סדר]
     'inbox'   => ['ממתין למיון', '📥', 10],
+    'property' => ['מסמכי הנכס', '🏠', 15], // PM-045: שרטוטים, נסח, היתרים של הנכס — מופיעים גם אצל ספקים בקישור
     'client'  => ['הלקוח', '👤', 20],
     'lawyer'  => ['עו"ד', '⚖️', 30],
     'stages'  => ['לפי שלבים', '🧱', 50], // שלב ← ספק — מחושב מהשיוכים (lib/links.php)
@@ -581,6 +582,40 @@ function pm_file_link(array $user, int $id, int $folderId, bool $add): array
         pm_db()->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ? AND is_home = 0')->execute([$id, $folderId]);
     }
     pm_audit("user:{$user['id']}", $add ? 'file.link' : 'file.unlink', 'file', $id, ['folder' => $folderId]);
+    return ['file' => pm_file_get($user, $id)];
+}
+
+/**
+ * PM-045 — "🔗 להציג גם ב…": קבוצת המקומות הנוספים של הקובץ (קיצורי דרך, לא העתק) נקבעת בבת אחת.
+ * $folderIds — כל התיקיות שהקובץ יופיע בהן מלבד התיקייה שלו; מה שלא ברשימה — מוסר. התיקייה שלו לא נוגעת.
+ */
+function pm_file_places(array $user, int $id, array $folderIds): array
+{
+    $x = pm_file_row($user, $id);
+    $pid = (int)$x['project_id'];
+    $db = pm_db();
+    $want = [];
+    foreach (array_unique(array_filter(array_map('intval', $folderIds))) as $fid) {
+        if ((int)pm_folder_row($user, $fid)['project_id'] !== $pid) throw new PmError('רק בתוך אותו פרויקט', 422);
+        $want[$fid] = true;
+    }
+    $cur = $db->prepare('SELECT folder_id, is_home FROM file_links WHERE file_id = ?');
+    $cur->execute([$id]);
+    $have = [];
+    foreach ($cur->fetchAll() as $r) $have[(int)$r['folder_id']] = (bool)$r['is_home'];
+    $added = $removed = [];
+    $db->beginTransaction();
+    try {
+        $ins = $db->prepare('INSERT OR IGNORE INTO file_links (file_id, folder_id, is_home) VALUES (?,?,0)');
+        foreach (array_keys($want) as $fid) if (!isset($have[$fid])) { $ins->execute([$id, $fid]); $added[] = $fid; }
+        $del = $db->prepare('DELETE FROM file_links WHERE file_id = ? AND folder_id = ? AND is_home = 0');
+        foreach ($have as $fid => $home) if (!$home && !isset($want[$fid])) { $del->execute([$id, $fid]); $removed[] = $fid; }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    if ($added || $removed) pm_audit("user:{$user['id']}", 'file.places', 'file', $id, ['added' => $added, 'removed' => $removed]);
     return ['file' => pm_file_get($user, $id)];
 }
 

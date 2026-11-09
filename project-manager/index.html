@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#2d4a8a">
     <meta name="color-scheme" content="light dark">
     <title>ניהול פרויקטים</title>
-    <link rel="stylesheet" href="assets/css/app.css?v=106">
+    <link rel="stylesheet" href="assets/css/app.css?v=107">
     <link rel="stylesheet" href="assets/css/devloop.css?v=100">
     <link rel="icon" href="assets/icon.svg">
     <!-- אפליקציה עצמאית במסך הבית: מניפסט לאנדרואיד, ותגיות לאייפון -->
@@ -1308,6 +1308,16 @@
                     <button type="button" class="link-start" id="file-link-start"><span class="tile-ic" aria-hidden="true">🔗</span>
                         <span class="tile-tx"><b id="file-link-title">לשייך את הקובץ</b><small id="file-link-sub">לספק במקצוע — חוזה, הצעה, תשלום, תיעוד…</small></span><span class="use-go" aria-hidden="true">‹</span></button>
                 </section>
+                <!-- PM-045: מקום פיזי אחד, והופעה בכמה מקומות בקישור — בלי העתק -->
+                <section class="file-places" aria-labelledby="g-places">
+                    <h3 class="sec-title" id="g-places">מופיע ב… <small>קובץ אחד — קישורים, לא העתק</small></h3>
+                    <div class="chips" id="file-links"></div>
+                    <button type="button" class="btn ghost sm" id="add-link" aria-expanded="false" aria-controls="place-pick">🔗 להציג גם ב…</button>
+                    <div id="place-pick" class="place-pick" hidden>
+                        <div id="place-list"></div>
+                        <div class="toolbar end"><button type="button" class="btn ghost sm" id="place-cancel">ביטול</button><button type="button" class="btn primary sm" id="place-save">שמירה</button></div>
+                    </div>
+                </section>
                 <h3 class="sec-title">פרטים</h3>
                 <div class="fields fd-grid">
                     <label class="f wide"><span>שם</span><input name="name" maxlength="150"></label>
@@ -1317,9 +1327,6 @@
                 <label class="switch"><input type="checkbox" name="visible"><span>גלוי ללקוח, לעו"ד ולספק בפורטל</span></label>
                 <div class="fd-more">
                     <label class="f wide"><span>הערה</span><textarea name="note" rows="2" maxlength="2000"></textarea></label>
-                    <h3 class="sec-title">מופיע גם ב… <small>קיצורי דרך — לא העתק</small></h3>
-                    <div class="chips" id="file-links"></div>
-                    <div class="toolbar"><select name="link_to" aria-label="הוספת קיצור דרך לתיקייה"></select><button type="button" class="btn ghost" id="add-link">הוספה</button></div>
                 </div>
                 <p class="error" role="alert" hidden></p>
             </div>
@@ -1550,7 +1557,7 @@
     <script src="assets/js/devloop.js?v=100"></script>
     <script src="assets/js/engage.js?v=100"></script>
     <script src="assets/js/linker.js?v=100"></script>
-    <script src="assets/js/files.js?v=100"></script>
+    <script src="assets/js/files.js?v=101"></script>
     <script src="assets/js/lightbox.js?v=100"></script>
     <script src="assets/js/field.js?v=100"></script>
     <script src="assets/js/share-store.js?v=1"></script>

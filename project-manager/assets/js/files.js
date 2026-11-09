@@ -98,7 +98,9 @@ const Files = (() => {
         // סגירה: עוצרים ציור של עמודים וסרטון שרץ
         $('#file-dlg').addEventListener('close', () => { stopPreview?.(); stopPreview = null; $('#file-preview').innerHTML = ''; });
         $('#file-open').addEventListener('click', () => Viewer.open(current));
-        $('#add-link').addEventListener('click', addLink);
+        $('#add-link').addEventListener('click', () => openPlaces(!$('#place-pick').hidden ? false : true));
+        $('#place-cancel').addEventListener('click', () => openPlaces(false));
+        $('#place-save').addEventListener('click', savePlaces);
         $('#file-links').addEventListener('click', e => { const b = e.target.closest('[data-unlink]'); if (b) unlink(Number(b.dataset.unlink)); });
         $('#file-delete').addEventListener('click', deleteFile);
         $('#file-uses').addEventListener('click', e => {
@@ -149,6 +151,19 @@ const Files = (() => {
         });
     }
 
+    // i18n-ok-start — מתורגם בתצוגה
+    const CREATED = '📁 תיקיות שנוצרו', PROJECT_SPACE = '🏠 מסמכי הפרויקט והנכס', SUPPLIER_SPACE = '👷 מסמכים לכל ספק', SYSTEM = '🔒 תיקיות מערכת';
+    // i18n-ok-end
+    /** [[כותרת, תיקיות]]: מערכת קודם, שנוצרו אחרונות; בשורש — הפרויקט והנכס, הספקים, שנוצרו. */
+    function folderGroups(list, root) {
+        const created = list.filter(f => !f.system), sys = list.filter(f => f.system);
+        const out = root
+            ? [[PROJECT_SPACE, sys.filter(f => f.kind !== 'contact')], [SUPPLIER_SPACE, sys.filter(f => f.kind === 'contact')]]
+            : [[SYSTEM, sys]];
+        out.push([CREATED, created]);
+        return out.filter(([, l]) => l.length);
+    }
+
     function render(searching) {
         // פירורי לחם
         const trail = [];
@@ -159,12 +174,17 @@ const Files = (() => {
         // תיקיות (לא בחיפוש)
         const subs = searching ? [] : folders.filter(f => (f.parent_id || 0) === folderId);
         const count = id => folders.filter(f => f.parent_id === id).length;
-        $('#folder-list').innerHTML = subs.map(f => `<li class="card" data-folder="${f.id}" tabindex="0" role="button" aria-label="${esc(t(f.name))}">
+        const card = f => `<li class="card" data-folder="${f.id}" tabindex="0" role="button" aria-label="${esc(t(f.name))}">
             <span class="ficon" aria-hidden="true">${f.icon}</span>
-            <div class="body"><div class="l1"><span class="one">${esc(t(f.name))}</span></div>
+            <div class="body"><div class="l1"><span class="one">${esc(t(f.name))}</span>${f.system ? `<span class="lock" title="${esc(t('תיקיית מערכת — בלי מחיקה ושינוי שם'))}" aria-label="${esc(t('תיקיית מערכת'))}">🔒</span>` : ''}</div>
                 <div class="l2">${[f.files ? esc(t('{n} קבצים', { n: f.files })) : count(f.id) ? '' : esc(t('ריקה')), count(f.id) ? esc(t('{n} תיקיות', { n: count(f.id) })) : ''].filter(Boolean).join('<i class="sep" aria-hidden="true">·</i>')}</div></div>
             ${f.system ? '' : `<button class="icon-btn" data-edit-folder="${f.id}" aria-label="${esc(t('עריכת התיקייה {name}', { name: f.name }))}">✏️</button>`}
-        </li>`).join('');
+        </li>`;
+        // PM-045: תיקיות המערכת למעלה (🔒), ותיקיות שנוצרו — מתחת, בקבוצה נפרדת. בשורש — שני מרחבים:
+        // 🏠 מסמכי הפרויקט / הנכס, ו-👷 מסמכים לכל ספק
+        const groups = folderGroups(subs, !folderId);
+        $('#folder-list').innerHTML = groups.map(([title, list]) =>
+            (groups.length > 1 || title === CREATED ? `<li class="fgroup" role="presentation">${esc(t(title))}</li>` : '') + list.map(card).join('')).join('');
         $('#folder-list').hidden = !subs.length;
 
         $('#files-title').hidden = false;
@@ -539,14 +559,50 @@ const Files = (() => {
         });
     }
 
+    /** "מופיע ב…": התיקייה של הקובץ (📍) והקישורים (🔗, ✕ מסיר מקום אחד). */
     function renderLinks() {
+        const home = current.folders.find(l => l.home);
         const links = current.folders.filter(l => !l.home);
-        $('#file-links').innerHTML = links.map(l => `<span class="chip link">🔗 ${esc(path(l.folder_id))}
-            <button type="button" class="x" data-unlink="${l.folder_id}" aria-label="${esc(t('הסרת קיצור הדרך מ{folder}', { folder: path(l.folder_id) }))}">✕</button></span>`).join('')
-            || `<span class="hint">${esc(t('רק בתיקייה שלו'))}</span>`;
-        const used = new Set(current.folders.map(l => l.folder_id));
-        $('#file-dlg [name=link_to]').innerHTML = options(folders.filter(x => !used.has(x.id))
-            .map(x => ({ value: x.id, label: path(x.id) })).sort((a, b) => a.label.localeCompare(b.label, I18n.locale())));
+        $('#file-links').innerHTML = (home ? `<span class="chip" title="${esc(t('התיקייה של הקובץ'))}">📍 ${esc(path(home.folder_id))}</span>` : '')
+            + links.map(l => `<span class="chip link">🔗 ${esc(path(l.folder_id))}
+            <button type="button" class="x" data-unlink="${l.folder_id}" aria-label="${esc(t('הסרה מ{folder}', { folder: path(l.folder_id) }))}">✕</button></span>`).join('');
+        openPlaces(false);
+    }
+
+    /** התיקייה הראשית שמעל תיקייה. */
+    const rootOf = f => { while (f?.parent_id) f = folderById(f.parent_id); return f; };
+
+    /** "🔗 להציג גם ב…": בחירה מרובה — מסמכי הנכס / הפרויקט, ספקים, תיקיות שנוצרו. */
+    function openPlaces(on) {
+        $('#place-pick').hidden = !on;
+        $('#add-link').setAttribute('aria-expanded', String(on));
+        if (!on) return;
+        const home = current.folders.find(l => l.home)?.folder_id;
+        const linked = new Set(current.folders.filter(l => !l.home).map(l => l.folder_id));
+        const order = new Map(folders.filter(f => !f.parent_id).map((f, i) => [f.id, i]));
+        const pick = folders.filter(f => f.id !== home && f.kind !== 'inbox')
+            .map(f => ({ f, root: rootOf(f), label: path(f.id) }))
+            .sort((a, b) => (order.get(a.root?.id) ?? 0) - (order.get(b.root?.id) ?? 0) || a.label.localeCompare(b.label, I18n.locale()));
+        const space = x => !x.root?.system ? CREATED : x.root.kind === 'contact' ? SUPPLIER_SPACE : PROJECT_SPACE;
+        $('#place-list').innerHTML = [PROJECT_SPACE, SUPPLIER_SPACE, CREATED].map(g => {
+            const list = pick.filter(x => space(x) === g);
+            if (!list.length) return '';
+            return `<fieldset class="pl-group"><legend>${esc(t(g))}</legend>
+                ${g === SUPPLIER_SPACE ? `<p class="hint">${esc(t('הספק יראה את הקובץ גם בפורטל שלו'))}</p>` : ''}
+                ${list.map(x => `<label class="pl-row${x.f.parent_id ? ' sub' : ''}"><input type="checkbox" value="${x.f.id}"${linked.has(x.f.id) ? ' checked' : ''}>
+                    <span aria-hidden="true">${x.f.icon}</span><span>${esc(x.label)}</span></label>`).join('')}</fieldset>`;
+        }).join('');
+    }
+
+    async function savePlaces() {
+        const ids = [...$('#place-list').querySelectorAll('input:checked')].map(i => Number(i.value));
+        await busy($('#place-save'), $('#file-dlg form'), async () => {
+            ({ file: current } = await api('file-places', { body: { id: current.id, folder_ids: ids } }));
+            renderLinks();
+            toast(t('נשמר'));
+            await loadFolders();
+            await loadFiles();
+        });
     }
 
     async function saveFile() {
@@ -562,25 +618,22 @@ const Files = (() => {
         });
     }
 
-    async function addLink() {
-        const to = Number($('#file-dlg [name=link_to]').value);
-        if (!to) return;
-        await busy($('#add-link'), $('#file-dlg form'), async () => {
-            ({ file: current } = await api('file-link', { body: { id: current.id, folder_id: to, add: true } }));
-            renderLinks();
-            toast(t('נוסף קיצור דרך'));
-        });
-    }
-
     async function unlink(folder) {
         await busy(null, $('#file-dlg form'), async () => {
             ({ file: current } = await api('file-link', { body: { id: current.id, folder_id: folder, add: false } }));
             renderLinks();
+            await loadFolders();
+            await loadFiles();
         });
     }
 
     async function deleteFile() {
-        if (!confirm(t('למחוק את "{name}"? הוא ייעלם מכל התיקיות.', { name: current.name }))) return;
+        // PM-045: האישור מונה את המקומות שהקובץ מופיע בהם
+        const places = current.folders.map(l => path(l.folder_id));
+        const msg = places.length > 1
+            ? t('למחוק את "{name}"? הוא מופיע ב-{n} מקומות ({places}) — וייעלם מכולם.', { name: current.name, n: places.length, places: places.join(', ') })
+            : t('למחוק את "{name}"? הוא ייעלם מכל התיקיות.', { name: current.name });
+        if (!confirm(msg)) return;
         await busy(null, $('#file-dlg form'), async () => {
             await api('file-delete', { body: { id: current.id } });
             $('#file-dlg').close();

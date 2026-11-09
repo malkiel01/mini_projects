@@ -2714,5 +2714,19 @@
     "עוד אין אבני דרך לספק הזה.": "Pas encore de jalons pour ce fournisseur.",
     "כרטיס": "Fiche",
     "כרטיס ספק": "Fiche fournisseur",
-    "התשלום מקדים את הביצוע: {stages}": "Le paiement devance l'exécution : {stages}"
+    "התשלום מקדים את הביצוע: {stages}": "Le paiement devance l'exécution : {stages}",
+    "📁 תיקיות שנוצרו": "📁 Dossiers créés",
+    "🏠 מסמכי הפרויקט והנכס": "🏠 Documents du projet et du bien",
+    "👷 מסמכים לכל ספק": "👷 Documents par fournisseur",
+    "🔒 תיקיות מערכת": "🔒 Dossiers système",
+    "תיקיית מערכת — בלי מחיקה ושינוי שם": "Dossier système — ni suppression ni renommage",
+    "תיקיית מערכת": "Dossier système",
+    "התיקייה של הקובץ": "Dossier du fichier",
+    "הסרה מ{folder}": "Retirer de {folder}",
+    "הספק יראה את הקובץ גם בפורטל שלו": "Le fournisseur verra aussi le fichier dans son portail",
+    "למחוק את \"{name}\"? הוא מופיע ב-{n} מקומות ({places}) — וייעלם מכולם.": "Supprimer « {name} » ? Il apparaît à {n} endroits ({places}) et disparaîtra de tous.",
+    "מופיע ב…": "Apparaît dans…",
+    "קובץ אחד — קישורים, לא העתק": "Un seul fichier — des liens, pas des copies",
+    "🔗 להציג גם ב…": "🔗 Afficher aussi dans…",
+    "מסמכי הנכס": "Documents du bien"
 }
