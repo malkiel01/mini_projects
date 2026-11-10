@@ -753,7 +753,7 @@ $cols = array_column($old->query('PRAGMA table_info(requirements)')->fetchAll(PD
 apr_migrate($old);
 $cols2 = array_column($old->query('PRAGMA table_info(requirements)')->fetchAll(PDO::FETCH_ASSOC), 'name');
 eq([$v5, in_array('split_at', $cols, true), apr_schema_version($old), array_values(array_diff($cols2, $cols)), (int)$old->query("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('files', 'requirement_files', 'file_tags', 'file_thumbs')")->fetchColumn(), apr_schema_expected()],
-    [5, false, 6, ['status_by', 'status_at', 'split_from_id', 'split_at'], 4, 6], 'מיגרציה 006 על מסד בגרסה 5: העמודות והטבלאות נוספות');
+    [5, false, apr_schema_expected(), ['status_by', 'status_at', 'split_from_id', 'split_at'], 4, apr_schema_expected()], 'מיגרציה 006 (והבאות) על מסד בגרסה 5: העמודות והטבלאות נוספות');
 foreach (glob("$tmpDir/*") as $m) unlink($m);
 rmdir($tmpDir);
 

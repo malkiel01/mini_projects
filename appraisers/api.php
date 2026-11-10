@@ -22,6 +22,7 @@ function apr_out(mixed $data, int $status = 200): never
 {
     if (isset($GLOBALS['apr_cookie_out'])) apr_set_cookie($GLOBALS['apr_cookie_out']);
     if (isset($GLOBALS['apr_sso_cookie_out'])) apr_set_sso_cookie($GLOBALS['apr_sso_cookie_out']);
+    if (isset($GLOBALS['apr_portal_cookie_out'])) apr_set_portal_cookie($GLOBALS['apr_portal_cookie_out']);
     // כניסה מאוחדת (sso-start, sso-callback): הפניה של הדפדפן, לא JSON
     if (is_array($data) && isset($data['_redirect'])) {
         http_response_code(302);
@@ -82,9 +83,10 @@ try {
     // גוף JSON, עד 1MB. צילום שמצורף למטלה (…-attach) מגיע כגוף גולמי — המודול קורא אותו בעצמו.
     $in = [];
     $upload = [];
-    if ($method === 'POST' && $action === 'file-upload') {
+    if ($method === 'POST' && ($action === 'file-upload' || $action === 'portal-upload')) {
         // קובץ: הגוף הגולמי נשמר לקובץ זמני תחת data/tmp, עד הגודל המותר; הפרמטרים — בכתובת.
         // **הגוף נקרא רק אחרי אימות**: הנתב בודק זהות ו-CSRF, apr_file_upload בודק הרשאה בתיק ומכסה — ורק אז קורא לקורא הזה.
+        // בפורטל (portal-upload) האימות הוא האסימון של הקישור, שמגיע בכותרת — אותו עיקרון: קודם אסימון, אחר כך גוף.
         $in = array_filter($_GET, 'is_string');
         $upload = ['upload_reader' => 'apr_upload_receive'];
     } elseif ($method === 'POST' && !str_ends_with($action, '-attach')) {
@@ -106,6 +108,8 @@ try {
         'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),
         'fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
         'sso_state' => is_string($_COOKIE['apr_sso'] ?? null) ? $_COOKIE['apr_sso'] : '',
+        'portal_token' => (string)($_SERVER['HTTP_X_PORTAL_TOKEN'] ?? ''),
+        'portal_cookie' => is_string($_COOKIE[APR_PORTAL_COOKIE] ?? null) ? $_COOKIE[APR_PORTAL_COOKIE] : '',
     ] + $upload);
     apr_out(apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out);
 } catch (Throwable $e) {

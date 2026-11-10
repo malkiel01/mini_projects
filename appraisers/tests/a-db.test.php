@@ -84,7 +84,7 @@ apr_migrate($db, $dir);
 eq((int)$db->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn(), $want + 1, 'ולא רצה פעמיים');
 
 // שמות ומספרים: רצופים מ-001
-file_put_contents($dir . '/009_gap.sql', 'SELECT 1;');
+file_put_contents(sprintf('%s/%03d_gap.sql', $dir, $want + 3), 'SELECT 1;');
 try { apr_migration_files($dir); check('מספר לא רצוף נדחה', false); } catch (LogicException) { check('מספר לא רצוף נדחה', true); }
 
 // ── אילוצים במסד ──

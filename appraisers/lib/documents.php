@@ -105,7 +105,7 @@ function apr_req_derive(int $reqId): ?string
  * מעביר דרישה ממצב למצב: UPDATE … WHERE status = <הקודם>. אפס שורות — מישהו הקדים, 409.
  * $strict — המעבר חייב להופיע בטבלה (APR_REQ_TRANSITIONS). בלי $strict: חזרה לאחור אחרי דחייה או מחיקת קובץ (§6, §11).
  */
-function apr_req_move(array $r, string $to, ?string $reason, int $by, bool $strict = true): void
+function apr_req_move(array $r, string $to, ?string $reason, ?int $by, bool $strict = true): void
 {
     if ($r['status'] === $to) {
         if ($to !== 'received') return;                      // עוד קובץ לדרישה שממתינה לבדיקה
@@ -113,10 +113,11 @@ function apr_req_move(array $r, string $to, ?string $reason, int $by, bool $stri
     $n = apr_exec('UPDATE requirements SET status = ?, status_reason = ?, status_by = ?, status_at = ?, updated_at = ? WHERE id = ? AND status = ? AND split_at IS NULL',
         [$to, $reason, $by, apr_now(), apr_now(), $r['id'], $r['status']]);
     if ($n !== 1) apr_fail('req_changed');
+    apr_requests_on_req_change((int)$r['id']);              // בקשה שכל הדרישות שלה נסגרו — "הושלמה" (07 §6)
 }
 
 /** משייך קובץ לדרישה (גרסה חדשה או נלווה), והדרישה עוברת ל-received. בתוך טרנזקציה. מחזיר [pid של השיוך, מספר גרסה, relation]. */
-function apr_req_link(array $c, array $r, int $fileId, string $relation, int $by): array
+function apr_req_link(array $c, array $r, int $fileId, string $relation, ?int $by): array
 {
     if ($r['split_at'] !== null) apr_fail('req_state');
     if ($r['status'] !== 'received' && !apr_req_can($r['status'], 'received')) apr_fail('req_state');
@@ -132,7 +133,7 @@ function apr_req_link(array $c, array $r, int $fileId, string $relation, int $by
 }
 
 /** אחרי דחייה או מחיקה של קובץ: המצב שנגזר ממה שנשאר; אם לא נשאר קובץ — המצב שלפני (required / requested). */
-function apr_req_fallback(array $r, string $before, int $by): string
+function apr_req_fallback(array $r, string $before, ?int $by): string
 {
     $to = apr_req_derive((int)$r['id']) ?? (in_array($before, ['required', 'requested'], true) ? $before : 'required');
     if ($to !== $r['status']) apr_req_move($r, $to, null, $by, false);
@@ -146,13 +147,13 @@ const APR_QUOTA_CASE = 2 * 1024 ** 3;              // נפח הקבצים של �
 const APR_QUOTA_OFFICE = 20 * 1024 ** 3;           // נפח הקבצים של משרד
 
 /**
- * קצב ומכסה. $count — לספור את הניסיון (פעם אחת לבקשה, לפני קריאת הגוף). הנפח כולל קבצים שנמחקו מחיקה רכה: הם עדיין
+ * קצב ומכסה. $rateKey — מי מעלה (מזהה משתמש, או "p<קישור>" לנמען בפורטל). $count — לספור את הניסיון (פעם אחת לבקשה, לפני קריאת הגוף). הנפח כולל קבצים שנמחקו מחיקה רכה: הם עדיין
  * בדיסק (מחזור החיים — פרוסה 21).
  */
-function apr_upload_allowed(array $c, int $uid, int $size, bool $count = true): void
+function apr_upload_allowed(array $c, string $rateKey, int $size, bool $count = true, ?array $rate = null): void
 {
-    [$max, $window] = $GLOBALS['apr_upload_rate'] ?? APR_UPLOAD_RATE;
-    if ($count && !apr_limit('upload:' . $uid, $max, $window)) apr_fail('upload_rate');
+    [$max, $window] = $rate ?? $GLOBALS['apr_upload_rate'] ?? APR_UPLOAD_RATE;
+    if ($count && !apr_limit('upload:' . $rateKey, $max, $window)) apr_fail('upload_rate');
     [$qc, $qo] = $GLOBALS['apr_quota'] ?? [APR_QUOTA_CASE, APR_QUOTA_OFFICE];
     $need = max($size, 1);                             // לפני קריאת הגוף הגודל עוד לא ידוע: נכשלים רק אם כבר אין מקום לבית אחד
     if ((int)apr_val('SELECT COALESCE(SUM(size), 0) FROM files WHERE case_id = ?', [$c['id']]) + $need > $qc) apr_fail('quota_case');
@@ -177,12 +178,30 @@ function apr_upload_key(array $ctx, mixed $v): ?string
  */
 function apr_file_upload(array $ctx, array $q, array $env): array
 {
+    $uid = (int)$ctx['user']['id'];
+    return apr_file_ingest(fn() => apr_case_get($ctx, $q['case'] ?? null, 'documents'), ['kind' => 'user', 'uid' => $uid, 'channel' => 'internal', 'rate_key' => (string)$uid,
+        'key' => fn() => apr_upload_key($ctx, $q['key'] ?? null)], $q, $env);
+}
+
+/**
+ * הצינור של קובץ נכנס — אחד לכל ערוץ (העלאה פנימית, פורטל). $case — מחזיר את התיק אחרי שבדק מי מעלה (הרשאה בתיק, או
+ * אסימון של בקשה); נקרא לפני שנוגעים בגוף הבקשה. $who: kind (user | recipient), uid (או null), channel, rate_key, rate?
+ * ([מספר, חלון]), key (מזהה פעולה, כבר עם קידומת של המעלה), request (id של בקשה, לפורטל), audit ([actor, kind]).
+ * לנמען: דרישה חובה, כפילות נבדקת רק מול מה שהועלה באותה בקשה, והתשובה אינה חושפת דבר על שאר התיק.
+ */
+function apr_file_ingest(callable $case, array $who, array $q, array $env): array
+{
     $tmp = is_string($env['upload'] ?? null) ? $env['upload'] : '';
+    $recipient = $who['kind'] === 'recipient';
+    $uid = $who['uid'] ?? null;
+    $actor = $who['audit'] ?? [null, 'user'];
     try {
-        $c = apr_case_get($ctx, $q['case'] ?? null, 'documents');
-        $uid = (int)$ctx['user']['id'];
-        apr_upload_allowed($c, $uid, 0);
-        // רק עכשיו — אחרי זהות, CSRF, הרשאה בתיק ומכסה — קוראים את גוף הבקשה לדיסק (api.php מוסר את הקורא)
+        $c = $case();
+        foreach (['rate_key', 'request'] as $lazy) {        // בפורטל הקישור ידוע רק אחרי ש-$case אימת את האסימון
+            if (($who[$lazy] ?? null) instanceof Closure) $who[$lazy] = ($who[$lazy])();
+        }
+        apr_upload_allowed($c, $who['rate_key'], 0, true, $who['rate'] ?? null);
+        // רק עכשיו — אחרי זהות (או אסימון), CSRF, הרשאה ומכסה — קוראים את גוף הבקשה לדיסק (api.php מוסר את הקורא)
         if (isset($env['upload_reader'])) {
             $env = ($env['upload_reader'])() + $env;
             $tmp = is_string($env['upload'] ?? null) ? $env['upload'] : '';
@@ -191,15 +210,16 @@ function apr_file_upload(array $ctx, array $q, array $env): array
         if ($tmp === '' || !is_file($tmp)) apr_fail('file_missing');
         $size = (int)filesize($tmp);
         if ($size > apr_file_max()) apr_fail_size();
-        apr_upload_allowed($c, $uid, $size, false);
-        $key = apr_upload_key($ctx, $q['key'] ?? null);
+        apr_upload_allowed($c, $who['rate_key'], $size, false);
+        $key = ($who['key'] ?? null) instanceof Closure ? ($who['key'])() : ($who['key'] ?? null);
         $relation = apr_clean_choice($q['relation'] ?? null, ['version', 'attachment']) ?? 'version';
         $name = apr_file_clean_name($q['name'] ?? null);
-        $note = apr_clean_text($q['source_note'] ?? '', 200);
-        $docDate = apr_clean_date($q['doc_date'] ?? null);
+        $note = $recipient ? null : apr_clean_text($q['source_note'] ?? '', 200);
+        $docDate = $recipient ? null : apr_clean_date($q['doc_date'] ?? null);
         $reqPid = $q['requirement'] ?? null;
         if ($reqPid !== null && $reqPid !== '') apr_req_row($c, $reqPid);       // דרישה של תיק אחר — 404, לפני שנוגעים בקובץ
         else $reqPid = null;
+        if ($recipient && $reqPid === null) apr_fail('not_found');
         // העלאה חוזרת עם אותו מזהה פעולה — בלי לעבד את הקובץ שוב
         if ($key !== null && ($old = apr_row('SELECT pid, case_id FROM files WHERE idempotency_key = ?', [$key]))) {
             if ((int)$old['case_id'] !== (int)$c['id']) apr_fail('content_invalid');
@@ -211,35 +231,43 @@ function apr_file_upload(array $ctx, array $q, array $env): array
             $scan = apr_file_scan($tmp);
             if ($scan === 'rejected') throw new AprFileRejected('file_infected', 'scanner');
         } catch (AprFileRejected $e) {
-            apr_tx(fn() => apr_case_audit($c, 'file.rejected', 'file', $c['pid'], ['sha256' => $sha, 'size' => $size, 'why' => $e->why]));
+            apr_tx(fn() => apr_case_audit($c, 'file.rejected', 'file', $c['pid'], ['sha256' => $sha, 'size' => $size, 'why' => $e->why] + ($recipient ? ['channel' => 'portal'] : []), null, $actor[0], $actor[1]));
             throw $e;
         }
         [$ext] = APR_FILE_TYPES[$info['mime']];
         $stored = null;
         try {
-            return apr_tx(function () use ($c, $q, $tmp, $sha, $size, $info, $scan, $ext, $key, $relation, $name, $note, $docDate, $reqPid, $uid, &$stored) {
+            return apr_tx(function () use ($c, $q, $who, $recipient, $actor, $tmp, $sha, $size, $info, $scan, $ext, $key, $relation, $name, $note, $docDate, $reqPid, $uid, &$stored) {
                 apr_case_still_open($c);
+                if (isset($who['recheck'])) ($who['recheck'])();     // פורטל: הקישור והבקשה עדיין בתוקף, בתוך הטרנזקציה
                 if ($key !== null && ($old = apr_row('SELECT pid FROM files WHERE idempotency_key = ? AND case_id = ?', [$key, $c['id']]))) return ['file' => $old['pid'], 'repeat' => true];
                 $r = $reqPid !== null ? apr_req_row($c, $reqPid) : null;
-                // כפילות — בתוך התיק בלבד. לעולם לא בין תיקים: ההתרעה עצמה הייתה חושפת שהקובץ קיים במקום אחר.
-                if (($q['dup'] ?? '') !== '1' && ($d = apr_row('SELECT * FROM files WHERE case_id = ? AND sha256 = ? AND deleted_at IS NULL ORDER BY id LIMIT 1', [$c['id'], $sha]))) {
+                if ($recipient) {
+                    // לנמען: אותו קובץ שכבר העלה בבקשה הזו לאותה דרישה — "כבר התקבל". שום בדיקה מול שאר התיק: התשובה הייתה חושפת מה יש בו.
+                    $d = apr_row("SELECT f.pid FROM files f JOIN requirement_files rf ON rf.file_id = f.id AND rf.requirement_id = ? AND rf.review_state <> 'rejected'
+                        WHERE f.request_id = ? AND f.sha256 = ? AND f.deleted_at IS NULL ORDER BY f.id LIMIT 1", [$r['id'], $who['request'], $sha]);
+                    if ($d) return ['file' => $d['pid'], 'repeat' => true];
+                    if ($r['status'] === 'approved') apr_fail('req_state');           // דרישה שאושרה — הנמען אינו פותח אותה מחדש
+                    $relation = $r['status'] === 'received' ? 'attachment' : 'version';
+                } elseif (($q['dup'] ?? '') !== '1' && ($d = apr_row('SELECT * FROM files WHERE case_id = ? AND sha256 = ? AND deleted_at IS NULL ORDER BY id LIMIT 1', [$c['id'], $sha]))) {
+                    // כפילות — בתוך התיק בלבד. לעולם לא בין תיקים: ההתרעה עצמה הייתה חושפת שהקובץ קיים במקום אחר.
                     return ['duplicate' => ['file' => $d['pid'], 'name' => $d['original_name'], 'received_at' => $d['received_at'],
                         'requirement' => apr_val("SELECT r.title FROM requirement_files rf JOIN requirements r ON r.id = rf.requirement_id WHERE rf.file_id = ? AND rf.review_state <> 'rejected' ORDER BY rf.id LIMIT 1", [$d['id']]) ?: null]];
                 }
-                apr_upload_allowed($c, $uid, $size, false);          // שוב, בתוך הטרנזקציה: שתי העלאות במקביל לא עוברות יחד את התקרה
+                apr_upload_allowed($c, $who['rate_key'], $size, false);          // שוב, בתוך הטרנזקציה: שתי העלאות במקביל לא עוברות יחד את התקרה
                 $stored = apr_file_store($tmp);
                 if (isset($GLOBALS['apr_after_store'])) ($GLOBALS['apr_after_store'])();   // בדיקות: כישלון אחרי השמירה לדיסק
                 $pid = apr_pid();
                 $id = apr_insert('files', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'sha256' => $sha, 'size' => $size, 'mime' => $info['mime'], 'ext' => $ext,
-                    'original_name' => $name, 'storage_key' => $stored, 'uploader_kind' => 'user', 'uploader_id' => $uid, 'channel' => 'internal', 'source_note' => $note, 'doc_date' => $docDate,
-                    'received_at' => apr_now(), 'scan_state' => $scan, 'pages' => $info['pages'], 'is_encrypted' => (int)$info['encrypted'], 'idempotency_key' => $key]);
+                    'original_name' => $name, 'storage_key' => $stored, 'uploader_kind' => $who['kind'], 'uploader_id' => $uid, 'channel' => $who['channel'], 'source_note' => $note, 'doc_date' => $docDate,
+                    'received_at' => apr_now(), 'scan_state' => $scan, 'pages' => $info['pages'], 'is_encrypted' => (int)$info['encrypted'], 'idempotency_key' => $key, 'request_id' => $who['request'] ?? null]);
                 $out = ['file' => $pid];
-                $meta = ['mime' => $info['mime'], 'size' => $size];
+                $meta = ['mime' => $info['mime'], 'size' => $size] + ($recipient ? ['channel' => 'portal'] : []);
                 if ($r) {
                     [$out['link'], $out['version'], $out['relation']] = apr_req_link($c, $r, $id, $relation, $uid);
                     $meta += ['requirement' => $r['pid'], 'version' => $out['version'], 'relation' => $out['relation']];
                 }
-                apr_case_audit($c, 'file.upload', 'file', $pid, $meta);
+                apr_case_audit($c, 'file.upload', 'file', $pid, $meta, null, $actor[0], $actor[1]);
                 apr_case_touch($c);
                 return $out;
             });
