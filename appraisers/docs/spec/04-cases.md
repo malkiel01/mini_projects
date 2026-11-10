@@ -36,8 +36,8 @@ cases
   status             draft | collecting | awaiting_reply | checking | visit |
                      analysis | review | approved | delivered | closed
   title              TEXT                תיאור חופשי של הנכס, לזיהוי ברשימה
-  purpose            TEXT NULL           מטרת השומה (מרשימה) + purpose_note
-  property_type      TEXT NULL
+  purpose            TEXT NULL           מטרת השומה — מהרשימה שב-03 §4.4; `other` מחייב purpose_note
+  property_type      TEXT NULL           מהרשימה שב-03 §4.4
   key_date           DATE NULL           המועד הקובע — NULL = "לא ידוע, להשלמה"
   due_date           DATE NULL           יעד
   flags              JSON                הדגלים שסומנו (מהפרופיל)
@@ -316,3 +316,4 @@ audit_log  (+)
 | תאריך | מה | מה נדרש מהקוד |
 | --- | --- | --- |
 | 2026-11-10 | גרסה ראשונה | — |
+| 2026-11-10 | **שינוי 1** — `purpose` ו-`property_type` מפנים לרשימות שב-`03-profiles.md` §4.4 | אין |
