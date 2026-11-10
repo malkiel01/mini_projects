@@ -20,6 +20,8 @@ function auditHtml(rows, text, who) {
 /** גיליון עם קישור ההזמנה להעתקה. האסימון מוצג פעם אחת — במסד נשמר רק ה-hash שלו. */
 function showInviteLink(r, rotated) {
     sheet(T.inviteLinkTitle, `
+        ${r.provision && T.provision[r.provision] ? `<p class="banner" role="status">${T.provision[r.provision]}</p>` : ''}
+        ${r.mail === 'failed' ? `<p class="banner" role="alert">${T.mailFailed}</p>` : ''}
         ${rotated ? `<p class="hint">${T.linkRotated}</p>` : ''}<p class="hint">${esc(T.inviteLinkHint(fmtDate(r.expires_at)))}</p>
         <label class="f"><span>${T.inviteLinkTitle}</span><input readonly dir="ltr" id="link" value="${esc(inviteUrl(r.token))}"></label>
         <button type="button" class="btn primary" id="copy">${T.copyLink}</button>`, null).querySelector('#copy')
@@ -52,7 +54,10 @@ async function viewOffice(tab) {
         ${admin && d.invites.length ? `<p class="sec-title">${T.pendingInvites}</p><ul class="list">${d.invites.map(i => `<li class="card static">
             <span class="use-ic" aria-hidden="true">✉️</span>
             <div class="body"><div class="l1"><span dir="ltr">${esc(i.email)}</span></div>
-            <div class="l2">${esc(roleLabel(i.role, i.is_admin))}<i class="sep" aria-hidden="true">·</i>${esc(T.inviteUntil(fmtDate(i.expires_at)))}</div></div>
+            <div class="l2">${esc(roleLabel(i.role, i.is_admin))}<i class="sep" aria-hidden="true">·</i>${esc(T.inviteUntil(fmtDate(i.expires_at)))}</div>
+            <div class="chips">${i.provision && T.provisionChip[i.provision] ? `<span class="chip ${i.provision === 'blocked' || i.provision === 'failed' ? 'bad' : 'ok'}">${T.provisionChip[i.provision]}</span>` : ''}${
+                i.mail ? `<span class="chip ${i.mail === 'sent' ? 'ok' : 'warn'}">${T.mailChip[i.mail]}</span>` : ''}</div></div>
+            <button class="icon-btn" data-resend="${i.pid}" aria-label="${T.inviteResend}">📨</button>
             <button class="icon-btn" data-link="${i.pid}" aria-label="${T.copyLink}">📋</button>
             <button class="icon-btn" data-revoke="${i.pid}" data-email="${esc(i.email)}" aria-label="${T.revoke}">🗑️</button></li>`).join('')}</ul>` : ''}
         <p class="foot"><button class="btn sm ghost danger" id="leave">${T.leave}</button></p>`;
@@ -60,19 +65,26 @@ async function viewOffice(tab) {
     const body = extra => ({ office: o.pid, ...extra });
     const showLink = showInviteLink;
 
-    $('#invite')?.addEventListener('click', () => sheet(T.inviteTitle, `
+    let inviteOp = '';
+    $('#invite')?.addEventListener('click', () => { inviteOp = opId(); sheet(T.inviteTitle, `
         <p class="hint">${T.inviteHint}</p>
         <label class="f"><span>${T.email}</span><input name="email" type="email" dir="ltr" inputmode="email" autocomplete="off" required maxlength="200"></label>
+        <label class="f"><span>${T.inviteeName}</span><input name="name" maxlength="120" autocomplete="off"></label>
         <div class="f"><span>${T.role}</span>${roleField('staff')}</div>
         <label class="switch"><input type="checkbox" name="is_admin"><span>${T.alsoAdmin}</span></label>`, async f => {
-        const r = await api('invite-create', { body: body({ email: f.email, role: f.role, is_admin: !!f.is_admin }) });
+        // op — מזהה הפעולה של הגיליון הזה: לחיצה כפולה או שליחה חוזרת אחרי תקלת רשת = הזמנה אחת ומייל אחד
+        const r = await api('invite-create', { body: body({ email: f.email, name: f.name, role: f.role, is_admin: !!f.is_admin, op: inviteOp }) });
+        if (r.repeat) { viewOffice(); return; }
         viewOffice();
         showLink(r, false);
         return false;   // הגיליון נשאר פתוח — עכשיו עם הקישור
-    }, T.inviteCreate));
+    }, T.inviteCreate); });
 
     $$('[data-link]').forEach(b => b.addEventListener('click', async () => {
         try { showLink(await api('invite-link', { body: body({ invite: b.dataset.link }) }), true); } catch (x) { toastError(x); }
+    }));
+    $$('[data-resend]').forEach(b => b.addEventListener('click', async () => {
+        try { const r = await api('invite-resend', { body: body({ invite: b.dataset.resend }) }); viewOffice(); showLink(r, true); } catch (x) { toastError(x); }
     }));
     $$('[data-revoke]').forEach(b => b.addEventListener('click', async () => {
         if (!confirm(T.revokeAsk(b.dataset.email))) return;

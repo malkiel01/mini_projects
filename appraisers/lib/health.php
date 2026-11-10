@@ -30,8 +30,7 @@ function apr_health_register(string $id, string $label, callable $check): void
 /** הכתובת של קובץ באפליקציה, כפי שהדפדפן רואה אותה (לבדיקה עצמית). */
 function apr_self_url(string $path): string
 {
-    $host = preg_replace('/[^a-z0-9.\-]/i', '', (string)($_SERVER['SERVER_NAME'] ?? 'localhost'));
-    return 'https://' . $host . rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/appraisers/api.php')), '/') . '/' . $path;
+    return apr_app_url($path);   // הכתובת הקבועה מ-app.json — לא מהבקשה
 }
 
 function apr_health(): array
@@ -163,6 +162,18 @@ apr_health_register('queue', 'תור הרקע', function () {
     $stuck = (int)apr_val("SELECT COUNT(*) FROM jobs WHERE status = 'running' AND started_at < ?", [apr_iso(apr_time() - APR_JOB_STUCK)]);
     if ($bad || $stuck) return ['bad', ($bad ? "$bad משימות נכשלו או דורשות טיפול" : '') . ($bad && $stuck ? '; ' : '') . ($stuck ? "$stuck משימות תקועות מעל 10 דקות" : '') . '. בלשונית "שירותי רקע".'];
     return ['ok', (int)apr_val("SELECT COUNT(*) FROM jobs WHERE status = 'pending'") . ' ממתינות, אין כשלים'];
+});
+
+apr_health_register('platform_key', 'מפתח החתימה מול המעטפת', function () {
+    $k = apr_pkey();
+    return ['ok', 'מפתח פעיל ' . $k['kid'] . ' (הפרטי מוצפן במסד)'];
+});
+
+apr_health_register('sso_clock', 'שעון השרת (כניסה מאוחדת)', function () {
+    $at = (int)apr_meta('sso_expired_at', '0');
+    return $at > apr_time() - 86400
+        ? ['warn', 'זהות חתומה נדחתה כי פג תוקפה (' . apr_iso($at) . ') — אם זה חוזר, שעון השרת סוטה']
+        : ['ok', 'לא נדחתה זהות בגלל תוקף ב-24 השעות האחרונות'];
 });
 
 apr_health_register('mail', 'שליחת מייל', fn() => function_exists('mail') ? ['ok', 'הפונקציה mail זמינה (לא נשלח מייל בבדיקה)'] : ['warn', 'הפונקציה mail אינה זמינה — תידרש בפרוסה 07']);

@@ -63,7 +63,7 @@ eq(array_values(array_unique($vs[1])), [(string)$app['version']], 'index.html: ?
 eq($app['id'] ?? null, basename($root), 'app.json: id = שם התיקייה');
 eq([$app['gate'] ?? null, $app['restricted'] ?? null], [true, true], 'app.json: מחוברת לשער, וחסומה כברירת מחדל');
 check('app.json: גרסה', preg_match('/^\d+\.\d+(\.\d+)?$/', (string)($app['version'] ?? '')) === 1);
-eq($app['public'] ?? null, ['manifest.webmanifest', 'cron.php', 'api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach'], 'app.json: public בדיוק לפי האפיון (§10)');
+eq($app['public'] ?? null, ['manifest.webmanifest', 'cron.php', 'api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach|platform_key|sso-start|sso-callback|login|forgot|reset|login-config'], 'app.json: public בדיוק לפי האפיון (01 §10, 02 §4.1)');
 
 // כל פעולה ציבורית ב-app.json היא public / token בטבלת ההרשאות — ולהפך
 preg_match('/api\.php\?action=(.*)$/', $app['public'][2], $pm);
@@ -75,7 +75,7 @@ eq($listed, $open, 'הפעולות הציבוריות ב-app.json = הפעולו
 
 // ── טבלת ההרשאות שלמה: לכל פעולה יש מימוש, ולכל מימוש — שורה בטבלה ──
 $router = file_get_contents("$root/lib/app.php");
-preg_match_all("/^\s+'([a-z][a-z-]+)'\s+=>/m", substr($router, strpos($router, 'function apr_dispatch')), $arms);
+preg_match_all("/^\s+'([a-z][a-z_-]+)'\s+=>/m", substr($router, strpos($router, 'function apr_dispatch')), $arms);
 $arms = array_unique($arms[1]);
 eq(array_values(array_diff(array_keys(APR_ACCESS), $arms)), [], 'לכל פעולה בטבלת ההרשאות יש מימוש בנתב');
 eq(array_values(array_diff($arms, array_keys(APR_ACCESS))), [], 'ואין בנתב פעולה בלי שורה בטבלת ההרשאות');

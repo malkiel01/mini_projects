@@ -145,13 +145,17 @@ function apr_migrate(PDO $db, ?string $dir = null): void
 function apr_tx(callable $fn): mixed
 {
     $db = apr_db();
-    if ($db->inTransaction()) return $fn($db);
+    // טרנזקציה בתוך טרנזקציה מצטרפת לחיצונית. הדגל שלנו, כי PDO אינו יודע על BEGIN שנשלח ב-exec.
+    if (!empty($GLOBALS['apr_in_tx'])) return $fn($db);
     $db->exec('BEGIN IMMEDIATE');
+    $GLOBALS['apr_in_tx'] = true;
     try {
         $out = $fn($db);
+        $GLOBALS['apr_in_tx'] = false;
         $db->exec('COMMIT');
         return $out;
     } catch (Throwable $e) {
+        $GLOBALS['apr_in_tx'] = false;
         $db->exec('ROLLBACK');
         throw $e;
     }
@@ -206,12 +210,34 @@ function apr_meta_set(string $key, string $value): void
 }
 
 /** הגדרות המערכת שמנהל המערכת משנה: שם => ברירת מחדל. נשמרות ב-meta ("setting.<שם>"). */
-const APR_SETTINGS = ['office_self_create' => true];
+const APR_SETTINGS = ['office_self_create' => true, 'invites_per_day' => 200];
 
-function apr_setting(string $name): bool
+/** הגדרה: כן / לא, או מספר — לפי הסוג של ברירת המחדל. */
+function apr_setting(string $name): bool|int
 {
     $v = apr_meta('setting.' . $name);
+    if (is_int(APR_SETTINGS[$name])) return $v === null ? APR_SETTINGS[$name] : (int)$v;
     return $v === null ? APR_SETTINGS[$name] : $v === '1';
+}
+
+// ── הגבלת קצב ───────────────────────────────────────────────
+
+/**
+ * מונה בחלון זמן (טבלת login_attempts): עד $max פעמים ב-$window שניות לכל מפתח. מחזיר false כשהתקרה הושגה — ואז
+ * לא סופר. אטומי (BEGIN IMMEDIATE): בקשות במקביל לא עוקפות את התקרה.
+ */
+function apr_limit(string $key, int $max, int $window): bool
+{
+    return apr_tx(function () use ($key, $max, $window) {
+        $now = apr_time();
+        $r = apr_row('SELECT count, updated_at FROM login_attempts WHERE key = ?', [$key]);
+        $fresh = !$r || strtotime($r['updated_at']) <= $now - $window;
+        $count = $fresh ? 0 : (int)$r['count'];
+        if ($count >= $max) return false;
+        apr_exec('INSERT INTO login_attempts (key, count, updated_at) VALUES (?, 1, ?)
+            ON CONFLICT(key) DO UPDATE SET count = ?, updated_at = ?, locked_until = NULL', [$key, apr_iso($now), $count + 1, $fresh ? apr_iso($now) : $r['updated_at']]);
+        return true;
+    });
 }
 
 // ── מפתח הסודות ──────────────────────────────────────────────

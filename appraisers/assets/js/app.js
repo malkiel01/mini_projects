@@ -1,6 +1,6 @@
 /*
  * שמאות מקרקעין — הניתוב וההפעלה. דף אחד, ניווט ב-#.
- * הזהות מגיעה מהשער של המעטפת; כאן אין כניסה ואין יציאה.
+ * הזהות מגיעה מהשער של המעטפת. מסך כניסה ויציאה — רק כשהמערכת מנותקת מהמעטפת (#/login, #/reset/<אסימון>).
  *
  *   #/                     בית                              #/welcome            הקמת משרד / יש לי הזמנה
  *   #/invite/<אסימון>      קבלת הזמנה                       #/office · #/office/log   המשרד שלי · יומן הפעולות
@@ -54,8 +54,14 @@ function openMe() {
         ${me.offices.length ? `<p class="sec-title">${T.myOffices}</p>${officesListHtml()}` : ''}
         <ul class="list">${links.map(([h, i, t]) => `<li><a class="use-row" href="${h}" data-close><span class="use-ic" aria-hidden="true">${i}</span>
             <span class="use-tx"><b>${t}</b></span><span class="use-go" aria-hidden="true">‹</span></a></li>`).join('')}</ul>
-        <p class="hint">${T.noLogout} ${esc(T.version(me.version))}</p>`, null);
+        <ul class="list"><li><button class="use-row" type="button" id="pw-open"><span class="use-ic" aria-hidden="true">🔑</span>
+            <span class="use-tx"><b>${T.passwordMenu}</b><small>${me.has_password ? T.passwordSet : T.passwordNotSet}</small></span></button></li>
+          ${me.mode === 'detached' ? `<li><button class="use-row" type="button" id="logout"><span class="use-ic" aria-hidden="true">🚪</span>
+            <span class="use-tx"><b>${T.logout}</b></span></button></li>` : ''}</ul>
+        <p class="hint">${me.mode === 'detached' ? '' : T.noLogout + ' '}${esc(T.version(me.version))}</p>`, null);
     bindOfficePick(dlg);
+    $('#pw-open', dlg).addEventListener('click', openPassword);
+    $('#logout', dlg)?.addEventListener('click', logout);
 }
 
 function bindOfficePick(dlg) {
@@ -107,14 +113,27 @@ async function boot() {
         api, toast, isDev: () => !!App.me?.user.is_developer, appName: T.app, tasksHref: '#/dev/tasks', mountBefore: '#me-btn',
         headers: () => ({ 'X-CSRF': App.me?.csrf || '' }), version: () => App.me?.version || '', builtinLog: true, logHref: r => '#/dev/log/' + r.req,
     });
+    // מסכי הכניסה (רק במצב מנותק) — בלי משתמש
+    const [, a0 = '', b0 = ''] = location.hash.split('/').map(decodeURIComponent);
+    if (a0 === 'reset' && b0) return viewReset(b0);
     try {
         App.me = await api('me');
     } catch (x) {
+        if (x.code === 'login_required') {
+            // לאן לחזור אחרי הכניסה (למשל קישור הזמנה) — נשמר בלשונית בלבד
+            if (a0 && a0 !== 'login' && a0 !== 'reset') sessionStorage.setItem('apr-after-login', location.hash);
+            addEventListener('hashchange', () => location.reload());
+            return viewLogin(a0 === 'login' ? b0 : '');
+        }
         App.main.innerHTML = `<div class="notice"><div class="big" aria-hidden="true">🔒</div>
             <h2>${x.status === 401 ? T.loginNeeded : x.status === 503 ? T.loginUnavailable : T.cannotEnter}</h2><p class="muted">${esc(x.message)}</p>
             ${x.req ? `<p class="muted" dir="auto">${esc(T.reqId(x.req))}</p>` : ''}</div>`;
         return;
     }
+    const after = sessionStorage.getItem('apr-after-login');
+    sessionStorage.removeItem('apr-after-login');
+    if (after) history.replaceState(null, '', after);
+    else if (a0 === 'login' || a0 === 'reset') history.replaceState(null, '', '#/');
     drawHead();
     if (App.me.user.is_developer) DevLoop.mount();
     addEventListener('hashchange', route);

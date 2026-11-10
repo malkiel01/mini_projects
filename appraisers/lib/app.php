@@ -14,12 +14,17 @@
  *                  {user, is_sysadmin} · sys-settings · sys-setting-set {name, value}
  * המפתח:           dev-health · dev-audit · dev-jobs · dev-job-retry {job} · dev-job-cancel {job} · dev-cron-run
  *                  · dev-… של DevLoop (אותם שמות כמו בכל אפליקציה)
- * בלי משתמש:       health · devapi-… (באסימון X-Dev-Token)
+ * בלי משתמש:       health · devapi-… (באסימון X-Dev-Token) · platform_key · login-config · sso-start · sso-callback
+ *                  · login {email, password} · forgot {email} · reset {token, password}
+ * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
+ *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me. כל מזהה בבקשה הוא pid; מזהה המשתמש ומזהה המשרד
  * של הבקשה עצמה לא נלקחים מהדפדפן אף פעם. פעולת משרד יכולה לשאת office (pid) — הוא חייב להיות המשרד הפעיל.
  *
- * $env: platform_user (ה-JSON מהשער, או null), cookie (apr_session), csrf (X-CSRF), ua, cron_url.
+ * $env: platform_user (ה-JSON מהשער, או null), cookie (apr_session), csrf (X-CSRF), ua, cron_url, ip, sso_state (העוגייה apr_sso),
+ *       content_type, origin, fetch_site (לבדיקת המקור של POST ציבורי).
+ * פעולה שמחזירה ['_redirect' => כתובת] — api.php מפנה אליה במקום לענות ב-JSON.
  */
 
 declare(strict_types=1);
@@ -34,12 +39,15 @@ require_once __DIR__ . '/system.php';
 require_once __DIR__ . '/jobs.php';
 require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/devtasks.php';
+require_once __DIR__ . '/mail.php';
+require_once __DIR__ . '/login.php';
+require_once __DIR__ . '/confirm.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
 {
     return str_starts_with($action, 'devapi-') || str_starts_with($action, 'devloop-')
-        || (str_starts_with($action, 'dev-') && !in_array($action, ['dev-health', 'dev-audit', 'dev-jobs', 'dev-job-retry', 'dev-job-cancel', 'dev-cron-run'], true));
+        || (str_starts_with($action, 'dev-') && !in_array($action, ['dev-health', 'dev-audit', 'dev-jobs', 'dev-job-retry', 'dev-job-cancel', 'dev-cron-run', 'dev-mail'], true));
 }
 
 function apr_me(array $ctx): array
@@ -54,6 +62,9 @@ function apr_me(array $ctx): array
         'office' => $ctx['office']['pid'] ?? null,
         'can_create_office' => (bool)$u['is_sysadmin'] || apr_setting('office_self_create'),
         'version' => apr_app_version(),
+        'mode' => $ctx['mode'],                          // connected / detached — במנותקת יש "יציאה"
+        'has_password' => $u['password_hash'] !== null,
+        'confirm_word' => APR_CONFIRM_WORD,
     ];
 }
 
@@ -65,8 +76,24 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
     // בלי משתמש: בדיקת החיים, ו-Claude באסימון — לפני כל דבר שנוגע בזהות. לא נוגעים ב-session ולא יוצרים חדש.
     if ($rule === 'public' || $rule === 'token') {
         if ($method !== ($read ? 'GET' : 'POST')) apr_fail('method');
+        // POST ציבורי (login, forgot, reset) — אין session ואין X-CSRF, ולכן: רק JSON (טופס חוצה-אתרים לא יכול לשלוח
+        // אותו בלי preflight), ורק מהאפליקציה עצמה. בלי זה אתר זר מכניס קורבן לחשבון של התוקף.
+        if ($rule === 'public' && !$read) {
+            $site = (string)($env['fetch_site'] ?? '');
+            $origin = (string)($env['origin'] ?? '');
+            if (!str_starts_with(strtolower((string)($env['content_type'] ?? '')), 'application/json')
+                || ($site !== '' && !in_array($site, ['same-origin', 'none'], true))
+                || ($origin !== '' && !hash_equals(apr_app_origin(), $origin))) apr_fail('csrf');
+        }
         return match ($action) {
             'health'         => apr_health_public(),
+            'platform_key'   => apr_pkey_public(),
+            'login-config'   => apr_login_config($env),
+            'sso-start'      => apr_sso_start($env),
+            'sso-callback'   => apr_sso_callback($get, $env),
+            'login'          => apr_login($in, $env),
+            'forgot'         => apr_forgot($in, $env),
+            'reset'          => apr_reset($in, $env),
             'devapi-feed'    => devloop_api_feed(devloop_api_auth(), $get),
             'devapi-comment' => devloop_api_comment(devloop_api_auth(), $in),
             'devapi-file'    => (devloop_api_auth() and devloop_file_out((int)($get['id'] ?? 0))),
@@ -84,8 +111,14 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
     // שגיאת JavaScript מהדפדפן רק נרשמת, ועלולה לקרות לפני ש-me נטען — בלי CSRF
     if (!$read && $action !== 'devloop-client-error' && !hash_equals($ctx['csrf'], (string)($env['csrf'] ?? ''))) apr_fail('csrf');
 
+    apr_confirm_check($ctx, $action, $p);   // פעולה רגישה בלי אישור חוזר — 403 confirm_required
+
     return match ($action) {
         'me'                 => apr_me($ctx),
+        'logout'             => apr_logout($ctx),
+        'password-set'       => apr_password_set($ctx, $p),
+        'confirm-request'    => apr_confirm_request($ctx),
+        'confirm-verify'     => apr_confirm_verify($ctx, $p),
         'office-switch'      => apr_office_switch($ctx, $p),
         'office-create'      => apr_office_create($ctx, $p),
         'my-invites'         => apr_my_invites($ctx),
@@ -99,6 +132,7 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'invite-create'      => apr_invite_create($ctx, $p),
         'invite-link'        => apr_invite_link($ctx, $p),
         'invite-revoke'      => apr_invite_revoke($ctx, $p),
+        'invite-resend'      => apr_invite_resend($ctx, $p),
         'member-update'      => apr_member_update($ctx, $p),
         'member-remove'      => apr_member_remove($ctx, $p),
 
@@ -118,6 +152,7 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'dev-job-retry'      => apr_job_retry($p),
         'dev-job-cancel'     => apr_job_cancel($p),
         'dev-cron-run'       => apr_jobs_run(10.0, 'manual'),
+        'dev-mail'           => apr_mail_rows($p),
 
         // DevLoop
         'devloop-client-error' => devloop_log_client(array_intersect_key($in, array_flip(['kind', 'message', 'source', 'line', 'col', 'stack', 'page']))),
@@ -151,6 +186,6 @@ function apr_error_response(Throwable $e, string $action): array
         [$status, $code, $msg] = [500, 'server', APR_ERRORS['server'][1]];
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
-    return [$status, apr_is_devloop($action) ? ['error' => $msg, 'req' => apr_req_id()]
+    return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
         : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg], 'req' => apr_req_id()]];
 }

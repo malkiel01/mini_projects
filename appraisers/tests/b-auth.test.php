@@ -109,12 +109,12 @@ eq(call('GET', 'me', [], ident('21', 'רון', null), [], ['cookie' => "' OR 1=1
 check('מקרה 1: שני sessions, שניהם תקפים', $d1['csrf'] !== $d2['csrf'] && $d1['user']['pid'] === $d2['user']['pid']);
 eq([$d1['office'], $d2['office']], [$A, $A], 'כניסה במכשיר חדש: המשרד הפעיל האחרון');
 
-// ── 01-B7: מנותקת / לא זמינה → 503 לכל פעולה לא-ציבורית ──
-foreach (['detached', 'unavailable'] as $mode) {
+// ── 01-B7: לא זמינה → 503 לכל פעולה לא-ציבורית; מנותקת (מאז פרוסה 02) → 401 login_required בלי session ──
+foreach (['detached' => [401, 'login_required'], 'unavailable' => [503, 'login_unavailable']] as $mode => $want) {
     putenv("APR_PLATFORM=$mode");
-    eq([call('GET', 'me')[0], code(call('GET', 'me'))], [503, 'login_unavailable'], "01-B7 $mode: me → 503");
-    eq(call('POST', 'office-create', ['name' => 'x'])[0], 503, "01-B7 $mode: פעולה משנה → 503");
-    eq(call('GET', 'dev-health')[0], 503, "01-B7 $mode: מסך המפתח → 503");
+    eq([call('GET', 'me')[0], code(call('GET', 'me'))], $want, "01-B7 $mode: me → {$want[0]}");
+    eq(call('POST', 'office-create', ['name' => 'x'])[0], $want[0], "01-B7 $mode: פעולה משנה → {$want[0]}");
+    eq(call('GET', 'dev-health')[0], $want[0], "01-B7 $mode: מסך המפתח → {$want[0]}");
     eq(call('GET', 'health')[0], 200, "01-B7 $mode: הציבורית עדיין עונה");
 }
 putenv('APR_PLATFORM');
@@ -132,8 +132,21 @@ $GLOBALS['apr_time'] = time() + 61 + 16;
 eq(apr_platform_mode(null, 'litespeed'), 'connected', 'ואחריהן שואלים שוב');
 unset($GLOBALS['apr_time']);
 eq(apr_platform_mode($dana, 'litespeed'), 'connected', 'יש זהות תקינה → מחוברת, בלי לשאול אף אחד');
-$_SERVER['SERVER_NAME'] = 'mbe-plus.com'; $_SERVER['SCRIPT_NAME'] = '/mini_projects/appraisers/api.php'; $_SERVER['HTTP_HOST'] = 'evil.example';
-eq(apr_platform_url('action=config'), 'https://mbe-plus.com/mini_projects/platform/sso.php?action=config', 'הכתובת מ-SERVER_NAME, לא מ-Host של הבקשה');
+// ביקורת 02 סבב 1, 🔴1: שום כתובת לא נגזרת מהבקשה — SERVER_NAME / HTTP_HOST / SCRIPT_NAME זרים לא משנים אף אחת
+$urls = fn() => [apr_app_url('x'), apr_app_path(), apr_app_origin(), apr_platform_base(), apr_platform_url('action=config'), apr_self_url('cron.php'), apr_sso_return()];
+$u0 = $urls();
+$_SERVER['SERVER_NAME'] = 'evil.example'; $_SERVER['HTTP_HOST'] = 'evil.example:8443'; $_SERVER['SCRIPT_NAME'] = '/evil/app/api.php'; $_SERVER['HTTP_X_FORWARDED_HOST'] = 'evil.example';
+eq($urls(), $u0, '🔴1 Host זר לא משנה אף כתובת');
+eq($u0, ['https://example.test/mini_projects/appraisers/x', '/mini_projects/appraisers/', 'https://example.test', 'https://example.test/mini_projects',
+    'https://example.test/mini_projects/platform/sso.php?action=config', 'https://example.test/mini_projects/appraisers/cron.php',
+    'https://example.test/mini_projects/appraisers/api.php?action=sso-callback'], '🔴1 כל הכתובות נגזרות מהכתובת הקבועה של האפליקציה');
+// בשרת (בלי APR_DEV): הכתובת הקבועה נקראת מ-app.json — נבדק בתהליך נפרד, עם Host זר
+$probe = 'define("APR_DATA_DIR", sys_get_temp_dir() . "/apr-probe"); define("APR_DB_PATH", ":memory:"); $_SERVER["SERVER_NAME"] = "evil.example"; $_SERVER["HTTP_HOST"] = "evil.example";'
+    . ' $_SERVER["SCRIPT_NAME"] = "/evil/api.php"; require ' . var_export(dirname(__DIR__) . '/lib/login.php', true) . '; echo json_encode([apr_app_url(), apr_platform_url("action=key"), apr_sso_return()]);';
+eq(json_decode((string)shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($probe)), true), ['https://mbe-plus.com/mini_projects/appraisers/',
+    'https://mbe-plus.com/mini_projects/platform/sso.php?action=key', 'https://mbe-plus.com/mini_projects/appraisers/api.php?action=sso-callback'], '🔴1 בשרת: הכתובות מ-app.json, גם כשה-Host של הבקשה זר');
+$app = json_decode(file_get_contents(dirname(__DIR__) . '/app.json'), true);
+eq([$app['sso']['return'], $app['provision']['key_url']], [['https://mbe-plus.com/mini_projects/appraisers/api.php?action=sso-callback'], 'https://mbe-plus.com/mini_projects/appraisers/api.php?action=platform_key'], 'app.json: כתובת החזרה וכתובת המפתח תחת אותה כתובת קבועה');
 
 // ── 01-B8: APR_TEST_IDENTITY נקרא רק ב-CLI ──
 putenv('APR_TEST_IDENTITY=' . $dana);

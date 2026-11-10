@@ -21,6 +21,13 @@ $method = (string)($_SERVER['REQUEST_METHOD'] ?? 'GET');
 function apr_out(mixed $data, int $status = 200): never
 {
     if (isset($GLOBALS['apr_cookie_out'])) apr_set_cookie($GLOBALS['apr_cookie_out']);
+    if (isset($GLOBALS['apr_sso_cookie_out'])) apr_set_sso_cookie($GLOBALS['apr_sso_cookie_out']);
+    // כניסה מאוחדת (sso-start, sso-callback): הפניה של הדפדפן, לא JSON
+    if (is_array($data) && isset($data['_redirect'])) {
+        http_response_code(302);
+        header('Location: ' . $data['_redirect']);
+        exit;
+    }
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -54,6 +61,11 @@ try {
         'csrf' => (string)($_SERVER['HTTP_X_CSRF'] ?? ''),
         'ua' => (string)($_SERVER['HTTP_USER_AGENT'] ?? ''),
         'cron_url' => apr_self_url('cron.php'),
+        'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+        'content_type' => (string)($_SERVER['CONTENT_TYPE'] ?? ''),
+        'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),
+        'fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
+        'sso_state' => is_string($_COOKIE['apr_sso'] ?? null) ? $_COOKIE['apr_sso'] : '',
     ]);
     apr_out(apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out);
 } catch (Throwable $e) {
