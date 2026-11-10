@@ -4,7 +4,8 @@
  *
  *   #/                     בית                              #/welcome            הקמת משרד / יש לי הזמנה
  *   #/invite/<אסימון>      קבלת הזמנה                       #/office · #/office/log   המשרד שלי · יומן הפעולות
- *   #/system · #/system/users   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
+ *   #/profiles[/<pid>[/edit | /try | /v/<גרסה>]]   פרופילים
+ *   #/system · #/system/users · #/system/doc-types   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
 
@@ -43,6 +44,7 @@ function openMe() {
     const me = App.me, u = me.user, o = myOffice();
     const links = [];
     if (o && o.status === 'active') links.push(['#/office', '👥', T.myOffice]);
+    if ((o && o.status === 'active') || u.is_sysadmin) links.push(['#/profiles', '📑', T.tileProfiles]);
     links.push(['#/welcome', '➕', T.newOffice]);
     if (u.is_sysadmin) links.push(['#/system', '🏛️', T.systemAdmin]);
     if (u.is_developer) links.push(['#/dev', '🛠️', T.devScreen]);
@@ -72,8 +74,9 @@ function bindOfficePick(dlg) {
 }
 
 async function route() {
-    const [, a = '', b = '', c = ''] = location.hash.split('/').map(decodeURIComponent);
+    const [, a = '', b = '', c = '', d = ''] = location.hash.split('/').map(decodeURIComponent);
     const me = App.me, o = myOffice(), ok = o && o.status === 'active';
+    await peLeave().catch(() => {});   // יוצאים מעורך הפרופיל — מה שממתין נשמר
     $('#back').hidden = a === '';
     App.sub = undefined;
     const home = () => { history.replaceState(null, '', '#/'); $('#back').hidden = true; viewHome(); };
@@ -82,6 +85,7 @@ async function route() {
         else if (a === 'welcome') await viewWelcome();
         else if (a === 'invite' && b) await viewInvite(b);
         else if (a === 'office' && ok) await viewOffice(b);
+        else if (a === 'profiles' && (ok || me.user.is_sysadmin)) await viewProfiles(b, c, d);
         else if (a === 'system' && me.user.is_sysadmin) await viewSystem(b);
         else if (a === 'dev' && me.user.is_developer) await viewDev(b, c);
         else home();   // אין הרשאה או אין מסך כזה — לבית, בלי לחשוף מה היה שם

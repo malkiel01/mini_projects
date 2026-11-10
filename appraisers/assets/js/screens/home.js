@@ -7,6 +7,7 @@ function manageTiles() {
     const u = App.me.user, tiles = [];
     const o = myOffice();
     if (o && o.status === 'active') tiles.push(['#/office', '👥', T.tileOffice]);
+    if ((o && o.status === 'active') || u.is_sysadmin) tiles.push(['#/profiles', '📑', T.tileProfiles]);
     if (u.is_sysadmin) tiles.push(['#/system', '🏛️', T.tileSystem]);
     if (u.is_developer) tiles.push(['#/dev', '🛠️', T.tileDev]);
     return tiles.length ? `<div class="tiles">${tiles.map(([h, i, t]) => `<a class="tile" href="${h}"><span class="tile-ic" aria-hidden="true">${i}</span>${t}</a>`).join('')}</div>` : '';
