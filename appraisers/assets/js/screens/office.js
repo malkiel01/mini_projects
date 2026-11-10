@@ -48,7 +48,7 @@ async function viewOffice(tab) {
             <div class="body"><div class="l1"><span>${esc(m.name)}${m.me ? ' ' + T.me : ''}</span></div>
             <div class="l2">${esc(roleLabel(m.role, m.is_admin))}${m.title ? `<i class="sep" aria-hidden="true">·</i>${esc(m.title)}` : ''}${
                 admin ? `<i class="sep" aria-hidden="true">·</i>${esc(seen(m.last_seen_at))}` : ''}</div></div>
-            ${m.status === 'suspended' ? `<span class="chip bad">${T.statuses.suspended}</span>` : ''}</li>`).join('')}</ul>
+            ${m.account_suspended ? `<span class="chip bad">${T.accountSuspended}</span>` : m.status === 'suspended' ? `<span class="chip bad">${T.statuses.suspended}</span>` : ''}</li>`).join('')}</ul>
         ${admin && d.invites.length ? `<p class="sec-title">${T.pendingInvites}</p><ul class="list">${d.invites.map(i => `<li class="card static">
             <span class="use-ic" aria-hidden="true">✉️</span>
             <div class="body"><div class="l1"><span dir="ltr">${esc(i.email)}</span></div>
@@ -93,6 +93,7 @@ async function viewOffice(tab) {
         const m = d.members.find(x => x.pid === li.dataset.member);
         const dlg = sheet(m.name, `
             <p class="hint" dir="auto">${esc(m.email || '')}</p>
+            ${m.account_suspended ? `<p class="banner" role="note">${T.accountSuspendedHint}</p>` : ''}
             <div class="f"><span>${T.role}</span>${roleField(m.role)}</div>
             <div class="fields two">
               <label class="f"><span>${T.memberTitle}</span><input name="title" maxlength="80" value="${esc(m.title || '')}" placeholder="${T.memberTitlePh}"></label>

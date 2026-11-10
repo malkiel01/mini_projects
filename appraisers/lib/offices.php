@@ -100,7 +100,8 @@ function apr_office_view(array $ctx): array
         'members' => array_map(function ($r) use ($ctx, $admin) {
             $m = ['pid' => $r['pid'], 'name' => $r['name'], 'role' => $r['role'], 'is_admin' => (bool)$r['is_admin'], 'title' => $r['title'],
                 'me' => $r['pid'] === $ctx['user']['pid']];
-            return $admin ? $m + ['email' => $r['email'], 'status' => $r['status'], 'license_no' => $r['license_no'], 'last_seen_at' => $r['last_seen_at']] : $m;
+            // account_suspended — החשבון עצמו הושעה בידי מנהל המערכת; מנהל המשרד רואה, אבל לא יכול לבטל
+            return $admin ? $m + ['email' => $r['email'], 'status' => $r['status'], 'account_suspended' => $r['user_status'] === 'suspended', 'license_no' => $r['license_no'], 'last_seen_at' => $r['last_seen_at']] : $m;
         }, $rows)];
     if ($admin) {
         apr_invites_expire();

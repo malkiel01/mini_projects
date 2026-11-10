@@ -144,7 +144,17 @@ eq(array_keys(call('GET', 'sys-offices', [], $owner)[1]['offices'][0]), ['pid', 
 eq(code(call('GET', 'sys-office', [], $owner, ['office' => apr_pid()])), 'not_found', 'משרד שלא קיים');
 // מקרה 10: משרד בלי אף חבר פעיל — נשאר, ומסומן
 call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner);
+eq(call('GET', 'office', [], $batya)[0], 403, 'חשבון מושעה לא נכנס');
 eq(array_column(call('GET', 'sys-offices', [], $owner)[1]['offices'], 'no_active_members', 'pid')[$B], true, 'מקרה 10: משרד בלי חבר פעיל מסומן אצל מנהל המערכת');
+// ביקורת 02 (🟡): מנהל המשרד מבחין בין השעיה במשרד להשעיית החשבון
+join_office($avi, $ella, 'ella@a.co');
+call('POST', 'sys-user-status', ['user' => $ellaPid, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner);
+$m = array_column(call('GET', 'office', [], $avi)[1]['members'], null, 'pid')[$ellaPid];
+eq([$m['status'], $m['account_suspended']], ['active', true], 'החשבון הושעה בידי מנהל המערכת: החברות פעילה, והמסך יודע להסביר');
+call('POST', 'sys-user-status', ['user' => $ellaPid, 'status' => 'active', 'reason' => 'סוף בדיקה'], $owner);
+call('POST', 'member-update', ['user' => $ellaPid, 'status' => 'suspended'], $avi);
+$m = array_column(call('GET', 'office', [], $avi)[1]['members'], null, 'pid')[$ellaPid];
+eq([$m['status'], $m['account_suspended']], ['suspended', false], 'השעיה במשרד: מצב החברות, לא החשבון');
 call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'active', 'reason' => 'סוף בדיקה'], $owner);
 // 01-C6: מנהל המערכת האחרון
 eq(code(call('POST', 'sys-user-flags', ['user' => $ownerPid, 'is_sysadmin' => false], $owner)), 'last_sysadmin', '01-C6 אי אפשר להסיר את מנהל המערכת האחרון');

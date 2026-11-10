@@ -56,6 +56,7 @@ const T = {
     pendingInvites: 'הזמנות ממתינות', inviteUntil: d => `בתוקף עד ${d}`, revoke: 'ביטול ההזמנה', revokeAsk: email => `לבטל את ההזמנה של ${email}?`, revoked: 'ההזמנה בוטלה',
     me: '(אני)', seenToday: 'נכנס היום', seenYesterday: 'נכנס אתמול', seenDays: d => `נכנס לפני ${d} ימים`, seenNever: 'עוד לא נכנס',
     memberTitle: 'תיאור התפקיד', memberTitlePh: 'למשל: מזכירה, שמאי בכיר', license: 'מספר רישיון', licenseNote: 'לא אומת',
+    accountSuspended: 'החשבון הושעה', accountSuspendedHint: 'החשבון הושעה בידי מנהל המערכת, בכל המשרדים. רק הוא יכול לבטל את ההשעיה.',
     isAdmin: 'מנהל/ת משרד', activeInOffice: 'פעיל/ה במשרד', remove: '🗑️ הסרה מהמשרד', removeAsk: name => `להסיר את ${name} מהמשרד?`, removed: 'הוסר/ה מהמשרד',
     renameOffice: 'שינוי שם המשרד', leave: 'עזיבת המשרד', leaveAsk: name => `לעזוב את "${name}"? כדי לחזור תצטרכו הזמנה חדשה.`, left: 'עזבתם את המשרד',
     logEmpty: 'עוד אין פעולות ביומן.', system: 'המערכת', sysadminActor: 'מנהל המערכת',
