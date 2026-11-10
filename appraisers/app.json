@@ -6,10 +6,14 @@
   "description": "ניהול תיקי שמאות מקרקעין והפקת דוחות: מסמכים, בקשות לגורמים, מידע מרשויות, ביקור בנכס, עסקאות השוואה ודוח. בפיתוח.",
   "category": "documents",
   "entry": "index.html",
-  "version": "0.1",
+  "version": "0.3",
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"
-  ]
+    "manifest.webmanifest",
+    "cron.php",
+    "api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach|platform_key|sso-start|sso-callback|login|forgot|reset|login-config"
+  ],
+  "provision": { "key_url": "https://mbe-plus.com/mini_projects/appraisers/api.php?action=platform_key" },
+  "sso": { "return": ["https://mbe-plus.com/mini_projects/appraisers/api.php?action=sso-callback"] }
 }
