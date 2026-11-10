@@ -54,10 +54,17 @@ const APR_ERRORS = [
     'mail_failed'        => [502, 'המייל לא נשלח — נסו שוב'],
     'too_soon'           => [429, 'נשלח לפני רגע — המתינו דקה ונסו שוב'],
     'invite_limit'       => [429, 'הגעתם למגבלת ההזמנות היומית'],
+    'content_invalid'    => [422, 'מבנה הפרופיל אינו תקין'],
+    'condition_invalid'  => [422, 'תנאי במבנה שאינו נתמך'],
+    'content_too_large'  => [422, 'הפרופיל גדול מדי: עד 300 דרישות, 100 משימות ו-100 כללים'],
+    'draft_changed'      => [409, 'הטיוטה עודכנה בינתיים — טענו אותה מחדש'],
+    'publish_blocked'    => [422, 'אי אפשר לפרסם: יש בפרופיל שגיאות שצריך לתקן'],
+    'profile_state'      => [409, 'אי אפשר לבצע את הפעולה במצב הנוכחי של הפרופיל'],
+    'share_no_user'      => [404, 'לא נמצא משתמש בכתובת הזו'],
     'job_state'          => [409, 'אי אפשר לבצע את הפעולה במצב הנוכחי של המשימה'],
 ];
 
-final class AprError extends RuntimeException
+class AprError extends RuntimeException
 {
     public readonly int $status;
     public readonly string $errorCode;

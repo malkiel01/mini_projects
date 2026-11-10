@@ -38,6 +38,15 @@ const APR_ACCESS = [
     'confirm-request'     => 'user',
     'confirm-verify'      => 'user',
 
+    // פרופילים (03): ההרשאה לכל פרופיל מוכרעת ב-apr_profile_level() — מומלץ נראה גם למי שאין לו משרד
+    'profile-lists'       => 'user', 'profiles' => 'user', 'profile' => 'user', 'profile-version' => 'user', 'profile-versions' => 'user',
+    'profile-compare'     => 'user', 'profile-create' => 'user', 'profile-update' => 'user', 'profile-draft-open' => 'user',
+    'profile-draft-save'  => 'user', 'profile-draft-info' => 'user', 'profile-draft-discard' => 'user', 'profile-check' => 'user',
+    'profile-publish'     => 'user', 'profile-archive' => 'user', 'profile-delete' => 'user', 'profile-duplicate' => 'user',
+    'profile-try'         => 'user', 'profile-shares' => 'user', 'profile-share-preview' => 'user', 'profile-share' => 'user',
+    'profile-share-revoke' => 'user',
+    'office-required-profile' => 'admin',
+
     'office'              => 'member',
     'office-leave'        => 'member',
     'office-rename'       => 'admin',
@@ -58,6 +67,8 @@ const APR_ACCESS = [
     'sys-users'           => 'sysadmin',
     'sys-user-status'     => 'sysadmin',
     'sys-user-flags'      => 'sysadmin',
+    'sys-doc-types'       => 'sysadmin',
+    'sys-doc-type-save'   => 'sysadmin',
 
     'dev-health'          => 'developer',
     'dev-audit'           => 'developer',
@@ -73,7 +84,8 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
+const APR_READS = ['profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
+    'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
 
 /**
