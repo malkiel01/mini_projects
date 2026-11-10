@@ -56,6 +56,10 @@ const APR_ACCESS = [
     'contact-save' => 'member', 'contact-delete' => 'member', 'case-party-add' => 'member', 'case-party-update' => 'member',
     'case-party-remove' => 'member', 'task-create' => 'member', 'task-update' => 'member', 'my-tasks' => 'member',
     'requirement-add' => 'member', 'requirement-update' => 'member',
+    // מסמכים (06): ההרשאה לכל פעולה — documents / review_docs בתיק (lib/documents.php)
+    'case-docs' => 'member', 'file' => 'member', 'file-thumb' => 'member', 'docs-search' => 'member', 'docs-pending' => 'member',
+    'file-upload' => 'member', 'file-assign' => 'member', 'file-update' => 'member', 'file-delete' => 'member', 'file-review' => 'member',
+    'requirement-status' => 'member', 'requirement-order' => 'member', 'requirement-split' => 'member',
     'office-cases' => 'admin', 'office-case-transfer' => 'admin',
 
     'office'              => 'member',
@@ -95,7 +99,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];

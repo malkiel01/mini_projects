@@ -83,14 +83,14 @@ function &jar(): array
 
 /**
  * קריאה ל-API. $as — הזהות (ident(...)) או null בלי שער. העוגייה נשמרת לכל זהות, וה-CSRF נשלח לבד ב-POST
- * (אלא אם $opt['csrf'] נקבע במפורש). מחזיר [status, body] — body כמו שהדפדפן מקבל.
+ * (אלא אם $opt['csrf'] נקבע במפורש). $opt['env'] מצטרף ל-$env של הנתב (למשל upload). מחזיר [status, body] — body כמו שהדפדפן מקבל.
  */
 function call(string $method, string $action, array $in = [], ?string $as = null, array $get = [], array $opt = []): array
 {
     static $csrf = [];
     $jar = &jar();
     $key = $opt['jar'] ?? ($as ?? '-');
-    $run = function (string $method, string $action, array $in, array $get, ?string $token) use (&$jar, $key, $as): array {
+    $run = function (string $method, string $action, array $in, array $get, ?string $token) use (&$jar, $key, $as, $opt): array {
         unset($GLOBALS['apr_cookie_out']);
         apr_actor(null);
         try {
@@ -98,7 +98,7 @@ function call(string $method, string $action, array $in = [], ?string $as = null
             $out = apr_dispatch($method, $action, $get + ['action' => $action], $in,
                 ['platform_user' => $as, 'cookie' => $jar[$key] ?? '', 'csrf' => $token ?? '', 'ua' => 'test', 'cron_url' => 'https://example.test/appraisers/cron.php',
                     'ip' => $GLOBALS['t_ip'] ?? '203.0.113.1', 'sso_state' => $GLOBALS['t_sso_cookie'] ?? '',
-                    'content_type' => $GLOBALS['t_content_type'] ?? 'application/json', 'origin' => $GLOBALS['t_origin'] ?? '', 'fetch_site' => $GLOBALS['t_fetch_site'] ?? '']);
+                    'content_type' => $GLOBALS['t_content_type'] ?? 'application/json', 'origin' => $GLOBALS['t_origin'] ?? '', 'fetch_site' => $GLOBALS['t_fetch_site'] ?? ''] + ($opt['env'] ?? []));
             if (isset($GLOBALS['apr_sso_cookie_out'])) { $GLOBALS['t_sso_cookie'] = $GLOBALS['apr_sso_cookie_out']; unset($GLOBALS['apr_sso_cookie_out']); }
             [$status, $body] = [200, apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out];
         } catch (Throwable $e) {

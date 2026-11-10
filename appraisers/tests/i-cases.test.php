@@ -154,7 +154,7 @@ eq([$view($avi, $C)[1]['profile']['version'], $view($avi, $C)[1]['profile']['new
 $versions = fn() => apr_rows('SELECT id, content, state, number FROM profile_versions ORDER BY id');
 $pv = $versions();
 $rightsPid = $rs['rights']['pid'];
-eq(call('POST', 'requirement-update', ['requirement' => $rightsPid, 'title' => 'נסח — שונה בתיק', 'priority' => 'low', 'mandatory' => false], $avi)[0], 200, 'משנים דרישה בתיק');
+eq(call('POST', 'requirement-update', ['requirement' => $rightsPid, 'title' => 'נסח — שונה בתיק', 'priority' => 'low', 'mandatory' => false, 'reason' => 'לא נדרש בתיק הזה'], $avi)[0], 200, 'משנים דרישה בתיק');
 call('POST', 'requirement-add', ['case' => $C, 'title' => 'דרישה ידנית'], $avi);
 eq([$versions(), apr_val('SELECT title FROM requirements WHERE pid = ?', [$rightsPid])], [$pv, 'נסח — שונה בתיק'], '04-A5 שינוי דרישה בתיק אינו משנה את content של שום גרסת פרופיל');
 
@@ -373,8 +373,14 @@ eq([in_array($E, array_column(call('GET', 'cases', [], $dana)[1]['cases'], 'pid'
 // ── 04-C3, מקרי 3–4, 04-B7: מזהים ──
 $addr = apr_row("SELECT pid FROM case_identifiers WHERE case_id = ? AND kind = 'address'", [$crow($C)['id']])['pid'];
 eq([code(call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'state' => 'verified'], $avi)), apr_val('SELECT state FROM case_identifiers WHERE pid = ?', [$addr])], ['address_not_verifiable', 'entered'], '04-C3 כתובת שהמקור שלה הוא המשתמש אינה ניתנת לסימון verified');
-eq([call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'state' => 'needs_check'], $avi)[0], call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'state' => 'verified', 'source_kind' => 'document'], $avi)[0],
-    code(call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'source_kind' => 'user'], $avi))], [200, 200, 'address_not_verifiable'], '04-C3 עם מקור שאינו המשתמש — כן; ואי אפשר להחזיר ל"משתמש" ולהשאיר מאומת');
+// מקור "מסמך" הוא קובץ אמיתי של התיק (נסגר ב-06; הבדיקות המלאות — j-documents)
+$srcFile = apr_pid();
+apr_insert('files', ['pid' => $srcFile, 'office_id' => $crow($C)['office_id'], 'case_id' => $crow($C)['id'], 'sha256' => str_repeat('a', 64), 'size' => 1, 'mime' => 'application/pdf', 'ext' => 'pdf',
+    'original_name' => 'נסח.pdf', 'storage_key' => 'aa/' . str_repeat('a', 32), 'received_at' => apr_now()]);
+eq([call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'state' => 'needs_check'], $avi)[0],
+    code(call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'state' => 'verified', 'source_kind' => 'document'], $avi)),
+    call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'state' => 'verified', 'source_kind' => 'document', 'source_ref' => $srcFile], $avi)[0],
+    code(call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $addr, 'source_kind' => 'user'], $avi))], [200, 'source_file_required', 200, 'address_not_verifiable'], '04-C3 מול מסמך של התיק — כן; בלי קובץ — לא; ואי אפשר להחזיר ל"משתמש" ולהשאיר מאומת');
 $parcel = call('POST', 'case-identifier-add', ['case' => $C, 'kind' => 'parcel', 'gush' => '6158', 'helka' => '13'], $avi)[1];
 eq([call('POST', 'case-identifier-update', ['case' => $C, 'identifier' => $parcel['identifier'], 'state' => 'verified'], $avi)[0], apr_row('SELECT tat_helka, apartment_no FROM case_identifiers WHERE pid = ?', [$parcel['identifier']])], [200, ['tat_helka' => null, 'apartment_no' => null]], 'מקרה 4: כמה חלקות; תת-חלקה ריקה נשארת NULL; חלקה כן ניתנת לאימות');
 eq([code(call('POST', 'case-identifier-add', ['case' => $C, 'kind' => 'parcel', 'gush' => '61א', 'helka' => '1'], $avi)), code(call('POST', 'case-identifier-add', ['case' => $C, 'kind' => 'parcel', 'gush' => '6158'], $avi)), code(call('POST', 'case-identifier-add', ['case' => $C, 'kind' => 'address'], $avi))],

@@ -398,7 +398,7 @@ function apr_case_status(array $ctx, array $in): array
     if ($from === 'draft' || $to === 'draft') apr_fail('case_state');
     $needReason = array_search($to, APR_CASE_STATUSES, true) < array_search($from, APR_CASE_STATUSES, true);
     if ($from === 'closed' && $c['my_role'] !== 'responsible') apr_fail('forbidden');
-    if ($to === 'closed' && (apr_val("SELECT 1 FROM requirements WHERE case_id = ? AND mandatory = 1 AND status = 'required'", [$c['id']])
+    if ($to === 'closed' && (apr_val('SELECT 1 FROM requirements WHERE case_id = ? AND ' . apr_req_open_sql(), [$c['id']])
         || apr_val("SELECT 1 FROM tasks WHERE case_id = ? AND status IN ('open', 'in_progress')", [$c['id']]))) $needReason = true;
     $reason = $needReason ? apr_reason($in['reason'] ?? null) : (apr_clean_text($in['reason'] ?? '', 500));
     return apr_tx(function () use ($c, $from, $to, $reason) {
@@ -597,7 +597,7 @@ function apr_case_profile_diff_calc(array $c): array
         $diff = [];
         foreach (['title' => $r['title'], 'priority' => $r['priority'], 'mandatory' => (int)$r['mandatory']] as $f => $v) if ($h[$f] != $v) $diff[$f] = ['case' => $h[$f], 'profile' => $v];
         // מה שכבר טופל (אינו required) — לא משתנה, ולכן גם לא מוצע
-        if ($diff && $h['status'] === 'required') $out['requirements']['changed'][] = ['key' => $key, 'title' => $h['title'], 'fields' => $diff];
+        if ($diff && $h['status'] === 'required' && $h['split_at'] === null) $out['requirements']['changed'][] = ['key' => $key, 'title' => $h['title'], 'fields' => $diff];
     }
     foreach (array_diff_key($have, $new) as $key => $h) $out['requirements']['removed'][] = ['key' => $key, 'title' => $h['title']];
     $haveT = array_column(apr_rows("SELECT * FROM tasks WHERE case_id = ? AND kind IN ('profile', 'rule') AND origin_key IS NOT NULL", [$c['id']]), null, 'origin_key');
@@ -641,7 +641,7 @@ function apr_case_profile_apply(array $ctx, array $in): array
         }
         foreach (array_intersect($pick('requirements_change'), array_column($d['requirements']['changed'], 'key')) as $key) {
             $r = $plan['r'][$key];
-            apr_exec("UPDATE requirements SET title = ?, priority = ?, mandatory = ?, updated_at = ? WHERE case_id = ? AND origin_key = ? AND status = 'required'",
+            apr_exec("UPDATE requirements SET title = ?, priority = ?, mandatory = ?, updated_at = ? WHERE case_id = ? AND origin_key = ? AND status = 'required' AND split_at IS NULL",
                 [$r['title'], $r['priority'], (int)$r['mandatory'], apr_now(), $c['id'], $key]);
             $done['requirements_change'][] = $key;
         }
