@@ -21,6 +21,16 @@
       "items_file": "document-templates/dev/open-items.json",
       "token_env": "DT_DEVLOOP_TOKEN",
       "note": "דרך www: סוד רשת בסביבת הענן מוצמד לפי מארח, ו-mbe-plus.com כבר נושא את האסימון של מנהל הפרויקטים — אז לתבניות המסמכים מארח נפרד (אותו אתר)."
+    },
+    {
+      "name": "שמאות מקרקעין",
+      "prefix": "AP-",
+      "dir": "appraisers",
+      "api": "https://mbe-plus.com/mini_projects/appraisers/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/appraisers/#/dev/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/appraisers/#/dev/log",
+      "items_file": "appraisers/dev/open-items.json",
+      "token_env": "AP_DEVLOOP_TOKEN"
     }
   ],
   "module": {

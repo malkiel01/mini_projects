@@ -25,6 +25,45 @@ $db = apr_db();
 eq([$schema(), hash_file('sha256', APR_DATA_DIR . '/secret.key'), (int)$db->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn()], $before, '01-A1 הרצה שנייה אינה משנה דבר');
 eq(apr_secret(), $key, '01-A1 אותו מפתח בהרצה השנייה');
 
+// ── מיגרציה 002 עוברת משני המצבים (team/decisions.md): מסד ריק, ומסד שכבר ב-user_version = 1 (כמו בשרת) ──
+eq($want >= 2, true, 'יש מיגרציה 002');
+$pdoOpt = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC];
+$shape = fn(PDO $d) => json_encode($d->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'dev_%' AND name <> 'schema_migrations' ORDER BY name")->fetchAll());
+// מצב א: מסד ריק — 001 ואז 002 ברצף
+$fresh = new PDO('sqlite::memory:', null, null, $pdoOpt);
+$fresh->exec('PRAGMA foreign_keys = ON');
+apr_migrate($fresh);
+eq(apr_schema_version($fresh), $want, '002 ממסד ריק: מגיע לגרסה האחרונה');
+// מצב ב: מסד ב-user_version = 1, עם שורות בטבלאות של 001 (כולל קשרים), ועם טבלאות DevLoop
+$only1 = APR_DATA_DIR . '/mig-001';
+mkdir($only1);
+copy(__DIR__ . '/../lib/migrations/001_foundation.sql', $only1 . '/001_foundation.sql');
+$old = new PDO('sqlite::memory:', null, null, $pdoOpt);
+$old->exec('PRAGMA foreign_keys = ON');
+apr_migrate($old, $only1);
+eq(apr_schema_version($old), 1, 'מסד במצב של השרת: user_version = 1');
+$old->exec("INSERT INTO users (platform_sub, email, display_name, is_platform_manager, is_developer, created_at) VALUES ('1', 'owner@example.com', 'הבעלים', 1, 1, '2026-11-10T08:00:00Z');
+    INSERT INTO offices (name, created_by, created_at) VALUES ('משרד ישן', 1, '2026-11-10T08:00:00Z');
+    INSERT INTO memberships (office_id, user_id, role, created_at) VALUES (1, 1, 'office_admin', '2026-11-10T08:00:00Z');
+    INSERT INTO sessions (token_hash, user_id, csrf, office_id, created_at, last_seen) VALUES ('h', 1, 'c', 1, '2026-11-10T08:00:00Z', 1);
+    INSERT INTO audit_log (at, office_id, user_id, action) VALUES ('2026-11-10T08:00:00Z', 1, 1, 'office.created');
+    INSERT INTO service_state (name) VALUES ('x');
+    CREATE TABLE dev_tasks (id INTEGER PRIMARY KEY, code TEXT, created_by INTEGER);
+    INSERT INTO dev_tasks (code, created_by) VALUES ('AP-024', 1);");
+apr_migrate($old);
+eq(apr_schema_version($old), $want, '002 ממסד ב-user_version = 1: מגיע לגרסה האחרונה');
+eq($shape($old), $shape($fresh), 'משני המצבים — אותו מבנה בדיוק');
+$cols = array_column($old->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+check('המבנה המיושר: pid ו-is_sysadmin, בלי is_platform_manager', in_array('pid', $cols, true) && in_array('is_sysadmin', $cols, true) && !in_array('is_platform_manager', $cols, true));
+check('service_state נמחקה; invitations, jobs ו-meta נוצרו', !$old->query("SELECT 1 FROM sqlite_master WHERE name = 'service_state'")->fetchColumn()
+    && count($old->query("SELECT name FROM sqlite_master WHERE name IN ('invitations', 'jobs', 'meta')")->fetchAll()) === 3);
+eq([(int)$old->query('SELECT COUNT(*) FROM users')->fetchColumn(), (int)$old->query('SELECT COUNT(*) FROM audit_log')->fetchColumn()], [0, 0], 'הטבלאות החדשות ריקות');
+eq($old->query('SELECT code FROM dev_tasks')->fetchColumn(), 'AP-024', 'טבלאות DevLoop לא נגעו');
+eq((int)$old->query('PRAGMA foreign_key_check')->fetchColumn(), 0, 'אין מפתח זר שבור');
+apr_migrate($old);
+eq((int)$old->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn(), $want, 'הרצה חוזרת לא משנה דבר');
+check('מיגרציה 001 זהה למה שב-main (לא משתנה אחרי מיזוג)', trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/001_foundation.sql 2>/dev/null')) === '');
+
 // ── 01-A2: מיגרציה שזורקת חריגה אינה מקדמת את הגרסה, והמסד נשאר כפי שהיה ──
 $dir = APR_DATA_DIR . '/mig';
 mkdir($dir);

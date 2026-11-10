@@ -1,129 +1,72 @@
--- תשתית (אפיון 01 §4): משתמשים, session, משרדים, חברות, הזמנות, יומן פעולות, שירותי רקע והגדרות.
---
--- מוסכמות לכל הטבלאות, גם בפרוסות הבאות:
---   id   — מספר רץ פנימי. לא יוצא מהשרת.
---   pid  — מזהה ציבורי אקראי (16 תווים, אותיות קטנות וספרות). רק הוא מופיע בכתובות וב-API.
---   זמנים — UTC, "YYYY-MM-DDTHH:MM:SSZ" (ממוינים כמחרוזת).
---   מחיקה רכה (deleted_at) בישויות עסקיות; לא מוחקים שורות שיומן הפעולות מפנה אליהן.
+-- תשתית: משתמשים, session, משרדים, חברות במשרד, יומן פעולות ומצב שירותי רקע.
+-- זמנים — UTC בצורה "YYYY-MM-DDTHH:MM:SSZ" (ממוינת כמחרוזת); sessions.last_seen — שניות unix.
 
+-- משתמש של האפליקציה. platform_sub ריק = הוזמן במייל ועוד לא נכנס דרך הפלטפורמה.
 CREATE TABLE users (
-    id              INTEGER PRIMARY KEY,
-    pid             TEXT NOT NULL UNIQUE,
-    platform_sub    TEXT UNIQUE,                       -- ה-sub מהמעטפת (מחרוזת ספרות)
-    email           TEXT,                              -- באותיות קטנות
-    email_verified  INTEGER NOT NULL DEFAULT 0,        -- כפי שהגיע מהמעטפת
-    name            TEXT NOT NULL DEFAULT '',
-    status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
-    is_sysadmin     INTEGER NOT NULL DEFAULT 0,        -- מנהל המערכת
-    is_developer    INTEGER NOT NULL DEFAULT 0,        -- רואה את מסך המפתח
-    last_seen_at    TEXT,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
+    id                  INTEGER PRIMARY KEY,
+    platform_sub        TEXT UNIQUE,
+    email               TEXT COLLATE NOCASE,
+    display_name        TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+    is_platform_manager INTEGER NOT NULL DEFAULT 0,
+    is_developer        INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL,
+    last_login_at       TEXT
 );
-CREATE UNIQUE INDEX users_email ON users (email) WHERE email IS NOT NULL;
+CREATE INDEX users_email ON users (email);
 
-CREATE TABLE offices (
-    id          INTEGER PRIMARY KEY,
-    pid         TEXT NOT NULL UNIQUE,
-    name        TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
-    settings    TEXT NOT NULL DEFAULT '{}',            -- JSON; ריק בפרוסה הזו
-    created_by  INTEGER REFERENCES users (id),
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
-
--- העוגייה apr_session: במסד רק ה-hash של האסימון
+-- העוגייה apr_session: במסד רק ה-hash של האסימון. office_id — המשרד שהמשתמש עובד בו עכשיו.
 CREATE TABLE sessions (
-    id                INTEGER PRIMARY KEY,
-    user_id           INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    token_hash        TEXT NOT NULL UNIQUE,
-    csrf              TEXT NOT NULL,
-    active_office_id  INTEGER REFERENCES offices (id) ON DELETE SET NULL,
-    platform_sub      TEXT NOT NULL,                   -- למי ה-session שייך
-    ua                TEXT NOT NULL DEFAULT '',
-    created_at        TEXT NOT NULL,
-    last_used_at      TEXT NOT NULL,
-    expires_at        TEXT NOT NULL
+    token_hash  TEXT PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    csrf        TEXT NOT NULL,
+    office_id   INTEGER REFERENCES offices (id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL,
+    last_seen   INTEGER NOT NULL
 );
 CREATE INDEX sessions_user ON sessions (user_id);
 
--- role — התפקיד המקצועי; is_admin — ניהול המשרד, דגל נפרד. "שמאי אחראי" הוא תפקיד בתיק, לא כאן.
+CREATE TABLE offices (
+    id          INTEGER PRIMARY KEY,
+    name        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+    created_by  INTEGER REFERENCES users (id) ON DELETE SET NULL,
+    created_at  TEXT NOT NULL
+);
+
+-- חברות במשרד. אדם יכול להיות חבר בכמה משרדים; ההקשר נבחר במפורש (sessions.office_id).
 CREATE TABLE memberships (
     id          INTEGER PRIMARY KEY,
-    office_id   INTEGER NOT NULL REFERENCES offices (id),
-    user_id     INTEGER NOT NULL REFERENCES users (id),
-    role        TEXT NOT NULL CHECK (role IN ('appraiser', 'trainee', 'staff')),
-    is_admin    INTEGER NOT NULL DEFAULT 0,
+    office_id   INTEGER NOT NULL REFERENCES offices (id) ON DELETE CASCADE,
+    user_id     INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    role        TEXT NOT NULL CHECK (role IN ('office_admin', 'appraiser', 'associate', 'staff')),
     status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
-    title       TEXT,                                  -- תיאור חופשי ("מזכירה", "שמאי בכיר")
-    license_no  TEXT,                                  -- מספר רישיון — מוצג "לא אומת"
-    invited_by  INTEGER REFERENCES users (id),
+    invited_by  INTEGER REFERENCES users (id) ON DELETE SET NULL,
     created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL,
-    deleted_at  TEXT,                                  -- הסרה = מחיקה רכה; החשבון נשאר
     UNIQUE (office_id, user_id)
 );
 CREATE INDEX memberships_user ON memberships (user_id);
 
-CREATE TABLE invitations (
-    id           INTEGER PRIMARY KEY,
-    pid          TEXT NOT NULL UNIQUE,
-    office_id    INTEGER NOT NULL REFERENCES offices (id),
-    email        TEXT NOT NULL,                        -- באותיות קטנות
-    role         TEXT NOT NULL CHECK (role IN ('appraiser', 'trainee', 'staff')),
-    is_admin     INTEGER NOT NULL DEFAULT 0,
-    token_hash   TEXT NOT NULL UNIQUE,                 -- רק ה-hash; האסימון עצמו רק בקישור
-    status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')),
-    invited_by   INTEGER NOT NULL REFERENCES users (id),
-    accepted_by  INTEGER REFERENCES users (id),
-    expires_at   TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    accepted_at  TEXT,
-    revoked_at   TEXT
-);
-CREATE INDEX invitations_office ON invitations (office_id, status);
-CREATE INDEX invitations_email ON invitations (email, status);
-
--- יומן הפעולות: רק מוסיפים. meta — מזהים ומצבים בלבד, לא תוכן.
+-- יומן פעולות (audit): מי עשה מה, מתי ובאיזה משרד. בלי תוכן אישי ובלי סודות.
 CREATE TABLE audit_log (
-    id             INTEGER PRIMARY KEY,
-    at             TEXT NOT NULL,
-    office_id      INTEGER,                            -- NULL = פעולה ברמת המערכת
-    actor_user_id  INTEGER,                            -- NULL = המערכת / שירות רקע
-    actor_kind     TEXT NOT NULL DEFAULT 'user' CHECK (actor_kind IN ('user', 'system', 'job', 'recipient')),
-    action         TEXT NOT NULL,
-    entity_type    TEXT NOT NULL DEFAULT '',
-    entity_pid     TEXT NOT NULL DEFAULT '',
-    meta           TEXT NOT NULL DEFAULT '{}',
-    reason         TEXT,
-    req            TEXT NOT NULL DEFAULT ''            -- מזהה הבקשה — מקשר ליומן הטכני
+    id          INTEGER PRIMARY KEY,
+    at          TEXT NOT NULL,
+    office_id   INTEGER,
+    user_id     INTEGER,
+    actor       TEXT NOT NULL DEFAULT '',
+    action      TEXT NOT NULL,
+    target      TEXT NOT NULL DEFAULT '',
+    data_json   TEXT NOT NULL DEFAULT '{}',
+    req         TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX audit_office ON audit_log (office_id, id);
-CREATE INDEX audit_action ON audit_log (action, id);
-CREATE TRIGGER audit_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
-CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 
-CREATE TABLE jobs (
-    id            INTEGER PRIMARY KEY,
-    pid           TEXT NOT NULL UNIQUE,
-    office_id     INTEGER REFERENCES offices (id),
-    kind          TEXT NOT NULL,
-    payload       TEXT NOT NULL DEFAULT '{}',
-    dedupe_key    TEXT UNIQUE,                         -- אותה משימה לא נכנסת פעמיים
-    status        TEXT NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending', 'running', 'done', 'partial', 'failed', 'needs_action', 'cancelled')),
-    attempts      INTEGER NOT NULL DEFAULT 0,
-    max_attempts  INTEGER NOT NULL DEFAULT 3,
-    run_after     TEXT NOT NULL,
-    started_at    TEXT,
-    finished_at   TEXT,
-    last_error    TEXT,                                -- הודעה טכנית, בלי תוכן
-    created_at    TEXT NOT NULL
-);
-CREATE INDEX jobs_due ON jobs (status, run_after);
-
-CREATE TABLE meta (
-    key    TEXT PRIMARY KEY,
-    value  TEXT NOT NULL
+-- שירותי רקע: כל שירות מדווח כשרץ; מסך המפתח מראה מי תקוע.
+CREATE TABLE service_state (
+    name        TEXT PRIMARY KEY,
+    label       TEXT NOT NULL DEFAULT '',
+    every_sec   INTEGER NOT NULL DEFAULT 0,
+    last_run_at TEXT,
+    last_ok_at  TEXT,
+    last_error  TEXT NOT NULL DEFAULT ''
 );
