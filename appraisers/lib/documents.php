@@ -141,6 +141,24 @@ function apr_req_fallback(array $r, string $before, int $by): string
 
 // ── העלאה ─────────────────────────────────────────────────────
 
+const APR_UPLOAD_RATE = [60, 600];                 // העלאות למשתמש, בחלון של שניות
+const APR_QUOTA_CASE = 2 * 1024 ** 3;              // נפח הקבצים של תיק
+const APR_QUOTA_OFFICE = 20 * 1024 ** 3;           // נפח הקבצים של משרד
+
+/**
+ * קצב ומכסה. $count — לספור את הניסיון (פעם אחת לבקשה, לפני קריאת הגוף). הנפח כולל קבצים שנמחקו מחיקה רכה: הם עדיין
+ * בדיסק (מחזור החיים — פרוסה 21).
+ */
+function apr_upload_allowed(array $c, int $uid, int $size, bool $count = true): void
+{
+    [$max, $window] = $GLOBALS['apr_upload_rate'] ?? APR_UPLOAD_RATE;
+    if ($count && !apr_limit('upload:' . $uid, $max, $window)) apr_fail('upload_rate');
+    [$qc, $qo] = $GLOBALS['apr_quota'] ?? [APR_QUOTA_CASE, APR_QUOTA_OFFICE];
+    $need = max($size, 1);                             // לפני קריאת הגוף הגודל עוד לא ידוע: נכשלים רק אם כבר אין מקום לבית אחד
+    if ((int)apr_val('SELECT COALESCE(SUM(size), 0) FROM files WHERE case_id = ?', [$c['id']]) + $need > $qc) apr_fail('quota_case');
+    if ((int)apr_val('SELECT COALESCE(SUM(size), 0) FROM files WHERE office_id = ?', [$c['office_id']]) + $need > $qo) apr_fail('quota_office');
+}
+
 /** מזהה פעולה מהדפדפן: אותיות, ספרות, מקף וקו תחתון. נשמר עם מזהה המשתמש, כדי שמזהה של אחד לא יפגוש של אחר. */
 function apr_upload_key(array $ctx, mixed $v): ?string
 {
@@ -162,11 +180,18 @@ function apr_file_upload(array $ctx, array $q, array $env): array
     $tmp = is_string($env['upload'] ?? null) ? $env['upload'] : '';
     try {
         $c = apr_case_get($ctx, $q['case'] ?? null, 'documents');
+        $uid = (int)$ctx['user']['id'];
+        apr_upload_allowed($c, $uid, 0);
+        // רק עכשיו — אחרי זהות, CSRF, הרשאה בתיק ומכסה — קוראים את גוף הבקשה לדיסק (api.php מוסר את הקורא)
+        if (isset($env['upload_reader'])) {
+            $env = ($env['upload_reader'])() + $env;
+            $tmp = is_string($env['upload'] ?? null) ? $env['upload'] : '';
+        }
         if (($env['upload_error'] ?? '') !== '') $env['upload_error'] === 'file_too_large' ? apr_fail_size() : apr_fail($env['upload_error']);
         if ($tmp === '' || !is_file($tmp)) apr_fail('file_missing');
         $size = (int)filesize($tmp);
         if ($size > apr_file_max()) apr_fail_size();
-        $uid = (int)$ctx['user']['id'];
+        apr_upload_allowed($c, $uid, $size, false);
         $key = apr_upload_key($ctx, $q['key'] ?? null);
         $relation = apr_clean_choice($q['relation'] ?? null, ['version', 'attachment']) ?? 'version';
         $name = apr_file_clean_name($q['name'] ?? null);
@@ -201,7 +226,9 @@ function apr_file_upload(array $ctx, array $q, array $env): array
                     return ['duplicate' => ['file' => $d['pid'], 'name' => $d['original_name'], 'received_at' => $d['received_at'],
                         'requirement' => apr_val("SELECT r.title FROM requirement_files rf JOIN requirements r ON r.id = rf.requirement_id WHERE rf.file_id = ? AND rf.review_state <> 'rejected' ORDER BY rf.id LIMIT 1", [$d['id']]) ?: null]];
                 }
+                apr_upload_allowed($c, $uid, $size, false);          // שוב, בתוך הטרנזקציה: שתי העלאות במקביל לא עוברות יחד את התקרה
                 $stored = apr_file_store($tmp);
+                if (isset($GLOBALS['apr_after_store'])) ($GLOBALS['apr_after_store'])();   // בדיקות: כישלון אחרי השמירה לדיסק
                 $pid = apr_pid();
                 $id = apr_insert('files', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'sha256' => $sha, 'size' => $size, 'mime' => $info['mime'], 'ext' => $ext,
                     'original_name' => $name, 'storage_key' => $stored, 'uploader_kind' => 'user', 'uploader_id' => $uid, 'channel' => 'internal', 'source_note' => $note, 'doc_date' => $docDate,
@@ -358,6 +385,7 @@ function apr_requirement_status(array $ctx, array $in): array
         $r = apr_req_row($c, $in['requirement'] ?? null);
         $from = $r['status'];
         if ($r['split_at'] !== null) apr_fail('req_state');
+        if ($from === $to) return ['status' => $to];            // אין שינוי — אין שורת יומן
         // רק מעבר יזום; שהמעבר עצמו בטבלה — נבדק ב-apr_req_move
         $manual = ($to === 'not_relevant') || ($to === 'required') || ($from === 'approved' && $to === 'received');
         if (!$manual) apr_fail('req_transition');

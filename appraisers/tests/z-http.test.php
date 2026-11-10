@@ -8,7 +8,7 @@ $root = dirname(__DIR__);
 copy("$root/data/.htaccess", "$data/.htaccess");
 $port = 0;
 for ($i = 0; $i < 20 && !$port; $i++) { $p = random_int(20000, 40000); $s = @stream_socket_server("tcp://127.0.0.1:$p"); if ($s) { fclose($s); $port = $p; } }
-$proc = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", '-d', 'auto_prepend_file=' . __DIR__ . '/dev-prepend.php', '-t', $root],
+$proc = proc_open([PHP_BINARY, '-S', "127.0.0.1:$port", '-d', 'auto_prepend_file=' . __DIR__ . '/dev-prepend.php', '-d', 'post_max_size=32M', '-t', $root],
     [['pipe', 'r'], ['file', "$data/server.log", 'w'], ['file', "$data/server.log", 'a']], $pipes, $root, ['APR_DATA_DIR' => $data, 'PATH' => getenv('PATH')]);
 register_shutdown_function(function () use ($proc, $data) {
     proc_terminate($proc);
@@ -146,6 +146,28 @@ eq([$st, str_starts_with($h['content-disposition'][0] ?? '', 'inline; '), str_st
 eq([http('GET', 'api.php?action=file&file=' . $fp, null, ['X-Dev-As' => '77:זר:stranger@example.com'])[0], http('GET', 'api.php?action=file&file=' . $fp, null, ['X-Dev-As' => 'none'])[0]], [403, 401], '06-C1 ב-HTTP: בלי משרד / בלי זהות ← אין קובץ');
 $stored = glob("$data/files/*/*") ?: [];
 check('06-B7 הקובץ בדיסק: תחת data/files, שם אקראי בלי סיומת; הקובץ הזמני נמחק', count($stored) === 1 && preg_match('~/files/[a-f0-9]{2}/[a-f0-9]{32}$~', $stored[0]) === 1 && !(glob("$data/tmp/*") ?: []), $stored);
+
+// סבב 2: הגוף אינו נכתב לפני אימות (🔴2), וגוף מעל המגבלה נדחה (🟡6) — גם בלי Content-Length (chunked)
+$spy = function () use ($data): array { clearstatcache(); return [is_dir("$data/tmp") ? count(glob("$data/tmp/*") ?: []) : 0, count(glob("$data/files/*/*") ?: [])]; };
+$was = $spy();
+$tmpMtime = is_dir("$data/tmp") ? filemtime("$data/tmp") : 0;
+sleep(1);
+$anon = [http('POST', $upUrl, null, ['X-Dev-As' => 'none'], $pdfBody)[0], http('POST', $upUrl, null, ['X-Dev-As' => '77:זר:stranger@example.com', 'X-CSRF' => 'x'], $pdfBody)[0], http('POST', $upUrl, null, $C, $pdfBody)[0],
+    http('POST', 'api.php?action=file-upload&case=aaaaaaaaaaaaaaaa&name=x.pdf', null, $X, $pdfBody)[0]];
+clearstatcache();
+eq([$anon, $spy(), is_dir("$data/tmp") ? filemtime("$data/tmp") : 0], [[401, 403, 403, 404], $was, $tmpMtime], '🔴2 ב-HTTP: בלי זהות, בלי משרד, בלי CSRF, תיק שלא קיים ← נדחה, ושום קובץ לא נוצר ב-data/tmp (גם לא לרגע)');
+$bigBody = "%PDF-1.4\n" . str_repeat('% ' . str_repeat('x', 1021) . "\n", 26 * 1024) . "%%EOF\n";
+[$st, $j] = http('POST', $upUrl . '&dup=1', null, $X, $bigBody);
+eq([$st, $j['error']['code'] ?? null, $spy()], [413, 'file_too_large', $was], '🟡6 ב-HTTP: גוף של 26MB (Content-Length) ← 413, לא נשמר');
+$sock = fsockopen('127.0.0.1', $port, $en, $es, 10);
+fwrite($sock, "POST /$upUrl&dup=1 HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: {$C['Cookie']}\r\nX-CSRF: {$me['csrf']}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n");
+foreach (str_split($bigBody, 1 << 20) as $part) @fwrite($sock, dechex(strlen($part)) . "\r\n" . $part . "\r\n");
+@fwrite($sock, "0\r\n\r\n");
+stream_set_timeout($sock, 20);
+$resp = (string)stream_get_contents($sock);
+fclose($sock);
+preg_match('#^HTTP/\S+ (\d+)#', $resp, $m);
+check('🟡6 ב-HTTP: אותו גוף ב-chunked (בלי Content-Length) ← לא נשמר', (int)($m[1] ?? 0) >= 400 && $spy() === $was, [substr($resp, 0, 60), $spy(), $was]);
 
 // ── קבצים סטטיים ונתיבים חסומים ──
 eq(http('GET', 'manifest.webmanifest')[0], 200, 'manifest.webmanifest מוגש');

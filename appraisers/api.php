@@ -83,9 +83,10 @@ try {
     $in = [];
     $upload = [];
     if ($method === 'POST' && $action === 'file-upload') {
-        // קובץ: הגוף הגולמי נשמר לקובץ זמני תחת data/tmp, עד הגודל המותר; הפרמטרים — בכתובת. ההרשאה נבדקת בנתב.
+        // קובץ: הגוף הגולמי נשמר לקובץ זמני תחת data/tmp, עד הגודל המותר; הפרמטרים — בכתובת.
+        // **הגוף נקרא רק אחרי אימות**: הנתב בודק זהות ו-CSRF, apr_file_upload בודק הרשאה בתיק ומכסה — ורק אז קורא לקורא הזה.
         $in = array_filter($_GET, 'is_string');
-        $upload = apr_upload_receive();
+        $upload = ['upload_reader' => 'apr_upload_receive'];
     } elseif ($method === 'POST' && !str_ends_with($action, '-attach')) {
         $max = 1_000_000;
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) apr_fail('too_large');

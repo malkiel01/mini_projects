@@ -6,7 +6,7 @@
  * - data/ חסומה מהדפדפן (data/.htaccess) ומוחרגת מהפריסה. קובץ יוצא רק דרך api.php, אחרי בדיקת ההרשאה בתיק.
  * - שום קובץ אינו מורץ ואינו מוגש כ-HTML: תמיד nosniff + Content-Disposition + Content-Security-Policy: sandbox;
  *   תצוגה מקדימה (inline) רק ל-PDF ולתמונה. ZIP נשמר כמו שהוא ואינו נפתח — קוראים רק את רשימת השמות שבסופו.
- * - זיהוי תוכן פעיל הוא מאמץ סביר, לא סורק: PDF — /JS, /JavaScript, /EmbeddedFile, /Launch מחוץ לזרמים ובזרמי אובייקטים;
+ * - זיהוי תוכן פעיל הוא **סינון שמרני, לא ערובה**: PDF — סריקה של כל הקובץ ושל זרמי Flate לשמות פעילים (apr_sniff_pdf);
  *   Office — vbaProject או סוג תוכן macroEnabled. הסורק (clamscan), אם קיים בשרת, רץ בנוסף.
  */
 
@@ -153,39 +153,65 @@ function apr_sniff_image(string $path, int $type, string $mime): string
     return $mime;
 }
 
+/** שמות ב-PDF שמעידים על תוכן פעיל או על קידוד שאיננו בודקים. שם ארוך — מספיק שיופיע; שם קצר — רק עם ערך אחריו. */
+const APR_PDF_GAP = '(?:\s|%[^\r\n]*[\r\n])*+';   // רווחים והערות בין שם לערך; possessive — בלי נסיגה
+const APR_PDF_ACTIVE = [
+    '~/(JavaScript|EmbeddedFiles?|Launch|SubmitForm|ImportData|XFA|RichMedia|ASCIIHexDecode|ASCII85Decode|LZWDecode|RunLengthDecode|AHx|A85|LZW)(?![A-Za-z0-9])~',
+    '~/(JS|AA)' . APR_PDF_GAP . '(?:\(|<|\d+\s+\d+\s+R)~',
+    '~/(OpenAction)' . APR_PDF_GAP . '(?!\[)~',       // יעד פתיחה (מערך) מותר; פעולה או הפניה — לא
+];
+
+/** סורק טקסט לשמות הפעילים, אחרי פענוח #xx (‎/J#53 = /JS). מחזיר את השם שנמצא, או null. כשל של ה-regex = נמצא. */
+function apr_pdf_active(string $text): ?string
+{
+    if (str_contains($text, '#')) $text = (string)preg_replace_callback('/#([0-9A-Fa-f]{2})/', fn($m) => chr((int)hexdec($m[1])), $text);
+    foreach (APR_PDF_ACTIVE as $re) {
+        $n = preg_match($re, $text, $m);
+        if ($n === false) return 'scan';
+        if ($n === 1) return $m[1];
+    }
+    return null;
+}
+
 /**
- * PDF: חייב להסתיים כ-PDF (%%EOF), ובלי JavaScript, קובץ מוטמע או הפעלת תוכנה. הסריקה היא על מה שמחוץ לזרמים
- * (שם יושבים המילונים), ועל זרמי אובייקטים (ObjStm) אחרי פריסה. PDF מוצפן נשמר ומסומן — את תוכנו אי אפשר לבדוק.
+ * PDF: חייב להסתיים כ-PDF (%%EOF), ובלי שמות של תוכן פעיל. **סינון שמרני, לא ניתוח מבנה ולא ערובה:** סורקים את כל הקובץ
+ * הגולמי — מילונים, מחרוזות, הערות וזרמים שאינם דחוסים — ואת מה שנפרס מזרמי Flate, עד תקרה של נפח וזמן. התאמה = דחייה,
+ * גם אם ה-PDF תמים. זרם בקידוד שאיננו פורסים (ASCIIHex, ASCII85, LZW, RunLength) — נדחה. ההגנה האמיתית היא ההגשה:
+ * attachment, nosniff ו-sandbox. הכול במעבר אחד: כל בית נקרא מספר קבוע של פעמים.
+ * PDF מוצפן נשמר ומסומן — את תוכנו אי אפשר לבדוק.
  */
 function apr_sniff_pdf(string $path): array
 {
     $data = (string)file_get_contents($path);
     if (strrpos($data, '%%EOF') === false) throw new AprFileRejected('file_mismatch', 'pdf-truncated');
-    $text = '';
-    $pos = 0;
-    $budget = 16_000_000;
-    while (($s = strpos($data, 'stream', $pos)) !== false) {
-        $text .= substr($data, $pos, $s - $pos);
+    $hit = apr_pdf_active($data);
+    if ($hit !== null) throw new AprFileRejected('file_active', 'pdf:' . $hit);
+    $pages = (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $data);
+    $budget = 48_000_000;                                  // סך הבתים שנפרסים מכל הזרמים
+    $deadline = microtime(true) + 3.0;
+    $len = strlen($data);
+    for ($pos = 0; ($s = strpos($data, 'stream', $pos)) !== false; $pos = $b) {
         $b = $s + 6;
         if (($data[$b] ?? '') === "\r") $b++;
         if (($data[$b] ?? '') === "\n") $b++;
-        $e = strpos($data, 'endstream', $b);
-        if ($e === false) { $pos = strlen($data); break; }
-        $from = strrpos($text, ' obj');
-        if ($budget > 0 && str_contains(substr($text, $from === false ? 0 : $from), '/ObjStm')) {
-            $inf = @gzuncompress(substr($data, $b, $e - $b), 4_000_000);
-            if (is_string($inf)) { $text .= "\n" . $inf . "\n"; $budget -= strlen($inf); }
+        if (($data[$b] ?? '') !== "\x78") continue;        // לא zlib
+        if ($budget <= 0 || microtime(true) > $deadline) break;
+        $z = inflate_init(ZLIB_ENCODING_DEFLATE);
+        $out = '';
+        for ($o = $b; $z && $o < $len && strlen($out) < 2_000_000; $o += 65536) {
+            $chunk = @inflate_add($z, substr($data, $o, 65536));
+            if ($chunk === false) break;
+            $out .= $chunk;
+            if (inflate_get_status($z) === ZLIB_STREAM_END) break;
         }
-        $pos = $e + 9;
+        $budget -= strlen($out) + 65536;
+        if ($out === '') continue;
+        $hit = apr_pdf_active($out);
+        if ($hit !== null) throw new AprFileRejected('file_active', 'pdf:' . $hit);
+        $pages += (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $out);
     }
-    $text .= substr($data, $pos);
-    unset($data);
-    // שם ב-PDF יכול להיכתב עם #xx (‎/J#53 = /JS)
-    $text = (string)preg_replace_callback('/#([0-9A-Fa-f]{2})/', fn($m) => chr((int)hexdec($m[1])), $text);
-    if (preg_match('~/(JavaScript|JS|EmbeddedFiles?|Launch)(?![A-Za-z0-9])~', $text, $m)) throw new AprFileRejected('file_active', 'pdf:' . $m[1]);
-    $encrypted = preg_match('~/Encrypt(?![A-Za-z0-9])~', $text) === 1;
-    $pages = $encrypted ? 0 : (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $text);
-    return ['encrypted' => $encrypted, 'pages' => $pages > 0 ? $pages : null];
+    $encrypted = preg_match('~/Encrypt(?![A-Za-z0-9])~', $data) === 1;
+    return ['encrypted' => $encrypted, 'pages' => $pages > 0 && !$encrypted ? $pages : null];
 }
 
 /**
@@ -280,6 +306,7 @@ function apr_file_response(string $path, string $mime, string $name, bool $inlin
     if (!is_file($path)) apr_fail('not_found');
     $inline = $inline && in_array($mime, APR_FILE_PREVIEW, true);
     $ascii = (string)preg_replace('/[^A-Za-z0-9._-]+/', '_', $name);
+    if (preg_match('/[A-Za-z0-9]/', pathinfo($ascii, PATHINFO_FILENAME)) !== 1) $ascii = 'file.' . pathinfo($ascii, PATHINFO_EXTENSION);   // שם עברי: file.pdf ולא _.pdf
     return ['_file' => ['path' => $path, 'headers' => [
         'Content-Type' => $mime,
         'Content-Length' => (string)filesize($path),
@@ -292,12 +319,12 @@ function apr_file_response(string $path, string $mime, string $name, bool $inlin
 
 // ── תמונה ממוזערת ─────────────────────────────────────────────
 
-/** יוצר JPEG ממוזער (עד 320px) לתמונה. null — אי אפשר (אין GD, סוג אחר, או תמונה גדולה מדי לזיכרון). */
+/** יוצר JPEG ממוזער (עד 320px) לתמונה. null — אי אפשר (אין GD, סוג אחר, או תמונה מעל 16 מגה-פיקסל). נוצר פעם אחת ונשמר (file_thumbs). */
 function apr_thumb_make(string $src, string $mime): ?array
 {
     if (!function_exists('imagecreatetruecolor') || !in_array($mime, APR_FILE_THUMB, true)) return null;
     $i = @getimagesize($src);
-    if (!$i || $i[0] * $i[1] > 40_000_000) return null;
+    if (!$i || $i[0] * $i[1] > 16_000_000) return null;   // GD מחזיק 4–5 בתים לפיקסל, מחוץ ל-memory_limit
     $im = match ($mime) {
         'image/jpeg' => @imagecreatefromjpeg($src),
         'image/png' => @imagecreatefrompng($src),
