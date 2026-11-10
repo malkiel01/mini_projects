@@ -85,7 +85,7 @@
     function draw() {
         const d = data;
         document.title = 'העלאת מסמכים — ' + d.office;
-        main.replaceChildren(
+        main.replaceChildren(...[
             el('div', { class: 'head' }, el('h1', null, d.office), d.sender ? el('p', { class: 'muted' }, 'הבקשה נשלחה בידי ' + d.sender) : null),
             el('div', { class: 'intro', dir: 'auto' }, d.intro),
             d.items.length ? null : el('p', { class: 'muted' }, 'אין כרגע מסמכים שמחכים לכם.'),
@@ -93,7 +93,8 @@
             (d.can.view || d.can.download) && d.otp.available && !d.otp.verified
                 ? el('div', { class: 'foot' }, el('button', { class: 'btn', type: 'button', on: { click: () => otpScreen(false) } }, 'לצפייה בקבצים שהעליתי'))
                 : null,
-            el('p', { class: 'muted foot' }, 'הקישור בתוקף עד ' + fmtDate(d.expires_at) + '. הוא אישי — אין להעביר אותו לאחרים.'));
+            el('p', { class: 'muted foot' }, 'הקישור בתוקף עד ' + fmtDate(d.expires_at) + '. הוא אישי — אין להעביר אותו לאחרים.')].filter(Boolean));   // replaceChildren היה כותב "null"
+
     }
 
     function itemCard(it) {

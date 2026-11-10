@@ -141,6 +141,12 @@ eq([$pv['sender'], $pv['recipient']['name'], $pv['recipient']['email'], array_co
         ['upload' => true, 'reply' => true, 'view_own' => true, 'download_own' => false], 30, false],
     '§4 התצוגה המקדימה: השולח, הנמען, הדרישות עם ההסבר לנמען (בלי ההסבר הפנימי), ברירות המחדל של הפעולות והתוקף');
 
+$fixed = ['subject' => 'נושא קבוע', 'body' => 'נוסח קבוע'] + $base;
+$pvAvi = call('POST', 'request-preview', $fixed, $avi)[1]['preview'];
+eq([code(call('POST', 'request-send', $fixed + ['preview' => $pvAvi, 'op' => 'op-other-user1'], $tal)), code(call('POST', 'request-send', $fixed + ['preview' => $pvAvi, 'op' => 'op-other-user2'], $ron)),
+    code(call('POST', 'request-send', $fixed + ['preview' => $pvAvi, 'op' => 'op-other-user3'], $gil)), $count('requests')], ['preview_required', 'forbidden', 'not_found', 0],
+    '07-A1 / §11 מזהה תצוגה מקדימה של משתמש אחר — גם לתוכן זהה לגמרי — אינו תקף; שליחה בלי contact ← 403, גם עם מזהה תקף של אחר');
+
 // ── 07-A2: שליחה ──
 $sent = call('POST', 'request-send', $base + ['preview' => $pv['preview'], 'op' => 'op-first-0001'], $avi);
 $Q1 = $sent[1]['request'] ?? '';
@@ -338,11 +344,15 @@ for ($i = 0; $i < 22; $i++) $codes[] = code(portal('portal-open', ['token' => $b
 eq([array_count_values($codes), code(portal('portal-open', ['token' => $T1], ['keep' => true]) + [1 => []]) ?? 'ok'], [['portal_invalid' => 20, 'portal_rate' => 2], 'ok'], '§9 עשרים אסימונים שגויים מ-IP אחד, ואחריהם 429');
 apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%'");
 $codes = [];
+for ($i = 0; $i < 62; $i++) $codes[] = portal('portal-open', ['token' => $i % 2 ? $T1 : $T2], ['keep' => true])[0];
+eq(array_count_values($codes), [200 => 60, 429 => 2], '§9 60 בקשות לדקה ל-IP — גם כשהן מתחלקות בין שני קישורים');
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%'");
+$codes = [];
 for ($i = 0; $i < 62; $i++) $codes[] = portal('portal-open', ['token' => $T1], ['keep' => true])[0];
 $GLOBALS['t_ip'] = '198.51.100.9';
 $other = [portal('portal-open', ['token' => $T2], ['keep' => true])[0], code(portal('portal-open', ['token' => $T1], ['keep' => true]))];
 unset($GLOBALS['t_ip']);
-eq([array_count_values($codes), $other], [[200 => 60, 429 => 2], [200, 'portal_rate']], '§9 60 בקשות לדקה ל-IP; וגם לקישור — מ-IP אחר הקישור עדיין חסום, וקישור אחר פתוח');
+eq([array_count_values($codes), $other], [[200 => 60, 429 => 2], [200, 'portal_rate']], '§9 60 בקשות לדקה לקישור — גם מ-IP אחר הקישור חסום, וקישור אחר פתוח');
 apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%' OR key LIKE 'upload:p%'");
 $codes = [];
 for ($i = 0; $i < 22; $i++) {
@@ -352,7 +362,10 @@ for ($i = 0; $i < 22; $i++) {
 eq([array_count_values($codes), $rrow($R['permit'])['status']], [['file_type' => 20, 'upload_rate' => 2], 'requested'], '§9 עשרים העלאות לשעה לקישור — גם ניסיון שנדחה נספר');
 apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%' OR key LIKE 'upload:p%'");
 $ce = portal('portal-client-error', ['message' => 'TypeError at https://x/portal/#' . $T1 . ' boom', 'source' => 'https://example.test/appraisers/portal/portal.js?token=' . $T1, 'line' => 12, 'stack' => $T1, 'page' => '#' . $T1]);
-eq([$ce[0], str_contains($dump(), $T1)], [200, false], '§9 שגיאת דפדפן מהפורטל נרשמת בלי האסימון');
+$dl = devloop_log_db();
+$dlRows = $dl ? json_encode($dl->query("SELECT * FROM log WHERE event = 'portal.client_error'")->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE) : '';
+eq([$ce[0], str_contains($dump(), $T1), $dl !== null, str_contains($dlRows, 'TypeError at'), str_contains($dlRows, $T1), str_contains($dlRows, 'portal.js')], [200, false, true, true, false, true],
+    '§9 שגיאת דפדפן מהפורטל נרשמת ביומן הטכני — בלי האסימון (גם כשהדף שלח אותו בהודעה, בקובץ המקור או בשדה אחר)');
 
 // ── 07-B6: פג, בוטל, לא קיים — אותה תשובה ──
 $sentX = send_request($avi, ['case' => $C, 'party' => $client, 'requirements' => [$R['id']], 'channel' => 'link_copy', 'days' => 7]);
@@ -384,6 +397,16 @@ eq([$rev[0], code(portal_up($TX, pdf('rv'), ['requirement' => $R['id']])), code(
     $rrow($R['id'])['status'], $qrow($q3)['status'], code(call('POST', 'request-revoke', ['request' => $q3], $tal)), code(send_request($avi, ['request' => $q3, 'channel' => 'link_copy']))],
     [200, 'portal_invalid', 'portal_invalid', 'portal_invalid', 'portal_invalid', 'portal_invalid', 1, $q3, true, 'required', 'revoked', 'request_state', 'request_state'],
     '07-B7 אחרי ביטול כל portal-* נדחה; הביטול ביומן; הדרישה חוזרת ל-required; בקשה שבוטלה אינה נשלחת מחדש');
+
+eq([code(call('POST', 'request-resend', ['request' => $Q1, 'channel' => 'link_copy', 'preview' => $pvAvi, 'op' => 'op-resend-ron1'], $ron)), code(call('POST', 'request-preview', ['requirements' => [$R['rights']]] + $base, $avi)),
+    $rrow($R['rights'])['status']], ['forbidden', 'req_state', 'received'], '§11 שליחה מחדש בלי contact ← 403; דרישה שכבר התקבל לה מסמך אינה נכנסת לבקשה חדשה');
+// הרשאות הבקשה: בלי upload ובלי reply
+$sentN = send_request($avi, ['case' => $D, 'party' => $party($D, 'client'), 'requirements' => [$RD['plan']], 'channel' => 'link_copy', 'perms' => ['upload' => false, 'reply' => false]]);
+$TN = token_of($sentN[1]['link']);
+eq([portal('portal-open', ['token' => $TN])[1]['can'], code(portal_up($TN, pdf('noperm'), ['requirement' => $RD['plan']])), code(portal('portal-respond', ['token' => $TN, 'requirement' => $RD['plan'], 'kind' => 'comment', 'text' => 'x'])),
+    $count('files', 'request_id = ' . (int)$qrow($sentN[1]['request'])['id']), $rrow($RD['plan'])['status']],
+    [['upload' => false, 'reply' => false, 'view' => true, 'download' => false], 'portal_forbidden', 'portal_forbidden', 0, 'requested'], '§11 בקשה בלי "העלאה" ובלי "תשובה": הפורטל דוחה את שתיהן');
+call('POST', 'request-revoke', ['request' => $sentN[1]['request']], $avi);
 
 // ── 07-B8: שליחה מחדש ──
 eq([code(call('POST', 'request-resend', ['request' => $Q1, 'channel' => 'email', 'contact_ok' => true, 'op' => 'op-resend-001'], $avi)), code(send_request($ron, ['request' => $Q1, 'channel' => 'email', 'contact_ok' => true])),

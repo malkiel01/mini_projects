@@ -251,6 +251,41 @@ $prow = $logdb->query("SELECT COUNT(*) FROM log WHERE action LIKE 'portal-%'")->
 $pusr = $logdb->query("SELECT COUNT(*) FROM log WHERE action LIKE 'portal-%' AND action <> 'portal-client-error' AND username <> ''")->fetchColumn();
 eq([$leaks, (int)$prow >= 10, (int)$pusr, (int)$logdb->query("SELECT COUNT(*) FROM log WHERE event = 'portal.client_error'")->fetchColumn()], [[], true, 0, 1],
     '§9 האסימון אינו מופיע ביומן הבקשות, ביומן השגיאות או במסד — גם אחרי שגיאת דפדפן שכללה אותו; ובקשות הפורטל נרשמות בלי משתמש');
+// קוד חד-פעמי ועוגיית המכשיר, ב-HTTP: נמען עם מייל (X-Dev-Mail — "שליחה" לקובץ בתיקיית הנתונים של הבדיקה)
+$M = ['X-Dev-Mail' => '1'];
+$mails = fn() => array_map(fn($l) => json_decode($l, true), file("$data/dev-mail.log", FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: []);
+$pty2 = http('POST', 'api.php?action=case-party-add', ['case' => $cc, 'name' => 'עו"ד עם מייל', 'email' => 'law@firm.example', 'kind' => 'lawyer'], $X)[1]['party'] ?? '';
+$rq2 = http('POST', 'api.php?action=requirement-add', ['case' => $cc, 'title' => 'הסכם מכר', 'doc_type' => 'rights'], $X)[1]['requirement'] ?? '';
+$c2 = ['case' => $cc, 'party' => $pty2, 'requirements' => [$rq2], 'channel' => 'email', 'contact_ok' => true];
+$pv2 = http('POST', 'api.php?action=request-preview', $c2, $X)[1];
+$s2 = http('POST', 'api.php?action=request-send', $c2 + ['preview' => $pv2['preview'] ?? '', 'op' => 'op-http-0002'], $X + $M);
+$m2 = $mails()[0] ?? [];
+preg_match('~/portal/#([A-Za-z0-9_-]{43})\s~', (string)($m2['text'] ?? ''), $tm2);
+$TK2 = $tm2[1] ?? '';
+eq([$s2[1]['message'] ?? null, array_key_exists('link', $s2[1]) ? $s2[1]['link'] : 'x', $m2['to'] ?? null, $m2['from_name'] ?? null, $m2['reply_to'] ?? null, $TK2 !== '', str_contains(json_encode($s2[1]), $TK2 ?: '-')],
+    ['sent', null, 'law@firm.example', 'משרד קבצים', 'owner@example.com', true, false], '07-A2 / 07-D4 ב-HTTP: בקשה במייל — שם המשרד כשולח, "השב" לשמאי, והאסימון במייל בלבד (לא בתשובה למשתמש)');
+$up2 = http('POST', 'api.php?action=portal-upload&requirement=' . $rq2 . '&name=contract.pdf&key=key-http-0010', null, $N + $oct + ['X-Portal-Token' => $TK2], "%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%two\n%%EOF\n");
+http('POST', 'api.php?action=portal-otp-send', ['token' => $TK2], $N + $M);
+preg_match('/הקוד שלכם: (\d{6})/', (string)($mails()[1]['text'] ?? ''), $cm);
+$wrong = http('POST', 'api.php?action=portal-otp-verify', ['token' => $TK2, 'code' => $cm[1] === '111111' ? '222222' : '111111'], $N);
+[$vs, , $vh] = http('POST', 'api.php?action=portal-otp-verify', ['token' => $TK2, 'code' => $cm[1] ?? ''], $N);
+$dc = $vh['set-cookie'][0] ?? '';
+preg_match('/^apr_portal=([A-Za-z0-9_-]{43});/', $dc, $dm);
+check('§5.1 ב-HTTP: קוד נכון ← עוגיית apr_portal: HttpOnly, SameSite=Strict; קוד שגוי ← בלי עוגייה', $vs === 200 && isset($dm[1]) && stripos($dc, 'HttpOnly') !== false && stripos($dc, 'SameSite=Strict') !== false
+    && ($wrong[1]['error']['code'] ?? null) === 'portal_otp_wrong' && !isset($wrong[2]['set-cookie']), [$vs, $dc, $wrong[1]]);
+$DC = ['Cookie' => 'apr_portal=' . ($dm[1] ?? '')];
+[$fs, , $fh, $fraw] = http('POST', 'api.php?action=portal-file', ['token' => $TK2, 'file' => $up2[1]['file'] ?? '', 'inline' => true], $N + $DC);
+eq([$fs, $fh['content-type'][0] ?? '', $fh['x-content-type-options'][0] ?? '', str_starts_with($fh['content-security-policy'][0] ?? '', 'sandbox'), str_starts_with($fh['content-disposition'][0] ?? '', 'inline'), str_starts_with($fraw, '%PDF-1.4'),
+    http('POST', 'api.php?action=portal-file', ['token' => $TK2, 'file' => $up2[1]['file'] ?? ''], $N + $DC)[1]['error']['code'] ?? null,
+    http('POST', 'api.php?action=portal-file', ['token' => $TK2, 'file' => $upOk[1]['file'] ?? '', 'inline' => true], $N + $DC)[1]['error']['code'] ?? null,
+    http('POST', 'api.php?action=portal-file', ['token' => $TK2, 'file' => $fp, 'inline' => true], $N + $DC)[1]['error']['code'] ?? null,
+    http('POST', 'api.php?action=portal-file', ['token' => $TK, 'file' => $upOk[1]['file'] ?? '', 'inline' => true], $N + $DC)[1]['error']['code'] ?? null,
+    http('GET', 'api.php?action=me', null, $N + $DC)[0]],
+    [200, 'application/pdf', 'nosniff', true, true, true, 'portal_forbidden', 'not_found', 'not_found', 'portal_otp_required', 401],
+    '07-B4 / 07-B2 ב-HTTP: ממכשיר מאומת — הקובץ שלו, עם nosniff ו-sandbox; הורדה בלי download_own, קובץ של נמען אחר, קובץ פנימי, או אותה עוגייה בקישור אחר ← נדחה; העוגייה אינה זהות במערכת');
+$leak2 = [];
+foreach (array_merge(glob("$data/_dev/log.sqlite*") ?: [], glob("$data/*.sqlite*") ?: []) as $f) { $raw = (string)file_get_contents($f); if (str_contains($raw, $TK2) || str_contains($raw, $dm[1] ?? '-') || preg_match('/"?code_hash"?\W+' . ($cm[1] ?? 'x') . '\b/', $raw)) $leak2[] = basename($f); }
+eq($leak2, [], '07-C4 ב-HTTP: האסימון, עוגיית המכשיר והקוד אינם בקובצי המסד או היומן');
 $rvk = http('POST', 'api.php?action=request-revoke', ['request' => $snd[1]['request'] ?? ''], $X);
 eq([$rvk[0], $inv(http('POST', 'api.php?action=portal-open', ['token' => $TK], $N)), http('POST', $upP . 'key-http-0006', null, $N + $oct + ['X-Portal-Token' => $TK], $goodPdf)[1]['error']['code'] ?? null],
     [200, $want, 'portal_invalid'], '07-B7 ב-HTTP: אחרי ביטול — אותה תשובה כמו לאסימון שלא היה קיים');
