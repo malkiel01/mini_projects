@@ -328,6 +328,36 @@ unlink($tmpf);
 $took = microtime(true) - $t0;
 check('🔴1 בדיקת PDF ליניארית: ארבעה קלטים עוינים של 4MB (אלפי זרמים, פריסה חוזרת, פצצת דחיסה) — פחות מ-6 שניות יחד', $took < 6.0, round($took, 2));
 
+// 🟡 (ביקורת 06, אחרי המיזוג): הסריקה אינה נעצרת בשקט. מאות זרמים ריקים ואחריהם JS; ריפוד של 2.5MB בתוך זרם אחד; שם שנחתך בגבול חלון
+$sn = function (string $body): string {
+    $f = tempnam(apr_upload_tmp_dir(), 'pb');
+    file_put_contents($f, '%PDF-1.4' . "\n" . $body . "\n%%EOF\n");
+    try { apr_file_sniff($f); $r = 'ok'; } catch (AprFileRejected $e) { $r = (string)$e->why; } finally { unlink($f); }
+    return $r;
+};
+$empty = "5 0 obj\n<< /Filter /FlateDecode >>\nstream\n" . gzcompress('') . "\nendstream\nendobj\n";
+$js = "stream\n" . gzcompress('<< /S /Foo /JS (app.alert(1)) >>') . "\nendstream\n";
+eq([$sn(str_repeat($empty, 800) . $js), $sn(str_repeat($empty, 5000) . $js), $sn(str_repeat($empty, 5000))], ['pdf:JS', 'pdf:JS', 'ok'], '🟡 800 ו-5,000 זרמים ריקים ואחריהם זרם עם JS ← נדחה; בלי ה-JS ← מתקבל');
+mt_srand(7);
+$noise = ''; for ($i = 0; $i < 2_600_000; $i++) $noise .= chr(97 + mt_rand(0, 25));      // אותיות אקראיות: נפרסות בנתחים קטנים, כמו זרם אמיתי
+eq([$sn("stream\n" . gzcompress($noise . '<< /JS (x) >>') . "\n"), $sn("stream\n" . gzcompress($noise) . "\n")], ['pdf:JS', 'ok'], '🟡 JS אחרי 2.6MB של ריפוד באותו זרם ← נדחה (אין תקרה שקטה לזרם)');
+$gap = fn(string $g) => $sn("stream\n" . gzcompress(substr($noise, 0, 700_000) . '/JS' . $g . '(x)' . substr($noise, 0, 900_000)) . "\n");
+eq([$gap("%" . substr($noise, 0, 600_000) . "\n"), $gap("%" . substr($noise, 0, 1_400_000) . "\n"), $sn("stream\n" . gzcompress(substr($noise, 0, 700_000) . '/JS' . "%" . substr($noise, 0, 600_000) . "\n" . 'x') . "\n")],
+    ['pdf:JS', 'pdf:gap', 'ok'], '🟡 שם שהערה ארוכה מפרידה בינו לערך, על פני גבול חלון הסריקה ← נדחה; בלי ערך ← מתקבל');
+$tail = function (string $w): string { try { return (string)strlen(apr_pdf_tail($w)); } catch (AprFileRejected $e) { return (string)$e->why; } };
+eq([$tail(str_repeat('q', 9000)), $tail(str_repeat('q', 9000) . '/J#53' . str_repeat(' ', 7000)), $tail(str_repeat('q', 9000) . '/JS' . str_repeat(' ', 7000) . 'x'), $tail('/AA' . str_repeat("\n", (1 << 20)))],
+    ['4096', '7005', '4096', 'pdf:gap'], '🟡 הזנב שעובר לחלון הבא: 4KB, או מהשם שבסוף החלון; רווח של יותר מ-1MB אחרי שם ← נדחה');
+$GLOBALS['apr_pdf_budget'] = 3_000_000;
+$mid = "stream\n" . gzcompress(str_repeat('BT (x) Tj ET ', 40_000)) . "\nendstream\n";       // ~520KB אחרי פריסה
+eq([$sn(str_repeat($mid, 4)), $sn(str_repeat($mid, 8)), $sn(str_repeat($mid, 8) . $js), $sn(str_repeat($empty, 2800)), $sn(str_repeat($empty, 3100))], ['ok', 'pdf:budget', 'pdf:budget', 'ok', 'pdf:budget'],
+    '🟡 התקציב נמדד במה שנפרס בפועל (+1KB לזרם), ומי שחורג ממנו נדחה (pdf:budget) — לא מתקבל בלי סריקה');
+unset($GLOBALS['apr_pdf_budget']);
+$t0 = microtime(true);
+eq($sn(str_repeat("5 0 obj\n<< /Filter /FlateDecode >>\nstream\n" . gzcompress(str_repeat('BT /F1 12 Tf (hello) Tj ET ', 150)) . "\nendstream\nendobj\n", 20_000)), 'ok', '🟡 PDF רגיל עם 20,000 זרמים קטנים — נסרק עד הסוף ומתקבל');
+check('🟡 … ובפחות משתי שניות', microtime(true) - $t0 < 2.0, round(microtime(true) - $t0, 2));
+$n = $nfiles();
+eq([code(up($avi, '%PDF-1.4' . "\n" . str_repeat($empty, 800) . $js . "%%EOF\n", ['case' => $C])), $nfiles() - $n], ['file_active', 0], '🟡 … וגם דרך file-upload: נדחה, ואין קובץ');
+
 // ── 06-B3: גודל ──
 $n = $nfiles(); $d = $disk();
 $GLOBALS['apr_file_max'] = 400;

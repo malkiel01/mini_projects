@@ -173,9 +173,27 @@ function apr_pdf_active(string $text): ?string
     return null;
 }
 
+/** תקרת העבודה על זרמי Flate ב-PDF אחד: בתים שנקראו ונפרסו (ועוד 1,024 לזרם), ושניות. מעבר לה — הקובץ נדחה. */
+const APR_PDF_BUDGET = 800_000_000;
+const APR_PDF_SECONDS = 12.0;
+
+/**
+ * הזנב שעובר מחלון סריקה לחלון הבא, כדי ששם שנחתך בגבול החלון לא יחמוק: 4KB אחרונים, או — אם החלון מסתיים בשם שאחריו
+ * רק רווחים והערות — מאותו שם. "רווח" ארוך מ-1MB אחרי שם אינו PDF סביר — נדחה.
+ */
+function apr_pdf_tail(string $win): string
+{
+    $keep = min(strlen($win), 4096);
+    $n = preg_match('~/[A-Za-z0-9#]{1,40}' . APR_PDF_GAP . '(?:%[^\r\n]*+)?\z~', $win, $m);   // גם הערה שטרם נסגרה
+    if ($n === false) throw new AprFileRejected('file_active', 'pdf:scan');
+    if ($n === 1) $keep = max($keep, strlen($m[0]));
+    if ($keep > 1 << 20) throw new AprFileRejected('file_active', 'pdf:gap');
+    return substr($win, -$keep);
+}
+
 /**
  * PDF: חייב להסתיים כ-PDF (%%EOF), ובלי שמות של תוכן פעיל. **סינון שמרני, לא ניתוח מבנה ולא ערובה:** סורקים את כל הקובץ
- * הגולמי — מילונים, מחרוזות, הערות וזרמים שאינם דחוסים — ואת מה שנפרס מזרמי Flate, עד תקרה של נפח וזמן. התאמה = דחייה,
+ * הגולמי — מילונים, מחרוזות, הערות וזרמים שאינם דחוסים — ואת כל מה שנפרס מזרמי Flate (בחלונות, עם זנב חופף). תקרת נפח וזמן: מי שחורג ממנה נדחה (pdf:budget) — לא מתקבל בלי סריקה. התאמה = דחייה,
  * גם אם ה-PDF תמים. זרם בקידוד שאיננו פורסים (ASCIIHex, ASCII85, LZW, RunLength) — נדחה. ההגנה האמיתית היא ההגשה:
  * attachment, nosniff ו-sandbox. הכול במעבר אחד: כל בית נקרא מספר קבוע של פעמים.
  * PDF מוצפן נשמר ומסומן — את תוכנו אי אפשר לבדוק.
@@ -187,28 +205,42 @@ function apr_sniff_pdf(string $path): array
     $hit = apr_pdf_active($data);
     if ($hit !== null) throw new AprFileRejected('file_active', 'pdf:' . $hit);
     $pages = (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $data);
-    $budget = 48_000_000;                                  // סך הבתים שנפרסים מכל הזרמים
-    $deadline = microtime(true) + 3.0;
+    // תקציב: כל בית שנקרא או נפרס מזרם, ועוד קבוע קטן לזרם. נגמר התקציב או הזמן ונשארו זרמים — הקובץ נדחה, לא מתקבל בשקט.
+    $budget = $GLOBALS['apr_pdf_budget'] ?? APR_PDF_BUDGET;
+    $deadline = microtime(true) + APR_PDF_SECONDS;
     $len = strlen($data);
     for ($pos = 0; ($s = strpos($data, 'stream', $pos)) !== false; $pos = $b) {
         $b = $s + 6;
         if (($data[$b] ?? '') === "\r") $b++;
         if (($data[$b] ?? '') === "\n") $b++;
         if (($data[$b] ?? '') !== "\x78") continue;        // לא zlib
-        if ($budget <= 0 || microtime(true) > $deadline) break;
+        if ($budget <= 0 || microtime(true) > $deadline) throw new AprFileRejected('file_active', 'pdf:budget');
         $z = inflate_init(ZLIB_ENCODING_DEFLATE);
-        $out = '';
-        for ($o = $b; $z && $o < $len && strlen($out) < 2_000_000; $o += 65536) {
-            $chunk = @inflate_add($z, substr($data, $o, 65536));
+        $budget -= 1024;
+        $win = '';                                         // חלון הסריקה: מה שנפרס וטרם נסרק, ועוד הזנב של החלון הקודם
+        for ($o = $b, $step = 512; $z && $o < $len; $o += $step, $step = min($step * 8, 65536)) {
+            $in = substr($data, $o, $step);
+            $chunk = @inflate_add($z, $in);
+            $budget -= strlen($in);
             if ($chunk === false) break;
-            $out .= $chunk;
-            if (inflate_get_status($z) === ZLIB_STREAM_END) break;
+            $budget -= strlen($chunk);
+            $win .= $chunk;
+            $end = inflate_get_status($z) === ZLIB_STREAM_END;
+            if ($end) $budget += strlen($in) - max(0, inflate_get_read_len($z) - ($o - $b));   // הזרם נגמר באמצע הנתח: מחייבים רק מה שנקרא
+            if ($end || strlen($win) >= 1 << 20) {
+                $hit = apr_pdf_active($win);
+                if ($hit !== null) throw new AprFileRejected('file_active', 'pdf:' . $hit);
+                $pages += (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $win);
+                $win = $end ? '' : apr_pdf_tail($win);
+            }
+            if ($end) break;
+            if ($budget <= 0 || microtime(true) > $deadline) throw new AprFileRejected('file_active', 'pdf:budget');
         }
-        $budget -= strlen($out) + 65536;
-        if ($out === '') continue;
-        $hit = apr_pdf_active($out);
-        if ($hit !== null) throw new AprFileRejected('file_active', 'pdf:' . $hit);
-        $pages += (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $out);
+        if ($win !== '') {                                 // זרם שנקטע באמצע: מה שנפרס ממנו נסרק
+            $hit = apr_pdf_active($win);
+            if ($hit !== null) throw new AprFileRejected('file_active', 'pdf:' . $hit);
+            $pages += (int)preg_match_all('~/Type\s*/Page(?![A-Za-z0-9])~', $win);
+        }
     }
     $encrypted = preg_match('~/Encrypt(?![A-Za-z0-9])~', $data) === 1;
     return ['encrypted' => $encrypted, 'pages' => $pages > 0 && !$encrypted ? $pages : null];
