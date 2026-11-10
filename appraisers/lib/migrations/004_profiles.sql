@@ -31,6 +31,7 @@ CREATE TABLE profile_versions (
     number        INTEGER,                                        -- 1, 2, 3 … רק למפורסמות; הטיוטה = NULL
     state         TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft', 'published')),
     content       TEXT NOT NULL,                                  -- JSON
+    revision      INTEGER NOT NULL DEFAULT 1,                     -- אסימון השמירה של הטיוטה: עולה ב-1 בכל שמירה
     change_note   TEXT,
     published_by  INTEGER REFERENCES users (id),
     published_at  TEXT,

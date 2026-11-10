@@ -2,7 +2,7 @@
  * פרופילים (אפיון 03 §7): הספרייה, צפייה, העורך (פרטים · מסמכים · משימות · כללים · שיתוף · היסטוריה), תצוגת ניסיון,
  * וסוגי המסמך של מנהל המערכת. כל הרשאה נאכפת בשרת; כאן רק מסתירים מה שלא רלוונטי.
  *
- * העורך מחזיק את הטיוטה בזיכרון (PE) ושומר אותה לבד, עם ה-updated_at שקרא: אם מישהו אחר שמר בינתיים — השרת עונה 409,
+ * העורך מחזיק את הטיוטה בזיכרון (PE) ושומר אותה לבד, עם ה-revision שקרא: אם מישהו אחר שמר בינתיים — השרת עונה 409,
  * והמסך מציע לטעון מחדש או לשמור כעותק. אין דריסה שקטה.
  */
 'use strict';
@@ -292,8 +292,8 @@ async function peSave() {
     PE.dirty = false;
     peStatus('saving');
     try {
-        const r = await api('profile-draft-save', { body: { profile: PE.pid, content: PE.content, updated_at: PE.updatedAt } });
-        PE.updatedAt = r.updated_at;
+        const r = await api('profile-draft-save', { body: { profile: PE.pid, content: PE.content, revision: PE.revision } });
+        PE.revision = r.revision;
         PE.checks = r.checks;
         PE.saving = false;
         if (PE.dirty) return peSave();
@@ -319,7 +319,7 @@ async function peConflict() {
         try {
             const r = await api('profile-create', { body: { name: (PE.profile.name + ' — ' + P.copy).slice(0, 120), scope: 'personal' } });
             const d = await api('profile-draft-open', { body: { profile: r.profile } });
-            await api('profile-draft-save', { body: { profile: r.profile, content: PE.content, updated_at: d.draft.updated_at } });
+            await api('profile-draft-save', { body: { profile: r.profile, content: PE.content, revision: d.draft.revision } });
             dlg.close();
             PE.dirty = false;
             toast(P.savedAsCopy);
@@ -341,7 +341,7 @@ async function peLeave() {
 
 async function viewProfileEdit(pid) {
     const d = await api('profile-draft-open', { body: { profile: pid } });
-    Object.assign(PE, { pid, profile: d.profile, content: d.content, updatedAt: d.draft.updated_at, checks: d.checks, dirty: false, saving: false, state: 'saved',
+    Object.assign(PE, { pid, profile: d.profile, content: d.content, revision: d.draft.revision, checks: d.checks, dirty: false, saving: false, state: 'saved',
         tab: PE.lastPid === pid ? PE.tab || 'docs' : 'docs', lastPid: pid });
     setHead(d.profile.name, null);
     const tabs = ['details', 'docs', 'tasks', 'rules', ...(d.profile.can.share ? ['share'] : []), 'history'];
@@ -388,7 +388,7 @@ function peDetails(body) {
     const act = (sel, fn) => $(sel)?.addEventListener('click', async () => { try { await fn(); } catch (x) { toastError(x); } });
     act('#parch', async () => { await api('profile-archive', { body: { profile: PE.pid, archived: p.status !== 'archived' } }); toast(T.saved); viewProfileEdit(PE.pid); });
     act('#pdel', async () => { if (!confirm(P.deleteAsk(p.name))) return; await api('profile-delete', { body: { profile: PE.pid } }); PE.dirty = false; toast(P.deleted); location.hash = '#/profiles'; });
-    act('#pdiscard', async () => { if (!confirm(P.discardAsk)) return; await api('profile-draft-discard', { body: { profile: PE.pid } }); PE.dirty = false; location.hash = '#/profiles/' + PE.pid; });
+    act('#pdiscard', async () => { if (!confirm(P.discardAsk)) return; await peSave(); await api('profile-draft-discard', { body: { profile: PE.pid, revision: PE.revision } }); PE.dirty = false; location.hash = '#/profiles/' + PE.pid; });
     act('#preq', async () => { if (!confirm(P.requiredAsk(p.name))) return; await api('office-required-profile', { body: { profile: PE.pid } }); toast(P.requiredDone); });
 }
 
@@ -593,7 +593,7 @@ async function pePublish() {
             ${errors.length ? `<p class="hint">${P.publishBlocked}</p>` : `<p class="sec-title">${d.previous ? P.changesSince(d.previous) : P.firstVersion}</p>${diffHtml(d.diff)}
             <label class="f"><span>${P.changeNote}</span><textarea name="note" rows="2" maxlength="500" placeholder="${P.changeNotePh}"></textarea></label>`}`,
             errors.length ? null : async f => {
-                const r = await api('profile-publish', { body: { profile: PE.pid, note: f.note } });
+                const r = await api('profile-publish', { body: { profile: PE.pid, note: f.note, revision: PE.revision } });
                 toast(P.published(r.number));
                 PE.dirty = false;
                 location.hash = '#/profiles/' + PE.pid;

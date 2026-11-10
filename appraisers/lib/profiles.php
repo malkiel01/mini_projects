@@ -100,7 +100,7 @@ function apr_version_out(array $v): array
 {
     return ['pid' => $v['pid'], 'number' => $v['number'] === null ? null : (int)$v['number'], 'state' => $v['state'], 'change_note' => $v['change_note'],
         'published_at' => $v['published_at'], 'published_by' => $v['published_by'] !== null ? (string)apr_val('SELECT name FROM users WHERE id = ?', [$v['published_by']]) : null,
-        'updated_at' => $v['updated_at'], 'updated_by' => ($v['updated_by'] ?? null) !== null ? (string)apr_val('SELECT name FROM users WHERE id = ?', [$v['updated_by']]) : null];
+        'revision' => (int)($v['revision'] ?? 1), 'updated_at' => $v['updated_at'], 'updated_by' => ($v['updated_by'] ?? null) !== null ? (string)apr_val('SELECT name FROM users WHERE id = ?', [$v['updated_by']]) : null];
 }
 
 // ── רשימות ───────────────────────────────────────────────────
@@ -188,7 +188,7 @@ function apr_profile_meta_clean(array $in, array $base = []): array
     $list = function (string $key, array $allowed) use ($in, $base): string {
         if (!array_key_exists($key, $in)) return $base[$key] ?? '[]';
         $v = $in[$key];
-        if (!is_array($v) || !array_is_list($v) || array_diff($v, $allowed)) apr_fail('content_invalid');
+        if (!is_array($v) || !array_is_list($v) || array_filter($v, fn($x) => !is_string($x) || !in_array($x, $allowed, true))) apr_fail('content_invalid');
         return json_encode(array_values(array_unique($v)));
     };
     return ['name' => array_key_exists('name', $in) || !$base ? apr_clean_name($in['name'] ?? null) : $base['name'],
@@ -236,8 +236,10 @@ function apr_profile_update(array $ctx, array $in): array
 {
     $p = apr_profile_get($ctx, $in['profile'] ?? null, 'edit');
     $meta = apr_profile_meta_clean($in, $p);
-    return apr_tx(function () use ($p, $meta) {
-        apr_exec('UPDATE profiles SET name = ?, description = ?, purposes = ?, property_types = ?, updated_at = ? WHERE id = ?', [...array_values($meta), apr_now(), $p['id']]);
+    // "דוגמה — טעון אישור מקצועי": מנהל המערכת מנקה (או מחזיר) בפרופיל מומלץ, אחרי שאושר מקצועית
+    $sample = $p['scope'] === 'recommended' && $p['level'] === 'owner' && is_bool($in['is_sample'] ?? null) ? (int)$in['is_sample'] : (int)$p['is_sample'];
+    return apr_tx(function () use ($p, $meta, $sample) {
+        apr_exec('UPDATE profiles SET name = ?, description = ?, purposes = ?, property_types = ?, is_sample = ?, updated_at = ? WHERE id = ?', [...array_values($meta), $sample, apr_now(), $p['id']]);
         apr_audit('profile.update', 'profile', $p['pid'], [], office: $p['office_id'] === null ? null : (int)$p['office_id']);
         return [];
     });
@@ -265,8 +267,15 @@ function apr_profile_draft_open(array $ctx, array $in): array
     return ['profile' => apr_profile_out($p, $p['level']), 'draft' => apr_version_out($d), 'content' => $content, 'checks' => apr_profile_checks($content, apr_doc_type_keys())];
 }
 
+/** האסימון של הטיוטה: revision שהעורך קרא. חסר, לא מספר, או לא העדכני → 409 draft_changed. */
+function apr_profile_draft_token(array $d, array $in): void
+{
+    if (!is_int($in['revision'] ?? null) || $in['revision'] !== (int)$d['revision']) apr_fail('draft_changed');
+}
+
 /**
- * שמירת הטיוטה. updated_at — מה שהעורך קרא: אם הטיוטה השתנתה בינתיים → 409 draft_changed, בלי דריסה.
+ * שמירת הטיוטה. revision — מה שהעורך קרא: אם הטיוטה נשמרה בינתיים → 409 draft_changed, בלי דריסה. המספר עולה
+ * ב-1 בכל שמירה, באותה פקודת UPDATE שבודקת אותו.
  * המבנה מאומת (apr_profile_content_clean); בדיקות המשמעות חוזרות בתשובה ואינן חוסמות שמירה.
  */
 function apr_profile_draft_save(array $ctx, array $in): array
@@ -275,12 +284,11 @@ function apr_profile_draft_save(array $ctx, array $in): array
     $content = apr_profile_content_clean($in['content'] ?? null);
     return apr_tx(function () use ($ctx, $p, $in, $content) {
         $d = apr_profile_draft_row((int)$p['id']) ?? apr_fail('not_found');
-        if (!is_string($in['updated_at'] ?? null) || !hash_equals($d['updated_at'], $in['updated_at'])) apr_fail('draft_changed');
-        // updated_at חייב להתקדם גם בשתי שמירות באותה שנייה — הוא האסימון של השמירה הבאה
-        $now = max(apr_now(), apr_iso(strtotime($d['updated_at']) + 1));
-        apr_exec('UPDATE profile_versions SET content = ?, updated_by = ?, updated_at = ? WHERE id = ? AND state = ?',
-            [json_encode($content, JSON_UNESCAPED_UNICODE), $ctx['user']['id'], $now, $d['id'], 'draft']);
-        return ['updated_at' => $now, 'checks' => apr_profile_checks($content, apr_doc_type_keys())];
+        apr_profile_draft_token($d, $in);
+        $n = apr_exec("UPDATE profile_versions SET content = ?, updated_by = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND state = 'draft' AND revision = ?",
+            [json_encode($content, JSON_UNESCAPED_UNICODE), $ctx['user']['id'], apr_now(), $d['id'], $in['revision']]);
+        if ($n !== 1) apr_fail('draft_changed');
+        return ['revision' => (int)$d['revision'] + 1, 'checks' => apr_profile_checks($content, apr_doc_type_keys())];
     });
 }
 
@@ -292,12 +300,18 @@ function apr_profile_draft_info(array $ctx, array $q): array
     return ['draft' => apr_version_out($d)];
 }
 
+/** ביטול הטיוטה — הרסני, ולכן: לבעלים בלבד, עם אסימון הטיוטה (מה שהוא רואה הוא מה שנמחק), ונרשם ביומן. */
 function apr_profile_draft_discard(array $ctx, array $in): array
 {
-    $p = apr_profile_get($ctx, $in['profile'] ?? null, 'edit');
+    $p = apr_profile_get($ctx, $in['profile'] ?? null, 'owner');
     if ($p['current_version_id'] === null) apr_fail('profile_state');   // פרופיל שלא פורסם — מוחקים אותו, לא את הטיוטה
-    apr_exec("DELETE FROM profile_versions WHERE profile_id = ? AND state = 'draft'", [$p['id']]);
-    return [];
+    return apr_tx(function () use ($p, $in) {
+        $d = apr_profile_draft_row((int)$p['id']) ?? apr_fail('not_found');
+        apr_profile_draft_token($d, $in);
+        apr_exec("DELETE FROM profile_versions WHERE id = ? AND state = 'draft'", [$d['id']]);
+        apr_audit('profile.draft_discard', 'profile', $p['pid'], [], office: $p['office_id'] === null ? null : (int)$p['office_id']);
+        return [];
+    });
 }
 
 /** פרסום: הבדיקות של §8 (❌ חוסם), מספר עוקב, והטיוטה הופכת לגרסה. מחזיר גם סיכום שינויים מול הקודמת. */
@@ -305,8 +319,9 @@ function apr_profile_publish(array $ctx, array $in): array
 {
     $p = apr_profile_get($ctx, $in['profile'] ?? null, 'edit');
     $note = apr_clean_text($in['note'] ?? '', 500);
-    return apr_tx(function () use ($ctx, $p, $note) {
+    return apr_tx(function () use ($ctx, $p, $note, $in) {
         $d = apr_profile_draft_row((int)$p['id']) ?? apr_fail('not_found');
+        apr_profile_draft_token($d, $in);   // מפרסמים את מה שהעורך רואה — לא טיוטה שמישהו שינה בינתיים
         $content = apr_profile_content_read($d['content']);
         $checks = apr_profile_checks($content, apr_doc_type_keys());
         if ($checks['errors']) throw new AprPublishBlocked($checks);
@@ -314,7 +329,9 @@ function apr_profile_publish(array $ctx, array $in): array
         $now = apr_now();
         apr_exec("UPDATE profile_versions SET state = 'published', number = ?, change_note = ?, published_by = ?, published_at = ?, updated_at = ? WHERE id = ? AND state = 'draft'",
             [$number, $note, $ctx['user']['id'], $now, $now, $d['id']]);
-        apr_exec("UPDATE profiles SET current_version_id = ?, status = CASE WHEN status = 'draft' THEN 'active' ELSE status END, updated_at = ? WHERE id = ?", [$d['id'], $now, $p['id']]);
+        // עותק של דוגמה שהמשתמש פרסם בו גרסה משלו — כבר אינו "דוגמה". במומלץ — מנהל המערכת מנקה במפורש (profile-update).
+        apr_exec("UPDATE profiles SET current_version_id = ?, status = CASE WHEN status = 'draft' THEN 'active' ELSE status END,
+            is_sample = CASE WHEN scope = 'recommended' THEN is_sample ELSE 0 END, updated_at = ? WHERE id = ?", [$d['id'], $now, $p['id']]);
         apr_audit('profile.publish', 'profile', $p['pid'], ['number' => $number], office: $p['office_id'] === null ? null : (int)$p['office_id']);
         return ['version' => $d['pid'], 'number' => $number, 'warnings' => $checks['warnings']];
     });
@@ -351,6 +368,7 @@ function apr_profile_archive(array $ctx, array $in): array
         $to = $archive ? 'archived' : 'active';
         if ($p['status'] !== $to) {
             apr_exec('UPDATE profiles SET status = ?, updated_at = ? WHERE id = ?', [$to, apr_now(), $p['id']]);
+            if ($archive) apr_required_profile_clear($p);
             apr_audit($archive ? 'profile.archive' : 'profile.unarchive', 'profile', $p['pid'], [], office: $p['office_id'] === null ? null : (int)$p['office_id']);
         }
         return [];
@@ -410,18 +428,20 @@ function apr_profile_grantee(array $ctx, array $in): array
 {
     if (($in['office'] ?? null) === true) {
         $o = apr_office($ctx);
-        return ['office', (int)$o['office_id'], $o['name']];
+        return ['office', (int)$o['office_id'], $o['name'], $o['pid']];
     }
     $email = apr_clean_email($in['email'] ?? null);
-    $u = apr_row("SELECT id, name FROM users WHERE email = ? AND email_verified = 1 AND status = 'active'", [$email]) ?? apr_fail('share_no_user');
+    $u = apr_row("SELECT id, pid, name FROM users WHERE email = ? AND email_verified = 1 AND status = 'active'", [$email]) ?? apr_fail('share_no_user');
     if ((int)$u['id'] === (int)$ctx['user']['id']) apr_fail('self_action');
-    return ['user', (int)$u['id'], $u['name']];
+    return ['user', (int)$u['id'], $u['name'], $u['pid']];
 }
 
 function apr_profile_share_args(array $ctx, array $in): array
 {
     $p = apr_profile_get($ctx, $in['profile'] ?? null, 'owner');
     if ($p['scope'] === 'recommended') apr_fail('profile_state');   // מומלץ גלוי לכולם ממילא
+    // התצוגה המקדימה הופכת מייל לשם — מוגבלת בקצב, למשתמש: 30 ב-15 דקות (preview ו-share יחד)
+    if (!apr_limit('pshare:u:' . $ctx['user']['id'], 30, 900)) apr_fail('too_many_requests');
     $can = is_string($in['can'] ?? null) && in_array($in['can'], ['view', 'duplicate', 'edit'], true) ? $in['can'] : apr_fail('content_invalid');
     return [$p, $can, apr_profile_grantee($ctx, $in)];
 }
@@ -435,20 +455,20 @@ function apr_profile_share_preview(array $ctx, array $in): array
 
 function apr_profile_share(array $ctx, array $in): array
 {
-    [$p, $can, [$kind, $gid]] = apr_profile_share_args($ctx, $in);
-    return apr_tx(function () use ($ctx, $p, $can, $kind, $gid) {
+    [$p, $can, [$kind, $gid, , $gpid]] = apr_profile_share_args($ctx, $in);
+    return apr_tx(function () use ($ctx, $p, $can, $kind, $gid, $gpid) {
         $prev = apr_row('SELECT * FROM profile_shares WHERE profile_id = ? AND grantee_kind = ? AND grantee_id = ? AND revoked_at IS NULL', [$p['id'], $kind, $gid]);
         if ($prev) {
             if ($prev['can'] !== $can) {
                 apr_exec('UPDATE profile_shares SET can = ? WHERE id = ?', [$can, $prev['id']]);
-                apr_audit('profile.share', 'profile', $p['pid'], ['kind' => $kind, 'can' => $can, 'change' => true], office: (int)$p['office_id']);
+                apr_audit('profile.share', 'profile', $p['pid'], ['kind' => $kind, 'can' => $can, 'grantee' => $gpid, 'change' => true], office: (int)$p['office_id']);
             }
             return ['share' => $prev['pid']];
         }
         $pid = apr_pid();
         apr_insert('profile_shares', ['pid' => $pid, 'profile_id' => $p['id'], 'grantee_kind' => $kind, 'grantee_id' => $gid, 'can' => $can,
             'granted_by' => $ctx['user']['id'], 'created_at' => apr_now()]);
-        apr_audit('profile.share', 'profile', $p['pid'], ['kind' => $kind, 'can' => $can], office: (int)$p['office_id']);
+        apr_audit('profile.share', 'profile', $p['pid'], ['kind' => $kind, 'can' => $can, 'grantee' => $gpid], office: (int)$p['office_id']);
         return ['share' => $pid];
     });
 }
@@ -469,9 +489,23 @@ function apr_profile_share_revoke(array $ctx, array $in): array
     $p = apr_profile_get($ctx, $s['profile_pid'] ?? null, 'owner');
     return apr_tx(function () use ($ctx, $s, $p) {
         apr_exec('UPDATE profile_shares SET revoked_at = ?, revoked_by = ? WHERE id = ?', [apr_now(), $ctx['user']['id'], $s['id']]);
-        apr_audit('profile.unshare', 'profile', $p['pid'], ['kind' => $s['grantee_kind']], office: (int)$p['office_id']);
+        apr_audit('profile.unshare', 'profile', $p['pid'], ['kind' => $s['grantee_kind'], 'grantee' => (string)apr_val($s['grantee_kind'] === 'user' ? 'SELECT pid FROM users WHERE id = ?' : 'SELECT pid FROM offices WHERE id = ?', [$s['grantee_id']])], office: (int)$p['office_id']);
         return [];
     });
+}
+
+/**
+ * פרופיל שאי אפשר עוד לבחור (אורכב) אינו נשאר "הפרופיל המחייב" של המשרד — אחרת תיקים חדשים ננעלים על פרופיל
+ * שאינו זמין. מנקים באותה טרנזקציה, עם רישום ביומן.
+ */
+function apr_required_profile_clear(array $p): void
+{
+    if ($p['office_id'] === null) return;
+    $s = json_decode((string)apr_val('SELECT settings FROM offices WHERE id = ?', [$p['office_id']]), true) ?: [];
+    if (($s['required_profile'] ?? null) !== $p['pid']) return;
+    unset($s['required_profile']);
+    apr_exec('UPDATE offices SET settings = ?, updated_at = ? WHERE id = ?', [json_encode((object)$s), apr_now(), $p['office_id']]);
+    apr_audit('office.required_profile', 'office', (string)apr_val('SELECT pid FROM offices WHERE id = ?', [$p['office_id']]), ['set' => false, 'by' => 'archive'], office: (int)$p['office_id'], actor: null, kind: 'system');
 }
 
 // ── הגדרת משרד: פרופיל משרדי מחייב ────────────────────────────
@@ -500,7 +534,8 @@ function apr_office_required_profile(array $ctx, array $in): array
  */
 function apr_profiles_on_leave(int $office, int $user): void
 {
-    foreach (apr_rows("SELECT id, pid FROM profiles WHERE office_id = ? AND owner_user_id = ? AND scope = 'personal' AND deleted_at IS NULL", [$office, $user]) as $p) {
+    foreach (apr_rows("SELECT id, pid, office_id FROM profiles WHERE office_id = ? AND owner_user_id = ? AND scope = 'personal' AND deleted_at IS NULL", [$office, $user]) as $p) {
+        apr_required_profile_clear($p);
         apr_exec("UPDATE profiles SET scope = 'office', status = CASE WHEN current_version_id IS NULL THEN status ELSE 'archived' END, updated_at = ? WHERE id = ?", [apr_now(), $p['id']]);
         apr_audit('profile.to_office', 'profile', $p['pid'], [], office: $office, actor: null, kind: 'system');
     }
@@ -517,7 +552,7 @@ function apr_doc_types(): array
 /** הוספה ועריכה. אין מחיקה: סוג שאינו רצוי — מוסתר (hidden), והפרופילים שמשתמשים בו ממשיכים לעבוד. */
 function apr_doc_type_save(array $in): array
 {
-    $key = is_string($in['key'] ?? null) && preg_match('/^[a-z0-9_]{1,40}$/', $in['key']) ? $in['key'] : apr_fail('content_invalid');
+    $key = is_string($in['key'] ?? null) && preg_match('/^[a-z0-9_]{1,40}\z/', $in['key']) ? $in['key'] : apr_fail('content_invalid');
     $name = apr_clean_name($in['name'] ?? null);
     $desc = apr_clean_text($in['description'] ?? '', 300) ?? '';
     $hidden = (int)(($in['hidden'] ?? false) === true);

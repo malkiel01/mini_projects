@@ -33,7 +33,7 @@ function apr_profile_empty_content(): array
 
 function apr_pc_key(mixed $v): string
 {
-    if (!is_string($v) || !preg_match('/^[a-z0-9_]{1,40}$/', $v)) apr_fail('content_invalid');
+    if (!is_string($v) || !preg_match('/^[a-z0-9_]{1,40}\z/', $v)) apr_fail('content_invalid');   // \z ולא $: $ מתאים גם לפני ירידת שורה אחרונה
     return $v;
 }
 
@@ -91,7 +91,7 @@ function apr_pc_condition(mixed $c, int $depth = 1): ?array
     sort($keys);
     if ($keys !== ['field', 'op', 'value']) apr_fail('condition_invalid');
     $field = $c['field'];
-    if (!is_string($field) || !preg_match('/^(purpose|property_type|flags\.[a-z0-9_]{1,40}|party\.(' . implode('|', APR_PARTY_KINDS) . '))$/', $field)) apr_fail('condition_invalid');
+    if (!is_string($field) || !preg_match('/^(purpose|property_type|flags\.[a-z0-9_]{1,40}|party\.(' . implode('|', APR_PARTY_KINDS) . '))\z/', $field)) apr_fail('condition_invalid');
     if (!is_string($c['op']) || !in_array($c['op'], APR_COND_OPS, true)) apr_fail('condition_invalid');
     $list = in_array($c['op'], ['in', 'not_in'], true);
     $bool = str_starts_with($field, 'flags.') || str_starts_with($field, 'party.');
@@ -161,6 +161,8 @@ function apr_profile_content_clean(mixed $c): array
             $do = apr_pc_enum($a['do'] ?? '', APR_RULE_ACTIONS, '');
             if ($do === 'alert') $then[] = ['do' => 'alert', 'text' => apr_pc_text($a['text'] ?? '', 300)];
             elseif (!is_array($a['item'] ?? null)) apr_fail('content_invalid');
+            // פריט שכלל מוסיף אינו נושא תנאי משלו — התנאי הוא של הכלל
+            elseif (($a['item']['when'] ?? null) !== null) apr_fail('condition_invalid');
             else $then[] = ['do' => $do, 'item' => $do === 'add_requirement' ? apr_pc_requirement($a['item']) : apr_pc_task($a['item'])];
         }
         $out['rules'][] = ['key' => apr_pc_key($rule['key'] ?? null), 'title' => apr_pc_text($rule['title'] ?? '', 160),
@@ -233,6 +235,12 @@ function apr_profile_checks(array $content, array $docTypes): array
     $seen = [];
     $itemKeys = array_column($items, 'key');
     $taskKeys = array_column($tasks, 'key');
+    // מפתח כפול גם בין פריטים שכללים מוסיפים (תיק שומר origin_key ומשווה לפיו) — לכל רשימה בנפרד
+    foreach (['add_requirement' => 'requirement', 'add_task' => 'task'] as $do => $kind) {
+        $keys = [];
+        foreach ($rules as $rule) foreach ($rule['then'] as $a) if ($a['do'] === $do) $keys[] = $a['item']['key'];
+        foreach (array_keys(array_filter(array_count_values($keys), fn($n) => $n > 1)) as $dup) $add($err, 'dup_key', "המפתח \"$dup\" מופיע פעמיים בפריטים שכללים מוסיפים", "$kind:$dup");
+    }
     foreach ($rules as $rule) {
         $ref = 'rule:' . $rule['key'];
         $checkCond($rule['when'], $ref);
