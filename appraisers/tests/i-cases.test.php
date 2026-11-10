@@ -447,4 +447,17 @@ eq([array_unique(array_column(call('GET', 'cases', [], $avi, ['status' => 'draft
 eq([$cv['missing'], array_values(array_diff($cv['todo'], $cv['missing'])), isset($cv['case']['progress'])], [[], ['property_type', 'key_date', 'due_date', 'title'], false], '§9 הסקירה: רשימת "להשלמה" — לא אחוז התקדמות');
 check('כרטיס התיק: בלי מזהים פנימיים', !preg_match('/"(id|office_id|case_id|user_id|contact_id|profile_id|created_by)"\s*:/', json_encode($view($avi, $C)[1])));
 
+// §7 "המשימות שלי": רק מה שמוקצה לי — לא משימה בלי אחראי בתיק שאני משתתף בו
+$notMine = call('POST', 'task-create', ['case' => $C, 'title' => 'בלי אחראי'], $avi)[1]['task'];
+$isMine = call('POST', 'task-create', ['case' => $C, 'title' => 'שלי', 'assignee' => $aviPid], $avi)[1]['task'];
+$myPids = array_column(call('GET', 'my-tasks', [], $avi)[1]['tasks'], 'pid');
+eq([in_array($isMine, $myPids, true), in_array($notMine, $myPids, true)], [true, false], '§7 "המשימות שלי" מחזיר רק משימות שמוקצות לי');
+
+// ── 04-B3: יומן הפעולות של המשרד אינו חושף פעולות בתוך תיק ──
+$acts = array_values(array_unique(array_column(call('GET', 'office-audit', [], $avi, ['limit' => '200'])[1]['rows'], 'action')));
+eq([array_values(array_filter($acts, fn($a) => preg_match('/^(case|task|requirement)\./', $a) && $a !== 'case.responsible')), in_array('case.responsible', $acts, true)], [[], true],
+    '04-B3 יומן המשרד: מפעולות בתיקים מופיעה רק העברת אחריות');
+$devRows = call('GET', 'dev-audit', [], $owner, ['what' => 'case.status']);
+eq([$devRows[0], count($devRows[1]['rows']) > 0, array_values(array_filter(array_column($devRows[1]['rows'], 'reason')))], [200, true, []], 'יומן המפתח: פעולה בתיק מופיעה בלי הנימוק שלה');
+
 done();

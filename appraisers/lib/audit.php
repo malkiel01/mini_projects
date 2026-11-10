@@ -57,6 +57,8 @@ function apr_audit_rows(?int $office, array $q = []): array
     $w = ['1 = 1'];
     $a = [];
     if ($office !== null) { $w[] = 'a.office_id = ?'; $a[] = $office; }
+    // פעולות בתוך תיק שייכות ללשונית הפעילות של התיק (למשתתפים בלבד). מנהל משרד רואה מהן רק העברת אחריות — כמו בשורת הניהול.
+    if ($office !== null) $w[] = "(a.case_id IS NULL OR a.action = 'case.responsible')";
     if (is_string($q['what'] ?? null) && $q['what'] !== '') { $w[] = "a.action LIKE ? ESCAPE '\\'"; $a[] = strtr($q['what'], ['%' => '', '_' => '\\_', '\\' => '']) . '%'; }
     if ($office === null && apr_is_pid($q['office'] ?? null)) { $w[] = 'o.pid = ?'; $a[] = $q['office']; }
     if ($office === null && apr_is_pid($q['user'] ?? null)) { $w[] = 'u.pid = ?'; $a[] = $q['user']; }
@@ -68,6 +70,9 @@ function apr_audit_rows(?int $office, array $q = []): array
     $rows = apr_rows('SELECT a.*, o.pid AS office_pid, u.pid AS actor_pid, u.name AS actor_name FROM audit_log a
         LEFT JOIN offices o ON o.id = a.office_id LEFT JOIN users u ON u.id = a.actor_user_id
         WHERE ' . implode(' AND ', $w) . " ORDER BY a.id DESC LIMIT $limit OFFSET $offset", $a);
+
+    // יומן המפתח: נתונים תפעוליים בלבד — הנימוק של פעולה בתיק הוא תוכן של התיק
+    if ($office === null) foreach ($rows as $i => $r) if ($r['case_id'] !== null) $rows[$i]['reason'] = null;
 
     // שמות — רק למנהל משרד, ורק של מי שהיה אי-פעם חבר במשרד שלו
     $names = [];

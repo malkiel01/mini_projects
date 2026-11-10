@@ -5,6 +5,8 @@
  *   #/                     בית                              #/welcome            הקמת משרד / יש לי הזמנה
  *   #/invite/<אסימון>      קבלת הזמנה                       #/office · #/office/log   המשרד שלי · יומן הפעולות
  *   #/profiles[/<pid>[/edit | /try | /v/<גרסה>]]   פרופילים
+ *   #/cases · #/cases/new · #/cases/<pid>[/setup[/<שלב>] | /parties | /reqs | /activity]   תיקים
+ *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
  *   #/system · #/system/users · #/system/doc-types   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
@@ -79,21 +81,25 @@ async function route() {
     await peLeave().catch(() => {});   // יוצאים מעורך הפרופיל — מה שממתין נשמר
     $('#back').hidden = a === '';
     App.sub = undefined;
-    const home = () => { history.replaceState(null, '', '#/'); $('#back').hidden = true; viewHome(); };
+    const home = () => { history.replaceState(null, '', '#/'); $('#back').hidden = true; return viewHome(); };
     try {
-        if (a === '') viewHome();
+        if (a === '') await viewHome();
         else if (a === 'welcome') await viewWelcome();
         else if (a === 'invite' && b) await viewInvite(b);
+        else if (a === 'office' && b === 'cases' && ok && o.is_admin) await viewOfficeCases();
         else if (a === 'office' && ok) await viewOffice(b);
+        else if (a === 'cases' && ok) await viewCases(b, c, d);
+        else if (a === 'tasks' && ok) await viewMyTasks();
+        else if (a === 'contacts' && ok) await viewContacts();
         else if (a === 'profiles' && (ok || me.user.is_sysadmin)) await viewProfiles(b, c, d);
         else if (a === 'system' && me.user.is_sysadmin) await viewSystem(b);
         else if (a === 'dev' && me.user.is_developer) await viewDev(b, c);
-        else home();   // אין הרשאה או אין מסך כזה — לבית, בלי לחשוף מה היה שם
+        else await home();   // אין הרשאה או אין מסך כזה — לבית, בלי לחשוף מה היה שם
     } catch (x) {
         if (x.code === 'office_changed' || x.code === 'not_found' || x.code === 'no_office') {
             // המשרד הוחלף בלשונית אחרת, או שההרשאה השתנתה — מרעננים וחוזרים לבית
             await refreshMe().catch(() => {});
-            home();
+            await home().catch(() => {});
         } else {
             App.main.innerHTML = errorHtml(x);
             $('[data-retry]')?.addEventListener('click', route);
@@ -144,7 +150,8 @@ async function boot() {
     // חזרה: למסך הקודם באפליקציה, עד הבית — לא יוצאים מהאפליקציה
     $('#back').addEventListener('click', () => {
         const parts = location.hash.split('/').filter(Boolean);
-        location.hash = parts.length > 2 ? '#/' + parts.slice(1, -1).join('/') : '#/';
+        // מהאשף חוזרים לרשימה: כרטיס של טיוטה מפנה חזרה לאשף, וכך "חזרה" הייתה נתקעת
+        location.hash = parts[1] === 'cases' && parts[3] === 'setup' ? '#/cases' : parts.length > 2 ? '#/' + parts.slice(1, -1).join('/') : '#/';
     });
     $('#me-btn').addEventListener('click', openMe);
     $('#sub').addEventListener('click', () => bindOfficePick(sheet(T.officePick, officesListHtml(), null)));
