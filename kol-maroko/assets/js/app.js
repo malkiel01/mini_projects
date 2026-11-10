@@ -46,6 +46,40 @@ async function api(action, body, query = '') {
   return data;
 }
 
+// ── תצוגה במכשיר (הסטודיו והקוד) ─────────────────────────
+// מחשב — ממלא את כל הקנבס. טאבלט / טלפון — ברוחב האמיתי (כדי ש-@media של העמוד יעבדו כמו במכשיר),
+// ואם אין מקום — מוקטן כולו (scale), לא נחתך. במסך צר (מתחת ל-1000) — תמיד ממלא: המסך עצמו הוא המכשיר.
+const DEVICES = { desktop: ['מחשב', 0], tablet: ['טאבלט', 820], phone: ['טלפון', 390] };
+const WIDE_MQ = matchMedia('(min-width: 1000px)');
+function devicePreview(frame, key) {
+  let dev = 'desktop';
+  try { if (DEVICES[localStorage.getItem(key)]) dev = localStorage.getItem(key); } catch { /* בלי אחסון — ברירת מחדל */ }
+  const stage = h('div', { class: 'dv-stage' }, frame);
+  const canvas = h('div', { class: 'dv-canvas' }, stage);
+  const fit = () => {
+    const d = WIDE_MQ.matches ? dev : 'desktop', w = DEVICES[d][1];
+    canvas.dataset.device = d;
+    if (!w) { stage.removeAttribute('style'); return; }
+    const pad = 32, k = Math.min(1, (canvas.clientWidth - pad) / w);
+    stage.style.width = w + 'px';
+    stage.style.height = Math.max(200, (canvas.clientHeight - pad) / k) + 'px';
+    stage.style.transform = k < 1 ? `scale(${k})` : '';
+  };
+  new ResizeObserver(fit).observe(canvas);
+  const seg = h('fieldset', { class: 'seg dv-seg', 'aria-label': 'רוחב התצוגה' },
+    Object.entries(DEVICES).map(([v, [lbl, w]]) => h('label', { title: w ? `${lbl} · ${w}px` : `${lbl} · כל הרוחב` },
+      h('input', { type: 'radio', name: key, value: v, checked: v === dev,
+        onchange: () => { dev = v; try { localStorage.setItem(key, v); } catch { /* לא נורא */ } fit(); } }),
+      h('span', {}, lbl))));
+  return { canvas, seg };
+}
+
+// מגן לתצוגה: ה-CSS של ערכת הנושא (preview_css) נטען כמו שהוא, וחוקים שלה על html/body (flex, רוחב, שוליים)
+// מכווצים את העמוד לחצי מסך. העמוד עצמו (.kol-page) לא נגעים בו — רק המעטפת של התצוגה.
+const FRAME_GUARD = 'html,body{width:auto!important;min-width:0!important;max-width:none!important;margin:0!important;float:none!important;'
+  + 'position:static!important;transform:none!important;display:block!important;columns:auto!important}'
+  + 'body>#root,body>.kol-page{display:block;width:100%;max-width:none}';
+
 function toast(msg, err = false) {
   const el = $('.toast');
   el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;

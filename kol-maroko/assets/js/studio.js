@@ -779,9 +779,8 @@ parent.postMessage({kol:'ready'},'*');
     const btn = (a, ic, lbl, fn, cls = 'icon-btn') => h('button', { type: 'button', class: cls, 'data-a': a, 'aria-label': lbl, title: lbl, onclick: fn }, ic);
     const frame = h('iframe', { class: 'st-frame', title: 'תצוגת העמוד', sandbox: 'allow-scripts' });
     const side = h('aside', { class: 'st-side', 'aria-label': 'מאפייני הרכיב' });
-    const device = h('fieldset', { class: 'seg st-device', 'aria-label': 'רוחב התצוגה' },
-      [['phone', '📱'], ['desktop', '🖥️']].map(([v, ic], i) => h('label', {}, h('input', { type: 'radio', name: 'device', value: v, checked: i === 1,
-        onchange: () => root.classList.toggle('phone', v === 'phone') }), h('span', { title: v === 'phone' ? 'טלפון' : 'מחשב' }, ic))));
+    const { canvas, seg: device } = devicePreview(frame, 'kol-studio-device');
+    device.classList.add('st-device');
     const root = h('div', { class: 'studio' },
       h('div', { class: 'st-bar' },
         btn('add', h('span', {}, h('span', { 'aria-hidden': 'true' }, '+'), h('span', { class: 'lbl' }, ' רכיב')), 'הוספת רכיב', addSheet, 'btn primary'),
@@ -791,7 +790,7 @@ parent.postMessage({kol:'ready'},'*');
         btn('tree', '🧱', 'מבנה העמוד', structureSheet), btn('hist', '🕘', 'היסטוריה', historySheet), btn('set', '⚙️', 'הגדרות העמוד', settingsSheet),
         device, h('span', { class: 'chip st-status' })),
       h('div', { class: 'st-banner', role: 'status', hidden: true }),
-      h('div', { class: 'st-main' }, h('div', { class: 'st-canvas' }, frame), side));
+      h('div', { class: 'st-main' }, h('div', { class: 'st-canvas' }, canvas), side));
     host.replaceChildren(root);
     document.body.classList.add('studio-on');
     root.style.height = `calc(100dvh - ${Math.round(root.getBoundingClientRect().top + scrollY)}px)`;   // עד תחתית המסך, מתחת לכותרת וללשוניות
@@ -808,7 +807,7 @@ parent.postMessage({kol:'ready'},'*');
     document.addEventListener('visibilitychange', onHide);
     window.addEventListener('pagehide', onPageHide);
     WIDE.addEventListener('change', renderPanel);
-    frame.srcdoc = FRAME;
+    frame.srcdoc = FRAME.replace('</head>', `<style id="guard">${FRAME_GUARD}</style></head>`);   // אחרי #page — גובר על ערכת הנושא
     status(); updateBar(); renderPanel();
 
     const lock = d.lock.mine ? d.lock : (await api('lock', { op: 'take' }).catch(() => ({ lock: { mine: false, by: '?' } }))).lock;
