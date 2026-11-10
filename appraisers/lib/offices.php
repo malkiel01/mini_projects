@@ -140,6 +140,12 @@ function apr_member_update(array $ctx, array $in): array
         $wasAdmin = (int)$m['is_admin'] && $m['status'] === 'active';
         if ($wasAdmin && (!$isAdmin || $status !== 'active') && !apr_active_admins($office, (int)$m['user_id'])) apr_fail('last_admin');
 
+        // אחראי על תיק חייב להיות שמאי: לא מורידים מתפקיד שמאי את מי שאחראי על תיקים פתוחים — קודם מעבירים אחריות
+        if ($m['role'] === 'appraiser' && $role !== 'appraiser' && function_exists('apr_cases_responsible_open')
+            && ($n = apr_cases_responsible_open($office, (int)$m['user_id'])) > 0) {
+            throw new AprError('responsible_has_cases', "החבר אחראי על $n תיקים פתוחים — העבירו את האחריות לפני שינוי התפקיד");
+        }
+
         apr_exec('UPDATE memberships SET role = ?, is_admin = ?, status = ?, title = ?, license_no = ?, updated_at = ? WHERE id = ?',
             [$role, $isAdmin, $status, $title, $license, apr_now(), $m['id']]);
         $log = fn(string $action, array $meta = []) => apr_audit($action, 'user', $m['user_pid'], $meta, office: $office);

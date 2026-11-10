@@ -50,7 +50,7 @@ function apr_pid(): string
 
 function apr_is_pid(mixed $v): bool
 {
-    return is_string($v) && preg_match('/^[a-z0-9]{16}$/', $v) === 1;
+    return is_string($v) && preg_match('/^[a-z0-9]{16}\z/', $v) === 1;
 }
 
 function apr_db(): PDO

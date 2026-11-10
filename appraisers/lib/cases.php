@@ -58,9 +58,10 @@ function apr_case_audit(array $case, string $action, string $entityType = 'case'
 
 /**
  * התיק לפי pid, אם אני משתתף בו ויש לי את $perm. מחזיר את השורה + 'perms' (שלי) + 'my_role'.
- * משרד אחר / אינני משתתף / לא קיים → 404, בלי הבדל. אין הרשאה → 403.
+ * משרד אחר / אינני משתתף / לא קיים → 404, בלי הבדל. אין הרשאה → 403. פעולה משנה ($perm אינו view) על תיק סגור → 409,
+ * אלא אם $closedOk (שינוי המצב עצמו).
  */
-function apr_case_get(array $ctx, mixed $pid, string $perm = 'view'): array
+function apr_case_get(array $ctx, mixed $pid, string $perm = 'view', bool $closedOk = false): array
 {
     $office = apr_office_id($ctx);
     $c = apr_is_pid($pid) ? apr_row('SELECT * FROM cases WHERE pid = ? AND office_id = ? AND deleted_at IS NULL', [$pid, $office]) : null;
@@ -69,7 +70,21 @@ function apr_case_get(array $ctx, mixed $pid, string $perm = 'view'): array
     $perms = (json_decode($m['perms'], true) ?: []) + array_fill_keys(APR_CASE_PERMS, false);
     if (empty($perms['view'])) apr_fail('not_found');
     if (empty($perms[$perm])) apr_fail('forbidden');
-    return $c + ['perms' => $perms, 'my_role' => $m['role']];
+    $c += ['perms' => $perms, 'my_role' => $m['role']];
+    if ($perm !== 'view' && !$closedOk) apr_case_writable($c);
+    return $c;
+}
+
+/** תיק סגור — קריאה בלבד, עד שהשמאי האחראי פותח אותו מחדש (case-status). */
+function apr_case_writable(array $c): void
+{
+    if ($c['status'] === 'closed') apr_fail('case_closed');
+}
+
+/** על כמה תיקים פתוחים במשרד המשתמש אחראי. */
+function apr_cases_responsible_open(int $office, int $user): int
+{
+    return (int)apr_val("SELECT COUNT(*) FROM cases WHERE office_id = ? AND responsible_user_id = ? AND deleted_at IS NULL AND status <> 'closed'", [$office, $user]);
 }
 
 /** חבר פעיל במשרד לפי pid של המשתמש — או not_found. */
@@ -99,7 +114,7 @@ function apr_case_next_number(int $office): string
 function apr_clean_date(mixed $v): ?string
 {
     if ($v === null || $v === '') return null;      // חסר אינו אפס: לא ידוע = NULL
-    if (!is_string($v) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) apr_fail('date_invalid');
+    if (!is_string($v) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})\z/', $v, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) apr_fail('date_invalid');
     return $v;
 }
 
@@ -118,9 +133,15 @@ function apr_case_profile(array $ctx, mixed $pid): array
     $p = apr_profile_get($ctx, $pid);
     if ($p['status'] === 'archived') apr_fail('profile_archived');
     if ($p['status'] !== 'active' || $p['current_version_id'] === null) apr_fail('profile_state');
-    $required = (json_decode((string)apr_val('SELECT settings FROM offices WHERE id = ?', [apr_office_id($ctx)]), true) ?: [])['required_profile'] ?? null;
-    if ($required !== null && $required !== $p['pid'] && apr_val("SELECT 1 FROM profiles WHERE pid = ? AND status = 'active' AND deleted_at IS NULL", [$required])) apr_fail('profile_required');
+    apr_case_required_profile(apr_office_id($ctx), $p['pid']);
     return $p;
+}
+
+/** פרופיל משרדי מחייב (אם נקבע, והוא פעיל): תיק נפתח — ויוצא מטיוטה — רק איתו. */
+function apr_case_required_profile(int $office, string $profilePid): void
+{
+    $required = (json_decode((string)apr_val('SELECT settings FROM offices WHERE id = ?', [$office]), true) ?: [])['required_profile'] ?? null;
+    if ($required !== null && $required !== $profilePid && apr_val("SELECT 1 FROM profiles WHERE pid = ? AND status = 'active' AND deleted_at IS NULL", [$required])) apr_fail('profile_required');
 }
 
 /** מה שהאשף צריך: מי יכול להיות אחראי / משתתף, והפרופיל המחייב. */
@@ -187,7 +208,7 @@ function apr_case_update(array $ctx, array $in): array
     if (array_key_exists('flags', $in)) {
         if (!is_array($in['flags'])) apr_fail('content_invalid');
         $flags = [];
-        foreach ($in['flags'] as $k => $v) if (is_string($k) && preg_match('/^[a-z0-9_]{1,40}$/', $k)) $flags[$k] = $v === true;
+        foreach ($in['flags'] as $k => $v) if (is_string($k) && preg_match('/^[a-z0-9_]{1,40}\z/', $k)) $flags[$k] = $v === true;
         $set['flags'] = json_encode((object)$flags);
     }
     // "אחר" תמיד מחייב הערה חופשית (אפיון 03 §4.4)
@@ -300,13 +321,16 @@ function apr_case_task_from_plan(array $c, array $t, string $kind): string
 function apr_case_start(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
-    if ($c['status'] !== 'draft') apr_fail('case_state');
     $adj = is_array($in['plan'] ?? null) ? $in['plan'] : [];
+    if (isset($GLOBALS['apr_before_case_start'])) ($GLOBALS['apr_before_case_start'])();   // בדיקות בלבד: בקשה מקבילה שנכנסת בדיוק כאן
     return apr_tx(function () use ($ctx, $c, $adj) {
+        // היציאה מטיוטה נתפסת בתוך הטרנזקציה: שתי בקשות במקביל — רק אחת יוצרת את הדרישות והמשימות
+        if (apr_exec("UPDATE cases SET status = 'collecting' WHERE id = ? AND status = 'draft'", [$c['id']]) !== 1) apr_fail('case_state');
         $missing = apr_case_missing($c);
         if ($missing) throw new AprCaseIncomplete($missing);
         $p = apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']]);
         if (!$p || $p['deleted_at'] !== null || $p['status'] !== 'active') apr_fail('profile_archived');
+        apr_case_required_profile((int)$c['office_id'], $p['pid']);   // טיוטה שנפתחה לפני שנקבע פרופיל מחייב
         // טיוטה נפתחת עם הגרסה העדכנית של הפרופיל ברגע היצירה
         $version = (int)$p['current_version_id'];
         $content = apr_case_version_content($version);
@@ -366,7 +390,7 @@ final class AprCaseIncomplete extends AprError
  */
 function apr_case_status(array $ctx, array $in): array
 {
-    $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
+    $c = apr_case_get($ctx, $in['case'] ?? null, 'edit', true);
     $to = is_string($in['status'] ?? null) && in_array($in['status'], APR_CASE_STATUSES, true) ? $in['status'] : apr_fail('status_invalid');
     $from = $c['status'];
     if ($to === $from) return [];
@@ -423,22 +447,34 @@ function apr_case_member_add(array $ctx, array $in): array
     $role = ($in['role'] ?? null) === null ? apr_case_role_for($u['role']) : (in_array($in['role'], ['partner', 'visitor', 'staff'], true) ? $in['role'] : apr_fail('role_invalid'));
     return apr_tx(function () use ($ctx, $c, $u, $role) {
         if (apr_val('SELECT 1 FROM case_members WHERE case_id = ? AND user_id = ? AND revoked_at IS NULL', [$c['id'], $u['id']])) apr_fail('already_member');
-        apr_case_member_insert((int)$c['id'], (int)$u['id'], $role, apr_case_default_perms($role, $u['role']), (int)$ctx['user']['id']);
+        // מי שאינו האחראי אינו מעניק הרשאה שאין לו עצמו
+        $perms = apr_case_default_perms($role, $u['role']);
+        if ($c['my_role'] !== 'responsible') foreach ($perms as $k => $v) {
+            if ($k === 'view' || !$v) continue;
+            $mine = $c['perms'][$k] ?? false;
+            $perms[$k] = $mine === true ? $v : ($k === 'tasks' && $mine === 'own' ? 'own' : false);
+        }
+        apr_case_member_insert((int)$c['id'], (int)$u['id'], $role, $perms, (int)$ctx['user']['id']);
         apr_case_audit($c, 'case.member_add', 'user', $u['pid'], ['role' => $role]);
         apr_case_touch($c);
         return [];
     });
 }
 
-/** שינוי תפקיד (מחזיר את ההרשאות לברירת המחדל שלו) או שינוי תיבות בודדות. role = responsible — העברת אחריות. */
+/**
+ * שינוי תפקיד (מחזיר את ההרשאות לברירת המחדל שלו) או שינוי תיבות בודדות — **רק השמאי האחראי** (אפיון 04 §6): הרשאת
+ * members מוסיפה ומסירה משתתפים, ואינה משנה הרשאות — גם לא של עצמה. role = responsible — העברת אחריות: רק האחראי, עם נימוק.
+ */
 function apr_case_member_update(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null, 'members');
-    return apr_tx(function () use ($ctx, $c, $in) {
+    if ($c['my_role'] !== 'responsible') apr_fail('forbidden');
+    $reason = ($in['role'] ?? null) === 'responsible' ? apr_reason($in['reason'] ?? null) : null;
+    return apr_tx(function () use ($ctx, $c, $in, $reason) {
         $m = apr_case_member_row($c, $in['user'] ?? null);
         if (($in['role'] ?? null) === 'responsible') {
             apr_case_set_responsible($c, (int)$m['user_id'], (int)$ctx['user']['id']);
-            apr_case_audit($c, 'case.responsible', 'user', $m['user_pid'], ['by' => 'member']);
+            apr_case_audit($c, 'case.responsible', 'user', $m['user_pid'], ['by' => 'member'], $reason);
             return [];
         }
         if ($m['role'] === 'responsible') apr_fail('responsible_fixed');   // לאחראי כל ההרשאות; מחליפים אחראי, לא מצמצמים אותו
@@ -514,16 +550,17 @@ function apr_office_cases(array $ctx): array
         apr_rows('SELECT c.pid, c.number, c.status, c.due_date, c.updated_at, u.name AS responsible FROM cases c LEFT JOIN users u ON u.id = c.responsible_user_id
             WHERE c.office_id = ? AND c.deleted_at IS NULL ORDER BY (c.responsible_user_id IS NULL) DESC, c.id DESC', [$office])),
         'appraisers' => array_map(fn($r) => ['pid' => $r['pid'], 'name' => $r['name']], apr_rows("SELECT u.pid, u.name FROM memberships m JOIN users u ON u.id = m.user_id
-            WHERE m.office_id = ? AND m.deleted_at IS NULL AND m.status = 'active' AND m.role = 'appraiser' AND u.status = 'active' ORDER BY u.name", [$office]))];
+            WHERE m.office_id = ? AND m.deleted_at IS NULL AND m.status = 'active' AND m.role = 'appraiser' AND u.status = 'active' AND u.id <> ? ORDER BY u.name", [$office, $ctx['user']['id']]))];
 }
 
-/** מנהל המשרד מעביר אחריות לשמאי אחר במשרד — עם נימוק. אינו הופך למשתתף בעצמו (אלא אם העביר לעצמו, כשמאי). */
+/** מנהל המשרד מעביר אחריות לשמאי **אחר** במשרד — עם נימוק. אינו יכול להעביר לעצמו, וכך אינו מוסיף את עצמו לתיק. */
 function apr_office_case_transfer(array $ctx, array $in): array
 {
     $office = apr_office_id($ctx);
     $reason = apr_reason($in['reason'] ?? null);
     $c = (apr_is_pid($in['case'] ?? null) ? apr_row('SELECT * FROM cases WHERE pid = ? AND office_id = ? AND deleted_at IS NULL', [$in['case'], $office]) : null) ?? apr_fail('not_found');
     $u = apr_case_office_member($office, $in['user'] ?? null);
+    if ((int)$u['id'] === (int)$ctx['user']['id']) apr_fail('transfer_self');   // §6.1: לשמאי אחר; מנהל אינו מוסיף את עצמו לתיק
     return apr_tx(function () use ($ctx, $c, $u, $reason) {
         apr_case_set_responsible($c, (int)$u['id'], (int)$ctx['user']['id']);
         apr_case_audit($c, 'case.responsible', 'user', $u['pid'], ['by' => 'office_admin'], $reason);

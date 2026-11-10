@@ -321,6 +321,7 @@ function apr_task_create(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null);
     if ($c['perms']['tasks'] !== true) apr_fail('forbidden');
+    apr_case_writable($c);
     $title = apr_clean_name($in['title'] ?? null, 160);
     $assignee = apr_task_assignee($c, $in['assignee'] ?? null);
     $link = is_string($in['link_type'] ?? null) && in_array($in['link_type'], ['requirement', 'identifier', 'identifiers'], true) ? $in['link_type'] : null;
@@ -341,6 +342,7 @@ function apr_task_update(array $ctx, array $in): array
     $t = apr_is_pid($in['task'] ?? null) ? apr_row('SELECT t.*, c.pid AS case_pid FROM tasks t JOIN cases c ON c.id = t.case_id WHERE t.pid = ?', [$in['task']]) : null;
     $c = apr_case_get($ctx, $t['case_pid'] ?? null);
     apr_task_allowed($ctx, $c, $t);
+    apr_case_writable($c);
     $full = $c['perms']['tasks'] === true;
     return apr_tx(function () use ($c, $t, $in, $full) {
         $set = [];

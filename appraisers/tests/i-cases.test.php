@@ -1,5 +1,16 @@
 <?php
 // פרוסה 04 — תיקים (docs/spec/04-cases.md §11): 04-A1 … 04-C4, ומקרי הקצה.
+if (($argv[1] ?? '') === 'starter') {
+    // 🟡2: תהליך-בן שמנסה להוציא את אותה טיוטה מטיוטה, במקביל לאחרים
+    define('APR_DATA_DIR', $argv[2]);
+    define('APR_DB_PATH', $argv[2] . '/app.sqlite');
+    require __DIR__ . '/lib.php';
+    $as = ident('2', 'אבי', 'avi@example.com');
+    call('GET', 'case', [], $as, ['case' => $argv[3]]);                 // חימום: session, CSRF ומסד פתוח
+    while (microtime(true) < (float)$argv[4]) usleep(200);              // כל התהליכים יוצאים באותו רגע
+    echo call('POST', 'case-start', ['case' => $argv[3]], $as)[0];
+    exit(0);
+}
 if (($argv[1] ?? '') === 'worker') {
     // 04-A7: תהליך-בן שפותח תיקים במקביל לאחרים, על אותו קובץ מסד
     define('APR_DATA_DIR', $argv[2]);
@@ -28,6 +39,8 @@ $B = office_for($boaz, 'משרד ב');
 $danaPid = join_office($avi, $dana, 'dana@example.com', 'appraiser');
 $talPid = join_office($avi, $tal, 'tal@example.com', 'staff');
 $noamPid = join_office($avi, $noam, 'noam@example.com', 'trainee');
+$gil = ident('7', 'גיל', 'gil@example.com');       // שמאי נוסף במשרד א
+$gilPid = join_office($avi, $gil, 'gil@example.com', 'appraiser');
 $aviPid = call('GET', 'me', [], $avi)[1]['user']['pid'];
 
 function req(string $key, array $more = []): array
@@ -250,12 +263,16 @@ eq(code(call('GET', 'office-cases', [], $dana)), 'forbidden', 'שורות הני
 eq([code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $aviPid], $avi)), code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $aviPid, 'reason' => '  '], $avi)), (int)$crow($D)['responsible_user_id'] === (int)apr_val('SELECT id FROM users WHERE pid = ?', [$danaPid])],
     ['reason_required', 'reason_required', true], '04-B4 העברת אחריות בלי נימוק → נדחית');
 eq([code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $talPid, 'reason' => 'x'], $avi)), code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $danaPid, 'reason' => 'x'], $dana))], ['responsible_invalid', 'forbidden'], 'רק לשמאי; ורק מנהל משרד מעביר');
-eq(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $aviPid, 'reason' => 'דנה בחופשה'], $avi)[0], 200, '04-B4 עם נימוק → מתבצעת');
+eq([code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $aviPid, 'reason' => 'אני אטפל'], $avi)), $view($avi, $D)[0], in_array($aviPid, array_column(call('GET', 'office-cases', [], $avi)[1]['appraisers'], 'pid'), true)],
+    ['transfer_self', 404, false], '🟡3 מנהל משרד שהוא שמאי אינו מעביר תיק לעצמו — ואינו נכנס כך לתיק');
+eq([code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $gilPid, 'reason' => 'x'], $boaz)), code(call('POST', 'office-case-transfer', ['case' => $D, 'user' => call('GET', 'me', [], $boaz)[1]['user']['pid'], 'reason' => 'x'], $boaz)),
+    (int)$crow($D)['responsible_user_id'] === (int)apr_val('SELECT id FROM users WHERE pid = ?', [$danaPid])], ['not_found', 'not_found', true], '🟡7 מנהל של משרד אחר אינו מעביר תיק של המשרד הזה');
+eq(call('POST', 'office-case-transfer', ['case' => $D, 'user' => $gilPid, 'reason' => 'דנה בחופשה'], $avi)[0], 200, '04-B4 עם נימוק → מתבצעת');
 $t = $log($D, 'case.responsible');
-$mem = array_column($view($avi, $D)[1]['members'], 'role', 'pid');
-eq([count($t), $t[0]['reason'], $mem[$aviPid], $mem[$danaPid], $view($dana, $D)[1]['me']['perms']['members']], [1, 'דנה בחופשה', 'responsible', 'partner', false], '04-B4 ונרשמת; האחראי הקודם נשאר שותף');
+$mem = array_column($view($gil, $D)[1]['members'], 'role', 'pid');
+eq([count($t), $t[0]['reason'], $mem[$gilPid], $mem[$danaPid], $view($dana, $D)[1]['me']['perms']['members']], [1, 'דנה בחופשה', 'responsible', 'partner', false], '04-B4 ונרשמת; האחראי הקודם נשאר שותף');
 call('POST', 'office-case-transfer', ['case' => $D, 'user' => $danaPid, 'reason' => 'חזרה'], $avi);
-call('POST', 'case-member-remove', ['case' => $D, 'user' => $aviPid], $dana);
+call('POST', 'case-member-remove', ['case' => $D, 'user' => $gilPid], $dana);
 
 // ── 04-B5: לכל הרשאה — נדחית בלי, מתקבלת עם ──
 call('POST', 'case-member-add', ['case' => $D, 'user' => $talPid], $dana);
@@ -273,7 +290,7 @@ $guarded = [
         ['case-identifier-update', ['identifier' => $dIdent, 'state' => 'needs_check']], ['case-party-add', ['name' => 'בנק', 'kind' => 'bank']], ['case-profile-apply', []]],
     'tasks' => [['task-create', ['title' => 'משימה']], ['task-update', ['task' => $dTask, 'title' => 'שם חדש']]],
     'documents' => [['requirement-add', ['title' => 'דרישה']], ['requirement-update', ['requirement' => $dReq, 'priority' => 'high']]],
-    'members' => [['case-member-add', ['user' => $aviPid]], ['case-member-update', ['user' => $noamPid, 'perms' => ['visit' => false]]]],
+    'members' => [['case-member-add', ['user' => $aviPid]], ['case-member-remove', ['user' => $noamPid]]],
 ];
 foreach ($guarded as $perm => $actions) {
     foreach ($actions as [$action, $in]) {
@@ -283,16 +300,39 @@ foreach ($guarded as $perm => $actions) {
         call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'perms' => [$perm => true]], $dana);
         eq(call('POST', $action, ['case' => $D] + $in, $tal)[0], 200, "04-B5 $perm: $action מתקבלת למי שקיבל אותה");
         if ($action === 'case-member-add') call('POST', 'case-member-remove', ['case' => $D, 'user' => $aviPid], $dana);
+        if ($action === 'case-member-remove') call('POST', 'case-member-add', ['case' => $D, 'user' => $noamPid], $dana);
     }
 }
 eq(array_values(array_diff(APR_CASE_PERMS, array_keys($guarded), ['view', 'review_docs', 'sources', 'visit', 'contact', 'approve_report', 'export'])), [], '04-B5 כל הרשאה שיש לה פעולה בפרוסה הזו נבדקה (השאר — בפרוסות שלהן)');
 eq([$view($tal, $D)[0], call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'perms' => ['view' => false]], $dana)[0], $view($tal, $D)[0]], [200, 200, 200], 'view אינו ניתן לכיבוי — מי שלא רואה מוסר מהתיק');
+// 🔴1: הרשאת members מוסיפה ומסירה משתתפים — ואינה משנה הרשאות, אינה מעניקה מה שאין לה, ואינה נוגעת באחראי
+call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'perms' => ['members' => true, 'edit' => false, 'approve_report' => false, 'export' => false]], $dana);
+$permsOf = fn(string $pid) => json_decode((string)apr_val('SELECT cm.perms FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE cm.case_id = ? AND u.pid = ? AND cm.revoked_at IS NULL', [$crow($D)['id'], $pid]), true);
+$talBefore = $permsOf($talPid);
+eq([code(call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'perms' => ['approve_report' => true, 'export' => true, 'edit' => true]], $tal)),
+    code(call('POST', 'case-member-update', ['case' => $D, 'user' => $noamPid, 'perms' => ['edit' => true]], $tal)), code(call('POST', 'case-member-update', ['case' => $D, 'user' => $noamPid, 'role' => 'partner'], $tal)),
+    $permsOf($talPid), $permsOf($noamPid)['edit']], ['forbidden', 'forbidden', 'forbidden', $talBefore, false], '🔴1 בעל members אינו משנה הרשאות — לא של עצמו ולא של אחר');
+call('POST', 'case-member-add', ['case' => $D, 'user' => $gilPid, 'role' => 'partner'], $tal);
+eq([code(call('POST', 'case-member-update', ['case' => $D, 'user' => $gilPid, 'role' => 'responsible', 'reason' => 'x'], $tal)), code(call('POST', 'case-member-remove', ['case' => $D, 'user' => $danaPid], $tal)),
+    (int)$crow($D)['responsible_user_id'] === (int)apr_val('SELECT id FROM users WHERE pid = ?', [$danaPid]), $view($dana, $D)[1]['me']['role']], ['forbidden', 'responsible_fixed', true, 'responsible'],
+    '🔴1 בעל members אינו מעביר אחריות ואינו מסיר את האחראי');
+$g = $permsOf($gilPid);
+eq([$g['edit'], $g['review_docs'], $g['visit'], $g['members'], $g['approve_report'], $g['tasks'], $g['documents']], [false, false, false, false, false, true, true], '🔴1 מי שמוסיף משתתף אינו מעניק לו הרשאה שאין לו עצמו');
+eq([code(call('POST', 'case-member-update', ['case' => $D, 'user' => $gilPid, 'role' => 'responsible'], $dana)), call('POST', 'case-member-update', ['case' => $D, 'user' => $gilPid, 'role' => 'responsible', 'reason' => 'יוצאת לחופשה'], $dana)[0],
+    array_slice($log($D, 'case.responsible'), -1)[0]['reason'], $view($gil, $D)[1]['me']['role'], $view($dana, $D)[1]['me']['role']], ['reason_required', 200, 'יוצאת לחופשה', 'responsible', 'partner'], '🔴1 העברת אחריות בידי האחראי — רק עם נימוק, ונרשמת');
+call('POST', 'case-member-update', ['case' => $D, 'user' => $danaPid, 'role' => 'responsible', 'reason' => 'חזרה'], $gil);
+eq([call('POST', 'case-member-remove', ['case' => $D, 'user' => $gilPid], $tal)[0], $view($gil, $D)[0]], [200, 404], 'בעל members מסיר משתתף');
+// 🟡4: לא מורידים מתפקיד שמאי את מי שאחראי על תיקים פתוחים
+$r = call('POST', 'member-update', ['user' => $danaPid, 'role' => 'staff'], $avi);
+eq([code($r), (bool)preg_match('/\d+ תיקים/u', $r[1]['error']['message']), apr_val('SELECT m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.pid = ? AND m.deleted_at IS NULL', [$danaPid]), call('POST', 'member-update', ['user' => $gilPid, 'role' => 'staff'], $avi)[0]],
+    ['responsible_has_cases', true, 'appraiser', 200], '🟡4 שמאי שאחראי על תיקים פתוחים אינו מורד מתפקיד שמאי; מי שאינו אחראי — כן');
+call('POST', 'member-update', ['user' => $gilPid, 'role' => 'appraiser'], $avi);
 // tasks: 'own'
 $own = call('POST', 'task-create', ['case' => $D, 'title' => 'לצלם את החזית', 'assignee' => $noamPid], $dana)[1]['task'];
 eq([code(call('POST', 'task-update', ['task' => $dTask, 'status' => 'done'], $noam)), code(call('POST', 'task-create', ['case' => $D, 'title' => 'x'], $noam)), call('POST', 'task-update', ['task' => $own, 'status' => 'done', 'title' => 'שם אחר'], $noam)[0],
     apr_row('SELECT status, title FROM tasks WHERE pid = ?', [$own])], ['forbidden', 'forbidden', 200, ['status' => 'done', 'title' => 'לצלם את החזית']], '04-B5 tasks "שלו": מבקר מעדכן מצב רק במשימה שלו, ואינו יוצר או משנה אחרת');
 eq([code(call('POST', 'case-member-update', ['case' => $D, 'user' => $danaPid, 'perms' => ['export' => false]], $dana)), code(call('POST', 'case-member-remove', ['case' => $D, 'user' => $danaPid], $dana)),
-    code(call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'role' => 'responsible'], $dana))], ['responsible_fixed', 'responsible_fixed', 'responsible_invalid'], '§6 בדיוק אחראי אחד, שמאי: לא מצמצמים, לא מסירים, ולא ממנים מי שאינו שמאי');
+    code(call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'role' => 'responsible', 'reason' => 'x'], $dana))], ['responsible_fixed', 'responsible_fixed', 'responsible_invalid'], '§6 בדיוק אחראי אחד, שמאי: לא מצמצמים, לא מסירים, ולא ממנים מי שאינו שמאי');
 eq(code(call('POST', 'case-create', ['profile' => $P], $tal)), 'responsible_invalid', '§4.1 מי שאינו שמאי פותח תיק רק עם שמאי אחראי');
 $T = call('POST', 'case-create', ['profile' => $P, 'responsible' => $danaPid], $tal)[1]['case'];
 eq([array_column($view($tal, $T)[1]['members'], 'role', 'pid'), $view($dana, $T)[0]], [[$danaPid => 'responsible', $talPid => 'staff'], 200], 'עובדת משרד פותחת תיק לשמאית: היא משתתפת, והשמאית אחראית');
@@ -379,7 +419,7 @@ eq([$view($tal, $D)[0], call('GET', 'cases', [], $tal)[1]['cases']], [404, []], 
 call('POST', 'member-remove', ['user' => $danaPid], $avi);
 $row = array_values(array_filter(call('GET', 'office-cases', [], $avi)[1]['cases'], fn($c) => $c['pid'] === $D))[0];
 eq([$row['responsible'], $crow($D)['responsible_user_id'], array_column(array_map(fn($r) => json_decode($r['meta'], true), $log($D, 'case.member_out')), 'was'), (int)apr_val("SELECT COUNT(*) FROM tasks WHERE case_id = ? AND assignee_user_id IS NOT NULL AND status = 'open'", [$crow($D)['id']])], [null, null, ['staff', 'responsible'], 0], 'מקרה 5: האחראית הוסרה מהמשרד — התיק "בלי אחראי פעיל" בשורת הניהול');
-eq([call('POST', 'office-case-transfer', ['case' => $D, 'user' => $aviPid, 'reason' => 'דנה עזבה'], $avi)[0], $view($avi, $D)[1]['me']['role'], count($view($avi, $D)[1]['members'])], [200, 'responsible', 2], 'מנהל המשרד מעביר אחריות; מי שעזבה אינה נשארת שותפה');
+eq([call('POST', 'office-case-transfer', ['case' => $D, 'user' => $gilPid, 'reason' => 'דנה עזבה'], $avi)[0], $view($gil, $D)[1]['me']['role'], count($view($gil, $D)[1]['members'])], [200, 'responsible', 2], 'מנהל המשרד מעביר אחריות; מי שעזבה אינה נשארת שותפה');
 
 // ── 04-C4: כל פעולה משנה מופיעה בלשונית הפעילות ──
 $G = make_case($avi, $P, ['gush' => '9000', 'helka' => '1', 'start' => false]);
@@ -452,6 +492,106 @@ $notMine = call('POST', 'task-create', ['case' => $C, 'title' => 'בלי אחר�
 $isMine = call('POST', 'task-create', ['case' => $C, 'title' => 'שלי', 'assignee' => $aviPid], $avi)[1]['task'];
 $myPids = array_column(call('GET', 'my-tasks', [], $avi)[1]['tasks'], 'pid');
 eq([in_array($isMine, $myPids, true), in_array($notMine, $myPids, true)], [true, false], '§7 "המשימות שלי" מחזיר רק משימות שמוקצות לי');
+
+// ── סבב 2 של הביקורת ──
+// 🟡5: regex עם \z — ירידת שורה בסוף אינה עוברת
+eq([code(call('POST', 'case-update', ['case' => $C, 'key_date' => "2026-05-01\n"], $avi)), code($view($avi, $C . "\n")), apr_is_pid("abcdefgh12345678\n")], ['date_invalid', 'not_found', false], '🟡5 תאריך ו-pid עם ירידת שורה בסוף נדחים');
+call('POST', 'case-update', ['case' => $C, 'flags' => ["bad_key\n" => true, 'good_key' => true]], $avi);
+eq(array_keys(json_decode($crow($C)['flags'], true)), ['good_key'], '🟡5 מפתח דגל עם ירידת שורה בסוף אינו נשמר');
+// 🟡7: מזהה בן של תיק אחר אינו נגיש דרך התיק שלי
+$emptyK = make_profile($avi, 'ריק 2', ['requirements' => ['groups' => [], 'items' => []]]);
+$K = make_case($avi, $emptyK, ['gush' => '9200', 'helka' => '2']);
+$cIdent = apr_row('SELECT pid FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL', [$crow($C)['id']])['pid'];
+$cParty = apr_row('SELECT pid FROM case_parties WHERE case_id = ? AND removed_at IS NULL', [$crow($C)['id']])['pid'];
+$kReq = call('POST', 'requirement-add', ['case' => $K, 'title' => 'דרישה ב-K'], $avi)[1]['requirement'];
+eq([code(call('POST', 'case-identifier-update', ['case' => $K, 'identifier' => $cIdent, 'state' => 'needs_check'], $avi)), code(call('POST', 'case-identifier-remove', ['case' => $K, 'identifier' => $cIdent], $avi)),
+    code(call('POST', 'case-party-update', ['case' => $K, 'party' => $cParty, 'is_orderer' => true], $avi)), code(call('POST', 'case-party-remove', ['case' => $K, 'party' => $cParty], $avi)),
+    code(call('POST', 'requirement-update', ['requirement' => $kReq, 'party' => $cParty], $avi)), apr_val('SELECT removed_at FROM case_identifiers WHERE pid = ?', [$cIdent]), apr_val('SELECT removed_at FROM case_parties WHERE pid = ?', [$cParty])],
+    ['not_found', 'not_found', 'not_found', 'not_found', 'not_found', null, null], '🟡7 מזהה / גורם של תיק אחר (שאני משתתף בו) אינו נגיש דרך תיק אחר');
+// 🟡7 (04-C1): סגירה כשיש משימה פתוחה — בלי דרישת חובה פתוחה — דורשת נימוק
+call('POST', 'requirement-update', ['requirement' => $kReq, 'mandatory' => false], $avi);
+$kTask = call('POST', 'task-create', ['case' => $K, 'title' => 'פתוחה', 'assignee' => $aviPid], $avi)[1]['task'];
+eq([(int)apr_val("SELECT COUNT(*) FROM requirements WHERE case_id = ? AND mandatory = 1 AND status = 'required'", [$crow($K)['id']]), code(call('POST', 'case-status', ['case' => $K, 'status' => 'closed'], $avi)), $crow($K)['status']],
+    [0, 'reason_required', 'collecting'], '04-C1 סגירה עם משימה פתוחה (בלי דרישת חובה פתוחה) — נדחית בלי נימוק');
+// 🟡7: "המשימות שלי" — רק מהמשרד הפעיל, ורק מתיק שאני משתתף בו (גם אם שורת המשימה עוד מצביעה עליי)
+call('POST', 'case-member-add', ['case' => $K, 'user' => $gilPid], $avi);
+$gTask = call('POST', 'task-create', ['case' => $K, 'title' => 'של גיל', 'assignee' => $gilPid], $avi)[1]['task'];
+$mine = fn(string $as) => array_column(call('GET', 'my-tasks', [], $as)[1]['tasks'], 'pid');
+eq(in_array($gTask, $mine($gil), true), true, 'גיל רואה את המשימה שלו');
+$officeA = (int)$crow($K)['office_id'];
+apr_exec('UPDATE tasks SET office_id = (SELECT id FROM offices WHERE id <> ? LIMIT 1) WHERE pid = ?', [$officeA, $gTask]);
+eq(in_array($gTask, $mine($gil), true), false, '🟡7 my-tasks: משימה של משרד אחר אינה מופיעה');
+apr_exec('UPDATE tasks SET office_id = ? WHERE pid = ?', [$officeA, $gTask]);
+apr_exec("UPDATE case_members SET revoked_at = ? WHERE case_id = ? AND user_id = (SELECT id FROM users WHERE pid = ?)", [apr_now(), $crow($K)['id'], $gilPid]);
+eq([in_array($gTask, $mine($gil), true), (int)apr_val('SELECT assignee_user_id FROM tasks WHERE pid = ?', [$gTask]) > 0], [false, true], '🟡7 my-tasks: משימה בתיק שכבר אינני משתתף בו אינה מופיעה');
+// ⚪ תיק סגור — קריאה בלבד, עד פתיחה מחדש
+eq(call('POST', 'case-status', ['case' => $K, 'status' => 'closed', 'reason' => 'הסתיים'], $avi)[0], 200, 'סגירה עם נימוק');
+call('POST', 'case-member-add', ['case' => $H, 'user' => $gilPid, 'role' => 'partner'], $avi);
+$closedWrites = [['case-update', ['case' => $K, 'title' => 'אחרי סגירה']], ['case-identifier-add', ['case' => $K, 'kind' => 'other', 'value_text' => 'x']], ['case-party-add', ['case' => $K, 'name' => 'x', 'kind' => 'bank']],
+    ['task-create', ['case' => $K, 'title' => 'x']], ['task-update', ['task' => $kTask, 'status' => 'done']], ['requirement-add', ['case' => $K, 'title' => 'x']], ['requirement-update', ['requirement' => $kReq, 'priority' => 'high']],
+    ['case-member-add', ['case' => $K, 'user' => $gilPid]], ['case-profile-apply', ['case' => $K]]];
+eq(array_values(array_unique(array_map(fn($w) => code(call('POST', $w[0], $w[1], $avi)), $closedWrites))), ['case_closed'], '⚪ תיק סגור: כל פעולה משנה נדחית (case_closed)');
+eq([$view($avi, $K)[0], call('POST', 'case-status', ['case' => $K, 'status' => 'review', 'reason' => 'נפתח מחדש'], $avi)[0], call('POST', 'case-update', ['case' => $K, 'title' => 'אחרי פתיחה'], $avi)[0]], [200, 200, 200], '⚪ צפייה נשארת; אחרי פתיחה מחדש — אפשר לערוך');
+// 🟡7: עזיבת המשרד מבטלת את ההשתתפות בתיקים (hook של office-leave)
+eq([$view($gil, $H)[0], call('POST', 'office-leave', [], $gil)[0], (int)apr_val('SELECT COUNT(*) FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE u.pid = ? AND cm.revoked_at IS NULL', [$gilPid]), count($log($H, 'case.member_out'))],
+    [200, 200, 0, 1], '🟡7 office-leave: כל שורות ההשתתפות של העוזב מבוטלות, ונרשם בתיק');
+// 🟡7 (04-A1, 04-A4): הגרסה ב"יצירה", ומה שכבר טופל אינו מוצע ואינו משתנה
+$one = fn(string $title) => ['requirements' => ['groups' => [], 'items' => [req('a', ['title' => $title])]], 'tasks' => ['items' => []], 'rules' => [], 'flags' => []];
+$Pv = make_profile($avi, 'גרסאות', $one('כותרת 1'));
+$X = make_case($avi, $Pv, ['gush' => '9300', 'helka' => '3', 'start' => false]);
+$v1 = (int)$crow($X)['profile_version_id'];
+publish($avi, $Pv, $one('כותרת 2'), 'שנייה');
+call('POST', 'case-start', ['case' => $X], $avi);
+$cur = fn() => (int)apr_val('SELECT current_version_id FROM profiles WHERE pid = ?', [$Pv]);
+eq([(int)$crow($X)['profile_version_id'] === $cur(), (int)$crow($X)['profile_version_id'] !== $v1, $reqs($X)[0]['title'], json_decode($crow($X)['plan_snapshot'], true)['version']], [true, true, 'כותרת 2', 2],
+    '🟡7 "יצירה": הטיוטה מקבלת את הגרסה העדכנית, ו-profile_version_id מתעדכן');
+apr_exec("UPDATE requirements SET status = 'received' WHERE case_id = ?", [$crow($X)['id']]);
+publish($avi, $Pv, $one('כותרת 3'), 'שלישית');
+$dx = call('GET', 'case-profile-diff', [], $avi, ['case' => $X])[1]['diff'];
+eq([$dx['from'], $dx['to'], $dx['requirements']['changed']], [2, 3, []], '04-A4 דרישה שכבר אינה required אינה מוצעת לשינוי בתצוגת ההבדלים');
+$ax = call('POST', 'case-profile-apply', ['case' => $X, 'requirements_change' => ['a']], $avi);
+eq([$ax[1]['applied']['requirements_change'], $reqs($X)[0]['title'], (int)$crow($X)['profile_version_id'] === $cur()], [0, 'כותרת 2', true], '04-A4 וגם כשסומנה — אינה משתנה; הגרסה מתעדכנת');
+// 🟡6: פרופיל מחייב שנקבע אחרי שהטיוטה נפתחה — נבדק שוב ב"יצירה"
+$Y = make_case($avi, $Pv, ['gush' => '9400', 'helka' => '4', 'start' => false]);
+eq(call('POST', 'office-required-profile', ['profile' => $P], $avi)[0], 200, 'נקבע פרופיל מחייב');
+eq([code(call('POST', 'case-start', ['case' => $Y], $avi)), $crow($Y)['status'], count($reqs($Y))], ['profile_required', 'draft', 0], '🟡6 טיוטה עם פרופיל אחר אינה יוצאת מטיוטה כשנקבע פרופיל מחייב');
+call('POST', 'office-required-profile', ['profile' => null], $avi);
+// 🟡2: בקשה מקבילה שמסיימת "יצירה" אחרי שהראשונה כבר קראה את התיק כטיוטה — הראשונה נדחית, ושום דבר לא נוצר פעמיים
+$Z = make_case($avi, $P, ['gush' => '9500', 'helka' => '5', 'start' => false]);
+$inner = null;
+$GLOBALS['apr_before_case_start'] = function () use (&$inner, $Z, $avi) {
+    unset($GLOBALS['apr_before_case_start']);
+    $jar = &jar();
+    $keep = $jar;                                   // הקריאה הפנימית לא נוגעת בעוגיות של החיצונית
+    $inner = call('POST', 'case-start', ['case' => $Z], $avi)[0];
+    $jar = $keep;
+};
+$outer = call('POST', 'case-start', ['case' => $Z], $avi);
+unset($GLOBALS['apr_before_case_start']);
+eq([$inner, code($outer), count($reqs($Z)), count($tasks($Z)), count($log($Z, 'case.start'))], [200, 'case_state', 2, 2, 1], '🟡2 "יצירה" כפולה: הבקשה שקראה טיוטה ישנה נדחית; דרישות ומשימות נוצרות פעם אחת');
+// 🟡2: שש בקשות "יצירה" במקביל לאותה טיוטה — רק אחת מצליחה, והדרישות נוצרות פעם אחת
+$dir = sys_get_temp_dir() . '/apr-conc-' . bin2hex(random_bytes(5));
+mkdir($dir, 0700, true);
+$setup = 'define("APR_DATA_DIR", ' . var_export($dir, true) . '); define("APR_DB_PATH", ' . var_export("$dir/app.sqlite", true) . '); require ' . var_export(__DIR__ . '/lib.php', true) . ';'
+    . ' $a = ident("2", "אבי", "avi@example.com"); office_for($a, "x"); $p = call("POST", "profile-create", ["scope" => "office", "name" => "p"], $a)[1]["profile"];'
+    . ' $d = call("POST", "profile-draft-open", ["profile" => $p], $a)[1]; $c = $d["content"]; $c["tasks"]["items"][] = ["key" => "t1", "title" => "משימה", "assignee" => "responsible", "sort" => 1];'
+    . ' $s = call("POST", "profile-draft-save", ["profile" => $p, "content" => $c, "revision" => $d["draft"]["revision"]], $a)[1];'
+    . ' call("POST", "profile-publish", ["profile" => $p, "revision" => $s["revision"]], $a); $k = call("POST", "case-create", ["profile" => $p], $a)[1]["case"];'
+    . ' call("POST", "case-update", ["case" => $k, "purpose" => "purchase"], $a); call("POST", "case-identifier-add", ["case" => $k, "kind" => "other", "value_text" => "x"], $a);'
+    . ' call("POST", "case-party-add", ["case" => $k, "name" => "מזמין", "kind" => "client", "is_orderer" => true], $a); echo $k;';
+$kk = trim((string)shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($setup)));
+$procs = $pipes = [];
+$go = (string)(microtime(true) + 1.5);
+for ($i = 0; $i < 6; $i++) $procs[] = proc_open([PHP_BINARY, __FILE__, 'starter', $dir, $kk, $go], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes[$i]);
+$codes = [];
+foreach ($procs as $i => $proc) { $codes[] = (int)stream_get_contents($pipes[$i][1]); proc_close($proc); }
+sort($codes);
+$pdo = new PDO("sqlite:$dir/app.sqlite");
+eq([$codes, (int)$pdo->query("SELECT COUNT(*) FROM tasks")->fetchColumn(), (int)$pdo->query("SELECT COUNT(*) FROM audit_log WHERE action = 'case.start'")->fetchColumn()], [[200, 409, 409, 409, 409, 409], 1, 1],
+    '🟡2 שש בקשות "יצירה" במקביל → אחת מצליחה, המשימות נוצרות פעם אחת');
+$pdo = null;
+foreach (glob("$dir/*") ?: [] as $f) @unlink($f);
+@rmdir($dir);
 
 // ── 04-B3: יומן הפעולות של המשרד אינו חושף פעולות בתוך תיק ──
 $acts = array_values(array_unique(array_column(call('GET', 'office-audit', [], $avi, ['limit' => '200'])[1]['rows'], 'action')));

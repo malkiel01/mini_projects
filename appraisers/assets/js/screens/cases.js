@@ -381,26 +381,32 @@ function membersBind(d, reload) {
     });
     cOn('[data-member]', el => {
         const m = d.members.find(x => x.pid === el.dataset.member);
-        const dlg = sheet(m.name, `<label class="f"><span>${C.memberRole}</span><select name="role">${roles.map(r => cOpt(r, C.memberRoles[r], m.role)).join('')}</select></label>
+        const boss = d.me.role === 'responsible';   // תפקיד והרשאות — רק השמאי האחראי; הרשאת members מוסיפה ומסירה בלבד
+        const fields = boss ? `<label class="f"><span>${C.memberRole}</span><select name="role">${roles.map(r => cOpt(r, C.memberRoles[r], m.role)).join('')}</select></label>
             <div class="f"><span>${C.permsTitle}</span>${Object.keys(C.perms).filter(k => k !== 'view' && k !== 'tasks').map(k =>
                 `<label class="switch"><input type="checkbox" data-perm="${k}"${m.perms[k] ? ' checked' : ''}><span>${C.perms[k]}</span></label>`).join('')}
               <label class="f"><span>${C.perms.tasks}</span><select data-perm-tasks>${cOpt('no', T.p.no, m.perms.tasks === true ? 'all' : m.perms.tasks === 'own' ? 'own' : 'no')}${
-                  cOpt('own', C.tasksOwn, m.perms.tasks === 'own' ? 'own' : '')}${cOpt('all', T.p.yes, m.perms.tasks === true ? 'all' : '')}</select></label></div>
-            <div class="row-btns wrap">${m.office_role === 'appraiser' ? `<button type="button" class="btn ghost" id="mresp">${C.makeResponsible}</button>` : ''}
-              <button type="button" class="btn danger" id="mrm">${C.remove}</button></div>`, async f => {
+                  cOpt('own', C.tasksOwn, m.perms.tasks === 'own' ? 'own' : '')}${cOpt('all', T.p.yes, m.perms.tasks === true ? 'all' : '')}</select></label></div>`
+            : `<p class="hint">${esc(C.memberRoles[m.role])} · ${C.permsOnlyResponsible}</p>`;
+        const dlg = sheet(m.name, `${fields}
+            <div class="row-btns wrap">${boss && m.office_role === 'appraiser' ? `<button type="button" class="btn ghost" id="mresp">${C.makeResponsible}</button>` : ''}
+              <button type="button" class="btn danger" id="mrm">${C.remove}</button></div>`, boss ? async f => {
             const roleChanged = f.role !== m.role;
             const tv = dlg.querySelector('[data-perm-tasks]').value;
-            const perms = { ...Object.fromEntries($$('[data-perm]', dlg).map(x => [x.dataset.perm, x.checked])), tasks: tv === 'all' ? true : tv === 'own' ? 'own' : false };
+            const perms = { ...Object.fromEntries(Array.from(dlg.querySelectorAll('[data-perm]')).map(x => [x.dataset.perm, x.checked])), tasks: tv === 'all' ? true : tv === 'own' ? 'own' : false };
             // שינוי תפקיד מחזיר את ההרשאות לברירת המחדל שלו; בלי שינוי תפקיד — נשמרות התיבות
             await api('case-member-update', { body: roleChanged ? { case: pid, user: m.pid, role: f.role } : { case: pid, user: m.pid, perms } });
             reload();
+        } : null);
+        dlg.querySelector('#mresp')?.addEventListener('click', async () => {
+            const reason = (prompt(C.makeResponsibleAsk(m.name) + '\n\n' + C.reasonReq) || '').trim();   // העברת אחריות — תמיד עם נימוק
+            if (!reason) return;
+            try { await api('case-member-update', { body: { case: pid, user: m.pid, role: 'responsible', reason } }); dlg.close(); reload(); } catch (x) { toastError(x); }
         });
-        const act = (id, ask, body) => $(id, dlg)?.addEventListener('click', async () => {
-            if (!confirm(ask)) return;
-            try { await api(body.role ? 'case-member-update' : 'case-member-remove', { body: { case: pid, user: m.pid, ...body } }); dlg.close(); reload(); } catch (x) { toastError(x); }
+        dlg.querySelector('#mrm').addEventListener('click', async () => {
+            if (!confirm(C.removeMemberAsk(m.name))) return;
+            try { await api('case-member-remove', { body: { case: pid, user: m.pid } }); dlg.close(); reload(); } catch (x) { toastError(x); }
         });
-        act('#mresp', C.makeResponsibleAsk(m.name), { role: 'responsible' });
-        act('#mrm', C.removeMemberAsk(m.name), {});
     });
 }
 
@@ -457,8 +463,11 @@ async function viewMyTasks() {
 
 async function viewCase(pid, tab) {
     const d = await api('case', { params: { case: pid } });
-    const c = d.case, perms = d.me.perms;
+    const c = d.case, canStatus = !!d.me.perms.edit;
     if (c.status === 'draft') { location.replace(`#/cases/${pid}/setup`); return; }
+    // תיק סגור — קריאה בלבד עד פתיחה מחדש (השרת אוכף; כאן רק לא מציגים כפתורים שיידחו)
+    if (c.status === 'closed') d.me.perms = { ...d.me.perms, edit: false, tasks: false, documents: false, members: false };
+    const perms = d.me.perms;
     const tabs = ['overview', 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
     const cur = tabs.includes(tab) ? tab : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
@@ -466,7 +475,7 @@ async function viewCase(pid, tab) {
     setHead(c.number, null);
     const head = `<div class="summary"><div class="line"><b class="one">${esc(c.title || C.noTitle)}</b><span class="chip" dir="ltr">${esc(c.number)}</span></div>
         <div class="line muted">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : `<span class="chip bad">${C.noResponsible}</span>`}</div>
-        <div class="chips">${perms.edit ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
+        <div class="chips">${canStatus ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
         ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.length : undefined]), href(cur))}`;
     let body = '';
     if (cur === 'overview') {
