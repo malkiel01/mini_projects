@@ -204,6 +204,25 @@ $GLOBALS['apr_time'] = time() + 86401;
 eq(call('POST', 'invite-create', ['email' => 'u21@example.com', 'role' => 'staff'], $carmel)[0], 200, '§4.3 למחרת — שוב אפשר');
 unset($GLOBALS['apr_time']);
 
+// ── T-002: כתובת מעטפה (-f) מה-host של האפליקציה בלבד, נפילה חזרה בלי הפרמטר, והדרך נרשמת ב-mail_log ──
+$keepMail = $GLOBALS['apr_mail'];
+unset($GLOBALS['apr_mail']);
+$sent = [];
+$GLOBALS['apr_mail_fn'] = function (string $to, string $subject, string $text, string $headers, string $params) use (&$sent) { $sent[] = compact('to', 'headers', 'params'); return true; };
+$evil = "x@example.org -OQueueDirectory=/tmp -X/tmp/x";
+eq([apr_mail_send('invite', $evil, 'נושא', 'גוף', 'env-1'), count($sent), $sent[0]['params'], str_contains($sent[0]['headers'], "\r\nReply-To: noreply@example.test\r\n"), str_contains($sent[0]['headers'], '<noreply@example.test>')],
+    ['sent', 1, '-fnoreply@example.test', true, true], 'T-002 נשלח עם -f מה-host של האפליקציה, ועם Reply-To; כתובת הנמען אינה נכנסת לפרמטרים');
+eq(apr_val("SELECT error FROM mail_log WHERE idempotency_key = 'env-1'"), 'envelope -f', 'T-002 הדרך נרשמת ב-mail_log');
+$sent = [];
+$GLOBALS['apr_mail_fn'] = function (string $to, string $subject, string $text, string $headers, string $params) use (&$sent) { $sent[] = $params; return $params === ''; };
+eq([apr_mail_send('invite', 'a@example.org', 'נושא', 'גוף', 'env-2'), $sent, apr_val("SELECT error FROM mail_log WHERE idempotency_key = 'env-2'")],
+    ['sent', ['-fnoreply@example.test', ''], 'no envelope (-f refused)'], 'T-002 השרת דחה -f → נשלח שוב בלי הפרמטר, ונרשם');
+$GLOBALS['apr_mail_fn'] = fn() => false;
+eq([apr_mail_send('invite', 'a@example.org', 'נושא', 'גוף', 'env-3'), apr_row("SELECT status, error FROM mail_log WHERE idempotency_key = 'env-3'")],
+    ['failed', ['status' => 'failed', 'error' => 'transport returned false · no envelope (-f refused)']], 'T-002 שתי הדרכים נכשלו → failed');
+unset($GLOBALS['apr_mail_fn']);
+$GLOBALS['apr_mail'] = $keepMail;
+
 // ── 02-C2: ב-mail_log אין אף כתובת מייל בטקסט גלוי ──
 $log = apr_rows('SELECT * FROM mail_log');
 check('02-C2 יש שורות לבדוק, כולל כישלון', count($log) > 20 && in_array('failed', array_column($log, 'status'), true));
