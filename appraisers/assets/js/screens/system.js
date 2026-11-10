@@ -11,7 +11,13 @@ function reasonSheet(title, hint, onConfirm) {
 async function viewSystem(tab) {
     setHead(T.sysTitle, null);
     const users = tab === 'users';
-    const tabs = tabsHtml([['#/system', T.tabOffices], ['#/system/users', T.tabUsers]], users ? '#/system/users' : '#/system');
+    const tabs = tabsHtml([['#/system', T.tabOffices], ['#/system/users', T.tabUsers], ['#/system/doc-types', T.tabDocTypes]], tab === 'doc-types' ? '#/system/doc-types' : users ? '#/system/users' : '#/system');
+    if (tab === 'doc-types') {
+        const v = await viewDocTypes();
+        App.main.innerHTML = tabs + v.html;
+        v.bind();
+        return;
+    }
     if (users) {
         const d = await api('sys-users');
         App.main.innerHTML = `${tabs}<ul class="list">${d.users.map(u => `<li class="card" tabindex="0" role="button" data-user="${u.pid}">

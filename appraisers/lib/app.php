@@ -42,6 +42,7 @@ require_once __DIR__ . '/devtasks.php';
 require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/login.php';
 require_once __DIR__ . '/confirm.php';
+require_once __DIR__ . '/profiles.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -125,6 +126,30 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'invite-info'        => apr_invite_info($ctx, $p),
         'invite-accept'      => apr_invite_accept($ctx, $p),
 
+        'profile-lists'      => apr_profile_lists(),
+        'profiles'           => apr_profiles_list($ctx, $p),
+        'profile'            => apr_profile_view($ctx, $p),
+        'profile-version'    => apr_profile_version($ctx, $p),
+        'profile-versions'   => apr_profile_versions($ctx, $p),
+        'profile-compare'    => apr_profile_compare($ctx, $p),
+        'profile-create'     => apr_profile_create($ctx, $p),
+        'profile-update'     => apr_profile_update($ctx, $p),
+        'profile-draft-open' => apr_profile_draft_open($ctx, $p),
+        'profile-draft-save' => apr_profile_draft_save($ctx, $p),
+        'profile-draft-info' => apr_profile_draft_info($ctx, $p),
+        'profile-draft-discard' => apr_profile_draft_discard($ctx, $p),
+        'profile-check'      => apr_profile_check($ctx, $p),
+        'profile-publish'    => apr_profile_publish($ctx, $p),
+        'profile-archive'    => apr_profile_archive($ctx, $p),
+        'profile-delete'     => apr_profile_delete($ctx, $p),
+        'profile-duplicate'  => apr_profile_duplicate($ctx, $p),
+        'profile-try'        => apr_profile_try_action($ctx, $p),
+        'profile-shares'     => apr_profile_shares($ctx, $p),
+        'profile-share-preview' => apr_profile_share_preview($ctx, $p),
+        'profile-share'      => apr_profile_share($ctx, $p),
+        'profile-share-revoke' => apr_profile_share_revoke($ctx, $p),
+        'office-required-profile' => apr_office_required_profile($ctx, $p),
+
         'office'             => apr_office_view($ctx),
         'office-leave'       => apr_office_leave($ctx),
         'office-rename'      => apr_office_rename($ctx, $p),
@@ -145,6 +170,8 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'sys-users'          => apr_sys_users(),
         'sys-user-status'    => apr_sys_user_status($p),
         'sys-user-flags'     => apr_sys_user_flags($p),
+        'sys-doc-types'      => apr_doc_types(),
+        'sys-doc-type-save'  => apr_doc_type_save($p),
 
         'dev-health'         => apr_health(),
         'dev-audit'          => ['rows' => apr_audit_rows(null, $p)],
@@ -187,5 +214,5 @@ function apr_error_response(Throwable $e, string $action): array
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
     return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
-        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg], 'req' => apr_req_id()]];
+        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []), 'req' => apr_req_id()]];
 }
