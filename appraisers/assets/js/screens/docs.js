@@ -47,7 +47,7 @@ function fileRow(f, pid, l) {
         <div class="body"><div class="l1"><span dir="auto">${esc(f.name)}</span>${l ? `<span class="t">${esc(l.relation === 'version' ? D.versionN(l.version) : D.attachmentOf(l.version))}</span>` : ''}</div>
         <div class="l2 wrap">${sub}${l && l.review_state === 'returned' && l.return_reason ? ' · ' + esc(l.return_reason) : ''}</div>
         <div class="chips">${l ? dReviewChip(l) : ''}${l && l.relation === 'version' && l.review_state !== 'rejected' ? `<span class="chip${l.current ? ' info' : ''}">${l.current ? D.current : D.replaced}</span>` : ''}${
-            f.deleted ? `<span class="chip bad">${D.deleted}</span>` : ''}${f.encrypted ? `<span class="chip warn">${D.encrypted}</span>` : ''}${f.tags.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div></li>`;
+            f.deleted ? `<span class="chip bad">${D.deleted}</span>` : ''}${f.channel === 'portal' ? `<span class="chip info">${esc(D.channels.portal)}</span>` : ''}${f.encrypted ? `<span class="chip warn">${D.encrypted}</span>` : ''}${f.tags.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div></div></li>`;
 }
 
 function docReqRow(r, d, pid, drag) {
@@ -191,7 +191,7 @@ function reasonSheet(title, hint, run, label) {
 
 /** דף דרישה: פרטים, קבצים וגרסאות, היסטוריה, פעולות. */
 async function viewRequirement(pid, rpid) {
-    const [d, x, log] = await Promise.all([api('case', { params: { case: pid } }), api('case-docs', { params: { case: pid } }), api('case-activity', { params: { case: pid } })]);
+    const [d, x, log, rqs] = await Promise.all([api('case', { params: { case: pid } }), api('case-docs', { params: { case: pid } }), api('case-activity', { params: { case: pid } }), api('case-requests', { params: { case: pid } })]);
     const r = x.requirements.find(q => q.pid === rpid);
     if (!r) { location.replace(`#/cases/${pid}/reqs`); return; }
     setHead(d.case.number, null);
@@ -216,6 +216,7 @@ async function viewRequirement(pid, rpid) {
           ${can && at > 0 ? btn('rupw', '▲ ' + D.moveUp) : ''}${can && at > -1 && at < live.length - 1 ? btn('rdown', '▼ ' + D.moveDown) : ''}</div>
         <h2 class="sec-title">📎 ${D.filesTitle} <small>${r.files.length || ''}</small></h2>
         ${r.files.length ? `<ul class="list">${r.files.map(l => fileRow(l.file, pid, l)).join('')}</ul>` : `<p class="empty">${D.noFiles}</p>`}
+        ${reqRequestsHtml(rqs, rpid)}
         <h2 class="sec-title">🕘 ${D.history}</h2>
         ${hist.length ? auditHtml(hist, a => esc((T.audit[a.action] || (() => a.action))(a)), a => esc(a.actor || C.system)) : `<p class="empty">${C.activityEmpty}</p>`}`;
     dThumbsBind();

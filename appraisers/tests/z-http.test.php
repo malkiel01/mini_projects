@@ -28,7 +28,7 @@ function http(string $method, string $path, ?array $body = null, array $headers 
     global $port;
     $h = [];
     foreach ($headers as $k => $v) $h[] = "$k: $v";
-    if ($body !== null || $raw !== null) $h[] = 'Content-Type: application/json';
+    if (($body !== null || $raw !== null) && !isset($headers['Content-Type'])) $h[] = 'Content-Type: application/json';
     $ctx = stream_context_create(['http' => ['method' => $method, 'header' => implode("\r\n", $h), 'content' => $raw ?? ($body !== null ? json_encode($body, JSON_UNESCAPED_UNICODE) : ''),
         'ignore_errors' => true, 'timeout' => 20, 'follow_location' => 0]]);
     $res = (string)file_get_contents("http://127.0.0.1:$port/$path", false, $ctx);
@@ -168,6 +168,92 @@ $resp = (string)stream_get_contents($sock);
 fclose($sock);
 preg_match('#^HTTP/\S+ (\d+)#', $resp, $m);
 check('🟡6 ב-HTTP: אותו גוף ב-chunked (בלי Content-Length) ← לא נשמר', (int)($m[1] ?? 0) >= 400 && $spy() === $was, [substr($resp, 0, 60), $spy(), $was]);
+
+// ── פרוסה 07, ב-HTTP אמיתי: הפורטל הוא כתובת ציבורית — בלי זהות, בלי עוגייה, והאסימון אינו נרשם ──
+$N = ['X-Dev-As' => 'none'];                                   // דפדפן של נמען: אין זהות מהשער, אין session
+http('POST', 'api.php?action=case-update', ['case' => $cc, 'title' => 'דירה ברחוב הסוד 9', 'purpose' => 'purchase'], $X);
+http('POST', 'api.php?action=case-identifier-add', ['case' => $cc, 'kind' => 'parcel', 'gush' => '7777', 'helka' => '3'], $X);
+$pty = http('POST', 'api.php?action=case-party-add', ['case' => $cc, 'name' => 'נועה נמענת', 'kind' => 'client', 'is_orderer' => true], $X)[1]['party'] ?? '';
+http('POST', 'api.php?action=case-start', ['case' => $cc], $X);
+$rqp = http('POST', 'api.php?action=requirement-add', ['case' => $cc, 'title' => 'נסח טאבו', 'doc_type' => 'rights', 'explain_internal' => 'פנימי-בלבד-7'], $X)[1]['requirement'] ?? '';
+$content = ['case' => $cc, 'party' => $pty, 'requirements' => [$rqp], 'channel' => 'link_copy'];
+$pv = http('POST', 'api.php?action=request-preview', $content, $X)[1];
+eq(http('POST', 'api.php?action=request-send', $content + ['op' => 'op-http-0001'], $X)[1]['error']['code'] ?? null, 'preview_required', '07-A1 ב-HTTP: שליחה בלי תצוגה מקדימה נדחית');
+$snd = http('POST', 'api.php?action=request-send', $content + ['preview' => $pv['preview'] ?? '', 'op' => 'op-http-0001'], $X);
+preg_match('~^http://127\.0\.0\.1:\d+/portal/#([A-Za-z0-9_-]{43})$~', (string)($snd[1]['link'] ?? ''), $tm);
+$TK = $tm[1] ?? '';
+check('הכנה: בקשה ב"קישור להעתקה" — הקישור נבנה מכתובת האפליקציה, והאסימון אחרי ה-#', $snd[0] === 200 && $TK !== '', $snd[1]);
+
+[$st, , $h, $page] = http('GET', 'portal/', null, $N);
+$csp = $h['content-security-policy'][0] ?? '';
+eq([$st, $h['referrer-policy'][0] ?? '', $h['cache-control'][0] ?? '', str_contains($h['x-robots-tag'][0] ?? '', 'noindex'), isset($h['set-cookie']),
+    str_contains($csp, "default-src 'none'"), str_contains($csp, "script-src 'self'"), str_contains($csp, 'unsafe'), str_contains($csp, "frame-ancestors 'none'")],
+    [200, 'no-referrer', 'no-store', true, false, true, true, false, true], '07-D1 דף הפורטל בלי זהות: 200, no-referrer, no-store, noindex, CSP בלי סקריפט חיצוני ובלי inline — ובלי עוגייה');
+preg_match_all('~(?:src|href)="([^"]+)"~', $page, $refs);
+eq([array_values(array_filter($refs[1], fn($u) => !preg_match('~^portal\.(js|css)\?v=[0-9.]+$~', $u))), (bool)preg_match('~<script(?![^>]*\ssrc=)|\son[a-z]+=|style=~i', $page), str_contains($page, 'index.html')],
+    [[], false, false], '07-D2 בדף הפורטל: רק portal.js ו-portal.css, בלי סקריפט בתוך הדף, ובלי קישור למערכת');
+$pjs = http('GET', 'portal/portal.js', null, $N);
+$pcss = http('GET', 'portal/portal.css', null, $N);
+eq([$pjs[0], $pcss[0], (bool)preg_match('~https?://|innerHTML|document\.write|localStorage|sessionStorage|eval\(~', $pjs[3]), (bool)preg_match('~url\(|@import|https?://~', $pcss[3]),
+    (bool)preg_match('~assets/|index\.html|#/cases~', $pjs[3])], [200, 200, false, false, false],
+    '07-D2 portal.js ו-portal.css: בלי משאב חיצוני, בלי innerHTML, בלי storage, ובלי הפניה לקוד או למסכים של המערכת');
+
+[$st, $po, $h] = http('POST', 'api.php?action=portal-open', ['token' => $TK], $N);
+$poj = json_encode($po, JSON_UNESCAPED_UNICODE);
+eq([$st, $po['state'] ?? null, array_column($po['items'] ?? [], 'title'), $po['office'] ?? null, isset($h['set-cookie']), $h['referrer-policy'][0] ?? '', $h['cache-control'][0] ?? '',
+    array_values(array_filter(['הסוד', '7777', 'פנימי-בלבד', $cc, 'owner@'], fn($x) => str_contains($poj, $x)))],
+    [200, 'open', ['נסח טאבו'], 'משרד קבצים', false, 'no-referrer', 'no-store', []], '07-B1 ב-HTTP: portal-open בלי זהות ← הדרישות של הבקשה בלבד; בלי עוגייה; בלי פרטי התיק');
+$inv = fn(array $r) => [$r[0], $r[1]['error']['code'] ?? null, $r[1]['error']['message'] ?? null, isset($r[2]['set-cookie'])];
+$bad = str_repeat('Z', 43);
+$want = [404, 'portal_invalid', 'הקישור אינו בתוקף. לקבלת קישור חדש, פנו למשרד ששלח אותו.', false];
+eq([$inv(http('POST', 'api.php?action=portal-open', ['token' => $bad], $N)), $inv(http('POST', 'api.php?action=portal-open', ['token' => $bad], $X)), $inv(http('POST', 'api.php?action=portal-open&token=' . $TK, [], $N)),
+    $inv(http('POST', 'api.php?action=portal-respond', ['token' => $bad, 'requirement' => $rqp, 'kind' => 'comment', 'text' => 'x'], $X)),
+    $inv(http('POST', 'api.php?action=portal-file', ['token' => $bad, 'file' => $fp], $X))], [$want, $want, $want, $want, $want],
+    '07-B9 / 07-B6 ב-HTTP: אסימון שגוי ← 404 אחיד — גם עם עוגיית session ו-X-CSRF של שמאי, וגם כשהאסימון הנכון בכתובת במקום בגוף');
+eq([http('GET', 'api.php?action=portal-open&token=' . $TK, null, $N)[0], http('POST', 'api.php?action=portal-open', ['token' => $TK], $N + ['Origin' => 'https://evil.example'])[1]['error']['code'] ?? null,
+    http('POST', 'api.php?action=portal-open', null, $N + ['Content-Type' => 'text/plain'], json_encode(['token' => $TK]))[1]['error']['code'] ?? null,
+    http('POST', 'api.php?action=portal-open', ['token' => $TK], $N + ['Sec-Fetch-Site' => 'cross-site'])[1]['error']['code'] ?? null], [405, 'csrf', 'csrf', 'csrf'],
+    'CSRF ב-HTTP: GET, מקור זר, או גוף שאינו JSON ← נדחה');
+
+$filesWas = $spy();
+$upP = 'api.php?action=portal-upload&requirement=' . $rqp . '&name=' . rawurlencode('<b>נסח.pdf') . '&key=';
+$goodPdf = "%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%portal\n%%EOF\n";
+$oct = ['Content-Type' => 'application/octet-stream'];
+$noHdr = http('POST', $upP . 'key-http-0001', null, $N + $oct, $goodPdf);
+$asOwner = http('POST', $upP . 'key-http-0002', null, $X + $oct + ['X-Portal-Token' => $bad], $goodPdf);
+$inUrl = http('POST', $upP . 'key-http-0003&token=' . $TK . '&portal_token=' . $TK, null, $N + $oct, $goodPdf);
+eq([$noHdr[1]['error']['code'] ?? null, $asOwner[1]['error']['code'] ?? null, $inUrl[1]['error']['code'] ?? null, $spy()], ['portal_invalid', 'portal_invalid', 'portal_invalid', $filesWas],
+    '07-B9 ב-HTTP: העלאה לפורטל בלי הכותרת, עם זהות של שמאי ואסימון שגוי, או עם האסימון בכתובת ← נדחית, ודבר לא נשמר');
+$upOk = http('POST', $upP . 'key-http-0004', null, $N + $oct + ['X-Portal-Token' => $TK], $goodPdf);
+$upJs = http('POST', $upP . 'key-http-0005', null, $N + $oct + ['X-Portal-Token' => $TK], "%PDF-1.4\n1 0 obj << /S /JavaScript /JS (app.alert(1)) >> endobj\n%%EOF\n");
+$docs = http('GET', 'api.php?action=case-docs&case=' . $cc, null, $C)[1];
+$mine = array_values(array_filter($docs['requirements'] ?? [], fn($r) => $r['pid'] === $rqp))[0] ?? [];
+eq([$upOk[0], $upOk[1]['received'] ?? null, isset($upOk[2]['set-cookie']), $upJs[1]['error']['code'] ?? null, $mine['status'] ?? null, $mine['files'][0]['review_state'] ?? null,
+    $mine['files'][0]['file']['uploader_kind'] ?? null, $mine['files'][0]['file']['channel'] ?? null, $mine['files'][0]['file']['uploader'] ?? null, $mine['files'][0]['file']['name'] ?? null, count($mine['files'] ?? [])],
+    [200, true, false, 'file_active', 'received', 'pending', 'recipient', 'portal', 'נועה נמענת', '<b>נסח.pdf', 1],
+    '07-C1 / 07-C3 ב-HTTP: העלאה מהפורטל ← received ו-pending, והמשרד רואה מי העלה ובאיזה ערוץ; קובץ עם תוכן פעיל נדחה');
+$pf = http('POST', 'api.php?action=portal-file', ['token' => $TK, 'file' => $upOk[1]['file'] ?? '', 'inline' => true], $N);
+$pfC = http('POST', 'api.php?action=portal-file', ['token' => $TK, 'file' => $upOk[1]['file'] ?? '', 'inline' => true], $N + ['Cookie' => 'apr_portal=' . str_repeat('c', 43)]);
+eq([$pf[0], $pf[1]['error']['code'] ?? null, $pfC[1]['error']['code'] ?? null, http('POST', 'api.php?action=portal-otp-send', ['token' => $TK], $N)[1]['error']['code'] ?? null,
+    http('POST', 'api.php?action=portal-file', ['token' => $TK, 'file' => $fp, 'inline' => true], $N)[1]['error']['code'] ?? null],
+    [403, 'portal_otp_required', 'portal_otp_required', 'portal_otp_unavailable', 'portal_otp_required'], '07-B4 ב-HTTP: portal-file בלי מכשיר מאומת (גם עם עוגייה מומצאת) ← 403; לנמען בלי מייל אין קוד');
+$rs = http('POST', 'api.php?action=portal-respond', ['token' => $TK, 'requirement' => $rqp, 'kind' => 'no_document', 'text' => '<img src=x onerror=alert(1)>'], $N);
+$rqs = http('GET', 'api.php?action=case-requests&case=' . $cc, null, $C)[1]['requests'][0] ?? [];
+eq([$rs[0], $rqs['responses'][0]['text'] ?? null, $rqs['use_count'] ?? 0, $rqs['messages'][0]['status'] ?? null, http('GET', 'api.php?action=case-requests&case=' . $cc, null, $U)[0]],
+    [200, '<img src=x onerror=alert(1)>', 1, 'unknown', 403], '07-C2 ב-HTTP: התשובה של הנמען נשמרת כפי שנכתבה (המסך מציג אותה דרך esc); משתמש בלי משרד ← 403');
+http('POST', 'api.php?action=portal-client-error', ['message' => "boom at /portal/#$TK", 'source' => "http://x/portal/portal.js?t=$TK", 'line' => 3, 'stack' => $TK, 'page' => "#$TK"], $N);
+usleep(300000);
+$leaks = [];
+// (יומן שרת הפיתוח רושם כתובות, והבדיקה למעלה שמה את האסימון בכתובת בכוונה — לכן הוא אינו נסרק כאן; הדף עצמו לעולם אינו שולח אותו בכתובת)
+foreach (array_merge(glob("$data/_dev/log.sqlite*") ?: [], glob("$data/*.sqlite*") ?: []) as $f) if (str_contains((string)file_get_contents($f), $TK)) $leaks[] = basename($f);
+$logdb = new PDO("sqlite:$data/_dev/log.sqlite");
+$prow = $logdb->query("SELECT COUNT(*) FROM log WHERE action LIKE 'portal-%'")->fetchColumn();
+$pusr = $logdb->query("SELECT COUNT(*) FROM log WHERE action LIKE 'portal-%' AND action <> 'portal-client-error' AND username <> ''")->fetchColumn();
+eq([$leaks, (int)$prow >= 10, (int)$pusr, (int)$logdb->query("SELECT COUNT(*) FROM log WHERE event = 'portal.client_error'")->fetchColumn()], [[], true, 0, 1],
+    '§9 האסימון אינו מופיע ביומן הבקשות, ביומן השגיאות או במסד — גם אחרי שגיאת דפדפן שכללה אותו; ובקשות הפורטל נרשמות בלי משתמש');
+$rvk = http('POST', 'api.php?action=request-revoke', ['request' => $snd[1]['request'] ?? ''], $X);
+eq([$rvk[0], $inv(http('POST', 'api.php?action=portal-open', ['token' => $TK], $N)), http('POST', $upP . 'key-http-0006', null, $N + $oct + ['X-Portal-Token' => $TK], $goodPdf)[1]['error']['code'] ?? null],
+    [200, $want, 'portal_invalid'], '07-B7 ב-HTTP: אחרי ביטול — אותה תשובה כמו לאסימון שלא היה קיים');
 
 // ── קבצים סטטיים ונתיבים חסומים ──
 eq(http('GET', 'manifest.webmanifest')[0], 200, 'manifest.webmanifest מוגש');

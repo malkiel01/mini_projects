@@ -514,7 +514,8 @@ function apr_file_out(array $f, array $tags = []): array
 function apr_case_docs(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
-    $files = array_column(apr_rows('SELECT f.*, u.name AS uploader_name FROM files f LEFT JOIN users u ON u.id = f.uploader_id WHERE f.case_id = ? ORDER BY f.id', [$c['id']]), null, 'id');
+    $files = array_column(apr_rows('SELECT f.*, COALESCE(u.name, ct.name) AS uploader_name FROM files f LEFT JOIN users u ON u.id = f.uploader_id
+        LEFT JOIN requests q ON q.id = f.request_id LEFT JOIN case_parties cp ON cp.id = q.party_id LEFT JOIN contacts ct ON ct.id = cp.contact_id WHERE f.case_id = ? ORDER BY f.id', [$c['id']]), null, 'id');
     $tags = [];
     foreach (apr_rows('SELECT t.file_id, t.tag FROM file_tags t JOIN files f ON f.id = t.file_id WHERE f.case_id = ? ORDER BY t.tag', [$c['id']]) as $t) $tags[$t['file_id']][] = $t['tag'];
     $links = [];
