@@ -16,6 +16,9 @@
  *                  · dev-… של DevLoop (אותם שמות כמו בכל אפליקציה)
  * בלי משתמש:       health · devapi-… (באסימון X-Dev-Token) · platform_key · login-config · sso-start · sso-callback
  *                  · login {email, password} · forgot {email} · reset {token, password}
+ * מסמכים (06):     case-docs {case} · file {file, inline?} · file-thumb {file} · docs-search {q, case?} · docs-pending
+ *                  · file-upload (גוף גולמי; הפרמטרים בכתובת: case, requirement?, relation?, name, key, dup?, source_note?, doc_date?)
+ *                  · file-assign · file-update · file-delete · file-review · requirement-status · requirement-order · requirement-split
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
  *
@@ -45,6 +48,7 @@ require_once __DIR__ . '/confirm.php';
 require_once __DIR__ . '/profiles.php';
 require_once __DIR__ . '/cases.php';
 require_once __DIR__ . '/case_parts.php';
+require_once __DIR__ . '/documents.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -182,6 +186,19 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'my-tasks' => apr_my_tasks($ctx),
         'requirement-add' => apr_requirement_add($ctx, $p),
         'requirement-update' => apr_requirement_update($ctx, $p),
+        'case-docs' => apr_case_docs($ctx, $p),
+        'file' => apr_file_serve($ctx, $p),
+        'file-thumb' => apr_file_thumb($ctx, $p),
+        'docs-search' => apr_docs_search($ctx, $p),
+        'docs-pending' => apr_docs_pending($ctx),
+        'file-upload' => apr_file_upload($ctx, $p, $env),
+        'file-assign' => apr_file_assign($ctx, $p),
+        'file-update' => apr_file_update($ctx, $p),
+        'file-delete' => apr_file_delete($ctx, $p),
+        'file-review' => apr_file_review($ctx, $p),
+        'requirement-status' => apr_requirement_status($ctx, $p),
+        'requirement-order' => apr_requirement_order($ctx, $p),
+        'requirement-split' => apr_requirement_split($ctx, $p),
         'office-cases' => apr_office_cases($ctx),
         'office-case-transfer' => apr_office_case_transfer($ctx, $p),
 
@@ -249,5 +266,5 @@ function apr_error_response(Throwable $e, string $action): array
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
     return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
-        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []), 'req' => apr_req_id()]];
+        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []), 'req' => apr_req_id()]];
 }

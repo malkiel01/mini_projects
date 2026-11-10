@@ -124,6 +124,29 @@ $U = ['X-Dev-As' => '17:דנה לוי:dana@example.com'];
 eq(http('GET', 'api.php?action=dev-health', null, $U)[0], 404, '01-E1 משתמש רגיל: מסך המפתח → 404');
 eq(http('GET', 'api.php?action=dev-items', null, $U)[0], 404, '01-E1 ו-DevLoop → 404');
 
+// ── פרוסה 06, ב-HTTP אמיתי: העלאה בגוף גולמי, והגשה עם הכותרות (06-C3) ──
+http('POST', 'api.php?action=office-create', ['name' => 'משרד קבצים', 'role' => 'appraiser'], $X);
+$pp = http('POST', 'api.php?action=profile-create', ['scope' => 'office', 'name' => 'פרופיל'], $X)[1]['profile'] ?? '';
+$dr = http('POST', 'api.php?action=profile-draft-open', ['profile' => $pp], $X)[1];
+$sv = http('POST', 'api.php?action=profile-draft-save', ['profile' => $pp, 'content' => ['flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => []], 'revision' => $dr['draft']['revision'] ?? ''], $X)[1];
+http('POST', 'api.php?action=profile-publish', ['profile' => $pp, 'note' => '', 'revision' => $sv['revision'] ?? ''], $X);
+$cc = http('POST', 'api.php?action=case-create', ['profile' => $pp], $X)[1]['case'] ?? '';
+$pdfBody = "%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n<script>alert(1)</script>\n%%EOF\n";
+$upUrl = 'api.php?action=file-upload&case=' . $cc . '&name=' . rawurlencode('../נסח <b>.html');
+[$st, $j] = http('POST', $upUrl, null, $X, $pdfBody);
+$fp = $j['file'] ?? '';
+eq([$st, preg_match('/^[a-z0-9]{16}$/', $fp), http('POST', $upUrl, null, $C, $pdfBody)[0], http('POST', $upUrl, null, $X, '<html><script>alert(1)</script></html>')[0], http('POST', $upUrl, null, $X, '')[0]],
+    [200, 1, 403, 415, 415], '06 העלאה ב-HTTP: גוף גולמי נשמר; בלי X-CSRF ← 403; HTML או גוף ריק ← 415');
+[$st, , $h, $raw] = http('GET', 'api.php?action=file&file=' . $fp, null, $C);
+eq([$st, $raw === $pdfBody, $h['content-type'][0] ?? '', $h['x-content-type-options'][0] ?? '', str_starts_with($h['content-disposition'][0] ?? '', 'attachment; filename='), str_contains($h['content-disposition'][0] ?? '', '.pdf'),
+    str_contains($h['content-disposition'][0] ?? '', 'html'), str_starts_with($h['content-security-policy'][0] ?? '', 'sandbox'), str_contains($h['cache-control'][0] ?? '', 'no-store')],
+    [200, true, 'application/pdf', 'nosniff', true, true, false, true, true], '06-C3 הורדה ב-HTTP: התוכן כמו שהוא, application/pdf, nosniff, attachment עם סיומת מהסוג שזוהה, sandbox');
+[$st, , $h] = http('GET', 'api.php?action=file&inline=1&file=' . $fp, null, $C);
+eq([$st, str_starts_with($h['content-disposition'][0] ?? '', 'inline; '), str_starts_with($h['content-security-policy'][0] ?? '', 'sandbox'), $h['x-content-type-options'][0] ?? ''], [200, true, true, 'nosniff'], '06-C3 תצוגה מקדימה ב-HTTP: inline עם sandbox');
+eq([http('GET', 'api.php?action=file&file=' . $fp, null, ['X-Dev-As' => '77:זר:stranger@example.com'])[0], http('GET', 'api.php?action=file&file=' . $fp, null, ['X-Dev-As' => 'none'])[0]], [403, 401], '06-C1 ב-HTTP: בלי משרד / בלי זהות ← אין קובץ');
+$stored = glob("$data/files/*/*") ?: [];
+check('06-B7 הקובץ בדיסק: תחת data/files, שם אקראי בלי סיומת; הקובץ הזמני נמחק', count($stored) === 1 && preg_match('~/files/[a-f0-9]{2}/[a-f0-9]{32}$~', $stored[0]) === 1 && !(glob("$data/tmp/*") ?: []), $stored);
+
 // ── קבצים סטטיים ונתיבים חסומים ──
 eq(http('GET', 'manifest.webmanifest')[0], 200, 'manifest.webmanifest מוגש');
 $idx = http('GET', 'index.html')[3];

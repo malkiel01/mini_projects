@@ -28,6 +28,14 @@ function apr_out(mixed $data, int $status = 200): never
         header('Location: ' . $data['_redirect']);
         exit;
     }
+    // קובץ (file, file-thumb): הכותרות נקבעות ב-lib/files.php — תמיד nosniff, Content-Disposition ו-sandbox
+    if (is_array($data) && isset($data['_file'])) {
+        http_response_code(200);
+        foreach ($data['_file']['headers'] as $k => $v) header("$k: $v");
+        while (ob_get_level() > 0) ob_end_clean();
+        readfile($data['_file']['path']);
+        exit;
+    }
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
@@ -44,10 +52,41 @@ function apr_out(mixed $data, int $status = 200): never
     exit;
 }
 
+/** קורא את גוף הבקשה לקובץ זמני. מחזיר ['upload' => נתיב] או ['upload_error' => קוד] — בלי לקרוא מעבר לגודל המותר. */
+function apr_upload_receive(): array
+{
+    $max = apr_file_max();
+    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) return ['upload_error' => 'file_too_large'];
+    apr_upload_tmp_sweep();
+    $tmp = tempnam(apr_upload_tmp_dir(), 'up');
+    $src = fopen('php://input', 'rb');
+    $dst = $tmp !== false ? fopen($tmp, 'wb') : false;
+    if (!$src || !$dst) return ['upload_error' => 'storage_full'];
+    $err = '';
+    for ($total = 0; !feof($src);) {
+        $chunk = fread($src, 1 << 20);
+        if ($chunk === false || $chunk === '') break;
+        $total += strlen($chunk);
+        if ($total > $max) { $err = 'file_too_large'; break; }
+        if (fwrite($dst, $chunk) !== strlen($chunk)) { $err = 'storage_full'; break; }
+    }
+    fclose($src);
+    if (!fclose($dst) && $err === '') $err = 'storage_full';
+    if ($err !== '') { @unlink($tmp); return ['upload_error' => $err]; }
+    // בקשה שנדחית לפני הקליטה (CSRF, הרשאה) — הקובץ הזמני לא נשאר
+    register_shutdown_function(fn() => is_file($tmp) && @unlink($tmp));
+    return ['upload' => $tmp];
+}
+
 try {
     // גוף JSON, עד 1MB. צילום שמצורף למטלה (…-attach) מגיע כגוף גולמי — המודול קורא אותו בעצמו.
     $in = [];
-    if ($method === 'POST' && !str_ends_with($action, '-attach')) {
+    $upload = [];
+    if ($method === 'POST' && $action === 'file-upload') {
+        // קובץ: הגוף הגולמי נשמר לקובץ זמני תחת data/tmp, עד הגודל המותר; הפרמטרים — בכתובת. ההרשאה נבדקת בנתב.
+        $in = array_filter($_GET, 'is_string');
+        $upload = apr_upload_receive();
+    } elseif ($method === 'POST' && !str_ends_with($action, '-attach')) {
         $max = 1_000_000;
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) apr_fail('too_large');
         $raw = (string)file_get_contents('php://input', false, null, 0, $max + 1);
@@ -66,7 +105,7 @@ try {
         'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),
         'fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
         'sso_state' => is_string($_COOKIE['apr_sso'] ?? null) ? $_COOKIE['apr_sso'] : '',
-    ]);
+    ] + $upload);
     apr_out(apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out);
 } catch (Throwable $e) {
     devloop_log_error($e);

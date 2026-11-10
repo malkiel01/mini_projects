@@ -67,7 +67,9 @@ function apr_case_identifier_add(array $ctx, array $in): array
     $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
     $kind = apr_clean_choice($in['kind'] ?? null, APR_IDENT_KINDS) ?? apr_fail('content_invalid');
     $row = apr_ident_fields($in, $kind) + ['kind' => $kind, 'source_kind' => apr_clean_choice($in['source_kind'] ?? 'user', APR_IDENT_SOURCES) ?? 'user',
-        'source_ref' => apr_is_pid($in['source_ref'] ?? null) ? $in['source_ref'] : null, 'source_note' => apr_clean_text($in['source_note'] ?? '', 120), 'note' => apr_clean_text($in['note'] ?? '', 300)];
+        'source_ref' => null, 'source_note' => apr_clean_text($in['source_note'] ?? '', 120), 'note' => apr_clean_text($in['note'] ?? '', 300)];
+    // 04-C3: מקור מסוג מסמך הוא קובץ אמיתי של התיק הזה — לא הצהרה
+    if ($row['source_kind'] === 'document') $row['source_ref'] = apr_source_file($c, $in['source_ref'] ?? null);
     $row['match_key'] = apr_ident_match_key($row);
     return apr_tx(function () use ($ctx, $c, $row) {
         if ((int)apr_val('SELECT COUNT(*) FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL', [$c['id']]) >= 50) apr_fail('content_too_large');
@@ -99,8 +101,9 @@ function apr_ident_row(array $c, mixed $pid): array
 }
 
 /**
- * עדכון מצב / מקור / הערה של מזהה. **כתובת לבדה אינה זיהוי ודאי**: מזהה מסוג כתובת שהמקור שלו הוא המשתמש אינו ניתן
- * לסימון verified.
+ * עדכון מצב / מקור / הערה של מזהה. **כתובת לבדה אינה זיהוי ודאי**: מזהה מסוג כתובת מסומן verified רק מול **מסמך אמיתי
+ * של התיק** (source_kind = document, ו-source_ref הוא קובץ קיים בתיק שלא נמחק). מקור "מסמך" בכל מזהה — תמיד קובץ כזה.
+ * בדיקת מקור וביקור (source_check, visit) עוד אינם ישויות — עד הפרוסות שלהם הם אינם מאמתים כתובת.
  */
 function apr_case_identifier_update(array $ctx, array $in): array
 {
@@ -109,9 +112,9 @@ function apr_case_identifier_update(array $ctx, array $in): array
         $i = apr_ident_row($c, $in['identifier'] ?? null);
         $state = array_key_exists('state', $in) ? (apr_clean_choice($in['state'], APR_IDENT_STATES) ?? apr_fail('status_invalid')) : $i['state'];
         $source = array_key_exists('source_kind', $in) ? (apr_clean_choice($in['source_kind'], APR_IDENT_SOURCES) ?? apr_fail('content_invalid')) : $i['source_kind'];
-        if ($state === 'verified' && $i['kind'] === 'address' && $source === 'user') apr_fail('address_not_verifiable');
-        apr_exec('UPDATE case_identifiers SET state = ?, source_kind = ?, source_ref = ?, source_note = ?, note = ? WHERE id = ?', [$state, $source,
-            array_key_exists('source_ref', $in) ? (apr_is_pid($in['source_ref']) ? $in['source_ref'] : null) : $i['source_ref'],
+        if ($state === 'verified' && $i['kind'] === 'address' && $source !== 'document') apr_fail('address_not_verifiable');
+        $ref = $source === 'document' ? apr_source_file($c, array_key_exists('source_ref', $in) ? $in['source_ref'] : $i['source_ref']) : null;
+        apr_exec('UPDATE case_identifiers SET state = ?, source_kind = ?, source_ref = ?, source_note = ?, note = ? WHERE id = ?', [$state, $source, $ref,
             array_key_exists('source_note', $in) ? apr_clean_text($in['source_note'], 120) : $i['source_note'],
             array_key_exists('note', $in) ? apr_clean_text($in['note'], 300) : $i['note'], $i['id']]);
         apr_case_audit($c, 'case.identifier_update', 'identifier', $i['pid'], ['state' => $state, 'source' => $source]);
@@ -325,10 +328,15 @@ function apr_task_create(array $ctx, array $in): array
     $title = apr_clean_name($in['title'] ?? null, 160);
     $assignee = apr_task_assignee($c, $in['assignee'] ?? null);
     $link = is_string($in['link_type'] ?? null) && in_array($in['link_type'], ['requirement', 'identifier', 'identifiers'], true) ? $in['link_type'] : null;
-    return apr_tx(function () use ($ctx, $c, $in, $title, $assignee, $link) {
+    $linkPid = null;
+    if ($link === 'requirement' || $link === 'identifier') {
+        $linkPid = apr_is_pid($in['link_pid'] ?? null) ? $in['link_pid'] : apr_fail('link_invalid');
+        if (!apr_val($link === 'requirement' ? 'SELECT 1 FROM requirements WHERE pid = ? AND case_id = ?' : 'SELECT 1 FROM case_identifiers WHERE pid = ? AND case_id = ? AND removed_at IS NULL', [$linkPid, $c['id']])) apr_fail('link_invalid');
+    }
+    return apr_tx(function () use ($ctx, $c, $in, $title, $assignee, $link, $linkPid) {
         $pid = apr_pid();
         apr_insert('tasks', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'kind' => 'manual', 'title' => $title, 'detail' => apr_clean_text($in['detail'] ?? '', 1000),
-            'assignee_user_id' => $assignee, 'due_at' => apr_clean_due($in['due_at'] ?? null), 'link_type' => $link, 'link_pid' => $link && apr_is_pid($in['link_pid'] ?? null) ? $in['link_pid'] : null,
+            'assignee_user_id' => $assignee, 'due_at' => apr_clean_due($in['due_at'] ?? null), 'link_type' => $link, 'link_pid' => $linkPid,
             'created_by' => $ctx['user']['id'], 'created_at' => apr_now(), 'updated_at' => apr_now()]);
         apr_case_audit($c, 'task.create', 'task', $pid);
         apr_case_touch($c);
@@ -379,13 +387,13 @@ function apr_my_tasks(array $ctx): array
     return ['tasks' => array_map(fn($t) => apr_task_out($t) + ['case' => ['pid' => $cases[$t['case_id']]['pid'], 'number' => $cases[$t['case_id']]['number'], 'title' => $cases[$t['case_id']]['title']]], $rows)];
 }
 
-// ── דרישות (הבסיס; קבצים, בדיקה ומצבים — פרוסה 06) ────────────
+// ── דרישות (הוספה ועריכה; מצבים, קבצים ובדיקה — lib/documents.php) ──
 
 function apr_requirement_out(array $r): array
 {
     return ['pid' => $r['pid'], 'origin' => $r['origin'], 'group' => $r['group_key'], 'doc_type' => $r['doc_type'], 'title' => $r['title'], 'explain_recipient' => $r['explain_recipient'],
         'explain_internal' => $r['explain_internal'], 'priority' => $r['priority'], 'mandatory' => (bool)$r['mandatory'], 'party_kind' => $r['party_kind'],
-        'party' => $r['party_pid'] ?? null, 'due_at' => $r['due_at'], 'status' => $r['status'], 'in_profile' => $r['in_profile'] ?? true];
+        'party' => $r['party_pid'] ?? null, 'due_at' => $r['due_at'], 'status' => $r['status'], 'in_profile' => $r['in_profile'] ?? true, 'split' => ($r['split_at'] ?? null) !== null];
 }
 
 /** דרישה ידנית בתיק. התאמה בתיק לעולם אינה משנה את הפרופיל. */
@@ -404,12 +412,20 @@ function apr_requirement_add(array $ctx, array $in): array
     });
 }
 
+/** עריכת דרישה (documents). **הורדת "חובה"** — רק לבעל review_docs, ועם נימוק. דרישה שפוצלה אינה נערכת. */
 function apr_requirement_update(array $ctx, array $in): array
 {
-    $r = apr_is_pid($in['requirement'] ?? null) ? apr_row('SELECT r.*, c.pid AS case_pid FROM requirements r JOIN cases c ON c.id = r.case_id WHERE r.pid = ?', [$in['requirement']]) : null;
-    $c = apr_case_get($ctx, $r['case_pid'] ?? null, 'documents');
-    return apr_tx(function () use ($c, $r, $in) {
+    $c = apr_case_get($ctx, apr_doc_case_pid('requirements', $in['requirement'] ?? null), 'documents');
+    return apr_tx(function () use ($c, $in) {
+        apr_case_still_open($c);
+        $r = apr_req_row($c, $in['requirement'] ?? null);
+        if ($r['split_at'] !== null) apr_fail('req_state');
         $set = [];
+        $reason = null;
+        if ((int)$r['mandatory'] === 1 && array_key_exists('mandatory', $in) && $in['mandatory'] !== true) {
+            if (empty($c['perms']['review_docs'])) apr_fail('forbidden');
+            $reason = apr_reason($in['reason'] ?? null);
+        }
         if (array_key_exists('title', $in)) $set['title'] = apr_clean_name($in['title'], 160);
         if (array_key_exists('priority', $in)) $set['priority'] = apr_clean_choice($in['priority'], APR_PRIORITIES) ?? apr_fail('content_invalid');
         if (array_key_exists('mandatory', $in)) $set['mandatory'] = (int)($in['mandatory'] === true);
@@ -419,7 +435,7 @@ function apr_requirement_update(array $ctx, array $in): array
         if (array_key_exists('party', $in)) $set['party_id'] = $in['party'] === null ? null : (int)apr_party_row($c, $in['party'])['id'];
         if (!$set) return [];
         apr_exec('UPDATE requirements SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($set))) . ', updated_at = ? WHERE id = ?', [...array_values($set), apr_now(), $r['id']]);
-        apr_case_audit($c, 'requirement.update', 'requirement', $r['pid'], ['fields' => array_keys($set)]);
+        apr_case_audit($c, 'requirement.update', 'requirement', $r['pid'], ['fields' => array_keys($set)], $reason);
         apr_case_touch($c);
         return [];
     });
@@ -488,7 +504,7 @@ function apr_cases_list(array $ctx, array $q): array
         $args[] = $q['orderer'];
     }
     if (is_string($q['due_before'] ?? null) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $q['due_before'])) { $where[] = 'c.due_date IS NOT NULL AND c.due_date <= ?'; $args[] = $q['due_before']; }
-    if (($q['open_mandatory'] ?? '') === '1') $where[] = "EXISTS (SELECT 1 FROM requirements r WHERE r.case_id = c.id AND r.mandatory = 1 AND r.status = 'required')";
+    if (($q['open_mandatory'] ?? '') === '1') $where[] = 'EXISTS (SELECT 1 FROM requirements r WHERE r.case_id = c.id AND ' . apr_req_open_sql('r.') . ')';
     $needle = trim(is_string($q['q'] ?? null) ? mb_substr($q['q'], 0, 100) : '');
     if ($needle !== '') {
         $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($needle)) . '%';
@@ -505,7 +521,7 @@ function apr_cases_list(array $ctx, array $q): array
         $where[] = '(' . implode(' OR ', $parts) . ')';
     }
     $rows = apr_rows('SELECT c.*, u.name AS responsible_name, u.pid AS responsible_pid,
-            (SELECT COUNT(*) FROM requirements r WHERE r.case_id = c.id AND r.mandatory = 1 AND r.status = \'required\') AS open_mandatory,
+            (SELECT COUNT(*) FROM requirements r WHERE r.case_id = c.id AND ' . apr_req_open_sql('r.') . ') AS open_mandatory,
             (SELECT COUNT(*) FROM tasks t WHERE t.case_id = c.id AND t.status IN (\'open\', \'in_progress\') AND t.due_at IS NOT NULL AND t.due_at < ?) AS overdue_tasks
         FROM cases c JOIN case_members cm ON cm.case_id = c.id AND cm.user_id = ? AND cm.revoked_at IS NULL LEFT JOIN users u ON u.id = c.responsible_user_id
         WHERE ' . implode(' AND ', $where) . ' ORDER BY c.updated_at DESC, c.id DESC LIMIT 200', [apr_now(), ...$args]);
