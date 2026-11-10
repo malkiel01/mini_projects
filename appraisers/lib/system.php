@@ -112,7 +112,7 @@ function apr_sys_office_create(array $ctx, array $in): array
         $pid = apr_pid();
         $office = apr_insert('offices', ['pid' => $pid, 'name' => $name, 'created_by' => $ctx['user']['id'], 'created_at' => $now, 'updated_at' => $now]);
         apr_audit('office.create', 'office', $pid, ['by' => 'sysadmin'], office: $office);
-        return ['office' => $pid] + apr_invite_insert($office, $email, $role, 1, (int)$ctx['user']['id']);
+        return array_diff_key(['office' => $pid] + apr_invite_insert($office, $email, $role, 1, (int)$ctx['user']['id']), ['id' => 0]);
     });
 }
 

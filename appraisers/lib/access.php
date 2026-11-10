@@ -21,6 +21,9 @@ const APR_ROLES = ['appraiser', 'trainee', 'staff'];
  */
 const APR_ACCESS = [
     'health'              => 'public',
+    'platform_key'        => 'public',
+    'login-config'        => 'public', 'sso-start' => 'public', 'sso-callback' => 'public',
+    'login'               => 'public', 'forgot' => 'public', 'reset' => 'public',
     'devapi-feed'         => 'token', 'devapi-comment' => 'token', 'devapi-file' => 'token', 'devapi-attach' => 'token',
 
     'me'                  => 'user',
@@ -30,6 +33,10 @@ const APR_ACCESS = [
     'invite-info'         => 'user',
     'invite-accept'       => 'user',
     'devloop-client-error' => 'user',
+    'logout'              => 'user',
+    'password-set'        => 'user',
+    'confirm-request'     => 'user',
+    'confirm-verify'      => 'user',
 
     'office'              => 'member',
     'office-leave'        => 'member',
@@ -38,6 +45,7 @@ const APR_ACCESS = [
     'invite-create'       => 'admin',
     'invite-link'         => 'admin',
     'invite-revoke'       => 'admin',
+    'invite-resend'       => 'admin',
     'member-update'       => 'admin',
     'member-remove'       => 'admin',
 
@@ -57,6 +65,7 @@ const APR_ACCESS = [
     'dev-job-retry'       => 'developer',
     'dev-job-cancel'      => 'developer',
     'dev-cron-run'        => 'developer',
+    'dev-mail'            => 'developer',
     'dev-items'           => 'developer', 'dev-task-create' => 'developer', 'dev-task-set' => 'developer', 'dev-comment' => 'developer',
     'dev-comment-delete'  => 'developer', 'dev-verify' => 'developer', 'dev-report' => 'developer', 'dev-attach' => 'developer',
     'dev-file'            => 'developer', 'dev-tokens' => 'developer', 'dev-token-create' => 'developer', 'dev-token-revoke' => 'developer',
@@ -64,26 +73,32 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['health', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
+const APR_READS = ['health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
 
 /**
  * ההקשר של הבקשה: המשתמש, ה-session והמשרד הפעיל.
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua.
- * 503 במצב מנותק / לא זמין; 401 בלי זהות או בלי הרשאה; 403 לחשבון מושעה.
+ * מחוברת: הזהות מהשער. מנותקת (אפיון 02 §5): ה-session לפי העוגייה בלבד — בלי session, 401 login_required.
+ * 503 כשהמעטפת לא עונה; 401 בלי זהות או בלי הרשאה; 403 לחשבון מושעה.
  */
 function apr_ctx(array $env): array
 {
     $raw = $env['platform_user'] ?? null;
     $mode = apr_platform_mode($raw);
-    if ($mode !== 'connected') apr_fail('login_unavailable');
-    $id = apr_platform_identity($raw);
-    if (!$id || !$id['granted']) apr_fail('unauthenticated');
-
-    $user = apr_user_for($id);
-    apr_actor((int)$user['id']);
-    if ($user['status'] !== 'active') apr_fail('account_suspended');   // ההשעיה גוברת — גם על מפתח
-    $s = apr_session_for($user, (string)($env['cookie'] ?? ''), (string)($env['ua'] ?? ''));
+    if ($mode === 'unavailable') apr_fail('login_unavailable');
+    if ($mode === 'connected') {
+        $id = apr_platform_identity($raw);
+        if (!$id || !$id['granted']) apr_fail('unauthenticated');
+        $user = apr_user_for($id);
+        apr_actor((int)$user['id']);
+        if ($user['status'] !== 'active') apr_fail('account_suspended');   // ההשעיה גוברת — גם על מפתח
+        $s = apr_session_for($user, (string)($env['cookie'] ?? ''), (string)($env['ua'] ?? ''));
+    } else {
+        [$user, $s] = apr_session_user((string)($env['cookie'] ?? '')) ?? apr_fail('login_required');
+        apr_actor((int)$user['id']);
+        if ($user['status'] !== 'active') apr_fail('account_suspended');
+    }
     if ($s['new_token'] !== null) $GLOBALS['apr_cookie_out'] = $s['new_token'];
 
     $offices = apr_my_offices((int)$user['id']);
@@ -101,7 +116,7 @@ function apr_ctx(array $env): array
             apr_exec('UPDATE sessions SET active_office_id = ? WHERE id = ?', [$active['office_id'], $s['id']]);
         }
     }
-    return ['user' => $user, 'session' => (int)$s['id'], 'csrf' => $s['csrf'], 'offices' => $offices, 'office' => $active];
+    return ['user' => $user, 'session' => (int)$s['id'], 'csrf' => $s['csrf'], 'offices' => $offices, 'office' => $active, 'mode' => $mode];
 }
 
 /** החברויות שלי שלא הוסרו — כולל משרד מושעה וחברות מושעית (כדי להסביר למשתמש מה קרה). */

@@ -24,6 +24,18 @@ putenv('APR_PLATFORM');
 putenv('APR_TEST_IDENTITY');
 // שום בדיקה לא יוצאת לרשת: בקשת HTTP "עצמית" נענית כאן
 $GLOBALS['apr_http'] = fn(string $url) => str_contains($url, 'sso.php') ? [200, '{"app":"appraisers","connected":true,"login":{"platform":true}}'] : [403, ''];
+// המעטפת המדומה לבקשת provision: ברירת המחדל — "invited" עם sub שנגזר מהמייל. כל בקשה נרשמת ב-$GLOBALS['t_provision'].
+$GLOBALS['t_provision'] = [];
+$GLOBALS['apr_http_post'] = function (string $url, string $body, array $headers) {
+    $GLOBALS['t_provision'][] = ['url' => $url, 'body' => json_decode($body, true), 'headers' => $headers, 'raw' => $body];
+    return [200, json_encode(['status' => 'invited', 'sub' => '9' . substr((string)crc32((string)json_decode($body, true)['email']), 0, 8)])];
+};
+// המיילים של הבדיקה: נרשמים ב-$GLOBALS['t_mail'], ולא יוצאים לשום מקום
+$GLOBALS['t_mail'] = [];
+$GLOBALS['apr_mail'] = function (string $to, string $subject, string $text) {
+    $GLOBALS['t_mail'][] = ['to' => $to, 'subject' => $subject, 'text' => $text];
+    return true;
+};
 
 require __DIR__ . '/../lib/app.php';
 
@@ -71,18 +83,21 @@ function call(string $method, string $action, array $in = [], ?string $as = null
         try {
             // כמו בשרת: $_GET תמיד כולל את action — פעולה שקוראת פרמטר בשם הזה תיתפס כאן
             $out = apr_dispatch($method, $action, $get + ['action' => $action], $in,
-                ['platform_user' => $as, 'cookie' => $jar[$key] ?? '', 'csrf' => $token ?? '', 'ua' => 'test', 'cron_url' => 'https://example.test/appraisers/cron.php']);
+                ['platform_user' => $as, 'cookie' => $jar[$key] ?? '', 'csrf' => $token ?? '', 'ua' => 'test', 'cron_url' => 'https://example.test/appraisers/cron.php',
+                    'ip' => $GLOBALS['t_ip'] ?? '203.0.113.1', 'sso_state' => $GLOBALS['t_sso_cookie'] ?? '']);
+            if (isset($GLOBALS['apr_sso_cookie_out'])) { $GLOBALS['t_sso_cookie'] = $GLOBALS['apr_sso_cookie_out']; unset($GLOBALS['apr_sso_cookie_out']); }
             [$status, $body] = [200, apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out];
         } catch (Throwable $e) {
             [$status, $body] = apr_error_response($e, $action);
             if ($status === 500) $body['_debug'] = get_class($e) . ': ' . $e->getMessage() . ' @' . basename($e->getFile()) . ':' . $e->getLine();
         }
         if (isset($GLOBALS['apr_cookie_out'])) $jar[$key] = $GLOBALS['apr_cookie_out'];
+        unset($GLOBALS['apr_cookie_out']);
         return [$status, $body];
     };
     if (array_key_exists('cookie', $opt)) $jar[$key] = $opt['cookie'];
     $token = $opt['csrf'] ?? null;
-    if ($method === 'POST' && $token === null && $as !== null) {
+    if ($method === 'POST' && $token === null && ($as !== null || isset($opt['jar'])) && (APR_ACCESS[$action] ?? '') !== 'public') {
         [$st, $me] = $run('GET', 'me', [], [], null);
         if ($st === 200) $csrf[$key] = $me['csrf'];
         $token = $csrf[$key] ?? '';

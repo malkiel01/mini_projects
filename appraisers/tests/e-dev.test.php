@@ -66,7 +66,7 @@ check('מטלה חדשה מהמסך מקבלת את הקוד הבא', $st === 20
 eq(call('POST', 'dev-comment', ['code' => $t['code'], 'body' => 'קורה רק בטלפון'], $owner)[0], 200, 'הערה בשיח');
 [$st, $rep] = call('POST', 'dev-report', ['title' => 'המסך נתקע', 'context' => ['url' => '#/office', 'screen' => '390×844', 'requests' => [], 'errors' => []]], $owner);
 check('דיווח 🐞 פותח מטלה עם ההקשר', $st === 200 && !empty($rep['code']), $rep);
-[$st, $tok] = call('POST', 'dev-token-create', ['label' => 'Claude'], $owner);
+[$st, $tok] = call('POST', 'dev-token-create', ['label' => 'Claude', 'confirm' => 'אישור'], $owner);
 check('אסימון apd_', $st === 200 && str_starts_with($tok['token'], 'apd_'));
 $_SERVER['HTTP_X_DEV_TOKEN'] = 'apd_' . str_repeat('ab', 24);
 eq(call('GET', 'devapi-feed')[0], 401, '01-E3 אסימון מומצא → 401');

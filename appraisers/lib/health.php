@@ -165,4 +165,16 @@ apr_health_register('queue', 'תור הרקע', function () {
     return ['ok', (int)apr_val("SELECT COUNT(*) FROM jobs WHERE status = 'pending'") . ' ממתינות, אין כשלים'];
 });
 
+apr_health_register('platform_key', 'מפתח החתימה מול המעטפת', function () {
+    $k = apr_pkey();
+    return ['ok', 'מפתח פעיל ' . $k['kid'] . ' (הפרטי מוצפן במסד)'];
+});
+
+apr_health_register('sso_clock', 'שעון השרת (כניסה מאוחדת)', function () {
+    $at = (int)apr_meta('sso_expired_at', '0');
+    return $at > apr_time() - 86400
+        ? ['warn', 'זהות חתומה נדחתה כי פג תוקפה (' . apr_iso($at) . ') — אם זה חוזר, שעון השרת סוטה']
+        : ['ok', 'לא נדחתה זהות בגלל תוקף ב-24 השעות האחרונות'];
+});
+
 apr_health_register('mail', 'שליחת מייל', fn() => function_exists('mail') ? ['ok', 'הפונקציה mail זמינה (לא נשלח מייל בבדיקה)'] : ['warn', 'הפונקציה mail אינה זמינה — תידרש בפרוסה 07']);

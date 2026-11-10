@@ -44,7 +44,8 @@ eq([$st, $j['ok'] ?? null, $j['error']['code'] ?? null], [401, false, 'unauthent
 check('כל תשובה נושאת X-Request-Id, והוא חוזר גם בגוף השגיאה', preg_match('/^[a-f0-9]{10}$/', $h['x-request-id'][0] ?? '') === 1 && ($j['req'] ?? '') === $h['x-request-id'][0]);
 eq([$h['cache-control'][0] ?? '', $h['x-content-type-options'][0] ?? ''], ['no-store', 'nosniff'], 'Cache-Control: no-store, nosniff');
 check('בקשה בלי זהות לא מקבלת עוגייה', !isset($h['set-cookie']));
-eq(http('GET', 'api.php?action=me', null, ['X-Dev-As' => 'detached'])[0], 503, '01-B7 מנותקת → 503');
+eq(http('GET', 'api.php?action=me', null, ['X-Dev-As' => 'detached'])[0], 401, '01-B7 מנותקת, בלי session → 401');
+eq(http('GET', 'api.php?action=me', null, ['X-Dev-As' => 'unavailable'])[0], 503, '01-B7 המעטפת לא עונה → 503');
 [$st, $j, $h] = http('GET', 'api.php?action=health', null, ['X-Dev-As' => 'none']);
 eq([$st, array_keys($j), isset($h['set-cookie'])], [200, ['ok', 'version'], false], '01-E2 health ציבורי: רק ok ו-version, בלי עוגייה');
 

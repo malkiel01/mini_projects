@@ -9,8 +9,10 @@ if (PHP_SAPI !== 'cli-server') { http_response_code(404); exit; }
 define('APR_DEV', true);
 if ($p = getenv('APR_DATA_DIR')) define('APR_DATA_DIR', $p);
 // בפיתוח אין מעטפת לשאול, ואין https לבדיקה עצמית
-$GLOBALS['apr_http'] = fn(string $url) => str_contains($url, 'sso.php') ? [200, '{"connected":true}'] : [403, ''];
 $as = (string)($_SERVER['HTTP_X_DEV_AS'] ?? ($_COOKIE['dev_as'] ?? 'owner'));
+// במצב מנותק המעטפת המדומה פותחת גם כניסה בסיסמה, כדי שאפשר יהיה לראות את מסך הכניסה
+$GLOBALS['apr_http'] = fn(string $url) => str_contains($url, 'sso.php')
+    ? [200, $as === 'detached' ? '{"connected":false,"login":{"platform":true,"password":true}}' : '{"connected":true}'] : [403, ''];
 unset($_SERVER['PLATFORM_USER']);
 if ($as === 'owner') {
     $_SERVER['PLATFORM_USER'] = json_encode(['sub' => '1', 'name' => 'הבעלים', 'email' => 'owner@example.com', 'email_verified' => true, 'platform_admin' => true, 'granted' => true]);

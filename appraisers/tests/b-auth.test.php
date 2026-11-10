@@ -109,12 +109,12 @@ eq(call('GET', 'me', [], ident('21', 'רון', null), [], ['cookie' => "' OR 1=1
 check('מקרה 1: שני sessions, שניהם תקפים', $d1['csrf'] !== $d2['csrf'] && $d1['user']['pid'] === $d2['user']['pid']);
 eq([$d1['office'], $d2['office']], [$A, $A], 'כניסה במכשיר חדש: המשרד הפעיל האחרון');
 
-// ── 01-B7: מנותקת / לא זמינה → 503 לכל פעולה לא-ציבורית ──
-foreach (['detached', 'unavailable'] as $mode) {
+// ── 01-B7: לא זמינה → 503 לכל פעולה לא-ציבורית; מנותקת (מאז פרוסה 02) → 401 login_required בלי session ──
+foreach (['detached' => [401, 'login_required'], 'unavailable' => [503, 'login_unavailable']] as $mode => $want) {
     putenv("APR_PLATFORM=$mode");
-    eq([call('GET', 'me')[0], code(call('GET', 'me'))], [503, 'login_unavailable'], "01-B7 $mode: me → 503");
-    eq(call('POST', 'office-create', ['name' => 'x'])[0], 503, "01-B7 $mode: פעולה משנה → 503");
-    eq(call('GET', 'dev-health')[0], 503, "01-B7 $mode: מסך המפתח → 503");
+    eq([call('GET', 'me')[0], code(call('GET', 'me'))], $want, "01-B7 $mode: me → {$want[0]}");
+    eq(call('POST', 'office-create', ['name' => 'x'])[0], $want[0], "01-B7 $mode: פעולה משנה → {$want[0]}");
+    eq(call('GET', 'dev-health')[0], $want[0], "01-B7 $mode: מסך המפתח → {$want[0]}");
     eq(call('GET', 'health')[0], 200, "01-B7 $mode: הציבורית עדיין עונה");
 }
 putenv('APR_PLATFORM');

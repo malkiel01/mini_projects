@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/access.php';
+require_once __DIR__ . '/invites.php';
 
 const APR_INVITE_TTL = 14 * 86400;
 
@@ -106,7 +107,7 @@ function apr_office_view(array $ctx): array
     if ($admin) {
         apr_invites_expire();
         $out['invites'] = array_map(fn($i) => ['pid' => $i['pid'], 'email' => $i['email'], 'role' => $i['role'], 'is_admin' => (bool)$i['is_admin'],
-            'expires_at' => $i['expires_at'], 'created_at' => $i['created_at']],
+            'expires_at' => $i['expires_at'], 'created_at' => $i['created_at']] + apr_invite_state($i),
             apr_rows("SELECT * FROM invitations WHERE office_id = ? AND status = 'pending' ORDER BY id DESC", [$office]));
     }
     return $out;
@@ -172,7 +173,8 @@ function apr_invites_expire(): int
 
 /**
  * הזמנה לפי מייל, בתוקף 14 יום. האסימון חוזר **פעם אחת** (לקישור שהמנהל מעתיק); במסד נשמר רק ה-hash.
- * הזמנה חדשה לאותו מייל באותו משרד מבטלת את הקודמת.
+ * הזמנה חדשה לאותו מייל באותו משרד מבטלת את הקודמת. אחרי השמירה — פתיחת חשבון במעטפת ומייל (lib/invites.php).
+ * op — מזהה פעולה: אותה בקשה פעמיים = הזמנה אחת, בקשת provision אחת ומייל אחד.
  */
 function apr_invite_create(array $ctx, array $in): array
 {
@@ -180,16 +182,29 @@ function apr_invite_create(array $ctx, array $in): array
     $email = apr_clean_email($in['email'] ?? null);
     $role = apr_clean_role($in['role'] ?? null);
     $isAdmin = (int)(($in['is_admin'] ?? false) === true);
-    return apr_tx(function () use ($ctx, $office, $email, $role, $isAdmin) {
+    $name = apr_clean_text($in['name'] ?? '', 120) ?? '';
+    $op = is_string($in['op'] ?? null) && preg_match('/^[A-Za-z0-9_-]{8,64}$/', $in['op']) ? $in['op'] : null;
+    $r = apr_tx(function () use ($ctx, $office, $email, $role, $isAdmin, $name, $op) {
+        if ($op !== null && ($prev = apr_row('SELECT * FROM invitations WHERE office_id = ? AND op = ?', [$office, $op]))) {
+            return ['invite' => $prev['pid'], 'expires_at' => $prev['expires_at'], 'repeat' => true] + apr_invite_state($prev);
+        }
+        // המוזמן כבר חבר — לא נשלחת בקשה למעטפת
         if (apr_val('SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.office_id = ? AND u.email = ? AND m.deleted_at IS NULL', [$office, $email])) {
             apr_fail('already_member');
         }
-        return apr_invite_insert($office, $email, $role, $isAdmin, (int)$ctx['user']['id']);
+        if ((int)apr_val('SELECT COUNT(*) FROM invitations WHERE office_id = ? AND created_at > ?', [$office, apr_iso(apr_time() - 86400)]) >= APR_INVITES_PER_DAY) {
+            apr_fail('invite_limit');
+        }
+        return apr_invite_insert($office, $email, $role, $isAdmin, (int)$ctx['user']['id'], $name, $op);
     });
+    if (!empty($r['repeat'])) return $r;
+    $id = (int)$r['id'];
+    unset($r['id']);
+    return $r + apr_invite_deliver($id, $r['token']);
 }
 
 /** יוצר הזמנה (בתוך טרנזקציה), ומבטל הזמנה ממתינה קודמת לאותו מייל באותו משרד. מחזיר את האסימון — פעם אחת. */
-function apr_invite_insert(int $office, string $email, string $role, int $isAdmin, int $by): array
+function apr_invite_insert(int $office, string $email, string $role, int $isAdmin, int $by, string $name = '', ?string $op = null): array
 {
     $now = apr_now();
     foreach (apr_rows("SELECT pid FROM invitations WHERE office_id = ? AND email = ? AND status = 'pending'", [$office, $email]) as $old) {
@@ -199,10 +214,10 @@ function apr_invite_insert(int $office, string $email, string $role, int $isAdmi
     $token = bin2hex(random_bytes(24));
     $pid = apr_pid();
     $until = apr_iso(apr_time() + APR_INVITE_TTL);
-    apr_insert('invitations', ['pid' => $pid, 'office_id' => $office, 'email' => $email, 'role' => $role, 'is_admin' => $isAdmin,
+    $id = apr_insert('invitations', ['pid' => $pid, 'office_id' => $office, 'email' => $email, 'role' => $role, 'is_admin' => $isAdmin, 'name' => $name, 'op' => $op,
         'token_hash' => hash('sha256', $token), 'invited_by' => $by, 'expires_at' => $until, 'created_at' => $now]);
     apr_audit('invite.create', 'invitation', $pid, ['role' => $role, 'is_admin' => (bool)$isAdmin], office: $office);
-    return ['invite' => $pid, 'token' => $token, 'expires_at' => $until];
+    return ['id' => $id, 'invite' => $pid, 'token' => $token, 'expires_at' => $until];
 }
 
 function apr_invite_mine(int $office, mixed $pid): array
@@ -245,13 +260,21 @@ function apr_invite_for(array $ctx, array $in): array
     $i = null;
     if (is_string($in['token'] ?? null) && preg_match('/^[a-f0-9]{48}$/', $in['token'])) {
         $i = apr_row("SELECT * FROM invitations WHERE token_hash = ? AND status = 'pending'", [hash('sha256', $in['token'])]);
-        if ($i && ($u['email'] === null || $u['email'] !== $i['email'])) apr_fail('invite_other_email');
-    } elseif (apr_is_pid($in['invite'] ?? null) && $u['email'] !== null && (int)$u['email_verified']) {
-        $i = apr_row("SELECT * FROM invitations WHERE pid = ? AND email = ? AND status = 'pending'", [$in['invite'], $u['email']]);
+        // ה-sub שהמעטפת החזירה כשפתחה את החשבון מזהה את המוזמן גם בלי התאמת מייל
+        if ($i && !apr_invite_is_for($i, $u) && ($u['email'] === null || $u['email'] !== $i['email'])) apr_fail('invite_other_email');
+    } elseif (apr_is_pid($in['invite'] ?? null)) {
+        $i = apr_row("SELECT * FROM invitations WHERE pid = ? AND status = 'pending'", [$in['invite']]);
+        if ($i && !apr_invite_is_for($i, $u) && !($u['email'] !== null && (int)$u['email_verified'] && $u['email'] === $i['email'])) $i = null;
     }
     $i ??= apr_fail('invite_invalid');
     $o = apr_row("SELECT * FROM offices WHERE id = ? AND status = 'active'", [$i['office_id']]) ?? apr_fail('invite_invalid');
     return [$i, $o];
+}
+
+/** ההזמנה נפתחה במעטפת בשביל החשבון הזה (invitee_sub = ה-sub שלו). */
+function apr_invite_is_for(array $i, array $u): bool
+{
+    return $i['invitee_sub'] !== null && $u['platform_sub'] !== null && hash_equals((string)$i['invitee_sub'], (string)$u['platform_sub']);
 }
 
 function apr_invite_info(array $ctx, array $in): array
@@ -260,16 +283,17 @@ function apr_invite_info(array $ctx, array $in): array
     return ['invite' => ['office_name' => $o['name'], 'role' => $i['role'], 'is_admin' => (bool)$i['is_admin'], 'expires_at' => $i['expires_at']]];
 }
 
-/** ההזמנות הממתינות למייל שלי — רק כשהמייל מאומת. */
+/** ההזמנות הממתינות לי: למייל שלי כשהוא מאומת, ולחשבון שהמעטפת פתחה בשבילי (invitee_sub) — גם בלי מייל מאומת. */
 function apr_my_invites(array $ctx): array
 {
     $u = $ctx['user'];
-    if ($u['email'] === null || !(int)$u['email_verified']) return ['invites' => [], 'email' => $u['email'], 'verified' => false];
+    $verified = $u['email'] !== null && (int)$u['email_verified'];
     apr_invites_expire();
-    return ['email' => $u['email'], 'verified' => true, 'invites' => array_map(
+    return ['email' => $u['email'], 'verified' => (bool)$verified, 'invites' => array_map(
         fn($r) => ['pid' => $r['pid'], 'office_name' => $r['name'], 'role' => $r['role'], 'is_admin' => (bool)$r['is_admin'], 'expires_at' => $r['expires_at']],
         apr_rows("SELECT i.pid, i.role, i.is_admin, i.expires_at, o.name FROM invitations i JOIN offices o ON o.id = i.office_id
-            WHERE i.email = ? AND i.status = 'pending' AND o.status = 'active' ORDER BY i.id DESC", [$u['email']]))];
+            WHERE (i.email = ? OR (i.invitee_sub IS NOT NULL AND i.invitee_sub = ?)) AND i.status = 'pending' AND o.status = 'active' ORDER BY i.id DESC",
+            [$verified ? $u['email'] : '', (string)$u['platform_sub']]))];
 }
 
 function apr_invite_accept(array $ctx, array $in): array
