@@ -1,0 +1,188 @@
+<?php
+/**
+ * ההרשאות — המקום היחיד שמכריע (אפיון 01 §7). הנתב קורא ל-apr_authorize() לפני כל פעולה; המסכים רק מסתירים
+ * כפתורים. פעולה שאינה בטבלה — לא קיימת.
+ *
+ * בידוד משרדים (00-overview §4.5): המשרד של הבקשה נקבע בשרת — המשרד הפעיל שב-session, אם החברות עדיין בתוקף.
+ * בקשה יכולה לשאת office (pid): הוא חייב להיות המשרד הפעיל. משרד שאינני חבר בו ומשרד שלא קיים — אותה תשובה (404).
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/platform.php';
+require_once __DIR__ . '/auth.php';
+
+const APR_ROLES = ['appraiser', 'trainee', 'staff'];
+
+/**
+ * מי רשאי: public (בלי משתמש) · token (אסימון DevLoop) · user (כל משתמש פעיל) · member (חבר פעיל במשרד פעיל) ·
+ * admin (is_admin במשרד) · sysadmin · developer.
+ */
+const APR_ACCESS = [
+    'health'              => 'public',
+    'devapi-feed'         => 'token', 'devapi-comment' => 'token', 'devapi-file' => 'token', 'devapi-attach' => 'token',
+
+    'me'                  => 'user',
+    'office-switch'       => 'user',
+    'office-create'       => 'user',
+    'my-invites'          => 'user',
+    'invite-info'         => 'user',
+    'invite-accept'       => 'user',
+    'devloop-client-error' => 'user',
+
+    'office'              => 'member',
+    'office-leave'        => 'member',
+    'office-rename'       => 'admin',
+    'office-audit'        => 'admin',
+    'invite-create'       => 'admin',
+    'invite-link'         => 'admin',
+    'invite-revoke'       => 'admin',
+    'member-update'       => 'admin',
+    'member-remove'       => 'admin',
+
+    'sys-offices'         => 'sysadmin',
+    'sys-office-create'   => 'sysadmin',
+    'sys-settings'        => 'sysadmin',
+    'sys-setting-set'     => 'sysadmin',
+    'sys-office'          => 'sysadmin',
+    'sys-office-status'   => 'sysadmin',
+    'sys-users'           => 'sysadmin',
+    'sys-user-status'     => 'sysadmin',
+    'sys-user-flags'      => 'sysadmin',
+
+    'dev-health'          => 'developer',
+    'dev-audit'           => 'developer',
+    'dev-jobs'            => 'developer',
+    'dev-job-retry'       => 'developer',
+    'dev-job-cancel'      => 'developer',
+    'dev-cron-run'        => 'developer',
+    'dev-items'           => 'developer', 'dev-task-create' => 'developer', 'dev-task-set' => 'developer', 'dev-comment' => 'developer',
+    'dev-comment-delete'  => 'developer', 'dev-verify' => 'developer', 'dev-report' => 'developer', 'dev-attach' => 'developer',
+    'dev-file'            => 'developer', 'dev-tokens' => 'developer', 'dev-token-create' => 'developer', 'dev-token-revoke' => 'developer',
+    'dev-item-log'        => 'developer', 'dev-log-links' => 'developer', 'dev-task-from-log' => 'developer', 'dev-log' => 'developer',
+];
+
+/** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
+const APR_READS = ['health', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
+    'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
+
+/**
+ * ההקשר של הבקשה: המשתמש, ה-session והמשרד הפעיל.
+ * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua.
+ * 503 במצב מנותק / לא זמין; 401 בלי זהות או בלי הרשאה; 403 לחשבון מושעה.
+ */
+function apr_ctx(array $env): array
+{
+    $raw = $env['platform_user'] ?? null;
+    $mode = apr_platform_mode($raw);
+    if ($mode !== 'connected') apr_fail('login_unavailable');
+    $id = apr_platform_identity($raw);
+    if (!$id || !$id['granted']) apr_fail('unauthenticated');
+
+    $user = apr_user_for($id);
+    apr_actor((int)$user['id']);
+    if ($user['status'] !== 'active') apr_fail('account_suspended');   // ההשעיה גוברת — גם על מפתח
+    $s = apr_session_for($user, (string)($env['cookie'] ?? ''), (string)($env['ua'] ?? ''));
+    if ($s['new_token'] !== null) $GLOBALS['apr_cookie_out'] = $s['new_token'];
+
+    $offices = apr_my_offices((int)$user['id']);
+    $active = null;
+    foreach ($offices as $o) {
+        if ($s['active_office_id'] !== null && (int)$o['office_id'] === (int)$s['active_office_id']) $active = $o;
+    }
+    // המשרד הפעיל האחרון כבר לא זמין (או שעוד לא נבחר) — הראשון הזמין
+    if (!$active || $active['office_status'] !== 'active' || $active['status'] !== 'active') {
+        foreach ($offices as $o) {
+            if ($o['office_status'] === 'active' && $o['status'] === 'active') { $active = $o; break; }
+        }
+        $active ??= $offices[0] ?? null;
+        if ($active && (int)$active['office_id'] !== (int)($s['active_office_id'] ?? 0)) {
+            apr_exec('UPDATE sessions SET active_office_id = ? WHERE id = ?', [$active['office_id'], $s['id']]);
+        }
+    }
+    return ['user' => $user, 'session' => (int)$s['id'], 'csrf' => $s['csrf'], 'offices' => $offices, 'office' => $active];
+}
+
+/** החברויות שלי שלא הוסרו — כולל משרד מושעה וחברות מושעית (כדי להסביר למשתמש מה קרה). */
+function apr_my_offices(int $userId): array
+{
+    return apr_rows('SELECT m.id AS membership_id, m.office_id, m.role, m.is_admin, m.status, m.title, o.pid, o.name, o.status AS office_status
+        FROM memberships m JOIN offices o ON o.id = m.office_id WHERE m.user_id = ? AND m.deleted_at IS NULL
+        ORDER BY (o.status = \'active\' AND m.status = \'active\') DESC, o.name, o.id', [$userId]);
+}
+
+/** בודק שהמשתמש רשאי לפעולה. זורק not_found לפעולה שלא קיימת — וגם למי שאינו מפתח / מנהל מערכת (לא רומזים שהיא קיימת). */
+function apr_authorize(array $ctx, string $action, array $in = []): void
+{
+    $rule = APR_ACCESS[$action] ?? apr_fail('not_found');
+    $u = $ctx['user'];
+    switch ($rule) {
+        case 'user':
+            return;
+        case 'developer':
+            if (!(int)$u['is_developer']) apr_fail('not_found');
+            return;
+        case 'sysadmin':
+            if (!(int)$u['is_sysadmin']) apr_fail('not_found');
+            return;
+        case 'member':
+        case 'admin':
+            $o = apr_office($ctx, $in['office'] ?? null);
+            if ($rule === 'admin' && !(int)$o['is_admin']) apr_fail('forbidden');
+            return;
+    }
+    apr_fail('not_found');
+}
+
+/**
+ * המשרד הפעיל של הבקשה — אחרי כל הבדיקות. $pid, אם נשלח, חייב להיות שלו:
+ * משרד אחר שלי → office_changed (הלשונית לא מעודכנת); משרד שאינני חבר בו או שלא קיים → not_found.
+ */
+function apr_office(array $ctx, mixed $pid = null): array
+{
+    if ($pid !== null && $pid !== '') {
+        $mine = array_filter($ctx['offices'], fn($o) => $o['pid'] === $pid);
+        if (!$mine) apr_fail('not_found');
+        if (!$ctx['office'] || $ctx['office']['pid'] !== $pid) apr_fail('office_changed');
+    }
+    $o = $ctx['office'] ?? apr_fail('no_office');
+    if ($o['office_status'] !== 'active') apr_fail('office_suspended');
+    if ($o['status'] !== 'active') apr_fail('forbidden');
+    return $o;
+}
+
+function apr_office_id(array $ctx): int
+{
+    return (int)apr_office($ctx)['office_id'];
+}
+
+// ── ניקוי קלט ────────────────────────────────────────────────
+
+function apr_clean_name(mixed $v, int $max = 120): string
+{
+    $s = trim(preg_replace('/\s+/u', ' ', is_string($v) ? $v : '') ?? '');
+    if ($s === '') apr_fail('name_required');
+    if (mb_strlen($s) > $max) apr_fail('name_too_long');
+    return $s;
+}
+
+function apr_clean_text(mixed $v, int $max): ?string
+{
+    $s = trim(preg_replace('/\s+/u', ' ', is_string($v) ? $v : '') ?? '');
+    if (mb_strlen($s) > $max) apr_fail('text_too_long');
+    return $s === '' ? null : $s;
+}
+
+function apr_clean_email(mixed $v): string
+{
+    $s = mb_strtolower(trim(is_string($v) ? $v : ''));
+    if ($s === '' || mb_strlen($s) > 200 || !filter_var($s, FILTER_VALIDATE_EMAIL)) apr_fail('email_invalid');
+    return $s;
+}
+
+function apr_clean_role(mixed $v): string
+{
+    if (!is_string($v) || !in_array($v, APR_ROLES, true)) apr_fail('role_invalid');
+    return $v;
+}
