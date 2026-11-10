@@ -137,7 +137,7 @@ function apr_portal_otp_send(array $in, array $env): array
         return apr_insert('portal_otps', ['link_id' => $l['l_id'], 'code_hash' => apr_portal_otp_hash((int)$l['l_id'], $code), 'created_at' => apr_now(), 'expires_at' => apr_iso(apr_time() + APR_PORTAL_OTP_TTL)]);
     });
     $status = apr_mail_send('portal_otp', (string)$l['contact_email'], 'קוד אימות — ' . $l['office_name'],
-        "הקוד שלכם: $code\n\nהקוד תקף ל-10 דקות, ומשמש לצפייה במסמכים שהעליתם.\nאם לא ביקשתם קוד — אפשר להתעלם מההודעה.", 'portal-otp:' . $id, (int)$l['office_id'], ['from_name' => $l['office_name']]);
+        "הקוד שלכם: $code\n\nהקוד תקף ל-10 דקות, ומשמש לצפייה במסמכים שהעליתם.\nאם לא ביקשתם קוד — אפשר להתעלם מההודעה.", 'portal-otp:' . $id . ':' . apr_pid(),   // מזהה שורה חוזר אחרי מחיקה — לא מספיק כמפתח (int)$l['office_id'], ['from_name' => $l['office_name']]);
     if ($status !== 'sent') apr_fail('portal_otp_unavailable');
     return ['sent' => true, 'minutes' => intdiv(APR_PORTAL_OTP_TTL, 60)];
 }
@@ -241,7 +241,7 @@ function apr_portal_upload(array $q, array $env): array
         if ($r['status'] === 'approved') apr_fail('req_state');
         return apr_portal_case($l);
     }, ['kind' => 'recipient', 'uid' => null, 'channel' => 'portal', 'audit' => [null, 'recipient'],
-        'rate_key' => fn() => 'p' . $l['l_id'], 'rate' => APR_PORTAL_UPLOADS, 'request' => fn() => (int)$l['id'],
+        'rate_key' => function () use (&$l) { return 'p' . $l['l_id']; }, 'rate' => APR_PORTAL_UPLOADS, 'request' => function () use (&$l) { return (int)$l['id']; },
         'key' => function () use ($q, &$l) {
             $v = $q['key'] ?? null;
             if (!is_string($v) || preg_match('/^[A-Za-z0-9_-]{8,64}\z/', $v) !== 1) apr_fail('content_invalid');   // מזהה פעולה חובה: לחיצה כפולה = קובץ אחד

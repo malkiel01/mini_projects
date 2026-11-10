@@ -77,7 +77,7 @@ function apr_mail_transport(string $to, string $subject, string $text, array $op
  */
 function apr_mail_opts(array $opt): array
 {
-    $name = trim((string)preg_replace('/[\x00-\x1F\x7F"<>]+/u', ' ', is_string($opt['from_name'] ?? null) ? $opt['from_name'] : ''));
+    $name = trim((string)preg_replace('/[\s\x00-\x1F\x7F"<>]+/u', ' ', is_string($opt['from_name'] ?? null) ? $opt['from_name'] : ''));
     $name = $name === '' ? 'שמאות מקרקעין' : mb_substr($name, 0, 60);
     $reply = is_string($opt['reply_to'] ?? null) ? $opt['reply_to'] : '';
     $ok = $reply !== '' && strlen($reply) <= 200 && preg_match('/^[^\s\x00-\x1F\x7F<>,;:"()\[\]\\\\]+@[A-Za-z0-9.-]+\z/', $reply) === 1 && filter_var($reply, FILTER_VALIDATE_EMAIL) !== false;
