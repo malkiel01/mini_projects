@@ -321,6 +321,10 @@ eq([$k1[0], $k2[0], $k1[1]['file'] === $k2[1]['file'], $k3[1]['file'] === $k1[1]
 eq([code(up($tal, pdf('', 'k'), ['case' => $C, 'key' => 'short'])), code(up($tal, pdf('', 'k'), ['case' => $C, 'key' => "op-abc12345\n"])), code(up($avi, pdf('', 'idem'), ['case' => $D, 'key' => 'op-abc12345', 'dup' => '1'])),
     up($dana, pdf('', 'idem-dana'), ['case' => $C, 'key' => 'op-abc12345'])[1]['file'] !== $k1[1]['file']], ['content_invalid', 'content_invalid', null, true], '06-B6 מזהה פגום נדחה (גם עם שורה חדשה בסופו); מזהה של משתמש אחר אינו מתנגש');
 $Funassigned = $k1[1]['file'];
+$kx = up($avi, pdf('', 'key-c'), ['case' => $C, 'key' => 'op-crosscase1']);
+$n = $nfiles();
+eq([$kx[0], code(up($avi, pdf('', 'key-d'), ['case' => $D, 'key' => 'op-crosscase1'])), $nfiles() - $n],
+    [200, 'content_invalid', 0], '06-B6 אותו מזהה פעולה בתיק אחר אינו מחזיר את הקובץ של התיק הראשון');
 
 // ── 06-B7: שם הקובץ אינו נתיב ──
 $out = dirname(apr_data_dir());
@@ -431,6 +435,16 @@ $v3 = up($tal, pdf('', 'plan-3'), ['case' => $C, 'requirement' => $R['plan']]);
 call('POST', 'file-review', ['link' => $v3[1]['link'], 'do' => 'reject', 'reason' => 'לא קשור'], $dana);
 eq([$rrow($R['plan'])['status'], apr_req_current((int)$rrow($R['plan'])['id'])], ['returned', 2], 'דחיית גרסה 3 ← הדרישה חוזרת למצב של גרסה 2 (returned)');
 
+// גרסה שהוחלפה לפני שנבדקה אינה נבדקת עוד; ומחיקת קובץ של דרישה "לא רלוונטי" אינה מחזירה אותה לרשימה
+$sA = up($tal, pdf('', 'super-1'), ['case' => $C, 'requirement' => $R['plan']])[1]['link'];
+$sB = up($tal, pdf('', 'super-2'), ['case' => $C, 'requirement' => $R['plan']])[1];
+eq([code($approve($dana, $sA)), $lrow($sA)['review_state'], $rrow($R['plan'])['status']], ['req_state', 'pending', 'received'], 'גרסה שהוחלפה לפני שנבדקה — אינה נבדקת; בודקים את הנוכחית');
+call('POST', 'file-review', ['link' => $sB['link'], 'do' => 'return', 'return_code' => 'unreadable'], $dana);
+call('POST', 'requirement-status', ['requirement' => $R['plan'], 'status' => 'not_relevant', 'reason' => 'ויתרנו'], $dana);
+call('POST', 'file-delete', ['file' => $sB['file'], 'reason' => 'לא נחוץ'], $dana);
+eq($rrow($R['plan'])['status'], 'not_relevant', 'מחיקת קובץ של דרישה "לא רלוונטי" משאירה אותה כך');
+call('POST', 'requirement-status', ['requirement' => $R['plan'], 'status' => 'required', 'reason' => 'חזרה'], $dana);
+
 // ── 06-D3, עריכת פרטי קובץ, תגיות ──
 $fo = fn(string $as, string $case, string $pid) => array_column(array_merge($docs($as, $case)[1]['unassigned'], ...array_map(fn($r) => array_column($r['files'], 'file'), $docs($as, $case)[1]['requirements'])), null, 'pid')[$pid] ?? null;
 eq([array_key_exists('doc_date', $fo($avi, $C, $Funassigned)), $fo($avi, $C, $Funassigned)['doc_date'], $frow($Funassigned)['doc_date']], [true, null, null], '06-D3 doc_date שלא הוזן מוחזר null (ונשמר NULL)');
@@ -521,7 +535,7 @@ eq([$del[0], $f['deleted_at'] !== null, $f['delete_reason'], is_file(apr_files_d
     [200, true, 'הנסח הוחלף', true, 'required', 'received', [$R['rights'] => 'required', $R['id'] => 'received']], 'מקרה 8: מחיקה רכה של הקובץ היחיד של דרישה מאושרת ← required; דרישה שנשארה לה גרסה קודמת שממתינה — received');
 eq([$istate()['state'], code(call('GET', 'file', [], $avi, ['file' => $F1])), code(call('GET', 'file-thumb', [], $avi, ['file' => $F1])), code(call('POST', 'file-delete', ['file' => $F1, 'reason' => 'שוב'], $dana)),
     code(call('POST', 'file-assign', ['file' => $F1, 'requirement' => $R['plan']], $tal)), code($approve($dana, $L1)), $fo($avi, $C, $F1)['deleted'], count($log($C, 'file.delete'))],
-    ['needs_check', 'not_found', 'not_found', 'not_found', 'not_found', 'not_found', true, 3], 'קובץ שנמחק: אין הורדה, שיוך או בדיקה; נשאר בהיסטוריה כמחוק; המזהה שאומת מולו חוזר ל"לבדיקה"');
+    ['needs_check', 'not_found', 'not_found', 'not_found', 'not_found', 'not_found', true, 4], 'קובץ שנמחק: אין הורדה, שיוך או בדיקה; נשאר בהיסטוריה כמחוק; המזהה שאומת מולו חוזר ל"לבדיקה"');
 eq([up($tal, pdf('', 'gone'), ['case' => $C])[1]['duplicate'] ?? null, isset(up($tal, pdf('', 'gone'), ['case' => $C])[1]['duplicate'])], [null, true], 'קובץ שנמחק אינו נחשב כפילות (והעותק החדש שלו — כן)');
 
 // ── קישור של משימה ──

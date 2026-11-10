@@ -196,7 +196,6 @@ function apr_file_upload(array $ctx, array $q, array $env): array
                 apr_case_still_open($c);
                 if ($key !== null && ($old = apr_row('SELECT pid FROM files WHERE idempotency_key = ? AND case_id = ?', [$key, $c['id']]))) return ['file' => $old['pid'], 'repeat' => true];
                 $r = $reqPid !== null ? apr_req_row($c, $reqPid) : null;
-                if ($r && ($r['split_at'] !== null || ($r['status'] !== 'received' && !apr_req_can($r['status'], 'received')))) apr_fail('req_state');
                 // כפילות — בתוך התיק בלבד. לעולם לא בין תיקים: ההתרעה עצמה הייתה חושפת שהקובץ קיים במקום אחר.
                 if (($q['dup'] ?? '') !== '1' && ($d = apr_row('SELECT * FROM files WHERE case_id = ? AND sha256 = ? AND deleted_at IS NULL ORDER BY id LIMIT 1', [$c['id'], $sha]))) {
                     return ['duplicate' => ['file' => $d['pid'], 'name' => $d['original_name'], 'received_at' => $d['received_at'],
@@ -320,7 +319,6 @@ function apr_file_review(array $ctx, array $in): array
         $l = apr_row(APR_LINK_SELECT . ' WHERE rf.pid = ? AND rf.case_id = ?', [$in['link'], $c['id']]) ?? apr_fail('not_found');
         $r = apr_row('SELECT * FROM requirements WHERE id = ? AND case_id = ?', [$l['requirement_id'], $c['id']]) ?? apr_fail('not_found');
         if ($l['file_deleted'] !== null) apr_fail('not_found');
-        if ($r['split_at'] !== null || $r['status'] === 'not_relevant') apr_fail('req_state');
         // בודקים רק את הגרסה הנוכחית (ונלווים שלה); גרסה שהוחלפה נשארת בהיסטוריה כמו שהיא
         if ((int)$l['version_no'] !== apr_req_current((int)$r['id']) && $l['review_state'] === 'pending') apr_fail('req_state');
         $n = apr_exec("UPDATE requirement_files SET review_state = ?, chk_readable = ?, chk_complete = ?, chk_matches = ?, review_note = ?, return_code = ?, return_reason = ?,
@@ -353,15 +351,14 @@ function apr_file_review(array $ctx, array $in): array
  */
 function apr_requirement_status(array $ctx, array $in): array
 {
-    $c = apr_case_get($ctx, apr_doc_case_pid('requirements', $in['requirement'] ?? null));
-    apr_case_writable($c);
+    $c = apr_case_get($ctx, apr_doc_case_pid('requirements', $in['requirement'] ?? null));   // ההרשאה תלויה במעבר — נבדקת למטה
     $to = apr_clean_choice($in['status'] ?? null, APR_REQ_STATUSES) ?? apr_fail('status_invalid');
     return apr_tx(function () use ($ctx, $c, $in, $to) {
         apr_case_still_open($c);
         $r = apr_req_row($c, $in['requirement'] ?? null);
         $from = $r['status'];
         if ($r['split_at'] !== null) apr_fail('req_state');
-        if (!apr_req_can($from, $to)) apr_fail('req_transition');
+        // רק מעבר יזום; שהמעבר עצמו בטבלה — נבדק ב-apr_req_move
         $manual = ($to === 'not_relevant') || ($to === 'required') || ($from === 'approved' && $to === 'received');
         if (!$manual) apr_fail('req_transition');
         $review = !($from === 'requested' && $to === 'required');
@@ -421,7 +418,6 @@ function apr_requirement_split(array $ctx, array $in): array
         $r = apr_req_row($c, $in['requirement'] ?? null);
         $rows = [];
         foreach ($parts as $p) {
-            if (!is_array($p)) apr_fail('content_invalid');
             $party = apr_party_row($c, $p['party'] ?? null);
             if (isset($rows[$party['id']])) apr_fail('split_parts');
             $name = (string)apr_val('SELECT name FROM contacts WHERE id = ?', [$party['contact_id']]);

@@ -111,8 +111,6 @@ function apr_file_download_name(string $name, string $ext): string
  */
 function apr_file_sniff(string $path): array
 {
-    $size = (int)@filesize($path);
-    if ($size <= 0) throw new AprFileRejected('file_type', 'empty');
     $head = (string)file_get_contents($path, false, null, 0, 64);
     $out = ['encrypted' => false, 'pages' => null];
     if (str_starts_with($head, '%PDF-')) {
