@@ -43,6 +43,8 @@ require_once __DIR__ . '/mail.php';
 require_once __DIR__ . '/login.php';
 require_once __DIR__ . '/confirm.php';
 require_once __DIR__ . '/profiles.php';
+require_once __DIR__ . '/cases.php';
+require_once __DIR__ . '/case_parts.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -150,6 +152,39 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'profile-share-revoke' => apr_profile_share_revoke($ctx, $p),
         'office-required-profile' => apr_office_required_profile($ctx, $p),
 
+        'case-options' => apr_case_options($ctx),
+        'case-create' => apr_case_create($ctx, $p),
+        'case-update' => apr_case_update($ctx, $p),
+        'case-plan' => apr_case_plan($ctx, $p),
+        'case-start' => apr_case_start($ctx, $p),
+        'case-status' => apr_case_status($ctx, $p),
+        'case-delete' => apr_case_delete($ctx, $p),
+        'case' => apr_case_view($ctx, $p),
+        'cases' => apr_cases_list($ctx, $p),
+        'case-activity' => apr_case_activity($ctx, $p),
+        'case-member-add' => apr_case_member_add($ctx, $p),
+        'case-member-update' => apr_case_member_update($ctx, $p),
+        'case-member-remove' => apr_case_member_remove($ctx, $p),
+        'case-profile-diff' => apr_case_profile_diff($ctx, $p),
+        'case-profile-apply' => apr_case_profile_apply($ctx, $p),
+        'case-identifier-add' => apr_case_identifier_add($ctx, $p),
+        'case-identifier-update' => apr_case_identifier_update($ctx, $p),
+        'case-identifier-remove' => apr_case_identifier_remove($ctx, $p),
+        'case-identifiers-conflict' => apr_case_identifiers_conflict($ctx, $p),
+        'contacts' => apr_contacts($ctx, $p),
+        'contact-save' => apr_contact_save($ctx, $p),
+        'contact-delete' => apr_contact_delete($ctx, $p),
+        'case-party-add' => apr_case_party_add($ctx, $p),
+        'case-party-update' => apr_case_party_update($ctx, $p),
+        'case-party-remove' => apr_case_party_remove($ctx, $p),
+        'task-create' => apr_task_create($ctx, $p),
+        'task-update' => apr_task_update($ctx, $p),
+        'my-tasks' => apr_my_tasks($ctx),
+        'requirement-add' => apr_requirement_add($ctx, $p),
+        'requirement-update' => apr_requirement_update($ctx, $p),
+        'office-cases' => apr_office_cases($ctx),
+        'office-case-transfer' => apr_office_case_transfer($ctx, $p),
+
         'office'             => apr_office_view($ctx),
         'office-leave'       => apr_office_leave($ctx),
         'office-rename'      => apr_office_rename($ctx, $p),
@@ -214,5 +249,5 @@ function apr_error_response(Throwable $e, string $action): array
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
     return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
-        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []), 'req' => apr_req_id()]];
+        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []), 'req' => apr_req_id()]];
 }

@@ -100,7 +100,7 @@ function apr_version_out(array $v): array
 {
     return ['pid' => $v['pid'], 'number' => $v['number'] === null ? null : (int)$v['number'], 'state' => $v['state'], 'change_note' => $v['change_note'],
         'published_at' => $v['published_at'], 'published_by' => $v['published_by'] !== null ? (string)apr_val('SELECT name FROM users WHERE id = ?', [$v['published_by']]) : null,
-        'revision' => (int)($v['revision'] ?? 1), 'updated_at' => $v['updated_at'], 'updated_by' => ($v['updated_by'] ?? null) !== null ? (string)apr_val('SELECT name FROM users WHERE id = ?', [$v['updated_by']]) : null];
+        'revision' => apr_profile_draft_token_of($v), 'updated_at' => $v['updated_at'], 'updated_by' => ($v['updated_by'] ?? null) !== null ? (string)apr_val('SELECT name FROM users WHERE id = ?', [$v['updated_by']]) : null];
 }
 
 // ── רשימות ───────────────────────────────────────────────────
@@ -267,14 +267,23 @@ function apr_profile_draft_open(array $ctx, array $in): array
     return ['profile' => apr_profile_out($p, $p['level']), 'draft' => apr_version_out($d), 'content' => $content, 'checks' => apr_profile_checks($content, apr_doc_type_keys())];
 }
 
-/** האסימון של הטיוטה: revision שהעורך קרא. חסר, לא מספר, או לא העדכני → 409 draft_changed. */
+/**
+ * האסימון של הטיוטה: מזהה שורת הטיוטה + ה-revision שלה ("<pid>.<n>"). ה-revision לבדו אינו מספיק — כל טיוטה חדשה
+ * מתחילה ב-1, ולשונית ישנה (אחרי פרסום או ביטול) הייתה מחזיקה מספר שתקף שוב. ה-pid אקראי ואינו חוזר.
+ */
+function apr_profile_draft_token_of(array $v): string
+{
+    return $v['pid'] . '.' . (int)($v['revision'] ?? 1);
+}
+
+/** האסימון שהעורך קרא. חסר, לא מחרוזת, של טיוטה אחרת, או לא העדכני → 409 draft_changed. */
 function apr_profile_draft_token(array $d, array $in): void
 {
-    if (!is_int($in['revision'] ?? null) || $in['revision'] !== (int)$d['revision']) apr_fail('draft_changed');
+    if (!is_string($in['revision'] ?? null) || !hash_equals(apr_profile_draft_token_of($d), $in['revision'])) apr_fail('draft_changed');
 }
 
 /**
- * שמירת הטיוטה. revision — מה שהעורך קרא: אם הטיוטה נשמרה בינתיים → 409 draft_changed, בלי דריסה. המספר עולה
+ * שמירת הטיוטה. revision — האסימון שהעורך קרא: אם הטיוטה נשמרה בינתיים → 409 draft_changed, בלי דריסה. המספר עולה
  * ב-1 בכל שמירה, באותה פקודת UPDATE שבודקת אותו.
  * המבנה מאומת (apr_profile_content_clean); בדיקות המשמעות חוזרות בתשובה ואינן חוסמות שמירה.
  */
@@ -286,9 +295,9 @@ function apr_profile_draft_save(array $ctx, array $in): array
         $d = apr_profile_draft_row((int)$p['id']) ?? apr_fail('not_found');
         apr_profile_draft_token($d, $in);
         $n = apr_exec("UPDATE profile_versions SET content = ?, updated_by = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND state = 'draft' AND revision = ?",
-            [json_encode($content, JSON_UNESCAPED_UNICODE), $ctx['user']['id'], apr_now(), $d['id'], $in['revision']]);
+            [json_encode($content, JSON_UNESCAPED_UNICODE), $ctx['user']['id'], apr_now(), $d['id'], (int)$d['revision']]);
         if ($n !== 1) apr_fail('draft_changed');
-        return ['revision' => (int)$d['revision'] + 1, 'checks' => apr_profile_checks($content, apr_doc_type_keys())];
+        return ['revision' => apr_profile_draft_token_of(['revision' => (int)$d['revision'] + 1] + $d), 'checks' => apr_profile_checks($content, apr_doc_type_keys())];
     });
 }
 

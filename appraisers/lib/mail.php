@@ -3,6 +3,7 @@
  * מייל (אפיון 02 §3): כל מייל שהמערכת שולחת עובר כאן ונרשם ב-mail_log — עם hash של הכתובת, לא הכתובת.
  * מפתח אידמפוטנטיות: אותו מייל לא יוצא פעמיים. מייל שנכשל אינו מוצג כנשלח.
  * בבדיקות: $GLOBALS['apr_mail'] = fn(string $to, string $subject, string $text): bool. ב-CLI בלי זה — לא נשלח דבר.
+ * בעמודה error של שליחה שהצליחה רשומה הדרך שבה יצאה ("envelope -f" / "no envelope …") — לא שגיאה.
  */
 
 declare(strict_types=1);
@@ -23,7 +24,8 @@ function apr_mail_send(string $kind, string $to, string $subject, string $text, 
     $error = null;
     try {
         $ok = apr_mail_transport($to, $subject, $text);
-        if (!$ok) $error = 'transport returned false';
+        // לשליחה שהצליחה: באיזו דרך יצאה (עם כתובת מעטפה או בלי) — כדי שיומן המיילים של המפתח יראה את זה
+        $error = $ok ? ($GLOBALS['apr_mail_via'] ?? null) : 'transport returned false' . (isset($GLOBALS['apr_mail_via']) ? ' · ' . $GLOBALS['apr_mail_via'] : '');
     } catch (Throwable $e) {
         $ok = false;
         $error = get_class($e);                         // בלי הודעת החריגה — עלולה לכלול את הכתובת
@@ -37,13 +39,34 @@ function apr_mail_send(string $kind, string $to, string $subject, string $text, 
     return $ok ? 'sent' : 'failed';
 }
 
+/**
+ * השליחה עצמה. כתובת המעטפה (`-f`, ה-Return-Path) נקבעת במפורש: בלעדיה השרת שולח בשם משתמש המערכת, ומיילים כאלה
+ * נדחים או נופלים לספאם. שרת שאוסר `-f` מחזיר false — ואז שולחים שוב בלי הפרמטר.
+ * הכתובת נבנית **רק** מה-host של האפליקציה (app.json), ורק אם הוא שם מתחם תקין — שום קלט של משתמש לא מגיע לפרמטרים
+ * של sendmail. באיזו דרך נשלח — ב-$GLOBALS['apr_mail_via'], ומשם ל-mail_log.
+ * בבדיקות: $GLOBALS['apr_mail_fn'] מחליף את mail() (אותם חמישה פרמטרים).
+ */
 function apr_mail_transport(string $to, string $subject, string $text): bool
 {
+    unset($GLOBALS['apr_mail_via']);
     if (isset($GLOBALS['apr_mail'])) return (bool)($GLOBALS['apr_mail'])($to, $subject, $text);
-    if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server' || !function_exists('mail')) return false;
-    $host = (string)parse_url(apr_app_url(), PHP_URL_HOST);
-    $headers = "From: =?UTF-8?B?" . base64_encode('שמאות מקרקעין') . "?= <noreply@$host>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit";
-    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $text, $headers);
+    $send = $GLOBALS['apr_mail_fn'] ?? null;
+    if ($send === null) {
+        if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server' || !function_exists('mail')) return false;
+        $send = fn(string ...$a): bool => @mail(...$a);
+    }
+    $host = mb_strtolower((string)parse_url(apr_app_url(), PHP_URL_HOST));
+    $safe = (bool)preg_match('/^(?=.{4,253}\z)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+\z/', $host);
+    $from = 'noreply@' . ($safe ? $host : 'localhost');
+    $headers = "From: =?UTF-8?B?" . base64_encode('שמאות מקרקעין') . "?= <$from>\r\nReply-To: $from\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit";
+    $subject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
+    if ($safe && $send($to, $subject, $text, $headers, '-f' . $from)) {
+        $GLOBALS['apr_mail_via'] = 'envelope -f';
+        return true;
+    }
+    $ok = (bool)$send($to, $subject, $text, $headers, '');
+    $GLOBALS['apr_mail_via'] = $safe ? 'no envelope (-f refused)' : 'no envelope (host not usable)';
+    return $ok;
 }
 
 /** יומן המיילים למפתח: hash, סוג, מצב ושגיאה — בלי כתובת. */

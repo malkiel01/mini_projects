@@ -26,10 +26,16 @@ function content(array $more = []): array
             'when' => ['all' => [['field' => 'flags.renovation_planned', 'op' => 'is', 'value' => true]]],
             'then' => [['do' => 'add_requirement', 'item' => req('works_quote', ['doc_type' => 'works_quote', 'title' => 'פירוט עבודות'])], ['do' => 'alert', 'text' => 'לבדוק היתר לשיפוץ']]]]];
 }
-/** ה-revision של הטיוטה (אסימון השמירה) — 0 כשאין טיוטה. */
-function rev(string $pid): int
+/** אסימון הטיוטה ("<pid של הטיוטה>.<revision>") — '' כשאין טיוטה. $shift מזיז את המספר (אסימון ישן). */
+function rev(string $pid, int $shift = 0): string
 {
-    return (int)apr_val("SELECT v.revision FROM profile_versions v JOIN profiles p ON p.id = v.profile_id WHERE p.pid = ? AND v.state = 'draft'", [$pid]);
+    $v = apr_row("SELECT v.pid, v.revision FROM profile_versions v JOIN profiles p ON p.id = v.profile_id WHERE p.pid = ? AND v.state = 'draft'", [$pid]);
+    return $v ? $v['pid'] . '.' . ((int)$v['revision'] + $shift) : '';
+}
+/** המספר שבאסימון. */
+function revn(string $token): int
+{
+    return (int)substr($token, strrpos($token, '.') + 1);
 }
 /** יוצר פרופיל, שומר תוכן ומפרסם. מחזיר pid. */
 function make_profile(string $as, string $scope, string $name, ?array $content = null, bool $publish = true): string
@@ -312,21 +318,46 @@ $t = $d1['draft']['revision'];
 [$st, $s1] = call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(['tasks' => ['items' => [['key' => 'first', 'title' => 'ראשון']]]]), 'revision' => $t], $avi);
 $kept = $draftAt($P);
 $r = call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(['tasks' => ['items' => [['key' => 'second', 'title' => 'שני']]]]), 'revision' => $t], $avi);
-eq([$st, $s1['revision'], $r[0], code($r), $draftAt($P)], [200, $t + 1, 409, 'draft_changed', $kept], '03-D1 שמירה עם אסימון ישן → 409, והטיוטה שבשרת לא השתנתה');
-eq([code(call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content()], $avi)), code(call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(), 'revision' => (string)$s1['revision']], $avi))], ['draft_changed', 'draft_changed'], '03-D1 בלי אסימון, או אסימון שאינו מספר — גם נדחה');
+eq([$st, revn($s1['revision']), strtok($s1['revision'], '.') === strtok($t, '.'), $r[0], code($r), $draftAt($P)], [200, revn($t) + 1, true, 409, 'draft_changed', $kept], '03-D1 שמירה עם אסימון ישן → 409, והטיוטה שבשרת לא השתנתה');
+eq([code(call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content()], $avi)), code(call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(), 'revision' => revn($s1['revision'])], $avi)), code(call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(), 'revision' => 'x.' . revn($s1['revision'])], $avi))], ['draft_changed', 'draft_changed', 'draft_changed'], '03-D1 בלי אסימון, מספר בלי מזהה הטיוטה, או מזהה של טיוטה אחרת — גם נדחה');
 // 🟡5: האסימון הוא מספר שעולה ב-1 — שתי שמירות באותה שנייה אינן דורסות זו את זו
 $GLOBALS['apr_time'] = time();
 [, $sa] = call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(), 'revision' => $s1['revision']], $avi);
 $rb = call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(['rules' => []]), 'revision' => $s1['revision']], $avi);
-eq([$sa['revision'], code($rb), call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(), 'revision' => $sa['revision']], $avi)[1]['revision']], [$s1['revision'] + 1, 'draft_changed', $s1['revision'] + 2], '🟡5 שתי שמירות באותה שנייה עם אותו אסימון — השנייה נדחית');
+eq([revn($sa['revision']), code($rb), revn(call('POST', 'profile-draft-save', ['profile' => $P, 'content' => content(), 'revision' => $sa['revision']], $avi)[1]['revision'])], [revn($s1['revision']) + 1, 'draft_changed', revn($s1['revision']) + 2], '🟡5 שתי שמירות באותה שנייה עם אותו אסימון — השנייה נדחית');
 unset($GLOBALS['apr_time']);
 eq(call('GET', 'profile-draft-info', [], $avi, ['profile' => $P])[1]['draft']['updated_by'], 'אבי', 'מקרה 1: "עודכנה בידי <שם>"');
 // 🟡4: פרסום וביטול טיוטה — רק עם האסימון העדכני; ביטול — לבעלים, ונרשם
 $cur = rev($P);
-eq([code(call('POST', 'profile-publish', ['profile' => $P], $avi)), code(call('POST', 'profile-publish', ['profile' => $P, 'revision' => $cur - 1], $avi)), code(call('POST', 'profile-draft-discard', ['profile' => $P], $avi)),
-    code(call('POST', 'profile-draft-discard', ['profile' => $P, 'revision' => $cur - 1], $avi)), rev($P)], ['draft_changed', 'draft_changed', 'draft_changed', 'draft_changed', $cur], '🟡4 פרסום וביטול טיוטה בלי האסימון העדכני → 409, והטיוטה נשארת');
+eq([code(call('POST', 'profile-publish', ['profile' => $P], $avi)), code(call('POST', 'profile-publish', ['profile' => $P, 'revision' => rev($P, -1)], $avi)), code(call('POST', 'profile-draft-discard', ['profile' => $P], $avi)),
+    code(call('POST', 'profile-draft-discard', ['profile' => $P, 'revision' => rev($P, -1)], $avi)), rev($P)], ['draft_changed', 'draft_changed', 'draft_changed', 'draft_changed', $cur], '🟡4 פרסום וביטול טיוטה בלי האסימון העדכני → 409, והטיוטה נשארת');
 $n0 = (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'profile.draft_discard'");
-eq([call('POST', 'profile-draft-discard', ['profile' => $P, 'revision' => $cur], $avi)[0], rev($P), (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'profile.draft_discard'") - $n0], [200, 0, 1], '🟡4 עם האסימון — הטיוטה מבוטלת, ונרשם ביומן הפעולות');
+eq([call('POST', 'profile-draft-discard', ['profile' => $P, 'revision' => $cur], $avi)[0], rev($P), (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'profile.draft_discard'") - $n0], [200, '', 1], '🟡4 עם האסימון — הטיוטה מבוטלת, ונרשם ביומן הפעולות');
+
+// 🟡5 (סבב 2 של 03): האסימון קשור לשורת הטיוטה — לשונית ישנה אינה דורסת טיוטה חדשה שה-revision שלה חזר לאותו מספר
+$mark = fn(string $k) => content(['tasks' => ['items' => [['key' => $k, 'title' => $k]]]]);
+$T5 = call('POST', 'profile-create', ['scope' => 'office', 'name' => 'אסימון'], $avi)[1]['profile'];
+// תרחיש א: לשונית ישנה (rev 1) ← פרסום ← טיוטה חדשה (שוב rev 1)
+[, $o1] = call('POST', 'profile-draft-open', ['profile' => $T5], $avi);
+$oldTab = $o1['draft']['revision'];
+eq(call('POST', 'profile-publish', ['profile' => $T5, 'revision' => $oldTab, 'note' => 'מלשונית אחרת'], $avi)[0], 200, '🟡5 א: הטיוטה פורסמה מלשונית אחרת');
+[, $o2] = call('POST', 'profile-draft-open', ['profile' => $T5], $avi);
+$kept = $draftAt($T5);
+$r = call('POST', 'profile-draft-save', ['profile' => $T5, 'content' => $mark('stale_a'), 'revision' => $oldTab], $avi);
+eq([revn($oldTab), revn($o2['draft']['revision']), $r[0], code($r), $draftAt($T5)], [1, 1, 409, 'draft_changed', $kept], '🟡5 א: לשונית ישנה אחרי פרסום + טיוטה חדשה (אותו מספר) → 409, בלי דריסה');
+// תרחיש ב: לשונית ישנה (rev 3) ← ביטול ← טיוטה חדשה ושתי שמירות (שוב rev 3)
+$tk = $o2['draft']['revision'];
+foreach (['b1', 'b2'] as $k) $tk = call('POST', 'profile-draft-save', ['profile' => $T5, 'content' => $mark($k), 'revision' => $tk], $avi)[1]['revision'];
+$oldTab = $tk;
+eq(call('POST', 'profile-draft-discard', ['profile' => $T5, 'revision' => $oldTab], $avi)[0], 200, '🟡5 ב: הטיוטה בוטלה מלשונית אחרת');
+$tk = call('POST', 'profile-draft-open', ['profile' => $T5], $avi)[1]['draft']['revision'];
+foreach (['c1', 'c2'] as $k) $tk = call('POST', 'profile-draft-save', ['profile' => $T5, 'content' => $mark($k), 'revision' => $tk], $avi)[1]['revision'];
+$kept = $draftAt($T5);
+$r = call('POST', 'profile-draft-save', ['profile' => $T5, 'content' => $mark('stale_b'), 'revision' => $oldTab], $avi);
+$r2 = call('POST', 'profile-publish', ['profile' => $T5, 'revision' => $oldTab], $avi);
+$r3 = call('POST', 'profile-draft-discard', ['profile' => $T5, 'revision' => $oldTab], $avi);
+eq([revn($oldTab), revn($tk), code($r), code($r2), code($r3), $draftAt($T5)], [3, 3, 'draft_changed', 'draft_changed', 'draft_changed', $kept], '🟡5 ב: לשונית ישנה אחרי ביטול + שתי שמירות (אותו מספר) → 409 בשמירה, בפרסום ובביטול');
+call('POST', 'profile-draft-discard', ['profile' => $T5, 'revision' => $tk], $avi);
 
 // ── 03-D2: ארכיון ──
 $v1pid = (string)apr_val('SELECT v.pid FROM profile_versions v JOIN profiles p ON p.id = v.profile_id WHERE p.pid = ? AND v.number = 1', [$Q]);
