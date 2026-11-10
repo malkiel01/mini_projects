@@ -38,10 +38,10 @@ function req(string $key, array $more = []): array
 function content(array $more = []): array
 {
     return $more + ['flags' => [['key' => 'renovation_planned', 'title' => 'שיפוץ', 'question' => 'מתוכנן שיפוץ?']],
-        'requirements' => ['groups' => [], 'items' => [req('rights', ['mandatory' => true]), req('contract', ['doc_type' => 'contract', 'party_kind' => 'lawyer', 'sort' => 2])]],
+        'requirements' => ['groups' => [], 'items' => [req('rights', ['mandatory' => true, 'explain_internal' => 'לבדוק הערות אזהרה']), req('contract', ['doc_type' => 'contract', 'party_kind' => 'lawyer', 'sort' => 2])]],
         'tasks' => ['items' => [['key' => 'check_rights', 'title' => 'בדיקת זכויות', 'assignee' => 'responsible', 'due' => ['mode' => 'relative', 'days' => 5], 'sort' => 1]]],
         'rules' => [['key' => 'renovation', 'title' => 'שיפוץ', 'when' => ['all' => [['field' => 'flags.renovation_planned', 'op' => 'is', 'value' => true]]],
-            'then' => [['do' => 'add_requirement', 'item' => req('works_quote', ['doc_type' => 'works_quote', 'title' => 'פירוט עבודות'])], ['do' => 'add_task', 'item' => ['key' => 'review_works', 'title' => 'בדיקת פירוט העבודות']],
+            'then' => [['do' => 'add_requirement', 'item' => req('works_quote', ['doc_type' => 'works_quote', 'title' => 'פירוט עבודות', 'sort' => 9])], ['do' => 'add_task', 'item' => ['key' => 'review_works', 'title' => 'בדיקת פירוט העבודות', 'sort' => 9]],
                 ['do' => 'alert', 'text' => 'לבדוק היתר']]]]];
 }
 function publish(string $as, string $pid, array $content, string $note = ''): int
@@ -96,6 +96,7 @@ eq([$r[0], code($r), $r[1]['error']['missing'] ?? null, $crow($C)['status'], cou
 call('POST', 'case-update', ['case' => $C, 'purpose' => 'purchase'], $avi);
 eq(call('POST', 'case-start', ['case' => $C], $avi)[1]['error']['missing'], ['identifier', 'orderer'], '04-A6 בלי מזהה ומזמין');
 call('POST', 'case-identifier-add', ['case' => $C, 'kind' => 'address', 'locality' => 'תל אביב', 'street' => 'הרצל', 'house_no' => '10', 'apartment_no' => '4', 'source_note' => 'נמסר מהלקוח'], $avi);
+call('POST', 'case-identifier-add', ['case' => $C, 'kind' => 'parcel', 'gush' => '6158', 'helka' => '12'], $avi);
 eq(call('POST', 'case-start', ['case' => $C], $avi)[1]['error']['missing'], ['orderer'], '04-A6 בלי מזמין');
 call('POST', 'case-party-add', ['case' => $C, 'name' => 'רות לקוחה', 'kind' => 'client'], $avi);
 eq(call('POST', 'case-start', ['case' => $C], $avi)[1]['error']['missing'], ['orderer'], '04-A6 גורם שאינו המזמין לא מספיק');
@@ -112,6 +113,7 @@ eq([$st, $crow($C)['status'], array_keys($rs), array_column($tasks($C), 'origin_
 $verId = (int)apr_val('SELECT current_version_id FROM profiles WHERE pid = ?', [$P]);
 eq([(int)$crow($C)['profile_version_id'], $rs['rights']['origin'], (int)$rs['rights']['mandatory'], $rs['rights']['status'], $rs['rights']['due_at'] !== null], [$verId, 'profile', 1, 'required', true], '04-A1 profile_version_id נשמר; הדרישות לפי הגרסה');
 eq([$rs['works_quote']['origin'], apr_row("SELECT kind FROM tasks WHERE origin_key = 'review_works'")['kind']], ['rule', 'rule'], '04-A2 עם הדגל: הדרישה והמשימה של הכלל נוצרות עם origin = rule');
+eq([$rs['rights']['explain_internal'], $view($avi, $C)[1]['profile']['pending']], ['לבדוק הערות אזהרה', 0], 'ההסבר הפנימי מהפרופיל נשמר בדרישה; אין מה להציע מיד אחרי היצירה');
 $lawyer = (int)apr_val('SELECT id FROM case_parties WHERE pid = ?', [$pa['party']]);
 eq([(int)$rs['contract']['party_id'], $rs['rights']['party_id'] !== null, (int)$tasks($C)[0]['assignee_user_id'] === (int)$crow($C)['responsible_user_id']], [$lawyer, true, true], 'הדרישה מוקצית לגורם מהסוג שלה; המשימה — לאחראי');
 $snap = json_decode($crow($C)['plan_snapshot'], true);
@@ -168,15 +170,16 @@ eq([apr_val("SELECT title FROM requirements WHERE case_id = ? AND origin_key = '
     ['נסח רישום עדכני', 'בדיקת זכויות מעמיקה', 1], '04-A4 שינוי שסומן — מוחל על מה שעוד לא טופל');
 // מקרה 9: שינוי דגל אחרי הפתיחה — הכללים לא רצים לבד
 call('POST', 'case-update', ['case' => $C2, 'flags' => ['renovation_planned' => true]], $avi);
+eq($view($avi, $C2)[1]['profile']['pending'] > 0, true, 'מקרה 9: כרטיס התיק מסמן "ייתכן שכללי הפרופיל רלוונטיים"');
 call('POST', 'case-profile-apply', ['case' => $C2], $avi);
-eq([in_array('works_quote', array_column($reqs($C2), 'origin_key'), true), array_column(call('GET', 'case-profile-diff', [], $avi, ['case' => $C2])[1]['diff']['requirements']['added'], 'key')], [false, ['works_quote']], 'מקרה 9: דגל שסומן אחרי הפתיחה — אין הוספה אוטומטית; ההבדלים מציעים אותה');
+eq([in_array('works_quote', array_column($reqs($C2), 'origin_key'), true), array_column(call('GET', 'case-profile-diff', [], $avi, ['case' => $C2])[1]['diff']['requirements']['added'], 'key')], [false, ['survey', 'works_quote']], 'מקרה 9: דגל שסומן אחרי הפתיחה — אין הוספה אוטומטית; ההבדלים מציעים אותה');
 
 // ── 04-A7: 100 פתיחות מקבילות ──
-$dir = sys_get_temp_dir() . '/apr-test-conc-' . bin2hex(random_bytes(5));
+$dir = sys_get_temp_dir() . '/apr-conc-' . bin2hex(random_bytes(5));
 mkdir($dir, 0700, true);
 $setup = 'define("APR_DATA_DIR", ' . var_export($dir, true) . '); define("APR_DB_PATH", ' . var_export("$dir/app.sqlite", true) . '); require ' . var_export(__DIR__ . '/lib.php', true) . ';'
     . ' $a = ident("2", "אבי", "avi@example.com"); office_for($a, "x"); $p = call("POST", "profile-create", ["scope" => "office", "name" => "p"], $a)[1]["profile"];'
-    . ' $d = call("POST", "profile-draft-open", ["profile" => $p], $a)[1]; call("POST", "profile-publish", ["profile" => $p], $a); echo $p;';
+    . ' $d = call("POST", "profile-draft-open", ["profile" => $p], $a)[1]; call("POST", "profile-publish", ["profile" => $p, "revision" => $d["draft"]["revision"]], $a); echo $p;';
 $pp = trim((string)shell_exec(escapeshellarg(PHP_BINARY) . ' -r ' . escapeshellarg($setup)));
 $procs = [];
 for ($i = 0; $i < 10; $i++) $procs[] = proc_open([PHP_BINARY, __FILE__, 'worker', $dir, $pp, '10'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes[$i]);
@@ -297,7 +300,7 @@ eq([array_column($view($tal, $T)[1]['members'], 'role', 'pid'), $view($dana, $T)
 // ── משימות ──
 eq(code(call('POST', 'task-create', ['case' => $D, 'title' => 'x', 'assignee' => $aviPid], $dana)), 'assignee_not_member', '§7 משימה למי שאינו משתתף בתיק — "הוסיפו אותו לתיק קודם"');
 eq([code(call('POST', 'task-update', ['task' => $dTask, 'status' => 'cancelled'], $dana)), apr_val('SELECT status FROM tasks WHERE pid = ?', [$dTask])], ['reason_required', 'open'], '04-C1 ביטול משימה בלי נימוק → נדחה');
-eq([call('POST', 'task-update', ['task' => $dTask, 'status' => 'cancelled', 'reason' => 'כפילות'], $dana)[0], apr_row('SELECT status, cancel_reason FROM tasks WHERE pid = ?', [$dTask]), end($GLOBALS['x'] = $log($D, 'task.status'))['reason']],
+eq([call('POST', 'task-update', ['task' => $dTask, 'status' => 'cancelled', 'reason' => 'כפילות'], $dana)[0], apr_row('SELECT status, cancel_reason FROM tasks WHERE pid = ?', [$dTask]), array_slice($log($D, 'task.status'), -1)[0]['reason']],
     [200, ['status' => 'cancelled', 'cancel_reason' => 'כפילות'], 'כפילות'], '04-C1 עם נימוק → מתקבל, והנימוק ביומן');
 $mine = call('POST', 'task-create', ['case' => $D, 'title' => 'לתאם ביקור', 'assignee' => $danaPid, 'due_at' => '2026-12-01'], $dana)[1]['task'];
 eq([call('POST', 'task-update', ['task' => $mine, 'status' => 'done'], $dana)[0], apr_val('SELECT done_at FROM tasks WHERE pid = ?', [$mine]) !== null], [200, true], '§7 "בוצע" אינו דורש נימוק');
@@ -375,7 +378,7 @@ call('POST', 'member-update', ['user' => $talPid, 'status' => 'active'], $avi);
 eq([$view($tal, $D)[0], call('GET', 'cases', [], $tal)[1]['cases']], [404, []], '04-B6 ביטול ההשעיה לא מחזיר את ההשתתפות — צריך להוסיף אותו שוב');
 call('POST', 'member-remove', ['user' => $danaPid], $avi);
 $row = array_values(array_filter(call('GET', 'office-cases', [], $avi)[1]['cases'], fn($c) => $c['pid'] === $D))[0];
-eq([$row['responsible'], $crow($D)['responsible_user_id'], count($log($D, 'case.member_out')), (int)apr_val("SELECT COUNT(*) FROM tasks WHERE case_id = ? AND assignee_user_id IS NOT NULL AND status = 'open'", [$crow($D)['id']])], [null, null, 1, 0], 'מקרה 5: האחראית הוסרה מהמשרד — התיק "בלי אחראי פעיל" בשורת הניהול');
+eq([$row['responsible'], $crow($D)['responsible_user_id'], array_column(array_map(fn($r) => json_decode($r['meta'], true), $log($D, 'case.member_out')), 'was'), (int)apr_val("SELECT COUNT(*) FROM tasks WHERE case_id = ? AND assignee_user_id IS NOT NULL AND status = 'open'", [$crow($D)['id']])], [null, null, ['staff', 'responsible'], 0], 'מקרה 5: האחראית הוסרה מהמשרד — התיק "בלי אחראי פעיל" בשורת הניהול');
 eq([call('POST', 'office-case-transfer', ['case' => $D, 'user' => $aviPid, 'reason' => 'דנה עזבה'], $avi)[0], $view($avi, $D)[1]['me']['role'], count($view($avi, $D)[1]['members'])], [200, 'responsible', 2], 'מנהל המשרד מעביר אחריות; מי שעזבה אינה נשארת שותפה');
 
 // ── 04-C4: כל פעולה משנה מופיעה בלשונית הפעילות ──

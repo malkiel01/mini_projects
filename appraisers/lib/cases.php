@@ -238,6 +238,15 @@ function apr_case_version_content(int $versionId): array
     return apr_profile_content_read((string)apr_val('SELECT content FROM profile_versions WHERE id = ?', [$versionId]));
 }
 
+/** ההסבר הפנימי של כל דרישה בגרסה, לפי key — תצוגת הניסיון משמיטה אותו, והתיק צריך אותו. */
+function apr_case_internal_notes(array $content): array
+{
+    $out = [];
+    foreach ($content['requirements']['items'] as $r) $out[$r['key']] = $r['explain_internal'] ?? '';
+    foreach ($content['rules'] as $rule) foreach ($rule['then'] as $a) if (($a['do'] ?? '') === 'add_requirement') $out[$a['item']['key']] = $a['item']['explain_internal'] ?? '';
+    return $out;
+}
+
 /** מה ייווצר: אותו מנוע של תצוגת הניסיון (פרוסה 03), עם הנתונים של התיק. קריאה בלבד. */
 function apr_case_plan(array $ctx, array $q): array
 {
@@ -302,6 +311,7 @@ function apr_case_start(array $ctx, array $in): array
         $version = (int)$p['current_version_id'];
         $content = apr_case_version_content($version);
         $plan = apr_profile_try($content, apr_case_plan_input($c));
+        $notes = apr_case_internal_notes($content);
         $skip = is_array($adj['skip'] ?? null) ? $adj['skip'] : [];
         $set = is_array($adj['set'] ?? null) ? $adj['set'] : [];
         $snap = ['version' => (int)apr_val('SELECT number FROM profile_versions WHERE id = ?', [$version]), 'created_at' => apr_now(), 'input' => apr_case_plan_input($c),
@@ -317,7 +327,7 @@ function apr_case_start(array $ctx, array $in): array
                 if (isset($set[$r['key']]['priority'])) $r['priority'] = apr_clean_choice($set[$r['key']]['priority'], APR_PRIORITIES) ?? $r['priority'];
                 if (isset($set[$r['key']]['party_kind'])) $r['party_kind'] = apr_clean_choice($set[$r['key']]['party_kind'], APR_PARTY_KINDS) ?? $r['party_kind'];
             }
-            apr_case_requirement_insert($c, $r, $r['rule'] ? 'rule' : 'profile');
+            apr_case_requirement_insert($c, $r + ['explain_internal' => $notes[$r['key']] ?? ''], $r['rule'] ? 'rule' : 'profile');
             $snap['requirements'][] = ['key' => $r['key'], 'title' => $r['title'], 'origin' => $r['rule'] ? 'rule' : 'profile', 'rule' => $r['rule']['key'] ?? null];
             if ($r['rule']) $snap['rules'][$r['rule']['key']] = $r['rule']['title'];
         }
@@ -532,7 +542,10 @@ function apr_case_profile_diff_calc(array $c): array
     $p = apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']]);
     $target = (int)$p['current_version_id'];
     $number = fn(int $id) => (int)apr_val('SELECT number FROM profile_versions WHERE id = ?', [$id]);
-    $plan = apr_profile_try(apr_case_version_content($target), apr_case_plan_input($c));
+    $content = apr_case_version_content($target);
+    $plan = apr_profile_try($content, apr_case_plan_input($c));
+    $notes = apr_case_internal_notes($content);
+    foreach ($plan['requirements'] as $i => $r) $plan['requirements'][$i] += ['explain_internal' => $notes[$r['key']] ?? ''];
     $out = ['from' => $number((int)$c['profile_version_id']), 'to' => $number($target), 'target' => $target, 'profile' => $p['name'],
         'requirements' => ['added' => [], 'changed' => [], 'removed' => []], 'tasks' => ['added' => [], 'changed' => [], 'removed' => []], 'plan' => $plan];
     $skipped = array_column((json_decode($c['plan_snapshot'], true) ?: [])['skipped'] ?? [], 'key');

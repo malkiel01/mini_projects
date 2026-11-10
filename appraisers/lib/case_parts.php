@@ -440,16 +440,22 @@ function apr_case_view(array $ctx, array $q): array
     $planKeys = array_flip(array_merge(array_column($content['requirements']['items'], 'key'), ...array_map(fn($r) => array_map(fn($a) => $a['item']['key'] ?? '', $r['then']), $content['rules'])));
     $resp = $c['responsible_user_id'] !== null ? apr_row('SELECT pid, name FROM users WHERE id = ?', [$c['responsible_user_id']]) : null;
     $snap = json_decode($c['plan_snapshot'], true) ?: [];
+    // מקרה 9: הכללים רצו פעם אחת, ביצירה. אם היום (דגל ששונה, גורם שנוסף, גרסה חדשה) הפרופיל היה יוצר עוד — המסך מציע לבדוק
+    $pending = 0;
+    if ($c['status'] !== 'draft' && $p['deleted_at'] === null) {
+        $d = apr_case_profile_diff_calc($c);
+        $pending = count($d['requirements']['added']) + count($d['tasks']['added']);
+    }
     return [
         'case' => apr_case_head($c) + ['flags' => json_decode($c['flags'], true) ?: (object)[], 'responsible' => $resp, 'closed_at' => $c['closed_at'], 'close_reason' => $c['close_reason']],
         'me' => ['role' => $c['my_role'], 'perms' => $c['perms']],
         'todo' => apr_case_todo($c), 'missing' => apr_case_missing($c),
         'profile' => ['pid' => apr_profile_level($ctx, apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']])) !== null ? $p['pid'] : null, 'name' => $p['name'],
-            'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null,
+            'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null, 'pending' => $pending,
             'flags' => $content['flags'], 'groups' => $content['requirements']['groups']],
         'plan' => ['alerts' => $snap['alerts'] ?? [], 'skipped' => $snap['skipped'] ?? [], 'applications' => array_map(fn($a) => array_diff_key($a, ['by' => 0]), $snap['applications'] ?? [])],
         'identifiers' => array_map('apr_ident_out', apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']])),
-        'parties' => array_map(fn($r) => ['pid' => $r['pid'], 'kind' => $r['kind'], 'is_orderer' => (bool)$r['is_orderer'], 'note' => $r['note'], 'contact' => apr_contact_out($r + ['pid' => $r['contact_pid']])],
+        'parties' => array_map(fn($r) => ['pid' => $r['pid'], 'kind' => $r['kind'], 'is_orderer' => (bool)$r['is_orderer'], 'note' => $r['note'], 'contact' => apr_contact_out(['pid' => $r['contact_pid']] + $r)],
             apr_rows('SELECT cp.pid, cp.kind, cp.is_orderer, cp.note AS note, ct.pid AS contact_pid, ct.name, ct.org, ct.email, ct.phone FROM case_parties cp JOIN contacts ct ON ct.id = cp.contact_id
                 WHERE cp.case_id = ? AND cp.removed_at IS NULL ORDER BY cp.is_orderer DESC, cp.id', [$c['id']])),
         'members' => array_map(fn($r) => ['pid' => $r['pid'], 'name' => $r['name'], 'role' => $r['role'], 'office_role' => $r['office_role'], 'perms' => json_decode($r['perms'], true) ?: (object)[], 'me' => (int)$r['user_id'] === (int)$ctx['user']['id']],
