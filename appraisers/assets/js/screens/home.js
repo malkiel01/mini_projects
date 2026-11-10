@@ -86,6 +86,8 @@ async function acceptInvite(body, btn) {
 /** #/invite/<אסימון> — "הוזמנת למשרד X בתפקיד Y — הצטרפות". */
 async function viewInvite(token) {
     setHead(T.inviteScreenTitle, null);
+    // האסימון נשאר במשתנה בלבד: הכתובת מנוקה מיד, כדי שלא יגיע ליומן הטכני דרך שגיאת דפדפן או דיווח 🐞
+    history.replaceState(null, '', '#/invite');
     try {
         const { invite } = await api('invite-info', { body: { token } });
         App.main.innerHTML = `<div class="notice"><div class="big" aria-hidden="true">✉️</div>

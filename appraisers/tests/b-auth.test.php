@@ -56,6 +56,29 @@ $pre2 = apr_insert('users', ['pid' => apr_pid(), 'email' => 'gil@example.com', '
 [$st, $meG] = call('GET', 'me', [], ident('31', 'מתחזה', 'gil@example.com', ['email_verified' => false]));
 eq([$st, apr_val('SELECT platform_sub FROM users WHERE id = ?', [$pre2]), $users()], [200, null, 5], '01-B4 מייל לא מאומת — חשבון חדש, והישן לא קושר');
 eq($meG['user']['email'], null, 'מקרה 5: החשבון החדש בלי המייל (הוא שייך לחשבון אחר)');
+
+// ── ביקורת 01-align 🔴1: הזהות היא מקור האמת למייל, בכל כניסה ──
+$tal = fn(?string $email, bool $v = true) => ident('50', 'טל', $email, ['email_verified' => $v]);
+$mail = fn(string $sub) => apr_row('SELECT email, email_verified FROM users WHERE platform_sub = ?', [$sub]);
+call('GET', 'me', [], $tal('tal@example.com'));
+eq($mail('50'), ['email' => 'tal@example.com', 'email_verified' => 1], 'מייל מאומת נשמר');
+[, $t2] = call('GET', 'me', [], $tal(null));
+eq([$mail('50'), $t2['user']['email'], $t2['user']['email_verified']], [['email' => null, 'email_verified' => 0], null, false], '🔴1 הזהות חזרה עם email:null (הוחלף וטרם אומת) ← המייל והאימות נמחקים');
+call('GET', 'me', [], $tal('tal@example.com'));
+call('GET', 'me', [], $tal('tal@example.com', false));
+eq($mail('50'), ['email' => 'tal@example.com', 'email_verified' => 0], '🔴1 אותו מייל, כבר לא מאומת ← האימות יורד');
+call('GET', 'me', [], $tal('tal@example.com'));
+call('GET', 'me', [], $tal('dana@example.com'));   // הכתובת מאומתת אצל דנה
+eq($mail('50'), ['email' => null, 'email_verified' => 0], '🔴1 הזהות עברה למייל שמאומת אצל חשבון אחר ← בלי מייל (לא נשאר הישן "המאומת")');
+eq($mail('17'), ['email' => 'dana@example.com', 'email_verified' => 1], 'ובעלת הכתובת לא נפגעה');
+
+// ── 🟡2: מייל לא מאומת אינו חוסם את בעל הכתובת ──
+call('GET', 'me', [], ident('51', 'תופס', 'real@example.com', ['email_verified' => false]));
+eq($mail('51'), ['email' => 'real@example.com', 'email_verified' => 0], 'מייל לא מאומת נשמר כל עוד הכתובת פנויה');
+[, $real] = call('GET', 'me', [], ident('52', 'בעל הכתובת', 'real@example.com'));
+eq([$real['user']['email'], $real['user']['email_verified'], $mail('51')], ['real@example.com', true, ['email' => null, 'email_verified' => 0]], '🟡2 זהות מאומתת לוקחת את הכתובת; מי שלא אימת נשאר בלי מייל');
+call('GET', 'me', [], ident('51', 'תופס', 'real@example.com', ['email_verified' => false]));
+eq([$mail('51')['email'], $mail('52')['email']], [null, 'real@example.com'], '🟡2 והוא לא מקבל אותה בחזרה בכניסה הבאה');
 [, $meD2] = call('GET', 'me', [], ident('99', 'דנה אחרת', 'dana@example.com'));
 check('חשבון שכבר מקושר לא מתקשר ל-sub נוסף', $meD2['user']['pid'] !== $me['user']['pid']);
 

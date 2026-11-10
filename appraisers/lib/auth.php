@@ -44,10 +44,7 @@ function apr_user_resolve(array $id): array
         }
     }
     if (!$user) {
-        // מייל שכבר שייך לחשבון אחר (למשל שני חשבונות מעטפת באותו מייל) — החשבון החדש נפתח בלי מייל
-        $email = $id['email'] !== null && !apr_val('SELECT 1 FROM users WHERE email = ?', [$id['email']]) ? $id['email'] : null;
-        $uid = apr_insert('users', ['pid' => apr_pid(), 'platform_sub' => $id['sub'], 'email' => $email,
-            'email_verified' => $email !== null && $id['email_verified'] ? 1 : 0, 'name' => $id['name'],
+        $uid = apr_insert('users', ['pid' => apr_pid(), 'platform_sub' => $id['sub'], 'name' => $id['name'],
             'last_seen_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
         $user = apr_row('SELECT * FROM users WHERE id = ?', [$uid]);
         apr_audit('user.create', 'user', $user['pid'], [], actor: $uid);
@@ -55,12 +52,10 @@ function apr_user_resolve(array $id): array
 
     $set = [];
     if ($id['name'] !== '' && $id['name'] !== $user['name']) $set['name'] = $id['name'];
-    if ($id['email'] !== null && $id['email'] !== $user['email'] && !apr_val('SELECT 1 FROM users WHERE email = ? AND id <> ?', [$id['email'], $user['id']])) {
-        $set['email'] = $id['email'];
-    }
-    if (($set['email'] ?? $user['email']) === $id['email'] && (int)$user['email_verified'] !== (int)$id['email_verified']) {
-        $set['email_verified'] = (int)$id['email_verified'];
-    }
+    // המייל: הזהות היא מקור האמת, בכל כניסה. מה שהיה שמור ואינו בזהות — נמחק, יחד עם סימון האימות.
+    [$email, $verified] = apr_email_claim($id, (int)$user['id']);
+    if ($email !== $user['email']) $set['email'] = $email;
+    if ($verified !== (int)$user['email_verified']) $set['email_verified'] = $verified;
     if ($id['platform_admin'] && !(int)$user['is_sysadmin']) {
         $set['is_sysadmin'] = 1;
         apr_audit('user.grant_sysadmin', 'user', $user['pid'], ['by' => 'platform_admin'], actor: null, kind: 'system');
@@ -78,6 +73,26 @@ function apr_user_resolve(array $id): array
         $user = apr_row('SELECT * FROM users WHERE id = ?', [$user['id']]);
     }
     return $user;
+}
+
+/**
+ * איזה מייל נשמר בחשבון, לפי הזהות של הכניסה הזו: [email או null, verified 0/1].
+ *   - אין מייל בזהות (למשל הוחלף וטרם אומת) → בלי מייל.
+ *   - הכתובת פנויה → נשמרת, עם סימון האימות שבזהות.
+ *   - הכתובת אצל חשבון אחר: זהות **מאומתת** לוקחת אותה מחשבון שלא אימת אותה (הוא נשאר בלי מייל);
+ *     בכל מקרה אחר — החשבון הזה נשאר בלי מייל.
+ * כך מייל לא מאומת לעולם אינו חוסם את בעל הכתובת, ומייל "מאומת" לא נשאר אחרי שהזהות כבר לא נושאת אותו.
+ */
+function apr_email_claim(array $id, int $selfId): array
+{
+    if ($id['email'] === null) return [null, 0];
+    $holder = apr_row('SELECT id, email_verified FROM users WHERE email = ? AND id <> ?', [$id['email'], $selfId]);
+    if (!$holder) return [$id['email'], (int)$id['email_verified']];
+    if ($id['email_verified'] && !(int)$holder['email_verified']) {
+        apr_exec('UPDATE users SET email = NULL, email_verified = 0, updated_at = ? WHERE id = ?', [apr_now(), $holder['id']]);
+        return [$id['email'], 1];
+    }
+    return [null, 0];
 }
 
 /**

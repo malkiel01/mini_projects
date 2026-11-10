@@ -51,7 +51,15 @@ foreach ($php as $rel) {
     exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($files[$rel]) . ' 2>&1', $out, $rc);
     check("01-A5 php -l $rel", $rc === 0);
 }
+// שער הרישום של הפלטפורמה — כשהאפליקציה יושבת בריפו (באפליקציה עצמאית הוא לא קיים)
+$gate = dirname($root) . '/platform/check-apps.php';
+if (is_file($gate)) {
+    exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($gate) . ' 2>&1', $gateOut, $gateRc);
+    check('01-A5 php platform/check-apps.php עובר', $gateRc === 0, array_slice($gateOut, -3));
+}
+preg_match_all('/\?v=([0-9.]+)/', file_get_contents("$root/index.html"), $vs);
 $app = json_decode(file_get_contents("$root/app.json"), true);
+eq(array_values(array_unique($vs[1])), [(string)$app['version']], 'index.html: ?v= של כל הנכסים שווה לגרסה שב-app.json');
 eq($app['id'] ?? null, basename($root), 'app.json: id = שם התיקייה');
 eq([$app['gate'] ?? null, $app['restricted'] ?? null], [true, true], 'app.json: מחוברת לשער, וחסומה כברירת מחדל');
 check('app.json: גרסה', preg_match('/^\d+\.\d+(\.\d+)?$/', (string)($app['version'] ?? '')) === 1);

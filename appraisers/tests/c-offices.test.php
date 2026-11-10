@@ -221,6 +221,45 @@ eq(code(call('POST', 'invite-accept', ['invite' => $inv['invite']], $squatter)),
 eq(apr_val('SELECT status FROM invitations WHERE pid = ?', [$inv['invite']]), 'pending', '01-C14 ההזמנה נשארת ממתינה');
 eq(call('GET', 'me', [], $squatter)[1]['offices'], [], '01-C14 והמתחזה בלי משרד');
 
+// ── ביקורת 01-align 🔴1: מייל שכבר אינו בזהות לא תופס הזמנה ──
+$invR = call('POST', 'invite-create', ['email' => 'rina@c.co', 'role' => 'staff', 'is_admin' => true], $hila)[1];
+$rina = fn(?string $email, bool $v = true) => ident('32', 'רינה', $email, ['email_verified' => $v]);
+eq(count(call('GET', 'my-invites', [], $rina('rina@c.co'))[1]['invites']), 1, 'עם מייל מאומת — ההזמנה מוצגת');
+[, $mi] = call('GET', 'my-invites', [], $rina(null));
+eq([$mi['verified'], $mi['invites']], [false, []], '🔴1 הזהות חזרה בלי מייל ← ההזמנה כבר אינה מוצגת');
+eq(code(call('POST', 'invite-accept', ['invite' => $invR['invite']], $rina(null))), 'invite_invalid', '🔴1 ואינה מתקבלת בלי הקישור');
+eq(code(call('POST', 'invite-accept', ['token' => $invR['token']], $rina(null))), 'invite_other_email', '🔴1 וגם לא עם הקישור — אין לה מייל');
+eq(code(call('POST', 'invite-accept', ['invite' => $invR['invite']], $rina('hila@c.co'))), 'invite_invalid', '🔴1 זהות שעברה למייל תפוס — לא נשארת עם הישן');
+eq(apr_val('SELECT status FROM invitations WHERE pid = ?', [$invR['invite']]), 'pending', '🔴1 ההזמנה נשארת ממתינה');
+// 🟡2: מי שתפס את הכתובת בלי לאמת לא חוסם את בעלת הכתובת
+call('GET', 'me', [], $rina(null));
+call('GET', 'me', [], ident('33', 'תופסת', 'rina@c.co', ['email_verified' => false]));
+eq(call('POST', 'invite-accept', ['invite' => $invR['invite']], $rina('rina@c.co'))[0], 200, '🟡2 בעלת הכתובת המאומתת מקבלת את ההזמנה, גם אחרי שמישהי תפסה את הכתובת בלי לאמת');
+
+// ── 🟡3 / 01-C7: חבר מושעה במשרד היחיד שלו ──
+$solo = ident('34', 'סולו', 'solo@c.co');
+$soloPid = join_office($hila, $solo, 'solo@c.co', 'staff', true);
+eq(call('GET', 'office', [], $solo)[0], 200, 'לפני ההשעיה — עובד');
+call('POST', 'member-update', ['user' => $soloPid, 'status' => 'suspended'], $hila);
+[, $meS] = call('GET', 'me', [], $solo);
+eq([$meS['office'], $meS['offices'][0]['status']], [$C, 'suspended'], '01-C7 המשרד היחיד שלו, והחברות מושעית');
+foreach ([['GET', 'office', []], ['POST', 'office-leave', []], ['GET', 'office-audit', []], ['POST', 'invite-create', ['email' => 'w@c.co', 'role' => 'staff']],
+          ['POST', 'office-rename', ['name' => 'שלי']], ['POST', 'member-update', ['user' => $soloPid, 'status' => 'active']]] as [$m, $a, $body]) {
+    $r = call($m, $a, $body, $solo);
+    eq([$r[0], code($r)], [403, 'forbidden'], "01-C7 חבר מושעה במשרד היחיד שלו: $a → 403");
+}
+eq(apr_val('SELECT m.status FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.pid = ?', [$soloPid]), 'suspended', '01-C7 ולא ביטל לעצמו את ההשעיה');
+
+// ── 🟡7: הזמנה למשרד מושעה אינה מתקבלת ואינה מוצגת ──
+$invS = call('POST', 'invite-create', ['email' => 'late@c.co', 'role' => 'staff'], $hila)[1];
+$late = ident('35', 'מאחר', 'late@c.co');
+call('POST', 'sys-office-status', ['office' => $C, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner);
+eq(call('GET', 'my-invites', [], $late)[1]['invites'], [], 'הזמנה למשרד מושעה אינה מוצגת');
+eq([code(call('POST', 'invite-info', ['token' => $invS['token']], $late)), code(call('POST', 'invite-accept', ['token' => $invS['token']], $late)), code(call('POST', 'invite-accept', ['invite' => $invS['invite']], $late))],
+    ['invite_invalid', 'invite_invalid', 'invite_invalid'], 'ואינה מתקבלת — באותו נוסח כמו הזמנה שאינה בתוקף');
+call('POST', 'sys-office-status', ['office' => $C, 'status' => 'active', 'reason' => 'סוף בדיקה'], $owner);
+eq(call('POST', 'invite-accept', ['token' => $invS['token']], $late)[0], 200, 'אחרי ביטול ההשעיה — מתקבלת');
+
 // ── המזהה הפנימי לא יוצא מהשרת ──
 $all = json_encode([call('GET', 'me', [], $ella)[1], call('GET', 'office', [], $ella)[1], call('GET', 'office-audit', [], $ella)[1], call('GET', 'sys-offices', [], $owner)[1], call('GET', 'sys-users', [], $owner)[1], call('GET', 'my-invites', [], $gil)[1]]);
 check('אין בתשובות מספר פנימי (id, user_id, office_id …)', !preg_match('/"(id|user_id|office_id|membership_id|actor_user_id|invited_by)"\s*:/', $all), $all);
