@@ -3,9 +3,10 @@
   "updated": "2026-11-10",
   "spec": "session_018g4NYChyg3pn6J7Mpn8BdW",
   "code": "session_018g4NYFs9fDdKejES8Dp6rw",
-  "control": "session_018g4NYDAvuqfD5J5wQYMo2Q",
+  "control": "session_018g4NYFwUcVefmCvwGAazWA",
   "tasks": "session_018g4NYGYQpEYJDdYkxFAL6d",
   "retired": {
-    "code-1": "session_018g4NYFYs5G6v9s2CqJNEPh"
+    "code-1": "session_018g4NYFYs5G6v9s2CqJNEPh",
+    "control-1": "session_018g4NYDAvuqfD5J5wQYMo2Q"
   }
 }
