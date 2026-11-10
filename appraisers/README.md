@@ -52,7 +52,6 @@
 | `lib/requests.php` | בקשות (07), הצד של המשרד: תוכן הבקשה, מזהה התצוגה המקדימה, שליחה, שליחה מחדש, ביטול, "הודעות שנכשלו" |
 | `lib/portal.php` | **הפורטל לנמען — הפעולות הציבוריות היחידות שנוגעות בנתוני תיק.** אימות האסימון (`apr_portal_link`), קצב, קוד חד-פעמי, העלאה, תשובה, קובץ |
 | `portal/index.php`, `portal.js`, `portal.css` | דף הפורטל. עומד בפני עצמו: אינו טוען דבר מהמערכת, ואין בו קישור אליה |
-| `.user.ini`, `.htaccess` | `post_max_size` / `memory_limit` להעלאת קובץ עד 25MB (LiteSpeed קורא אותו לתיקייה); ה-`.htaccess` חוסם את `.user.ini` מהדפדפן |
 | `lib/system.php` | מנהל המערכת: משרדים ומשתמשים — נתונים תפעוליים בלבד |
 | `lib/audit.php` | יומן הפעולות |
 | `lib/jobs.php` | שירותי רקע: התור, הסבב, הרישום של שירותים |
@@ -268,4 +267,4 @@ APR_DATA_DIR=/tmp/apr php -S 127.0.0.1:8765 -d auto_prepend_file=$PWD/appraisers
 - **פרוסה 06 — הורדה:** `view` בתיק מספיק (אין עדיין שותף חיצוני / תמיכה — פרוסה 05, שם תיכנס `download`).
 - **פרוסה 06 — עמודות מעבר לאפיון** במיגרציה 006: `requirements.split_at`; `files.is_encrypted`; `requirement_files.case_id`,
   `return_code`, `status_before`, `created_by`. `idempotency_key` נשמר כ-`"<מזהה המשתמש>:<מזהה הפעולה>"`.
-- **פרוסה 06 — גודל:** 25MB, או פחות אם `post_max_size` בשרת נמוך מזה (בדיקת התקינות "אחסון קבצים" מתריעה). `.user.ini` מבקש 32M.
+- **פרוסה 06 — גודל:** 25MB, או פחות אם `post_max_size` בשרת נמוך מזה (בדיקת התקינות "אחסון קבצים" מתריעה). **לאפליקציה אין `.user.ini` משלה:** השער של הפלטפורמה (`platform/build-gate.php`) יוצר `appraisers/.user.ini` בפריסה, וקובץ כזה בגיט מפיל אותה. לכן התקרה היא `min(25MB, post_max_size של השרת פחות 64KB)` (`apr_file_max()`), המסכים מציגים אותה, גוף שהשרת זרק נענה ב-413, ובדיקת התקינות מדווחת את `post_max_size` / `upload_max_filesize` / `memory_limit` בפועל.

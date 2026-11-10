@@ -358,6 +358,19 @@ check('🟡 … ובפחות משתי שניות', microtime(true) - $t0 < 2.0, 
 $n = $nfiles();
 eq([code(up($avi, '%PDF-1.4' . "\n" . str_repeat($empty, 800) . $js . "%%EOF\n", ['case' => $C])), $nfiles() - $n], ['file_active', 0], '🟡 … וגם דרך file-upload: נדחה, ואין קובץ');
 
+// בלי .user.ini משלנו: התקרה נגזרת מ-post_max_size של השרת, פחות מרווח — והמסך, ההודעה ובדיקת התקינות אומרים את האמת
+$GLOBALS['apr_post_max'] = 8 << 20;
+$h8 = apr_health()['checks'] ?? [];
+$h8 = array_values(array_filter($h8, fn($c) => ($c['id'] ?? '') === 'files'))[0] ?? [];
+eq([apr_file_max(), $docs($avi, $C)[1]['limits']['max_size'], $h8['state'] ?? null, str_contains($h8['detail'] ?? '', 'post_max_size=') && str_contains($h8['detail'] ?? '', 'memory_limit=') && str_contains($h8['detail'] ?? '', 'קובץ עד 7MB')],
+    [(8 << 20) - 65536, (8 << 20) - 65536, 'warn', true], 'שרת עם post_max_size = 8M ← התקרה 8MB פחות 64KB, המסך מקבל אותה, ובדיקת התקינות מדווחת את ערכי השרת בפועל');
+$GLOBALS['apr_post_max'] = 64 << 20;
+$big8 = [apr_file_max()];
+$GLOBALS['apr_post_max'] = 0;
+$big8[] = apr_file_max();
+unset($GLOBALS['apr_post_max']);
+eq([$big8, is_file(dirname(__DIR__) . '/.user.ini')], [[APR_FILE_MAX, APR_FILE_MAX], false], 'שרת נדיב או בלי הגבלה ← 25MB; ואין .user.ini בתיקיית האפליקציה (השער יוצר אותו בפריסה)');
+
 // ── 06-B3: גודל ──
 $n = $nfiles(); $d = $disk();
 $GLOBALS['apr_file_max'] = 400;

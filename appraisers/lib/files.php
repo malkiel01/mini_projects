@@ -42,12 +42,21 @@ function apr_ini_bytes(string $v): int
     return match (strtolower(substr($v, -1))) { 'g' => $n << 30, 'm' => $n << 20, 'k' => $n << 10, default => $n };
 }
 
-/** הגודל המרבי לקובץ: 25MB, או פחות אם השרת מגביל את גוף הבקשה. */
+/** post_max_size של השרת, בבתים (0 = בלי הגבלה). לאפליקציה אין .user.ini משלה — השער של הפלטפורמה יוצר אותו — ולכן זה מה שהשרת נותן. */
+function apr_post_max(): int
+{
+    return (int)($GLOBALS['apr_post_max'] ?? apr_ini_bytes((string)ini_get('post_max_size')));
+}
+
+/**
+ * הגודל המרבי לקובץ: 25MB, או פחות — post_max_size של השרת פחות מרווח של 64KB. גוף שעובר את post_max_size נזרק בידי PHP
+ * לפני שהקוד רץ, ולכן התקרה שלנו חייבת להיות מתחתיו: כך הדחייה היא 413 ברור, והמסך מציג את התקרה האמיתית.
+ */
 function apr_file_max(): int
 {
     if (isset($GLOBALS['apr_file_max'])) return (int)$GLOBALS['apr_file_max'];
-    $post = apr_ini_bytes((string)ini_get('post_max_size'));
-    return $post > 0 ? min(APR_FILE_MAX, $post) : APR_FILE_MAX;
+    $post = apr_post_max();
+    return $post > 0 ? max(1, min(APR_FILE_MAX, $post - 65536)) : APR_FILE_MAX;
 }
 
 function apr_files_dir(): string

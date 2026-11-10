@@ -100,3 +100,6 @@
   07: מיגרציה 007; `lib/requests.php`, `lib/portal.php`, `portal/` (דף ב-PHP עם CSP), `screens/requests.js`; `apr_file_ingest` — צינור
   אחד להעלאה פנימית ולפורטל. `k-requests` 73 בדיקות, `z-http` 69 (18 חדשות לכתובות הציבוריות), ו-Playwright (20 צעדים, לא בריפו).
   60 מוטציות: 49 נתפסות; 11 ששרדו — הגנות כפולות ומרוצים. הסטיות מהאפיון — ב-README, "מה טרם הוכרע".
+- 2026-11-10 20:05 UTC · **קוד (5)** · תוספת ל-#1392 לפי הבקרה (פריסת 06 נכשלה על `.user.ini`): `apr_file_max()` = `min(25MB, post_max_size − 64KB)`;
+  גוף שהשרת זרק ← 413; "אחסון קבצים" מדווחת `post_max_size` / `upload_max_filesize` / `memory_limit` בפועל; `appraisers/.htaccess` הוסר
+  (כל תוכנו היה חסימת `.user.ini`); README עודכן. בדיקה ב-`j-documents` (וו `apr_post_max`).

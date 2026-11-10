@@ -72,6 +72,8 @@ function apr_upload_receive(): array
         if (fwrite($dst, $chunk) !== strlen($chunk)) { $err = 'storage_full'; break; }
     }
     fclose($src);
+    // הוצהר על גוף, ולא הגיע דבר: השרת זרק אותו (post_max_size) — "גדול מדי", לא "לא התקבל קובץ"
+    if ($err === '' && $total === 0 && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) $err = 'file_too_large';
     if (!fclose($dst) && $err === '') $err = 'storage_full';
     if ($err !== '') { @unlink($tmp); return ['upload_error' => $err]; }
     // בקשה שנדחית לפני הקליטה (CSRF, הרשאה) — הקובץ הזמני לא נשאר

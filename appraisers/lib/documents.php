@@ -640,9 +640,13 @@ apr_health_register('files', 'אחסון קבצים', function () {
     if (!is_writable($dir)) return ['bad', 'אין הרשאת כתיבה ל-data/files'];
     $free = @disk_free_space($dir);
     $max = apr_file_max();
-    $detail = sprintf('קובץ עד %dMB', intdiv($max, 1048576)) . ($free !== false ? sprintf(' · פנוי בדיסק: %.1fGB', $free / (1 << 30)) : '');
+    // הערכים בפועל של השרת: לאפליקציה אין .user.ini משלה (השער של הפלטפורמה יוצר אותו), ולכן אלה אינם בשליטתנו
+    $mem = apr_ini_bytes((string)ini_get('memory_limit'));
+    $detail = sprintf('קובץ עד %dMB', intdiv($max, 1048576)) . ($free !== false ? sprintf(' · פנוי בדיסק: %.1fGB', $free / (1 << 30)) : '')
+        . sprintf(' · בשרת: post_max_size=%s, upload_max_filesize=%s, memory_limit=%s', ini_get('post_max_size') ?: '?', ini_get('upload_max_filesize') ?: '?', ini_get('memory_limit') ?: '?');
     if ($free !== false && $free < 500 * (1 << 20)) return ['warn', $detail . ' — מעט מקום פנוי'];
-    if ($max < APR_FILE_MAX) return ['warn', $detail . ' — השרת מגביל את גוף הבקשה (post_max_size) מתחת ל-25MB'];
+    if ($max < APR_FILE_MAX) return ['warn', $detail . ' — השרת מגביל את גוף הבקשה (post_max_size) מתחת ל-25MB; המסכים מציגים את התקרה בפועל'];
+    if ($mem > 0 && $mem < 3 * $max) return ['warn', $detail . ' — memory_limit נמוך לבדיקת PDF בגודל המרבי'];
     return ['ok', $detail];
 });
 apr_health_register('scanner', 'סורק קבצים', function () {
