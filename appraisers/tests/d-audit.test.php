@@ -33,8 +33,12 @@ call('POST', 'sys-office-status', ['office' => $B, 'status' => 'suspended', 'rea
 call('POST', 'sys-office-status', ['office' => $B, 'status' => 'active', 'reason' => 'נבדק'], $owner);               // office.unsuspend
 call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'suspended', 'reason' => 'לבקשתה'], $owner);       // user.suspend
 call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'active', 'reason' => 'חזרה'], $owner);            // user.unsuspend
-call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => true, 'is_developer' => true], $owner);          // user.grant_sysadmin, user.grant_developer
-call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => false, 'is_developer' => false], $owner);        // user.revoke_sysadmin, user.revoke_developer
+call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => true, 'is_developer' => true], $owner);          // user.grant_sysadmin (is_developer — מתעלמים)
+call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => false], $owner);                                 // user.revoke_sysadmin
+call('GET', 'me', [], ident('1', 'הבעלים', 'owner@example.com'));                                                   // user.developer_off (כבר לא platform_admin)
+call('GET', 'me', [], $owner);                                                                                      // user.developer_on
+call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => false], $owner);                         // setting.change
+call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => true], $owner);
 $tok = call('POST', 'dev-token-create', ['label' => 'Claude'], $owner)[1];                                          // devtoken.create
 call('POST', 'dev-token-revoke', ['id' => 1], $owner);                                                              // devtoken.revoke
 
@@ -54,9 +58,8 @@ $expect = [   // פעולה => [כמה שורות, משרד (pid או null), מ�
     'member.remove' => [1, $A, $aviPid, 'user', $ellaPid],
     'user.suspend' => [1, null, $ownerPid, 'user', $batyaPid],
     'user.unsuspend' => [1, null, $ownerPid, 'user', $batyaPid],
-    'user.grant_developer' => [1, null, $ownerPid, 'user', $aviPid],
     'user.revoke_sysadmin' => [1, null, $ownerPid, 'user', $aviPid],
-    'user.revoke_developer' => [1, null, $ownerPid, 'user', $aviPid],
+    'user.developer_off' => [1, null, null, 'user', $ownerPid],
     'devtoken.create' => [1, null, $ownerPid, 'devtoken', '1'],
     'devtoken.revoke' => [1, null, $ownerPid, 'devtoken', '1'],
 ];
@@ -67,16 +70,19 @@ foreach ($expect as $action => [$n, $office, $actor, $type, $entity]) {
 }
 eq(count($rows('user.create')), 4, '01-D1 user.create — שורה לכל חשבון שנפתח בכניסה');
 eq(count($rows('office.create')), 2, '01-D1 office.create — שורה לכל משרד');
+eq([count($rows('user.developer_on')), $rows('user.developer_on')[0]['actor_kind'], $rows('user.developer_on')[0]['actor_pid']], [2, 'system', null], '01-D1 user.developer_on — בכניסה הראשונה ובחזרה; המבצע: המערכת');
+eq(array_map(fn($r) => json_decode($r['meta'], true)['to'], $rows('setting.change')), [false, true], '01-D1 setting.change — עם הערך החדש');
+eq(apr_val("SELECT is_developer FROM users WHERE pid = ?", [$aviPid]), 0, 'אין פעולת API שמדליקה is_developer');
 eq(count($rows('user.grant_sysadmin')), 2, '01-D1 user.grant_sysadmin — הבעלים (מהמעטפת) ואבי (בידי מנהל המערכת)');
 eq(array_map(fn($r) => json_decode($r['meta'], true)['via'], $rows('member.join')), ['create', 'create', 'invite', 'invite'], '01-D1 member.join — בהקמה ובקבלת הזמנה');
 eq(count($rows('invite.create')), 3, '01-D1 invite.create');
 eq(count($rows('invite.accept')), 2, '01-D1 invite.accept');
 eq([$rows('office.suspend')[0]['reason'], $rows('user.suspend')[0]['reason']], ['חשד לשימוש לרעה', 'לבקשתה'], '01-D1 הנימוק נשמר');
 eq(json_decode($rows('member.role')[0]['meta'], true), ['from' => 'staff', 'to' => 'trainee'], '01-D1 meta: מצב קודם וחדש');
-$known = ['user.create', 'user.link', 'user.suspend', 'user.unsuspend', 'user.grant_sysadmin', 'user.revoke_sysadmin', 'user.grant_developer', 'user.revoke_developer',
+$known = ['user.create', 'user.link', 'user.suspend', 'user.unsuspend', 'user.grant_sysadmin', 'user.revoke_sysadmin', 'user.developer_on', 'user.developer_off', 'setting.change',
     'office.create', 'office.rename', 'office.suspend', 'office.unsuspend', 'member.join', 'member.role', 'member.admin_on', 'member.admin_off', 'member.suspend',
     'member.unsuspend', 'member.remove', 'member.leave', 'invite.create', 'invite.revoke', 'invite.accept', 'devtoken.create', 'devtoken.revoke'];
-eq(array_values(array_diff($known, array_column(apr_rows('SELECT DISTINCT action FROM audit_log'), 'action'))), [], '01-D1 כל 25 הפעולות שבאפיון נרשמו');
+eq(array_values(array_diff($known, array_column(apr_rows('SELECT DISTINCT action FROM audit_log'), 'action'))), [], '01-D1 כל 26 הפעולות שבאפיון נרשמו');
 eq(array_values(array_diff(array_column(apr_rows('SELECT DISTINCT action FROM audit_log'), 'action'), $known)), [], '01-D1 ואין קוד פעולה שאינו באפיון');
 
 // מה לא נכנס ליומן: אסימונים, מיילים, שמות
@@ -117,7 +123,7 @@ eq([$role['actor'], $role['entity_name']], ['אבי', 'אלה'], 'מנהל מש�
 $susp = array_values(array_filter($lb['rows'], fn($r) => $r['action'] === 'office.suspend'))[0];
 eq([$susp['actor'], $susp['reason']], ['', 'חשד לשימוש לרעה'], 'פעולה של מנהל המערכת: בלי שם (אינו חבר במשרד), עם הנימוק');
 [, $all] = call('GET', 'dev-audit', [], $owner);
-check('המפתח רואה את כל המערכת, מהחדש לישן', count($all['rows']) === min(100, $n) && $all['rows'][0]['action'] === 'devtoken.revoke');
+check('המפתח רואה את כל המערכת, מהחדש לישן', count($all['rows']) === min(100, $n) && $all['rows'][0]['action'] === 'devtoken.revoke' &&$all['rows'][0]['at'] >= end($all['rows'])['at']);
 check('המפתח רואה מזהים — לא שמות ולא מיילים', !preg_match('/@|אבי|אלה|בתיה|"actor_name"|"entity_name"/u', preg_replace('/"reason":"[^"]*"/u', '', json_encode($all, JSON_UNESCAPED_UNICODE))));
 $f = call('GET', 'dev-audit', [], $owner, ['what' => 'office.'])[1]['rows'];
 check('סינון לפי פעולה', count($f) === 5 && !array_filter($f, fn($r) => !str_starts_with($r['action'], 'office.')));
@@ -128,7 +134,8 @@ eq(count(call('GET', 'dev-audit', [], $owner, ['limit' => 3, 'offset' => 2])[1][
 check('לכל שורה מזהה בקשה לקישור ליומן הטכני (ריק בבדיקה בלי שרת)', !array_filter($all['rows'], fn($r) => !array_key_exists('req', $r)));
 
 // ── ניהול המערכת (§7): נתונים תפעוליים בלבד ──
-foreach (['sys-offices' => 'GET', 'sys-office' => 'GET', 'sys-users' => 'GET', 'sys-office-status' => 'POST', 'sys-user-status' => 'POST', 'sys-user-flags' => 'POST'] as $a => $m) {
+foreach (array_keys(array_filter(APR_ACCESS, fn($r) => $r === 'sysadmin')) as $a) {
+    $m = in_array($a, APR_READS, true) ? 'GET' : 'POST';
     eq([call($m, $a, [], $avi)[0], code(call($m, $a, [], $avi))], [404, 'not_found'], "$a — 404 למי שאינו מנהל המערכת");
 }
 [, $so] = call('GET', 'sys-office', [], $owner, ['office' => $A]);

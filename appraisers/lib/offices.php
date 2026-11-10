@@ -15,13 +15,17 @@ const APR_INVITE_TTL = 14 * 86400;
 
 // ── הקמה, החלפה, שם, עזיבה ───────────────────────────────────
 
-/** כל משתמש פעיל מקים משרד, והופך לחבר פעיל עם is_admin. המשרד פעיל מיד. op — מזהה פעולה: לחיצה כפולה = משרד אחד. */
+/**
+ * הקמה עצמית: כל משתמש פעיל מקים משרד, והופך לחבר פעיל עם is_admin. המשרד פעיל מיד. נשלטת בהגדרת המערכת
+ * office_self_create (ברירת המחדל: דלוק). op — מזהה פעולה: לחיצה כפולה = משרד אחד.
+ */
 function apr_office_create(array $ctx, array $in): array
 {
     $name = apr_clean_name($in['name'] ?? null);
     $role = apr_clean_role($in['role'] ?? 'appraiser');
     $op = is_string($in['op'] ?? null) && preg_match('/^[A-Za-z0-9_-]{8,64}$/', $in['op']) ? $in['op'] : null;
     $uid = (int)$ctx['user']['id'];
+    if (!(int)$ctx['user']['is_sysadmin'] && !apr_setting('office_self_create')) apr_fail('self_create_off');
     return apr_tx(function () use ($ctx, $name, $role, $op, $uid) {
         if ($op !== null) {
             $prev = apr_row("SELECT entity_pid FROM audit_log WHERE action = 'office.create' AND actor_user_id = ? AND json_extract(meta, '$.op') = ?", [$uid, $op]);
@@ -179,18 +183,25 @@ function apr_invite_create(array $ctx, array $in): array
         if (apr_val('SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.office_id = ? AND u.email = ? AND m.deleted_at IS NULL', [$office, $email])) {
             apr_fail('already_member');
         }
-        $now = apr_now();
-        foreach (apr_rows("SELECT pid FROM invitations WHERE office_id = ? AND email = ? AND status = 'pending'", [$office, $email]) as $old) {
-            apr_exec("UPDATE invitations SET status = 'revoked', revoked_at = ? WHERE pid = ?", [$now, $old['pid']]);
-            apr_audit('invite.revoke', 'invitation', $old['pid'], ['by' => 'replaced'], office: $office);
-        }
-        $token = bin2hex(random_bytes(24));
-        $pid = apr_pid();
-        apr_insert('invitations', ['pid' => $pid, 'office_id' => $office, 'email' => $email, 'role' => $role, 'is_admin' => $isAdmin,
-            'token_hash' => hash('sha256', $token), 'invited_by' => $ctx['user']['id'], 'expires_at' => apr_iso(apr_time() + APR_INVITE_TTL), 'created_at' => $now]);
-        apr_audit('invite.create', 'invitation', $pid, ['role' => $role, 'is_admin' => (bool)$isAdmin], office: $office);
-        return ['invite' => $pid, 'token' => $token, 'expires_at' => apr_iso(apr_time() + APR_INVITE_TTL)];
+        return apr_invite_insert($office, $email, $role, $isAdmin, (int)$ctx['user']['id']);
     });
+}
+
+/** יוצר הזמנה (בתוך טרנזקציה), ומבטל הזמנה ממתינה קודמת לאותו מייל באותו משרד. מחזיר את האסימון — פעם אחת. */
+function apr_invite_insert(int $office, string $email, string $role, int $isAdmin, int $by): array
+{
+    $now = apr_now();
+    foreach (apr_rows("SELECT pid FROM invitations WHERE office_id = ? AND email = ? AND status = 'pending'", [$office, $email]) as $old) {
+        apr_exec("UPDATE invitations SET status = 'revoked', revoked_at = ? WHERE pid = ?", [$now, $old['pid']]);
+        apr_audit('invite.revoke', 'invitation', $old['pid'], ['by' => 'replaced'], office: $office);
+    }
+    $token = bin2hex(random_bytes(24));
+    $pid = apr_pid();
+    $until = apr_iso(apr_time() + APR_INVITE_TTL);
+    apr_insert('invitations', ['pid' => $pid, 'office_id' => $office, 'email' => $email, 'role' => $role, 'is_admin' => $isAdmin,
+        'token_hash' => hash('sha256', $token), 'invited_by' => $by, 'expires_at' => $until, 'created_at' => $now]);
+    apr_audit('invite.create', 'invitation', $pid, ['role' => $role, 'is_admin' => (bool)$isAdmin], office: $office);
+    return ['invite' => $pid, 'token' => $token, 'expires_at' => $until];
 }
 
 function apr_invite_mine(int $office, mixed $pid): array

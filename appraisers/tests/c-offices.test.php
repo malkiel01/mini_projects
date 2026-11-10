@@ -183,6 +183,44 @@ eq(call('GET', 'me', [], $avi)[1]['offices'], [], 'ואחרי העזיבה — �
 eq(call('POST', 'office-rename', ['name' => 'משרד אלף'], $ella)[0], 200, 'מנהלת משנה את שם המשרד');
 eq(call('GET', 'me', [], $ella)[1]['offices'][0]['name'], 'משרד אלף', 'השם החדש בכותרת');
 
+// ── 01-C12: מנהל המערכת מקים משרד עם מייל של מנהל ראשון ──
+$hila = ident('30', 'הילה', 'hila@c.co');
+[$st, $so] = call('POST', 'sys-office-create', ['name' => 'משרד ג', 'admin_email' => 'HILA@c.co'], $owner);
+$C = $so['office'] ?? '';
+check('01-C12 נוצר משרד, עם אסימון להזמנה', $st === 200 && apr_is_pid($C) && preg_match('/^[a-f0-9]{48}$/', $so['token']) === 1, $so);
+eq([apr_val('SELECT status FROM offices WHERE pid = ?', [$C]), (int)apr_val('SELECT COUNT(*) FROM memberships m JOIN offices o ON o.id = m.office_id WHERE o.pid = ?', [$C])], ['active', 0], '01-C12 משרד פעיל, בלי אף חבר');
+eq(apr_row('SELECT i.email, i.is_admin, i.status FROM invitations i JOIN offices o ON o.id = i.office_id WHERE o.pid = ?', [$C]), ['email' => 'hila@c.co', 'is_admin' => 1, 'status' => 'pending'], '01-C12 והזמנה עם is_admin למייל של המנהל הראשון');
+eq([call('GET', 'me', [], $owner)[1]['offices'], code(call('POST', 'office-switch', ['office' => $C], $owner)), code(call('GET', 'office', [], $owner, ['office' => $C]))], [[], 'not_found', 'not_found'], '01-C12 מנהל המערכת אינו חבר, ואינו יכול להחליף אליו');
+eq(array_column(call('GET', 'sys-offices', [], $owner)[1]['offices'], 'no_active_members', 'pid')[$C], true, 'ברשימה שלו המשרד מסומן "בלי חבר פעיל" עד שהמנהל מצטרף');
+eq(call('POST', 'invite-accept', ['token' => $so['token']], $hila)[0], 200, 'המנהלת הראשונה מקבלת את ההזמנה');
+[, $meH] = call('GET', 'me', [], $hila);
+eq([$meH['office'], $meH['offices'][0]['is_admin']], [$C, true], '01-C12 והיא מנהלת את המשרד');
+eq(code(call('POST', 'sys-office-create', ['name' => 'x', 'admin_email' => 'y@y.co'], $batya)), 'not_found', 'מי שאינו מנהל המערכת — 404');
+eq(code(call('POST', 'sys-office-create', ['name' => 'x', 'admin_email' => 'לא-מייל'], $owner)), 'email_invalid', 'מייל לא תקין');
+eq((int)apr_val("SELECT COUNT(*) FROM offices WHERE name = 'x'"), 0, 'בקשה שנדחתה לא השאירה משרד בלי מנהל');
+
+// ── 01-C13: office_self_create כבוי ← הקמה עצמית נדחית למי שאינו מנהל המערכת ──
+eq(call('GET', 'me', [], $batya)[1]['can_create_office'], true, 'ברירת המחדל: הקמה עצמית דלוקה');
+eq(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => false], $owner)[0], 200, 'מנהל המערכת מכבה');
+$r = call('POST', 'office-create', ['name' => 'לא אמור לקום', 'role' => 'staff'], $batya);
+eq([$r[0], code($r), (int)apr_val("SELECT COUNT(*) FROM offices WHERE name = 'לא אמור לקום'")], [403, 'self_create_off', 0], '01-C13 הקמה עצמית נדחית');
+eq(call('GET', 'me', [], $batya)[1]['can_create_office'], false, '01-C13 והמסך יודע להסביר במקום להציג את הטופס');
+eq(call('POST', 'office-create', ['name' => 'של מנהל המערכת', 'role' => 'staff'], $owner)[0], 200, '01-C13 מנהל המערכת עדיין יכול');
+eq(code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => true], $batya)), 'not_found', 'רק מנהל המערכת משנה הגדרות');
+eq(code(call('POST', 'sys-setting-set', ['name' => 'no_such', 'value' => true], $owner)), 'setting_invalid', 'הגדרה לא מוכרת');
+eq(code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => 'yes'], $owner)), 'setting_invalid', 'ערך שאינו בוליאני');
+call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => true], $owner);
+eq(call('GET', 'sys-settings', [], $owner)[1]['settings'], ['office_self_create' => true], 'ההגדרה חזרה');
+
+// ── 01-C14: הזמנה אינה נתפסת בידי חשבון שהמייל שלו לא אומת ──
+$inv = call('POST', 'invite-create', ['email' => 'victim@c.co', 'role' => 'appraiser', 'is_admin' => true], $hila)[1];
+$squatter = ident('31', 'מתחזה', 'victim@c.co', ['email_verified' => false]);
+[, $sq] = call('GET', 'my-invites', [], $squatter);
+eq([$sq['verified'], $sq['invites']], [false, []], '01-C14 מייל לא מאומת: ההזמנה אינה מוצגת');
+eq(code(call('POST', 'invite-accept', ['invite' => $inv['invite']], $squatter)), 'invite_invalid', '01-C14 ואינה מתקבלת בלי הקישור');
+eq(apr_val('SELECT status FROM invitations WHERE pid = ?', [$inv['invite']]), 'pending', '01-C14 ההזמנה נשארת ממתינה');
+eq(call('GET', 'me', [], $squatter)[1]['offices'], [], '01-C14 והמתחזה בלי משרד');
+
 // ── המזהה הפנימי לא יוצא מהשרת ──
 $all = json_encode([call('GET', 'me', [], $ella)[1], call('GET', 'office', [], $ella)[1], call('GET', 'office-audit', [], $ella)[1], call('GET', 'sys-offices', [], $owner)[1], call('GET', 'sys-users', [], $owner)[1], call('GET', 'my-invites', [], $gil)[1]]);
 check('אין בתשובות מספר פנימי (id, user_id, office_id …)', !preg_match('/"(id|user_id|office_id|membership_id|actor_user_id|invited_by)"\s*:/', $all), $all);

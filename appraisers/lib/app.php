@@ -9,8 +9,9 @@
  * מנהל משרד:       office-rename {name} · office-audit · invite-create {email, role, is_admin} · invite-link {invite}
  *                  · invite-revoke {invite} · member-update {user, role?, is_admin?, status?, title?, license_no?}
  *                  · member-remove {user}
- * מנהל המערכת:     sys-offices · sys-office {office} · sys-office-status {office, status, reason} · sys-users
- *                  · sys-user-status {user, status, reason} · sys-user-flags {user, is_sysadmin?, is_developer?}
+ * מנהל המערכת:     sys-offices · sys-office {office} · sys-office-create {name, admin_email, role?} · sys-office-status
+ *                  {office, status, reason} · sys-users · sys-user-status {user, status, reason} · sys-user-flags
+ *                  {user, is_sysadmin} · sys-settings · sys-setting-set {name, value}
  * המפתח:           dev-health · dev-audit · dev-jobs · dev-job-retry {job} · dev-job-cancel {job} · dev-cron-run
  *                  · dev-… של DevLoop (אותם שמות כמו בכל אפליקציה)
  * בלי משתמש:       health · devapi-… (באסימון X-Dev-Token)
@@ -51,6 +52,7 @@ function apr_me(array $ctx): array
         'offices' => array_map(fn($o) => ['pid' => $o['pid'], 'name' => $o['name'], 'role' => $o['role'], 'is_admin' => (bool)$o['is_admin'],
             'status' => $o['office_status'] !== 'active' ? 'office_suspended' : $o['status']], $ctx['offices']),
         'office' => $ctx['office']['pid'] ?? null,
+        'can_create_office' => (bool)$u['is_sysadmin'] || apr_setting('office_self_create'),
         'version' => apr_app_version(),
     ];
 }
@@ -101,6 +103,9 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'member-remove'      => apr_member_remove($ctx, $p),
 
         'sys-offices'        => apr_sys_offices(),
+        'sys-office-create'  => apr_sys_office_create($ctx, $p),
+        'sys-settings'       => apr_sys_settings(),
+        'sys-setting-set'    => apr_sys_setting_set($p),
         'sys-office'         => apr_sys_office($p),
         'sys-office-status'  => apr_sys_office_status($p),
         'sys-users'          => apr_sys_users(),

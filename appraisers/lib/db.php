@@ -205,6 +205,15 @@ function apr_meta_set(string $key, string $value): void
     apr_exec('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [$key, $value]);
 }
 
+/** הגדרות המערכת שמנהל המערכת משנה: שם => ברירת מחדל. נשמרות ב-meta ("setting.<שם>"). */
+const APR_SETTINGS = ['office_self_create' => true];
+
+function apr_setting(string $name): bool
+{
+    $v = apr_meta('setting.' . $name);
+    return $v === null ? APR_SETTINGS[$name] : $v === '1';
+}
+
 // ── מפתח הסודות ──────────────────────────────────────────────
 
 /**

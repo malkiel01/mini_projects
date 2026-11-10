@@ -30,7 +30,7 @@ function apr_actor(?int $userId = null): ?int
 function apr_audit(string $action, string $entityType, string $entityPid, array $meta = [], ?string $reason = null,
     ?int $office = null, ?int $actor = null, string $kind = 'user'): void
 {
-    $actor ??= apr_actor();
+    if ($kind === 'user') $actor ??= apr_actor();   // פעולה של המערכת (kind אחר) — בלי מבצע
     apr_insert('audit_log', ['at' => apr_now(), 'office_id' => $office, 'actor_user_id' => $actor,
         'actor_kind' => $actor === null && $kind === 'user' ? 'system' : $kind, 'action' => $action,
         'entity_type' => $entityType, 'entity_pid' => $entityPid,

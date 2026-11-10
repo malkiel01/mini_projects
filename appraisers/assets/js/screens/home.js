@@ -42,13 +42,15 @@ async function viewWelcome() {
     App.main.innerHTML = `<p class="hint">${T.welcomeHint}</p>
         <p class="sec-title">✉️ ${T.haveInvite}</p>${invites}
         <p class="sec-title">🏛️ ${T.createOffice}</p>
-        <form class="panel" id="create" novalidate>
+        ${App.me.can_create_office ? `<form class="panel" id="create" novalidate>
           <label class="f"><span>${T.officeName}</span><input name="name" required maxlength="120" autocomplete="organization"></label>
           <div class="f"><span>${T.myRole}</span>${roleField('appraiser', ['appraiser', 'staff'])}</div>
           <p class="hint">${T.createOfficeHint}</p>
           <p class="error" role="alert" hidden></p>
           <button class="btn primary" type="submit">${T.createOfficeDo}</button>
-        </form>`;
+        </form>` : `<p class="hint" id="no-create">${T.selfCreateOff}</p>`}`;
+    $$('[data-join]').forEach(b => b.addEventListener('click', () => acceptInvite({ invite: b.dataset.join }, b)));
+    if (!App.me.can_create_office) return;
     const form = $('#create'), op = opId();   // מזהה פעולה אחד לטופס: לחיצה כפולה = משרד אחד
     form.addEventListener('submit', async e => {
         e.preventDefault();
@@ -66,7 +68,6 @@ async function viewWelcome() {
             btn.disabled = false;
         }
     });
-    $$('[data-join]').forEach(b => b.addEventListener('click', () => acceptInvite({ invite: b.dataset.join }, b)));
 }
 
 async function acceptInvite(body, btn) {

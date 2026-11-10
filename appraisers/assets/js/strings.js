@@ -70,7 +70,11 @@ const T = {
     suspendOfficeHint: 'חברי משרד מושעה לא יכולים לבצע בו שום פעולה. הנתונים לא נמחקים.',
     suspendUserHint: 'משתמש מושעה לא נכנס למערכת בכלל, בשום משרד.',
     officesCount: n => n === 1 ? 'משרד אחד' : `${n} משרדים`, noOffice: 'בלי משרד',
-    flagSys: 'מנהל המערכת', flagDev: 'מפתח (רואה את מסך המפתח)', flagsTitle: 'הרשאות מערכת',
+    flagSys: 'מנהל המערכת', flagsTitle: 'הרשאות מערכת', devFlagNote: 'מפתח — נקבע בכלים הדיגיטליים (מנהל הפלטפורמה), לא כאן.',
+    sysNewOffice: 'משרד', sysNewOfficeTitle: 'הקמת משרד', firstAdminEmail: 'המייל של מנהל המשרד הראשון *',
+    sysNewOfficeHint: 'נוצר משרד פעיל בלי חברים, והזמנה למנהל הראשון. אתם לא הופכים לחברים במשרד, ולא רואים את תוכנו.',
+    selfCreate: 'כל משתמש יכול להקים משרד', selfCreateHint: 'כבוי — רק מנהל המערכת מקים משרדים.',
+    selfCreateOff: 'פתיחת משרד נעשית בידי מנהל המערכת.',
 
     // מסך המפתח
     devTitle: 'מסך המפתח', devTabs: { tasks: '📋 מטלות', log: '📜 יומן', audit: '🧾 פעולות', health: '🩺 תקינות', jobs: '⚙️ רקע' },
@@ -101,6 +105,7 @@ const T = {
         'invite.create': r => `נשלחה הזמנה לתפקיד ${T.roles[r.meta.role] || ''}`,
         'invite.revoke': r => r.meta.by === 'replaced' ? 'הזמנה הוחלפה בחדשה' : 'הזמנה בוטלה',
         'invite.accept': () => 'הזמנה התקבלה',
+        'setting.change': () => 'הגדרת מערכת שונתה',
     },
-    auditIcon: { office: '🏛️', member: '👤', invite: '✉️', user: '👤', devtoken: '🔑' },
+    auditIcon: { office: '🏛️', member: '👤', invite: '✉️', user: '👤', devtoken: '🔑', setting: '⚙️' },
 };

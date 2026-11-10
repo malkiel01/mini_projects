@@ -25,9 +25,9 @@ async function viewSystem(tab) {
                 <p class="hint" dir="auto">${esc(u.email || '')}</p>
                 <section class="group"><h3>${T.flagsTitle}</h3>
                   <label class="switch"><input type="checkbox" name="is_sysadmin"${u.is_sysadmin ? ' checked' : ''}><span>${T.flagSys}</span></label>
-                  <label class="switch"><input type="checkbox" name="is_developer"${u.is_developer ? ' checked' : ''}><span>${T.flagDev}</span></label></section>
+                  <p class="hint">${T.devFlagNote}</p></section>
                 <section class="group"><button type="button" class="btn ghost${u.status === 'active' ? ' danger' : ''}" id="status">${u.status === 'active' ? T.suspendUser : T.unsuspendUser}</button></section>`, async f => {
-                await api('sys-user-flags', { body: { user: u.pid, is_sysadmin: !!f.is_sysadmin, is_developer: !!f.is_developer } });
+                await api('sys-user-flags', { body: { user: u.pid, is_sysadmin: !!f.is_sysadmin } });
                 toast(T.saved);
                 await refreshMe();
                 route();
@@ -40,13 +40,35 @@ async function viewSystem(tab) {
         }));
         return;
     }
-    const d = await api('sys-offices');
-    App.main.innerHTML = `${tabs}<p class="hint">${T.sysHint}</p>${d.offices.length ? `<ul class="list">${d.offices.map(o => `<li class="card" tabindex="0" role="button" data-sys-office="${o.pid}">
+    const [d, cfg] = await Promise.all([api('sys-offices'), api('sys-settings')]);
+    App.main.innerHTML = `${tabs}<p class="hint">${T.sysHint}</p>
+        <div class="toolbar"><label class="switch" style="flex:1"><input type="checkbox" id="self-create"${cfg.settings.office_self_create ? ' checked' : ''}><span>${T.selfCreate}</span></label>
+        <button class="btn primary" id="new-office"><span aria-hidden="true">+</span> ${T.sysNewOffice}</button></div>
+        ${d.offices.length ? `<ul class="list">${d.offices.map(o => `<li class="card" tabindex="0" role="button" data-sys-office="${o.pid}">
         <span class="use-ic" aria-hidden="true">🏛️</span>
         <div class="body"><div class="l1"><span>${esc(o.name)}</span></div>
         <div class="l2">${T.members(o.members)}<i class="sep" aria-hidden="true">·</i>${o.last_activity ? esc(T.lastActivity(fmtDate(o.last_activity))) : T.noActivity}</div></div>
         ${o.status === 'suspended' ? `<span class="chip bad">${T.statuses.suspended}</span>` : o.no_active_members ? `<span class="chip warn">${T.noActiveMembers}</span>` : ''}</li>`).join('')}</ul>`
         : `<p class="empty">${T.noOffices}</p>`}`;
+    $('#self-create').addEventListener('change', async e => {
+        try {
+            await api('sys-setting-set', { body: { name: 'office_self_create', value: e.target.checked } });
+            toast(e.target.checked ? T.saved : T.selfCreateHint);
+            await refreshMe();
+        } catch (x) {
+            e.target.checked = !e.target.checked;
+            toastError(x);
+        }
+    });
+    $('#new-office').addEventListener('click', () => sheet(T.sysNewOfficeTitle, `
+        <p class="hint">${T.sysNewOfficeHint}</p>
+        <label class="f"><span>${T.officeName}</span><input name="name" required maxlength="120" autocomplete="off"></label>
+        <label class="f"><span>${T.firstAdminEmail}</span><input name="admin_email" type="email" dir="ltr" inputmode="email" required maxlength="200" autocomplete="off"></label>`, async f => {
+        const r = await api('sys-office-create', { body: f });
+        viewSystem();
+        showInviteLink(r, false);
+        return false;   // הגיליון נשאר פתוח — עכשיו עם קישור ההזמנה למנהל הראשון
+    }, T.createOfficeDo));
     $$('[data-sys-office]').forEach(li => onActivate(li, async () => {
         try {
             const o = await api('sys-office', { params: { office: li.dataset.sysOffice } });

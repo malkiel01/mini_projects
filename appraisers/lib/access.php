@@ -42,6 +42,9 @@ const APR_ACCESS = [
     'member-remove'       => 'admin',
 
     'sys-offices'         => 'sysadmin',
+    'sys-office-create'   => 'sysadmin',
+    'sys-settings'        => 'sysadmin',
+    'sys-setting-set'     => 'sysadmin',
     'sys-office'          => 'sysadmin',
     'sys-office-status'   => 'sysadmin',
     'sys-users'           => 'sysadmin',
@@ -61,7 +64,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['health', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users',
+const APR_READS = ['health', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
 
 /**

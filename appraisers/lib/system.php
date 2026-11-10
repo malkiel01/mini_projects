@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/access.php';
+require_once __DIR__ . '/offices.php';
 
 function apr_sys_offices(): array
 {
@@ -82,18 +84,53 @@ function apr_sys_user_status(array $in): array
     });
 }
 
-/** הענקה וביטול של is_sysadmin / is_developer. */
+/** הענקה וביטול של is_sysadmin. (is_developer אינו ניתן כאן — הוא שווה תמיד ל-platform_admin שבזהות.) */
 function apr_sys_user_flags(array $in): array
 {
     return apr_tx(function () use ($in) {
         $u = apr_sys_user_row($in['user'] ?? null);
-        foreach (['is_sysadmin' => 'sysadmin', 'is_developer' => 'developer'] as $col => $name) {
-            if (!array_key_exists($col, $in)) continue;
-            $on = (int)($in[$col] === true);
-            if ($on === (int)$u[$col]) continue;
-            if ($col === 'is_sysadmin' && !$on && $u['status'] === 'active' && !apr_active_sysadmins((int)$u['id'])) apr_fail('last_sysadmin');
-            apr_exec("UPDATE users SET $col = ?, updated_at = ? WHERE id = ?", [$on, apr_now(), $u['id']]);
-            apr_audit('user.' . ($on ? 'grant_' : 'revoke_') . $name, 'user', $u['pid']);
+        $on = (int)(($in['is_sysadmin'] ?? null) === true);
+        if (!array_key_exists('is_sysadmin', $in) || $on === (int)$u['is_sysadmin']) return [];
+        if (!$on && $u['status'] === 'active' && !apr_active_sysadmins((int)$u['id'])) apr_fail('last_sysadmin');
+        apr_exec('UPDATE users SET is_sysadmin = ?, updated_at = ? WHERE id = ?', [$on, apr_now(), $u['id']]);
+        apr_audit($on ? 'user.grant_sysadmin' : 'user.revoke_sysadmin', 'user', $u['pid']);
+        return [];
+    });
+}
+
+/**
+ * מנהל המערכת מקים משרד: שם, ומייל של המנהל הראשון. נוצר משרד פעיל **בלי אף חבר**, והזמנה למייל הזה עם is_admin.
+ * מנהל המערכת אינו הופך לחבר במשרד, ואינו רואה את תוכנו. האסימון של ההזמנה חוזר פעם אחת — לקישור שהוא מוסר.
+ */
+function apr_sys_office_create(array $ctx, array $in): array
+{
+    $name = apr_clean_name($in['name'] ?? null);
+    $email = apr_clean_email($in['admin_email'] ?? null);
+    $role = apr_clean_role($in['role'] ?? 'appraiser');
+    return apr_tx(function () use ($ctx, $name, $email, $role) {
+        $now = apr_now();
+        $pid = apr_pid();
+        $office = apr_insert('offices', ['pid' => $pid, 'name' => $name, 'created_by' => $ctx['user']['id'], 'created_at' => $now, 'updated_at' => $now]);
+        apr_audit('office.create', 'office', $pid, ['by' => 'sysadmin'], office: $office);
+        return ['office' => $pid] + apr_invite_insert($office, $email, $role, 1, (int)$ctx['user']['id']);
+    });
+}
+
+function apr_sys_settings(): array
+{
+    $out = [];
+    foreach (APR_SETTINGS as $name => $default) $out[$name] = apr_setting($name);
+    return ['settings' => $out];
+}
+
+function apr_sys_setting_set(array $in): array
+{
+    $name = is_string($in['name'] ?? null) && array_key_exists($in['name'], APR_SETTINGS) ? $in['name'] : apr_fail('setting_invalid');
+    if (!is_bool($in['value'] ?? null)) apr_fail('setting_invalid');
+    return apr_tx(function () use ($name, $in) {
+        if (apr_setting($name) !== $in['value']) {
+            apr_meta_set('setting.' . $name, $in['value'] ? '1' : '0');
+            apr_audit('setting.change', 'setting', $name, ['to' => $in['value']]);
         }
         return [];
     });

@@ -17,6 +17,15 @@ function auditHtml(rows, text, who) {
     return out + '</ul>';
 }
 
+/** גיליון עם קישור ההזמנה להעתקה. האסימון מוצג פעם אחת — במסד נשמר רק ה-hash שלו. */
+function showInviteLink(r, rotated) {
+    sheet(T.inviteLinkTitle, `
+        ${rotated ? `<p class="hint">${T.linkRotated}</p>` : ''}<p class="hint">${esc(T.inviteLinkHint(fmtDate(r.expires_at)))}</p>
+        <label class="f"><span>${T.inviteLinkTitle}</span><input readonly dir="ltr" id="link" value="${esc(inviteUrl(r.token))}"></label>
+        <button type="button" class="btn primary" id="copy">${T.copyLink}</button>`, null).querySelector('#copy')
+        .addEventListener('click', () => copyText(inviteUrl(r.token)));
+}
+
 async function viewOffice(tab) {
     const o = myOffice();
     setHead(T.officeTitle, o.name);
@@ -49,11 +58,7 @@ async function viewOffice(tab) {
         <p class="foot"><button class="btn sm ghost danger" id="leave">${T.leave}</button></p>`;
 
     const body = extra => ({ office: o.pid, ...extra });
-    const showLink = (r, rotated) => sheet(T.inviteLinkTitle, `
-        ${rotated ? `<p class="hint">${T.linkRotated}</p>` : ''}<p class="hint">${esc(T.inviteLinkHint(fmtDate(r.expires_at)))}</p>
-        <label class="f"><span>${T.inviteLinkTitle}</span><input readonly dir="ltr" id="link" value="${esc(inviteUrl(r.token))}"></label>
-        <button type="button" class="btn primary" id="copy">${T.copyLink}</button>`, null).querySelector('#copy')
-        .addEventListener('click', () => copyText(inviteUrl(r.token)));
+    const showLink = showInviteLink;
 
     $('#invite')?.addEventListener('click', () => sheet(T.inviteTitle, `
         <p class="hint">${T.inviteHint}</p>

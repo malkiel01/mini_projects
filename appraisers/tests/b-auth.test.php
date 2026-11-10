@@ -38,6 +38,13 @@ eq([$meO['user']['is_sysadmin'], $meO['user']['is_developer']], [true, true], '0
 check('01-B3 נרשם ביומן הפעולות', (bool)apr_val("SELECT 1 FROM audit_log WHERE action = 'user.grant_sysadmin' AND entity_pid = ?", [$meO['user']['pid']]));
 call('GET', 'me', [], $owner);
 eq((int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'user.grant_sysadmin'"), 1, '01-B3 ורק פעם אחת');
+// is_developer שווה תמיד ל-platform_admin שבזהות — לשני הכיוונים; is_sysadmin נשאר
+[, $meO2] = call('GET', 'me', [], ident('1', 'הבעלים', 'owner@example.com'));
+eq([$meO2['user']['is_developer'], $meO2['user']['is_sysadmin']], [false, true], '01-B3 נכנס עם platform_admin:false ← is_developer כבוי, is_sysadmin נשאר');
+eq(call('GET', 'dev-health', [], ident('1', 'הבעלים', 'owner@example.com'))[0], 404, '01-B3 ומסך המפתח נסגר לו מיד');
+eq(apr_val("SELECT actor_kind FROM audit_log WHERE action = 'user.developer_off'"), 'system', '01-B3 user.developer_off, המבצע: המערכת');
+call('POST', 'sys-user-flags', ['user' => $me['user']['pid'], 'is_developer' => true], $owner);
+eq([call('GET', 'me', [], $dana)[1]['user']['is_developer'], call('GET', 'me', [], $owner)[1]['user']['is_developer']], [false, true], '01-B3 אין פעולת API שמדליקה is_developer; הבעלים חוזר להיות מפתח בכניסה');
 
 // ── 01-B4: איחוד לפי מייל מאומת ──
 $now = apr_now();

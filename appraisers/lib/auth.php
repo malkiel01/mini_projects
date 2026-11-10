@@ -5,7 +5,8 @@
  *   1. יש חשבון עם ה-sub → זה החשבון.
  *   2. אין, והמייל אומת במעטפת → חשבון באותו מייל שעוד לא קושר מתקשר עכשיו (user.link).
  *   3. אחרת → חשבון חדש, פעיל, מיד (user.create). ההרשאה במעטפת היא האישור — אין אישור כפול.
- *   platform_admin → מדליקים is_sysadmin ו-is_developer אם כבויים: הבעלים מקבל את המסכים שלו בכניסה הראשונה.
+ *   platform_admin → מדליקים is_sysadmin אם כבוי; is_developer שווה תמיד ל-platform_admin שבזהות, ומתעדכן בכל כניסה
+ *   לשני הכיוונים. כך הבעלים מקבל את המסכים שלו בכניסה הראשונה, ואין דרך להפוך למפתח מתוך האפליקציה.
  *
  * ה-session: העוגייה apr_session — אסימון אקראי (במסד רק ה-hash), אסימון ה-CSRF והמשרד הפעיל. 30 יום מהשימוש
  * האחרון. לא session של PHP (בשרת המשותף הוא נמחק אחרי 24 דקות). session ששייך ל-sub אחר — נמחק, ונפתח חדש.
@@ -60,9 +61,14 @@ function apr_user_resolve(array $id): array
     if (($set['email'] ?? $user['email']) === $id['email'] && (int)$user['email_verified'] !== (int)$id['email_verified']) {
         $set['email_verified'] = (int)$id['email_verified'];
     }
-    if ($id['platform_admin'] && (!(int)$user['is_sysadmin'] || !(int)$user['is_developer'])) {
-        $set += ['is_sysadmin' => 1, 'is_developer' => 1];
-        apr_audit('user.grant_sysadmin', 'user', $user['pid'], ['by' => 'platform_admin'], actor: (int)$user['id'], kind: 'system');
+    if ($id['platform_admin'] && !(int)$user['is_sysadmin']) {
+        $set['is_sysadmin'] = 1;
+        apr_audit('user.grant_sysadmin', 'user', $user['pid'], ['by' => 'platform_admin'], actor: null, kind: 'system');
+    }
+    // המפתח = מנהל הפלטפורמה שבזהות, לשני הכיוונים, בכל כניסה. אין דרך להפוך למפתח מתוך האפליקציה.
+    if ((int)$user['is_developer'] !== (int)$id['platform_admin']) {
+        $set['is_developer'] = (int)$id['platform_admin'];
+        apr_audit($id['platform_admin'] ? 'user.developer_on' : 'user.developer_off', 'user', $user['pid'], [], actor: null, kind: 'system');
     }
     // לא כותבים למסד בכל בקשה: רק כשמשהו השתנה, או פעם ב-10 דקות
     if ($set || $user['last_seen_at'] === null || strtotime($user['last_seen_at']) < apr_time() - 600) {
