@@ -311,6 +311,7 @@ jobs:
             --exclude='renovation-punchlist/data/media/' \
             --exclude='claude-tasks/data/*.sqlite*' \
             --include='/trading-strategies/data/.htaccess' --exclude='/trading-strategies/data/*' \
+            --include='/appraisers/data/.htaccess' --exclude='/appraisers/data/*' --exclude='/appraisers/team/' --exclude='/appraisers/docs/' \
             --exclude='creative-suite/dashboard/data/cadence.json' \
             --exclude='recipes-app/data/*.sqlite*' \
             --include='recipes-app/data/media/.htaccess' \
