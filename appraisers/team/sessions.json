@@ -2,11 +2,12 @@
   "note": "מתעדכן בידי צ'אט הבקרה",
   "updated": "2026-11-10",
   "spec": "session_018g4NYChyg3pn6J7Mpn8BdW",
-  "code": "session_018g4NYFs9fDdKejES8Dp6rw",
+  "code": "session_018g4NYEcVpQ8cZai3AMFK74",
   "control": "session_018g4NYFwUcVefmCvwGAazWA",
   "tasks": "session_018g4NYGYQpEYJDdYkxFAL6d",
   "retired": {
     "code-1": "session_018g4NYFYs5G6v9s2CqJNEPh",
-    "control-1": "session_018g4NYDAvuqfD5J5wQYMo2Q"
+    "control-1": "session_018g4NYDAvuqfD5J5wQYMo2Q",
+    "code-2": "session_018g4NYFs9fDdKejES8Dp6rw"
   }
 }
