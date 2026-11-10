@@ -1,0 +1,12 @@
+{
+  "id": "appraisers",
+  "name": "שמאות מקרקעין",
+  "icon": "🏛️",
+  "icon_svg": "assets/icon.svg",
+  "description": "ניהול תיקי שמאות מקרקעין והפקת דוחות: מסמכים, בקשות לגורמים, מידע מרשויות, ביקור בנכס, עסקאות השוואה ודוח. בפיתוח.",
+  "category": "documents",
+  "entry": "index.html",
+  "version": "0.0",
+  "gate": true,
+  "restricted": true
+}
