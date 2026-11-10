@@ -2,16 +2,36 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#2d4a8a">
 <title>שמאות מקרקעין</title>
 <link rel="icon" href="assets/icon.svg">
-<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/app.css?v=0.1">
+<link rel="stylesheet" href="assets/css/devloop.css?v=0.1">
 </head>
 <body>
-<main>
-  <h1>🏛️ שמאות מקרקעין</h1>
-  <p>האפליקציה בפיתוח.</p>
-</main>
-<script src="assets/js/app.js"></script>
+<a class="skip" href="#main">דילוג לתוכן</a>
+<header class="top">
+  <button class="icon-btn" id="back" aria-label="חזרה" hidden>→</button>
+  <div class="titles"><h1 id="title">שמאות מקרקעין</h1><div class="sub" id="sub"></div></div>
+  <a class="icon-btn" id="dev-btn" href="#/dev" aria-label="מסך המפתח" hidden>🛠️</a>
+  <button class="icon-btn me" id="me-btn" aria-label="החשבון שלי" hidden></button>
+</header>
+<main id="main" tabindex="-1"><p class="boot">טוען…</p></main>
+
+<dialog id="sheet" aria-labelledby="sheet-title">
+  <form method="dialog" novalidate>
+    <header class="sheet-head">
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+      <h2 id="sheet-title"></h2>
+      <button type="submit" class="btn primary" id="sheet-save">שמירה</button>
+    </header>
+    <div class="sheet-body" id="sheet-body"></div>
+  </form>
+</dialog>
+<div class="toast" role="status" hidden></div>
+
+<script src="assets/js/devloop.js?v=0.1"></script>
+<script src="assets/js/app.js?v=0.1"></script>
 </body>
 </html>
