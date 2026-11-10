@@ -25,6 +25,22 @@ const T = {
 
     // כניסה
     loginNeeded: 'נדרשת כניסה', loginUnavailable: 'הכניסה לא זמינה כרגע', cannotEnter: 'אי אפשר להיכנס',
+    loginTitle: 'כניסה', loginViaPlatform: 'הכניסה — דרך הכלים הדיגיטליים.', loginUnavailableRetry: 'הכניסה לא זמינה כרגע. נסו שוב בעוד דקה.',
+    loginPlatform: 'כניסה עם הכלים הדיגיטליים', loginOr: 'או במייל ובסיסמה', password: 'סיסמה *', loginDo: 'כניסה',
+    loginErrors: { invalid: 'הזהות לא תקפה. נסו להיכנס שוב.', cancelled: 'הכניסה בוטלה.', suspended: 'החשבון הושעה — פנו למנהל המערכת.' },
+    forgot: 'שכחתי סיסמה', forgotTitle: 'שכחתי סיסמה', forgotHint: 'נשלח קישור לבחירת סיסמה חדשה. הוא תקף לשעה.', forgotDo: 'שליחה',
+    forgotSent: 'אם הכתובת רשומה — נשלח מייל',
+    resetTitle: 'בחירת סיסמה חדשה', newPassword: 'סיסמה חדשה *', passwordRule: 'לפחות 10 תווים.', resetDo: 'שמירת הסיסמה', resetDone: 'הסיסמה נשמרה — אפשר להיכנס',
+    passwordMenu: 'סיסמה לכניסה נפרדת', passwordTitle: 'סיסמה לכניסה נפרדת', passwordSaved: 'הסיסמה נשמרה',
+    passwordHint: 'הסיסמה משמשת רק כשהמערכת פועלת בנפרד מהכלים הדיגיטליים. קביעת סיסמה מנתקת את שאר המכשירים שלכם.',
+    passwordSet: 'נקבעה', passwordNotSet: 'לא נקבעה', logout: 'יציאה',
+
+    // אישור חוזר לפעולות רגישות
+    sensitive: { 'sys-office-status': 'השעיית משרד: חברי המשרד לא יוכלו לבצע בו שום פעולה.', 'sys-user-flags': 'הענקת הרשאת מנהל המערכת למשתמש.',
+        'dev-token-create': 'יצירת אסימון DevLoop: מי שמחזיק בו קורא את המטלות ומגיב עליהן.' },
+    confirmWordAsk: (what, word) => `${what}\n\nכדי לאשר, הקלידו: ${word}`,
+    confirmCodeAsk: what => `${what}\n\nנשלח אליכם מייל עם קוד בן 6 ספרות. הקלידו אותו כאן:`,
+    confirmCancelled: 'הפעולה לא אושרה',
 
     // בית
     homeEmpty: 'אין עדיין תיקים — התיקים יופיעו כאן.',
@@ -49,7 +65,17 @@ const T = {
     officeTitle: 'המשרד שלי', tabTeam: '👥 צוות', tabLog: '🧾 יומן פעולות',
     teamHintAdmin: 'מי עובד במשרד, ובאיזה תפקיד.', teamHint: 'מי עובד איתכם במשרד.',
     invite: 'הזמנה', inviteTitle: 'הזמנה למשרד', email: 'מייל *', role: 'תפקיד', alsoAdmin: 'גם מנהל/ת משרד',
-    inviteHint: 'בשלב הזה ההזמנה היא קישור שמוסרים בעצמכם. המוזמן נכנס דרך הכלים הדיגיטליים, עם אותה כתובת מייל — ושם הוא צריך גם הרשאה לאפליקציה הזו.',
+    inviteeName: 'שם המוזמן/ת', inviteResend: 'שליחה שוב', inviteResent: 'ההזמנה נשלחה שוב',
+    // מה קרה בפתיחת החשבון במעטפת, ומה קרה למייל — למנהל המשרד
+    provision: {
+        invited: 'נשלחה הזמנה. המוזמן יקבל מייל לבחירת סיסמה.',
+        granted: 'למוזמן יש כבר חשבון; נשלח לו קישור להצטרפות.',
+        blocked: 'אי אפשר להזמין את הכתובת הזו. פנו למנהל המערכת.',
+        failed: 'ההזמנה נשמרה, אבל פתיחת החשבון נכשלה. ננסה שוב; אפשר גם להעתיק את הקישור.',
+    },
+    provisionChip: { invited: 'חשבון נפתח', granted: 'יש חשבון', blocked: 'הכתובת חסומה', failed: 'פתיחת החשבון נכשלה' },
+    mailFailed: 'המייל לא נשלח — העתיקו את הקישור', mailChip: { sent: 'המייל נשלח', failed: 'המייל לא נשלח' },
+    inviteHint: 'המוזמן יקבל מייל עם קישור להצטרפות. אם אין לו חשבון בכלים הדיגיטליים — ייפתח לו חשבון, ויגיע אליו מייל נוסף לבחירת סיסמה.',
     inviteCreate: 'יצירת הזמנה', inviteLinkTitle: 'קישור ההזמנה',
     inviteLinkHint: until => `מסרו את הקישור למוזמן. הוא בתוקף עד ${until}, ומתאים רק לכתובת המייל שהזנתם.`,
     copyLink: '📋 העתקת קישור', linkRotated: 'הונפק קישור חדש — הקודם כבר לא עובד.',
@@ -87,6 +113,8 @@ const T = {
     cronUrlHint: 'להגדרה ב-cPanel, כל 5 דקות:', cronCopy: '📋 העתקת הפקודה', cronRun: '▶️ הרצה עכשיו', cronRan: r => r.skipped ? 'סבב אחר רץ כרגע' : `רצו ${r.ran}, נכשלו ${r.failed}`,
     queueTitle: 'התור', jobStatus: { pending: 'ממתינה', running: 'רצה', done: 'הסתיימה', partial: 'חלקית', failed: 'נכשלה', needs_action: 'דורשת טיפול', cancelled: 'בוטלה' },
     kindsTitle: 'השירותים', kindEvery: s => s ? `כל ${Math.round(s / 60)} דקות` : 'לפי דרישה', kindLast: d => `רץ לאחרונה ${d}`, kindNever: 'עוד לא רץ',
+    mailTitle: 'מיילים אחרונים', mailEmpty: 'עוד לא נשלחו מיילים.', mailHint: 'הנמען מוצג כ-hash — הכתובת עצמה אינה נשמרת ביומן.',
+    mailKind: { invite: 'הזמנה', reset: 'איפוס סיסמה', otp: 'קוד אישור' },
     jobsTitle: 'משימות אחרונות', jobsEmpty: 'אין משימות.', attempts: (a, m) => `ניסיון ${a} מתוך ${m}`, jobRetry: 'ניסיון חוזר', jobCancel: 'ביטול',
 
     // יומן הפעולות — מה קרה (למנהל משרד, עם שמות)
@@ -106,7 +134,9 @@ const T = {
         'invite.create': r => `נשלחה הזמנה לתפקיד ${T.roles[r.meta.role] || ''}`,
         'invite.revoke': r => r.meta.by === 'replaced' ? 'הזמנה הוחלפה בחדשה' : 'הזמנה בוטלה',
         'invite.accept': () => 'הזמנה התקבלה',
+        'invite.resend': () => 'הזמנה נשלחה שוב',
+        'invite.provision': r => `פתיחת חשבון למוזמן: ${T.provisionChip[r.meta.status] || ''}`,
         'setting.change': () => 'הגדרת מערכת שונתה',
     },
-    auditIcon: { office: '🏛️', member: '👤', invite: '✉️', user: '👤', devtoken: '🔑', setting: '⚙️' },
+    auditIcon: { confirm: '✅', office: '🏛️', member: '👤', invite: '✉️', user: '👤', devtoken: '🔑', setting: '⚙️' },
 };

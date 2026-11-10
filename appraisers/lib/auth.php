@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/platform.php';
 
 const APR_COOKIE = 'apr_session';
 const APR_SESSION_TTL = 30 * 86400;
@@ -56,12 +57,13 @@ function apr_user_resolve(array $id): array
     [$email, $verified] = apr_email_claim($id, (int)$user['id']);
     if ($email !== $user['email']) $set['email'] = $email;
     if ($verified !== (int)$user['email_verified']) $set['email_verified'] = $verified;
+    // platform_admin = null: זהות חתומה במצב מנותק אינה נושאת אותו — הדגלים נשארים כמו שהם
     if ($id['platform_admin'] && !(int)$user['is_sysadmin']) {
         $set['is_sysadmin'] = 1;
         apr_audit('user.grant_sysadmin', 'user', $user['pid'], ['by' => 'platform_admin'], actor: null, kind: 'system');
     }
     // המפתח = מנהל הפלטפורמה שבזהות, לשני הכיוונים, בכל כניסה. אין דרך להפוך למפתח מתוך האפליקציה.
-    if ((int)$user['is_developer'] !== (int)$id['platform_admin']) {
+    if ($id['platform_admin'] !== null && (int)$user['is_developer'] !== (int)$id['platform_admin']) {
         $set['is_developer'] = (int)$id['platform_admin'];
         apr_audit($id['platform_admin'] ? 'user.developer_on' : 'user.developer_off', 'user', $user['pid'], [], actor: null, kind: 'system');
     }
@@ -118,7 +120,7 @@ function apr_session_for(array $user, string $cookie, string $ua = ''): array
     // כניסה: המשרד הפעיל האחרון של המשתמש (מ-session אחר שלו); אם אינו זמין — ייבחר הראשון הזמין (lib/access.php)
     $last = apr_val('SELECT active_office_id FROM sessions WHERE user_id = ? AND active_office_id IS NOT NULL ORDER BY last_used_at DESC, id DESC LIMIT 1', [$user['id']]);
     $sid = apr_insert('sessions', ['user_id' => $user['id'], 'token_hash' => hash('sha256', $token), 'csrf' => bin2hex(random_bytes(32)),
-        'active_office_id' => $last ?: null, 'platform_sub' => $user['platform_sub'], 'ua' => mb_substr($ua, 0, 300),
+        'active_office_id' => $last ?: null, 'platform_sub' => (string)$user['platform_sub'], 'ua' => mb_substr($ua, 0, 300),
         'created_at' => apr_iso($now), 'last_used_at' => apr_iso($now), 'expires_at' => apr_iso($now + APR_SESSION_TTL)]);
     return apr_row('SELECT * FROM sessions WHERE id = ?', [$sid]) + ['new_token' => $token];
 }
@@ -128,10 +130,62 @@ function apr_set_cookie(string $token): void
     if (headers_sent()) return;
     $path = rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/')), '/') . '/';
     setcookie(APR_COOKIE, $token, [
-        'expires' => time() + APR_SESSION_TTL,
+        'expires' => $token === '' ? 1 : time() + APR_SESSION_TTL,   // ריק = יציאה: העוגייה נמחקת
         'path' => $path,                        // תיקיית האפליקציה בלבד
         'secure' => !defined('APR_DEV'),        // בפיתוח מקומי (http) — בלי Secure
         'httponly' => true,
         'samesite' => 'Lax',
     ]);
+}
+
+/**
+ * מצב מנותק: המשתמש וה-session לפי העוגייה בלבד (אין זהות מהשער). session שנפתח במצב מחוברת ממשיך עד שיפוג.
+ * מחזיר [user, session] או null.
+ */
+function apr_session_user(string $cookie): ?array
+{
+    if (preg_match('/^[a-f0-9]{64}$/', $cookie) !== 1) return null;
+    $now = apr_time();
+    $s = apr_row('SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?', [hash('sha256', $cookie), apr_iso($now)]);
+    $user = $s ? apr_row('SELECT * FROM users WHERE id = ?', [$s['user_id']]) : null;
+    if (!$user) return null;
+    $refresh = strtotime($s['last_used_at']) < $now - 3600;
+    if ($refresh) apr_exec('UPDATE sessions SET last_used_at = ?, expires_at = ? WHERE id = ?', [apr_iso($now), apr_iso($now + APR_SESSION_TTL), $s['id']]);
+    return [$user, $s + ['new_token' => $refresh ? $cookie : null]];
+}
+
+/** עוגיית ה-state של הכניסה המאוחדת: קצרת חיים, רק לדפדפן שהתחיל את הכניסה. ריק = מחיקה. */
+function apr_set_sso_cookie(string $state): void
+{
+    if (headers_sent()) return;
+    setcookie('apr_sso', $state, ['expires' => $state === '' ? 1 : time() + 600, 'path' => rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/')), '/') . '/',
+        'secure' => !defined('APR_DEV'), 'httponly' => true, 'samesite' => 'Lax']);
+}
+
+const APR_GRANT_EVERY = 900;        // מנותקת: כל 15 דקות שואלים את המעטפת אם ההרשאה עדיין בתוקף
+const APR_GRANT_GRACE = 86400;      // המעטפת לא עונה: ממשיכים עד 24 שעות מהתשובה החיובית האחרונה
+
+/**
+ * מצב מנותק: אין שער שבודק הרשאה בכל בקשה, ולכן ה-session נבדק מול המעטפת (grant_status, חתום) פעם ב-15 דקות.
+ * "לא" → ה-session נמחק (401). המעטפת לא עונה → ממשיכים עד 24 שעות מהבדיקה האחרונה שהצליחה, ואז נכשל סגור (503);
+ * בינתיים שואלים שוב אחרי דקה.
+ */
+function apr_session_grant_check(array $user, array $s): void
+{
+    $now = apr_time();
+    // חלון החסד נבדק תמיד — גם כשעוד לא הגיע הזמן לשאול שוב
+    $expired = strtotime($s['grant_ok_at'] ?? $s['created_at']) <= $now - APR_GRANT_GRACE;
+    if (!$expired && $s['grant_checked_at'] !== null && strtotime($s['grant_checked_at']) > $now - APR_GRANT_EVERY) return;
+    $allowed = apr_grant_status($user['platform_sub']);
+    if ($allowed === false) {
+        apr_exec('DELETE FROM sessions WHERE id = ?', [$s['id']]);
+        $GLOBALS['apr_cookie_out'] = '';
+        apr_fail('login_required');
+    }
+    if ($allowed === true) {
+        apr_exec('UPDATE sessions SET grant_checked_at = ?, grant_ok_at = ? WHERE id = ?', [apr_iso($now), apr_iso($now), $s['id']]);
+        return;
+    }
+    if ($expired) apr_fail('login_unavailable');
+    apr_exec('UPDATE sessions SET grant_checked_at = ? WHERE id = ?', [apr_iso($now - APR_GRANT_EVERY + 60), $s['id']]);
 }

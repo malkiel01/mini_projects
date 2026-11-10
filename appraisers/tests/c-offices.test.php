@@ -151,8 +151,8 @@ eq(code(call('GET', 'office', [], $owner, ['office' => $A])), 'not_found', '01-C
 eq(code(call('GET', 'office-audit', [], $owner)), 'no_office', '01-C9 ולא את יומן הפעולות שלו');
 
 // ── 01-C10: משרד מושעה ──
-eq(code(call('POST', 'sys-office-status', ['office' => $B, 'status' => 'suspended'], $owner)), 'reason_required', 'השעיית משרד דורשת נימוק');
-eq(call('POST', 'sys-office-status', ['office' => $B, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner)[0], 200, 'מנהל המערכת משעה את משרד ב');
+eq(code(call('POST', 'sys-office-status', ['confirm' => 'אישור', 'office' => $B, 'status' => 'suspended'], $owner)), 'reason_required', 'השעיית משרד דורשת נימוק');
+eq(call('POST', 'sys-office-status', ['confirm' => 'אישור', 'office' => $B, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner)[0], 200, 'מנהל המערכת משעה את משרד ב');
 $count = (int)apr_val('SELECT COUNT(*) FROM memberships');
 foreach ([['GET', 'office', []], ['GET', 'office-audit', []], ['POST', 'invite-create', ['email' => 'z@b.co', 'role' => 'staff']], ['POST', 'office-rename', ['name' => 'x']], ['POST', 'office-leave', []]] as [$m, $a, $body]) {
     $r = call($m, $a, $body, $batya);
@@ -210,7 +210,7 @@ eq(code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value'
 eq(code(call('POST', 'sys-setting-set', ['name' => 'no_such', 'value' => true], $owner)), 'setting_invalid', 'הגדרה לא מוכרת');
 eq(code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => 'yes'], $owner)), 'setting_invalid', 'ערך שאינו בוליאני');
 call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => true], $owner);
-eq(call('GET', 'sys-settings', [], $owner)[1]['settings'], ['office_self_create' => true], 'ההגדרה חזרה');
+eq(call('GET', 'sys-settings', [], $owner)[1]['settings'], ['office_self_create' => true, 'invites_per_day' => 200], 'ההגדרה חזרה');
 
 // ── 01-C14: הזמנה אינה נתפסת בידי חשבון שהמייל שלו לא אומת ──
 $inv = call('POST', 'invite-create', ['email' => 'victim@c.co', 'role' => 'appraiser', 'is_admin' => true], $hila)[1];
@@ -253,7 +253,7 @@ eq(apr_val('SELECT m.status FROM memberships m JOIN users u ON u.id = m.user_id 
 // ── 🟡7: הזמנה למשרד מושעה אינה מתקבלת ואינה מוצגת ──
 $invS = call('POST', 'invite-create', ['email' => 'late@c.co', 'role' => 'staff'], $hila)[1];
 $late = ident('35', 'מאחר', 'late@c.co');
-call('POST', 'sys-office-status', ['office' => $C, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner);
+call('POST', 'sys-office-status', ['confirm' => 'אישור', 'office' => $C, 'status' => 'suspended', 'reason' => 'בדיקה'], $owner);
 eq(call('GET', 'my-invites', [], $late)[1]['invites'], [], 'הזמנה למשרד מושעה אינה מוצגת');
 eq([code(call('POST', 'invite-info', ['token' => $invS['token']], $late)), code(call('POST', 'invite-accept', ['token' => $invS['token']], $late)), code(call('POST', 'invite-accept', ['invite' => $invS['invite']], $late))],
     ['invite_invalid', 'invite_invalid', 'invite_invalid'], 'ואינה מתקבלת — באותו נוסח כמו הזמנה שאינה בתוקף');

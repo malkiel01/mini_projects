@@ -52,7 +52,7 @@ async function devHealth(body) {
 }
 
 async function devJobs(body) {
-    const d = await api('dev-jobs');
+    const [d, mail] = await Promise.all([api('dev-jobs'), api('dev-mail')]);
     const c = d.cron, cmd = `curl -s "${c.url}"`;
     const chip = { failed: 'bad', needs_action: 'bad', partial: 'warn', pending: 'info', running: 'info' };
     body.innerHTML = `
@@ -75,7 +75,12 @@ async function devJobs(body) {
             <span class="chip ${chip[j.status] || 'ok'}">${T.jobStatus[j.status] || esc(j.status)}</span>
             ${['failed', 'needs_action', 'cancelled'].includes(j.status) ? `<button class="icon-btn" data-retry-job="${j.pid}" aria-label="${T.jobRetry}">🔁</button>` : ''}
             ${['pending', 'failed', 'needs_action'].includes(j.status) ? `<button class="icon-btn" data-cancel-job="${j.pid}" aria-label="${T.jobCancel}">✕</button>` : ''}</li>`).join('')}</ul>`
-            : `<p class="empty">${T.jobsEmpty}</p>`}`;
+            : `<p class="empty">${T.jobsEmpty}</p>`}
+        <p class="sec-title">✉️ ${T.mailTitle}</p><p class="hint">${T.mailHint}</p>
+        ${mail.rows.length ? `<ul class="list">${mail.rows.map(m => `<li class="card static"><div class="body">
+            <div class="l1"><span>${esc(T.mailKind[m.kind] || m.kind)}</span><span class="t">${esc(fmtDateTime(m.at))}</span></div>
+            <div class="l2 wrap"><span dir="ltr">${esc(m.to)}…</span>${m.error ? `<i class="sep" aria-hidden="true">·</i><span dir="ltr">${esc(m.error)}</span>` : ''}</div></div>
+            <span class="chip ${m.status === 'sent' ? 'ok' : 'bad'}">${T.mailChip[m.status] || esc(m.status)}</span></li>`).join('')}</ul>` : `<p class="empty">${T.mailEmpty}</p>`}`;
     const act = (action, job) => api(action, { body: job ? { job } : {} }).then(r => { if (action === 'dev-cron-run') toast(T.cronRan(r)); return devJobs(body); }).catch(toastError);
     $('#copy-cron').addEventListener('click', () => copyText(cmd));
     $('#run-cron').addEventListener('click', () => act('dev-cron-run'));

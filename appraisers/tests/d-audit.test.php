@@ -29,17 +29,17 @@ call('POST', 'member-update', ['user' => $ellaPid, 'status' => 'active'], $avi);
 call('POST', 'office-leave', [], $ella);                                                                            // member.leave
 join_office($avi, $ella, 'ella@a.co');
 call('POST', 'member-remove', ['user' => $ellaPid], $avi);                                                          // member.remove
-call('POST', 'sys-office-status', ['office' => $B, 'status' => 'suspended', 'reason' => 'חשד לשימוש לרעה'], $owner); // office.suspend
+call('POST', 'sys-office-status', ['confirm' => 'אישור', 'office' => $B, 'status' => 'suspended', 'reason' => 'חשד לשימוש לרעה'], $owner); // office.suspend
 call('POST', 'sys-office-status', ['office' => $B, 'status' => 'active', 'reason' => 'נבדק'], $owner);               // office.unsuspend
 call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'suspended', 'reason' => 'לבקשתה'], $owner);       // user.suspend
 call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'active', 'reason' => 'חזרה'], $owner);            // user.unsuspend
-call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => true, 'is_developer' => true], $owner);          // user.grant_sysadmin (is_developer — מתעלמים)
+call('POST', 'sys-user-flags', ['confirm' => 'אישור', 'user' => $aviPid, 'is_sysadmin' => true, 'is_developer' => true], $owner);          // user.grant_sysadmin (is_developer — מתעלמים)
 call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => false], $owner);                                 // user.revoke_sysadmin
 call('GET', 'me', [], ident('1', 'הבעלים', 'owner@example.com'));                                                   // user.developer_off (כבר לא platform_admin)
 call('GET', 'me', [], $owner);                                                                                      // user.developer_on
 call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => false], $owner);                         // setting.change
 call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => true], $owner);
-$tok = call('POST', 'dev-token-create', ['label' => 'Claude'], $owner)[1];                                          // devtoken.create
+$tok = call('POST', 'dev-token-create', ['label' => 'Claude', 'confirm' => 'אישור'], $owner)[1];                                          // devtoken.create
 call('POST', 'dev-token-revoke', ['id' => 1], $owner);                                                              // devtoken.revoke
 
 // ── 01-D1: כל פעולה כתבה שורה, עם המבצע, המשרד והישות ──
@@ -83,7 +83,8 @@ $known = ['user.create', 'user.link', 'user.suspend', 'user.unsuspend', 'user.gr
     'office.create', 'office.rename', 'office.suspend', 'office.unsuspend', 'member.join', 'member.role', 'member.admin_on', 'member.admin_off', 'member.suspend',
     'member.unsuspend', 'member.remove', 'member.leave', 'invite.create', 'invite.revoke', 'invite.accept', 'devtoken.create', 'devtoken.revoke'];
 eq(array_values(array_diff($known, array_column(apr_rows('SELECT DISTINCT action FROM audit_log'), 'action'))), [], '01-D1 כל 26 הפעולות שבאפיון נרשמו');
-eq(array_values(array_diff(array_column(apr_rows('SELECT DISTINCT action FROM audit_log'), 'action'), $known)), [], '01-D1 ואין קוד פעולה שאינו באפיון');
+eq(array_values(array_diff(array_column(apr_rows('SELECT DISTINCT action FROM audit_log'), 'action'), $known,
+    ['confirm.ok', 'invite.provision', 'invite.resend', 'user.login', 'user.logout', 'user.password_set', 'user.password_reset'])), [], '01-D1 ואין קוד פעולה שאינו באפיון (01 §8, ועוד הפעולות של 02)');
 
 // מה לא נכנס ליומן: אסימונים, מיילים, שמות
 $dump = json_encode(apr_rows('SELECT * FROM audit_log'), JSON_UNESCAPED_UNICODE);
@@ -159,7 +160,7 @@ call('POST', 'sys-user-status', ['user' => $batyaPid, 'status' => 'active', 'rea
 // 01-C6: מנהל המערכת האחרון
 eq(code(call('POST', 'sys-user-flags', ['user' => $ownerPid, 'is_sysadmin' => false], $owner)), 'last_sysadmin', '01-C6 אי אפשר להסיר את מנהל המערכת האחרון');
 eq(code(call('POST', 'sys-user-status', ['user' => $ownerPid, 'status' => 'suspended', 'reason' => 'x'], $owner)), 'last_sysadmin', '01-C6 ולא להשעות אותו');
-call('POST', 'sys-user-flags', ['user' => $aviPid, 'is_sysadmin' => true], $owner);
+call('POST', 'sys-user-flags', ['confirm' => 'אישור', 'user' => $aviPid, 'is_sysadmin' => true], $owner);
 eq(call('GET', 'sys-offices', [], $avi)[0], 200, 'מי שקיבל is_sysadmin רואה את מסך המערכת');
 eq(call('GET', 'dev-health', [], $avi)[0], 404, 'אבל לא את מסך המפתח — דגל נפרד');
 eq(code(call('POST', 'sys-user-status', ['user' => apr_pid(), 'status' => 'suspended', 'reason' => 'x'], $owner)), 'not_found', 'משתמש שלא קיים');
