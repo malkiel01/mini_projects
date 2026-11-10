@@ -186,13 +186,23 @@ function apr_invite_create(array $ctx, array $in): array
     $op = is_string($in['op'] ?? null) && preg_match('/^[A-Za-z0-9_-]{8,64}$/', $in['op']) ? $in['op'] : null;
     $r = apr_tx(function () use ($ctx, $office, $email, $role, $isAdmin, $name, $op) {
         if ($op !== null && ($prev = apr_row('SELECT * FROM invitations WHERE office_id = ? AND op = ?', [$office, $op]))) {
-            return ['invite' => $prev['pid'], 'expires_at' => $prev['expires_at'], 'repeat' => true] + apr_invite_state($prev);
+            if ($prev['provision_status'] !== null || $prev['status'] !== 'pending') {
+                return ['invite' => $prev['pid'], 'expires_at' => $prev['expires_at'], 'repeat' => true] + apr_invite_state($prev);
+            }
+            // הבקשה הקודמת נקטעה אחרי השמירה ולפני המשלוח (קריסה): משלימים עכשיו, עם קישור חדש — האסימון הקודם לא נשמר
+            $token = bin2hex(random_bytes(24));
+            apr_exec('UPDATE invitations SET token_hash = ? WHERE id = ?', [hash('sha256', $token), $prev['id']]);
+            return ['id' => (int)$prev['id'], 'invite' => $prev['pid'], 'token' => $token, 'expires_at' => $prev['expires_at']];
         }
         // המוזמן כבר חבר — לא נשלחת בקשה למעטפת
         if (apr_val('SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.office_id = ? AND u.email = ? AND m.deleted_at IS NULL', [$office, $email])) {
             apr_fail('already_member');
         }
-        if ((int)apr_val('SELECT COUNT(*) FROM invitations WHERE office_id = ? AND created_at > ?', [$office, apr_iso(apr_time() - 86400)]) >= APR_INVITES_PER_DAY) {
+        // שלוש תקרות ליממה: למשרד, למשתמש המזמין (אחרת מקימים עוד משרד ועוקפים), ולמערכת כולה
+        $since = apr_iso(apr_time() - 86400);
+        if ((int)apr_val('SELECT COUNT(*) FROM invitations WHERE office_id = ? AND created_at > ?', [$office, $since]) >= APR_INVITES_PER_DAY
+            || (int)apr_val('SELECT COUNT(*) FROM invitations WHERE invited_by = ? AND created_at > ?', [$ctx['user']['id'], $since]) >= APR_INVITES_PER_DAY
+            || (int)apr_val('SELECT COUNT(*) FROM invitations WHERE created_at > ?', [$since]) >= apr_setting('invites_per_day')) {
             apr_fail('invite_limit');
         }
         return apr_invite_insert($office, $email, $role, $isAdmin, (int)$ctx['user']['id'], $name, $op);

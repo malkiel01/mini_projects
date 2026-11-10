@@ -62,6 +62,9 @@ try {
         'ua' => (string)($_SERVER['HTTP_USER_AGENT'] ?? ''),
         'cron_url' => apr_self_url('cron.php'),
         'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+        'content_type' => (string)($_SERVER['CONTENT_TYPE'] ?? ''),
+        'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),
+        'fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
         'sso_state' => is_string($_COOKIE['apr_sso'] ?? null) ? $_COOKIE['apr_sso'] : '',
     ]);
     apr_out(apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out);

@@ -134,6 +134,8 @@ function apr_sso_callback(array $get, array $env): array
 function apr_login_open(array $user, array $env, string $via): void
 {
     $s = apr_session_for($user, '', (string)($env['ua'] ?? ''));
+    // הכניסה עצמה היא בדיקת הרשאה שהצליחה (זהות חתומה ניתנת רק למורשה; בסיסמה — grant_status נבדק לפני כן)
+    apr_exec('UPDATE sessions SET grant_checked_at = ?, grant_ok_at = ? WHERE id = ?', [apr_now(), apr_now(), $s['id']]);
     $GLOBALS['apr_cookie_out'] = $s['new_token'];
     apr_audit('user.login', 'user', $user['pid'], ['via' => $via], actor: (int)$user['id']);
 }
@@ -145,32 +147,39 @@ function apr_login_keys(string $email, array $env): array
     return ['e:' . apr_mail_hash($email), 'i:' . hash_hmac('sha256', 'ip:' . (string)($env['ip'] ?? ''), apr_secret())];
 }
 
-function apr_login_locked(array $keys): bool
+/**
+ * ניסיון כניסה נספר **לפני** בדיקת הסיסמה, באותה טרנזקציה שבודקת את הנעילה (BEGIN IMMEDIATE) — כך N בקשות במקביל
+ * אינן N ניחושים. הניסיון החמישי בתוך 15 דקות נועל ל-15 דקות. מחזיר false כשהמפתח נעול (ואז לא סופר).
+ */
+function apr_login_attempt(array $keys): bool
 {
-    foreach ($keys as $k) {
-        $until = apr_val('SELECT locked_until FROM login_attempts WHERE key = ?', [$k]);
-        if (is_string($until) && $until > apr_now()) return true;
-    }
-    return false;
+    return apr_tx(function () use ($keys) {
+        $now = apr_time();
+        foreach ($keys as $k) {
+            $until = apr_val('SELECT locked_until FROM login_attempts WHERE key = ?', [$k]);
+            if (is_string($until) && $until > apr_iso($now)) return false;
+        }
+        foreach ($keys as $k) {
+            $r = apr_row('SELECT count, updated_at FROM login_attempts WHERE key = ?', [$k]);
+            $count = $r && strtotime($r['updated_at']) > $now - APR_LOGIN_LOCK ? (int)$r['count'] + 1 : 1;
+            apr_exec('INSERT INTO login_attempts (key, count, updated_at, locked_until) VALUES (?, ?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET count = excluded.count, updated_at = excluded.updated_at, locked_until = excluded.locked_until',
+                [$k, $count, apr_iso($now), $count >= APR_LOGIN_MAX_FAILS ? apr_iso($now + APR_LOGIN_LOCK) : null]);
+        }
+        return true;
+    });
 }
 
-/** כישלון: מונה לכל מפתח; בכישלון החמישי בתוך 15 דקות — נעילה ל-15 דקות. */
-function apr_login_fail(array $keys): void
+/** הכניסה הצליחה: המונה של המייל מתאפס, והניסיון הזה יורד מהמונה של ה-IP. */
+function apr_login_succeeded(array $keys): void
 {
-    $now = apr_time();
-    foreach ($keys as $k) {
-        $r = apr_row('SELECT count, updated_at FROM login_attempts WHERE key = ?', [$k]);
-        $count = $r && strtotime($r['updated_at']) > $now - APR_LOGIN_LOCK ? (int)$r['count'] + 1 : 1;
-        $lock = $count >= APR_LOGIN_MAX_FAILS ? apr_iso($now + APR_LOGIN_LOCK) : null;
-        apr_exec('INSERT INTO login_attempts (key, count, updated_at, locked_until) VALUES (?, ?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET count = excluded.count, updated_at = excluded.updated_at, locked_until = excluded.locked_until',
-            [$k, $lock ? 0 : $count, apr_iso($now), $lock]);
-    }
+    apr_exec('DELETE FROM login_attempts WHERE key = ?', [$keys[0]]);
+    apr_exec('UPDATE login_attempts SET count = MAX(count - 1, 0), locked_until = NULL WHERE key = ?', [$keys[1]]);
 }
 
 /**
- * כניסה במייל ובסיסמה. מייל שלא קיים, סיסמה שגויה, חשבון בלי סיסמה וחשבון מושעה — אותה תשובה בדיוק.
- * הנעילה נבדקת לפני הסיסמה: בזמן נעילה גם הסיסמה הנכונה נדחית.
+ * כניסה במייל ובסיסמה. מייל שלא קיים, סיסמה שגויה, חשבון בלי סיסמה, חשבון מושעה ומי שהמעטפת ביטלה לו את ההרשאה —
+ * אותה תשובה בדיוק. הנעילה נבדקת לפני הסיסמה: בזמן נעילה גם הסיסמה הנכונה נדחית.
  */
 function apr_login(array $in, array $env): array
 {
@@ -178,15 +187,18 @@ function apr_login(array $in, array $env): array
     $email = mb_strtolower(trim(is_string($in['email'] ?? null) ? $in['email'] : ''));
     $password = is_string($in['password'] ?? null) ? $in['password'] : '';
     $keys = apr_login_keys($email, $env);
-    if (apr_login_locked($keys)) apr_fail('login_locked');
+    if (!apr_login_attempt($keys)) apr_fail('login_locked');
     $user = $email !== '' ? apr_row('SELECT * FROM users WHERE email = ? AND password_hash IS NOT NULL', [$email]) : null;
     // גם כשאין חשבון — מחשבים hash, כדי שזמן התשובה לא יסגיר אם הכתובת רשומה
-    $ok = password_verify($password, $user['password_hash'] ?? '$2y$10$7Ptg4w3VfoQGtRGzZJjdKuIWLTVribzROCfoTTb9GrLWgGDhEumyu') && $user && $user['status'] === 'active';
-    if (!$ok) {
-        apr_login_fail($keys);
-        apr_fail('login_failed');
-    }
-    apr_exec('DELETE FROM login_attempts WHERE key = ?', [$keys[0]]);
+    static $dummy = null;
+    $dummy ??= password_hash(bin2hex(random_bytes(8)), PASSWORD_DEFAULT);
+    $ok = password_verify($password, $user['password_hash'] ?? $dummy) && $user && $user['status'] === 'active';
+    if (!$ok) apr_fail('login_failed');
+    // ההרשאה במעטפת היא האישור גם כאן: בוטלה → כמו סיסמה שגויה; המעטפת לא עונה → נכשל סגור
+    $granted = apr_grant_status($user['platform_sub']);
+    if ($granted === null) apr_fail('login_unavailable');
+    if (!$granted) apr_fail('login_failed');
+    apr_login_succeeded($keys);
     apr_actor((int)$user['id']);
     apr_login_open($user, $env, 'password');
     return [];
@@ -195,7 +207,7 @@ function apr_login(array $in, array $env): array
 function apr_password_check(mixed $v): string
 {
     if (!is_string($v) || mb_strlen($v) < APR_PASSWORD_MIN) apr_fail('password_short');
-    if (strlen($v) > 200) apr_fail('text_too_long');
+    if (strlen($v) > 72) apr_fail('password_long');     // bcrypt מתעלם ממה שאחרי 72 בתים
     return $v;
 }
 
@@ -207,28 +219,31 @@ function apr_password_set(array $ctx, array $in): array
         $uid = (int)$ctx['user']['id'];
         apr_exec('UPDATE users SET password_hash = ?, must_change_pw = 0, updated_at = ? WHERE id = ?', [password_hash($password, PASSWORD_DEFAULT), apr_now(), $uid]);
         apr_exec('DELETE FROM sessions WHERE user_id = ? AND id <> ?', [$uid, $ctx['session']]);
+        apr_exec('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL', [apr_now(), $uid]);   // קישורי איפוס פתוחים מתבטלים
         apr_audit('user.password_set', 'user', $ctx['user']['pid']);
         return [];
     });
 }
 
-/** שכחתי סיסמה: התשובה זהה תמיד. לכתובת רשומה (חשבון פעיל) — מייל עם קישור לשעה, לשימוש אחד. */
+/**
+ * שכחתי סיסמה: התשובה זהה תמיד. מייל נשלח רק לחשבון פעיל **שקבע סיסמה** ושהמייל שלו **אומת** — מי שלא קבע סיסמה אין
+ * לו כניסה בסיסמה (§5.3), ומייל לא מאומת אינו הוכחה שהכתובת של בעל החשבון. עד 5 בקשות ב-15 דקות לכתובת ול-IP.
+ */
 function apr_forgot(array $in, array $env): array
 {
     apr_password_login_guard($env);
     $email = mb_strtolower(trim(is_string($in['email'] ?? null) ? $in['email'] : ''));
-    $keys = ['f:' . apr_mail_hash($email), 'f' . apr_login_keys($email, $env)[1]];
-    if ($email !== '' && !apr_login_locked($keys)) {
-        apr_login_fail($keys);                          // אותה הגבלה: 5 בקשות ב-15 דקות לכתובת ול-IP
-        $user = apr_row("SELECT * FROM users WHERE email = ? AND status = 'active'", [$email]);
-        if ($user) {
-            $token = bin2hex(random_bytes(24));
-            $id = apr_insert('password_resets', ['user_id' => $user['id'], 'token_hash' => hash('sha256', $token), 'created_at' => apr_now(),
-                'expires_at' => apr_iso(apr_time() + APR_RESET_TTL)]);
-            apr_mail_send('reset', $email, 'בחירת סיסמה חדשה — שמאות מקרקעין',
-                "שלום,\n\nהתקבלה בקשה לבחור סיסמה חדשה לחשבון שלך בשמאות מקרקעין.\n\n" . apr_app_url('#/reset/' . $token)
-                . "\n\nהקישור תקף לשעה, ולשימוש אחד. אם לא ביקשת — אפשר להתעלם מהמייל.\n", 'reset:' . $id);
-        }
+    if ($email === '') return [];
+    $ipKey = 'f' . apr_login_keys($email, $env)[1];
+    if (!apr_limit($ipKey, APR_LOGIN_MAX_FAILS, APR_LOGIN_LOCK) || !apr_limit('f:' . apr_mail_hash($email), APR_LOGIN_MAX_FAILS, APR_LOGIN_LOCK)) return [];
+    $user = apr_row("SELECT * FROM users WHERE email = ? AND status = 'active' AND password_hash IS NOT NULL AND email_verified = 1", [$email]);
+    if ($user) {
+        $token = bin2hex(random_bytes(24));
+        $id = apr_insert('password_resets', ['user_id' => $user['id'], 'token_hash' => hash('sha256', $token), 'created_at' => apr_now(),
+            'expires_at' => apr_iso(apr_time() + APR_RESET_TTL)]);
+        apr_mail_send('reset', $email, 'בחירת סיסמה חדשה — שמאות מקרקעין',
+            "שלום,\n\nהתקבלה בקשה לבחור סיסמה חדשה לחשבון שלך בשמאות מקרקעין.\n\n" . apr_app_url('#/reset/' . $token)
+            . "\n\nהקישור תקף לשעה, ולשימוש אחד. אם לא ביקשת — אפשר להתעלם מהמייל.\n", 'reset:' . $id);
     }
     return [];
 }

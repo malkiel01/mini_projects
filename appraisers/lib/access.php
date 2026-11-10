@@ -98,6 +98,7 @@ function apr_ctx(array $env): array
         [$user, $s] = apr_session_user((string)($env['cookie'] ?? '')) ?? apr_fail('login_required');
         apr_actor((int)$user['id']);
         if ($user['status'] !== 'active') apr_fail('account_suspended');
+        apr_session_grant_check($user, $s);
     }
     if ($s['new_token'] !== null) $GLOBALS['apr_cookie_out'] = $s['new_token'];
 

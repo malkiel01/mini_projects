@@ -65,30 +65,50 @@ function apr_platform_mode(?string $raw, ?string $sapi = null): string
     return ($cfg['connected'] ?? null) === true ? 'connected' : 'detached';
 }
 
-/** שורש המעטפת ("https://host/mini_projects") — נבנה מ-SERVER_NAME (לא מ-Host של הבקשה) ומהמיקום של האפליקציה. */
+/**
+ * הכתובת הקבועה של האפליקציה ("https://mbe-plus.com/mini_projects/appraisers/") — מ-app.json (provision.key_url),
+ * **לעולם לא מהבקשה**: SERVER_NAME ו-Host מגיעים מהלקוח, וכתובת שנגזרת מהם מפנה את בקשות המפתח וה-config לשרת של
+ * תוקף. ממנה נגזרות כל הכתובות: המעטפת, כתובת החזרה של הכניסה המאוחדת, והקישורים במיילים.
+ * פיתוח ובדיקות בלבד (APR_DEV, שמוגדר רק ב-tests/): APR_APP_URL מחליף אותה.
+ */
+function apr_app_url(string $path = ''): string
+{
+    static $base = null;
+    if ($base === null) {
+        if (defined('APR_DEV') && defined('APR_APP_URL')) {
+            $base = APR_APP_URL;
+        } else {
+            $app = json_decode((string)@file_get_contents(dirname(__DIR__) . '/app.json'), true);
+            $key = is_array($app) ? (string)($app['provision']['key_url'] ?? '') : '';
+            if (!preg_match('~^(https://[a-z0-9.\-]+(?:/[A-Za-z0-9._\-]+)*/)api\.php\?action=platform_key$~', $key, $m)) throw new AprError('storage');
+            $base = $m[1];
+        }
+    }
+    return $base . $path;
+}
+
+/** הנתיב של האפליקציה באתר ("/mini_projects/appraisers/"). */
+function apr_app_path(): string
+{
+    return (string)parse_url(apr_app_url(), PHP_URL_PATH);
+}
+
+/** scheme + host של האפליקציה ("https://mbe-plus.com") — להשוואה מול Origin. */
+function apr_app_origin(): string
+{
+    return (string)preg_replace('~^(https?://[^/]+).*$~', '$1', apr_app_url());
+}
+
+/** שורש המעטפת ("https://mbe-plus.com/mini_projects") — התיקייה שמעל האפליקציה. */
 function apr_platform_base(): string
 {
-    $host = preg_replace('/[^a-z0-9.\-]/i', '', (string)($_SERVER['SERVER_NAME'] ?? 'localhost'));
-    $base = rtrim(dirname(rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/appraisers/api.php')), '/')), '/');
-    return 'https://' . $host . $base;
+    return rtrim(dirname(rtrim(apr_app_url(), '/')), '/');
 }
 
 /** הכתובת של sso.php במעטפת. */
 function apr_platform_url(string $query): string
 {
     return apr_platform_base() . '/platform/sso.php?' . $query;
-}
-
-/** הנתיב של האפליקציה באתר ("/mini_projects/appraisers/"), והכתובת המלאה של קובץ בה. */
-function apr_app_path(): string
-{
-    return rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/appraisers/api.php')), '/') . '/';
-}
-
-function apr_app_url(string $path = ''): string
-{
-    $host = preg_replace('/[^a-z0-9.\-]/i', '', (string)($_SERVER['SERVER_NAME'] ?? 'localhost'));
-    return 'https://' . $host . apr_app_path() . $path;
 }
 
 /** בקשת GET קצרה. מחזיר [status, body], או null בכישלון. בבדיקות — $GLOBALS['apr_http'] מחליף אותה. */
@@ -167,29 +187,47 @@ function apr_pkey_public(): array
 }
 
 /**
- * בקשה חתומה שרת-לשרת למעטפת (platform/docs/embed.md §2): provision.php, action = "provision".
+ * בקשה חתומה שרת-לשרת למעטפת (platform/docs/embed.md §2) אל provision.php. $action נכנס להודעה החתומה — חתימה של
+ * פעולה אחת אינה תקפה לשנייה. מחזיר את ה-JSON של תשובת 200, או null (לא ענתה / שגיאה / לא JSON).
+ */
+function apr_platform_signed(string $action, array $payload): ?array
+{
+    try {
+        $key = apr_pkey();
+        $body = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $time = (string)time();
+        $nonce = bin2hex(random_bytes(16));
+        $sig = sodium_crypto_sign_detached("$action\n$time\n$nonce\n" . hash('sha256', $body), $key['secret']);
+        $res = apr_http_post(apr_platform_base() . '/platform/provision.php' . ($action === 'provision' ? '' : '?action=' . $action), $body,
+            ['X-Embed-Client: ' . APR_CLIENT_ID, "X-Embed-Time: $time", "X-Embed-Nonce: $nonce", 'X-Embed-Signature: ' . $key['kid'] . '.' . base64_encode($sig)]);
+    } catch (Throwable) {
+        return null;
+    }
+    $out = $res && $res[0] === 200 ? json_decode($res[1], true) : null;
+    return is_array($out) ? $out : null;
+}
+
+/**
+ * פתיחת חשבון במעטפת עם הרשאה לאפליקציה הזו בלבד.
  * מחזיר ['status' => invited|granted|blocked, 'sub' => ?string], או null — המעטפת לא ענתה או ענתה משהו לא מובן.
  * נכשלים סגור: null אינו "החשבון נפתח".
  */
 function apr_provision(string $email, string $name): ?array
 {
-    try {
-        $key = apr_pkey();
-        $body = json_encode(['email' => $email, 'name' => $name, 'grant' => true, 'next' => apr_app_path()], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $time = (string)time();
-        $nonce = bin2hex(random_bytes(16));
-        $sig = sodium_crypto_sign_detached("provision\n$time\n$nonce\n" . hash('sha256', $body), $key['secret']);
-        $res = apr_http_post(apr_platform_base() . '/platform/provision.php', $body, ['X-Embed-Client: ' . APR_CLIENT_ID, "X-Embed-Time: $time",
-            "X-Embed-Nonce: $nonce", 'X-Embed-Signature: ' . $key['kid'] . '.' . base64_encode($sig)]);
-    } catch (Throwable) {
-        return null;
-    }
-    $out = $res && $res[0] === 200 ? json_decode($res[1], true) : null;
-    $status = is_array($out) ? ($out['status'] ?? null) : null;
+    $out = apr_platform_signed('provision', ['email' => $email, 'name' => $name, 'grant' => true, 'next' => apr_app_path()]);
+    $status = $out['status'] ?? null;
     if ($status === 'blocked') return ['status' => 'blocked', 'sub' => null];
-    $sub = is_array($out) && is_scalar($out['sub'] ?? null) ? (string)$out['sub'] : '';
+    $sub = is_scalar($out['sub'] ?? null) ? (string)$out['sub'] : '';
     if (!in_array($status, ['invited', 'granted'], true) || !preg_match('/^[0-9]{1,12}$/', $sub)) return null;
     return ['status' => $status, 'sub' => $sub];
+}
+
+/** האם למשתמש יש (עדיין) הרשאה לאפליקציה במעטפת — sso.md §6, grant_status. true / false, או null כשהמעטפת לא עונה. */
+function apr_grant_status(?string $sub): ?bool
+{
+    if ($sub === null || !preg_match('/^[0-9]{1,12}$/', $sub)) return false;
+    $out = apr_platform_signed('grant_status', ['sub' => $sub]);
+    return is_bool($out['allowed'] ?? null) ? $out['allowed'] : null;
 }
 
 /** המפתח הציבורי של המעטפת לזהות חתומה (sso.php?action=key) — בינארי, או null. מטמון של 24 שעות. */

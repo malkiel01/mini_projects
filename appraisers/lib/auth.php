@@ -16,6 +16,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';
+require_once __DIR__ . '/platform.php';
 
 const APR_COOKIE = 'apr_session';
 const APR_SESSION_TTL = 30 * 86400;
@@ -159,4 +160,32 @@ function apr_set_sso_cookie(string $state): void
     if (headers_sent()) return;
     setcookie('apr_sso', $state, ['expires' => $state === '' ? 1 : time() + 600, 'path' => rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/')), '/') . '/',
         'secure' => !defined('APR_DEV'), 'httponly' => true, 'samesite' => 'Lax']);
+}
+
+const APR_GRANT_EVERY = 900;        // מנותקת: כל 15 דקות שואלים את המעטפת אם ההרשאה עדיין בתוקף
+const APR_GRANT_GRACE = 86400;      // המעטפת לא עונה: ממשיכים עד 24 שעות מהתשובה החיובית האחרונה
+
+/**
+ * מצב מנותק: אין שער שבודק הרשאה בכל בקשה, ולכן ה-session נבדק מול המעטפת (grant_status, חתום) פעם ב-15 דקות.
+ * "לא" → ה-session נמחק (401). המעטפת לא עונה → ממשיכים עד 24 שעות מהבדיקה האחרונה שהצליחה, ואז נכשל סגור (503);
+ * בינתיים שואלים שוב אחרי דקה.
+ */
+function apr_session_grant_check(array $user, array $s): void
+{
+    $now = apr_time();
+    // חלון החסד נבדק תמיד — גם כשעוד לא הגיע הזמן לשאול שוב
+    $expired = strtotime($s['grant_ok_at'] ?? $s['created_at']) <= $now - APR_GRANT_GRACE;
+    if (!$expired && $s['grant_checked_at'] !== null && strtotime($s['grant_checked_at']) > $now - APR_GRANT_EVERY) return;
+    $allowed = apr_grant_status($user['platform_sub']);
+    if ($allowed === false) {
+        apr_exec('DELETE FROM sessions WHERE id = ?', [$s['id']]);
+        $GLOBALS['apr_cookie_out'] = '';
+        apr_fail('login_required');
+    }
+    if ($allowed === true) {
+        apr_exec('UPDATE sessions SET grant_checked_at = ?, grant_ok_at = ? WHERE id = ?', [apr_iso($now), apr_iso($now), $s['id']]);
+        return;
+    }
+    if ($expired) apr_fail('login_unavailable');
+    apr_exec('UPDATE sessions SET grant_checked_at = ? WHERE id = ?', [apr_iso($now - APR_GRANT_EVERY + 60), $s['id']]);
 }

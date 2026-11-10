@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/platform.php';
 
 function apr_mail_hash(string $email): string
 {
@@ -40,7 +41,7 @@ function apr_mail_transport(string $to, string $subject, string $text): bool
 {
     if (isset($GLOBALS['apr_mail'])) return (bool)($GLOBALS['apr_mail'])($to, $subject, $text);
     if (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server' || !function_exists('mail')) return false;
-    $host = preg_replace('/[^a-z0-9.\-]/i', '', (string)($_SERVER['SERVER_NAME'] ?? 'localhost'));
+    $host = (string)parse_url(apr_app_url(), PHP_URL_HOST);
     $headers = "From: =?UTF-8?B?" . base64_encode('שמאות מקרקעין') . "?= <noreply@$host>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit";
     return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $text, $headers);
 }

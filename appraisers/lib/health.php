@@ -30,8 +30,7 @@ function apr_health_register(string $id, string $label, callable $check): void
 /** הכתובת של קובץ באפליקציה, כפי שהדפדפן רואה אותה (לבדיקה עצמית). */
 function apr_self_url(string $path): string
 {
-    $host = preg_replace('/[^a-z0-9.\-]/i', '', (string)($_SERVER['SERVER_NAME'] ?? 'localhost'));
-    return 'https://' . $host . rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/appraisers/api.php')), '/') . '/' . $path;
+    return apr_app_url($path);   // הכתובת הקבועה מ-app.json — לא מהבקשה
 }
 
 function apr_health(): array

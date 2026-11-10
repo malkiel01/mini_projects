@@ -27,6 +27,9 @@ ALTER TABLE users ADD COLUMN must_change_pw INTEGER NOT NULL DEFAULT 0;
 
 -- אישור חוזר במצב מנותק: עד מתי ה-session מאושר לפעולות רגישות
 ALTER TABLE sessions ADD COLUMN confirmed_until TEXT;
+-- מנותקת: מתי נשאלה המעטפת אם למשתמש עדיין יש הרשאה (grant_status), ומתי ענתה "כן" בפעם האחרונה
+ALTER TABLE sessions ADD COLUMN grant_checked_at TEXT;
+ALTER TABLE sessions ADD COLUMN grant_ok_at TEXT;
 
 CREATE TABLE confirm_codes (
     session_id  INTEGER PRIMARY KEY REFERENCES sessions (id) ON DELETE CASCADE,
@@ -36,7 +39,8 @@ CREATE TABLE confirm_codes (
     expires_at  TEXT NOT NULL
 );
 
--- key: "e:<hash של המייל>" או "i:<hash של ה-IP>" — בלי כתובת גלויה
+-- מונים והגבלות קצב. key: "e:<hash של המייל>", "i:<hash של ה-IP>", "otp:u:<משתמש>" … — בלי כתובת גלויה.
+-- updated_at — תחילת החלון של המונה.
 CREATE TABLE login_attempts (
     key           TEXT PRIMARY KEY,
     count         INTEGER NOT NULL DEFAULT 0,

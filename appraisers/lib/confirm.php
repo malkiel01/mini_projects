@@ -15,6 +15,8 @@ require_once __DIR__ . '/mail.php';
 const APR_CONFIRM_WORD = 'אישור';
 const APR_CONFIRM_TTL = 600;
 const APR_CONFIRM_TRIES = 5;
+const APR_CONFIRM_CODES = 3;
+const APR_CONFIRM_WINDOW = 900;
 
 /**
  * הפעולות הרגישות: פעולה => null (תמיד), או [שדה, ערך] — רגישה רק כשהשדה בבקשה שווה לערך.
@@ -55,6 +57,8 @@ function apr_confirm_request(array $ctx): array
     if ($u['email'] === null) apr_fail('no_email');
     $prev = apr_val('SELECT created_at FROM confirm_codes WHERE session_id = ?', [$ctx['session']]);
     if (is_string($prev) && strtotime($prev) > apr_time() - 60) apr_fail('too_soon');
+    // תקרה שלא מתאפסת בניחושים: 3 קודים ב-15 דקות, ל-session ולמשתמש — אחרת 5 ניחושים לכל קוד הם ניחושים בלי סוף
+    if (!apr_limit('otp:u:' . $u['id'], APR_CONFIRM_CODES, APR_CONFIRM_WINDOW) || !apr_limit('otp:s:' . $ctx['session'], APR_CONFIRM_CODES, APR_CONFIRM_WINDOW)) apr_fail('too_many_codes');
     $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     apr_exec('INSERT INTO confirm_codes (session_id, code_hash, attempts, created_at, expires_at) VALUES (?, ?, 0, ?, ?)
         ON CONFLICT(session_id) DO UPDATE SET code_hash = excluded.code_hash, attempts = 0, created_at = excluded.created_at, expires_at = excluded.expires_at',
@@ -74,13 +78,11 @@ function apr_confirm_verify(array $ctx, array $in): array
 {
     if ($ctx['mode'] !== 'detached') apr_fail('forbidden');
     $code = is_string($in['code'] ?? null) ? trim($in['code']) : '';
-    $r = apr_row('SELECT * FROM confirm_codes WHERE session_id = ? AND expires_at > ?', [$ctx['session'], apr_now()]) ?? apr_fail('confirm_code_invalid');
-    if (!hash_equals($r['code_hash'], apr_confirm_hash($ctx['session'], $code))) {
-        // בניסיון החמישי הקוד נמחק — צריך לבקש חדש
-        if ((int)$r['attempts'] + 1 >= APR_CONFIRM_TRIES) apr_exec('DELETE FROM confirm_codes WHERE session_id = ?', [$ctx['session']]);
-        else apr_exec('UPDATE confirm_codes SET attempts = attempts + 1 WHERE session_id = ?', [$ctx['session']]);
-        apr_fail('confirm_code_invalid');
-    }
+    // הניסיון נספר לפני ההשוואה, באותה פקודה שבודקת שהקוד חי. אחרי 5 ניסיונות הקוד מת — והשורה **נשארת**, כדי
+    // ש"המתינו דקה" והתקרה של הקודים ימשיכו לחול.
+    $live = apr_exec('UPDATE confirm_codes SET attempts = attempts + 1 WHERE session_id = ? AND expires_at > ? AND attempts < ?', [$ctx['session'], apr_now(), APR_CONFIRM_TRIES]);
+    $r = $live === 1 ? apr_row('SELECT * FROM confirm_codes WHERE session_id = ?', [$ctx['session']]) : null;
+    if (!$r || !hash_equals($r['code_hash'], apr_confirm_hash($ctx['session'], $code))) apr_fail('confirm_code_invalid');
     apr_exec('DELETE FROM confirm_codes WHERE session_id = ?', [$ctx['session']]);
     apr_exec('UPDATE sessions SET confirmed_until = ? WHERE id = ?', [apr_iso(apr_time() + APR_CONFIRM_TTL), $ctx['session']]);
     return ['until' => apr_iso(apr_time() + APR_CONFIRM_TTL)];

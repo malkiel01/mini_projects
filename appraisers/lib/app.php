@@ -22,7 +22,8 @@
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me. כל מזהה בבקשה הוא pid; מזהה המשתמש ומזהה המשרד
  * של הבקשה עצמה לא נלקחים מהדפדפן אף פעם. פעולת משרד יכולה לשאת office (pid) — הוא חייב להיות המשרד הפעיל.
  *
- * $env: platform_user (ה-JSON מהשער, או null), cookie (apr_session), csrf (X-CSRF), ua, cron_url, ip, sso_state (העוגייה apr_sso).
+ * $env: platform_user (ה-JSON מהשער, או null), cookie (apr_session), csrf (X-CSRF), ua, cron_url, ip, sso_state (העוגייה apr_sso),
+ *       content_type, origin, fetch_site (לבדיקת המקור של POST ציבורי).
  * פעולה שמחזירה ['_redirect' => כתובת] — api.php מפנה אליה במקום לענות ב-JSON.
  */
 
@@ -75,6 +76,15 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
     // בלי משתמש: בדיקת החיים, ו-Claude באסימון — לפני כל דבר שנוגע בזהות. לא נוגעים ב-session ולא יוצרים חדש.
     if ($rule === 'public' || $rule === 'token') {
         if ($method !== ($read ? 'GET' : 'POST')) apr_fail('method');
+        // POST ציבורי (login, forgot, reset) — אין session ואין X-CSRF, ולכן: רק JSON (טופס חוצה-אתרים לא יכול לשלוח
+        // אותו בלי preflight), ורק מהאפליקציה עצמה. בלי זה אתר זר מכניס קורבן לחשבון של התוקף.
+        if ($rule === 'public' && !$read) {
+            $site = (string)($env['fetch_site'] ?? '');
+            $origin = (string)($env['origin'] ?? '');
+            if (!str_starts_with(strtolower((string)($env['content_type'] ?? '')), 'application/json')
+                || ($site !== '' && !in_array($site, ['same-origin', 'none'], true))
+                || ($origin !== '' && !hash_equals(apr_app_origin(), $origin))) apr_fail('csrf');
+        }
         return match ($action) {
             'health'         => apr_health_public(),
             'platform_key'   => apr_pkey_public(),

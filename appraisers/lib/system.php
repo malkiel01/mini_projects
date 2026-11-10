@@ -126,10 +126,12 @@ function apr_sys_settings(): array
 function apr_sys_setting_set(array $in): array
 {
     $name = is_string($in['name'] ?? null) && array_key_exists($in['name'], APR_SETTINGS) ? $in['name'] : apr_fail('setting_invalid');
-    if (!is_bool($in['value'] ?? null)) apr_fail('setting_invalid');
+    $v = $in['value'] ?? null;
+    // הסוג לפי ברירת המחדל: כן / לא, או מספר שלם 0–100000
+    if (is_int(APR_SETTINGS[$name]) ? !is_int($v) || $v < 0 || $v > 100000 : !is_bool($v)) apr_fail('setting_invalid');
     return apr_tx(function () use ($name, $in) {
         if (apr_setting($name) !== $in['value']) {
-            apr_meta_set('setting.' . $name, $in['value'] ? '1' : '0');
+            apr_meta_set('setting.' . $name, is_int($in['value']) ? (string)$in['value'] : ($in['value'] ? '1' : '0'));
             apr_audit('setting.change', 'setting', $name, ['to' => $in['value']]);
         }
         return [];

@@ -1,7 +1,9 @@
 <?php
 // פרוסה 02 — מצב מנותק ואישור חוזר (docs/spec/02-invites-detached.md §5–6): 02-B1 … 02-B8, 02-C1, מקרי הקצה 6–10.
-$_SERVER['SERVER_NAME'] = 'example.test';
-$_SERVER['SCRIPT_NAME'] = '/mini_projects/appraisers/api.php';
+// הכתובות לא נגזרות מהבקשה: גם עם Host זר — הכול לפי הכתובת הקבועה (tests/lib.php: example.test)
+$_SERVER['SERVER_NAME'] = 'evil.example';
+$_SERVER['HTTP_HOST'] = 'evil.example';
+$_SERVER['SCRIPT_NAME'] = '/x/api.php';
 require __DIR__ . '/lib.php';
 
 // ── המעטפת המדומה: config, והמפתח שבו היא חותמת על זהויות ──
@@ -318,8 +320,157 @@ unset($GLOBALS['apr_time']);
 connected();
 eq(code(call('POST', 'confirm-request', [], $owner)), 'forbidden', 'מחוברת: אין קוד במייל — מילת אישור');
 
+// ══ ביקורת סבב 1 (team/reviews/02-invites-detached.md) ══
+unset($GLOBALS['apr_time']);
+detached();
+
+// 🟡2 Login CSRF: POST ציבורי — רק JSON, ורק מהאפליקציה עצמה
+$GLOBALS['t_ip'] = '198.51.100.20';
+$good = ['email' => 'dana@example.com', 'password' => 'brand new pass 2'];
+$n0 = (int)apr_val('SELECT COUNT(*) FROM sessions');
+foreach (['טופס text/plain' => ['t_content_type' => 'text/plain'], 'טופס רגיל' => ['t_content_type' => 'application/x-www-form-urlencoded'], 'בלי Content-Type' => ['t_content_type' => ''],
+    'Origin זר' => ['t_origin' => 'https://evil.example'], 'Origin: null' => ['t_origin' => 'null'], 'Sec-Fetch-Site: cross-site' => ['t_fetch_site' => 'cross-site'], 'Sec-Fetch-Site: same-site' => ['t_fetch_site' => 'same-site']] as $name => $set) {
+    foreach ($set as $k => $v) $GLOBALS[$k] = $v;
+    foreach (['login' => $good, 'forgot' => ['email' => 'dana@example.com'], 'reset' => ['token' => str_repeat('a', 48), 'password' => 'whatever pass 9']] as $action => $in) {
+        $r = call('POST', $action, $in, null, [], ['jar' => 'csrf']);
+        eq([$r[0], code($r)], [403, 'csrf'], "🟡2 $action — $name → נדחה");
+    }
+    foreach (array_keys($set) as $k) unset($GLOBALS[$k]);
+}
+eq([(int)apr_val('SELECT COUNT(*) FROM sessions') - $n0, $me('csrf')[0]], [0, 401], '🟡2 ולא נפתח session');
+$GLOBALS['t_origin'] = 'https://example.test'; $GLOBALS['t_fetch_site'] = 'same-origin';
+eq(call('POST', 'login', $good, null, [], ['jar' => 'csrf'])[0], 200, '🟡2 מהאפליקציה עצמה, ב-JSON — עובר');
+unset($GLOBALS['t_origin'], $GLOBALS['t_fetch_site']);
+
+// 🟡7 מנותקת: ה-session נבדק מול המעטפת (grant_status) פעם ב-15 דקות
+$t0 = time();
+$GLOBALS['apr_time'] = $t0;
+call('POST', 'login', $good, null, [], ['jar' => 'grant']);
+$c0 = $GLOBALS['t_grant_calls'];
+$GLOBALS['apr_time'] = $t0 + 899;
+eq([$me('grant')[0], $GLOBALS['t_grant_calls'] - $c0], [200, 0], '🟡7 בתוך 15 דקות — בלי שאלה למעטפת');
+$GLOBALS['apr_time'] = $t0 + 901;
+eq([$me('grant')[0], $GLOBALS['t_grant_calls'] - $c0, $me('grant')[0], $GLOBALS['t_grant_calls'] - $c0], [200, 1, 200, 1], '🟡7 אחרי 15 דקות — שאלה אחת, והתשובה "כן" מחזיקה עוד 15 דקות');
+// המעטפת לא עונה: ממשיכים עד 24 שעות מהתשובה החיובית האחרונה, ואז נכשל סגור
+$GLOBALS['t_grant']['17'] = null;
+$GLOBALS['apr_time'] = $t0 + 901 + 901;
+eq($me('grant')[0], 200, '🟡7 המעטפת לא עונה — ממשיכים');
+$c1 = $GLOBALS['t_grant_calls'];
+eq([$me('grant')[0], $GLOBALS['t_grant_calls'] - $c1], [200, 0], 'ולא שואלים שוב בכל בקשה');
+$GLOBALS['apr_time'] = $t0 + 901 + 901 + 61;
+eq([$me('grant')[0], $GLOBALS['t_grant_calls'] - $c1], [200, 1], 'אלא אחרי דקה');
+$GLOBALS['apr_time'] = $t0 + 901 + 86399;
+eq($me('grant')[0], 200, '🟡7 23:59 מהתשובה האחרונה — עדיין בפנים');
+$GLOBALS['apr_time'] = $t0 + 901 + 86401;
+eq([$me('grant')[0], code($me('grant')), (int)apr_val('SELECT COUNT(*) FROM sessions WHERE token_hash = ?', [hash('sha256', jar()['grant'])])], [503, 'login_unavailable', 1], '🟡7 אחרי 24 שעות בלי תשובה — נכשל סגור (ה-session לא נמחק)');
+unset($GLOBALS['t_grant']['17']);
+eq($me('grant')[0], 200, 'המעטפת חזרה — ממשיכים');
+// ההרשאה בוטלה במעטפת
+$GLOBALS['t_grant']['17'] = false;
+$GLOBALS['apr_time'] = $t0 + 901 + 86401 + 901;
+$tok = jar()['grant'];
+eq([$me('grant')[0], code(call('GET', 'me', [], null, [], ['jar' => 'grant', 'cookie' => $tok])), (int)apr_val('SELECT COUNT(*) FROM sessions WHERE token_hash = ?', [hash('sha256', $tok)])], [401, 'login_required', 0], '🟡7 allowed: false → ה-session נמחק');
+$GLOBALS['t_ip'] = '198.51.100.21';
+$r = call('POST', 'login', $good, null, [], ['jar' => 'grant2']);
+eq([$r[0], code($r), $me('grant2')[0]], [401, 'login_failed', 401], '🟡7 כניסה בסיסמה של מי שההרשאה שלו בוטלה — כמו סיסמה שגויה');
+$GLOBALS['t_grant']['17'] = null;
+eq(code(call('POST', 'login', $good, null, [], ['jar' => 'grant2'])), 'login_unavailable', '🟡7 כניסה בסיסמה כשהמעטפת לא עונה — נכשל סגור');
+unset($GLOBALS['t_grant']['17'], $GLOBALS['apr_time']);
+connected();
+$c2 = $GLOBALS['t_grant_calls'];
+call('GET', 'me', [], $dana);
+eq($GLOBALS['t_grant_calls'] - $c2, 0, '🟡7 במחוברת השער בודק — לא שואלים');
+detached();
+
+// 🟡8 בדיקות שחסרו
+// (א) sso-callback במצב מחוברת: גם זהות תקינה לא פותחת session
+$s = sso_start();
+$tok = sso_token($s);
+connected();
+$n0 = (int)apr_val('SELECT COUNT(*) FROM sessions');
+eq([...sso_callback(['state' => $s, 'token' => $tok], 'conn'), (int)apr_val('SELECT COUNT(*) FROM sessions') - $n0], [$HOME, null, false, 0], '🟡8 מחוברת: sso-callback רק מחזיר לאפליקציה, בלי session');
+detached();
+// (ב) משתמש מושעה בכניסה בסיסמה
+$GLOBALS['t_ip'] = '198.51.100.22';
+apr_exec("UPDATE users SET status = 'suspended' WHERE pid = ?", [$danaPid]);
+$r = call('POST', 'login', $good, null, [], ['jar' => 'susp']);
+eq([$r[0], code($r), $me('susp')[0]], [401, 'login_failed', 401], '🟡8 חשבון מושעה עם הסיסמה הנכונה — אותה תשובה כמו סיסמה שגויה, ובלי session');
+$m0 = count($GLOBALS['t_mail']);
+call('POST', 'forgot', ['email' => 'dana@example.com']);
+eq(count($GLOBALS['t_mail']) - $m0, 0, 'ואין לו קישור איפוס');
+apr_exec("UPDATE users SET status = 'active' WHERE pid = ?", [$danaPid]);
+// 🟡4 forgot: רק למי שקבע סיסמה, ורק למייל מאומת
+$GLOBALS['t_ip'] = '198.51.100.23';
+$m0 = count($GLOBALS['t_mail']);
+call('POST', 'forgot', ['email' => 'owner@example.com']);                       // לא קבע סיסמה
+apr_exec("UPDATE users SET email_verified = 0 WHERE pid = ?", [$danaPid]);
+call('POST', 'forgot', ['email' => 'dana@example.com']);                        // מייל לא מאומת
+eq([count($GLOBALS['t_mail']) - $m0, (int)apr_val("SELECT COUNT(*) FROM password_resets WHERE created_at >= ?", [apr_now()])], [0, 0], '🟡4 forgot: בלי סיסמה או עם מייל לא מאומת — אין קישור');
+apr_exec("UPDATE users SET email_verified = 1 WHERE pid = ?", [$danaPid]);
+// (ד) ביטול שאר קישורי האיפוס
+$GLOBALS['t_ip'] = '198.51.100.24';
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'f%'");
+$links = [];
+foreach ([1, 2] as $i) { call('POST', 'forgot', ['email' => 'dana@example.com']); preg_match('~#/reset/([a-f0-9]{48})~', end($GLOBALS['t_mail'])['text'], $mm); $links[] = $mm[1]; }
+eq([$links[0] !== $links[1], call('POST', 'reset', ['token' => $links[1], 'password' => 'brand new pass 5'])[0], code(call('POST', 'reset', ['token' => $links[0], 'password' => 'brand new pass 6']))], [true, 200, 'reset_invalid'], '🟡8 שימוש בקישור איפוס אחד מבטל את האחרים');
+// (ג) הגבלת הקצב של forgot: 5 ב-15 דקות לכתובת ול-IP
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'f%'");
+$m0 = count($GLOBALS['t_mail']);
+for ($i = 1; $i <= 7; $i++) $last = call('POST', 'forgot', ['email' => 'dana@example.com']);
+eq([count($GLOBALS['t_mail']) - $m0, $last[1]], [5, ['ok' => true]], '🟡8 forgot: 5 מיילים ב-15 דקות לכתובת — והתשובה לא משתנה');
+$GLOBALS['t_ip'] = '198.51.100.25';
+$m0 = count($GLOBALS['t_mail']);
+call('POST', 'forgot', ['email' => 'dana@example.com']);
+eq(count($GLOBALS['t_mail']) - $m0, 0, 'גם מכתובת IP אחרת');
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'f%'");
+apr_exec("UPDATE users SET password_hash = ?, email = 'boaz@example.com', email_verified = 1 WHERE pid = ?", [password_hash('boaz password 1', PASSWORD_DEFAULT), $boazPid]);
+$m0 = count($GLOBALS['t_mail']);
+foreach (['dana@example.com', 'boaz@example.com', 'dana@example.com', 'boaz@example.com', 'dana@example.com', 'boaz@example.com', 'dana@example.com'] as $e) call('POST', 'forgot', ['email' => $e]);
+eq(count($GLOBALS['t_mail']) - $m0, 5, '🟡8 והתקרה לפי IP — גם כשמחליפים כתובות');
+// קביעת סיסמה מבטלת קישורי איפוס פתוחים
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'f%'");
+call('POST', 'forgot', ['email' => 'dana@example.com']);
+preg_match('~#/reset/([a-f0-9]{48})~', end($GLOBALS['t_mail'])['text'], $open);
+$GLOBALS['t_ip'] = '198.51.100.26';
+call('POST', 'login', ['email' => 'dana@example.com', 'password' => 'brand new pass 5'], null, [], ['jar' => 'pw']);
+eq([call('POST', 'password-set', ['password' => 'brand new pass 7'], null, [], ['jar' => 'pw'])[0], code(call('POST', 'reset', ['token' => $open[1], 'password' => 'brand new pass 8']))], [200, 'reset_invalid'], 'קביעת סיסמה מבטלת קישורי איפוס פתוחים');
+eq(code(call('POST', 'password-set', ['password' => str_repeat('a', 73)], null, [], ['jar' => 'pw'])), 'password_long', 'סיסמה מעל 72 תווים — נדחית (bcrypt חותך)');
+
+// 🟡5 הניסיון נספר לפני בדיקת הסיסמה, באותה טרנזקציה שבודקת את הנעילה
+$keys = ['e:test-atomic', 'i:test-atomic'];
+eq(array_map(fn() => apr_login_attempt($keys), range(1, 6)), [true, true, true, true, true, false], '🟡5 חמישה ניסיונות נספרים — השישי נעול, בלי תלות בבדיקת הסיסמה');
+$src = file_get_contents(dirname(__DIR__) . '/lib/login.php');
+check('🟡5 ב-apr_login הספירה קודמת ל-password_verify', strpos($src, 'if (!apr_login_attempt($keys))') < strpos($src, '$ok = password_verify('));
+eq([apr_limit('t:x', 2, 60), apr_limit('t:x', 2, 60), apr_limit('t:x', 2, 60)], [true, true, false], 'apr_limit: עד התקרה, ואז לא');
+
+// 🟡3 קוד האישור: אחרי 5 ניחושים הקוד מת אבל השורה נשארת; ותקרה של 3 קודים ב-15 דקות
+$s = sso_start();
+sso_callback(['state' => $s, 'token' => sso_token($s, ['sub' => '1', 'name' => 'הבעלים', 'email' => 'owner@example.com'])], 'own2');
+$o2 = fn(string $action, array $in = []) => call('POST', $action, $in, null, [], ['jar' => 'own2']);
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'otp:%'");
+$t0 = time();
+$GLOBALS['apr_time'] = $t0;
+$o2('confirm-request');
+preg_match('/קוד האישור שלך: (\d{6})\b/u', end($GLOBALS['t_mail'])['text'], $k1);
+$bad = $k1[1] === '000000' ? '111111' : '000000';
+for ($i = 1; $i <= 5; $i++) $o2('confirm-verify', ['code' => $bad]);
+eq([code($o2('confirm-verify', ['code' => $k1[1]])), (int)apr_val('SELECT MAX(attempts) FROM confirm_codes'), code($o2('confirm-request'))], ['confirm_code_invalid', 5, 'too_soon'], '🟡3 אחרי 5 ניחושים הקוד מת, השורה נשארת — ואי אפשר לבקש קוד חדש מיד');
+$GLOBALS['apr_time'] = $t0 + 61;
+eq($o2('confirm-request')[0], 200, 'קוד שני, אחרי דקה');
+$GLOBALS['apr_time'] = $t0 + 122;
+eq($o2('confirm-request')[0], 200, 'קוד שלישי');
+$GLOBALS['apr_time'] = $t0 + 183;
+$m0 = count($GLOBALS['t_mail']);
+eq([code($o2('confirm-request')), count($GLOBALS['t_mail']) - $m0], ['too_many_codes', 0], '🟡3 קוד רביעי ב-15 דקות — נדחה, בלי מייל');
+$s = sso_start();
+sso_callback(['state' => $s, 'token' => sso_token($s, ['sub' => '1', 'name' => 'הבעלים', 'email' => 'owner@example.com'])], 'own3');
+eq(code(call('POST', 'confirm-request', [], null, [], ['jar' => 'own3'])), 'too_many_codes', '🟡3 התקרה למשתמש — גם מ-session אחר');
+$GLOBALS['apr_time'] = $t0 + 901;
+eq($o2('confirm-request')[0], 200, 'אחרי 15 דקות — שוב אפשר');
+unset($GLOBALS['apr_time']);
+
 // ── ניקוי ──
-$GLOBALS['apr_time'] = time() + 2 * 86400;
+$GLOBALS['apr_time'] = time() + 4 * 86400;
 apr_jobs_run(5.0);
 eq([(int)apr_val('SELECT COUNT(*) FROM sso_states'), (int)apr_val('SELECT COUNT(*) FROM sso_jti'), (int)apr_val('SELECT COUNT(*) FROM login_attempts'), (int)apr_val('SELECT COUNT(*) FROM confirm_codes')], [0, 0, 0, 0], 'שירות הרקע auth.cleanup מנקה את מה שפג');
 unset($GLOBALS['apr_time']);

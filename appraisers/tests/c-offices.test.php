@@ -210,7 +210,7 @@ eq(code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value'
 eq(code(call('POST', 'sys-setting-set', ['name' => 'no_such', 'value' => true], $owner)), 'setting_invalid', 'הגדרה לא מוכרת');
 eq(code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => 'yes'], $owner)), 'setting_invalid', 'ערך שאינו בוליאני');
 call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => true], $owner);
-eq(call('GET', 'sys-settings', [], $owner)[1]['settings'], ['office_self_create' => true], 'ההגדרה חזרה');
+eq(call('GET', 'sys-settings', [], $owner)[1]['settings'], ['office_self_create' => true, 'invites_per_day' => 200], 'ההגדרה חזרה');
 
 // ── 01-C14: הזמנה אינה נתפסת בידי חשבון שהמייל שלו לא אומת ──
 $inv = call('POST', 'invite-create', ['email' => 'victim@c.co', 'role' => 'appraiser', 'is_admin' => true], $hila)[1];

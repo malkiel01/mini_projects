@@ -1,7 +1,9 @@
 <?php
 // פרוסה 02 — הזמנה דרך המעטפת (docs/spec/02-invites-detached.md §4): 02-A1 … 02-A6, 02-C2, ומקרי הקצה 1–4.
-$_SERVER['SERVER_NAME'] = 'example.test';
-$_SERVER['SCRIPT_NAME'] = '/mini_projects/appraisers/api.php';
+// הכתובות לא נגזרות מהבקשה: גם עם Host זר — הכול לפי הכתובת הקבועה (tests/lib.php: example.test)
+$_SERVER['SERVER_NAME'] = 'evil.example';
+$_SERVER['HTTP_HOST'] = 'evil.example';
+$_SERVER['SCRIPT_NAME'] = '/x/api.php';
 require __DIR__ . '/lib.php';
 
 $owner = ident('1', 'הבעלים', 'owner@example.com', ['platform_admin' => true]);
@@ -12,6 +14,7 @@ $A = office_for($owner, 'משרד א');
 function platform_answers(?array $answer): void
 {
     $GLOBALS['apr_http_post'] = function (string $url, string $body, array $headers) use ($answer) {
+        if (str_contains($url, 'action=grant_status')) return t_grant_answer($body);
         $GLOBALS['t_provision'][] = ['url' => $url, 'body' => json_decode($body, true), 'headers' => $headers, 'raw' => $body];
         return $answer === null ? null : [200, json_encode($answer)];
     };
@@ -122,7 +125,7 @@ platform_answers(null);
 [, $r3] = call('POST', 'invite-create', ['email' => 'never@example.com', 'role' => 'staff'], $owner);
 foreach ([61, 400, 2300] as $dt) { $GLOBALS['apr_time'] = $t + $dt; apr_jobs_run(5.0); }
 unset($GLOBALS['apr_time']);
-eq([apr_val("SELECT status FROM jobs WHERE dedupe_key = ?", ['invite.provision:' . $r3['invite']]), $inv($r3['invite'])['invitee_sub']], ['failed', null], '02-A4 אחרי 3 ניסיונות — נכשלה; ה-sub לא הומצא');
+eq([apr_val("SELECT status FROM jobs WHERE dedupe_key LIKE ?", ['invite.provision:' . $r3['invite'] . ':%']), $inv($r3['invite'])['invitee_sub']], ['failed', null], '02-A4 אחרי 3 ניסיונות — נכשלה; ה-sub לא הומצא');
 
 // ── 02-A5: אותה הזמנה פעמיים עם אותו מזהה פעולה ──
 platform_answers(['status' => 'invited', 'sub' => '881']);
@@ -212,5 +215,63 @@ eq(call('GET', 'dev-mail', [], $dana)[0], 404, 'dev-mail — רק למפתח');
 $audit = json_encode(apr_rows("SELECT meta FROM audit_log WHERE action LIKE 'invite.%'"));
 check('יומן הפעולות של ההזמנות: בלי כתובות', !str_contains($audit, '@'));
 check('שורת משימת הרקע: בלי כתובת', !str_contains(json_encode(apr_rows('SELECT payload, last_error FROM jobs')), '@'));
+
+// ══ ביקורת סבב 1 (team/reviews/02-invites-detached.md) ══
+platform_answers(['status' => 'invited', 'sub' => '900']);
+$eli = ident('5', 'אלי', 'eli@example.com');
+office_for($eli, 'משרד ה');
+
+// 🟡9 שליחה שוב: מרווח של דקה גם כשהמייל נכשל, וכישלון אינו דורס חותמת של שליחה שהצליחה
+[, $r] = call('POST', 'invite-create', ['email' => 'stamp@example.com', 'role' => 'staff'], $eli);
+$sentAt = $inv($r['invite'])['email_sent_at'];
+$GLOBALS['apr_time'] = time() + 61;
+$GLOBALS['apr_mail'] = fn() => false;
+[$st, $x] = call('POST', 'invite-resend', ['invite' => $r['invite']], $eli);
+eq([$st, $x['mail'], $inv($r['invite'])['email_status'], $inv($r['invite'])['email_sent_at']], [200, 'failed', 'failed', $sentAt], '🟡9 שליחה שוב שנכשלה: מוצג "לא נשלח", והחותמת של השליחה שהצליחה נשארת');
+eq(code(call('POST', 'invite-resend', ['invite' => $r['invite']], $eli)), 'too_soon', '🟡9 המרווח חל גם אחרי מייל שנכשל');
+$GLOBALS['apr_time'] = time() + 61 + 61;
+eq(call('POST', 'invite-resend', ['invite' => $r['invite']], $eli)[0], 200, 'ואחרי דקה — אפשר שוב');
+unset($GLOBALS['apr_time']);
+$GLOBALS['apr_mail'] = function (string $to, string $subject, string $text) { $GLOBALS['t_mail'][] = compact('to', 'subject', 'text'); return true; };
+
+// 🟡9 op חוזר אחרי קריסה (ההזמנה נשמרה, המשלוח לא התחיל): הבקשה החוזרת משלימה — provision, מייל וקישור
+$eliOffice = (int)apr_val("SELECT id FROM offices WHERE name = 'משרד ה'");
+$eliId = (int)apr_val("SELECT id FROM users WHERE platform_sub = '5'");
+$crashed = apr_tx(fn() => apr_invite_insert($eliOffice, 'crash@example.com', 'staff', 0, $eliId, '', 'op-crash-0001'));
+[$p0, $m0] = [$asked(), $mails()];
+[$st, $x] = call('POST', 'invite-create', ['email' => 'crash@example.com', 'role' => 'staff', 'op' => 'op-crash-0001'], $eli);
+eq([$st, $x['invite'], $x['repeat'] ?? null, $x['provision'], $x['mail'], $asked() - $p0, $mails() - $m0, (int)apr_val("SELECT COUNT(*) FROM invitations WHERE email = 'crash@example.com'")],
+    [200, $crashed['invite'], null, 'invited', 'sent', 1, 1, 1], '🟡9 op חוזר אחרי קריסה: אותה הזמנה, והמשלוח מושלם');
+eq([call('POST', 'invite-info', ['token' => $x['token']], ident('900', 'קראש', 'crash@example.com'))[0], code(call('POST', 'invite-info', ['token' => $crashed['token']], ident('900', 'קראש', 'crash@example.com')))], [200, 'invite_invalid'], 'עם קישור חדש; הקודם לא עובד');
+[$p0, $m0] = [$asked(), $mails()];
+eq([call('POST', 'invite-create', ['email' => 'crash@example.com', 'role' => 'staff', 'op' => 'op-crash-0001'], $eli)[1]['repeat'] ?? null, $asked() - $p0, $mails() - $m0], [true, 0, 0], 'ופעם שלישית — repeat, בלי כלום');
+
+// 🟡9 מפתח ה-dedupe: אחרי סדרת ניסיונות שמוצתה, "שליחה שוב" שנכשלת פותחת סדרה חדשה
+platform_answers(null);
+$GLOBALS['apr_time'] = time() + 5000;
+$jobs = fn(string $status) => (int)apr_val("SELECT COUNT(*) FROM jobs WHERE kind = 'invite.provision' AND status = ? AND dedupe_key LIKE ?", [$status, 'invite.provision:' . $r3['invite'] . ':%']);
+apr_exec("UPDATE invitations SET provision_status = 'failed', invitee_sub = NULL WHERE pid = ?", [$r3['invite']]);
+[$f0, $p0] = [$jobs('failed'), $jobs('pending')];
+[, $x] = call('POST', 'invite-resend', ['invite' => $r3['invite']], $owner);
+eq([$x['provision'], $f0, $jobs('pending') - $p0], ['failed', 1, 1], '🟡9 אחרי 3 כישלונות, שליחה שוב שנכשלת יוצרת משימת רקע חדשה');
+unset($GLOBALS['apr_time']);
+
+// 🟡6 תקרת ההזמנות: גם למשתמש המזמין (בכל המשרדים שלו), וגם למערכת כולה
+platform_answers(['status' => 'invited', 'sub' => '901']);
+$fay = ident('6', 'פיי', 'fay@example.com');
+$F1 = office_for($fay, 'משרד ו1');
+for ($i = 1; $i <= 12; $i++) call('POST', 'invite-create', ['email' => "f1-$i@example.com", 'role' => 'staff'], $fay);
+$F2 = office_for($fay, 'משרד ו2');   // משרד חדש — המשרד הפעיל
+for ($i = 1; $i <= 8; $i++) $last = call('POST', 'invite-create', ['email' => "f2-$i@example.com", 'role' => 'staff'], $fay);
+$p0 = $asked();
+eq([$last[0], code(call('POST', 'invite-create', ['email' => 'f2-9@example.com', 'role' => 'staff'], $fay)), $asked() - $p0], [200, 'invite_limit', 0], '🟡6 20 הזמנות ליום למשתמש המזמין — הקמת משרד נוסף לא עוקפת');
+$gil = ident('7', 'גיל', 'gil7@example.com');
+office_for($gil, 'משרד ז');
+$total = (int)apr_val('SELECT COUNT(*) FROM invitations WHERE created_at > ?', [apr_iso(time() - 86400)]);
+eq(call('POST', 'sys-setting-set', ['name' => 'invites_per_day', 'value' => $total + 1], $owner)[0], 200, '🟡6 התקרה הכללית היא הגדרת מערכת');
+eq([call('POST', 'invite-create', ['email' => 'g1@example.com', 'role' => 'staff'], $gil)[0], code(call('POST', 'invite-create', ['email' => 'g2@example.com', 'role' => 'staff'], $gil))], [200, 'invite_limit'], '🟡6 התקרה הכללית: מעבר לה — נדחה, גם למשרד ולמשתמש חדשים');
+eq([code(call('POST', 'sys-setting-set', ['name' => 'invites_per_day', 'value' => true], $owner)), code(call('POST', 'sys-setting-set', ['name' => 'invites_per_day', 'value' => -1], $owner)),
+    code(call('POST', 'sys-setting-set', ['name' => 'office_self_create', 'value' => 5], $owner)), apr_setting('invites_per_day')], ['setting_invalid', 'setting_invalid', 'setting_invalid', $total + 1], 'ערך מהסוג הלא נכון — נדחה');
+call('POST', 'sys-setting-set', ['name' => 'invites_per_day', 'value' => 200], $owner);
 
 done();
