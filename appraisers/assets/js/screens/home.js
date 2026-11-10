@@ -1,4 +1,4 @@
-/* בית, ברוכים הבאים (הקמת משרד / יש לי הזמנה), וקבלת הזמנה מקישור. */
+/* בית (הלוח הראשי עצמו — ב-cases.js), ברוכים הבאים (הקמת משרד / יש לי הזמנה), וקבלת הזמנה מקישור. */
 'use strict';
 
 const myOffice = () => App.me.offices.find(o => o.pid === App.me.office) || null;
@@ -13,7 +13,7 @@ function manageTiles() {
     return tiles.length ? `<div class="tiles">${tiles.map(([h, i, t]) => `<a class="tile" href="${h}"><span class="tile-ic" aria-hidden="true">${i}</span>${t}</a>`).join('')}</div>` : '';
 }
 
-function viewHome() {
+async function viewHome() {
     const o = myOffice();
     setHead(T.app, o ? o.name : '');
     if (!o) {
@@ -27,9 +27,7 @@ function viewHome() {
             <h2>${office ? T.officeSuspendedTitle : T.memberSuspendedTitle}</h2><p class="muted">${office ? T.officeSuspendedText : T.memberSuspendedText}</p></div>${manageTiles()}`;
         return;
     }
-    App.main.innerHTML = `<p class="banner" role="note">⚠️ ${T.devEnv}</p>
-        <div class="summary"><div class="line"><b class="one">${esc(o.name)}</b><span class="chip info">${esc(roleLabel(o.role, o.is_admin))}</span></div></div>
-        <p class="empty">${T.homeEmpty}</p>${manageTiles()}`;
+    await viewDashboard(o);   // הלוח הראשי — screens/cases.js
 }
 
 async function viewWelcome() {

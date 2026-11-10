@@ -252,3 +252,11 @@ code.cmd { display: block; padding: var(--s2); background: var(--bg); border-rad
 .diff .add { color: var(--ok); } .diff .del { color: var(--danger); }
 .chip.pick input { accent-color: var(--brand); margin: 0; }
 .chip.pick:has(input:checked) { background: var(--brand-soft); border-color: var(--brand); color: var(--brand); }
+
+/* פרוסה 04 — תיקים */
+button.chip { cursor: pointer; font-family: inherit; min-height: 28px; }
+.banner .btn.sm { margin-inline-start: var(--s2); }
+.banner a { margin-inline-start: var(--s1); }
+details > summary.hint { cursor: pointer; padding: var(--s2) 0; }
+.switch small.chip { margin-inline-start: var(--s1); }
+[data-for][hidden], #pnew[hidden] { display: none; }

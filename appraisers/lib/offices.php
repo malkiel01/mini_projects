@@ -84,6 +84,7 @@ function apr_office_leave(array $ctx): array
         apr_exec('UPDATE sessions SET active_office_id = NULL WHERE user_id = ? AND active_office_id = ?', [$uid, $office]);
         apr_audit('member.leave', 'user', $ctx['user']['pid'], [], office: $office);
         if (function_exists('apr_profiles_on_leave')) apr_profiles_on_leave($office, $uid);
+        if (function_exists('apr_cases_on_member_out')) apr_cases_on_member_out($office, $uid);
         return [];
     });
 }
@@ -139,12 +140,20 @@ function apr_member_update(array $ctx, array $in): array
         $wasAdmin = (int)$m['is_admin'] && $m['status'] === 'active';
         if ($wasAdmin && (!$isAdmin || $status !== 'active') && !apr_active_admins($office, (int)$m['user_id'])) apr_fail('last_admin');
 
+        // אחראי על תיק חייב להיות שמאי: לא מורידים מתפקיד שמאי את מי שאחראי על תיקים פתוחים — קודם מעבירים אחריות
+        if ($m['role'] === 'appraiser' && $role !== 'appraiser' && function_exists('apr_cases_responsible_open')
+            && ($n = apr_cases_responsible_open($office, (int)$m['user_id'])) > 0) {
+            throw new AprError('responsible_has_cases', "החבר אחראי על $n תיקים פתוחים — העבירו את האחריות לפני שינוי התפקיד");
+        }
+
         apr_exec('UPDATE memberships SET role = ?, is_admin = ?, status = ?, title = ?, license_no = ?, updated_at = ? WHERE id = ?',
             [$role, $isAdmin, $status, $title, $license, apr_now(), $m['id']]);
         $log = fn(string $action, array $meta = []) => apr_audit($action, 'user', $m['user_pid'], $meta, office: $office);
         if ($role !== $m['role']) $log('member.role', ['from' => $m['role'], 'to' => $role]);
         if ($isAdmin !== (int)$m['is_admin']) $log($isAdmin ? 'member.admin_on' : 'member.admin_off');
         if ($status !== $m['status']) $log($status === 'suspended' ? 'member.suspend' : 'member.unsuspend');
+        // חבר שהושעה במשרד מאבד את ההשתתפות בכל תיקי המשרד
+        if ($status === 'suspended' && $m['status'] !== 'suspended' && function_exists('apr_cases_on_member_out')) apr_cases_on_member_out($office, (int)$m['user_id']);
         return [];
     });
 }
@@ -161,6 +170,7 @@ function apr_member_remove(array $ctx, array $in): array
         apr_exec('UPDATE sessions SET active_office_id = NULL WHERE user_id = ? AND active_office_id = ?', [$m['user_id'], $office]);
         apr_audit('member.remove', 'user', $m['user_pid'], ['role' => $m['role']], office: $office);
         if (function_exists('apr_profiles_on_leave')) apr_profiles_on_leave($office, (int)$m['user_id']);
+        if (function_exists('apr_cases_on_member_out')) apr_cases_on_member_out($office, (int)$m['user_id']);
         return [];
     });
 }

@@ -47,6 +47,17 @@ const APR_ACCESS = [
     'profile-share-revoke' => 'user',
     'office-required-profile' => 'admin',
 
+    // תיקים (04): חבר פעיל במשרד; ההרשאה לכל תיק — שורה ב-case_members (apr_case_get)
+    'case-options' => 'member', 'case-create' => 'member', 'case-update' => 'member', 'case-plan' => 'member',
+    'case-start' => 'member', 'case-status' => 'member', 'case-delete' => 'member', 'case' => 'member',
+    'cases' => 'member', 'case-activity' => 'member', 'case-member-add' => 'member', 'case-member-update' => 'member',
+    'case-member-remove' => 'member', 'case-profile-diff' => 'member', 'case-profile-apply' => 'member', 'case-identifier-add' => 'member',
+    'case-identifier-update' => 'member', 'case-identifier-remove' => 'member', 'case-identifiers-conflict' => 'member', 'contacts' => 'member',
+    'contact-save' => 'member', 'contact-delete' => 'member', 'case-party-add' => 'member', 'case-party-update' => 'member',
+    'case-party-remove' => 'member', 'task-create' => 'member', 'task-update' => 'member', 'my-tasks' => 'member',
+    'requirement-add' => 'member', 'requirement-update' => 'member',
+    'office-cases' => 'admin', 'office-case-transfer' => 'admin',
+
     'office'              => 'member',
     'office-leave'        => 'member',
     'office-rename'       => 'admin',
@@ -84,7 +95,8 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
+const APR_READS = ['case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+    'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
 
