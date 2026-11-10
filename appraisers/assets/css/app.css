@@ -232,3 +232,7 @@ code.cmd { display: block; padding: var(--s2); background: var(--bg); border-rad
 .pid { border: 0; background: var(--bg); color: var(--brand); border-radius: 6px; padding: 0 4px; font: inherit; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8em; cursor: pointer; direction: ltr; }
 .health .card { min-height: 52px; }
 .toast { cursor: default; }
+
+/* מסך הכניסה (מצב מנותק) */
+.login form { display: grid; gap: var(--s3); }
+.login > .btn { text-align: center; text-decoration: none; }

@@ -15,6 +15,35 @@ const App = { me: null, main: null };
  * body → POST עם X-CSRF; אחרת GET. זה גם החוזה ש-DevLoop מצפה לו.
  */
 async function api(action, { body, params } = {}) {
+    try {
+        return await apiOnce(action, { body, params });
+    } catch (x) {
+        // פעולה רגישה (אפיון 02 §6): השרת דורש אישור חוזר — מבקשים אותו מהמשתמש, ושולחים שוב
+        if (x.code !== 'confirm_required' || body === undefined) throw x;
+        return apiOnce(action, { body: { ...body, ...await confirmSensitive(action) }, params });
+    }
+}
+
+/**
+ * אישור חוזר: במצב מחוברת — הקלדת מילת האישור; במנותקת — קוד בן 6 ספרות שנשלח למייל.
+ * מחזיר את מה שמצטרף לגוף הבקשה. ביטול — זורק.
+ */
+async function confirmSensitive(action) {
+    const what = T.sensitive[action] || '';
+    const cancelled = () => Object.assign(new Error(T.confirmCancelled), { code: 'confirm_cancelled', status: 0, req: '' });
+    if (App.me?.mode === 'detached') {
+        await apiOnce('confirm-request', { body: {} });
+        const code = prompt(T.confirmCodeAsk(what));
+        if (!code) throw cancelled();
+        await apiOnce('confirm-verify', { body: { code: code.trim() } });
+        return {};
+    }
+    const word = App.me?.confirm_word || 'אישור';
+    if ((prompt(T.confirmWordAsk(what, word)) || '').trim() !== word) throw cancelled();
+    return { confirm: word };
+}
+
+async function apiOnce(action, { body, params } = {}) {
     const qs = new URLSearchParams({ action, ...(params || {}) });
     const init = { credentials: 'same-origin' };
     if (body !== undefined) {
@@ -36,7 +65,7 @@ async function api(action, { body, params } = {}) {
     if (!res.ok) {
         // האפליקציה: {error: {code, message}}; DevLoop: {error: "…"}
         const e = data.error;
-        throw Object.assign(new Error((typeof e === 'string' ? e : e?.message) || T.fault(res.status)), { code: e?.code || '', status: res.status, req });
+        throw Object.assign(new Error((typeof e === 'string' ? e : e?.message) || T.fault(res.status)), { code: e?.code || data.code || '', status: res.status, req });
     }
     return data;
 }

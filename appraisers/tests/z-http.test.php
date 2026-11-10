@@ -46,6 +46,16 @@ eq([$h['cache-control'][0] ?? '', $h['x-content-type-options'][0] ?? ''], ['no-s
 check('בקשה בלי זהות לא מקבלת עוגייה', !isset($h['set-cookie']));
 eq(http('GET', 'api.php?action=me', null, ['X-Dev-As' => 'detached'])[0], 401, '01-B7 מנותקת, בלי session → 401');
 eq(http('GET', 'api.php?action=me', null, ['X-Dev-As' => 'unavailable'])[0], 503, '01-B7 המעטפת לא עונה → 503');
+// ── פרוסה 02, ב-HTTP אמיתי: הפעולות הציבוריות עונות בלי זהות, והכניסה המאוחדת היא הפניה של הדפדפן ──
+[$st, $j, $h] = http('GET', 'api.php?action=platform_key', null, ['X-Dev-As' => 'none']);
+eq([$st, $j['client'] ?? null, $j['keys'][0]['alg'] ?? null, isset($h['set-cookie'])], [200, 'appraisers', 'Ed25519', false], '02-A1 platform_key בלי זהות: JSON, לא 401, בלי עוגייה');
+eq(http('GET', 'api.php?action=login-config', null, ['X-Dev-As' => 'detached'])[1]['mode'] ?? null, 'detached', 'login-config ציבורי');
+[$st, , $h] = http('GET', 'api.php?action=sso-start', null, ['X-Dev-As' => 'detached']);
+check('§5.2 sso-start: 302 למעטפת, עם state ועוגיית apr_sso (HttpOnly)', $st === 302 && preg_match('~/platform/sso\.php\?client=appraisers&state=[a-f0-9]{32}&return=~', $h['location'][0] ?? '') === 1
+    && preg_match('/^apr_sso=[a-f0-9]{32};.*HttpOnly/i', $h['set-cookie'][0] ?? '') === 1, [$st, $h['location'] ?? null]);
+[$st, , $h] = http('GET', 'api.php?action=sso-callback&state=' . str_repeat('a', 32) . '&token=x.y', null, ['X-Dev-As' => 'detached']);
+check('02-B1 sso-callback עם state זר: חזרה למסך הכניסה, בלי עוגיית session', $st === 302 && str_ends_with($h['location'][0] ?? '', '#/login/invalid') && !preg_match('/apr_session=[a-f0-9]/', implode(' ', $h['set-cookie'] ?? [])), [$st, $h]);
+eq(http('POST', 'api.php?action=login', ['email' => 'a@example.com', 'password' => 'x'], ['X-Dev-As' => 'none'])[0], 403, '02-B3 מחוברת: login → 403');
 [$st, $j, $h] = http('GET', 'api.php?action=health', null, ['X-Dev-As' => 'none']);
 eq([$st, array_keys($j), isset($h['set-cookie'])], [200, ['ok', 'version'], false], '01-E2 health ציבורי: רק ok ו-version, בלי עוגייה');
 
