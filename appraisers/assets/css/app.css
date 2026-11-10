@@ -260,3 +260,27 @@ button.chip { cursor: pointer; font-family: inherit; min-height: 28px; }
 details > summary.hint { cursor: pointer; padding: var(--s2) 0; }
 .switch small.chip { margin-inline-start: var(--s1); }
 [data-for][hidden], #pnew[hidden] { display: none; }
+
+/* ===== מסמכים (06) ===== */
+main.wide { max-width: 1240px; }
+.thumb { flex: none; inline-size: 36px; block-size: 36px; object-fit: cover; border-radius: 10px; background: var(--brand-soft); }
+.chip small { opacity: .75; margin-inline-start: 4px; }
+.drop { display: grid; gap: var(--s1); justify-items: center; text-align: center; padding: var(--s4) var(--s3); border: 2px dashed var(--line); border-radius: var(--r); background: var(--surface); cursor: pointer; }
+.drop.over, .drop:hover { border-color: var(--brand); background: var(--brand-soft); }
+.up-row .fields.two { margin-top: var(--s1); align-items: center; }
+.up-row select { min-width: 0; }
+.l2.error { color: var(--danger); }
+.doc-grid { display: grid; gap: var(--s3); }
+.doc-view { display: grid; place-items: center; min-height: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.doc-view img { display: block; max-width: 100%; max-height: 78dvh; }
+.doc-view iframe { display: block; inline-size: 100%; block-size: 78dvh; border: 0; }
+.doc-wait { display: grid; gap: var(--s2); justify-items: center; padding: var(--s4); text-align: center; }
+.doc-wait .big { font-size: 2.6rem; }
+.doc-side { display: grid; gap: var(--s3); align-content: start; min-width: 0; }
+.review { display: grid; gap: var(--s2); border: 0; }
+.panel .line { display: flex; gap: var(--s2); align-items: center; }
+/* במחשב: המסמך משמאל, הפרטים והבדיקה מימין. בטלפון — זה מעל זה. */
+@media (min-width: 900px) {
+    .doc-grid { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: start; }
+    .doc-view { order: 2; position: sticky; top: calc(var(--head) + var(--s2)); }
+}

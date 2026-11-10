@@ -5,7 +5,7 @@
  *   #/                     בית                              #/welcome            הקמת משרד / יש לי הזמנה
  *   #/invite/<אסימון>      קבלת הזמנה                       #/office · #/office/log   המשרד שלי · יומן הפעולות
  *   #/profiles[/<pid>[/edit | /try | /v/<גרסה>]]   פרופילים
- *   #/cases · #/cases/new · #/cases/<pid>[/setup[/<שלב>] | /parties | /reqs | /activity]   תיקים
+ *   #/cases · #/cases/new · #/cases/<pid>[/setup[/<שלב>] | /parties | /reqs[/<דרישה>] | /file/<קובץ> | /activity]   תיקים
  *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
  *   #/system · #/system/users · #/system/doc-types   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
@@ -81,6 +81,7 @@ async function route() {
     await peLeave().catch(() => {});   // יוצאים מעורך הפרופיל — מה שממתין נשמר
     $('#back').hidden = a === '';
     App.sub = undefined;
+    App.main.classList.remove('wide');   // מסך קובץ רחב יותר (screens/docs.js)
     const home = () => { history.replaceState(null, '', '#/'); $('#back').hidden = true; return viewHome(); };
     try {
         if (a === '') await viewHome();

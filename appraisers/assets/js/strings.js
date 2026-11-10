@@ -210,7 +210,7 @@ T.p = {
 
 
 // ── פרוסה 04: תיקים ──
-Object.assign(T.auditIcon, { case: '📁', task: '☑️', requirement: '📄', contact: '📇' });
+Object.assign(T.auditIcon, { case: '📁', task: '☑️', requirement: '📄', contact: '📇', file: '📎' });
 T.c = {
     cases: 'תיקים', myCases: 'התיקים שלי', newCase: 'תיק חדש', allCases: 'כל התיקים', myTasks: 'המשימות שלי', allTasks: 'כל המשימות', contacts: 'ספר הכתובות', officeCases: 'תיקי המשרד',
     search: 'חיפוש: מספר תיק, כותרת, כתובת, גוש / חלקה, שם', noCases: 'אין עדיין תיקים.', noResults: 'לא נמצאו תיקים. נסו לשנות את הסינון.',
@@ -249,7 +249,7 @@ T.c = {
     todo: { purpose: 'מטרת השומה', identifier: 'מזהה נכס', orderer: 'מזמין', property_type: 'סוג נכס', key_date: 'המועד הקובע', due_date: 'יעד', title: 'תיאור הנכס', responsible: 'שמאי אחראי' },
     byRule: t => `לפי הכלל: ${t}`,
     // כרטיס תיק
-    tabs: { overview: 'סקירה', parties: 'גורמים והרשאות', reqs: 'דרישות', activity: 'פעילות' },
+    tabs: { overview: 'סקירה', parties: 'גורמים והרשאות', reqs: 'דרישות וקבצים', activity: 'פעילות' },
     todoTitle: 'להשלמה', todoNone: 'אין מה להשלים בפרטי התיק.', details: 'פרטי התיק', openMandatoryTitle: 'דרישות חובה פתוחות', noOpenMandatory: 'אין דרישות חובה פתוחות.',
     tasksTitle: 'משימות', addTask: 'משימה', noOpenTasks: 'אין משימות פתוחות.', doneTasks: n => `הושלמו / בוטלו (${n})`,
     profileTitle: 'פרופיל', newer: n => `לפרופיל גרסה חדשה (${n})`, pending: 'ייתכן שכללי הפרופיל רלוונטיים', check: 'בדיקה', notInVersion: 'אינה בגרסה החדשה',
@@ -285,3 +285,45 @@ T.c = {
     },
 };
 Object.assign(T.audit, T.c.audit);
+
+// ── מסמכים (06) ──
+T.d = {
+    statuses: { required: 'נדרשת', requested: 'נשלחה בקשה', received: 'התקבל — ממתין לבדיקה', returned: 'הוחזר להשלמה', approved: 'אושר', not_relevant: 'לא רלוונטי' },
+    review: { pending: 'ממתין לבדיקה', approved: 'אושר', returned: 'הוחזר', rejected: 'נדחה' },
+    filters: { missing: 'חסר', uploaded: 'הועלה', review: 'בבדיקה', approved: 'אושר', not_relevant: 'לא רלוונטי' },
+    search: 'חיפוש: דרישה, שם קובץ, תגית', noMatch: 'אין דרישות שמתאימות לסינון.', byParty: 'גורם', requirement: 'דרישה', file: 'קובץ',
+    upload: 'העלאה', uploadDo: 'העלאה', pick: 'בחירת קבצים — או גרירה לכאן', camera: 'צילום מסמך', limits: (mb, types) => `עד ${mb}MB לקובץ · ${types}`,
+    sourceNote: 'מאיפה המסמך', sourceHint: 'למשל: נמסר מהלקוח, הופק באתר הרשות', assignTo: 'שיוך לדרישה', noAssign: 'בלי שיוך (לתיק)', relation: 'איך לצרף',
+    asVersion: 'גרסה חדשה (מחליפה את הנוכחית)', asAttachment: 'קובץ נלווה (מצטרף לגרסה הנוכחית)', remove: 'הסרה',
+    uploading: 'מעלה…', uploaded: 'הועלה — ממתין לבדיקה', uploadedN: n => n === 1 ? 'הקובץ הועלה' : `${n} קבצים הועלו`, tooBig: mb => `הקובץ גדול מדי — עד ${mb}MB`,
+    dupMsg: (req, date) => `הקובץ הזה כבר קיים בתיק (${req || 'בלי שיוך'}, ${date}).`, dupAnyway: 'להעלות בכל זאת', dupCancel: 'ביטול', dupSkipped: 'לא הועלה', dupWill: 'יועלה בכל זאת',
+    dropHint: 'אפשר לגרור קבצים מהמחשב אל הרשימה.', dragHint: 'גרירת שורה משנה את הסדר.',
+    unassigned: 'קבצים שלא שויכו', unassignedNote: 'הקובץ אינו משויך לדרישה.', split: 'פוצלה', splitN: n => `דרישות שפוצלו לגורמים (${n})`, splitNote: 'הדרישה פוצלה לגורמים. היא סגורה ואינה נספרת.',
+    received: d => `התקבל ${d}`, versionN: n => `גרסה ${n}`, attachmentOf: n => `נלווה לגרסה ${n}`, current: 'נוכחית', replaced: 'הוחלפה', deleted: 'נמחק', encrypted: 'מוגן בסיסמה',
+    statusBy: (who, when) => `${who} · ${when}`, yes: 'כן', no: 'לא', origin: 'מקור הדרישה', edit: 'עריכה', filesTitle: 'קבצים וגרסאות', noFiles: 'עוד לא הועלה קובץ לדרישה.', history: 'היסטוריה',
+    markNotRelevant: 'לא רלוונטי', notRelevantHint: 'הדרישה תסומן כלא רלוונטית לתיק. הנימוק נשמר בהיסטוריה.', unmark: 'ביטול "לא רלוונטי"', cancelRequest: 'ביטול הבקשה',
+    reopen: 'פתיחה לבדיקה מחדש', reopenHint: 'האישור יבוטל, והקובץ יחזור להמתין לבדיקה.', splitDo: 'פיצול לגורמים', splitHint: 'בחרו שני גורמים או יותר. לכל אחד תיווצר דרישה משלו, והדרישה הזו תיסגר.',
+    splitDone: 'הדרישה פוצלה', moveUp: 'למעלה', moveDown: 'למטה', moved: 'הסדר עודכן', dropMandatory: 'הורדת "חובה"', dropMandatoryHint: 'הורדת סימון החובה דורשת נימוק.',
+    fileGone: 'הקובץ לא נמצא, או שנמחק', loadingPreview: 'טוען תצוגה מקדימה…', noPreview: 'אין תצוגה מקדימה לקובץ הזה — אפשר להוריד אותו.', packageNote: 'חבילה (ZIP) — להורדה בלבד. היא נשמרת כמו שהיא ואינה נפתחת בשרת.',
+    download: 'הורדה', editFile: 'פרטי הקובץ', assign: 'שיוך לדרישה', assignHint: 'אותו קובץ יכול לשמש כמה דרישות; בכל אחת הוא נבדק בנפרד.', assigned: 'הקובץ שויך', noOpenReqs: 'אין דרישה פתוחה לשייך אליה.',
+    del: 'מחיקה', delHint: 'הקובץ יוסר מהתיק (נשמר רישום בהיסטוריה). דרישה שנשארת בלי קובץ חוזרת ל"נדרשת".', deletedDone: 'הקובץ נמחק',
+    receivedAt: 'התקבל בתיק', docDate: 'תאריך המסמך', source: 'מקור', uploader: 'העלה', type: 'סוג', size: 'גודל', pages: n => `${n} עמודים`, fileName: 'שם להצגה', tags: 'תגיות', tagsHint: 'מופרדות בפסיק',
+    channels: { internal: 'הועלה במשרד', portal: 'פורטל', email: 'מייל', other: 'אחר' }, kinds: { pdf: 'PDF', image: 'תמונה', office: 'מסמך Office', package: 'חבילה' },
+    scanNone: 'לא נסרק לאיומים', scanClean: 'נסרק — נקי',
+    reviewTitle: 'בדיקה', chkReadable: 'קריא', chkComplete: 'שלם (כל העמודים)', chkMatches: 'מתאים לדרישה', note: 'הערה פנימית', approve: 'אישור', approveHint: 'אישור דורש את שלוש התיבות. אישור המסמך אינו אישור של הנתונים שבו.',
+    returnDo: 'החזרה להשלמה', returnCode: 'סיבה', returnExplain: 'הסבר לנמען', returnHint: 'הקובץ נשאר בהיסטוריה, ואפשר להעלות קובץ נוסף.', reject: 'דחייה', rejectHint: 'הקובץ ינותק מהדרישה ויישאר ב"קבצים שלא שויכו". הדרישה תחזור למצבה הקודם.',
+    returnCodes: { missing_pages: 'חסרים עמודים', unreadable: 'לא קריא', outdated: 'מסמך ישן', wrong_document: 'מסמך אחר', other: 'אחר' }, returnReason: 'סיבת ההחזרה', rejectReason: 'סיבת הדחייה',
+    approved: 'המסמך אושר', returned: 'המסמך הוחזר להשלמה', rejected: 'הקובץ נדחה', reviewedBy: (who, when) => `נבדק בידי ${who}, ${when}`, alreadyReviewed: (who, state) => `כבר נבדק בידי ${who} — ${state}`,
+    encryptedNote: 'הקובץ מוגן בסיסמה, ואי אפשר לבדוק את תוכנו. מומלץ להחזיר להשלמה.',
+    sourceFile: 'המסמך שבתיק', pickFile: 'בחרו מסמך', noFilesYet: 'אין עדיין קבצים בתיק', sourceFileHint: 'כתובת מסומנת "מאומת" רק מול מסמך שבתיק.',
+    pendingTitle: 'מסמכים שממתינים לבדיקה', searchResults: 'מסמכים ודרישות',
+    audit: {
+        'file.upload': r => r.meta.requirement ? `הועלה קובץ לדרישה (${r.meta.relation === 'attachment' ? 'נלווה לגרסה' : 'גרסה'} ${r.meta.version})` : 'הועלה קובץ לתיק',
+        'file.assign': r => `קובץ שויך לדרישה (גרסה ${r.meta.version})`, 'file.update': () => 'פרטי קובץ עודכנו', 'file.delete': () => 'קובץ נמחק',
+        'file.approve': r => `מסמך אושר (גרסה ${r.meta.version})`, 'file.return': r => `מסמך הוחזר להשלמה: ${T.d.returnCodes[r.meta.code] || ''}`, 'file.reject': () => 'קובץ נדחה ונותק מהדרישה',
+        'file.rejected': r => `קובץ נדחה בקליטה (${({ unknown: 'סוג לא נתמך', empty: 'קובץ ריק', scanner: 'הסורק זיהה איום' })[r.meta.why] || (String(r.meta.why || '').match(/^(pdf|office):/) ? 'תוכן פעיל או סוג לא נתמך' : 'תוכן שאינו תואם לסוג')})`,
+        'requirement.status': r => `דרישה: ${T.d.statuses[r.meta.from] || ''} ← ${T.d.statuses[r.meta.to] || ''}`, 'requirement.order': () => 'סדר הדרישות שונה',
+        'requirement.split': r => `דרישה פוצלה ל-${(r.meta.into || []).length} גורמים`,
+    },
+};
+Object.assign(T.audit, T.d.audit);
