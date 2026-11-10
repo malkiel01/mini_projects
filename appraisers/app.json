@@ -6,10 +6,12 @@
   "description": "ניהול תיקי שמאות מקרקעין והפקת דוחות: מסמכים, בקשות לגורמים, מידע מרשויות, ביקור בנכס, עסקאות השוואה ודוח. בפיתוח.",
   "category": "documents",
   "entry": "index.html",
-  "version": "0.1",
+  "version": "0.2",
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"
+    "manifest.webmanifest",
+    "cron.php",
+    "api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach"
   ]
 }

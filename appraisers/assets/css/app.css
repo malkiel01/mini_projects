@@ -192,29 +192,43 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ===== שמאות מקרקעין — מה שמעבר לבסיס ===== */
 .top a.icon-btn { color: inherit; }
-a.tile { color: inherit; text-decoration: none; }
 .top .me { width: 34px; min-width: 34px; height: 34px; min-height: 34px; border-radius: 50%; background: rgba(255, 255, 255, .18); font-size: .8rem; font-weight: 600; }
+/* המשרד הפעיל בכותרת — וכשיש יותר ממשרד אחד, גם הבורר */
+.top button.sub { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: .78rem; text-align: start; cursor: pointer; }
+.top button.sub:disabled { cursor: default; opacity: .85; }
+a.tile, a.use-row { color: inherit; text-decoration: none; }
 .boot { text-align: center; color: var(--muted); padding: 20vh var(--s4) 0; }
-.notice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4); display: grid; gap: var(--s2); text-align: center; }
+.notice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s4); display: grid; gap: var(--s2); text-align: center; margin-bottom: var(--s3); }
 .notice .big { font-size: 2rem; }
-.notice h2 { font-size: 1.05rem; }
-.list > li { border-top: 1px solid var(--line); }
-.list > li:first-child { border-top: 0; }
-.list > li.card { border-top: 1px solid var(--line); }
-.list > li.card:first-child { border-top: 0; }
+.notice h2 { font-size: 1.05rem; overflow-wrap: anywhere; }
+.banner { background: color-mix(in srgb, var(--star) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--star) 40%, transparent); border-radius: var(--r);
+    padding: var(--s2) var(--s3); font-size: .85rem; margin-bottom: var(--s3); }
+.panel { display: grid; gap: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); }
+.foot { margin-top: var(--s4); text-align: center; }
+.list > li + li { border-top: 1px solid var(--line); }
 .card.static { cursor: default; }
 .card.static:hover { background: none; }
+.card .l2.wrap, .health .l2 { white-space: normal; overflow-wrap: anywhere; }
 .chip.info { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 40%, transparent); background: var(--brand-soft); }
+.summary .line .chip { margin-inline-start: auto; }
+.seg-tabs.five button { font-size: .74rem; padding: 4px 0; }
+.toolbar.wrap { flex-wrap: wrap; }
+.toolbar.wrap input[type=date] { flex: 1 1 130px; }
+.toolbar.wrap input[name=what] { flex: 1 1 100%; }
+/* יומן פעולות: ימים כמפרידים; שורה = אייקון, מה קרה, מי ומתי */
 .day { font-size: .78rem; color: var(--muted); margin: var(--s3) var(--s1) var(--s1); }
 .ev { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2) var(--s3); }
 .ev .use-ic { inline-size: 32px; block-size: 32px; font-size: 1rem; }
 .ev .body { flex: 1; min-width: 0; }
 .ev .what { overflow-wrap: anywhere; }
-.ev .who { color: var(--muted); font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.health .card { cursor: default; min-height: 52px; }
-.health .card:hover { background: none; }
-.health .l2 { white-space: normal; overflow-wrap: anywhere; }
-.dot { flex: none; inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--ok); }
-.dot.warn { background: var(--star); } .dot.bad { background: var(--danger); }
-.summary .line .chip { margin-inline-start: auto; }
+.ev .why { font-size: .85rem; color: var(--muted); border-inline-start: 2px solid var(--line); padding-inline-start: var(--s2); margin: 2px 0; overflow-wrap: anywhere; }
+.ev .who { color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+/* יומן המפתח: קודים ומזהים — משמאל לימין */
+.ev.ltr .body { direction: ltr; text-align: left; }
+.ev.ltr .why { direction: rtl; text-align: right; }
+code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .82em; direction: ltr; unicode-bidi: isolate; }
+code.meta { display: block; color: var(--muted); overflow-wrap: anywhere; }
+code.cmd { display: block; padding: var(--s2); background: var(--bg); border-radius: var(--r); overflow-wrap: anywhere; text-align: left; user-select: all; }
+.pid { border: 0; background: var(--bg); color: var(--brand); border-radius: 6px; padding: 0 4px; font: inherit; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8em; cursor: pointer; direction: ltr; }
+.health .card { min-height: 52px; }
 .toast { cursor: default; }
