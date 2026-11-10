@@ -35,7 +35,8 @@ function apr_audit(string $action, string $entityType, string $entityPid, array 
         'actor_kind' => $actor === null && $kind === 'user' ? 'system' : $kind, 'action' => $action,
         'entity_type' => $entityType, 'entity_pid' => $entityPid,
         'meta' => json_encode((object)$meta, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        'reason' => $reason === null || $reason === '' ? null : mb_substr($reason, 0, 500), 'req' => apr_req_id()]);
+        'reason' => $reason === null || $reason === '' ? null : mb_substr($reason, 0, 500), 'req' => apr_req_id()]
+        + (isset($GLOBALS['apr_audit_case']) ? ['case_id' => $GLOBALS['apr_audit_case']] : []));   // פעולה בתיק — לשונית הפעילות שלו
 }
 
 /** נימוק לפעולה שדורשת אותו. */
