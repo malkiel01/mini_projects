@@ -215,9 +215,17 @@ body.studio-on main { max-width: none; padding: 0; }
     border-bottom: 1px solid var(--line); font-size: .9rem; }
 .st-banner .one { flex: 1; }
 .st-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-.st-canvas { min-height: 0; background: var(--bg); display: flex; justify-content: center; }
+.st-canvas { min-height: 0; min-width: 0; display: flex; }
 .st-frame { border: 0; width: 100%; height: 100%; background: #fff; }
-.studio.phone .st-frame { width: 390px; max-width: 100%; border-inline: 1px solid var(--line); }
+
+/* תצוגה במכשיר (devicePreview ב-app.js): מחשב ממלא; טאבלט/טלפון ברוחב אמיתי, באמצע, מוקטן אם צריך */
+.dv-canvas { flex: 1; min-width: 0; min-height: 0; height: 100%; overflow: hidden; display: flex; justify-content: center; align-items: flex-start;
+    background: var(--bg); }
+.dv-stage { flex: none; width: 100%; height: 100%; transform-origin: 50% 0; }
+.dv-stage > iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.dv-canvas:not([data-device="desktop"]) { padding: var(--s4); background: color-mix(in srgb, var(--ink) 8%, var(--bg)); }
+.dv-canvas:not([data-device="desktop"]) .dv-stage { border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 8px 28px rgba(16, 24, 40, .16); }
+.dv-seg span { min-height: 32px; padding: 0 var(--s3); font-size: .85rem; }
 .st-side { display: none; }
 .st-props, .st-side { display: grid; gap: var(--s3); align-content: start; }
 .st-actions { display: flex; gap: var(--s1); }
@@ -234,8 +242,9 @@ body.studio-on main { max-width: none; padding: 0; }
 .use-row.on { background: var(--brand-soft); }
 .st-props .seg.grid span, .st-side .seg.grid span { font-size: .8rem; min-height: 34px; }
 @media (min-width: 1000px) {
-    .st-main { grid-template-columns: minmax(0, 1fr) 340px; }
-    .st-side { display: grid; overflow-y: auto; padding: var(--s3); background: var(--surface); border-inline-start: 1px solid var(--line); }
+    /* הפאנל — רוחב קבוע בצד הימני (תחילת השורה, כמו אלמנטור בעברית); הקנבס — כל השאר */
+    .st-main { grid-template-columns: 360px minmax(0, 1fr); }
+    .st-side { display: grid; order: -1; overflow-y: auto; padding: var(--s3); background: var(--surface); border-inline-end: 1px solid var(--line); }
     .st-device { display: flex; margin-inline-start: var(--s2); }
 }
 @media (min-width: 1000px) { .st-bar [data-a=edit] { display: none; } }   /* במחשב — הפאנל תמיד פתוח בצד */
@@ -285,7 +294,6 @@ body.studio-on main { max-width: none; padding: 0; }
     border-bottom: 1px solid var(--line); background: var(--surface); }
 .wp-head b { flex: 1; }
 .wp-box { flex: 1; min-height: 0; }
-.code-area { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 180px; white-space: pre; overflow-x: auto; }
 .code-area { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; min-height: 180px; white-space: pre; overflow-x: auto; }
 
 /* ===== פרסום והגדרות ===== */
@@ -357,13 +365,21 @@ th.w-c-word { background: var(--bg); z-index: 2; }
 .code-main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .code-ed { min-height: 0; height: 100%; }
 .code-fallback { width: 100%; height: 100%; border: 0; border-radius: 0; resize: none; font: 13px/1.5 ui-monospace, Consolas, monospace; }
-.code-pv { display: none; min-height: 0; border-top: 1px solid var(--line); }
+.code-pv { display: none; min-height: 0; min-width: 0; flex-direction: column; border-top: 1px solid var(--line); }
+.code-pv-bar { flex: none; display: flex; align-items: center; gap: var(--s2); padding: 4px var(--s2); border-bottom: 1px solid var(--line); background: var(--surface); }
+.code-pv-bar b { flex: 1; font-size: .85rem; font-weight: 600; }
+.code-pv-bar .dv-seg { display: none; }
 .code-frame { width: 100%; height: 100%; border: 0; background: #fff; }
 .code-wrap.show-pv .code-main { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-.code-wrap.show-pv .code-pv { display: block; }
+.code-wrap.show-pv .code-pv { display: flex; }
+/* מסך מלא (body.code-on): בלי מסגרת ה-860, העורך והתצוגה ממלאים עד תחתית המסך */
+body.code-on main { max-width: none; padding: 0; }
+body.code-on .code-wrap { border-radius: 0; border-inline: 0; border-bottom: 0; min-height: 360px; }
+body.code-on .code-hint { margin: 0; padding: 6px var(--s3); }
 @media (min-width: 1000px) {
   .code-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .code-pv { display: block; border-top: 0; border-inline-start: 1px solid var(--line); }
+  .code-pv { display: flex; border-top: 0; border-inline-start: 1px solid var(--line); }
+  .code-pv-bar .dv-seg { display: flex; }
   .code-pv-btn { display: none; }
   .code-wrap.show-pv .code-main { grid-template-rows: none; }
 }

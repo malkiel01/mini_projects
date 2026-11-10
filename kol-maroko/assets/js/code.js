@@ -53,6 +53,7 @@ const Code = (() => {
     const edBox = h('div', { class: 'code-ed', dir: 'ltr' });
     const frame = h('iframe', { class: 'code-frame', sandbox: 'allow-scripts', title: 'תצוגה' });
     C.frame = frame;
+    const pv = devicePreview(frame, 'kol-code-device');
     C.root = h('div', { class: 'code-wrap' },
       h('div', { class: 'code-bar' },
         h('div', { class: 'seg code-files', role: 'tablist' }),
@@ -62,10 +63,11 @@ const Code = (() => {
         h('button', { type: 'button', class: 'icon-btn', title: 'המשתנים של התבנית', 'aria-label': 'עזרה', onclick: () => help() }, '❓'),
         h('button', { type: 'button', class: 'icon-btn code-pv-btn', title: 'תצוגה', 'aria-label': 'תצוגה', onclick: () => { C.root.classList.toggle('show-pv'); refresh(); } }, '👁️'),
         h('button', { type: 'button', class: 'icon-btn', title: 'חזרה לתבנית המובנית', 'aria-label': 'חזרה לתבנית המובנית', onclick: () => reset() }, '↩️')),
-      h('div', { class: 'code-main' }, edBox, h('div', { class: 'code-pv' }, frame)));
-    host.replaceChildren(h('p', { class: 'hint' }, 'הקוד של העמוד. ',
+      h('div', { class: 'code-main' }, edBox, h('div', { class: 'code-pv' }, h('div', { class: 'code-pv-bar' }, h('b', {}, '👁️ תצוגה'), pv.seg), pv.canvas)));
+    host.replaceChildren(h('p', { class: 'hint one code-hint' }, 'הקוד של העמוד. ',
       h('b', {}, 'שמירה'), ' — לטיוטה (Ctrl+S); לאתר — בפרסום. באתר: HTML ו-CSS מנוקים (בלי סקריפטים, CSS רק בתוך המילון). JS ששונה — המילון מוצג באתר במסגרת מבודדת, בלי גישה לאתר (גוגל סורק פחות טוב תוכן במסגרת).'), C.root);
-    C.root.style.height = `calc(100dvh - ${Math.round(C.root.getBoundingClientRect().top + scrollY) + 8}px)`;
+    document.body.classList.add('code-on');   // מסך מלא: העורך והתצוגה זה לצד זה, בלי מסגרת ה-860 של שאר הלשוניות
+    C.root.style.height = `calc(100dvh - ${Math.round(C.root.getBoundingClientRect().top + scrollY)}px)`;
     try {
       await loadMonaco();
       if (!C || C.host !== host) return;
@@ -146,7 +148,7 @@ const Code = (() => {
       const esc = s => (s || '').replace(/<\/(script|style)/gi, '<\\/$1');
       C.frame.srcdoc = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">`
         + (r.fonts ? `<link rel="stylesheet" href="${r.fonts}">` : '')
-        + `<style>body{margin:0;font-family:system-ui,Arial,sans-serif}${esc(r.css)}</style></head><body>${r.html}`
+        + `<style>body{margin:0;font-family:system-ui,Arial,sans-serif}${esc(r.css)}</style><style>${FRAME_GUARD}</style></head><body>${r.html}`
         + (r.js ? `<script>${esc(r.js)}<\/script>` : '') + '</body></html>';
     } catch (e) { toast(e.message, true); }
   }
@@ -185,6 +187,7 @@ const Code = (() => {
   function unmount() {
     if (!C) return;
     Object.keys(C.files).filter(isDirty).forEach(p => save(p, true));
+    document.body.classList.remove('code-on');
     C.editor?.dispose();
     Object.values(C.models).forEach(m => m.m?.dispose());
     removeEventListener('keydown', onKey);
