@@ -136,8 +136,9 @@ function apr_portal_otp_send(array $in, array $env): array
         apr_exec('UPDATE portal_otps SET used_at = ? WHERE link_id = ? AND used_at IS NULL', [apr_now(), $l['l_id']]);   // קוד חדש מבטל את הקודם
         return apr_insert('portal_otps', ['link_id' => $l['l_id'], 'code_hash' => apr_portal_otp_hash((int)$l['l_id'], $code), 'created_at' => apr_now(), 'expires_at' => apr_iso(apr_time() + APR_PORTAL_OTP_TTL)]);
     });
+    // מפתח האידמפוטנטיות של המייל כולל חלק אקראי: מזהה שורה ב-portal_otps חוזר אחרי מחיקה (שליחה מחדש), ואז המייל לא היה יוצא
     $status = apr_mail_send('portal_otp', (string)$l['contact_email'], 'קוד אימות — ' . $l['office_name'],
-        "הקוד שלכם: $code\n\nהקוד תקף ל-10 דקות, ומשמש לצפייה במסמכים שהעליתם.\nאם לא ביקשתם קוד — אפשר להתעלם מההודעה.", 'portal-otp:' . $id . ':' . apr_pid(),   // מזהה שורה חוזר אחרי מחיקה — לא מספיק כמפתח (int)$l['office_id'], ['from_name' => $l['office_name']]);
+        "הקוד שלכם: $code\n\nהקוד תקף ל-10 דקות, ומשמש לצפייה במסמכים שהעליתם.\nאם לא ביקשתם קוד — אפשר להתעלם מההודעה.", 'portal-otp:' . $id . ':' . apr_pid(), (int)$l['office_id'], ['from_name' => $l['office_name']]);
     if ($status !== 'sent') apr_fail('portal_otp_unavailable');
     return ['sent' => true, 'minutes' => intdiv(APR_PORTAL_OTP_TTL, 60)];
 }
