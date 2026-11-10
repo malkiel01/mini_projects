@@ -62,7 +62,8 @@ function apr_profile_content_read(?string $json): array
 {
     $c = json_decode((string)$json, true);
     // schema ישן, או מקטע שעוד לא היה: משלימים את החסר; מקטע שאיננו מכירים — מתעלמים ממנו
-    return is_array($c) ? array_intersect_key($c, apr_profile_empty_content()) + apr_profile_empty_content() : apr_profile_empty_content();
+    $empty = apr_profile_empty_content();
+    return ['schema' => APR_PROFILE_SCHEMA] + (is_array($c) ? array_merge($empty, array_intersect_key($c, $empty)) : $empty);
 }
 
 function apr_doc_type_keys(): array
