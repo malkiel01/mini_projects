@@ -10,6 +10,8 @@
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"
+    "manifest.webmanifest",
+    "cron.php",
+    "api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach"
   ]
 }

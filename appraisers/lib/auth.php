@@ -1,21 +1,14 @@
 <?php
 /**
- * מי המשתמש (platform/docs/auth.md, sso.md §0 ו-§4).
+ * חשבונות ו-session (אפיון 01 §5.2). הזהות מגיעה מהמעטפת (lib/platform.php); החשבונות כאן הם של האפליקציה:
  *
- * האפליקציה מחוברת ("gate": true): השער של הפלטפורמה כותב את $_SERVER['PLATFORM_USER'] —
- * {sub, name, email, email_verified, platform_admin, granted} — רק למי שיש לו הרשאה לאפליקציה. זה מקור הזהות היחיד:
- * אין כאן סיסמה, אין מסך כניסה ואין יציאה (יציאה מהפלטפורמה = יציאה מכאן). בלי זהות — אין כניסה.
- *
- * החשבונות כאן הם של האפליקציה, במסד שלה (users), מקושרים לזהות ב-platform_sub:
  *   1. יש חשבון עם ה-sub → זה החשבון.
- *   2. אין, והמייל אומת בפלטפורמה → חשבון שהוזמן באותו מייל ועוד לא קושר מתקשר עכשיו (ונרשם ביומן הפעולות).
- *   3. אחרת → חשבון חדש, פעיל. ההרשאה בפלטפורמה היא האישור; חברות במשרד — עניין נפרד (lib/offices.php).
+ *   2. אין, והמייל אומת במעטפת → חשבון באותו מייל שעוד לא קושר מתקשר עכשיו (user.link).
+ *   3. אחרת → חשבון חדש, פעיל, מיד (user.create). ההרשאה במעטפת היא האישור — אין אישור כפול.
+ *   platform_admin → מדליקים is_sysadmin ו-is_developer אם כבויים: הבעלים מקבל את המסכים שלו בכניסה הראשונה.
  *
- * העוגייה apr_session היא ה-session של האפליקציה עצמה: אסימון אקראי (במסד רק ה-hash), איתו אסימון ה-CSRF והמשרד
- * שהמשתמש עובד בו. session ששייך למשתמש אחר מזה שהשער אומר — לא בשימוש; נפתח חדש.
- *
- * מנהל הפלטפורמה (platform_admin מהשער) הוא הבעלים: כאן הוא גם מנהל הפלטפורמה של האפליקציה וגם המפתח. שני הדגלים
- * מתעדכנים מהשער בכל כניסה — אין דרך להפוך למפתח מתוך האפליקציה.
+ * ה-session: העוגייה apr_session — אסימון אקראי (במסד רק ה-hash), אסימון ה-CSRF והמשרד הפעיל. 30 יום מהשימוש
+ * האחרון. לא session של PHP (בשרת המשותף הוא נמחק אחרי 24 דקות). session ששייך ל-sub אחר — נמחק, ונפתח חדש.
  */
 
 declare(strict_types=1);
@@ -24,96 +17,98 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';
 
 const APR_COOKIE = 'apr_session';
-const APR_SESSION_TTL = 180 * 86400;   // כמו הפלטפורמה — חצי שנה מהשימוש האחרון
+const APR_SESSION_TTL = 30 * 86400;
 
-/** הזהות מהשער, מנוקה. null — אין זהות, או שאין הרשאה לאפליקציה. */
-function apr_identity(?string $raw): ?array
-{
-    $id = json_decode((string)$raw, true);
-    if (!is_array($id) || !is_scalar($id['sub'] ?? null) || !preg_match('/^[0-9]{1,12}$/', (string)$id['sub'])) return null;
-    if (($id['granted'] ?? true) !== true) return null;   // מחובר לפלטפורמה בלי הרשאה לאפליקציה — לא נכנס
-    $email = is_string($id['email'] ?? null) && filter_var($id['email'], FILTER_VALIDATE_EMAIL) ? mb_strtolower($id['email']) : null;
-    return [
-        'sub' => (string)$id['sub'],
-        'name' => mb_substr(trim((string)($id['name'] ?? '')), 0, 120),
-        'email' => $email,
-        'email_verified' => ($id['email_verified'] ?? false) === true,
-        'platform_admin' => ($id['platform_admin'] ?? false) === true,
-    ];
-}
-
-/** החשבון באפליקציה לפי הזהות — מקושר, מתאחד לפי מייל, או נפתח. */
+/** החשבון לפי הזהות — מקושר, מתאחד לפי מייל מאומת, או נפתח. */
 function apr_user_for(array $id): array
 {
-    return apr_tx(function () use ($id) {
-        $now = apr_now();
-        $admin = $id['platform_admin'] ? 1 : 0;
-        $user = apr_row('SELECT * FROM users WHERE platform_sub = ?', [$id['sub']]);
-        if (!$user && $id['email'] !== null && $id['email_verified']) {
-            // איחוד לפי מייל — רק מייל שאומת, ורק חשבון שהוזמן ועוד לא קושר לאף אחד
-            $user = apr_row('SELECT * FROM users WHERE email = ? AND platform_sub IS NULL ORDER BY id LIMIT 1', [$id['email']]);
-            if ($user) {
-                apr_exec('UPDATE users SET platform_sub = ? WHERE id = ?', [$id['sub'], $user['id']]);
-                apr_audit($user, null, 'user.linked', 'user:' . $user['id'], ['by' => 'email']);
-            }
+    try {
+        return apr_tx(fn() => apr_user_resolve($id));
+    } catch (PDOException $e) {
+        // שתי בקשות ראשונות במקביל מאותו משתמש חדש: platform_sub ייחודי — המפסיד קורא מחדש
+        if (!str_contains($e->getMessage(), 'UNIQUE')) throw $e;
+        return apr_tx(fn() => apr_user_resolve($id));
+    }
+}
+
+function apr_user_resolve(array $id): array
+{
+    $now = apr_now();
+    $user = apr_row('SELECT * FROM users WHERE platform_sub = ?', [$id['sub']]);
+    if (!$user && $id['email'] !== null && $id['email_verified']) {
+        $user = apr_row('SELECT * FROM users WHERE email = ? AND platform_sub IS NULL', [$id['email']]);
+        if ($user) {
+            apr_exec('UPDATE users SET platform_sub = ?, email_verified = 1, updated_at = ? WHERE id = ?', [$id['sub'], $now, $user['id']]);
+            apr_audit('user.link', 'user', $user['pid'], ['by' => 'email'], actor: (int)$user['id']);
         }
-        if (!$user) {
-            apr_exec('INSERT INTO users (platform_sub, email, display_name, is_platform_manager, is_developer, created_at, last_login_at)
-                      VALUES (?, ?, ?, ?, ?, ?, ?)', [$id['sub'], $id['email'], $id['name'], $admin, $admin, $now, $now]);
-            $user = apr_row('SELECT * FROM users WHERE platform_sub = ?', [$id['sub']]);
-            apr_audit($user, null, 'user.created', 'user:' . $user['id']);
-            return $user;
-        }
-        // לא כותבים למסד בכל בקשה: רק כשמשהו השתנה, או פעם בשעה
-        $name = $id['name'] !== '' ? $id['name'] : $user['display_name'];
-        $email = $id['email'] ?? $user['email'];
-        $stale = $user['last_login_at'] === null || strtotime($user['last_login_at']) < apr_time() - 3600;
-        if ($stale || $name !== $user['display_name'] || $email !== $user['email']
-            || (int)$user['is_platform_manager'] !== $admin || (int)$user['is_developer'] !== $admin) {
-            apr_exec('UPDATE users SET display_name = ?, email = ?, is_platform_manager = ?, is_developer = ?, last_login_at = ? WHERE id = ?',
-                [$name, $email, $admin, $admin, $now, $user['id']]);
-            $user = apr_row('SELECT * FROM users WHERE id = ?', [$user['id']]);
-        }
-        return $user;
-    });
+    }
+    if (!$user) {
+        // מייל שכבר שייך לחשבון אחר (למשל שני חשבונות מעטפת באותו מייל) — החשבון החדש נפתח בלי מייל
+        $email = $id['email'] !== null && !apr_val('SELECT 1 FROM users WHERE email = ?', [$id['email']]) ? $id['email'] : null;
+        $uid = apr_insert('users', ['pid' => apr_pid(), 'platform_sub' => $id['sub'], 'email' => $email,
+            'email_verified' => $email !== null && $id['email_verified'] ? 1 : 0, 'name' => $id['name'],
+            'last_seen_at' => $now, 'created_at' => $now, 'updated_at' => $now]);
+        $user = apr_row('SELECT * FROM users WHERE id = ?', [$uid]);
+        apr_audit('user.create', 'user', $user['pid'], [], actor: $uid);
+    }
+
+    $set = [];
+    if ($id['name'] !== '' && $id['name'] !== $user['name']) $set['name'] = $id['name'];
+    if ($id['email'] !== null && $id['email'] !== $user['email'] && !apr_val('SELECT 1 FROM users WHERE email = ? AND id <> ?', [$id['email'], $user['id']])) {
+        $set['email'] = $id['email'];
+    }
+    if (($set['email'] ?? $user['email']) === $id['email'] && (int)$user['email_verified'] !== (int)$id['email_verified']) {
+        $set['email_verified'] = (int)$id['email_verified'];
+    }
+    if ($id['platform_admin'] && (!(int)$user['is_sysadmin'] || !(int)$user['is_developer'])) {
+        $set += ['is_sysadmin' => 1, 'is_developer' => 1];
+        apr_audit('user.grant_sysadmin', 'user', $user['pid'], ['by' => 'platform_admin'], actor: (int)$user['id'], kind: 'system');
+    }
+    // לא כותבים למסד בכל בקשה: רק כשמשהו השתנה, או פעם ב-10 דקות
+    if ($set || $user['last_seen_at'] === null || strtotime($user['last_seen_at']) < apr_time() - 600) {
+        $set += ['last_seen_at' => $now];
+        if (count($set) > 1) $set['updated_at'] = $now;
+        apr_exec('UPDATE users SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($set))) . ' WHERE id = ?', [...array_values($set), $user['id']]);
+        $user = apr_row('SELECT * FROM users WHERE id = ?', [$user['id']]);
+    }
+    return $user;
 }
 
 /**
- * ה-session של הבקשה. מחזיר ['token_hash', 'csrf', 'office_id', 'new_token' => אסימון לעוגייה, אם צריך לכתוב אותה].
+ * ה-session של הבקשה: השורה מהמסד, ועוד 'new_token' — אסימון לעוגייה, כשצריך לכתוב אותה.
  */
-function apr_session_for(array $user, string $cookie): array
+function apr_session_for(array $user, string $cookie, string $ua = ''): array
 {
     $now = apr_time();
-    if (preg_match('/^[a-f0-9]{64}$/', $cookie)) {
+    $valid = preg_match('/^[a-f0-9]{64}$/', $cookie) === 1;
+    if ($valid) {
         $s = apr_row('SELECT * FROM sessions WHERE token_hash = ?', [hash('sha256', $cookie)]);
-        if ($s && (int)$s['user_id'] === (int)$user['id'] && (int)$s['last_seen'] > $now - APR_SESSION_TTL) {
-            $refresh = (int)$s['last_seen'] < $now - 3600;
-            if ($refresh) apr_exec('UPDATE sessions SET last_seen = ? WHERE token_hash = ?', [$now, $s['token_hash']]);
-            return ['token_hash' => $s['token_hash'], 'csrf' => $s['csrf'], 'office_id' => $s['office_id'] === null ? null : (int)$s['office_id'],
-                'new_token' => $refresh ? $cookie : null];
+        if ($s && $s['platform_sub'] === $user['platform_sub'] && (int)$s['user_id'] === (int)$user['id'] && $s['expires_at'] > apr_iso($now)) {
+            $refresh = strtotime($s['last_used_at']) < $now - 3600;
+            if ($refresh) {
+                apr_exec('UPDATE sessions SET last_used_at = ?, expires_at = ? WHERE id = ?', [apr_iso($now), apr_iso($now + APR_SESSION_TTL), $s['id']]);
+            }
+            return $s + ['new_token' => $refresh ? $cookie : null];
         }
+        // פג, או שייך ל-sub אחר (מישהו אחר נכנס למעטפת באותו דפדפן) — נמחק; המשרד הפעיל שלו לא עובר
+        if ($s) apr_exec('DELETE FROM sessions WHERE id = ?', [$s['id']]);
     }
     $token = bin2hex(random_bytes(32));
-    $csrf = bin2hex(random_bytes(32));
-    apr_exec('INSERT INTO sessions (token_hash, user_id, csrf, created_at, last_seen) VALUES (?, ?, ?, ?, ?)',
-        [hash('sha256', $token), $user['id'], $csrf, apr_now(), $now]);
-    if (random_int(1, 50) === 1) apr_exec('DELETE FROM sessions WHERE last_seen < ?', [$now - APR_SESSION_TTL]);
-    return ['token_hash' => hash('sha256', $token), 'csrf' => $csrf, 'office_id' => null, 'new_token' => $token];
+    // כניסה: המשרד הפעיל האחרון של המשתמש (מ-session אחר שלו); אם אינו זמין — ייבחר הראשון הזמין (lib/access.php)
+    $last = apr_val('SELECT active_office_id FROM sessions WHERE user_id = ? AND active_office_id IS NOT NULL ORDER BY last_used_at DESC, id DESC LIMIT 1', [$user['id']]);
+    $sid = apr_insert('sessions', ['user_id' => $user['id'], 'token_hash' => hash('sha256', $token), 'csrf' => bin2hex(random_bytes(32)),
+        'active_office_id' => $last ?: null, 'platform_sub' => $user['platform_sub'], 'ua' => mb_substr($ua, 0, 300),
+        'created_at' => apr_iso($now), 'last_used_at' => apr_iso($now), 'expires_at' => apr_iso($now + APR_SESSION_TTL)]);
+    return apr_row('SELECT * FROM sessions WHERE id = ?', [$sid]) + ['new_token' => $token];
 }
 
-/** אין זהות מהשער (למשל יצאו מהפלטפורמה): ה-session של האפליקציה נמחק. */
-function apr_session_drop(string $cookie): void
-{
-    if (preg_match('/^[a-f0-9]{64}$/', $cookie)) apr_exec('DELETE FROM sessions WHERE token_hash = ?', [hash('sha256', $cookie)]);
-}
-
-function apr_set_cookie(string $token, bool $clear = false): void
+function apr_set_cookie(string $token): void
 {
     if (headers_sent()) return;
     $path = rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/')), '/') . '/';
-    setcookie(APR_COOKIE, $clear ? '' : $token, [
-        'expires' => $clear ? 1 : time() + APR_SESSION_TTL,
-        'path' => $path,
+    setcookie(APR_COOKIE, $token, [
+        'expires' => time() + APR_SESSION_TTL,
+        'path' => $path,                        // תיקיית האפליקציה בלבד
         'secure' => !defined('APR_DEV'),        // בפיתוח מקומי (http) — בלי Secure
         'httponly' => true,
         'samesite' => 'Lax',
