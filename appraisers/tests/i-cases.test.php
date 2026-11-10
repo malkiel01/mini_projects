@@ -47,8 +47,8 @@ function content(array $more = []): array
 function publish(string $as, string $pid, array $content, string $note = ''): int
 {
     [, $d] = call('POST', 'profile-draft-open', ['profile' => $pid], $as);
-    $s = call('POST', 'profile-draft-save', ['profile' => $pid, 'content' => $content, 'updated_at' => $d['draft']['updated_at']], $as);
-    $r = call('POST', 'profile-publish', ['profile' => $pid, 'note' => $note], $as);
+    $s = call('POST', 'profile-draft-save', ['profile' => $pid, 'content' => $content, 'revision' => $d['draft']['revision']], $as);
+    $r = call('POST', 'profile-publish', ['profile' => $pid, 'note' => $note, 'revision' => $s[1]['revision'] ?? ''], $as);
     if ($r[0] !== 200) throw new RuntimeException('publish: ' . json_encode([$s[1], $r[1]], JSON_UNESCAPED_UNICODE));
     return $r[1]['number'];
 }
