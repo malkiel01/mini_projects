@@ -402,10 +402,11 @@ apr_exec("UPDATE users SET status = 'active' WHERE pid = ?", [$danaPid]);
 // 🟡4 forgot: רק למי שקבע סיסמה, ורק למייל מאומת
 $GLOBALS['t_ip'] = '198.51.100.23';
 $m0 = count($GLOBALS['t_mail']);
+$r0 = (int)apr_val('SELECT COUNT(*) FROM password_resets');   // ספירה לפני ואחרי — לא לפי שעה, שתלויה בגבול של שנייה
 call('POST', 'forgot', ['email' => 'owner@example.com']);                       // לא קבע סיסמה
 apr_exec("UPDATE users SET email_verified = 0 WHERE pid = ?", [$danaPid]);
 call('POST', 'forgot', ['email' => 'dana@example.com']);                        // מייל לא מאומת
-eq([count($GLOBALS['t_mail']) - $m0, (int)apr_val("SELECT COUNT(*) FROM password_resets WHERE created_at >= ?", [apr_now()])], [0, 0], '🟡4 forgot: בלי סיסמה או עם מייל לא מאומת — אין קישור');
+eq([count($GLOBALS['t_mail']) - $m0, (int)apr_val('SELECT COUNT(*) FROM password_resets') - $r0], [0, 0], '🟡4 forgot: בלי סיסמה או עם מייל לא מאומת — אין קישור');
 apr_exec("UPDATE users SET email_verified = 1 WHERE pid = ?", [$danaPid]);
 // (ד) ביטול שאר קישורי האיפוס
 $GLOBALS['t_ip'] = '198.51.100.24';
