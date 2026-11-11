@@ -80,6 +80,7 @@
 - `git push --force` חסום לכל הצ'אטים: אחרי מיזוג — `git merge origin/main` ודחיפה רגילה.
 - הודעה לצ'אט עסוק מגיעה רק בסוף התור שלו; דחוף → `priority: now`.
 - רישום מחוץ ל-`appraisers/` (DevLoop) נעשה: `devloop/apps.json`, `.devloop.json` (#1368).
+- **השער מזריק `platform/assets/diag.js` לכל דף PHP של האפליקציה, גם ציבורי** (`pwa.php` `inject_html`); דף שמכיל את המחרוזת — מדולג. כל דף ציבורי חדש: לבדוק דרך `gate-prepend.php` האמיתי. שאלה לבעלים: שהפלטפורמה תדלג על דפים ציבוריים.
 - **`.user.ini` בתוך `appraisers/` אסור** — שייך לשער (`platform/build-gate.php`); קובץ כזה מפיל את הפריסה של כל הריפו. לבדוק בכל ביקורת: `ls -a appraisers | grep user.ini`.
 - מיגרציה שב-main לא משתנה (001–003); 004 תינעל כש-#1379 יתמזג.
 - השעון: משימה מתוזמנת שעתית לתוך צ'אט הבקרה הפעיל (שם: "שמאות · שעון הבקרה (2)", `trig_01BuCgfuTEQULcEcGkwdoSyh`, בדקה 47).
