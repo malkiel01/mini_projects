@@ -10,7 +10,7 @@
   "restricted": true,
   "version": "0.14",
   "public": [
-    "api.php?action=embed_key|media",
+    "api.php?action=embed_key|media|devapi-feed|devapi-comment|devapi-file|devapi-attach",
     "agent.php"
   ]
 }
