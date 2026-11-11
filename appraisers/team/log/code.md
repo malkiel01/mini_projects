@@ -125,3 +125,7 @@
 - 2026-11-11 12:10 UTC · **קוד (8)** · פרוסה 09 (מקורות, בדיקות, תכנון והיתרים — מסלול ידני), גרסה 0.10, PR #1425. מיגרציה 010 (`sources`, `source_checks`,
   `planning_items`, 13 מקורות), `lib/sources.php` (19 פעולות), `screens/sources.js`, מקטע "מקורות" בפרופיל, `source.ref` בנתון. `n-sources`: 59 בדיקות;
   41 מוטציות — 37 נתפסות (השאר: הגנה כפולה — `filter_var` מעל ה-regex, `apr_case_writable` מעל `apr_case_still_open`; ואחת קורסת). המסכים הורצו ב-Chromium מקומי.
+- 2026-11-11 12:45 UTC · **קוד (8)** · פרוסה 09, סבב 2 (ביקורת `team/reviews/09-sources.md`). 🔴1: האישור נגזר מכל היסטוריית המקור בתיק (`apr_src_pending_approval`) —
+  record, plan ו-`apr_sources_on_identifier`; שמאי שפועל בעצמו — השורה נושאת `approved_by`. 🟡2: `source-file-upload` דרך `apr_file_ingest`, עם שיוך לדרישה (נבדק גם ב-HTTP
+  אמיתי, Chromium). 🟡3: `disclaimer` ב-`case-activity`. 🟡4: `PRAGMA recursive_triggers = ON` — כל 16 הקבצים ירוקים, שום טריגר קיים לא נשבר. 🟡5: `value_corrected`.
+  🟡6: בדיקה מאומתת מתיק אחר. `n-sources`: 73 בדיקות; 13 מוטציות על התיקונים — כולן נתפסות.

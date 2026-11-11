@@ -115,9 +115,10 @@ async function viewCaseSource(pid, key) {
 /** "רישום התוצאה". מזהה פעולה (op) נוצר פעם אחת לגיליון — שליחה כפולה היא בדיקה אחת. */
 async function checkSheet(pid, x, reload) {
     const s = x.source, op = 'chk-' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
-    let files = [];
+    let files = [], reqs = [];
     if (s.license.store !== 'no') {
-        const docs = await api('case-docs', { params: { case: pid } });
+        const docs = await api('case-docs', { params: { case: pid } }).catch(() => ({ requirements: [], unassigned: [] }));
+        reqs = docs.requirements.filter(r => !r.split);
         files = [...docs.requirements.flatMap(r => r.files.map(l => l.file)), ...docs.unassigned].filter((f, i, all) => !f.deleted && all.findIndex(o => o.pid === f.pid) === i);
     }
     sheet(`${S.record}: ${s.name}`, `<label class="f"><span>${S.result} *</span><select name="status" required><option value="">${S.pickResult}</option>${x.results.map(r => cOpt(r, S.statuses[r], '')).join('')}</select></label>
@@ -127,11 +128,16 @@ async function checkSheet(pid, x, reload) {
         <label class="f"><span>${S.summary}</span><textarea name="result_summary" maxlength="2000" rows="3"></textarea></label>
         <label class="f"><span>${S.link}</span><input name="link_url" type="url" inputmode="url" dir="ltr" maxlength="500" autocomplete="off"></label><p class="hint">${S.linkHint}</p>
         ${s.license.store === 'no' ? `<p class="banner" role="note">${esc(s.store_note)}</p>` : `<label class="f"><span>${S.file}</span><select name="file"><option value="">${S.noFile}</option>${files.map(f => cOpt(f.pid, f.name, '')).join('')}</select></label>
-            <p class="hint">${S.fileHint}${s.store_note ? ' ' + esc(s.store_note) : ''}</p>`}
+            <label class="f"><span>${S.upload}</span><input type="file" name="upload"></label>
+            <label class="f"><span>${S.toRequirement}</span><select name="requirement"><option value="">${S.noRequirement}</option>${reqs.map(r => cOpt(r.pid, r.title, '')).join('')}</select></label>
+            <p class="hint">${s.store_note ? esc(s.store_note) : ''}</p>`}
         <label class="f"><span>${S.limitation}</span><input name="limitation" maxlength="1000" autocomplete="off"></label>
         <div class="fields two"><label class="f"><span>${S.costAmount}</span><input name="cost" inputmode="decimal" dir="ltr" maxlength="10" autocomplete="off"></label>
             <label class="f"><span>${S.costNote}</span><input name="cost_note" maxlength="300" autocomplete="off"></label></div><p class="hint">${S.costHint}</p>`, async (v, dlg) => {
         const cost = sCostIn(v.cost);
+        // מסמך חדש עובר קודם את צינור הקליטה של התיק (06) — ורק אז מצורף לבדיקה. אותו מזהה פעולה: ניסיון חוזר אינו מעלה פעמיים
+        const up = $('[name="upload"]', dlg)?.files?.[0];
+        if (up) { const u = await apiUpload({ action: 'source-file-upload', case: pid, source: s.key, name: up.name, key: op, ...(v.requirement ? { requirement: v.requirement } : {}) }, up); v.file = u.file || u.duplicate?.file; }   // אותו קובץ כבר בתיק — מצרפים את הקיים
         const r = await api('source-check-record', { body: { case: pid, source: s.key, status: v.status, identifiers: $$('[name="ident"]:checked', dlg).map(i => i.value), query_text: v.query_text,
             coverage_note: v.coverage_note, result_summary: v.result_summary, link_url: v.link_url, file: v.file || null, limitation: v.limitation, cost_amount: cost, cost_note: v.cost_note, op } });
         toast(r.check.disclaimer || T.saved);

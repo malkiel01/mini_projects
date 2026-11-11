@@ -483,7 +483,7 @@ T.s = {
     by: (n, d) => `${n || 'המערכת'} · ${d}`, approve: 'אישור הבדיקה', approved: (n, d) => `אושר בידי ${n} · ${d}`, verify: 'נבדק ואומת', verifyAsk: 'לסמן את הבדיקה "נבדק ואומת"? הסימון נרשם על שמכם ואינו מתבטל.',
     verified: (n, d) => `אומת בידי ${n} · ${d}`, lastVerified: 'בדיקה מאומתת קודמת', checkTitle: 'בדיקה', derived: 'נגזרו מהבדיקה', addFact: 'נתון מהבדיקה', addFactHint: 'בלשונית "נתונים" — בוחרים מאפיין, ובמקור: "מבדיקת מקור".',
     addItem: 'פריט', localityHint: 'הוסיפו יישוב כדי לראות את מקורות הרשות המקומית', spendApproval: 'בפרופיל: הוצאה על מקור דורשת אישור של שמאי.', fileGone: 'המסמך נמחק', fileRestricted: 'מסמך מצורף',
-    queried: 'נבדק לפי', checksN: n => `${n} בדיקות`,
+    queried: 'נבדק לפי', valueCorrected: 'הערך תוקן אחרי הבדיקה', upload: 'או: העלאת מסמך חדש', toRequirement: 'לשייך לדרישה', noRequirement: '— בלי שיוך —', checksN: n => `${n} בדיקות`,
     kinds: { plan: 'תוכנית', application: 'בקשה להיתר', decision: 'החלטה', permit: 'היתר שהונפק', building_doc: 'מסמך מתיק הבניין', enforcement: 'רישום פיקוח' },
     kindCls: { application: 'warn', permit: 'ok', enforcement: 'bad' }, kind: 'סוג', kindFixed: 'הסוג נקבע ביצירה ואינו משתנה. בקשה אינה היתר — היתר נרשם כפריט חדש, ואפשר לקשר אותו לבקשה.',
     title: 'כותרת', refNumber: 'מספר / מזהה במקור', statusReported: 'הסטטוס כפי שדווח במקור', statusReportedHint: 'בלשון המקור. המערכת אינה מתרגמת אותו למצב משלה.', itemDate: 'תאריך', source: 'מקור', noSource: '— בלי מקור —',
@@ -502,7 +502,7 @@ T.c.tabs.sources = T.s.tab;
 T.p.editTabs.sources = 'מקורות';
 Object.assign(T.auditIcon, { source_check: '🔎', planning_item: '🏗️', source: '🗂️' });
 Object.assign(T.audit, {
-    'source.plan': r => `בדיקת מקור: ${T.s.statuses[r.meta.status] || ''}`, 'source.check': r => `נרשמה תוצאה של בדיקת מקור: ${T.s.statuses[r.meta.status] || ''}`,
+    'source.plan': r => `בדיקת מקור: ${T.s.statuses[r.meta.status] || ''}`, 'source.check': r => `נרשמה תוצאה של בדיקת מקור: ${T.s.statuses[r.meta.status] || ''}${r.disclaimer ? ' — ' + r.disclaimer : ''}`,
     'source.verify': () => 'בדיקת מקור סומנה "נבדק ואומת"', 'source.cost': () => 'נרשמה הוצאה על בדיקת מקור',
     'planning.add': r => `נוסף פריט תכנון: ${T.s.kinds[r.meta.kind] || ''}`, 'planning.update': () => 'פריט תכנון עודכן', 'planning.applicability': r => `תחולה: ${T.s.applicabilities[r.meta.to] || ''}`,
     'planning.delete': () => 'פריט תכנון נמחק', 'planning.task': () => 'נפתחה משימת "אי התאמה אפשרית"', 'source.create': () => 'מקור נוסף לקטלוג', 'source.update': () => 'כרטיס מקור עודכן',

@@ -34,7 +34,7 @@
  *                  · fact-state {fact, rev, do, reason? / note?} · fact-delete {fact, rev, reason} · conflict-resolve {conflict, rev,
  *                  purpose, fact, reasoning} · conflict-dismiss {conflict, rev, reasoning, fixes?[]} · sys-attributes · sys-attribute-save
  * מקורות (09):      sources · case-sources {case} · case-source {case, source} · source-check {check} · source-check-plan {case, source,
- *                  spend?} · source-check-record {case, source, status, identifiers[], query_text?, coverage_note, result_summary,
+ *                  spend?} · source-file-upload (גוף גולמי; בכתובת: case, source, requirement?, name, key) · source-check-record {case, source, status, identifiers[], query_text?, coverage_note, result_summary,
  *                  link_url?, file?, limitation?, cost_amount?, cost_note?, op?} · source-check-approve {check} · source-check-verify
  *                  {check} · source-check-cost {check, cost_amount, cost_note?} · case-planning {case} · planning-item {item}
  *                  · planning-add {case, kind, title, …} · planning-update {item, …בלי kind} · planning-applicability {item,
@@ -254,6 +254,7 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'case-source' => apr_case_source($ctx, $p),
         'source-check' => apr_source_check_view($ctx, $p),
         'source-check-plan' => apr_source_check_plan($ctx, $p),
+        'source-file-upload' => apr_source_file_upload($ctx, $p, $env),
         'source-check-record' => apr_source_check_record($ctx, $p),
         'source-check-approve' => apr_source_check_approve($ctx, $p),
         'source-check-verify' => apr_source_check_verify($ctx, $p),

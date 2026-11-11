@@ -480,6 +480,112 @@ eq([array_values(array_filter($params, fn($p) => preg_match($SECRET, $p))), coun
 eq([$count('source_checks', "performed_by_kind = 'connector'"), $count('sources', "access_mode = 'connector' OR feasibility = 'approved'")], [0, 0], 'אחרי כל הבדיקות: אף בדיקה לא נרשמה כ"connector", ואף מקור לא הפך למחובר');
 eq($warnings, [], 'בלי אזהרות PHP');
 
+// ══ סבב 2 (team/reviews/09-sources.md) ══
+// 🔴1: בקשת אישור שלא נענתה חוסמת — לפי כל היסטוריית המקור בתיק, לא לפי השורה האחרונה
+$CA = $newCase(['kind' => 'other', 'value_text' => 'מגרש בלי מזהה']);
+$ask = fn() => apr_rows("SELECT k.status, k.approved_by, k.performed_by FROM source_checks k JOIN sources s ON s.id = k.source_id WHERE k.case_id = ? AND s.key = 'tabu_extract' ORDER BY k.id", [$caseId($CA)]);
+$found = ['query_text' => 'גוש 1', 'result_summary' => 'נסח'];
+$r1 = $rec($tal, $CA, 'tabu_extract', 'found', $found);
+$before = $dumpAll();
+$p1 = call('POST', 'source-check-plan', ['case' => $CA, 'source' => 'tabu_extract'], $tal);
+$r2 = $rec($tal, $CA, 'tabu_extract', 'found', $found);
+$r2b = $rec($noa, $CA, 'tabu_extract', 'found', $found);
+eq([array_column($ask(), 'status'), code($r1), $p1[0], $p1[1]['check']['status'] ?? null, code($r2), code($r2b), $dumpAll() === $before],
+    [['needs_approval'], 'check_needs_approval', 200, 'needs_approval', 'check_needs_approval', 'check_needs_approval', true],
+    '🔴1 הרצף המדויק: needs_approval (ask, מזהה שאינו מספיק) ← record נדחה ← plan של עובדת משרד אינו מוסיף שורה (מוחזרת הבקשה הקיימת) ← record עדיין נדחה; המסד לא השתנה');
+call('POST', 'case-identifier-add', ['case' => $CA, 'kind' => 'parcel', 'gush' => '1', 'helka' => '2'], $avi);
+$p2 = call('POST', 'source-check-plan', ['case' => $CA, 'source' => 'tabu_extract'], $tal);
+eq([array_column($ask(), 'status'), $p2[1]['check']['status'] ?? null, code($rec($tal, $CA, 'tabu_extract', 'found', $found)), count($tasksOf($CA, 'source-check:tabu_extract')), array_column($tasksOf($CA, 'source-approve:tabu_extract'), 'status')],
+    [['needs_approval'], 'needs_approval', 'check_needs_approval', 0, ['open']], '🔴1 גם אחרי שנוסף מזהה מספיק: הבקשה אינה הופכת ל"מתוכנן" לבד (apr_sources_on_identifier), plan אינו מחליף אותה, ו-record נדחה');
+// שורה שנדחסה ליומן אחרי הבקשה (כמו בגרסה הקודמת) אינה מבטלת אותה
+apr_exec("INSERT INTO source_checks (pid, office_id, case_id, source_id, performed_by_kind, performed_by, performed_at, status, created_at, updated_at)
+    SELECT 'bbbbbbbbbbbbbbbb', office_id, case_id, source_id, 'user', (SELECT id FROM users WHERE pid = ?), 'x', 'awaiting_identification', 'x', 'x' FROM source_checks WHERE case_id = ? AND status = 'needs_approval'", [$talPid, $caseId($CA)]);
+eq([array_column($ask(), 'status'), code($rec($tal, $CA, 'tabu_extract', 'found', $found)), call('POST', 'source-check-plan', ['case' => $CA, 'source' => 'tabu_extract'], $tal)[1]['check']['status'], count($ask())],
+    [['needs_approval', 'awaiting_identification'], 'check_needs_approval', 'needs_approval', 2], '🔴1 גם כשהשורה האחרונה אינה needs_approval — הבקשה שלא נענתה עדיין חוסמת');
+$CA3 = $newCase(['kind' => 'other', 'value_text' => 'מגרש שלישי']);
+apr_exec("INSERT INTO source_checks (pid, office_id, case_id, source_id, performed_by_kind, performed_by, performed_at, status, created_at, updated_at)
+    SELECT 'cccccccccccccccc', office_id, case_id, source_id, 'user', (SELECT id FROM users WHERE pid = ?), 'x', 'awaiting_identification', 'x', 'x' FROM source_checks WHERE case_id = ? AND status = 'needs_approval'", [$talPid, $caseId($CA3)]);
+call('POST', 'case-identifier-add', ['case' => $CA3, 'kind' => 'parcel', 'gush' => '7', 'helka' => '8'], $avi);
+eq([apr_val("SELECT GROUP_CONCAT(k.status) FROM source_checks k JOIN sources s ON s.id = k.source_id WHERE k.case_id = ? AND s.key = 'tabu_extract'", [$caseId($CA3)]), count($tasksOf($CA3, 'source-check:tabu_extract')),
+    apr_val("SELECT k.status FROM source_checks k JOIN sources s ON s.id = k.source_id WHERE k.case_id = ? AND s.key = 'xplan' ORDER BY k.id DESC LIMIT 1", [$caseId($CA3)])],
+    ['needs_approval,awaiting_identification', 0, 'planned'], '🔴1 מקור ש"ממתין לזיהוי" אבל יש לו בקשת אישור פתוחה אינו הופך ל-planned כשנוסף מזהה (בלי מאשר); מקור בלי בקשה כזו — כן');
+$askPid = apr_val("SELECT pid FROM source_checks WHERE case_id = ? AND status = 'needs_approval'", [$caseId($CA)]);
+$okA = call('POST', 'source-check-approve', ['check' => $askPid], $dana);
+$r3 = $rec($tal, $CA, 'tabu_extract', 'found', $found);
+eq([$okA[0], $okA[1]['check']['status'] ?? null, $okA[1]['check']['approved_by'] ?? null, $r3[0], code(call('POST', 'source-check-approve', ['check' => $askPid], $dana))], [200, 'planned', 'דנה', 200, 'check_state'],
+    '🔴1 אחרי אישור של שמאית (גם כשהבקשה אינה השורה האחרונה) — הרישום מתקבל; אישור שני נדחה');
+$CA2 = $newCase(['kind' => 'other', 'value_text' => 'מגרש אחר']);
+$rj = $rec($dana, $CA2, 'tabu_extract', 'found', $found);
+$rowJ = apr_row('SELECT * FROM source_checks WHERE pid = ?', [$rj[1]['check']['pid'] ?? '']);
+eq([$rj[0], $rj[1]['check']['approved_by'] ?? null, $rowJ['approved_at'] ?? null, array_column($tasksOf($CA2, 'source-approve:tabu_extract'), 'status'), $rec($tal, $CA2, 'tabu_extract', 'needs_clarification', $found)[0]],
+    [200, 'דנה', apr_now(), ['done'], 200], '🔴1 שמאית שרושמת בעצמה על מקור שממתין לאישור: השורה נושאת approved_by — האישור רשום ביומן, ולא משתמע');
+
+// 🟡2: מסמך מצורף ברישום התוצאה — דרך צינור הקליטה של 06, עם שיוך לדרישה
+$upSrc = function (string $as, string $case, string $source, string $body, array $q = []) {
+    $tmp = tempnam(apr_upload_tmp_dir(), 'up');
+    file_put_contents($tmp, $body);
+    return call('POST', 'source-file-upload', $q + ['case' => $case, 'source' => $source, 'name' => 'nesach.pdf'], $as, [], ['env' => ['upload' => $tmp]]);
+};
+$pdfBody = fn(string $m) => "%PDF-1.4\n%$m\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n";
+$reqPid = apr_val('SELECT pid FROM requirements WHERE case_id = ? ORDER BY id LIMIT 1', [$caseId($CA)]);
+$u1 = $upSrc($tal, $CA, 'tabu_extract', $pdfBody('src-one'), ['requirement' => $reqPid, 'key' => 'up-00000001']);
+$u1again = $upSrc($tal, $CA, 'tabu_extract', $pdfBody('src-one'), ['requirement' => $reqPid, 'key' => 'up-00000001']);
+$frowU = apr_row('SELECT * FROM files WHERE pid = ?', [$u1[1]['file'] ?? '']);
+$withFile = $rec($tal, $CA, 'tabu_extract', 'found', $found + ['file' => $u1[1]['file'] ?? '']);
+eq([$u1[0], (int)($frowU['case_id'] ?? 0) === $caseId($CA), $frowU['mime'] ?? null, $u1again[1]['file'] ?? null, $count('requirement_files', 'file_id = ?', [$frowU['id'] ?? 0]),
+    apr_val('SELECT status FROM requirements WHERE pid = ?', [$reqPid]), $withFile[1]['check']['file']['pid'] ?? null, $count('audit_log', "action LIKE 'file.%' AND entity_pid = ?", [$u1[1]['file'] ?? '']) > 0],
+    [200, true, 'application/pdf', $u1[1]['file'] ?? 'x', 1, 'received', $u1[1]['file'] ?? 'x', true],
+    '🟡2 מסמך שמועלה מתוך "רישום התוצאה" עובר את צינור הקליטה של 06 (סוג לפי התוכן, יומן, מזהה פעולה), משויך לדרישה — והדרישה עוברת ל"התקבל" — ומצורף לבדיקה');
+$filesBefore = $count('files');
+$before = $dumpAll();
+$reads = 0;
+$noRead = ['env' => ['upload_reader' => function () use (&$reads) { $reads++; return ['upload_error' => 'file_missing']; }]];
+eq([code($upSrc($tal, $CA, 'govmap', $pdfBody('no-store'))), code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'govmap', 'name' => 'x.pdf'], $tal, [], $noRead)),
+    code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'tabu_extract', 'name' => 'x.pdf'], $ron, [], $noRead)), code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'tabu_extract', 'name' => 'x.pdf'], $gil, [], $noRead)),
+    code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'tabu_extract', 'name' => 'x.pdf'], $boaz, [], $noRead)), code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'planning_info', 'name' => 'x.pdf'], $tal, [], $noRead)),
+    code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'no_such', 'name' => 'x.pdf'], $tal, [], $noRead)),
+    code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'tabu_extract', 'name' => 'x.pdf', 'requirement' => apr_val('SELECT pid FROM requirements WHERE case_id = ? LIMIT 1', [$caseId($CB)])], $tal, [], $noRead)),
+    code($upSrc($tal, $CA, 'tabu_extract', '<html><script>alert(1)</script></html>')), $reads, $count('files') === $filesBefore, $dumpAll() === $before],
+    ['source_store_forbidden', 'source_store_forbidden', 'forbidden', 'not_found', 'not_found', 'source_hidden', 'not_found', 'not_found', 'file_type', 0, true, true],
+    '🟡2 / 09-B4 ההעלאה נדחית בשרת **לפני שהגוף נקרא**: מקור עם license.store = no, צופה (403), מי שאינו בתיק / משרד אחר (404), מקור מוסתר, מקור שלא קיים, דרישה של תיק אחר; קובץ שאינו מסוג מותר נדחה בצינור — ושום קובץ לא נשמר');
+call('POST', 'case-member-update', ['case' => $CA, 'user' => $yaelPid, 'perms' => ['sources' => true, 'documents' => false]], $avi);
+eq([code(call('POST', 'source-file-upload', ['case' => $CA, 'source' => 'tabu_extract', 'name' => 'x.pdf', 'requirement' => $reqPid], $yael, [], $noRead)), $upSrc($yael, $CA, 'tabu_extract', $pdfBody('no-req'))[0]], ['forbidden', 200],
+    '🟡2 שיוך לדרישה דורש גם documents; בלי שיוך — sources מספיק');
+
+// 🟡3: יומן הפעילות נושא את ההסתייגות
+$act = call('GET', 'case-activity', [], $ron, ['case' => $C])[1]['rows'];
+$srcRows = array_values(array_filter($act, fn($r) => $r['entity_type'] === 'source_check'));
+$missing = array_values(array_filter($srcRows, fn($r) => !array_key_exists('disclaimer', $r) || $r['disclaimer'] !== (APR_SRC_DISCLAIMERS[((array)$r['meta'])['status'] ?? ''] ?? null)));
+eq([$missing, count(array_filter($srcRows, fn($r) => $r['disclaimer'] === APR_SRC_DISCLAIMERS['not_found'])) >= 1, count(array_filter($srcRows, fn($r) => $r['disclaimer'] === APR_SRC_DISCLAIMERS['unavailable'])) >= 1,
+    count(array_filter($act, fn($r) => $r['entity_type'] !== 'source_check' && array_key_exists('disclaimer', $r)))], [[], true, true, 0],
+    '🟡3 / 09-A2 גם ב-case-activity: כל שורה של בדיקה במצב not_found / unavailable נושאת את נוסח ההסתייגות (ושורה במצב אחר — null)');
+
+// 🟡4: INSERT OR REPLACE אינו עוקף את "שורה אינה נמחקת" (PRAGMA recursive_triggers)
+$nfR = apr_row("SELECT * FROM source_checks WHERE status = 'not_found' ORDER BY id LIMIT 1");
+$apR = apr_row("SELECT * FROM planning_items WHERE kind = 'application' ORDER BY id LIMIT 1");
+$fcR = apr_row('SELECT * FROM facts ORDER BY id LIMIT 1');
+$replace = fn(string $t, array $row, array $set) => $raises("INSERT OR REPLACE INTO $t (" . implode(', ', array_keys($set + $row)) . ') VALUES (' . implode(', ', array_fill(0, count($row), '?')) . ')', array_values($set + $row));
+eq([(int)apr_val('PRAGMA recursive_triggers'), $replace('source_checks', $nfR, ['status' => 'found', 'result_summary' => 'x']), $replace('planning_items', $apR, ['kind' => 'permit']),
+    $replace('facts', $fcR, ['value_num' => 1]), $raises('REPLACE INTO sources (id, pid, key, name, owner) SELECT id, pid, key, name, owner FROM sources LIMIT 1'),
+    apr_row('SELECT * FROM source_checks WHERE id = ?', [$nfR['id']]) === $nfR, apr_row('SELECT * FROM planning_items WHERE id = ?', [$apR['id']]) === $apR, apr_row('SELECT * FROM facts WHERE id = ?', [$fcR['id']]) === $fcR],
+    [1, true, true, true, true, true, true, true], '🟡4 INSERT OR REPLACE ב-SQL ישיר נחסם: not_found אינו נכתב מחדש כ-found, application אינו הופך ל-permit, ונתון אינו נדרס (recursive_triggers דולק בחיבור)');
+
+// 🟡5: נתון שמצטט בדיקה מאומתת ותוקן — המקור מציין שהערך תוקן
+$CF = $newCase();
+$kf = $rec($tal, $CF, 'govmap', 'found', ['query_text' => 'גוש 6158', 'result_summary' => 'אותר', 'link_url' => 'https://www.govmap.gov.il/']);
+call('POST', 'source-check-verify', ['check' => $kf[1]['check']['pid']], $dana);
+$f5 = $fadd($tal, $CF, $kf[1]['check']['pid']);
+$src0 = $f5[1]['fact']['source'];
+$fix = call('POST', 'fact-correct', ['fact' => $f5[1]['fact']['pid'], 'rev' => $f5[1]['fact']['rev'], 'value' => 5], $tal);
+$src1 = call('GET', 'fact', [], $ron, ['fact' => $f5[1]['fact']['pid']])[1]['fact']['source'];
+eq([$src0['check_status'], $src0['value_corrected'], $fix[0], $src1['check_status'], $src1['value_corrected'], str_contains((string)file_get_contents(__DIR__ . '/../assets/js/screens/facts.js'), 's.value_corrected ?')],
+    ['verified', false, 200, 'verified', true, true], '🟡5 נתון שמצטט בדיקה מאומתת ותוקן אחר כך: המקור נושא value_corrected, והמסך מציג "הערך תוקן אחרי הבדיקה" במקום "נבדק ואומת"');
+
+// 🟡6: בדיקה עם ממצא — מתיק אחר — אינה מקור לנתון
+eq([apr_val('SELECT status FROM source_checks WHERE pid = ?', [$kf[1]['check']['pid']]), code($fadd($avi, $CJ, $kf[1]['check']['pid'])), code($fadd($boaz, $CB, $kf[1]['check']['pid'])), $fadd($avi, $CF, $kf[1]['check']['pid'])[0]],
+    ['verified', 'fact_source', 'fact_source', 200], '🟡6 בדיקה מאומתת של תיק אחר (גם באותו משרד) אינה מקור לנתון — רק בתיק שלה');
+eq($warnings, [], 'בלי אזהרות PHP (סבב 2)');
+
 // ── מיגרציה 010 על מסד v9 מאוכלס: כל שורה נשמרת, והזריעה אידמפוטנטית ──
 $m9 = sys_get_temp_dir() . '/apr-m9-' . bin2hex(random_bytes(5));
 mkdir($m9, 0700, true);

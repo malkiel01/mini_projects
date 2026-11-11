@@ -39,7 +39,7 @@ function fSource(f, pid) {
         return `${s.kind === 'ai' ? esc(F.sourceKinds.ai) + ' · ' : ''}${doc}${date}${s.locator ? ` · <q dir="auto">${esc(s.locator)}</q>` : ''}${
             s.doc_state === 'deleted' ? ` <span class="chip bad">${esc(F.srcDeleted)}</span>` : s.doc_state === 'returned' ? ` <span class="chip warn">${esc(F.srcReturned)}</span>` : ''}`;
     }
-    if (s.check) return `<a href="#/cases/${pid}/check/${s.check}">🔎 ${esc(s.check_source)}</a> · ${esc(T.s.statuses[s.check_status] || '')}${s.note ? ' · ' + esc(s.note) : ''}${date}`;
+    if (s.check) return `<a href="#/cases/${pid}/check/${s.check}">🔎 ${esc(s.check_source)}</a> · ${s.value_corrected ? `<span class="chip warn">${esc(T.s.valueCorrected)}</span>` : esc(T.s.statuses[s.check_status] || '')}${s.note ? ' · ' + esc(s.note) : ''}${date}`;
     return `${esc(F.sourceKinds[s.kind] || s.kind)}${s.note ? ' · ' + esc(s.note) : ''}${date}`;
 }
 

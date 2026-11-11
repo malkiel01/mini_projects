@@ -85,7 +85,7 @@ const APR_ACCESS = [
 
     // מקורות, בדיקות, תכנון והיתרים (09): view לצפייה; sources לרישום; sources + שמאי בתיק לאימות, לתחולה ולאישור (lib/sources.php)
     'sources' => 'user', 'sys-sources' => 'sysadmin', 'sys-source-save' => 'sysadmin',
-    'case-sources' => 'member', 'case-source' => 'member', 'source-check' => 'member', 'source-check-plan' => 'member',
+    'case-sources' => 'member', 'case-source' => 'member', 'source-check' => 'member', 'source-check-plan' => 'member', 'source-file-upload' => 'member',
     'source-check-record' => 'member', 'source-check-approve' => 'member', 'source-check-verify' => 'member', 'source-check-cost' => 'member',
     'case-planning' => 'member', 'planning-item' => 'member', 'planning-add' => 'member', 'planning-update' => 'member',
     'planning-applicability' => 'member', 'planning-delete' => 'member', 'planning-task' => 'member',

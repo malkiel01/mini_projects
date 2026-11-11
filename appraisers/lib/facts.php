@@ -247,7 +247,8 @@ function apr_fact_source_out(array $ctx, array $c, array $f): array
         // נתון מבדיקת מקור: המקור נפתח מהנתון — מזהה הבדיקה, שם המקור ומצבה (09)
         if ($f['source_kind'] === 'source_check' && $f['source_ref_pid'] !== null
             && ($k = apr_row('SELECT k.pid, k.status, s.name FROM source_checks k JOIN sources s ON s.id = k.source_id WHERE k.pid = ? AND k.case_id = ?', [$f['source_ref_pid'], $c['id']]))) {
-            $src += ['check' => $k['pid'], 'check_source' => $k['name'], 'check_status' => $k['status']];
+            // value_corrected: הערך תוקן אחרי שנרשם מהבדיקה — המסך אינו מציג "נבדק ואומת" לבדו על ערך שכבר אינו זה שנבדק
+            $src += ['check' => $k['pid'], 'check_source' => $k['name'], 'check_status' => $k['status'], 'value_corrected' => $f['corrected_at'] !== null];
         }
         return $src + ['date' => $f['source_date'], 'note' => $f['source_note']];
     }

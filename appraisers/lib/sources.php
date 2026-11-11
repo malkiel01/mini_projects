@@ -439,9 +439,26 @@ function apr_sources_on_identifier(array $c): void
     if (!apr_src_identified(apr_src_idents((int)$c['id']))) return;
     foreach (apr_rows("SELECT s.* FROM sources s JOIN source_checks k ON k.source_id = s.id WHERE k.case_id = ? AND k.status = 'awaiting_identification'
         AND k.id = (SELECT MAX(id) FROM source_checks WHERE case_id = k.case_id AND source_id = k.source_id)", [$c['id']]) as $s) {
-        if ($s['status'] !== 'active') continue;
+        if ($s['status'] !== 'active' || apr_src_pending_approval($c, $s)) continue;      // מה שממתין לאישור של שמאי אינו הופך ל"מתוכנן" לבד
         apr_src_task($c, $s, 'check', apr_src_insert($c, $s, 'planned', [], null));
     }
+}
+
+/**
+ * האם למקור הזה בתיק יש בקשת אישור שעוד לא נענתה: שורת needs_approval שאחריה אין שורה שנושאת אישור של שמאי (approved_at).
+ * נגזר מ**כל** היסטוריית המקור בתיק — לא מהשורה האחרונה: שורה אחרת שנוספה אחרי הבקשה אינה מבטלת אותה.
+ */
+function apr_src_pending_approval(array $c, array $s): bool
+{
+    $asked = apr_val("SELECT MAX(id) FROM source_checks WHERE case_id = ? AND source_id = ? AND status = 'needs_approval'", [$c['id'], $s['id']]);
+    if ($asked === null || $asked === false) return false;
+    return (int)$asked > (int)apr_val('SELECT COALESCE(MAX(id), 0) FROM source_checks WHERE case_id = ? AND source_id = ? AND approved_at IS NOT NULL', [$c['id'], $s['id']]);
+}
+
+/** שמאי בתיק שפועל בעצמו על מקור שממתין לאישור — הפעולה שלו היא האישור, והשורה נושאת אותו. */
+function apr_src_self_approval(array $ctx, array $c, array $s): array
+{
+    return apr_src_pending_approval($c, $s) && apr_src_can_judge($ctx, $c) ? ['approved_by' => (int)$ctx['user']['id'], 'approved_at' => apr_now()] : [];
 }
 
 /** האם רישום הוצאה למקור הזה בתיק דורש אישור שעוד לא ניתן (§6 "מקור בתשלום"). שמאי בתיק מאשר בעצם הרישום. */
@@ -467,10 +484,20 @@ function apr_source_check_plan(array $ctx, array $in): array
         $spend = $s['auth_required'] === 'payment' || ($in['spend'] ?? false) === true;
         $approved = (bool)apr_val('SELECT 1 FROM source_checks WHERE case_id = ? AND source_id = ? AND approved_at IS NOT NULL LIMIT 1', [$c['id'], $s['id']]);
         $last = apr_src_last($c, $s);
+        $judge = apr_src_can_judge($ctx, $c);
+        $pending = apr_src_pending_approval($c, $s);
+        if ($pending && !$judge) {
+            // בקשת אישור פתוחה: מי שאינו רשאי לאשר אינו מוסיף שורה שתחליף אותה — מקבל את הבקשה הקיימת כפי שהיא
+            $pid = (string)apr_val("SELECT pid FROM source_checks WHERE case_id = ? AND source_id = ? AND status = 'needs_approval' ORDER BY id DESC LIMIT 1", [$c['id'], $s['id']]);
+            apr_src_task($c, $s, 'approve', $pid);
+            return ['check' => apr_src_check_out($ctx, $c, apr_src_check_row($c, $pid), apr_src_labels($idents))];
+        }
         $status = !apr_src_identified($idents) ? 'awaiting_identification'
-            : ((($spend && apr_src_case_content($c)['spend_needs_approval'] && !$approved) || ($last && $last['status'] === 'needs_approval')) && !apr_src_can_judge($ctx, $c) ? 'needs_approval' : 'in_progress');
-        // אותו מצב פתוח פעמיים ברצף — אין שורה נוספת
-        $pid = $last && $last['status'] === $status ? $last['pid'] : apr_src_insert($c, $s, $status, [], (int)$ctx['user']['id']);
+            : ($spend && apr_src_case_content($c)['spend_needs_approval'] && !$approved && !$judge ? 'needs_approval' : 'in_progress');
+        // אותו מצב פתוח פעמיים ברצף — אין שורה נוספת (אלא אם השורה החדשה נושאת אישור של שמאי)
+        $self = apr_src_self_approval($ctx, $c, $s);
+        $pid = $last && $last['status'] === $status && !$self ? $last['pid'] : apr_src_insert($c, $s, $status, $self, (int)$ctx['user']['id']);
+        if ($self) apr_src_tasks_done($c, $s, ['approve']);
         if ($status === 'needs_approval') apr_src_task($c, $s, 'approve', $pid);
         return ['check' => apr_src_check_out($ctx, $c, apr_src_check_row($c, $pid), apr_src_labels($idents))];
     });
@@ -521,16 +548,39 @@ function apr_source_check_record(array $ctx, array $in): array
         }
         // "מה בדיוק חיפשו": תוצאה (אותר / חלקית / לא אותר) בלי אף מזהה ובלי טקסט חיפוש אינה נרשמת
         if (in_array($status, ['found', 'partial', 'not_found'], true) && !$used && $qText === null) apr_fail('check_query_required');
-        $last = apr_src_last($c, $s);
-        if ($last && $last['status'] === 'needs_approval' && !apr_src_can_judge($ctx, $c)) apr_fail('check_needs_approval');
+        // האישור נגזר מכל היסטוריית המקור בתיק: בקשת אישור שלא נענתה חוסמת רישום, גם אם נוספה אחריה שורה אחרת
+        if (apr_src_pending_approval($c, $s) && !apr_src_can_judge($ctx, $c)) apr_fail('check_needs_approval');
         if (apr_src_spend_blocked($ctx, $c, $s, $cost)) apr_fail('check_spend_approval');
-        $pid = apr_src_insert($c, $s, $status, ['query' => json_encode(['identifiers' => array_values($used), 'text' => $qText], JSON_UNESCAPED_UNICODE)] + $row, (int)$ctx['user']['id']);
+        $pid = apr_src_insert($c, $s, $status, apr_src_self_approval($ctx, $c, $s) + ['query' => json_encode(['identifiers' => array_values($used), 'text' => $qText], JSON_UNESCAPED_UNICODE)] + $row, (int)$ctx['user']['id']);
         apr_src_tasks_done($c, $s, ['check', 'approve']);
         $task = null;
         if (in_array($status, APR_SRC_RETRY, true)) $task = apr_src_task($c, $s, 'retry', $pid);
         else apr_src_tasks_done($c, $s, ['retry']);
         return ['check' => apr_src_check_out($ctx, $c, apr_src_check_row($c, $pid), $labels), 'task' => $task];
     });
+}
+
+/**
+ * העלאת מסמך מתוך "רישום התוצאה" (§6.3–6.4) — גוף גולמי, הפרמטרים בכתובת: case, source, requirement?, name, key, dup?, source_note?,
+ * doc_date?. הקובץ עובר את **אותו צינור קליטה** של פרוסה 06 (apr_file_ingest: גודל, סוג לפי התוכן, סורק, כפילות, מכסות), ואפשר
+ * לשייכו לדרישה (אז נדרשת גם הרשאת documents). כל הבדיקות — הרשאה, מקור פעיל, license.store — רצות **לפני** שהגוף נקרא:
+ * למקור ש-store שלו no ההעלאה נדחית בשרת, והקובץ אינו נשמר. התשובה: {file} — ה-pid שמצרפים ב-source-check-record.
+ */
+function apr_source_file_upload(array $ctx, array $q, array $env): array
+{
+    $uid = (int)$ctx['user']['id'];
+    return apr_file_ingest(function () use ($ctx, $q) {
+        $c = apr_src_case($ctx, $q['case'] ?? null, 'write');
+        $s = apr_src_get($q['source'] ?? null);
+        if ($s['status'] !== 'active') apr_fail('source_hidden');
+        if (apr_src_license($s['license'])['store'] === 'no') apr_fail('source_store_forbidden');
+        if (($q['requirement'] ?? '') !== '') {
+            if (empty($c['perms']['documents'])) apr_fail('forbidden');
+            apr_req_row($c, $q['requirement']);          // דרישה של תיק אחר — 404, לפני שהגוף נקרא
+        }
+        return $c;
+    }, ['kind' => 'user', 'uid' => $uid, 'channel' => 'internal', 'rate_key' => (string)$uid, 'key' => fn() => apr_upload_key($ctx, $q['key'] ?? null)],
+        ['source_note' => $q['source_note'] ?? null] + $q, $env);
 }
 
 /** שמאי בתיק מאשר בדיקה שממתינה לאישור (ask בפרופיל, או הוצאה): שורה חדשה planned עם מי אישר ומתי, ומשימה לבדיקה. */
@@ -541,8 +591,8 @@ function apr_source_check_approve(array $ctx, array $in): array
         apr_case_still_open($c);
         $k = apr_src_check_row($c, $in['check'] ?? null);
         $s = apr_row('SELECT * FROM sources WHERE id = ?', [$k['source_id']]);
-        $last = apr_src_last($c, $s);
-        if ($k['status'] !== 'needs_approval' || (int)$last['id'] !== (int)$k['id']) apr_fail('check_state');
+        $asked = apr_val("SELECT MAX(id) FROM source_checks WHERE case_id = ? AND source_id = ? AND status = 'needs_approval'", [$c['id'], $s['id']]);
+        if ($k['status'] !== 'needs_approval' || (int)$asked !== (int)$k['id'] || !apr_src_pending_approval($c, $s)) apr_fail('check_state');
         if ($s['status'] !== 'active') apr_fail('source_hidden');
         $idents = apr_src_idents((int)$c['id']);
         $status = apr_src_identified($idents) ? 'planned' : 'awaiting_identification';
