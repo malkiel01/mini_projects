@@ -386,3 +386,15 @@ test('פרויקט: kol.json לא תקין — מדווח, והמסך ממשיך
     eq('home.html', $w2['json']['kol']['config']['entry']);
     http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $id, 'rev' => $w2['json']['file']['rev'], 'content' => $f['content']]]);
 });
+
+test('בידוד (S6): Monaco מאוחסן באפליקציה — אין CDN בקוד הדפדפן; ומסך הפרויקט אינו כותב HTML מנתונים', function () {
+    foreach (array_merge(glob(KOL_ROOT . '/assets/js/*.js'), [KOL_ROOT . '/index.html']) as $f) {
+        eq(0, preg_match('#https?://[^\s\'"`]*(jsdelivr|unpkg|cdnjs|cloudflare\.com/ajax|monaco-editor)#i', (string)file_get_contents($f)), 'כתובת CDN ב-' . basename($f));
+    }
+    foreach (['loader.js', 'editor/editor.main.js', 'editor/editor.main.css', 'base/worker/workerMain.js', 'language/html/htmlMode.js', 'language/css/cssMode.js',
+              'language/json/jsonMode.js', 'language/typescript/tsMode.js', 'basic-languages/markdown/markdown.js', 'basic-languages/xml/xml.js'] as $f) {
+        ok(is_file(KOL_ROOT . '/assets/vendor/monaco/vs/' . $f), "חסר assets/vendor/monaco/vs/$f");
+    }
+    $js = (string)preg_replace('#^\s*//.*$#m', '', (string)file_get_contents(KOL_ROOT . '/assets/js/project.js'));
+    foreach (['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'srcdoc', 'eval('] as $bad) ok(!str_contains($js, $bad), "$bad ב-project.js");
+});

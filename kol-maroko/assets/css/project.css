@@ -1,0 +1,60 @@
+/* קול מרוקו — 📁 פרויקט (F2a): עץ קבצים ועורך קוד. הטלפון קודם: העץ הוא גיליון; מ-1000px — עמודה קבועה בצד. */
+.pj { display: flex; flex-direction: column; gap: var(--s2); height: calc(var(--vvh, 100dvh) - var(--head) - var(--tap) - 2 * var(--s3)); min-height: 380px; }
+.pj-note, .pj-warn { margin: 0; padding: 6px var(--s3); border-radius: var(--r); font-size: .85rem; }
+.pj-note { background: color-mix(in srgb, var(--star) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--star) 45%, transparent); }
+.pj-warn { background: var(--danger-soft); color: var(--danger); }
+.pj-wrap { flex: 1; min-height: 0; display: flex; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.pj-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pj-bar { display: flex; align-items: center; gap: var(--s1); padding: 4px; border-bottom: 1px solid var(--line); min-width: 0; }
+.pj-tabs { flex: 1; min-width: 0; display: flex; overflow-x: auto; scrollbar-width: none; }
+.pj-tabs::-webkit-scrollbar { display: none; }
+.pj-tab { flex: none; display: inline-flex; align-items: center; border-radius: 8px; color: var(--muted); }
+.pj-tab.on { background: var(--brand-soft); color: var(--ink); font-weight: 600; }
+.pj-tab button { border: 0; background: none; cursor: pointer; min-height: 34px; padding: 0 6px; font-size: .85rem; white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+.pj-tab .pj-x { padding: 0 6px; font-size: .75rem; opacity: .7; }
+.pj-dot { color: var(--star); }
+.pj-status { flex: none; font-size: .8rem; color: var(--muted); white-space: nowrap; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+.pj-status.bad { color: var(--danger); }
+.pj-ed, .pj-view { flex: 1; min-height: 0; }
+.pj-view { overflow: auto; padding: var(--s3); }
+.pj-fallback { width: 100%; height: 100%; border: 0; resize: none; }
+.pj-bin { display: grid; gap: var(--s3); justify-items: start; }
+.pj-img { max-width: 100%; max-height: 50vh; border: 1px solid var(--line); border-radius: var(--r);
+    background: repeating-conic-gradient(color-mix(in srgb, var(--line) 60%, transparent) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.pj-bin audio { width: 100%; }
+.pj-diff { height: min(52vh, 420px); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; display: grid; }
+.pj-menu { display: grid; gap: var(--s2); }
+.pj-menu .btn { justify-content: flex-start; }
+.pj-fails { margin: 0; padding-inline-start: var(--s4); display: grid; gap: var(--s1); overflow-wrap: anywhere; }
+.pj-trash, .pj-limit { display: flex; align-items: center; gap: var(--s2); }
+.pj-trash .body, .pj-limit .f { flex: 1; min-width: 0; }
+
+/* העץ */
+.pj-side { display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.pj-side.drop { outline: 2px dashed var(--brand); outline-offset: -4px; }
+.pj-side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s2) 0 var(--s3); min-height: var(--tap); border-bottom: 1px solid var(--line); }
+.pj-side-btns { display: flex; flex-wrap: wrap; gap: var(--s1); padding: var(--s2); }
+.pj-side-btns .btn { flex: 1 0 auto; }
+.pj-side > .hint { padding: var(--s1) var(--s3); margin: 0; }
+.pj-tree { flex: 1; min-height: 0; overflow: auto; list-style: none; padding-bottom: var(--s2); }
+.pj-row { display: flex; align-items: center; padding-inline-start: calc(var(--d, 0) * 14px + 4px); }
+.pj-row.on { background: var(--brand-soft); }
+.pj-name { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; min-height: var(--tap); border: 0; background: none; cursor: pointer; text-align: start; }
+.pj-ico { flex: none; width: 1.2em; text-align: center; font-size: .9rem; }
+.pj-dir > .pj-name { font-weight: 600; }
+.pj-more { flex: none; color: var(--muted); }
+.pj-row .chip { font-size: .7rem; min-height: 18px; }
+
+@media (max-width: 999px) {
+    .pj-side { position: fixed; inset: 0; z-index: 15; height: var(--vvh, 100dvh); display: none; }
+    .side-open .pj-side { display: flex; }
+}
+@media (min-width: 1000px) {
+    .pj-side { flex: 0 0 300px; border-inline-end: 1px solid var(--line); }
+    .pj-files-btn, .pj-side-x { display: none; }
+    .pj-name { min-height: 32px; }
+    .pj-more { min-height: 32px; min-width: 32px; opacity: 0; }
+    .pj-row:hover .pj-more, .pj-more:focus-visible { opacity: 1; }
+    .pj-tab button { max-width: 220px; }
+}
+main:has(> .pj) { max-width: 1600px; }

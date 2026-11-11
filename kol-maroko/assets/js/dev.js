@@ -88,7 +88,7 @@ const Dev = (() => {
   }
 
   // ── מסך המפתח ─────────────────────────────────────────────
-  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים']];
+  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות']];
   const LV = { error: '🔴', warn: '🟠', info: '⚪' };
   const LV_NAME = { error: 'שגיאה', warn: 'אזהרה', info: 'רגיל' };
   const CAT = { api: 'בקשה', agent: 'צ\'אט', php: 'שרת', client: 'דפדפן', auth: 'כניסה', data: 'נתונים', health: 'תקינות' };
@@ -102,7 +102,7 @@ const Dev = (() => {
       h('nav', { class: 'dev-subs', 'aria-label': 'מסך המפתח' }, SUBS.map(([id, label]) => h('a', { href: '#/dev/' + id, 'aria-current': id === sub ? 'page' : null }, label))),
       body);
     try {
-      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body) })[sub]();
+      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body) })[sub]();
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
