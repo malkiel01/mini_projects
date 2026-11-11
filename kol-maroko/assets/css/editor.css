@@ -1,0 +1,39 @@
+/* 🎨 עורך (V1a) — סרגל, שביל ניווט, קנבס. הקנבס עצמו (מסגרת + שכבת הבחירה) — .spike-canvas ב-app.css. */
+.ed { display: flex; flex-direction: column; gap: var(--s2); height: calc(100dvh - 150px); min-height: 420px; position: relative; }
+.ed-bar { display: flex; align-items: center; gap: var(--s1); min-width: 0; }
+.ed-bar .ed-page { flex: 1 1 120px; min-width: 0; min-height: var(--tap); font-size: 16px; text-overflow: ellipsis; direction: ltr; }
+.ed-bar .icon-btn, .ed-bar .btn { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.ed-bar :disabled { opacity: .45; }
+.ed-status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .8rem; }
+.ed-dev { display: flex; flex: none; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.ed-dev button { min-width: 36px; min-height: var(--tap); border: 0; background: var(--surface); font-size: 1rem; cursor: pointer; }
+.ed-dev button.wide { font-size: 1.25rem; }
+.ed-dev button[aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); }
+.ed-path { display: flex; align-items: center; gap: var(--s2); min-width: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: 0 var(--s2); min-height: var(--tap); }
+.ed-crumbs { display: flex; align-items: center; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.ed-crumbs .hint { margin: 0; direction: rtl; }
+.ed-crumb { border: 0; background: none; color: var(--muted); font: .8rem/1 ui-monospace, monospace; padding: 10px 4px; cursor: pointer; flex: none; max-width: 16em; overflow: hidden; text-overflow: ellipsis; }
+.ed-crumb[aria-current="true"] { color: var(--brand); font-weight: 700; }
+.ed-sep { color: var(--muted); flex: none; }
+.ed-where { flex: none; color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.ed-strip { display: block; width: 100%; margin: 0; padding: 6px var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--brand-soft); color: var(--ink); font-size: .85rem; text-align: start; }
+button.ed-strip { cursor: pointer; min-height: 34px; }
+.ed-strip.warn { background: var(--danger-soft, #fdecea); }
+.ed-canvas.spike-canvas { flex: 1; height: auto; min-height: 0; border-radius: var(--r); overflow: hidden; background: #fff; }
+.ed-canvas.spike-canvas iframe { background: #fff; }
+.ed-note { position: absolute; inset-inline: var(--s2); bottom: var(--s2); z-index: 5; display: flex; align-items: center; gap: var(--s2); padding: 4px 4px 4px var(--s3); padding-inline: var(--s3) 4px;
+  background: var(--ink); color: var(--surface); border-radius: var(--r); font-size: .9rem; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+.ed-note span { flex: 1; min-width: 0; }
+.ed-note.err { background: var(--danger, #b3261e); color: #fff; }
+.ed-note .btn { background: var(--surface); color: var(--ink); flex: none; }
+.ed-note .icon-btn { color: inherit; background: none; border: 0; flex: none; }
+/* סימונים מעל הקנבס: מצביע לאלמנט בגודל אפס (אפשר ללחוץ), ומסגרת לאזור שבור */
+.ed-marks button { position: absolute; pointer-events: auto; padding: 0; cursor: pointer; }
+.ed-mark-zero { width: 12px; height: 12px; border: 2px solid #1a73e8; border-radius: 50%; background: #fff; opacity: .8; }
+.ed-mark-broken { border: 2px dashed #b3261e; background: rgba(179, 38, 30, .06); pointer-events: none !important; }
+@media (max-width: 999px) {
+  .ed { height: calc(100dvh - 120px); }
+  .ed-word { display: none; }
+  .ed-status { display: none; }
+  .ed-bar .ed-page { flex-basis: 60px; }
+}
