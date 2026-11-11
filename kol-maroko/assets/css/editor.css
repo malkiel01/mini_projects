@@ -96,3 +96,18 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .dt-by { display: block; color: var(--muted); font: .7rem/1.4 system-ui, sans-serif; }
 .dt-empty { margin: var(--s2); }
 @media (max-width: 1399px) and (min-width: 1000px) { .ed-side { width: 230px; } .ed-info { width: 270px; } }
+/* מבט מפוצל: קוד לצד הקנבס (במחשב); בטלפון — לשוניות */
+.ed-panes { flex: 1; min-height: 0; display: flex; gap: var(--s2); direction: ltr; }
+.ed-panes > .ed-canvas { flex: 1 1 50%; min-width: 0; }
+.ed-code { display: none; flex: 1 1 50%; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.ed.split .ed-code { display: block; }
+.ed-code .pj-split { width: 100%; height: 100%; }
+.ed-tabs { display: none; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; flex: none; }
+.ed-tabs button { flex: 1; min-height: 36px; border: 0; background: var(--surface); font: inherit; font-size: .85rem; cursor: pointer; }
+.ed-tabs button[aria-selected="true"] { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); font-weight: 700; }
+@media (max-width: 999px) {
+  .ed.split .ed-tabs { display: flex; }
+  .ed.split .ed-code { display: none; }
+  .ed.split.tab-code .ed-code { display: block; }
+  .ed.split.tab-code .ed-canvas { display: none; }
+}

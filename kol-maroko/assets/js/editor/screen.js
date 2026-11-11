@@ -13,7 +13,8 @@ const Editor = (() => {
   const LS = 'kol-editor';
   const DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   const SYNC_MS = 120;                                                     // הקלדה בקוד ← קנבס: הרבה מתחת ל-300ms
-  const S = { host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false, nav: null, info: null };
+  const S = { host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false, nav: null, info: null, split: false, code: null, codeOff: null, mute: false, fromCode: false, curT: 0 };
+  let pending = null;
   const phone = () => matchMedia('(max-width: 999px)').matches;
   const el = {};
   let loading = null, K = null;
@@ -75,7 +76,10 @@ const Editor = (() => {
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
       if (S.readOnly) note(S.readOnly);
+      mountCode();
       drawAll();
+      if (pending && pending.path === f.path) applyAt(pending.off);
+      pending = null;
     } catch (e) { status(''); note(e.message, true); }
     finally { S.busy = false; }
   }
@@ -106,6 +110,60 @@ const Editor = (() => {
     try { c.patch(patches); }
     catch (e) { console.error(e); c.load(now, c.sheets).then(drawAll); return; }   // נפילה בטוחה: טעינה מלאה
     drawAll();
+  }
+
+  // ── "בחר בעורך" ומבט מפוצל (04 §3) ──────────────────────
+  /** האלמנט הכתוב העמוק ביותר שהמיקום בקובץ נמצא בתוכו. */
+  function nodeAt(off) { let best = null; const m = S.canvas?.m; if (m?.root) K.walk(m.root, n => { if (!n.implied && n.from <= off && off <= n.to && (!best || n.from >= best.from)) best = n; }); return best; }
+  function applyAt(off) {
+    const c = S.canvas; if (!c?.m || !S.doc) return;
+    if (!S.doc.binary && c.src !== S.doc.text()) { clearTimeout(S.timer); syncCanvas(); }
+    const n = nodeAt(off);
+    if (n) { c.select(n); c.reveal(n); } else note('במקום הזה בקובץ אין אלמנט');
+  }
+  /** "בחר בעורך": מעורך הקוד (או מהמבט המפוצל) — האלמנט שהסמן בתוכו נבחר בקנבס. */
+  async function selectAt(path, off) {
+    if (S.host && S.file?.path === path && S.canvas?.m) return applyAt(off);
+    pending = { path, off };
+    if (S.host) { const f = Project.docs.byPath(path); if (f) { el.page.value = f.id; await open(f.id); } return; }
+    location.hash = '#/editor/' + encodeURIComponent(path);
+  }
+  function mountCode() {
+    S.codeOff?.dispose(); S.codeOff = null; S.code = null;
+    if (!S.split || !el.pane) return;
+    const sp = S.doc && !S.doc.binary && S.file ? Project.splitEditor(el.pane, S.file.id) : null;
+    if (!sp) { el.pane.replaceChildren(h('p', { class: 'hint' }, S.doc?.binary ? 'הקובץ אינו UTF-8 — אין לו עורך קוד.' : 'עורך הקוד לא נטען.')); return; }
+    S.code = sp;
+    S.codeOff = sp.onCursor(() => { if (S.mute) return; clearTimeout(S.curT); S.curT = setTimeout(fromCode, 150); });
+    markInCode();
+  }
+  /** הסמן בקוד ← האלמנט בקנבס. */
+  function fromCode() {
+    const c = S.canvas; if (!S.code || !c?.m || !S.doc) return;
+    if (c.src !== S.doc.text()) { clearTimeout(S.timer); syncCanvas(); }
+    const n = nodeAt(S.code.offset());
+    if (n && n !== c.selected) { S.fromCode = true; try { c.select(n); c.reveal(n); } finally { S.fromCode = false; } }
+  }
+  /** הבחירה בקנבס ← הטווח מסומן בקוד (בלי להזיז את המיקוד). */
+  function markInCode() {
+    const c = S.canvas; let n = c?.selected;
+    if (!S.code || S.fromCode || !n || !S.doc || c.src !== S.doc.text()) return;
+    while (n && n.implied) n = n.parent;
+    if (!n) return;
+    S.mute = true; try { S.code.mark(n.from, K.endOf(c.m, n)); } finally { S.mute = false; }
+  }
+  function split(on) {
+    S.split = on == null ? !S.split : on; prefs.split = S.split; keep();
+    el.root.classList.toggle('split', S.split); el.splitBtn.setAttribute('aria-pressed', String(S.split));
+    if (S.split && !phone() && innerWidth < 1500) panel('info', false);       // מקום לקוד ולקנבס
+    if (!S.split) el.pane.replaceChildren();
+    mountCode(); tab('canvas');
+  }
+  /** בטלפון: לשוניות במקום פיצול. */
+  function tab(id) {
+    el.root.classList.toggle('tab-code', id === 'code');
+    for (const b of el.tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === id));
+    requestAnimationFrame(() => { S.canvas?.setViewport(deviceWidth()); S.code?.ed.layout(); if (id === 'code') markInCode(); });
   }
 
   // ── 👁 / 🔒 — בעורך בלבד, נשמרות בדפדפן לכל עמוד (לפי מקום האלמנט בעץ) ──
@@ -175,6 +233,7 @@ const Editor = (() => {
     if (mod && !e.altKey && k.toLowerCase() === 'y') return hit(redo);
     if (mod || e.altKey) return;
     if (k === 'n' || k === 'N' || k === 'מ') return hit(() => { panel('nav', true); S.nav.list.focus(); });
+    if (k === 's' || k === 'S' || k === 'ד') return hit(() => split());
     if (k === 'i' || k === 'I' || k === 'ן') return hit(() => { panel('info', true); el.infoBody.focus(); });
     if (k === 'Delete' || k === 'Backspace') return hit(remove);
     if (!c.selected) return;
@@ -247,10 +306,13 @@ const Editor = (() => {
     const toggle = (id, icon, label) => h('button', { type: 'button', class: 'icon-btn', 'data-panel': id, 'aria-pressed': 'false', 'aria-label': label, title: label, onclick: () => panel(id) }, icon);
     const side = (id, title, body) => h('aside', { class: 'ed-side ed-' + id, 'aria-label': title },
       h('div', { class: 'ed-side-head' }, h('strong', {}, title), h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירת ' + title, onclick: () => panel(id, false) }, '✕')), body);
+    el.splitBtn = h('button', { type: 'button', class: 'icon-btn', 'data-split': true, 'aria-pressed': 'false', 'aria-label': 'מבט מפוצל — קוד לצד הקנבס (S)', title: 'מבט מפוצל — קוד לצד הקנבס (S)', onclick: () => split() }, '◫');
+    el.pane = h('div', { class: 'ed-code', 'aria-label': 'הקוד של העמוד' });
+    el.tabs = h('div', { class: 'ed-tabs', role: 'tablist', 'aria-label': 'קנבס או קוד' }, [['canvas', '🖼️ קנבס'], ['code', '</> קוד']].map(([id, label]) => h('button', { type: 'button', role: 'tab', 'data-tab': id, 'aria-selected': String(id === 'canvas'), onclick: () => tab(id) }, label)));
     el.navBody = h('div', { class: 'ed-side-body nv' });
     el.infoBody = h('div', { class: 'ed-side-body dt', tabindex: '-1' });
-    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.status);
-    el.mid = h('div', { class: 'ed-mid' }, el.canvas);
+    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.status);
+    el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
       el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken,
       h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navBody), el.mid, side('info', 'פרטים', el.infoBody)), el.note);
@@ -263,7 +325,8 @@ const Editor = (() => {
       c.drag = false; c.repeatUp = true; c.marksOn = true;                  // V1a: בלי גרירה (V4); לחיצה חוזרת — ההורה
       S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); }, onToggle: saveMarks });
       S.info = new window.KolDetails.Details(el.infoBody, { canvas: c, K, sheets: () => S.sheets, file: () => S.file, openAt: (p, line) => Project.openAt(p, line), openEl: n => openInCode(n) });
-      c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); }; c.onKey = onKey;
+      c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); }; c.onKey = onKey;
+      S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);
       if (!phone() && prefs.navOpen !== false) panel('nav', true);
       c.onInequiv = (diff, patches) => {                                    // נפילה בטוחה כבר נעשתה בקנבס; כאן — הרישום ביומן המפתח
@@ -280,8 +343,8 @@ const Editor = (() => {
       await open(first.id);
     } catch (e) { status(''); el.canvas.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
-  function unmount() { if (!S.host) return; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; }
+  function unmount() { if (!S.host) return; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
-  return { view, unmount, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks };
+  return { view, unmount, selectAt, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks };
 })();

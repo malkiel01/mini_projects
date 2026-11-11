@@ -43,6 +43,8 @@ const Dev = (() => {
   });
   addEventListener('unhandledrejection', e => {
     const r = e.reason, msg = String((r && r.message) || r);
+    // Monaco מבטל משימות ממתינות כשמחליפים קובץ (CancellationError, "Canceled") — ביטול מתוכנן, לא תקלה: לא נרשם ולא מדווח
+    if (r && r.name === 'Canceled' && /\/vendor\/monaco\//.test(String(r.stack || ''))) { e.preventDefault(); return; }
     push(trace.errors, { kind: 'promise', message: msg.slice(0, 300), at: new Date().toISOString() });
     report({ kind: 'promise', message: msg, stack: r && r.stack });
   });

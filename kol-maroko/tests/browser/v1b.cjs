@@ -59,7 +59,7 @@ const PAGE = `<!doctype html>
 
     const ctx = await mk(1280, 800), page = await ctx.newPage();
     const errors = global.__errors = [];
-    page.on('pageerror', e => errors.push(e.message));
+    page.on('pageerror', e => { errors.push(e.message); console.log('   ⚠️ שגיאה בדף אחרי בדיקה ' + ran + ': ' + e.message + ' ' + String(e.stack || '').split('\n').slice(1, 4).join(' | ').slice(0, 400)); });
     await page.addInitScript(() => { window.__msgs = []; window.addEventListener('message', e => { if (typeof e.data === 'string' && e.data.startsWith('pwned')) window.__msgs.push(e.data); }); });
     await page.goto(base + '/#/project');
     await page.waitForSelector('.pj-tree .pj-row');
@@ -168,6 +168,42 @@ const PAGE = `<!doctype html>
     await openPage(page, 't/page.html');
     await navSearch(page, '#t1'); await navClick(page); await navSearch(page, '');
     ok((await page.$eval('.dt', e => e.textContent)).includes('שגיאה ב-CSS בשורה') && await page.$('.dt-note .btn') !== null, 'CSS עם סוגר חסר (03 §2.3): הפאנל מציג "שגיאה ב-CSS בשורה N", עם "פתח בקוד"');
+
+    // ── 1ג. "בחר בעורך" ומבט מפוצל ──
+    await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row');
+    await page.evaluate(async () => { await Project.openAt('t/page.html', 9); });
+    await page.waitForFunction(() => Project._state.editor && Project._state.editor.getModel() && Project._state.editor.getPosition().lineNumber === 9);
+    const hasAction = await page.evaluate(() => { const a = Project._state.editor.getAction('kol.pickInEditor'); return !!a && a.isSupported(); });
+    ok(hasAction, 'עורך הקוד, קובץ HTML: הפעולה "בחר בעורך החזותי" קיימת (תפריט ההקשר)');
+    await page.evaluate(() => { const ed = Project._state.editor, m = ed.getModel(); ed.setPosition(m.getPositionAt(m.getValue().indexOf('מחלקה זדונית') + 2)); ed.focus(); });
+    await page.click('.pj-ed .view-lines', { button: 'right', position: { x: 300, y: 300 } }).catch(() => {});
+    ok(await page.locator('.monaco-menu .action-label', { hasText: 'בחר בעורך החזותי' }).count() > 0, 'תפריט ההקשר של עורך הקוד מציג "בחר בעורך החזותי"');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { const ed = Project._state.editor, m = ed.getModel(); ed.setPosition(m.getPositionAt(m.getValue().indexOf('מחלקה זדונית') + 2)); ed.focus(); });
+    await page.keyboard.press('Control+Alt+e');
+    await page.waitForFunction(() => location.hash.startsWith('#/editor') && Editor._state.canvas && Editor._state.canvas.selected, null, { timeout: 15000 }).catch(() => {});
+    await sleep(200);
+    ok((await st(page)).sel === 'div#evil-class', '"בחר בעורך" בקיצור (Ctrl+Alt+E): העורך החזותי נפתח, והאלמנט שהסמן בתוכו נבחר — ' + (await st(page)).sel);
+    await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row');
+    await page.evaluate(async () => { await Project.openAt('t/a.css', 1); });
+    ok(await page.evaluate(() => { const a = Project._state.editor.getAction('kol.pickInEditor'); return !a || !a.isSupported(); }), 'בקובץ CSS הפעולה אינה זמינה');
+    // מבט מפוצל
+    await openPage(page, 't/page.html');
+    await page.click('[data-split]'); await page.waitForSelector('.ed-code .monaco-editor .view-lines'); await sleep(300);
+    const lay2 = await page.evaluate(() => { const a = document.querySelector('.ed-canvas').getBoundingClientRect(), b = document.querySelector('.ed-code').getBoundingClientRect(); return { side: Math.abs(a.top - b.top) < 4 && a.width > 200 && b.width > 200 && (a.right <= b.left + 2 || b.right <= a.left + 2), same: Project._state.split.getModel() === Project._state.docs.get(Editor._state.file.id).model }; });
+    ok(lay2.side && lay2.same, 'מבט מפוצל (1280px): קוד לצד הקנבס, על אותו מסמך');
+    await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('.sub'))); }); await sleep(100);
+    ok(await page.evaluate(() => { const sp = Editor._state.code, r = sp.selection(), t = Editor._state.doc.text(); return t.slice(r.from, r.to) === '<h2 class="sub">משנה</h2>'; }), 'בחירה בקנבס מסמנת את הטווח של האלמנט בקוד');
+    await page.evaluate(() => { const ed = Project._state.split, m = ed.getModel(); ed.focus(); ed.setPosition(m.getPositionAt(m.getValue().indexOf('<td>') + 5)); });
+    await page.keyboard.press('ArrowRight'); await sleep(450);
+    ok((await st(page)).sel === 'td', 'הסמן בקוד (מקלדת) מסמן את האלמנט בקנבס — ' + (await st(page)).sel);
+    await page.keyboard.type('XY'); await sleep(450);
+    ok(await page.evaluate(() => Editor._state.canvas.doc.querySelector('td').textContent.includes('XY') && Editor._state.canvas.selected.tag === 'td'), 'הקלדה בקוד שבמבט המפוצל מעדכנת את הקנבס, והנבחר נשאר נבחר');
+    await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z'); await sleep(300);
+    ok(await page.evaluate(src => Editor._state.doc.text() === src, PAGE), 'ביטול בקוד מחזיר את הקובץ למקור (אותה היסטוריה)');
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'v1b-1280-split.png') });
+    await page.click('[data-split]'); await sleep(100);
+    ok(!(await page.isVisible('.ed-code')), 'כיבוי המבט המפוצל');
 
     // ── 2. index.html המוסב (F3): לכל צומת יש דרך לבחור ──
     await openPage(page, 'index.html');

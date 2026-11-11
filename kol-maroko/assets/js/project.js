@@ -538,6 +538,7 @@ const Project = (() => {
     persist();
   }
   const toolsMenu = () => menu('כלי העורך', [
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
@@ -604,6 +605,7 @@ const Project = (() => {
         // שואלת על שורה שכבר אינה קיימת — "Illegal value for lineNumber" (V1a 🟡-1). כבויה.
         stickyScroll: { enabled: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
+      addPick(S.editor, () => S.cur);
     }
     try {
       const first = !S.loaded;
@@ -631,6 +633,40 @@ const Project = (() => {
     liveClose();
     liveEl = h('div', { class: 'pj-live' }, h('iframe', { src: 'live.php?embed=1' + (path ? '&path=' + encodeURIComponent(path) : ''), title: 'תצוגה חיה' }));
     document.body.append(liveEl);
+  }
+  // ── "בחר בעורך" (04 §3): מהסמן בקוד אל האלמנט בעורך החזותי — תפריט ההקשר של עורך הקוד, וקיצור ──
+  function pickInEditor(ed, id) {
+    const f = S.byId.get(id), m = ed?.getModel();
+    if (!f || !m || !/\.html?$/i.test(f.path)) { toast('"בחר בעורך" פועל בקובץ HTML', true); return; }
+    Editor.selectAt(f.path, m.getOffsetAt(ed.getPosition()));
+  }
+  function addPick(ed, idOf) {
+    ed.addAction({ id: 'kol.pickInEditor', label: 'בחר בעורך החזותי', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyE],
+      precondition: "editorLangId == 'html'", contextMenuGroupId: 'navigation', contextMenuOrder: 0, run: () => pickInEditor(ed, idOf()) });
+  }
+  /**
+   * עורך קוד שני, למבט המפוצל של העורך החזותי: אותו מסמך (אותו מודל של Monaco — אותו טקסט, אותה היסטוריה, אותה שמירה).
+   * נוצר פעם אחת לכל חיי הדף (Monaco שנסגר משבית פעולות בעורך שנפתח אחריו), ומחובר מחדש למכל שמבקש אותו.
+   */
+  function splitEditor(host, id) {
+    const doc = S.docs.get(id);
+    if (!monaco || !doc?.model) return null;
+    if (!S.split) {
+      el.split = h('div', { class: 'pj-split', dir: 'ltr' });
+      S.split = monaco.editor.create(el.split, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: 'on', minimap: { enabled: false }, tabSize: 2,
+        scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false }, stickyScroll: { enabled: false }, lineNumbersMinChars: 3 });
+      S.split.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.splitId));
+      addPick(S.split, () => S.splitId);
+    }
+    S.splitId = id;
+    host.replaceChildren(el.split);
+    S.split.setModel(doc.model); S.split.layout();
+    const ed = S.split, m = doc.model;
+    return { ed, offset: () => m.getOffsetAt(ed.getPosition()),
+      /** מסמן טווח (בתווים) בלי להעביר אליו את המיקוד. */
+      mark(from, to) { const a = m.getPositionAt(from), b = m.getPositionAt(to), r = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column); ed.setSelection(r); ed.revealRangeInCenterIfOutsideViewport(r); },
+      selection() { const r = ed.getSelection(); return r ? { from: m.getOffsetAt(r.getStartPosition()), to: m.getOffsetAt(r.getEndPosition()) } : null; },
+      onCursor(cb) { return ed.onDidChangeCursorPosition(e => { if (e.source === 'mouse' || e.source === 'keyboard') cb(); }); } };
   }
   /** פותח קובץ בעורך הקוד. line — שורה; range — {from, to} בתווים: הטווח מסומן (למשל האלמנט שנבחר בעורך החזותי). */
   async function openAt(path, line, range) {
@@ -694,5 +730,5 @@ const Project = (() => {
       pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, _state: S, _open: openFile, _save: save };
+  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, _state: S, _open: openFile, _save: save };
 })();
