@@ -3,7 +3,7 @@
 
 const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
-const state = { user: null, csrf: '', roles: {} };
+const state = { user: null, csrf: '', roles: {}, version: '' };
 const ROLE_NAMES = { owner: 'בעלים', publisher: 'מפרסם', editor: 'עורך' };
 const ACTIONS = {
   publish: '🚀 פרסם', publish_failed: '⚠️ פרסום נכשל', version_create: '📦 יצר גרסה', import: '📥 ייבא את העמוד מהאתר',
@@ -88,19 +88,21 @@ const TABS = [
   { id: 'members', label: '👥 חברים', min: 'owner' },
   { id: 'log', label: '📜 יומן', min: 'owner' },
   { id: 'settings', label: '⚙️ הגדרות', min: 'owner' },
+  { id: 'dev', label: '🛠️ מפתח', min: 'editor', dev: true },      // מי מפתח — מהשרת (user.developer)
 ];
 const RANK = { editor: 1, publisher: 2, owner: 3 };
 
 function route() {
-  const tabs = TABS.filter(t => RANK[state.user.role] >= RANK[t.min]);
-  const cur = tabs.find(t => location.hash === '#/' + t.id) || tabs[0];
+  const tabs = TABS.filter(t => RANK[state.user.role] >= RANK[t.min] && (!t.dev || state.user.developer));
+  const [, hashTab, sub, arg] = location.hash.split('/');           // #/dev/log/<מזהה בקשה>
+  const cur = tabs.find(t => hashTab === t.id) || tabs[0];
   const nav = $('#tabs');
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
   ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), restore: () => Restore.view(main, state.user.role), files: () => Library.view(main, state.user.role === 'owner'),
-    publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog })[cur.id]();
+    publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
 
@@ -228,7 +230,8 @@ async function viewLog() {
 (async () => {
   try {
     const d = await api('me');
-    Object.assign(state, { user: d.user, csrf: d.csrf, roles: d.roles });
+    Object.assign(state, { user: d.user, csrf: d.csrf, roles: d.roles, version: d.version || '' });
+    Dev.start(state);                                                  // 🐞 בכותרת, ושגיאות דפדפן ליומן
     $('#who').textContent = `${d.user.name}${d.user.role ? ' · ' + ROLE_NAMES[d.user.role] : ''}`;
     if (!d.user.role) {
       viewGate('🔒', 'אין לך תפקיד בכלי', 'בעל המערכת יראה שביקשת גישה ויוסיף אותך כעורך או כמפרסם.');
