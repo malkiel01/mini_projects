@@ -9,11 +9,12 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/navigator.js'];
   const LS = 'kol-editor';
   const DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   const SYNC_MS = 120;                                                     // הקלדה בקוד ← קנבס: הרבה מתחת ל-300ms
-  const S = { host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false };
+  const S = { host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false, nav: null, panel: '' };
+  const phone = () => matchMedia('(max-width: 999px)').matches;
   const el = {};
   let loading = null, K = null;
   let prefs = {}; try { prefs = JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch { prefs = {}; }
@@ -71,6 +72,7 @@ const Editor = (() => {
       c.capOff = false;
       await c.load(src, href => { const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });
       c.setViewport(deviceWidth());
+      loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
       if (S.readOnly) note(S.readOnly);
       drawAll();
@@ -104,6 +106,33 @@ const Editor = (() => {
     try { c.patch(patches); }
     catch (e) { console.error(e); c.load(now, c.sheets).then(drawAll); return; }   // נפילה בטוחה: טעינה מלאה
     drawAll();
+  }
+
+  // ── 👁 / 🔒 — בעורך בלבד, נשמרות בדפדפן לכל עמוד (לפי מקום האלמנט בעץ) ──
+  function saveMarks() {
+    const c = S.canvas; if (!c?.m || !S.file) return;
+    const paths = set => [...set].filter(n => c.m2d.has(n)).map(n => K.pathOf(n).join('.'));
+    const hide = paths(c.hiddenNodes), lock = paths(c.lockedNodes);
+    prefs.marks = prefs.marks || {};
+    if (hide.length || lock.length) prefs.marks[S.file.path] = { hide, lock }; else delete prefs.marks[S.file.path];
+    keep();
+  }
+  function loadMarks() {
+    const c = S.canvas, mk = prefs.marks?.[S.file?.path]; if (!c?.m || !mk) return;
+    const nodes = list => (list || []).map(p => K.byPath(c.m, p === '' ? [] : p.split('.').map(Number))).filter(Boolean);
+    c.hiddenNodes = new Set(nodes(mk.hide)); c.lockedNodes = new Set(nodes(mk.lock));
+    c.recap(); c.draw();
+  }
+  /** פאנל צד (Navigator / פרטים). במחשב — עמודה קבועה; בטלפון — גיליון מלמטה, אחד בכל רגע. */
+  function panel(id, on) {
+    const key = id === 'nav' ? 'navOpen' : 'infoOpen';
+    const open = on == null ? !el.root.classList.contains(id + '-open') : on;
+    if (open && phone()) for (const other of ['nav', 'info']) if (other !== id) el.root.classList.remove(other + '-open');
+    el.root.classList.toggle(id + '-open', open);
+    if (!phone()) { prefs[key] = open; keep(); }
+    for (const b of el.bar.querySelectorAll('[data-panel]')) b.setAttribute('aria-pressed', String(el.root.classList.contains(b.dataset.panel + '-open')));
+    if (open && id === 'nav') { S.nav?.refresh(); S.nav?.sync(); }
+    S.canvas?.setViewport(deviceWidth());
   }
 
   // ── פעולות ────────────────────────────────────────────────
@@ -144,6 +173,7 @@ const Editor = (() => {
     if (mod && !e.altKey && k.toLowerCase() === 'z') return hit(e.shiftKey ? redo : undo);
     if (mod && !e.altKey && k.toLowerCase() === 'y') return hit(redo);
     if (mod || e.altKey) return;
+    if (k === 'n' || k === 'N' || k === 'מ') return hit(() => { panel('nav', true); S.nav.list.focus(); });
     if (k === 'Delete' || k === 'Backspace') return hit(remove);
     if (!c.selected) return;
     if (k === 'Escape') return hit(() => c.step('parent'));
@@ -171,11 +201,12 @@ const Editor = (() => {
     el.crumbs.scrollLeft = el.crumbs.dir === 'ltr' ? el.crumbs.scrollWidth : -el.crumbs.scrollWidth;
     el.del.disabled = !n || !canWrite(); el.code.disabled = !S.file;
     const lines = n && !n.implied ? K.lineOf(c.m.src, n.from) : 0;
-    el.where.textContent = n ? (n.implied ? 'לא במקור — הדפדפן הוסיף' : 'שורה ' + lines) : '';
+    const vis = n ? c.visual(n) : '';
+    el.where.textContent = n ? (n.implied ? 'לא במקור — הדפדפן הוסיף' : 'שורה ' + lines) + (vis === 'shown' ? ' · ' + c.shownNote : vis === 'nonvisual' ? ' · אינו נראה בעמוד' : vis === 'zero' ? ' · בגודל אפס' : vis === 'none' ? ' · אינו מוצג' : '') : '';
   }
   function drawAll() {
     if (!S.host) return;
-    drawState(); drawCrumbs();
+    drawState(); drawCrumbs(); S.nav?.refresh(); saveMarks();
     const cap = S.canvas?.capInfo;
     el.cap.hidden = !cap;
     if (cap) el.cap.textContent = cap.shown ? 'מוצגים כל האלמנטים · הצג 60' : 'מוצגים 60 מכל רשימה ארוכה · הצג הכול (' + cap.hidden + ' מוסתרים)';
@@ -209,16 +240,25 @@ const Editor = (() => {
     el.broken = h('p', { class: 'ed-strip warn', role: 'alert', hidden: true });
     el.note = h('div', { class: 'ed-note', role: 'status', hidden: true });
     el.canvas = h('div', { class: 'ed-canvas' });
-    host.replaceChildren(h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
-      h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, el.status),
-      h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken, el.canvas, el.note));
+    const toggle = (id, icon, label) => h('button', { type: 'button', class: 'icon-btn', 'data-panel': id, 'aria-pressed': 'false', 'aria-label': label, title: label, onclick: () => panel(id) }, icon);
+    const side = (id, title, body) => h('aside', { class: 'ed-side ed-' + id, 'aria-label': title },
+      h('div', { class: 'ed-side-head' }, h('strong', {}, title), h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירת ' + title, onclick: () => panel(id, false) }, '✕')), body);
+    el.navBody = h('div', { class: 'ed-side-body nv' });
+    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), el.status);
+    el.mid = h('div', { class: 'ed-mid' }, el.canvas);
+    el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
+      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken,
+      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navBody), el.mid), el.note);
+    host.replaceChildren(el.root);
     status('טוען…');
     try {
       await loadJs(); K = window.KolSrc;
       if (S.host !== host) return;
       const c = S.canvas = new window.KolCanvas.Canvas(el.canvas);
       c.drag = false; c.repeatUp = true; c.marksOn = true;                  // V1a: בלי גרירה (V4); לחיצה חוזרת — ההורה
-      c.onSelect = () => drawCrumbs(); c.onKey = onKey;
+      S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); }, onToggle: saveMarks });
+      c.onSelect = () => { drawCrumbs(); S.nav.sync(); }; c.onKey = onKey;
+      if (!phone() && prefs.navOpen !== false) panel('nav', true);
       c.onInequiv = (diff, patches) => {                                    // נפילה בטוחה כבר נעשתה בקנבס; כאן — הרישום ביומן המפתח
         const rec = { type: 'editor-inequivalent', level: 'error', message: 'המודל ההדרגתי אינו שקול לניתוח מלא: ' + diff, file: S.file?.path, patches: JSON.stringify(patches).slice(0, 500) };
         console.error('[editor]', rec); if (typeof window.KolLog === 'function') window.KolLog(rec);
@@ -233,8 +273,8 @@ const Editor = (() => {
       await open(first.id);
     } catch (e) { status(''); el.canvas.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
-  function unmount() { if (!S.host) return; close(); S.host = null; S.canvas = null; }
+  function unmount() { if (!S.host) return; close(); S.host = null; S.canvas = null; S.nav = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
-  return { view, unmount, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas };
+  return { view, unmount, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks };
 })();
