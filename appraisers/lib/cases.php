@@ -376,6 +376,8 @@ function apr_case_start_tx(array $ctx, array $c, array $adj): array
             if ($t['rule']) $snap['rules'][$t['rule']['key']] = $t['rule']['title'];
         }
         foreach ($plan['alerts'] as $a) $snap['rules'][$a['rule']['key']] = $a['rule']['title'];
+        // מקטע "מקורות" של הפרופיל (09 §8): auto / ask יוצרים משימה ושורת בדיקה — שום דבר אינו רץ מול אתר חיצוני
+        apr_sources_on_start($c, $content, apr_case_plan_input($c));
         apr_exec("UPDATE cases SET status = 'collecting', profile_version_id = ?, plan_snapshot = ?, updated_at = ? WHERE id = ?", [$version, json_encode($snap, JSON_UNESCAPED_UNICODE), apr_now(), $c['id']]);
         apr_case_audit($c, 'case.start', 'case', null, ['version' => $snap['version'], 'requirements' => count($snap['requirements']), 'tasks' => count($snap['tasks']), 'skipped' => count($snap['skipped'])]);
         return ['status' => 'collecting', 'requirements' => count($snap['requirements']), 'tasks' => count($snap['tasks'])];

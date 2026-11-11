@@ -230,7 +230,12 @@ function apr_fact_source(array $ctx, array $c, mixed $src, ?string $fixedKind = 
         $out['source_file_id'] = (int)$f['id'];
         $out['source_locator'] = apr_clean_text($src['locator'] ?? null, 300);
     }
-    // ביקור (13) ובדיקת מקור (09) עוד לא קיימים — אין ישות להצביע עליה, ולכן source_ref_pid נשאר ריק עד אז
+    // בדיקת מקור (09): source.ref הוא pid של בדיקה **בתיק הזה**, שיש בה ממצא — "לא אותר" ו"מקור לא זמין" אינם מקור לנתון.
+    // בדיקה של תיק אחר, בדיקה שלא קיימת ובדיקה בלי ממצא — אותה תשובה. ביקור (13) עוד אינו ישות.
+    if ($kind === 'source_check' && ($src['ref'] ?? null) !== null && $src['ref'] !== '') {
+        if (!apr_is_pid($src['ref']) || !apr_val("SELECT 1 FROM source_checks WHERE pid = ? AND case_id = ? AND status IN ('found', 'partial', 'verified', 'needs_clarification')", [$src['ref'], $c['id']])) apr_fail('fact_source');
+        $out['source_ref_pid'] = $src['ref'];
+    }
     return $out;
 }
 
@@ -238,7 +243,14 @@ function apr_fact_source(array $ctx, array $c, mixed $src, ?string $fixedKind = 
 function apr_fact_source_out(array $ctx, array $c, array $f): array
 {
     $src = ['kind' => $f['source_kind']];
-    if ($f['source_file_id'] === null) return $src + ['date' => $f['source_date'], 'note' => $f['source_note']];
+    if ($f['source_file_id'] === null) {
+        // נתון מבדיקת מקור: המקור נפתח מהנתון — מזהה הבדיקה, שם המקור ומצבה (09)
+        if ($f['source_kind'] === 'source_check' && $f['source_ref_pid'] !== null
+            && ($k = apr_row('SELECT k.pid, k.status, s.name FROM source_checks k JOIN sources s ON s.id = k.source_id WHERE k.pid = ? AND k.case_id = ?', [$f['source_ref_pid'], $c['id']]))) {
+            $src += ['check' => $k['pid'], 'check_source' => $k['name'], 'check_status' => $k['status']];
+        }
+        return $src + ['date' => $f['source_date'], 'note' => $f['source_note']];
+    }
     if (!apr_file_visible($ctx, $c, ['id' => (int)$f['source_file_id'], 'pid' => $f['file_pid'], 'case_id' => $c['id']])) return $src + ['restricted' => true];
     $gone = $f['file_deleted'] !== null;
     return $src + ['file' => $gone ? null : $f['file_pid'], 'file_name' => $f['file_name'], 'page' => $f['source_page'] === null ? null : (int)$f['source_page'],

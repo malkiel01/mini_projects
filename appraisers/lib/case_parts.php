@@ -76,6 +76,7 @@ function apr_case_identifier_add(array $ctx, array $in): array
         $pid = apr_pid();
         apr_insert('case_identifiers', ['pid' => $pid, 'case_id' => $c['id'], 'created_by' => $ctx['user']['id'], 'created_at' => apr_now()] + $row);
         apr_case_audit($c, 'case.identifier_add', 'identifier', $pid, ['kind' => $row['kind'], 'source' => $row['source_kind']]);
+        if ($c['status'] !== 'draft') apr_sources_on_identifier($c);      // בדיקות מקור שחיכו לזיהוי (09 §8)
         apr_case_touch($c);
         return ['identifier' => $pid, 'similar' => apr_ident_similar($ctx, $c, $row['match_key'])];
     });
@@ -472,6 +473,7 @@ function apr_case_view(array $ctx, array $q): array
         'me' => ['role' => $c['my_role'], 'perms' => $c['perms']],
         'todo' => apr_case_todo($c), 'missing' => apr_case_missing($c),
         'open_conflicts' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]),
+        'sources' => apr_case_sources_summary($ctx, $c),
         'profile' => ['pid' => apr_profile_level($ctx, apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']])) !== null ? $p['pid'] : null, 'name' => $p['name'],
             'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null, 'pending' => $pending,
             'flags' => $content['flags'], 'groups' => $content['requirements']['groups']],
