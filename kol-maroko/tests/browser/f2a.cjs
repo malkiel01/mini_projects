@@ -230,9 +230,60 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const up = await call(mp, 'pf_read', null, `&id=${tree.find(f => f.path === 'up.html').id}`);
     const bin = await call(mp, 'pf_read', null, `&id=${tree.find(f => f.path === 'font.woff2').id}`);
     ok(up.content === '﻿<script>x</scr' + 'ipt>\r\nעברית' && bin.b64 === Buffer.from([0, 1, 2, 255, 254, 128]).toString('base64'), '390px: העלאה של קבצים — בייט בבייט (BOM, CRLF, בינארי)');
-    await mp.click('.pj-side-x');
-    await mp.click('.pj-bar [aria-label="כלי העורך"]').catch(() => {});
-    ok(await mp.isVisible('#sheet[open] .pj-menu') || true, '390px: כלי העורך בתפריט');
+    // מדיה: נכנסת לספריית המדיה, ומופיעה בעץ כהפניה
+    const [ch2] = await Promise.all([mp.waitForEvent('filechooser'), mp.click('.pj-side-btns .btn:has-text("העלאה")')]);
+    await ch2.setFiles([{ name: 'pic.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') }]);
+    await mp.waitForSelector('.pj-tree .pj-row:has-text("pic.png") .chip:has-text("מדיה")');
+    ok((await call(mp, 'pf_tree')).files.find(f => f.path === 'pic.png').kind === 'media', '390px: תמונה שהועלתה נכנסה לספריית המדיה ומופיעה בעץ כהפניה');
+    await mp.click('.pj-tree .pj-name:has-text("pic.png")');
+    await mp.waitForFunction(() => document.querySelector('.pj-bin img')?.naturalWidth > 0);
+    ok(true, '390px: הפניה למדיה נפתחת כתצוגה');
+
+    // התנגשות rev: מישהו שמר בינתיים — שתי הגרסאות מוצגות, ושום דבר לא נדרס בשקט
+    await mp.click('.pj-files-btn');
+    await mp.click('.pj-tree .pj-name:has-text("up.html")');
+    await mp.waitForSelector('.pj-ed .monaco-editor .view-line');
+    const upId = await mp.evaluate(() => Project._state.cur);
+    await call(mp, 'pf_write', { id: upId, rev: 1, content: 'מישהו אחר שמר' });
+    await mp.evaluate(() => Project._state.editor.getModel().setValue('הגרסה שלי'));
+    await mp.keyboard.press('Control+s');
+    await mp.waitForSelector('#sheet[open] .pj-diff');
+    ok((await mp.textContent('#sheet-title')) === 'הקובץ השתנה בינתיים' && (await call(mp, 'pf_read', null, `&id=${upId}`)).content === 'מישהו אחר שמר', '390px: rev ישן — "הקובץ השתנה בינתיים", עם שתי הגרסאות; השרת לא נדרס');
+    await mp.click('#sheet .btn:has-text("לשמור את שלי")');
+    await mp.waitForFunction(() => document.querySelector('.pj-status').textContent.includes('✓'));
+    ok((await call(mp, 'pf_read', null, `&id=${upId}`)).content === 'הגרסה שלי', '390px: אחרי בחירה מפורשת — נשמר');
+
+    // כלי העורך: חיפוש, מעבר לשורה, עטיפה, גופן, בטל
+    const tool = async name => { await mp.click('.pj-bar [aria-label="כלי העורך"]'); await mp.waitForSelector('#sheet[open] .pj-menu'); await mp.click(`#sheet .pj-menu .btn:has-text("${name}")`); await mp.waitForFunction(() => !document.querySelector('#sheet[open]')); };
+    const font0 = await mp.evaluate(() => Project._state.editor.getOption(monaco.editor.EditorOption.fontSize));
+    await tool('גופן גדול יותר');
+    ok(await mp.evaluate(() => Project._state.editor.getOption(monaco.editor.EditorOption.fontSize)) === font0 + 1, '390px: גודל גופן');
+    await tool('בלי עטיפת שורות');
+    ok(await mp.evaluate(() => Project._state.editor.getOption(monaco.editor.EditorOption.wordWrap)) === 'off', '390px: עטיפת שורות');
+    await tool('חיפוש והחלפה');
+    await mp.waitForSelector('.monaco-editor .find-widget.visible', { timeout: 5000 });
+    ok(await mp.isVisible('.monaco-editor .find-widget .replace-part'), '390px: חיפוש והחלפה בקובץ');
+    await mp.keyboard.press('Escape');
+    await mp.evaluate(() => { const e = Project._state.editor; e.focus(); e.executeEdits('t', [{ range: new monaco.Range(1, 1, 1, 1), text: 'XX' }]); e.pushUndoStop(); });
+    await tool('בטל');
+    ok(await mp.evaluate(() => Project._state.editor.getModel().getValue()) === 'הגרסה שלי', '390px: בטל');
+    await tool('חזור');
+    ok(await mp.evaluate(() => Project._state.editor.getModel().getValue()) === 'XXהגרסה שלי', '390px: חזור');
+    await mp.waitForFunction(() => document.querySelector('.pj-status').textContent.includes('✓'), null, { timeout: 8000 });
+
+    // 📏 מגבלות במסך המפתח, והלשונית הישנה </> קוד עם Monaco מקומי
+    await mp.goto(base + '/#/dev/limits');
+    await mp.waitForSelector('.pj-limit');
+    ok(await mp.$$eval('.pj-limit input', i => i.map(x => +x.value).join()) === '200,2097152,2000,200', '390px: 📏 מגבלות במסך המפתח — ארבע הגדרות');
+    await call(mp, 'code_create', {});
+    await mp.goto(base + '/#/code');
+    await mp.waitForSelector('.code-ed .monaco-editor .view-line', { timeout: 20000 });
+    ok(true, 'הלשונית הישנה </> קוד נטענת עם Monaco מהאפליקציה');
+    await mp.goto(base + '/#/project');
+    await mp.waitForSelector('.pj-ed .monaco-editor .view-line', { timeout: 20000 });
+    await tool('חיפוש בקובץ');
+    await mp.waitForSelector('.monaco-editor .find-widget.visible', { timeout: 5000 });
+    ok(true, 'חזרה למסך הפרויקט אחרי הלשונית הישנה — העורך וכליו עובדים');
     if (SHOTS) await mp.screenshot({ path: path.join(SHOTS, 'f2a-390-editor.png') });
     ok(merr.length === 0, '390px: אין שגיאות JavaScript' + (merr.length ? ' · ' + merr.join(' | ') : ''));
     await m.close();

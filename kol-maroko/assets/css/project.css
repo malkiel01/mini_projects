@@ -22,7 +22,9 @@
 .pj-img { max-width: 100%; max-height: 50vh; border: 1px solid var(--line); border-radius: var(--r);
     background: repeating-conic-gradient(color-mix(in srgb, var(--line) 60%, transparent) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
 .pj-bin audio { width: 100%; }
-.pj-diff { height: min(52vh, 420px); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; display: grid; }
+.pj-diff { display: grid; gap: var(--s2); }
+.pj-diff textarea { width: 100%; }
+@media (min-width: 700px) { .pj-diff { grid-template-columns: 1fr 1fr; } }
 .pj-menu { display: grid; gap: var(--s2); }
 .pj-menu .btn { justify-content: flex-start; }
 .pj-fails { margin: 0; padding-inline-start: var(--s4); display: grid; gap: var(--s1); overflow-wrap: anywhere; }

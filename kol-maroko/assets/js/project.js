@@ -158,9 +158,8 @@ const Project = (() => {
   function conflictSheet(doc, mine, theirs) {
     const f = S.byId.get(doc.id);
     const box = h('div', { class: 'pj-diff', dir: 'ltr' });
-    let diff = null;
     const dlg = sheet('הקובץ השתנה בינתיים',
-      h('p', { class: 'hint' }, `${f ? f.path : ''} נשמר בינתיים בידי ${theirs.file.by || 'מישהו אחר'} (${when(theirs.file.at)}). מימין — הגרסה שבשרת; משמאל — שלך.`),
+      h('p', { class: 'hint' }, `${f ? f.path : ''} נשמר בינתיים בידי ${theirs.file.by || 'מישהו אחר'} (${when(theirs.file.at)}). למטה — שתי הגרסאות.`),
       box,
       h('div', { class: 'row-btns wrap' },
         h('button', { type: 'button', class: 'btn primary', onclick: () => { doc.rev = theirs.file.rev; doc.conflict = false; dlg.close(); save(doc.id); } }, 'לשמור את שלי'),
@@ -171,14 +170,9 @@ const Project = (() => {
           dlg.close();
         } }, 'לקחת את הגרסה מהשרת'),
         h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'אחר כך')));
-    if (monaco && !theirs.binary) {
-      diff = monaco.editor.createDiffEditor(box, { readOnly: true, automaticLayout: true, renderSideBySide: !phone(), minimap: { enabled: false }, theme: dark() ? 'vs-dark' : 'vs' });
-      const a = monaco.editor.createModel(theirs.content, doc.model?.getLanguageId()), b = monaco.editor.createModel(mine, doc.model?.getLanguageId());
-      diff.setModel({ original: a, modified: b });
-      dlg.addEventListener('close', () => { diff.dispose(); a.dispose(); b.dispose(); }, { once: true });
-    } else {
-      box.append(h('textarea', { class: 'code-area', readonly: true, rows: 8 }, theirs.binary ? '(קובץ בינארי)' : theirs.content), h('textarea', { class: 'code-area', readonly: true, rows: 8 }, mine));
-    }
+    // שתי תיבות לקריאה בלבד (עורך ההשוואה של Monaco, כשהוא נסגר, משבית את העורך הראשי — לכן לא כאן; diff מלא ב-F2b)
+    const pane = (label, text) => h('label', { class: 'f' }, h('span', {}, label), h('textarea', { class: 'code-area', readonly: true, rows: 9, spellcheck: 'false' }, text));
+    box.append(pane('בשרת', theirs.binary ? '(קובץ בינארי)' : theirs.content), pane('שלך', mine));
     drawStatus();
   }
 
@@ -469,7 +463,8 @@ const Project = (() => {
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
     el.tabs = h('div', { class: 'pj-tabs', role: 'tablist', 'aria-label': 'קבצים פתוחים' });
-    el.ed = h('div', { class: 'pj-ed', dir: 'ltr', hidden: true });
+    // עורך אחד לכל חיי הדף: Monaco שנסגר (dispose) משבית פעולות בעורך שנפתח אחריו — לכן שומרים אותו ומחברים מחדש
+    el.ed = el.ed || h('div', { class: 'pj-ed', dir: 'ltr', hidden: true });
     el.view = h('div', { class: 'pj-view' }, h('p', { class: 'empty' }, 'טוען…'));
     el.status = h('span', { class: 'pj-status', role: 'status' });
     el.save = h('button', { type: 'button', class: 'btn primary sm', disabled: true, onclick: () => save(S.cur) }, '💾 שמירה');
@@ -499,11 +494,10 @@ const Project = (() => {
       h('p', { class: 'pj-note', role: 'note' }, 'הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא.'),
       el.kol,
       h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
-    S.editor = null;
 
     try { await loadMonaco(); } catch { toast('העורך המלא לא נטען — עורכים בתיבת טקסט', true); }
     if (S.host !== host) return;
-    if (monaco) {
+    if (monaco && !S.editor) {
       S.editor = monaco.editor.create(el.ed, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: prefs.wrap ? 'on' : 'off',
         minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
@@ -523,7 +517,7 @@ const Project = (() => {
   function unmount() {
     if (!S.host) return;
     keepView();
-    S.editor?.dispose(); S.editor = null; S.host = null;
+    S.host = null;
   }
 
   // Ctrl/⌘+S גם כשהמיקוד מחוץ לעורך; אזהרה ביציאה כשיש שינוי שלא נשמר
