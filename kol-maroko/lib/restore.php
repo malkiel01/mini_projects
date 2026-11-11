@@ -13,6 +13,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/project.php';
+
 const SNAP_SETTINGS = ['imported_css', 'preview_css', 'preview_js', 'theme_lexicon_css', 'theme_style_css', 'imported_from'];
 const SNAP_CHAT_IDLE = 1800;             // צ'אט שלא עשה כלום חצי שעה — הפעולה הבאה שלו פותחת נקודה חדשה
 
@@ -45,7 +47,7 @@ function snap_state(): array
     $j = fn($v) => json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $settings = [];
     foreach (SNAP_SETTINGS as $k) $settings[$k] = setting($k);
-    return [
+    return (pf_seeded() ? ['project' => pf_snap_state()] : []) + [          // קבצי הפרויקט (F2a) — רק אחרי שהפרויקט נוצר
         'draft' => (string)draft_row()['json'],
         'words' => $j($pdo->query('SELECT * FROM words ORDER BY id')->fetchAll()),
         'topics' => $j($pdo->query('SELECT * FROM topics ORDER BY slug')->fetchAll()),
@@ -178,6 +180,8 @@ function snapshot_apply(array $user, array $parts, string $note): array
             if (isset($have[$f['id']])) $st->execute([$f['deleted_at'], $f['deleted_by'], $f['id']]);
             elseif ($f['deleted_at'] === null) $missing[] = $f['id'];          // נמחק סופית אחרי הנקודה
         }
+        // נקודה מלפני F2a אינה מכילה את קבצי הפרויקט — והם נשארים כמו שהם
+        if (isset($parts['project'])) $missing = array_merge($missing, pf_snap_apply($user, json_decode(blob_get($parts['project']), true) ?: [], $note));
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
@@ -310,7 +314,7 @@ function backup_download(array $owner): never
     }
     $zip->addFromString('README.txt', "גיבוי מלא של קול מרוקו — " . gmdate('Y-m-d H:i') . " UTC\n\n"
         . "kol.sqlite — המסד: הגרסאות, נקודות השחזור, המילים, הנושאים, קבצי הקוד, החברים וההיסטוריה.\n"
-        . "files/ — כל הקבצים (תמונות, הקלטות, ייבוא).\n\n"
+        . "files/ — כל הקבצים (תמונות, הקלטות, ייבוא); files/_project/ — תוכן קבצי הפרויקט, לפי sha256 (הרשומות במסד: pf_files).\n\n"
         . "שחזור: מעתיקים את kol.sqlite לתיקייה kol-maroko/data/ ואת התוכן של files/ ל-kol-maroko/data/files/ בשרת.\n");
     $zip->close();
     @unlink($db);
