@@ -193,6 +193,8 @@ function apr_contact_save(array $ctx, array $in): array
         if (($in['contact'] ?? null) !== null) {
             $r = apr_contact_row($office, $in['contact']);
             apr_exec('UPDATE contacts SET name = ?, org = ?, email = ?, phone = ?, note = ?, updated_at = ? WHERE id = ?', [...array_values($f), $now, $r['id']]);
+            // המייל של הנמען השתנה — הקישורים שנשלחו לכתובת הקודמת מבוטלים, ונדרשת שליחה מחדש (07 §7)
+            if (mb_strtolower((string)$r['email']) !== (string)$f['email']) apr_requests_on_email_change((int)$r['id']);
             apr_audit('contact.update', 'contact', $r['pid'], [], office: $office);
             return ['contact' => $r['pid']];
         }
@@ -275,8 +277,9 @@ function apr_case_party_update(array $ctx, array $in): array
 function apr_case_party_remove(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
-    return apr_tx(function () use ($c, $in) {
+    return apr_tx(function () use ($ctx, $c, $in) {
         $p = apr_party_row($c, $in['party'] ?? null);
+        apr_requests_on_party_remove($c, (int)$p['id'], (int)$ctx['user']['id']);     // כל הבקשות שלו מבוטלות (07 §7) — לפני ההסרה
         apr_exec('UPDATE case_parties SET removed_at = ?, is_orderer = 0 WHERE id = ?', [apr_now(), $p['id']]);
         apr_exec("UPDATE requirements SET party_id = NULL, updated_at = ? WHERE case_id = ? AND party_id = ? AND status = 'required'", [apr_now(), $c['id'], $p['id']]);
         apr_case_audit($c, 'case.party_remove', 'party', $p['pid']);

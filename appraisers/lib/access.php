@@ -24,6 +24,9 @@ const APR_ACCESS = [
     'platform_key'        => 'public',
     'login-config'        => 'public', 'sso-start' => 'public', 'sso-callback' => 'public',
     'login'               => 'public', 'forgot' => 'public', 'reset' => 'public',
+    // הפורטל לנמען (07): בלי משתמש — כל פעולה מאמתת את האסימון של הקישור בעצמה (lib/portal.php)
+    'portal-open' => 'public', 'portal-otp-send' => 'public', 'portal-otp-verify' => 'public', 'portal-upload' => 'public',
+    'portal-respond' => 'public', 'portal-file' => 'public', 'portal-client-error' => 'public',
     'devapi-feed'         => 'token', 'devapi-comment' => 'token', 'devapi-file' => 'token', 'devapi-attach' => 'token',
 
     'me'                  => 'user',
@@ -60,6 +63,9 @@ const APR_ACCESS = [
     'case-docs' => 'member', 'file' => 'member', 'file-thumb' => 'member', 'docs-search' => 'member', 'docs-pending' => 'member',
     'file-upload' => 'member', 'file-assign' => 'member', 'file-update' => 'member', 'file-delete' => 'member', 'file-review' => 'member',
     'requirement-status' => 'member', 'requirement-order' => 'member', 'requirement-split' => 'member',
+    // בקשות (07): view בתיק לצפייה; contact ליצירה, שליחה, שליחה מחדש וביטול (lib/requests.php)
+    'case-requests' => 'member', 'requests-failed' => 'member', 'request-preview' => 'member', 'request-send' => 'member',
+    'request-resend' => 'member', 'request-revoke' => 'member', 'office-portal-otp' => 'admin',
     'office-cases' => 'admin', 'office-case-transfer' => 'admin',
 
     'office'              => 'member',
@@ -99,7 +105,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
