@@ -129,3 +129,4 @@
   record, plan ו-`apr_sources_on_identifier`; שמאי שפועל בעצמו — השורה נושאת `approved_by`. 🟡2: `source-file-upload` דרך `apr_file_ingest`, עם שיוך לדרישה (נבדק גם ב-HTTP
   אמיתי, Chromium). 🟡3: `disclaimer` ב-`case-activity`. 🟡4: `PRAGMA recursive_triggers = ON` — כל 16 הקבצים ירוקים, שום טריגר קיים לא נשבר. 🟡5: `value_corrected`.
   🟡6: בדיקה מאומתת מתיק אחר. `n-sources`: 73 בדיקות; 13 מוטציות על התיקונים — כולן נתפסות.
+- 2026-11-11 13:05 UTC · **קוד (8)** · פרוסה 09 מוזגה (#1425, main `9110410`), כולל סבב 2. `team/handoff/code.md` עודכן לקוד (9), לקראת 13 (ביקור). קוד (8) מפסיק לפעול.

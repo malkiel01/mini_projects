@@ -39,6 +39,13 @@
  *                  {check} · source-check-cost {check, cost_amount, cost_note?} · case-planning {case} · planning-item {item}
  *                  · planning-add {case, kind, title, …} · planning-update {item, …בלי kind} · planning-applicability {item,
  *                  applicability, note} · planning-delete {item, reason} · planning-task {item, detail?} · sys-sources · sys-source-save
+ * ביקור (13):       case-visits {case} · visit {visit} · my-visits · visit-plan {case, visitor, scheduled_at?, access_contact?, access_note?}
+ *                  · visit-update {visit, rev, …} · visit-start {visit, rev} · visit-cancel {visit, rev, reason} · visit-answer {visit, field,
+ *                  row?, rev, value, unit?, area_kind?, obtained?, obtained_from?, note?, op?} · visit-row-add {visit, group} · visit-row-remove
+ *                  {visit, group, row} · visit-copy {visit, from} · visit-finish {visit, rev, result, note?, override_reason?, scheduled_at?}
+ *                  · visit-reopen {visit, rev, reason} · visit-photo {photo, thumb?} · visit-photo-upload (גוף גולמי; בכתובת: visit, field?, row?,
+ *                  name, key, caption?, place?, taken_at?, consent?, lat?, lng?) · visit-photo-update {photo, rev, caption?, place?, usage?,
+ *                  for_report?, confirm_rights?} · visit-photo-order {visit, order[]} · visit-photo-delete {photo, rev} · office-visit-geo {on}
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -77,6 +84,8 @@ require_once __DIR__ . '/reminders.php';
 require_once __DIR__ . '/inbound.php';
 require_once __DIR__ . '/facts.php';
 require_once __DIR__ . '/sources.php';
+require_once __DIR__ . '/visits.php';
+require_once __DIR__ . '/visit_photos.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -266,6 +275,26 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'planning-applicability' => apr_planning_applicability($ctx, $p),
         'planning-delete' => apr_planning_delete($ctx, $p),
         'planning-task' => apr_planning_task($ctx, $p),
+        // ביקור (13)
+        'case-visits' => apr_case_visits($ctx, $p),
+        'visit' => apr_visit_view($ctx, $p),
+        'my-visits' => apr_my_visits($ctx),
+        'visit-plan' => apr_visit_plan($ctx, $p),
+        'visit-update' => apr_visit_update($ctx, $p),
+        'visit-start' => apr_visit_start($ctx, $p),
+        'visit-cancel' => apr_visit_cancel($ctx, $p),
+        'visit-answer' => apr_visit_answer($ctx, $p),
+        'visit-row-add' => apr_visit_row_add($ctx, $p),
+        'visit-row-remove' => apr_visit_row_remove($ctx, $p),
+        'visit-copy' => apr_visit_copy($ctx, $p),
+        'visit-finish' => apr_visit_finish($ctx, $p),
+        'visit-reopen' => apr_visit_reopen($ctx, $p),
+        'visit-photo' => apr_visit_photo_serve($ctx, $p),
+        'visit-photo-upload' => apr_visit_photo_upload($ctx, $p, $env),
+        'visit-photo-update' => apr_visit_photo_update($ctx, $p),
+        'visit-photo-order' => apr_visit_photo_order($ctx, $p),
+        'visit-photo-delete' => apr_visit_photo_delete($ctx, $p),
+        'office-visit-geo' => apr_office_visit_geo($ctx, $p),
         'file-assign' => apr_file_assign($ctx, $p),
         'file-update' => apr_file_update($ctx, $p),
         'file-delete' => apr_file_delete($ctx, $p),
@@ -366,5 +395,5 @@ function apr_error_response(Throwable $e, string $action): array
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
     return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
-        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []) + ($e instanceof AprFactChanged ? ['current' => $e->current] : []), 'req' => apr_req_id()]];
+        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []) + ($e instanceof AprFactChanged ? ['current' => $e->current] : []) + ($e instanceof AprVisitError ? $e->extra : []), 'req' => apr_req_id()]];
 }

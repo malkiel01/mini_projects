@@ -30,7 +30,8 @@ function apr_profile_empty_content(): array
 {
     return ['schema' => APR_PROFILE_SCHEMA, 'flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => [],
         'contact' => apr_contact_defaults(),
-        'sources' => ['items' => [], 'spend_needs_approval' => true]];     // "מקורות" (אפיון 09 §8) — lib/sources.php     // "קשר ותזכורות" (אפיון 08 §4) — lib/contact_content.php
+        'sources' => ['items' => [], 'spend_needs_approval' => true],
+        'visit' => apr_visit_default_form()];                               // "ביקור" (אפיון 13 §4) — lib/visit_form.php; ברירת המחדל: שש הקבוצות לדוגמה     // "מקורות" (אפיון 09 §8) — lib/sources.php     // "קשר ותזכורות" (אפיון 08 §4) — lib/contact_content.php
 }
 
 // ── אימות המבנה בשמירה ───────────────────────────────────────
@@ -174,6 +175,7 @@ function apr_profile_content_clean(mixed $c): array
     }
     $out['contact'] = apr_contact_clean($c['contact'] ?? null);
     $out['sources'] = apr_pc_sources($c['sources'] ?? null);
+    $out['visit'] = apr_pc_visit($c['visit'] ?? null);
     return $out;
 }
 
@@ -268,6 +270,10 @@ function apr_profile_checks(array $content, array $docTypes): array
     foreach (apr_contact_checks(apr_contact_clean($content['contact'] ?? null)) as [$code, $message, $ref]) $add($err, $code, $message, $ref);
     // מקור שהוסר או הוסתר בקטלוג — אזהרה בלבד (09, מקרה קצה 10)
     foreach (apr_pc_sources_checks($content['sources'] ?? []) as [$code, $message, $ref]) $add($warn, $code, $message, $ref);
+    // טופס הביקור (13 §4): מפתח כפול, תנאי שמפנה קדימה, maps_to שאינו בקטלוג — חוסמים; שדה שטח בלי maps_to — אזהרה
+    [$ve, $vw] = apr_pc_visit_checks($content['visit'] ?? apr_visit_default_form(), array_column(apr_attrs_all(), null, 'key'));
+    foreach ($ve as [$code, $message, $ref]) $add($err, $code, $message, $ref);
+    foreach ($vw as [$code, $message, $ref]) $add($warn, $code, $message, $ref);
     if (!$items && !$tasks) $add($warn, 'empty', 'בפרופיל אין אף דרישה ואף משימה', 'profile');
     return ['errors' => $err, 'warnings' => $warn];
 }
@@ -334,7 +340,9 @@ function apr_profile_diff(array $a, array $b): array
     $sections = ['flags' => fn($c) => $c['flags'], 'groups' => fn($c) => $c['requirements']['groups'], 'requirements' => fn($c) => $c['requirements']['items'],
         'tasks' => fn($c) => $c['tasks']['items'], 'rules' => fn($c) => $c['rules'],
         // "מקורות" (09): המפתח הוא המקור, כדי ששינוי של mode ייראה בהשוואה
-        'sources' => fn($c) => array_map(fn($i) => ['key' => $i['source'], 'title' => $i['source']] + $i, $c['sources']['items'] ?? [])];
+        'sources' => fn($c) => array_map(fn($i) => ['key' => $i['source'], 'title' => $i['source']] + $i, $c['sources']['items'] ?? []),
+        // "ביקור" (13): קבוצות ושדות ברשימה אחת — מפתח של קבוצה נושא קידומת, כדי שלא יתנגש במפתח של שדה
+        'visit' => fn($c) => array_merge(array_map(fn($g) => ['key' => 'group:' . $g['key']] + $g, $c['visit']['groups'] ?? []), array_map(fn($f) => ['title' => $f['label']] + $f, $c['visit']['fields'] ?? []))];
     $out = [];
     foreach ($sections as $name => $get) {
         $old = array_column($get($a), null, 'key');

@@ -289,9 +289,9 @@ eq(code(call('POST', 'profile-share', ['profile' => $mine, 'email' => 'dana@exam
 // ── 03-C2: מה עובר בשיתוף ובשכפול ──
 $allowedProfile = ['pid', 'scope', 'name', 'description', 'purposes', 'property_types', 'status', 'is_sample', 'owner', 'version', 'has_draft', 'updated_at', 'source', 'can'];
 [, $seen] = call('GET', 'profile', [], $boaz, ['profile' => $mine]);
-eq([array_keys($seen), array_keys($seen['profile']), array_keys($seen['content'])], [['ok', 'profile', 'version', 'content'], $allowedProfile, ['schema', 'flags', 'requirements', 'tasks', 'rules', 'contact', 'sources']], '03-C2 תשובת השיתוף: רק פרטי הפרופיל ו-content');
+eq([array_keys($seen), array_keys($seen['profile']), array_keys($seen['content'])], [['ok', 'profile', 'version', 'content'], $allowedProfile, ['schema', 'flags', 'requirements', 'tasks', 'rules', 'contact', 'sources', 'visit']], '03-C2 תשובת השיתוף: רק פרטי הפרופיל ו-content');
 [, $copyView] = call('POST', 'profile-draft-open', ['profile' => $bdup['profile']], $boaz);
-eq([array_keys($copyView['profile']), array_keys($copyView['content'])], [$allowedProfile, ['schema', 'flags', 'requirements', 'tasks', 'rules', 'contact', 'sources']], '03-C2 הפרופיל המשוכפל: אותם שדות');
+eq([array_keys($copyView['profile']), array_keys($copyView['content'])], [$allowedProfile, ['schema', 'flags', 'requirements', 'tasks', 'rules', 'contact', 'sources', 'visit']], '03-C2 הפרופיל המשוכפל: אותם שדות');
 $ids = fn(string $t) => array_column(apr_rows("SELECT pid FROM $t"), 'pid');
 $danaOffice = (int)apr_val('SELECT id FROM offices WHERE pid = ?', [$A]);
 $blob = json_encode([$seen, $copyView, call('GET', 'profiles', [], $boaz)[1]], JSON_UNESCAPED_UNICODE);
@@ -411,7 +411,7 @@ $x = $la('profile.create', $recMine);
 eq([$x['office_pid'], json_decode($x['meta'], true)], [null, ['scope' => 'recommended']], 'profile.create של מומלץ: בלי משרד');
 eq([(int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'profile.duplicate' AND json_extract(meta, '$.from_number') IS NOT NULL"), (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action LIKE 'profile.%' AND entity_type <> 'profile'")], [(int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'profile.duplicate'"), 0], 'profile.duplicate: ממספר איזו גרסה; וכל שורה על ישות מסוג profile');
 check('היומן בלי תוכן של פרופיל', !preg_match('/דרישה|rights|works_quote/u', json_encode(apr_rows("SELECT meta FROM audit_log WHERE action LIKE 'profile.%'"), JSON_UNESCAPED_UNICODE)));
-eq(array_keys(apr_profile_content_read('{"schema":0,"requirements":{"groups":[],"items":[]},"visit":{"x":1}}')), ['schema', 'flags', 'requirements', 'tasks', 'rules', 'contact', 'sources'], 'מקרה 8: תוכן ישן — מקטע חסר מושלם, מקטע לא מוכר מתעלמים ממנו');
+eq(array_keys(apr_profile_content_read('{"schema":0,"requirements":{"groups":[],"items":[]},"future":{"x":1}}')), ['schema', 'flags', 'requirements', 'tasks', 'rules', 'contact', 'sources', 'visit'], 'מקרה 8: תוכן ישן — מקטע חסר מושלם, מקטע לא מוכר מתעלמים ממנו');
 eq(apr_profile_content_read('{"schema":0}')['schema'], APR_PROFILE_SCHEMA, 'מקרה 8: ה-schema מתעדכן בקריאה');
 
 // ══ ביקורת סבב 1 (team/reviews/03-profiles.md) ══

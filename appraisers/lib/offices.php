@@ -99,7 +99,7 @@ function apr_office_view(array $ctx): array
     $rows = apr_rows('SELECT u.pid, u.name, u.email, u.last_seen_at, u.status AS user_status, m.role, m.is_admin, m.status, m.title, m.license_no
         FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.office_id = ? AND m.deleted_at IS NULL' . ($admin ? '' : " AND m.status = 'active'") . '
         ORDER BY m.status, u.name, u.id', [$office]);
-    $out = ['office' => ['pid' => $ctx['office']['pid'], 'name' => $ctx['office']['name'], 'portal_always_otp' => (bool)apr_val('SELECT portal_always_otp FROM offices WHERE id = ?', [$office])], 'can_manage' => $admin,
+    $out = ['office' => ['pid' => $ctx['office']['pid'], 'name' => $ctx['office']['name'], 'portal_always_otp' => (bool)apr_val('SELECT portal_always_otp FROM offices WHERE id = ?', [$office]), 'visit_geo' => (bool)apr_val('SELECT photo_geo FROM office_visit_settings WHERE office_id = ?', [$office])], 'can_manage' => $admin,
         'members' => array_map(function ($r) use ($ctx, $admin) {
             $m = ['pid' => $r['pid'], 'name' => $r['name'], 'role' => $r['role'], 'is_admin' => (bool)$r['is_admin'], 'title' => $r['title'],
                 'me' => $r['pid'] === $ctx['user']['pid']];
