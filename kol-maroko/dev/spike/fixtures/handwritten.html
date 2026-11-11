@@ -1,0 +1,66 @@
+﻿<!DOCTYPE html>
+<!-- עמוד שנכתב ביד: הזחה מעורבת, תגיות לא סגורות, תכונות בלי מרכאות -->
+<html lang=he dir=rtl>
+<head>
+	<meta charset="utf-8">
+    <title>דף של בן אדם &amp; חברים</title>
+	<link rel=stylesheet href=handwritten.css>
+	<style>
+	  /* סגנון בתוך הדף */
+	  .inline-note { color: #a00; }
+	</style>
+	<script>
+	  // סקריפט בתוך הדף — אסור שירוץ בקנבס
+	  document.title = 'PWNED-script';
+	  try { parent.postMessage('kol-spike-pwned:script', '*'); } catch (e) {}
+	</script>
+</head>
+<body class="page home">
+<header id=top class='site-head' >
+	<h1 class="title">ברוכים&nbsp;הבאים   </h1>
+    <p class=lead>טקסט פתיחה עם <b>הדגשה</b>, <i>נטוי</i> &mdash; ועוד.
+    <p>פסקה שנייה בלי תגית סגירה
+	<nav>
+	  <ul class="menu">
+		<li><a href="#one">ראשון</a>
+		<li class="current"><a href=#two>שני</a>
+	    <li><a href="javascript:parent.postMessage('kol-spike-pwned:href','*')" id="evil-link">שלישי</a>
+	  </ul>
+	</nav>
+</header>
+
+<main>
+  <!-- אזור ראשי -->
+  <section id="one" class="block  wide" data-x="1"   hidden=""  >
+	<h2 class="block-title">כותרת ראשונה</h2>
+	<p class="text">שורה אחת<br>שורה שתיים<br/>
+	   שורה שלוש, עם רווחים בסוף   </p>
+	<img src="nope.png" alt="תמונה" width=120 onerror="parent.postMessage('kol-spike-pwned:onerror','*')">
+	<button type="button" id="evil-btn" onclick="parent.postMessage('kol-spike-pwned:onclick','*')" class="btn">לחצו</button>
+  </section>
+  <section id="two" class="block">
+    <h2 class="block-title">כותרת שנייה</h2>
+    <table class="data">
+      <tr><th>מילה<th>פירוש
+      <tr><td>שלום</td><td>سلام</td></tr>
+      <tr><td>Bslama<td>להתראות
+    </table>
+    <div class="cards">
+      <div class="card" id="c1"><span class="tag">א</span> כרטיס ראשון</div>
+      <div class="card" id="c2"><span class="tag">ב</span> כרטיס שני</div>
+	  <div class="card" id="c3">
+		<span class="tag">ג</span>
+		כרטיס שלישי
+	  </div>
+    </div>
+    <div class="aside-box" id="box"></div>
+    <noscript><p class="ns">בלי סקריפטים</p></noscript>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <p>&copy; 2026 · נכתב ביד</p>
+  <script>parent.postMessage('kol-spike-pwned:script2','*');</script>
+</footer>
+</body>
+</html>

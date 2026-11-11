@@ -1,0 +1,127 @@
+/**
+ * קול מרוקו - עיצוב עמוד המילון (קובץ בדיקה לספייק V0).
+ * נכתב בסגנון ערכת הנושא: משתנים, !important, @media, הערות.
+ */
+:root {
+    --ka-navy: #14213d;
+    --ka-gold: #c9a227;
+    --ka-cream: #f5ebd6;
+    --ka-radius: 14px;
+    --ka-hero-overlay: .4; /* נדרס מה-style של הפס */
+}
+
+.kadisha-page { font-family: 'Assistant', 'Heebo', Arial, sans-serif; color: #1f2430; margin: 0; }
+.kadisha-container { max-width: 1180px; margin: 0 auto; padding: 0 1.25rem; }
+
+/* ── הפס העליון ───────────────────────────── */
+.kadisha-hero {
+    position: relative;
+    background: var(--ka-navy) center / cover no-repeat;
+    color: var(--ka-cream);
+    text-align: center;
+    padding: 4rem 0 3rem;
+}
+.kadisha-hero--has-image::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: rgba(10, 16, 32, var(--ka-hero-overlay));
+}
+.kadisha-hero-inner { position: relative; z-index: 1; }
+.kadisha-hero-title { font-family: 'Frank Ruhl Libre', serif; margin: 0 0 .4rem; }
+.kadisha-hero-eyebrow { display: inline-flex; flex-direction: column; letter-spacing: .12em; text-transform: uppercase; }
+.kadisha-hero-eyebrow-line { display: block; }
+.kadisha-lex-hero-actions { display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem; }
+.kadisha-lex-hero-btn {
+    display: inline-flex; align-items: center; gap: .5rem;
+    background: var(--ka-gold); color: var(--ka-navy);
+    border: 0; border-radius: 999px; padding: .6rem 1.4rem;
+    font: inherit; font-weight: 700; cursor: pointer;
+}
+.kadisha-lex-hero-btn:hover,
+.kadisha-lex-hero-btn:focus-visible { filter: brightness(1.08); outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ── המבוא ── */
+.kadisha-lexicon-intro { margin: 1.5rem auto; background: #fffaf0; border-radius: var(--ka-radius); padding: 1.25rem 1.5rem; }
+.kadisha-lexicon-intro[hidden] { display: none !important; }
+.kadisha-lexicon-intro-toggle { background: none; border: 0; color: var(--ka-navy); font-weight: 700; cursor: pointer; }
+
+/* ── חיפוש וסינון ── */
+.kadisha-lexicon-controls { margin: 2rem 0 1.25rem; }
+.kadisha-lexicon-search-wrap { position: relative; }
+.kadisha-lexicon-search {
+    width: 100%; box-sizing: border-box;
+    font-size: 1.15rem; padding: .85rem 3rem .85rem 1rem;
+    border: 2px solid #d9d2c0; border-radius: var(--ka-radius);
+}
+.kadisha-lexicon-search:focus { border-color: var(--ka-gold) !important; outline: none; }
+.kadisha-lexicon-search-icon { position: absolute; inset-inline-start: 1rem; top: 50%; transform: translateY(-50%); }
+.screen-reader-text { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.kadisha-lexicon-topic-filter { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.kadisha-lex-topic-btn { border: 1px solid #d9d2c0; background: #fff; border-radius: 999px; padding: .35rem .9rem; cursor: pointer; font: inherit; }
+.kadisha-lex-topic-btn.is-active { background: var(--ka-navy); color: #fff; border-color: var(--ka-navy); }
+.kadisha-lex-topic-count { opacity: .65; font-size: .85em; }
+.kadisha-lexicon-count { margin-top: .75rem; color: #6b7280; font-size: .95rem; }
+
+/* ── הכרטיסים ── */
+.kadisha-lexicon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+.kadisha-word-card {
+    background: #fff;
+    border: 1px solid #ece6d6;
+    border-radius: var(--ka-radius);
+    padding: 1rem 1.1rem;
+    box-shadow: 0 1px 3px rgba(20, 33, 61, .06);
+}
+.kadisha-word-head { display: flex; align-items: center; gap: .5rem; }
+.kadisha-word-title { font-size: 1.35rem; margin: 0; flex: 1; color: var(--ka-navy); }
+.kadisha-word-extid { font-size: .75rem; color: #9ca3af; }
+.kadisha-word-audio-btn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--ka-gold); color: #fff; cursor: pointer; }
+.kadisha-word-topics { display: flex; flex-wrap: wrap; gap: .3rem; margin: .5rem 0; }
+.kadisha-word-topic { background: #f3efe3; border-radius: 999px; padding: .1rem .6rem; font-size: .8rem; }
+.kadisha-word-meaning p { margin: .35rem 0; line-height: 1.6; }
+.kadisha-word-footer { margin-top: .6rem; text-align: end; }
+.kadisha-word-feedback-btn { background: none; border: 0; color: #6b7280; cursor: pointer; font: inherit; font-size: .85rem; }
+
+/* ── חלון המשוב ── */
+.kadisha-lex-feedback-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; }
+.kadisha-lex-feedback-modal[hidden] { display: none !important; }
+.kadisha-lex-feedback-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .55); }
+.kadisha-lex-feedback-window { position: relative; background: #fff; border-radius: var(--ka-radius); width: min(520px, 92vw); padding: 1.25rem; }
+.kadisha-lex-feedback-field { display: block; margin: .75rem 0; }
+.kadisha-lex-feedback-field input,
+.kadisha-lex-feedback-field textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .5rem; }
+.kadisha-lex-feedback-honeypot { position: absolute !important; left: -9999px !important; }
+
+@media (max-width: 782px) {
+    .kadisha-hero { padding: 2.5rem 0 2rem; }
+    .kadisha-lexicon-grid { grid-template-columns: 1fr; }
+    /* בטלפון הכפתורים ברוחב מלא */
+    .kadisha-lex-hero-btn { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+}
+
+/* ── הגדלים מהפאנל (סטודיו ← המילון) ── */
+.kadisha-lexicon-page .kadisha-hero { min-height: 420px; }
+.kadisha-lexicon-page .kadisha-hero-title,
+.kadisha-lexicon-page .kadisha-hero h1 { font-size: 64px !important; font-weight: 700 !important; line-height: 1.15; margin-bottom: 0 !important; }
+.kadisha-lexicon-page .kadisha-hero-subtitle { font-size: 22px !important; font-weight: 700 !important; }
+.kadisha-lexicon-page .kadisha-hero-credit { font-size: 16px !important; margin-top: 0 !important; line-height: 1.25 !important; opacity: .92; }
+.kadisha-lexicon-page .kadisha-hero-subtitle:has(+ .kadisha-hero-credit) { margin-bottom: 0 !important; line-height: 1.25 !important; }
+@supports not selector(:has(*)) { .kadisha-lexicon-page .kadisha-hero-subtitle { margin-bottom: 0 !important; } }
+.kadisha-lexicon-page .kadisha-hero-subtitle-main {
+    font-family: 'Frank Ruhl Libre', 'David Libre', serif !important; font-size: 40px !important; font-weight: 700 !important;
+    line-height: 1.1 !important; color: var(--ka-cream, #f5ebd6) !important; text-shadow: 0 2px 8px rgba(0,0,0,.3); margin: -.1em 0 1.1rem !important; padding: 0 !important; letter-spacing: .01em;
+}
+.kadisha-lexicon-page .kadisha-hero-eyebrow--under { font-size: 15px !important; margin-top: 0; margin-bottom: .6rem; padding: .15rem 1.5rem; }
+@media (max-width: 600px) {
+    .kadisha-lexicon-page .kadisha-hero-title, .kadisha-lexicon-page .kadisha-hero h1 { font-size: 38px !important; }
+    .kadisha-lexicon-page .kadisha-hero-subtitle-main { font-size: 26px !important; }
+    .kadisha-lexicon-page .kadisha-hero-subtitle { font-size: 19px !important; }
+    .kadisha-lexicon-page .kadisha-hero-eyebrow--under { font-size: 12px !important; }
+    .kadisha-lexicon-page .kadisha-hero-credit { font-size: 14px !important; }
+}
