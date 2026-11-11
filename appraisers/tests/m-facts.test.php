@@ -34,6 +34,8 @@ $danaPid = join_office($avi, $dana, 'dana@example.com', 'appraiser');
 $talPid = join_office($avi, $tal, 'tal@example.com', 'staff');
 join_office($avi, $gil, 'gil@example.com', 'appraiser');
 $ronPid = join_office($avi, $ron, 'ron@example.com', 'staff');
+$noa = ident('9', 'נועה', 'noa@example.com');      // מתמחה: תצורף כשותפה עם review_docs — ועדיין אינה שמאית
+$noaPid = join_office($avi, $noa, 'noa@example.com', 'trainee');
 
 function make_profile(string $as): string
 {
@@ -70,11 +72,12 @@ function up(string $as, string $case, string $mark, array $q = []): array
 
 $P = make_profile($avi);
 $PB = make_profile($boaz);
-$newCase = function () use ($avi, $P, $danaPid, $talPid, $ronPid): string {
+$newCase = function () use ($avi, $P, $danaPid, $talPid, $ronPid, $noaPid): string {
     $c = make_case($avi, $P);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $danaPid], $avi);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $talPid], $avi);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $ronPid, 'role' => 'visitor'], $avi);
+    call('POST', 'case-member-add', ['case' => $c, 'user' => $noaPid, 'role' => 'partner', 'perms' => ['review_docs' => true, 'edit' => true]], $avi);
     call('POST', 'case-member-update', ['case' => $c, 'user' => $ronPid, 'perms' => ['edit' => false, 'documents' => false, 'review_docs' => false, 'tasks' => false, 'visit' => false]], $avi);
     return $c;
 };
@@ -262,11 +265,13 @@ call('POST', 'case-member-update', ['case' => $C, 'user' => $talPid, 'perms' => 
 call('POST', 'case-member-update', ['case' => $C, 'user' => $danaPid, 'perms' => ['review_docs' => false]], $avi);
 $danaNo = code($st($dana, $f, 'verify'));
 call('POST', 'case-member-update', ['case' => $C, 'user' => $danaPid, 'perms' => ['review_docs' => true]], $avi);
+$noaRow = apr_row('SELECT cm.role, cm.perms FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE u.pid = ? AND cm.case_id = ?', [$noaPid, $caseId($C)]);
+$noaTry = [$noaRow['role'], json_decode($noaRow['perms'], true)['review_docs'] ?? null, code($st($noa, $f, 'verify')), code($st($noa, $f, 'reject', ['reason' => 'x'])), code($res($noa, []))];
 $v = $st($dana, $f, 'verify');
-eq([$talReview, $danaNo, $v[0], $v[1]['fact']['state'], $v[1]['fact']['verified_by'], code($st($dana, $v[1]['fact'], 'verify')), code($res($tal, [])), code($res($ron, [])),
+eq([$talReview, $danaNo, $noaTry, $v[0], $v[1]['fact']['state'] ?? null, $v[1]['fact']['verified_by'] ?? null, code($st($dana, $v[1]['fact'] ?? $f, 'verify')), code($res($tal, [])), code($res($ron, [])),
     code(call('POST', 'conflict-dismiss', ['conflict' => $K, 'rev' => $kv()['rev'], 'reasoning' => 'x'], $tal)), $kv()['status']],
-    ['forbidden', 'forbidden', 200, 'verified', 'דנה', 'fact_state', 'forbidden', 'forbidden', 'forbidden', 'open'],
-    '10-B5 review_docs בלי תפקיד שמאי — לא מספיק; שמאית בלי review_docs — לא מספיק; שמאית שותפה עם review_docs מאמתת; הכרעה ו"אין סתירה" — אותו כלל');
+    ['forbidden', 'forbidden', ['partner', true, 'forbidden', 'forbidden', 'forbidden'], 200, 'verified', 'דנה', 'fact_state', 'forbidden', 'forbidden', 'forbidden', 'open'],
+    '10-B5 review_docs בלי תפקיד שמאי — לא מספיק, גם למתמחה שצורפה כשותפה; שמאית בלי review_docs — לא מספיק; שמאית שותפה עם review_docs מאמתת; הכרעה ו"אין סתירה" — אותו כלל');
 $f2 = $mk();
 eq([code($add($ron, $C, 'rooms', 4)), code($fx($ron, $f2, ['value' => 5])), code($st($ron, $f2, 'clarify', ['note' => 'x'])), code(call('POST', 'fact-delete', ['fact' => $f2['pid'], 'rev' => 1, 'reason' => 'x'], $ron)),
     code(call('POST', 'fact-delete', ['fact' => $f2['pid'], 'rev' => 1, 'reason' => 'x'], $tal)), $facts($ron, $C)[0], $facts($ron, $C)[1]['perms'], $facts($tal, $C)[1]['perms'], $facts($dana, $C)[1]['perms'],
@@ -301,7 +306,7 @@ eq([code($v1), $frow($ai1)['state'], $v2[0], $v2[1]['fact']['state'] ?? null, co
 
 // ── 10-C1: שינוי נתון מסמן את מי שנשען עליו ──
 $CR = $crow($C);
-$u1 = $mk();
+$u1 = $add($avi, $C, 'rent', 3000, ['unit' => 'ILS'])[1]['fact'];
 $u2 = $add($avi, $C, 'year_built', 1985)[1]['fact'];
 $usePid = fn() => apr_pid();
 [$calc, $sec, $comp] = [$usePid(), $usePid(), $usePid()];
@@ -314,7 +319,7 @@ $u1v = $st($avi, $u1, 'verify')[1]['fact'];
 $s1 = $stale($u1['pid']);
 $u1c = $fx($tal, $u1v, ['note' => 'הערה בלבד'])[1]['fact'];
 $s2 = $stale($u1['pid']);
-$u1d = $fx($tal, $u1c, ['value' => 5])[1]['fact'];
+$u1d = $fx($tal, $u1c, ['value' => 3500])[1]['fact'];
 $s3 = [$stale($u1['pid']), $stale($u2['pid']), apr_fact_uses_of($CR, 'calc', $calc)[0]['stale'], $u1d['state'], $u1d['verified_by']];
 apr_fact_use($CR, $u1['pid'], 'calc', $calc);
 $s4 = $stale($u1['pid']);
