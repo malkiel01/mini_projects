@@ -43,6 +43,7 @@ async function viewOffice(tab) {
     App.main.innerHTML = `${tabs}
         <div class="summary"><div class="line"><b class="one">${esc(d.office.name)}</b>
           ${admin ? `<button class="icon-btn" id="rename" aria-label="${T.renameOffice}" style="margin-inline-start:auto">✏️</button>` : ''}</div></div>
+        ${admin ? `<label class="switch"><input type="checkbox" id="potp"${d.office.portal_always_otp ? ' checked' : ''}><span>${T.rq.alwaysOtpSetting}</span></label>` : ''}
         <div class="toolbar"><p class="hint one" style="flex:1;margin:0">${admin ? T.teamHintAdmin : T.teamHint}</p>
           ${admin ? `<button class="btn primary" id="invite"><span aria-hidden="true">+</span> ${T.invite}</button>` : ''}</div>
         <ul class="list">${d.members.map(m => `<li class="card${admin ? '' : ' static'}" ${admin ? `tabindex="0" role="button" data-member="${m.pid}"` : ''}>
@@ -90,6 +91,9 @@ async function viewOffice(tab) {
         if (!confirm(T.revokeAsk(b.dataset.email))) return;
         try { await api('invite-revoke', { body: body({ invite: b.dataset.revoke }) }); toast(T.revoked); viewOffice(); } catch (x) { toastError(x); }
     }));
+    $('#potp')?.addEventListener('change', async e => {
+        try { await api('office-portal-otp', { body: { on: e.target.checked } }); toast(T.rq.alwaysOtpSaved); } catch (x) { e.target.checked = !e.target.checked; toastError(x); }
+    });
     $('#rename')?.addEventListener('click', () => sheet(T.renameOffice, `
         <label class="f"><span>${T.officeName}</span><input name="name" required maxlength="120" value="${esc(d.office.name)}"></label>`, async f => {
         await api('office-rename', { body: body({ name: f.name }) });

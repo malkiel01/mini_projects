@@ -328,6 +328,70 @@ unlink($tmpf);
 $took = microtime(true) - $t0;
 check('🔴1 בדיקת PDF ליניארית: ארבעה קלטים עוינים של 4MB (אלפי זרמים, פריסה חוזרת, פצצת דחיסה) — פחות מ-6 שניות יחד', $took < 6.0, round($took, 2));
 
+// 🟡 (ביקורת 06, אחרי המיזוג): הסריקה אינה נעצרת בשקט. מאות זרמים ריקים ואחריהם JS; ריפוד של 2.5MB בתוך זרם אחד; שם שנחתך בגבול חלון
+$sn = function (string $body): string {
+    $f = tempnam(apr_upload_tmp_dir(), 'pb');
+    file_put_contents($f, '%PDF-1.4' . "\n" . $body . "\n%%EOF\n");
+    try { apr_file_sniff($f); $r = 'ok'; } catch (AprFileRejected $e) { $r = (string)$e->why; } finally { unlink($f); }
+    return $r;
+};
+$empty = "5 0 obj\n<< /Filter /FlateDecode >>\nstream\n" . gzcompress('') . "\nendstream\nendobj\n";
+$js = "stream\n" . gzcompress('<< /S /Foo /JS (app.alert(1)) >>') . "\nendstream\n";
+eq([$sn(str_repeat($empty, 800) . $js), $sn(str_repeat($empty, 5000) . $js), $sn(str_repeat($empty, 5000))], ['pdf:JS', 'pdf:JS', 'ok'], '🟡 800 ו-5,000 זרמים ריקים ואחריהם זרם עם JS ← נדחה; בלי ה-JS ← מתקבל');
+mt_srand(7);
+$noise = ''; for ($i = 0; $i < 2_600_000; $i++) $noise .= chr(97 + mt_rand(0, 25));      // אותיות אקראיות: נפרסות בנתחים קטנים, כמו זרם אמיתי
+eq([$sn("stream\n" . gzcompress($noise . '<< /JS (x) >>') . "\n"), $sn("stream\n" . gzcompress($noise) . "\n")], ['pdf:JS', 'ok'], '🟡 JS אחרי 2.6MB של ריפוד באותו זרם ← נדחה (אין תקרה שקטה לזרם)');
+$gap = fn(string $g) => $sn("stream\n" . gzcompress(substr($noise, 0, 700_000) . '/JS' . $g . '(x)' . substr($noise, 0, 900_000)) . "\n");
+eq([$gap("%" . substr($noise, 0, 600_000) . "\n"), $gap("%" . substr($noise, 0, 1_400_000) . "\n"), $sn("stream\n" . gzcompress(substr($noise, 0, 700_000) . '/JS' . "%" . substr($noise, 0, 600_000) . "\n" . 'x') . "\n")],
+    ['pdf:JS', 'pdf:gap', 'ok'], '🟡 שם שהערה ארוכה מפרידה בינו לערך, על פני גבול חלון הסריקה ← נדחה; בלי ערך ← מתקבל');
+$tail = function (string $w): string { try { return (string)strlen(apr_pdf_tail($w)); } catch (AprFileRejected $e) { return (string)$e->why; } };
+eq([$tail(str_repeat('q', 9000)), $tail(str_repeat('q', 9000) . '/J#53' . str_repeat(' ', 7000)), $tail(str_repeat('q', 9000) . '/JS' . str_repeat(' ', 7000) . 'x'), $tail('/AA' . str_repeat("\n", (1 << 20)))],
+    ['4096', '7005', '4096', 'pdf:gap'], '🟡 הזנב שעובר לחלון הבא: 4KB, או מהשם שבסוף החלון; רווח של יותר מ-1MB אחרי שם ← נדחה');
+$GLOBALS['apr_pdf_budget'] = 3_000_000;
+$mid = "stream\n" . gzcompress(str_repeat('BT (x) Tj ET ', 40_000)) . "\nendstream\n";       // ~520KB אחרי פריסה
+eq([$sn(str_repeat($mid, 4)), $sn(str_repeat($mid, 8)), $sn(str_repeat($mid, 8) . $js), $sn(str_repeat($empty, 2800)), $sn(str_repeat($empty, 3100))], ['ok', 'pdf:budget', 'pdf:budget', 'ok', 'pdf:budget'],
+    '🟡 התקציב נמדד במה שנפרס בפועל (+1KB לזרם), ומי שחורג ממנו נדחה (pdf:budget) — לא מתקבל בלי סריקה');
+unset($GLOBALS['apr_pdf_budget']);
+$t0 = microtime(true);
+eq($sn(str_repeat("5 0 obj\n<< /Filter /FlateDecode >>\nstream\n" . gzcompress(str_repeat('BT /F1 12 Tf (hello) Tj ET ', 150)) . "\nendstream\nendobj\n", 20_000)), 'ok', '🟡 PDF רגיל עם 20,000 זרמים קטנים — נסרק עד הסוף ומתקבל');
+check('🟡 … ובפחות משתי שניות', microtime(true) - $t0 < 2.0, round(microtime(true) - $t0, 2));
+$n = $nfiles();
+eq([code(up($avi, '%PDF-1.4' . "\n" . str_repeat($empty, 800) . $js . "%%EOF\n", ['case' => $C])), $nfiles() - $n], ['file_active', 0], '🟡 … וגם דרך file-upload: נדחה, ואין קובץ');
+
+// ── ביקורת 07, 🟡2 + 🟡3: הסורק נגיש עכשיו לנמען אנונימי ──
+$jsObj = '<< /S /JavaScript /JS (app.alert(1)) >>';
+$z9 = function (string $d, int $wbits): string { $c = deflate_init(ZLIB_ENCODING_DEFLATE, ['window' => $wbits]); return deflate_add($c, $d, ZLIB_FINISH); };
+$small = $z9($jsObj, 9);
+eq([ord($small[0]) !== 0x78, $sn("stream\n" . $small . "\nendstream"), $sn("stream \n" . gzcompress($jsObj) . "\nendstream"), $sn("stream\t \r\n" . gzcompress($jsObj) . "\nendstream"),
+    $sn("stream\n" . gzcompress(gzcompress($jsObj)) . "\nendstream"), $sn("5 0 obj << /Filter [/FlateDecode /FlateDecode] >> endobj"), $sn("5 0 obj << /Filter [ /Fl /DCTDecode /F#6c ] >> endobj"),
+    $sn("stream\n" . gzcompress(gzcompress(str_repeat('q ', 3_000_000) . $jsObj)) . "\nendstream"), $sn("stream \n" . $z9(str_repeat('BT (x) Tj ET ', 500), 10) . "\nendstream"), $sn("5 0 obj << /Filter [/FlateDecode /DCTDecode] >> endobj")],
+    [true, 'pdf:JavaScript', 'pdf:JavaScript', 'pdf:JavaScript', 'pdf:nested', 'pdf:Fl' . 'ateDecode', 'pdf:Fl', 'pdf:nested', 'ok', 'ok'],
+    '🟡3 JavaScript בזרם Flate עם חלון zlib קטן, עם רווח אחרי stream, או ב-Flate כפול ← נדחה; זרם תמים באותן צורות ← מתקבל');
+$ref = fn(int $before, string $gap) => $sn("stream\n" . gzcompress(substr($noise, 0, $before) . '/JS' . $gap . '12 0 R ' . substr($noise, 0, 900_000)) . "\n");
+eq([$ref(900_000, str_repeat(' ', 200_000)), $ref(1_048_560, ' '), $ref(1_048_565, '   '), $tail(str_repeat('q', 9000) . '/JS  ' . str_repeat(' ', 6000) . '12 0'), $tail(str_repeat('q', 9000) . '/JS 12 ' . str_repeat(' ', 6000))],
+    ['pdf:JS', 'pdf:JS', 'pdf:JS', '6009', '6007'], '🟡3 ‎/JS + רווחים + הפניה (12 0 R) על גבול חלון הסריקה ← נדחה: הזנב כולל הפניה שנחתכה');
+$bombFile = tempnam(apr_upload_tmp_dir(), 'bm');
+file_put_contents($bombFile, '%PDF-1.4' . "\nstream\n" . gzcompress(str_repeat("\0", 900_000_000 > 0 ? 400_000_000 : 0), 9) . "\nendstream\n%%EOF\n");
+$child = 'require ' . var_export(dirname(__DIR__) . '/lib/errors.php', true) . '; require ' . var_export(dirname(__DIR__) . '/lib/files.php', true) . '; $GLOBALS["apr_pdf_budget"] = 2000000000;'
+    . ' try { apr_file_sniff($argv[1]); echo "ok ", memory_get_peak_usage() >> 20; } catch (AprFileRejected $e) { echo $e->why, " ", memory_get_peak_usage() >> 20; }';
+$outB = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' -d memory_limit=48M -r ' . escapeshellarg($child) . ' ' . escapeshellarg($bombFile) . ' 2>&1');
+check('🟡2 פצצת דחיסה (פחות מ-1MB שנפרס ל-400MB) תחת memory_limit=48M: נסרקת עד הסוף בלי להפיל את PHP', preg_match('/^ok \d+$/', $outB) === 1 && filesize($bombFile) < 1_000_000, [$outB, filesize($bombFile)]);
+unlink($bombFile);
+eq([code(up($avi, '%PDF-1.4' . "\nstream\n" . gzcompress(gzcompress('x')) . "\nendstream\n%%EOF\n", ['case' => $C])), APR_ERRORS['file_unscannable'][0]], ['file_unscannable', 415], 'קובץ שאי אפשר לבדוק נדחה בנוסח משלו ("לא ניתן לבדוק"), לא כ"תוכן פעיל"');
+
+// בלי .user.ini משלנו: התקרה נגזרת מ-post_max_size של השרת, פחות מרווח — והמסך, ההודעה ובדיקת התקינות אומרים את האמת
+$GLOBALS['apr_post_max'] = 8 << 20;
+$h8 = apr_health()['checks'] ?? [];
+$h8 = array_values(array_filter($h8, fn($c) => ($c['id'] ?? '') === 'files'))[0] ?? [];
+eq([apr_file_max(), $docs($avi, $C)[1]['limits']['max_size'], $h8['state'] ?? null, str_contains($h8['detail'] ?? '', 'post_max_size=') && str_contains($h8['detail'] ?? '', 'memory_limit=') && str_contains($h8['detail'] ?? '', 'קובץ עד 7MB')],
+    [(8 << 20) - 65536, (8 << 20) - 65536, 'warn', true], 'שרת עם post_max_size = 8M ← התקרה 8MB פחות 64KB, המסך מקבל אותה, ובדיקת התקינות מדווחת את ערכי השרת בפועל');
+$GLOBALS['apr_post_max'] = 64 << 20;
+$big8 = [apr_file_max()];
+$GLOBALS['apr_post_max'] = 0;
+$big8[] = apr_file_max();
+unset($GLOBALS['apr_post_max']);
+eq([$big8, is_file(dirname(__DIR__) . '/.user.ini')], [[APR_FILE_MAX, APR_FILE_MAX], false], 'שרת נדיב או בלי הגבלה ← 25MB; ואין .user.ini בתיקיית האפליקציה (השער יוצר אותו בפריסה)');
+
 // ── 06-B3: גודל ──
 $n = $nfiles(); $d = $disk();
 $GLOBALS['apr_file_max'] = 400;
@@ -723,7 +787,7 @@ $cols = array_column($old->query('PRAGMA table_info(requirements)')->fetchAll(PD
 apr_migrate($old);
 $cols2 = array_column($old->query('PRAGMA table_info(requirements)')->fetchAll(PDO::FETCH_ASSOC), 'name');
 eq([$v5, in_array('split_at', $cols, true), apr_schema_version($old), array_values(array_diff($cols2, $cols)), (int)$old->query("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('files', 'requirement_files', 'file_tags', 'file_thumbs')")->fetchColumn(), apr_schema_expected()],
-    [5, false, 6, ['status_by', 'status_at', 'split_from_id', 'split_at'], 4, 6], 'מיגרציה 006 על מסד בגרסה 5: העמודות והטבלאות נוספות');
+    [5, false, apr_schema_expected(), ['status_by', 'status_at', 'split_from_id', 'split_at'], 4, apr_schema_expected()], 'מיגרציה 006 (והבאות) על מסד בגרסה 5: העמודות והטבלאות נוספות');
 foreach (glob("$tmpDir/*") as $m) unlink($m);
 rmdir($tmpDir);
 
