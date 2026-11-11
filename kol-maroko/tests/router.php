@@ -26,6 +26,11 @@ if ($path === '/api.php' || $path === '/agent.php') {
     require $root . $path;
     exit;
 }
+if (str_starts_with($path, '/preview/')) {              // כמו preview/.htaccess: הכול ל-index.php
+    chdir($root);
+    require $root . '/preview/index.php';
+    exit;
+}
 // קבצים סטטיים (לבדיקות הדפדפן). data/ — כמו בשרת: חסום. ?open=1 מדמה שרת שבו ה-.htaccess לא פועל
 if (str_starts_with($path, '/data/')) {
     if (getenv('KOL_TEST_DATA_OPEN')) { echo 'open'; exit; }
