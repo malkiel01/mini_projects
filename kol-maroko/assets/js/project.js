@@ -140,6 +140,7 @@ const Project = (() => {
       const f = S.byId.get(id);
       if (f) Object.assign(f, d.file);
       if (d.kol) { S.kol = d.kol; drawBars(); }
+      if (f) bc?.postMessage({ t: 'saved', path: f.path });       // התצוגה החיה מתרעננת (assets/js/live.js)
     } catch (e) {
       if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
       else if (!auto) toast(e.message, true);
@@ -471,6 +472,7 @@ const Project = (() => {
     el.bar = h('div', { class: 'pj-bar' },
       h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📁 קבצים'),
       el.tabs, el.status, el.save,
+      h('button', { type: 'button', class: 'btn sm pj-live-btn', title: 'תצוגה חיה — העמוד רץ כפי שירוץ אצל הגולש', onclick: () => live() }, '▶️', h('span', { class: 'pj-live-word' }, ' תצוגה חיה')),
       h('button', { type: 'button', class: 'icon-btn', 'data-ed': true, 'aria-label': 'כלי העורך', onclick: toolsMenu }, '⋯'));
     const aside = h('aside', { class: 'pj-side', 'aria-label': 'מנהל הקבצים' },
       h('div', { class: 'pj-side-head' },
@@ -480,6 +482,7 @@ const Project = (() => {
         h('button', { type: 'button', class: 'btn sm', onclick: () => newFile('') }, '+ קובץ'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => newDir('') }, '+ תיקייה'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => pick('') }, '⬆️ העלאה'),
+        h('button', { type: 'button', class: 'btn sm', 'data-live': true, onclick: () => live() }, '▶️ תצוגה חיה'),
         el.trash),
       el.tree, el.count);
     // גרירה מהמחשב אל תיקייה (או אל העץ — לשורש)
@@ -513,6 +516,35 @@ const Project = (() => {
       drawAll();
     } catch (e) { el.view.hidden = false; el.view.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
+
+  // ── ▶️ התצוגה החיה (F4) ───────────────────────────────────
+  // live.php הוא מסמך משלו (מדיניות CSP מלאה), ובתוכו המסגרת המבודדת. כאן רק פותחים אותו בשכבה מעל המסך, ומדברים
+  // איתו בערוץ של אותו מקור: "נשמר" ← רענון; "פתח בקוד" → הקובץ והשורה נפתחים בעורך. קוד העמוד אינו שותף לערוץ.
+  let bc = null, liveEl = null;
+  try { bc = new BroadcastChannel('kol-pf'); } catch { /* בלי רענון אוטומטי */ }
+  function liveClose() { liveEl?.remove(); liveEl = null; S.editor?.layout(); }
+  async function live() {
+    const doc = S.docs.get(S.cur), f = S.byId.get(S.cur);
+    if (doc?.dirty) await save(S.cur);                         // התצוגה מראה את מה שנשמר
+    const path = f && /\.html?$/i.test(f.path) ? f.path : '';
+    liveClose();
+    liveEl = h('div', { class: 'pj-live' }, h('iframe', { src: 'live.php?embed=1' + (path ? '&path=' + encodeURIComponent(path) : ''), title: 'תצוגה חיה' }));
+    document.body.append(liveEl);
+  }
+  async function openAt(path, line) {
+    liveClose();
+    if (location.hash.split('/')[1] !== 'project') { location.hash = '#/project'; await new Promise(r => setTimeout(r, 400)); }
+    const f = S.files.find(x => x.path === path);
+    if (!f) { toast('הקובץ אינו בפרויקט: ' + path, true); return; }
+    await openFile(f.id);
+    if (S.editor && line > 0) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); }
+  }
+  bc?.addEventListener('message', e => {
+    const d = e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'close') liveClose();
+    if (d.t === 'open' && typeof d.path === 'string') openAt(d.path, Number.isInteger(d.line) ? d.line : 0);
+  });
 
   function unmount() {
     if (!S.host) return;
@@ -550,5 +582,5 @@ const Project = (() => {
       pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, _state: S };
+  return { view, unmount, limits, loadMonaco, live, _state: S, _open: openFile, _save: save };
 })();

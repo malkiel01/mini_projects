@@ -163,18 +163,34 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
         'GET dev-log' => ($dev() ? dev_log_view($_GET) : []),
         'GET dev-audit' => ($dev() ? dev_audit_view($_GET) : []),
         'GET dev-health' => ($dev() ? dev_health() : []),
+        'POST dev-attack-save' => pv_attack_save($dev(), $in),       // ערכת ההתקפה מול הסטודיו (F4, lib/preview.php)
         'GET dev-state' => ($dev() ? ['services' => dev_services(), 'stats' => dev_stats()] : []),
+        // ספייק מנוע העורך (V0): קבצי הבדיקה מוגשים כנתונים — dev/ חסומה מהדפדפן
+        'GET dev-spike-fixture' => ($dev() ? dev_spike_fixture((string)($_GET['name'] ?? '')) : []),
         default => throw new ApiError('פעולה לא מוכרת', in_array($action, DEV_ACTIONS, true) ? 405 : 404),
     };
 }
 
 const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-items',
     'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-file', 'dev-tokens', 'dev-token-create',
-    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state'];
+    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save'];
 /** פעולות שנכנסים אליהן באסימון, בלי משתמש מהשער. חייבות להופיע גם ב-"public" של app.json. */
 const DEV_TOKEN_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 /** פעולות שהגוף שלהן הוא קובץ, לא JSON. */
 const DEV_RAW_BODY = ['dev-attach', 'devapi-attach'];
+
+// ── ספייק מנוע העורך (V0) ─────────────────────────────────
+
+const DEV_SPIKE_FIXTURES = ['lexicon.html', 'lexicon.css', 'handwritten.html', 'handwritten.css', 'broken.html', 'broken.css'];
+
+/** קובץ בדיקה של הספייק, ב-base64 — כדי שהבייטים (BOM, CRLF) יגיעו לדפדפן כמו שהם. רשימה סגורה; קריאה בלבד. */
+function dev_spike_fixture(string $name): array
+{
+    if (!in_array($name, DEV_SPIKE_FIXTURES, true)) throw new ApiError('אין קובץ בדיקה כזה', 404);
+    $raw = @file_get_contents(__DIR__ . '/../dev/spike/fixtures/' . $name);
+    if ($raw === false) throw new ApiError('קובץ הבדיקה חסר בשרת', 404);
+    return ['name' => $name, 'bytes' => strlen($raw), 'b64' => base64_encode($raw)];
+}
 
 // ── יומן הבקשות והשגיאות ─────────────────────────────────
 
@@ -322,6 +338,12 @@ function dev_health_checks(): array
                 'להתקין באתר את התוסף המעודכן מ-wordpress-plugin/ (מטלה לבעלים; docs/install.md)'];
             return [true, "ה-ping החתום עבר · תוסף $p · $state", ''];
         }],
+        'preview' => ['התצוגה החיה: מפתח החתימה וכותרות הבידוד', function (): array {
+            require_once __DIR__ . '/preview.php';
+            if (!pv_token_ok(pv_token_make())) return [false, 'אסימון שנחתם עכשיו אינו מתקבל', 'לבדוק ש-data/secrets.json נכתב ונקרא (הרשאות), ושהשעון בשרת תקין'];
+            if (pv_token_ok(pv_token_make(time() - 5))) return [false, 'אסימון שפג תוקפו מתקבל', 'תקלה בקוד — lib/preview.php'];
+            return [true, 'האסימון נחתם ונבדק; אסימון שפג נדחה', ''];
+        }, 'preview'],
         'editor' => ['עורך התמלילים זמין', function (): array {
             require_once __DIR__ . '/longtext.php';
             $ch = curl_init(WordProcessorClient::EDITOR . 'api.php?action=embed_key');
@@ -354,7 +376,8 @@ function dev_health(): array
             + (isset($c[2]) ? ['probe' => $c[2]] : []);
     }
     dev_run_note('health', !$fails, $fails ? 'נכשלו: ' . implode(', ', $fails) : 'הכול ירוק (' . count($out) . ')');
-    return ['checks' => $out, 'at' => now_iso(), 'version' => dev_app_version(), 'build' => dev_build(), 'req' => devlog_req()];
+    require_once __DIR__ . '/preview.php';
+    return ['attack' => pv_attack_last(), 'checks' => $out, 'at' => now_iso(), 'version' => dev_app_version(), 'build' => dev_build(), 'req' => devlog_req()];
 }
 
 // ── שירותי רקע ───────────────────────────────────────────

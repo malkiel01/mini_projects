@@ -13,6 +13,7 @@ require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/agent.php';
 require_once __DIR__ . '/lib/library.php';
 require_once __DIR__ . '/lib/dev.php';
+require_once __DIR__ . '/lib/preview.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -137,6 +138,8 @@ try {
         'pf_trash' => (require_role($user, 'editor') ? pf_trash() : []),
         'pf_restore' => pf_restore(require_role($user, 'editor'), $body),
         'pf_purge' => pf_purge(require_role($user, 'owner'), $body),
+        // התצוגה החיה (F4, lib/preview.php): אסימון חתום וקצר-מועד לכתובת המבודדת — רק למי שמורשה לקרוא את הפרויקט
+        'pv_token' => pv_token(require_role($user, 'editor')),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),

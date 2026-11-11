@@ -88,7 +88,7 @@ const Dev = (() => {
   }
 
   // ── מסך המפתח ─────────────────────────────────────────────
-  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות']];
+  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות'], ['spike', '🧪 ספייק העורך']];
   const LV = { error: '🔴', warn: '🟠', info: '⚪' };
   const LV_NAME = { error: 'שגיאה', warn: 'אזהרה', info: 'רגיל' };
   const CAT = { api: 'בקשה', agent: 'צ\'אט', php: 'שרת', client: 'דפדפן', auth: 'כניסה', data: 'נתונים', health: 'תקינות' };
@@ -102,7 +102,7 @@ const Dev = (() => {
       h('nav', { class: 'dev-subs', 'aria-label': 'מסך המפתח' }, SUBS.map(([id, label]) => h('a', { href: '#/dev/' + id, 'aria-current': id === sub ? 'page' : null }, label))),
       body);
     try {
-      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body) })[sub]();
+      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
@@ -217,7 +217,20 @@ const Dev = (() => {
     const out = h('ul', { class: 'dev-checks' }), info = h('p', { class: 'hint' });
     const runBtn = h('button', { type: 'button', class: 'btn primary', onclick: run }, '▶ הרצת כל הבדיקות');
     const copyBtn = h('button', { type: 'button', class: 'btn ghost', disabled: true, onclick: e => copy(reportText(), e.currentTarget) }, '📋 העתקת הדוח');
-    el.replaceChildren(h('div', { class: 'row-btns' }, runBtn, copyBtn), info, out);
+    // ערכת ההתקפה מול הסטודיו (F4, assets/js/attack-kit.js)
+    const kitInfo = h('p', { class: 'hint', id: 'kit-info' }), kitOut = h('ul', { class: 'dev-checks', id: 'kit-out' });
+    const kitLast = a => { kitInfo.textContent = a ? `ריצה אחרונה: ${a.ok ? '✅' : '❌'} ${a.note} · ${when(a.at)}` : 'הערכה עוד לא הורצה.'; };
+    const kitBtn = h('button', { type: 'button', class: 'btn', id: 'kit-run', onclick: async () => {
+      kitBtn.disabled = true; kitInfo.textContent = 'מריץ… (כמה שניות)'; kitOut.replaceChildren();
+      const k = await AttackKit.run();
+      kitOut.replaceChildren(...k.checks.map(checkRow));
+      kitLast(k.last || { ok: k.ok, note: k.ok ? `כל ${k.checks.length} הבדיקות עברו` : 'יש בדיקות שנכשלו', at: new Date().toISOString() });
+      kitBtn.disabled = false;
+    } }, '🛡️ הרץ את ערכת ההתקפה מול הסטודיו');
+    el.replaceChildren(h('div', { class: 'row-btns' }, runBtn, copyBtn), info, out,
+      h('h3', { class: 'sec-title' }, 'הבידוד של התצוגה החיה'),
+      h('p', { class: 'hint' }, 'קובץ זמני בפרויקט מנסה, מתוך התצוגה החיה, לגעת בסטודיו: עוגייה, אחסון, המסמך של ההורה, ניווט, api.php והודעות. הקובץ נמחק בסוף.'),
+      h('div', { class: 'row-btns' }, kitBtn), kitInfo, kitOut);
     async function run() {
       runBtn.disabled = true;
       info.textContent = 'בודק…';
@@ -226,6 +239,18 @@ const Dev = (() => {
       try { r = await devApi('dev-health'); }
       catch (e) {            // גם כשהבקשה כולה נופלת — המסך נשאר, והתקלה מוצגת כבדיקה אדומה
         r = { checks: [{ id: 'request', name: 'הבקשה לשרת', ok: false, text: e.message, fix: 'לחפש את מזהה הבקשה ב-📜 יומן' }], at: new Date().toISOString(), version: ctx.version };
+      }
+      for (const c of r.checks) {
+        if (c.probe !== 'preview') continue;
+        // התצוגה החיה (F4): בקשות אמיתיות מהדפדפן לכתובת התצוגה — הכותרות שהגולש יקבל, כולל ב-404 וב-403
+        delete c.probe;
+        try {
+            const tok = (await api('pv_token')).token;
+            const hs = await AttackKit.headers(tok, 'index.html');
+            const bad = hs.filter(x => !x.ok);
+            if (bad.length) { c.ok = false; c.text = 'כותרות הבידוד חסרות: ' + bad.map(x => `${x.name} — ${x.text}`).join(' | '); c.fix = 'אם התשובה היא דף כניסה או 404 של השרת — preview/.htaccess אינו פועל, או ש-preview/index.php אינו ב-"public" של app.json'; }
+            else c.text += ' · מהדפדפן: ארגז חול בלי allow-same-origin, nosniff ופתוח לקריאה — ב-200, ב-404 וב-403';
+        } catch (e) { c.ok = false; c.text = 'הבקשה לכתובת התצוגה נכשלה: ' + e.message; c.fix = 'לנסות שוב; אם חוזר — 📜 יומן'; }
       }
       for (const c of r.checks) {
         if (!c.probe) continue;
@@ -239,6 +264,7 @@ const Dev = (() => {
       let state = null;
       try { state = await devApi('dev-state'); } catch { /* הדוח יוצא בלי מצב הנתונים */ }
       lastReport = { ...r, state };
+      kitLast(r.attack);
       const bad = r.checks.filter(c => !c.ok).length;
       info.textContent = `${bad ? `${bad} אדומות מתוך ${r.checks.length}` : `כל ${r.checks.length} הבדיקות ירוקות`} · ${when(r.at)}`;
       out.replaceChildren(...r.checks.map(checkRow));
@@ -282,6 +308,18 @@ const Dev = (() => {
             h('p', {}, 'הבא: ', s.next_text, s.next ? ' ' + when(s.next) : ''),
             h('p', { class: 'hint' }, s.how))))));
     } catch (e) { el.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+
+  // ── ספייק מנוע העורך (V0): הקוד נטען רק כשנכנסים למסך ─────
+  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/spike/model.js', 'assets/js/spike/canvas.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
+  let spikeLoad = null;
+  async function viewSpike(el) {
+    el.replaceChildren(h('p', { class: 'hint' }, 'טוען…'));
+    spikeLoad = spikeLoad || SPIKE_JS.reduce((p, src) => p.then(() => new Promise((ok, bad) => {
+      document.head.append(h('script', { src, onload: ok, onerror: () => bad(new Error('לא נטען: ' + src)) }));
+    })), Promise.resolve());
+    try { await spikeLoad; window.KolSpikeScreen.show(el, { api: devApi, h }); }
+    catch (e) { spikeLoad = null; el.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
   return { start, view, trace: () => trace };
