@@ -491,7 +491,9 @@ function apr_visit_answer(array $ctx, array $in): array
     $op = apr_visit_op($in['op'] ?? null);
     [$text, $num, $date, $json, $unit, $kind] = apr_visit_value($f, $in);
     $empty = $text === null && $num === null && $date === null && $json === null;
-    $obtained = apr_clean_choice($in['obtained'] ?? null, APR_VISIT_OBTAINED) ?? ($f['obtained'] ?? apr_visit_default_obtained($f['type']));
+    $obtained = $in['obtained'] ?? null;
+    if ($obtained === null || $obtained === '') $obtained = $f['obtained'] ?? apr_visit_default_obtained($f['type']);
+    elseif (!is_string($obtained) || !in_array($obtained, APR_VISIT_OBTAINED, true)) apr_fail('visit_value');
     $from = $obtained === 'reported' ? apr_clean_text($in['obtained_from'] ?? null, 120) : null;
     $note = apr_clean_text($in['note'] ?? null, 1000);
     $uid = (int)$ctx['user']['id'];
@@ -610,7 +612,7 @@ function apr_visit_copy(array $ctx, array $in): array
  */
 function apr_visit_finish(array $ctx, array $in): array
 {
-    $result = apr_clean_choice($in['result'] ?? null, ['completed', 'postponed', 'no_access']) ?? apr_fail('visit_result');
+    $result = is_string($in['result'] ?? null) && in_array($in['result'], ['completed', 'postponed', 'no_access'], true) ? $in['result'] : apr_fail('visit_result');
     [$c, $v] = apr_visit_get($ctx, $in['visit'] ?? null, $result === 'postponed' ? 'any' : 'fill');
     $rev = apr_visit_rev($in['rev'] ?? null);
     $note = apr_clean_text($in['note'] ?? null, 1000);

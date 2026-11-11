@@ -135,6 +135,7 @@ function apr_photo_strip(string $path): void
     elseif (str_starts_with($d, 'RIFF') && substr($d, 8, 4) === 'WEBP') $out = apr_photo_strip_webp($d);
     else apr_fail('photo_type');
     if (file_put_contents($path, $out) !== strlen($out)) apr_fail('storage_full');
+    clearstatcache(true, $path);          // הגודל שהצינור קורא אחר כך הוא של הקובץ הנקי
 }
 
 // ── מי רואה ───────────────────────────────────────────────────
@@ -288,7 +289,7 @@ function apr_visit_photo_update(array $ctx, array $in): array
     if (array_key_exists('place', $in)) $set['place'] = apr_clean_text($in['place'], 80) ?? '';
     $usage = $p['usage'];
     if (array_key_exists('usage', $in)) {
-        $usage = apr_clean_choice($in['usage'], APR_PHOTO_USAGES) ?? apr_fail('photo_usage');
+        $usage = is_string($in['usage']) && in_array($in['usage'], APR_PHOTO_USAGES, true) ? $in['usage'] : apr_fail('photo_usage');
         if ($usage !== $p['usage']) {
             $set['usage'] = $usage;
             if ($usage === 'report') {
