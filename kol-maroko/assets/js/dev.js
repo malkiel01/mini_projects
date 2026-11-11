@@ -88,7 +88,7 @@ const Dev = (() => {
   }
 
   // ── מסך המפתח ─────────────────────────────────────────────
-  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות']];
+  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות'], ['spike', '🧪 ספייק העורך']];
   const LV = { error: '🔴', warn: '🟠', info: '⚪' };
   const LV_NAME = { error: 'שגיאה', warn: 'אזהרה', info: 'רגיל' };
   const CAT = { api: 'בקשה', agent: 'צ\'אט', php: 'שרת', client: 'דפדפן', auth: 'כניסה', data: 'נתונים', health: 'תקינות' };
@@ -102,7 +102,7 @@ const Dev = (() => {
       h('nav', { class: 'dev-subs', 'aria-label': 'מסך המפתח' }, SUBS.map(([id, label]) => h('a', { href: '#/dev/' + id, 'aria-current': id === sub ? 'page' : null }, label))),
       body);
     try {
-      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body) })[sub]();
+      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
@@ -282,6 +282,18 @@ const Dev = (() => {
             h('p', {}, 'הבא: ', s.next_text, s.next ? ' ' + when(s.next) : ''),
             h('p', { class: 'hint' }, s.how))))));
     } catch (e) { el.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+
+  // ── ספייק מנוע העורך (V0): הקוד נטען רק כשנכנסים למסך ─────
+  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/spike/model.js', 'assets/js/spike/canvas.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
+  let spikeLoad = null;
+  async function viewSpike(el) {
+    el.replaceChildren(h('p', { class: 'hint' }, 'טוען…'));
+    spikeLoad = spikeLoad || SPIKE_JS.reduce((p, src) => p.then(() => new Promise((ok, bad) => {
+      document.head.append(h('script', { src, onload: ok, onerror: () => bad(new Error('לא נטען: ' + src)) }));
+    })), Promise.resolve());
+    try { await spikeLoad; window.KolSpikeScreen.show(el, { api: devApi, h }); }
+    catch (e) { spikeLoad = null; el.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
   return { start, view, trace: () => trace };
