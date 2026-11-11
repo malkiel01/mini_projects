@@ -24,6 +24,12 @@
  *                  · request-resend {request, channel, contact_ok, days?, preview, op} · request-revoke {request} · office-portal-otp {on}
  * הפורטל (07):     portal-open · portal-otp-send · portal-otp-verify {code} · portal-respond {requirement, kind, text} · portal-file
  *                  {file, inline} · portal-client-error — כולן POST עם token בגוף; portal-upload — גוף גולמי, האסימון ב-X-Portal-Token
+ * תזכורות (08):    reminders-stop {request} · message-check {message} · inbox · inbox-assign {item, case, requirement?} · inbox-dismiss
+ *                  {item, reason} · office-channels · office-channel-save {connection?, provider, label, config{}} · office-channel-status
+ *                  {connection, status} · office-channel-test {connection} · office-inbox-handler {user, on} · sys-channels · sys-channel-…
+ *                  (אותם שדות) · sys-channel-grant {connection, all_offices} או {connection, office, on} · sys-inbox · sys-inbox-dismiss
+ *                  {item, reason} · sys-inbox-route {item, office} · sys-inbox-reply {item}
+ * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
  *
@@ -56,6 +62,9 @@ require_once __DIR__ . '/case_parts.php';
 require_once __DIR__ . '/documents.php';
 require_once __DIR__ . '/requests.php';
 require_once __DIR__ . '/portal.php';
+require_once __DIR__ . '/channels.php';
+require_once __DIR__ . '/reminders.php';
+require_once __DIR__ . '/inbound.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -103,6 +112,8 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         // הפורטל: מכאן לא נקרא שום דבר מ-platform_user, מהעוגייה apr_session או מ-X-CSRF — רק האסימון של הקישור
         $penv = array_intersect_key($env, array_flip(['ip', 'portal_token', 'portal_name', 'portal_cookie', 'upload', 'upload_reader', 'upload_error']));
         return match ($action) {
+            // webhook נכנס: מהבקשה מגיעים רק ה-IP, החתימה, מזהה החיבור שבכתובת וקורא הגוף הגולמי — שום זהות ושום עוגייה
+            'inbound-relay'       => apr_inbound_hook('relay', ['c' => $get['c'] ?? null], array_intersect_key($env, array_flip(['ip', 'signature', 'raw_reader']))),
             'portal-open'         => apr_portal_open($in, $penv),
             'portal-otp-send'     => apr_portal_otp_send($in, $penv),
             'portal-otp-verify'   => apr_portal_otp_verify($in, $penv),
@@ -223,6 +234,25 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'request-resend' => apr_request_resend($ctx, $p),
         'request-revoke' => apr_request_revoke($ctx, $p),
         'office-portal-otp' => apr_office_portal_otp($ctx, $p),
+        'reminders-stop' => apr_reminders_stop($ctx, $p),
+        'message-check' => apr_message_check($ctx, $p),
+        'inbox' => apr_inbox($ctx),
+        'inbox-assign' => apr_inbox_assign($ctx, $p),
+        'inbox-dismiss' => apr_inbox_dismiss($ctx, $p),
+        'office-channels' => apr_office_channels($ctx),
+        'office-channel-save' => apr_channel_save(apr_office_id($ctx), (int)$user['id'], $p),
+        'office-channel-status' => apr_channel_status(apr_office_id($ctx), $p),
+        'office-channel-test' => apr_channel_test(apr_office_id($ctx), $p),
+        'office-inbox-handler' => apr_office_inbox_handler($ctx, $p),
+        'sys-channels' => apr_sys_channels(),
+        'sys-channel-save' => apr_channel_save(null, (int)$user['id'], $p),
+        'sys-channel-status' => apr_channel_status(null, $p),
+        'sys-channel-test' => apr_channel_test(null, $p),
+        'sys-channel-grant' => apr_sys_channel_grant($p),
+        'sys-inbox' => apr_sys_inbox(),
+        'sys-inbox-dismiss' => apr_sys_inbox_dismiss($ctx, $p),
+        'sys-inbox-route' => apr_sys_inbox_route($p),
+        'sys-inbox-reply' => apr_sys_inbox_reply($p),
         'office-cases' => apr_office_cases($ctx),
         'office-case-transfer' => apr_office_case_transfer($ctx, $p),
 

@@ -307,8 +307,8 @@ eq([$cm[0], code(portal('portal-respond', ['token' => $T2, 'requirement' => $R['
 $resp = call('GET', 'case-requests', [], $ron, ['case' => $C])[1];
 eq([$resp['can_send'], array_column($resp['requests'][0]['responses'], 'kind'), $resp['requests'][0]['responses'][0]['text'], $resp['requests'][0]['party_name'], $resp['requests'][0]['messages'][0]['status'],
     code(call('GET', 'case-requests', [], $gil, ['case' => $C])), code(call('GET', 'case-requests', [], $boaz, ['case' => $C])), $log($C, 'portal.response')[0]['actor_kind'] ?? null],
-    [false, ['comment', 'no_document', 'no_document'], 'אשלח בשבוע הבא', 'עו"ד רות כהן', 'sent', 'not_found', 'not_found', 'recipient'],
-    '§10 המשרד רואה את הבקשות, ההודעות ותשובות הנמען (view); לא משתתף / משרד אחר ← 404');
+    [false, ['comment', 'no_document', 'no_document'], 'אשלח בשבוע הבא', 'עו"ד רות כהן', 'answered', 'not_found', 'not_found', 'recipient'],
+    '§10 המשרד רואה את הבקשות, ההודעות ותשובות הנמען (view); לא משתתף / משרד אחר ← 404 (אפיון 08 §5: הודעה שהנמען הגיב לה — "נענתה")');
 
 // ── 07-B5: קודים שגויים ──
 $n = count($GLOBALS['t_mail']);

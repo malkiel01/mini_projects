@@ -63,7 +63,7 @@ eq(array_values(array_unique($vs[1])), [(string)$app['version']], 'index.html: ?
 eq($app['id'] ?? null, basename($root), 'app.json: id = שם התיקייה');
 eq([$app['gate'] ?? null, $app['restricted'] ?? null], [true, true], 'app.json: מחוברת לשער, וחסומה כברירת מחדל');
 check('app.json: גרסה', preg_match('/^\d+\.\d+(\.\d+)?$/', (string)($app['version'] ?? '')) === 1);
-eq($app['public'] ?? null, ['manifest.webmanifest', 'cron.php', 'portal/', 'portal/**', 'api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach|platform_key|sso-start|sso-callback|login|forgot|reset|login-config|portal-open|portal-otp-send|portal-otp-verify|portal-upload|portal-respond|portal-file|portal-client-error'], 'app.json: public בדיוק לפי האפיון (01 §10, 02 §4.1, 07 §8)');
+eq($app['public'] ?? null, ['manifest.webmanifest', 'cron.php', 'portal/', 'portal/**', 'api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach|platform_key|sso-start|sso-callback|login|forgot|reset|login-config|portal-open|portal-otp-send|portal-otp-verify|portal-upload|portal-respond|portal-file|portal-client-error|inbound-relay'], 'app.json: public בדיוק לפי האפיון (01 §10, 02 §4.1, 07 §8, 08 §7)');
 
 // כל פעולה ציבורית ב-app.json היא public / token בטבלת ההרשאות — ולהפך
 preg_match('/api\.php\?action=(.*)$/', $app['public'][4], $pm);
