@@ -7,12 +7,14 @@
   <title>קול מרוקו</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="stylesheet" href="assets/css/devloop.css">
 </head>
 <body>
   <a class="skip" href="#main">דילוג לתוכן</a>
   <header class="top">
     <img class="logo" src="assets/icon.svg" alt="">
     <div class="titles"><h1>קול מרוקו</h1><div class="sub" id="who"></div></div>
+    <span id="top-end" hidden></span>
   </header>
   <nav class="tabs" id="tabs" aria-label="לשוניות" hidden></nav>
   <main id="main" tabindex="-1"><p class="empty">טוען…</p></main>
@@ -27,6 +29,8 @@
       <div class="sheet-body" id="sheet-body"></div>
     </form>
   </dialog>
+  <script src="assets/js/dev.js" defer></script>
+  <script src="assets/js/devloop.js" defer></script>
   <script src="assets/js/media.js" defer></script>
   <script src="assets/js/studio.js" defer></script>
   <script src="assets/js/words.js" defer></script>
