@@ -332,7 +332,9 @@ function apr_profile_try(array $content, array $input): array
 function apr_profile_diff(array $a, array $b): array
 {
     $sections = ['flags' => fn($c) => $c['flags'], 'groups' => fn($c) => $c['requirements']['groups'], 'requirements' => fn($c) => $c['requirements']['items'],
-        'tasks' => fn($c) => $c['tasks']['items'], 'rules' => fn($c) => $c['rules']];
+        'tasks' => fn($c) => $c['tasks']['items'], 'rules' => fn($c) => $c['rules'],
+        // "מקורות" (09): המפתח הוא המקור, כדי ששינוי של mode ייראה בהשוואה
+        'sources' => fn($c) => array_map(fn($i) => ['key' => $i['source'], 'title' => $i['source']] + $i, $c['sources']['items'] ?? [])];
     $out = [];
     foreach ($sections as $name => $get) {
         $old = array_column($get($a), null, 'key');
