@@ -366,6 +366,64 @@ const PAGE = `<!doctype html>
     ok(await page.evaluate(() => { const c = Editor._state.canvas; return !!c.doc.querySelector('h1') && getComputedStyle(c.doc.querySelector('#t1')).color === 'rgb(7, 7, 7)'; }), 'תחת המדיניות: הקנבס מוצג, וה-CSS של הפרויקט חל בו');
     await page.evaluate(() => Editor._state.canvas.doc.querySelector('img[src$="y.png"]')?.remove());
 
+    // ── 3ג. מה שנדחה מ-V1a ──
+    // שם העסקה נשמר בהיסטוריית הקובץ, ונראה ב"גרסאות"
+    await call(page, 'pf_create', { path: 't/v.html', content: '<!doctype html><html><head><title>v</title></head><body>\n<h1 id="keep">נשאר</h1>\n<h2 class="gone">נמחק</h2>\n<p>סוף</p>\n</body></html>\n' });
+    await openPage(page, 't/v.html');
+    await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('.gone'))); });
+    await page.keyboard.press('Delete');
+    await page.waitForFunction(() => !Editor._state.doc.dirty && !Editor._state.doc.saving && Editor._state.doc.rev >= 2, null, { timeout: 15000 });
+    const vid = await page.evaluate(() => Editor._state.file.id);
+    const vers = (await call(page, 'pf_versions', null, '&id=' + vid)).versions;
+    ok(vers[0].note === 'מחיקת h2.gone' && vers[0].rev === 2 && vers[vers.length - 1].note === 'נוצר', 'שם העסקה ("מחיקת h2.gone") נשמר בהיסטוריית הקובץ — ' + JSON.stringify(vers.map(v => v.note)));
+    await page.evaluate(() => Project.versions(Editor._state.file));
+    await page.waitForSelector('#sheet[open] .pj-ver-list li');
+    ok((await page.$eval('.pj-ver-list li', e => e.textContent)).includes('מחיקת h2.gone') && (await page.$$('.pj-ver-list li')).length === 2, '"גרסאות" של הקובץ מציג את המחיקה מהעורך החזותי, עם השם שלה');
+    await page.click('#sheet [data-close]');
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => !Editor._state.doc.dirty && !Editor._state.doc.saving && Editor._state.doc.rev >= 3, null, { timeout: 15000 });
+    ok((await call(page, 'pf_versions', null, '&id=' + vid)).versions[0].note !== 'מחיקת h2.gone', 'שמירה שאחריה (ביטול) אינה נושאת שוב את שם העסקה הקודמת');
+    // אי-שקילות: נרשמת ביומן המפתח, ומפעילה ניתוח מלא (נפילה בטוחה)
+    const ineq = await page.evaluate(async () => {
+      const c = Editor._state.canvas, K = window.KolSrc, orig = K.sameModel;
+      K.sameModel = () => { K.sameModel = orig; return 'בדיקה: אי-שקילות מכוונת'; };
+      c.select(c.d2m.get(c.doc.querySelector('p')));
+      Editor._remove();
+      await new Promise(r => setTimeout(r, 200));
+      return { verify: c.verify, n: c.inequiv.length, same: c.src === Editor._state.doc.text(), map: c.mapErrors.length, real: K.sameModel(c.m, K.parseHtml(c.src)), gone: !c.doc.querySelector('p') };
+    });
+    ok(ineq.verify && ineq.n === 1 && ineq.same && ineq.map === 0 && !ineq.real && ineq.gone, 'מצב פיתוח: אי-שקילות (מוזרקת) מתגלה אחרי הפעולה, ומפעילה ניתוח מלא — המודל והקנבס נשארים נכונים');
+    let logged = false;
+    for (let i = 0; i < 20 && !logged; i++) { await sleep(250); logged = JSON.stringify(await call(page, 'dev-log', null, '&q=' + encodeURIComponent('editor-inequivalent'))).includes('editor-inequivalent'); }
+    ok(logged, 'אי-השקילות נרשמה ביומן המפתח (editor-inequivalent)');
+    await page.keyboard.press('Control+z'); await sleep(200);
+    // רוחבי המכשיר מ-kol.json
+    const kolF = (await call(page, 'pf_tree')).files.find(f => f.path === 'kol.json');
+    const kolC = JSON.parse((await call(page, 'pf_read', null, '&id=' + kolF.id)).content);
+    kolC.breakpoints = [{ id: 'tablet', label: 'טאבלט', max: 1024, preview: 700 }, { id: 'small', label: 'נייד קטן', max: 480, preview: 360 }];
+    await call(page, 'pf_write', { id: kolF.id, rev: kolF.rev, content: JSON.stringify(kolC, null, 2) });
+    await openPage(page, 't/v.html');
+    const devs = await page.$$eval('.ed-dev button', b => b.map(x => x.title));
+    ok(devs.length === 3 && devs[1].includes('700px') && devs[2] === 'נייד קטן · 360px', 'רוחבי הקנבס נלקחים מ-kol.json של הפרויקט — ' + devs.join(' | '));
+    await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press('3'); await sleep(80);
+    ok(await page.evaluate(() => Editor._state.canvas.viewport === 360), 'בחירת המכשיר השלישי — הקנבס ברוחב 360px');
+    kolC.breakpoints = [{ id: 'tablet', label: 'טאבלט', max: 1024, preview: 820 }, { id: 'mobile', label: 'טלפון', max: 767, preview: 390 }];
+    await call(page, 'pf_write', { id: kolF.id, rev: (await call(page, 'pf_tree')).files.find(f => f.path === 'kol.json').rev, content: JSON.stringify(kolC, null, 2) });
+    await page.evaluate(() => Editor._prefs({ device: 'desktop' }));
+    // הנעילה מתגלה בפתיחה, לא בכתיבה הראשונה
+    const ctxL = await mk(1280, 800, { sub: 'u-ed', name: 'Ed Member', email: 'ed@example.test', email_verified: true }), pl = await ctxL.newPage();
+    await pl.goto(base + '/#/words'); await pl.waitForFunction(() => typeof state !== 'undefined' && state.user);
+    await call(pl, 'lock', { op: 'take' });
+    await openPage(page, 't/v.html');
+    const locked = await page.evaluate(() => ({ status: document.querySelector('.ed-status').textContent, ro: Editor._state.readOnly, dirty: Editor._state.doc.dirty }));
+    await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#keep'))); }); await sleep(60);
+    ok(locked.status.includes('לקריאה בלבד') && locked.ro.includes('Ed Member') && !locked.dirty && (await st(page)).sel === 'h1#keep' && await page.isDisabled('.ed-bar [aria-label^="מחיקת"]'), 'נעילה אצל חבר אחר מתגלה כבר בפתיחה: "לקריאה בלבד", רואים ובוחרים, המחיקה כבויה — ' + locked.ro);
+    await page.keyboard.press('Delete'); await sleep(150);
+    ok(await page.evaluate(() => !!Editor._state.canvas.doc.querySelector('#keep') && !Editor._state.doc.dirty), 'בזמן נעילה: Delete אינו כותב דבר');
+    await call(pl, 'lock', { op: 'release' }); await ctxL.close();
+    await openPage(page, 't/v.html');
+    ok(await page.evaluate(() => !Editor._state.readOnly), 'אחרי שחרור הנעילה — העריכה חוזרת');
+
     // ── 4. מקלדת בלבד, ו-`?` ──
     await openPage(page, 't/page.html');
     await page.evaluate(() => { document.activeElement && document.activeElement.blur(); });

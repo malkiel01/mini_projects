@@ -158,6 +158,7 @@ const Project = (() => {
           doc.text = out + before.slice(at); changed(doc);
         }
         (doc.tx = doc.tx || []).push({ label, at: Date.now() }); if (doc.tx.length > 100) doc.tx.shift();
+        if (label) (doc.txPending = doc.txPending || []).push(label);   // שם העסקה — נשמר כהערת הגרסה בשמירה הבאה
       },
       undo() { if (doc.model) doc.model.undo(); else if (doc.undo?.length) { (doc.redo = doc.redo || []).push(doc.text); doc.text = doc.undo.pop(); changed(doc); } },
       redo() { if (doc.model) doc.model.redo(); else if (doc.redo?.length) { doc.undo.push(doc.text); doc.text = doc.redo.pop(); changed(doc); } },
@@ -179,6 +180,8 @@ const Project = (() => {
       const doc = S.docs.get(id);
       return doc ? handle(doc) : null;
     },
+    /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */
+    async info() { const d = await api('pf_tree'); S.kol = d.kol; return { lock: d.lock, kol: d.kol }; },
     /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
     async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
   };
@@ -190,8 +193,10 @@ const Project = (() => {
     const content = doc.model ? doc.model.getValue() : doc.text;
     doc.saving = true; drawStatus();
     try {
-      const d = await api('pf_write', { id, rev: doc.rev, content, auto });
+      const tx = (doc.txPending || []).slice();
+      const d = await api('pf_write', tx.length ? { id, rev: doc.rev, content, auto, tx } : { id, rev: doc.rev, content, auto });
       doc.rev = d.file.rev; doc.saved = content; doc.conflict = false;
+      if (doc.txPending) doc.txPending.splice(0, tx.length);
       const f = S.byId.get(id);
       if (f) Object.assign(f, d.file);
       if (d.kol) { S.kol = d.kol; drawBars(); }
@@ -408,7 +413,18 @@ const Project = (() => {
     const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(([label, fn, cls]) =>
       h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))));
   }
+  /** "גרסאות" של קובץ: כל שמירה — מתי, מי, ומה נעשה בה (שם העסקה מהעורך החזותי, "שמירה", "שמירה אוטומטית"). */
+  async function versions(f) {
+    const body = h('div', { class: 'pj-versions' }, h('p', { class: 'hint' }, 'טוען…'));
+    sheet('גרסאות · ' + base(f.path), body);
+    try {
+      const d = await api('pf_versions', undefined, `&id=${f.id}`);
+      body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '.'),
+        h('ol', { class: 'pj-ver-list' }, d.versions.map(v => h('li', { 'data-rev': v.rev }, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))))));
+    } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
   const fileMenu = f => menu(base(f.path), [
+    f.kind === 'file' ? ['🕘 גרסאות', () => versions(f)] : null,
     ['📂 פתיחה', () => openFile(f.id)],
     ['✏️ שינוי שם', () => rename({ id: f.id }, f.path)],
     ['⬇️ הורדה', () => download(f)],
@@ -730,5 +746,5 @@ const Project = (() => {
       pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, _state: S, _open: openFile, _save: save };
+  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();
