@@ -167,11 +167,15 @@ function pv_words(string $app): string
     $items = [];
     foreach ($rows as $w) {
         $a = (string)$w['audio'];
-        $items[] = [
+        $item = [
             'id' => $w['id'], 'word' => $w['word'], 'meaning' => $w['meaning'],
             'topics' => array_map(fn($t) => topic_slug((string)$t, $map), $w['topics']),
             'audio' => $a === '' ? '' : (file_id($a) ? $app . media_url($a) : $a),
         ];
+        // המזהה באתר (למשוב) והמזהה מהאקסל — רק למילה שיש לה (F3: הכרטיס המוסב נקשר אליהם)
+        if (($w['wp_id'] ?? null) !== null) $item['wp_id'] = $w['wp_id'];
+        if ((string)($w['external_id'] ?? '') !== '') $item['external_id'] = $w['external_id'];
+        $items[] = $item;
     }
     return json_encode(['topics' => $topics, 'items' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 }
