@@ -158,6 +158,7 @@ const Project = (() => {
           doc.text = out + before.slice(at); changed(doc);
         }
         (doc.tx = doc.tx || []).push({ label, at: Date.now() }); if (doc.tx.length > 100) doc.tx.shift();
+        if (label) (doc.txPending = doc.txPending || []).push(label);   // שם העסקה — נשמר כהערת הגרסה בשמירה הבאה
       },
       undo() { if (doc.model) doc.model.undo(); else if (doc.undo?.length) { (doc.redo = doc.redo || []).push(doc.text); doc.text = doc.undo.pop(); changed(doc); } },
       redo() { if (doc.model) doc.model.redo(); else if (doc.redo?.length) { doc.undo.push(doc.text); doc.text = doc.redo.pop(); changed(doc); } },
@@ -179,6 +180,8 @@ const Project = (() => {
       const doc = S.docs.get(id);
       return doc ? handle(doc) : null;
     },
+    /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */
+    async info() { const d = await api('pf_tree'); S.kol = d.kol; return { lock: d.lock, kol: d.kol }; },
     /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
     async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
   };
@@ -190,8 +193,10 @@ const Project = (() => {
     const content = doc.model ? doc.model.getValue() : doc.text;
     doc.saving = true; drawStatus();
     try {
-      const d = await api('pf_write', { id, rev: doc.rev, content, auto });
+      const tx = (doc.txPending || []).slice();
+      const d = await api('pf_write', tx.length ? { id, rev: doc.rev, content, auto, tx } : { id, rev: doc.rev, content, auto });
       doc.rev = d.file.rev; doc.saved = content; doc.conflict = false;
+      if (doc.txPending) doc.txPending.splice(0, tx.length);
       const f = S.byId.get(id);
       if (f) Object.assign(f, d.file);
       if (d.kol) { S.kol = d.kol; drawBars(); }
@@ -408,7 +413,18 @@ const Project = (() => {
     const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(([label, fn, cls]) =>
       h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))));
   }
+  /** "גרסאות" של קובץ: כל שמירה — מתי, מי, ומה נעשה בה (שם העסקה מהעורך החזותי, "שמירה", "שמירה אוטומטית"). */
+  async function versions(f) {
+    const body = h('div', { class: 'pj-versions' }, h('p', { class: 'hint' }, 'טוען…'));
+    sheet('גרסאות · ' + base(f.path), body);
+    try {
+      const d = await api('pf_versions', undefined, `&id=${f.id}`);
+      body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '.'),
+        h('ol', { class: 'pj-ver-list' }, d.versions.map(v => h('li', { 'data-rev': v.rev }, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))))));
+    } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
   const fileMenu = f => menu(base(f.path), [
+    f.kind === 'file' ? ['🕘 גרסאות', () => versions(f)] : null,
     ['📂 פתיחה', () => openFile(f.id)],
     ['✏️ שינוי שם', () => rename({ id: f.id }, f.path)],
     ['⬇️ הורדה', () => download(f)],
@@ -538,6 +554,7 @@ const Project = (() => {
     persist();
   }
   const toolsMenu = () => menu('כלי העורך', [
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
@@ -604,6 +621,7 @@ const Project = (() => {
         // שואלת על שורה שכבר אינה קיימת — "Illegal value for lineNumber" (V1a 🟡-1). כבויה.
         stickyScroll: { enabled: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
+      addPick(S.editor, () => S.cur);
     }
     try {
       const first = !S.loaded;
@@ -631,6 +649,40 @@ const Project = (() => {
     liveClose();
     liveEl = h('div', { class: 'pj-live' }, h('iframe', { src: 'live.php?embed=1' + (path ? '&path=' + encodeURIComponent(path) : ''), title: 'תצוגה חיה' }));
     document.body.append(liveEl);
+  }
+  // ── "בחר בעורך" (04 §3): מהסמן בקוד אל האלמנט בעורך החזותי — תפריט ההקשר של עורך הקוד, וקיצור ──
+  function pickInEditor(ed, id) {
+    const f = S.byId.get(id), m = ed?.getModel();
+    if (!f || !m || !/\.html?$/i.test(f.path)) { toast('"בחר בעורך" פועל בקובץ HTML', true); return; }
+    Editor.selectAt(f.path, m.getOffsetAt(ed.getPosition()));
+  }
+  function addPick(ed, idOf) {
+    ed.addAction({ id: 'kol.pickInEditor', label: 'בחר בעורך החזותי', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyE],
+      precondition: "editorLangId == 'html'", contextMenuGroupId: 'navigation', contextMenuOrder: 0, run: () => pickInEditor(ed, idOf()) });
+  }
+  /**
+   * עורך קוד שני, למבט המפוצל של העורך החזותי: אותו מסמך (אותו מודל של Monaco — אותו טקסט, אותה היסטוריה, אותה שמירה).
+   * נוצר פעם אחת לכל חיי הדף (Monaco שנסגר משבית פעולות בעורך שנפתח אחריו), ומחובר מחדש למכל שמבקש אותו.
+   */
+  function splitEditor(host, id) {
+    const doc = S.docs.get(id);
+    if (!monaco || !doc?.model) return null;
+    if (!S.split) {
+      el.split = h('div', { class: 'pj-split', dir: 'ltr' });
+      S.split = monaco.editor.create(el.split, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: 'on', minimap: { enabled: false }, tabSize: 2,
+        scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false }, stickyScroll: { enabled: false }, lineNumbersMinChars: 3 });
+      S.split.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.splitId));
+      addPick(S.split, () => S.splitId);
+    }
+    S.splitId = id;
+    host.replaceChildren(el.split);
+    S.split.setModel(doc.model); S.split.layout();
+    const ed = S.split, m = doc.model;
+    return { ed, offset: () => m.getOffsetAt(ed.getPosition()),
+      /** מסמן טווח (בתווים) בלי להעביר אליו את המיקוד. */
+      mark(from, to) { const a = m.getPositionAt(from), b = m.getPositionAt(to), r = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column); ed.setSelection(r); ed.revealRangeInCenterIfOutsideViewport(r); },
+      selection() { const r = ed.getSelection(); return r ? { from: m.getOffsetAt(r.getStartPosition()), to: m.getOffsetAt(r.getEndPosition()) } : null; },
+      onCursor(cb) { return ed.onDidChangeCursorPosition(e => { if (e.source === 'mouse' || e.source === 'keyboard') cb(); }); } };
   }
   /** פותח קובץ בעורך הקוד. line — שורה; range — {from, to} בתווים: הטווח מסומן (למשל האלמנט שנבחר בעורך החזותי). */
   async function openAt(path, line, range) {
@@ -694,5 +746,5 @@ const Project = (() => {
       pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, _state: S, _open: openFile, _save: save };
+  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();

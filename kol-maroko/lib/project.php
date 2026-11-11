@@ -405,12 +405,41 @@ function pf_write(array $user, array $b): array
         db()->prepare('UPDATE pf_files SET sha = ?, size = ?, rev = rev + 1, updated_by = ?, updated_name = ?, updated_at = ? WHERE id = ?')
             ->execute([$sha, strlen($bytes), $user['sub'], $user['name'] ?? '', now_iso(), $r['id']]);
         $r = pf_row((int)$r['id']);
-        pf_hist($r, $user, !empty($b['auto']) ? 'auto' : 'שמירה');
+        pf_hist($r, $user, pf_tx_note($b) ?? (!empty($b['auto']) ? 'auto' : 'שמירה'));
         return $r;
     });
     $out = ['file' => pf_public($r)];
     if ($r['path'] === 'kol.json') $out['kol'] = pf_kol();
     return $out;
+}
+
+/**
+ * שם העסקה (04 §2): פעולות עם שם שנעשו מאז השמירה הקודמת ("מחיקת h2.sub") — נשמרות כהערת הגרסה, במקום "auto" / "שמירה".
+ * גרסה עם שם אינה מתמזגת עם שמירות אוטומטיות שאחריה או שלפניה. טקסט בלבד, מקוצר.
+ */
+function pf_tx_note(array $b): ?string
+{
+    $tx = $b['tx'] ?? null;
+    if (is_string($tx)) $tx = [$tx];
+    if (!is_array($tx)) return null;
+    $labels = [];
+    foreach (array_slice($tx, 0, 8) as $t) {
+        if (!is_string($t)) continue;
+        $t = trim(preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $t) ?? '');
+        if ($t !== '') $labels[] = mb_substr($t, 0, 80);
+    }
+    if (!$labels) return null;
+    $extra = is_array($b['tx']) && count($b['tx']) > 8 ? ' ועוד ' . (count($b['tx']) - 8) : '';
+    return mb_substr(implode(' · ', $labels) . $extra, 0, 240);
+}
+
+/** "גרסאות" של קובץ: היסטוריית השמירות שלו — גרסה, מתי, מי, ומה נעשה (שם העסקה). קריאה בלבד. */
+function pf_versions(array $q): array
+{
+    $r = pf_row((int)($q['id'] ?? 0));
+    $st = db()->prepare('SELECT rev, at, name, note, size FROM pf_history WHERE file_id = ? ORDER BY id DESC');   // ההיסטוריה כבר מוגבלת בשמירה (pf_hist)
+    $st->execute([$r['id']]);
+    return ['file' => pf_public($r), 'versions' => array_map(fn($h) => ['rev' => (int)$h['rev'], 'at' => $h['at'], 'by' => $h['name'], 'note' => $h['note'] === 'auto' ? 'שמירה אוטומטית' : $h['note'], 'size' => (int)$h['size']], $st->fetchAll())];
 }
 
 /** כל השורות החיות שמתחת לתיקייה (לא כולל שורת התיקייה עצמה). */

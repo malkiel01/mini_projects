@@ -20,16 +20,16 @@ const API_MIN_ROLE = [
     'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
     'library' => 'editor',
     // פרוסה F1
-    'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-items' => 'editor',
+    'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-my-reports' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',
     'dev-file' => 'owner', 'dev-tokens' => 'owner', 'dev-token-create' => 'owner', 'dev-token-revoke' => 'owner', 'dev-item-log' => 'owner',
     // פרוסה F2a — מאגר הפרויקט
-    'pf_tree' => 'editor', 'pf_read' => 'editor', 'pf_raw' => 'editor', 'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor',
+    'pf_tree' => 'editor', 'pf_read' => 'editor', 'pf_versions' => 'editor', 'pf_raw' => 'editor', 'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor',
     'pv_token' => 'editor',
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner', 'dev-attack-save' => 'owner',
 ];
-const API_GET_DEV = ['dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];
+const API_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];
 
 function api_method(string $action): string
 {

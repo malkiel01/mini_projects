@@ -14,7 +14,9 @@
 (function () {
   'use strict';
   const K = window.KolSrc;
-  const OWNED = 'data-kol-canvas', CAP = 60;
+  const OWNED = 'data-kol-canvas', CAP = 60, REAL = ':not([' + OWNED + '])';
+  /** אלמנטים שאין להם מראה בעמוד — נבחרים ב-Navigator, ואינם "מוצגים לעריכה". */
+  const NONVIS = new Set('html head title meta link script style base noscript template'.split(' '));
   const decode = bytes => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   const encode = text => new TextEncoder().encode(text);
   const noBom = s => s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
@@ -61,6 +63,7 @@
       this.history = []; this.timing = null; this.cssSrc = ''; this.cssM = null; this.styleEl = null;
       this.verify = false; this.inequiv = []; this.onInequiv = null; this.lastMode = ''; this.lastWhy = ''; this.stats = { inc: 0, full: 0 };
       this.sheets = null; this.baseHref = ''; this.marksOn = false; this.zeroAt = 0; this.onKey = null; this.viewport = null; this.drag = true; this.repeatUp = false; this.scale = 1; this.ox = 0; this.capOff = false; this.capInfo = null;
+      this.hiddenNodes = new Set(); this.lockedNodes = new Set(); this.shownMap = new Map(); this.shownD2m = new Map(); this.shownUndo = []; this.shownNote = ''; this.onPoint = null; this.onContext = null; this.longT = 0;
       host.classList.add('spike-canvas');
       this.frame = document.createElement('iframe');
       this.frame.setAttribute('sandbox', 'allow-same-origin');             // בלי allow-scripts — זה כל העניין
@@ -91,7 +94,7 @@
       const t4 = performance.now();
       void this.doc.documentElement.offsetHeight;                          // פריסה בפועל
       const t5 = performance.now();
-      this.history = []; this.zeroAt = 0; this.select(null);
+      this.history = []; this.zeroAt = 0; this.hiddenNodes = new Set(); this.lockedNodes = new Set(); this.select(null);
       return (this.timing = { parseHtml: t1 - t0, parseCss: t2 - t1, render: t3 - t2, map: t4 - t3, layout: t5 - t4, total: t5 - t0 });
     }
     render() {
@@ -138,17 +141,82 @@
         const sig = k => k.tag + '.' + K.classesOf(k).join('.'), s0 = sig(n.kids[0]);
         if (!n.kids.every(k => sig(k) === s0)) return;
         found.push({ node: n, total: n.kids.length });
-        let sel = ''; for (let x = n; x; x = x.parent) sel = (x.parent ? ' > :nth-child(' + (this.domIndex(x) + 1) + ')' : 'html') + sel;
-        rules += sel + ' > :nth-child(n+' + (CAP + 1) + '){display:none!important}\n';
+        rules += this.selOf(n) + ' > :nth-child(n+' + (CAP + 1) + ' of ' + REAL + '){display:none!important}\n';
       });
       this.capInfo = found.length ? { lists: found, hidden: found.reduce((a, f) => a + f.total - CAP, 0), shown: this.capOff } : null;
-      this.capStyle.textContent = this.capOff ? '' : rules;
+      this.capStyle.textContent = (this.capOff ? '' : rules) + this.hideRules();
+    }
+    /** בורר CSS לצומת, לפי מקומו בין האחים שבמקור (אלמנטים של העורך אינם נספרים). לשימוש בכללי העורך בלבד. */
+    selOf(n) { let sel = ''; for (let x = n; x; x = x.parent) sel = (x.parent ? ' > :nth-child(' + (x.parent.kids.indexOf(x) + 1) + ' of ' + REAL + ')' : 'html') + sel; return sel; }
+    /** 👁 הסתרה בעורך בלבד: כלל CSS של העורך. הקובץ וה-DOM של העמוד אינם משתנים. */
+    hideRules() { let r = ''; for (const n of this.hiddenNodes) if (this.m2d && this.m2d.has(n) && n !== this.selected) r += this.selOf(n) + '{display:none!important}\n'; return r; }
+    setHidden(n, on) { if (on) this.hiddenNodes.add(n); else this.hiddenNodes.delete(n); this.recap(); this.zeroAt = 0; this.draw(); }
+    setLocked(n, on) { if (on) this.lockedNodes.add(n); else this.lockedNodes.delete(n); }
+    elOf(n) { return this.shownMap.get(n) || this.m2d.get(n) || null; }
+    /** מה רואים מהאלמנט: 'nonvisual' (ראש העמוד, סקריפט…) · 'shown' (מוסתר בעמוד, מוצג זמנית לעריכה) · 'zero' · 'visible' · 'none'. */
+    visual(n) {
+      if (!n) return 'none';
+      for (let x = n; x; x = x.parent) if (x.tag === 'head') return 'nonvisual';
+      if (NONVIS.has(n.tag) && !(n.tag === 'template' && this.shownNote)) return 'nonvisual';
+      const r = this.rectOf(n);
+      return !r ? 'none' : this.shownNote && n === this.selected ? 'shown' : r.zero ? 'zero' : 'visible';
+    }
+    /** מחזיר את הקנבס למצבו: מסיר את מה ש"הוצג לעריכה". נקרא לפני כל שינוי ב-DOM, כדי שהסנכרון יעבוד על DOM נקי. */
+    unshow() {
+      for (const u of this.shownUndo) u();
+      this.shownUndo = []; this.shownMap = new Map(); this.shownD2m = new Map(); this.shownNote = '';
+    }
+    /**
+     * "מוצג לעריכה": אלמנט נבחר שאינו נראה (display:none, hidden, חלון סגור, או תוכן של <template>) מוצג זמנית בקנבס.
+     * תוכן <template> — עותק שלו מוצב מיד אחרי התבנית (מסומן כשל העורך, ואינו חלק מהמיפוי); הסתרה — נדרסת בסגנון
+     * על האלמנט ב-DOM של הקנבס, ומוחזרת כשהבחירה עוברת. הקובץ אינו משתנה.
+     */
+    show(n) {
+      this.unshow();
+      if (!n || !this.m2d.has(n) || !this.doc.body) return;
+      for (let x = n; x; x = x.parent) if (x.tag === 'head') return;
+      if (NONVIS.has(n.tag) && n.tag !== 'template') return;
+      const win = this.frame.contentWindow, chain = [];
+      for (let x = n.parent; x; x = x.parent) if (x.tag === 'template') chain.unshift(x);
+      if (n.tag === 'template') chain.push(n);
+      const pair = (x, e) => { this.shownMap.set(x, e); this.shownD2m.set(e, x); const dk = kidsOf(e); for (let i = 0; i < Math.min(dk.length, x.kids.length); i++) pair(x.kids[i], dk[i]); };
+      for (const tpl of chain) {
+        const te = this.elOf(tpl);
+        if (!te || !te.isConnected) break;
+        let tops = tpl.kids;
+        if (tpl !== n) { let top = n; while (top.parent !== tpl) top = top.parent; tops = [top]; }
+        let after = te;
+        for (const t of tops) {
+          const src = this.elOf(t); if (!src) continue;
+          const c = src.cloneNode(true); c.setAttribute(OWNED, 'shown'); after.after(c); after = c; pair(t, c);
+          this.shownUndo.push(() => c.remove());
+        }
+        this.shownNote = 'מוצג לעריכה · תוכן תבנית';
+      }
+      // הסתרה (display:none, hidden, חלון סגור): נדרסת בכלל CSS של העורך, לפי מקום האלמנט ב-DOM — בלי לגעת בתכונות שלו
+      const domSel = e => { let sel = ''; for (let x = e; x.parentElement; x = x.parentElement) sel = ' > :nth-child(' + (Array.prototype.indexOf.call(x.parentElement.children, x) + 1) + ')' + sel; return 'html' + sel; };
+      const path = []; for (let x = n; x; x = x.parent) path.unshift(x);
+      let st = null, rules = '';
+      const put = text => { if (!st) { st = this.doc.createElement('style'); st.setAttribute(OWNED, 'show'); (this.doc.head || this.doc.documentElement).append(st); this.shownUndo.push(() => st.remove()); } st.textContent = text; };
+      for (const x of path) {
+        const e = this.elOf(x);
+        if (!e || !e.isConnected) continue;
+        const cs = win.getComputedStyle(e), none = cs.display === 'none', inv = cs.visibility === 'hidden' && x === n;
+        if (!none && !inv) continue;
+        const sel = domSel(e);
+        if (none) { put(rules + sel + '{display:revert!important}'); rules += sel + (win.getComputedStyle(e).display === 'none' ? '{display:block!important}' : '{display:revert!important}'); }
+        if (inv) rules += sel + '{visibility:visible!important}';
+        put(rules);
+        this.shownNote = this.shownNote || 'מוצג לעריכה';
+      }
     }
     domIndex(n) { const d = this.m2d && this.m2d.get(n); if (d && d.parentElement) return Array.prototype.indexOf.call(d.parentElement.children, d); return n.parent ? n.parent.kids.indexOf(n) : 0; }
     showAll(on) { this.capOff = !!on; this.recap(); this.draw(); }
     remap() { const r = mapTrees(this.m, this.doc.documentElement); this.d2m = r.d2m; this.m2d = r.m2d; this.mapErrors = r.errors; this.mapDom = r.dom; }
     domOf(n) { return this.m2d.get(n) || null; }
-    nodeOf(d) { for (; d; d = d.parentElement) { const n = this.d2m.get(d); if (n) return n; } return null; }
+    nodeOf(d) { for (; d; d = d.parentElement) { const n = this.shownD2m.get(d) || this.d2m.get(d); if (n) return n; } return null; }
+    /** האלמנט שלחיצה בנקודה בוחרת: העמוק ביותר שאינו 🔒 נעול (נעול — מדלגים להורה). */
+    pick(d) { let n = this.nodeOf(d); while (n && this.lockedNodes.has(n)) n = n.parent; return n; }
 
     /** מחיל פעולת HTML: fn(model) מחזירה {patches}. זורק SrcError כשהפעולה נדחית — והקובץ אינו משתנה. */
     apply(fn) {
@@ -162,6 +230,7 @@
     /** מחיל תיקוני טקסט על הקובץ שבקנבס — מכל מקור: פעולה חזותית, ביטול, או הקלדה בעורך הקוד. */
     patch(patches) {
       const t0 = performance.now(), sel = this.selected, selPath = sel ? K.pathOf(sel) : null, hov = this.hovered;
+      this.unshow();
       const u = K.update(this.m, patches);
       const t1 = performance.now();
       this.m = u.model; this.src = u.model.src; this.lastMode = u.mode; this.lastWhy = u.why; this.lastDiff = null;
@@ -180,6 +249,9 @@
       const alive = n => { for (let x = n; x; x = x.parent) if (x === this.m.root) return true; return false; };
       this.selected = sel && this.m2d.has(sel) && alive(sel) ? sel : (selPath ? K.byPath(this.m, selPath) : null);
       this.hovered = hov && this.m2d.has(hov) && alive(hov) ? hov : null;
+      for (const set of [this.hiddenNodes, this.lockedNodes]) for (const x of set) if (!this.m2d.has(x) || !alive(x)) set.delete(x);
+      if (this.sheets) this.recap();
+      this.show(this.selected);
       this.zeroAt = 0; this.draw();
       return { mode: this.lastMode, why: this.lastWhy, timing: { op: 0, reparse: t1 - t0, dom: t2 - t1, map: t3 - t2, layout: t4 - t3, total: t4 - t0 } };
     }
@@ -254,9 +326,15 @@
     listen() {
       const doc = this.doc, stop = e => { e.preventDefault(); e.stopPropagation(); };
       for (const ev of ['click', 'auxclick', 'dblclick', 'submit', 'dragstart', 'contextmenu']) doc.addEventListener(ev, stop, true);
+      // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
+      const ctxAt = (t, x, y) => { const n = this.nodeOf(t); if (n && this.onContext) { const f = this.frame.getBoundingClientRect(); this.onContext(n, f.left + x * this.scale, f.top + y * this.scale); } };
+      doc.addEventListener('contextmenu', e => { clearTimeout(this.longT); if (!this.longDone) ctxAt(e.target, e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
-        const n = this.nodeOf(e.target);
+        clearTimeout(this.longT); this.longDone = false;
+        if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(e.target); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
+        if (e.pointerType === 'touch') { const t = e.target, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
+        const n = this.pick(e.target);
         this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n } : null;
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
         else if (n && !(this.repeatUp && this.selected === n)) this.select(n);
@@ -265,15 +343,17 @@
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
         const p = this.press;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) clearTimeout(this.longT);
         if (p && p.id === e.pointerId) {
           if (this.drag && !p.drag && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) p.drag = true;
           if (p.drag) { p.drop = this.dropAt(p.n, e.clientX, e.clientY); this.drawDrop(p.drop); }
           return;
         }
-        const n = this.nodeOf(e.target);
+        const n = this.pick(e.target);
         if (n !== this.hovered) { this.hovered = n; this.draw(); }
       }, true);
       const up = e => {
+        clearTimeout(this.longT);
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);
         if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent) return this.select(p.n.parent);   // לחיצה חוזרת — ההורה
@@ -287,7 +367,9 @@
       doc.addEventListener('pointerleave', () => { this.hovered = null; this.draw(); }, true);
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
       doc.addEventListener('touchstart', e => { const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
-      doc.addEventListener('scroll', () => this.draw(), true);
+      doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
+      // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
+      doc.addEventListener('securitypolicyviolation', e => { if (this.onBlocked && /^https?:/i.test(e.blockedURI || '')) this.onBlocked(e.blockedURI, e.effectiveDirective || ''); });
       doc.addEventListener('keydown', e => { if (this.onKey) this.onKey(e); }, true);
       this.frame.contentWindow.addEventListener('resize', () => this.draw());
       this.events = [];
@@ -308,10 +390,14 @@
       if (n.parent.kids.indexOf(n) === index) return null;
       return { parent: n.parent, index, rect: r, after, sameRow, rtl };
     }
-    select(n) { this.selected = n || null; this.draw(); if (this.onSelect) this.onSelect(this.selected); }
+    select(n) {
+      const was = this.selected; this.unshow(); this.selected = n || null;
+      if (this.sheets && (this.hiddenNodes.has(was) || this.hiddenNodes.has(this.selected))) this.recap();   // נבחר שהוסתר בעורך — מוצג כל עוד הוא נבחר
+      this.show(this.selected); this.zeroAt = 0; this.draw(); if (this.onSelect) this.onSelect(this.selected);
+    }
     /** Alt + לחיצה: כל האלמנטים שמתחת לנקודה, מהעליון לתחתון; מחזיר את זה שאחרי הנבחר. */
     under(x, y) {
-      const stack = []; for (const d of this.doc.elementsFromPoint(x, y)) { const n = this.d2m.get(d); if (n && !stack.includes(n)) stack.push(n); }
+      const stack = []; for (const d of this.doc.elementsFromPoint(x, y)) { const n = this.shownD2m.get(d) || this.d2m.get(d); if (n && !stack.includes(n)) stack.push(n); }
       if (!stack.length) return null;
       return stack[(stack.indexOf(this.selected) + 1) % stack.length];
     }
@@ -323,7 +409,7 @@
       if (to) { this.select(to); this.reveal(to); }
       return to || null;
     }
-    reveal(n) { const d = this.m2d.get(n); if (!d) return; const r = d.getBoundingClientRect(), w = this.frame.contentWindow; if (r.width + r.height > 0 && (r.bottom < 0 || r.top > w.innerHeight)) d.scrollIntoView({ block: 'center' }); this.draw(); }
+    reveal(n) { const d = this.elOf(n); if (!d) return; const r = d.getBoundingClientRect(), w = this.frame.contentWindow; if (r.width + r.height > 0 && (r.bottom < 0 || r.top > w.innerHeight)) d.scrollIntoView({ block: 'center' }); this.draw(); }
     label(n) { const id = K.attrOf(n, 'id'), c = K.classesOf(n)[0]; return n.tag + (id ? '#' + id.value : c ? '.' + c : '') + (n.implied ? ' · לא במקור' : '') + (n.broken ? ' · שבור' : ''); }
     /** רוחב הקנבס בפיקסלים (null — כרוחב המכל). כשאין מקום — המסגרת מוקטנת, והמסגרות שמעליה מחושבות לפי ההקטנה. */
     setViewport(width) {
@@ -337,9 +423,15 @@
       this.zeroAt = 0; this.draw();
     }
     rectOf(n) {
-      const d = n && this.m2d.get(n);
-      if (!d || !d.getClientRects().length) return null;                    // לא מרונדר (display:none, head) — ב-Navigator
-      const r = d.getBoundingClientRect(), s = this.scale;
+      const d = n && this.elOf(n);
+      if (!d) return null;
+      let r;
+      if (d.getClientRects().length) r = d.getBoundingClientRect();
+      else if (n.tag === 'template' && n === this.selected && this.shownMap.size) {   // תבנית שתוכנה מוצג: המסגרת עוטפת את התוכן
+        let a = null; for (const k of n.kids) { const e = this.shownMap.get(k), b = e && e.getClientRects().length ? e.getBoundingClientRect() : null; if (b) a = a ? { left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom) } : { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; }
+        if (!a) return null; r = { left: a.left, top: a.top, width: a.right - a.left, height: a.bottom - a.top };
+      } else return null;                                                   // לא מרונדר (head, סקריפט) — ב-Navigator
+      const s = this.scale;
       return { left: this.ox + r.left * s, top: r.top * s, width: r.width * s, height: r.height * s, zero: r.width === 0 || r.height === 0 };
     }
     place(box, n) {
@@ -347,7 +439,7 @@
       if (!r) { box.hidden = true; return; }
       box.hidden = false;
       box.style.cssText = 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + Math.max(r.width, 2) + 'px;height:' + Math.max(r.height, 2) + 'px';
-      box.firstChild.textContent = this.label(n);
+      box.firstChild.textContent = this.label(n) + (box === this.boxSel && this.shownNote ? ' · ' + this.shownNote : '');
     }
     draw() {
       if (!this.m2d) return;
@@ -389,5 +481,5 @@
     }
   }
 
-  window.KolCanvas = { Canvas, mapTrees, sameDom, browserParse, decode, encode, kidsOf, OWNED };
+  window.KolCanvas = { Canvas, mapTrees, sameDom, browserParse, decode, encode, kidsOf, OWNED, NONVIS };
 })();

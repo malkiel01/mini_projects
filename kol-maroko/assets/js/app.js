@@ -93,14 +93,21 @@ const TABS = [
   { id: 'dev', label: '🛠️ מפתח', min: 'editor', dev: true },      // מי מפתח — מהשרת (user.developer)
 ];
 const RANK = { editor: 1, publisher: 2, owner: 3 };
+// המסמך המוקשח (editor.php — המדיניות המלאה של C1 שלב ב): בו רצים העורך החזותי ועורך הקוד בלבד. שאר המסכים — ב-index.html.
+const HARD = /\/editor\.php$/.test(location.pathname), HARD_TABS = ['editor', 'project'];
+// הפניה מוקדמת, לפני כל בקשה: מי שנכנס (או מרענן) ב-index.html#/editor עובר מיד למסמך המוקשח — פעם אחת, בלי טעינה כפולה
+if (!HARD && /^#\/editor(\/|$)/.test(location.hash)) location.replace('editor.php' + location.hash);
+const tabHref = id => (HARD ? (HARD_TABS.includes(id) ? '#/' + id : 'index.html#/' + id) : HARD_TABS.includes(id) ? 'editor.php#/' + id : '#/' + id);
 
 function route() {
   const tabs = TABS.filter(t => RANK[state.user.role] >= RANK[t.min] && (!t.dev || state.user.developer));
   const [, hashTab, sub, arg] = location.hash.split('/');           // #/dev/log/<מזהה בקשה>
-  const cur = tabs.find(t => hashTab === t.id) || tabs[0];
+  let cur = tabs.find(t => hashTab === t.id) || (HARD ? tabs.find(t => t.id === 'editor') : null) || tabs[0];
+  if (HARD && !HARD_TABS.includes(cur.id)) { location.replace('index.html' + (location.hash || '#/' + cur.id)); return; }   // מסך אחר — במסמך הרגיל
+  if (!HARD && cur.id === 'editor') { location.replace('editor.php' + (location.hash || '#/editor')); return; }               // העורך — תמיד תחת המדיניות המלאה
   const nav = $('#tabs');
   nav.hidden = tabs.length < 2;
-  nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
+  nav.replaceChildren(...tabs.map(t => h('a', { href: tabHref(t.id), 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
   ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, state.user.role), files: () => Library.view(main, state.user.role === 'owner'),
