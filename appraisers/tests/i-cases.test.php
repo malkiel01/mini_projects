@@ -485,7 +485,7 @@ eq([$view($avi, $C)[0], call('GET', 'cases', [], $avi)[1]['cases']], [404, []], 
 call('POST', 'office-switch', ['office' => $A], $avi);
 [, $list] = call('GET', 'cases', [], $avi);
 $rowC = array_values(array_filter($list['cases'], fn($c) => $c['pid'] === $C))[0];
-eq([array_keys($rowC), $rowC['responsible']['name'], $rowC['open_mandatory'] >= 1], [['pid', 'number', 'status', 'title', 'purpose', 'purpose_note', 'property_type', 'key_date', 'due_date', 'updated_at', 'created_at', 'responsible', 'open_mandatory', 'overdue_tasks'], 'אבי', true], '§9 שורה ברשימה: מספר, כותרת, מטרה, אחראי, מצב, יעד, וסימון');
+eq([array_keys($rowC), $rowC['responsible']['name'], $rowC['open_mandatory'] >= 1], [['pid', 'number', 'status', 'title', 'purpose', 'purpose_note', 'property_type', 'key_date', 'due_date', 'updated_at', 'created_at', 'responsible', 'open_mandatory', 'overdue_tasks', 'open_conflicts'], 'אבי', true], '§9 שורה ברשימה: מספר, כותרת, מטרה, אחראי, מצב, יעד, וסימון');
 eq([array_unique(array_column(call('GET', 'cases', [], $avi, ['status' => 'draft'])[1]['cases'], 'status')), in_array($C, array_column(call('GET', 'cases', [], $avi, ['open_mandatory' => '1'])[1]['cases'], 'pid'), true),
     in_array($H, array_column(call('GET', 'cases', [], $avi, ['open_mandatory' => '1'])[1]['cases'], 'pid'), true), array_column(call('GET', 'cases', [], $avi, ['orderer' => $ruth['contact']['pid']])[1]['cases'], 'pid')],
     [['draft'], true, false, [$C]], '§9 מסננים: מצב, "יש דרישת חובה פתוחה", מזמין');
