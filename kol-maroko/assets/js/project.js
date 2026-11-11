@@ -324,7 +324,8 @@ const Project = (() => {
     el.ed.hidden = el.view.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
-      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'));
+      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
+        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ')));
       return;
     }
     if (doc.model && S.editor) {
@@ -529,7 +530,7 @@ const Project = (() => {
     el.status = h('span', { class: 'pj-status', role: 'status' });
     el.save = h('button', { type: 'button', class: 'btn primary sm', disabled: true, onclick: () => save(S.cur) }, '💾 שמירה');
     el.bar = h('div', { class: 'pj-bar' },
-      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📁 קבצים'),
+      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📂 קבצי הקוד'),
       el.tabs, el.status, el.save,
       h('button', { type: 'button', class: 'btn sm pj-live-btn', title: 'תצוגה חיה — העמוד רץ כפי שירוץ אצל הגולש', onclick: () => live() }, '▶️', h('span', { class: 'pj-live-word' }, ' תצוגה חיה')),
       h('button', { type: 'button', class: 'icon-btn', 'data-ed': true, 'aria-label': 'כלי העורך', onclick: toolsMenu }, '⋯'));
@@ -573,6 +574,7 @@ const Project = (() => {
         S.cur = cur; persist();
       }
       drawAll();
+      if (phone() && !S.cur) side(true);                         // בטלפון, בלי קובץ פתוח: העץ עצמו, לא מסך ריק עם כפתור
     } catch (e) { el.view.hidden = false; el.view.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
