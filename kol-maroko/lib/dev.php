@@ -116,6 +116,15 @@ function dev_attach_own(array $du, string $code): void
     }
 }
 
+/** הדיווחים של המשתמש עצמו (🐞, ו"לא הצלחתי לשנות" מהעורך) — קוד, כותרת, תווית, מצב. קריאה בלבד מטבלת המטלות של DevLoop. */
+function dev_my_reports(array $du): array
+{
+    devloop_migrate();
+    $st = db()->prepare('SELECT code, title, area, status, created_at FROM dev_tasks WHERE created_by = ? ORDER BY id DESC LIMIT 50');
+    $st->execute([$du['id']]);
+    return ['items' => $st->fetchAll()];
+}
+
 /**
  * הפעולות של המפתח ושל DevLoop. מחזיר null כשהפעולה אינה שלו. שמות הפעולות — כמו בכל אפליקציה עם DevLoop
  * (dev-…, devapi-…), כדי ש-Claude והסקיל devloop יעבדו בלי התאמה.
@@ -145,6 +154,8 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
             if (!is_developer($user)) dev_attach_own($du, (string)($_GET['code'] ?? ''));
             return devloop_attach('user:' . $du['id'], $_GET);
         })(),
+        // כל חבר: הדיווחים שהוא עצמו פתח, ומצבם (מי שאינו המפתח אינו רואה את שאר המטלות)
+        'GET dev-my-reports' => dev_my_reports($member()),
         'GET dev-items' => ($member() && is_developer($user) ? devloop_task_list() : ['updated' => null, 'note' => null, 'items' => []]),
         // המפתח בלבד
         'POST dev-task-create' => devloop_task_create($dev(), $in),
@@ -163,6 +174,7 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
         'GET dev-log' => ($dev() ? dev_log_view($_GET) : []),
         'GET dev-audit' => ($dev() ? dev_audit_view($_GET) : []),
         'GET dev-health' => ($dev() ? dev_health() : []),
+        'POST dev-attack-save' => pv_attack_save($dev(), $in),       // ערכת ההתקפה מול הסטודיו (F4, lib/preview.php)
         'GET dev-state' => ($dev() ? ['services' => dev_services(), 'stats' => dev_stats()] : []),
         // ספייק מנוע העורך (V0): קבצי הבדיקה מוגשים כנתונים — dev/ חסומה מהדפדפן
         'GET dev-spike-fixture' => ($dev() ? dev_spike_fixture((string)($_GET['name'] ?? '')) : []),
@@ -170,9 +182,9 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
     };
 }
 
-const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-items',
+const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-my-reports', 'dev-items',
     'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-file', 'dev-tokens', 'dev-token-create',
-    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];
+    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save'];
 /** פעולות שנכנסים אליהן באסימון, בלי משתמש מהשער. חייבות להופיע גם ב-"public" של app.json. */
 const DEV_TOKEN_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 /** פעולות שהגוף שלהן הוא קובץ, לא JSON. */
@@ -337,6 +349,12 @@ function dev_health_checks(): array
                 'להתקין באתר את התוסף המעודכן מ-wordpress-plugin/ (מטלה לבעלים; docs/install.md)'];
             return [true, "ה-ping החתום עבר · תוסף $p · $state", ''];
         }],
+        'preview' => ['התצוגה החיה: מפתח החתימה וכותרות הבידוד', function (): array {
+            require_once __DIR__ . '/preview.php';
+            if (!pv_token_ok(pv_token_make())) return [false, 'אסימון שנחתם עכשיו אינו מתקבל', 'לבדוק ש-data/secrets.json נכתב ונקרא (הרשאות), ושהשעון בשרת תקין'];
+            if (pv_token_ok(pv_token_make(time() - 5))) return [false, 'אסימון שפג תוקפו מתקבל', 'תקלה בקוד — lib/preview.php'];
+            return [true, 'האסימון נחתם ונבדק; אסימון שפג נדחה', ''];
+        }, 'preview'],
         'editor' => ['עורך התמלילים זמין', function (): array {
             require_once __DIR__ . '/longtext.php';
             $ch = curl_init(WordProcessorClient::EDITOR . 'api.php?action=embed_key');
@@ -369,7 +387,8 @@ function dev_health(): array
             + (isset($c[2]) ? ['probe' => $c[2]] : []);
     }
     dev_run_note('health', !$fails, $fails ? 'נכשלו: ' . implode(', ', $fails) : 'הכול ירוק (' . count($out) . ')');
-    return ['checks' => $out, 'at' => now_iso(), 'version' => dev_app_version(), 'build' => dev_build(), 'req' => devlog_req()];
+    require_once __DIR__ . '/preview.php';
+    return ['attack' => pv_attack_last(), 'checks' => $out, 'at' => now_iso(), 'version' => dev_app_version(), 'build' => dev_build(), 'req' => devlog_req()];
 }
 
 // ── שירותי רקע ───────────────────────────────────────────

@@ -66,6 +66,7 @@ const Project = (() => {
     // לשונית של קובץ שנמחק או שונה שמו — מתעדכנת
     S.tabs = S.tabs.filter(id => S.byId.has(id) || S.docs.get(id)?.dirty);
     if (!S.tabs.includes(S.cur)) S.cur = S.tabs[S.tabs.length - 1] ?? null;
+    if (el.mig) el.mig.hidden = !S.canPurge;                     // ההסבה ו"פרויקט ריק" — בעלים בלבד
     drawAll();
   }
 
@@ -95,7 +96,7 @@ const Project = (() => {
     const f = S.byId.get(id);
     if (!f || f.kind === 'dir') return;
     if (!S.tabs.includes(id)) S.tabs.push(id);
-    if (activate) S.cur = id;
+    if (activate) { S.cur = id; if (phone()) side(false); }    // בטלפון העץ מכסה את העורך — קובץ שנפתח סוגר אותו
     persist();
     if (!S.docs.has(id)) {
       const doc = { id, rev: f.rev, dirty: false, model: null, saved: '', binary: false, saving: false, timer: 0, conflict: false };
@@ -119,6 +120,7 @@ const Project = (() => {
   }
 
   function changed(doc) {
+    emit(doc, 'text');
     const now = doc.model ? doc.model.getValue() : doc.text;
     const was = doc.dirty;
     doc.dirty = now !== doc.saved;
@@ -128,6 +130,62 @@ const Project = (() => {
     if (doc.dirty && !doc.conflict) doc.timer = setTimeout(() => save(doc.id, true), AUTOSAVE_MS);
   }
 
+  // ── שירות המסמכים (04 §1) ─────────────────────────────────
+  // מקור אמת אחד לכל קובץ פתוח: הטקסט, ההיסטוריה (ביטול / חזרה) וה-rev. עורך הקוד והעורך החזותי (assets/js/editor)
+  // עובדים על אותו מסמך — תיקון מכאן או משם נכנס לאותה היסטוריה, ונשמר באותה שמירה (pf_write, אותו rev, אותן גרסאות).
+  const subs = new Map();
+  function emit(doc, kind) { for (const cb of subs.get(doc.id) || []) { try { cb(kind); } catch (e) { console.error(e); } } }
+  function handle(doc) {
+    const text = () => (doc.model ? doc.model.getValue() : doc.text ?? '');
+    return {
+      id: doc.id, text,
+      get path() { return S.byId.get(doc.id)?.path || ''; },
+      get rev() { return doc.rev; }, get dirty() { return doc.dirty; }, get saving() { return doc.saving; }, get conflict() { return doc.conflict; },
+      get binary() { return doc.binary; }, get error() { return doc.error || ''; }, get errorStatus() { return doc.errorStatus || 0; },
+      get lastTx() { return doc.tx?.[doc.tx.length - 1] || null; },
+      /** עסקה עם שם: תיקוני טקסט {from, to, text} (מיקומים בטקסט הנוכחי) כצעד אחד בהיסטוריה. */
+      edit(patches, label) {
+        if (doc.binary) throw new Error('הקובץ פתוח לקריאה בלבד');
+        if (doc.model) {
+          const m = doc.model, pos = at => m.getPositionAt(at);
+          m.pushStackElement();
+          m.pushEditOperations(null, patches.map(p => { const a = pos(p.from), b = pos(p.to); return { range: new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column), text: p.text, forceMoveMarkers: true }; }), () => null);
+          m.pushStackElement();
+        } else {
+          const ps = patches.slice().sort((a, b) => a.from - b.from), before = doc.text; let out = '', at = 0;
+          for (const p of ps) { out += before.slice(at, p.from) + p.text; at = p.to; }
+          (doc.undo = doc.undo || []).push(before); doc.redo = [];
+          doc.text = out + before.slice(at); changed(doc);
+        }
+        (doc.tx = doc.tx || []).push({ label, at: Date.now() }); if (doc.tx.length > 100) doc.tx.shift();
+        if (label) (doc.txPending = doc.txPending || []).push(label);   // שם העסקה — נשמר כהערת הגרסה בשמירה הבאה
+      },
+      undo() { if (doc.model) doc.model.undo(); else if (doc.undo?.length) { (doc.redo = doc.redo || []).push(doc.text); doc.text = doc.undo.pop(); changed(doc); } },
+      redo() { if (doc.model) doc.model.redo(); else if (doc.redo?.length) { doc.undo.push(doc.text); doc.text = doc.redo.pop(); changed(doc); } },
+      canUndo() { return doc.model ? doc.model.canUndo() : !!doc.undo?.length; },
+      canRedo() { return doc.model ? doc.model.canRedo() : !!doc.redo?.length; },
+      on(cb) { if (!subs.has(doc.id)) subs.set(doc.id, new Set()); subs.get(doc.id).add(cb); return () => subs.get(doc.id)?.delete(cb); },
+      save: () => save(doc.id),
+    };
+  }
+  const Docs = {
+    /** כל קובצי הפרויקט (אחרי טעינת העץ). */
+    async files() { if (!S.loaded) await refresh(); return S.files; },
+    byPath: path => S.files.find(f => f.path === path && f.kind !== 'dir') || null,
+    /** פותח קובץ כמסמך משותף (וכלשונית בעורך הקוד). מחזיר null כשאי אפשר לפתוח. */
+    async open(id) {
+      if (!S.loaded) await refresh();
+      try { await loadMonaco(); } catch { /* בלי Monaco — מסמך טקסט פשוט, עם היסטוריה משלו */ }
+      if (!S.docs.has(id)) { const cur = S.cur; await openFile(id, false); S.cur = cur ?? id; persist(); }
+      const doc = S.docs.get(id);
+      return doc ? handle(doc) : null;
+    },
+    /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */
+    async info() { const d = await api('pf_tree'); S.kol = d.kol; return { lock: d.lock, kol: d.kol }; },
+    /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
+    async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
+  };
+
   /** שמירה. הקוד נשמר כמו שהוא — גם שבור; אין כאן שום בדיקת תקינות שמונעת שמירה. */
   async function save(id, auto = false) {
     const doc = S.docs.get(id);
@@ -135,21 +193,24 @@ const Project = (() => {
     const content = doc.model ? doc.model.getValue() : doc.text;
     doc.saving = true; drawStatus();
     try {
-      const d = await api('pf_write', { id, rev: doc.rev, content, auto });
+      const tx = (doc.txPending || []).slice();
+      const d = await api('pf_write', tx.length ? { id, rev: doc.rev, content, auto, tx } : { id, rev: doc.rev, content, auto });
       doc.rev = d.file.rev; doc.saved = content; doc.conflict = false;
+      if (doc.txPending) doc.txPending.splice(0, tx.length);
       const f = S.byId.get(id);
       if (f) Object.assign(f, d.file);
       if (d.kol) { S.kol = d.kol; drawBars(); }
+      if (f) bc?.postMessage({ t: 'saved', path: f.path });       // התצוגה החיה מתרעננת (assets/js/live.js)
     } catch (e) {
       if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
       else if (!auto) toast(e.message, true);
-      doc.error = e.message;
+      doc.error = e.message; doc.errorStatus = e.status || 0;
     } finally {
       doc.saving = false;
       const now = doc.model ? doc.model.getValue() : doc.text;
       doc.dirty = now !== doc.saved;
-      if (!doc.dirty) doc.error = '';
-      drawTabs(); drawTree(); drawStatus();
+      if (!doc.dirty) { doc.error = ''; doc.errorStatus = 0; }
+      drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
       if (doc.dirty && !doc.conflict && !doc.error) { clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), AUTOSAVE_MS); }
     }
   }
@@ -199,6 +260,7 @@ const Project = (() => {
   function drawAll() { if (!S.host) return; drawBars(); drawTree(); drawTabs(); drawEditor(); drawStatus(); }
 
   function drawBars() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const k = S.kol;
     el.kol.hidden = !k || k.valid;
     if (k && !k.valid) {
@@ -219,6 +281,7 @@ const Project = (() => {
   }
 
   function drawTree() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const entry = S.kol?.config?.entry;
     const rows = [];
     const walk = (n, depth) => {
@@ -249,6 +312,7 @@ const Project = (() => {
   }
 
   function drawTabs() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     el.tabs.replaceChildren(...S.tabs.map(id => {
       const f = S.byId.get(id);
       const name = f ? base(f.path) : '(נמחק)';
@@ -261,11 +325,13 @@ const Project = (() => {
   }
 
   function drawEditor() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
     el.ed.hidden = el.view.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
-      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'));
+      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
+        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ')));
       return;
     }
     if (doc.model && S.editor) {
@@ -303,6 +369,7 @@ const Project = (() => {
   }
 
   function drawStatus() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const doc = S.docs.get(S.cur), f = S.byId.get(S.cur);
     const editable = !!doc && !doc.binary;
     el.save.disabled = !editable || !doc.dirty || doc.saving;
@@ -346,7 +413,18 @@ const Project = (() => {
     const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(([label, fn, cls]) =>
       h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))));
   }
+  /** "גרסאות" של קובץ: כל שמירה — מתי, מי, ומה נעשה בה (שם העסקה מהעורך החזותי, "שמירה", "שמירה אוטומטית"). */
+  async function versions(f) {
+    const body = h('div', { class: 'pj-versions' }, h('p', { class: 'hint' }, 'טוען…'));
+    sheet('גרסאות · ' + base(f.path), body);
+    try {
+      const d = await api('pf_versions', undefined, `&id=${f.id}`);
+      body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '.'),
+        h('ol', { class: 'pj-ver-list' }, d.versions.map(v => h('li', { 'data-rev': v.rev }, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))))));
+    } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
   const fileMenu = f => menu(base(f.path), [
+    f.kind === 'file' ? ['🕘 גרסאות', () => versions(f)] : null,
     ['📂 פתיחה', () => openFile(f.id)],
     ['✏️ שינוי שם', () => rename({ id: f.id }, f.path)],
     ['⬇️ הורדה', () => download(f)],
@@ -407,6 +485,41 @@ const Project = (() => {
   }
 
   // ── הסל ───────────────────────────────────────────────────
+  // ── ההסבה (F3): "צור פרויקט מהעמוד של היום" ו"פרויקט ריק" — בעלים בלבד ─────────
+  const NOTE_ICON = { failed: '❌', warn: '⚠️', changed: '✏️', dropped: '➖' };
+  function migrateReport(r, title) {
+    sheet(title,
+      r.snapshot ? h('p', { class: 'hint' }, `נקודת שחזור נשמרה לפני הפעולה (♻️ שחזור). ${r.trashed ? `הפרויקט הקודם — ${r.trashed} פריטים — בסל הפרויקט.` : ''}`) : null,
+      r.taken ? h('h3', {}, 'מה נלקח מאיפה') : null,
+      r.taken ? h('ul', { class: 'list' }, r.taken.map(([what, from]) => h('li', { class: 'card' }, h('div', { class: 'body' }, h('strong', { dir: 'auto' }, what), h('div', { class: 'hint' }, from))))) : null,
+      r.notes?.length ? h('h3', {}, `מה השתנה בדרך, ומה לא הומר · ${r.notes.length}`) : null,
+      r.notes?.length ? h('ul', { class: 'list' }, r.notes.map(([kind, text]) => h('li', { class: 'card' }, h('div', { class: 'body' }, (NOTE_ICON[kind] || '•') + ' ' + text)))) : null,
+      h('p', { class: 'hint' }, 'הקבצים: ' + (r.files || []).join(' · ')));
+  }
+  async function migrateSheet() {
+    let last = null;
+    try { last = (await api('pf_migrate_last')).last; } catch { /* בלי הדוח הקודם */ }
+    const go = async (action, question, done) => {
+      if (S.tabs.some(dirty) && !confirm('יש קבצים עם שינויים שלא נשמרו. להמשיך בלי לשמור אותם?')) return;
+      if (!confirm(question)) return;
+      dlg.close();
+      try {
+        const r = await api(action, {});
+        for (const d of S.docs.values()) { clearTimeout(d.timer); d.dirty = false; d.model?.dispose(); }
+        S.docs.clear(); S.tabs = []; S.cur = null; persist();
+        await refresh();
+        bc?.postMessage({ t: 'saved' });
+        migrateReport(r, done);
+      } catch (e) { toast(e.message, true); }
+    };
+    const dlg = sheet('פרויקט חדש',
+      h('p', { class: 'hint' }, 'שתי הפעולות מעבירות את קבצי הפרויקט הנוכחי לסל (אפשר לשחזר), ושומרות נקודת שחזור לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
+      h('div', { class: 'pj-menu' },
+        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: () => go('pf_migrate', 'ליצור את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'הפרויקט נוצר מהעמוד של היום') }, '🪄 צור פרויקט מהעמוד של היום'),
+        h('button', { type: 'button', class: 'btn', 'data-blank-run': true, onclick: () => go('pf_blank', 'להתחיל פרויקט ריק?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'פרויקט ריק נוצר') }, '📄 פרויקט ריק'),
+        last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח ההסבה האחרונה · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח ההסבה האחרונה') : null));
+  }
+
   async function trashSheet() {
     let d;
     try { d = await api('pf_trash'); } catch (e) { return toast(e.message, true); }
@@ -441,6 +554,7 @@ const Project = (() => {
     persist();
   }
   const toolsMenu = () => menu('כלי העורך', [
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
@@ -462,6 +576,7 @@ const Project = (() => {
     el.tree = h('ul', { class: 'pj-tree', 'aria-label': 'קבצי הפרויקט' });
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
+    el.mig = h('button', { type: 'button', class: 'btn sm', 'data-migrate': true, hidden: true, title: 'יצירת הפרויקט מהעמוד של היום, או פרויקט ריק', onclick: migrateSheet }, '🪄 פרויקט חדש');
     el.tabs = h('div', { class: 'pj-tabs', role: 'tablist', 'aria-label': 'קבצים פתוחים' });
     // עורך אחד לכל חיי הדף: Monaco שנסגר (dispose) משבית פעולות בעורך שנפתח אחריו — לכן שומרים אותו ומחברים מחדש
     el.ed = el.ed || h('div', { class: 'pj-ed', dir: 'ltr', hidden: true });
@@ -469,8 +584,9 @@ const Project = (() => {
     el.status = h('span', { class: 'pj-status', role: 'status' });
     el.save = h('button', { type: 'button', class: 'btn primary sm', disabled: true, onclick: () => save(S.cur) }, '💾 שמירה');
     el.bar = h('div', { class: 'pj-bar' },
-      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📁 קבצים'),
+      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📂 קבצי הקוד'),
       el.tabs, el.status, el.save,
+      h('button', { type: 'button', class: 'btn sm pj-live-btn', title: 'תצוגה חיה — העמוד רץ כפי שירוץ אצל הגולש', onclick: () => live() }, '▶️', h('span', { class: 'pj-live-word' }, ' תצוגה חיה')),
       h('button', { type: 'button', class: 'icon-btn', 'data-ed': true, 'aria-label': 'כלי העורך', onclick: toolsMenu }, '⋯'));
     const aside = h('aside', { class: 'pj-side', 'aria-label': 'מנהל הקבצים' },
       h('div', { class: 'pj-side-head' },
@@ -480,7 +596,8 @@ const Project = (() => {
         h('button', { type: 'button', class: 'btn sm', onclick: () => newFile('') }, '+ קובץ'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => newDir('') }, '+ תיקייה'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => pick('') }, '⬆️ העלאה'),
-        el.trash),
+        h('button', { type: 'button', class: 'btn sm', 'data-live': true, onclick: () => live() }, '▶️ תצוגה חיה'),
+        el.trash, el.mig),
       el.tree, el.count);
     // גרירה מהמחשב אל תיקייה (או אל העץ — לשורש)
     aside.addEventListener('dragover', e => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); aside.classList.add('drop'); } });
@@ -499,8 +616,12 @@ const Project = (() => {
     if (S.host !== host) return;
     if (monaco && !S.editor) {
       S.editor = monaco.editor.create(el.ed, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: prefs.wrap ? 'on' : 'off',
-        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false } });
+        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false },
+        // "הכותרת הדביקה" של Monaco מתעדכנת באיחור (async), ואחרי שינוי שמקצר את הקובץ (מחיקה בעורך החזותי, ביטול) היא
+        // שואלת על שורה שכבר אינה קיימת — "Illegal value for lineNumber" (V1a 🟡-1). כבויה.
+        stickyScroll: { enabled: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
+      addPick(S.editor, () => S.cur);
     }
     try {
       const first = !S.loaded;
@@ -511,8 +632,83 @@ const Project = (() => {
         S.cur = cur; persist();
       }
       drawAll();
+      if (phone() && !S.cur) side(true);                         // בטלפון, בלי קובץ פתוח: העץ עצמו, לא מסך ריק עם כפתור
     } catch (e) { el.view.hidden = false; el.view.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
+
+  // ── ▶️ התצוגה החיה (F4) ───────────────────────────────────
+  // live.php הוא מסמך משלו (מדיניות CSP מלאה), ובתוכו המסגרת המבודדת. כאן רק פותחים אותו בשכבה מעל המסך, ומדברים
+  // איתו בערוץ של אותו מקור: "נשמר" ← רענון; "פתח בקוד" → הקובץ והשורה נפתחים בעורך. קוד העמוד אינו שותף לערוץ.
+  let bc = null, liveEl = null;
+  try { bc = new BroadcastChannel('kol-pf'); } catch { /* בלי רענון אוטומטי */ }
+  function liveClose() { liveEl?.remove(); liveEl = null; S.editor?.layout(); }
+  async function live() {
+    const doc = S.docs.get(S.cur), f = S.byId.get(S.cur);
+    if (doc?.dirty) await save(S.cur);                         // התצוגה מראה את מה שנשמר
+    const path = f && /\.html?$/i.test(f.path) ? f.path : '';
+    liveClose();
+    liveEl = h('div', { class: 'pj-live' }, h('iframe', { src: 'live.php?embed=1' + (path ? '&path=' + encodeURIComponent(path) : ''), title: 'תצוגה חיה' }));
+    document.body.append(liveEl);
+  }
+  // ── "בחר בעורך" (04 §3): מהסמן בקוד אל האלמנט בעורך החזותי — תפריט ההקשר של עורך הקוד, וקיצור ──
+  function pickInEditor(ed, id) {
+    const f = S.byId.get(id), m = ed?.getModel();
+    if (!f || !m || !/\.html?$/i.test(f.path)) { toast('"בחר בעורך" פועל בקובץ HTML', true); return; }
+    Editor.selectAt(f.path, m.getOffsetAt(ed.getPosition()));
+  }
+  function addPick(ed, idOf) {
+    ed.addAction({ id: 'kol.pickInEditor', label: 'בחר בעורך החזותי', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyE],
+      precondition: "editorLangId == 'html'", contextMenuGroupId: 'navigation', contextMenuOrder: 0, run: () => pickInEditor(ed, idOf()) });
+  }
+  /**
+   * עורך קוד שני, למבט המפוצל של העורך החזותי: אותו מסמך (אותו מודל של Monaco — אותו טקסט, אותה היסטוריה, אותה שמירה).
+   * נוצר פעם אחת לכל חיי הדף (Monaco שנסגר משבית פעולות בעורך שנפתח אחריו), ומחובר מחדש למכל שמבקש אותו.
+   */
+  function splitEditor(host, id) {
+    const doc = S.docs.get(id);
+    if (!monaco || !doc?.model) return null;
+    if (!S.split) {
+      el.split = h('div', { class: 'pj-split', dir: 'ltr' });
+      S.split = monaco.editor.create(el.split, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: 'on', minimap: { enabled: false }, tabSize: 2,
+        scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false }, stickyScroll: { enabled: false }, lineNumbersMinChars: 3 });
+      S.split.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.splitId));
+      addPick(S.split, () => S.splitId);
+    }
+    S.splitId = id;
+    host.replaceChildren(el.split);
+    S.split.setModel(doc.model); S.split.layout();
+    const ed = S.split, m = doc.model;
+    return { ed, offset: () => m.getOffsetAt(ed.getPosition()),
+      /** מסמן טווח (בתווים) בלי להעביר אליו את המיקוד. */
+      mark(from, to) { const a = m.getPositionAt(from), b = m.getPositionAt(to), r = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column); ed.setSelection(r); ed.revealRangeInCenterIfOutsideViewport(r); },
+      selection() { const r = ed.getSelection(); return r ? { from: m.getOffsetAt(r.getStartPosition()), to: m.getOffsetAt(r.getEndPosition()) } : null; },
+      onCursor(cb) { return ed.onDidChangeCursorPosition(e => { if (e.source === 'mouse' || e.source === 'keyboard') cb(); }); } };
+  }
+  /** פותח קובץ בעורך הקוד. line — שורה; range — {from, to} בתווים: הטווח מסומן (למשל האלמנט שנבחר בעורך החזותי). */
+  async function openAt(path, line, range) {
+    liveClose();
+    if (location.hash.split('/')[1] !== 'project') { location.hash = '#/project'; await new Promise(r => setTimeout(r, 400)); }
+    const f = S.files.find(x => x.path === path);
+    if (!f) { toast('הקובץ אינו בפרויקט: ' + path, true); return; }
+    await openFile(f.id);
+    const m = S.docs.get(f.id)?.model;
+    if (S.editor && m) for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+    if (S.editor && m && line > 0 && S.editor.getModel() === m) {   // שורה שמעבר לסוף הקובץ (המסוף מדווח על גרסה ישנה) — נתחמת
+      const ln = Math.min(line, m.getLineCount());
+      S.editor.revealLineInCenter(ln); S.editor.setPosition({ lineNumber: ln, column: 1 }); S.editor.focus();
+    }
+    if (S.editor && m && range) {
+      if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
+      const a = m.getPositionAt(range.from), b = m.getPositionAt(range.to), sel = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
+      S.editor.setSelection(sel); S.editor.revealRangeInCenterIfOutsideViewport(sel); S.editor.focus();
+    }
+  }
+  bc?.addEventListener('message', e => {
+    const d = e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'close') liveClose();
+    if (d.t === 'open' && typeof d.path === 'string') openAt(d.path, Number.isInteger(d.line) ? d.line : 0);
+  });
 
   function unmount() {
     if (!S.host) return;
@@ -547,8 +743,8 @@ const Project = (() => {
 
   document.addEventListener('DOMContentLoaded', () => {
     if (typeof ACTIONS === 'object') Object.assign(ACTIONS, { pf_create: '📁 יצר קובץ בפרויקט', pf_mkdir: '📁 יצר תיקייה בפרויקט', pf_rename: '📁 שינה שם בפרויקט',
-      pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
+      pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, _state: S };
+  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();

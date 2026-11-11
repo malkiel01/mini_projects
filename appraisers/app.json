@@ -6,7 +6,7 @@
   "description": "ניהול תיקי שמאות מקרקעין והפקת דוחות: מסמכים, בקשות לגורמים, מידע מרשויות, ביקור בנכס, עסקאות השוואה ודוח. בפיתוח.",
   "category": "documents",
   "entry": "index.html",
-  "version": "0.9",
+  "version": "0.10",
   "gate": true,
   "restricted": true,
   "public": [

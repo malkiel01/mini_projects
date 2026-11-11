@@ -13,6 +13,8 @@ require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/agent.php';
 require_once __DIR__ . '/lib/library.php';
 require_once __DIR__ . '/lib/dev.php';
+require_once __DIR__ . '/lib/preview.php';
+require_once __DIR__ . '/lib/migrate.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -46,7 +48,7 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
-                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set'];
+                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -127,6 +129,7 @@ try {
         // מאגר הפרויקט (F2a, lib/project.php). pf_raw — הבייטים עצמם, תמיד בארגז חול
         'pf_tree' => pf_tree(require_role($user, 'editor')),
         'pf_read' => (require_role($user, 'editor') ? pf_read($_GET) : []),
+        'pf_versions' => (require_role($user, 'editor') ? pf_versions($_GET) : []),
         'pf_raw' => (require_role($user, 'editor') ? pf_raw($_GET) : []),
         'pf_create' => pf_create(require_role($user, 'editor'), $body),
         'pf_write' => pf_write(require_role($user, 'editor'), $body),
@@ -137,6 +140,12 @@ try {
         'pf_trash' => (require_role($user, 'editor') ? pf_trash() : []),
         'pf_restore' => pf_restore(require_role($user, 'editor'), $body),
         'pf_purge' => pf_purge(require_role($user, 'owner'), $body),
+        // ההסבה (F3, lib/migrate.php) — בעלים בלבד
+        'pf_migrate' => pf_migrate(require_role($user, 'owner'), $body),
+        'pf_migrate_last' => (require_role($user, 'owner') ? pf_migrate_last() : []),
+        'pf_blank' => pf_blank(require_role($user, 'owner')),
+        // התצוגה החיה (F4, lib/preview.php): אסימון חתום וקצר-מועד לכתובת המבודדת — רק למי שמורשה לקרוא את הפרויקט
+        'pv_token' => pv_token(require_role($user, 'editor')),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),

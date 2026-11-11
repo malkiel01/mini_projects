@@ -28,6 +28,9 @@ test('DevLoop: חבר שאינו מפתח מדווח 🐞 — נפתחת מטל�
     $other = http('POST', '/api.php?action=dev-task-create', ['user' => U_OWNER, 'json' => ['title' => 'מטלה של המפתח']])['json']['code'];
     eq(403, http('POST', "/api.php?action=dev-attach&code=$other&name=x.png", ['user' => U_EDITOR, 'raw' => png_bytes()])['status']);
     $GLOBALS['KM_OTHER'] = $other;
+    // V1b: המדווח רואה את הדיווחים שלו ומצבם — ורק אותם
+    $mine = http('GET', '/api.php?action=dev-my-reports', ['user' => U_EDITOR])['json']['items'];
+    eq([[$code, 'open', 'דיווח']], array_map(fn($i) => [$i['code'], $i['status'], $i['area']], $mine), 'dev-my-reports: רק מה שהמשתמש עצמו פתח');
 
     $items = http('GET', '/api.php?action=dev-items', ['user' => U_OWNER])['json']['items'];
     $x = array_values(array_filter($items, fn($i) => $i['code'] === $code))[0] ?? null;
@@ -144,7 +147,7 @@ test('מסך המפתח: בדיקות התקינות — כל בדיקה ירו�
     $h = http('GET', '/api.php?action=dev-health', ['user' => U_OWNER]);
     eq(200, $h['status'], $h['body']);
     $c = array_column($h['json']['checks'], null, 'id');
-    eq(['db', 'writable', 'disk', 'php', 'version', 'htaccess', 'site', 'editor'], array_keys($c));
+    eq(['db', 'writable', 'disk', 'php', 'version', 'htaccess', 'site', 'preview', 'editor'], array_keys($c));
     foreach ($c as $id => $x) ok(is_bool($x['ok']) && $x['text'] !== '' && ($x['ok'] || $x['fix'] !== ''), "$id: ירוק, או אדום עם מה לעשות");
     foreach (['db', 'writable', 'disk', 'php'] as $id) ok($c[$id]['ok'], "$id ירוקה: " . $c[$id]['text']);
     ok(str_contains($c['db']['text'], (string)KOL_SCHEMA_VERSION), 'גרסת הסכמה בטקסט');
@@ -156,7 +159,7 @@ test('מסך המפתח: בדיקות התקינות — כל בדיקה ירו�
     try { $h2 = http('GET', '/api.php?action=dev-health', ['user' => U_OWNER]); } finally { db()->exec('ALTER TABLE files_hidden RENAME TO files'); }
     eq(200, $h2['status']);
     $c2 = array_column($h2['json']['checks'], null, 'id');
-    eq([false, true, 8], [$c2['disk']['ok'], $c2['db']['ok'], count($c2)]);
+    eq([false, true, 9], [$c2['disk']['ok'], $c2['db']['ok'], count($c2)]);
     $run = dev_last_run('health');
     ok($run && !$run['ok'] && str_contains($run['note'], 'disk'), 'הריצה נרשמה');
 });

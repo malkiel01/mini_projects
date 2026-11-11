@@ -13,9 +13,18 @@ if (PHP_SAPI !== 'cli-server' || !$data || !is_dir($data)) { http_response_code(
 
 define('KOL_DATA_DIR', $data);
 if (isset($_SERVER['HTTP_X_TEST_USER'])) $_SERVER['PLATFORM_USER'] = $_SERVER['HTTP_X_TEST_USER'];
+// בדיקות הדפדפן של הבידוד (F4): הזהות בעוגייה — כמו בייצור (HttpOnly, SameSite=Lax), כדי שהדפדפן עצמו יחליט מתי לשלוח אותה
+elseif (isset($_COOKIE['kol_test_user'])) $_SERVER['PLATFORM_USER'] = (string)base64_decode($_COOKIE['kol_test_user']);
+// ויומן של מה שהשרת ראה בפועל: מי פנה, מאיזה מקור, ועם זהות או בלי
+if ($trace = getenv('KOL_TEST_TRACE')) {
+    file_put_contents($trace, json_encode(['uri' => $_SERVER['REQUEST_URI'], 'method' => $_SERVER['REQUEST_METHOD'], 'origin' => $_SERVER['HTTP_ORIGIN'] ?? null,
+        'site' => $_SERVER['HTTP_SEC_FETCH_SITE'] ?? null, 'dest' => $_SERVER['HTTP_SEC_FETCH_DEST'] ?? null, 'user' => isset($_SERVER['PLATFORM_USER']), 'cookie' => isset($_SERVER['HTTP_COOKIE'])]) . "\n", FILE_APPEND | LOCK_EX);
+}
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $root = dirname(__DIR__);
+if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
+if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }
 if ($path === '/api.php' || $path === '/agent.php') {
     if (isset($_SERVER['HTTP_X_TEST_WARN'])) {          // אזהרת PHP אמיתית בתוך בקשה — לבדיקת הלכידה
         require_once $root . '/lib/devlog.php';
@@ -24,6 +33,11 @@ if ($path === '/api.php' || $path === '/agent.php') {
     }
     chdir($root);
     require $root . $path;
+    exit;
+}
+if (str_starts_with($path, '/preview/')) {              // כמו preview/.htaccess: הכול ל-index.php
+    chdir($root);
+    require $root . '/preview/index.php';
     exit;
 }
 // קבצים סטטיים (לבדיקות הדפדפן). data/ — כמו בשרת: חסום. ?open=1 מדמה שרת שבו ה-.htaccess לא פועל

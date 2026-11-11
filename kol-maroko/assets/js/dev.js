@@ -43,6 +43,8 @@ const Dev = (() => {
   });
   addEventListener('unhandledrejection', e => {
     const r = e.reason, msg = String((r && r.message) || r);
+    // Monaco מבטל משימות ממתינות כשמחליפים קובץ (CancellationError, "Canceled") — ביטול מתוכנן, לא תקלה: לא נרשם ולא מדווח
+    if (r && r.name === 'Canceled' && /\/vendor\/monaco\//.test(String(r.stack || ''))) { e.preventDefault(); return; }
     push(trace.errors, { kind: 'promise', message: msg.slice(0, 300), at: new Date().toISOString() });
     report({ kind: 'promise', message: msg, stack: r && r.stack });
   });
@@ -102,8 +104,26 @@ const Dev = (() => {
       h('nav', { class: 'dev-subs', 'aria-label': 'מסך המפתח' }, SUBS.map(([id, label]) => h('a', { href: '#/dev/' + id, 'aria-current': id === sub ? 'page' : null }, label))),
       body);
     try {
-      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
+      ({ tasks: () => { const stuck = h('div', { class: 'dev-stuck' }), list = h('div'); body.replaceChildren(stuck, list); viewStuck(stuck); DevLoop.show(list, arg || undefined); }, log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+
+  /** מונה "לא הצלחתי לשנות" (08 §5): המטלות הפתוחות שנפתחו מהעורך החזותי, מקובצות לפי אלמנט. */
+  async function viewStuck(el) {
+    try {
+      const items = ((await api('dev-items')).items || []).filter(x => x.area === 'לא הצלחתי לשנות' && x.status !== 'closed');
+      if (!items.length) { el.replaceChildren(h('p', { class: 'hint', 'data-stuck': '0' }, '🐞 "לא הצלחתי לשנות": אין מטלות פתוחות.')); return; }
+      const groups = new Map();
+      for (const x of items) {
+        const d = String(x.detail || ''), elName = (/^אלמנט: (.*)$/m.exec(d) || [])[1] || x.title, file = ((/^קובץ: (\S+)/m.exec(d) || [])[1] || '');
+        const key = elName + ' · ' + file;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(x.code);
+      }
+      el.replaceChildren(h('details', { class: 'dev-stuck-box', open: true, 'data-stuck': String(items.length) },
+        h('summary', {}, '🐞 "לא הצלחתי לשנות": ', h('b', {}, String(items.length)), ' מטלות פתוחות, על ' + groups.size + ' אלמנטים'),
+        h('ul', {}, [...groups].sort((a, b) => b[1].length - a[1].length).map(([key, codes]) => h('li', {}, h('code', { dir: 'ltr' }, key), ' — ' + codes.length + ' · ', codes.map((c, i) => [i ? ', ' : '', h('a', { href: '#/dev/tasks/' + c }, c)])))) ));
+    } catch (e) { el.replaceChildren(h('p', { class: 'hint' }, e.message)); }
   }
 
   const select = (label, opts, value = '') => h('select', { 'aria-label': label }, h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: v === value }, t)));
@@ -217,7 +237,20 @@ const Dev = (() => {
     const out = h('ul', { class: 'dev-checks' }), info = h('p', { class: 'hint' });
     const runBtn = h('button', { type: 'button', class: 'btn primary', onclick: run }, '▶ הרצת כל הבדיקות');
     const copyBtn = h('button', { type: 'button', class: 'btn ghost', disabled: true, onclick: e => copy(reportText(), e.currentTarget) }, '📋 העתקת הדוח');
-    el.replaceChildren(h('div', { class: 'row-btns' }, runBtn, copyBtn), info, out);
+    // ערכת ההתקפה מול הסטודיו (F4, assets/js/attack-kit.js)
+    const kitInfo = h('p', { class: 'hint', id: 'kit-info' }), kitOut = h('ul', { class: 'dev-checks', id: 'kit-out' });
+    const kitLast = a => { kitInfo.textContent = a ? `ריצה אחרונה: ${a.ok ? '✅' : '❌'} ${a.note} · ${when(a.at)}` : 'הערכה עוד לא הורצה.'; };
+    const kitBtn = h('button', { type: 'button', class: 'btn', id: 'kit-run', onclick: async () => {
+      kitBtn.disabled = true; kitInfo.textContent = 'מריץ… (כמה שניות)'; kitOut.replaceChildren();
+      const k = await AttackKit.run();
+      kitOut.replaceChildren(...k.checks.map(checkRow));
+      kitLast(k.last || { ok: k.ok, note: k.ok ? `כל ${k.checks.length} הבדיקות עברו` : 'יש בדיקות שנכשלו', at: new Date().toISOString() });
+      kitBtn.disabled = false;
+    } }, '🛡️ הרץ את ערכת ההתקפה מול הסטודיו');
+    el.replaceChildren(h('div', { class: 'row-btns' }, runBtn, copyBtn), info, out,
+      h('h3', { class: 'sec-title' }, 'הבידוד של התצוגה החיה'),
+      h('p', { class: 'hint' }, 'קובץ זמני בפרויקט מנסה, מתוך התצוגה החיה, לגעת בסטודיו: עוגייה, אחסון, המסמך של ההורה, ניווט, api.php והודעות. הקובץ נמחק בסוף.'),
+      h('div', { class: 'row-btns' }, kitBtn), kitInfo, kitOut);
     async function run() {
       runBtn.disabled = true;
       info.textContent = 'בודק…';
@@ -226,6 +259,18 @@ const Dev = (() => {
       try { r = await devApi('dev-health'); }
       catch (e) {            // גם כשהבקשה כולה נופלת — המסך נשאר, והתקלה מוצגת כבדיקה אדומה
         r = { checks: [{ id: 'request', name: 'הבקשה לשרת', ok: false, text: e.message, fix: 'לחפש את מזהה הבקשה ב-📜 יומן' }], at: new Date().toISOString(), version: ctx.version };
+      }
+      for (const c of r.checks) {
+        if (c.probe !== 'preview') continue;
+        // התצוגה החיה (F4): בקשות אמיתיות מהדפדפן לכתובת התצוגה — הכותרות שהגולש יקבל, כולל ב-404 וב-403
+        delete c.probe;
+        try {
+            const tok = (await api('pv_token')).token;
+            const hs = await AttackKit.headers(tok, 'index.html');
+            const bad = hs.filter(x => !x.ok);
+            if (bad.length) { c.ok = false; c.text = 'כותרות הבידוד חסרות: ' + bad.map(x => `${x.name} — ${x.text}`).join(' | '); c.fix = 'אם התשובה היא דף כניסה או 404 של השרת — preview/.htaccess אינו פועל, או ש-preview/index.php אינו ב-"public" של app.json'; }
+            else c.text += ' · מהדפדפן: ארגז חול בלי allow-same-origin, nosniff ופתוח לקריאה — ב-200, ב-404 וב-403';
+        } catch (e) { c.ok = false; c.text = 'הבקשה לכתובת התצוגה נכשלה: ' + e.message; c.fix = 'לנסות שוב; אם חוזר — 📜 יומן'; }
       }
       for (const c of r.checks) {
         if (!c.probe) continue;
@@ -239,6 +284,7 @@ const Dev = (() => {
       let state = null;
       try { state = await devApi('dev-state'); } catch { /* הדוח יוצא בלי מצב הנתונים */ }
       lastReport = { ...r, state };
+      kitLast(r.attack);
       const bad = r.checks.filter(c => !c.ok).length;
       info.textContent = `${bad ? `${bad} אדומות מתוך ${r.checks.length}` : `כל ${r.checks.length} הבדיקות ירוקות`} · ${when(r.at)}`;
       out.replaceChildren(...r.checks.map(checkRow));
@@ -285,7 +331,7 @@ const Dev = (() => {
   }
 
   // ── ספייק מנוע העורך (V0): הקוד נטען רק כשנכנסים למסך ─────
-  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/spike/model.js', 'assets/js/spike/canvas.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
+  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/equiv.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
   let spikeLoad = null;
   async function viewSpike(el) {
     el.replaceChildren(h('p', { class: 'hint' }, 'טוען…'));
