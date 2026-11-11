@@ -33,6 +33,12 @@
  *                  attribute, value, unit?, area_kind?, estimated?, zero_ok?, source{}, note?, state?} · fact-correct {fact, rev, …}
  *                  · fact-state {fact, rev, do, reason? / note?} · fact-delete {fact, rev, reason} · conflict-resolve {conflict, rev,
  *                  purpose, fact, reasoning} · conflict-dismiss {conflict, rev, reasoning, fixes?[]} · sys-attributes · sys-attribute-save
+ * מקורות (09):      sources · case-sources {case} · case-source {case, source} · source-check {check} · source-check-plan {case, source,
+ *                  spend?} · source-file-upload (גוף גולמי; בכתובת: case, source, requirement?, name, key) · source-check-record {case, source, status, identifiers[], query_text?, coverage_note, result_summary,
+ *                  link_url?, file?, limitation?, cost_amount?, cost_note?, op?} · source-check-approve {check} · source-check-verify
+ *                  {check} · source-check-cost {check, cost_amount, cost_note?} · case-planning {case} · planning-item {item}
+ *                  · planning-add {case, kind, title, …} · planning-update {item, …בלי kind} · planning-applicability {item,
+ *                  applicability, note} · planning-delete {item, reason} · planning-task {item, detail?} · sys-sources · sys-source-save
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -70,6 +76,7 @@ require_once __DIR__ . '/channels.php';
 require_once __DIR__ . '/reminders.php';
 require_once __DIR__ . '/inbound.php';
 require_once __DIR__ . '/facts.php';
+require_once __DIR__ . '/sources.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -239,6 +246,26 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'conflict-dismiss' => apr_conflict_dismiss($ctx, $p),
         'sys-attributes' => apr_sys_attributes(),
         'sys-attribute-save' => apr_sys_attribute_save($p),
+        // מקורות, בדיקות, תכנון והיתרים (09) — המסלול הידני
+        'sources' => apr_sources_list(),
+        'sys-sources' => apr_sys_sources(),
+        'sys-source-save' => apr_sys_source_save($ctx, $p),
+        'case-sources' => apr_case_sources($ctx, $p),
+        'case-source' => apr_case_source($ctx, $p),
+        'source-check' => apr_source_check_view($ctx, $p),
+        'source-check-plan' => apr_source_check_plan($ctx, $p),
+        'source-file-upload' => apr_source_file_upload($ctx, $p, $env),
+        'source-check-record' => apr_source_check_record($ctx, $p),
+        'source-check-approve' => apr_source_check_approve($ctx, $p),
+        'source-check-verify' => apr_source_check_verify($ctx, $p),
+        'source-check-cost' => apr_source_check_cost($ctx, $p),
+        'case-planning' => apr_case_planning($ctx, $p),
+        'planning-item' => apr_planning_item($ctx, $p),
+        'planning-add' => apr_planning_add($ctx, $p),
+        'planning-update' => apr_planning_update($ctx, $p),
+        'planning-applicability' => apr_planning_applicability($ctx, $p),
+        'planning-delete' => apr_planning_delete($ctx, $p),
+        'planning-task' => apr_planning_task($ctx, $p),
         'file-assign' => apr_file_assign($ctx, $p),
         'file-update' => apr_file_update($ctx, $p),
         'file-delete' => apr_file_delete($ctx, $p),

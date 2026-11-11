@@ -68,7 +68,8 @@ function apr_db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_STRINGIFY_FETCHES => false,
         ]);
-        $db->exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+        // recursive_triggers: בלעדיו INSERT OR REPLACE מוחק את השורה הישנה בלי להפעיל את טריגרי ה-DELETE — ועוקף את "שורה אינה נמחקת"
+        $db->exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA recursive_triggers = ON;');
         if ($path !== ':memory:') $db->exec('PRAGMA journal_mode = WAL;');
     } catch (Throwable $e) {
         error_log('appraisers: המסד לא נפתח — ' . $e->getMessage());   // ליומן השגיאות של PHP; המשתמש מקבל 503

@@ -11,10 +11,16 @@ function reasonSheet(title, hint, onConfirm) {
 async function viewSystem(tab) {
     setHead(T.sysTitle, null);
     const users = tab === 'users';
-    const tabs = tabsHtml([['#/system', T.tabOffices], ['#/system/users', T.tabUsers], ['#/system/doc-types', T.tabDocTypes], ['#/system/attributes', T.f.catalog], ['#/system/channels', T.ch.sysTab], ['#/system/inbox', T.ch.inboxTab]],
-        ['doc-types', 'attributes', 'channels', 'inbox'].includes(tab) ? '#/system/' + tab : users ? '#/system/users' : '#/system');
+    const tabs = tabsHtml([['#/system', T.tabOffices], ['#/system/users', T.tabUsers], ['#/system/doc-types', T.tabDocTypes], ['#/system/attributes', T.f.catalog], ['#/system/sources', T.s.catalog], ['#/system/channels', T.ch.sysTab], ['#/system/inbox', T.ch.inboxTab]],
+        ['doc-types', 'attributes', 'sources', 'channels', 'inbox'].includes(tab) ? '#/system/' + tab : users ? '#/system/users' : '#/system');
     if (tab === 'channels') return viewSysChannels(tabs);
     if (tab === 'inbox') return viewSysInbox(tabs);
+    if (tab === 'sources') {
+        const v = await viewSysSources();
+        App.main.innerHTML = tabs + v.html;
+        v.bind();
+        return;
+    }
     if (tab === 'attributes') {
         const v = await viewAttributes();
         App.main.innerHTML = tabs + v.html;

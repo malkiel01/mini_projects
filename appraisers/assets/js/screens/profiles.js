@@ -344,7 +344,7 @@ async function viewProfileEdit(pid) {
     Object.assign(PE, { pid, profile: d.profile, content: d.content, revision: d.draft.revision, checks: d.checks, dirty: false, saving: false, state: 'saved',
         tab: PE.lastPid === pid ? PE.tab || 'docs' : 'docs', lastPid: pid });
     setHead(d.profile.name, null);
-    const tabs = ['details', 'docs', 'tasks', 'rules', 'contact', ...(d.profile.can.share ? ['share'] : []), 'history'];
+    const tabs = ['details', 'docs', 'tasks', 'rules', 'contact', 'sources', ...(d.profile.can.share ? ['share'] : []), 'history'];
     App.main.innerHTML = `<div class="toolbar"><span class="chip ok" id="pe-status" role="status">${P.saveState.saved}</span><span style="flex:1"></span>
           <a class="btn ghost sm" href="#/profiles/${pid}/try/draft">🧪 ${P.tryIt}</a><button class="btn primary sm" id="pe-publish">${P.publish}</button></div>
         <div class="seg-tabs six" role="tablist">${tabs.map(t => `<button role="tab" data-pe-tab="${t}">${P.editTabs[t]}</button>`).join('')}</div>
@@ -359,7 +359,7 @@ async function viewProfileEdit(pid) {
 function peDraw() {
     $$('[data-pe-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.peTab === PE.tab));
     const body = $('#pe-body');
-    ({ details: peDetails, docs: peDocs, tasks: peTasks, rules: peRules, contact: peContact, share: peShare, history: peHistory })[PE.tab](body);
+    ({ details: peDetails, docs: peDocs, tasks: peTasks, rules: peRules, contact: peContact, sources: peSources, share: peShare, history: peHistory })[PE.tab](body);
 }
 
 // פרטים
