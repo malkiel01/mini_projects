@@ -306,7 +306,7 @@ jobs:
           attempt=1
           max=4
           until rsync -rlptz \
-            --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
             --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
             --exclude='/creative-suite/pdf-core/tools/' \
             --exclude='/creative-suite/pdf-core/tests/' \
