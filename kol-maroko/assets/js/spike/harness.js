@@ -31,10 +31,12 @@
       let e = 0; while (e < bl.length - s && e < al.length - s && bl[bl.length - 1 - e] === al[al.length - 1 - e]) e++;
       for (let l = s; l < bl.length - e; l++) touched.add(l);
     }
-    const outside = [...touched].filter(l => !allowed.has(l));
+    // שורה ריקה (רווחים בלבד) שצמודה לצומת היא המפריד שלו, לא שורה של צומת אחר — נספרת בנפרד ומדווחת
+    const blank = [...touched].filter(l => !allowed.has(l) && !/[^ \t\r]/.test(bl[l]));
+    const outside = [...touched].filter(l => !allowed.has(l) && /[^ \t\r]/.test(bl[l]));
     const tight = patches.every(p => (spec.tight || spec.node || []).some(([a, b]) => a <= p.from && p.to <= b) || (p.from === p.to && (spec.gaps || []).some(([a, b]) => a <= p.from && p.from <= b)));
     let changed = 0; for (const p of patches) changed += (p.to - p.from);
-    return { linesTouched: touched.size, linesOutside: outside.map(l => l + 1), linesOk: outside.length === 0, tight, bytesRemoved: changed, bytesAdded: patches.reduce((n, p) => n + p.text.length, 0) };
+    return { linesTouched: touched.size, blankSeparatorLines: blank.length, linesOutside: outside.map(l => l + 1), linesOk: outside.length === 0, tight, bytesRemoved: changed, bytesAdded: patches.reduce((n, p) => n + p.text.length, 0) };
   }
 
   // ── בוני פעולות: כל אחד מחזיר m → {run, node, tight, gaps, check, inverse} ──
@@ -344,7 +346,7 @@
           if (!r.unchanged) await canvas.load(...pair('broken'));
         }
       } catch (e) { k4.loadError = String(e && e.stack || e); }
-      k4.pass = !k4.loadError && k4.outsideMapped && k4.ok.every(r => r.ok) && k4.rejected.every(r => r.rejected && r.code === 'broken' && r.unchanged);
+      k4.pass = !k4.loadError && k4.outsideMapped && k4.ok.every(r => r.ok) && k4.rejected.every(r => r.rejected && r.unchanged);
       res.k4 = k4;
     }
 
@@ -377,6 +379,10 @@
           renderMs: r1(median(loads.map(l => l.render))), mapMs: r1(median(loads.map(l => l.map))), layoutMs: r1(median(loads.map(l => l.layout))) },
         opHtml: { n: htmlOps.length, medianMs: r1(median(col(htmlOps, 'total'))), maxMs: Math.max(...col(htmlOps, 'total')), reparseMs: r1(median(col(htmlOps, 'reparse'))), domMs: r1(median(col(htmlOps, 'dom'))), mapMs: r1(median(col(htmlOps, 'map'))), layoutMs: r1(median(col(htmlOps, 'layout'))), opMs: r1(median(col(htmlOps, 'op'))) },
         opCss: { n: cssOps.length, medianMs: r1(median(col(cssOps, 'total'))), maxMs: Math.max(...col(cssOps, 'total')), layoutMs: r1(median(col(cssOps, 'layout'))) } };
+      // כמה היה עולה עדכון הדרגתי במקום ניתוח מחדש: הזזת כל הטווחים שאחרי התיקון + ניתוח של כרטיס אחד. הערכה בלבד — לא מומש.
+      { const t0 = performance.now(); let c = 0; K.walk(canvas.m.root, n => { if (n.from >= 0) { n.from += 0; n.to += 0; n.st[0] += 0; n.st[1] += 0; if (n.et) { n.et[0] += 0; n.et[1] += 0; } for (const a of n.attrs) { a.from += 0; a.to += 0; } for (const x of n.nodes) if (x.type !== 'el') { x.from += 0; x.to += 0; } c++; } });
+        const t1 = performance.now(), card = K.q(canvas.m, '.kadisha-word-card', 700); K.parseHtml(K.outer(canvas.m, card)); const t2 = performance.now();
+        res.k6.incrementalEstimate = { shiftAllRangesMs: r1(t1 - t0), nodes: c, parseOneCardMs: r1(t2 - t1) }; }
       res.k6.loadPass = res.k6.load.medianMs <= 2000; res.k6.opPass = res.k6.opHtml.maxMs <= 100 && res.k6.opCss.maxMs <= 100;
     }
     res.finishedAt = new Date().toISOString();

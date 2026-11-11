@@ -294,8 +294,9 @@
     if (index < sibs.length) {
       const ref = sibs[index];
       if (ref.implied) throw new SrcError('אין מיקום בקובץ להוספה לפני אלמנט שהדפדפן הוסיף', 'implied');
-      const at = leadOf(m, ref), lt = leadText(m, ref);
-      return { patches: [{ from: at, to: at, text: lt + html }], muts: ok ? [{ t: 'before', node: ref, html: html + lt }] : coarse(par) };
+      // ההזחה נלמדת מהאח הקודם (האלמנט החדש מתיישר איתו); בלי אח קודם — מהאח שלפניו מוסיפים
+      const at = leadOf(m, ref), lt = index > 0 && !sibs[index - 1].implied ? leadText(m, sibs[index - 1]) : leadText(m, ref);
+      return { patches: [{ from: at, to: at, text: lt + html }], muts: ok ? [{ t: 'before', node: ref, html: lt + html, lead: at < ref.from }] : coarse(par) };
     }
     if (sibs.length) {
       const last = sibs[sibs.length - 1];

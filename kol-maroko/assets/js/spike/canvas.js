@@ -142,7 +142,12 @@
           const prev = d.previousSibling;
           if (mu.lead && prev && prev.nodeType === 3) prev.nodeValue = prev.nodeValue.replace(/[ \t\n\r\f]+$/, '');
           d.remove(); par.normalize();
-        } else if (mu.t === 'before') { par.insertBefore(frag(par, mu.html), d); par.normalize(); }
+        } else if (mu.t === 'before') {
+          // בקובץ ההוספה נעשית לפני רווח ההזחה של d — וכך גם כאן: מפצלים את צומת הטקסט שלפניו בתחילת הרווח
+          const t = d.previousSibling; let ref = d;
+          if (mu.lead && t && t.nodeType === 3) ref = t.splitText(/[ \t\n\r\f]*$/.exec(t.nodeValue).index);
+          par.insertBefore(frag(par, mu.html), ref); par.normalize();
+        }
         else if (mu.t === 'after') { par.insertBefore(frag(par, mu.html), d.nextSibling); par.normalize(); }
         else if (mu.t === 'swap') { par.replaceChild(frag(par, mu.html), d); par.normalize(); }
       }

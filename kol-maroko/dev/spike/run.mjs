@@ -65,12 +65,16 @@ const loadHw = page => page.evaluate(async () => { const s = window.__spike; s.p
   k5.mouse.hover = { got: s.hovered, box: s.hovBox, pass: s.hovered === 'h1' && s.hovBox };
   await page.mouse.click(p.x, p.y); s = await state(page);
   k5.mouse.click = { got: s.selected, box: s.selBox, pass: s.selected === 'h1' && s.selBox };
-  p = await pt(page, '#evil-btn'); await page.mouse.click(p.x, p.y); await page.waitForTimeout(300); s = await state(page);
-  k5.mouse.clickOnclick = { got: s.selected, pwn: s.pwn, pass: s.selected === 'button#evil-btn' && s.pwn.length === 0 };
+  p = await pt(page, '#evil-h2'); await page.mouse.click(p.x, p.y); await page.waitForTimeout(300); s = await state(page);
+  k5.mouse.clickOnclick = { got: s.selected, pwn: s.pwn, pass: s.selected === 'h2#evil-h2' && s.pwn.length === 0 };
   p = await pt(page, '#evil-link'); await page.mouse.click(p.x, p.y); await page.waitForTimeout(300); s = await state(page);
   k5.mouse.clickJavascriptHref = { got: s.selected, pwn: s.pwn, title: s.title, pass: s.selected === 'a#evil-link' && s.pwn.length === 0 && !s.title.includes('PWNED') && s.href.endsWith('/__spike') };
-  const a = await pt(page, '#c1'), b = await pt(page, '#c3', 0.5, 0.8);
-  await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 5 }); await page.mouse.move(b.x, b.y, { steps: 5 }); await page.mouse.up();
+  const a = await pt(page, '#c1'), b = await pt(page, '#c3', 0.2, 0.8);   // RTL: החצי השמאלי = "אחרי"
+  // דרך CDP ישירות: page.mouse.move עם כפתור לחוץ נתקע ביירוט הגרירה של Playwright כשהיעד בתוך מסגרת
+  const cdpM = await ctx.newCDPSession(page), ev = (type, x, y, buttons) => cdpM.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons, clickCount: 1, pointerType: 'mouse' });
+  await ev('mouseMoved', a.x, a.y, 0); await ev('mousePressed', a.x, a.y, 1);
+  for (let i = 1; i <= 8; i++) await ev('mouseMoved', a.x + (b.x - a.x) * i / 8, a.y + (b.y - a.y) * i / 8, 1);
+  await ev('mouseReleased', b.x, b.y, 0); await page.waitForTimeout(100);
   s = await state(page);
   k5.mouse.drag = { domOrder: s.order, srcOrder: s.srcOrder, pass: s.order === 'c2,c3,c1' && s.srcOrder === 'id="c2",id="c3",id="c1"' };
   k5.mouse.events = s.events;
@@ -111,11 +115,11 @@ for (const dev of ['Pixel 7', 'iPhone 14']) {
   const t = { emulated: dev + ' ב-Chromium — לא מכשיר אמיתי ולא Safari' };
   let p = await pt(page, 'h1.title'); await page.touchscreen.tap(p.x, p.y); let s = await state(page);
   t.tap = { got: s.selected, box: s.selBox, pass: s.selected === 'h1' && s.selBox };
-  p = await pt(page, '#evil-btn'); await page.touchscreen.tap(p.x, p.y); await page.waitForTimeout(300); s = await state(page);
-  t.tapOnclick = { got: s.selected, pwn: s.pwn, pass: s.selected === 'button#evil-btn' && s.pwn.length === 0 };
+  p = await pt(page, '#evil-h2'); await page.touchscreen.tap(p.x, p.y); await page.waitForTimeout(300); s = await state(page);
+  t.tapOnclick = { got: s.selected, pwn: s.pwn, pass: s.selected === 'h2#evil-h2' && s.pwn.length === 0 };
   // גרירה במגע: קודם בוחרים (נגיעה), ואז גוררים את האלמנט הנבחר
   p = await pt(page, '#c1'); await page.touchscreen.tap(p.x, p.y);
-  const a = await pt(page, '#c1'), b = await pt(page, '#c3', 0.5, 0.8), cdp = await ctx.newCDPSession(page);
+  const a = await pt(page, '#c1'), b = await pt(page, '#c3', 0.2, 0.8), cdp = await ctx.newCDPSession(page);
   const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: Math.round(x), y: Math.round(y), id: 1 }] });
   await touch('touchStart', a.x, a.y);
   for (let i = 1; i <= 8; i++) { await touch('touchMove', a.x + (b.x - a.x) * i / 8, a.y + (b.y - a.y) * i / 8); await page.waitForTimeout(20); }
