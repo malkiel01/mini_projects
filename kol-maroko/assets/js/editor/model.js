@@ -1,5 +1,5 @@
 /**
- * ספייק V0 — מודל מקור ל-HTML ול-CSS (D3, שכבה א).
+ * העורך החזותי — מודל מקור ל-HTML ול-CSS (D3, שכבה א). נולד בספייק V0; מ-V1 הוא המודול הקבוע של העורך.
  *
  * הקובץ עצמו הוא מקור האמת: המודל מחזיק את הטקסט כמו שהוא, ועץ שבו לכל צומת יש טווח תווים בטקסט. פעולה אינה
  * משנה את העץ ואינה "כותבת את הקובץ מחדש" — היא מחזירה תיקוני טקסט ({from, to, text}), ואחרי החלתם מנתחים שוב.
@@ -15,6 +15,8 @@
   // שגיאות ניתוח שאינן "קוד שבור": המבנה שנוצר חד-משמעי, והטווחים נכונים.
   const BENIGN = new Set(['missing-doctype', 'non-conforming-doctype', 'non-void-html-element-start-tag-with-trailing-solidus',
     'missing-semicolon-after-character-reference', 'unknown-named-character-reference', 'abandoned-head-element-child']);
+  const IMPLIED_OK = new Set('html head body tbody colgroup tr'.split(' '));   // אלמנטים שהדפדפן מוסיף במקום שבו הילדים שלהם כתובים
+  const XHTML = 'http://www.w3.org/1999/xhtml';
   const WS = c => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f';
 
   class SrcError extends Error { constructor(msg, code) { super(msg); this.name = 'SrcError'; this.code = code || 'rejected'; } }
@@ -50,37 +52,15 @@
     const errors = [];
     const doc = g.KolParsers.parseHtml(bom ? src.slice(1) : src, { sourceCodeLocationInfo: true, scriptingEnabled: false,
       onParseError(e) { errors.push({ code: e.code, at: e.startOffset + bom }); } });
-    const m = { kind: 'html', src, bom, errors, nl: src.indexOf('\r\n') >= 0 ? '\r\n' : '\n', count: 0, located: 0, root: null, loose: [] };
-    const build = (p5, parent) => {
-      const loc = p5.sourceCodeLocation;
-      const n = { tag: p5.tagName, parent, kids: [], nodes: [], attrs: [], implied: !loc, broken: false, hasBroken: false, from: -1, to: -1, st: null, et: null };
-      m.count++;
-      if (loc) {
-        m.located++;
-        n.from = loc.startOffset + bom; n.to = loc.endOffset + bom;
-        const st = loc.startTag || loc;
-        n.st = [st.startOffset + bom, st.endOffset + bom];
-        if (loc.endTag) n.et = [loc.endTag.startOffset + bom, loc.endTag.endOffset + bom];
-        const al = loc.attrs || st.attrs || {};
-        for (const a of p5.attrs) {
-          const name = a.prefix ? a.prefix + ':' + a.name : a.name, l = al[name] || al[name.toLowerCase()] || al[a.name];   // parse5 מתקן אותיות ב-SVG (viewBox)
-          n.attrs.push({ name, value: a.value, from: l ? l.startOffset + bom : -1, to: l ? l.endOffset + bom : -1 });
-        }
-      } else for (const a of p5.attrs) n.attrs.push({ name: a.name, value: a.value, from: -1, to: -1 });
-      const kids = p5.tagName === 'template' && p5.content ? p5.content.childNodes : p5.childNodes;
-      for (const c of kids || []) {
-        const cl = c.sourceCodeLocation;
-        if (c.tagName) { const k = build(c, n); n.kids.push(k); n.nodes.push({ type: 'el', node: k }); }
-        else if (c.nodeName === '#text') n.nodes.push({ type: 'text', value: c.value, from: cl ? cl.startOffset + bom : -1, to: cl ? cl.endOffset + bom : -1 });
-        else if (c.nodeName === '#comment') n.nodes.push({ type: 'comment', from: cl ? cl.startOffset + bom : -1, to: cl ? cl.endOffset + bom : -1 });
-      }
-      return n;
-    };
+    const m = { kind: 'html', src, bom, errors, nl: src.indexOf('\r\n') >= 0 ? '\r\n' : '\n', count: 0, located: 0, marks: 0, root: null, loose: [], doctypeText: '' };
+    const build = (p5, parent) => buildNode(m, p5, parent, bom);
+    const dt = (doc.childNodes || []).find(c => c.nodeName === '#documentType');
+    if (dt && dt.sourceCodeLocation) m.doctypeText = src.slice(dt.sourceCodeLocation.startOffset + bom, dt.sourceCodeLocation.endOffset + bom);
     const html = (doc.childNodes || []).find(c => c.tagName);
     m.root = html ? build(html, null) : null;
     m.doctype = (doc.childNodes || []).some(c => c.nodeName === '#documentType');
     // אזורים שבורים: שגיאת ניתוח שאינה ברשימת הלא-מזיקות מסמנת את האלמנט העמוק ביותר שמכיל אותה.
-    const mark = n => { n.broken = true; for (let p = n.parent; p; p = p.parent) p.hasBroken = true; };
+    const mark = n => { n.broken = true; m.marks++; for (let p = n.parent; p; p = p.parent) p.hasBroken = true; };
     const deepest = (n, at) => {
       for (const k of n.kids) if (k.implied ? deepest(k, at) : (k.from <= at && at <= k.to)) return k.implied ? deepest(k, at) : (deepest(k, at) || k);
       return null;
@@ -93,11 +73,56 @@
       }
       walk(m.root, n => {
         if (n.implied || n.et || VOID.has(n.tag) || OPT_END.has(n.tag)) return;
-        if (src.slice(n.st[1] - 2, n.st[1]) === '/>') return;            // נסגר בעצמו (svg)
+        if (n.foreign && src.slice(n.st[1] - 2, n.st[1]) === '/>') return; // נסגר בעצמו — רק ב-SVG / MathML; <div/> ב-HTML נשאר פתוח
         mark(n);                                                          // תגית שחייבת סגירה ולא נסגרה
       });
     }
+    m.lex = !m.root || lexOk([{ type: 'el', node: m.root }], -1, Infinity) >= 0;
     return m;
+  }
+  /** בונה צומת (ותת-עץ) מצומת של parse5; off — ההיסט שמוסיפים למיקומים (BOM, או מיקום הקטע בעדכון הדרגתי). */
+  function buildNode(m, p5, parent, off) {
+    const loc = p5.sourceCodeLocation;
+    const n = { tag: p5.tagName, parent, kids: [], nodes: [], attrs: [], implied: !loc, foreign: !!p5.namespaceURI && p5.namespaceURI !== XHTML, broken: false, hasBroken: false, from: -1, to: -1, st: null, et: null };
+    m.count++;
+    if (loc) {
+      m.located++;
+      n.from = loc.startOffset + off; n.to = loc.endOffset + off;
+      const st = loc.startTag || loc;
+      n.st = [st.startOffset + off, st.endOffset + off];
+      if (loc.endTag) n.et = [loc.endTag.startOffset + off, loc.endTag.endOffset + off];
+      const al = loc.attrs || st.attrs || {};
+      for (const a of p5.attrs) {
+        const name = a.prefix ? a.prefix + ':' + a.name : a.name, l = al[name] || al[name.toLowerCase()] || al[a.name];   // parse5 מתקן אותיות ב-SVG (viewBox)
+        n.attrs.push({ name, value: a.value, from: l ? l.startOffset + off : -1, to: l ? l.endOffset + off : -1 });
+      }
+    } else for (const a of p5.attrs) n.attrs.push({ name: a.name, value: a.value, from: -1, to: -1 });
+    for (const c of p5kids(p5)) pushChild(m, n, c, off);
+    return n;
+  }
+  const p5kids = p5 => (p5.tagName === 'template' && p5.content ? p5.content.childNodes : p5.childNodes) || [];
+  function pushChild(m, n, c, off) {
+    const cl = c.sourceCodeLocation;
+    if (c.tagName) { const k = buildNode(m, c, n, off); n.kids.push(k); n.nodes.push({ type: 'el', node: k }); }
+    else if (c.nodeName === '#text') n.nodes.push({ type: 'text', value: c.value, from: cl ? cl.startOffset + off : -1, to: cl ? cl.endOffset + off : -1 });
+    else if (c.nodeName === '#comment') n.nodes.push({ type: 'comment', from: cl ? cl.startOffset + off : -1, to: cl ? cl.endOffset + off : -1 });
+  }
+  /**
+   * "הקינון בעץ תואם לקינון בטקסט": כל ילד כתוב בין התגיות של ההורה שלו, והאחים בסדר שבו נכתבו ובלי חפיפה.
+   * parse5 אינו מדווח על כל שגיאות בניית העץ (אימוץ אל מחוץ לטבלה, שכפול תגיות עיצוב) — זו הבדיקה שתופסת אותן,
+   * והיא התנאי לעדכון הדרגתי. מחזיר את המיקום שאחרי האחרון, או ‎-1 כשהתנאי מופר.
+   */
+  function lexOk(nodes, pos, max) {
+    for (const x of nodes) {
+      if (x.type !== 'el') { if (x.from < pos || x.to > max || x.to < x.from) return -1; pos = x.to; continue; }   // גם טקסט "מאומץ" נתפס כאן
+      const k = x.node;
+      if (k.implied) { if (!IMPLIED_OK.has(k.tag)) return -1; pos = lexOk(k.nodes, pos, max); if (pos < 0) return -1; continue; }   // <p> שנוצר מ-</p> יתום אינו "במקום"
+      if (k.from < pos || k.to > max || k.to < k.st[1]) return -1;
+      const open = k.tag === 'html' || k.tag === 'body';                    // טקסט שאחרי </body> שייך ל-body
+      if (lexOk(k.nodes, k.st[1], open ? Infinity : (k.et ? k.et[0] : k.to)) < 0) return -1;
+      pos = k.to;
+    }
+    return pos;
   }
   function walk(n, fn) { fn(n); for (const k of n.kids) walk(k, fn); }
   function all(m) { const out = []; if (m.root) walk(m.root, n => out.push(n)); return out; }
@@ -118,7 +143,7 @@
     if (m.root) visit(m.root);
     return found;
   }
-  const isSimple = (m, n) => !n.implied && (!!n.et || VOID.has(n.tag) || m.src.slice(n.st[1] - 2, n.st[1]) === '/>');
+  const isSimple = (m, n) => !n.implied && (!!n.et || VOID.has(n.tag) || (n.foreign && m.src.slice(n.st[1] - 2, n.st[1]) === '/>'));
   /** סוף האלמנט בקובץ. לאלמנט בלי תגית סגירה (li, p) — בלי הרווחים שבסופו: הם ההזחה של האח הבא. */
   function endOf(m, n) { return isSimple(m, n) ? n.to : backWs(m.src, n.to, n.st[1]); }
   /** תחילת הרווח שלפני האלמנט, כשהאלמנט בשורה משלו; אחרת — תחילת האלמנט. */
@@ -435,6 +460,173 @@
     },
   };
 
-  g.KolSrc = { SrcError, applyPatches, invertPatches, parseHtml, parseCss, html: H, css: C, all, walk, q, pathOf, byPath, attrOf, classesOf, textOf,
+  // ══ עדכון הדרגתי (V1) ═════════════════════════════════════
+  // אחרי תיקון לא מנתחים את כל הקובץ: מוצאים את המכל הקטן ביותר שהתיקון כולו בתוכו, מנתחים מחדש רק את הילדים
+  // שנגעו בהם — בתוך "מסמך סינתטי" שמשחזר את שרשרת האבות (כדי שמצב המנתח יהיה זהה לזה של הקובץ המלא) — ומזיזים את
+  // הטווחים של כל מה שבא אחריהם. כל ספק ← ניתוח מלא (נפילה בטוחה). התנאי לכל העניין: קובץ בלי שגיאות ניתוח.
+  const NL_DROP = new Set(['pre', 'textarea', 'listing']);                 // שורה חדשה מיד אחרי תגית הפתיחה נבלעת
+  const GAP = 2000;                                                        // תיקונים קרובים מזה מטופלים כאזור אחד
+  const p5simple = (syn, c) => { const l = c.sourceCodeLocation; return !l || !!l.endTag || VOID.has(c.tagName) || c.namespaceURI !== XHTML && syn.slice((l.startTag || l).endOffset - 2, (l.startTag || l).endOffset) === '/>'; };
+
+  /**
+   * מחיל תיקונים על המודל. מחזיר { model, mode: 'inc' | 'full', why, regions }.
+   * 'inc' — המודל עודכן במקומו (צמתים שלא נגעו בהם שומרים על זהותם), ו-regions מתאר מה הוחלף.
+   * 'full' — הוחזר מודל חדש מניתוח מלא; המודל הישן אינו שמיש עוד.
+   */
+  function update(m, patches) {
+    const next = applyPatches(m.src, patches);
+    const full = why => ({ model: parseHtml(next), mode: 'full', why, regions: null });
+    if (m.kind !== 'html' || !m.root) return full('אין שורש');
+    if (m.marks || m.loose.length || !m.errors.every(e => BENIGN.has(e.code))) return full('בקובץ יש קוד שבור');
+    if (!m.lex) return full('הקינון בעץ אינו תואם לטקסט');
+    const ps = patches.filter(p => p.to > p.from || p.text).map((p, i) => ({ from: p.from, to: p.to, text: p.text, i })).sort((a, b) => a.from - b.from || a.i - b.i);
+    if (!ps.length) return { model: m, mode: 'inc', why: '', regions: [] };
+    const clusters = [];
+    for (const p of ps) { const l = clusters[clusters.length - 1]; if (l && p.from - l[l.length - 1].to < GAP) l.push(p); else clusters.push([p]); }
+    const regions = [];
+    try {
+      for (let c = clusters.length - 1; c >= 0; c--) {                      // מהסוף להתחלה: המיקומים שלפני נשארים תקפים
+        const r = updateRegion(m, clusters[c], false);
+        if (typeof r === 'string') return full(r);
+        regions.push(r);
+      }
+    } catch (e) { if (e instanceof SrcError) throw e; return full('חריגה: ' + (e && e.message || e)); }
+    if (m.src !== next) return full('הטקסט אינו תואם');
+    return { model: m, mode: 'inc', why: '', regions };
+  }
+  /** מחזיר תיאור אזור, או מחרוזת — הסיבה לנפילה לניתוח מלא. המודל אינו משתנה לפני שכל הבדיקות עברו. */
+  function updateRegion(m, ps, forceAll) {
+    const src = m.src, lo = ps[0].from, hi = ps[ps.length - 1].to;
+    // 1. המכל: האלמנט העמוק ביותר, עם תגית סגירה כתובה, שהתיקון כולו בין התגיות שלו
+    let P = null;
+    const find = n => {
+      for (const k of n.kids) {
+        if (k.implied) { find(k); continue; }
+        if (k.from <= lo && hi <= k.to) { if (k.et && k.st[1] <= lo && hi <= k.et[0] && k.tag !== 'html') P = k; find(k); return; }
+      }
+    };
+    if (!m.root.implied && m.root.from <= lo && hi <= m.root.to) find(m.root); else if (m.root.implied) find(m.root);
+    if (!P) return 'אין מכל סגור סביב התיקון';
+    // 2. הילדים שנגעו בהם, בתוספת טקסט צמוד (צמתי טקסט מתמזגים) ואח קודם בלי תגית סגירה (הוא נסגר במה שבא אחריו)
+    const nodes = P.nodes, rng = x => x.type === 'el' ? (x.node.implied ? null : [x.node.from, x.node.to]) : (x.from < 0 ? null : [x.from, x.to]);
+    let all = forceAll || NL_DROP.has(P.tag), i0 = -1, i1 = -1;
+    if (!all) {
+      for (let i = 0; i < nodes.length; i++) {
+        const r = rng(nodes[i]);
+        if (!r) { all = true; break; }
+        if (r[0] <= hi && r[1] >= lo) { if (i0 < 0) i0 = i; i1 = i; }
+      }
+      if (!all && i0 < 0 && nodes.length) all = true;
+    }
+    if (!all && nodes.length) {
+      while (i0 > 0 && nodes[i0 - 1].type === 'text') i0--;
+      if (i0 > 0 && nodes[i0 - 1].type === 'el' && !isSimple(m, nodes[i0 - 1].node)) i0--;
+      while (i1 < nodes.length - 1 && nodes[i1 + 1].type === 'text') i1++;
+    }
+    let a, b;
+    if (all || !nodes.length) { a = P.st[1]; b = P.et[0]; i0 = 0; i1 = nodes.length - 1; }
+    else { a = rng(nodes[i0])[0]; b = rng(nodes[i1])[1]; if (a < P.st[1] || b > P.et[0] || a > lo || b < hi) return forceAll ? 'טווח הילדים חורג מהמכל' : updateRegion(m, ps, true); }
+    if (all && P.tag === 'body') return 'שינוי בכל תוכן ה-body';              // טקסט שאחרי </body> שייך ל-body ואינו בין התגיות
+    // </body> או </html> בתוך הקטע (לפני או אחרי התיקון) קובעים את הטווח של body / html, שמחוץ לקטע
+    for (let n = P; n; n = n.parent) if ((n.tag === 'body' || n.tag === 'html') && n.et && n.et[0] >= a && n.et[0] < b) return '</' + n.tag + '> בתוך הקטע';
+    if (/<\/(body|html)[\s>\/]/i.test(src.slice(a, b)) || ps.some(p => /<\/(body|html)[\s>\/]/i.test(p.text))) return 'תגית סגירה של body / html בתוך הקטע';
+    const whole = i0 === 0 && i1 === nodes.length - 1 && a === P.st[1] && b === P.et[0];
+    // 3. המסמך הסינתטי: doctype, תגיות הפתיחה של שרשרת האבות, הקטע החדש, ותגיות הסגירה
+    const chain = []; for (let n = P; n; n = n.parent) chain.unshift(n);
+    let pre = m.doctypeText; const starts = [];
+    for (const n of chain) { starts.push(pre.length); pre += n.implied ? '<' + n.tag + '>' : src.slice(n.st[0], n.st[1]); }
+    let suf = ''; for (let i = chain.length - 1; i >= 0; i--) if (chain[i].et) suf += src.slice(chain[i].et[0], chain[i].et[1]);
+    const patched = applyPatches(src.slice(a, b), ps.map(p => ({ from: p.from - a, to: p.to - a, text: p.text })));
+    const syn = pre + patched + suf, errs = [];
+    const doc = g.KolParsers.parseHtml(syn, { sourceCodeLocationInfo: true, scriptingEnabled: false, onParseError(e) { errs.push({ code: e.code, at: e.startOffset }); } });
+    const end = pre.length + patched.length, off = a - pre.length, added = [];
+    for (const e of errs) {
+      if (!BENIGN.has(e.code)) return 'שגיאת ניתוח בקטע: ' + e.code;
+      if (e.at >= pre.length && e.at < end) added.push({ code: e.code, at: e.at + off });
+    }
+    let cur = { childNodes: doc.childNodes, tagName: '' };
+    for (let i = 0; i < chain.length; i++) {
+      // כל ילד אחר — משהו "ברח" מהקטע אל אחד האבות (אימוץ מחוץ לטבלה, <p> שנוצר מ-</p> יתום). רק head / body של html מותרים
+      const hit = p5kids(cur).filter(c => c.nodeName !== '#documentType' && !(cur.tagName === 'html' && !c.sourceCodeLocation && (c.tagName === 'head' || c.tagName === 'body')));
+      if (hit.length !== 1 || hit[0].tagName !== chain[i].tag || !hit[0].sourceCodeLocation || hit[0].sourceCodeLocation.startOffset !== starts[i]) return 'שרשרת האבות לא שוחזרה ב-<' + chain[i].tag + '>';
+      cur = hit[0];
+    }
+    const cl = cur.sourceCodeLocation;
+    if (!cl.endTag || cl.endTag.startOffset !== end || (cl.startTag || cl).endOffset !== pre.length) return 'הקטע פרץ את גבולות המכל';
+    const fresh = p5kids(cur);
+    // 4. הקצוות: אלמנט אחרון בלי תגית סגירה היה בולע את מה שבא אחריו; ושורה חדשה בתחילת הקטע אינה בתחילת המכל
+    if (!whole) {
+      const last = fresh[fresh.length - 1];
+      if (last && last.tagName && !p5simple(syn, last)) return forceAll ? 'אלמנט אחרון פתוח' : updateRegion(m, ps, true);
+    }
+    if (!NL_DROP.has(P.tag)) {                                              // הילדים מכסים את הקטע כולו, ברצף
+      let at = pre.length;
+      for (const c of fresh) { const l = c.sourceCodeLocation; if (!l) { at = -1; break; } if (l.startOffset !== at) return 'הקטע אינו מכוסה ברצף'; at = l.endOffset; }
+      if (at >= 0 && at !== end) return 'הקטע אינו מכוסה ברצף';
+    }
+    // 5. הכול נבדק — מחליפים. מכאן אין נפילה.
+    const tmp = { count: 0, located: 0 }, holder = { kids: [], nodes: [] };
+    for (const c of fresh) pushChild(tmp, holder, c, off);
+    let bad = false;
+    for (const k of holder.kids) walk(k, n => { if (!(n.implied || n.et || VOID.has(n.tag) || OPT_END.has(n.tag) || (n.foreign && syn.slice(n.st[1] - off - 2, n.st[1] - off) === '/>'))) bad = true; });
+    if (bad) return 'תגית שחייבת סגירה ולא נסגרה';
+    if (lexOk(holder.nodes, a, a + patched.length) < 0) return 'הקינון בקטע אינו תואם לטקסט';
+    for (const k of holder.kids) k.parent = P;
+    const d = patched.length - (b - a), oldCount = nodes.length ? i1 - i0 + 1 : 0, removed = [];
+    let gone = 0, goneLoc = 0;
+    const after = nodes.slice(i0 + oldCount);
+    for (let i = i0; i < i0 + oldCount; i++) if (nodes[i].type === 'el') { removed.push(nodes[i].node); walk(nodes[i].node, n => { gone++; if (!n.implied) goneLoc++; }); }
+    P.nodes = nodes.slice(0, i0).concat(holder.nodes, after);
+    P.kids = []; for (const x of P.nodes) if (x.type === 'el') P.kids.push(x.node);
+    m.count += tmp.count - gone; m.located += tmp.located - goneLoc;
+    if (d) {
+      const shiftEl = n => walk(n, x => {
+        if (x.implied) { shiftLoose(x); return; }
+        x.from += d; x.to += d; x.st[0] += d; x.st[1] += d; if (x.et) { x.et[0] += d; x.et[1] += d; }
+        for (const t of x.attrs) if (t.from >= 0) { t.from += d; t.to += d; }
+        shiftLoose(x);
+      });
+      const shiftLoose = x => { for (const t of x.nodes) if (t.type !== 'el' && t.from >= 0) { t.from += d; t.to += d; } };
+      const shiftEntry = x => { if (x.type === 'el') shiftEl(x.node); else if (x.from >= 0) { x.from += d; x.to += d; } };
+      after.forEach(shiftEntry);
+      for (let n = P; n; n = n.parent) {
+        if (!n.implied) { n.to += d; if (n.et) { n.et[0] += d; n.et[1] += d; } }
+        if (n.parent) { const sib = n.parent.nodes; let at = sib.length; for (let i = 0; i < sib.length; i++) if (sib[i].type === 'el' && sib[i].node === n) { at = i; break; } for (let i = at + 1; i < sib.length; i++) shiftEntry(sib[i]); }
+      }
+    }
+    const kept = [];
+    for (const e of m.errors) { if (e.at >= a && e.at < b) continue; if (e.at >= b) e.at += d; kept.push(e); }
+    m.errors = kept.concat(added).sort((x, y) => x.at - y.at);
+    m.src = src.slice(0, a) + patched + src.slice(b);
+    m.nl = m.nl === '\r\n' && patched.indexOf('\r\n') < 0 ? (m.src.indexOf('\r\n') >= 0 ? '\r\n' : '\n') : (patched.indexOf('\r\n') >= 0 ? '\r\n' : m.nl);
+    return { parent: P, index: i0, oldCount, newCount: holder.nodes.length, html: patched, whole, removed, from: a, to: a + patched.length };
+  }
+  /** השוואה מלאה בין שני מודלים — אותם צמתים, אותם טווחים. מחזיר null כשזהים, אחרת תיאור ההבדל הראשון. */
+  function sameModel(x, y) {
+    if (x.src !== y.src) return 'הטקסט שונה';
+    for (const k of ['bom', 'nl', 'count', 'located', 'marks', 'lex', 'doctype', 'doctypeText']) if (x[k] !== y[k]) return k + ': ' + x[k] + ' ≠ ' + y[k];
+    const es = m => m.errors.map(e => e.at + ':' + e.code).sort().join('|');
+    if (es(x) !== es(y)) return 'רשימת שגיאות הניתוח שונה';
+    const pair = (p, q) => (p === null) === (q === null) && (p === null || (p[0] === q[0] && p[1] === q[1]));
+    const go = (p, q, path) => {
+      if (!p || !q) return (p || q) ? path + ': צומת חסר' : null;
+      for (const k of ['tag', 'implied', 'foreign', 'broken', 'hasBroken', 'from', 'to']) if (p[k] !== q[k]) return path + ' <' + p.tag + '>: ' + k + ' ' + p[k] + ' ≠ ' + q[k];
+      if (!pair(p.st, q.st) || !pair(p.et, q.et)) return path + ' <' + p.tag + '>: טווח התגיות';
+      if (p.attrs.length !== q.attrs.length) return path + ' <' + p.tag + '>: מספר התכונות';
+      for (let i = 0; i < p.attrs.length; i++) { const s = p.attrs[i], t = q.attrs[i]; if (s.name !== t.name || s.value !== t.value || s.from !== t.from || s.to !== t.to) return path + ' <' + p.tag + '>: התכונה ' + s.name; }
+      if (p.nodes.length !== q.nodes.length || p.kids.length !== q.kids.length) return path + ' <' + p.tag + '>: מספר הילדים ' + p.nodes.length + ' ≠ ' + q.nodes.length;
+      let ki = 0;
+      for (let i = 0; i < p.nodes.length; i++) {
+        const s = p.nodes[i], t = q.nodes[i];
+        if (s.type !== t.type) return path + ' <' + p.tag + '>: סוג הילד ' + i;
+        if (s.type === 'el') { if (s.node !== p.kids[ki] || s.node.parent !== p) return path + ' <' + p.tag + '>: קישורי העץ'; const r = go(s.node, t.node, path + '.' + ki); if (r) return r; ki++; }
+        else if (s.from !== t.from || s.to !== t.to || s.value !== t.value) return path + ' <' + p.tag + '>: ' + s.type + ' ' + i + ' [' + s.from + ',' + s.to + '] ≠ [' + t.from + ',' + t.to + ']';
+      }
+      return null;
+    };
+    return go(x.root, y.root, '');
+  }
+
+  g.KolSrc = { SrcError, applyPatches, invertPatches, parseHtml, parseCss, update, sameModel, html: H, css: C, all, walk, q, pathOf, byPath, attrOf, classesOf, textOf,
     leadOf, endOf, outer, isSimple, lineOf, cssAll, cssFind, cssAt, VOID, BENIGN };
 })(typeof window !== 'undefined' ? window : globalThis);

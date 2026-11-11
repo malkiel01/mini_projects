@@ -18,7 +18,7 @@ const { chromium, devices } = createRequire(import.meta.url)('playwright');
 const TYPES = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.json': 'application/json' };
 const PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>spike</title>
 <link rel="stylesheet" href="/assets/css/app.css"><style>body{margin:0;padding:8px}#host{height:640px}</style></head><body><div id="host"></div>
-<script src="/assets/vendor/spike-parsers.js"></script><script src="/assets/js/spike/model.js"></script><script src="/assets/js/spike/canvas.js"></script><script src="/assets/js/spike/harness.js"></script></body></html>`;
+<script src="/assets/vendor/spike-parsers.js"></script><script src="/assets/js/editor/model.js"></script><script src="/assets/js/editor/canvas.js"></script><script src="/assets/js/spike/harness.js"></script></body></html>`;
 const server = http.createServer((req, res) => {
   const u = decodeURIComponent(req.url.split('?')[0]);
   if (u === '/__spike') { res.writeHead(200, { 'content-type': TYPES['.html'] }); return res.end(PAGE); }
@@ -133,7 +133,7 @@ await browser.close(); server.close();
 
 // ── 5. K7: משקל ──────────────────────────────────────────────
 const size = f => { const b = fs.readFileSync(path.join(root, f)); return { file: f, bytes: b.length, gzip: zlib.gzipSync(b, { level: 9 }).length, brotli: zlib.brotliCompressSync(b).length }; };
-out.k7 = { parsers: size('assets/vendor/spike-parsers.js'), ours: ['assets/js/spike/model.js', 'assets/js/spike/canvas.js'].map(size), limitGzip: 400 * 1024 };
+out.k7 = { parsers: size('assets/vendor/spike-parsers.js'), ours: ['assets/js/editor/model.js', 'assets/js/editor/canvas.js'].map(size), limitGzip: 400 * 1024 };
 out.k7.pass = out.k7.parsers.gzip <= out.k7.limitGzip;
 out.pageErrors = errors;
 
