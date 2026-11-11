@@ -44,7 +44,7 @@ function taskRow(t, withCase) {
 // ── לוח ראשי ──────────────────────────────────────────────────
 
 async function viewDashboard(o) {
-    const [t, cs, pd] = await Promise.all([api('my-tasks'), api('cases'), api('docs-pending')]);
+    const [t, cs, pd, rf] = await Promise.all([api('my-tasks'), api('cases'), api('docs-pending'), api('requests-failed')]);
     const tiles = [['#/cases', '📁', C.cases], ['#/tasks', '☑️', C.myTasks], ['#/contacts', '📇', C.contacts]];
     if (o.is_admin) tiles.push(['#/office/cases', '🗂️', C.officeCases]);
     App.main.innerHTML = `<p class="banner" role="note">⚠️ ${T.devEnv}</p>
@@ -53,7 +53,7 @@ async function viewDashboard(o) {
           <a class="btn primary" href="#/cases/new"><span aria-hidden="true">+</span> ${C.newCase}</a></form>
         <h2 class="sec-title">☑️ ${C.myTasks} <small>${t.tasks.length || ''}</small></h2>
         ${t.tasks.length ? `<ul class="list">${t.tasks.slice(0, 5).map(x => taskRow(x, true)).join('')}</ul>${t.tasks.length > 5 ? `<p class="hint"><a href="#/tasks">${C.allTasks}</a></p>` : ''}` : `<p class="empty">${C.noMyTasks}</p>`}
-        ${pendingDocsHtml(pd.pending)}
+        ${failedRequestsHtml(rf.failed)}${pendingDocsHtml(pd.pending)}
         <h2 class="sec-title">📁 ${C.myCases} <small>${cs.cases.length || ''}</small></h2>
         ${cs.cases.length ? `<ul class="list">${cs.cases.slice(0, 8).map(caseRow).join('')}</ul>${cs.cases.length > 8 ? `<p class="hint"><a href="#/cases">${C.allCases}</a></p>` : ''}` : `<p class="empty">${C.noCases}</p>`}
         <div class="tiles">${tiles.map(([h, i, x]) => `<a class="tile" href="${h}"><span class="tile-ic" aria-hidden="true">${i}</span>${x}</a>`).join('')}</div>${manageTiles()}`;
@@ -488,7 +488,7 @@ async function viewCase(pid, tab) {
         <div class="line muted">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : `<span class="chip bad">${C.noResponsible}</span>`}</div>
         <div class="chips">${canStatus ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
         ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : undefined]), href(cur))}`;
-    let body = '', docs = null;
+    let body = '', docs = null, rqs = null;
     if (cur === 'overview') {
         const openM = d.requirements.filter(r => r.mandatory && dOpen(r));
         const openT = d.tasks.filter(t => ['open', 'in_progress'].includes(t.status)), doneT = d.tasks.filter(t => !['open', 'in_progress'].includes(t.status));
@@ -510,7 +510,8 @@ async function viewCase(pid, tab) {
               <div class="line muted">${C.keyDate}: ${c.key_date ? esc(fmtDate(c.key_date)) : C.unknown} · ${C.propertyType}: ${c.property_type ? esc(P.propertyTypes[c.property_type]) : C.unknown}</div></div>
             ${d.plan.skipped.length ? `<h2 class="sec-title">${C.skippedTitle}</h2><ul class="list">${d.plan.skipped.map(s => `<li class="card static"><div class="body"><div class="l1"><span>${esc(s.title)}</span></div><div class="l2 wrap">${esc(s.reason)}</div></div></li>`).join('')}</ul>` : ''}`;
     } else if (cur === 'parties') {
-        body = partiesHtml(d, !!perms.edit) + membersHtml(d);
+        rqs = await api('case-requests', { params: { case: pid } });
+        body = partiesHtml(d, !!perms.edit) + requestsHtml(rqs, d) + membersHtml(d);
     } else if (cur === 'reqs') {
         docs = await docsTab(pid, d, reload);
         body = docs.html;
@@ -543,7 +544,7 @@ async function viewCase(pid, tab) {
     });
     $('#radd')?.addEventListener('click', () => requirementSheet(null, async v => { await api('requirement-add', { body: { case: pid, ...v } }); reload(); }));
     if (cur === 'overview') identsBind(d, !!perms.edit, reload);
-    if (cur === 'parties') { partiesBind(d, !!perms.edit, reload); membersBind(d, reload); }
+    if (cur === 'parties') { partiesBind(d, !!perms.edit, reload); requestsBind(rqs, d, reload); membersBind(d, reload); }
 }
 
 function reqRow(r, d, clickable) {

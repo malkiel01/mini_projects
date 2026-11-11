@@ -19,6 +19,11 @@
  * מסמכים (06):     case-docs {case} · file {file, inline?} · file-thumb {file} · docs-search {q, case?} · docs-pending
  *                  · file-upload (גוף גולמי; הפרמטרים בכתובת: case, requirement?, relation?, name, key, dup?, source_note?, doc_date?)
  *                  · file-assign · file-update · file-delete · file-review · requirement-status · requirement-order · requirement-split
+ * בקשות (07):      case-requests {case} · requests-failed · request-preview {case, party, requirements[], perms{}, days, subject?, body?,
+ *                  channel, contact_ok} או {request, channel, contact_ok, days?} · request-send {…אותו תוכן…, preview, op}
+ *                  · request-resend {request, channel, contact_ok, days?, preview, op} · request-revoke {request} · office-portal-otp {on}
+ * הפורטל (07):     portal-open · portal-otp-send · portal-otp-verify {code} · portal-respond {requirement, kind, text} · portal-file
+ *                  {file, inline} · portal-client-error — כולן POST עם token בגוף; portal-upload — גוף גולמי, האסימון ב-X-Portal-Token
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
  *
@@ -26,7 +31,7 @@
  * של הבקשה עצמה לא נלקחים מהדפדפן אף פעם. פעולת משרד יכולה לשאת office (pid) — הוא חייב להיות המשרד הפעיל.
  *
  * $env: platform_user (ה-JSON מהשער, או null), cookie (apr_session), csrf (X-CSRF), ua, cron_url, ip, sso_state (העוגייה apr_sso),
- *       content_type, origin, fetch_site (לבדיקת המקור של POST ציבורי).
+ *       content_type, origin, fetch_site (לבדיקת המקור של POST ציבורי), portal_token (X-Portal-Token), portal_cookie (apr_portal).
  * פעולה שמחזירה ['_redirect' => כתובת] — api.php מפנה אליה במקום לענות ב-JSON.
  */
 
@@ -49,6 +54,8 @@ require_once __DIR__ . '/profiles.php';
 require_once __DIR__ . '/cases.php';
 require_once __DIR__ . '/case_parts.php';
 require_once __DIR__ . '/documents.php';
+require_once __DIR__ . '/requests.php';
+require_once __DIR__ . '/portal.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -88,11 +95,21 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         if ($rule === 'public' && !$read) {
             $site = (string)($env['fetch_site'] ?? '');
             $origin = (string)($env['origin'] ?? '');
-            if (!str_starts_with(strtolower((string)($env['content_type'] ?? '')), 'application/json')
+            // portal-upload: הגוף הוא הקובץ עצמו, והאסימון בכותרת X-Portal-Token — כותרת שטופס חוצה-אתרים אינו יכול לשלוח
+            if (($action !== 'portal-upload' && !str_starts_with(strtolower((string)($env['content_type'] ?? '')), 'application/json'))
                 || ($site !== '' && !in_array($site, ['same-origin', 'none'], true))
                 || ($origin !== '' && !hash_equals(apr_app_origin(), $origin))) apr_fail('csrf');
         }
+        // הפורטל: מכאן לא נקרא שום דבר מ-platform_user, מהעוגייה apr_session או מ-X-CSRF — רק האסימון של הקישור
+        $penv = array_intersect_key($env, array_flip(['ip', 'portal_token', 'portal_name', 'portal_cookie', 'upload', 'upload_reader', 'upload_error']));
         return match ($action) {
+            'portal-open'         => apr_portal_open($in, $penv),
+            'portal-otp-send'     => apr_portal_otp_send($in, $penv),
+            'portal-otp-verify'   => apr_portal_otp_verify($in, $penv),
+            'portal-upload'       => apr_portal_upload($in, $penv),
+            'portal-respond'      => apr_portal_respond($in, $penv),
+            'portal-file'         => apr_portal_file($in, $penv),
+            'portal-client-error' => apr_portal_client_error($in, $penv),
             'health'         => apr_health_public(),
             'platform_key'   => apr_pkey_public(),
             'login-config'   => apr_login_config($env),
@@ -199,6 +216,13 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'requirement-status' => apr_requirement_status($ctx, $p),
         'requirement-order' => apr_requirement_order($ctx, $p),
         'requirement-split' => apr_requirement_split($ctx, $p),
+        'case-requests' => apr_case_requests($ctx, $p),
+        'requests-failed' => apr_requests_failed($ctx),
+        'request-preview' => apr_request_preview($ctx, $p),
+        'request-send' => apr_request_send($ctx, $p),
+        'request-resend' => apr_request_resend($ctx, $p),
+        'request-revoke' => apr_request_revoke($ctx, $p),
+        'office-portal-otp' => apr_office_portal_otp($ctx, $p),
         'office-cases' => apr_office_cases($ctx),
         'office-case-transfer' => apr_office_case_transfer($ctx, $p),
 

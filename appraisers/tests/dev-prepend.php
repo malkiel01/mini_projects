@@ -10,6 +10,10 @@ define('APR_DEV', true);
 if ($p = getenv('APR_DATA_DIR')) define('APR_DATA_DIR', $p);
 // בפיתוח מקומי הכתובת הקבועה היא של שרת הפיתוח (בשרת האמיתי — מ-app.json, לעולם לא מהבקשה)
 define('APR_APP_URL', 'http://127.0.0.1:' . (int)($_SERVER['SERVER_PORT'] ?? 80) . '/');
+// מייל בפיתוח: שרת הפיתוח אינו שולח. בקשה עם הכותרת X-Dev-Mail "שולחת" לקובץ dev-mail.log שבתיקיית הנתונים — כדי לבדוק ב-HTTP זרימות שתלויות במייל (קוד חד-פעמי)
+if (isset($_SERVER['HTTP_X_DEV_MAIL']) && defined('APR_DATA_DIR')) {
+    $GLOBALS['apr_mail'] = fn(string $to, string $subject, string $text, array $opt = []): bool => (bool)file_put_contents(APR_DATA_DIR . '/dev-mail.log', json_encode(['to' => $to, 'subject' => $subject, 'text' => $text] + $opt, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+}
 $GLOBALS['apr_http_post'] = fn(string $url) => str_contains($url, 'action=grant_status') ? [200, '{"allowed":true}'] : null;
 // בפיתוח אין מעטפת לשאול, ואין https לבדיקה עצמית
 $as = (string)($_SERVER['HTTP_X_DEV_AS'] ?? ($_COOKIE['dev_as'] ?? 'owner'));

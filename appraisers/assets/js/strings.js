@@ -327,3 +327,41 @@ T.d = {
     },
 };
 Object.assign(T.audit, T.d.audit);
+
+// ── בקשות ופורטל (07) ──
+T.rq = {
+    title: 'בקשות לגורמים', none: 'עוד לא נשלחה בקשה', newOne: 'בקשה חדשה', requestTo: n => `בקשה אל ${n}`, noParties: 'אין גורמים בתיק — הוסיפו גורם לפני שליחת בקשה',
+    statuses: { active: 'פעילה', expired: 'פג תוקף', revoked: 'בוטלה', completed: 'הושלמה', draft: 'טיוטה' },
+    channels: { email: 'מייל', link_copy: 'קישור להעתקה' },
+    msg: { planned: 'מתוכנן', sent: 'נשלח', delivered: 'נמסר', failed: 'נכשל', unknown: 'לא ידוע אם נמסר' },
+    kinds: { no_document: 'אין ברשותי', comment: 'הערה' },
+    perms: { upload: 'להעלות קבצים', reply: 'להשיב ולהעיר', view_own: 'לראות מה שהעלה', download_own: 'להוריד מה שהעלה' }, noPerms: 'צפייה ברשימה בלבד',
+    permsHint: 'צפייה והורדה דורשות מהנמען קוד חד-פעמי שנשלח למייל שלו.',
+    until: d => `בתוקף עד ${d}`, lastUsed: d => `שימוש אחרון: ${d}`, neverUsed: 'שימוש אחרון בקישור: מעולם', responsesN: n => n === 1 ? 'תשובה אחת' : `${n} תשובות`,
+    sentBy: (who, when) => `נשלחה בידי ${who}, ${when}`, needsResend: 'נדרשת שליחה מחדש', needsResendNote: 'פרטי הקשר של הנמען השתנו, והקישור הקודם בוטל. שלחו מחדש.',
+    itemsTitle: 'הדרישות בבקשה', messagesTitle: 'הודעות', responsesTitle: 'תשובות הנמען', noItems: 'אין דרישות שאפשר לבקש',
+    resend: 'שליחה מחדש', copyLink: 'העתקת קישור', revoke: 'ביטול הגישה', resendHint: 'שליחה מחדש והעתקת קישור יוצרות קישור חדש ומבטלות את הקודם.',
+    revokeAsk: 'לבטל את הבקשה? הקישור יפסיק לעבוד מיד. עותקים שכבר הורדו אינם נמחקים.', revoked: 'הבקשה בוטלה',
+    recipient: 'נמען', noContact: 'אין פרטי קשר', channel: 'ערוץ', contactOk: mail => `הכתובת ${mail} נכונה`, noEmailHint: 'לנמען אין כתובת מייל — אפשר רק קישור להעתקה, בלי צפייה בקבצים.',
+    allow: 'מה הנמען יוכל לעשות', validFor: 'תוקף הקישור', daysN: n => `${n} ימים`, subject: 'נושא', body: 'נוסח', fromTemplate: 'נוסח המערכת',
+    bodyHint: 'שדה ריק — נוסח המערכת. המייל כולל את שם המשרד, את הנוסח וקישור אחד: בלי קבצים, בלי פרטי הנכס ובלי שמות של גורמים אחרים, מעבר למה שתכתבו כאן.',
+    toPreview: 'תצוגה מקדימה', previewTitle: 'תצוגה מקדימה', previewNote: 'זה בדיוק מה שיישלח. בדקו את הנמען, הנוסח והדרישות.', from: 'השולח כפי שיופיע', replyTo: '"השב" יגיע אל',
+    validUntil: 'בתוקף עד', linkLine: '[כאן יופיע הקישור האישי, ומועד התפוגה]', anyoneNote: 'כל מי שמחזיק בקישור יכול להעלות קבצים. צפייה בקבצים דורשת קוד למייל של הנמען.',
+    unknownNote: 'קישור להעתקה: המערכת אינה יודעת אם הקישור נמסר לנמען.', sentNote: '"נשלח" פירושו שהמייל יצא מהמערכת — לא שהתקבל.',
+    alwaysOtp: 'במשרד מוגדר "תמיד לדרוש קוד": הנמען יתבקש להזין קוד שנשלח למייל שלו לפני כל פעולה.',
+    backToEdit: 'חזרה לעריכה', send: 'שליחה', makeLink: 'יצירת קישור', sentToast: 'הבקשה נשלחה', alreadySent: 'הבקשה כבר נשלחה', failedToast: 'שליחת המייל נכשלה — הבקשה מופיעה ב"הודעות שנכשלו"',
+    linkTitle: 'הקישור לנמען', linkOnce: 'הקישור מוצג פעם אחת. העתיקו אותו עכשיו ושלחו לנמען בכל דרך.', link: 'קישור', copy: 'העתקה',
+    failedTitle: 'הודעות שנכשלו', failedHint: 'עדכנו את פרטי הקשר של הנמען, שלחו מחדש, העתיקו קישור או בטלו את הגישה — בכרטיס התיק.',
+    alwaysOtpSetting: 'פורטל: תמיד לדרוש קוד חד-פעמי מהנמען', alwaysOtpSaved: 'ההגדרה נשמרה',
+    uploadedBy: n => `הועלה בפורטל בידי ${n}`,
+    audit: {
+        'request.send': r => `נשלחה בקשה (${T.rq.channels[r.meta.channel] || ''}; ${r.meta.items} דרישות) — ${T.rq.msg[r.meta.message] || ''}`,
+        'request.resend': r => `בקשה נשלחה מחדש (${T.rq.channels[r.meta.channel] || ''}) — ${T.rq.msg[r.meta.message] || ''}`,
+        'request.revoke': r => 'בקשה בוטלה' + (r.meta.why === 'party_removed' ? ' (הגורם הוסר מהתיק)' : ''),
+        'request.link_revoked': () => 'קישור של בקשה בוטל — המייל של הנמען השתנה',
+        'portal.response': r => `הנמען השיב בפורטל: ${T.rq.kinds[r.meta.kind] || ''}`,
+        'portal.device_verified': () => 'הנמען אימת מכשיר בקוד חד-פעמי', 'portal.locked': () => 'קישור הפורטל נחסם לרבע שעה — קודים שגויים',
+        'office.portal_otp': r => `פורטל: "תמיד לדרוש קוד" ${r.meta.on ? 'הופעל' : 'כובה'}`,
+    },
+};
+Object.assign(T.audit, T.rq.audit);
