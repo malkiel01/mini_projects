@@ -95,7 +95,7 @@ const Project = (() => {
     const f = S.byId.get(id);
     if (!f || f.kind === 'dir') return;
     if (!S.tabs.includes(id)) S.tabs.push(id);
-    if (activate) S.cur = id;
+    if (activate) { S.cur = id; if (phone()) side(false); }    // בטלפון העץ מכסה את העורך — קובץ שנפתח סוגר אותו
     persist();
     if (!S.docs.has(id)) {
       const doc = { id, rev: f.rev, dirty: false, model: null, saved: '', binary: false, saving: false, timer: 0, conflict: false };
