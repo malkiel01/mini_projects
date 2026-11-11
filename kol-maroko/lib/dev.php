@@ -165,17 +165,32 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
         'GET dev-health' => ($dev() ? dev_health() : []),
         'POST dev-attack-save' => pv_attack_save($dev(), $in),       // ערכת ההתקפה מול הסטודיו (F4, lib/preview.php)
         'GET dev-state' => ($dev() ? ['services' => dev_services(), 'stats' => dev_stats()] : []),
+        // ספייק מנוע העורך (V0): קבצי הבדיקה מוגשים כנתונים — dev/ חסומה מהדפדפן
+        'GET dev-spike-fixture' => ($dev() ? dev_spike_fixture((string)($_GET['name'] ?? '')) : []),
         default => throw new ApiError('פעולה לא מוכרת', in_array($action, DEV_ACTIONS, true) ? 405 : 404),
     };
 }
 
 const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-items',
     'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-file', 'dev-tokens', 'dev-token-create',
-    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-attack-save'];
+    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save'];
 /** פעולות שנכנסים אליהן באסימון, בלי משתמש מהשער. חייבות להופיע גם ב-"public" של app.json. */
 const DEV_TOKEN_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 /** פעולות שהגוף שלהן הוא קובץ, לא JSON. */
 const DEV_RAW_BODY = ['dev-attach', 'devapi-attach'];
+
+// ── ספייק מנוע העורך (V0) ─────────────────────────────────
+
+const DEV_SPIKE_FIXTURES = ['lexicon.html', 'lexicon.css', 'handwritten.html', 'handwritten.css', 'broken.html', 'broken.css'];
+
+/** קובץ בדיקה של הספייק, ב-base64 — כדי שהבייטים (BOM, CRLF) יגיעו לדפדפן כמו שהם. רשימה סגורה; קריאה בלבד. */
+function dev_spike_fixture(string $name): array
+{
+    if (!in_array($name, DEV_SPIKE_FIXTURES, true)) throw new ApiError('אין קובץ בדיקה כזה', 404);
+    $raw = @file_get_contents(__DIR__ . '/../dev/spike/fixtures/' . $name);
+    if ($raw === false) throw new ApiError('קובץ הבדיקה חסר בשרת', 404);
+    return ['name' => $name, 'bytes' => strlen($raw), 'b64' => base64_encode($raw)];
+}
 
 // ── יומן הבקשות והשגיאות ─────────────────────────────────
 

@@ -6,8 +6,9 @@
  *   #/invite/<אסימון>      קבלת הזמנה                       #/office · #/office/log   המשרד שלי · יומן הפעולות
  *   #/profiles[/<pid>[/edit | /try | /v/<גרסה>]]   פרופילים
  *   #/cases · #/cases/new · #/cases/<pid>[/setup[/<שלב>] | /parties | /reqs[/<דרישה>] | /file/<קובץ> | /activity]   תיקים
+ *   #/cases/<pid>/facts[/<מאפיין>] · #/cases/<pid>/conflicts[/<סתירה>]   נתוני הנכס וסתירות (10)
  *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
- *   #/system · #/system/users · #/system/doc-types   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
+ *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
 
