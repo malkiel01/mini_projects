@@ -201,6 +201,7 @@ function apr_reminder_prepare(int $planId): string|array
         apr_exec('UPDATE reminder_plans SET next_at = ? WHERE id = ?', [$m['retry_at'], $p['id']]);
         return 'deferred';
     }
+    if ($p['next_at'] === null || $p['next_at'] > $now) return 'noop';       // המועד עוד לא הגיע — גם כשקוראים למנוע ישירות
 
     // ── הבדיקות של §5, לפי הסדר ──
     $open = apr_rows("SELECT r.* FROM request_items ri JOIN requirements r ON r.id = ri.requirement_id
