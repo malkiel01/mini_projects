@@ -3,7 +3,8 @@
   "updated": "2026-11-11",
   "spec": "session_018g4NYFXfe6iF4owmDWWorS",
   "spec_previous": ["session_018g4NYDLWsSr9Pt3MYTmbcK"],
-  "code": "session_018g4NYD9DUA7W2FJRnSxYT5",
+  "code": {"F1": "session_018g4NYE4wmn5gkTxqMgwnZm", "A1": "session_018g4NYE7U59DTztVz4fTKCL"},
+  "code_previous": ["session_018g4NYD9DUA7W2FJRnSxYT5"],
   "control": "session_018g4NYFFdyRghdH6dzvTsTX",
   "tasks": "session_018g4NYFkoAv3UHd7gDhGzXT"
 }
