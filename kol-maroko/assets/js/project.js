@@ -119,6 +119,7 @@ const Project = (() => {
   }
 
   function changed(doc) {
+    emit(doc, 'text');
     const now = doc.model ? doc.model.getValue() : doc.text;
     const was = doc.dirty;
     doc.dirty = now !== doc.saved;
@@ -127,6 +128,59 @@ const Project = (() => {
     clearTimeout(doc.timer);
     if (doc.dirty && !doc.conflict) doc.timer = setTimeout(() => save(doc.id, true), AUTOSAVE_MS);
   }
+
+  // ── שירות המסמכים (04 §1) ─────────────────────────────────
+  // מקור אמת אחד לכל קובץ פתוח: הטקסט, ההיסטוריה (ביטול / חזרה) וה-rev. עורך הקוד והעורך החזותי (assets/js/editor)
+  // עובדים על אותו מסמך — תיקון מכאן או משם נכנס לאותה היסטוריה, ונשמר באותה שמירה (pf_write, אותו rev, אותן גרסאות).
+  const subs = new Map();
+  function emit(doc, kind) { for (const cb of subs.get(doc.id) || []) { try { cb(kind); } catch (e) { console.error(e); } } }
+  function handle(doc) {
+    const text = () => (doc.model ? doc.model.getValue() : doc.text ?? '');
+    return {
+      id: doc.id, text,
+      get path() { return S.byId.get(doc.id)?.path || ''; },
+      get rev() { return doc.rev; }, get dirty() { return doc.dirty; }, get saving() { return doc.saving; }, get conflict() { return doc.conflict; },
+      get binary() { return doc.binary; }, get error() { return doc.error || ''; }, get errorStatus() { return doc.errorStatus || 0; },
+      get lastTx() { return doc.tx?.[doc.tx.length - 1] || null; },
+      /** עסקה עם שם: תיקוני טקסט {from, to, text} (מיקומים בטקסט הנוכחי) כצעד אחד בהיסטוריה. */
+      edit(patches, label) {
+        if (doc.binary) throw new Error('הקובץ פתוח לקריאה בלבד');
+        if (doc.model) {
+          const m = doc.model, pos = at => m.getPositionAt(at);
+          m.pushStackElement();
+          m.pushEditOperations(null, patches.map(p => { const a = pos(p.from), b = pos(p.to); return { range: new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column), text: p.text, forceMoveMarkers: true }; }), () => null);
+          m.pushStackElement();
+        } else {
+          const ps = patches.slice().sort((a, b) => a.from - b.from), before = doc.text; let out = '', at = 0;
+          for (const p of ps) { out += before.slice(at, p.from) + p.text; at = p.to; }
+          (doc.undo = doc.undo || []).push(before); doc.redo = [];
+          doc.text = out + before.slice(at); changed(doc);
+        }
+        (doc.tx = doc.tx || []).push({ label, at: Date.now() }); if (doc.tx.length > 100) doc.tx.shift();
+      },
+      undo() { if (doc.model) doc.model.undo(); else if (doc.undo?.length) { (doc.redo = doc.redo || []).push(doc.text); doc.text = doc.undo.pop(); changed(doc); } },
+      redo() { if (doc.model) doc.model.redo(); else if (doc.redo?.length) { doc.undo.push(doc.text); doc.text = doc.redo.pop(); changed(doc); } },
+      canUndo() { return doc.model ? doc.model.canUndo() : !!doc.undo?.length; },
+      canRedo() { return doc.model ? doc.model.canRedo() : !!doc.redo?.length; },
+      on(cb) { if (!subs.has(doc.id)) subs.set(doc.id, new Set()); subs.get(doc.id).add(cb); return () => subs.get(doc.id)?.delete(cb); },
+      save: () => save(doc.id),
+    };
+  }
+  const Docs = {
+    /** כל קובצי הפרויקט (אחרי טעינת העץ). */
+    async files() { if (!S.loaded) await refresh(); return S.files; },
+    byPath: path => S.files.find(f => f.path === path && f.kind !== 'dir') || null,
+    /** פותח קובץ כמסמך משותף (וכלשונית בעורך הקוד). מחזיר null כשאי אפשר לפתוח. */
+    async open(id) {
+      if (!S.loaded) await refresh();
+      try { await loadMonaco(); } catch { /* בלי Monaco — מסמך טקסט פשוט, עם היסטוריה משלו */ }
+      if (!S.docs.has(id)) { const cur = S.cur; await openFile(id, false); S.cur = cur ?? id; persist(); }
+      const doc = S.docs.get(id);
+      return doc ? handle(doc) : null;
+    },
+    /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
+    async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
+  };
 
   /** שמירה. הקוד נשמר כמו שהוא — גם שבור; אין כאן שום בדיקת תקינות שמונעת שמירה. */
   async function save(id, auto = false) {
@@ -144,13 +198,13 @@ const Project = (() => {
     } catch (e) {
       if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
       else if (!auto) toast(e.message, true);
-      doc.error = e.message;
+      doc.error = e.message; doc.errorStatus = e.status || 0;
     } finally {
       doc.saving = false;
       const now = doc.model ? doc.model.getValue() : doc.text;
       doc.dirty = now !== doc.saved;
-      if (!doc.dirty) doc.error = '';
-      drawTabs(); drawTree(); drawStatus();
+      if (!doc.dirty) { doc.error = ''; doc.errorStatus = 0; }
+      drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
       if (doc.dirty && !doc.conflict && !doc.error) { clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), AUTOSAVE_MS); }
     }
   }
@@ -200,6 +254,7 @@ const Project = (() => {
   function drawAll() { if (!S.host) return; drawBars(); drawTree(); drawTabs(); drawEditor(); drawStatus(); }
 
   function drawBars() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const k = S.kol;
     el.kol.hidden = !k || k.valid;
     if (k && !k.valid) {
@@ -220,6 +275,7 @@ const Project = (() => {
   }
 
   function drawTree() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const entry = S.kol?.config?.entry;
     const rows = [];
     const walk = (n, depth) => {
@@ -250,6 +306,7 @@ const Project = (() => {
   }
 
   function drawTabs() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     el.tabs.replaceChildren(...S.tabs.map(id => {
       const f = S.byId.get(id);
       const name = f ? base(f.path) : '(נמחק)';
@@ -262,11 +319,13 @@ const Project = (() => {
   }
 
   function drawEditor() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
     el.ed.hidden = el.view.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
-      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'));
+      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
+        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ')));
       return;
     }
     if (doc.model && S.editor) {
@@ -304,6 +363,7 @@ const Project = (() => {
   }
 
   function drawStatus() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const doc = S.docs.get(S.cur), f = S.byId.get(S.cur);
     const editable = !!doc && !doc.binary;
     el.save.disabled = !editable || !doc.dirty || doc.saving;
@@ -470,7 +530,7 @@ const Project = (() => {
     el.status = h('span', { class: 'pj-status', role: 'status' });
     el.save = h('button', { type: 'button', class: 'btn primary sm', disabled: true, onclick: () => save(S.cur) }, '💾 שמירה');
     el.bar = h('div', { class: 'pj-bar' },
-      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📁 קבצים'),
+      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📂 קבצי הקוד'),
       el.tabs, el.status, el.save,
       h('button', { type: 'button', class: 'btn sm pj-live-btn', title: 'תצוגה חיה — העמוד רץ כפי שירוץ אצל הגולש', onclick: () => live() }, '▶️', h('span', { class: 'pj-live-word' }, ' תצוגה חיה')),
       h('button', { type: 'button', class: 'icon-btn', 'data-ed': true, 'aria-label': 'כלי העורך', onclick: toolsMenu }, '⋯'));
@@ -514,6 +574,7 @@ const Project = (() => {
         S.cur = cur; persist();
       }
       drawAll();
+      if (phone() && !S.cur) side(true);                         // בטלפון, בלי קובץ פתוח: העץ עצמו, לא מסך ריק עם כפתור
     } catch (e) { el.view.hidden = false; el.view.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
@@ -531,13 +592,21 @@ const Project = (() => {
     liveEl = h('div', { class: 'pj-live' }, h('iframe', { src: 'live.php?embed=1' + (path ? '&path=' + encodeURIComponent(path) : ''), title: 'תצוגה חיה' }));
     document.body.append(liveEl);
   }
-  async function openAt(path, line) {
+  /** פותח קובץ בעורך הקוד. line — שורה; range — {from, to} בתווים: הטווח מסומן (למשל האלמנט שנבחר בעורך החזותי). */
+  async function openAt(path, line, range) {
     liveClose();
     if (location.hash.split('/')[1] !== 'project') { location.hash = '#/project'; await new Promise(r => setTimeout(r, 400)); }
     const f = S.files.find(x => x.path === path);
     if (!f) { toast('הקובץ אינו בפרויקט: ' + path, true); return; }
     await openFile(f.id);
     if (S.editor && line > 0) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); }
+    const m = S.docs.get(f.id)?.model;
+    if (S.editor && m && range) {
+      for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+      if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
+      const a = m.getPositionAt(range.from), b = m.getPositionAt(range.to), sel = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
+      S.editor.setSelection(sel); S.editor.revealRangeInCenterIfOutsideViewport(sel); S.editor.focus();
+    }
   }
   bc?.addEventListener('message', e => {
     const d = e.data;
@@ -582,5 +651,5 @@ const Project = (() => {
       pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, _state: S, _open: openFile, _save: save };
+  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, _state: S, _open: openFile, _save: save };
 })();
