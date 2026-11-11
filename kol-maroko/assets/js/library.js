@@ -267,7 +267,7 @@ const Library = (() => {
         f ? cell('משך', dur.has(r.id) ? clock(dur.get(r.id)) : 'יוצג אחרי השמעה') : null,
         f ? cell('נוסף', `${f.by} · ${date(f.at)}`) : null),
       r.shared?.length ? h('p', { class: 'hint' }, 'אותה הקלטה משמשת גם את: ',
-        r.shared.map((id, i) => [i ? ', ' : '', h('a', { href: '#/files', onclick: e => { e.preventDefault(); $('#sheet').close(); show(id); } }, `#${id} ${byId(id)?.word || ''}`)])) : null,
+        r.shared.flatMap((id, i) => [i ? ', ' : '', h('a', { href: '#/files', onclick: e => { e.preventDefault(); $('#sheet').close(); show(id); } }, `#${id} ${byId(id)?.word || ''}`)])) : null,
       r.state === 'site' ? h('label', { class: 'f' }, h('span', {}, 'הכתובת באתר (מכאן משמיעים)'), h('input', { readonly: true, dir: 'ltr', value: r.src })) : null,
       f?.origin ? h('label', { class: 'f' }, h('span', {}, 'עותק של ההקלטה שבאתר'), h('input', { readonly: true, dir: 'ltr', value: f.origin })) : null,
       r.state === 'site' ? h('p', { class: 'hint' }, 'ההקלטה נמצאת באתר ומתנגנת משם. אפשר להחליף אותה מכאן — ההקלטה החדשה תישמר בכלי, והמקורית באתר לא נמחקת. שינוי שם, מחיקה והורדה ייפתחו אחרי שהקבצים יובאו לכלי.') : null,
