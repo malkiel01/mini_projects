@@ -23,6 +23,9 @@ const API_MIN_ROLE = [
     'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',
     'dev-file' => 'owner', 'dev-tokens' => 'owner', 'dev-token-create' => 'owner', 'dev-token-revoke' => 'owner', 'dev-item-log' => 'owner',
+    // פרוסה F2a — מאגר הפרויקט
+    'pf_tree' => 'editor', 'pf_read' => 'editor', 'pf_raw' => 'editor', 'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor',
+    'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner',
 ];
 const API_GET_DEV = ['dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];

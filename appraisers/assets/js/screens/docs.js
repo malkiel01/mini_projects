@@ -295,7 +295,15 @@ async function viewFile(pid, fpid) {
             ${rev ? `<button type="button" class="btn ghost danger" id="fdel">${D.del}</button>` : ''}</div>
           <dl class="cells">${cell(D.receivedAt, esc(fmtDateTime(f.received_at)))}${cell(D.docDate, f.doc_date ? esc(fmtDate(f.doc_date)) : C.unknown)}${cell(D.source, esc(D.channels[f.channel] || f.channel) + (f.source_note ? ' · ' + esc(f.source_note) : ''))}
             ${cell(D.uploader, esc(f.uploader || C.system))}${cell(D.type, esc(D.kinds[f.kind] || f.kind) + ' · ' + esc(f.ext.toUpperCase()))}${cell(D.size, dSize(f.size) + (f.pages ? ' · ' + esc(D.pages(f.pages)) : ''))}</dl>
-          ${links.length ? links.map(linkHtml).join('') : `<p class="banner" role="note">📎 ${D.unassignedNote}</p>`}</div></div>`;
+          ${links.length ? links.map(linkHtml).join('') : `<p class="banner" role="note">📎 ${D.unassignedNote}</p>`}
+          <div id="file-facts"></div></div></div>`;
+    // 10-D1: לחיצה על נתון מדפדפת את המסמך לעמוד שבו הוא מופיע (מציג ה-PDF של הדפדפן מקבל #page=N)
+    const goPage = n => {
+        const fr = $('.doc-view iframe');
+        if (fr && DBLOB) { const nf = fr.cloneNode(); nf.src = `${DBLOB}#page=${n}`; fr.replaceWith(nf); }
+        $('.doc-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    fileFactsPanel(pid, fpid, goPage, reload).catch(() => {});
     if (f.mime === 'application/pdf') {
         // PDF מוצג מתוך blob: התשובה של השרת נושאת sandbox, ודפדפן אינו פותח בה את מציג ה-PDF שלו
         fetch(dUrl(f.pid, true), { credentials: 'same-origin' }).then(r => r.ok ? r.blob() : Promise.reject()).then(b => {

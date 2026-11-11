@@ -414,3 +414,46 @@ T.ch = {
     weekdays: { sun: 'א׳', mon: 'ב׳', tue: 'ג׳', wed: 'ד׳', thu: 'ה׳', fri: 'ו׳', sat: 'ש׳' }, stopAnswered: 'לעצור כשהנמען ענה', remHint: 'לפני כל תזכורת המערכת בודקת שוב: דרישה שכבר התקבלה אינה מוזכרת, ושבת וחג אינם ימי שליחה.',
     preview: 'תצוגה מקדימה (נתוני דוגמה)', sample: { 'שם_הנמען': 'ישראל ישראלי', 'שם_המשרד': 'משרד לדוגמה', 'שם_השמאי': 'שם השמאי', 'רשימת_הדרישות': '• נסח טאבו\n• הסכם מכר', 'קישור': '[קישור אישי]', 'תאריך_יעד': '01.01.2027' },
 };
+
+// ── נתונים וסתירות (פרוסה 10) ──
+T.f = {
+    tab: 'נתונים', title: 'נתוני הנכס', unknown: 'לא ידוע', add: 'הוספת ערך', addFact: 'הוספת נתון', addFromPage: 'הוספת נתון מהעמוד הזה', value: 'ערך', unit: 'יחידה',
+    groups: { identity: 'זיהוי', features: 'מאפיינים', rights: 'זכויות', deal: 'עסקה', renovation: 'שיפוץ', rent: 'שכירות' },
+    units: { sqm: 'מ"ר', dunam: 'דונם', cm: 'ס"מ', m: 'מ\'', ILS: '₪', USD: '$', EUR: '€' },
+    areaKind: 'סוג שטח', areaKinds: { registered: 'רשום', built: 'בנוי', gross: 'ברוטו', net: 'נטו', primary: 'עיקרי', other: 'אחר', unknown: 'סוג לא ידוע' }, pickAreaKind: 'בחרו סוג שטח',
+    areaKindHint: '"סוג לא ידוע" הוא ערך חוקי — עדיף על ניחוש.',
+    states: { proposed: 'ממתין לבדיקה', manual: 'לא אומת', needs_clarification: 'דורש בירור', verified: 'מאומת', rejected: 'נדחה' },
+    estimated: 'אומדן', estimatedLabel: 'אומדן, לא מדידה', yes: 'כן', no: 'לא', example: 'דוגמה', multi: 'כמה ערכים', hidden: 'מוסתר',
+    source: 'מקור', sourceKinds: { document: 'מסמך', visit: 'ביקור', source_check: 'בדיקת מקור', user: 'נמסר בעל פה', ai: 'חילוץ אוטומטי' },
+    srcDocOnly: 'מקור: מסמך', srcDeleted: 'מסמך המקור נמחק', srcReturned: 'המסמך הוחזר להשלמה', page: n => `עמ' ${n}`, pageLabel: 'עמוד', locator: 'ציטוט או מיקום במסמך',
+    sourceDate: 'תאריך המקור', toldBy: 'נמסר מ-…', file: 'קובץ', pickFile: 'בחרו קובץ', noFiles: 'אין בתיק קבצים. העלו קובץ בלשונית "דרישות וקבצים", או בחרו מקור אחר.',
+    note: 'הערה', notFound: 'חיפשנו ולא מצאנו — "דורש בירור", בלי ערך', notFoundHint: 'נרשם שחיפשתם; ההערה מסבירה מה חסר.',
+    zeroAsk: 'אפס, או לא ידוע?\n\nאישור — הערך הוא אפס.\nביטול — חוזרים לטופס; "לא ידוע" נשאר בלי נתון.',
+    saved: 'הנתון נשמר', correct: 'תיקון', correctionNote: 'למה תוקן', corrected: 'הנתון תוקן', original: (v, by, at) => `כפי שהגיע: ${v} · תוקן בידי ${by}, ${at}`,
+    verify: 'אימות', verified: 'הנתון אומת', verifiedBy: (by, at) => `אומת בידי ${by}, ${at}`, reject: 'דחייה', rejected: 'הנתון נדחה', rejectHint: 'הנתון נשאר להיסטוריה ואינו משמש לדבר.', rejectedWhy: 'סיבת הדחייה',
+    clarify: 'דורש בירור', clarifyHint: 'מה צריך לברר?', backToManual: 'בורר — חזרה ל"לא אומת"', del: 'מחיקה', delHint: 'הנתון יוסר מהרשימה; מי שנשען עליו יסומן לבדיקה מחדש.', deleted: 'הנתון נמחק',
+    enteredBy: (by, at) => `הוזן בידי ${by}, ${at}`, history: 'היסטוריה', uses: (n, s) => `${n} פריטים נשענים על הנתון${s ? ` · ${s} לבדיקה מחדש` : ''}`,
+    changed: (by, theirs, mine) => `${by} — בשרת: ${theirs}. אצלך: ${mine}. הדף רוענן; בדקו ונסו שוב.`,
+    allValues: 'כל הערכים שנרשמו', noValues: 'עוד לא נרשם ערך — המאפיין "לא ידוע".', agreed: 'ערך מוסכם', several: n => `${n} ערכים`,
+    conflict: 'סתירה', conflicts: 'סתירות', conflictOpen: 'סתירה פתוחה', openConflicts: n => n === 1 ? 'סתירה פתוחה אחת' : `${n} סתירות פתוחות`, noConflicts: 'אין סתירות בתיק.',
+    conflictKinds: { value: 'ערכים שונים', incomparable: 'אי אפשר להשוות' }, conflictStatuses: { open: 'פתוחה', resolved: 'הוכרעה', dismissed: 'אין סתירה' },
+    incomparableHint: 'אי אפשר להשוות בין הערכים — סוג השטח או היחידה של אחד מהם אינם ידועים. ברר ותקן, או הכרע.',
+    closedAuto: 'נסגרה לבד — הנתונים כבר אינם סותרים', needsHuman: 'הכרעה קודמת איבדה תוקף — נדרשת הכרעה מחדש', reopened: n => `נפתחה ${n} פעמים`,
+    decide: 'הכרעה', purpose: 'לאיזו מטרה', purposeHint: 'אפשר כמה הכרעות, כל אחת למטרה אחרת.', purposes: ['לחישוב מחיר למ"ר', 'לתיאור הנכס בדוח', 'להשוואה לעסקאות'],
+    chosen: 'הערך שנבחר', reasoning: 'נימוק', decided: 'ההכרעה נשמרה', pick: 'בחירה',
+    dismiss: 'אין סתירה', dismissHint: 'למשל: שני סוגי שטח שסומנו בטעות כזהים. אפשר לתקן את סוג השטח כאן.', dismissed: 'נרשם: אין סתירה',
+    resolutions: 'הכרעות', resolutionBy: (by, at) => `${by}, ${at}`, voided: { superseded: 'הוחלפה בהכרעה חדשה', fact_rejected: 'לא תקפה — הנתון שנבחר נדחה', fact_deleted: 'לא תקפה — הנתון שנבחר נמחק', fact_changed: 'לא תקפה — הנתון שנבחר תוקן' },
+    inactive: 'אינו פעיל', fromFile: 'נתונים מהמסמך', noFileFacts: 'עוד לא נרשמו נתונים שמקורם במסמך הזה.', goPage: 'מעבר לעמוד',
+    catalog: 'מאפיינים', catalogHint: 'מה אפשר לדעת על נכס ועל עסקה. מאפיין אינו נמחק — רק מוסתר. מאפיין שכבר בשימוש: המבנה שלו נעול.', newAttr: 'מאפיין חדש', key: 'מפתח (אנגלית, a-z ו-_)',
+    label: 'שם', group: 'קבוצה', valueType: 'סוג ערך', valueTypes: { number: 'מספר', money: 'כסף', date: 'תאריך', text: 'טקסט', choice: 'בחירה מרשימה', bool: 'כן / לא' },
+    unitKind: 'סוג יחידה', unitKinds: { none: 'בלי', area: 'שטח', length: 'אורך', money: 'כסף', count: 'מנייה' }, hasAreaKind: 'נדרש סוג שטח', multiLabel: 'טבעי שיהיו כמה ערכים',
+    decimals: 'ספרות אחרי הנקודה', negative: 'מותר ערך שלילי', choices: 'אפשרויות (שורה לכל אחת: מפתח = שם)', status: 'מצב', active: 'פעיל', sort: 'סדר', inUse: 'בשימוש', exampleLabel: 'מסומן "דוגמה" עד אישור שמאי',
+};
+T.c.tabs.facts = T.f.tab;
+Object.assign(T.audit, {
+    'fact.add': () => 'נתון נוסף', 'fact.correct': () => 'נתון תוקן', 'fact.verify': () => 'נתון אומת', 'fact.reject': () => 'נתון נדחה', 'fact.clarify': () => 'נתון סומן "דורש בירור"',
+    'fact.manual': () => 'נתון חזר ל"לא אומת"', 'fact.delete': () => 'נתון נמחק', 'fact.source_deleted': () => 'מסמך המקור של נתון נמחק — הנתון חזר ל"דורש בירור"',
+    'conflict.open': () => 'נפתחה סתירה בנתונים', 'conflict.reopen': () => 'סתירה נפתחה מחדש', 'conflict.resolve': r => `סתירה הוכרעה: ${r.meta.purpose || ''}`,
+    'conflict.dismiss': () => 'סתירה נסגרה: אין סתירה', 'conflict.auto_close': () => 'סתירה נסגרה — הנתונים כבר אינם סותרים',
+    'attribute.create': () => 'מאפיין נוסף לקטלוג', 'attribute.update': () => 'מאפיין עודכן בקטלוג',
+});

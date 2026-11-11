@@ -29,6 +29,10 @@
  *                  {connection, status} · office-channel-test {connection} · office-inbox-handler {user, on} · sys-channels · sys-channel-…
  *                  (אותם שדות) · sys-channel-grant {connection, all_offices} או {connection, office, on} · sys-inbox · sys-inbox-dismiss
  *                  {item, reason} · sys-inbox-route {item, office} · sys-inbox-reply {item}
+ * נתונים (10):     case-facts {case} · fact {fact} · case-conflicts {case} · conflict {conflict} · file-facts {file} · fact-add {case,
+ *                  attribute, value, unit?, area_kind?, estimated?, zero_ok?, source{}, note?, state?} · fact-correct {fact, rev, …}
+ *                  · fact-state {fact, rev, do, reason? / note?} · fact-delete {fact, rev, reason} · conflict-resolve {conflict, rev,
+ *                  purpose, fact, reasoning} · conflict-dismiss {conflict, rev, reasoning, fixes?[]} · sys-attributes · sys-attribute-save
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -65,6 +69,7 @@ require_once __DIR__ . '/portal.php';
 require_once __DIR__ . '/channels.php';
 require_once __DIR__ . '/reminders.php';
 require_once __DIR__ . '/inbound.php';
+require_once __DIR__ . '/facts.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -220,6 +225,20 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'docs-search' => apr_docs_search($ctx, $p),
         'docs-pending' => apr_docs_pending($ctx),
         'file-upload' => apr_file_upload($ctx, $p, $env),
+        // נתונים וסתירות (10)
+        'case-facts' => apr_case_facts($ctx, $p),
+        'fact' => apr_fact_view($ctx, $p),
+        'case-conflicts' => apr_case_conflicts($ctx, $p),
+        'conflict' => apr_conflict_view($ctx, $p),
+        'file-facts' => apr_file_facts($ctx, $p),
+        'fact-add' => apr_fact_add($ctx, $p),
+        'fact-correct' => apr_fact_correct($ctx, $p),
+        'fact-state' => apr_fact_state($ctx, $p),
+        'fact-delete' => apr_fact_delete($ctx, $p),
+        'conflict-resolve' => apr_conflict_resolve($ctx, $p),
+        'conflict-dismiss' => apr_conflict_dismiss($ctx, $p),
+        'sys-attributes' => apr_sys_attributes(),
+        'sys-attribute-save' => apr_sys_attribute_save($p),
         'file-assign' => apr_file_assign($ctx, $p),
         'file-update' => apr_file_update($ctx, $p),
         'file-delete' => apr_file_delete($ctx, $p),
@@ -320,5 +339,5 @@ function apr_error_response(Throwable $e, string $action): array
     }
     $status = $status >= 400 && $status < 600 ? $status : 500;
     return [$status, apr_is_devloop($action) ? ['error' => $msg, 'code' => $code, 'req' => apr_req_id()]
-        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []), 'req' => apr_req_id()]];
+        : ['ok' => false, 'error' => ['code' => $code, 'message' => $msg] + ($e instanceof AprPublishBlocked ? ['checks' => $e->checks] : []) + ($e instanceof AprCaseIncomplete ? ['missing' => $e->missing] : []) + ($e instanceof AprReviewed ? ['review' => $e->review] : []) + ($e instanceof AprFactChanged ? ['current' => $e->current] : []), 'req' => apr_req_id()]];
 }

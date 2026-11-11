@@ -3,7 +3,7 @@
 'use strict';
 
 const Code = (() => {
-  const MONACO = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs';
+  const MONACO = new URL('assets/vendor/monaco/vs', location.href).href;      // מהאפליקציה עצמה, לא מ-CDN (F2a)
   const NAMES = { 'lexicon.html': 'HTML (תבנית)', 'lexicon.css': 'CSS', 'lexicon.js': 'JS' };
   let C = null;                 // מצב המסך: { host, files, models, cur, editor, frame }
 
@@ -11,6 +11,7 @@ const Code = (() => {
   let monaco = null;
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
+    if (window.monaco) return Promise.resolve(monaco = window.monaco);      // כבר נטען במסך 📁 פרויקט
     return new Promise((ok, fail) => {
       const t = setTimeout(() => fail(new Error('העורך לא נטען')), 15000);
       // ה-workers מכתובת אחרת — דרך blob, אחרת הדפדפן חוסם
