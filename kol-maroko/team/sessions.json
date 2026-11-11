@@ -1,12 +1,12 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-11T22:25Z",
+  "updated": "2026-11-11T22:40Z",
   "spec": "session_018g4NYFXfe6iF4owmDWWorS",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK"
   ],
   "code": {
-    "F3": "session_018g4NYDg3cpgT97h5KoqptJ"
+    "V1b": "session_018g4NYFNQX4u4YmY4jz9JLa"
   },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
@@ -15,7 +15,8 @@
     "session_018g4NYH2BeqdoMZp7C85JrD (F2a)",
     "session_018g4NYH1vGxpAL64PMipdcR (V0)",
     "session_018g4NYCXEG9bNcfcVGKkh9d (F4)",
-    "session_018g4NYDLvR41xhwjBj7nzwc (V1a)"
+    "session_018g4NYDLvR41xhwjBj7nzwc (V1a)",
+    "session_018g4NYDg3cpgT97h5KoqptJ (F3)"
   ],
   "control": "session_018g4NYDHwbDK3tiZ7BUZYwp",
   "control_previous": [
