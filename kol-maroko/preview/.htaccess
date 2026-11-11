@@ -1,0 +1,6 @@
+# התצוגה החיה (F4): כל כתובת כאן — preview/<אסימון>/<נתיב בפרויקט> — מוגשת על ידי index.php, שבודק את האסימון
+# ושולח את כותרות הבידוד. אין בתיקייה הזו קבצים סטטיים; RewriteEngine משלה = הכללים של התיקייה שמעל אינם חלים כאן.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^ index.php [L]
+</IfModule>

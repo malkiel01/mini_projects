@@ -60,3 +60,9 @@
     .pj-tab button { max-width: 220px; }
 }
 main:has(> .pj) { max-width: 1600px; }
+/* ▶️ תצוגה חיה (F4): בטלפון — רק הסמל, כדי שהסרגל לא יגלוש */
+.pj-live-btn { flex: none; }
+@media (max-width: 699px) { .pj-live-word { display: none; } }
+/* המסך שמכיל את התצוגה (index.html, 📁 פרויקט): שכבה מעל הכול, והמסמך של live.php בתוכה */
+.pj-live { position: fixed; inset: 0; z-index: 40; background: var(--bg); }
+.pj-live iframe { display: block; width: 100%; height: 100%; border: 0; }
