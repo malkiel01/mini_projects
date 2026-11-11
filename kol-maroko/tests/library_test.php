@@ -11,6 +11,7 @@
 
 declare(strict_types=1);
 
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $direct = realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__;
 if ($direct) {
     $tmp = sys_get_temp_dir() . '/kol-a1-' . bin2hex(random_bytes(4));
