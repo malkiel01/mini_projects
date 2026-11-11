@@ -63,7 +63,7 @@
       this.history = []; this.timing = null; this.cssSrc = ''; this.cssM = null; this.styleEl = null;
       this.verify = false; this.inequiv = []; this.onInequiv = null; this.lastMode = ''; this.lastWhy = ''; this.stats = { inc: 0, full: 0 };
       this.sheets = null; this.baseHref = ''; this.marksOn = false; this.zeroAt = 0; this.onKey = null; this.viewport = null; this.drag = true; this.repeatUp = false; this.scale = 1; this.ox = 0; this.capOff = false; this.capInfo = null;
-      this.hiddenNodes = new Set(); this.lockedNodes = new Set(); this.shownMap = new Map(); this.shownD2m = new Map(); this.shownUndo = []; this.shownNote = '';
+      this.hiddenNodes = new Set(); this.lockedNodes = new Set(); this.shownMap = new Map(); this.shownD2m = new Map(); this.shownUndo = []; this.shownNote = ''; this.onPoint = null; this.onContext = null; this.longT = 0;
       host.classList.add('spike-canvas');
       this.frame = document.createElement('iframe');
       this.frame.setAttribute('sandbox', 'allow-same-origin');             // בלי allow-scripts — זה כל העניין
@@ -326,8 +326,14 @@
     listen() {
       const doc = this.doc, stop = e => { e.preventDefault(); e.stopPropagation(); };
       for (const ev of ['click', 'auxclick', 'dblclick', 'submit', 'dragstart', 'contextmenu']) doc.addEventListener(ev, stop, true);
+      // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
+      const ctxAt = (t, x, y) => { const n = this.nodeOf(t); if (n && this.onContext) { const f = this.frame.getBoundingClientRect(); this.onContext(n, f.left + x * this.scale, f.top + y * this.scale); } };
+      doc.addEventListener('contextmenu', e => { clearTimeout(this.longT); if (!this.longDone) ctxAt(e.target, e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
+        clearTimeout(this.longT); this.longDone = false;
+        if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(e.target); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
+        if (e.pointerType === 'touch') { const t = e.target, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
         const n = this.pick(e.target);
         this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n } : null;
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
@@ -337,6 +343,7 @@
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
         const p = this.press;
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) clearTimeout(this.longT);
         if (p && p.id === e.pointerId) {
           if (this.drag && !p.drag && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) p.drag = true;
           if (p.drag) { p.drop = this.dropAt(p.n, e.clientX, e.clientY); this.drawDrop(p.drop); }
@@ -346,6 +353,7 @@
         if (n !== this.hovered) { this.hovered = n; this.draw(); }
       }, true);
       const up = e => {
+        clearTimeout(this.longT);
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);
         if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent) return this.select(p.n.parent);   // לחיצה חוזרת — ההורה
@@ -359,7 +367,7 @@
       doc.addEventListener('pointerleave', () => { this.hovered = null; this.draw(); }, true);
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
       doc.addEventListener('touchstart', e => { const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
-      doc.addEventListener('scroll', () => this.draw(), true);
+      doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
       doc.addEventListener('keydown', e => { if (this.onKey) this.onKey(e); }, true);
       this.frame.contentWindow.addEventListener('resize', () => this.draw());
       this.events = [];

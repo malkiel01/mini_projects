@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/report.js'];
   const LS = 'kol-editor';
   const DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   const SYNC_MS = 120;                                                     // הקלדה בקוד ← קנבס: הרבה מתחת ל-300ms
@@ -166,6 +166,64 @@ const Editor = (() => {
     requestAnimationFrame(() => { S.canvas?.setViewport(deviceWidth()); S.code?.ed.layout(); if (id === 'code') markInCode(); });
   }
 
+  // ── "🐞 לא הצלחתי לשנות את זה" (03 §12), ותפריט ההקשר של אלמנט ──
+  const curDevice = () => DEVICES.find(d => d.id === S.device) || DEVICES[0];
+  function pointing(on) {
+    const c = S.canvas; if (!c?.m) return;
+    S.pointing = on; el.root.classList.toggle('pointing', on); el.bug.setAttribute('aria-pressed', String(on));
+    c.onPoint = on ? n => { pointing(false); reportSheet(n); } : null;
+    el.point.hidden = !on;
+    if (on) {
+      const n = c.selected;
+      el.point.replaceChildren(h('span', {}, '🐞 מצביעים על מה שלא הצלחת לשנות — לחיצה על כל דבר בקנבס.'),
+        n ? h('button', { type: 'button', class: 'btn sm', 'data-bug-selected': true, onclick: () => { pointing(false); reportSheet(n); } }, 'האלמנט הנבחר: ' + c.label(n)) : null,
+        h('button', { type: 'button', class: 'btn sm', onclick: () => pointing(false) }, 'ביטול (Esc)'));
+      (el.point.querySelector('button') || el.point).focus();
+    }
+  }
+  function reportSheet(n) {
+    const c = S.canvas, R = window.KolReport; if (!c?.m || !n || !S.file) return;
+    c.select(n); c.reveal(n);
+    const d = R.describe(c, K, n, S.file, { width: deviceWidth(), label: curDevice().label });
+    const shotBox = h('div', { class: 'ed-shot' }, h('span', { class: 'hint' }, 'מצלם את הקנבס…')), tried = h('textarea', { rows: 3, 'aria-label': 'מה ניסית לשנות (לא חובה)', placeholder: 'מה ניסית לשנות? (לא חובה)' });
+    const msg = h('p', { class: 'hint', role: 'status' }), sendBtn = h('button', { type: 'button', class: 'btn primary', 'data-bug-send': true }, 'פתיחת מטלה'), list = h('div', { class: 'ed-mine' });
+    let shot = null;
+    const shooting = new Promise(r => setTimeout(r, 60)).then(() => R.shoot(c, n)).then(s => { shot = s; const img = h('img', { alt: 'צילום הקנבס, האלמנט מסומן' }); img.src = URL.createObjectURL(s.blob); shotBox.replaceChildren(img, s.full ? null : h('span', { class: 'hint' }, 'תרשים — הדפדפן אינו מרשה צילום מלא')); }, () => { shotBox.replaceChildren(h('span', { class: 'hint' }, 'הצילום לא הצליח — המטלה תיפתח בלעדיו')); });
+    sendBtn.addEventListener('click', async () => {
+      sendBtn.disabled = true; msg.textContent = 'שולח…';
+      try {
+        await shooting;
+        const r = await R.send(d, tried.value, shot);
+        S.lastReport = r;
+        msg.textContent = '✅ נפתחה מטלה ' + r.code + (r.attached ? ', עם הצילום' : ' (בלי צילום)') + '. היא נשארת פתוחה עד שתאשר שזה נפתר.';
+        drawMine(list);
+      } catch (e) { msg.textContent = '⚠️ ' + e.message; sendBtn.disabled = false; }
+    });
+    sheet('🐞 לא הצלחתי לשנות את זה', shotBox, h('pre', { class: 'ed-report-info', dir: 'auto' }, R.detail(d, '').split('\n').slice(2).join('\n')), tried, h('div', { class: 'ed-report-go' }, sendBtn), msg, h('h3', { class: 'dt-h' }, 'הדיווחים שלי'), list);
+    drawMine(list);
+  }
+  async function drawMine(list) {
+    const R = window.KolReport;
+    try {
+      const items = (await R.mine()).filter(x => x.area === R.LABEL);
+      list.replaceChildren(...(items.length ? items.map(x => h('div', { class: 'ed-mine-row' }, h('code', {}, x.code), h('span', {}, x.title.replace(R.LABEL + ': ', '')), h('b', {}, R.STATUS[x.status] || x.status))) : [h('p', { class: 'hint' }, 'עוד לא דיווחת על דבר.')]));
+    } catch (e) { list.replaceChildren(h('p', { class: 'hint' }, e.message)); }
+  }
+  /** תפריט ההקשר של אלמנט (לחיצה ימנית; לחיצה ארוכה במגע; מקש התפריט / Shift+F10). */
+  function ctxMenu(n) {
+    const c = S.canvas; if (!c?.m || !n) return;
+    c.select(n);
+    const dlg = document.getElementById('sheet'), go = fn => () => { dlg.close(); fn(); };
+    const item = (label, fn, off) => h('button', { type: 'button', class: 'btn ed-menu-item', disabled: !!off, onclick: go(fn) }, label);
+    sheet(c.label(n), h('div', { class: 'ed-menu', role: 'menu' },
+      item('↑ בחר הורה', () => { c.select(n.parent); c.reveal(n.parent); }, !n.parent),
+      item('</> פתח בקוד', () => openInCode(n)),
+      item('🌳 הצג ב-Navigator', () => { panel('nav', true); S.nav.sync(); S.nav.list.focus(); }),
+      item('ℹ️ פרטים', () => panel('info', true)),
+      item('🗑️ מחיקה', remove, !canWrite()),
+      item('🐞 לא הצלחתי לשנות את זה', () => reportSheet(n))));
+  }
+
   // ── 👁 / 🔒 — בעורך בלבד, נשמרות בדפדפן לכל עמוד (לפי מקום האלמנט בעץ) ──
   function saveMarks() {
     const c = S.canvas; if (!c?.m || !S.file) return;
@@ -224,16 +282,19 @@ const Editor = (() => {
     Project.openAt(S.file.path, 0, { from: n.from, to: K.endOf(S.canvas.m, n) });
   }
   function onKey(e) {
-    if (!S.host || !S.canvas?.m || e.defaultPrevented) return;
+    if (!S.host || !S.canvas?.m || e.defaultPrevented || document.querySelector('dialog[open]')) return;   // גיליון פתוח — הקיצורים של העורך אינם פעילים
     const t = e.target, tag = t && t.nodeType === 1 ? t.localName : '';
     if (t && t.ownerDocument === document && (/^(input|textarea|select)$/.test(tag) || t.isContentEditable || t.closest?.('dialog[open], .monaco-editor'))) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key, c = S.canvas;
     const hit = fn => { e.preventDefault(); fn(); };
+    if (S.pointing && k === 'Escape') return hit(() => pointing(false));
+    if ((k === 'ContextMenu' || (k === 'F10' && e.shiftKey)) && c.selected) return hit(() => ctxMenu(c.selected));
     if (mod && !e.altKey && k.toLowerCase() === 'z') return hit(e.shiftKey ? redo : undo);
     if (mod && !e.altKey && k.toLowerCase() === 'y') return hit(redo);
     if (mod || e.altKey) return;
     if (k === 'n' || k === 'N' || k === 'מ') return hit(() => { panel('nav', true); S.nav.list.focus(); });
     if (k === 's' || k === 'S' || k === 'ד') return hit(() => split());
+    if (k === 'b' || k === 'B' || k === 'נ') return hit(() => pointing(!S.pointing));
     if (k === 'i' || k === 'I' || k === 'ן') return hit(() => { panel('info', true); el.infoBody.focus(); });
     if (k === 'Delete' || k === 'Backspace') return hit(remove);
     if (!c.selected) return;
@@ -309,12 +370,14 @@ const Editor = (() => {
     el.splitBtn = h('button', { type: 'button', class: 'icon-btn', 'data-split': true, 'aria-pressed': 'false', 'aria-label': 'מבט מפוצל — קוד לצד הקנבס (S)', title: 'מבט מפוצל — קוד לצד הקנבס (S)', onclick: () => split() }, '◫');
     el.pane = h('div', { class: 'ed-code', 'aria-label': 'הקוד של העמוד' });
     el.tabs = h('div', { class: 'ed-tabs', role: 'tablist', 'aria-label': 'קנבס או קוד' }, [['canvas', '🖼️ קנבס'], ['code', '</> קוד']].map(([id, label]) => h('button', { type: 'button', role: 'tab', 'data-tab': id, 'aria-selected': String(id === 'canvas'), onclick: () => tab(id) }, label)));
+    el.bug = h('button', { type: 'button', class: 'icon-btn', 'data-bug': true, 'aria-pressed': 'false', 'aria-label': 'לא הצלחתי לשנות את זה — דיווח (B)', title: '🐞 לא הצלחתי לשנות את זה — לוחצים, ומצביעים על מה שלא הצלחת לשנות (B)', onclick: () => pointing(!S.pointing) }, '🐞');
+    el.point = h('div', { class: 'ed-strip ed-point', role: 'status', hidden: true });
     el.navBody = h('div', { class: 'ed-side-body nv' });
     el.infoBody = h('div', { class: 'ed-side-body dt', tabindex: '-1' });
-    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.status);
+    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.bug, el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
-      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken,
+      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken, el.point,
       h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navBody), el.mid, side('info', 'פרטים', el.infoBody)), el.note);
     host.replaceChildren(el.root);
     status('טוען…');
@@ -325,7 +388,7 @@ const Editor = (() => {
       c.drag = false; c.repeatUp = true; c.marksOn = true;                  // V1a: בלי גרירה (V4); לחיצה חוזרת — ההורה
       S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); }, onToggle: saveMarks });
       S.info = new window.KolDetails.Details(el.infoBody, { canvas: c, K, sheets: () => S.sheets, file: () => S.file, openAt: (p, line) => Project.openAt(p, line), openEl: n => openInCode(n) });
-      c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); }; c.onKey = onKey;
+      c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);
       if (!phone() && prefs.navOpen !== false) panel('nav', true);
@@ -343,8 +406,8 @@ const Editor = (() => {
       await open(first.id);
     } catch (e) { status(''); el.canvas.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
-  function unmount() { if (!S.host) return; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; }
+  function unmount() { if (!S.host) return; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
-  return { view, unmount, selectAt, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks };
+  return { view, unmount, selectAt, _ctx: ctxMenu, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks };
 })();

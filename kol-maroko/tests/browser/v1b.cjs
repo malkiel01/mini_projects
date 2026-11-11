@@ -205,6 +205,82 @@ const PAGE = `<!doctype html>
     await page.click('[data-split]'); await sleep(100);
     ok(!(await page.isVisible('.ed-code')), 'כיבוי המבט המפוצל');
 
+    // ── 1ד. "🐞 לא הצלחתי לשנות את זה" ──
+    const rows = sql => JSON.parse(execFileSync('php', ['-r', '$p = new PDO("sqlite:" . $argv[1] . "/kol.sqlite"); echo json_encode($p->query($argv[2])->fetchAll(PDO::FETCH_ASSOC));', data, sql]).toString());
+    const canvasPt = (pg, sel) => pg.evaluate(q => { const c = Editor._state.canvas, d = c.doc.querySelector(q); d.scrollIntoView({ block: 'center' }); const r = d.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + Math.min(r.width / 2, 14)) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale }; }, sel);
+    await page.evaluate(() => Editor._state.canvas.select(null));
+    await page.click('[data-bug]');
+    ok(await page.isVisible('.ed-point') && (await page.textContent('.ed-point')).includes('מצביעים'), '🐞 בסרגל: מצב הצבעה, עם הנחיה');
+    let pt2 = await canvasPt(page, '.sub'); await page.mouse.click(pt2.x, pt2.y);
+    await page.waitForSelector('#sheet[open] .ed-shot img', { timeout: 15000 });
+    await page.waitForFunction(() => { const i = document.querySelector('.ed-shot img'); return i.complete && i.naturalWidth > 0; });
+    const rep = await page.evaluate(() => ({ info: document.querySelector('.ed-report-info').textContent, w: document.querySelector('.ed-shot img').naturalWidth, chart: document.querySelector('.ed-shot').textContent.includes('תרשים'), pointing: !document.querySelector('.ed-point').hidden, sel: Editor._state.canvas.label(Editor._state.canvas.selected) }));
+    ok(rep.sel === 'h2.sub' && !rep.pointing, 'הצבעה על אלמנט בקנבס פותחת את הדיווח עליו');
+    ok(rep.w >= 600 && !rep.chart, `צילום הקנבס מוצג בדיווח (${rep.w}px, צילום מלא ולא תרשים)`);
+    ok(rep.info.includes('שביל: html › body › h2.sub') && rep.info.includes('תגית: <h2> · מחלקות: .sub') && rep.info.includes('קובץ: t/page.html · שורות 8') && /רוחב הקנבס: 1280px/.test(rep.info), 'הדיווח כולל שביל, תגית ומחלקות, קובץ ושורות, ורוחב הקנבס');
+    await page.fill('#sheet textarea', 'רציתי להגדיל את הכותרת');
+    await page.click('[data-bug-send]');
+    await page.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
+    const code1 = await page.evaluate(() => Editor._state.lastReport.code);
+    const t1 = rows(`SELECT code, area, kind, status, detail FROM dev_tasks WHERE code = '${code1}'`)[0], f1 = rows(`SELECT mime, size FROM dev_files WHERE code = '${code1}'`);
+    ok(/^KM-\d+$/.test(code1) && t1 && t1.area === 'לא הצלחתי לשנות' && t1.kind === 'bug' && t1.status === 'open', `נפתחה מטלת DevLoop ${code1}, תווית "לא הצלחתי לשנות"`);
+    ok(t1.detail.includes('מה ניסיתי לשנות: רציתי להגדיל את הכותרת') && t1.detail.includes('אלמנט: h2.sub') && t1.detail.includes('שביל: html › body › h2.sub') && t1.detail.includes('שורות 8') && t1.detail.includes('1280px'), 'במטלה: הטקסט החופשי, האלמנט, השביל, הקובץ והשורות, הרוחב');
+    ok(f1.length === 1 && f1[0].mime === 'image/png' && f1[0].size > 2000, `הצילום צורף למטלה (PNG, ${f1[0] && f1[0].size} בייט)`);
+    ok((await page.$$eval('.ed-mine-row', r => r.map(x => x.textContent))).some(x => x.includes(code1) && x.includes('פתוח')), 'המדווח רואה את המטלה שלו ואת מצבה');
+    await page.click('#sheet [data-close]');
+    // תפריט ההקשר
+    pt2 = await canvasPt(page, '#t1'); await page.mouse.click(pt2.x, pt2.y, { button: 'right' });
+    await page.waitForSelector('#sheet[open] .ed-menu');
+    const menuItems = await page.$$eval('.ed-menu-item', b => b.map(x => x.textContent));
+    ok(menuItems.some(x => x.includes('בחר הורה')) && menuItems.some(x => x.includes('פתח בקוד')) && menuItems.some(x => x.includes('לא הצלחתי לשנות')) && (await st(page)).sel === 'h1#t1', 'לחיצה ימנית על אלמנט: תפריט הקשר עם "בחר הורה", "פתח בקוד", "🐞 לא הצלחתי"');
+    await page.click('.ed-menu-item:has-text("לא הצלחתי")');
+    await page.waitForSelector('#sheet[open] [data-bug-send]');
+    await page.click('[data-bug-send]');                                   // בלי טקסט — לא חובה
+    await page.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
+    await page.click('#sheet [data-close]');
+    // מקלדת בלבד: B ← "האלמנט הנבחר" ← שליחה — ושוב על h2.sub (לקיבוץ)
+    await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('.sub'))); document.querySelector('.nv-list').focus(); });
+    await page.keyboard.press('b');
+    ok(await page.evaluate(() => document.activeElement && document.activeElement.hasAttribute('data-bug-selected')), 'מקלדת: B פותח את מצב ההצבעה, והמיקוד על "האלמנט הנבחר"');
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('#sheet[open] [data-bug-send]');
+    await page.focus('[data-bug-send]'); await page.keyboard.press('Enter');
+    await page.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
+    await page.keyboard.press('b'); await sleep(60);
+    ok(await page.evaluate(() => document.querySelector('.ed-point').hidden), 'כשגיליון פתוח — קיצורי העורך אינם פעילים');
+    await page.click('#sheet [data-close]'); await sleep(100);
+    await page.keyboard.press('b'); await page.keyboard.press('Escape'); await sleep(60);
+    ok(await page.evaluate(() => document.querySelector('.ed-point').hidden && !Editor._state.canvas.onPoint), 'Esc מבטל את מצב ההצבעה');
+    // אלמנט מוסתר / בתבנית — גם עליו מדווחים
+    await navSearch(page, '.wordx'); await navClick(page); await navSearch(page, '');
+    await page.keyboard.press('Shift+F10').catch(() => {});
+    await page.evaluate(() => { if (!document.querySelector('#sheet[open] .ed-menu')) Editor._ctx(Editor._state.canvas.selected); });
+    await page.click('.ed-menu-item:has-text("לא הצלחתי")');
+    await page.waitForSelector('#sheet[open] .ed-shot img'); await page.click('[data-bug-send]');
+    await page.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
+    await page.click('#sheet [data-close]');
+    const stuckRows = rows("SELECT code, detail FROM dev_tasks WHERE area = 'לא הצלחתי לשנות'");
+    ok(stuckRows.length === 4 && stuckRows.some(r => r.detail.includes('אלמנט: b.wordx') && r.detail.includes('הוצג לעריכה')), 'דיווח על אלמנט שבתוך <template> (מוצג לעריכה) — נפתח, ומציין שהוא מוסתר בעמוד');
+    // מסך המפתח: מונה, מקובץ לפי אלמנט
+    await page.goto(base + '/#/dev/tasks'); await page.waitForSelector('[data-stuck]');
+    const stuck = await page.evaluate(() => ({ n: document.querySelector('[data-stuck]').dataset.stuck, text: document.querySelector('.dev-stuck').textContent, groups: document.querySelectorAll('.dev-stuck li').length }));
+    ok(stuck.n === '4' && stuck.groups === 3 && /h2\.sub · t\/page\.html — 2/.test(stuck.text), `מסך המפתח: מונה "לא הצלחתי לשנות" — ${stuck.n} פתוחות, מקובצות לפי אלמנט (${stuck.groups} אלמנטים; h2.sub — 2)`);
+    // חבר שאינו המפתח מדווח, ורואה רק את שלו
+    await call(page, 'member_add', { email: 'ed@example.test', role: 'editor' });
+    const ctxE = await mk(1280, 800, { sub: 'u-ed', name: 'Ed Member', email: 'ed@example.test', email_verified: true }), pe = await ctxE.newPage();
+    const errE = []; pe.on('pageerror', e => errE.push(e.message));
+    await pe.goto(base + '/#/project'); await pe.waitForSelector('.pj-tree .pj-row');
+    await openPage(pe, 't/page.html');
+    await pe.click('[data-bug]'); pt2 = await canvasPt(pe, '#t1'); await pe.mouse.click(pt2.x, pt2.y);
+    await pe.waitForSelector('#sheet[open] .ed-shot img'); await pe.click('[data-bug-send]');
+    await pe.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
+    const mineE = await pe.$$eval('.ed-mine-row', r => r.map(x => x.textContent));
+    const codeE = await pe.evaluate(() => Editor._state.lastReport);
+    ok(mineE.length === 1 && mineE[0].includes(codeE.code) && codeE.attached, `חבר בתפקיד "עורך" (לא המפתח) מדווח, עם צילום, ורואה רק את הדיווח שלו (${codeE.code})`);
+    ok((await call(pe, 'dev-items')).items.length === 0 && !(await pe.$$eval('#tabs a', a => a.some(x => x.textContent.includes('מפתח')))), 'לחבר שאינו המפתח אין מסך מטלות — רק הדיווחים שלו');
+    ok(errE.length === 0, 'אין שגיאות JavaScript אצל החבר' + (errE.length ? ': ' + errE[0] : ''));
+    await ctxE.close();
+
     // ── 2. index.html המוסב (F3): לכל צומת יש דרך לבחור ──
     await openPage(page, 'index.html');
     const cover = await page.evaluate(async () => {
