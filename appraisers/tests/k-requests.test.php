@@ -265,6 +265,14 @@ eq([array_column($oL['items'], 'title'), array_column($oL['items'][0]['files'], 
     str_contains(json_encode($oL, JSON_UNESCAPED_UNICODE), 'נסח')], [['הסכם מכר', 'היתר בנייה'], [$upL[1]['file']], ['<img src=x onerror=alert(1)>.pdf', 'מסמך.pdf'], 'checking', true, false],
     '07-D5 כל אחד רואה רק את הדרישות והקבצים שלו; המצב "התקבל — בבדיקה"');
 
+$tmp = tempnam(apr_upload_tmp_dir(), 'up');
+file_put_contents($tmp, pdf('internal-attached'));
+$intAtt = call('POST', 'file-upload', ['case' => $C, 'requirement' => $R['rights'], 'relation' => 'attachment', 'name' => 'סודי-פנימי.pdf', 'dup' => '1'], $avi, [], ['env' => ['upload' => $tmp]]);
+$o1b = portal('portal-open', ['token' => $T1], ['cookie' => $cookie1])[1];
+eq([$intAtt[0], array_column($o1b['items'][0]['files'], 'name'), $o1b['items'][0]['files_count'], str_contains(json_encode($o1b, JSON_UNESCAPED_UNICODE), 'סודי-פנימי'),
+    code(portal('portal-file', ['token' => $T1, 'file' => $intAtt[1]['file'] ?? '', 'inline' => true], ['cookie' => $cookie1]))],
+    [200, ['<img src=x onerror=alert(1)>.pdf', 'מסמך.pdf'], 2, false, 'not_found'], '🟡7 קובץ שהצוות צירף לאותה דרישה אינו מופיע ברשימה של הנמען, אינו נספר, ואינו נגיש לו');
+
 // ── 07-B4: קובץ רק ממכשיר מאומת, ורק לפי ההרשאה ──
 eq([code(portal('portal-file', ['token' => $T1, 'file' => $up[1]['file'], 'inline' => true])), code(portal('portal-file', ['token' => $T1, 'file' => $up[1]['file'], 'inline' => true], ['cookie' => $cookie2])),
     code(portal('portal-file', ['token' => $T1, 'file' => $up[1]['file'], 'inline' => true], ['cookie' => str_repeat('B', 43)])), code(portal('portal-file', ['token' => $T1, 'file' => $up[1]['file']], ['cookie' => $cookie1])),
@@ -310,14 +318,17 @@ $wrongCode = $cm[1] === '000000' ? '000001' : '000000';
 $tries = [];
 for ($i = 0; $i < 5; $i++) $tries[] = code(portal('portal-otp-verify', ['token' => $T2, 'code' => $wrongCode]));
 $sixth = code(portal('portal-otp-verify', ['token' => $T2, 'code' => $cm[1]]));
-eq([$tries, $sixth, code(portal('portal-open', ['token' => $T2])), code(portal_up($T2, pdf('locked'), ['requirement' => $R['permit']])), isset($GLOBALS['apr_portal_cookie_out']), count($log($C, 'portal.locked')),
-    portal('portal-open', ['token' => $T1])[0]],
-    [array_fill(0, 5, 'portal_otp_wrong'), 'portal_locked', 'portal_locked', 'portal_locked', false, 1, 200], '07-B5 חמישה קודים שגויים, והשישי — גם אם נכון — נדחה: הקישור נחסם (ורק הוא)');
+$lockedCookie = isset($GLOBALS['apr_portal_cookie_out']);
+eq([$tries, $sixth, code(portal('portal-otp-send', ['token' => $T2])), $lockedCookie, count($log($C, 'portal.locked')), portal('portal-otp-send', ['token' => $T1])[0]],
+    [array_fill(0, 5, 'portal_otp_wrong'), 'portal_locked', 'portal_locked', false, 1, 200], '07-B5 חמישה קודים שגויים, והשישי — גם אם נכון — נדחה: אימות ושליחת קוד בקישור נחסמים (ורק בו)');
+eq([portal('portal-open', ['token' => $T2])[0], portal('portal-open', ['token' => $T2], ['cookie' => $cookie2])[1]['otp']['verified'], code(portal_up($T2, 'not a document', ['requirement' => $R['permit']])),
+    portal('portal-file', ['token' => $T2, 'file' => $upL[1]['file']], ['cookie' => $cookie2])[0], portal('portal-respond', ['token' => $T2, 'requirement' => $R['permit'], 'kind' => 'comment', 'text' => 'בזמן נעילה'])[0]],
+    [200, true, 'file_type', 200, 200], '🟡5 הנעילה חלה רק על הקוד: הפורטל נפתח, העלאה ותשובה עובדות, ומכשיר שכבר אומת ממשיך לראות את הקבצים שלו');
 $GLOBALS['apr_time'] = time() + APR_PORTAL_LOCK - 30;
-$still = code(portal('portal-open', ['token' => $T2]));
+$still = code(portal('portal-otp-verify', ['token' => $T2, 'code' => $cm[1]]));
 $GLOBALS['apr_time'] = time() + APR_PORTAL_LOCK + 5;
-$after = portal('portal-open', ['token' => $T2])[0];
 $stale = code(portal('portal-otp-verify', ['token' => $T2, 'code' => $cm[1]]));
+$after = portal('portal-otp-send', ['token' => $T2])[0];
 unset($GLOBALS['apr_time']);
 apr_exec('UPDATE portal_links SET locked_until = NULL, otp_fails = 0');
 eq([$still, $after, $stale], ['portal_locked', 200, 'portal_otp_wrong'], '07-B5 החסימה לרבע שעה; אחריה הקישור עובד, והקוד הישן כבר אינו תקף');
@@ -336,6 +347,29 @@ apr_exec('UPDATE portal_links SET locked_until = NULL, otp_fails = 0');
 $sends = [];
 for ($i = 0; $i < 4; $i++) $sends[] = code(portal('portal-otp-send', ['token' => $T1], ['keep' => true]));
 eq($sends, [null, null, null, 'too_many_codes'], '§9 עד שלושה קודים לרבע שעה לקישור');
+// 🟡7: קוד חדש מבטל את הקודם; תוקף עוגיית המכשיר; עוגייה חדשה בכל אימות; אותו קוד פעמיים אינו נספר כשגוי
+$n = count($GLOBALS['t_mail']);
+portal('portal-otp-send', ['token' => $T1]);
+portal('portal-otp-send', ['token' => $T1]);
+preg_match('/הקוד שלכם: (\d{6})/', $GLOBALS['t_mail'][$n]['text'], $c1);
+preg_match('/הקוד שלכם: (\d{6})/', $GLOBALS['t_mail'][$n + 1]['text'], $c2);
+$planted = str_repeat('P', 43);
+$oldCode = $c1[1] === $c2[1] ? 'same' : code(portal('portal-otp-verify', ['token' => $T1, 'code' => $c1[1]]));
+$v2 = portal('portal-otp-verify', ['token' => $T1, 'code' => $c2[1]], ['cookie' => $planted]);
+$fresh = (string)($GLOBALS['apr_portal_cookie_out'] ?? '');
+$failsBefore = (int)apr_val('SELECT otp_fails FROM portal_links WHERE request_id = ? AND revoked_at IS NULL', [$qrow($Q1)['id']]);
+$twice = code(portal('portal-otp-verify', ['token' => $T1, 'code' => $c2[1]]));
+$failsAfter = (int)apr_val('SELECT otp_fails FROM portal_links WHERE request_id = ? AND revoked_at IS NULL', [$qrow($Q1)['id']]);
+eq([in_array($oldCode, ['portal_otp_wrong', 'same'], true), $v2[0], $fresh !== $planted && strlen($fresh) === 43, portal('portal-open', ['token' => $T1], ['cookie' => $planted])[1]['otp']['verified'],
+    portal('portal-open', ['token' => $T1], ['cookie' => $fresh])[1]['otp']['verified'], $twice, $failsAfter - $failsBefore],
+    [true, 200, true, false, true, 'portal_otp_wrong', 0], '🟡7 / ⚪ קוד חדש מבטל את הקודם; אימות מנפיק עוגייה חדשה (ערך שהגיע מהלקוח אינו מאומת); אותו קוד נכון שוב — נדחה, אבל לא נספר כניסיון שגוי');
+$GLOBALS['apr_time'] = time() + APR_PORTAL_DEVICE_TTL - 60;
+$dev1 = portal('portal-open', ['token' => $T2], ['cookie' => $cookie2])[1]['otp']['verified'] ?? null;
+unset($GLOBALS['apr_time']);
+apr_exec('UPDATE portal_devices SET expires_at = ? WHERE device_hash = ?', [apr_iso(time() - 5), apr_portal_device_hash($fresh)]);
+eq([portal('portal-open', ['token' => $T1], ['cookie' => $fresh])[1]['otp']['verified'], code(portal('portal-file', ['token' => $T1, 'file' => $up[1]['file'], 'inline' => true], ['cookie' => $fresh]))],
+    [false, 'portal_otp_required'], '🟡7 מכשיר שתוקפו פג (30 יום) אינו מאומת עוד');
+$cookie1 = verify_device($T1);
 
 // ── הגבלת קצב ──
 apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%'");
@@ -366,6 +400,33 @@ $dl = devloop_log_db();
 $dlRows = $dl ? json_encode($dl->query("SELECT * FROM log WHERE event = 'portal.client_error'")->fetchAll(PDO::FETCH_ASSOC), JSON_UNESCAPED_UNICODE) : '';
 eq([$ce[0], str_contains($dump(), $T1), $dl !== null, str_contains($dlRows, 'TypeError at'), str_contains($dlRows, $T1), str_contains($dlRows, 'portal.js')], [200, false, true, true, false, true],
     '§9 שגיאת דפדפן מהפורטל נרשמת ביומן הטכני — בלי האסימון (גם כשהדף שלח אותו בהודעה, בקובץ המקור או בשדה אחר)');
+
+$codes = [];
+for ($i = 0; $i < 32; $i++) {
+    apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:i:%' OR key LIKE 'portal:l:%'");
+    $codes[] = code(portal('portal-respond', ['token' => $T2, 'requirement' => $R['permit'], 'kind' => 'comment', 'text' => 'הצפה ' . $i], ['keep' => true])) ?? 'ok';
+}
+$nresp = $count('requirement_responses');
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%'");
+$errs = [];
+for ($i = 0; $i < 12; $i++) $errs[] = code(portal('portal-client-error', ['message' => 'e' . $i], ['keep' => true])) ?? 'ok';
+eq([array_count_values($codes), array_count_values($errs), $nresp], [['ok' => 30, 'portal_rate' => 2], ['ok' => 10, 'portal_rate' => 2], $nresp], '🟡7 שלושים תשובות לשעה לקישור; עשר שגיאות דפדפן ל-10 דקות ל-IP');
+apr_exec("DELETE FROM requirement_responses WHERE text LIKE 'הצפה %'");
+// 🟡4: תקרה לבקשה אחת — נפח ומספר קבצים, כולל קבצים שנמחקו
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'portal:%' OR key LIKE 'upload:p%'");
+$mineN = $count('files', 'request_id = ' . (int)$qrow($Q2)['id']);
+$GLOBALS['apr_portal_quota'] = [APR_PORTAL_QUOTA_BYTES, $mineN];
+$reads = 0;
+$qFiles = portal('portal-upload', ['requirement' => $R['permit'], 'name' => 'a.pdf', 'key' => 'key-quota-0001'], ['env' => ['portal_token' => $T2, 'upload_reader' => $reader]]);
+$usedBytes = (int)apr_val('SELECT COALESCE(SUM(size), 0) FROM files WHERE request_id = ?', [$qrow($Q2)['id']]);
+$GLOBALS['apr_portal_quota'] = [$usedBytes + 50, 1000];
+$qBytes = portal_up($T2, pdf('quota-bytes'), ['requirement' => $R['permit']]);
+apr_exec('UPDATE files SET deleted_at = ?, delete_reason = ? WHERE request_id = ?', [apr_now(), 'בדיקה', $qrow($Q2)['id']]);
+$qDeleted = portal_up($T2, pdf('quota-bytes'), ['requirement' => $R['permit']]);
+apr_exec('UPDATE files SET deleted_at = NULL, delete_reason = NULL WHERE request_id = ?', [$qrow($Q2)['id']]);
+unset($GLOBALS['apr_portal_quota']);
+eq([code($qFiles), $reads, code($qBytes), code($qDeleted), $qBytes[0], $count('files', 'request_id = ' . (int)$qrow($Q2)['id']) - $mineN, $rrow($R['permit'])['status'], [APR_PORTAL_QUOTA_BYTES, APR_PORTAL_QUOTA_FILES]],
+    ['portal_quota', 0, 'portal_quota', 'portal_quota', 413, 0, 'requested', [200 << 20, 60]], '🟡4 תקרה לבקשה (200MB / 60 קבצים): מעבר לה ההעלאה נדחית — לפני קריאת הגוף כשאין מקום — וקבצים שנמחקו עדיין נספרים');
 
 // ── 07-B6: פג, בוטל, לא קיים — אותה תשובה ──
 $sentX = send_request($avi, ['case' => $C, 'party' => $client, 'requirements' => [$R['id']], 'channel' => 'link_copy', 'days' => 7]);
@@ -419,6 +480,33 @@ eq([$re[1]['message'] ?? null, $T1b !== $T1 && strlen($T1b) === 43, $strip(porta
     count($log($C, 'request.resend')), $count('messages', 'request_id = ' . (int)$qrow($Q1)['id'])],
     ['sent', true, true, 200, 'portal_otp_required', 1, 1, 2], '07-B8 "שליחה מחדש" ← האסימון הישן אינו עובד, החדש עובד, ומכשירים שאומתו נשכחים');
 
+// ── 🟡6: המייל נשלח אחרי ה-commit ──
+$seen = [];
+$keepMail = $GLOBALS['apr_mail'];
+$GLOBALS['apr_mail'] = function (string $to, string $subject, string $text, array $opt = []) use (&$seen, $keepMail) {
+    if (str_contains($text, '/portal/#')) {
+        $m = apr_row('SELECT m.status, q.status AS qs FROM messages m JOIN requests q ON q.id = m.request_id ORDER BY m.id DESC LIMIT 1');
+        $seen = ['in_tx' => !empty($GLOBALS['apr_in_tx']), 'message' => $m['status'], 'request' => $m['qs'], 'link' => (int)apr_val('SELECT COUNT(*) FROM portal_links WHERE token_hash = ?', [apr_portal_token_hash(token_of($text))])];
+    }
+    return $keepMail($to, $subject, $text, $opt);
+};
+$sentM = send_request($avi, ['case' => $D, 'party' => $party($D, 'client'), 'requirements' => [$RD['id']], 'channel' => 'email', 'contact_ok' => true]);
+$GLOBALS['apr_mail'] = $keepMail;
+eq([$seen, $sentM[1]['message'] ?? null, apr_val('SELECT status FROM messages ORDER BY id DESC LIMIT 1'), $rrow($RD['id'])['status'], count($log($D, 'request.send'))],
+    [['in_tx' => false, 'message' => 'planned', 'request' => 'active', 'link' => 1], 'sent', 'sent', 'requested', 2],
+    '🟡6 המייל יוצא אחרי ה-commit: בזמן השליחה אין טרנזקציה פתוחה, הבקשה והקישור כבר במסד, וההודעה planned; אחריה — sent והדרישה requested');
+// נפילה בין השלבים: ההודעה נשארת planned, הדרישה לא התקדמה, ואחרי 10 דקות הבקשה ב"הודעות שנכשלו"
+$GLOBALS['apr_mail'] = function () { throw new Error('crash'); };
+try { $crash = send_request($avi, ['case' => $D, 'party' => $party($D, 'client'), 'requirements' => [$RD['permit']], 'channel' => 'email', 'contact_ok' => true]); } catch (Throwable $e) { $crash = [500, ['x' => get_class($e)]]; }
+$GLOBALS['apr_mail'] = $keepMail;
+apr_exec("UPDATE messages SET status = 'planned', error = NULL WHERE id = (SELECT MAX(id) FROM messages)");
+$f0 = count(call('GET', 'requests-failed', [], $avi)[1]['failed']);
+$GLOBALS['apr_time'] = time() + 700;
+$f1 = array_column(call('GET', 'requests-failed', [], $avi)[1]['failed'], 'party_name');
+unset($GLOBALS['apr_time']);
+eq([$rrow($RD['permit'])['status'], $f0, $f1], ['required', 0, ['משה לקוח']], '🟡6 הודעה שנתקעה כ-planned: הדרישה לא התקדמה, ואחרי 10 דקות הבקשה מופיעה ב"הודעות שנכשלו"');
+call('POST', 'request-revoke', ['request' => apr_val('SELECT q.pid FROM requests q ORDER BY q.id DESC LIMIT 1')], $avi);
+
 // ── 07-A3: המייל נכשל ──
 $E = make_case($avi, $P, 'תיק שלישי');
 $RE = $rq($E);
@@ -440,10 +528,15 @@ $close = call('POST', 'case-status', ['case' => $E, 'status' => 'closed', 'reaso
 $oc = portal('portal-open', ['token' => $TE]);
 eq([$close[0], $oc[0], $oc[1], code(portal_up($TE, pdf('closed'), ['requirement' => $RE['rights']])), code(portal('portal-respond', ['token' => $TE, 'requirement' => $RE['rights'], 'kind' => 'comment', 'text' => 'x'])),
     code(portal('portal-otp-send', ['token' => $TE])), code(send_request($avi, ['request' => $QF, 'channel' => 'link_copy'])), code(call('POST', 'request-revoke', ['request' => $QF], $avi)),
-    call('GET', 'case-requests', [], $avi, ['case' => $E])[1]['can_send']],
-    [200, 200, ['ok' => true, 'state' => 'closed'], 'portal_closed', 'portal_closed', 'portal_closed', 'case_closed', 'case_closed', false], 'מקרה 11: תיק סגור ← "הבקשה נסגרה", העלאה ותשובה חסומות; גם המשרד אינו שולח ואינו מבטל');
+    call('GET', 'case-requests', [], $avi, ['case' => $E])[1]['can_send'], code(portal('portal-otp-verify', ['token' => $TE, 'code' => '123456'])),
+    code(portal('portal-file', ['token' => $TE, 'file' => 'aaaaaaaaaaaaaaaa', 'inline' => true])), code(portal('portal-respond', ['token' => $TE, 'requirement' => $RE['rights'], 'kind' => 'no_document']))],
+    [200, 200, ['ok' => true, 'state' => 'closed'], 'portal_closed', 'portal_closed', 'portal_closed', 'case_closed', 'case_closed', false, 'portal_closed', 'portal_closed', 'portal_closed'], 'מקרה 11: תיק סגור ← "הבקשה נסגרה", העלאה ותשובה חסומות; גם המשרד אינו שולח ואינו מבטל');
 call('POST', 'case-status', ['case' => $E, 'status' => 'collecting', 'reason' => 'נפתח מחדש'], $avi);
 eq(portal('portal-open', ['token' => $TE])[1]['state'] ?? null, 'open', 'התיק נפתח מחדש ← הקישור חוזר לעבוד');
+apr_exec('UPDATE cases SET deleted_at = ? WHERE pid = ?', [apr_now(), $E]);
+$del = [portal('portal-open', ['token' => $TE]), portal_up($TE, pdf('deleted'), ['requirement' => $RE['rights']])];
+apr_exec('UPDATE cases SET deleted_at = NULL WHERE pid = ?', [$E]);
+eq([code($del[0]), $del[0][1]['error']['message'] ?? null, code($del[1]), portal('portal-open', ['token' => $TE])[0]], ['portal_invalid', APR_ERRORS['portal_invalid'][1], 'portal_invalid', 200], '🟡7 תיק שנמחק ← "הקישור אינו בתוקף", כמו כל קישור אחר');
 
 // ── §7: שינוי מייל, הסרת גורם ──
 $contact = apr_val('SELECT ct.pid FROM case_parties cp JOIN contacts ct ON ct.id = cp.contact_id WHERE cp.pid = ?', [$party($E, 'client')]);
@@ -478,8 +571,10 @@ eq([$up2[0], $rrow($R['contract'])['status'], apr_val('SELECT relation FROM requ
     'העלאה חוזרת לדרישה שהוחזרה ← גרסה חדשה, received');
 $ap = $rev1($R['contract']);
 $done = portal('portal-open', ['token' => $T2])[1];
-eq([$ap[0], $rrow($R['contract'])['status'], $qrow($Q2)['status'], $done['state'], $done['items'][0]['state'], code(portal_up($T2, pdf('after'), ['requirement' => $R['contract']])), $rrow($R['contract'])['status']],
-    [200, 'approved', 'completed', 'open', 'done', 'req_state', 'approved'], '§6 כל הדרישות אושרו או לא רלוונטיות ← הבקשה completed; הקישור נשאר לצפייה; הנמען אינו פותח מחדש דרישה שאושרה');
+$ntk = $count('tasks');
+eq([$ap[0], $rrow($R['contract'])['status'], $qrow($Q2)['status'], $done['state'], $done['items'][0]['state'], code(portal_up($T2, pdf('after'), ['requirement' => $R['contract']])), $rrow($R['contract'])['status'],
+    code(portal('portal-respond', ['token' => $T2, 'requirement' => $R['contract'], 'kind' => 'no_document'])), $count('tasks') - $ntk],
+    [200, 'approved', 'completed', 'open', 'done', 'req_state', 'approved', 'req_state', 0], '§6 כל הדרישות אושרו או לא רלוונטיות ← הבקשה completed; הקישור נשאר לצפייה; הנמען אינו פותח מחדש דרישה שאושרה');
 call('POST', 'requirement-status', ['requirement' => $R['permit'], 'status' => 'required', 'reason' => 'בכל זאת נדרש'], $avi);
 eq($qrow($Q2)['status'], 'active', '… ודרישה שנפתחה שוב מחזירה את הבקשה לפעילה');
 // מקרה 2: אותו אדם בשני תיקים — שני קישורים נפרדים

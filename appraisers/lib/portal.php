@@ -3,7 +3,7 @@
  * הפורטל לנמען (אפיון 07 §5, §9) — הפעולות הציבוריות היחידות שנוגעות בנתוני תיק. **לנמען אין חשבון**: הזהות היא האסימון
  * של הקישור, ורק הוא. הקוד כאן אינו קורא את PLATFORM_USER ואת apr_session, ואינו יוצר session — גם אם הם קיימים בדפדפן.
  *
- * כל פעולה, לפי הסדר: קצב לפי IP ← האסימון (hash, תוקף, ביטול, בקשה, תיק, משרד) ← נעילה ← קצב לפי קישור ← הפעולה.
+ * כל פעולה, לפי הסדר: קצב לפי IP ← האסימון (hash, תוקף, ביטול, בקשה, תיק, משרד) ← קצב לפי קישור ← הפעולה.
  * - אסימון שגוי, שפג, שבוטל, של בקשה שבוטלה, של תיק שנמחק או של משרד מושעה — **אותה תשובה בדיוק** (portal_invalid).
  * - האסימון מגיע בגוף הבקשה (ובהעלאה — בכותרת X-Portal-Token), לעולם לא בכתובת; הוא אינו נרשם בשום יומן.
  * - התשובות בנויות כאן שדה-שדה: רק הדרישות שב-request_items, ורק הקבצים שהועלו דרך הבקשה הזו. אין בהן מספר תיק,
@@ -19,6 +19,8 @@ const APR_PORTAL_COOKIE = 'apr_portal';
 const APR_PORTAL_RATE = [60, 60];                  // בקשות לדקה — לכל IP, ולכל קישור
 const APR_PORTAL_BAD = [20, 600];                  // אסימונים שגויים מ-IP אחד
 const APR_PORTAL_UPLOADS = [20, 3600];             // העלאות לקישור
+const APR_PORTAL_QUOTA_BYTES = 200 * 1024 * 1024;   // סך הקבצים שבקשה אחת מקבלת
+const APR_PORTAL_QUOTA_FILES = 60;
 const APR_PORTAL_REPLIES = [30, 3600];             // תשובות לקישור
 const APR_PORTAL_OTP_SENDS = [3, 900];             // קודים שנשלחים לקישור
 const APR_PORTAL_OTP_TTL = 600;
@@ -58,7 +60,8 @@ function apr_portal_link(mixed $token, array $env): array
         if (!apr_limit('portal:bad:' . apr_portal_ip_key($env), ...APR_PORTAL_BAD)) apr_fail('portal_rate');
         apr_fail('portal_invalid');
     }
-    if ($row['l_locked'] !== null && $row['l_locked'] > $now) apr_fail('portal_locked');
+    // נעילה אחרי קודים שגויים חלה רק על אימות ושליחת קוד (ביקורת 07, 🟡5): מכשיר שכבר אומת, העלאה וקישור בלי קוד אינם מושפעים
+    $row['otp_locked'] = $row['l_locked'] !== null && $row['l_locked'] > $now;
     if (!apr_limit('portal:l:' . $row['l_id'], ...APR_PORTAL_RATE)) apr_fail('portal_rate');
     $row['closed'] = $row['case_status'] === 'closed';
     $row['perms'] = apr_request_perms(json_decode($row['perms'], true), $row['contact_email'] !== null && $row['contact_email'] !== '');
@@ -129,6 +132,7 @@ function apr_portal_otp_send(array $in, array $env): array
     $l = apr_portal_link($in['token'] ?? null, $env);
     if ($l['closed']) apr_fail('portal_closed');
     if (!$l['has_email']) apr_fail('portal_otp_unavailable');
+    if ($l['otp_locked']) apr_fail('portal_locked');
     if (!apr_limit('portal:otp:' . $l['l_id'], ...APR_PORTAL_OTP_SENDS)) apr_fail('too_many_codes');
     $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $id = apr_tx(function () use ($l, $code) {
@@ -144,7 +148,7 @@ function apr_portal_otp_send(array $in, array $env): array
 }
 
 /**
- * מאמת קוד. 5 קודים שגויים ברצף — הקישור נחסם לרבע שעה (07-B5); הספירה אטומית, בתוך הטרנזקציה. הצלחה: המכשיר נזכר
+ * מאמת קוד. 5 קודים שגויים ברצף — אימות ושליחת קוד בקישור נחסמים לרבע שעה (07-B5; שאר הפורטל ממשיך לעבוד); הספירה אטומית, בתוך הטרנזקציה. הצלחה: המכשיר נזכר
  * 30 יום (העוגייה apr_portal — אקראית, HttpOnly; במסד רק ה-hash שלה, ורק לקישור הזה).
  */
 function apr_portal_otp_verify(array $in, array $env): array
@@ -153,8 +157,8 @@ function apr_portal_otp_verify(array $in, array $env): array
     if ($l['closed']) apr_fail('portal_closed');
     $code = is_string($in['code'] ?? null) ? trim($in['code']) : '';
     $valid = preg_match('/^\d{6}\z/', $code) === 1;
-    $cookie = (string)($env['portal_cookie'] ?? '');
-    if (preg_match('/^[A-Za-z0-9_-]{43}\z/', $cookie) !== 1) $cookie = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    // עוגייה חדשה בכל אימות מוצלח — לעולם לא ערך שהגיע מהלקוח (מי ששתל עוגייה בדפדפן של הנמען לא יקבל מכשיר מאומת)
+    $cookie = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
     $ok = apr_tx(function () use ($l, $code, $valid, $cookie) {
         apr_portal_recheck($l);
         $locked = apr_val('SELECT locked_until FROM portal_links WHERE id = ?', [$l['l_id']]);
@@ -169,6 +173,10 @@ function apr_portal_otp_verify(array $in, array $env): array
             apr_case_audit(apr_portal_case($l), 'portal.device_verified', 'request', $l['pid'], [], null, null, 'recipient');
             return true;
         }
+        // אותו קוד נכון שהוגש פעמיים במקביל: השני מוצא אותו "משומש" — לא מצליח, אבל גם לא נספר כניסיון שגוי
+        $last = apr_row('SELECT code_hash, used_at FROM portal_otps WHERE link_id = ? ORDER BY id DESC LIMIT 1', [$l['l_id']]);
+        if ($valid && $last && $last['used_at'] !== null && $last['used_at'] >= apr_iso(apr_time() - 60) && hash_equals($last['code_hash'], apr_portal_otp_hash((int)$l['l_id'], $code))
+            && apr_val('SELECT 1 FROM portal_devices WHERE link_id = ? AND verified_at >= ?', [$l['l_id'], apr_iso(apr_time() - 60)])) return false;
         apr_exec('UPDATE portal_links SET otp_fails = otp_fails + 1 WHERE id = ?', [$l['l_id']]);
         if ((int)apr_val('SELECT otp_fails FROM portal_links WHERE id = ?', [$l['l_id']]) >= APR_PORTAL_OTP_TRIES) {
             apr_exec('UPDATE portal_links SET locked_until = ?, otp_fails = 0 WHERE id = ?', [apr_iso(apr_time() + APR_PORTAL_LOCK), $l['l_id']]);
@@ -248,9 +256,22 @@ function apr_portal_upload(array $q, array $env): array
             if (!is_string($v) || preg_match('/^[A-Za-z0-9_-]{8,64}\z/', $v) !== 1) apr_fail('content_invalid');   // מזהה פעולה חובה: לחיצה כפולה = קובץ אחד
             return 'r' . $l['id'] . ':' . $v;
         },
+        'limit' => function (int $size) use (&$l) { apr_portal_quota($l, $size); },
         'recheck' => function () use ($q, &$l) { apr_portal_recheck($l); apr_portal_item($l, $q['requirement'] ?? null); }],
-        ['requirement' => $q['requirement'] ?? null, 'name' => $q['name'] ?? null], $env);
+        // שם הקובץ מגיע בכותרת X-Portal-Name (מקודד) ולא בכתובת — כתובות נרשמות ביומן הגישה של השרת
+        ['requirement' => $q['requirement'] ?? null, 'name' => ($env['portal_name'] ?? '') !== '' ? rawurldecode((string)$env['portal_name']) : ($q['name'] ?? null)], $env);
     return ['received' => true, 'file' => $out['file'], 'repeat' => !empty($out['repeat'])];
+}
+
+/**
+ * תקרה לבקשה אחת (ביקורת 07, 🟡4): קישור אחד אינו ממלא את מכסת התיק. נספרים גם קבצים שנמחקו — הם עדיין בדיסק, ומי שמחזיק
+ * בקישור אינו מקבל "מקום חדש" כשהצוות מוחק. $size = 0 — לפני קריאת הגוף: נדחה רק אם כבר אין מקום לקובץ נוסף.
+ */
+function apr_portal_quota(array $l, int $size): void
+{
+    [$bytes, $files] = $GLOBALS['apr_portal_quota'] ?? [APR_PORTAL_QUOTA_BYTES, APR_PORTAL_QUOTA_FILES];
+    $r = apr_row('SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS total FROM files WHERE request_id = ?', [$l['id']]);
+    if ((int)$r['n'] >= $files || (int)$r['total'] + max($size, 1) > $bytes) apr_fail('portal_quota');
 }
 
 /** "אין ברשותי" או הערה. "אין ברשותי" יוצר משימת המשך לשמאי — הדרישה **אינה** משנה מצב: זו החלטה של השמאי (§6). */
@@ -269,6 +290,7 @@ function apr_portal_respond(array $in, array $env): array
         apr_case_still_open($c);
         apr_portal_recheck($l);
         $r = apr_portal_item($l, $in['requirement'] ?? null);
+        if ($kind === 'no_document' && $r['status'] === 'approved') apr_fail('req_state');     // המסמך כבר התקבל ואושר
         $pid = apr_pid();
         apr_insert('requirement_responses', ['pid' => $pid, 'requirement_id' => $r['id'], 'party_id' => $l['party_id'], 'request_id' => $l['id'], 'kind' => $kind, 'text' => $text, 'created_at' => apr_now()]);
         if ($kind === 'no_document') {

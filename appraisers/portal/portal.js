@@ -50,11 +50,11 @@
         return j;
     }
     async function upload(item, file) {
-        const qs = new URLSearchParams({ requirement: item.id, name: file.name, key: 'k' + crypto.getRandomValues(new Uint32Array(3)).reduce((s, n) => s + n.toString(36), '') });
+        const qs = new URLSearchParams({ requirement: item.id, key: 'k' + crypto.getRandomValues(new Uint32Array(3)).reduce((s, n) => s + n.toString(36), '') });
         let res;
         try {
             res = await fetch(API + 'portal-upload&' + qs, { method: 'POST', credentials: 'same-origin', referrerPolicy: 'no-referrer', cache: 'no-store',
-                headers: { 'Content-Type': 'application/octet-stream', 'X-Portal-Token': TOKEN }, body: file });
+                headers: { 'Content-Type': 'application/octet-stream', 'X-Portal-Token': TOKEN, 'X-Portal-Name': encodeURIComponent(file.name).slice(0, 900) }, body: file });
         } catch { throw fail('אין חיבור לרשת. נסו שוב.', 'network', 0); }
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw fail(j.error?.message || 'ההעלאה נכשלה. נסו שוב.', j.error?.code || '', res.status);

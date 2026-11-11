@@ -111,6 +111,7 @@ try {
         'fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
         'sso_state' => is_string($_COOKIE['apr_sso'] ?? null) ? $_COOKIE['apr_sso'] : '',
         'portal_token' => (string)($_SERVER['HTTP_X_PORTAL_TOKEN'] ?? ''),
+        'portal_name' => (string)($_SERVER['HTTP_X_PORTAL_NAME'] ?? ''),
         'portal_cookie' => is_string($_COOKIE[APR_PORTAL_COOKIE] ?? null) ? $_COOKIE[APR_PORTAL_COOKIE] : '',
     ] + $upload);
     apr_out(apr_is_devloop($action) ? ($out ?? ['ok' => true]) : ['ok' => true] + (array)$out);

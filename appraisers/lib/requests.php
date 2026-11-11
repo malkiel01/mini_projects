@@ -6,7 +6,7 @@
  * - **אין שליחה בלי תצוגה מקדימה** (07-A1): request-preview מחזיר מזהה חתום של התוכן המדויק; request-send ו-request-resend
  *   מחשבים את התוכן מחדש ודורשים מזהה תואם. שינוי של תו אחד — המזהה אינו תקף.
  * - **האסימון של הקישור** — 32 בתים אקראיים; במסד רק sha256 שלו. הוא מופיע פעם אחת: במייל, או בתשובה של "קישור להעתקה".
- * - כל שינוי בטרנזקציה, עם שורה ביומן הפעולות של התיק. מצב דרישה משתנה רק ב-apr_req_move().
+ * - כל שינוי בטרנזקציה, עם שורה ביומן הפעולות של התיק. המייל עצמו נשלח אחרי ה-commit (apr_request_deliver). מצב דרישה משתנה רק ב-apr_req_move().
  */
 
 declare(strict_types=1);
@@ -170,29 +170,53 @@ function apr_request_mail_text(array $k, string $token, string $expires): string
 }
 
 /**
- * יוצר קישור ושולח הודעה — בתוך טרנזקציה. מחזיר ['message' => מצב, 'link' => כתובת (רק ב"קישור להעתקה")].
- * הודעה שנכשלה אינה מקדמת שום דרישה (§6): רק אחרי sent / unknown הדרישות שהיו required עוברות ל-requested.
+ * שלב א, בתוך הטרנזקציה: קישור חדש ושורת הודעה. "קישור להעתקה" מסתיים כאן (unknown, והדרישות מתקדמות). מייל — ההודעה
+ * נשארת planned, והשליחה עצמה נעשית **אחרי ה-commit** (apr_request_deliver): mail() איטי אינו מחזיק את נעילת הכתיבה של המסד,
+ * ואין מצב שבו מייל יצא והקישור שבו בוטל ב-rollback (ביקורת 07, 🟡6). מחזיר את מה ש-apr_request_deliver צריך.
  */
 function apr_request_dispatch(array $ctx, array $c, array $req, array $k, string $op, string $expires): array
 {
     $uid = (int)$ctx['user']['id'];
     $token = apr_portal_link_new((int)$req['id'], $expires);
     $msgPid = apr_pid();
+    $email = $k['channel'] === 'email';
     $msgId = apr_insert('messages', ['pid' => $msgPid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'request_id' => $req['id'], 'party_id' => $k['party']['id'], 'channel' => $k['channel'],
-        'to_hash' => $k['email'] !== null && $k['channel'] === 'email' ? apr_mail_hash($k['email']) : null, 'status' => 'planned', 'idempotency_key' => $op, 'created_by' => $uid, 'created_at' => apr_now()]);
-    if ($k['channel'] === 'email') {
-        $status = apr_mail_send('request', $k['email'], $k['subject'], apr_request_mail_text($k, $token, $expires), 'request:' . $msgPid, (int)$c['office_id'],
-            ['from_name' => $k['office_name'], 'reply_to' => $ctx['user']['email']]);
-    } else {
-        $status = 'unknown';                               // המערכת אינה יודעת אם הקישור נמסר
+        'to_hash' => $email ? apr_mail_hash($k['email']) : null, 'status' => $email ? 'planned' : 'unknown', 'idempotency_key' => $op, 'created_by' => $uid, 'created_at' => apr_now(),
+        'sent_at' => $email ? null : apr_now()]);
+    if (!$email) apr_request_advance((int)$req['id'], $uid);    // המערכת אינה יודעת אם הקישור נמסר — אבל הוא נוצר
+    return ['message' => $email ? 'planned' : 'unknown', 'message_id' => $msgId, 'message_pid' => $msgPid, 'request_id' => (int)$req['id'], 'uid' => $uid,
+        'link' => $email ? null : apr_portal_url($token),
+        'mail' => $email ? [$k['email'], $k['subject'], apr_request_mail_text($k, $token, $expires), (int)$c['office_id'], ['from_name' => $k['office_name'], 'reply_to' => $ctx['user']['email']]] : null];
+}
+
+/** הדרישות של הבקשה שעדיין required עוברות ל-requested. הודעה שנכשלה אינה מקדמת שום דרישה (§6) — לכן רק אחרי sent / unknown. */
+function apr_request_advance(int $requestId, ?int $by): void
+{
+    foreach (apr_rows("SELECT r.* FROM request_items ri JOIN requirements r ON r.id = ri.requirement_id WHERE ri.request_id = ? AND r.status = 'required' AND r.split_at IS NULL", [$requestId]) as $r) {
+        apr_req_move($r, 'requested', null, $by);
     }
-    apr_exec('UPDATE messages SET status = ?, sent_at = ?, error = ? WHERE id = ?', [$status, $status === 'failed' ? null : apr_now(), $status === 'failed' ? 'mail' : null, $msgId]);
-    if ($status !== 'failed') {
-        foreach (apr_rows("SELECT r.* FROM request_items ri JOIN requirements r ON r.id = ri.requirement_id WHERE ri.request_id = ? AND r.status = 'required' AND r.split_at IS NULL", [$req['id']]) as $r) {
-            apr_req_move($r, 'requested', null, $uid);
-        }
-    }
-    return ['message' => $status, 'message_pid' => $msgPid, 'link' => $k['channel'] === 'link_copy' ? apr_portal_url($token) : null];
+}
+
+/**
+ * שלב ב, אחרי ה-commit: שולח את המייל, ורושם את התוצאה בטרנזקציה קצרה משלה. ההודעה מתעדכנת רק אם היא עדיין planned
+ * (UPDATE … WHERE) ורק אם הבקשה לא בוטלה בינתיים — ואז גם הדרישות מתקדמות. מחזיר את מצב ההודעה.
+ * נפילה בין שני השלבים משאירה planned: הבקשה מופיעה ב"הודעות שנכשלו" אחרי 10 דקות, ו"שליחה מחדש" מנפיקה קישור חדש.
+ */
+function apr_request_deliver(array $c, array $sent, string $audit, string $requestPid, array $meta): string
+{
+    if ($sent['mail'] === null) return $sent['message'];
+    [$to, $subject, $text, $office, $opt] = $sent['mail'];
+    $status = apr_mail_send('request', $to, $subject, $text, 'request:' . $sent['message_pid'], $office, $opt);
+    apr_tx(function () use ($c, $sent, $status, $audit, $requestPid, $meta) {
+        $n = apr_exec("UPDATE messages SET status = ?, sent_at = ?, error = ? WHERE id = ? AND status = 'planned'",
+            [$status, $status === 'failed' ? null : apr_now(), $status === 'failed' ? 'mail' : null, $sent['message_id']]);
+        if ($n !== 1) return;
+        $live = apr_val("SELECT 1 FROM requests WHERE id = ? AND status <> 'revoked'", [$sent['request_id']]) && apr_val("SELECT status FROM cases WHERE id = ? AND deleted_at IS NULL", [$c['id']]) !== 'closed';
+        if ($status !== 'failed' && $live) apr_request_advance($sent['request_id'], $sent['uid']);
+        apr_case_audit($c, $audit, 'request', $requestPid, $meta + ['message' => $status], null, $sent['uid']);
+        apr_case_touch($c);
+    });
+    return $status;
 }
 
 /** תשובה לבקשה חוזרת עם אותו מזהה פעולה: מה שנרשם אז — בלי הודעה שנייה, ובלי הקישור (הוא הוצג פעם אחת). */
@@ -211,7 +235,7 @@ function apr_request_send(array $ctx, array $in): array
     if ($old = apr_request_repeat($c, $op)) return $old;
     $k = apr_request_content($ctx, $c, $in);
     apr_request_preview_check((int)$ctx['user']['id'], $k['hash'], $in['preview'] ?? null);
-    return apr_tx(function () use ($ctx, $c, $in, $k, $op) {
+    $out = apr_tx(function () use ($ctx, $c, $in, $op) {
         apr_case_still_open($c);
         if ($old = apr_request_repeat($c, $op)) return $old;
         $k = apr_request_content($ctx, $c, $in);            // שוב, בתוך הטרנזקציה: הדרישות והנמען לא השתנו מאז התצוגה המקדימה
@@ -223,10 +247,13 @@ function apr_request_send(array $ctx, array $in): array
             'created_by' => $ctx['user']['id'], 'created_at' => apr_now()]);
         foreach ($k['items'] as $r) apr_insert('request_items', ['request_id' => $id, 'requirement_id' => $r['id']]);
         $sent = apr_request_dispatch($ctx, $c, ['id' => $id], $k, $op, $expires);
-        apr_case_audit($c, 'request.send', 'request', $pid, ['party' => $k['party']['pid'], 'items' => count($k['items']), 'channel' => $k['channel'], 'message' => $sent['message']]);
+        $meta = ['party' => $k['party']['pid'], 'items' => count($k['items']), 'channel' => $k['channel']];
+        if ($sent['mail'] === null) apr_case_audit($c, 'request.send', 'request', $pid, $meta + ['message' => $sent['message']]);
         apr_case_touch($c);
-        return ['request' => $pid, 'message' => $sent['message'], 'link' => $sent['link']];
+        return ['request' => $pid, '_sent' => $sent, '_meta' => $meta];
     });
+    if (!isset($out['_sent'])) return $out;
+    return ['request' => $out['request'], 'message' => apr_request_deliver($c, $out['_sent'], 'request.send', $out['request'], $out['_meta']), 'link' => $out['_sent']['link']];
 }
 
 /** שליחה מחדש: קישור חדש, והקודם מבוטל; מכשירים שאומתו נשכחים. בקשה שפגה מקבלת תוקף חדש. */
@@ -235,7 +262,7 @@ function apr_request_resend(array $ctx, array $in): array
     $c = apr_case_get($ctx, apr_doc_case_pid('requests', $in['request'] ?? null), 'contact');
     $op = apr_request_op($ctx, $in['op'] ?? null);
     if ($old = apr_request_repeat($c, $op)) return $old;
-    return apr_tx(function () use ($ctx, $c, $in, $op) {
+    $out = apr_tx(function () use ($ctx, $c, $in, $op) {
         apr_case_still_open($c);
         if ($old = apr_request_repeat($c, $op)) return $old;
         $req = apr_request_row($c, $in['request'] ?? null);
@@ -246,10 +273,13 @@ function apr_request_resend(array $ctx, array $in): array
         $expires = $expired || isset($in['days']) ? apr_iso(apr_time() + $k['days'] * 86400) : $req['expires_at'];
         if (apr_exec("UPDATE requests SET expires_at = ?, days = ?, perms = ? WHERE id = ? AND status <> 'revoked'", [$expires, $k['days'], json_encode($k['perms']), $req['id']]) !== 1) apr_fail('request_state');
         $sent = apr_request_dispatch($ctx, $c, $req, $k, $op, $expires);
-        apr_case_audit($c, 'request.resend', 'request', $req['pid'], ['party' => $k['party']['pid'], 'channel' => $k['channel'], 'message' => $sent['message']]);
+        $meta = ['party' => $k['party']['pid'], 'channel' => $k['channel']];
+        if ($sent['mail'] === null) apr_case_audit($c, 'request.resend', 'request', $req['pid'], $meta + ['message' => $sent['message']]);
         apr_case_touch($c);
-        return ['request' => $req['pid'], 'message' => $sent['message'], 'link' => $sent['link']];
+        return ['request' => $req['pid'], '_sent' => $sent, '_meta' => $meta];
     });
+    if (!isset($out['_sent'])) return $out;
+    return ['request' => $out['request'], 'message' => apr_request_deliver($c, $out['_sent'], 'request.resend', $out['request'], $out['_meta']), 'link' => $out['_sent']['link']];
 }
 
 /**
@@ -341,14 +371,14 @@ function apr_case_requests(array $ctx, array $q): array
         'requests' => array_map(fn($r) => apr_request_out($r, $links[$r['id']] ?? [], $items[$r['id']] ?? [], $msgs[$r['id']] ?? [], $resp[$r['id']] ?? []), $rows)];
 }
 
-/** ללוח הראשי: בקשות שההודעה האחרונה שלהן נכשלה — בתיקים פתוחים שיש לי בהם contact. */
+/** ללוח הראשי: בקשות שההודעה האחרונה שלהן נכשלה (או נתקעה כ-planned יותר מ-10 דקות) — בתיקים פתוחים שיש לי בהם contact. */
 function apr_requests_failed(array $ctx): array
 {
     $rows = apr_rows("SELECT q.pid, q.created_at, m.created_at AS failed_at, ct.name AS party_name, c.pid AS case_pid, c.number, c.title FROM requests q
         JOIN messages m ON m.id = (SELECT MAX(id) FROM messages WHERE request_id = q.id) JOIN case_parties cp ON cp.id = q.party_id JOIN contacts ct ON ct.id = cp.contact_id
         JOIN cases c ON c.id = q.case_id
-        WHERE m.status = 'failed' AND q.status = 'active' AND c.status <> 'closed' AND q.case_id IN (SELECT c.id " . apr_my_cases_sql('contact') . ')
-        ORDER BY m.id DESC LIMIT 100', [$ctx['user']['id'], apr_office_id($ctx)]);
+        WHERE (m.status = 'failed' OR (m.status = 'planned' AND m.created_at < ?)) AND q.status = 'active' AND c.status <> 'closed' AND q.case_id IN (SELECT c.id " . apr_my_cases_sql('contact') . ')
+        ORDER BY m.id DESC LIMIT 100', [apr_iso(apr_time() - 600), $ctx['user']['id'], apr_office_id($ctx)]);
     return ['failed' => array_map(fn($r) => ['request' => $r['pid'], 'party_name' => $r['party_name'], 'failed_at' => $r['failed_at'],
         'case' => ['pid' => $r['case_pid'], 'number' => $r['number'], 'title' => $r['title']]], $rows)];
 }

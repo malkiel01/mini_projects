@@ -101,7 +101,7 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
                 || ($origin !== '' && !hash_equals(apr_app_origin(), $origin))) apr_fail('csrf');
         }
         // הפורטל: מכאן לא נקרא שום דבר מ-platform_user, מהעוגייה apr_session או מ-X-CSRF — רק האסימון של הקישור
-        $penv = array_intersect_key($env, array_flip(['ip', 'portal_token', 'portal_cookie', 'upload', 'upload_reader', 'upload_error']));
+        $penv = array_intersect_key($env, array_flip(['ip', 'portal_token', 'portal_name', 'portal_cookie', 'upload', 'upload_reader', 'upload_error']));
         return match ($action) {
             'portal-open'         => apr_portal_open($in, $penv),
             'portal-otp-send'     => apr_portal_otp_send($in, $penv),

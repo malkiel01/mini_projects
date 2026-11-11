@@ -187,9 +187,9 @@ check('הכנה: בקשה ב"קישור להעתקה" — הקישור נבנה 
 [$st, , $h, $page] = http('GET', 'portal/', null, $N);
 $csp = $h['content-security-policy'][0] ?? '';
 eq([$st, $h['referrer-policy'][0] ?? '', $h['cache-control'][0] ?? '', str_contains($h['x-robots-tag'][0] ?? '', 'noindex'), isset($h['set-cookie']),
-    str_contains($csp, "default-src 'none'"), str_contains($csp, "script-src 'self'"), str_contains($csp, 'unsafe'), str_contains($csp, "frame-ancestors 'none'")],
+    str_contains($csp, "default-src 'none'"), (bool)preg_match("~script-src 'nonce-[A-Za-z0-9_-]{20,}';~", $csp), str_contains($csp, 'unsafe'), str_contains($csp, "frame-ancestors 'none'")],
     [200, 'no-referrer', 'no-store', true, false, true, true, false, true], '07-D1 דף הפורטל בלי זהות: 200, no-referrer, no-store, noindex, CSP בלי סקריפט חיצוני ובלי inline — ובלי עוגייה');
-preg_match_all('~(?:src|href)="([^"]+)"~', $page, $refs);
+preg_match_all('~(?:src|href)="([^"]+)"~', (string)preg_replace('~<!--.*?-->~s', '', $page), $refs);
 eq([array_values(array_filter($refs[1], fn($u) => !preg_match('~^portal\.(js|css)\?v=[0-9.]+$~', $u))), (bool)preg_match('~<script(?![^>]*\ssrc=)|\son[a-z]+=|style=~i', $page), str_contains($page, 'index.html')],
     [[], false, false], '07-D2 בדף הפורטל: רק portal.js ו-portal.css, בלי סקריפט בתוך הדף, ובלי קישור למערכת');
 $pjs = http('GET', 'portal/portal.js', null, $N);
@@ -289,6 +289,58 @@ eq($leak2, [], '07-C4 ב-HTTP: האסימון, עוגיית המכשיר והק�
 $rvk = http('POST', 'api.php?action=request-revoke', ['request' => $snd[1]['request'] ?? ''], $X);
 eq([$rvk[0], $inv(http('POST', 'api.php?action=portal-open', ['token' => $TK], $N)), http('POST', $upP . 'key-http-0006', null, $N + $oct + ['X-Portal-Token' => $TK], $goodPdf)[1]['error']['code'] ?? null],
     [200, $want, 'portal_invalid'], '07-B7 ב-HTTP: אחרי ביטול — אותה תשובה כמו לאסימון שלא היה קיים');
+
+// ── ביקורת 07, 🔴1: דף הפורטל דרך השער האמיתי של הפלטפורמה — שום סקריפט זר ──
+// השער (platform/gate-prepend.php) מוסיף לכל דף PHP של אפליקציה מחוברת את diag.js, ששולח את הכתובת כולל ה-# (= האסימון).
+// שרת הפיתוח הרגיל רץ בלי שער, ולכן כאן שרת שני: עותק זמני של platform/ (קריאה בלבד מהמקור) ושל portal/, עם gate-prepend אמיתי.
+$repo = dirname($root);
+if (is_file("$repo/platform/gate-prepend.php")) {
+    $gt = "$data/gate";
+    $cp = function (string $from, string $to) use (&$cp) { @mkdir($to, 0700, true); foreach (array_diff(scandir($from) ?: [], ['.', '..']) as $f) is_dir("$from/$f") ? $cp("$from/$f", "$to/$f") : copy("$from/$f", "$to/$f"); };
+    $cp("$repo/platform", "$gt/platform");
+    $cp("$root/portal", "$gt/appraisers/portal");
+    copy("$root/app.json", "$gt/appraisers/app.json");
+    // דף זהה בלי ההערה שמונעת את ההזרקה — מוכיח שהבדיקה באמת מפעילה את ההזרקה, ושה-CSP חוסם גם אז
+    file_put_contents("$gt/appraisers/portal/bare.php", preg_replace('~<!--.*?-->\s*~s', '', (string)file_get_contents("$root/portal/index.php")));
+    $gport = 0;
+    for ($i = 0; $i < 20 && !$gport; $i++) { $p = random_int(40001, 50000); $sk = @stream_socket_server("tcp://127.0.0.1:$p"); if ($sk) { fclose($sk); $gport = $p; } }
+    $gproc = proc_open([PHP_BINARY, '-S', "127.0.0.1:$gport", '-d', "auto_prepend_file=$gt/platform/gate-prepend.php", '-t', $gt], [['pipe', 'r'], ['file', "$data/gate.log", 'w'], ['file', "$data/gate.log", 'a']], $gp, $gt, ['PATH' => getenv('PATH')]);
+    for ($i = 0; $i < 50; $i++) { if (@fsockopen('127.0.0.1', $gport)) break; usleep(100000); }
+    $nav = function (string $path) use ($gport): array {
+        $ctx = stream_context_create(['http' => ['method' => 'GET', 'header' => "Sec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\nAccept: text/html", 'ignore_errors' => true, 'timeout' => 20, 'follow_location' => 0]]);
+        $body = (string)file_get_contents("http://127.0.0.1:$gport/$path", false, $ctx);
+        preg_match('#^HTTP/\S+ (\d+)#', $http_response_header[0] ?? '', $m);
+        $csp = '';
+        foreach ($http_response_header ?? [] as $h) if (stripos($h, 'content-security-policy:') === 0) $csp = trim(substr($h, 24));
+        preg_match_all('~<script\b[^>]*>~i', $body, $tags);
+        return [(int)($m[1] ?? 0), $tags[0], $csp, $body, implode("\n", $http_response_header ?? [])];
+    };
+    [$gs, $gtags, $gcsp, $gbody, $ghead] = $nav('appraisers/portal/');
+    preg_match("~script-src 'nonce-([A-Za-z0-9_-]{20,})'~", $gcsp, $nm);
+    $nonce = $nm[1] ?? '-';
+    [$bs, $btags, $bcsp] = $nav('appraisers/portal/bare.php');
+    preg_match("~script-src 'nonce-([A-Za-z0-9_-]{20,})'~", $bcsp, $bm);
+    proc_terminate($gproc);
+    proc_close($gproc);
+    eq([$gs, count($gtags), str_contains($gtags[0] ?? '', 'nonce="' . $nonce . '"') && str_contains($gtags[0] ?? '', 'src="portal.js?v='), stripos($ghead, 'set-cookie') !== false,
+        (bool)preg_match("~script-src[^;]*('self'|'unsafe|https?:|\*)~", $gcsp), str_contains($gbody, 'pwa-beacon.js"') || str_contains($gbody, 'diag.js"'), (bool)preg_match('~rel="?manifest~', $gbody)],
+        [200, 1, true, false, false, false, false], '🔴1 דף הפורטל דרך gate-prepend.php האמיתי, בלי התחברות: סקריפט אחד בלבד — portal.js עם ה-nonce של הבקשה; בלי diag.js, בלי beacon, בלי manifest ובלי עוגייה');
+    eq([$bs, count($btags) > 1 && (bool)preg_grep('~platform/assets/diag\.js~', $btags), count(preg_grep('~nonce=~', $btags)), ($bm[1] ?? '') !== '' && ($bm[1] ?? '') !== $nonce],
+        [200, true, 1, true], '🔴1 בלי ההערה שבדף השער אכן מזריק את diag.js (הבדיקה אמיתית) — וגם אז ה-CSP מתיר רק את הסקריפט שנושא nonce, וה-nonce מתחלף בכל בקשה');
+    check('🔴1 ב-portal/index.php: ההערה עם שם הסקריפט של הפלטפורמה נמצאת לפני </head>', (bool)preg_match('~<!--[^>]*platform/assets/diag\.js[^>]*-->.*</head>~s', (string)file_get_contents("$root/portal/index.php")));
+} else {
+    check('🔴1 platform/gate-prepend.php נמצא בריפו (נדרש לבדיקת ההזרקה)', false);
+}
+// שם הקובץ בכותרת (לא בכתובת — כתובות נרשמות ביומן הגישה)
+$rq3 = http('POST', 'api.php?action=requirement-add', ['case' => $cc, 'title' => 'תשריט', 'doc_type' => 'rights'], $X)[1]['requirement'] ?? '';
+$c3 = ['case' => $cc, 'party' => $pty, 'requirements' => [$rq3], 'channel' => 'link_copy'];
+$sndH = http('POST', 'api.php?action=request-send', $c3 + ['preview' => http('POST', 'api.php?action=request-preview', $c3, $X)[1]['preview'] ?? '', 'op' => 'op-http-0003'], $X);
+preg_match('~/portal/#([A-Za-z0-9_-]{43})$~', (string)($sndH[1]['link'] ?? ''), $hm);
+$upH = http('POST', 'api.php?action=portal-upload&requirement=' . $rq3 . '&key=key-http-0020', null, $N + $oct + ['X-Portal-Token' => $hm[1] ?? '', 'X-Portal-Name' => rawurlencode('צילום "חדש" <1>.pdf')], "%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%hdr\n%%EOF\n");
+$docsH = http('GET', 'api.php?action=case-docs&case=' . $cc, null, $C)[1];
+$namesH = [];
+foreach ($docsH['requirements'] ?? [] as $r) foreach ($r['files'] as $l) $namesH[] = $l['file']['name'];
+eq([$upH[0], in_array('צילום "חדש" <1>.pdf', $namesH, true), str_contains((string)file_get_contents("$data/server.log"), rawurlencode('צילום'))], [200, true, false], 'שם הקובץ בהעלאה מהפורטל מגיע בכותרת X-Portal-Name, ואינו ביומן הגישה של השרת');
 
 // ── קבצים סטטיים ונתיבים חסומים ──
 eq(http('GET', 'manifest.webmanifest')[0], 200, 'manifest.webmanifest מוגש');

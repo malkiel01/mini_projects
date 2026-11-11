@@ -168,6 +168,8 @@ const APR_PDF_ACTIVE = [
     '~/(JavaScript|EmbeddedFiles?|Launch|SubmitForm|ImportData|XFA|RichMedia|ASCIIHexDecode|ASCII85Decode|LZWDecode|RunLengthDecode|AHx|A85|LZW)(?![A-Za-z0-9])~',
     '~/(JS|AA)' . APR_PDF_GAP . '(?:\(|<|\d+\s+\d+\s+R)~',
     '~/(OpenAction)' . APR_PDF_GAP . '(?!\[)~',       // יעד פתיחה (מערך) מותר; פעולה או הפניה — לא
+    // מערך פילטרים עם Flate פעמיים: שכבה שנייה שאיננו פורסים
+    '~\[[^\]]{0,300}?/(?:FlateDecode|Fl)(?![A-Za-z0-9])[^\]]{0,300}?/(FlateDecode|Fl)(?![A-Za-z0-9])~',
 ];
 
 /** סורק טקסט לשמות הפעילים, אחרי פענוח #xx (‎/J#53 = /JS). מחזיר את השם שנמצא, או null. כשל של ה-regex = נמצא. */
@@ -193,11 +195,28 @@ const APR_PDF_SECONDS = 12.0;
 function apr_pdf_tail(string $win): string
 {
     $keep = min(strlen($win), 4096);
-    $n = preg_match('~/[A-Za-z0-9#]{1,40}' . APR_PDF_GAP . '(?:%[^\r\n]*+)?\z~', $win, $m);   // גם הערה שטרם נסגרה
-    if ($n === false) throw new AprFileRejected('file_active', 'pdf:scan');
+    // גם הערה שטרם נסגרה, וגם הפניה שנחתכה באמצע ("/JS   12 0" — ה-R בחלון הבא)
+    $n = preg_match('~/[A-Za-z0-9#]{1,40}' . APR_PDF_GAP . '(?:\d{1,10}\s*+(?:\d{1,10}\s*+)?)?(?:%[^\r\n]*+)?\z~', $win, $m);
+    if ($n === false) throw new AprFileRejected('file_unscannable', 'pdf:scan');
     if ($n === 1) $keep = max($keep, strlen($m[0]));
-    if ($keep > 1 << 20) throw new AprFileRejected('file_active', 'pdf:gap');
+    if ($keep > 1 << 20) throw new AprFileRejected('file_unscannable', 'pdf:gap');
     return substr($win, -$keep);
+}
+
+/** כותרת zlib תקינה במקום $at: שיטת deflate, חלון עד 32KB, ובדיקת ה-FCHECK. חלון קטן מ-15 נותן בית ראשון שאינו 0x78. */
+function apr_zlib_head(string $data, int $at): bool
+{
+    if (!isset($data[$at + 1])) return false;
+    $cmf = ord($data[$at]);
+    return ($cmf & 0x0F) === 8 && ($cmf >> 4) <= 7 && (($cmf << 8) | ord($data[$at + 1])) % 31 === 0;
+}
+
+/** האם התחילית הזו באמת נפרסת כ-zlib (ולא רק נראית כך במקרה): נפרס ממנה פלט בלי שגיאה. */
+function apr_zlib_inflates(string $head): bool
+{
+    $z = inflate_init(ZLIB_ENCODING_DEFLATE);
+    $out = $z ? @inflate_add($z, $head) : false;
+    return $out !== false && $out !== '';
 }
 
 /**
@@ -220,19 +239,27 @@ function apr_sniff_pdf(string $path): array
     $len = strlen($data);
     for ($pos = 0; ($s = strpos($data, 'stream', $pos)) !== false; $pos = $b) {
         $b = $s + 6;
+        $b += strspn($data, " \t", $b);                     // קוראי PDF סובלים רווחים אחרי המילה stream
         if (($data[$b] ?? '') === "\r") $b++;
         if (($data[$b] ?? '') === "\n") $b++;
-        if (($data[$b] ?? '') !== "\x78") continue;        // לא zlib
-        if ($budget <= 0 || microtime(true) > $deadline) throw new AprFileRejected('file_active', 'pdf:budget');
+        if (!apr_zlib_head($data, $b)) continue;            // לא zlib (כל גודל חלון, לא רק 0x78)
+        if ($budget <= 0 || microtime(true) > $deadline) throw new AprFileRejected('file_unscannable', 'pdf:budget');
         $z = inflate_init(ZLIB_ENCODING_DEFLATE);
         $budget -= 1024;
         $win = '';                                         // חלון הסריקה: מה שנפרס וטרם נסרק, ועוד הזנב של החלון הקודם
-        for ($o = $b, $step = 512; $z && $o < $len; $o += $step, $step = min($step * 8, 65536)) {
+        $first = true;
+        // צעדים של עד 4KB: נתח קלט אחד נפרס לכל היותר לכ-4MB, כך ש"פצצת דחיסה" אינה ממלאת את הזיכרון לפני שהתקציב עוצר אותה
+        for ($o = $b, $step = 512; $z && $o < $len; $o += $step, $step = min($step * 2, 4096)) {
             $in = substr($data, $o, $step);
             $chunk = @inflate_add($z, $in);
             $budget -= strlen($in);
             if ($chunk === false) break;
             $budget -= strlen($chunk);
+            if ($first && $chunk !== '') {
+                // Flate בתוך Flate: זרם שהפלט שלו הוא בעצמו zlib תקין — קידוד שאיננו בודקים, כמו ASCIIHex. נדחה, לא נסרק "בערך".
+                if (apr_zlib_head($chunk, 0) && apr_zlib_inflates(substr($chunk, 0, 4096))) throw new AprFileRejected('file_unscannable', 'pdf:nested');
+                $first = false;
+            }
             $win .= $chunk;
             $end = inflate_get_status($z) === ZLIB_STREAM_END;
             if ($end) $budget += strlen($in) - max(0, inflate_get_read_len($z) - ($o - $b));   // הזרם נגמר באמצע הנתח: מחייבים רק מה שנקרא
@@ -243,7 +270,7 @@ function apr_sniff_pdf(string $path): array
                 $win = $end ? '' : apr_pdf_tail($win);
             }
             if ($end) break;
-            if ($budget <= 0 || microtime(true) > $deadline) throw new AprFileRejected('file_active', 'pdf:budget');
+            if ($budget <= 0 || microtime(true) > $deadline) throw new AprFileRejected('file_unscannable', 'pdf:budget');
         }
         if ($win !== '') {                                 // זרם שנקטע באמצע: מה שנפרס ממנו נסרק
             $hit = apr_pdf_active($win);

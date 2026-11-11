@@ -358,6 +358,27 @@ check('🟡 … ובפחות משתי שניות', microtime(true) - $t0 < 2.0, 
 $n = $nfiles();
 eq([code(up($avi, '%PDF-1.4' . "\n" . str_repeat($empty, 800) . $js . "%%EOF\n", ['case' => $C])), $nfiles() - $n], ['file_active', 0], '🟡 … וגם דרך file-upload: נדחה, ואין קובץ');
 
+// ── ביקורת 07, 🟡2 + 🟡3: הסורק נגיש עכשיו לנמען אנונימי ──
+$jsObj = '<< /S /JavaScript /JS (app.alert(1)) >>';
+$z9 = function (string $d, int $wbits): string { $c = deflate_init(ZLIB_ENCODING_DEFLATE, ['window' => $wbits]); return deflate_add($c, $d, ZLIB_FINISH); };
+$small = $z9($jsObj, 9);
+eq([ord($small[0]) !== 0x78, $sn("stream\n" . $small . "\nendstream"), $sn("stream \n" . gzcompress($jsObj) . "\nendstream"), $sn("stream\t \r\n" . gzcompress($jsObj) . "\nendstream"),
+    $sn("stream\n" . gzcompress(gzcompress($jsObj)) . "\nendstream"), $sn("5 0 obj << /Filter [/FlateDecode /FlateDecode] >> endobj"), $sn("5 0 obj << /Filter [ /Fl /DCTDecode /F#6c ] >> endobj"),
+    $sn("stream\n" . gzcompress(gzcompress(str_repeat('q ', 3_000_000) . $jsObj)) . "\nendstream"), $sn("stream \n" . $z9(str_repeat('BT (x) Tj ET ', 500), 10) . "\nendstream"), $sn("5 0 obj << /Filter [/FlateDecode /DCTDecode] >> endobj")],
+    [true, 'pdf:JavaScript', 'pdf:JavaScript', 'pdf:JavaScript', 'pdf:nested', 'pdf:Fl' . 'ateDecode', 'pdf:Fl', 'pdf:nested', 'ok', 'ok'],
+    '🟡3 JavaScript בזרם Flate עם חלון zlib קטן, עם רווח אחרי stream, או ב-Flate כפול ← נדחה; זרם תמים באותן צורות ← מתקבל');
+$ref = fn(int $before, string $gap) => $sn("stream\n" . gzcompress(substr($noise, 0, $before) . '/JS' . $gap . '12 0 R ' . substr($noise, 0, 900_000)) . "\n");
+eq([$ref(900_000, str_repeat(' ', 200_000)), $ref(1_048_560, ' '), $ref(1_048_565, '   '), $tail(str_repeat('q', 9000) . '/JS  ' . str_repeat(' ', 6000) . '12 0'), $tail(str_repeat('q', 9000) . '/JS 12 ' . str_repeat(' ', 6000))],
+    ['pdf:JS', 'pdf:JS', 'pdf:JS', '6009', '6007'], '🟡3 ‎/JS + רווחים + הפניה (12 0 R) על גבול חלון הסריקה ← נדחה: הזנב כולל הפניה שנחתכה');
+$bombFile = tempnam(apr_upload_tmp_dir(), 'bm');
+file_put_contents($bombFile, '%PDF-1.4' . "\nstream\n" . gzcompress(str_repeat("\0", 900_000_000 > 0 ? 400_000_000 : 0), 9) . "\nendstream\n%%EOF\n");
+$child = 'require ' . var_export(dirname(__DIR__) . '/lib/errors.php', true) . '; require ' . var_export(dirname(__DIR__) . '/lib/files.php', true) . '; $GLOBALS["apr_pdf_budget"] = 2000000000;'
+    . ' try { apr_file_sniff($argv[1]); echo "ok ", memory_get_peak_usage() >> 20; } catch (AprFileRejected $e) { echo $e->why, " ", memory_get_peak_usage() >> 20; }';
+$outB = (string)shell_exec(escapeshellarg(PHP_BINARY) . ' -d memory_limit=48M -r ' . escapeshellarg($child) . ' ' . escapeshellarg($bombFile) . ' 2>&1');
+check('🟡2 פצצת דחיסה (פחות מ-1MB שנפרס ל-400MB) תחת memory_limit=48M: נסרקת עד הסוף בלי להפיל את PHP', preg_match('/^ok \d+$/', $outB) === 1 && filesize($bombFile) < 1_000_000, [$outB, filesize($bombFile)]);
+unlink($bombFile);
+eq([code(up($avi, '%PDF-1.4' . "\nstream\n" . gzcompress(gzcompress('x')) . "\nendstream\n%%EOF\n", ['case' => $C])), APR_ERRORS['file_unscannable'][0]], ['file_unscannable', 415], 'קובץ שאי אפשר לבדוק נדחה בנוסח משלו ("לא ניתן לבדוק"), לא כ"תוכן פעיל"');
+
 // בלי .user.ini משלנו: התקרה נגזרת מ-post_max_size של השרת, פחות מרווח — והמסך, ההודעה ובדיקת התקינות אומרים את האמת
 $GLOBALS['apr_post_max'] = 8 << 20;
 $h8 = apr_health()['checks'] ?? [];

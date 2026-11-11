@@ -201,6 +201,7 @@ function apr_file_ingest(callable $case, array $who, array $q, array $env): arra
             if (($who[$lazy] ?? null) instanceof Closure) $who[$lazy] = ($who[$lazy])();
         }
         apr_upload_allowed($c, $who['rate_key'], 0, true, $who['rate'] ?? null);
+        if (isset($who['limit'])) ($who['limit'])(0);       // פורטל: תקרת הנפח ומספר הקבצים של הבקשה
         // רק עכשיו — אחרי זהות (או אסימון), CSRF, הרשאה ומכסה — קוראים את גוף הבקשה לדיסק (api.php מוסר את הקורא)
         if (isset($env['upload_reader'])) {
             $env = ($env['upload_reader'])() + $env;
@@ -255,6 +256,7 @@ function apr_file_ingest(callable $case, array $who, array $q, array $env): arra
                         'requirement' => apr_val("SELECT r.title FROM requirement_files rf JOIN requirements r ON r.id = rf.requirement_id WHERE rf.file_id = ? AND rf.review_state <> 'rejected' ORDER BY rf.id LIMIT 1", [$d['id']]) ?: null]];
                 }
                 apr_upload_allowed($c, $who['rate_key'], $size, false);          // שוב, בתוך הטרנזקציה: שתי העלאות במקביל לא עוברות יחד את התקרה
+                if (isset($who['limit'])) ($who['limit'])($size);
                 $stored = apr_file_store($tmp);
                 if (isset($GLOBALS['apr_after_store'])) ($GLOBALS['apr_after_store'])();   // בדיקות: כישלון אחרי השמירה לדיסק
                 $pid = apr_pid();
