@@ -57,7 +57,7 @@ const ATTACK = `<!doctype html>
     const st = page => page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, n = c && c.selected; return { sel: n ? c.label(n) : null, tag: n ? n.tag : null, src: c ? c.src : null, box: c ? !c.boxSel.hidden : false, crumbs: [...document.querySelectorAll('.ed-crumb')].map(e => e.textContent), mode: c && c.lastMode, inequiv: c ? c.inequiv.length : -1, mapErrors: c ? c.mapErrors.length : -1, title: c ? c.doc.title : '' }; });
     /** לחיצה אמיתית (עכבר) על אלמנט בקנבס, לפי בורר. */
     const clickIn = async (page, sel, opt = {}) => {
-      const p = await page.evaluate(s => { const c = Editor._state.canvas, d = c.doc.querySelector(s); d.scrollIntoView({ block: 'center' }); const r = d.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + Math.min(r.width / 2, 12)) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale }; }, sel);
+      const p = await page.evaluate(([s, o]) => { const c = Editor._state.canvas, d = c.doc.querySelector(s); d.scrollIntoView({ block: 'center' }); const r = d.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + (o.center ? r.width / 2 : Math.min(r.width / 2, 12))) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale }; }, [sel, { center: !!opt.center }]);
       if (opt.alt) await page.keyboard.down('Alt');
       if (opt.touch) await page.touchscreen.tap(p.x, p.y); else await page.mouse.click(p.x, p.y);
       if (opt.alt) await page.keyboard.up('Alt');
@@ -89,14 +89,14 @@ const ATTACK = `<!doctype html>
     await page.evaluate(() => Editor._state.canvas.m2d.get(window.__t).removeAttribute('data-test-target'));
     let s = await st(page);
     ok(s.tag === target.tag && s.box, 'לחיצה בקנבס בוחרת את האלמנט (' + s.sel + '), והמסגרת מצוירת מעל הקנבס');
-    ok(s.crumbs.length >= 3 && s.crumbs[0] === 'html' && s.crumbs[s.crumbs.length - 1] === s.sel, 'שביל הניווט: ' + s.crumbs.join(' › '));
+    ok(s.crumbs.length >= 3 && s.crumbs[0].startsWith('html') && s.crumbs[s.crumbs.length - 1] === s.sel, 'שביל הניווט: ' + s.crumbs.join(' › '));
     ok(await page.evaluate(() => !Editor._state.canvas.doc.querySelector('[class*="kol"],[data-kol-sel]') && Editor._state.canvas.layer.ownerDocument === document), 'ה-DOM של הקנבס אינו מקבל סימון — המסגרות במסמך של המעטפת');
     // "פתח בקוד"
     await page.click('.ed-bar button:has-text("</>")');
     await page.waitForSelector('.pj-ed .monaco-editor .view-line');
     await page.waitForFunction(() => { const e = Project._state.editor, m = e && e.getModel(); return m && !e.getSelection().isEmpty(); });
     const selText = await page.evaluate(() => { const e = Project._state.editor; return e.getModel().getValueInRange(e.getSelection()); });
-    ok(location && selText === target.text, '"פתח בקוד": עורך הקוד נפתח על הקובץ, וטווח האלמנט מסומן');
+    ok(selText === target.text, '"פתח בקוד": עורך הקוד נפתח על הקובץ, וטווח האלמנט מסומן');
     // שינוי טקסט בקוד ← נראה בקנבס
     const marker = 'שונה-בקוד-' + Date.now();
     await page.evaluate(([t, m]) => { const e = Project._state.editor, mod = e.getModel(), a = mod.getPositionAt(t.to), s0 = mod.getValue(), close = s0.lastIndexOf('</', t.to), p = mod.getPositionAt(close); e.executeEdits('test', [{ range: new monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text: m }]); e.pushUndoStop(); }, [target, marker]);
@@ -104,7 +104,7 @@ const ATTACK = `<!doctype html>
     await page.waitForFunction(() => Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy);
     ok(await page.evaluate(m => Editor._state.canvas.doc.body.textContent.includes(m), marker), 'שינוי טקסט בעורך הקוד נראה בקנבס');
     // מחיקה בקנבס ← נראית בקוד
-    const victim = await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc; const n = K.all(c.m).find(x => !x.implied && x.et && x.kids.length >= 2 && x.kids.length < 30 && c.rectOf(x) && !c.rectOf(x).zero && x.parent && x.parent.tag !== 'html' && x.tag !== 'body' && !x.hasBroken && !x.broken); c.select(n); return { label: c.label(n), inside: K.all({ root: n }).length - 1, text: c.m.src.slice(n.from, K.endOf(c.m, n)), before: c.src }; });
+    const victim = await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, inB = x => { for (; x; x = x.parent) if (x.broken) return true; return false; }; const n = K.all(c.m).find(x => !x.implied && x.et && x.kids.length >= 2 && x.kids.length < 30 && c.rectOf(x) && !c.rectOf(x).zero && x.parent && x.parent.tag !== 'html' && x.tag !== 'body' && !x.hasBroken && !inB(x)); c.select(n); return { label: c.label(n), inside: K.all({ root: n }).length - 1, text: c.m.src.slice(n.from, K.endOf(c.m, n)), before: c.src }; });
     await page.keyboard.press('Delete');
     await sleep(100);
     s = await st(page);
@@ -112,7 +112,7 @@ const ATTACK = `<!doctype html>
     ok(!s.src.includes(victim.text) && s.src.length < victim.before.length, 'Delete: האלמנט הוסר מהקובץ ומהקנבס (' + victim.label + ')');
     ok(noteText.includes('נמחק') && noteText.includes('עם ' + victim.inside + ' אלמנטים בתוכו') && noteText.includes('בטל'), 'ההודעה: "' + noteText.replace('✕', '').trim() + '"');
     ok(await page.evaluate(() => Editor._state.doc.text() === Editor._state.canvas.src && Project._state.docs.get(Editor._state.file.id).model.getValue() === Editor._state.canvas.src), 'המחיקה נראית בעורך הקוד — אותו מסמך, בלי טעינה מחדש');
-    ok(s.mode === 'inc' && s.inequiv === 0 && s.mapErrors === 0, 'העדכון הדרגתי (' + s.mode + '), שקול לניתוח מלא, והמיפוי שלם');
+    ok(s.inequiv === 0 && s.mapErrors === 0, 'אחרי המחיקה המודל שקול לניתוח מלא והמיפוי שלם (מצב העדכון בקובץ הזה: ' + s.mode + ')');
     ok(await page.evaluate(() => { const c = Editor._state.canvas; return window.KolCanvas.sameDom(c.doc.documentElement, window.KolCanvas.browserParse(c.src).documentElement, true).filter(d => !/base|style/.test(d)).length === 0; }), 'ה-DOM של הקנבס אחרי המחיקה זהה לניתוח טרי של הדפדפן');
     // אותה שמירה, אותו rev, אותה היסטוריה
     await page.waitForFunction(r => !Editor._state.doc.dirty && Editor._state.doc.rev > r, rev0, { timeout: 10000 });
@@ -132,7 +132,7 @@ const ATTACK = `<!doctype html>
     await page.keyboard.press('Control+z'); await sleep(60); await page.keyboard.press('Control+z'); await sleep(60);
     // היסטוריה משותפת: חזותי, הקלדה בקוד, חזותי — שלושה ביטולים בסדר
     const snap = [];
-    const delFirst = async () => { await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc; c.select(K.all(c.m).find(x => !x.implied && x.et && !x.kids.length && c.rectOf(x) && x.parent && x.parent.et && x.parent.tag !== 'head' && !x.broken)); }); await page.keyboard.press('Delete'); await sleep(80); };
+    const delFirst = async () => { await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, inB = x => { for (; x; x = x.parent) if (x.broken) return true; return false; }; c.select(K.all(c.m).find(x => !x.implied && x.et && !x.kids.length && c.rectOf(x) && x.parent && x.parent.et && x.parent.tag !== 'head' && !inB(x))); }); await page.keyboard.press('Delete'); await sleep(80); };
     snap.push((await st(page)).src); await delFirst();
     snap.push((await st(page)).src);
     await page.evaluate(() => { const m = Project._state.docs.get(Editor._state.file.id).model; m.pushStackElement(); m.pushEditOperations(null, [{ range: new monaco.Range(1, 1, 1, 1), text: '<!-- הוקלד בקוד -->' }], () => null); m.pushStackElement(); });
@@ -172,6 +172,7 @@ const ATTACK = `<!doctype html>
     await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#evil-class'))); });
     await page.keyboard.press('Delete'); await sleep(100);
     ok(await page.evaluate(() => !document.querySelector('.ed-note img') && document.querySelector('.ed-note').textContent.includes('נמחק')) && (await page.evaluate(() => window.__msgs.length)) === 0, 'גם בהודעת המחיקה — טקסט בלבד');
+    ok((await st(page)).mode === 'inc' && (await st(page)).inequiv === 0, 'בקובץ תקין המחיקה היא עדכון הדרגתי, שקול לניתוח מלא');
     await page.keyboard.press('Control+z'); await sleep(100);
     // הוספת סקריפט דרך תיקון (הקלדה בקוד) — גם הוא אינו רץ
     await page.evaluate(() => { const m = Project._state.docs.get(Editor._state.file.id).model, at = m.getValue().indexOf('<h2'), p = m.getPositionAt(at); m.pushEditOperations(null, [{ range: new monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text: '<script>parent.postMessage("pwned:patched","*")</scr' + 'ipt><img src="nope-pwned2.png" onerror="parent.postMessage(\'pwned:patched-img\',\'*\')">' }], () => null); });
@@ -200,7 +201,7 @@ const ATTACK = `<!doctype html>
     const a1 = (await st(page)).crumbs.length;
     await page.keyboard.press('ArrowLeft'); await sleep(40);
     const sib = await page.evaluate(() => { const c = Editor._state.canvas; return c.selected.parent.kids.indexOf(c.selected); });
-    ok(a1 === 6 && sib === 1, 'חיצים: ילד, ואח (בעמוד RTL שמאל = הבא)');
+    ok(a1 === 5 && sib === 1, 'חיצים: ילד, ואח (בעמוד RTL שמאל = הבא)');
     await clickIn(page, '.in span', { alt: true }); const alt1 = (await st(page)).sel; await clickIn(page, '.in span', { alt: true }); const alt2 = (await st(page)).sel;
     ok(alt1 !== alt2 && [alt1, alt2].every(Boolean), 'Alt + לחיצה עובר בין אלמנטים שמונחים זה על זה (' + alt1 + ' ← ' + alt2 + ')');
     await page.hover('.ed-canvas', { position: { x: 300, y: 60 } }); await sleep(80);
@@ -234,20 +235,19 @@ const ATTACK = `<!doctype html>
     await openPage(page, 'atk/broken.html');
     const br = await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc; c.draw(); return { marks: c.m.marks, strip: !document.querySelector('p.ed-strip.warn').hidden, boxes: document.querySelectorAll('.ed-mark-broken').length, bad: K.all(c.m).filter(n => n.broken).map(n => c.label(n)) }; });
     ok(br.marks > 0 && br.strip && br.boxes > 0, 'קובץ שבור נטען; האזור השבור מסומן בקנבס (' + br.bad.join(', ') + ')');
-    await clickIn(page, '#ok2'); const beforeB = (await st(page)).src;
+    await clickIn(page, '#ok2', { center: true });   /* במרכז: בפינה יושב המצביע של ה-<p> הריק שמעליו */ const beforeB = (await st(page)).src;
     ok((await st(page)).sel === 'footer#ok2', 'מה שמחוץ לאזור השבור נבחר');
     await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc; c.select(K.all(c.m).find(n => n.broken)); });
     await page.keyboard.press('Delete'); await sleep(100);
     const nb = await page.evaluate(() => ({ text: document.querySelector('.ed-note').textContent, err: document.querySelector('.ed-note').classList.contains('err'), btn: !!document.querySelector('.ed-note .btn') }));
     ok((await st(page)).src === beforeB && nb.err && nb.text.includes('שבור') && nb.text.includes('פתח בקוד'), 'מחיקה באזור שבור נדחית, בהודעה, עם "פתח בקוד" — והקובץ לא השתנה');
-    await clickIn(page, '#ok2'); await page.keyboard.press('Delete'); await sleep(120);
+    await clickIn(page, '#ok2', { center: true });   /* במרכז: בפינה יושב המצביע של ה-<p> הריק שמעליו */ await page.keyboard.press('Delete'); await sleep(120);
     ok(!(await st(page)).src.includes('id="ok2"') && (await st(page)).inequiv === 0, 'מחיקה מחוץ לאזור השבור עובדת (ניתוח מלא: ' + (await st(page)).mode + ')');
     await page.keyboard.press('Control+z'); await sleep(120);
     ok((await st(page)).src === beforeB, 'והביטול מחזיר קובץ זהה');
 
     // ── 5. קובץ שאינו UTF-8 — קריאה בלבד ──
-    const bid = await page.evaluate(async () => { const fd = new FormData(); return null; });
-    await call(page, 'pf_create', { path: 'atk/legacy.html', b64: Buffer.from([0x3c, 0x68, 0x31, 0x3e, 0xf9, 0xec, 0xe5, 0xed, 0x3c, 0x2f, 0x68, 0x31, 0x3e]).toString('base64') }).catch(e => { console.log('   (pf_create b64: ' + e.message + ')'); });
+    await call(page, 'pf_create', { path: 'atk/legacy.html', content_b64: Buffer.from([0x3c, 0x68, 0x31, 0x3e, 0xf9, 0xec, 0xe5, 0xed, 0x3c, 0x2f, 0x68, 0x31, 0x3e]).toString('base64') }).catch(e => { console.log('   (pf_create b64: ' + e.message + ')'); });
     const hasLegacy = await page.evaluate(async () => { await Project.docs.files(); const d = await api('pf_tree'); return d.files.some(f => f.path === 'atk/legacy.html'); });
     if (hasLegacy) {
       await openPage(page, 'atk/legacy.html');

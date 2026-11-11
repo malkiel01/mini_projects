@@ -254,6 +254,7 @@ const Project = (() => {
   function drawAll() { if (!S.host) return; drawBars(); drawTree(); drawTabs(); drawEditor(); drawStatus(); }
 
   function drawBars() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const k = S.kol;
     el.kol.hidden = !k || k.valid;
     if (k && !k.valid) {
@@ -274,6 +275,7 @@ const Project = (() => {
   }
 
   function drawTree() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const entry = S.kol?.config?.entry;
     const rows = [];
     const walk = (n, depth) => {
@@ -304,6 +306,7 @@ const Project = (() => {
   }
 
   function drawTabs() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     el.tabs.replaceChildren(...S.tabs.map(id => {
       const f = S.byId.get(id);
       const name = f ? base(f.path) : '(נמחק)';
@@ -316,6 +319,7 @@ const Project = (() => {
   }
 
   function drawEditor() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
     el.ed.hidden = el.view.hidden = true;
     if (!f || !doc) {
@@ -358,6 +362,7 @@ const Project = (() => {
   }
 
   function drawStatus() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const doc = S.docs.get(S.cur), f = S.byId.get(S.cur);
     const editable = !!doc && !doc.binary;
     el.save.disabled = !editable || !doc.dirty || doc.saving;
