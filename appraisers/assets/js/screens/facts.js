@@ -39,6 +39,7 @@ function fSource(f, pid) {
         return `${s.kind === 'ai' ? esc(F.sourceKinds.ai) + ' · ' : ''}${doc}${date}${s.locator ? ` · <q dir="auto">${esc(s.locator)}</q>` : ''}${
             s.doc_state === 'deleted' ? ` <span class="chip bad">${esc(F.srcDeleted)}</span>` : s.doc_state === 'returned' ? ` <span class="chip warn">${esc(F.srcReturned)}</span>` : ''}`;
     }
+    if (s.check) return `<a href="#/cases/${pid}/check/${s.check}">🔎 ${esc(s.check_source)}</a> · ${esc(T.s.statuses[s.check_status] || '')}${s.note ? ' · ' + esc(s.note) : ''}${date}`;
     return `${esc(F.sourceKinds[s.kind] || s.kind)}${s.note ? ' · ' + esc(s.note) : ''}${date}`;
 }
 
@@ -107,6 +108,8 @@ async function factAddSheet(pid, a, x, preset, reload) {
     const docs = await api('case-docs', { params: { case: pid } });
     const files = [...docs.requirements.flatMap(r => r.files.map(l => l.file)), ...docs.unassigned].filter((f, i, all) => !f.deleted && all.findIndex(o => o.pid === f.pid) === i);
     const kind0 = preset?.file ? 'document' : files.length ? 'document' : 'user';
+    // בדיקות מקור שיש בהן ממצא (09) — "לא אותר" ו"מקור לא זמין" אינם מקור לנתון
+    const checks = (await api('case-sources', { params: { case: pid } })).sources.flatMap(s => [s.latest, s.verified]).filter(k => k && ['found', 'partial', 'verified', 'needs_clarification'].includes(k.status));
     const dlg = sheet(`${F.addFact}: ${a.label}`, `${fValueFields(a, x, null)}
         <label class="switch"><input type="checkbox" name="estimated"><span>${F.estimatedLabel}</span></label>
         <label class="f"><span>${F.source}</span><select name="kind">${x.sources.map(k => cOpt(k, F.sourceKinds[k], kind0)).join('')}</select></label>
@@ -114,12 +117,13 @@ async function factAddSheet(pid, a, x, preset, reload) {
           ${files.length ? '' : `<p class="hint">${F.noFiles}</p>`}
           <label class="f"><span>${F.pageLabel}</span><input name="page" inputmode="numeric" dir="ltr" maxlength="6" value="${esc(preset?.page || '')}"></label>
           <label class="f"><span>${F.locator}</span><input name="locator" maxlength="300" dir="auto"></label></div>
+        <div data-src="source_check"><label class="f"><span>${T.s.checkTitle}</span><select name="check"><option value=""></option>${checks.map(k => cOpt(k.pid, `${k.source_name} · ${fmtDate(k.performed_at)} · ${T.s.statuses[k.status]}`, '')).join('')}</select></label></div>
         <div data-src="user"><label class="f"><span>${F.toldBy}</span><input name="src_note" maxlength="200" dir="auto"></label></div>
         <label class="f"><span>${F.sourceDate}</span><input type="date" name="src_date"></label>
         <label class="f"><span>${F.note}</span><textarea name="note" maxlength="1000" rows="2"></textarea></label>
         <label class="switch"><input type="checkbox" name="not_found"><span>${F.notFound}</span></label><p class="hint">${F.notFoundHint}</p>`, async v => {
         const page = (v.page || '').trim();
-        const source = { kind: v.kind, date: v.src_date || null, ...(v.kind === 'document' ? { file: v.file || null, page: /^\d+$/.test(page) ? Number(page) : page === '' ? null : page, locator: v.locator } : { note: v.src_note }) };
+        const source = { kind: v.kind, date: v.src_date || null, ...(v.kind === 'document' ? { file: v.file || null, page: /^\d+$/.test(page) ? Number(page) : page === '' ? null : page, locator: v.locator } : v.kind === 'source_check' ? { ref: v.check || null } : { note: v.src_note }) };
         await fSend('fact-add', { case: pid, attribute: a.key, ...fValueBody(a, v), estimated: !!v.estimated, source, note: v.note, ...(v.not_found ? { state: 'needs_clarification' } : {}) });
         toast(F.saved);
         reload();

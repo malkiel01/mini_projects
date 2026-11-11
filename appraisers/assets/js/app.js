@@ -8,6 +8,7 @@
  *   #/cases · #/cases/new · #/cases/<pid>[/setup[/<שלב>] | /parties | /reqs[/<דרישה>] | /file/<קובץ> | /activity]   תיקים
  *   #/cases/<pid>/facts[/<מאפיין>] · #/cases/<pid>/conflicts[/<סתירה>]   נתוני הנכס וסתירות (10)
  *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
+ *   #/cases/<pid>/sources[/<מקור>] · #/cases/<pid>/check/<בדיקה> · #/cases/<pid>/planning/<פריט> · #/sources[/<מקור>]   מקורות ותכנון (09)
  *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
@@ -94,6 +95,7 @@ async function route() {
         else if (a === 'cases' && ok) await viewCases(b, c, d);
         else if (a === 'tasks' && ok) await viewMyTasks();
         else if (a === 'contacts' && ok) await viewContacts();
+        else if (a === 'sources') await viewSourcesCatalog(b);
         else if (a === 'profiles' && (ok || me.user.is_sysadmin)) await viewProfiles(b, c, d);
         else if (a === 'system' && me.user.is_sysadmin) await viewSystem(b);
         else if (a === 'dev' && me.user.is_developer) await viewDev(b, c);
