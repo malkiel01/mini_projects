@@ -66,6 +66,7 @@ const Project = (() => {
     // לשונית של קובץ שנמחק או שונה שמו — מתעדכנת
     S.tabs = S.tabs.filter(id => S.byId.has(id) || S.docs.get(id)?.dirty);
     if (!S.tabs.includes(S.cur)) S.cur = S.tabs[S.tabs.length - 1] ?? null;
+    if (el.mig) el.mig.hidden = !S.canPurge;                     // ההסבה ו"פרויקט ריק" — בעלים בלבד
     drawAll();
   }
 
@@ -95,7 +96,7 @@ const Project = (() => {
     const f = S.byId.get(id);
     if (!f || f.kind === 'dir') return;
     if (!S.tabs.includes(id)) S.tabs.push(id);
-    if (activate) S.cur = id;
+    if (activate) { S.cur = id; if (phone()) side(false); }    // בטלפון העץ מכסה את העורך — קובץ שנפתח סוגר אותו
     persist();
     if (!S.docs.has(id)) {
       const doc = { id, rev: f.rev, dirty: false, model: null, saved: '', binary: false, saving: false, timer: 0, conflict: false };
@@ -468,6 +469,41 @@ const Project = (() => {
   }
 
   // ── הסל ───────────────────────────────────────────────────
+  // ── ההסבה (F3): "צור פרויקט מהעמוד של היום" ו"פרויקט ריק" — בעלים בלבד ─────────
+  const NOTE_ICON = { failed: '❌', warn: '⚠️', changed: '✏️', dropped: '➖' };
+  function migrateReport(r, title) {
+    sheet(title,
+      r.snapshot ? h('p', { class: 'hint' }, `נקודת שחזור נשמרה לפני הפעולה (♻️ שחזור). ${r.trashed ? `הפרויקט הקודם — ${r.trashed} פריטים — בסל הפרויקט.` : ''}`) : null,
+      r.taken ? h('h3', {}, 'מה נלקח מאיפה') : null,
+      r.taken ? h('ul', { class: 'list' }, r.taken.map(([what, from]) => h('li', { class: 'card' }, h('div', { class: 'body' }, h('strong', { dir: 'auto' }, what), h('div', { class: 'hint' }, from))))) : null,
+      r.notes?.length ? h('h3', {}, `מה השתנה בדרך, ומה לא הומר · ${r.notes.length}`) : null,
+      r.notes?.length ? h('ul', { class: 'list' }, r.notes.map(([kind, text]) => h('li', { class: 'card' }, h('div', { class: 'body' }, (NOTE_ICON[kind] || '•') + ' ' + text)))) : null,
+      h('p', { class: 'hint' }, 'הקבצים: ' + (r.files || []).join(' · ')));
+  }
+  async function migrateSheet() {
+    let last = null;
+    try { last = (await api('pf_migrate_last')).last; } catch { /* בלי הדוח הקודם */ }
+    const go = async (action, question, done) => {
+      if (S.tabs.some(dirty) && !confirm('יש קבצים עם שינויים שלא נשמרו. להמשיך בלי לשמור אותם?')) return;
+      if (!confirm(question)) return;
+      dlg.close();
+      try {
+        const r = await api(action, {});
+        for (const d of S.docs.values()) { clearTimeout(d.timer); d.dirty = false; d.model?.dispose(); }
+        S.docs.clear(); S.tabs = []; S.cur = null; persist();
+        await refresh();
+        bc?.postMessage({ t: 'saved' });
+        migrateReport(r, done);
+      } catch (e) { toast(e.message, true); }
+    };
+    const dlg = sheet('פרויקט חדש',
+      h('p', { class: 'hint' }, 'שתי הפעולות מעבירות את קבצי הפרויקט הנוכחי לסל (אפשר לשחזר), ושומרות נקודת שחזור לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
+      h('div', { class: 'pj-menu' },
+        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: () => go('pf_migrate', 'ליצור את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'הפרויקט נוצר מהעמוד של היום') }, '🪄 צור פרויקט מהעמוד של היום'),
+        h('button', { type: 'button', class: 'btn', 'data-blank-run': true, onclick: () => go('pf_blank', 'להתחיל פרויקט ריק?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'פרויקט ריק נוצר') }, '📄 פרויקט ריק'),
+        last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח ההסבה האחרונה · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח ההסבה האחרונה') : null));
+  }
+
   async function trashSheet() {
     let d;
     try { d = await api('pf_trash'); } catch (e) { return toast(e.message, true); }
@@ -523,6 +559,7 @@ const Project = (() => {
     el.tree = h('ul', { class: 'pj-tree', 'aria-label': 'קבצי הפרויקט' });
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
+    el.mig = h('button', { type: 'button', class: 'btn sm', 'data-migrate': true, hidden: true, title: 'יצירת הפרויקט מהעמוד של היום, או פרויקט ריק', onclick: migrateSheet }, '🪄 פרויקט חדש');
     el.tabs = h('div', { class: 'pj-tabs', role: 'tablist', 'aria-label': 'קבצים פתוחים' });
     // עורך אחד לכל חיי הדף: Monaco שנסגר (dispose) משבית פעולות בעורך שנפתח אחריו — לכן שומרים אותו ומחברים מחדש
     el.ed = el.ed || h('div', { class: 'pj-ed', dir: 'ltr', hidden: true });
@@ -543,7 +580,7 @@ const Project = (() => {
         h('button', { type: 'button', class: 'btn sm', onclick: () => newDir('') }, '+ תיקייה'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => pick('') }, '⬆️ העלאה'),
         h('button', { type: 'button', class: 'btn sm', 'data-live': true, onclick: () => live() }, '▶️ תצוגה חיה'),
-        el.trash),
+        el.trash, el.mig),
       el.tree, el.count);
     // גרירה מהמחשב אל תיקייה (או אל העץ — לשורש)
     aside.addEventListener('dragover', e => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); aside.classList.add('drop'); } });
@@ -562,7 +599,10 @@ const Project = (() => {
     if (S.host !== host) return;
     if (monaco && !S.editor) {
       S.editor = monaco.editor.create(el.ed, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: prefs.wrap ? 'on' : 'off',
-        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false } });
+        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false },
+        // "הכותרת הדביקה" של Monaco מתעדכנת באיחור (async), ואחרי שינוי שמקצר את הקובץ (מחיקה בעורך החזותי, ביטול) היא
+        // שואלת על שורה שכבר אינה קיימת — "Illegal value for lineNumber" (V1a 🟡-1). כבויה.
+        stickyScroll: { enabled: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
     }
     try {
@@ -599,10 +639,13 @@ const Project = (() => {
     const f = S.files.find(x => x.path === path);
     if (!f) { toast('הקובץ אינו בפרויקט: ' + path, true); return; }
     await openFile(f.id);
-    if (S.editor && line > 0) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); }
     const m = S.docs.get(f.id)?.model;
+    if (S.editor && m) for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+    if (S.editor && m && line > 0 && S.editor.getModel() === m) {   // שורה שמעבר לסוף הקובץ (המסוף מדווח על גרסה ישנה) — נתחמת
+      const ln = Math.min(line, m.getLineCount());
+      S.editor.revealLineInCenter(ln); S.editor.setPosition({ lineNumber: ln, column: 1 }); S.editor.focus();
+    }
     if (S.editor && m && range) {
-      for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
       if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
       const a = m.getPositionAt(range.from), b = m.getPositionAt(range.to), sel = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
       S.editor.setSelection(sel); S.editor.revealRangeInCenterIfOutsideViewport(sel); S.editor.focus();
@@ -648,7 +691,7 @@ const Project = (() => {
 
   document.addEventListener('DOMContentLoaded', () => {
     if (typeof ACTIONS === 'object') Object.assign(ACTIONS, { pf_create: '📁 יצר קובץ בפרויקט', pf_mkdir: '📁 יצר תיקייה בפרויקט', pf_rename: '📁 שינה שם בפרויקט',
-      pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
+      pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
   return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, _state: S, _open: openFile, _save: save };
