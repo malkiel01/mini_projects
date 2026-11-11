@@ -562,7 +562,10 @@ const Project = (() => {
     if (S.host !== host) return;
     if (monaco && !S.editor) {
       S.editor = monaco.editor.create(el.ed, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: prefs.wrap ? 'on' : 'off',
-        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false } });
+        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false },
+        // "הכותרת הדביקה" של Monaco מתעדכנת באיחור (async), ואחרי שינוי שמקצר את הקובץ (מחיקה בעורך החזותי, ביטול) היא
+        // שואלת על שורה שכבר אינה קיימת — "Illegal value for lineNumber" (V1a 🟡-1). כבויה.
+        stickyScroll: { enabled: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
     }
     try {
@@ -599,10 +602,13 @@ const Project = (() => {
     const f = S.files.find(x => x.path === path);
     if (!f) { toast('הקובץ אינו בפרויקט: ' + path, true); return; }
     await openFile(f.id);
-    if (S.editor && line > 0) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); }
     const m = S.docs.get(f.id)?.model;
+    if (S.editor && m) for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+    if (S.editor && m && line > 0 && S.editor.getModel() === m) {   // שורה שמעבר לסוף הקובץ (המסוף מדווח על גרסה ישנה) — נתחמת
+      const ln = Math.min(line, m.getLineCount());
+      S.editor.revealLineInCenter(ln); S.editor.setPosition({ lineNumber: ln, column: 1 }); S.editor.focus();
+    }
     if (S.editor && m && range) {
-      for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
       if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
       const a = m.getPositionAt(range.from), b = m.getPositionAt(range.to), sel = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
       S.editor.setSelection(sel); S.editor.revealRangeInCenterIfOutsideViewport(sel); S.editor.focus();
