@@ -58,7 +58,7 @@ const Editor = (() => {
       const doc = await Project.docs.open(id);
       if (!doc) throw new Error('הקובץ לא נפתח');
       if (S.host === null) return;
-      S.file = f; S.doc = doc; S.readOnly = ''; prefs.page = f.path; keep();
+      S.file = f; S.doc = doc; S.readOnly = ''; prefs.page = f.path; keep(); S.blocked = new Map(); drawBlocked();
       try {                                                                 // הנעילה ורוחבי המכשיר — כבר בפתיחה, לא בכתיבה הראשונה
         const info = await Project.docs.info();
         if (info.lock?.by) S.readOnly = 'העמוד בעריכה אצל ' + info.lock.by + ' — כאן אפשר לראות ולבחור, לא לשנות';
@@ -216,19 +216,20 @@ const Editor = (() => {
         await shooting;
         const r = await R.send(d, tried.value, shot);
         S.lastReport = r;
+        await drawMine(list);                                               // קודם הרשימה, ואז ההודעה: מי שרואה "נפתחה מטלה" רואה אותה כבר ב"הדיווחים שלי"
         msg.textContent = '✅ נפתחה מטלה ' + r.code + (r.attached ? ', עם הצילום' : ' (בלי צילום)') + '. היא נשארת פתוחה עד שתאשר שזה נפתר.';
-        drawMine(list);
       } catch (e) { msg.textContent = '⚠️ ' + e.message; sendBtn.disabled = false; }
     });
     sheet('🐞 לא הצלחתי לשנות את זה', shotBox, h('pre', { class: 'ed-report-info', dir: 'auto' }, R.detail(d, '').split('\n').slice(2).join('\n')), tried, h('div', { class: 'ed-report-go' }, sendBtn), msg, h('h3', { class: 'dt-h' }, 'הדיווחים שלי'), list);
     drawMine(list);
   }
   async function drawMine(list) {
-    const R = window.KolReport;
+    const R = window.KolReport, turn = list._turn = (list._turn || 0) + 1;   // בקשה ישנה שחוזרת מאוחר אינה דורסת רשימה חדשה ממנה
     try {
       const items = (await R.mine()).filter(x => x.area === R.LABEL);
+      if (list._turn !== turn) return;
       list.replaceChildren(...(items.length ? items.map(x => h('div', { class: 'ed-mine-row' }, h('code', {}, x.code), h('span', {}, x.title.replace(R.LABEL + ': ', '')), h('b', {}, R.STATUS[x.status] || x.status))) : [h('p', { class: 'hint' }, 'עוד לא דיווחת על דבר.')]));
-    } catch (e) { list.replaceChildren(h('p', { class: 'hint' }, e.message)); }
+    } catch (e) { if (list._turn === turn) list.replaceChildren(h('p', { class: 'hint' }, e.message)); }
   }
   /** תפריט ההקשר של אלמנט (לחיצה ימנית; לחיצה ארוכה במגע; מקש התפריט / Shift+F10). */
   function ctxMenu(n) {
@@ -370,6 +371,13 @@ const Editor = (() => {
   }
   const infoOpen = () => !!el.root?.classList.contains('info-open');
   function drawInfo() { if (S.info && infoOpen()) { try { S.info.draw(); } catch (e) { console.error(e); } } }
+  /** משאבים חיצוניים של העמוד שאינם נטענים בקנבס (המדיניות של העורך) — פס עם הרשימה, כטקסט. */
+  function drawBlocked() {
+    if (!el.blocked) return;
+    const list = [...(S.blocked || new Map()).keys()];
+    el.blocked.hidden = !list.length;
+    if (list.length) el.blocked.replaceChildren(h('summary', {}, list.length + ' משאבים חיצוניים אינם מוצגים בעורך — הם מוצגים ב"▶️ תצוגה חיה"'), h('ul', { dir: 'ltr' }, list.slice(0, 50).map(u => h('li', {}, u))));
+  }
   function drawAll() {
     if (!S.host) return;
     drawState(); drawCrumbs(); S.nav?.refresh(); drawInfo(); saveMarks();
@@ -403,6 +411,7 @@ const Editor = (() => {
     el.where = h('span', { class: 'ed-where' });
     el.cap = h('button', { type: 'button', class: 'ed-strip', hidden: true, onclick: () => { S.canvas.showAll(!S.canvas.capOff); drawAll(); } });
     el.broken = h('p', { class: 'ed-strip warn', role: 'alert', hidden: true });
+    el.blocked = h('details', { class: 'ed-strip ed-blocked', hidden: true });
     el.note = h('div', { class: 'ed-note', role: 'status', hidden: true });
     el.canvas = h('div', { class: 'ed-canvas' });
     const toggle = (id, icon, label) => h('button', { type: 'button', class: 'icon-btn', 'data-panel': id, 'aria-pressed': 'false', 'aria-label': label, title: label, onclick: () => panel(id) }, icon);
@@ -418,7 +427,7 @@ const Editor = (() => {
     el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
-      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken, el.point,
+      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken, el.blocked, el.point,
       h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navBody), el.mid, side('info', 'פרטים', el.infoBody)), el.note);
     host.replaceChildren(el.root);
     status('טוען…');
@@ -430,6 +439,7 @@ const Editor = (() => {
       S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); }, onToggle: saveMarks });
       S.info = new window.KolDetails.Details(el.infoBody, { canvas: c, K, sheets: () => S.sheets, file: () => S.file, openAt: (p, line) => Project.openAt(p, line), openEl: n => openInCode(n) });
       c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
+      c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);
       if (!phone() && prefs.navOpen !== false) panel('nav', true);

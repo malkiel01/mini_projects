@@ -366,6 +366,15 @@ const PAGE = `<!doctype html>
     ok(await page.evaluate(() => { const c = Editor._state.canvas; return !!c.doc.querySelector('h1') && getComputedStyle(c.doc.querySelector('#t1')).color === 'rgb(7, 7, 7)'; }), 'תחת המדיניות: הקנבס מוצג, וה-CSS של הפרויקט חל בו');
     await page.evaluate(() => Editor._state.canvas.doc.querySelector('img[src$="y.png"]')?.remove());
 
+    // משאב חיצוני שנחסם בקנבס — העורך אומר זאת
+    await call(page, 'pf_create', { path: 't/ext.html', content: '<!doctype html><html><head><title>ext</title><link rel="stylesheet" href="https://cdn.example.net/x.css"></head><body><h1>חיצוני</h1><img src="https://example.com/a.png" alt=""><img src="https://example.com/a.png" alt=""></body></html>\n' });
+    await openPage(page, 't/ext.html');
+    await page.waitForFunction(() => { const b = document.querySelector('.ed-blocked'); return b && !b.hidden && b.querySelectorAll('li').length === 2; }, null, { timeout: 10000 }).catch(() => {});
+    const blk = await page.evaluate(() => { const b = document.querySelector('.ed-blocked'); return { hidden: b.hidden, sum: b.querySelector('summary')?.textContent || '', items: [...b.querySelectorAll('li')].map(x => x.textContent), html: b.querySelectorAll('img, a, link').length }; });
+    ok(!blk.hidden && blk.sum.startsWith('2 משאבים חיצוניים אינם מוצגים בעורך') && blk.sum.includes('תצוגה חיה') && blk.items.includes('https://cdn.example.net/x.css') && blk.items.includes('https://example.com/a.png') && blk.html === 0, 'משאבים חיצוניים שנחסמו בקנבס: פס בעורך עם המספר והכתובות (כטקסט) — ' + blk.sum);
+    await openPage(page, 't/page.html');
+    ok(await page.evaluate(() => document.querySelector('.ed-blocked').hidden), 'בעמוד בלי משאבים חיצוניים — הפס אינו מוצג');
+
     // ── 3ג. מה שנדחה מ-V1a ──
     // שם העסקה נשמר בהיסטוריית הקובץ, ונראה ב"גרסאות"
     await call(page, 'pf_create', { path: 't/v.html', content: '<!doctype html><html><head><title>v</title></head><body>\n<h1 id="keep">נשאר</h1>\n<h2 class="gone">נמחק</h2>\n<p>סוף</p>\n</body></html>\n' });

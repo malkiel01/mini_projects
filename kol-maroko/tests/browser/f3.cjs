@@ -329,7 +329,7 @@ const UNIT_PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset=
 
     // ════ ד. העורך החזותי על index.html המוסב ════
     group = 'העורך החזותי';
-    await page.goto(base + '/#/editor/' + encodeURIComponent('index.html')); await page.reload();
+    await page.goto(base + '/editor.php#/editor/' + encodeURIComponent('index.html')); await page.reload();   // העורך הוא מסמך משלו (V1b); index.html#/editor מפנה אליו — נבדק ב-v1b.cjs
     await page.waitForFunction(() => Editor._state.file && Editor._state.file.path === 'index.html' && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
     const ed = await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, all = K.all(c.m); c.draw(); return { marks: c.m.marks, broken: all.filter(n => n.broken || n.hasBroken).map(n => c.label(n)), total: all.length, strip: !document.querySelector('p.ed-strip.warn').hidden, boxes: document.querySelectorAll('.ed-mark-broken').length, visible: all.filter(n => !n.implied && c.rectOf(n) && !c.rectOf(n).zero).length }; });
     report.editor = ed;

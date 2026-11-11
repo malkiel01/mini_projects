@@ -368,6 +368,8 @@
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
       doc.addEventListener('touchstart', e => { const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
       doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
+      // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
+      doc.addEventListener('securitypolicyviolation', e => { if (this.onBlocked && /^https?:/i.test(e.blockedURI || '')) this.onBlocked(e.blockedURI, e.effectiveDirective || ''); });
       doc.addEventListener('keydown', e => { if (this.onKey) this.onKey(e); }, true);
       this.frame.contentWindow.addEventListener('resize', () => this.draw());
       this.events = [];

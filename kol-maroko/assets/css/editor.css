@@ -131,3 +131,5 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed-keys th, .ed-keys td { padding: 5px 4px; border-top: 1px solid var(--line); text-align: start; vertical-align: baseline; font-weight: 400; }
 .ed-keys kbd { font: .78rem ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
 .ed :focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.ed-blocked summary { cursor: pointer; }
+.ed-blocked ul { margin: var(--s1) 0 0; padding-inline-start: 1.2em; font: .75rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; max-height: 8em; overflow: auto; }
