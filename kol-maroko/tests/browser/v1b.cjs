@@ -145,6 +145,30 @@ const PAGE = `<!doctype html>
     ok(await page.evaluate(() => !document.querySelector('.ed img[src="x"]') && !document.querySelector('.nv-list img')) && (await page.evaluate(() => window.__msgs)).length === 0, 'מחלקה בשם "><img onerror> מוצגת ב-Navigator כטקסט בלבד');
     await navClick(page); await navSearch(page, '');
 
+    // ── 1ב. פאנל "פרטים" ──
+    ok(await page.isVisible('.ed-info .dt'), 'פאנל "פרטים" פתוח לצד הקנבס (1280px)');
+    ok(!(await page.evaluate(() => document.querySelector('.dt img'))) && (await page.$eval('.dt', e => e.textContent)).includes('onerror=') && (await page.evaluate(() => window.__msgs)).length === 0, 'מחלקה בשם "><img onerror> מוצגת ב"פרטים" כטקסט בלבד');
+    await navSearch(page, '#t1'); await navClick(page); await navSearch(page, '');
+    const info = await page.evaluate(() => { const d = Editor._state.info.last; return { text: document.querySelector('.dt').textContent, rules: d.rules.map(r => ({ sel: r.sel, path: r.path, line: r.line, off: !!r.off, media: r.media, decls: r.decls.map(x => x.prop + ':' + x.value + (x.important ? '!' : '') + '@' + x.line + (x.by ? ' <' + x.by.sel : '')) })) }; });
+    const rule = (sel, p) => info.rules.find(r => r.sel === sel && r.path === p);
+    ok(info.text.includes('<h1>') && info.text.includes('#t1') && info.text.includes('.hero-title') && info.text.includes('.inline-rule') && info.text.includes('t/page.html') && info.text.includes('שורה 7'), 'פרטים: תגית, מזהה, מחלקות, הקובץ והשורה');
+    ok(info.rules.length === 7, 'פרטים: 7 כללים חלים על h1 (שני קבצים מקושרים, <style> בדף, @media, ו-style=) — ' + info.rules.length);
+    ok(rule('.hero-title', 't/a.css')?.line === 1 && rule('#t1', 't/a.css')?.line === 4 && rule('.hero-title', 't/sub/b.css')?.line === 3 && rule('.hero-title', 't/sub/b.css').decls[0].startsWith('font-weight:400@4'), 'פרטים: לכל כלל הקובץ והשורה שלו, ולכל הצהרה השורה שלה');
+    ok(rule('.inline-rule', 't/page.html')?.line === 4 && rule('.inline-rule', 't/page.html').decls[0] === 'letter-spacing:3px@4', 'פרטים: כלל מתוך <style> שבדף — השורה בקובץ ה-HTML');
+    const colors = info.rules.filter(r => !r.off).flatMap(r => r.decls.filter(d => d.startsWith('color:')));
+    ok(colors.length === 4 && colors.filter(d => d.includes(' <h1.hero-title')).length === 3 && colors.some(d => d.startsWith('color:rgb(7, 7, 7)!') && !d.includes(' <')), 'פרטים: מה נדרס — שלוש הצהרות color נדרסות בידי h1.hero-title !important');
+    ok(rule('.hero-title', 't/a.css').decls.some(d => d.startsWith('margin-top:3px') && d.includes(' <style=')) && rule('style="…"', 't/page.html').decls[0] === 'margin-top:7px@7', 'פרטים: style= שבתגית דורס את margin-top של הקובץ, עם השורה ב-HTML');
+    const mq = info.rules.find(r => r.media);
+    ok(mq && mq.off && mq.media.includes('max-width') && info.text.includes('אינו חל ברוחב הנוכחי'), 'פרטים: כלל בתוך @media שאינו חל ברוחב הזה — מוצג, מסומן, ואינו משתתף במפל');
+    ok(await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('#t1')).color === 'rgb(7, 7, 7)'), 'המפל שבפאנל תואם לדפדפן (הצבע בפועל — של הכלל המנצח)');
+    await page.click('.dt-decl:has-text("font-weight")');
+    await page.waitForFunction(() => location.hash.startsWith('#/project') && Project._state.editor && Project._state.editor.getModel() && Project._state.byId.get(Project._state.cur)?.path === 't/sub/b.css' && Project._state.editor.getPosition().lineNumber === 4, null, { timeout: 8000 }).then(() => ok(true, '"פתח בקוד" מהצהרה: עורך הקוד נפתח על קובץ ה-CSS, בשורה של ההצהרה'), () => ok(false, '"פתח בקוד" מהצהרה: עורך הקוד נפתח על קובץ ה-CSS, בשורה של ההצהרה'));
+    // CSS שבור: סוגר חסר — הפאנל אומר איפה
+    await call(page, 'pf_write', { id: (await call(page, 'pf_tree')).files.find(f => f.path === 't/sub/b.css').id, rev: (await call(page, 'pf_tree')).files.find(f => f.path === 't/sub/b.css').rev, content: '.hero-title {\n  font-weight: 400;\n\n.sub { color: blue; }\n' });
+    await openPage(page, 't/page.html');
+    await navSearch(page, '#t1'); await navClick(page); await navSearch(page, '');
+    ok((await page.$eval('.dt', e => e.textContent)).includes('שגיאה ב-CSS בשורה') && await page.$('.dt-note .btn') !== null, 'CSS עם סוגר חסר (03 §2.3): הפאנל מציג "שגיאה ב-CSS בשורה N", עם "פתח בקוד"');
+
     // ── 2. index.html המוסב (F3): לכל צומת יש דרך לבחור ──
     await openPage(page, 'index.html');
     const cover = await page.evaluate(async () => {
