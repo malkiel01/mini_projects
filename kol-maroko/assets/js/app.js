@@ -101,7 +101,7 @@ function route() {
   nav.replaceChildren(...tabs.map(t => h('a', { href: '#/' + t.id, 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
-  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), restore: () => Restore.view(main, state.user.role), files: () => Media.view(main, state.user.role === 'owner'),
+  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), restore: () => Restore.view(main, state.user.role), files: () => Library.view(main, state.user.role === 'owner'),
     publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());

@@ -100,6 +100,8 @@ try {
     $GLOBALS['WP_DIR'] = $TMP . '/wp';
 
     foreach (glob(__DIR__ . '/cases/*.php') as $f) require $f;
+    // בדיקות של פרוסות אחרות שמחזירות מערך של שם → פונקציה (tests/*_test.php). רצות אחרונות — הן ממלאות את המסד במילים
+    foreach (glob(__DIR__ . '/*_test.php') as $f) foreach ((array)(require $f) as $name => $fn) test($name, $fn);
     $filter = $argv[1] ?? '';
     foreach ($TESTS as [$name, $fn]) {
         if ($filter !== '' && !str_contains($name, $filter)) continue;

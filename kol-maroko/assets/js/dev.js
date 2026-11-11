@@ -64,6 +64,12 @@ const Dev = (() => {
       headers: { 'Content-Type': 'application/json', 'X-Kol': '1', 'X-CSRF': ctx.csrf }, body: JSON.stringify(body) }).catch(() => {});
   }
 
+  // הקלטה שלא נטענה בספרייה (library.js קורא ל-window.KolLog) — ליומן המפתח, כאזהרה
+  window.KolLog = rec => {
+    const { type, at, ...rest } = rec || {};
+    report({ kind: 'audio', message: `${type || 'log'}: ${JSON.stringify(rest).slice(0, 600)}`, action: 'library' });
+  };
+
   // ── החיבור ────────────────────────────────────────────────
   const devApi = (action, { body, params } = {}) => api(action, body, params ? '&' + new URLSearchParams(params) : '');
 

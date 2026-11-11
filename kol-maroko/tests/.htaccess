@@ -1,4 +1,4 @@
-# הבדיקות אינן מוגשות לדפדפן.
+# הבדיקות רצות רק משורת הפקודה — לא דרך הדפדפן.
 <IfModule mod_authz_core.c>
     Require all denied
 </IfModule>

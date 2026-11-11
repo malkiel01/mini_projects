@@ -18,6 +18,7 @@ const API_MIN_ROLE = [
     'code' => 'editor', 'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor', 'code_history' => 'editor', 'code_history_get' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor', 'import_info' => 'owner',
     'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
+    'library' => 'editor',
     // פרוסה F1
     'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',

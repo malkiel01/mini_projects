@@ -250,10 +250,10 @@ function devlog_begin(string $entry = 'api'): void
  */
 function devlog_client(array $user, array $b): array
 {
-    $kind = in_array($b['kind'] ?? '', ['error', 'promise', 'api'], true) ? $b['kind'] : 'error';
+    $kind = in_array($b['kind'] ?? '', ['error', 'promise', 'api', 'audio'], true) ? $b['kind'] : 'error';   // audio — הקלטה שלא נטענה (library.js)
     $str = fn(string $k, int $n) => mb_substr(is_scalar($b[$k] ?? null) ? (string)$b[$k] : '', 0, $n);
     $source = preg_replace('~^https?://[^/]+/~', '', strtok($str('source', 300), '?') ?: '');
-    devlog_write($kind === 'api' && (int)($b['status'] ?? 0) < 500 && (int)($b['status'] ?? 0) !== 0 ? 'warn' : 'error', 'client', 'client.' . $kind, [
+    devlog_write($kind === 'audio' || ($kind === 'api' && (int)($b['status'] ?? 0) < 500 && (int)($b['status'] ?? 0) !== 0) ? 'warn' : 'error', 'client', 'client.' . $kind, [
         'message' => $str('message', 1000), 'user' => $user, 'fold' => true,
         'method' => 'CLIENT', 'action' => $str('action', 60), 'status' => isset($b['status']) ? (int)$b['status'] : null,
         'data' => array_filter([

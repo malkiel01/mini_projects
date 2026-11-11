@@ -80,6 +80,10 @@ test('יומן: שגיאה מהדפדפן נרשמת עם המסך, הפעולה
     eq(['#/words', 'word_save', '390×844', '0.14', 'assets/js/words.js', 12], [$r['data']['page'], $r['data']['last_action'], $r['data']['viewport'], $r['data']['version'], $r['data']['source'], $r['data']['line']]);
     eq(['TestBrowser/1.0', 'u-editor', 'error'], [$r['ua'], $r['sub'], $r['level']]);
     ok(!str_contains(log_dump(), MARK), 'סוד במחסנית או בשדה לא מוכר הוסתר');
+    // הקלטה שלא נטענה בספרייה (window.KolLog) — אזהרה
+    http('POST', '/api.php?action=dev-client-error', ['user' => U_EDITOR, 'json' => ['kind' => 'audio', 'message' => 'audio_playback: {"word":"x"}', 'action' => 'library', 'page' => '#/files']]);
+    $au = array_values(array_filter(devlog_rows(['category' => 'client']), fn($x) => $x['event'] === 'client.audio'))[0] ?? null;
+    eq(['warn', 'library', '#/files'], [$au['level'] ?? '', $au['action'] ?? '', $au['data']['page'] ?? '']);
     eq(401, http('POST', '/api.php?action=dev-client-error', ['json' => $b])['status'], 'בלי זהות — לא נרשם');
 });
 

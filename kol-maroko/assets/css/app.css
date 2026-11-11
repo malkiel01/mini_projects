@@ -375,6 +375,35 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: var(--s3) 0; }
 .agent .cells dd { overflow-wrap: anywhere; font: 13px/1.5 ui-monospace, Consolas, monospace; }
 .agent textarea { font: 12px/1.5 ui-monospace, Consolas, monospace; }
 
+/* ── הספרייה: ההקלטות (library.js) ── */
+.lib-stats { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: .9rem; }
+.lib-total b { font-size: 1.15rem; }
+.lib-stat { min-block-size: 32px; padding: 0 var(--s2); border: 1px solid var(--line); border-radius: 99px; background: var(--surface); cursor: pointer; white-space: nowrap; font-size: .85rem; }
+.lib-stat.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.lib-filters { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+@media (max-width: 600px) { .lib-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .lib-filters select { min-inline-size: 0; padding-inline: 6px; } }
+.lib-row { display: flex; align-items: center; gap: var(--s1); padding: 4px var(--s2); border-top: 1px solid var(--line); min-block-size: 52px; }
+.lib-row:first-child { border-top: 0; }
+.lib-row.on { background: var(--brand-soft); }
+.lib-row.flash { animation: lib-flash 1.6s ease-out; }
+@keyframes lib-flash { from { background: color-mix(in srgb, var(--star) 35%, var(--surface)); } }
+.lib-play { flex: none; border-radius: 50%; background: var(--brand); color: var(--brand-ink); font-size: .9rem; }
+.lib-noplay { flex: none; inline-size: var(--tap); text-align: center; color: var(--muted); }
+.lib-main { flex: 1; min-inline-size: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; padding: 4px var(--s1); background: none; border: 0; text-align: start; cursor: pointer; min-block-size: var(--tap); align-content: center; }
+.lib-main small { color: var(--muted); font-size: .78rem; }
+.lib-l1 { display: flex; align-items: baseline; gap: 6px; min-inline-size: 0; }
+.lib-id { flex: none; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.lib-bad, .lib-main small.lib-bad { color: var(--danger); }
+.lib-wrap { overflow-wrap: anywhere; }
+.lib-images > .seg-tabs, .lib-images .toolbar .hint { display: none; }
+.lib-player { position: fixed; inset-inline: 0; inset-block-end: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--line);
+    padding: 4px var(--s2) calc(4px + env(safe-area-inset-bottom)); box-shadow: 0 -2px 8px rgba(16, 24, 40, .08); }
+.lib-p-row { display: flex; align-items: center; gap: 2px; max-inline-size: 860px; margin: 0 auto; }
+.lib-p-row .use-tx { padding-inline: var(--s2); }
+.lib-toggle { border-radius: 50%; background: var(--brand); color: var(--brand-ink); }
+.lib-seek { display: block; inline-size: 100%; max-inline-size: 860px; margin: 0 auto; block-size: 20px; accent-color: var(--brand); direction: ltr; }
+body.lib-playing main { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+body.lib-playing .toast { bottom: calc(100px + env(safe-area-inset-bottom)); }
 /* ===== מסך המפתח (פרוסה F1) ===== */
 .dev-bug { position: relative; flex: none; }
 .dev-subs { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 calc(-1 * var(--s3)) var(--s2); padding: 0 var(--s3); }
