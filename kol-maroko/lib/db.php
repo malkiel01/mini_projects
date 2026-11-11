@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 12;
+const KOL_SCHEMA_VERSION = 13;
 
 final class ApiError extends RuntimeException
 {
@@ -317,6 +317,45 @@ function migrate(PDO $pdo): void
                 note TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX idx_dev_runs_name ON dev_runs(name, id);
+            SQL,
+        13 => <<<'SQL'
+            -- פרוסה F2a: מאגר הפרויקט (lib/project.php). התוכן עצמו — לפי sha256 תחת data/files/_project/.
+            -- kind: file — קובץ במאגר; dir — תיקייה ריקה; media — הפניה לספריית המדיה (file_id).
+            CREATE TABLE pf_files (
+                id            INTEGER PRIMARY KEY,
+                path          TEXT NOT NULL,
+                path_key      TEXT NOT NULL,
+                kind          TEXT NOT NULL CHECK (kind IN ('file','dir','media')),
+                sha           TEXT NOT NULL DEFAULT '',
+                size          INTEGER NOT NULL DEFAULT 0,
+                file_id       TEXT,
+                rev           INTEGER NOT NULL DEFAULT 1,
+                created_by    TEXT NOT NULL DEFAULT '',
+                created_at    TEXT NOT NULL,
+                updated_by    TEXT NOT NULL DEFAULT '',
+                updated_name  TEXT NOT NULL DEFAULT '',
+                updated_at    TEXT NOT NULL,
+                deleted_at    TEXT,
+                deleted_by    TEXT,
+                deleted_name  TEXT,
+                deleted_batch TEXT
+            );
+            CREATE INDEX idx_pf_files_key ON pf_files(path_key) WHERE deleted_at IS NULL;
+            CREATE INDEX idx_pf_files_sha ON pf_files(sha);
+            CREATE TABLE pf_history (
+                id      INTEGER PRIMARY KEY,
+                file_id INTEGER NOT NULL,
+                rev     INTEGER NOT NULL,
+                path    TEXT NOT NULL,
+                sha     TEXT NOT NULL,
+                size    INTEGER NOT NULL,
+                sub     TEXT NOT NULL DEFAULT '',
+                name    TEXT NOT NULL DEFAULT '',
+                at      TEXT NOT NULL,
+                note    TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX idx_pf_history_file ON pf_history(file_id, id);
+            CREATE INDEX idx_pf_history_sha ON pf_history(sha);
             SQL,
     ];
     foreach ($steps as $n => $sql) {

@@ -45,7 +45,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
-                      'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge'];
+                      'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
+                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -123,6 +124,21 @@ try {
         'agent_tokens' => agent_tokens(require_role($user, 'editor')),
         'agent_token_create' => agent_token_create(require_role($user, 'editor'), $body),
         'agent_token_revoke' => agent_token_revoke(require_role($user, 'editor'), $body),
+        // מאגר הפרויקט (F2a, lib/project.php). pf_raw — הבייטים עצמם, תמיד בארגז חול
+        'pf_tree' => pf_tree(require_role($user, 'editor')),
+        'pf_read' => (require_role($user, 'editor') ? pf_read($_GET) : []),
+        'pf_raw' => (require_role($user, 'editor') ? pf_raw($_GET) : []),
+        'pf_create' => pf_create(require_role($user, 'editor'), $body),
+        'pf_write' => pf_write(require_role($user, 'editor'), $body),
+        'pf_mkdir' => pf_mkdir(require_role($user, 'editor'), $body),
+        'pf_link' => pf_link(require_role($user, 'editor'), $body),
+        'pf_rename' => pf_rename(require_role($user, 'editor'), $body),
+        'pf_delete' => pf_delete(require_role($user, 'editor'), $body),
+        'pf_trash' => (require_role($user, 'editor') ? pf_trash() : []),
+        'pf_restore' => pf_restore(require_role($user, 'editor'), $body),
+        'pf_purge' => pf_purge(require_role($user, 'owner'), $body),
+        'pf_limits' => (require_developer($user) ? pf_limits() : []),
+        'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status(require_role($user, 'editor')),
         'ai_suggest' => ai_suggest(require_role($user, 'editor'), $body),
