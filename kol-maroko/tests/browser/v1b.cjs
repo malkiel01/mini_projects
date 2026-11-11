@@ -50,7 +50,7 @@ const PAGE = `<!doctype html>
     const mk = (width, height, user = OWNER) => browser.newContext({ viewport: { width, height }, hasTouch: width < 600, extraHTTPHeaders: { 'X-Test-User': JSON.stringify(user) } });
     const call = (page, action, body, query = '') => page.evaluate(([a, b, q]) => api(a, b ?? undefined, q), [action, body ?? null, query]);
     const st = page => page.evaluate(() => { const c = Editor._state.canvas, n = c && c.selected; return { sel: n ? c.label(n) : null, tag: n ? n.tag : null, src: c ? c.src : null, box: c ? !c.boxSel.hidden : false, boxText: c ? c.boxSel.textContent : '', vis: n ? c.visual(n) : '', where: document.querySelector('.ed-where').textContent, inequiv: c ? c.inequiv.length : -1, mapErrors: c ? c.mapErrors.length : -1 }; });
-    const openPage = async (page, p) => { await page.goto(base + '/#/editor/' + encodeURIComponent(p)); await page.reload(); await page.waitForFunction(q => Editor._state.file && Editor._state.file.path === q && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, p, { timeout: 30000 }); await sleep(150); };
+    const openPage = async (page, p) => { await page.goto(base + '/editor.php#/editor/' + encodeURIComponent(p)); await page.reload(); await page.waitForFunction(q => Editor._state.file && Editor._state.file.path === q && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, p, { timeout: 30000 }); await sleep(150); };
     /** לחיצה אמיתית על שורה ב-Navigator לפי הטקסט שלה (אחרי חיפוש). */
     const navSearch = async (page, q) => { await page.fill('.nv-search', q); await sleep(260); };
     const navRows = page => page.$$eval('.nv-row', r => r.map(x => x.querySelector('.nv-lab').textContent));
@@ -338,6 +338,33 @@ const PAGE = `<!doctype html>
     ok(bigR.a < 80 && bigR.b < 80, `רק השורות הנראות ב-DOM (${bigR.a}, ${bigR.b} מתוך ${bigR.rows})`);
     ok(bigR.build < 300 && bigR.maxFrame < 50, `בלי תקיעה: בניית הרשימה ${bigR.build.toFixed(1)}ms, ציור בגלילה עד ${bigR.maxFrame.toFixed(1)}ms`);
     ok(bigR.lastRow.includes('ג') && bigR.selVisible, 'גלילה עד הסוף מציגה את השורה האחרונה; בחירה של צומת רחוק גוללת אליו');
+
+    // ── 3ב. המדיניות (C1 שלב ב): המסך הוא מסמך משלו, תחת CSP מלא ──
+    const resp = await ctx.request.get(base + '/editor.php');
+    const csp = resp.headers()['content-security-policy'] || '';
+    ok(/default-src 'none'/.test(csp) && /script-src 'self'(;|$)/.test(csp) && !/unsafe-eval/.test(csp) && !/script-src[^;]*unsafe-inline/.test(csp) && /connect-src 'self'/.test(csp) && /object-src 'none'/.test(csp) && /base-uri 'self'/.test(csp) && /frame-ancestors 'self'/.test(csp), 'editor.php: כותרת CSP מלאה (C1 שלב ב) — ' + csp.slice(0, 90) + '…');
+    ok(/frame-src [^;]*\/live\.php [^;]*\/preview\//.test(csp) && !/frame-src[^;]*\*/.test(csp) && (resp.headers()['x-content-type-options'] || '') === 'nosniff', 'editor.php: frame-src — רק התצוגה החיה והתצוגה המבודדת; nosniff');
+    await page.goto(base + '/#/editor/' + encodeURIComponent('t/page.html'));
+    await page.waitForFunction(() => location.pathname.endsWith('/editor.php') && typeof Editor !== 'undefined' && Editor._state.file && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
+    ok(new URL(page.url()).hash === '#/editor/' + encodeURIComponent('t/page.html'), 'index.html#/editor מפנה ל-editor.php — העורך נפתח תמיד תחת המדיניות');
+    const tabsH = await page.$$eval('#tabs a', a => a.map(x => x.getAttribute('href')));
+    ok(tabsH.includes('#/editor') && tabsH.includes('#/project') && tabsH.includes('index.html#/words') && tabsH.includes('index.html#/studio'), 'במסמך המוקשח: העורך ועורך הקוד במקום; שאר הלשוניות מובילות ל-index.html');
+    const blocked = await page.evaluate(async () => {
+      const out = {}, v = []; document.addEventListener('securitypolicyviolation', e => v.push(e.effectiveDirective));
+      const s = document.createElement('script'); s.textContent = 'window.__inline = 1'; document.head.append(s); out.inline = window.__inline === 1;
+      // eval נבדק מחוץ לקריאת הבדיקה עצמה (setTimeout): כלי האוטומציה מתיר eval בקוד שהוא עצמו מריץ, והדף — לא
+      await new Promise(r => setTimeout(() => { try { out.evalRan = (0, eval)('1+1') === 2; } catch { out.evalRan = false; } try { out.fn = new Function('return 1')() === 1; } catch { out.fn = false; } r(); }, 0));
+      const d = document.createElement('div'); d.innerHTML = '<img src=x onerror="window.__h = 1">'; document.body.append(d); await new Promise(r => setTimeout(r, 300)); out.handler = window.__h === 1; d.remove();
+      out.img = await new Promise(r => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = 'https://example.com/x.png'; setTimeout(() => r(false), 2500); });
+      try { await fetch('https://example.com/', { mode: 'no-cors' }); out.fetch = true; } catch { out.fetch = false; }
+      const c = Editor._state.canvas, cd = c.doc, ci = cd.createElement('img'); out.canvasImg = await new Promise(r => { ci.onload = () => r(true); ci.onerror = () => r(false); ci.src = 'https://example.com/y.png'; cd.body.append(ci); setTimeout(() => r(false), 2500); }); ci.remove();
+      out.violations = [...new Set(v)];
+      return out;
+    });
+    ok(!blocked.inline && !blocked.evalRan && !blocked.fn && !blocked.handler, 'CSP: סקריפט בתוך הדף, eval, new Function ו-onerror שהוזרק כ-HTML — אינם רצים');
+    ok(!blocked.img && !blocked.fetch && !blocked.canvasImg, 'CSP: תמונה ו-fetch לדומיין זר נחסמים — גם בתוך הקנבס (srcdoc יורש את המדיניות)');
+    ok(await page.evaluate(() => { const c = Editor._state.canvas; return !!c.doc.querySelector('h1') && getComputedStyle(c.doc.querySelector('#t1')).color === 'rgb(7, 7, 7)'; }), 'תחת המדיניות: הקנבס מוצג, וה-CSS של הפרויקט חל בו');
+    await page.evaluate(() => Editor._state.canvas.doc.querySelector('img[src$="y.png"]')?.remove());
 
     // ── 4. מקלדת בלבד, ו-`?` ──
     await openPage(page, 't/page.html');

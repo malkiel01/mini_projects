@@ -24,6 +24,7 @@ if ($trace = getenv('KOL_TEST_TRACE')) {
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $root = dirname(__DIR__);
 if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
+if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }
 if ($path === '/api.php' || $path === '/agent.php') {
     if (isset($_SERVER['HTTP_X_TEST_WARN'])) {          // אזהרת PHP אמיתית בתוך בקשה — לבדיקת הלכידה
         require_once $root . '/lib/devlog.php';

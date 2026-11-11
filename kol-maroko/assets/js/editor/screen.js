@@ -14,7 +14,7 @@ const Editor = (() => {
   const DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   const SYNC_MS = 120;                                                     // הקלדה בקוד ← קנבס: הרבה מתחת ל-300ms
   const S = { host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false, nav: null, info: null, split: false, code: null, codeOff: null, mute: false, fromCode: false, curT: 0 };
-  let pending = null;
+  let pending = null; const PICK = 'kol-editor-pick';
   const phone = () => matchMedia('(max-width: 999px)').matches;
   const el = {};
   let loading = null, K = null;
@@ -78,6 +78,7 @@ const Editor = (() => {
       if (S.readOnly) note(S.readOnly);
       mountCode();
       drawAll();
+      if (!pending) { try { const p = JSON.parse(sessionStorage.getItem(PICK) || 'null'); sessionStorage.removeItem(PICK); if (p && Date.now() - p.at < 30000) pending = p; } catch { /* אין אחסון */ } }
       if (pending && pending.path === f.path) applyAt(pending.off);
       pending = null;
     } catch (e) { status(''); note(e.message, true); }
@@ -125,6 +126,11 @@ const Editor = (() => {
   async function selectAt(path, off) {
     if (S.host && S.file?.path === path && S.canvas?.m) return applyAt(off);
     pending = { path, off };
+    if (!/\/editor\.php$/.test(location.pathname)) {                        // מעורך הקוד שבמסמך הרגיל: העורך החזותי הוא מסמך אחר (editor.php) — שומרים, וזוכרים מה לבחור
+      const f = Project.docs.byPath(path);
+      if (f) await Project._save(f.id);
+      try { sessionStorage.setItem(PICK, JSON.stringify({ path, off, at: Date.now() })); } catch { /* אין אחסון — העורך ייפתח בלי בחירה */ }
+    }
     if (S.host) { const f = Project.docs.byPath(path); if (f) { el.page.value = f.id; await open(f.id); } return; }
     location.hash = '#/editor/' + encodeURIComponent(path);
   }
