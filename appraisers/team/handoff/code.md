@@ -31,6 +31,18 @@
 - **קליטה נכנסת (מייל):** קובץ נכנס עובר ב-`apr_file_ingest()` (`lib/documents.php`) — אותו צינור של העלאה פנימית ופורטל. `$who`:
   `kind`, `uid`, `channel` (`email` כבר ב-CHECK של `files`), `rate_key`, `rate`, `key`, `request`, `limit`, `recheck`, `audit`.
 
+## דפוסים מ-07 לשימוש חוזר ב-08
+
+| צריך | משתמשים ב- |
+| --- | --- |
+| לשלוח הודעה בלי להחזיק את המסד | `apr_request_dispatch()` בטרנזקציה ← `apr_request_deliver()` אחרי ה-commit (`lib/requests.php`) |
+| כתובת ציבורית באסימון | `apr_portal_link()` ← `apr_portal_usable()` ← בתוך הטרנזקציה `apr_portal_recheck()` (`lib/portal.php`) |
+| הגבלת קצב ציבורית | `apr_limit('portal:<סוג>:<מפתח>', מספר, חלון)` — לפי IP (`apr_portal_ip_key`, HMAC) **וגם** לפי הקישור; ניסיון שגוי נספר בנפרד |
+| אסימון / קוד / עוגייה | אקראי ← במסד רק hash (`apr_portal_token_hash`, `apr_portal_otp_hash` עם מפתח השרת) ← השוואה ב-`hash_equals` |
+| קובץ נכנס מכל ערוץ | `apr_file_ingest($case, $who, $q, $env)` — הגוף נקרא רק אחרי ש-`$case()` אימת את המעלה |
+| לבדוק דף ציבורי כמו בשרת | `z-http`, המקטע "🔴1": שרת שני עם `gate-prepend.php` האמיתי על עותק זמני של `platform/`, וכותרות ניווט (`Sec-Fetch-Mode: navigate`) |
+| מייל בבדיקת HTTP | הכותרת `X-Dev-Mail` (`tests/dev-prepend.php`) ← `dev-mail.log` בתיקיית הנתונים |
+
 ## הכללים שנקבעו ב-07 (לא לפתוח מחדש)
 
 - **כתובת ציבורית = `"public"` ב-`app.json` + `'public'` ב-`APR_ACCESS` + זרוע ב-match הציבורי שב-`apr_dispatch`.** `a-boundaries`
