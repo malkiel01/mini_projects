@@ -43,6 +43,8 @@ const Dev = (() => {
   });
   addEventListener('unhandledrejection', e => {
     const r = e.reason, msg = String((r && r.message) || r);
+    // Monaco מבטל משימות ממתינות כשמחליפים קובץ (CancellationError, "Canceled") — ביטול מתוכנן, לא תקלה: לא נרשם ולא מדווח
+    if (r && r.name === 'Canceled' && /\/vendor\/monaco\//.test(String(r.stack || ''))) { e.preventDefault(); return; }
     push(trace.errors, { kind: 'promise', message: msg.slice(0, 300), at: new Date().toISOString() });
     report({ kind: 'promise', message: msg, stack: r && r.stack });
   });
@@ -102,8 +104,26 @@ const Dev = (() => {
       h('nav', { class: 'dev-subs', 'aria-label': 'מסך המפתח' }, SUBS.map(([id, label]) => h('a', { href: '#/dev/' + id, 'aria-current': id === sub ? 'page' : null }, label))),
       body);
     try {
-      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
+      ({ tasks: () => { const stuck = h('div', { class: 'dev-stuck' }), list = h('div'); body.replaceChildren(stuck, list); viewStuck(stuck); DevLoop.show(list, arg || undefined); }, log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+
+  /** מונה "לא הצלחתי לשנות" (08 §5): המטלות הפתוחות שנפתחו מהעורך החזותי, מקובצות לפי אלמנט. */
+  async function viewStuck(el) {
+    try {
+      const items = ((await api('dev-items')).items || []).filter(x => x.area === 'לא הצלחתי לשנות' && x.status !== 'closed');
+      if (!items.length) { el.replaceChildren(h('p', { class: 'hint', 'data-stuck': '0' }, '🐞 "לא הצלחתי לשנות": אין מטלות פתוחות.')); return; }
+      const groups = new Map();
+      for (const x of items) {
+        const d = String(x.detail || ''), elName = (/^אלמנט: (.*)$/m.exec(d) || [])[1] || x.title, file = ((/^קובץ: (\S+)/m.exec(d) || [])[1] || '');
+        const key = elName + ' · ' + file;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(x.code);
+      }
+      el.replaceChildren(h('details', { class: 'dev-stuck-box', open: true, 'data-stuck': String(items.length) },
+        h('summary', {}, '🐞 "לא הצלחתי לשנות": ', h('b', {}, String(items.length)), ' מטלות פתוחות, על ' + groups.size + ' אלמנטים'),
+        h('ul', {}, [...groups].sort((a, b) => b[1].length - a[1].length).map(([key, codes]) => h('li', {}, h('code', { dir: 'ltr' }, key), ' — ' + codes.length + ' · ', codes.map((c, i) => [i ? ', ' : '', h('a', { href: '#/dev/tasks/' + c }, c)])))) ));
+    } catch (e) { el.replaceChildren(h('p', { class: 'hint' }, e.message)); }
   }
 
   const select = (label, opts, value = '') => h('select', { 'aria-label': label }, h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: v === value }, t)));

@@ -116,6 +116,15 @@ function dev_attach_own(array $du, string $code): void
     }
 }
 
+/** הדיווחים של המשתמש עצמו (🐞, ו"לא הצלחתי לשנות" מהעורך) — קוד, כותרת, תווית, מצב. קריאה בלבד מטבלת המטלות של DevLoop. */
+function dev_my_reports(array $du): array
+{
+    devloop_migrate();
+    $st = db()->prepare('SELECT code, title, area, status, created_at FROM dev_tasks WHERE created_by = ? ORDER BY id DESC LIMIT 50');
+    $st->execute([$du['id']]);
+    return ['items' => $st->fetchAll()];
+}
+
 /**
  * הפעולות של המפתח ושל DevLoop. מחזיר null כשהפעולה אינה שלו. שמות הפעולות — כמו בכל אפליקציה עם DevLoop
  * (dev-…, devapi-…), כדי ש-Claude והסקיל devloop יעבדו בלי התאמה.
@@ -145,6 +154,8 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
             if (!is_developer($user)) dev_attach_own($du, (string)($_GET['code'] ?? ''));
             return devloop_attach('user:' . $du['id'], $_GET);
         })(),
+        // כל חבר: הדיווחים שהוא עצמו פתח, ומצבם (מי שאינו המפתח אינו רואה את שאר המטלות)
+        'GET dev-my-reports' => dev_my_reports($member()),
         'GET dev-items' => ($member() && is_developer($user) ? devloop_task_list() : ['updated' => null, 'note' => null, 'items' => []]),
         // המפתח בלבד
         'POST dev-task-create' => devloop_task_create($dev(), $in),
@@ -171,7 +182,7 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
     };
 }
 
-const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-items',
+const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-my-reports', 'dev-items',
     'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-file', 'dev-tokens', 'dev-token-create',
     'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save'];
 /** פעולות שנכנסים אליהן באסימון, בלי משתמש מהשער. חייבות להופיע גם ב-"public" של app.json. */

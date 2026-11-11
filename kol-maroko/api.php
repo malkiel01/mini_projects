@@ -129,6 +129,7 @@ try {
         // מאגר הפרויקט (F2a, lib/project.php). pf_raw — הבייטים עצמם, תמיד בארגז חול
         'pf_tree' => pf_tree(require_role($user, 'editor')),
         'pf_read' => (require_role($user, 'editor') ? pf_read($_GET) : []),
+        'pf_versions' => (require_role($user, 'editor') ? pf_versions($_GET) : []),
         'pf_raw' => (require_role($user, 'editor') ? pf_raw($_GET) : []),
         'pf_create' => pf_create(require_role($user, 'editor'), $body),
         'pf_write' => pf_write(require_role($user, 'editor'), $body),

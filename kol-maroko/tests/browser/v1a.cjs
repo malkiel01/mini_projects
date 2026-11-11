@@ -63,7 +63,7 @@ const ATTACK = `<!doctype html>
       if (opt.alt) await page.keyboard.up('Alt');
       await sleep(60);
     };
-    const openPage = async (page, p) => { await page.goto(base + '/#/editor/' + encodeURIComponent(p)); await page.reload(); await page.waitForFunction(q => Editor._state.file && Editor._state.file.path === q && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, p, { timeout: 30000 }); };
+    const openPage = async (page, p) => { await page.goto(base + '/editor.php#/editor/' + encodeURIComponent(p)); await page.reload(); await page.waitForFunction(q => Editor._state.file && Editor._state.file.path === q && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, p, { timeout: 30000 }); };
     const hist = id => JSON.parse(execFileSync('php', ['-r', '$p = new PDO("sqlite:" . $argv[1] . "/kol.sqlite"); echo json_encode($p->query("SELECT rev, note, sub FROM pf_history WHERE file_id = " . (int)$argv[2] . " ORDER BY id")->fetchAll(PDO::FETCH_ASSOC));', data, String(id)]).toString());
 
     const ctx = await mk(1280, 800), page = await ctx.newPage();
@@ -74,7 +74,7 @@ const ATTACK = `<!doctype html>
     await page.waitForSelector('.pj-tree .pj-row');
 
     // ── 1. התרחיש של הפרוסה (§3), על from-current/lexicon.html ──
-    await page.goto(base + '/#/editor');
+    await page.goto(base + '/editor.php#/editor');
     await page.waitForSelector('.ed-page option', { state: 'attached' });
     ok(await page.$$eval('#tabs a', a => a.some(x => x.textContent.includes('עורך'))) , 'לשונית "🎨 עורך" לצד המסכים הקיימים');
     const pages = await page.$$eval('.ed-page option', o => o.map(x => x.textContent));
@@ -100,7 +100,7 @@ const ATTACK = `<!doctype html>
     // שינוי טקסט בקוד ← נראה בקנבס
     const marker = 'שונה-בקוד-' + Date.now();
     await page.evaluate(([t, m]) => { const e = Project._state.editor, mod = e.getModel(), a = mod.getPositionAt(t.to), s0 = mod.getValue(), close = s0.lastIndexOf('</', t.to), p = mod.getPositionAt(close); e.executeEdits('test', [{ range: new monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text: m }]); e.pushUndoStop(); }, [target, marker]);
-    await page.goto(base + '/#/editor');
+    await page.goto(base + '/editor.php#/editor');
     await page.waitForFunction(() => Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy);
     ok(await page.evaluate(m => Editor._state.canvas.doc.body.textContent.includes(m), marker), 'שינוי טקסט בעורך הקוד נראה בקנבס');
     // מחיקה בקנבס ← נראית בקוד
@@ -211,7 +211,7 @@ const ATTACK = `<!doctype html>
     ok(s.sel === 'tbody · לא במקור' && (await page.textContent('.ed-where')).includes('לא במקור'), 'אלמנט שהדפדפן הוסיף (<tbody>) נבחר, מסומן "לא במקור"');
     await page.click('.ed-bar button:has-text("</>")');
     await page.waitForFunction(() => { const e = Project._state.editor; return e && e.getModel() && !e.getSelection().isEmpty() && e.getModel().getValueInRange(e.getSelection()).startsWith('<table'); }, null, { timeout: 5000 }).then(() => ok(true, '"פתח בקוד" מ-<tbody> מוביל להורה הכתוב שלו (<table>)'), () => ok(false, '"פתח בקוד" מ-<tbody> מוביל להורה הכתוב שלו'));
-    await page.goto(base + '/#/editor'); await page.waitForFunction(() => Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy);
+    await page.goto(base + '/editor.php#/editor'); await page.waitForFunction(() => Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy);
     const zero = await page.evaluate(() => { const c = Editor._state.canvas; c.draw(); const b = [...document.querySelectorAll('.ed-mark-zero')].find(x => x.title.startsWith('div#zero')); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
     if (zero) await page.mouse.click(zero.x, zero.y);
     ok(zero && (await st(page)).sel === 'div#zero', 'אלמנט בגודל אפס מקבל מצביע שאפשר ללחוץ עליו');

@@ -37,3 +37,99 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
   .ed-status { display: none; }
   .ed-bar .ed-page { flex-basis: 60px; }
 }
+/* ── V1b: גוף העורך — Navigator | קנבס | פרטים ── */
+.ed-body { flex: 1; min-height: 0; display: flex; gap: var(--s2); direction: ltr; }
+.ed-mid { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--s1); direction: rtl; }
+.ed-side { display: none; flex: none; width: 280px; min-height: 0; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); direction: rtl; overflow: hidden; }
+.ed.nav-open .ed-nav, .ed.info-open .ed-info { display: flex; }
+.ed-side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s1) 0 var(--s2); padding-inline: var(--s2) var(--s1); min-height: 36px; border-bottom: 1px solid var(--line); font-size: .85rem; }
+.ed-side-head .icon-btn { border: 0; background: none; }
+.ed-side-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.ed-bar [aria-pressed="true"].icon-btn { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); }
+.nv-head { display: flex; align-items: center; gap: var(--s1); padding: var(--s1); border-bottom: 1px solid var(--line); }
+.nv-search { flex: 1; min-width: 0; min-height: 32px; font-size: 16px; border: 1px solid var(--line); border-radius: 8px; padding: 0 var(--s2); }
+.nv-count { flex: none; color: var(--muted); font-size: .72rem; white-space: nowrap; }
+.nv-list { flex: 1; min-height: 0; overflow: auto; position: relative; outline-offset: -2px; }
+.nv-space { position: relative; min-width: 100%; }
+.nv-row { position: absolute; left: 0; right: 0; height: 30px; display: flex; align-items: center; gap: 2px; padding-right: 2px; cursor: pointer; font: .78rem/1 ui-monospace, monospace; white-space: nowrap; }
+.nv-row:hover { background: var(--bg); }
+.nv-row.sel { background: var(--brand-soft); box-shadow: inset 3px 0 0 var(--brand); }
+.nv-row.off .nv-lab { opacity: .45; }
+.nv-row.broken b { color: var(--danger); }
+.nv-tw { flex: none; width: 22px; height: 28px; border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0; font-size: .8rem; }
+.nv-tw:disabled { cursor: default; }
+.nv-lab { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nv-lab i { color: var(--muted); font: normal .7rem system-ui, sans-serif; }
+.nv-txt { color: var(--muted); font-family: system-ui, sans-serif; unicode-bidi: plaintext; }
+.nv-ic { flex: none; width: 26px; height: 28px; border: 0; background: none; cursor: pointer; padding: 0; font-size: .8rem; opacity: .18; filter: grayscale(1); }
+.nv-row:hover .nv-ic, .nv-row.sel .nv-ic { opacity: .5; }
+.nv-ic.on { opacity: 1 !important; filter: none; }
+@media (max-width: 999px) {
+  .ed-bar { flex-wrap: wrap; }
+  .ed-bar .ed-page { flex-basis: 100%; }
+  .ed-bar .icon-btn, .ed-bar .btn { min-width: 36px; }
+  .ed-side { position: fixed; inset-inline: 0; bottom: 0; width: auto; height: 58dvh; z-index: 30; border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px rgba(0, 0, 0, .25); padding-bottom: env(safe-area-inset-bottom); }
+  .ed-side-head { min-height: var(--tap); }
+  .nv-ic { opacity: .5; width: 34px; }
+}
+/* פאנל "פרטים" */
+.ed-info { width: 320px; }
+.dt { overflow: auto; padding: var(--s2); gap: var(--s1); font-size: .85rem; display: block; }
+.dt > * + * { margin-top: var(--s1); }
+.dt-row { display: flex; gap: var(--s2); align-items: baseline; }
+.dt-k { flex: none; width: 4.2em; color: var(--muted); font-size: .78rem; }
+.dt-v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dt code { font: .78rem/1.5 ui-monospace, monospace; background: var(--bg); border-radius: 4px; padding: 0 4px; unicode-bidi: isolate; }
+.dt-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.dt-open { border: 1px solid var(--line); background: var(--surface); }
+.dt-h { margin: var(--s3) 0 var(--s1); font-size: .85rem; }
+.dt-note { margin: 0; padding: 6px var(--s2); border-radius: 8px; background: var(--danger-soft); font-size: .8rem; }
+.dt-rule { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.dt-rule.off { opacity: .55; }
+.dt-sel, .dt-decl { display: block; width: 100%; border: 0; background: none; text-align: left; cursor: pointer; font: .76rem/1.5 ui-monospace, monospace; color: var(--ink); padding: 3px var(--s2); overflow-wrap: anywhere; min-height: 26px; }
+.dt-sel { background: var(--bg); display: flex; flex-wrap: wrap; gap: 2px 8px; justify-content: space-between; }
+.dt-src { color: var(--muted); font-size: .7rem; }
+.dt-media { padding: 2px var(--s2); color: var(--muted); font-size: .72rem; background: var(--bg); }
+.dt-decl:hover, .dt-sel:hover { background: var(--brand-soft); }
+.dt-p { color: var(--brand); }
+.dt-decl.over .dt-p, .dt-decl.over .dt-val { text-decoration: line-through; color: var(--muted); }
+.dt-by { display: block; color: var(--muted); font: .7rem/1.4 system-ui, sans-serif; }
+.dt-empty { margin: var(--s2); }
+@media (max-width: 1399px) and (min-width: 1000px) { .ed-side { width: 230px; } .ed-info { width: 270px; } }
+/* מבט מפוצל: קוד לצד הקנבס (במחשב); בטלפון — לשוניות */
+.ed-panes { flex: 1; min-height: 0; display: flex; gap: var(--s2); direction: ltr; }
+.ed-panes > .ed-canvas { flex: 1 1 50%; min-width: 0; }
+.ed-code { display: none; flex: 1 1 50%; min-width: 0; min-height: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.ed.split .ed-code { display: block; }
+.ed-code .pj-split { width: 100%; height: 100%; }
+.ed-tabs { display: none; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; flex: none; }
+.ed-tabs button { flex: 1; min-height: 36px; border: 0; background: var(--surface); font: inherit; font-size: .85rem; cursor: pointer; }
+.ed-tabs button[aria-selected="true"] { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); font-weight: 700; }
+@media (max-width: 999px) {
+  .ed.split .ed-tabs { display: flex; }
+  .ed.split .ed-code { display: none; }
+  .ed.split.tab-code .ed-code { display: block; }
+  .ed.split.tab-code .ed-canvas { display: none; }
+}
+/* "🐞 לא הצלחתי לשנות", ותפריט ההקשר */
+.ed-point { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); background: #fff7d6; border-color: #e1c14a; }
+.ed-point[hidden] { display: none; }
+.ed-point span { flex: 1 1 200px; }
+.ed-point .btn { border: 1px solid var(--line); background: var(--surface); }
+.ed.pointing .ed-canvas { outline: 3px dashed #e19a00; outline-offset: -3px; cursor: crosshair; }
+.ed-shot { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); min-height: 60px; display: grid; place-items: center; }
+.ed-shot img { display: block; max-width: 100%; max-height: 38dvh; }
+.ed-report-info { margin: var(--s2) 0; padding: var(--s2); background: var(--bg); border-radius: 8px; font: .78rem/1.6 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ed-report-go { display: flex; justify-content: flex-end; margin-top: var(--s2); }
+.ed-mine-row { display: flex; gap: var(--s2); align-items: baseline; padding: 4px 0; border-top: 1px solid var(--line); font-size: .85rem; }
+.ed-mine-row span { flex: 1; min-width: 0; overflow-wrap: anywhere; direction: ltr; text-align: end; }
+.ed-menu { display: flex; flex-direction: column; gap: var(--s1); }
+.ed-menu-item { justify-content: flex-start; text-align: start; border: 1px solid var(--line); background: var(--surface); min-height: var(--tap); }
+.dev-stuck-box { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: var(--s2) var(--s3); margin-bottom: var(--s2); }
+.dev-stuck-box ul { margin: var(--s2) 0 0; padding-inline-start: 1.2em; font-size: .85rem; }
+.ed-keys { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.ed-keys th, .ed-keys td { padding: 5px 4px; border-top: 1px solid var(--line); text-align: start; vertical-align: baseline; font-weight: 400; }
+.ed-keys kbd { font: .78rem ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+.ed :focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.ed-blocked summary { cursor: pointer; }
+.ed-blocked ul { margin: var(--s1) 0 0; padding-inline-start: 1.2em; font: .75rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; max-height: 8em; overflow: auto; }

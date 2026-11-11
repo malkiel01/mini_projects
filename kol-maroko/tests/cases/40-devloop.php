@@ -28,6 +28,9 @@ test('DevLoop: חבר שאינו מפתח מדווח 🐞 — נפתחת מטל�
     $other = http('POST', '/api.php?action=dev-task-create', ['user' => U_OWNER, 'json' => ['title' => 'מטלה של המפתח']])['json']['code'];
     eq(403, http('POST', "/api.php?action=dev-attach&code=$other&name=x.png", ['user' => U_EDITOR, 'raw' => png_bytes()])['status']);
     $GLOBALS['KM_OTHER'] = $other;
+    // V1b: המדווח רואה את הדיווחים שלו ומצבם — ורק אותם
+    $mine = http('GET', '/api.php?action=dev-my-reports', ['user' => U_EDITOR])['json']['items'];
+    eq([[$code, 'open', 'דיווח']], array_map(fn($i) => [$i['code'], $i['status'], $i['area']], $mine), 'dev-my-reports: רק מה שהמשתמש עצמו פתח');
 
     $items = http('GET', '/api.php?action=dev-items', ['user' => U_OWNER])['json']['items'];
     $x = array_values(array_filter($items, fn($i) => $i['code'] === $code))[0] ?? null;
