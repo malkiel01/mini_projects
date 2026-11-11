@@ -45,7 +45,8 @@
       const u = t.currentSrc || t.src || t.href || '';
       line('error', 'המשאב לא נטען: ' + rel(u) + '  (<' + t.tagName.toLowerCase() + '>)', { file: here() });
     } else {
-      line('error', e.message || 'שגיאה', { file: rel(e.filename || ''), line: e.lineno });
+      const muted = !e.filename && /^Script error\.?$/.test(e.message || '');
+      line('error', muted ? 'שגיאה בסקריפט שנטען בלי crossorigin (נוצר ב-JS) — הדפדפן מסתיר את הפרטים במקור אטום' : (e.message || 'שגיאה'), { file: rel(e.filename || ''), line: e.lineno });
     }
   }, true);
   addEventListener('unhandledrejection', e => line('error', 'Promise נדחה בלי טיפול: ' + show(e.reason), {}));
@@ -55,7 +56,7 @@
   const limit = (kind, text) => { if (said.has(kind)) return; said.add(kind); line('warn', text, caller(), kind); };
   const trap = (obj, proto, name, kind, text) => {
     try {
-      const d = Object.getOwnPropertyDescriptor(proto, name);
+      const d = Object.getOwnPropertyDescriptor(obj, name) || Object.getOwnPropertyDescriptor(proto, name);   // ב-Window התכונות יושבות על האובייקט עצמו
       if (!d || !d.get) return;
       Object.defineProperty(obj, name, {
         configurable: true,

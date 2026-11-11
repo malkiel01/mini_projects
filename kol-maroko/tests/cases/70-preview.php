@@ -82,7 +82,12 @@ test('תצוגה: כל קובץ בנתיב שלו, סוג תוכן מרשימה 
     $src = pf_blob_get(pf_by_path('index.html')['sha']);
     eq(substr_count($src, "\n"), substr_count($r['body'], "\n"), 'ההזרקה אינה מזיזה אף שורה');
     ok(preg_match('#<head><script src="/preview/[^"]+/__kol/bridge\.js"></script>#', $r['body']) === 1, 'הגשר מוזרק אחרי <head>');
-    eq($src, preg_replace('#<script src="/preview/[^"]+/__kol/bridge\.js"></script>#', '', $r['body'], 1), 'חוץ מהגשר — בייט בבייט');
+    $back = str_replace('<script crossorigin src=', '<script src=', (string)preg_replace('#<script src="/preview/[^"]+/__kol/bridge\.js"></script>#', '', $r['body'], 1));
+    eq($src, $back, 'חוץ מהגשר ומ-crossorigin על <script src> — בייט בבייט');
+    ok(str_contains($r['body'], '<script crossorigin src="js/page.js">'), 'crossorigin נוסף ל-<script src> — כדי ששגיאות יגיעו עם קובץ ושורה');
+    pf_new('pv/co.html', '<script src=a.js crossorigin="anonymous"></script><script>var s = "<script>";</script><script type=module src=m.js></script>');
+    $co = pv_get('pv/co.html')['body'];
+    ok(str_ends_with($co, '<script src=a.js crossorigin="anonymous"></script><script>var s = "<script>";</script><script crossorigin type=module src=m.js></script>'), 'מי שכבר הגדיר crossorigin, וסקריפט בתוך הדף — אינם משתנים');
     eq($r['body'], pv_get('index.html')['body'], 'השורש הוא קובץ הכניסה');
 
     $css = pv_get('css/page.css');

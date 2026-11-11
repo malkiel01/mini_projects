@@ -139,10 +139,15 @@ function pv_send(?string $bytes, ?string $file, string $name, int $code = 200): 
 
 /**
  * הגשר נכנס למסמך באותה שורה שבה נפתח ה-<head> — כך מספרי השורות שהמסוף מדווח הם מספרי השורות שבקובץ.
- * זה השינוי היחיד בבייטים של העמוד, והוא קיים רק בתצוגה החיה.
+ *
+ * ועוד שינוי אחד: לכל <script src> נוספת התכונה crossorigin. במקור אטום כל סקריפט חיצוני הוא "ממקור אחר", והדפדפן
+ * מסתיר את פרטי השגיאות שלו ("Script error.", בלי קובץ ושורה) אלא אם נטען במצב CORS. הקבצים מוגשים ממילא עם
+ * Access-Control-Allow-Origin: * (I4), כך שהטעינה עצמה אינה משתנה. אלה שני השינויים היחידים בבייטים של העמוד,
+ * והם קיימים רק בתצוגה החיה.
  */
 function pv_inject(string $html, string $src): string
 {
+    $html = (string)preg_replace('/<script\b(?![^>]*\bcrossorigin\b)(?=[^>]*\bsrc\s*=)/i', '<script crossorigin', $html);
     $tag = '<script src="' . htmlspecialchars($src, ENT_QUOTES) . '"></script>';
     foreach (['/<head(?:\s[^>]*)?>/i', '/<html(?:\s[^>]*)?>/i', '/<!doctype[^>]*>/i'] as $re) {
         if (preg_match($re, $html, $m, PREG_OFFSET_CAPTURE)) {
