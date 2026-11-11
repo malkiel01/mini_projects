@@ -65,7 +65,7 @@ async function apiOnce(action, { body, params } = {}) {
     if (!res.ok) {
         // האפליקציה: {error: {code, message}}; DevLoop: {error: "…"}
         const e = data.error;
-        throw Object.assign(new Error((typeof e === 'string' ? e : e?.message) || T.fault(res.status)), { code: e?.code || data.code || '', status: res.status, req, missing: e?.missing, review: e?.review });
+        throw Object.assign(new Error((typeof e === 'string' ? e : e?.message) || T.fault(res.status)), { code: e?.code || data.code || '', status: res.status, req, missing: e?.missing, review: e?.review, current: e?.current });
     }
     return data;
 }

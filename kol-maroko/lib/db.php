@@ -7,6 +7,9 @@ declare(strict_types=1);
 
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
+/** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
+const KOL_SCHEMA_VERSION = 13;
+
 final class ApiError extends RuntimeException
 {
     public function __construct(string $message, int $code = 400, public readonly array $extra = [])
@@ -271,6 +274,88 @@ function migrate(PDO $pdo): void
             );
             ALTER TABLE files ADD COLUMN deleted_at TEXT;
             ALTER TABLE files ADD COLUMN deleted_by TEXT;
+            SQL,
+        // פרוסה F1 — תשתית המפתח: מזהה מספרי לכל משתמש בשביל DevLoop (lib/dev.php), יומן הבקשות והשגיאות
+        // (lib/devlog.php), וריצות של שירותי רקע ובדיקות תקינות. הטבלאות של DevLoop עצמו (dev_tasks…) נוצרות במודול.
+        12 => <<<'SQL'
+            CREATE TABLE dev_users (
+                id        INTEGER PRIMARY KEY,
+                sub       TEXT NOT NULL UNIQUE,
+                name      TEXT NOT NULL DEFAULT '',
+                developer INTEGER NOT NULL DEFAULT 0,
+                seen_at   TEXT
+            );
+            CREATE TABLE dev_log (
+                id        INTEGER PRIMARY KEY,
+                at        TEXT NOT NULL,
+                level     TEXT NOT NULL,
+                category  TEXT NOT NULL,
+                event     TEXT NOT NULL,
+                message   TEXT NOT NULL DEFAULT '',
+                sub       TEXT NOT NULL DEFAULT '',
+                username  TEXT NOT NULL DEFAULT '',
+                ua        TEXT NOT NULL DEFAULT '',
+                method    TEXT NOT NULL DEFAULT '',
+                action    TEXT NOT NULL DEFAULT '',
+                status    INTEGER,
+                ms        INTEGER,
+                req       TEXT NOT NULL DEFAULT '',
+                data_json TEXT NOT NULL DEFAULT '{}',
+                sig       TEXT NOT NULL DEFAULT '',
+                count     INTEGER NOT NULL DEFAULT 1,
+                last_at   TEXT
+            );
+            CREATE INDEX idx_dev_log_at ON dev_log(at);
+            CREATE INDEX idx_dev_log_level ON dev_log(level, id);
+            CREATE INDEX idx_dev_log_req ON dev_log(req);
+            CREATE INDEX idx_dev_log_sig ON dev_log(sig, id);
+            CREATE TABLE dev_runs (
+                id   INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                at   TEXT NOT NULL,
+                ok   INTEGER NOT NULL,
+                note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX idx_dev_runs_name ON dev_runs(name, id);
+            SQL,
+        13 => <<<'SQL'
+            -- פרוסה F2a: מאגר הפרויקט (lib/project.php). התוכן עצמו — לפי sha256 תחת data/files/_project/.
+            -- kind: file — קובץ במאגר; dir — תיקייה ריקה; media — הפניה לספריית המדיה (file_id).
+            CREATE TABLE pf_files (
+                id            INTEGER PRIMARY KEY,
+                path          TEXT NOT NULL,
+                path_key      TEXT NOT NULL,
+                kind          TEXT NOT NULL CHECK (kind IN ('file','dir','media')),
+                sha           TEXT NOT NULL DEFAULT '',
+                size          INTEGER NOT NULL DEFAULT 0,
+                file_id       TEXT,
+                rev           INTEGER NOT NULL DEFAULT 1,
+                created_by    TEXT NOT NULL DEFAULT '',
+                created_at    TEXT NOT NULL,
+                updated_by    TEXT NOT NULL DEFAULT '',
+                updated_name  TEXT NOT NULL DEFAULT '',
+                updated_at    TEXT NOT NULL,
+                deleted_at    TEXT,
+                deleted_by    TEXT,
+                deleted_name  TEXT,
+                deleted_batch TEXT
+            );
+            CREATE INDEX idx_pf_files_key ON pf_files(path_key) WHERE deleted_at IS NULL;
+            CREATE INDEX idx_pf_files_sha ON pf_files(sha);
+            CREATE TABLE pf_history (
+                id      INTEGER PRIMARY KEY,
+                file_id INTEGER NOT NULL,
+                rev     INTEGER NOT NULL,
+                path    TEXT NOT NULL,
+                sha     TEXT NOT NULL,
+                size    INTEGER NOT NULL,
+                sub     TEXT NOT NULL DEFAULT '',
+                name    TEXT NOT NULL DEFAULT '',
+                at      TEXT NOT NULL,
+                note    TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX idx_pf_history_file ON pf_history(file_id, id);
+            CREATE INDEX idx_pf_history_sha ON pf_history(sha);
             SQL,
     ];
     foreach ($steps as $n => $sql) {

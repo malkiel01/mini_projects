@@ -284,3 +284,11 @@ main.wide { max-width: 1240px; }
     .doc-grid { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: start; }
     .doc-view { order: 2; position: sticky; top: calc(var(--head) + var(--s2)); }
 }
+
+/* ── נתונים וסתירות (פרוסה 10) ── */
+.side-by-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--s3); align-items: start; margin-block: var(--s3); }
+.side-by-side .panel.off { opacity: .6; }
+.big-val { font-size: 1.25rem; }
+.card .t b, .card .t .muted { font-weight: 600; }
+q { quotes: '"' '"'; color: var(--muted); }
+#file-facts { display: grid; gap: var(--s2); }

@@ -77,6 +77,12 @@ const APR_ACCESS = [
     'sys-channel-grant' => 'sysadmin', 'sys-inbox' => 'sysadmin', 'sys-inbox-dismiss' => 'sysadmin', 'sys-inbox-route' => 'sysadmin',
     'sys-inbox-reply' => 'sysadmin',
 
+    // נתונים וסתירות (10): view לצפייה; edit / documents להזנה ולתיקון; review_docs + שמאי בתיק לאימות, לדחייה ולהכרעה (lib/facts.php)
+    'case-facts' => 'member', 'fact' => 'member', 'case-conflicts' => 'member', 'conflict' => 'member', 'file-facts' => 'member',
+    'fact-add' => 'member', 'fact-correct' => 'member', 'fact-state' => 'member', 'fact-delete' => 'member',
+    'conflict-resolve' => 'member', 'conflict-dismiss' => 'member',
+    'sys-attributes' => 'sysadmin', 'sys-attribute-save' => 'sysadmin',
+
     'office'              => 'member',
     'office-leave'        => 'member',
     'office-rename'       => 'admin',
@@ -114,7 +120,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];

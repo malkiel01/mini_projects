@@ -1,0 +1,34 @@
+@charset "utf-8";
+/* קובץ CSS שנכתב ביד — סגנונות מעורבים */
+:root{--main:#234;--gap:  12px}
+
+body.page {
+	margin:0;
+    font-family: Arial , sans-serif ;
+	color : var( --main ) ;
+}
+.site-head{background:#eee;padding:10px 20px}
+.title { font-size:2em!important; margin:0 0 .5em }   /* הערה בסוף שורה */
+.lead   {
+  color: #555;
+  /* הערה בין הצהרות */
+  line-height: 1.6
+}
+.menu li.current > a { font-weight: bold; text-decoration: none; }
+.block, .block.wide
+{
+	padding: var(--gap);
+	border: 1px solid #ccc ;
+}
+.block-title{color:#036}
+.card { display:inline-block; padding:4px 8px; background:url("img/a;b.png") no-repeat; }
+.card .tag::before { content: "}"; }
+.btn{cursor:pointer}
+
+@media (max-width: 600px) {
+	.site-head { padding: 6px }
+  .card{display:block}
+}
+@media print{.menu{display:none}}
+@font-face { font-family: "X"; src: url(x.woff2) format("woff2"); }
+.site-foot { text-align:center; font-size: .8em }

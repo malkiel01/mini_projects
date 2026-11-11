@@ -9,6 +9,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/members.php';
 require_once __DIR__ . '/lib/import.php';
 require_once __DIR__ . '/lib/agent.php';
+require_once __DIR__ . '/lib/devlog.php';
+
+devlog_begin('agent');
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -30,6 +33,7 @@ try {
     $body = $method === 'POST' ? json_decode((string)file_get_contents('php://input'), true) : [];
     if (!is_array($body)) throw new ApiError('הגוף אינו JSON תקין');
     $user = agent_auth();
+    devlog_user($user);
     // שמירת הטיוטה — כמו בסטודיו: הנעילה לחבר הזה (אם מישהו אחר עורך עכשיו — 423, לנסות אחר כך)
     $saveDraft = function () use ($user, $body) {
         if (!lock_op($user, ['op' => 'take'])['lock']['mine']) throw new ApiError('הטיוטה פתוחה לעריכה אצל מישהו אחר בסטודיו. לנסות שוב בעוד כמה דקות', 423);
@@ -58,8 +62,10 @@ try {
     };
     agent_out(['ok' => true] + $result);
 } catch (ApiError $e) {
+    devlog_exception($e);
     agent_out(['ok' => false, 'error' => $e->getMessage()] + $e->extra, $e->getCode() ?: 400);
 } catch (Throwable $e) {
-    error_log('kol-maroko agent: ' . $e);
-    agent_out(['ok' => false, 'error' => 'תקלה בשרת'], 500);
+    devlog_exception($e);
+    error_log('kol-maroko agent [' . devlog_req() . ']: ' . $e->getMessage());
+    agent_out(['ok' => false, 'error' => 'תקלה בשרת · מזהה ' . devlog_req(), 'req' => devlog_req()], 500);
 }

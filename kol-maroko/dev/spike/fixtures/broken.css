@@ -1,0 +1,13 @@
+/* CSS באמצע הקלדה */
+.top { padding: 10px; color: #123; }
+.title { font-size: 2em; margin: 0; }
+@media (max-width: 600px) {
+  .top { padding: 4px; }
+}
+.ok { border: 1px solid #ccc; content: "מרכאה לא נסגרה;
+}
+.lead { color: #555; }
+.typing { margin: 1em
+  padding: 2em;
+.foot { text-align: center; }
+.after { color: blue; }

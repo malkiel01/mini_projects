@@ -225,6 +225,9 @@ $noTok2 = portal('portal-upload', ['token' => $T1, 'requirement' => $R['rights']
 $wrongReq = portal('portal-upload', ['requirement' => $R['contract'], 'name' => 'a.pdf', 'key' => 'key-notoken3'], ['env' => ['portal_token' => $T1, 'upload_reader' => $reader]]);
 eq([code($noTok), code($noTok2), code($wrongReq), $reads, $count('files')], ['portal_invalid', 'portal_invalid', 'not_found', 0, 0],
     '§9 הגוף אינו נקרא לדיסק לפני שהאסימון אומת ושהדרישה שייכת לבקשה; אסימון בכתובת במקום בכותרת אינו מתקבל');
+// השעון קפוא עד סוף 07-C3: קובץ נוסף לדרישה שכבר received מרענן את status_at (apr_req_move), והתור "מסמכים שהתקבלו" ממוין
+// לפי status_at ואז id. בלי שעון קפוא, מעבר שנייה בין ההעלאות הופך את הסדר — כך נפלה 07-C3 פעם ב-~16 הרצות.
+$GLOBALS['apr_time'] = time();
 $up = portal_up($T1, pdf('rights-1'), ['requirement' => $R['rights'], 'name' => '<img src=x onerror=alert(1)>.pdf', 'key' => 'key-rights-001']);
 $f1 = apr_row('SELECT * FROM files WHERE pid = ?', [$up[1]['file'] ?? '']);
 $l1 = apr_row('SELECT * FROM requirement_files WHERE file_id = ?', [$f1['id'] ?? 0]);
@@ -287,6 +290,12 @@ $exe = portal_up($T1, "MZ\x90\x00" . str_repeat("\0", 200), ['requirement' => $R
 $rl = $log($C, 'file.rejected');
 eq([code($rej), code($exe), $count('files') - $n, $rrow($R['plan'])['status'], count($rl) >= 1, $rl[0]['actor_kind'] ?? null, array_column(call('GET', 'docs-pending', [], $avi)[1]['pending'], 'requirement')],
     ['file_active', 'file_type', 0, 'requested', true, 'recipient', [$R['rights'], $R['contract']]], '07-C3 קובץ שנדחה בפורטל (תוכן פעיל, סוג) ← אין קובץ, הדרישה לא שינתה מצב, והמשרד אינו מקבל "מסמך שהתקבל"');
+// ואותו תור כשהשעון כן מתקדם: הדרישה שקיבלה קובץ אחרון עוברת לסוף (הסדר נקבע לפי status_at, לא במקרה)
+$GLOBALS['apr_time'] += 5;
+$late = portal_up($T1, pdf('rights-late'), ['requirement' => $R['rights']]);
+eq([$late[0], array_column(call('GET', 'docs-pending', [], $avi)[1]['pending'], 'requirement')], [200, [$R['contract'], $R['rights']]],
+    'התור "מסמכים שהתקבלו" ממוין לפי מועד הקובץ האחרון: דרישה שקיבלה קובץ נוסף אחר כך — אחרי דרישה שממתינה מקודם');
+unset($GLOBALS['apr_time']);
 // אותו קובץ שכבר קיים בתיק כקובץ פנימי — מתקבל כחדש, בלי לחשוף שהוא קיים
 $dupI = portal_up($T1, pdf('internal'), ['requirement' => $R['plan']]);
 eq([$dupI[0], array_keys($dupI[1]), $rrow($R['plan'])['status']], [200, ['ok', 'received', 'file', 'repeat'], 'received'], 'כפילות מול קובץ פנימי של התיק אינה נחשפת לנמען — הקובץ פשוט מתקבל');
