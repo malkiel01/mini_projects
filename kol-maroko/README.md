@@ -11,6 +11,15 @@
 
 האפיון המלא: [`docs/spec.md`](docs/spec.md). התקנה באתר: [`docs/install.md`](docs/install.md) · Cloudflare: [`docs/cloudflare.md`](docs/cloudflare.md).
 
+## הצוות והדרישה (מ-2026-11-10)
+
+הבעלים קבע שהכלי, כפי שהוא, **לא נותן את מה שביקש**: בידוד מוחלט של העמוד מהאתר,
+ושליטה מלאה (100%) של בעל העמוד בכל מה שבתוכו. הדרישה במילים שלו —
+[`docs/owner-brief.md`](docs/owner-brief.md); היא גוברת על `docs/spec.md` ועל טבלת "מצב" שלמטה.
+
+ארבעה צ'אטים — אפיון, קוד, בקרה ומטלות — עובדים לפי [`team/PROTOCOL.md`](team/PROTOCOL.md).
+הלוח: `team/board.md`. המצב: `team/STATE.md`.
+
 ## מצב
 
 | # | שלב | מצב |
