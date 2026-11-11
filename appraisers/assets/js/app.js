@@ -88,6 +88,7 @@ async function route() {
         else if (a === 'welcome') await viewWelcome();
         else if (a === 'invite' && b) await viewInvite(b);
         else if (a === 'office' && b === 'cases' && ok && o.is_admin) await viewOfficeCases();
+        else if (a === 'inbox' && ok) await viewInbox();
         else if (a === 'office' && ok) await viewOffice(b);
         else if (a === 'cases' && ok) await viewCases(b, c, d);
         else if (a === 'tasks' && ok) await viewMyTasks();

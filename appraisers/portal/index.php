@@ -21,7 +21,7 @@ header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 $nonce = rtrim(strtr(base64_encode(random_bytes(18)), '+/', '-_'), '=');
 header("Content-Security-Policy: default-src 'none'; script-src 'nonce-$nonce'; style-src 'self'; img-src 'self' blob:; frame-src blob:; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'");
-$v = '0.7';
+$v = '0.8';
 ?>
 <!doctype html>
 <html lang="he" dir="rtl">

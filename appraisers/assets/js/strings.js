@@ -365,3 +365,52 @@ T.rq = {
     },
 };
 Object.assign(T.audit, T.rq.audit);
+
+// ── פרוסה 08: תזכורות, ערוצים וקליטה נכנסת ──
+T.p.editTabs.contact = 'תהליך ותזכורות';
+Object.assign(T.rq.channels, { sms: 'מסרון', whatsapp: 'WhatsApp' });
+Object.assign(T.rq.msg, { answered: 'נענתה', skipped: 'דולגה', received: 'התקבלה' });
+T.auditIcon.channel = '🔌'; T.auditIcon.inbound = '📥'; T.auditIcon.reminder = '⏰'; T.auditIcon.message = '✉️';
+Object.assign(T.audit, {
+    'request.optout_cleared': () => 'נשלחה בקשה לנמען שביקש להפסיק — הסימון הוסר', 'channel.create': () => 'נוצר חיבור ערוץ', 'channel.update': () => 'עודכן חיבור ערוץ', 'channel.status': r => `חיבור ערוץ: ${r.meta?.to === 'active' ? 'הופעל' : 'הושבת'}`,
+    'channel.failed': () => 'חיבור ערוץ נכשל 3 פעמים ברצף, והושבת', 'channel.grant': () => 'עודכנה הקצאה של חיבור מערכת', 'office.inbox_handler': r => `"מטפל בתור": ${r.meta?.on ? 'הוסמך' : 'בוטלה ההסמכה'}`,
+    'inbound.dismiss': () => 'הודעה נכנסת נדחתה', 'inbound.route': () => 'הודעה לא מזוהה נותבה למשרד', 'inbound.reply': () => 'נשלחה תשובה אוטומטית לשולח לא מזוהה',
+});
+T.ch = {
+    officeTab: '🔌 ערוצים', sysTab: '🔌 ערוצים', inboxTab: '📥 לא מזוהה', inboxTitle: 'ממתינות לשיוך', inboxTile: 'תור השיוך',
+    title: 'חיבורי המשרד', sysTitle: 'חיבורי המערכת', catalog: 'קטלוג הערוצים', none: 'אין חיבורים',
+    channels: { email: 'מייל', sms: 'מסרון', whatsapp: 'WhatsApp', storage: 'אחסון' },
+    states: { available: 'זמין', needs_provider: 'לא מחובר — נדרש חשבון ספק', unavailable: 'לא זמין' },
+    statuses: { active: 'פעיל', needs_auth: 'דורש חיבור', disabled: 'מושבת', failed: 'נכשל' },
+    scope: { system: 'של המערכת', office: 'של המשרד' }, sendOnly: 'שליחה', inboundOnly: 'קליטה נכנסת',
+    secretSet: tail => `סוד מוגדר · מסתיים ב-${tail}`, secretNone: 'סוד לא מוגדר', lastOk: at => `הצלחה אחרונה: ${at}`, lastError: 'תקלה אחרונה',
+    add: 'חיבור חדש', provider: 'ספק', label: 'שם החיבור', secret: 'סוד החתימה (32 תווים לפחות)', secretKeep: 'להשאיר ריק כדי לא לשנות',
+    secretHint: 'הסוד נשמר מוצפן, ואינו מוצג שוב — רק 4 התווים האחרונים שלו.',
+    test: 'בדיקה', disable: 'השבתה', enable: 'הפעלה', edit: 'עריכה', saved: 'החיבור נשמר', hookUrl: 'כתובת ה-webhook',
+    genSecret: 'ייצור סוד', genHint: 'הסוד שנוצר מוצג עכשיו בלבד — העתיקו אותו לשירות ששולח את ההודעות, ואז שמרו.',
+    hookHint: 'השירות ששולח לכתובת הזו חותם כל הודעה בסוד שהגדרתם (<code dir="ltr">X-Relay-Signature</code>). הודעה בלי חתימה תקפה נדחית.',
+    allOffices: 'מותר לכל המשרדים', grants: 'משרדים שהותר להם', handlersTitle: 'מי מטפל בתור השיוך', handlersHint: 'מנהלי המשרד רואים את התור תמיד. אפשר להסמיך חברים נוספים.',
+    inboxEmpty: 'אין הודעות שממתינות לשיוך', inboxHint: 'הודעה שלא זוהתה בוודאות אינה נכנסת לשום תיק עד שמשייכים אותה כאן.',
+    why: { no_ref: 'בלי מזהה שיוך', sender_mismatch: 'השולח אינו הנמען של הבקשה', request_inactive: 'הבקשה כבר אינה פעילה', shared: 'השולח מוכר ביותר ממשרד אחד', unknown_sender: 'שולח לא מוכר' },
+    rejects: { file_type: 'סוג הקובץ אינו נתמך', file_mismatch: 'הקובץ פגום או שאינו תואם לסוגו', file_active: 'הקובץ מכיל תוכן פעיל', file_unscannable: 'לא ניתן לבדוק את הקובץ', file_infected: 'זוהה איום',
+        file_too_large: 'הקובץ גדול מדי', inbound_too_many: 'צורפו יותר קבצים מהמותר', inbound_queue_full: 'התור מלא — הקבצים לא נשמרו', quota_case: 'התיק הגיע לתקרת הנפח', other: 'לא התקבל' },
+    from: 'שולח', assign: 'שיוך לתיק', dismiss: 'דחייה', dismissReason: 'למה נדחית (חובה)', toCase: 'תיק', toReq: 'דרישה (לא חובה)', noReq: 'בלי דרישה — "קבצים שלא שויכו"',
+    candidates: 'תיקים אפשריים', otherCase: 'תיק אחר שלי', assigned: 'שויך לתיק', dismissed: 'נדחה', fileRejected: 'קובץ נדחה', noCases: 'אין תיק שאפשר לשייך אליו',
+    sysInboxEmpty: 'אין הודעות לא מזוהות', sysInboxHint: 'תוכן ההודעות אינו מוצג כאן. אפשר לנתב למשרד שהשולח מוכר בו, להשיב לשולח תשובה אוטומטית, או לדחות.',
+    route: 'ניתוב ל', reply: 'תשובה אוטומטית', replied: 'נשלחה תשובה', routed: 'נותב למשרד',
+    // בקשה: ציר זמן ותזכורות
+    kinds: { request: 'נשלחה', resend: 'נשלחה מחדש', inbound: 'הודעה נכנסת' }, reminderN: n => `תזכורת ${n}`,
+    skip: { requirement_closed: 'כל הדרישות כבר התקבלו', recipient_answered: 'הנמען כבר ענה', request_revoked: 'הבקשה בוטלה', request_inactive: 'הבקשה או הקישור אינם בתוקף', party_removed: 'הגורם הוסר מהתיק',
+        case_closed: 'התיק נסגר', connection_unavailable: 'הערוץ אינו זמין', no_address: 'לנמען אין כתובת בערוץ', recipient_opted_out: 'הנמען ביקש להפסיק', max_reached: 'נשלחו כל התזכורות', send_failed: 'השליחה נכשלה 3 פעמים',
+        manual: 'נעצרו ידנית' },
+    planActive: (n, at) => `תזכורות פעילות · נשלחו ${n}${at ? ' · הבאה: ' + at : ''}`, planStopped: why => `התזכורות נעצרו — ${why}`, stop: 'עצירת תזכורות', stopAsk: 'לעצור את התזכורות של הבקשה הזו?', stopped: 'התזכורות נעצרו',
+    noDelivery: 'נשלח (אין אישור מסירה בערוץ הזה)', check: 'בדיקה', checked: s => `מצב ההודעה: ${s}`, unknownTitle: 'לא ידוע אם נשלחו', unknownHint: 'אין ניסיון חוזר אוטומטי. אפשר לבדוק, או לשלוח מחדש מכרטיס הבקשה.',
+    noEmailChannel: 'אין חיבור מייל פעיל למשרד — אפשר להעתיק קישור ולמסור אותו בעצמכם.',
+    // עורך הפרופיל
+    sendMode: 'שליחת הבקשה', sendModes: { manual: 'ידנית — השמאי שולח אחרי תצוגה מקדימה', auto: 'אוטומטית — עם פתיחת התיק' },
+    autoHint: 'אוטומטית: בקשה נשלחת לכל גורם שיש לו דרישות, מייל וחיבור פעיל. גורם בלי מייל — נוצרת משימה "לשלוח בקשה ידנית".',
+    tplRequest: 'נוסח הבקשה', tplReminder: 'נוסח התזכורת', subject: 'נושא', body: 'גוף ההודעה', vars: 'משתנים שאפשר לשלב', varsHint: 'משתנה שאינו ברשימה חוסם את פרסום הפרופיל.',
+    remTitle: 'תזכורות', remOn: 'לשלוח תזכורות', afterDays: 'אחרי כמה ימים (מופרד בפסיקים)', max: 'מספר מרבי', days: 'ימים', from: 'משעה', to: 'עד שעה',
+    weekdays: { sun: 'א׳', mon: 'ב׳', tue: 'ג׳', wed: 'ד׳', thu: 'ה׳', fri: 'ו׳', sat: 'ש׳' }, stopAnswered: 'לעצור כשהנמען ענה', remHint: 'לפני כל תזכורת המערכת בודקת שוב: דרישה שכבר התקבלה אינה מוזכרת, ושבת וחג אינם ימי שליחה.',
+    preview: 'תצוגה מקדימה (נתוני דוגמה)', sample: { 'שם_הנמען': 'ישראל ישראלי', 'שם_המשרד': 'משרד לדוגמה', 'שם_השמאי': 'שם השמאי', 'רשימת_הדרישות': '• נסח טאבו\n• הסכם מכר', 'קישור': '[קישור אישי]', 'תאריך_יעד': '01.01.2027' },
+};

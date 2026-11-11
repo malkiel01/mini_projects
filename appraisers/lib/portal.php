@@ -260,6 +260,7 @@ function apr_portal_upload(array $q, array $env): array
         'recheck' => function () use ($q, &$l) { apr_portal_recheck($l); apr_portal_item($l, $q['requirement'] ?? null); }],
         // שם הקובץ מגיע בכותרת X-Portal-Name (מקודד) ולא בכתובת — כתובות נרשמות ביומן הגישה של השרת
         ['requirement' => $q['requirement'] ?? null, 'name' => ($env['portal_name'] ?? '') !== '' ? rawurldecode((string)$env['portal_name']) : ($q['name'] ?? null)], $env);
+    if (empty($out['repeat'])) apr_tx(fn() => apr_request_answered((int)$l['id']));      // ההודעה האחרונה שנשלחה — "נענתה" (אפיון 08 §5)
     return ['received' => true, 'file' => $out['file'], 'repeat' => !empty($out['repeat'])];
 }
 
@@ -302,6 +303,7 @@ function apr_portal_respond(array $in, array $env): array
                     'created_at' => apr_now(), 'updated_at' => apr_now()]);
             }
         }
+        apr_request_answered((int)$l['id']);
         apr_case_audit($c, 'portal.response', 'requirement', $r['pid'], ['kind' => $kind, 'request' => $l['pid']], null, null, 'recipient');
         apr_case_touch($c);
         return ['saved' => true];
