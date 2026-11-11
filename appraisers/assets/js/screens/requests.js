@@ -7,7 +7,7 @@
 
 const RQ = T.rq;
 const rqChip = q => `<span class="chip ${({ active: 'info', expired: 'warn', revoked: 'bad', completed: 'ok' })[q.status] || ''}">${esc(RQ.statuses[q.status] || q.status)}</span>`;
-const rqMsgChip = m => m ? `<span class="chip ${({ sent: 'ok', delivered: 'ok', failed: 'bad', unknown: 'warn' })[m.status] || ''}">${esc(RQ.channels[m.channel] || m.channel)} · ${esc(RQ.msg[m.status] || m.status)}</span>` : '';
+const rqMsgChip = m => m ? `<span class="chip ${({ sent: 'ok', delivered: 'ok', answered: 'ok', received: 'info', failed: 'bad', unknown: 'warn', skipped: '' })[m.status] || ''}">${esc(RQ.channels[m.channel] || m.channel)} · ${esc(RQ.msg[m.status] || m.status)}</span>` : '';
 const rqPermsText = p => Object.keys(RQ.perms).filter(k => p[k]).map(k => RQ.perms[k]).join(' · ') || RQ.noPerms;
 
 function requestRow(q, d) {
@@ -44,14 +44,15 @@ function requestSheet(q, x, d, reload) {
         <p class="sec-title">${RQ.itemsTitle}</p>
         <ul class="list">${q.requirements.map(pid => `<li class="card static"><div class="body"><div class="l1"><span>${esc(reqTitle(pid))}</span></div></div>${dStatusChip(d.requirements.find(r => r.pid === pid) || { status: '' })}</li>`).join('')}</ul>
         <p class="sec-title">${RQ.messagesTitle}</p>
-        <ul class="list">${q.messages.map(m => `<li class="card static"><div class="body"><div class="l1"><span>${esc(fmtDateTime(m.created_at))}</span></div><div class="l2">${esc(m.by || C.system)}</div></div>${rqMsgChip(m)}</li>`).join('')}</ul>
+        ${rqTimelineHtml(q)}
         ${q.messages[0]?.status === 'unknown' ? `<p class="hint">${RQ.unknownNote}</p>` : ''}${q.messages[0]?.status === 'sent' ? `<p class="hint">${RQ.sentNote}</p>` : ''}
         ${q.responses.length ? `<p class="sec-title">${RQ.responsesTitle}</p><ul class="list">${q.responses.map(s => `<li class="card static"><span class="use-ic" aria-hidden="true">${s.kind === 'no_document' ? '🚫' : '💬'}</span>
             <div class="body"><div class="l1"><span>${esc(RQ.kinds[s.kind])} — ${esc(reqTitle(s.requirement))}</span><span class="t">${esc(fmtDate(s.created_at))}</span></div>
             ${s.text ? `<div class="l2 wrap" dir="auto">${esc(s.text)}</div>` : ''}</div></li>`).join('')}</ul>` : ''}
-        ${live ? `<div class="row-btns wrap"><button type="button" class="btn ghost" id="rqresend">${RQ.resend}</button><button type="button" class="btn ghost" id="rqcopy">${RQ.copyLink}</button>
+        ${live ? `<div class="row-btns wrap">${q.reminders?.state === 'active' ? `<button type="button" class="btn ghost" id="rqstop">${T.ch.stop}</button>` : ''}<button type="button" class="btn ghost" id="rqresend">${RQ.resend}</button><button type="button" class="btn ghost" id="rqcopy">${RQ.copyLink}</button>
             <button type="button" class="btn ghost danger" id="rqrevoke">${RQ.revoke}</button></div><p class="hint">${RQ.resendHint}</p>` : ''}`);
     const party = d.parties.find(p => p.pid === q.party);
+    rqTimelineBind(q, x, reload, $('#sheet'));
     $('#rqresend')?.addEventListener('click', () => requestPreview({ request: q.pid, channel: 'email' }, x, d, reload, party, null));
     $('#rqcopy')?.addEventListener('click', () => requestPreview({ request: q.pid, channel: 'link_copy' }, x, d, reload, party, null));
     $('#rqrevoke')?.addEventListener('click', async () => {
@@ -83,13 +84,16 @@ function requestCompose(x, d, reload, st) {
         return false;
     }, RQ.toPreview);
     const draw = () => {
-        const p = d.parties.find(q => q.pid === dlg.querySelector('[name=party]').value), mail = p.contact.email;
+        // חיבור מייל מושבת או שנכשל: המייל אינו זמין, והשליחה מציעה "העתקת קישור" (08-E2)
+        const p = d.parties.find(q => q.pid === dlg.querySelector('[name=party]').value), canMail = (x.connections || []).some(k => k.channel === 'email' && k.status === 'active');
+        const mail = canMail ? p.contact.email : null;
         const ch = st.channel || (mail ? 'email' : 'link_copy');
         $('#rqcontact', dlg).innerHTML = `<div class="summary"><div class="line"><b class="one">${esc(p.contact.name)}</b></div>
               <div class="line muted" dir="auto">${esc([p.contact.org, p.contact.phone, mail].filter(Boolean).join(' · ') || RQ.noContact)}</div></div>
             <fieldset class="seg" aria-label="${RQ.channel}"><label><input type="radio" name="channel" value="email"${ch === 'email' && mail ? ' checked' : ''}${mail ? '' : ' disabled'}><span>${RQ.channels.email}</span></label>
               <label><input type="radio" name="channel" value="link_copy"${ch !== 'email' || !mail ? ' checked' : ''}><span>${RQ.channels.link_copy}</span></label></fieldset>
-            ${mail ? `<label class="switch"><input type="checkbox" name="contact_ok"${st.contact_ok ? ' checked' : ''}><span>${esc(RQ.contactOk(mail))}</span></label>` : `<p class="hint">${RQ.noEmailHint}</p>`}`;
+            ${mail ? `<label class="switch"><input type="checkbox" name="contact_ok"${st.contact_ok ? ' checked' : ''}><span>${esc(RQ.contactOk(mail))}</span></label>` : `<p class="hint">${canMail ? RQ.noEmailHint : T.ch.noEmailChannel}</p>`}
+            ${canMail ? '' : (x.connections || []).filter(k => k.channel === 'email').map(k => `<p class="hint">🔌 ${esc(k.label)} — ${esc(T.ch.statuses[k.status] || k.status)}</p>`).join('')}`;
         const chosen = st.requirements;
         $('#rqitems', dlg).innerHTML = can.length ? can.map(r => `<label class="switch"><input type="checkbox" value="${r.pid}"${(chosen ? chosen.includes(r.pid) : r.party === p.pid) ? ' checked' : ''}>
             <span>${esc(r.title)}${r.status !== 'required' ? ` <small class="muted">${esc(D.statuses[r.status])}</small>` : ''}</span></label>`).join('') : `<p class="empty">${RQ.noItems}</p>`;
