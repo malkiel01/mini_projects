@@ -23,9 +23,9 @@ const API_MIN_ROLE = [
     'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',
     'dev-file' => 'owner', 'dev-tokens' => 'owner', 'dev-token-create' => 'owner', 'dev-token-revoke' => 'owner', 'dev-item-log' => 'owner',
-    'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-state' => 'owner',
+    'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner',
 ];
-const API_GET_DEV = ['dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state'];
+const API_GET_DEV = ['dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];
 
 function api_method(string $action): string
 {

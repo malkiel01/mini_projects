@@ -173,7 +173,7 @@
       const t = textTarget(m, n), a = fwdWs(m.src, t.from, t.to), b = Math.max(a, backWs(m.src, t.to, t.from));
       return { patches: [{ from: a, to: b, text: escText(text) }], muts: [{ t: 'inner', node: n }] };
     },
-    /** value === null — תכונה בלי ערך. opt.before — שם תכונה קיימת שלפניה מוסיפים. */
+    /** value === null — תכונה בלי ערך. opt.before / opt.after — שם תכונה קיימת שלפניה או אחריה מוסיפים. */
     setAttr(m, n, name, value, opt) {
       guard(n);
       const a = attrOf(n, name), muts = [{ t: 'attrs', node: n }];
@@ -190,6 +190,8 @@
       const txt = name + (value === null ? '' : '=' + qs + escAttr(value, qs) + qs);
       const ref = opt && opt.before ? attrOf(n, opt.before) : null;
       if (ref && ref.from >= 0) return { patches: [{ from: ref.from, to: ref.from, text: txt + ' ' }], muts };
+      const aft = opt && opt.after ? attrOf(n, opt.after) : null;
+      if (aft && aft.from >= 0) return { patches: [{ from: aft.to, to: aft.to, text: ' ' + txt }], muts };
       const located = n.attrs.filter(x => x.from >= 0);
       const at = located.length ? located[located.length - 1].to : n.st[0] + 1 + n.tag.length;
       return { patches: [{ from: at, to: at, text: ' ' + txt }], muts };
@@ -371,7 +373,7 @@
   }
   function appendTo(m, par, text, index) {
     if (index != null && index < par.kids.length) { const ref = par.kids[index], at = cssLead(m, ref); return [{ from: at, to: at, text: m.src.slice(at, ref.from) + text }]; }
-    if (par.kids.length) { const last = par.kids[par.kids.length - 1]; let lt = m.src.slice(cssLead(m, last), last.from); if (!lt) lt = m.nl; return [{ from: last.to, to: last.to, text: lt + text }]; }
+    if (par.kids.length) { const last = par.kids[par.kids.length - 1]; if (last.broken) throw new SrcError('הכלל האחרון בקובץ שבור — כלל חדש אחריו היה נבלע בו', 'broken'); let lt = m.src.slice(cssLead(m, last), last.from); if (!lt) lt = m.nl; return [{ from: last.to, to: last.to, text: lt + text }]; }
     if (par === m.root) { const e = backWs(m.src, m.src.length, m.bom); return [{ from: e, to: e, text: (e > m.bom ? m.nl : '') + text }]; }
     throw new SrcError('הוספה לבלוק ריק אינה ממומשת בספייק', 'unsupported');
   }
