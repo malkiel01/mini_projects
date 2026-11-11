@@ -457,3 +457,53 @@ Object.assign(T.audit, {
     'conflict.dismiss': () => 'סתירה נסגרה: אין סתירה', 'conflict.auto_close': () => 'סתירה נסגרה — הנתונים כבר אינם סותרים',
     'attribute.create': () => 'מאפיין נוסף לקטלוג', 'attribute.update': () => 'מאפיין עודכן בקטלוג',
 });
+
+// ── פרוסה 09: מקורות מידע, בדיקות, תכנון והיתרים (המסלול הידני) ──
+T.s = {
+    tab: 'מקורות ותכנון', sourcesTitle: 'מקורות', planningTitle: 'תכנון והיתרים', catalog: 'מקורות מידע', catalogHint: 'כרטיס לכל מקור: מה יש בו, איך בודקים, ומה מגבלותיו. הבדיקה עצמה נעשית בידי המשתמש, באתר המקור.',
+    sysHint: 'הקטלוג של המערכת — אחד לכל המשרדים. מקור אינו נמחק, רק מוסתר. חיבור אוטומטי אינו נקבע כאן.',
+    statuses: { not_checked: 'לא נבדק', planned: 'מתוכנן', awaiting_identification: 'ממתין לזיהוי', needs_approval: 'נדרש אישור', in_progress: 'בתהליך', found: 'אותר', partial: 'הושלם חלקית',
+        not_found: 'לא אותר במקור שנבדק', unavailable: 'מקור לא זמין', needs_login: 'דורש הזדהות', needs_clarification: 'דורש בירור', failed: 'נכשל', verified: 'נבדק ואומת' },
+    statusCls: { found: 'ok', verified: 'ok', partial: 'warn', not_found: 'warn', unavailable: 'bad', needs_login: 'warn', needs_clarification: 'warn', failed: 'bad', needs_approval: 'warn', awaiting_identification: 'warn', planned: 'info', in_progress: 'info' },
+    infoKinds: { deals: 'עסקאות', planning: 'תכנון', permits: 'היתרים', rights: 'זכויות', map: 'מפה', enforcement: 'פיקוח', stats: 'סטטיסטיקה' },
+    access: { connector: 'חיבור אוטומטי', guided: 'בדיקה מונחית', manual: 'בדיקה ידנית', unavailable: 'לא זמין' },
+    feasibility: { approved: 'חיבור אושר', needs_inquiry: 'דורש בירור', manual_only: 'ידני בלבד', unavailable: 'לא זמין' },
+    auth: { none: 'בלי הזדהות', personal_login: 'התחברות אישית באתר המקור', national_id: 'הזדהות לאומית באתר המקור', payment: 'בתשלום באתר המקור', agreement: 'דורש הסכם עם המקור' },
+    license: { display: 'הצגה', store: 'שמירה', offline: 'שימוש בלי רשת', in_report: 'שילוב בדוח', distribute: 'הפצה', ai: 'עיבוד ב-AI' }, licenseValues: { yes: 'מותר', no: 'אסור', unknown: 'לא נבדק' },
+    modes: { auto: 'אוטומטי — נוצרת משימה לבדיקה', manual: 'ביוזמת השמאי', ask: 'לשאול את השמאי קודם' }, modeShort: { auto: 'משימה אוטומטית', manual: 'ביוזמת השמאי', ask: 'באישור שמאי' },
+    notConnected: 'אין חיבור אוטומטי — הבדיקה ידנית', connected: 'מחובר', cardStale: 'הכרטיס לא נבדק מזמן', cardChecked: d => `הכרטיס נבדק ב-${d}`, hidden: 'מוסתר',
+    open: 'פתיחת המקור', openHint: 'האתר נפתח בלשונית חדשה. בודקים שם בעצמכם — המערכת אינה מבקשת, אינה שומרת ואינה מעבירה סיסמה, קוד או פרטי תשלום.',
+    noUrl: 'למקור הזה אין כתובת אחת — ראו "איך בודקים".', record: 'רישום תוצאה', start: 'אני מתחיל לבדוק', askApproval: 'בקשת אישור להוצאה', history: 'בדיקות בתיק', noChecks: 'עוד לא נרשמה בדיקה במקור הזה, בתיק הזה.',
+    howTo: 'איך בודקים', coverage: 'כיסוי', limitations: 'מגבלות', owner: 'הגוף המחזיק', cost: 'עלות', terms: 'תנאי שימוש', attribution: 'ייחוס', incident: 'תקלה אחרונה', research: 'מקור הכרטיס', licenseTitle: 'הרשאות שימוש',
+    idsTitle: 'מזהי הנכס — להעתקה', copy: 'העתקה', copied: 'הועתק', noIdent: 'אין בתיק מזהה נכס מספיק (גוש וחלקה, או כתובת עם יישוב ורחוב).',
+    result: 'תוצאה', pickResult: 'בחרו תוצאה', idsChecked: 'אילו מזהים נבדקו', queryText: 'או: לפי מה חיפשתם', coverageNote: 'מה בדיוק נבדק (טווח הכיסוי)', coverageHint: 'חובה ל"לא אותר" ול"הושלם חלקית".',
+    summary: 'מה נמצא', link: 'קישור לתוצאה', linkHint: 'כתובת מלאה של הדף (מתחילה ב-https) — בלי שם משתמש וסיסמה.', file: 'מסמך מצורף (מקובצי התיק)', noFile: '— בלי מסמך —', fileHint: 'מעלים את המסמך בלשונית "דרישות וקבצים", ואז בוחרים אותו כאן.',
+    limitation: 'מגבלה שנתקלתם בה', costAmount: 'הוצאה (₪)', costNote: 'על מה', costHint: 'ריק = לא נרשם. 0 = ללא עלות. המערכת אינה משלמת — רק רושמת.', addCost: 'רישום הוצאה',
+    costNone: 'ללא עלות', costOf: a => `הוצאה: ${a} ₪`, noEvidence: 'בלי אסמכתא מצורפת', idsChanged: 'נעשתה לפני שינוי המזהים', refOnly: 'הפניה בלבד',
+    by: (n, d) => `${n || 'המערכת'} · ${d}`, approve: 'אישור הבדיקה', approved: (n, d) => `אושר בידי ${n} · ${d}`, verify: 'נבדק ואומת', verifyAsk: 'לסמן את הבדיקה "נבדק ואומת"? הסימון נרשם על שמכם ואינו מתבטל.',
+    verified: (n, d) => `אומת בידי ${n} · ${d}`, lastVerified: 'בדיקה מאומתת קודמת', checkTitle: 'בדיקה', derived: 'נגזרו מהבדיקה', addFact: 'נתון מהבדיקה', addFactHint: 'בלשונית "נתונים" — בוחרים מאפיין, ובמקור: "מבדיקת מקור".',
+    addItem: 'פריט', localityHint: 'הוסיפו יישוב כדי לראות את מקורות הרשות המקומית', spendApproval: 'בפרופיל: הוצאה על מקור דורשת אישור של שמאי.', fileGone: 'המסמך נמחק', fileRestricted: 'מסמך מצורף',
+    queried: 'נבדק לפי', valueCorrected: 'הערך תוקן אחרי הבדיקה', upload: 'או: העלאת מסמך חדש', toRequirement: 'לשייך לדרישה', noRequirement: '— בלי שיוך —', checksN: n => `${n} בדיקות`,
+    kinds: { plan: 'תוכנית', application: 'בקשה להיתר', decision: 'החלטה', permit: 'היתר שהונפק', building_doc: 'מסמך מתיק הבניין', enforcement: 'רישום פיקוח' },
+    kindCls: { application: 'warn', permit: 'ok', enforcement: 'bad' }, kind: 'סוג', kindFixed: 'הסוג נקבע ביצירה ואינו משתנה. בקשה אינה היתר — היתר נרשם כפריט חדש, ואפשר לקשר אותו לבקשה.',
+    title: 'כותרת', refNumber: 'מספר / מזהה במקור', statusReported: 'הסטטוס כפי שדווח במקור', statusReportedHint: 'בלשון המקור. המערכת אינה מתרגמת אותו למצב משלה.', itemDate: 'תאריך', source: 'מקור', noSource: '— בלי מקור —',
+    related: 'קשור לפריט', noRelated: '— בלי קישור —', note: 'הערה', url: 'קישור', duplicate: 'קיים כבר פריט מאותו סוג עם אותו מספר — הפריט נרשם בכל זאת.',
+    applicability: 'תחולה', applicabilities: { unknown: 'לא נקבעה', applies: 'חל על הנכס', partial: 'חל חלקית', not_applies: 'אינו חל' }, setApplicability: 'קביעת תחולה', applicabilityNote: 'הנמקה', applicabilityOnly: 'תחולה נקבעת רק בידי שמאי בתיק.',
+    applicabilityBy: (n, d) => `נקבע בידי ${n} · ${d}`, lockedByJudge: 'התחולה נקבעה בידי שמאי — רק שמאי בתיק משנה או מוחק את הפריט.',
+    task: 'משימה: אי התאמה אפשרית', taskDetail: 'מה נראה לא תואם', taskHint: 'זו משימה לבירור — לא קביעה. במערכת אין שדה "עבירה" ואין שדה "חוקי".', taskOpened: 'נפתחה משימה', taskExists: 'כבר קיימת משימה פתוחה לפריט',
+    del: 'מחיקה', delReason: 'נימוק למחיקה', edit: 'עריכה', tasks: 'משימות', itemHistory: 'היסטוריה',
+    profileHint: 'לכל מקור: מה קורה בפתיחת תיק. "אוטומטי" כאן פירושו שנוצרת משימה לבדיקה ידנית — הגדרה אינה יוצרת חיבור.', spendSwitch: 'הוצאה על מקור דורשת אישור של שמאי בתיק',
+    unknownSource: 'המקור אינו קיים עוד בקטלוג — בפתיחת תיק מתעלמים ממנו', remove: 'הסרה',
+    key: 'מפתח (באנגלית)', name: 'שם המקור', siteUrl: 'הכתובת הרשמית', termsUrl: 'כתובת תנאי השימוש', region: 'אזור', regions: { national: 'ארצי', municipality: 'רשות מקומית' }, municipality: 'שם הרשות (ריק = כרטיס כללי)',
+    accessMode: 'דרך הגישה', feasibilityLabel: 'היתכנות חיבור', authLabel: 'הזדהות', infoLabel: 'סוג המידע', sort: 'סדר', active: 'פעיל', markVerified: 'בדקתי את הכרטיס עכשיו', newSource: 'מקור', inUse: 'בשימוש',
+    attention: n => `${n} בדיקות מקור דורשות תשומת לב`, toSources: 'למקורות',
+};
+T.c.tabs.sources = T.s.tab;
+T.p.editTabs.sources = 'מקורות';
+Object.assign(T.auditIcon, { source_check: '🔎', planning_item: '🏗️', source: '🗂️' });
+Object.assign(T.audit, {
+    'source.plan': r => `בדיקת מקור: ${T.s.statuses[r.meta.status] || ''}`, 'source.check': r => `נרשמה תוצאה של בדיקת מקור: ${T.s.statuses[r.meta.status] || ''}${r.disclaimer ? ' — ' + r.disclaimer : ''}`,
+    'source.verify': () => 'בדיקת מקור סומנה "נבדק ואומת"', 'source.cost': () => 'נרשמה הוצאה על בדיקת מקור',
+    'planning.add': r => `נוסף פריט תכנון: ${T.s.kinds[r.meta.kind] || ''}`, 'planning.update': () => 'פריט תכנון עודכן', 'planning.applicability': r => `תחולה: ${T.s.applicabilities[r.meta.to] || ''}`,
+    'planning.delete': () => 'פריט תכנון נמחק', 'planning.task': () => 'נפתחה משימת "אי התאמה אפשרית"', 'source.create': () => 'מקור נוסף לקטלוג', 'source.update': () => 'כרטיס מקור עודכן',
+});

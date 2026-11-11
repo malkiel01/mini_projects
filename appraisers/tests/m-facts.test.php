@@ -573,7 +573,7 @@ $v8->exec($seedSql);
 eq([apr_schema_version($v8), count($tables) > 30, $rows8 > 30, $dump($v8) === $d8, $shape($v8) === $shape($fresh), (int)$v8->query('SELECT COUNT(*) FROM attributes')->fetchColumn(),
     $v8->query("SELECT label FROM attributes WHERE key = 'rooms'")->fetchColumn(), (int)$v8->query('SELECT COUNT(*) FROM facts')->fetchColumn(), count($v8->query('PRAGMA foreign_key_check')->fetchAll()),
     trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/00[1-8]_*.sql 2>/dev/null'))],
-    [9, true, true, true, true, 27, 'שם שהמנהל שינה', 0, 0, ''],
+    [apr_schema_expected(), true, true, true, true, 27, 'שם שהמנהל שינה', 0, 0, ''],
     'מיגרציה 009 על מסד v8 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא, המבנה זהה למסד חדש, הקטלוג נזרע (27) — וזריעה חוזרת אינה מכפילה ואינה דורסת שינוי של המנהל; 001–008 לא נגעו');
 $v8 = null;
 $rm = function (string $d) use (&$rm) { foreach (array_diff(scandir($d) ?: [], ['.', '..']) as $f) is_dir("$d/$f") ? $rm("$d/$f") : @unlink("$d/$f"); @rmdir($d); };
