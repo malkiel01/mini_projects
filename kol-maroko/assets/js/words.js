@@ -32,6 +32,26 @@ const Words = (() => {
     try { D = await api('words'); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     shown = PAGE;
     draw(host);
+    if (pending) {                                   // הגענו מהספרייה: "פתח את המילה"
+      const w = D.words.find(x => x.id === pending);
+      pending = 0;
+      if (w) { q = ''; topic = ''; audio = ''; edit(w, host); }
+    }
+  }
+
+  // ── מהספרייה (library.js) ────────────────────────────────
+  let pending = 0;
+  /** פותח את 📚 מילים על המילה הזו. */
+  function open(id) { pending = id; if (location.hash === '#/words') view(main); else location.hash = '#/words'; }
+  /** "החלף / הקלט" — אותה פעולה כמו בטבלה, בלי לעבור מסך. מחזיר true אם ההקלטה הוחלפה. */
+  async function replaceAudio(id) {
+    D = await api('words');
+    const w = D.words.find(x => x.id === id);
+    if (!w) throw new Error('המילה לא נמצאה');
+    const [f] = await Media.pick({ kind: 'audio' });
+    if (!f) return false;
+    await saveRow(w, { audio: f.id });
+    return true;
   }
 
   // שמירה של שורה (מהתא או מהכרטיס). light — השרת מחזיר רק את השורה
@@ -209,7 +229,8 @@ const Words = (() => {
           Object.assign(cur, { audio: f.id, audio_src: f.url, audio_kind: 'file' });
           drawAudio();
         } }, cur.audio ? '🔁 החלפה / הקלטה' : '🎙️ הקלטה / בחירה'),
-        cur.audio ? h('button', { type: 'button', class: 'btn sm ghost danger', onclick: () => { Object.assign(cur, { audio: '', audio_src: '', audio_kind: '' }); drawAudio(); } }, '✕ הסרה') : null),
+        cur.audio ? h('button', { type: 'button', class: 'btn sm ghost danger', onclick: () => { Object.assign(cur, { audio: '', audio_src: '', audio_kind: '' }); drawAudio(); } }, '✕ הסרה') : null,
+        w && typeof Library !== 'undefined' ? h('button', { type: 'button', class: 'btn sm ghost', onclick: () => { dlg.close(); Library.show(w.id); } }, '🗂️ הצג בספרייה') : null),
     ].filter(Boolean));
     drawAudio();
     const ext = h('input', { value: cur.external_id, maxlength: 40, dir: 'ltr', inputmode: 'numeric' });
@@ -244,5 +265,5 @@ const Words = (() => {
     if (!dl) { dl = h('datalist', { id: 'w-topics' }); document.body.append(dl); }
     dl.replaceChildren(...(D?.topics || []).map(t => h('option', { value: t.name })));
   }
-  return { view };
+  return { view, open, replaceAudio };
 })();

@@ -11,6 +11,10 @@ require_once __DIR__ . '/lib/members.php';
 require_once __DIR__ . '/lib/import.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/agent.php';
+require_once __DIR__ . '/lib/library.php';
+require_once __DIR__ . '/lib/dev.php';
+
+devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -21,6 +25,13 @@ function json_out(array $data, int $code = 200): never
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+/** מי אני: המשתמש, התפקיד, האם מפתח, והגרסה. כניסה נרשמת ביומן הפעולות. */
+function me_state(array $user): array
+{
+    if ($user['role']) audit_login($user);
+    return ['user' => $user + ['developer' => is_developer($user)], 'csrf' => csrf_token($user['sub']), 'roles' => ROLES, 'version' => dev_app_version()];
 }
 
 $action = (string)($_GET['action'] ?? '');
@@ -38,18 +49,20 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
-    // upload_chunk — גוף גולמי (חלק מקובץ), לא JSON
-    $body = $method === 'POST' && $action !== 'upload_chunk' ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
+    // upload_chunk ו-dev-attach — גוף גולמי (חלק מקובץ / צילום), לא JSON
+    $body = $method === 'POST' && $action !== 'upload_chunk' && !in_array($action, DEV_RAW_BODY, true) ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
     if (!is_array($body)) $body = [];
 
-    $user = in_array($action, PUBLIC_ACTIONS, true) ? null : current_user();
+    // devapi-… — Claude, באסימון (X-Dev-Token) ובלי משתמש מהשער
+    $user = in_array($action, PUBLIC_ACTIONS, true) || in_array($action, DEV_TOKEN_ACTIONS, true) ? null : current_user();
+    devlog_user($user);
     if ($user && $method === 'POST') check_csrf($user);
     if ($user && $user['role']) snapshot_daily();                 // נקודת שחזור יומית — בבקשה הראשונה של היום
 
-    $result = match ($action) {
+    $result = dev_route($action, $method, $user, $body) ?? match ($action) {
         'embed_key' => wp()->publicKeys(),
         'me' => $user
-            ? ['user' => $user, 'csrf' => csrf_token($user['sub']), 'roles' => ROLES]
+            ? me_state($user)
             : throw new ApiError('נדרשת כניסה דרך הכלים הדיגיטליים', 401),
         'members' => members_state(require_role($user, 'owner')),
         'member_add' => member_add(require_role($user, 'owner'), $body),
@@ -86,6 +99,7 @@ try {
         'site_switch' => site_switch(require_role($user, 'publisher'), $body),
         'import_run' => import_run(require_role($user, 'owner'), $body),
         'words' => (require_role($user, 'editor') ? words_list() : []),
+        'library' => (require_role($user, 'editor') ? library_list() : []),
         'word_save' => word_save(require_role($user, 'editor'), $body),
         'word_delete' => word_delete(require_role($user, 'editor'), $body),
         'topic_op' => topic_op(require_role($user, 'editor'), $body),
@@ -120,8 +134,12 @@ try {
     };
     json_out(['ok' => true] + $result);
 } catch (ApiError $e) {
-    json_out(['ok' => false, 'error' => $e->getMessage()] + $e->extra, $e->getCode() ?: 400);
+    devlog_exception($e);
+    $code = $e->getCode() ?: 400;
+    // 5xx: המשתמש רואה את מזהה הבקשה — אותו מזהה ביומן ובכותרת X-Request-Id
+    json_out(['ok' => false, 'error' => $e->getMessage() . ($code >= 500 ? ' · מזהה ' . devlog_req() : ''), 'req' => devlog_req()] + $e->extra, $code);
 } catch (Throwable $e) {
-    error_log('kol-maroko: ' . $e);
-    json_out(['ok' => false, 'error' => 'תקלה בשרת'], 500);
+    devlog_exception($e);
+    error_log('kol-maroko [' . devlog_req() . ']: ' . $e->getMessage());
+    json_out(['ok' => false, 'error' => 'תקלה בשרת · מזהה ' . devlog_req(), 'req' => devlog_req()], 500);
 }
