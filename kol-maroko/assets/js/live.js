@@ -241,7 +241,14 @@
 
   // ── חיבור ────────────────────────────────────────────────
   $('lv-reload').addEventListener('click', reload);
-  $('lv-stop').addEventListener('click', () => { clearConsole(); mount().then(() => toast('המסגרת נעצרה ונטענה מחדש')); });
+  // "עצור ורענן": קודם מסירים את המסגרת התקועה, ורק אחרי רגע טוענים חדשה — כדי שהדפדפן יסגור את התהליך התקוע ולא ישבץ בו את החדשה
+  $('lv-stop').addEventListener('click', async () => {
+    clearConsole();
+    S.frame?.remove(); S.frame = null; S.title = ''; drawWhere();
+    await new Promise(r => setTimeout(r, 700));
+    await mount();
+    toast('המסגרת נעצרה ונטענה מחדש');
+  });
   $('lv-pick').addEventListener('click', () => setPicking(!S.picking));
   $('lv-clear').addEventListener('click', clearConsole);
   $('lv-t-console').addEventListener('click', () => tab('console'));

@@ -162,6 +162,112 @@ throw new Error('בום בשורה 6');
       ok(errors.length === 0, 'בלי שגיאות JS בסטודיו' + (errors.length ? ' · ' + errors[0] : ''));
       await ctx.close();
     }
+
+    // ══ ערכת ההתקפה מול הסטודיו — הבודק מחובר כבעלים ══
+    console.log('\n── ערכת ההתקפה ──');
+    const ctx = await mk(1280, 900), page = await ctx.newPage();
+    await page.goto(base + '/#/dev/health');
+    await page.waitForSelector('#kit-run');
+    const runKit = async () => {
+      await page.click('#kit-run');
+      await page.waitForFunction(() => !document.getElementById('kit-run').disabled && document.querySelectorAll('#kit-out li').length > 0, null, { timeout: 40000 });
+      return page.$$eval('#kit-out li', els => els.map(e => ({ ok: e.classList.contains('ok'), name: e.querySelector('b')?.textContent || '', text: e.querySelector('p')?.textContent || '' })));
+    };
+
+    // ביקורת חיובית לערכה כולה: מסירים את הבידוד (בלי כותרת ארגז החול, ועם allow-same-origin) — הערכה חייבת להיכשל
+    const weakA = async route => { const r = await route.fetch(); const h = { ...r.headers() }; delete h['content-security-policy']; await route.fulfill({ response: r, headers: h }); };
+    const weakB = async route => { const r = await route.fetch(); await route.fulfill({ response: r, body: (await r.text()).replace("const SANDBOX = 'allow-scripts", "const SANDBOX = 'allow-same-origin allow-scripts") }); };
+    await page.route('**/preview/**', weakA); await page.route('**/assets/js/live.js', weakB);
+    const weak = await runKit();
+    ok(weak.length > 0 && weak.some(c => !c.ok), 'ביקורת חיובית לערכה כולה: כשמסירים את הבידוד — הערכה אדומה (' + weak.filter(c => !c.ok).map(c => c.text).join(' | ').slice(0, 90) + ')');
+    ok((await page.textContent('#kit-info')).includes('❌'), 'והתוצאה האחרונה מוצגת כאדומה');
+    await page.unroute('**/preview/**', weakA); await page.unroute('**/assets/js/live.js', weakB);
+    fs.writeFileSync(trace, '');
+
+    const kit = await runKit();
+    const red = kit.filter(c => !c.ok);
+    ok(kit.length >= 15 && red.length === 0, `ערכת ההתקפה: כל ${kit.length} הבדיקות ירוקות` + (red.length ? ' · נכשלו: ' + red.map(c => c.name + ' [' + c.text + ']').join(' | ') : ''));
+    for (const n of ['מקור אטום', 'document.cookie', 'localStorage', 'parent.document', 'top.location', 'fetch ל-api.php', 'הקובץ לא השתנה', 'הסטודיו מתעלם', 'מוצגת כטקסט', 'בלי אסימון', 'ביקורת חיובית']) {
+      const c = kit.find(x => x.name.includes(n));
+      ok(c && c.ok, '  · ' + (c ? c.name + ' — ' + c.text : 'חסרה בדיקה: ' + n));
+    }
+    ok((await page.textContent('#kit-info')).includes('✅'), 'התוצאה האחרונה נשמרת ומוצגת במסך המפתח');
+    await page.reload(); await page.waitForSelector('#kit-run');
+    await until(async () => (await page.textContent('#kit-info')).includes('✅'));
+    ok((await page.textContent('#kit-info')).includes('✅'), 'וגם אחרי טעינה מחדש (מהשרת)');
+    ok(await page.evaluate(async () => (await api('pf_tree')).files.every(f => !f.path.startsWith('__kol-attack')) && (await api('pf_trash')).items.every(f => !f.path.startsWith('__kol-attack'))), 'הקבצים הזמניים נמחקו, גם מהסל');
+    const hp = await until(() => page.$$eval('.dev-checks:not(#kit-out) li', els => els.map(e => e.textContent).find(t => t.includes('התצוגה החיה'))));
+    ok(hp && hp.includes('✅') && hp.includes('מהדפדפן'), 'בדיקת התקינות: כתובת התצוגה מחזירה את כותרות הבידוד');
+
+    // מה שהשרת ראה בפועל: כל פנייה ל-api.php מתוך התצוגה (Origin: null) הגיעה בלי זהות
+    const T = seen(), fromFrame = T.filter(t => t.uri.includes('/api.php') && t.origin === 'null');
+    ok(fromFrame.length > 0 && fromFrame.every(t => !t.user), `השרת: ${fromFrame.length} פניות ל-api.php מתוך התצוגה (${[...new Set(fromFrame.map(t => t.method))].join('+')}) — כולן בלי זהות` + (fromFrame.some(t => t.user) ? ' · ⚠️ ' + JSON.stringify(fromFrame.find(t => t.user)) : ''));
+    ok(T.some(t => t.uri.includes('action=me') && t.user && t.origin !== 'null'), 'ביקורת חיובית: אותה פנייה מהסטודיו עצמו הגיעה עם זהות');
+    ok(T.filter(t => t.uri.includes('/preview/')).length > 0, 'ביקורת חיובית: היומן רואה את הבקשות של התצוגה');
+
+    // ── פתיחה ישירה בלשונית, עם ובלי אסימון; ומסגרת שמנווטת את עצמה ל-api.php ──
+    await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row', { state: 'attached' });
+    const PROBE = "<!doctype html><title>t</title><script>var d=document.documentElement.dataset;d.o=self.origin;try{void document.cookie;d.c='read'}catch(e){d.c='throw'}try{localStorage.length;d.s='read'}catch(e){d.s='throw'}</scr" + "ipt>";
+    const HOST = '<img src=x onerror=window.pwned=1>.html';
+    for (const [p, c] of [['t/origin.html', PROBE], ['t/nav.html', `<script>location.href = ${JSON.stringify(base + '/api.php?action=me&from=selfnav')}</scr` + 'ipt>'],
+      ['t/loop.html', '<title>loop</title><script>setTimeout(() => { for (;;) {} }, 400)</scr' + 'ipt>'], ['t/' + HOST, '<title>שם עוין</title><p class=\'"><img src=x onerror=top.pwned=1>\'>x</p>']]) await call(page, 'pf_create', { path: p, content: c });
+    const tok = (await call(page, 'pv_token')).token;
+    const tab = await ctx.newPage();
+    const res = await tab.goto(`${base}/preview/${tok}/t/origin.html`);
+    const d = await tab.evaluate(() => ({ ...document.documentElement.dataset }));
+    ok(res.status() === 200 && d.o === 'null' && d.c === 'throw' && d.s === 'throw', `פתיחה ישירה בלשונית, עם אסימון: מקור אטום (origin=${d.o}, cookie ${d.c}, storage ${d.s})`);
+    const no = await tab.goto(`${base}/preview/x/t/origin.html`);
+    ok(no.status() === 403 && (no.headers()['content-security-policy'] || '').startsWith('sandbox ') && !(await tab.content()).includes('dataset'), 'פתיחה ישירה בלי אסימון: 403, בלי תוכן, ועדיין בארגז חול');
+    const ctl = await tab.goto(base + '/index.html');
+    ok(await tab.evaluate(() => { try { void document.cookie; localStorage.length; return self.origin; } catch { return 'throw'; } }) === base, 'ביקורת חיובית: דף רגיל של הסטודיו — מקור רגיל, עוגייה ואחסון נקראים');
+    fs.writeFileSync(trace, '');
+    await tab.goto(base + '/live.php?path=t/nav.html');
+    await sleep(1500);
+    const nav2 = seen().find(t => t.uri.includes('from=selfnav'));
+    ok(!nav2 || !nav2.user, 'מסגרת שמנווטת את עצמה ל-api.php: ' + (nav2 ? `הבקשה הגיעה בלי זהות (site: ${nav2.site})` : 'נחסמת עוד בדפדפן — frame-src של live.php מתיר רק את כתובת התצוגה'));
+    ok(seen().some(t => t.uri.includes('/t/nav.html')), 'ביקורת חיובית: העמוד שמנווט אכן נטען');
+
+    // ── לולאה אינסופית ──
+    await tab.goto(base + '/live.php?path=t/loop.html');
+    await until(async () => (await tab.textContent('#lv-title')) === 'loop');
+    await sleep(1200);
+    const alive = await Promise.race([tab.evaluate(() => 1 + 1), sleep(3000).then(() => 'FROZEN')]);
+    ok(alive === 2, 'לולאה אינסופית בקוד העמוד: המסך נשאר חי (עם בידוד תהליכים — ר\' ההערה ב-README)');
+    if (alive === 2) {
+      await call(page, 'pf_write', { id: (await call(page, 'pf_tree')).files.find(f => f.path === 't/loop.html').id, rev: 1, content: '<title>fixed</title>' });
+      await tab.click('#lv-stop');
+      ok(await until(async () => (await tab.textContent('#lv-title')) === 'fixed'), '"עצור ורענן": המסגרת התקועה מוחלפת, והעמוד המתוקן נטען');
+    }
+
+    // ══ C1 שלב ב: המדיניות המלאה על live.php ══
+    console.log('\n── C1 שלב ב ──');
+    const lr = await tab.goto(base + '/live.php?path=' + encodeURIComponent('t/' + HOST));
+    const csp = lr.headers()['content-security-policy'] || '';
+    ok(csp.includes("default-src 'none'") && csp.includes("script-src 'self'") && !/unsafe-eval|script-src[^;]*unsafe-inline/.test(csp) && csp.includes("frame-ancestors 'self'") && csp.includes("object-src 'none'"), 'live.php: המדיניות המלאה ככותרת שרת');
+    ok(csp.includes(`frame-src 127.0.0.1:${port}/preview/;`), 'frame-src מתיר רק את כתובת התצוגה');
+    const attack = () => new Promise(async done => {
+      const out = { violations: [] };
+      document.addEventListener('securitypolicyviolation', e => out.violations.push(e.effectiveDirective));
+      const s = document.createElement('script'); s.textContent = 'window.__inl = 1'; document.body.append(s); out.inline = window.__inl === 1;
+      setTimeout('window.__ev = 1', 0); await new Promise(r => setTimeout(r, 150)); out.eval = window.__ev === 1;      // קוד ממחרוזת — כמו eval, ונבדק בהקשר של הדף עצמו
+      out.img = await new Promise(r => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = location.href.replace('127.0.0.1', 'localhost').replace(/[^/]*$/, 'assets/icon.svg'); });
+      const f = document.createElement('iframe'); f.src = 'index.html'; document.body.append(f);
+      out.frame = await new Promise(r => { f.onload = () => { try { r(!!f.contentDocument && f.contentDocument.title !== ''); } catch { r(false); } }; setTimeout(() => r(false), 1500); });
+      f.remove();
+      setTimeout(() => done(out), 200);
+    });
+    const hard = await tab.evaluate(attack);
+    ok(!hard.inline && !hard.eval && !hard.img && !hard.frame, `סקריפט בתוך הדף, eval, תמונה מדומיין זר ומסגרת שאינה התצוגה — נחסמים (${[...new Set(hard.violations)].join(', ')})`);
+    await tab.waitForSelector('.lv-iframe');
+    await tab.click('#lv-pick'); await sleep(300);
+    await tab.frames().find(f => f.url().includes('/preview/')).click('p');
+    await until(async () => (await tab.textContent('#lv-inspect')).includes('onerror'));
+    ok(await tab.textContent('#lv-path') === 't/' + HOST && (await tab.textContent('#lv-inspect')).includes('<img') && await tab.$('.lv img') === null && await tab.evaluate(() => window.pwned) === undefined,
+      'שם קובץ ושם מחלקה שהם HTML — מוצגים כטקסט, ואינם רצים');
+    await tab.goto(base + '/index.html');
+    const soft = await tab.evaluate(attack);
+    ok(soft.inline && soft.eval && soft.frame, 'ביקורת חיובית: באותן בדיקות, דף בלי המדיניות (index.html) — הכול עובר, כלומר הבדיקה מסוגלת להיכשל');
+    await ctx.close();
   } catch (e) {
     failed++;
     console.log('❌ הבדיקה נעצרה: ' + e.message.split('\n')[0]);

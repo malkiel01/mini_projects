@@ -237,21 +237,19 @@ function pv_serve(): never
     }
 }
 
-/** בדיקת התקינות של מסך המפתח: התצוגה מחזירה את כותרות הבידוד — בודקים את מה שהקוד שולח בפועל, בבקשה אמיתית. */
-function pv_health(string $appUrl): array
+/** התוצאה האחרונה של ערכת ההתקפה (מסך המפתח) — מטבלת dev_runs הקיימת. */
+function pv_attack_last(): ?array
 {
-    $problems = [];
-    foreach (['' => 200, 'no-such-file-' . bin2hex(random_bytes(3)) . '.html' => 404] as $p => $want) {
-        $h = @get_headers($appUrl . 'preview/' . pv_token_make() . '/' . $p, true, stream_context_create(['http' => ['timeout' => 6, 'ignore_errors' => true, 'follow_location' => 0]]));
-        if (!$h) return ['ok' => false, 'detail' => 'לא הצלחתי לפנות לכתובת התצוגה מהשרת עצמו — בודקים מהדפדפן: "הרץ את ערכת ההתקפה"'];
-        $h = array_change_key_case($h);
-        $csp = $h['content-security-policy'] ?? '';
-        $csp = is_array($csp) ? implode(', ', $csp) : (string)$csp;
-        if (!str_contains((string)$h[0], (string)$want)) $problems[] = "ציפיתי ל-$want וקיבלתי: {$h[0]}";
-        if (!str_starts_with($csp, 'sandbox ') || str_contains($csp, 'allow-same-origin')) $problems[] = "כותרת ארגז החול חסרה או שגויה בתשובת $want";
-        if (($h['x-content-type-options'] ?? '') !== 'nosniff') $problems[] = "nosniff חסר בתשובת $want";
-        if (($h['access-control-allow-origin'] ?? '') !== '*') $problems[] = "Access-Control-Allow-Origin חסר בתשובת $want";
-        if (isset($h['set-cookie'])) $problems[] = "התשובה קובעת עוגייה ($want)";
-    }
-    return ['ok' => !$problems, 'detail' => $problems ? implode(' · ', $problems) : 'ארגז חול בלי allow-same-origin, nosniff, פתוח לקריאה, בלי עוגייה — גם ב-404'];
+    $r = db()->query("SELECT at, ok, note FROM dev_runs WHERE name = 'attack' ORDER BY id DESC LIMIT 1")->fetch();
+    return $r ? ['at' => $r['at'], 'ok' => (bool)$r['ok'], 'note' => $r['note']] : null;
+}
+
+/** הערכה רצה בדפדפן (assets/js/attack-kit.js); כאן רק נרשמת התוצאה, עם מי שהריץ. */
+function pv_attack_save(array $dev, array $b): array
+{
+    $ok = !empty($b['ok']);
+    $note = mb_substr((string)($b['note'] ?? ''), 0, 400);
+    dev_run_note('attack', $ok, $note);
+    devlog_write($ok ? 'info' : 'error', 'health', 'attack.kit', ['message' => $note]);
+    return ['attack' => pv_attack_last()];
 }
