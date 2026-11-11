@@ -181,7 +181,7 @@ test('תצוגה: data/words.json נבנה מטבלת המילים ברגע הב
         $j = json_decode($r['body'], true);
         $mine = array_values(array_filter($j['items'], fn($w) => $w['id'] === $id))[0] ?? null;
         ok($mine !== null, 'המילה שנוספה לטבלה מופיעה מיד');
-        eq(['id', 'word', 'meaning', 'topics', 'audio'], array_keys($mine), 'השדות של 02 §8.1');
+        eq(['id', 'word', 'meaning', 'topics', 'audio'], array_slice(array_keys($mine), 0, 5), 'השדות של 02 §8.1 (אחריהם — מפתחות נוספים, רק למילה שיש לה: wp_id, external_id)');
         eq('https://site.example/a.mp3', $mine['audio']);
         $topic = array_values(array_filter($j['topics'], fn($t) => $t['label'] === 'אוכל'))[0];
         eq([$topic['id']], $mine['topics'], 'הנושא לפי המזהה שלו');
