@@ -311,7 +311,7 @@ const Dev = (() => {
   }
 
   // ── ספייק מנוע העורך (V0): הקוד נטען רק כשנכנסים למסך ─────
-  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
+  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/equiv.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
   let spikeLoad = null;
   async function viewSpike(el) {
     el.replaceChildren(h('p', { class: 'hint' }, 'טוען…'));
