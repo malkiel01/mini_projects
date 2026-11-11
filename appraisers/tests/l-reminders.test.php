@@ -27,6 +27,7 @@ final class MockAdapter implements AprChannelAdapter
 $mock = fn(array $caps) => ['channel' => 'email', 'label' => 'ספק מדומה', 'builtin' => false, 'scopes' => ['office', 'system'], 'fields' => ['api_key' => [8, 100]],
     'caps' => $caps + ['send' => true] + APR_CAPS_NONE, 'adapter' => fn(array $c, array $cfg) => new MockAdapter($c, $cfg)];
 $GLOBALS['apr_channel_providers'] = ['mock' => $mock([]), 'mock_dr' => $mock(['delivery_reports' => true]), 'mock_sms' => ['channel' => 'sms'] + $mock(['free_text' => false, 'max_len' => 134])];
+$GLOBALS['apr_channel_providers']['mock_hook'] = ['fields' => ['webhook_secret' => [32, 200]]] + $mock(['inbound' => true]);     // ספק אחר שגם לו יש סוד חתימה
 $GLOBALS['t_sent'] = [];
 $GLOBALS['t_mode'] = 'sent';
 $sent = fn() => count($GLOBALS['t_sent']);
@@ -442,6 +443,7 @@ $denied = [
     'חיבור שאינו קיים' => hook('0123456789abcdef', $msg),
     'מזהה חיבור שאינו מזהה' => hook("x' OR '1'='1", $msg),
     'חיבור מספק אחר' => hook($MC, $msg, ['secret' => SECRET_KEY]),
+    'חיבור מספק אחר, עם הסוד הנכון שלו' => hook(api('POST', 'office-channel-save', ['provider' => 'mock_hook', 'label' => 'ספק אחר', 'config' => ['webhook_secret' => SECRET_HOOK . '-other'], 'confirm' => 'אישור'], $avi)[1]['connection']['pid'], $msg, ['secret' => SECRET_HOOK . '-other']),
     'גוף מעל התקרה' => hook($RL, $msg, ['max' => 10]),
 ];
 api('POST', 'office-channel-status', ['connection' => $RL, 'status' => 'disabled'], $avi);
@@ -461,7 +463,7 @@ eq([code($x), code($y), code(api('GET', 'inbound-relay', [], null, ['c' => $RL])
 
 // 08-C1: בלי מזהה שיוך ← לתור, ואפס שורות בתיק
 $before = $snap();
-$r = hook($RL, $msg + ['files' => [['name' => '../../evil.php', 'data' => base64_encode(pdf('c1'))]]]);
+$r = hook($RL, $msg + ['files' => [['name' => str_repeat('..' . '/', 2) . 'evil.php', 'data' => base64_encode(pdf('c1'))]]]);
 $it = apr_row('SELECT * FROM inbound_items ORDER BY id DESC LIMIT 1');
 $f0 = json_decode($it['file_ids'], true)[0] ?? [];
 eq([$r[0], $snap() === $before, $count('inbound_items'), $it['why'], (int)$it['office_id'] === (int)apr_val('SELECT id FROM offices WHERE pid = ?', [$OA]), $it['status'], $f0['name'] ?? null,
