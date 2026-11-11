@@ -1,0 +1,71 @@
+/* DevLoop — המסך של המטלות, 🐞 בכותרת, אימות, צעדי בדיקה, ראיות, צילומים, הקשר טכני.
+   ⚠️ קובץ מסונכרן — המקור: devloop/src/devloop.css. משתמש במשתנים של שפת העיצוב (phone-first-design):
+   --s2 --s3 --r --line --surface --bg --muted --brand --brand-ink --brand-soft --danger --ok --star */
+.dt-stats { font-size: .9rem; } .dt-stats small { color: var(--muted); }
+.dt-filters .chip { cursor: pointer; min-height: 34px; }
+.dt-filters .chip.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.dt-items { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.dt-item { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.dt-item > summary { list-style: none; }
+.dt-item > summary::-webkit-details-marker { display: none; }
+.dt-item .use-tx small { white-space: normal; }
+.dt-code { font-size: .78rem; background: var(--bg); border-radius: 6px; padding: 1px 5px; }
+.dt-badges { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-inline-size: 40%; }
+.dt-badges .chip { font-size: .72rem; min-height: 22px; padding: 0 6px; }
+.chip.dt-warn { color: var(--star); } .chip.dt-bad { color: var(--danger); } .chip.dt-ok { color: var(--ok); } .dt-body { padding: 0 var(--s3) var(--s3); display: grid; gap: var(--s2); }
+.dt-body p { margin: 0; white-space: pre-wrap; }
+.dt-questions ul { margin: 4px 0 0; padding-inline-start: 1.2em; }
+.dt-thread { display: grid; gap: 6px; }
+.dt-comments { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.dt-c { padding: 6px var(--s2); border-radius: 10px; background: var(--bg); }
+.dt-c.claude { background: var(--brand-soft); }
+.dt-c-head { display: flex; gap: var(--s2); align-items: baseline; font-size: .85rem; }
+.dt-c-head small { color: var(--muted); }
+.dt-c-head .link { margin-inline-start: auto; background: none; border: 0; color: var(--danger); cursor: pointer; font: inherit; font-size: .8rem; }
+.dt-new { display: flex; gap: var(--s2); align-items: flex-end; }
+.dt-new textarea { flex: 1; }
+.dt-secret { display: block; padding: 6px; background: var(--bg); border-radius: 8px; overflow-wrap: anywhere; font-size: .78rem; margin-block: 4px; }
+.dt-ok { color: var(--ok); margin: 0; }
+.dt-token { display: flex; align-items: center; gap: var(--s2); padding: 8px var(--s3); }
+.dt-dlg textarea { inline-size: 100%; }
+
+/* DevLoop 1: 🐞 בכותרת, אימות, צעדי בדיקה, ראיות, צילומים בשיח, הקשר טכני */
+.dev-bug { position: relative; font-size: 1.15rem; }
+.dev-bug-n { position: absolute; top: 2px; inset-inline-end: 0; min-inline-size: 18px; block-size: 18px; padding: 0 4px; border-radius: 9px;
+    background: var(--danger); color: #fff; font-size: .68rem; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+.dt-item.you { border-color: var(--danger); }
+.dt-verify { padding: var(--s2) var(--s3); border-radius: var(--r); background: color-mix(in srgb, var(--star) 14%, var(--surface)); display: grid; gap: 6px; }
+.dt-verify textarea { inline-size: 100%; }
+.dt-detail { overflow-wrap: anywhere; }
+.dt-acc, .dt-steps, .dt-ev { display: grid; gap: 4px; }
+.dt-steps ol, .dt-ev ul { margin: 0; padding-inline-start: 1.3em; display: grid; gap: 4px; }
+.dt-steps label { display: flex; gap: 6px; align-items: flex-start; }
+.dt-steps input:checked + span { text-decoration: line-through; color: var(--muted); }
+.dt-ev small { color: var(--muted); margin-inline-start: 6px; }
+.dt-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.dt-thumb img { inline-size: 84px; block-size: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.dt-new-acts { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.dt-attach { cursor: pointer; }
+.dt-ctx { font-size: .82rem; border: 1px dashed var(--line); border-radius: var(--r); padding: 6px var(--s2); }
+.dt-ctx summary { cursor: pointer; color: var(--muted); }
+.dt-ctx p { margin: 6px 0; }
+.dt-req { inline-size: 100%; border-collapse: collapse; font-size: .76rem; }
+.dt-req th, .dt-req td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: start; }
+.dt-req tr.bad td { color: var(--danger); }
+.dt-errs { margin: 6px 0; padding-inline-start: 1.2em; color: var(--danger); font-size: .76rem; }
+.dt-steps input[type=checkbox] { inline-size: 18px; block-size: 18px; min-block-size: 0; min-inline-size: 0; flex: none; margin: 2px 0 0; padding: 0; }
+.dt-steps label span { flex: 1; }
+
+/* 📜 יומן — במטלה, במסך היומן המובנה, ו-🔗 / "+ מטלה" בתצוגת היומן של האפליקציה */
+.dt-log { font-size: .82rem; border: 1px dashed var(--line); border-radius: var(--r); padding: 6px var(--s2); }
+.dt-log summary { cursor: pointer; color: var(--muted); }
+.dt-lrs { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.dt-lr { padding: 4px 6px; border-radius: 8px; background: var(--bg); display: grid; gap: 2px; overflow-wrap: anywhere; }
+.dt-lr.error { box-shadow: inset 3px 0 0 var(--danger); }
+.dt-lr.warn { box-shadow: inset 3px 0 0 var(--star); }
+.dt-lr small { color: var(--muted); }
+.dt-lr p { margin: 0; }
+.dt-log-tools input { flex: 1; min-inline-size: 8em; }
+.dl-slot:empty { display: none; }
+.chip.dl-link, .chip.dl-new { font-size: .72rem; min-height: 22px; padding: 0 8px; cursor: pointer; text-decoration: none; }
+.chip.dl-new { color: var(--danger); }
