@@ -138,7 +138,7 @@ function factHistorySheet(f, a) {
 
 /** כרטיס של נתון אחד, עם הפעולות שמותרות לי. */
 function factCard(f, a, pid, perms) {
-    const live = f.state !== 'rejected';
+    const live = f.state !== 'rejected', mayEdit = perms.write && (f.state !== 'verified' || perms.judge);   // נתון מאומת משנה רק מי שרשאי לאמת
     const btn = (act, label, cls = '') => `<button type="button" class="btn ghost sm${cls}" data-fact="${f.pid}" data-act="${act}">${label}</button>`;
     return `<li class="card static"><div class="body"><div class="l1"><span>${fVal(f, a)}</span></div>
         <div class="l2 wrap">${fSource(f, pid)}</div><div class="chips">${fChips(f)}</div>
@@ -147,7 +147,7 @@ function factCard(f, a, pid, perms) {
         ${f.note ? `<p class="hint"><b>${F.note}:</b> ${esc(f.note)}</p>` : ''}
         ${f.rejected_reason ? `<p class="hint"><b>${F.rejectedWhy}:</b> ${esc(f.rejected_reason)}</p>` : ''}
         <p class="hint">${esc(f.state === 'verified' && f.verified_by ? F.verifiedBy(f.verified_by, fmtDate(f.verified_at)) : F.enteredBy(f.entered_by || C.system, fmtDate(f.entered_at)))}</p>
-        <div class="row-btns wrap">${perms.write && live ? btn('correct', F.correct) + (f.state === 'needs_clarification' ? (f.has_value ? btn('manual', F.backToManual) : '') : btn('clarify', F.clarify)) : ''}${
+        <div class="row-btns wrap">${mayEdit && live ? btn('correct', F.correct) + (f.state === 'needs_clarification' ? (f.has_value ? btn('manual', F.backToManual) : '') : btn('clarify', F.clarify)) : ''}${
             perms.judge && live ? (f.state !== 'verified' && f.has_value ? btn('verify', F.verify) : '') + btn('reject', F.reject, ' danger') : ''}${
             perms.write || perms.judge ? btn('delete', F.del, ' danger') : ''}${btn('history', F.history)}</div></div></li>`;
 }
@@ -214,7 +214,8 @@ async function viewConflict(pid, kpid) {
     const reload = () => viewConflict(pid, kpid);
     setHead(x.case.number, null);
     App.main.classList.add('wide');
-    const col = f => `<div class="panel${f.active ? '' : ' off'}"><div class="line"><span class="big-val">${f.deleted ? `<span class="muted">${esc(F.deleted)}</span>` : fVal(f, a)}</span></div>
+    const col = f => f.deleted ? `<div class="panel off"><div class="line"><span class="big-val muted">${esc(F.deleted)}</span></div></div>`
+        : `<div class="panel${f.active ? '' : ' off'}"><div class="line"><span class="big-val">${fVal(f, a)}</span></div>
         <div class="chips">${fChips(f)}${f.active ? '' : `<span class="chip">${esc(F.inactive)}</span>`}</div>
         <p class="hint"><b>${F.source}:</b> ${fSource(f, pid)}</p>
         ${f.note ? `<p class="hint"><b>${F.note}:</b> ${esc(f.note)}</p>` : ''}${f.rejected_reason ? `<p class="hint"><b>${F.rejectedWhy}:</b> ${esc(f.rejected_reason)}</p>` : ''}
@@ -235,7 +236,7 @@ async function viewConflict(pid, kpid) {
             <div class="row-btns wrap"><button type="submit" class="btn primary">${F.decide}</button>${k.status === 'open' ? `<button type="button" class="btn ghost" id="kdismiss">${F.dismiss}</button>` : ''}</div></section>` : ''}</form>
         <h2 class="sec-title">${F.resolutions} <small>${k.resolutions.length || ''}</small></h2>
         ${k.resolutions.length ? `<ul class="list">${k.resolutions.map(r => { const f = k.facts.find(t => t.pid === r.fact); return `<li class="card static"><div class="body">
-            <div class="l1"><span>${esc(r.purpose)}</span><span class="t">${f ? fVal(f, a) : ''}</span></div><div class="l2 wrap">${esc(r.reasoning)}</div>
+            <div class="l1"><span>${esc(r.purpose)}</span><span class="t">${f && !f.deleted ? fVal(f, a) : ''}</span></div><div class="l2 wrap">${esc(r.reasoning)}</div>
             <div class="chips"><span class="chip">${esc(F.resolutionBy(r.by, fmtDate(r.at)))}</span>${r.valid ? '' : `<span class="chip warn">${esc(F.voided[r.void_reason] || '')}</span>`}</div></div></li>`; }).join('')}</ul>` : `<p class="empty">—</p>`}`;
     $('#kform').addEventListener('submit', async e => {
         e.preventDefault();

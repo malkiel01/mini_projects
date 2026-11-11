@@ -102,6 +102,15 @@ WHEN (NEW.value_num IS NOT OLD.value_num OR NEW.value_text IS NOT OLD.value_text
     OR NEW.unit IS NOT OLD.unit OR NEW.area_kind IS NOT OLD.area_kind) AND NEW.corrected_at IS NULL
 BEGIN SELECT RAISE(ABORT, 'facts: value change without original'); END;
 
+-- עד התיקון הראשון original_* ריק; בתיקון הראשון הוא חייב להיות בדיוק הערך שהיה — כולו (ערך, יחידה וסוג שטח)
+CREATE TRIGGER facts_original_first BEFORE UPDATE ON facts
+WHEN OLD.corrected_at IS NULL AND (
+    (NEW.corrected_at IS NULL AND (NEW.original_num IS NOT NULL OR NEW.original_text IS NOT NULL OR NEW.original_date IS NOT NULL
+        OR NEW.original_unit IS NOT NULL OR NEW.original_area_kind IS NOT NULL))
+    OR (NEW.corrected_at IS NOT NULL AND (NEW.original_num IS NOT OLD.value_num OR NEW.original_text IS NOT OLD.value_text
+        OR NEW.original_date IS NOT OLD.value_date OR NEW.original_unit IS NOT OLD.unit OR NEW.original_area_kind IS NOT OLD.area_kind)))
+BEGIN SELECT RAISE(ABORT, 'facts: original must be the previous value'); END;
+
 -- נתון שנדחה או נמחק נשאר להיסטוריה כמו שהוא
 CREATE TRIGGER facts_frozen BEFORE UPDATE ON facts
 WHEN OLD.deleted_at IS NOT NULL OR (OLD.state = 'rejected' AND NEW.deleted_at IS NULL)

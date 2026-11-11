@@ -36,6 +36,8 @@ join_office($avi, $gil, 'gil@example.com', 'appraiser');
 $ronPid = join_office($avi, $ron, 'ron@example.com', 'staff');
 $noa = ident('9', 'נועה', 'noa@example.com');      // מתמחה: תצורף כשותפה עם review_docs — ועדיין אינה שמאית
 $noaPid = join_office($avi, $noa, 'noa@example.com', 'trainee');
+$yael = ident('10', 'יעל', 'yael@example.com');   // שמאית במשרד: תצורף לתיק כצופה עם review_docs — שמאית, אבל לא אחראית ולא שותפה
+$yaelPid = join_office($avi, $yael, 'yael@example.com', 'appraiser');
 
 function make_profile(string $as): string
 {
@@ -72,12 +74,14 @@ function up(string $as, string $case, string $mark, array $q = []): array
 
 $P = make_profile($avi);
 $PB = make_profile($boaz);
-$newCase = function () use ($avi, $P, $danaPid, $talPid, $ronPid, $noaPid): string {
+$newCase = function () use ($avi, $P, $danaPid, $talPid, $ronPid, $noaPid, $yaelPid): string {
     $c = make_case($avi, $P);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $danaPid], $avi);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $talPid], $avi);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $ronPid, 'role' => 'visitor'], $avi);
     call('POST', 'case-member-add', ['case' => $c, 'user' => $noaPid, 'role' => 'partner', 'perms' => ['review_docs' => true, 'edit' => true]], $avi);
+    call('POST', 'case-member-add', ['case' => $c, 'user' => $yaelPid, 'role' => 'visitor'], $avi);
+    call('POST', 'case-member-update', ['case' => $c, 'user' => $yaelPid, 'perms' => ['review_docs' => true, 'edit' => true]], $avi);
     call('POST', 'case-member-update', ['case' => $c, 'user' => $ronPid, 'perms' => ['edit' => false, 'documents' => false, 'review_docs' => false, 'tasks' => false, 'visit' => false]], $avi);
     return $c;
 };
@@ -235,9 +239,14 @@ $c2 = $fx($avi, $c1[1]['fact'], ['value' => 92, 'area_kind' => 'gross']);
 $row = $frow($p90['pid']);
 eq([$c1[0], $c1[1]['fact']['num'], $c1[1]['fact']['original']['num'], $c1[1]['fact']['corrected_by'], $c2[0], $c2[1]['fact']['num'], $c2[1]['fact']['area_kind'], $c2[1]['fact']['original'], $c2[1]['fact']['corrected_by'],
     [(int)$row['original_num'], $row['original_area_kind'], (int)$row['value_num'], (int)$row['rev']], $p90['original'],
-    $raises('UPDATE facts SET original_num = 1, rev = rev + 1 WHERE id = ' . (int)$row['id']), $raises('UPDATE facts SET corrected_at = NULL, rev = rev + 1 WHERE id = ' . (int)$row['id'])],
-    [200, '91.5', '90', 'טל', 200, '92', 'gross', ['num' => '90', 'bool' => null, 'text' => null, 'date' => null, 'unit' => 'sqm', 'area_kind' => 'built'], 'אבי', [9000, 'built', 9200, 3], null, true, true],
-    '10-B1 תיקון שומר את הערך כפי שהגיע ב-original (ערך, יחידה וסוג שטח); תיקון שני אינו דורס אותו — גם לא ישירות במסד; נרשמים המתקן והזמן');
+    $raises('UPDATE facts SET original_num = 1, rev = rev + 1 WHERE id = ' . (int)$row['id']), $raises('UPDATE facts SET corrected_at = NULL, rev = rev + 1 WHERE id = ' . (int)$row['id']),
+    // תיקון ראשון ב-SQL ישיר (נתון שעוד לא תוקן): ערך חדש עם corrected_at אבל בלי original_*, עם original חלקי, או עם original שאינו הערך הקודם
+    $raises("UPDATE facts SET value_num = 1, corrected_at = 'x', rev = rev + 1 WHERE id = " . (int)$before[0]['id']),
+    $raises("UPDATE facts SET value_num = 1, corrected_at = 'x', original_num = value_num, rev = rev + 1 WHERE id = " . (int)$before[0]['id']),
+    $raises("UPDATE facts SET value_num = 1, corrected_at = 'x', original_num = 5, original_unit = unit, original_area_kind = area_kind, rev = rev + 1 WHERE id = " . (int)$before[0]['id']),
+    $raises('UPDATE facts SET original_num = 5, rev = rev + 1 WHERE id = ' . (int)$before[0]['id']), $frow($before[0]['pid']) === $before[0]],
+    [200, '91.5', '90', 'טל', 200, '92', 'gross', ['num' => '90', 'bool' => null, 'text' => null, 'date' => null, 'unit' => 'sqm', 'area_kind' => 'built'], 'אבי', [9000, 'built', 9200, 3], null, true, true, true, true, true, true, true],
+    '10-B1 תיקון שומר את הערך כפי שהגיע ב-original (ערך, יחידה וסוג שטח); תיקון שני אינו דורס אותו — גם לא ישירות במסד; תיקון ראשון ב-SQL ישיר בלי המקורי המלא נחסם; נרשמים המתקן והזמן');
 $hist = call('GET', 'fact', [], $avi, ['fact' => $p90['pid']])[1];
 eq([array_column($hist['history'], 'action'), $hist['history'][1]['meta']['from']['num'] ?? null, $hist['history'][1]['meta']['to']['num'] ?? null, $hist['history'][1]['by'], $hist['history'][1]['reason']],
     [['fact.add', 'fact.correct', 'fact.correct'], '90', '91.5', 'טל', 'טעות הקלדה'], 'היסטוריה מלאה: כל שינוי בנתון — מי, מתי, מאיזה ערך לאיזה, ולמה');
@@ -267,11 +276,21 @@ $danaNo = code($st($dana, $f, 'verify'));
 call('POST', 'case-member-update', ['case' => $C, 'user' => $danaPid, 'perms' => ['review_docs' => true]], $avi);
 $noaRow = apr_row('SELECT cm.role, cm.perms FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE u.pid = ? AND cm.case_id = ?', [$noaPid, $caseId($C)]);
 $noaTry = [$noaRow['role'], json_decode($noaRow['perms'], true)['review_docs'] ?? null, code($st($noa, $f, 'verify')), code($st($noa, $f, 'reject', ['reason' => 'x'])), code($res($noa, []))];
+$yaelRow = apr_row('SELECT cm.role, cm.perms FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE u.pid = ? AND cm.case_id = ?', [$yaelPid, $caseId($C)]);
+$yaelTry = [$yaelRow['role'], json_decode($yaelRow['perms'], true)['review_docs'] ?? null, call('GET', 'me', [], $yael)[1]['offices'][0]['role'], code($st($yael, $f, 'verify')), code($st($yael, $f, 'reject', ['reason' => 'x'])), code($res($yael, []))];
 $v = $st($dana, $f, 'verify');
-eq([$talReview, $danaNo, $noaTry, $v[0], $v[1]['fact']['state'] ?? null, $v[1]['fact']['verified_by'] ?? null, code($st($dana, $v[1]['fact'] ?? $f, 'verify')), code($res($tal, [])), code($res($ron, [])),
+$vf0 = $v[1]['fact'] ?? $f;
+$vRow = $frow($f['pid']);
+$indirect = [code($st($tal, $vf0, 'clarify', ['note' => 'x'])), code($fx($tal, $vf0, ['value' => 4])), code($fx($tal, $vf0, ['source' => ['note' => 'אחר']])), code($st($yael, $vf0, 'clarify', ['note' => 'x'])), $frow($f['pid']) === $vRow,
+    $fx($tal, $vf0, ['note' => 'הערה של טל'])[1]['fact']['state'] ?? null];
+$vf1 = call('GET', 'fact', [], $avi, ['fact' => $f['pid']])[1]['fact'];
+$backV = $st($dana, $st($avi, $vf1, 'clarify', ['note' => 'בדיקה חוזרת'])[1]['fact'] ?? $vf1, 'verify');
+$v[1]['fact'] = $backV[1]['fact'] ?? null;
+eq([$talReview, $danaNo, $noaTry, $yaelTry, $indirect, $v[0], $v[1]['fact']['state'] ?? null, $v[1]['fact']['verified_by'] ?? null, code($st($dana, $v[1]['fact'] ?? $f, 'verify')), code($res($tal, [])), code($res($ron, [])),
     code(call('POST', 'conflict-dismiss', ['conflict' => $K, 'rev' => $kv()['rev'], 'reasoning' => 'x'], $tal)), $kv()['status']],
-    ['forbidden', 'forbidden', ['partner', true, 'forbidden', 'forbidden', 'forbidden'], 200, 'verified', 'דנה', 'fact_state', 'forbidden', 'forbidden', 'forbidden', 'open'],
-    '10-B5 review_docs בלי תפקיד שמאי — לא מספיק, גם למתמחה שצורפה כשותפה; שמאית בלי review_docs — לא מספיק; שמאית שותפה עם review_docs מאמתת; הכרעה ו"אין סתירה" — אותו כלל');
+    ['forbidden', 'forbidden', ['partner', true, 'forbidden', 'forbidden', 'forbidden'], ['visitor', true, 'appraiser', 'forbidden', 'forbidden', 'forbidden'],
+        ['forbidden', 'forbidden', 'forbidden', 'forbidden', true, 'verified'], 200, 'verified', 'דנה', 'fact_state', 'forbidden', 'forbidden', 'forbidden', 'open'],
+    '10-B5 review_docs בלי תפקיד שמאי — לא מספיק, גם למתמחה שצורפה כשותפה; שמאית שאינה אחראית או שותפה בתיק — לא מספיק; נתון מאומת: מי שאינו רשאי לאמת אינו מוריד אותו ל"דורש בירור" ואינו משנה ערך או מקור (הערה — כן); שמאית בלי review_docs — לא מספיק; שמאית שותפה עם review_docs מאמתת; הכרעה ו"אין סתירה" — אותו כלל');
 $f2 = $mk();
 eq([code($add($ron, $C, 'rooms', 4)), code($fx($ron, $f2, ['value' => 5])), code($st($ron, $f2, 'clarify', ['note' => 'x'])), code(call('POST', 'fact-delete', ['fact' => $f2['pid'], 'rev' => 1, 'reason' => 'x'], $ron)),
     code(call('POST', 'fact-delete', ['fact' => $f2['pid'], 'rev' => 1, 'reason' => 'x'], $tal)), $facts($ron, $C)[0], $facts($ron, $C)[1]['perms'], $facts($tal, $C)[1]['perms'], $facts($dana, $C)[1]['perms'],
@@ -319,7 +338,7 @@ $u1v = $st($avi, $u1, 'verify')[1]['fact'];
 $s1 = $stale($u1['pid']);
 $u1c = $fx($tal, $u1v, ['note' => 'הערה בלבד'])[1]['fact'];
 $s2 = $stale($u1['pid']);
-$u1d = $fx($tal, $u1c, ['value' => 3500])[1]['fact'];
+$u1d = $fx($avi, $u1c, ['value' => 3500])[1]['fact'];
 $s3 = [$stale($u1['pid']), $stale($u2['pid']), apr_fact_uses_of($CR, 'calc', $calc)[0]['stale'], $u1d['state'], $u1d['verified_by']];
 apr_fact_use($CR, $u1['pid'], 'calc', $calc);
 $s4 = $stale($u1['pid']);
@@ -356,6 +375,18 @@ $st($avi, $g1, 'reject', ['reason' => 'שייך לדירה אחרת']);
 $k6 = $conflicts($avi, $C6)[0];
 eq([$k5c[1]['conflict']['status'] ?? null, $k6['status'], $k6['close_kind'], $count('tasks', "kind = 'clarification' AND status = 'open' AND case_id = " . $caseId($C6)), $attrOf($facts($avi, $C6), 'area')['value']['num'] ?? null],
     ['resolved', 'resolved', 'auto', 0, '65'], '§6.3 דחיית אחד משני הנתונים מיישבת את הסתירה לבד (והמשימה נסגרת); הערך שנשאר הוא הערך של המאפיין');
+
+// ── נתון שנמחק נשאר בסתירה כמזהה בלבד (ביקורת 10, 🟡1) ──
+$C7 = $newCase();
+$area($avi, $C7, 61, 'net');
+$dl = $area($avi, $C7, 67, 'net', ['note' => 'הערה-סודית-של-נתון-מחוק', 'source' => ['kind' => 'user', 'note' => 'מקור-של-נתון-מחוק']])[1]['fact'];
+call('POST', 'fact-delete', ['fact' => $dl['pid'], 'rev' => $dl['rev'], 'reason' => 'סיבת-המחיקה'], $avi);
+$k7 = $conflicts($avi, $C7)[0];
+$gone = array_values(array_filter($k7['facts'], fn($f) => $f['pid'] === $dl['pid']))[0] ?? null;
+$j7 = json_encode([$conflicts($avi, $C7), call('GET', 'conflict', [], $avi, ['conflict' => $k7['pid']])[1], $facts($avi, $C7)[1]], JSON_UNESCAPED_UNICODE);
+eq([$gone, str_contains($j7, '"67"'), str_contains($j7, 'הערה-סודית'), str_contains($j7, 'מקור-של-נתון'), str_contains($j7, 'סיבת-המחיקה'), $k7['status'], $k7['close_kind'], (int)$frow($dl['pid'])['value_num']],
+    [['pid' => $dl['pid'], 'attribute' => 'area', 'deleted' => true, 'active' => false, 'has_value' => false], false, false, false, false, 'resolved', 'auto', 6700],
+    'נתון שנמחק נשאר ברשימת הנתונים של הסתירה כמזהה בלבד — בלי ערך, יחידה, מקור, הערה או סיבה, ב-conflict, ב-case-conflicts וב-case-facts; השורה במסד נשארת');
 
 // ── §6.3 "אין סתירה", עם תיקון סוג השטח באותה פעולה ──
 $k3 = $c3[0];

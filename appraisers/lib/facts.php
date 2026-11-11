@@ -534,7 +534,9 @@ function apr_fact_correct_tx(array $ctx, array $c, array $f, array $in): bool
             'original_unit' => $f['unit'], 'original_area_kind' => $f['area_kind']];
         $set += ['corrected_by' => (int)$ctx['user']['id'], 'corrected_at' => apr_now(), 'correction_note' => apr_clean_text($in['correction_note'] ?? null, 500)];
     }
-    // נתון מאומת שהערך או המקור שלו השתנו כבר אינו "מאומת" — האימות היה על מה שהיה
+    // נתון מאומת שהערך או המקור שלו השתנו כבר אינו "מאומת" — האימות היה על מה שהיה. לכן רק מי שרשאי לאמת רשאי לשנות אותם:
+    // אחרת מי שמזין היה מבטל אימות של שמאי בעקיפין (ביקורת 10, 🟡3)
+    if ($f['state'] === 'verified' && ($valueChanged || $sourceChanged) && !apr_fact_can_judge($ctx, $c)) apr_fail('forbidden');
     if ($f['state'] === 'verified' && ($valueChanged || $sourceChanged)) $set += ['state' => 'manual', 'verified_by' => null, 'verified_at' => null];
     apr_fact_update($ctx, $c, $f, $attr, $rev, $set);
     $show = fn($num, $text, $date, $unit, $kind) => array_filter(apr_fact_value_out($num === null ? null : (int)$num, $text, $date, $unit, $kind, $attr), fn($v) => $v !== null);
@@ -563,7 +565,8 @@ function apr_fact_correct(array $ctx, array $in): array
 }
 
 /**
- * שינוי מצב: fact, rev, do. verify / reject — שמאי בתיק (10-B5); clarify ("דורש בירור") / manual (חזרה מ"דורש בירור") — מי שמזין.
+ * שינוי מצב: fact, rev, do. verify / reject — שמאי בתיק (10-B5); clarify ("דורש בירור") / manual (חזרה מ"דורש בירור") — מי שמזין,
+ * אבל כל שינוי של נתון **מאומת** — רק שמאי בתיק.
  * reject דורש reason; clarify דורש note. אימות ודחייה אינם נוגעים במסמך המקור (10-C2).
  */
 function apr_fact_state(array $ctx, array $in): array
@@ -580,6 +583,8 @@ function apr_fact_state(array $ctx, array $in): array
         $uid = (int)$ctx['user']['id'];
         $from = match ($do) { 'verify' => ['proposed', 'manual', 'needs_clarification'], 'reject' => ['proposed', 'manual', 'needs_clarification', 'verified'],
             'clarify' => ['proposed', 'manual', 'verified'], 'manual' => ['needs_clarification'] };
+        // הורדה מ"מאומת" היא שינוי של הכרעת שמאי — רק מי שרשאי לאמת (ביקורת 10, 🟡3)
+        if ($f['state'] === 'verified' && !apr_fact_can_judge($ctx, $c)) apr_fail('forbidden');
         if ((int)$f['rev'] === $rev && !in_array($f['state'], $from, true)) apr_fail('fact_state');
         if (in_array($do, ['verify', 'manual'], true) && !apr_fact_has_value($f)) apr_fail('fact_no_value');
         if ($do === 'verify' && $f['source_kind'] === 'ai') {
@@ -722,9 +727,9 @@ function apr_conflict_out(array $ctx, array $c, array $cf): array
         'closed_by' => $cf['closed_by'] === null ? null : apr_val('SELECT name FROM users WHERE id = ?', [$cf['closed_by']]), 'closed_at' => $cf['closed_at'],
         'needs_human' => (bool)$cf['needs_human'], 'opened_count' => (int)$cf['opened_count'], 'rev' => (int)$cf['rev'], 'created_at' => $cf['created_at'],
         'task' => $cf['task_id'] === null ? null : apr_val('SELECT pid FROM tasks WHERE id = ?', [$cf['task_id']]),
-        // נתון שנמחק נשאר ברשימה (בלי ערך) — כדי שההיסטוריה של הסתירה תישאר שלמה
-        'facts' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr) + ['deleted' => $f['deleted_at'] !== null,
-            'active' => $f['deleted_at'] === null && $f['state'] !== 'rejected' && apr_fact_has_value($f)], $facts),
+        // נתון שנמחק נשאר ברשימה כדי שההיסטוריה של הסתירה תישאר שלמה — רק המזהה: בלי ערך, יחידה, מקור, ציטוט או הערה
+        'facts' => array_map(fn($f) => $f['deleted_at'] !== null ? ['pid' => $f['pid'], 'attribute' => $f['attribute_key'], 'deleted' => true, 'active' => false, 'has_value' => false]
+            : apr_fact_out($ctx, $c, $f, $attr) + ['deleted' => false, 'active' => $f['state'] !== 'rejected' && apr_fact_has_value($f)], $facts),
         'resolutions' => array_map(fn($r) => ['pid' => $r['pid'], 'purpose' => $r['purpose'], 'fact' => $pids[$r['chosen_fact_id']] ?? null, 'reasoning' => $r['reasoning'],
             'by' => $r['by_name'], 'at' => $r['resolved_at'], 'valid' => $r['voided_at'] === null, 'void_reason' => $r['void_reason'], 'voided_at' => $r['voided_at']],
             apr_rows('SELECT r.*, u.name AS by_name FROM conflict_resolutions r JOIN users u ON u.id = r.resolved_by WHERE r.conflict_id = ? ORDER BY r.id', [$cf['id']]))];
