@@ -14,6 +14,10 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/lexicon.php';
+require_once __DIR__ . '/project.php';
+require_once __DIR__ . '/draft.php';
+
 const MG_LIST = 'words';
 const MG_SEED = __DIR__ . '/../assets/project-seed/';
 const MG_FORM_DONE = 'תודה! המשוב יישלח לתיבת הפניות. השליחה עדיין אינה פעילה.';
