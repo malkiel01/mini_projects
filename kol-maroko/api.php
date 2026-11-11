@@ -11,6 +11,7 @@ require_once __DIR__ . '/lib/members.php';
 require_once __DIR__ . '/lib/import.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/agent.php';
+require_once __DIR__ . '/lib/library.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
@@ -86,6 +87,7 @@ try {
         'site_switch' => site_switch(require_role($user, 'publisher'), $body),
         'import_run' => import_run(require_role($user, 'owner'), $body),
         'words' => (require_role($user, 'editor') ? words_list() : []),
+        'library' => (require_role($user, 'editor') ? library_list() : []),
         'word_save' => word_save(require_role($user, 'editor'), $body),
         'word_delete' => word_delete(require_role($user, 'editor'), $body),
         'topic_op' => topic_op(require_role($user, 'editor'), $body),
