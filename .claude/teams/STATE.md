@@ -7,8 +7,8 @@
 
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
-| `appraisers` שמאות מקרקעין | פעיל | `session_018g4NYFwUcVefmCvwGAazWA` |
-| `kol-maroko` קול מרוקו | פעיל | `session_018g4NYFFdyRghdH6dzvTsTX` |
+| `appraisers` שמאות מקרקעין | מושהה עד הודעה של הבעלים | `session_018g4NYFwUcVefmCvwGAazWA` |
+| `kol-maroko` קול מרוקו | מושהה עד הודעה של הבעלים (הבקרה ב-739K — להחליף לפני החזרה) | `session_018g4NYFFdyRghdH6dzvTsTX` |
 
 ## ממתין לבעלים
 
