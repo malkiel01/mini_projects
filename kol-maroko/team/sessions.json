@@ -1,10 +1,11 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-11",
+  "updated": "2026-11-11T21:45Z",
   "spec": "session_018g4NYFXfe6iF4owmDWWorS",
   "spec_previous": ["session_018g4NYDLWsSr9Pt3MYTmbcK"],
   "code": {"V1a": "session_018g4NYDLvR41xhwjBj7nzwc"},
   "code_previous": ["session_018g4NYD9DUA7W2FJRnSxYT5", "session_018g4NYE4wmn5gkTxqMgwnZm (F1)", "session_018g4NYE7U59DTztVz4fTKCL (A1)", "session_018g4NYH2BeqdoMZp7C85JrD (F2a)", "session_018g4NYH1vGxpAL64PMipdcR (V0)", "session_018g4NYCXEG9bNcfcVGKkh9d (F4)"],
-  "control": "session_018g4NYFFdyRghdH6dzvTsTX",
+  "control": "session_018g4NYDHwbDK3tiZ7BUZYwp",
+  "control_previous": ["session_018g4NYFFdyRghdH6dzvTsTX"],
   "tasks": "session_018g4NYFkoAv3UHd7gDhGzXT"
 }
