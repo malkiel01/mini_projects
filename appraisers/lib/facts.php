@@ -166,7 +166,7 @@ function apr_fact_value(array $attr, array $in, bool $emptyOk): array
     if (APR_UNITS[$attr['unit_kind']]) {
         $unit = $in['unit'] ?? null;
         if (!is_string($unit) || !isset(APR_UNITS[$attr['unit_kind']][$unit])) apr_fail('fact_unit');
-    }
+    } elseif (($in['unit'] ?? null) !== null && $in['unit'] !== '') apr_fail('fact_unit');          // יחידה למאפיין שאין לו יחידות — טעות, לא מתעלמים
     if ($empty) {
         if (!$emptyOk) apr_fail('fact_no_value');
         return [null, null, null, $unit, $kind];
@@ -216,7 +216,7 @@ function apr_fact_norm(array $f, array $attr): array
 function apr_fact_source(array $ctx, array $c, mixed $src, ?string $fixedKind = null): array
 {
     if (!is_array($src)) apr_fail('fact_source');
-    $kind = $fixedKind ?? (apr_clean_choice($src['kind'] ?? null, APR_FACT_SOURCES) ?? apr_fail('fact_source'));
+    $kind = $fixedKind ?? (is_string($src['kind'] ?? null) && in_array($src['kind'], APR_FACT_SOURCES, true) ? $src['kind'] : apr_fail('fact_source'));
     $out = ['source_kind' => $kind, 'source_file_id' => null, 'source_page' => null, 'source_locator' => null, 'source_ref_pid' => null,
         'source_date' => apr_clean_date($src['date'] ?? null), 'source_note' => apr_clean_text($src['note'] ?? null, 200)];
     if ($kind === 'document' || ($kind === 'ai' && ($src['file'] ?? null) !== null)) {
@@ -379,7 +379,7 @@ function apr_conflict_reopen(array $c, array $attr, array $cf, array $factIds, b
 
 /**
  * מביא את הסתירות של מאפיין בתיק למצב שנגזר מהנתונים — אחרי כל שינוי, בתוך אותה טרנזקציה. $changed — נתון שערכו, יחידתו או סוג
- * השטח שלו השתנו (או שנוסף) בפעולה הזו.
+ * השטח שלו תוקנו בפעולה הזו.
  *
  * נתונים פעילים: לא נמחקו, לא נדחו, ויש להם ערך. משווים רק בתוך אותו סוג שטח ואותה משפחת יחידות (§6.1): שני ערכים שונים שם ←
  * סתירת ערך. סוג שטח "לא ידוע" או יחידות שאי אפשר להמיר, כשיש שני נתונים לפחות ← סתירה "אי אפשר להשוות" (scope '*').
@@ -470,9 +470,9 @@ function apr_fact_resolutions_void(array $c, array $attr, int $factId, string $r
 function apr_fact_insert(array $c, array $attr, array $row): string
 {
     $pid = apr_pid();
-    $id = apr_insert('facts', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'attribute_key' => $attr['key'], 'entered_at' => apr_now(), 'updated_at' => apr_now()] + $row);
+    apr_insert('facts', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'attribute_key' => $attr['key'], 'entered_at' => apr_now(), 'updated_at' => apr_now()] + $row);
     apr_case_audit($c, 'fact.add', 'fact', $pid, ['attribute' => $attr['key'], 'state' => $row['state'], 'source' => $row['source_kind']]);
-    apr_conflicts_sync($c, $attr, $id);
+    apr_conflicts_sync($c, $attr);                  // נתון חדש מזוהה בסנכרון עצמו (אינו ב-conflict_facts)
     apr_case_touch($c);
     return $pid;
 }
