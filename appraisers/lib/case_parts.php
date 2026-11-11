@@ -471,6 +471,7 @@ function apr_case_view(array $ctx, array $q): array
         'case' => apr_case_head($c) + ['flags' => json_decode($c['flags'], true) ?: (object)[], 'responsible' => $resp, 'closed_at' => $c['closed_at'], 'close_reason' => $c['close_reason']],
         'me' => ['role' => $c['my_role'], 'perms' => $c['perms']],
         'todo' => apr_case_todo($c), 'missing' => apr_case_missing($c),
+        'open_conflicts' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]),
         'profile' => ['pid' => apr_profile_level($ctx, apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']])) !== null ? $p['pid'] : null, 'name' => $p['name'],
             'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null, 'pending' => $pending,
             'flags' => $content['flags'], 'groups' => $content['requirements']['groups']],
@@ -525,11 +526,12 @@ function apr_cases_list(array $ctx, array $q): array
     }
     $rows = apr_rows('SELECT c.*, u.name AS responsible_name, u.pid AS responsible_pid,
             (SELECT COUNT(*) FROM requirements r WHERE r.case_id = c.id AND ' . apr_req_open_sql('r.') . ') AS open_mandatory,
-            (SELECT COUNT(*) FROM tasks t WHERE t.case_id = c.id AND t.status IN (\'open\', \'in_progress\') AND t.due_at IS NOT NULL AND t.due_at < ?) AS overdue_tasks
+            (SELECT COUNT(*) FROM tasks t WHERE t.case_id = c.id AND t.status IN (\'open\', \'in_progress\') AND t.due_at IS NOT NULL AND t.due_at < ?) AS overdue_tasks,
+            (SELECT COUNT(*) FROM conflicts x WHERE x.case_id = c.id AND x.status = \'open\') AS open_conflicts
         FROM cases c JOIN case_members cm ON cm.case_id = c.id AND cm.user_id = ? AND cm.revoked_at IS NULL LEFT JOIN users u ON u.id = c.responsible_user_id
         WHERE ' . implode(' AND ', $where) . ' ORDER BY c.updated_at DESC, c.id DESC LIMIT 200', [apr_now(), ...$args]);
     return ['cases' => array_map(fn($c) => apr_case_head($c) + ['responsible' => $c['responsible_pid'] === null ? null : ['pid' => $c['responsible_pid'], 'name' => $c['responsible_name']],
-        'open_mandatory' => (int)$c['open_mandatory'], 'overdue_tasks' => (int)$c['overdue_tasks']], $rows)];
+        'open_mandatory' => (int)$c['open_mandatory'], 'overdue_tasks' => (int)$c['overdue_tasks'], 'open_conflicts' => (int)$c['open_conflicts']], $rows)];
 }
 
 /** לשונית הפעילות: השורות של התיק ביומן הפעולות, מהחדשה לישנה — עם שם המבצע. */
