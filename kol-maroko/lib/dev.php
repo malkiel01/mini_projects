@@ -310,7 +310,11 @@ function dev_health_checks(): array
         }, 'data/.htaccess'],
         'site' => ['החיבור לאתר, וגרסת התוסף שמותקנת בו', function (): array {
             require_once __DIR__ . '/publish.php';
-            $r = site_call('ping', []);
+            try {
+                $r = site_call('ping', []);
+            } catch (ApiError $e) {
+                return [false, 'ה-ping החתום נכשל: ' . $e->getMessage(), 'ב-🚀 פרסום ← "בדיקת חיבור" מופיע ההסבר המלא; לוודא שהתוסף מותקן ופעיל באתר ושהמפתח הציבורי הודבק בו (docs/install.md)'];
+            }
             $p = (string)($r['plugin'] ?? '');
             $state = (!empty($r['enabled']) ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר מציג את העמוד המקורי') . ' · גרסה חיה ' . (int)($r['live'] ?? 0);
             if ($p === '') return [false, "ה-ping החתום עבר, אבל התוסף לא דיווח גרסה · $state", 'התוסף באתר ישן מאוד — להתקין את ' . KOL_PLUGIN_EXPECTED . ' (מטלה לבעלים)'];
