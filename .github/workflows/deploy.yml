@@ -139,6 +139,15 @@ jobs:
       - name: family-shopping tests
         run: for t in family-shopping/tests/*.php; do echo "--- $t"; php "$t" > /tmp/fs-test.log || { cat /tmp/fs-test.log; exit 1; }; tail -1 /tmp/fs-test.log; done
 
+      # קול מרוקו — הבדיקות של האפליקציה (מסד זמני, בלי Composer, לא נוגע ב-data/): הרשאות לכל פעולה, חתימת הפרסום,
+      # מיגרציות, יומן המפתח והספרייה. בדיקה שנכשלת עוצרת את הפריסה. ו-dev/build.json — הקומיט והשעה, למסך המפתח
+      # ("גרסה וקומיט"); הקובץ נוצר כאן בלבד, אינו בגיט, ו-dev/.htaccess חוסם אותו מהדפדפן.
+      - name: kol-maroko tests + build info
+        run: |
+          set -euo pipefail
+          php kol-maroko/tests/run.php
+          printf '{"commit":"%s","at":"%s"}\n' "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > kol-maroko/dev/build.json
+
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
       - name: Build the platform gate
@@ -364,7 +373,7 @@ jobs:
             --exclude='org-budget-proposals/data/*.sqlite*' \
             --exclude='org-budget-proposals/data/files/' \
             --exclude='kol-maroko/data/*.sqlite*' --exclude='kol-maroko/data/files/' \
-            --exclude='kol-maroko/data/secrets.json' --exclude='/kol-maroko/wordpress-plugin/' --exclude='/kol-maroko/team/' \
+            --exclude='kol-maroko/data/secrets.json' --exclude='/kol-maroko/wordpress-plugin/' --exclude='/kol-maroko/team/' --exclude='/kol-maroko/tests/' \
             --exclude='word-processor/data/*.sqlite*' \
             --exclude='word-processor/data/media/' \
             --exclude='time-clock/data/*.sqlite*' \
