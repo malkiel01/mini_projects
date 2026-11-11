@@ -180,8 +180,9 @@ const DEV_RAW_BODY = ['dev-attach', 'devapi-attach'];
 
 function dev_log_view(array $q): array
 {
-    $f = array_intersect_key($q, array_flip(['before', 'level', 'q', 'from', 'to', 'category', 'user', 'action', 'req']));
-    $rows = devlog_rows($f + ['limit' => 200]);
+    // act — הפעולה שמסננים לפיה ("action" בכתובת הוא שם הפעולה של הבקשה הזו עצמה)
+    $f = array_intersect_key($q, array_flip(['before', 'level', 'q', 'from', 'to', 'category', 'user', 'req']));
+    $rows = devlog_rows($f + ['action' => $q['act'] ?? '', 'limit' => 200]);
     $pdo = db();
     return [
         'rows' => $rows,
@@ -201,13 +202,13 @@ function dev_log_view(array $q): array
 
 /**
  * מי עשה מה ומתי. טבלת audit, ואיתה שמירות הטיוטה (מטבלת revisions — שם הן כבר רשומות; לא משכפלים אותן ל-audit
- * כדי ששמירה אוטומטית לא תציף אותו). סינון: action, user (sub), q, from, to.
+ * כדי ששמירה אוטומטית לא תציף אותו). סינון: act (הפעולה), user (sub), q, from, to.
  */
 function dev_audit_view(array $q): array
 {
     $w = ['1 = 1'];
     $a = [];
-    foreach (['action' => 'action = ?', 'user' => 'sub = ?', 'from' => 'at >= ?', 'to' => 'at <= ?'] as $k => $sql) {
+    foreach (['act' => 'action = ?', 'user' => 'sub = ?', 'from' => 'at >= ?', 'to' => 'at <= ?'] as $k => $sql) {
         if (is_scalar($q[$k] ?? null) && (string)$q[$k] !== '') { $w[] = $sql; $a[] = (string)$q[$k]; }
     }
     if (is_scalar($q['q'] ?? null) && (string)$q['q'] !== '') {
