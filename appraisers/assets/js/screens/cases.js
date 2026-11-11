@@ -25,7 +25,8 @@ function identText(i) {
 }
 
 function caseRow(c) {
-    const marks = [c.open_mandatory ? `<span class="chip warn">${esc(C.openMandatory(c.open_mandatory))}</span>` : '', c.overdue_tasks ? `<span class="chip bad">${esc(C.overdue(c.overdue_tasks))}</span>` : ''].join('');
+    const marks = [c.open_mandatory ? `<span class="chip warn">${esc(C.openMandatory(c.open_mandatory))}</span>` : '', c.overdue_tasks ? `<span class="chip bad">${esc(C.overdue(c.overdue_tasks))}</span>` : '',
+        c.open_conflicts ? `<span class="chip bad">⚠️ ${esc(T.f.openConflicts(c.open_conflicts))}</span>` : ''].join('');
     return `<li class="card" tabindex="0" role="button" data-go="#/cases/${c.pid}${c.status === 'draft' ? '/setup' : ''}"><span class="use-ic" aria-hidden="true">📁</span>
         <div class="body"><div class="l1"><span>${esc(c.title || C.noTitle)}</span><span class="t" dir="ltr">${esc(c.number)}</span></div>
         <div class="l2 wrap">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : C.noResponsible}${c.due_date ? ' · ' + esc(C.due(fmtDate(c.due_date))) : ''}</div>
@@ -72,6 +73,8 @@ async function viewCases(pid, sub, arg) {
     await pLists();
     if (pid === 'new') return viewCaseNew();
     if (pid && sub === 'reqs' && arg) return viewRequirement(pid, arg);
+    if (pid && sub === 'facts' && arg) return viewAttribute(pid, arg);
+    if (pid && sub === 'conflicts') return arg ? viewConflict(pid, arg) : viewConflicts(pid);
     if (pid && sub === 'file') return arg ? viewFile(pid, arg) : viewCase(pid, 'reqs');
     if (pid) return sub === 'setup' ? viewCaseSetup(pid, arg) : viewCase(pid, sub);
     setHead(C.cases, null);
@@ -480,7 +483,7 @@ async function viewCase(pid, tab) {
     // תיק סגור — קריאה בלבד עד פתיחה מחדש (השרת אוכף; כאן רק לא מציגים כפתורים שיידחו)
     if (c.status === 'closed') d.me.perms = { ...d.me.perms, edit: false, tasks: false, documents: false, members: false };
     const perms = d.me.perms;
-    const tabs = ['overview', 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
+    const tabs = ['overview', 'facts', 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
     const cur = tabs.includes(tab) ? tab : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
     const reload = () => viewCase(pid, cur);
@@ -488,7 +491,7 @@ async function viewCase(pid, tab) {
     const head = `<div class="summary"><div class="line"><b class="one">${esc(c.title || C.noTitle)}</b><span class="chip" dir="ltr">${esc(c.number)}</span></div>
         <div class="line muted">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : `<span class="chip bad">${C.noResponsible}</span>`}</div>
         <div class="chips">${canStatus ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
-        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : undefined]), href(cur))}`;
+        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : undefined]), href(cur))}`;
     let body = '', docs = null, rqs = null;
     if (cur === 'overview') {
         const openM = d.requirements.filter(r => r.mandatory && dOpen(r));
@@ -496,6 +499,7 @@ async function viewCase(pid, tab) {
         body = `${c.status === 'closed' ? `<p class="banner" role="note">🔒 ${esc(C.closedBanner(fmtDate(c.closed_at), c.close_reason))}</p>` : ''}
             ${d.profile.newer || d.profile.pending ? `<p class="banner" role="note">🆕 ${esc(d.profile.newer ? C.newer(d.profile.newer) : C.pending)} <button type="button" class="btn ghost sm" id="cdiff">${C.check}</button></p>` : ''}
             ${d.plan.alerts.map(a => `<p class="banner" role="note">🔔 ${esc(a.text)}</p>`).join('')}
+            ${d.open_conflicts ? `<p class="banner" role="note">⚠️ ${esc(T.f.openConflicts(d.open_conflicts))} <a class="btn ghost sm" href="#/cases/${pid}/conflicts">${T.f.conflicts}</a></p>` : ''}
             <h2 class="sec-title">✍️ ${C.todoTitle} <small>${d.todo.length || ''}</small></h2>
             ${d.todo.length ? `<ul class="list">${d.todo.map(k => `<li class="card static"><span class="use-ic" aria-hidden="true">▫️</span><div class="body"><div class="l1"><span>${esc(C.todo[k] || k)}</span></div></div></li>`).join('')}</ul>` : `<p class="empty">${C.todoNone}</p>`}
             ${perms.edit ? `<div class="row-btns"><button type="button" class="btn ghost" id="cdetails">${C.details}</button></div>` : ''}
@@ -510,6 +514,9 @@ async function viewCase(pid, tab) {
             <div class="summary"><div class="line"><span>${d.profile.pid ? `<a href="#/profiles/${d.profile.pid}">${esc(d.profile.name)}</a>` : esc(d.profile.name)}</span><span class="chip">${esc(P.versionN(d.profile.version))}</span></div>
               <div class="line muted">${C.keyDate}: ${c.key_date ? esc(fmtDate(c.key_date)) : C.unknown} · ${C.propertyType}: ${c.property_type ? esc(P.propertyTypes[c.property_type]) : C.unknown}</div></div>
             ${d.plan.skipped.length ? `<h2 class="sec-title">${C.skippedTitle}</h2><ul class="list">${d.plan.skipped.map(s => `<li class="card static"><div class="body"><div class="l1"><span>${esc(s.title)}</span></div><div class="l2 wrap">${esc(s.reason)}</div></div></li>`).join('')}</ul>` : ''}`;
+    } else if (cur === 'facts') {
+        docs = await factsTab(pid);
+        body = docs.html;
     } else if (cur === 'parties') {
         rqs = await api('case-requests', { params: { case: pid } });
         body = partiesHtml(d, !!perms.edit) + requestsHtml(rqs, d) + membersHtml(d);

@@ -342,6 +342,7 @@ function apr_file_delete(array $ctx, array $in): array
             $back[$r['pid']] = apr_req_fallback($r, 'required', $uid);
         }
         apr_exec("UPDATE case_identifiers SET state = 'needs_check' WHERE case_id = ? AND source_ref = ? AND state = 'verified'", [$c['id'], $f['pid']]);
+        apr_facts_on_file_delete($c, $f);                    // נתון מאומת שנשען על הקובץ חוזר ל"דורש בירור" (10, מקרה קצה 6)
         apr_case_audit($c, 'file.delete', 'file', $f['pid'], ['requirements' => $back], $reason);
         apr_case_touch($c);
         return ['requirements' => $back];
@@ -546,11 +547,23 @@ function apr_case_docs(array $ctx, array $q): array
         'unassigned' => array_values(array_map(fn($f) => apr_file_out($f, $tags[$f['id']] ?? []), array_filter($files, fn($f) => $f['deleted_at'] === null && !isset($assigned[$f['id']]))))];
 }
 
+/**
+ * האם מותר לי לראות את הקובץ הזה של התיק — המקום היחיד שמכריע. היום: כל מי שרואה את התיק (view). שיתוף ברמת פריט (items,
+ * פרוסה 05) ייכנס לכאן, וכל מי שמציג קובץ או פרט שלו (הורדה, תמונה ממוזערת, מקור של נתון — פרוסה 10) כבר שואל כאן.
+ * $GLOBALS['apr_file_visible'] — תפר לבדיקות, עד שיהיה שיתוף כזה.
+ */
+function apr_file_visible(array $ctx, array $c, array $f): bool
+{
+    if (isset($GLOBALS['apr_file_visible'])) return (bool)$GLOBALS['apr_file_visible']($ctx, $c, $f);
+    return !empty($c['perms']['view']);
+}
+
 /** הורדה / תצוגה מקדימה: file, inline=1. הרשאה: view בתיק (שותף חיצוני ותמיכה — פרוסה 05). קובץ שנמחק — לא נמצא. */
 function apr_file_serve(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, apr_doc_case_pid('files', $q['file'] ?? null));
     $f = apr_file_row($c, $q['file'] ?? null);
+    if (!apr_file_visible($ctx, $c, $f)) apr_fail('not_found');
     return apr_file_response(apr_file_path($f['storage_key']), $f['mime'], apr_file_download_name($f['original_name'], $f['ext']), ($q['inline'] ?? '') === '1');
 }
 
@@ -559,6 +572,7 @@ function apr_file_thumb(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, apr_doc_case_pid('files', $q['file'] ?? null));
     $f = apr_file_row($c, $q['file'] ?? null);
+    if (!apr_file_visible($ctx, $c, $f)) apr_fail('not_found');
     $t = apr_row('SELECT * FROM file_thumbs WHERE file_id = ?', [$f['id']]);
     if (!$t || !is_file(apr_file_path($t['storage_key'], 'thumbs'))) {
         $made = apr_thumb_make(apr_file_path($f['storage_key']), $f['mime']) ?? apr_fail('not_found');
