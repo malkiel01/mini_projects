@@ -29,7 +29,8 @@ const APR_PROFILE_LIMITS = ['requirements' => 300, 'tasks' => 100, 'rules' => 10
 function apr_profile_empty_content(): array
 {
     return ['schema' => APR_PROFILE_SCHEMA, 'flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => [],
-        'contact' => apr_contact_defaults()];     // "קשר ותזכורות" (אפיון 08 §4) — lib/contact_content.php
+        'contact' => apr_contact_defaults(),
+        'sources' => ['items' => [], 'spend_needs_approval' => true]];     // "מקורות" (אפיון 09 §8) — lib/sources.php     // "קשר ותזכורות" (אפיון 08 §4) — lib/contact_content.php
 }
 
 // ── אימות המבנה בשמירה ───────────────────────────────────────
@@ -172,6 +173,7 @@ function apr_profile_content_clean(mixed $c): array
             'when' => apr_pc_condition($rule['when'] ?? null), 'then' => $then];
     }
     $out['contact'] = apr_contact_clean($c['contact'] ?? null);
+    $out['sources'] = apr_pc_sources($c['sources'] ?? null);
     return $out;
 }
 
@@ -264,6 +266,8 @@ function apr_profile_checks(array $content, array $docTypes): array
     }
     // נוסח עם משתנה שאינו ברשימה הסגורה חוסם פרסום (08-D3)
     foreach (apr_contact_checks(apr_contact_clean($content['contact'] ?? null)) as [$code, $message, $ref]) $add($err, $code, $message, $ref);
+    // מקור שהוסר או הוסתר בקטלוג — אזהרה בלבד (09, מקרה קצה 10)
+    foreach (apr_pc_sources_checks($content['sources'] ?? []) as [$code, $message, $ref]) $add($warn, $code, $message, $ref);
     if (!$items && !$tasks) $add($warn, 'empty', 'בפרופיל אין אף דרישה ואף משימה', 'profile');
     return ['errors' => $err, 'warnings' => $warn];
 }
@@ -328,7 +332,9 @@ function apr_profile_try(array $content, array $input): array
 function apr_profile_diff(array $a, array $b): array
 {
     $sections = ['flags' => fn($c) => $c['flags'], 'groups' => fn($c) => $c['requirements']['groups'], 'requirements' => fn($c) => $c['requirements']['items'],
-        'tasks' => fn($c) => $c['tasks']['items'], 'rules' => fn($c) => $c['rules']];
+        'tasks' => fn($c) => $c['tasks']['items'], 'rules' => fn($c) => $c['rules'],
+        // "מקורות" (09): המפתח הוא המקור, כדי ששינוי של mode ייראה בהשוואה
+        'sources' => fn($c) => array_map(fn($i) => ['key' => $i['source'], 'title' => $i['source']] + $i, $c['sources']['items'] ?? [])];
     $out = [];
     foreach ($sections as $name => $get) {
         $old = array_column($get($a), null, 'key');
