@@ -47,13 +47,14 @@ async function viewDashboard(o) {
     const [t, cs, pd, rf] = await Promise.all([api('my-tasks'), api('cases'), api('docs-pending'), api('requests-failed')]);
     const tiles = [['#/cases', '📁', C.cases], ['#/tasks', '☑️', C.myTasks], ['#/contacts', '📇', C.contacts]];
     if (o.is_admin) tiles.push(['#/office/cases', '🗂️', C.officeCases]);
+    if (rf.inbox !== null && rf.inbox !== undefined) tiles.push(['#/inbox', '📥', T.ch.inboxTile]);
     App.main.innerHTML = `<p class="banner" role="note">⚠️ ${T.devEnv}</p>
         <div class="summary"><div class="line"><b class="one">${esc(o.name)}</b><span class="chip info">${esc(roleLabel(o.role, o.is_admin))}</span></div></div>
         <form class="toolbar" id="dsearch"><input type="search" name="q" placeholder="${C.search}" aria-label="${C.search}" style="flex:1">
           <a class="btn primary" href="#/cases/new"><span aria-hidden="true">+</span> ${C.newCase}</a></form>
         <h2 class="sec-title">☑️ ${C.myTasks} <small>${t.tasks.length || ''}</small></h2>
         ${t.tasks.length ? `<ul class="list">${t.tasks.slice(0, 5).map(x => taskRow(x, true)).join('')}</ul>${t.tasks.length > 5 ? `<p class="hint"><a href="#/tasks">${C.allTasks}</a></p>` : ''}` : `<p class="empty">${C.noMyTasks}</p>`}
-        ${failedRequestsHtml(rf.failed)}${pendingDocsHtml(pd.pending)}
+        ${failedRequestsHtml(rf.failed)}${contactBoardHtml(rf)}${pendingDocsHtml(pd.pending)}
         <h2 class="sec-title">📁 ${C.myCases} <small>${cs.cases.length || ''}</small></h2>
         ${cs.cases.length ? `<ul class="list">${cs.cases.slice(0, 8).map(caseRow).join('')}</ul>${cs.cases.length > 8 ? `<p class="hint"><a href="#/cases">${C.allCases}</a></p>` : ''}` : `<p class="empty">${C.noCases}</p>`}
         <div class="tiles">${tiles.map(([h, i, x]) => `<a class="tile" href="${h}"><span class="tile-ic" aria-hidden="true">${i}</span>${x}</a>`).join('')}</div>${manageTiles()}`;
