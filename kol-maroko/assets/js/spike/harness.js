@@ -232,7 +232,7 @@
     let spec, r;
     try { spec = make(model()); r = isHtml ? canvas.apply(spec.run) : canvas.applyCss(spec.run); }
     catch (e) { out.error = String(e && e.message || e); out.code = e && e.code; return out; }
-    out.patches = r.patches.length;
+    out.patches = r.patches.length; out.mode = r.mode; out.equiv = !r.diff; if (r.diff) out.equivDiff = r.diff; if (r.mode !== 'inc') out.fullWhy = r.why;
     Object.assign(out, diffCheck(before, r.patches, spec));
     out.effect = !!spec.check(model());
     out.ms = r1(r.timing.total); out.timing = Object.fromEntries(Object.entries(r.timing).map(([k, v]) => [k, r1(v)]));
@@ -241,7 +241,7 @@
     out.undo = K.applyPatches(r.after, K.invertPatches(before, r.patches)) === before;
     try {
       const r2 = isHtml ? canvas.apply(spec.inverse) : canvas.applyCss(spec.inverse);
-      out.inverseOp = r2.after === before;
+      out.inverseOp = r2.after === before; out.modeInverse = r2.mode; out.equivInverse = !r2.diff; if (r2.diff) out.equivDiff = r2.diff;
       if (!out.inverseOp) out.inverseDiff = firstDiff(before, r2.after);
       if (isHtml && out.inverseOp) { const s2 = strictCanvas(canvas); out.canvasAfterInverse = s2.ok; }
     } catch (e) { out.inverseOp = false; out.inverseError = String(e && e.message || e); }
@@ -251,11 +251,13 @@
   }
   function firstDiff(a, b) { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return { at: i, was: a.slice(Math.max(0, i - 25), i + 35), got: b.slice(Math.max(0, i - 25), i + 35) }; }
 
+  const SEED = 20261111, out0 = {};
   async function run(opt) {
     const say = opt.progress || (() => {}), res = { startedAt: new Date().toISOString(), ua: navigator.userAgent, k1: {}, k2: {}, k3: {}, k4: {}, k5: {}, k6: {}, probes: [] };
     const bytes = {}, text = {};
     for (const f of FILES) { bytes[f] = await opt.fixture(f); text[f] = C.decode(bytes[f]); }
     const canvas = new C.Canvas(opt.host);
+    canvas.verify = true;                                                  // V1: אחרי כל פעולה — המודל ההדרגתי מול ניתוח מלא
     const pair = base => [text[base + '.html'], text[base + '.css']];
 
     say('K1 — הלוך-חזור');
@@ -368,6 +370,29 @@
       res.k5 = k5; res._pwn = got; window.__spike = { canvas, pwn: got, text, bytes };
     }
 
+    say('שקילות — המודל ההדרגתי מול ניתוח מלא');
+    {
+      // (א) 60 הפעולות של K2, וההפוכות שלהן: כל החלה נבדקה (canvas.verify) מול ניתוח מלא של אותו טקסט
+      const ops = ['lexicon', 'handwritten'].flatMap(b => res.k2[b].ops.filter(o => o.kind === 'html' && o.mode));
+      const applied = ops.length + ops.filter(o => o.modeInverse).length;
+      const bad = ops.filter(o => o.equiv === false || o.equivInverse === false);
+      res.equiv = { ops60: { htmlOps: ops.length, applications: applied, incremental: ops.filter(o => o.mode === 'inc').length + ops.filter(o => o.modeInverse === 'inc').length,
+        inequivalent: bad.length, failed: bad.map(o => o.id + ': ' + o.equivDiff), fullWhy: ops.filter(o => o.fullWhy).map(o => o.id + ': ' + o.fullWhy) }, random: {} };
+      // (ב) 200 פעולות אקראיות בזרע קבוע, דרך הקנבס; כל 25 — גם ה-DOM של הקנבס מול ניתוח טרי של הדפדפן
+      for (const base of ['handwritten', 'lexicon']) {
+        await canvas.load(...pair(base));
+        const times = [], dom = []; let n = 0;
+        const out = window.KolEquiv.randomRun({ seed: SEED, n: 200, model: () => canvas.m, maxElements: 60000,
+          apply(run) { const r = canvas.apply(run); times.push(r.timing.total); if (++n % 25 === 0) { const sc = strictCanvas(canvas); dom.push(sc.ok); if (!sc.ok) out0.domDiffs = sc.diffs.concat(sc.mapErrors.map(e => e.path + ' ' + e.why)); } return { mode: r.mode, why: r.why, diff: r.diff }; },
+          undo() { canvas.undo(); return { diff: canvas.lastDiff }; } });
+        const fin = strictCanvas(canvas);
+        res.equiv.random[base] = Object.assign(out, out0, { medianMs: r1(median(times)), maxMs: r1(Math.max(...times)), domChecks: dom.length + 1, domOk: dom.every(Boolean) && fin.ok,
+          pass: out.applied === 200 && out.inequivalent === 0 && dom.every(Boolean) && fin.ok });
+        say('שקילות ' + base + (res.equiv.random[base].pass ? ' ✓' : ' ✗'));
+      }
+      res.equiv.pass = res.equiv.ops60.inequivalent === 0 && Object.values(res.equiv.random).every(x => x.pass);
+    }
+
     say('K6 — מהירות');
     {
       const loads = [];
@@ -379,11 +404,12 @@
           renderMs: r1(median(loads.map(l => l.render))), mapMs: r1(median(loads.map(l => l.map))), layoutMs: r1(median(loads.map(l => l.layout))) },
         opHtml: { n: htmlOps.length, medianMs: r1(median(col(htmlOps, 'total'))), maxMs: Math.max(...col(htmlOps, 'total')), reparseMs: r1(median(col(htmlOps, 'reparse'))), domMs: r1(median(col(htmlOps, 'dom'))), mapMs: r1(median(col(htmlOps, 'map'))), layoutMs: r1(median(col(htmlOps, 'layout'))), opMs: r1(median(col(htmlOps, 'op'))) },
         opCss: { n: cssOps.length, medianMs: r1(median(col(cssOps, 'total'))), maxMs: Math.max(...col(cssOps, 'total')), layoutMs: r1(median(col(cssOps, 'layout'))) } };
-      // כמה היה עולה עדכון הדרגתי במקום ניתוח מחדש: הזזת כל הטווחים שאחרי התיקון + ניתוח של כרטיס אחד. הערכה בלבד — לא מומש.
+      // ההערכה מהספייק (לפני שהעדכון ההדרגתי מומש ב-V1) — נשארת להשוואה מול המספר האמיתי שב-opHtml.
       { const t0 = performance.now(); let c = 0; K.walk(canvas.m.root, n => { if (n.from >= 0) { n.from += 0; n.to += 0; n.st[0] += 0; n.st[1] += 0; if (n.et) { n.et[0] += 0; n.et[1] += 0; } for (const a of n.attrs) { a.from += 0; a.to += 0; } for (const x of n.nodes) if (x.type !== 'el') { x.from += 0; x.to += 0; } c++; } });
         const t1 = performance.now(), card = K.q(canvas.m, '.kadisha-word-card', 700); K.parseHtml(K.outer(canvas.m, card)); const t2 = performance.now();
         res.k6.incrementalEstimate = { shiftAllRangesMs: r1(t1 - t0), nodes: c, parseOneCardMs: r1(t2 - t1) }; }
-      res.k6.loadPass = res.k6.load.medianMs <= 2000; res.k6.opPass = res.k6.opHtml.maxMs <= 100 && res.k6.opCss.maxMs <= 100;
+      // V1: היעד — פעולת HTML ≤ 100ms בחציון (הספייק דרש זאת מהמקסימום; שניהם נרשמים)
+      res.k6.loadPass = res.k6.load.medianMs <= 2000; res.k6.opHtmlMedianPass = res.k6.opHtml.medianMs <= 100; res.k6.opPass = res.k6.opHtml.maxMs <= 100 && res.k6.opCss.maxMs <= 100;
     }
     res.finishedAt = new Date().toISOString();
     return res;

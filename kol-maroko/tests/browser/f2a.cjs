@@ -174,9 +174,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     mp.on('dialog', d => d.accept());
     await mp.goto(base + '/#/project');
     await mp.waitForSelector('.pj-files-btn');
-    ok(!(await mp.isVisible('.pj-side')), '390px: העץ סגור עד שפותחים אותו');
+    // ממצא הבעלים (טלפון): בלי קובץ פתוח רואים את העץ עצמו, לא מסך ריק שמפנה לכפתור
+    await mp.waitForSelector('.pj-side', { state: 'visible' });
+    ok(await mp.isVisible('.pj-tree .pj-row'), '390px: בלי קובץ פתוח — העץ מוצג מיד בכניסה למסך');
+    ok((await mp.textContent('.pj-files-btn')).includes('קבצי הקוד'), '390px: הכפתור נקרא "📂 קבצי הקוד" (לא כשם הלשונית "🗂️ קבצים")');
     ok(await mp.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '390px: אין גלילה אופקית');
-    await mp.click('.pj-files-btn');
+    await mp.click('.pj-side-x');
+    ok(!(await mp.isVisible('.pj-side')) && await mp.isVisible('.pj-view .btn.primary'), '390px: אחרי סגירת העץ — כפתור ברור "📂 קבצי הקוד — בחירת קובץ" במקום ההודעה');
+    await mp.click('.pj-view .btn.primary');
     await mp.waitForSelector('.pj-side', { state: 'visible' });
     if (SHOTS) await mp.screenshot({ path: path.join(SHOTS, 'f2a-390-tree.png') });
     await mp.click('.pj-side-btns .btn:has-text("+ קובץ")');
