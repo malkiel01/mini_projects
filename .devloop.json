@@ -31,6 +31,17 @@
       "log_url": "https://mbe-plus.com/mini_projects/appraisers/#/dev/log",
       "items_file": "appraisers/dev/open-items.json",
       "token_env": "AP_DEVLOOP_TOKEN"
+    },
+    {
+      "name": "קול מרוקו",
+      "prefix": "KM-",
+      "dir": "kol-maroko",
+      "api": "https://mbe-plus.com/mini_projects/kol-maroko/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/kol-maroko/#/dev/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/kol-maroko/#/dev/log",
+      "items_file": "kol-maroko/dev/open-items.json",
+      "token_env": "KM_DEVLOOP_TOKEN",
+      "note": "נרשם לפני פרוסה F1; המסכים עצמם נבנים בה. אם הנתיבים ישתנו במימוש — הבקרה מעדכנת כאן."
     }
   ],
   "module": {
