@@ -75,7 +75,7 @@ const ATTACK = `<!doctype html>
 
     // ── 1. התרחיש של הפרוסה (§3), על from-current/lexicon.html ──
     await page.goto(base + '/#/editor');
-    await page.waitForSelector('.ed-page option');
+    await page.waitForSelector('.ed-page option', { state: 'attached' });
     ok(await page.$$eval('#tabs a', a => a.some(x => x.textContent.includes('עורך'))) , 'לשונית "🎨 עורך" לצד המסכים הקיימים');
     const pages = await page.$$eval('.ed-page option', o => o.map(x => x.textContent));
     ok(pages.includes('index.html') && pages.includes('from-current/lexicon.html') && pages.every(p => /\.html?$/.test(p)), 'בורר "עמוד": כל קובצי ה-HTML של הפרויקט (' + pages.length + ')');
