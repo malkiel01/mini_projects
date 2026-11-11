@@ -11,6 +11,7 @@
   "version": "0.15",
   "public": [
     "api.php?action=embed_key|media|devapi-feed|devapi-comment|devapi-file|devapi-attach",
-    "agent.php"
+    "agent.php",
+    "preview/index.php"
   ]
 }
