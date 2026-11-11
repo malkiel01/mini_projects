@@ -200,6 +200,8 @@ $hash = apr_mail_hash('moshe@client.example');
 $checks = [
     '1 בקשה שבוטלה' => ["UPDATE requests SET status = 'revoked' WHERE id = $q3", "UPDATE requests SET status = 'active' WHERE id = $q3", 'skipped:request_revoked'],
     '1 קישור שבוטל' => ["UPDATE portal_links SET revoked_at = '2026-01-01T00:00:00Z' WHERE request_id = $q3", "UPDATE portal_links SET revoked_at = NULL WHERE request_id = $q3", 'skipped:request_inactive'],
+    '1 בקשה במצב שאינו פעיל (expired)' => ["UPDATE requests SET status = 'expired' WHERE id = $q3", "UPDATE requests SET status = 'active' WHERE id = $q3", 'skipped:request_inactive'],
+    '1 בקשה שהושלמה, עם דרישה שנפתחה שוב' => ["UPDATE requests SET status = 'completed' WHERE id = $q3", "UPDATE requests SET status = 'active' WHERE id = $q3", 'skipped:request_inactive'],
     '1 בקשה שפגה' => ["UPDATE requests SET expires_at = '2026-11-16T00:00:00Z' WHERE id = $q3", "UPDATE requests SET expires_at = '2027-06-01T00:00:00Z' WHERE id = $q3", 'skipped:request_inactive'],
     '2 אין דרישה פתוחה' => ["UPDATE requirements SET status = 'received' WHERE pid IN ('{$RE['rights']}', '{$RE['plan']}')", "UPDATE requirements SET status = 'requested' WHERE pid IN ('{$RE['rights']}', '{$RE['plan']}')", 'skipped:requirement_closed'],
     '3 הנמען ענה' => ["INSERT INTO requirement_responses (pid, requirement_id, party_id, request_id, kind, text, created_at) SELECT 'resp-test', ri.requirement_id, q.party_id, q.id, 'comment', 'x', '2026-11-17T00:00:00Z' FROM requests q JOIN request_items ri ON ri.request_id = q.id WHERE q.id = $q3 LIMIT 1",
@@ -418,7 +420,7 @@ function hook(string $conn, array $payload, array $o = []): array
     apr_exec("DELETE FROM login_attempts WHERE key LIKE 'inbound:%'");
     $raw = json_encode($payload + ['id' => 'm-' . bin2hex(random_bytes(6))], JSON_UNESCAPED_UNICODE);
     $t = $o['t'] ?? apr_time();
-    $sig = $o['sig'] ?? "t=$t,v1=" . hash_hmac('sha256', "$t.$raw", $o['secret'] ?? SECRET_HOOK);
+    $sig = $o['sig'] ?? "t=$t,v1=" . hash_hmac('sha256', "$t." . ($o['signed_conn'] ?? $conn) . ".$raw", $o['secret'] ?? SECRET_HOOK);
     $body = $o['body'] ?? $raw;
     return api('POST', 'inbound-relay', [], $o['as'] ?? null, ['c' => $conn], ['env' => ['signature' => $sig, 'raw_reader' => fn(int $max) => strlen($body) <= ($o['max'] ?? $max) ? $body : null]]);
 }
@@ -441,6 +443,8 @@ $denied = [
     'חותמת זמן ישנה' => hook($RL, $msg, ['t' => apr_time() - 301]),
     'חותמת זמן עתידית' => hook($RL, $msg, ['t' => apr_time() + 301]),
     'חיבור שאינו קיים' => hook('0123456789abcdef', $msg),
+    'חתימה של חיבור אחר עם אותו סוד' => hook($RL, $msg, ['signed_conn' => $SR]),
+    'חתימה בלי מזהה החיבור' => hook($RL, $msg, ['signed_conn' => '']),
     'מזהה חיבור שאינו מזהה' => hook("x' OR '1'='1", $msg),
     'חיבור מספק אחר' => hook($MC, $msg, ['secret' => SECRET_KEY]),
     'חיבור מספק אחר, עם הסוד הנכון שלו' => hook(api('POST', 'office-channel-save', ['provider' => 'mock_hook', 'label' => 'ספק אחר', 'config' => ['webhook_secret' => SECRET_HOOK . '-other'], 'confirm' => 'אישור'], $avi)[1]['connection']['pid'], $msg, ['secret' => SECRET_HOOK . '-other']),
@@ -577,6 +581,63 @@ for ($i = 0; $i < 22; $i++) {
 }
 eq([array_count_values($codes), $count('inbound_items', "from_display = 'a@b.example'")], [['not_found' => 20, 'inbound_rate' => 2], 0], 'webhook: 20 בקשות שנדחו מ-IP אחד ← 429 (הגבלת קצב לפי IP), ואין פריט');
 apr_exec("DELETE FROM login_attempts WHERE key LIKE 'inbound:%'");
+
+// ── ביקורת 08, סבב 2 ──
+// 🔴1: שליחה אוטומטית אינה יוצאת לנמען שביקש "הסר", ואינה מוחקת את הסימון; רק שליחה ידנית של אדם מסירה אותו — עם רישום ביומן
+$aid = (int)apr_val('SELECT id FROM offices WHERE pid = ?', [$OA]);
+apr_exec("INSERT INTO channel_optouts (office_id, channel, to_hash, created_at) VALUES (?, 'email', ?, ?)", [$aid, apr_mail_hash('moshe@client.example'), apr_now()]);
+$n = [$count('messages'), $sent(), count($GLOBALS['t_mail']), $count('requests')];
+$H3 = make_case($avi, $PA, 'תיק אוטומטי לנמען שביקש הסר', [$moshe], false);
+$st = api('POST', 'case-start', ['case' => $H3], $avi);
+$h3 = (int)$crow($H3)['id'];
+eq([$st[0], $st[1]['auto'] ?? null, [$count('messages'), $sent(), count($GLOBALS['t_mail']), $count('requests')] === $n, $count('channel_optouts'), apr_val("SELECT title FROM tasks WHERE case_id = ? AND origin_key LIKE 'auto-send:%'", [$h3]),
+    $count('audit_log', "action = 'request.optout_cleared' AND case_id = $h3")],
+    [200, [$party($H3, 'client') => 'task'], true, 1, 'הנמען ביקש להפסיק לקבל הודעות — לשלוח ידנית רק אחרי בירור — משה לקוח', 0],
+    '🔴1 פרופיל auto + נמען שביקש "הסר" ← משימה ידנית, אפס הודעות ואפס בקשות, והסימון נשאר');
+$r = send_req($avi, $H3, $party($H3, 'client'), [$rq($H3)['rights']], ['connection' => $MC]);
+eq([$r[1]['message'] ?? null, $count('channel_optouts'), $count('audit_log', "action = 'request.optout_cleared' AND case_id = $h3 AND actor_kind = 'user'")], ['sent', 0, 1], '🔴1 שליחה ידנית מפורשת של אדם ← נשלחת, הסימון מוסר, ונרשם ביומן');
+
+// 🟡2: ביטול / אישור / סגירה שנוחתים בין הבדיקות לקריאה למתאם — לא נשלח דבר
+$late = [];
+foreach (['request_revoked' => fn($q) => call('POST', 'request-revoke', ['request' => $q], $GLOBALS['t_avi']), 'requirement_closed' => fn($q) => apr_exec("UPDATE requirements SET status = 'approved' WHERE id IN (SELECT requirement_id FROM request_items WHERE request_id = ?)", [$qrow($q)['id']]),
+    'case_closed' => fn($q) => apr_exec("UPDATE cases SET status = 'closed' WHERE id = ?", [$qrow($q)['case_id']]), 'manual' => fn($q) => call('POST', 'reminders-stop', ['request' => $q], $GLOBALS['t_avi'])] as $want => $change) {
+    $GLOBALS['t_avi'] = $avi;
+    $at('2026-11-15T08:00:00Z');
+    $K = make_case($avi, $P, "תיק מרוץ $want", [$moshe]);
+    $QK = send_req($avi, $K, $party($K, 'client'), [$rq($K)['rights']], ['connection' => $MC])[1]['request'];
+    $at('2026-11-18T08:00:00Z');
+    $n = $sent();
+    $GLOBALS['apr_before_reminder_send'] = function () use ($change, $QK) { unset($GLOBALS['apr_before_reminder_send']); $change($QK); };
+    $out = $run($QK);
+    $rm = $msgs($QK, "kind = 'reminder'")[0];
+    $late[$want] = [$out, $sent() - $n, $rm['status'], $rm['skip_reason'], $plan($QK)['state'], $count('portal_links', 'revoked_at IS NULL AND request_id = ' . (int)$qrow($QK)['id']) <= 1];
+    $wantAll[$want] = ["skipped:$want", 0, 'skipped', $want, 'stopped', true];
+}
+eq($late, $wantAll, '🟡2 ביטול בקשה, אישור הדרישות, סגירת תיק או עצירה ידנית שנוחתים אחרי הבדיקות ולפני הקריאה למתאם ← אין קריאה; ההודעה skipped, והקישור החדש מבוטל');
+
+// 🟡3: הרשאת השיוך, תיק סגור, ומטפל בתור שהוסר
+hook($RL, ['from' => 'moshe@client.example', 'text' => 'לבדיקת הרשאות']);
+$ip = apr_val("SELECT pid FROM inbound_items WHERE status = 'unassigned' AND text = 'לבדיקת הרשאות'");
+api('POST', 'office-inbox-handler', ['user' => $ronPid, 'on' => true], $avi);
+$before = $snap();
+$closedPid = apr_val("SELECT pid FROM cases WHERE status = 'closed' AND office_id = $aid LIMIT 1");
+eq([is_array($inbox($ron)), code(api('POST', 'inbox-assign', ['item' => $ip, 'case' => $C], $ron)), is_string($closedPid), code(api('POST', 'inbox-assign', ['item' => $ip, 'case' => $closedPid], $avi)),
+    $snap() === $before, apr_val('SELECT status FROM inbound_items WHERE pid = ?', [$ip])], [true, 'forbidden', true, 'case_closed', true, 'unassigned'],
+    '🟡3 שיוך: מטפל בתור עם view בלבד בתיק (בלי documents) ← 403; שיוך לתיק סגור ← 409; הפריט נשאר בתור, ואפס שורות בתיק');
+call('POST', 'member-remove', ['user' => $ronPid], $avi);
+eq([code(api('GET', 'inbox', [], $ron)), code(api('POST', 'inbox-assign', ['item' => $ip, 'case' => $C], $ron)), (int)apr_val('SELECT inbox_handler FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.pid = ?', [$ronPid]),
+    in_array($ronPid, array_column(api('GET', 'office-channels', [], $avi)[1]['members'], 'pid'), true)], ['no_office', 'no_office', 0, false],
+    '🟡3 חבר שהוסר מהמשרד: ההסמכה לתור מתנקה, והתור אינו נגיש לו');
+
+// 🟡4: בדיקת תקינות ללוח החגים
+$hol = fn() => array_values(array_filter(api('GET', 'dev-health', [], $owner)[1]['checks'] ?? [], fn($x) => ($x['id'] ?? '') === 'holidays'))[0]['state'] ?? null;
+$at('2026-11-15T08:00:00Z');
+$h1 = $hol();
+$at('2027-08-01T08:00:00Z');
+$h2 = $hol();
+$at('2028-01-01T08:00:00Z');
+eq([$h1, $h2, $hol()], ['ok', 'warn', 'warn'], '🟡4 בדיקת התקינות מזהירה כשנשארו פחות מ-90 יום בלוח החגים, וכשהוא נגמר');
+$at('2026-11-18T08:00:00Z');
 
 // ── 08-D1: הסודות אינם בשום תשובת API, ביומן הפעולות או בקובץ בתיקיית הנתונים ──
 api('GET', 'office-channels', [], $avi);

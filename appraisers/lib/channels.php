@@ -352,7 +352,7 @@ function apr_channel_test(?int $office, array $in): array
 function apr_office_channels(array $ctx): array
 {
     $office = apr_office_id($ctx);
-    $handlers = apr_rows("SELECT u.pid, u.name, m.inbox_handler, m.is_admin FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.office_id = ? AND m.status = 'active' ORDER BY u.name", [$office]);
+    $handlers = apr_rows("SELECT u.pid, u.name, m.inbox_handler, m.is_admin FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.office_id = ? AND m.status = 'active' AND m.deleted_at IS NULL ORDER BY u.name", [$office]);
     return ['connections' => array_map('apr_conn_out', apr_conns_for_office($office)), 'catalog' => apr_channel_catalog(),
         'members' => array_map(fn($m) => ['pid' => $m['pid'], 'name' => $m['name'], 'is_admin' => (bool)$m['is_admin'], 'inbox_handler' => (bool)$m['inbox_handler']], $handlers)];
 }
@@ -363,7 +363,7 @@ function apr_office_inbox_handler(array $ctx, array $in): array
     $office = apr_office_id($ctx);
     $on = ($in['on'] ?? null) === true;
     return apr_tx(function () use ($ctx, $office, $in, $on) {
-        $u = apr_is_pid($in['user'] ?? null) ? apr_row("SELECT u.id, u.pid FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.pid = ? AND m.office_id = ? AND m.status = 'active'", [$in['user'], $office]) : null;
+        $u = apr_is_pid($in['user'] ?? null) ? apr_row("SELECT u.id, u.pid FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.pid = ? AND m.office_id = ? AND m.status = 'active' AND m.deleted_at IS NULL", [$in['user'], $office]) : null;
         if (!$u) apr_fail('not_found');
         apr_exec('UPDATE memberships SET inbox_handler = ? WHERE office_id = ? AND user_id = ?', [(int)$on, $office, $u['id']]);
         apr_audit('office.inbox_handler', 'user', $u['pid'], ['on' => $on], null, $office);
@@ -408,6 +408,14 @@ function apr_sys_channel_grant(array $in): array
         return ['on' => $on];
     });
 }
+
+// לוח החגים זרוע מראש (מיגרציה 008). כשהוא עומד להיגמר — חג ייחשב יום רגיל, בשקט; לכן מזהירים 90 יום לפני
+apr_health_register('holidays', 'לוח החגים של התזכורות', function () {
+    $last = apr_val('SELECT MAX(day) FROM holidays');
+    if (!$last) return ['bad', 'לוח החגים ריק — תזכורות יישלחו גם בחג'];
+    $days = intdiv(strtotime($last . 'T00:00:00Z') - apr_time(), 86400);
+    return $days < 90 ? ['warn', $days < 0 ? "לוח החגים הסתיים ב-$last — תזכורות נשלחות גם בחג" : "לוח החגים מסתיים ב-$last (בעוד $days ימים) — יש להאריך אותו"] : ['ok', "זרוע עד $last"];
+});
 
 apr_health_register('channels', 'ערוצים וחיבורים', function () {
     $bad = [];

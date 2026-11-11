@@ -205,15 +205,23 @@ function apr_request_mail_text(array $k, string $token, string $expires, string 
  * נשארת planned, והשליחה עצמה נעשית **אחרי ה-commit** (apr_request_deliver): mail() איטי אינו מחזיק את נעילת הכתיבה של המסד,
  * ואין מצב שבו מייל יצא והקישור שבו בוטל ב-rollback (ביקורת 07, 🟡6). מחזיר את מה ש-apr_request_deliver צריך.
  */
-function apr_request_dispatch(array $ctx, array $c, array $req, array $k, string $op, string $expires, string $kind = 'request'): array
+function apr_request_dispatch(array $ctx, array $c, array $req, array $k, string $op, string $expires, string $kind = 'request', bool $auto = false): array
 {
     $uid = (int)$ctx['user']['id'];
     $token = apr_portal_link_new((int)$req['id'], $expires);
     $msgPid = apr_pid();
     $email = $k['channel'] === 'email';
     $ref = apr_request_ref_set($req);
-    // שליחה ביוזמת השמאי ("הכתובת נכונה") מסירה בקשת "הסר" קודמת של הנמען בערוץ הזה (אפיון 08, מקרה קצה 6)
-    if ($email) apr_exec("DELETE FROM channel_optouts WHERE office_id = ? AND channel = 'email' AND to_hash = ?", [$c['office_id'], apr_mail_hash($k['email'])]);
+    // "הסר" של נמען (אפיון 08, מקרה קצה 6) מוסר **רק** בשליחה ידנית מפורשת של אדם ("הכתובת נכונה"), עם רישום ביומן.
+    // שליחה אוטומטית אינה מגיעה לכאן כשיש "הסר" (apr_requests_auto) — ואם הגיעה, היא נעצרת ואינה מוחקת דבר.
+    if ($email) {
+        $has = apr_val("SELECT 1 FROM channel_optouts WHERE office_id = ? AND channel = 'email' AND to_hash = ?", [$c['office_id'], apr_mail_hash($k['email'])]);
+        if ($has && $auto) apr_fail('recipient_opted_out');
+        if ($has) {
+            apr_exec("DELETE FROM channel_optouts WHERE office_id = ? AND channel = 'email' AND to_hash = ?", [$c['office_id'], apr_mail_hash($k['email'])]);
+            apr_case_audit($c, 'request.optout_cleared', 'party', $k['party']['pid']);
+        }
+    }
     $msgId = apr_insert('messages', ['pid' => $msgPid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'request_id' => $req['id'], 'party_id' => $k['party']['id'], 'channel' => $k['channel'],
         'connection_id' => $k['conn']['id'] ?? null, 'kind' => $kind,
         'to_hash' => $email ? apr_mail_hash($k['email']) : null, 'status' => $email ? 'planned' : 'unknown', 'idempotency_key' => $op, 'created_by' => $uid, 'created_at' => apr_now(),
@@ -275,7 +283,7 @@ function apr_request_create(array $ctx, array $c, array $k, string $op, bool $au
         'perms' => json_encode($k['perms']), 'subject' => $k['subject'], 'body' => $k['body'], 'days' => $k['days'], 'expires_at' => $expires, 'status' => 'active',
         'created_by' => $ctx['user']['id'], 'created_at' => apr_now()]);
     foreach ($k['items'] as $r) apr_insert('request_items', ['request_id' => $id, 'requirement_id' => $r['id']]);
-    $sent = apr_request_dispatch($ctx, $c, ['id' => $id, 'pid' => $pid], $k, $op, $expires);
+    $sent = apr_request_dispatch($ctx, $c, ['id' => $id, 'pid' => $pid], $k, $op, $expires, 'request', $auto);
     $meta = ['party' => $k['party']['pid'], 'items' => count($k['items']), 'channel' => $k['channel']] + ($auto ? ['auto' => true] : []);
     if ($sent['mail'] === null) apr_case_audit($c, 'request.send', 'request', $pid, $meta + ['message' => $sent['message']]);
     apr_case_touch($c);
@@ -305,8 +313,9 @@ function apr_requests_auto(array $ctx, array $c): array
             });
             if ($made !== null) $out[$party['pid']] = apr_request_deliver($c, $made['_sent'], 'request.send', $made['request'], $made['_meta']);
         } catch (AprError $e) {
-            if (!in_array($e->errorCode, ['recipient_no_email', 'channel_unavailable'], true)) throw $e;
-            apr_tx(fn() => apr_case_system_task($c, 'לשלוח בקשה ידנית — ' . $party['name'], 'auto-send:' . $party['pid'], 'party', $party['pid']));
+            if (!in_array($e->errorCode, ['recipient_no_email', 'channel_unavailable', 'recipient_opted_out'], true)) throw $e;
+            // גם נמען שביקש "הסר": שליחה אוטומטית אינה יוצאת אליו — רק אדם מחליט לשלוח שוב
+            apr_tx(fn() => apr_case_system_task($c, ($e->errorCode === 'recipient_opted_out' ? 'הנמען ביקש להפסיק לקבל הודעות — לשלוח ידנית רק אחרי בירור — ' : 'לשלוח בקשה ידנית — ') . $party['name'], 'auto-send:' . $party['pid'], 'party', $party['pid']));
             $out[$party['pid']] = 'task';
         }
     }

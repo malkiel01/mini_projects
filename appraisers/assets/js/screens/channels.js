@@ -10,6 +10,19 @@ const CH = T.ch;
 const chStatus = c => `<span class="chip ${({ active: 'ok', needs_auth: 'warn', disabled: '', failed: 'bad' })[c.status] || ''}">${esc(CH.statuses[c.status] || c.status)}</span>`;
 const chHookUrl = c => location.origin + location.pathname.replace(/[^/]*$/, '') + 'api.php?action=inbound-' + c.provider + '&c=' + c.pid;
 
+const chGenBtn = `<div class="row-btns"><button type="button" class="btn ghost sm" data-gen>🎲 ${CH.genSecret}</button></div>`;
+/** "ייצור סוד": 48 תווים אקראיים מהדפדפן (crypto.getRandomValues), מוצגים בשדה כדי שאפשר יהיה להעתיק — עד השמירה בלבד. */
+function chGenBind(dlg) {
+    $('[data-gen]', dlg)?.addEventListener('click', () => {
+        const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ' + 'abcdefghijkmnopqrstuvwxyz' + '23456789', buf = crypto.getRandomValues(new Uint8Array(96));
+        let out = '';
+        for (const b of buf) { if (b < 228 && out.length < 48) out += abc[b % abc.length]; }
+        const el = dlg.querySelector('[name=secret]');
+        el.type = 'text'; el.dir = 'ltr'; el.value = out; el.select();
+        toast(CH.genHint);
+    });
+}
+
 function chConnCard(c, manage) {
     return `<li class="card${manage ? '' : ' static'}" ${manage ? `tabindex="0" role="button" data-conn="${c.pid}"` : ''}><span class="use-ic" aria-hidden="true">🔌</span>
         <div class="body"><div class="l1"><span>${esc(c.label)}</span></div>
@@ -30,7 +43,7 @@ function chConnSheet(c, d, sys, reload) {
           <div class="line muted">${c.builtin ? '' : esc(c.secret.set ? CH.secretSet(c.secret.tail || '') : CH.secretNone)}</div></div>
         ${c.capabilities.inbound ? `<label class="f"><span>${CH.hookUrl}</span><input readonly dir="ltr" value="${esc(chHookUrl(c))}"></label><p class="hint">${CH.hookHint}</p>` : ''}
         ${c.builtin ? '' : `<label class="f"><span>${CH.label}</span><input name="label" required maxlength="80" value="${esc(c.label)}"></label>
-          <label class="f"><span>${CH.secret}</span><input name="secret" type="password" autocomplete="off" maxlength="200" placeholder="${CH.secretKeep}"></label><p class="hint">${CH.secretHint}</p>`}
+          <label class="f"><span>${CH.secret}</span><input name="secret" type="password" autocomplete="off" maxlength="200" placeholder="${CH.secretKeep}"></label>${chGenBtn}<p class="hint">${CH.secretHint}</p>`}
         ${sys ? `<label class="switch"><input type="checkbox" id="chall"${c.all_offices ? ' checked' : ''}><span>${CH.allOffices}</span></label>
           <fieldset class="f"${c.all_offices ? ' hidden' : ''} id="chgrants"><legend>${CH.grants}</legend>${d.offices.map(o => `<label class="switch"><input type="checkbox" data-grant="${o.pid}"${c.offices.includes(o.pid) ? ' checked' : ''}><span>${esc(o.name)}</span></label>`).join('')}</fieldset>` : ''}
         <div class="row-btns wrap"><button type="button" class="btn ghost" id="chtest">${CH.test}</button>
@@ -40,6 +53,7 @@ function chConnSheet(c, d, sys, reload) {
             await api(pre + 'save', { body: { connection: c.pid, label: f.label, config: f.secret && field ? { [field]: f.secret } : {} } });
             toast(CH.saved); reload();
         });
+    chGenBind(dlg);
     const act = (sel, fn) => $(sel, dlg)?.addEventListener('click', async () => { try { await fn(); } catch (e) { toastError(e); } });
     act('#chtest', async () => { const r = await api(pre + 'test', { body: { connection: c.pid } }); toast(r.health.text, r.health.state !== 'ok'); });
     act('#chtoggle', async () => { await api(pre + 'status', { body: { connection: c.pid, status: c.status === 'active' ? 'disabled' : 'active' } }); dlg.close(); toast(T.saved); reload(); });
@@ -56,11 +70,12 @@ function chAddSheet(d, sys, reload) {
     const list = d.catalog.providers.filter(p => p.scopes.includes(scope));
     sheet(CH.add, `<label class="f"><span>${CH.provider}</span><select name="provider">${list.map(p => `<option value="${esc(p.provider)}">${esc(p.label)}</option>`).join('')}</select></label>
         <label class="f"><span>${CH.label}</span><input name="label" required maxlength="80"></label>
-        <label class="f"><span>${CH.secret}</span><input name="secret" type="password" autocomplete="off" maxlength="200" required minlength="32"></label><p class="hint">${CH.secretHint}</p>`, async f => {
+        <label class="f"><span>${CH.secret}</span><input name="secret" type="password" autocomplete="off" maxlength="200" required minlength="32"></label>${chGenBtn}<p class="hint">${CH.secretHint}</p>`, async f => {
         const p = list.find(x => x.provider === f.provider);
         await api(sys ? 'sys-channel-save' : 'office-channel-save', { body: { provider: f.provider, label: f.label, config: { [p.fields[0]]: f.secret } } });
         toast(CH.saved); reload();
     });
+    chGenBind($('#sheet'));
 }
 
 /** #/office/channels — חיבורי המשרד, החיבורים שהמערכת התירה לו, ומי מטפל בתור. */

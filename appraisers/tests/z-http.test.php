@@ -337,17 +337,18 @@ $hc = http('POST', 'api.php?action=sys-channel-save', ['provider' => 'relay', 'l
 $HC = $hc[1]['connection']['pid'] ?? '';
 $hook = function (string $conn, string $raw, ?string $sig = null, array $headers = []) use ($HS, $N): array {
     $t = time();
-    return http('POST', 'api.php?action=inbound-relay&c=' . rawurlencode($conn), null, $N + ['X-Relay-Signature' => $sig ?? "t=$t,v1=" . hash_hmac('sha256', "$t.$raw", $HS)] + $headers, $raw);
+    return http('POST', 'api.php?action=inbound-relay&c=' . rawurlencode($conn), null, $N + ['X-Relay-Signature' => $sig ?? "t=$t,v1=" . hash_hmac('sha256', "$t.$conn.$raw", $HS)] + $headers, $raw);
 };
 $strip = fn(array $r) => [$r[0], $r[1]['error']['code'] ?? null, array_keys($r[1] ?? [])];
 $good = '{"id":"http-1","from":"someone@nowhere.example","subject":"נושא-http-סודי","text":"גוף-http-סודי"}';
 $t = time();
 $bad = [
-    $hook($HC, $good, "t=$t,v1=" . hash_hmac('sha256', "$t.$good", str_repeat('z', 40))),
+    $hook($HC, $good, "t=$t,v1=" . hash_hmac('sha256', "$t.$HC.$good", str_repeat('z', 40))),
     $hook($HC, $good, ''),
-    $hook($HC, $good . ' ', "t=$t,v1=" . hash_hmac('sha256', "$t.$good", $HS)),            // הגוף שונה בתו אחד מזה שנחתם
+    $hook($HC, $good . ' ', "t=$t,v1=" . hash_hmac('sha256', "$t.$HC.$good", $HS)),
+    $hook($HC, $good, "t=$t,v1=" . hash_hmac('sha256', "$t.$good", $HS)),                  // חתימה בלי מזהה החיבור            // הגוף שונה בתו אחד מזה שנחתם
     $hook('0123456789abcdef', $good),
-    $hook($HC, $good, 't=' . ($t - 4000) . ',v1=' . hash_hmac('sha256', ($t - 4000) . ".$good", $HS)),
+    $hook($HC, $good, 't=' . ($t - 4000) . ',v1=' . hash_hmac('sha256', ($t - 4000) . ".$HC.$good", $HS)),
 ];
 eq([$hc[0], str_contains($hc[3], $HS), array_values(array_unique(array_map(fn($r) => json_encode($strip($r)), $bad))), isset($bad[0][2]['set-cookie'])],
     [200, false, ['[404,"not_found",["ok","error","req"]]'], false], '08-C6 ב-HTTP: חתימה שגויה, בלי חתימה, גוף ששונה בתו, חיבור שאינו קיים, חותמת ישנה ← אותה תשובת 404; הסוד אינו בתשובת השמירה');

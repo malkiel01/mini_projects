@@ -3,7 +3,8 @@
  * קליטה נכנסת (אפיון 08 §7): ה-webhook הציבורי, השיוך האוטומטי, ותור השיוך הידני.
  *
  * **ה-webhook** — api.php?action=inbound-relay&c=<מזהה החיבור>, POST, גוף JSON, והכותרת
- *   X-Relay-Signature: t=<שניות unix>,v1=<hex של HMAC-SHA256(סוד החיבור, "<t>.<הגוף הגולמי>")>
+ *   X-Relay-Signature: t=<שניות unix>,v1=<hex של HMAC-SHA256(סוד החיבור, "<t>.<מזהה החיבור>.<הגוף הגולמי>")>
+ * מזהה החיבור בתוך המחרוזת הנחתמת: חתימה שנוצרה לחיבור אחד אינה תקפה לחיבור אחר, גם אם שניהם הוגדרו עם אותו סוד.
  * הסדר: הגבלת קצב לפי IP ← תקרת גודל (לפי Content-Length, לפני הקריאה) ← חתימה על **הגוף הגולמי**, בזמן קבוע, לפני כל פענוח ←
  * חותמת זמן (±5 דקות) ← הגבלת קצב לחיבור ← פענוח ← מזהה ההודעה (UNIQUE לחיבור: שידור חוזר אינו נרשם שוב).
  * חיבור שאינו קיים, מושבת, מספק אחר, בלי סוד, חתימה שגויה, חותמת ישנה או גוף גדול מדי — **אותה תשובה: 404**, בלי להבחין.
@@ -60,7 +61,7 @@ function apr_inbound_hook(string $provider, array $get, array $env): array
     // הגוף נקרא גם כשאין חיבור — אותו מסלול ואותו זמן לחיבור קיים ולחיבור שאינו קיים
     $raw = ($env['raw_reader'] ?? fn() => null)(APR_INBOUND_MAX);
     $ok = is_string($raw) && preg_match('/^t=(\d{9,11}),v1=([0-9a-f]{64})\z/', (string)($env['signature'] ?? ''), $s) === 1;
-    $calc = hash_hmac('sha256', ($ok ? $s[1] : '0') . '.' . ($ok ? $raw : ''), $secret ?? ('none:' . apr_secret()));
+    $calc = hash_hmac('sha256', ($ok ? $s[1] : '0') . '.' . ($conn['pid'] ?? '-') . '.' . ($ok ? $raw : ''), $secret ?? ('none:' . apr_secret()));
     if (!$ok || !hash_equals($calc, $s[2]) || $secret === null) $deny();
     if (abs(apr_time() - (int)$s[1]) > APR_INBOUND_SKEW) $deny();
     if (!apr_limit('inbound:c:' . $conn['id'], ...APR_INBOUND_CONN)) apr_fail('inbound_rate');
@@ -257,7 +258,7 @@ function apr_inbound_ingest(array $c, array $files, string $keyBase, string $cha
 function apr_inbox_allowed(array $ctx): bool
 {
     $office = apr_office_id($ctx);
-    return (bool)apr_val("SELECT 1 FROM memberships WHERE office_id = ? AND user_id = ? AND status = 'active' AND (is_admin = 1 OR inbox_handler = 1)", [$office, $ctx['user']['id']]);
+    return (bool)apr_val("SELECT 1 FROM memberships WHERE office_id = ? AND user_id = ? AND status = 'active' AND deleted_at IS NULL AND (is_admin = 1 OR inbox_handler = 1)", [$office, $ctx['user']['id']]);
 }
 
 /** ללוח הראשי: כמה פריטים ממתינים — או null למי שאינו רואה את התור. */

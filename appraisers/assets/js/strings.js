@@ -372,7 +372,7 @@ Object.assign(T.rq.channels, { sms: 'מסרון', whatsapp: 'WhatsApp' });
 Object.assign(T.rq.msg, { answered: 'נענתה', skipped: 'דולגה', received: 'התקבלה' });
 T.auditIcon.channel = '🔌'; T.auditIcon.inbound = '📥'; T.auditIcon.reminder = '⏰'; T.auditIcon.message = '✉️';
 Object.assign(T.audit, {
-    'channel.create': () => 'נוצר חיבור ערוץ', 'channel.update': () => 'עודכן חיבור ערוץ', 'channel.status': r => `חיבור ערוץ: ${r.meta?.to === 'active' ? 'הופעל' : 'הושבת'}`,
+    'request.optout_cleared': () => 'נשלחה בקשה לנמען שביקש להפסיק — הסימון הוסר', 'channel.create': () => 'נוצר חיבור ערוץ', 'channel.update': () => 'עודכן חיבור ערוץ', 'channel.status': r => `חיבור ערוץ: ${r.meta?.to === 'active' ? 'הופעל' : 'הושבת'}`,
     'channel.failed': () => 'חיבור ערוץ נכשל 3 פעמים ברצף, והושבת', 'channel.grant': () => 'עודכנה הקצאה של חיבור מערכת', 'office.inbox_handler': r => `"מטפל בתור": ${r.meta?.on ? 'הוסמך' : 'בוטלה ההסמכה'}`,
     'inbound.dismiss': () => 'הודעה נכנסת נדחתה', 'inbound.route': () => 'הודעה לא מזוהה נותבה למשרד', 'inbound.reply': () => 'נשלחה תשובה אוטומטית לשולח לא מזוהה',
 });
@@ -387,6 +387,7 @@ T.ch = {
     add: 'חיבור חדש', provider: 'ספק', label: 'שם החיבור', secret: 'סוד החתימה (32 תווים לפחות)', secretKeep: 'להשאיר ריק כדי לא לשנות',
     secretHint: 'הסוד נשמר מוצפן, ואינו מוצג שוב — רק 4 התווים האחרונים שלו.',
     test: 'בדיקה', disable: 'השבתה', enable: 'הפעלה', edit: 'עריכה', saved: 'החיבור נשמר', hookUrl: 'כתובת ה-webhook',
+    genSecret: 'ייצור סוד', genHint: 'הסוד שנוצר מוצג עכשיו בלבד — העתיקו אותו לשירות ששולח את ההודעות, ואז שמרו.',
     hookHint: 'השירות ששולח לכתובת הזו חותם כל הודעה בסוד שהגדרתם (<code dir="ltr">X-Relay-Signature</code>). הודעה בלי חתימה תקפה נדחית.',
     allOffices: 'מותר לכל המשרדים', grants: 'משרדים שהותר להם', handlersTitle: 'מי מטפל בתור השיוך', handlersHint: 'מנהלי המשרד רואים את התור תמיד. אפשר להסמיך חברים נוספים.',
     inboxEmpty: 'אין הודעות שממתינות לשיוך', inboxHint: 'הודעה שלא זוהתה בוודאות אינה נכנסת לשום תיק עד שמשייכים אותה כאן.',

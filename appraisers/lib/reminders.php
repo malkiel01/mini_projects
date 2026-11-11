@@ -153,8 +153,37 @@ function apr_reminder_run(int $planId): string
     $prep = apr_tx(fn() => apr_reminder_prepare($planId));
     if (!is_array($prep)) return $prep;
     if (isset($GLOBALS['apr_before_reminder_send'])) ($GLOBALS['apr_before_reminder_send'])($prep);     // בדיקות בלבד
+    // קריאה חוזרת מיד לפני המתאם (ביקורת 08, 🟡2): ביטול, אישור או סגירה שנחתו מאז שהבדיקות נסגרו — לא נשלח דבר
+    $changed = apr_tx(fn() => apr_reminder_recheck($prep));
+    if ($changed !== null) return 'skipped:' . $changed;
     $res = apr_channel_send($prep['conn'], $prep['msg']);
     return apr_tx(fn() => apr_reminder_finish($prep, $res));
+}
+
+/**
+ * בין שלב א לקריאה למתאם: הבקשה, התוכנית, התיק והדרישות עדיין במצב שמצדיק תזכורת? מחזיר null (לשלוח), או את הסיבה —
+ * ואז ההודעה נרשמת skipped, הקישור החדש מבוטל והתוכנית נעצרת. בתוך טרנזקציה.
+ */
+function apr_reminder_recheck(array $prep): ?string
+{
+    $q = apr_row('SELECT q.status, q.expires_at, c.status AS case_status, c.deleted_at AS case_deleted, p.state, p.stopped_reason,
+            (SELECT COUNT(*) FROM request_items ri JOIN requirements r ON r.id = ri.requirement_id WHERE ri.request_id = q.id AND r.split_at IS NULL AND r.status IN (\'requested\', \'returned\')) AS open,
+            (SELECT revoked_at FROM portal_links WHERE id = ?) AS link_revoked
+        FROM requests q JOIN cases c ON c.id = q.case_id JOIN reminder_plans p ON p.request_id = q.id WHERE q.id = ?', [$prep['link_id'], $prep['q']['id']]);
+    $why = match (true) {
+        !$q, $q['status'] === 'revoked' => 'request_revoked',
+        (int)$q['open'] === 0 => 'requirement_closed',
+        $q['case_status'] === 'closed' || $q['case_deleted'] !== null => 'case_closed',
+        $q['state'] !== 'active' => (string)($q['stopped_reason'] ?? 'manual'),
+        $q['status'] !== 'active' || $q['expires_at'] <= apr_now() || $q['link_revoked'] !== null => 'request_inactive',
+        default => null,
+    };
+    if ($why === null) return null;
+    if (apr_exec("UPDATE messages SET status = 'skipped', skip_reason = ? WHERE id = ? AND status = 'planned'", [$why, $prep['msg_id']]) !== 1) return $why;
+    apr_exec('UPDATE portal_links SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL', [apr_now(), $prep['link_id']]);
+    apr_plan_stop((int)$prep['plan']['id'], $why);
+    apr_case_audit($prep['c'], 'reminder.skip', 'request', $prep['q']['pid'], ['why' => $why, 'no' => $prep['n'], 'late' => true], null, null, 'system');
+    return $why;
 }
 
 /** שלב א — בתוך טרנזקציה. מחזיר מחרוזת (לא נשלח דבר), או את מה שנשלח. */
