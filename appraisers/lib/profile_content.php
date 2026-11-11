@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/errors.php';
 
+require_once __DIR__ . '/contact_content.php';
+
 const APR_PROFILE_SCHEMA = 1;
 const APR_PURPOSES = ['purchase', 'collateral', 'renovation', 'construction', 'income', 'taxation', 'dispute', 'other'];
 const APR_PROPERTY_TYPES = ['apartment', 'house', 'commercial', 'office', 'industrial', 'land', 'complex', 'other'];
@@ -26,7 +28,8 @@ const APR_PROFILE_LIMITS = ['requirements' => 300, 'tasks' => 100, 'rules' => 10
 
 function apr_profile_empty_content(): array
 {
-    return ['schema' => APR_PROFILE_SCHEMA, 'flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => []];
+    return ['schema' => APR_PROFILE_SCHEMA, 'flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => [],
+        'contact' => apr_contact_defaults()];     // "קשר ותזכורות" (אפיון 08 §4) — lib/contact_content.php
 }
 
 // ── אימות המבנה בשמירה ───────────────────────────────────────
@@ -168,6 +171,7 @@ function apr_profile_content_clean(mixed $c): array
         $out['rules'][] = ['key' => apr_pc_key($rule['key'] ?? null), 'title' => apr_pc_text($rule['title'] ?? '', 160),
             'when' => apr_pc_condition($rule['when'] ?? null), 'then' => $then];
     }
+    $out['contact'] = apr_contact_clean($c['contact'] ?? null);
     return $out;
 }
 
@@ -258,6 +262,8 @@ function apr_profile_checks(array $content, array $docTypes): array
             }
         }
     }
+    // נוסח עם משתנה שאינו ברשימה הסגורה חוסם פרסום (08-D3)
+    foreach (apr_contact_checks(apr_contact_clean($content['contact'] ?? null)) as [$code, $message, $ref]) $add($err, $code, $message, $ref);
     if (!$items && !$tasks) $add($warn, 'empty', 'בפרופיל אין אף דרישה ואף משימה', 'profile');
     return ['errors' => $err, 'warnings' => $warn];
 }

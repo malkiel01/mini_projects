@@ -25,6 +25,8 @@ const APR_SENSITIVE = [
     'sys-office-status' => ['status', 'suspended'],     // השעיית משרד
     'sys-user-flags'    => ['is_sysadmin', true],       // הענקת מנהל מערכת
     'dev-token-create'  => null,                        // יצירת אסימון DevLoop
+    'office-channel-save' => null,                      // חיבור ערוץ של המשרד — נושא סוד (אפיון 08 §9)
+    'sys-channel-save'  => null,                        // חיבור ערוץ של המערכת
 ];
 
 function apr_is_sensitive(string $action, array $in): bool

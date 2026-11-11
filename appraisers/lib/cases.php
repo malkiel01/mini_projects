@@ -323,7 +323,16 @@ function apr_case_start(array $ctx, array $in): array
     $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
     $adj = is_array($in['plan'] ?? null) ? $in['plan'] : [];
     if (isset($GLOBALS['apr_before_case_start'])) ($GLOBALS['apr_before_case_start'])();   // בדיקות בלבד: בקשה מקבילה שנכנסת בדיוק כאן
-    return apr_tx(function () use ($ctx, $c, $adj) {
+    $out = apr_tx(fn() => apr_case_start_tx($ctx, $c, $adj));
+    // פרופיל עם שליחה אוטומטית (אפיון 08 §4): אחרי ה-commit — בקשה לכל גורם שאפשר, ומשימה ידנית לכל מי שאי אפשר
+    $c['status'] = 'collecting';
+    $auto = apr_requests_auto($ctx, $c);
+    return $out + ($auto ? ['auto' => $auto] : []);
+}
+
+function apr_case_start_tx(array $ctx, array $c, array $adj): array
+{
+    return (function () use ($ctx, $c, $adj) {
         // היציאה מטיוטה נתפסת בתוך הטרנזקציה: שתי בקשות במקביל — רק אחת יוצרת את הדרישות והמשימות
         if (apr_exec("UPDATE cases SET status = 'collecting' WHERE id = ? AND status = 'draft'", [$c['id']]) !== 1) apr_fail('case_state');
         $missing = apr_case_missing($c);
@@ -370,7 +379,7 @@ function apr_case_start(array $ctx, array $in): array
         apr_exec("UPDATE cases SET status = 'collecting', profile_version_id = ?, plan_snapshot = ?, updated_at = ? WHERE id = ?", [$version, json_encode($snap, JSON_UNESCAPED_UNICODE), apr_now(), $c['id']]);
         apr_case_audit($c, 'case.start', 'case', null, ['version' => $snap['version'], 'requirements' => count($snap['requirements']), 'tasks' => count($snap['tasks']), 'skipped' => count($snap['skipped'])]);
         return ['status' => 'collecting', 'requirements' => count($snap['requirements']), 'tasks' => count($snap['tasks'])];
-    });
+    })();
 }
 
 /** יציאה מטיוטה נדחתה: 422 עם רשימת החסרים. */
