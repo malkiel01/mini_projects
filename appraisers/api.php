@@ -91,6 +91,13 @@ try {
         // בפורטל (portal-upload) האימות הוא האסימון של הקישור, שמגיע בכותרת — אותו עיקרון: קודם אסימון, אחר כך גוף.
         $in = array_filter($_GET, 'is_string');
         $upload = ['upload_reader' => 'apr_upload_receive'];
+    } elseif ($method === 'POST' && str_starts_with($action, 'inbound-')) {
+        // webhook נכנס: הגוף הגולמי נקרא בידי lib/inbound.php, עד התקרה ולא מעבר לה — והחתימה נבדקת עליו לפני כל פענוח
+        $upload = ['signature' => (string)($_SERVER['HTTP_X_RELAY_SIGNATURE'] ?? ''), 'raw_reader' => function (int $max): ?string {
+            if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) return null;
+            $raw = file_get_contents('php://input', false, null, 0, $max + 1);
+            return is_string($raw) && strlen($raw) <= $max ? $raw : null;
+        }];
     } elseif ($method === 'POST' && !str_ends_with($action, '-attach')) {
         $max = 1_000_000;
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) apr_fail('too_large');

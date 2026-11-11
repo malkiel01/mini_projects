@@ -331,6 +331,40 @@ if (is_file("$repo/platform/gate-prepend.php")) {
 } else {
     check('🔴1 platform/gate-prepend.php נמצא בריפו (נדרש לבדיקת ההזרקה)', false);
 }
+// ── פרוסה 08, ב-HTTP אמיתי: ה-webhook הנכנס הוא כתובת ציבורית — חתימה על הגוף הגולמי, 404 אחיד, והסוד אינו נרשם ──
+$HS = 'http-hook-secret-0123456789abcdefghijklmnop';
+$hc = http('POST', 'api.php?action=sys-channel-save', ['provider' => 'relay', 'label' => 'מייל נכנס', 'config' => ['webhook_secret' => $HS], 'confirm' => 'אישור'], $X);
+$HC = $hc[1]['connection']['pid'] ?? '';
+$hook = function (string $conn, string $raw, ?string $sig = null, array $headers = []) use ($HS, $N): array {
+    $t = time();
+    return http('POST', 'api.php?action=inbound-relay&c=' . rawurlencode($conn), null, $N + ['X-Relay-Signature' => $sig ?? "t=$t,v1=" . hash_hmac('sha256', "$t.$conn.$raw", $HS)] + $headers, $raw);
+};
+$strip = fn(array $r) => [$r[0], $r[1]['error']['code'] ?? null, array_keys($r[1] ?? [])];
+$good = '{"id":"http-1","from":"someone@nowhere.example","subject":"נושא-http-סודי","text":"גוף-http-סודי"}';
+$t = time();
+$bad = [
+    $hook($HC, $good, "t=$t,v1=" . hash_hmac('sha256', "$t.$HC.$good", str_repeat('z', 40))),
+    $hook($HC, $good, ''),
+    $hook($HC, $good . ' ', "t=$t,v1=" . hash_hmac('sha256', "$t.$HC.$good", $HS)),
+    $hook($HC, $good, "t=$t,v1=" . hash_hmac('sha256', "$t.$good", $HS)),                  // חתימה בלי מזהה החיבור            // הגוף שונה בתו אחד מזה שנחתם
+    $hook('0123456789abcdef', $good),
+    $hook($HC, $good, 't=' . ($t - 4000) . ',v1=' . hash_hmac('sha256', ($t - 4000) . ".$HC.$good", $HS)),
+];
+eq([$hc[0], str_contains($hc[3], $HS), array_values(array_unique(array_map(fn($r) => json_encode($strip($r)), $bad))), isset($bad[0][2]['set-cookie'])],
+    [200, false, ['[404,"not_found",["ok","error","req"]]'], false], '08-C6 ב-HTTP: חתימה שגויה, בלי חתימה, גוף ששונה בתו, חיבור שאינו קיים, חותמת ישנה ← אותה תשובת 404; הסוד אינו בתשובת השמירה');
+$okh = $hook($HC, $good);
+$rep = $hook($HC, $good);
+$big = $hook($HC, '{"id":"big","from":"a@b.example","text":"' . str_repeat('a', 13 * 1024 * 1024) . '"}');
+$inbox = http('GET', 'api.php?action=sys-inbox', null, $X);
+eq([$okh[0], $okh[1]['received'] ?? null, $rep[1]['repeat'] ?? null, $big[0], count($inbox[1]['items'] ?? []), str_contains($inbox[3], 'סודי'), $inbox[1]['items'][0]['from'] ?? null,
+    http('GET', 'api.php?action=inbound-relay&c=' . $HC, null, $N)[0], http('POST', 'api.php?action=inbound-relay&c=' . $HC, null, $N + ['Content-Type' => 'text/plain', 'X-Relay-Signature' => 'x'], $good)[0]],
+    [200, true, true, 404, 1, false, 'so…@nowhere.example', 405, 403],
+    '08-C6 / 08-C4 ב-HTTP: בלי זהות ובלי עוגייה — חתימה נכונה מתקבלת פעם אחת (שידור חוזר אינו נרשם שוב), גוף מעל 12MB ← 404, ומנהל המערכת רואה שולח מקוצר בלי תוכן');
+usleep(300000);
+$hits = [];
+foreach (array_merge(glob("$data/*") ?: [], glob("$data/*/*") ?: []) as $f) if (is_file($f) && str_contains((string)file_get_contents($f), $HS)) $hits[] = basename($f);
+eq($hits, [], '08-D1 ב-HTTP: סוד החיבור אינו בקובצי המסד (מוצפן), ביומן הטכני, ביומן השרת או בשום קובץ אחר בתיקיית הנתונים');
+
 // שם הקובץ בכותרת (לא בכתובת — כתובות נרשמות ביומן הגישה)
 $rq3 = http('POST', 'api.php?action=requirement-add', ['case' => $cc, 'title' => 'תשריט', 'doc_type' => 'rights'], $X)[1]['requirement'] ?? '';
 $c3 = ['case' => $cc, 'party' => $pty, 'requirements' => [$rq3], 'channel' => 'link_copy'];

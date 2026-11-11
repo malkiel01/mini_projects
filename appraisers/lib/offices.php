@@ -166,7 +166,7 @@ function apr_member_remove(array $ctx, array $in): array
         $m = apr_member($office, $in['user'] ?? null);
         if ((int)$m['user_id'] === (int)$ctx['user']['id']) apr_fail('self_action');
         if ((int)$m['is_admin'] && $m['status'] === 'active' && !apr_active_admins($office, (int)$m['user_id'])) apr_fail('last_admin');
-        apr_exec('UPDATE memberships SET deleted_at = ?, updated_at = ?, is_admin = 0 WHERE id = ?', [apr_now(), apr_now(), $m['id']]);
+        apr_exec('UPDATE memberships SET deleted_at = ?, updated_at = ?, is_admin = 0, inbox_handler = 0 WHERE id = ?', [apr_now(), apr_now(), $m['id']]);   // גם ההסמכה לתור השיוך (08)
         apr_exec('UPDATE sessions SET active_office_id = NULL WHERE user_id = ? AND active_office_id = ?', [$m['user_id'], $office]);
         apr_audit('member.remove', 'user', $m['user_pid'], ['role' => $m['role']], office: $office);
         if (function_exists('apr_profiles_on_leave')) apr_profiles_on_leave($office, (int)$m['user_id']);

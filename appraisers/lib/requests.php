@@ -48,6 +48,28 @@ function apr_request_links_kill(int $requestId): int
     return apr_exec("UPDATE portal_links SET revoked_at = ? WHERE id IN ($in) AND revoked_at IS NULL", [apr_now()]);
 }
 
+/**
+ * מזהה השיוך של בקשה (אפיון 08 §7): מוטמע בכל הודעה יוצאת, ותשובה שנושאת אותו — מהנמען עצמו — נרשמת בתיק לבד.
+ * נגזר ממפתח השרת ומה-pid של הבקשה (אפשר להפיק אותו שוב לתזכורת); במסד רק ה-hash שלו.
+ */
+function apr_request_ref(string $requestPid): string
+{
+    return 'APR-' . strtoupper(substr(hash_hmac('sha256', 'ref:' . $requestPid, apr_secret()), 0, 20));
+}
+
+function apr_request_ref_hash(string $ref): string
+{
+    return hash('sha256', 'ref:' . $ref);
+}
+
+/** המזהה של הבקשה, אחרי שה-hash שלו נרשם (בקשה מלפני פרוסה 08 מקבלת אותו בשליחה הבאה). בתוך טרנזקציה. */
+function apr_request_ref_set(array $req): string
+{
+    $ref = apr_request_ref($req['pid']);
+    apr_exec('UPDATE requests SET ref_hash = ? WHERE id = ? AND ref_hash IS NULL', [apr_request_ref_hash($ref), $req['id']]);
+    return $ref;
+}
+
 function apr_portal_url(string $token): string
 {
     return apr_app_url('portal/') . '#' . $token;
@@ -65,10 +87,15 @@ function apr_request_perms(mixed $in, bool $hasEmail): array
 }
 
 /** הנוסח שהמערכת מציעה. בלי פרטי הנכס, בלי מספר התיק ובלי שמות של גורמים אחרים — רק מה שהשמאי יוסיף בעצמו. */
-function apr_request_template(string $office, string $sender, string $recipient): array
+function apr_request_template(string $office, string $sender, string $recipient, ?array $tpl = null, array $items = []): array
 {
-    return ['בקשה למסמכים — ' . $office,
-        "שלום $recipient,\n\nלצורך הכנת חוות דעת שמאית נבקש לקבל את המסמכים שברשימה.\nאפשר להעלות אותם בקישור האישי שבהודעה זו — בלי הרשמה ובלי סיסמה.\n\nתודה,\n$sender\n$office"];
+    $tpl ??= apr_contact_defaults()['templates']['request'];
+    $due = array_filter(array_column($items, 'due_at'));
+    // הקישור אינו חלק מהנוסח השמור: הוא מצורף למייל בנפרד (apr_request_mail_text), ולעולם אינו נשמר
+    $vars = ['שם_הנמען' => apr_tpl_val($recipient), 'שם_המשרד' => apr_tpl_val($office), 'שם_השמאי' => apr_tpl_val($sender), 'קישור' => '',
+        'רשימת_הדרישות' => implode("\n", array_map(fn($r) => '• ' . apr_tpl_val($r['title']), $items)),
+        'תאריך_יעד' => $due ? (new DateTimeImmutable(min($due)))->setTimezone(new DateTimeZone(APR_CASE_TZ))->format('d.m.Y') : ''];
+    return [apr_tpl_subject($tpl['subject'], $vars), trim(apr_tpl_render($tpl['body'], $vars))];
 }
 
 /**
@@ -82,6 +109,7 @@ function apr_request_content(array $ctx, array $c, array $in, ?array $req = null
     $contact = apr_row('SELECT * FROM contacts WHERE id = ? AND office_id = ? AND deleted_at IS NULL', [$party['contact_id'], $c['office_id']]) ?? apr_fail('not_found');
     $email = $contact['email'] !== null && $contact['email'] !== '' ? (string)$contact['email'] : null;
     $channel = apr_clean_choice($in['channel'] ?? null, ['email', 'link_copy']) ?? apr_fail('content_invalid');
+    $conn = null;
     if ($channel === 'email') {
         if ($email === null) apr_fail('recipient_no_email');
         if (($in['contact_ok'] ?? false) !== true) apr_fail('contact_unconfirmed');    // "הכתובת נכונה" — המשתמש מאשר לפני שליחה
@@ -103,13 +131,15 @@ function apr_request_content(array $ctx, array $c, array $in, ?array $req = null
         usort($items, fn($a, $b) => [$a['sort'], $a['id']] <=> [$b['sort'], $b['id']]);
         $perms = apr_request_perms($in['perms'] ?? null, $email !== null);
         $days = in_array((int)($in['days'] ?? 30), APR_REQUEST_DAYS, true) ? (int)($in['days'] ?? 30) : apr_fail('content_invalid');
-        [$dSubject, $dBody] = apr_request_template($officeRow['name'], $ctx['user']['name'], $contact['name']);
+        [$dSubject, $dBody] = apr_request_template($officeRow['name'], $ctx['user']['name'], $contact['name'], apr_case_contact($c)['templates']['request'], $items);
         $subject = apr_clean_text($in['subject'] ?? '', 150) ?? $dSubject;
         $subject = (string)preg_replace('/\s+/u', ' ', $subject);
         $body = is_string($in['body'] ?? null) && trim($in['body']) !== '' ? trim(str_replace("\r", '', $in['body'])) : $dBody;
         if (mb_strlen($body) > 4000) apr_fail('text_too_long');
     }
-    $out = ['party' => $party, 'contact' => $contact, 'email' => $email, 'channel' => $channel, 'items' => $items, 'perms' => $perms, 'days' => $days,
+    // החיבור שדרכו נשלח: זה שנבחר, או הראשון הפעיל שזמין למשרד. משרד בלי הרשאה לחיבור מערכת אינו שולח דרכו (08-D2)
+    if ($channel === 'email') $conn = apr_conn_pick((int)$c['office_id'], 'email', $in['connection'] ?? null);
+    $out = ['party' => $party, 'contact' => $contact, 'email' => $email, 'channel' => $channel, 'conn' => $conn, 'items' => $items, 'perms' => $perms, 'days' => $days,
         'subject' => $subject, 'body' => $body, 'office_name' => $officeRow['name'], 'always_otp' => (bool)$officeRow['portal_always_otp']];
     $out['hash'] = hash('sha256', json_encode([$req['id'] ?? 0, (int)$c['id'], (int)$party['id'], $email, $channel, array_map(fn($r) => (int)$r['id'], $items), $perms, $days, $subject, $body], JSON_UNESCAPED_UNICODE));
     return $out;
@@ -163,10 +193,11 @@ function apr_request_op(array $ctx, mixed $v): string
 }
 
 /** גוף המייל: הנוסח, קישור אחד, ועד מתי. בלי קבצים, בלי פרטי הנכס ובלי שמות של אחרים. */
-function apr_request_mail_text(array $k, string $token, string $expires): string
+function apr_request_mail_text(array $k, string $token, string $expires, string $ref = ''): string
 {
     $date = (new DateTimeImmutable($expires))->setTimezone(new DateTimeZone(APR_CASE_TZ))->format('d.m.Y');
-    return $k['body'] . "\n\nלהעלאת המסמכים:\n" . apr_portal_url($token) . "\n\nהקישור אישי, ותקף עד $date. אין להעביר אותו לאחרים.";
+    return $k['body'] . "\n\nלהעלאת המסמכים:\n" . apr_portal_url($token) . "\n\nהקישור אישי, ותקף עד $date. אין להעביר אותו לאחרים."
+        . ($ref !== '' ? "\n\nמזהה פנייה: $ref" : '');
 }
 
 /**
@@ -174,19 +205,31 @@ function apr_request_mail_text(array $k, string $token, string $expires): string
  * נשארת planned, והשליחה עצמה נעשית **אחרי ה-commit** (apr_request_deliver): mail() איטי אינו מחזיק את נעילת הכתיבה של המסד,
  * ואין מצב שבו מייל יצא והקישור שבו בוטל ב-rollback (ביקורת 07, 🟡6). מחזיר את מה ש-apr_request_deliver צריך.
  */
-function apr_request_dispatch(array $ctx, array $c, array $req, array $k, string $op, string $expires): array
+function apr_request_dispatch(array $ctx, array $c, array $req, array $k, string $op, string $expires, string $kind = 'request', bool $auto = false): array
 {
     $uid = (int)$ctx['user']['id'];
     $token = apr_portal_link_new((int)$req['id'], $expires);
     $msgPid = apr_pid();
     $email = $k['channel'] === 'email';
+    $ref = apr_request_ref_set($req);
+    // "הסר" של נמען (אפיון 08, מקרה קצה 6) מוסר **רק** בשליחה ידנית מפורשת של אדם ("הכתובת נכונה"), עם רישום ביומן.
+    // שליחה אוטומטית אינה מגיעה לכאן כשיש "הסר" (apr_requests_auto) — ואם הגיעה, היא נעצרת ואינה מוחקת דבר.
+    if ($email) {
+        $has = apr_val("SELECT 1 FROM channel_optouts WHERE office_id = ? AND channel = 'email' AND to_hash = ?", [$c['office_id'], apr_mail_hash($k['email'])]);
+        if ($has && $auto) apr_fail('recipient_opted_out');
+        if ($has) {
+            apr_exec("DELETE FROM channel_optouts WHERE office_id = ? AND channel = 'email' AND to_hash = ?", [$c['office_id'], apr_mail_hash($k['email'])]);
+            apr_case_audit($c, 'request.optout_cleared', 'party', $k['party']['pid']);
+        }
+    }
     $msgId = apr_insert('messages', ['pid' => $msgPid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'request_id' => $req['id'], 'party_id' => $k['party']['id'], 'channel' => $k['channel'],
+        'connection_id' => $k['conn']['id'] ?? null, 'kind' => $kind,
         'to_hash' => $email ? apr_mail_hash($k['email']) : null, 'status' => $email ? 'planned' : 'unknown', 'idempotency_key' => $op, 'created_by' => $uid, 'created_at' => apr_now(),
         'sent_at' => $email ? null : apr_now()]);
     if (!$email) apr_request_advance((int)$req['id'], $uid);    // המערכת אינה יודעת אם הקישור נמסר — אבל הוא נוצר
     return ['message' => $email ? 'planned' : 'unknown', 'message_id' => $msgId, 'message_pid' => $msgPid, 'request_id' => (int)$req['id'], 'uid' => $uid,
-        'link' => $email ? null : apr_portal_url($token),
-        'mail' => $email ? [$k['email'], $k['subject'], apr_request_mail_text($k, $token, $expires), (int)$c['office_id'], ['from_name' => $k['office_name'], 'reply_to' => $ctx['user']['email']]] : null];
+        'link' => $email ? null : apr_portal_url($token), 'conn' => $k['conn'], 'kind' => $kind,
+        'mail' => $email ? [$k['email'], $k['subject'], apr_request_mail_text($k, $token, $expires, $ref), (int)$c['office_id'], ['from_name' => $k['office_name'], 'reply_to' => $ctx['user']['email']]] : null];
 }
 
 /** הדרישות של הבקשה שעדיין required עוברות ל-requested. הודעה שנכשלה אינה מקדמת שום דרישה (§6) — לכן רק אחרי sent / unknown. */
@@ -206,13 +249,16 @@ function apr_request_deliver(array $c, array $sent, string $audit, string $reque
 {
     if ($sent['mail'] === null) return $sent['message'];
     [$to, $subject, $text, $office, $opt] = $sent['mail'];
-    $status = apr_mail_send('request', $to, $subject, $text, 'request:' . $sent['message_pid'], $office, $opt);
-    apr_tx(function () use ($c, $sent, $status, $audit, $requestPid, $meta) {
-        $n = apr_exec("UPDATE messages SET status = ?, sent_at = ?, error = ? WHERE id = ? AND status = 'planned'",
-            [$status, $status === 'failed' ? null : apr_now(), $status === 'failed' ? 'mail' : null, $sent['message_id']]);
+    // דרך המתאם של החיבור (אפיון 08 §6.2): חריגה = failed, תשובה לא ברורה = unknown — ולעולם לא sent בלי אישור
+    $res = apr_channel_send($sent['conn'], ['kind' => 'request', 'to' => $to, 'subject' => $subject, 'text' => $text, 'idem' => 'request:' . $sent['message_pid'], 'office' => $office] + $opt);
+    $status = $res['status'];
+    apr_tx(function () use ($c, $sent, $status, $res, $audit, $requestPid, $meta) {
+        $n = apr_exec("UPDATE messages SET status = ?, sent_at = ?, error = ?, provider_ref = ?, attempts = 1 WHERE id = ? AND status = 'planned'",
+            [$status, $status === 'failed' ? null : apr_now(), $res['error'], $res['ref'], $sent['message_id']]);
         if ($n !== 1) return;
         $live = apr_val("SELECT 1 FROM requests WHERE id = ? AND status <> 'revoked'", [$sent['request_id']]) && apr_val("SELECT status FROM cases WHERE id = ? AND deleted_at IS NULL", [$c['id']]) !== 'closed';
         if ($status !== 'failed' && $live) apr_request_advance($sent['request_id'], $sent['uid']);
+        if ($status !== 'failed' && $live) apr_reminder_plan_start($c, $sent['request_id'], isset($sent['conn']['id']) ? (int)$sent['conn']['id'] : null);
         apr_case_audit($c, $audit, 'request', $requestPid, $meta + ['message' => $status], null, $sent['uid']);
         apr_case_touch($c);
     });
@@ -228,6 +274,54 @@ function apr_request_repeat(array $c, string $op): ?array
     return ['request' => $m['pid'], 'message' => $m['status'], 'link' => null, 'repeat' => true];
 }
 
+/** הבקשה, הדרישות שלה, הקישור ושורת ההודעה — בתוך טרנזקציה. $auto: נשלחה לבד, לפי הפרופיל (apr_requests_auto). */
+function apr_request_create(array $ctx, array $c, array $k, string $op, bool $auto = false): array
+{
+    $pid = apr_pid();
+    $expires = apr_iso(apr_time() + $k['days'] * 86400);
+    $id = apr_insert('requests', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'party_id' => $k['party']['id'],
+        'perms' => json_encode($k['perms']), 'subject' => $k['subject'], 'body' => $k['body'], 'days' => $k['days'], 'expires_at' => $expires, 'status' => 'active',
+        'created_by' => $ctx['user']['id'], 'created_at' => apr_now()]);
+    foreach ($k['items'] as $r) apr_insert('request_items', ['request_id' => $id, 'requirement_id' => $r['id']]);
+    $sent = apr_request_dispatch($ctx, $c, ['id' => $id, 'pid' => $pid], $k, $op, $expires, 'request', $auto);
+    $meta = ['party' => $k['party']['pid'], 'items' => count($k['items']), 'channel' => $k['channel']] + ($auto ? ['auto' => true] : []);
+    if ($sent['mail'] === null) apr_case_audit($c, 'request.send', 'request', $pid, $meta + ['message' => $sent['message']]);
+    apr_case_touch($c);
+    return ['request' => $pid, '_sent' => $sent, '_meta' => $meta];
+}
+
+/**
+ * פרופיל עם send_mode = auto (אפיון 08 §4): עם פתיחת התיק, בקשה לכל גורם שיש לו דרישות, מייל וחיבור פעיל. **אינו מדלג על
+ * בדיקות:** גורם בלי מייל, או משרד בלי חיבור פעיל — נוצרת משימה "לשלוח בקשה ידנית", ולא נשלח דבר (08-D4). נקרא אחרי ה-commit
+ * של פתיחת התיק; כל בקשה בטרנזקציה משלה, והמייל — אחריה.
+ */
+function apr_requests_auto(array $ctx, array $c): array
+{
+    if (apr_case_contact($c)['send_mode'] !== 'auto') return [];
+    $out = [];
+    $parties = apr_rows("SELECT cp.id, cp.pid, ct.name FROM case_parties cp JOIN contacts ct ON ct.id = cp.contact_id
+        WHERE cp.case_id = ? AND cp.removed_at IS NULL AND EXISTS (SELECT 1 FROM requirements r WHERE r.party_id = cp.id AND r.status = 'required' AND r.split_at IS NULL) ORDER BY cp.id", [$c['id']]);
+    foreach ($parties as $party) {
+        $in = ['party' => $party['pid'], 'channel' => 'email', 'contact_ok' => true,
+            'requirements' => array_slice(array_column(apr_rows("SELECT pid FROM requirements WHERE party_id = ? AND case_id = ? AND status = 'required' AND split_at IS NULL ORDER BY sort, id", [$party['id'], $c['id']]), 'pid'), 0, APR_REQUEST_MAX_ITEMS)];
+        $op = 'auto:' . $c['id'] . ':' . $party['id'];
+        try {
+            $made = apr_tx(function () use ($ctx, $c, $in, $op) {
+                apr_case_still_open($c);
+                if (apr_val('SELECT 1 FROM messages WHERE idempotency_key = ?', [$op])) return null;
+                return apr_request_create($ctx, $c, apr_request_content($ctx, $c, $in), $op, true);
+            });
+            if ($made !== null) $out[$party['pid']] = apr_request_deliver($c, $made['_sent'], 'request.send', $made['request'], $made['_meta']);
+        } catch (AprError $e) {
+            if (!in_array($e->errorCode, ['recipient_no_email', 'channel_unavailable', 'recipient_opted_out'], true)) throw $e;
+            // גם נמען שביקש "הסר": שליחה אוטומטית אינה יוצאת אליו — רק אדם מחליט לשלוח שוב
+            apr_tx(fn() => apr_case_system_task($c, ($e->errorCode === 'recipient_opted_out' ? 'הנמען ביקש להפסיק לקבל הודעות — לשלוח ידנית רק אחרי בירור — ' : 'לשלוח בקשה ידנית — ') . $party['name'], 'auto-send:' . $party['pid'], 'party', $party['pid']));
+            $out[$party['pid']] = 'task';
+        }
+    }
+    return $out;
+}
+
 function apr_request_send(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null, 'contact');
@@ -240,17 +334,7 @@ function apr_request_send(array $ctx, array $in): array
         if ($old = apr_request_repeat($c, $op)) return $old;
         $k = apr_request_content($ctx, $c, $in);            // שוב, בתוך הטרנזקציה: הדרישות והנמען לא השתנו מאז התצוגה המקדימה
         apr_request_preview_check((int)$ctx['user']['id'], $k['hash'], $in['preview'] ?? null);
-        $pid = apr_pid();
-        $expires = apr_iso(apr_time() + $k['days'] * 86400);
-        $id = apr_insert('requests', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'party_id' => $k['party']['id'],
-            'perms' => json_encode($k['perms']), 'subject' => $k['subject'], 'body' => $k['body'], 'days' => $k['days'], 'expires_at' => $expires, 'status' => 'active',
-            'created_by' => $ctx['user']['id'], 'created_at' => apr_now()]);
-        foreach ($k['items'] as $r) apr_insert('request_items', ['request_id' => $id, 'requirement_id' => $r['id']]);
-        $sent = apr_request_dispatch($ctx, $c, ['id' => $id], $k, $op, $expires);
-        $meta = ['party' => $k['party']['pid'], 'items' => count($k['items']), 'channel' => $k['channel']];
-        if ($sent['mail'] === null) apr_case_audit($c, 'request.send', 'request', $pid, $meta + ['message' => $sent['message']]);
-        apr_case_touch($c);
-        return ['request' => $pid, '_sent' => $sent, '_meta' => $meta];
+        return apr_request_create($ctx, $c, $k, $op);
     });
     if (!isset($out['_sent'])) return $out;
     return ['request' => $out['request'], 'message' => apr_request_deliver($c, $out['_sent'], 'request.send', $out['request'], $out['_meta']), 'link' => $out['_sent']['link']];
@@ -272,7 +356,7 @@ function apr_request_resend(array $ctx, array $in): array
         $expired = strtotime($req['expires_at']) <= apr_time();
         $expires = $expired || isset($in['days']) ? apr_iso(apr_time() + $k['days'] * 86400) : $req['expires_at'];
         if (apr_exec("UPDATE requests SET expires_at = ?, days = ?, perms = ? WHERE id = ? AND status <> 'revoked'", [$expires, $k['days'], json_encode($k['perms']), $req['id']]) !== 1) apr_fail('request_state');
-        $sent = apr_request_dispatch($ctx, $c, $req, $k, $op, $expires);
+        $sent = apr_request_dispatch($ctx, $c, $req, $k, $op, $expires, 'resend');
         $meta = ['party' => $k['party']['pid'], 'channel' => $k['channel']];
         if ($sent['mail'] === null) apr_case_audit($c, 'request.resend', 'request', $req['pid'], $meta + ['message' => $sent['message']]);
         apr_case_touch($c);
@@ -290,6 +374,7 @@ function apr_request_revoke_row(array $c, array $req, ?int $by, ?string $why = n
 {
     if (apr_exec("UPDATE requests SET status = 'revoked', revoked_at = ?, revoked_by = ? WHERE id = ? AND status <> 'revoked'", [apr_now(), $by, $req['id']]) !== 1) return false;
     apr_request_links_kill((int)$req['id']);
+    apr_exec("UPDATE reminder_plans SET state = 'stopped', stopped_reason = 'request_revoked', next_at = NULL WHERE request_id = ? AND state = 'active'", [$req['id']]);
     foreach (apr_rows("SELECT r.* FROM request_items ri JOIN requirements r ON r.id = ri.requirement_id WHERE ri.request_id = ? AND r.status = 'requested' AND r.split_at IS NULL", [$req['id']]) as $r) {
         $other = apr_val("SELECT 1 FROM request_items ri JOIN requests q ON q.id = ri.request_id WHERE ri.requirement_id = ? AND q.id <> ? AND q.status = 'active' AND q.expires_at > ?", [$r['id'], $req['id'], apr_now()]);
         if (!$other) apr_req_move($r, 'required', null, $by);
@@ -359,8 +444,15 @@ function apr_case_requests(array $ctx, array $q): array
     $links = $items = $msgs = $resp = [];
     foreach (apr_rows('SELECT l.* FROM portal_links l JOIN requests q ON q.id = l.request_id WHERE q.case_id = ? ORDER BY l.id', [$c['id']]) as $l) $links[$l['request_id']] = $l;   // האחרון
     foreach (apr_rows('SELECT ri.request_id, r.pid FROM request_items ri JOIN requirements r ON r.id = ri.requirement_id JOIN requests q ON q.id = ri.request_id WHERE q.case_id = ? ORDER BY r.sort, r.id', [$c['id']]) as $i) $items[$i['request_id']][] = $i['pid'];
+    $conns = apr_conns_for_office((int)$c['office_id']);
+    $caps = [];
+    foreach ($conns as $k) $caps[$k['id']] = apr_conn_caps($k);
+    $plans = array_column(apr_rows('SELECT p.* FROM reminder_plans p JOIN requests q ON q.id = p.request_id WHERE q.case_id = ?', [$c['id']]), null, 'request_id');
     foreach (apr_rows('SELECT m.*, u.name AS sender FROM messages m LEFT JOIN users u ON u.id = m.created_by WHERE m.case_id = ? ORDER BY m.id DESC', [$c['id']]) as $m) {
-        $msgs[$m['request_id']][] = ['pid' => $m['pid'], 'channel' => $m['channel'], 'status' => $m['status'], 'created_at' => $m['created_at'], 'sent_at' => $m['sent_at'], 'by' => $m['sender']];
+        // delivery: האם הערוץ מדווח מסירה — בלעדיו המסך כותב "נשלח (אין אישור מסירה בערוץ הזה)"
+        $msgs[$m['request_id']][] = ['pid' => $m['pid'], 'channel' => $m['channel'], 'status' => $m['status'], 'created_at' => $m['created_at'], 'sent_at' => $m['sent_at'], 'by' => $m['sender'],
+            'direction' => $m['direction'], 'kind' => $m['kind'], 'reminder_no' => $m['reminder_no'] === null ? null : (int)$m['reminder_no'], 'skip_reason' => $m['skip_reason'],
+            'text' => $m['direction'] === 'in' || $m['kind'] === 'reminder' ? $m['body'] : null, 'delivery' => !empty($caps[$m['connection_id']]['delivery_reports'])];
     }
     foreach (apr_rows('SELECT s.*, r.pid AS req_pid FROM requirement_responses s JOIN requirements r ON r.id = s.requirement_id WHERE r.case_id = ? ORDER BY s.id DESC', [$c['id']]) as $s) {
         $resp[$s['request_id']][] = ['pid' => $s['pid'], 'requirement' => $s['req_pid'], 'kind' => $s['kind'], 'text' => $s['text'], 'created_at' => $s['created_at']];
@@ -368,7 +460,12 @@ function apr_case_requests(array $ctx, array $q): array
     return ['case' => ['pid' => $c['pid'], 'status' => $c['status']], 'can_send' => !empty($c['perms']['contact']) && $c['status'] !== 'closed',
         'days' => APR_REQUEST_DAYS, 'perms_default' => APR_REQUEST_PERMS, 'item_states' => APR_REQUEST_ITEM_STATES,
         'always_otp' => (bool)apr_val('SELECT portal_always_otp FROM offices WHERE id = ?', [$c['office_id']]),
-        'requests' => array_map(fn($r) => apr_request_out($r, $links[$r['id']] ?? [], $items[$r['id']] ?? [], $msgs[$r['id']] ?? [], $resp[$r['id']] ?? []), $rows)];
+        // החיבורים שזמינים למשרד בערוצי שליחה: מושבת או שנכשל מוצג כך, והשליחה מציעה "העתקת קישור" (08-E2)
+        'connections' => array_values(array_map(fn($k) => ['pid' => $k['pid'], 'channel' => $k['channel'], 'label' => $k['label'], 'status' => $k['status'], 'scope' => $k['scope']],
+            array_filter($conns, fn($k) => !empty(apr_conn_caps($k)['send'])))),
+        'unassigned_messages' => $msgs[''] ?? [],                // הודעות נכנסות ששויכו לתיק מהתור, בלי בקשה
+        'requests' => array_map(fn($r) => apr_request_out($r, $links[$r['id']] ?? [], $items[$r['id']] ?? [], $msgs[$r['id']] ?? [], $resp[$r['id']] ?? [])
+            + ['reminders' => isset($plans[$r['id']]) ? ['state' => $plans[$r['id']]['state'], 'stopped_reason' => $plans[$r['id']]['stopped_reason'], 'sent' => (int)$plans[$r['id']]['sent_count'], 'next_at' => $plans[$r['id']]['next_at']] : null], $rows)];
 }
 
 /** ללוח הראשי: בקשות שההודעה האחרונה שלהן נכשלה (או נתקעה כ-planned יותר מ-10 דקות) — בתיקים פתוחים שיש לי בהם contact. */
@@ -379,8 +476,14 @@ function apr_requests_failed(array $ctx): array
         JOIN cases c ON c.id = q.case_id
         WHERE (m.status = 'failed' OR (m.status = 'planned' AND m.created_at < ?)) AND q.status = 'active' AND c.status <> 'closed' AND q.case_id IN (SELECT c.id " . apr_my_cases_sql('contact') . ')
         ORDER BY m.id DESC LIMIT 100', [apr_iso(apr_time() - 600), $ctx['user']['id'], apr_office_id($ctx)]);
-    return ['failed' => array_map(fn($r) => ['request' => $r['pid'], 'party_name' => $r['party_name'], 'failed_at' => $r['failed_at'],
-        'case' => ['pid' => $r['case_pid'], 'number' => $r['number'], 'title' => $r['title']]], $rows)];
+    $out = fn($r) => ['request' => $r['pid'], 'party_name' => $r['party_name'], 'failed_at' => $r['failed_at'], 'case' => ['pid' => $r['case_pid'], 'number' => $r['number'], 'title' => $r['title']]];
+    // "לא ידוע אם נשלחו" (אפיון 08 §5): אין ניסיון חוזר אוטומטי — השמאי בודק, או שולח מחדש ביוזמתו. "קישור להעתקה" אינו נספר.
+    $unknown = apr_rows("SELECT q.pid, q.created_at, m.created_at AS failed_at, ct.name AS party_name, c.pid AS case_pid, c.number, c.title FROM requests q
+        JOIN messages m ON m.id = (SELECT MAX(id) FROM messages WHERE request_id = q.id AND direction = 'out') JOIN case_parties cp ON cp.id = q.party_id JOIN contacts ct ON ct.id = cp.contact_id
+        JOIN cases c ON c.id = q.case_id
+        WHERE m.status = 'unknown' AND m.channel <> 'link_copy' AND q.status = 'active' AND c.status <> 'closed' AND q.case_id IN (SELECT c.id " . apr_my_cases_sql('contact') . ')
+        ORDER BY m.id DESC LIMIT 100', [$ctx['user']['id'], apr_office_id($ctx)]);
+    return ['failed' => array_map($out, $rows), 'unknown' => array_map($out, $unknown), 'inbox' => apr_inbox_count($ctx)];
 }
 
 /** הגדרת משרד: "תמיד לדרוש קוד" בפורטל. */
