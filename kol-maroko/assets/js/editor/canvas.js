@@ -185,17 +185,28 @@
     }
     /** מחליף ב-DOM את הצמתים של אזור אחד. מחזיר false על כל אי-התאמה (לפני או אחרי השינוי) — ואז מרנדרים הכול. */
     sync(r) {
-      const d = this.m2d.get(r.parent), doc = this.doc;
+      const doc = this.doc;
+      if (r.attrs) {                                                        // תכונות בלבד: מעדכנים אותן על האלמנט הקיים
+        const e = this.m2d.get(r.node);
+        if (!e) return false;
+        for (const a of Array.from(e.attributes)) if (!r.node.attrs.some(x => x.name === a.name) && !(e.localName === 'link' && a.name === 'disabled')) e.removeAttribute(a.name);
+        try { for (const a of r.node.attrs) if (e.getAttribute(a.name) !== a.value) e.setAttribute(a.name, a.value); } catch (err) { return false; }   // שם תכונה שה-DOM אינו מקבל
+        if (e.attributes.length - (e.localName === 'link' && e.hasAttribute('disabled') ? 1 : 0) !== r.node.attrs.length) return false;
+        if (/^(link|style|base)$/.test(r.node.tag)) this.restyle();
+        this.mapErrors = [];
+        return true;
+      }
+      const d = this.m2d.get(r.parent);
       if (!d) return false;
       const host = d.localName === 'template' && d.content ? d.content : d;
       const list = Array.prototype.filter.call(host.childNodes, x => !(x.nodeType === 1 && x.hasAttribute(OWNED)));
-      if (list.length !== r.parent.nodes.length - r.newCount + r.oldCount) return false;
+      if (list.length !== r.total - r.newCount + r.oldCount) return false;   // r.total: מספר הילדים מיד אחרי האזור הזה (אזורים נוספים באותו הורה מוחלים אחריו)
       let html = r.html.replace(/\r\n?/g, '\n');
       if (r.whole && /^(pre|textarea|listing)$/.test(r.parent.tag) && html[0] === '\n') html = html.slice(1);
       const range = doc.createRange(); range.selectNodeContents(d.localName === 'template' ? doc.body : d);
       const frag = range.createContextualFragment(html), fresh = Array.from(frag.childNodes);
       if (fresh.length !== r.newCount) return false;
-      for (let i = 0; i < fresh.length; i++) { const x = r.parent.nodes[r.index + i], t = fresh[i].nodeType; if ((x.type === 'el') !== (t === 1) || (x.type === 'text') !== (t === 3) || (x.type === 'el' && fresh[i].localName !== x.node.tag)) return false; }
+      for (let i = 0; i < fresh.length; i++) { const x = r.nodes[i], t = fresh[i].nodeType; if ((x.type === 'el') !== (t === 1) || (x.type === 'text') !== (t === 3) || (x.type === 'el' && fresh[i].localName !== x.node.tag)) return false; }
       const ref = list[r.index + r.oldCount] || null;
       let links = /<link|<style|<base/i.test(r.html);
       for (let i = r.index; i < r.index + r.oldCount; i++) list[i].remove();
@@ -209,7 +220,7 @@
         if (dk.length !== n.kids.length) { bad = true; return; }
         for (let i = 0; i < dk.length; i++) go(n.kids[i], dk[i]);
       };
-      for (let i = 0; i < fresh.length; i++) if (fresh[i].nodeType === 1) go(r.parent.nodes[r.index + i].node, fresh[i]);
+      for (let i = 0; i < fresh.length; i++) if (fresh[i].nodeType === 1) go(r.nodes[i].node, fresh[i]);
       if (bad) return false;
       if (links) this.restyle();
       this.mapErrors = [];

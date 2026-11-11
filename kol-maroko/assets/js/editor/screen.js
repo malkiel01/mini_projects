@@ -166,7 +166,7 @@ const Editor = (() => {
     const c = S.canvas, n = c?.selected, chain = [];
     for (let x = n; x; x = x.parent) chain.unshift(x);
     el.crumbs.replaceChildren(...(chain.length ? chain.flatMap((x, i) => [i ? h('span', { class: 'ed-sep', 'aria-hidden': 'true' }, '›') : null,
-      h('button', { type: 'button', class: 'ed-crumb', 'aria-current': x === n ? 'true' : null, onclick: () => { c.select(x); c.reveal(x); } }, c.label(x))])
+      h('button', { type: 'button', class: 'ed-crumb', 'aria-current': x === n ? 'true' : null, onclick: () => { c.select(x); c.reveal(x); } }, c.label(x))]).filter(Boolean)
       : [h('span', { class: 'hint' }, S.file ? 'לוחצים על אלמנט בעמוד כדי לבחור אותו' : '')]));
     el.crumbs.scrollLeft = el.crumbs.dir === 'ltr' ? el.crumbs.scrollWidth : -el.crumbs.scrollWidth;
     el.del.disabled = !n || !canWrite(); el.code.disabled = !S.file;

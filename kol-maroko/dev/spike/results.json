@@ -1,9 +1,9 @@
 {
  "node": "v22.23.4",
  "chromium": "153.0.8010.12",
- "date": "2026-11-11T12:04:07.859Z",
+ "date": "2026-11-11T21:43:50.205Z",
  "harness": {
-  "startedAt": "2026-11-11T12:04:08.074Z",
+  "startedAt": "2026-11-11T21:43:50.297Z",
   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
   "k1": {
    "lexicon.html": {
@@ -90,14 +90,14 @@
       "bytesRemoved": 9,
       "bytesAdded": 44,
       "effect": true,
-      "ms": 27.7,
+      "ms": 15.1,
       "timing": {
-       "op": 0.2,
-       "reparse": 26.7,
-       "dom": 0.6,
+       "op": 0.1,
+       "reparse": 13.7,
+       "dom": 0.8,
        "map": 0,
-       "layout": 0.2,
-       "total": 27.7
+       "layout": 0.5,
+       "total": 15.1
       },
       "canvas": true,
       "undo": true,
@@ -123,14 +123,14 @@
       "bytesRemoved": 11,
       "bytesAdded": 12,
       "effect": true,
-      "ms": 8.1,
+      "ms": 8.7,
       "timing": {
-       "op": 0.3,
-       "reparse": 6.4,
-       "dom": 0.9,
+       "op": 0.2,
+       "reparse": 7.4,
+       "dom": 0.6,
        "map": 0,
        "layout": 0.5,
-       "total": 8.1
+       "total": 8.7
       },
       "canvas": true,
       "undo": true,
@@ -156,14 +156,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 14,
       "effect": true,
-      "ms": 388,
+      "ms": 6.3,
       "timing": {
-       "op": 0.2,
-       "reparse": 122.1,
-       "dom": 93.6,
+       "op": 0.1,
+       "reparse": 4,
+       "dom": 0.5,
        "map": 0,
-       "layout": 172.1,
-       "total": 388
+       "layout": 1.7,
+       "total": 6.3
       },
       "canvas": true,
       "undo": true,
@@ -189,14 +189,14 @@
       "bytesRemoved": 26,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 8.3,
+      "ms": 6.1,
       "timing": {
-       "op": 0.1,
-       "reparse": 7.3,
-       "dom": 0.5,
+       "op": 0,
+       "reparse": 5.2,
+       "dom": 0.4,
        "map": 0,
-       "layout": 0.4,
-       "total": 8.3
+       "layout": 0.5,
+       "total": 6.1
       },
       "canvas": true,
       "undo": true,
@@ -222,14 +222,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 12,
       "effect": true,
-      "ms": 12.3,
+      "ms": 8.4,
       "timing": {
-       "op": 0.3,
-       "reparse": 5.2,
-       "dom": 1.9,
+       "op": 0.4,
+       "reparse": 7.7,
+       "dom": 0.1,
        "map": 0,
-       "layout": 4.9,
-       "total": 12.3
+       "layout": 0.2,
+       "total": 8.4
       },
       "canvas": true,
       "undo": true,
@@ -255,14 +255,14 @@
       "bytesRemoved": 10,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 4.6,
+      "ms": 4.3,
       "timing": {
        "op": 0.1,
-       "reparse": 3.8,
-       "dom": 0.4,
+       "reparse": 3.9,
+       "dom": 0.1,
        "map": 0,
-       "layout": 0.3,
-       "total": 4.6
+       "layout": 0.2,
+       "total": 4.3
       },
       "canvas": true,
       "undo": true,
@@ -288,14 +288,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 20,
       "effect": true,
-      "ms": 8.9,
+      "ms": 5,
       "timing": {
        "op": 0,
-       "reparse": 8.2,
-       "dom": 0.6,
+       "reparse": 4.8,
+       "dom": 0.1,
        "map": 0,
        "layout": 0.1,
-       "total": 8.9
+       "total": 5
       },
       "canvas": true,
       "undo": true,
@@ -321,14 +321,14 @@
       "bytesRemoved": 3,
       "bytesAdded": 3,
       "effect": true,
-      "ms": 2.8,
+      "ms": 47.8,
       "timing": {
-       "op": 0.1,
-       "reparse": 1.6,
-       "dom": 0.4,
+       "op": 0,
+       "reparse": 1.9,
+       "dom": 45.4,
        "map": 0,
-       "layout": 0.7,
-       "total": 2.8
+       "layout": 0.5,
+       "total": 47.8
       },
       "canvas": true,
       "undo": true,
@@ -354,14 +354,14 @@
       "bytesRemoved": 1254,
       "bytesAdded": 1254,
       "effect": true,
-      "ms": 11.1,
+      "ms": 17.8,
       "timing": {
-       "op": 1,
-       "reparse": 2.4,
-       "dom": 2.1,
+       "op": 1.9,
+       "reparse": 3.9,
+       "dom": 3,
        "map": 0,
-       "layout": 5.6,
-       "total": 11.1
+       "layout": 9,
+       "total": 17.8
       },
       "canvas": true,
       "undo": true,
@@ -387,14 +387,14 @@
       "bytesRemoved": 1163,
       "bytesAdded": 1163,
       "effect": true,
-      "ms": 316.3,
+      "ms": 36,
       "timing": {
-       "op": 0.5,
-       "reparse": 9.5,
-       "dom": 3,
-       "map": 111.1,
-       "layout": 192.2,
-       "total": 316.3
+       "op": 2.4,
+       "reparse": 19.2,
+       "dom": 7.4,
+       "map": 0,
+       "layout": 7,
+       "total": 36
       },
       "canvas": true,
       "undo": true,
@@ -422,11 +422,11 @@
       "effect": true,
       "ms": 9.9,
       "timing": {
-       "op": 0.1,
+       "op": 0,
        "reparse": 8.9,
        "dom": 0.5,
        "map": 0,
-       "layout": 0.4,
+       "layout": 0.5,
        "total": 9.9
       },
       "canvas": true,
@@ -453,14 +453,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 118,
       "effect": true,
-      "ms": 17.1,
+      "ms": 25.6,
       "timing": {
-       "op": 0.3,
-       "reparse": 5.9,
-       "dom": 1.8,
+       "op": 0.4,
+       "reparse": 7.9,
+       "dom": 3.5,
        "map": 0,
-       "layout": 9.1,
-       "total": 17.1
+       "layout": 13.8,
+       "total": 25.6
       },
       "canvas": true,
       "undo": true,
@@ -486,14 +486,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 42,
       "effect": true,
-      "ms": 5.6,
+      "ms": 4.4,
       "timing": {
-       "op": 0.2,
-       "reparse": 4.8,
-       "dom": 0.5,
+       "op": 0.1,
+       "reparse": 4,
+       "dom": 0.2,
        "map": 0,
        "layout": 0.1,
-       "total": 5.6
+       "total": 4.4
       },
       "canvas": true,
       "undo": true,
@@ -519,14 +519,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 1135,
       "effect": true,
-      "ms": 18.4,
+      "ms": 34.6,
       "timing": {
        "op": 0.3,
-       "reparse": 7.4,
-       "dom": 2.1,
+       "reparse": 24,
+       "dom": 1.6,
        "map": 0,
-       "layout": 8.6,
-       "total": 18.4
+       "layout": 8.7,
+       "total": 34.6
       },
       "canvas": true,
       "undo": true,
@@ -552,14 +552,14 @@
       "bytesRemoved": 934,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 18.7,
+      "ms": 15.9,
       "timing": {
        "op": 0.4,
-       "reparse": 8.1,
-       "dom": 2.2,
+       "reparse": 5,
+       "dom": 1.5,
        "map": 0,
-       "layout": 8,
-       "total": 18.7
+       "layout": 9,
+       "total": 15.9
       },
       "canvas": true,
       "undo": true,
@@ -585,14 +585,14 @@
       "bytesRemoved": 97,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 4.3,
+      "ms": 4.8,
       "timing": {
-       "op": 0.1,
-       "reparse": 3.8,
+       "op": 0,
+       "reparse": 4.1,
        "dom": 0.3,
        "map": 0,
-       "layout": 0.1,
-       "total": 4.3
+       "layout": 0.4,
+       "total": 4.8
       },
       "canvas": true,
       "undo": true,
@@ -618,14 +618,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 25,
       "effect": true,
-      "ms": 6.7,
+      "ms": 12.4,
       "timing": {
        "op": 0.2,
-       "reparse": 5.5,
+       "reparse": 10.9,
        "dom": 0.5,
        "map": 0,
-       "layout": 0.5,
-       "total": 6.7
+       "layout": 0.8,
+       "total": 12.4
       },
       "canvas": true,
       "undo": true,
@@ -651,14 +651,14 @@
       "bytesRemoved": 4,
       "bytesAdded": 4,
       "effect": true,
-      "ms": 5.9,
+      "ms": 7,
       "timing": {
-       "op": 0.1,
-       "reparse": 1.6,
+       "op": 0.2,
+       "reparse": 1.8,
        "dom": 0.4,
        "map": 0,
-       "layout": 3.8,
-       "total": 5.9
+       "layout": 4.6,
+       "total": 7
       },
       "canvas": true,
       "undo": true,
@@ -683,14 +683,14 @@
       "bytesRemoved": 16,
       "bytesAdded": 3,
       "effect": true,
-      "ms": 21,
+      "ms": 21.4,
       "timing": {
        "op": 0.1,
-       "reparse": 1.1,
+       "reparse": 1.2,
        "dom": 0,
        "map": 0,
-       "layout": 19.8,
-       "total": 21
+       "layout": 20.1,
+       "total": 21.4
       },
       "canvas": true,
       "undo": true,
@@ -713,14 +713,14 @@
       "bytesRemoved": 4,
       "bytesAdded": 4,
       "effect": true,
-      "ms": 18.6,
+      "ms": 17.2,
       "timing": {
-       "op": 0,
-       "reparse": 1.4,
+       "op": 0.1,
+       "reparse": 0.9,
        "dom": 0,
        "map": 0,
-       "layout": 17.2,
-       "total": 18.6
+       "layout": 16.2,
+       "total": 17.2
       },
       "canvas": true,
       "undo": true,
@@ -743,14 +743,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 25,
       "effect": true,
-      "ms": 30.7,
+      "ms": 28.6,
       "timing": {
-       "op": 0,
-       "reparse": 0.8,
+       "op": 0.1,
+       "reparse": 0.7,
        "dom": 0,
        "map": 0,
-       "layout": 29.9,
-       "total": 30.7
+       "layout": 27.8,
+       "total": 28.6
       },
       "canvas": true,
       "undo": true,
@@ -773,14 +773,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 19,
       "effect": true,
-      "ms": 20.8,
+      "ms": 15,
       "timing": {
        "op": 0,
        "reparse": 0.7,
        "dom": 0,
        "map": 0,
-       "layout": 20.1,
-       "total": 20.8
+       "layout": 14.3,
+       "total": 15
       },
       "canvas": true,
       "undo": true,
@@ -803,14 +803,14 @@
       "bytesRemoved": 28,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 17.9,
+      "ms": 14.9,
       "timing": {
        "op": 0,
-       "reparse": 0.7,
+       "reparse": 0.6,
        "dom": 0,
        "map": 0,
-       "layout": 17.2,
-       "total": 17.9
+       "layout": 14.3,
+       "total": 14.9
       },
       "canvas": true,
       "undo": true,
@@ -833,14 +833,14 @@
       "bytesRemoved": 12,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 43.8,
+      "ms": 42.8,
       "timing": {
        "op": 0,
-       "reparse": 0.6,
+       "reparse": 0.8,
        "dom": 0,
        "map": 0,
-       "layout": 43.2,
-       "total": 43.8
+       "layout": 42,
+       "total": 42.8
       },
       "canvas": true,
       "undo": true,
@@ -863,14 +863,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 72,
       "effect": true,
-      "ms": 18.5,
+      "ms": 17,
       "timing": {
-       "op": 0.3,
-       "reparse": 0.7,
+       "op": 0.2,
+       "reparse": 0.6,
        "dom": 0,
        "map": 0,
-       "layout": 17.5,
-       "total": 18.5
+       "layout": 16.2,
+       "total": 17
       },
       "canvas": true,
       "undo": true,
@@ -893,14 +893,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 19,
       "effect": true,
-      "ms": 19.3,
+      "ms": 15.7,
       "timing": {
        "op": 0,
-       "reparse": 0.7,
+       "reparse": 0.6,
        "dom": 0,
        "map": 0,
-       "layout": 18.6,
-       "total": 19.3
+       "layout": 15.1,
+       "total": 15.7
       },
       "canvas": true,
       "undo": true,
@@ -923,14 +923,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 47,
       "effect": true,
-      "ms": 23.3,
+      "ms": 14.8,
       "timing": {
-       "op": 0.1,
-       "reparse": 0.8,
+       "op": 0,
+       "reparse": 0.6,
        "dom": 0,
        "map": 0,
-       "layout": 22.4,
-       "total": 23.3
+       "layout": 14.2,
+       "total": 14.8
       },
       "canvas": true,
       "undo": true,
@@ -953,14 +953,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 76,
       "effect": true,
-      "ms": 17.5,
+      "ms": 23.3,
       "timing": {
-       "op": 0.3,
-       "reparse": 0.8,
+       "op": 0.2,
+       "reparse": 2.2,
        "dom": 0,
        "map": 0,
-       "layout": 16.4,
-       "total": 17.5
+       "layout": 20.9,
+       "total": 23.3
       },
       "canvas": true,
       "undo": true,
@@ -983,14 +983,14 @@
       "bytesRemoved": 59,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 27.3,
+      "ms": 32.6,
       "timing": {
-       "op": 0,
-       "reparse": 0.7,
+       "op": 0.1,
+       "reparse": 0.6,
        "dom": 0,
        "map": 0,
-       "layout": 26.6,
-       "total": 27.3
+       "layout": 31.9,
+       "total": 32.6
       },
       "canvas": true,
       "undo": true,
@@ -1013,14 +1013,14 @@
       "bytesRemoved": 7,
       "bytesAdded": 7,
       "effect": true,
-      "ms": 42.7,
+      "ms": 36.9,
       "timing": {
        "op": 0,
-       "reparse": 0.6,
+       "reparse": 0.5,
        "dom": 0,
        "map": 0,
-       "layout": 42.1,
-       "total": 42.7
+       "layout": 36.4,
+       "total": 36.9
       },
       "canvas": true,
       "undo": true,
@@ -1052,14 +1052,14 @@
       "bytesRemoved": 17,
       "bytesAdded": 27,
       "effect": true,
-      "ms": 0.5,
+      "ms": 0.8,
       "timing": {
        "op": 0,
-       "reparse": 0.3,
+       "reparse": 0.5,
        "dom": 0.1,
        "map": 0,
-       "layout": 0.1,
-       "total": 0.5
+       "layout": 0.2,
+       "total": 0.8
       },
       "canvas": true,
       "undo": true,
@@ -1085,14 +1085,14 @@
       "bytesRemoved": 5,
       "bytesAdded": 22,
       "effect": true,
-      "ms": 0.9,
+      "ms": 0.2,
       "timing": {
        "op": 0.1,
        "reparse": 0.1,
-       "dom": 0.7,
+       "dom": 0,
        "map": 0,
        "layout": 0,
-       "total": 0.9
+       "total": 0.2
       },
       "canvas": true,
       "undo": true,
@@ -1118,14 +1118,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 14,
       "effect": true,
-      "ms": 0.7,
+      "ms": 0.2,
       "timing": {
-       "op": 0,
-       "reparse": 0.2,
-       "dom": 0.2,
+       "op": 0.1,
+       "reparse": 0,
+       "dom": 0,
        "map": 0,
-       "layout": 0.3,
-       "total": 0.7
+       "layout": 0.1,
+       "total": 0.2
       },
       "canvas": true,
       "undo": true,
@@ -1151,14 +1151,14 @@
       "bytesRemoved": 11,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 0.5,
+      "ms": 0.1,
       "timing": {
        "op": 0,
-       "reparse": 0.2,
-       "dom": 0.3,
+       "reparse": 0,
+       "dom": 0,
        "map": 0,
-       "layout": 0,
-       "total": 0.5
+       "layout": 0.1,
+       "total": 0.1
       },
       "canvas": true,
       "undo": true,
@@ -1184,14 +1184,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 5,
       "effect": true,
-      "ms": 0.7,
+      "ms": 0.3,
       "timing": {
-       "op": 0,
-       "reparse": 0.3,
-       "dom": 0.1,
+       "op": 0.1,
+       "reparse": 0.1,
+       "dom": 0,
        "map": 0,
-       "layout": 0.3,
-       "total": 0.7
+       "layout": 0.1,
+       "total": 0.3
       },
       "canvas": true,
       "undo": true,
@@ -1218,14 +1218,14 @@
       "bytesRemoved": 5,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 1.8,
+      "ms": 2.1,
       "timing": {
        "op": 0,
-       "reparse": 0.3,
+       "reparse": 0.4,
        "dom": 0,
-       "map": 0.6,
+       "map": 0.8,
        "layout": 0.9,
-       "total": 1.8
+       "total": 2.1
       },
       "canvas": true,
       "undo": true,
@@ -1251,14 +1251,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 17,
       "effect": true,
-      "ms": 0.5,
+      "ms": 0.2,
       "timing": {
-       "op": 0,
+       "op": 0.1,
        "reparse": 0.1,
-       "dom": 0.2,
+       "dom": 0,
        "map": 0,
-       "layout": 0.2,
-       "total": 0.5
+       "layout": 0,
+       "total": 0.2
       },
       "canvas": true,
       "undo": true,
@@ -1284,14 +1284,14 @@
       "bytesRemoved": 3,
       "bytesAdded": 3,
       "effect": true,
-      "ms": 0.4,
+      "ms": 0.3,
       "timing": {
-       "op": 0,
-       "reparse": 0.1,
-       "dom": 0.2,
+       "op": 0.2,
+       "reparse": 0,
+       "dom": 0,
        "map": 0,
        "layout": 0.1,
-       "total": 0.4
+       "total": 0.3
       },
       "canvas": true,
       "undo": true,
@@ -1317,14 +1317,14 @@
       "bytesRemoved": 78,
       "bytesAdded": 78,
       "effect": true,
-      "ms": 0.5,
+      "ms": 0.7,
       "timing": {
-       "op": 0,
+       "op": 0.1,
        "reparse": 0.2,
        "dom": 0.1,
        "map": 0,
-       "layout": 0.2,
-       "total": 0.5
+       "layout": 0.3,
+       "total": 0.7
       },
       "canvas": true,
       "undo": true,
@@ -1353,10 +1353,10 @@
       "ms": 0.5,
       "timing": {
        "op": 0,
-       "reparse": 0.2,
+       "reparse": 0.3,
        "dom": 0.1,
        "map": 0,
-       "layout": 0.2,
+       "layout": 0.1,
        "total": 0.5
       },
       "canvas": true,
@@ -1387,14 +1387,14 @@
       "bytesRemoved": 124,
       "bytesAdded": 134,
       "effect": true,
-      "ms": 1.5,
+      "ms": 1.9,
       "timing": {
-       "op": 0.2,
+       "op": 0,
        "reparse": 0.3,
-       "dom": 0.5,
+       "dom": 1.2,
        "map": 0,
-       "layout": 0.5,
-       "total": 1.5
+       "layout": 0.4,
+       "total": 1.9
       },
       "canvas": true,
       "undo": true,
@@ -1420,14 +1420,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 35,
       "effect": true,
-      "ms": 0.4,
+      "ms": 0.6,
       "timing": {
        "op": 0,
        "reparse": 0.1,
        "dom": 0.1,
        "map": 0,
-       "layout": 0.2,
-       "total": 0.4
+       "layout": 0.4,
+       "total": 0.6
       },
       "canvas": true,
       "undo": true,
@@ -1453,14 +1453,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 23,
       "effect": true,
-      "ms": 0.3,
+      "ms": 0.5,
       "timing": {
        "op": 0,
-       "reparse": 0,
+       "reparse": 0.2,
        "dom": 0.1,
        "map": 0,
        "layout": 0.2,
-       "total": 0.3
+       "total": 0.5
       },
       "canvas": true,
       "undo": true,
@@ -1486,14 +1486,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 43,
       "effect": true,
-      "ms": 0.5,
+      "ms": 0.6,
       "timing": {
        "op": 0,
        "reparse": 0.2,
-       "dom": 0,
+       "dom": 0.2,
        "map": 0,
-       "layout": 0.3,
-       "total": 0.5
+       "layout": 0.2,
+       "total": 0.6
       },
       "canvas": true,
       "undo": true,
@@ -1519,14 +1519,14 @@
       "bytesRemoved": 76,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 0.4,
+      "ms": 0.5,
       "timing": {
        "op": 0,
-       "reparse": 0.2,
-       "dom": 0,
+       "reparse": 0.1,
+       "dom": 0.1,
        "map": 0,
-       "layout": 0.2,
-       "total": 0.4
+       "layout": 0.3,
+       "total": 0.5
       },
       "canvas": true,
       "undo": true,
@@ -1552,14 +1552,14 @@
       "bytesRemoved": 32,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 0.2,
+      "ms": 0.4,
       "timing": {
-       "op": 0,
-       "reparse": 0.2,
-       "dom": 0,
+       "op": 0.1,
+       "reparse": 0.1,
+       "dom": 0.1,
        "map": 0,
-       "layout": 0,
-       "total": 0.2
+       "layout": 0.1,
+       "total": 0.4
       },
       "canvas": true,
       "undo": true,
@@ -1585,14 +1585,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 30,
       "effect": true,
-      "ms": 0.5,
+      "ms": 0.8,
       "timing": {
        "op": 0,
        "reparse": 0.2,
-       "dom": 0,
+       "dom": 0.2,
        "map": 0,
-       "layout": 0.3,
-       "total": 0.5
+       "layout": 0.4,
+       "total": 0.8
       },
       "canvas": true,
       "undo": true,
@@ -1621,8 +1621,8 @@
       "ms": 0.3,
       "timing": {
        "op": 0,
-       "reparse": 0.2,
-       "dom": 0.1,
+       "reparse": 0.1,
+       "dom": 0.2,
        "map": 0,
        "layout": 0,
        "total": 0.3
@@ -1650,14 +1650,14 @@
       "bytesRemoved": 4,
       "bytesAdded": 4,
       "effect": true,
-      "ms": 1,
+      "ms": 1.1,
       "timing": {
        "op": 0,
        "reparse": 0.2,
        "dom": 0,
        "map": 0,
-       "layout": 0.8,
-       "total": 1
+       "layout": 0.9,
+       "total": 1.1
       },
       "canvas": true,
       "undo": true,
@@ -1680,14 +1680,14 @@
       "bytesRemoved": 3,
       "bytesAdded": 3,
       "effect": true,
-      "ms": 1.6,
+      "ms": 2.1,
       "timing": {
        "op": 0,
-       "reparse": 0.2,
+       "reparse": 0.1,
        "dom": 0,
        "map": 0,
-       "layout": 1.4,
-       "total": 1.6
+       "layout": 2,
+       "total": 2.1
       },
       "canvas": true,
       "undo": true,
@@ -1710,14 +1710,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 14,
       "effect": true,
-      "ms": 0.8,
+      "ms": 1,
       "timing": {
        "op": 0,
-       "reparse": 0.1,
+       "reparse": 0.3,
        "dom": 0,
        "map": 0,
        "layout": 0.7,
-       "total": 0.8
+       "total": 1
       },
       "canvas": true,
       "undo": true,
@@ -1740,14 +1740,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 10,
       "effect": true,
-      "ms": 0.9,
+      "ms": 1,
       "timing": {
        "op": 0,
        "reparse": 0.2,
        "dom": 0,
        "map": 0,
-       "layout": 0.7,
-       "total": 0.9
+       "layout": 0.8,
+       "total": 1
       },
       "canvas": true,
       "undo": true,
@@ -1770,14 +1770,14 @@
       "bytesRemoved": 39,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 3.3,
+      "ms": 5.3,
       "timing": {
        "op": 0,
-       "reparse": 0.3,
+       "reparse": 0.1,
        "dom": 0,
        "map": 0,
-       "layout": 3,
-       "total": 3.3
+       "layout": 5.2,
+       "total": 5.3
       },
       "canvas": true,
       "undo": true,
@@ -1805,14 +1805,14 @@
       "bytesRemoved": 17,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 1,
+      "ms": 1.4,
       "timing": {
-       "op": 0.1,
-       "reparse": 0.1,
+       "op": 0,
+       "reparse": 0.4,
        "dom": 0,
        "map": 0,
-       "layout": 0.8,
-       "total": 1
+       "layout": 1,
+       "total": 1.4
       },
       "canvas": true,
       "undo": true,
@@ -1865,14 +1865,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 11,
       "effect": true,
-      "ms": 0.9,
+      "ms": 0.8,
       "timing": {
        "op": 0,
-       "reparse": 0.3,
+       "reparse": 0.2,
        "dom": 0,
        "map": 0,
        "layout": 0.6,
-       "total": 0.9
+       "total": 0.8
       },
       "canvas": true,
       "undo": true,
@@ -1895,14 +1895,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 27,
       "effect": true,
-      "ms": 0.8,
+      "ms": 0.9,
       "timing": {
-       "op": 0,
+       "op": 0.1,
        "reparse": 0.1,
        "dom": 0,
        "map": 0,
        "layout": 0.7,
-       "total": 0.8
+       "total": 0.9
       },
       "canvas": true,
       "undo": true,
@@ -1925,14 +1925,14 @@
       "bytesRemoved": 0,
       "bytesAdded": 52,
       "effect": true,
-      "ms": 0.9,
+      "ms": 1,
       "timing": {
-       "op": 0,
+       "op": 0.1,
        "reparse": 0.1,
        "dom": 0,
        "map": 0,
        "layout": 0.8,
-       "total": 0.9
+       "total": 1
       },
       "canvas": true,
       "undo": true,
@@ -1955,14 +1955,14 @@
       "bytesRemoved": 26,
       "bytesAdded": 0,
       "effect": true,
-      "ms": 0.8,
+      "ms": 1.1,
       "timing": {
-       "op": 0,
+       "op": 0.1,
        "reparse": 0.1,
        "dom": 0,
        "map": 0,
-       "layout": 0.7,
-       "total": 0.8
+       "layout": 0.9,
+       "total": 1.1
       },
       "canvas": true,
       "undo": true,
@@ -1993,10 +1993,10 @@
       "ms": 1,
       "timing": {
        "op": 0,
-       "reparse": 0.1,
+       "reparse": 0.2,
        "dom": 0,
        "map": 0,
-       "layout": 0.9,
+       "layout": 0.8,
        "total": 1
       },
       "canvas": true,
@@ -2094,14 +2094,14 @@
      "bytesRemoved": 11,
      "bytesAdded": 10,
      "effect": true,
-     "ms": 1,
+     "ms": 1.4,
      "timing": {
       "op": 0,
-      "reparse": 0.2,
-      "dom": 0,
+      "reparse": 0.3,
+      "dom": 0.1,
       "map": 0.5,
-      "layout": 0.3,
-      "total": 1
+      "layout": 0.5,
+      "total": 1.4
      },
      "canvas": true,
      "undo": true,
@@ -2127,14 +2127,14 @@
      "bytesRemoved": 4,
      "bytesAdded": 8,
      "effect": true,
-     "ms": 0.9,
+     "ms": 1,
      "timing": {
-      "op": 0,
-      "reparse": 0.1,
+      "op": 0.1,
+      "reparse": 0.2,
       "dom": 0,
       "map": 0.4,
-      "layout": 0.4,
-      "total": 0.9
+      "layout": 0.3,
+      "total": 1
      },
      "canvas": true,
      "undo": true,
@@ -2160,14 +2160,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 11,
      "effect": true,
-     "ms": 0.7,
+     "ms": 1,
      "timing": {
       "op": 0,
       "reparse": 0.2,
       "dom": 0,
-      "map": 0.3,
-      "layout": 0.2,
-      "total": 0.7
+      "map": 0.5,
+      "layout": 0.3,
+      "total": 1
      },
      "canvas": true,
      "undo": true,
@@ -2193,14 +2193,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 10,
      "effect": true,
-     "ms": 0.8,
+     "ms": 1.1,
      "timing": {
       "op": 0.1,
-      "reparse": 0.1,
+      "reparse": 0.2,
       "dom": 0,
       "map": 0.4,
-      "layout": 0.2,
-      "total": 0.8
+      "layout": 0.4,
+      "total": 1.1
      },
      "canvas": true,
      "undo": true,
@@ -2226,14 +2226,14 @@
      "bytesRemoved": 11,
      "bytesAdded": 0,
      "effect": true,
-     "ms": 0.8,
+     "ms": 1.2,
      "timing": {
       "op": 0,
       "reparse": 0.2,
       "dom": 0,
-      "map": 0.3,
-      "layout": 0.3,
-      "total": 0.8
+      "map": 0.5,
+      "layout": 0.5,
+      "total": 1.2
      },
      "canvas": true,
      "undo": true,
@@ -2263,14 +2263,14 @@
      "bytesRemoved": 41,
      "bytesAdded": 41,
      "effect": true,
-     "ms": 0.9,
+     "ms": 1,
      "timing": {
       "op": 0.1,
-      "reparse": 0.1,
-      "dom": 0.1,
-      "map": 0.3,
+      "reparse": 0.2,
+      "dom": 0,
+      "map": 0.4,
       "layout": 0.3,
-      "total": 0.9
+      "total": 1
      },
      "canvas": true,
      "undo": true,
@@ -2296,14 +2296,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 39,
      "effect": true,
-     "ms": 0.9,
+     "ms": 0.8,
      "timing": {
       "op": 0,
-      "reparse": 0.3,
+      "reparse": 0.1,
       "dom": 0,
-      "map": 0.2,
+      "map": 0.3,
       "layout": 0.4,
-      "total": 0.9
+      "total": 0.8
      },
      "canvas": true,
      "undo": true,
@@ -2334,8 +2334,8 @@
       "op": 0,
       "reparse": 0.1,
       "dom": 0,
-      "map": 0.4,
-      "layout": 0.4,
+      "map": 0.3,
+      "layout": 0.5,
       "total": 0.9
      },
      "canvas": true,
@@ -2362,14 +2362,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 21,
      "effect": true,
-     "ms": 0.7,
+     "ms": 1.2,
      "timing": {
       "op": 0,
-      "reparse": 0.1,
+      "reparse": 0.2,
       "dom": 0,
-      "map": 0.3,
-      "layout": 0.3,
-      "total": 0.7
+      "map": 0.4,
+      "layout": 0.6,
+      "total": 1.2
      },
      "canvas": true,
      "undo": true,
@@ -2395,14 +2395,14 @@
      "bytesRemoved": 4,
      "bytesAdded": 4,
      "effect": true,
-     "ms": 0.7,
+     "ms": 1,
      "timing": {
       "op": 0,
       "reparse": 0.2,
       "dom": 0,
-      "map": 0.2,
-      "layout": 0.3,
-      "total": 0.7
+      "map": 0.4,
+      "layout": 0.4,
+      "total": 1
      },
      "canvas": true,
      "undo": true,
@@ -2428,14 +2428,14 @@
      "bytesRemoved": 9,
      "bytesAdded": 7,
      "effect": true,
-     "ms": 0.8,
+     "ms": 1,
      "timing": {
-      "op": 0,
+      "op": 0.1,
       "reparse": 0.2,
       "dom": 0,
       "map": 0.3,
-      "layout": 0.3,
-      "total": 0.8
+      "layout": 0.4,
+      "total": 1
      },
      "canvas": true,
      "undo": true,
@@ -2461,14 +2461,14 @@
      "bytesRemoved": 34,
      "bytesAdded": 0,
      "effect": true,
-     "ms": 0.7,
+     "ms": 0.9,
      "timing": {
       "op": 0,
-      "reparse": 0.1,
+      "reparse": 0.2,
       "dom": 0,
-      "map": 0.4,
-      "layout": 0.2,
-      "total": 0.7
+      "map": 0.3,
+      "layout": 0.4,
+      "total": 0.9
      },
      "canvas": true,
      "undo": true,
@@ -2494,14 +2494,14 @@
      "bytesRemoved": 63,
      "bytesAdded": 63,
      "effect": true,
-     "ms": 0.8,
+     "ms": 0.9,
      "timing": {
-      "op": 0,
+      "op": 0.1,
       "reparse": 0.1,
       "dom": 0,
-      "map": 0.5,
-      "layout": 0.2,
-      "total": 0.8
+      "map": 0.4,
+      "layout": 0.3,
+      "total": 0.9
      },
      "canvas": true,
      "undo": true,
@@ -2527,14 +2527,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 19,
      "effect": true,
-     "ms": 0.8,
+     "ms": 0.9,
      "timing": {
       "op": 0,
-      "reparse": 0.1,
+      "reparse": 0.2,
       "dom": 0,
       "map": 0.4,
       "layout": 0.3,
-      "total": 0.8
+      "total": 0.9
      },
      "canvas": true,
      "undo": true,
@@ -2587,14 +2587,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 12,
      "effect": true,
-     "ms": 0.5,
+     "ms": 0.6,
      "timing": {
-      "op": 0,
-      "reparse": 0.4,
+      "op": 0.1,
+      "reparse": 0.3,
       "dom": 0,
       "map": 0,
-      "layout": 0.1,
-      "total": 0.5
+      "layout": 0.2,
+      "total": 0.6
      },
      "canvas": true,
      "undo": true,
@@ -2616,14 +2616,14 @@
      "bytesRemoved": 15,
      "bytesAdded": 0,
      "effect": true,
-     "ms": 0.5,
+     "ms": 0.4,
      "timing": {
       "op": 0,
       "reparse": 0.3,
       "dom": 0,
       "map": 0,
-      "layout": 0.2,
-      "total": 0.5
+      "layout": 0.1,
+      "total": 0.4
      },
      "canvas": true,
      "undo": true,
@@ -2645,14 +2645,14 @@
      "bytesRemoved": 4,
      "bytesAdded": 4,
      "effect": true,
-     "ms": 0.4,
+     "ms": 0.7,
      "timing": {
-      "op": 0,
-      "reparse": 0.3,
+      "op": 0.1,
+      "reparse": 0.4,
       "dom": 0,
       "map": 0,
-      "layout": 0.1,
-      "total": 0.4
+      "layout": 0.2,
+      "total": 0.7
      },
      "canvas": true,
      "undo": true,
@@ -2674,14 +2674,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 24,
      "effect": true,
-     "ms": 0.7,
+     "ms": 0.6,
      "timing": {
-      "op": 0.2,
+      "op": 0,
       "reparse": 0.4,
       "dom": 0,
       "map": 0,
-      "layout": 0.1,
-      "total": 0.7
+      "layout": 0.2,
+      "total": 0.6
      },
      "canvas": true,
      "undo": true,
@@ -2703,14 +2703,14 @@
      "bytesRemoved": 0,
      "bytesAdded": 11,
      "effect": true,
-     "ms": 0.4,
+     "ms": 0.5,
      "timing": {
       "op": 0,
-      "reparse": 0.2,
+      "reparse": 0.4,
       "dom": 0,
       "map": 0,
-      "layout": 0.2,
-      "total": 0.4
+      "layout": 0.1,
+      "total": 0.5
      },
      "canvas": true,
      "undo": true,
@@ -2873,43 +2873,43 @@
    "elements": 23953,
    "load": {
     "runs": [
-     374.5,
-     413.2,
-     484.1,
-     417.4,
-     418.6
+     310.8,
+     350,
+     371.4,
+     385.8,
+     324
     ],
-    "medianMs": 417.4,
-    "parseHtmlMs": 130.9,
-    "parseCssMs": 0.7,
-    "renderMs": 56.9,
-    "mapMs": 34.5,
-    "layoutMs": 196.2
+    "medianMs": 350,
+    "parseHtmlMs": 102.3,
+    "parseCssMs": 0.6,
+    "renderMs": 51.5,
+    "mapMs": 34.3,
+    "layoutMs": 149
    },
    "opHtml": {
     "n": 18,
     "medianMs": 9.9,
-    "maxMs": 388,
-    "reparseMs": 6.4,
-    "domMs": 0.6,
+    "maxMs": 47.8,
+    "reparseMs": 5.2,
+    "domMs": 0.5,
     "mapMs": 0,
-    "layoutMs": 0.7,
+    "layoutMs": 0.5,
     "opMs": 0.2
    },
    "opCss": {
     "n": 12,
-    "medianMs": 21,
-    "maxMs": 43.8,
+    "medianMs": 21.4,
+    "maxMs": 42.8,
     "layoutMs": 20.1
    },
    "incrementalEstimate": {
-    "shiftAllRangesMs": 15.2,
+    "shiftAllRangesMs": 3.9,
     "nodes": 23953,
-    "parseOneCardMs": 2.9
+    "parseOneCardMs": 2.1
    },
    "loadPass": true,
    "opHtmlMedianPass": true,
-   "opPass": false
+   "opPass": true
   },
   "probes": [
    {
@@ -2925,14 +2925,14 @@
     "bytesRemoved": 22,
     "bytesAdded": 3,
     "effect": true,
-    "ms": 0.3,
+    "ms": 0.4,
     "timing": {
      "op": 0.1,
-     "reparse": 0.1,
+     "reparse": 0.2,
      "dom": 0,
      "map": 0,
      "layout": 0.1,
-     "total": 0.3
+     "total": 0.4
     },
     "canvas": true,
     "undo": true,
@@ -2963,14 +2963,14 @@
     "bytesRemoved": 4,
     "bytesAdded": 10,
     "effect": true,
-    "ms": 0.6,
+    "ms": 0.2,
     "timing": {
      "op": 0,
-     "reparse": 0.2,
-     "dom": 0.2,
+     "reparse": 0.1,
+     "dom": 0.1,
      "map": 0,
-     "layout": 0.2,
-     "total": 0.6
+     "layout": 0,
+     "total": 0.2
     },
     "canvas": true,
     "undo": true,
@@ -3001,14 +3001,14 @@
     "bytesRemoved": 6,
     "bytesAdded": 0,
     "effect": true,
-    "ms": 0.6,
+    "ms": 0.2,
     "timing": {
-     "op": 0.1,
-     "reparse": 0.2,
-     "dom": 0.2,
+     "op": 0,
+     "reparse": 0.1,
+     "dom": 0.1,
      "map": 0,
-     "layout": 0.1,
-     "total": 0.6
+     "layout": 0,
+     "total": 0.2
     },
     "canvas": true,
     "undo": true,
@@ -3043,9 +3043,9 @@
     "timing": {
      "op": 0,
      "reparse": 0.2,
-     "dom": 0.3,
+     "dom": 0.1,
      "map": 0,
-     "layout": 0.1,
+     "layout": 0.3,
      "total": 0.6
     },
     "canvas": true,
@@ -3073,14 +3073,14 @@
     "bytesRemoved": 0,
     "bytesAdded": 29,
     "effect": true,
-    "ms": 0.6,
+    "ms": 0.7,
     "timing": {
      "op": 0,
      "reparse": 0.2,
-     "dom": 0.1,
+     "dom": 0.3,
      "map": 0,
-     "layout": 0.3,
-     "total": 0.6
+     "layout": 0.2,
+     "total": 0.7
     },
     "canvas": true,
     "undo": true,
@@ -3107,14 +3107,14 @@
     "bytesRemoved": 32,
     "bytesAdded": 35,
     "effect": true,
-    "ms": 0.6,
+    "ms": 0.8,
     "timing": {
-     "op": 0,
+     "op": 0.1,
      "reparse": 0.2,
-     "dom": 0.1,
+     "dom": 0.2,
      "map": 0,
      "layout": 0.3,
-     "total": 0.6
+     "total": 0.8
     },
     "canvas": true,
     "undo": true,
@@ -3140,14 +3140,14 @@
     "bytesRemoved": 20,
     "bytesAdded": 0,
     "effect": true,
-    "ms": 1,
+    "ms": 1.4,
     "timing": {
-     "op": 0,
+     "op": 0.1,
      "reparse": 0.2,
      "dom": 0,
      "map": 0,
-     "layout": 0.8,
-     "total": 1
+     "layout": 1.1,
+     "total": 1.4
     },
     "canvas": true,
     "undo": true,
@@ -3176,14 +3176,14 @@
     "bytesRemoved": 28,
     "bytesAdded": 27,
     "effect": true,
-    "ms": 1.3,
+    "ms": 1.9,
     "timing": {
-     "op": 0.1,
-     "reparse": 0.1,
+     "op": 0,
+     "reparse": 0.2,
      "dom": 0,
      "map": 0,
-     "layout": 1.1,
-     "total": 1.3
+     "layout": 1.7,
+     "total": 1.9
     },
     "canvas": true,
     "undo": true,
@@ -3208,14 +3208,14 @@
     "bytesRemoved": 1306,
     "bytesAdded": 0,
     "effect": true,
-    "ms": 15.5,
+    "ms": 24.8,
     "timing": {
-     "op": 4.7,
-     "reparse": 5.3,
-     "dom": 1.8,
+     "op": 6.8,
+     "reparse": 6.8,
+     "dom": 3,
      "map": 0,
-     "layout": 3.7,
-     "total": 15.5
+     "layout": 8.2,
+     "total": 24.8
     },
     "canvas": true,
     "undo": true,
@@ -3243,14 +3243,14 @@
     "bytesRemoved": 0,
     "bytesAdded": 32,
     "effect": true,
-    "ms": 502.6,
+    "ms": 621.1,
     "timing": {
      "op": 0,
-     "reparse": 219,
+     "reparse": 353.1,
      "dom": 0,
-     "map": 100.2,
-     "layout": 183.4,
-     "total": 502.6
+     "map": 114.4,
+     "layout": 153.6,
+     "total": 621.1
     },
     "canvas": true,
     "undo": true,
@@ -3283,14 +3283,14 @@
      "applied": 200,
      "rejected": 54,
      "broke": 13,
-     "inc": 177,
-     "full": 23,
+     "inc": 179,
+     "full": 21,
      "inequivalent": 0,
      "firstDiff": null,
      "fullWhy": {
-      "שינוי בכל תוכן ה-body": 5,
+      "שינוי בכל תוכן ה-body": 4,
       "שרשרת האבות לא שוחזרה ב-<p>": 2,
-      "אין מכל סגור סביב התיקון": 4,
+      "אין מכל סגור סביב התיקון": 3,
       "שרשרת האבות לא שוחזרה ב-<table>": 5,
       "הקינון בקטע אינו תואם לטקסט": 3,
       "הקטע פרץ את גבולות המכל": 2,
@@ -3312,7 +3312,7 @@
      },
      "maxElements": 89,
      "medianMs": 0.4,
-     "maxMs": 10.7,
+     "maxMs": 16.6,
      "domChecks": 9,
      "domOk": true,
      "pass": true
@@ -3348,8 +3348,8 @@
       "setText": 8
      },
      "maxElements": 23997,
-     "medianMs": 10.7,
-     "maxMs": 507,
+     "medianMs": 11,
+     "maxMs": 522.4,
      "domChecks": 9,
      "domOk": true,
      "pass": true
@@ -3357,7 +3357,7 @@
    },
    "pass": true
   },
-  "finishedAt": "2026-11-11T12:05:18.133Z"
+  "finishedAt": "2026-11-11T21:44:55.772Z"
  },
  "k5": {
   "engine": "Chromium 153.0.8010.12 (headless)",
@@ -3448,92 +3448,92 @@
  },
  "k6": {
   "desktop": {
-   "loadMedianMs": 440.3,
+   "loadMedianMs": 426.9,
    "ops": [
     {
      "name": "הזזת כרטיס",
-     "totalMs": 17.2,
-     "reparseMs": 6.7,
-     "domMs": 2.5,
+     "totalMs": 16.5,
+     "reparseMs": 6.4,
+     "domMs": 2.4,
+     "mapMs": 0,
+     "layoutMs": 5.1
+    },
+    {
+     "name": "שינוי תכונה",
+     "totalMs": 7.1,
+     "reparseMs": 5.3,
+     "domMs": 0.1,
+     "mapMs": 0,
+     "layoutMs": 0.1
+    },
+    {
+     "name": "שינוי טקסט",
+     "totalMs": 12.3,
+     "reparseMs": 5.3,
+     "domMs": 0.2,
      "mapMs": 0,
      "layoutMs": 5.2
     },
     {
-     "name": "שינוי תכונה",
-     "totalMs": 17.6,
-     "reparseMs": 7.8,
-     "domMs": 2.6,
-     "mapMs": 0,
-     "layoutMs": 5
-    },
-    {
-     "name": "שינוי טקסט",
-     "totalMs": 14.9,
-     "reparseMs": 6.9,
-     "domMs": 0.2,
-     "mapMs": 0,
-     "layoutMs": 5.3
-    },
-    {
      "name": "מחיקת כרטיס",
-     "totalMs": 15.2,
-     "reparseMs": 5.1,
+     "totalMs": 18.1,
+     "reparseMs": 6,
      "domMs": 2,
      "mapMs": 0,
-     "layoutMs": 6.5
+     "layoutMs": 8.5
     },
     {
      "name": "שינוי CSS",
-     "totalMs": 77,
-     "reparseMs": 1.3,
+     "totalMs": 104.2,
+     "reparseMs": 0.7,
      "domMs": 0,
      "mapMs": 0,
-     "layoutMs": 75.5
+     "layoutMs": 103.3
     }
    ]
   },
   "cpu4x": {
-   "loadMedianMs": 1816.8,
+   "loadMedianMs": 1968.7,
    "ops": [
     {
      "name": "הזזת כרטיס",
-     "totalMs": 75.5,
-     "reparseMs": 27.2,
-     "domMs": 10.8,
+     "totalMs": 98.1,
+     "reparseMs": 33.1,
+     "domMs": 12.7,
      "mapMs": 0,
-     "layoutMs": 24.4
+     "layoutMs": 37.3
     },
     {
      "name": "שינוי תכונה",
-     "totalMs": 67.7,
-     "reparseMs": 23.4,
-     "domMs": 8.8,
+     "totalMs": 29.9,
+     "reparseMs": 20.2,
+     "domMs": 0.8,
      "mapMs": 0,
-     "layoutMs": 26.4
+     "layoutMs": 0.1
     },
     {
      "name": "שינוי טקסט",
-     "totalMs": 47.4,
-     "reparseMs": 23.8,
+     "totalMs": 53,
+     "reparseMs": 20.7,
      "domMs": 0.8,
      "mapMs": 0,
-     "layoutMs": 15.8
+     "layoutMs": 23.2
     },
     {
      "name": "מחיקת כרטיס",
-     "totalMs": 67.6,
-     "reparseMs": 21.4,
-     "domMs": 8,
+     "totalMs": 72.7,
+     "reparseMs": 20.3,
+     "domMs": 10.5,
      "mapMs": 0,
-     "layoutMs": 30.4
+     "layoutMs": 34.1
     },
     {
      "name": "שינוי CSS",
-     "totalMs": 321.9,
-     "reparseMs": 3.1,
+     "totalMs": 339.7,
+     "reparseMs": 3.2,
      "domMs": 0,
      "mapMs": 0,
-     "layoutMs": 317.9
+     "layoutMs": 336.4
     }
    ]
   }
@@ -3548,15 +3548,15 @@
   "ours": [
    {
     "file": "assets/js/editor/model.js",
-    "bytes": 47934,
-    "gzip": 14481,
-    "brotli": 12738
+    "bytes": 51870,
+    "gzip": 15327,
+    "brotli": 13409
    },
    {
     "file": "assets/js/editor/canvas.js",
-    "bytes": 27207,
-    "gzip": 8911,
-    "brotli": 7811
+    "bytes": 28176,
+    "gzip": 9158,
+    "brotli": 8033
    }
   ],
   "limitGzip": 409600,
@@ -3571,12 +3571,12 @@
   "K5_chromium": true,
   "K5_other_browsers": "לא נבדק — בסביבה מותקן Chromium בלבד",
   "K6_load": true,
-  "K6_op": false,
+  "K6_op": true,
   "K7": true,
   "V1_equiv_60_ops": true,
   "V1_equiv_random_200": true,
   "V1_op_html_median_ms": 9.9,
-  "V1_op_html_max_ms": 388,
+  "V1_op_html_max_ms": 47.8,
   "V1_op_html_median_le_100": true
  }
 }

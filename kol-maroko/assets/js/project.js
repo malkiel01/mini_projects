@@ -600,7 +600,8 @@ const Project = (() => {
     if (S.editor && line > 0) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); }
     const m = S.docs.get(f.id)?.model;
     if (S.editor && m && range) {
-      for (let i = 0; i < 20 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+      for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+      if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
       const a = m.getPositionAt(range.from), b = m.getPositionAt(range.to), sel = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
       S.editor.setSelection(sel); S.editor.revealRangeInCenterIfOutsideViewport(sel); S.editor.focus();
     }

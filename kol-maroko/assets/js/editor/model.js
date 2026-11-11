@@ -91,14 +91,18 @@
       const st = loc.startTag || loc;
       n.st = [st.startOffset + off, st.endOffset + off];
       if (loc.endTag) n.et = [loc.endTag.startOffset + off, loc.endTag.endOffset + off];
-      const al = loc.attrs || st.attrs || {};
-      for (const a of p5.attrs) {
-        const name = a.prefix ? a.prefix + ':' + a.name : a.name, l = al[name] || al[name.toLowerCase()] || al[a.name];   // parse5 מתקן אותיות ב-SVG (viewBox)
-        n.attrs.push({ name, value: a.value, from: l ? l.startOffset + off : -1, to: l ? l.endOffset + off : -1 });
-      }
+      n.attrs = attrsOf(p5, off);
     } else for (const a of p5.attrs) n.attrs.push({ name: a.name, value: a.value, from: -1, to: -1 });
     for (const c of p5kids(p5)) pushChild(m, n, c, off);
     return n;
+  }
+  function attrsOf(p5, off) {
+    const loc = p5.sourceCodeLocation, st = loc.startTag || loc, al = loc.attrs || st.attrs || {}, out = [];
+    for (const a of p5.attrs) {
+      const name = a.prefix ? a.prefix + ':' + a.name : a.name, l = al[name] || al[name.toLowerCase()] || al[a.name];   // parse5 מתקן אותיות ב-SVG (viewBox)
+      out.push({ name, value: a.value, from: l ? l.startOffset + off : -1, to: l ? l.endOffset + off : -1 });
+    }
+    return out;
   }
   const p5kids = p5 => (p5.tagName === 'template' && p5.content ? p5.content.childNodes : p5.childNodes) || [];
   function pushChild(m, n, c, off) {
@@ -486,13 +490,70 @@
     const regions = [];
     try {
       for (let c = clusters.length - 1; c >= 0; c--) {                      // מהסוף להתחלה: המיקומים שלפני נשארים תקפים
-        const r = updateRegion(m, clusters[c], false);
+        const r = updateAttrs(m, clusters[c]) || updateRegion(m, clusters[c], false);
         if (typeof r === 'string') return full(r);
         regions.push(r);
       }
     } catch (e) { if (e instanceof SrcError) throw e; return full('חריגה: ' + (e && e.message || e)); }
     if (m.src !== next) return full('הטקסט אינו תואם');
     return { model: m, mode: 'inc', why: '', regions };
+  }
+  // הזזת טווחים ב-d תווים: צומת ותת-העץ שלו; וכל מה שבא אחרי המכל P בקובץ (סוף האבות, והאחים שאחריהם)
+  const shiftLoose = (x, d) => { for (const t of x.nodes) if (t.type !== 'el' && t.from >= 0) { t.from += d; t.to += d; } };
+  const shiftEl = (n, d) => walk(n, x => {
+    if (!x.implied) { x.from += d; x.to += d; x.st[0] += d; x.st[1] += d; if (x.et) { x.et[0] += d; x.et[1] += d; } for (const t of x.attrs) if (t.from >= 0) { t.from += d; t.to += d; } }
+    shiftLoose(x, d);
+  });
+  const shiftEntry = (x, d) => { if (x.type === 'el') shiftEl(x.node, d); else if (x.from >= 0) { x.from += d; x.to += d; } };
+  function shiftTail(P, d) {
+    for (let n = P; n; n = n.parent) {
+      if (!n.implied) { n.to += d; if (n.et) { n.et[0] += d; n.et[1] += d; } }
+      if (n.parent) { const sib = n.parent.nodes; let at = sib.length; for (let i = 0; i < sib.length; i++) if (sib[i].type === 'el' && sib[i].node === n) { at = i; break; } for (let i = at + 1; i < sib.length; i++) shiftEntry(sib[i], d); }
+    }
+  }
+  const ATTR_SENSITIVE = new Set(['input', 'font', 'template', 'html', 'body', 'annotation-xml']);   // תכונה שלהם משנה את בניית העץ
+  /**
+   * מסלול מהיר: תיקון שכולו בתוך תגית פתיחה (תכונות). מנתחים רק את התגית, ומזיזים את מה שאחריה — בלי לנתח את התוכן
+   * (שיכול להיות כל הקובץ). מחזיר תיאור אזור, null כשהתיקון אינו כזה, או מחרוזת — סיבה לנפילה לניתוח מלא.
+   */
+  function updateAttrs(m, ps) {
+    const src = m.src, lo = ps[0].from, hi = ps[ps.length - 1].to;
+    let n = null;
+    const find = x => { for (const k of x.kids) { if (k.implied) { find(k); if (n) return; continue; } if (k.from <= lo && hi <= k.to) { if (k.st[0] < lo && hi < k.st[1]) n = k; else find(k); return; } } };
+    find({ kids: [m.root] });
+    if (!n || lo < n.st[0] + 1 + n.tag.length || ps.some(p => /[<>]/.test(p.text))) return null;
+    if (n.foreign || ATTR_SENSITIVE.has(n.tag)) return null;
+    for (let p = n.parent; p; p = p.parent) if (p.foreign) return null;
+    const chain = []; for (let x = n.parent; x; x = x.parent) chain.unshift(x);
+    let pre = m.doctypeText; const starts = [];
+    for (const x of chain) { starts.push(pre.length); pre += x.implied ? '<' + x.tag + '>' : src.slice(x.st[0], x.st[1]); }
+    const tag = applyPatches(src.slice(n.st[0], n.st[1]), ps.map(p => ({ from: p.from - n.st[0], to: p.to - n.st[0], text: p.text })));
+    let suf = n.et ? src.slice(n.et[0], n.et[1]) : ''; for (let i = chain.length - 1; i >= 0; i--) if (chain[i].et) suf += src.slice(chain[i].et[0], chain[i].et[1]);
+    const errs = [], off = n.st[0] - pre.length;
+    const doc = g.KolParsers.parseHtml(pre + tag + suf, { sourceCodeLocationInfo: true, scriptingEnabled: false, onParseError(e) { errs.push({ code: e.code, at: e.startOffset }); } });
+    const added = [];
+    for (const e of errs) { if (!BENIGN.has(e.code)) return 'שגיאת ניתוח בתגית: ' + e.code; if (e.at >= pre.length && e.at < pre.length + tag.length) added.push({ code: e.code, at: e.at + off }); }
+    let cur = { childNodes: doc.childNodes, tagName: '' };
+    for (let i = 0; i <= chain.length; i++) {
+      const want = i < chain.length ? chain[i].tag : n.tag, at = i < chain.length ? starts[i] : pre.length;
+      const hit = p5kids(cur).filter(c => c.nodeName !== '#documentType' && !(cur.tagName === 'html' && !c.sourceCodeLocation && (c.tagName === 'head' || c.tagName === 'body')));
+      if (hit.length !== 1 || hit[0].tagName !== want || !hit[0].sourceCodeLocation || hit[0].sourceCodeLocation.startOffset !== at) return 'שרשרת האבות לא שוחזרה ב-<' + want + '>';
+      cur = hit[0];
+    }
+    const cl = cur.sourceCodeLocation, st = cl.startTag || cl;
+    if (st.endOffset !== pre.length + tag.length || p5kids(cur).length || !!cl.endTag !== !!n.et) return 'התגית פרצה את גבולותיה';
+    const d = tag.length - (n.st[1] - n.st[0]), end = n.st[1];
+    n.attrs = attrsOf(cur, off);
+    if (d) {
+      n.st[1] += d;
+      for (const x of n.nodes) shiftEntry(x, d);
+      shiftTail(n, d);
+    }
+    const kept = []; for (const e of m.errors) { if (e.at >= n.st[0] && e.at < end) continue; if (e.at >= end) e.at += d; kept.push(e); }
+    m.errors = kept.concat(added).sort((x, y) => x.at - y.at);
+    m.src = src.slice(0, n.st[0]) + tag + src.slice(end);
+    if (tag.indexOf('\r\n') >= 0) m.nl = '\r\n';
+    return { attrs: true, node: n };
   }
   /** מחזיר תיאור אזור, או מחרוזת — הסיבה לנפילה לניתוח מלא. המודל אינו משתנה לפני שכל הבדיקות עברו. */
   function updateRegion(m, ps, forceAll) {
@@ -579,27 +640,13 @@
     P.nodes = nodes.slice(0, i0).concat(holder.nodes, after);
     P.kids = []; for (const x of P.nodes) if (x.type === 'el') P.kids.push(x.node);
     m.count += tmp.count - gone; m.located += tmp.located - goneLoc;
-    if (d) {
-      const shiftEl = n => walk(n, x => {
-        if (x.implied) { shiftLoose(x); return; }
-        x.from += d; x.to += d; x.st[0] += d; x.st[1] += d; if (x.et) { x.et[0] += d; x.et[1] += d; }
-        for (const t of x.attrs) if (t.from >= 0) { t.from += d; t.to += d; }
-        shiftLoose(x);
-      });
-      const shiftLoose = x => { for (const t of x.nodes) if (t.type !== 'el' && t.from >= 0) { t.from += d; t.to += d; } };
-      const shiftEntry = x => { if (x.type === 'el') shiftEl(x.node); else if (x.from >= 0) { x.from += d; x.to += d; } };
-      after.forEach(shiftEntry);
-      for (let n = P; n; n = n.parent) {
-        if (!n.implied) { n.to += d; if (n.et) { n.et[0] += d; n.et[1] += d; } }
-        if (n.parent) { const sib = n.parent.nodes; let at = sib.length; for (let i = 0; i < sib.length; i++) if (sib[i].type === 'el' && sib[i].node === n) { at = i; break; } for (let i = at + 1; i < sib.length; i++) shiftEntry(sib[i]); }
-      }
-    }
+    if (d) { after.forEach(x => shiftEntry(x, d)); shiftTail(P, d); }
     const kept = [];
     for (const e of m.errors) { if (e.at >= a && e.at < b) continue; if (e.at >= b) e.at += d; kept.push(e); }
     m.errors = kept.concat(added).sort((x, y) => x.at - y.at);
     m.src = src.slice(0, a) + patched + src.slice(b);
     m.nl = m.nl === '\r\n' && patched.indexOf('\r\n') < 0 ? (m.src.indexOf('\r\n') >= 0 ? '\r\n' : '\n') : (patched.indexOf('\r\n') >= 0 ? '\r\n' : m.nl);
-    return { parent: P, index: i0, oldCount, newCount: holder.nodes.length, html: patched, whole, removed, from: a, to: a + patched.length };
+    return { parent: P, index: i0, oldCount, newCount: holder.nodes.length, total: P.nodes.length, nodes: holder.nodes, html: patched, whole, removed, from: a, to: a + patched.length };
   }
   /** השוואה מלאה בין שני מודלים — אותם צמתים, אותם טווחים. מחזיר null כשזהים, אחרת תיאור ההבדל הראשון. */
   function sameModel(x, y) {
