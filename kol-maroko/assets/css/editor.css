@@ -127,3 +127,7 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed-menu-item { justify-content: flex-start; text-align: start; border: 1px solid var(--line); background: var(--surface); min-height: var(--tap); }
 .dev-stuck-box { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); padding: var(--s2) var(--s3); margin-bottom: var(--s2); }
 .dev-stuck-box ul { margin: var(--s2) 0 0; padding-inline-start: 1.2em; font-size: .85rem; }
+.ed-keys { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.ed-keys th, .ed-keys td { padding: 5px 4px; border-top: 1px solid var(--line); text-align: start; vertical-align: baseline; font-weight: 400; }
+.ed-keys kbd { font: .78rem ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+.ed :focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }

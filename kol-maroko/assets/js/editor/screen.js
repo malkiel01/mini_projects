@@ -295,6 +295,10 @@ const Editor = (() => {
     if (k === 'n' || k === 'N' || k === 'מ') return hit(() => { panel('nav', true); S.nav.list.focus(); });
     if (k === 's' || k === 'S' || k === 'ד') return hit(() => split());
     if (k === 'b' || k === 'B' || k === 'נ') return hit(() => pointing(!S.pointing));
+    if (k === '?' || (k === '/' && e.shiftKey)) return hit(help);
+    if (k === 'c' || k === 'C' || k === 'ב') return hit(() => openInCode());
+    if (k === '1' || k === '2' || k === '3') return hit(() => setDevice(DEVICES[+k - 1].id));
+    if (!c.selected && /^Arrow/.test(k)) return hit(() => { const b = c.m.root && (c.m.root.kids.find(x => x.tag === 'body') || c.m.root); if (b) { c.select(b); c.reveal(b); } });
     if (k === 'i' || k === 'I' || k === 'ן') return hit(() => { panel('info', true); el.infoBody.focus(); });
     if (k === 'Delete' || k === 'Backspace') return hit(remove);
     if (!c.selected) return;
@@ -304,6 +308,17 @@ const Editor = (() => {
     if (k === 'ArrowLeft' || k === 'ArrowRight') { const rtl = c.frame.contentWindow.getComputedStyle(c.doc.documentElement).direction === 'rtl'; return hit(() => c.step((k === 'ArrowLeft') === rtl ? 'next' : 'prev')); }
   }
   document.addEventListener('keydown', onKey);
+
+  const KEYS = [['חיצים ↑ ↓', 'ההורה / הילד הראשון (בלי בחירה — מתחילים מ-body)'], ['חיצים ← →', 'האח הקודם / הבא'], ['Esc', 'ההורה (או ביטול מצב ההצבעה)'],
+    ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y', 'בטל · החזר'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['I', 'פרטים'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
+    ['B', '🐞 לא הצלחתי לשנות את זה'], ['Shift+F10', 'תפריט ההקשר של האלמנט הנבחר'], ['1 · 2 · 3', 'רוחב הקנבס: מחשב · טאבלט · טלפון'], ['?', 'הרשימה הזו'],
+    ['ב-Navigator: ↑ ↓', 'השורה הקודמת / הבאה'], ['ב-Navigator: ← →', 'קיפול / פתיחה, ההורה / הילד'], ['ב-Navigator: H · L', '👁 הסתרה בעורך · 🔒 נעילה'], ['בעורך הקוד: Ctrl+Alt+E', 'בחר בעורך החזותי']];
+  function help() { sheet('קיצורי מקלדת', h('table', { class: 'ed-keys' }, h('tbody', {}, KEYS.map(([k, t]) => h('tr', {}, h('th', { scope: 'row', dir: 'ltr' }, h('kbd', {}, k)), h('td', {}, t)))))); }
+  function setDevice(id) {
+    S.device = id; prefs.device = id; keep();
+    for (const b of el.dev.children) b.setAttribute('aria-pressed', String(b.dataset.dev === id));
+    S.canvas?.setViewport(deviceWidth()); drawInfo();
+  }
 
   // ── ציור ──────────────────────────────────────────────────
   const deviceWidth = () => (DEVICES.find(d => d.id === S.device) || DEVICES[0]).width;
@@ -357,7 +372,7 @@ const Editor = (() => {
     el.del = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'מחיקת האלמנט הנבחר (Delete)', title: 'מחיקה (Delete)', disabled: true, onclick: remove }, '🗑️');
     el.code = h('button', { type: 'button', class: 'btn sm', title: 'פתח בקוד — הקובץ, על האלמנט הנבחר', disabled: true, onclick: () => openInCode() }, '</>', h('span', { class: 'ed-word' }, ' פתח בקוד'));
     el.dev = h('div', { class: 'ed-dev', role: 'group', 'aria-label': 'רוחב הקנבס' }, DEVICES.map(d => h('button', { type: 'button', 'data-dev': d.id, 'aria-pressed': String(d.id === S.device), 'aria-label': d.label + (d.width ? ' — ' + d.width + 'px' : ''), title: d.label + (d.width ? ' · ' + d.width + 'px' : ''),
-      class: d.wide ? 'wide' : '', onclick: () => { S.device = d.id; for (const b of el.dev.children) b.setAttribute('aria-pressed', String(b.dataset.dev === d.id)); S.canvas?.setViewport(deviceWidth()); } }, d.icon)));
+      class: d.wide ? 'wide' : '', onclick: () => setDevice(d.id) }, d.icon)));
     el.crumbs = h('nav', { class: 'ed-crumbs', dir: 'ltr', 'aria-label': 'שביל ניווט' });
     el.where = h('span', { class: 'ed-where' });
     el.cap = h('button', { type: 'button', class: 'ed-strip', hidden: true, onclick: () => { S.canvas.showAll(!S.canvas.capOff); drawAll(); } });
@@ -374,7 +389,7 @@ const Editor = (() => {
     el.point = h('div', { class: 'ed-strip ed-point', role: 'status', hidden: true });
     el.navBody = h('div', { class: 'ed-side-body nv' });
     el.infoBody = h('div', { class: 'ed-side-body dt', tabindex: '-1' });
-    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.bug, el.status);
+    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'פרטים — מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
       el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken, el.point,

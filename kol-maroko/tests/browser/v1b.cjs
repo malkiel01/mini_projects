@@ -339,8 +339,66 @@ const PAGE = `<!doctype html>
     ok(bigR.build < 300 && bigR.maxFrame < 50, `בלי תקיעה: בניית הרשימה ${bigR.build.toFixed(1)}ms, ציור בגלילה עד ${bigR.maxFrame.toFixed(1)}ms`);
     ok(bigR.lastRow.includes('ג') && bigR.selVisible, 'גלילה עד הסוף מציגה את השורה האחרונה; בחירה של צומת רחוק גוללת אליו');
 
+    // ── 4. מקלדת בלבד, ו-`?` ──
+    await openPage(page, 't/page.html');
+    await page.evaluate(() => { document.activeElement && document.activeElement.blur(); });
+    await page.keyboard.press('ArrowDown'); await sleep(60);
+    ok((await st(page)).sel === 'body', 'מקלדת: בלי בחירה, חץ בוחר את body');
+    await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowLeft'); await sleep(60);
+    ok((await st(page)).sel === 'h2.sub', 'מקלדת: חץ למטה — הילד הראשון; חץ — האח הבא (' + (await st(page)).sel + ')');
+    await page.keyboard.press('Shift+?'); await page.waitForSelector('#sheet[open] .ed-keys');
+    const keys = await page.$$eval('.ed-keys kbd', k => k.map(x => x.textContent));
+    ok(keys.length >= 15 && ['Delete', 'C', 'N', 'I', 'S', 'B', '?'].every(k => keys.includes(k)), '`?` מציג את רשימת הקיצורים (' + keys.length + ')');
+    await page.click('#sheet [data-close]');
+    await page.keyboard.press('2'); await sleep(80);
+    ok(await page.evaluate(() => Editor._state.device === 'tablet' && Editor._state.canvas.viewport === 820), 'מקלדת: 2 — רוחב טאבלט');
+    await page.keyboard.press('1');
+    await page.keyboard.press('i'); await sleep(60);
+    ok(await page.evaluate(() => document.querySelector('.ed').classList.contains('info-open') && document.activeElement === document.querySelector('.dt')), 'מקלדת: I — פאנל הפרטים, והמיקוד בו');
+    await page.keyboard.press('Tab');
+    ok(await page.evaluate(() => document.activeElement.classList.contains('dt-open')), 'Tab מגיע ל"פתח בקוד" שבפרטים (וממנו לכל הצהרה)');
+    await page.evaluate(() => document.activeElement.blur());
+    await page.keyboard.press('n'); await sleep(60);
+    ok(await page.evaluate(() => document.activeElement === document.querySelector('.nv-list') && !!document.querySelector('.nv-list').getAttribute('aria-activedescendant')), 'מקלדת: N — המיקוד בעץ, על השורה הנבחרת');
+    await page.evaluate(() => document.activeElement.blur());
+    await page.keyboard.press('c');
+    await page.waitForFunction(() => location.hash.startsWith('#/project') && Project._state.editor && Project._state.editor.getSelection() && !Project._state.editor.getSelection().isEmpty(), null, { timeout: 8000 }).then(() => ok(true, 'מקלדת: C — "פתח בקוד", והטווח של האלמנט מסומן'), () => ok(false, 'מקלדת: C — "פתח בקוד", והטווח של האלמנט מסומן'));
+    const allBtns = await (async () => { await openPage(page, 't/page.html'); return page.$$eval('.ed-bar button, .ed-bar select', b => b.filter(x => !(x.getAttribute('aria-label') || x.title || x.textContent.trim())).length); })();
+    ok(allBtns === 0, 'לכל כפתור בסרגל יש שם נגיש');
+
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף (1280px)' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
     await ctx.close();
+    // ── 5. טלפון (390px): הקנבס על כל המסך; Navigator ופרטים — גיליונות מלמטה; לשוניות במקום פיצול ──
+    const ctxM = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, extraHTTPHeaders: { 'X-Test-User': JSON.stringify(OWNER) } }), pm = await ctxM.newPage();
+    const errM = []; pm.on('pageerror', e => errM.push(e.message));
+    await pm.goto(base + '/#/project'); await pm.waitForSelector('.pj-tree .pj-row', { state: 'attached' });
+    await openPage(pm, 't/page.html');
+    const layM = await pm.evaluate(() => { const cv = document.querySelector('.ed-canvas').getBoundingClientRect(); return { scroll: document.documentElement.scrollWidth <= innerWidth, cvW: cv.width, cvH: cv.height, navHidden: getComputedStyle(document.querySelector('.ed-nav')).display === 'none', infoHidden: getComputedStyle(document.querySelector('.ed-info')).display === 'none', taps: [...document.querySelectorAll('.ed-bar button, .ed-bar select')].map(b => b.getBoundingClientRect()).every(r => r.height >= 34 && r.width >= 34 && r.right <= innerWidth + 1) }; });
+    ok(layM.scroll && layM.cvW > 350 && layM.cvH > 400 && layM.navHidden && layM.infoHidden && layM.taps, `390px: הקנבס על כל המסך (${Math.round(layM.cvW)}×${Math.round(layM.cvH)}), הפאנלים סגורים, וכל כפתורי הסרגל ניתנים להקשה`);
+    await pm.tap('[data-panel="nav"]'); await sleep(150);
+    const sheetM = await pm.evaluate(() => { const r = document.querySelector('.ed-nav').getBoundingClientRect(); return { fixed: getComputedStyle(document.querySelector('.ed-nav')).position === 'fixed', bottom: Math.abs(r.bottom - innerHeight) < 2, w: r.width, h: r.height, rows: document.querySelectorAll('.nv-row').length }; });
+    ok(sheetM.fixed && sheetM.bottom && sheetM.w === 390 && sheetM.h > 300 && sheetM.rows > 5, `390px: Navigator — גיליון מלמטה (${sheetM.w}×${Math.round(sheetM.h)}), עם שורות`);
+    await pm.tap('.nv-row:has-text("h2.sub") .nv-lab'); await sleep(150);
+    ok((await st(pm)).sel === 'h2.sub' && (await st(pm)).box, '390px: הקשה על שורה בגיליון בוחרת בקנבס');
+    await pm.tap('[data-panel="info"]'); await sleep(150);
+    ok(await pm.evaluate(() => getComputedStyle(document.querySelector('.ed-nav')).display === 'none' && getComputedStyle(document.querySelector('.ed-info')).position === 'fixed' && document.querySelector('.dt').textContent.includes('<h2>')), '390px: פרטים — גיליון מלמטה, במקום ה-Navigator (אחד בכל רגע)');
+    if (SHOTS) await pm.screenshot({ path: path.join(SHOTS, 'v1b-390-info.png') });
+    await pm.tap('.ed-info .ed-side-head button'); await sleep(100);
+    ok(await pm.evaluate(() => getComputedStyle(document.querySelector('.ed-info')).display === 'none'), '390px: ✕ סוגר את הגיליון');
+    await pm.tap('[data-split]'); await pm.waitForSelector('.ed-tabs [role="tab"]'); await sleep(200);
+    ok(await pm.evaluate(() => getComputedStyle(document.querySelector('.ed-tabs')).display !== 'none' && getComputedStyle(document.querySelector('.ed-code')).display === 'none' && getComputedStyle(document.querySelector('.ed-canvas')).display !== 'none'), '390px: מבט מפוצל = לשוניות; הקנבס מוצג');
+    await pm.tap('.ed-tabs [data-tab="code"]'); await pm.waitForSelector('.ed-code .monaco-editor .view-lines'); await sleep(300);
+    ok(await pm.evaluate(() => { const sp = Editor._state.code, r = sp && sp.selection(); return getComputedStyle(document.querySelector('.ed-canvas')).display === 'none' && document.querySelector('.ed-code').getBoundingClientRect().width > 350 && !!r && Editor._state.doc.text().slice(r.from, r.to) === '<h2 class="sub">משנה</h2>'; }), '390px: לשונית "קוד" — הקוד על כל הרוחב, והאלמנט הנבחר מסומן בו');
+    await pm.tap('.ed-tabs [data-tab="canvas"]'); await sleep(250);
+    ok(await pm.evaluate(() => getComputedStyle(document.querySelector('.ed-canvas')).display !== 'none' && !Editor._state.canvas.boxSel.hidden), '390px: חזרה ללשונית "קנבס" — הבחירה במקומה');
+    await pm.tap('[data-split]'); await sleep(100);
+    // 🐞 במגע, והדיווח כגיליון
+    await pm.tap('[data-bug]'); const ptM = await canvasPt(pm, '#t1'); await pm.touchscreen.tap(ptM.x, ptM.y);
+    await pm.waitForSelector('#sheet[open] .ed-shot img', { timeout: 15000 });
+    ok((await pm.textContent('.ed-report-info')).includes('רוחב הקנבס: 390px (טלפון)'), '390px: 🐞 במגע פותח דיווח, עם רוחב הקנבס 390px');
+    await pm.tap('#sheet [data-close]');
+    ok(errM.length === 0, 'אין שגיאות JavaScript בדף (390px)' + (errM.length ? ': ' + errM.slice(0, 3).join(' | ') : ''));
+    await ctxM.close();
   } catch (e) { failed++; console.log('❌ חריגה: ' + (e && e.stack || e) + (global.__errors && global.__errors.length ? '\n   שגיאות בדף: ' + global.__errors.slice(0, 3).join(' | ') : '')); }
   finally {
     if (browser) await browser.close();
