@@ -85,7 +85,7 @@ try {
     // גוף JSON, עד 1MB. צילום שמצורף למטלה (…-attach) מגיע כגוף גולמי — המודול קורא אותו בעצמו.
     $in = [];
     $upload = [];
-    if ($method === 'POST' && ($action === 'file-upload' || $action === 'source-file-upload' || $action === 'portal-upload')) {
+    if ($method === 'POST' && ($action === 'file-upload' || $action === 'source-file-upload' || $action === 'visit-photo-upload' || $action === 'portal-upload')) {
         // קובץ: הגוף הגולמי נשמר לקובץ זמני תחת data/tmp, עד הגודל המותר; הפרמטרים — בכתובת.
         // **הגוף נקרא רק אחרי אימות**: הנתב בודק זהות ו-CSRF, apr_file_upload בודק הרשאה בתיק ומכסה — ורק אז קורא לקורא הזה.
         // בפורטל (portal-upload) האימות הוא האסימון של הקישור, שמגיע בכותרת — אותו עיקרון: קודם אסימון, אחר כך גוף.

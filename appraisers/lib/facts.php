@@ -231,9 +231,15 @@ function apr_fact_source(array $ctx, array $c, mixed $src, ?string $fixedKind = 
         $out['source_locator'] = apr_clean_text($src['locator'] ?? null, 300);
     }
     // בדיקת מקור (09): source.ref הוא pid של בדיקה **בתיק הזה**, שיש בה ממצא — "לא אותר" ו"מקור לא זמין" אינם מקור לנתון.
-    // בדיקה של תיק אחר, בדיקה שלא קיימת ובדיקה בלי ממצא — אותה תשובה. ביקור (13) עוד אינו ישות.
+    // בדיקה של תיק אחר, בדיקה שלא קיימת ובדיקה בלי ממצא — אותה תשובה.
     if ($kind === 'source_check' && ($src['ref'] ?? null) !== null && $src['ref'] !== '') {
         if (!apr_is_pid($src['ref']) || !apr_val("SELECT 1 FROM source_checks WHERE pid = ? AND case_id = ? AND status IN ('found', 'partial', 'verified', 'needs_clarification')", [$src['ref'], $c['id']])) apr_fail('fact_source');
+        $out['source_ref_pid'] = $src['ref'];
+    }
+    // ביקור (13): source.ref הוא pid של ביקור **בתיק הזה** שהושלם. ביקור של תיק אחר, ביקור שלא קיים, ביקור שנדחה או שלא הייתה
+    // בו גישה — אותה תשובה: "נדחה" ו"לא הייתה גישה" אינם ביקור שבוצע, ולכן אינם מקור לנתון.
+    if ($kind === 'visit' && ($src['ref'] ?? null) !== null && $src['ref'] !== '') {
+        if (!apr_is_pid($src['ref']) || !apr_val("SELECT 1 FROM visits WHERE pid = ? AND case_id = ? AND status = 'completed'", [$src['ref'], $c['id']])) apr_fail('fact_source');
         $out['source_ref_pid'] = $src['ref'];
     }
     return $out;
@@ -249,6 +255,11 @@ function apr_fact_source_out(array $ctx, array $c, array $f): array
             && ($k = apr_row('SELECT k.pid, k.status, s.name FROM source_checks k JOIN sources s ON s.id = k.source_id WHERE k.pid = ? AND k.case_id = ?', [$f['source_ref_pid'], $c['id']]))) {
             // value_corrected: הערך תוקן אחרי שנרשם מהבדיקה — המסך אינו מציג "נבדק ואומת" לבדו על ערך שכבר אינו זה שנבדק
             $src += ['check' => $k['pid'], 'check_source' => $k['name'], 'check_status' => $k['status'], 'value_corrected' => $f['corrected_at'] !== null];
+        }
+        // נתון מביקור (13): הביקור נפתח מהנתון. visit_done = false כשהביקור נפתח מחדש — המסך אינו מציג אותו כביקור שהושלם
+        if ($f['source_kind'] === 'visit' && $f['source_ref_pid'] !== null
+            && ($v = apr_row('SELECT pid, seq, status FROM visits WHERE pid = ? AND case_id = ?', [$f['source_ref_pid'], $c['id']]))) {
+            $src += ['visit' => $v['pid'], 'visit_seq' => (int)$v['seq'], 'visit_status' => $v['status'], 'visit_done' => $v['status'] === 'completed', 'value_corrected' => $f['corrected_at'] !== null];
         }
         return $src + ['date' => $f['source_date'], 'note' => $f['source_note']];
     }

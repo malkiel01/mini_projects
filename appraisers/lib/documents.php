@@ -235,6 +235,7 @@ function apr_file_ingest(callable $case, array $who, array $q, array $env): arra
             apr_tx(fn() => apr_case_audit($c, 'file.rejected', 'file', $c['pid'], ['sha256' => $sha, 'size' => $size, 'why' => $e->why] + ($recipient ? ['channel' => 'portal'] : []), null, $actor[0], $actor[1]));
             throw $e;
         }
+        if (isset($who['mimes']) && !in_array($info['mime'], $who['mimes'], true)) apr_fail('photo_type');      // תמונות ביקור: תמונה בלבד
         [$ext] = APR_FILE_TYPES[$info['mime']];
         $stored = null;
         try {
@@ -264,6 +265,7 @@ function apr_file_ingest(callable $case, array $who, array $q, array $env): arra
                     'original_name' => $name, 'storage_key' => $stored, 'uploader_kind' => $who['kind'], 'uploader_id' => $uid, 'channel' => $who['channel'], 'source_note' => $note, 'doc_date' => $docDate,
                     'received_at' => apr_now(), 'scan_state' => $scan, 'pages' => $info['pages'], 'is_encrypted' => (int)$info['encrypted'], 'idempotency_key' => $key, 'request_id' => $who['request'] ?? null]);
                 $out = ['file' => $pid];
+                if (isset($who['after'])) ($who['after'])($id, $pid);         // ביקור (13): השורה ב-visit_photos, באותה טרנזקציה
                 $meta = ['mime' => $info['mime'], 'size' => $size] + ($recipient ? ['channel' => 'portal'] : []);
                 if ($r) {
                     [$out['link'], $out['version'], $out['relation']] = apr_req_link($c, $r, $id, $relation, $uid);
@@ -290,6 +292,7 @@ function apr_file_assign(array $ctx, array $in): array
     return apr_tx(function () use ($ctx, $c, $in, $relation) {
         apr_case_still_open($c);
         $f = apr_file_row($c, $in['file'] ?? null);
+        apr_visit_not_photo($f);                             // תמונת ביקור מנוהלת רק ממסך הביקור (13)
         $r = apr_req_row($c, $in['requirement'] ?? null);
         [$link, $ver, $rel] = apr_req_link($c, $r, (int)$f['id'], $relation, (int)$ctx['user']['id']);
         apr_case_audit($c, 'file.assign', 'file', $f['pid'], ['requirement' => $r['pid'], 'version' => $ver, 'relation' => $rel]);
@@ -314,6 +317,7 @@ function apr_file_update(array $ctx, array $in): array
     return apr_tx(function () use ($c, $in, $set, $tags) {
         apr_case_still_open($c);
         $f = apr_file_row($c, $in['file'] ?? null);
+        apr_visit_not_photo($f);                             // תמונת ביקור מנוהלת רק ממסך הביקור (13)
         if ($set) apr_exec('UPDATE files SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($set))) . ' WHERE id = ?', [...array_values($set), $f['id']]);
         if ($tags !== null) {
             apr_exec('DELETE FROM file_tags WHERE file_id = ?', [$f['id']]);
@@ -333,6 +337,7 @@ function apr_file_delete(array $ctx, array $in): array
     return apr_tx(function () use ($ctx, $c, $in, $reason) {
         apr_case_still_open($c);
         $f = apr_file_row($c, $in['file'] ?? null);
+        apr_visit_not_photo($f);                             // תמונת ביקור מנוהלת רק ממסך הביקור (13)
         $uid = (int)$ctx['user']['id'];
         if (apr_exec('UPDATE files SET deleted_at = ?, deleted_by = ?, delete_reason = ? WHERE id = ? AND deleted_at IS NULL', [apr_now(), $uid, $reason, $f['id']]) !== 1) apr_fail('not_found');
         $back = [];
@@ -518,7 +523,7 @@ function apr_case_docs(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
     $files = array_column(apr_rows('SELECT f.*, COALESCE(u.name, ct.name) AS uploader_name FROM files f LEFT JOIN users u ON u.id = f.uploader_id
-        LEFT JOIN requests q ON q.id = f.request_id LEFT JOIN case_parties cp ON cp.id = q.party_id LEFT JOIN contacts ct ON ct.id = cp.contact_id WHERE f.case_id = ? ORDER BY f.id', [$c['id']]), null, 'id');
+        LEFT JOIN requests q ON q.id = f.request_id LEFT JOIN case_parties cp ON cp.id = q.party_id LEFT JOIN contacts ct ON ct.id = cp.contact_id WHERE f.case_id = ? AND f.id NOT IN (SELECT file_id FROM visit_photos) ORDER BY f.id', [$c['id']]), null, 'id');   // תמונות ביקור — במסך הביקור בלבד (13)
     $tags = [];
     foreach (apr_rows('SELECT t.file_id, t.tag FROM file_tags t JOIN files f ON f.id = t.file_id WHERE f.case_id = ? ORDER BY t.tag', [$c['id']]) as $t) $tags[$t['file_id']][] = $t['tag'];
     $links = [];
@@ -554,6 +559,8 @@ function apr_case_docs(array $ctx, array $q): array
  */
 function apr_file_visible(array $ctx, array $c, array $f): bool
 {
+    // תמונת ביקור (13): לפי הרשאת השימוש שלה — private רק למבקר ולאחראי. גובר על כל דבר אחר.
+    if (($photo = apr_visit_file_rule($ctx, $c, $f)) !== null) return $photo;
     if (isset($GLOBALS['apr_file_visible'])) return (bool)$GLOBALS['apr_file_visible']($ctx, $c, $f);
     return !empty($c['perms']['view']);
 }
@@ -605,7 +612,7 @@ function apr_docs_search(array $ctx, array $q): array
     if (apr_is_pid($q['case'] ?? null)) { $only = ' AND c.pid = ?'; $args[] = $q['case']; }
     $out = [];
     foreach (apr_rows("SELECT f.pid, f.original_name, f.mime, f.received_at, c.pid AS case_pid, c.number, c.title FROM files f JOIN cases c ON c.id = f.case_id
-        WHERE f.deleted_at IS NULL AND f.case_id IN ($mine$only) AND (lower(f.original_name) LIKE ? ESCAPE '\\'
+        WHERE f.deleted_at IS NULL AND f.id NOT IN (SELECT file_id FROM visit_photos) AND f.case_id IN ($mine$only) AND (lower(f.original_name) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM file_tags t WHERE t.file_id = f.id AND lower(t.tag) LIKE ? ESCAPE '\\')) ORDER BY f.id DESC LIMIT 50", [...$args, $like, $like]) as $f) {
         $out[] = ['type' => 'file', 'case' => ['pid' => $f['case_pid'], 'number' => $f['number'], 'title' => $f['title']], 'file' => $f['pid'], 'title' => $f['original_name'],
             'kind' => APR_FILE_TYPES[$f['mime']][1] ?? 'other', 'at' => $f['received_at']];
