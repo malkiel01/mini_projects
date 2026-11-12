@@ -158,26 +158,10 @@ function pv_inject(string $html, string $src): string
     return $tag . $html;
 }
 
-/** data/words.json — נבנה מטבלת המילים ברגע הבקשה (עד N1: המילים כמו שהן). $app — כתובת האפליקציה, להקלטות שהועלו. */
+/** data/words.json — נבנה מטבלת המילים ברגע הבקשה. N1: הפונקציה האחת words_json (lib/lexicon.php). $app — כתובת האפליקציה, להקלטות שהועלו. */
 function pv_words(string $app): string
 {
-    $rows = words_rows();
-    $map = topic_slugs();
-    $topics = array_map(fn($t) => ['id' => $t['slug'], 'label' => $t['name']], topics_used($rows, $map));
-    $items = [];
-    foreach ($rows as $w) {
-        $a = (string)$w['audio'];
-        $item = [
-            'id' => $w['id'], 'word' => $w['word'], 'meaning' => $w['meaning'],
-            'topics' => array_map(fn($t) => topic_slug((string)$t, $map), $w['topics']),
-            'audio' => $a === '' ? '' : (file_id($a) ? $app . media_url($a) : $a),
-        ];
-        // המזהה באתר (למשוב) והמזהה מהאקסל — רק למילה שיש לה (F3: הכרטיס המוסב נקשר אליהם)
-        if (($w['wp_id'] ?? null) !== null) $item['wp_id'] = $w['wp_id'];
-        if ((string)($w['external_id'] ?? '') !== '') $item['external_id'] = $w['external_id'];
-        $items[] = $item;
-    }
-    return json_encode(['topics' => $topics, 'items' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    return words_json($app);
 }
 
 /** קובץ של הפרויקט לפי נתיב, או null. I5: רק מה שבפרויקט; pf_path דוחה כל טיפוס (.., \, נתיב מוחלט). */

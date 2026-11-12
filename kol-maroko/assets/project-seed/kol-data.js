@@ -5,7 +5,8 @@
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
  *
  *   data-kol-list="words"            המכל שבו מוצגת הרשימה. הילד <template> שלו הוא תבנית הפריט.
- *   data-kol-sort="word"             מיון: שם שדה, "-שדה" ליורד, או "manual" (סדר הקובץ).
+ *   data-kol-sort="word"             מיון: שם שדה, "-שדה" ליורד, או "manual" (סדר הקובץ = הסדר שנקבע בגרירה בטבלה).
+ *   data-kol-sort-lang="he"          השפה של המיון לפי א"ב (Intl.Collator): "he", "ar", "fr"… ברירת מחדל: he.
  *   data-kol-page="60"               כמה פריטים בכל טעינה. בלי התכונה — הכול מוצג.
  *   data-kol-text="meaning"          תוכן הטקסט של האלמנט ← השדה.   אפשר גם תבנית: "#{id}"
  *   data-kol-html="meaning"          כמו text, אבל כ-HTML.
@@ -211,13 +212,24 @@
     return (input && input.getAttribute('data-kol-search-fields')) || 'word';
   }
 
-  function sorted(items, how) {
+  var collators = {};
+  function collator(lang) {
+    lang = String(lang || 'he').trim() || 'he';
+    if (!collators[lang]) {
+      try { collators[lang] = new Intl.Collator(lang, { numeric: true, sensitivity: 'base' }); }
+      catch (e) { collators[lang] = new Intl.Collator('he', { numeric: true, sensitivity: 'base' }); }   // שפה לא תקינה — עברית
+    }
+    return collators[lang];
+  }
+
+  /** "manual" (או בלי התכונה) — סדר הקובץ כמו שהוא. אחרת — לפי שדה, עם Intl.Collator בשפה של data-kol-sort-lang. */
+  function sorted(items, how, lang) {
     if (!how || how === 'manual') return items;
     var down = how.charAt(0) === '-', field = down ? how.slice(1) : how;
-    var copy = items.slice();
+    var copy = items.slice(), col = collator(lang);
     copy.sort(function (a, b) {
       var x = a[field], y = b[field];
-      var order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x == null ? '' : x).localeCompare(String(y == null ? '' : y), 'he');
+      var order = typeof x === 'number' && typeof y === 'number' ? x - y : col.compare(String(x == null ? '' : x), String(y == null ? '' : y));
       return down ? -order : order;
     });
     return copy;
@@ -253,7 +265,7 @@
     var token = container.__kolToken = (container.__kolToken || 0) + 1;
     var page = parseInt(container.getAttribute('data-kol-page'), 10) || 0;
     if (page && !state.limit) state.limit = page;
-    var items = sorted(state.matched, container.getAttribute('data-kol-sort'));
+    var items = sorted(state.matched, container.getAttribute('data-kol-sort'), container.getAttribute('data-kol-sort-lang'));
     if (page) items = items.slice(0, state.limit);
     container.__kolShown = items.length;
 

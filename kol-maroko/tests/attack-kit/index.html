@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🛡️ ערכת ההתקפה — קול מרוקו 2.0</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<h1>🛡️ ערכת ההתקפה</h1>
+<p>חבילת בדיקה קבועה (פרוסה M2, H1–H15). היא מנסה, מתוך העמוד, לגעת באתר שמארח אותה — וכל שורה בטבלה צריכה להיות ✓.
+  מומלץ לפתוח כשאתם <b>מחוברים כמנהלים</b> בוורדפרס (H2, H3). צלמו את הטבלה וצרפו למטלה.</p>
+<p id="kit-sum">רץ…</p>
+<table id="kit-table"><tr><th></th><th>#</th><th>הניסיון</th><th>מה קרה</th></tr></table>
+<h2>בדיקות מבחוץ — ביד</h2>
+<ul>
+  <li><b>H5</b> — אחרי הטעינה: עמוד אחר של האתר נראה רגיל.</li>
+  <li><b>H6</b> — <a href="x.php">x.php</a>, <a href="x.phtml">x.phtml</a>, <a href="x.php.jpg">x.php.jpg</a>, <a href=".htaccess">.htaccess</a>,
+    <a href=".user.ini">.user.ini</a> — יורדים כטקסט, לא רצים (אין "RAN-42"). <a href="x.svg">x.svg</a> — במקור אטום.</li>
+  <li><b>H7</b> — <a href="../../wp-config.php">../../wp-config.php</a>, <a href="nope.html">נתיב שאינו בחבילה</a> — 404 (עמוד ה-404 של החבילה).</li>
+  <li><b>H11</b> — <a href="probe.html" target="_blank" rel="opener">probe.html בלשונית חדשה</a> — בכותרת הלשונית: "probe null".</li>
+  <li><b>H14</b> — כיבוי "העמוד החדש" בעמוד התוסף ← העמוד המקורי חוזר מיד; הדלקה ← הערכה חוזרת.</li>
+</ul>
+<script src="kit.js"></script>
+</body>
+</html>

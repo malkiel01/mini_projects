@@ -203,6 +203,7 @@ test('הרשאות: אורח 401; זר 403; עורך בונה ואינו שול�
 test('שליחה: תוסף 1.x ← "נדרש 2.0"; הגרסה נשמרת built, ושום דבר לא נשלח', function () {
     wp_site_ready();
     m1_wp_opt('kol_v2_mock', null);
+    m1_wp_opt('kol_wp_plugin_v1', true);            // M2: התוסף בריפו הוא 2.0 — "תוסף 1.x" הוא העותק הקפוא של 1.6.0
     $b = m1_build(U_PUBLISHER);
     $r = m1_post('build_send', ['id' => $b['id']], U_PUBLISHER);
     eq([409, 'plugin_v1'], [$r['status'], $r['json']['code'] ?? null], $r['body']);

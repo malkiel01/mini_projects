@@ -467,3 +467,16 @@ body.lib-playing .toast { bottom: calc(100px + env(safe-area-inset-bottom)); }
 .lf-set { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-block: var(--s2); }
 .lf-confirm ul { margin: 0; padding-inline-start: 1.2em; }
 .lib-measure { justify-self: start; }
+
+/* N1 — הסדר בטבלת המילים: ידית ⠿, בחירה, מקום; תצוגת "מה ישתנה" */
+.w-table .w-c-ord { position: sticky; inset-inline-start: 0; background: var(--surface); inline-size: 96px; min-inline-size: 96px; z-index: 1; }
+.w-table th.w-c-ord { background: var(--bg); z-index: 2; }
+.w-table .w-c-word { inset-inline-start: 96px; }
+.w-ord { display: flex; align-items: center; gap: 4px; }
+.w-grip { cursor: grab; color: var(--muted); padding: 4px 2px; user-select: none; font-size: 1.1rem; line-height: 1; }
+.w-place { min-inline-size: 36px; padding: 2px 4px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: .8rem; cursor: pointer; }
+.w-table tr.w-drop td { box-shadow: inset 0 2px 0 var(--accent, #a3322a); }
+.w-table tr.w-drop.w-drop-after td { box-shadow: inset 0 -2px 0 var(--accent, #a3322a); }
+.w-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.w-bulk[hidden] { display: none; }
+.pj-plan ul { margin: 4px 0; padding-inline-start: 18px; }
