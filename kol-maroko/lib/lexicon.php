@@ -141,7 +141,7 @@ function words_list(): array
         $w['audio_kind'] = $w['audio'] === '' ? '' : (!file_id($w['audio']) ? 'site' : (!$f ? 'missing' : (!empty($f['origin']) ? 'copy' : 'file')));
     }
     unset($w);
-    return ['words' => $rows, 'topics' => topics_used($rows, $map)];
+    return ['words' => $rows, 'topics' => topics_used($rows, $map), 'fields' => fields_public($rows)];
 }
 
 function word_input(array $b): array
@@ -165,13 +165,24 @@ function word_save(array $user, array $b): array
     $pdo = db();
     $id = (int)($b['id'] ?? 0);
     $json = json_encode($in['topics'], JSON_UNESCAPED_UNICODE);
+    // N2: ערכי השדות המותאמים — רק המפתחות שנשלחו משתנים; מילה חדשה מקבלת את ברירות המחדל
+    $cur = [];
     if ($id) {
-        $st = $pdo->prepare('UPDATE words SET word = ?, meaning = ?, topics = ?, audio = ?, external_id = ?, updated_at = ?, updated_by = ? WHERE id = ?');
-        $st->execute([$in['word'], $in['meaning'], $json, $in['audio'], $in['external_id'], now_iso(), $user['name'], $id]);
+        $st = $pdo->prepare('SELECT extra FROM words WHERE id = ?');
+        $st->execute([$id]);
+        $x = $st->fetchColumn();
+        if ($x === false) throw new ApiError('המילה לא נמצאה', 404);
+        $cur = json_decode((string)$x, true) ?: [];
+    }
+    $extra = word_extra_input(fields_all(), $b['extra'] ?? null, $cur, !$id, $in);
+    $ej = $extra ? json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '{}';
+    if ($id) {
+        $st = $pdo->prepare('UPDATE words SET word = ?, meaning = ?, topics = ?, audio = ?, external_id = ?, extra = ?, updated_at = ?, updated_by = ? WHERE id = ?');
+        $st->execute([$in['word'], $in['meaning'], $json, $in['audio'], $in['external_id'], $ej, now_iso(), $user['name'], $id]);
         if (!$st->rowCount()) throw new ApiError('המילה לא נמצאה', 404);
     } else {
-        $pdo->prepare('INSERT INTO words (word, meaning, topics, audio, external_id, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$in['word'], $in['meaning'], $json, $in['audio'], $in['external_id'], now_iso(), $user['name']]);
+        $pdo->prepare('INSERT INTO words (word, meaning, topics, audio, external_id, extra, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$in['word'], $in['meaning'], $json, $in['audio'], $in['external_id'], $ej, now_iso(), $user['name']]);
         $id = (int)$pdo->lastInsertId();
     }
     $map = topic_slugs();
@@ -182,6 +193,34 @@ function word_save(array $user, array $b): array
         foreach (words_list()['words'] as $w) if ($w['id'] === $id) return ['id' => $id, 'word' => $w];
     }
     return ['id' => $id] + words_list();
+}
+
+/**
+ * הערכים מהטבלה (עריכה בתא) ← extra: כל מפתח שנשלח נבדק לפי הסוג שלו (field_parse); null / '' — מוחק. מילה חדשה — ברירות
+ * המחדל לשדות שלא נשלחו. חובה — נבדק לכל שדה (גם מובנה). שגיאה — ApiError עם שם השדה.
+ */
+function word_extra_input(array $fields, mixed $sent, array $cur, bool $new, array $builtin): array
+{
+    $by = array_column(fields_custom($fields), null, 'key');
+    $out = array_intersect_key($cur, $by);                     // ערך של שדה שכבר אינו קיים — לא נשמר
+    if ($sent !== null) {
+        if (!is_array($sent) || ($sent && array_is_list($sent))) throw new ApiError('ערכי השדות חייבים להיות אובייקט');
+        foreach ($sent as $k => $v) {
+            $f = $by[$k] ?? throw new ApiError('שדה לא מוכר "' . mb_substr((string)$k, 0, 60) . '"');
+            [$val, $err, $warn] = field_parse($f, $v);
+            if ($err) throw new ApiError("{$f['label']}: $err");
+            if ($warn && in_array($f['type'], ['image', 'audio'], true)) throw new ApiError("{$f['label']}: הקובץ לא נמצא בספרייה");
+            if ($val === null) unset($out[$k]); else $out[$k] = $val;
+        }
+    }
+    if ($new) foreach ($by as $k => $f) if (!array_key_exists($k, $out) && $f['def'] !== null && !array_key_exists($k, (array)$sent)) $out[$k] = $f['def'];
+    foreach ($fields as $f) {
+        if (!$f['required']) continue;
+        $v = $f['col'] === null ? ($out[$f['key']] ?? null) : ($builtin[$f['col']] ?? null);
+        if ($v === null || $v === '' || $v === []) throw new ApiError("\"{$f['label']}\" הוא שדה חובה");
+    }
+    ksort($out);
+    return $out;
 }
 
 /** נושא: שינוי שם (גם איחוד — אם השם החדש כבר קיים) או הסרה מכל המילים. */
@@ -1449,4 +1488,211 @@ function topics_out(array $all, ?string $app, array $meta): array
         $out[] = $o;
     }
     return $out;
+}
+
+// ── N2: "מבנה המילה" — קריאה, עריכה, מחיקה לסל ───────────
+
+/** השדות לממשק: עם מספר המילים שיש להן ערך. */
+function fields_public(?array $rows = null): array
+{
+    $rows ??= words_rows();
+    $out = [];
+    foreach (fields_all() as $f) {
+        $n = 0;
+        foreach ($rows as $w) {
+            $v = $f['col'] === null ? ($w['extra'][$f['key']] ?? null) : $w[$f['col']];
+            if ($v !== null && $v !== '' && $v !== []) $n++;
+        }
+        $out[] = $f + ['filled' => $n, 'builtin' => $f['col'] !== null];
+    }
+    return $out;
+}
+
+function fields_state(array $user): array
+{
+    return ['fields' => fields_public(), 'types' => FIELD_TYPES, 'col_types' => FIELD_COL_TYPES, 'reserved' => FIELD_RESERVED,
+        'can_structure' => ROLE_RANK[$user['role'] ?? 'editor'] >= ROLE_RANK['publisher'], 'rev' => words_rev()];
+}
+
+/** הגדרת שדה מהבקשה ← ערכים לשורה (בלי המפתח). שגיאה — ApiError. $cur — השדה הקיים (עריכה). */
+function field_input(array $b, ?array $cur): array
+{
+    $label = str(preg_replace('/\s+/u', ' ', (string)($b['label'] ?? ($cur['label'] ?? ''))), 80);
+    if ($label === '') throw new ApiError('חסר שם לשדה');
+    $type = (string)($b['type'] ?? ($cur['type'] ?? 'text'));
+    if ($cur && $cur['col'] !== null) {
+        if (!in_array($type, FIELD_COL_TYPES[$cur['col']], true)) throw new ApiError("לשדה המובנה \"{$cur['label']}\" אפשר רק: " . implode(' / ', FIELD_COL_TYPES[$cur['col']]));
+    } elseif (!in_array($type, FIELD_TYPES, true)) throw new ApiError('סוג לא מוכר');
+    $options = $cur['options'] ?? [];
+    if (array_key_exists('options', $b)) {
+        if (!is_array($b['options']) || !array_is_list($b['options']) || count($b['options']) > 200) throw new ApiError('אפשרויות: רשימה של עד 200');
+        $options = []; $seen = [];
+        foreach ($b['options'] as $o) {
+            $v = is_array($o) ? ($o['value'] ?? '') : $o;
+            if (!is_string($v) || ($v = trim($v)) === '' || mb_strlen($v) > 200 || preg_match('/[\r\n]/', $v)) throw new ApiError('אפשרות לא תקינה (טקסט בשורה אחת, עד 200)');
+            if (isset($seen[$v])) throw new ApiError("האפשרות \"$v\" מופיעה פעמיים");
+            $seen[$v] = true;
+            $options[] = ['value' => $v, 'label' => str(is_array($o) ? ($o['label'] ?? $v) : $v, 200) ?: $v];
+        }
+    }
+    if ($type !== 'choice') $options = [];
+    $dir = (string)($b['dir'] ?? ($cur['dir'] ?? 'auto'));
+    if (!in_array($dir, FIELD_DIRS, true)) throw new ApiError('כיוון לא תקין');
+    $o = ['label' => $label, 'type' => $type, 'options' => $options, 'dir' => $dir,
+        'required' => array_key_exists('required', $b) ? ($b['required'] === true) : ($cur['required'] ?? false),
+        'published' => array_key_exists('published', $b) ? ($b['published'] === true) : ($cur['published'] ?? true),
+        'help' => array_key_exists('help', $b) ? str($b['help'], 300) : ($cur['help'] ?? '')];
+    if ($cur && $cur['col'] === 'word') $o['required'] = true;                // המילה — תמיד חובה
+    // ברירת מחדל — רק לשדה מותאם; נבדקת כמו כל ערך
+    $def = array_key_exists('def', $b) ? $b['def'] : ($cur['def'] ?? null);
+    $o['def'] = null;
+    if (($cur['col'] ?? null) === null && $def !== null && $def !== '') {
+        [$v, $err] = field_parse(['key' => 'def', 'options' => $options, 'type' => $type], $def);
+        if ($err) throw new ApiError('ברירת המחדל: ' . $err);
+        $o['def'] = $v;
+    }
+    return $o;
+}
+
+/**
+ * הוספה / עריכה של שדה (publisher), או סדר השדות (order). שינוי סוג של שדה מותאם: כל ערך קיים מומר (field_convert);
+ * dry — רק הדוח ("יומרו 340, ייכשלו 3"); נכשלים — 422 עם הרשימה, אלא אם clear_failed (ואז נקודת שחזור לפני, והם מתרוקנים).
+ */
+function field_save(array $user, array $b): array
+{
+    $pdo = db();
+    if (isset($b['order'])) {
+        $keys = array_values(array_filter(is_array($b['order']) ? $b['order'] : [], 'is_string'));
+        $have = array_column(fields_all(), 'key');
+        if (count($keys) !== count($have) || array_diff($have, $keys)) throw new ApiError('הסדר חייב לכלול כל שדה פעם אחת');
+        pf_tx(function () use ($pdo, $keys) {
+            fields_fill();
+            $st = $pdo->prepare('UPDATE word_fields SET sort_order = ? WHERE key = ?');
+            foreach ($keys as $i => $k) $st->execute([($i + 1) * 10, $k]);
+        });
+        audit_as($user, 'field_edit', 'סדר השדות: ' . implode(', ', $keys));
+        return fields_state($user);
+    }
+    $fields = fields_all();
+    $origKey = (string)($b['orig'] ?? '');
+    $cur = null;
+    foreach ($fields as $f) if ($f['key'] === $origKey) $cur = $f;
+    if ($origKey !== '' && !$cur) throw new ApiError('השדה לא נמצא', 404);
+    if ($cur && isset($b['key']) && $b['key'] !== $cur['key']) throw new ApiError('שינוי מפתח — דרך "שנה מפתח" (עם עדכון הקשירות בקבצים)');
+    $in = field_input($b, $cur);
+    $key = $cur ? $cur['key'] : (string)($b['key'] ?? '');
+    if (!$cur && ($e = field_key_error($key, $fields))) throw new ApiError($e);
+    // שינוי סוג של שדה מותאם — המרה של כל ערך קיים
+    $conv = null;
+    if ($cur && $cur['col'] === null && ($cur['type'] !== $in['type'] || ($in['type'] === 'choice' && $in['options'] !== $cur['options']))) {
+        $conv = field_convert_plan($cur, ['key' => $key] + $in);
+        if (!empty($b['dry'])) return ['convert' => array_diff_key($conv, ['values' => 1])];
+        if ($conv['failed'] && empty($b['clear_failed'])) throw new ApiError("ההמרה נעצרה: {$conv['failed_count']} ערכים לא מומרים. תקנו אותם, או בחרו \"רוקן את הנכשלים\"", 422, ['convert' => array_diff_key($conv, ['values' => 1])]);
+    } elseif (!empty($b['dry'])) return ['convert' => null];
+    $snap = $conv && ($conv['failed_count'] || $conv['converted'] > WORDS_BULK) ? snapshot_create($user, "לפני שינוי הסוג של השדה \"$key\": {$cur['type']} → {$in['type']}") : null;
+    pf_tx(function () use ($pdo, $cur, $key, $in, $conv, $fields) {
+        fields_fill();
+        $row = [$in['label'], $in['type'], (int)$in['required'], $in['def'] === null ? null : json_encode($in['def'], JSON_UNESCAPED_UNICODE),
+            $in['help'], json_encode($in['options'], JSON_UNESCAPED_UNICODE), (int)$in['published'], $in['dir']];
+        if ($cur) $pdo->prepare('UPDATE word_fields SET label = ?, type = ?, required = ?, def = ?, help = ?, options = ?, published = ?, dir = ? WHERE key = ?')->execute([...$row, $key]);
+        else {
+            $max = (int)$pdo->query('SELECT COALESCE(MAX(sort_order), 0) FROM word_fields')->fetchColumn();
+            $pdo->prepare('INSERT INTO word_fields (label, type, required, def, help, options, published, dir, key, col, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)')->execute([...$row, $key, $max + 10]);
+        }
+        if ($conv) words_extra_write($key, $conv['values']);
+    });
+    $detail = $cur ? "$key ({$in['label']})" . ($conv ? " · סוג {$cur['type']} → {$in['type']}: {$conv['converted']} הומרו, {$conv['failed_count']} רוקנו" : '') : "$key ({$in['label']}, {$in['type']})";
+    audit_as($user, $cur ? 'field_edit' : 'field_add', $detail);
+    return fields_state($user) + ['snapshot' => $snap, 'convert' => $conv ? array_diff_key($conv, ['values' => 1]) : null];
+}
+
+/** כותב לשדה $key את הערכים [id => ערך|null] (null — המפתח יוצא). בתוך עסקה. */
+function words_extra_write(string $key, array $values): void
+{
+    $pdo = db();
+    $get = $pdo->prepare('SELECT extra FROM words WHERE id = ?');
+    $put = $pdo->prepare('UPDATE words SET extra = ? WHERE id = ?');
+    foreach ($values as $id => $v) {
+        $get->execute([$id]);
+        $x = json_decode((string)$get->fetchColumn(), true);
+        $x = is_array($x) && !array_is_list($x) ? $x : [];
+        if ($v === null) unset($x[$key]); else $x[$key] = $v;
+        ksort($x);
+        $put->execute([$x ? json_encode($x, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '{}', $id]);
+    }
+}
+
+/** המרת ערך לסוג אחר: הערך כטקסט (כמו בתא של אקסל) ← נקרא בסוג החדש. מחזיר [ערך|null, שגיאה|null]. */
+function field_convert(array $from, array $to, mixed $v): array
+{
+    if ($v === null) return [null, null];
+    $s = in_array($from['type'], ['image', 'audio'], true) ? (string)$v : field_cell($from, $v, []);
+    [$out, $err, , $opt] = field_parse($to, $s, true);
+    if (in_array($to['type'], ['image', 'audio'], true)) [$out, $err] = file_id($s) && field_file_resolve($s, $to['type']) ? [$s, null] : [null, 'אינו קובץ מהסוג הזה'];
+    return [$out, $err ?? ($opt !== null ? 'אינו אחת האפשרויות' : null)];
+}
+
+/** תוכנית ההמרה: כמה יומרו, כמה ייכשלו (עם הרשימה), והערכים החדשים. */
+function field_convert_plan(array $from, array $to): array
+{
+    $values = []; $failed = []; $n = 0;
+    foreach (words_rows() as $w) {
+        if (!array_key_exists($from['key'], $w['extra'])) continue;
+        $v = $w['extra'][$from['key']];
+        [$out, $err] = field_convert($from, $to, $v);
+        if ($err !== null || $out === null) { $failed[] = ['id' => $w['id'], 'word' => $w['word'], 'value' => mb_substr(is_array($v) ? implode('; ', $v) : (string)json_encode($v, JSON_UNESCAPED_UNICODE), 0, 120)]; $values[$w['id']] = null; continue; }
+        if ($out !== $v) $values[$w['id']] = $out;
+        $n++;
+    }
+    return ['converted' => $n, 'failed_count' => count($failed), 'failed' => array_slice($failed, 0, 500), 'values' => $values];
+}
+
+/**
+ * מחיקת שדה מותאם — לסל: השורה וכל הערכים ({id: value}) ב-field_trash, ושחזור מהסל מחזיר את שניהם. לפני — נקודת שחזור.
+ * dry — רק מה יימחק: כמה ערכים, וכמה קשירות בקבצי הפרויקט יישארו בלי ערך.
+ */
+function field_delete(array $user, array $b): array
+{
+    $key = (string)($b['key'] ?? '');
+    $f = null;
+    foreach (fields_all() as $x) if ($x['key'] === $key) $f = $x;
+    if (!$f) throw new ApiError('השדה לא נמצא', 404);
+    if ($f['col'] !== null) throw new ApiError("\"{$f['label']}\" הוא שדה מובנה — אינו נמחק. אפשר להסתיר אותו מהעמוד (\"מתפרסם\")");
+    $vals = [];
+    foreach (words_rows() as $w) if (array_key_exists($key, $w['extra'])) $vals[$w['id']] = $w['extra'][$key];
+    $binds = function_exists('fields_bind_scan') ? count(array_filter(fields_bind_scan('field', $key), fn($h) => !$h['manual'])) : 0;
+    if (!empty($b['dry'])) return ['values' => count($vals), 'bindings' => $binds];
+    $snap = snapshot_create($user, "לפני מחיקת השדה \"{$f['label']}\" ($key)");
+    pf_tx(function () use ($user, $key, $vals) {
+        $st = db()->prepare('SELECT * FROM word_fields WHERE key = ?');
+        $st->execute([$key]);
+        $row = $st->fetch();
+        db()->prepare('INSERT INTO field_trash (at, by_name, field, vals) VALUES (?, ?, ?, ?)')
+            ->execute([now_iso(), $user['name'] ?? '', json_encode($row, JSON_UNESCAPED_UNICODE), json_encode((object)$vals, JSON_UNESCAPED_UNICODE)]);
+        words_extra_write($key, array_fill_keys(array_keys($vals), null));
+        db()->prepare('DELETE FROM word_fields WHERE key = ?')->execute([$key]);
+    });
+    audit_as($user, 'field_delete', "$key ({$f['label']}) · " . count($vals) . ' ערכים → לסל');
+    return fields_state($user) + ['snapshot' => $snap, 'bindings' => $binds];
+}
+
+/** מהסל: השדה כמו שהיה, והערכים — למילים שעדיין קיימות. מפתח שנתפס בינתיים — 409. בתוך העסקה של trash_restore. */
+function field_trash_restore(array $user, int $id): string
+{
+    $pdo = db();
+    $st = $pdo->prepare('SELECT * FROM field_trash WHERE id = ?');
+    $st->execute([$id]);
+    $t = $st->fetch() ?: throw new ApiError('לא נמצא בסל', 404);
+    $row = json_decode($t['field'], true);
+    $chk = $pdo->prepare('SELECT 1 FROM word_fields WHERE key = ?');
+    $chk->execute([$row['key']]);
+    if ($chk->fetchColumn()) throw new ApiError("כבר יש שדה עם המפתח \"{$row['key']}\" — שנו את המפתח שלו, ואז שחזרו", 409);
+    fields_fill();
+    $cols = array_keys($row);
+    $pdo->prepare('INSERT INTO word_fields (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($row));
+    $exists = array_flip(array_map('intval', $pdo->query('SELECT id FROM words')->fetchAll(PDO::FETCH_COLUMN)));
+    $vals = array_filter(json_decode($t['vals'], true) ?: [], fn($k) => isset($exists[(int)$k]), ARRAY_FILTER_USE_KEY);
+    words_extra_write($row['key'], $vals);
+    $pdo->prepare('DELETE FROM field_trash WHERE id = ?')->execute([$id]);
+    return "שדה · {$row['label']} ({$row['key']}) · " . count($vals) . ' ערכים';
 }

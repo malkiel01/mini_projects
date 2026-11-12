@@ -49,6 +49,7 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
+                      'field_save', 'field_delete',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
@@ -126,6 +127,9 @@ try {
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
         'word_move' => word_move(require_role($user, 'editor'), $body),          // N1: גרירה / "העבר ל…" בטבלה
+        'fields' => fields_state(require_role($user, 'editor')),                // N2: "מבנה המילה" — קריאה לכולם, שינוי — מפרסם
+        'field_save' => field_save(require_role($user, 'publisher'), $body),
+        'field_delete' => field_delete(require_role($user, 'publisher'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),

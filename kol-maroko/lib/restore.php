@@ -213,7 +213,10 @@ function trash_list(): array
         $pdo->query('SELECT id, at, by_name, row FROM words_trash ORDER BY id DESC LIMIT 500')->fetchAll());
     $topics = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'op' => $r['op'], 'name' => $r['name'], 'to' => $r['to_name'],
         'words' => count(json_decode($r['before'], true) ?: [])], $pdo->query('SELECT * FROM topic_trash ORDER BY id DESC LIMIT 500')->fetchAll());
-    return ['files' => $files, 'words' => $words, 'topics' => $topics];
+    // N2: שדה שנמחק — עם מספר הערכים שנשמרו איתו
+    $fields = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'key' => json_decode($r['field'], true)['key'] ?? '?',
+        'label' => json_decode($r['field'], true)['label'] ?? '?', 'values' => count(json_decode($r['vals'], true) ?: [])], $pdo->query('SELECT * FROM field_trash ORDER BY id DESC LIMIT 500')->fetchAll());
+    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'fields' => $fields];
 }
 
 function trash_restore(array $user, array $b): array
@@ -249,6 +252,9 @@ function trash_restore(array $user, array $b): array
         $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($t['name'], $map), $t['name']]);
         $pdo->prepare('DELETE FROM topic_trash WHERE id = ?')->execute([(int)$id]);
         audit_as($user, 'trash_restore', 'נושא · ' . $t['name']);
+    } elseif ($kind === 'field') {
+        $detail = pf_tx(fn() => field_trash_restore($user, (int)$id));
+        audit_as($user, 'trash_restore', $detail);
     } else {
         throw new ApiError('בקשה לא תקינה');
     }
@@ -268,9 +274,9 @@ function trash_purge(array $owner, array $b): array
         $pdo->prepare('DELETE FROM files WHERE id = ?')->execute([$f['id']]);
         @unlink(file_path($f));
         audit_as($owner, 'trash_purge', 'קובץ · ' . $f['name']);
-    } elseif ($kind === 'word' || $kind === 'topic') {
-        $pdo->prepare('DELETE FROM ' . ($kind === 'word' ? 'words_trash' : 'topic_trash') . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
-        audit_as($owner, 'trash_purge', $kind === 'word' ? 'מילה' : 'נושא');
+    } elseif ($kind === 'word' || $kind === 'topic' || $kind === 'field') {
+        $pdo->prepare('DELETE FROM ' . ['word' => 'words_trash', 'topic' => 'topic_trash', 'field' => 'field_trash'][$kind] . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
+        audit_as($owner, 'trash_purge', ['word' => 'מילה', 'topic' => 'נושא', 'field' => 'שדה'][$kind]);
     } else {
         throw new ApiError('בקשה לא תקינה');
     }
