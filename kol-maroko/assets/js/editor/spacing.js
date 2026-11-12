@@ -194,7 +194,7 @@
       if (!this.canWrite()) return;
       e.preventDefault(); e.stopPropagation(); el.setPointerCapture(e.pointerId);
       const x0 = e.clientX, y0 = e.clientY; let moved = false; this.drag = true;
-      const move = ev => { const dx = (ev.clientX - x0) / this.c.scale, dy = (ev.clientY - y0) / this.c.scale; if (!moved && Math.hypot(dx, dy) < 2) return; moved = true; this.showNum(fn(dx, dy, ev), ev); };
+      const move = ev => { const dx = (ev.clientX - x0) / this.c.scale, dy = (ev.clientY - y0) / this.c.scale; if (!moved && Math.hypot(dx, dy) < 2) return; moved = true; this.showNum(fn(dx, dy, ev, ev.clientX - x0, ev.clientY - y0), ev); };
       const up = ev => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); this.num.hidden = true; this.drag = false; done(moved && ev.type === 'pointerup'); this.draw(); };
       el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
     }
@@ -261,13 +261,13 @@
         this.write(new Map([[B, [[g.startB, P(D - g.gap - g.mA), { kind: 'inline', sel: 'style=""', path: '' }]]]]), L + ' · רק כאן');
       } });
     }
+    /** גודל הטקסט — בפיקסלי מסך (בקנבס מוקטן הידית אינה רגישה פי כמה). */
     dragFont(e) {
       const n = this.c.selected; if (!n) return;
       const fs0 = px(this.cs(n).fontSize); let v = fs0;
-      this.track(e, this.fsH, (dx, dy, ev) => { v = Math.max(1, this.stepped(fs0 + dy / 2, ev, 4)); this.preview([n], [['font-size', v + 'px']]); return 'גודל ' + v + 'px'; }, moved => {
+      this.track(e, this.fsH, (dx, dy, ev, rx, ry) => { v = Math.max(1, this.stepped(fs0 + ry / 2, ev, 4)); this.preview([n], [['font-size', v + 'px']]); return 'גודל ' + v + 'px'; }, moved => {
         this.unpreview(); if (!moved || v === fs0) return;
-        const t = this.design.effTarget ? (this.design.n === n ? this.design.effTarget(n, 'font-size') : null) : null;
-        const per = new Map([[n, [['font-size', v + 'px', t || this.targetFor(n, 'font-size')]]]]);
+        const per = new Map([[n, [['font-size', v + 'px', this.targetFor(n, 'font-size')]]]]);
         this.write(per, 'גודל גופן · ' + this.c.label(n) + ' · ' + r1(fs0) + ' ← ' + v);
       });
     }

@@ -223,6 +223,17 @@ const PAGE = `<!doctype html>
     await pick(page, '#plain'); await typeIn(page, 'design', 'color', '#dddddd');
     ok(await page.isVisible(body('design') + ' .sg-contrast.low'), 'ניגודיות נמוכה מ-4.5 (טקסט אפור בהיר על לבן) — מסומנת, לא חוסמת');
     ok(await undoFiles(page, t0), 'בטל — חזרה');
+    // ידית גודל הטקסט, וסימון האלמנטים שהיעד משפיע עליהם
+    await pick(page, '#plain'); await tab(page, 'design'); await sleep(150);
+    const fh = await page.evaluate(() => { const b = document.querySelector('[data-sp-fs]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const fs0 = await cs(page, '#plain', 'font-size');
+    if (fh) { await page.mouse.move(fh.x, fh.y); await page.mouse.down(); for (let i = 1; i <= 5; i++) { await page.mouse.move(fh.x, fh.y + i * 4); await sleep(16); } await page.mouse.up(); await sleep(250); }
+    ok(fh && parseFloat(await cs(page, '#plain', 'font-size')) === parseFloat(fs0) + 10, 'ידית בפינת אלמנט טקסט: גרירה למטה (20px) מגדילה את font-size ב-10', { fs0, now: await cs(page, '#plain', 'font-size') });
+    ok(await undoFiles(page, t0), 'בטל — חזרה');
+    await pick(page, '.cell'); await tab(page, 'design');
+    await page.hover(body('design') + ' [data-target]'); await sleep(120);
+    ok(await page.$$eval('[data-sp-hi]', x => x.length) === 3, 'ריחוף על "משנה את" (כלל חדש .cell): שלושת האלמנטים שהוא משפיע עליהם מסומנים בקנבס', await page.$$eval('[data-sp-hi]', x => x.length));
+    await page.mouse.move(5, 5); await sleep(60);
     // מה יוצר את הרווח
     await pick(page, '#a'); await tab(page, 'adv');
     ok(await page.isVisible(body('adv') + ' [data-sec="why"] [data-why="gap"]'), '"מה יוצר את הרווח" — בלשונית מתקדם');
