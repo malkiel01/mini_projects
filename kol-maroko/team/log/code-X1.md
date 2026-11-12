@@ -28,3 +28,13 @@
   הכפתורים של N2, עם `reload(host)`), README — שני הצדדים נשמרו.
 - 2026-11-12 · **מוכן**: run.php 244/244 · x1.cjs ×3 (26) · שכנות: n1.cjs 39, f2b.cjs 35, n2.cjs 28 · check-apps · sync --check. בלי מיגרציה.
   ❌ לא נבדק: 📝 בדפדפן מול עורך תמלילים אמיתי (בשרת — מדומה; ב-editor.php חסום עד שיתוקן frame-src); ✨ מול שירות הבינה האמיתי.
+- 2026-11-12 · באישור הבקרה (א): `lib/csp.php` — `csp_wp_frame()`: ל-frame-src של `editor_csp()` בלבד נוספה הכתובת המלאה של התיקייה של עורך התמלילים
+  (KOL_WP_URL / WordProcessorClient::EDITOR; רק https://מארח/נתיב/ — לא מארח בלבד ולא wildcard; כתובת בצורה אחרת — לא נוסף כלום).
+  `90-csp.php` — המחרוזת המלאה עודכנה + בדיקה שה-frame-src הוא בדיוק שלושת המקורות. הבדיקה תפסה באג: `~` בתוך מחלקת התווים סגר את
+  ה-delimiter, ולכן הכתובת לא נוספה — תוקן (delimiter `#`).
+  - **sandbox של ה-iframe** (project.js, לפני הניווט הראשון — host.js קובע src רק אחרי session()): `allow-scripts` (העורך הוא אפליקציית JS) ·
+    `allow-same-origin` (הכניסה והשמירה שלו, ו-postMessage עם המקור האמיתי — host.js בודק e.origin; בלי זה המקור "null" והחיבור נשבר) ·
+    `allow-downloads` (ייצוא מסמך). בלי allow-forms / popups / top-navigation / modals. ⚠️ בגלוי: העורך באותו מקור (mbe-plus.com), ולכן
+    scripts + same-origin אינם בידוד אמיתי מולנו — ה-sandbox חוסם ניווט של החלון העליון, חלונות קופצים וטפסים, לא יותר. האמון בעורך
+    התמלילים הוא כמו היום בסטודיו (שם בכלל אין sandbox).
+  - מוזג main (V4, 9a57988), בלי התנגשויות. run.php 244/244 · x1.cjs 26 · c1.cjs 25 · check-apps · sync --check.

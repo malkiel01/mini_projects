@@ -1068,6 +1068,9 @@ const Project = (() => {
       onLock: l => toast('פתוח לעריכה אצל ' + l.by),
       onError: e => toast(e.message || 'שגיאה בעורך', true),
     });
+    // sandbox מינימלי — לפני הניווט הראשון (host.js קובע src רק אחרי session()). allow-scripts: העורך הוא אפליקציית JS;
+    // allow-same-origin: הכניסה והשמירה שלו, ו-postMessage עם המקור האמיתי (host.js בודק e.origin); allow-downloads: ייצוא מסמך
+    box.querySelector('iframe')?.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads');
     let closing = false;
     async function close() {
       if (closing) return;
