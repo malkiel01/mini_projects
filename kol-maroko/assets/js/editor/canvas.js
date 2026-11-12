@@ -233,7 +233,7 @@
       if (n.tag === 'template') chain.push(n);
       const pair = (x, e) => { this.shownMap.set(x, e); this.shownD2m.set(e, x); const dk = kidsOf(e); for (let i = 0; i < Math.min(dk.length, x.kids.length); i++) pair(x.kids[i], dk[i]); };
       for (const tpl of chain) {
-        if (this.lv && this.lv.covers(tpl)) continue;                       // V11: הרשימה מצוירת — הכרטיסים הם התצוגה, בלי עותק
+        if (this.lv && this.lv.covers(tpl) && (n === tpl || this.lv.els(n).length)) continue;   // V11: הרשימה מצוירת — הכרטיסים הם התצוגה; חלק שאין בשום כרטיס מצויר — עותק, כמו קודם
         const te = this.shownMap.get(tpl) || this.m2d.get(tpl);
         if (!te || !te.isConnected) break;
         let tops = tpl.kids;

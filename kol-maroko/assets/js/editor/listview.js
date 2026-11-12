@@ -139,8 +139,9 @@
         }
         // המונה, "אין תוצאות", "טען עוד": לפי המצב — בכלל CSS של העורך (התכונות של העמוד אינן משתנות)
         const empty = L.matched === 0, moreOn = !!page && Math.min(L.matched, limit) < L.matched;
-        this.each('data-kol-empty', L.name, sel => { css += sel + (empty ? '{display:block!important}' : '{display:none!important}') + '\n'; });
-        this.each('data-kol-more', L.name, sel => { css += sel + (moreOn ? '' : '{display:none!important}') + '\n'; });
+        // :where — בלי משקל: אלמנט נבחר ש"מוצג לעריכה" (canvas.show) גובר על ההסתרה של המצב
+        this.each('data-kol-empty', L.name, sel => { css += ':where(' + sel + ')' + (empty ? '{display:block!important}' : '{display:none!important}') + '\n'; });
+        this.each('data-kol-more', L.name, sel => { if (!moreOn) css += ':where(' + sel + '){display:none!important}\n'; });
         if (searchN) { const se = c.m2d.get(searchN); if (se && 'value' in se) { const was = se.value; se.value = query; this.restore.push(() => { se.value = was; }); } }
         if (filterN && !fv) { /* "הכל" — כמו בעמוד */ }
       }
@@ -350,7 +351,7 @@
             for (const [k, label] of keys) { const o = mk('option', '', label); o.value = k; o.selected = M.pickArg === k; fs.append(o); }
             fs.addEventListener('change', () => { M.pickArg = fs.value; this.redraw(); }); row.append(fs);
           }
-          if (M.pick === 'search') { const q = mk('input', ''); q.type = 'search'; q.value = M.pickArg; q.placeholder = 'מילה'; q.setAttribute('aria-label', 'חיפוש מילה לתצוגה'); q.setAttribute('data-lv-pick-arg', ''); q.addEventListener('input', () => { M.pickArg = q.value; clearTimeout(this.qt); this.qt = setTimeout(() => this.redraw(), 200); }); row.append(q); }
+          if (M.pick === 'search') { const q = mk('input', ''); q.type = 'search'; q.value = M.pickArg; q.placeholder = 'מילה'; q.setAttribute('aria-label', 'חיפוש מילה לתצוגה'); q.setAttribute('data-lv-pick-arg', ''); q.addEventListener('input', () => { M.pickArg = q.value; clearTimeout(this.qt); this.qt = setTimeout(() => this.redraw(false), 200); });   // בלי לבנות את הסרגל מחדש — המיקוד נשאר בשדה row.append(q); }
           if (L.pickMiss) row.append(mk('span', 'hint', ' — אין מילה כזו'));
         }
         rows.push(row);
@@ -366,9 +367,14 @@
         rows.push(row);
       }
       if (kd && kd.modified && this.lists.length) { const w = mk('div', 'lv-strip-row lv-warn', 'הכרטיסים מצוירים לפי המימוש של הכלי; js/kol-data.js שלך שונה — ייתכן שבתצוגה החיה הם ייראו אחרת'); w.setAttribute('data-lv-modified', ''); w.setAttribute('role', 'note'); rows.unshift(w); }
-      host.replaceChildren(...rows); host.hidden = !rows.length;
+      // בטלפון — מקופל כברירת מחדל (הקנבס צריך את הגובה); השורה המקופלת אומרת מה מוצג
+      if (this.stripOpen == null) this.stripOpen = !matchMedia('(max-width: 999px)').matches;
+      const L0 = this.lists[0], sum = mk('summary', 'lv-sum', '📋 רשימות בקנבס' + (L0 && L0.status === 'ok' ? ' · ' + L0.name + ' · ' + L0.drawn + ' מתוך ' + L0.matched + (this.mode(L0.name).state ? ' · ' + (STATES.find(x => x[0] === this.mode(L0.name).state) || ['', ''])[1] : '') : '') + (kd && kd.modified && this.lists.length ? ' · ⚠️ kol-data.js שונה' : ''));
+      const det = mk('details', 'lv-det'); det.open = this.stripOpen; det.append(sum, ...rows);
+      det.addEventListener('toggle', () => { this.stripOpen = det.open; });
+      host.replaceChildren(...(rows.length ? [det] : [])); host.hidden = !rows.length;
     }
-    redraw() { if (!this.c.m) return; this.draw(); this.c.draw(); this.drawStrip(); }
+    redraw(strip = true) { if (!this.c.m) return; this.draw(); this.c.draw(); if (strip) this.drawStrip(); }
   }
 
   window.KolList = { ListView, PICKS, STATES, CANVAS_PAGE, OWNED, CARD };

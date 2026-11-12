@@ -538,3 +538,6 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .dp-h { margin: 10px 0 4px; font-size: .85rem; }
 .dp-int { color: #b45309; }
 @media (max-width: 999px) { .lv-bar { font-size: .85rem; } .lv-bar button { min-height: 36px; } }
+.lv-det > summary { cursor: pointer; font-weight: 600; min-height: 28px; }
+.lv-det[open] > summary { margin-bottom: 4px; }
+@media (max-width: 999px) { .lv-det > summary { min-height: 36px; line-height: 36px; } }
