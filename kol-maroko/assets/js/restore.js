@@ -91,6 +91,8 @@ const Restore = (() => {
       ...sec('מילים', d.words.map(w => row('📚', w.word, `${w.by} · ${when(w.at)}`, 'word', w.id, w.word))),
       ...sec('נושאים', d.topics.map(t => row('🏷️', t.op === 'rename' ? `${t.name} → ${t.to}` : t.op === 'merge' ? `מוזג: ${t.name} → ${t.to}` : `הוסר: ${t.name}`, `${t.words} מילים · ${t.by} · ${when(t.at)}`, 'topic', t.id, t.name))),
       ...sec('שדות', (d.fields || []).map(f => row('🧩', `${f.label} (${f.key})`, `${f.values} ערכים · ${f.by} · ${when(f.at)}`, 'field', f.id, f.label))),
+      // N3: רשימות — רשימה שלמה, שדה ברשימה, פריט (lib/lists.php, list_trash)
+      ...sec('רשימות', (d.lists || []).map(x => row(x.kind === 'list' ? '📚' : x.kind === 'field' ? '🧩' : '▫️', x.name, `${x.list} · ${x.by} · ${when(x.at)}`, 'list', x.id, x.name))),
       // M5: פניות — אצווה (פנייה שנמחקה, או "מחק ישנות" כולה) משוחזרת יחד
       ...sec('פניות', (d.forms || []).map(f => row('📬', f.old ? `"מחק ישנות" · ${f.n} פניות` : `פנייה בטופס ${f.form}${f.n > 1 ? ` · ${f.n}` : ''}`, `${f.by} · ${when(f.at)}`, 'form', f.id, `${f.n} פניות`))));
   }

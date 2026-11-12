@@ -80,7 +80,7 @@ function sheet(title, ...body) {
 // ── ניתוב ────────────────────────────────────────────────
 const TABS = [
   { id: 'studio', label: '🎨 סטודיו', min: 'editor' },
-  { id: 'words', label: '📚 מילים', min: 'editor' },
+  { id: 'words', label: '📚 נתונים', min: 'editor' },          // N3: המילים — הרשימה הראשונה
   { id: 'code', label: '</> קוד', min: 'editor' },
   { id: 'editor', label: '🎨 עורך', min: 'editor' },
   { id: 'project', label: '📁 פרויקט', min: 'editor' },

@@ -101,6 +101,14 @@ function pf_free(string $path, array $skip = [], bool $dir = false): void
         if (str_starts_with($key, $wk . '/')) throw new ApiError("\"$w\" הוא קובץ, לא תיקייה", 409);
         if (!$dir && str_starts_with($wk, $key . '/')) throw new ApiError("\"$path\" היא תיקייה", 409);
     }
+    // N3: וכך גם הקובץ של כל רשימה
+    foreach (pf_list_paths() as $lp => $lk) {
+        if ($lk === 'words' || pf_by_path($lp)) continue;
+        $wk = pf_key($lp);
+        if ($key === $wk) throw new ApiError("\"$lp\" הוא הקובץ של הרשימה \"$lk\" (kol.json ← data) — שמירה בו מעדכנת את הטבלה", 409);
+        if (str_starts_with($key, $wk . '/')) throw new ApiError("\"$lp\" הוא קובץ, לא תיקייה", 409);
+        if (!$dir && str_starts_with($wk, $key . '/')) throw new ApiError("\"$path\" היא תיקייה", 409);
+    }
     $st = db()->prepare("SELECT id, path, kind FROM pf_files WHERE deleted_at IS NULL AND (path_key = ? OR path_key LIKE ? ESCAPE '!')");
     $st->execute([$key, pf_like($key) . '/%']);
     foreach ($st->fetchAll() as $r) {
@@ -288,6 +296,7 @@ function pf_tree(array $user): array
         if (pf_by_path($wp)) $words = ['blocked' => "בנתיב \"$wp\" יש קובץ רגיל, ולכן הקובץ של טבלת המילים אינו מוצג. שנו את data.words.file ב-kol.json, או את שם הקובץ"];
         else $files[] = pf_words_public();
     }
+    foreach (pf_list_paths() as $lp => $lk) if ($lk !== 'words' && !pf_by_path($lp)) $files[] = pf_list_file($lk);      // N3: קובץ לכל רשימה
     return [
         'files' => $files,
         'words_file' => $words,
@@ -311,6 +320,7 @@ function pf_seed_only(): bool
 function pf_read(array $q): array
 {
     if (pf_is_words($q)) { $json = words_json(); return ['file' => pf_words_public($json), 'content' => $json]; }
+    if (($lk = pf_list_of($q)) !== null) { $json = list_json($lk); return ['file' => pf_list_file($lk, $json), 'content' => $json]; }
     $r = pf_row((int)($q['id'] ?? 0), empty($q['trash']));
     if ($r['kind'] !== 'file') return ['file' => pf_public($r)];
     return ['file' => pf_public($r)] + pf_payload(pf_blob_get($r['sha']));
@@ -327,9 +337,9 @@ function pf_payload(string $bytes): array
  */
 function pf_raw(array $q): never
 {
-    if (pf_is_words($q)) {
-        $json = words_json();
-        $f = pf_words_public($json);
+    if (pf_is_words($q) || ($lk = pf_list_of($q)) !== null) {
+        $json = isset($lk) ? list_json($lk) : words_json();
+        $f = isset($lk) ? pf_list_file($lk, $json) : pf_words_public($json);
         header_remove('Content-Type');
         header('Content-Type: application/octet-stream');
         header('X-Content-Type-Options: nosniff');
@@ -431,6 +441,7 @@ function pf_link(array $user, array $b): array
 function pf_write(array $user, array $b): array
 {
     if (pf_is_words($b)) return pf_words_write($user, $b);
+    if (($lk = pf_list_of($b)) !== null) return pf_list_write($user, $lk, $b);
     pf_guard($user);
     $bytes = pf_bytes($b);
     if (strlen($bytes) > ($max = pf_limit('text'))) pf_over('הקובץ גדול מדי', strlen($bytes), $max);
@@ -477,6 +488,7 @@ function pf_tx_note(array $b): ?string
 function pf_versions(array $q): array
 {
     if (pf_is_words($q)) return pf_words_versions();
+    if (($lk = pf_list_of($q)) !== null) return pf_list_versions($lk);
     $r = pf_row((int)($q['id'] ?? 0));
     $st = db()->prepare('SELECT id, rev, at, name, note, size FROM pf_history WHERE file_id = ? ORDER BY id DESC');   // ההיסטוריה כבר מוגבלת בשמירה (pf_hist)
     $st->execute([$r['id']]);
@@ -535,6 +547,7 @@ function pf_delete(array $user, array $b): array
 {
     pf_guard($user);
     if (pf_is_words($b)) return pf_words_unlink($user, $b);
+    if (($lk = pf_list_of($b)) !== null) return pf_list_unlink($user, $lk, $b);
     [$path, $n] = pf_tx(function () use ($b, $user) {
         [$path, $rows] = pf_target($b);
         $batch = bin2hex(random_bytes(6));
@@ -750,6 +763,98 @@ function pf_words_unlink(array $user, array $b): array
     return ['deleted' => 0, 'unlinked' => true, 'kol' => pf_kol()];
 }
 
+// ── N3: data/<key>.json — הקובץ של כל רשימה (lib/lists.php) ─────
+
+/** כל הקבצים המקושרים לטבלה: [נתיב => 'words' | מפתח רשימה], מ-kol.json ← data (source "words" / "list:<key>" של רשימה קיימת). */
+function pf_list_paths(): array
+{
+    $c = pf_kol()['config'] ?? null;
+    $data = is_array($c) && is_array($c['data'] ?? null) ? $c['data'] : [];
+    $lists = null;
+    $out = [];
+    foreach ($data as $name => $d) {
+        if (!is_array($d)) continue;
+        $src = (string)($d['source'] ?? ($name === 'words' ? 'words' : ''));
+        if ($src === 'words') { if ($name === 'words' && ($p = pf_words_path()) !== null) $out[$p] = 'words'; continue; }
+        if (!preg_match('/^list:([a-z][a-z0-9_]{0,29})$/', $src, $m)) continue;
+        $lists ??= lists_all();
+        if (!isset($lists[$m[1]])) continue;
+        try { $p = pf_path($d['file'] ?? "data/{$m[1]}.json"); } catch (ApiError) { continue; }
+        $out[$p] ??= $m[1];
+    }
+    return $out;
+}
+
+/** המזהה בעץ ← מפתח הרשימה (רק רשימה שרשומה ב-kol.json). */
+function pf_list_of(array $b): ?string
+{
+    $id = (int)($b['id'] ?? 0);
+    if ($id > -LIST_FILE_BASE) return null;
+    $st = db()->prepare('SELECT key FROM lists WHERE fid = ?');
+    $st->execute([-$id - LIST_FILE_BASE]);
+    $k = $st->fetchColumn();
+    if ($k === false || !in_array($k, pf_list_paths(), true)) throw new ApiError('הקובץ לא נמצא', 404);
+    return (string)$k;
+}
+
+function pf_list_audit(string $key): array
+{
+    $st = db()->prepare('SELECT id, at, name, action, detail FROM audit WHERE action IN (' . implode(',', array_fill(0, count(LIST_AUDIT), '?')) . ') AND (detail LIKE ? OR detail LIKE ? OR detail LIKE ?) ORDER BY id DESC LIMIT 100');
+    $st->execute([...LIST_AUDIT, "%($key)%", "$key.%", "%רשימה · % ($key)%"]);
+    return $st->fetchAll();
+}
+
+function pf_list_file(string $key, ?string $json = null): array
+{
+    $l = list_get($key);
+    $path = array_search($key, pf_list_paths(), true);
+    if ($path === false) throw new ApiError("אין בפרויקט קובץ לרשימה \"$key\" (kol.json ← data)", 404);
+    $json ??= list_json($key);
+    $last = pf_list_audit($key)[0] ?? ['at' => $l['created_at'], 'name' => $l['created_by']];
+    $int = array_values(array_map(fn($f) => ['key' => $f['key'], 'label' => $f['label']], array_filter(list_fields($key), fn($f) => !$f['published'])));
+    return ['id' => -(LIST_FILE_BASE + $l['fid']), 'path' => $path, 'kind' => 'file', 'size' => strlen($json), 'rev' => list_rev($key, $json), 'at' => $last['at'], 'by' => $last['name'],
+        'linked' => 'list', 'list' => $key, 'note' => "נבנה מהרשימה \"{$l['label']}\" — שמירה מעדכנת את הטבלה" . ($int ? ' · שדות פנימיים: ' . implode(', ', array_column($int, 'key')) . ' — לא מתפרסמים' : ''), 'internal' => $int];
+}
+
+/** שמירה ← הטבלה של הרשימה, כמו pf_words_write: בלי apply — "מה ישתנה"; עם apply + token — ההחלה. */
+function pf_list_write(array $user, string $key, array $b): array
+{
+    pf_guard($user);
+    if (!empty($b['auto'])) throw new ApiError('הקובץ של הרשימה נשמר רק בשמירה מפורשת (Ctrl+S), אחרי "מה ישתנה"', 400, ['linked' => 'list']);
+    $bytes = pf_bytes($b);
+    if (strlen($bytes) > PF_WORDS_MAX) pf_over('הקובץ גדול מדי', strlen($bytes), PF_WORDS_MAX);
+    $json = list_json($key);
+    $f = pf_list_file($key, $json);
+    if ((string)($b['rev'] ?? '') !== $f['rev']) throw new ApiError('הקובץ השתנה בינתיים', 409, ['conflict' => ['file' => $f, 'content' => $json]]);
+    $r = list_file_save($user, $key, $bytes, $b);
+    if (isset($r['done'])) { $json = list_json($key); $r['file'] = pf_list_file($key, $json); $r['content'] = $json; }
+    else $r['file'] = $f;
+    return $r;
+}
+
+function pf_list_versions(string $key): array
+{
+    $label = ['list_file' => '📄 קובץ', 'list_csv' => '📊 אקסל', 'list_item_add' => '➕ פריט', 'list_item_edit' => '✏️ פריט', 'list_item_delete' => '🗑️ פריט', 'list_item_move' => '⠿ סדר',
+        'list_field_add' => '🧩 שדה', 'list_field_edit' => '🧩 שדה', 'list_field_key' => '🧩 מפתח', 'list_field_delete' => '🧩 שדה', 'list_add' => '📚 נוצרה', 'list_edit' => '📚 שם', 'list_key' => '📚 מפתח',
+        'trash_restore' => '↩️ מהסל', 'snapshot_restore' => '↩️ נקודת שחזור'];
+    return ['file' => pf_list_file($key), 'linked' => 'list', 'versions' => array_map(fn($h) => ['hid' => -(int)$h['id'], 'rev' => null, 'at' => $h['at'], 'by' => $h['name'],
+        'note' => ($label[$h['action']] ?? $h['action']) . ' · ' . $h['detail'], 'size' => null, 'linked' => true], pf_list_audit($key))];
+}
+
+/** "מחיקה" של הקובץ: אינה מוחקת פריט. unlink: true — מסירה את הרישום מ-kol.json (גרסה חדשה שלו); הרשימה נשארת. */
+function pf_list_unlink(array $user, string $key, array $b): array
+{
+    if (($b['unlink'] ?? null) !== true) {
+        throw new ApiError("זה הקובץ של הרשימה \"$key\". מחיקה כאן אינה מוחקת פריטים; להסיר אותו מהעמוד = להסיר את data.$key מ-kol.json (הרשימה נשארת ב-📚 נתונים)", 409, ['linked' => 'list', 'action' => 'unlink']);
+    }
+    pf_tx(fn() => list_kol_data($user, function (array $d) use ($key) {
+        foreach ($d as $k => $v) if (is_array($v) && ($v['source'] ?? '') === "list:$key") unset($d[$k]);
+        return $d;
+    }, "הסרת data.$key — הקובץ של הרשימה הוסר מהעמוד (הרשימה נשארה)"));
+    audit_as($user, 'pf_delete', "data.$key הוסר מ-kol.json (הרשימה נשארה)");
+    return ['deleted' => 0, 'unlinked' => true, 'kol' => pf_kol()];
+}
+
 // ── היום הראשון (פרוסה F2 §2) ─────────────────────────────
 
 /** פעם אחת: שלד ברירת המחדל, ו-from-current/ — עותק כמו שהוא של הקוד שהכלי מחזיק היום. */
@@ -809,3 +914,4 @@ function pf_seed_files(): array
 }
 
 require_once __DIR__ . '/project_ops.php';     // F2b: שכפול, גרסאות, חיפוש והחלפה, הפניות, ZIP
+require_once __DIR__ . '/lists.php';           // N3: pf_list_paths / pf_list_of — המפתחות והקבועים של הרשימות

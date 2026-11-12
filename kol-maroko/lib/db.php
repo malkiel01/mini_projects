@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 21;
+const KOL_SCHEMA_VERSION = 22;
 
 final class ApiError extends RuntimeException
 {
@@ -501,6 +501,53 @@ function migrate(PDO $pdo): void
                 since   TEXT NOT NULL,
                 fell_at TEXT,
                 detail  TEXT NOT NULL DEFAULT ''
+            );
+            SQL,
+        // N3: רשימות נוספות ("פתגמים") — רשימה, השדות שלה, הפריטים (id לכל רשימה, לא חוזר: next_id), והסל. הוספה בלבד;
+        // המילים נשארות בטבלאות שלהן. fid — מזהה מספרי קבוע לקובץ הווירטואלי בעץ (lib/lists.php, LIST_FILE_BASE)
+        22 => <<<'SQL'
+            CREATE TABLE IF NOT EXISTS lists (
+                key        TEXT PRIMARY KEY,
+                fid        INTEGER NOT NULL UNIQUE,
+                label      TEXT NOT NULL,
+                item_label TEXT NOT NULL DEFAULT '',
+                next_id    INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS list_fields (
+                list       TEXT NOT NULL,
+                key        TEXT NOT NULL,
+                label      TEXT NOT NULL,
+                type       TEXT NOT NULL,
+                required   INTEGER NOT NULL DEFAULT 0,
+                def        TEXT,
+                help       TEXT NOT NULL DEFAULT '',
+                options    TEXT NOT NULL DEFAULT '[]',
+                published  INTEGER NOT NULL DEFAULT 1,
+                dir        TEXT NOT NULL DEFAULT 'auto',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (list, key)
+            );
+            CREATE TABLE IF NOT EXISTS list_items (
+                list       TEXT NOT NULL,
+                id         INTEGER NOT NULL,
+                data       TEXT NOT NULL DEFAULT '{}',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (list, id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_list_items_sort ON list_items(list, sort_order, id);
+            CREATE TABLE IF NOT EXISTS list_trash (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                list    TEXT NOT NULL,
+                kind    TEXT NOT NULL,
+                item_id INTEGER,
+                row     TEXT NOT NULL,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT ''
             );
             SQL,
     ];

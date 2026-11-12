@@ -561,3 +561,21 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
   body.lib-wide .lib-field-m { display: none; }
   body.lib-wide .lib-row > .chip { flex: none; inline-size: 6.5rem; justify-content: center; text-align: center; }
 }
+/* N3: 📚 נתונים — בורר הרשימות, הטבלה של כל רשימה, גרירה בעכבר ובמגע. במחשב — על כל רוחב המסך */
+@media (min-width: 900px) { main:has(> .d-lists) { max-width: none; } }
+.d-lists { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: var(--s2); border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+.d-list { flex: none; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
+.d-list.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.d-list.on small { color: inherit; opacity: .7; }
+.d-list.d-new { border-style: dashed; color: var(--muted); }
+.l-filters { grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 600px) { .l-filters { grid-template-columns: 1fr; } }
+.l-table { min-inline-size: 560px; }
+.l-grip { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; min-width: 28px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border-radius: 6px; }
+.l-grip:focus-visible { outline: 2px solid var(--accent, #a3322a); }
+.l-grip:active { cursor: grabbing; }
+.l-table tr.l-dragging td { opacity: .45; }
+.l-ghost { position: fixed; inset: 0 auto auto 0; z-index: 50; pointer-events: none; padding: 6px 12px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: .85rem; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 6px 18px rgb(0 0 0 / .2); }
+.l-preview th input, .l-preview th select { width: 100%; margin-top: 4px; font-size: .8rem; }
+.l-from-csv { margin: var(--s2) 0; }
+.l-from-csv summary { cursor: pointer; }
