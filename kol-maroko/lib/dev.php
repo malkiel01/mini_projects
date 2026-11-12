@@ -339,6 +339,16 @@ function dev_health_checks(): array
         }, 'data/.htaccess'],
         'site' => ['החיבור לאתר, וגרסת התוסף שמותקנת בו', function (): array {
             require_once __DIR__ . '/publish.php';
+            if (pub_channel() === 'pull') {
+                // M7: הכלי אינו שואל — "הדופק": מתי האתר משך לאחרונה. מעל 24 שעות (או מעולם לא) — נכשל; מעל 30 דקות — עובר, עם אזהרה
+                $p = pull_pulse();
+                $fix = 'וורדפרס ← קול מרוקו ← 🔄 עדכן עכשיו / בדוק חיבור; ואם אין ביקורים באתר — cron אמיתי ב-Bluehost (docs/install.md)';
+                if ($p['never']) return [false, 'ערוץ משיכה: האתר עוד לא משך מהכלי אף פעם', 'להדביק בתוסף את "שורת החיבור" (⚙️ הגדרות ← 🔗 חיבור לאתר) וללחוץ "בדוק חיבור"'];
+                $plug = (string)($p['state']['plugin'] ?? '');
+                if ($p['level'] === 'bad') return [false, 'ערוץ משיכה · ' . $p['text'] . ' — יותר מ-24 שעות', $fix];
+                if ($plug !== '' && version_compare($plug, KOL_PLUGIN_EXPECTED, '<')) return [false, 'ערוץ משיכה · ' . $p['text'] . ' · בריפו ' . KOL_PLUGIN_EXPECTED, 'להתקין באתר את התוסף המעודכן (מטלה לבעלים)'];
+                return [true, 'ערוץ משיכה · ' . $p['text'] . ($p['level'] === 'warn' ? ' — ⚠️ יותר מ-30 דקות (ייתכן שאין ביקורים, ו-wp-cron לא רץ)' : ''), $p['level'] === 'warn' ? $fix : ''];
+            }
             try {
                 $r = site_call('ping', []);
             } catch (ApiError $e) {

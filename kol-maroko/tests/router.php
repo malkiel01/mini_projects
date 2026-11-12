@@ -36,7 +36,8 @@ if ($path === '/studio.html') { http_response_code(403); exit; }
 if ($path === '/index.html') { $q = (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_QUERY); header('Location: /index.php' . ($q !== '' ? '?' . $q : ''), true, 302); exit; }
 if ($path === '/csp.php') { chdir($root); require $root . '/csp.php'; exit; }
 if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
-if ($path === '/form.php') { chdir($root); require $root . '/form.php'; exit; }     // M5 — הנקודה הציבורית של הטפסים
+if ($path === '/form.php') { chdir($root); require $root . '/form.php'; exit; }
+if ($path === '/pull.php') { chdir($root); require $root . '/pull.php'; exit; }       // M7 — נקודת המשיכה (ציבורית, באסימון)     // M5 — הנקודה הציבורית של הטפסים
 if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }
 if ($path === '/api.php' || $path === '/agent.php') {
     if (isset($_SERVER['HTTP_X_TEST_WARN'])) {          // אזהרת PHP אמיתית בתוך בקשה — לבדיקת הלכידה
