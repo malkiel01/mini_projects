@@ -130,7 +130,7 @@ const Project = (() => {
     if (was !== doc.dirty) { drawTabs(); drawTree(); }
     drawStatus();
     clearTimeout(doc.timer);
-    if (doc.dirty && !doc.conflict) doc.timer = setTimeout(() => save(doc.id, true), AUTOSAVE_MS);
+    if (doc.dirty && !doc.conflict && !S.byId.get(doc.id)?.linked) doc.timer = setTimeout(() => save(doc.id, true), AUTOSAVE_MS);   // N1: הקובץ של הטבלה — רק בשמירה מפורשת
   }
 
   // ── שירות המסמכים (04 §1) ─────────────────────────────────
@@ -196,6 +196,7 @@ const Project = (() => {
     const doc = S.docs.get(id);
     if (!doc || !doc.dirty || doc.saving || (auto && doc.conflict)) return;
     const content = doc.model ? doc.model.getValue() : doc.text;
+    if (S.byId.get(id)?.linked) return auto ? undefined : wordsSave(doc, content);   // N1: "מה ישתנה" לפני שהטבלה משתנה
     doc.saving = true; drawStatus();
     try {
       const tx = (doc.txPending || []).slice();
@@ -218,6 +219,86 @@ const Project = (() => {
       drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
       if (doc.dirty && !doc.conflict && !doc.error) { clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), AUTOSAVE_MS); }
     }
+  }
+
+  // ── N1: data/words.json — הקובץ של טבלת המילים ─────────────
+  // שמירה = בדיקה בשרת ← "מה ישתנה" (לפי id) ← "החל". שגיאה — עם שורה ועמודה, מסומנת בעורך; הטבלה אינה משתנה עד "החל".
+  function wordsMarks(doc, errors, warnings = []) {
+    if (!doc.model || !monaco) return;
+    const m = (x, sev) => ({ startLineNumber: x.line, startColumn: x.col, endLineNumber: x.line, endColumn: x.col + 1, message: x.msg, severity: sev });
+    monaco.editor.setModelMarkers(doc.model, 'kol-words', [...errors.map(x => m(x, monaco.MarkerSeverity.Error)), ...warnings.map(x => m(x, monaco.MarkerSeverity.Warning))]);
+  }
+  const wordsAt = (doc, line) => { if (S.editor && doc.model) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); } };
+  async function wordsSave(doc, content, create = []) {
+    doc.saving = true; drawStatus();
+    try {
+      const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, create_topics: create });
+      doc.error = ''; wordsMarks(doc, [], d.plan.warnings);
+      wordsPlanSheet(doc, content, d.plan, create);
+    } catch (e) {
+      doc.error = e.message; doc.errorStatus = e.status || 0;
+      if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
+      else if (e.status === 422 && e.data?.errors) { wordsMarks(doc, e.data.errors, e.data.warnings || []); wordsErrors(doc, content, e.data, create); }
+      else toast(e.message, true);
+    } finally {
+      doc.saving = false;
+      drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
+    }
+  }
+  function wordsErrors(doc, content, data, create) {
+    const props = (data.proposals || []).filter(p => !create.includes(p.slug));
+    const list = data.errors.filter(x => !x.propose);
+    const dlg = sheet('הקובץ לא נשמר — הטבלה לא השתנתה',
+      list.length ? h('ul', { class: 'pj-fails', 'data-words-errors': true }, list.slice(0, 50).map(x => h('li', {},
+        h('button', { type: 'button', class: 'pj-ref-at', onclick: () => { dlg.close(); wordsAt(doc, x.line); } }, h('span', { dir: 'ltr' }, `שורה ${x.line}, עמודה ${x.col}`)), ' ', h('span', { dir: 'auto' }, x.msg)))) : null,
+      props.length ? h('div', { class: 'warnbox' }, h('p', {}, 'נושאים שאינם קיימים:'),
+        h('div', { class: 'row-btns wrap' }, props.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-topic': p.slug,
+          onclick: () => { dlg.close(); wordsSave(doc, content, [...create, p.slug]); } }, `צור נושא "${p.slug}" (${p.name})`)))) : null,
+      h('div', { class: 'row-btns' }, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'חזרה לעורך')));
+  }
+  function wordsPlanSheet(doc, content, plan, create) {
+    const c = plan.counts;
+    const field = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', audio: 'הקלטה', external_id: 'מספר מהאקסל' };
+    const fold = (title, n, items) => n ? h('details', { class: 'pj-plan' }, h('summary', {}, `${title} (${n})`), h('ul', {}, items)) : null;
+    const apply = h('button', { type: 'button', class: 'btn primary', 'data-words-apply': true }, 'החל');
+    const dlg = sheet('מה ישתנה בטבלת המילים',
+      h('p', { 'data-words-summary': true }, h('b', {}, plan.summary)),
+      !c.changed && !c.added && !c.trashed && !c.moved && !c.topics ? h('p', { class: 'hint' }, 'אין שינויים — הקובץ זהה לטבלה.') : null,
+      plan.warnings?.length ? h('div', { class: 'warnbox' }, h('ul', {}, plan.warnings.slice(0, 20).map(x => h('li', { dir: 'auto' }, `שורה ${x.line}: ${x.msg}`)))) : null,
+      fold('ישתנו', c.changed, plan.changed.map(w => h('li', {}, h('b', { dir: 'auto' }, w.word), h('small', { class: 'muted' }, ` #${w.id}`),
+        h('ul', {}, Object.entries(w.fields).map(([k, [a, b]]) => h('li', {}, `${field[k] || k}: `, h('span', { class: 'pj-ref-old', dir: 'auto' }, a || '—'), ' ← ', h('span', { class: 'pj-ref-new', dir: 'auto' }, b || '—'))))))),
+      fold('יתווספו', c.added, plan.added.map(w => h('li', { dir: 'auto' }, w.word, w.id ? h('small', { class: 'muted' }, ` #${w.id}`) : h('small', { class: 'muted' }, ' — מזהה חדש')))),
+      fold('יעברו לסל', c.trashed, plan.trashed.map(w => h('li', { dir: 'auto' }, w.word, h('small', { class: 'muted' }, ` #${w.id}${w.audio ? ' · עם ההקלטה (נשארת בספרייה)' : ''}`)))),
+      plan.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + plan.new_topics.map(t => `${t.name} (${t.slug})`).join(', ')) : null,
+      plan.snapshot ? h('p', { class: 'hint' }, '↩️ לפני ההחלה תיווצר נקודת שחזור.') : null,
+      plan.needs === 'publisher' ? h('p', { class: 'hint' }, 'מחיקה של יותר מ-20 מילים — רק למפרסם.') : null,
+      h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
+    apply.onclick = async () => {
+      apply.disabled = true;
+      try {
+        const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, apply: true, token: plan.token, create_topics: create });
+        dlg.close();
+        setDocText(doc, d.content, d.file.rev);
+        doc.error = ''; doc.errorStatus = 0; wordsMarks(doc, []);
+        const f = S.byId.get(doc.id);
+        if (f) { Object.assign(f, d.file); bc?.postMessage({ t: 'saved', path: f.path }); }
+        toast('הטבלה עודכנה · ' + plan.summary);
+        drawAll();
+      } catch (e) {
+        apply.disabled = false;
+        if (e.status === 409 && e.data?.conflict) { dlg.close(); doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
+        else toast(e.message, true);
+      }
+    };
+  }
+  /** "מחיקה" של הקובץ של הטבלה: אינה מוחקת מילים. ההסבר, והאפשרות להסיר את data.words מ-kol.json. */
+  function wordsRemove(f) {
+    const dlg = sheet('הקובץ של טבלת המילים',
+      h('p', {}, 'זה הקובץ של טבלת המילים. מחיקה כאן אינה מוחקת מילים.'),
+      h('p', { class: 'hint' }, 'להסיר אותו מהעמוד = להסיר את data.words מ-kol.json. הטבלה נשארת כמו שהיא, ואפשר להחזיר מההיסטוריה של kol.json.'),
+      h('div', { class: 'row-btns wrap' },
+        h('button', { type: 'button', class: 'btn danger', 'data-words-unlink': true, onclick: () => { dlg.close(); run(() => api('pf_delete', { id: f.id, unlink: true }), 'data.words הוסר מ-kol.json — המילים נשארו'); } }, 'הסר את data.words מ-kol.json'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
   }
 
   /** "הקובץ השתנה בינתיים" — שתי הגרסאות זו מול זו, והבחירה בידי העורך. שום דבר לא נדרס בשקט. */
@@ -302,13 +383,14 @@ const Project = (() => {
       }
       for (const f of n.files.sort((a, b) => base(a.path).localeCompare(base(b.path), 'he'))) {
         const miss = f.kind === 'media' && f.media_info?.missing;
-        rows.push(h('li', { class: 'pj-row' + (f.id === S.cur ? ' on' : ''), style: `--d:${depth}`, 'data-dir': parent(f.path), draggable: 'true', ondragstart: e => dragStart(e, { id: f.id }, f.path) },
+        rows.push(h('li', { class: 'pj-row' + (f.id === S.cur ? ' on' : ''), style: `--d:${depth}`, 'data-dir': parent(f.path), draggable: f.linked ? 'false' : 'true', ondragstart: e => { if (!f.linked) dragStart(e, { id: f.id }, f.path); } },
           h('button', { type: 'button', class: 'pj-name', title: f.path, onclick: () => { openFile(f.id); if (phone()) side(false); } },
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, ICONS[ext(f.path)] || '📄'),
             h('span', { class: 'one', dir: 'auto' }, base(f.path)),
             f.path === entry && h('span', { class: 'chip', title: 'קובץ הכניסה (kol.json)' }, 'כניסה'),
             OLD_TPL(f.path) && h('span', { class: 'chip', 'data-old-tpl': true, title: 'קובץ תבנית מהגרסה הקודמת (עם {{…}}) — לעיון בלבד; העמוד עצמו הוא index.html' }, 'תבנית ישנה'),
             f.kind === 'media' && h('span', { class: 'chip' + (miss ? ' bad' : '') }, miss ? 'חסר בספרייה' : 'מדיה'),
+            f.linked && h('span', { class: 'chip', 'data-linked': f.linked, title: f.note }, '🔗 טבלה'),
             dirty(f.id) && h('span', { class: 'pj-dot', title: 'לא נשמר', 'aria-label': 'לא נשמר' }, '●')),
           h('button', { type: 'button', class: 'icon-btn pj-more', 'aria-label': `פעולות על ${base(f.path)}`, onclick: () => fileMenu(f) }, '⋯')));
       }
@@ -382,7 +464,7 @@ const Project = (() => {
     const editable = !!doc && !doc.binary;
     el.save.disabled = !editable || !doc.dirty || doc.saving;
     el.status.className = 'pj-status' + (doc?.conflict || doc?.error ? ' bad' : '');
-    el.status.textContent = !doc || !f ? '' : doc.binary ? size(f.size) : doc.conflict ? '⚠️ השתנה בינתיים — לא נשמר' : doc.saving ? 'שומר…' : doc.dirty ? (doc.error ? '⚠️ לא נשמר: ' + doc.error : '● לא נשמר') : '✓ נשמר';
+    el.status.textContent = !doc || !f ? '' : doc.binary ? size(f.size) : doc.conflict ? '⚠️ השתנה בינתיים — לא נשמר' : doc.saving ? 'שומר…' : doc.dirty ? (doc.error ? '⚠️ לא נשמר: ' + doc.error : f.linked ? '● לא נשמר — Ctrl+S: "מה ישתנה" בטבלה' : '● לא נשמר') : f.linked ? '🔗 ' + f.note : '✓ נשמר';
     for (const b of el.bar.querySelectorAll('[data-ed]')) b.disabled = !editable || !S.editor;
   }
 
@@ -432,8 +514,8 @@ const Project = (() => {
   }
 
   function menu(title, items) {
-    const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(([label, fn, cls]) =>
-      h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))));
+    const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(it => it instanceof Node ? it : (([label, fn, cls]) =>
+      h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))(it))));
   }
   /** "גרסאות" של קובץ: כל שמירה — מתי, מי, ומה נעשה בה (שם העסקה מהעורך החזותי, "שמירה", "שמירה אוטומטית"). */
   async function versions(f) {
@@ -441,6 +523,11 @@ const Project = (() => {
     sheet('גרסאות · ' + base(f.path), body);
     try {
       const d = await api('pf_versions', undefined, `&id=${f.id}`);
+      if (d.linked) {                                              // N1: השמירות של הטבלה (יומן הפעולות) — אין גוש שמור לשחזר
+        body.replaceChildren(h('p', { class: 'hint' }, 'הקובץ נבנה מטבלת המילים, ולכן אין לו גרסאות שמורות. אלה השמירות האחרונות בטבלה; חזרה אחורה — ב-↩️ שחזור (נקודת שחזור נוצרת לפני כל מחיקה ולפני שינוי של יותר מ-20 מילים).'),
+          h('ol', { class: 'pj-ver-list' }, d.versions.map(v => h('li', {}, h('div', {}, h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at)))))));
+        return;
+      }
       body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '. "השוואה" — מה השתנה מאז; "שחזור" — התוכן שלה נשמר כגרסה חדשה (שום גרסה אינה נמחקת).'),
         h('ol', { class: 'pj-ver-list' }, d.versions.map((v, i) => h('li', { 'data-rev': v.rev },
           h('div', {}, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))),
@@ -449,7 +536,14 @@ const Project = (() => {
             i > 0 && h('button', { type: 'button', class: 'btn sm', 'data-ver-restore': v.hid, onclick: () => restoreVersion(d.file, v) }, '↩️ שחזור'))))));
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
-  const fileMenu = f => menu(base(f.path), [
+  const fileMenu = f => f.linked ? menu(base(f.path), [
+    h('p', { class: 'hint' }, '🔗 ' + f.note + '. השם והמיקום — ב-kol.json (data.words.file).'),
+    ['🕘 שמירות', () => versions(f)],
+    ['📂 פתיחה', () => openFile(f.id)],
+    ['📋 שכפול (עותק סטטי — לא מקושר לטבלה)', () => duplicate({ id: f.id }, f.path)],
+    ['⬇️ הורדה', () => download(f)],
+    ['🗑️ הסרה מהעמוד…', () => wordsRemove(f), 'danger'],
+  ]) : menu(base(f.path), [
     f.kind === 'file' ? ['🕘 גרסאות', () => versions(f)] : null,
     ['📂 פתיחה', () => openFile(f.id)],
     ['✏️ שינוי שם', () => rename({ id: f.id }, f.path)],
@@ -494,6 +588,16 @@ const Project = (() => {
     for (const file of files) {
       const path = join(dir, file.name);
       toast(`מעלה ${++done} מתוך ${files.length}…`);
+      const lf = S.files.find(f => f.linked && f.path === path);
+      if (lf) {                                                  // N1: העלאה באותו נתיב = שמירה של הקובץ של הטבלה — "מה ישתנה" ואז "החל"
+        try {
+          await openFile(lf.id);
+          const doc = S.docs.get(lf.id), text = await file.text();
+          if (doc.model) doc.model.setValue(text); else { doc.text = text; changed(doc); }
+          await save(lf.id);
+        } catch (e) { fails.push(`${file.name}: ${e.message}`); }
+        continue;
+      }
       try {
         let linked = false;
         if (MEDIA_UP.test(file.type)) {

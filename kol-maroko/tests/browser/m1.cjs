@@ -72,6 +72,7 @@ const until = async (fn, ms = 10000) => { const t = Date.now(); for (;;) { try {
 
     // ════ א. הבנייה מהלשונית ════
     console.log('\n── א. בנייה ──');
+    wpOpt('kol_wp_plugin_v1', true);           // M2: התוסף בריפו הוא 2.0 — "תוסף 1.x" הוא העותק הקפוא של 1.6.0
     await page.goto(base + '/#/publish');
     await ready();
     await call('pf_migrate', {});

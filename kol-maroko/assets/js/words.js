@@ -9,6 +9,8 @@ const Words = (() => {
   const KIND = { site: ['באתר', ''], copy: ['בכלי', 'ok'], file: ['חדשה', 'warn'], missing: ['חסרה', 'bad'] };
   let D = null;                           // { words, topics }
   let q = '', topic = '', audio = '', shown = PAGE;
+  const picked = new Set();               // N1: בחירה מרובה — לגרירה ול"העבר ל…"
+  let dragIds = null;
   let player = null;
 
   const plain = html => { const d = document.createElement('div'); d.innerHTML = html.replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'); return d.textContent.replace(/\s+/g, ' ').trim(); };
@@ -73,6 +75,11 @@ const Words = (() => {
     const audioSel = h('select', { 'aria-label': 'הקלטה', onchange: e => { audio = e.target.value; shown = PAGE; list(); } },
       Object.entries(AUDIO).map(([v, l]) => h('option', { value: v, selected: v === audio }, l)));
     const n = k => D.words.filter(w => w.audio_kind === k).length;
+    // N1: מה שנבחר — "העבר ל…" (מקום מספרי) או גרירה של כולן יחד
+    const bulk = h('div', { class: 'w-bulk', hidden: !picked.size },
+      h('span', { 'data-picked': picked.size }, `${picked.size} נבחרו`),
+      h('button', { type: 'button', class: 'btn sm', onclick: () => moveTo([...picked], host) }, '↕️ העבר ל…'),
+      h('button', { type: 'button', class: 'btn sm ghost', onclick: () => { picked.clear(); draw(host); } }, 'ביטול הבחירה'));
     const csvIn = h('input', { type: 'file', accept: '.csv,text/csv', hidden: true, onchange: () => importCsv(csvIn, host) });
     const box = h('div', { class: 'w-box' });
     host.replaceChildren(
@@ -88,7 +95,7 @@ const Words = (() => {
         h('b', {}, String(D.topics.length)), h('span', { class: 'muted' }, 'נושאים')),
         n('site') ? h('p', { class: 'hint', style: 'margin:0' }, `${n('site')} הקלטות עדיין רק באתר. להעתקה לכלי: ⚙️ הגדרות ← "ייבוא ההקלטות".`) : null),
       h('div', { class: 'w-filters' }, search, topicSel, audioSel),
-      box);
+      bulk, box);
 
     function rows() {
       const s = norm(q.trim());
@@ -100,7 +107,7 @@ const Words = (() => {
     function list() {
       const all = rows();
       const table = h('table', { class: 'w-table' },
-        h('thead', {}, h('tr', {}, h('th', { class: 'w-c-word' }, 'מילה'),
+        h('thead', {}, h('tr', {}, h('th', { class: 'w-c-ord' }, h('span', { title: 'הסדר בעמוד — גרירה בידית ⠿' }, '#')), h('th', { class: 'w-c-word' }, 'מילה'),
           h('th', {}, 'פירוש'), h('th', { class: 'w-c-topics' }, 'נושאים'), h('th', { class: 'w-c-audio' }, 'הקלטה'), h('th', { class: 'w-c-act' }, h('span', { class: 'sr' }, 'עריכה')))),
         h('tbody', {}, all.slice(0, shown).map(w => row(w, host))));
       box.replaceChildren(...[
@@ -133,8 +140,17 @@ const Words = (() => {
 
   function row(w, host) {
     const [kl, kc] = KIND[w.audio_kind] || ['', ''];
-    // ההשמעה בתוך תא המילה — שניהם נשארים במקום כשגוללים את הטבלה לרוחב
-    return h('tr', {},
+    const place = D.words.indexOf(w) + 1;
+    const tr = h('tr', { 'data-word': w.id, ondragover: e => { if (dragIds) { e.preventDefault(); tr.classList.toggle('w-drop-after', e.offsetY > tr.offsetHeight / 2); tr.classList.add('w-drop'); } },
+      ondragleave: () => tr.classList.remove('w-drop', 'w-drop-after'),
+      ondrop: e => { e.preventDefault(); tr.classList.remove('w-drop', 'w-drop-after'); if (dragIds) dropOn(w, e.offsetY > tr.offsetHeight / 2, host); } },
+      // N1: ידית לגרירה, תיבת בחירה, ומספר המקום (לחיצה — "העבר ל…")
+      h('td', { class: 'w-c-ord' }, h('div', { class: 'w-ord' },
+        h('span', { class: 'w-grip', draggable: 'true', title: 'גרירה לשינוי הסדר', 'aria-hidden': 'true',
+          ondragstart: e => { dragIds = picked.has(w.id) ? [...picked] : [w.id]; e.dataTransfer.setData('text/plain', String(w.id)); e.dataTransfer.effectAllowed = 'move'; },
+          ondragend: () => { dragIds = null; } }, '⠿'),
+        h('input', { type: 'checkbox', 'aria-label': `בחירה: ${w.word}`, checked: picked.has(w.id), onchange: e => { e.target.checked ? picked.add(w.id) : picked.delete(w.id); draw(host); } }),
+        h('button', { type: 'button', class: 'w-place', title: 'העבר ל…', 'aria-label': `מקום ${place} — העבר ל…`, onclick: () => moveTo(picked.has(w.id) ? [...picked] : [w.id], host) }, String(place)))),
       h('td', { class: 'w-c-word' }, h('div', { class: 'w-wordcell' }, w.audio_src
         ? h('button', { type: 'button', class: 'icon-btn w-play', 'aria-label': `השמעה: ${w.word}`, onclick: e => play(w.audio_src, e.currentTarget) }, '▶')
         : h('span', { class: 'w-play none', role: 'img', 'aria-label': 'בלי הקלטה', title: 'בלי הקלטה' }),
@@ -145,6 +161,34 @@ const Words = (() => {
       h('td', { class: 'w-c-audio' }, h('button', { type: 'button', class: 'w-aud', title: 'הקלטה / החלפה', onclick: () => pickAudio(w, host) },
         kl ? h('span', { class: `chip ${kc}` }, kl) : h('span', { class: 'muted' }, '🎙️ +'))),
       h('td', { class: 'w-c-act' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכה: ${w.word}`, onclick: () => edit(w, host) }, '✏️')));
+    return tr;
+  }
+
+  // ── N1: הסדר — גרירה ו"העבר ל…". נכתב רק מה שזז (word_move); הסדר בעמוד ובקובץ data/words.json — אותו סדר ──
+  async function move(body, host) {
+    try {
+      const r = await api('word_move', body);
+      for (const [id, v] of Object.entries(r.sort || {})) { const w = D.words.find(x => x.id === +id); if (w) w.sort_order = v; }
+      D.words.sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+      toast(r.moved ? `הסדר נשמר · ${r.moved} זזו` : 'הסדר לא השתנה');
+      draw(host);
+    } catch (e) { toast(e.message, true); }
+  }
+  function dropOn(w, after, host) {
+    const ids = dragIds; dragIds = null;
+    if (!ids || ids.includes(w.id) && ids.length === 1) return;
+    if (!after) return move({ ids, before: w.id }, host);
+    const rest = D.words.filter(x => !ids.includes(x.id));
+    const next = rest[rest.indexOf(w) + 1];
+    move(next ? { ids, before: next.id } : { ids, to: rest.length + 1 }, host);
+  }
+  function moveTo(ids, host) {
+    if (!ids.length) return;
+    const v = prompt(`להעביר ${ids.length > 1 ? ids.length + ' מילים' : 'את המילה'} למקום (1–${D.words.length}):`, '1');
+    const n = parseInt(v || '', 10);
+    if (!n || n < 1) return;
+    picked.clear();
+    move({ ids, to: n }, host);
   }
 
   async function pickAudio(w, host) {
@@ -172,23 +216,48 @@ const Words = (() => {
   }
 
   // ── אקסל ────────────────────────────────────────────────
+  // N1: אותו מנוע כמו שמירת data/words.json — תצוגה של מה ישתנה לפי id, ורק אז "החל". הבייטים כמו שהם (הקידוד מזוהה בשרת)
   async function importCsv(input, host) {
     const f = input.files[0];
     input.value = '';
     if (!f) return;
-    if (!confirm('לעדכן את המילים לפי הקובץ? שורה עם מזהה — מעדכנת את המילה, בלי מזהה — מוסיפה. מחיקה וההקלטות — לא מהקובץ.')) return;
-    const buf = await f.arrayBuffer();
-    let text;
-    try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { text = new TextDecoder('windows-1255').decode(buf); }
-    try {
-      const r = await api('words_csv_import', { csv: text });
-      D = r;
-      const s = r.stats;
-      sheet('⬆️ מאקסל', h('div', { class: 'summary' },
-        h('p', {}, h('b', {}, `${s.updated} עודכנו · ${s.added} נוספו`), ` · ${s.same} בלי שינוי`),
-        s.errors.length ? h('div', { class: 'warnbox' }, h('b', {}, `${s.errors.length} שורות לא נקלטו:`), h('ul', {}, s.errors.slice(0, 30).map(x => h('li', {}, x)))) : null));
-      draw(host);
-    } catch (e) { toast(e.message, true); }
+    const buf = new Uint8Array(await f.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    csvPlan(btoa(bin), false, host);
+  }
+  async function csvPlan(b64, replace, host) {
+    let r;
+    try { r = await api('words_csv_import', { csv_b64: b64, replace_all: replace }); }
+    catch (e) {
+      if (e.status === 422 && e.data?.errors) sheet('⬆️ מאקסל — לא יובא', h('p', { class: 'hint' }, `זוהה קידוד: ${e.data.encoding || '?'} · הטבלה לא השתנתה.`),
+        h('div', { class: 'warnbox', 'data-csv-errors': true }, h('ul', {}, e.data.errors.slice(0, 50).map(x => h('li', { dir: 'auto' }, x.msg)))));
+      else toast(e.message, true);
+      return;
+    }
+    const p = r.plan, c = p.counts;
+    const fold = (title, n, items) => n ? h('details', {}, h('summary', {}, `${title} (${n})`), h('ul', {}, items)) : null;
+    const name = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', external_id: 'מספר מהאקסל' };
+    const all = h('input', { type: 'checkbox', checked: replace, onchange: e => { dlg.close(); csvPlan(b64, e.target.checked, host); } });
+    const apply = h('button', { type: 'button', class: 'btn primary', 'data-csv-apply': true }, replace ? `החל — ${c.trashed} לסל` : 'החל');
+    const dlg = sheet('⬆️ מאקסל — מה ישתנה',
+      h('p', { class: 'hint', 'data-csv-encoding': r.encoding }, `זוהה קידוד: ${r.encoding}`),
+      h('p', { 'data-csv-summary': true }, h('b', {}, p.summary)),
+      p.warnings?.length ? h('div', { class: 'warnbox' }, h('ul', {}, p.warnings.slice(0, 20).map(x => h('li', { dir: 'auto' }, x.msg)))) : null,
+      fold('ישתנו', c.changed, p.changed.map(w => h('li', {}, h('b', { dir: 'auto' }, w.word), h('ul', {}, Object.entries(w.fields).map(([k, [a, b]]) => h('li', { dir: 'auto' }, `${name[k] || k}: ${a || '—'} ← ${b || '—'}`)))))),
+      fold('יתווספו', c.added, p.added.map(w => h('li', { dir: 'auto' }, w.word))),
+      fold('יעברו לסל', c.trashed, p.trashed.map(w => h('li', { dir: 'auto' }, w.word))),
+      p.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + p.new_topics.map(t => t.name).join(', ')) : null,
+      h('label', { class: 'line' }, all, ' החלף הכול — מילה שאינה בגיליון עוברת לסל (מפרסם בלבד, עם נקודת שחזור)'),
+      p.snapshot ? h('p', { class: 'hint' }, '↩️ לפני ההחלה תיווצר נקודת שחזור.') : null,
+      h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
+    if (!c.changed && !c.added && !c.trashed && !c.moved && !c.topics) apply.disabled = true;
+    apply.onclick = async () => {
+      if (replace && !confirm(`${c.trashed} מילים יעברו לסל. להמשיך?`)) return;
+      apply.disabled = true;
+      try { D = await api('words_csv_import', { csv_b64: b64, replace_all: replace, apply: true, token: p.token }); dlg.close(); toast('הטבלה עודכנה · ' + p.summary); draw(host); }
+      catch (e) { apply.disabled = false; toast(e.message, true); }
+    };
   }
 
   // ── כרטיס עריכה: הכול, כולל הפירוש המעוצב וההקלטה ──────────

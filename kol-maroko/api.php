@@ -48,7 +48,7 @@ const PUBLIC_ACTIONS = ['embed_key', 'media'];
 const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
-                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
+                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
@@ -144,6 +144,7 @@ try {
         'topic_op' => topic_op(require_role($user, 'editor'), $body),
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
+        'word_move' => word_move(require_role($user, 'editor'), $body),          // N1: גרירה / "העבר ל…" בטבלה
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),

@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 16;
+const KOL_SCHEMA_VERSION = 17;
 
 final class ApiError extends RuntimeException
 {
@@ -401,6 +401,11 @@ function migrate(PDO $pdo): void
                 read_at  TEXT,
                 read_by  TEXT
             );
+            SQL,
+        // N1: הסדר הידני של המילים. הוספה בלבד; המילוי הראשון — ב-PHP (words_order_fill), כי הוא משחזר את lex_sort (Collator)
+        17 => <<<'SQL'
+            ALTER TABLE words ADD COLUMN sort_order INTEGER;
+            CREATE INDEX idx_words_sort ON words(sort_order, id);
             SQL,
     ];
     foreach ($steps as $n => $sql) {

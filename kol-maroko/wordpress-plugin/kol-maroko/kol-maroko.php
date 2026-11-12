@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.6.0
+ * Version: 2.0.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -15,19 +15,28 @@
  * כל בקשה נבדקת: חתימה מול המפתח הציבורי שהודבק בהגדרות, site = הדומיין הזה, page = lexicon, זמן ±5 דקות,
  * nonce שלא נראה, ולפרסום — מספר גרסה גבוה מהאחרון שהתקבל. שום נקודה לא מחזירה תוכן, משתמשים או קבצים.
  *
+ * 2.0 (פרוסה M2) — המסלול החדש, לצד 1.x ובלי לשנות אותו:
+ *   POST …/asset_has, …/asset_put, …/manifest, …/activate — חבילה חתומה לפי hash (v2-store.php).
+ *   GET/HEAD /lexicon/** — כשהמפסק "העמוד החדש" דולק ויש גרסה v2: מוגש מהחבילה, לפני וורדפרס, מבודד (v2-serve.php).
+ *   המפסק כבוי (ברירת המחדל), או שאין גרסה v2 — האתר מגיש בדיוק מה שהגיש ב-1.x.
+ *
  * מסך ההגדרות (הגדרות ← קול מרוקו, מנהלים בלבד): המפתח הציבורי, העמוד, מתג "פעיל", הגרסאות שהתקבלו,
  * "חזרה לתוכן המקורי", ו"ייצוא העמוד הקיים" — קובץ ZIP עם התוכן, העיצוב והקבצים, להעלאה לסטודיו.
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.6.0');
+define('KOL_MAROKO_VERSION', '2.0.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
 define('KOL_MAROKO_KEEP', 10);
 define('KOL_MAROKO_MAX_FILE', 600 * 1024 * 1024);
 define('KOL_MAROKO_EXTS', 'jpg,jpeg,png,gif,webp,mp3,m4a,aac,ogg,webm,wav,mp4,mov,pdf,docx,xlsx,pptx,zip,txt');
+
+require_once __DIR__ . '/v2-store.php';
+require_once __DIR__ . '/v2-serve.php';
+require_once __DIR__ . '/v2-admin.php';
 
 // ── עזרים ──────────────────────────────────────────────────
 
@@ -75,10 +84,15 @@ function kol_maroko_fail($code, $msg, $status = 400, $extra = [])
     return new WP_REST_Response(['ok' => false, 'code' => $code, 'message' => $msg] + $extra, $status);
 }
 
+// ── ההגשה של 2.0 — בטעינת הקובץ, לפני הניתוב של וורדפרס (תופסת רק כשהמפסק דולק ויש גרסה v2) ──
+
+kol_maroko_v2_maybe_serve();
+add_action('init', 'kol_maroko_v2_scope_refresh');
+
 // ── נקודות הקבלה ──────────────────────────────────────────
 
 add_action('rest_api_init', function () {
-    foreach (['ping', 'asset', 'publish', 'switch'] as $action) {
+    foreach (['ping', 'asset', 'publish', 'switch', 'asset_has', 'asset_put', 'manifest', 'activate'] as $action) {
         register_rest_route('kol-maroko/v1', '/' . $action, [
             'methods' => 'POST',
             'permission_callback' => '__return_true',     // ההגנה היא החתימה (נבדקת ב-kol_maroko_verify)
@@ -123,8 +137,12 @@ function kol_maroko_handle($action, WP_REST_Request $req)
     if ($b instanceof WP_REST_Response) return $b;
     if ($action === 'ping') {
         return new WP_REST_Response(['ok' => true, 'version' => (int)kol_maroko_opt('last', 0), 'live' => (int)kol_maroko_opt('live', 0),
-            'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION]);
+            'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION,
+            'protocol' => KOL_MAROKO_PROTOCOL, 'v2_version' => (int)kol_maroko_opt('v2_last', 0), 'v2_live' => (int)kol_maroko_opt('v2_live', 0),
+            'v2_on' => (bool)kol_maroko_opt('v2_on', false), 'v2_has_live' => kol_maroko_v2_live_manifest() !== null,
+            'v2_preview' => (bool)kol_maroko_opt('v2_preview_hash', ''), 'v2_stats' => kol_maroko_opt('v2_on', false) ? kol_maroko_v2_stats_public() : null]);
     }
+    if (in_array($action, ['asset_has', 'asset_put', 'manifest', 'activate'], true)) return kol_maroko_v2_handle($action, $b);
     if ($action === 'asset') return kol_maroko_asset($b);
     if ($action === 'switch') return kol_maroko_switch($b);
     return kol_maroko_publish($b);
@@ -356,6 +374,7 @@ add_action('admin_post_kol_maroko_save', function () {
         kol_maroko_set('keys', trim(sanitize_textarea_field(wp_unslash($_POST['keys'] ?? ''))));
         kol_maroko_set('page_id', (int)($_POST['page_id'] ?? 0));
         kol_maroko_set('enabled', !empty($_POST['enabled']));
+        kol_maroko_v2_scope_refresh();
     } elseif ($op === 'original') {
         kol_maroko_set('enabled', false);
     } elseif ($op === 'show' && ($n = (int)($_POST['n'] ?? 0)) && kol_maroko_opt('v_' . $n)) {
@@ -428,10 +447,13 @@ function kol_maroko_admin()
         echo '</p>';
     }
 
+    kol_maroko_v2_admin_section();
+
     echo '<h2 id="kol-diag">🔎 אבחון</h2><p>איך העמוד בנוי: התבניות, סוגי התוכן, והרכיבים שהמבקר רואה. מעתיקים את כל הטקסט בתיבה ושולחים לצ\'אט של קול מרוקו.</p>';
     echo '<form method="post" action="' . $post . '">' . wp_nonce_field('kol_maroko_diagnose', '_wpnonce', true, false) . '<input type="hidden" name="action" value="kol_maroko_diagnose">';
     submit_button('🔎 הפקת אבחון', 'secondary', 'submit', false);
     echo '</form>';
+    kol_maroko_v2_selftest_html();
     $diag = get_transient('kol_maroko_diag');
     if ($diag) {
         echo '<textarea readonly rows="18" dir="ltr" style="width:100%;max-width:900px;font:12px monospace" onclick="this.select()">'
@@ -684,6 +706,7 @@ function kol_maroko_diagnose($id, $render = null)
         $c = wp_count_posts($pt->name);
         $d['post_types'][] = ['name' => $pt->name, 'label' => $pt->label, 'publish' => (int)($c->publish ?? 0), 'public' => (bool)$pt->public];
     }
+    $d['v2'] = kol_maroko_v2_diagnose();
     $d['entry_types'] = kol_maroko_entry_types($render['full'] ?? '');
     // תבניות אלמנטור (Theme Builder / JetThemeCore) ותנאיהן
     $d['templates'] = [];

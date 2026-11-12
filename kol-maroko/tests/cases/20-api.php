@@ -12,7 +12,7 @@ const API_MIN_ROLE = [
     'publish_preview' => 'publisher', 'publish' => 'publisher', 'republish' => 'publisher', 'version_send' => 'publisher',
     'versions' => 'editor', 'version_preview' => 'editor', 'publish_settings' => 'owner', 'key_rotate' => 'owner', 'key_activate' => 'owner',
     'site_set' => 'owner', 'site_ping' => 'publisher', 'site_switch' => 'publisher', 'import_run' => 'owner',
-    'words' => 'editor', 'word_save' => 'editor', 'word_delete' => 'editor', 'topic_op' => 'editor', 'words_csv' => 'editor', 'words_csv_import' => 'editor',
+    'words' => 'editor', 'word_save' => 'editor', 'word_delete' => 'editor', 'topic_op' => 'editor', 'words_csv' => 'editor', 'words_csv_import' => 'editor', 'word_move' => 'editor',
     'audio_import' => 'owner', 'snapshots' => 'editor', 'snapshot_create' => 'editor', 'snapshot_restore' => 'editor', 'snapshot_preview' => 'editor',
     'trash' => 'editor', 'trash_restore' => 'editor', 'trash_purge' => 'owner', 'backup' => 'owner',
     'code' => 'editor', 'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor', 'code_history' => 'editor', 'code_history_get' => 'editor',
