@@ -1,4 +1,12 @@
-/** V10 */
+/**
+ * פרוסה V10 — מסגרת, צל, אפקטים, תנועה, sticky ורקע מתקדם — בדיקות בדפדפן   node kol-maroko/tests/browser/v10.cjs
+ *
+ * על index.html המוסב: לכל קבוצה — שינוי בפאנל (עכבר אמיתי) ← השורה בקובץ ← הקנבס (getComputedStyle); ידיות על הקנבס בעכבר
+ * אמיתי — רדיוס (Alt: פינה אחת), ☀ צל (גרירה + גלגלת), ⟳ סיבוב (Shift 15°), נקודת ציר, Ctrl + פינה = scale; מפריד צורה נבחר
+ * ונמחק; css/motion.css נוצר ומקושר; js/kol-motion.js נוצר רק ב"כשנראה"; התצוגה החיה (is-in, prefers-reduced-motion באמולציה,
+ * בלי הקובץ — לא שקוף); אפקט גלילה + גלילה מדומה; נדבק; וידאו ברקע ב-Navigator; מצגת; הזרקה; Ctrl+Z עד ההתחלה (הקבצים
+ * שנוצרו — לסל); 1920×1080 ו-1366×768 בלי פס ריק; 390 — מגע. צילומים — ל-tmpdir (kol-v10-shots).
+ */
 'use strict';
 const { chromium } = require('playwright');
 const { spawn, execFileSync } = require('child_process');
@@ -262,6 +270,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const o_1 = await cs(page, '.v10-box', 'opacity');
     ok(+o_0 < 0.2 && +o_1 > 0.8, '"מיקום גלילה מדומה" — הקנבס מראה כל נקודה בטווח (שקיפות 0 ← 1)', { o_0, o_1 });
 
+    // אפקט עכבר — הטיה (js/kol-motion.js כבר קיים: לא נוצר שוב)
+    await page.click(A_ + '[data-mouse="tilt"]'); await sleep(900);
+    all = await files(page);
+    ok(/<section class="v10-box kol-sc" data-kol-tilt="10">/.test(all['index.html']) && /\.v10-box \{[^}]*transform: perspective\(800px\) rotateX\(var\(--kol-tilt-x, 0deg\)\) rotateY\(var\(--kol-tilt-y, 0deg\)\);/.test(all['css/page.css']) && (all['index.html'].match(/kol-motion\.js/g) || []).length === 1, 'אפקט עכבר "הטיה": data-kol-tilt + transform עם var() בכלל היעד; kol-motion.js — פעם אחת', await lastTx(page));
+    // "קוד" מראה את השורות שנכתבו
+    st = await page.evaluate(() => { const t = [...Editor._state.sheets.values()].find(x => x.path === 'css/motion.css'); return t ? t.doc.text().split('\n').filter(l => /kol-in-fade-up|kol-sc/.test(l)).length : 0; });
+    ok(st >= 3, 'css/motion.css — קובץ רגיל של הפרויקט, השורות גלויות לעורך הקוד', st);
+
     // ═══ 10. נדבק ═══
     await select(page, '.v10-t'); await tab(page, 'adv'); await openGrp(page, A_, 'sticky');
     await page.click(A_ + '[data-sticky="top"]'); await sleep(450);
@@ -275,7 +291,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await select(page, '.v10-box'); await tab(page, 'adv'); await openGrp(page, A_, 'bgvideo');
     await page.click(A_ + '[data-bgv-add]'); await pickItem('media/v10/clip.mp4'); await pickItem('media/v10/a.png'); await sleep(900);
     all = await files(page);
-    ok(/<section class="v10-box kol-sc"><video class="bg-video" src="media\/v10\/clip\.mp4" poster="media\/v10\/a\.png" autoplay muted loop playsinline aria-hidden="true"><\/video><h2/.test(all['index.html']) && /\.bg-video \{[^}]*object-fit: cover;/.test(all['css/page.css']) && /@media \(max-width: 767px\) \{[\s\S]*\.bg-video \{ display: none; \}/.test(all['css/page.css']), 'וידאו ברקע: <video class="bg-video"> ראשון ברובריקה (src, poster, autoplay muted loop playsinline), .bg-video ב-CSS, "רק במחשב" ← display:none ב-@media של הטלפון', all['css/page.css'].slice(-260));
+    ok(/<section class="v10-box kol-sc"[^>]*><video class="bg-video" src="media\/v10\/clip\.mp4" poster="media\/v10\/a\.png" autoplay muted loop playsinline aria-hidden="true"><\/video><h2/.test(all['index.html']) && /\.bg-video \{[^}]*object-fit: cover;/.test(all['css/page.css']) && /@media \(max-width: 767px\) \{[\s\S]*\.bg-video \{ display: none; \}/.test(all['css/page.css']), 'וידאו ברקע: <video class="bg-video"> ראשון ברובריקה (src, poster, autoplay muted loop playsinline), .bg-video ב-CSS, "רק במחשב" ← display:none ב-@media של הטלפון', all['css/page.css'].slice(-260));
     st = await page.evaluate(() => { const n = Editor._state.canvas.selected; return n ? n.tag : null; });
     const navHas = await page.evaluate(() => [...document.querySelectorAll('.nv *')].some(e => /video\.bg-video/.test(e.textContent)));
     ok(st === 'video' && navHas, 'הווידאו נבחר, ומופיע ב-Navigator (video.bg-video)', { st, navHas });
