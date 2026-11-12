@@ -16,6 +16,8 @@ devlog_begin('agent');
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
+require_once __DIR__ . '/lib/csp.php';
+csp_api_headers();          // C1: תשובת API לעולם אינה מסמך
 
 function agent_out(array $data, int $code = 200): never
 {

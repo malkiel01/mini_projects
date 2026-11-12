@@ -15,6 +15,8 @@ define('KOL_DATA_DIR', $data);
 if (isset($_SERVER['HTTP_X_TEST_USER'])) $_SERVER['PLATFORM_USER'] = $_SERVER['HTTP_X_TEST_USER'];
 // בדיקות הדפדפן של הבידוד (F4): הזהות בעוגייה — כמו בייצור (HttpOnly, SameSite=Lax), כדי שהדפדפן עצמו יחליט מתי לשלוח אותה
 elseif (isset($_COOKIE['kol_test_user'])) $_SERVER['PLATFORM_USER'] = (string)base64_decode($_COOKIE['kol_test_user']);
+// A2: "האתר" של ההקלטות — שרת מדומה מקומי (tests/fake-audio.php). JSON: {"https://maghreb.co.il": "http://127.0.0.1:PORT"}
+if ($map = getenv('KOL_TEST_REC_MAP')) $GLOBALS['kol_rec_test_map'] = json_decode($map, true);
 // ויומן של מה שהשרת ראה בפועל: מי פנה, מאיזה מקור, ועם זהות או בלי
 if ($trace = getenv('KOL_TEST_TRACE')) {
     file_put_contents($trace, json_encode(['uri' => $_SERVER['REQUEST_URI'], 'method' => $_SERVER['REQUEST_METHOD'], 'origin' => $_SERVER['HTTP_ORIGIN'] ?? null,
@@ -23,6 +25,11 @@ if ($trace = getenv('KOL_TEST_TRACE')) {
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $root = dirname(__DIR__);
+// הסטודיו (C1): '/' ו-index.php — דרך index.php, עם הכותרות; studio.html ישירות — חסום; index.html — 302, כמו ב-.htaccess שבשורש
+if ($path === '/' || $path === '/index.php') { chdir($root); require $root . '/index.php'; exit; }
+if ($path === '/studio.html') { http_response_code(403); exit; }
+if ($path === '/index.html') { $q = (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_QUERY); header('Location: /index.php' . ($q !== '' ? '?' . $q : ''), true, 302); exit; }
+if ($path === '/csp.php') { chdir($root); require $root . '/csp.php'; exit; }
 if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
 if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }
 if ($path === '/api.php' || $path === '/agent.php') {
@@ -45,7 +52,7 @@ if (str_starts_with($path, '/data/')) {
     if (getenv('KOL_TEST_DATA_OPEN')) { echo 'open'; exit; }
     http_response_code(403); exit;
 }
-$file = realpath($root . ($path === '/' ? '/index.html' : $path));
+$file = realpath($root . $path);
 if (!$file || !str_starts_with($file, $root . '/') || !is_file($file) || str_ends_with($file, '.php')) { http_response_code(404); exit; }
 $types = ['html' => 'text/html; charset=utf-8', 'js' => 'text/javascript; charset=utf-8', 'css' => 'text/css; charset=utf-8', 'svg' => 'image/svg+xml', 'json' => 'application/json'];
 header('Content-Type: ' . ($types[pathinfo($file, PATHINFO_EXTENSION)] ?? 'application/octet-stream'));
