@@ -22,3 +22,4 @@
 - 2026-11-12 20:10 — T15: נמצא המקור. Bluehost ← maghreb.co.il ("ארגון קהילות יהודי צפון אפריקה") ← PERFORMANCE ← Cloudflare: "Enable Cloudflare" דלוק, Status: Active. אין שם הגדרת כללים. לא כובה (לפי הבקרה). התבקש צילום של הלשונית SECURITY. הועבר לבקרה להכרעה: תמיכת Bluehost / כיבוי / להמתין ל-M7.
 - 2026-11-12 20:01 — בקרה (6) הכריעה ב-T15: (א) תמיכת Bluehost — רשות, ו-(ג) M7 במקביל; לא לכבות את Cloudflare. SECURITY — לא חובה. Caching Level "Assets & Web Pages" — לא לשנות; ייתכן מטלת Purge אחרי הבדיקה הראשונה. הוצג לבעלים.
 - 2026-11-12 20:05 — T15: צילום SECURITY ב-Bluehost: SSL Premium (Secure), Malware Protection (סריקה), Check Core Files, IP Blocker (Manage), Hotlink Protection (Manage). אין הגדרת WAF/Bot של Cloudflare. לא שונה דבר. הועבר לבקרה.
+- 2026-11-12 21:00 — בקרה (6): M7 נפרסה (1586). T15 ← נפתרה בעקיפין; T13 ב'–ה' ← הוחלפו ב-T16 (חיבור בדרך המשיכה, תוסף 2.2.0). התוויות אומתו ב-main. הוצג לבעלים; לדווח לבקרה אחרי צעד 4 ואחרי צעד 6.
