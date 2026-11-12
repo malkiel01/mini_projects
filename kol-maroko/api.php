@@ -147,14 +147,14 @@ try {
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
         'word_move' => word_move(require_role($user, 'editor'), $body),          // N1: גרירה / "העבר ל…" בטבלה
-        'fields' => fields_state(require_role($user, 'editor')),                // N2: "מבנה המילה" — קריאה לכולם, שינוי — מפרסם
-        'field_save' => field_save(require_role($user, 'publisher'), $body),
-        'field_delete' => field_delete(require_role($user, 'publisher'), $body),
+        'fields' => fields_state(require_role($user, 'editor')),                // N2: "מבנה המילה" — עורך (08 §3); "רוקן נכשלים" ומחיקה עם ערכים — מפרסם, בפונקציה
+        'field_save' => field_save(require_role($user, 'editor'), $body),
+        'field_delete' => field_delete(require_role($user, 'editor'), $body),
         'topics' => topics_state(require_role($user, 'editor')),                // N2: מסך הנושאים
         'topic_save' => topic_save(require_role($user, 'editor'), $body),
         'topic_merge' => topic_merge(require_role($user, 'editor'), $body),
-        'field_key_preview' => field_key_preview(require_role($user, 'publisher'), $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
-        'field_key_apply' => field_key_apply(require_role($user, 'publisher'), $body),
+        'field_key_preview' => field_key_preview(require_role($user, 'editor'), $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
+        'field_key_apply' => field_key_apply(require_role($user, 'editor'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),

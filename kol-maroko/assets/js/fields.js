@@ -1,13 +1,12 @@
 // קול מרוקו — N2: "מבנה המילה" (השדות של כל מילה), מסך הנושאים, והתאים של שדה מותאם בטבלת המילים.
 // נטען מ-words.js לפי הצורך (בלי לשונית ובלי שורה ב-studio.html). השרת: lib/lexicon.php (fields_*, topic_*) ו-lib/fields_bind.php.
-// מבנה (הוספה, מחיקה, סוג, מפתח, "מתפרסם") — מפרסם; ערכים ונושאים — עורך.
+// מבנה, ערכים ונושאים — עורך (08 §3). "רוקן את הנכשלים" ומחיקת שדה שיש לו ערכים — מפרסם (השרת בודק).
 'use strict';
 
 const Fields = (() => {
   const TYPES = { text: 'טקסט קצר', longtext: 'טקסט ארוך', rich: 'טקסט מעוצב', number: 'מספר', bool: 'כן / לא', choice: 'בחירה', date: 'תאריך',
     url: 'קישור', image: 'תמונה', audio: 'הקלטה', list: 'רשימה', topics: 'נושאים' };
   const DIRS = { auto: 'אוטומטי', rtl: 'ימין לשמאל', ltr: 'שמאל לימין' };
-  const canStructure = () => RANK[state.user?.role] >= RANK.publisher;
 
   // תעתיק לטיני פשוט — הצעה למפתח מהשם. המשתמש יכול לשנות; השרת בודק בכל מקרה
   const TR = { א: 'a', ב: 'b', ג: 'g', ד: 'd', ה: 'h', ו: 'v', ז: 'z', ח: 'ch', ט: 't', י: 'y', כ: 'k', ך: 'k', ל: 'l', מ: 'm', ם: 'm', נ: 'n', ן: 'n',
@@ -122,6 +121,7 @@ const Fields = (() => {
     const remove = async f => {
       let d;
       try { d = await api('field_delete', { key: f.key, dry: true }); } catch (e) { toast(e.message, true); return; }
+      if (d.needs === 'publisher' && !S.can_purge) { toast(`לשדה "${f.label}" יש ${d.values} ערכים — מחיקה רק למפרסם`, true); return; }
       const msg = `למחוק את השדה "${f.label}"? ${d.values} ערכים יעברו איתו לסל (שחזור — ב-↩️ שחזור).` + (d.bindings ? `\n${d.bindings} קשירות בקבצי העמוד יישארו בלי ערך.` : '');
       if (!confirm(msg)) return;
       try { S = await api('field_delete', { key: f.key }); toast('השדה הועבר לסל'); onChange(); draw(); } catch (e) { toast(e.message, true); }
@@ -181,7 +181,8 @@ const Fields = (() => {
         h('p', {}, h('b', {}, `יומרו ${c.converted}, ייכשלו ${c.failed_count}`)),
         c.failed_count ? h('ul', {}, c.failed.slice(0, 30).map(x => h('li', { dir: 'auto' }, `${x.word}: ${x.value}`))) : null,
         c.failed_count ? h('p', { class: 'hint' }, 'ערך שנכשל אינו נמחק בשקט: תקנו אותו בטבלה, או רוקנו במפורש (עם נקודת שחזור לפני).') : null,
-        c.failed_count ? h('button', { type: 'button', class: 'btn danger', 'data-clear-failed': true, onclick: () => go({ clear_failed: true }) }, `רוקן את ${c.failed_count} הנכשלים ושמור`) : null));
+        c.failed_count && S.can_purge ? h('button', { type: 'button', class: 'btn danger', 'data-clear-failed': true, onclick: () => go({ clear_failed: true }) }, `רוקן את ${c.failed_count} הנכשלים ושמור`) : null,
+        c.failed_count && !S.can_purge ? h('p', { class: 'hint' }, '"רוקן את הנכשלים" — רק למפרסם.') : null));
       save.onclick = async () => {
         if (!label.value.trim()) { label.focus(); return; }
         if (isNew && !KEY_RX.test(key.value)) { key.focus(); toast('מפתח לא תקין', true); return; }

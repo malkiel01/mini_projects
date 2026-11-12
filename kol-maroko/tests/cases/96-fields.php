@@ -91,7 +91,10 @@ test('N2 מבנה: הוספת שדה — רק מפרסם; מפתח נבדק (ת�
     n2_reset();
     n1_kol();
     $rev = n1_read()['json']['file']['rev'];
-    eq(403, n2_field(['key' => 'translit', 'label' => 'תעתיק', 'type' => 'text'], U_EDITOR)['status'], 'עורך — לא');
+    // 08 §3: המבנה — עורך (שדה בלי ערכים גם נמחק בידי עורך)
+    eq(200, n2_field(['key' => 'by_editor', 'label' => 'מעורך', 'type' => 'text'], U_EDITOR)['status'], 'עורך — מוסיף שדה');
+    eq(200, b_post('field_delete', ['key' => 'by_editor'], U_EDITOR)['status'], 'ומוחק שדה בלי ערכים');
+    eq(403, b_post('field_save', ['key' => 'x2', 'label' => 'x', 'type' => 'text'], U_STRANGER)['status'], 'זר — לא');
     foreach (['Translit', '1x', 'a b', 'a"b', 'a<b', 'a}b', 'x-y', str_repeat('a', 41), 'id', 'wp_id', 'label', 'topics_x', 'word', ''] as $bad) {
         $r = n2_field(['key' => $bad, 'label' => 'x', 'type' => 'text']);
         eq(400, $r['status'], "מפתח נדחה: $bad");
@@ -105,7 +108,7 @@ test('N2 מבנה: הוספת שדה — רק מפרסם; מפתח נבדק (ת�
     eq([true, 'ltr', false, 0], [$f['published'], $f['dir'], $f['builtin'], $f['filled']], 'מתפרסם כברירת מחדל');
     ok($rev !== n1_read()['json']['file']['rev'], 'ה-rev של הקובץ כולל את המבנה');
     eq(400, n2_field(['key' => 'translit', 'label' => 'שוב', 'type' => 'text'])['status'], 'מפתח קיים');
-    eq(1, (int)db()->query("SELECT COUNT(*) FROM audit WHERE action = 'field_add'")->fetchColumn(), 'audit');
+    eq(2, (int)db()->query("SELECT COUNT(*) FROM audit WHERE action = 'field_add'")->fetchColumn(), 'audit');
 });
 
 test('N2 ערכים: כל סוג נבדק בעריכה בתא; ערך עוין נשמר רק כ-JSON; חובה; ברירת מחדל רק למילה חדשה', function () {
@@ -178,7 +181,7 @@ test('N2 מחיקה: שדה וכל ערכיו לסל, עם נקודת שחזור
     $fp = md5(json_encode(array_column(words_rows(), 'extra')));
     $d = b_post('field_delete', ['key' => 'translit', 'dry' => true], U_PUBLISHER)['json'];
     eq([5, 0], [$d['values'], $d['bindings']], 'תצוגה לפני');
-    eq(403, b_post('field_delete', ['key' => 'translit'], U_EDITOR)['status']);
+    eq(403, b_post('field_delete', ['key' => 'translit'], U_EDITOR)['status'], 'שדה עם ערכים — מחיקה רק למפרסם');
     eq(200, b_post('field_delete', ['key' => 'translit'], U_PUBLISHER)['status']);
     ok((int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn() > $snapBefore, 'נקודת שחזור');
     ok(!str_contains(words_json(), 'translit'), 'השדה והערכים יצאו');
@@ -203,7 +206,8 @@ test('N2 שינוי סוג: "יומרו / ייכשלו" עם הרשימה; נע�
     eq([3, 2], [$r['json']['convert']['converted'], $r['json']['convert']['failed_count']], json_encode($r['json'], JSON_UNESCAPED_UNICODE));
     eq(['שתים', 'x'], array_map(fn($f) => json_decode($f['value']), $r['json']['convert']['failed']));
     $fp = md5(json_encode(array_column(words_rows(), 'extra')));
-    eq(422, n2_field(['orig' => 'num', 'label' => 'מספר', 'type' => 'number'])['status'], 'נעצר');
+    eq(422, n2_field(['orig' => 'num', 'label' => 'מספר', 'type' => 'number'], U_EDITOR)['status'], 'נעצר (גם לעורך — שינוי סוג מותר לו)');
+    eq(403, n2_field(['orig' => 'num', 'label' => 'מספר', 'type' => 'number', 'clear_failed' => true], U_EDITOR)['status'], '"רוקן" — רק למפרסם');
     eq($fp, md5(json_encode(array_column(words_rows(), 'extra'))), 'שום ערך לא השתנה');
     eq('text', array_column(fields_all(), 'type', 'key')['num']);
     $r = n2_field(['orig' => 'num', 'label' => 'מספר', 'type' => 'number', 'clear_failed' => true]);
@@ -260,8 +264,7 @@ test('N2 קובץ: מפתח לכל שדה, אחרי המובנים; ערך לפ�
     $r = n1_save(n1_enc($j), false);
     eq(422, $r['status']);
     eq('gender:x', $r['json']['errors'][0]['propose_option'] ?? null, 'בחירה שאינה ברשימה — הצעה');
-    eq(403, n1_save(n1_enc($j), true, ['create_options' => ['gender:x']])['status'], 'הוספת אפשרות — מפרסם');
-    eq(200, n1_save(n1_enc($j), true, ['create_options' => ['gender:x']], U_PUBLISHER)['status']);
+    eq(200, n1_save(n1_enc($j), true, ['create_options' => ['gender:x']])['status'], 'הוספת אפשרות — עורך');
     ok(in_array('x', array_column(array_column(fields_all(), 'options', 'key')['gender'], 'value'), true), 'האפשרות נוספה');
     // מפתח לא מוכר
     $j = n1_file();
@@ -273,8 +276,7 @@ test('N2 קובץ: מפתח לכל שדה, אחרי המובנים; ערך לפ�
     ok(count(array_filter($r['json']['errors'], fn($e) => ($e['propose_field'] ?? '') === 'notes')) === 1, 'הצעה "צור שדה notes"');
     ok(count(array_filter($r['json']['errors'], fn($e) => str_contains($e['msg'], 'evil'))) === 1, 'מפתח עוין — שגיאה, בלי הצעה');
     unset($j['items'][2]['evil"key']);
-    eq(403, n1_save(n1_enc($j), true, ['create_fields' => ['notes']])['status'], 'עורך — לא יוצר שדה');
-    $a = n1_save(n1_enc($j), true, ['create_fields' => ['notes']], U_PUBLISHER);
+    $a = n1_save(n1_enc($j), true, ['create_fields' => ['notes']]);
     eq(200, $a['status'], json_encode($a['json'], JSON_UNESCAPED_UNICODE));
     eq('text', array_column(fields_all(), 'type', 'key')['notes'], 'סוג מנוחש');
     eq('עוד', n2_word($j['items'][1]['id'])['extra']['notes']);
@@ -345,8 +347,7 @@ test('N2 אקסל: עמודה לכל שדה (הכותרת — השם); הלוך-
     $p = b_post('words_csv_import', ['csv' => n2_csv($rows)], U_EDITOR)['json'];
     ok(str_contains(json_encode($p['plan']['warnings'], JSON_UNESCAPED_UNICODE), 'region'), 'לא תיובא');
     eq('region', $p['plan']['field_proposals'][0]['key'] ?? null);
-    eq(403, n2_csv_import(n2_csv($rows), ['create_fields' => ['region']])['status'], 'יצירת שדה — מפרסם');
-    eq(200, n2_csv_import(n2_csv($rows), ['create_fields' => ['region']], U_PUBLISHER)['status']);
+    eq(200, n2_csv_import(n2_csv($rows), ['create_fields' => ['region']])['status'], 'יצירת שדה מאקסל — עורך');
     eq('צפון', n2_word($ids[1])['extra']['region']);
     $rows[$x][9] = 'שתיים';
     eq(422, n2_csv_import(n2_csv($rows), [], U_EDITOR, false)['status'], 'מספר לא תקין — שגיאה עם שורה');
@@ -407,7 +408,7 @@ test('N2 שינוי מפתח: כל הקשירות (קובץ · שורה · לפ�
     eq(2, count($manual), 'JS: item.translit ו-[\'translit\'] — לבדיקה ידנית (לא ההערה ולא המחרוזת)');
     eq(1, $p['json']['values']);
     ok(str_contains($auto[0]['after'], 'data-kol-sort="-latin"'), 'אחרי');
-    eq(403, http('GET', '/api.php?action=field_key_preview&key=translit&to=latin', ['user' => U_EDITOR])['status'], 'עורך — לא');
+    eq(200, http('GET', '/api.php?action=field_key_preview&key=translit&to=latin', ['user' => U_EDITOR])['status'], 'עורך — כן (08 §3)');
     // מפתח עוין — נדחה בשרת, ושום קובץ לא נגע
     foreach (['a"b', 'a<b', 'a}b', 'a b', 'Latin', 'id', 'word', '{x}', "a\nb"] as $bad) {
         eq(400, b_post('field_key_apply', ['key' => 'translit', 'to' => $bad, 'revs' => []], U_PUBLISHER)['status'], "נדחה: $bad");

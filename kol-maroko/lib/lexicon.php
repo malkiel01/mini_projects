@@ -258,7 +258,7 @@ function topics_state(array $user): array
     $all = topics_all();
     $meta = files_meta(array_values(array_filter(array_column($all, 'image'), 'file_id')));
     return ['topics' => array_values(array_map(fn($t) => array_diff_key($t, ['row' => 1]) + ['image_src' => $t['image'] !== '' && isset($meta[$t['image']]) ? media_url($t['image']) : ''], $all)),
-        'can_slug' => ROLE_RANK[$user['role'] ?? 'editor'] >= ROLE_RANK['publisher'], 'rev' => words_rev()];
+        'can_slug' => true, 'rev' => words_rev()];
 }
 
 /**
@@ -935,7 +935,7 @@ function field_guess(array $values, bool $csv = false): string
     return 'text';
 }
 
-/** שדה חדש שאושר מתוך קובץ / גיליון (publisher) — ההגדרה שנכנסת ל-word_fields בהחלה. */
+/** שדה חדש שאושר מתוך קובץ / גיליון (עורך) — ההגדרה שנכנסת ל-word_fields בהחלה. */
 function field_proposed(string $key, string $type): array
 {
     return field_norm(['key' => $key, 'label' => $key, 'type' => $type, 'col' => null, 'required' => 0, 'def' => null, 'help' => '', 'options' => '[]', 'published' => 1, 'dir' => 'auto', 'sort_order' => 0]);
@@ -1030,7 +1030,7 @@ function words_file_items(string $bytes, array $state, array $create, array $opt
             }
         }
     }
-    // מפתחות לא מוכרים: שדה חדש מוצע (publisher). הסוג — לפי כל הערכים שלו בקובץ
+    // מפתחות לא מוכרים: שדה חדש מוצע (עורך). הסוג — לפי כל הערכים שלו בקובץ
     $unknown = [];
     foreach ($j['items'] as $x => $it) if (is_array($it)) foreach ($it as $k => $v) {
         $k = (string)$k;
@@ -1044,7 +1044,7 @@ function words_file_items(string $bytes, array $state, array $create, array $opt
         $type = field_guess($u['values']);
         $fieldProps[$k] = ['key' => $k, 'type' => $type, 'line' => $at($p)[0], 'count' => count(array_filter($u['values'], fn($v) => $v !== null && $v !== ''))];
         if (in_array($k, $opt['fields'] ?? [], true)) $custom[$k] = field_proposed($k, $type);
-        else $add($errors, $p, "שדה לא מוכר \"$k\" — אשרו \"צור שדה $k\" (סוג: $type; דורש מפרסם), או הסירו אותו", ['propose_field' => $k]);
+        else $add($errors, $p, "שדה לא מוכר \"$k\" — אשרו \"צור שדה $k\" (סוג: $type), או הסירו אותו", ['propose_field' => $k]);
     }
     $allFields = array_merge(array_values(array_filter($fields, fn($f) => $f['col'] !== null)), array_values($custom));
     $items = []; $seen = [];
@@ -1200,7 +1200,7 @@ function words_plan(array $in, array $state): array
         'new_topics' => $in['create'] ?? [], 'proposals' => $in['proposals'] ?? [], 'field_proposals' => $in['field_proposals'] ?? [],
         'option_proposals' => $in['option_proposals'] ?? [], 'warnings' => $in['warnings'] ?? [],
         'snapshot' => $counts['trashed'] > 0 || $counts['changed'] + $counts['added'] + $moved > WORDS_BULK || !empty($counts['new_fields']),
-        'needs' => $counts['trashed'] > WORDS_BULK || !empty($in['replace']) || !empty($counts['new_fields']) || !empty($counts['new_options']) ? 'publisher' : 'editor'];
+        'needs' => $counts['trashed'] > WORDS_BULK || !empty($in['replace']) ? 'publisher' : 'editor'];      // N2: "צור שדה" / "הוסף אפשרות" — עורך (08 §3)
     $plan['summary'] = words_plan_text($counts, array_diff_key($byField, array_flip(array_values($c2k))));    // המובנים — כמו ב-N1
     // האסימון: <חותמת הטבלה>.<חותמת התוכנית> — כך ההחלה יודעת קודם כול אם הטבלה השתנתה מאז התצוגה
     $plan['token'] = words_state_hash($state) . '.' . substr(hash('sha256', json_encode([$in['items'], $set, array_column($trashed, 'id'), $in['create'] ?? [],
@@ -1250,7 +1250,7 @@ function words_apply(array $user, callable $build, string $token, string $source
         if (ROLE_RANK[$user['role'] ?? 'editor'] < ROLE_RANK[$plan['needs']]) throw new ApiError('"החלף הכול", ומחיקה של יותר מ-' . WORDS_BULK . ' מילים — רק למפרסם', 403, ['plan' => $plan]);
         $snap = $plan['snapshot'] ? snapshot_create($user, "לפני שמירת $source: " . $plan['summary']) : null;
         $now = now_iso();
-        // N2: שדות חדשים ואפשרויות חדשות שאושרו (publisher — נבדק למעלה דרך needs)
+        // N2: שדות חדשים ואפשרויות חדשות שאושרו בתצוגה
         if (!empty($in['create_fields']) || !empty($in['create_options'])) fields_fill();
         foreach ($in['create_fields'] ?? [] as $cf) {
             if (field_key_error($cf['key'], fields_all())) throw new ApiError("כבר יש שדה \"{$cf['key']}\"", 409);
@@ -1347,7 +1347,7 @@ function words_apply(array $user, callable $build, string $token, string $source
 function words_file_save(array $user, string $bytes, array $b): array
 {
     $create = array_values(array_filter(is_array($b['create_topics'] ?? null) ? $b['create_topics'] : [], 'is_string'));
-    // N2: "צור שדה" ו"הוסף אפשרות" שאושרו בתצוגה (publisher — נבדק בהחלה)
+    // N2: "צור שדה" ו"הוסף אפשרות" שאושרו בתצוגה
     $opt = ['fields' => array_values(array_filter(is_array($b['create_fields'] ?? null) ? $b['create_fields'] : [], 'is_string')),
         'options' => array_values(array_filter(is_array($b['create_options'] ?? null) ? $b['create_options'] : [], 'is_string'))];
     $build = function (array $state) use ($bytes, $create, $opt) {
@@ -1437,7 +1437,7 @@ function words_csv_items(array $rows, array $state, array $opt = []): array
     }
     if (!isset($col['word'])) return ['errors' => [['line' => 1, 'col' => 1, 'msg' => 'לא מצאתי עמודה "מילה" בשורה הראשונה. כדאי להתחיל מקובץ שיוצא מכאן (⬇️ אקסל)']]];
     $errors = []; $warnings = []; $items = []; $order = []; $seen = []; $newTopics = [];
-    // N2: עמודות של שדות מותאמים — לפי השם (label) או המפתח; עמודה לא מוכרת — "לא תיובא", עם הצעה ליצור שדה (publisher)
+    // N2: עמודות של שדות מותאמים — לפי השם (label) או המפתח; עמודה לא מוכרת — "לא תיובא", עם הצעה ליצור שדה (עורך)
     $fields = $state['fields'] ?? fields_all();
     $fcol = []; $fieldProps = []; $create = [];
     $known = array_merge(array_values(CSV_COLS), array_keys(CSV_COLS));
@@ -1451,7 +1451,7 @@ function words_csv_items(array $rows, array $state, array $opt = []): array
         $k = field_key_error($h, $fields) === null ? $h : null;
         $type = field_guess($vals, true);
         if ($k !== null && in_array($k, $opt['fields'] ?? [], true)) { $f = field_proposed($k, $type); $fcol[$k] = [$i, $f]; $create[] = ['key' => $k, 'type' => $type]; continue; }
-        $warnings[] = ['line' => 1, 'col' => $i + 1, 'msg' => "העמודה \"" . mb_substr($h, 0, 60) . '" לא תיובא — אין שדה כזה' . ($k !== null ? " (אפשר ליצור שדה \"$k\", סוג $type — מפרסם)" : ' (שם עמודה לשדה חדש: מפתח באנגלית, למשל translit)')];
+        $warnings[] = ['line' => 1, 'col' => $i + 1, 'msg' => "העמודה \"" . mb_substr($h, 0, 60) . '" לא תיובא — אין שדה כזה' . ($k !== null ? " (אפשר ליצור שדה \"$k\", סוג $type)" : ' (שם עמודה לשדה חדש: מפתח באנגלית, למשל translit)')];
         if ($k !== null) $fieldProps[] = ['key' => $k, 'type' => $type, 'line' => 1, 'count' => count(array_filter($vals, fn($v) => $v !== ''))];
     }
     $allFields = array_merge(array_values(array_filter($fields, fn($f) => $f['col'] !== null)), array_column($fcol, 1));
@@ -1850,8 +1850,9 @@ function fields_public(?array $rows = null): array
 
 function fields_state(array $user): array
 {
+    // N2 (08 §3): המבנה — עורך; "רוקן נכשלים" ומחיקת שדה שיש לו ערכים — מפרסם (כמו מחיקה של יותר מ-20 ב-N1)
     return ['fields' => fields_public(), 'types' => FIELD_TYPES, 'col_types' => FIELD_COL_TYPES, 'reserved' => FIELD_RESERVED,
-        'can_structure' => ROLE_RANK[$user['role'] ?? 'editor'] >= ROLE_RANK['publisher'], 'rev' => words_rev()];
+        'can_structure' => true, 'can_purge' => ROLE_RANK[$user['role'] ?? 'editor'] >= ROLE_RANK['publisher'], 'rev' => words_rev()];
 }
 
 /** הגדרת שדה מהבקשה ← ערכים לשורה (בלי המפתח). שגיאה — ApiError. $cur — השדה הקיים (עריכה). */
@@ -1895,7 +1896,7 @@ function field_input(array $b, ?array $cur): array
 }
 
 /**
- * הוספה / עריכה של שדה (publisher), או סדר השדות (order). שינוי סוג של שדה מותאם: כל ערך קיים מומר (field_convert);
+ * הוספה / עריכה של שדה (עורך; "רוקן נכשלים" — מפרסם), או סדר השדות (order). שינוי סוג של שדה מותאם: כל ערך קיים מומר (field_convert);
  * dry — רק הדוח ("יומרו 340, ייכשלו 3"); נכשלים — 422 עם הרשימה, אלא אם clear_failed (ואז נקודת שחזור לפני, והם מתרוקנים).
  */
 function field_save(array $user, array $b): array
@@ -1927,6 +1928,7 @@ function field_save(array $user, array $b): array
     if ($cur && $cur['col'] === null && ($cur['type'] !== $in['type'] || ($in['type'] === 'choice' && $in['options'] !== $cur['options']))) {
         $conv = field_convert_plan($cur, ['key' => $key] + $in);
         if (!empty($b['dry'])) return ['convert' => array_diff_key($conv, ['values' => 1])];
+        if ($conv['failed'] && !empty($b['clear_failed']) && ROLE_RANK[$user['role'] ?? 'editor'] < ROLE_RANK['publisher']) throw new ApiError('"רוקן את הנכשלים" — רק למפרסם', 403, ['convert' => array_diff_key($conv, ['values' => 1])]);
         if ($conv['failed'] && empty($b['clear_failed'])) throw new ApiError("ההמרה נעצרה: {$conv['failed_count']} ערכים לא מומרים. תקנו אותם, או בחרו \"רוקן את הנכשלים\"", 422, ['convert' => array_diff_key($conv, ['values' => 1])]);
     } elseif (!empty($b['dry'])) return ['convert' => null];
     $snap = $conv && ($conv['failed_count'] || $conv['converted'] > WORDS_BULK) ? snapshot_create($user, "לפני שינוי הסוג של השדה \"$key\": {$cur['type']} → {$in['type']}") : null;
@@ -2001,7 +2003,8 @@ function field_delete(array $user, array $b): array
     $vals = [];
     foreach (words_rows() as $w) if (array_key_exists($key, $w['extra'])) $vals[$w['id']] = $w['extra'][$key];
     $binds = function_exists('fields_bind_scan') ? count(array_filter(fields_bind_scan('field', $key), fn($h) => !$h['manual'])) : 0;
-    if (!empty($b['dry'])) return ['values' => count($vals), 'bindings' => $binds];
+    if (!empty($b['dry'])) return ['values' => count($vals), 'bindings' => $binds, 'needs' => $vals ? 'publisher' : 'editor'];
+    if ($vals && ROLE_RANK[$user['role'] ?? 'editor'] < ROLE_RANK['publisher']) throw new ApiError('מחיקת שדה שיש לו ערכים (' . count($vals) . ') — רק למפרסם', 403);
     $snap = snapshot_create($user, "לפני מחיקת השדה \"{$f['label']}\" ($key)");
     pf_tx(function () use ($user, $key, $vals) {
         $st = db()->prepare('SELECT * FROM word_fields WHERE key = ?');

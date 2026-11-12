@@ -267,7 +267,7 @@ const Words = (() => {
     const name = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', external_id: 'מספר מהאקסל' };
     const all = h('input', { type: 'checkbox', checked: replace, onchange: e => { dlg.close(); csvPlan(b64, e.target.checked, host, create); } });
     // N2: עמודה שאין לה שדה — "לא תיובא", עם הצעה ליצור שדה (מפרסם)
-    const canMake = RANK[state.user?.role] >= RANK.publisher;
+    const canMake = true;                                      // N2 (08 §3): יצירת שדה — עורך
     const props = (p.field_proposals || []).length ? h('div', { class: 'warnbox', 'data-field-proposals': true }, h('p', {}, 'עמודות בלי שדה — לא ייובאו:'),
       h('ul', {}, p.field_proposals.map(fp => h('li', {}, h('code', { dir: 'ltr' }, fp.key), ` · ${fp.count} ערכים · סוג משוער: ${fp.type} `,
         canMake ? h('button', { type: 'button', class: 'btn sm', 'data-make-field': fp.key, onclick: () => { dlg.close(); csvPlan(b64, replace, host, [...create, fp.key]); } }, `+ צור שדה ${fp.key}`) : h('small', { class: 'muted' }, '(יצירת שדה — למפרסם)'))))) : null;
