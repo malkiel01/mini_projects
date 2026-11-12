@@ -106,11 +106,17 @@
         let ref = after ? sibs.slice(i + 1).find(k => !this.moving(k)) || null : n;
         base = { par: n.parent, ref };
       } else base = { par: n, ref: null };
-      return this.level(base);
+      return this.level(base, fx, fy);
     }
     /** רמות באותו מקום: הבסיס, ולמעלה — "אחרי הרובריקה" כשהיעד בסוף שלה (או "לפניה" כשבתחילתה); למטה — לתוך האח שלפני. */
-    level(base) {
+    level(base, fx, fy) {
       const a = this.active, chain = [base];
+      // רמות רק בשפה: כשהסמן ליד ההתחלה / הסוף של הרובריקה (שם כמה רובריקות נפגשות). בפנים — היעד הוא מה שמתחת לסמן, ותנועת הגישה אינה מחליפה רמה
+      if (fx != null) {
+        const r = this.rect(base.par), ax = this.axis(base.par);
+        const d = !r ? 0 : ax.axis === 'row' ? Math.min(Math.abs(fx - r.left), Math.abs(r.right - fx)) : Math.min(Math.abs(fy - r.top), Math.abs(r.bottom - fy));
+        if (!r || d >= 2 * EDGE) { a.key = ''; base.levels = 1; base.level = 0; return base; }
+      }
       for (let t = base; ;) {
         const par = t.par; if (!par.parent || par.tag === 'body') break;
         const kids = par.kids.filter(k => !this.moving(k)), atEnd = t.ref === null, atStart = t.ref && kids[0] === t.ref;

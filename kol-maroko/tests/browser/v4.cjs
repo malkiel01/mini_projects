@@ -172,7 +172,7 @@ const PAGE = `<!doctype html>
       const pt = (i, f) => { const e = S.nav.space.querySelector('[data-i="' + i + '"]'), r = e.getBoundingClientRect(); return { x: r.left + Math.min(r.width / 2, 140), y: r.top + r.height * f }; };
       return [pt(ia, 0.5), pt(ib, fb)]; }, [a, b, fb]);
     await page.click('[data-ntab="tree"]'); await sleep(80);
-    [from, to] = await navPts(page, "K.attrOf(x, 'id')?.value === 'kadisha-lex-no-matches'", "x.tag === 'article'", 0.15);
+    [from, to] = await navPts(page, "K.classesOf(x).includes('kadisha-lexicon-count')", "x.tag === 'article'", 0.15);
     const tpl0 = await src(page);
     pk = await drag(page, from, to, { steps: 6 });
     ok(pk.bad && /V11/.test(pk.tag) && (await src(page)) === tpl0, 'גרירה אל תוך <template> (כרטיס המילה) ב-Navigator — היעד אדום, התווית "…V11 — עד אז: פתח בקוד", ודבר אינו נכתב', pk);
@@ -393,6 +393,39 @@ const PAGE = `<!doctype html>
     ok(/<div id="box"><p id="t3">שלישי<\/p><p id="t1">/.test(await src(mp)), 'טלפון: לחיצה ארוכה (400ms) ואז גרירה — #t3 לפני #t1', pk);
     ok(await undoFiles(mp, m0), 'טלפון: בטל — חזרה');
     await cm.close();
+
+    // ═══ 5. פריסה: העורך על כל המסך (תלונת הבעלים ב-1920) — צילומים ב-1280, 1920 ו-390 ═══
+    const shots = path.join(os.tmpdir(), 'kol-v4-shots'); fs.mkdirSync(shots, { recursive: true });
+    const geo = pg => pg.evaluate(() => { const r = s => { const e = document.querySelector(s); if (!e || !e.getClientRects().length) return null; const b = e.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), b: Math.round(b.bottom), w: Math.round(b.width) }; };
+      return { W: innerWidth, H: innerHeight, main: getComputedStyle(document.querySelector('main')).maxWidth, ed: r('.ed'), canvas: r('.ed-canvas'), nav: r('.ed-nav'), info: r('.ed-info') }; });
+    for (const [w, hgt] of [[1280, 800], [1920, 1080]]) {
+      const lc = await mk(w, hgt), lp = await lc.newPage(); lp.on('pageerror', e => errors.push(w + ': ' + e.message));
+      await openPage(lp, 'index.html');
+      await lp.evaluate(() => { for (const id of ['nav', 'info']) if (!document.querySelector('.ed').classList.contains(id + '-open')) document.querySelector('.ed-bar [data-panel="' + id + '"]').click(); }); await sleep(300);
+      const g = await geo(lp), file = path.join(shots, 'editor-' + w + '.png'); await lp.screenshot({ path: file });
+      ok(g.main === 'none' && g.ed.l <= 12 && g.ed.r >= g.W - 12 && g.canvas.w >= g.W * 0.5 && g.nav && g.info && g.nav.w >= 200 && g.nav.w <= 340 && g.info.w >= 200 && g.info.w <= 340 && g.ed.b >= g.H - 24 && g.ed.b <= g.H,
+        `${w}px: העורך על כל הרוחב והגובה — Navigator ${g.nav && g.nav.w}px בצד אחד, "האלמנט הנבחר" ${g.info && g.info.w}px בצד השני, הקנבס ${g.canvas.w}px (≥ 50% מ-${g.W}), בלי ריק בצדדים · צילום: ${file}`, g);
+      if (w === 1920) {
+        const gr = await lp.$('.ed-grip[data-grip-side="nav"]'), gb = await gr.boundingBox();
+        await lp.mouse.move(gb.x + gb.width / 2, gb.y + 200); await lp.mouse.down(); await lp.mouse.move(gb.x + gb.width / 2 + 80, gb.y + 200, { steps: 5 }); await lp.mouse.up(); await sleep(200);
+        const g2 = await geo(lp), saved = await lp.evaluate(() => JSON.parse(localStorage.getItem('kol-editor') || '{}').navW);
+        ok(Math.abs(g2.nav.w - (g.nav.w + 80)) <= 3 && g2.canvas.w < g.canvas.w && saved === g2.nav.w, `גרירת הידית שבין ה-Navigator לקנבס: ${g.nav.w} ← ${g2.nav.w}px, והקנבס מצטמצם — נשמר בדפדפן`, { g2, saved });
+        await lp.goto(base + '/#/project'); await lp.waitForSelector('.pj'); await sleep(300);
+        const pj = await lp.evaluate(() => ({ max: getComputedStyle(document.querySelector('main')).maxWidth, w: Math.round(document.querySelector('.pj').getBoundingClientRect().width), W: innerWidth }));
+        await lp.screenshot({ path: path.join(shots, 'project-1920.png') });
+        ok(pj.max === 'none' && pj.w >= pj.W - 60, `"📁 פרויקט" ב-1920: על כל הרוחב (${pj.w}px)`, pj);
+        await lp.goto(base + '/#/settings'); await sleep(600);
+        ok(await lp.evaluate(() => getComputedStyle(document.querySelector('main')).maxWidth) === '860px', 'מסך של טפסים ("⚙️ הגדרות") נשאר ב-860px');
+      }
+      await lc.close();
+    }
+    {
+      const lc = await mk(390, 844), lp = await lc.newPage(); lp.on('pageerror', e => errors.push('390: ' + e.message));
+      await openPage(lp, 'index.html');
+      const g = await geo(lp), file = path.join(shots, 'editor-390.png'); await lp.screenshot({ path: file });
+      ok(g.main === '860px' && g.canvas.w >= 340 && !g.nav && !g.info, `390px: הטלפון לא השתנה — main ב-860px (כמו קודם), הקנבס ${g.canvas.w}px, הפאנלים סגורים (גיליון מלמטה) · צילום: ${file}`, g);
+      await lc.close();
+    }
 
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף לאורך כל הבדיקה', errors);
   } catch (e) { failed++; console.log('❌ הבדיקה נפלה: ' + (e.stack || e)); }

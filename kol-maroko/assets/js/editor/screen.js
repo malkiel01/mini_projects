@@ -707,6 +707,20 @@ const Editor = (() => {
     note.t = setTimeout(() => { el.note.hidden = true; }, err || action ? 12000 : 5000);
   }
 
+  /** V4: ידית בין פאנל צד לקנבס — גרירה משנה את רוחב הפאנל (200–560px), נשמר בדפדפן. */
+  function grip(id) {
+    const g = h('div', { class: 'ed-grip', 'data-grip-side': id, role: 'separator', 'aria-orientation': 'vertical', 'aria-label': 'רוחב ' + (id === 'nav' ? 'ה-Navigator' : 'הפאנל'), title: 'גרירה — רוחב הפאנל' });
+    g.addEventListener('pointerdown', e => {
+      if (e.button > 0) return; e.preventDefault();
+      const side = el.root.querySelector('.ed-' + id), w0 = side ? side.getBoundingClientRect().width : 280, x0 = e.clientX;
+      try { g.setPointerCapture(e.pointerId); } catch { /* */ }
+      g.classList.add('on');
+      const mv = ev => { const w = Math.round(Math.max(200, Math.min(560, w0 + (id === 'nav' ? ev.clientX - x0 : x0 - ev.clientX)))); el.root.style.setProperty('--ed-' + id + '-w', w + 'px'); prefs[id + 'W'] = w; };
+      const up = () => { g.classList.remove('on'); g.removeEventListener('pointermove', mv); g.removeEventListener('pointerup', up); g.removeEventListener('pointercancel', up); keep(); };
+      g.addEventListener('pointermove', mv); g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+    });
+    return g;
+  }
   async function view(host, wantPath) {
     S.host = host;
     el.page = h('select', { class: 'ed-page', 'aria-label': 'עמוד', onchange: () => open(+el.page.value) });
@@ -752,7 +766,8 @@ const Editor = (() => {
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
       el.bar, h('div', { class: 'ed-path' }, el.seltools, el.crumbs, el.where), el.seed, el.cap, el.broken, el.blocked, el.point, el.gapbar,
-      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navWrap), el.mid, side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
+      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navWrap), grip('nav'), el.mid, grip('info'), side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
+    for (const id of ['nav', 'info']) if (prefs[id + 'W'] >= 200 && prefs[id + 'W'] <= 560) el.root.style.setProperty('--ed-' + id + '-w', prefs[id + 'W'] + 'px');
     host.replaceChildren(el.root);
     status('טוען…');
     try {

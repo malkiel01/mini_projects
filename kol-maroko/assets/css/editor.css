@@ -302,3 +302,13 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .ed-moveto { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-height: 50vh; overflow: auto; }
 .ed-moveto-row { direction: ltr; font: .78rem ui-monospace, monospace; }
 .ed-tag-in { font: .85rem ui-monospace, monospace; width: 9em; }
+
+/* ── V4: העורך תופס את כל רוחב החלון ואת כל הגובה שמתחת ללשוניות (מחשב; הטלפון — כמו שהיה) ── */
+@media (min-width: 1000px) {
+  main:has(> .ed) { max-width: none; padding: var(--s2) var(--s2) 0; }
+  main:has(> .ed) > .ed { height: calc(var(--vvh, 100dvh) - var(--head) - var(--tap) - var(--s2) - 4px - env(safe-area-inset-top)); }
+  .ed .ed-nav { width: var(--ed-nav-w, 270px); } .ed .ed-info { width: var(--ed-info-w, 310px); }
+  .ed-grip { display: none; flex: none; width: 6px; margin: 0 -4px; cursor: col-resize; touch-action: none; border-radius: 3px; position: relative; z-index: 2; }
+  .ed-grip:hover, .ed-grip.on { background: var(--brand-soft, rgba(26, 115, 232, .2)); }
+  .ed.nav-open .ed-grip[data-grip-side="nav"], .ed.info-open .ed-grip[data-grip-side="info"] { display: block; }
+}
