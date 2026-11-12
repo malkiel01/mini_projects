@@ -87,6 +87,7 @@ const TABS = [
   { id: 'files', label: '🗂️ קבצים', min: 'editor' },
   { id: 'restore', label: '↩️ שחזור', min: 'editor' },
   { id: 'publish', label: '🚀 פרסום', min: 'editor' },
+  { id: 'inbox', label: '📬 פניות', min: 'editor' },                // M5 (assets/js/inbox.js) — את המונה מצייר Inbox על הקישור
   { id: 'members', label: '👥 חברים', min: 'owner' },
   { id: 'log', label: '📜 יומן', min: 'owner' },
   { id: 'settings', label: '⚙️ הגדרות', min: 'owner' },
@@ -110,6 +111,7 @@ function route() {
   nav.replaceChildren(...tabs.map(t => h('a', { href: tabHref(t.id), 'aria-current': t === cur ? 'page' : null }, t.label)));
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
+  if (cur.id === 'inbox') return Inbox.view(main);                    // M5
   ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, state.user.role), files: () => Library.view(main, state.user.role === 'owner'),
     publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }

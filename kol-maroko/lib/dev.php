@@ -11,9 +11,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/devlog.php';
 require_once __DIR__ . '/devloop.php';
+require_once __DIR__ . '/forms.php';
 
 /** גרסת התוסף לוורדפרס שהריפו מצפה לה באתר. התוסף אינו נפרס לשרת הזה, ולכן המספר כתוב כאן; בדיקה אוטומטית משווה אותו לקובץ התוסף. */
-const KOL_PLUGIN_EXPECTED = '2.0.0';
+const KOL_PLUGIN_EXPECTED = '2.0.1';
 const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צילום רק למטלה שהוא עצמו פתח ב-15 הדקות האחרונות
 
 /**
@@ -176,6 +177,7 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
         'GET dev-health' => ($dev() ? dev_health() : []),
         'POST dev-attack-save' => pv_attack_save($dev(), $in),       // ערכת ההתקפה מול הסטודיו (F4, lib/preview.php)
         'GET dev-state' => ($dev() ? ['services' => dev_services(), 'stats' => dev_stats()] : []),
+        'GET dev-forms' => ($dev() ? forms_dev_state() : []),             // M5: שורת 📬 טפסים (lib/forms.php)
         // ספייק מנוע העורך (V0): קבצי הבדיקה מוגשים כנתונים — dev/ חסומה מהדפדפן
         'GET dev-spike-fixture' => ($dev() ? dev_spike_fixture((string)($_GET['name'] ?? '')) : []),
         default => throw new ApiError('פעולה לא מוכרת', in_array($action, DEV_ACTIONS, true) ? 405 : 404),
@@ -184,7 +186,7 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
 
 const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-my-reports', 'dev-items',
     'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-file', 'dev-tokens', 'dev-token-create',
-    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save'];
+    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save', 'dev-forms'];
 /** פעולות שנכנסים אליהן באסימון, בלי משתמש מהשער. חייבות להופיע גם ב-"public" של app.json. */
 const DEV_TOKEN_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 /** פעולות שהגוף שלהן הוא קובץ, לא JSON. */
@@ -429,6 +431,7 @@ function dev_services(): array
             'next' => $cleanAt ? gmdate('Y-m-d\TH:i:s\Z', $cleanAt + DEVLOG_CLEAN_EVERY) : null, 'next_text' => $cleanAt ? 'בבקשה הראשונה אחרי' : 'בבקשה הבאה שנרשמת'],
         ['id' => 'health', 'name' => '🩺 בדיקות התקינות', 'how' => 'כשפותחים את המסך או לוחצים "הרצת כל הבדיקות"',
             'last' => $health['at'] ?? null, 'ok' => $health['ok'] ?? null, 'result' => $health['note'] ?? 'עוד לא רצו', 'next' => null, 'next_text' => 'בלחיצה'],
+        forms_dev_service(),                                                // M5: המייל על פניות חדשות
     ];
 }
 

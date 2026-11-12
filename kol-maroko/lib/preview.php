@@ -18,6 +18,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/project.php';
 require_once __DIR__ . '/secrets.php';
 require_once __DIR__ . '/lexicon.php';
+require_once __DIR__ . '/forms.php';
 
 const PV_TTL = 1800;                // תוקף האסימון, בשניות
 const PV_SANDBOX = 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-presentation';
@@ -105,10 +106,24 @@ function pv_fail(int $code, string $text): never
     exit($text);
 }
 
-/** שליחה עם Range (שמע ווידאו דורשים). $bytes — תוכן בזיכרון; אחרת $file — קובץ בדיסק. */
-function pv_send(?string $bytes, ?string $file, string $name, int $code = 200): never
+/**
+ * הסוג של קובץ מדיה: מה שנשמר בספרייה (files.type), אם הוא סוג מוכר; אחרת — לפי הסיומת. הנתיב היציב של הקלטה
+ * (media/audio/<מזהה>.<סיומת>) שומר את הסיומת המקורית גם כשהוחלפה בקובץ מסוג אחר (A3: mp3 ← m4a) — B1.
+ */
+function pv_media_type(array $f, string $name): string
 {
-    $type = PV_TYPES[strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? null;
+    $t = strtolower(trim(explode(';', (string)($f['type'] ?? ''))[0]));
+    $t = ['audio/x-m4a' => 'audio/mp4', 'audio/m4a' => 'audio/mp4', 'audio/mp3' => 'audio/mpeg', 'audio/x-wav' => 'audio/wav', 'audio/wave' => 'audio/wav',
+        'audio/vnd.wave' => 'audio/wav', 'audio/x-aac' => 'audio/aac', 'image/jpg' => 'image/jpeg'][$t] ?? $t;
+    $known = array_map(fn($x) => trim(explode(';', $x)[0]), PV_TYPES);
+    if ($t !== '' && in_array($t, $known, true)) return $t;
+    return trim(explode(';', PV_TYPES[strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? 'application/octet-stream')[0]);
+}
+
+/** שליחה עם Range (שמע ווידאו דורשים). $bytes — תוכן בזיכרון; אחרת $file — קובץ בדיסק. $type — כשהסיומת אינה הסוג (מדיה). */
+function pv_send(?string $bytes, ?string $file, string $name, int $code = 200, ?string $type = null): never
+{
+    $type ??= PV_TYPES[strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? null;
     $size = $bytes !== null ? strlen($bytes) : (int)filesize((string)$file);
     header('Content-Type: ' . ($type ?? 'application/octet-stream'));
     if (!$type) header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode(basename($name)));
@@ -202,6 +217,7 @@ function pv_serve(): never
         if ($path === PV_WORDS) pv_send(pv_words($app), null, 'words.json');
 
         $html = fn(string $bytes) => pv_inject($bytes, $root . PV_BRIDGE);
+        $pvHtml = $html; $html = fn(string $bytes) => forms_meta_inject($pvHtml($bytes), forms_endpoint(true));    // M5: <meta> של form.php?test=1 (lib/forms.php)
         $r = null;
         if ($path === '' || str_ends_with($path, '/')) {
             $entry = $path === '' ? (string)(pf_kol()['config']['entry'] ?? 'index.html') : $path . 'index.html';
@@ -215,9 +231,10 @@ function pv_serve(): never
             pv_fail(404, "404 - no such file in the project.\nאין קובץ כזה בפרויקט: " . $path);
         }
         if ($r['kind'] === 'media') {
-            $file = file_path(file_row((string)$r['file_id']));
+            $fr = file_row((string)$r['file_id']);
+            $file = file_path($fr);
             if (!is_file($file)) pv_fail(404, '404 - the media file is missing on the server.');
-            pv_send(null, $file, $r['path']);
+            pv_send(null, $file, $r['path'], 200, pv_media_type($fr, $r['path']));
         }
         $ext = strtolower(pathinfo($r['path'], PATHINFO_EXTENSION));
         if ($ext === 'html' || $ext === 'htm') pv_send($html(pf_blob_get($r['sha'])), null, $r['path']);

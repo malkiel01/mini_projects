@@ -164,6 +164,14 @@ function v2_real(string $action, WP_REST_Request $req)
 }
 
 if (!preg_match('~^/wp-json/kol-maroko/v1/(ping|asset|publish|switch|asset_has|asset_put|manifest|activate)$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), $m)) { http_response_code(404); exit; }
+// B1: ניקוי באתר ממש לפני המניפסט — הגושים ב-v2_orphan נמחקים (גם אצל התוסף האמיתי). v2_orphan_keep — בכל מניפסט, לא פעם אחת
+if ($m[1] === 'manifest' && ($orph = (array)get_option('v2_orphan', []))) {
+    foreach ($orph as $sha) {
+        @unlink($GLOBALS['wp_dir'] . "/v2/blobs/$sha");
+        for ($i = 0; $i < 5 && function_exists('kol_maroko_v2_blob') && ($b = kol_maroko_v2_blob($sha)); $i++) @unlink($b);
+    }
+    if (!get_option('v2_orphan_keep')) delete_option('v2_orphan');
+}
 $r = get_option('kol_v2_mock') ? (getenv('KOL_V2_REAL') ? v2_real($m[1], new WP_REST_Request()) : v2_handle($m[1], new WP_REST_Request())) : kol_maroko_handle($m[1], new WP_REST_Request());
 http_response_code($r->status);
 header('Content-Type: application/json; charset=utf-8');

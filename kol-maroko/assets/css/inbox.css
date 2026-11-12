@@ -1,0 +1,21 @@
+/* 📬 פניות (M5, assets/js/inbox.js) */
+.ib-entries { gap: var(--s1); }
+.ib-entry { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.ib-entry > summary { display: flex; gap: var(--s2); align-items: flex-start; padding: var(--s2); cursor: pointer; list-style: none; min-height: var(--tap); }
+.ib-entry > summary::-webkit-details-marker { display: none; }
+.ib-entry.unread > summary b { font-weight: 700; }
+.ib-entry:not(.unread) > summary b { font-weight: 500; }
+.ib-dot { color: var(--brand); width: 1em; flex: none; }
+.ib-tx { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ib-tx b { overflow-wrap: anywhere; }
+.ib-tx small { color: var(--muted); }
+.ib-body { padding: 0 var(--s2) var(--s2); }
+.ib-fields { margin: 0 0 var(--s2); display: grid; gap: var(--s1); }
+.ib-fields dt { font-size: .75rem; color: var(--muted); }
+.ib-fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ib-ext { margin-bottom: var(--s2); }
+.ib-checks { display: grid; gap: var(--s1); margin-bottom: var(--s2); }
+.ib-check { display: flex; gap: var(--s1); align-items: center; overflow-wrap: anywhere; }
+.ib-limits { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); margin-bottom: var(--s2); }
+.ib-limit { display: grid; gap: 2px; }
+.ib-limit small { color: var(--muted); font-size: .75rem; }

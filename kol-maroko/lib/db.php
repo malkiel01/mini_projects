@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 17;
+const KOL_SCHEMA_VERSION = 19;
 
 final class ApiError extends RuntimeException
 {
@@ -406,6 +406,74 @@ function migrate(PDO $pdo): void
         17 => <<<'SQL'
             ALTER TABLE words ADD COLUMN sort_order INTEGER;
             CREATE INDEX idx_words_sort ON words(sort_order, id);
+            SQL,
+        // N2: שדות מותאמים למילה (word_fields + words.extra), סל לשדה שנמחק, ונושאים מורחבים (סדר, צבע, תמונה, מוסתר).
+        // הוספה בלבד. המילוי (שדות מובנים, סדר נושאים) — ב-PHP, ורק בפעולה שמשנה מבנה (lib/lexicon.php, fields_fill / topics_fill)
+        18 => <<<'SQL'
+            CREATE TABLE word_fields (
+                key        TEXT PRIMARY KEY,
+                label      TEXT NOT NULL,
+                type       TEXT NOT NULL,
+                col        TEXT,
+                required   INTEGER NOT NULL DEFAULT 0,
+                def        TEXT,
+                help       TEXT NOT NULL DEFAULT '',
+                options    TEXT NOT NULL DEFAULT '[]',
+                published  INTEGER NOT NULL DEFAULT 1,
+                dir        TEXT NOT NULL DEFAULT 'auto',
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE field_trash (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT '',
+                field   TEXT NOT NULL,
+                vals    TEXT NOT NULL
+            );
+            ALTER TABLE words ADD COLUMN extra TEXT NOT NULL DEFAULT '{}';
+            ALTER TABLE topics ADD COLUMN sort_order INTEGER;
+            ALTER TABLE topics ADD COLUMN color TEXT NOT NULL DEFAULT '';
+            ALTER TABLE topics ADD COLUMN image TEXT NOT NULL DEFAULT '';
+            ALTER TABLE topics ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE topic_trash ADD COLUMN row TEXT;
+            SQL,
+        // M5: טפסים ותיבת פניות (lib/forms.php). הוספה בלבד. הפנייה אינה שומרת IP / User-Agent / Referer; ה-IP — רק מגובב, בטבלת הקצב
+        19 => <<<'SQL'
+            CREATE TABLE form_entries (
+                id         INTEGER PRIMARY KEY,
+                form       TEXT NOT NULL,
+                fields     TEXT NOT NULL DEFAULT '{}',
+                word_id    INTEGER,
+                page       TEXT NOT NULL DEFAULT '',
+                test       INTEGER NOT NULL DEFAULT 0,
+                at         TEXT NOT NULL,
+                read_at    TEXT,
+                read_by    TEXT,
+                handled_at TEXT,
+                handled_by TEXT
+            );
+            CREATE INDEX idx_form_entries_at ON form_entries(test, at);
+            CREATE TABLE form_hits (
+                ip_hash TEXT NOT NULL,
+                at      INTEGER NOT NULL
+            );
+            CREATE INDEX idx_form_hits ON form_hits(ip_hash, at);
+            CREATE INDEX idx_form_hits_at ON form_hits(at);
+            CREATE TABLE form_rejects (
+                day    TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                n      INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, reason)
+            );
+            CREATE TABLE forms_trash (
+                id       INTEGER PRIMARY KEY,
+                entry_id INTEGER NOT NULL,
+                row      TEXT NOT NULL,
+                batch    TEXT NOT NULL DEFAULT '',
+                at       TEXT NOT NULL,
+                by_name  TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE pkg_builds ADD COLUMN forms TEXT;
             SQL,
     ];
     foreach ($steps as $n => $sql) {

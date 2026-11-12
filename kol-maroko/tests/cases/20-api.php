@@ -38,9 +38,13 @@ const API_MIN_ROLE = [
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     // פרוסה F2b
     'pf_copy' => 'editor', 'pf_version' => 'editor', 'pf_version_restore' => 'editor', 'pf_search' => 'editor', 'pf_replace' => 'editor', 'pf_refs' => 'editor', 'pf_zip' => 'editor', 'pf_zip_import' => 'editor',
+    // פרוסה N2 — שדות מותאמים ונושאים
+    'fields' => 'editor', 'field_save' => 'editor', 'field_delete' => 'editor', 'topics' => 'editor', 'topic_save' => 'editor', 'topic_merge' => 'editor', 'field_key_preview' => 'editor', 'field_key_apply' => 'editor',
+    // פרוסה M5 — 📬 פניות
+    'inbox' => 'editor', 'inbox_mark' => 'editor', 'inbox_csv' => 'editor', 'forms_settings' => 'editor', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher', 'mail_test' => 'owner', 'dev-forms' => 'owner',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner', 'dev-attack-save' => 'owner',
 ];
-const API_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];
+const API_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-forms'];
 
 function api_method(string $action): string
 {
