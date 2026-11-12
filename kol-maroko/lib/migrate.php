@@ -237,6 +237,17 @@ function mg_walk(array $nodes, array $stack, array $ctx, array &$notes, string &
     }
 }
 
+/** ההכהיה של הכלי נשמרת באחוזים (0–100), אבל נכנסת ל-rgba(…, var(--ka-hero-overlay)) — שם 45 נחתך ל-1 (כיסוי מלא, התמונה
+ *  אינה נראית). ערך מעל 1 ← חלקי 100 (45 ← 0.45); ערך שאינו מספר — כמו שהוא. */
+function mg_overlay($v): string
+{
+    $t = trim((string)$v);
+    if (!is_numeric($t)) return $t;
+    $x = (float)$t;
+    if ($x > 1) $x = min(100.0, $x) / 100;
+    return rtrim(rtrim(number_format(max(0.0, $x), 2, '.', ''), '0'), '.') ?: '0';
+}
+
 /** התבנית ← גוף העמוד. $css — כללים שיצאו מ-style="" של הכלי (התמונה, רוחב המבוא). */
 function mg_body(string $tpl, array $ctx, array &$notes, array &$css, string $heroRef): string
 {
@@ -244,7 +255,7 @@ function mg_body(string $tpl, array $ctx, array &$notes, array &$css, string $he
     $heroFrag = "{{#hero}} style=\"background-image:url('{{hero}}'); --ka-hero-overlay:{{hero_overlay}};\"{{/hero}}";
     if (str_contains($tpl, $heroFrag)) {
         $tpl = str_replace($heroFrag, '', $tpl);
-        if ($heroRef !== '') $css[] = ".kadisha-lexicon-page .kadisha-hero.kadisha-hero--has-image {\n    background-image: url('$heroRef');\n    --ka-hero-overlay: {$ctx['hero_overlay']};\n}";
+        if ($heroRef !== '') $css[] = ".kadisha-lexicon-page .kadisha-hero.kadisha-hero--has-image {\n    background-image: url('$heroRef');\n    --ka-hero-overlay: " . mg_overlay($ctx['hero_overlay']) . ";\n}";
     } elseif ($ctx['hero'] !== '') $notes[] = ['changed', 'ה-style של הפס שונה בתבנית שלך — נשאר כ-style על האלמנט, כפי שכתבת'];
     if (str_contains($tpl, ' style="{{intro_style}}"')) {
         $tpl = str_replace(' style="{{intro_style}}"', '', $tpl);
