@@ -13,7 +13,7 @@
   const NUM = /^(-?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/i;
   const UNITS = ['px', '%', 'em', 'rem', 'vw', 'vh', 'ch'];
   const SYSTEM_FONTS = ['system-ui', 'Arial', 'Helvetica', 'Tahoma', 'Verdana', 'Georgia', 'Times New Roman', 'Courier New', 'serif', 'sans-serif', 'monospace'];
-  const valid = (prop, v) => { try { return CSS.supports(prop, v); } catch { return false; } };
+  const valid = (prop, v) => { if (String(v).includes('<')) return false; try { return CSS.supports(prop, v); } catch { return false; } };   // '<' — לעולם לא (style.js: checkValue)
   const round = x => Math.round(x * 1000) / 1000;
   const fmt = x => String(round(x)).replace(/^(-?)0\./, '$1.').replace(/^(-?)\.(\d)/, '$10.$2');
 

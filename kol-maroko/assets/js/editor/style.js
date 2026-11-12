@@ -169,6 +169,15 @@
     return K().css.addRule(m, m.root, sel, decls.map(([p, v]) => [logical(p, rtl), v]));
   }
 
+  /** בדיקת ערך לפני כל כתיבה (הגנה כפולה — לא סומכים רק על הפאנל): '<' נדחה בכל יעד (ב-<style> של עמוד HTML הוא היה
+   *  סוגר את התגית: "</style><img onerror=…>" עובר CSS.supports כמחרוזת), וערך שאינו חוקי למאפיין — נדחה. */
+  function checkValue(phys, v) {
+    if (v == null) return;
+    const E = K().SrcError;
+    if (String(v).includes('<')) throw new E('הערך מכיל < — בתוך <style> של עמוד HTML זה היה סוגר את התגית. ערך CSS אינו צריך <.', 'invalid');
+    if (typeof CSS !== 'undefined' && CSS.supports && !CSS.supports(phys, v)) throw new E('ערך לא חוקי ל-' + phys + ': ' + v, 'invalid');
+  }
+
   // ── המפל, בדפדפן ─────────────────────────────────────────
   const INHERITED = /^(color|font-.*|line-height|letter-spacing|word-spacing|text-align|text-transform|direction|text-indent|white-space|visibility|cursor|quotes|list-style.*|text-shadow|text-decoration-color)$/;
   const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
@@ -270,6 +279,7 @@
     plan(n, t, sets, opt = {}) {
       const K2 = K(), rtl = this.rtl(n), html = this.doc();
       if (!Array.isArray(sets[0])) sets = [sets];
+      if (!opt.unimportant) for (const [phys, value] of sets) checkValue(phys, value);
       const diff = (was, now) => { if (was === now) return []; let a = 0; const max = Math.min(was.length, now.length); while (a < max && was.charCodeAt(a) === now.charCodeAt(a)) a++; let b = 0; while (b < max - a && was.charCodeAt(was.length - 1 - b) === now.charCodeAt(now.length - 1 - b)) b++; return [{ from: a, to: was.length - b, text: now.slice(a, now.length - b) }]; };
       const step = (m, rn, phys, value) => (opt.unimportant ? planUnimportant(m, rn, phys, rtl) : value == null ? planReset(m, rn, phys, rtl) : planRule(m, rn, phys, value, rtl));
       /** כלל קיים: מתכננים ברצף על טקסט הגיליון (או תוכן ה-<style>). תחילת הכלל אינה זזה — כל התיקונים בתוכו. */
@@ -315,5 +325,5 @@
     }
   }
 
-  g.KolStyle = { splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
+  g.KolStyle = { checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
 })(typeof window !== 'undefined' ? window : globalThis);

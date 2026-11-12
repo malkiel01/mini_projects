@@ -77,5 +77,13 @@ const cssOut = K.applyPatches(page, ST.planNewRule(K.parseCss(page), '.hero-titl
 ok(lines(html, hOut).text === '  <h2 class="hero-title">כותרת</h2>' && K.applyPatches(hOut, K.invertPatches(html, hp)) === html && /\.hero-title \{[^}]*margin-block-end: 0;/.test(cssOut) && K.q(K.parseHtml(hOut), '.hero-title') !== null,
   'שני קבצים: ב-HTML נוספה מחלקה (שורה אחת), ב-CSS נוסף כלל — ושניהם חוזרים בביטול');
 
+// ── 6. קלט שמנסה לצאת מההצהרה / מהתכונה / מתגית <style> ──
+const bad = ['"</style><img src=x onerror=alert(1)>"', "a, '</STYLE >'", 'var(--a, "</style><script>x</script>")', '<b>'];
+ok(bad.every(v => { try { ST.checkValue('font-family', v); return false; } catch (e) { return e instanceof K.SrcError && /</.test(e.message); } }), 'checkValue: כל ערך עם < נדחה (SrcError בעברית) — גם כשהוא מחרוזת CSS חוקית');
+ok((() => { try { ST.checkValue('margin-top', '0'); ST.checkValue('color', 'var(--ka-cream)'); ST.checkValue('x', null); return true; } catch { return false; } })(), 'checkValue: ערכים רגילים ואיפוס (null) עוברים');
+const qh = '<!doctype html><html><body>\n<p id="q">x</p>\n</body></html>\n', qm = K.parseHtml(qh), qn = K.q(qm, '#q');
+const qs = ST.planInline('', 'font-family', '"a" onmouseover="alert(1)', true), qo = K.applyPatches(qh, K.html.setAttr(qm, qn, 'style', qs).patches), qn2 = K.q(K.parseHtml(qo), '#q');
+ok(qn2 && qn2.attrs.length === 2 && !qn2.attrs.some(a => a.name === 'onmouseover') && qo.includes('&quot;'), 'style="": מרכאות בערך נשארות ישות (&quot;) — אין יציאה מהתכונה ואין onmouseover', qo.split('\n')[1]);
+
 console.log('\n' + (failed ? '❌ ' + failed + ' מתוך ' + ran + ' נכשלו' : '✅ כל ' + ran + ' הבדיקות עברו'));
 process.exit(failed ? 1 : 0);

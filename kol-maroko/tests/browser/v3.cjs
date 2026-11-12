@@ -181,6 +181,20 @@ const PAGE = `<!doctype html>
     const imp = (await files(page))['t/page.html'];
     ok(/\.strong #imp \{ margin-bottom: 10px; margin-block-start: auto; \}/.test(imp), 'יחידות וערכים מותאמים בהקלדה חופשית: calc(), clamp(), שלילי, auto — כולם נכתבו', imp.split('\n').find(l => l.includes('#imp {')));
     ok(await undoFiles(page, t0), '"בטל" עד ההתחלה — הקובץ בייט בבייט');
+    // קלט שמנסה לצאת מ-<style> / מהתכונה: נדחה בפאנל, ונדחה גם ב-Styler.plan עצמו (הגנה כפולה)
+    await pick(page, '#a'); await tab(page, 'design');
+    await page.selectOption(body('design') + ' [data-target]', { index: await page.evaluate(q => [...document.querySelector(q + ' [data-target]').options].findIndex(o => o.textContent.includes('.wrap h2')), body('design')) }); await sleep(150);
+    const imgs0 = await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('img').length);
+    const inj = '"</style><img src=x onerror=alert(1)>"';
+    await page.fill(field('design', 'font-family') + ' .sg-ctl input', inj); await page.press(field('design', 'font-family') + ' .sg-ctl input', 'Enter'); await sleep(150);
+    await page.fill(field('design', 'color') + ' .sg-ctl input', 'var(--a, ' + inj + ')'); await page.press(field('design', 'color') + ' .sg-ctl input', 'Enter'); await sleep(150);
+    const planErr = await page.evaluate(v => { const S = Editor._state, n = S.canvas.selected, t = S.styler.targets(n).find(x => x.sel === '.wrap h2'); try { S.styler.plan(n, t, [['font-family', v]]); return 'נכתב'; } catch (e) { return e.message; } }, inj);
+    ok(same(await files(page), t0) && await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('img').length) === imgs0 && /מכיל </.test(planErr), '"</style><img onerror>" בגופן ובצבע (יעד: כלל בתוך <style> של העמוד): הקובץ לא משתנה, לא נוסף <img>, ו-Styler.plan עצמו דוחה', planErr);
+    await page.selectOption(body('design') + ' [data-target]', { index: await page.evaluate(q => [...document.querySelector(q + ' [data-target]').options].findIndex(o => o.textContent.includes('style=""')), body('design')) }); await sleep(150);
+    await page.fill(field('design', 'font-family') + ' .sg-ctl input', `'a" onmouseover="x'`); await page.press(field('design', 'font-family') + ' .sg-ctl input', 'Enter'); await sleep(200);
+    const qa = changed(t0, await files(page))['t/page.html']?.text || '';
+    ok(/style="font-family: 'a&quot; onmouseover=&quot;x'"/.test(qa) && await page.evaluate(() => !Editor._state.canvas.doc.querySelector('#a').hasAttribute('onmouseover')), '"רק האלמנט הזה" (style=""): מרכאות בערך נשארות ישות — אין יציאה מהתכונה', qa);
+    ok(await undoFiles(page, t0), 'בטל — חזרה');
     // צעדים: חיצים, Shift ×10, Alt ×0.1, גרירה על התווית
     await pick(page, '#plain'); await tab(page, 'adv');
     const fin = field('adv', 'padding-top') + ' .sg-ctl input';
