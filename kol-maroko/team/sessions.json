@@ -1,13 +1,19 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-12T06:30Z",
-  "spec": "session_018g4NYFVLVbyN6jb8ZTZRT1",
+  "updated": "2026-11-12T13:35Z",
+  "spec": "session_018g4NYGmY6iWXmmRw38khnp",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
-    "session_018g4NYFXfe6iF4owmDWWorS"
+    "session_018g4NYFXfe6iF4owmDWWorS",
+    "session_018g4NYFVLVbyN6jb8ZTZRT1",
+    "session_018g4NYDGj9nDDPBwcKYPGw2"
   ],
   "code": {
-    "V3": "session_018g4NYFpccNa8aQDJr15sQp"
+    "M3": "session_018g4NYDNtjMmzAwj16DgwP2",
+    "N2b": "session_018g4NYEQzGfT4EMaYTQyNTx",
+    "N3": "session_018g4NYFmV6HzEJaDBHun6cG",
+    "M4-BC": "session_018g4NYF927z2Fc5UWgJ4gag",
+    "V6": "session_018g4NYDuHr3SfYobKszmsRH"
   },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
@@ -21,12 +27,31 @@
     "session_018g4NYFNQX4u4YmY4jz9JLa (V1b)",
     "session_018g4NYCNk2uBmYWuNbxSSJS (V2, נעצר על מגבלת Fable)",
     "session_018g4NYGkM9kM3jX2EPCZvti (V2 (2), נעצר 05:36)",
-    "session_018g4NYCNk2uBmYWuNbxSSJS (V2, מוזגה 06:30)"
+    "session_018g4NYCNk2uBmYWuNbxSSJS (V2, מוזגה 06:30)",
+    "session_018g4NYFpccNa8aQDJr15sQp (V3, מוזגה 07:12)",
+    "session_018g4NYFHV7U272jiNfe6P9u (F2b, מוזגה 08:30)",
+    "session_018g4NYCmrLkEFdkgCFTBBE6 (A2, מוזגה 08:32)",
+    "session_018g4NYFzdrcm79E9rHgGcQZ (M1, מוזגה 08:37)",
+    "session_018g4NYDvqMVieahjNt9213o (C1, מוזגה 08:41)",
+    "session_018g4NYDqSADMkHkDkiJiiYi (M2, מוזגה 09:15 — ממשיכה כ-M2b)",
+    "session_018g4NYDJsQ89EKNooSUqRgM (N1, מוזגה 09:26, 383K — רדום)",
+    "session_018g4NYDqSADMkHkDkiJiiYi (M2b, מוזגה 09:45 — רדום)",
+    "session_018g4NYGzZg9ooe3a4MJJELF (A3, מוזגה 09:53, 381K — רדום)",
+    "session_018g4NYEMSxGEvLdmXYaLJ7k (L1+L1b מוזגו 09:50/09:57 — ממשיך כ-B1)",
+    "session_018g4NYEMSxGEvLdmXYaLJ7k (B1 מוזגה 10:07 — רדום)",
+    "session_018g4NYEdzMiZ4Ep8rQ85ZxV (N2 מוזגה 10:08, 401K — רדום)",
+    "session_018g4NYDYGYVviuAXgKvUVQL (M5 מוזגה 10:15 — ממשיך כ-N2c)",
+    "session_018g4NYChvguP3UAsPoe1XqG (V4 מוזגה 10:17 — רדום)",
+    "session_018g4NYDYGYVviuAXgKvUVQL (N2c מוזגה 10:21 — רדום)",
+    "session_018g4NYEQfvhsSBXe1LD3vHb (X1 מוזגה 10:24 — רדום)",
+    "session_018g4NYDuHr3SfYobKszmsRH (V5 מוזגה 13:20 — ממשיך כ-V6)"
   ],
-  "control": "session_018g4NYCjBqmqsHEct4XvhJj",
+  "control": "session_018g4NYCik48sdEyBfXuc6it",
   "control_previous": [
     "session_018g4NYDHwbDK3tiZ7BUZYwp",
-    "session_018g4NYFFdyRghdH6dzvTsTX"
+    "session_018g4NYFFdyRghdH6dzvTsTX",
+    "session_018g4NYCjBqmqsHEct4XvhJj",
+    "session_018g4NYGbTsYKFmHndtZzAux"
   ],
   "tasks": "session_018g4NYFkoAv3UHd7gDhGzXT"
 }
