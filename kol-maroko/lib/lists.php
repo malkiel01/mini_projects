@@ -874,7 +874,7 @@ function list_csv_new(string $raw, ?array $columns): array
         }
         $items[] = $d;
     }
-    $out = array_map(fn($f) => array_diff_key($f, ['col' => 1]), $fields);
+    $out = $fields;                                     // col — המקום בגיליון (הממשק שולח את התיקונים לפי אינדקס)
     return ['fields' => $out, 'items' => $items, 'errors' => array_slice($errors, 0, 200), 'encoding' => $enc,
         'preview' => array_map(fn($d) => array_map(fn($f) => $d[$f['key']] ?? null, $out), array_slice($items, 0, 5))];
 }
@@ -1239,7 +1239,7 @@ function list_snippet(array $l, array $fields): string
     $first = true;
     foreach ($pub as $f) {
         $fk = $f['key'];
-        $cls = "{$c}__$fk";
+        $cls = "{$c}__f-$fk";                       // __f- — שדה; בלי התנגשות עם __title / __items של הקטע
         $tpl[] = match ($f['type']) {
             'rich' => "        <div class=\"$cls\" data-kol-html=\"$fk\"></div>",
             'longtext' => "        <p class=\"$cls\" data-kol-text=\"$fk\"></p>",
@@ -1255,7 +1255,7 @@ function list_snippet(array $l, array $fields): string
     $s = "<section class=\"$c\" id=\"list-$k\">\n"
         . "  <h2 class=\"{$c}__title\">$label</h2>\n"
         . ($search ? "  <input type=\"search\" class=\"{$c}__search\" data-kol-search=\"$k\" data-kol-search-fields=\"" . implode(' ', $search) . "\" placeholder=\"חיפוש…\" aria-label=\"חיפוש ב$label\">\n" : '')
-        . ($choice ? "  <div class=\"{$c}__filter\" data-kol-filter=\"$k:{$choice['key']}\" data-kol-active-class=\"is-active\">\n    <button type=\"button\" data-kol-filter-value=\"\">הכול</button>\n    <template><button type=\"button\">{label}</button></template>\n  </div>\n" : '')
+        . ($choice ? "  <div class=\"{$c}__filter\" data-kol-filter=\"$k:{$choice['key']}\" data-kol-active-class=\"is-active\">\n    <button type=\"button\" data-kol-filter-value=\"\">הכול</button>\n    <template><button type=\"button\" data-kol-text=\"label\"></button></template>\n  </div>\n" : '')
         . "  <p class=\"{$c}__count\" data-kol-count=\"$k\" data-kol-count-text=\"{shown} מתוך {total}\"></p>\n"
         . "  <div class=\"{$c}__items\" data-kol-list=\"$k\" data-kol-sort=\"manual\" data-kol-page=\"30\">\n    <template>\n      <article class=\"{$c}__item\">\n"
         . implode("\n", $tpl) . "\n      </article>\n    </template>\n  </div>\n"
