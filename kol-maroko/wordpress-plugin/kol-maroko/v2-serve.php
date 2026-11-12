@@ -81,6 +81,8 @@ function kol_maroko_v2_base_headers($type = 'text/plain; charset=utf-8')
     header('Access-Control-Allow-Origin: *');
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Cross-Origin-Resource-Policy: cross-origin');
+    // עמוד שנפתח מעמוד של האתר (window.open) — בלי opener: אחרת הוא יכול לנווט את הלשונית של האתר, גם תחת sandbox (H4)
+    header('Cross-Origin-Opener-Policy: same-origin');
     header('Accept-Ranges: bytes');
     header('X-LiteSpeed-Tag: ' . KOL_MAROKO_V2_TAG);
 }
@@ -144,7 +146,8 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
     header('ETag: ' . $etag);
     if ($code === 404) header('Cache-Control: no-store');
     elseif ($media || !empty($f['immutable'])) header('Cache-Control: public, max-age=31536000, immutable');
-    else header('Cache-Control: public, max-age=60, must-revalidate');
+    // HTML ו"יפה" — נבדק מול השרת בכל טעינה (ETag ← 304), כדי שכיבוי המפסק יחזיר את העמוד המקורי מיד (H14, G7)
+    else header('Cache-Control: public, max-age=0, must-revalidate');
 
     $inm = (string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '');
     if ($code === 200 && $inm !== '' && (trim($inm) === '*' || in_array($etag, array_map('trim', explode(',', str_replace('W/', '', $inm))), true))) {

@@ -139,6 +139,7 @@ function kp_iso(array $r): array
     if (kp_h($r, 'access-control-allow-origin') !== '*') $bad[] = 'ACAO';
     if (kp_h($r, 'referrer-policy') !== 'strict-origin-when-cross-origin') $bad[] = 'Referrer-Policy';
     if (kp_h($r, 'cross-origin-resource-policy') !== 'cross-origin') $bad[] = 'CORP';
+    if (kp_h($r, 'cross-origin-opener-policy') !== 'same-origin') $bad[] = 'COOP';
     if (kp_h($r, 'content-type') === null) $bad[] = 'Content-Type';
     if (isset($r['headers']['set-cookie'])) $bad[] = 'Set-Cookie: ' . implode(' | ', $r['headers']['set-cookie']);
     if (str_contains($r['body'], 'OUTPUT-BEFORE-PLUGIN') || str_contains($r['body'], 'WP-SITE-PAGE')) $bad[] = 'פלט של האתר דלף';

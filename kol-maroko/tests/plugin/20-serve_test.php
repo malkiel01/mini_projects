@@ -118,7 +118,7 @@ test('M2 I7: בלי Set-Cookie — גם כשתוסף אחר קבע עוגייה 
     }
 });
 
-test('M2 מטמון: מדיה ו-immutable — לשנה; HTML ו"יפה" — 60 שניות + ETag = sha256; If-None-Match ← 304', function () {
+test('M2 מטמון: מדיה ו-immutable — לשנה; HTML ו"יפה" — max-age=0 + ETag = sha256; If-None-Match ← 304', function () {
     kp_site();
     kp_reset();
     $b = kp_bundle('A') + ['assets/app.3f2a.js' => 'x'];
@@ -127,7 +127,7 @@ test('M2 מטמון: מדיה ו-immutable — לשנה; HTML ו"יפה" — 60 
     kp_publish($man);
     kp_opt('kol_maroko_v2_on', true);
     $year = 'public, max-age=31536000, immutable';
-    $short = 'public, max-age=60, must-revalidate';
+    $short = 'public, max-age=0, must-revalidate';
     eq($year, kp_h(kp_http('GET', '/lexicon/media/w.mp3'), 'cache-control'), 'מדיה');
     eq($year, kp_h(kp_http('GET', '/lexicon/assets/app.3f2a.js'), 'cache-control'), 'immutable במניפסט');
     foreach (['/lexicon/', '/lexicon/x/', '/lexicon/a.css'] as $p) {

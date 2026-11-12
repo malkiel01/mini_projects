@@ -77,6 +77,11 @@ if (preg_match('~^/wp-json/kol-maroko/v1/([a-z_]+)$~', $path, $m)) {
     echo json_encode($r->data, JSON_UNESCAPED_UNICODE);
     exit;
 }
+// H2 / H3 / H15: מה השרת קיבל בפועל — האם הגיעה העוגייה של המחובר, ומאיזה מקור
+if (in_array($path, ['/wp-json/wp/v2/users/me', '/wp-admin/admin-ajax.php'], true)) {
+    update_option('test_hits', array_merge((array)get_option('test_hits', []), [['path' => $path, 'method' => $_SERVER['REQUEST_METHOD'], 'cookie' => $logged,
+        'origin' => $_SERVER['HTTP_ORIGIN'] ?? null, 'action' => $_POST['action'] ?? null]]));
+}
 header('Access-Control-Allow-Origin: ' . ($_SERVER['HTTP_ORIGIN'] ?? '*'));       // כמו אתר "פתוח" — כדי שרק העוגייה תכריע
 header('Access-Control-Allow-Credentials: true');
 if ($path === '/wp-json/wp/v2/users/me') {
@@ -98,6 +103,10 @@ if ($path === '/__login') {
     exit;
 }
 header('Content-Type: text/html; charset=utf-8');
+if ($path === '/__site/frame') {         // עמוד של האתר שמכיל את העמוד במסגרת (H4 / H15 בתוך מסגרת)
+    echo '<!doctype html><meta charset="utf-8"><title>site frame</title><h1 id="site-marker">WP-SITE-PAGE frame</h1><iframe id="kit" src="/lexicon/" style="width:900px;height:700px"></iframe>';
+    exit;
+}
 if (strpos($path, '/__site/') === 0) {
     // עמוד של האתר: מה שהבודק רואה בשאר האתר (H5), ובקרה חיובית ל-H2/H3 — אותו fetch, מהמקור של האתר, כן מחובר
     echo '<!doctype html><meta charset="utf-8"><title>site page</title><h1 id="site-marker" style="display:block">WP-SITE-PAGE</h1>'
