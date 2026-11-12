@@ -11,3 +11,4 @@
   `kol-data.js` — `data-kol-sort-lang` + Intl.Collator (הגרסה נשארה 1.1.0, כדי לא לשבור את בדיקות M1 — לבקרה).
 - 2026-11-12 · יחידה 3: `tests/browser/n1.cjs` (39), README. מוכן: run.php 133 · כל בדיקות הדפדפן ×3 ירוקות · check-apps · sync --check.
   מיגרציה 19 מול 16 ב-main — דווח לבקרה (סכנת דילוג על 17/18 אם N1 תמוזג לפני V4/M3).
+- 2026-11-12 · לבקשת בקרה (4): מוזג main (a6c76c7, M2); המיגרציה מוספרה מחדש 19 → **17** (max ב-main = 16), כולל KOL_SCHEMA_VERSION, הערות ו-README.
