@@ -19,7 +19,8 @@ elseif (isset($_COOKIE['kol_test_user'])) $_SERVER['PLATFORM_USER'] = (string)ba
 // P1: platform/provision.php — שרת מדומה (tests/fake-provision.php)
 // P1: מטריצת ההרשאות — api.php עוצר מיד אחרי authorize() (בלי להריץ את הפעולה)
 if (isset($_SERVER['HTTP_X_TEST_AUTHORIZE_ONLY'])) $GLOBALS['kol_test_authorize_only'] = true;
-if ($prov = getenv('KOL_TEST_PROVISION')) $GLOBALS['kol_provision_url'] = $prov;
+// בלי שרת מדומה — כתובת מקומית שאינה עונה (נכשל מיד), לעולם לא הפלטפורמה האמיתית
+$GLOBALS['kol_provision_url'] = getenv('KOL_TEST_PROVISION') ?: 'http://127.0.0.1:9/provision.php';
 if ($map = getenv('KOL_TEST_REC_MAP')) $GLOBALS['kol_rec_test_map'] = json_decode($map, true);
 // ויומן של מה שהשרת ראה בפועל: מי פנה, מאיזה מקור, ועם זהות או בלי
 if ($trace = getenv('KOL_TEST_TRACE')) {
