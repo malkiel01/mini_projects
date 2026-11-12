@@ -218,7 +218,7 @@ throw new Error('בום בשורה 6');
     ok(res.status() === 200 && d.o === 'null' && d.c === 'throw' && d.s === 'throw', `פתיחה ישירה בלשונית, עם אסימון: מקור אטום (origin=${d.o}, cookie ${d.c}, storage ${d.s})`);
     const no = await tab.goto(`${base}/preview/x/t/origin.html`);
     ok(no.status() === 403 && (no.headers()['content-security-policy'] || '').startsWith('sandbox ') && !(await tab.content()).includes('dataset'), 'פתיחה ישירה בלי אסימון: 403, בלי תוכן, ועדיין בארגז חול');
-    const ctl = await tab.goto(base + '/index.html');
+    const ctl = await tab.goto(base + '/index.php');
     ok(await tab.evaluate(() => { try { void document.cookie; localStorage.length; return self.origin; } catch { return 'throw'; } }) === base, 'ביקורת חיובית: דף רגיל של הסטודיו — מקור רגיל, עוגייה ואחסון נקראים');
     fs.writeFileSync(trace, '');
     await tab.goto(base + '/live.php?path=t/nav.html');
@@ -251,7 +251,7 @@ throw new Error('בום בשורה 6');
       const s = document.createElement('script'); s.textContent = 'window.__inl = 1'; document.body.append(s); out.inline = window.__inl === 1;
       setTimeout('window.__ev = 1', 0); await new Promise(r => setTimeout(r, 150)); out.eval = window.__ev === 1;      // קוד ממחרוזת — כמו eval, ונבדק בהקשר של הדף עצמו
       out.img = await new Promise(r => { const i = new Image(); i.onload = () => r(true); i.onerror = () => r(false); i.src = location.href.replace('127.0.0.1', 'localhost').replace(/[^/]*$/, 'assets/icon.svg'); });
-      const f = document.createElement('iframe'); f.src = 'index.html'; document.body.append(f);
+      const f = document.createElement('iframe'); f.src = 'index.php'; document.body.append(f);
       out.frame = await new Promise(r => { f.onload = () => { try { r(!!f.contentDocument && f.contentDocument.title !== ''); } catch { r(false); } }; setTimeout(() => r(false), 1500); });
       f.remove();
       setTimeout(() => done(out), 200);
@@ -264,9 +264,9 @@ throw new Error('בום בשורה 6');
     await until(async () => (await tab.textContent('#lv-inspect')).includes('onerror'));
     ok(await tab.textContent('#lv-path') === 't/' + HOST && (await tab.textContent('#lv-inspect')).includes('<img') && await tab.$('.lv img') === null && await tab.evaluate(() => window.pwned) === undefined,
       'שם קובץ ושם מחלקה שהם HTML — מוצגים כטקסט, ואינם רצים');
-    await tab.goto(base + '/index.html');
+    await tab.goto(base + '/index.php');
     const soft = await tab.evaluate(attack);
-    ok(soft.inline && soft.eval && soft.frame, 'ביקורת חיובית: באותן בדיקות, דף בלי המדיניות (index.html) — הכול עובר, כלומר הבדיקה מסוגלת להיכשל');
+    ok(soft.inline && soft.eval && soft.frame, 'ביקורת חיובית: באותן בדיקות, דף בלי המדיניות (index.php, C1 שלב א) — הכול עובר, כלומר הבדיקה מסוגלת להיכשל');
     await ctx.close();
   } catch (e) {
     failed++;
