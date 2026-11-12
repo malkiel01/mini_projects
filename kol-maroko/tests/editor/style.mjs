@@ -85,5 +85,21 @@ const qh = '<!doctype html><html><body>\n<p id="q">x</p>\n</body></html>\n', qm 
 const qs = ST.planInline('', 'font-family', '"a" onmouseover="alert(1)', true), qo = K.applyPatches(qh, K.html.setAttr(qm, qn, 'style', qs).patches), qn2 = K.q(K.parseHtml(qo), '#q');
 ok(qn2 && qn2.attrs.length === 2 && !qn2.attrs.some(a => a.name === 'onmouseover') && qo.includes('&quot;'), 'style="": מרכאות בערך נשארות ישות (&quot;) — אין יציאה מהתכונה ואין onmouseover', qo.split('\n')[1]);
 
+// ── V6: קיצורים של מיקום, flex, יישור, grid, overflow ──
+ok(JSON.stringify(ST.covered('inset', true)) === '["top","right","bottom","left"]' && JSON.stringify(ST.covered('inset-inline-start', true)) === '["right"]' && JSON.stringify(ST.covered('inset-inline-start', false)) === '["left"]' && JSON.stringify(ST.covered('inset-block-end', true)) === '["bottom"]' && JSON.stringify(ST.covered('inset-inline', true)) === '["right","left"]',
+  'V6 · inset / inset-inline / inset-block-end ← top/right/bottom/left לפי dir');
+ok(ST.logical('top', true) === 'inset-block-start' && ST.logical('right', true) === 'inset-inline-start' && ST.logical('left', true) === 'inset-inline-end' && ST.logical('left', false) === 'inset-inline-start' && ST.logical('width', true) === 'width',
+  'V6 · הצהרה חדשה — בשם לוגי (top ← inset-block-start; right ב-RTL ← inset-inline-start); width נשאר פיזי');
+ok(sc('inset', '0', 'bottom', '10%') === '0 0 10%' && sc('inset-inline', '0 auto', 'left', '5px') === '0 5px' && sc('flex', '1 1 0', 'flex-basis', '30%') === '1 1 30%' && sc('flex', '1', 'flex-grow', '2') === '2 1 0%' && sc('flex', 'none', 'flex-grow', '1') === '1 0 auto' && sc('flex', 'var(--f)', 'flex-grow', '1') === null,
+  'V6 · setComponent: inset (ארבעה), inset-inline, flex (1 ← 1 1 0%, none ← 0 0 auto); var() — null');
+ok(sc('flex-flow', 'row wrap', 'flex-wrap', 'nowrap') === 'row nowrap' && sc('place-items', 'center', 'justify-items', 'start') === 'center start' && sc('overflow', 'hidden', 'overflow-y', 'auto') === 'hidden auto' && sc('grid-area', '1 / 2', 'grid-row-start', '3') === null && sc('grid-column', '1 / 3', 'grid-column-end', '4') === null && sc('grid-template', 'auto / 1fr', 'grid-template-rows', '1fr') === null,
+  'V6 · flex-flow, place-items, overflow — בתוך הקיצור; grid-area / grid-column / grid-template — null (נכתב אחרי הקיצור)');
+ok(ST.componentOf('flex', '1 1 0', 'flex-basis', true) === '0' && ST.componentOf('flex', 'auto', 'flex-grow', true) === '1' && ST.componentOf('grid-column', '1 / 3', 'grid-column-end', true) === '3' && ST.componentOf('inset', '0 auto', 'left', true) === 'auto' && ST.componentOf('place-content', 'center end', 'justify-content', true) === 'end',
+  'V6 · componentOf: flex, grid-column, inset, place-content');
+{ const src = '.a {\n  position: absolute;\n  inset: 0 auto auto 0;\n}\n', m6 = K.parseCss(src), r6 = rule(m6, '.a'), res = ST.planRule(m6, r6, 'bottom', '5%', true);
+  k2('V6 · K2 · רכיב בתוך קיצור inset: הערך נערך בתוך הקיצור', src, res.patches, d => d.old === 1 && d.neu === 1 && d.text === '  inset: 0 auto 5% 0;'); }
+{ const src = '.a { color: red; }\n', m6 = K.parseCss(src), r6 = rule(m6, '.a'), res = ST.planRule(m6, r6, 'right', '10%', true);
+  k2('V6 · K2 · היסט חדש — inset-inline-start (לוגי) בכלל קיים', src, res.patches, (d, out) => out === '.a { color: red; inset-inline-start: 10%; }\n'); }
+
 console.log('\n' + (failed ? '❌ ' + failed + ' מתוך ' + ran + ' נכשלו' : '✅ כל ' + ran + ' הבדיקות עברו'));
 process.exit(failed ? 1 : 0);
