@@ -1,0 +1,9 @@
+/* ערכת ההתקפה — עיצוב מינימלי, בתוך החבילה בלבד */
+body { font: 15px/1.5 system-ui, sans-serif; margin: 16px; max-width: 900px; color: #1d2327; background: #fff; }
+table { border-collapse: collapse; width: 100%; }
+td, th { border-bottom: 1px solid #ddd; padding: 6px 8px; text-align: start; vertical-align: top; }
+tr.ok td:first-child { color: #137333; font-weight: 700; }
+tr.bad td:first-child { color: #b3261e; font-weight: 700; }
+tr.bad { background: #fde7e7; }
+#kit-sum { font-weight: 700; }
+td:last-child { font: 12px ui-monospace, monospace; direction: ltr; text-align: left; }
