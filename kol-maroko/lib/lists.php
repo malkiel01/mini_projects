@@ -24,6 +24,7 @@ const LIST_FIELD_RESERVED = ['items'];        // בנוסף ל-FIELD_RESERVED: "
 const LIST_AUDIT = ['list_add', 'list_edit', 'list_key', 'list_delete', 'list_file', 'list_csv', 'list_item_add', 'list_item_edit', 'list_item_delete', 'list_item_move',
     'list_field_add', 'list_field_edit', 'list_field_key', 'list_field_delete', 'trash_restore', 'snapshot_restore'];
 const LIST_PLACE_WHERE = ['main', 'body', 'after'];
+const LIST_PLACE_UNDO_KEEP = 20;              // N3b: כמה ביטולים של "➕ הוסף לעמוד" נשמרים (setting list_place_undo)
 
 // ── המתאם ─────────────────────────────────────────────────
 
@@ -1033,6 +1034,9 @@ function list_field_key(array $user, string $key, array $b, bool $apply): array
             unset($d[$old]);
             $put->execute([list_data_json($d), $key, $r['id']]);
         }
+        // N3b: ההקלטות של השדה (recordings.field, והנתיבים בעץ) — באותה עסקה, אחרת rec_sync יראה מקום חדש וירשום כפולה
+        require_once __DIR__ . '/rec_actions.php';
+        rec_list_renamed($key, $old, $old, $new, $user);
         $hits = array_values(array_filter(fields_bind_scan('field', $old), fn($h) => !$h['manual'] && !isset($skip[$h['id']])));
         return lists_bind_write(array_map(fn($h) => $h + ['old' => $old, 'new' => $new], $hits), $old, $new, $user, $note, is_array($b['revs'] ?? null) ? $b['revs'] : []);
     });
@@ -1119,6 +1123,8 @@ function list_key_apply(array $user, array $b): array
     $done = pf_tx(function () use ($old, $new, $path, $newPath, $skip, $user, $note, $b) {
         $pdo = db();
         foreach (['list_items' => 'list', 'list_fields' => 'list', 'list_trash' => 'list', 'lists' => 'key'] as $t => $c) $pdo->prepare("UPDATE $t SET $c = ? WHERE $c = ?")->execute([$new, $old]);
+        require_once __DIR__ . '/rec_actions.php';
+        rec_list_renamed($old, null, $old, $new, $user);                 // N3b: ההקלטות של הרשימה והנתיבים שלהן בעץ
         $hits = array_values(array_filter(lists_bind_scan($old), fn($h) => !$h['manual'] && !isset($skip[$h['id']])));
         $hits = array_map(function ($h) use ($old, $new) {
             return $h + ['old' => $old, 'new' => $new];
@@ -1338,12 +1344,13 @@ function list_place(array $user, array $b): array
         $html = substr($html, 0, $at) . $indent . $snippet . substr($html, $at);
         $kd = defined('BUILD_KD') ? BUILD_KD : 'js/kol-data.js';
         $added = [];
+        $undo = [[(int)$page['id'], (string)$page['sha']]];       // N3b: [מזהה, התוכן שלפני | null — נוצר עכשיו]
         if (!preg_match('~<script\b[^>]*\bsrc\s*=\s*["\']?[^"\'>]*kol-data\.js~i', $html)) {
             $tag = '  <script src="' . list_attr(list_rel($page['path'], $kd)) . '"></script>' . "\n";
             if (preg_match_all('~</body\s*>~i', $html, $m, PREG_OFFSET_CAPTURE)) { $p = end($m[0])[1]; $html = substr($html, 0, $p) . $tag . substr($html, $p); }
             else $html .= $tag;
             $added[] = 'script';
-            if (!pf_by_path($kd)) { pf_insert($kd, 'file', (string)file_get_contents(dirname(__DIR__) . '/assets/project-seed/kol-data.js'), $user, null, $note); $added[] = $kd; }
+            if (!pf_by_path($kd)) { $undo[] = [(int)pf_insert($kd, 'file', (string)file_get_contents(dirname(__DIR__) . '/assets/project-seed/kol-data.js'), $user, null, $note)['id'], null]; $added[] = $kd; }
         }
         $r = pf_put($page, $html, $user, $note);
         $cssPath = (string)(pf_kol()['config']['styles']['page'] ?? 'css/page.css');
@@ -1352,14 +1359,84 @@ function list_place(array $user, array $b): array
         $block = list_snippet_css($l['key']);
         if ($css && $css['kind'] === 'file') {
             $cur = pf_blob_get($css['sha']);
-            if (!str_contains($cur, '.kol-list-' . $l['key'] . ' {')) pf_put($css, rtrim($cur, "\n") . "\n" . $block, $user, $note);
+            if (!str_contains($cur, '.kol-list-' . $l['key'] . ' {')) { pf_put($css, rtrim($cur, "\n") . "\n" . $block, $user, $note); $undo[] = [(int)$css['id'], (string)$css['sha']]; }
         } elseif (!$css) {
-            pf_insert($cssPath, 'file', ltrim($block), $user, null, $note);
+            $undo[] = [(int)pf_insert($cssPath, 'file', ltrim($block), $user, null, $note)['id'], null];
             $added[] = $cssPath;
         }
-        return ['file' => pf_public($r), 'css' => $cssPath, 'added' => $added, 'html' => $snippet];
+        $token = list_place_undo_save($user, $l, $undo);
+        return ['file' => pf_public(pf_row((int)$r['id'])), 'css' => $cssPath, 'added' => $added, 'html' => $snippet, 'undo' => $token];
     });
     audit_as($user, 'pf_write', "{$out['file']['path']} · $note ({$l['key']}) · $where");
+    return $out;
+}
+
+// ── N3b: ביטול "➕ הוסף לעמוד" (Ctrl+Z / "↶ בטל") ─────────
+
+/**
+ * הביטול נשמר בשרת (setting list_place_undo — LIST_PLACE_UNDO_KEEP האחרונים), והדפדפן מחזיק רק אסימון. לכל קובץ: המזהה, ה-rev
+ * שאחרי ההוספה, והתוכן שלפני (sha בבלובים של מנוע הקבצים) — או null, קובץ שנוצר בהוספה. בתוך pf_tx של list_place.
+ */
+function list_place_undo_save(array $user, array $l, array $undo): string
+{
+    $token = bin2hex(random_bytes(12));
+    $files = [];
+    foreach ($undo as [$id, $sha]) {
+        $r = pf_row($id);
+        if ($sha !== null && $sha === $r['sha']) continue;             // לא השתנה (הבלוק כבר היה ב-CSS)
+        $files[] = ['id' => $id, 'rev' => (int)$r['rev'], 'sha' => $sha, 'path' => $r['path']];
+    }
+    $all = json_decode((string)setting('list_place_undo', '[]'), true);
+    $all = is_array($all) ? $all : [];
+    array_unshift($all, ['token' => $token, 'sub' => (string)$user['sub'], 'at' => now_iso(), 'list' => $l['key'], 'label' => $l['label'], 'files' => $files]);
+    setting_set('list_place_undo', json_encode(array_slice($all, 0, LIST_PLACE_UNDO_KEEP), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    return $token;
+}
+
+/**
+ * "↶ בטל" אחרי "➕ הוסף לעמוד": כל קובץ חוזר לתוכן שלפני — דרך pf_put (גרסה חדשה בהיסטוריה, "בוטל: …"; ההיסטוריה אינה
+ * נמחקת); קובץ שנוצר בהוספה — לסל של הקבצים (כמו pf_delete). רק מי שהוסיף, ורק אם אף קובץ לא השתנה מאז (rev) — אחרת 409
+ * והכול נשאר כמו שהוא (השחזור הידני — "גרסאות" בעורך הקוד). פעם אחת לכל אסימון.
+ */
+function list_place_undo(array $user, array $b): array
+{
+    pf_guard($user);
+    $token = is_string($b['token'] ?? null) && preg_match('/^[0-9a-f]{24}$/', $b['token']) ? $b['token'] : throw new ApiError('אין מה לבטל', 404);
+    $out = pf_tx(function () use ($user, $token) {
+        $all = json_decode((string)setting('list_place_undo', '[]'), true);
+        $all = is_array($all) ? $all : [];
+        $i = null;
+        foreach ($all as $k => $u) if (hash_equals((string)($u['token'] ?? ''), $token)) $i = $k;
+        if ($i === null || !hash_equals((string)$all[$i]['sub'], (string)$user['sub'])) throw new ApiError('אין מה לבטל — ההוספה כבר בוטלה, או שאינה שלך', 404);
+        $u = $all[$i];
+        $note = "בוטל: הוסף את הרשימה {$u['label']}";
+        $rows = [];
+        foreach ($u['files'] as $f) {
+            $st = db()->prepare('SELECT * FROM pf_files WHERE id = ?');
+            $st->execute([(int)$f['id']]);
+            $r = $st->fetch();
+            if (!$r || $r['deleted_at'] !== null || (int)$r['rev'] !== (int)$f['rev']) {
+                throw new ApiError("\"{$f['path']}\" השתנה מאז ההוספה — הביטול לא נעשה. אפשר לשחזר ידנית מ\"גרסאות\" בעורך הקוד", 409, ['path' => $f['path']]);
+            }
+            if ($f['sha'] !== null && !is_file(pf_blob_path((string)$f['sha']))) throw new ApiError('התוכן הקודם חסר בשרת — שחזרו מ"גרסאות"', 410);
+            $rows[] = [$r, $f['sha']];
+        }
+        $done = [];
+        $batch = bin2hex(random_bytes(6));
+        foreach ($rows as [$r, $sha]) {
+            if ($sha === null) {
+                db()->prepare('UPDATE pf_files SET deleted_at = ?, deleted_by = ?, deleted_name = ?, deleted_batch = ? WHERE id = ?')->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $r['id']]);
+                $done[] = ['path' => $r['path'], 'deleted' => true];
+            } else {
+                $n = pf_put($r, pf_blob_get((string)$sha), $user, $note);
+                $done[] = ['path' => $n['path'], 'rev' => (int)$n['rev']];
+            }
+        }
+        array_splice($all, $i, 1);
+        setting_set('list_place_undo', json_encode($all, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        return ['files' => $done, 'label' => $u['label'], 'list' => $u['list']];
+    });
+    audit_as($user, 'pf_write', 'בוטל: הוסף את הרשימה ' . $out['label'] . ' · ' . implode(', ', array_map(fn($f) => $f['path'] . (!empty($f['deleted']) ? ' (לסל)' : ''), $out['files'])));
     return $out;
 }
 

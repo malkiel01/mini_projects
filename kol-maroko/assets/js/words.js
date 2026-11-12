@@ -88,6 +88,8 @@ const Words = (() => {
   // ── מהספרייה (library.js) ────────────────────────────────
   let pending = 0;
   /** פותח את 📚 נתונים ← מילים על המילה הזו. */
+  /** N3b: מהספרייה (הקלטה של פריט ברשימה) — "📚 פתח את הרשימה". */
+  function openList(key) { cur = key; try { sessionStorage.setItem(CUR_KEY, key); } catch { /* מצב פרטי */ } if (location.hash === '#/words') view(main); else location.hash = '#/words'; }
   function open(id) { pending = id; cur = 'words'; try { sessionStorage.setItem(CUR_KEY, 'words'); } catch { /* מצב פרטי */ } if (location.hash === '#/words') view(main); else location.hash = '#/words'; }
   /** "החלף / הקלט" — אותה פעולה כמו בטבלה, בלי לעבור מסך. מחזיר true אם ההקלטה הוחלפה. */
   async function replaceAudio(id) {
@@ -405,5 +407,5 @@ const Words = (() => {
     if (!dl) { dl = h('datalist', { id: 'w-topics' }); document.body.append(dl); }
     dl.replaceChildren(...(D?.topics || []).map(t => h('option', { value: t.name })));
   }
-  return { view, open, replaceAudio };
+  return { view, open, openList, replaceAudio };
 })();
