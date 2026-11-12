@@ -265,20 +265,26 @@ test('M3 · נקודת שחזור: "צור עכשיו" ← ✓ (גם כשהמצ�
 
 // ── ה. ה-ping האמיתי ──────────────────────────────────────
 
-test('M3 · התוסף מול fake-wp: 1.x ← ✗ "להתקין 2.0"; המקבל המדומה v2 ← protocol 2', function () {
+test('M3 · התוסף האמיתי (2.0, אחרי M2) מול fake-wp: protocol 2; בלי גרסה v2 באוויר ← ✗ "לשלוח"; המקבל המדומה — גם הוא נקרא', function () {
+    // תוסף 1.x — נבדק ב-eval (ping מדומה); שדות המפסק והמונה — לפי M2 §2 שורה 26, ובתשובה מדומה עד M2b
     setting_set('site_url', $GLOBALS['WP']);
     $f = $GLOBALS['WP_DIR'] . '/options.json';
     $o = is_file($f) ? (json_decode((string)file_get_contents($f), true) ?: []) : [];
-    $o['kol_maroko_keys'] = pub_key_line(pub_key());
-    unset($o['kol_v2_mock']);
+    $keep = $o;
+    $o = ['kol_maroko_keys' => pub_key_line(pub_key())];      // נקי: בלי מה שבדיקות אחרות השאירו (שדרוג מ-1.4 וכו')
     file_put_contents($f, json_encode($o));
-    $r = m3_row(http('GET', '/api.php?action=cutover', ['user' => U_OWNER])['json'], 'plugin');
+    $ping = cutover_ping();
+    ok(!isset($ping['error']), 'ה-ping ענה: ' . ($ping['error'] ?? ''));
+    eq(2, $ping['protocol'], 'protocol');
+    ok(str_starts_with($ping['plugin'], '2.'), 'גרסת התוסף: ' . $ping['plugin']);
+    eq(false, $ping['v2_on'], 'המפסק כבוי');
+    $r = m3_row(cutover_eval(m3_facts(['ping' => $ping + ['v2_live' => 0]])), 'plugin');
     eq('bad', $r['status'], $r['detail']);
-    ok(str_contains($r['todo'], '2.0'), $r['todo']);
+    ok(str_contains($r['todo'], 'לשלוח'), $r['todo']);
+    ok(str_contains($r['detail'], 'protocol 2') && str_contains($r['detail'], 'המפסק: כבוי'), $r['detail']);
     $o['kol_v2_mock'] = true;
     file_put_contents($f, json_encode($o));
-    $r = m3_row(http('GET', '/api.php?action=cutover', ['user' => U_OWNER])['json'], 'plugin');
-    ok(str_contains($r['detail'], 'protocol 2'), $r['detail']);
-    unset($o['kol_v2_mock']);
-    file_put_contents($f, json_encode($o));
+    $ping = cutover_ping();
+    eq(2, $ping['protocol'], 'המקבל המדומה');
+    file_put_contents($f, json_encode($keep + ['kol_maroko_keys' => $o['kol_maroko_keys']]));
 });
