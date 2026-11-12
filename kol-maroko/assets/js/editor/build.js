@@ -52,7 +52,12 @@
       if (hr && hv === c.hovered && c.pt) {
         const px = c.ox + c.pt.x * c.scale, py = c.pt.y * c.scale, E = 10;
         const near = ax.axis === 'row' ? Math.min(Math.abs(px - hr.left), Math.abs(hr.left + hr.width - px)) < E : Math.min(Math.abs(py - hr.top), Math.abs(hr.top + hr.height - py)) < E;
-        if (!near) hv = null;
+        if (!near) { hv = null; this.dwell = null; }
+        else {                                                              // כוונת ריחוף: רק אחרי 350ms ליד אותה שפה — תזוזה עוברת ולחיצה מהירה אינן פוגשות "＋"
+          const key = hv; if (!this.dwell || this.dwell.n !== key) this.dwell = { n: key, at: performance.now() };
+          const left = 350 - (performance.now() - this.dwell.at);
+          if (left > 0 && !(this.plusN === hv)) { clearTimeout(this.dwellT); this.dwellT = setTimeout(() => this.draw(), left + 10); hv = null; }
+        }
       }
       if (!hv || !hr || !this.canWrite() || hr.zero || hr.height < 16 || hr.width < 40) { this.plus.forEach(b => { b.hidden = true; }); if (!hv) this.plusN = this.plusHold ? this.plusN : null; return; }
       if (hv === c.hovered) { this.plusN = hv; this.plusAt = performance.now(); }
