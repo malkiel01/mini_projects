@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 1.6.0
+ * Version: 2.0.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -26,7 +26,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '1.6.0');   // 2.0.0 — ביחידה האחרונה של M2 (עם KOL_PLUGIN_EXPECTED)
+define('KOL_MAROKO_VERSION', '2.0.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
