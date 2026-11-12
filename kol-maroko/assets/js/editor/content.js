@@ -86,7 +86,9 @@
         if (!can) body.push(h('p', { class: 'dt-note' }, T.blocker(this.canvas.m, host).message), this.btn('</> פתח בקוד', () => this.openEl(host)));
         out.push(this.group('טקסט', ...body));
       } else if (!/^(html|head|body)$/.test(n.tag) && !this.inHead(n)) out.push(this.group('טקסט', h('p', { class: 'hint' }, 'באלמנט הזה אין טקסט לעריכה במקום.')));
-      if (TEXT_TAGS.includes(n.tag) && !n.implied)
+      const tf = this.tagField && this.tagField(n);                       // V4: כל תגית — רשימה לפי הקשר והקלדה חופשית, דרך KolStruct.retag
+      if (tf) out.push(this.group('תגית', tf));
+      else if (TEXT_TAGS.includes(n.tag) && !n.implied)
         out.push(this.group('תגית', this.row('סוג האלמנט', this.select(n.tag, TEXT_TAGS.map(t => [t, '<' + t + '>' + ({ h1: ' — כותרת ראשית', h2: ' — כותרת משנה', p: ' — פסקה', span: ' — קטע בתוך שורה', div: ' — מכל' }[t] || '')]), v => { if (v !== n.tag) this.act('תגית ' + v + ' · ' + this.lab(n), m => K.html.retag(m, n, v), n); }, 'tag'))));
       return out;
     }

@@ -59,7 +59,7 @@
     .pj-row:hover .pj-more, .pj-more:focus-visible { opacity: 1; }
     .pj-tab button { max-width: 220px; }
 }
-main:has(> .pj) { max-width: 1600px; }
+main:has(> .pj) { max-width: none; }                                    /* V4: כל רוחב החלון, כמו העורך */
 /* ▶️ תצוגה חיה (F4): בטלפון — רק הסמל, כדי שהסרגל לא יגלוש */
 .pj-live-btn { flex: none; }
 @media (max-width: 699px) { .pj-live-word { display: none; } }
