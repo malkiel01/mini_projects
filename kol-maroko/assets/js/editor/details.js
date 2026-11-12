@@ -51,7 +51,9 @@
       return rec;
     }
     /** כל הכללים שחלים על האלמנט (וגם כאלה שבתוך @media שאינו חל ברוחב הנוכחי — מסומנים). */
-    collect(n) {
+    /** opt.pseudo — 'before' / 'after': הכללים של הפסאודו-אלמנט (V5 — הכיסוי). */
+    collect(n, opt) {
+      const pseudo = opt && opt.pseudo ? opt.pseudo : '';
       const c = this.canvas, K = this.K, e = c.elOf(n), out = { rules: [], notes: [] };
       if (!e || !e.matches) return out;
       const win = c.frame.contentWindow, file = this.file(), sheets = this.sheets();
@@ -62,7 +64,10 @@
           if (r.type === 1 || (r.selectorText != null && r.style)) {
             const id = ctx + '|' + norm(r.selectorText), i = seen.get(id) || 0; seen.set(id, i + 1);
             let best = null, text = '';
-            for (const part of splitSel(r.selectorText)) { let hit = false; try { hit = e.matches(part); } catch { hit = false; } if (hit) { const sp = specificity(part); if (!best || cmp(sp, best) > 0) { best = sp; text = part; } } }
+            for (const part of splitSel(r.selectorText)) {
+              let base = part, hit = false;
+              if (pseudo) { const pm = /::?(before|after)\s*$/i.exec(part); if (!pm || pm[1].toLowerCase() !== pseudo) continue; base = part.slice(0, pm.index).trim() || '*'; }   // V5: ::before / ::after של האלמנט
+              try { hit = e.matches(base); } catch { hit = false; } if (hit) { const sp = specificity(part); if (!best || cmp(sp, best) > 0) { best = sp; text = part; } } }
             if (best) {
               const mr = rec && rec.index.get(id) ? rec.index.get(id)[i] : null, decls = [];
               if (mr) for (const d of mr.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line: lineAt(src, d.from), d });
@@ -91,7 +96,7 @@
         if (rec && rec.brokenLine) { const line = src.html ? K.lineOf(c.m.src, src.off) + rec.brokenLine - 1 : rec.brokenLine; out.notes.push({ text: 'שגיאה ב-CSS בשורה ' + line + ' של ' + src.path + ' — מה שאחריה עלול שלא להיקרא', path: src.path, line }); }
         walk(rules, '', src, rec, new Map(), '', false);
       }
-      const st = K.attrOf(n, 'style');
+      const st = pseudo ? null : K.attrOf(n, 'style');
       if (st && st.value.trim()) {
         const line = st.from >= 0 ? K.lineOf(c.m.src, st.from) : 0, decls = [];
         try { const m = K.parseCss('x{' + st.value + '}'), r = m.root.kids[0]; if (r) for (const d of r.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line }); } catch { /* סגנון שאינו נקרא — לא מוצג */ }
