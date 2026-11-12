@@ -215,3 +215,13 @@ test('X1 ✨: דרך ה-API — עורך בלבד, POST בלבד; בלי מפת�
     $r = http('POST', '/api.php?action=ai_suggest_files', ['user' => U_EDITOR, 'json' => ['prompt' => 'abc', 'paths' => ['index.html']]]);
     eq(503, $r['status']);
 });
+
+test('X1 ✨: טווח שורות ואלמנט מהעורך החזותי — נשלחים לבינה (שתי הקצוות של הטווח)', function () {
+    x1_file('x1/r.html', "<p>1</p>\n<p>2</p>\n<p>3</p>\n");
+    x1_fake([], 'אין', $seen);
+    ai_suggest_files(X1_ED, ['prompt' => 'טווח', 'range' => ['path' => 'x1/r.html', 'from' => 2, 'to' => 3]]);
+    ok(str_contains($seen['messages'][0]['content'], 'השורות 2–3'), 'הטווח');
+    ai_suggest_files(X1_ED, ['prompt' => 'אלמנט', 'element' => ['path' => 'x1/r.html', 'element' => 'main > p:nth-of-type(2)']]);
+    ok(str_contains($seen['messages'][0]['content'], 'main > p:nth-of-type(2)'), 'האלמנט');
+    unset($GLOBALS['kol_ai_fake']);
+});

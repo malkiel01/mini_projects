@@ -202,7 +202,7 @@ function ai_context(array $b): array
     if ($range) {
         $from = max(1, (int)($range['from'] ?? 1));
         $to = max($from, (int)($range['to'] ?? $from));
-        $msg .= "\nהעורך סימן בקובץ {$range['path']} את השורות $from–$to — עבוד עליהן.\n";
+        $msg .= "\nהעורך סימן בקובץ {$range['path']} את השורות {$from}–{$to} — עבוד עליהן.\n";
     }
     if ($el) $msg .= "\nהעורך בחר בעורך החזותי את האלמנט " . pf_label((string)($el['element'] ?? ''), 300) . " בקובץ {$el['path']} — עבוד עליו.\n";
     $sys = array_values(array_intersect(array_keys($files), ai_system_files()));

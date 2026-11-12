@@ -17,3 +17,9 @@
   (CSS ל-`css/longtext/<doc>.css` + `<link>` ב-head פעם אחת, גרסה "📝 <שם>"; hash ≠ ← 409 עם שני הצדדים, `mode: overwrite | import`),
   `longtexts` + `longtext_link` ("🔗 חבר למסמך קיים"). בלי מיגרציה: path + hash ב-settings (`lt_link_<doc>`), לא עמודות ב-longtexts.
   `longtext_sync` בלי path — הטיוטה הישנה, כמו היום (עד M6). בדיקות: `tests/cases/98-longtext-files.php` (5, כולל payload עוין).
+- 2026-11-12 · יחידה 4 (ממשק): `assets/js/ai-sheet.js` (חדש) — בקשה, הקשר, diff לכל קובץ (`Project.diffView`), סימון לכל עריכה, "לא הוחלו" עם
+  סיבה, במילים — התצוגה של N1; "החל" / "בטל". `project.js` — ✨ בסרגל (קובץ פתוח / שורות שסומנו), וב-⋯: 📝 ערוך בעורך התמלילים (אזור
+  שבו הסמן, או חדש), 🔗 חבר למסמך קיים (על הבחירה), חלון התנגשות עם שלוש האפשרויות; `Project.ai()` טוען את ai-sheet.js רק כשצריך
+  (בלי לגעת ב-studio.html). `words.js` — שורה אחת: ✨ עוזר ב-📚. CSS ב-`project.css`. `tests/browser/x1.cjs` (26) + `x1-router.php`
+  (שירות בינה מדומה, בלי לגעת ב-router.php). נמצא ותוקן: `"$from–$to"` ב-PHP — ה-– נבלע בשם המשתנה (טווח השורות נשלח חסר).
+  - ❗ פתוח: `frame-src` ב-editor.php (lib/csp.php, C1) לא מתיר את עורך התמלילים — 📝 ב-📁 ייחסם עד שתתווסף KOL_WP_URL. נשאל בבקרה.

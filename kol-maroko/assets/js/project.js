@@ -994,6 +994,127 @@ const Project = (() => {
         h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
   }
 
+  // ── X1: ✨ עוזר הבינה, 📝 טקסט ארוך, 🔗 חיבור למסמך ─────────────
+  const scripts = {};
+  const loadScript = src => scripts[src] ??= new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = () => { delete scripts[src]; fail(new Error('הרכיב לא נטען: ' + src)); };
+    document.head.append(s);
+  });
+  const curText = doc => (doc.model ? doc.model.getValue() : doc.text);
+  /** ✨ — ai-sheet.js נטען רק כשצריך. ctx כמו ב-AiSheet.open; אחרי "החל" — העץ והקבצים הפתוחים מתעדכנים (Ctrl+Z מבטל בעורך). */
+  async function ai(ctx) {
+    try {
+      await saveAll().catch(() => {});                           // ההצעה נבנית מול מה ששמור בשרת
+      if (typeof AiSheet === 'undefined') await loadScript('assets/js/ai-sheet.js');
+    } catch (e) { toast(e.message, true); return; }
+    AiSheet.open({ ...ctx, onApplied: async a => { if (S.loaded) await refresh(); await ctx.onApplied?.(a); } });
+  }
+  /** ✨ על הקובץ הפתוח — ועם בחירה בעורך: טווח השורות שסומן. */
+  function aiHere() {
+    const f = S.byId.get(S.cur);
+    if (!f || f.kind !== 'file') { ai({ paths: [] }); return; }
+    const sel = S.editor?.getSelection();
+    const range = sel && !sel.isEmpty() ? { path: f.path, from: sel.startLineNumber, to: sel.endLineNumber } : null;
+    ai({ paths: [f.path], range });
+  }
+  /** האזורים data-kol-longtext בקובץ: [{doc, start, end}] (היסטים בתווים), לפי ספירה של <div> מקוננים — כמו בשרת. */
+  function ltRegions(text) {
+    const out = [], rx = /<div\b[^>]*?\sdata-kol-longtext\s*=\s*(["'])([A-Za-z0-9:_-]{1,40})\1[^>]*>/gi;
+    let m;
+    while ((m = rx.exec(text))) {
+      const t = /<div\b[^>]*>|<\/div\s*>/gi;
+      t.lastIndex = m.index + m[0].length;
+      let depth = 1, x;
+      while (depth > 0 && (x = t.exec(text))) { depth += x[0][1] === '/' ? -1 : 1; if (!depth) out.push({ doc: m[2], start: m.index, end: t.lastIndex }); }
+    }
+    return out;
+  }
+  /** 📝 — האזור שבו הסמן; אין — אזור חדש בסוף <main>. */
+  async function longtextHere() {
+    const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
+    if (!f || !doc || doc.binary || !/\.html?$/i.test(f.path)) { toast('פתחו קובץ HTML', true); return; }
+    const text = curText(doc), off = doc.model && S.editor ? doc.model.getOffsetAt(S.editor.getPosition()) : 0;
+    const regs = ltRegions(text), at = regs.find(r => off >= r.start && off <= r.end) || (regs.length === 1 ? regs[0] : null);
+    if (!at && !confirm(`ליצור ב-${base(f.path)} אזור חדש של עורך התמלילים, בסוף <main>?`)) return;
+    try { await saveAll(); } catch (e) { toast(e.message, true); return; }
+    longtextEditor(f.path, at?.doc || '');
+  }
+  /** עורך התמלילים במסך מלא (host.js, כמו בסטודיו). בסיום — סנכרון לקובץ; עריכה ביד מאז — שלוש אפשרויות, לעולם לא דריסה שקטה. */
+  async function longtextEditor(path, docId) {
+    let first;
+    try {
+      first = await api('longtext_open', { path, doc: docId });
+      if (first.created) await refresh();
+      if (typeof WordProcessor === 'undefined') await loadScript(first.host_js);
+    } catch (e) { toast(e.message, true); return; }
+    let doc = first.doc;
+    const box = h('div', { class: 'wp-box' });
+    const badge = h('span', { class: 'chip' }, 'עריכה');
+    const dlg = h('dialog', { class: 'wp-dlg', 'aria-label': 'עורך התמלילים', 'data-lt-dlg': doc },
+      h('div', { class: 'wp-head' },
+        h('button', { type: 'button', class: 'btn primary', 'data-lt-done': true, onclick: () => close() }, '✓ סיום'),
+        h('b', { class: 'one', dir: 'auto' }, '📝 ' + base(path)), badge),
+      box);
+    document.body.append(dlg);
+    dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    dlg.showModal();
+    const ed = WordProcessor.mount(box, {
+      session: async () => { if (first) { const f = first; first = null; return f; } return api('longtext_open', { path, doc }); },
+      onDoc: d => { doc = d; },
+      onChange: dirty => { badge.textContent = dirty ? 'שומר…' : 'נשמר ✓'; },
+      onSaved: () => { badge.textContent = 'נשמר ✓'; },
+      onClose: () => close(),
+      onLock: l => toast('פתוח לעריכה אצל ' + l.by),
+      onError: e => toast(e.message || 'שגיאה בעורך', true),
+    });
+    let closing = false;
+    async function close() {
+      if (closing) return;
+      closing = true;
+      if (!(await ed.save()) && !confirm('השינויים האחרונים בעורך לא נשמרו. לסגור בכל זאת?')) { closing = false; return; }
+      ed.destroy(); dlg.close(); dlg.remove();
+      await longtextSync(path, doc);
+    }
+  }
+  async function longtextSync(path, doc, mode) {
+    try {
+      const r = await api('longtext_sync', { path, doc, mode });
+      if (r.reopen) { toast('השינויים שלך יובאו לעורך התמלילים'); await refresh(); longtextEditor(path, doc); return; }
+      toast('📝 נכתב ב-' + base(path));
+      await refresh();
+    } catch (e) {
+      const c = e.data?.conflict;
+      if (e.status !== 409 || !c) { toast(e.message, true); return; }
+      const dlg = sheet('האזור נערך ביד מאז הסנכרון האחרון',
+        h('p', { class: 'hint' }, `ב-${c.path} מישהו שינה את התוכן של האזור ישירות בקובץ. − מה שבקובץ · + גרסת עורך התמלילים. שום דבר לא נכתב עדיין.`),
+        diffView(c.file, c.editor),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn danger', 'data-lt-overwrite': true, onclick: () => { dlg.close(); longtextSync(path, doc, 'overwrite'); } }, 'דרוס בגרסת עורך התמלילים'),
+          h('button', { type: 'button', class: 'btn', 'data-lt-import': true, onclick: () => { dlg.close(); longtextSync(path, doc, 'import'); } }, 'ייבא את השינויים שלי לעורך התמלילים'),
+          h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
+    }
+  }
+  /** 🔗 — האלמנט שסומן בעורך נעטף ב-data-kol-longtext של מסמך קיים (מההסבה). */
+  async function longtextLink() {
+    const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
+    const sel = S.editor?.getSelection();
+    if (!f || !doc?.model || !sel || sel.isEmpty()) { toast('סמנו בעורך את האלמנט (מהתגית הפותחת עד הסוגרת)', true); return; }
+    const old = doc.model.getValueInRange(sel);
+    let list;
+    try { await saveAll(); list = (await api('longtexts')).docs; } catch (e) { toast(e.message, true); return; }
+    const dlg = sheet('🔗 חבר למסמך קיים',
+      h('p', { class: 'hint' }, 'האלמנט שסימנתם ייעטף באזור של המסמך. מעכשיו עורכים אותו ב-📝 עורך התמלילים.'),
+      list.length ? h('ul', { class: 'pj-lt-docs' }, list.map(d => h('li', {},
+        h('button', { type: 'button', class: 'btn', 'data-lt-doc': d.doc, onclick: async () => {
+          dlg.close();
+          try { await api('longtext_link', { path: f.path, rev: S.docs.get(S.cur)?.rev ?? f.rev, old, doc: d.doc }); toast('🔗 חובר'); await refresh(); }
+          catch (e) { toast(e.message, true); }
+        } }, h('b', {}, d.name), ' · ', h('span', { class: 'muted' }, when(d.at)), d.path ? h('span', { class: 'chip' }, 'מחובר: ' + d.path) : null),
+        h('p', { class: 'hint' }, d.preview)))) : h('p', { class: 'empty' }, 'אין מסמכים של עורך התמלילים.'),
+      h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול'));
+  }
+
   // ── כלי העורך ─────────────────────────────────────────────
   const edRun = id => { S.editor?.focus(); S.editor?.getAction(id)?.run(); };
   function applyPrefs() {
@@ -1002,6 +1123,9 @@ const Project = (() => {
   }
   const toolsMenu = () => menu('כלי העורך', [
     /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
+    ['✨ עוזר הבינה — על הקובץ (או על השורות שסומנו)', () => aiHere()],
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['📝 ערוך בעורך התמלילים', () => longtextHere()] : null,
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🔗 חבר למסמך קיים (על האלמנט שסומן)', () => longtextLink()] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
     S.canPurge ? ['🔄 ייבוא מחדש מהעמוד של היום', () => migrateSheet()] : null,   // גם כאן — בטלפון רשימת הקבצים סגורה, והכפתור שבה אינו נראה
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
@@ -1037,6 +1161,7 @@ const Project = (() => {
     el.bar = h('div', { class: 'pj-bar' },
       h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📂 קבצי הקוד'),
       el.tabs, el.status, el.save,
+      h('button', { type: 'button', class: 'btn sm pj-ai-btn', 'data-ai': true, title: '✨ עוזר הבינה — על הקובץ הפתוח, או על השורות שסומנו', onclick: () => aiHere() }, '✨'),
       h('button', { type: 'button', class: 'btn sm pj-live-btn', title: 'תצוגה חיה — העמוד רץ כפי שירוץ אצל הגולש', onclick: () => live() }, '▶️', h('span', { class: 'pj-live-word' }, ' תצוגה חיה')),
       h('button', { type: 'button', class: 'icon-btn', 'data-ed': true, 'aria-label': 'כלי העורך', onclick: toolsMenu }, '⋯'));
     const aside = h('aside', { class: 'pj-side', 'aria-label': 'מנהל הקבצים' },
@@ -1203,5 +1328,5 @@ const Project = (() => {
       pf_copy: '📋 שכפל בפרויקט', pf_version_restore: '↩️ שחזר גרסה של קובץ', pf_replace: '🔁 החליף בכל קובצי הפרויקט', pf_zip: '🗜️ הוריד את הפרויקט כ-ZIP', pf_zip_import: '📦 ייבא ZIP לפרויקט' });
   });
 
-  return { oldTemplate: OLD_TPL, seed: { get only() { return !!S.seedOnly; }, draw: drawSeed }, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
+  return { ai, diffView, oldTemplate: OLD_TPL, seed: { get only() { return !!S.seedOnly; }, draw: drawSeed }, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();

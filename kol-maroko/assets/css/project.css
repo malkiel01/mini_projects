@@ -92,3 +92,21 @@ main:has(> .pj) { max-width: 1600px; }
 .pj-check { display: inline-flex; align-items: center; gap: 6px; }
 .pj-zlist ul { max-height: 30vh; overflow: auto; margin: 4px 0; }
 .pj-row[draggable="true"] { -webkit-user-drag: element; }
+
+/* X1 — ✨ עוזר הבינה (assets/js/ai-sheet.js) ו-🔗 רשימת המסמכים */
+.ai-prompt { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; margin: 8px 0; }
+.ai-ctx { gap: 6px; margin-bottom: 4px; }
+.ai-ctx code { font-size: .85em; }
+.ai-out { margin-top: 10px; display: grid; gap: 12px; }
+.ai-file { border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow: hidden; }
+.ai-file-head { gap: 6px; margin-bottom: 6px; }
+.ai-file-head b { overflow-wrap: anywhere; }
+.ai-marks { gap: 6px; margin-bottom: 6px; }
+.ai-marks label { cursor: pointer; }
+.ai-rej { background: color-mix(in srgb, var(--star) 12%, var(--surface)); border-radius: 8px; padding: 8px; }
+.ai-rej ul { margin: 4px 0 0; padding-inline-start: 18px; }
+.ai-sum { margin: 0; }
+.chip.warn { background: color-mix(in srgb, var(--star) 25%, var(--surface)); }
+.pj-lt-docs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.pj-lt-docs .btn { width: 100%; justify-content: flex-start; flex-wrap: wrap; gap: 4px; }
+.pj-lt-docs p { margin: 2px 4px 0; }
