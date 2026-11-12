@@ -161,6 +161,41 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForSelector('.w-table th[data-col="region"]');
     ok((await words(page)).some(w => w.extra.region === 'צפון'), '"צור שדה" מאקסל — השדה והערך');
 
+    // ── N2c: "צור שדה" בעורך הקוד, אזהרת השכפול, DOMParser ─────
+    await page.goto(base + '/#/project');
+    await page.waitForSelector('.pj-tree .pj-row');
+    await page.locator('.pj-tree .pj-row', { has: page.locator('[data-linked="words"]') }).locator('.pj-name').click();
+    await page.waitForFunction(() => window.monaco && monaco.editor.getModels().some(m => m.getValue().includes('"items"')));
+    const model = () => page.evaluate(() => monaco.editor.getModels().find(m => m.getValue().includes('"items"')).getValue());
+    const jf = JSON.parse(await model());
+    jf.items[0].dialect = 'פאס';
+    await page.evaluate(t => monaco.editor.getModels().find(m => m.getValue().includes('"items"')).setValue(t), JSON.stringify(jf, null, 2));
+    await page.click('.pj-ed .monaco-editor .view-line'); await page.keyboard.press('Control+s');
+    await page.waitForSelector('#sheet [data-create-field="dialect"]');
+    ok(true, 'N2c: שדה שאינו קיים בקובץ — כפתור "צור שדה" בעורך הקוד');
+    await page.click('#sheet [data-create-field="dialect"]');
+    await page.waitForSelector('#sheet [data-words-summary]');
+    ok((await page.textContent('#sheet')).includes('שדות חדשים: dialect'), 'N2c: השדה החדש בתוכנית "מה ישתנה"');
+    await page.click('#sheet [data-words-apply]');
+    await page.waitForFunction(() => !document.querySelector('#sheet').open);
+    ok((await words(page)).some(w => w.extra && w.extra.dialect === 'פאס'), 'N2c: "צור שדה" ← השדה והערך בטבלה');
+    const wid = (await call(page, 'pf_tree')).files.find(f => f.path === 'data/words.json');
+    const cp = await call(page, 'pf_copy', { id: wid ? wid.id : -1, to: 'data/words-copy.json' });
+    ok(typeof cp.warning === 'string' && cp.warning.length > 0, 'N2c: pf_copy של הקובץ המקושר מחזיר אזהרה', cp);
+    const exec = await page.evaluate(() => {
+      window.__n2c = 0;
+      const a = Fields.show({ type: 'rich' }, '<img src=x onerror="window.__n2c=1">טקסט<script>window.__n2c=2</script>');
+      return new Promise(r => setTimeout(() => r([a, window.__n2c]), 300));
+    });
+    ok(exec[0].startsWith('טקסט') && !exec[0].includes('<img') && exec[1] === 0, 'N2c: Fields.show (rich) — DOMParser; <img onerror> ו-<script> אינם רצים', exec);
+    const pexec = await page.evaluate(() => new Promise(r => {
+      window.__n2c = 0;
+      const doc = new DOMParser().parseFromString('<img src=x onerror="window.__n2c=3">', 'text/html');
+      setTimeout(() => r(window.__n2c + ':' + doc.body.textContent), 300);
+    }));
+    ok(pexec === '0:', 'N2c: מסמך של DOMParser אינו מריץ onerror (הבסיס של plain() ב-words.js)', pexec);
+    ok(/new DOMParser\(\)\.parseFromString/.test(require('fs').readFileSync(require('path').join(ROOT, 'assets/js/words.js'), 'utf8')) && !/createElement\('div'\); d\.innerHTML = html/.test(require('fs').readFileSync(require('path').join(ROOT, 'assets/js/words.js'), 'utf8')), 'N2c: plain() ב-words.js — DOMParser, לא innerHTML על דיב');
+
     // ── טלפון ──────────────────────────────────────────────────
     const pctx = await mk(390, 800), phone = await pctx.newPage();
     phone.on('pageerror', e => errors.push('phone: ' + e.message));
