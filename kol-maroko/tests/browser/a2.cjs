@@ -118,7 +118,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // נסה שוב — לאחת
     await page2.locator('#sheet-body .lf-fails li', { hasText: 'מילה 16' }).locator('button').click();
     await waitSheet(page2, /נכשלו בהבאה · 1/, 30000);
-    ok((await call(page2, 'rec_status')).counts.tool === 17, '"נסה שוב" — הנופלת הובאה בניסיון השני');
+    // T1: "· 1" מופיע מיד כשהבקשה מסמנת את המילה מחדש — לפני שצעד ההורדה רץ. מחכים לסוף העבודה, ואז בודקים
+    let rs = null;
+    for (let k = 0; k < 60 && (!rs || rs.job.status === 'running'); k++) { if (rs) await sleep(500); rs = await call(page2, 'rec_status'); }
+    ok(rs.counts.tool === 17 && rs.job.status !== 'running', '"נסה שוב" — הנופלת הובאה בניסיון השני', { tool: rs.counts.tool, failed: rs.counts.failed, job: rs.job.status, fails: (rs.failed || []).map(x => x.word_id + ':' + (x.f_code || x.code || '')) });
     await page2.keyboard.press('Escape');
 
     // ── 4. בספרייה: "בכלי", מתנגנת מהכלי, המשך נשמר ──

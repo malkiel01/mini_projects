@@ -449,10 +449,12 @@ const Library = (() => {
   }
 
   /** אחרי הבאה — הנתונים מחדש, בלי לאבד את מקום הגלילה. */
+  let reloadSeq = 0;               // T1: רק התשובה האחרונה נכנסת — תשובה ישנה שמגיעה אחרי חדשה (עומס) לא מחזירה מצב קודם
   async function reload(loud = false) {
     if (!host?.isConnected || location.hash !== '#/files') return;
-    try { const keep = shown; setD(await api('library')); shown = keep; if (tab === 'audio') render(); }
-    catch (e) { if (loud) toast(e.message, true); /* נשאר המצב הקודם */ }
+    const my = ++reloadSeq;
+    try { const keep = shown, d = await api('library'); if (my !== reloadSeq) return; setD(d); shown = keep; if (tab === 'audio') render(); }
+    catch (e) { if (loud && my === reloadSeq) toast(e.message, true); /* נשאר המצב הקודם */ }
   }
 
   function imagesView(box) {
