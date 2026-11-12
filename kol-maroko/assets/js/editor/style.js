@@ -202,6 +202,109 @@
     return K().css.addRule(m, m.root, sel, decls.map(([p, v]) => [logical(p, rtl), v]));
   }
 
+  // ── מכשירים (V7, 03 §8.1): נקודת שבירה = @media (max-width: <max>px), בדיוק ──────────────────────
+  /** ה-max של תנאי @media שהוא "מכשיר": (max-width: 767px) / (width <= 767px) / (767px >= width), רווחים ואותיות לא משנים.
+   *  כל תנאי אחר (min-width, screen and, print, prefers-…, כמה תנאים) — null: אינו מכשיר, ונערך כמו שהוא. */
+  function mediaMax(cond) {
+    const s = String(cond == null ? '' : cond).trim().replace(/^@media\s+/i, '').replace(/\s+/g, ' ').toLowerCase();
+    const n = '(\\d+(?:\\.\\d+)?)px', m = new RegExp('^\\( ?max-width ?: ?' + n + ' ?\\)$').exec(s) || new RegExp('^\\( ?width ?<= ?' + n + ' ?\\)$').exec(s) || new RegExp('^\\( ?' + n + ' ?>= ?width ?\\)$').exec(s);
+    return m ? +m[1] : null;
+  }
+  /** התנאי שהעורך כותב למכשיר. */
+  const devCond = max => '(max-width: ' + max + 'px)';
+  /** max של כלל מפאנל "פרטים" (r.media: "@media (max-width: 767px)", או כמה הקשרים מופרדים ב-" · "): רק @media אחד בלי עוטף. */
+  function ruleMax(r) { const md = r && r.media ? String(r.media) : ''; if (!md || md.includes(' · ') || !/^@media /.test(md)) return null; return mediaMax(md.slice(7)); }
+  const normSel = s => String(s).replace(/\s+/g, ' ').trim();
+  const isDevBlock = (n, max) => n && n.type === 'at' && n.name.toLowerCase() === 'media' && mediaMax(n.sel) === max;
+  /** הכלל של המכשיר לבורר: באותו הקשר של הכלל הבסיסי (בדרך כלל רמת הגיליון), בתוך @media של המכשיר, ואחרי הבסיס —
+   *  כלל שלפני הבסיס היה נדרס בידו (אותה ייחודיות, מוקדם יותר). כמה כאלה — האחרון קובע. */
+  function devRule(m, sel, max, base) {
+    const ctx = base ? base.parent : m.root;
+    return K().cssAll(m).filter(r => r.type === 'rule' && !r.broken && normSel(r.sel) === normSel(sel) && isDevBlock(r.parent, max) && r.parent.parent === ctx && (!base || r.from > base.to)).pop() || null;
+  }
+  /** בלוק @media של המכשיר באותו הקשר, אחרי הבסיס (הראשון כזה). */
+  function devBlock(m, max, base) {
+    const ctx = base ? base.parent : m.root;
+    return ctx.kids.find(k => isDevBlock(k, max) && !k.broken && !k.hasBroken && (!base || k.from > base.to)) || null;
+  }
+  const blank = (m, n) => !m.src.slice(n.bFrom + 1, n.bTo - 1).trim();
+  /**
+   * כתיבה למכשיר, על טקסט CSS (קובץ, או תוכן <style>): sets — [[מאפיין פיזי, ערך | null], …], כל אחד על הטקסט שאחרי הקודם.
+   * o: { sel, max, baseFrom (תחילת הכלל הבסיסי בטקסט; -1 — אין), rtl }. מחזיר { text, notes }.
+   * יש כלל של המכשיר ← ההצהרה בו · יש בלוק @media זהה ← כלל חדש בסופו · אין ← בלוק חדש מיד אחרי הכלל הבסיסי (בלי בסיס — בסוף).
+   * איפוס (null): ההצהרה נמחקת; כלל שנשאר ריק — נמחק; בלוק שנשאר ריק לגמרי — נמחק (בלוק עם הערה — נשאר).
+   */
+  function planDevice(text, o) {
+    const K2 = K(); let cur = text; const notes = [];
+    const baseOf = m => (o.baseFrom >= 0 ? K2.cssAll(m).find(x => x.type === 'rule' && x.from === o.baseFrom) || null : null);
+    for (const [phys, value] of o.sets) {
+      const m = K2.parseCss(cur), base = baseOf(m);
+      if (o.baseFrom >= 0 && !base) throw new K2.SrcError('הכלל השתנה בינתיים — נסו שוב', 'stale');
+      const r = devRule(m, o.sel, o.max, base);
+      if (value == null) {
+        if (!r) continue;
+        const res = planReset(m, r, phys, o.rtl); if (!res) continue;
+        if (res.whole) notes.push(res.whole);
+        cur = K2.applyPatches(cur, res.patches);
+        const m2 = K2.parseCss(cur), r2 = K2.cssAll(m2).find(x => x.type === 'rule' && x.from === r.from);
+        if (r2 && !r2.decls.length && blank(m2, r2)) {
+          const blk = r2.parent, alone = blk.kids.length === 1 && !m2.src.slice(blk.bFrom + 1, blk.bTo - 1).replace(m2.src.slice(r2.from, r2.to), '').trim();
+          cur = K2.applyPatches(cur, K2.css.removeNode(m2, alone ? blk : r2).patches);
+        }
+        continue;
+      }
+      if (r) { cur = K2.applyPatches(cur, planRule(m, r, phys, value, o.rtl).patches); continue; }
+      const decls = [[logical(phys, o.rtl), value]], blk = devBlock(m, o.max, base);
+      if (blk && blk.kids.length) { cur = K2.applyPatches(cur, K2.css.addRule(m, blk, o.sel, decls).patches); continue; }
+      if (blk) {   // בלוק ריק (רק הערה / רווח) — הכלל נכתב בתוכו, בהזחה של הקובץ
+        const ind = (/\n([ \t]+)\S/.exec(m.src.slice(blk.bFrom)) || /\n([ \t]+)\S/.exec(m.src) || [, '  '])[1]; let at = blk.bTo - 1;
+        while (at > blk.bFrom + 1 && /\s/.test(m.src[at - 1])) at--;
+        cur = K2.applyPatches(cur, [{ from: at, to: at, text: m.nl + ind + o.sel + ' { ' + decls[0][0] + ': ' + decls[0][1] + '; }' + (/\n/.test(m.src.slice(at, blk.bTo - 1)) ? '' : m.nl) }]);
+        continue;
+      }
+      const add = K2.css.addMedia(m, devCond(o.max), [{ sel: o.sel, decls }]).patches[0], body = add.text.replace(/^\s+/, '');
+      if (!base) { cur = K2.applyPatches(cur, [add]); continue; }
+      const lead = m.src.slice(0, base.from).match(/(\s*)$/)[1], sep = lead.includes('\n') ? lead.replace(/^[ \t]+|[ \t]+$/g, '') : m.nl;
+      cur = K2.applyPatches(cur, [{ from: base.to, to: base.to, text: sep + body }]);
+    }
+    return { text: cur, notes };
+  }
+
+  /** שינוי max של נקודת שבירה: כל בלוק @media שתנאיו הם בדיוק המכשיר הישן ← התנאי החדש. { patches, blocks, rules }. */
+  function mediaRetarget(text, oldMax, newMax) {
+    const m = K().parseCss(text), patches = []; let rules = 0;
+    for (const n of K().cssAll(m)) if (n.type === 'at' && n.name.toLowerCase() === 'media' && !n.broken && mediaMax(n.sel) === oldMax) { patches.push({ from: n.selFrom, to: n.selTo, text: devCond(newMax) }); rules += n.kids.filter(k => k.type === 'rule').length; }
+    return { patches: patches.sort((a, b) => b.from - a.from), blocks: patches.length, rules };
+  }
+  /** כמה כללים כתובים למכשיר (לאזהרה במחיקה). */
+  const mediaCount = (text, max) => mediaRetarget(text, max, max).rules;
+  /** kol.json ← breakpoints חדשים, בלי לגעת בשאר הקובץ: הערך של "breakpoints" מוחלף במקומו (אין — נוסף ראשון),
+   *  שורה לכל נקודה, בהזחה של הקובץ. קובץ שאינו JSON תקין — חריגה (מתקנים בקוד). */
+  function kolBreakpoints(text, list) {
+    const E = K().SrcError; let obj;
+    try { obj = JSON.parse(text.replace(/^﻿/, '')); } catch (e) { throw new E('kol.json אינו JSON תקין — מתקנים אותו בעורך הקוד, ואז משנים נקודות שבירה', 'broken'); }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new E('kol.json חייב להיות אובייקט', 'broken');
+    const nl = text.includes('\r\n') ? '\r\n' : '\n', ind = (/\n([ \t]+)"/.exec(text) || [, '  '])[1];
+    const arr = '[' + list.map(b => nl + ind + ind + '{ ' + [['id', b.id], ['label', b.label], ['max', b.max], ['preview', b.preview]].map(([k, v]) => JSON.stringify(k) + ': ' + JSON.stringify(v)).join(', ') + ' }').join(',') + nl + ind + ']';
+    // הערך הקיים — סריקה של מחרוזות וסוגריים ברמה העליונה
+    let depth = 0, i = 0, keyAt = -1;
+    for (; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '"') { let j = i + 1; while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1; const str = text.slice(i, j + 1); if (depth === 1 && str === '"breakpoints"' && /^\s*:/.test(text.slice(j + 1))) { keyAt = i; break; } i = j; continue; }
+      if (ch === '{' || ch === '[') depth++; else if (ch === '}' || ch === ']') depth--;
+    }
+    if (keyAt < 0) { const open = text.indexOf('{'); return text.slice(0, open + 1) + nl + ind + '"breakpoints": ' + arr + (/^\s*\}/.test(text.slice(open + 1)) ? nl : ',') + text.slice(open + 1); }
+    let a = text.indexOf(':', keyAt) + 1; while (/\s/.test(text[a])) a++;
+    let b = a, d = 0;
+    for (; b < text.length; b++) {
+      const ch = text[b];
+      if (ch === '"') { b++; while (b < text.length && text[b] !== '"') b += text[b] === '\\' ? 2 : 1; if (!d) { b++; break; } continue; }
+      if (ch === '{' || ch === '[') d++; else if (ch === '}' || ch === ']') { d--; if (!d) { b++; break; } }
+      else if (!d && /[,\s}]/.test(ch)) break;
+    }
+    return text.slice(0, a) + arr + text.slice(b);
+  }
+
   /** בדיקת ערך לפני כל כתיבה (הגנה כפולה — לא סומכים רק על הפאנל): '<' נדחה בכל יעד (ב-<style> של עמוד HTML הוא היה
    *  סוגר את התגית: "</style><img onerror=…>" עובר CSS.supports כמחרוזת), וערך שאינו חוקי למאפיין — נדחה. */
   function checkValue(phys, v) {
@@ -294,11 +397,63 @@
       }
       return { value, browser: true, all: [] };
     }
+    // ── V7: מכשירים ──
+    /** המכשיר הנוכחי: null — מחשב (הבסיס); אחרת { id, label, max }. devices() — כל המכשירים, מהרחב לצר (מחשב: max null). */
+    device() { return this.getDevice ? this.getDevice() : null; }
+    devs() { return this.getDevices ? this.getDevices() : [{ id: 'desktop', label: 'מחשב', max: null }]; }
+    /** האם max הוא של נקודת שבירה (ולא סתם max-width אחר, כמו 600px / 782px). */
+    isDev(mx) { return mx != null && this.devs().some(d => d.max === mx); }
+    /** היעד במכשיר: כלל (שאינו בתוך @media) / כלל חדש / מחלקה חדשה ← אותו בורר בתוך @media של המכשיר. יעד שכבר בתוך @media
+     *  (אחר, או של המכשיר) נשאר כמו שהוא; יעד שקבע מכשיר במפורש ('dev' in t — גם null = הבסיס) — כמו שהוא. */
+    dev(t, d) {
+      d = d === undefined ? this.device() : d;
+      if (!t || 'dev' in t || (t.kind === 'rule' && t.media)) return t;
+      return d && d.max ? Object.assign({}, t, { dev: d }) : t;
+    }
+    /** הכלל של המכשיר ליעד, מתוך פאנל "פרטים" (אותו בורר, אותו קובץ, @media של המכשיר). */
+    devOwn(info, t) {
+      const sel = normSel(t.kind === 'newclass' ? '.' + t.name : t.sel);
+      return info.rules.filter(r => r.located && !r.inline && normSel(r.sel) === sel && ruleMax(r) === t.dev.max && r.path === (t.r ? t.r.path : t.path)).pop() || null;
+    }
+    /** ההצהרה ביעד (לאיפוס): במכשיר — בכלל של המכשיר. */
+    ownDecl(n, t, phys, info) {
+      const rtl = this.rtl(n);
+      if (t.dev && t.kind !== 'inline') { const r = this.devOwn(info || this.info(n), t); return r && r.node ? declFor(r.node, phys, rtl) : null; }
+      if (t.kind === 'rule') return declFor(t.r.node, phys, rtl);
+      return null;
+    }
+    /** הערך בכל מכשיר, מהכללים (לא מהרינדור): מחשב — הכללים בלי @media; מכשיר — גם @media של כל מכשיר רחב ממנו או שווה.
+     *  [{ d, value, own (נכתב במכשיר הזה), from (המכשיר שממנו הוא עובר: id) }]. @media שאינו מכשיר — אינו נספר כאן. */
+    perDevice(n, phys, info) {
+      info = info || this.info(n);
+      const rtl = this.rtl(n), devs = this.devs(), out = [];
+      for (const d of devs) {
+        let w = null;
+        for (const r of info.rules) {
+          const mx = r.inline ? null : r.media ? ruleMax(r) : null;
+          if (r.media && !this.isDev(mx)) continue;   // @media שאינו מכשיר — אינו נספר כאן
+          if (mx != null && (d.max == null || mx < d.max)) continue;
+          for (const dc of r.decls) if (covered(dc.prop, rtl).includes(phys)) { const k = rank(r, dc.important); if (!w || cmp(k, w.k) >= 0) w = { r, d: dc, k, mx }; }
+        }
+        const src = w ? (w.mx == null ? devs[0] : devs.find(x => x.max === w.mx) || null) : null;
+        out.push({ d, value: w ? (componentOf(w.d.prop, w.d.value, phys, rtl) ?? w.d.value) : '', own: !!w && (d.max == null ? w.mx == null : w.mx === d.max), from: src ? src.id : null, w });
+      }
+      return out;
+    }
     /** האם כתיבה ליעד תיראה. מחזיר { ok, by (מי דורס), media (נכתב שם — 03: "עורך את ההצהרה ההיא") }. */
     visible(n, t, phys, info) {
       info = info || this.info(n);
       const rtl = this.rtl(n), cs = this.cands(info, phys, rtl);
-      let mineK;
+      let mineK, own = null;
+      if (t.dev && t.kind !== 'inline') {   // V7: היעד הוא הכלל של המכשיר (קיים או שייווצר אחרי הבסיס)
+        own = this.devOwn(info, t);
+        const oc = own && cs.filter(c => c.r === own);
+        // כלל שעוד לא קיים: הייחודיות של החלק שחל (לא של כל הרשימה), ומיקום — מיד אחרי הכלל הבסיסי (בלי בסיס — בסוף הקובץ)
+        mineK = oc && oc.length ? oc[0].k : own ? rank(own, false) : [0, 0, ...(t.r ? t.r.spec : g.KolDetails.specificity(t.kind === 'newclass' ? '.' + t.name : t.sel)), t.r ? t.r.order + 0.5 : 1e9];
+        const by = cs.find(c => c.r !== own && cmp(c.k, mineK) > 0);
+        if (!by) return { ok: true };
+        return { ok: false, by, media: !!by.r.media && by.r.located && !by.r.external && !this.isDev(ruleMax(by.r)) };
+      }
       if (t.kind === 'rule') { const d = declFor(t.r.node, phys, rtl); mineK = rank(t.r, d ? d.important : false); const own = cs.filter(c => c.r === t.r); if (own.length) mineK = own[0].k; }
       else if (t.kind === 'inline') { const own = cs.find(c => c.r.inline); mineK = own ? own.k : [0, 1, 0, 0, 0, 1e9]; }
       else mineK = [0, 0, ...g.KolDetails.specificity(t.sel), 1e9];
@@ -314,6 +469,19 @@
       if (!Array.isArray(sets[0])) sets = [sets];
       if (!opt.unimportant) for (const [phys, value] of sets) checkValue(phys, value);
       const diff = (was, now) => { if (was === now) return []; let a = 0; const max = Math.min(was.length, now.length); while (a < max && was.charCodeAt(a) === now.charCodeAt(a)) a++; let b = 0; while (b < max - a && was.charCodeAt(was.length - 1 - b) === now.charCodeAt(now.length - 1 - b)) b++; return [{ from: a, to: was.length - b, text: now.slice(a, now.length - b) }]; };
+      if (t.dev) {   // V7: כתיבה למכשיר — בתוך @media (max-width: <max>px) של נקודת השבירה
+        if (t.kind === 'inline') throw new K2.SrcError('"רק האלמנט הזה" (style="") אינו יכול לקבל מכשיר — ל-style אין @media. בוחרים ב"משנה את" את כלל המחלקה (או "מחלקה חדשה" עם שם קריא), וכך הערך נכתב ל' + t.dev.label + ' בלבד.', 'device');
+        if (opt.unimportant) return [];
+        const sel = t.kind === 'newclass' ? '.' + t.name : t.sel;
+        let doc, text, off = 0, inHtml = false, baseFrom = -1;
+        if (t.kind === 'rule') { const src = t.r.src; baseFrom = t.r.node.from; if (src.html) { inHtml = true; doc = html; text = src.text; off = src.off; } else { doc = this.docOf(src.path); text = doc && doc.text(); } }
+        else { doc = this.docOf(t.path); text = doc && doc.text(); }
+        if (!doc) throw new K2.SrcError('קובץ העיצוב ' + (t.path || '') + ' אינו פתוח לעריכה', 'missing');
+        const out = planDevice(text, { sel, max: t.dev.max, baseFrom, rtl, sets }), ps = diff(text, out.text).map(p => ({ from: p.from + off, to: p.to + off, text: p.text }));
+        const ops = ps.length ? [inHtml ? { doc: html, html: true, patches: ps } : { doc, patches: ps }] : [];
+        if (t.kind === 'newclass' && ps.length) ops.unshift({ doc: html, html: true, patches: K2.html.addClass(this.canvas.m, n, t.name).patches });
+        return Object.assign(ops, { notes: out.notes });
+      }
       const step = (m, rn, phys, value) => (opt.unimportant ? planUnimportant(m, rn, phys, rtl) : value == null ? planReset(m, rn, phys, rtl) : planRule(m, rn, phys, value, rtl));
       /** כלל קיים: מתכננים ברצף על טקסט הגיליון (או תוכן ה-<style>). תחילת הכלל אינה זזה — כל התיקונים בתוכו. */
       const onRule = (text, from, sel) => {
@@ -358,5 +526,5 @@
     }
   }
 
-  g.KolStyle = { flexParse, checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
+  g.KolStyle = { mediaRetarget, mediaCount, kolBreakpoints, mediaMax, devCond, ruleMax, devRule, devBlock, planDevice, flexParse, checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
 })(typeof window !== 'undefined' ? window : globalThis);

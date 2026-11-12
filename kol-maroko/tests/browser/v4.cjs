@@ -390,6 +390,8 @@ const PAGE = `<!doctype html>
     ok(/<body>\n<p id="t1">ראשון<\/p>\n<main/.test(await src(mp)), 'טלפון: "העבר אל…" ← "לפני main" בעץ — כל יעד שהגרירה מגיעה אליו, גם מכאן', (await src(mp)).slice(0, 0));
     ok(await undoFiles(mp, m0), 'טלפון: בטל — חזרה');
     pk = await drag(mp, await at(mp, '#t3'), await at(mp, '#t1', 0.5, 0.15), { touch: true, hold: 450, steps: 8 });
+    // V7: ב-390 המכשיר הוא "טלפון" — גרירה שואלת "בכל המכשירים או רק כאן"; ברירת המחדל (הראשונה) — בכל המכשירים (HTML)
+    if (await mp.isVisible('[data-ask^="סדר ב"] [data-choice="all"]').catch(() => false)) { await mp.click('[data-ask^="סדר ב"] [data-choice="all"]'); await sleep(250); }
     ok(/<div id="box"><p id="t3">שלישי<\/p><p id="t1">/.test(await src(mp)), 'טלפון: לחיצה ארוכה (400ms) ואז גרירה — #t3 לפני #t1', pk);
     ok(await undoFiles(mp, m0), 'טלפון: בטל — חזרה');
     await cm.close();

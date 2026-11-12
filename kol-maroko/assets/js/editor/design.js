@@ -50,6 +50,24 @@
     return { ratio: (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05) };
   }
 
+  /** "חל כשהמסך צר מ-782px" — תנאי @media במילים (מה שלא מזוהה — כמו שהוא). */
+  function mediaWhen(md) {
+    const s = String(md || '').replace(/^.*@media\s+/, ''); let m;
+    if ((m = /max-width\s*:\s*(\d+(?:\.\d+)?)px/i.exec(s)) && !/min-width/i.test(s)) return 'חל כשהמסך צר מ-' + (+m[1] + 1) + 'px';
+    if ((m = /min-width\s*:\s*(\d+(?:\.\d+)?)px/i.exec(s)) && !/max-width/i.test(s)) return 'חל כשהמסך רחב מ-' + (+m[1] - 1) + 'px';
+    return 'חל כש-' + s;
+  }
+  /** מי ינצח כשכותבים למכשיר בזמן ש-@media אחר (by) קובע את הערך: ייחודיות, ואחריה — מי כתוב אחרי בקובץ (הכלל של המכשיר
+   *  נכתב מיד אחרי הכלל הבסיסי). */
+  function whoWins(by, t, D) {
+    const spec = window.KolDetails.specificity(t.kind === 'newclass' ? '.' + t.name : t.sel), c = by.r.spec.map((x, i) => x - spec[i]).find(x => x) || 0, other = by.r.media.replace(/^.*@media\s+/, '');
+    if (by.d.important) return other + ' ינצח — !important';
+    if (c > 0) return other + ' ינצח — הבורר שלו חזק יותר';
+    if (c < 0) return 'הכלל של ' + D.label + ' ינצח — הבורר שלו חזק יותר';
+    const later = t.r && t.r.src && by.r.src && by.r.path === t.r.path ? by.r.order > t.r.order : true;
+    return later ? other + ' ינצח ברוחב שבו שניהם חלים — הוא כתוב אחרי הכלל הבסיסי בקובץ. כדי ש' + D.label + ' ינצח — עורכים את ההצהרה ההיא (ברירת המחדל)' : 'הכלל של ' + D.label + ' ינצח — הוא נכתב אחרי';
+  }
+
   class Design {
     /** opt: { canvas, styler, nodes(): [נבחרים], write(nodes, sets, {target, label, unimportant}), preview(nodes, sets), unpreview(),
      *         openAt(path, line), canWrite(), highlight(els), hint(phys), sheets(): Map, mode } */
@@ -66,7 +84,7 @@
       if (!n || !c.m) { this.host.replaceChildren(h('p', { class: 'hint' }, 'בוחרים אלמנט — בקנבס או ב-Navigator — ומשנים כאן את ' + (this.mode === 'adv' ? 'המרווחים שלו.' : 'הגופן והצבע שלו.'))); return; }
       if (!c.elOf(n) || c.visual(n) === 'nonvisual') { this.host.replaceChildren(h('p', { class: 'hint' }, 'לאלמנט הזה אין מראה בעמוד (ראש העמוד / סקריפט / שדה מוסתר).')); return; }
       const scroll = this.host.scrollTop;
-      this.info = this.styler.info(n); this.list = this.styler.targets(n, this.info); this.t = this.target(n, this.list);
+      this.info = this.styler.info(n); this.list = this.styler.targets(n, this.info); this.t0 = this.target(n, this.list); this.t = this.styler.dev(this.t0);   // V7: במכשיר — אותו בורר בתוך @media
       const kids = [this.drawTarget(n)];
       const many = this.nodes().length;
       if (many > 1) kids.push(h('p', { class: 'sg-multi', 'data-multi': many }, '✳️ ' + many + ' אלמנטים נבחרים (Shift + לחיצה) — שינוי חל על כולם, כל אחד בכלל שלו.'));
@@ -84,7 +102,7 @@
     drawTarget(n) {
       const t = this.t, why = { class: 'הכלל של המחלקה', source: 'כלל אחר שחל', media: 'בתוך @media', inline: '' };
       const sel = h('select', { class: 'sg-tsel', 'aria-label': 'משנה את — לאן השינויים נכתבים', 'data-target': true });
-      this.list.forEach((x, i) => sel.append(h('option', { value: String(i), selected: x === t || null }, (i === 0 ? '★ ' : '') + this.tlabel(x) + (x.kind !== 'inline' && x.kind !== 'newclass' ? ' · משפיע על ' + x.count : '') + (why[x.why] && i ? ' — ' + why[x.why] : ''))));
+      this.list.forEach((x, i) => sel.append(h('option', { value: String(i), selected: x === this.t0 || null }, (i === 0 ? '★ ' : '') + this.tlabel(x) + (x.kind !== 'inline' && x.kind !== 'newclass' ? ' · משפיע על ' + x.count : '') + (why[x.why] && i ? ' — ' + why[x.why] : ''))));
       sel.addEventListener('change', () => this.setTarget(this.list[+sel.value]));
       const hi = on => this.highlight(on ? this.styler.elementsOf(this.t) : null);
       sel.addEventListener('mouseenter', () => hi(true)); sel.addEventListener('mouseleave', () => hi(false)); sel.addEventListener('focus', () => hi(true)); sel.addEventListener('blur', () => hi(false));
@@ -96,6 +114,9 @@
         inp.addEventListener('change', () => { const v = inp.value.trim(); if (/^-?[_a-zA-Z][\w-]*$/.test(v)) { t.name = v; t.sel = '.' + v; this.tgt.set(n, { kind: 'newclass', sel: '.' + v, path: t.path, line: 0, name: v }); inp.classList.remove('bad'); } else inp.classList.add('bad'); });
         box.append(h('p', { class: 'hint sg-newclass' }, 'לאלמנט אין מחלקה. בשינוי הראשון תיווסף לו המחלקה ', inp, ' ב-HTML, וכלל בשמה ב-' + t.path + ' — עסקה אחת, שני קבצים.'));
       } else if (t.kind === 'new') box.append(h('p', { class: 'hint' }, 'אין עדיין כלל למחלקה — בשינוי הראשון ייווצר ' + t.sel + ' ב-' + t.path + '.'));
+      const D = this.styler.device();
+      if (D && t.kind === 'inline') box.append(h('p', { class: 'sg-over', 'data-dev-inline': true }, '📱 ' + D.label + ': "רק האלמנט הזה" (style="") אינו יכול לקבל מכשיר — ל-style אין @media. ', h('button', { type: 'button', class: 'btn sm', onclick: () => { const c2 = this.list.find(x => x.kind !== 'inline'); if (c2) this.setTarget(c2); } }, this.list.some(x => x.kind === 'newclass') ? 'ליצור מחלקה (שם קריא)' : 'לכתוב לכלל המחלקה')));
+      else if (D && t.dev) box.append(h('p', { class: 'hint sg-devt', 'data-dev-target': D.id }, '📱 נכתב ל-' + D.label + ': ', h('code', { dir: 'ltr' }, '@media (max-width: ' + D.max + 'px) { ' + (t.kind === 'newclass' ? '.' + t.name : t.sel.replace(/\s+/g, ' ')) + ' }'), ' · ' + t.path));
       return box;
     }
 
@@ -106,11 +127,16 @@
       if (s.winner) { out.append('מ: ', at(s.winner)); if (s.winner.r.media) out.append(h('span', { class: 'sg-media' }, ' ' + s.winner.r.media)); if (s.winner.r.inline) out.append(' (style="" של האלמנט)'); }
       else if (s.inherited) { out.append('בירושה מ-' + s.inherited.label + ': ', at(s.inherited.winner)); }
       else out.append(h('span', { class: 'hint' }, 'ברירת מחדל של הדפדפן'));
+      const dr = this.devRow(n, phys); if (dr) out.prepend(dr);
       const vis = this.styler.visible(n, this.t, phys, this.info);
       if (!vis.ok) {
         const by = vis.by, w = h('div', { class: 'sg-over' + (vis.media ? ' media' : ''), 'data-over': phys });
         const mine = this.t.kind === 'rule' ? ST().declFor(this.t.r.node, phys, this.styler.rtl(n)) : null;
-        if (vis.media) w.append('הערך הנראה מגיע מתוך ' + by.r.media + ' — שינוי כאן נכתב שם.');
+        if (vis.media) {
+          w.append('הערך הנראה מגיע מתוך ' + by.r.media + ' (' + mediaWhen(by.r.media) + ') — שינוי כאן נכתב שם.');
+          const D = this.styler.device();
+          if (D && this.t.dev) w.append(h('div', { class: 'sg-over-go' }, h('button', { type: 'button', class: 'btn sm', 'data-over-dev': phys, title: 'הערך ייכתב ל-@media (max-width: ' + D.max + 'px). מי ינצח: ' + whoWins(by, this.t, D), onclick: () => { this.redirect = { phys, t: this.t }; this.focusField(phys); } }, 'לכתוב ל' + D.label + ' בכל זאת'), h('span', { class: 'hint', 'data-who-wins': true }, ' — ' + whoWins(by, this.t, D))));
+        }
         else {
           w.append('⚠️ ' + (mine ? 'כתוב כאן: ' + (ST().componentOf(mine.prop, mine.value, phys, this.styler.rtl(n)) || mine.value) + ' — אבל ' : 'ערך שייכתב כאן לא ייראה — ') + 'נדרס ע״י ', at(by), ' (' + (by.d.important && !(mine && mine.important) ? '!important' : 'כלל חזק יותר') + ')');
           const tb = this.list.find(x => x.kind === 'rule' && x.r === by.r) || (by.r.inline ? this.list.find(x => x.kind === 'inline') : null);
@@ -144,6 +170,43 @@
       return this.write(per, label, opt);
     }
     curDeclared(n, phys) { const s = this.styler.source(n, phys, this.info); return s.winner ? s.declared : ''; }
+
+    // ── V7: מכשירים — "נכתב כאן / עובר מ- / נדרס" לכל ערך ──
+    /** שורת המכשיר של ערך: ● נכתב כאן · ○ עובר ממחשב / מטאבלט (עם הערך) · ⚠ נכתב כאן אבל נדרס. ריחוף — הערך בכל מכשיר;
+     *  לחיצה על "עובר מ-" — עוברת למכשיר ההוא. ולצד ערך שנכתב במכשיר: "לכל המכשירים" / "מכאן ומטה". */
+    devRow(n, phys) {
+      const devs = this.styler.devs(); if (devs.length < 2 || !this.info) return null;
+      const D = this.styler.device(), all = this.styler.perDevice(n, phys, this.info), cur = all.find(x => (D ? x.d.id === D.id : x.d.max == null)); if (!cur) return null;
+      const rtl = this.styler.rtl(n), w = this.styler.cands(this.info, phys, rtl)[0], here = D ? D.max : null, others = all.filter(x => x.own && x !== cur);
+      // בלי מידע — בלי שורה: במחשב, כשאף מכשיר אינו שונה; במכשיר, כשהערך אינו כתוב בשום מקום (ברירת מחדל / ירושה)
+      if (!D && !others.length) return null;
+      if (D && !cur.own && !cur.value) return null;
+      const wonHere = w && (here == null ? !w.r.media : ST().ruleMax(w.r) === here);
+      const row = h('div', { class: 'sg-dev', 'data-dev-state': phys, title: all.map(x => x.d.label + ': ' + (x.value || '—') + (x.own ? ' (נכתב שם)' : '')).join('\n') });
+      let state;
+      if (cur.own) { state = w && !wonHere ? 'over' : 'own'; row.append(h('span', { class: 'sg-dev-sym ' + state }, state === 'over' ? '⚠' : '●'), state === 'over' ? 'נכתב ב' + cur.d.label + ' — אבל נדרס' : 'נכתב ב' + cur.d.label); }
+      else if (!D) { state = 'base'; row.append(h('span', { class: 'sg-dev-sym from' }, '○'), 'במחשב — לא נכתב'); }
+      else if (cur.value) { state = 'from'; const from = devs.find(x => x.id === cur.from); row.append(h('span', { class: 'sg-dev-sym from' }, '○'), h('button', { type: 'button', class: 'sg-dev-from', 'data-dev-from': cur.from, title: 'מעבר ל' + (from ? from.label : ''), onclick: () => this.setDevice && this.setDevice(cur.from) }, 'עובר מ' + (from ? from.label : '…')), h('span', { dir: 'ltr', class: 'sg-dev-val' }, ' ' + cur.value)); }
+      else { state = 'none'; row.append(h('span', { class: 'sg-dev-sym from' }, '○'), 'לא נכתב בשום מכשיר'); }
+      row.dataset.state = state;
+      if (others.length) row.append(h('span', { class: 'sg-dev-others', 'data-dev-others': true }, ' · שונה ב: ' + others.map(x => x.d.label + ' ' + x.value).join(', ')));
+      if (cur.own && this.canWrite() && (D || others.length)) {
+        row.append(h('button', { type: 'button', class: 'btn sm sg-dev-all', 'data-dev-all': phys, title: 'הערך ' + cur.value + ' — בכל המכשירים: נכתב לבסיס, ונמחק מכל @media של מכשיר', onclick: () => this.copyDev(n, phys, cur.value, 'all') }, '⇊ לכל המכשירים'));
+        const below = devs.filter(x => x.max && (here == null || x.max < here) && all.find(y => y.d.id === x.id && y.own));
+        if (below.length) row.append(h('button', { type: 'button', class: 'btn sm sg-dev-down', 'data-dev-down': phys, title: 'המכשירים הצרים מ' + cur.d.label + ' (' + below.map(x => x.label).join(', ') + ') יקבלו את הערך הזה: ההצהרות שלהם נמחקות', onclick: () => this.copyDev(n, phys, cur.value, 'down') }, '↧ מכאן ומטה'));
+      }
+      return row;
+    }
+    /** "העתק לכל המכשירים" / "החל מהמכשיר הזה ומטה" — עסקה אחת. */
+    copyDev(n, phys, v, how) {
+      const devs = this.styler.devs(), D = this.styler.device(), base = this.t0 || this.t, sets = [];
+      if (base.kind === 'inline') return;
+      const owned = d => this.styler.perDevice(n, phys, this.info).find(x => x.d.id === d.id)?.own;
+      if (how === 'all') { sets.push([phys, v, Object.assign({}, base, { dev: null })]); for (const d of devs) if (d.max && owned(d)) sets.push([phys, null, this.styler.dev(base, d)]); }
+      else for (const d of devs) if (d.max && (!D || d.max < D.max) && owned(d)) sets.push([phys, null, this.styler.dev(base, d)]);
+      if (!sets.length) return;
+      this.write(new Map([[n, sets]]), (how === 'all' ? 'לכל המכשירים' : 'מ' + (D ? D.label : 'מחשב') + ' ומטה') + ' · ' + this.canvas.label(n) + ' · ' + phys + ': ' + v);
+    }
 
     // ── השליטה המספרית ──────────────────────────────────────
     num(phys, label, opt = {}) {
@@ -208,11 +271,11 @@
     resetBtn(n, phys, label) {
       const t = this.effTarget(n, phys), rtl = this.styler.rtl(n);
       let has = false, imp = false;
-      if (t.kind === 'rule') { const d = ST().declFor(t.r.node, phys, rtl); has = !!d; imp = !!(d && d.important); }
+      if (t.kind === 'rule' || t.dev) { const d = this.styler.ownDecl(n, t, phys, this.info); has = !!d; imp = !!(d && d.important) && !t.dev; }
       else if (t.kind === 'inline') { const r = this.info.rules.find(x => x.inline); const d = r && r.decls.find(x => ST().covered(x.prop, rtl).includes(phys)); has = !!d; imp = !!(d && d.important); }
       const box = h('span', { class: 'sg-acts' });
       if (imp) box.append(h('button', { type: 'button', class: 'btn sm sg-unimp', 'data-unimportant': phys, title: 'ההצהרה כתובה עם !important — העורך שומר עליו בעריכה; כאן מסירים אותו', disabled: !this.canWrite() || null, onclick: () => this.put([[phys, '']], 'הסרת !important · ' + label + ' · ' + this.canvas.label(n), { unimportant: true }) }, '!important ✕'));
-      box.append(h('button', { type: 'button', class: 'sg-reset', 'data-reset': phys, 'aria-label': 'איפוס — מחיקת ההצהרה של ' + label + ' מהיעד', title: has ? 'איפוס: מוחק את ההצהרה מהיעד (לא כותב ברירת מחדל)' : 'אין הצהרה ביעד', disabled: !has || !this.canWrite() || null,
+      box.append(h('button', { type: 'button', class: 'sg-reset', 'data-reset': phys, 'aria-label': (t.dev ? 'איפוס ב' + t.dev.label + ' — ' : 'איפוס — ') + 'מחיקת ההצהרה של ' + label + ' מהיעד', title: has ? (t.dev ? 'איפוס במכשיר הזה: מוחק רק את ההצהרה שבתוך @media (max-width: ' + t.dev.max + 'px)' : 'איפוס: מוחק את ההצהרה מהיעד (לא כותב ברירת מחדל)') : 'אין הצהרה ביעד', disabled: !has || !this.canWrite() || null,
         onclick: () => this.put([[phys, null]], label + ' · ' + this.canvas.label(n) + ' · איפוס') }, '⟲'));
       return box;
     }

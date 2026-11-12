@@ -82,3 +82,16 @@
 - **פעולה חדשה = שורה ב-`ACTION_ROLES` (`lib/auth.php`)**, בלי `require_role` ב-api.php. בלי שורה — 404, ו-`tests/cases/21-roles.php` נכשלת.
 - זהות — רק דרך `lib/login.php`. התפקידים: `content_editor` / `editor` / `publisher` / `page_owner` / `site_owner` (**'owner' כבר לא קיים**).
 - בדיקת דפדפן חדשה — הזהות גם בעוגייה `kol_test_user` (בקשת מדיה בלי זהות מוחקת את ה-session).
+
+## מ-T1 (2026-11-12, נרשם בידי בקרה (6))
+- `plugin_zip` (בעל האתר) — `lib/plugin_zip.php`; `wordpress-plugin/` נפרס עכשיו לשרת (מוגן ב-`.htaccess` וב-`ABSPATH`). קובץ חדש בתוסף = בתוך ה-ZIP אוטומטית.
+- `lock_op` ב-`BEGIN IMMEDIATE`. כל עסקה שקוראת ואז כותבת — אותו דבר (DEFERRED נכשלת ב-SQLITE_BUSY_SNAPSHOT בעומס).
+- בדיקות דפדפן כותבות צילומים ל-tmpdir בלבד (`/tmp/kol-<פרוסה>-shots/`) — לא לריפו.
+- `Library.view(el, owner, page)` — `pageOwner` לפעולות של בעל העמוד ומעלה.
+
+## מ-V7 (2026-11-12, נרשם בידי בקרה (6))
+- כתיבה לפי מכשיר: `St.dev(t)` לפני `writeStyle` — אותו בורר בתוך `@media (max-width: <max>px)`; `planDevice` בונה/מוצא את הבלוק אחרי הכלל הבסיסי. **V8 (פסאודו-מחלקות):** `planDevice` מקבל בורר — `:hover` במכשיר = אותו בורר עם הפסאודו בתוך ה-@media.
+- `Styler.perDevice / devOwn / ownDecl / isDev(max)`; `DEVICES` מ-kol.json (`kolChanged`); `canvas.devHidden / markDev`; `editor/devices.js` (נראות לפי מכשיר).
+- ❌ פתוח: `Bg.ruleOps` כותב לבסיס גם במכשיר · הזזת HTML במיקום חופשי ביחס לאב רחוק — לכל המכשירים · Safari/Firefox/iOS לא נבדקו.
+- בטלפון (<1000px) שדה הרוחב החופשי מוסתר (⚙ נשאר) — כדי שהסרגל לא יגדל בשורה ויכסה את המקלדת (v2).
+- 🟡 בפאנל העיצוב ב-1920 חלק מהערכים חתוכים בתוך השדה ("norma"). התוויות שלמות.

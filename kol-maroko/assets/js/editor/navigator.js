@@ -64,7 +64,7 @@
       if (si != null && si >= first && si < last) this.list.setAttribute('aria-activedescendant', this.uid + '-' + si); else this.list.removeAttribute('aria-activedescendant');
     }
     row(r, i, sel) {
-      const n = r.n, c = this.canvas, e = mk('div', 'nv-row' + (n === sel ? ' sel' : '') + (c.hiddenNodes.has(n) ? ' off' : '') + (n.broken ? ' broken' : ''));
+      const n = r.n, c = this.canvas, e = mk('div', 'nv-row' + (n === sel ? ' sel' : '') + (c.hiddenNodes.has(n) ? ' off' : '') + (c.devHidden && c.devHidden.has(n) ? ' devoff' : '') + (n.broken ? ' broken' : ''));
       e.id = this.uid + '-' + i; e.dataset.i = i; e.style.top = i * ROW + 'px'; e.style.paddingLeft = PAD + Math.min(r.depth, 24) * 12 + 'px';
       e.setAttribute('role', 'treeitem'); e.setAttribute('aria-level', r.depth + 1); e.setAttribute('aria-selected', String(n === sel));
       const open = !this.collapsed.has(n), tw = mk('button', 'nv-tw', n.kids.length && !this.query ? (open ? '▾' : '▸') : '');
@@ -74,6 +74,9 @@
       const txt = this.textOf(n);
       const flags = (n.tag === 'head' ? ' ראש העמוד' : '') + (n.tag === 'template' ? ' תבנית' : '') + (n.implied ? ' · לא במקור' : '') + (n.broken ? ' · קוד שבור' : '');
       if (flags) lab.append(mk('i', '', flags));
+      // V7: מוסתר במכשיר הנוכחי · סדר נראה (order) לצד סדר המקור
+      if (c.devHidden && c.devHidden.has(n)) { const x = mk('i', 'nv-devhide', ' 🚫 מוסתר במכשיר הזה'); x.dataset.devHidden = '1'; lab.append(x); }
+      const ord = this.order ? this.order(n) : null; if (ord) { const x = mk('i', 'nv-order', ' ⇅ ' + ord); x.dataset.order = ord; lab.append(x); }
       if (txt) lab.append(mk('span', 'nv-txt', ' ' + txt.slice(0, 40)));
       const eye = mk('button', 'nv-ic' + (c.hiddenNodes.has(n) ? ' on' : ''), '👁'); eye.type = 'button'; eye.tabIndex = -1; eye.dataset.act = 'hide';
       eye.setAttribute('aria-label', 'הסתרה בעורך בלבד'); eye.title = 'הסתרה בעורך בלבד — הקובץ אינו משתנה (H)'; eye.setAttribute('aria-pressed', String(c.hiddenNodes.has(n)));

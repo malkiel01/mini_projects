@@ -200,6 +200,15 @@
       // הזזה שמוציאה אלמנט מהרובריקה שקוד הנתונים קשור אליה (או מכניסה לתוכה) — אזהרה, לא חסימה
       const moved = nodes.filter(n => this.X.bindingOf(n) !== this.X.bindingOf(t.par) && [...this.attrsDeep(n)].some(a => /^data-kol-/.test(a)));
       if (moved.length && !(await this.confirm('הזזה', ['האלמנט עובר אל מחוץ לרובריקה שקוד הנתונים (js/kol-data.js) קשור אליה — ' + moved.map(n => c.label(n)).join(', ') + ' עלול להפסיק לעבוד']))) return;
+      // V7: במכשיר — "להזיז בכל המכשירים (HTML), או רק כאן (order)?" (רק כשהאלמנט נשאר באותה רובריקה — order אינו חוצה רובריקות)
+      const dev = this.device && this.device();
+      if (dev && nodes.length === 1 && nodes[0].parent === t.par && this.devices && this.devices()) {
+        const pd = this.styler.computed(t.par, 'display'), flex = /flex|grid/.test(pd);
+        const go = await this.ask('סדר ב' + dev.label, ['להזיז בכל המכשירים (שינוי ב-HTML), או רק ב' + dev.label + ' (order לאחים, ב-@media (max-width: ' + dev.max + 'px))?' + (flex ? '' : ' ברובריקה שאינה flex — "רק כאן" יכתוב לה גם display:flex (בעמודה) ב' + dev.label + '.')],
+          [['all', 'בכל המכשירים'], ['here', 'רק ב' + dev.label], ['cancel', 'בטל']]);
+        if (go === 'cancel' || !go) return;
+        if (go === 'here') { this.devices().order(nodes[0], t.ref); return; }
+      }
       const label = 'גרירה · ' + (nodes.length > 1 ? nodes.length + ' אלמנטים' : c.label(nodes[0])) + ' · אל ' + (t.ref ? 'לפני ' + c.label(t.ref) : 'סוף ' + c.label(t.par));
       const paths = nodes.map(n => K.pathOf(n)), outs = nodes.map(n => K.outer(c.m, n)); let start = -1;
       const ok = this.act(label, m => { const r = this.X.move(m, paths.map(p => K.byPath(m, p)), K.byPath(m, P), refP ? K.byPath(m, refP) : null); start = nodes.length === 1 ? r.start : -1; return r; }, nodes[0]);
