@@ -8,6 +8,15 @@ const Publish = (() => {
   const DOCS = 'https://github.com/malkiel01/mini_projects/blob/main/kol-maroko/docs/';
   const when = iso => new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jerusalem' });
 
+  // M1 — "📁 פרסום מפרויקט הקבצים" (assets/js/build.js): נטען כאן, כדי שלא לגעת ב-index.html
+  let buildJs = null;
+  const buildReady = () => buildJs ??= new Promise((ok, fail) => {
+    if (window.KolBuild) return ok();
+    document.head.append(h('script', { src: 'assets/js/build.js', onload: ok, onerror: () => { buildJs = null; fail(new Error('build.js לא נטען')); } }));
+  });
+  if (document.readyState !== 'loading') setTimeout(() => buildReady().then(() => KolBuild.notices()).catch(() => {}), 0);
+  else document.addEventListener('DOMContentLoaded', () => buildReady().then(() => KolBuild.notices()).catch(() => {}));
+
   // ── פרסום ────────────────────────────────────────────────
   async function view(host, role, more = []) {
     if (!more.length) host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
@@ -16,7 +25,11 @@ const Publish = (() => {
     d.versions = [...more, ...d.versions];
     const canPublish = role === 'publisher' || role === 'owner';
     const live = d.live;
+    let pk = more.length ? host.querySelector('.pk') : null;
+    if (!more.length) { try { await buildReady(); pk = KolBuild.block(host, role); } catch (e) { pk = h('p', { class: 'error' }, e.message); } }
     host.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
+      pk,
+      h('h2', { class: 'sec-title' }, '🎨 פרסום הטיוטה (המסלול של היום)'),
       h('div', { class: 'summary' },
         h('div', { class: 'line' }, live
           ? [h('span', { class: 'muted' }, 'באתר עכשיו:'), h('b', {}, `גרסה ${live.n}`), h('span', { class: 'muted' }, `· ${live.name} · ${when(live.at)}`)]

@@ -1,0 +1,41 @@
+/* קול מרוקו — "📁 פרסום מפרויקט הקבצים" (פרוסה M1). נטען מ-assets/js/build.js. */
+
+.pk { display: grid; gap: var(--s2); margin-bottom: var(--s4); padding-bottom: var(--s4); border-bottom: 1px solid var(--line); }
+.pk .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.pk progress { width: 100%; height: 8px; accent-color: var(--brand); }
+.pk-opts { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2) var(--s3); background: var(--surface); }
+.pk-opts summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; font-weight: 600; }
+.pk-opts textarea { width: 100%; font: .85rem ui-monospace, monospace; }
+
+/* המסגרת של הבנייה — רוחב מחשב, מחוץ לעין, בלי מגע */
+.bd-frame { position: fixed; inset-inline-start: 0; top: 0; width: 1280px; height: 800px; border: 0; opacity: 0; pointer-events: none; z-index: -1; }
+
+.pk-sheet { display: grid; gap: var(--s2); }
+.pk-sheet .line { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.pk-err { display: grid; gap: var(--s2); }
+.pk-send { display: grid; gap: var(--s2); }
+.pk-files { margin: 0; padding-inline-start: 1.2em; display: grid; gap: 2px; font-size: .88rem; overflow-wrap: anywhere; }
+.pk-files code { font-size: .8rem; }
+.linkish { background: none; border: 0; padding: 0; color: var(--brand); text-decoration: underline; cursor: pointer; font: inherit; text-align: start; overflow-wrap: anywhere; }
+
+.pk-compare { display: grid; gap: var(--s2); }
+.pk-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+@media (max-width: 640px) { .pk-pair { grid-template-columns: 1fr; } }
+.pk-pair figure { margin: 0; min-width: 0; }
+.pk-pair figcaption { font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+.pk-scale { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r); background: #fff; }
+.pk-scale iframe { position: absolute; top: 0; inset-inline-start: 0; border: 0; transform-origin: top right; }
+[dir="ltr"] .pk-scale iframe { transform-origin: top left; }
+
+.pk-view { width: 100%; height: min(70vh, 900px); border: 1px solid var(--line); border-radius: var(--r); background: #fff; display: block; margin-inline: auto; }
+.pk-thumb { max-width: 100%; max-height: 50vh; border-radius: var(--r); }
+
+.pk-diff { margin: 0; max-height: 60vh; overflow: auto; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
+  font: .78rem/1.45 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pk-diff .add { display: block; background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.pk-diff .del { display: block; background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.pk-diff .gap { display: block; color: var(--muted); }
+
+.pk-notice { position: fixed; inset-inline: var(--s3); bottom: var(--s3); z-index: 30; display: grid; gap: var(--s2); padding: var(--s3); max-width: 560px; margin-inline: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 6px 24px rgba(0, 0, 0, .18); }
+.pk-notice ul { margin: 0; padding-inline-start: 1.2em; font-size: .9rem; }
