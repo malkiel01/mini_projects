@@ -678,7 +678,7 @@ function builds_list(array $user): array
     $out = array_map(fn($r) => ['by_me' => $r['by_sub'] === $user['sub']] + build_public($r), $rows);
     $live = build_live();
     return ['builds' => $out, 'live' => $live ? build_public($live) : null, 'kd' => pf_seeded() ? build_kd_state() : null,
-        'can_send' => ROLE_RANK[$user['role']] >= ROLE_RANK['publisher'], 'is_owner' => $user['role'] === 'owner'];
+        'can_send' => ROLE_RANK[$user['role']] >= ROLE_RANK['publisher'], 'is_owner' => role_at_least($user, 'page_owner')];
 }
 
 function build_get(array $user, array $q): array
@@ -771,7 +771,14 @@ function build_send(array $user, array $b): array
     foreach ($rep['warnings'] ?? [] as $w) if (!empty($w['block'])) throw new ApiError($w['msg'], 422, ['code' => 'quota']);
     $live = build_live();
     if ($live && (int)$live['id'] > (int)$r['id']) throw new ApiError('באתר כבר גרסה שנבנתה אחרי הזו. בנו מחדש', 409);
+    // P1 [ש-7]: "כל פרסום מחכה לאישורי" דולק — מי שאינו בעל האתר: הגרסה נעצרת ב"ממתין לאישור"
+    if (setting('publish_approval') === '1' && !role_at_least($user, 'site_owner')) return publish_hold($r, $user);
+    return build_send_now($r, $user);
+}
 
+/** השליחה עצמה, אחרי כל הבדיקות (ואחרי אישור בעל האתר, כשנדרש). */
+function build_send_now(array $r, array $user, ?array $approver = null): array
+{
     $ping = site_call('ping', []);
     $proto = (int)($ping['protocol'] ?? 0);
     if ($proto < BUILD_PROTOCOL) {
@@ -815,7 +822,11 @@ function build_send(array $user, array $b): array
     $pdo->prepare("UPDATE pkg_builds SET status = 'superseded' WHERE status = 'live'")->execute();
     build_save((int)$r['id'], ['status' => 'live', 'manifest' => $bytes, 'sent_at' => now_iso(), 'sent_by' => $user['name'] ?? '', 'error' => null]);
     audit_as($user, 'pkg_publish', "גרסה $n · " . count($files) . " קבצים · $sent נשלחו");
-    notice_add('owner', 'publish', ($user['name'] ?? '') . " פרסם/ה את גרסה $n (פרויקט הקבצים) — " . count($files) . " קבצים, $sent נשלחו", (int)$r['id'], $user);
+    $what = ($user['name'] ?? '') . " פרסם/ה את גרסה $n (פרויקט הקבצים) — " . count($files) . " קבצים, $sent נשלחו" . ($approver ? ' · אושר בידי ' . ($approver['name'] ?? '') : '') . build_change_line($r);
+    notice_add('site_owner', 'publish', $what, (int)$r['id'], $user);
+    // לבעל העמוד — פרסום של מישהו אחר (08 §7)
+    if (!role_at_least($user, 'page_owner')) notice_add('page_owner', 'publish', $what, (int)$r['id'], $user);
+    publish_pending_clear((int)$r['id']);
     return ['build' => build_public(build_row((int)$r['id'])), 'sent' => $sent, 'site' => $res];
 }
 
@@ -894,22 +905,155 @@ function build_send_blobs(array $files): int
 
 // ── הודעות בכלי ([ש-7]) ───────────────────────────────────
 
-function notice_add(string $role, string $kind, string $text, ?int $build, array $by): void
+/**
+ * P1 (08 §7): הודעה לתפקיד (role_to: site_owner / page_owner; 'owner' — הישן, = בעל האתר) או לאדם (user_id).
+ * הודעה לתפקיד שאחד מבעליו קרא — נקראה לכולם.
+ */
+function notice_add(string $role, string $kind, string $text, ?int $build, array $by, ?int $userId = null): void
 {
-    db()->prepare('INSERT INTO notices (role_to, kind, text, build_id, by_name, at) VALUES (?, ?, ?, ?, ?, ?)')
-        ->execute([$role, $kind, mb_substr($text, 0, 500), $build, $by['name'] ?? '', now_iso()]);
+    db()->prepare('INSERT INTO notices (role_to, kind, text, build_id, by_name, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$role, $kind, mb_substr($text, 0, 500), $build, $by['name'] ?? '', now_iso(), $userId]);
 }
 
-function notices_list(array $owner): array
+function notice_user(int $userId, string $kind, string $text, array $by, ?int $build = null): void
 {
-    $rows = db()->query("SELECT id, kind, text, build_id, by_name, at FROM notices WHERE role_to = 'owner' AND read_at IS NULL ORDER BY id DESC LIMIT 50")->fetchAll();
-    return ['notices' => array_map(fn($r) => ['id' => (int)$r['id'], 'build' => $r['build_id'] === null ? null : (int)$r['build_id']] + $r, $rows)];
+    notice_add('', $kind, $text, $build, $by, $userId);
 }
 
-function notice_read(array $owner, array $b): array
+/** מה אני רואה: שלי (user_id), ולפי התפקיד. בעל האתר רואה גם את של בעל העמוד ("הכול"). */
+function notices_where(array $user): array
 {
+    $roles = match ($user['role'] ?? '') {
+        'site_owner' => ['owner', 'site_owner', 'page_owner'],
+        'page_owner' => ['page_owner'],
+        default => [],
+    };
+    $in = $roles ? implode(',', array_map(fn($r) => db()->quote($r), $roles)) : "''";
+    return ["(user_id = ? OR (user_id IS NULL AND role_to IN ($in)))", [(int)($user['id'] ?? 0)]];
+}
+
+function notices_list(array $user): array
+{
+    [$w, $a] = notices_where($user);
+    $st = db()->prepare("SELECT id, kind, text, build_id, by_name, at FROM notices WHERE $w AND read_at IS NULL ORDER BY id DESC LIMIT 50");
+    $st->execute($a);
+    $rows = $st->fetchAll();
+    return ['notices' => array_map(fn($r) => ['id' => (int)$r['id'], 'build' => $r['build_id'] === null ? null : (int)$r['build_id']] + $r, $rows), 'unread' => count($rows)];
+}
+
+function notice_read(array $user, array $b): array
+{
+    [$w, $a] = notices_where($user);
     $ids = array_map('intval', array_slice(is_array($b['ids'] ?? null) ? $b['ids'] : [(int)($b['id'] ?? 0)], 0, 100));
-    $st = db()->prepare("UPDATE notices SET read_at = ?, read_by = ? WHERE id = ? AND role_to = 'owner' AND read_at IS NULL");
-    foreach ($ids as $id) $st->execute([now_iso(), $owner['name'] ?? '', $id]);
-    return notices_list($owner);
+    $st = db()->prepare("UPDATE notices SET read_at = ?, read_by = ? WHERE id = ? AND $w AND read_at IS NULL");
+    foreach ($ids as $id) $st->execute([now_iso(), $user['name'] ?? '', $id, ...$a]);
+    return notices_list($user);
+}
+
+function notices_read_all(array $user): array
+{
+    [$w, $a] = notices_where($user);
+    db()->prepare("UPDATE notices SET read_at = ?, read_by = ? WHERE $w AND read_at IS NULL")->execute([now_iso(), $user['name'] ?? '', ...$a]);
+    return notices_list($user);
+}
+
+// ── "כל פרסום מחכה לאישורי" ([ש-7], P1 §2.4) ───────────────
+
+/** "מה השתנה" של M1 — שורה קצרה מהדוח של הבנייה. */
+function build_change_line(array $r): string
+{
+    $rep = json_decode((string)($r['report'] ?? ''), true);
+    $d = is_array($rep) ? ($rep['diff'] ?? null) : null;
+    if (!is_array($d)) return '';
+    $n = fn($k) => is_array($d[$k] ?? null) ? count($d[$k]) : (int)($d[$k] ?? 0);
+    return ' · מה השתנה: +' . $n('added') . ' ~' . $n('changed') . ' −' . $n('removed');
+}
+
+function publish_pending(): array
+{
+    $p = json_decode((string)setting('publish_pending', '{}'), true);
+    return is_array($p) ? $p : [];
+}
+
+function publish_pending_clear(int $id): void
+{
+    $p = publish_pending();
+    if (!isset($p[(string)$id])) return;
+    unset($p[(string)$id]);
+    setting_set('publish_pending', json_encode($p ?: new stdClass(), JSON_UNESCAPED_UNICODE));
+}
+
+function publish_hold(array $r, array $user): array
+{
+    $p = publish_pending();
+    $p[(string)$r['id']] = ['id' => (int)$r['id'], 'by_id' => $user['id'] ?? null, 'by_sub' => $user['sub'], 'by_name' => $user['name'] ?? '', 'by_role' => $user['role'], 'at' => now_iso()];
+    setting_set('publish_pending', json_encode($p, JSON_UNESCAPED_UNICODE));
+    audit_as($user, 'pkg_publish_pending', 'בנייה ' . $r['id'] . ' · ממתינה לאישור בעל האתר');
+    notice_add('site_owner', 'approve', '⏳ ' . ($user['name'] ?? '') . ' ביקש/ה לפרסם (בנייה ' . $r['id'] . ')' . build_change_line($r) . '. ⚙️ בעל האתר ← ממתינים לאישור', (int)$r['id'], $user);
+    return ['build' => build_public(build_row((int)$r['id'])), 'pending' => true, 'message' => 'הגרסה ממתינה לאישור בעל האתר. תקבל/י הודעה כשיאשר או ידחה'];
+}
+
+/** בעל האתר: אישור (השליחה רצה בשם מי שבנה) או דחייה (עם סיבה — הודעה למבקש). */
+function publish_decide(array $owner, array $b): array
+{
+    $id = (int)($b['id'] ?? 0);
+    $p = publish_pending()[(string)$id] ?? throw new ApiError('אין בקשה כזו', 404);
+    $r = build_row($id);
+    if (!empty($b['approve'])) {
+        $by = ($p['by_id'] ? user_get((int)$p['by_id']) : null) ?? [];
+        $res = build_send_now($r, ['id' => $p['by_id'], 'sub' => $p['by_sub'], 'name' => $p['by_name'], 'role' => $by['role'] ?? $p['by_role']], $owner);
+        audit_as($owner, 'pkg_publish_approved', "בנייה $id · של " . $p['by_name']);
+        if ($p['by_id']) notice_user((int)$p['by_id'], 'approve', '✅ בעל האתר אישר את הפרסום שלך (בנייה ' . $id . ')', $owner, $id);
+        return $res + owner_settings($owner);
+    }
+    $why = mb_substr(trim((string)($b['reason'] ?? '')), 0, 300);
+    if ($why === '') throw new ApiError('כתבו סיבה לדחייה — היא נשלחת למבקש');
+    publish_pending_clear($id);
+    audit_as($owner, 'pkg_publish_rejected', "בנייה $id · של {$p['by_name']} · $why");
+    if ($p['by_id']) notice_user((int)$p['by_id'], 'approve', '✋ בעל האתר דחה את הפרסום (בנייה ' . $id . '): ' . $why, $owner, $id);
+    return owner_settings($owner);
+}
+
+// ── ⚙️ בעל האתר (P1 §2.4) ─────────────────────────────────
+
+/**
+ * כל מה שבידי בעל האתר — במקום אחד. לבעל העמוד ולשאר: אותה רשימה, לקריאה, כל שורה במילים ("נקבע בידי בעל האתר").
+ * ההגדרות עצמן נערכות במסכים הקיימים (המכסות, החיבור, האופן) — כאן הן מרוכזות ומקושרות.
+ */
+function owner_settings(array $user): array
+{
+    $mb = fn(int $b) => $b >= 1073741824 ? round($b / 1073741824, 1) . 'GB' : round($b / 1048576) . 'MB';
+    $lim = [];
+    foreach (pf_limits()['limits'] as $l) $lim[] = ['label' => $l['label'], 'value' => (string)$l['value']];
+    $sw = db()->query("SELECT detail, at FROM audit WHERE action = 'site_switch' ORDER BY id DESC LIMIT 1")->fetch();
+    $owners = db()->query("SELECT name, email FROM users WHERE role = 'page_owner' AND status = 'active' AND agent IS NULL ORDER BY name")->fetchAll();
+    $mount = setting('site_mount', 'full');
+    $rows = [
+        ['group' => 'המפסק', 'label' => 'מה האתר מציג', 'value' => $sw ? $sw['detail'] : 'עוד לא הופעל מכאן', 'where' => '🚀 פרסום (מפרסם ומעלה)'],
+        ['group' => 'המכסות', 'label' => 'תקרת כל הקבצים', 'value' => $mb(disk_cap()), 'where' => '🗂️ קבצים'],
+        ['group' => 'המכסות', 'label' => 'גודל קובץ מקסימלי', 'value' => $mb(FILE_MAX), 'where' => 'קבוע בקוד'],
+        ...array_map(fn($l) => ['group' => 'המכסות', 'label' => $l['label'], 'value' => $l['value'], 'where' => '🛠️ מפתח ← 📏 מגבלות'], $lim),
+        ['group' => 'המכסות', 'label' => 'בינה — טוקנים לחודש לאדם', 'value' => number_format((int)(setting('ai_quota_default') ?? AI_QUOTA_DEFAULT)), 'where' => 'כאן, למטה ← ✨ עוזר הבינה'],
+        ['group' => 'החיבור לאתר', 'label' => 'האתר', 'value' => site_url_setting(), 'where' => 'כאן, למטה'],
+        ['group' => 'החיבור לאתר', 'label' => 'אופן ההצבה באתר', 'value' => BUILD_MOUNTS[$mount]['name'] ?? $mount, 'where' => 'כאן, למטה'],
+        ['group' => 'פרסום', 'label' => 'כל פרסום מחכה לאישור בעל האתר', 'value' => setting('publish_approval') === '1' ? 'דולק' : 'כבוי — מתפרסם מיד, ובעל האתר מקבל הודעה', 'where' => 'כאן'],
+        ['group' => 'אנשים', 'label' => 'בעל העמוד', 'value' => $owners ? implode(', ', array_map(fn($o) => $o['name'] ?: $o['email'], $owners)) : 'עוד לא מונה', 'where' => '👥 אנשים (המינוי הראשון — בעל האתר)'],
+    ];
+    $site = role_at_least($user, 'site_owner');
+    return ['owner' => [
+        'rows' => array_map(fn($r) => $r + ['text' => $r['label'] . ': ' . $r['value'] . ' — נקבע בידי בעל האתר'], $rows),
+        'approval' => setting('publish_approval') === '1',
+        'pending' => $site ? array_values(publish_pending()) : [],
+        'can_edit' => $site,
+    ]];
+}
+
+function owner_set(array $owner, array $b): array
+{
+    if (array_key_exists('approval', $b)) {
+        $on = $b['approval'] === true;
+        setting_set('publish_approval', $on ? '1' : '0');
+        audit_as($owner, 'owner_set', 'כל פרסום מחכה לאישור: ' . ($on ? 'דולק' : 'כבוי'));
+    }
+    return owner_settings($owner);
 }

@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 22;
+const KOL_SCHEMA_VERSION = 23;
 
 final class ApiError extends RuntimeException
 {
@@ -550,6 +550,8 @@ function migrate(PDO $pdo): void
                 by_name TEXT NOT NULL DEFAULT ''
             );
             SQL,
+        // P1: משתמשי האפליקציה, ה-session שלה, audit.user_id/source, notices.user_id. הוספה בלבד — members ו-access_requests נשארים
+        23 => 'migrate_people',
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
@@ -661,4 +663,70 @@ function setting(string $k, ?string $default = null): ?string
 function setting_set(string $k, string $v): void
 {
     db()->prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')->execute([$k, $v]);
+}
+
+/**
+ * שלב 23 (P1): users + sessions, עמודות חדשות ב-audit וב-notices, והמילוי — מ-members (התפקיד כמו שהוא), ומכל sub שמופיע
+ * ב-audit בלי חבר (בלי תפקיד, removed). אידמפוטנטי: INSERT OR IGNORE לפי sub, ולפי מייל לחבר שהוזמן ועוד לא נכנס.
+ * בעל האתר (platform_admin) נקבע בכניסה הראשונה שלו (lib/login.php). שום עמודה ושום שורה אינן נמחקות.
+ */
+function migrate_people(PDO $pdo): void
+{
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS users (
+            id         INTEGER PRIMARY KEY,
+            sub        TEXT UNIQUE,                    -- של הפלטפורמה. ריק — הוזמן ועוד לא נכנס
+            name       TEXT NOT NULL DEFAULT '',
+            email      TEXT,
+            role       TEXT CHECK (role IS NULL OR role IN ('content_editor','editor','publisher','page_owner','site_owner')),
+            status     TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','removed')),
+            created_at TEXT NOT NULL,
+            last_seen  TEXT,
+            invited_by INTEGER,
+            ai_quota   INTEGER,                        -- מ-members.ai_quota
+            agent      TEXT,                           -- כניסה מצ'אט (agent_tokens.id) — המשתמש שלה
+            invite     TEXT NOT NULL DEFAULT '',       -- '' · invited · granted · blocked · pending (provision נכשל) · revoked
+            invite_note TEXT NOT NULL DEFAULT '',
+            invite_at  TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_open ON users(email) WHERE sub IS NULL AND agent IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_agent ON users(agent) WHERE agent IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS sessions (
+            id         TEXT PRIMARY KEY,               -- sha256 של המזהה שבעוגייה
+            user_id    INTEGER NOT NULL,
+            csrf       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            seen_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        SQL);
+    $cols = fn(string $t) => array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+    if (!in_array('user_id', $cols('audit'), true)) $pdo->exec('ALTER TABLE audit ADD COLUMN user_id INTEGER');
+    if (!in_array('source', $cols('audit'), true)) $pdo->exec("ALTER TABLE audit ADD COLUMN source TEXT NOT NULL DEFAULT 'studio'");
+    if (!in_array('user_id', $cols('notices'), true)) $pdo->exec('ALTER TABLE notices ADD COLUMN user_id INTEGER');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit(user_id)');
+    $now = gmdate('Y-m-d\TH:i:s\Z');
+    $mc = $cols('members');
+    $q = in_array('ai_quota', $mc, true) ? 'ai_quota' : 'NULL';
+    foreach ($pdo->query("SELECT id, sub, email, name, role, added_at, last_seen, $q AS ai_quota FROM members ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) as $m) {
+        if ($m['sub'] !== null) {
+            $pdo->prepare('INSERT OR IGNORE INTO users (sub, name, email, role, created_at, last_seen, ai_quota) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$m['sub'], $m['name'], $m['email'], $m['role'], $m['added_at'], $m['last_seen'], $m['ai_quota']]);
+        } elseif ($m['email'] !== null) {
+            $st = $pdo->prepare('SELECT 1 FROM users WHERE sub IS NULL AND agent IS NULL AND email = ?');
+            $st->execute([$m['email']]);
+            if (!$st->fetchColumn()) {
+                $pdo->prepare('INSERT INTO users (name, email, role, created_at, ai_quota) VALUES (?, ?, ?, ?, ?)')
+                    ->execute([$m['name'], $m['email'], $m['role'], $m['added_at'], $m['ai_quota']]);
+            }
+        }
+    }
+    // כל מי שעשה משהו בכלי ואינו חבר — שורה בלי תפקיד, removed (כדי שליומן יהיה אדם)
+    foreach ($pdo->query("SELECT sub, MAX(name) AS name, MIN(at) AS first, MAX(at) AS last FROM audit WHERE sub <> '' GROUP BY sub")->fetchAll(PDO::FETCH_ASSOC) as $a) {
+        $pdo->prepare("INSERT OR IGNORE INTO users (sub, name, role, status, created_at, last_seen) VALUES (?, ?, NULL, 'removed', ?, ?)")
+            ->execute([$a['sub'], (string)$a['name'], $a['first'], $a['last']]);
+    }
+    $pdo->exec('UPDATE audit SET user_id = (SELECT id FROM users WHERE users.sub = audit.sub) WHERE user_id IS NULL');
+    $pdo->exec("UPDATE audit SET source = 'agent' WHERE source = 'studio' AND detail LIKE 'source: agent%'");
+    unset($now);
 }

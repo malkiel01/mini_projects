@@ -9,8 +9,10 @@
   "gate": true,
   "restricted": true,
   "version": "0.15",
+  "provision": { "key_url": "https://mbe-plus.com/mini_projects/kol-maroko/api.php?action=platform_key" },
+  "grant_status": { "key_url": "https://mbe-plus.com/mini_projects/kol-maroko/api.php?action=platform_key" },
   "public": [
-    "api.php?action=embed_key|media|devapi-feed|devapi-comment|devapi-file|devapi-attach",
+    "api.php?action=embed_key|media|platform_key|devapi-feed|devapi-comment|devapi-file|devapi-attach",
     "agent.php",
     "preview/index.php",
     "form.php"

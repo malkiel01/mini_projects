@@ -12,7 +12,7 @@ declare(strict_types=1);
 
 require_once KOL_ROOT . '/lib/cutover.php';
 
-const M3_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'role' => 'owner'];
+const M3_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'role' => 'site_owner'];
 
 /** עובדות שבהן הכול ✓; כל בדיקה משנה שדה אחד. */
 function m3_facts(array $over = []): array

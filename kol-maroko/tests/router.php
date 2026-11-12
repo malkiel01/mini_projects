@@ -16,6 +16,10 @@ if (isset($_SERVER['HTTP_X_TEST_USER'])) $_SERVER['PLATFORM_USER'] = $_SERVER['H
 // בדיקות הדפדפן של הבידוד (F4): הזהות בעוגייה — כמו בייצור (HttpOnly, SameSite=Lax), כדי שהדפדפן עצמו יחליט מתי לשלוח אותה
 elseif (isset($_COOKIE['kol_test_user'])) $_SERVER['PLATFORM_USER'] = (string)base64_decode($_COOKIE['kol_test_user']);
 // A2: "האתר" של ההקלטות — שרת מדומה מקומי (tests/fake-audio.php). JSON: {"https://maghreb.co.il": "http://127.0.0.1:PORT"}
+// P1: platform/provision.php — שרת מדומה (tests/fake-provision.php)
+// P1: מטריצת ההרשאות — api.php עוצר מיד אחרי authorize() (בלי להריץ את הפעולה)
+if (isset($_SERVER['HTTP_X_TEST_AUTHORIZE_ONLY'])) $GLOBALS['kol_test_authorize_only'] = true;
+if ($prov = getenv('KOL_TEST_PROVISION')) $GLOBALS['kol_provision_url'] = $prov;
 if ($map = getenv('KOL_TEST_REC_MAP')) $GLOBALS['kol_rec_test_map'] = json_decode($map, true);
 // ויומן של מה שהשרת ראה בפועל: מי פנה, מאיזה מקור, ועם זהות או בלי
 if ($trace = getenv('KOL_TEST_TRACE')) {
