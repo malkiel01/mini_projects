@@ -16,6 +16,7 @@ require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/preview.php';
 require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
+require_once __DIR__ . '/lib/cutover.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -52,7 +53,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
-                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read'];
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read',
+                      'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -182,6 +184,12 @@ try {
         'kd_update' => build_kd_update(require_role($user, 'owner'), $body),
         'notices' => notices_list(require_role($user, 'owner')),
         'notice_read' => notice_read(require_role($user, 'owner'), $body),
+        // 🔁 המעבר (M3, lib/cutover.php): קריאה — מפרסם ומעלה; ראיה, נקודת שחזור ו"מוכן למעבר" — בעלים בלבד. אינו מדליק דבר באתר
+        'cutover' => cutover_state(require_role($user, 'publisher')),
+        'cutover_evidence' => cutover_evidence_add(require_role($user, 'owner'), $body),
+        'cutover_evidence_revoke' => cutover_evidence_revoke(require_role($user, 'owner'), $body),
+        'cutover_snapshot' => cutover_snapshot(require_role($user, 'owner')),
+        'cutover_ready' => cutover_ready(require_role($user, 'owner')),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
