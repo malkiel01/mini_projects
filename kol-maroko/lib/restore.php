@@ -51,6 +51,7 @@ function snap_state(): array
         'draft' => (string)draft_row()['json'],
         'words' => $j($pdo->query('SELECT * FROM words ORDER BY id')->fetchAll()),
         'topics' => $j($pdo->query('SELECT * FROM topics ORDER BY slug')->fetchAll()),
+        'fields' => $j($pdo->query('SELECT * FROM word_fields ORDER BY key')->fetchAll()),         // N2: מבנה המילה
         'code' => $j($pdo->query('SELECT * FROM code_files ORDER BY path')->fetchAll()),
         'settings' => $j($settings),
         'files' => $j($pdo->query('SELECT id, deleted_at, deleted_by FROM files ORDER BY id')->fetchAll()),
@@ -168,6 +169,7 @@ function snapshot_apply(array $user, array $parts, string $note): array
         }
         $put('words', $rows('words'));
         $put('topics', $rows('topics'));
+        if (isset($parts['fields'])) $put('word_fields', $rows('fields'));        // נקודה מלפני N2 — המבנה נשאר כמו שהוא
         $put('code_files', $rows('code'));
         foreach (json_decode(blob_get($parts['settings']), true) ?: [] as $k => $v) {
             if (!in_array($k, SNAP_SETTINGS, true)) continue;

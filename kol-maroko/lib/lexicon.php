@@ -76,11 +76,13 @@ function lexicon_props(array $p): array
 function words_rows(): array
 {
     if (isset($GLOBALS['kol_words'])) return $GLOBALS['kol_words'];
-    $rows = db()->query('SELECT id, wp_id, word, meaning, topics, audio, external_id, sort_order FROM words ORDER BY id')->fetchAll();
+    $rows = db()->query('SELECT id, wp_id, word, meaning, topics, audio, external_id, sort_order, extra FROM words ORDER BY id')->fetchAll();
     foreach ($rows as &$r) {
         $r['id'] = (int)$r['id'];
         $r['wp_id'] = $r['wp_id'] === null ? null : (int)$r['wp_id'];
         $r['topics'] = json_decode($r['topics'], true) ?: [];
+        $x = json_decode((string)$r['extra'], true);              // N2: ערכי השדות המותאמים
+        $r['extra'] = is_array($x) && !array_is_list($x) ? $x : [];
     }
     unset($r);
     return words_order_effective($rows);
@@ -107,14 +109,15 @@ function topic_slug(string $name, array &$map): string
     return $map[$name] ??= 'kt-' . substr(md5($name), 0, 10);
 }
 
-/** הנושאים שיש להם מילה, עם מספר המילים — כמו get_terms(hide_empty). */
+/** הנושאים שיש להם מילה, עם מספר המילים — כמו get_terms(hide_empty). N2: בסדר של הנושאים (בלי סדר שנקבע — לפי השם, כמו קודם). */
 function topics_used(array $words, array &$map): array
 {
-    $count = [];
-    foreach ($words as $w) foreach ($w['topics'] as $t) $count[$t] = ($count[$t] ?? 0) + 1;
     $out = [];
-    foreach ($count as $name => $n) $out[] = ['name' => (string)$name, 'slug' => topic_slug((string)$name, $map), 'count' => $n];
-    return lex_sort($out, 'name');
+    foreach (topics_all($words) as $t) {
+        $map[$t['name']] ??= $t['slug'];
+        if ($t['count']) $out[] = ['name' => $t['name'], 'slug' => $t['slug'], 'count' => $t['count'], 'color' => $t['color'], 'hidden' => $t['hidden']];
+    }
+    return $out;
 }
 
 function words_snapshot(): string
@@ -581,22 +584,34 @@ function word_move(array $user, array $b): array
 function words_json(?string $app = null): string
 {
     $rows = words_rows();
-    $map = topic_slugs();
-    $topics = array_map(fn($t) => ['id' => $t['slug'], 'label' => $t['name']], topics_used($rows, $map));
-    $meta = $app === null ? files_meta(array_values(array_unique(array_filter(array_map(fn($w) => file_id($w['audio']), $rows))))) : [];
+    $fields = fields_all();
+    $all = topics_all($rows);
+    $map = array_column($all, 'slug', 'name');
+    // N2: לתצוגה החיה ולבנייה ($app) — רק שדות "מתפרסם"; לעורך — הכול
+    $use = array_values(array_filter($fields, fn($f) => $app === null || $f['published']));
+    $ids = array_merge(array_map(fn($w) => file_id($w['audio']), $rows), fields_file_ids($rows, $use), array_column($all, 'image'));
+    $meta = $app === null ? files_meta(array_values(array_unique(array_filter($ids, 'file_id')))) : [];
     $items = [];
+    $hasTopics = in_array('topics', array_column($use, 'col'), true);
     foreach ($rows as $w) {
-        $item = [
-            'id' => $w['id'], 'word' => $w['word'], 'meaning' => $w['meaning'],
-            'topics' => array_map(fn($t) => topic_slug((string)$t, $map), $w['topics']),
-            'audio' => $app === null ? words_audio_ref((string)$w['audio'], $meta) : (($a = (string)$w['audio']) === '' ? '' : (file_id($a) ? $app . media_url($a) : $a)),
-        ];
+        $item = ['id' => $w['id']];
+        foreach ($use as $f) {
+            if ($f['col'] === null) continue;
+            $item[$f['key']] = match ($f['col']) {
+                'topics' => array_map(fn($t) => topic_slug((string)$t, $map), $w['topics']),
+                'audio' => $app === null ? words_audio_ref((string)$w['audio'], $meta) : (($a = (string)$w['audio']) === '' ? '' : (file_id($a) ? $app . media_url($a) : $a)),
+                default => $w[$f['col']],
+            };
+        }
         // המזהה באתר (למשוב) והמזהה מהאקסל — רק למילה שיש לה (F3: הכרטיס המוסב נקשר אליהם)
         if (($w['wp_id'] ?? null) !== null) $item['wp_id'] = $w['wp_id'];
         if ((string)($w['external_id'] ?? '') !== '') $item['external_id'] = $w['external_id'];
+        // N2: השדות המותאמים — אחרי המובנים, בסדר שלהם; ערך ריק — המפתח חסר
+        foreach ($use as $f) if ($f['col'] === null && array_key_exists($f['key'], $w['extra'])) $item[$f['key']] = field_out($f, $w['extra'][$f['key']], $meta, $app);
         $items[] = $item;
     }
-    return words_json_encode(['topics' => $topics, 'items' => $items]);
+    $j = $hasTopics ? ['topics' => topics_out($all, $app, $meta)] : [];          // "נושאים" שאינו מתפרסם — גם בלי הרשימה
+    return words_json_encode($j + ['items' => $items]);
 }
 
 function words_json_encode(array $j): string
@@ -617,7 +632,7 @@ function words_audio_ref(string $a, array $meta): string
 /** ה-rev של הקובץ: חותמת של התוכן שלו (הטבלה + הנושאים + הסדר). כל שינוי בטבלה — rev אחר, ועורך פתוח יודע. */
 function words_rev(?string $json = null): string
 {
-    return 'w' . substr(hash('sha256', $json ?? words_json()), 0, 16);
+    return 'w' . substr(hash('sha256', ($json ?? words_json()) . '|' . fields_sig()), 0, 16);       // N2: גם המבנה
 }
 
 /** offset בבייטים → [שורה, עמודה] (עמודה בתווים, כמו ב-Monaco). */
@@ -713,16 +728,20 @@ function wj_scan(string $s): array
 function words_state(): array
 {
     $rows = words_rows();
-    $map = topic_slugs();
-    topics_used($rows, $map);                                   // גם מפתחות של שמות שאינם בטבלת הנושאים
-    $meta = files_meta(array_values(array_unique(array_filter(array_map(fn($w) => file_id($w['audio']), $rows)))));
+    $fields = fields_all();
+    $all = topics_all($rows);
+    $map = array_column($all, 'slug', 'name');                  // גם מפתחות של שמות שאינם בטבלת הנושאים
+    $meta = files_meta(array_values(array_unique(array_filter(array_merge(array_map(fn($w) => file_id($w['audio']), $rows), fields_file_ids($rows, $fields), array_column($all, 'image')), 'file_id'))));
     $by = [];
     foreach ($rows as $w) {
         $w['slugs'] = array_map(fn($t) => topic_slug((string)$t, $map), $w['topics']);
         $w['audio_ref'] = words_audio_ref((string)$w['audio'], $meta);
+        $w['extra_ref'] = [];                                   // N2: הערכים כפי שהם בקובץ (image/audio — נתיב)
+        foreach (fields_custom($fields) as $f) if (array_key_exists($f['key'], $w['extra'])) $w['extra_ref'][$f['key']] = field_out($f, $w['extra'][$f['key']], $meta, null);
         $by[$w['id']] = $w;
     }
-    return ['by' => $by, 'order' => array_column($rows, 'id'), 'slug_name' => array_flip($map), 'name_slug' => $map];
+    return ['by' => $by, 'order' => array_column($rows, 'id'), 'slug_name' => array_flip($map), 'name_slug' => $map,
+        'fields' => $fields, 'topics' => $all, 'meta' => $meta];
 }
 
 /** הקלטה מהקובץ ← ערך לטבלה: מזהה בספרייה, media/audio/<מזהה>.*, קובץ מדיה בעץ הפרויקט, או כתובת https באתר. אחרת — null. */
@@ -887,8 +906,8 @@ function words_plan(array $in, array $state): array
 
 function words_state_hash(array $state): string
 {
-    return substr(hash('sha256', json_encode([$state['order'], array_map(fn($w) => [$w['word'], $w['meaning'], $w['topics'], $w['audio'], $w['external_id'], $w['wp_id'], $w['sort_order']], $state['by']),
-        $state['name_slug']], JSON_UNESCAPED_UNICODE)), 0, 32);
+    return substr(hash('sha256', json_encode([$state['order'], array_map(fn($w) => [$w['word'], $w['meaning'], $w['topics'], $w['audio'], $w['external_id'], $w['wp_id'], $w['sort_order'], $w['extra']], $state['by']),
+        $state['name_slug'], $state['fields'] ?? [], array_map(fn($t) => array_diff_key($t, ['count' => 1]), $state['topics'] ?? [])], JSON_UNESCAPED_UNICODE)), 0, 32);
 }
 
 function words_plan_text(array $c): string
@@ -1160,4 +1179,274 @@ function words_csv_import(array $user, array $b): array
     $r = words_apply($user, $build, (string)($b['token'] ?? ''), 'אקסל');
     $c = $r['done'];
     return $r + ['encoding' => $enc, 'stats' => ['updated' => $c['changed'], 'added' => $c['added'], 'trashed' => $c['trashed'], 'moved' => $c['moved'], 'errors' => []]] + words_list();
+}
+
+// ── N2: שדות מותאמים למילה ────────────────────────────────
+
+const FIELD_TYPES = ['text', 'longtext', 'rich', 'number', 'bool', 'choice', 'date', 'url', 'image', 'audio', 'list'];
+const FIELD_KEY_RX = '/^[a-z][a-z0-9_]{0,39}$/';
+/** מפתחות שאסור לשדה: המזהים של הקובץ, ומה ש-kol-data.js קורא בעצמו ({count}, {shown}, {total}, {label}). וגם topics_* */
+const FIELD_RESERVED = ['id', 'sort_order', 'wp_id', 'external_id', 'count', 'shown', 'total', 'label', 'value', 'extra'];
+const FIELD_DIRS = ['auto', 'rtl', 'ltr'];
+const FIELD_TEXT_MAX = 500;
+const FIELD_LIST_MAX = [50, 200];
+/** ארבעת השדות המובנים — הערך בעמודה במסד (col). הסוג — רק בתוך המשפחה (FIELD_COL_TYPES) */
+const FIELD_BUILTIN = [
+    ['key' => 'word', 'label' => 'מילה', 'type' => 'text', 'col' => 'word', 'required' => 1],
+    ['key' => 'meaning', 'label' => 'פירוש', 'type' => 'rich', 'col' => 'meaning', 'required' => 0],
+    ['key' => 'topics', 'label' => 'נושאים', 'type' => 'topics', 'col' => 'topics', 'required' => 0],
+    ['key' => 'audio', 'label' => 'הקלטה', 'type' => 'audio', 'col' => 'audio', 'required' => 0],
+];
+const FIELD_COL_TYPES = ['word' => ['text'], 'meaning' => ['text', 'longtext', 'rich'], 'topics' => ['topics'], 'audio' => ['audio']];
+
+/** שורה מהטבלה ← שדה מנורמל. */
+function field_norm(array $r): array
+{
+    return ['key' => (string)$r['key'], 'label' => (string)$r['label'], 'type' => (string)$r['type'], 'col' => $r['col'] === null || $r['col'] === '' ? null : (string)$r['col'],
+        'required' => (bool)(int)$r['required'], 'def' => isset($r['def']) && $r['def'] !== null && $r['def'] !== '' ? json_decode((string)$r['def'], true) : null,
+        'help' => (string)($r['help'] ?? ''), 'options' => json_decode((string)($r['options'] ?? '[]'), true) ?: [], 'published' => (bool)(int)($r['published'] ?? 1),
+        'dir' => (string)($r['dir'] ?? 'auto'), 'sort_order' => (int)($r['sort_order'] ?? 0)];
+}
+
+/**
+ * כל השדות, לפי הסדר. טבלה ריקה (אחרי מיגרציה 18, לפני פעולת מבנה ראשונה) — ארבעת המובנים בזיכרון; קריאה אינה כותבת
+ * (כמו sort_order של N1). fields_fill כותב אותם — רק בפעולה שמשנה מבנה.
+ */
+function fields_all(): array
+{
+    $rows = db()->query('SELECT * FROM word_fields ORDER BY sort_order, key')->fetchAll();
+    if (!$rows) foreach (FIELD_BUILTIN as $i => $f) $rows[] = $f + ['def' => null, 'help' => '', 'options' => '[]', 'published' => 1, 'dir' => 'auto', 'sort_order' => ($i + 1) * 10];
+    return array_map('field_norm', $rows);
+}
+
+function fields_fill(): void
+{
+    $pdo = db();
+    if ($pdo->query('SELECT 1 FROM word_fields LIMIT 1')->fetchColumn()) return;
+    $st = $pdo->prepare('INSERT INTO word_fields (key, label, type, col, required, sort_order) VALUES (?, ?, ?, ?, ?, ?)');
+    foreach (FIELD_BUILTIN as $i => $f) $st->execute([$f['key'], $f['label'], $f['type'], $f['col'], $f['required'], ($i + 1) * 10]);
+}
+
+/** עמודה מובנית ← המפתח שלה בקובץ (word → word, אלא אם שונה). */
+function fields_colkeys(?array $fields = null): array
+{
+    $o = [];
+    foreach ($fields ?? fields_all() as $f) if ($f['col'] !== null) $o[$f['col']] = $f['key'];
+    return $o + ['word' => 'word', 'meaning' => 'meaning', 'topics' => 'topics', 'audio' => 'audio'];
+}
+
+function fields_custom(?array $fields = null): array
+{
+    return array_values(array_filter($fields ?? fields_all(), fn($f) => $f['col'] === null));
+}
+
+/** חותמת המבנה — נכנסת ל-rev של הקובץ: שינוי שם, "מתפרסם" או סוג — הקובץ הפתוח בעורך יודע. */
+function fields_sig(): string
+{
+    return substr(hash('sha256', json_encode(fields_all(), JSON_UNESCAPED_UNICODE)), 0, 16);
+}
+
+/** מפתח חדש: התבנית, השמורים, והקיימים. מחזיר שגיאה (טקסט) או null. */
+function field_key_error(string $key, array $fields, ?string $self = null): ?string
+{
+    if (!preg_match(FIELD_KEY_RX, $key)) return "מפתח לא תקין \"" . mb_substr($key, 0, 60) . "\" — אותיות לטיניות קטנות, ספרות ו-_ , מתחיל באות, עד 40";
+    if (in_array($key, FIELD_RESERVED, true) || str_starts_with($key, 'topics_')) return "המפתח \"$key\" שמור למערכת";
+    foreach ($fields as $f) if ($f['key'] === $key && $f['key'] !== $self) return "כבר יש שדה עם המפתח \"$key\"";
+    return null;
+}
+
+/**
+ * ערך לשדה מותאם ← הצורה הקנונית (06 §2.2). $csv — הערך הגיע כמחרוזת מגיליון. מחזיר [ערך|null, שגיאה|null, אזהרה|null,
+ * אפשרות-להצעה|null]. null = ריק (המפתח חסר). image/audio — מזהה קובץ, או הפניה (media/…); לא נמצא — אזהרה והערך הקודם.
+ */
+function field_parse(array $f, mixed $v, bool $csv = false): array
+{
+    if ($v === null || $v === '' || ($v === [] && $f['type'] === 'list')) return [null, null, null, null];
+    $t = $f['type'];
+    $need = fn(string $what) => [null, "\"{$f['key']}\" חייב להיות $what", null, null];
+    switch ($t) {
+        case 'text':
+            if (!is_string($v)) return $need('טקסט');
+            $v = trim($v);
+            if (preg_match('/[\r\n]/', $v)) return [null, "\"{$f['key']}\": טקסט בשורה אחת (בלי ירידת שורה). לטקסט ארוך — סוג \"טקסט ארוך\"", null, null];
+            if (mb_strlen($v) > FIELD_TEXT_MAX) return [null, "\"{$f['key']}\" ארוך מ-" . FIELD_TEXT_MAX . ' תווים', null, null];
+            return [$v === '' ? null : $v, null, null, null];
+        case 'longtext':
+            if (!is_string($v)) return $need('טקסט');
+            if (mb_strlen($v) > MEANING_MAX) return [null, "\"{$f['key']}\" ארוך מ-" . MEANING_MAX . ' תווים', null, null];
+            return [trim($v) === '' ? null : $v, null, null, null];
+        case 'rich':
+            if (!is_string($v)) return $need('טקסט (HTML)');
+            if (mb_strlen($v) > MEANING_MAX) return [null, "\"{$f['key']}\" ארוך מ-" . MEANING_MAX . ' תווים', null, null];
+            $c = sanitize_rich($csv ? lex_from_plain($v) : $v);
+            return [$c === '' ? null : $c, null, !$csv && $c !== $v ? "\"{$f['key']}\": חלק מה-HTML הוסר בניקוי (תגיות או תכונות שאינן מותרות)" : null, null];
+        case 'number':
+            if ($csv || is_string($v)) {
+                if (!$csv) return $need('מספר (בלי מירכאות)');
+                $s = str_replace(',', '.', trim((string)$v));
+                if (!preg_match('/^-?\d{1,15}(?:\.\d{1,10})?$/', $s)) return [null, "\"{$f['key']}\": \"" . mb_substr((string)$v, 0, 40) . '" אינו מספר', null, null];
+                return [str_contains($s, '.') ? (float)$s : (int)$s, null, null, null];
+            }
+            if (is_bool($v) || (!is_int($v) && !is_float($v)) || !is_finite((float)$v) || abs((float)$v) > 1e15) return $need('מספר');
+            return [$v, null, null, null];
+        case 'bool':
+            if ($csv) {
+                $s = mb_strtolower(trim((string)$v));
+                if (in_array($s, ['1', 'כן', 'true', 'v', '✓'], true)) return [true, null, null, null];
+                if (in_array($s, ['0', 'לא', 'false'], true)) return [false, null, null, null];
+                return [null, "\"{$f['key']}\": \"" . mb_substr((string)$v, 0, 40) . '" — כן/לא, 1/0 או true/false', null, null];
+            }
+            return is_bool($v) ? [$v, null, null, null] : $need('true או false');
+        case 'choice':
+            if (!is_string($v)) return $need('טקסט — אחת האפשרויות');
+            $v = trim($v);
+            if ($v === '') return [null, null, null, null];
+            foreach ($f['options'] as $o) if ((string)$o['value'] === $v) return [$v, null, null, null];
+            if (mb_strlen($v) > 200 || preg_match('/[\r\n]/', $v)) return [null, "\"{$f['key']}\": אפשרות לא תקינה", null, null];
+            return [null, "\"{$f['key']}\": \"$v\" אינו אחת האפשרויות", null, $v];
+        case 'date':
+            if (!is_string($v)) return $need('תאריך YYYY-MM-DD');
+            $v = trim($v);
+            if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) || !checkdate((int)$m[2], (int)$m[3], (int)$m[1])) return [null, "\"{$f['key']}\": \"" . mb_substr($v, 0, 40) . '" אינו תאריך קיים (YYYY-MM-DD)', null, null];
+            return [$v, null, null, null];
+        case 'url':
+            if (!is_string($v)) return $need('כתובת');
+            $v = trim($v);
+            if (mb_strlen($v) > 2000 || !preg_match('~^https?://[^\s"\'<>`\\\\]+$~i', $v)) return [null, "\"{$f['key']}\": כתובת חייבת להתחיל ב-https:// או http:// (בלי רווחים)", null, null];
+            return [$v, null, null, null];
+        case 'image':
+        case 'audio':
+            if (!is_string($v)) return $need('מזהה קובץ או נתיב media/…');
+            $id = field_file_resolve($v, $t);
+            if ($id === null) return [null, null, "\"{$f['key']}\": הקובץ \"" . mb_substr($v, 0, 80) . '" לא נמצא בספרייה — נשאר כמו שהיה', null];
+            return [$id === '' ? null : $id, null, null, null];
+        case 'list':
+            if ($csv) $v = preg_split('/\s*;\s*/u', (string)$v, -1, PREG_SPLIT_NO_EMPTY);
+            if (!is_array($v) || !array_is_list($v)) return $need('רשימה של טקסטים');
+            $out = [];
+            foreach ($v as $x) {
+                if (!is_string($x)) return [null, "\"{$f['key']}\": כל איבר ברשימה חייב להיות טקסט", null, null];
+                $x = trim($x);
+                if ($x === '') continue;
+                if (mb_strlen($x) > FIELD_LIST_MAX[1] || preg_match('/[\r\n]/', $x)) return [null, "\"{$f['key']}\": איבר ארוך מ-" . FIELD_LIST_MAX[1] . ' תווים, או עם ירידת שורה', null, null];
+                $out[] = $x;
+            }
+            if (count($out) > FIELD_LIST_MAX[0]) return [null, "\"{$f['key']}\": יותר מ-" . FIELD_LIST_MAX[0] . ' איברים', null, null];
+            return [$out ?: null, null, null, null];
+    }
+    return [null, "סוג לא מוכר \"$t\"", null, null];
+}
+
+/** קובץ לשדה image/audio: מזהה, media/images/<id>.*, media/audio/<id>(-<key>).*, או קובץ מדיה בעץ. '' — ריק; null — לא נמצא. */
+function field_file_resolve(string $v, string $kind): ?string
+{
+    $v = trim($v);
+    if ($v === '') return '';
+    if (preg_match('~^(?:\./)?media/(?:images|audio)/([0-9a-f]{32})(?:-[a-z][a-z0-9_]{0,39})?\.[A-Za-z0-9]{1,8}$~', $v, $m)) $v = $m[1];
+    if (!file_id($v) && function_exists('pf_by_path')) {
+        try { $r = pf_by_path(pf_path($v)); } catch (ApiError) { $r = null; }
+        if ($r && $r['kind'] === 'media' && file_id((string)$r['file_id'])) $v = (string)$r['file_id'];
+    }
+    if (!file_id($v)) return null;
+    $f = files_meta([$v])[$v] ?? null;
+    return $f && ($f['deleted_at'] ?? null) === null && $f['kind'] === $kind ? $v : null;
+}
+
+/** הערך כפי שהוא בקובץ: image/audio — הנתיב בחבילה (06 §2.3); $app — כתובת להשמעה בתצוגה החיה. */
+function field_out(array $f, mixed $v, array $meta, ?string $app): mixed
+{
+    if (!in_array($f['type'], ['image', 'audio'], true) || !is_string($v) || !file_id($v)) return $v;
+    if ($app !== null) return $app . media_url($v);
+    $m = $meta[$v] ?? null;
+    if (!$m) return $v;
+    return $f['type'] === 'image' ? "media/images/$v.{$m['ext']}" : "media/audio/$v-{$f['key']}.{$m['ext']}";
+}
+
+/** הערך בתא של אקסל. */
+function field_cell(array $f, mixed $v, array $meta): string
+{
+    if ($v === null) return '';
+    return match ($f['type']) {
+        'rich' => lex_plain((string)$v),
+        'bool' => $v ? 'כן' : 'לא',
+        'list' => implode('; ', (array)$v),
+        'number' => (string)json_encode($v),
+        'image', 'audio' => (string)field_out($f, $v, $meta, null),
+        default => (string)$v,
+    };
+}
+
+/** כל מזהי הקבצים בשדות image/audio של המילים (ושל תמונות הנושאים) — ל-files_meta אחד. */
+function fields_file_ids(array $rows, array $fields): array
+{
+    $ids = [];
+    foreach (fields_custom($fields) as $f) if (in_array($f['type'], ['image', 'audio'], true)) {
+        foreach ($rows as $w) if (file_id($w['extra'][$f['key']] ?? null)) $ids[] = $w['extra'][$f['key']];
+    }
+    return $ids;
+}
+
+// ── N2: נושאים מורחבים ────────────────────────────────────
+
+const TOPIC_SLUG_RX = '/^[a-z][a-z0-9_]{0,39}$/';          // מפתח חדש של נושא — כמו מפתח של שדה (נכתב לקבצי הפרויקט)
+const TOPIC_COLOR_RX = '/^#[0-9a-f]{6}$/';
+
+/**
+ * כל הנושאים, בסדר שלהם: השורות בטבלה, ועוד כל שם שבמילים ואין לו שורה (ה-slug שהוא מקבל היום, kt-<md5>). sort_order ריק:
+ * כשכולם ריקים — לפי השם (lex_sort, הסדר של לפני N2), בקפיצות של 10; אחרת — הריקים לסוף, לפי השם. קריאה אינה כותבת.
+ * מחזיר [slug => {slug, name, sort_order, color, image, hidden, count, row}].
+ */
+function topics_all(?array $words = null): array
+{
+    $words ??= words_rows();
+    $count = [];
+    foreach ($words as $w) foreach ($w['topics'] as $t) $count[(string)$t] = ($count[(string)$t] ?? 0) + 1;
+    $by = []; $names = [];
+    foreach (db()->query('SELECT slug, name, sort_order, color, image, hidden FROM topics')->fetchAll() as $t) {
+        $by[$t['slug']] = ['slug' => (string)$t['slug'], 'name' => (string)$t['name'], 'sort_order' => $t['sort_order'] === null ? null : (int)$t['sort_order'],
+            'color' => (string)$t['color'], 'image' => (string)$t['image'], 'hidden' => (bool)(int)$t['hidden'], 'row' => true];
+        $names[$t['name']] = $t['slug'];
+    }
+    foreach ($count as $name => $n) {
+        if (isset($names[$name])) continue;
+        $map = $names;
+        $slug = topic_slug($name, $map);
+        $by[$slug] = ['slug' => $slug, 'name' => $name, 'sort_order' => null, 'color' => '', 'image' => '', 'hidden' => false, 'row' => false];
+        $names[$name] = $slug;
+    }
+    foreach ($by as &$t) $t['count'] = $count[$t['name']] ?? 0;
+    unset($t);
+    $set = array_values(array_filter($by, fn($t) => $t['sort_order'] !== null));
+    $empty = lex_sort(array_values(array_filter($by, fn($t) => $t['sort_order'] === null)), 'name');
+    usort($set, fn($a, $b) => $a['sort_order'] <=> $b['sort_order'] ?: strcmp($a['slug'], $b['slug']));
+    $n = $set ? max(array_column($set, 'sort_order')) : 0;
+    foreach ($empty as &$t) $t['sort_order'] = $n += WORDS_ORDER_STEP;
+    unset($t);
+    $out = [];
+    foreach (array_merge($set, $empty) as $t) $out[$t['slug']] = $t;
+    return $out;
+}
+
+/** כותב את מה ש-topics_all מחשב בזיכרון: שורה לכל שם בלי שורה, וסדר לכל שורה בלי סדר. לפני כל פעולה על נושאים. */
+function topics_fill(): void
+{
+    $pdo = db();
+    $ins = $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name, sort_order) VALUES (?, ?, ?)');
+    $upd = $pdo->prepare('UPDATE topics SET sort_order = ? WHERE slug = ? AND sort_order IS NULL');
+    foreach (topics_all() as $t) { if (!$t['row']) $ins->execute([$t['slug'], $t['name'], $t['sort_order']]); else $upd->execute([$t['sort_order'], $t['slug']]); }
+}
+
+/** רשימת הנושאים בקובץ: רק מה שיש לו מילה, לפי הסדר. מפתחות ריקים נשמטים — בלי צבע/תמונה הקובץ זהה ל-N1. */
+function topics_out(array $all, ?string $app, array $meta): array
+{
+    $out = [];
+    foreach ($all as $t) {
+        if (!$t['count'] || ($app !== null && $t['hidden'])) continue;
+        $o = ['id' => $t['slug'], 'label' => $t['name']];
+        if ($t['color'] !== '') $o['color'] = $t['color'];
+        if ($t['image'] !== '') $o['image'] = field_out(['type' => 'image', 'key' => 'image'], $t['image'], $meta, $app);
+        if ($t['hidden']) $o['hidden'] = true;
+        $out[] = $o;
+    }
+    return $out;
 }
