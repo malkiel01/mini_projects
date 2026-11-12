@@ -65,9 +65,9 @@
             for (const part of splitSel(r.selectorText)) { let hit = false; try { hit = e.matches(part); } catch { hit = false; } if (hit) { const sp = specificity(part); if (!best || cmp(sp, best) > 0) { best = sp; text = part; } } }
             if (best) {
               const mr = rec && rec.index.get(id) ? rec.index.get(id)[i] : null, decls = [];
-              if (mr) for (const d of mr.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line: lineAt(src, d.from) });
+              if (mr) for (const d of mr.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line: lineAt(src, d.from), d });
               else for (let j = 0; j < r.style.length; j++) { const p = r.style[j]; decls.push({ prop: p, value: r.style.getPropertyValue(p), important: r.style.getPropertyPriority(p) === 'important', line: 0 }); }
-              out.rules.push({ sel: mr ? mr.sel : r.selectorText, matched: text, spec: best, order: order++, media, off, path: src.path, external: !!src.external, line: mr ? lineAt(src, mr.from) : (src.html ? K.lineOf(c.m.src, src.off) : 1), decls, located: !!mr });
+              out.rules.push({ sel: mr ? mr.sel : r.selectorText, matched: text, spec: best, order: order++, media, off, path: src.path, external: !!src.external, line: mr ? lineAt(src, mr.from) : (src.html ? K.lineOf(c.m.src, src.off) : 1), decls, located: !!mr, node: mr, src });
             }
             if (r.cssRules && r.cssRules.length) walk(r.cssRules, ctx, src, rec, seen, media, off);   // קינון CSS
           } else if (r.cssRules) {
@@ -95,7 +95,7 @@
       if (st && st.value.trim()) {
         const line = st.from >= 0 ? K.lineOf(c.m.src, st.from) : 0, decls = [];
         try { const m = K.parseCss('x{' + st.value + '}'), r = m.root.kids[0]; if (r) for (const d of r.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line }); } catch { /* סגנון שאינו נקרא — לא מוצג */ }
-        out.rules.push({ sel: 'style="…"', inline: true, spec: [0, 0, 0], order: order++, media: '', off: false, path: file.path, line, decls, located: line > 0 });
+        out.rules.push({ sel: 'style="…"', inline: true, spec: [0, 0, 0], order: order++, media: '', off: false, path: file.path, line, decls, located: line > 0, src: { inline: true } });
       }
       // מפל: לכל הצהרה — האם הצהרה חזקה ממנה (אותו מאפיין, או קיצור שמכסה אותו) דורסת אותה
       const rank = (r, d) => [d.important ? 1 : 0, r.inline ? 1 : 0, r.spec[0], r.spec[1], r.spec[2], r.order];

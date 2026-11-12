@@ -409,7 +409,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await clickFresh(page, 'h1.kadisha-hero-title');
     const bgTxt = await ctText();
     ok(await page.isVisible('.ct [data-f="bg-note"]') && /V5/.test(await page.textContent('.ct [data-f="bg-note"]')) && bgTxt.includes('section.kadisha-hero') && /css\/[a-z.-]+\.css:\d+/.test(await page.textContent('.ct [data-w="bg-code"]')), 'index.html: כותרת שעל התמונה — הפאנל אומר במפורש שזו תמונת רקע (CSS) של section.kadisha-hero, שהחלפה והסרה שלה אינן על המסך (V5), ומוביל להצהרה בקוד', bgTxt.slice(-260));
-    ok(await page.$$eval('.ed-ptabs [role="tab"]', t => t.map(x => x.textContent + ':' + x.getAttribute('aria-selected')).join('|')) === '✏️ תוכן:true|ℹ️ פרטים:false', 'לשונית "תוכן" היא הראשונה בפאנל, והיא הפתוחה');
+    ok(await page.$$eval('.ed-ptabs [role="tab"]', t => t.map(x => x.textContent + ':' + x.getAttribute('aria-selected')).join('|')) === '✏️ תוכן:true|🎨 עיצוב:false|📐 מתקדם:false|ℹ️ פרטים:false', 'לשונית "תוכן" היא הראשונה בפאנל, והיא הפתוחה (ואחריה "עיצוב" ו"מתקדם" של V3, ו"פרטים")');
     await clickFresh(page, '.kadisha-lex-hero-btn'); await page.evaluate(() => { const c = Editor._state.canvas; let n = c.selected; while (n && n.tag !== 'button') n = n.parent; c.select(n); });
     const hb0 = await src(page);
     ok(await page.$eval('.ct [data-f="data-panel"]', e => e.localName === 'select' && e.value === 'kadisha-lex-panel-0'), 'כפתור בעמוד המוסב: הפאנל מציג את היעד שלו (data-panel) כרשימת המזהים שבעמוד');
