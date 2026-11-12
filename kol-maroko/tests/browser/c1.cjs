@@ -5,7 +5,7 @@
  * מגיעים ליומן — שולח אותם הדפדפן עצמו, עם העוגייה (HttpOnly, SameSite=Lax, כמו של הפלטפורמה), כמו בייצור.
  *
  *  א. הסטודיו (index.php, שלב א): object / base / form-action נחסמים; סקריפט בתוך הדף רץ (דיווח בלבד) ומדווח;
- *     התצוגה הישנה (srcdoc) עובדת; index.html ישירות — 403.
+ *     התצוגה הישנה (srcdoc) עובדת; studio.html ישירות — 403; index.html — מופנה ל-index.php.
  *  ב. העורך (editor.php, שלב ב): סקריפט מוזרק, eval, handler, תמונה זרה, fetch החוצה (גם לאתר המחובר) ומסגרת זרה —
  *     נחסמים; תמונה ושמע מהאתר המחובר — נטענים; בשימוש רגיל (העורך, עורך הקוד ו-Monaco) — אפס הפרות לא צפויות;
  *     משאב חיצוני בקנבס — נספר כ"צפוי", לא שגיאה ביומן.
@@ -94,8 +94,13 @@ const WAV = (() => { const n = 800, b = Buffer.alloc(44 + n); b.write('RIFF', 0)
     // נשאר בשלב א עד שהוא מוסר.
     const fromFrame = await until(() => seen().filter(t => t.uri.startsWith('/csp.php') && !t.user).length);
     ok(fromFrame && !(await reports({ doc: 'about:srcdoc', policy: 'studio' })).length, `הפרות בתוך התצוגה הישנה (מקור אטום): הדוח נשלח בלי זהות (${fromFrame}) — ואינו נקלט; פער מתועד`);
-    const direct = await page.goto(base + '/index.html');
-    ok(direct.status() === 403 && !(await page.content()).includes('app.js'), 'index.html בכתובת ישירה — 403, בלי הסטודיו (אין כתובת שמגישה אותו בלי הכותרות)');
+    const direct = await page.goto(base + '/studio.html');
+    ok(direct.status() === 403 && !(await page.content()).includes('app.js'), 'studio.html (המעטפת) בכתובת ישירה — 403, בלי הסטודיו (אין כתובת שמגישה אותו בלי הכותרות)');
+    const old = await page.goto(base + '/index.html?pwa-launch=1#/words');
+    await page.waitForSelector('#tabs a');
+    const u = new URL(page.url());
+    ok(u.pathname === '/index.php' && u.search === '?pwa-launch=1' && u.hash === '#/words' && /form-action 'self'/.test(old.headers()['content-security-policy'] || ''),
+      'index.html (קישור ישן / קיצור דרך / PWA) — מופנה ל-index.php, עם השאילתה והגיבוב, והסטודיו נפתח עם הכותרות: ' + u.pathname + u.search + u.hash);
     await page.goto(base + '/');                                  // ביקורת: הסטודיו ממשיך לעבוד
     ok(await page.waitForSelector('#tabs a', { timeout: 8000 }).then(() => true, () => false), 'ביקורת חיובית: הסטודיו נטען מ-/ (index.php)');
 

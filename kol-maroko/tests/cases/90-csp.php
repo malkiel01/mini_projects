@@ -19,7 +19,7 @@ test('C1 שלב א: הסטודיו (/, index.php) — nosniff, Referrer-Policy, 
     foreach (['/', '/index.php'] as $u) {
         $r = http('GET', $u, ['user' => U_EDITOR]);
         eq(200, $r['status'], $u);
-        ok(str_contains($r['body'], '<script src="assets/js/app.js'), "$u: גוף הדף הוא index.html");
+        ok(str_contains($r['body'], '<script src="assets/js/app.js'), "$u: גוף הדף הוא studio.html");
         eq('nosniff', $r['headers']['x-content-type-options'] ?? null, "$u nosniff");
         eq('strict-origin-when-cross-origin', $r['headers']['referrer-policy'] ?? null, "$u Referrer-Policy");
         $csp = $r['headers']['content-security-policy'] ?? '';
@@ -31,15 +31,43 @@ test('C1 שלב א: הסטודיו (/, index.php) — nosniff, Referrer-Policy, 
     }
 });
 
-test('C1: index.html בכתובת ישירה — חסום (403), גם עם משתמש; וה-.htaccess שבשורש חוסם אותו רק בשורש', function () {
-    eq(403, http('GET', '/index.html', ['user' => U_EDITOR])['status']);
+test('C1: studio.html (המעטפת) בכתובת ישירה — 403; index.html (הכתובת הישנה) — 302 ל-index.php עם השאילתה; app.json → index.php', function () {
+    eq(403, http('GET', '/studio.html', ['user' => U_EDITOR])['status']);
+    $r = http('GET', '/index.html?pwa-launch=1', ['user' => U_EDITOR]);
+    eq([302, '/index.php?pwa-launch=1'], [$r['status'], $r['headers']['location'] ?? null], 'קיצור דרך / PWA ישן');
+    ok(!is_file(KOL_ROOT . '/index.html'), 'אין index.html על הדיסק — הכללים של השער (שדורשים קובץ קיים) אינם תופסים אותו');
     $ht = (string)file_get_contents(KOL_ROOT . '/.htaccess');
     ok(preg_match('/^DirectoryIndex index\.php$/m', $ht), 'DirectoryIndex index.php — התיקייה נפתחת ב-index.php');
-    ok(preg_match('~<Files "index\.html">\s*<IfModule mod_authz_core\.c>\s*Require all denied~', $ht), 'index.html: Require all denied');
-    ok(!preg_match('/RewriteEngine/i', $ht), 'בלי RewriteEngine משלו — הבלוק של השער (build-gate.php) נשאר היחיד');
-    ok(preg_match('~<Files "index\.html">\s*<IfModule mod_authz_core\.c>\s*Require all granted~', (string)file_get_contents(KOL_ROOT . '/preview/.htaccess')), 'preview/: index.html של הפרויקט מותר במפורש');
+    ok(preg_match('~RewriteCond %\{REQUEST_URI\} \^\(\.\*/\)index\\\.html\$\s*RewriteRule \^index\\\.html\$ %1index\.php \[R=302,L,QSA\]~', $ht), 'הכלל: index.html → index.php, 302, מהנתיב המבוקש');
+    ok(preg_match('~<Files "studio\.html">\s*<IfModule mod_authz_core\.c>\s*Require all denied~', $ht), 'studio.html: Require all denied');
+    ok(preg_match('~<Files "studio\.html">\s*<IfModule mod_authz_core\.c>\s*Require all granted~', (string)file_get_contents(KOL_ROOT . '/preview/.htaccess')), 'preview/: studio.html של פרויקט מותר במפורש');
     $app = json_decode((string)file_get_contents(KOL_ROOT . '/app.json'), true);
     eq('index.php', $app['entry'], 'app.json: הכניסה היא index.php');
+    // שום קובץ אמיתי בשם studio.html מתחת לתיקייה, חוץ מהמעטפת (החסימה חלה גם בתת-תיקיות)
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(KOL_ROOT, FilesystemIterator::SKIP_DOTS));
+    $found = [];
+    foreach ($it as $f) if ($f->getFilename() === 'studio.html') $found[] = substr($f->getPathname(), strlen(KOL_ROOT) + 1);
+    eq(['studio.html'], $found, 'studio.html יחיד');
+});
+
+test('C1: build-gate.php (הפריסה) על עותק — הבלוק של השער בראש, הכללים של C1 נשמרים אחריו, ושום כלל של השער אינו תופס את index.html', function () {
+    $tmp = sys_get_temp_dir() . '/kol-bg-' . bin2hex(random_bytes(4)) . '/home/u/public_html/mini_projects';
+    mkdir("$tmp/platform/lib", 0775, true); mkdir("$tmp/kol-maroko/preview", 0775, true);
+    copy(dirname(KOL_ROOT) . '/platform/build-gate.php', "$tmp/platform/build-gate.php");
+    copy(dirname(KOL_ROOT) . '/platform/lib/registry.php', "$tmp/platform/lib/registry.php");
+    foreach (['app.json', '.htaccess', 'preview/.htaccess'] as $f) copy(KOL_ROOT . "/$f", "$tmp/kol-maroko/$f");
+    try {
+        exec(PHP_BINARY . ' ' . escapeshellarg("$tmp/platform/build-gate.php") . ' --root=/home/u/public_html/mini_projects --host=mbe-plus.com 2>&1', $out, $code);
+        eq(0, $code, implode(' ', $out));
+        $ht = (string)file_get_contents("$tmp/kol-maroko/.htaccess");
+        $gate = strpos($ht, '# <<< platform-gate'); $mine = strpos($ht, 'RewriteRule ^index\.html$');
+        ok(str_starts_with($ht, '# >>> platform-gate') && $gate !== false && $mine > $gate, 'הסדר: השער, ואחריו C1');
+        ok(str_contains($ht, (string)file_get_contents(KOL_ROOT . '/.htaccess')), 'הכללים של C1 — כמו שהם');
+        // כל כלל של השער שמגיש קובץ דורש שהוא קיים (-f), ושל התיקייה — index.html קיים ו-index.php לא
+        ok(str_contains($ht, "RewriteCond %{REQUEST_FILENAME}/index.php !-f") && preg_match_all('/RewriteCond %\{REQUEST_FILENAME\} -f\s*\n\s*RewriteRule/', $ht) === 1, 'כללי השער תלויים בקובץ קיים');
+    } finally {
+        rrmdir(dirname($tmp, 4));
+    }
 });
 
 test('C1: כל תשובת API — default-src \'none\'; frame-ancestors \'none\'; sandbox, nosniff, Referrer-Policy (גם שגיאה, גם בלי משתמש)', function () {

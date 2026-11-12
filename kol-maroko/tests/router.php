@@ -23,9 +23,10 @@ if ($trace = getenv('KOL_TEST_TRACE')) {
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $root = dirname(__DIR__);
-// הסטודיו (C1): '/' ו-index.php — דרך index.php, עם הכותרות; index.html ישירות — חסום, כמו ב-.htaccess שבשורש
+// הסטודיו (C1): '/' ו-index.php — דרך index.php, עם הכותרות; studio.html ישירות — חסום; index.html — 302, כמו ב-.htaccess שבשורש
 if ($path === '/' || $path === '/index.php') { chdir($root); require $root . '/index.php'; exit; }
-if ($path === '/index.html') { http_response_code(403); exit; }
+if ($path === '/studio.html') { http_response_code(403); exit; }
+if ($path === '/index.html') { $q = (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_QUERY); header('Location: /index.php' . ($q !== '' ? '?' . $q : ''), true, 302); exit; }
 if ($path === '/csp.php') { chdir($root); require $root . '/csp.php'; exit; }
 if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
 if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }

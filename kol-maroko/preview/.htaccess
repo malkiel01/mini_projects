@@ -4,9 +4,9 @@
     RewriteEngine On
     RewriteRule ^ index.php [L]
 </IfModule>
-# ../.htaccess חוסם index.html (גוף הסטודיו) לגישה ישירה, ו-<Files> חל גם על תת-תיקיות. כאן index.html הוא קובץ של
-# הפרויקט שמוגש מ-index.php — לכן מותר במפורש, גם בשרת שמתאים את <Files> לנתיב המבוקש ולא לקובץ שעל הדיסק.
-<Files "index.html">
+# ../.htaccess חוסם studio.html (גוף הסטודיו) לגישה ישירה, ו-<Files> חל גם על תת-תיקיות. כאן studio.html יכול להיות
+# קובץ של הפרויקט שמוגש מ-index.php — לכן מותר במפורש, גם בשרת שמתאים את <Files> לנתיב המבוקש ולא לקובץ שעל הדיסק.
+<Files "studio.html">
     <IfModule mod_authz_core.c>
         Require all granted
     </IfModule>

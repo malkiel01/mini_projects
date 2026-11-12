@@ -3,14 +3,14 @@
  * כותרות האבטחה של האפליקציה (פרוסה C1 — docs/spec-v2/slices/C1-studio-csp.md) ודוחות ההפרה ליומן (F1).
  *
  * שלוש מדיניות, תמיד ככותרת שרת (לא <meta>):
- *  - הסטודיו (index.php → index.html) — שלב א: נאכף רק object-src / base-uri / form-action, והמדיניות המלאה
+ *  - הסטודיו (index.php → studio.html) — שלב א: נאכף רק object-src / base-uri / form-action, והמדיניות המלאה
  *    ב-Report-Only. התצוגה הישנה היא srcdoc ויורשת את המדיניות — לכן המלאה אינה נאכפת כאן (§1).
  *  - העורך (editor.php) — שלב ב: המדיניות המלאה נאכפת (§2, §2א).
  *  - תשובות API (api.php, agent.php, csp.php) — default-src 'none'; frame-ancestors 'none'; sandbox. JSON אינו מסמך.
  *
- * ⚠️ למה לא .htaccess: השער של הפלטפורמה מעביר כל קובץ סטטי (גם index.html) בהפניה פנימית ל-platform/gate.php,
- * ו-Header set של התיקייה הזו אינו חל אחרי הפניה כזו. לכן הסטודיו מוגש מ-index.php, ו-index.html חסום לגישה ישירה
- * (.htaccess) — כך אין כתובת שמגישה את הסטודיו בלי הכותרות.
+ * ⚠️ למה לא .htaccess: השער של הפלטפורמה מעביר כל קובץ סטטי בהפניה פנימית ל-platform/gate.php, ו-Header set של
+ * התיקייה הזו אינו חל אחרי הפניה כזו. לכן הסטודיו מוגש מ-index.php; המעטפת (studio.html) חסומה לגישה ישירה, ו-index.html
+ * (הכתובת הישנה) מופנית ל-index.php (.htaccess) — כך אין כתובת שמגישה את הסטודיו בלי הכותרות.
  *
  * דוחות: report-uri לנקודה csp.php?p=<מדיניות>. נצברים בטבלה csp_reports — שורה לכל (מדיניות, אכיפה, הנחיה, מקור
  * חסום, מסמך) עם מונה — ונכתבים ליומן המפתח כשורה מקופלת (fold) ליממה. חסימה צפויה (משאב חיצוני בקנבס של העורך,
