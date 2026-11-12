@@ -171,6 +171,8 @@ const Project = (() => {
   const Docs = {
     /** כל קובצי הפרויקט (אחרי טעינת העץ). */
     async files() { if (!S.loaded) await refresh(); return S.files; },
+    /** טוען מחדש את רשימת הקבצים (אחרי העלאה או קישור של מדיה מהעורך החזותי). */
+    async reload() { await refresh(); return S.files; },
     byPath: path => S.files.find(f => f.path === path && f.kind !== 'dir') || null,
     /** פותח קובץ כמסמך משותף (וכלשונית בעורך הקוד). מחזיר null כשאי אפשר לפתוח. */
     async open(id) {

@@ -17,7 +17,9 @@
   const OWNED = 'data-kol-canvas', CAP = 60, REAL = ':not([' + OWNED + '])';
   /** אלמנטים שאין להם מראה בעמוד — נבחרים ב-Navigator, ואינם "מוצגים לעריכה". */
   /** עריכת טקסט במקום (V2): מסגרת לאלמנט הנערך, ו"הקלד כאן" לאלמנט ריק. contenteditable נוסף ל-DOM של הקנבס בלבד, לזמן העריכה. */
-  const EDIT_CSS = '[contenteditable="true"]{outline:2px solid #1a73e8!important;outline-offset:2px;cursor:text;min-height:1em;-webkit-user-modify:read-write}[contenteditable="true"]:empty::before{content:"הקלד כאן";opacity:.45}';
+  const EDIT_CSS = '[contenteditable="true"]{outline:2px solid #1a73e8!important;outline-offset:2px;cursor:text;min-height:1em;-webkit-user-modify:read-write}[contenteditable="true"]:empty::before{content:"הקלד כאן";opacity:.45}'
+    + 'iframe,object,embed,audio,video{pointer-events:none}iframe{outline:1px dashed #8a8f98;outline-offset:-1px}';   // הטמעה ומדיה: בקנבס הן דוממות — הלחיצה בוחרת, לא מפעילה
+  const DEAD = 'iframe,object,embed,audio,video';
   const NONVIS = new Set('html head title meta link script style base noscript template'.split(' '));
   const decode = bytes => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   const encode = text => new TextEncoder().encode(text);
@@ -217,6 +219,15 @@
     showAll(on) { this.capOff = !!on; this.recap(); this.draw(); }
     remap() { const r = mapTrees(this.m, this.doc.documentElement); this.d2m = r.d2m; this.m2d = r.m2d; this.mapErrors = r.errors; this.mapDom = r.dom; }
     domOf(n) { return this.m2d.get(n) || null; }
+    /** האלמנט שמתחת לסמן. הטמעה ומדיה אינן מקבלות אירועים בקנבס (pointer-events: none) — מאתרים אותן לפי המלבן שלהן. */
+    hit(e) {
+      const t = e.target, doc = this.doc;
+      if (!t || t.nodeType !== 1 || !this.deadTags) return t;
+      if (!this.deadTags.some(l => l.length)) return t;
+      let best = null;
+      for (const f of t.querySelectorAll(DEAD)) { const r = f.getBoundingClientRect(); if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) best = f; }
+      return best || t;
+    }
     nodeOf(d) { for (; d; d = d.parentElement) { const n = this.shownD2m.get(d) || this.d2m.get(d); if (n) return n; } return null; }
     /** האלמנט שלחיצה בנקודה בוחרת: העמוק ביותר שאינו 🔒 נעול (נעול — מדלגים להורה). */
     pick(d) { let n = this.nodeOf(d); while (n && this.lockedNodes.has(n)) n = n.parent; return n; }
@@ -331,15 +342,17 @@
       const doc = this.doc, stop = e => { e.preventDefault(); e.stopPropagation(); };
       for (const ev of ['click', 'auxclick', 'dblclick', 'submit', 'dragstart', 'contextmenu']) doc.addEventListener(ev, stop, true);
       // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
+      this.deadTags = DEAD.split(',').map(t => doc.getElementsByTagName(t));
       const ctxAt = (t, x, y) => { const n = this.nodeOf(t); if (n && this.onContext) { const f = this.frame.getBoundingClientRect(); this.onContext(n, f.left + x * this.scale, f.top + y * this.scale); } };
-      doc.addEventListener('contextmenu', e => { clearTimeout(this.longT); if (!this.longDone) ctxAt(e.target, e.clientX, e.clientY); this.longDone = false; }, true);
+      doc.addEventListener('contextmenu', e => { clearTimeout(this.longT); if (!this.longDone) ctxAt(this.hit(e), e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
         if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
         clearTimeout(this.longT); this.longDone = false;
-        if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(e.target); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
-        if (e.pointerType === 'touch') { const t = e.target, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
-        const n = this.pick(e.target);
+        const tg = this.hit(e);
+        if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(tg); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
+        if (e.pointerType === 'touch') { const t = tg, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
+        const n = this.pick(tg);
         this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n } : null;
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
         else if (n && !(this.repeatUp && this.selected === n)) this.select(n);
@@ -355,7 +368,7 @@
           if (p.drag) { p.drop = this.dropAt(p.n, e.clientX, e.clientY); this.drawDrop(p.drop); }
           return;
         }
-        const n = this.pick(e.target);
+        const n = this.pick(this.hit(e));
         if (n !== this.hovered) { this.hovered = n; this.draw(); }
       }, true);
       const up = e => {
@@ -364,7 +377,7 @@
         this.events.push(e.type + ':' + e.pointerType);
         if (p && !p.drag && e.type === 'pointerup' && e.pointerType === 'touch') {   // הקשה כפולה במגע = לחיצה כפולה (iOS אינו שולח dblclick)
           const now = performance.now(), t = this.tap; this.tap = { at: now, x: e.clientX, y: e.clientY };
-          if (t && now - t.at < 380 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 24 && this.onDbl) { this.tap = null; const n = this.nodeOf(e.target); if (n) { e.preventDefault(); this.dblAt = now; return this.onDbl(n, { x: e.clientX, y: e.clientY }); } }
+          if (t && now - t.at < 380 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 24 && this.onDbl) { this.tap = null; const n = this.nodeOf(this.hit(e)); if (n) { e.preventDefault(); this.dblAt = now; return this.onDbl(n, { x: e.clientX, y: e.clientY }); } }
         }
         if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent) return this.select(p.n.parent);   // לחיצה חוזרת — ההורה
         if (!p || !p.drag || e.type !== 'pointerup') return;
@@ -376,12 +389,34 @@
       doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
       doc.addEventListener('pointerleave', () => { this.hovered = null; this.draw(); }, true);
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
-      doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(e.target); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
+      doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(this.hit(e)); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
       doc.addEventListener('touchstart', e => { if (this.edit && this.edit.active) return; const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
       doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
       // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
       doc.addEventListener('securitypolicyviolation', e => { if (this.onBlocked && /^https?:/i.test(e.blockedURI || '')) this.onBlocked(e.blockedURI, e.effectiveDirective || ''); });
       doc.addEventListener('keydown', e => { if (this.onKey) this.onKey(e); }, true);
+      // מדיה אינה מתנגנת בקנבס (גם לא autoplay): ההשמעה — מהפאנל
+      doc.addEventListener('play', e => { try { e.target.pause(); } catch { /* לא מדיה */ } }, true);
+      // תמונה שנטענה או נכשלה — הסימון "תמונה חסרה" מתעדכן
+      const imgEv = e => { if (e.target && e.target.localName === 'img') { this.zeroAt = 0; clearTimeout(this.imgT); this.imgT = setTimeout(() => this.draw(), 60); } };
+      doc.addEventListener('error', imgEv, true); doc.addEventListener('load', imgEv, true);
+      // קובץ שנגרר מהמחשב אל הקנבס: קו הכנסה, ובשחרור — onDropFile(file, האלמנט שמתחת לסמן)
+      const hasFiles = e => !!e.dataTransfer && Array.prototype.includes.call(e.dataTransfer.types || [], 'Files');
+      doc.addEventListener('dragover', e => {
+        if (!hasFiles(e) || !this.onDropFile) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+        const n = this.pick(this.hit(e)), r = n && this.rectOf(n);
+        if (!r) { this.boxDrop.hidden = true; return; }
+        this.boxDrop.hidden = false;
+        this.boxDrop.style.cssText = n.tag === 'img' ? 'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;opacity:.35' : 'left:' + r.left + 'px;top:' + (r.top + r.height - 2) + 'px;width:' + r.width + 'px;height:4px';
+      }, true);
+      doc.addEventListener('dragleave', () => { this.boxDrop.hidden = true; }, true);
+      doc.addEventListener('drop', e => {
+        this.boxDrop.hidden = true;
+        if (!hasFiles(e) || !this.onDropFile) return;
+        e.preventDefault(); e.stopPropagation();
+        const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) this.onDropFile(f, this.pick(this.hit(e)));
+      }, true);
       this.frame.contentWindow.addEventListener('resize', () => this.draw());
       this.events = [];
       if (this.onListen) this.onListen(doc);
@@ -461,6 +496,7 @@
       if (!this.m2d) return;
       this.place(this.boxSel, this.selected); this.place(this.boxHov, this.hovered !== this.selected ? this.hovered : null);
       if (this.marksOn) this.drawMarks();
+      if (this.onDraw) this.onDraw();
     }
     /**
      * סימונים מעל הקנבס (לא בתוכו): אזור שבור — מסגרת מקווקוות; אלמנט מרונדר בגודל אפס — מצביע קטן שאפשר ללחוץ עליו.
@@ -468,16 +504,21 @@
      */
     drawMarks() {
       if (!this.zeroAt) {
-        this.zeroAt = 1; this.zero = []; this.brokenNodes = [];
+        this.zeroAt = 1; this.zero = []; this.brokenNodes = []; this.noted = [];
         if (this.m.root) K.walk(this.m.root, n => {
           if (n.broken) this.brokenNodes.push(n);
           if (this.zero.length >= 400 || n.tag === 'br' || n.tag === 'wbr') return;
           const d = this.m2d.get(n);
+          if (d && this.noted.length < 200) {                                 // V2: תמונה שהקובץ שלה חסר, והטמעה (שאינה נטענת בעורך) — מסגרת עם הנתיב
+            if (n.tag === 'img' && d.complete && d.naturalWidth === 0 && d.getAttribute('src')) this.noted.push({ n, cls: 'ed-mark-missing', text: '⚠️ תמונה חסרה · ' + d.getAttribute('src') });
+            else if (n.tag === 'iframe') this.noted.push({ n, cls: 'ed-mark-frame', text: 'הטמעה · ' + (d.getAttribute('src') || 'בלי כתובת') });
+          }
           if (d && (d.offsetWidth === 0 || d.offsetHeight === 0) && d.getClientRects().length && d.ownerSVGElement === undefined) this.zero.push(n);
         });
       }
       const want = [], H = this.host.clientHeight;
       for (const n of this.brokenNodes) { const r = this.rectOf(n); if (r && r.top < H && r.top + r.height > 0) want.push({ n, r, cls: 'ed-mark-broken' }); }
+      for (const x of this.noted) { const r = this.rectOf(x.n); if (r && !r.zero && r.top < H && r.top + r.height > 0) want.push({ n: x.n, r, cls: x.cls, text: x.text }); }
       for (const n of this.zero) { if (want.length > 120) break; const r = this.rectOf(n); if (r && r.zero && r.top < H && r.top > -12) want.push({ n, r, cls: 'ed-mark-zero' }); }
       if (!this.markBox) { this.markBox = document.createElement('div'); this.markBox.className = 'ed-marks'; this.layer.append(this.markBox); }
       const kids = this.markBox.children;
@@ -485,7 +526,7 @@
       want.forEach((w, i) => {
         let b = kids[i];
         if (!b) { b = document.createElement('button'); b.type = 'button'; b.addEventListener('click', () => { if (b._n) this.select(b._n); }); this.markBox.append(b); }
-        b._n = w.n; b.className = w.cls; b.title = this.label(w.n) + (w.cls === 'ed-mark-zero' ? ' · בגודל אפס' : ' · קוד שבור');
+        b._n = w.n; b.className = w.cls; b.title = this.label(w.n) + (w.text ? ' · ' + w.text : w.cls === 'ed-mark-zero' ? ' · בגודל אפס' : ' · קוד שבור'); b.textContent = w.text || '';
         b.style.cssText = w.cls === 'ed-mark-zero' ? 'left:' + (w.r.left - 1) + 'px;top:' + (w.r.top - 1) + 'px' : 'left:' + w.r.left + 'px;top:' + w.r.top + 'px;width:' + Math.max(w.r.width, 8) + 'px;height:' + Math.max(w.r.height, 8) + 'px';
       });
     }
