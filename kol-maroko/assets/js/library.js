@@ -2,16 +2,22 @@
 // המפתח של הקלטה הוא מזהה המילה. ההשמעה היא של הדפדפן, ישירות מהכתובת; שום דבר לא יורד ולא נשמר.
 // "קבצים" ו"תמונות" — המסך הקיים (media.js), בתוך לשונית.
 // A2: המצב נקרא ממודל ההקלטות; לבעלים — "הבאה מהאתר" (library-fetch.js); המשך נשמר בשרת כשהוא נמדד.
+// A3: הפעולות על הקלטה (library-actions.js): תפריט שורה, בחירה מרובה, הוספה עם התאמה, סל, גרסאות, הורדה, כפולות.
+//     הקלטה "לא מחוברת" (D.loose) — שורה עם מזהה שלילי (-מזהה הרשומה), כדי לא להתנגש במזהה מילה.
 'use strict';
 
 const Library = (() => {
   const PAGE = 60;                         // שורות בכל פעם
   const TIMEOUT = 15000;                   // כמה מחכים להקלטה לפני "תם הזמן"
   const STATE = { site: ['באתר', ''], tool: ['בכלי', 'ok'], none: ['בלי הקלטה', 'warn'] };
+  const DURS = { '': 'כל המשכים', short: 'עד 2 שניות', mid: '2–10 שניות', long: 'מעל 10 שניות', unknown: 'משך לא נמדד' };
+  const SIZES = { '': 'כל הגדלים', s: 'עד 50KB', m: '50KB–1MB', l: 'מעל 1MB' };
   const SORTS = { id: 'לפי מזהה', ab: 'לפי א"ב', state: 'לפי מצב' };
   const ORDER = { tool: 0, site: 1, none: 2 };
   let D = null, host = null, isOwner = false;
-  let tab = '', q = '', st = '', topic = '', sort = 'id', shown = PAGE;
+  let tab = '', q = '', st = '', topic = '', sort = 'id', shown = PAGE, durF = '', sizeF = '';
+  const chosen = new Set();                   // A3: הבחירה המרובה (מפתחות שורה)
+  let selMode = false;                     // בטלפון — אחרי לחיצה ארוכה
   let pending = 0;                         // מילה להציג כשהמסך נטען ("הצג בספרייה")
   let listEl = null, moreEl = null, items = new Map();
   const failed = new Map();                // id → למה לא נטען
@@ -21,7 +27,11 @@ const Library = (() => {
   const num = n => n.toLocaleString('he-IL');
   const clock = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '';
   const date = iso => new Date(iso).toLocaleDateString('he-IL', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'Asia/Jerusalem' });
-  const byId = id => D.rows.find(r => r.id === id);
+  const byId = id => D.all.find(r => r.id === id);
+  /** הנתונים מהשרת: שורות המילים ואחריהן ההקלטות הלא מחוברות. */
+  const setD = d => { d.all = [...d.rows, ...(d.loose || [])]; D = d; for (const k of [...chosen]) if (!byId(k)) chosen.delete(k); return d; };
+  const durOf = r => dur.get(r.id) ?? r.file?.duration ?? null;
+  const dupCount = () => { const m = new Map(); for (const r of D.all) if (r.file?.sha && !r.missing) m.set(r.file.sha, (m.get(r.file.sha) || 0) + 1); return m; };
 
   /** כתובת באתר מותרת להשמעה / להצגה רק אם היא https והמארח הוא מארח האתר. קובץ שלנו — כתובת יחסית של api.php. */
   function safeSrc(src) {
@@ -79,7 +89,7 @@ const Library = (() => {
       const r = byId(P.id);                  // A2: המשך נשמר — רק לקובץ שבכלי, ורק פעם אחת
       if (r?.file && r.file.duration == null && r.state === 'tool') {
         r.file.duration = a.duration;
-        api('rec_duration', { word_id: r.id, file_id: r.file.id, duration: a.duration }).catch(() => {});
+        api('rec_duration', r.loose ? { rec_id: r.rec, file_id: r.file.id, duration: a.duration } : { word_id: r.id, file_id: r.file.id, duration: a.duration }).catch(() => {});
       }
     });
     a.addEventListener('timeupdate', () => {
@@ -116,7 +126,7 @@ const Library = (() => {
     const prev = p.id;
     p.id = id;
     p.bar.hidden = false; document.body.classList.add('lib-playing');
-    p.title.textContent = `#${r.id} · ${r.word}`;
+    p.title.textContent = r.loose ? r.word : `#${r.id} · ${r.word}`;
     p.sub.textContent = 'טוען…';
     p.seek.value = 0;
     failed.delete(id);
@@ -179,12 +189,18 @@ const Library = (() => {
   // ── הנתונים והרשימה ───────────────────────────────────────
   function filtered() {
     const s = norm(q.trim()), idq = s.replace(/^#/, '');
-    const rows = D.rows.filter(r =>
-      (st === 'none' ? r.state === 'none' : r.state !== 'none' && (!st || r.state === st)) &&
+    const dups = st === 'dups' ? dupCount() : null;
+    const sizeOk = r => !sizeF || (r.file && (sizeF === 's' ? r.file.size <= 51200 : sizeF === 'm' ? r.file.size > 51200 && r.file.size <= 1048576 : r.file.size > 1048576));
+    const durOk = r => { if (!durF) return true; const d = durOf(r); if (durF === 'unknown') return r.state === 'tool' && d == null; return d != null && (durF === 'short' ? d <= 2 : durF === 'mid' ? d > 2 && d <= 10 : d > 10); };
+    const stOk = r => st === 'none' ? r.state === 'none' : st === 'loose' ? !!r.loose : st === 'failed' ? !!r.fetch
+      : st === 'dups' ? !!(r.file?.sha && !r.missing && dups.get(r.file.sha) > 1) : r.state !== 'none' && (!st || r.state === st);
+    const rows = D.all.filter(r => stOk(r) && sizeOk(r) && durOk(r) &&
       (!topic || r.topics.includes(topic)) &&
-      (!s || norm(r.word).includes(s) || norm(r.meaning).includes(s) || String(r.id) === idq));
-    if (sort === 'id') rows.sort((a, b) => a.id - b.id);
-    else if (sort === 'state') rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || a.id - b.id);
+      (!s || norm(r.word).includes(s) || norm(r.meaning).includes(s) || norm(r.name || '').includes(s) || String(r.id) === idq));
+    const key = r => r.loose ? 1e9 - r.id : r.id;          // הלא מחוברות — אחרי המילים
+    if (st === 'dups') rows.sort((a, b) => a.file.sha < b.file.sha ? -1 : a.file.sha > b.file.sha ? 1 : key(a) - key(b));
+    else if (sort === 'id') rows.sort((a, b) => key(a) - key(b));
+    else if (sort === 'state') rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || key(a) - key(b));
     return rows;                             // 'ab' — הסדר שהשרת החזיר (א"ב עברי)
   }
 
@@ -193,36 +209,83 @@ const Library = (() => {
     const [label, cls] = bad ? ['לא נטען', 'bad'] : STATE[r.state];
     const f = r.file;
     const l2 = [r.meaning, r.topics.join(', ')].filter(Boolean).join(' · ');
-    const l3 = bad || (r.fetch ? 'ההבאה לכלי נכשלה — ' + r.fetch.reason : '') || (f ? [f.name, Media.mb(f.size), clock(dur.get(r.id) ?? f.duration ?? NaN), date(f.at)].filter(Boolean).join(' · ') : '');
-    const li = h('li', { class: 'lib-row' + (P.id === r.id ? ' on' : ''), 'data-id': r.id },
+    const named = r.name && r.name !== r.word && !r.loose ? '«' + r.name + '» · ' : '';
+    const d = durOf(r);
+    const l3 = bad || (r.fetch ? 'ההבאה לכלי נכשלה — ' + r.fetch.reason : '') || (f ? named + [d != null ? '⏱ ' + clock(d) : 'משך לא נמדד', Media.mb(f.size), f.name, date(f.at),
+      r.versions ? `${r.versions} ${r.versions === 1 ? 'גרסה קודמת' : 'גרסאות קודמות'}` : ''].filter(Boolean).join(' · ') : '');
+    const can = r.state !== 'none' && r.rec;
+    const li = h('li', { class: 'lib-row' + (P.id === r.id ? ' on' : '') + (chosen.has(r.id) ? ' picked' : ''), 'data-id': r.id },
+      can ? h('input', { type: 'checkbox', class: 'lib-check', checked: chosen.has(r.id), 'aria-label': `בחירה: ${r.word}`, onchange: e => choose(r.id, e.target.checked) }) : h('span', { class: 'lib-check-sp' }),
       r.state === 'none'
         ? h('span', { class: 'lib-noplay', role: 'img', 'aria-label': 'בלי הקלטה' }, '—')
         : h('button', { type: 'button', class: 'icon-btn lib-play', 'aria-label': `השמעה: ${r.word}`, onclick: () => play(r.id) },
           P.id === r.id && P.audio && !P.audio.paused ? '⏸' : '▶'),
       h('button', { type: 'button', class: 'lib-main', 'aria-label': `פרטים: ${r.word}`, onclick: () => details(r) },
-        h('span', { class: 'lib-l1' }, h('span', { class: 'lib-id', dir: 'ltr' }, '#' + r.id), h('b', { class: 'one' }, r.word)),
+        h('span', { class: 'lib-l1' }, r.loose ? null : h('span', { class: 'lib-id', dir: 'ltr' }, '#' + r.id), h('b', { class: 'one lib-title' }, r.word)),
         l2 ? h('small', { class: 'one' }, l2) : null,
         l3 ? h('small', { class: 'one' + (bad || r.fetch ? ' lib-bad' : '') }, l3) : null),
-      h('span', { class: `chip ${cls}` }, label),
+      h('span', { class: `chip ${cls}` }, r.loose && !bad ? 'לא מחוברת' : label),
       r.state === 'none'
         ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכת המילה: ${r.word}`, title: 'עריכת המילה', onclick: () => Words.open(r.id) }, '✏️')
         : null,
       h('button', { type: 'button', class: 'icon-btn lib-rep', title: r.state === 'none' ? 'הקלט / בחר קובץ' : 'החלף / הקלט',
-        'aria-label': `${r.state === 'none' ? 'הקלט' : 'החלף / הקלט'}: ${r.word}`, onclick: () => replace(r.id) }, r.state === 'none' ? '🎙️' : '🔁'));
+        'aria-label': `${r.state === 'none' ? 'הקלט' : 'החלף / הקלט'}: ${r.word}`, onclick: () => replace(r.id) }, r.state === 'none' ? '🎙️' : '🔁'),
+      can ? h('button', { type: 'button', class: 'icon-btn lib-more', title: 'כל הפעולות', 'aria-label': `כל הפעולות: ${r.word}`, onclick: () => LibActions.menu(r) }, '⋯') : null);
+    // טלפון: לחיצה ארוכה — בחירה מרובה
+    if (can) {
+      let t = 0;
+      li.addEventListener('touchstart', () => { t = setTimeout(() => { t = 0; selMode = true; choose(r.id, true); navigator.vibrate?.(15); }, 550); }, { passive: true });
+      for (const ev of ['touchend', 'touchmove', 'touchcancel']) li.addEventListener(ev, () => { clearTimeout(t); }, { passive: true });
+      li.addEventListener('contextmenu', e => { if (matchMedia('(pointer: coarse)').matches) e.preventDefault(); });
+    }
     items.set(r.id, li);
     return li;
   }
+
+  // ── בחירה מרובה ───────────────────────────────────────────
+  let selBar = null;
+  function choose(id, on) { on ? chosen.add(id) : chosen.delete(id); redraw(id); drawSel(); }
+  function drawSel() {
+    if (!selBar) return;
+    document.body.classList.toggle('lib-selecting', selMode || chosen.size > 0);
+    selBar.hidden = !chosen.size;
+    if (!chosen.size) return;
+    const rows = [...chosen].map(byId).filter(Boolean);
+    const all = filtered().filter(r => r.state !== 'none' && r.rec);
+    selBar.replaceChildren(
+      h('b', {}, `נבחרו ${num(chosen.size)}`),
+      all.some(r => !chosen.has(r.id)) ? h('button', { type: 'button', class: 'btn ghost sm', onclick: () => { all.forEach(r => chosen.add(r.id)); draw(); drawSel(); } }, `בחר את כל המסוננות (${num(all.length)})`) : null,
+      h('button', { type: 'button', class: 'btn ghost sm', onclick: () => LibActions.download(rows) }, '⬇️ הורדה'),
+      h('button', { type: 'button', class: 'btn ghost sm', onclick: () => LibActions.disconnect(rows) }, '⛓️ ניתוק'),
+      h('button', { type: 'button', class: 'btn ghost sm danger', onclick: () => LibActions.remove(rows) }, '🗑️ מחיקה'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'ביטול הבחירה', onclick: clearSel }, '✕'));
+  }
+  function clearSel() { chosen.clear(); selMode = false; if (D && listEl) draw(); drawSel(); }
   function redraw(id) {
     const old = items.get(id), r = D && byId(id);
     if (old?.isConnected && r) old.replaceWith(row(r));
   }
 
   function draw() {
+    if (st === 'trash') { LibActions.trashView(listEl); moreEl.replaceChildren(); return; }
     const all = filtered();
     items = new Map();
+    const lis = [];
+    let prevSha = null;
+    for (const r of all.slice(0, shown)) {           // כפולות — כותרת לכל קבוצה, ו"השאר את זו" בכל שורה
+      if (st === 'dups' && r.file.sha !== prevSha) {
+        prevSha = r.file.sha;
+        const n = all.filter(x => x.file.sha === prevSha).length;
+        lis.push(h('li', { class: 'lib-group' }, h('b', {}, `${n} עותקים זהים`), ' · ', h('small', { dir: 'ltr' }, 'sha256 ' + prevSha.slice(0, 12) + '…')));
+      }
+      const li = row(r);
+      if (st === 'dups') li.append(h('button', { type: 'button', class: 'btn ghost sm lib-keep', onclick: () => LibActions.keepOne(r) }, 'השאר את זו'));
+      lis.push(li);
+    }
     listEl.replaceChildren(...(all.length
-      ? [h('ul', { class: 'list lib-list' }, all.slice(0, shown).map(row))]
-      : [h('p', { class: 'empty' }, st === 'none' ? 'לכל המילים יש הקלטה.' : D.counts.audio ? 'לא נמצאו הקלטות.' : 'עוד אין הקלטות. ייבוא המילים מהאתר — ב-⚙️ הגדרות.')]));
+      ? [h('ul', { class: 'list lib-list' }, lis)]
+      : [h('p', { class: 'empty' }, st === 'none' ? 'לכל המילים יש הקלטה.' : st === 'loose' ? 'אין הקלטות שאינן מחוברות למילה.' : st === 'dups' ? 'אין כפולות — כל הקבצים שונים.'
+        : D.counts.audio || D.counts.loose ? 'לא נמצאו הקלטות.' : 'עוד אין הקלטות. ייבוא המילים מהאתר — ב-⚙️ הגדרות.')]));
     const left = all.length - shown;
     moreEl.replaceChildren(...[
       left > 0 ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: more }, `עוד ${Math.min(PAGE, left)} (נשארו ${num(left)})`) : null,
@@ -247,15 +310,16 @@ const Library = (() => {
   /** "החלף / הקלט" — הפעולה של 📚 מילים (words.js), מופעלת מכאן. ההקלטה שבאתר אינה נמחקת ואינה משתנה. */
   async function replace(id) {
     try {
-      if (!await Words.replaceAudio(id)) return;
+      const r = byId(id);
+      if (!r) return;
+      const [f] = await Media.pick({ kind: 'audio' });
+      if (!f) return;
+      await api('rec_replace', r.rec ? { rec_id: r.rec, file_id: f.id } : { word_id: r.id, file_id: f.id });
       if (P.id === id) stop();
       failed.delete(id); dur.delete(id);
-      const keep = shown;
-      D = await api('library');
-      shown = keep;
       const dlg = $('#sheet'); if (dlg.open) dlg.close();
-      render();
-      toast('ההקלטה הוחלפה — עכשיו בכלי');
+      await reload(true);
+      toast(r.state === 'none' ? 'ההקלטה נשמרה' : 'ההקלטה הוחלפה — הקודמת נשמרה כגרסה');
     } catch (e) { toast(e.message, true); }
   }
 
@@ -263,11 +327,11 @@ const Library = (() => {
     const bad = failed.get(r.id) || (r.missing ? 'הקובץ חסר בכלי' : '');
     const f = r.file;
     const cell = (k, v, attrs = {}) => v ? h('div', {}, h('dt', {}, k), h('dd', attrs, v)) : null;
-    sheet(`#${r.id} · ${r.word}`,
+    sheet(r.loose ? r.word : `#${r.id} · ${r.word}`,
       bad ? h('p', { class: 'error' }, 'לא נטען — ' + bad) : null,
       r.meaning ? h('p', { dir: 'auto' }, r.meaning) : null,
       h('dl', { class: 'cells' },
-        cell('מזהה המילה', String(r.id), { dir: 'ltr' }),
+        r.loose ? cell('מילה', 'לא מחוברת') : cell('מזהה המילה', String(r.id), { dir: 'ltr' }),
         cell('מצב', STATE[r.state][0]),
         cell('נושאים', r.topics.join(', ')),
         cell('מספר מהאקסל', r.external_id, { dir: 'ltr' }),
@@ -281,10 +345,12 @@ const Library = (() => {
       r.state === 'site' ? h('label', { class: 'f' }, h('span', {}, 'הכתובת באתר (מכאן משמיעים)'), h('input', { readonly: true, dir: 'ltr', value: r.src })) : null,
       f?.origin ? h('label', { class: 'f' }, h('span', {}, 'עותק של ההקלטה שבאתר'), h('input', { readonly: true, dir: 'ltr', value: f.origin })) : null,
       r.state === 'site' ? h('p', { class: 'hint' }, 'ההקלטה נמצאת באתר ומתנגנת משם. אפשר להחליף אותה מכאן — ההקלטה החדשה תישמר בכלי, והמקורית באתר לא נמחקת. שינוי שם, מחיקה והורדה ייפתחו אחרי שהקבצים יובאו לכלי.') : null,
+      r.name && r.name !== r.word ? h('p', { class: 'hint' }, 'השם לתצוגה: ', h('b', {}, r.name)) : null,
       h('div', { class: 'row-btns wrap' },
         r.state !== 'none' ? h('button', { type: 'button', class: 'btn primary', onclick: () => { $('#sheet').close(); play(r.id); } }, '▶ השמעה') : null,
         h('button', { type: 'button', class: 'btn ghost', onclick: () => replace(r.id) }, r.state === 'none' ? '🎙️ הקלט / בחר קובץ' : '🔁 החלף / הקלט'),
-        h('button', { type: 'button', class: 'btn ghost', onclick: () => { $('#sheet').close(); Words.open(r.id); } }, '📚 פתח את המילה')));
+        r.rec ? h('button', { type: 'button', class: 'btn ghost', onclick: () => LibActions.menu(r) }, '⋯ כל הפעולות') : null,
+        r.loose ? null : h('button', { type: 'button', class: 'btn ghost', onclick: () => { $('#sheet').close(); Words.open(r.id); } }, '📚 פתח את המילה')));
   }
 
   // ── המסכים ────────────────────────────────────────────────
@@ -298,39 +364,55 @@ const Library = (() => {
     const sel = (label, value, opts, on) => h('select', { 'aria-label': label, onchange: e => on(e.target.value) },
       opts.map(([v, l]) => h('option', { value: v, selected: v === value }, l)));
     listEl = h('div', {}); moreEl = h('div', {});
+    selBar = h('div', { class: 'lib-selbar', role: 'region', 'aria-label': 'פעולות על הנבחרות', hidden: true });
+    const inTool = D.all.filter(r => r.state === 'tool' && !r.missing).length;
     box.replaceChildren(
       h('div', { class: 'summary' },
         h('div', { class: 'lib-stats' },
           h('span', { class: 'lib-total' }, h('b', {}, num(c.audio)), ' הקלטות'),
-          stat(c.site, 'באתר', 'site'), stat(c.tool, 'בכלי', 'tool'), stat(c.none, c.none === 1 ? 'מילה בלי הקלטה' : 'מילים בלי הקלטה', 'none')),
+          stat(c.site, 'באתר', 'site'), stat(c.tool, 'בכלי', 'tool'), stat(c.none, c.none === 1 ? 'מילה בלי הקלטה' : 'מילים בלי הקלטה', 'none'),
+          c.loose ? stat(c.loose, 'לא מחוברות', 'loose') : null,
+          c.failed ? stat(c.failed, 'נכשלו בהבאה', 'failed') : null,
+          stat(c.trash, '🗑️ בסל', 'trash')),
         c.missing ? h('p', { class: 'hint lib-bad', style: 'margin:0' }, `${num(c.missing)} מההקלטות שבכלי מצביעות על קובץ חסר — מסומנות "לא נטען".`) : null,
         c.site ? h('p', { class: 'hint', style: 'margin:0' }, 'הקלטה "באתר" מתנגנת ישירות מהאתר. 🔁 מחליף אותה בהקלטה חדשה שנשמרת בכלי; שינוי שם ומחיקה — אחרי הבאת הקבצים.') : null,
         isOwner && (c.site || c.tool) && typeof LibraryFetch !== 'undefined' ? LibraryFetch.panel(c, reload) : null,
         measureBtn(),
-        c.audio ? h('p', { class: 'hint', style: 'margin:0' }, 'מוצגות ההקלטות של המילים. קובצי שמע אחרים שבאתר עדיין אינם מוצגים.') : null),
+        c.audio ? h('p', { class: 'hint', style: 'margin:0' }, 'מוצגות ההקלטות של המילים. קובצי שמע אחרים שבאתר עדיין אינם מוצגים.') : null,
+        h('div', { class: 'row-btns wrap lib-tools' },
+          LibActions.addButton(),
+          inTool ? h('button', { type: 'button', class: 'btn ghost', onclick: () => LibActions.download(null) }, `⬇️ הורדת כולן (${num(inTool)})`) : null,
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => { st = 'dups'; shown = PAGE; render(); } }, '👯 כפולות')),
+        LibActions.versionsLine()),
       h('div', { class: 'w-filters lib-filters' }, search,
-        sel('מצב', st, [['', 'כל ההקלטות'], ['site', 'באתר'], ['tool', 'בכלי'], ['none', 'מילים בלי הקלטה']], pick),
+        sel('מצב', st, [['', 'כל ההקלטות'], ['site', 'באתר'], ['tool', 'בכלי'], ['none', 'מילים בלי הקלטה'], ['loose', 'לא בשימוש (לא מחוברות)'],
+          ['dups', 'כפולות (אותו קובץ)'], ['failed', 'נכשלו בהבאה'], ['trash', '🗑️ הסל']], pick),
         sel('נושא', topic, [['', 'כל הנושאים'], ...D.topics.map(t => [t.name, `${t.name} (${t.count})`])], v => { topic = v; shown = PAGE; draw(); }),
+        sel('משך', durF, Object.entries(DURS), v => { durF = v; shown = PAGE; draw(); }),
+        sel('גודל', sizeF, Object.entries(SIZES), v => { sizeF = v; shown = PAGE; draw(); }),
         sel('מיון', sort, Object.entries(SORTS), v => { sort = v; shown = PAGE; draw(); })),
-      listEl, moreEl);
+      selBar, listEl, moreEl);
+    LibActions.dropZone(box);
     draw();
+    drawSel();
   }
 
   /** "⏱️ מדוד את כולן" — המשך של ההקלטות שבכלי שעוד לא נמדדו (library-fetch.js). */
   function measureBtn() {
-    const n = D.rows.filter(r => r.state === 'tool' && r.file && r.file.duration == null && !r.missing).length;
+    const n = D.all.filter(r => r.state === 'tool' && r.file && r.file.duration == null && !r.missing).length;
     if (!n || typeof LibraryFetch === 'undefined') return null;
-    const b = h('button', { type: 'button', class: 'btn ghost lib-measure', onclick: () => LibraryFetch.measureAll(D.rows, m => {
+    const b = h('button', { type: 'button', class: 'btn ghost lib-measure', onclick: () => LibraryFetch.measureAll(D.all, m => {
       b.textContent = m.on ? `⏹ מודד… ${m.done} מתוך ${m.total}` : `✓ נמדדו ${m.done}`;
-      if (!m.on) for (const r of D.rows) if (r.file?.duration != null && !dur.has(r.id)) { dur.set(r.id, r.file.duration); redraw(r.id); }
+      if (!m.on) for (const r of D.all) if (r.file?.duration != null && !dur.has(r.id)) { dur.set(r.id, r.file.duration); redraw(r.id); }
     }) }, `⏱️ מדוד את כולן (${n})`);
     return b;
   }
 
   /** אחרי הבאה — הנתונים מחדש, בלי לאבד את מקום הגלילה. */
-  async function reload() {
+  async function reload(loud = false) {
     if (!host?.isConnected || location.hash !== '#/files') return;
-    try { const keep = shown; D = await api('library'); shown = keep; if (tab === 'audio') render(); } catch { /* נשאר המצב הקודם */ }
+    try { const keep = shown; setD(await api('library')); shown = keep; if (tab === 'audio') render(); }
+    catch (e) { if (loud) toast(e.message, true); /* נשאר המצב הקודם */ }
   }
 
   function imagesView(box) {
@@ -370,7 +452,7 @@ const Library = (() => {
   async function view(el, owner) {
     host = el; isOwner = owner;
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
-    try { D = await api('library'); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    try { setD(await api('library')); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     // ברירת המחדל: "הקלטות" כשיש הקלטות
     tab = sessionStorage.getItem('kol-lib-tab') || (D.counts.audio ? 'audio' : 'files');
     shown = PAGE;
@@ -387,5 +469,11 @@ const Library = (() => {
   /** מ-📚 מילים: "הצג בספרייה". */
   function show(id) { pending = id; if (location.hash === '#/files') view(host || main, isOwner); else location.hash = '#/files'; }
 
-  return { view, show, errors, logPlaybackError };
+  /** A3 — מה ש-library-actions.js צריך מבפנים. */
+  const ctx = {
+    get D() { return D; }, get isOwner() { return isOwner; }, byId, safeSrc, reload, clearSel, play, stop, redraw, dur, clock, date, num,
+    replace, focusTrash: () => { st = 'trash'; render(); }, titleOf: id => items.get(id)?.querySelector('.lib-title'),
+    stoppedIf: id => { if (P.id === id) stop(); },
+  };
+  return { view, show, errors, logPlaybackError, ctx };
 })();

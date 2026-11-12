@@ -467,3 +467,41 @@ body.lib-playing .toast { bottom: calc(100px + env(safe-area-inset-bottom)); }
 .lf-set { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-block: var(--s2); }
 .lf-confirm ul { margin: 0; padding-inline-start: 1.2em; }
 .lib-measure { justify-self: start; }
+
+/* ── A3: הפעולות על הקלטה (library-actions.js) ── */
+.lib-filters { grid-template-columns: minmax(0, 1fr) repeat(5, auto); }
+@media (max-width: 860px) { .lib-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); } .lib-filters .w-search { grid-column: 1 / -1; } .lib-filters select { min-inline-size: 0; padding-inline: 6px; } }
+.lib-check { flex: none; inline-size: 20px; block-size: 20px; margin: 0; accent-color: var(--brand); cursor: pointer; }
+.lib-check-sp { flex: none; inline-size: 20px; }
+.lib-row.picked { background: var(--brand-soft); }
+.lib-more { flex: none; font-size: 1.1rem; }
+.lib-tools { margin: 0; }
+.lib-vline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); }
+.lib-selbar { position: sticky; inset-block-start: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: var(--s1) var(--s2);
+  margin-block: var(--s1); background: var(--surface); border: 1px solid var(--brand); border-radius: 12px; box-shadow: 0 2px 8px rgb(0 0 0 / .08); }
+.lib-selbar b { margin-inline-end: auto; }
+.lib-group { padding: var(--s2) var(--s2) 4px; border-top: 1px solid var(--line); font-size: .85rem; color: var(--muted); }
+.lib-group b { color: var(--ink); }
+.lib-keep { flex: none; }
+.lib-editing { cursor: default; }
+.lib-rename { inline-size: 100%; min-block-size: 36px; }
+.lib-acts { display: grid; gap: 6px; }
+.lib-act { justify-content: flex-start; text-align: start; }
+.lib-act small { color: var(--muted); font-weight: 400; }
+.lib-versions, .lib-trash, .lib-match, .lib-pickword { margin-block: var(--s1); }
+.lib-ver { display: grid; gap: 6px; padding: var(--s2); border-top: 1px solid var(--line); }
+.lib-ver:first-child { border-top: 0; }
+.lib-ver.on { background: var(--brand-soft); }
+.lib-vplay { inline-size: 100%; block-size: 36px; }
+.lib-mrow { display: flex; align-items: center; gap: var(--s1); padding: 6px var(--s2); border-top: 1px solid var(--line); }
+.lib-mrow:first-child { border-top: 0; }
+.lib-mrow select { max-inline-size: 100%; margin-block-start: 4px; }
+.lib-mrow .use-tx small { white-space: normal; }
+.warn-box { padding: var(--s2); border-radius: 10px; background: var(--warn-soft, #fff4d6); color: var(--ink); }
+label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--s2); }
+.lib-drop { outline: 3px dashed var(--brand); outline-offset: 4px; border-radius: 12px; }
+/* טלפון: תיבות הסימון מופיעות רק אחרי לחיצה ארוכה; כל הפעולות מתפריט השורה (⋯) */
+@media (pointer: coarse), (max-width: 600px) {
+  body:not(.lib-selecting) .lib-check, body:not(.lib-selecting) .lib-check-sp { display: none; }
+  .lib-rep { display: none; }
+}
