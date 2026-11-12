@@ -5,7 +5,7 @@
 | # | מטלה | מי ביקש | מצב | תוצאה |
 | --- | --- | --- | --- | --- |
 | T1 | וורדפרס ← הגדרות ← קול מרוקו: האם התוסף מותקן, איזו גרסה, והאם "פעיל" מסומן | קוד (`dev/audit.md` פרק 7, שורה 1) | נענה 2026-11-11 | מותקן · "0.14" · פעיל. **שים לב:** האבחון (T3) מדווח `plugin: 1.4.0`; בריפו 1.6.0 |
-| T2 | וורדפרס ← "ייצוא ההקלטות": כמה הקלטות, גודל כולל, כמה חלקים | קוד (שורה 4) | נענה חלקית 2026-11-11 | מספרים לא נמסרו (כנראה אין אזור כזה ב-1.4.0). הבעלים הסביר את ההתאמה — ראה "תשובות מלאות" |
+| T2 | וורדפרס ← "ייצוא ההקלטות": כמה הקלטות, גודל כולל, כמה חלקים | קוד (שורה 4) | נענה 2026-11-12 | 1494 הקלטות · 162 MB · 1 חלק (מצילום מסך של עמוד התוסף, 2026-11-12) |
 | T3 | וורדפרס ← "🔎 הפקת אבחון": להעתיק את כל הטקסט שבתיבה | קוד (שורה 6) | נענה 2026-11-11 | האבחון המלא למטה |
 | T4 | סטודיו ← ⚙️ הגדרות: מה כתוב ב"ייבוא אחרון" | קוד (שורה 2) | נשאל שוב 2026-11-11 | הבעלים לא מצא את המקום; הוסבר מחדש |
 | T5 | סטודיו ← 📚 מילים ← מסנן "הקלטה": כמה "באתר" מול "עותק בכלי" | קוד (שורה 3) | נענה 2026-11-11 | 1496 מילים · 1494 עם הקלטה · 0 מהן בכלי · 24 נושאים |
@@ -16,7 +16,7 @@
 | T10 | סטודיו ← "📁 פרויקט": בדיקת פרוסה F2a (קבצי הפרויקט) — התיקייה `from-current/`, יצירת `test.html` ושמירה, שינוי שם/מחיקה/שחזור מהסל, הורדת קובץ, העורך, תצוגת טלפון, ומה חסר | בקרה (`team/reviews/F2a.md`) | הוצג לבעלים 2026-11-11 (פריסה אושרה: run 1503, 1124e0d) | — |
 | T11 | סטודיו ← 🛠️ מפתח ← 🧪 ספייק העורך ← "קוד שנכתב ביד": בדיקת מגע (K5) ב-Safari ב-iPhone (החשוב ביותר), Safari ב-Mac ו-Firefox — מסגרת כחולה, גרירת כרטיס "א" מתחת ל"ג", בחירה בתפריט, ו"דוח מכשיר" | בקרה (`dev/spike/REPORT.md` §4) | הוצג לבעלים 2026-11-11 (פריסה אושרה: run 1509, f937dda) | — |
 | T12 | סטודיו: בדיקת פרוסה F4 (התצוגה החיה המבודדת) — 🛠️ מפתח ← 🩺 תקינות: שורת "התצוגה החיה" ו"הרץ את ערכת ההתקפה"; 📁 פרויקט ← קובץ HTML ← "▶️ תצוגה חיה": מה נפתח, מצבי מכשיר, מסוף, "פתח בלשונית חדשה" | בקרה (`team/reviews/F4.md`) | הוצג לבעלים 2026-11-11 (פריסה אושרה: run 1512, 66da6ba) | — |
-| T13 | וורדפרס: התקנת תוסף 2.1.0 (גיבוי `uploads/kol-maroko/`, העלאה במקום הקיים); באפליקציה ← ⚙️ הגדרות ← "🪟 אופן ההצבה" ← "חלון בתוך האתר" ← "שמירה באתר"; בכתובת הבדיקה: כותרת+תחתית, רוחב מלא במחשב, טלפון, Firefox/Safari; צילום מחשב+טלפון | בקרה (`team/reviews/M4-BC.md`) | הוצג לבעלים 2026-11-12 (zip נשלח בצ'אט) | — |
+| T13 | וורדפרס: התקנת תוסף 2.1.0 (גיבוי `uploads/kol-maroko/`, העלאה במקום הקיים); באפליקציה ← ⚙️ הגדרות ← "🪟 אופן ההצבה" ← "חלון בתוך האתר" ← "שמירה באתר"; בכתובת הבדיקה: כותרת+תחתית, רוחב מלא במחשב, טלפון, Firefox/Safari; צילום מחשב+טלפון | בקרה (`team/reviews/M4-BC.md`) | בביצוע 2026-11-12 — הבעלים: "עדכנתי את הגרסה החדשה" | ראה תשובות 2026-11-12 |
 | T14 | באפליקציה ← "🎨 עורך" ← אזור התמונה למעלה (hero) ← "תקן ל-0.45" ← לוודא שהתמונה נראית | בקרה (V6, פריסה 1567) | הוצג לבעלים 2026-11-12 | — |
 
 קישורים: וורדפרס — `https://maghreb.co.il/wp-admin/options-general.php?page=kol-maroko` · סטודיו — `https://mbe-plus.com/mini_projects/kol-maroko/`
@@ -42,3 +42,10 @@
 "templates":[{"id":1693,"title":"Course_Register","type":"page","conditions":null},{"id":1319,"title":"פוסט חדשות","type":"single-post","conditions":null},{"id":1294,"title":"תבנית קורס","type":"section","conditions":null},{"id":792,"title":"404","type":"error-404","conditions":["include/singular/not_found404"]},{"id":748,"title":"School_Step_3","type":"section","conditions":null},{"id":741,"title":"School_Step_2","type":"section","conditions":null},{"id":738,"title":"School_Step_1","type":"section","conditions":null},{"id":734,"title":"Passover_Step_3","type":"section","conditions":null},{"id":731,"title":"Passover_Step_2","type":"section","conditions":null},{"id":728,"title":"Passover_Step_1","type":"section","conditions":null},{"id":684,"title":"Member_Step_3","type":"section","conditions":null},{"id":681,"title":"Member_Step_2","type":"section","conditions":null},{"id":676,"title":"Member_Step_1","type":"section","conditions":null},{"id":404,"title":"Tires &#038; Mechanics Contact Page","type":"page","conditions":null},{"id":363,"title":"Tires &#038; Mechanics About Page","type":"page","conditions":null},{"id":316,"title":"Woodworking Thank You Page","type":"page","conditions":null},{"id":250,"title":"Post","type":"single-post","conditions":["include/singular/post"]},{"id":253,"title":"Blog Post Template &#8211; Image Cover Single Post Page","type":"single","conditions":null},{"id":239,"title":"Blog","type":"archive","conditions":["include/archive"]},{"id":109,"title":"Amota_Forms","type":"page","conditions":null},{"id":49,"title":"Header","type":"header","conditions":["include/general"]},{"id":35,"title":"Home_Amtoa","type":"page","conditions":null},{"id":5,"title":"קיט ברירת מחדל","type":"kit","conditions":null}],
 "render":{"source":"loopback","error":null,"bytes":3726152,"audio":0,"img":3,"elementor_docs":["header#49"],"widgets":{"image.default":1,"nav-menu.default":1,"button.default":1}}}
 ```
+
+## תשובות — 2026-11-12
+
+**T13 (חלקי):** "עדכנתי את הגרסה החדשה, אבל הוא כותב שעוד לא התקבלה גרסה". בצילום — עמוד התוסף בוורדפרס: "פעיל" כבוי ("להציג בעמוד את הגרסה מהסטודיו"), "גרסאות שהתקבלו: עוד לא התקבלה גרסה" (החלק של 1.x, `kol-maroko.php:416`), ומתחת "העמוד החדש (2.0)". הגרסה של התוסף לא נראית בצילום — נשאל לאמת. הוסבר לבעלים שההודעה היא על חבילות שנשלחו מהאפליקציה, לא על התוסף.
+
+**T2:** "ייצוא ההקלטות לסטודיו — 1494 הקלטות, 162 MB, ב-1 קבצים" (מאותו צילום).
+
