@@ -10,6 +10,7 @@
  *   ignore_range   מגיש את כל הקובץ ב-200 גם כשנשלח Range
  *   slow           מיקרו-שניות השהיה לכל תשובה (H28)
  *   rate_after     אחרי N בקשות גוש — 429
+ *   blob_fail      N בקשות הגוש הראשונות — 500
  * כל בקשה נרשמת ב-<dir>/pull-log.json (נתיב, query, Range, האם האסימון תקין); כל דיווח — ב-<dir>/reports.json.
  */
 
@@ -48,6 +49,10 @@ if (isset($_GET['blob'])) {
     // rate_after: אחרי N בקשות גוש — 429 (מגבלת 60 לדקה של הכלי)
     if (isset($cfg['rate_after']) && count(array_filter(json_decode((string)@file_get_contents("$dir/pull-log.json"), true) ?: [], fn($l) => str_starts_with($l['query'], 'blob='))) > (int)$cfg['rate_after']) {
         http_response_code(429); header('Content-Type: application/json'); echo '{"ok":false,"code":"rate"}'; exit;
+    }
+    // blob_fail: N בקשות הגוש הראשונות — 500 (תקלת רשת / שרת זמנית)
+    if (isset($cfg['blob_fail']) && count(array_filter(json_decode((string)@file_get_contents("$dir/pull-log.json"), true) ?: [], fn($l) => str_starts_with($l['query'], 'blob='))) <= (int)$cfg['blob_fail']) {
+        http_response_code(500); exit;
     }
     $file = $cfg['blobs'][$sha] ?? null;
     if (!$file || !is_file($file)) { http_response_code(404); exit; }

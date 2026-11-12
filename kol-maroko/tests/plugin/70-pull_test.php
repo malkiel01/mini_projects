@@ -320,6 +320,28 @@ test('M7 קצב: 429 מהכלי באמצע ההורדה — לא נכשל; ממ�
     eq(4, (int)kp_get('kol_maroko_v2_live'));
 });
 
+test('M7b תקלת רשת בהורדה (500 / הפניה): ממשיך בריצה הבאה — עד 3 ריצות רצופות, ורק אז failed: blob_http; תקלה שעוברת — מוחל', function () {
+    $blobs = [];
+    $files = ['index.html' => '<p>N</p>', 'a.css' => 'p{}'];
+    kpp_reset(['items' => [kpp_manifest($files, 6, 60, $blobs)], 'blobs' => $blobs, 'blob_fail' => 1]);
+    $r = kpp_run();
+    eq([0, 0, true], [$r['applied'], $r['failed'], $r['pending']], 'ריצה 1 — 500 ← ממשיך: ' . json_encode($r, JSON_UNESCAPED_UNICODE));
+    eq(0, (int)kp_get('kol_maroko_pull_cursor'), 'הסמן לא זז');
+    ok(isset(((array)kp_get('test_cron'))['kol_maroko_pull_now']), 'משיכה נוספת בעוד דקה');
+    eq(1, kpp_run()['applied'], 'ריצה 2 — התקלה עברה ← מוחל');
+    eq(6, (int)kp_get('kol_maroko_v2_live'));
+    eq([], (array)kp_get('kol_maroko_pull_net_tries'), 'המונה התאפס');
+    // תקלה קבועה: שלוש ריצות רצופות ← failed
+    $blobs = [];
+    kpp_cfg(['items' => [kpp_manifest(['index.html' => '<p>M</p>'], 7, 61, $blobs)], 'blobs' => $blobs, 'blob_fail' => 999]);
+    $out = [];
+    for ($i = 0; $i < 3; $i++) { $r = kpp_run(); $out[] = [$r['applied'], $r['failed'], $r['pending']]; }
+    eq([[0, 0, true], [0, 0, true], [0, 1, false]], $out, 'pending, pending, failed');
+    eq([61 => ['failed', 'blob_http']], kpp_last_report());
+    eq(61, (int)kp_get('kol_maroko_pull_cursor'));
+    eq(6, (int)kp_get('kol_maroko_v2_live'), 'הגרסה שבאוויר לא נגעה');
+});
+
 test('M7 H28: שתי משיכות במקביל — אחת רצה, השנייה יוצאת מיד; אין החלה כפולה', function () {
     kpp_reset(['items' => [kpp_item('mount', ['mount' => 'framed'], 40)], 'slow' => 700000]);
     // נעילה שמוחזקת (ריצה אחרת באמצע) — יוצאת מיד

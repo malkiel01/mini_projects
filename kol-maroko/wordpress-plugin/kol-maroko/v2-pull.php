@@ -121,7 +121,10 @@ function kol_maroko_pull_http($method, $query, $body = null, array $headers = []
     $r = wp_remote_request($base . '?' . $query, $args);
     if (is_wp_error($r)) return ['error' => substr((string)$r->get_error_message(), 0, 300), 'code' => 'network'];
     $h = [];
-    foreach ((array)wp_remote_retrieve_headers($r) as $k => $v) $h[strtolower((string)$k)] = is_array($v) ? (string)reset($v) : (string)$v;
+    // M7b: בלי (array) — בוורדפרס הכותרות הן אובייקט (CaseInsensitiveDictionary), וה-cast מחזיר את המאפיין הפנימי שלו, לא את
+    // הכותרות. ב-2.2.0 זה איבד את Content-Range, וכל גוש נכשל ב"טווח לא צפוי מהכלי"
+    $hdrs = wp_remote_retrieve_headers($r);
+    if (is_array($hdrs) || $hdrs instanceof Traversable) foreach ($hdrs as $k => $v) $h[strtolower((string)$k)] = is_array($v) ? (string)reset($v) : (string)$v;
     $st = (int)wp_remote_retrieve_response_code($r);
     $out = ['status' => $st, 'headers' => $h, 'body' => (string)wp_remote_retrieve_body($r)];
     if ($st >= 300 && $st < 400) $out += ['error' => 'הפניה (' . $st . ') ל-' . substr((string)($h['location'] ?? '?'), 0, 200) . ' — לא נעקבת', 'code' => 'redirect'];
@@ -178,7 +181,7 @@ function kol_maroko_pull_verify($item, $cursor)
 
 /**
  * מוריד גוש אחד ל-parts/<sha>.pull, ממשיך מהבייט שכבר כאן. true — הגוש שמור ב-blobs; 'pending' — נגמר התקציב (ממשיכים בריצה
- * הבאה מאותו בייט); מערך — כשל (blob_mismatch אחרי 3, blob_http).
+ * הבאה מאותו בייט); מערך — כשל (blob_mismatch אחרי 3; blob_http / redirect — kol_maroko_pull_apply מחליטה: עד 3 ריצות — pending).
  */
 function kol_maroko_pull_blob($sha, $size, $type, $seq, $t0)
 {
@@ -230,6 +233,23 @@ function kol_maroko_pull_blob($sha, $size, $type, $seq, $t0)
 
 // ── ההחלה ─────────────────────────────────────────────────
 
+/** כמה ריצות רצופות נכשלה ההורדה של הפקודה הזו בתקלת רשת (כולל הנוכחית). */
+function kol_maroko_pull_net_try($seq)
+{
+    $t = (array)kol_maroko_opt('pull_net_tries', []);
+    $t[(string)$seq] = (int)($t[(string)$seq] ?? 0) + 1;
+    kol_maroko_set('pull_net_tries', array_slice($t, -20, null, true));
+    return $t[(string)$seq];
+}
+
+function kol_maroko_pull_net_clear($seq)
+{
+    $t = (array)kol_maroko_opt('pull_net_tries', []);
+    if (!isset($t[(string)$seq])) return;
+    unset($t[(string)$seq]);
+    kol_maroko_set('pull_net_tries', $t);
+}
+
 /** פקודה מאומתת ← ['state' => applied|failed, code, message] או 'pending' (נמשיך בריצה הבאה). */
 function kol_maroko_pull_apply(array $b, $t0)
 {
@@ -253,8 +273,15 @@ function kol_maroko_pull_apply(array $b, $t0)
             $seen[$f['sha256']] = true;
             $r = kol_maroko_pull_blob($f['sha256'], $f['size'], $f['type'] ?? '', $b['seq'], $t0);
             if ($r === 'pending') return 'pending';
-            if ($r !== true) return ['state' => 'failed'] + $r;
+            if ($r !== true) {
+                // M7b: תקלת רשת (blob_http, הפניה, timeout) — זמנית בדרך כלל: "ממשיך בריצה הבאה", עד 3 ריצות רצופות; רק אז failed.
+                // blob_mismatch (שלוש פעמים hash שגוי) — failed מיד, כמו קודם
+                if (in_array($r['code'] ?? '', ['blob_http', 'redirect'], true) && kol_maroko_pull_net_try($b['seq']) < KOL_MAROKO_PULL_TRIES) return 'pending';
+                kol_maroko_pull_net_clear($b['seq']);
+                return ['state' => 'failed'] + $r;
+            }
         }
+        kol_maroko_pull_net_clear($b['seq']);
         return $done(kol_maroko_v2_manifest($b, $b['seq']));
     }
     if ($action === 'mount') return $done(kol_maroko_v2_mount_set($b));
