@@ -398,3 +398,16 @@ test('בידוד (S6): Monaco מאוחסן באפליקציה — אין CDN ב�
     $js = (string)preg_replace('#^\s*//.*$#m', '', (string)file_get_contents(KOL_ROOT . '/assets/js/project.js'));
     foreach (['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'srcdoc', 'eval('] as $bad) ok(!str_contains($js, $bad), "$bad ב-project.js");
 });
+
+test('"העמוד של היום עוד לא יובא": seed_only כל עוד index.html הוא שלד הזריעה; עריכה אחת — כבר לא', function () {
+    $t = http('GET', '/api.php?action=pf_tree', ['user' => U_EDITOR]);
+    $f = null; foreach ($t['json']['files'] as $x) if ($x['path'] === 'index.html') $f = $x;
+    ok($f !== null, 'יש index.html');
+    $r = http('GET', '/api.php?action=pf_read&id=' . $f['id'], ['user' => U_EDITOR]);
+    eq($r['json']['content'] === pf_seed_files()['index.html'], $t['json']['seed_only'], 'seed_only תואם לתוכן הנוכחי');
+    $w = http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $f['id'], 'rev' => $r['json']['file']['rev'], 'content' => pf_seed_files()['index.html']]]);
+    eq(true, http('GET', '/api.php?action=pf_tree', ['user' => U_EDITOR])['json']['seed_only'], 'שלד הזריעה ← seed_only');
+    $w2 = http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $f['id'], 'rev' => $w['json']['file']['rev'], 'content' => pf_seed_files()['index.html'] . ' ']]);
+    eq(false, http('GET', '/api.php?action=pf_tree', ['user' => U_EDITOR])['json']['seed_only'], 'נערך ← לא');
+    http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $f['id'], 'rev' => $w2['json']['file']['rev'], 'content' => $r['json']['content']]]);
+});

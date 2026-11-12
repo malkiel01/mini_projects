@@ -61,12 +61,13 @@ const Project = (() => {
   // ── נתונים ────────────────────────────────────────────────
   async function refresh() {
     const d = await api('pf_tree');
-    S.files = d.files; S.trash = d.trash; S.limits = d.limits; S.kol = d.kol; S.canPurge = d.can_purge; S.loaded = true;
+    S.files = d.files; S.trash = d.trash; S.limits = d.limits; S.kol = d.kol; S.canPurge = d.can_purge; S.seedOnly = !!d.seed_only; S.loaded = true;
     S.byId = new Map(d.files.map(f => [f.id, f]));
     // לשונית של קובץ שנמחק או שונה שמו — מתעדכנת
     S.tabs = S.tabs.filter(id => S.byId.has(id) || S.docs.get(id)?.dirty);
     if (!S.tabs.includes(S.cur)) S.cur = S.tabs[S.tabs.length - 1] ?? null;
-    if (el.mig) el.mig.hidden = !S.canPurge;                     // ההסבה ו"פרויקט ריק" — בעלים בלבד
+    drawSeed(el.seed);
+    if (el.mig) el.mig.hidden = !S.canPurge;                     // "ייבוא מחדש" — בעלים בלבד
     drawAll();
   }
 
@@ -136,7 +137,7 @@ const Project = (() => {
   const subs = new Map();
   function emit(doc, kind) { for (const cb of subs.get(doc.id) || []) { try { cb(kind); } catch (e) { console.error(e); } } }
   function handle(doc) {
-    const text = () => (doc.model ? doc.model.getValue() : doc.text ?? '');
+    const text = () => (doc.model && !doc.model.isDisposed() ? doc.model.getValue() : doc.text ?? doc.saved ?? '');   // מסמך שנסגר (ייבוא מחדש) — הטקסט האחרון, לא חריגה
     return {
       id: doc.id, text,
       get path() { return S.byId.get(doc.id)?.path || ''; },
@@ -171,6 +172,8 @@ const Project = (() => {
   const Docs = {
     /** כל קובצי הפרויקט (אחרי טעינת העץ). */
     async files() { if (!S.loaded) await refresh(); return S.files; },
+    /** טוען מחדש את רשימת הקבצים (אחרי העלאה או קישור של מדיה מהעורך החזותי). */
+    async reload() { await refresh(); return S.files; },
     byPath: path => S.files.find(f => f.path === path && f.kind !== 'dir') || null,
     /** פותח קובץ כמסמך משותף (וכלשונית בעורך הקוד). מחזיר null כשאי אפשר לפתוח. */
     async open(id) {
@@ -181,7 +184,7 @@ const Project = (() => {
       return doc ? handle(doc) : null;
     },
     /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */
-    async info() { const d = await api('pf_tree'); S.kol = d.kol; return { lock: d.lock, kol: d.kol }; },
+    async info() { const d = await api('pf_tree'); S.kol = d.kol; S.seedOnly = !!d.seed_only; S.canPurge = d.can_purge; return { lock: d.lock, kol: d.kol, seedOnly: S.seedOnly }; },
     /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
     async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
   };
@@ -280,6 +283,8 @@ const Project = (() => {
     return 0;
   }
 
+  /** קובצי התבנית של הגרסה הקודמת (from-current/, עם {{…}}) — נשארים לעיון, ואינם העמוד. */
+  const OLD_TPL = path => /^from-current\/[^/]+\.html?$/i.test(path);
   function drawTree() {
     if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const entry = S.kol?.config?.entry;
@@ -300,6 +305,7 @@ const Project = (() => {
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, ICONS[ext(f.path)] || '📄'),
             h('span', { class: 'one', dir: 'auto' }, base(f.path)),
             f.path === entry && h('span', { class: 'chip', title: 'קובץ הכניסה (kol.json)' }, 'כניסה'),
+            OLD_TPL(f.path) && h('span', { class: 'chip', 'data-old-tpl': true, title: 'קובץ תבנית מהגרסה הקודמת (עם {{…}}) — לעיון בלבד; העמוד עצמו הוא index.html' }, 'תבנית ישנה'),
             f.kind === 'media' && h('span', { class: 'chip' + (miss ? ' bad' : '') }, miss ? 'חסר בספרייה' : 'מדיה'),
             dirty(f.id) && h('span', { class: 'pj-dot', title: 'לא נשמר', 'aria-label': 'לא נשמר' }, '●')),
           h('button', { type: 'button', class: 'icon-btn pj-more', 'aria-label': `פעולות על ${base(f.path)}`, onclick: () => fileMenu(f) }, '⋯')));
@@ -485,7 +491,8 @@ const Project = (() => {
   }
 
   // ── הסל ───────────────────────────────────────────────────
-  // ── ההסבה (F3): "צור פרויקט מהעמוד של היום" ו"פרויקט ריק" — בעלים בלבד ─────────
+  // ── ההסבה (F3): "🔄 ייבוא מחדש מהעמוד של היום" — בעלים בלבד. אין "פרויקט חדש" ואין "פרויקט ריק": לכלי יש פרויקט אחד
+  //    (הכרעת הבעלים, team/decisions.md 2026-11-12). pf_blank נשאר בשרת, ואינו בממשק. ─────────
   const NOTE_ICON = { failed: '❌', warn: '⚠️', changed: '✏️', dropped: '➖' };
   function migrateReport(r, title) {
     sheet(title,
@@ -496,28 +503,38 @@ const Project = (() => {
       r.notes?.length ? h('ul', { class: 'list' }, r.notes.map(([kind, text]) => h('li', { class: 'card' }, h('div', { class: 'body' }, (NOTE_ICON[kind] || '•') + ' ' + text)))) : null,
       h('p', { class: 'hint' }, 'הקבצים: ' + (r.files || []).join(' · ')));
   }
+  /** "🔄 ייבוא מחדש": אישור אחד, pf_migrate (נקודת שחזור לפני; הקבצים הנוכחיים — לסל), ודוח. מחזיר true כשהייבוא נעשה. */
+  async function reimport(question) {
+    if (S.tabs.some(dirty) && !confirm('יש קבצים עם שינויים שלא נשמרו. להמשיך בלי לשמור אותם?')) return false;
+    if (!confirm(question || 'לייבא מחדש את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.')) return false;
+    try {
+      const r = await api('pf_migrate', {});
+      for (const d of S.docs.values()) { clearTimeout(d.timer); d.dirty = false; d.model?.dispose(); }
+      S.docs.clear(); S.tabs = []; S.cur = null; persist();
+      await refresh();
+      bc?.postMessage({ t: 'saved' });
+      migrateReport(r, 'הפרויקט יובא מחדש מהעמוד של היום');
+      return true;
+    } catch (e) { toast(e.message, true); return false; }
+  }
+  /** הפס "העמוד של היום עוד לא יובא" — כל עוד index.html הוא שלד הזריעה. בעלים: עם "ייבוא עכשיו"; אחרים — מי יכול. */
+  function drawSeed(box, after) {
+    if (!box) return;
+    box.hidden = !S.seedOnly;
+    if (!S.seedOnly) return;
+    box.replaceChildren(h('span', {}, '⚠️ העמוד של היום עוד לא יובא', h('span', { class: 'seed-more' }, ' — מה שרואים כאן הוא שלד ריק, לא העמוד שבאתר.')),
+      S.canPurge ? h('button', { type: 'button', class: 'btn primary sm', 'data-seed-run': true, onclick: async () => { if (await reimport('לייבא עכשיו את העמוד של היום לפרויקט?\nנשמרת נקודת שחזור לפני.')) after?.(); } }, '🔄 ייבוא עכשיו')
+        : h('span', { class: 'hint' }, ' הייבוא — בידי בעל העמוד.'));
+  }
   async function migrateSheet() {
     let last = null;
     try { last = (await api('pf_migrate_last')).last; } catch { /* בלי הדוח הקודם */ }
-    const go = async (action, question, done) => {
-      if (S.tabs.some(dirty) && !confirm('יש קבצים עם שינויים שלא נשמרו. להמשיך בלי לשמור אותם?')) return;
-      if (!confirm(question)) return;
-      dlg.close();
-      try {
-        const r = await api(action, {});
-        for (const d of S.docs.values()) { clearTimeout(d.timer); d.dirty = false; d.model?.dispose(); }
-        S.docs.clear(); S.tabs = []; S.cur = null; persist();
-        await refresh();
-        bc?.postMessage({ t: 'saved' });
-        migrateReport(r, done);
-      } catch (e) { toast(e.message, true); }
-    };
-    const dlg = sheet('פרויקט חדש',
-      h('p', { class: 'hint' }, 'שתי הפעולות מעבירות את קבצי הפרויקט הנוכחי לסל (אפשר לשחזר), ושומרות נקודת שחזור לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
+    const go = async () => { dlg.close(); await reimport(); };
+    const dlg = sheet('🔄 ייבוא מחדש מהעמוד של היום',
+      h('p', { class: 'hint' }, 'הפרויקט נבנה מחדש מהעמוד של היום. קבצי הפרויקט הנוכחי עוברים לסל (אפשר לשחזר), ונקודת שחזור נשמרת לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
       h('div', { class: 'pj-menu' },
-        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: () => go('pf_migrate', 'ליצור את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'הפרויקט נוצר מהעמוד של היום') }, '🪄 צור פרויקט מהעמוד של היום'),
-        h('button', { type: 'button', class: 'btn', 'data-blank-run': true, onclick: () => go('pf_blank', 'להתחיל פרויקט ריק?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'פרויקט ריק נוצר') }, '📄 פרויקט ריק'),
-        last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח ההסבה האחרונה · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח ההסבה האחרונה') : null));
+        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: go }, '🔄 ייבוא מחדש'),
+        last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח הייבוא האחרון · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח הייבוא האחרון') : null));
   }
 
   async function trashSheet() {
@@ -556,6 +573,7 @@ const Project = (() => {
   const toolsMenu = () => menu('כלי העורך', [
     /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
+    S.canPurge ? ['🔄 ייבוא מחדש מהעמוד של היום', () => migrateSheet()] : null,   // גם כאן — בטלפון רשימת הקבצים סגורה, והכפתור שבה אינו נראה
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
     ['↩️ בטל', () => { S.editor?.focus(); S.editor?.trigger('menu', 'undo', null); }],
@@ -573,10 +591,11 @@ const Project = (() => {
   async function view(host) {
     S.host = host;
     el.kol = h('p', { class: 'pj-warn', role: 'alert', hidden: true });
+    el.seed = h('p', { class: 'pj-warn pj-seed', role: 'alert', 'data-seed': true, hidden: true });
     el.tree = h('ul', { class: 'pj-tree', 'aria-label': 'קבצי הפרויקט' });
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
-    el.mig = h('button', { type: 'button', class: 'btn sm', 'data-migrate': true, hidden: true, title: 'יצירת הפרויקט מהעמוד של היום, או פרויקט ריק', onclick: migrateSheet }, '🪄 פרויקט חדש');
+    el.mig = h('button', { type: 'button', class: 'btn sm', 'data-migrate': true, hidden: true, title: 'ייבוא מחדש של הפרויקט מהעמוד של היום', onclick: migrateSheet }, '🔄 ייבוא מחדש מהעמוד של היום');
     el.tabs = h('div', { class: 'pj-tabs', role: 'tablist', 'aria-label': 'קבצים פתוחים' });
     // עורך אחד לכל חיי הדף: Monaco שנסגר (dispose) משבית פעולות בעורך שנפתח אחריו — לכן שומרים אותו ומחברים מחדש
     el.ed = el.ed || h('div', { class: 'pj-ed', dir: 'ltr', hidden: true });
@@ -609,7 +628,7 @@ const Project = (() => {
     });
     host.replaceChildren(h('div', { class: 'pj' },
       h('p', { class: 'pj-note', role: 'note' }, 'הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא.'),
-      el.kol,
+      el.kol, el.seed,
       h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
 
     try { await loadMonaco(); } catch { toast('העורך המלא לא נטען — עורכים בתיבת טקסט', true); }
@@ -743,8 +762,8 @@ const Project = (() => {
 
   document.addEventListener('DOMContentLoaded', () => {
     if (typeof ACTIONS === 'object') Object.assign(ACTIONS, { pf_create: '📁 יצר קובץ בפרויקט', pf_mkdir: '📁 יצר תיקייה בפרויקט', pf_rename: '📁 שינה שם בפרויקט',
-      pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
+      pf_migrate: '🔄 ייבא מחדש את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
+  return { oldTemplate: OLD_TPL, seed: { get only() { return !!S.seedOnly; }, draw: drawSeed }, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();

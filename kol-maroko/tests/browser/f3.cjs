@@ -167,7 +167,7 @@ const UNIT_PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset=
     const call = (action, body, query = '') => page.evaluate(([a, b, q]) => api(a, b ?? undefined, q), [action, body ?? null, query]);
     await page.goto(base + '/#/project');
     await page.waitForSelector('.pj-tree .pj-row');
-    ok(await page.isVisible('.pj-side-btns [data-migrate]'), 'בעלים רואה "🪄 פרויקט חדש" במנהל הקבצים');
+    ok(await page.isVisible('.pj-side-btns [data-migrate]'), 'בעלים רואה "🔄 ייבוא מחדש מהעמוד של היום" במנהל הקבצים');
     await page.click('.pj-side-btns [data-migrate]');
     await page.click('[data-migrate-run]');
     await page.waitForFunction(() => document.querySelector('#sheet')?.open && document.querySelector('#sheet').textContent.includes('מה נלקח מאיפה'), null, { timeout: 30000 });

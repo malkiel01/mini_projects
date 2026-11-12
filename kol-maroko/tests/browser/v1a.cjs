@@ -100,7 +100,7 @@ const ATTACK = `<!doctype html>
     // שינוי טקסט בקוד ← נראה בקנבס
     const marker = 'שונה-בקוד-' + Date.now();
     await page.evaluate(([t, m]) => { const e = Project._state.editor, mod = e.getModel(), a = mod.getPositionAt(t.to), s0 = mod.getValue(), close = s0.lastIndexOf('</', t.to), p = mod.getPositionAt(close); e.executeEdits('test', [{ range: new monaco.Range(p.lineNumber, p.column, p.lineNumber, p.column), text: m }]); e.pushUndoStop(); }, [target, marker]);
-    await page.goto(base + '/editor.php#/editor');
+    await page.goto(base + '/editor.php#/editor/' + encodeURIComponent('from-current/lexicon.html'));   // מ-V2 תבנית ישנה אינה נפתחת מהזיכרון — מבקשים אותה במפורש
     await page.waitForFunction(() => Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy);
     ok(await page.evaluate(m => Editor._state.canvas.doc.body.textContent.includes(m), marker), 'שינוי טקסט בעורך הקוד נראה בקנבס');
     // מחיקה בקנבס ← נראית בקוד
@@ -297,6 +297,7 @@ const ATTACK = `<!doctype html>
     await clickIn(pm, '[data-test-target]', { touch: true });
     const sm = await st(pm);
     ok(sm.sel === tm && sm.box, '390px: הקשה (מגע) בוחרת אלמנט — ' + sm.sel);
+    await sleep(450);                                                     // מ-V2: שתי הקשות מהירות (עד 380ms) הן "הקשה כפולה" — עריכת טקסט; הקשה חוזרת איטית מזה עולה להורה
     await clickIn(pm, '[data-test-target]', { touch: true });
     ok((await st(pm)).sel !== tm && (await st(pm)).crumbs.length === sm.crumbs.length - 1, '390px: הקשה חוזרת עולה להורה');
     await pm.evaluate(() => Editor._state.canvas.doc.querySelector('[data-test-target]').removeAttribute('data-test-target'));
