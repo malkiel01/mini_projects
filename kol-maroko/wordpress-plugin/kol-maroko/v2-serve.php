@@ -85,13 +85,57 @@ function kol_maroko_v2_base_headers($type = 'text/plain; charset=utf-8')
     header('Cross-Origin-Opener-Policy: same-origin');
     header('Accept-Ranges: bytes');
     header('X-LiteSpeed-Tag: ' . KOL_MAROKO_V2_TAG);
+    if (kol_maroko_v2_private()) {
+        // כתובת הבדיקה / הבדיקה העצמית: לעולם לא במטמון משותף — אחרת LiteSpeed / Cloudflare היו מגישים את העמוד החדש לגולשים
+        // באותה כתובת בזמן שהמפסק כבוי. ובלי אינדוקס (M3 §2 — החבילה עצמה אינה נוגעת ב-<meta robots>)
+        header('X-Robots-Tag: noindex, nofollow');
+        header('X-LiteSpeed-Cache-Control: no-cache');
+        header('Vary: Cookie');
+    }
+}
+
+/** הבקשה מוגשת לא כי המפסק דולק אלא כתצוגה מוקדמת (כתובת הבדיקה) או כבדיקה עצמית. */
+function kol_maroko_v2_private()
+{
+    return in_array($GLOBALS['kol_maroko_v2_mode'] ?? '', ['preview', 'self'], true);
+}
+
+function kol_maroko_v2_cache($value)
+{
+    header('Cache-Control: ' . (kol_maroko_v2_private() ? 'private, no-store' : $value));
+}
+
+/**
+ * כתובת הבדיקה (M3 §2): `?kol_preview=<אסימון>` בתחום, או העוגייה kol_preview שהבקשה הראשונה קובעת לתחום בלבד.
+ * האסימון — 32 תווי hex (128 ביט), נשמר רק כ-sha256 (kol_maroko_v2_preview_hash). מחזיר 'query' / 'cookie' / false.
+ */
+function kol_maroko_v2_preview_req()
+{
+    $hash = (string)kol_maroko_opt('v2_preview_hash', '');
+    if (!preg_match('/^[a-f0-9]{64}$/', $hash)) return false;
+    foreach (['query' => $_GET['kol_preview'] ?? null, 'cookie' => $_COOKIE['kol_preview'] ?? null] as $how => $t) {
+        if (is_string($t) && preg_match('/^[a-f0-9]{32}$/', $t) && hash_equals($hash, hash('sha256', $t))) return [$how, $t];
+    }
+    return false;
+}
+
+/**
+ * העוגייה של כתובת הבדיקה — של התוסף, לא של החבילה (I7: החבילה אינה קובעת עוגייה; קוד החבילה, במקור אטום, אינו רואה אותה).
+ * SameSite=None; Secure — הקבצים שהעמוד טוען נשלחים ממקור אטום, ועוגייה Lax לא הייתה מצורפת אליהם. HttpOnly, לתחום בלבד.
+ * הערך — רק אחרי שנבדק כ-32 hex, והנתיב — רק תווים בטוחים: אין דרך להזריק שורת כותרת.
+ */
+function kol_maroko_v2_preview_cookie($token, $scope)
+{
+    if (!preg_match('/^[a-f0-9]{32}$/', $token)) return null;
+    if (!preg_match('~^/[A-Za-z0-9._~%/-]*/$~', $scope)) $scope = '/' . KOL_MAROKO_PAGE . '/';
+    return 'kol_preview=' . $token . '; Path=' . $scope . '; Max-Age=86400; HttpOnly; Secure; SameSite=None';
 }
 
 /** תשובה סופית בלי גוף (או עם גוף קטן קבוע), עם כל הכותרות. */
 function kol_maroko_v2_status($code, array $extra = [])
 {
     kol_maroko_v2_base_headers();
-    header('Cache-Control: no-store');
+    kol_maroko_v2_cache('no-store');
     foreach ($extra as $h) header($h);
     http_response_code($code);
     header('Content-Length: 0');
@@ -101,6 +145,7 @@ function kol_maroko_v2_status($code, array $extra = [])
 function kol_maroko_v2_end()
 {
     header_remove('Set-Cookie');
+    if (!empty($GLOBALS['kol_maroko_v2_cookie'])) header('Set-Cookie: ' . $GLOBALS['kol_maroko_v2_cookie'], false);
     exit;
 }
 
@@ -111,28 +156,44 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
 {
     $method = strtoupper((string)($method ?? ($_SERVER['REQUEST_METHOD'] ?? '')));
     if ($method !== 'GET' && $method !== 'HEAD') return;
-    if (!(int)kol_maroko_opt('v2_live', 0) || !(kol_maroko_opt('v2_on', false) || kol_maroko_v2_selftest_req())) return;
     $path = (string)parse_url('http://x' . (string)($uri ?? ($_SERVER['REQUEST_URI'] ?? '')), PHP_URL_PATH);
     $scope = kol_maroko_v2_scope();
     if ($path !== rtrim($scope, '/') && strpos($path, $scope) !== 0) return;
+    if (!(int)kol_maroko_opt('v2_live', 0)) return;
+    $GLOBALS['kol_maroko_v2_mode'] = null;
+    $GLOBALS['kol_maroko_v2_cookie'] = null;
+    if (kol_maroko_opt('v2_on', false)) $GLOBALS['kol_maroko_v2_mode'] = 'on';
+    elseif (kol_maroko_v2_selftest_req()) $GLOBALS['kol_maroko_v2_mode'] = 'self';
+    elseif ($pv = kol_maroko_v2_preview_req()) {
+        $GLOBALS['kol_maroko_v2_mode'] = 'preview';
+        if ($pv[0] === 'query') $GLOBALS['kol_maroko_v2_cookie'] = kol_maroko_v2_preview_cookie($pv[1], $scope);
+    } else return;
     $man = kol_maroko_v2_live_manifest();                   // קריאה אחת: כל הבקשה מוגשת מהמניפסט הזה
     if (!$man) return;
+    if ($GLOBALS['kol_maroko_v2_mode'] === 'on') kol_maroko_v2_stat('request');
 
     // מכאן הבקשה שלנו. שום פלט של וורדפרס או של תוסף אחר לא יוצא איתה, ושום עוגייה
     while (ob_get_level() > 0) @ob_end_clean();
-    if (function_exists('header_register_callback')) header_register_callback(function () { header_remove('Set-Cookie'); });
+    if (function_exists('header_register_callback')) header_register_callback(function () {
+        header_remove('Set-Cookie');
+        if (!empty($GLOBALS['kol_maroko_v2_cookie'])) header('Set-Cookie: ' . $GLOBALS['kol_maroko_v2_cookie'], false);
+    });
     if ($path === rtrim($scope, '/')) kol_maroko_v2_status(301, ['Location: ' . $scope]);
 
     $p = kol_maroko_v2_map(substr($path, strlen($scope)), $man);
     $code = 200;
     if ($p === null) {
         $code = 404;
+        if ($GLOBALS['kol_maroko_v2_mode'] === 'on') kol_maroko_v2_stat('404', $path);
         $p = isset($man['files']['404.html']) && is_array($man['files']['404.html']) ? '404.html' : null;
         if ($p === null) kol_maroko_v2_status(404);
     }
     $f = $man['files'][$p];
     $file = kol_maroko_v2_blob($f['sha256'] ?? '');
-    if ($file === null) kol_maroko_v2_status(404);
+    if ($file === null) {                                   // המניפסט מפנה לגוש שאינו — תקלה, לא נתיב שגוי
+        if ($GLOBALS['kol_maroko_v2_mode'] === 'on') kol_maroko_v2_stat('error', $p);
+        kol_maroko_v2_status(500);
+    }
     $size = (int)filesize($file);
     [$type, $download, $media] = kol_maroko_v2_type($p);
     $etag = '"' . $f['sha256'] . '"';
@@ -144,10 +205,10 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
     kol_maroko_v2_base_headers($type);
     if ($download) header('Content-Disposition: attachment');
     header('ETag: ' . $etag);
-    if ($code === 404) header('Cache-Control: no-store');
-    elseif ($media || !empty($f['immutable'])) header('Cache-Control: public, max-age=31536000, immutable');
+    if ($code === 404) kol_maroko_v2_cache('no-store');
+    elseif ($media || !empty($f['immutable'])) kol_maroko_v2_cache('public, max-age=31536000, immutable');
     // HTML ו"יפה" — נבדק מול השרת בכל טעינה (ETag ← 304), כדי שכיבוי המפסק יחזיר את העמוד המקורי מיד (H14, G7)
-    else header('Cache-Control: public, max-age=0, must-revalidate');
+    else kol_maroko_v2_cache('public, max-age=0, must-revalidate');
 
     $inm = (string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '');
     if ($code === 200 && $inm !== '' && (trim($inm) === '*' || in_array($etag, array_map('trim', explode(',', str_replace('W/', '', $inm))), true))) {
@@ -198,4 +259,52 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
         fclose($fh);
     }
     kol_maroko_v2_end();
+}
+
+/**
+ * המונה אחרי ההדלקה (M3 §2): בקשות, 404 עם 20 הנתיבים האחרונים, שגיאות — מאז ההדלקה. רק כשמוגש כי המפסק דולק.
+ * בלי מידע על גולשים: בלי IP, בלי עוגיות, בלי מחרוזת שאילתה — רק הנתיב, מקוצר ונקי מתווי בקרה.
+ */
+function kol_maroko_v2_stat($kind, $path = null)
+{
+    $f = kol_maroko_v2_dir() . '/stats.json';
+    $fh = @fopen($f, 'c+');
+    if (!$fh) return;
+    flock($fh, LOCK_EX);
+    $s = json_decode((string)stream_get_contents($fh), true);
+    if (!is_array($s)) $s = kol_maroko_v2_stats_new();
+    if ($kind === 'request') $s['requests'] = (int)($s['requests'] ?? 0) + 1;
+    if ($kind === '404' || $kind === 'error') {
+        $k = $kind === '404' ? 'not_found' : 'errors';
+        $s[$k] = (int)($s[$k] ?? 0) + 1;
+        $clean = substr(preg_replace('/[\x00-\x1f\x7f]/', '', (string)$path), 0, 300);
+        $list = $kind === '404' ? 'last404' : 'last_errors';
+        $s[$list] = array_slice(array_merge([['at' => time(), 'path' => $clean]], (array)($s[$list] ?? [])), 0, 20);
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, (string)json_encode($s, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE));
+    flock($fh, LOCK_UN);
+    fclose($fh);
+}
+
+function kol_maroko_v2_stats_new()
+{
+    return ['since' => time(), 'requests' => 0, 'not_found' => 0, 'errors' => 0, 'last404' => [], 'last_errors' => []];
+}
+
+function kol_maroko_v2_stats()
+{
+    $s = json_decode((string)@file_get_contents(kol_maroko_v2_dir() . '/stats.json'), true);
+    return is_array($s) ? $s : null;
+}
+
+/** המונה כפי שיוצא ב-ping: מספרים ונתיבים בלבד, עם המבנה הקבוע (גם אם הקובץ שובש). */
+function kol_maroko_v2_stats_public()
+{
+    $s = kol_maroko_v2_stats();
+    if (!$s) return null;
+    $rows = fn($k) => array_map(fn($r) => ['at' => (int)($r['at'] ?? 0), 'path' => substr((string)($r['path'] ?? ''), 0, 300)], array_slice((array)($s[$k] ?? []), 0, 20));
+    return ['since' => (int)($s['since'] ?? 0), 'requests' => (int)($s['requests'] ?? 0), 'not_found' => (int)($s['not_found'] ?? 0),
+        'errors' => (int)($s['errors'] ?? 0), 'last404' => $rows('last404'), 'last_errors' => $rows('last_errors')];
 }
