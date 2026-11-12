@@ -131,7 +131,8 @@ let ma = K.parseHtml(aa), as = ma.root.kids[1].kids;
 ok(err(() => X.move(ma, [as[1]], as[0], null), 'invalid', /<a> בתוך <a>/), 'קישור בתוך קישור — נדחה');
 e = err(() => X.move(ma, [as[5]], q(ma, 'ul'), null), 'invalid', /בתוך <ul> רק <li>/); ok(e && e.fix.kind === 'wrap', '<h2> ישר בתוך <ul> — נדחה, עם "עטוף ב-<li>"');
 ok(err(() => X.insert(ma, q(ma, 'img'), 0, '<b>x</b>'), 'invalid', /<img> אינו יכול להכיל/), 'תוכן ב-<img> — נדחה');
-ok(err(() => X.move(ma, [as[5]], q(ma, 'template'), null), 'template', /V11/) && err(() => X.move(ma, [q(ma, 'b')], q(ma, 'body'), null), 'template'), 'אל תוך <template> ומתוכו — לא ב-V4, עם ההסבר (V11)');
+ok(err(() => X.move(ma, [as[5]], q(ma, 'template'), null), 'template', /V11/) && err(() => X.move(ma, [q(ma, 'b')], q(ma, 'body'), null), 'template'), 'V11: אלמנט מהעמוד אל תוך <template>, וחלק של התבנית אל מחוצה לה — לא, עם ההסבר');
+{ const mt = K.parseHtml('<!doctype html><html><body><template><article><h3>a</h3><p>b</p></article></template></body></html>'), art = q(mt, 'article'); const r2 = X.move(mt, [q(mt, 'p')], art, q(mt, 'h3')); const o2 = K.applyPatches(mt.src, r2.patches); ok(/<article><p>b<\/p><h3>a<\/h3><\/article>/.test(o2.replace(/\s+/g, '')), 'V11: גרירה בתוך הכרטיס (אותה תבנית) — מותרת', o2); }
 ok(err(() => X.move(ma, [q(ma, 'body')], q(ma, 'ul'), null), 'root') && err(() => X.duplicate(ma, q(ma, 'body')), 'root') && err(() => X.wrap(ma, [q(ma, 'body')]), 'root'), 'html / head / body — אינם נגררים, משוכפלים או נעטפים');
 ok(err(() => X.move(m, [inner], q(m, 'h1'), null), 'cycle') || err(() => X.move(m, [inner], h1, null)), 'אלמנט אל תוך צאצא שלו — נדחה');
 const list = q(m, '#kadisha-lex-grid');
