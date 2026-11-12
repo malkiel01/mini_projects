@@ -58,3 +58,9 @@
 - שורת המשוב ✓ = `forms_draft()` לא ריק, וכל טופס בו רשום ב-`forms_live()` (M5).
 - `m3-fidelity.cjs --self-test` — בלי האתר (~3.5 דק'); מול האתר האמיתי — רק מדפדפן שעובר את Cloudflare.
 - פתוח (לא של M3): `a2.cjs` #3 לא יציב גם ב-main (מרוץ בעליית הסטודיו — העורך עובר ל-#/files והסטודיו ממשיך; התיקון של A3 אינו מכסה) · `l1.cjs` כותב את `dev/l1/*.png` בריפו בכל הרצה · חבילת M1 שמישה בטלפון אחרי ~6 שניות, מול ~3.5 בתצוגה החיה · `pkg_site_blobs` אחרי `asset_missing` (`lib/build.php`).
+
+## מ-M4-BC (2026-11-12, נרשם בידי בקרה (5))
+- "איך העמוד מוצג באתר" — היום ב-`assets/js/publish.js` (`mountBlock`); כש-P1 ("⚙️ בעל האתר") תיבנה — להעביר לשם.
+- ping מחזיר `v2_mount`; מסך הבעלים מזהה תוסף ישן לפי היעדרו (409 `plugin_old`).
+- הבדיקות: `tests/plugin/60-mount_test.php` · `tests/cases/99-mount.php` · `tests/browser/m4bc.cjs` · `m2.cjs` סעיף ה.
+- באתר (מטלה): ערכת ההתקפה H1–H17 ב-Chrome/Firefox/Safari; מה `get_header()` מדפיס בערכה האמיתית (ש-24) — האם העמוד ברוחב מלא; כפילות og/title מתוסף SEO; LiteSpeed מול המעטפת.
