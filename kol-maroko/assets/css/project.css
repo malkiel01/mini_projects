@@ -70,3 +70,25 @@ main:has(> .pj) { max-width: 1600px; }
 .pj-ver-list { list-style: none; margin: 0; padding: 0; }
 .pj-ver-list li { padding: 6px 0; border-top: 1px solid var(--line); font-size: .9rem; overflow-wrap: anywhere; }
 .pj-ver-note { font-weight: 600; }
+
+/* ── F2b: הפניות, השוואת גרסאות, חיפוש בכל הקבצים, ZIP ── */
+.pj-refs { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s2); max-height: 50vh; overflow: auto; }
+.pj-refs li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .9em; }
+.pj-refs code, .pj-hit-t, .pj-dt { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.pj-ref-at, .pj-hit { background: none; border: 0; padding: 2px 0; color: var(--accent, inherit); cursor: pointer; text-align: start; font: inherit; }
+.pj-ref-old { text-decoration: line-through; opacity: .75; }
+.pj-ver-list li { display: grid; gap: 4px; padding: var(--s2) 0; border-bottom: 1px solid var(--line, #8883); }
+.pj-ver-btns { display: flex; gap: var(--s2); flex-wrap: wrap; }
+.pj-diffv { max-height: 60vh; overflow: auto; font-size: 13px; border: 1px solid var(--line, #8884); border-radius: 8px; text-align: left; }
+.pj-dl { display: grid; grid-template-columns: 3.2em 3.2em 1fr; gap: 6px; padding: 0 6px; white-space: pre-wrap; }
+.pj-samples .pj-dl, .pj-sfile .pj-dl { grid-template-columns: 3.2em 1fr; }
+.pj-dl.add { background: #2ea04326; }
+.pj-dl.del { background: #f8514926; }
+.pj-dl.gap { display: block; color: var(--muted, #888); text-align: center; padding: 2px; }
+.pj-ln { color: var(--muted, #888); text-align: end; user-select: none; font-variant-numeric: tabular-nums; }
+.pj-sres { display: grid; gap: var(--s2); max-height: 55vh; overflow: auto; }
+.pj-sfile ul { list-style: none; margin: 4px 0; padding: 0; }
+.pj-hit { display: grid; grid-template-columns: 3.2em 1fr; gap: 6px; width: 100%; color: inherit; }
+.pj-check { display: inline-flex; align-items: center; gap: 6px; }
+.pj-zlist ul { max-height: 30vh; overflow: auto; margin: 4px 0; }
+.pj-row[draggable="true"] { -webkit-user-drag: element; }
