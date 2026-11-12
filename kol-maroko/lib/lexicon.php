@@ -331,6 +331,8 @@ function lexicon_render(array $w, bool $editor, string $cls, string $k): array
 /**
  * קובץ הקלטות מהתוסף (1.3, "ייצוא ההקלטות", חלק אחד מכמה): audio.json + הקבצים. כל הקלטה נכנסת לספרייה (עם origin —
  * הכתובת שלה באתר), ונקשרת לכל מילה שהצביעה על הכתובת הזו. קובץ שכבר הועתק — לא נכנס פעמיים.
+ * A2: ההתאמה קודם לפי מזהה המילה (word_id בייצוא = wp_id, או מספר בשם הקובץ), ורק אחר כך לפי הכתובת. מה שלא הותאם —
+ * ב-unmatched_list. ההקלטות נכנסות למודל (lib/recordings.php) עם המקור של המילה.
  */
 function audio_import(array $owner, array $b): array
 {
@@ -348,8 +350,13 @@ function audio_import(array $owner, array $b): array
         throw new ApiError('זה לא קובץ הקלטות של קול מרוקו (חסר audio.json). בוורדפרס: הגדרות ← קול מרוקו ← "ייצוא ההקלטות"');
     }
     snapshot_create($owner, 'לפני ייבוא הקלטות');
+    require_once __DIR__ . '/recordings.php';
+    rec_sync();                                         // הרשומות קיימות לפני הקישור — כך המקור נשאר הכתובת של המילה
     $pdo = db();
-    $st = ['part' => (int)($j['part'] ?? 0), 'parts' => (int)($j['parts'] ?? 0), 'linked' => 0, 'files' => 0, 'already' => 0, 'unmatched' => 0, 'failed' => []];
+    $st = ['part' => (int)($j['part'] ?? 0), 'parts' => (int)($j['parts'] ?? 0), 'linked' => 0, 'files' => 0, 'already' => 0, 'unmatched' => 0, 'failed' => [], 'unmatched_list' => []];
+    $byWp = $pdo->prepare('SELECT id, word, audio FROM words WHERE wp_id = ?');
+    $linkId = $pdo->prepare('UPDATE words SET audio = ? WHERE id = ?');
+    $imported = [];
     $words = $pdo->prepare('SELECT word FROM words WHERE audio = ?');
     $copy = $pdo->prepare('SELECT id FROM files WHERE origin = ?');
     $link = $pdo->prepare('UPDATE words SET audio = ? WHERE audio = ?');
@@ -359,15 +366,25 @@ function audio_import(array $owner, array $b): array
         $url = lex_url($f['url'] ?? '');
         $entry = (string)($f['file'] ?? '');
         if ($url === '') { $st['failed'][] = (string)($f['word'] ?? '?') . ' — כתובת לא מהאתר'; continue; }
+        // לפי מזהה: word_id של הייצוא (= wp_id), ואם אין — מספר בשם הקובץ ("6.mp3"). מילה שכבר יש לה קובץ בכלי — לא נדרסת
+        $wpid = (int)($f['word_id'] ?? 0);
+        if (!$wpid && preg_match('~(?:^|/)(\d{1,9})\.[a-z0-9]{1,5}$~i', $entry, $m)) $wpid = (int)$m[1];
+        $idWords = [];
+        if ($wpid) { $byWp->execute([$wpid]); $idWords = array_filter($byWp->fetchAll(), fn($w) => !file_id($w['audio'])); }
         $words->execute([$url]);
         $ws = $words->fetchAll(PDO::FETCH_COLUMN);
         $copy->execute([$url]);
         $fid = $copy->fetchColumn();
-        if (!$ws) { $fid ? $st['already']++ : $st['unmatched']++; continue; }
+        if (!$ws && !$idWords) {
+            $fid ? $st['already']++ : $st['unmatched']++;
+            if (!$fid && count($st['unmatched_list']) < 200) $st['unmatched_list'][] = ['word' => mb_substr((string)($f['word'] ?? ''), 0, 200), 'word_id' => $wpid ?: null, 'url' => $url, 'file' => mb_substr($entry, 0, 300)];
+            continue;
+        }
+        $first = $idWords ? reset($idWords)['word'] : $ws[0];
         if (!$fid) {
             $stat = $zip->statName($entry);
             if (!str_starts_with($entry, 'audio/') || str_contains($entry, '..') || !$stat || $stat['size'] > FILE_MAX) {
-                $st['failed'][] = $ws[0] . ' — הקובץ חסר או גדול מ-50MB';
+                $st['failed'][] = $first . ' — הקובץ חסר או גדול מ-50MB';
                 continue;
             }
             $tmp = $dir . '/aud-' . bin2hex(random_bytes(8));
@@ -378,21 +395,29 @@ function audio_import(array $owner, array $b): array
             fclose($out);
             $ext = strtolower(pathinfo($entry, PATHINFO_EXTENSION)) ?: 'mp3';
             try {
-                $fid = file_store($tmp, mb_substr($ws[0], 0, 80) . '.' . $ext, $owner, 'audio/');
+                $fid = file_store($tmp, mb_substr($first, 0, 80) . '.' . $ext, $owner, 'audio/');
             } catch (ApiError $e) {
-                $st['failed'][] = $ws[0] . ' — ' . $e->getMessage();
+                $st['failed'][] = $first . ' — ' . $e->getMessage();
                 continue;
             }
             $pdo->prepare('UPDATE files SET origin = ? WHERE id = ?')->execute([$url, $fid]);
             $st['files']++;
         }
+        $n = 0;
+        foreach ($idWords as $w) { $linkId->execute([$fid, $w['id']]); $n += $linkId->rowCount(); }
         $link->execute([$fid, $url]);
-        $st['linked'] += count($ws);
+        $st['linked'] += $n + $link->rowCount();
+        $imported[] = $fid;
     }
     $zip->close();
     $pdo->prepare('DELETE FROM uploads WHERE id = ?')->execute([$u['id']]);
     @unlink($path);
     $st['remaining'] = (int)$pdo->query("SELECT COUNT(*) FROM words WHERE audio LIKE 'https://%'")->fetchColumn();
+    rec_sync();
+    if ($imported) {
+        $mark = rec_db()->prepare("UPDATE recordings SET how = 'imported' WHERE file_id = ?");
+        foreach (array_unique($imported) as $id) $mark->execute([$id]);
+    }
     audit_as($owner, 'audio_import', "חלק {$st['part']} מתוך {$st['parts']} · {$st['files']} הקלטות");
     return ['stats' => $st];
 }
