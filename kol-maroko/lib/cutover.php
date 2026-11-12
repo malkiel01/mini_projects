@@ -11,7 +11,7 @@
  * הרשאות: קריאה — מפרסם ומעלה; כל שינוי (ראיה, נקודת שחזור, "מוכן למעבר") — בעלים בלבד. נבדק כאן ב-require_role,
  * לא רק בממשק (tests/cases/95-cutover.php).
  *
- * הנתונים: cutover_evidence ו-cutover_marks ב-data/kol.sqlite (מיגרציה 17); קובצי ראיה — במאגר הקבצים הקיים
+ * הנתונים: cutover_evidence ו-cutover_marks ב-data/kol.sqlite (מיגרציה 18); קובצי ראיה — במאגר הקבצים הקיים
  * (data/files/, דרך upload_init/chunk/done הרגיל). אין קובץ נתונים חדש, ולכן אין --exclude חדש.
  *
  * cutover_eval() — פונקציה טהורה: מקבלת את העובדות ומחזירה את השורות. כך כל ✓ / ✗ / ⏳ נבדק בלי אתר ובלי מסד.
