@@ -33,6 +33,12 @@ function cutover_lib(): void
     require_once __DIR__ . '/lib/cutover.php';
 }
 
+/** ⬇️ הורדת התוסף (T1) — נטען רק בפעולה שלו. */
+function plugin_lib(): void
+{
+    require_once __DIR__ . '/lib/plugin_zip.php';
+}
+
 function json_out(array $data, int $code = 200): never
 {
     http_response_code($code);
@@ -261,6 +267,7 @@ try {
         // אופן ההצבה באתר (M4-BC): עמוד מלא / חלון בתוך האתר / פס האתר — בעלים בלבד, פעולה חתומה לתוסף
         'mount' => ($u ? mount_state() : []),
         'mount_set' => mount_set($u, $body),
+        'plugin_zip' => plugin_lib() ?? plugin_zip($u),          // T1: תוסף הוורדפרס כ-ZIP — בעל האתר
         'notices' => notices_list($u),
         'notice_read' => notice_read($u, $body),
         // 📬 פניות (M5, lib/forms.php): קריאה, סימון וייצוא — עורך ומעלה; מחיקה ו"מחק ישנות" — מפרסם; מגבלות ומייל — המפתח

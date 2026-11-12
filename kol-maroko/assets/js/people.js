@@ -172,7 +172,8 @@ const People = (() => {
         h('h2', { class: 'sec-title' }, '👥 בעל העמוד'),
         h('p', { class: 'hint' }, 'מינוי והסרה של בעל העמוד — ב-', h('a', { href: '#/members' }, '👥 אנשים'), ' (המינוי הראשון — רק בעל האתר).'),
         h('h2', { class: 'sec-title' }, '🪟 אופן ההצבה'),
-        mountBlock());
+        mountBlock(),
+        pluginBlock());
       const rest = h('div', { id: 'owner-connection' });
       parts.push(rest);
       el.replaceChildren(...parts);
@@ -205,6 +206,28 @@ const People = (() => {
         h('span', { class: 'muted' }, '— בכל אופן הקוד של העמוד רץ מבודד; החבילה עצמה לא משתנה')), ...rows, h('div', { class: 'row-btns' }, save), status);
     }).catch(e => box.replaceChildren(h('p', { class: 'error' }, e.message)));
     return box;
+  }
+
+  // T1: התוסף לוורדפרס כ-ZIP, מהשרת (wordpress-plugin/kol-maroko/) — להעלאה ב"תוספים ← הוספת תוסף ← העלאה". בעל האתר בלבד
+  function pluginBlock() {
+    const status = h('p', { class: 'hint', role: 'status' });
+    const btn = h('button', { type: 'button', class: 'btn', 'data-plugin-zip': '', onclick: async () => {
+      btn.disabled = true; status.textContent = 'מכין את הקובץ…';
+      try {
+        const res = await fetch('api.php?action=plugin_zip');
+        if (!res.ok) { let m = 'ההורדה נכשלה'; try { m = (await res.json()).error || m; } catch { /* לא JSON */ } throw new Error(m); }
+        const ver = res.headers.get('X-Kol-Plugin-Version') || '';
+        const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: 'application/zip' }));
+        const a = h('a', { href: url, download: 'kol-maroko' + (ver ? '-' + ver : '') + '.zip' });
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        status.textContent = '✓ ירד' + (ver ? ' — גרסה ' + ver : '') + '. בוורדפרס: תוספים ← הוספת תוסף ← העלאת תוסף.';
+      } catch (e) { status.replaceChildren(h('span', { class: 'error' }, e.message)); }
+      btn.disabled = false;
+    } }, '⬇️ הורד את התוסף (zip)');
+    return h('div', { class: 'summary', id: 'plugin-block' },
+      h('div', { class: 'line' }, h('b', {}, '🧩 התוסף לוורדפרס'), h('span', { class: 'muted' }, '— הגרסה שבשרת, להתקנה או לעדכון באתר')),
+      h('div', { class: 'row-btns' }, btn), status);
   }
 
   // ── 🔔 הפעמון ────────────────────────────────────────────

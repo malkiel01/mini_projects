@@ -8,7 +8,7 @@
  *   הסרה      — בעל העמוד מסיר ← בטעינה הבאה "הוסרת מהכלי".
  *   בלי תפקיד — "נכנסת. בעל העמוד עוד לא נתן לך תפקיד"; אצל בעל העמוד — ב"ביקשו גישה" ובפעמון.
  *   מפרסם     — בלי 👥 ובלי ⚙️.
- * צילומים: dev/p1/ — 1920 (כל המסך) ו-390.
+ * צילומים: תיקייה זמנית (os.tmpdir()/kol-p1-shots, או KOL_SHOTS) — 1920 (כל המסך) ו-390.
  */
 'use strict';
 const { chromium } = require('playwright');
@@ -16,7 +16,8 @@ const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), net = require('net');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SHOTS = path.join(ROOT, 'dev', 'p1');
+// T1: כמו l1.cjs — הצילומים לתיקייה זמנית, לא לריפו. KOL_SHOTS=<תיקייה> — מיקום אחר.
+const SHOTS = process.env.KOL_SHOTS || path.join(os.tmpdir(), 'kol-p1-shots');
 const USERS = {
   site: { sub: '501', name: 'בעל האתר', email: 'site@example.test', email_verified: true, platform_admin: true },
   page: { sub: '502', name: 'בעלת העמוד', email: 'page@example.test', email_verified: true },
@@ -54,7 +55,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     for (let i = 0; i < 100; i++) { try { await fetch(base + '/api.php?action=embed_key'); await fetch(`http://127.0.0.1:${provPort}/`); break; } catch { await sleep(50); } }
     browser = await chromium.launch();
     const open = async (who, width = 1280, height = 900) => {
-      const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: width === 390 ? 2 : 1 });
+      const ctx = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: width === 390 ? 2 : 1, acceptDownloads: true });
       await ctx.addCookies([{ name: 'kol_test_user', value: Buffer.from(JSON.stringify(USERS[who])).toString('base64'), url: base, httpOnly: true, sameSite: 'Lax' }]);
       const page = await ctx.newPage();
       page.on('pageerror', e => errors.push(who + ': ' + e.message));
@@ -76,6 +77,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(await site.$('#owner-approval') !== null, 'המתג "כל פרסום מחכה לאישורי"');
     ok(await site.waitForSelector('#mount-block .mount-opt', { timeout: 8000 }).then(() => true).catch(() => false), 'אופן ההצבה — עבר ל"⚙️ בעל האתר"');
     ok(await site.waitForSelector('#owner-connection .keybox', { timeout: 8000 }).then(() => true).catch(() => false), 'החיבור לאתר (המפתח) — באותו מסך');
+    // T1: ⬇️ הורד את התוסף (zip) — ליד אופן ההצבה; הקובץ שיורד הוא ZIP של wordpress-plugin/kol-maroko/
+    const plugVer = (fs.readFileSync(path.join(ROOT, 'wordpress-plugin', 'kol-maroko', 'kol-maroko.php'), 'utf8').match(/^\s*\*\s*Version:\s*(\S+)/m) || [])[1];
+    const [dl] = await Promise.all([site.waitForEvent('download', { timeout: 15000 }), site.click('#plugin-block [data-plugin-zip]')]);
+    const dlPath = await dl.path(), dlBuf = fs.readFileSync(dlPath);
+    ok(dl.suggestedFilename() === `kol-maroko-${plugVer}.zip` && dlBuf.slice(0, 2).toString() === 'PK' && dlBuf.includes(Buffer.from('kol-maroko/kol-maroko.php')),
+      `⬇️ הורד את התוסף (zip) — ${dl.suggestedFilename()}, ${dlBuf.length} בייט, kol-maroko/kol-maroko.php בפנים`);
+    ok(/גרסה/.test(await site.textContent('#plugin-block [role=status]')), 'ההורדה — אישור עם הגרסה ומה עושים בוורדפרס');
     await site.check('#owner-approval');
     await site.waitForFunction(() => /דולק/.test(document.querySelector('#owner-rows')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
     ok(/כל פרסום מחכה לאישור בעל האתר: דולק/.test(await site.textContent('#owner-rows')), 'המתג נשמר — "דולק"');
@@ -115,7 +123,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await shot(p390, 'owner-page-390');
     await page.goto(base + '/#/settings');
     await page.waitForSelector('#owner-rows', { timeout: 15000 });
-    ok(await page.$('#owner-approval') === null && await page.$('#mount-block') === null, 'בעל העמוד — הרשימה לקריאה, בלי מתגים ובלי החיבור');
+    ok(await page.$('#owner-approval') === null && await page.$('#mount-block') === null && await page.$('#plugin-block') === null, 'בעל העמוד — הרשימה לקריאה, בלי מתגים, בלי החיבור ובלי הורדת התוסף');
     ok((await page.$$eval('.owner-list li', l => l.every(x => x.textContent.includes('נקבע בידי בעל האתר')))), 'כל שורה — "נקבע בידי בעל האתר"');
     await shot(page, 'owner-page-1920');
 
