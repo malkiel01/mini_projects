@@ -355,7 +355,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .gt-grip { cursor: grab; touch-action: none; padding: 0 4px; user-select: none; } .gt-tag { font-size: .75rem; opacity: .7; }
 @media (pointer: coarse) { .gt-grip, .gt-row .btn { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; } }
 .ps-eq { position: absolute; z-index: 26; pointer-events: none; background: rgba(224, 0, 204, .25); border: 1px dashed #e0c; font: .7rem ui-monospace, monospace; color: #e0c; display: grid; place-items: center; }
-.sz-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+.sz-tip, .fx-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
 
 /* ── V7: מכשירים ── */
 .ed { --devc: transparent; }
@@ -489,3 +489,31 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
   .gl .sg-reset { min-width: 44px; }
   .gl-vctl input[type="color"] { width: 44px; }
 }
+
+/* V10 — אפקטים ותנועה: קבוצות מתקפלות, שכבות צל, מסננים, עורך עקומה, ידיות רדיוס / צל / סיבוב / ציר */
+.sg-fx > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+.sg-fx > summary::before { content: '▸'; font-size: .8em; opacity: .7; } .sg-fx[open] > summary::before { content: '▾'; }
+.sg-fx[open] { gap: 6px; display: flex; flex-direction: column; }
+.sg-sub { margin: 6px 0 0; font-size: .82rem; opacity: .85; }
+.fx-layers { padding: 0; margin: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.fx-layer { flex-wrap: wrap; padding: 3px; border-radius: 6px; border: 1px solid transparent; }
+.fx-layer.on { border-color: var(--brand, #36c); background: color-mix(in srgb, var(--brand, #36c) 8%, transparent); }
+.fx-layer input[type=text] { flex: 1 1 52px; min-width: 44px; }
+.fx-in { display: inline-flex; align-items: center; gap: 2px; font-size: .78rem; }
+.fx-frow input[type=range] { flex: 1; min-width: 0; } .fx-val { font: .75rem ui-monospace, monospace; min-width: 4.5em; text-align: end; opacity: .85; }
+.bz-wrap svg.bz { width: 100%; max-width: 140px; height: auto; align-self: center; overflow: visible; touch-action: none; }
+.bz .bz-box { fill: none; stroke: currentColor; stroke-opacity: .2; } .bz .bz-c { fill: none; stroke: var(--brand, #36c); stroke-width: 3; }
+.bz .bz-l { stroke: currentColor; stroke-opacity: .45; } .bz .bz-h { fill: #fff; stroke: #e0c; stroke-width: 2.5; cursor: grab; }
+.tf-origin { display: grid; grid-template-columns: repeat(3, 22px); gap: 2px; }
+.tf-origin button { width: 22px; height: 22px; padding: 0; border: 1px solid var(--line, #ccd); border-radius: 3px; background: transparent; line-height: 1; }
+.tf-origin button[aria-pressed=true] { background: var(--brand, #36c); color: #fff; }
+.fx-rad { position: absolute; z-index: 26; border-radius: 50%; background: #fff; border: 2px solid #e0c; touch-action: none; pointer-events: auto; cursor: nwse-resize; }
+.fx-sun { position: absolute; z-index: 26; border-radius: 50%; background: #ffd54a; border: 2px solid #b8860b; display: grid; place-items: center; font-size: 12px; line-height: 1; touch-action: none; pointer-events: auto; cursor: move; user-select: none; }
+.fx-sun.ro { opacity: .45; cursor: not-allowed; }
+.tf-rot { position: absolute; z-index: 26; border-radius: 50%; background: #fff; border: 2px solid var(--brand, #36c); display: grid; place-items: center; font-size: 13px; line-height: 1; touch-action: none; pointer-events: auto; cursor: grab; user-select: none; }
+.tf-org { position: absolute; z-index: 26; border-radius: 50%; background: #fff; border: 2px solid #0a8; box-shadow: 0 0 0 2px rgba(0, 0, 0, .25); touch-action: none; pointer-events: auto; cursor: crosshair; }
+@media (pointer: coarse) { .tf-origin { grid-template-columns: repeat(3, 44px); } .tf-origin button { width: 44px; height: 44px; } .fx-layer .btn, .fx-in { min-height: 44px; } }
+@media (pointer: coarse) { .sg-fx button, .sg-fx select, .sg-fx input:not([type=checkbox]):not([type=range]), [data-sec="motion"] button, [data-sec="motion"] select { min-height: 44px; } .sg-fx .sg-swatch, .sg-fx .sg-reset { min-width: 44px; } }
+.sg-fx label.sg-line { justify-content: flex-start; gap: 6px; } .sg-fx input[type=checkbox] { width: auto; height: auto; min-height: 0; flex: none; margin: 0; }
+@media (pointer: coarse) { .sg-fx input[type=checkbox] { width: 24px; height: 24px; } .sg-fx label.sg-line { min-height: 44px; } }
+@media (max-width: 999px) { .ed-bar [data-play] { display: none; } }   /* V10: כמו V7 — בטלפון הסרגל לא מתארך (המקלדת); "↻ הצג שוב" בפאנל */

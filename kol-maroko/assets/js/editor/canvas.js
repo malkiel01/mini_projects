@@ -21,6 +21,7 @@
   /** עריכת טקסט במקום (V2): מסגרת לאלמנט הנערך, ו"הקלד כאן" לאלמנט ריק. contenteditable נוסף ל-DOM של הקנבס בלבד, לזמן העריכה. */
   const EDIT_CSS = '[contenteditable="true"]{outline:2px solid #1a73e8!important;outline-offset:2px;cursor:text;min-height:1em;-webkit-user-modify:read-write}[contenteditable="true"]:empty::before{content:"הקלד כאן";opacity:.45}'
     + 'iframe,object,embed,audio,video{pointer-events:none}iframe{outline:1px dashed #8a8f98;outline-offset:-1px}';   // הטמעה ומדיה: בקנבס הן דוממות — הלחיצה בוחרת, לא מפעילה
+  const MOTION_OFF = ':not([data-kol-replay]),:not([data-kol-replay])::before,:not([data-kol-replay])::after{animation:none!important}';   // V10
   const DEAD = 'iframe,object,embed,audio,video';
   const NONVIS = new Set('html head title meta link script style base noscript template'.split(' '));
   /** <input type="hidden">: אין לו מראה בשום מצב (בדפדפן display:none !important) — נבחר מה-Navigator ונערך בפאנל, כמו סקריפט. */
@@ -137,9 +138,13 @@
       }
       if (this.baseHref && head) { const b = doc.createElement('base'); b.setAttribute(OWNED, 'base'); b.setAttribute('href', this.baseHref); head.prepend(b); }
       this.capStyle = doc.createElement('style'); this.capStyle.setAttribute(OWNED, 'cap'); head.append(this.capStyle);
-      const ed = doc.createElement('style'); ed.setAttribute(OWNED, 'edit'); ed.textContent = EDIT_CSS; head.append(ed);   // V2: המראה של אלמנט בזמן עריכת טקסט — בקנבס בלבד
+      const ed = doc.createElement('style'); ed.setAttribute(OWNED, 'edit'); ed.textContent = EDIT_CSS; head.append(ed);
+      this.motionStyle = doc.createElement('style'); this.motionStyle.setAttribute(OWNED, 'motion'); this.motionStyle.textContent = this.play ? '' : MOTION_OFF; head.append(this.motionStyle);   // V10   // V2: המראה של אלמנט בזמן עריכת טקסט — בקנבס בלבד
       this.recap(); this.markDev();
     }
+    /** V10: אנימציות בקנבס — מושהות כברירת מחדל (CSS של העורך: animation: none — המצב הסופי, לא תוכן שקוף). "▶" מפעיל.
+     *  אלמנט עם data-kol-replay ("↻ הצג שוב", גלילה מדומה) — יוצא מההשהיה. */
+    setPlay(on) { this.play = !!on; if (this.motionStyle) this.motionStyle.textContent = on ? '' : MOTION_OFF; }
     /** מחליף את הטקסט של קובץ CSS מקושר (אחרי עריכה שלו), בלי לגעת בשאר. */
     setSheet(href, text) { for (const st of this.doc.querySelectorAll('style[' + OWNED + ']')) if (st.getAttribute(OWNED) === href) st.textContent = noBom(text); this.markDev(); }
     /**
@@ -156,7 +161,7 @@
         const mx = ST.mediaMax(r.conditionText); let on = false; try { on = mx != null && (!this.devMaxes || this.devMaxes().includes(mx)) && win.matchMedia(r.conditionText).matches; } catch { on = false; }
         if (on) for (const x of r.cssRules) if (x.style && x.style.getPropertyValue('display').trim() === 'none') { try { for (const e of doc.querySelectorAll(x.selectorText)) if (!e.closest('[' + OWNED + ']')) els.add(e); } catch { /* בורר שאינו נקרא */ } }
       } };
-      for (const sh of doc.styleSheets) { const o = sh.ownerNode; if (!o || sh.disabled || /^(devhide|show|cap|edit)$/.test(o.getAttribute(OWNED) || '')) continue; try { walk(sh.cssRules); } catch { /* גיליון חיצוני */ } }
+      for (const sh of doc.styleSheets) { const o = sh.ownerNode; if (!o || sh.disabled || /^(devhide|show|cap|edit|motion)$/.test(o.getAttribute(OWNED) || '')) continue; try { walk(sh.cssRules); } catch { /* גיליון חיצוני */ } }
       const text = [...els].map(e => domSel(e) + '{display:revert!important;opacity:.45!important;outline:2px dashed #b45309!important;outline-offset:-2px!important}').join('\n');
       let st = this.devStyle;
       if (!st || !st.isConnected) { if (!text) return; st = this.devStyle = doc.createElement('style'); st.setAttribute(OWNED, 'devhide'); (doc.head || doc.documentElement).append(st); }

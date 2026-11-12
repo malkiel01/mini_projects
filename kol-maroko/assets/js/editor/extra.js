@@ -15,7 +15,14 @@
     'margin-top margin-right margin-bottom margin-left padding-top padding-right padding-bottom padding-left row-gap column-gap ' +
     'display position top right bottom left z-index width height min-width min-height max-width max-height box-sizing aspect-ratio overflow-x overflow-y ' +
     'flex-direction flex-wrap flex-grow flex-shrink flex-basis order justify-content align-items align-content align-self justify-items justify-self grid-auto-flow grid-template-columns grid-template-rows ' +
-    'transition-property transition-duration transition-timing-function transition-delay').split(' '));
+    'transition-property transition-duration transition-timing-function transition-delay ' +
+    // V10: מסגרת, פינות, צל, אפקטים, מסיכה, transform, נדבק (top/bottom כבר), כניסה וגלילה (--kol-in-* / --kol-sc-*)
+    'border border-radius border-top-left-radius border-top-right-radius border-bottom-right-radius border-bottom-left-radius ' +
+    ['top', 'right', 'bottom', 'left'].map(s => ['width', 'style', 'color'].map(k => 'border-' + s + '-' + k).join(' ')).join(' ') + ' ' +
+    'outline-style outline-width outline-color outline-offset opacity filter backdrop-filter mix-blend-mode isolation ' +
+    'mask-image mask-size mask-position mask-repeat -webkit-mask-image -webkit-mask-size -webkit-mask-position -webkit-mask-repeat transform transform-origin').split(' '));
+  /** V10: מה שהפאנל אינו מפרק (צל עם var() בשכבה, filter עם url(), transform עם matrix) — נשאר כאן, ונערך כאן. */
+  const RAW = { 'box-shadow': v => window.KolFx.parseShadows(v) === null, 'text-shadow': v => window.KolFx.parseShadows(v, true) === null, filter: v => window.KolFx.parseFilter(v) === null, 'backdrop-filter': v => window.KolFx.parseFilter(v) === null, transform: v => window.KolFx.parseTransform(v) === null };
   const SHORT = ['margin', 'padding', 'border', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-radius', 'border-color', 'border-style', 'border-width', 'background', 'font', 'flex', 'flex-flow', 'grid', 'grid-area', 'grid-template', 'grid-row', 'grid-column', 'gap', 'inset', 'outline', 'transition', 'animation', 'text-decoration', 'list-style', 'columns', 'overflow', 'place-items', 'place-content', 'place-self', 'mask', 'text-emphasis', 'scroll-margin', 'scroll-padding', 'container', 'offset'];
   let PROPS = null;
   /** כל מאפייני ה-CSS שהדפדפן מכיר: הרשימה של getComputedStyle + קיצורים (CSS.supports). */
@@ -35,7 +42,7 @@
     return v;
   }
   const covers = (prop, rtl) => ST().covered(prop, rtl);
-  const controlled = (prop, rtl) => { const p = prop.trim().toLowerCase(); if (p.startsWith('--')) return false; const c = covers(p, rtl); return c.every(x => CONTROLLED.has(x)) && !SHORT.includes(p) || CONTROLLED.has(p); };
+  const controlled = (prop, rtl, value) => { const p = prop.trim().toLowerCase(); if (/^--kol-(in|sc)-/.test(p)) return true; if (p.startsWith('--')) return false; if (RAW[p] && window.KolFx) return !RAW[p](value || ''); if (p === 'box-shadow' || p === 'text-shadow') return true; const c = covers(p, rtl); return c.every(x => CONTROLLED.has(x)) && !SHORT.includes(p) || CONTROLLED.has(p); };
 
   class Extra {
     /** opt: { canvas, styler, writeOps, note, html(), docOf(path) } */
@@ -66,7 +73,7 @@
       const rows = [];
       for (const r of info.rules) {
         if (r.off) continue;
-        for (const d of r.decls) if (!controlled(d.prop, rtl)) rows.push({ r, d, k: DT().rankOf(r, d.important) });
+        for (const d of r.decls) if (!controlled(d.prop, rtl, d.value)) rows.push({ r, d, k: DT().rankOf(r, d.important) });
       }
       rows.sort((a, b) => { for (let i = 0; i < a.k.length; i++) if (a.k[i] !== b.k[i]) return b.k[i] - a.k[i]; return 0; });
       const list = h('div', { class: 'sg-extra-list', 'data-extra-list': true });
