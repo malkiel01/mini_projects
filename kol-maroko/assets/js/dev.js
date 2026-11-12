@@ -95,7 +95,9 @@ const Dev = (() => {
   const LV_NAME = { error: 'שגיאה', warn: 'אזהרה', info: 'רגיל' };
   const CAT = { api: 'בקשה', agent: 'צ\'אט', php: 'שרת', client: 'דפדפן', auth: 'כניסה', data: 'נתונים', health: 'תקינות' };
   const MORE_ACTIONS = { login: '🔑 נכנס לכלי', draft_save: '💾 שמר טיוטה', dev_token_create: '🔑 יצר אסימון ל-Claude', dev_token_revoke: '🔑 ביטל אסימון ל-Claude',
-    secret_set: '🔐 עדכן סוד', secret_remove: '🔐 הסיר סוד', ai: '✨ ביקש מעוזר הבינה', ai_quota: '✨ שינה מכסת בינה' };
+    secret_set: '🔐 עדכן סוד', secret_remove: '🔐 הסיר סוד', ai: '✨ ביקש מעוזר הבינה', ai_quota: '✨ שינה מכסת בינה',
+    ai_apply: '✨ החיל הצעה של העוזר', agent_write: '🤖 כתב קובץ', agent_edit: '🤖 ערך קובץ', agent_create: '🤖 יצר קובץ', agent_words: '🤖 שמר מילים',
+    longtext_sync: '📝 סנכרן טקסט ארוך', longtext_conflict: '📝 התנגשות בטקסט ארוך', longtext_import: '📝 ייבא לעורך התמלילים', longtext_link: '🔗 חיבר למסמך', longtext_new: '📝 אזור חדש' };
 
   function view(el, sub, arg) {
     if (!SUBS.some(s => s[0] === sub)) sub = 'tasks';
