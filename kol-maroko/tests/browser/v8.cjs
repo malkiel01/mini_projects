@@ -236,11 +236,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(tags.map(t => t.c).join() === 'v8-t1,v8-cards-title,v8-extra' && tags[2].u, 'הוספה (השלמה מהפרויקט); מחלקה בלי כלל ובלי JS — "לא משמשת לעיצוב"', tags);
     // גרירה לשינוי סדר — עכבר אמיתי
     const tb = async c => page.evaluate(([q, c]) => { const t = document.querySelector(q + ' [data-tag="' + c + '"]'), g = t.querySelector('.sg-tag-grip').getBoundingClientRect(), r = t.getBoundingClientRect(); return { x: g.x + g.width / 2, y: r.y + r.height / 2, r: r.right, l: r.left }; }, [A, c]);
+    { const r0 = await tb('v8-t1'); await page.mouse.move(r0.x, 600); for (let k = 0; k < 8 && (await tb('v8-extra')).y > 900; k++) { await page.mouse.wheel(0, 200); await sleep(150); } }   // גלגלת על הפאנל — כמו משתמש
     let t1 = await tb('v8-extra'), t0 = await tb('v8-t1');
-    await page.mouse.move(t1.x, t1.y); await page.mouse.down(); for (let i = 1; i <= 8; i++) { await page.mouse.move(t1.x + (t0.r - 4 - t1.x) * i / 8, t0.y); await sleep(20); } await page.mouse.up(); await sleep(300);
+    await page.mouse.move(t1.x, t1.y); await page.mouse.down(); for (let i = 1; i <= 8; i++) { await page.mouse.move(t1.x + (t0.r - 4 - t1.x) * i / 8, t0.y); await sleep(20); } await page.mouse.up();
+    await page.waitForFunction(() => /<h2 class="v8-extra v8-t1 v8-cards-title">/.test(Editor._state.doc.text()), null, { timeout: 3000 }).catch(() => {}); await sleep(200);
     ok(/<h2 class="v8-extra v8-t1 v8-cards-title">/.test((await files(page))['index.html']), 'גרירת תגית (עכבר) — סדר המחלקות ב-class השתנה', (await files(page))['index.html'].match(/<h2 class="[^"]*">כותרת 1/));
-    await page.click(A + ' [data-tag-remove="v8-extra"]'); await sleep(300);
-    ok(/<h2 class="v8-t1 v8-cards-title">/.test((await files(page))['index.html']), 'הסרת מחלקה (✕)');
+    await page.click(A + ' [data-tag-remove="v8-extra"]'); await page.waitForFunction(() => !/v8-extra/.test(Editor._state.doc.text()), null, { timeout: 3000 }).catch(() => {}); await sleep(200);
+    ok(/<h2 class="v8-t1 v8-cards-title">/.test((await files(page))['index.html']), 'הסרת מחלקה (✕)', (await files(page))['index.html'].match(/<h2 class="[^"]*">כותרת 1/));
     for (const bad of ['a b', '.x', 'x"y', '<b>']) { const was = await files(page); await page.fill(A + ' [data-tag-add]', bad); await page.press(A + ' [data-tag-add]', 'Enter'); await sleep(150); ok(same(was, await files(page)), 'מחלקה נדחתה: ' + bad); }
     // שינוי שם בכל הפרויקט — HTML, CSS, ומחרוזות JS לבחירה
     await select(page, '.kadisha-lex-hero-btn'); await sleep(200);

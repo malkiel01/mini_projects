@@ -238,16 +238,16 @@
     dragTag(tag, box, n) {
       tag.addEventListener('pointerdown', e => {
         if (e.target.closest('button') || !this.canWrite()) return;
-        e.preventDefault(); tag.setPointerCapture(e.pointerId); tag.classList.add('drag');
+        e.preventDefault(); try { box.setPointerCapture(e.pointerId); } catch { /* */ } tag.classList.add('drag');   // הלכידה על המכל: התגית עצמה זזה ב-DOM, ותזוזה משחררת לכידה
         const list = () => [...box.querySelectorAll('[data-tag]')];
         const move = ev => { const over = list().find(t => { if (t === tag) return false; const r = t.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; }); if (!over) return; const r = over.getBoundingClientRect(), rtl = getComputedStyle(box).direction === 'rtl', before = rtl ? ev.clientX > r.left + r.width / 2 : ev.clientX < r.left + r.width / 2; box.insertBefore(tag, before ? over : over.nextSibling); };
         const up = () => {
-          tag.removeEventListener('pointermove', move); tag.removeEventListener('pointerup', up); tag.removeEventListener('pointercancel', up); tag.classList.remove('drag');
+          box.removeEventListener('pointermove', move); box.removeEventListener('pointerup', up); box.removeEventListener('pointercancel', up); tag.classList.remove('drag');
           const order = list().map(t => t.dataset.tag), K2 = K(), path = K2.pathOf(n);
           if (order.join(' ') === K2.classesOf(n).join(' ')) return;
           this.writeOps([() => [{ doc: this.html(), html: true, patches: setAttr(this.c.m, K2.byPath(this.c.m, path), 'class', order.join(' ')).patches }]], 'סדר המחלקות · ' + this.c.label(n));
         };
-        tag.addEventListener('pointermove', move); tag.addEventListener('pointerup', up); tag.addEventListener('pointercancel', up);
+        box.addEventListener('pointermove', move); box.addEventListener('pointerup', up); box.addEventListener('pointercancel', up);
       });
     }
     attrList(n) {
