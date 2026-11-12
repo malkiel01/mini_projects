@@ -76,9 +76,18 @@
    * שלו הם בדיוק העץ המבוקש, והעליונים שבהם ילדים של ההורה שמתחיל ב-parentFrom. delta — כמה אלמנטים נוספו בסך הכול.
    * מחזיר את המודל החדש, או זורק SrcError (code: 'parse') עם הסבר.
    */
+  /** עותק עמוק של המודל (KolSrc.update משנה את המודל במקום — הבדיקה רצה על עותק, והמודל של הקנבס אינו נוגע). */
+  function clone(m) {
+    const cn = (n, parent) => { const c = Object.assign({}, n, { parent, attrs: n.attrs.map(a => Object.assign({}, a)), st: n.st && n.st.slice(), et: n.et && n.et.slice(), kids: [], nodes: [] });
+      for (const x of n.nodes) { if (x.type === 'el') { const k = cn(x.node, c); c.kids.push(k); c.nodes.push({ type: 'el', node: k }); } else c.nodes.push(Object.assign({}, x)); }
+      return c; };
+    return Object.assign({}, m, { errors: m.errors.slice(), loose: (m.loose || []).slice(), root: m.root ? cn(m.root, null) : null });
+  }
   function verify(m, src, pieces, delta, patches) {
-    void patches;
-    const fresh = K().parseHtml(src);
+    // המודל ההדרגתי (KolSrc.update, על עותק) — שקול לניתוח מלא ונופל אליו בכל ספק (equiv.mjs, K2); בעמוד גדול חוסך ניתוח מלא
+    let fresh = null;
+    if (patches) { try { const u = K().update(clone(m), patches).model; if (u.src === src) fresh = u; } catch { fresh = null; } }
+    if (!fresh) fresh = K().parseHtml(src);
     const bad = why => { throw E('הדפדפן היה קורא את התוצאה אחרת ממה שנועד (' + why + ') — הקובץ לא שונה', 'parse'); };
     if (fresh.count !== m.count + delta) bad('מספר האלמנטים ' + fresh.count + ' במקום ' + (m.count + delta));
     if (count(fresh, n => n.implied) !== count(m, n => n.implied)) bad('הדפדפן הוסיף אלמנט שאינו כתוב');
