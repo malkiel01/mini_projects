@@ -588,6 +588,16 @@ const Project = (() => {
     for (const file of files) {
       const path = join(dir, file.name);
       toast(`מעלה ${++done} מתוך ${files.length}…`);
+      const lf = S.files.find(f => f.linked && f.path === path);
+      if (lf) {                                                  // N1: העלאה באותו נתיב = שמירה של הקובץ של הטבלה — "מה ישתנה" ואז "החל"
+        try {
+          await openFile(lf.id);
+          const doc = S.docs.get(lf.id), text = await file.text();
+          if (doc.model) doc.model.setValue(text); else { doc.text = text; changed(doc); }
+          await save(lf.id);
+        } catch (e) { fails.push(`${file.name}: ${e.message}`); }
+        continue;
+      }
       try {
         let linked = false;
         if (MEDIA_UP.test(file.type)) {
