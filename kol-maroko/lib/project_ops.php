@@ -89,10 +89,14 @@ function pf_copy(array $user, array $b): array
         $r = pf_tx(function () use ($to, $user) {
             pf_free($to);
             if (($n = pf_count()) >= ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $n + 1, $max);
-            return pf_insert($to, 'file', words_json(), $user, null, 'עותק סטטי של טבלת המילים — אינו מתעדכן ואינו מעדכן');
+            $int = pf_words_internal();
+            return pf_insert($to, 'file', words_json(), $user, null, 'עותק סטטי של טבלת המילים — אינו מתעדכן ואינו מעדכן' . ($int ? ' · כולל שדות פנימיים (' . implode(', ', array_column($int, 'key')) . ') — יתפרסם כקובץ רגיל' : ''));
         });
         audit_as($user, 'pf_copy', "טבלת המילים ← $to (עותק סטטי)");
-        return ['copied' => ['from' => pf_words_path(), 'to' => $to, 'count' => 1], 'file' => pf_public($r), 'static_copy' => true];
+        // N2: העותק כולל גם שדות פנימיים — והוא יתפרסם כקובץ רגיל
+        $int = pf_words_internal();
+        $warn = $int ? 'העותק כולל ' . (count($int) === 1 ? 'שדה פנימי אחד' : count($int) . ' שדות פנימיים') . ' (' . implode(', ', array_column($int, 'key')) . '), והוא יתפרסם כקובץ רגיל' : null;
+        return ['copied' => ['from' => pf_words_path(), 'to' => $to, 'count' => 1], 'file' => pf_public($r), 'static_copy' => true, 'warning' => $warn];
     }
     [$from, $first, $n] = pf_tx(function () use ($b, $to, $user) {
         [$from, $rows, $dir] = pf_target($b);

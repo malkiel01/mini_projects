@@ -144,7 +144,7 @@ function build_collect(array $opts): array
         if ($r['kind'] === 'media') {
             $f = $media[$r['file_id']] ?? null;
             if (!$f || $f['deleted_at'] !== null || !is_file(file_path($f))) throw new ApiError("קובץ המדיה \"$p\" חסר בספרייה — בחרו אותו מחדש", 422, ['file' => $p]);
-            $files[$p] = ['sha' => $f['sha256'] ?: hash_file('sha256', file_path($f)), 'size' => (int)$f['size'], 'type' => build_type($p), 'src' => 'media', 'file_id' => $f['id']];
+            $files[$p] = ['sha' => $f['sha256'] ?: hash_file('sha256', file_path($f)), 'size' => (int)$f['size'], 'type' => pv_media_type($f, $p), 'src' => 'media', 'file_id' => $f['id']];
             continue;
         }
         $files[$p] = ['sha' => $r['sha'], 'size' => (int)$r['size'], 'type' => build_type($p), 'src' => 'repo'];
@@ -175,27 +175,57 @@ function build_needs_words(array $files): bool
 function build_words(array $files): array
 {
     $notes = [];
-    $j = json_decode(pv_words(''), true);
-    $byWord = [];
-    foreach (words_rows() as $w) $byWord[(int)$w['id']] = (string)$w['audio'];
-    $ids = array_values(array_unique(array_filter(array_map('file_id', $byWord))));
-    $meta = files_meta($ids);
+    $j = json_decode(pv_words(''), true);                     // N2: רק שדות "מתפרסם" (words_json עם $app)
+    $fields = fields_all();
+    $pub = array_values(array_filter($fields, fn($f) => $f['published']));
+    $audioKey = null;
+    foreach ($pub as $f) if ($f['col'] === 'audio') $audioKey = $f['key'];
+    // N2: כל שדה קובץ מותאם שמתפרסם — כמו ההקלטה (06 §2.3: media/images/<id>.<ext>, media/audio/<id>-<key>.<ext>)
+    $fileFields = array_values(array_filter($pub, fn($f) => $f['col'] === null && in_array($f['type'], ['image', 'audio'], true)));
+    $byWord = []; $extra = [];
+    foreach (words_rows() as $w) { $byWord[(int)$w['id']] = (string)$w['audio']; $extra[(int)$w['id']] = $w['extra']; }
+    $topics = topics_all();
+    $ids = array_merge(array_map('file_id', $byWord), array_column($topics, 'image'));
+    foreach ($fileFields as $f) foreach ($extra as $x) $ids[] = file_id($x[$f['key']] ?? null);
+    $meta = files_meta(array_values(array_unique(array_filter($ids))));
     $site = $missing = 0;
+    $add = function (string $id, string $path) use (&$files, $meta): bool {
+        $f = $meta[$id] ?? null;
+        if (!$f || $f['deleted_at'] !== null || !is_file(file_path($f))) return false;
+        if (!isset($files[$path])) $files[$path] = ['sha' => $f['sha256'] ?: hash_file('sha256', file_path($f)), 'size' => (int)$f['size'], 'type' => build_type($path), 'src' => 'media', 'file_id' => $f['id']];
+        return true;
+    };
     foreach ($j['items'] as &$it) {
-        $a = $byWord[(int)$it['id']] ?? '';
+        $wid = (int)$it['id'];
+        foreach ($fileFields as $f) {
+            $v = $extra[$wid][$f['key']] ?? null;
+            if (!file_id($v)) continue;
+            $m = $meta[$v] ?? null;
+            $path = $m ? ($f['type'] === 'image' ? "media/images/$v.{$m['ext']}" : "media/audio/$v-{$f['key']}.{$m['ext']}") : '';
+            if ($path !== '' && $add($v, $path)) $it[$f['key']] = $path; else { unset($it[$f['key']]); $missing++; }
+        }
+        if ($audioKey === null) continue;
+        $a = $byWord[$wid] ?? '';
         if ($a === '') continue;
         if (!file_id($a)) { $site++; continue; }
         $f = $meta[$a] ?? null;
-        if (!$f || $f['deleted_at'] !== null || !is_file(file_path($f))) { $it['audio'] = ''; $missing++; continue; }
-        $path = 'media/audio/' . $f['id'] . '.' . $f['ext'];
-        $it['audio'] = $path;
-        if (!isset($files[$path])) $files[$path] = ['sha' => $f['sha256'] ?: hash_file('sha256', file_path($f)), 'size' => (int)$f['size'], 'type' => build_type($path), 'src' => 'media', 'file_id' => $f['id']];
+        $path = $f ? 'media/audio/' . $f['id'] . '.' . $f['ext'] : '';
+        if ($path !== '' && $add($a, $path)) $it[$audioKey] = $path; else { $it[$audioKey] = ''; $missing++; }
     }
     unset($it);
+    // תמונות הנושאים — גם הן בחבילה
+    if (isset($j['topics'])) foreach ($j['topics'] as &$t) {
+        $img = $topics[$t['id']]['image'] ?? '';
+        if (!file_id($img)) continue;
+        $m = $meta[$img] ?? null;
+        $path = $m ? "media/images/$img.{$m['ext']}" : '';
+        if ($path !== '' && $add($img, $path)) $t['image'] = $path; else { unset($t['image']); $missing++; }
+    }
+    unset($t);
     $bytes = json_encode($j, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
     $files[PV_WORDS] = ['sha' => pf_blob_put($bytes), 'size' => strlen($bytes), 'type' => 'application/json', 'src' => 'data'];
     if ($site) $notes[] = ['kind' => 'site_audio', 'msg' => "$site הקלטות עדיין באתר (כתובת חיצונית) — לא בחבילה. אחרי \"משיכה\" לספריית ההקלטות הן ייכנסו", 'count' => $site];
-    if ($missing) $notes[] = ['kind' => 'missing_audio', 'msg' => "$missing הקלטות חסרות בספרייה — יצאו בלי שמע", 'count' => $missing];
+    if ($missing) $notes[] = ['kind' => 'missing_audio', 'msg' => "$missing קבצים (הקלטות / תמונות) חסרים בספרייה — יצאו בלעדיהם", 'count' => $missing];
     return [$files, $notes];
 }
 
@@ -681,7 +711,7 @@ function build_serve(int $id, string $mode, string $root, string $path): never
     if ($f['src'] === 'media') {
         $file = file_path(file_row((string)$f['file_id']));
         if (!is_file($file)) pv_fail(404, '404 - the media file is missing on the server.');
-        pv_send(null, $file, $path);
+        pv_send(null, $file, $path, 200, $f['type'] ?? null);
     }
     $sha = $mode === 'p' && $f['src'] === 'prerender' ? $f['orig'] : $f['sha'];
     if ($mode === 'p' && preg_match('/\.html?$/i', $path)) pv_send(pv_inject(pf_blob_get($sha), $root . PV_BRIDGE), null, $path);
@@ -719,19 +749,28 @@ function build_send(array $user, array $b): array
     build_save((int)$r['id'], ['status' => 'sending', 'version' => $n, 'error' => null]);
     $files = json_decode($r['files'], true);
     $sent = 0;
+    $entry = (string)(json_decode($r['opts'], true)['entry'] ?? 'index.html');
+    $k = pub_key();
     try {
-        $sent = build_send_blobs($files);
-        $entry = (string)(json_decode($r['opts'], true)['entry'] ?? 'index.html');
-        $man = ['site' => site_host(), 'page' => PUB_PAGE, 'version' => $n, 'time' => time(), 'nonce' => bin2hex(random_bytes(16)), 'entry' => $entry,
-            'published_by' => $user['name'] ?? '', 'files' => array_map(fn($f) => ['sha256' => $f['sha'], 'size' => $f['size'], 'type' => $f['type']], $files)];
-        $bytes = build_json($man);
-        $k = pub_key();
-        try {
-            $res = site_call('manifest', ['manifest' => $bytes, 'manifest_sig' => base64_encode(sodium_crypto_sign_detached($bytes, base64_decode($k['secret']))), 'kid' => $k['kid']]);
-        } catch (ApiError $e) {
-            // התשובה הקודמת אבדה, והאתר כבר מחזיק בדיוק את המספר הזה — הצלחה
-            if (($e->extra['code'] ?? '') === 'old_version' && (int)($e->extra['site']['version'] ?? 0) === $n) $res = $e->extra['site'];
-            else throw $e;
+        for ($try = 0; ; $try++) {
+            $sent += build_send_blobs($files);
+            $man = ['site' => site_host(), 'page' => PUB_PAGE, 'version' => $n, 'time' => time(), 'nonce' => bin2hex(random_bytes(16)), 'entry' => $entry,
+                'published_by' => $user['name'] ?? '', 'files' => array_map(fn($f) => ['sha256' => $f['sha'], 'size' => $f['size'], 'type' => $f['type']], $files)];
+            $bytes = build_json($man);
+            try {
+                $res = site_call('manifest', ['manifest' => $bytes, 'manifest_sig' => base64_encode(sodium_crypto_sign_detached($bytes, base64_decode($k['secret']))), 'kid' => $k['kid']]);
+                break;
+            } catch (ApiError $e) {
+                $code = $e->extra['code'] ?? '';
+                // התשובה הקודמת אבדה, והאתר כבר מחזיק בדיוק את המספר הזה — הצלחה
+                if ($code === 'old_version' && (int)($e->extra['site']['version'] ?? 0) === $n) { $res = $e->extra['site']; break; }
+                // B1: האתר מחק גוש ש-pkg_site_blobs זוכר כ"נשלח" (ניקוי, שחזור). שוכחים את הגושים של הגרסה הזו — asset_has
+                // יאשר מחדש את מה שעוד שם, ורק החסר נשלח — ומנסים שוב. פעם אחת בלבד: חסר שוב ← הכשל מגיע לכלי
+                if ($code !== 'asset_missing' || $try > 0) throw $e;
+                $forget = db()->prepare('DELETE FROM pkg_site_blobs WHERE sha = ? AND site = ?');
+                foreach (array_unique(array_column($files, 'sha')) as $sha) $forget->execute([$sha, site_host()]);
+                audit_as($user, 'pkg_send_retry', "גרסה $n · האתר דיווח על קובץ חסר — שליחה חוזרת של החסרים");
+            }
         }
     } catch (ApiError $e) {
         build_save((int)$r['id'], ['error' => build_json(['msg' => $e->getMessage(), 'code' => $e->extra['code'] ?? null, 'send' => true])]);

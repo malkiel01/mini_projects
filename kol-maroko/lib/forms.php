@@ -9,7 +9,7 @@
  *       כל מגבלה נאכפת כאן, בשרת. התשובה — רק ok ו-reason. ה-IP — HMAC בלבד, בטבלת הקצב בלבד, 30 יום.
  *   (ג) התיבה — "📬 פניות" בסטודיו (api.php), המייל, ושורת המפתח.
  *
- * איפה הנתונים: form_entries / form_hits / form_rejects / forms_trash ב-data/kol.sqlite (מיגרציה 18); מפתח ה-HMAC —
+ * איפה הנתונים: form_entries / form_hits / form_rejects / forms_trash ב-data/kol.sqlite (מיגרציה 19); מפתח ה-HMAC —
  * data/secrets.json (forms_ip_key); ההגדרות — בטבלת settings. אין קובץ חדש ב-data/. snap_state אינו כולל פניות.
  */
 
