@@ -214,6 +214,7 @@ const Publish = (() => {
         h('a', { class: 'btn ghost', href: DOCS + 'install.md', target: '_blank', rel: 'noopener' }, '📘 מדריך התקנה'),
         h('a', { class: 'btn ghost', href: DOCS + 'cloudflare.md', target: '_blank', rel: 'noopener' }, '☁️ Cloudflare')),
       ping,
+      mountBlock(),
       importBlock(host, imp.imported),
       audioBlock(),
       aiBlock(host));
@@ -263,6 +264,31 @@ const Publish = (() => {
       h('p', { class: 'hint' }, 'כל התוכן, ההקלטות והעיצוב של העמוד היום — לטיוטה, לעריכה. בוורדפרס: הגדרות ← קול מרוקו ← "⬇️ ייצוא העמוד", ואת הקובץ שירד מעלים כאן.'),
       last ? h('p', { class: 'hint' }, `ייבוא אחרון: ${when(last.at)} · ${last.meta?.url || ''}`) : null,
       input, h('button', { type: 'button', class: 'btn primary', onclick: () => input.click() }, '📥 העלאת קובץ הייצוא'), ups, result);
+  }
+
+  // אופן ההצבה באתר (M4-BC): עמוד מלא / חלון בתוך האתר / פס האתר. נשלח לתוסף בפעולה חתומה — מיידי, בלי פרסום מחדש
+  function mountBlock() {
+    const box = h('div', { class: 'summary', id: 'mount-block' }, h('p', { class: 'hint' }, 'טוען…'));
+    api('mount').then(st => {
+      let cur = st.mount;
+      const status = h('p', { class: 'hint', role: 'status' });
+      const rows = Object.entries(st.options).map(([id, o]) => h('label', { class: 'mount-opt', style: 'display:block;margin:6px 0' },
+        h('input', { type: 'radio', name: 'kol-mount', value: id, checked: id === cur }), ' ', h('b', {}, o.name), ' — ', o.text,
+        o.loses.length ? h('ul', { class: 'hint', style: 'margin:4px 0 0' }, ...o.loses.map(t => h('li', {}, t))) : ''));
+      const save = h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+        const id = (box.querySelector('input[name=kol-mount]:checked') || {}).value;
+        if (!id || id === cur) { toast('לא השתנה'); return; }
+        const o = st.options[id];
+        if (!confirm('לשנות את אופן ההצבה באתר ל"' + o.name + '"? השינוי מיידי, בלי פרסום מחדש. אפשר לחזור בכל רגע.' + (o.loses.length ? '\n\nמה העמוד מפסיד:\n• ' + o.loses.join('\n• ') : ''))) return;
+        save.disabled = true; status.textContent = 'שולח לאתר…';
+        try { const r = await api('mount_set', { mount: id }); cur = r.mount; status.textContent = '✓ באתר עכשיו: ' + st.options[cur].name; toast('נשמר באתר'); }
+        catch (e) { status.replaceChildren(h('span', { class: 'error' }, e.message)); }
+        save.disabled = false;
+      } }, 'שמירה באתר');
+      box.replaceChildren(h('div', { class: 'line' }, h('b', {}, '🪟 איך העמוד מוצג באתר'),
+        h('span', { class: 'muted' }, '— בכל אופן הקוד של העמוד רץ מבודד; החבילה עצמה לא משתנה')), ...rows, h('div', { class: 'row-btns' }, save), status);
+    }).catch(e => box.replaceChildren(h('p', { class: 'error' }, e.message)));
+    return box;
   }
 
   // ההקלטות מהאתר → עותק בכלי. הקבצים מהתוסף (1.3): "ייצוא ההקלטות", כמה חלקים — אפשר לבחור את כולם יחד

@@ -1,5 +1,5 @@
 /*
- * 🛡️ ערכת ההתקפה מול האתר (פרוסה M2; 07 §6, H1–H15). רצה **מתוך החבילה**, כפי שהתוסף מגיש אותה בכתובת של העמוד.
+ * 🛡️ ערכת ההתקפה מול האתר (פרוסה M2; 07 §6, H1–H15; M4-BC — H16, H17 בתוך המעטפת). רצה **מתוך החבילה**, כפי שהתוסף מגיש אותה בכתובת של העמוד.
  *
  * אותן בדיקות של ה-probe בערכה של התצוגה החיה (assets/js/attack-kit.js, F4 — הקובץ ההוא לקריאה בלבד; זה עותק מותאם):
  * עוגייה, אחסון, מסמך ההורה, ניווט הלשונית, ובקשה עם העוגיות של המחובר — כאן מול נקודות של וורדפרס במקום api.php.
@@ -99,6 +99,40 @@
     st.remove();
     cover.remove();
     add('H5', 'סגנון עוין ושכבה מעל הכול — בתוך העמוד בלבד', true, 'הוזרקו והוסרו; שאר האתר — נבדק מבחוץ');
+
+    // H16 (M4-BC) — הודעות מזויפות לאתר שמסביב: נתיב החוצה, גובה ענק, סוג לא מוכר, צורה לא מדויקת, ומ-iframe פנימי
+    // (מקור נכון, אבל source אחר). שהן נזרקו — נבדק מבחוץ: הכתובת, הכותרת והגובה של המעטפת לא זזו
+    if (framed) {
+      const forged = [{ kol: 'path', p: '../wp-admin/' }, { kol: 'path', p: '/wp-admin/' }, { kol: 'path', p: 'https://evil.example/x' }, { kol: 'path', p: 'nope.html' },
+        { kol: 'height', h: 1e9 }, { kol: 'height', h: -5 }, { kol: 'height', h: '321' }, { kol: 'height', h: NaN }, { kol: 'title', t: 'PWNED-' + 'x'.repeat(5000) },
+        { kol: 'title', t: 'PWNED-EXTRA', extra: 1 }, { kol: 'title', t: { toString: null } }, { kol: 'evil', x: 1 }, 'kol:title', ['kol', 'title'], { kolFrame: true, h: 77 }, null];
+      let sent = 0;
+      for (const m of forged) { try { parent.postMessage(m, '*'); sent++; } catch (e) { /* לא ניתן לשכפול */ } }
+      const child = document.createElement('iframe');
+      child.style.cssText = 'width:1px;height:1px;border:0;position:absolute;left:-9999px';
+      child.srcdoc = '<script>top.postMessage({kol:"path",p:"probe.html"},"*");top.postMessage({kol:"title",t:"PWNED-CHILD"},"*");top.postMessage({kol:"height",h:4321},"*");<\/script>';
+      document.body.append(child);
+      await wait(300);
+      child.remove();
+      add('H16', 'הודעות מזויפות לאתר — נשלחו ' + sent + ' + 3 מ-iframe פנימי', true, 'שנזרקו — נבדק מבחוץ (כתובת, כותרת, גובה)');
+    } else {
+      add('H16', 'הודעות מזויפות לאתר', true, 'העמוד הוא המסמך העליון — אין מעטפת');
+    }
+
+    // H17 (M4-BC) — העמוד מנסה לקרוא או לנווט את המעטפת: window.top.location, parent.document, frameElement, history, אחסון
+    if (framed) {
+      try { const x = window.top.location.href; add('H17', 'top.location.href — חריגה', false, 'נקרא: ' + x); } catch (e) { add('H17', 'top.location.href — חריגה', true, e.name); }
+      try { void parent.document.cookie; add('H17', 'parent.document.cookie — חריגה', false, 'נקרא!'); } catch (e) { add('H17', 'parent.document.cookie — חריגה', true, e.name); }
+      try { parent.history.replaceState(null, '', '/__kolkit-pwned/'); add('H17', 'parent.history — חריגה', false, 'הוצב!'); } catch (e) { add('H17', 'parent.history — חריגה', true, e.name); }
+      try { void parent.localStorage; add('H17', 'parent.localStorage — חריגה', false, 'נקרא!'); } catch (e) { add('H17', 'parent.localStorage — חריגה', true, e.name); }
+      add('H17', 'frameElement — null', window.frameElement === null, String(window.frameElement));
+      let threw = 'לא נזרק';
+      try { window.top.location.replace('/__kolkit-pwned/'); } catch (e) { threw = e.name; }
+      await wait(300);                      // אם הניווט היה עובר — הערכה הייתה נעלמת ולא מדווחת
+      add('H17', 'top.location.replace(…) — נחסם', true, threw + ' · העמוד שמסביב — נבדק מבחוץ');
+    } else {
+      add('H17', 'window.top / parent', true, 'העמוד הוא המסמך העליון — אין מעטפת');
+    }
 
     await wait(500);                        // שהטופס יגיע לשרת
     render();

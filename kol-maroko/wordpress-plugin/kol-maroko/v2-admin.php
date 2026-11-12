@@ -111,7 +111,7 @@ function kol_maroko_v2_wipe()
     foreach (['blobs', 'parts'] as $d) foreach (glob("$root/$d/*") ?: [] as $f) if (is_file($f) && basename($f) !== 'index.html') @unlink($f);
     foreach (glob("$root/{manifest-*.json,live.json,live.json.tmp*,rate.json,publish.lock,stats.json}", GLOB_BRACE) ?: [] as $f) @unlink($f);
     kol_maroko_v2_log('wipe', 0);
-    foreach (['v2_live', 'v2_last', 'v2_versions', 'v2_nonces', 'v2_selftest', 'v2_selftest_result', 'v2_purge', 'v2_preview_hash'] as $k) delete_option('kol_maroko_' . $k);
+    foreach (['v2_live', 'v2_last', 'v2_versions', 'v2_nonces', 'v2_selftest', 'v2_selftest_result', 'v2_purge', 'v2_preview_hash', 'v2_mount'] as $k) delete_option('kol_maroko_' . $k);
     kol_maroko_v2_lock_files(true);
     kol_maroko_v2_purge();
 }
@@ -134,6 +134,10 @@ function kol_maroko_v2_admin_section()
     if ($msg) echo '<div class="notice notice-info"><p>' . esc_html($msg) . '</p></div>';
     echo '<p>חבילה חתומה מהסטודיו, מוגשת בכתובת <code dir="ltr">' . esc_html(kol_maroko_v2_scope()) . '</code> לפני וורדפרס — בלי ערכת הנושא, בלי עוגיות, '
         . 'ובמקור אטום (ארגז חול). כל עוד המפסק כבוי, הגולשים רואים את העמוד כמו היום.</p>';
+    $mount_names = ['full' => 'עמוד מלא (M-A) — העמוד הוא כל המסך', 'framed' => 'חלון בתוך האתר (M-C) — הכותרת והתחתית של האתר, והעמוד כחלון ביניהן',
+        'bar' => 'פס האתר (M-B) — הכותרת של האתר, והעמוד ממלא את שאר המסך'];
+    echo '<p id="kol-v2-mount">אופן ההצבה: <b>' . esc_html($mount_names[kol_maroko_v2_mount()]) . '</b> — נקבע מהכלי ("🔗 חיבור לאתר"). בכל אופן הקוד של העמוד '
+        . 'רץ במקור אטום בלבד; בחלון — המעטפת היא קוד קבוע של התוסף.</p>';
     $info_live = (array)($info[$live] ?? []);
     $confirm_text = 'הגולשים יראו מעכשיו את הגרסה ' . $live . ', שפורסמה ב-' . (isset($info_live['at']) ? wp_date('d.m.Y H:i', (int)$info_live['at']) : '?')
         . ' ע"י ' . (string)($info_live['by'] ?? '?') . '. להדליק?';

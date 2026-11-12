@@ -416,6 +416,7 @@ function kol_maroko_v2_handle($action, array $b)
     if ($action === 'asset_has') return kol_maroko_v2_asset_has($b);
     if ($action === 'asset_put') return kol_maroko_v2_asset_put($b);
     if ($action === 'manifest') return kol_maroko_v2_manifest($b);
+    if ($action === 'mount') return kol_maroko_v2_mount_set($b);
     return kol_maroko_v2_activate($b);
 }
 

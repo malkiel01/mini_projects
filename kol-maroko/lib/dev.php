@@ -14,7 +14,7 @@ require_once __DIR__ . '/devloop.php';
 require_once __DIR__ . '/forms.php';
 
 /** גרסת התוסף לוורדפרס שהריפו מצפה לה באתר. התוסף אינו נפרס לשרת הזה, ולכן המספר כתוב כאן; בדיקה אוטומטית משווה אותו לקובץ התוסף. */
-const KOL_PLUGIN_EXPECTED = '2.0.1';
+const KOL_PLUGIN_EXPECTED = '2.1.0';
 const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צילום רק למטלה שהוא עצמו פתח ב-15 הדקות האחרונות
 
 /**
