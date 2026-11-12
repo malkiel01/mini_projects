@@ -295,7 +295,21 @@
       const sec = h('section', { class: 'sg-sec', 'data-sec': 'layout' }, h('h3', { class: 'dt-h' }, 'פריסה · רובריקה'),
         h('div', { class: 'sg-line', role: 'group', 'aria-label': 'כיוון' }, h('span', { class: 'sg-lab' }, 'כיוון'), btn('col', '↕ עמודה'), btn('row', '↔ שורה'), h('span', { class: 'hint', 'data-dirnow': s.kind }, ' עכשיו: ' + s.text)));
       if (s.kind === 'grid' || s.kind === 'other') sec.append(h('p', { class: 'hint' }, 'התצוגה היא ' + s.text + ' (display: ' + s.other + '). "↕ / ↔" יציעו להפוך אותה ל-flex ויאמרו מה ישתנה. עריכת הרשת עצמה — V6.'));
-      if (design && design.num) sec.append(design.num('gap', 'רווח בין הילדים', { group: 'gap' }));
+      if (s.flex || s.kind === 'grid') { if (design && design.num) sec.append(design.num(s.kind === 'row' ? 'column-gap' : 'row-gap', 'רווח בין הילדים', { group: 'gap' })); }
+      else if (s.block) {
+        // זרימה רגילה: רווח שהוקלד כותב display:flex; flex-direction:column; gap — עסקה אחת (הערך עובר checkValue / CSS.supports)
+        const inp = h('input', { type: 'text', class: 'sg-in', dir: 'ltr', inputmode: 'decimal', placeholder: '0', 'aria-label': 'רווח בין הילדים', 'data-blockgap': true, disabled: !w || null });
+        const go = () => {
+          let v = inp.value.trim(); if (!v) return; if (/^-?\d+(\.\d+)?$/.test(v)) v += 'px';
+          const t = this.styler.targets(n)[0]; if (!t) return this.note('אין לאן לכתוב — מקשרים קובץ CSS לעמוד', true);
+          const label = 'רווח · ' + this.canvas.label(n) + ' · ' + v;
+          const docs = this.writeStyle(new Map([[n, [['display', 'flex', t], ['flex-direction', 'column', t], ['row-gap', v, t]]]]), label);
+          if (docs && docs.length) this.note(label + ' — הרובריקה הפכה ל-flex בעמודה (display:flex; flex-direction:column), כדי שהרווח ייראה', false, { label: 'בטל', run: this.undo });
+        };
+        inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+        inp.addEventListener('change', go);
+        sec.append(h('div', { class: 'sg-line' }, h('span', { class: 'sg-lab' }, 'רווח בין הילדים'), inp, h('span', { class: 'hint' }, ' ייכתב display:flex; flex-direction:column; gap')));
+      }
       try { const cs = this.canvas.frame.contentWindow.getComputedStyle(this.canvas.elOf(n)); if (/flex/.test(cs.display)) sec.append(h('p', { class: 'hint', 'data-wrap': cs.flexWrap }, 'גלישה (flex-wrap): ' + cs.flexWrap + ' · יישור, גלישה ורוחב העמודות — V6; עד אז ', h('button', { type: 'button', class: 'btn sm', onclick: () => this.openInCode(n) }, '</> פתח בקוד'))); } catch { /* */ }
       if (!n.kids.length && !n.nodes.some(x => x.type === 'text' && /\S/.test(x.value))) sec.append(h('p', { class: 'hint', 'data-empty-note': true }, 'רובריקה ריקה — בתצוגה החיה גובהה 0. בעורך היא מוצגת עם גובה מינימלי וקו מקווקו (לא נכתב לקובץ).'));
       return sec;
@@ -402,7 +416,7 @@
       if (!par) return;
       // בין עמודים: העמוד הזה אינו מקשר את קובץ ה-CSS שבו הכללים של המחלקות — מציעים לקשר, ושום כלל אינו משוכפל בשקט
       if (own && this.clip.page !== this.filePath()) {
-        const linked = new Set(this.sheetsList().map(s => s.path)), miss = this.clip.sheets.filter(p => !linked.has(p));
+        const linked = new Set(this.linkedPaths ? this.linkedPaths() : this.sheetsList().map(s => s.path)), miss = this.clip.sheets.filter(p => !linked.has(p));
         if (miss.length) {
           const go = await this.ask('הדבקה מעמוד אחר', 'העיצוב של האלמנט נמצא ב-' + miss.join(', ') + ', והעמוד הזה אינו מקשר אותו.', [['link', 'קשר את ' + miss.join(', ') + ' לעמוד'], ['bare', 'הדבק בלי העיצוב'], ['cancel', 'בטל']]);
           if (go === 'cancel' || !go) return;

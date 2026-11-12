@@ -102,6 +102,7 @@ const PAGE = `<!doctype html>
     await page.waitForSelector('.pj-tree .pj-row');
     await call(page, 'pf_migrate', {});
     await call(page, 'pf_create', { path: 't/page.html', content: PAGE });
+    await call(page, 'pf_create', { path: 't/other.html', content: '<!doctype html>\n<html lang="he" dir="rtl">\n<head>\n  <meta charset="utf-8">\n  <title>אחר</title>\n</head>\n<body>\n  <p id="o1">עמוד אחר</p>\n</body>\n</html>\n' });
     const cards = Array.from({ length: 1496 }, (_, i) => `  <li class="card"><b>מילה ${i}</b> <span>פירוש</span></li>`).join('\n');
     await call(page, 'pf_create', { path: 't/big.html', content: `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><link rel="stylesheet" href="../css/page.css"></head><body>\n<h1 class="big-title">מילון</h1>\n<div class="tools"><p>כלים</p></div>\n<ul class="cards">\n${cards}\n</ul>\n</body></html>\n` });
 
@@ -322,7 +323,38 @@ const PAGE = `<!doctype html>
     await page.keyboard.press('Escape'); await sleep(250);
     ok(/<div><\/div><img src="" alt="">|<div><img src="" alt=""><\/div>/.test(await src(page)) && /בלי קובץ/.test((await st(page)).note), 'ביטול הבחירה — האלמנט נשאר, "בלי קובץ"', (await st(page)).note);
     ok(await undoFiles(page, p0), 'בטל — חזרה');
+    // רווח ברובריקה בזרימה רגילה: display:flex; flex-direction:column; gap — עסקה אחת; ערך עוין נדחה
+    await select(page, '#box'); await page.evaluate(() => Editor._tab('adv')); await sleep(150);
+    await page.fill('[data-blockgap]', '</style><script>alert(1)</script>'); await page.press('[data-blockgap]', 'Enter'); await sleep(200);
+    ok(same(await files(page), p0), 'רווח: ערך עוין ("</style><script>…") — נדחה, אף קובץ לא השתנה', (await st(page)).note);
+    await select(page, '#box'); await page.evaluate(() => Editor._tab('adv')); await sleep(150);
+    await page.fill('[data-blockgap]', '12'); await page.press('[data-blockgap]', 'Enter'); await sleep(250);
+    f1 = await files(page);
+    ok(/\{[^}]*display: flex;[^}]*flex-direction: column;[^}]*row-gap: 12px;/.test(f1['css/page.css']) && await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('#box')).rowGap) === '12px', 'רווח שהוקלד ברובריקה רגילה: display:flex; flex-direction:column; gap — והרווח נראה', f1['css/page.css'].slice(-160));
+    ok(await undoFiles(page, p0), 'בטל — שני הקבצים חוזרים');
     ok((await st(page)).inequiv === 0, 'אין אי-שקילות במודל בעמוד הבדיקה');
+
+    // ═══ העתק / הדבק בין עמודים ═══
+    await openPage(page, 'index.html');
+    await select(page, 'h1.kadisha-hero-title'); await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await page.keyboard.press('Control+c'); await sleep(120);
+    const otherId = await page.evaluate(() => [...document.querySelectorAll('.ed-page option')].find(o => o.textContent === 't/other.html').value);
+    await page.selectOption('.ed-page', otherId); await page.waitForFunction(() => Editor._state.file && Editor._state.file.path === 't/other.html' && !Editor._state.busy); await sleep(300);
+    const o0 = await files(page);
+    await select(page, '#o1'); await page.evaluate(() => Editor._state.canvas.doc.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }))); await sleep(250);
+    ok(/css\/page\.css/.test(await page.textContent('#sheet')) && await page.isVisible('#sheet [data-choice="link"]') && await page.isVisible('#sheet [data-choice="bare"]'), 'הדבקה בעמוד שאינו מקשר את קובצי העיצוב של האלמנט: "קשר את css/… לעמוד" (ברירת המחדל) או "הדבק בלי העיצוב"');
+    await page.click('#sheet [data-choice="link"]'); await sleep(400);
+    s1 = await src(page);
+    ok(/<link rel="stylesheet" href="\.\.\/css\/page\.css">/.test(s1) && /<p id="o1">עמוד אחר<\/p>\n  <h1 id="lexicon-hero-title" class="kadisha-hero-title">קול מרוקו<\/h1>/.test(s1) && !Object.keys(await files(page)).some(k => k.endsWith('.css') && (o0[k] || '') !== (k in o0 ? o0[k] : '') ), 'בין עמודים: נוסף <link> לקבצים (נתיב יחסי), והאלמנט הודבק עם המחלקות — שום כלל לא שוכפל', { note: (await st(page)).note, s: s1.slice(s1.indexOf('<head>'), s1.indexOf('<head>') + 260) });
+    ok(await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('h1.kadisha-hero-title')).fontFamily) !== '' && (await st(page)).inequiv === 0, 'בקנבס — העיצוב של העמוד המקושר חל מיד');
+    for (let i = 0; i < 20 && (await src(page)) !== o0['t/other.html']; i++) { await page.evaluate(() => Editor._undo()); await sleep(40); }
+    ok((await src(page)) === o0['t/other.html'], 'בטל — העמוד האחר חוזר בייט בבייט (קבצי ה-CSS לא השתנו)');
+    await select(page, '#o1'); await page.evaluate(() => Editor._state.canvas.doc.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: new DataTransfer(), bubbles: true, cancelable: true }))); await sleep(250);
+    await page.click('#sheet [data-choice="bare"]'); await sleep(300);
+    s1 = await src(page);
+    ok(!/<link/.test(s1) && /<h1 id="lexicon-hero-title" class="kadisha-hero-title">קול מרוקו<\/h1>/.test(s1), '"הדבק בלי העיצוב" — האלמנט בלבד, בלי <link>');
+    for (let i = 0; i < 20 && (await src(page)) !== o0['t/other.html']; i++) { await page.evaluate(() => Editor._undo()); await sleep(40); }
+    ok((await src(page)) === o0['t/other.html'], 'בטל — חזרה');
 
     // ═══ 3. ביצועים: 1,496 מילים (60 בקנבס) ═══
     await openPage(page, 't/big.html');
