@@ -96,7 +96,7 @@
       if (this.states) kids.push(this.states.bar(n));
       kids.push(this.drawTarget(n));
       if (many > 1) kids.push(this.drawMulti(n, many));
-      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); if (this.extra) kids.push(...this.extra(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n), this.drawMotion(n));
+      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); if (this.extra) kids.push(...this.extra(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n), ...(this.fx ? this.fx(n) : []), this.transition ? this.transition(n, this) : this.drawMotion(n));   // V10: מסגרת / צל / אפקטים / מסיכה / מפריד, ומעבר עם עורך עקומה
       if (this.extraProps) kids.push(this.extraProps(n, this));
       this.host.replaceChildren(...kids);
       this.host.scrollTop = scroll;
