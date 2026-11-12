@@ -1,4 +1,5 @@
-// קול מרוקו — 📁 פרויקט (פרוסה F2a; lib/project.php): עץ הקבצים של העמוד ועורך קוד רב-לשוניות.
+// קול מרוקו — 📁 פרויקט (פרוסות F2a + F2b; lib/project.php, lib/project_ops.php): עץ הקבצים של העמוד ועורך קוד רב-לשוניות.
+// F2b: העברה (גרירה / "העבר אל…") ושכפול; ZIP הלוך-חזור; חיפוש והחלפה בכל הקבצים; הפניות בשינוי שם ובמחיקה; גרסאות עם השוואה ושחזור.
 // S4 / S6: התוכן מגיע כנתונים (JSON) ונכנס רק לעורך. שם קובץ ותוכן קובץ מוצגים כטקסט בלבד — דרך h() / textContent,
 // ואין בקובץ הזה innerHTML. העורך (Monaco) נטען מ-assets/vendor/monaco, לא מ-CDN.
 'use strict';
@@ -69,6 +70,7 @@ const Project = (() => {
     drawSeed(el.seed);
     if (el.mig) el.mig.hidden = !S.canPurge;                     // "ייבוא מחדש" — בעלים בלבד
     drawAll();
+    if ([...S.docs.values()].some(stale)) syncOpen();            // השרת שינה קובץ פתוח (הפניות, החלפה, שחזור, ZIP)
   }
 
   /** העץ: תיקיות (גם כאלה שקיימות רק כי יש בהן קבצים) וקבצים, ממוינים — תיקיות קודם. */
@@ -292,7 +294,7 @@ const Project = (() => {
     const walk = (n, depth) => {
       for (const d of [...n.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'))) {
         const shut = prefs.closed.includes(d.path);
-        rows.push(h('li', { class: 'pj-row pj-dir', style: `--d:${depth}`, 'data-dir': d.path },
+        rows.push(h('li', { class: 'pj-row pj-dir', style: `--d:${depth}`, 'data-dir': d.path, draggable: 'true', ondragstart: e => dragStart(e, { path: d.path }) },
           h('button', { type: 'button', class: 'pj-name', 'aria-expanded': String(!shut), onclick: () => { prefs.closed = shut ? prefs.closed.filter(x => x !== d.path) : [...prefs.closed, d.path]; persist(); drawTree(); } },
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, shut ? '▸' : '▾'), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, '📁'), h('span', { class: 'one', dir: 'auto' }, d.name)),
           h('button', { type: 'button', class: 'icon-btn pj-more', 'aria-label': `פעולות על התיקייה ${d.name}`, onclick: () => dirMenu(d) }, '⋯')));
@@ -300,7 +302,7 @@ const Project = (() => {
       }
       for (const f of n.files.sort((a, b) => base(a.path).localeCompare(base(b.path), 'he'))) {
         const miss = f.kind === 'media' && f.media_info?.missing;
-        rows.push(h('li', { class: 'pj-row' + (f.id === S.cur ? ' on' : ''), style: `--d:${depth}`, 'data-dir': parent(f.path) },
+        rows.push(h('li', { class: 'pj-row' + (f.id === S.cur ? ' on' : ''), style: `--d:${depth}`, 'data-dir': parent(f.path), draggable: 'true', ondragstart: e => dragStart(e, { id: f.id }, f.path) },
           h('button', { type: 'button', class: 'pj-name', title: f.path, onclick: () => { openFile(f.id); if (phone()) side(false); } },
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, ICONS[ext(f.path)] || '📄'),
             h('span', { class: 'one', dir: 'auto' }, base(f.path)),
@@ -406,13 +408,27 @@ const Project = (() => {
     'כל שם וכל סיומת. "/" יוצר תיקייה בדרך.');
   const newDir = dir => nameSheet('תיקייה חדשה', 'נתיב התיקייה', join(dir, 'תיקייה'), 'יצירה', path => run(() => api('pf_mkdir', { path })));
   const rename = (target, path) => nameSheet('שינוי שם', 'הנתיב החדש', path, 'שינוי',
-    to => run(() => api('pf_rename', { ...target, to })), 'הקבצים האחרים אינם מתעדכנים לבד — הפניות לנתיב הישן יישארו כמו שהן.');
+    to => moveTo(target, path, to), 'שינוי של התיקייה בנתיב — הוא העברה. אם קבצים אחרים מפנים לנתיב הישן, תוצג רשימה, ואתם מחליטים אם לעדכן.');
 
-  function remove(target, label, n) {
+  async function remove(target, label, n) {
     const open = S.tabs.filter(id => dirty(id) && (target.id === id || (target.path && (S.byId.get(id)?.path || '').startsWith(target.path + '/'))));
+    const doIt = () => {
+      for (const id of open) { const d = S.docs.get(id); clearTimeout(d.timer); d.dirty = false; }
+      return run(() => api('pf_delete', target), 'עבר לסל');
+    };
+    let refs = [];
+    try { refs = (await api('pf_refs', undefined, tq(target))).refs; } catch { /* בלי רשימה — עדיין אפשר למחוק */ }
+    if (refs.length) {                                           // לא חוסם: הרשימה, והבחירה בידי בעל העמוד
+      const dlg = sheet(`${refs.length} הפניות ל${label}`,
+        h('p', { class: 'hint' }, `קבצים אחרים מפנים אל ${label}. אחרי המחיקה ההפניות האלה לא יגיעו לשום דבר. אפשר לפתוח כל אחת ולתקן — או למחוק בכל זאת (אפשר לשחזר מהסל).`),
+        refList(refs, false),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn danger', 'data-refs-delete': true, onclick: () => { dlg.close(); doIt(); } }, `העברה לסל בכל זאת${n > 1 ? ` (${n} פריטים)` : ''}`),
+          h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
+      return;
+    }
     if (!confirm(`להעביר את ${label} לסל?${n > 1 ? ` (${n} פריטים)` : ''}${open.length ? '\nיש בו שינויים שלא נשמרו.' : ''}\nאפשר לשחזר מהסל.`)) return;
-    for (const id of open) { const d = S.docs.get(id); clearTimeout(d.timer); d.dirty = false; }
-    run(() => api('pf_delete', target), 'עבר לסל');
+    doIt();
   }
 
   function menu(title, items) {
@@ -425,14 +441,20 @@ const Project = (() => {
     sheet('גרסאות · ' + base(f.path), body);
     try {
       const d = await api('pf_versions', undefined, `&id=${f.id}`);
-      body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '.'),
-        h('ol', { class: 'pj-ver-list' }, d.versions.map(v => h('li', { 'data-rev': v.rev }, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))))));
+      body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '. "השוואה" — מה השתנה מאז; "שחזור" — התוכן שלה נשמר כגרסה חדשה (שום גרסה אינה נמחקת).'),
+        h('ol', { class: 'pj-ver-list' }, d.versions.map((v, i) => h('li', { 'data-rev': v.rev },
+          h('div', {}, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))),
+          f.kind === 'file' && v.hid && h('div', { class: 'pj-ver-btns' },
+            h('button', { type: 'button', class: 'btn sm', 'data-ver-diff': v.hid, onclick: () => diffSheet(d.file, v) }, '↔️ השוואה'),
+            i > 0 && h('button', { type: 'button', class: 'btn sm', 'data-ver-restore': v.hid, onclick: () => restoreVersion(d.file, v) }, '↩️ שחזור'))))));
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
   const fileMenu = f => menu(base(f.path), [
     f.kind === 'file' ? ['🕘 גרסאות', () => versions(f)] : null,
     ['📂 פתיחה', () => openFile(f.id)],
     ['✏️ שינוי שם', () => rename({ id: f.id }, f.path)],
+    ['↪️ העבר אל…', () => moveSheet({ id: f.id }, f.path)],
+    ['📋 שכפול', () => duplicate({ id: f.id }, f.path)],
     ['⬇️ הורדה', () => download(f)],
     ['🗑️ מחיקה לסל', () => remove({ id: f.id }, `"${base(f.path)}"`, 1), 'danger'],
   ]);
@@ -441,6 +463,8 @@ const Project = (() => {
     ['📁 תיקייה חדשה כאן', () => newDir(d.path)],
     ['⬆️ העלאה לכאן', () => pick(d.path)],
     ['✏️ שינוי שם', () => rename({ path: d.path }, d.path)],
+    ['↪️ העבר אל…', () => moveSheet({ path: d.path }, d.path)],
+    ['📋 שכפול', () => duplicate({ path: d.path }, d.path)],
     ['🗑️ מחיקה לסל', () => remove({ path: d.path }, `התיקייה "${d.name}"`, S.files.filter(f => f.path === d.path || f.path.startsWith(d.path + '/')).length), 'danger'],
   ]);
 
@@ -564,6 +588,308 @@ const Project = (() => {
     return p || 'שורש הפרויקט';
   }
 
+  // ── F2b: קבצים פתוחים שהשרת שינה ──────────────────────────
+  const stale = d => !d.dirty && !d.binary && !d.saving && S.byId.has(d.id) && S.byId.get(d.id).rev !== d.rev;
+  /** מחליף את הטקסט של מסמך פתוח (לא מלוכלך) בגרסה מהשרת — כצעד אחד שאפשר לבטל. */
+  function setDocText(doc, text, rev) {
+    doc.rev = rev; doc.saved = text; doc.conflict = false;
+    if (doc.model) {
+      if (doc.model.getValue() !== text) {
+        doc.model.pushStackElement();
+        doc.model.pushEditOperations(null, [{ range: doc.model.getFullModelRange(), text }], () => null);
+        doc.model.pushStackElement();
+      }
+    } else doc.text = text;
+    doc.dirty = false;
+    emit(doc, 'text'); emit(doc, 'state');
+  }
+  let syncing = false;
+  async function syncOpen() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      for (const doc of [...S.docs.values()].filter(stale)) {
+        try { const d = await api('pf_read', undefined, `&id=${doc.id}`); if (!d.binary && stale(doc)) setDocText(doc, d.content, d.file.rev); } catch { /* בפעם הבאה */ }
+      }
+    } finally { syncing = false; }
+    drawAll();
+  }
+  /** לפני פעולה שהשרת כותב בה לקבצים אחרים (הפניות, החלפה, ZIP) — כל מה שבעורך נשמר קודם. */
+  async function saveAll() {
+    for (const d of [...S.docs.values()]) if (d.dirty && !d.binary) await save(d.id);
+    if ([...S.docs.values()].some(d => d.dirty)) throw new Error('יש קבצים שלא נשמרו — שמרו אותם קודם');
+  }
+
+  // ── F2b: העברה, שכפול, הפניות ─────────────────────────────
+  const tq = t => (t.id ? `&id=${t.id}` : `&path=${encodeURIComponent(t.path)}`);
+  /** רשימת הפניות: קובץ:שורה (פותח את הקובץ בשורה), הערך הישן, ובשינוי שם — החדש. הכול כטקסט. */
+  function refList(refs, withNew) {
+    return h('ul', { class: 'pj-refs' }, refs.map(r => h('li', { 'data-ref': r.path + ':' + r.line },
+      h('button', { type: 'button', class: 'pj-ref-at', title: 'פתיחה בשורה', onclick: () => { $('#sheet')?.close(); openAt(r.path, r.line); } }, h('span', { dir: 'ltr' }, `${r.path}:${r.line}`)),
+      h('code', { dir: 'ltr', class: 'pj-ref-old' }, r.old),
+      withNew && r.new != null ? [h('span', { 'aria-hidden': 'true' }, ' ← '), h('code', { dir: 'ltr', class: 'pj-ref-new' }, r.new)] : null)));
+  }
+  /**
+   * שינוי שם / העברה. קודם — מי מפנה לנתיב הישן (pf_refs). אין הפניות → מבצעים. יש → הרשימה, ובעל העמוד בוחר: לעדכן
+   * אותן, או להעביר בלי לעדכן. לא חוסם. מחזיר null כשבוטל.
+   */
+  async function moveTo(target, from, to) {
+    if (!to || to === from) return null;
+    try { await saveAll(); } catch (e) { toast(e.message, true); return null; }
+    let refs;
+    try { refs = (await api('pf_refs', undefined, tq(target) + '&to=' + encodeURIComponent(to))).refs; } catch (e) { toast(e.message, true); return null; }
+    const go = upd => run(() => api('pf_rename', { ...target, to, update_refs: upd }), upd ? `הועבר · ${refs.length} הפניות עודכנו` : 'הועבר');
+    if (!refs.length) return go(false);
+    return new Promise(res => {
+      const dlg = sheet(`${refs.length} הפניות ל-${base(from)}`,
+        h('p', { class: 'hint' }, `קבצים אחרים מפנים אל "${from}". אחרי ההעברה ל-"${to}" ההפניות האלה לא יגיעו אליו — אלא אם מעדכנים אותן. כך ייראו אחרי העדכון:`),
+        refList(refs, true),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn primary', 'data-refs-update': true, onclick: () => { res(go(true)); dlg.close(); } }, `העברה ועדכון ${refs.length} הפניות`),
+          h('button', { type: 'button', class: 'btn', 'data-refs-skip': true, onclick: () => { res(go(false)); dlg.close(); } }, 'העברה בלי לעדכן'),
+          h('button', { type: 'button', class: 'btn ghost', 'data-close': true, onclick: () => res(null) }, 'ביטול')));
+    });
+  }
+  /** "העבר אל…" — בכל מכשיר: רשימת התיקיות; הבחירה מעבירה, עם בדיקת ההפניות. */
+  function moveSheet(target, from) {
+    const dirs = [''];
+    const walk = n => { for (const d of [...n.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'))) { dirs.push(d.path); walk(d); } };
+    walk(tree());
+    const isDir = !target.id;
+    const can = dirs.filter(d => d !== parent(from) && !(isDir && (d === from || d.startsWith(from + '/'))));
+    const dlg = sheet('העברה אל… · ' + base(from),
+      h('p', { class: 'hint' }, 'בחרו תיקייה. במחשב אפשר גם לגרור שורה בעץ אל תיקייה.'),
+      can.length ? h('div', { class: 'pj-menu pj-move' }, can.map(d => h('button', { type: 'button', class: 'btn', 'data-move-to': d, onclick: () => { dlg.close(); moveTo(target, from, join(d, base(from))); } },
+        h('span', { 'aria-hidden': 'true' }, d ? '📁 ' : '🏠 '), h('span', { dir: 'auto' }, d || 'שורש הפרויקט')))) : h('p', { class: 'empty' }, 'אין תיקייה אחרת. צרו תיקייה ואז העבירו.'));
+  }
+  const DRAG = 'application/x-kol-move';
+  function dragStart(e, target, path) {
+    e.dataTransfer.setData(DRAG, JSON.stringify({ ...target, from: path || target.path }));
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function dropMove(raw, dir) {
+    let t;
+    try { t = JSON.parse(raw); } catch { return; }
+    const from = t.from;
+    if (typeof from !== 'string' || parent(from) === dir || (!t.id && (dir === from || dir.startsWith(from + '/')))) return;
+    moveTo(t.id ? { id: t.id } : { path: from }, from, join(dir, base(from)));
+  }
+  /** שם פנוי לעותק: "x (עותק).html", "x (עותק 2).html"… */
+  function dupName(p) {
+    const b = base(p), i = b.lastIndexOf('.'), stem = i > 0 ? b.slice(0, i) : b, x = i > 0 ? b.slice(i) : '';
+    const taken = n => S.files.some(f => f.path.toLowerCase() === n.toLowerCase() || f.path.toLowerCase().startsWith(n.toLowerCase() + '/'));
+    let n = join(parent(p), `${stem} (עותק)${x}`), k = 2;
+    while (taken(n)) n = join(parent(p), `${stem} (עותק ${k++})${x}`);
+    return n;
+  }
+  const duplicate = (target, path) => nameSheet('שכפול', 'הנתיב של העותק', dupName(path), 'שכפול',
+    to => run(async () => { const d = await api('pf_copy', { ...target, to }); if (d.file && d.file.kind === 'file' && target.id) { await refresh(); openFile(d.file.id); } return d; }, 'שוכפל'),
+    'העותק מתחיל היסטוריה משלו. ההפניות בתוכו — כמו במקור.');
+
+  // ── F2b: גרסה מול הנוכחית, ושחזור ─────────────────────────
+  /** השוואת שורות (LCS, אחרי קיצוץ ההתחלה והסוף המשותפים). [סימן, טקסט, שורה ישנה, שורה חדשה]. */
+  function lineDiff(a, b) {
+    const A = a.split('\n'), B = b.split('\n'), ops = [];
+    let s = 0; while (s < A.length && s < B.length && A[s] === B[s]) s++;
+    let e = 0; while (e < A.length - s && e < B.length - s && A[A.length - 1 - e] === B[B.length - 1 - e]) e++;
+    const a2 = A.slice(s, A.length - e), b2 = B.slice(s, B.length - e), n = a2.length, m = b2.length;
+    for (let i = 0; i < s; i++) ops.push([' ', A[i], i + 1, i + 1]);
+    if (n * m > 4e6) {                                           // ענק — בלי יישור: הכול הוסר / נוסף
+      a2.forEach((l, i) => ops.push(['-', l, s + i + 1, 0])); b2.forEach((l, j) => ops.push(['+', l, 0, s + j + 1]));
+    } else {
+      const W = m + 1, L = new Uint32Array((n + 1) * W);
+      for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i * W + j] = a2[i] === b2[j] ? L[(i + 1) * W + j + 1] + 1 : Math.max(L[(i + 1) * W + j], L[i * W + j + 1]);
+      let i = 0, j = 0;
+      while (i < n || j < m) {
+        if (i < n && j < m && a2[i] === b2[j]) { ops.push([' ', a2[i], s + i + 1, s + j + 1]); i++; j++; }
+        else if (i < n && (j === m || L[(i + 1) * W + j] >= L[i * W + j + 1])) { ops.push(['-', a2[i], s + i + 1, 0]); i++; }   // הוסר — לפני נוסף
+        else { ops.push(['+', b2[j], 0, s + j + 1]); j++; }
+      }
+    }
+    for (let k = 0; k < e; k++) ops.push([' ', A[A.length - e + k], A.length - e + k + 1, B.length - e + k + 1]);
+    return ops;
+  }
+  /** התצוגה: שורות שהוסרו / נוספו, עם 3 שורות הקשר; רצף ארוך של שורות זהות — מקופל. טקסט בלבד. */
+  function diffView(a, b) {
+    const ops = lineDiff(a, b), keep = new Uint8Array(ops.length), C = 3;
+    ops.forEach((o, i) => { if (o[0] !== ' ') for (let k = Math.max(0, i - C); k <= Math.min(ops.length - 1, i + C); k++) keep[k] = 1; });
+    const add = ops.filter(o => o[0] === '+').length, del = ops.filter(o => o[0] === '-').length;
+    if (!add && !del) return h('p', { class: 'empty', 'data-diff-none': true }, 'אין הבדל — התוכן זהה.');
+    const rows = [];
+    for (let i = 0; i < ops.length; i++) {
+      if (!keep[i]) { let j = i; while (j < ops.length && !keep[j]) j++; rows.push(h('div', { class: 'pj-dl gap' }, `⋯ ${j - i} שורות זהות`)); i = j - 1; continue; }
+      const [sg, t, o, nn] = ops[i];
+      rows.push(h('div', { class: 'pj-dl' + (sg === '+' ? ' add' : sg === '-' ? ' del' : '') },
+        h('span', { class: 'pj-ln' }, o || ''), h('span', { class: 'pj-ln' }, nn || ''), h('span', { class: 'pj-dt' }, (sg === ' ' ? '  ' : sg + ' ') + t)));
+    }
+    return h('div', {}, h('p', { class: 'hint', 'data-diff-sum': `${del}-${add}` }, `${del} שורות הוסרו · ${add} נוספו`), h('div', { class: 'pj-diffv', dir: 'ltr' }, rows));
+  }
+  async function diffSheet(f, v) {
+    const body = h('div', { class: 'pj-diff-wrap' }, h('p', { class: 'hint' }, 'טוען…'));
+    sheet(`גרסה ${v.rev} מול הנוכחית · ${base(f.path)}`, body);
+    try {
+      const doc = S.docs.get(f.id);
+      const old = await api('pf_version', undefined, `&id=${f.id}&hid=${v.hid}`);
+      const live = doc && !doc.binary ? { text: doc.model ? doc.model.getValue() : doc.text, label: doc.dirty ? 'מה שבעורך עכשיו (לא נשמר)' : 'הגרסה הנוכחית' } : null;
+      const cur = live || await api('pf_read', undefined, `&id=${f.id}`).then(d => (d.binary ? null : { text: d.content, label: 'הגרסה הנוכחית' }));
+      if (old.binary || !cur) { body.replaceChildren(h('p', { class: 'empty' }, 'קובץ בינארי — אין השוואה בטקסט.')); return; }
+      body.replaceChildren(h('p', { class: 'hint' }, `מימין לשמאל: גרסה ${v.rev} (${v.by || ''} · ${when(v.at)}) מול ${cur.label}. − הוסר מאז · + נוסף מאז.`),
+        diffView(old.content, cur.text),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn', onclick: () => versions(f) }, '→ חזרה לגרסאות'),
+          h('button', { type: 'button', class: 'btn primary', 'data-ver-restore': v.hid, onclick: () => restoreVersion(f, v) }, `↩️ שחזור גרסה ${v.rev}`)));
+    } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+  async function restoreVersion(f, v) {
+    const doc = S.docs.get(f.id), cur = S.byId.get(f.id) || f;
+    if (doc?.dirty && !confirm('בקובץ יש שינויים שלא נשמרו. השחזור יחליף אותם. להמשיך?')) return;
+    if (!confirm(`לשחזר את גרסה ${v.rev} של "${base(cur.path)}"?\nהתוכן שלה יישמר כגרסה חדשה — שום גרסה אינה נמחקת.`)) return;
+    try {
+      if (doc) clearTimeout(doc.timer);
+      const d = await api('pf_version_restore', { id: f.id, hid: v.hid, rev: doc?.rev ?? cur.rev });
+      if (doc && !d.binary) setDocText(doc, d.content, d.file.rev);
+      Object.assign(cur, d.file);
+      if (d.kol) { S.kol = d.kol; drawBars(); }
+      bc?.postMessage({ t: 'saved', path: cur.path });
+      toast(`שוחזר — גרסה ${v.rev} נשמרה כגרסה ${d.file.rev}`);
+      await refresh();
+      versions(cur);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // ── F2b: חיפוש והחלפה בכל הקבצים ─────────────────────────
+  const last = { q: '', regex: false, case: false, with: '' };
+  function searchSheet() {
+    const qIn = h('input', { type: 'search', dir: 'auto', value: last.q, 'aria-label': 'מה לחפש', placeholder: 'מה לחפש', autocomplete: 'off', spellcheck: 'false', 'data-s-q': true });
+    const rx = h('input', { type: 'checkbox', 'data-s-rx': true }), cs = h('input', { type: 'checkbox', 'data-s-case': true });
+    rx.checked = last.regex; cs.checked = last.case;
+    const rep = h('input', { type: 'text', dir: 'auto', value: last.with, 'aria-label': 'להחליף ב-', placeholder: 'להחליף ב- (לא חובה)', autocomplete: 'off', spellcheck: 'false', 'data-s-with': true });
+    const out = h('div', { class: 'pj-sres', 'aria-live': 'polite' });
+    const opts = () => { Object.assign(last, { q: qIn.value, regex: rx.checked, case: cs.checked, with: rep.value }); return { q: last.q, regex: last.regex, case: last.case }; };
+    const qs = o => `&q=${encodeURIComponent(o.q)}${o.regex ? '&regex=1' : ''}${o.case ? '&case=1' : ''}`;
+    async function find() {
+      const o = opts();
+      if (!o.q) return;
+      out.replaceChildren(h('p', { class: 'hint' }, 'מחפש…'));
+      try { await saveAll(); } catch { /* מחפשים במה שנשמר */ }
+      try {
+        const d = await api('pf_search', undefined, qs(o));
+        out.replaceChildren(h('p', { class: 'hint', 'data-s-total': d.total }, d.total ? `${d.total} התאמות ב-${d.files.length} קבצים${d.cut ? ' — הרשימה קוצרה; צמצמו את החיפוש' : ''}` : 'לא נמצא.'),
+          ...d.files.map(f => h('details', { open: true, class: 'pj-sfile' },
+            h('summary', {}, h('span', { dir: 'auto' }, f.path), h('small', {}, ' · ' + f.count)),
+            h('ul', {}, f.hits.map(x => h('li', {}, h('button', { type: 'button', class: 'pj-hit', 'data-hit': `${f.path}:${x.line}`, onclick: () => { $('#sheet')?.close(); openAt(f.path, x.line, null, { col: x.col, len: x.len }); } },
+              h('span', { class: 'pj-ln' }, x.line), h('span', { class: 'pj-hit-t', dir: 'ltr' }, x.text))))))));
+      } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); }
+    }
+    async function preview() {
+      const o = opts();
+      if (!o.q) return;
+      try { await saveAll(); } catch (e) { toast(e.message, true); return; }
+      out.replaceChildren(h('p', { class: 'hint' }, 'מכין תצוגה מקדימה…'));
+      let d;
+      try { d = await api('pf_replace', { ...o, with: last.with }); } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      if (!d.files.length) { out.replaceChildren(h('p', { class: 'hint' }, 'אין מה להחליף.')); return; }
+      const picks = new Map();
+      const go = h('button', { type: 'button', class: 'btn primary', 'data-s-apply': true, onclick: async () => {
+        const chosen = d.files.filter(f => picks.get(f.id).checked);
+        if (!chosen.length) return;
+        go.disabled = true;
+        try {
+          const r = await api('pf_replace', { ...o, with: last.with, apply: true, ids: chosen.map(f => f.id), revs: Object.fromEntries(chosen.map(f => [f.id, f.rev])) });
+          toast(`${r.replaced} החלפות ב-${r.files.length} קבצים · נקודת שחזור נשמרה לפני`);
+          await refresh();
+          for (const f of r.files) bc?.postMessage({ t: 'saved', path: f.path });
+          find();
+        } catch (e) { go.disabled = false; out.prepend(h('p', { class: 'error' }, e.message)); }
+      } }, `החלפה ב-${d.files.length} קבצים`);
+      const count = () => { const n = d.files.filter(f => picks.get(f.id).checked); go.textContent = `החלפה ב-${n.length} קבצים`; go.disabled = !n.length; };
+      out.replaceChildren(h('p', { class: 'hint' }, `תצוגה מקדימה: ${d.total} החלפות ב-${d.files.length} קבצים. עדיין לא נכתב דבר. הורידו סימון מקובץ שלא רוצים לשנות. לפני ההחלפה נשמרת נקודת שחזור, ולכל קובץ — גרסה חדשה.`),
+        ...d.files.map(f => {
+          const cb = h('input', { type: 'checkbox', checked: true, 'data-s-file': f.path, onchange: count });
+          picks.set(f.id, cb);
+          return h('div', { class: 'pj-sfile' },
+            h('label', { class: 'pj-check' }, cb, h('span', { dir: 'auto' }, f.path), h('small', {}, ' · ' + f.count)),
+            h('ul', { class: 'pj-samples' }, f.samples.map(x => h('li', {},
+              h('div', { class: 'pj-dl del', dir: 'ltr' }, h('span', { class: 'pj-ln' }, x.line), h('span', { class: 'pj-dt' }, '- ' + x.before)),
+              h('div', { class: 'pj-dl add', dir: 'ltr' }, h('span', { class: 'pj-ln' }, x.line), h('span', { class: 'pj-dt' }, '+ ' + x.after))))));
+        }),
+        h('div', { class: 'row-btns' }, go));
+    }
+    qIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); find(); } });
+    sheet('🔎 חיפוש והחלפה בכל הקבצים',
+      h('label', { class: 'f' }, h('span', {}, 'חיפוש'), qIn),
+      h('div', { class: 'row-btns wrap' }, h('label', { class: 'pj-check' }, rx, ' ביטוי רגולרי'), h('label', { class: 'pj-check' }, cs, ' רישיות (Aa)')),
+      h('label', { class: 'f' }, h('span', {}, 'החלפה'), rep),
+      h('div', { class: 'row-btns wrap' },
+        h('button', { type: 'button', class: 'btn primary', 'data-s-find': true, onclick: find }, '🔎 חיפוש'),
+        h('button', { type: 'button', class: 'btn', 'data-s-preview': true, onclick: preview }, '🔁 החלפה — תצוגה מקדימה')),
+      out);
+    setTimeout(() => qIn.focus(), 50);
+    if (last.q) find();
+  }
+
+  // ── F2b: ZIP הלוך-חזור ────────────────────────────────────
+  const zipMenu = () => menu('🗜️ ZIP', [
+    ['⬇️ הורדת הפרויקט כולו כ-ZIP', () => zipDownload()],
+    ['📦 העלאת ZIP — קודם תצוגה של מה ישתנה', () => zipPick()],
+  ]);
+  async function zipDownload() {
+    try {
+      const res = await fetch('api.php?action=pf_zip');
+      if (!res.ok) { let m = 'ההורדה נכשלה'; try { m = (await res.json()).error || m; } catch { /* לא JSON */ } throw new Error(m); }
+      const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: 'application/zip' }));
+      const a = h('a', { href: url, download: `kol-project-${new Date().toISOString().slice(0, 10)}.zip` });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (e) { toast(e.message, true); }
+  }
+  function zipPick() {
+    const input = h('input', { type: 'file', accept: '.zip,application/zip', hidden: true, 'data-zip-input': true, onchange: () => { if (input.files[0]) zipPlan(input.files[0]); input.remove(); } });
+    document.body.append(input); input.click();
+  }
+  /** ה-ZIP עצמו כגוף הבקשה (לא JSON). אותן הגנות: X-Kol + CSRF. */
+  async function zipSend(file, query) {
+    let res, data;
+    try {
+      res = await fetch('api.php?action=pf_zip_import' + query, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Kol': '1', 'X-CSRF': state.csrf }, body: file });
+      data = await res.json();
+    } catch { throw new Error(res ? 'תשובה לא תקינה מהשרת' : 'אין חיבור לשרת'); }
+    if (!data.ok) throw Object.assign(new Error(data.error || 'שגיאה'), { status: res.status, data });
+    return data;
+  }
+  async function zipPlan(file) {
+    try { await saveAll(); } catch (e) { toast(e.message, true); return; }
+    sheet('📦 ייבוא ZIP', h('p', { class: 'hint' }, `בודק את "${file.name}"…`));
+    let plan;
+    try { plan = (await zipSend(file, '')).plan; } catch (e) { sheet('ה-ZIP לא ייובא', h('p', { class: 'error', 'data-zip-error': true }, e.message)); return; }
+    const c = plan.counts, list = (key, title, items, open) => items.length ? h('details', { class: 'pj-zlist', open: open || null, 'data-zip-list': key },
+      h('summary', {}, `${title} · ${c[key] ?? items.length}`), h('ul', {}, items.map(p => h('li', { dir: 'auto' }, typeof p === 'string' ? p : `${p.path} — ${size(p.size)}`)))) : null;
+    const can = !plan.errors.length && (c.add + c.replace + c.dirs) > 0;
+    const dlg = sheet(`📦 ייבוא ZIP · ${file.name}`,
+      h('p', { class: 'hint' }, 'עדיין לא נכתב דבר. כך ישתנה הפרויקט:'),
+      plan.errors.length ? h('div', { class: 'pj-warn', role: 'alert' }, h('strong', {}, 'אי אפשר לייבא:'), h('ul', {}, plan.errors.map(t => h('li', { dir: 'auto' }, t)))) : null,
+      list('add', '➕ יתווספו', plan.add, true),
+      list('replace', '♻️ יוחלפו (נקודת שחזור נשמרת לפני; לכל קובץ — גרסה חדשה)', plan.replace, true),
+      list('dirs', '📁 תיקיות חדשות', plan.dirs),
+      list('same', '＝ זהים — לא ישתנו', plan.same),
+      list('keep', '· בפרויקט ואינם ב-ZIP — לא ישתנו ולא יימחקו', plan.keep),
+      list('skipped', 'דולגו (קובצי מערכת של macOS)', plan.skipped),
+      plan.big.length ? h('div', {}, list('big', `לא ייובאו — גדולים ממגבלת הגודל (${size(plan.limit.text)})`, plan.big, true), h('p', { class: 'hint' }, plan.limit.who)) : null,
+      h('div', { class: 'row-btns wrap' },
+        can && h('button', { type: 'button', class: 'btn primary', 'data-zip-apply': true, onclick: async e => {
+          e.target.disabled = true;
+          try {
+            const r = await zipSend(file, '&apply=1&token=' + encodeURIComponent(plan.token));
+            dlg.close();
+            toast(`יובא: ${r.done.add} נוספו · ${r.done.replace} הוחלפו${r.snapshot ? ' · נקודת שחזור נשמרה' : ''}`);
+            await refresh();
+            bc?.postMessage({ t: 'saved' });
+          } catch (err) { e.target.disabled = false; toast(err.message, true); }
+        } }, `ייבוא · ${c.add} חדשים, ${c.replace} מוחלפים`),
+        !can && !plan.errors.length && h('p', { class: 'hint' }, 'אין מה לייבא — הכול כבר בפרויקט.'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
+  }
+
   // ── כלי העורך ─────────────────────────────────────────────
   const edRun = id => { S.editor?.focus(); S.editor?.getAction(id)?.run(); };
   function applyPrefs() {
@@ -575,6 +901,8 @@ const Project = (() => {
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
     S.canPurge ? ['🔄 ייבוא מחדש מהעמוד של היום', () => migrateSheet()] : null,   // גם כאן — בטלפון רשימת הקבצים סגורה, והכפתור שבה אינו נראה
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
+    ['🔎 בכל הקבצים — חיפוש, והחלפה עם תצוגה מקדימה', () => searchSheet()],
+    ['🗜️ ZIP — הורדה והעלאה של הפרויקט', () => zipMenu()],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
     ['↩️ בטל', () => { S.editor?.focus(); S.editor?.trigger('menu', 'undo', null); }],
     ['↪️ חזור', () => { S.editor?.focus(); S.editor?.trigger('menu', 'redo', null); }],
@@ -616,12 +944,16 @@ const Project = (() => {
         h('button', { type: 'button', class: 'btn sm', onclick: () => newDir('') }, '+ תיקייה'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => pick('') }, '⬆️ העלאה'),
         h('button', { type: 'button', class: 'btn sm', 'data-live': true, onclick: () => live() }, '▶️ תצוגה חיה'),
+        h('button', { type: 'button', class: 'btn sm', 'data-search': true, onclick: () => searchSheet() }, '🔎 חיפוש'),
+        h('button', { type: 'button', class: 'btn sm', 'data-zip': true, onclick: () => zipMenu() }, '🗜️ ZIP'),
         el.trash, el.mig),
       el.tree, el.count);
     // גרירה מהמחשב אל תיקייה (או אל העץ — לשורש)
-    aside.addEventListener('dragover', e => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); aside.classList.add('drop'); } });
+    aside.addEventListener('dragover', e => { const t = e.dataTransfer?.types || []; if (t.includes('Files') || t.includes(DRAG)) { e.preventDefault(); aside.classList.add('drop'); } });
     aside.addEventListener('dragleave', () => aside.classList.remove('drop'));
     aside.addEventListener('drop', e => {
+      const moving = e.dataTransfer?.getData(DRAG);              // גרירה בתוך העץ = העברה לתיקייה (במחשב; בכל מכשיר — "העבר אל…")
+      if (moving) { e.preventDefault(); aside.classList.remove('drop'); dropMove(moving, e.target.closest('[data-dir]')?.dataset.dir || ''); return; }
       if (!e.dataTransfer?.files.length) return;
       e.preventDefault(); aside.classList.remove('drop');
       upload(e.target.closest('[data-dir]')?.dataset.dir || '', [...e.dataTransfer.files]);
@@ -704,7 +1036,7 @@ const Project = (() => {
       onCursor(cb) { return ed.onDidChangeCursorPosition(e => { if (e.source === 'mouse' || e.source === 'keyboard') cb(); }); } };
   }
   /** פותח קובץ בעורך הקוד. line — שורה; range — {from, to} בתווים: הטווח מסומן (למשל האלמנט שנבחר בעורך החזותי). */
-  async function openAt(path, line, range) {
+  async function openAt(path, line, range, cols) {
     liveClose();
     if (location.hash.split('/')[1] !== 'project') { location.hash = '#/project'; await new Promise(r => setTimeout(r, 400)); }
     const f = S.files.find(x => x.path === path);
@@ -715,6 +1047,7 @@ const Project = (() => {
     if (S.editor && m && line > 0 && S.editor.getModel() === m) {   // שורה שמעבר לסוף הקובץ (המסוף מדווח על גרסה ישנה) — נתחמת
       const ln = Math.min(line, m.getLineCount());
       S.editor.revealLineInCenter(ln); S.editor.setPosition({ lineNumber: ln, column: 1 }); S.editor.focus();
+      if (cols?.col) S.editor.setSelection(new monaco.Range(ln, cols.col, ln, cols.col + (cols.len || 0)));   // ההתאמה מהחיפוש בכל הקבצים
     }
     if (S.editor && m && range) {
       if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
@@ -762,7 +1095,8 @@ const Project = (() => {
 
   document.addEventListener('DOMContentLoaded', () => {
     if (typeof ACTIONS === 'object') Object.assign(ACTIONS, { pf_create: '📁 יצר קובץ בפרויקט', pf_mkdir: '📁 יצר תיקייה בפרויקט', pf_rename: '📁 שינה שם בפרויקט',
-      pf_migrate: '🔄 ייבא מחדש את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
+      pf_migrate: '🔄 ייבא מחדש את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט',
+      pf_copy: '📋 שכפל בפרויקט', pf_version_restore: '↩️ שחזר גרסה של קובץ', pf_replace: '🔁 החליף בכל קובצי הפרויקט', pf_zip: '🗜️ הוריד את הפרויקט כ-ZIP', pf_zip_import: '📦 ייבא ZIP לפרויקט' });
   });
 
   return { oldTemplate: OLD_TPL, seed: { get only() { return !!S.seedOnly; }, draw: drawSeed }, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
