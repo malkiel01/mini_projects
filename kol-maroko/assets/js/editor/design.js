@@ -70,7 +70,7 @@
       const kids = [this.drawTarget(n)];
       const many = this.nodes().length;
       if (many > 1) kids.push(h('p', { class: 'sg-multi', 'data-multi': many }, '✳️ ' + many + ' אלמנטים נבחרים (Shift + לחיצה) — שינוי חל על כולם, כל אחד בכלל שלו.'));
-      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n));
+      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); if (this.extra) kids.push(...this.extra(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n));
       this.host.replaceChildren(...kids);
       this.host.scrollTop = scroll;
     }

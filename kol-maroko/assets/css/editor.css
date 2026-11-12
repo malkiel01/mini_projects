@@ -335,3 +335,10 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .bg-move-b { min-width: 36px; height: 36px; border: 0; border-radius: 8px; background: rgba(255, 255, 255, .15); color: #fff; font-size: 1rem; cursor: pointer; }
 .bg-move-num { font: .85rem ui-monospace, monospace; padding: 0 6px; }
 @media (pointer: coarse) { .sg-pos9 { grid-template-columns: repeat(3, 40px); } .sg-pos9 button { width: 40px; height: 40px; } .bg-move-b { min-width: 44px; height: 44px; } }
+
+/* ── V6: מיקום חופשי ─────────────────────────────────────── */
+.ps-move { position: absolute; z-index: 25; cursor: move; touch-action: none; outline: 1px dashed var(--brand, #36c); pointer-events: auto; }
+.ps-guides { position: absolute; inset: 0; pointer-events: none; z-index: 26; }
+.ps-guide { position: absolute; background: #e0c; } .ps-guide.v { width: 1px; } .ps-guide.h { height: 1px; }
+.ps-dist { position: absolute; z-index: 27; pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; }
+.ed-bar [data-free-btn][aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); }
