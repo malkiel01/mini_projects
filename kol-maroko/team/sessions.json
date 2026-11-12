@@ -1,6 +1,6 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-12T09:54Z",
+  "updated": "2026-11-12T09:58Z",
   "spec": "session_018g4NYDGj9nDDPBwcKYPGw2",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
@@ -11,9 +11,9 @@
     "V4": "session_018g4NYChvguP3UAsPoe1XqG",
     "M3": "session_018g4NYDNtjMmzAwj16DgwP2",
     "N2": "session_018g4NYEdzMiZ4Ep8rQ85ZxV",
-    "L1": "session_018g4NYEMSxGEvLdmXYaLJ7k",
     "M5": "session_018g4NYDYGYVviuAXgKvUVQL",
-    "X1": "session_018g4NYEQfvhsSBXe1LD3vHb"
+    "X1": "session_018g4NYEQfvhsSBXe1LD3vHb",
+    "B1": "session_018g4NYEMSxGEvLdmXYaLJ7k"
   },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
@@ -36,7 +36,8 @@
     "session_018g4NYDqSADMkHkDkiJiiYi (M2, מוזגה 09:15 — ממשיכה כ-M2b)",
     "session_018g4NYDJsQ89EKNooSUqRgM (N1, מוזגה 09:26, 383K — רדום)",
     "session_018g4NYDqSADMkHkDkiJiiYi (M2b, מוזגה 09:45 — רדום)",
-    "session_018g4NYGzZg9ooe3a4MJJELF (A3, מוזגה 09:53, 381K — רדום)"
+    "session_018g4NYGzZg9ooe3a4MJJELF (A3, מוזגה 09:53, 381K — רדום)",
+    "session_018g4NYEMSxGEvLdmXYaLJ7k (L1+L1b מוזגו 09:50/09:57 — ממשיך כ-B1)"
   ],
   "control": "session_018g4NYGbTsYKFmHndtZzAux",
   "control_previous": [

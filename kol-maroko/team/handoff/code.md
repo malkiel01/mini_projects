@@ -12,3 +12,10 @@
 - sort_order ריק = סדר מחושב (lex_sort). words_order_fill(true) לפני כל פעולה שמשנה סדר, בתוך העסקה. בעסקה שנפתחה ב-exec('BEGIN IMMEDIATE'), PDO::inTransaction() מחזירה false.
 - mbstring לא מכיר Windows-1255 (נזרק ValueError). להשתמש ב-cp1255_utf8().
 - פתוח: PV_WORDS קבוע בתצוגה ובבנייה (שינוי שם דרך kol.json משפיע רק על העץ); חיפוש בכל הקבצים לא כולל את הקובץ; kol-data.js עדיין 1.1.0.
+
+## מ-A3 (2026-11-12, נרשם בידי בקרה (4))
+- מילה ↔ הקלטה = words.audio; כל פעולה כותבת אותו ו-rec_sync. לא מחוברת = recordings.word_id NULL. סל = deleted_at. גרסאות = rec_versions (גרסה בלי קובץ = הכתובת שבאתר).
+- הנתיב היציב media/audio/<id>.<ext> מתעדכן בהחלפה (rec_tree_point) רק כשהעץ קיים; הסיומת נשארת המקורית גם כשהסוג משתנה → B1 בודקת Content-Type.
+- files_in_use כולל recordings ו-rec_versions; מחיקה מ-🗂️ קבצים של קובץ הקלטה נחסמת.
+- ZIP: בלי ZIP64 (תקרה ~4GB); צעד = 192MB או 4 שניות. לא נבדק בשרת החי.
+- מרוץ studio.js: תוקן ב-mount (mine = S).
