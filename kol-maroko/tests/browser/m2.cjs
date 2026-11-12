@@ -37,8 +37,9 @@ const MIME = { html: 'text/html', css: 'text/css', js: 'text/javascript', svg: '
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const pub = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64');
   const optsFile = path.join(dir, 'options.json');
-  const opts = () => JSON.parse(fs.readFileSync(optsFile, 'utf8'));
-  const setOpt = (k, v) => { const o = opts(); if (v === null) delete o[k]; else o[k] = v; fs.writeFileSync(optsFile, JSON.stringify(o)); };
+  // האתר המדומה כותב את הקובץ אטומית (rename); כאן — אותו דבר, וקריאה חוזרת למקרה נדיר של קובץ בדרך
+  const opts = () => { for (let i = 0; ; i++) { try { return JSON.parse(fs.readFileSync(optsFile, 'utf8')); } catch (e) { if (i > 50) throw e; } } };
+  const setOpt = (k, v) => { const o = opts(); if (v === null) delete o[k]; else o[k] = v; fs.writeFileSync(optsFile + '.n', JSON.stringify(o)); fs.renameSync(optsFile + '.n', optsFile); };
   fs.writeFileSync(optsFile, JSON.stringify({ kol_maroko_keys: 'k-m2:' + pub, kol_maroko_page_id: 7 }));
   fs.mkdirSync(path.join(dir, 'uploads'));
   const port = await freePort(), base = `http://127.0.0.1:${port}`;
@@ -217,6 +218,35 @@ const MIME = { html: 'text/html', css: 'text/css', js: 'text/javascript', svg: '
     setOpt('kol_maroko_v2_on', true);
     await page.goto(base + '/lexicon/');
     ok((await page.content()).includes('ערכת ההתקפה'), 'H14: הדלקה ← החדש חוזר');
+
+    // ════ ד. M2b — כתובת הבדיקה: המפסק כבוי, העמוד נפתח באסימון, והקבצים שהוא טוען (ממקור אטום) מגיעים דרך העוגייה ════
+    console.log('\n── ד. כתובת הבדיקה ──');
+    setOpt('kol_maroko_v2_on', false);
+    const tok = crypto.randomBytes(16).toString('hex');
+    setOpt('kol_maroko_v2_preview_hash', crypto.createHash('sha256').update(tok).digest('hex'));
+    const pv = await browser.newContext();
+    const pvLines = [];
+    pv.on('console', m => pvLines.push(m.text()));
+    const pp = await pv.newPage();
+    const loaded = [];
+    pp.on('response', r => loaded.push([new URL(r.url()).pathname, r.status()]));
+    await pp.goto(base + '/lexicon/?kol_preview=' + tok);
+    const pvk = await until(() => pvLines.find(l => l.startsWith('KOLKIT2 ')), 15000);
+    ok(pvk, 'בכתובת הבדיקה הערכה נטענה ורצה — kit.js הגיע דרך העוגייה', JSON.stringify(loaded));
+    ok(loaded.some(([p, st]) => p === '/lexicon/kit.css' && st === 200), 'kit.css — 200 (עוגיית התוסף נשלחה גם מהמקור האטום)', JSON.stringify(loaded));
+    const PV = pvk ? JSON.parse(pvk.slice(8)) : { checks: [] };
+    ok(PV.checks.length && PV.checks.every(k => k.ok), 'כל בדיקות הערכה ✓ גם בכתובת הבדיקה', JSON.stringify(PV.checks.filter(k => !k.ok)));
+    const ck = (await pv.cookies()).find(c => c.name === 'kol_preview');
+    ok(ck && ck.httpOnly && ck.path === '/lexicon/' && ck.sameSite === 'None', 'העוגייה: HttpOnly, לתחום בלבד', JSON.stringify(ck));
+    const site = await pv.newPage();
+    await site.goto(base + '/lexicon/');
+    ok((await site.content()).includes('ערכת ההתקפה'), 'אותו דפדפן, בלי פרמטר — העוגייה ממשיכה להציג את החדש');
+    const other = await browser.newContext();
+    const op2 = await other.newPage();
+    await op2.goto(base + '/lexicon/');
+    ok((await op2.content()).includes('WP-SITE-PAGE'), 'דפדפן אחר (בלי אסימון) — העמוד הישן');
+    await pv.close();
+    await other.close();
   } catch (e) {
     ok(false, 'הריצה עצמה', e.stack);
   } finally {
