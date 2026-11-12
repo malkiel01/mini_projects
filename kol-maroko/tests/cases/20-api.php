@@ -26,6 +26,8 @@ const API_MIN_ROLE = [
     // פרוסה F2a — מאגר הפרויקט
     'pf_tree' => 'editor', 'pf_read' => 'editor', 'pf_versions' => 'editor', 'pf_raw' => 'editor', 'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor',
     'pv_token' => 'editor',
+    'builds' => 'editor', 'build_get' => 'editor', 'build_file' => 'editor', 'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
+    'build_send' => 'publisher', 'kd_seed' => 'owner', 'kd_update' => 'owner', 'notices' => 'owner', 'notice_read' => 'owner',
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner', 'dev-attack-save' => 'owner',
 ];

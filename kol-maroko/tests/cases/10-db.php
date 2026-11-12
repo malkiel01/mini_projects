@@ -23,7 +23,7 @@ test('מיגרציות: מסד בגרסה קודמת (11) עולה לגרסה ה
     $pdo = tmp_pdo('old');
     migrate($pdo);
     // חזרה למצב שלפני פרוסה F1: בלי הטבלאות של שלב 12
-    $pdo->exec('DROP TABLE dev_users; DROP TABLE dev_log; DROP TABLE dev_runs; DROP TABLE pf_files; DROP TABLE pf_history; PRAGMA user_version = 11');
+    $pdo->exec('DROP TABLE dev_users; DROP TABLE dev_log; DROP TABLE dev_runs; DROP TABLE pf_files; DROP TABLE pf_history; DROP TABLE pkg_builds; DROP TABLE pkg_site_blobs; DROP TABLE notices; PRAGMA user_version = 11');
     $pdo->exec("INSERT INTO words (word, meaning, updated_at) VALUES ('סבאח', 'בוקר', '2026-01-01T00:00:00Z')");
     $pdo->exec("INSERT INTO audit (at, sub, name, action, detail) VALUES ('2026-01-01T00:00:00Z', 'x', 'מישהו', 'publish', 'גרסה 3')");
     migrate($pdo);
