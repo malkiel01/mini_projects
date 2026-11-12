@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js'];
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -823,7 +823,7 @@ const Editor = (() => {
   }
   /** ידית הגודל של תמונה נבחרת: גרירה משנה רוחב ושומרת יחס; Shift — חופשי. נכתב בתכונת style. */
   function drawHandle() {
-    S.space?.draw();
+    S.space?.draw(); S.fx?.drawHandles(); S.mo?.drawHandles();   // V10
     const c = S.canvas, hd = el.handle; if (!hd || !c) return;
     const n = c.selected, r = n && n.tag === 'img' && canWrite() && !S.text?.active ? c.rectOf(n) : null;
     hd.hidden = !r; if (!r || hd._drag) return;
@@ -864,7 +864,7 @@ const Editor = (() => {
     if (!S.host) return;
     drawState(); drawCrumbs(); S.nav?.refresh(); drawInfo(); drawTools(); saveMarks();
     if (S.build) { S.build.tools._n = null; S.build.draw(); }
-    S.lay?.drawHandles(); S.pos?.drawHandle();   // ידיות הקנבס של V6 — גם אחרי כתיבת CSS בלבד (הקנבס אינו מצויר מחדש אז)
+    S.lay?.drawHandles(); S.pos?.drawHandle(); S.fx?.drawHandles(); S.mo?.drawHandles();   // ידיות הקנבס של V6 — גם אחרי כתיבת CSS בלבד (הקנבס אינו מצויר מחדש אז)
     const cap = S.canvas?.capInfo;
     el.cap.hidden = !cap;
     if (cap) el.cap.textContent = cap.shown ? 'מוצגים כל האלמנטים · הצג 60' : 'מוצגים 60 מכל רשימה ארוכה · הצג הכול (' + cap.hidden + ' מוסתרים)';
@@ -971,7 +971,7 @@ const Editor = (() => {
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = () => { S.states?.apply(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
+      c.onDraw = () => { S.states?.apply(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); S.fx?.drawHandles(); S.mo?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
       S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath, basePath, getDevice: writeDevice, getDevices: () => DEVICES.map(d => ({ id: d.id, label: d.label, max: d.max })) });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
         highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } }, setDevice: id => setDevice(id) });
@@ -997,6 +997,16 @@ const Editor = (() => {
       S.nav.order = n => S.devs.seen(n);
       S.space = new window.KolSpacing.Spacing(c, { styler: S.styler, design: S.adv, write: writeStyle, preview, unpreview, canWrite: () => !!canWrite(), note, undo, phone, on: () => (S.spaceOn || (S.tab === 'adv' && (infoOpen() || phone())) ? 'adv' : S.tab === 'design' && infoOpen() ? 'design' : false), sheetHost: () => el.gapbar });
       S.adv.whyGap = n => S.space.whyNode(n);
+      // V10: אפקטים ותנועה — "עיצוב": מסגרת, צל, אפקטים, מסיכה, מפריד, מעבר; "מתקדם": transform, כניסה, גלילה, נדבק, וידאו / מצגת ברקע
+      const fxBusy = () => !!S.bg?.mv || !!S.text?.active || !!S.pos?.dragging || !!S.lay?.dragging;
+      S.fx = new window.KolFx.Fx({ design: S.design, adv: S.adv, write: writeStyle, writeOps, joinTx, note, undo, phone, layer: () => c.layer, busy: fxBusy, on: () => S.tab === 'design' && (infoOpen() || phone()),
+        html: () => S.doc, docOf: docOfP, pagePath, pick, filePath: () => S.file?.path, shapeUrl: id => 'assets/editor-shapes/' + encodeURIComponent(id) + '.svg', reorder: (...a) => S.lay.reorder(...a) });
+      S.mo = new window.KolMotion.Motion({ design: S.design, adv: S.adv, fx: S.fx, write: writeStyle, writeOps, joinTx, attachFx, txCount: () => S.tx.length, note, undo, phone, layer: () => c.layer, busy: () => fxBusy() || !!S.fx?.dragging, on: () => S.tab === 'adv' && (infoOpen() || phone()),
+        html: () => S.doc, docOf: docOfP, pagePath, sheets: () => S.sheets, linkSheet, files: () => Project._state.files || [], reload: () => Project.docs.reload(), openDoc: f => Project.docs.open(f.id), filePath: () => S.file?.path, pick, devs: () => DEVICES,
+        seedUrl: name => 'assets/project-seed/' + encodeURIComponent(name), api: (a, b) => api(a, b) });
+      S.design.fx = n => S.fx.sections(n); S.design.transition = (n, d) => S.mo.transition(n, d);
+      { const ex = S.adv.extra; S.adv.extra = n => [...ex(n), ...S.mo.sections(n)]; }
+      el.bar.append(S.mo.button());
       S.build = new window.KolBuild.Build({ canvas: c, nav: S.nav, navHost: el.libBody, toolsHost: el.seltools, K, X: window.KolStruct, styler: S.styler, act, multi, writeStyle, note, sheet, undo, canWrite: () => !!canWrite(), device: writeDevice, devices: () => S.devs,
         pick, rel: relRef, openInCode, linkSheet, removeOne, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, sheetsList: () => [...S.sheets.values()],
         jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path, linkedPaths: () => { const out = []; if (c.m?.root) K.walk(c.m.root, n => { if (n.tag === 'link' && /stylesheet/i.test(K.attrOf(n, 'rel')?.value || '')) { const hr = K.attrOf(n, 'href'); if (hr) out.push(resolve(dirOf(S.file.path), hr.value)); } }); return out; },

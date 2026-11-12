@@ -52,12 +52,25 @@
     if (p === 'grid-template') return ['grid-template-rows', 'grid-template-columns', 'grid-template-areas'];
     if (p === 'overflow') return ['overflow-x', 'overflow-y'];
     if (p === 'transition') return ['transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay', 'transition-behavior'];   // V8: "מעבר" — קריאה; כתיבה אחרי הקיצור
+    // V10: מסגרת ופינות — שמות לוגיים ← פיזיים (קיצור של צד: שלושת הרכיבים; `border` ו-`border-radius` נשארים כשם עצמם)
+    if ((m = /^border-(block|inline)-(start|end)-(width|style|color)$/.exec(p))) return ['border-' + sideOf(m[1], m[2], rtl) + '-' + m[3]];
+    if ((m = /^border-(block|inline)-(start|end)$/.exec(p))) { const sd = sideOf(m[1], m[2], rtl); return ['border-' + sd + '-width', 'border-' + sd + '-style', 'border-' + sd + '-color']; }
+    if ((m = /^border-(top|right|bottom|left)$/.exec(p))) return ['border-' + m[1] + '-width', 'border-' + m[1] + '-style', 'border-' + m[1] + '-color'];
+    if ((m = /^border-(start|end)-(start|end)-radius$/.exec(p))) return ['border-' + (m[1] === 'start' ? 'top' : 'bottom') + '-' + sideOf('inline', m[2], rtl) + '-radius'];
+    if (p === 'outline') return ['outline-width', 'outline-style', 'outline-color'];
+    // `border` / `border-radius`: השם עצמו (כתיבה של "כל הצדדים") ואחריו הרכיבים — כדי ש"מאיפה הערך" של צד יראה את הקיצור
+    if (p === 'border') return ['border'].concat(...SIDES.map(sd => ['border-' + sd + '-width', 'border-' + sd + '-style', 'border-' + sd + '-color']));
+    if ((m = /^border-(width|style|color)$/.exec(p))) return SIDES.map(sd => 'border-' + sd + '-' + m[1]);
+    if (p === 'border-radius') return ['border-radius', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius'];
     if (p === 'background') return ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat', 'background-attachment', 'background-origin', 'background-clip'];   // V5: כל הרכיבים (לקריאה; הכתיבה — אחרי הקיצור)
     return [p];
   }
   /** השם שהעורך כותב להצהרה חדשה: מאפיין לוגי (margin-block-start), לא פיזי. */
   function logical(phys, rtl) {
     const m = /^(margin|padding)-(top|right|bottom|left)$/.exec(phys);
+    let b;
+    if ((b = /^border-(top|right|bottom|left)-(width|style|color)$/.exec(phys))) return 'border-' + (b[1] === 'top' ? 'block-start' : b[1] === 'bottom' ? 'block-end' : (b[1] === 'right') === !!rtl ? 'inline-start' : 'inline-end') + '-' + b[2];   // V10
+    if ((b = /^border-(top|bottom)-(left|right)-radius$/.exec(phys))) return 'border-' + (b[1] === 'top' ? 'start' : 'end') + '-' + ((b[2] === 'right') === !!rtl ? 'start' : 'end') + '-radius';
     if (/^(top|right|bottom|left)$/.test(phys)) return phys === 'top' ? 'inset-block-start' : phys === 'bottom' ? 'inset-block-end' : (phys === 'right') === !!rtl ? 'inset-inline-start' : 'inset-inline-end';   // V6 — רק להצהרה חדשה
     if (!m) return phys;
     const s = m[2];
@@ -107,6 +120,15 @@
     if (phys === 'text-decoration-line') out.line = nv; else if (phys === 'text-decoration-style') out.style = nv; else if (phys === 'text-decoration-color') out.color = nv; else return null;
     return [out.line || 'none', out.style, out.thick, out.color].filter(Boolean).join(' ');
   }
+  /** V10: קו (מסגרת של צד / outline): [עובי, סוג, צבע], בכל סדר; null — var() או משהו שאינו מזוהה. */
+  const LSTYLE = /^(none|hidden|dotted|dashed|solid|double|groove|ridge|inset|outset|auto)$/i, LWIDTH = /^(thin|medium|thick|0|-?[\d.]+[a-z%]+|(calc|clamp|min|max)\(.*\))$/i;
+  function lineParse(v) {
+    const t = splitTop(String(v).trim()); if (!t.length || t.length > 3 || t.some(x => /var\(|env\(/i.test(x))) return null;
+    const out = ['medium', 'none', 'currentcolor']; let seen = 0;
+    for (const x of t) { const k = LSTYLE.test(x) ? 1 : LWIDTH.test(x) ? 0 : 2; if (seen & (1 << k)) return null; seen |= 1 << k; out[k] = x; }
+    return out;
+  }
+  function lineSet(v, i, nv) { const f = lineParse(v); if (!f) return null; f[i] = nv; return f.join(' '); }
   /** flex: none | auto | initial | <grow> [<shrink>] [<basis>] | <basis> ← [grow, shrink, basis]; null — לא מפורק. */
   function flexParse(v) {
     const t = splitTop(String(v).trim()), num = x => /^(\d+\.?\d*|\.\d+)$/.test(x);
@@ -128,6 +150,8 @@
     if (p === 'font') return fontSet(value, phys, nv);
     if (p === 'text-decoration') return decoSet(value, phys, nv);
     if (p === 'background' || p === 'transition' || p === 'grid-area' || p === 'grid-template' || /^grid-(row|column)$/.test(p)) return null;
+    if (p === 'outline' || /^border-(top|right|bottom|left|block-start|block-end|inline-start|inline-end)$/.test(p)) return lineSet(value, i, nv);   // V10
+    if (p === 'border' || p === 'border-radius') return i === 0 ? nv : null;   // V10: רכיב של צד / פינה בתוך הקיצור — הצהרה נפרדת אחריו
     if (p === 'flex') { const f = flexParse(value); if (!f) return null; f[i] = nv; return f.join(' '); }
     if (p === 'flex-flow') { const f = flexFlowParse(value); if (!f) return null; f[i] = nv; return f.join(' '); }
     const t = splitTop(value);
@@ -143,6 +167,9 @@
     if (i < 0) return null;
     if (cov.length === 1) return value;
     if (p === 'background') return g.KolBg ? g.KolBg.bgComponent(value, phys) : null;   // V5: background.js
+    if (p === 'outline' || /^border-(top|right|bottom|left|block-start|block-end|inline-start|inline-end)$/.test(p)) { const f = lineParse(value); return f ? f[i] : null; }   // V10
+    if (p === 'border') { if (!i) return value; const f = lineParse(value); return f ? f[(i - 1) % 3] : null; }
+    if (p === 'border-radius') { if (!i) return value; if (/\//.test(value)) return null; const t = splitTop(value); return t.length <= 4 && !t.some(x => /var\(/i.test(x)) ? expand4(t)[i - 1] : null; }
     if (p === 'flex') { const f = flexParse(value); return f ? f[i] : null; }
     if (p === 'flex-flow') { const f = flexFlowParse(value); return f ? f[i] : null; }
     if (/^grid-(row|column)$/.test(p)) { const f = String(value).split('/').map(x => x.trim()); return f[i] || (i === 1 && /^\d+$|^-?\d+$/.test(f[0]) ? 'auto' : f[0]); }
@@ -643,5 +670,5 @@
     }
   }
 
-  g.KolStyle = { stateSel, checkState, checkSelector, stateRule, planState, removeDeclAt, mediaRetarget, mediaCount, kolBreakpoints, mediaMax, devCond, ruleMax, devRule, devBlock, planDevice, flexParse, checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
+  g.KolStyle = { stateSel, checkState, checkSelector, stateRule, planState, removeDeclAt, mediaRetarget, mediaCount, kolBreakpoints, mediaMax, devCond, ruleMax, devRule, devBlock, planDevice, flexParse, checkValue, splitTop, covered, logical, lineParse, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
 })(typeof window !== 'undefined' ? window : globalThis);
