@@ -105,3 +105,11 @@
 - בבדיקות: כפתורי מצב — `.sg-state-seg [data-state]` (`[data-state]` קיים גם על שורות `sg-dev`).
 - `.sg` (עיצוב/מתקדם) — עכשיו גולל (לא היה overflow גם ב-main).
 - ❌ "לא חל על אף אלמנט" · "מאפיינים נוספים" ב"תוכן"/"פרטים" · `::before`+מצב · Safari/Firefox.
+
+## מ-V9 (2026-11-12, נרשם בידי בקרה (6))
+- `KolGlobals` (globals.js) — **כל כתיבה גלובלית דרכו:** planNewVar / planSetVar / planRename / planReplaceValue / planFontFace / planLinkInsert / planLinkDrop. כל ערך — `checkRaw` (+ `checkValue` / `CSS.supports`); שם משפחה — `FAMILY`, שם משתנה — `VAR_NAME`.
+- פעולת שרת שהיא חלק מעסקה (קובץ שנוצר) — `attachFx({undo, redo})` מיד אחרי writeOps; `joinTx` שומר אותה.
+- "⛓" (קישור למשתנה) — דרך `D.varBtn` / `D.varChip` בשורת המקור (srcLine). סוג שליטה חדש שצריך משתנה — להוסיף ל-`kindOfProp`.
+- בבדיקות: לשונית `.ed-ptabs [data-ptab="glob"]`; הכנה שעוקפת עסקאות — רק לפני תמונת המצב ההתחלתית.
+- **בקשה יוצאת חדשה — רק דרך `font_http`** (או אותו מבנה: רשימת מארחים, https, בלי הפניות, IP נבדק ומוצמד), עם בדיקות ב-tests/cases.
+- ❌ ראו reviews/V9.md.
