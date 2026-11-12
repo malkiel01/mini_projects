@@ -122,3 +122,4 @@
 - 2026-11-12 14:05 UTC — **V6 (חלק א) מוזגה** (#1485 → 17b6deb, אחרי מיזוג main: run 284, v6 21 ✓). צ'אט V6 רדום. V6b — צ'אט חדש.
 - 2026-11-12 14:10 UTC — **N3 מוזגה** (#1487 → 9fb94c5; `reviews/N3.md` — run 295, n3×2, n2, n2b, n1, f2b ✓; מיגרציה 22). צ'אט N3 רדום (427K).
 - 2026-11-12 14:12 UTC — נפתחו 3 צ'אטי קוד (Opus): **V6b** `…G46U6LhM9Cn4jLsUJ` · **P1** `…FGqudCUh3SjagMU2d` · **N3b** `…FiFsHU44FDuGnAVZc`. המכסה: allowed (five_hour).
+- 2026-11-12 13:50 UTC (שעון) — פריסה 1567 (9fb94c5 — HEAD, כולל M4-BC, V6, N3) success. V6b רץ. המכסה: seven_day allowed_warning — לא פותחים עוד.
