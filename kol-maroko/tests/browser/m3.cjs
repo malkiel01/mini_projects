@@ -38,7 +38,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     $now = now_iso();
     foreach ([['u-pub', 'pub@example.test', 'Pub Test', 'publisher'], ['u-ed', 'ed@example.test', 'Ed Test', 'editor']] as $m)
-      db()->prepare('INSERT INTO members (sub, email, name, role, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)')->execute([...$m, 'test', $now]);
+      db()->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute([...$m, $now]);   // P1
     setting_set('site_url', $argv[3]);
     file_put_contents($argv[4] . '/options.json', json_encode(['kol_maroko_keys' => pub_key_line(pub_key())]));
   `, data, ROOT, wp, wpDir]);

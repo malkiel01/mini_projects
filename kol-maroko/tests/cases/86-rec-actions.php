@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 require_once KOL_ROOT . '/lib/library.php';
 
-const A3_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'role' => 'owner'];
+const A3_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'role' => 'site_owner'];
 const A3_ED = ['sub' => 'u-ed', 'name' => 'עורכת בדיקה', 'role' => 'editor'];
 const A3_U = 'https://maghreb.co.il/wp-content/uploads/';
 

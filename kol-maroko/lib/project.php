@@ -304,7 +304,7 @@ function pf_tree(array $user): array
         'limits' => array_column(pf_limits()['limits'], 'value', 'key'),
         'kol' => pf_kol(),
         'lock' => lock_view($user),
-        'can_purge' => $user['role'] === 'owner',
+        'can_purge' => role_at_least($user, 'page_owner'),
         'seed_only' => pf_seed_only(),
     ];
 }

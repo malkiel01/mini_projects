@@ -42,6 +42,8 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
       const c = await browser.newContext({ viewport: { width, height }, hasTouch: width < 600, acceptDownloads: true,
         permissions: ['microphone'], extraHTTPHeaders: { 'X-Test-User': JSON.stringify(user) } });
       await c.addInitScript(() => { try { sessionStorage.setItem('kol-lib-tab', 'audio'); } catch { /* */ } });
+      // P1: גם בעוגייה — בקשות מדיה (<audio>) יוצאות בלי extraHTTPHeaders, ובקשה בלי זהות מוחקת את ה-session (יציאה מהפלטפורמה)
+      await c.addCookies([{ name: 'kol_test_user', value: Buffer.from(JSON.stringify(user)).toString('base64'), url: base, httpOnly: true, sameSite: 'Lax' }]);
       return c;
     };
     const call = (page, action, body, query = '') => page.evaluate(([a, b, q]) => api(a, b ?? undefined, q).catch(e => ({ error: e.message, status: e.status })), [action, body ?? null, query]);

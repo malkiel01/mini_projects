@@ -375,7 +375,7 @@ test('N3 נקודת שחזור כוללת את הרשימות; מסך המפתח
     l3_create();
     l3_item('proverbs', ['title' => 'א']);
     ok(isset(snap_state()['lists']), 'snap_state — lists');
-    $snap = snapshot_create(['sub' => 'u-owner', 'name' => 'o', 'role' => 'owner'], 'בדיקה');
+    $snap = snapshot_create(['sub' => 'u-owner', 'name' => 'o', 'role' => 'site_owner'], 'בדיקה');
     l3_item('proverbs', ['title' => 'ב']);
     eq(2, count(list_rows('proverbs')));
     eq(200, b_post('snapshot_restore', ['id' => $snap], U_EDITOR)['status']);

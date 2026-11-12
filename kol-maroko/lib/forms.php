@@ -555,7 +555,7 @@ function inbox_csv(array $user, array $q): never
 function forms_mail_candidates(array $user): array
 {
     $out = [];
-    foreach (db()->query("SELECT name, email FROM members WHERE email IS NOT NULL AND email <> '' ORDER BY name")->fetchAll() as $m) {
+    foreach (db()->query("SELECT name, email FROM users WHERE status = 'active' AND role IS NOT NULL AND agent IS NULL AND email IS NOT NULL AND email <> '' ORDER BY name")->fetchAll() as $m) {
         if (forms_email_ok((string)$m['email'])) $out[strtolower($m['email'])] = ['email' => strtolower($m['email']), 'name' => $m['name']];
     }
     $mine = strtolower((string)($user['email'] ?? ''));

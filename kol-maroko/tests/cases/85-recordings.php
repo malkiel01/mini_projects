@@ -16,7 +16,7 @@ mkdir($AUD_DIR, 0775, true);
 $GLOBALS['AUD_DIR'] = $AUD_DIR;
 $GLOBALS['kol_rec_test_map'] = ['https://maghreb.co.il' => $AUD, 'https://www.maghreb.co.il' => $AUD];
 
-const A2_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'role' => 'owner'];
+const A2_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'role' => 'site_owner'];
 const A2_U = 'https://maghreb.co.il/wp-content/uploads/';
 
 /** האתר המחובר בזמן הבדיקה: https://maghreb.co.il (בדיקות קודמות מחברות את וורדפרס המדומה). מחזיר שחזור. */
@@ -186,7 +186,7 @@ test('A2 · בלי לחיצה שום בייט אינו יורד: הספרייה,
         foreach (glob(KOL_ROOT . '/{lib,.}/*.php', GLOB_BRACE) as $f) {
             if (str_ends_with($f, 'recordings.php')) continue;
             $c = (string)file_get_contents($f);
-            ok(!preg_match('/rec_http\(|rec_fetch_step\(|rec_scan_step\(/', preg_replace('~\'rec_(fetch|scan)_step\' => rec_\1_step\(require_role\(\$user, \'owner\'\)\)~', '', $c)), basename($f) . ' מפעיל הורדה');
+            ok(!preg_match('/rec_http\(|rec_fetch_step\(|rec_scan_step\(/', preg_replace('~\'rec_(fetch|scan)_step\' => rec_\1_step\(\$u\)~', '', $c)), basename($f) . ' מפעיל הורדה');
         }
     } finally { $clean(); }
 });

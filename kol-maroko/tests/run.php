@@ -51,15 +51,29 @@ function serve(string $router, array $env): array
 }
 
 /**
- * בקשה לשרת הבדיקות. $o: user (מערך זהות מהשער | null), json (גוף), raw (גוף גולמי), headers [], csrf (ברירת מחדל: אוטומטי למשתמש).
+ * בקשה לשרת הבדיקות. $o: user (מערך זהות מהשער | null), json (גוף), raw (גוף גולמי), headers [], csrf (ברירת מחדל: אוטומטי למשתמש),
+ * jar (ברירת מחדל: true — העוגייה kolm_sess של המשתמש נשמרת ונשלחת, כמו בדפדפן; P1).
  * מחזיר ['status', 'json', 'headers', 'body'].
  */
 function http(string $method, string $url, array $o = []): array
 {
     $h = $o['headers'] ?? [];
+    $jarKey = null;
     if (!empty($o['user'])) {
         $h[] = 'X-Test-User: ' . json_encode($o['user'], JSON_UNESCAPED_UNICODE);
-        if ($method === 'POST' && ($o['csrf'] ?? true)) { $h[] = 'X-Kol: 1'; $h[] = 'X-CSRF: ' . csrf_token((string)$o['user']['sub']); }
+        if ($o['jar'] ?? true) {
+            $jarKey = (string)$o['user']['sub'];
+            // P1: ה-CSRF הוא של ה-session — לפני POST ראשון, "me" (כמו שהסטודיו עושה בטעינה)
+            if ($method === 'POST' && ($o['csrf'] ?? true) && empty($GLOBALS['JAR'][$jarKey]['csrf'])) {
+                http('GET', '/api.php?action=me', ['user' => $o['user']]);
+            }
+            if (!empty($GLOBALS['JAR'][$jarKey]['cookie'])) {
+                $c = 'kolm_sess=' . $GLOBALS['JAR'][$jarKey]['cookie'];
+                $i = array_key_first(array_filter($h, fn($x) => stripos($x, 'Cookie:') === 0));
+                if ($i === null) $h[] = "Cookie: $c"; else $h[$i] .= "; $c";      // עוגייה שהבדיקה עצמה שולחת — באותה כותרת
+            }
+            if ($method === 'POST' && ($o['csrf'] ?? true)) { $h[] = 'X-Kol: 1'; $h[] = 'X-CSRF: ' . ($GLOBALS['JAR'][$jarKey]['csrf'] ?? ''); }
+        }
     }
     $body = isset($o['json']) ? json_encode($o['json'], JSON_UNESCAPED_UNICODE) : ($o['raw'] ?? null);
     if (isset($o['json'])) $h[] = 'Content-Type: application/json';
@@ -72,7 +86,15 @@ function http(string $method, string $url, array $o = []): array
     if ($res === false) throw new TestFail('הבקשה נכשלה: ' . curl_error($ch));
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     curl_close($ch);
-    return ['status' => $status, 'json' => json_decode((string)$res, true), 'headers' => $rh, 'body' => (string)$res];
+    $json = json_decode((string)$res, true);
+    if ($jarKey !== null) {
+        if (preg_match('/^kolm_sess=([^;]*)/', $rh['set-cookie'] ?? '', $cm)) {
+            if (($GLOBALS['JAR'][$jarKey]['cookie'] ?? '') !== $cm[1]) $GLOBALS['JAR'][$jarKey] = ['cookie' => $cm[1], 'csrf' => null];
+            if ($cm[1] === '') unset($GLOBALS['JAR'][$jarKey]);
+        }
+        if (is_array($json) && is_string($json['csrf'] ?? null) && !empty($GLOBALS['JAR'][$jarKey]['cookie'])) $GLOBALS['JAR'][$jarKey]['csrf'] = $json['csrf'];
+    }
+    return ['status' => $status, 'json' => $json, 'headers' => $rh, 'body' => (string)$res];
 }
 
 function rrmdir(string $d): void
@@ -85,6 +107,9 @@ const U_OWNER = ['sub' => 'u-owner', 'name' => 'בעלים בדיקה', 'email' 
 const U_EDITOR = ['sub' => 'u-editor', 'name' => 'עורך בדיקה', 'email' => 'editor@example.test', 'email_verified' => true];
 const U_PUBLISHER = ['sub' => 'u-publisher', 'name' => 'מפרסם בדיקה', 'email' => 'publisher@example.test', 'email_verified' => true];
 const U_STRANGER = ['sub' => 'u-stranger', 'name' => 'זר', 'email' => 'stranger@example.test', 'email_verified' => true];
+// P1 — חמשת התפקידים
+const U_CONTENT = ['sub' => 'u-content', 'name' => 'עורכת תוכן בדיקה', 'email' => 'content@example.test', 'email_verified' => true];
+const U_PAGE = ['sub' => 'u-page', 'name' => 'בעלת העמוד בדיקה', 'email' => 'page@example.test', 'email_verified' => true];
 
 $procs = [];
 $failed = 0;
@@ -92,10 +117,13 @@ $ran = 0;
 try {
     db();                                                   // יוצר את המסד הזמני ומריץ את המיגרציות
     $now = now_iso();
-    foreach ([[U_EDITOR, 'editor'], [U_PUBLISHER, 'publisher']] as [$u, $role]) {
-        db()->prepare('INSERT INTO members (sub, email, name, role, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)')->execute([$u['sub'], $u['email'], $u['name'], $role, 'test', $now]);
+    // P1: האנשים — ב-users (members נשארת לקריאה בלבד)
+    foreach ([[U_EDITOR, 'editor'], [U_PUBLISHER, 'publisher'], [U_CONTENT, 'content_editor'], [U_PAGE, 'page_owner']] as [$u, $role]) {
+        db()->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute([$u['sub'], $u['email'], $u['name'], $role, $now]);
     }
-    [$procs[], $GLOBALS['BASE']] = serve(__DIR__ . '/router.php', ['KOL_TEST_DATA' => KOL_DATA_DIR]);
+    [$procs[], $GLOBALS['PROV']] = serve(__DIR__ . '/fake-provision.php', ['KOL_TEST_PROV' => $TMP . '/prov.json']);
+    $GLOBALS['PROV_FILE'] = $TMP . '/prov.json';
+    [$procs[], $GLOBALS['BASE']] = serve(__DIR__ . '/router.php', ['KOL_TEST_DATA' => KOL_DATA_DIR, 'KOL_TEST_PROVISION' => $GLOBALS['PROV'] . '/provision.php']);
     [$procs[], $GLOBALS['WP']] = serve(__DIR__ . '/fake-wp.php', ['KOL_TEST_WP' => $TMP . '/wp']);
     $GLOBALS['WP_DIR'] = $TMP . '/wp';
 

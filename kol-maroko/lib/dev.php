@@ -22,7 +22,7 @@ const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צי�
  */
 function is_developer(?array $user): bool
 {
-    return ($user['role'] ?? null) === 'owner';
+    return ($user['role'] ?? null) === 'site_owner';
 }
 
 function require_developer(?array $user): array
@@ -97,8 +97,8 @@ function dev_setup(): void
 function audit_login(array $user): void
 {
     try {
-        $st = db()->prepare("SELECT 1 FROM audit WHERE sub = ? AND action = 'login' AND at > ? LIMIT 1");
-        $st->execute([$user['sub'], gmdate('Y-m-d\TH:i:s\Z', time() - 1800)]);
+        $st = db()->prepare("SELECT 1 FROM audit WHERE user_id = ? AND action = 'login' AND at > ? LIMIT 1");
+        $st->execute([$user['id'] ?? 0, gmdate('Y-m-d\TH:i:s\Z', time() - 1800)]);
         if (!$st->fetchColumn()) audit_as($user, 'login', mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 120));
     } catch (Throwable $e) {
         devlog_write('warn', 'data', 'audit.login', ['message' => $e->getMessage()]);
@@ -135,7 +135,7 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
     if (!str_starts_with($action, 'dev')) return null;
     dev_setup();
     $member = function () use ($user): array {                    // כל חבר עם תפקיד — רואה 🐞 ומדווח
-        return dev_user(require_role($user, 'editor'));
+        return dev_user(require_role($user, 'content_editor'));
     };
     $dev = function () use ($user): array {
         return dev_user(require_developer($user));
@@ -462,13 +462,40 @@ function dev_stats(): array
         ['id' => 'versions', 'label' => 'גרסאות שפורסמו', 'value' => $n('SELECT COUNT(*) FROM versions')],
         ['id' => 'revisions', 'label' => 'שמירות טיוטה בהיסטוריה', 'value' => $n('SELECT COUNT(*) FROM revisions')],
         ['id' => 'snapshots', 'label' => 'נקודות שחזור', 'value' => $n('SELECT COUNT(*) FROM snapshots')],
-        ['id' => 'members', 'label' => 'חברים', 'value' => $n('SELECT COUNT(*) FROM members')],
-        ['id' => 'requests', 'label' => 'ביקשו גישה', 'value' => $n('SELECT COUNT(*) FROM access_requests')],
+        dev_people_row(),
         ['id' => 'log', 'label' => 'שורות ביומן', 'value' => $n('SELECT COUNT(*) FROM dev_log')],
         ['id' => 'db_size', 'label' => 'גודל המסד', 'value' => dev_bytes($size)],
         dev_x1_row(),
         ['id' => 'imported', 'label' => 'ייבוא העמוד מהאתר', 'value' => is_array($imp) ? (string)($imp['at'] ?? 'בוצע') : 'לא בוצע'],
     ];
+}
+
+/**
+ * P1 (08 §5): משתמשים לפי תפקיד, sessions פעילים, הזמנות ממתינות, תוצאת provision האחרונה, ותוצאת מטריצת ההרשאות
+ * — בשרת עצמו: כל פעולה ב-api.php וב-dev_route מסווגת ב-ACTION_ROLES (המטריצה המלאה רצה ב-tests/cases/21-roles.php).
+ */
+function dev_roles_check(): array
+{
+    preg_match_all("/^        '([a-z_]+)' => /m", (string)@file_get_contents(dirname(__DIR__) . '/api.php'), $m);
+    $all = array_unique(array_merge($m[1], DEV_ACTIONS));
+    $miss = array_values(array_diff($all, array_keys(ACTION_ROLES)));
+    return ['ok' => !$miss && count($m[1]) > 50, 'checks' => count($all) . ' פעולות' . ($miss ? ' · בלי סיווג: ' . implode(', ', $miss) : ''), 'at' => now_iso()];
+}
+
+function dev_people_row(): array
+{
+    $pdo = db();
+    $by = [];
+    foreach ($pdo->query("SELECT COALESCE(role, '') AS r, COUNT(*) AS n FROM users WHERE status = 'active' AND agent IS NULL GROUP BY r")->fetchAll() as $r) {
+        $by[] = ($r['r'] === '' ? 'בלי תפקיד' : (ROLES[$r['r']] ?? $r['r'])) . ' ' . $r['n'];
+    }
+    $sess = (int)$pdo->query("SELECT COUNT(*) FROM sessions WHERE seen_at > '" . gmdate('Y-m-d\TH:i:s\Z', time() - 86400) . "'")->fetchColumn();
+    $pend = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE status = 'active' AND invite IN ('pending','invited') AND sub IS NULL")->fetchColumn();
+    $prov = json_decode((string)setting('provision_last', 'null'), true);
+    $mx = dev_roles_check();
+    return ['id' => 'people', 'label' => '👥 אנשים (P1)', 'value' => implode(' · ', $by ?: ['אין']) . " · sessions ביממה: $sess · הזמנות ממתינות: $pend"
+        . ' · provision: ' . (is_array($prov) ? ($prov['at'] . ' ' . ($prov['error'] ?? $prov['status'] ?? $prov['http'])) : 'עוד לא נקרא')
+        . ' · מטריצת הרשאות: ' . ($mx['ok'] ? '✓ ' : '✗ ') . $mx['checks']];
 }
 
 /** X1: ✨ / 🤖 / 📝 החודש — שימוש בבינה (קיים), עריכות שהוחלו / נדחו, בקשות מהצ'אט לפי כניסה, סנכרונים של טקסט ארוך והתנגשויות. */

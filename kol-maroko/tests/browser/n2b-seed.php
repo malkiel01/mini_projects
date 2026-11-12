@@ -12,7 +12,7 @@ if (realpath(KOL_DATA_DIR) === realpath($root . '/data')) exit("לא על data/\
 foreach (['members', 'import', 'dev', 'library'] as $lib) require_once "$root/lib/$lib.php";
 $pdo = db();
 setting_set('site_url', 'https://maghreb.co.il');
-$who = ['sub' => 'u-owner', 'name' => 'Owner Test', 'role' => 'owner'];
+$who = ['sub' => 'u-owner', 'name' => 'Owner Test', 'role' => 'site_owner'];
 $mp3 = fn(string $salt) => "ID3\x03\x00\x00\x00\x00\x00\x00" . str_repeat("\xff\xfb\x90\x64" . str_repeat("\x00", 413), 5) . $salt;
 $store = function (string $bytes, string $name) use ($who): string {
     $tmp = files_dir() . '/tmp/seed-' . bin2hex(random_bytes(4));

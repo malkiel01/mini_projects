@@ -197,7 +197,10 @@ test('הרשאות: אורח 401; זר 403; עורך בונה ואינו שול�
     eq([403, 'not_builder'], [$r['status'], $r['json']['code'] ?? null], 'מפרסם — רק גרסה שבנה בעצמו');
     eq(403, http('POST', '/api.php?action=build_send', ['user' => U_PUBLISHER, 'json' => ['id' => $b['id']], 'csrf' => false])['status'], 'בלי CSRF');
     eq(403, m1_post('kd_update', [])['status'], 'עדכון kol-data.js — בעלים בלבד');
-    eq(403, m1_get('notices')['status'], 'הודעות — בעלים בלבד');
+    // P1: הפעמון — לכל אחד, ההודעות שלו; עורך אינו רואה את ההודעות של בעל האתר
+    $n = m1_get('notices');
+    eq(200, $n['status'], 'הפעמון');
+    eq([], array_values(array_filter($n['json']['notices'], fn($x) => $x['kind'] === 'publish')), 'הודעות הפרסום — רק לבעלים');
 });
 
 test('שליחה: תוסף 1.x ← "נדרש 2.0"; הגרסה נשמרת built, ושום דבר לא נשלח', function () {
@@ -311,7 +314,7 @@ test('kol-data.js: עדכון ל-1.1.0 — בעלים בלבד, נקודת שח�
         $rev = (int)$r['rev'];
         m1_post('pf_write', ['id' => (int)$r['id'], 'rev' => $rev, 'content' => "window.KolData = { version: '1.0.0' };\n"]);
     }
-    $st = builds_list(['sub' => U_OWNER['sub'], 'role' => 'owner'])['kd'];
+    $st = builds_list(['sub' => U_OWNER['sub'], 'role' => 'site_owner'])['kd'];
     eq(['1.0.0', false, false], [$st['version'], $st['prerender'], $st['same']]);
     $snaps = (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn();
     eq(409, m1_post('kd_update', ['rev' => $st['rev'] - 1], U_OWNER)['status'], 'מצב ישן של המסך — לא דורס');
@@ -408,4 +411,29 @@ test('B1: הקלטה שהוחלפה בסוג אחר (נתיב .mp3, תוכן m4a
     eq('audio/mpeg', pv_media_type(['type' => 'application/x-evil'], 'x.mp3'), 'סוג לא מוכר ← לפי הסיומת');
     eq('audio/mpeg', pv_media_type(['type' => ''], 'x.mp3'), 'בלי סוג ← לפי הסיומת');
     @unlink($tmp);
+});
+
+test('P1 [ש-7]: "כל פרסום מחכה לאישורי" — מפרסם ← ממתין; בעל האתר דוחה עם סיבה (הודעה למבקש) או מאשר (נשלח בשם מי שבנה)', function () {
+    wp_site_ready();
+    m1_wp_opt('kol_v2_mock', true);
+    http('POST', '/api.php?action=owner_set', ['user' => U_OWNER, 'json' => ['approval' => true]]);
+    try {
+        $b = m1_build(U_PUBLISHER);
+        $r = m1_post('build_send', ['id' => $b['id']], U_PUBLISHER);
+        eq([200, true, 'built'], [$r['status'], $r['json']['pending'] ?? null, $r['json']['build']['status']], $r['body']);
+        $o = http('GET', '/api.php?action=owner_settings', ['user' => U_OWNER])['json']['owner'];
+        eq([$b['id']], array_column($o['pending'], 'id'), 'ממתין אצל בעל האתר');
+        eq(403, m1_post('publish_decide', ['id' => $b['id'], 'approve' => true], U_PAGE)['status'], 'בעל העמוד אינו מאשר');
+        eq(400, m1_post('publish_decide', ['id' => $b['id']], U_OWNER)['status'], 'דחייה בלי סיבה');
+        eq(200, m1_post('publish_decide', ['id' => $b['id'], 'reason' => 'עוד לא'], U_OWNER)['status']);
+        $n = http('GET', '/api.php?action=notices', ['user' => U_PUBLISHER])['json']['notices'];
+        ok((bool)array_filter($n, fn($x) => str_contains($x['text'], 'דחה') && str_contains($x['text'], 'עוד לא')), 'הודעה למבקש עם הסיבה');
+        m1_post('build_send', ['id' => $b['id']], U_PUBLISHER);
+        $ok = m1_post('publish_decide', ['id' => $b['id'], 'approve' => true], U_OWNER);
+        eq([200, 'live'], [$ok['status'], $ok['json']['build']['status'] ?? null], $ok['body']);
+        eq('מפרסם בדיקה', build_row($b['id'])['sent_by'], 'נשלח בשם מי שבנה');
+        eq([], http('GET', '/api.php?action=owner_settings', ['user' => U_OWNER])['json']['owner']['pending']);
+    } finally {
+        http('POST', '/api.php?action=owner_set', ['user' => U_OWNER, 'json' => ['approval' => false]]);
+    }
 });

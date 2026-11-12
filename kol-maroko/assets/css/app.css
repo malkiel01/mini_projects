@@ -589,3 +589,18 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
 .l-preview th input, .l-preview th select { width: 100%; margin-top: 4px; font-size: .8rem; }
 .l-from-csv { margin: var(--s2) 0; }
 .l-from-csv summary { cursor: pointer; }
+
+/* P1 — 👥 אנשים, ⚙️ בעל האתר, 🔔, לקריאה בלבד */
+.people-add { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto auto; }
+@media (max-width: 640px) { .people-add { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .people-add .btn { grid-column: 1 / -1; } .people-add select { width: 100%; } }
+.ro-note { margin: 0; padding: var(--s2) var(--s4); background: var(--brand-soft); color: var(--ink); font-size: .85rem; border-bottom: 1px solid var(--line); }
+.top .bell { position: relative; }
+.top .bell .n:not(:empty) { position: absolute; top: 2px; inset-inline-start: 2px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 99px;
+    background: var(--star); color: #1b1300; font-size: .7rem; font-weight: 700; line-height: 18px; text-align: center; }
+.owner-rows { display: grid; gap: var(--s2); margin-bottom: var(--s3); }
+.owner-list { margin: var(--s1) 0 0; padding-inline-start: var(--s4); display: grid; gap: 4px; }
+.owner-list li { overflow-wrap: anywhere; }
+.f-check { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); margin-bottom: var(--s2); }
+.f-check input { width: 20px; height: 20px; }
+.log-filters select { width: auto; max-width: 50%; }
+.mount-opt input[type=radio] { width: auto; min-height: 0; display: inline-block; vertical-align: middle; }

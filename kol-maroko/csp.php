@@ -20,7 +20,7 @@ header('Cache-Control: no-store');
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') { http_response_code(405); exit; }
 try {
     $raw = (string)file_get_contents('php://input', false, null, 0, CSP_MAX_BODY + 1);
-    csp_report_accept(identity(), (string)($_GET['p'] ?? ''), $raw);
+    csp_report_accept(platform_who(), (string)($_GET['p'] ?? ''), $raw);
 } catch (Throwable $e) {
     error_log('kol-maroko csp report: ' . $e->getMessage());
 }

@@ -265,7 +265,7 @@ function cutover_state(array $user, ?array $ping = null): array
     $ev = cutover_track($user, $ev);
     $task = setting('cutover_task');
     return $ev + [
-        'can_edit' => $user['role'] === 'owner',
+        'can_edit' => $user['role'] === 'site_owner',
         'task' => $task ?: null,
         'instruction' => CUTOVER_SWITCH_PATH,
         'kill_rule' => CUTOVER_KILL_RULE,

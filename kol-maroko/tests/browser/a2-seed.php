@@ -33,4 +33,4 @@ $words += [13 => $U . 'missing/13.mp3', 14 => $U . 'html/14.mp3', 15 => $U . 'cu
     17 => $U . 'slow/17.mp3', 18 => $U . 'slow/18.mp3', 19 => $U . 'slow/19.mp3', 20 => $U . 'slow/20.mp3', 21 => ''];
 $ins = $pdo->prepare('INSERT INTO words (id, wp_id, word, meaning, topics, audio, external_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
 foreach ($words as $id => $a) $ins->execute([$id, 100 + $id, "מילה $id", '<p>פירוש</p>', '[]', $a, '', now_iso()]);
-$pdo->prepare('INSERT INTO members (sub, email, name, role, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)')->execute(['u-editor', 'editor@example.test', 'Editor Test', 'editor', 'test', now_iso()]);
+$pdo->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute(['u-editor', 'editor@example.test', 'Editor Test', 'editor', now_iso()]);     // P1
