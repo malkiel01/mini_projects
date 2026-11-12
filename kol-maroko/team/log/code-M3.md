@@ -11,3 +11,4 @@
 - 2026-11-12 13:00 — מוזג main עם N1 (ff556f0, מיגרציה 17). שלי ← 18 (KOL_SCHEMA_VERSION 18); התנגשות ב-db.php וב-README נפתרה (N1 ואחריו M3). run.php 179/179.
 - 2026-11-12 13:50 — לולאה ×3 על 96fccc7: 44/45 (a2 #2 — המרוץ ב-studio.js). מוזג main עם A3 (תיקון המרוץ), L1, L1b; התנגשות ברשימת POST_ACTIONS ב-api.php — שני הצדדים. run.php 197/197. main עדיין 17 ← שלי 18.
 - 2026-11-12 13:30 UTC — מוזג main 3973282 (N2, M5, V4, X1, B1, תוסף 2.0.1). המיגרציה ← 20 (main: 19), KOL_SCHEMA_VERSION 20. שורת המשוב מחוברת ל-M5 האמיתי: forms_draft() + forms_live() + form_entries (במקום ה-lib/inbox.php המשוער). run.php 262/262. a2 ב-main נכשל באותה תדירות (3/4 מול 3/4, לסירוגין) — לא מהענף.
+- 2026-11-12 13:40 UTC — לפי בקרה (5): N2b לקחה 20. מוזג main 6c68ac4; המיגרציה שלי ← 21, KOL_SCHEMA_VERSION 21. שתי שורות ב-tests/cases/98-rec-slots.php (של N2b): eq(20, user_version) ← eq(KOL_SCHEMA_VERSION, …) — אחרת נכשלות מעצם קיום 21. run.php 274/274.

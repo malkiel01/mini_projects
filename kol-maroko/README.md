@@ -658,7 +658,7 @@ node kol-maroko/tests/browser/v4.cjs         # 91, על index.html המוסב: �
 - **בדיקת הנאמנות:** `tests/browser/m3-fidelity.cjs <ישנה> <בדיקה>` — כל שורות `09` §4, דוח ל-`dev/m3/`. בפרוסה הזו — **רק
   מול שתי כתובות מקומיות** (`--self-test`): האתר מחזיר אתגר Cloudflare, ואין workflow (הכרעת הבקרה). מול האתר האמיתי —
   שורת הצילומים שלמעלה. מי שיש לו גישה לאתר מדפדפן רגיל יכול להריץ את הסקריפט ידנית ולצרף את הדוח כראיה נוספת.
-- **איפה הנתונים:** `cutover_evidence`, `cutover_marks` ב-`data/kol.sqlite` (מיגרציה 20); קובצי ראיה — במאגר הקבצים הקיים;
+- **איפה הנתונים:** `cutover_evidence`, `cutover_marks` ב-`data/kol.sqlite` (מיגרציה 21); קובצי ראיה — במאגר הקבצים הקיים;
   `cutover_task`, `cutover_on`, `cutover_snap_verified` בהגדרות. אין `--exclude` חדש.
 - **הבדיקות:** `tests/cases/95-cutover.php`, `tests/browser/m3.cjs`, `tests/browser/m3-fidelity.cjs --self-test`.
 - **מה טרם:** כתובת הבדיקה באתר, ההדלקה והמונה — בתוסף (אחרי M2). קובץ ראיה שנמחק מהספרייה — מסומן "נמחק", אבל

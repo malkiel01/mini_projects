@@ -2003,7 +2003,10 @@ function field_delete(array $user, array $b): array
     $vals = [];
     foreach (words_rows() as $w) if (array_key_exists($key, $w['extra'])) $vals[$w['id']] = $w['extra'][$key];
     $binds = function_exists('fields_bind_scan') ? count(array_filter(fields_bind_scan('field', $key), fn($h) => !$h['manual'])) : 0;
-    if (!empty($b['dry'])) return ['values' => count($vals), 'bindings' => $binds, 'needs' => $vals ? 'publisher' : 'editor'];
+    // N2b: ההקלטות של שדה שמע נשארות בספרייה כ"לא מחוברות" — האישור סופר אותן
+    $recs = 0;
+    if ($f['type'] === 'audio') { require_once __DIR__ . '/rec_actions.php'; $recs = rec_field_dropped($key); }
+    if (!empty($b['dry'])) return ['values' => count($vals), 'bindings' => $binds, 'needs' => $vals ? 'publisher' : 'editor', 'recordings' => $recs];
     if ($vals && ROLE_RANK[$user['role'] ?? 'editor'] < ROLE_RANK['publisher']) throw new ApiError('מחיקת שדה שיש לו ערכים (' . count($vals) . ') — רק למפרסם', 403);
     $snap = snapshot_create($user, "לפני מחיקת השדה \"{$f['label']}\" ($key)");
     pf_tx(function () use ($user, $key, $vals) {
@@ -2015,8 +2018,9 @@ function field_delete(array $user, array $b): array
         words_extra_write($key, array_fill_keys(array_keys($vals), null));
         db()->prepare('DELETE FROM word_fields WHERE key = ?')->execute([$key]);
     });
-    audit_as($user, 'field_delete', "$key ({$f['label']}) · " . count($vals) . ' ערכים → לסל');
-    return fields_state($user) + ['snapshot' => $snap, 'bindings' => $binds];
+    if ($recs) rec_field_changed();                     // N2b: ההקלטות שלו — "לא מחוברות", עם התווית "משדה שנמחק"
+    audit_as($user, 'field_delete', "$key ({$f['label']}) · " . count($vals) . ' ערכים → לסל' . ($recs ? " · $recs הקלטות — לא מחוברות" : ''));
+    return fields_state($user) + ['snapshot' => $snap, 'bindings' => $binds, 'recordings' => $recs];
 }
 
 /** מהסל: השדה כמו שהיה, והערכים — למילים שעדיין קיימות. מפתח שנתפס בינתיים — 409. בתוך העסקה של trash_restore. */
