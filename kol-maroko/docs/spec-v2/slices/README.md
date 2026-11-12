@@ -57,7 +57,7 @@ F2b — בקובץ של F2 (`F2-project-store-and-code.md`, הקריטריוני
 ## בהמשך (ייכתבו; **[ש-22]** מכריעה את הסדר)
 
 V10–V16 · N2b, N3 · M4 · עוזר הבינה, עבודה מצ'אט, טקסט ארוך ·
-`acceptance/owner-checklist.md`.
+`acceptance/owner-checklist.md` ✔.
 
 ## פרסום
 
