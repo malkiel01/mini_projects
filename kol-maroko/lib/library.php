@@ -6,11 +6,13 @@
  *
  * ⚠️ קריאה בלבד. הקובץ הזה אינו כותב למסד, אינו נוגע בקבצים, ואינו פונה לשום כתובת חיצונית:
  *    ההשמעה היא של הדפדפן, ישירות מהכתובת הציבורית. (נבדק ב-tests/library_test.php.)
+ *    מ-A2 המצב נקרא ממודל ההקלטות (lib/recordings.php — rec_rows מסנכרן את הטבלה recordings בלבד; המילים לא משתנות).
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/page.php';
+require_once __DIR__ . '/recordings.php';
 
 /** פירוש (HTML) → שורה אחת של טקסט, לרשימה ולחיפוש. */
 function library_plain(string $html): string
@@ -55,7 +57,8 @@ function library_site_images(): array
 function library_list(): array
 {
     $words = words_rows();
-    $ids = array_values(array_unique(array_filter(array_map(fn($w) => file_id($w['audio']), $words))));
+    $recs = rec_rows();                       // A2: המצב, הקובץ והמקור — מהמודל
+    $ids = array_values(array_unique(array_filter(array_map(fn($r) => (string)$r['file_id'], $recs))));
     $files = files_meta($ids);
 
     // מילים שמצביעות על אותה הקלטה — כל אחת רשומה בשורה של האחרת
@@ -63,21 +66,27 @@ function library_list(): array
     foreach ($words as $w) if ($w['audio'] !== '') $share[$w['audio']][] = $w['id'];
 
     $rows = [];
-    $counts = ['words' => count($words), 'audio' => 0, 'site' => 0, 'tool' => 0, 'none' => 0, 'missing' => 0];
+    $counts = ['words' => count($words), 'audio' => 0, 'site' => 0, 'tool' => 0, 'none' => 0, 'missing' => 0, 'failed' => 0];
     foreach ($words as $w) {
-        $state = library_state($w['audio']);
+        $rec = $w['audio'] !== '' ? ($recs[$w['id']] ?? null) : null;
+        $state = $rec ? ($rec['state'] === 'tool' ? 'tool' : 'site') : 'none';
         $counts[$state]++;
         if ($state !== 'none') $counts['audio']++;
         $row = ['id' => $w['id'], 'word' => $w['word'], 'meaning' => library_plain($w['meaning']), 'topics' => $w['topics'],
             'external_id' => $w['external_id'], 'state' => $state, 'src' => '', 'missing' => false];
         if ($state === 'site') {
-            $row['src'] = $w['audio'];
+            $row['src'] = $rec['source'];
+            if ($rec['state'] === 'failed') {             // ההבאה נכשלה — מתנגנת עדיין מהאתר, עם הסיבה
+                $row['fetch'] = ['code' => $rec['f_code'], 'reason' => REC_REASONS[$rec['f_code']] ?? $rec['f_code']];
+                $counts['failed']++;
+            }
         } elseif ($state === 'tool') {
-            $f = $files[$w['audio']] ?? null;
+            $f = $files[$rec['file_id']] ?? null;
             if ($f && empty($f['deleted_at'])) {
                 $row['src'] = media_url($f['id']);
                 $row['file'] = ['id' => $f['id'], 'name' => $f['name'], 'size' => (int)$f['size'], 'at' => $f['at'], 'by' => $f['by_name'],
-                    'origin' => (string)($f['origin'] ?? '')];
+                    'origin' => (string)($rec['source'] ?: ($f['origin'] ?? '')), 'type' => $f['type'],
+                    'duration' => $rec['duration'] === null ? null : (float)$rec['duration'], 'how' => $rec['how']];
             } else {                                  // המילה מצביעה על קובץ שאינו בספרייה — מופיעה, מסומנת
                 $row['missing'] = true;
                 $counts['missing']++;
