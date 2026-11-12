@@ -59,7 +59,11 @@ try {
     studioSaveSettings($uid, ['webhook_last_at' => nowTs()]);
 
     try {
-        studioSync($conv, studioKey($uid));
+        // אותה תפיסה כמו של הדפדפן והקורן — שני סנכרונים של אותה שיחה לא רצים במקביל.
+        // מישהו אחר מסנכרן ממש עכשיו? מסמנים שנשאר מה למשוך, והוא או הקורן ישלימו.
+        $before = (int) $conv['synced_at'];
+        $after = studioSyncIfDue($conv, studioKey($uid), 1);
+        if ((int) $after['synced_at'] === $before) studioUpdateConv((int) $conv['id'], ['more' => 1]);
     } catch (Throwable $e) {
         // המשיכה נכשלה — מסמנים שהשיחה דורשת סנכרון, והקורן ימשוך. ל-Anthropic עונים 2xx: קיבלנו.
         studioUpdateConv((int) $conv['id'], ['more' => 1]);

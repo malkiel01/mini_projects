@@ -124,5 +124,11 @@ export const PLATFORM_HINT = "☁️ Platform עוד לא עונה בעצמו (�
  */
 const studioAnchor = document.querySelector?.('#settingsBtn');
 if (studioAnchor && !document.querySelector('#studioBtn')) {
-  studioAnchor.before(el('a', { class: 'icon-btn', id: 'studioBtn', href: './studio.html', 'aria-label': 'סטודיו', title: "סטודיו — צ'אט פיתוח מול Claude Platform", text: '🛠' }));
+  const studioBtn = el('a', { class: 'icon-btn', id: 'studioBtn', href: './studio.html', 'aria-label': 'סטודיו', title: "סטודיו — צ'אט פיתוח מול Claude Platform", text: '🛠' });
+  studioAnchor.before(studioBtn);
+  // מוצג רק למי שרואה את כפתור הניהול (בעל הלוח): עוקב אחרי ה-hidden של #adminBtn, ש-app.js קובע אחרי הכניסה
+  const adminBtn = document.querySelector('#adminBtn');
+  const mirror = () => { studioBtn.hidden = !adminBtn || adminBtn.hidden; };
+  mirror();
+  if (adminBtn) new MutationObserver(mirror).observe(adminBtn, { attributes: true, attributeFilter: ['hidden'] });
 }
