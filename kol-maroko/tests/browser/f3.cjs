@@ -56,7 +56,7 @@ const UNIT_PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset=
 <button id="more" data-kol-more="words">עוד</button>
 <p id="empty" data-kol-empty="words" hidden>אין תוצאות</p>
 <div id="dlg" data-kol-dialog="feedback" hidden><strong id="dw" data-kol-text="word"></strong>
-<form id="form" data-kol-form="feedback" data-kol-form-done="נרשם, עוד לא נשלח"><textarea id="msg" required></textarea><button id="send" type="submit">שלח</button><button id="x" type="button" data-kol-close>סגור</button><span id="status" data-kol-form-status></span></form></div>
+<form id="form" data-kol-form="feedback" data-kol-form-done="נרשם, עוד לא נשלח" data-kol-form-error="לא נשלח"><textarea id="msg" required></textarea><button id="send" type="submit">שלח</button><button id="x" type="button" data-kol-close>סגור</button><span id="status" data-kol-form-status></span></form></div>
 <script>window.__aud = []; window.Audio = function (src) { var a = { src: src, paused: true, l: {}, play: function () { a.paused = false; return Promise.resolve(); }, pause: function () { a.paused = true; }, addEventListener: function (k, f) { a.l[k] = f; } }; window.__aud.push(a); return a; };</script>
 <script src="js/kol-data.js"></script></body></html>`;
 
@@ -130,7 +130,8 @@ const UNIT_PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset=
       await page.click('#list .card:nth-of-type(1) .fb');
       ok(await page.isVisible('#dlg') && await page.textContent('#dw') === 'אלף' && await page.evaluate(() => document.activeElement.id) === 'msg', 'data-kol-open / data-kol-dialog: נפתח מהכרטיס, עם המילה, והמיקוד בשדה הראשון');
       await page.fill('#msg', 'הערה'); await page.click('#send');
-      ok(await page.textContent('#status') === 'נרשם, עוד לא נשלח', 'data-kol-form: הנוסח של data-kol-form-done מוצג; דבר אינו נשלח');
+      // M5 (kol-data.js 1.2.0): בלי <meta name="kol-form-endpoint"> — דבר אינו נשלח, ומוצג הנוסח של data-kol-form-error (הצורה הישנה)
+      ok(await page.textContent('#status') === 'לא נשלח', 'data-kol-form: בלי כתובת — הנוסח של data-kol-form-error מוצג; דבר אינו נשלח', await page.textContent('#status'));
       await page.keyboard.press('Escape');
       ok(!(await page.isVisible('#dlg')) && await page.evaluate(() => document.activeElement.className) === 'fb', 'Escape סוגר, והמיקוד חוזר לכפתור שפתח');
       await page.click('#list .card:nth-of-type(2) .fb'); await page.click('#x');

@@ -216,7 +216,8 @@ function trash_list(): array
     // N2: שדה שנמחק — עם מספר הערכים שנשמרו איתו
     $fields = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'key' => json_decode($r['field'], true)['key'] ?? '?',
         'label' => json_decode($r['field'], true)['label'] ?? '?', 'values' => count(json_decode($r['vals'], true) ?: [])], $pdo->query('SELECT * FROM field_trash ORDER BY id DESC LIMIT 500')->fetchAll());
-    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'fields' => $fields];
+    require_once __DIR__ . '/forms.php';
+    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'fields' => $fields, 'forms' => forms_trash_list()];     // M5: פניות — אצוות
 }
 
 function trash_restore(array $user, array $b): array
@@ -265,6 +266,9 @@ function trash_restore(array $user, array $b): array
     } elseif ($kind === 'field') {
         $detail = pf_tx(fn() => field_trash_restore($user, (int)$id));
         audit_as($user, 'trash_restore', $detail);
+    } elseif ($kind === 'form') {                                          // M5: פניות (lib/forms.php) — אצווה שלמה, מפרסם ומעלה
+        require_once __DIR__ . '/forms.php';
+        forms_trash_restore($user, (int)$id);
     } else {
         throw new ApiError('בקשה לא תקינה');
     }
@@ -287,6 +291,9 @@ function trash_purge(array $owner, array $b): array
     } elseif ($kind === 'word' || $kind === 'topic' || $kind === 'field') {
         $pdo->prepare('DELETE FROM ' . ['word' => 'words_trash', 'topic' => 'topic_trash', 'field' => 'field_trash'][$kind] . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
         audit_as($owner, 'trash_purge', ['word' => 'מילה', 'topic' => 'נושא', 'field' => 'שדה'][$kind]);
+    } elseif ($kind === 'form') {                                          // M5
+        require_once __DIR__ . '/forms.php';
+        forms_trash_purge($owner, (int)($b['id'] ?? 0));
     } else {
         throw new ApiError('בקשה לא תקינה');
     }

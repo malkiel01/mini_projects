@@ -176,7 +176,7 @@ test('מסך המפתח: גרסת התוסף באתר מול הריפו, ו-ping
 test('מסך המפתח: שירותי רקע ומצב הנתונים', function () {
     $s = http('GET', '/api.php?action=dev-state', ['user' => U_OWNER])['json'];
     $svc = array_column($s['services'], null, 'id');
-    eq(['snapshot', 'trash', 'log_clean', 'health'], array_keys($svc));
+    eq(['snapshot', 'trash', 'log_clean', 'health', 'forms_mail'], array_keys($svc));
     foreach ($svc as $id => $x) ok($x['result'] !== '' && $x['next_text'] !== '' && array_key_exists('last', $x), "$id: מתי, תוצאה, הבא");
     ok($svc['snapshot']['last'] && $svc['snapshot']['ok'] === true, 'הנקודה היומית נוצרה בבקשה הראשונה');
     ok($svc['log_clean']['last'] && $svc['log_clean']['next'], 'ניקוי היומן: אחרון והבא');

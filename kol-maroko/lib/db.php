@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 18;
+const KOL_SCHEMA_VERSION = 19;
 
 final class ApiError extends RuntimeException
 {
@@ -436,6 +436,44 @@ function migrate(PDO $pdo): void
             ALTER TABLE topics ADD COLUMN image TEXT NOT NULL DEFAULT '';
             ALTER TABLE topics ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE topic_trash ADD COLUMN row TEXT;
+            SQL,
+        // M5: טפסים ותיבת פניות (lib/forms.php). הוספה בלבד. הפנייה אינה שומרת IP / User-Agent / Referer; ה-IP — רק מגובב, בטבלת הקצב
+        19 => <<<'SQL'
+            CREATE TABLE form_entries (
+                id         INTEGER PRIMARY KEY,
+                form       TEXT NOT NULL,
+                fields     TEXT NOT NULL DEFAULT '{}',
+                word_id    INTEGER,
+                page       TEXT NOT NULL DEFAULT '',
+                test       INTEGER NOT NULL DEFAULT 0,
+                at         TEXT NOT NULL,
+                read_at    TEXT,
+                read_by    TEXT,
+                handled_at TEXT,
+                handled_by TEXT
+            );
+            CREATE INDEX idx_form_entries_at ON form_entries(test, at);
+            CREATE TABLE form_hits (
+                ip_hash TEXT NOT NULL,
+                at      INTEGER NOT NULL
+            );
+            CREATE INDEX idx_form_hits ON form_hits(ip_hash, at);
+            CREATE INDEX idx_form_hits_at ON form_hits(at);
+            CREATE TABLE form_rejects (
+                day    TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                n      INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, reason)
+            );
+            CREATE TABLE forms_trash (
+                id       INTEGER PRIMARY KEY,
+                entry_id INTEGER NOT NULL,
+                row      TEXT NOT NULL,
+                batch    TEXT NOT NULL DEFAULT '',
+                at       TEXT NOT NULL,
+                by_name  TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE pkg_builds ADD COLUMN forms TEXT;
             SQL,
     ];
     foreach ($steps as $n => $sql) {
