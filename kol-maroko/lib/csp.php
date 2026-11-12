@@ -123,6 +123,7 @@ function csp_norm_url(string $u): string
         $path = (string)($p['path'] ?? '/');
         $dir = csp_dir() . '/';
         if (str_starts_with($path, $dir)) $path = substr($path, strlen($dir));
+        if ($path === '') $path = './';
         return "'self':" . mb_substr(preg_replace('~[^\w./%-]~u', '', $path), 0, 120);
     }
     return mb_substr($origin, 0, 120);
