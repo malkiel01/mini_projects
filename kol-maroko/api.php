@@ -16,6 +16,7 @@ require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/preview.php';
 require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
+require_once __DIR__ . '/lib/fields_bind.php';          // N2: שינוי מפתח — הקשירות בקבצי הפרויקט
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -49,7 +50,7 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
-                      'field_save', 'field_delete', 'topic_save', 'topic_merge',
+                      'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
@@ -133,6 +134,8 @@ try {
         'topics' => topics_state(require_role($user, 'editor')),                // N2: מסך הנושאים
         'topic_save' => topic_save(require_role($user, 'editor'), $body),
         'topic_merge' => topic_merge(require_role($user, 'editor'), $body),
+        'field_key_preview' => field_key_preview(require_role($user, 'publisher'), $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
+        'field_key_apply' => field_key_apply(require_role($user, 'publisher'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),

@@ -368,3 +368,110 @@ test('N2 שלוש הדלתות: שדה במסך ← עמודה בטבלה ← מ
     eq('מהקובץ', n2_word($ids[0])['extra']['translit'], 'קובץ ← טבלה');
     ok(str_contains(pv_get('data/words.json')['body'], 'מהקובץ'), 'קובץ ← תצוגה חיה');
 });
+
+require_once KOL_ROOT . '/lib/fields_bind.php';
+
+/** קובץ בפרויקט: יוצר, או כותב מחדש אם קיים. מחזיר את המזהה. */
+function n2_pf(string $path, string $bytes): int
+{
+    $id = pf_paths()[$path] ?? null;
+    if (!$id) return (int)pf_new($path, $bytes)['json']['file']['id'];
+    $rev = http('GET', "/api.php?action=pf_read&id=$id", ['user' => U_EDITOR])['json']['file']['rev'];
+    b_post('pf_write', ['id' => (int)$id, 'rev' => $rev, 'content' => $bytes]);
+    return (int)$id;
+}
+
+const N2_HTML = <<<'HTML'
+<ul data-kol-list="words" data-kol-sort="-translit" data-kol-search-fields="word translit">
+  <template><li data-kol-class-latin="translit=1" data-kol-if="!translit">
+    <b data-kol-text="translit"></b> <i data-kol-text="#{id} · {translit.count}"></i>
+    <s data-kol-text="translit_long"></s> <u data-kol-attr-title='השמע translit'></u> translit
+  </li></template>
+</ul>
+<nav data-kol-filter="words:translit"><button data-kol-filter-value="">הכל</button></nav>
+<nav data-kol-filter="words:topics"><button data-kol-filter-value="food">אוכל</button><p data-kol-if="topics=food"></p></nav>
+HTML;
+
+test('N2 שינוי מפתח: כל הקשירות (קובץ · שורה · לפני ← אחרי), רק בתוך ערך תכונה / {key}; JS — לבדיקה ידנית; עסקה אחת עם גרסה בהיסטוריה', function () {
+    $ids = n2_reset(4);
+    n1_kol();
+    n2_field(['key' => 'translit', 'label' => 'תעתיק', 'type' => 'text']);
+    n2_cell($ids[0], ['translit' => 'bslama']);
+    $html = n2_pf('n2/index.html', N2_HTML);
+    $js = n2_pf('n2/app.js', "// translit\nconst a = item.translit; const b = item['translit']; const c = 'translit';\n");
+    $p = http('GET', '/api.php?action=field_key_preview&key=translit&to=latin', ['user' => U_PUBLISHER]);
+    eq(200, $p['status'], json_encode($p['json'], JSON_UNESCAPED_UNICODE));
+    $auto = array_values(array_filter($p['json']['hits'], fn($h) => !$h['manual']));
+    $manual = array_values(array_filter($p['json']['hits'], fn($h) => $h['manual']));
+    eq(['data-kol-sort', 'data-kol-search-fields', 'data-kol-class-latin', 'data-kol-if', 'data-kol-text', 'data-kol-text', 'data-kol-filter'], array_column($auto, 'what'), 'שבע קשירות ב-HTML');
+    eq(2, count($manual), 'JS: item.translit ו-[\'translit\'] — לבדיקה ידנית (לא ההערה ולא המחרוזת)');
+    eq(1, $p['json']['values']);
+    ok(str_contains($auto[0]['after'], 'data-kol-sort="-latin"'), 'אחרי');
+    eq(403, http('GET', '/api.php?action=field_key_preview&key=translit&to=latin', ['user' => U_EDITOR])['status'], 'עורך — לא');
+    // מפתח עוין — נדחה בשרת, ושום קובץ לא נגע
+    foreach (['a"b', 'a<b', 'a}b', 'a b', 'Latin', 'id', 'word', '{x}', "a\nb"] as $bad) {
+        eq(400, b_post('field_key_apply', ['key' => 'translit', 'to' => $bad, 'revs' => []], U_PUBLISHER)['status'], "נדחה: $bad");
+    }
+    eq(N2_HTML, pf_get($html), 'הקובץ לא נגע');
+    // rev ישן — 409, ושום דבר לא השתנה
+    $revs = array_column($p['json']['hits'], 'rev', 'file');
+    eq(409, b_post('field_key_apply', ['key' => 'translit', 'to' => 'latin', 'revs' => [$html => 999]], U_PUBLISHER)['status']);
+    ok(in_array('translit', array_column(fields_all(), 'key'), true), 'המבנה לא השתנה');
+    $skip = [$auto[6]['id']];                                      // בלי ה-filter
+    $a = b_post('field_key_apply', ['key' => 'translit', 'to' => 'latin', 'revs' => $revs, 'skip' => $skip], U_PUBLISHER);
+    eq(200, $a['status'], json_encode($a['json'], JSON_UNESCAPED_UNICODE));
+    eq(6, $a['json']['replaced']);
+    $out = pf_get($html);
+    eq(str_replace(['-translit"', 'word translit"', '"translit=1"', '"!translit"', 'data-kol-text="translit"', '{translit.count}'],
+        ['-latin"', 'word latin"', '"latin=1"', '"!latin"', 'data-kol-text="latin"', '{latin.count}'], N2_HTML), $out, 'רק המקומות שסומנו; translit_long, הטקסט וה-filter שבוטל — נשארו');
+    eq("// translit\nconst a = item.translit; const b = item['translit']; const c = 'translit';\n", pf_get($js), 'JS לא מוחלף');
+    eq('bslama', n2_word($ids[0])['extra']['latin'], 'הערכים עברו למפתח החדש');
+    ok(str_contains(words_json(), '"latin": "bslama"'));
+    $v = b_get('pf_versions', "&id=$html")['json']['versions'] ?? [];
+    ok(str_contains(json_encode($v, JSON_UNESCAPED_UNICODE), 'שינוי מפתח `translit` → `latin`'), 'גרסה בהיסטוריה עם הסיבה');
+    eq(1, (int)db()->query("SELECT COUNT(*) FROM audit WHERE action = 'field_key'")->fetchColumn());
+    // מובנה: meaning → definition — הקובץ והקשירה בלבד; העמודה במסד נשארת
+    eq(200, b_post('field_key_apply', ['kind' => 'field', 'key' => 'meaning', 'to' => 'definition', 'revs' => []], U_PUBLISHER)['status']);
+    $j = json_decode(words_json(), true);
+    ok(isset($j['items'][0]['definition']) && !isset($j['items'][0]['meaning']), 'המפתח בקובץ');
+    eq('meaning', array_column(fields_all(), 'col', 'key')['definition'], 'העמודה במסד — אותה');
+    $j['items'][0]['definition'] = '<p>חדש</p>';
+    eq(200, n1_save(n1_enc($j))['status'], 'הקובץ נשמר עם המפתח החדש');
+    eq('<p>חדש</p>', n2_word($j['items'][0]['id'])['meaning']);
+});
+
+test('N2 שינוי slug של נושא: filter-value ו-topics=slug מתעדכנים; מפתח עוין נדחה; המילים לא משתנות', function () {
+    n2_reset(6);
+    n1_kol();
+    $html = n2_pf('n2/topics.html', N2_HTML);
+    $css = n2_pf('n2/t.css', "[data-kol-filter-value=\"food\"] { color: red }\n.food { x: 1 }\n");
+    $p = http('GET', '/api.php?action=field_key_preview&kind=topic&key=food&to=meals', ['user' => U_PUBLISHER])['json'];
+    eq(3, count(array_filter($p['hits'], fn($h) => !$h['manual'] && in_array($h['file'], [$html, $css], true))), 'filter-value, topics=food, ו-CSS שמפנה לתכונה');
+    foreach (['me"als', 'Meals', 'm<x', 'family'] as $bad) ok(in_array(b_post('field_key_apply', ['kind' => 'topic', 'key' => 'food', 'to' => $bad], U_PUBLISHER)['status'], [400, 409], true), "נדחה: $bad");
+    $words = md5(json_encode(db()->query('SELECT topics FROM words ORDER BY id')->fetchAll()));
+    $a = b_post('field_key_apply', ['kind' => 'topic', 'key' => 'food', 'to' => 'meals', 'revs' => array_column($p['hits'], 'rev', 'file')], U_PUBLISHER);
+    eq(200, $a['status'], json_encode($a['json'], JSON_UNESCAPED_UNICODE));
+    ok(str_contains(pf_get($html), 'data-kol-filter-value="meals"') && str_contains(pf_get($html), 'data-kol-if="topics=meals"'));
+    eq("[data-kol-filter-value=\"meals\"] { color: red }\n.food { x: 1 }\n", pf_get($css), 'מחלקה בשם food — לא נגעה');
+    eq($words, md5(json_encode(db()->query('SELECT topics FROM words ORDER BY id')->fetchAll())), 'המילים — לפי שם, לא השתנו');
+    ok(in_array('meals', array_column(json_decode(words_json(), true)['topics'], 'id'), true));
+    eq(1, (int)db()->query("SELECT COUNT(*) FROM audit WHERE action = 'topic_slug'")->fetchColumn());
+});
+
+test('N2 מתפרסם בעורך: תווית "שדות פנימיים" במנהל הקבצים (לא בתוך ה-JSON); שכפול — עותק שכולל אותם, עם אזהרה', function () {
+    n2_reset(3);
+    n1_kol();
+    $f = n1_read()['json']['file'];
+    eq([], $f['internal']);
+    n2_field(['key' => 'notes', 'label' => 'הערות', 'type' => 'text', 'published' => false]);
+    $f = n1_read()['json']['file'];
+    eq([['key' => 'notes', 'label' => 'הערות']], $f['internal']);
+    ok(str_contains($f['note'], 'שדות פנימיים: notes — לא מתפרסמים'), $f['note']);
+    ok(!str_contains(n1_read()['json']['content'], 'שדות פנימיים'), 'לא בתוך הקובץ');
+    $id = array_column(words_rows(), 'id')[0];
+    n2_cell($id, ['notes' => 'פנימי']);
+    $c = b_post('pf_copy', ['id' => -1, 'to' => 'n2/copy.json']);
+    eq(200, $c['status'], json_encode($c['json'], JSON_UNESCAPED_UNICODE));
+    ok(str_contains((string)$c['json']['warning'], 'שדה פנימי אחד (notes)'), 'אזהרה בשכפול');
+    ok(str_contains(pf_get((int)$c['json']['file']['id']), '"notes": "פנימי"'), 'העותק כולל את השדה הפנימי');
+});

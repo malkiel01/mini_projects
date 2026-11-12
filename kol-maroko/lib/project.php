@@ -686,7 +686,13 @@ function pf_words_public(?string $json = null): array
     $st->execute(PF_WORDS_AUDIT);
     $last = $st->fetch() ?: ['at' => null, 'name' => ''];
     return ['id' => PF_WORDS_ID, 'path' => $path, 'kind' => 'file', 'size' => strlen($json), 'rev' => words_rev($json), 'at' => $last['at'], 'by' => $last['name'],
-        'linked' => 'words', 'note' => PF_WORDS_NOTE];
+        'linked' => 'words', 'note' => PF_WORDS_NOTE . (($int = pf_words_internal()) ? ' · שדות פנימיים: ' . implode(', ', array_column($int, 'key')) . ' — לא מתפרסמים' : ''), 'internal' => $int];
+}
+
+/** N2: שדות שאינם "מתפרסם" — לתווית במנהל הקבצים ("שדות פנימיים: notes — לא מתפרסמים"), לא בתוך ה-JSON. */
+function pf_words_internal(): array
+{
+    return array_values(array_map(fn($f) => ['key' => $f['key'], 'label' => $f['label']], array_filter(fields_all(), fn($f) => !$f['published'])));
 }
 
 /**
