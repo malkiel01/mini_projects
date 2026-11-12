@@ -68,7 +68,9 @@ function rec_db(): PDO
         // A3: סל (מחיקה רכה — הרשומה נשארת, בלי מילה) וגרסאות קודמות. מוסיף בלבד.
         $cols = array_column($pdo->query('PRAGMA table_info(recordings)')->fetchAll(), 'name');
         foreach (['deleted_at TEXT', "deleted_by TEXT NOT NULL DEFAULT ''", 'deleted_word INTEGER', "deleted_audio TEXT NOT NULL DEFAULT ''"] as $c) {
-            if (!in_array(explode(' ', $c)[0], $cols, true)) $pdo->exec("ALTER TABLE recordings ADD COLUMN $c");
+            if (in_array(explode(' ', $c)[0], $cols, true)) continue;
+            try { $pdo->exec("ALTER TABLE recordings ADD COLUMN $c"); }
+            catch (PDOException $e) { if (!str_contains($e->getMessage(), 'duplicate column')) throw $e; }   // בקשה מקבילה הקדימה
         }
         $pdo->exec(<<<'SQL'
             CREATE TABLE IF NOT EXISTS rec_versions (

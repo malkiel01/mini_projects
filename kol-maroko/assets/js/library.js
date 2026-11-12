@@ -193,7 +193,7 @@ const Library = (() => {
     const sizeOk = r => !sizeF || (r.file && (sizeF === 's' ? r.file.size <= 51200 : sizeF === 'm' ? r.file.size > 51200 && r.file.size <= 1048576 : r.file.size > 1048576));
     const durOk = r => { if (!durF) return true; const d = durOf(r); if (durF === 'unknown') return r.state === 'tool' && d == null; return d != null && (durF === 'short' ? d <= 2 : durF === 'mid' ? d > 2 && d <= 10 : d > 10); };
     const stOk = r => st === 'none' ? r.state === 'none' : st === 'loose' ? !!r.loose : st === 'failed' ? !!r.fetch
-      : st === 'dups' ? !!(r.file?.sha && !r.missing && dups.get(r.file.sha) > 1) : r.state !== 'none' && (!st || r.state === st);
+      : st === 'dups' ? !!(r.file?.sha && !r.missing && dups.get(r.file.sha) > 1) : r.state !== 'none' && (!st || (r.state === st && !r.loose));
     const rows = D.all.filter(r => stOk(r) && sizeOk(r) && durOk(r) &&
       (!topic || r.topics.includes(topic)) &&
       (!s || norm(r.word).includes(s) || norm(r.meaning).includes(s) || norm(r.name || '').includes(s) || String(r.id) === idq));

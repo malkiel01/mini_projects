@@ -101,8 +101,9 @@ function upload_init(array $user, array $b): array
     $purpose = ($b['purpose'] ?? '') === 'import' ? 'import' : 'file';
     if ($purpose === 'import') require_role($user, 'owner');
     if ($size <= 0) throw new ApiError('הקובץ ריק');
-    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB');
-    if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה. מחקו קבצים שלא בשימוש', 507);
+    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB — התקרה לקובץ בכלי');
+    // A3: ההודעה אומרת מה המגבלה ומי משנה אותה
+    if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה (' . round(disk_cap() / 1073741824, 1) . 'GB). בעל העמוד מגדיל אותה ב-🗂️ קבצים ← תקרת הקבצים; או מחקו קבצים שלא בשימוש', 507);
 
     // העלאות שנתקעו יותר מיממה — נמחקות
     $old = db()->query("SELECT id FROM uploads WHERE started < " . (time() - 86400))->fetchAll(PDO::FETCH_COLUMN);

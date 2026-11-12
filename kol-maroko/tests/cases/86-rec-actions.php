@@ -80,8 +80,13 @@ test('A3 · החלפה שומרת את הקודמת כגרסה; "חזור לגר
     $clean = a3_fixture([9301 => $a]);
     try {
         $r0 = a3_rec(9301);
+        pf_seed(A3_OWNER);
+        rec_tree_link(9301, $a, A3_OWNER);                     // הנתיב היציב בעץ (A2): media/audio/9301.mp3
+        eq($a, pf_by_path('media/audio/9301.mp3')['file_id'] ?? null, 'בעץ לפני');
         $b = a3_file('m4a', 'a3-new.m4a');
         rec_replace(A3_ED, ['word_id' => 9301, 'file_id' => $b]);
+        eq($b, pf_by_path('media/audio/9301.mp3')['file_id'] ?? null, 'הנתיב בעץ לא השתנה — ומצביע על הקובץ החדש');
+        ok(!pf_by_path('media/audio/9301.m4a'), 'אין נתיב חדש');
         $r1 = a3_rec(9301);
         eq([$r0['id'], $b, 'replaced'], [$r1['id'], $r1['file_id'], $r1['how']], 'אותה רשומה, קובץ חדש');
         eq($b, a3_audio(9301), 'המילה מצביעה על החדש');
