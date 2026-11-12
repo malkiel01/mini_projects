@@ -108,6 +108,7 @@
       return (this.timing = { parseHtml: t1 - t0, parseCss: t2 - t1, render: t3 - t2, map: t4 - t3, layout: t5 - t4, total: t5 - t0 });
     }
     render() {
+      if (this.lv) this.lv.clear();                                         // V11: הכרטיסים יצוירו מחדש אחרי המיפוי (remap)
       const parsed = browserParse(this.src), doc = this.doc, win = this.frame.contentWindow, sx = win ? win.scrollX : 0, sy = win ? win.scrollY : 0;
       const root = doc.adoptNode(parsed.documentElement);
       if (doc.documentElement) doc.replaceChild(root, doc.documentElement); else doc.appendChild(root);
@@ -120,7 +121,7 @@
      */
     restyle() {
       const doc = this.doc, head = doc.head || doc.documentElement;
-      for (const o of doc.querySelectorAll('[' + OWNED + ']')) o.remove();
+      for (const o of doc.querySelectorAll('[' + OWNED + ']:not([' + OWNED + '="card"]):not([' + OWNED + '="lvstate"])')) o.remove();   // V11: הכרטיסים המצוירים — של הרשימה (listview.js)
       this.styleEl = null; this.linked = [];
       const mk = (text, href) => { const st = doc.createElement('style'); st.setAttribute(OWNED, href == null ? '' : href); st.textContent = noBom(text); return st; };
       const links = Array.from(doc.querySelectorAll('link[rel~="stylesheet" i]'));
@@ -159,7 +160,7 @@
       const walk = list => { for (const r of list) {
         if (!r.cssRules || r.conditionText == null || !/Media/.test(r.constructor && r.constructor.name || '')) continue;
         const mx = ST.mediaMax(r.conditionText); let on = false; try { on = mx != null && (!this.devMaxes || this.devMaxes().includes(mx)) && win.matchMedia(r.conditionText).matches; } catch { on = false; }
-        if (on) for (const x of r.cssRules) if (x.style && x.style.getPropertyValue('display').trim() === 'none') { try { for (const e of doc.querySelectorAll(x.selectorText)) if (!e.closest('[' + OWNED + ']')) els.add(e); } catch { /* בורר שאינו נקרא */ } }
+        if (on) for (const x of r.cssRules) if (x.style && x.style.getPropertyValue('display').trim() === 'none') { try { for (const e of doc.querySelectorAll(x.selectorText)) if (!e.closest('[' + OWNED + ']:not([' + OWNED + '="card"])')) els.add(e); } catch { /* בורר שאינו נקרא */ } }   // V11: גם חלקי הכרטיסים המצוירים
       } };
       for (const sh of doc.styleSheets) { const o = sh.ownerNode; if (!o || sh.disabled || /^(devhide|show|cap|edit|motion)$/.test(o.getAttribute(OWNED) || '')) continue; try { walk(sh.cssRules); } catch { /* גיליון חיצוני */ } }
       const text = [...els].map(e => domSel(e) + '{display:revert!important;opacity:.45!important;outline:2px dashed #b45309!important;outline-offset:-2px!important}').join('\n');
@@ -203,12 +204,12 @@
     }
     setHidden(n, on) { if (on) this.hiddenNodes.add(n); else this.hiddenNodes.delete(n); this.recap(); this.zeroAt = 0; this.draw(); }
     setLocked(n, on) { if (on) this.lockedNodes.add(n); else this.lockedNodes.delete(n); }
-    elOf(n) { return this.shownMap.get(n) || this.m2d.get(n) || null; }
+    elOf(n) { return this.shownMap.get(n) || (this.lv && this.lv.elOf(n)) || this.m2d.get(n) || null; }   // V11: צומת בתבנית — האלמנט בכרטיס הנוכחי
     /** מה רואים מהאלמנט: 'nonvisual' (ראש העמוד, סקריפט…) · 'shown' (מוסתר בעמוד, מוצג זמנית לעריכה) · 'zero' · 'visible' · 'none'. */
     visual(n) {
       if (!n) return 'none';
       for (let x = n; x; x = x.parent) if (x.tag === 'head') return 'nonvisual';
-      if ((NONVIS.has(n.tag) && !(n.tag === 'template' && this.shownNote)) || hiddenInput(n)) return 'nonvisual';
+      if ((NONVIS.has(n.tag) && !(n.tag === 'template' && (this.shownNote || (this.lv && this.lv.covers(n))))) || hiddenInput(n)) return 'nonvisual';
       const r = this.rectOf(n);
       return !r ? 'none' : this.shownNote && n === this.selected ? 'shown' : r.zero ? 'zero' : 'visible';
     }
@@ -232,13 +233,14 @@
       if (n.tag === 'template') chain.push(n);
       const pair = (x, e) => { this.shownMap.set(x, e); this.shownD2m.set(e, x); const dk = kidsOf(e); for (let i = 0; i < Math.min(dk.length, x.kids.length); i++) pair(x.kids[i], dk[i]); };
       for (const tpl of chain) {
-        const te = this.elOf(tpl);
+        if (this.lv && this.lv.covers(tpl) && (n === tpl || this.lv.els(n).length)) continue;   // V11: הרשימה מצוירת — הכרטיסים הם התצוגה; חלק שאין בשום כרטיס מצויר — עותק, כמו קודם
+        const te = this.shownMap.get(tpl) || this.m2d.get(tpl);
         if (!te || !te.isConnected) break;
         let tops = tpl.kids;
         if (tpl !== n) { let top = n; while (top.parent !== tpl) top = top.parent; tops = [top]; }
         let after = te;
         for (const t of tops) {
-          const src = this.elOf(t); if (!src) continue;
+          const src = this.shownMap.get(t) || this.m2d.get(t); if (!src) continue;   // V11: מהתבנית עצמה, לא מכרטיס מצויר
           const c = src.cloneNode(true); c.setAttribute(OWNED, 'shown'); after.after(c); after = c; pair(t, c);
           this.shownUndo.push(() => c.remove());
         }
@@ -262,7 +264,7 @@
     }
     domIndex(n) { const d = this.m2d && this.m2d.get(n); if (d && d.parentElement) return Array.prototype.indexOf.call(d.parentElement.children, d); return n.parent ? n.parent.kids.indexOf(n) : 0; }
     showAll(on) { this.capOff = !!on; this.recap(); this.draw(); }
-    remap() { const r = mapTrees(this.m, this.doc.documentElement); this.d2m = r.d2m; this.m2d = r.m2d; this.mapErrors = r.errors; this.mapDom = r.dom; }
+    remap() { const r = mapTrees(this.m, this.doc.documentElement); this.d2m = r.d2m; this.m2d = r.m2d; this.mapErrors = r.errors; this.mapDom = r.dom; if (this.lv) this.lv.draw(); }
     domOf(n) { return this.m2d.get(n) || null; }
     /** האלמנט שמתחת לסמן. הטמעה ומדיה אינן מקבלות אירועים בקנבס (pointer-events: none) — מאתרים אותן לפי המלבן שלהן. */
     hit(e) {
@@ -273,7 +275,7 @@
       for (const f of t.querySelectorAll(DEAD)) { const r = f.getBoundingClientRect(); if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) best = f; }
       return best || t;
     }
-    nodeOf(d) { for (; d; d = d.parentElement) { const n = this.shownD2m.get(d) || this.d2m.get(d); if (n) return n; } return null; }
+    nodeOf(d) { for (; d; d = d.parentElement) { const n = this.shownD2m.get(d) || (this.lv && this.lv.d2m.get(d)) || this.d2m.get(d); if (n) return n; } return null; }
     /** האלמנט שלחיצה בנקודה בוחרת: העמוק ביותר שאינו 🔒 נעול (נעול — מדלגים להורה). */
     pick(d) { let n = this.nodeOf(d); while (n && this.lockedNodes.has(n)) n = n.parent; return n; }
 
@@ -291,6 +293,7 @@
       if (this.edit) this.edit.abort();                                     // עריכת טקסט פתוחה שלא היא שכתבה — נסגרת; ה-DOM שלה עומד להתחלף
       const t0 = performance.now(), sel = this.selected, selPath = sel ? K.pathOf(sel) : null, hov = this.hovered;
       this.unshow();
+      if (this.lv) this.lv.clear();                                         // V11: DOM נקי לסנכרון — הכרטיסים מצוירים מחדש בסוף
       const u = K.update(this.m, patches);
       const t1 = performance.now();
       this.m = u.model; this.src = u.model.src; this.lastMode = u.mode; this.lastWhy = u.why; this.lastDiff = null;
@@ -311,6 +314,7 @@
       this.hovered = hov && this.m2d.has(hov) && alive(hov) ? hov : null;
       for (const set of [this.hiddenNodes, this.lockedNodes]) for (const x of set) if (!this.m2d.has(x) || !alive(x)) set.delete(x);
       if (this.sheets) this.recap();
+      if (this.lv && ok) this.lv.draw();                                    // (ברינדור מלא — כבר צוירו ב-remap)
       this.show(this.selected);
       this.markDev(); this.zeroAt = 0; this.draw();
       return { mode: this.lastMode, why: this.lastWhy, timing: { op: 0, reparse: t1 - t0, dom: t2 - t1, map: t3 - t2, layout: t4 - t3, total: t4 - t0 } };
@@ -393,8 +397,10 @@
       doc.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
         if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
+        if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) { this.press = null; return; }   // V11: עריכת ערך של המילה
         clearTimeout(this.longT); this.longDone = false;
         const tg = this.hit(e);
+        if (this.lv) this.lv.focusAt(tg);                                   // V11: הכרטיס שנלחץ — הכרטיס הנוכחי
         if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(tg); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
         if (e.pointerType === 'touch') {
           const t = tg, x = e.clientX, y = e.clientY;
@@ -411,7 +417,7 @@
       }, true);
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
-        if (this.ext && this.ext.active) { const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
+        if (this.ext && this.ext.active) { if (this.lv) this.lv.focusAt(e.target); const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
         this.pt = { x: e.clientX, y: e.clientY };                           // V4: "＋" מופיע רק ליד שפת האלמנט
         if (this.press && e.pointerType === 'mouse' && e.buttons === 0) this.press = null;   // השחרור אבד (מחוץ לחלון) — אין לחיצה
         const p = this.press;
@@ -450,13 +456,13 @@
       doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
       doc.addEventListener('pointerleave', () => { this.hovered = null; this.draw(); }, true);
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
-      doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(this.hit(e)); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
+      doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(this.hit(e)); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
       doc.addEventListener('touchmove', e => { if ((this.armed && this.press === this.armed) || (this.ext && this.ext.active)) e.preventDefault(); }, { capture: true, passive: false });
       doc.addEventListener('touchstart', e => { if (this.edit && this.edit.active) return; const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
       doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
       // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
       doc.addEventListener('securitypolicyviolation', e => { if (this.onBlocked && /^https?:/i.test(e.blockedURI || '')) this.onBlocked(e.blockedURI, e.effectiveDirective || ''); });
-      doc.addEventListener('keydown', e => { if (this.onKey) this.onKey(e); }, true);
+      doc.addEventListener('keydown', e => { if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) return; if (this.onKey) this.onKey(e); }, true);
       // מדיה אינה מתנגנת בקנבס (גם לא autoplay): ההשמעה — מהפאנל
       doc.addEventListener('play', e => { try { e.target.pause(); } catch { /* לא מדיה */ } }, true);
       // תמונה שנטענה או נכשלה — הסימון "תמונה חסרה" מתעדכן
@@ -520,7 +526,7 @@
     picked() { return this.selected ? [this.selected, ...[...this.multi].filter(x => x !== this.selected && this.m2d.has(x))] : []; }
     /** Alt + לחיצה: כל האלמנטים שמתחת לנקודה, מהעליון לתחתון; מחזיר את זה שאחרי הנבחר. */
     under(x, y) {
-      const stack = []; for (const d of this.doc.elementsFromPoint(x, y)) { const n = this.shownD2m.get(d) || this.d2m.get(d); if (n && !stack.includes(n)) stack.push(n); }
+      const stack = []; for (const d of this.doc.elementsFromPoint(x, y)) { const n = this.shownD2m.get(d) || (this.lv && this.lv.d2m.get(d)) || this.d2m.get(d); if (n && !stack.includes(n)) stack.push(n); }
       if (!stack.length) return null;
       return stack[(stack.indexOf(this.selected) + 1) % stack.length];
     }

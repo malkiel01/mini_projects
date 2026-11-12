@@ -44,7 +44,9 @@
   const inTemplate = n => { for (let p = n && n.parent; p; p = p.parent) if (p.tag === 'template') return p; return null; };
   const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   const label = n => { const id = K().attrOf(n, 'id'), c = K().classesOf(n)[0]; return n.tag + (id ? '#' + id.value : c ? '.' + c : ''); };
-  const TPL_MSG = 'תבנית הכרטיס נערכת בגרירה ב-V11 — עד אז: פתח בקוד';
+  const TPL_MSG = 'חלק של תבנית הכרטיס נשאר בתוכה, ואלמנט מהעמוד אינו נכנס אליה בגרירה — מוסיפים לכרטיס מהספרייה או מרשימת השדות (V11)';
+  /** V11: התבנית שהצומת בתוכה (או היא עצמה), לגרירה בתוך הכרטיס. */
+  const tplOf = n => (n && n.tag === 'template' ? n : inTemplate(n));
 
   // ── החלפת טקסט: כמה צעדים, תיקון אחד ─────────────────────
   function diff(was, now) {
@@ -108,8 +110,7 @@
     if (!par) return { msg: 'אין יעד' };
     if (par.implied && !ROOTS.has(par.tag)) return { msg: '<' + par.tag + '> נוסף בידי הדפדפן ואינו כתוב בקובץ' };
     if (par.tag === 'html' || par.tag === 'head') return { msg: 'בתוך <' + par.tag + '> אין תוכן נראה — גוררים אל תוך <body>' };
-    if (par.tag === 'template' || inTemplate(par)) return { msg: TPL_MSG, code: 'template' };
-    if (moving) for (const n of moving) if (inTemplate(n)) return { msg: TPL_MSG, code: 'template' };
+    if (moving) for (const n of moving) if (inTemplate(n) !== tplOf(par)) return { msg: TPL_MSG, code: 'template' };   // V11: בתוך אותה תבנית — כן; חוצה את הגבול — לא
     if (isVoid(par.tag)) return { msg: '<' + par.tag + '> אינו יכול להכיל אלמנטים' };
     if (!canHold(par)) return { msg: '<' + par.tag + '> מכיל טקסט גולמי בלבד, לא אלמנטים' };
     for (let p = par; p; p = p.parent) if (p.broken) return { msg: 'הרובריקה נמצאת באזור שבור בקוד', code: 'broken' };
@@ -129,7 +130,6 @@
   const topTags = html => { const m = K().parseHtml('<!doctype html><html><body><template>' + html + '</template></body></html>'); const b = m.root.kids.find(k => k.tag === 'body'); return b && b.kids[0] ? b.kids[0].kids.map(k => k.tag) : []; };
   function guardRoot(n, what) {
     if (ROOTS.has(n.tag)) throw E('<' + n.tag + '> — יש אחד כזה בעמוד; אינו ' + what + '. כל מה שבתוכו — כן', 'root');
-    if (inTemplate(n)) throw E(TPL_MSG, 'template');
   }
   function check(par, tags, moving) { const w = why(par, tags, moving); if (w) throw E(w.msg, w.code || 'invalid', { fix: w.fix || null }); }
 

@@ -454,9 +454,9 @@
     /** כמה אלמנטים בעמוד הכלל משפיע עליהם (העותקים של העורך — לא). */
     count(sel) {
       if (sel === null) return 1;
-      try { let n = 0; for (const e of this.canvas.doc.querySelectorAll(sel)) if (!e.closest('[data-kol-canvas]')) n++; return n; } catch { return 0; }
+      try { let n = 0; for (const e of this.canvas.doc.querySelectorAll(sel)) if (!e.closest('[data-kol-canvas]:not([data-kol-canvas="card"])')) n++; return n; } catch { return 0; }
     }
-    elementsOf(t) { if (t.kind === 'inline' || t.kind === 'newclass') return null; try { return [...this.canvas.doc.querySelectorAll(t.sel)].filter(e => !e.closest('[data-kol-canvas]')); } catch { return []; } }
+    elementsOf(t) { if (t.kind === 'inline' || t.kind === 'newclass') return null; try { return [...this.canvas.doc.querySelectorAll(t.sel)].filter(e => !e.closest('[data-kol-canvas]:not([data-kol-canvas="card"])')); } catch { return []; } }   // V11: כרטיס מצויר — כן נספר (הכלל חל עליו)
     /** היעדים לבורר "משנה את": ברירת המחדל קודם. */
     targets(n, info) {
       info = info || this.info(n);

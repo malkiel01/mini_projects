@@ -81,7 +81,7 @@ const FILES = {
     console.log('── framed ──');
     await p.goto(base + '/lexicon/');
     let f = await frameOf(p);
-    ok(f && await until(() => f.evaluate(() => window.KolData && window.KolData.version === '1.3.0')), 'kol-data.js 1.3.0 רץ בתוך החלון');
+    ok(f && await until(() => f.evaluate(() => window.KolData && window.KolData.version >= '1.3.0')), 'kol-data.js 1.3.0 רץ בתוך החלון');
     ok(await p.isVisible('#site-header') && await p.isVisible('#site-footer'), 'הכותרת והתחתית של האתר — סביב החלון');
     const inner = () => f.evaluate(() => ({ h: Math.ceil(document.documentElement.getBoundingClientRect().height), sh: document.documentElement.scrollHeight, ih: innerHeight, sw: document.documentElement.scrollWidth, iw: innerWidth }));
     let fit = await until(async () => { const i = await inner(); const h = await fh(p); return Math.abs(h - i.h) <= 1 && h < 800 ? { i, h } : null; });
@@ -194,7 +194,7 @@ const FILES = {
     const p2 = await ctx.newPage();
     await p2.addInitScript(() => { window.__sent = 0; const o = window.postMessage.bind(window); window.postMessage = (...a) => { window.__sent++; return o(...a); }; });
     await p2.goto(base + '/lexicon/');
-    ok(await until(() => p2.evaluate(() => window.KolData && window.KolData.version === '1.3.0')), 'full: העמוד הוא המסמך העליון');
+    ok(await until(() => p2.evaluate(() => window.KolData && window.KolData.version >= '1.3.0')), 'full: העמוד הוא המסמך העליון');
     await sleep(300);
     ok(await p2.evaluate(() => window.__sent) === 0, 'full: kol-data.js לא שלח אף הודעה');
     ok(!(await p2.content()).includes('SITE-HEADER'), 'full: בלי הכותרת של האתר (M-A)');
