@@ -215,3 +215,156 @@ test('N2 שינוי סוג: "יומרו / ייכשלו" עם הרשימה; נע�
     eq(200, $r['status']);
     eq(['12', '3.5', '7'], array_values(array_filter(array_map(fn($id) => n2_word($id)['extra']['num'] ?? null, $ids), fn($v) => $v !== null)));
 });
+
+function n2_csv(array $rows): string
+{
+    $out = fopen('php://temp', 'w+');
+    foreach ($rows as $r) fputcsv($out, $r, ',', '"', '');
+    rewind($out);
+    return (string)stream_get_contents($out);
+}
+
+function n2_csv_import(string $csv, array $more = [], array $user = U_EDITOR, bool $apply = true): array
+{
+    $p = b_post('words_csv_import', ['csv' => $csv] + $more, $user);
+    if (!$apply || $p['status'] !== 200) return $p;
+    return b_post('words_csv_import', ['csv' => $csv, 'apply' => true, 'token' => $p['json']['plan']['token']] + $more, $user);
+}
+
+test('N2 קובץ: מפתח לכל שדה, אחרי המובנים; ערך לפי סוג עם שורה ועמודה; "ישתנה translit ב-2 מילים"; מפתח לא מוכר — הצעה (מפרסם)', function () {
+    $ids = n2_reset(6);
+    n1_kol();
+    n2_field(['key' => 'translit', 'label' => 'תעתיק', 'type' => 'text']);
+    n2_field(['key' => 'year', 'label' => 'שנה', 'type' => 'number']);
+    n2_field(['key' => 'gender', 'label' => 'מין', 'type' => 'choice', 'options' => ['m', 'f']]);
+    $j = n1_file();
+    $keys = array_keys($j['items'][0]);
+    eq(['id', 'word', 'meaning', 'topics', 'audio'], array_slice($keys, 0, 5), 'המובנים קודם');
+    $j['items'][0]['translit'] = 'bslama';
+    $j['items'][1]['translit'] = 'lbraka';
+    $j['items'][1]['year'] = 1950;
+    $r = n1_save(n1_enc($j), false);
+    eq(200, $r['status'], json_encode($r['json'], JSON_UNESCAPED_UNICODE));
+    ok(str_contains($r['json']['plan']['summary'], 'ישתנה translit ב-2 מילים'), $r['json']['plan']['summary']);
+    eq(200, n1_save(n1_enc($j))['status']);
+    eq('lbraka', n2_word($j['items'][1]['id'])['extra']['translit'], 'קובץ ← טבלה');
+    eq(1950, n2_word($j['items'][1]['id'])['extra']['year']);
+    // שגיאות לפי סוג — עם שורה ועמודה, והטבלה לא משתנה
+    $j = n1_file();
+    $j['items'][2]['year'] = 'אלף';
+    $enc = n1_enc($j);
+    $line = substr_count(substr($enc, 0, strpos($enc, '"year": "אלף"')), "\n") + 1;
+    n1_bad($enc, $line, 15, '"year" חייב להיות מספר');
+    $j = n1_file();
+    $j['items'][2]['gender'] = 'x';
+    $r = n1_save(n1_enc($j), false);
+    eq(422, $r['status']);
+    eq('gender:x', $r['json']['errors'][0]['propose_option'] ?? null, 'בחירה שאינה ברשימה — הצעה');
+    eq(403, n1_save(n1_enc($j), true, ['create_options' => ['gender:x']])['status'], 'הוספת אפשרות — מפרסם');
+    eq(200, n1_save(n1_enc($j), true, ['create_options' => ['gender:x']], U_PUBLISHER)['status']);
+    ok(in_array('x', array_column(array_column(fields_all(), 'options', 'key')['gender'], 'value'), true), 'האפשרות נוספה');
+    // מפתח לא מוכר
+    $j = n1_file();
+    $j['items'][0]['notes'] = 'הערה';
+    $j['items'][1]['notes'] = 'עוד';
+    $j['items'][2]['evil"key'] = 1;
+    $r = n1_save(n1_enc($j), false);
+    eq(422, $r['status']);
+    ok(count(array_filter($r['json']['errors'], fn($e) => ($e['propose_field'] ?? '') === 'notes')) === 1, 'הצעה "צור שדה notes"');
+    ok(count(array_filter($r['json']['errors'], fn($e) => str_contains($e['msg'], 'evil'))) === 1, 'מפתח עוין — שגיאה, בלי הצעה');
+    unset($j['items'][2]['evil"key']);
+    eq(403, n1_save(n1_enc($j), true, ['create_fields' => ['notes']])['status'], 'עורך — לא יוצר שדה');
+    $a = n1_save(n1_enc($j), true, ['create_fields' => ['notes']], U_PUBLISHER);
+    eq(200, $a['status'], json_encode($a['json'], JSON_UNESCAPED_UNICODE));
+    eq('text', array_column(fields_all(), 'type', 'key')['notes'], 'סוג מנוחש');
+    eq('עוד', n2_word($j['items'][1]['id'])['extra']['notes']);
+    // מחיקת מפתח מפריט — הערך מתרוקן
+    $j = n1_file();
+    unset($j['items'][1]['notes']);
+    eq(200, n1_save(n1_enc($j))['status']);
+    ok(!isset(n2_word($j['items'][1]['id'])['extra']['notes']));
+    eq(0, n1_save(n1_file() ? n1_enc(n1_file()) : '', false)['json']['plan']['counts']['changed'], 'הלוך-חזור — 0 שינויים');
+});
+
+test('N2 קובץ ונושאים: שם / צבע / מוסתר / סדר של נושא קיים — נשמרים, וה-slug לא זז; צבע עוין נדחה', function () {
+    n2_reset(10);
+    n1_kol();
+    $j = n1_file();
+    $slugs = array_column($j['topics'], 'id');
+    $i = array_search('food', $slugs, true);
+    $j['topics'][$i]['label'] = 'מאכלים';
+    $j['topics'][$i]['color'] = '#aa0033';
+    $j['topics'][$i === 0 ? 1 : 0]['hidden'] = true;
+    $j['topics'] = array_reverse($j['topics']);
+    $r = n1_save(n1_enc($j), false);
+    eq(200, $r['status'], json_encode($r['json'], JSON_UNESCAPED_UNICODE));
+    ok(str_contains($r['json']['plan']['summary'], 'נושאים'), $r['json']['plan']['summary']);
+    eq(200, n1_save(n1_enc($j))['status']);
+    $f = n1_file();
+    eq(array_column($j['topics'], 'id'), array_column($f['topics'], 'id'), 'הסדר נשמר, אותם slugs');
+    $food = $f['topics'][array_search('food', array_column($f['topics'], 'id'), true)];
+    eq(['id' => 'food', 'label' => 'מאכלים', 'color' => '#aa0033'], $food, 'שם חדש, אותו slug');
+    eq(0, (int)db()->query("SELECT COUNT(*) FROM words WHERE topics LIKE '%\"אוכל\"%'")->fetchColumn(), 'השם הישן לא נשאר במילים');
+    ok(str_contains(words_json(), '"hidden": true'), 'מוסתר — בקובץ של העורך');
+    $live = json_decode(pv_get('data/words.json')['body'], true);
+    eq(count($f['topics']) - 1, count($live['topics']), 'מוסתר — לא ברשימה המתפרסמת');
+    $hid = array_values(array_filter($f['topics'], fn($t) => !empty($t['hidden'])))[0]['id'];
+    ok(count(array_filter($live['items'], fn($it) => in_array($hid, $it['topics'], true))) > 0, 'ונשאר על המילים');
+    foreach (['red', '#FFF', '#12345g', '"><script>', '#aa0033;x'] as $bad) {
+        $j = n1_file();
+        $j['topics'][0]['color'] = $bad;
+        eq(422, n1_save(n1_enc($j), false)['status'], "צבע נדחה: $bad");
+    }
+});
+
+test('N2 אקסל: עמודה לכל שדה (הכותרת — השם); הלוך-חזור = 0 שינויים; התאמה לפי שם או מפתח; עמודה לא מוכרת — "לא תיובא" + הצעה', function () {
+    $ids = n2_reset(6);
+    n2_field(['key' => 'translit', 'label' => 'תעתיק', 'type' => 'text']);
+    n2_field(['key' => 'n', 'label' => 'מספר', 'type' => 'number']);
+    n2_field(['key' => 'ok', 'label' => 'מאושר', 'type' => 'bool']);
+    n2_field(['key' => 'tags', 'label' => 'תגיות', 'type' => 'list']);
+    n2_cell($ids[0], ['translit' => '=cmd', 'n' => 3.5, 'ok' => true, 'tags' => ['א', 'ב']]);
+    $csv = http('GET', '/api.php?action=words_csv', ['user' => U_EDITOR])['body'];
+    [$rows] = words_csv_read($csv);
+    eq(['תעתיק', 'מספר', 'מאושר', 'תגיות'], array_slice($rows[0], 8), 'עמודות השדות אחרי של N1');
+    ok(str_contains($csv, "'=cmd"), 'נוסחה מנוטרלת');
+    $p = n2_csv_import($csv, [], U_EDITOR, false);
+    eq(200, $p['status'], json_encode($p['json'], JSON_UNESCAPED_UNICODE));
+    eq(['changed' => 0, 'added' => 0, 'trashed' => 0, 'moved' => 0, 'topics' => 0], $p['json']['plan']['counts'], 'הלוך-חזור');
+    // עריכה בגיליון: כותרת לפי מפתח, פסיק עשרוני, "לא", עמודה לא מוכרת
+    $rows[0][8] = 'translit';
+    $rows[0][] = 'region';
+    $x = array_search((string)$ids[1], array_column($rows, 0), true);
+    $rows[$x][8] = 'lbraka';
+    $rows[$x][9] = '2,5';
+    $rows[$x][10] = 'לא';
+    $rows[$x][12] = 'צפון';
+    $r = n2_csv_import(n2_csv($rows));
+    eq(200, $r['status'], json_encode($r['json'], JSON_UNESCAPED_UNICODE));
+    eq(['n' => 2.5, 'ok' => false, 'translit' => 'lbraka'], n2_word($ids[1])['extra'], 'אקסל ← טבלה');
+    $p = b_post('words_csv_import', ['csv' => n2_csv($rows)], U_EDITOR)['json'];
+    ok(str_contains(json_encode($p['plan']['warnings'], JSON_UNESCAPED_UNICODE), 'region'), 'לא תיובא');
+    eq('region', $p['plan']['field_proposals'][0]['key'] ?? null);
+    eq(403, n2_csv_import(n2_csv($rows), ['create_fields' => ['region']])['status'], 'יצירת שדה — מפרסם');
+    eq(200, n2_csv_import(n2_csv($rows), ['create_fields' => ['region']], U_PUBLISHER)['status']);
+    eq('צפון', n2_word($ids[1])['extra']['region']);
+    $rows[$x][9] = 'שתיים';
+    eq(422, n2_csv_import(n2_csv($rows), [], U_EDITOR, false)['status'], 'מספר לא תקין — שגיאה עם שורה');
+});
+
+test('N2 שלוש הדלתות: שדה במסך ← עמודה בטבלה ← מפתח בקובץ ← עמודה ב-CSV ← ערך מהקובץ בטבלה ובתצוגה החיה', function () {
+    $ids = n2_reset(4);
+    n1_kol();
+    n2_field(['key' => 'translit', 'label' => 'תעתיק', 'type' => 'text']);
+    eq('translit', array_column(b_get('words')['json']['fields'], 'key')[4], 'עמודה בטבלה');
+    n2_cell($ids[0], ['translit' => 'מהטבלה']);
+    $j = n1_file();
+    $x = array_search($ids[0], array_column($j['items'], 'id'), true);
+    eq('מהטבלה', $j['items'][$x]['translit'], 'טבלה ← קובץ');
+    $csv = http('GET', '/api.php?action=words_csv', ['user' => U_EDITOR])['body'];
+    ok(str_contains($csv, 'מהטבלה'), 'טבלה ← CSV');
+    $j['items'][$x]['translit'] = 'מהקובץ';
+    eq(200, n1_save(n1_enc($j))['status']);
+    eq('מהקובץ', n2_word($ids[0])['extra']['translit'], 'קובץ ← טבלה');
+    ok(str_contains(pv_get('data/words.json')['body'], 'מהקובץ'), 'קובץ ← תצוגה חיה');
+});

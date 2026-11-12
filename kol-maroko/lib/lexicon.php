@@ -798,70 +798,170 @@ function words_audio_resolve(string $v): ?string
     return null;
 }
 
-const WJ_ITEM_KEYS = ['id', 'word', 'meaning', 'topics', 'audio', 'wp_id', 'external_id'];
+const WJ_ITEM_KEYS = ['id', 'wp_id', 'external_id'];          // N2: ועוד המפתחות של השדות (fields_all) — הרשימה דינמית
+
+/** סוג משוער לשדה חדש מהערכים שבקובץ / בגיליון: מספרים → number, true/false → bool, רשימות → list, אחרת text. */
+function field_guess(array $values, bool $csv = false): string
+{
+    $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+    if (!$values) return 'text';
+    if ($csv) {
+        if (!array_filter($values, fn($v) => !preg_match('/^-?\d{1,15}(?:[.,]\d{1,10})?$/', trim((string)$v)))) return 'number';
+        if (!array_filter($values, fn($v) => !in_array(mb_strtolower(trim((string)$v)), ['כן', 'לא', 'true', 'false'], true))) return 'bool';
+        return 'text';
+    }
+    if (!array_filter($values, fn($v) => is_bool($v) || (!is_int($v) && !is_float($v)))) return 'number';
+    if (!array_filter($values, fn($v) => !is_bool($v))) return 'bool';
+    if (!array_filter($values, fn($v) => !is_array($v) || !array_is_list($v))) return 'list';
+    return 'text';
+}
+
+/** שדה חדש שאושר מתוך קובץ / גיליון (publisher) — ההגדרה שנכנסת ל-word_fields בהחלה. */
+function field_proposed(string $key, string $type): array
+{
+    return field_norm(['key' => $key, 'label' => $key, 'type' => $type, 'col' => null, 'required' => 0, 'def' => null, 'help' => '', 'options' => '[]', 'published' => 1, 'dir' => 'auto', 'sort_order' => 0]);
+}
+
+/** חובה: לכל שדה required — יש ערך (מובנה: בעמודה; מותאם: ב-extra). מחזיר את השדה החסר הראשון, או null. */
+function fields_required_missing(array $fields, array $o, ?array $cur): ?array
+{
+    foreach ($fields as $f) {
+        if (!$f['required']) continue;
+        $v = $f['col'] === null ? (($o['extra'] ?? $cur['extra'] ?? [])[$f['key']] ?? null) : ($o[$f['col']] ?? $cur[$f['col']] ?? null);
+        if ($v === null || $v === '' || $v === []) return $f;
+    }
+    return null;
+}
 
 /**
  * הקובץ ← רשימת פריטים מנורמלים, או שגיאות עם שורה ועמודה. ערך שזהה לערך שבטבלה נשאר בדיוק כמו בטבלה (בלי ניקוי
  * חוזר) — כך קובץ שלא נערך לא "משנה" אף מילה. ערך שהשתנה עובר את אותו ניקוי כמו עריכה בטבלה (word_input).
+ * N2: המפתחות — לפי "מבנה המילה" (מובנה ששמו שונה, ושדות מותאמים, לפי סוג); מפתח לא מוכר — הצעה "צור שדה" ($opt['fields']);
+ * בחירה שאינה ברשימה — הצעה "הוסף אפשרות" ($opt['options'], "key:value"); נושא קיים — שם, צבע, תמונה, מוסתר וסדר נשמרים.
  */
-function words_file_items(string $bytes, array $state, array $create): array
+function words_file_items(string $bytes, array $state, array $create, array $opt = []): array
 {
     $scan = wj_scan($bytes);
-    $errors = []; $warnings = []; $proposals = [];
-    $at = function (string $path) use ($scan, $bytes): array {
+    $errors = []; $warnings = []; $proposals = []; $fieldProps = []; $optionProps = [];
+    $fields = $state['fields'] ?? fields_all();
+    $c2k = fields_colkeys($fields);
+    $k2c = array_flip(array_intersect_key($c2k, array_flip(array_column(array_filter($fields, fn($f) => $f['col'] !== null), 'col'))));
+    $custom = array_column(fields_custom($fields), null, 'key');
+    // נתיב לפי שם העמודה (/items/3/meaning) ← הנתיב בקובץ (/items/3/<המפתח של "פירוש">). "!" — מפתח של שדה מותאם, כמו שהוא
+    $at = function (string $path) use ($scan, $bytes, $c2k): array {
+        if (str_contains($path, '/!')) $path = str_replace('/!', '/', $path);
+        else $path = preg_replace_callback('~^(/items/\d+/)(word|meaning|topics|audio)(?=$|#|/)~', fn($m) => $m[1] . $c2k[$m[2]], $path);
         $o = $scan['pos'][$path] ?? $scan['pos'][preg_replace('~/[^/]*$~', '', $path)] ?? 0;
         return wj_linecol($bytes, $o);
     };
-    $add = function (array &$list, string $path, string $msg) use ($at) { [$l, $c] = $at($path); $list[] = ['line' => $l, 'col' => $c, 'msg' => $msg]; };
+    $add = function (array &$list, string $path, string $msg, array $more = []) use ($at) { [$l, $c] = $at($path); $list[] = ['line' => $l, 'col' => $c, 'msg' => $msg] + $more; };
     if ($scan['error']) { [$l, $c] = wj_linecol($bytes, $scan['error'][1]); return ['errors' => [['line' => $l, 'col' => $c, 'msg' => 'JSON לא תקין: ' . $scan['error'][0]]]]; }
     $j = $scan['value'];
     // {} ו-[] מתפענחים שניהם למערך ריק — ההבחנה לפי התו בקובץ. "items": {} אינו "רשימה ריקה" (שהייתה מעבירה הכול לסל)
     $is = fn(string $path, string $ch) => ($bytes[$scan['pos'][$path] ?? -1] ?? '') === $ch;
     if (!is_array($j) || !$is('', '{')) return ['errors' => [['line' => 1, 'col' => 1, 'msg' => 'הקובץ חייב להיות אובייקט: { "topics": [...], "items": [...] }']]];
-    foreach (array_keys($j) as $k) if (!in_array($k, ['topics', 'items'], true)) $add($errors, "/$k#key", "שדה לא מוכר \"$k\" — שדות חדשים יתווספו ב-N2. הסירו אותו כדי לשמור");
+    foreach (array_keys($j) as $k) if (!in_array($k, ['topics', 'items'], true)) $add($errors, "/$k#key", "שדה לא מוכר \"$k\" בראש הקובץ — רק \"topics\" ו-\"items\". הסירו אותו כדי לשמור");
     if (!isset($j['items']) || !is_array($j['items']) || !array_is_list($j['items']) || !$is('/items', '[')) {
         $add($errors, isset($j['items']) ? '/items' : '', '"items" חסר, או שאינו רשימה');
         return ['errors' => $errors];
     }
-    // הנושאים שבראש הקובץ — רק כדי לתת שם לנושא חדש. שינוי שם של נושא קיים — במסך הנושאים (לא ב-N1)
-    $labels = [];
+    // הנושאים שבראש הקובץ: שם לנושא חדש, ו-N2 — שם / צבע / תמונה / מוסתר / סדר של נושא קיים
+    $labels = []; $topicUpd = []; $topicSeq = [];
+    $topics = $state['topics'] ?? [];
     if (isset($j['topics'])) {
         if (!is_array($j['topics']) || !array_is_list($j['topics']) || !$is('/topics', '[')) $add($errors, '/topics', '"topics" חייב להיות רשימה של { "id", "label" }');
-        else foreach ($j['topics'] as $ti => $t) {
-            if (!is_array($t) || !$is("/topics/$ti", '{') || !is_string($t['id'] ?? null) || !is_string($t['label'] ?? null) || array_diff(array_keys($t), ['id', 'label'])) { $add($errors, "/topics/$ti", 'נושא חייב להיות { "id": "…", "label": "…" } (מחרוזות)'); continue; }
-            $labels[$t['id']] = $t['label'];
-            $name = $state['slug_name'][$t['id']] ?? null;
-            if ($name !== null && $name !== $t['label']) $add($warnings, "/topics/$ti/label", "שינוי שם הנושא \"$name\" נעשה במסך הנושאים — כאן הוא לא נשמר");
+        else {
+            $names = [];
+            foreach ($j['topics'] as $ti => $t) {
+                $tp = "/topics/$ti";
+                if (!is_array($t) || !$is($tp, '{') || !is_string($t['id'] ?? null) || !is_string($t['label'] ?? null) || array_diff(array_keys($t), ['id', 'label', 'color', 'image', 'hidden'])) {
+                    $add($errors, $tp, 'נושא חייב להיות { "id", "label", "color"?, "image"?, "hidden"? } (id ו-label — מחרוזות)');
+                    continue;
+                }
+                $labels[$t['id']] = $t['label'];
+                $cur = $topics[$t['id']] ?? null;
+                if (!$cur) continue;
+                $topicSeq[] = $t['id'];
+                $u = [];
+                $label = str(preg_replace('/\s+/u', ' ', $t['label']), 80);
+                if ($label === '') { $add($errors, "$tp/label", 'שם הנושא ריק'); continue; }
+                if ($label !== $cur['name']) $u['name'] = $label;
+                $color = $t['color'] ?? '';
+                if (!is_string($color) || ($color !== '' && !preg_match(TOPIC_COLOR_RX, $color))) { $add($errors, "$tp/color", 'צבע — "#rrggbb" (שש ספרות הקסדצימליות, אותיות קטנות)'); continue; }
+                if ($color !== $cur['color']) $u['color'] = $color;
+                $img = $t['image'] ?? '';
+                if (!is_string($img)) { $add($errors, "$tp/image", 'תמונה — נתיב media/images/… או מזהה קובץ'); continue; }
+                $curRef = $cur['image'] === '' ? '' : (string)field_out(['type' => 'image', 'key' => 'image'], $cur['image'], $state['meta'] ?? [], null);
+                if ($img !== $curRef) {
+                    $r = field_file_resolve($img, 'image');
+                    if ($r === null) $add($warnings, "$tp/image", "התמונה \"" . mb_substr($img, 0, 80) . '" לא נמצאה בספרייה — נשארת כמו שהייתה');
+                    elseif ($r !== $cur['image']) $u['image'] = $r;
+                }
+                $hidden = $t['hidden'] ?? false;
+                if (!is_bool($hidden)) { $add($errors, "$tp/hidden", '"hidden" — true או false'); continue; }
+                if ($hidden !== $cur['hidden']) $u['hidden'] = $hidden;
+                $newName = $u['name'] ?? $cur['name'];
+                if (isset($names[$newName])) { $add($errors, "$tp/label", "שני נושאים בשם \"$newName\""); continue; }
+                $names[$newName] = true;
+                if (isset($u['name']) && isset($state['name_slug'][$u['name']]) && $state['name_slug'][$u['name']] !== $t['id'] && !isset($labels[$state['name_slug'][$u['name']]])) {
+                    $add($errors, "$tp/label", "כבר יש נושא בשם \"{$u['name']}\" — למיזוג: מסך הנושאים");
+                    continue;
+                }
+                if ($u) $topicUpd[$t['id']] = $u + ['from' => $cur['name']];
+            }
         }
     }
+    // מפתחות לא מוכרים: שדה חדש מוצע (publisher). הסוג — לפי כל הערכים שלו בקובץ
+    $unknown = [];
+    foreach ($j['items'] as $x => $it) if (is_array($it)) foreach ($it as $k => $v) {
+        $k = (string)$k;
+        if (in_array($k, WJ_ITEM_KEYS, true) || isset($k2c[$k]) || isset($custom[$k])) continue;
+        $unknown[$k]['values'][] = $v;
+        $unknown[$k]['x'] ??= $x;
+    }
+    foreach ($unknown as $k => $u) {
+        $p = "/items/{$u['x']}/!$k#key";
+        if ($e = field_key_error($k, $fields)) { $add($errors, $p, "שדה לא מוכר \"" . mb_substr($k, 0, 60) . "\" — $e"); continue; }
+        $type = field_guess($u['values']);
+        $fieldProps[$k] = ['key' => $k, 'type' => $type, 'line' => $at($p)[0], 'count' => count(array_filter($u['values'], fn($v) => $v !== null && $v !== ''))];
+        if (in_array($k, $opt['fields'] ?? [], true)) $custom[$k] = field_proposed($k, $type);
+        else $add($errors, $p, "שדה לא מוכר \"$k\" — אשרו \"צור שדה $k\" (סוג: $type; דורש מפרסם), או הסירו אותו", ['propose_field' => $k]);
+    }
+    $allFields = array_merge(array_values(array_filter($fields, fn($f) => $f['col'] !== null)), array_values($custom));
     $items = []; $seen = [];
-    foreach ($j['items'] as $x => $it) {
+    foreach ($j['items'] as $x => $raw) {
         $p = "/items/$x";
-        if (!is_array($it) || !$is($p, '{')) { $add($errors, $p, 'פריט חייב להיות אובייקט'); continue; }
+        if (!is_array($raw) || !$is($p, '{')) { $add($errors, $p, 'פריט חייב להיות אובייקט'); continue; }
+        // המפתחות בקובץ ← שמות העמודות (word, meaning…) ושדות מותאמים
+        $it = []; $ex = [];
+        foreach ($raw as $k => $v) {
+            if (isset($k2c[$k])) $it[$k2c[$k]] = $v;
+            elseif (isset($custom[$k])) $ex[$k] = $v;
+            elseif (in_array($k, WJ_ITEM_KEYS, true)) $it[$k] = $v;
+        }
         $bad = false;
-        foreach (array_keys($it) as $k) if (!in_array($k, WJ_ITEM_KEYS, true)) { $add($errors, "$p/$k#key", "שדה לא מוכר \"$k\" — יתווסף כשדה ב-N2. הסירו אותו כדי לשמור"); $bad = true; }
         $id = $it['id'] ?? null;
         if ($id !== null && (!is_int($id) || $id < 1 || $id > 2147483647)) { $add($errors, "$p/id", '"id" חייב להיות מספר שלם חיובי (או להיעדר — מילה חדשה)'); continue; }
         if ($id !== null && isset($seen[$id])) { $add($errors, "$p/id", "\"id\": $id מופיע פעמיים (גם בפריט " . ($seen[$id] + 1) . ')'); continue; }
         if ($id !== null) $seen[$id] = $x;
         $cur = $id !== null ? ($state['by'][$id] ?? null) : null;
         foreach (['word', 'meaning', 'audio', 'external_id'] as $k) {
-            if (array_key_exists($k, $it) && !is_string($it[$k])) { $add($errors, "$p/$k", "\"$k\" חייב להיות מחרוזת"); $bad = true; }
+            if (array_key_exists($k, $it) && !is_string($it[$k])) { $add($errors, "$p/$k", '"' . ($c2k[$k] ?? $k) . '" חייב להיות מחרוזת'); $bad = true; }
         }
         $topicsIn = $it['topics'] ?? [];
-        if (!is_array($topicsIn) || !array_is_list($topicsIn) || (array_key_exists('topics', $it) && !$is("$p/topics", '[')) || array_filter($topicsIn, fn($t) => !is_string($t))) { $add($errors, "$p/topics", '"topics" חייב להיות רשימה של מפתחות נושא (מחרוזות)'); $bad = true; }
+        if (!is_array($topicsIn) || !array_is_list($topicsIn) || (array_key_exists('topics', $it) && !$is("$p/{$c2k['topics']}", '[')) || array_filter($topicsIn, fn($t) => !is_string($t))) { $add($errors, "$p/topics", '"' . $c2k['topics'] . '" חייב להיות רשימה של מפתחות נושא (מחרוזות)'); $bad = true; }
         if ($bad) continue;
         $o = ['x' => $x, 'id' => $id, 'line' => $at($p)[0]];
         // מילה
         $w = $it['word'] ?? '';
         if ($cur && $w === $cur['word']) $o['word'] = $cur['word'];
-        elseif (trim($w) === '') { $add($errors, "$p/word", '"word" ריק'); continue; }
-        elseif (mb_strlen(trim($w)) > WORD_MAX) { $add($errors, "$p/word", '"word" ארוך מ-' . WORD_MAX . ' תווים'); continue; }
+        elseif (trim($w) === '') { $add($errors, "$p/word", '"' . $c2k['word'] . '" ריק'); continue; }
+        elseif (mb_strlen(trim($w)) > WORD_MAX) { $add($errors, "$p/word", '"' . $c2k['word'] . '" ארוך מ-' . WORD_MAX . ' תווים'); continue; }
         else $o['word'] = str($w, WORD_MAX);
         // פירוש
         $m = $it['meaning'] ?? '';
         if ($cur && $m === $cur['meaning']) $o['meaning'] = $cur['meaning'];
-        elseif (mb_strlen($m) > MEANING_MAX) { $add($errors, "$p/meaning", '"meaning" ארוך מ-' . MEANING_MAX . ' תווים'); continue; }
+        elseif (mb_strlen($m) > MEANING_MAX) { $add($errors, "$p/meaning", '"' . $c2k['meaning'] . '" ארוך מ-' . MEANING_MAX . ' תווים'); continue; }
         else $o['meaning'] = sanitize_rich($m);
         // נושאים: מפתחות ← שמות
         $topicsIn = array_values(array_unique($topicsIn));
@@ -896,11 +996,41 @@ function words_file_items(string $bytes, array $state, array $create): array
         }
         $e = $it['external_id'] ?? '';
         $o['external_id'] = $cur && $e === $cur['external_id'] ? $cur['external_id'] : str($e, 40);
+        // N2: השדות המותאמים — הקובץ שלם: מפתח שחסר = ריק; מילה חדשה — ברירת המחדל
+        $extra = [];
+        foreach ($custom as $k => $f) {
+            if (!array_key_exists($k, $ex)) { if (!$cur && $f['def'] !== null) $extra[$k] = $f['def']; continue; }
+            $v = $ex[$k];
+            if ($cur && array_key_exists($k, $cur['extra_ref']) && $v === $cur['extra_ref'][$k]) { $extra[$k] = $cur['extra'][$k]; continue; }
+            [$val, $err, $warn, $propose] = field_parse($f, $v);
+            if ($propose !== null) $optionProps["$k:$propose"] ??= ['key' => $k, 'value' => $propose, 'line' => $at("$p/!$k")[0]];
+            if ($propose !== null && in_array("$k:$propose", $opt['options'] ?? [], true)) { $extra[$k] = $propose; continue; }
+            if ($propose !== null) { $add($errors, "$p/!$k", "$err — אשרו \"הוסף אפשרות\", או תקנו", ['propose_option' => "$k:$propose"]); continue 2; }
+            if ($err) { $add($errors, "$p/!$k", $err); continue 2; }
+            if ($warn) $add($warnings, "$p/!$k", $warn);
+            if ($warn && in_array($f['type'], ['image', 'audio'], true)) { if (isset($cur['extra'][$k])) $extra[$k] = $cur['extra'][$k]; continue; }
+            if ($val !== null) $extra[$k] = $val;
+        }
+        ksort($extra);
+        $o['extra'] = $extra;
+        if ($miss = fields_required_missing($allFields, $o, $cur)) { $add($errors, $p, "\"{$miss['key']}\" ({$miss['label']}) הוא שדה חובה — חסר ערך"); continue; }
         if ($cur === null && $id !== null) $add($warnings, "$p/id", "אין מילה עם \"id\": $id — תתווסף מילה חדשה עם המזהה הזה. המזהה הוא המפתח של ההקלטה ושל קישורים למילה");
         $items[] = $o;
     }
-    // id שהשתנה = מילה שנמחקה ואחרת שנוספה. אזהרה אחת, כשיש גם מילה שנעלמת וגם מזהה שאינו קיים
-    return ['errors' => $errors, 'warnings' => $warnings, 'items' => $items, 'proposals' => array_values($proposals), 'full' => true, 'seq' => true];
+    // הסדר של הנושאים: הסדר שבקובץ, למה שמופיע בו; השאר נשארים במקומם
+    $topicOrder = [];
+    if ($topicSeq) {
+        $curOrder = array_keys($topics);
+        $listed = array_flip($topicSeq);
+        $full = []; $q = $topicSeq;
+        foreach ($curOrder as $s) $full[] = isset($listed[$s]) ? array_shift($q) : $s;
+        if ($full !== $curOrder) foreach ($full as $i => $s) if ($topics[$s]['sort_order'] !== ($i + 1) * WORDS_ORDER_STEP) $topicOrder[$s] = ($i + 1) * WORDS_ORDER_STEP;
+    }
+    return ['errors' => $errors, 'warnings' => $warnings, 'items' => $items, 'proposals' => array_values($proposals), 'full' => true, 'seq' => true,
+        'field_proposals' => array_values($fieldProps), 'option_proposals' => array_values($optionProps),
+        'create_fields' => array_values(array_filter(array_map(fn($k) => isset($fieldProps[$k]) ? ['key' => $k, 'type' => $fieldProps[$k]['type']] : null, $opt['fields'] ?? []))),
+        'create_options' => array_values(array_map(fn($s) => $optionProps[$s], array_filter($opt['options'] ?? [], fn($s) => is_string($s) && isset($optionProps[$s])))),
+        'topic_updates' => $topicUpd, 'topic_order' => $topicOrder];
 }
 
 /**
@@ -909,15 +1039,25 @@ function words_file_items(string $bytes, array $state, array $create): array
  */
 function words_plan(array $in, array $state): array
 {
-    $changed = []; $added = []; $trashed = []; $keepIds = [];
+    $changed = []; $added = []; $trashed = []; $keepIds = []; $byField = [];
     $fields = ['word', 'meaning', 'topics', 'audio', 'external_id'];
-    $short = fn($v) => is_array($v) ? implode(', ', $v) : (mb_strlen((string)$v) > 300 ? mb_substr((string)$v, 0, 300) . '…' : (string)$v);
+    $c2k = fields_colkeys($state['fields'] ?? null);
+    $short = fn($v) => $v === null ? '' : (is_array($v) ? implode(', ', array_map(fn($x) => is_scalar($x) ? (string)$x : json_encode($x), $v)) : (is_bool($v) ? ($v ? 'true' : 'false')
+        : (mb_strlen((string)$v) > 300 ? mb_substr((string)$v, 0, 300) . '…' : (string)$v)));
     foreach ($in['items'] as $o) {
         $cur = $o['id'] !== null ? ($state['by'][$o['id']] ?? null) : null;
         if (!$cur) { $added[] = ['id' => $o['id'], 'word' => $o['word'], 'line' => $o['line'] ?? null]; continue; }
         $keepIds[$o['id']] = true;
         $diff = [];
-        foreach ($fields as $f) if (array_key_exists($f, $o) && $o[$f] !== $cur[$f]) $diff[$f] = [$short($cur[$f]), $short($o[$f])];
+        foreach ($fields as $f) if (array_key_exists($f, $o) && $o[$f] !== $cur[$f]) { $diff[$c2k[$f] ?? $f] = [$short($cur[$f]), $short($o[$f])]; $byField[$c2k[$f] ?? $f] = ($byField[$c2k[$f] ?? $f] ?? 0) + 1; }
+        // N2: השדות המותאמים — מפתח מפתח
+        if (array_key_exists('extra', $o) && $o['extra'] !== $cur['extra']) {
+            foreach (array_unique(array_merge(array_keys($o['extra']), array_keys($cur['extra']))) as $k) {
+                if (($o['extra'][$k] ?? null) === ($cur['extra'][$k] ?? null)) continue;
+                $diff[$k] = [$short($cur['extra'][$k] ?? null), $short($o['extra'][$k] ?? null)];
+                $byField[$k] = ($byField[$k] ?? 0) + 1;
+            }
+        }
         if ($diff) $changed[] = ['id' => $o['id'], 'word' => $cur['word'], 'fields' => $diff];
     }
     if (!empty($in['full'])) foreach ($state['by'] as $id => $w) if (!isset($keepIds[$id])) $trashed[] = ['id' => $id, 'word' => $w['word'], 'audio' => $w['audio'] !== ''];
@@ -931,15 +1071,21 @@ function words_plan(array $in, array $state): array
     } elseif (!empty($in['order'])) {
         foreach ($in['order'] as $id => $v) if (isset($cur[$id]) && $cur[$id] !== $v) { $set[$id] = $v; $moved++; }
     }
+    $topicChanges = array_unique(array_merge(array_keys($in['topic_updates'] ?? []), array_keys($in['topic_order'] ?? [])));
     $counts = ['changed' => count($changed), 'added' => count($added), 'trashed' => count($trashed), 'moved' => $moved,
         'topics' => count($in['create'] ?? [])];
+    // N2 — רק כשיש (הצורה של N1 נשמרת)
+    foreach (['topic_changes' => count($topicChanges), 'new_fields' => count($in['create_fields'] ?? []), 'new_options' => count($in['create_options'] ?? [])] as $k => $n) if ($n) $counts[$k] = $n;
     $plan = ['counts' => $counts, 'changed' => array_slice($changed, 0, 500), 'added' => array_slice($added, 0, 500), 'trashed' => array_slice($trashed, 0, 500),
-        'new_topics' => $in['create'] ?? [], 'proposals' => $in['proposals'] ?? [], 'warnings' => $in['warnings'] ?? [],
-        'snapshot' => $counts['trashed'] > 0 || $counts['changed'] + $counts['added'] + $moved > WORDS_BULK,
-        'needs' => $counts['trashed'] > WORDS_BULK || !empty($in['replace']) ? 'publisher' : 'editor'];
-    $plan['summary'] = words_plan_text($counts);
+        'by_field' => $byField, 'topic_updates' => $in['topic_updates'] ?? [], 'new_fields' => $in['create_fields'] ?? [], 'new_options' => $in['create_options'] ?? [],
+        'new_topics' => $in['create'] ?? [], 'proposals' => $in['proposals'] ?? [], 'field_proposals' => $in['field_proposals'] ?? [],
+        'option_proposals' => $in['option_proposals'] ?? [], 'warnings' => $in['warnings'] ?? [],
+        'snapshot' => $counts['trashed'] > 0 || $counts['changed'] + $counts['added'] + $moved > WORDS_BULK || !empty($counts['new_fields']),
+        'needs' => $counts['trashed'] > WORDS_BULK || !empty($in['replace']) || !empty($counts['new_fields']) || !empty($counts['new_options']) ? 'publisher' : 'editor'];
+    $plan['summary'] = words_plan_text($counts, array_diff_key($byField, array_flip(array_values($c2k))));    // המובנים — כמו ב-N1
     // האסימון: <חותמת הטבלה>.<חותמת התוכנית> — כך ההחלה יודעת קודם כול אם הטבלה השתנתה מאז התצוגה
-    $plan['token'] = words_state_hash($state) . '.' . substr(hash('sha256', json_encode([$in['items'], $set, array_column($trashed, 'id'), $in['create'] ?? []], JSON_UNESCAPED_UNICODE)), 0, 32);
+    $plan['token'] = words_state_hash($state) . '.' . substr(hash('sha256', json_encode([$in['items'], $set, array_column($trashed, 'id'), $in['create'] ?? [],
+        $in['topic_updates'] ?? [], $in['topic_order'] ?? [], $in['create_fields'] ?? [], $in['create_options'] ?? []], JSON_UNESCAPED_UNICODE)), 0, 32);
     return [$plan, $set];
 }
 
@@ -949,7 +1095,7 @@ function words_state_hash(array $state): string
         $state['name_slug'], $state['fields'] ?? [], array_map(fn($t) => array_diff_key($t, ['count' => 1]), $state['topics'] ?? [])], JSON_UNESCAPED_UNICODE)), 0, 32);
 }
 
-function words_plan_text(array $c): string
+function words_plan_text(array $c, array $byField = []): string
 {
     $parts = [];
     $parts[] = $c['changed'] === 1 ? 'תשתנה מילה אחת' : "ישתנו {$c['changed']} מילים";
@@ -957,6 +1103,11 @@ function words_plan_text(array $c): string
     $parts[] = "יעברו לסל {$c['trashed']}";
     $parts[] = "ישתנה הסדר של {$c['moved']}";
     if (!empty($c['topics'])) $parts[] = "נושאים חדשים: {$c['topics']}";
+    if (!empty($c['topic_changes'])) $parts[] = $c['topic_changes'] === 1 ? 'ישתנה נושא אחד' : "ישתנו {$c['topic_changes']} נושאים";
+    if (!empty($c['new_fields'])) $parts[] = "שדות חדשים: {$c['new_fields']}";
+    if (!empty($c['new_options'])) $parts[] = "אפשרויות חדשות: {$c['new_options']}";
+    // N2: "ישתנה translit ב-40 מילים"
+    foreach (array_slice($byField, 0, 8, true) as $k => $n) $parts[] = "ישתנה $k " . ($n === 1 ? 'במילה אחת' : "ב-$n מילים");
     return implode(' · ', $parts);
 }
 
@@ -980,6 +1131,22 @@ function words_apply(array $user, callable $build, string $token, string $source
         if (ROLE_RANK[$user['role'] ?? 'editor'] < ROLE_RANK[$plan['needs']]) throw new ApiError('"החלף הכול", ומחיקה של יותר מ-' . WORDS_BULK . ' מילים — רק למפרסם', 403, ['plan' => $plan]);
         $snap = $plan['snapshot'] ? snapshot_create($user, "לפני שמירת $source: " . $plan['summary']) : null;
         $now = now_iso();
+        // N2: שדות חדשים ואפשרויות חדשות שאושרו (publisher — נבדק למעלה דרך needs)
+        if (!empty($in['create_fields']) || !empty($in['create_options'])) fields_fill();
+        foreach ($in['create_fields'] ?? [] as $cf) {
+            if (field_key_error($cf['key'], fields_all())) throw new ApiError("כבר יש שדה \"{$cf['key']}\"", 409);
+            $max = (int)$pdo->query('SELECT COALESCE(MAX(sort_order), 0) FROM word_fields')->fetchColumn();
+            $pdo->prepare('INSERT INTO word_fields (key, label, type, col, sort_order) VALUES (?, ?, ?, NULL, ?)')->execute([$cf['key'], $cf['key'], $cf['type'], $max + 10]);
+            audit_as($user, 'field_add', "{$cf['key']} ({$cf['type']}) · מתוך $source");
+        }
+        foreach ($in['create_options'] ?? [] as $co) {
+            $st = $pdo->prepare('SELECT options FROM word_fields WHERE key = ?');
+            $st->execute([$co['key']]);
+            $opts = json_decode((string)$st->fetchColumn(), true) ?: [];
+            if (!in_array($co['value'], array_column($opts, 'value'), true)) $opts[] = ['value' => $co['value'], 'label' => $co['value']];
+            $pdo->prepare('UPDATE word_fields SET options = ? WHERE key = ?')->execute([json_encode($opts, JSON_UNESCAPED_UNICODE), $co['key']]);
+            audit_as($user, 'field_edit', "{$co['key']}: אפשרות חדשה \"{$co['value']}\" · מתוך $source");
+        }
         $addTopic = $pdo->prepare('INSERT INTO topics (slug, name) VALUES (?, ?)');
         foreach ($in['create'] ?? [] as $t) {
             $st = $pdo->prepare('SELECT slug FROM topics WHERE name = ?');
@@ -990,28 +1157,33 @@ function words_apply(array $user, callable $build, string $token, string $source
         $createdNames = array_column($in['create'] ?? [], 'name');
         $known = $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)');
         $map = $state['name_slug'];
-        $upd = $pdo->prepare('UPDATE words SET word = ?, meaning = ?, topics = ?, audio = ?, external_id = ?, updated_at = ?, updated_by = ? WHERE id = ?');
-        $insId = $pdo->prepare('INSERT INTO words (id, word, meaning, topics, audio, external_id, sort_order, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        $ins = $pdo->prepare('INSERT INTO words (word, meaning, topics, audio, external_id, sort_order, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        $upd = $pdo->prepare('UPDATE words SET word = ?, meaning = ?, topics = ?, audio = ?, external_id = ?, extra = ?, updated_at = ?, updated_by = ? WHERE id = ?');
+        $insId = $pdo->prepare('INSERT INTO words (id, word, meaning, topics, audio, external_id, extra, sort_order, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $ins = $pdo->prepare('INSERT INTO words (word, meaning, topics, audio, external_id, extra, sort_order, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $defs = [];
+        foreach (fields_custom() as $f) if ($f['def'] !== null) $defs[$f['key']] = $f['def'];
+        $ej = fn(array $x) => $x ? json_encode($x, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '{}';
         $changedIds = array_flip(array_column($plan['changed'], 'id'));
         $nn = 0; $newIds = [];
         foreach ($in['items'] as $o) {
             $cur = $o['id'] !== null ? ($state['by'][$o['id']] ?? null) : null;
             $v = [];
             foreach (['word', 'meaning', 'topics', 'audio', 'external_id'] as $f) $v[$f] = array_key_exists($f, $o) ? $o[$f] : ($cur[$f] ?? ($f === 'topics' ? [] : ''));
+            if (array_key_exists('extra', $o)) $v['extra'] = $o['extra'];
+            else { $v['extra'] = $cur['extra'] ?? $defs; ksort($v['extra']); }
             if ($cur && !isset($changedIds[$o['id']])) continue;
             foreach ($v['topics'] as $t) if (!in_array($t, $createdNames, true)) $known->execute([topic_slug($t, $map), $t]);
             $tj = json_encode($v['topics'], JSON_UNESCAPED_UNICODE);
-            if ($cur) { $upd->execute([$v['word'], $v['meaning'], $tj, $v['audio'], $v['external_id'], $now, $user['name'], $o['id']]); continue; }
+            if ($cur) { $upd->execute([$v['word'], $v['meaning'], $tj, $v['audio'], $v['external_id'], $ej($v['extra']), $now, $user['name'], $o['id']]); continue; }
             $so = !empty($in['seq']) ? ($set['new:' . $nn++] ?? null) : null;
             if ($o['id'] !== null) {
                 $chk = $pdo->prepare('SELECT 1 FROM words WHERE id = ?');
                 $chk->execute([$o['id']]);
                 if ($chk->fetchColumn()) throw new ApiError("המזהה {$o['id']} תפוס", 409);
-                $insId->execute([$o['id'], $v['word'], $v['meaning'], $tj, $v['audio'], $v['external_id'], $so, $now, $user['name']]);
+                $insId->execute([$o['id'], $v['word'], $v['meaning'], $tj, $v['audio'], $v['external_id'], $ej($v['extra']), $so, $now, $user['name']]);
                 $newIds[] = $o['id'];
             } else {
-                $ins->execute([$v['word'], $v['meaning'], $tj, $v['audio'], $v['external_id'], $so, $now, $user['name']]);
+                $ins->execute([$v['word'], $v['meaning'], $tj, $v['audio'], $v['external_id'], $ej($v['extra']), $so, $now, $user['name']]);
                 $newIds[] = (int)$pdo->lastInsertId();
             }
         }
@@ -1028,6 +1200,14 @@ function words_apply(array $user, callable $build, string $token, string $source
         $so = $pdo->prepare('UPDATE words SET sort_order = ? WHERE id = ?');
         foreach ($set as $id => $v) if (is_int($id)) $so->execute([$v, $id]);
         words_order_fill(true);                                 // מילה חדשה מאקסל (בלי סדר) — לסוף
+        // N2: נושאים קיימים — שם (ה-slug נשאר), צבע, תמונה, מוסתר, סדר
+        if (!empty($in['topic_updates']) || !empty($in['topic_order'])) {
+            topics_fill();
+            topics_rename($user, array_filter(array_map(fn($u) => isset($u['name']) ? [$u['from'], $u['name']] : null, $in['topic_updates'] ?? [])));
+            foreach ($in['topic_updates'] ?? [] as $slug => $u) topic_attrs($slug, $u);
+            $so = $pdo->prepare('UPDATE topics SET sort_order = ? WHERE slug = ?');
+            foreach ($in['topic_order'] ?? [] as $slug => $v) $so->execute([$v, $slug]);
+        }
         $c = $plan['counts'];
         $detail = "$source · {$c['changed']} שונו, {$c['added']} נוספו, {$c['trashed']} לסל, {$c['moved']} בסדר";
         $names = array_merge(array_column($plan['changed'], 'word'), array_column($plan['added'], 'word'), array_map(fn($t) => '🗑 ' . $t['word'], $plan['trashed']));
@@ -1048,8 +1228,11 @@ function words_apply(array $user, callable $build, string $token, string $source
 function words_file_save(array $user, string $bytes, array $b): array
 {
     $create = array_values(array_filter(is_array($b['create_topics'] ?? null) ? $b['create_topics'] : [], 'is_string'));
-    $build = function (array $state) use ($bytes, $create) {
-        $in = words_file_items($bytes, $state, $create);
+    // N2: "צור שדה" ו"הוסף אפשרות" שאושרו בתצוגה (publisher — נבדק בהחלה)
+    $opt = ['fields' => array_values(array_filter(is_array($b['create_fields'] ?? null) ? $b['create_fields'] : [], 'is_string')),
+        'options' => array_values(array_filter(is_array($b['create_options'] ?? null) ? $b['create_options'] : [], 'is_string'))];
+    $build = function (array $state) use ($bytes, $create, $opt) {
+        $in = words_file_items($bytes, $state, $create, $opt);
         $in['create'] = array_values(array_filter($in['proposals'] ?? [], fn($p) => in_array($p['slug'], $create, true)));
         $pending = array_values(array_filter($in['proposals'] ?? [], fn($p) => !in_array($p['slug'], $create, true)));
         if ($pending && empty($in['errors'])) $in['errors'] = array_map(fn($p) => ['line' => $p['line'], 'col' => 1, 'msg' => "אין נושא \"{$p['slug']}\" — אשרו \"צור נושא {$p['slug']}\", או תקנו את המפתח", 'propose' => $p['slug']], $pending);
@@ -1058,7 +1241,8 @@ function words_file_save(array $user, string $bytes, array $b): array
     if (empty($b['apply'])) {
         $state = words_state();
         $in = $build($state);
-        if (!empty($in['errors'])) throw new ApiError('הקובץ לא נשמר — ' . count($in['errors']) . ' שגיאות. הטבלה לא השתנתה', 422, ['errors' => array_slice($in['errors'], 0, 200), 'proposals' => $in['proposals'] ?? [], 'warnings' => $in['warnings'] ?? []]);
+        if (!empty($in['errors'])) throw new ApiError('הקובץ לא נשמר — ' . count($in['errors']) . ' שגיאות. הטבלה לא השתנתה', 422, ['errors' => array_slice($in['errors'], 0, 200), 'proposals' => $in['proposals'] ?? [],
+            'field_proposals' => $in['field_proposals'] ?? [], 'option_proposals' => $in['option_proposals'] ?? [], 'warnings' => $in['warnings'] ?? []]);
         return ['plan' => words_plan($in, $state)[0]];
     }
     return words_apply($user, $build, (string)($b['token'] ?? ''), 'words.json');
@@ -1084,12 +1268,13 @@ function words_csv(): never
     header('Content-Disposition: attachment; filename="kol-maroko-words-' . gmdate('Y-m-d') . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF");                    // אקסל מזהה כך שזה UTF-8 (אחרת — ג'יבריש)
-    fputcsv($out, array_values(CSV_COLS), ',', '"', '');
+    $custom = fields_custom();
+    fputcsv($out, array_map('csv_cell', [...array_values(CSV_COLS), ...array_column($custom, 'label')]), ',', '"', '');     // N2: עמודה לכל שדה, אחרי של N1
     $rows = words_rows();
-    $meta = files_meta(array_values(array_unique(array_filter(array_map(fn($w) => file_id($w['audio']), $rows)))));
+    $meta = files_meta(array_values(array_unique(array_filter(array_merge(array_map(fn($w) => file_id($w['audio']), $rows), fields_file_ids($rows, $custom))))));
     foreach ($rows as $w) {
         fputcsv($out, array_map('csv_cell', [$w['id'], $w['word'], lex_plain($w['meaning']), implode('; ', $w['topics']), words_audio_ref((string)$w['audio'], $meta),
-            $w['external_id'], $w['sort_order'], $w['wp_id'] ?? '']), ',', '"', '');
+            $w['external_id'], $w['sort_order'], $w['wp_id'] ?? '', ...array_map(fn($f) => field_cell($f, $w['extra'][$f['key']] ?? null, $meta), $custom)]), ',', '"', '');
     }
     fclose($out);
     exit;
@@ -1124,7 +1309,7 @@ function cp1255_utf8(string $s): string
 }
 
 /** שורות הגיליון ← פריטים למנוע. עמודה שאינה בגיליון — הערך שבטבלה נשמר. שגיאה — עם מספר השורה בגיליון. */
-function words_csv_items(array $rows, array $state): array
+function words_csv_items(array $rows, array $state, array $opt = []): array
 {
     $head = array_map(fn($h) => trim((string)$h), $rows[0] ?? []);
     $col = [];
@@ -1133,6 +1318,24 @@ function words_csv_items(array $rows, array $state): array
     }
     if (!isset($col['word'])) return ['errors' => [['line' => 1, 'col' => 1, 'msg' => 'לא מצאתי עמודה "מילה" בשורה הראשונה. כדאי להתחיל מקובץ שיוצא מכאן (⬇️ אקסל)']]];
     $errors = []; $warnings = []; $items = []; $order = []; $seen = []; $newTopics = [];
+    // N2: עמודות של שדות מותאמים — לפי השם (label) או המפתח; עמודה לא מוכרת — "לא תיובא", עם הצעה ליצור שדה (publisher)
+    $fields = $state['fields'] ?? fields_all();
+    $fcol = []; $fieldProps = []; $create = [];
+    $known = array_merge(array_values(CSV_COLS), array_keys(CSV_COLS));
+    foreach (fields_custom($fields) as $f) {
+        if (($i = array_search($f['label'], $head, true)) !== false || ($i = array_search($f['key'], $head, true)) !== false) $fcol[$f['key']] = [$i, $f];
+    }
+    $used = array_merge(array_values($col), array_column($fcol, 0));
+    foreach ($head as $i => $h) {
+        if ($h === '' || in_array($i, $used, true) || in_array($h, $known, true)) continue;
+        $vals = array_map(fn($r) => csv_uncell(trim((string)($r[$i] ?? ''))), array_slice($rows, 1));
+        $k = field_key_error($h, $fields) === null ? $h : null;
+        $type = field_guess($vals, true);
+        if ($k !== null && in_array($k, $opt['fields'] ?? [], true)) { $f = field_proposed($k, $type); $fcol[$k] = [$i, $f]; $create[] = ['key' => $k, 'type' => $type]; continue; }
+        $warnings[] = ['line' => 1, 'col' => $i + 1, 'msg' => "העמודה \"" . mb_substr($h, 0, 60) . '" לא תיובא — אין שדה כזה' . ($k !== null ? " (אפשר ליצור שדה \"$k\", סוג $type — מפרסם)" : ' (שם עמודה לשדה חדש: מפתח באנגלית, למשל translit)')];
+        if ($k !== null) $fieldProps[] = ['key' => $k, 'type' => $type, 'line' => 1, 'count' => count(array_filter($vals, fn($v) => $v !== ''))];
+    }
+    $allFields = array_merge(array_values(array_filter($fields, fn($f) => $f['col'] !== null)), array_column($fcol, 1));
     $err = function (int $n, string $m) use (&$errors) { $errors[] = ['line' => $n, 'col' => 1, 'msg' => "שורה $n: $m"]; };
     for ($x = 1; $x < count($rows); $x++) {
         $r = $rows[$x];
@@ -1185,10 +1388,27 @@ function words_csv_items(array $rows, array $state): array
             if (!preg_match('/^-?\d{1,12}$/', $so)) { $err($n, "סדר לא תקין \"$so\" (מספר שלם)"); continue; }
             if ($cur) $order[$id] = (int)$so;
         }
+        // N2: ערכי השדות. עמודה שאינה בגיליון — הערך שבטבלה נשמר; image / audio — לקריאה בלבד (כמו ההקלטה)
+        if ($fcol || !$cur) {
+            $extra = $cur['extra'] ?? [];
+            if (!$cur) foreach (fields_custom($fields) as $f) if ($f['def'] !== null) $extra[$f['key']] = $f['def'];
+            foreach ($fcol as $k => [$i, $f]) {
+                if (in_array($f['type'], ['image', 'audio'], true)) continue;
+                $cell = csv_uncell(trim((string)($r[$i] ?? '')));
+                if ($cur && $cell === field_cell($f, $cur['extra'][$k] ?? null, [])) continue;
+                [$val, $e2, , $propose] = field_parse($f, $cell, true);
+                if ($e2) { $err($n, $e2 . ($propose !== null ? ' (הוסיפו אותה ב"מבנה המילה")' : '')); continue 2; }
+                if ($val === null) unset($extra[$k]); else $extra[$k] = $val;
+            }
+            ksort($extra);
+            $o['extra'] = $extra;
+        }
+        if ($miss = fields_required_missing($allFields, $o, $cur)) { $err($n, "\"{$miss['label']}\" הוא שדה חובה — חסר ערך"); continue; }
         $items[] = $o;
     }
     // נושא חדש מאקסל נוצר לפי השם (כמו לפני N1) — ומוצג בתוכנית
-    return ['errors' => $errors, 'warnings' => $warnings, 'items' => $items, 'order' => $order, 'full' => false, 'new_topic_names' => array_keys($newTopics)];
+    return ['errors' => $errors, 'warnings' => $warnings, 'items' => $items, 'order' => $order, 'full' => false, 'new_topic_names' => array_keys($newTopics),
+        'field_proposals' => $fieldProps, 'create_fields' => $create];
 }
 
 /**
@@ -1202,8 +1422,9 @@ function words_csv_import(array $user, array $b): array
     if ($raw === false) throw new ApiError('הקובץ (base64) לא תקין');
     [$rows, $enc] = words_csv_read($raw);
     $replace = ($b['replace_all'] ?? false) === true;
-    $build = function (array $state) use ($rows, $replace) {
-        $in = words_csv_items($rows, $state);
+    $opt = ['fields' => array_values(array_filter(is_array($b['create_fields'] ?? null) ? $b['create_fields'] : [], 'is_string'))];
+    $build = function (array $state) use ($rows, $replace, $opt) {
+        $in = words_csv_items($rows, $state, $opt);
         if ($replace) { $in['full'] = true; $in['replace'] = true; $in['order'] = []; }
         $in['create'] = [];
         foreach ($in['new_topic_names'] ?? [] as $name) $in['create'][] = ['slug' => topic_slug($name, $state['name_slug']), 'name' => $name];
@@ -1695,4 +1916,42 @@ function field_trash_restore(array $user, int $id): string
     words_extra_write($row['key'], $vals);
     $pdo->prepare('DELETE FROM field_trash WHERE id = ?')->execute([$id]);
     return "שדה · {$row['label']} ({$row['key']}) · " . count($vals) . ' ערכים';
+}
+
+/**
+ * שינוי שם של נושאים — ה-slug נשאר (זה התיקון של הפגם: הכפתור, הקישור וה-CSS בעמוד קשורים ל-slug). [slug => [שם ישן, שם חדש]].
+ * כמה בבת אחת (גם החלפה הדדית): השורות דרך שם זמני, והמילים — מעבר אחד עם המפה. בתוך עסקה. מחזיר כמה מילים השתנו.
+ */
+function topics_rename(array $user, array $map): int
+{
+    if (!$map) return 0;
+    $pdo = db();
+    $tmp = $pdo->prepare('UPDATE topics SET name = ? WHERE slug = ?');
+    foreach ($map as $slug => [$from, $to]) $tmp->execute(["\x01$slug", $slug]);
+    foreach ($map as $slug => [$from, $to]) {
+        $chk = $pdo->prepare('SELECT slug FROM topics WHERE name = ?');
+        $chk->execute([$to]);
+        if (($other = $chk->fetchColumn()) !== false) throw new ApiError("כבר יש נושא בשם \"$to\" — למיזוג: \"מזג אל…\"", 409);
+        $tmp->execute([$to, $slug]);
+    }
+    $names = [];
+    foreach ($map as [$from, $to]) $names[$from] = $to;
+    $upd = $pdo->prepare('UPDATE words SET topics = ?, updated_at = ?, updated_by = ? WHERE id = ?');
+    $n = 0;
+    foreach ($pdo->query('SELECT id, topics FROM words')->fetchAll() as $r) {
+        $t = json_decode($r['topics'], true) ?: [];
+        if (!array_intersect($t, array_keys($names))) continue;
+        $t = array_values(array_unique(array_map(fn($x) => $names[$x] ?? $x, $t)));
+        $upd->execute([json_encode($t, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'] ?? '', $r['id']]);
+        $n++;
+    }
+    return $n;
+}
+
+/** צבע, תמונה, מוסתר — לנושא שכבר יש לו שורה (topics_fill). הערכים כבר נבדקו. */
+function topic_attrs(string $slug, array $u): void
+{
+    $set = []; $vals = [];
+    foreach (['color' => 'color', 'image' => 'image', 'hidden' => 'hidden', 'sort_order' => 'sort_order'] as $k => $col) if (array_key_exists($k, $u)) { $set[] = "$col = ?"; $vals[] = is_bool($u[$k]) ? (int)$u[$k] : $u[$k]; }
+    if ($set) db()->prepare('UPDATE topics SET ' . implode(', ', $set) . ' WHERE slug = ?')->execute([...$vals, $slug]);
 }
