@@ -211,11 +211,15 @@ async function refresh(force = false) {
   try {
     const r = await call('conv-events', { id, since: S.lastSeq, force });
     if (!S.conv || S.conv.id !== id) return;
+    const wasRunning = S.conv.status === 'running';
     S.conv = r.conv;
     S.lastSeq = r.last_seq;
     appendEvents(r.events);
     renderConv();
     if (r.sync_error) toast(r.sync_error, 'error');
+    // ריצה שנגמרה עכשיו: בדיקה אחת נוספת מול הפלטפורמה. הודעה שחיכתה בתור מתחילה תור חדש מיד אחרי
+    // הסיום, ובלי הבדיקה הזו הדף היה נעצר על "ממתין לך" בזמן שהסוכן עובד.
+    if (wasRunning && r.conv.status === 'idle' && !force) { S.timer = setTimeout(() => refresh(true), 4000); return; }
   } catch (e) {
     if (e.status === 401 || e.status === 403) { stopPolling(); showBlocked(e); return; }
     toast(e.message, 'error');
