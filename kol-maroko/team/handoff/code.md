@@ -113,3 +113,11 @@
 - בבדיקות: לשונית `.ed-ptabs [data-ptab="glob"]`; הכנה שעוקפת עסקאות — רק לפני תמונת המצב ההתחלתית.
 - **בקשה יוצאת חדשה — רק דרך `font_http`** (או אותו מבנה: רשימת מארחים, https, בלי הפניות, IP נבדק ומוצמד), עם בדיקות ב-tests/cases.
 - ❌ ראו reviews/V9.md.
+
+## מ-M7 (2026-11-12, נרשם בידי בקרה (6))
+- **כל מה שיוצא לאתר — רק דרך `site_call(action, payload|Closure(seq,exp), user, meta)`.** פקודה חדשה = שורה ב-`OUTBOX_ACTIONS` + `OUTBOX_TTL` + טיפול ב-`v2-pull.php` (`kol_maroko_pull_apply`) + ב-`outbox_effect` אם הכלי צריך לדעת שהוחלה.
+- בערוץ המשיכה אין תשובה מיידית: שום מצב "באתר" לפני `applied`; ping = הדופק (`pull_pulse` / `outbox_ping`).
+- התוסף: הסמן (`pull_cursor`) מתקדם רק על פקודה חתומה; מצב התוסף לכלי — `kol_maroko_ping_data()` (מסונן ב-`PULL_STATE_KEYS` — שדה חדש = שורה שם). דיווח שנחסם (429) — ניסיון חוזר בעוד דקה.
+- מטמון: `immutable` רק לפי hash; אחרת `max-age=0` + ETag + `CDN-Cache-Control: no-store`.
+- בדיקות: `tests/plugin/fake-pull.php` (כלי מדומה וזדוני); מקביליות אמיתית = שני שרתי `php -S` על אותה תיקייה (H28). בדיקה שסופרת בקשות — לאפס את מונה הקצב.
+- `publish.js` נטען לפני `app.js`: בלי `h()` בקוד שרץ בטעינה.
