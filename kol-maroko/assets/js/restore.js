@@ -89,7 +89,8 @@ const Restore = (() => {
       h('p', { class: 'hint' }, owner ? 'מחיקה סופית — רק מכאן, ורק בעלים. קובץ שגרסה שמורה מפנה אליו לא נמחק סופית.' : 'מחיקה סופית — רק לבעלים.'),
       ...sec('קבצים', d.files.map(f => row('📄', f.name, `${f.deleted_by || ''} · ${when(f.deleted_at)}`, 'file', f.id, f.name))),
       ...sec('מילים', d.words.map(w => row('📚', w.word, `${w.by} · ${when(w.at)}`, 'word', w.id, w.word))),
-      ...sec('נושאים', d.topics.map(t => row('🏷️', t.op === 'rename' ? `${t.name} → ${t.to}` : `הוסר: ${t.name}`, `${t.words} מילים · ${t.by} · ${when(t.at)}`, 'topic', t.id, t.name))));
+      ...sec('נושאים', d.topics.map(t => row('🏷️', t.op === 'rename' ? `${t.name} → ${t.to}` : t.op === 'merge' ? `מוזג: ${t.name} → ${t.to}` : `הוסר: ${t.name}`, `${t.words} מילים · ${t.by} · ${when(t.at)}`, 'topic', t.id, t.name))),
+      ...sec('שדות', (d.fields || []).map(f => row('🧩', `${f.label} (${f.key})`, `${f.values} ערכים · ${f.by} · ${when(f.at)}`, 'field', f.id, f.label))));
   }
 
   // ── גיבוי ──────────────────────────────────────────────
