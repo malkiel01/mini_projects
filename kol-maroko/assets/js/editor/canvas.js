@@ -132,6 +132,7 @@
           if (text == null) continue;                                       // לא מהפרויקט ("באתר"): נטען מהכתובת שלו
           l.setAttribute('disabled', ''); l.after(mk(text, href));
         }
+        for (const href of this.extraSheets || []) { const text = this.sheets(href); if (text != null) head.append(mk(text, href)); }   // V12: style.css של רכיב שתבנית שלו פתוחה
       } else {
         for (const l of links) l.setAttribute('disabled', '');
         this.styleEl = mk(this.cssSrc, null);

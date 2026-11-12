@@ -77,6 +77,7 @@
       // V7: מוסתר במכשיר הנוכחי · סדר נראה (order) לצד סדר המקור
       if (c.devHidden && c.devHidden.has(n)) { const x = mk('i', 'nv-devhide', ' 🚫 מוסתר במכשיר הזה'); x.dataset.devHidden = '1'; lab.append(x); }
       const ord = this.order ? this.order(n) : null; if (ord) { const x = mk('i', 'nv-order', ' ⇅ ' + ord); x.dataset.order = ord; lab.append(x); }
+      const bd = this.badge ? this.badge(n) : null; if (bd) { const x = mk('i', 'nv-comp', ' ' + bd.icon); x.dataset.comp = bd.state; x.title = bd.title; lab.append(x); }   // V12: ◆ מקושר · ◇ שונה
       if (txt) lab.append(mk('span', 'nv-txt', ' ' + txt.slice(0, 40)));
       const eye = mk('button', 'nv-ic' + (c.hiddenNodes.has(n) ? ' on' : ''), '👁'); eye.type = 'button'; eye.tabIndex = -1; eye.dataset.act = 'hide';
       eye.setAttribute('aria-label', 'הסתרה בעורך בלבד'); eye.title = 'הסתרה בעורך בלבד — הקובץ אינו משתנה (H)'; eye.setAttribute('aria-pressed', String(c.hiddenNodes.has(n)));
