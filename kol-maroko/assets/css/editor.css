@@ -513,3 +513,6 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .tf-rot { position: absolute; z-index: 26; border-radius: 50%; background: #fff; border: 2px solid var(--brand, #36c); display: grid; place-items: center; font-size: 13px; line-height: 1; touch-action: none; pointer-events: auto; cursor: grab; user-select: none; }
 .tf-org { position: absolute; z-index: 26; border-radius: 50%; background: #fff; border: 2px solid #0a8; box-shadow: 0 0 0 2px rgba(0, 0, 0, .25); touch-action: none; pointer-events: auto; cursor: crosshair; }
 @media (pointer: coarse) { .tf-origin { grid-template-columns: repeat(3, 44px); } .tf-origin button { width: 44px; height: 44px; } .fx-layer .btn, .fx-in { min-height: 44px; } }
+@media (pointer: coarse) { .sg-fx button, .sg-fx select, .sg-fx input:not([type=checkbox]):not([type=range]), [data-sec="motion"] button, [data-sec="motion"] select { min-height: 44px; } .sg-fx .sg-swatch, .sg-fx .sg-reset { min-width: 44px; } }
+.sg-fx label.sg-line { justify-content: flex-start; gap: 6px; } .sg-fx input[type=checkbox] { width: auto; height: auto; min-height: 0; flex: none; margin: 0; }
+@media (pointer: coarse) { .sg-fx input[type=checkbox] { width: 24px; height: 24px; } .sg-fx label.sg-line { min-height: 44px; } }

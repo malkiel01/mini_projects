@@ -466,15 +466,19 @@
       /** "של המחלקה": אחד מחלקי הבורר שחל על האלמנט מסתיים במחלקה שלו (.x .hero-title, ולא .x h1 שבאותה רשימה). */
       const ofClass = r => g.KolDetails.splitSel(r.sel).some(part => { let hit = false; try { hit = !!e && e.matches(part); } catch { hit = false; } return hit && hasCls(part); });
       const rules = info.rules.filter(r => writable(r) && !r.off);
-      const mine = rules.filter(r => ofClass(r) && !r.media).sort((a, b) => cmp(rank(b, false), rank(a, false)));
+      // V10: מחלקות של מערכת התנועה (kol-in-*, kol-sc, bg-slides-N…) — כלל שלהן אינו היעד הראשון (ב-css/motion.css הוא משותף)
+      const SYS = /^(kol-in(-[\w-]+)?|kol-sc|is-in|kol-motion-on|kol-slides-[\w-]+|bg-slides-\d+)$/, own = cls.filter(c => !SYS.test(c));
+      const sysOnly = r => !own.some(c => new RegExp('\\.' + c.replace(/[^\w-]/g, '\\$&') + '(?![\\w-])').test(subject(r.sel)));
+      const mine = rules.filter(r => ofClass(r) && !r.media).sort((a, b) => (sysOnly(a) - sysOnly(b)) || cmp(rank(b, false), rank(a, false)));
       const add = t => { const key = t.kind + '|' + (t.path || '') + '|' + (t.line || '') + '|' + t.sel; if (seen.has(key)) return; seen.add(key); out.push(t); };
       const ruleT = (r, why) => ({ kind: 'rule', sel: r.sel, path: r.path, line: r.line, media: r.media, r, why, count: this.count(r.sel) });
-      for (const r of mine) add(ruleT(r, 'class'));
-      if (!mine.length) {
+      for (const r of mine) if (!sysOnly(r)) add(ruleT(r, 'class'));
+      if (!mine.some(r => !sysOnly(r))) {
         const page = this.pagePath();
-        if (cls.length && page) add({ kind: 'new', sel: '.' + cls[0], path: page, why: 'class', count: this.count('.' + cls[0]) });
+        if (own.length && page) add({ kind: 'new', sel: '.' + own[0], path: page, why: 'class', count: this.count('.' + own[0]) });
         else if (page) add({ kind: 'newclass', sel: '.' + this.suggest(n), name: this.suggest(n), path: page, why: 'class', count: 1 });
       }
+      for (const r of mine) if (sysOnly(r)) add(ruleT(r, 'class'));
       for (const r of rules) if (!mine.includes(r)) add(ruleT(r, r.media ? 'media' : 'source'));
       add({ kind: 'inline', sel: 'style=""', path: this.file().path, why: 'inline', count: 1 });
       return out;

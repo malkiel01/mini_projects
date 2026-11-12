@@ -14,6 +14,7 @@
   const MOTION_CSS = 'css/motion.css', MOTION_JS = 'js/kol-motion.js';
   const clsOf = n => ((K().attrOf(n, 'class') || {}).value || '').split(/\s+/).filter(Boolean);
   const r2 = x => Math.round(x * 100) / 100;
+  const tick = () => new Promise(r => setTimeout(r, 80));
   const RANGES = [['cover 0%', 'נכנס מלמטה'], ['entry 100%', 'נכנס כולו'], ['contain 0%', 'כולו במסך'], ['cover 50%', 'באמצע המסך'], ['exit 0%', 'מתחיל לצאת'], ['cover 100%', 'יצא למעלה']];
 
   class Motion {
@@ -247,6 +248,7 @@
     /** <video class="bg-video"> כילד ראשון + .bg-video ב-CSS + position:relative לרובריקה; "רק במחשב" — display:none ב-@media של הטלפון. */
     async addVideo(n, desk) {
       const src = await this.pick('video', 'וידאו לרקע'); if (!src) return;
+      await tick();   // הדיאלוג הקודם נסגר (close אסינכרוני) — אחרת הבורר הבא נסגר איתו
       const poster = await this.pick('image', 'תמונת פתיחה (לא חובה — ביטול: בלי)');
       const esc = g.KolText.escAttr, path = K().pathOf(n), html = this.html(), t0 = this.txCount(), cssPath = this.pagePath(), cssDoc = cssPath && this.docOf(cssPath);
       try { g.KolBg.checkUrl(src); if (poster) g.KolBg.checkUrl(poster); } catch (e) { this.note(e.message, true); return; }
@@ -265,7 +267,7 @@
     }
     slideHtml(p) { return '<div class="bg-slide" style="background-image: ' + g.KolText.escAttr(g.KolBg.urlCss(this.rel(p), "'")) + '"></div>'; }
     async slidesNew(n) {
-      const a = await this.pick('image', 'מצגת · תמונה 1'); if (!a) return; const b = await this.pick('image', 'מצגת · תמונה 2'); if (!b) return;
+      const a = await this.pick('image', 'מצגת · תמונה 1'); if (!a) return; await tick(); const b = await this.pick('image', 'מצגת · תמונה 2'); if (!b) return;
       const path = K().pathOf(n), html = this.html(), t0 = this.txCount();
       if (!await this.ensureCss(['slides:2:fade:0'])) return;
       const ops = [() => { const m = this.c.m, at = K().byPath(m, path); return [{ doc: html, patches: K().html.insert(m, at, 0, '<div class="bg-slides bg-slides-2 kol-slides-fade-2" style="--kol-slide-d: 5s" aria-hidden="true">' + this.slideHtml(a) + this.slideHtml(b) + '</div>').patches }]; }];
@@ -342,7 +344,8 @@
   }
   /** kol.json: "system" — מוסיף את js/kol-motion.js (ואת js/kol-data.js, כשהמפתח לא היה — כדי שלא ייעלם מהרשימה). תיקון טקסט, לא כתיבה מחדש. */
   function planSystem(text, withData) {
-    const j = JSON.parse(text), entry = '"js/kol-motion.js": { "version": "1.0.0", "modified": false }';
+    let j; try { j = JSON.parse(text); } catch { throw new (K().SrcError)('kol.json אינו JSON תקין — מתקנים אותו בקוד, ואז מוסיפים את js/kol-motion.js', 'broken'); }
+    const entry = '"js/kol-motion.js": { "version": "1.0.0", "modified": false }';
     if (j.system && typeof j.system === 'object') { const m = /"system"\s*:\s*\{/.exec(text); const at = m.index + m[0].length, empty = !Object.keys(j.system).length; return [{ from: at, to: at, text: ' ' + entry + (empty ? ' ' : ',') }]; }
     const end = text.lastIndexOf('}'); let b = end; while (b > 0 && /\s/.test(text[b - 1])) b--;
     const ind = (/\n([ \t]+)"/.exec(text) || [, '  '])[1];

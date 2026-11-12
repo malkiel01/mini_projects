@@ -22,3 +22,16 @@
   ופינות עם נעילה, צל קופסה / טקסט בשכבות (⠿, ☀ + גלגלת), קו מתאר, ידיות רדיוס (Alt — פינה אחת)), `motion.js`, `canvas.js`
   (אנימציות מושהות — `animation: none` של העורך; `setPlay`), `design.js` (רישום), `style.js` (border / radius / outline ב-covered,
   logical, lineParse), 12 צורות ב-`assets/editor-shapes/`, `assets/project-seed/kol-motion.js`. v10.cjs חלק 1 — 19/19.
+- 2026-11-12 · יחידה 2: אפקטים (שקיפות, 9 מסננים במחוונים + צל-טיפה, פילטר רקע, מיזוג, isolation), מסיכה (8 מוכנות / מהספרייה;
+  `mask-*` + `-webkit-mask-*` בזוג), מפריד צורה (12 צורות; HTML + `.shape` ב-page.css + position:relative — עסקה אחת; נבחר מיד;
+  צבע / גובה / רוחב / היפוך / מעל התוכן / החלפת צורה).
+- 2026-11-12 · יחידה 3: `motion.js` — transform בפאנל + ⟳ (Shift 15°) + ⊕ נקודת ציר (נצמדת) + Ctrl על ידית פינה של V6 = scale (מאזין
+  capture על השכבה — layout.js לא נגוע); מעבר עם עורך cubic-bezier; כניסה (14) — motion.css נוצר ומקושר, `kol-motion.js` רק ב"כשנראה"
+  / עכבר (kol.json system + `<script defer>`), ↻ הצג שוב; גלילה (parallax, שקיפות, טשטוש, הזזה, סיבוב, קנה מידה, טווח, גלילה
+  מדומה); נדבק; וידאו ברקע (רק במחשב ← display:none ב-@media של הטלפון); מצגת (2–10, דהייה / החלקה / קן ברנס). ▶ בסרגל.
+- 2026-11-12 · תקלות שנמצאו בבדיקה ותוקנו: (1) אחרי "kol-in-fade-up" היעד הראשון בבורר הפך ל-`.kol-in-fade-up` שב-motion.css (מדורג
+  אחרון) — כל כתיבה הלכה לכלל המשותף. `Styler.targets`: מחלקות התנועה (kol-in*, kol-sc, bg-slides-N…) — אחרונות. (2) בורר הספרייה
+  פעמיים ברצף (וידאו ← תמונת פתיחה) — ה-close האסינכרוני של הראשון סגר את השני מיד; המתנה קצרה ביניהם. (3) גלגלת רצופה על ☀ —
+  כל צעד קרא את הקובץ שעוד לא נכתב. (4) "מקור הערך" של צד מסגרת לא ראה את `border:` — covered('border') כולל את הרכיבים.
+- 2026-11-12 · בדיקות: `tests/editor/effects.mjs` 29 (K2 לכל כתיבה, הזרקה כולל בתוך @keyframes) · `v10.cjs` 71 · tests/editor/* ·
+  run.php 336 · check-apps · sync --check.
