@@ -1,0 +1,15 @@
+# כותרות האבטחה (פרוסה C1, lib/csp.php) נשלחות מ-PHP: השער של הפלטפורמה מגיש קבצים סטטיים בהפניה פנימית
+# ל-platform/gate.php, ו-Header set מכאן לא היה חל עליהם. לכן הסטודיו מוגש מ-index.php, ו-index.html — רק דרכו.
+DirectoryIndex index.php
+
+# index.html — גוף הדף של index.php ושל editor.php (readfile). כתובת ישירה אליו הייתה מגישה את הסטודיו בלי ה-CSP.
+# (בתיקייה הזו בלבד: preview/ מוגשת כולה מ-preview/index.php, וגם שם הבלוק מתיר במפורש.)
+<Files "index.html">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</Files>
