@@ -77,3 +77,8 @@
 - ידית שכותבת לאלמנט אחד מתוך כלל משותף: `layout.ownTarget(n, taken)` → `newclass`.
 - ערך כתוב מחוץ לפאנל: `layout.decl(n, phys)`. `D.curDeclared` משתמש במטמון של הפאנל, שבטלפון סגור ולכן אינו מתעדכן.
 - `v6.cjs`: ה-390 נפתח רק אחרי שהדסקטופ שמר את הביטול — השמירה האוטומטית משותפת לשני ההקשרים.
+
+## מ-P1 (2026-11-12, נרשם בידי בקרה (5))
+- **פעולה חדשה = שורה ב-`ACTION_ROLES` (`lib/auth.php`)**, בלי `require_role` ב-api.php. בלי שורה — 404, ו-`tests/cases/21-roles.php` נכשלת.
+- זהות — רק דרך `lib/login.php`. התפקידים: `content_editor` / `editor` / `publisher` / `page_owner` / `site_owner` (**'owner' כבר לא קיים**).
+- בדיקת דפדפן חדשה — הזהות גם בעוגייה `kol_test_user` (בקשת מדיה בלי זהות מוחקת את ה-session).
