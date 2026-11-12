@@ -4,6 +4,7 @@
  * עמוד המילון (הזריעה של F3) — העמודה המיובאת היא display:contents, והרכיב התכווץ לרוחב התוכן (~717 מתוך 1580).
  * ב-1920 וב-1280: המסגרת + הפאנל = כל הרוחב, המסגרת עד תחתית המסך, והרכיב שבתוכה ממלא אותה.
  * "טלפון" — 390 ממורכז; טלפון אמיתי (390×844) — בלי פאנל, המסגרת לכל הרוחב. צילומים ל-dev/l1/.
+ * L1b: פלט הבנייה של הפרסום (build_version, דרך l1-build.php) — ב-1920, 1280 ו-390 המילון ממלא את השורה.
  */
 'use strict';
 const { chromium } = require('playwright');
@@ -73,6 +74,18 @@ const until = async (fn, ms = 10000) => { const t = Date.now(); for (;;) { try {
     ok(i.w >= i.iw - 2, `הרכיב ממלא את המסגרת (${i.w} מתוך ${i.iw})`);
     await page.screenshot({ path: path.join(SHOTS, 'studio-390.png') });
     await ctx.close();
+
+    console.log('\n── פלט הבנייה (הפרסום) ──');
+    const built = path.join(data, 'build.html');
+    execFileSync('php', [path.join(__dirname, 'l1-build.php'), data, built]);
+    for (const [W, H] of [[1920, 1080], [1280, 800], [390, 844]]) {
+      const pg = await browser.newPage({ viewport: { width: W, height: H } });
+      await pg.goto('file://' + built);
+      const m = await pg.evaluate(() => { const w = s => Math.round(document.querySelector(s).getBoundingClientRect().width); return { row: w('.kol-row'), w: w('.kol-w'), lex: w('.kadisha-lexicon-page') }; });
+      ok(m.row >= W - 2 && m.w >= m.row - 2 && m.lex >= m.row - 2, `${W}: המילון ממלא את השורה (${m.lex} / ${m.w} מתוך ${m.row})`);
+      await pg.screenshot({ path: path.join(SHOTS, `build-${W}.png`) });
+      await pg.close();
+    }
   } catch (e) { failed++; console.log('❌ חריגה: ' + (e.stack || e)); }
   finally { if (browser) await browser.close(); php.kill(); fs.rmSync(data, { recursive: true, force: true }); }
   console.log(`\n${ran - failed}/${ran} עברו`);
