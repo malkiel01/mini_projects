@@ -85,6 +85,15 @@ function pf_copy(array $user, array $b): array
 {
     pf_guard($user);
     $to = pf_path($b['to'] ?? null);
+    if (pf_is_words($b)) {                     // N1: שכפול של הקובץ של טבלת המילים = קובץ JSON רגיל (עותק סטטי), לא קשור לטבלה
+        $r = pf_tx(function () use ($to, $user) {
+            pf_free($to);
+            if (($n = pf_count()) >= ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $n + 1, $max);
+            return pf_insert($to, 'file', words_json(), $user, null, 'עותק סטטי של טבלת המילים — אינו מתעדכן ואינו מעדכן');
+        });
+        audit_as($user, 'pf_copy', "טבלת המילים ← $to (עותק סטטי)");
+        return ['copied' => ['from' => pf_words_path(), 'to' => $to, 'count' => 1], 'file' => pf_public($r), 'static_copy' => true];
+    }
     [$from, $first, $n] = pf_tx(function () use ($b, $to, $user) {
         [$from, $rows, $dir] = pf_target($b);
         if ($dir && str_starts_with($to . '/', $from . '/')) throw new ApiError('אי אפשר לשכפל תיקייה לתוך עצמה');
@@ -458,6 +467,7 @@ function pf_zip(array $user): never
         $z->setCompressionName($r['path'], preg_match('/\.(png|jpe?g|gif|webp|avif|mp3|m4a|aac|ogg|mp4|webm|woff2?|zip|gz)$/i', $r['path']) ? ZipArchive::CM_STORE : ZipArchive::CM_DEFLATE);
         $n++;
     }
+    if (($wp = pf_words_path()) !== null && !pf_by_path($wp)) { $z->addFromString($wp, words_json()); $n++; }   // N1: הקובץ של טבלת המילים
     if (!$z->close() || !$n) file_put_contents($tmp, "PK\x05\x06" . str_repeat("\0", 18));   // פרויקט ריק — ZIP ריק תקין
     audit_as($user, 'pf_zip', "$n פריטים");
     $name = 'kol-project-' . gmdate('Y-m-d') . '.zip';
@@ -559,6 +569,22 @@ function pf_zip_import(array $user, array $q, string $raw): array
         $mediaSha = array_column($st->fetchAll(), 'sha256', 'id');
     }
     $add = []; $replace = []; $same = []; $errors = [];
+    // N1: הקובץ של טבלת המילים (לפי kol.json שב-ZIP, אחרת לפי זה שבפרויקט) אינו נשמר כקובץ — עובר למנוע של הטבלה
+    $kz = isset($zip['files']['kol.json']) ? json_decode($zip['files']['kol.json'], true) : null;
+    $wd = is_array($kz) ? (is_array($kz['data'] ?? null) ? ($kz['data']['words'] ?? null) : null) : false;
+    try { $wpath = $wd === false ? pf_words_path() : (is_array($wd) && ($wd['source'] ?? 'words') === 'words' ? pf_path($wd['file'] ?? 'data/words.json') : null); } catch (ApiError) { $wpath = null; }
+    $words = null;
+    if ($wpath !== null && isset($zip['files'][$wpath]) && !isset($rows[$wpath])) {
+        $wb = $zip['files'][$wpath];
+        unset($zip['files'][$wpath]);
+        $here = pf_words_path() === $wpath;
+        if ($wb === words_json()) $here ? $same[] = $wpath : $add[] = $wpath;
+        else {
+            try { $words = words_file_save($user, $wb, ['create_topics' => is_array($q['create_topics'] ?? null) ? $q['create_topics'] : []])['plan'] + ['path' => $wpath]; }
+            catch (ApiError $e) { $errors[] = "\"$wpath\" (טבלת המילים) — " . $e->getMessage() . ': ' . implode(' · ', array_map(fn($x) => "שורה {$x['line']}: {$x['msg']}", array_slice($e->extra['errors'] ?? [], 0, 3))); }
+            if ($words) $here ? $replace[$wpath] = ['words' => true] : $add[] = $wpath;
+        }
+    }
     foreach ($zip['files'] as $path => $bytes) {
         $sha = hash('sha256', $bytes);
         $r = $rows[$path] ?? null;
@@ -582,13 +608,13 @@ function pf_zip_import(array $user, array $q, string $raw): array
     $keep = array_values(array_filter(array_keys($rows), fn($p) => !isset($inZip[$p]) && $rows[$p]['kind'] !== 'dir'));
     $big = array_values(array_filter($zip['big'], fn($b) => !in_array($b['path'], $same, true)));
     sort($add); ksort($replace); sort($same); sort($keep);
-    $token = hash('sha256', json_encode([$add, array_map(fn($r) => [$r['id'], $r['rev']], $replace), $newDirs,
-        array_map(fn($p) => hash('sha256', $zip['files'][$p]), array_merge($add, array_keys($replace)))]));
+    $token = hash('sha256', json_encode([$add, array_map(fn($r) => [$r['id'] ?? 'words', $r['rev'] ?? ''], $replace), $newDirs,
+        array_map(fn($p) => hash('sha256', $zip['files'][$p] ?? ''), array_merge($add, array_keys($replace))), $words['token'] ?? null]));
     $cap = fn(array $a) => array_slice(array_values($a), 0, PF_ZIP_LIST);
     $plan = ['add' => $cap($add), 'replace' => $cap(array_keys($replace)), 'same' => $cap($same), 'keep' => $cap($keep), 'dirs' => $cap($newDirs),
         'skipped' => $cap($zip['skipped']), 'big' => $big, 'errors' => $errors,
         'counts' => ['add' => count($add), 'replace' => count($replace), 'same' => count($same), 'keep' => count($keep), 'dirs' => count($newDirs), 'skipped' => count($zip['skipped']), 'big' => count($big)],
-        'token' => $token, 'limit' => ['text' => pf_limit('text'), 'who' => PF_WHO_CHANGES]];
+        'token' => $token, 'limit' => ['text' => pf_limit('text'), 'who' => PF_WHO_CHANGES], 'words' => $words];
     if (empty($q['apply'])) return ['plan' => $plan];
 
     pf_guard($user);
@@ -597,6 +623,10 @@ function pf_zip_import(array $user, array $q, string $raw): array
     if (($c = pf_count()) + count($add) > ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $c + count($add), $max);
     $snap = null;
     if ($replace) { require_once __DIR__ . '/restore.php'; $snap = snapshot_create($user, 'לפני ייבוא ZIP'); }
+    // N1: קודם הטבלה (אותו מנוע, אותו אימות, עסקה משלו ונקודת שחזור) — ואז הקבצים
+    $wdone = $words ? words_file_save($user, $wb, ['apply' => true, 'token' => $words['token'], 'create_topics' => is_array($q['create_topics'] ?? null) ? $q['create_topics'] : []])['done'] : null;
+    $add = array_values(array_filter($add, fn($p) => $p !== $wpath));
+    unset($replace[$wpath]);
     pf_tx(function () use ($add, $replace, $newDirs, $zip, $user) {
         foreach ($newDirs as $d) pf_insert($d, 'dir', '', $user);
         foreach ($add as $p) { pf_free($p); pf_insert($p, 'file', $zip['files'][$p], $user, null, 'ייבוא ZIP'); }
@@ -607,5 +637,5 @@ function pf_zip_import(array $user, array $q, string $raw): array
         }
     });
     audit_as($user, 'pf_zip_import', count($add) . ' נוספו · ' . count($replace) . ' הוחלפו');
-    return ['plan' => $plan, 'done' => ['add' => count($add), 'replace' => count($replace), 'dirs' => count($newDirs)], 'snapshot' => $snap];
+    return ['plan' => $plan, 'done' => ['add' => count($add), 'replace' => count($replace), 'dirs' => count($newDirs), 'words' => $wdone], 'snapshot' => $snap];
 }
