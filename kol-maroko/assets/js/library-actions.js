@@ -290,7 +290,7 @@ const LibActions = (() => {
   function trashView(el) {
     const T = L().D.trash || [];
     el.replaceChildren(
-      h('p', { class: 'hint' }, 'הקלטות שנמחקו. "שחזור" מחזיר את ההקלטה, ואם המילה עדיין בלי הקלטה — גם את החיבור אליה.', L().isOwner ? ' מחיקה סופית — רק כאן, באישור מפורש.' : ' מחיקה סופית — לבעל העמוד.'),
+      h('p', { class: 'hint' }, 'הקלטות שנמחקו. "שחזור" מחזיר את ההקלטה, ואם המילה עדיין בלי הקלטה — גם את החיבור אליה.', L().pageOwner ? ' מחיקה סופית — רק כאן, באישור מפורש.' : ' מחיקה סופית — לבעל העמוד.'),
       T.length ? h('ul', { class: 'list lib-trash' }, T.map(t => h('li', { class: 'lib-ver' },
         h('div', {}, h('b', {}, t.name), t.word_id ? (t.list_label ? ` · מ${t.list_label} #${t.word_id}${t.word ? ' ' + t.word : ' (נמחק)'} · ${t.field_label}`
           : ` · מהמילה #${t.word_id}${t.word ? ' ' + t.word : ' (נמחקה)'}${t.primary === false ? ' · ' + t.field_label : ''}`) : ' · לא הייתה מחוברת',
@@ -301,7 +301,7 @@ const LibActions = (() => {
             try { const res = await api('rec_restore', { id: t.rec }); await L().reload(true); toast(res.note || (res.word_id ? `שוחזרה — וחוברה שוב ל-#${res.word_id}${t.primary === false ? ' · ' + t.field_label : ''}` : 'שוחזרה')); }
             catch (e) { toast(e.message, true); }
           } }, '♻️ שחזור'),
-          L().isOwner ? h('button', { type: 'button', class: 'btn ghost sm danger', onclick: async () => {
+          L().pageOwner ? h('button', { type: 'button', class: 'btn ghost sm danger', onclick: async () => {
             if (!await ask(`למחוק לצמיתות את «${t.name}»?`, h('p', {}, 'הקובץ והגרסאות הקודמות שלו יימחקו מהשרת (אלא אם משהו אחר עדיין משתמש בהם). אי אפשר לבטל. ההקלטה שבאתר אינה נמחקת.'),
               'מחיקה סופית', { danger: true, check: 'אני מבין שזה סופי' })) return;
             try { const res = await api('rec_purge', { id: t.rec, confirm: true }); await L().reload(true); toast(`נמחקה לצמיתות${res.freed ? ' · התפנו ' + mb(res.freed) : ''}`); }
@@ -362,7 +362,7 @@ const LibActions = (() => {
     const v = L().D.versions;
     if (!v?.count) return null;
     return h('p', { class: 'hint lib-vline', style: 'margin:0' }, `🕘 גרסאות קודמות: ${L().num(v.count)} · ${mb(v.bytes)} מתוך תקרת הדיסק`,
-      L().isOwner ? h('button', { type: 'button', class: 'btn ghost sm', onclick: clean }, 'נקה גרסאות ישנות מ-…') : null);
+      L().pageOwner ? h('button', { type: 'button', class: 'btn ghost sm', onclick: clean }, 'נקה גרסאות ישנות מ-…') : null);
   }
   async function clean() {
     const d = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);

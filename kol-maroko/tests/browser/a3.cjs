@@ -15,6 +15,7 @@ const fs = require('fs'), os = require('os'), path = require('path'), net = requ
 const ROOT = path.resolve(__dirname, '..', '..');
 const OWNER = { sub: 'u-owner', name: 'Owner Test', email: 'owner@example.test', email_verified: true, platform_admin: true };
 const EDITOR = { sub: 'u-editor', name: 'Editor Test', email: 'editor@example.test', email_verified: true };
+const POWN = { sub: 'u-pown', name: 'Page Owner Test', email: 'pown@example.test', email_verified: true };   // T1: בעל העמוד (לא בעל האתר)
 let failed = 0, ran = 0;
 const ok = (cond, what, got) => { ran++; if (cond) console.log('✅ ' + what); else { failed++; console.log('❌ ' + what + (got !== undefined ? '\n   התקבל: ' + JSON.stringify(got).slice(0, 600) : '')); } };
 const freePort = () => new Promise(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
@@ -323,6 +324,19 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     ok(await ep.locator('.lib-trash button', { hasText: 'מחיקה סופית' }).count() === 0 && /לבעל העמוד/.test(await ep.innerText('#main')), 'עורך: אין "מחיקה סופית" בסל');
     ok(await ep.locator('.lib-vline button').count() === 0, 'עורך: אין "נקה גרסאות"');
     await ectx.close();
+
+    // ── 14b. T1: בעל העמוד — rec_purge ו-rec_versions_clean הן page_owner ב-ACTION_ROLES, ולכן הכפתורים מוצגים לו ──
+    const octx = await mk(1280, 900, POWN), op = await octx.newPage();
+    op.on('pageerror', e => errors.push(e.message));
+    await openLib(op);
+    ok((await call(op, 'me')).user?.role === 'page_owner', 'בעל העמוד: התפקיד page_owner');
+    await op.locator('.lib-stat', { hasText: 'בסל' }).click();
+    await op.waitForSelector('.lib-trash');
+    ok(await op.locator('.lib-trash button', { hasText: 'מחיקה סופית' }).count() >= 1 && !/לבעל העמוד\./.test(await op.innerText('#main')), 'בעל העמוד: "מחיקה סופית" בסל — כמו ההרשאה בשרת');
+    await filter(op, 'מצב', '');
+    ok(await op.locator('.lib-vline button', { hasText: 'נקה גרסאות ישנות' }).count() === 1, 'בעל העמוד: "נקה גרסאות ישנות מ-…"');
+    ok(await op.locator('.lf-panel').count() === 0, 'בעל העמוד: בלי "הבאה מהאתר" (של בעל האתר)');
+    await octx.close();
 
     // ── 15. טלפון 390px ──
     const pctx = await mk(390, 780), pp = await pctx.newPage();

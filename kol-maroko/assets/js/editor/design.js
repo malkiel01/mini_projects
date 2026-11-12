@@ -82,7 +82,7 @@
       const n = this.n, c = this.canvas;
       this.unpreview?.();
       if (!n || !c.m) { this.host.replaceChildren(h('p', { class: 'hint' }, 'בוחרים אלמנט — בקנבס או ב-Navigator — ומשנים כאן את ' + (this.mode === 'adv' ? 'המרווחים שלו.' : 'הגופן והצבע שלו.'))); return; }
-      if (!c.elOf(n) || c.visual(n) === 'nonvisual') { this.host.replaceChildren(h('p', { class: 'hint' }, 'לאלמנט הזה אין מראה בעמוד (ראש העמוד / סקריפט).')); return; }
+      if (!c.elOf(n) || c.visual(n) === 'nonvisual') { this.host.replaceChildren(h('p', { class: 'hint' }, 'לאלמנט הזה אין מראה בעמוד (ראש העמוד / סקריפט / שדה מוסתר).')); return; }
       const scroll = this.host.scrollTop;
       this.info = this.styler.info(n); this.list = this.styler.targets(n, this.info); this.t0 = this.target(n, this.list); this.t = this.styler.dev(this.t0);   // V7: במכשיר — אותו בורר בתוך @media
       const kids = [this.drawTarget(n)];

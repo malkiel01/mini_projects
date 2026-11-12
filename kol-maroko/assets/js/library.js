@@ -17,7 +17,7 @@ const Library = (() => {
   const SIZES = { '': 'כל הגדלים', s: 'עד 50KB', m: '50KB–1MB', l: 'מעל 1MB' };
   const SORTS = { id: 'לפי מזהה', ab: 'לפי א"ב', state: 'לפי מצב' };
   const ORDER = { tool: 0, site: 1, none: 2 };
-  let D = null, host = null, isOwner = false;
+  let D = null, host = null, isOwner = false, pageOwner = false;   // isOwner — בעל האתר; pageOwner — בעל העמוד ומעלה (T1)
   let tab = '', q = '', st = '', topic = '', sort = 'id', shown = PAGE, durF = '', sizeF = '', fieldF = '';
   const chosen = new Set();                   // A3: הבחירה המרובה (מפתחות שורה)
   let selMode = false;                     // בטלפון — אחרי לחיצה ארוכה
@@ -449,10 +449,12 @@ const Library = (() => {
   }
 
   /** אחרי הבאה — הנתונים מחדש, בלי לאבד את מקום הגלילה. */
+  let reloadSeq = 0;               // T1: רק התשובה האחרונה נכנסת — תשובה ישנה שמגיעה אחרי חדשה (עומס) לא מחזירה מצב קודם
   async function reload(loud = false) {
     if (!host?.isConnected || location.hash !== '#/files') return;
-    try { const keep = shown; setD(await api('library')); shown = keep; if (tab === 'audio') render(); }
-    catch (e) { if (loud) toast(e.message, true); /* נשאר המצב הקודם */ }
+    const my = ++reloadSeq;
+    try { const keep = shown, d = await api('library'); if (my !== reloadSeq) return; setD(d); shown = keep; if (tab === 'audio') render(); }
+    catch (e) { if (loud && my === reloadSeq) toast(e.message, true); /* נשאר המצב הקודם */ }
   }
 
   function imagesView(box) {
@@ -494,8 +496,9 @@ const Library = (() => {
     else Media.view(box, isOwner);
   }
 
-  async function view(el, owner) {
-    host = el; isOwner = owner;
+  /** owner — בעל האתר (הבאה מהאתר, תקרת דיסק); page — בעל העמוד ומעלה (מחיקה סופית, ניקוי גרסאות — page_owner ב-ACTION_ROLES). */
+  async function view(el, owner, page = owner) {
+    host = el; isOwner = owner; pageOwner = page || owner;
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
     try { setD(await api('library')); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     // ברירת המחדל: "הקלטות" כשיש הקלטות
@@ -512,11 +515,11 @@ const Library = (() => {
   }
 
   /** מ-📚 מילים: "הצג בספרייה". */
-  function show(id) { pending = id; if (location.hash === '#/files') view(host || main, isOwner); else location.hash = '#/files'; }
+  function show(id) { pending = id; if (location.hash === '#/files') view(host || main, isOwner, pageOwner); else location.hash = '#/files'; }
 
   /** A3 — מה ש-library-actions.js צריך מבפנים. */
   const ctx = {
-    get D() { return D; }, get isOwner() { return isOwner; }, byId, safeSrc, reload, clearSel, play, stop, redraw, dur, clock, date, num,
+    get D() { return D; }, get isOwner() { return isOwner; }, get pageOwner() { return pageOwner; }, byId, safeSrc, reload, clearSel, play, stop, redraw, dur, clock, date, num,
     widOf, multi, fieldOf, primaryKey, slotRow, get fieldF() { return fieldF; },
     replace, focusTrash: () => { st = 'trash'; render(); }, titleOf: id => items.get(id)?.querySelector('.lib-title'),
     stoppedIf: id => { if (P.id === id) stop(); },

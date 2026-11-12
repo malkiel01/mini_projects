@@ -84,7 +84,7 @@ const ACTION_ROLES = [
     // ── בעל האתר: החיבור, המפסק, המכסות, המפתחות, הסודות, מסך המפתח, DevLoop (08 §4)
     'owner_set' => 'site_owner', 'publish_decide' => 'site_owner',
     'disk_cap' => 'site_owner', 'publish_settings' => 'site_owner', 'key_rotate' => 'site_owner', 'key_activate' => 'site_owner', 'site_set' => 'site_owner',
-    'import_run' => 'site_owner', 'import_info' => 'site_owner', 'audio_import' => 'site_owner', 'mount' => 'site_owner', 'mount_set' => 'site_owner',
+    'import_run' => 'site_owner', 'import_info' => 'site_owner', 'audio_import' => 'site_owner', 'mount' => 'site_owner', 'mount_set' => 'site_owner', 'plugin_zip' => 'site_owner',
     'rec_status' => 'site_owner', 'rec_fetch_plan' => 'site_owner', 'rec_scan_start' => 'site_owner', 'rec_scan_step' => 'site_owner',
     'rec_fetch_start' => 'site_owner', 'rec_fetch_step' => 'site_owner', 'rec_job_op' => 'site_owner', 'rec_settings_set' => 'site_owner',
     'cutover_evidence' => 'site_owner', 'cutover_evidence_revoke' => 'site_owner', 'cutover_snapshot' => 'site_owner', 'cutover_ready' => 'site_owner',

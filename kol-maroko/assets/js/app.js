@@ -13,7 +13,7 @@ const ACTIONS = {
   backup: '💾 הוריד גיבוי מלא', version_to_tool: '↩️ החזיר את הכלי לגרסה', topic_rename: '🏷️ שינה שם של נושא',
   agent_create: '🤖 יצר כניסה לצ\'אט', agent_revoke: '🤖 ביטל כניסה לצ\'אט', words_csv: '📊 עדכן מילים מאקסל', topic_rename: '🏷️ שינה שם של נושא', topic_delete: '🏷️ הסיר נושא',
   key_rotate: '🔑 יצר מפתח חדש', key_activate: '🔑 הפעיל מפתח חדש', site_set: '🔗 שינה כתובת אתר',
-  person_invite: '✉️ הזמין עוזר', person_invite_failed: '⚠️ הזמנה ממתינה', owner_set: '⚙️ שינה הגדרה של בעל האתר', pkg_publish_pending: '⏳ ביקש לפרסם',
+  person_invite: '✉️ הזמין עוזר', person_invite_failed: '⚠️ הזמנה ממתינה', owner_set: '⚙️ שינה הגדרה של בעל האתר', plugin_zip: '⬇️ הוריד את התוסף', pkg_publish_pending: '⏳ ביקש לפרסם',
   pkg_publish_approved: '✅ אישר פרסום', pkg_publish_rejected: '✋ דחה פרסום', login: '🔑 נכנס', member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
 };
 
@@ -116,7 +116,7 @@ function route() {
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
   if (cur.id === 'inbox') return Inbox.view(main);                    // M5
-  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role)), files: () => Library.view(main, state.user.role === 'site_owner'),
+  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role)), files: () => Library.view(main, state.user.role === 'site_owner', RANK[state.user.role] >= RANK.page_owner),
     publish: () => Publish.view(main, legacyRole(state.user.role)), settings: () => People.owner(main), members: () => People.view(main), log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());

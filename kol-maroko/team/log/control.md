@@ -137,3 +137,4 @@
 - 2026-11-12 16:42 UTC — T13 שלב ב' (אופן הצבה) נכשל: Cloudflare 403 (מזהה 85d24df401) על POST ל-/wp-json/kol-maroko/v1/. מטלות פתחו T15 לפי docs/cloudflare.md — כיוון מאושר. מסקנה: שום שליחה מהאפליקציה לאתר (v2) לא הגיעה עד היום; חוסם את M3/M4 באתר.
 - 2026-11-12 16:50 UTC — **בקרה (5) ב-451K — מסירה.** STATE "למסירה" נכתב מחדש. נפתחה **בקרה (6)** `session_018g4NYFoe4n9RX5DwKoREdJ` — השעון יועבר על ידה. בקרה (5) מפסיקה לפעול.
 - 2026-11-12 16:52 UTC — **בקרה (6)** `session_018g4NYFoe4n9RX5DwKoREdJ` קיבלה. שעון חדש `trig_01AJHG5SXM2b5mbHdpJgL6ks` (דקה 48); הישן הושבת. sessions.json ו-.claude/teams/STATE.md עודכנו.
+- 2026-11-12 17:12 UTC — **T1 #1497 מוזגה** → 2689c18 (ביקורת `reviews/T1.md`: run 326, דפדפן ×2 ירוק, צילום 1920 בעין). `deploy.yml`: הוסרה ההחרגה של `/kol-maroko/wordpress-plugin/` (נדרשת לכפתור ההורדה; .htaccess + ABSPATH). V7 #1500 — בביקורת.
