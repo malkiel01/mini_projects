@@ -115,7 +115,7 @@
       const sel = h('select', { class: 'sg-tsel', 'aria-label': 'משנה את — לאן השינויים נכתבים', 'data-target': true });
       Object.assign(why, { tag: 'כל התגיות ' + n.tag + ' (styles.base)', typed: 'בורר בהקלדה', shared: 'מחלקה של האלמנט' });
       const wins = this.wins(n);
-      this.list.forEach((x, i) => sel.append(h('option', { value: String(i), selected: x === this.t0 || null, 'data-win': wins.get(x) ? 'over' : 'ok' }, (i === 0 ? '★ ' : '') + this.tlabel(x) + (x.kind !== 'inline' && x.kind !== 'newclass' ? ' · משפיע על ' + x.count : '') + (why[x.why] && i ? ' — ' + why[x.why] : '') + (wins.get(x) ? ' · ⚠ נדרס ע״י ' + wins.get(x) : ' · ✓'))));
+      this.list.forEach((x, i) => sel.append(h('option', { value: String(i), selected: x === this.t0 || null, 'data-win': wins.get(x) ? 'over' : 'ok' }, (i === 0 ? '★ ' : '') + this.tlabel(this.styler.st(x, this.stt)) + (x.kind !== 'inline' && x.kind !== 'newclass' ? ' · משפיע על ' + x.count : '') + (why[x.why] && i ? ' — ' + why[x.why] : '') + (wins.get(x) ? ' · ⚠ נדרס ע״י ' + wins.get(x) : ' · ✓'))));
       sel.append(h('option', { value: 'typed' }, '✎ בורר בהקלדה…'));
       sel.addEventListener('change', () => { if (sel.value === 'typed') { this.typing = true; this.draw(); setTimeout(() => this.host.querySelector('[data-typed-sel]')?.focus(), 0); return; } this.setTarget(this.list[+sel.value]); });
       const hi = on => this.highlight(on ? this.styler.elementsOf(this.t) : null);
