@@ -11,7 +11,9 @@ const LibraryFetch = (() => {
   const num = n => Number(n || 0).toLocaleString('he-IL');
   const mb = n => (n / 1048576).toLocaleString('he-IL', { maximumFractionDigits: n < 10485760 ? 1 : 0 }) + 'MB';
   const SCAN = { ok: 'קיימות', missing: 'חסרות', blocked: 'חסומות', error: 'שגיאה', skipped: 'כתובת שאינה מותרת' };
-  const running = () => S && S.job.status === 'running' && !S.job.stale;
+  // רצה = יש עבודה פעילה בשרת *והדף הזה מריץ את הצעדים*. פתיחה מחדש אינה ממשיכה לבד — רק "▶ המשך"
+  const running = () => S && S.job.status === 'running' && busy;
+  const halted = () => S && (S.job.status === 'paused' || (S.job.status === 'running' && !busy));
 
   /** השורה בראש ספריית ההקלטות (בעלים בלבד). */
   function panel(counts, change) {
@@ -24,13 +26,13 @@ const LibraryFetch = (() => {
       const j = S?.job || {};
       line.textContent = !S ? `${num(counts.site)} הקלטות עדיין רק באתר` + (counts.failed ? ` · ${num(counts.failed)} נכשלו בהבאה` : '')
         : running() ? (j.phase === 'scan' ? 'בודק מה יש באתר…' : `מביא… ${num(j.done)} מתוך ${num(j.total)}`)
-        : j.stale || j.status === 'paused' ? (j.phase === 'scan' ? 'הבדיקה נעצרה באמצע' : 'ההבאה נעצרה באמצע') + ' — אפשר להמשיך'
+        : halted() ? (j.phase === 'scan' ? 'הבדיקה נעצרה באמצע' : 'ההבאה נעצרה באמצע') + ' — אפשר להמשיך'
         : j.status === 'blocked' ? 'האתר חוסם את הכלי'
         : `${num(S.counts.site)} באתר · ${num(S.counts.tool)} בכלי` + (S.counts.failed ? ` · ${num(S.counts.failed)} נכשלו` : '');
     };
     say();
     panel.say = say;
-    if (!S) api('rec_status').then(x => { S = x; say(); if (running()) loop(); }).catch(() => {});
+    if (!S) api('rec_status').then(x => { S = x; say(); }).catch(() => {});
     return el;
   }
 
@@ -45,15 +47,18 @@ const LibraryFetch = (() => {
   async function op(action, b = {}) {
     try { S = await api(action, b); err = ''; } catch (e) { err = e.message; toast(e.message, true); }
     draw();
-    if (running()) loop();
+    if (S?.job.status === 'running') loop();
   }
+  /** "▶ המשך": מושהה — בשרת; נעצרה כי הדף נסגר או בגלל תקלת רשת — רק להריץ שוב את הצעדים. */
+  const resume = () => S.job.status === 'running' ? loop() : op('rec_job_op', { op: 'resume' });
 
   /** הצעדים: כל עוד העבודה רצה. גם כשהחלון סגור — ברקע, עד שהדף נסגר. */
   async function loop() {
     if (busy) return;
     busy = true;
+    draw();
     try {
-      while (running()) {
+      while (S.job.status === 'running') {
         const x = await api(S.job.phase === 'scan' ? 'rec_scan_step' : 'rec_fetch_step', {});
         S = x;
         draw();
@@ -90,21 +95,21 @@ const LibraryFetch = (() => {
     if (j.phase === 'scan' && (j.status === 'running' || j.status === 'paused')) {
       const done = notTool - sc[''];
       out.push(h('div', { class: 'summary', role: 'status' },
-        h('p', {}, j.stale || j.status === 'paused' ? 'הבדיקה נעצרה באמצע.' : 'בודק מה יש באתר…', ` ${num(done)} מתוך ${num(notTool)}`),
+        h('p', {}, halted() ? 'הבדיקה נעצרה באמצע.' : 'בודק מה יש באתר…', ` ${num(done)} מתוך ${num(notTool)}`),
         h('progress', { max: notTool || 1, value: done, 'aria-label': 'התקדמות הבדיקה' }),
         h('div', { class: 'row-btns wrap' },
-          running() ? btn('⏸ השהה', () => op('rec_job_op', { op: 'pause' })) : btn('▶ המשך', () => op('rec_job_op', { op: 'resume' }), 'primary'),
+          running() ? btn('⏸ השהה', () => op('rec_job_op', { op: 'pause' })) : btn('▶ המשך', resume, 'primary'),
           btn('⏹ עצור', () => op('rec_job_op', { op: 'stop' })))));
     }
     if (j.phase === 'fetch' && ['running', 'paused', 'full'].includes(j.status)) {
       const left = c.todo;
       out.push(h('div', { class: 'summary', role: 'status' },
         h('p', {}, j.status === 'full' ? 'ההבאה נעצרה: תקרת הדיסק מלאה. מגדילים אותה ב-🗂️ קבצים ← תקרת הקבצים, וממשיכים.'
-          : j.stale || j.status === 'paused' ? 'ההבאה נעצרה באמצע — ממשיכים מאותה נקודה. מה שכבר הובא לא יורד שוב.' : 'מביא את ההקלטות…'),
+          : halted() ? 'ההבאה נעצרה באמצע — ממשיכים מאותה נקודה. מה שכבר הובא לא יורד שוב.' : 'מביא את ההקלטות…'),
         h('p', { class: 'lf-nums' }, `הובאו ${num(j.done)} · נותרו ${num(left)} · נכשלו ${num(j.failed)} · ${mb(j.got || 0)}`),
         h('progress', { max: (j.done || 0) + (j.failed || 0) + left || 1, value: (j.done || 0) + (j.failed || 0), 'aria-label': 'התקדמות ההבאה' }),
         h('div', { class: 'row-btns wrap' },
-          running() ? btn('⏸ השהה', () => op('rec_job_op', { op: 'pause' })) : btn('▶ המשך', () => op('rec_job_op', { op: 'resume' }), 'primary'),
+          running() ? btn('⏸ השהה', () => op('rec_job_op', { op: 'pause' })) : btn('▶ המשך', resume, 'primary'),
           btn('⏹ עצור', () => op('rec_job_op', { op: 'stop' })))));
     }
     if (j.phase === 'fetch' && (j.status === 'done' || j.status === 'stopped')) {
@@ -151,7 +156,7 @@ const LibraryFetch = (() => {
     }
 
     // ── הפעולות ──
-    if (!running() && !confirm) {
+    if (!running() && !halted() && !confirm && S.job.status !== 'full') {
       const canFetch = S.scanned && c.todo > 0 && !j.blocked;
       out.push(h('div', { class: 'row-btns wrap' },
         notTool ? btn(scanned ? '🔎 בדוק שוב' : '🔎 בדוק מה יש באתר', () => op('rec_scan_start', {}), canFetch ? 'ghost' : 'primary') : null,

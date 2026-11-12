@@ -24,8 +24,8 @@ require_once __DIR__ . '/project.php';
 const REC_UPLOADS = '/wp-content/uploads/';
 const REC_UA = 'KolMaroko-AudioFetch/1.0 (read-only copy of this site\'s own recordings, started by the site owner)';
 const REC_HEAD_TIMEOUT = 15;
-const REC_GET_TIMEOUT = 45;        // לכל הורדה; צעד שלם: REC_STEP_BUDGET + REC_GET_TIMEOUT — רחוק ממגבלת השרת
-const REC_STEP_BUDGET = 8;         // אחרי כמה שניות צעד אינו מתחיל קבוצה חדשה
+const REC_GET_TIMEOUT = 25;        // לכל הורדה; צעד שלם: לכל היותר REC_STEP_BUDGET + REC_GET_TIMEOUT (~30 שניות)
+const REC_STEP_BUDGET = 5;         // אחרי כמה שניות צעד אינו מתחיל קבוצה חדשה
 const REC_MAX_HOPS = 3;
 const REC_BLOCK_RUN = 5;           // כמה חסימות רצופות, בלי אף הצלחה, הן "האתר חוסם את הכלי"
 const REC_REASONS = [
@@ -249,7 +249,7 @@ function rec_http(array $reqs, int $conc, int $timeout = REC_GET_TIMEOUT): array
                     CURLOPT_FOLLOWLOCATION => false,
                     CURLOPT_PROTOCOLS => $proto, CURLOPT_REDIR_PROTOCOLS => $proto,
                     CURLOPT_PROXY => '',                                   // לא דרך פרוסי מהסביבה (RESOLVE לא היה חל)
-                    CURLOPT_RESOLVE => $resolve,
+                    CURLOPT_RESOLVE => $resolve, CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,   // רק הכתובת שנבדקה
                     CURLOPT_USERAGENT => REC_UA,
                     CURLOPT_HTTPHEADER => ['Accept: audio/*, */*;q=0.1'],  // בלי Cookie, בלי Authorization
                     CURLOPT_CONNECTTIMEOUT => min(10, $timeout),
