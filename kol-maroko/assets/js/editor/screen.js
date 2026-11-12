@@ -732,6 +732,7 @@ const Editor = (() => {
     if (!S.host) return;
     drawState(); drawCrumbs(); S.nav?.refresh(); drawInfo(); drawTools(); saveMarks();
     if (S.build) { S.build.tools._n = null; S.build.draw(); }
+    S.lay?.drawHandles(); S.pos?.drawHandle();   // ידיות הקנבס של V6 — גם אחרי כתיבת CSS בלבד (הקנבס אינו מצויר מחדש אז)
     const cap = S.canvas?.capInfo;
     el.cap.hidden = !cap;
     if (cap) el.cap.textContent = cap.shown ? 'מוצגים כל האלמנטים · הצג 60' : 'מוצגים 60 מכל רשימה ארוכה · הצג הכול (' + cap.hidden + ' מוסתרים)';

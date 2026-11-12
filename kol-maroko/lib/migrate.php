@@ -242,7 +242,7 @@ function mg_walk(array $nodes, array $stack, array $ctx, array &$notes, string &
 function mg_overlay($v): string
 {
     $t = trim((string)$v);
-    if (!is_numeric($t)) return $t;
+    if (!is_numeric($t)) return '0.45';   // ערך שאינו מספר (ריק, "abc", "var(...)") — ברירת המחדל של התבנית
     $x = (float)$t;
     if ($x > 1) $x = min(100.0, $x) / 100;
     return rtrim(rtrim(number_format(max(0.0, $x), 2, '.', ''), '0'), '.') ?: '0';

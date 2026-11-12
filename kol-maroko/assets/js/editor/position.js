@@ -35,6 +35,18 @@
     return { h, v };
   }
 
+  /** "מרווח שווה בין שלושה": boxes — [התחלה, סוף] של האחרים בציר אחד, size — אורך הנגרר. מחזיר מקומות התחלה אפשריים, כל
+   *  אחד עם שני הקטעים השווים: אחרי B (המרווח של A–B), לפני A, ובאמצע בין A ל-B. רק זוגות סמוכים. */
+  function eqSnaps(boxes, size) {
+    const b = boxes.slice().sort((p, q) => p[0] - q[0]), out = [];
+    for (let i = 0; i + 1 < b.length; i++) {
+      const A = b[i], B = b[i + 1], gap = B[0] - A[1]; if (gap < 0) continue;
+      out.push({ at: B[1] + gap, gap, segs: [[A[1], B[0]], [B[1], B[1] + gap]] });
+      out.push({ at: A[0] - gap - size, gap, segs: [[A[0] - gap, A[0]], [A[1], B[0]]] });
+      if (gap >= size) { const g2 = (gap - size) / 2; out.push({ at: A[1] + g2, gap: g2, segs: [[A[1], A[1] + g2], [A[1] + g2 + size, B[0]]] }); }
+    }
+    return out;
+  }
   class Pos {
     /** o: { design (לשונית "מתקדם"), write (writeStyle), act, joinTx, note, undo, phone, layer(), X (KolStruct), setDevice } */
     constructor(o) { Object.assign(this, o); this.anchor = new WeakMap(); this.unit = 'pct'; }
@@ -150,8 +162,8 @@
       const ref = e.offsetParent || c.doc.body, g0 = this.geom(e, ref), x0 = ev.clientX, y0 = ev.clientY, s = c.scale, rtl = this.rtl(n);
       const R = ref.getBoundingClientRect(), ox = R.left + ref.clientLeft, oy = R.top + ref.clientTop;
       // יעדי הצמדה: קצוות ומרכז של הייחוס, קצוות ומרכזים של אחים ממוקמים / בזרימה (בתוך הייחוס)
-      const xs = [0, g0.W / 2, g0.W], ys = [0, g0.H / 2, g0.H];
-      for (const k of ref.children) { if (k === e || !k.getClientRects().length) continue; const b = k.getBoundingClientRect(); xs.push(b.left - ox, b.left - ox + b.width / 2, b.right - ox); ys.push(b.top - oy, b.top - oy + b.height / 2, b.bottom - oy); }
+      const xs = [0, g0.W / 2, g0.W], ys = [0, g0.H / 2, g0.H], sib = [];
+      for (const k of ref.children) { if (k === e || !k.getClientRects().length || k.closest('[data-kol-canvas]')) continue; const b = k.getBoundingClientRect(); xs.push(b.left - ox, b.left - ox + b.width / 2, b.right - ox); ys.push(b.top - oy, b.top - oy + b.height / 2, b.bottom - oy); sib.push({ x: b.left - ox, y: b.top - oy, w: b.width, h: b.height }); }
       const TH = 6 / s; let rect = { ...g0.rect }, moved = false;
       this.dragging = true;
       const mv = e2 => {
@@ -159,7 +171,11 @@
         if (!e2.ctrlKey && !e2.metaKey) {
           const snap = (v, size, list) => { let best = null; for (const t of list) for (const [k, off] of [[0, 0], [1, size / 2], [2, size]]) { const d = t - (v + off); if (Math.abs(d) < TH && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: t, k }; } return best; };
           const bx = snap(x, rect.w, xs), by = snap(y, rect.h, ys);
-          if (bx) { x += bx.d; lines.push(['v', bx.at]); } if (by) { y += by.d; lines.push(['h', by.at]); }
+          // מרווח שווה בין שלושה — מול האחים שחופפים בציר הניצב; גובר על קצה אלא אם הקצה קרוב ממנו ביותר מפיקסל
+          const eq = (v, size, list) => { let best = null; for (const c2 of eqSnaps(list, size)) { const d = c2.at - v; if (Math.abs(d) < TH && (!best || Math.abs(d) < Math.abs(best.d))) best = { ...c2, d }; } return best; };
+          const ex = eq(x, rect.w, sib.filter(b => b.y < y + rect.h && b.y + b.h > y).map(b => [b.x, b.x + b.w])), ey = eq(y, rect.h, sib.filter(b => b.x < x + rect.w && b.x + b.w > x).map(b => [b.y, b.y + b.h]));
+          if (ex && (!bx || Math.abs(ex.d) <= Math.abs(bx.d) + 1)) { x += ex.d; lines.push(['eq', 'x', ex.segs, ex.gap]); } else if (bx) { x += bx.d; lines.push(['v', bx.at]); }
+          if (ey && (!by || Math.abs(ey.d) <= Math.abs(by.d) + 1)) { y += ey.d; lines.push(['eq', 'y', ey.segs, ey.gap]); } else if (by) { y += by.d; lines.push(['h', by.at]); }
         }
         rect = { x, y, w: g0.rect.w, h: g0.rect.h }; moved = moved || Math.hypot(e2.clientX - x0, e2.clientY - y0) > 2;
         this.D.preview([n], [['left', (x - g0.m.left) + 'px'], ['top', (y - g0.m.top) + 'px'], ['right', 'auto'], ['bottom', 'auto'], ['translate', 'none']]);
@@ -179,7 +195,9 @@
     drawGuides(lines, ox, oy, g0, rect) {
       const c = this.c, s = c.scale, fr = c.frame.getBoundingClientRect(), L = this.layer().getBoundingClientRect();
       const X = v => fr.left - L.left + (ox + v) * s, Y = v => fr.top - L.top + (oy + v) * s;
-      this.guides.replaceChildren(...lines.map(([k, at]) => { const d = hh('div', { class: 'ps-guide ' + k }); d.style.cssText = k === 'v' ? 'left:' + X(at) + 'px;top:' + Y(0) + 'px;height:' + g0.H * s + 'px' : 'top:' + Y(at) + 'px;left:' + X(0) + 'px;width:' + g0.W * s + 'px'; return d; }));
+      const cx = rect ? rect.x + rect.w / 2 : 0, cy = rect ? rect.y + rect.h / 2 : 0;
+      const eqs = lines.filter(l => l[0] === 'eq').flatMap(([, ax, segs, gap]) => segs.map(([a, b]) => { const d = hh('div', { class: 'ps-eq', 'data-eq': ax }, '=' + Math.round(gap)); d.style.cssText = ax === 'x' ? 'left:' + X(a) + 'px;width:' + Math.max(2, (b - a) * s) + 'px;top:' + (Y(cy) - 7) + 'px;height:14px' : 'top:' + Y(a) + 'px;height:' + Math.max(2, (b - a) * s) + 'px;left:' + (X(cx) - 14) + 'px;width:28px'; return d; }));
+      this.guides.replaceChildren(...eqs, ...lines.filter(l => l[0] !== 'eq').map(([k, at]) => { const d = hh('div', { class: 'ps-guide ' + k }); d.style.cssText = k === 'v' ? 'left:' + X(at) + 'px;top:' + Y(0) + 'px;height:' + g0.H * s + 'px' : 'top:' + Y(at) + 'px;left:' + X(0) + 'px;width:' + g0.W * s + 'px'; return d; }));
       if (!rect) { this.dist.hidden = true; return; }
       this.dist.hidden = false;
       this.dist.textContent = '↑' + Math.round(rect.y) + ' ↓' + Math.round(g0.H - rect.y - rect.h) + ' ←' + Math.round(rect.x) + ' →' + Math.round(g0.W - rect.x - rect.w);
@@ -258,5 +276,5 @@
       return this.write(new Map([[n, [['z-index', String(z), this.D.effTarget(n, 'z-index')]]]]), 'שכבות · ' + this.label(n) + ' · z-index ' + z);
     }
   }
-  g.KolPos = { Pos, insets, nearest };
+  g.KolPos = { Pos, insets, nearest, eqSnaps };
 })(typeof window !== 'undefined' ? window : globalThis);
