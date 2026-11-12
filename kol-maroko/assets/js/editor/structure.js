@@ -315,7 +315,8 @@
       }
     });
     for (const f of jsTexts || []) {
-      const hit = [...ids].find(i => f.text.includes(i)) || [...classes].find(c => c.length > 3 && f.text.includes(c));
+      const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), tok = (x, pre) => new RegExp('[\'"`' + pre + ']' + esc(x) + '(?=[\'"`\\s\\],.:>)])').test(f.text);   // כמחרוזת / בורר בקוד — לא כחלק ממילה
+      const hit = [...ids].find(i => tok(i, '#')) || [...classes].find(c => tok(c, '.\\s'));
       if (hit) out.push({ kind: 'js', text: 'ייתכן ש-' + f.path + ' נשען על "' + hit + '"' });
     }
     return out;

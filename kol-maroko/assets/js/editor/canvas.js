@@ -166,7 +166,7 @@
         if (/^(img|video)$/.test(n.tag) && !n.implied && !(K.attrOf(n, 'src') || {}).value && !n.kids.some(k => k.tag === 'source')) { r += this.selOf(n) + '{min-width:96px;min-height:64px;display:inline-block;outline:2px dashed rgba(180,83,9,.7)!important;outline-offset:-2px}\n'; return; }
         if (n.implied || !BOX.test(n.tag) || n.kids.length || n.nodes.some(x => x.type === 'text' && /\S/.test(x.value))) return;
         for (let p = n.parent; p; p = p.parent) if (p.tag === 'template' || p.tag === 'head') return;
-        const sel = this.selOf(n);
+        const sel = this.selOf(n) + ':not([contenteditable])';             // בעריכת טקסט — מציין המיקום של העורך, לא זה
         r += sel + '{min-height:48px!important;min-width:48px;outline:2px dashed rgba(37,99,235,.55)!important;outline-offset:-2px}' + sel + '::before{content:"＋ גרור לכאן";display:block;padding:14px 8px;font:13px/1.4 system-ui,sans-serif;color:rgba(37,99,235,.8);text-align:center;pointer-events:none}\n';
       });
       return r;
@@ -383,6 +383,7 @@
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
         if (this.ext && this.ext.active) { const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
+        this.pt = { x: e.clientX, y: e.clientY };                           // V4: "＋" מופיע רק ליד שפת האלמנט
         if (this.press && e.pointerType === 'mouse' && e.buttons === 0) this.press = null;   // השחרור אבד (מחוץ לחלון) — אין לחיצה
         const p = this.press;
         if (this.edit && this.edit.active) { if (this.hovered) { this.hovered = null; this.draw(); } return; }

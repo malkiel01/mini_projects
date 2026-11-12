@@ -29,7 +29,8 @@
       this.navDrag();
       this.tools = h('div', { class: 'ed-seltools', hidden: true, role: 'toolbar', 'aria-label': 'האלמנט הנבחר' });
       this.plus = [0, 1].map(i => { const b = h('button', { type: 'button', class: 'ed-plus', hidden: true, 'data-plus': i ? 'after' : 'before', 'aria-label': i ? 'הוספה אחרי' : 'הוספה לפני', title: i ? 'הוספה אחרי' : 'הוספה לפני' }, '＋'); b.addEventListener('click', () => { this.plusHold = false; this.plusClick(b); }); b.addEventListener('pointerenter', () => { this.plusHold = true; }); b.addEventListener('pointerleave', () => { this.plusHold = false; this.plusAt = performance.now(); setTimeout(() => this.draw(), 320); }); return b; });
-      c.layer.append(this.tools, ...this.plus);
+      // הסרגל של הנבחר — בשורת השביל, לא מעל הקנבס: בקנבס מוקטן כל שכבה מעל התוכן מכסה אחים ובולעת לחיצות (נמדד ב-v1a / v2 / v3)
+      (this.toolsHost || c.layer).append(this.tools); c.layer.append(...this.plus);
       this.library();
     }
     unmount() { this.off(); this.drag.hide(); }
@@ -39,20 +40,22 @@
     // ── הסרגל הקטן של הנבחר, ו"＋" בין אחים ─────────────────
     draw() {
       const c = this.canvas, n = c.selected, r = n && c.rectOf(n), t = this.tools;
-      if (!n || !r || this.X.ROOTS.has(n.tag) && n.tag !== 'body' || c.edit?.active) t.hidden = true;
-      else {
-        if (t._n !== n || t._w !== this.canWrite()) { t._n = n; t._w = this.canWrite(); this.drawTools(n); }
-        t.hidden = false;
-        const top = r.top > 34 ? r.top - 32 : r.top + r.height + 4;
-        t.style.cssText = 'left:' + Math.max(0, r.left) + 'px;top:' + Math.max(0, top) + 'px';
-      }
+      if (!n || n.tag === 'html' || n.tag === 'head' || c.edit?.active) t.hidden = true;
+      else { if (t._n !== n || t._w !== this.canWrite()) { t._n = n; t._w = this.canWrite(); this.drawTools(n); } t.hidden = false; }
+      void r;
       // "＋" מחוץ לאלמנט (לפניו / אחריו, לפי ציר הרובריקה); יציאה מהקנבס אל ה-"＋" — 300ms חסד, כדי שאפשר יהיה ללחוץ עליו
       let hv = c.hovered && !this.drag.active ? c.hovered : null;
       if (!hv && !this.drag.active && this.plusN && (this.plusHold || performance.now() - this.plusAt < 300)) { hv = this.plusN; clearTimeout(this.plusT); this.plusT = setTimeout(() => this.draw(), 320); }
       const hr = hv && hv.parent && hv.tag !== 'body' && c.rectOf(hv);
-      if (!hr || !this.canWrite() || hr.zero || hr.height < 12 || hr.width < 40) { this.plus.forEach(b => { b.hidden = true; }); this.plusN = null; return; }
+      const ax = hr ? this.drag.axis(hv.parent) : null;
+      // רק כשהסמן ליד שפת ההתחלה / הסוף של האלמנט (בציר הרובריקה) — "＋" אינו מכסה את האלמנט ואינו בולע לחיצות
+      if (hr && hv === c.hovered && c.pt) {
+        const px = c.ox + c.pt.x * c.scale, py = c.pt.y * c.scale, E = 10;
+        const near = ax.axis === 'row' ? Math.min(Math.abs(px - hr.left), Math.abs(hr.left + hr.width - px)) < E : Math.min(Math.abs(py - hr.top), Math.abs(hr.top + hr.height - py)) < E;
+        if (!near) hv = null;
+      }
+      if (!hv || !hr || !this.canWrite() || hr.zero || hr.height < 16 || hr.width < 40) { this.plus.forEach(b => { b.hidden = true; }); if (!hv) this.plusN = this.plusHold ? this.plusN : null; return; }
       if (hv === c.hovered) { this.plusN = hv; this.plusAt = performance.now(); }
-      const ax = this.drag.axis(hv.parent);
       this.plus.forEach((b, i) => {
         b.hidden = false; b._n = hv; b._after = !!i;
         let x, y;

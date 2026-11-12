@@ -157,9 +157,9 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed-size { position: absolute; z-index: 3; padding: 1px 6px; border-radius: 4px; background: #1a73e8; color: #fff; font: 11px/16px ui-monospace, monospace; white-space: nowrap; direction: ltr; }
 @media (max-width: 999px) { .ed-handle { width: 24px; height: 24px; margin: -5px 0 0 -5px; } }
 /* V2 — לשוניות הפאנל, ולשונית "תוכן" */
-.ed-ptabs { display: flex; flex: none; gap: 2px; padding: 4px 4px 0; border-bottom: 1px solid var(--line); }
-.ed-ptabs button { flex: 1; min-height: 36px; padding: 0 var(--s2); border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted, #5f6368); font: inherit; font-size: .85rem; cursor: pointer; }
-.ed-ptabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand, #1a73e8); font-weight: 600; }
+.ed-ptabs, .ed-ntabs { display: flex; flex: none; gap: 2px; padding: 4px 4px 0; border-bottom: 1px solid var(--line); }
+.ed-ptabs button, .ed-ntabs button { flex: 1; min-height: 36px; padding: 0 var(--s2); border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted, #5f6368); font: inherit; font-size: .85rem; cursor: pointer; }
+.ed-ptabs button[aria-selected="true"], .ed-ntabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand, #1a73e8); font-weight: 600; }
 .ed-side-body > .ed-side-body { flex: 1; min-height: 0; }
 .ed-side-body[hidden] { display: none; }
 .ct { overflow: auto; padding: var(--s2); font-size: .85rem; display: block; }
@@ -283,7 +283,8 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .dg-tag.bad { background: #b3261e; } .dg-tag.noop { background: #5f6368; }
 .dg-ghost { position: fixed; z-index: 9999; pointer-events: none; font: 12px/18px system-ui, sans-serif; background: var(--surface, #fff); color: var(--ink, #222); border: 1px solid var(--line, #ccc); border-radius: 6px; padding: 2px 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, .18); }
 html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select: none; }
-.ed-seltools { position: absolute; z-index: 8; display: flex; gap: 2px; pointer-events: auto; background: var(--surface, #fff); border: 1px solid var(--line, #ccc); border-radius: 8px; padding: 1px; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); }
+.ed-seltools { display: inline-flex; gap: 2px; background: var(--surface, #fff); border: 1px solid var(--line, #ccc); border-radius: 8px; padding: 1px; margin-inline-end: 6px; vertical-align: middle; }
+.ed-seltools-host { display: inline-flex; flex: none; }
 .ed-seltools .icon-btn { min-width: 28px; min-height: 28px; font-size: .9rem; }
 .ed-seltools [data-grip] { cursor: grab; touch-action: none; }
 .ed-plus { position: absolute; z-index: 8; width: 22px; height: 22px; border-radius: 50%; border: 1px solid #1a73e8; background: #fff; color: #1a73e8; font: 700 15px/18px system-ui; padding: 0; pointer-events: auto; cursor: pointer; }
