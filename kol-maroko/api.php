@@ -75,7 +75,7 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
                       'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_move', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
-                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read', 'mount_set',
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read', 'mount_set', 'outbox_resend', 'site_wake', 'pull_line', 'pub_channel_set',
                       'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
                       'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open',   // X1
                       'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready'];
@@ -267,6 +267,12 @@ try {
         // אופן ההצבה באתר (M4-BC): עמוד מלא / חלון בתוך האתר / פס האתר — בעלים בלבד, פעולה חתומה לתוסף
         'mount' => ($u ? mount_state() : []),
         'mount_set' => mount_set($u, $body),
+        // M7 — התור היוצא, הדופק, שורת החיבור והערוץ (lib/outbox.php)
+        'outbox' => outbox_list($u),
+        'outbox_resend' => outbox_resend($u, $body),
+        'site_wake' => site_wake($u),
+        'pull_line' => pull_line($u),
+        'pub_channel_set' => pub_channel_set($u, $body),
         'plugin_zip' => plugin_lib() ?? plugin_zip($u),          // T1: תוסף הוורדפרס כ-ZIP — בעל האתר
         'notices' => notices_list($u),
         'notice_read' => notice_read($u, $body),
