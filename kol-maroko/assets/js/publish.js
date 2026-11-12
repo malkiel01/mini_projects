@@ -29,6 +29,7 @@ const Publish = (() => {
     if (!more.length) { try { await buildReady(); pk = KolBuild.block(host, role); } catch (e) { pk = h('p', { class: 'error' }, e.message); } }
     host.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
       pk,
+      canPublish ? more.length ? host.querySelector('.co') : (el => (window.KolCutover ? KolCutover.mount(el) : document.head.append(h('script', { src: 'assets/js/cutover.js', onload: () => KolCutover.mount(el) })), el))(h('section', {})) : null,   // M3 — 🔁 מעבר (assets/js/cutover.js)
       h('h2', { class: 'sec-title' }, '🎨 פרסום הטיוטה (המסלול של היום)'),
       h('div', { class: 'summary' },
         h('div', { class: 'line' }, live
