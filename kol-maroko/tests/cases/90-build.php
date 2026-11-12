@@ -203,6 +203,7 @@ test('הרשאות: אורח 401; זר 403; עורך בונה ואינו שול�
 test('שליחה: תוסף 1.x ← "נדרש 2.0"; הגרסה נשמרת built, ושום דבר לא נשלח', function () {
     wp_site_ready();
     m1_wp_opt('kol_v2_mock', null);
+    m1_wp_opt('kol_wp_plugin_v1', true);            // M2: התוסף בריפו הוא 2.0 — "תוסף 1.x" הוא העותק הקפוא של 1.6.0
     $b = m1_build(U_PUBLISHER);
     $r = m1_post('build_send', ['id' => $b['id']], U_PUBLISHER);
     eq([409, 'plugin_v1'], [$r['status'], $r['json']['code'] ?? null], $r['body']);
@@ -316,9 +317,95 @@ test('kol-data.js: עדכון ל-1.1.0 — בעלים בלבד, נקודת שח�
     eq(409, m1_post('kd_update', ['rev' => $st['rev'] - 1], U_OWNER)['status'], 'מצב ישן של המסך — לא דורס');
     $u = m1_post('kd_update', ['rev' => $st['rev']], U_OWNER);
     eq(200, $u['status'], $u['body']);
-    eq(['1.1.0', true, true], [$u['json']['kd']['version'], $u['json']['kd']['prerender'], $u['json']['kd']['same']]);
+    eq(['1.2.0', true, true], [$u['json']['kd']['version'], $u['json']['kd']['prerender'], $u['json']['kd']['same']]);
     eq($snaps + 1, (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'נקודת שחזור לפני');
     eq(file_get_contents(BUILD_SEED_KD), pf_blob_get(pf_by_path(BUILD_KD)['sha']), 'התוכן — הזרע');
     $h = db()->query('SELECT note FROM pf_history WHERE file_id = ' . (int)$st['id'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
-    ok(str_contains((string)$h, '1.1.0'), "בהיסטוריה: $h");
+    ok(str_contains((string)$h, '1.2.0'), "בהיסטוריה: $h");
+});
+
+// ── B1 ──────────────────────────────────────────────────────
+
+/** הגושים בצד האתר (המדומה, ובמצב KOL_V2_REAL — גם אצל התוסף). */
+function b1_site_has(string $sha): bool
+{
+    return is_file($GLOBALS['WP_DIR'] . "/v2/blobs/$sha");
+}
+
+test('B1: האתר מחק גוש ש"כבר נשלח" ← asset_missing ← שוכחים, שולחים את החסר שוב — פעם אחת, והפרסום מצליח', function () {
+    wp_site_ready();
+    m1_wp_opt('kol_v2_mock', true);
+    m1_files();
+    $p = 'm1/b1-orphan.txt';
+    eq(200, m1_post('pf_create', ['path' => $p, 'content' => 'גוש שיתום ' . microtime()])['status']);
+    $b = m1_build(U_PUBLISHER);
+    eq(200, m1_post('build_send', ['id' => $b['id']], U_PUBLISHER)['status'], 'הפרסום הראשון');
+    $sha = m1_files_of($b['id'])[$p]['sha'];
+    ok(b1_site_has($sha) && db()->query("SELECT COUNT(*) FROM pkg_site_blobs WHERE sha = '$sha'")->fetchColumn() == 1, 'הגוש באתר, ורשום אצלנו כ"נשלח"');
+    // גרסה חדשה (קובץ נוסף), והאתר "מנקה" את הגוש היתום ממש לפני המניפסט
+    eq(200, m1_post('pf_create', ['path' => 'm1/b1-next.txt', 'content' => 'הבא ' . microtime()])['status']);
+    $b2 = m1_build(U_PUBLISHER);
+    m1_wp_opt('v2_puts', []);
+    m1_wp_opt('v2_orphan', [$sha]);
+    $r = m1_post('build_send', ['id' => $b2['id']], U_PUBLISHER);
+    eq(200, $r['status'], $r['body']);
+    eq('live', $r['json']['build']['status']);
+    ok(b1_site_has($sha), 'הגוש חזר לאתר');
+    $puts = m1_wp_get('v2_puts');
+    eq(1, count(array_keys($puts, $sha)), 'הגוש היתום נשלח פעם אחת');
+    eq(count($puts), count(array_unique($puts)), 'שום גוש לא נשלח פעמיים');
+    $man = json_decode((string)file_get_contents($GLOBALS['WP_DIR'] . '/v2/live.json'), true);
+    eq($r['json']['build']['version'], $man['version'], 'המניפסט באתר — הגרסה החדשה');
+    ok((int)db()->query("SELECT COUNT(*) FROM audit WHERE action = 'pkg_send_retry'")->fetchColumn() >= 1, 'השליחה החוזרת ביומן הפעולות');
+});
+
+test('B1: חסר שוב אחרי השליחה החוזרת ← הכשל מגיע לכלי (בלי לולאה); הגרסה שבאוויר לא זזה', function () {
+    wp_site_ready();
+    m1_wp_opt('kol_v2_mock', true);
+    eq(200, m1_post('pf_create', ['path' => 'm1/b1-loop.txt', 'content' => 'לולאה ' . microtime()])['status']);
+    $b = m1_build(U_PUBLISHER);
+    $sha = m1_files_of($b['id'])['m1/b1-loop.txt']['sha'];
+    $live = (int)m1_wp_get('v2_live');
+    m1_wp_opt('v2_puts', []);
+    m1_wp_opt('v2_orphan', [$sha]);
+    m1_wp_opt('v2_orphan_keep', true);
+    try {
+        $r = m1_post('build_send', ['id' => $b['id']], U_PUBLISHER);
+    } finally { m1_wp_opt('v2_orphan', null); m1_wp_opt('v2_orphan_keep', null); }
+    eq([502, 'asset_missing'], [$r['status'], $r['json']['code'] ?? null], $r['body']);
+    eq(2, count(array_keys(m1_wp_get('v2_puts'), $sha)), 'נשלח פעמיים בדיוק: בשליחה ובניסיון החוזר היחיד');
+    eq('sending', build_row($b['id'])['status'], 'הגרסה לא באוויר');
+    eq($live, (int)m1_wp_get('v2_live'), 'באתר — לא השתנה');
+    // האתר חזר לעצמו — "המשך" מצליח
+    eq(200, m1_post('build_send', ['id' => $b['id']], U_PUBLISHER)['status'], 'המשך אחרי שהאתר תקין');
+});
+
+test('B1: הקלטה שהוחלפה בסוג אחר (נתיב .mp3, תוכן m4a) — הסוג במניפסט, בשליחת הגוש ובהגשה לפי files.type, לא לפי הסיומת', function () {
+    wp_site_ready();
+    m1_wp_opt('kol_v2_mock', true);
+    m1_files();
+    $tmp = files_dir() . '/tmp/b1-' . bin2hex(random_bytes(4));
+    @mkdir(dirname($tmp), 0775, true);
+    file_put_contents($tmp, pack('N', 24) . "ftypM4A \x00\x00\x00\x00M4A mp42isom" . str_repeat("\x00", 100) . random_bytes(8));
+    $fid = file_store($tmp, 'b1.m4a', ['sub' => 'u-b1', 'name' => 'B1', 'role' => 'editor'], 'audio/mp4');
+    $type = file_row($fid)['type'];
+    ok($type !== 'audio/mpeg' && in_array($type, ['audio/mp4', 'video/mp4', 'audio/x-m4a'], true), "הסוג בספרייה: $type");
+    $p = 'm1/b1-rec.mp3';
+    eq(200, m1_post('pf_link', ['path' => $p, 'file_id' => $fid])['status']);
+    $b = m1_build(U_PUBLISHER);
+    eq(pv_media_type(file_row($fid), $p), m1_files_of($b['id'])[$p]['type'], 'בחבילה: הסוג מהספרייה');
+    ok(m1_files_of($b['id'])[$p]['type'] !== 'audio/mpeg', 'ולא audio/mpeg של הסיומת');
+    $r = m1_post('build_send', ['id' => $b['id']], U_PUBLISHER);
+    eq(200, $r['status'], $r['body']);
+    $man = json_decode((string)file_get_contents($GLOBALS['WP_DIR'] . '/v2/live.json'), true);
+    eq(m1_files_of($b['id'])[$p]['type'], $man['files'][$p]['type'] ?? null, 'במניפסט שבאתר');
+    // ההגשה אצלנו: התצוגה של הגרסה הבנויה
+    // ההגשה אצלנו: התצוגה של הגרסה הבנויה, והתצוגה החיה של הפרויקט
+    $ct = fn(array $h) => [$h['status'], trim(explode(';', $h['headers']['content-type'] ?? '')[0])];
+    eq([200, $man['files'][$p]['type']], $ct(pv_get($p, build_token($b['id'], 'v'))), 'Content-Type בתצוגת הגרסה הבנויה');
+    eq([200, $man['files'][$p]['type']], $ct(pv_get($p)), 'Content-Type בתצוגה החיה');
+    eq('audio/mp4', pv_media_type(['type' => 'audio/x-m4a'], 'x.mp3'), 'כינוי ← הסוג הקנוני');
+    eq('audio/mpeg', pv_media_type(['type' => 'application/x-evil'], 'x.mp3'), 'סוג לא מוכר ← לפי הסיומת');
+    eq('audio/mpeg', pv_media_type(['type' => ''], 'x.mp3'), 'בלי סוג ← לפי הסיומת');
+    @unlink($tmp);
 });

@@ -41,7 +41,11 @@ final class WP_REST_Response
     public function __construct(public $data = null, public int $status = 200) {}
 }
 
-require dirname(__DIR__) . '/wordpress-plugin/kol-maroko/kol-maroko.php';
+// M2: התוסף האמיתי (2.0) — אלא אם הבדיקה מבקשת "תוסף 1.x" (kol_wp_plugin_v1, והמדומה כבוי): אז העותק הקפוא של 1.6.0.
+// הטעינה מריצה גם את ההגשה של 2.0 (v2-serve.php) — בקשה שאינה wp-json מגיעה לתוסף לפני ה-404 שבסוף, כמו בוורדפרס.
+require !get_option('kol_v2_mock') && get_option('kol_wp_plugin_v1')
+    ? __DIR__ . '/plugin/fixtures/kol-maroko-1.6.0.php'
+    : dirname(__DIR__) . '/wordpress-plugin/kol-maroko/kol-maroko.php';
 
 /**
  * **המקבל המדומה v2** (פרוסה M1 §3) — החוזה של M2, כתוב כבדיקה. פעיל רק כשהאפשרות kol_v2_mock דולקת.
@@ -128,8 +132,47 @@ function v2_handle(string $action, WP_REST_Request $req)
     return new WP_REST_Response(['ok' => true, 'version' => $n]);
 }
 
-if (!preg_match('~^/wp-json/kol-maroko/v1/(ping|asset|publish|switch|asset_has|asset_put|manifest)$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), $m)) { http_response_code(404); exit; }
-$r = get_option('kol_v2_mock') ? v2_handle($m[1], new WP_REST_Request()) : kol_maroko_handle($m[1], new WP_REST_Request());
+/**
+ * M2 — "הבדיקה המכרעת": KOL_V2_REAL=1 בסביבה (php tests/run.php / node tests/browser/m1.cjs) מריץ את הבדיקות של M1
+ * **מול התוסף האמיתי** גם כשהן מדליקות את kol_v2_mock. המתאם רק מציג את המצב של התוסף באותם שמות שהבדיקות קוראות
+ * (v2_live, v2_last, v2_puts, <dir>/v2/live.json, <dir>/v2/blobs/<sha>) ומכבד את הזרקת הכשל (v2_fail_after).
+ * הקבלה, הבדיקות והכתיבה עצמן — בקוד של התוסף בלבד.
+ */
+function v2_real(string $action, WP_REST_Request $req)
+{
+    if ($action === 'asset_put') {
+        $after = get_option('v2_fail_after', null);
+        if ($after !== null && count((array)get_option('v2_puts', [])) >= (int)$after) { delete_option('v2_fail_after'); return kol_maroko_fail('boom', 'כשל מדומה באמצע', 500); }
+    }
+    $r = kol_maroko_handle($action, $req);
+    if ($r->status !== 200) return $r;
+    $b = json_decode((string)$req->get_body(), true);
+    if ($action === 'asset_put' && !empty($r->data['done'])) {
+        $sha = (string)$b['sha256'];
+        @link(kol_maroko_v2_blob($sha), v2_dir() . "/$sha") || @copy(kol_maroko_v2_blob($sha), v2_dir() . "/$sha");
+        v2_log('v2_puts', $sha);
+    }
+    if ($action === 'manifest' || $action === 'activate') {
+        v2_dir();
+        copy(kol_maroko_v2_dir() . '/live.json', $GLOBALS['wp_dir'] . '/v2/live.json');
+        $man = json_decode((string)file_get_contents(kol_maroko_v2_dir() . '/live.json'), true);
+        foreach ($man['files'] as $f) if (!is_file(v2_dir() . '/' . $f['sha256']) && ($src = kol_maroko_v2_blob($f['sha256']))) copy($src, v2_dir() . '/' . $f['sha256']);
+        update_option('v2_last', (int)get_option('kol_maroko_v2_last', 0));
+        update_option('v2_live', (int)get_option('kol_maroko_v2_live', 0));
+    }
+    return $r;
+}
+
+if (!preg_match('~^/wp-json/kol-maroko/v1/(ping|asset|publish|switch|asset_has|asset_put|manifest|activate)$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), $m)) { http_response_code(404); exit; }
+// B1: ניקוי באתר ממש לפני המניפסט — הגושים ב-v2_orphan נמחקים (גם אצל התוסף האמיתי). v2_orphan_keep — בכל מניפסט, לא פעם אחת
+if ($m[1] === 'manifest' && ($orph = (array)get_option('v2_orphan', []))) {
+    foreach ($orph as $sha) {
+        @unlink($GLOBALS['wp_dir'] . "/v2/blobs/$sha");
+        for ($i = 0; $i < 5 && function_exists('kol_maroko_v2_blob') && ($b = kol_maroko_v2_blob($sha)); $i++) @unlink($b);
+    }
+    if (!get_option('v2_orphan_keep')) delete_option('v2_orphan');
+}
+$r = get_option('kol_v2_mock') ? (getenv('KOL_V2_REAL') ? v2_real($m[1], new WP_REST_Request()) : v2_handle($m[1], new WP_REST_Request())) : kol_maroko_handle($m[1], new WP_REST_Request());
 http_response_code($r->status);
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode($r->data, JSON_UNESCAPED_UNICODE);

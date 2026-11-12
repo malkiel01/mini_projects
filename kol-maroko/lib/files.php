@@ -26,6 +26,8 @@ const FILE_TYPES = [
     'image/jpeg' => ['image', 'jpg'], 'image/png' => ['image', 'png'], 'image/webp' => ['image', 'webp'], 'image/gif' => ['image', 'gif'],
     'audio/mpeg' => ['audio', 'mp3'], 'audio/mp4' => ['audio', 'm4a'], 'audio/x-m4a' => ['audio', 'm4a'], 'audio/aac' => ['audio', 'aac'],
     'audio/ogg' => ['audio', 'ogg'], 'audio/webm' => ['audio', 'webm'], 'audio/wav' => ['audio', 'wav'], 'audio/x-wav' => ['audio', 'wav'],
+    // A3: flac, ו-aac גולמי (ADTS); opus — בתוך ogg (audio/ogg)
+    'audio/flac' => ['audio', 'flac'], 'audio/x-flac' => ['audio', 'flac'], 'audio/x-hx-aac-adts' => ['audio', 'aac'], 'audio/vnd.wave' => ['audio', 'wav'],
     'video/mp4' => ['video', 'mp4'], 'video/webm' => ['video', 'webm'], 'video/quicktime' => ['video', 'mov'],
     'application/pdf' => ['doc', 'pdf'],
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => ['doc', 'docx'],
@@ -99,8 +101,9 @@ function upload_init(array $user, array $b): array
     $purpose = ($b['purpose'] ?? '') === 'import' ? 'import' : 'file';
     if ($purpose === 'import') require_role($user, 'owner');
     if ($size <= 0) throw new ApiError('הקובץ ריק');
-    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB');
-    if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה. מחקו קבצים שלא בשימוש', 507);
+    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB — התקרה לקובץ בכלי');
+    // A3: ההודעה אומרת מה המגבלה ומי משנה אותה
+    if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה (' . round(disk_cap() / 1073741824, 1) . 'GB). בעל העמוד מגדיל אותה ב-🗂️ קבצים ← תקרת הקבצים; או מחקו קבצים שלא בשימוש', 507);
 
     // העלאות שנתקעו יותר מיממה — נמחקות
     $old = db()->query("SELECT id FROM uploads WHERE started < " . (time() - 86400))->fetchAll(PDO::FETCH_COLUMN);
@@ -250,6 +253,12 @@ function files_in_use(): array
     $json .= (string)setting('imported_css', '');
     // הקלטות של מילים: במילים עכשיו, ובעותקים שבגרסאות האחרונות
     $json .= implode('', db()->query("SELECT '\"' || audio || '\"' FROM words WHERE length(audio) = 32")->fetchAll(PDO::FETCH_COLUMN));
+    // A3: הקלטות בספרייה (גם לא מחוברות, גם בסל של ההקלטות) וגרסאות קודמות שלהן — הקובץ שלהן אינו "לא בשימוש"
+    foreach (['recordings', 'rec_versions'] as $t) {
+        if (db()->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn()) {
+            $json .= implode('', db()->query("SELECT '\"' || file_id || '\"' FROM $t WHERE file_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN));
+        }
+    }
     // גרסאות לא נבדקות כאן: מחיקה היא לסל, והקובץ נשאר. מחיקה סופית — רק כשאף גרסה לא מפנה אליו (file_in_versions)
     preg_match_all('/(?:"|kol-file:)([0-9a-f]{32})/', $json, $m);
     return array_flip($m[1]);

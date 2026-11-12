@@ -70,7 +70,7 @@
       const kids = [this.drawTarget(n)];
       const many = this.nodes().length;
       if (many > 1) kids.push(h('p', { class: 'sg-multi', 'data-multi': many }, '✳️ ' + many + ' אלמנטים נבחרים (Shift + לחיצה) — שינוי חל על כולם, כל אחד בכלל שלו.'));
-      if (this.mode === 'adv') kids.push(...this.drawSpacing(n)); else kids.push(...this.drawType(n), ...this.drawColor(n));
+      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n));
       this.host.replaceChildren(...kids);
       this.host.scrollTop = scroll;
     }
@@ -339,8 +339,8 @@
         if (k.image) sec.append(h('p', { class: 'hint sg-contrast', 'data-contrast': 'image' }, 'ניגודיות: מתחת לטקסט יש תמונת רקע — היחס אינו מחושב. בודקים בעין.'));
         else sec.append(h('p', { class: 'sg-contrast' + (k.ratio < 4.5 ? ' low' : ''), 'data-contrast': round(k.ratio) }, 'ניגודיות טקסט / רקע: ' + k.ratio.toFixed(2) + ':1' + (k.ratio < 4.5 ? ' — ⚠️ נמוכה מ-4.5 (קשה לקריאה)' : ' ✓')));
       }
-      sec.append(h('p', { class: 'hint' }, 'תמונת רקע ומעבר צבע — V5.'));
-      return [sec];
+      const bg = this.bgSection ? this.bgSection(n) : null;                     // V5: background.js — "רקע"
+      return bg ? [sec, bg] : [sec];
     }
 
     // ── מרווחים ─────────────────────────────────────────────
@@ -350,7 +350,9 @@
       const box = h('div', { class: 'sg-box', 'data-box': true });
       const side = (kind, s) => {
         const phys = kind + '-' + s, f = this.num(phys, { top: 'עליון', bottom: 'תחתון', right: 'ימין', left: 'שמאל' }[s], { group: kind === 'margin' ? 'שוליים' : 'ריפוד', hint: true });
-        f.classList.add('sg-side', 's-' + s); return f;
+        f.classList.add('sg-side', 's-' + s);
+        if (kind === 'margin' && this.pickSide) f.addEventListener('pointerdown', () => this.pickSide(s), true);   // V4: Alt + חיצים משנים שוליים רק כשצד נבחר כאן
+        return f;
       };
       const lockBtn = kind => {
         const L = this.lock[kind], next = { none: 'pairs', pairs: 'all', all: 'none' }[L];

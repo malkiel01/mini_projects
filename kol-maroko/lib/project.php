@@ -94,6 +94,13 @@ function pf_key(string $path): string
 function pf_free(string $path, array $skip = [], bool $dir = false): void
 {
     $key = pf_key($path);
+    // N1: הנתיב של הקובץ של טבלת המילים תפוס — גם בלי שורה ב-pf_files
+    if (($w = pf_words_path()) !== null && !pf_by_path($w)) {
+        $wk = pf_key($w);
+        if ($key === $wk) throw new ApiError("\"$w\" הוא הקובץ של טבלת המילים (kol.json ← data.words) — שמירה בו מעדכנת את הטבלה", 409);
+        if (str_starts_with($key, $wk . '/')) throw new ApiError("\"$w\" הוא קובץ, לא תיקייה", 409);
+        if (!$dir && str_starts_with($wk, $key . '/')) throw new ApiError("\"$path\" היא תיקייה", 409);
+    }
     $st = db()->prepare("SELECT id, path, kind FROM pf_files WHERE deleted_at IS NULL AND (path_key = ? OR path_key LIKE ? ESCAPE '!')");
     $st->execute([$key, pf_like($key) . '/%']);
     foreach ($st->fetchAll() as $r) {
@@ -275,8 +282,15 @@ function pf_tree(array $user): array
         if ($r['kind'] === 'media') $o['media_info'] = $media[$r['file_id']] ?? ['type' => '', 'kind' => '', 'missing' => true];
         $files[] = $o;
     }
+    // N1: data/words.json — קובץ וירטואלי, נבנה מהטבלה ברגע הקריאה. נתיב שתפוס בקובץ רגיל — הקובץ הרגיל נשאר, ומדווח
+    $words = null;
+    if (($wp = pf_words_path()) !== null) {
+        if (pf_by_path($wp)) $words = ['blocked' => "בנתיב \"$wp\" יש קובץ רגיל, ולכן הקובץ של טבלת המילים אינו מוצג. שנו את data.words.file ב-kol.json, או את שם הקובץ"];
+        else $files[] = pf_words_public();
+    }
     return [
         'files' => $files,
+        'words_file' => $words,
         'trash' => (int)db()->query('SELECT COUNT(*) FROM pf_files WHERE deleted_at IS NOT NULL')->fetchColumn(),
         'limits' => array_column(pf_limits()['limits'], 'value', 'key'),
         'kol' => pf_kol(),
@@ -296,6 +310,7 @@ function pf_seed_only(): bool
 /** תוכן לעורך — כנתונים (JSON), לא כמסמך. טקסט UTF-8 ב-content; כל דבר אחר ב-b64. */
 function pf_read(array $q): array
 {
+    if (pf_is_words($q)) { $json = words_json(); return ['file' => pf_words_public($json), 'content' => $json]; }
     $r = pf_row((int)($q['id'] ?? 0), empty($q['trash']));
     if ($r['kind'] !== 'file') return ['file' => pf_public($r)];
     return ['file' => pf_public($r)] + pf_payload(pf_blob_get($r['sha']));
@@ -312,6 +327,20 @@ function pf_payload(string $bytes): array
  */
 function pf_raw(array $q): never
 {
+    if (pf_is_words($q)) {
+        $json = words_json();
+        $f = pf_words_public($json);
+        header_remove('Content-Type');
+        header('Content-Type: application/octet-stream');
+        header('X-Content-Type-Options: nosniff');
+        header("Content-Security-Policy: sandbox; default-src 'none'");
+        header('Cross-Origin-Resource-Policy: same-origin');
+        header('Cache-Control: private, no-store');
+        header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode(basename($f['path'])));
+        header('Content-Length: ' . strlen($json));
+        echo $json;
+        exit;
+    }
     $r = pf_row((int)($q['id'] ?? 0), empty($q['trash']));
     if ($r['kind'] === 'dir') throw new ApiError('זו תיקייה', 400);
     if ($r['kind'] === 'media') file_send(file_row((string)$r['file_id']), isset($q['download']));     // אותן כותרות, ועם Range
@@ -401,6 +430,7 @@ function pf_link(array $user, array $b): array
 /** שמירה. rev ישן — 409 עם הגרסה שבשרת, כדי להשוות; לא דריסה שקטה. */
 function pf_write(array $user, array $b): array
 {
+    if (pf_is_words($b)) return pf_words_write($user, $b);
     pf_guard($user);
     $bytes = pf_bytes($b);
     if (strlen($bytes) > ($max = pf_limit('text'))) pf_over('הקובץ גדול מדי', strlen($bytes), $max);
@@ -446,6 +476,7 @@ function pf_tx_note(array $b): ?string
 /** "גרסאות" של קובץ: היסטוריית השמירות שלו — גרסה, מתי, מי, ומה נעשה (שם העסקה). קריאה בלבד. */
 function pf_versions(array $q): array
 {
+    if (pf_is_words($q)) return pf_words_versions();
     $r = pf_row((int)($q['id'] ?? 0));
     $st = db()->prepare('SELECT id, rev, at, name, note, size FROM pf_history WHERE file_id = ? ORDER BY id DESC');   // ההיסטוריה כבר מוגבלת בשמירה (pf_hist)
     $st->execute([$r['id']]);
@@ -478,6 +509,7 @@ function pf_target(array $b): array
 function pf_rename(array $user, array $b): array
 {
     pf_guard($user);
+    if (pf_is_words($b)) throw new ApiError('המיקום של הקובץ של טבלת המילים נקבע ב-kol.json (data.words.file). התצוגה החיה והבנייה מגישות אותו ב-data/words.json', 409, ['linked' => 'words']);
     $to = pf_path($b['to'] ?? null);
     [$from, $refs] = pf_tx(function () use ($b, $to, $user) {
         [$from, $rows, $dir] = pf_target($b);
@@ -502,6 +534,7 @@ function pf_rename(array $user, array $b): array
 function pf_delete(array $user, array $b): array
 {
     pf_guard($user);
+    if (pf_is_words($b)) return pf_words_unlink($user, $b);
     [$path, $n] = pf_tx(function () use ($b, $user) {
         [$path, $rows] = pf_target($b);
         $batch = bin2hex(random_bytes(6));
@@ -623,6 +656,100 @@ function pf_snap_apply(array $user, array $rows, string $note): array
     return $missing;
 }
 
+// ── N1: data/words.json — הקובץ של טבלת המילים ────────────
+
+const PF_WORDS_ID = -1;                     // אין לו שורה ב-pf_files ואין לו גוש: נבנה מהטבלה ברגע הקריאה (words_json)
+const PF_WORDS_NOTE = 'נבנה מטבלת המילים — שמירה מעדכנת את הטבלה';
+const PF_WORDS_MAX = 1 << 25;                 // 32MB — 1,500 מילים עם פירושים ארוכים
+const PF_WORDS_AUDIT = ['words_file', 'words_csv', 'word_add', 'word_edit', 'word_delete', 'word_move', 'topic_rename', 'topic_delete', 'trash_restore', 'snapshot_restore',
+    'field_add', 'field_edit', 'field_key', 'field_delete', 'topic_edit', 'topic_merge', 'topic_slug'];      // N2: גם שינויי מבנה ונושאים
+
+function pf_is_words(array $b): bool
+{
+    return (int)($b['id'] ?? 0) === PF_WORDS_ID;
+}
+
+/** איפה הקובץ בעץ: kol.json ← data.words.file (source "words"). אין data.words — אין קובץ (הטבלה עצמה נשארת). */
+function pf_words_path(): ?string
+{
+    $c = pf_kol()['config'] ?? null;
+    $d = is_array($c) && is_array($c['data'] ?? null) ? ($c['data']['words'] ?? null) : null;
+    if (!is_array($d) || ($d['source'] ?? 'words') !== 'words') return null;
+    try { return pf_path($d['file'] ?? 'data/words.json'); } catch (ApiError) { return null; }
+}
+
+function pf_words_public(?string $json = null): array
+{
+    $path = pf_words_path() ?? throw new ApiError('אין בפרויקט קובץ של טבלת המילים (kol.json ← data.words)', 404);
+    $json ??= words_json();
+    $st = db()->prepare('SELECT at, name FROM audit WHERE action IN (' . implode(',', array_fill(0, count(PF_WORDS_AUDIT), '?')) . ') ORDER BY id DESC LIMIT 1');
+    $st->execute(PF_WORDS_AUDIT);
+    $last = $st->fetch() ?: ['at' => null, 'name' => ''];
+    return ['id' => PF_WORDS_ID, 'path' => $path, 'kind' => 'file', 'size' => strlen($json), 'rev' => words_rev($json), 'at' => $last['at'], 'by' => $last['name'],
+        'linked' => 'words', 'note' => PF_WORDS_NOTE . (($int = pf_words_internal()) ? ' · שדות פנימיים: ' . implode(', ', array_column($int, 'key')) . ' — לא מתפרסמים' : ''), 'internal' => $int];
+}
+
+/** N2: שדות שאינם "מתפרסם" — לתווית במנהל הקבצים ("שדות פנימיים: notes — לא מתפרסמים"), לא בתוך ה-JSON. */
+function pf_words_internal(): array
+{
+    return array_values(array_map(fn($f) => ['key' => $f['key'], 'label' => $f['label']], array_filter(fields_all(), fn($f) => !$f['published'])));
+}
+
+/**
+ * שמירה ← טבלה (lib/lexicon.php, words_file_save): בלי apply — "מה ישתנה" (שום דבר לא נכתב); עם apply + token — ההחלה.
+ * rev ישן — 409 עם התוכן הנוכחי, כמו כל קובץ. שמירה אוטומטית — לא: הטבלה משתנה רק אחרי שראו את ההבדלים.
+ */
+function pf_words_write(array $user, array $b): array
+{
+    pf_guard($user);
+    if (!empty($b['auto'])) throw new ApiError('הקובץ של טבלת המילים נשמר רק בשמירה מפורשת (Ctrl+S), אחרי "מה ישתנה"', 400, ['linked' => 'words']);
+    $bytes = pf_bytes($b);
+    if (strlen($bytes) > PF_WORDS_MAX) pf_over('הקובץ גדול מדי', strlen($bytes), PF_WORDS_MAX);
+    $json = words_json();
+    $f = pf_words_public($json);
+    if ((string)($b['rev'] ?? '') !== $f['rev']) throw new ApiError('הקובץ השתנה בינתיים', 409, ['conflict' => ['file' => $f, 'content' => $json]]);
+    $r = words_file_save($user, $bytes, $b);
+    if (isset($r['done'])) {
+        $json = words_json();
+        $r['file'] = pf_words_public($json);
+        $r['content'] = $json;                            // עם המזהים שניתנו למילים החדשות, ובניקוי של הטבלה
+    } else $r['file'] = $f;
+    return $r;
+}
+
+/** "גרסאות": השמירות של הטבלה (יומן הפעולות) — מתי, מי ומה השתנה. אין גוש שמור; נקודת שחזור — במסך השחזור. */
+function pf_words_versions(): array
+{
+    $st = db()->prepare('SELECT id, at, name, action, detail FROM audit WHERE action IN (' . implode(',', array_fill(0, count(PF_WORDS_AUDIT), '?')) . ') ORDER BY id DESC LIMIT 100');
+    $st->execute(PF_WORDS_AUDIT);
+    $label = ['words_file' => '📄 words.json', 'words_csv' => '📊 אקסל', 'word_add' => '➕ מילה', 'word_edit' => '✏️ מילה', 'word_delete' => '🗑️ מילה', 'word_move' => '⠿ סדר',
+        'topic_rename' => '🏷️ נושא', 'topic_delete' => '🏷️ נושא', 'topic_edit' => '🏷️ נושא', 'topic_merge' => '🏷️ מיזוג', 'topic_slug' => '🏷️ מפתח',
+        'field_add' => '🧩 שדה', 'field_edit' => '🧩 שדה', 'field_key' => '🧩 מפתח', 'field_delete' => '🧩 שדה', 'trash_restore' => '↩️ מהסל', 'snapshot_restore' => '↩️ נקודת שחזור'];
+    return ['file' => pf_words_public(), 'linked' => 'words', 'versions' => array_map(fn($h) => ['hid' => -(int)$h['id'], 'rev' => null, 'at' => $h['at'], 'by' => $h['name'],
+        'note' => ($label[$h['action']] ?? $h['action']) . ' · ' . $h['detail'], 'size' => null, 'linked' => true], $st->fetchAll())];
+}
+
+/**
+ * "מחיקה" של הקובץ: אינה מוחקת מילה. בלי unlink — הסבר (409), ועם unlink: true — מסירה את data.words מ-kol.json (גרסה
+ * חדשה של kol.json, הפיכה מההיסטוריה שלו). הטבלה נשארת כמו שהיא.
+ */
+function pf_words_unlink(array $user, array $b): array
+{
+    if (($b['unlink'] ?? null) !== true) {
+        throw new ApiError('זה הקובץ של טבלת המילים. מחיקה כאן אינה מוחקת מילים; להסיר אותו מהעמוד = להסיר את data.words מ-kol.json (הטבלה נשארת)', 409, ['linked' => 'words', 'action' => 'unlink']);
+    }
+    $kol = pf_kol();
+    $r = pf_by_path('kol.json');
+    if (!$kol['valid'] || !$r) throw new ApiError('kol.json אינו תקין — תקנו אותו קודם', 409);
+    $c = $kol['config'];
+    unset($c['data']['words']);
+    if (empty($c['data'])) unset($c['data']);
+    $bytes = json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+    pf_tx(fn() => pf_put(pf_row((int)$r['id']), $bytes, $user, 'הסרת data.words — הקובץ של טבלת המילים הוסר מהעמוד (הטבלה נשארה)'));
+    audit_as($user, 'pf_delete', 'data.words הוסר מ-kol.json (המילים נשארו בטבלה)');
+    return ['deleted' => 0, 'unlinked' => true, 'kol' => pf_kol()];
+}
+
 // ── היום הראשון (פרוסה F2 §2) ─────────────────────────────
 
 /** פעם אחת: שלד ברירת המחדל, ו-from-current/ — עותק כמו שהוא של הקוד שהכלי מחזיק היום. */
@@ -644,6 +771,7 @@ function pf_seed_files(): array
         'breakpoints' => [['id' => 'tablet', 'label' => 'טאבלט', 'max' => 1024, 'preview' => 820], ['id' => 'mobile', 'label' => 'טלפון', 'max' => 767, 'preview' => 390]],
         'styles' => ['tokens' => 'css/tokens.css', 'base' => 'css/base.css', 'page' => 'css/page.css'],
         'components' => 'components/',
+        'data' => ['words' => ['file' => 'data/words.json', 'source' => 'words']],      // N1: הקובץ של טבלת המילים
     ];
     $files = [
         'index.html' => "<!doctype html>\n<html lang=\"he\" dir=\"rtl\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>קול מרוקו</title>\n"

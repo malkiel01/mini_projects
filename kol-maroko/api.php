@@ -16,6 +16,8 @@ require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/preview.php';
 require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
+require_once __DIR__ . '/lib/fields_bind.php';          // N2: שינוי מפתח — הקשירות בקבצי הפרויקט
+require_once __DIR__ . '/lib/forms.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -48,13 +50,18 @@ const PUBLIC_ACTIONS = ['embed_key', 'media'];
 const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dismiss', 'lock', 'draft_save', 'render', 'revision_restore',
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
-                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
+                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
+                      'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
-                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read'];
+                      'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
+                      'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read',
+                      'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
+                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open'];   // X1
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -95,6 +102,9 @@ try {
         'media' => file_send(media_check($_GET)),
         'editor_session' => editor_session(require_role($user, 'editor'), $body),
         'longtext_sync' => longtext_sync(require_role($user, 'editor'), $body),
+        'longtexts' => (require_role($user, 'editor') ? longtexts_list() : []),          // X1: 🔗 חבר למסמך קיים
+        'longtext_link' => longtext_link(require_role($user, 'editor'), $body),
+        'longtext_open' => longtext_open(require_role($user, 'editor'), $body),
         'publish_preview' => publish_preview(require_role($user, 'publisher')),
         'publish' => publish(require_role($user, 'publisher'), $body),
         'republish' => republish(require_role($user, 'publisher'), $body),
@@ -120,11 +130,37 @@ try {
         'rec_fetch_step' => rec_fetch_step(require_role($user, 'owner')),
         'rec_job_op' => rec_job_op(require_role($user, 'owner'), $body),
         'rec_settings_set' => rec_settings_set(require_role($user, 'owner'), $body),
+        // A3 — הפעולות על הקלטה (lib/rec_actions.php): עורך ומעלה; מחיקה סופית וניקוי גרסאות — בעל העמוד
+        'rec_replace' => rec_replace(require_role($user, 'editor'), $body),
+        'rec_versions' => (require_role($user, 'editor') ? rec_versions($_GET) : []),
+        'rec_revert' => rec_revert(require_role($user, 'editor'), $body),
+        'rec_rename' => rec_rename(require_role($user, 'editor'), $body),
+        'rec_connect' => rec_connect(require_role($user, 'editor'), $body),
+        'rec_disconnect' => rec_disconnect(require_role($user, 'editor'), $body),
+        'rec_delete' => rec_delete(require_role($user, 'editor'), $body),
+        'rec_restore' => rec_restore(require_role($user, 'editor'), $body),
+        'rec_purge' => rec_purge(require_role($user, 'owner'), $body),
+        'rec_versions_clean' => rec_versions_clean(require_role($user, 'owner'), $body),
+        'rec_match' => (require_role($user, 'editor') ? rec_match($body) : []),
+        'rec_add' => rec_add(require_role($user, 'editor'), $body),
+        'rec_dedupe' => rec_dedupe(require_role($user, 'editor'), $body),
+        'rec_zip_start' => rec_zip_start(require_role($user, 'editor'), $body),
+        'rec_zip_step' => rec_zip_step(require_role($user, 'editor'), $body),
+        'rec_zip_get' => rec_zip_get(require_role($user, 'editor'), $_GET),
         'word_save' => word_save(require_role($user, 'editor'), $body),
         'word_delete' => word_delete(require_role($user, 'editor'), $body),
         'topic_op' => topic_op(require_role($user, 'editor'), $body),
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
+        'word_move' => word_move(require_role($user, 'editor'), $body),          // N1: גרירה / "העבר ל…" בטבלה
+        'fields' => fields_state(require_role($user, 'editor')),                // N2: "מבנה המילה" — עורך (08 §3); "רוקן נכשלים" ומחיקה עם ערכים — מפרסם, בפונקציה
+        'field_save' => field_save(require_role($user, 'editor'), $body),
+        'field_delete' => field_delete(require_role($user, 'editor'), $body),
+        'topics' => topics_state(require_role($user, 'editor')),                // N2: מסך הנושאים
+        'topic_save' => topic_save(require_role($user, 'editor'), $body),
+        'topic_merge' => topic_merge(require_role($user, 'editor'), $body),
+        'field_key_preview' => field_key_preview(require_role($user, 'editor'), $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
+        'field_key_apply' => field_key_apply(require_role($user, 'editor'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),
@@ -185,11 +221,21 @@ try {
         'kd_update' => build_kd_update(require_role($user, 'owner'), $body),
         'notices' => notices_list(require_role($user, 'owner')),
         'notice_read' => notice_read(require_role($user, 'owner'), $body),
+        // 📬 פניות (M5, lib/forms.php): קריאה, סימון וייצוא — עורך ומעלה; מחיקה ו"מחק ישנות" — מפרסם; מגבלות ומייל — המפתח
+        'inbox' => inbox_list(require_role($user, 'editor'), $_GET),
+        'inbox_mark' => inbox_mark(require_role($user, 'editor'), $body),
+        'inbox_delete' => inbox_delete(require_role($user, 'publisher'), $body),
+        'inbox_purge' => inbox_purge(require_role($user, 'publisher'), $body),
+        'inbox_csv' => inbox_csv(require_role($user, 'editor'), $_GET),
+        'forms_settings' => ($method === 'POST' ? forms_settings(require_role($user, 'editor'), $body, is_developer($user)) : forms_settings(require_role($user, 'editor'), [], false)),
+        'mail_test' => forms_mail_test(require_developer($user), $body),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status(require_role($user, 'editor')),
         'ai_suggest' => ai_suggest(require_role($user, 'editor'), $body),
+        'ai_suggest_files' => ai_suggest_files(require_role($user, 'editor'), $body),          // X1: ✨ על קבצי הפרויקט
+        'ai_apply_files' => ai_apply_files(require_role($user, 'editor'), $body),
         'ai_admin' => (require_role($user, 'owner') ? ai_admin() : []),
         'secret_set' => secret_set(require_role($user, 'owner'), $body),
         'ai_quota_set' => ai_quota_set(require_role($user, 'owner'), $body),

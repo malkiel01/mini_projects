@@ -12,6 +12,7 @@
   "public": [
     "api.php?action=embed_key|media|devapi-feed|devapi-comment|devapi-file|devapi-attach",
     "agent.php",
-    "preview/index.php"
+    "preview/index.php",
+    "form.php"
   ]
 }

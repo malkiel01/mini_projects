@@ -1,11 +1,12 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.1.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.2.0)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
  *
  *   data-kol-list="words"            המכל שבו מוצגת הרשימה. הילד <template> שלו הוא תבנית הפריט.
- *   data-kol-sort="word"             מיון: שם שדה, "-שדה" ליורד, או "manual" (סדר הקובץ).
+ *   data-kol-sort="word"             מיון: שם שדה, "-שדה" ליורד, או "manual" (סדר הקובץ = הסדר שנקבע בגרירה בטבלה).
+ *   data-kol-sort-lang="he"          השפה של המיון לפי א"ב (Intl.Collator): "he", "ar", "fr"… ברירת מחדל: he.
  *   data-kol-page="60"               כמה פריטים בכל טעינה. בלי התכונה — הכול מוצג.
  *   data-kol-text="meaning"          תוכן הטקסט של האלמנט ← השדה.   אפשר גם תבנית: "#{id}"
  *   data-kol-html="meaning"          כמו text, אבל כ-HTML.
@@ -23,7 +24,12 @@
  *   data-kol-play                    כפתור בתוך תבנית הפריט: משמיע את ההקלטה של הפריט (השדה audio).
  *   data-kol-open="feedback"         כפתור בתוך תבנית הפריט: פותח את החלון data-kol-dialog="feedback".
  *   data-kol-close                   סוגר את החלון שהוא בתוכו.
- *   data-kol-form="feedback"         טופס. אחרי שליחה מוצג הנוסח שב-data-kol-form-done, בתוך data-kol-form-status.
+ *   data-kol-form="feedback"         טופס בלי action: נשלח לתיבת הפניות בכלי (הכתובת — <meta name="kol-form-endpoint">,
+ *                                    שהפרסום כותב). נשלחים כל השדות עם name. טופס עם action משלו — הדפדפן שולח לשם, וכאן לא נוגעים.
+ *   data-kol-form-done               אלמנט בתוך הטופס (או בתוך החלון שלו): מוצג אחרי שליחה שהצליחה. כתבו בו מה שתרצו.
+ *   data-kol-form-error              כמוהו — מוצג כשהשליחה נכשלה. בזמן השליחה: הכפתור מושבת, ו-aria-busy על הטופס.
+ *   data-kol-trap                    שדה מלכודת (מוסתר מבני אדם): בוט שממלא אותו — נענה "התקבל", והפנייה אינה נשמרת.
+ *                                    (הצורה הישנה — data-kol-form-done="טקסט" על ה-<form> ו-data-kol-form-status — עובדת גם היא.)
  *   data-kol-active-class="is-on"    איזו מחלקה לשים על כפתור סינון / השמעה פעיל (בנוסף ל-aria-pressed).
  *   data-kol-prerendered             (נכתב בפרסום) המכל כבר מכיל את הרשימה כ-HTML, למי שאין לו JS ולמנועי חיפוש.
  *                                    כל פריט כתוב מסומן data-kol-pre; בציור הראשון הם מוסרים והרשימה נבנית מחדש — בלי
@@ -211,13 +217,24 @@
     return (input && input.getAttribute('data-kol-search-fields')) || 'word';
   }
 
-  function sorted(items, how) {
+  var collators = {};
+  function collator(lang) {
+    lang = String(lang || 'he').trim() || 'he';
+    if (!collators[lang]) {
+      try { collators[lang] = new Intl.Collator(lang, { numeric: true, sensitivity: 'base' }); }
+      catch (e) { collators[lang] = new Intl.Collator('he', { numeric: true, sensitivity: 'base' }); }   // שפה לא תקינה — עברית
+    }
+    return collators[lang];
+  }
+
+  /** "manual" (או בלי התכונה) — סדר הקובץ כמו שהוא. אחרת — לפי שדה, עם Intl.Collator בשפה של data-kol-sort-lang. */
+  function sorted(items, how, lang) {
     if (!how || how === 'manual') return items;
     var down = how.charAt(0) === '-', field = down ? how.slice(1) : how;
-    var copy = items.slice();
+    var copy = items.slice(), col = collator(lang);
     copy.sort(function (a, b) {
       var x = a[field], y = b[field];
-      var order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x == null ? '' : x).localeCompare(String(y == null ? '' : y), 'he');
+      var order = typeof x === 'number' && typeof y === 'number' ? x - y : col.compare(String(x == null ? '' : x), String(y == null ? '' : y));
       return down ? -order : order;
     });
     return copy;
@@ -253,7 +270,7 @@
     var token = container.__kolToken = (container.__kolToken || 0) + 1;
     var page = parseInt(container.getAttribute('data-kol-page'), 10) || 0;
     if (page && !state.limit) state.limit = page;
-    var items = sorted(state.matched, container.getAttribute('data-kol-sort'));
+    var items = sorted(state.matched, container.getAttribute('data-kol-sort'), container.getAttribute('data-kol-sort-lang'));
     if (page) items = items.slice(0, state.limit);
     container.__kolShown = items.length;
 
@@ -417,6 +434,7 @@
       all('[data-kol-value]', dialog).forEach(function (element) { element.value = fill([item], element.getAttribute('data-kol-value')); });
     }
     all('[data-kol-form-status]', dialog).forEach(function (element) { element.textContent = ''; });
+    all('[data-kol-form-done], [data-kol-form-error]', dialog).forEach(function (element) { if (!element.hasAttribute('data-kol-form')) element.hidden = true; });
     lastFocus = document.activeElement;
     dialog.hidden = false;
     var first = dialog.querySelector('input:not([type=hidden]):not([tabindex="-1"]), textarea, select, button');
@@ -483,13 +501,67 @@
     all('[data-kol-dialog]').forEach(closeDialog);
   });
 
+  // ── שליחת טופס (1.2.0) ────────────────────────────────────
+
+  var loadedAt = Date.now();
+  // הבסיס של החבילה — התיקייה שבה js/kol-data.js; ממנו הנתיב היחסי של העמוד (_page)
+  var script = document.currentScript && document.currentScript.src;
+  var base = script ? script.replace(/[?#].*$/, '').replace(/js\/kol-data\.js$/, '') : '';
+
+  function pagePath() {
+    var here = location.href.replace(/[?#].*$/, '');
+    if (base && here.indexOf(base) === 0) return here.slice(base.length) || 'index.html';
+    return location.pathname.split('/').pop() || 'index.html';
+  }
+
+  /** אלמנטי ההודעה של הטופס: בתוכו, ואם אין — בתוך החלון שלו. */
+  function messages(form, attr) {
+    var found = all('[' + attr + ']', form);
+    var dialog = closest(form, '[data-kol-dialog]');
+    if (!found.length && dialog) found = all('[' + attr + ']', dialog);
+    return found.filter(function (element) { return element !== form && !element.hasAttribute('data-kol-form'); });
+  }
+
+  function finish(form, ok) {
+    form.removeAttribute('aria-busy');
+    all('button, input[type=submit]', form).forEach(function (button) {
+      if (button.hasAttribute('data-kol-busy')) { button.disabled = false; button.removeAttribute('data-kol-busy'); }
+    });
+    messages(form, 'data-kol-form-done').forEach(function (element) { element.hidden = !ok; });
+    messages(form, 'data-kol-form-error').forEach(function (element) { element.hidden = ok; });
+    // הצורה הישנה: הנוסח בתכונה של הטופס, בתוך data-kol-form-status
+    var text = form.getAttribute(ok ? 'data-kol-form-done' : 'data-kol-form-error') || '';
+    all('[data-kol-form-status]', form).forEach(function (element) { element.textContent = text; });
+    if (ok) form.reset();
+  }
+
   document.addEventListener('submit', function (event) {
     var form = closest(event.target, '[data-kol-form]');
-    if (!form) return;
-    event.preventDefault();                                    // העמוד אינו שולח דבר לשום שרת מכאן
+    if (!form || form.hasAttribute('action')) return;             // טופס עם action משלו — הדפדפן שולח לשם
+    event.preventDefault();
+    if (form.getAttribute('aria-busy') === 'true') return;
     if (form.checkValidity && !form.checkValidity()) { if (form.reportValidity) form.reportValidity(); return; }
-    var done = form.getAttribute('data-kol-form-done') || '';
-    all('[data-kol-form-status]', form).forEach(function (element) { element.textContent = done; });
+    var meta = document.querySelector('meta[name="kol-form-endpoint"]');
+    var endpoint = meta && meta.getAttribute('content');
+    if (!endpoint || !window.fetch || !window.FormData) { finish(form, false); return; }
+    var data = new FormData(form);
+    var trap = '';
+    all('[data-kol-trap]', form).forEach(function (element) {
+      if (element.name) data.delete(element.name);
+      trap += element.value || '';
+    });
+    data.set('_form', form.getAttribute('data-kol-form'));
+    data.set('_t', String(Date.now() - loadedAt));
+    data.set('_page', pagePath());
+    if (trap) data.set('_trap', trap);
+    form.setAttribute('aria-busy', 'true');
+    all('button, input[type=submit]', form).forEach(function (button) {
+      if ((button.type || 'submit') === 'submit' && !button.disabled) { button.disabled = true; button.setAttribute('data-kol-busy', ''); }
+    });
+    fetch(endpoint, { method: 'POST', body: data, credentials: 'omit', mode: 'cors' })
+      .then(function (response) { return response.json(); })
+      .then(function (answer) { finish(form, !!(answer && answer.ok)); })
+      .catch(function () { finish(form, false); });
   });
 
   // ── התחלה ─────────────────────────────────────────────────
@@ -502,7 +574,7 @@
 
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.1.0',
+    version: '1.2.0',
     prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },

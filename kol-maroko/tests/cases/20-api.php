@@ -12,16 +12,20 @@ const API_MIN_ROLE = [
     'publish_preview' => 'publisher', 'publish' => 'publisher', 'republish' => 'publisher', 'version_send' => 'publisher',
     'versions' => 'editor', 'version_preview' => 'editor', 'publish_settings' => 'owner', 'key_rotate' => 'owner', 'key_activate' => 'owner',
     'site_set' => 'owner', 'site_ping' => 'publisher', 'site_switch' => 'publisher', 'import_run' => 'owner',
-    'words' => 'editor', 'word_save' => 'editor', 'word_delete' => 'editor', 'topic_op' => 'editor', 'words_csv' => 'editor', 'words_csv_import' => 'editor',
+    'words' => 'editor', 'word_save' => 'editor', 'word_delete' => 'editor', 'topic_op' => 'editor', 'words_csv' => 'editor', 'words_csv_import' => 'editor', 'word_move' => 'editor',
     'audio_import' => 'owner', 'snapshots' => 'editor', 'snapshot_create' => 'editor', 'snapshot_restore' => 'editor', 'snapshot_preview' => 'editor',
     'trash' => 'editor', 'trash_restore' => 'editor', 'trash_purge' => 'owner', 'backup' => 'owner',
     'code' => 'editor', 'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor', 'code_history' => 'editor', 'code_history_get' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor', 'import_info' => 'owner',
-    'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
+    'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_suggest_files' => 'editor', 'ai_apply_files' => 'editor', 'longtext_link' => 'editor', 'longtext_open' => 'editor', 'longtexts' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
     'library' => 'editor',
     // פרוסה A2 — הבאת ההקלטות
     'rec_duration' => 'editor', 'rec_status' => 'owner', 'rec_fetch_plan' => 'owner', 'rec_scan_start' => 'owner', 'rec_scan_step' => 'owner',
     'rec_fetch_start' => 'owner', 'rec_fetch_step' => 'owner', 'rec_job_op' => 'owner', 'rec_settings_set' => 'owner',
+    // A3
+    'rec_replace' => 'editor', 'rec_versions' => 'editor', 'rec_revert' => 'editor', 'rec_rename' => 'editor', 'rec_connect' => 'editor',
+    'rec_disconnect' => 'editor', 'rec_delete' => 'editor', 'rec_restore' => 'editor', 'rec_purge' => 'owner', 'rec_versions_clean' => 'owner',
+    'rec_match' => 'editor', 'rec_add' => 'editor', 'rec_dedupe' => 'editor', 'rec_zip_start' => 'editor', 'rec_zip_step' => 'editor', 'rec_zip_get' => 'editor',
     // פרוסה F1
     'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-my-reports' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',
@@ -34,9 +38,13 @@ const API_MIN_ROLE = [
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     // פרוסה F2b
     'pf_copy' => 'editor', 'pf_version' => 'editor', 'pf_version_restore' => 'editor', 'pf_search' => 'editor', 'pf_replace' => 'editor', 'pf_refs' => 'editor', 'pf_zip' => 'editor', 'pf_zip_import' => 'editor',
+    // פרוסה N2 — שדות מותאמים ונושאים
+    'fields' => 'editor', 'field_save' => 'editor', 'field_delete' => 'editor', 'topics' => 'editor', 'topic_save' => 'editor', 'topic_merge' => 'editor', 'field_key_preview' => 'editor', 'field_key_apply' => 'editor',
+    // פרוסה M5 — 📬 פניות
+    'inbox' => 'editor', 'inbox_mark' => 'editor', 'inbox_csv' => 'editor', 'forms_settings' => 'editor', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher', 'mail_test' => 'owner', 'dev-forms' => 'owner',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner', 'dev-attack-save' => 'owner',
 ];
-const API_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];
+const API_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-forms'];
 
 function api_method(string $action): string
 {

@@ -811,7 +811,9 @@ parent.postMessage({kol:'ready'},'*');
     frame.srcdoc = FRAME;
     status(); updateBar(); renderPanel();
 
+    const mine = S;                            // A3: עזיבה (או כניסה מחדש) בזמן ההמתנה ל-lock — המסך הזה כבר לא פעיל
     const lock = d.lock.mine ? d.lock : (await api('lock', { op: 'take' }).catch(() => ({ lock: { mine: false, by: '?' } }))).lock;
+    if (S !== mine) return;
     if (!lock.mine) readonly(`בעריכה אצל ${lock.by}. אפשר לצפות; העריכה תיפתח כשהוא יסיים`);
     S.beat = setInterval(beat, 30_000);
   }
