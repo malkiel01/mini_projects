@@ -338,6 +338,26 @@ th.w-c-word { background: var(--bg); z-index: 2; }
 .w-topic .use-tx { flex: 1; min-width: 0; }
 .w-play { inline-size: 40px; block-size: 40px; border-radius: 50%; background: color-mix(in srgb, var(--brand) 12%, var(--surface)); color: var(--brand); }
 .w-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+/* N2: שדות מותאמים (fields.js) — עמודות, "מבנה המילה", מסך הנושאים, שינוי מפתח */
+.w-filters.w-f4 { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+@media (max-width: 600px) { .w-filters.w-f4 { grid-template-columns: 1fr 1fr; } }
+.w-c-field { inline-size: 150px; min-inline-size: 110px; }
+.w-c-field select.w-cell { font-size: 16px; }
+.w-c-field input[type=checkbox] { inline-size: 22px; block-size: 22px; }
+.f-file { display: flex; align-items: center; gap: 4px; }
+.f-thumb { inline-size: 36px; block-size: 36px; object-fit: cover; border-radius: 6px; display: block; }
+.f-list .f-row { display: flex; align-items: center; gap: var(--s2); padding: 8px var(--s3); flex-wrap: wrap; }
+.f-row .use-tx { flex: 1 1 180px; min-width: 0; display: grid; gap: 2px; }
+.f-row .w-grip { cursor: grab; color: var(--muted); }
+.f-key { font-family: ui-monospace, monospace; color: var(--muted); }
+.f-acts { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.f-acts input[type=color] { inline-size: 36px; block-size: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.f-hits .f-hit { display: flex; gap: var(--s2); align-items: flex-start; padding: 6px var(--s2); }
+.f-hit .use-tx { display: grid; gap: 2px; min-width: 0; }
+.f-hit code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .78rem; padding: 2px 4px; border-radius: 4px; }
+.f-before { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.f-after { background: color-mix(in srgb, var(--brand) 12%, var(--surface)); }
+.f-hit.manual { opacity: .75; }
 .w-chips:empty { display: none; }
 .w-chips .chip { min-height: 28px; font-size: .8rem; color: var(--ink); gap: 4px; }
 .chip-x { border: 0; background: none; color: var(--muted); padding: 0 2px; cursor: pointer; font-size: .75rem; }

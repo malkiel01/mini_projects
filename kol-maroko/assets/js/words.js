@@ -9,11 +9,26 @@ const Words = (() => {
   const KIND = { site: ['באתר', ''], copy: ['בכלי', 'ok'], file: ['חדשה', 'warn'], missing: ['חסרה', 'bad'] };
   let D = null;                           // { words, topics }
   let q = '', topic = '', audio = '', shown = PAGE;
+  let ffilter = '';                       // N2: סינון לפי שדה — "key:has" / "key:no" / "key=value"
+  // N2: השדות המותאמים (assets/js/fields.js) — נטען לפי הצורך, בלי שורה ב-studio.html
+  let fieldsJs = null;
+  const fieldsReady = () => (fieldsJs ??= typeof Fields !== 'undefined' ? Promise.resolve() : new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = 'assets/js/fields.js?v=' + encodeURIComponent(state.version || '');
+    sc.onload = ok; sc.onerror = () => { fieldsJs = null; bad(new Error('fields.js לא נטען')); };
+    document.head.append(sc);
+  }));
+  // "הצג עמודות" — נזכר לכל משתמש בדפדפן הזה (לא בעמוד, לא ב-kol-data.js)
+  const COLS_KEY = 'kol.words.hidden-cols';
+  const hiddenCols = () => { try { return new Set(JSON.parse(localStorage.getItem(COLS_KEY) || '[]')); } catch { return new Set(); } };
+  const setHidden = set => { try { localStorage.setItem(COLS_KEY, JSON.stringify([...set])); } catch { /* מצב פרטי */ } };
+  const custom = () => (D?.fields || []).filter(f => !f.builtin);
   const picked = new Set();               // N1: בחירה מרובה — לגרירה ול"העבר ל…"
   let dragIds = null;
   let player = null;
 
-  const plain = html => { const d = document.createElement('div'); d.innerHTML = html.replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'); return d.textContent.replace(/\s+/g, ' ').trim(); };
+  // N2c: DOMParser — מסמך מנותק שאינו מריץ דבר (בדיב מנותק <img onerror> רץ)
+  const plain = html => (new DOMParser().parseFromString(String(html).replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'), 'text/html').body.textContent || '').replace(/\s+/g, ' ').trim();
   const norm = s => s.toLowerCase().replace(/[֑-ׇ]/g, '');          // בלי ניקוד וטעמים
   const splitTopics = s => [...new Set(s.split(/[;,،]/).map(t => t.trim().replace(/\s+/g, ' ')).filter(Boolean))];
 
@@ -31,7 +46,7 @@ const Words = (() => {
 
   async function view(host) {
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
-    try { D = await api('words'); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    try { D = await api('words'); if (custom().length) await fieldsReady(); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     shown = PAGE;
     draw(host);
     if (pending) {                                   // הגענו מהספרייה: "פתח את המילה"
@@ -59,6 +74,7 @@ const Words = (() => {
   // שמירה של שורה (מהתא או מהכרטיס). light — השרת מחזיר רק את השורה
   async function saveRow(w, patch, light = true) {
     const body = { id: w.id, word: w.word, meaning: w.meaning, topics: w.topics, audio: w.audio, external_id: w.external_id, ...patch, light };
+    if (!body.extra) delete body.extra;                    // N2: רק המפתחות שנשלחו משתנים
     const r = await api('word_save', body);
     if (!light) { D = r; return; }
     const i = D.words.findIndex(x => x.id === r.id);
@@ -75,6 +91,12 @@ const Words = (() => {
     const audioSel = h('select', { 'aria-label': 'הקלטה', onchange: e => { audio = e.target.value; shown = PAGE; list(); } },
       Object.entries(AUDIO).map(([v, l]) => h('option', { value: v, selected: v === audio }, l)));
     const n = k => D.words.filter(w => w.audio_kind === k).length;
+    // N2: סינון לפי שדה מותאם — יש ערך / אין ערך, ולבחירה — לפי ערך
+    const fieldSel = custom().length ? h('select', { 'aria-label': 'שדה', 'data-ffilter': true, onchange: e => { ffilter = e.target.value; shown = PAGE; list(); } },
+      h('option', { value: '' }, 'כל השדות'),
+      custom().map(f => [h('option', { value: `${f.key}:has`, selected: ffilter === `${f.key}:has` }, `${f.label}: יש ערך`), h('option', { value: `${f.key}:no`, selected: ffilter === `${f.key}:no` }, `${f.label}: אין ערך`),
+        ...(f.type === 'choice' ? f.options.map(o => h('option', { value: `${f.key}=${o.value}`, selected: ffilter === `${f.key}=${o.value}` }, `${f.label} = ${o.label}`)) : [])]).flat()) : null;
+    const shownFields = custom().filter(f => !hiddenCols().has(f.key));
     // N1: מה שנבחר — "העבר ל…" (מקום מספרי) או גרירה של כולן יחד
     const bulk = h('div', { class: 'w-bulk', hidden: !picked.size },
       h('span', { 'data-picked': picked.size }, `${picked.size} נבחרו`),
@@ -85,7 +107,10 @@ const Words = (() => {
     host.replaceChildren(
       h('div', { class: 'toolbar wrap' },
         h('button', { type: 'button', class: 'btn primary', onclick: () => edit(null, host) }, h('span', { 'aria-hidden': 'true' }, '+'), ' מילה'),
-        h('button', { type: 'button', class: 'btn ghost', onclick: () => topicsSheet(host) }, '🏷️ נושאים'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-topics': true, onclick: () => fieldsReady().then(() => Fields.topics(() => reload(host))).catch(e => toast(e.message, true)) }, '🏷️ נושאים'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-structure': true, onclick: () => fieldsReady().then(() => Fields.structure(() => reload(host))).catch(e => toast(e.message, true)) }, '🧩 מבנה המילה'),
+        custom().length ? h('button', { type: 'button', class: 'btn ghost', 'data-cols': true, onclick: () => colsSheet(host) }, '👁️ הצג עמודות') : null,
+        h('button', { type: 'button', class: 'btn ghost', 'data-ai-words': true, onclick: () => Project.ai({ title: '✨ עוזר הבינה — המילים', paths: ['data/words.json'], onApplied: () => reload(host) }) }, '✨ עוזר'),   // X1
         h('a', { class: 'btn ghost', href: 'api.php?action=words_csv', download: '' }, '⬇️ לאקסל'),
         h('button', { type: 'button', class: 'btn ghost', onclick: () => csvIn.click() }, '⬆️ מאקסל'), csvIn),
       h('div', { class: 'summary' }, h('div', { class: 'line wrap' },
@@ -94,7 +119,7 @@ const Words = (() => {
         h('b', {}, String(n('copy') + n('file'))), h('span', { class: 'muted' }, 'מהן בכלי ·'),
         h('b', {}, String(D.topics.length)), h('span', { class: 'muted' }, 'נושאים')),
         n('site') ? h('p', { class: 'hint', style: 'margin:0' }, `${n('site')} הקלטות עדיין רק באתר. להעתקה לכלי: ⚙️ הגדרות ← "ייבוא ההקלטות".`) : null),
-      h('div', { class: 'w-filters' }, search, topicSel, audioSel),
+      h('div', { class: 'w-filters' + (fieldSel ? ' w-f4' : '') }, search, topicSel, audioSel, fieldSel),
       bulk, box);
 
     function rows() {
@@ -102,14 +127,24 @@ const Words = (() => {
       return D.words.filter(w =>
         (!topic || (topic === '-' ? !w.topics.length : w.topics.includes(topic))) &&
         (!audio || (audio === 'yes' ? !!w.audio : audio === 'no' ? !w.audio : audio === 'new' ? w.audio_kind === 'file' : w.audio_kind === 'missing')) &&
-        (!s || norm(w.word).includes(s) || norm(plain(w.meaning)).includes(s)));
+        (!s || norm(w.word).includes(s) || norm(plain(w.meaning)).includes(s)) && fieldOk(w));
+    }
+    function fieldOk(w) {
+      if (!ffilter) return true;
+      const m = ffilter.match(/^([a-z][a-z0-9_]*)(?::(has|no)|=(.*))$/);
+      if (!m) return true;
+      const v = w.extra?.[m[1]];
+      const has = v != null && v !== '' && !(Array.isArray(v) && !v.length);
+      return m[2] === 'has' ? has : m[2] === 'no' ? !has : v === m[3];
     }
     function list() {
       const all = rows();
       const table = h('table', { class: 'w-table' },
         h('thead', {}, h('tr', {}, h('th', { class: 'w-c-ord' }, h('span', { title: 'הסדר בעמוד — גרירה בידית ⠿' }, '#')), h('th', { class: 'w-c-word' }, 'מילה'),
-          h('th', {}, 'פירוש'), h('th', { class: 'w-c-topics' }, 'נושאים'), h('th', { class: 'w-c-audio' }, 'הקלטה'), h('th', { class: 'w-c-act' }, h('span', { class: 'sr' }, 'עריכה')))),
-        h('tbody', {}, all.slice(0, shown).map(w => row(w, host))));
+          h('th', {}, 'פירוש'), h('th', { class: 'w-c-topics' }, 'נושאים'), h('th', { class: 'w-c-audio' }, 'הקלטה'),
+          shownFields.map(f => h('th', { class: 'w-c-field', 'data-col': f.key, title: f.help || null }, f.label, f.published ? null : h('span', { title: 'פנימי — לא מתפרסם' }, ' 🔒'))),
+          h('th', { class: 'w-c-act' }, h('span', { class: 'sr' }, 'עריכה')))),
+        h('tbody', {}, all.slice(0, shown).map(w => row(w, host, shownFields))));
       box.replaceChildren(...[
         all.length ? h('div', { class: 'w-table-wrap' }, table) : h('p', { class: 'empty' }, D.words.length ? 'לא נמצאו מילים.' : 'עוד אין מילים. "+ מילה", או ייבוא מהאתר ב-⚙️ הגדרות.'),
         all.length > shown ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: () => { shown += PAGE; list(); } }, `עוד ${Math.min(PAGE, all.length - shown)} (נשארו ${all.length - shown})`) : null,
@@ -138,7 +173,7 @@ const Words = (() => {
     return inp;
   }
 
-  function row(w, host) {
+  function row(w, host, shownFields = []) {
     const [kl, kc] = KIND[w.audio_kind] || ['', ''];
     const place = D.words.indexOf(w) + 1;
     const tr = h('tr', { 'data-word': w.id, ondragover: e => { if (dragIds) { e.preventDefault(); tr.classList.toggle('w-drop-after', e.offsetY > tr.offsetHeight / 2); tr.classList.add('w-drop'); } },
@@ -160,6 +195,7 @@ const Words = (() => {
       h('td', { class: 'w-c-topics' }, cell(w.topics.join(', '), 'נושאים', v => saveRow(w, { topics: splitTopics(v) }), { list: 'w-topics', placeholder: '—' })),
       h('td', { class: 'w-c-audio' }, h('button', { type: 'button', class: 'w-aud', title: 'הקלטה / החלפה', onclick: () => pickAudio(w, host) },
         kl ? h('span', { class: `chip ${kc}` }, kl) : h('span', { class: 'muted' }, '🎙️ +'))),
+      shownFields.map(f => h('td', { class: 'w-c-field' }, Fields.cell(f, w, v => saveRow(w, { extra: { [f.key]: v } })))),
       h('td', { class: 'w-c-act' }, h('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכה: ${w.word}`, onclick: () => edit(w, host) }, '✏️')));
     return tr;
   }
@@ -197,22 +233,15 @@ const Words = (() => {
     try { await saveRow(w, { audio: f.id }); toast('ההקלטה הוחלפה'); draw(host); } catch (e) { toast(e.message, true); }
   }
 
-  // ── נושאים: שינוי שם (גם איחוד עם נושא קיים) והסרה ─────────
-  function topicsSheet(host) {
-    const run = async (body, ok) => {
-      try { D = await api('topic_op', body); toast(ok); topicsSheet(host); draw(host); } catch (e) { toast(e.message, true); }
-    };
-    sheet('🏷️ נושאים',
-      h('p', { class: 'hint' }, 'שינוי שם חל על כל המילים בנושא. שם של נושא קיים — מאחד את השניים.'),
-      D.topics.length ? h('ul', { class: 'list' }, D.topics.map(t => h('li', { class: 'w-topic' },
-        h('span', { class: 'use-tx' }, h('b', { class: 'one' }, t.name), h('small', {}, `${t.count} מילים`)),
-        h('button', { type: 'button', class: 'btn sm ghost', onclick: () => {
-          const to = prompt(`שם חדש לנושא "${t.name}"`, t.name);
-          if (to && to.trim() && to.trim() !== t.name) run({ op: 'rename', name: t.name, to: to.trim() }, 'נשמר');
-        } }, '✏️ שם'),
-        h('button', { type: 'button', class: 'btn sm ghost danger', onclick: () => {
-          if (confirm(`להסיר את הנושא "${t.name}" מ-${t.count} מילים? המילים עצמן נשארות.`)) run({ op: 'delete', name: t.name }, 'הוסר');
-        } }, '🗑️')))) : h('p', { class: 'empty' }, 'אין נושאים.'));
+  // ── N2: אחרי שינוי מבנה או נושאים — הטבלה מחדש (העמודות החדשות מופיעות בלי רענון) ──
+  async function reload(host) {
+    try { D = await api('words'); if (custom().length) await fieldsReady(); draw(host); } catch (e) { toast(e.message, true); }
+  }
+  function colsSheet(host) {
+    const hid = hiddenCols();
+    sheet('👁️ הצג עמודות', h('p', { class: 'hint' }, 'אילו שדות מוצגים בטבלה — נזכר בדפדפן הזה. הנתונים עצמם לא משתנים.'),
+      h('ul', { class: 'list' }, custom().map(f => h('li', { class: 'w-topic' }, h('label', { class: 'line' },
+        h('input', { type: 'checkbox', checked: !hid.has(f.key), 'data-col-toggle': f.key, onchange: e => { e.target.checked ? hid.delete(f.key) : hid.add(f.key); setHidden(hid); draw(host); } }), ' ', f.label)))));
   }
 
   // ── אקסל ────────────────────────────────────────────────
@@ -226,9 +255,9 @@ const Words = (() => {
     for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
     csvPlan(btoa(bin), false, host);
   }
-  async function csvPlan(b64, replace, host) {
+  async function csvPlan(b64, replace, host, create = []) {
     let r;
-    try { r = await api('words_csv_import', { csv_b64: b64, replace_all: replace }); }
+    try { r = await api('words_csv_import', { csv_b64: b64, replace_all: replace, create_fields: create }); }
     catch (e) {
       if (e.status === 422 && e.data?.errors) sheet('⬆️ מאקסל — לא יובא', h('p', { class: 'hint' }, `זוהה קידוד: ${e.data.encoding || '?'} · הטבלה לא השתנתה.`),
         h('div', { class: 'warnbox', 'data-csv-errors': true }, h('ul', {}, e.data.errors.slice(0, 50).map(x => h('li', { dir: 'auto' }, x.msg)))));
@@ -238,7 +267,13 @@ const Words = (() => {
     const p = r.plan, c = p.counts;
     const fold = (title, n, items) => n ? h('details', {}, h('summary', {}, `${title} (${n})`), h('ul', {}, items)) : null;
     const name = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', external_id: 'מספר מהאקסל' };
-    const all = h('input', { type: 'checkbox', checked: replace, onchange: e => { dlg.close(); csvPlan(b64, e.target.checked, host); } });
+    const all = h('input', { type: 'checkbox', checked: replace, onchange: e => { dlg.close(); csvPlan(b64, e.target.checked, host, create); } });
+    // N2: עמודה שאין לה שדה — "לא תיובא", עם הצעה ליצור שדה (מפרסם)
+    const canMake = true;                                      // N2 (08 §3): יצירת שדה — עורך
+    const props = (p.field_proposals || []).length ? h('div', { class: 'warnbox', 'data-field-proposals': true }, h('p', {}, 'עמודות בלי שדה — לא ייובאו:'),
+      h('ul', {}, p.field_proposals.map(fp => h('li', {}, h('code', { dir: 'ltr' }, fp.key), ` · ${fp.count} ערכים · סוג משוער: ${fp.type} `,
+        canMake ? h('button', { type: 'button', class: 'btn sm', 'data-make-field': fp.key, onclick: () => { dlg.close(); csvPlan(b64, replace, host, [...create, fp.key]); } }, `+ צור שדה ${fp.key}`) : h('small', { class: 'muted' }, '(יצירת שדה — למפרסם)'))))) : null;
+    const made = (p.new_fields || []).length ? h('p', {}, 'שדות חדשים: ' + p.new_fields.map(f => `${f.key} (${f.type})`).join(', ')) : null;
     const apply = h('button', { type: 'button', class: 'btn primary', 'data-csv-apply': true }, replace ? `החל — ${c.trashed} לסל` : 'החל');
     const dlg = sheet('⬆️ מאקסל — מה ישתנה',
       h('p', { class: 'hint', 'data-csv-encoding': r.encoding }, `זוהה קידוד: ${r.encoding}`),
@@ -247,15 +282,15 @@ const Words = (() => {
       fold('ישתנו', c.changed, p.changed.map(w => h('li', {}, h('b', { dir: 'auto' }, w.word), h('ul', {}, Object.entries(w.fields).map(([k, [a, b]]) => h('li', { dir: 'auto' }, `${name[k] || k}: ${a || '—'} ← ${b || '—'}`)))))),
       fold('יתווספו', c.added, p.added.map(w => h('li', { dir: 'auto' }, w.word))),
       fold('יעברו לסל', c.trashed, p.trashed.map(w => h('li', { dir: 'auto' }, w.word))),
-      p.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + p.new_topics.map(t => t.name).join(', ')) : null,
+      p.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + p.new_topics.map(t => t.name).join(', ')) : null, props, made,
       h('label', { class: 'line' }, all, ' החלף הכול — מילה שאינה בגיליון עוברת לסל (מפרסם בלבד, עם נקודת שחזור)'),
       p.snapshot ? h('p', { class: 'hint' }, '↩️ לפני ההחלה תיווצר נקודת שחזור.') : null,
       h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
-    if (!c.changed && !c.added && !c.trashed && !c.moved && !c.topics) apply.disabled = true;
+    if (!c.changed && !c.added && !c.trashed && !c.moved && !c.topics && !c.new_fields) apply.disabled = true;
     apply.onclick = async () => {
       if (replace && !confirm(`${c.trashed} מילים יעברו לסל. להמשיך?`)) return;
       apply.disabled = true;
-      try { D = await api('words_csv_import', { csv_b64: b64, replace_all: replace, apply: true, token: p.token }); dlg.close(); toast('הטבלה עודכנה · ' + p.summary); draw(host); }
+      try { D = await api('words_csv_import', { csv_b64: b64, replace_all: replace, create_fields: create, apply: true, token: p.token }); dlg.close(); toast('הטבלה עודכנה · ' + p.summary); if (create.length) await fieldsReady(); draw(host); }
       catch (e) { apply.disabled = false; toast(e.message, true); }
     };
   }
@@ -303,6 +338,11 @@ const Words = (() => {
     ].filter(Boolean));
     drawAudio();
     const ext = h('input', { value: cur.external_id, maxlength: 40, dir: 'ltr', inputmode: 'numeric' });
+    // N2: השדות המותאמים — אותם תאים של הטבלה, אבל נאספים כאן ונשלחים ב"שמירה"
+    cur.extra = { ...(w?.extra || {}) };
+    const changed = {};
+    const fieldsBox = custom().length && typeof Fields !== 'undefined' ? custom().map(f => h('div', { class: 'f' }, h('span', {}, f.label + (f.required ? ' *' : '')),
+      Fields.cell(f, cur, async v => { cur.extra[f.key] = v; changed[f.key] = v; }), f.help ? h('small', { class: 'hint' }, f.help) : null)) : [];
     const save = h('button', { type: 'button', class: 'btn primary' }, '✓ שמירה');
     const dlg = sheet(w ? `✏️ ${w.word}` : '+ מילה חדשה',
       h('label', { class: 'f' }, h('span', {}, 'המילה *'), word),
@@ -310,6 +350,7 @@ const Words = (() => {
       h('div', { class: 'f' }, h('span', {}, 'נושאים'), chips, addTopic),
       h('div', { class: 'f' }, h('span', {}, 'הקלטה'), audioBox),
       h('label', { class: 'f' }, h('span', {}, 'מספר מהאקסל (לא חובה)'), ext),
+      fieldsBox,
       h('div', { class: 'row-btns' }, save,
         w ? h('button', { type: 'button', class: 'btn ghost danger', onclick: async () => {
           if (!confirm(`להעביר את "${w.word}" לסל המחזור? (באתר היא תיעלם בפרסום הבא; שחזור — ב-↩️ שחזור)`)) return;
@@ -320,7 +361,8 @@ const Words = (() => {
       if (!word.value.trim()) { word.focus(); toast('חסרה המילה', true); return; }
       save.disabled = true;
       try {
-        await saveRow(cur, { word: word.value, meaning: meaning.value(), topics: cur.topics, audio: cur.audio, external_id: ext.value }, !w ? false : true);
+        await saveRow(cur, { word: word.value, meaning: meaning.value(), topics: cur.topics, audio: cur.audio, external_id: ext.value,
+          extra: Object.keys(changed).length ? changed : undefined }, !w ? false : true);
         dlg.close(); toast('נשמרה'); draw(host);
       } catch (e) { toast(e.message, true); save.disabled = false; }
     };

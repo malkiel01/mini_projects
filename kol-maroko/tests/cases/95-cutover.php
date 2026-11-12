@@ -26,7 +26,7 @@ function m3_facts(array $over = []): array
         'build' => ['version' => 7, 'sent_at' => $at, 'sent_by' => 'מפרסם', 'rev' => 40, 'current' => true],
         'rev' => 40,
         'ping' => ['plugin' => '2.0.0', 'protocol' => 2, 'v2_live' => 7, 'v2_on' => false, 'stats' => null],
-        'feedback' => ['inbox' => ['ok' => true, 'detail' => ''], 'forms' => ['index.html']],
+        'feedback' => ['inbox' => ['ok' => true, 'detail' => ''], 'forms' => ['feedback'], 'live' => ['feedback']],
         'snap' => ['id' => 3, 'at' => $at],
         'snap_verified' => null,
         'evidence' => array_fill_keys(CUTOVER_EVIDENCE, null),
@@ -92,14 +92,23 @@ test('M3 · eval: התוסף — 1.x ✗, אין v2 ✗, גרסה אחרת מה�
     ok(str_contains($r['detail'], 'המפסק: דולק'), 'המפסק מוצג');
 });
 
-test('M3 · eval: המשוב — בלי M5 ⏳; תיבה בלי טופס data-kol-form ✗', function () {
+test('M3 · eval: המשוב (M5) — ✓ רק כשהטופס בפרויקט רשום גם בגרסה שבאתר; בלי טופס ✗; בלי M5 ⏳', function () {
+    eq('ok', m3_row(cutover_eval(m3_facts()), 'feedback')['status']);
     $f = m3_facts(); $f['feedback']['inbox'] = null;
-    eq('wait', m3_row(cutover_eval($f), 'feedback')['status']);
-    $f = m3_facts(); $f['feedback']['forms'] = [];
+    eq('wait', m3_row(cutover_eval($f), 'feedback')['status'], 'בלי M5');
+    $f = m3_facts(); $f['feedback']['forms'] = []; $f['feedback']['live'] = [];
     $r = m3_row(cutover_eval($f), 'feedback');
-    eq('bad', $r['status']); ok(str_contains($r['todo'], 'data-kol-form'));
-    $f = m3_facts(); $f['feedback']['inbox'] = ['ok' => false];
-    eq('bad', m3_row(cutover_eval($f), 'feedback')['status'], 'תיבה לא פעילה');
+    eq('bad', $r['status'], 'אין טופס'); ok(str_contains($r['todo'], 'data-kol-form'), $r['todo']);
+    $f = m3_facts(); $f['feedback']['live'] = [];
+    $r = m3_row(cutover_eval($f), 'feedback');
+    eq('bad', $r['status'], 'הגרסה שבאתר אינה רושמת'); ok(str_contains($r['todo'], 'לבנות ולשלוח'), $r['todo']);
+});
+
+test('M3 · המשוב מול M5 האמיתי: forms_draft / forms_live / form_entries נקראים בלי שגיאה', function () {
+    $fb = cutover_feedback_facts();
+    ok(is_array($fb['inbox']) && $fb['inbox']['ok'] === true, 'התיבה קיימת (M5)');
+    ok(is_array($fb['forms']) && is_array($fb['live']), 'רשימות');
+    ok(str_contains($fb['inbox']['detail'], 'פניות בתיבה'), $fb['inbox']['detail']);
 });
 
 test('M3 · eval: נקודת שחזור — מעל 24 שעות ✗; ישנה שאומתה כזהה עכשיו ✓; אין ✗', function () {

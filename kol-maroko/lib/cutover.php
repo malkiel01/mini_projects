@@ -11,7 +11,7 @@
  * הרשאות: קריאה — מפרסם ומעלה; כל שינוי (ראיה, נקודת שחזור, "מוכן למעבר") — בעלים בלבד. נבדק כאן ב-require_role,
  * לא רק בממשק (tests/cases/95-cutover.php).
  *
- * הנתונים: cutover_evidence ו-cutover_marks ב-data/kol.sqlite (מיגרציה 18); קובצי ראיה — במאגר הקבצים הקיים
+ * הנתונים: cutover_evidence ו-cutover_marks ב-data/kol.sqlite (מיגרציה 20); קובצי ראיה — במאגר הקבצים הקיים
  * (data/files/, דרך upload_init/chunk/done הרגיל). אין קובץ נתונים חדש, ולכן אין --exclude חדש.
  *
  * cutover_eval() — פונקציה טהורה: מקבלת את העובדות ומחזירה את השורות. כך כל ✓ / ✗ / ⏳ נבדק בלי אתר ובלי מסד.
@@ -53,22 +53,16 @@ function cutover_ping(): array
     ];
 }
 
-/** המשוב (M5): תיבת הפניות — כשהפרוסה תוסיף את lib/inbox.php עם inbox_cutover_state(); והטופס בפרויקט (data-kol-form). */
+/**
+ * המשוב (M5, lib/forms.php): הטפסים בפרויקט (forms_draft — כל data-kol-form), והטפסים שהגרסה שבאתר רושמת (forms_live —
+ * רק אליהם form.php מקבל פניות). ✓ = יש טופס בפרויקט, והגרסה שבאתר רושמת אותו — כלומר פנייה מהעמוד מגיעה לתיבה.
+ */
 function cutover_feedback_facts(): array
 {
-    $inbox = null;
-    if (is_file(__DIR__ . '/inbox.php')) {
-        require_once __DIR__ . '/inbox.php';
-        if (function_exists('inbox_cutover_state')) $inbox = (array)inbox_cutover_state();
-    }
-    $forms = [];
-    if (pf_seeded()) {
-        foreach (db()->query("SELECT path, sha FROM pf_files WHERE deleted_at IS NULL AND kind = 'file' AND path LIKE '%.htm%'")->fetchAll() as $f) {
-            $s = @file_get_contents(pf_blob_path($f['sha']));
-            if (is_string($s) && str_contains($s, 'data-kol-form')) $forms[] = $f['path'];
-        }
-    }
-    return ['inbox' => $inbox, 'forms' => $forms];
+    if (!is_file(__DIR__ . '/forms.php')) return ['inbox' => null, 'forms' => [], 'live' => []];
+    require_once __DIR__ . '/forms.php';
+    $n = (int)db()->query('SELECT COUNT(*) FROM form_entries')->fetchColumn();
+    return ['inbox' => ['ok' => true, 'detail' => "$n פניות בתיבה"], 'forms' => array_keys(forms_draft()), 'live' => array_keys(forms_live())];
 }
 
 /** הראיות הפעילות לכל תנאי (החדשה ראשונה). */
@@ -164,15 +158,16 @@ function cutover_eval(array $f): array
     // המשוב (M5)
     $fb = $f['feedback'];
     if ($fb['inbox'] === null) {
-        $rows['feedback'] = cutover_row('feedback', 'המשוב מגיע לתיבת הפניות', 'wait', 'מחושב · תיבת הפניות (M5)',
-            'תיבת הפניות עוד לא בנויה' . ($fb['forms'] ? ' · טופס בפרויקט: ' . implode(', ', $fb['forms']) : ''), 'ממתין לפרוסה M5');
+        $rows['feedback'] = cutover_row('feedback', 'המשוב מגיע לתיבת הפניות', 'wait', 'מחושב · תיבת הפניות (M5)', 'תיבת הפניות עוד לא בנויה', 'ממתין לפרוסה M5');
     } else {
-        $inboxOk = !empty($fb['inbox']['ok']);
-        $ok = $inboxOk && $fb['forms'];
+        $live = $fb['live'] ?? [];
+        $missing = array_values(array_diff($fb['forms'], $live));
+        $ok = $fb['forms'] && !$missing;
+        $todo = !$fb['forms'] ? 'להוסיף לטופס המשוב בפרויקט data-kol-form'
+            : 'לבנות ולשלוח — הגרסה שבאתר אינה רושמת את ' . implode(', ', $missing) . ', ולכן פנייה ממנו לא תתקבל';
         $rows['feedback'] = cutover_row('feedback', 'המשוב מגיע לתיבת הפניות', $ok ? 'ok' : 'bad', 'מחושב · תיבת הפניות (M5)',
-            ($inboxOk ? 'התיבה קיימת' : 'התיבה אינה פעילה') . ($fb['inbox']['detail'] ?? '' ? ' · ' . $fb['inbox']['detail'] : '') . ' · ' .
-            ($fb['forms'] ? 'טופס בפרויקט: ' . implode(', ', $fb['forms']) : 'אין בפרויקט טופס עם data-kol-form'),
-            !$inboxOk ? 'להפעיל את תיבת הפניות' : 'להוסיף לטופס המשוב בפרויקט data-kol-form');
+            ($fb['forms'] ? 'טפסים בפרויקט: ' . implode(', ', $fb['forms']) : 'אין בפרויקט טופס עם data-kol-form') . ' · ' .
+            ($live ? 'רשומים בגרסה שבאתר: ' . implode(', ', $live) : 'הגרסה שבאתר אינה רושמת טופס') . ' · ' . ($fb['inbox']['detail'] ?? ''), $todo);
     }
 
     // גיבוי ונקודת שחזור

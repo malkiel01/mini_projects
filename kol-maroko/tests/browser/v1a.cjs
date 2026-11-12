@@ -15,9 +15,11 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const SHOTS = process.env.KOL_SHOTS || '';
 const OWNER = { sub: 'u-owner', name: 'Owner Test', email: 'owner@example.test', email_verified: true, platform_admin: true };
 let failed = 0, ran = 0;
-const ok = (cond, what) => { ran++; if (cond) console.log('✅ ' + what); else { failed++; console.log('❌ ' + what); } };
+const ok = (cond, what, got) => { ran++; if (cond) console.log('✅ ' + what); else { failed++; console.log('❌ ' + what + (got !== undefined ? '\n   התקבל: ' + JSON.stringify(got).slice(0, 600) : '')); } };
 const freePort = () => new Promise(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+/** V4: מחיקה של אלמנט שקוד נשען עליו מציגה אזהרה ("בצע בכל זאת" / "בטל") — לא חסימה. כאן — ממשיכים. */
+const goAnyway = async page => { await sleep(60); if (await page.isVisible('#sheet[open] [data-choice="go"]').catch(() => false)) { await page.click('#sheet [data-choice="go"]'); await sleep(60); } };
 
 const ATTACK = `<!doctype html>
 <html lang="he" dir="rtl"><head><meta charset="utf-8"><title>התקפה</title>
@@ -32,7 +34,7 @@ const ATTACK = `<!doctype html>
 <a id="evil-href" href="javascript:parent.postMessage('pwned:href','*')">קישור</a>
 <img id="evil-img" src="nope-pwned.png" onerror="parent.postMessage('pwned:onerror','*')">
 <img id="pic" src="pic.svg" alt="">
-<div id="zero"></div>
+<p id="zero"></p>
 <table id="tb"><tr><td>תא</td></tr></table>
 <section class="wrap"><div class="in"><span>א</span><span>ב</span><span>ג</span></div></section>
 <ul id="long">${Array.from({ length: 75 }, (_, i) => `<li class="it">פריט ${i + 1}</li>`).join('')}</ul>
@@ -105,7 +107,7 @@ const ATTACK = `<!doctype html>
     ok(await page.evaluate(m => Editor._state.canvas.doc.body.textContent.includes(m), marker), 'שינוי טקסט בעורך הקוד נראה בקנבס');
     // מחיקה בקנבס ← נראית בקוד
     const victim = await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, inB = x => { for (; x; x = x.parent) if (x.broken) return true; return false; }; const n = K.all(c.m).find(x => !x.implied && x.et && x.kids.length >= 2 && x.kids.length < 30 && c.rectOf(x) && !c.rectOf(x).zero && x.parent && x.parent.tag !== 'html' && x.tag !== 'body' && !x.hasBroken && !inB(x)); c.select(n); return { label: c.label(n), inside: K.all({ root: n }).length - 1, text: c.m.src.slice(n.from, K.endOf(c.m, n)), before: c.src }; });
-    await page.keyboard.press('Delete');
+    await page.keyboard.press('Delete'); await goAnyway(page);
     await sleep(100);
     s = await st(page);
     const noteText = await page.textContent('.ed-note');
@@ -132,7 +134,7 @@ const ATTACK = `<!doctype html>
     await page.keyboard.press('Control+z'); await sleep(60); await page.keyboard.press('Control+z'); await sleep(60);
     // היסטוריה משותפת: חזותי, הקלדה בקוד, חזותי — שלושה ביטולים בסדר
     const snap = [];
-    const delFirst = async () => { await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, inB = x => { for (; x; x = x.parent) if (x.broken) return true; return false; }; c.select(K.all(c.m).find(x => !x.implied && x.et && !x.kids.length && c.rectOf(x) && x.parent && x.parent.et && x.parent.tag !== 'head' && !inB(x))); }); await page.keyboard.press('Delete'); await sleep(80); };
+    const delFirst = async () => { await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc, inB = x => { for (; x; x = x.parent) if (x.broken) return true; return false; }; c.select(K.all(c.m).find(x => !x.implied && x.et && !x.kids.length && c.rectOf(x) && x.parent && x.parent.et && x.parent.tag !== 'head' && !inB(x))); }); await page.keyboard.press('Delete'); await goAnyway(page); await sleep(80); };
     snap.push((await st(page)).src); await delFirst();
     snap.push((await st(page)).src);
     await page.evaluate(() => { const m = Project._state.docs.get(Editor._state.file.id).model; m.pushStackElement(); m.pushEditOperations(null, [{ range: new monaco.Range(1, 1, 1, 1), text: '<!-- הוקלד בקוד -->' }], () => null); m.pushStackElement(); });
@@ -170,7 +172,7 @@ const ATTACK = `<!doctype html>
     s = await st(page);
     ok(s.sel === 'div#evil-class' && await page.evaluate(() => !document.querySelector('.ed img, .spike-layer img, .ed-crumbs img') && [...document.querySelectorAll('.ed-crumb')].every(b => b.children.length === 0)), 'שם מחלקה שהוא HTML מוצג כטקסט בלבד (שביל, תווית, הודעה)');
     await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#evil-class'))); });
-    await page.keyboard.press('Delete'); await sleep(100);
+    await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
     ok(await page.evaluate(() => !document.querySelector('.ed-note img') && document.querySelector('.ed-note').textContent.includes('נמחק')) && (await page.evaluate(() => window.__msgs.length)) === 0, 'גם בהודעת המחיקה — טקסט בלבד');
     ok((await st(page)).mode === 'inc' && (await st(page)).inequiv === 0, 'בקובץ תקין המחיקה היא עדכון הדרגתי, שקול לניתוח מלא');
     await page.keyboard.press('Control+z'); await sleep(100);
@@ -205,16 +207,16 @@ const ATTACK = `<!doctype html>
     await clickIn(page, '.in span', { alt: true }); const alt1 = (await st(page)).sel; await clickIn(page, '.in span', { alt: true }); const alt2 = (await st(page)).sel;
     ok(alt1 !== alt2 && [alt1, alt2].every(Boolean), 'Alt + לחיצה עובר בין אלמנטים שמונחים זה על זה (' + alt1 + ' ← ' + alt2 + ')');
     await page.hover('.ed-canvas', { position: { x: 300, y: 60 } }); await sleep(80);
-    ok(await page.evaluate(() => { const c = Editor._state.canvas; return !!c.hovered && !c.boxHov.hidden && c.boxHov.firstChild.textContent === c.label(c.hovered); }), 'ריחוף — מסגרת ותווית');
+    ok(await page.evaluate(() => { const c = Editor._state.canvas; return !!c.hovered && !c.boxHov.hidden && c.boxHov.firstChild.textContent === c.label(c.hovered); }), 'ריחוף — מסגרת ותווית', await page.evaluate(() => { const c = Editor._state.canvas; return { hv: c.hovered && c.label(c.hovered), sel: c.selected && c.label(c.selected), hid: c.boxHov.hidden, ev: c.events.slice(-3), top: document.elementFromPoint(document.querySelector('.ed-canvas').getBoundingClientRect().left + 300, document.querySelector('.ed-canvas').getBoundingClientRect().top + 60)?.outerHTML.slice(0, 80) }; }));
     await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#tb tbody'))); });
     s = await st(page);
     ok(s.sel === 'tbody · לא במקור' && (await page.textContent('.ed-where')).includes('לא במקור'), 'אלמנט שהדפדפן הוסיף (<tbody>) נבחר, מסומן "לא במקור"');
     await page.click('.ed-bar button:has-text("</>")');
     await page.waitForFunction(() => { const e = Project._state.editor; return e && e.getModel() && !e.getSelection().isEmpty() && e.getModel().getValueInRange(e.getSelection()).startsWith('<table'); }, null, { timeout: 5000 }).then(() => ok(true, '"פתח בקוד" מ-<tbody> מוביל להורה הכתוב שלו (<table>)'), () => ok(false, '"פתח בקוד" מ-<tbody> מוביל להורה הכתוב שלו'));
     await page.goto(base + '/editor.php#/editor'); await page.waitForFunction(() => Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy);
-    const zero = await page.evaluate(() => { const c = Editor._state.canvas; c.draw(); const b = [...document.querySelectorAll('.ed-mark-zero')].find(x => x.title.startsWith('div#zero')); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    const zero = await page.evaluate(() => { const c = Editor._state.canvas; c.draw(); const b = [...document.querySelectorAll('.ed-mark-zero')].find(x => x.title.startsWith('p#zero')); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
     if (zero) await page.mouse.click(zero.x, zero.y);
-    ok(zero && (await st(page)).sel === 'div#zero', 'אלמנט בגודל אפס מקבל מצביע שאפשר ללחוץ עליו');
+    ok(zero && (await st(page)).sel === 'p#zero', 'אלמנט בגודל אפס מקבל מצביע שאפשר ללחוץ עליו');
     // רשימה ארוכה
     const cap = await page.evaluate(() => { const c = Editor._state.canvas, lis = [...c.doc.querySelectorAll('#long li')]; return { shown: lis.filter(l => l.getClientRects().length).length, total: lis.length, strip: document.querySelector('button.ed-strip').textContent, hidden: document.querySelector('button.ed-strip').hidden }; });
     ok(cap.shown === 60 && cap.total === 75 && !cap.hidden && cap.strip.includes('הצג הכול'), 'רשימה ארוכה: 75 אחים זהים — מוצגים 60, ו"הצג הכול"');
@@ -238,10 +240,10 @@ const ATTACK = `<!doctype html>
     await clickIn(page, '#ok2', { center: true });   /* במרכז: בפינה יושב המצביע של ה-<p> הריק שמעליו */ const beforeB = (await st(page)).src;
     ok((await st(page)).sel === 'footer#ok2', 'מה שמחוץ לאזור השבור נבחר');
     await page.evaluate(() => { const c = Editor._state.canvas, K = window.KolSrc; c.select(K.all(c.m).find(n => n.broken)); });
-    await page.keyboard.press('Delete'); await sleep(100);
+    await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
     const nb = await page.evaluate(() => ({ text: document.querySelector('.ed-note').textContent, err: document.querySelector('.ed-note').classList.contains('err'), btn: !!document.querySelector('.ed-note .btn') }));
     ok((await st(page)).src === beforeB && nb.err && nb.text.includes('שבור') && nb.text.includes('פתח בקוד'), 'מחיקה באזור שבור נדחית, בהודעה, עם "פתח בקוד" — והקובץ לא השתנה');
-    await clickIn(page, '#ok2', { center: true });   /* במרכז: בפינה יושב המצביע של ה-<p> הריק שמעליו */ await page.keyboard.press('Delete'); await sleep(120);
+    await clickIn(page, '#ok2', { center: true });   /* במרכז: בפינה יושב המצביע של ה-<p> הריק שמעליו */ await page.keyboard.press('Delete'); await goAnyway(page); await sleep(120);
     ok(!(await st(page)).src.includes('id="ok2"') && (await st(page)).inequiv === 0, 'מחיקה מחוץ לאזור השבור עובדת (ניתוח מלא: ' + (await st(page)).mode + ')');
     await page.keyboard.press('Control+z'); await sleep(120);
     ok((await st(page)).src === beforeB, 'והביטול מחזיר קובץ זהה');
@@ -251,7 +253,7 @@ const ATTACK = `<!doctype html>
     const hasLegacy = await page.evaluate(async () => { await Project.docs.files(); const d = await api('pf_tree'); return d.files.some(f => f.path === 'atk/legacy.html'); });
     if (hasLegacy) {
       await openPage(page, 'atk/legacy.html');
-      await clickIn(page, 'h1'); const b0 = (await st(page)).src; await page.keyboard.press('Delete'); await sleep(100);
+      await clickIn(page, 'h1'); const b0 = (await st(page)).src; await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
       ok((await page.textContent('.ed-status')).includes('לקריאה בלבד') && (await st(page)).sel === 'h1' && (await st(page)).src === b0 && await page.evaluate(() => Editor._state.canvas.doc.body.textContent.includes('שלום')), 'קובץ שאינו UTF-8: נפתח לקריאה בלבד, עם הודעה; נבחר — ואינו נכתב');
     } else ok(false, 'קובץ שאינו UTF-8: לא ניתן היה ליצור קובץ בדיקה');
 
@@ -260,7 +262,7 @@ const ATTACK = `<!doctype html>
     const aid = await page.evaluate(() => Editor._state.file.id), cur = await call(page, 'pf_read', null, `&id=${aid}`);
     const other = cur.content.replace('משנה', 'שונה ממקום אחר');
     await call(page, 'pf_write', { id: aid, rev: cur.file.rev, content: other });
-    await clickIn(page, '#t1'); await page.keyboard.press('Delete');
+    await clickIn(page, '#t1'); await page.keyboard.press('Delete'); await goAnyway(page);
     await page.waitForSelector('#sheet[open]', { timeout: 10000 }).catch(() => {});
     const conflict = await page.evaluate(() => ({ open: document.querySelector('#sheet').open, title: document.querySelector('#sheet-title').textContent, conflict: Editor._state.doc.conflict }));
     ok(conflict.open && conflict.conflict && (await call(page, 'pf_read', null, `&id=${aid}`)).content === other, 'rev ישן: אין דריסה — הודעה ("' + conflict.title + '"), והקובץ שבשרת נשאר של מי ששמר');
@@ -273,13 +275,13 @@ const ATTACK = `<!doctype html>
     await p2.goto(base + '/#/project'); await p2.waitForSelector('.pj-tree .pj-row');
     const lock = await p2.evaluate(() => api('lock', { op: 'take' }).then(r => r.lock, e => ({ error: e.message })));
     await page.evaluate(() => { document.querySelector('#sheet').close(); });
-    await clickIn(page, '#evil-click'); await page.keyboard.press('Delete');
+    await clickIn(page, '#evil-click'); await page.keyboard.press('Delete'); await goAnyway(page);
     await page.waitForFunction(() => Editor._state.readOnly, null, { timeout: 10000 }).catch(() => {});
     const ro = await page.evaluate(() => ({ ro: Editor._state.readOnly, status: document.querySelector('.ed-status').textContent }));
     const srv = (await call(page, 'pf_read', null, `&id=${aid}`)).content;
     ok(lock && lock.mine && !!ro.ro && srv.includes('id="evil-click"'), 'נעילה אצל עורך אחר: הכתיבה נדחית בשרת (423), והעורך עובר לקריאה בלבד — "' + ro.ro + '"');
     await clickIn(page, '#t1').catch(() => {}); await clickIn(page, '.in span');
-    const srcRo = (await st(page)).src; await page.keyboard.press('Delete'); await sleep(100);
+    const srcRo = (await st(page)).src; await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
     ok((await st(page)).sel === 'span' && (await st(page)).src === srcRo, 'מי שאינו רשאי לערוך — רואה ובוחר, ואינו כותב');
     await p2.evaluate(() => api('lock', { op: 'release' })); await ctx2.close();
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף (1280px)' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

@@ -234,3 +234,35 @@ test('M2 בדיקה עצמית: אסימון חד-פעמי מגיש גם כשה�
     kp_opt('kol_maroko_v2_selftest', ['t' => str_repeat('c', 32), 'exp' => time() - 1]);
     ok(kp_site_page(kp_http('GET', '/lexicon/', ['X-Kol-Selftest: ' . str_repeat('c', 32)])), 'פג — לא');
 });
+
+test('B1 (2.0.1): הסוג במניפסט — m4a בנתיב .mp3 ← audio/mp4; סוג לא מותר (HTML, SVG, JS, לא מוכר) ← לפי הסיומת; nosniff נשאר', function () {
+    kp_site();
+    kp_reset();
+    $m4a = pack('N', 24) . "ftypM4A \x00\x00\x00\x00M4A mp42isom" . str_repeat("\x00", 200);
+    $html = "<!doctype html><script>top.pwned=1</script><p>HTML-IN-MP3</p>";
+    $files = kp_bundle('A') + ['media/audio/7.mp3' => $m4a, 'media/audio/8.mp3' => $html, 'media/audio/9.mp3' => $html . ' ', 'media/audio/10.mp3' => $html . '  ',
+        'media/audio/11.mp3' => $html . '   ', 'img/p.png' => "\x89PNG....", 'a2.css' => 'p{}', 'x/b.html' => '<p>b</p>'];
+    $declared = ['media/audio/7.mp3' => 'audio/x-m4a', 'media/audio/8.mp3' => 'text/html', 'media/audio/9.mp3' => 'image/svg+xml',
+        'media/audio/10.mp3' => 'text/javascript', 'media/audio/11.mp3' => 'application/x-evil', 'img/p.png' => 'audio/mp4',
+        'a2.css' => 'audio/mp4', 'x/b.html' => 'audio/mpeg'];
+    $man = kp_manifest($files, 1);
+    foreach ($declared as $p => $t) $man['files'][$p]['type'] = $t;
+    $r = kp_publish($man);
+    eq(200, $r['status'], $r['body']);
+    kp_opt('kol_maroko_v2_on', true);
+    $want = ['media/audio/7.mp3' => 'audio/mp4',                  // (א) הקלטה שהוחלפה
+        'media/audio/8.mp3' => 'audio/mpeg', 'media/audio/9.mp3' => 'audio/mpeg', 'media/audio/10.mp3' => 'audio/mpeg', 'media/audio/11.mp3' => 'audio/mpeg',  // (ב)
+        'img/p.png' => 'audio/mp4',                                   // מדיה ← מדיה: מותר (הנתיב והסוג — שניהם מדיה)
+        'a2.css' => 'text/css; charset=utf-8', 'x/b.html' => 'text/html; charset=utf-8',  // נתיב שאינו מדיה — הסוג מהמניפסט אינו נשמע
+        'media/w.mp3' => 'audio/mpeg'];                               // type="x" (kp_manifest) ← לפי הסיומת
+    foreach ($want as $p => $type) {
+        foreach (['GET', 'HEAD'] as $m) {
+            $h = kp_http($m, '/lexicon/' . $p);
+            eq([200, $type], [$h['status'], kp_h($h, 'content-type')], "$m $p");
+            ok(!str_starts_with((string)kp_h($h, 'content-type'), 'text/html') || $p === 'x/b.html', "$p — לא מוגש כ-HTML");
+            eq([], kp_iso($h), "$m $p — כל הכותרות, גם nosniff (ג)");
+        }
+    }
+    $h = kp_http('GET', '/lexicon/media/audio/7.mp3', ['Range: bytes=0-9']);
+    eq([206, 'audio/mp4', substr($m4a, 0, 10)], [$h['status'], kp_h($h, 'content-type'), $h['body']], 'Range — אותו סוג');
+});

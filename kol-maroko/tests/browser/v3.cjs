@@ -221,7 +221,8 @@ const PAGE = `<!doctype html>
     ok(!(only['t/page.html']?.text || '').includes('gap: 6px 0') && /class="cell"[^>]*style="margin-inline-start: -6px"|<span class="cell" style="margin-inline-start: -6px">2<\/span>/.test(only['t/page.html']?.text || '') && await page.evaluate(() => { const [a, b] = Editor._state.canvas.doc.querySelectorAll('.cell'); return Math.round(a.getBoundingClientRect().left - b.getBoundingClientRect().right); }) === 0, '"רק כאן": ה-gap חוזר, ונכתבים שוליים לאלמנט השני בלבד', only);
     ok(await undoFiles(page, t0), 'בטל — חזרה');
     // מקלדת: Alt + חיצים
-    await pick(page, '#plain'); await page.evaluate(() => document.activeElement.blur());
+    // V4: Alt + חיצים משנים שוליים רק כשצד נבחר בתרשים הקופסה (אחרת הם מזיזים את האלמנט) — בוחרים את הצד התחתון
+    await pick(page, '#plain'); await tab(page, 'adv'); await page.dispatchEvent('[data-sec="space"] .sg-m > .sg-side.s-bottom', 'pointerdown'); await page.evaluate(() => document.activeElement.blur());
     await page.keyboard.press('Alt+ArrowDown'); await page.keyboard.press('Alt+ArrowDown'); await sleep(650);
     ok(await cs(page, '#plain', 'margin-bottom') !== (await page.evaluate(() => '')) && changed(t0, await files(page))['css/page.css'] !== undefined || changed(t0, await files(page))['t/page.html'] !== undefined, 'Alt + ↓ ×2: השוליים בצד שנבחר גדלים (עסקה אחת אחרי הפסקה)', changed(t0, await files(page)));
     ok(await undoFiles(page, t0), 'בטל — חזרה');

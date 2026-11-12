@@ -31,7 +31,7 @@ const PAGE = `<!doctype html>
 <div id="gone" style="display:none"><p id="deep">מוסתר עמוק</p></div>
 <div id="dlg" hidden><strong id="dw">חלון</strong></div>
 <dialog id="real-dlg"><p id="in-dlg">חלון אמיתי</p></dialog>
-<div id="zero"></div>
+<p id="zero"></p>
 <table id="tb"><tr><td>תא</td></tr></table>
 <ul id="cards"><template><li class="card"><b class="wordx">מילה</b><template><i class="deep-t">פנימי</i></template></li></template></ul>
 <section class="wrap"><div class="in"><span>א</span><span>ב</span><span>ג</span></div></section>

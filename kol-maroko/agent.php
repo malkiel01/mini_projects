@@ -1,7 +1,7 @@
 <?php
 /**
  * הכניסה לצ'אט (lib/agent.php): שם משתמש וסיסמה שנוצרו בכלי, בלי עוגייה ובלי השער של הפלטפורמה (ציבורי ב-app.json —
- * ההגנה כאן היא הכניסה עצמה). רק פעולות של עורך על הטיוטה, המילים וקבצי הקוד. אין פרסום ואין שום דבר אחר.
+ * ההגנה כאן היא הכניסה עצמה). X1: פעולות של עורך על קבצי הפרויקט (📁) והמילים — כל כתיבה דרך מנוע הקבצים, עם גרסה "🤖 <שם הכניסה>". אין פרסום ואין שום דבר אחר.
  */
 
 declare(strict_types=1);
@@ -28,7 +28,8 @@ function agent_out(array $data, int $code = 200): never
 
 $action = (string)($_GET['action'] ?? 'help');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-const AGENT_POST = ['draft_save', 'render', 'word_save', 'word_delete', 'topic_op', 'code_create', 'code_save'];
+// X1: הפעולות על קבצי הפרויקט. הישנות (draft, draft_save, render, page, code*, publish_preview) — נמחקו; אין פרסום
+const AGENT_POST = ['write', 'edit', 'create', 'words_save', 'word_save', 'word_delete', 'topic_op'];
 
 try {
     if (in_array($action, AGENT_POST, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -36,31 +37,27 @@ try {
     if (!is_array($body)) throw new ApiError('הגוף אינו JSON תקין');
     $user = agent_auth();
     devlog_user($user);
-    // שמירת הטיוטה — כמו בסטודיו: הנעילה לחבר הזה (אם מישהו אחר עורך עכשיו — 423, לנסות אחר כך)
-    $saveDraft = function () use ($user, $body) {
-        if (!lock_op($user, ['op' => 'take'])['lock']['mine']) throw new ApiError('הטיוטה פתוחה לעריכה אצל מישהו אחר בסטודיו. לנסות שוב בעוד כמה דקות', 423);
-        return draft_save($user, $body);
-    };
-    // מחיקה ונושאים מחזירים בכלי את כל הרשימה — לצ'אט מספיק "בוצע" (ו-words כשצריך)
+    agent_rate($user);
+    // מחיקה ונושאים מחזירים בכלי את כל הרשימה — לצ'אט מספיק "בוצע"
     $done = fn(array $r) => ['done' => true];
     // לפני הפעולה הראשונה של הצ'אט (ואחרי חצי שעה בלי פעולה) — נקודת שחזור: "בטל את מה שהצ'אט עשה" בלחיצה
-    if (in_array($action, AGENT_POST, true) && $action !== 'render') snapshot_before_chat($user);
+    if (in_array($action, AGENT_POST, true)) snapshot_before_chat($user);
     $result = match ($action) {
         'help' => agent_help($user),
-        'draft' => draft_get($user),
-        'draft_save' => $saveDraft(),
-        'render' => render_preview(['page' => $body['page'] ?? json_decode((string)draft_row()['json'], true)]),
-        'words' => words_list(),
+        'tree' => agent_tree($user),
+        'read' => agent_read((string)($_GET['path'] ?? '')),
+        'write' => agent_write($user, $body),
+        'edit' => agent_edit($user, $body),
+        'create' => agent_create($user, $body),
+        'search' => pf_search(['q' => (string)($_GET['q'] ?? ''), 'regex' => !empty($_GET['regex']), 'case' => !empty($_GET['case'])]),
+        'versions' => agent_versions((string)($_GET['path'] ?? '')),
+        'preview_url' => agent_preview_url($user),
+        'words' => agent_read(pf_words_path() ?? throw new ApiError('אין בפרויקט קובץ של טבלת המילים (kol.json ← data.words)', 404)),
+        'words_save' => agent_words_save($user, $body),
         'word_save' => word_save($user, $body + ['light' => true]),
         'word_delete' => $done(word_delete($user, $body)),
         'topic_op' => $done(topic_op($user, $body)),
-        'code' => code_state(),
-        'code_create' => code_create($user),
-        'code_save' => code_save($user, $body),
-        'code_history' => code_history($_GET),
-        'files' => files_list(),
-        'publish_preview' => publish_preview($user),
-        default => throw new ApiError('פעולה לא מוכרת. רשימת הפעולות: ?action=help', 404),
+        default => throw new ApiError('פעולה לא מוכרת. רשימת הפעולות: ?action=help', 404, in_array($action, AGENT_GONE, true) ? ['moved' => 'files'] : []),
     };
     agent_out(['ok' => true] + $result);
 } catch (ApiError $e) {

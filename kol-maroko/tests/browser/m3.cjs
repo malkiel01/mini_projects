@@ -75,7 +75,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(meta.every(m => m.ok || m.todo), 'לכל שורה שאינה ✓ — "מה לעשות"');
     const plug = await rowOf(page, 'plugin').textContent();
     ok(await statusOf(page, 'plugin') === 'bad' && /protocol 2/.test(plug) && /לשלוח/.test(plug), 'התוסף האמיתי 2.0 (M2), בלי גרסה v2 באוויר ← ✗ "לשלוח"', plug.slice(0, 120));
-    ok(await statusOf(page, 'feedback') === 'wait', 'המשוב ⏳ — M5 טרם');
+    ok(await statusOf(page, 'feedback') === 'bad', 'המשוב ✗ — אין גרסה שבאתר שרושמת טופס (M5)');
     ok(await statusOf(page, 'recordings') === 'bad', 'הקלטות ✗ (אין בכלי)');
     ok(await statusOf(page, 'build') === 'bad', 'אין פרסום בפורמט החדש ← ✗');
     ok(!(await page.$('.co-ready')) && !!(await page.$('.co-notready')), 'אין "מוכן למעבר"');

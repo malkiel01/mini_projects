@@ -89,8 +89,11 @@ test('C1: editor.php ו-live.php — המדיניות המלאה עם report-uri
     ok(str_ends_with($e, '; report-uri /csp.php?p=editor') && str_contains($e, "script-src 'self';") && str_contains($e, 'https://fonts.gstatic.com'), 'editor.php: ' . $e);
     $l = http('GET', '/live.php', ['user' => U_EDITOR])['headers']['content-security-policy'] ?? '';
     ok(str_ends_with($l, '; report-uri /csp.php?p=live') && str_contains($l, "default-src 'none'"), 'live.php: ' . $l);
-    eq("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' blob: data: https://s.example; media-src 'self' blob: data: https://s.example; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; worker-src 'self' blob:; frame-src h/d/live.php h/d/preview/; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'",
-        editor_csp('h/d', 'https://s.example'), 'המדיניות של V1b, תו בתו');
+    eq("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' blob: data: https://s.example; media-src 'self' blob: data: https://s.example; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self'; worker-src 'self' blob:; frame-src h/d/live.php h/d/preview/ https://mbe-plus.com/mini_projects/word-processor/; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'",
+        editor_csp('h/d', 'https://s.example'), 'המדיניות של V1b, תו בתו (X1: + התיקייה של עורך התמלילים ב-frame-src)');
+    // X1: frame-src — בדיוק live.php, preview/ והתיקייה המלאה של עורך התמלילים; שום מקור אחר
+    preg_match('/frame-src ([^;]+)/', editor_csp('h/d', ''), $m);
+    eq(['h/d/live.php', 'h/d/preview/', 'https://mbe-plus.com/mini_projects/word-processor/'], explode(' ', $m[1]));
 });
 
 test('C1: דוח הפרה נצבר — שורה אחת לכל (מדיניות, אכיפה, הנחיה, מקור, מסמך) עם מונה; ושורה מקופלת אחת ביומן המפתח', function () {
