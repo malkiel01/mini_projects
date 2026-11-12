@@ -18,7 +18,10 @@ add_action('admin_post_kol_maroko_v2', function () {
     check_admin_referer('kol_maroko_v2');
     $op = sanitize_key($_POST['op'] ?? '');
     $msg = 'נשמר.';
-    if ($op === 'on') {
+    $pull = strpos($op, 'pull_') === 0 ? kol_maroko_pull_admin_op($op) : null;     // M7 — שורת החיבור והמשיכה (v2-pull.php)
+    if ($pull !== null) {
+        $msg = $pull;
+    } elseif ($op === 'on') {
         // אישור כפול (M3 §2): הסימון בטופס, ומספר הגרסה שהאישור ניתן עליה — אם הגרסה שבאוויר התחלפה בינתיים, לא מדליקים
         $live = (int)kol_maroko_opt('v2_live', 0);
         if (!$live) $msg = 'אין גרסה 2.0 באוויר — אין מה להדליק.';
@@ -157,6 +160,7 @@ function kol_maroko_v2_admin_section()
         . ' · נפח: ' . esc_html(size_format(kol_maroko_v2_usage())) . ' · פרוטוקול ' . KOL_MAROKO_PROTOCOL . '</td></tr></table>';
 
     // כתובת הבדיקה
+    echo kol_maroko_pull_admin_html($post, $nonce);     // M7 — שורת החיבור והמשיכה
     echo '<h3>כתובת בדיקה</h3><p>העמוד החדש, באתר האמיתי, לפני שהגולשים רואים אותו (רק כשהמפסק כבוי). הכתובת מוצגת פעם אחת כשנוצרת; '
         . 'מה שנשמר כאן — רק טביעה שלה. ' . (kol_maroko_opt('v2_preview_hash', '') ? '<b>יש כתובת פעילה.</b>' : 'אין כתובת פעילה.') . '</p>'
         . '<form method="post" action="' . $post . '" style="display:inline">' . $nonce . '<input type="hidden" name="op" value="preview_new"><button class="button">'

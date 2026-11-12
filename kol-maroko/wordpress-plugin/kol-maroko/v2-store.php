@@ -231,7 +231,7 @@ function kol_maroko_v2_live_manifest()
  * בודק מניפסט מפוענח מול המכסות והגושים. מחזיר null אם תקין, או WP_REST_Response של דחייה.
  * (החתימה, site, page, זמן ו-nonce — נבדקים לפניו ב-kol_maroko_v2_manifest.)
  */
-function kol_maroko_v2_check_files(array $man)
+function kol_maroko_v2_check_files(array $man, $blobs = true)
 {
     $q = kol_maroko_v2_quota();
     $files = $man['files'];
@@ -249,6 +249,7 @@ function kol_maroko_v2_check_files(array $man)
     if ($total > $q['total_mb'] * 1048576) return kol_maroko_fail('quota', 'החבילה גדולה מהמכסה', 413, ['quota' => 'total_mb', 'limit' => $q['total_mb'], 'value' => $total]);
     $entry = $man['entry'] ?? null;
     if (!is_string($entry) || !isset($files[$entry])) return kol_maroko_fail('bad_request', 'נקודת הכניסה אינה בחבילה', 422);
+    if (!$blobs) return null;                    // M7: לפני ההורדה — המבנה והמכסות בלבד
     foreach ($files as $path => $f) {
         $file = kol_maroko_v2_blob($f['sha256']);
         if ($file === null) return kol_maroko_fail('asset_missing', 'חסר קובץ: ' . $path, 409);
@@ -265,7 +266,12 @@ function kol_maroko_v2_check_files(array $man)
     return null;
 }
 
-function kol_maroko_v2_manifest(array $b)
+/**
+ * החתימה על המניפסט, site, page, הזמן וה-nonce — בלי לכתוב דבר. ['man', 'bytes', 'nonce'] או WP_REST_Response של דחייה.
+ * $seq (M7, ערוץ המשיכה): במקום חלון הזמן ±5 דקות — המניפסט החתום חייב לשאת את אותו seq ו-expires של המעטפה, ו-expires בעתיד.
+ * כך מניפסט מהתור אינו נכנס במעטפה אחרת, ומניפסט של הדחיפה (בלי seq) אינו נכנס בתור.
+ */
+function kol_maroko_v2_manifest_parse(array $b, $seq = null)
 {
     $bytes = $b['manifest'] ?? null;
     if (!is_string($bytes) || $bytes === '') return kol_maroko_fail('bad_request', 'מניפסט חסר', 400);
@@ -281,9 +287,25 @@ function kol_maroko_v2_manifest(array $b)
     }
     if (($man['site'] ?? '') !== kol_maroko_host()) return kol_maroko_fail('wrong_site', 'האתר לא תואם', 403);
     if (($man['page'] ?? '') !== KOL_MAROKO_PAGE) return kol_maroko_fail('wrong_page', 'העמוד לא תואם', 403);
-    if (!is_int($man['time'] ?? null) || abs(time() - $man['time']) > KOL_MAROKO_SKEW) return kol_maroko_fail('stale', 'המניפסט ישן', 401);
+    if ($seq === null) {
+        if (array_key_exists('seq', $man) || array_key_exists('expires', $man)) return kol_maroko_fail('wrong_channel', 'מניפסט מהתור אינו מתקבל בדחיפה', 409);
+        if (!is_int($man['time'] ?? null) || abs(time() - $man['time']) > KOL_MAROKO_SKEW) return kol_maroko_fail('stale', 'המניפסט ישן', 401);
+    } else {
+        if (($man['seq'] ?? null) !== $seq || ($man['expires'] ?? null) !== ($b['expires'] ?? false)) return kol_maroko_fail('bad_request', 'המניפסט אינו של הפקודה הזו', 400);
+        if (!is_int($man['expires']) || $man['expires'] <= time()) return kol_maroko_fail('expired', 'פג התוקף', 401);
+    }
     $nonce = $man['nonce'] ?? '';
     if (!is_string($nonce) || !preg_match('/^[a-f0-9]{32}$/', $nonce)) return kol_maroko_fail('bad_request', 'nonce לא תקין', 400);
+    return ['man' => $man, 'bytes' => $bytes, 'nonce' => $nonce];
+}
+
+function kol_maroko_v2_manifest(array $b, $seq = null)
+{
+    $pre = kol_maroko_v2_manifest_parse($b, $seq);
+    if ($pre instanceof WP_REST_Response) return $pre;
+    $man = $pre['man'];
+    $bytes = $pre['bytes'];
+    $nonce = $pre['nonce'];
 
     $root = kol_maroko_v2_ensure();
     // כל השאר — תחת נעילה אחת: שני מניפסטים במקביל לא יחליפו מצביע זה על גבי זה
