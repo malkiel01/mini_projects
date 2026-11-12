@@ -459,6 +459,22 @@ function dev_stats(): array
         ['id' => 'requests', 'label' => 'ביקשו גישה', 'value' => $n('SELECT COUNT(*) FROM access_requests')],
         ['id' => 'log', 'label' => 'שורות ביומן', 'value' => $n('SELECT COUNT(*) FROM dev_log')],
         ['id' => 'db_size', 'label' => 'גודל המסד', 'value' => dev_bytes($size)],
+        dev_x1_row(),
         ['id' => 'imported', 'label' => 'ייבוא העמוד מהאתר', 'value' => is_array($imp) ? (string)($imp['at'] ?? 'בוצע') : 'לא בוצע'],
     ];
+}
+
+/** X1: ✨ / 🤖 / 📝 החודש — שימוש בבינה (קיים), עריכות שהוחלו / נדחו, בקשות מהצ'אט לפי כניסה, סנכרונים של טקסט ארוך והתנגשויות. */
+function dev_x1_row(): array
+{
+    $st = db()->prepare("SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens FROM ai_usage WHERE at >= ? AND status <> 'error'");
+    $st->execute([gmdate('Y-m-01\\T00:00:00\\Z')]);
+    $u = $st->fetch() ?: ['calls' => 0, 'tokens' => 0];
+    $s = function_exists('x1_stats') ? x1_stats() : [];
+    $agents = [];
+    foreach ($s as $k => $v) if (str_starts_with((string)$k, 'agent:')) $agents[] = substr((string)$k, 6) . ': ' . $v;
+    $value = sprintf('✨ %d בקשות · %s טוקנים · הוחלו %d · נדחו %d  |  🤖 %s  |  📝 סנכרונים %d · התנגשויות %d',
+        (int)$u['calls'], number_format((int)$u['tokens']), (int)($s['applied'] ?? 0), (int)($s['rejected'] ?? 0),
+        $agents ? implode(', ', $agents) : 'אין בקשות', (int)($s['lt_sync'] ?? 0), (int)($s['lt_conflict'] ?? 0));
+    return ['id' => 'x1', 'label' => 'בינה, צ\'אט וטקסט ארוך — החודש', 'value' => $value];
 }

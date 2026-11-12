@@ -147,3 +147,13 @@ test('X1 📝: אזור שנמחק ביד — 404 ברור; הטיוטה היש�
     ok(function_exists('longtexts_get'));
     unset($GLOBALS['kol_wp_fake']);
 });
+
+test('X1: שורה במסך המפתח — בינה (בקשות, טוקנים, הוחלו / נדחו), צ\'אט לפי כניסה, סנכרונים והתנגשויות', function () {
+    $row = array_column(dev_stats(), null, 'id')['x1'] ?? null;
+    ok($row !== null, 'יש שורה');
+    $s = x1_stats();
+    ok(($s['applied'] ?? 0) >= 3 && ($s['rejected'] ?? 0) >= 6, 'מונים מהבדיקות של ✨');
+    ok(($s['lt_sync'] ?? 0) >= 3 && ($s['lt_conflict'] ?? 0) >= 2, 'מונים מהבדיקות של 📝');
+    ok((bool)array_filter(array_keys($s), fn($k) => str_starts_with((string)$k, "agent:צ'אט בדיקה")), 'בקשות לפי כניסה');
+    foreach (['הוחלו', 'נדחו', '🤖', 'סנכרונים', 'התנגשויות'] as $w) ok(str_contains($row['value'], $w), $w);
+});

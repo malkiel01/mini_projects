@@ -89,6 +89,23 @@ function ai_schema(): array
     ];
 }
 
+// ── מונים לשורת X1 במסך המפתח (בלי טבלה חדשה: settings, לפי חודש) ──
+
+/** $k: applied | rejected | lt_sync | lt_conflict, או agent:<כניסה>. */
+function x1_stat(string $k, int $n = 1): void
+{
+    if ($n <= 0) return;
+    $key = 'x1_stats_' . gmdate('Y-m');
+    $s = json_decode((string)setting($key, '{}'), true) ?: [];
+    $s[$k] = (int)($s[$k] ?? 0) + $n;
+    setting_set($key, (string)json_encode($s, JSON_UNESCAPED_UNICODE));
+}
+
+function x1_stats(): array
+{
+    return json_decode((string)setting('x1_stats_' . gmdate('Y-m'), '{}'), true) ?: [];
+}
+
 // ── מכסה ──────────────────────────────────────────────────
 
 function ai_month_start(): string
@@ -328,6 +345,7 @@ function ai_suggest_files(array $user, array $b): array
         $view[] = $v;
     }
     ai_prop_clean();
+    x1_stat('rejected', count($rejected));
     setting_set('ai_prop_' . $rid, (string)json_encode(['sub' => $user['sub'], 'at' => time(), 'prompt' => $prompt, 'edits' => $edits,
         'revs' => array_map(fn($f) => $f['rev'], $plan), 'tokens' => array_filter(array_map(fn($v) => $v['plan']['token'] ?? null, array_column($view, null, 'path')))],
         JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
@@ -395,6 +413,7 @@ function ai_apply_files(array $user, array $b): array
     });
     db()->prepare('DELETE FROM settings WHERE k = ?')->execute(['ai_prop_' . $rid]);
     $sys = array_values(array_intersect(array_keys($plan), ai_system_files()));
+    x1_stat('applied', count($applied));             // הנדחות נספרות בהצעה — לא פעמיים
     audit_as($user, 'ai_apply', pf_label($prop['prompt'], 80) . ' · ' . count($applied) . ' עריכות ב-' . count($done) . ' קבצים · ' . count($rejected) . ' נדחו');
     return ['applied' => $done, 'rejected' => $rejected, 'system' => $sys, 'kol' => isset($plan['kol.json']) ? pf_kol() : null];
 }

@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/project.php';
 require_once __DIR__ . '/preview.php';
+require_once __DIR__ . '/ai.php';
 
 const AGENT_DAYS = 90;
 const AGENT_FAIL_MAX = 10;
@@ -102,6 +103,7 @@ function agent_rate(array $user): void
     $r = json_decode((string)setting($key, '{}'), true) ?: [];
     $n = ($r['m'] ?? 0) === $min ? (int)($r['n'] ?? 0) + 1 : 1;
     setting_set($key, json_encode(['m' => $min, 'n' => $n]));
+    x1_stat('agent:' . pf_label((string)($user['agent_label'] ?? $user['agent']), 40) . ' (' . $user['agent'] . ')');
     if ($n > AGENT_RATE) throw new ApiError('יותר מדי בקשות (' . AGENT_RATE . ' בדקה לכל כניסה). נסו שוב בעוד דקה', 429);
 }
 

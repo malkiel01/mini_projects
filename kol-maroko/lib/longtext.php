@@ -15,6 +15,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/draft.php';
 require_once __DIR__ . '/WordProcessorClient.php';
 require_once __DIR__ . '/project.php';
+require_once __DIR__ . '/ai.php';
 
 if (!defined('KOL_WP_URL')) define('KOL_WP_URL', WordProcessorClient::EDITOR);
 const KOL_SELF = 'https://mbe-plus.com/mini_projects/kol-maroko/';
@@ -327,6 +328,7 @@ function lt_sync_file(array $user, array $b): array
     $new = sanitize_doc((string)($h['html'] ?? ''));
     $css = sanitize_css((string)($h['css'] ?? ''));
     if ($manual && $mode !== 'overwrite') {
+        x1_stat('lt_conflict');
         audit_as($user, 'longtext_conflict', "{$r['path']} · $doc");
         throw new ApiError('האזור נערך ביד מאז הסנכרון האחרון — בחרו מה לעשות', 409, ['conflict' => ['doc' => $doc, 'path' => $r['path'], 'rev' => (int)$r['rev'],
             'file' => $inner, 'editor' => $new, 'options' => ['overwrite', 'import', 'cancel']]]);
@@ -338,6 +340,7 @@ function lt_sync_file(array $user, array $b): array
     db()->prepare('INSERT INTO longtexts (doc, html, css, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(doc) DO UPDATE SET html = excluded.html, css = excluded.css, updated_at = excluded.updated_at, updated_by = excluded.updated_by')
         ->execute([$doc, $new, $css, now_iso(), $user['sub']]);
+    x1_stat('lt_sync');
     audit_as($user, 'longtext_sync', "{$r['path']} ← $doc" . ($manual ? ' (דריסה של עריכה ביד, באישור)' : ''));
     return ['doc' => $doc, 'file' => pf_public($page), 'chars' => mb_strlen(strip_tags($new)), 'overwrote' => $manual];
 }
