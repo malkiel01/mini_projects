@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 19;
+const KOL_SCHEMA_VERSION = 20;
 
 final class ApiError extends RuntimeException
 {
@@ -437,9 +437,47 @@ function migrate(PDO $pdo): void
             ALTER TABLE topics ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
             ALTER TABLE topic_trash ADD COLUMN row TEXT;
             SQL,
+        // M5: טפסים ותיבת פניות (lib/forms.php). הוספה בלבד. הפנייה אינה שומרת IP / User-Agent / Referer; ה-IP — רק מגובב, בטבלת הקצב
+        19 => <<<'SQL'
+            CREATE TABLE form_entries (
+                id         INTEGER PRIMARY KEY,
+                form       TEXT NOT NULL,
+                fields     TEXT NOT NULL DEFAULT '{}',
+                word_id    INTEGER,
+                page       TEXT NOT NULL DEFAULT '',
+                test       INTEGER NOT NULL DEFAULT 0,
+                at         TEXT NOT NULL,
+                read_at    TEXT,
+                read_by    TEXT,
+                handled_at TEXT,
+                handled_by TEXT
+            );
+            CREATE INDEX idx_form_entries_at ON form_entries(test, at);
+            CREATE TABLE form_hits (
+                ip_hash TEXT NOT NULL,
+                at      INTEGER NOT NULL
+            );
+            CREATE INDEX idx_form_hits ON form_hits(ip_hash, at);
+            CREATE INDEX idx_form_hits_at ON form_hits(at);
+            CREATE TABLE form_rejects (
+                day    TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                n      INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, reason)
+            );
+            CREATE TABLE forms_trash (
+                id       INTEGER PRIMARY KEY,
+                entry_id INTEGER NOT NULL,
+                row      TEXT NOT NULL,
+                batch    TEXT NOT NULL DEFAULT '',
+                at       TEXT NOT NULL,
+                by_name  TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE pkg_builds ADD COLUMN forms TEXT;
+            SQL,
         // N2b: הקלטה לכל "מקום" (רשימה, פריט, שדה) — בונה את recordings מחדש (SQLite אינו מסיר UNIQUE ב-ALTER). ב-PHP:
         // ספירה ו-checksum לפני ואחרי, ואם לא תואם — חריגה, והעסקה כולה מתבטלת (migrate_recordings_slots)
-        19 => 'migrate_recordings_slots',
+        20 => 'migrate_recordings_slots',
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
@@ -501,7 +539,7 @@ function migrate_sum(PDO $pdo, string $table, array $cols): array
 }
 
 /**
- * שלב 19 (N2b): recordings נבנית מחדש בתוך העסקה של migrate — CREATE חדשה → INSERT … SELECT → DROP הישנה → RENAME.
+ * שלב 20 (N2b): recordings נבנית מחדש בתוך העסקה של migrate — CREATE חדשה → INSERT … SELECT → DROP הישנה → RENAME.
  * המזהים (id) נשמרים, ולכן rec_versions.rec_id ממשיך להצביע נכון. הרשומות הקיימות — של השדה הראשי (המפתח של השדה
  * שה-col שלו audio; בלי שורה ב-word_fields — 'audio'). לפני ואחרי: מספר השורות ו-checksum של כל העמודות המשותפות, ושל
  * rec_versions; לא תואם — חריגה, והעסקה מתבטלת: המסד נשאר כמו שהיה.
@@ -531,9 +569,9 @@ function migrate_recordings_slots(PDO $pdo): void
         $after = migrate_sum($pdo, 'recordings', $common);
         $vAfter = $vSum();
         if ($before !== $after || $vBefore !== $vAfter) {
-            throw new RuntimeException("מיגרציה 19 בוטלה: ההקלטות לפני ואחרי אינן זהות (recordings {$before[0]} → {$after[0]}, rec_versions {$vBefore[0]} → {$vAfter[0]}). המסד לא השתנה");
+            throw new RuntimeException("מיגרציה 20 בוטלה: ההקלטות לפני ואחרי אינן זהות (recordings {$before[0]} → {$after[0]}, rec_versions {$vBefore[0]} → {$vAfter[0]}). המסד לא השתנה");
         }
-        $GLOBALS['kol_migrate_19'] = ['recordings' => $before[0], 'sha' => $before[1], 'versions' => $vBefore[0], 'versions_sha' => $vBefore[1]];
+        $GLOBALS['kol_migrate_20'] = ['recordings' => $before[0], 'sha' => $before[1], 'versions' => $vBefore[0], 'versions_sha' => $vBefore[1]];
     } else {
         $pdo->exec('ALTER TABLE recordings_n2b RENAME TO recordings');
     }

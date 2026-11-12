@@ -1,7 +1,7 @@
 # יומן צ'אט הקוד — N2b (הקלטה שנייה, וכל שדה שמע, בספרייה)
 
 - 2026-11-12 · התחלה. הענף `claude/kol-maroko-n2b` מ-origin/main (041813a). N3 לא מוזגה — §2.6 עוברת אליה (דרך `rec_slot_get/set`, `rec_sync`).
-- 2026-11-12 · יחידה 1 (שרת): **מיגרציה 19** — `recordings` נבנית מחדש בעסקה אחת (CREATE `recordings_n2b` → INSERT SELECT של העמודות
+- 2026-11-12 · יחידה 1 (שרת): **מיגרציה 20** — `recordings` נבנית מחדש בעסקה אחת (CREATE `recordings_n2b` → INSERT SELECT של העמודות
   המשותפות → DROP → RENAME), ספירה + sha256 של כל העמודות המשותפות ושל `rec_versions` לפני ואחרי; לא תואם — `RuntimeException`
   והעסקה מתבטלת (הלולאה של `migrate` עברה ל-try/rollBack, ובודקת `user_version` שוב בתוך העסקה). העמודות: `list`, `field`,
   `deleted_list`, `deleted_field`; `UNIQUE (list, word_id, field)`; אינדקס על `file_id`. הסכמה עברה מ-`rec_db` למיגרציה.

@@ -27,7 +27,8 @@ const Words = (() => {
   let dragIds = null;
   let player = null;
 
-  const plain = html => { const d = document.createElement('div'); d.innerHTML = html.replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'); return d.textContent.replace(/\s+/g, ' ').trim(); };
+  // N2c: DOMParser — מסמך מנותק שאינו מריץ דבר (בדיב מנותק <img onerror> רץ)
+  const plain = html => (new DOMParser().parseFromString(String(html).replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'), 'text/html').body.textContent || '').replace(/\s+/g, ' ').trim();
   const norm = s => s.toLowerCase().replace(/[֑-ׇ]/g, '');          // בלי ניקוד וטעמים
   const splitTopics = s => [...new Set(s.split(/[;,،]/).map(t => t.trim().replace(/\s+/g, ' ')).filter(Boolean))];
 
@@ -109,6 +110,7 @@ const Words = (() => {
         h('button', { type: 'button', class: 'btn ghost', 'data-topics': true, onclick: () => fieldsReady().then(() => Fields.topics(() => reload(host))).catch(e => toast(e.message, true)) }, '🏷️ נושאים'),
         h('button', { type: 'button', class: 'btn ghost', 'data-structure': true, onclick: () => fieldsReady().then(() => Fields.structure(() => reload(host))).catch(e => toast(e.message, true)) }, '🧩 מבנה המילה'),
         custom().length ? h('button', { type: 'button', class: 'btn ghost', 'data-cols': true, onclick: () => colsSheet(host) }, '👁️ הצג עמודות') : null,
+        h('button', { type: 'button', class: 'btn ghost', 'data-ai-words': true, onclick: () => Project.ai({ title: '✨ עוזר הבינה — המילים', paths: ['data/words.json'], onApplied: () => reload(host) }) }, '✨ עוזר'),   // X1
         h('a', { class: 'btn ghost', href: 'api.php?action=words_csv', download: '' }, '⬇️ לאקסל'),
         h('button', { type: 'button', class: 'btn ghost', onclick: () => csvIn.click() }, '⬆️ מאקסל'), csvIn),
       h('div', { class: 'summary' }, h('div', { class: 'line wrap' },

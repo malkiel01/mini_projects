@@ -24,6 +24,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/preview.php';
 require_once __DIR__ . '/publish.php';
 require_once __DIR__ . '/restore.php';
+require_once __DIR__ . '/forms.php';
 
 const BUILD_TTL = 3600;                      // תוקף כתובת המסגרת של בנייה / תצוגה של גרסה בנויה
 const BUILD_STALE = 900;                     // בנייה שלא הסתיימה תוך רבע שעה — נכשלה
@@ -462,8 +463,9 @@ function build_finish(array $user, array $b): array
         if (is_string($u) && preg_match('~^https?://~i', $u) && strlen($u) <= 2000) $runtime[] = $u;
     }
     $files = json_decode($r['files'], true);
-    $report = json_decode($r['report'], true) + build_report($files, json_decode($r['notes'], true), array_values(array_unique($runtime)));
-    build_save((int)$r['id'], ['status' => 'built', 'report' => build_json($report), 'built_at' => now_iso()]);
+    [$files, $forms, $fnotes] = forms_build($files);          // M5: רישום הטפסים ו-meta של כתובת form.php (lib/forms.php)
+    $report = json_decode($r['report'], true) + build_report($files, [...json_decode($r['notes'], true), ...$fnotes], array_values(array_unique($runtime)));
+    build_save((int)$r['id'], ['status' => 'built', 'report' => build_json($report), 'built_at' => now_iso(), 'files' => build_json($files), 'forms' => build_json($forms)]);
     audit_as($user, 'build', "גרסה בנויה {$r['id']} · " . count($files) . ' קבצים · ' . count($report['warnings']) . ' אזהרות');
     return ['build' => build_public(build_row((int)$r['id']), true)];
 }

@@ -38,7 +38,7 @@ const REC_REASONS = [
 // ── המודל ─────────────────────────────────────────────────
 
 /**
- * המסד. הטבלה recordings — בסכמה (lib/db.php, שלב 19: רשומה לכל מקום — רשימה, פריט, שדה). rec_versions — כאן,
+ * המסד. הטבלה recordings — בסכמה (lib/db.php, שלב 20: רשומה לכל מקום — רשימה, פריט, שדה). rec_versions — כאן,
  * CREATE IF NOT EXISTS (מוסיף בלבד).
  */
 function rec_db(): PDO

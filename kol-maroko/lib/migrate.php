@@ -269,8 +269,11 @@ function mg_body(string $tpl, array $ctx, array &$notes, array &$css, string $he
     $add('~(<[a-zA-Z][^<>]*\bclass="[^"]*\bkadisha-word-feedback-btn\b[^"]*"[^<>]*?)(>)~', 'data-kol-open="feedback"');
     $add('~(<[a-zA-Z][^<>]*\bid="kadisha-lex-feedback-modal"[^<>]*?)(>)~', 'data-kol-dialog="feedback"');
     $add('~(<[a-zA-Z][^<>]*\bdata-klf-close="1"[^<>]*?)(>)~', 'data-kol-close');
-    $add('~(<form\b[^<>]*\bid="kadisha-lex-feedback-form"[^<>]*?)(>)~', 'data-kol-form="feedback" data-kol-form-done="' . MG_FORM_DONE . '"');
-    $add('~(<[a-zA-Z][^<>]*\bid="kadisha-lex-feedback-status"[^<>]*?)(>)~', 'data-kol-form-status');
+    $add('~(<form\b[^<>]*\bid="kadisha-lex-feedback-form"[^<>]*?)(>)~', 'data-kol-form="feedback"');
+    // M5: ההודעות — אלמנטים בקובץ (בעל העמוד משנה את הנוסח), המלכודת, ומזהה המילה שנשלח עם הפנייה
+    $out = preg_replace('~(<[a-zA-Z][^<>]*\bid="kadisha-lex-feedback-status"[^<>]*>)~', '$1<span data-kol-form-done hidden>תודה! המשוב נשלח לתיבת הפניות.</span><span data-kol-form-error hidden>לא נשלח. נסו שוב.</span>', $out);
+    $add('~(<input\b[^<>]*\bname="website"[^<>]*?)(/?>)~', 'data-kol-trap');
+    $out = preg_replace('~(<form\b[^<>]*\bid="kadisha-lex-feedback-form"[^<>]*>)(?!<input type="hidden" name="word_id")~', '$1<input type="hidden" name="word_id" data-kol-value="id">', $out);
     $add('~(<[a-zA-Z][^<>]*\bid="kadisha-lex-feedback-word-name"[^<>]*?)(>)~', 'data-kol-text="word"');
     if (str_contains($out, '{{')) $notes[] = ['failed', 'נשאר בקובץ תחביר {{…}} שלא הומר — חפשו "{{" ב-index.html'];
     return $out;

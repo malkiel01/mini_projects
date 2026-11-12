@@ -22,12 +22,12 @@ function n2b_old_schema(string $t, string $nameType = 'TEXT'): string
 
 const N2B_OLD_COLS = 'id, word_id, state, source, file_id, name, duration, how, at, by_name, scan, scan_size, scan_type, scan_note, scan_at, f_code, f_note, f_at, deleted_at, deleted_by, deleted_word, deleted_audio';
 
-/** recordings חוזרת לסכמה של לפני N2b (מסד בגרסה 18), עם אותן שורות. */
+/** recordings חוזרת לסכמה של לפני N2b (מסד בגרסה 19), עם אותן שורות. */
 function n2b_downgrade(PDO $pdo, string $nameType = 'TEXT'): void
 {
     $pdo->exec(n2b_old_schema('rec_old', $nameType));
     $pdo->exec('INSERT INTO rec_old (' . N2B_OLD_COLS . ') SELECT ' . N2B_OLD_COLS . " FROM recordings WHERE list = 'words' AND field = 'audio'");
-    $pdo->exec('DROP TABLE recordings; ALTER TABLE rec_old RENAME TO recordings; PRAGMA user_version = 18');
+    $pdo->exec('DROP TABLE recordings; ALTER TABLE rec_old RENAME TO recordings; PRAGMA user_version = 19');
 }
 
 /** שדה "הקלטה בצרפתית" (audio_fr), ומילים 9800+ [id => [ראשי, צרפתית]]. מחזיר ניקוי. */
@@ -76,7 +76,7 @@ function n2b_strip(array $rows): array
 
 // ── §2.1 המודל — מיגרציה אחת ─────────────────────────────
 
-test('N2b · מיגרציה 19 על מסד בגודל אמיתי (1,500 הקלטות + גרסאות + סל): אותן רשומות, אותן גרסאות, אותו סל; words.json ו-rec_rows זהים', function () {
+test('N2b · מיגרציה 20 על מסד בגודל אמיתי (1,500 הקלטות + גרסאות + סל): אותן רשומות, אותן גרסאות, אותו סל; words.json ו-rec_rows זהים', function () {
     $pdo = db();
     $clean = a3_fixture([]);
     try {
@@ -111,11 +111,11 @@ test('N2b · מיגרציה 19 על מסד בגודל אמיתי (1,500 הקלט
         $t0 = microtime(true);
         migrate($pdo);
         $ms = (int)((microtime(true) - $t0) * 1000);
-        eq(19, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'הגרסה');
-        $m = $GLOBALS['kol_migrate_19'] ?? [];
+        eq(20, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'הגרסה');
+        $m = $GLOBALS['kol_migrate_20'] ?? [];
         eq($n, $m['recordings'] ?? null, 'הספירה לפני (מהמיגרציה)');
         eq($n, (int)$pdo->query('SELECT COUNT(*) FROM recordings')->fetchColumn(), 'הספירה אחרי');
-        fwrite(STDERR, "   מיגרציה 19: $n רשומות, " . ($m['versions'] ?? 0) . " גרסאות, $ms ms · sha " . substr($m['sha'] ?? '', 0, 12) . "\n");
+        fwrite(STDERR, "   מיגרציה 20: $n רשומות, " . ($m['versions'] ?? 0) . " גרסאות, $ms ms · sha " . substr($m['sha'] ?? '', 0, 12) . "\n");
         $after = [
             'json' => words_json(), 'rows' => n2b_strip(rec_rows()), 'trash' => array_map(fn($t) => array_diff_key($t, ['field' => 1, 'field_label' => 1, 'primary' => 1]), rec_trash()), 'use' => files_in_use(),
             'versions' => $pdo->query('SELECT * FROM rec_versions ORDER BY id')->fetchAll(),
@@ -151,7 +151,7 @@ function throws_pdo(callable $fn): bool
     return false;
 }
 
-test('N2b · מיגרציה 19: checksum שאינו תואם — ROLLBACK, והמסד נשאר כמו שהיה (גרסה 18, הטבלה הישנה, אותן שורות)', function () {
+test('N2b · מיגרציה 20: checksum שאינו תואם — ROLLBACK, והמסד נשאר כמו שהיה (גרסה 19, הטבלה הישנה, אותן שורות)', function () {
     $pdo = tmp_pdo('n2b-rollback');
     migrate($pdo);
     // טבלה ישנה שבה ההעתקה משנה ערך (name INTEGER ← TEXT): המיגרציה חייבת לזהות ולבטל
@@ -160,13 +160,13 @@ test('N2b · מיגרציה 19: checksum שאינו תואם — ROLLBACK, וה�
     $pdo->exec("INSERT INTO recordings (id, word_id, state, name, at) VALUES (1, 1, 'site', 5, 'x'), (2, 2, 'tool', 6, 'x'), (3, NULL, 'tool', 7, 'x')");
     $pdo->exec("CREATE TABLE IF NOT EXISTS rec_versions (id INTEGER PRIMARY KEY, rec_id INTEGER NOT NULL, file_id TEXT, source TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', duration REAL, how TEXT NOT NULL DEFAULT '', since TEXT, at TEXT NOT NULL, by_name TEXT NOT NULL DEFAULT '')");
     $pdo->exec("INSERT INTO rec_versions (rec_id, at) VALUES (1, 'x'), (2, 'x')");
-    $pdo->exec('PRAGMA user_version = 18');
+    $pdo->exec('PRAGMA user_version = 19');
     $sql = $pdo->query("SELECT sql FROM sqlite_master WHERE name = 'recordings'")->fetchColumn();
     $rows = $pdo->query('SELECT * FROM recordings ORDER BY id')->fetchAll();
     $err = '';
     try { migrate($pdo); } catch (RuntimeException $e) { $err = $e->getMessage(); }
-    ok(str_contains($err, 'מיגרציה 19 בוטלה'), 'חריגה עם הסבר: ' . $err);
-    eq(18, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'הגרסה נשארה 18');
+    ok(str_contains($err, 'מיגרציה 20 בוטלה'), 'חריגה עם הסבר: ' . $err);
+    eq(19, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'הגרסה נשארה 19');
     eq($sql, $pdo->query("SELECT sql FROM sqlite_master WHERE name = 'recordings'")->fetchColumn(), 'הטבלה הישנה במקומה');
     eq($rows, $pdo->query('SELECT * FROM recordings ORDER BY id')->fetchAll(), 'אותן שורות');
     eq(2, (int)$pdo->query('SELECT COUNT(*) FROM rec_versions')->fetchColumn(), 'הגרסאות');
@@ -177,19 +177,19 @@ test('N2b · מיגרציה 19: checksum שאינו תואם — ROLLBACK, וה�
     $pdo->exec(n2b_old_schema('recordings'));
     $pdo->exec("INSERT INTO recordings (id, word_id, state, name, at, deleted_at, deleted_word) VALUES (1, 1, 'site', 'א', 'x', NULL, NULL), (2, NULL, 'tool', 'ב', 'x', 'y', 7)");
     migrate($pdo);
-    eq(19, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'עכשיו — 19');
+    eq(20, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'עכשיו — 20');
     eq([['id' => 1, 'field' => 'audio', 'deleted_field' => null], ['id' => 2, 'field' => 'audio', 'deleted_field' => 'audio']],
         $pdo->query('SELECT id, field, deleted_field FROM recordings ORDER BY id')->fetchAll(), 'השדה הראשי, והסל זוכר את המקום');
 });
 
-test('N2b · מיגרציה 19: המפתח של השדה הראשי שונה ב-N2 (audio → sound) — הרשומות מקבלות את המפתח', function () {
+test('N2b · מיגרציה 20: המפתח של השדה הראשי שונה ב-N2 (audio → sound) — הרשומות מקבלות את המפתח', function () {
     $pdo = tmp_pdo('n2b-key');
     migrate($pdo);
     $pdo->exec("INSERT INTO word_fields (key, label, type, col, sort_order) VALUES ('sound', 'הקלטה', 'audio', 'audio', 10)");
     $pdo->exec('DROP TABLE recordings');
     $pdo->exec(n2b_old_schema('recordings'));
     $pdo->exec("INSERT INTO recordings (id, word_id, state, name, at) VALUES (1, 1, 'site', 'א', 'x')");
-    $pdo->exec('PRAGMA user_version = 18');
+    $pdo->exec('PRAGMA user_version = 19');
     migrate($pdo);
     eq('sound', $pdo->query('SELECT field FROM recordings WHERE id = 1')->fetchColumn());
 });

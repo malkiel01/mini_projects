@@ -24,7 +24,7 @@ const Fields = (() => {
     if (f.type === 'bool') return v ? '✓' : '✗';
     if (f.type === 'list') return v.join(', ');
     if (f.type === 'choice') return (f.options.find(o => o.value === v) || { label: v }).label;
-    if (f.type === 'rich') { const d = document.createElement('div'); d.innerHTML = v; return d.textContent.trim(); }
+    if (f.type === 'rich') return (new DOMParser().parseFromString(String(v), 'text/html').body.textContent || '').trim();    // N2c: מסמך מנותק — <img onerror> אינו רץ
     return String(v);
   }
 

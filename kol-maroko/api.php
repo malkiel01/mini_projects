@@ -17,6 +17,7 @@ require_once __DIR__ . '/lib/preview.php';
 require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
 require_once __DIR__ . '/lib/fields_bind.php';          // N2: שינוי מפתח — הקשירות בקבצי הפרויקט
+require_once __DIR__ . '/lib/forms.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -58,7 +59,9 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
                       'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_move', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
-                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read'];
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read',
+                      'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
+                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open'];   // X1
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -99,6 +102,9 @@ try {
         'media' => file_send(media_check($_GET)),
         'editor_session' => editor_session(require_role($user, 'editor'), $body),
         'longtext_sync' => longtext_sync(require_role($user, 'editor'), $body),
+        'longtexts' => (require_role($user, 'editor') ? longtexts_list() : []),          // X1: 🔗 חבר למסמך קיים
+        'longtext_link' => longtext_link(require_role($user, 'editor'), $body),
+        'longtext_open' => longtext_open(require_role($user, 'editor'), $body),
         'publish_preview' => publish_preview(require_role($user, 'publisher')),
         'publish' => publish(require_role($user, 'publisher'), $body),
         'republish' => republish(require_role($user, 'publisher'), $body),
@@ -216,11 +222,21 @@ try {
         'kd_update' => build_kd_update(require_role($user, 'owner'), $body),
         'notices' => notices_list(require_role($user, 'owner')),
         'notice_read' => notice_read(require_role($user, 'owner'), $body),
+        // 📬 פניות (M5, lib/forms.php): קריאה, סימון וייצוא — עורך ומעלה; מחיקה ו"מחק ישנות" — מפרסם; מגבלות ומייל — המפתח
+        'inbox' => inbox_list(require_role($user, 'editor'), $_GET),
+        'inbox_mark' => inbox_mark(require_role($user, 'editor'), $body),
+        'inbox_delete' => inbox_delete(require_role($user, 'publisher'), $body),
+        'inbox_purge' => inbox_purge(require_role($user, 'publisher'), $body),
+        'inbox_csv' => inbox_csv(require_role($user, 'editor'), $_GET),
+        'forms_settings' => ($method === 'POST' ? forms_settings(require_role($user, 'editor'), $body, is_developer($user)) : forms_settings(require_role($user, 'editor'), [], false)),
+        'mail_test' => forms_mail_test(require_developer($user), $body),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status(require_role($user, 'editor')),
         'ai_suggest' => ai_suggest(require_role($user, 'editor'), $body),
+        'ai_suggest_files' => ai_suggest_files(require_role($user, 'editor'), $body),          // X1: ✨ על קבצי הפרויקט
+        'ai_apply_files' => ai_apply_files(require_role($user, 'editor'), $body),
         'ai_admin' => (require_role($user, 'owner') ? ai_admin() : []),
         'secret_set' => secret_set(require_role($user, 'owner'), $body),
         'ai_quota_set' => ai_quota_set(require_role($user, 'owner'), $body),
