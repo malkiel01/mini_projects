@@ -89,7 +89,9 @@ const Restore = (() => {
       h('p', { class: 'hint' }, owner ? 'מחיקה סופית — רק מכאן, ורק בעלים. קובץ שגרסה שמורה מפנה אליו לא נמחק סופית.' : 'מחיקה סופית — רק לבעלים.'),
       ...sec('קבצים', d.files.map(f => row('📄', f.name, `${f.deleted_by || ''} · ${when(f.deleted_at)}`, 'file', f.id, f.name))),
       ...sec('מילים', d.words.map(w => row('📚', w.word, `${w.by} · ${when(w.at)}`, 'word', w.id, w.word))),
-      ...sec('נושאים', d.topics.map(t => row('🏷️', t.op === 'rename' ? `${t.name} → ${t.to}` : `הוסר: ${t.name}`, `${t.words} מילים · ${t.by} · ${when(t.at)}`, 'topic', t.id, t.name))));
+      ...sec('נושאים', d.topics.map(t => row('🏷️', t.op === 'rename' ? `${t.name} → ${t.to}` : `הוסר: ${t.name}`, `${t.words} מילים · ${t.by} · ${when(t.at)}`, 'topic', t.id, t.name))),
+      // M5: פניות — אצווה (פנייה שנמחקה, או "מחק ישנות" כולה) משוחזרת יחד
+      ...sec('פניות', (d.forms || []).map(f => row('📬', f.old ? `"מחק ישנות" · ${f.n} פניות` : `פנייה בטופס ${f.form}${f.n > 1 ? ` · ${f.n}` : ''}`, `${f.by} · ${when(f.at)}`, 'form', f.id, `${f.n} פניות`))));
   }
 
   // ── גיבוי ──────────────────────────────────────────────

@@ -77,7 +77,7 @@ test('הסבה: ה-CSS של ערכת הנושא בייט בבייט; ערכי ה
         ok((bool)array_filter($b['notes'], fn($n) => $n[0] === 'warn' && str_contains($n[1], '.kadisha-hero-title · font-size')), 'אזהרה על !important של ערכת הנושא שמתנגש בערך מהפאנל');
         ok(str_contains($b['files']['js/lexicon.js'], "console.log('theme')") && !str_contains($b['files']['index.html'], 'js/lexicon.js'), 'lexicon.js — עותק לעיון, לא נטען');
         $kol = json_decode($b['files']['kol.json'], true);
-        eq(['version' => '1.1.0', 'modified' => false], $kol['system']['js/kol-data.js'] ?? null, 'kol.json רושם את kol-data.js כקובץ מערכת');
+        eq(['version' => '1.2.0', 'modified' => false], $kol['system']['js/kol-data.js'] ?? null, 'kol.json רושם את kol-data.js כקובץ מערכת');
         ok(!preg_match('/[\x{0590}-\x{05FF}]/u', preg_replace('~/\*[\s\S]*?\*/|//[^\n]*~', '', $b['files']['js/kol-data.js'])), 'ב-kol-data.js אין טקסט שהגולש רואה (עברית מחוץ להערות)');
     } finally { $done(); }
 });
@@ -86,7 +86,7 @@ test('הסבה: משוב ומזהים דולקים בפאנל ← החלון, ה
     $done = mg_fixture(['feedback' => true, 'show_ids' => true]);
     try {
         $h = mg_build()['files']['index.html'];
-        foreach (['data-kol-dialog="feedback"', 'data-kol-form="feedback"', 'data-kol-form-done="', 'data-kol-form-status', 'data-kol-close', 'data-kol-open="feedback"', 'data-kol-if="wp_id"',
+        foreach (['data-kol-dialog="feedback"', 'data-kol-form="feedback"', '<span data-kol-form-done hidden>', '<span data-kol-form-error hidden>', 'name="website" tabindex="-1" autocomplete="off" data-kol-trap', '<input type="hidden" name="word_id" data-kol-value="id">', 'data-kol-close', 'data-kol-open="feedback"', 'data-kol-if="wp_id"',
             'data-kol-if="external_id"', 'data-kol-text="#{external_id}"', 'id="kadisha-lex-feedback-word-name" data-kol-text="word"'] as $need) ok(str_contains($h, $need), "חסר: $need");
         ok(!str_contains($h, '{{'), 'נשאר Mustache');
     } finally { $done(); }

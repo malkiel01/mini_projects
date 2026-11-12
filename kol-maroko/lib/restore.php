@@ -211,7 +211,8 @@ function trash_list(): array
         $pdo->query('SELECT id, at, by_name, row FROM words_trash ORDER BY id DESC LIMIT 500')->fetchAll());
     $topics = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'op' => $r['op'], 'name' => $r['name'], 'to' => $r['to_name'],
         'words' => count(json_decode($r['before'], true) ?: [])], $pdo->query('SELECT * FROM topic_trash ORDER BY id DESC LIMIT 500')->fetchAll());
-    return ['files' => $files, 'words' => $words, 'topics' => $topics];
+    require_once __DIR__ . '/forms.php';
+    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'forms' => forms_trash_list()];     // M5: פניות — אצוות
 }
 
 function trash_restore(array $user, array $b): array
@@ -247,6 +248,9 @@ function trash_restore(array $user, array $b): array
         $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($t['name'], $map), $t['name']]);
         $pdo->prepare('DELETE FROM topic_trash WHERE id = ?')->execute([(int)$id]);
         audit_as($user, 'trash_restore', 'נושא · ' . $t['name']);
+    } elseif ($kind === 'form') {                                          // M5: פניות (lib/forms.php) — אצווה שלמה, מפרסם ומעלה
+        require_once __DIR__ . '/forms.php';
+        forms_trash_restore($user, (int)$id);
     } else {
         throw new ApiError('בקשה לא תקינה');
     }
@@ -269,6 +273,9 @@ function trash_purge(array $owner, array $b): array
     } elseif ($kind === 'word' || $kind === 'topic') {
         $pdo->prepare('DELETE FROM ' . ($kind === 'word' ? 'words_trash' : 'topic_trash') . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
         audit_as($owner, 'trash_purge', $kind === 'word' ? 'מילה' : 'נושא');
+    } elseif ($kind === 'form') {                                          // M5
+        require_once __DIR__ . '/forms.php';
+        forms_trash_purge($owner, (int)($b['id'] ?? 0));
     } else {
         throw new ApiError('בקשה לא תקינה');
     }

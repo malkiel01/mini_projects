@@ -18,6 +18,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/project.php';
 require_once __DIR__ . '/secrets.php';
 require_once __DIR__ . '/lexicon.php';
+require_once __DIR__ . '/forms.php';
 
 const PV_TTL = 1800;                // תוקף האסימון, בשניות
 const PV_SANDBOX = 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-presentation';
@@ -202,6 +203,7 @@ function pv_serve(): never
         if ($path === PV_WORDS) pv_send(pv_words($app), null, 'words.json');
 
         $html = fn(string $bytes) => pv_inject($bytes, $root . PV_BRIDGE);
+        $pvHtml = $html; $html = fn(string $bytes) => forms_meta_inject($pvHtml($bytes), forms_endpoint(true));    // M5: <meta> של form.php?test=1 (lib/forms.php)
         $r = null;
         if ($path === '' || str_ends_with($path, '/')) {
             $entry = $path === '' ? (string)(pf_kol()['config']['entry'] ?? 'index.html') : $path . 'index.html';
