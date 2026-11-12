@@ -82,3 +82,42 @@
 - **פעולה חדשה = שורה ב-`ACTION_ROLES` (`lib/auth.php`)**, בלי `require_role` ב-api.php. בלי שורה — 404, ו-`tests/cases/21-roles.php` נכשלת.
 - זהות — רק דרך `lib/login.php`. התפקידים: `content_editor` / `editor` / `publisher` / `page_owner` / `site_owner` (**'owner' כבר לא קיים**).
 - בדיקת דפדפן חדשה — הזהות גם בעוגייה `kol_test_user` (בקשת מדיה בלי זהות מוחקת את ה-session).
+
+## מ-T1 (2026-11-12, נרשם בידי בקרה (6))
+- `plugin_zip` (בעל האתר) — `lib/plugin_zip.php`; `wordpress-plugin/` נפרס עכשיו לשרת (מוגן ב-`.htaccess` וב-`ABSPATH`). קובץ חדש בתוסף = בתוך ה-ZIP אוטומטית.
+- `lock_op` ב-`BEGIN IMMEDIATE`. כל עסקה שקוראת ואז כותבת — אותו דבר (DEFERRED נכשלת ב-SQLITE_BUSY_SNAPSHOT בעומס).
+- בדיקות דפדפן כותבות צילומים ל-tmpdir בלבד (`/tmp/kol-<פרוסה>-shots/`) — לא לריפו.
+- `Library.view(el, owner, page)` — `pageOwner` לפעולות של בעל העמוד ומעלה.
+
+## מ-V7 (2026-11-12, נרשם בידי בקרה (6))
+- כתיבה לפי מכשיר: `St.dev(t)` לפני `writeStyle` — אותו בורר בתוך `@media (max-width: <max>px)`; `planDevice` בונה/מוצא את הבלוק אחרי הכלל הבסיסי. **V8 (פסאודו-מחלקות):** `planDevice` מקבל בורר — `:hover` במכשיר = אותו בורר עם הפסאודו בתוך ה-@media.
+- `Styler.perDevice / devOwn / ownDecl / isDev(max)`; `DEVICES` מ-kol.json (`kolChanged`); `canvas.devHidden / markDev`; `editor/devices.js` (נראות לפי מכשיר).
+- ❌ פתוח: `Bg.ruleOps` כותב לבסיס גם במכשיר · הזזת HTML במיקום חופשי ביחס לאב רחוק — לכל המכשירים · Safari/Firefox/iOS לא נבדקו.
+- בטלפון (<1000px) שדה הרוחב החופשי מוסתר (⚙ נשאר) — כדי שהסרגל לא יגדל בשורה ויכסה את המקלדת (v2).
+- 🟡 בפאנל העיצוב ב-1920 חלק מהערכים חתוכים בתוך השדה ("norma"). התוויות שלמות.
+
+## מ-V8 (2026-11-12, נרשם בידי בקרה (6))
+- מצב: `Styler.st(t, {pc, of})` מוסיף `t.state.sel`; הכתיבה — `planState` (מיד אחרי הבסיס) או `planDevice` עם בסיס = כלל המצב. `details.collect(n, {state})` — המפל במצב.
+- הקנבס במצב (`states.js`): `data-kol-st` ועותקי כללים עם `[data-kol-st~=…]`; `details.collect` מדלג עליהם.
+- דירוג במפל — **רק** `KolDetails.rankOf` (8 רכיבים, כולל שכבה וקרבה); כלל חדש — `rankNew` ב-style.js. לא בונים דירוג ביד.
+- `identity.js`: `checkAttr/checkClass/checkId`, `renameHtml/renameCss`, `setAttr` (מקודד < >). **כל כתיבת תכונה — דרכם.**
+- `extra.js`: `CONTROLLED` — מאפיין שמקבל שליטה ייעודית (V9/V10) נוסף לרשימה, אחרת יופיע גם ב"מאפיינים נוספים".
+- בבדיקות: כפתורי מצב — `.sg-state-seg [data-state]` (`[data-state]` קיים גם על שורות `sg-dev`).
+- `.sg` (עיצוב/מתקדם) — עכשיו גולל (לא היה overflow גם ב-main).
+- ❌ "לא חל על אף אלמנט" · "מאפיינים נוספים" ב"תוכן"/"פרטים" · `::before`+מצב · Safari/Firefox.
+
+## מ-V9 (2026-11-12, נרשם בידי בקרה (6))
+- `KolGlobals` (globals.js) — **כל כתיבה גלובלית דרכו:** planNewVar / planSetVar / planRename / planReplaceValue / planFontFace / planLinkInsert / planLinkDrop. כל ערך — `checkRaw` (+ `checkValue` / `CSS.supports`); שם משפחה — `FAMILY`, שם משתנה — `VAR_NAME`.
+- פעולת שרת שהיא חלק מעסקה (קובץ שנוצר) — `attachFx({undo, redo})` מיד אחרי writeOps; `joinTx` שומר אותה.
+- "⛓" (קישור למשתנה) — דרך `D.varBtn` / `D.varChip` בשורת המקור (srcLine). סוג שליטה חדש שצריך משתנה — להוסיף ל-`kindOfProp`.
+- בבדיקות: לשונית `.ed-ptabs [data-ptab="glob"]`; הכנה שעוקפת עסקאות — רק לפני תמונת המצב ההתחלתית.
+- **בקשה יוצאת חדשה — רק דרך `font_http`** (או אותו מבנה: רשימת מארחים, https, בלי הפניות, IP נבדק ומוצמד), עם בדיקות ב-tests/cases.
+- ❌ ראו reviews/V9.md.
+
+## מ-M7 (2026-11-12, נרשם בידי בקרה (6))
+- **כל מה שיוצא לאתר — רק דרך `site_call(action, payload|Closure(seq,exp), user, meta)`.** פקודה חדשה = שורה ב-`OUTBOX_ACTIONS` + `OUTBOX_TTL` + טיפול ב-`v2-pull.php` (`kol_maroko_pull_apply`) + ב-`outbox_effect` אם הכלי צריך לדעת שהוחלה.
+- בערוץ המשיכה אין תשובה מיידית: שום מצב "באתר" לפני `applied`; ping = הדופק (`pull_pulse` / `outbox_ping`).
+- התוסף: הסמן (`pull_cursor`) מתקדם רק על פקודה חתומה; מצב התוסף לכלי — `kol_maroko_ping_data()` (מסונן ב-`PULL_STATE_KEYS` — שדה חדש = שורה שם). דיווח שנחסם (429) — ניסיון חוזר בעוד דקה.
+- מטמון: `immutable` רק לפי hash; אחרת `max-age=0` + ETag + `CDN-Cache-Control: no-store`.
+- בדיקות: `tests/plugin/fake-pull.php` (כלי מדומה וזדוני); מקביליות אמיתית = שני שרתי `php -S` על אותה תיקייה (H28). בדיקה שסופרת בקשות — לאפס את מונה הקצב.
+- `publish.js` נטען לפני `app.js`: בלי `h()` בקוד שרץ בטעינה.
