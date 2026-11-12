@@ -355,7 +355,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .gt-grip { cursor: grab; touch-action: none; padding: 0 4px; user-select: none; } .gt-tag { font-size: .75rem; opacity: .7; }
 @media (pointer: coarse) { .gt-grip, .gt-row .btn { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; } }
 .ps-eq { position: absolute; z-index: 26; pointer-events: none; background: rgba(224, 0, 204, .25); border: 1px dashed #e0c; font: .7rem ui-monospace, monospace; color: #e0c; display: grid; place-items: center; }
-.sz-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+.sz-tip, .fx-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
 
 /* ── V7: מכשירים ── */
 .ed { --devc: transparent; }

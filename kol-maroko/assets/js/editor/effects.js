@@ -376,7 +376,7 @@
       drawHandles() {
         const c = this.c, n = c.selected, L = this.layer();
         if (!this.rh) {
-          this.rh = {}; this.tip = hh('span', { class: 'sz-tip', hidden: true, dir: 'auto' });
+          this.rh = {}; this.tip = hh('span', { class: 'fx-tip', hidden: true, dir: 'auto' });
           for (const [k] of CORNERS) { const b = hh('div', { class: 'fx-rad', hidden: true, 'data-radius-h': k, title: 'רדיוס · גרירה ← כל הפינות; Alt ← הפינה הזו' }); b.addEventListener('pointerdown', ev => this.radDown(ev, k)); this.rh[k] = b; L.append(b); }
           this.sun = hh('div', { class: 'fx-sun', hidden: true, 'data-shadow-h': true, title: 'צל · גרירה ← X/Y; גלגלת ← טשטוש' }, '☀');
           this.sun.addEventListener('pointerdown', ev => this.sunDown(ev)); this.sun.addEventListener('wheel', ev => this.sunWheel(ev), { passive: false });

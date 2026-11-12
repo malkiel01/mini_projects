@@ -20,7 +20,7 @@
   class Motion {
     /** o: { design, adv, write, writeOps, joinTx, attachFx, txCount(), note, undo, phone, layer(), busy(), on(), html(), docOf(path), sheets(), linkSheet(path),
      *       files(), reload(), filePath(), pick(kind, title), seedUrl(name), api, bar } */
-    constructor(o) { Object.assign(this, o); this.open = new Set(['transform']); this.scrub = 0.5; }
+    constructor(o) { Object.assign(this, o); this.open = new Set(); this.scrub = 0.5; }
     get A() { return this.adv; } get c() { return this.adv.canvas; }
     win() { return this.c.frame.contentWindow; }
     cs(n) { const e = this.c.elOf(n); return e ? this.win().getComputedStyle(e) : null; }
@@ -299,7 +299,7 @@
       if (!this.rot) {
         this.rot = hh('div', { class: 'tf-rot', hidden: true, 'data-rotate-h': true, title: 'סיבוב — גרירה; Shift: קפיצות של 15°' }, '⟳');
         this.org = hh('div', { class: 'tf-org', hidden: true, 'data-origin-h': true, title: 'נקודת הציר (transform-origin) — גרירה' });
-        this.tip = hh('span', { class: 'sz-tip', hidden: true, dir: 'auto' });
+        this.tip = hh('span', { class: 'fx-tip', hidden: true, dir: 'auto' });
         this.rot.addEventListener('pointerdown', ev => this.rotDown(ev)); this.org.addEventListener('pointerdown', ev => this.orgDown(ev));
         L.append(this.rot, this.org, this.tip);
         L.addEventListener('pointerdown', ev => { const hz = ev.target.closest && ev.target.closest('.sz-h'); if (hz && (ev.ctrlKey || ev.metaKey) && /^(ne|nw|se|sw)$/.test(hz.dataset.sizeH)) { ev.stopPropagation(); ev.preventDefault(); this.scaleDown(ev, hz); } }, true);
