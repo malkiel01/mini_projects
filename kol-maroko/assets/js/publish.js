@@ -258,7 +258,7 @@ const Publish = (() => {
     const input = h('input', { type: 'file', accept: '.zip,application/zip', multiple: true, hidden: true, onchange: async () => {
       const files = [...input.files];
       input.value = '';
-      const tot = { files: 0, linked: 0, failed: [] };
+      const tot = { files: 0, linked: 0, failed: [], unmatched: [] };
       let remaining = null;
       for (const f of files) {
         const row = Media.progressRow();
@@ -268,7 +268,7 @@ const Publish = (() => {
           row.set(f.name, 1, 1, null, 'מכניס את ההקלטות ומקשר למילים…');
           const st = (await api('audio_import', { id })).stats;
           row.set(f.name, 1, 1, null, `✓ חלק ${st.part} מתוך ${st.parts}: ${st.files} הקלטות${st.already ? ` · ${st.already} כבר היו` : ''}`);
-          tot.files += st.files; tot.linked += st.linked; tot.failed.push(...st.failed);
+          tot.files += st.files; tot.linked += st.linked; tot.failed.push(...st.failed); tot.unmatched.push(...(st.unmatched_list || []));
           remaining = st.remaining;
         } catch (e) {
           row.el.classList.add('error');
@@ -278,7 +278,10 @@ const Publish = (() => {
       out.replaceChildren(h('div', { class: 'summary' },
         h('p', {}, h('b', { style: 'color:var(--ok)' }, `✓ ${tot.files} הקלטות נכנסו לכלי`), ` · ${tot.linked} מילים קושרו`),
         remaining ? h('p', { class: 'hint' }, `${remaining} מילים עדיין עם הקלטה רק באתר — כנראה חסר חלק. העלו גם אותו.`) : h('p', { class: 'hint' }, 'כל ההקלטות בכלי. רואים אותן ב-🗂️ קבצים וב-📚 מילים.'),
-        tot.failed.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.failed.length} לא נכנסו:`), h('ul', {}, tot.failed.slice(0, 30).map(x => h('li', {}, x)))) : null));
+        tot.failed.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.failed.length} לא נכנסו:`), h('ul', {}, tot.failed.slice(0, 30).map(x => h('li', {}, x)))) : null,
+        // A2: מה שלא הותאם לאף מילה (לא לפי המזהה ולא לפי הכתובת) — מוצג, לא מדולג בשקט
+        tot.unmatched.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.unmatched.length} לא הותאמו לאף מילה (לא נכנסו):`),
+          h('ul', {}, tot.unmatched.slice(0, 100).map(x => h('li', {}, x.word_id ? `#${x.word_id} ` : '', x.word || '', ' — ', h('span', { dir: 'ltr' }, x.url || x.file))))) : null));
     } });
     return h('section', {},
       h('h2', { class: 'sec-title' }, '🎙️ ייבוא ההקלטות'),
