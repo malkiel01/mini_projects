@@ -10,6 +10,7 @@
 (function () {
   'use strict';
   const ST = () => window.KolStyle;
+  const normSel = s => String(s).replace(/\s+/g, ' ').trim();
   const NUM = /^(-?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/i;
   const UNITS = ['px', '%', 'em', 'rem', 'vw', 'vh', 'ch'];
   const SYSTEM_FONTS = ['system-ui', 'Arial', 'Helvetica', 'Tahoma', 'Verdana', 'Georgia', 'Times New Roman', 'Courier New', 'serif', 'sans-serif', 'monospace'];
@@ -84,17 +85,27 @@
       if (!n || !c.m) { this.host.replaceChildren(h('p', { class: 'hint' }, 'בוחרים אלמנט — בקנבס או ב-Navigator — ומשנים כאן את ' + (this.mode === 'adv' ? 'המרווחים שלו.' : 'הגופן והצבע שלו.'))); return; }
       if (!c.elOf(n) || c.visual(n) === 'nonvisual') { this.host.replaceChildren(h('p', { class: 'hint' }, 'לאלמנט הזה אין מראה בעמוד (ראש העמוד / סקריפט / שדה מוסתר).')); return; }
       const scroll = this.host.scrollTop;
-      this.info = this.styler.info(n); this.list = this.styler.targets(n, this.info); this.t0 = this.target(n, this.list); this.t = this.styler.dev(this.t0);   // V7: במכשיר — אותו בורר בתוך @media
-      const kids = [this.drawTarget(n)];
+      // V8: מצב — הקנבס מסומן לפני קריאת המפל; היעדים מחושבים מהמצב הרגיל, והמפל — מהמצב
+      this.stt = this.states ? this.states.cur(n) : null; if (this.states) this.states.apply();
+      this.infoBase = this.styler.info(n); this.info = this.stt ? this.styler.info(n, this.stt.pc) : this.infoBase;
+      this.list = this.moreTargets(n, this.styler.targets(n, this.infoBase));
       const many = this.nodes().length;
-      if (many > 1) kids.push(h('p', { class: 'sg-multi', 'data-multi': many }, '✳️ ' + many + ' אלמנטים נבחרים (Shift + לחיצה) — שינוי חל על כולם, כל אחד בכלל שלו.'));
-      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); if (this.extra) kids.push(...this.extra(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n));
+      this.t0 = many > 1 ? this.multiTarget(n) || this.target(n, this.list) : this.target(n, this.list);
+      this.t = this.styler.st(this.styler.dev(this.t0), this.stt);   // V7: במכשיר — אותו בורר בתוך @media; V8: במצב — <יעד>:<מצב>
+      const kids = [];
+      if (this.states) kids.push(this.states.bar(n));
+      kids.push(this.drawTarget(n));
+      if (many > 1) kids.push(this.drawMulti(n, many));
+      if (this.mode === 'adv') { const lay = this.layout && this.layout(n, this); if (lay) kids.push(lay); kids.push(...this.drawSpacing(n)); if (this.extra) kids.push(...this.extra(n)); } else kids.push(...this.drawType(n), ...this.drawColor(n), this.drawMotion(n));
+      if (this.extraProps) kids.push(this.extraProps(n, this));
       this.host.replaceChildren(...kids);
       this.host.scrollTop = scroll;
     }
 
     // ── "משנה את:" ──────────────────────────────────────────
+    stateLabel() { return this.stt ? this.stt.label : 'רגיל'; }
     tlabel(t) {
+      if (t.state) return t.state.sel.replace(/\s+/g, ' ') + ' · ' + (t.r ? t.r.path : t.path) + (t.dev ? ' · ' + t.dev.label : '') + ' · מצב ' + this.stateLabel();
       if (t.kind === 'inline') return 'רק האלמנט הזה · style=""';
       if (t.kind === 'newclass') return 'מחלקה חדשה .' + t.name + ' · ' + t.path;
       return t.sel.replace(/\s+/g, ' ') + ' · ' + t.path + (t.line ? ':' + t.line : '') + (t.kind === 'new' ? ' (כלל חדש)' : '') + (t.media ? ' · ' + t.media : '');
@@ -102,13 +113,17 @@
     drawTarget(n) {
       const t = this.t, why = { class: 'הכלל של המחלקה', source: 'כלל אחר שחל', media: 'בתוך @media', inline: '' };
       const sel = h('select', { class: 'sg-tsel', 'aria-label': 'משנה את — לאן השינויים נכתבים', 'data-target': true });
-      this.list.forEach((x, i) => sel.append(h('option', { value: String(i), selected: x === this.t0 || null }, (i === 0 ? '★ ' : '') + this.tlabel(x) + (x.kind !== 'inline' && x.kind !== 'newclass' ? ' · משפיע על ' + x.count : '') + (why[x.why] && i ? ' — ' + why[x.why] : ''))));
-      sel.addEventListener('change', () => this.setTarget(this.list[+sel.value]));
+      Object.assign(why, { tag: 'כל התגיות ' + n.tag + ' (styles.base)', typed: 'בורר בהקלדה', shared: 'מחלקה של האלמנט' });
+      const wins = this.wins(n);
+      this.list.forEach((x, i) => sel.append(h('option', { value: String(i), selected: x === this.t0 || null, 'data-win': wins.get(x) ? 'over' : 'ok' }, (i === 0 ? '★ ' : '') + this.tlabel(x) + (x.kind !== 'inline' && x.kind !== 'newclass' ? ' · משפיע על ' + x.count : '') + (why[x.why] && i ? ' — ' + why[x.why] : '') + (wins.get(x) ? ' · ⚠ נדרס ע״י ' + wins.get(x) : ' · ✓'))));
+      sel.append(h('option', { value: 'typed' }, '✎ בורר בהקלדה…'));
+      sel.addEventListener('change', () => { if (sel.value === 'typed') { this.typing = true; this.draw(); setTimeout(() => this.host.querySelector('[data-typed-sel]')?.focus(), 0); return; } this.setTarget(this.list[+sel.value]); });
       const hi = on => this.highlight(on ? this.styler.elementsOf(this.t) : null);
       sel.addEventListener('mouseenter', () => hi(true)); sel.addEventListener('mouseleave', () => hi(false)); sel.addEventListener('focus', () => hi(true)); sel.addEventListener('blur', () => hi(false));
       const box = h('div', { class: 'sg-target' }, h('label', { class: 'sg-tlabel' }, 'משנה את:', sel));
       const cnt = t.kind === 'inline' ? 1 : t.count;
-      box.append(h('p', { class: 'sg-tinfo', 'data-tinfo': true }, h('code', { dir: 'ltr' }, t.kind === 'newclass' ? '.' + t.name : t.sel.replace(/\s+/g, ' ')), ' · ', h('span', { dir: 'ltr' }, t.path), ' · ', h('b', { 'data-count': cnt }, 'משפיע על ' + cnt + (cnt === 1 ? ' אלמנט' : ' אלמנטים'))));
+      if (this.typing || t.why === 'typed') box.append(this.typedField(n, t));
+      box.append(h('p', { class: 'sg-tinfo', 'data-tinfo': true }, h('code', { dir: 'ltr' }, t.state ? t.state.sel.replace(/\s+/g, ' ') : t.kind === 'newclass' ? '.' + t.name : t.sel.replace(/\s+/g, ' ')), ' · ', h('span', { dir: 'ltr' }, t.path), ' · ', h('b', { 'data-count': cnt }, 'משפיע על ' + cnt + (cnt === 1 ? ' אלמנט' : ' אלמנטים'))));
       if (t.kind === 'newclass') {
         const inp = h('input', { type: 'text', dir: 'ltr', value: t.name, 'aria-label': 'שם המחלקה החדשה', 'data-newclass': true, spellcheck: 'false' });
         inp.addEventListener('change', () => { const v = inp.value.trim(); if (/^-?[_a-zA-Z][\w-]*$/.test(v)) { t.name = v; t.sel = '.' + v; this.tgt.set(n, { kind: 'newclass', sel: '.' + v, path: t.path, line: 0, name: v }); inp.classList.remove('bad'); } else inp.classList.add('bad'); });
@@ -128,6 +143,7 @@
       else if (s.inherited) { out.append('בירושה מ-' + s.inherited.label + ': ', at(s.inherited.winner)); }
       else out.append(h('span', { class: 'hint' }, 'ברירת מחדל של הדפדפן'));
       const dr = this.devRow(n, phys); if (dr) out.prepend(dr);
+      const sr = this.stRow(n, phys, s); if (sr) out.prepend(sr);
       const vis = this.styler.visible(n, this.t, phys, this.info);
       if (!vis.ok) {
         const by = vis.by, w = h('div', { class: 'sg-over' + (vis.media ? ' media' : ''), 'data-over': phys });
@@ -162,14 +178,101 @@
     put(sets, label, opt = {}) {
       const n = this.n, nodes = this.nodes(), per = new Map();
       sets = sets.flatMap(([p, v]) => { const f = /^(margin|padding)-/.exec(p); return f ? linked(p, this.lock[f[1]]).map(q => [q, v]) : [[p, v]]; });
+      const base = /^transition-/;   // V8: "מעבר" נכתב לכלל הרגיל (בלי מצב) — הוא חל בכניסה למצב וביציאה ממנו
+      const shared = nodes.length > 1 && this.multiOn();   // V8: מחלקה משותפת — פעם אחת, לכולם
       for (const x of nodes) {
-        if (x === n) { per.set(x, sets.map(([p, v]) => [p, v, this.effTarget(n, p)])); continue; }
-        const list = this.styler.targets(x); per.set(x, sets.map(([p, v]) => [p, v, list[0]]));
+        if (x === n) { per.set(x, sets.map(([p, v]) => [p, v, base.test(p) ? this.styler.dev(this.t0) : this.effTarget(n, p)])); continue; }
+        if (shared) continue;
+        const list = this.styler.targets(x); per.set(x, sets.map(([p, v]) => [p, v, base.test(p) ? list[0] : this.styler.st(list[0], this.stt)]));
       }
       this.redirect = null;
       return this.write(per, label, opt);
     }
     curDeclared(n, phys) { const s = this.styler.source(n, phys, this.info); return s.winner ? s.declared : ''; }
+
+    // ── V8: מצבים, כלל היעד המלא, מחלקה משותפת ──
+    /** שורת המצב של ערך: ● נכתב במצב · ○ עובר מרגיל (עם הערך) · כלל משותף לשני מצבים — נאמר. */
+    stRow(n, phys, s) {
+      const t = this.t; if (!t.state) return null;
+      const own = this.styler.stOwn(this.info, t), d = own && own.node ? ST().declFor(own.node, phys, this.styler.rtl(n)) : null;
+      const row = h('div', { class: 'sg-dev sg-st', 'data-st-state': phys });
+      if (d) { row.dataset.state = 'own'; row.append(h('span', { class: 'sg-dev-sym' }, '●'), 'נכתב במצב ' + this.stateLabel()); if (window.KolDetails.splitSel(own.sel).length > 1) row.append(h('span', { class: 'hint', 'data-st-shared': true }, ' · כלל משותף: ' + own.sel.replace(/\s+/g, ' '))); }
+      else { const v = this.styler.source(n, phys, this.infoBase); row.dataset.state = 'from'; row.append(h('span', { class: 'sg-dev-sym from' }, '○'), 'עובר מרגיל', h('span', { dir: 'ltr', class: 'sg-dev-val' }, ' ' + ((v.winner ? v.declared : v.value) || '—'))); }
+      return row;
+    }
+    /** יעדים נוספים (03 §4.2): כל מחלקה של האלמנט, התגית (styles.base), ובורר שהוקלד. */
+    moreTargets(n, list) {
+      const K2 = window.KolSrc, page = this.styler.pagePath && this.styler.pagePath(), basePath = this.styler.basePath ? this.styler.basePath() : null;
+      const has = sel => list.some(x => x.kind !== 'inline' && normSel(x.kind === 'newclass' ? '.' + x.name : x.sel) === normSel(sel));
+      const at = list.findIndex(x => x.kind === 'inline'), add = t => list.splice(at < 0 ? list.length : list.indexOf(list.find(x => x.kind === 'inline')), 0, t);
+      for (const c of K2.classesOf(n)) if (page && !has('.' + c)) add({ kind: 'new', sel: '.' + c, path: page, why: 'shared', count: this.styler.count('.' + c) });
+      if (basePath && n.tag && !has(n.tag)) {
+        const r = this.infoBase.rules.filter(x => x.located && !x.external && !x.inline && !x.media && x.node && x.path === basePath && normSel(x.sel) === n.tag).pop();
+        add(r ? { kind: 'rule', sel: r.sel, path: r.path, line: r.line, r, why: 'tag', count: this.styler.count(n.tag) } : { kind: 'new', sel: n.tag, path: basePath, why: 'tag', count: this.styler.count(n.tag) });
+      }
+      const ty = this.typedSel && this.typedSel.get(n);
+      if (ty && !has(ty)) {
+        const r = this.infoBase.rules.filter(x => x.located && !x.external && !x.inline && !x.media && x.node && normSel(x.sel) === normSel(ty)).pop();
+        add(r ? { kind: 'rule', sel: r.sel, path: r.path, line: r.line, r, why: 'typed', count: this.styler.count(ty) } : { kind: 'new', sel: ty, path: page, why: 'typed', count: this.styler.count(ty) });
+      }
+      return list;
+    }
+    /** "בורר בהקלדה": כל בורר; על כמה ועל אילו אלמנטים הוא חל, ואזהרה אם אינו חל על הנבחר. */
+    typedField(n, t) {
+      const cur = t.why === 'typed' ? t.sel : '', inp = h('input', { type: 'text', dir: 'ltr', value: cur, placeholder: '.page h2 · main > section:first-child', 'aria-label': 'בורר בהקלדה', spellcheck: 'false', 'data-typed-sel': true });
+      const msg = h('p', { class: 'hint', 'data-typed-msg': true });
+      const show = v => {
+        if (!v) { msg.textContent = 'בורר CSS כלשהו — הכלל נכתב ל-' + (this.styler.pagePath() || '') + '.'; return; }
+        let els; try { ST().checkSelector(v); els = [...this.canvas.doc.querySelectorAll(v)].filter(e => !e.closest('[data-kol-canvas]')); } catch (e) { msg.className = 'sg-over'; msg.textContent = e.message || 'בורר לא חוקי'; inp.classList.add('bad'); return false; }
+        const e0 = this.canvas.elOf(n), hit = els.includes(e0);
+        msg.className = hit ? 'hint' : 'sg-over'; inp.classList.remove('bad');
+        msg.textContent = 'חל על ' + els.length + ': ' + els.slice(0, 5).map(e => { const x = this.canvas.nodeOf(e); return x ? this.canvas.label(x) : e.localName; }).join(', ') + (els.length > 5 ? '…' : '') + (hit ? '' : ' — ⚠️ אינו חל על האלמנט הנבחר');
+        this.highlight(els); return true;
+      };
+      inp.addEventListener('input', () => show(inp.value.trim()));
+      inp.addEventListener('change', () => { const v = inp.value.trim(); if (!v || show(v) === false) return; (this.typedSel = this.typedSel || new WeakMap()).set(n, v); this.typing = false; this.tgt.set(n, { kind: 'x', sel: v }); this.list = null; const list = this.moreTargets(n, this.styler.targets(n, this.infoBase)), tt = list.find(x => x.why === 'typed'); if (tt) this.setTarget(tt); else this.draw(); });
+      inp.addEventListener('blur', () => this.highlight(null));
+      show(cur);
+      return h('div', { class: 'sg-typed' }, h('label', { class: 'sg-line' }, h('span', { class: 'sg-label' }, 'בורר'), h('span', { class: 'sg-ctl wide' }, inp)), msg);
+    }
+    /** לכל יעד ברשימה — האם ינצח את מה שנראה היום (לפני הבחירה): המאפיינים שכתובים היום על האלמנט, ומי דורס. */
+    wins(n) {
+      const out = new Map(), rtl = this.styler.rtl(n), props = new Set();
+      for (const r of this.info.rules) if (!r.off) for (const d of r.decls) for (const p of ST().covered(d.prop, rtl)) if (props.size < 40) props.add(p);
+      for (const x of this.list) {
+        const tt = this.styler.st(this.styler.dev(x), this.stt), by = new Set();
+        for (const p of props) { const v = this.styler.visible(n, tt, p, this.info); if (!v.ok && v.by && !v.media) by.add(v.by.r.sel.replace(/\s+/g, ' ')); }
+        if (by.size) out.set(x, [...by].slice(0, 2).join(' / ') + (by.size > 2 ? ' ועוד' : ''));
+      }
+      return out;
+    }
+    /** בחירה מרובה: מפתח לבחירה (הנתיבים), והמצב — "כל אחד בכלל שלו" / מחלקה משותפת. */
+    multiKey() { return this.nodes().map(x => window.KolSrc.pathOf(x).join('.')).sort().join('|'); }
+    multiOn() { const m = (this.multiMode || {})[this.multiKey()]; if (m === 'each') return null; const sh = this.identity ? this.identity.shared(this.nodes()) : []; if (m) return sh.find(x => x.cls === m) || null; return sh.find(x => x.r) || null; }
+    multiTarget(n) {
+      const on = this.multiOn(); if (!on) return null;
+      const r = on.r && this.list.find(x => x.kind === 'rule' && x.r && normSel(x.sel) === '.' + on.cls && !x.media);
+      return r || { kind: 'new', sel: '.' + on.cls, path: this.styler.pagePath(), why: 'class', count: on.count };
+    }
+    drawMulti(n, many) {
+      const sh = this.identity ? this.identity.shared(this.nodes()) : [], on = this.multiOn();
+      const sel = h('select', { 'aria-label': 'בחירה מרובה — משנה את', 'data-multi-mode': true });
+      sel.append(h('option', { value: 'each', selected: !on || null }, 'כל אחד בכלל שלו (' + many + ')'));
+      for (const x of sh) sel.append(h('option', { value: x.cls, selected: on && on.cls === x.cls || null }, '.' + x.cls + ' — מחלקה משותפת · משפיע על ' + x.count + (x.r ? '' : ' (כלל חדש)')));
+      sel.addEventListener('change', () => { this.multiMode = this.multiMode || {}; this.multiMode[this.multiKey()] = sel.value; this.draw(); });
+      const mk = h('button', { type: 'button', class: 'btn sm', 'data-shared-create': true, disabled: !this.canWrite() || null, onclick: () => this.identity.createDialog(this.nodes(), v => { this.multiMode = this.multiMode || {}; this.multiMode[this.multiKey()] = v; this.draw(); }) }, '✳️ צור מחלקה משותפת');
+      return h('div', { class: 'sg-multi', 'data-multi': many }, h('label', { class: 'sg-line' }, h('span', { class: 'sg-label' }, '✳️ ' + many + ' נבחרים — משנה את:'), h('span', { class: 'sg-ctl wide' }, sel)), mk,
+        h('p', { class: 'hint' }, on ? 'שינוי נכתב פעם אחת, לכלל .' + on.cls + ' — חל על כל ' + on.count + '.' : 'שינוי חל על כולם, כל אחד בכלל שלו (Shift + לחיצה מוסיף).'));
+    }
+    /** "תנועה" הבסיסית: מעבר בין רגיל למצב (שאר תנועה — V10). נכתב לכלל הרגיל. */
+    drawMotion(n) {
+      const sec = h('section', { class: 'sg-sec', 'data-sec': 'motion' }, h('h3', { class: 'dt-h' }, 'תנועה — מעבר בין מצבים'));
+      sec.append(this.choice('transition-property', 'מאפיין', [['all', 'הכול'], ['color', 'צבע'], ['background-color', 'צבע רקע'], ['opacity', 'שקיפות'], ['transform', 'transform'], ['box-shadow', 'צל'], ['none', 'בלי מעבר']]));
+      sec.append(this.num('transition-duration', 'משך', { units: ['s', 'ms'], step: 0.05, unitless: false }), this.num('transition-delay', 'השהיה', { units: ['s', 'ms'], step: 0.05 }));
+      sec.append(this.choice('transition-timing-function', 'עקומה', [['ease', 'ease'], ['linear', 'linear'], ['ease-in', 'ease-in'], ['ease-out', 'ease-out'], ['ease-in-out', 'ease-in-out'], ['steps(4, end)', 'steps(4)'], ['cubic-bezier(.2, .8, .2, 1)', 'cubic-bezier(.2,.8,.2,1)']]));
+      sec.append(h('p', { class: 'hint' }, 'נכתב לכלל הרגיל (לא למצב) — כך המעבר חל בכניסה ובציאה.'));
+      return sec;
+    }
 
     // ── V7: מכשירים — "נכתב כאן / עובר מ- / נדרס" לכל ערך ──
     /** שורת המכשיר של ערך: ● נכתב כאן · ○ עובר ממחשב / מטאבלט (עם הערך) · ⚠ נכתב כאן אבל נדרס. ריחוף — הערך בכל מכשיר;
@@ -271,11 +374,11 @@
     resetBtn(n, phys, label) {
       const t = this.effTarget(n, phys), rtl = this.styler.rtl(n);
       let has = false, imp = false;
-      if (t.kind === 'rule' || t.dev) { const d = this.styler.ownDecl(n, t, phys, this.info); has = !!d; imp = !!(d && d.important) && !t.dev; }
+      if (t.kind === 'rule' || t.dev || t.state) { const d = this.styler.ownDecl(n, t, phys, this.info); has = !!d; imp = !!(d && d.important) && !t.dev && !t.state; }
       else if (t.kind === 'inline') { const r = this.info.rules.find(x => x.inline); const d = r && r.decls.find(x => ST().covered(x.prop, rtl).includes(phys)); has = !!d; imp = !!(d && d.important); }
       const box = h('span', { class: 'sg-acts' });
       if (imp) box.append(h('button', { type: 'button', class: 'btn sm sg-unimp', 'data-unimportant': phys, title: 'ההצהרה כתובה עם !important — העורך שומר עליו בעריכה; כאן מסירים אותו', disabled: !this.canWrite() || null, onclick: () => this.put([[phys, '']], 'הסרת !important · ' + label + ' · ' + this.canvas.label(n), { unimportant: true }) }, '!important ✕'));
-      box.append(h('button', { type: 'button', class: 'sg-reset', 'data-reset': phys, 'aria-label': (t.dev ? 'איפוס ב' + t.dev.label + ' — ' : 'איפוס — ') + 'מחיקת ההצהרה של ' + label + ' מהיעד', title: has ? (t.dev ? 'איפוס במכשיר הזה: מוחק רק את ההצהרה שבתוך @media (max-width: ' + t.dev.max + 'px)' : 'איפוס: מוחק את ההצהרה מהיעד (לא כותב ברירת מחדל)') : 'אין הצהרה ביעד', disabled: !has || !this.canWrite() || null,
+      box.append(h('button', { type: 'button', class: 'sg-reset', 'data-reset': phys, 'aria-label': (t.state ? 'איפוס במצב ' + this.stateLabel() + ' — ' : t.dev ? 'איפוס ב' + t.dev.label + ' — ' : 'איפוס — ') + 'מחיקת ההצהרה של ' + label + ' מהיעד', title: has ? (t.dev ? 'איפוס במכשיר הזה: מוחק רק את ההצהרה שבתוך @media (max-width: ' + t.dev.max + 'px)' : 'איפוס: מוחק את ההצהרה מהיעד (לא כותב ברירת מחדל)') : 'אין הצהרה ביעד', disabled: !has || !this.canWrite() || null,
         onclick: () => this.put([[phys, null]], label + ' · ' + this.canvas.label(n) + ' · איפוס') }, '⟲'));
       return box;
     }

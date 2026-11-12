@@ -342,7 +342,8 @@
         if (r) { let cur = doc.text(); for (const d of decls) { const mm = K2.parseCss(cur), rr = K2.cssAll(mm).find(x => x.type === 'rule' && x.from === r.from); cur = K2.applyPatches(cur, K2.css.addDecl(mm, rr, d.prop, d.value + (d.important ? ' !important' : '')).patches); } return [{ doc, patches: diff(doc.text(), cur) }]; }
         return [{ doc, patches: K2.css.addRule(m, m.root, '.' + cls, decls.map(d => [d.prop, d.value + (d.important ? ' !important' : '')])).patches }];
       });
-      if (decls.length) for (const own of plan.srcs) for (const r of own) ops.push(() => this.removeDecls(r, decls));
+      // מהסוף להתחלה: מחיקה בכלל מוקדם אינה מזיזה את הכללים שאחריו בקובץ שעוד לא טופלו
+      if (decls.length) for (const r of plan.srcs.flat().sort((a, b) => (a.path === b.path ? b.node.from - a.node.from : a.path < b.path ? -1 : 1))) ops.push(() => this.removeDecls(r, decls));
       const label = 'מחלקה משותפת .' + cls + ' · ' + nodes.length + ' אלמנטים' + (decls.length ? ' · הועברו ' + decls.length + ' הצהרות' : '');
       const docs = this.writeOps(ops, label);
       if (!docs) return null;

@@ -407,3 +407,36 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .sg-core { overflow-wrap: anywhere; min-width: 0; }
 /* הפאנל "עיצוב" / "מתקדם": ריווח מהמסגרת, כמו ב"תוכן" וב"פרטים" (התוויות לא נוגעות בקצה ונחתכות — גם לפני V7) */
 .sg { padding: 0 var(--s2) var(--s2); }
+
+/* ── V8: מצבים, מחלקות, תכונות, "מאפיינים נוספים" ── */
+.sg-states { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: var(--r); padding: 6px var(--s2); background: var(--surface); }
+.sg-state-seg { flex-wrap: wrap; }
+.sg-state-seg button { font-size: .74rem; padding: 0 4px; white-space: nowrap; }
+.sg-states:has(.sg-state-seg button[aria-pressed="true"]:not([data-state="normal"])) { border-color: #b45309; box-shadow: inset 3px 0 0 #b45309; }
+.sg-st .sg-dev-sym { color: #b45309; }
+.sg-multi { display: flex; flex-direction: column; gap: 4px; }
+.sg-multi .sg-label { white-space: normal; width: auto; }
+.sg-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.sg-tag { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: 0 2px 0 8px; background: var(--brand-soft); font-size: .78rem; cursor: grab; touch-action: none; user-select: none; }
+.sg-tag.unused { background: var(--surface); border-style: dashed; }
+.sg-tag.drag { opacity: .6; cursor: grabbing; }
+.sg-tag code { overflow-wrap: anywhere; }
+.sg-tag small { color: var(--muted); }
+.sg-tag-grip { color: var(--muted); }
+.sg-tag-btn { border: 0; background: none; cursor: pointer; min-width: 28px; min-height: 28px; border-radius: 999px; color: var(--ink); }
+.sg-tag-btn:hover { background: var(--surface); }
+.sg-attr-list { display: flex; flex-direction: column; gap: 4px; }
+.sg-attr .sg-label { font-size: .74rem; overflow-wrap: anywhere; }
+.sg-attr-new .sg-ctl input:first-child { flex: 0 1 40%; }
+.sg-extra-ctl input:first-child { flex: 0 1 42%; }
+.sg-extra-row.over input { text-decoration: line-through; opacity: .7; }
+.sg-extra-state { color: #b45309; }
+.sg-extra-by { color: var(--danger); }
+.sg-extra-imp[aria-pressed="true"] { background: var(--danger-soft); border-color: var(--danger); }
+.sg-cssview summary { cursor: pointer; font-size: .8rem; min-height: 32px; display: flex; align-items: center; overflow-wrap: anywhere; }
+.sg-cssview textarea { width: 100%; box-sizing: border-box; font: .8rem ui-monospace, monospace; border: 1px solid var(--line); border-radius: 6px; padding: 6px; background: var(--surface); color: var(--ink); }
+.sg-diff { font: .74rem ui-monospace, monospace; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }
+.sg-move-list { font: .78rem ui-monospace, monospace; margin: 0; padding-inline-start: 1.2em; }
+.sg-js-cand { font: .74rem ui-monospace, monospace; align-items: flex-start; overflow-wrap: anywhere; }
+.sg-typed .sg-ctl input { font-size: .8rem; }
+@media (pointer: coarse) { .sg-tag-btn { min-width: 44px; min-height: 44px; } .sg-state-seg button { min-height: 44px; min-width: 44px; } .sg-extra-imp, .sg-cssview summary { min-height: 44px; } }
