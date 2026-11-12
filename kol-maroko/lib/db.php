@@ -506,7 +506,7 @@ function migrate(PDO $pdo): void
         // N3: רשימות נוספות ("פתגמים") — רשימה, השדות שלה, הפריטים (id לכל רשימה, לא חוזר: next_id), והסל. הוספה בלבד;
         // המילים נשארות בטבלאות שלהן. fid — מזהה מספרי קבוע לקובץ הווירטואלי בעץ (lib/lists.php, LIST_FILE_BASE)
         22 => <<<'SQL'
-            CREATE TABLE lists (
+            CREATE TABLE IF NOT EXISTS lists (
                 key        TEXT PRIMARY KEY,
                 fid        INTEGER NOT NULL UNIQUE,
                 label      TEXT NOT NULL,
@@ -516,7 +516,7 @@ function migrate(PDO $pdo): void
                 created_at TEXT NOT NULL,
                 created_by TEXT NOT NULL DEFAULT ''
             );
-            CREATE TABLE list_fields (
+            CREATE TABLE IF NOT EXISTS list_fields (
                 list       TEXT NOT NULL,
                 key        TEXT NOT NULL,
                 label      TEXT NOT NULL,
@@ -530,7 +530,7 @@ function migrate(PDO $pdo): void
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (list, key)
             );
-            CREATE TABLE list_items (
+            CREATE TABLE IF NOT EXISTS list_items (
                 list       TEXT NOT NULL,
                 id         INTEGER NOT NULL,
                 data       TEXT NOT NULL DEFAULT '{}',
@@ -539,8 +539,8 @@ function migrate(PDO $pdo): void
                 updated_by TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (list, id)
             );
-            CREATE INDEX idx_list_items_sort ON list_items(list, sort_order, id);
-            CREATE TABLE list_trash (
+            CREATE INDEX IF NOT EXISTS idx_list_items_sort ON list_items(list, sort_order, id);
+            CREATE TABLE IF NOT EXISTS list_trash (
                 id      INTEGER PRIMARY KEY AUTOINCREMENT,
                 list    TEXT NOT NULL,
                 kind    TEXT NOT NULL,
