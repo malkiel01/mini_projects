@@ -150,12 +150,27 @@
         rules += this.selOf(n) + ' > :nth-child(n+' + (CAP + 1) + ' of ' + REAL + '){display:none!important}\n';
       });
       this.capInfo = found.length ? { lists: found, hidden: found.reduce((a, f) => a + f.total - CAP, 0), shown: this.capOff } : null;
-      this.capStyle.textContent = (this.capOff ? '' : rules) + this.hideRules();
+      this.capStyle.textContent = (this.capOff ? '' : rules) + this.hideRules() + this.emptyRules();
     }
     /** בורר CSS לצומת, לפי מקומו בין האחים שבמקור (אלמנטים של העורך אינם נספרים). לשימוש בכללי העורך בלבד. */
     selOf(n) { let sel = ''; for (let x = n; x; x = x.parent) sel = (x.parent ? ' > :nth-child(' + (x.parent.kids.indexOf(x) + 1) + ' of ' + REAL + ')' : 'html') + sel; return sel; }
     /** 👁 הסתרה בעורך בלבד: כלל CSS של העורך. הקובץ וה-DOM של העמוד אינם משתנים. */
     hideRules() { let r = ''; for (const n of this.hiddenNodes) if (this.m2d && this.m2d.has(n) && n !== this.selected) r += this.selOf(n) + '{display:none!important}\n'; return r; }
+    /**
+     * V4: רובריקה ריקה אינה נעלמת — בקנבס בלבד: גובה מינימלי, קו מקווקו ו"＋ גרור לכאן" (כלל של העורך; הקובץ, התצוגה
+     * החיה וה-DOM של העמוד אינם משתנים). רובריקה = div / section… בלי ילדים ובלי טקסט.
+     */
+    emptyRules() {
+      let r = ''; const BOX = /^(div|section|article|header|footer|main|nav|aside|figure|form|fieldset|li|ul|ol|blockquote|details)$/;
+      if (this.m.root) K.walk(this.m.root, n => {
+        if (/^(img|video)$/.test(n.tag) && !n.implied && !(K.attrOf(n, 'src') || {}).value && !n.kids.some(k => k.tag === 'source')) { r += this.selOf(n) + '{min-width:96px;min-height:64px;display:inline-block;outline:2px dashed rgba(180,83,9,.7)!important;outline-offset:-2px}\n'; return; }
+        if (n.implied || !BOX.test(n.tag) || n.kids.length || n.nodes.some(x => x.type === 'text' && /\S/.test(x.value))) return;
+        for (let p = n.parent; p; p = p.parent) if (p.tag === 'template' || p.tag === 'head') return;
+        const sel = this.selOf(n);
+        r += sel + '{min-height:48px!important;min-width:48px;outline:2px dashed rgba(37,99,235,.55)!important;outline-offset:-2px}' + sel + '::before{content:"＋ גרור לכאן";display:block;padding:14px 8px;font:13px/1.4 system-ui,sans-serif;color:rgba(37,99,235,.8);text-align:center;pointer-events:none}\n';
+      });
+      return r;
+    }
     setHidden(n, on) { if (on) this.hiddenNodes.add(n); else this.hiddenNodes.delete(n); this.recap(); this.zeroAt = 0; this.draw(); }
     setLocked(n, on) { if (on) this.lockedNodes.add(n); else this.lockedNodes.delete(n); }
     elOf(n) { return this.shownMap.get(n) || this.m2d.get(n) || null; }
@@ -345,16 +360,21 @@
       // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
       this.deadTags = DEAD.split(',').map(t => doc.getElementsByTagName(t));
       const ctxAt = (t, x, y) => { const n = this.nodeOf(t); if (n && this.onContext) { const f = this.frame.getBoundingClientRect(); this.onContext(n, f.left + x * this.scale, f.top + y * this.scale); } };
-      doc.addEventListener('contextmenu', e => { clearTimeout(this.longT); if (!this.longDone) ctxAt(this.hit(e), e.clientX, e.clientY); this.longDone = false; }, true);
+      doc.addEventListener('contextmenu', e => { if (this.onDragStart && this.press && this.press.touch) return; clearTimeout(this.longT); if (!this.longDone) ctxAt(this.hit(e), e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
         if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
         clearTimeout(this.longT); this.longDone = false;
         const tg = this.hit(e);
         if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(tg); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
-        if (e.pointerType === 'touch') { const t = tg, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
+        if (e.pointerType === 'touch') {
+          const t = tg, x = e.clientX, y = e.clientY;
+          // V4: לחיצה ארוכה (400ms) מחמשת גרירה; תזוזה אחריה — גרירה, ושחרור בלי תזוזה — תפריט ההקשר
+          if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; } }, 400);
+          else this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600);
+        }
         const n = this.pick(tg);
-        this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n } : null;
+        this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n, touch: e.pointerType === 'touch' } : null;
         if (n && e.shiftKey && this.selected && this.selected !== n) { this.press = null; e.preventDefault(); this.toggleMulti(n); return; }   // Shift + לחיצה: בחירה מרובה (V3)
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
         else if (n && !(this.repeatUp && this.selected === n)) this.select(n);
@@ -362,8 +382,13 @@
       }, true);
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
+        if (this.ext && this.ext.active) { const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
         const p = this.press;
         if (this.edit && this.edit.active) { if (this.hovered) { this.hovered = null; this.draw(); } return; }
+        if (p && p.id === e.pointerId && this.onDragStart && !p.drag && (e.pointerType === 'touch' ? p.armed && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 : Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4)) {
+          p.drag = true; this.press = null; this.armed = null; clearTimeout(this.longT);       // V4: גרירה אחרי 4px — כדי שלחיצה תישאר בחירה
+          const f = this.frame.getBoundingClientRect(); this.onDragStart(p.n, f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return;
+        }
         if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) clearTimeout(this.longT);
         if (p && p.id === e.pointerId) {
           if (this.drag && !p.drag && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) p.drag = true;
@@ -375,6 +400,9 @@
       }, true);
       const up = e => {
         clearTimeout(this.longT);
+        if (this.ext && this.ext.active) { this.press = null; this.ext.end(e.type === 'pointerup'); return; }
+        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; ctxAt(p.t, p.x, p.y); return; }
+        this.armed = null;
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);
         if (p && !p.drag && e.type === 'pointerup' && e.pointerType === 'touch') {   // הקשה כפולה במגע = לחיצה כפולה (iOS אינו שולח dblclick)
@@ -392,6 +420,7 @@
       doc.addEventListener('pointerleave', () => { this.hovered = null; this.draw(); }, true);
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
       doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(this.hit(e)); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
+      doc.addEventListener('touchmove', e => { if ((this.armed && this.press === this.armed) || (this.ext && this.ext.active)) e.preventDefault(); }, { capture: true, passive: false });
       doc.addEventListener('touchstart', e => { if (this.edit && this.edit.active) return; const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
       doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
       // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
@@ -526,6 +555,7 @@
           const d = this.m2d.get(n);
           if (d && this.noted.length < 200) {                                 // V2: תמונה שהקובץ שלה חסר, והטמעה (שאינה נטענת בעורך) — מסגרת עם הנתיב
             if (n.tag === 'img' && d.complete && d.naturalWidth === 0 && d.getAttribute('src')) this.noted.push({ n, cls: 'ed-mark-missing', text: '⚠️ תמונה חסרה · ' + d.getAttribute('src') });
+            else if (/^(img|audio|video)$/.test(n.tag) && !d.getAttribute('src') && !d.querySelector('source[src]')) this.noted.push({ n, cls: 'ed-mark-missing', text: '⚠️ בלי קובץ' });   // V4: נוסף מהספרייה ולא נבחר קובץ
             else if (n.tag === 'iframe') this.noted.push({ n, cls: 'ed-mark-frame', text: 'הטמעה · ' + (d.getAttribute('src') || 'בלי כתובת') });
           }
           if (d && (d.offsetWidth === 0 || d.offsetHeight === 0) && d.getClientRects().length && d.ownerSVGElement === undefined) this.zero.push(n);

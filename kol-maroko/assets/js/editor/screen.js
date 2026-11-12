@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/style.js', 'assets/js/editor/design.js', 'assets/js/editor/spacing.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/spacing.js'];
   const LS = 'kol-editor';
   const DEFAULT_DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   let DEVICES = DEFAULT_DEVICES;
@@ -84,6 +84,8 @@ const Editor = (() => {
         S.sheets.set(href, { path, doc: cd });
         S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } }));
       }
+      S.js = [];                                                            // V4: קובצי ה-JS של הפרויקט — לאזהרה "ייתכן ש-js/… נשען על…" (קריאה בלבד)
+      for (const jf of files.filter(x => x.kind === 'file' && /\.m?js$/i.test(x.path)).slice(0, 20)) { try { const jd = await Project.docs.open(jf.id); if (jd && !jd.binary) S.js.push({ path: jf.path, doc: jd }); } catch { /* לא נפתח — בלי אזהרה ממנו */ } }
       const c = S.canvas;
       c.baseHref = S.token ? pvUrl(dirOf(f.path)) : '';
       c.verify = !!state.user?.developer || prefs.verify === true;         // מצב פיתוח: שקילות אחרי כל פעולה
@@ -253,6 +255,8 @@ const Editor = (() => {
       item('✏️ תוכן — תמונה, קישור, מדיה', () => { panel('info', true); setTab('content'); }),
       item('ℹ️ פרטים', () => { panel('info', true); setTab('info'); }),
       item('🕘 גרסאות של הקובץ', () => Project.versions(S.file)),
+      item('⋯ מבנה — שכפול, עטיפה, פירוק, העברה, העתקה', () => S.build?.menu(n), false),
+      item('↕ העבר אל…', () => S.build?.moveSheet(n), !canWrite() || /^(html|head|body)$/.test(n.tag)),
       item('🗑️ מחיקה', remove, !canWrite()),
       item('🐞 לא הצלחתי לשנות את זה', () => reportSheet(n))));
   }
@@ -296,6 +300,32 @@ const Editor = (() => {
     if (S.own) syncCanvas();
     pushTx([S.doc], label);
     return true;
+  }
+  /** V4: עסקה אחת בכמה קבצים — ops: [{ html: true | doc, patches }], לפי הסדר. */
+  function multi(label, ops) {
+    if (!canWrite()) { note(S.readOnly || 'הקובץ פתוח לקריאה בלבד', true); return false; }
+    if (S.canvas.src !== S.doc.text()) { clearTimeout(S.timer); syncCanvas(); }
+    const docs = [];
+    try {
+      for (const o of ops) {
+        if (!o.patches.length) continue;
+        const d = o.html ? S.doc : o.doc;
+        if (d === S.doc) { S.own = o.patches; d.edit(o.patches, label); if (S.own) syncCanvas(); } else d.edit(o.patches, label);
+        docs.push(d);
+      }
+    } catch (e) { if (docs.length) pushTx(docs, label); note(e.message, true); return false; }
+    if (docs.length) pushTx(docs, label);
+    drawAll();
+    return true;
+  }
+  /** V4: מקשר קובץ CSS של הפרויקט לעמוד (<link> בסוף ה-<head>) — המסמך נפתח קודם, כדי שהקנבס יציג אותו מיד. */
+  async function linkSheet(path) {
+    const cf = Project.docs.byPath(path); if (!cf) { note('הקובץ ' + path + ' אינו בפרויקט', true); return false; }
+    const cd = await Project.docs.open(cf.id); if (!cd || cd.binary) { note('הקובץ ' + path + ' לא נפתח', true); return false; }
+    const href = relRef(path), head = S.canvas.m.root && S.canvas.m.root.kids.find(k => k.tag === 'head' && !k.implied);
+    if (!head) { note('לעמוד אין <head> כתוב — מקשרים בעורך הקוד', true); return false; }
+    if (!S.sheets.has(href)) { S.sheets.set(href, { path, doc: cd }); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } })); }
+    return act('קישור ' + path + ' לעמוד', m => window.KolStruct.insert(m, K.byPath(m, K.pathOf(head)), null, '<link rel="stylesheet" href="' + window.KolText.escAttr(href) + '">'), head);
   }
   /** הקובץ לכלל חדש: styles.page שב-kol.json, אם העמוד מקשר אליו; אחרת קובץ ה-CSS האחרון שהעמוד מקשר. */
   function pagePath() { const want = S.kol?.styles?.page, paths = [...S.sheets.values()].map(x => x.path); return paths.includes(want) ? want : paths[paths.length - 1] || null; }
@@ -393,9 +423,11 @@ const Editor = (() => {
     }
     return commit(res.patches, label);
   }
-  function remove() {
+  /** מחיקה (V4): דרך המבנה — אזהרה כשקוד נשען על האלמנט, ובחירה מרובה. */
+  function remove() { S.text?.end(); if (!S.canvas?.selected) return note('בוחרים אלמנט, ואז מוחקים'); if (S.build) return S.build.remove(); return removeOne(S.canvas.selected); }
+  function removeOne(n0, cut) {
     S.text?.end();
-    const c = S.canvas, n = c?.selected;
+    const c = S.canvas, n = n0 || c?.selected;
     if (!n) return note('בוחרים אלמנט, ואז מוחקים');
     if (!canWrite()) return note(S.readOnly || 'הקובץ פתוח לקריאה בלבד', true);
     if (c.src !== S.doc.text()) syncCanvas();
@@ -410,7 +442,7 @@ const Editor = (() => {
     if (S.own) syncCanvas();
     pushTx([S.doc], 'מחיקת ' + label);
     if (next && c.m2d.has(next)) c.select(next);
-    note('נמחק: ' + label + (inside ? ', עם ' + inside + ' אלמנטים בתוכו' : ''), false, { label: 'בטל', run: undo });
+    note((cut ? 'נגזר: ' : 'נמחק: ') + label + (inside ? ', עם ' + inside + ' אלמנטים בתוכו' : ''), false, { label: 'בטל', run: undo });
   }
   function undo() { S.text?.end(); unpreview(); if (undoTx() || (S.doc?.canUndo() && (S.doc.undo(), true))) { clearTimeout(S.timer); syncCanvas(); } else note('אין מה לבטל'); }
   function redo() { S.text?.end(); unpreview(); if (redoTx() || (S.doc?.canRedo() && (S.doc.redo(), true))) { clearTimeout(S.timer); syncCanvas(); } else note('אין מה להחזיר'); }
@@ -433,7 +465,11 @@ const Editor = (() => {
     if ((k === 'ContextMenu' || (k === 'F10' && e.shiftKey)) && c.selected) return hit(() => ctxMenu(c.selected));
     if (mod && !e.altKey && k.toLowerCase() === 'z') return hit(e.shiftKey ? redo : undo);
     if (mod && !e.altKey && k.toLowerCase() === 'y') return hit(redo);
-    if (e.altKey && !mod && /^Arrow/.test(k) && c.selected) return hit(() => S.space?.nudge(k, e.shiftKey));   // Alt + חיצים: שוליים בצד שנבחר
+    // Alt + חיצים: שוליים — רק כשצד נבחר בתרשים הקופסה; אחרת מזיזים בין אחים (Alt + Shift — מוציא / מכניס) (V4)
+    if (e.altKey && !mod && /^Arrow/.test(k) && c.selected) return hit(() => { if (S.space && S.space.sidePicked === c.selected && !e.shiftKey) S.space.nudge(k, e.shiftKey); else S.build?.key(k, e.shiftKey); });
+    if (mod && !e.altKey && (k === 'd' || k === 'D' || k === 'ג') && c.selected) return hit(() => S.build?.duplicate());
+    if (mod && !e.altKey && !e.shiftKey && (k === 'c' || k === 'C' || k === 'ב') && c.selected && !hasTextSel()) return hit(() => S.build?.copy(false));
+    if (mod && !e.altKey && !e.shiftKey && (k === 'x' || k === 'X' || k === 'ס') && c.selected && !hasTextSel()) return hit(() => S.build?.copy(true));
     if (mod || e.altKey) return;
     if (k === 'm' || k === 'M' || k === 'צ') return hit(() => spaceMode());
     if (k === 'n' || k === 'N' || k === 'מ') return hit(() => { panel('nav', true); S.nav.list.focus(); });
@@ -454,6 +490,17 @@ const Editor = (() => {
     if (k === 'ArrowLeft' || k === 'ArrowRight') { const rtl = c.frame.contentWindow.getComputedStyle(c.doc.documentElement).direction === 'rtl'; return hit(() => c.step((k === 'ArrowLeft') === rtl ? 'next' : 'prev')); }
   }
   document.addEventListener('keydown', onKey);
+  const hasTextSel = () => { try { return !!String(window.getSelection() || '').trim(); } catch { return false; } };
+  /** הדבקה (V4): Ctrl+V על הקנבס — מהלוח של העורך, או מלוח המערכת (HTML, אחרת טקסט). בשדה / בעריכת טקסט — של השדה. */
+  function onPaste(e) {
+    if (!S.host || !S.canvas?.m || !S.build || S.text?.active || document.querySelector('dialog[open]')) return;
+    const t = e.target, tag = t && t.nodeType === 1 ? t.localName : '';
+    if (t && t.ownerDocument === document && (/^(input|textarea|select)$/.test(tag) || t.isContentEditable || t.closest?.('.monaco-editor'))) return;
+    const d = e.clipboardData; if (!d) return;
+    e.preventDefault();
+    S.build.paste(d.getData('text/html') || d.getData('text/plain') || (S.build.clip ? S.build.clip.html : ''));
+  }
+  document.addEventListener('paste', onPaste);
 
   const KEYS = [['חיצים ↑ ↓', 'ההורה / הילד הראשון (בלי בחירה — מתחילים מ-body)'], ['חיצים ← →', 'האח הקודם / הבא'], ['Esc', 'ההורה (או ביטול מצב ההצבעה)'],
     ['לחיצה כפולה · Enter · F2', 'עריכת הטקסט במקום (Esc — סיום ושמירה)'], ['בעריכת טקסט: Ctrl+B · I · U', 'מודגש · נטוי · קו תחתון'], ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y', 'בטל · החזר'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['T', 'הפאנל — לשונית "תוכן"'], ['I', 'הפאנל — לשונית "פרטים"'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
@@ -640,6 +687,7 @@ const Editor = (() => {
   function drawAll() {
     if (!S.host) return;
     drawState(); drawCrumbs(); S.nav?.refresh(); drawInfo(); drawTools(); saveMarks();
+    if (S.build) { S.build.tools._n = null; S.build.draw(); }
     const cap = S.canvas?.capInfo;
     el.cap.hidden = !cap;
     if (cap) el.cap.textContent = cap.shown ? 'מוצגים כל האלמנטים · הצג 60' : 'מוצגים 60 מכל רשימה ארוכה · הצג הכול (' + cap.hidden + ' מוסתרים)';
@@ -685,6 +733,10 @@ const Editor = (() => {
     el.gapbar = h('div', { class: 'ed-strip ed-gapbar', role: 'group', 'aria-label': 'מרווח — מספר', 'data-gapbar': true, hidden: true });
     el.spaceBtn = h('button', { type: 'button', class: 'icon-btn', 'data-space': true, 'aria-pressed': 'false', 'aria-label': 'ידיות מרווח על הקנבס (M)', title: 'ידיות מרווח על הקנבס — שוליים, ריפוד, ורווח בין אחים (M)', onclick: () => spaceMode() }, '📏');
     el.navBody = h('div', { class: 'ed-side-body nv' });
+    el.libBody = h('div', { class: 'ed-side-body ed-libbody', hidden: true });
+    const navTab = id => h('button', { type: 'button', role: 'tab', 'data-ntab': id, 'aria-selected': String(id === 'tree'), onclick: () => navTabs(id) }, id === 'tree' ? '🌳 עץ' : '＋ ספרייה');
+    el.navTabs = h('div', { class: 'ed-ptabs ed-ntabs', role: 'tablist', 'aria-label': 'עץ או ספרייה' }, navTab('tree'), navTab('lib'));
+    el.navWrap = h('div', { class: 'ed-navwrap' }, el.navTabs, el.navBody, el.libBody);
     el.infoBody = h('div', { class: 'ed-side-body dt', tabindex: '-1', role: 'tabpanel', 'aria-label': 'פרטים' });
     el.contentBody = h('div', { class: 'ed-side-body ct', tabindex: '-1', role: 'tabpanel', 'aria-label': 'תוכן' });
     el.designBody = h('div', { class: 'ed-side-body sg', tabindex: '-1', role: 'tabpanel', 'aria-label': 'עיצוב' });
@@ -697,7 +749,7 @@ const Editor = (() => {
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
       el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.seed, el.cap, el.broken, el.blocked, el.point, el.gapbar,
-      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navBody), el.mid, side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
+      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navWrap), el.mid, side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
     host.replaceChildren(el.root);
     status('טוען…');
     try {
@@ -712,17 +764,21 @@ const Editor = (() => {
         note, openInCode, onState: () => { el.root.classList.toggle('typing', !!S.text?.active); drawCrumbs(); } });
       c.onDbl = (n, pt) => { if (S.pointing) return; S.text.begin(n, pt); };
       S.content = new window.KolContent.Content(el.contentBody, { canvas: c, file: () => S.file, files: () => Project._state.files || [], act, canWrite: () => !!canWrite(), begin: n => S.text.begin(n), openEl: n => openInCode(n), openAt: (p, line) => Project.openAt(p, line),
-        note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove });
+        note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = drawHandle; c.onDropFile = (file, n) => dropFile(file, n);
+      c.onDraw = () => { drawHandle(); S.build?.draw(); }; c.onDropFile = (file, n) => dropFile(file, n);
       S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
-        highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys) });
+        highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } } });
       S.design = new window.KolDesign.Design(el.designBody, dOpt('design'));
       S.adv = new window.KolDesign.Design(el.advBody, dOpt('adv'));
       S.space = new window.KolSpacing.Spacing(c, { styler: S.styler, design: S.adv, write: writeStyle, preview, unpreview, canWrite: () => !!canWrite(), note, undo, phone, on: () => (S.spaceOn || (S.tab === 'adv' && (infoOpen() || phone())) ? 'adv' : S.tab === 'design' && infoOpen() ? 'design' : false), sheetHost: () => el.gapbar });
       S.adv.whyGap = n => S.space.whyNode(n);
+      S.build = new window.KolBuild.Build({ canvas: c, nav: S.nav, navHost: el.libBody, K, X: window.KolStruct, styler: S.styler, act, multi, writeStyle, note, sheet, undo, canWrite: () => !!canWrite(),
+        pick, rel: relRef, openInCode, linkSheet, removeOne, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, sheetsList: () => [...S.sheets.values()],
+        jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path,
+        begin: (n, pt, all) => { if (S.text.begin(n, pt) && all && S.text.e) { const sl = c.doc.getSelection(); sl.selectAllChildren(S.text.e); } } });
       setTab(prefs.tab);
       c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
@@ -745,7 +801,14 @@ const Editor = (() => {
       await open(first.id);
     } catch (e) { status(''); el.canvas.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
-  function unmount() { if (!S.host) return; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  /** לשונית ליד ה-Navigator: 🌳 עץ / ＋ ספרייה (V4). */
+  function navTabs(id) {
+    if (!el.navTabs) return;
+    for (const b of el.navTabs.children) b.setAttribute('aria-selected', String(b.dataset.ntab === id));
+    el.navBody.hidden = id !== 'tree'; el.libBody.hidden = id !== 'lib'; if (S.build?.lib) S.build.lib.hidden = id !== 'lib';
+    if (id === 'tree') S.nav?.draw();
+  }
+  function unmount() { if (!S.host) return; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
   return { view, unmount, selectAt, _ctx: ctxMenu, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };

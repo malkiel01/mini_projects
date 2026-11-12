@@ -272,3 +272,32 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .sp-bar-b { min-width: var(--tap); min-height: var(--tap); font-size: 1.2rem; }
 .sp-bar-name { font-size: .8rem; font-weight: 700; flex: 1 1 100%; }
 .spike-box.ed-multi { outline: 2px dashed #8e24aa; }
+
+/* ── V4: מבנה — גרירה, ספרייה, סרגל הנבחר, "＋" ── */
+.dg-line { position: absolute; background: #1a73e8; border-radius: 2px; box-shadow: 0 0 0 1px #fff; z-index: 6; }
+.dg-line.cell { background: rgba(26, 115, 232, .18); outline: 2px solid #1a73e8; box-shadow: none; }
+.dg-line.bad, .dg-box.bad { background: #b3261e; }
+.dg-box { position: absolute; box-sizing: border-box; outline: 2px solid rgba(26, 115, 232, .7); background: rgba(26, 115, 232, .06); z-index: 5; }
+.dg-box.bad { background: rgba(179, 38, 30, .08); outline-color: #b3261e; }
+.dg-tag { position: absolute; z-index: 7; max-width: 92%; font: 12px/18px system-ui, sans-serif; background: #1a73e8; color: #fff; padding: 2px 8px; border-radius: 6px; white-space: normal; direction: rtl; unicode-bidi: plaintext; }
+.dg-tag.bad { background: #b3261e; } .dg-tag.noop { background: #5f6368; }
+.dg-ghost { position: fixed; z-index: 9999; pointer-events: none; font: 12px/18px system-ui, sans-serif; background: var(--surface, #fff); color: var(--ink, #222); border: 1px solid var(--line, #ccc); border-radius: 6px; padding: 2px 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, .18); }
+html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select: none; }
+.ed-seltools { position: absolute; z-index: 8; display: flex; gap: 2px; pointer-events: auto; background: var(--surface, #fff); border: 1px solid var(--line, #ccc); border-radius: 8px; padding: 1px; box-shadow: 0 2px 8px rgba(0, 0, 0, .15); }
+.ed-seltools .icon-btn { min-width: 28px; min-height: 28px; font-size: .9rem; }
+.ed-seltools [data-grip] { cursor: grab; touch-action: none; }
+.ed-plus { position: absolute; z-index: 8; width: 22px; height: 22px; border-radius: 50%; border: 1px solid #1a73e8; background: #fff; color: #1a73e8; font: 700 15px/18px system-ui; padding: 0; pointer-events: auto; cursor: pointer; }
+.ed-plus:hover { background: #1a73e8; color: #fff; }
+@media (pointer: coarse) { .ed-seltools .icon-btn { min-width: 40px; min-height: 40px; } .ed-plus { width: 32px; height: 32px; } }
+.ed-navwrap { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.ed-navwrap > .ed-side-body { flex: 1; min-height: 0; }
+.ed-lib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+.ed-lib-item { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #fff); color: inherit; font: inherit; font-size: .85rem; cursor: grab; text-align: start; touch-action: none; min-height: 40px; }
+.ed-lib-item:hover { border-color: var(--brand); }
+.ed-libbody { padding: var(--s2, 8px); overflow: auto; }
+.nv-row.dg-before { box-shadow: inset 0 3px 0 #1a73e8; } .nv-row.dg-after { box-shadow: inset 0 -3px 0 #1a73e8; }
+.nv-row.dg-in { background: rgba(26, 115, 232, .1); } .nv-row.dg-bad { box-shadow: inset 0 3px 0 #b3261e; background: rgba(179, 38, 30, .08); }
+.ed-ask .ed-warn { margin: 0 0 6px; } .ed-ask-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ed-moveto { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-height: 50vh; overflow: auto; }
+.ed-moveto-row { direction: ltr; font: .78rem ui-monospace, monospace; }
+.ed-tag-in { font: .85rem ui-monospace, monospace; width: 9em; }
