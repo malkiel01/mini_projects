@@ -321,7 +321,9 @@ function page_render(array $page, bool $editor = false, ?callable $url = null): 
     $css[] = "@media (max-width:767px){{$P} .kol-row{flex-direction:column;gap:16px}{$P} .kol-col{flex-basis:auto!important}{$P} .kol-hm{display:none!important}}";
     $css[] = "@media (min-width:768px){{$P} .kol-hd{display:none!important}}";
 
-    $css[] = "$P .kol-legacy{margin:0}$P .kol-contents{display:contents}$P .kol-raw>:first-child{margin-top:0}";
+    // עמודה מיובאת היא display:contents — הרכיבים שלה הם פריטי flex של השורה, ובלי flex-grow מתכווצים לרוחב התוכן
+    // (המילון: 717–778px מתוך 1920). כאן הם ממלאים את השורה — בסטודיו ובפרסום (L1, L1b)
+    $css[] = "$P .kol-legacy{margin:0}$P .kol-contents{display:contents}$P .kol-row>.kol-contents>*{flex:1 1 auto;min-width:0}$P .kol-raw>:first-child{margin-top:0}";
 
     $kid = fn(string $id) => $editor ? ' data-kid="' . $id . '"' : '';
     $html = '<div class="kol-page">' . legacy_open($st['legacy'] ?? []);

@@ -9,3 +9,4 @@
 - 2026-11-12 11:55 — לפי הכלל החדש של הבקרה (4) — הראשון שמגיש 'מוכן' לוקח max(main)+1: המיגרציה 18 ← 17 (KOL_SCHEMA_VERSION 17). run.php 165/165.
 - 2026-11-12 12:40 — a2 נכשל בענף (4/4) ועבר ב-main (3/3). הסיבה: מרוץ קיים ב-studio.js — mount() מחכה ל-lock ואז S.beat, ו-unmount() כבר איפס את S ('Cannot set properties of null (setting beat)'); a2 מנווט ל-#/files מיד אחרי '/'. הטעינה של cutover.php בכל בקשה הזיזה את התזמון. תיקון אצלי: cutover.php נטען רק בפעולות שלו (cutover_lib()). a2 2/2. המרוץ ב-studio.js — דווח לבקרה (לא בתחום שלי).
 - 2026-11-12 13:00 — מוזג main עם N1 (ff556f0, מיגרציה 17). שלי ← 18 (KOL_SCHEMA_VERSION 18); התנגשות ב-db.php וב-README נפתרה (N1 ואחריו M3). run.php 179/179.
+- 2026-11-12 13:50 — לולאה ×3 על 96fccc7: 44/45 (a2 #2 — המרוץ ב-studio.js). מוזג main עם A3 (תיקון המרוץ), L1, L1b; התנגשות ברשימת POST_ACTIONS ב-api.php — שני הצדדים. run.php 197/197. main עדיין 17 ← שלי 18.
