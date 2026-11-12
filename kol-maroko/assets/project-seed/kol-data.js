@@ -1,5 +1,5 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.3.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.4.0)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
@@ -13,6 +13,7 @@
  *   data-kol-attr-src="audio"        תכונה כלשהי ← השדה.            אפשר גם תבנית: "השמע את {word}"
  *   data-kol-if="audio" / "!audio"   האלמנט נשאר רק אם לשדה יש / אין ערך. גם "שדה=ערך", "topics.count=1".
  *   data-kol-class-NAME="תנאי"       המחלקה NAME נוספת לאלמנט כשהתנאי מתקיים.
+ *   data-kol-class="NAME: תנאי; …"    הצורה הכללית (1.4.0) — גם לשם מחלקה עם אותיות גדולות, וכמה מחלקות בתכונה אחת.
  *   data-kol-each="topics"           חזרה על האלמנט לכל ערך בשדה-רשימה. בפנים: {label}, {id}, או "." לערך עצמו.
  *   data-kol-search="words"          <input> — חיפוש חי. data-kol-search-fields="word meaning" — באילו שדות.
  *   data-kol-search-scope="words"    תיבת סימון: כשהיא מסומנת, החיפוש עובר לשדות שב-data-kol-search-fields שלה.
@@ -121,6 +122,18 @@
     return !isEmpty(lookup(scope, condition));
   }
 
+  /** "isActive: topics; is-single: topics.count=1" ← [[שם, תנאי], …]. חלק בלי ":" — מדלגים עליו. */
+  function classPairs(spec) {
+    var out = [], parts = String(spec).split(';');
+    for (var i = 0; i < parts.length; i++) {
+      var at = parts[i].indexOf(':');
+      if (at < 1) continue;
+      var name = parts[i].slice(0, at).trim(), cond = parts[i].slice(at + 1).trim();
+      if (name && cond && !/\s/.test(name)) out.push([name, cond]);
+    }
+    return out;
+  }
+
   // ── בניית אלמנטים מתבנית ──────────────────────────────────
 
   /** ממלא אלמנט אחד (וכל מה שבתוכו) לפי תכונות הקשירה. מחזיר false אם האלמנט הוסר (data-kol-if). */
@@ -150,6 +163,7 @@
     for (var a = 0; a < attributes.length; a++) {
       var name = attributes[a].name, spec = attributes[a].value;
       if (name.indexOf('data-kol-attr-') === 0) element.setAttribute(name.slice(14), fill(scope, spec));
+      else if (name === 'data-kol-class') { var pairs = classPairs(spec); for (var p = 0; p < pairs.length; p++) if (holds(scope, pairs[p][1])) element.classList.add(pairs[p][0]); }
       else if (name.indexOf('data-kol-class-') === 0 && holds(scope, spec)) element.classList.add(name.slice(15));
     }
     // 4. תוכן
@@ -637,7 +651,7 @@
 
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.3.0',
+    version: '1.4.0',
     prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },
