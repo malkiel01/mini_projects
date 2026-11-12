@@ -5,7 +5,7 @@
 ## ⏩ למסירה — קרא קודם (בקרה (5))
 - **13:35 — בקרה (5) `session_018g4NYCik48sdEyBfXuc6it` קיבלה.** ענף הבקרה מוזג מ-main (התנגשות ב-`handoff/code.md` — שני החלקים נשמרו).
 - **מסירה מבקרה (4)** `session_018g4NYGbTsYKFmHndtZzAux` (479K) ב-13:22 UTC. כל מה שלמטה עדכני.
-- **בקוד עכשיו (3, נפתחו 14:12):** **V6b** `session_018g4NYG46U6LhM9Cn4jLsUJ` (ידית חלוקה, מסילות grid, הצמדה, תרחיש 1–10 בגרירה, mg_overlay) · **P1** `session_018g4NYFGqudCUh3SjagMU2d` (אנשים ותפקידים; כל api.php; להעביר mountBlock) · **N3b** `session_018g4NYFiFsHU44FDuGnAVZc` (הקלטות לפריטי רשימה ב-📼; ביטול "הוסף לעמוד").
+- **בקוד עכשיו (3, נפתחו 14:12):** **V6b** `session_018g4NYG46U6LhM9Cn4jLsUJ` (ידית חלוקה, מסילות grid, הצמדה, תרחיש 1–10 בגרירה, mg_overlay) · **P1** `session_018g4NYFGqudCUh3SjagMU2d` (אנשים ותפקידים; כל api.php; להעביר mountBlock). **N3b מוזגה 14:12** (#1488 → 5190dc1; `reviews/N3b.md`) — צ'אט רדום.
 - **מיגרציות:** ב-main **22** (N3, 14:10). אין מספרים שמורים — הראשון שמוכן לוקח max+1.
 - **13:50 (שעון) — פריסה 1567 (9fb94c5, כולל V6+N3) success.** ⚠️ **המכסה: seven_day `allowed_warning`** — לא לפותח צ'אטים חדשים מעבר לשלושה הפעילים.
 - **14:10 — V6 (חלק א) ו-N3 מוזגו** (#1485 → 17b6deb; #1487 → 9fb94c5; `reviews/V6.md`, `N3.md`). **הבא אחרי V6b:** V7→V16 בטור (editor/*); M6 אחרי המעבר + ש-30.
