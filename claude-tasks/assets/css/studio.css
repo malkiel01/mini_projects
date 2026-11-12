@@ -1,0 +1,86 @@
+/*
+ * סטודיו — צ'אט פיתוח מול Claude Platform. נשען על המשתנים והרכיבים של app.css
+ * (שפת "הטלפון קודם"): כאן רק מה שייחודי למסך הזה. רק תכונות לוגיות.
+ */
+
+.studio { display: flex; flex-direction: column; height: 100dvh; }
+.studio main { width: 100%; }
+.studio #sList { display: grid; gap: var(--s3); align-content: start; overflow-y: auto; flex: 1; }
+
+.s-note { padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--brand-soft); font-size: .9rem; line-height: 1.5; }
+.s-note--warn { background: var(--danger-soft); color: var(--danger); }
+.s-setup { display: grid; gap: var(--s1); padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); font-size: .9rem; }
+.s-setup b { font-weight: 600; }
+.s-setup .row { display: flex; gap: var(--s2); align-items: baseline; }
+.s-setup .ok { color: var(--ok); }
+.s-setup .miss { color: var(--danger); }
+
+/* רשימה = שורות בתוך מסגרת אחת */
+.s-convs { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.s-convs:empty { display: none; }
+.s-conv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--s2); width: 100%; padding: var(--s2) var(--s3);
+  text-align: start; background: none; border: 0; border-block-end: 1px solid var(--line); cursor: pointer; min-height: 56px; }
+.s-conv:last-child { border-block-end: 0; }
+.s-conv:hover { background: var(--brand-soft); }
+.s-conv .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-conv .m { grid-column: 1; color: var(--muted); font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s-conv .st { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+
+.s-badge { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 var(--s2); border-radius: 99px; font-size: .78rem;
+  background: color-mix(in srgb, var(--c, var(--muted)) 14%, transparent); color: var(--c, var(--muted)); white-space: nowrap; }
+.s-badge--running { --c: var(--star); }
+.s-badge--idle { --c: var(--ok); }
+.s-badge--needs_action, .s-badge--budget { --c: var(--violet); }
+.s-badge--terminated { --c: var(--danger); }
+.s-badge--running::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: s-pulse 1.2s ease-in-out infinite; }
+@keyframes s-pulse { 50% { opacity: .25; } }
+
+/* מסך השיחה: יומן שנגלל, ושורת כתיבה שנשארת למטה */
+.s-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 !important; max-width: 860px; margin: 0 auto; }
+.s-meta { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: center; padding: var(--s2) var(--s3); font-size: .8rem; color: var(--muted);
+  border-block-end: 1px solid var(--line); background: var(--surface); }
+.s-meta code { direction: ltr; unicode-bidi: isolate; }
+.s-log { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s3); display: grid; gap: var(--s2); align-content: start; }
+.s-msg { max-width: min(92%, 680px); padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--surface); border: 1px solid var(--line);
+  overflow-wrap: anywhere; line-height: 1.55; }
+.s-msg--user { justify-self: start; background: var(--brand); color: var(--brand-ink); border-color: transparent; white-space: pre-wrap; }
+.s-msg--agent { justify-self: end; }
+.s-msg--pending { opacity: .6; }
+.s-msg.md { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.s-msg pre { overflow-x: auto; direction: ltr; text-align: left; padding: var(--s2); background: var(--bg); border-radius: 6px; font-size: .82rem; }
+.s-msg code { direction: ltr; unicode-bidi: isolate; font-size: .88em; }
+
+.s-tool { justify-self: stretch; font-size: .8rem; color: var(--muted); border-inline-start: 3px solid var(--line); padding-inline-start: var(--s2); min-width: 0; }
+.s-tool summary { cursor: pointer; display: flex; gap: var(--s2); align-items: baseline; min-height: 28px; list-style: none; }
+.s-tool summary::-webkit-details-marker { display: none; }
+.s-tool .n { flex: none; font-weight: 600; color: var(--ink); }
+.s-tool .c { direction: ltr; unicode-bidi: isolate; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-family: ui-monospace, monospace; }
+.s-tool--err { border-color: var(--danger); }
+.s-tool pre { margin-block: var(--s1); padding: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto;
+  direction: ltr; text-align: left; font-size: .78rem; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.s-div { justify-self: center; font-size: .75rem; color: var(--muted); }
+.s-err { justify-self: stretch; padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--danger-soft); color: var(--danger); font-size: .88rem; }
+
+.s-strip { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); border-block-start: 1px solid var(--line); background: var(--brand-soft); font-size: .9rem; }
+.s-strip .row { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.s-strip input[type=number] { width: 90px; min-height: 34px; padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+
+.s-compose { display: flex; gap: var(--s2); align-items: flex-end; padding: var(--s2) var(--s3) calc(var(--s2) + env(safe-area-inset-bottom));
+  border-block-start: 1px solid var(--line); background: var(--surface); }
+.s-compose textarea { flex: 1; min-width: 0; min-height: var(--tap); max-height: 40dvh; padding: 9px var(--s3); border: 1px solid var(--line);
+  border-radius: var(--r); background: var(--bg); resize: none; line-height: 1.4; }
+
+/* גיליונות */
+
+
+.s-form input[type=text], .s-form input[type=number], .s-form input[type=password] { min-height: var(--tap); padding: 0 var(--s3);
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); width: 100%; }
+.s-check { display: flex; gap: var(--s2); align-items: flex-start; line-height: 1.4; }
+.s-check input { margin-block-start: 3px; }
+.s-h3 { font-size: .95rem; }
+.s-engines { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.s-engine { display: grid; gap: 2px; padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); text-align: start; }
+.s-engine.is-on { border-color: var(--brand); background: var(--brand-soft); }
+.s-engine[aria-disabled=true] { opacity: .55; }
+.s-engine small { color: var(--muted); font-size: .78rem; }
+.s-conn { display: grid; gap: var(--s1); font-size: .9rem; }

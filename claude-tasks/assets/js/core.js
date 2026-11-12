@@ -117,3 +117,18 @@ export function timeAgo(ts) {
 
 /** עד שלב 8 אף אחד לא לוקח מטלות במסלול platform — אומרים את זה ליד הבחירה. */
 export const PLATFORM_HINT = "☁️ Platform עוד לא עונה בעצמו (שלב 8). עד אז אף אחד לא לוקח את המטלות של הענף הזה — הצ'אטים לא יראו אותן.";
+
+/*
+ * 🛠 סטודיו — צ'אט פיתוח מול Claude Platform (docs/studio.md). הכפתור נוסף לכותרת הלוח מכאן.
+ * בדף הסטודיו עצמו אין #settingsBtn, ולכן שם לא קורה כלום. ההרשאה נאכפת בשרת (בעל הלוח בלבד).
+ */
+const studioAnchor = document.querySelector?.('#settingsBtn');
+if (studioAnchor && !document.querySelector('#studioBtn')) {
+  const studioBtn = el('a', { class: 'icon-btn', id: 'studioBtn', href: './studio.html', 'aria-label': 'סטודיו', title: "סטודיו — צ'אט פיתוח מול Claude Platform", text: '🛠' });
+  studioAnchor.before(studioBtn);
+  // מוצג רק למי שרואה את כפתור הניהול (בעל הלוח): עוקב אחרי ה-hidden של #adminBtn, ש-app.js קובע אחרי הכניסה
+  const adminBtn = document.querySelector('#adminBtn');
+  const mirror = () => { studioBtn.hidden = !adminBtn || adminBtn.hidden; };
+  mirror();
+  if (adminBtn) new MutationObserver(mirror).observe(adminBtn, { attributes: true, attributeFilter: ['hidden'] });
+}
