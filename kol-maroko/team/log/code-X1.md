@@ -11,3 +11,9 @@
   code*, publish_preview (`AGENT_GONE` → 404). כל כתיבה — גרסה "🤖 <שם הכניסה>"; audit `agent_*` עם `source: agent (<id>)` בפירוט (אין
   עמודת source בטבלה — P1 לא מוזגה). מגבלת קצב 120/דקה (`agent_rate`, ב-settings). הסקיל נבנה מ-kol.json, מהעץ ומהכותרת של
   `js/kol-data.js`. בדיקות: `tests/cases/97-agent-files.php` (9).
+- 2026-11-12 · יחידה 3 (📝): `lib/longtext.php` — `sanitize_doc` עבר לרשימה מותרת (תגיות + תכונות; מסוכנות נמחקות עם התוכן, לא מוכרות נפרקות;
+  בלי data-* / id / הערות; href https|mailto|tel|#, src https; מנתחים ב-<body> ולא בתוך מכל — `</div>` עודף לא בורח ממנו). `sanitize_css` —
+  תוקן חור: `@import` ברמה העליונה עבר. אזור `data-kol-longtext`: `longtext_open` (חדש בסוף <main> / קיים), `longtext_sync` עם path
+  (CSS ל-`css/longtext/<doc>.css` + `<link>` ב-head פעם אחת, גרסה "📝 <שם>"; hash ≠ ← 409 עם שני הצדדים, `mode: overwrite | import`),
+  `longtexts` + `longtext_link` ("🔗 חבר למסמך קיים"). בלי מיגרציה: path + hash ב-settings (`lt_link_<doc>`), לא עמודות ב-longtexts.
+  `longtext_sync` בלי path — הטיוטה הישנה, כמו היום (עד M6). בדיקות: `tests/cases/98-longtext-files.php` (5, כולל payload עוין).

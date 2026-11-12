@@ -98,6 +98,9 @@ try {
         'media' => file_send(media_check($_GET)),
         'editor_session' => editor_session(require_role($user, 'editor'), $body),
         'longtext_sync' => longtext_sync(require_role($user, 'editor'), $body),
+        'longtexts' => (require_role($user, 'editor') ? longtexts_list() : []),          // X1: 🔗 חבר למסמך קיים
+        'longtext_link' => longtext_link(require_role($user, 'editor'), $body),
+        'longtext_open' => longtext_open(require_role($user, 'editor'), $body),
         'publish_preview' => publish_preview(require_role($user, 'publisher')),
         'publish' => publish(require_role($user, 'publisher'), $body),
         'republish' => republish(require_role($user, 'publisher'), $body),
