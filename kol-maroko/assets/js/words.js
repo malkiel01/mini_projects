@@ -27,7 +27,8 @@ const Words = (() => {
   let dragIds = null;
   let player = null;
 
-  const plain = html => { const d = document.createElement('div'); d.innerHTML = html.replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'); return d.textContent.replace(/\s+/g, ' ').trim(); };
+  // N2c: DOMParser — מסמך מנותק שאינו מריץ דבר (בדיב מנותק <img onerror> רץ)
+  const plain = html => (new DOMParser().parseFromString(String(html).replace(/<\/(p|li|h\d)>|<br\s*\/?>/gi, ' $&'), 'text/html').body.textContent || '').replace(/\s+/g, ' ').trim();
   const norm = s => s.toLowerCase().replace(/[֑-ׇ]/g, '');          // בלי ניקוד וטעמים
   const splitTopics = s => [...new Set(s.split(/[;,،]/).map(t => t.trim().replace(/\s+/g, ' ')).filter(Boolean))];
 

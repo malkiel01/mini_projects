@@ -229,34 +229,44 @@ const Project = (() => {
     monaco.editor.setModelMarkers(doc.model, 'kol-words', [...errors.map(x => m(x, monaco.MarkerSeverity.Error)), ...warnings.map(x => m(x, monaco.MarkerSeverity.Warning))]);
   }
   const wordsAt = (doc, line) => { if (S.editor && doc.model) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); } };
-  async function wordsSave(doc, content, create = []) {
+  // N2c: more — אישורי צור שדה / הוסף אפשרות: { fields: [key], options: [key:value] }
+  async function wordsSave(doc, content, create = [], more = { fields: [], options: [] }) {
     doc.saving = true; drawStatus();
     try {
-      const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, create_topics: create });
+      const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, create_topics: create, create_fields: more.fields, create_options: more.options });
       doc.error = ''; wordsMarks(doc, [], d.plan.warnings);
-      wordsPlanSheet(doc, content, d.plan, create);
+      wordsPlanSheet(doc, content, d.plan, create, more);
     } catch (e) {
       doc.error = e.message; doc.errorStatus = e.status || 0;
       if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
-      else if (e.status === 422 && e.data?.errors) { wordsMarks(doc, e.data.errors, e.data.warnings || []); wordsErrors(doc, content, e.data, create); }
+      else if (e.status === 422 && e.data?.errors) { wordsMarks(doc, e.data.errors, e.data.warnings || []); wordsErrors(doc, content, e.data, create, more); }
       else toast(e.message, true);
     } finally {
       doc.saving = false;
       drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
     }
   }
-  function wordsErrors(doc, content, data, create) {
+  function wordsErrors(doc, content, data, create, more = { fields: [], options: [] }) {
     const props = (data.proposals || []).filter(p => !create.includes(p.slug));
-    const list = data.errors.filter(x => !x.propose);
+    const fprops = (data.field_proposals || []).filter(p => !more.fields.includes(p.key));
+    const oprops = (data.option_proposals || []).filter(p => !more.options.includes(`${p.key}:${p.value}`));
+    const list = data.errors.filter(x => !x.propose);       // שדה / אפשרות שאינם קיימים — נשארים ברשימה (עם השורה), והכפתור מתחת
     const dlg = sheet('הקובץ לא נשמר — הטבלה לא השתנתה',
       list.length ? h('ul', { class: 'pj-fails', 'data-words-errors': true }, list.slice(0, 50).map(x => h('li', {},
         h('button', { type: 'button', class: 'pj-ref-at', onclick: () => { dlg.close(); wordsAt(doc, x.line); } }, h('span', { dir: 'ltr' }, `שורה ${x.line}, עמודה ${x.col}`)), ' ', h('span', { dir: 'auto' }, x.msg)))) : null,
       props.length ? h('div', { class: 'warnbox' }, h('p', {}, 'נושאים שאינם קיימים:'),
         h('div', { class: 'row-btns wrap' }, props.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-topic': p.slug,
-          onclick: () => { dlg.close(); wordsSave(doc, content, [...create, p.slug]); } }, `צור נושא "${p.slug}" (${p.name})`)))) : null,
+          onclick: () => { dlg.close(); wordsSave(doc, content, [...create, p.slug], more); } }, `צור נושא "${p.slug}" (${p.name})`)))) : null,
+      // N2c: שדה שאינו קיים / ערך שאינו ברשימת האפשרויות — אותה דלת כמו "צור נושא"
+      fprops.length || oprops.length ? h('div', { class: 'warnbox' }, h('p', {}, 'שדות ואפשרויות שאינם קיימים:'),
+        h('div', { class: 'row-btns wrap' },
+          fprops.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-field': p.key,
+            onclick: () => { dlg.close(); wordsSave(doc, content, create, { ...more, fields: [...more.fields, p.key] }); } }, `צור שדה "${p.key}" (${p.type})`)),
+          oprops.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-option': `${p.key}:${p.value}`,
+            onclick: () => { dlg.close(); wordsSave(doc, content, create, { ...more, options: [...more.options, `${p.key}:${p.value}`] }); } }, `הוסף אפשרות "${p.value}" לשדה ${p.key}`)))) : null,
       h('div', { class: 'row-btns' }, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'חזרה לעורך')));
   }
-  function wordsPlanSheet(doc, content, plan, create) {
+  function wordsPlanSheet(doc, content, plan, create, more = { fields: [], options: [] }) {
     const c = plan.counts;
     const field = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', audio: 'הקלטה', external_id: 'מספר מהאקסל' };
     const fold = (title, n, items) => n ? h('details', { class: 'pj-plan' }, h('summary', {}, `${title} (${n})`), h('ul', {}, items)) : null;
@@ -270,13 +280,15 @@ const Project = (() => {
       fold('יתווספו', c.added, plan.added.map(w => h('li', { dir: 'auto' }, w.word, w.id ? h('small', { class: 'muted' }, ` #${w.id}`) : h('small', { class: 'muted' }, ' — מזהה חדש')))),
       fold('יעברו לסל', c.trashed, plan.trashed.map(w => h('li', { dir: 'auto' }, w.word, h('small', { class: 'muted' }, ` #${w.id}${w.audio ? ' · עם ההקלטה (נשארת בספרייה)' : ''}`)))),
       plan.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + plan.new_topics.map(t => `${t.name} (${t.slug})`).join(', ')) : null,
+      plan.new_fields?.length ? h('p', {}, 'שדות חדשים: ' + plan.new_fields.map(f => `${f.key} (${f.type})`).join(', ')) : null,
+      plan.new_options?.length ? h('p', {}, 'אפשרויות חדשות: ' + plan.new_options.map(o => `${o.key}: ${o.value}`).join(', ')) : null,
       plan.snapshot ? h('p', { class: 'hint' }, '↩️ לפני ההחלה תיווצר נקודת שחזור.') : null,
       plan.needs === 'publisher' ? h('p', { class: 'hint' }, 'מחיקה של יותר מ-20 מילים — רק למפרסם.') : null,
       h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
     apply.onclick = async () => {
       apply.disabled = true;
       try {
-        const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, apply: true, token: plan.token, create_topics: create });
+        const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, apply: true, token: plan.token, create_topics: create, create_fields: more.fields, create_options: more.options });
         dlg.close();
         setDocText(doc, d.content, d.file.rev);
         doc.error = ''; doc.errorStatus = 0; wordsMarks(doc, []);
@@ -787,7 +799,7 @@ const Project = (() => {
     return n;
   }
   const duplicate = (target, path) => nameSheet('שכפול', 'הנתיב של העותק', dupName(path), 'שכפול',
-    to => run(async () => { const d = await api('pf_copy', { ...target, to }); if (d.file && d.file.kind === 'file' && target.id) { await refresh(); openFile(d.file.id); } return d; }, 'שוכפל'),
+    to => run(async () => { const d = await api('pf_copy', { ...target, to }); if (d.file && d.file.kind === 'file' && target.id) { await refresh(); openFile(d.file.id); } return d; }, 'שוכפל').then(d => { if (d?.warning) toast(d.warning); return d; }),     // N2c: אזהרת השכפול של data/words.json
     'העותק מתחיל היסטוריה משלו. ההפניות בתוכו — כמו במקור.');
 
   // ── F2b: גרסה מול הנוכחית, ושחזור ─────────────────────────
