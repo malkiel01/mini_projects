@@ -160,7 +160,7 @@
         }
       }
       if (css) { this.style = doc.createElement('style'); this.style.setAttribute(OWNED, 'lvstate'); this.style.textContent = css; (doc.head || doc.documentElement).append(this.style); }
-      for (const [e, n] of this.d2m) { if (!this.byNode.has(n)) this.byNode.set(n, []); this.byNode.get(n).push(e); }
+      for (const [e, n] of this.d2m) { if (!e.isConnected) { this.d2m.delete(e); continue; } if (!this.byNode.has(n)) this.byNode.set(n, []); this.byNode.get(n).push(e); }   // המקור של each ושל if שנפל — הוסרו מה-DOM
       if (this.focus && !lists.some(L => L.name === this.focus.name && L.cards[this.focus.i])) this.focus = null;
       this.timing = performance.now() - t0;
     }
