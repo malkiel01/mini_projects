@@ -49,7 +49,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
-                      'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import'];
+                      'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
+                      'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -104,6 +105,16 @@ try {
         'import_run' => import_run(require_role($user, 'owner'), $body),
         'words' => (require_role($user, 'editor') ? words_list() : []),
         'library' => (require_role($user, 'editor') ? library_list() : []),
+        // הבאת ההקלטות מהאתר (A2, lib/recordings.php) — בעל האתר בלבד. המשך — לכל עורך (נמדד בהשמעה)
+        'rec_duration' => rec_duration(require_role($user, 'editor'), $body),
+        'rec_status' => rec_status(require_role($user, 'owner')),
+        'rec_fetch_plan' => rec_fetch_plan(require_role($user, 'owner')),
+        'rec_scan_start' => rec_scan_start(require_role($user, 'owner')),
+        'rec_scan_step' => rec_scan_step(require_role($user, 'owner')),
+        'rec_fetch_start' => rec_fetch_start(require_role($user, 'owner'), $body),
+        'rec_fetch_step' => rec_fetch_step(require_role($user, 'owner')),
+        'rec_job_op' => rec_job_op(require_role($user, 'owner'), $body),
+        'rec_settings_set' => rec_settings_set(require_role($user, 'owner'), $body),
         'word_save' => word_save(require_role($user, 'editor'), $body),
         'word_delete' => word_delete(require_role($user, 'editor'), $body),
         'topic_op' => topic_op(require_role($user, 'editor'), $body),

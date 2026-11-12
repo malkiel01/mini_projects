@@ -15,6 +15,8 @@ define('KOL_DATA_DIR', $data);
 if (isset($_SERVER['HTTP_X_TEST_USER'])) $_SERVER['PLATFORM_USER'] = $_SERVER['HTTP_X_TEST_USER'];
 // בדיקות הדפדפן של הבידוד (F4): הזהות בעוגייה — כמו בייצור (HttpOnly, SameSite=Lax), כדי שהדפדפן עצמו יחליט מתי לשלוח אותה
 elseif (isset($_COOKIE['kol_test_user'])) $_SERVER['PLATFORM_USER'] = (string)base64_decode($_COOKIE['kol_test_user']);
+// A2: "האתר" של ההקלטות — שרת מדומה מקומי (tests/fake-audio.php). JSON: {"https://maghreb.co.il": "http://127.0.0.1:PORT"}
+if ($map = getenv('KOL_TEST_REC_MAP')) $GLOBALS['kol_rec_test_map'] = json_decode($map, true);
 // ויומן של מה שהשרת ראה בפועל: מי פנה, מאיזה מקור, ועם זהות או בלי
 if ($trace = getenv('KOL_TEST_TRACE')) {
     file_put_contents($trace, json_encode(['uri' => $_SERVER['REQUEST_URI'], 'method' => $_SERVER['REQUEST_METHOD'], 'origin' => $_SERVER['HTTP_ORIGIN'] ?? null,
