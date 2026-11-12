@@ -327,8 +327,8 @@ function pf_ref_resolve(string $from, string $v, string $kind): ?string
 {
     if ($v === '' || $v[0] === '#' || str_starts_with($v, '//') || preg_match('/^[a-z][a-z0-9+.\-]*:/i', $v)) return null;
     if ($kind === 'attr') $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $v = rawurldecode($v);
-    if ($kind === 'entry') $v = '/' . ltrim($v, '/');                 // kol.json: מהשורש
+    // kol.json: נתיב בפרויקט (לא כתובת) — בלי פענוח %XX, ומהשורש
+    $v = $kind === 'entry' ? '/' . ltrim($v, '/') : rawurldecode($v);
     $segs = $v[0] === '/' ? [] : array_slice(explode('/', $from), 0, -1);
     foreach (explode('/', $v) as $s) {
         if ($s === '' || $s === '.') continue;
@@ -359,7 +359,7 @@ function pf_rel(string $fromFile, string $to): string
 function pf_ref_value(string $old, string $fileNew, string $targetNew, string $kind): string
 {
     $slash = str_ends_with($old, '/') ? '/' : '';
-    if ($kind === 'entry') return pf_ref_enc($targetNew);
+    if ($kind === 'entry') return substr((string)json_encode($targetNew, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 1, -1);   // מחרוזת JSON תקינה
     if ($old[0] === '/') return '/' . pf_ref_enc($targetNew) . $slash;
     $rel = pf_ref_enc(pf_rel($fileNew, $targetNew)) . $slash;
     if ((str_starts_with($old, './') || $kind === 'js') && !str_starts_with($rel, '../')) $rel = './' . $rel;

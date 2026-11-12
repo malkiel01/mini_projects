@@ -899,10 +899,10 @@ const Project = (() => {
   const toolsMenu = () => menu('כלי העורך', [
     /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
-    ['🔎 חיפוש והחלפה בכל הקבצים', () => searchSheet()],
-    ['🗜️ ZIP — הורדה והעלאה של הפרויקט', () => zipMenu()],
     S.canPurge ? ['🔄 ייבוא מחדש מהעמוד של היום', () => migrateSheet()] : null,   // גם כאן — בטלפון רשימת הקבצים סגורה, והכפתור שבה אינו נראה
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
+    ['🔎 בכל הקבצים — חיפוש, והחלפה עם תצוגה מקדימה', () => searchSheet()],
+    ['🗜️ ZIP — הורדה והעלאה של הפרויקט', () => zipMenu()],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
     ['↩️ בטל', () => { S.editor?.focus(); S.editor?.trigger('menu', 'undo', null); }],
     ['↪️ חזור', () => { S.editor?.focus(); S.editor?.trigger('menu', 'redo', null); }],

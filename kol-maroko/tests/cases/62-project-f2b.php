@@ -285,6 +285,9 @@ test('F2b הפניות: תיקייה שזזה; קובץ מפנה שזז; JS impo
     // kol.json: "entry"
     $r = b_get('pf_refs', '&id=' . b_id('index.html') . '&to=' . rawurlencode('home.html'))['json']['refs'];
     ok(in_array('kol.json', array_column($r, 'path'), true), 'kol.json מפנה ל-index.html (entry)');
+    $e = array_values(array_filter(b_get('pf_refs', '&id=' . b_id('index.html') . '&to=' . rawurlencode('דף "ראשי".html'))['json']['refs'], fn($x) => $x['path'] === 'kol.json'))[0];
+    eq('דף \\"ראשי\\".html', $e['new'], 'kol.json: מחרוזת JSON (לא %XX), והמרכאות מוברחות');
+    eq('דף "ראשי".html', json_decode('"' . $e['new'] . '"'), 'ונקראת חזרה לנתיב המדויק');
 
     // מחיקה: רשימה בלבד
     $before = pf_get(b_id('refs/page.html'));
