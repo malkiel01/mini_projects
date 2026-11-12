@@ -58,6 +58,17 @@ function csp_site(): string
     return '';
 }
 
+/**
+ * X1 (באישור הבקרה): עורך התמלילים ב-iframe של 📝 — הכתובת המלאה של התיקייה (סכמה + מארח + נתיב עם / בסוף), לא מארח ולא wildcard.
+ * KOL_WP_URL אם הוגדר (בדיקות), אחרת WordProcessorClient::EDITOR. כתובת שאינה בצורה הזו — לא נוספת כלום.
+ */
+function csp_wp_frame(): string
+{
+    if (!defined('KOL_WP_URL') && !class_exists('WordProcessorClient', false)) require_once __DIR__ . '/WordProcessorClient.php';
+    $u = defined('KOL_WP_URL') ? (string)KOL_WP_URL : WordProcessorClient::EDITOR;
+    return preg_match('#^https://[a-z0-9.-]+(:\d+)?/[A-Za-z0-9._~/-]*/$#', $u) ? ' ' . $u : '';
+}
+
 /** המדיניות המלאה (C1 §2, שלב ב; ההבדלים של §2א). $self — כתובת התיקייה בלי סכמה; $site — מקור האתר המחובר, או ''. */
 function editor_csp(string $self, string $site): string
 {
@@ -65,7 +76,7 @@ function editor_csp(string $self, string $site): string
     return implode('; ', [
         "default-src 'none'", "script-src 'self'", "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", 'img-src ' . $media, 'media-src ' . $media,
         "font-src 'self' data: https://fonts.gstatic.com", "connect-src 'self'", "worker-src 'self' blob:",
-        'frame-src ' . $self . '/live.php ' . $self . '/preview/', "frame-ancestors 'self'", "base-uri 'self'", "object-src 'none'", "form-action 'self'",
+        'frame-src ' . $self . '/live.php ' . $self . '/preview/' . csp_wp_frame(), "frame-ancestors 'self'", "base-uri 'self'", "object-src 'none'", "form-action 'self'",
     ]);
 }
 
