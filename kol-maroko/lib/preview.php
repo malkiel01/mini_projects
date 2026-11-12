@@ -204,6 +204,12 @@ function pv_serve(): never
         if ($at === false) pv_fail(404, 'Not found');
         $app = substr($uri, 0, $at + 1);                              // /mini_projects/kol-maroko/
         [$token, $rest] = array_pad(explode('/', substr($uri, $at + 9), 2), 2, '');
+        // M1 — מצב בנייה: אסימון של גרסה בנויה (b…). מגיש מהחבילה, לא מהמאגר (lib/build.php, build_serve)
+        if (str_starts_with($token, 'b')) {
+            require_once __DIR__ . '/build.php';
+            $bt = build_token_parse($token) ?? pv_fail(403, "403 - the build link is missing, invalid or expired.\nהקישור לגרסה הבנויה שגוי או שפג תוקפו.");
+            build_serve($bt[0], $bt[1], $app . 'preview/' . $token . '/', rawurldecode($rest));
+        }
         if (!pv_token_ok($token)) pv_fail(403, "403 - the preview link is missing, invalid or expired.\nהקישור לתצוגה חסר, שגוי או שפג תוקפו. פותחים אותו מחדש מהסטודיו.");
         $root = $app . 'preview/' . $token . '/';
         $path = rawurldecode($rest);

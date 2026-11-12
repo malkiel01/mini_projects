@@ -8,6 +8,15 @@ const Publish = (() => {
   const DOCS = 'https://github.com/malkiel01/mini_projects/blob/main/kol-maroko/docs/';
   const when = iso => new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jerusalem' });
 
+  // M1 — "📁 פרסום מפרויקט הקבצים" (assets/js/build.js): נטען כאן, כדי שלא לגעת ב-index.html
+  let buildJs = null;
+  const buildReady = () => buildJs ??= new Promise((ok, fail) => {
+    if (window.KolBuild) return ok();
+    document.head.append(h('script', { src: 'assets/js/build.js', onload: ok, onerror: () => { buildJs = null; fail(new Error('build.js לא נטען')); } }));
+  });
+  if (document.readyState !== 'loading') setTimeout(() => buildReady().then(() => KolBuild.notices()).catch(() => {}), 0);
+  else document.addEventListener('DOMContentLoaded', () => buildReady().then(() => KolBuild.notices()).catch(() => {}));
+
   // ── פרסום ────────────────────────────────────────────────
   async function view(host, role, more = []) {
     if (!more.length) host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
@@ -16,7 +25,11 @@ const Publish = (() => {
     d.versions = [...more, ...d.versions];
     const canPublish = role === 'publisher' || role === 'owner';
     const live = d.live;
+    let pk = more.length ? host.querySelector('.pk') : null;
+    if (!more.length) { try { await buildReady(); pk = KolBuild.block(host, role); } catch (e) { pk = h('p', { class: 'error' }, e.message); } }
     host.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
+      pk,
+      h('h2', { class: 'sec-title' }, '🎨 פרסום הטיוטה (המסלול של היום)'),
       h('div', { class: 'summary' },
         h('div', { class: 'line' }, live
           ? [h('span', { class: 'muted' }, 'באתר עכשיו:'), h('b', {}, `גרסה ${live.n}`), h('span', { class: 'muted' }, `· ${live.name} · ${when(live.at)}`)]
@@ -258,7 +271,7 @@ const Publish = (() => {
     const input = h('input', { type: 'file', accept: '.zip,application/zip', multiple: true, hidden: true, onchange: async () => {
       const files = [...input.files];
       input.value = '';
-      const tot = { files: 0, linked: 0, failed: [] };
+      const tot = { files: 0, linked: 0, failed: [], unmatched: [] };
       let remaining = null;
       for (const f of files) {
         const row = Media.progressRow();
@@ -268,7 +281,7 @@ const Publish = (() => {
           row.set(f.name, 1, 1, null, 'מכניס את ההקלטות ומקשר למילים…');
           const st = (await api('audio_import', { id })).stats;
           row.set(f.name, 1, 1, null, `✓ חלק ${st.part} מתוך ${st.parts}: ${st.files} הקלטות${st.already ? ` · ${st.already} כבר היו` : ''}`);
-          tot.files += st.files; tot.linked += st.linked; tot.failed.push(...st.failed);
+          tot.files += st.files; tot.linked += st.linked; tot.failed.push(...st.failed); tot.unmatched.push(...(st.unmatched_list || []));
           remaining = st.remaining;
         } catch (e) {
           row.el.classList.add('error');
@@ -278,7 +291,10 @@ const Publish = (() => {
       out.replaceChildren(h('div', { class: 'summary' },
         h('p', {}, h('b', { style: 'color:var(--ok)' }, `✓ ${tot.files} הקלטות נכנסו לכלי`), ` · ${tot.linked} מילים קושרו`),
         remaining ? h('p', { class: 'hint' }, `${remaining} מילים עדיין עם הקלטה רק באתר — כנראה חסר חלק. העלו גם אותו.`) : h('p', { class: 'hint' }, 'כל ההקלטות בכלי. רואים אותן ב-🗂️ קבצים וב-📚 מילים.'),
-        tot.failed.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.failed.length} לא נכנסו:`), h('ul', {}, tot.failed.slice(0, 30).map(x => h('li', {}, x)))) : null));
+        tot.failed.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.failed.length} לא נכנסו:`), h('ul', {}, tot.failed.slice(0, 30).map(x => h('li', {}, x)))) : null,
+        // A2: מה שלא הותאם לאף מילה (לא לפי המזהה ולא לפי הכתובת) — מוצג, לא מדולג בשקט
+        tot.unmatched.length ? h('div', { class: 'warnbox' }, h('b', {}, `${tot.unmatched.length} לא הותאמו לאף מילה (לא נכנסו):`),
+          h('ul', {}, tot.unmatched.slice(0, 100).map(x => h('li', {}, x.word_id ? `#${x.word_id} ` : '', x.word || '', ' — ', h('span', { dir: 'ltr' }, x.url || x.file))))) : null));
     } });
     return h('section', {},
       h('h2', { class: 'sec-title' }, '🎙️ ייבוא ההקלטות'),

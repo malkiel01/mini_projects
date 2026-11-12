@@ -19,6 +19,9 @@ const API_MIN_ROLE = [
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor', 'import_info' => 'owner',
     'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
     'library' => 'editor',
+    // פרוסה A2 — הבאת ההקלטות
+    'rec_duration' => 'editor', 'rec_status' => 'owner', 'rec_fetch_plan' => 'owner', 'rec_scan_start' => 'owner', 'rec_scan_step' => 'owner',
+    'rec_fetch_start' => 'owner', 'rec_fetch_step' => 'owner', 'rec_job_op' => 'owner', 'rec_settings_set' => 'owner',
     // פרוסה F1
     'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-my-reports' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',
@@ -26,7 +29,11 @@ const API_MIN_ROLE = [
     // פרוסה F2a — מאגר הפרויקט
     'pf_tree' => 'editor', 'pf_read' => 'editor', 'pf_versions' => 'editor', 'pf_raw' => 'editor', 'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor',
     'pv_token' => 'editor',
+    'builds' => 'editor', 'build_get' => 'editor', 'build_file' => 'editor', 'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
+    'build_send' => 'publisher', 'kd_seed' => 'owner', 'kd_update' => 'owner', 'notices' => 'owner', 'notice_read' => 'owner',
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
+    // פרוסה F2b
+    'pf_copy' => 'editor', 'pf_version' => 'editor', 'pf_version_restore' => 'editor', 'pf_search' => 'editor', 'pf_replace' => 'editor', 'pf_refs' => 'editor', 'pf_zip' => 'editor', 'pf_zip_import' => 'editor',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner', 'dev-attack-save' => 'owner',
 ];
 const API_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture'];

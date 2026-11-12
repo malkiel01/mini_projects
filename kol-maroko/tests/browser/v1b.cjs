@@ -348,7 +348,7 @@ const PAGE = `<!doctype html>
     await page.waitForFunction(() => location.pathname.endsWith('/editor.php') && typeof Editor !== 'undefined' && Editor._state.file && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
     ok(new URL(page.url()).hash === '#/editor/' + encodeURIComponent('t/page.html'), 'index.html#/editor מפנה ל-editor.php — העורך נפתח תמיד תחת המדיניות');
     const tabsH = await page.$$eval('#tabs a', a => a.map(x => x.getAttribute('href')));
-    ok(tabsH.includes('#/editor') && tabsH.includes('#/project') && tabsH.includes('index.html#/words') && tabsH.includes('index.html#/studio'), 'במסמך המוקשח: העורך ועורך הקוד במקום; שאר הלשוניות מובילות ל-index.html');
+    ok(tabsH.includes('#/editor') && tabsH.includes('#/project') && tabsH.includes('index.php#/words') && tabsH.includes('index.php#/studio'), 'במסמך המוקשח: העורך ועורך הקוד במקום; שאר הלשוניות מובילות ל-index.php');
     const blocked = await page.evaluate(async () => {
       const out = {}, v = []; document.addEventListener('securitypolicyviolation', e => v.push(e.effectiveDirective));
       const s = document.createElement('script'); s.textContent = 'window.__inline = 1'; document.head.append(s); out.inline = window.__inline === 1;
