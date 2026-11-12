@@ -1,13 +1,13 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-12T05:35Z",
+  "updated": "2026-11-12T05:40Z",
   "spec": "session_018g4NYFVLVbyN6jb8ZTZRT1",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
     "session_018g4NYFXfe6iF4owmDWWorS"
   ],
   "code": {
-    "V2": "session_018g4NYGkM9kM3jX2EPCZvti"
+    "V2": "session_018g4NYCNk2uBmYWuNbxSSJS"
   },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
@@ -19,7 +19,8 @@
     "session_018g4NYDLvR41xhwjBj7nzwc (V1a)",
     "session_018g4NYDg3cpgT97h5KoqptJ (F3)",
     "session_018g4NYFNQX4u4YmY4jz9JLa (V1b)",
-    "session_018g4NYCNk2uBmYWuNbxSSJS (V2, נעצר על מגבלת Fable)"
+    "session_018g4NYCNk2uBmYWuNbxSSJS (V2, נעצר על מגבלת Fable)",
+    "session_018g4NYGkM9kM3jX2EPCZvti (V2 (2), נעצר 05:36)"
   ],
   "control": "session_018g4NYCjBqmqsHEct4XvhJj",
   "control_previous": [
