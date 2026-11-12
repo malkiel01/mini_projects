@@ -450,3 +450,20 @@ body.lib-playing .toast { bottom: calc(100px + env(safe-area-inset-bottom)); }
 .spike-info { font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; direction: ltr; text-align: left; background: #f6f7f8; padding: .5rem; max-height: 14rem; overflow: auto; }
 .spike-table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 .spike-table td, .spike-table th { border: 1px solid #d9dce0; padding: .25rem .5rem; text-align: start; }
+
+/* ── A2: הבאת ההקלטות מהאתר (library-fetch.js) ── */
+.lf-panel { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; font-size: .9rem; }
+.lf-panel .use-tx { flex: 1; min-inline-size: 0; }
+.lf-body { display: grid; gap: var(--s2); }
+.lf-body progress { inline-size: 100%; block-size: 10px; }
+.lf-stats, .lf-nums { margin: 0; }
+.lf-scan { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: .9rem; }
+.lf-list ul, .lf-fails { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.lf-list summary { cursor: pointer; min-block-size: var(--tap); display: flex; align-items: center; }
+.lf-fails li { display: flex; align-items: center; gap: var(--s2); border-top: 1px solid var(--line); padding-top: 6px; }
+.lf-fails .use-tx { flex: 1; min-inline-size: 0; display: grid; }
+.lf-url { color: var(--muted); font-size: .75rem; overflow-wrap: anywhere; text-align: start; }
+.lf-pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .75rem; background: var(--surface); padding: 6px; border-radius: 6px; text-align: left; }
+.lf-set { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-block: var(--s2); }
+.lf-confirm ul { margin: 0; padding-inline-start: 1.2em; }
+.lib-measure { justify-self: start; }

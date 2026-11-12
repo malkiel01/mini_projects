@@ -1,5 +1,5 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.0.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.1.0)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
@@ -25,6 +25,9 @@
  *   data-kol-close                   סוגר את החלון שהוא בתוכו.
  *   data-kol-form="feedback"         טופס. אחרי שליחה מוצג הנוסח שב-data-kol-form-done, בתוך data-kol-form-status.
  *   data-kol-active-class="is-on"    איזו מחלקה לשים על כפתור סינון / השמעה פעיל (בנוסף ל-aria-pressed).
+ *   data-kol-prerendered             (נכתב בפרסום) המכל כבר מכיל את הרשימה כ-HTML, למי שאין לו JS ולמנועי חיפוש.
+ *                                    כל פריט כתוב מסומן data-kol-pre; בציור הראשון הם מוסרים והרשימה נבנית מחדש — בלי
+ *                                    כפילות. שאר מה שכתבתם בתוך המכל נשאר.
  *
  * שלושה כללים שהקובץ שומר עליהם:
  *   1. אין כאן אף מילה שהגולש רואה. כל כיתוב הוא תוכן או תכונה של אלמנט בקובץ העמוד.
@@ -241,6 +244,12 @@
   function draw(state, container) {
     var template = templateOf(container);
     if (!template) return;
+    if (container.hasAttribute('data-kol-prerendered') && !container.__kolClean) {
+      container.__kolClean = true;                                         // הרשימה שנכתבה מראש — מתחלפת בזו החיה
+      for (var c = container.children.length - 1; c >= 0; c--) {
+        if (container.children[c].hasAttribute('data-kol-pre')) container.removeChild(container.children[c]);
+      }
+    }
     var token = container.__kolToken = (container.__kolToken || 0) + 1;
     var page = parseInt(container.getAttribute('data-kol-page'), 10) || 0;
     if (page && !state.limit) state.limit = page;
@@ -493,7 +502,8 @@
 
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.0.0',
+    version: '1.1.0',
+    prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },
     reload: start
