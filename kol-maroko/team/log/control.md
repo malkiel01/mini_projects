@@ -170,3 +170,4 @@
 - 2026-11-12 22:00 UTC — **בקרה (7)** נפתחה: `session_018g4NYDvggGfQE65Uogdgt6` (עומק 7/8). בקרה (6) מפסיקה לפעול. השעון יועבר על ידה.
 - 2026-11-12 22:00 UTC — **בקרה (7)** `session_018g4NYDvggGfQE65Uogdgt6` קיבלה (עומק 7/8). שעון חדש `trig_01SnCf3dTo5pCUfX7RptD571` (דקה 48); הישן `trig_01AJHG5SXM2b5mbHdpJgL6ks` הושבת. sessions.json ו-.claude/teams/STATE.md עודכנו. הענף המקומי לא תאם ל-origin — שמו שונה ל-backup ונוצר מחדש.
 - 2026-11-12 22:00 UTC — **V11 נפתחה** `session_018g4NYDD49LuGeKgU5E7nft` (Opus, ענף claude/kol-maroko-v11; מיגרציה 25 אם צריך). מטלות קיבלו הודעה (T16 ← בקרה (7)). פריסה 1592 (bc3c8c2) cancelled — הוחלפה בהרצה של #1514 (כוללת את V10); לאמת. הדשבורד: V11 → in_progress.
+- 2026-11-12 22:04 UTC — פריסה **1594** (9e57bab — HEAD; כוללת V10 #1512, #1514, #1515) **success**. V10 בשרת.
