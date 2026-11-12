@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 20;
+const KOL_SCHEMA_VERSION = 21;
 
 final class ApiError extends RuntimeException
 {
@@ -478,6 +478,31 @@ function migrate(PDO $pdo): void
         // N2b: הקלטה לכל "מקום" (רשימה, פריט, שדה) — בונה את recordings מחדש (SQLite אינו מסיר UNIQUE ב-ALTER). ב-PHP:
         // ספירה ו-checksum לפני ואחרי, ואם לא תואם — חריגה, והעסקה כולה מתבטלת (migrate_recordings_slots)
         20 => 'migrate_recordings_slots',
+        21 => <<<'SQL'
+            -- פרוסה M3: המעבר (lib/cutover.php). ראיות מהבעלים לתנאים שרק הוא יודע — קובץ (במאגר הקיים, data/files/),
+            -- קישור או הערה, עם שם ותאריך. ביטול — מסמן, לא מוחק. cutover_marks — המצב האחרון של כל תנאי, כדי לרשום
+            -- ביומן כל שינוי ולזהות ✓ שנפל (fell_at).
+            CREATE TABLE IF NOT EXISTS cutover_evidence (
+                id         INTEGER PRIMARY KEY,
+                cond       TEXT NOT NULL,
+                note       TEXT NOT NULL DEFAULT '',
+                url        TEXT NOT NULL DEFAULT '',
+                file_id    TEXT,
+                by_sub     TEXT NOT NULL,
+                by_name    TEXT NOT NULL DEFAULT '',
+                at         TEXT NOT NULL,
+                revoked_at TEXT,
+                revoked_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_cutover_evidence_cond ON cutover_evidence(cond, id);
+            CREATE TABLE IF NOT EXISTS cutover_marks (
+                cond    TEXT PRIMARY KEY,
+                status  TEXT NOT NULL,
+                since   TEXT NOT NULL,
+                fell_at TEXT,
+                detail  TEXT NOT NULL DEFAULT ''
+            );
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
