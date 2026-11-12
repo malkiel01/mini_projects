@@ -47,7 +47,7 @@ const ACTION_ROLES = [
     'lists' => 'content_editor', 'list_key_preview' => 'content_editor', 'list_items' => 'content_editor', 'list_csv' => 'content_editor',
     'snapshots' => 'content_editor', 'snapshot_preview' => 'content_editor', 'trash' => 'content_editor',
     'code' => 'content_editor', 'code_history' => 'content_editor', 'code_history_get' => 'content_editor',
-    'pf_tree' => 'content_editor', 'pf_read' => 'content_editor', 'pf_versions' => 'content_editor', 'pf_raw' => 'content_editor', 'pf_trash' => 'content_editor',
+    'font_google_list' => 'content_editor', 'pf_tree' => 'content_editor', 'pf_read' => 'content_editor', 'pf_versions' => 'content_editor', 'pf_raw' => 'content_editor', 'pf_trash' => 'content_editor',
     'pf_version' => 'content_editor', 'pf_search' => 'content_editor', 'pf_refs' => 'content_editor', 'pf_zip' => 'content_editor', 'pv_token' => 'content_editor',
     'builds' => 'content_editor', 'build_get' => 'content_editor', 'build_file' => 'content_editor', 'ai_status' => 'content_editor', 'longtexts' => 'content_editor',
     'word_save' => 'content_editor', 'word_delete' => 'content_editor', 'topic_op' => 'content_editor', 'words_csv_import' => 'content_editor', 'word_move' => 'content_editor',
@@ -68,6 +68,7 @@ const ACTION_ROLES = [
     'snapshot_create' => 'editor', 'snapshot_restore' => 'editor', 'trash_restore' => 'editor',
     'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor',
+    'font_upload' => 'editor', 'font_google_add' => 'editor', 'font_fetch' => 'editor',      // V9 — כמו pf_create (אושר בידי הבקרה)
     'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor', 'pf_rename' => 'editor', 'pf_delete' => 'editor',
     'pf_restore' => 'editor', 'pf_copy' => 'editor', 'pf_version_restore' => 'editor', 'pf_replace' => 'editor', 'pf_zip_import' => 'editor',
     'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
