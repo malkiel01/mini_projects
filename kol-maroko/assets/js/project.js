@@ -66,7 +66,7 @@ const Project = (() => {
     // לשונית של קובץ שנמחק או שונה שמו — מתעדכנת
     S.tabs = S.tabs.filter(id => S.byId.has(id) || S.docs.get(id)?.dirty);
     if (!S.tabs.includes(S.cur)) S.cur = S.tabs[S.tabs.length - 1] ?? null;
-    if (el.mig) el.mig.hidden = !S.canPurge;                     // ההסבה ו"פרויקט ריק" — בעלים בלבד
+    if (el.mig) el.mig.hidden = !S.canPurge;                     // "ייבוא מחדש" — בעלים בלבד
     drawAll();
   }
 
@@ -282,6 +282,8 @@ const Project = (() => {
     return 0;
   }
 
+  /** קובצי התבנית של הגרסה הקודמת (from-current/, עם {{…}}) — נשארים לעיון, ואינם העמוד. */
+  const OLD_TPL = path => /^from-current\/[^/]+\.html?$/i.test(path);
   function drawTree() {
     if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const entry = S.kol?.config?.entry;
@@ -302,6 +304,7 @@ const Project = (() => {
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, ICONS[ext(f.path)] || '📄'),
             h('span', { class: 'one', dir: 'auto' }, base(f.path)),
             f.path === entry && h('span', { class: 'chip', title: 'קובץ הכניסה (kol.json)' }, 'כניסה'),
+            OLD_TPL(f.path) && h('span', { class: 'chip', 'data-old-tpl': true, title: 'קובץ תבנית מהגרסה הקודמת (עם {{…}}) — לעיון בלבד; העמוד עצמו הוא index.html' }, 'תבנית ישנה'),
             f.kind === 'media' && h('span', { class: 'chip' + (miss ? ' bad' : '') }, miss ? 'חסר בספרייה' : 'מדיה'),
             dirty(f.id) && h('span', { class: 'pj-dot', title: 'לא נשמר', 'aria-label': 'לא נשמר' }, '●')),
           h('button', { type: 'button', class: 'icon-btn pj-more', 'aria-label': `פעולות על ${base(f.path)}`, onclick: () => fileMenu(f) }, '⋯')));
@@ -487,7 +490,8 @@ const Project = (() => {
   }
 
   // ── הסל ───────────────────────────────────────────────────
-  // ── ההסבה (F3): "צור פרויקט מהעמוד של היום" ו"פרויקט ריק" — בעלים בלבד ─────────
+  // ── ההסבה (F3): "🔄 ייבוא מחדש מהעמוד של היום" — בעלים בלבד. אין "פרויקט חדש" ואין "פרויקט ריק": לכלי יש פרויקט אחד
+  //    (הכרעת הבעלים, team/decisions.md 2026-11-12). pf_blank נשאר בשרת, ואינו בממשק. ─────────
   const NOTE_ICON = { failed: '❌', warn: '⚠️', changed: '✏️', dropped: '➖' };
   function migrateReport(r, title) {
     sheet(title,
@@ -514,12 +518,11 @@ const Project = (() => {
         migrateReport(r, done);
       } catch (e) { toast(e.message, true); }
     };
-    const dlg = sheet('פרויקט חדש',
-      h('p', { class: 'hint' }, 'שתי הפעולות מעבירות את קבצי הפרויקט הנוכחי לסל (אפשר לשחזר), ושומרות נקודת שחזור לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
+    const dlg = sheet('🔄 ייבוא מחדש מהעמוד של היום',
+      h('p', { class: 'hint' }, 'הפרויקט נבנה מחדש מהעמוד של היום. קבצי הפרויקט הנוכחי עוברים לסל (אפשר לשחזר), ונקודת שחזור נשמרת לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
       h('div', { class: 'pj-menu' },
-        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: () => go('pf_migrate', 'ליצור את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'הפרויקט נוצר מהעמוד של היום') }, '🪄 צור פרויקט מהעמוד של היום'),
-        h('button', { type: 'button', class: 'btn', 'data-blank-run': true, onclick: () => go('pf_blank', 'להתחיל פרויקט ריק?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'פרויקט ריק נוצר') }, '📄 פרויקט ריק'),
-        last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח ההסבה האחרונה · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח ההסבה האחרונה') : null));
+        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: () => go('pf_migrate', 'לייבא מחדש את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'הפרויקט יובא מחדש מהעמוד של היום') }, '🔄 ייבוא מחדש'),
+        last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח הייבוא האחרון · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח הייבוא האחרון') : null));
   }
 
   async function trashSheet() {
@@ -558,6 +561,7 @@ const Project = (() => {
   const toolsMenu = () => menu('כלי העורך', [
     /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
+    S.canPurge ? ['🔄 ייבוא מחדש מהעמוד של היום', () => migrateSheet()] : null,   // גם כאן — בטלפון רשימת הקבצים סגורה, והכפתור שבה אינו נראה
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
     ['↩️ בטל', () => { S.editor?.focus(); S.editor?.trigger('menu', 'undo', null); }],
@@ -578,7 +582,7 @@ const Project = (() => {
     el.tree = h('ul', { class: 'pj-tree', 'aria-label': 'קבצי הפרויקט' });
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
-    el.mig = h('button', { type: 'button', class: 'btn sm', 'data-migrate': true, hidden: true, title: 'יצירת הפרויקט מהעמוד של היום, או פרויקט ריק', onclick: migrateSheet }, '🪄 פרויקט חדש');
+    el.mig = h('button', { type: 'button', class: 'btn sm', 'data-migrate': true, hidden: true, title: 'ייבוא מחדש של הפרויקט מהעמוד של היום', onclick: migrateSheet }, '🔄 ייבוא מחדש מהעמוד של היום');
     el.tabs = h('div', { class: 'pj-tabs', role: 'tablist', 'aria-label': 'קבצים פתוחים' });
     // עורך אחד לכל חיי הדף: Monaco שנסגר (dispose) משבית פעולות בעורך שנפתח אחריו — לכן שומרים אותו ומחברים מחדש
     el.ed = el.ed || h('div', { class: 'pj-ed', dir: 'ltr', hidden: true });
@@ -745,8 +749,8 @@ const Project = (() => {
 
   document.addEventListener('DOMContentLoaded', () => {
     if (typeof ACTIONS === 'object') Object.assign(ACTIONS, { pf_create: '📁 יצר קובץ בפרויקט', pf_mkdir: '📁 יצר תיקייה בפרויקט', pf_rename: '📁 שינה שם בפרויקט',
-      pf_migrate: '🪄 יצר את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
+      pf_migrate: '🔄 ייבא מחדש את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
+  return { oldTemplate: OLD_TPL, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();

@@ -165,7 +165,10 @@
       canvas.layer.append(this.bar);
       canvas.onListen = doc => this.listen(doc);
       if (canvas.ready) this.listen(canvas.doc);
-      if (g.visualViewport) g.visualViewport.addEventListener('resize', () => this.place());
+      // המקלדת עולה / יורדת: החלון הנראה משתנה, והקנבס מתכווץ אחריו — בודקים אחרי שהפריסה התעדכנה (שתי מסגרות)
+      const later = () => requestAnimationFrame(() => requestAnimationFrame(() => { this.place(); this.keepVisible(); }));
+      if (g.visualViewport) for (const ev of ['resize', 'scroll']) g.visualViewport.addEventListener(ev, later);
+      g.addEventListener('resize', later);
     }
     listen(doc) {
       const on = (ev, fn) => doc.addEventListener(ev, e => { if (this.active) fn(e); }, true);
@@ -213,7 +216,7 @@
         else { sel.selectAllChildren(e); sel.collapseToEnd(); }
         if (!pt) e.scrollIntoView({ block: 'nearest' });
       } finally { this.busy = false; }
-      c.hovered = null; c.draw(); this.drawBar();
+      c.hovered = null; c.draw(); this.drawBar(); this.keepVisible();
       if (this.opt.onState) this.opt.onState();
       return true;
     }
@@ -247,7 +250,7 @@
     touched() {
       this.dirty = true; clearTimeout(this.idle);
       this.idle = setTimeout(() => { if (this.active && !this.composing) this.flush(true); }, 2000);
-      this.c.draw(); this.place();
+      this.c.draw(); this.place(); this.keepVisible();
     }
     /** מיקום הסמן כמספר תווים מתחילת האלמנט (<br> נספר כתו) — כך הוא משוחזר אחרי שה-DOM הוחלף. */
     offset() {
@@ -436,6 +439,25 @@
       kids.push(noB);
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } else if (e.key === 'Escape') { e.preventDefault(); back(); this.drawBar(); } e.stopPropagation(); });
       this.form = kind; this.bar.replaceChildren(...kids); this.bar.hidden = false; this.place(); inp.focus();
+    }
+    /**
+     * טלפון: האלמנט הנערך (ליתר דיוק — הסמן שבו) נשאר מעל המקלדת ומעל הסרגל הצף. החלון הנראה (visualViewport) מתכווץ
+     * כשהמקלדת עולה; אם הסמן מתחתיו — גוללים את הקנבס (ולא את המעטפת) בדיוק בהפרש.
+     */
+    keepVisible() {
+      if (!this.active || !this.e || !(g.matchMedia && g.matchMedia('(max-width: 999px)').matches)) return;
+      const c = this.c, win = c.frame.contentWindow, vv = g.visualViewport, s = c.scale || 1, vTop = vv ? vv.offsetTop : 0, vBot = vv ? vv.offsetTop + vv.height : g.innerHeight;
+      let f = c.frame.getBoundingClientRect();
+      if (f.top > vBot - 120 || f.bottom < vTop + 40) { c.host.scrollIntoView({ block: 'start' }); f = c.frame.getBoundingClientRect(); }   // המעטפת עצמה דחפה את הקנבס אל מתחת למקלדת
+      const bottom = Math.min(f.bottom, vBot) - (this.bar.hidden ? 0 : this.bar.offsetHeight) - 8, top = Math.max(f.top, vTop) + 8;
+      const sel = c.doc.getSelection();
+      let r = sel && sel.rangeCount && this.e.contains(sel.focusNode) ? sel.getRangeAt(0).getBoundingClientRect() : null;
+      if (!r || (!r.width && !r.height && !r.top)) r = this.e.getBoundingClientRect();
+      const y1 = f.top + r.top * s, y2 = f.top + r.bottom * s;
+      let dy = 0;
+      if (y2 > bottom) dy = Math.min(y2 - bottom, y1 - top);               // לא גוללים את ראש האלמנט אל מעבר לראש החלון
+      else if (y1 < top) dy = y1 - top;
+      if (Math.abs(dy) > 1) { win.scrollBy(0, dy / s); c.draw(); this.place(); }
     }
     place() {
       if (this.bar.hidden || !this.active) return;

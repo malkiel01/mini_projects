@@ -432,7 +432,36 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     const ip = await at(pm, '#pic'); await pm.touchscreen.tap(ip.x, ip.y); await sleep(200);
     await pm.tap('[data-panel="info"]'); await sleep(200);
     ok(await pm.evaluate(() => { const S = Editor._state, p = document.querySelector('.ed-info'); return S.canvas.selected && S.canvas.selected.tag === 'img' && getComputedStyle(p).position === 'fixed' && !document.querySelector('.ct').hidden && !!document.querySelector('.ct [data-w="replace"]') && !!document.querySelector('[data-swap-img]'); }), '390px: תמונה נבחרת בהקשה; לשונית "תוכן" נפתחת כגיליון מלמטה, עם "החלף"');
+    // המקלדת עולה (החלון הנראה מתכווץ): האלמנט הנערך נגלל אל מעליה ומעל הסרגל הצף
+    await pm.tap('.ed-info .ed-side-head button'); await sleep(150);                // סוגרים את גיליון הפאנל
+    await pm.evaluate(() => { const e = Editor._state.canvas.doc.querySelector('#list li:nth-child(2)'); e.scrollIntoView({ block: 'end' }); Editor._state.canvas.frame.contentWindow.scrollBy(0, -10); });
+    await sleep(100);
+    const kp = await at(pm, '#list li:nth-child(2)');
+    await pm.touchscreen.tap(kp.x, kp.y); await sleep(90); await pm.touchscreen.tap(kp.x, kp.y); await sleep(250);
+    await pm.setViewportSize({ width: 390, height: 430 }); await sleep(400);
+    const kb = await pm.evaluate(() => { const S = Editor._state, c = S.canvas, f = c.frame.getBoundingClientRect(), r = S.text.e.getBoundingClientRect(), b = S.text.bar.getBoundingClientRect(), vv = visualViewport; return { typing: S.text.active, host: S.text.active ? c.label(S.text.n) : '', bottom: f.top + r.bottom * c.scale, top: f.top + r.top * c.scale, barTop: b.top, vh: vv.offsetTop + vv.height }; });
+    ok(kb.typing && kb.host === 'li.it' && kb.bottom <= kb.barTop + 1 && kb.top >= 0 && kb.barTop + 1 >= 0 && kb.barTop < kb.vh, '390px: כשהמקלדת עולה (החלון הנראה מתכווץ), האלמנט הנערך נגלל אל מעליה — מעל הסרגל הצף', kb);
+    await pm.keyboard.press('Escape'); await sleep(80);
+    await pm.setViewportSize({ width: 390, height: 780 });
+    // "🔄 ייבוא מחדש" נגיש בטלפון — בתפריט ⋯ של עורך הקוד (רשימת הקבצים סגורה שם)
+    await pm.goto(base + '/#/project'); await pm.waitForSelector('.pj-tree .pj-row', { state: 'attached' }); await pm.waitForSelector('[data-ed]');
+    await pm.tap('[data-ed]'); await sleep(200);
+    ok(await pm.evaluate(() => [...document.querySelectorAll('#sheet[open] button')].some(b => b.textContent.includes('ייבוא מחדש מהעמוד של היום') && b.getBoundingClientRect().height >= 34)), '390px: "🔄 ייבוא מחדש מהעמוד של היום" בתפריט ⋯ של עורך הקוד', await pm.evaluate(() => (document.querySelector('#sheet[open]') || {}).textContent || 'אין גיליון פתוח'));
     await cm.close();
+
+    // ── 8. "פרויקט אחד" (הכרעת הבעלים): ייבוא מחדש במקום "פרויקט חדש", בלי "פרויקט ריק"; ותבניות ישנות ──
+    await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row');
+    const migBtn = await page.textContent('.pj-side-btns [data-migrate]');
+    await page.click('.pj-side-btns [data-migrate]'); await page.waitForSelector('#sheet[open] [data-migrate-run]');
+    const migSheet = await page.evaluate(() => ({ title: document.getElementById('sheet-title').textContent, blank: !!document.querySelector('#sheet [data-blank-run]'), text: document.getElementById('sheet').textContent }));
+    ok(migBtn.includes('🔄 ייבוא מחדש מהעמוד של היום') && migSheet.title.includes('ייבוא מחדש') && !migSheet.blank && !/פרויקט ריק|פרויקט חדש/.test(migSheet.text + migBtn), 'מנהל הקבצים: "🔄 ייבוא מחדש מהעמוד של היום" (לא "פרויקט חדש"), ואין "📄 פרויקט ריק"', migSheet);
+    await page.evaluate(() => document.getElementById('sheet').close());
+    const tpl = await page.evaluate(() => [...document.querySelectorAll('.pj-row:not(.pj-dir)')].map(r => ({ dir: r.dataset.dir, name: r.querySelector('.one').textContent, chip: !!r.querySelector('[data-old-tpl]') })));
+    ok(tpl.some(r => r.chip) && tpl.every(r => r.chip === (r.dir === 'from-current' && /\.html?$/i.test(r.name))), 'בעץ: קובצי התבנית של from-current/ מסומנים "תבנית ישנה" — ורק הם', tpl.filter(r => r.chip !== (r.dir === 'from-current' && /\.html?$/i.test(r.name))));
+    await page.evaluate(() => { localStorage.setItem('kol-editor', JSON.stringify({ page: 'from-current/lexicon.html' })); });
+    await page.goto(base + '/editor.php#/editor'); await page.waitForFunction(() => Editor._state.file && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
+    const dflt = await page.evaluate(() => ({ path: Editor._state.file.path, opt: [...document.querySelectorAll('.ed-page option')].find(o => o.textContent.startsWith('from-current/lexicon.html'))?.textContent || '' }));
+    ok(dflt.path === 'index.html' && dflt.opt.includes('תבנית ישנה'), '"🎨 עורך" נפתח על index.html — גם כשהעמוד האחרון שנפתח היה תבנית ישנה; ובבורר העמוד היא מסומנת "תבנית ישנה"', dflt);
 //MORE
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף לאורך כל הבדיקה', errors);
   } catch (e) { failed++; console.log('❌ הבדיקה נפלה: ' + (e.stack || e)); }
