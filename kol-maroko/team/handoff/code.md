@@ -121,3 +121,10 @@
 - מטמון: `immutable` רק לפי hash; אחרת `max-age=0` + ETag + `CDN-Cache-Control: no-store`.
 - בדיקות: `tests/plugin/fake-pull.php` (כלי מדומה וזדוני); מקביליות אמיתית = שני שרתי `php -S` על אותה תיקייה (H28). בדיקה שסופרת בקשות — לאפס את מונה הקצב.
 - `publish.js` נטען לפני `app.js`: בלי `h()` בקוד שרץ בטעינה.
+
+## מ-V10 (2026-11-12, נרשם בידי בקרה (6))
+- כתיבה: `KolFx.checkSets` (checkFx ← checkValue) ← `Design.put`; מכשיר, מצב, ⟲ ו-Ctrl+Z — בחינם.
+- `css/motion.css` דרך `Motion.ensureCss(need)` (`KolFx.planMotion` מוסיף בסוף רק מה שחסר); `js/kol-motion.js` דרך `Motion.ensureJs`; קובץ שנוצר בשרת — לביטול דרך `fxFor`.
+- **מחלקות מערכת** (`kol-in*`, `kol-sc`, `bg-slides-N`, `kol-slides-*`) — כל מחלקה חדשה כזו ל-`SYS` ב-`Styler.targets`, אחרת תהפוך ליעד.
+- `covered('border'|'border-radius')` מחזירים את השם ואחריו הרכיבים; "כל הצדדים" כותב `border`, צד/פינה — לוגי.
+- ידיות חדשות על הקנבס — `fx-tip` (לא `sz-tip`); ידית של קבוצה — רק כשהקבוצה פתוחה. הרחבת ידית של V6 — מאזין capture על השכבה, בלי לגעת ב-layout.js.
