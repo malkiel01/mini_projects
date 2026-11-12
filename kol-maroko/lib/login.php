@@ -177,10 +177,20 @@ function csrf_token(array $user): string
     return (string)($user['csrf'] ?? '');
 }
 
+/**
+ * X-Kol + X-CSRF של ה-session. בטעינה הראשונה כמה בקשות מקבילות בלי עוגייה פותחות כל אחת session, ורק העוגייה של
+ * האחרונה נשארת בדפדפן — ולכן מתקבל גם אסימון של session חי אחר **של אותו משתמש** (אסימון אקראי שרק הוא קיבל).
+ */
 function check_csrf(array $user): void
 {
+    $got = (string)($_SERVER['HTTP_X_CSRF'] ?? '');
     $t = csrf_token($user);
-    if (($_SERVER['HTTP_X_KOL'] ?? '') !== '1' || $t === '' || !hash_equals($t, (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) {
-        throw new ApiError('הבקשה נדחתה. רענן את הדף', 403);
+    if (($_SERVER['HTTP_X_KOL'] ?? '') !== '1' || $got === '') throw new ApiError('הבקשה נדחתה. רענן את הדף', 403);
+    if ($t !== '' && hash_equals($t, $got)) return;
+    if (!empty($user['id'])) {
+        $st = db()->prepare('SELECT csrf FROM sessions WHERE user_id = ? AND seen_at >= ?');
+        $st->execute([(int)$user['id'], gmdate('Y-m-d\TH:i:s\Z', time() - LOGIN_IDLE_DAYS * 86400)]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $c) if (hash_equals((string)$c, $got)) return;
     }
+    throw new ApiError('הבקשה נדחתה. רענן את הדף', 403);
 }

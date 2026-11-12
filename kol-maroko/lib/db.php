@@ -705,7 +705,6 @@ function migrate_people(PDO $pdo): void
     if (!in_array('source', $cols('audit'), true)) $pdo->exec("ALTER TABLE audit ADD COLUMN source TEXT NOT NULL DEFAULT 'studio'");
     if (!in_array('user_id', $cols('notices'), true)) $pdo->exec('ALTER TABLE notices ADD COLUMN user_id INTEGER');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit(user_id)');
-    $now = gmdate('Y-m-d\TH:i:s\Z');
     $mc = $cols('members');
     $q = in_array('ai_quota', $mc, true) ? 'ai_quota' : 'NULL';
     foreach ($pdo->query("SELECT id, sub, email, name, role, added_at, last_seen, $q AS ai_quota FROM members ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) as $m) {
@@ -728,5 +727,4 @@ function migrate_people(PDO $pdo): void
     }
     $pdo->exec('UPDATE audit SET user_id = (SELECT id FROM users WHERE users.sub = audit.sub) WHERE user_id IS NULL');
     $pdo->exec("UPDATE audit SET source = 'agent' WHERE source = 'studio' AND detail LIKE 'source: agent%'");
-    unset($now);
 }
