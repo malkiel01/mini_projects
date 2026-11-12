@@ -223,37 +223,150 @@ function word_extra_input(array $fields, mixed $sent, array $cur, bool $new, arr
     return $out;
 }
 
-/** נושא: שינוי שם (גם איחוד — אם השם החדש כבר קיים) או הסרה מכל המילים. */
+/**
+ * נושא (הפעולה של לפני N2, נשארה לממשק הקיים): שינוי שם, או הסרה מכל המילים. N2: שינוי שם — ה-slug לא זז (topics_rename);
+ * לשם שכבר קיים — מיזוג (topic_merge). הסרה — גם שורת הנושא, לסל עם ה-slug והמאפיינים שלו.
+ */
 function topic_op(array $user, array $b): array
 {
     $name = str($b['name'] ?? '', 80);
     $to = str(preg_replace('/\s+/u', ' ', (string)($b['to'] ?? '')), 80);
     $op = (string)($b['op'] ?? '');
     if ($name === '' || !in_array($op, ['rename', 'delete'], true) || ($op === 'rename' && $to === '')) throw new ApiError('בקשה לא תקינה');
-    snapshot_create($user, 'לפני ' . ($op === 'rename' ? "שינוי שם הנושא \"$name\"" : "הסרת הנושא \"$name\""));
+    $all = topics_all();
+    $slug = array_column($all, 'slug', 'name')[$name] ?? throw new ApiError('הנושא לא נמצא', 404);
+    if ($op === 'rename') {
+        if ($to === $name) return words_list();
+        $other = array_column($all, 'slug', 'name')[$to] ?? null;
+        if ($other !== null) { topic_merge($user, ['from' => $slug, 'to' => $other]); return words_list(); }
+        topic_save($user, ['slug' => $slug, 'name' => $to]);
+        return words_list();
+    }
+    topic_remove($user, $slug);
+    return words_list();
+}
+
+/** מסך הנושאים: כל הנושאים — גם בלי מילים — בסדר שלהם, עם תמונה לתצוגה. */
+function topics_state(array $user): array
+{
+    $all = topics_all();
+    $meta = files_meta(array_values(array_filter(array_column($all, 'image'), 'file_id')));
+    return ['topics' => array_values(array_map(fn($t) => array_diff_key($t, ['row' => 1]) + ['image_src' => $t['image'] !== '' && isset($meta[$t['image']]) ? media_url($t['image']) : ''], $all)),
+        'can_slug' => ROLE_RANK[$user['role'] ?? 'editor'] >= ROLE_RANK['publisher'], 'rev' => words_rev()];
+}
+
+/**
+ * נושא: שם (ה-slug לא זז), צבע (#rrggbb), תמונה (מזהה קובץ image), מוסתר; או סדר (order: כל ה-slugs). שינוי slug — לא כאן
+ * (topic_slug_preview / apply: עם עדכון הקשירות בקבצי הפרויקט).
+ */
+function topic_save(array $user, array $b): array
+{
+    $pdo = db();
+    if (isset($b['order'])) {
+        $all = topics_all();
+        $seq = array_values(array_filter(is_array($b['order']) ? $b['order'] : [], 'is_string'));
+        if (count($seq) !== count($all) || array_diff(array_keys($all), $seq)) throw new ApiError('הסדר חייב לכלול כל נושא פעם אחת');
+        pf_tx(function () use ($seq) {
+            topics_fill();
+            $st = db()->prepare('UPDATE topics SET sort_order = ? WHERE slug = ?');
+            foreach ($seq as $i => $s) $st->execute([($i + 1) * WORDS_ORDER_STEP, $s]);
+        });
+        audit_as($user, 'topic_edit', 'סדר הנושאים');
+        return topics_state($user);
+    }
+    $slug = (string)($b['slug'] ?? '');
+    $all = topics_all();
+    $t = $all[$slug] ?? throw new ApiError('הנושא לא נמצא', 404);
+    $u = [];
+    if (array_key_exists('name', $b)) {
+        $name = str(preg_replace('/\s+/u', ' ', (string)$b['name']), 80);
+        if ($name === '') throw new ApiError('שם הנושא ריק');
+        if ($name !== $t['name']) {
+            foreach ($all as $o) if ($o['name'] === $name) throw new ApiError("כבר יש נושא בשם \"$name\" — \"מזג אל…\"", 409);
+            $u['name'] = $name;
+        }
+    }
+    if (array_key_exists('color', $b)) {
+        $c = (string)$b['color'];
+        if ($c !== '' && !preg_match(TOPIC_COLOR_RX, $c)) throw new ApiError('צבע — #rrggbb');
+        $u['color'] = $c;
+    }
+    if (array_key_exists('image', $b)) {
+        $img = (string)$b['image'];
+        if ($img !== '' && (!file_id($img) || field_file_resolve($img, 'image') !== $img)) throw new ApiError('התמונה לא נמצאה בספרייה');
+        $u['image'] = $img;
+    }
+    if (array_key_exists('hidden', $b)) $u['hidden'] = $b['hidden'] === true;
+    if (!$u) return topics_state($user);
+    $n = pf_tx(function () use ($user, $slug, $t, $u) {
+        topics_fill();
+        $n = isset($u['name']) ? topics_rename($user, [$slug => [$t['name'], $u['name']]]) : 0;
+        topic_attrs($slug, $u);
+        return $n;
+    });
+    audit_as($user, isset($u['name']) ? 'topic_rename' : 'topic_edit', isset($u['name']) ? "{$t['name']} → {$u['name']} ($n מילים, המפתח $slug נשאר)" : "{$t['name']}: " . implode(', ', array_keys($u)));
+    return topics_state($user);
+}
+
+/** הסרה: מכל המילים, ושורת הנושא — לסל (עם הנושאים של כל מילה לפני, וה-slug והמאפיינים — "שחזור" מחזיר בדיוק). */
+function topic_remove(array $user, string $slug): void
+{
+    $t = topics_all()[$slug] ?? throw new ApiError('הנושא לא נמצא', 404);
+    snapshot_create($user, "לפני הסרת הנושא \"{$t['name']}\"");
+    $n = pf_tx(function () use ($user, $t) {
+        topics_fill();
+        $before = topics_strip($user, $t['name'], null);
+        $row = db()->prepare('SELECT * FROM topics WHERE slug = ?');
+        $row->execute([$t['slug']]);
+        db()->prepare('INSERT INTO topic_trash (at, by_name, op, name, to_name, before, row) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([now_iso(), $user['name'] ?? '', 'delete', $t['name'], null, json_encode((object)$before, JSON_UNESCAPED_UNICODE), json_encode($row->fetch(), JSON_UNESCAPED_UNICODE)]);
+        db()->prepare('DELETE FROM topics WHERE slug = ?')->execute([$t['slug']]);
+        return count($before);
+    });
+    audit_as($user, 'topic_delete', "{$t['name']} ($n מילים) → לסל");
+}
+
+/** מוציא את הנושא $name מכל המילים (ומוסיף $to במקומו, בלי כפילות). מחזיר את הנושאים של כל מילה לפני. בתוך עסקה. */
+function topics_strip(array $user, string $name, ?string $to): array
+{
     $pdo = db();
     $st = $pdo->prepare('UPDATE words SET topics = ?, updated_at = ?, updated_by = ? WHERE id = ?');
-    $n = 0;
     $before = [];
-    $pdo->beginTransaction();
     foreach ($pdo->query('SELECT id, topics FROM words')->fetchAll() as $r) {
         $t = json_decode($r['topics'], true) ?: [];
         if (!in_array($name, $t, true)) continue;
         $before[$r['id']] = $t;
-        $t = array_values(array_unique(array_filter(array_map(fn($x) => $x === $name ? ($op === 'rename' ? $to : '') : $x, $t))));
-        $st->execute([json_encode($t, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'], $r['id']]);
-        $n++;
+        $t = array_values(array_unique(array_filter(array_map(fn($x) => $x === $name ? ($to ?? '') : $x, $t), fn($x) => $x !== '')));
+        $st->execute([json_encode($t, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'] ?? '', $r['id']]);
     }
-    // לסל המחזור: הנושאים של כל מילה לפני הפעולה — "שחזור" מחזיר אותם
-    if ($before) $pdo->prepare('INSERT INTO topic_trash (at, by_name, op, name, to_name, before) VALUES (?, ?, ?, ?, ?, ?)')
-        ->execute([now_iso(), $user['name'], $op, $name, $op === 'rename' ? $to : null, json_encode($before, JSON_UNESCAPED_UNICODE)]);
-    if ($op === 'rename') {
-        $map = topic_slugs();
-        $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($to, $map), $to]);
-    }
-    $pdo->commit();
-    audit_as($user, 'topic_' . $op, $op === 'rename' ? "$name → $to ($n מילים)" : "$name ($n מילים)");
-    return words_list();
+    return $before;
+}
+
+/**
+ * מיזוג א ← ב: כל מילה עם א מקבלת ב (בלי כפילות), שורת א — לסל (op=merge, עם הנושאים של כל מילה לפני). dry — כמה מילים,
+ * וכמה קשירות ל-slug של א בקבצי הפרויקט (לעדכון — דרך topic_slug_apply, אחרי). שחזור מהסל מחזיר את שני הנושאים והשיוכים.
+ */
+function topic_merge(array $user, array $b): array
+{
+    $all = topics_all();
+    $from = $all[(string)($b['from'] ?? '')] ?? throw new ApiError('הנושא לא נמצא', 404);
+    $to = $all[(string)($b['to'] ?? '')] ?? throw new ApiError('נושא היעד לא נמצא', 404);
+    if ($from['slug'] === $to['slug']) throw new ApiError('אי אפשר למזג נושא אל עצמו');
+    $binds = function_exists('fields_bind_scan') ? fields_bind_scan('topic', $from['slug']) : [];
+    if (!empty($b['dry'])) return ['words' => $from['count'], 'bindings' => array_values($binds)];
+    $snap = snapshot_create($user, "לפני מיזוג הנושא \"{$from['name']}\" אל \"{$to['name']}\"");
+    $n = pf_tx(function () use ($user, $from, $to) {
+        topics_fill();
+        $before = topics_strip($user, $from['name'], $to['name']);
+        $row = db()->prepare('SELECT * FROM topics WHERE slug = ?');
+        $row->execute([$from['slug']]);
+        db()->prepare('INSERT INTO topic_trash (at, by_name, op, name, to_name, before, row) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([now_iso(), $user['name'] ?? '', 'merge', $from['name'], $to['name'], json_encode((object)$before, JSON_UNESCAPED_UNICODE), json_encode($row->fetch(), JSON_UNESCAPED_UNICODE)]);
+        db()->prepare('DELETE FROM topics WHERE slug = ?')->execute([$from['slug']]);
+        return count($before);
+    });
+    audit_as($user, 'topic_merge', "{$from['name']} ({$from['slug']}) → {$to['name']} ({$to['slug']}) · $n מילים");
+    return topics_state($user) + ['snapshot' => $snap, 'merged' => $n, 'bindings' => array_values($binds)];
 }
 
 function word_delete(array $user, array $b): array

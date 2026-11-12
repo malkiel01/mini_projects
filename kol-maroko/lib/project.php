@@ -661,7 +661,8 @@ function pf_snap_apply(array $user, array $rows, string $note): array
 const PF_WORDS_ID = -1;                     // אין לו שורה ב-pf_files ואין לו גוש: נבנה מהטבלה ברגע הקריאה (words_json)
 const PF_WORDS_NOTE = 'נבנה מטבלת המילים — שמירה מעדכנת את הטבלה';
 const PF_WORDS_MAX = 1 << 25;                 // 32MB — 1,500 מילים עם פירושים ארוכים
-const PF_WORDS_AUDIT = ['words_file', 'words_csv', 'word_add', 'word_edit', 'word_delete', 'word_move', 'topic_rename', 'topic_delete', 'trash_restore', 'snapshot_restore'];
+const PF_WORDS_AUDIT = ['words_file', 'words_csv', 'word_add', 'word_edit', 'word_delete', 'word_move', 'topic_rename', 'topic_delete', 'trash_restore', 'snapshot_restore',
+    'field_add', 'field_edit', 'field_key', 'field_delete', 'topic_edit', 'topic_merge', 'topic_slug'];      // N2: גם שינויי מבנה ונושאים
 
 function pf_is_words(array $b): bool
 {
@@ -716,7 +717,8 @@ function pf_words_versions(): array
     $st = db()->prepare('SELECT id, at, name, action, detail FROM audit WHERE action IN (' . implode(',', array_fill(0, count(PF_WORDS_AUDIT), '?')) . ') ORDER BY id DESC LIMIT 100');
     $st->execute(PF_WORDS_AUDIT);
     $label = ['words_file' => '📄 words.json', 'words_csv' => '📊 אקסל', 'word_add' => '➕ מילה', 'word_edit' => '✏️ מילה', 'word_delete' => '🗑️ מילה', 'word_move' => '⠿ סדר',
-        'topic_rename' => '🏷️ נושא', 'topic_delete' => '🏷️ נושא', 'trash_restore' => '↩️ מהסל', 'snapshot_restore' => '↩️ נקודת שחזור'];
+        'topic_rename' => '🏷️ נושא', 'topic_delete' => '🏷️ נושא', 'topic_edit' => '🏷️ נושא', 'topic_merge' => '🏷️ מיזוג', 'topic_slug' => '🏷️ מפתח',
+        'field_add' => '🧩 שדה', 'field_edit' => '🧩 שדה', 'field_key' => '🧩 מפתח', 'field_delete' => '🧩 שדה', 'trash_restore' => '↩️ מהסל', 'snapshot_restore' => '↩️ נקודת שחזור'];
     return ['file' => pf_words_public(), 'linked' => 'words', 'versions' => array_map(fn($h) => ['hid' => -(int)$h['id'], 'rev' => null, 'at' => $h['at'], 'by' => $h['name'],
         'note' => ($label[$h['action']] ?? $h['action']) . ' · ' . $h['detail'], 'size' => null, 'linked' => true], $st->fetchAll())];
 }

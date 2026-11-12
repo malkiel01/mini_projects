@@ -248,8 +248,18 @@ function trash_restore(array $user, array $b): array
         $t = $st->fetch() ?: throw new ApiError('לא נמצא בסל', 404);
         $upd = $pdo->prepare('UPDATE words SET topics = ?, updated_at = ?, updated_by = ? WHERE id = ?');
         foreach (json_decode($t['before'], true) ?: [] as $wid => $topics) $upd->execute([json_encode($topics, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'], (int)$wid]);
-        $map = topic_slugs();
-        $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($t['name'], $map), $t['name']]);
+        $row = isset($t['row']) && $t['row'] !== null ? json_decode($t['row'], true) : null;
+        $free = $pdo->prepare('SELECT 1 FROM topics WHERE slug = ? OR name = ?');
+        if (is_array($row) && isset($row['slug'], $row['name'])) {          // N2: ה-slug והמאפיינים כמו שהיו (הסרה / מיזוג)
+            $free->execute([$row['slug'], $row['name']]);
+            if (!$free->fetchColumn()) {
+                $cols = array_keys($row);
+                $pdo->prepare('INSERT INTO topics (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($row));
+            }
+        } else {
+            $map = topic_slugs();
+            $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($t['name'], $map), $t['name']]);
+        }
         $pdo->prepare('DELETE FROM topic_trash WHERE id = ?')->execute([(int)$id]);
         audit_as($user, 'trash_restore', 'נושא · ' . $t['name']);
     } elseif ($kind === 'field') {
