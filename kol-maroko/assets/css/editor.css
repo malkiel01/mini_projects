@@ -133,3 +133,62 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed :focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .ed-blocked summary { cursor: pointer; }
 .ed-blocked ul { margin: var(--s1) 0 0; padding-inline-start: 1.2em; font: .75rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; max-height: 8em; overflow: auto; }
+
+/* V2 — טקסט במקום: הסרגל הצף (בשכבה שמעל הקנבס; השכבה עצמה שקופה ללחיצות) */
+.ed-tbar { position: absolute; z-index: 4; display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 2px; align-items: center; max-width: calc(100% - 4px); padding: 3px; pointer-events: auto;
+  background: var(--surface, #fff); border: 1px solid var(--line, #c9ccd1); border-radius: var(--r, 8px); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); }
+.ed-tbar[hidden] { display: none; }
+.ed-tb { flex: none; min-width: 34px; min-height: 34px; padding: 0 8px; white-space: nowrap; border: 0; border-radius: 6px; background: none; color: var(--ink, #1f2328); font: inherit; font-size: .9rem; cursor: pointer; }
+.ed-tb:hover:not(:disabled), .ed-tb:focus-visible { background: var(--brand-soft, #e8f0fe); }
+.ed-tb.on { background: var(--brand, #1a73e8); color: #fff; }
+.ed-tb:disabled { opacity: .4; cursor: default; }
+.ed-tb.b { font-weight: 700; } .ed-tb.i { font-style: italic; } .ed-tb.u { text-decoration: underline; }
+.ed-tb-in { flex: 1; min-width: 160px; min-height: 34px; padding: 0 8px; border: 1px solid var(--line, #c9ccd1); border-radius: 6px; font: inherit; font-size: .9rem; }
+.ed.typing .spike-sel > span { display: none; }
+@media (max-width: 999px) { .ed-tbar { border-radius: 0; justify-content: center; } .ed-tb { min-width: 44px; min-height: 44px; } }
+
+/* V2 — תמונה חסרה והטמעה: מסגרת עם הנתיב, מעל הקנבס (הלחיצה עוברת לאלמנט שמתחת) */
+.ed-marks .ed-mark-missing, .ed-marks .ed-mark-frame { pointer-events: none; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 2px 4px; border: 2px dashed #b3261e; background: rgba(255, 255, 255, .82);
+  color: #1f2328; font: 11px/1.3 system-ui, sans-serif; direction: ltr; unicode-bidi: plaintext; text-align: center; word-break: break-all; }
+.ed-marks .ed-mark-frame { border-color: #5f6368; }
+/* V2 — ידית הגודל של תמונה, והמספר בזמן הגרירה */
+.ed-handle { position: absolute; z-index: 3; width: 14px; height: 14px; padding: 0; border: 2px solid #fff; border-radius: 3px; background: #1a73e8; box-shadow: 0 0 0 1px #1a73e8; cursor: nwse-resize; pointer-events: auto; touch-action: none; }
+.ed-handle[hidden], .ed-size[hidden] { display: none; }
+.ed-size { position: absolute; z-index: 3; padding: 1px 6px; border-radius: 4px; background: #1a73e8; color: #fff; font: 11px/16px ui-monospace, monospace; white-space: nowrap; direction: ltr; }
+@media (max-width: 999px) { .ed-handle { width: 24px; height: 24px; margin: -5px 0 0 -5px; } }
+/* V2 — לשוניות הפאנל, ולשונית "תוכן" */
+.ed-ptabs { display: flex; flex: none; gap: 2px; padding: 4px 4px 0; border-bottom: 1px solid var(--line); }
+.ed-ptabs button { flex: 1; min-height: 36px; padding: 0 var(--s2); border: 0; border-bottom: 3px solid transparent; background: none; color: var(--muted, #5f6368); font: inherit; font-size: .85rem; cursor: pointer; }
+.ed-ptabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brand, #1a73e8); font-weight: 600; }
+.ed-side-body > .ed-side-body { flex: 1; min-height: 0; }
+.ed-side-body[hidden] { display: none; }
+.ct { overflow: auto; padding: var(--s2); font-size: .85rem; display: block; }
+.ct > * + * { margin-top: var(--s1); }
+.ct code { font: .78rem/1.5 ui-monospace, monospace; background: var(--bg); border-radius: 4px; padding: 0 4px; unicode-bidi: isolate; }
+.ct-group { padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.ct-group:last-child { border-bottom: 0; }
+.ct-say { margin: 0 0 var(--s1); font-size: .82rem; }
+.ct-row { display: flex; flex-direction: column; gap: 2px; margin: var(--s1) 0; }
+.ct-k { font-size: .78rem; color: var(--muted, #5f6368); }
+.ct-in { width: 100%; min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font: inherit; font-size: .85rem; box-sizing: border-box; }
+.ct-hint { font-size: .74rem; }
+.ct-check { display: flex; align-items: center; gap: var(--s2); min-height: 32px; font-size: .85rem; cursor: pointer; }
+.ct-btns { display: flex; flex-wrap: wrap; gap: var(--s1); align-items: center; margin: var(--s1) 0; }
+.ct-preview { position: relative; display: flex; align-items: center; justify-content: center; min-height: 80px; max-height: 180px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
+  background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 16px 16px; cursor: crosshair; }
+.ct-preview img { display: block; max-width: 100%; max-height: 180px; }
+.ct-focus { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid #fff; border-radius: 50%; background: #1a73e8; box-shadow: 0 0 0 1px #1a73e8; pointer-events: none; }
+.ct-missing { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: var(--s2); font-size: .82rem; }
+.ct-media { display: block; width: 100%; margin-top: var(--s1); }
+.ct-meta { margin: 2px 0; }
+/* V2 — בורר הספרייה */
+.ed-pick-bar { display: flex; gap: var(--s2); margin-bottom: var(--s2); }
+.ed-pick { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: var(--s2); max-height: 55vh; overflow: auto; }
+.ed-pick-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: .74rem; cursor: pointer; min-width: 0; }
+.ed-pick-item:hover, .ed-pick-item:focus-visible { border-color: var(--brand, #1a73e8); }
+.ed-pick-item img { width: 100%; height: 72px; object-fit: contain; }
+.ed-pick-ic { display: flex; align-items: center; justify-content: center; width: 100%; height: 72px; font-size: 2rem; }
+.ed-pick-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-seed, .pj-seed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-weight: 600; }
+.ed-seed[hidden], .pj-seed[hidden] { display: none; }
+@media (max-width: 999px) { .ed-seed, .pj-seed { flex-wrap: nowrap; padding-block: 2px; } .ed-seed > span, .pj-seed > span { flex: 1; min-width: 0; } .seed-more { display: none; } .ed-seed .btn, .pj-seed .btn { flex: none; white-space: nowrap; } }
