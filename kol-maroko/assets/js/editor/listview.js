@@ -112,6 +112,15 @@
           L.cards.push(roots);
         });
         L.el.append(frag);
+        // שדה פנימי (N2: לא מתפרסם) — מסומן בכרטיס: "לא יופיע אצל הגולש"
+        if (d.internal && d.internal.length) {
+          const keys = new Set(d.internal.map(x => x.key));
+          for (const r of L.owned) for (const e of [r, ...r.querySelectorAll('[data-kol-text],[data-kol-html],[data-kol-if]')]) {
+            const sp = e.getAttribute('data-kol-text') || e.getAttribute('data-kol-html') || (e.getAttribute('data-kol-if') || '').replace(/^!/, '');
+            if (sp && B.fieldsIn(sp).some(k => keys.has(k))) { e.setAttribute('data-lv-internal', ''); e.setAttribute('title', 'שדה פנימי — לא יופיע אצל הגולש'); }
+          }
+          css += '[data-lv-internal]{outline:1px dashed #b45309!important;outline-offset:1px}\n';
+        }
         // הנגן: מצב "מתנגן" — הכרטיס הראשון (המחלקה של data-kol-active-class, ו-aria-pressed — כמו markPlaying)
         if (M.state === 'playing' && L.cards[0]) for (const r of L.cards[0]) for (const b of [r, ...r.querySelectorAll('[data-kol-play]')]) if (b.hasAttribute('data-kol-play')) { b.setAttribute('aria-pressed', 'true'); const ac = b.getAttribute('data-kol-active-class'); if (ac) b.classList.add(ac); }
         // כפתורי הסינון מתבנית הכפתור

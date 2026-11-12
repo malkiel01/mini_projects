@@ -160,7 +160,7 @@
       const walk = list => { for (const r of list) {
         if (!r.cssRules || r.conditionText == null || !/Media/.test(r.constructor && r.constructor.name || '')) continue;
         const mx = ST.mediaMax(r.conditionText); let on = false; try { on = mx != null && (!this.devMaxes || this.devMaxes().includes(mx)) && win.matchMedia(r.conditionText).matches; } catch { on = false; }
-        if (on) for (const x of r.cssRules) if (x.style && x.style.getPropertyValue('display').trim() === 'none') { try { for (const e of doc.querySelectorAll(x.selectorText)) if (!e.closest('[' + OWNED + ']')) els.add(e); } catch { /* בורר שאינו נקרא */ } }
+        if (on) for (const x of r.cssRules) if (x.style && x.style.getPropertyValue('display').trim() === 'none') { try { for (const e of doc.querySelectorAll(x.selectorText)) if (!e.closest('[' + OWNED + ']:not([' + OWNED + '="card"])')) els.add(e); } catch { /* בורר שאינו נקרא */ } }   // V11: גם חלקי הכרטיסים המצוירים
       } };
       for (const sh of doc.styleSheets) { const o = sh.ownerNode; if (!o || sh.disabled || /^(devhide|show|cap|edit|motion)$/.test(o.getAttribute(OWNED) || '')) continue; try { walk(sh.cssRules); } catch { /* גיליון חיצוני */ } }
       const text = [...els].map(e => domSel(e) + '{display:revert!important;opacity:.45!important;outline:2px dashed #b45309!important;outline-offset:-2px!important}').join('\n');

@@ -320,11 +320,11 @@ test('kol-data.js: עדכון ל-1.1.0 — בעלים בלבד, נקודת שח�
     eq(409, m1_post('kd_update', ['rev' => $st['rev'] - 1], U_OWNER)['status'], 'מצב ישן של המסך — לא דורס');
     $u = m1_post('kd_update', ['rev' => $st['rev']], U_OWNER);
     eq(200, $u['status'], $u['body']);
-    eq(['1.3.0', true, true], [$u['json']['kd']['version'], $u['json']['kd']['prerender'], $u['json']['kd']['same']]);
+    eq(['1.4.0', true, true], [$u['json']['kd']['version'], $u['json']['kd']['prerender'], $u['json']['kd']['same']]);
     eq($snaps + 1, (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'נקודת שחזור לפני');
     eq(file_get_contents(BUILD_SEED_KD), pf_blob_get(pf_by_path(BUILD_KD)['sha']), 'התוכן — הזרע');
     $h = db()->query('SELECT note FROM pf_history WHERE file_id = ' . (int)$st['id'] . ' ORDER BY id DESC LIMIT 1')->fetchColumn();
-    ok(str_contains((string)$h, '1.3.0'), "בהיסטוריה: $h");
+    ok(str_contains((string)$h, '1.4.0'), "בהיסטוריה: $h");
 });
 
 // ── B1 ──────────────────────────────────────────────────────
