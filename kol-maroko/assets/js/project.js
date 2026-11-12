@@ -522,7 +522,7 @@ const Project = (() => {
     if (!box) return;
     box.hidden = !S.seedOnly;
     if (!S.seedOnly) return;
-    box.replaceChildren(h('span', {}, '⚠️ העמוד של היום עוד לא יובא — מה שרואים כאן הוא שלד ריק, לא העמוד שבאתר.'),
+    box.replaceChildren(h('span', {}, '⚠️ העמוד של היום עוד לא יובא', h('span', { class: 'seed-more' }, ' — מה שרואים כאן הוא שלד ריק, לא העמוד שבאתר.')),
       S.canPurge ? h('button', { type: 'button', class: 'btn primary sm', 'data-seed-run': true, onclick: async () => { if (await reimport('לייבא עכשיו את העמוד של היום לפרויקט?\nנשמרת נקודת שחזור לפני.')) after?.(); } }, '🔄 ייבוא עכשיו')
         : h('span', { class: 'hint' }, ' הייבוא — בידי בעל העמוד.'));
   }

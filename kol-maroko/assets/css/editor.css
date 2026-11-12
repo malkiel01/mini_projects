@@ -191,3 +191,4 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed-pick-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-seed, .pj-seed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-weight: 600; }
 .ed-seed[hidden], .pj-seed[hidden] { display: none; }
+@media (max-width: 999px) { .ed-seed, .pj-seed { flex-wrap: nowrap; padding-block: 2px; } .ed-seed > span, .pj-seed > span { flex: 1; min-width: 0; } .seed-more { display: none; } .ed-seed .btn, .pj-seed .btn { flex: none; white-space: nowrap; } }

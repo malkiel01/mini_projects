@@ -472,7 +472,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     ok(tpl.some(r => r.chip) && tpl.every(r => r.chip === (r.dir === 'from-current' && /\.html?$/i.test(r.name))), 'בעץ: קובצי התבנית של from-current/ מסומנים "תבנית ישנה" — ורק הם', tpl.filter(r => r.chip !== (r.dir === 'from-current' && /\.html?$/i.test(r.name))));
     await page.evaluate(() => { localStorage.setItem('kol-editor', JSON.stringify({ page: 'from-current/lexicon.html' })); });
     await page.goto(base + '/editor.php#/editor'); await page.waitForFunction(() => Editor._state.file && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
-    const dflt = await page.evaluate(() => ({ path: Editor._state.file.path, opt: [...document.querySelectorAll('.ed-page option')].find(o => o.textContent.startsWith('from-current/lexicon.html'))?.textContent || '' }));
+    const dflt = await page.evaluate(() => ({ path: Editor._state.file.path, opt: [...document.querySelectorAll('.ed-page option')].find(o => o.textContent === 'from-current/lexicon.html')?.title || '' }));
     ok(dflt.path === 'index.html' && dflt.opt.includes('תבנית ישנה'), '"🎨 עורך" נפתח על index.html — גם כשהעמוד האחרון שנפתח היה תבנית ישנה; ובבורר העמוד היא מסומנת "תבנית ישנה"', dflt);
 //MORE
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף לאורך כל הבדיקה', errors);

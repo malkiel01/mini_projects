@@ -630,10 +630,10 @@ const Editor = (() => {
       const files = (await Project.docs.files()).filter(f => f.kind === 'file' && /\.html?$/i.test(f.path)).sort((a, b) => a.path.localeCompare(b.path));
       if (S.host !== host) return;
       if (!files.length) { status(''); el.canvas.replaceChildren(h('p', { class: 'empty' }, 'אין בפרויקט קובץ HTML. יוצרים אחד ב-📁 פרויקט.')); return; }
-      el.page.replaceChildren(...files.map(f => h('option', { value: f.id }, f.path + (Project.oldTemplate(f.path) ? ' · תבנית ישנה' : ''))));
-      // ברירת המחדל: index.html. קובץ תבנית ישן (from-current/) נפתח רק כשמבקשים אותו במפורש — לא מהזיכרון ולא כ"ראשון"
+      el.page.replaceChildren(...files.map(f => h('option', { value: f.id, 'data-old-tpl': Project.oldTemplate(f.path) || null, title: Project.oldTemplate(f.path) ? 'תבנית ישנה (עם {{…}}) — העמוד עצמו הוא index.html' : null }, f.path)));   // הטקסט — הנתיב בלבד; הסימון בתכונה ובעץ
+      // העמוד האחרון שנפתח, ובלעדיו index.html. קובץ תבנית ישן (from-current/) נפתח רק כשמבקשים אותו במפורש — לא מהזיכרון ולא כ"ראשון"
       const old = f => Project.oldTemplate(f.path), mem = files.find(f => f.path === prefs.page && !old(f));
-      const first = files.find(f => f.path === wantPath) || files.find(f => f.path === 'index.html') || mem || files.find(f => !old(f)) || files[0];
+      const first = files.find(f => f.path === wantPath) || mem || files.find(f => f.path === 'index.html') || files.find(f => !old(f)) || files[0];
       el.page.value = first.id;
       await open(first.id);
     } catch (e) { status(''); el.canvas.replaceChildren(h('p', { class: 'error' }, e.message)); }
