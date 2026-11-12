@@ -50,12 +50,13 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
-                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank'];
+                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
+                      'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
     // upload_chunk ו-dev-attach — גוף גולמי (חלק מקובץ / צילום), לא JSON
-    $body = $method === 'POST' && $action !== 'upload_chunk' && !in_array($action, DEV_RAW_BODY, true) ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
+    $body = $method === 'POST' && !in_array($action, ['upload_chunk', 'pf_zip_import'], true) && !in_array($action, DEV_RAW_BODY, true) ? (json_decode((string)file_get_contents('php://input'), true) ?: []) : [];
     if (!is_array($body)) $body = [];
 
     // devapi-… — Claude, באסימון (X-Dev-Token) ובלי משתמש מהשער
@@ -143,6 +144,15 @@ try {
         'pf_trash' => (require_role($user, 'editor') ? pf_trash() : []),
         'pf_restore' => pf_restore(require_role($user, 'editor'), $body),
         'pf_purge' => pf_purge(require_role($user, 'owner'), $body),
+        // F2b (lib/project_ops.php). pf_zip_import — גוף גולמי (ה-ZIP עצמו)
+        'pf_copy' => pf_copy(require_role($user, 'editor'), $body),
+        'pf_version' => (require_role($user, 'editor') ? pf_version($_GET) : []),
+        'pf_version_restore' => pf_version_restore(require_role($user, 'editor'), $body),
+        'pf_search' => (require_role($user, 'editor') ? pf_search($_GET) : []),
+        'pf_replace' => pf_replace(require_role($user, 'editor'), $body),
+        'pf_refs' => (require_role($user, 'editor') ? pf_refs($_GET) : []),
+        'pf_zip' => pf_zip(require_role($user, 'editor')),
+        'pf_zip_import' => pf_zip_import(require_role($user, 'editor'), $_GET, (string)file_get_contents('php://input')),
         // ההסבה (F3, lib/migrate.php) — בעלים בלבד
         'pf_migrate' => pf_migrate(require_role($user, 'owner'), $body),
         'pf_migrate_last' => (require_role($user, 'owner') ? pf_migrate_last() : []),

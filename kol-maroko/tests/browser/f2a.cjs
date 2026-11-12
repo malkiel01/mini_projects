@@ -279,7 +279,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // 📏 מגבלות במסך המפתח, והלשונית הישנה </> קוד עם Monaco מקומי
     await mp.goto(base + '/#/dev/limits');
     await mp.waitForSelector('.pj-limit');
-    ok(await mp.$$eval('.pj-limit input', i => i.map(x => +x.value).join()) === '200,2097152,2000,200', '390px: 📏 מגבלות במסך המפתח — ארבע הגדרות');
+    ok(await mp.$$eval('.pj-limit input', i => i.slice(0, 4).map(x => +x.value).join()) === '200,2097152,2000,200', '390px: 📏 מגבלות במסך המפתח — ארבע ההגדרות של 02 §3 (ואחריהן שתי מגבלות ה-ZIP של F2b)');
     await call(mp, 'code_create', {});
     await mp.goto(base + '/#/code');
     await mp.waitForSelector('.code-ed .monaco-editor .view-line', { timeout: 20000 });
