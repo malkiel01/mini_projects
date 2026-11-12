@@ -16,7 +16,6 @@ require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/preview.php';
 require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
-require_once __DIR__ . '/lib/cutover.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -25,6 +24,12 @@ header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
 require_once __DIR__ . '/lib/csp.php';
 csp_api_headers();          // C1: תשובת API לעולם אינה מסמך — default-src 'none'; frame-ancestors 'none'; sandbox
+
+/** 🔁 המעבר (M3) — נטען רק בפעולות שלו, כדי שלא להוסיף זמן לכל בקשה אחרת. */
+function cutover_lib(): void
+{
+    require_once __DIR__ . '/lib/cutover.php';
+}
 
 function json_out(array $data, int $code = 200): never
 {
@@ -188,11 +193,11 @@ try {
         'notices' => notices_list(require_role($user, 'owner')),
         'notice_read' => notice_read(require_role($user, 'owner'), $body),
         // 🔁 המעבר (M3, lib/cutover.php): קריאה — מפרסם ומעלה; ראיה, נקודת שחזור ו"מוכן למעבר" — בעלים בלבד. אינו מדליק דבר באתר
-        'cutover' => cutover_state(require_role($user, 'publisher')),
-        'cutover_evidence' => cutover_evidence_add(require_role($user, 'owner'), $body),
-        'cutover_evidence_revoke' => cutover_evidence_revoke(require_role($user, 'owner'), $body),
-        'cutover_snapshot' => cutover_snapshot(require_role($user, 'owner')),
-        'cutover_ready' => cutover_ready(require_role($user, 'owner')),
+        'cutover' => cutover_lib() ?? cutover_state(require_role($user, 'publisher')),
+        'cutover_evidence' => cutover_lib() ?? cutover_evidence_add(require_role($user, 'owner'), $body),
+        'cutover_evidence_revoke' => cutover_lib() ?? cutover_evidence_revoke(require_role($user, 'owner'), $body),
+        'cutover_snapshot' => cutover_lib() ?? cutover_snapshot(require_role($user, 'owner')),
+        'cutover_ready' => cutover_lib() ?? cutover_ready(require_role($user, 'owner')),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
