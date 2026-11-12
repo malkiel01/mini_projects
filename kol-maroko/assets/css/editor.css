@@ -405,3 +405,5 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .sg-side .sg-ctl { flex: 1 1 100%; }
 .sg-side .sg-ctl input { width: 0; }
 .sg-core { overflow-wrap: anywhere; min-width: 0; }
+/* הפאנל "עיצוב" / "מתקדם": ריווח מהמסגרת, כמו ב"תוכן" וב"פרטים" (התוויות לא נוגעות בקצה ונחתכות — גם לפני V7) */
+.sg { padding: 0 var(--s2) var(--s2); }

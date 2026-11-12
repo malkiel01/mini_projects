@@ -707,7 +707,7 @@ const Editor = (() => {
     const n = S.canvas?.selected, w = canWrite();
     el.addImg.disabled = !w; el.swap.disabled = !w;
     if (n && n.tag === 'img') { if (!el.swap.isConnected) el.addImg.after(el.swap); } else el.swap.remove();   // "החלף" בסרגל — רק כשנבחרה תמונה
-    if (el.hideBtn) { const ok3 = !!(n && w && S.canvas.elOf(n) && !/^(html|body|head)$/.test(n.tag)), d = curDevice(), on = ok3 && (d.max ? !!S.canvas.devHidden?.has(n) : S.devs.hidden(n, d));
+    if (el.hideBtn) { const ok3 = !!(n && w && S.canvas.elOf(n) && !/^(html|body|head)$/.test(n.tag)), d = curDevice(), on = ok3 && (d.max ? !!S.canvas.devHidden?.has(n) : S.canvas.visual(n) === 'shown' && !S.text?.active);   // זול: בלי לאסוף את כללי ה-CSS בכל ציור (גם בזמן עריכת טקסט)
       el.hideBtn.disabled = !ok3; el.hideBtn.setAttribute('aria-pressed', String(on)); el.hideBtn.title = (on ? 'הצג ב' : 'הסתר ב') + d.label + ' — display' + (on ? '' : ': none') + (d.max ? ' ב-@media (max-width: ' + d.max + 'px)' : ' בכלל הבסיסי (המכשירים הצרים שומרים על התצוגה)'); el.hideBtn.lastChild.textContent = on ? ' הצג ב' + d.label : ' הסתר ב' + d.label; }
     if (el.freeBtn) { const ok2 = !!(n && w && S.canvas.elOf(n) && !/^(html|body|head)$/.test(n.tag)), fr = ok2 && S.pos?.isFree(n); el.freeBtn.disabled = !ok2; el.freeBtn.setAttribute('aria-pressed', String(!!fr)); }
     const bgOn = !!(n && S.bg && S.bg.hasImage(n));                       // V5: "🖼 תמונת רקע" — החלף · הסר · הזז

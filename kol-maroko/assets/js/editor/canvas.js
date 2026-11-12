@@ -149,7 +149,8 @@
     markDev() {
       const doc = this.doc, ST = window.KolStyle; this.devHidden = new Set();
       if (!doc || !doc.documentElement || !ST || !this.sheets) return;
-      const win = this.frame.contentWindow, els = new Set();
+      const win = this.frame.contentWindow, els = new Set(), maxes = this.devMaxes ? this.devMaxes() : null;
+      if (maxes && (!maxes.length || win.innerWidth > Math.max(...maxes))) { if (this.devStyle && this.devStyle.textContent) this.devStyle.textContent = ''; return; }   // רחב מכל נקודת שבירה (מחשב) — אין מה לסמן, ולא סורקים
       const walk = list => { for (const r of list) {
         if (!r.cssRules || r.conditionText == null || !/Media/.test(r.constructor && r.constructor.name || '')) continue;
         const mx = ST.mediaMax(r.conditionText); let on = false; try { on = mx != null && (!this.devMaxes || this.devMaxes().includes(mx)) && win.matchMedia(r.conditionText).matches; } catch { on = false; }

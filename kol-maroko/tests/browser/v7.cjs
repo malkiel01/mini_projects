@@ -213,10 +213,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ═══ 9. ביטול עד ההתחלה ═══
     ok(await undoFiles(page, o0) && (await page.evaluate(() => Editor._state.canvas.inequiv.length)) === 0, 'ביטול עד ההתחלה — כל הקבצים (HTML, CSS, kol.json) זהים בייט בבייט');
     await clickDev(page, 'desktop'); await select(page, H1); await sleep(200);
-    const ovf = async () => page.evaluate(() => [...document.querySelectorAll('.ed-info .ed-side-body.sg')].filter(b => !b.hidden).map(b => { let worst = null; for (const e of b.querySelectorAll('*')) { const r = e.getBoundingClientRect(), p = b.getBoundingClientRect(); if (r.width && (r.right > p.right + 1 || r.left < p.left - 1) && (!worst || r.width > worst.w)) worst = { cls: e.className, w: Math.round(r.width), pr: Math.round(p.right), r: Math.round(r.right) }; } return { sw: b.scrollWidth, cw: b.clientWidth, worst }; }));
+    const ovf = async () => page.evaluate(() => [...document.querySelectorAll('.ed-info .ed-side-body.sg')].filter(b => !b.hidden).map(b => { let worst = null; for (const e of b.querySelectorAll('*')) { const r = e.getBoundingClientRect(), p = b.getBoundingClientRect(); if (r.width && (r.right > p.right + 1 || r.left < p.left - 1) && (!worst || r.width > worst.w)) worst = { cls: e.className, w: Math.round(r.width), pr: Math.round(p.right), r: Math.round(r.right) }; } const a = document.querySelector('.ed-info').getBoundingClientRect(), labs = [...b.querySelectorAll('.sg-label, .dt-h')].filter(l => l.getClientRects().length).map(l => l.getBoundingClientRect()), edge = Math.max(...labs.map(r => r.right)); return { sw: b.scrollWidth, cw: b.clientWidth, worst, inset: Math.round(a.right - edge) }; }));   // inset — כמה פיקסלים בין התווית למסגרת הפאנל (מה שרואים בצילום)
     await tab(page, 'design'); await select(page, H1); await sleep(200); const ov1 = await ovf();
     await tab(page, 'adv'); await sleep(200); const ov2 = await ovf();
-    ok([...ov1, ...ov2].every(x => x.sw <= x.cw + 1 && !x.worst), '1920: פאנל העיצוב והמתקדם — שום דבר אינו חורג מהרוחב (התוויות אינן חתוכות)', { ov1, ov2 });
+    ok([...ov1, ...ov2].every(x => x.sw <= x.cw + 1 && !x.worst && x.inset >= 6), '1920: פאנל העיצוב והמתקדם — שום דבר אינו חורג, והתוויות במרחק ≥6px ממסגרת הפאנל (אינן נחתכות)', { ov1, ov2 });
     await tab(page, 'design');
     await page.screenshot({ path: path.join(shots, 'v7-1920.png') });
 
