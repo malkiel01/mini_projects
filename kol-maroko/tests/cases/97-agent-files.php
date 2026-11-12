@@ -98,6 +98,7 @@ test('X1 🤖: preview_url — כתובת התצוגה החיה עם אסימו�
 });
 
 test('X1 🤖: הסקיל — נבנה מהקבצים: kol.json, העץ, תכונות data-kol-* מהכותרת של kol-data.js, והכלל "כל כיתוב — תוכן של אלמנט"', function () {
+    x1_file('js/kol-data.js', (string)file_get_contents(KOL_ROOT . '/assets/project-seed/kol-data.js'));   // ✨ בבדיקות 96 שינה אותו
     $skill = x1_ag('GET', 'help')['json']['skill'];
     ok(str_contains($skill, '"entry": "index.html"'), 'kol.json');
     ok(str_contains($skill, '`ag/a.html`'), 'העץ — כולל קובץ שנוצר בבדיקה');
