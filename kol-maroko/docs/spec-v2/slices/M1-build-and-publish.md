@@ -135,7 +135,10 @@
 
 **אסור:** `assets/js/editor/*`, `editor.php`, `assets/css/editor.css` (V4) · `assets/project-seed/kol-data.js` — **קריאה בלבד**:
 הבנייה מריצה את העותק **שבפרויקט** · `lib/migrate.php`, `lib/project.php` (קריאה ל-`pf_*` מותרת, שינוי — לא) · `wordpress-plugin/`
-(M2) · `devloop/`, `.github/workflows/deploy.yml`. צריך שינוי באחד מהם — הודעה לבקרה.
+(M2) · `devloop/`, `.github/workflows/deploy.yml` · **צ'אטים פתוחים במקביל (הבקרה, 2026-11-12):** `assets/js/project.js`
+ו-`lib/project.php` (F2b) · כותרות ה-CSP — `editor.php`, `.htaccess`, הקבוע `PV_SANDBOX` ב-`lib/preview.php` (C1; מצב הבנייה
+**משתמש** במדיניות הקיימת ואינו משנה אותה) · `lib/library.php`, `lib/media.php`, `assets/js/library.js` (A2 — קריאה בלבד).
+צריך שינוי באחד מהם — הודעה לבקרה.
 
 **התנגשות צפויה אחת:** `assets/js/app.js` (רישום הלשונית) — כבר רשומה (`publish`), ולכן אין צורך לגעת בו. אם בכל זאת — שורה אחת, והבקרה ממזגת.
 
