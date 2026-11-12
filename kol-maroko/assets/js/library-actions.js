@@ -26,6 +26,9 @@ const LibActions = (() => {
   }
 
   const linked = r => !r.loose && r.state !== 'none';
+  /** N3b: פריט ברשימה (r.list) או מילה — "פתח את הרשימה" / "פתח את המילה". */
+  const openSlot = r => { $('#sheet').close(); if (r.list) Words.openList(r.list); else Words.open(L().widOf(r)); };
+  const what = r => r.list ? 'הפריט' : 'המילה';
   const hasFile = r => r.state === 'tool' && r.file && !r.missing;
   const fshort = k => L().fieldOf(k)?.short || k;
   const label = r => r.loose ? (r.name || r.word) : `#${L().widOf(r)} ${r.word}${L().multi() && r.field ? ' · ' + fshort(r.field) : ''}`;
@@ -45,12 +48,12 @@ const LibActions = (() => {
         b('🔁', 'החלף / הקלט', x => L().replace(x.id), { need: false }),
         b('🕘', `גרסאות${r.versions ? ` (${r.versions})` : ''}`, versions),
         b('✏️', 'שינוי שם', rename),
-        b('🔗', r.loose ? (L().multi() ? 'חבר ל…' : 'חבר למילה…') : 'העבר למילה אחרת…', connect),
+        b('🔗', r.loose ? (L().multi() ? 'חבר ל…' : 'חבר למילה…') : r.list ? 'העבר לפריט אחר…' : 'העבר למילה אחרת…', connect),
         moveOk ? b('↔️', 'העבר לשדה…', moveField) : null,
-        r.loose ? null : b('⛓️', 'נתק מהמילה', x => disconnect([x])),
+        r.loose ? null : b('⛓️', r.list ? 'נתק מהפריט' : 'נתק מהמילה', x => disconnect([x])),
         b('⬇️', 'הורדה (הקובץ המקורי)', x => download([x])),
         b('🗑️', 'מחיקה לסל', x => remove([x]), { cls: 'ghost danger' }),
-        r.loose ? null : b('📚', 'פתח את המילה', x => { $('#sheet').close(); Words.open(L().widOf(x)); }, { need: false })));
+        r.loose ? null : b('📚', r.list ? `פתח את הרשימה "${r.list_label || r.list}"` : 'פתח את המילה', openSlot, { need: false })));
   }
 
   // ── שינוי שם — בשורה עצמה ───────────────────────────────
@@ -108,7 +111,8 @@ const LibActions = (() => {
       if (e.status === 409 && e.data?.conflict) {
         const c = e.data.conflict;
         const what = L().multi() ? `${c.field_label || 'הקלטה'}` : 'הקלטה';
-        if (await ask(`למילה "${c.word}" כבר יש ${what}`, h('p', {}, `ההקלטה הקיימת («${c.name}») תישאר בספרייה תחת "לא מחוברות" — היא לא נמחקת.`), L().multi() ? 'החלף (הנוכחית תהפוך ללא מחוברת)' : 'חבר בכל זאת')) {
+        const inList = (L().fieldOf(c.field)?.list || 'words') !== 'words';        // N3b: פריט ברשימה
+        if (await ask(`${inList ? 'לפריט' : 'למילה'} "${c.word}" כבר יש ${what}`, h('p', {}, `ההקלטה הקיימת («${c.name}») תישאר בספרייה תחת "לא מחוברות" — היא לא נמחקת.`), L().multi() ? 'החלף (הנוכחית תהפוך ללא מחוברת)' : 'חבר בכל זאת')) {
           return link(recId, wid, word, field, { act, body: { ...(body || { rec_id: recId, word_id: wid, field }), replace: true } });
         }
         return false;
@@ -134,11 +138,11 @@ const LibActions = (() => {
     let qv = '';
     const draw = () => {
       const s = qv.trim().replace(/^#/, ''), n = s.toLowerCase();
-      const words = L().D.rows.filter(w => (w.field ?? L().primaryKey()) === field);
+      const words = L().D.rows.filter(w => (w.field ?? L().primaryKey()) === field);      // N3b: גם פריטי רשימה (field = "<רשימה>.<מפתח>")
       const hits = words.filter(w => !(L().widOf(w) === L().widOf(r) && w.field === r.field && !r.loose) && (!s || String(L().widOf(w)) === s || w.word.toLowerCase().includes(n))).slice(0, 40);
       list.replaceChildren(...(hits.length ? hits.map(w => h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: () => go(w) },
-        h('span', { class: 'use-tx' }, h('b', { class: 'one' }, `#${L().widOf(w)} ${w.word}`), h('small', { class: 'one' }, w.state === 'none' ? 'בלי הקלטה' : 'יש לה הקלטה — תתבקשו לאשר')),
-        h('span', { class: 'chip' + (w.state === 'none' ? ' warn' : '') }, w.state === 'none' ? 'בלי הקלטה' : 'יש הקלטה')))) : [h('p', { class: 'empty' }, 'לא נמצאה מילה')]));
+        h('span', { class: 'use-tx' }, h('b', { class: 'one' }, `#${L().widOf(w)} ${w.word}`), h('small', { class: 'one' }, w.state === 'none' ? 'בלי הקלטה' : 'יש כבר הקלטה — תתבקשו לאשר')),
+        h('span', { class: 'chip' + (w.state === 'none' ? ' warn' : '') }, w.state === 'none' ? 'בלי הקלטה' : 'יש הקלטה')))) : [h('p', { class: 'empty' }, L().fieldOf(field)?.list && L().fieldOf(field).list !== 'words' ? 'לא נמצא פריט' : 'לא נמצאה מילה')]));
     };
     const go = async w => {
       if (!await link(r.rec, L().widOf(w), w.word, field)) return;
@@ -146,7 +150,7 @@ const LibActions = (() => {
       await L().reload(true);
       toast(`חוברה ל-#${L().widOf(w)} ${w.word}${L().multi() ? ' · ' + fshort(field) : ''}`);
     };
-    const inp = h('input', { type: 'search', placeholder: 'חיפוש מילה או מזהה…', 'aria-label': 'חיפוש מילה', oninput: e => { qv = e.target.value; draw(); } });
+    const inp = h('input', { type: 'search', placeholder: 'חיפוש מילה, פריט או מזהה…', 'aria-label': 'חיפוש מילה או פריט', oninput: e => { qv = e.target.value; draw(); } });
     sheet(`🔗 חיבור${L().multi() ? '' : ' למילה'} · ${r.name || r.word}`,
       r.loose ? null : h('p', { class: 'hint' }, L().multi() ? `${label(r)} — המקום הזה יישאר "בלי הקלטה".` : `המילה #${r.id} ${r.word} תישאר "בלי הקלטה".`),
       fieldSelect(field, v => { field = v; draw(); }, 'לשדה'), inp, list);
@@ -156,9 +160,11 @@ const LibActions = (() => {
 
   /** "העבר לשדה…": אותה מילה, שדה אחר — שם, משך וגרסאות נשמרים. */
   function moveField(r) {
-    const others = L().D.fields.filter(f => f.key !== r.field);
+    // N3b: אותו פריט — ולכן רק שדות של אותה רשימה
+    const others = L().D.fields.filter(f => f.key !== r.field && (f.list || 'words') === (r.list || 'words'));
     sheet(`↔️ העבר לשדה · ${label(r)}`,
-      h('p', { class: 'hint' }, 'אותה מילה, שדה אחר. השם, המשך והגרסאות עוברים עם ההקלטה.'),
+      h('p', { class: 'hint' }, `אותו ${r.list ? 'פריט' : 'מילה'}, שדה אחר. השם, המשך והגרסאות עוברים עם ההקלטה.`),
+      others.length ? null : h('p', { class: 'empty' }, 'אין ברשימה הזו שדה שמע נוסף. מוסיפים שדה ב-🧩 מבנה של הרשימה.'),
       h('ul', { class: 'list lib-pickword' }, others.map(f => {
         const t = L().slotRow(L().widOf(r), f.key);
         return h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: async () => {
@@ -180,7 +186,7 @@ const LibActions = (() => {
         if (!await link(x.rec, L().widOf(r), r.word, r.field)) return;
         $('#sheet').close(); await L().reload(true); toast(`חוברה ל${slotText(r)}`);
       } }, h('span', { class: 'use-tx' }, h('b', { class: 'one', dir: 'auto' }, x.name || x.word),
-        h('small', { class: 'one' }, [x.dropped ? `משדה שנמחק: ${x.dropped}` : '', x.file ? mb(x.file.size) : ''].filter(Boolean).join(' · '))),
+        h('small', { class: 'one' }, [x.gone || (x.dropped ? `משדה שנמחק: ${x.dropped}` : ''), x.file ? mb(x.file.size) : ''].filter(Boolean).join(' · '))),
         x.file ? h('audio', { controls: true, preload: 'none', src: x.file && L().safeSrc(x.src), class: 'lib-vplay', onclick: e => e.stopPropagation() }) : null))) : [h('p', { class: 'empty' }, 'אין הקלטות לא מחוברות')]));
     };
     const inp = h('input', { type: 'search', placeholder: 'חיפוש הקלטה…', 'aria-label': 'חיפוש הקלטה', oninput: e => draw(e.target.value) });
@@ -269,8 +275,8 @@ const LibActions = (() => {
     if (!ok.length) { toast('הקלטה שעדיין באתר — ' + SITE_ONLY, true); return; }
     const used = ok.filter(linked);
     if (!await ask(ok.length === 1 ? `למחוק את «${ok[0].name || ok[0].word}»?` : `למחוק ${ok.length} הקלטות?`, [
-      used.length ? h('p', { class: 'warn-box' }, '⚠️ ', used.length === 1 ? `ההקלטה משמשת את המילה ${label(used[0])}` : `${used.length} מההקלטות משמשות מילים: ${used.slice(0, 8).map(label).join(', ')}${used.length > 8 ? ` ועוד ${used.length - 8}` : ''}`,
-        ' — ', used.length === 1 ? 'המילה תישאר "בלי הקלטה".' : 'המילים יישארו "בלי הקלטה".') : null,
+      used.length ? h('p', { class: 'warn-box' }, '⚠️ ', used.length === 1 ? `ההקלטה משמשת את ${what(used[0])} ${label(used[0])}` : `${used.length} מההקלטות משמשות מילים או פריטים: ${used.slice(0, 8).map(label).join(', ')}${used.length > 8 ? ` ועוד ${used.length - 8}` : ''}`,
+        ' — ', used.length === 1 ? (used[0].list ? 'הפריט יישאר "בלי הקלטה".' : 'המילה תישאר "בלי הקלטה".') : 'הם יישארו "בלי הקלטה".') : null,
       h('p', {}, 'ההקלטות עוברות לסל. "שחזור" מהסל מחזיר גם את החיבור למילה. ההקלטה שבאתר אינה נמחקת ואינה משתנה.'),
       site ? h('p', { class: 'hint' }, `${site} מהנבחרות עדיין באתר — לא יימחקו.`) : null], 'מחיקה לסל', { danger: true })) return;
     try {
@@ -286,7 +292,8 @@ const LibActions = (() => {
     el.replaceChildren(
       h('p', { class: 'hint' }, 'הקלטות שנמחקו. "שחזור" מחזיר את ההקלטה, ואם המילה עדיין בלי הקלטה — גם את החיבור אליה.', L().isOwner ? ' מחיקה סופית — רק כאן, באישור מפורש.' : ' מחיקה סופית — לבעל העמוד.'),
       T.length ? h('ul', { class: 'list lib-trash' }, T.map(t => h('li', { class: 'lib-ver' },
-        h('div', {}, h('b', {}, t.name), t.word_id ? ` · מהמילה #${t.word_id}${t.word ? ' ' + t.word : ' (נמחקה)'}${t.primary === false ? ' · ' + t.field_label : ''}` : ' · לא הייתה מחוברת',
+        h('div', {}, h('b', {}, t.name), t.word_id ? (t.list_label ? ` · מ${t.list_label} #${t.word_id}${t.word ? ' ' + t.word : ' (נמחק)'} · ${t.field_label}`
+          : ` · מהמילה #${t.word_id}${t.word ? ' ' + t.word : ' (נמחקה)'}${t.primary === false ? ' · ' + t.field_label : ''}`) : ' · לא הייתה מחוברת',
           h('br'), h('small', { class: 'hint' }, `נמחקה ${L().date(t.at)}${t.by ? ' · ' + t.by : ''}${t.file ? ' · ' + mb(t.file.size) : ''}`)),
         t.file ? h('audio', { controls: true, preload: 'none', src: t.file.url, class: 'lib-vplay' }) : null,
         h('div', { class: 'row-btns' },

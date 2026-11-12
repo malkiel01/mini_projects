@@ -363,9 +363,48 @@ const Lists = (() => {
         const r = await api('list_place', { list: KEY, path: page.value, where: where.value, id: id.value.trim() });
         dlg.close();
         toast(`נוסף ל-${r.file.path}` + (r.added.includes('script') ? ' · עם js/kol-data.js' : ''));
+        if (r.undo) undoBar({ token: r.undo, label: D.list.label, path: r.file.path });
       } catch (e) { go.disabled = false; toast(e.message, true); }
     };
   }
+
+  // ── N3b: ביטול "➕ הוסף לעמוד" — "↶ בטל" בפס (גם במגע), ו-Ctrl+Z במסך הנתונים ──────────
+  // השרת מחזיר את העמוד ואת ה-CSS לתוכן שלפני (גרסה חדשה בהיסטוריה), ומוחק לסל קובץ שנוצר בהוספה — רק אם אף קובץ לא
+  // השתנה מאז (rev). אחרת — ההודעה אומרת מה השתנה, והשחזור הידני ב"גרסאות" של עורך הקוד.
+  let undoTok = null, undoEl = null;
+  function undoBar(u) {
+    undoTok = u;
+    undoEl?.remove();
+    const btn = h('button', { type: 'button', class: 'btn primary sm', 'data-place-undo': true, onclick: () => undoPlace() }, '↶ בטל');
+    undoEl = h('div', { class: 'l-undo', role: 'status', 'aria-live': 'polite' },
+      h('span', { class: 'one' }, `"${u.label}" נוסף ל-${u.path}`), btn,
+      h('small', { class: 'l-undo-k', 'aria-hidden': 'true' }, 'Ctrl+Z'),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', onclick: () => { undoEl?.remove(); undoEl = null; undoTok = null; } }, '✕'));
+    document.body.append(undoEl);
+  }
+  async function undoPlace() {
+    const u = undoTok;
+    if (!u) return false;
+    undoTok = null;
+    undoEl?.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try {
+      const r = await api('list_place_undo', { token: u.token });
+      undoEl?.remove(); undoEl = null;
+      toast(`בוטל — ${r.files.map(f => f.path + (f.deleted ? ' (לסל)' : '')).join(', ')} חזרו למה שהיה`);
+    } catch (e) {
+      undoEl?.remove(); undoEl = null;
+      toast(e.message, true);
+    }
+    return true;
+  }
+  document.addEventListener('keydown', e => {
+    if (!undoTok || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !['z', 'ז'].includes(e.key.toLowerCase())) return;
+    if (location.hash !== '#/words' || document.querySelector('dialog[open]')) return;
+    if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;     // ביטול של טקסט בשדה — של הדפדפן
+    e.preventDefault();
+    undoPlace();
+  });
+  window.addEventListener('hashchange', () => { if (location.hash !== '#/words') { undoEl?.remove(); undoEl = null; undoTok = null; } });
 
   return { view, create };
 })();

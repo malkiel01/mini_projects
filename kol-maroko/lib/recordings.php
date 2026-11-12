@@ -109,6 +109,78 @@ function rec_slot_key(string $list, int $item, string $field): string
     return "$list|$item|$field";
 }
 
+// ── רשימות (N3b · N2b §2.6) ───────────────────────────────
+
+/**
+ * שדות השמע של כל רשימה (לא המילים): [רשימה => [מפתח => ['key', 'label', 'list_label', 'published']]]. ברשימה אין שדה ראשי —
+ * כל שדה שמע הוא "מותאם": הערך ב-list_items.data[מפתח] הוא מזהה קובץ בספרייה (N3).
+ */
+function rec_list_fields(): array
+{
+    $out = [];
+    foreach (lists_all() as $k => $l) {
+        foreach (list_fields($k) as $f) {
+            if ($f['type'] !== 'audio') continue;
+            $out[$k][$f['key']] = ['key' => $f['key'], 'label' => $f['label'], 'list_label' => $l['label'], 'published' => $f['published']];
+        }
+    }
+    return $out;
+}
+
+/**
+ * המפתח של שדה כלפי הספרייה (הדפדפן): במילים — מפתח השדה (כמו לפני); ברשימה — "<רשימה>.<מפתח>". נקודה אינה יכולה להופיע
+ * במפתח רשימה או שדה ([a-z][a-z0-9_]), ולכן הפירוק חד-משמעי (rec_fsplit).
+ */
+function rec_fkey(string $list, string $field): string
+{
+    return $list === 'words' ? $field : "$list.$field";
+}
+
+/** "<רשימה>.<מפתח>" ← [רשימה, מפתח]; בלי נקודה — [words, המפתח]. */
+function rec_fsplit(string $fk): array
+{
+    $p = strpos($fk, '.');
+    return $p === false ? ['words', $fk] : [substr($fk, 0, $p), substr($fk, $p + 1)];
+}
+
+/** הכותרת של פריט ברשימה, לשם ההקלטה ולשורה בספרייה: הערך הטקסטואלי הראשון לפי סדר השדות; בלי — "<שם פריט> #<מזהה>". */
+function rec_item_title(array $data, array $fields, string $itemLabel, int $id): string
+{
+    foreach ($fields as $f) {
+        if (in_array($f['type'], ['image', 'audio', 'number', 'bool', 'date'], true)) continue;
+        $v = $data[$f['key']] ?? null;
+        if (is_array($v)) $v = implode(', ', array_filter($v, 'is_string'));
+        if (!is_string($v)) continue;
+        if ($f['type'] === 'rich') $v = html_entity_decode(strip_tags($v), ENT_QUOTES | ENT_HTML5, 'UTF-8');     // טקסט רגיל — כמו שהוא (מוצג כטקסט)
+        $t = trim((string)preg_replace('/\s+/u', ' ', $v));
+        if ($t !== '') return mb_substr($t, 0, 200);
+    }
+    return trim(($itemLabel !== '' ? $itemLabel : 'פריט') . " #$id");
+}
+
+/**
+ * המקומות המלאים של כל הרשימות: [מפתח מקום => [פריט, שדה, ערך, ['word' => כותרת, 'updated_by'], רשימה]]. רק מזהה קובץ —
+ * ברשימה אין "כתובת באתר".
+ */
+function rec_list_slots(): array
+{
+    $out = [];
+    foreach (rec_list_fields() as $k => $afs) {
+        $l = list_get($k);
+        $fields = list_fields($k);
+        foreach (list_rows($k) as $r) {
+            $title = null;
+            foreach ($afs as $fk => $f) {
+                $v = $r['data'][$fk] ?? null;
+                if (!is_string($v) || !file_id($v)) continue;
+                $title ??= rec_item_title($r['data'], $fields, $l['item_label'], $r['id']);
+                $out[rec_slot_key($k, $r['id'], $fk)] = [$r['id'], $fk, $v, ['word' => $title, 'updated_by' => (string)($r['updated_by'] ?? '')], $k];
+            }
+        }
+    }
+    return $out;
+}
+
 /**
  * הרשומות נגזרות מהמילים: לכל מקום שיש בו הקלטה — רשומה אחת. הראשי — words.audio (מזהה קובץ או כתובת באתר); כל שדה
  * audio מותאם — words.extra[מפתח] (מזהה קובץ בלבד, N2 §2.2). מוסיף ומעדכן רק את הטבלה recordings; המילים והקבצים אינם
@@ -132,8 +204,11 @@ function rec_sync(): void
             if (is_string($v) && file_id($v)) $slots[rec_slot_key('words', $wid, $k)] = [$wid, $k, $v, $w];
         }
     }
+    // N3b: כל שדה audio של כל רשימה — אותם כללים (רשימה שנמחקה / פריט שנמחק / שדה שנמחק ⇒ "לא מחוברת"; חזרו ⇒ מתחברת)
+    $slots += rec_list_slots();
     $recs = [];
-    foreach ($pdo->query("SELECT * FROM recordings WHERE list = 'words' AND word_id IS NOT NULL")->fetchAll() as $r) $recs[rec_slot_key('words', (int)$r['word_id'], $r['field'])] = $r;
+    foreach ($pdo->query('SELECT * FROM recordings WHERE word_id IS NOT NULL')->fetchAll() as $r) $recs[rec_slot_key((string)$r['list'], (int)$r['word_id'], $r['field'])] = $r;
+    $moved = [];                                       // N3b: מקומות ברשימה שהקובץ שלהם השתנה מחוץ לספרייה — הנתיב בעץ (אחרי העסקה)
     $files = [];
     $origin = [];
     // A3: הקלטה "לא מחוברת" (word_id NULL, לא בסל) — מקום שמצביע על הקובץ שלה מתחבר אליה מחדש (שם, משך וגרסאות נשמרים)
@@ -144,12 +219,13 @@ function rec_sync(): void
         if (empty($f['deleted_at']) && ($f['origin'] ?? '') !== '' && !isset($origin[$f['origin']])) $origin[$f['origin']] = $f['id'];
     }
     $now = now_iso();
-    $ins = $pdo->prepare("INSERT INTO recordings (list, word_id, field, state, source, file_id, name, how, at) VALUES ('words', ?, ?, ?, ?, ?, ?, ?, ?)");
+    $ins = $pdo->prepare('INSERT INTO recordings (list, word_id, field, state, source, file_id, name, how, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $upd = $pdo->prepare('UPDATE recordings SET state = ?, source = ?, file_id = ?, how = ?, duration = ?, scan = ?, scan_size = ?, scan_note = ?, f_code = ?, f_note = ? WHERE id = ?');
-    $relink = $pdo->prepare("UPDATE recordings SET list = 'words', word_id = ?, field = ? WHERE id = ?");
+    $relink = $pdo->prepare('UPDATE recordings SET list = ?, word_id = ?, field = ? WHERE id = ?');
     $pdo->exec('BEGIN IMMEDIATE');
     try {
         foreach ($slots as $sk => [$wid, $field, $audio, $w]) {
+            $list = $slots[$sk][4] ?? 'words';
             $r = $recs[$sk] ?? null;
             $fid = file_id($audio);
             if ($fid) {                                    // המקום מצביע על קובץ בכלי (הוחלף, הועלה, ייבוא ה-ZIP, או שדה מותאם)
@@ -164,13 +240,14 @@ function rec_sync(): void
                 $state = $fid ? 'tool' : ($same && $r['state'] === 'failed' ? 'failed' : 'site');
                 $how = $fid ? ($same && $r['file_id'] === $fid ? $r['how'] : 'imported') : '';
             }
+            if ($list !== 'words' && $fid && (!$r || $r['file_id'] !== $fid)) $moved[] = [$list, $wid, $field, $fid, (string)($w['updated_by'] ?? '')];
             if (!$r && $fid && isset($loose[$fid])) {
-                $relink->execute([$wid, $field, $loose[$fid]]);
+                $relink->execute([$list, $wid, $field, $loose[$fid]]);
                 unset($loose[$fid]);
                 continue;
             }
             if (!$r) {
-                $ins->execute([$wid, $field, $state, $source, $fid, mb_substr((string)$w['word'], 0, 200), $how, $now]);
+                $ins->execute([$list, $wid, $field, $state, $source, $fid, mb_substr((string)$w['word'], 0, 200), $how, $now]);
                 continue;
             }
             // A3: הקובץ הוחלף מחוץ לספרייה (📚 מילים) — הקודם נשמר כגרסה. הבאה (אותה כתובת, עותק בכלי) אינה החלפה.
@@ -200,6 +277,9 @@ function rec_sync(): void
         $pdo->exec('ROLLBACK');
         throw $e;
     }
+    // N3b: הקובץ של מקום ברשימה הוחלף מהטבלה / מהקובץ / מהאקסל — הנתיב בעץ (media/audio/<רשימה>-<פריט>-<שדה>) מצביע עליו.
+    // אחרת החבילה (build_lists — נתיב שתפוס בעץ גובר) הייתה יוצאת עם הקובץ הקודם.
+    if ($moved && function_exists('rec_tree_point')) foreach ($moved as [$list, $wid, $field, $fid, $by]) rec_tree_point($wid, $fid, ['sub' => 'system', 'name' => $by !== '' ? $by : 'system'], $field, $list);
 }
 
 /** הרשומות של השדה הראשי, לפי מזהה המילה (אחרי סנכרון) — כמו לפני N2b. */
@@ -233,9 +313,10 @@ function rec_duration(array $user, array $b): array
     if ((!$wid && !$rid) || !$fid || !is_numeric($d) || $d <= 0 || $d > 36000) throw new ApiError('משך לא תקין');
     rec_sync();
     // N2b: הקלטה של מילה — לפי המקום (המילה והשדה; בלי שדה — הראשי)
-    $field = is_string($b['field'] ?? null) && $b['field'] !== '' ? $b['field'] : rec_primary();
-    $st = rec_db()->prepare("UPDATE recordings SET duration = ? WHERE " . ($rid ? 'id = ?' : "list = 'words' AND word_id = ? AND field = ?") . " AND file_id = ? AND state = 'tool'");
-    $st->execute($rid ? [round((float)$d, 2), $rid, $fid] : [round((float)$d, 2), $wid, $field, $fid]);
+    // N3b: שדה של רשימה — "<רשימה>.<מפתח>" (rec_fkey)
+    [$list, $field] = rec_fsplit(is_string($b['field'] ?? null) && $b['field'] !== '' ? $b['field'] : rec_primary());
+    $st = rec_db()->prepare("UPDATE recordings SET duration = ? WHERE " . ($rid ? 'id = ?' : 'list = ? AND word_id = ? AND field = ?') . " AND file_id = ? AND state = 'tool'");
+    $st->execute($rid ? [round((float)$d, 2), $rid, $fid] : [round((float)$d, 2), $list, $wid, $field, $fid]);
     return ['saved' => $st->rowCount() > 0];
 }
 
@@ -687,26 +768,30 @@ function rec_fetch_step(array $owner): array
     return rec_status($owner);
 }
 
-/** הנתיב היציב בעץ (N2b): הראשית — media/audio/<מזהה>.<סיומת>; שדה מותאם — media/audio/<מזהה>-<מפתח>.<סיומת> (06 §2.3). */
-function rec_tree_path(int $wid, string $field, string $ext): string
+/**
+ * הנתיב היציב בעץ (N2b): הראשית — media/audio/<מזהה>.<סיומת>; שדה מותאם — media/audio/<מזהה>-<מפתח>.<סיומת> (06 §2.3).
+ * N3b: פריט ברשימה — media/audio/<רשימה>-<מזהה>-<מפתח>.<סיומת> (אותה צורה שהקובץ data/<רשימה>.json והחבילה כותבים, N3 §2.4).
+ */
+function rec_tree_path(int $wid, string $field, string $ext, string $list = 'words'): string
 {
+    if ($list !== 'words') return "media/audio/$list-$wid-$field" . ($ext !== '' ? ".$ext" : '');
     return 'media/audio/' . $wid . ($field === '' || $field === rec_primary() ? '' : "-$field") . ($ext !== '' ? ".$ext" : '');
 }
 
 /** הקלטה שהובאה (או חוברה) — בעץ הפרויקט בנתיב של המקום (רק כשהעץ כבר קיים; כשל כאן אינו מכשיל את הפעולה). */
-function rec_tree_link(int $wid, string $fid, array $user, string $field = ''): void
+function rec_tree_link(int $wid, string $fid, array $user, string $field = '', string $list = 'words'): void
 {
     try {
         if (!pf_seeded()) return;
         $f = file_row($fid);
-        $path = rec_tree_path($wid, $field, (string)$f['ext']);
-        pf_tx(function () use ($path, $fid, $user, $field) {
+        $path = rec_tree_path($wid, $field, (string)$f['ext'], $list);
+        pf_tx(function () use ($path, $fid, $user, $field, $list) {
             if (pf_by_path($path)) return;
             pf_free($path);
-            pf_insert($path, 'media', '', $user, $fid, $field === '' || $field === rec_primary() ? 'הובאה מהאתר' : 'הקלטה');
+            pf_insert($path, 'media', '', $user, $fid, $list === 'words' && ($field === '' || $field === rec_primary()) ? 'הובאה מהאתר' : 'הקלטה');
         });
     } catch (Throwable $e) {
-        devlog_write('warn', 'audio', 'tree_link', ['message' => 'ההקלטה הובאה, אך לא נוספה לעץ הפרויקט: ' . $e->getMessage(), 'user' => $user, 'data' => ['word_id' => $wid, 'field' => $field]]);
+        devlog_write('warn', 'audio', 'tree_link', ['message' => 'ההקלטה הובאה, אך לא נוספה לעץ הפרויקט: ' . $e->getMessage(), 'user' => $user, 'data' => ['list' => $list, 'word_id' => $wid, 'field' => $field]]);
     }
 }
 

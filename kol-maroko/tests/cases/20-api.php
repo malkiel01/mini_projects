@@ -44,7 +44,7 @@ const API_MIN_ROLE = [
     'fields' => 'editor', 'field_save' => 'editor', 'field_delete' => 'editor', 'topics' => 'editor', 'topic_save' => 'editor', 'topic_merge' => 'editor', 'field_key_preview' => 'editor', 'field_key_apply' => 'editor',
     // N3: רשימות — עורך (מחיקת רשימה עם פריטים ו"החלף הכול" — מפרסם, בפונקציה)
     'lists' => 'editor', 'list_create' => 'editor', 'list_save' => 'editor', 'list_delete' => 'editor', 'list_key_preview' => 'editor', 'list_key_apply' => 'editor',
-    'list_items' => 'editor', 'list_item_save' => 'editor', 'list_item_delete' => 'editor', 'list_item_move' => 'editor', 'list_csv' => 'editor', 'list_csv_import' => 'editor', 'list_place' => 'editor',
+    'list_items' => 'editor', 'list_item_save' => 'editor', 'list_item_delete' => 'editor', 'list_item_move' => 'editor', 'list_csv' => 'editor', 'list_csv_import' => 'editor', 'list_place' => 'editor', 'list_place_undo' => 'editor',
     // פרוסה M5 — 📬 פניות
     'inbox' => 'editor', 'inbox_mark' => 'editor', 'inbox_csv' => 'editor', 'forms_settings' => 'editor', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher', 'mail_test' => 'owner', 'dev-forms' => 'owner',
     'dev-log-links' => 'owner', 'dev-task-from-log' => 'owner', 'dev-log' => 'owner', 'dev-audit' => 'owner', 'dev-health' => 'owner', 'dev-spike-fixture' => 'owner', 'dev-state' => 'owner', 'dev-attack-save' => 'owner',

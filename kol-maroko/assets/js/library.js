@@ -210,7 +210,9 @@ const Library = (() => {
       (!topic || r.topics.includes(topic)) &&
       (!s || norm(r.word).includes(s) || norm(r.meaning).includes(s) || norm(r.name || '').includes(s) || String(widOf(r)) === idq));
     const key = r => r.loose ? 1e9 - r.id : widOf(r);          // הלא מחוברות — אחרי המילים
-    const cmp = (a, b) => key(a) - key(b) || fIdx(a) - fIdx(b);  // N2b: אותה מילה — לפי סדר השדות
+    // N3b: קודם המילים, אחריהן כל רשימה (לפי סדר השדות שלה), ובסוף הלא מחוברות
+    const grp = r => r.loose ? 2 : r.list ? 1 : 0;
+    const cmp = (a, b) => grp(a) - grp(b) || (grp(a) === 1 && a.list !== b.list ? fIdx(a) - fIdx(b) : 0) || key(a) - key(b) || fIdx(a) - fIdx(b);  // N2b: אותה מילה — לפי סדר השדות
     if (st === 'dups') rows.sort((a, b) => a.file.sha < b.file.sha ? -1 : a.file.sha > b.file.sha ? 1 : cmp(a, b));
     else if (sort === 'id') rows.sort(cmp);
     else if (sort === 'state') rows.sort((a, b) => ORDER[a.state] - ORDER[b.state] || cmp(a, b));
@@ -230,7 +232,7 @@ const Library = (() => {
     const d = durOf(r);
     const l3 = bad || (r.fetch ? 'ההבאה לכלי נכשלה — ' + r.fetch.reason : '') || (f ? named + [d != null ? '⏱ ' + clock(d) : 'משך לא נמדד', Media.mb(f.size), f.name, date(f.at),
       r.versions ? `${r.versions} ${r.versions === 1 ? 'גרסה קודמת' : 'גרסאות קודמות'}` : ''].filter(Boolean).join(' · ') : '')
-      || (r.dropped ? `משדה שנמחק: ${r.dropped}` : '');
+      || r.gone || (r.dropped ? `משדה שנמחק: ${r.dropped}` : '');
     const can = r.state !== 'none' && r.rec;
     const word = r.loose ? r.word : `${r.word}${many && fl ? ' · ' + fl : ''}`;
     const li = h('li', { class: 'lib-row' + (P.id === r.id ? ' on' : '') + (chosen.has(r.id) ? ' picked' : '') + (r.state === 'none' ? ' lib-empty' : ''), 'data-id': r.id },
@@ -251,7 +253,8 @@ const Library = (() => {
       h('span', { class: 'lib-c lib-c-size', dir: 'ltr', title: 'גודל' }, f ? Media.mb(f.size) : '—'),
       h('span', { class: `chip ${cls}` }, r.loose && !bad ? 'לא מחוברת' : label),
       r.state === 'none'
-        ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכת המילה: ${r.word}`, title: 'עריכת המילה', onclick: () => Words.open(wid) }, '✏️')
+        ? (r.list ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': `פתיחת הרשימה: ${r.list_label || r.list}`, title: 'פתיחת הרשימה', onclick: () => Words.openList(r.list) }, '✏️')
+          : h('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכת המילה: ${r.word}`, title: 'עריכת המילה', onclick: () => Words.open(wid) }, '✏️'))
         : null,
       h('button', { type: 'button', class: 'icon-btn lib-rep', title: r.state === 'none' ? 'הקלט / העלה קובץ' : 'החלף / הקלט',
         'aria-label': `${r.state === 'none' ? 'הקלט' : 'החלף / הקלט'}: ${word}`, onclick: () => replace(r.id) }, r.state === 'none' ? '🎙️' : '🔁'),
@@ -359,9 +362,10 @@ const Library = (() => {
       bad ? h('p', { class: 'error' }, 'לא נטען — ' + bad) : null,
       r.meaning ? h('p', { dir: 'auto' }, r.meaning) : null,
       h('dl', { class: 'cells' },
-        r.loose ? cell('מילה', 'לא מחוברת') : cell('מזהה המילה', String(widOf(r)), { dir: 'ltr' }),
+        r.loose ? cell(r.list ? 'פריט' : 'מילה', 'לא מחוברת') : r.list ? cell(`מזהה הפריט ב${r.list_label || r.list}`, String(widOf(r)), { dir: 'ltr' }) : cell('מזהה המילה', String(widOf(r)), { dir: 'ltr' }),
         multi() && r.field_label ? cell('שדה', r.field_label + (r.internal ? ' · פנימי (אינו מתפרסם)' : '')) : null,
-        r.dropped ? cell('שדה', `משדה שנמחק: ${r.dropped}`) : null,
+        r.dropped ? cell('שדה', r.gone || `משדה שנמחק: ${r.dropped}`) : null,
+        r.path ? cell('בעץ הקוד', r.path, { dir: 'ltr' }) : null,
         cell('מצב', STATE[r.state][0]),
         cell('נושאים', r.topics.join(', ')),
         cell('מספר מהאקסל', r.external_id, { dir: 'ltr' }),
@@ -381,7 +385,7 @@ const Library = (() => {
         h('button', { type: 'button', class: 'btn ghost', onclick: () => replace(r.id) }, r.state === 'none' ? '🎙️ הקלט / בחר קובץ' : '🔁 החלף / הקלט'),
         r.rec ? h('button', { type: 'button', class: 'btn ghost', onclick: () => LibActions.menu(r) }, '⋯ כל הפעולות') : null,
         r.state === 'none' && !r.loose && D.loose?.length ? h('button', { type: 'button', class: 'btn ghost', onclick: () => LibActions.pickFor(r) }, '🔗 חבר הקלטה מהספרייה') : null,
-        r.loose ? null : h('button', { type: 'button', class: 'btn ghost', onclick: () => { $('#sheet').close(); Words.open(widOf(r)); } }, '📚 פתח את המילה')));
+        r.loose ? null : h('button', { type: 'button', class: 'btn ghost', onclick: () => { $('#sheet').close(); r.list ? Words.openList(r.list) : Words.open(widOf(r)); } }, r.list ? `📚 פתח את הרשימה "${r.list_label || r.list}"` : '📚 פתח את המילה')));
   }
 
   // ── המסכים ────────────────────────────────────────────────
@@ -413,7 +417,7 @@ const Library = (() => {
         c.site ? h('p', { class: 'hint', style: 'margin:0' }, 'הקלטה "באתר" מתנגנת ישירות מהאתר. 🔁 מחליף אותה בהקלטה חדשה שנשמרת בכלי; שינוי שם ומחיקה — אחרי הבאת הקבצים.') : null,
         isOwner && (c.site || c.tool) && typeof LibraryFetch !== 'undefined' ? LibraryFetch.panel(c, reload) : null,
         measureBtn(),
-        c.audio ? h('p', { class: 'hint', style: 'margin:0' }, 'מוצגות ההקלטות של המילים. קובצי שמע אחרים שבאתר עדיין אינם מוצגים.') : null,
+        c.audio ? h('p', { class: 'hint', style: 'margin:0' }, D.fields?.some(f => f.list && f.list !== 'words') ? 'מוצגות ההקלטות של המילים ושל הרשימות. קובצי שמע אחרים שבאתר עדיין אינם מוצגים.' : 'מוצגות ההקלטות של המילים. קובצי שמע אחרים שבאתר עדיין אינם מוצגים.') : null,
         h('div', { class: 'row-btns wrap lib-tools' },
           LibActions.addButton(),
           inTool ? h('button', { type: 'button', class: 'btn ghost', onclick: () => LibActions.download(null) }, `⬇️ הורדת כולן (${num(inTool)})`) : null,
