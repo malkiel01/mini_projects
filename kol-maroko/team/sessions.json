@@ -8,10 +8,10 @@
   ],
   "code": {
     "V4": "session_018g4NYChvguP3UAsPoe1XqG",
-    "M2": "session_018g4NYDqSADMkHkDkiJiiYi",
     "A3": "session_018g4NYGzZg9ooe3a4MJJELF",
     "M3": "session_018g4NYDNtjMmzAwj16DgwP2",
-    "N1": "session_018g4NYDJsQ89EKNooSUqRgM"
+    "N1": "session_018g4NYDJsQ89EKNooSUqRgM",
+    "M2b": "session_018g4NYDqSADMkHkDkiJiiYi"
   },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
@@ -30,7 +30,8 @@
     "session_018g4NYFHV7U272jiNfe6P9u (F2b, מוזגה 08:30)",
     "session_018g4NYCmrLkEFdkgCFTBBE6 (A2, מוזגה 08:32)",
     "session_018g4NYFzdrcm79E9rHgGcQZ (M1, מוזגה 08:37)",
-    "session_018g4NYDvqMVieahjNt9213o (C1, מוזגה 08:41)"
+    "session_018g4NYDvqMVieahjNt9213o (C1, מוזגה 08:41)",
+    "session_018g4NYDqSADMkHkDkiJiiYi (M2, מוזגה 09:22 — ממשיכה כ-M2b)"
   ],
   "control": "session_018g4NYGbTsYKFmHndtZzAux",
   "control_previous": [
