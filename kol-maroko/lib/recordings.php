@@ -65,9 +65,37 @@ function rec_db(): PDO
                 f_at      TEXT
             );
             SQL);
+        // A3: סל (מחיקה רכה — הרשומה נשארת, בלי מילה) וגרסאות קודמות. מוסיף בלבד.
+        $cols = array_column($pdo->query('PRAGMA table_info(recordings)')->fetchAll(), 'name');
+        foreach (['deleted_at TEXT', "deleted_by TEXT NOT NULL DEFAULT ''", 'deleted_word INTEGER', "deleted_audio TEXT NOT NULL DEFAULT ''"] as $c) {
+            if (!in_array(explode(' ', $c)[0], $cols, true)) $pdo->exec("ALTER TABLE recordings ADD COLUMN $c");
+        }
+        $pdo->exec(<<<'SQL'
+            CREATE TABLE IF NOT EXISTS rec_versions (
+                id        INTEGER PRIMARY KEY,
+                rec_id    INTEGER NOT NULL,               -- recordings.id
+                file_id   TEXT,                           -- הקובץ של הגרסה; NULL — הגרסה היא ההקלטה שבאתר (source)
+                source    TEXT NOT NULL DEFAULT '',
+                name      TEXT NOT NULL DEFAULT '',
+                duration  REAL,
+                how       TEXT NOT NULL DEFAULT '',
+                since     TEXT,                           -- מתי הגרסה הזו נעשתה הנוכחית
+                at        TEXT NOT NULL,                  -- מתי הוחלפה
+                by_name   TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS rec_versions_rec ON rec_versions (rec_id);
+            SQL);
         $ready = $pdo;
     }
     return $pdo;
+}
+
+/** הגרסה הנוכחית של הקלטה → גרסה קודמת (לפני החלפה). בלי קובץ ובלי מקור — אין מה לשמור. */
+function rec_version_push(array $r, string $by): void
+{
+    if (!$r['file_id'] && $r['source'] === '') return;
+    rec_db()->prepare('INSERT INTO rec_versions (rec_id, file_id, source, name, duration, how, since, at, by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$r['id'], $r['file_id'] ?: null, $r['file_id'] ? '' : $r['source'], $r['name'], $r['duration'], $r['how'], $r['at'], now_iso(), $by]);
 }
 
 /** קובץ חי בספרייה (לא בסל)? */
@@ -83,11 +111,14 @@ function rec_file_ok(?string $fid, array $files): bool
 function rec_sync(): void
 {
     $pdo = rec_db();
-    $words = $pdo->query("SELECT id, word, audio FROM words WHERE audio != ''")->fetchAll();
+    $words = $pdo->query("SELECT id, word, audio, updated_by FROM words WHERE audio != ''")->fetchAll();
     $recs = [];
     foreach ($pdo->query('SELECT * FROM recordings WHERE word_id IS NOT NULL')->fetchAll() as $r) $recs[(int)$r['word_id']] = $r;
     $files = [];
     $origin = [];
+    // A3: הקלטה "לא מחוברת" (word_id NULL, לא בסל) — מילה שמצביעה על הקובץ שלה מתחברת אליה מחדש (שם, משך וגרסאות נשמרים)
+    $loose = [];
+    foreach ($pdo->query('SELECT id, file_id FROM recordings WHERE word_id IS NULL AND deleted_at IS NULL AND file_id IS NOT NULL')->fetchAll() as $u) $loose[$u['file_id']] ??= (int)$u['id'];
     foreach ($pdo->query("SELECT id, origin, deleted_at FROM files WHERE kind = 'audio'")->fetchAll() as $f) {
         $files[$f['id']] = $f;
         if (empty($f['deleted_at']) && ($f['origin'] ?? '') !== '' && !isset($origin[$f['origin']])) $origin[$f['origin']] = $f['id'];
@@ -115,9 +146,18 @@ function rec_sync(): void
                 $state = $fid ? 'tool' : ($same && $r['state'] === 'failed' ? 'failed' : 'site');
                 $how = $fid ? ($same && $r['file_id'] === $fid ? $r['how'] : 'imported') : '';
             }
+            if (!$r && $fid && isset($loose[$fid])) {
+                $pdo->prepare('UPDATE recordings SET word_id = ? WHERE id = ?')->execute([$wid, $loose[$fid]]);
+                unset($loose[$fid]);
+                continue;
+            }
             if (!$r) {
                 $ins->execute([$wid, $state, $source, $fid, mb_substr((string)$w['word'], 0, 200), $how, $now]);
                 continue;
+            }
+            // A3: הקובץ הוחלף מחוץ לספרייה (📚 מילים) — הקודם נשמר כגרסה. הבאה (אותה כתובת, עותק בכלי) אינה החלפה.
+            if ($r['file_id'] !== $fid && $fid && ($r['file_id'] || ($r['state'] !== 'tool' && $r['source'] !== '' && ($files[$fid]['origin'] ?? '') !== $r['source']))) {
+                rec_version_push($r, (string)($w['updated_by'] ?? ''));
             }
             $srcChanged = $r['source'] !== $source;
             $dur = $r['file_id'] === $fid ? $r['duration'] : null;
@@ -127,8 +167,15 @@ function rec_sync(): void
             $was = [$r['state'], $r['source'], $r['file_id'], $r['how'], $r['duration'], $r['scan'], $r['scan_size'], $r['scan_note'], $r['f_code'], $r['f_note']];
             if ($row != $was) $upd->execute([...$row, $r['id']]);
         }
+        // מילה שאין לה עוד הקלטה: רשומה עם קובץ (או עם גרסאות) נשארת בספרייה כ"לא מחוברת" — רק כתובת בלי קובץ יורדת
         $del = $pdo->prepare('DELETE FROM recordings WHERE id = ?');
-        foreach ($recs as $wid => $r) if (!isset($keep[$wid])) $del->execute([$r['id']]);
+        $loosen = $pdo->prepare('UPDATE recordings SET word_id = NULL WHERE id = ?');
+        $hasV = $pdo->prepare('SELECT 1 FROM rec_versions WHERE rec_id = ? LIMIT 1');
+        foreach ($recs as $wid => $r) {
+            if (isset($keep[$wid])) continue;
+            $hasV->execute([$r['id']]);
+            (rec_file_ok($r['file_id'], $files) || $hasV->fetchColumn()) ? $loosen->execute([$r['id']]) : $del->execute([$r['id']]);
+        }
         $pdo->exec('COMMIT');
     } catch (Throwable $e) {
         $pdo->exec('ROLLBACK');
@@ -149,12 +196,13 @@ function rec_rows(): array
 function rec_duration(array $user, array $b): array
 {
     $wid = (int)($b['word_id'] ?? 0);
+    $rid = (int)($b['rec_id'] ?? 0);                 // A3: הקלטה לא מחוברת — לפי מזהה הרשומה
     $fid = file_id($b['file_id'] ?? '');
     $d = $b['duration'] ?? null;
-    if (!$wid || !$fid || !is_numeric($d) || $d <= 0 || $d > 36000) throw new ApiError('משך לא תקין');
+    if ((!$wid && !$rid) || !$fid || !is_numeric($d) || $d <= 0 || $d > 36000) throw new ApiError('משך לא תקין');
     rec_sync();
-    $st = rec_db()->prepare("UPDATE recordings SET duration = ? WHERE word_id = ? AND file_id = ? AND state = 'tool'");
-    $st->execute([round((float)$d, 2), $wid, $fid]);
+    $st = rec_db()->prepare("UPDATE recordings SET duration = ? WHERE " . ($rid ? 'id' : 'word_id') . " = ? AND file_id = ? AND state = 'tool'");
+    $st->execute([round((float)$d, 2), $rid ?: $wid, $fid]);
     return ['saved' => $st->rowCount() > 0];
 }
 
