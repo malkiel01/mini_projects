@@ -538,3 +538,25 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
 .w-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
 .w-bulk[hidden] { display: none; }
 .pj-plan ul { margin: 4px 0; padding-inline-start: 18px; }
+
+/* N2b — שדה שמע בספרייה: עמודה, סינון, "פנימי", גרירה; במחשב — על כל הרוחב (body.lib-wide נקבע ב-library.js) */
+.lib-c { display: none; }
+.lib-field-m { font-weight: 600; color: var(--ink); }
+.lib-internal { font-size: .7rem; min-block-size: 0; padding: 0 6px; }
+.lib-fstat b { font-size: .85rem; }
+.lib-fieldsel { margin-block: var(--s1); }
+.lib-filters.lib-f-field { grid-template-columns: minmax(0, 1fr) repeat(6, auto); }
+@media (max-width: 860px) { .lib-filters.lib-f-field { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.lib-row.lib-target { outline: 2px dashed var(--brand); outline-offset: -2px; background: var(--brand-soft); }
+.lib-row.lib-dragging { opacity: .5; }
+.lib-dragtip { position: fixed; z-index: 40; inset-block-start: 12px; inset-inline: 0; margin-inline: auto; inline-size: max-content; max-inline-size: calc(100vw - 24px);
+  padding: 6px var(--s3); border-radius: 99px; background: var(--ink); color: var(--bg); font-size: .9rem; pointer-events: none; }
+@media (min-width: 1024px) {
+  body.lib-wide main { max-width: none; padding-inline: var(--s4); }
+  body.lib-wide .lib-p-row, body.lib-wide .lib-seek { max-inline-size: none; }
+  body.lib-wide .lib-c { display: block; flex: none; font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  body.lib-wide .lib-c-field { inline-size: 11rem; color: var(--ink); }
+  body.lib-wide .lib-c-dur { inline-size: 4.5rem; text-align: center; }
+  body.lib-wide .lib-c-size { inline-size: 6rem; text-align: end; }
+  body.lib-wide .lib-field-m { display: none; }
+}
