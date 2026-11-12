@@ -73,9 +73,11 @@ const Studio = (() => {
   function fixSel() { if (S.sel && !find(S.sel)) S.sel = null; }
 
   // ── תצוגה ───────────────────────────────────────────────
+  // .kol-row>.kol-contents>*: עמודה מיובאת (display:contents) הופכת את הרכיב לפריט flex של השורה, והוא מתכווץ לרוחב התוכן —
+  // במחשב רחב המילון תפס ~717 מתוך 1580 ונשאר ריק ענק. כאן הוא ממלא את השורה (L1)
   const FRAME = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style id="base">html,body{margin:0}body{font-family:system-ui,"Segoe UI",Arial,sans-serif;color:#1d1d1f;background:#fff}
-[data-kid]{cursor:pointer}.kol-col:empty{min-height:64px;outline:1px dashed #c8c8c8;outline-offset:-4px}
+[data-kid]{cursor:pointer}.kol-row>.kol-contents>*{flex:1 1 0;min-width:0}.kol-col:empty{min-height:64px;outline:1px dashed #c8c8c8;outline-offset:-4px}
 .kol-sel{outline:2px solid #2d7ff9!important;outline-offset:2px}.kol-sec.kol-sel{outline-offset:-2px}
 .kol-empty{padding:48px 16px;text-align:center;color:#888}iframe.kol-code{pointer-events:none}</style><style id="page"></style></head>
 <body><div id="root"></div><script>
