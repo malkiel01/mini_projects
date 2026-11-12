@@ -93,17 +93,17 @@ const TABS = [
   { id: 'dev', label: '🛠️ מפתח', min: 'editor', dev: true },      // מי מפתח — מהשרת (user.developer)
 ];
 const RANK = { editor: 1, publisher: 2, owner: 3 };
-// המסמך המוקשח (editor.php — המדיניות המלאה של C1 שלב ב): בו רצים העורך החזותי ועורך הקוד בלבד. שאר המסכים — ב-index.html.
+// המסמך המוקשח (editor.php — המדיניות המלאה של C1 שלב ב): בו רצים העורך החזותי ועורך הקוד בלבד. שאר המסכים — ב-index.php (הסטודיו, שלב א).
 const HARD = /\/editor\.php$/.test(location.pathname), HARD_TABS = ['editor', 'project'];
 // הפניה מוקדמת, לפני כל בקשה: מי שנכנס (או מרענן) ב-index.html#/editor עובר מיד למסמך המוקשח — פעם אחת, בלי טעינה כפולה
 if (!HARD && /^#\/editor(\/|$)/.test(location.hash)) location.replace('editor.php' + location.hash);
-const tabHref = id => (HARD ? (HARD_TABS.includes(id) ? '#/' + id : 'index.html#/' + id) : HARD_TABS.includes(id) ? 'editor.php#/' + id : '#/' + id);
+const tabHref = id => (HARD ? (HARD_TABS.includes(id) ? '#/' + id : 'index.php#/' + id) : HARD_TABS.includes(id) ? 'editor.php#/' + id : '#/' + id);
 
 function route() {
   const tabs = TABS.filter(t => RANK[state.user.role] >= RANK[t.min] && (!t.dev || state.user.developer));
   const [, hashTab, sub, arg] = location.hash.split('/');           // #/dev/log/<מזהה בקשה>
   let cur = tabs.find(t => hashTab === t.id) || (HARD ? tabs.find(t => t.id === 'editor') : null) || tabs[0];
-  if (HARD && !HARD_TABS.includes(cur.id)) { location.replace('index.html' + (location.hash || '#/' + cur.id)); return; }   // מסך אחר — במסמך הרגיל
+  if (HARD && !HARD_TABS.includes(cur.id)) { location.replace('index.php' + (location.hash || '#/' + cur.id)); return; }   // מסך אחר — במסמך הרגיל
   if (!HARD && cur.id === 'editor') { location.replace('editor.php' + (location.hash || '#/editor')); return; }               // העורך — תמיד תחת המדיניות המלאה
   const nav = $('#tabs');
   nav.hidden = tabs.length < 2;

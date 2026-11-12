@@ -25,7 +25,8 @@ $dir = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? 
 $host = preg_replace('/[^A-Za-z0-9.:\[\]-]/', '', (string)($_SERVER['HTTP_HOST'] ?? ''));
 header_remove('Content-Type');
 header('Content-Type: text/html; charset=utf-8');
-header('Content-Security-Policy: ' . live_csp($host . $dir . '/preview/'));
+require_once __DIR__ . '/lib/csp.php';
+header('Content-Security-Policy: ' . live_csp($host . $dir . '/preview/') . '; report-uri ' . csp_report_uri('live'));   // דוחות ההפרה ליומן (C1)
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Cache-Control: no-store');
