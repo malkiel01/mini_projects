@@ -39,7 +39,7 @@
     if (p === 'grid-column-gap') return ['column-gap'];
     if (p === 'font') return ['font-style', 'font-weight', 'font-size', 'line-height', 'font-family'];
     if (p === 'text-decoration') return ['text-decoration-line', 'text-decoration-style', 'text-decoration-color'];
-    if (p === 'background') return ['background-color'];
+    if (p === 'background') return ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat', 'background-attachment', 'background-origin', 'background-clip'];   // V5: כל הרכיבים (לקריאה; הכתיבה — אחרי הקיצור)
     return [p];
   }
   /** השם שהעורך כותב להצהרה חדשה: מאפיין לוגי (margin-block-start), לא פיזי. */
@@ -113,6 +113,7 @@
     const p = prop.trim().toLowerCase(), cov = covered(p, rtl), i = cov.indexOf(phys);
     if (i < 0) return null;
     if (cov.length === 1) return value;
+    if (p === 'background') return g.KolBg ? g.KolBg.bgComponent(value, phys) : null;   // V5: background.js
     if (p === 'font') { const f = fontParse(value); if (!f) return null; return phys === 'font-size' ? f.size : phys === 'line-height' ? f.lh : phys === 'font-family' ? f.family : (f.pre.find(x => (phys === 'font-weight' ? WEIGHT : FSTYLE).test(x)) || 'normal'); }
     const t = splitTop(value); if (t.some(x => /var\(/i.test(x))) return null;
     if (cov.length === 4) return t.length <= 4 ? expand4(t)[i] : null;
