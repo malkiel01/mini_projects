@@ -51,6 +51,7 @@
     if ((m = /^grid-(row|column)$/.exec(p))) return ['grid-' + m[1] + '-start', 'grid-' + m[1] + '-end'];
     if (p === 'grid-template') return ['grid-template-rows', 'grid-template-columns', 'grid-template-areas'];
     if (p === 'overflow') return ['overflow-x', 'overflow-y'];
+    if (p === 'transition') return ['transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay', 'transition-behavior'];   // V8: "מעבר" — קריאה; כתיבה אחרי הקיצור
     if (p === 'background') return ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat', 'background-attachment', 'background-origin', 'background-clip'];   // V5: כל הרכיבים (לקריאה; הכתיבה — אחרי הקיצור)
     return [p];
   }
@@ -126,7 +127,7 @@
     if (cov.length === 1) return nv;
     if (p === 'font') return fontSet(value, phys, nv);
     if (p === 'text-decoration') return decoSet(value, phys, nv);
-    if (p === 'background' || p === 'grid-area' || p === 'grid-template' || /^grid-(row|column)$/.test(p)) return null;
+    if (p === 'background' || p === 'transition' || p === 'grid-area' || p === 'grid-template' || /^grid-(row|column)$/.test(p)) return null;
     if (p === 'flex') { const f = flexParse(value); if (!f) return null; f[i] = nv; return f.join(' '); }
     if (p === 'flex-flow') { const f = flexFlowParse(value); if (!f) return null; f[i] = nv; return f.join(' '); }
     const t = splitTop(value);
@@ -145,7 +146,7 @@
     if (p === 'flex') { const f = flexParse(value); return f ? f[i] : null; }
     if (p === 'flex-flow') { const f = flexFlowParse(value); return f ? f[i] : null; }
     if (/^grid-(row|column)$/.test(p)) { const f = String(value).split('/').map(x => x.trim()); return f[i] || (i === 1 && /^\d+$|^-?\d+$/.test(f[0]) ? 'auto' : f[0]); }
-    if (p === 'grid-area' || p === 'grid-template') return null;
+    if (p === 'grid-area' || p === 'grid-template' || p === 'transition') return null;
     if (p === 'font') { const f = fontParse(value); if (!f) return null; return phys === 'font-size' ? f.size : phys === 'line-height' ? f.lh : phys === 'font-family' ? f.family : (f.pre.find(x => (phys === 'font-weight' ? WEIGHT : FSTYLE).test(x)) || 'normal'); }
     const t = splitTop(value); if (t.some(x => /var\(/i.test(x))) return null;
     if (cov.length === 4) return t.length <= 4 ? expand4(t)[i] : null;
@@ -168,16 +169,18 @@
     }
     return { patches: K().css.addDecl(m, rule, logical(phys, rtl), value).patches, kind: 'add' };
   }
+  /** מחיקת הצהרה מסוימת מכלל (לא "האחרונה בשם הזה"), בלי לשבור את סגנון הנקודה-פסיק. */
+  function removeDeclAt(m, rule, d) {
+    const ds = rule.decls, at = ds.indexOf(d);
+    let from = d.from; while (from > rule.bFrom + 1 && /\s/.test(m.src[from - 1])) from--;
+    const to = d.semi >= 0 ? d.semi : d.to;
+    if (d.semi < 0 && at === ds.length - 1 && ds.length > 1 && m.src[from - 1] === ';') from--;
+    return [{ from, to, text: '' }];
+  }
   /** איפוס: מוחקים את ההצהרה (לא כותבים ברירת מחדל). קיצור — נמחק כולו, וזה נאמר. null — אין מה לאפס. */
   function planReset(m, rule, phys, rtl) {
     const d = declFor(rule, phys, rtl); if (!d) return null;
-    const ds = rule.decls, at = ds.indexOf(d), K2 = K();
-    // removeDecl מוחק את האחרונה בשם הזה; כאן — בדיוק ההצהרה שנמצאה
-    let from = d.from; while (from > rule.bFrom + 1 && /\s/.test(m.src[from - 1])) from--;
-    let to = d.semi >= 0 ? d.semi : d.to;
-    if (d.semi < 0 && at === ds.length - 1 && ds.length > 1 && m.src[from - 1] === ';') from--;
-    void K2;
-    return { patches: [{ from, to, text: '' }], whole: covered(d.prop, rtl).length > 1 ? d.prop.trim() : '', decl: d };
+    return { patches: removeDeclAt(m, rule, d), whole: covered(d.prop, rtl).length > 1 ? d.prop.trim() : '', decl: d };
   }
   /** הסרת !important מההצהרה (כפתור — לא מעצמו). */
   function planUnimportant(m, rule, phys, rtl) {
@@ -270,6 +273,80 @@
     return { text: cur, notes };
   }
 
+  // ── מצבים (V8, 03 §8.2): <יעד>:<מצב> מיד אחרי כלל היעד ───────────────────────────────────
+  const PSEUDO_EL = /(::?(before|after|first-line|first-letter)|::[\w-]+(\([^)]*\))?)$/i;
+  /** הבורר של המצב: הפסאודו-מחלקה לכל חלק ברשימה, לפני פסאודו-אלמנט (.x::before ← .x:hover::before).
+   *  of — בורר ההורה ("מצב של הורה"): <הורה>:<מצב> <נושא>. */
+  function stateSel(sel, pc, of) {
+    return splitList(sel).map(part => { if (of) return of + pc + ' ' + subject(part); const m = PSEUDO_EL.exec(part); return m ? part.slice(0, m.index) + pc + m[0] : part + pc; }).join(', ');
+  }
+  /** בדיקת מצב שהוקלד: פסאודו-מחלקה אחת (או כמה צמודות), שהדפדפן מקבל כבורר; בלי < ובלי {}; ;. */
+  function checkState(pc) {
+    const E = K().SrcError, v = String(pc == null ? '' : pc).trim();
+    if (!/^:[\w-]/.test(v)) throw new E('מצב מתחיל ב-: (פסאודו-מחלקה, למשל :hover). פסאודו-אלמנט (::before) נבחר כאלמנט, לא כמצב.', 'invalid');
+    if (/[<>{};\\]|\/\*/.test(v.replace(/\([^]*\)/, m => m.replace(/>/g, '')))) throw new E('מצב: בלי < { } ; ובלי הערה', 'invalid');
+    let d = 0, q = '';
+    for (const ch of v) {   // ברמה העליונה: בלי רווח, פסיק וקומבינטור — רק פסאודו-מחלקות צמודות; סוגריים מאוזנים
+      if (q) { if (ch === q) q = ''; continue; }
+      if (ch === '"' || ch === "'") { q = ch; continue; }
+      if (ch === '(') d++; else if (ch === ')') { d--; if (d < 0) break; }
+      else if (!d && /[\s,>+~\[\].#*|]/.test(ch)) throw new E('מצב: פסאודו-מחלקה אחת (או כמה צמודות), בלי רווח, פסיק או בורר נוסף — אלה נכתבים ב"בורר בהקלדה"', 'invalid');
+    }
+    if (d !== 0 || q) throw new E('מצב: סוגריים או מרכאות שאינם נסגרים', 'invalid');
+    if (typeof CSS !== 'undefined' && CSS.supports && !CSS.supports('selector(*' + v + ')')) throw new E('הדפדפן אינו מכיר את ' + v + ' כבורר', 'invalid');
+    return v;
+  }
+  /** בדיקת בורר שהוקלד (כלל היעד): בלי < ובלי {} ; (היו סוגרים את הכלל או את <style>), והדפדפן מקבל אותו. */
+  function checkSelector(sel) {
+    const E = K().SrcError, v = String(sel == null ? '' : sel).trim();
+    if (!v) throw new E('בורר ריק', 'invalid');
+    if (/[<{};]|\/\*|\*\//.test(v.replace(/"[^"]*"|'[^']*'/g, m => (/[<]/.test(m) ? '<' : '""')))) throw new E('בורר אינו יכול להכיל < { } ; או הערה — הם היו סוגרים את הכלל (או את <style>)', 'invalid');
+    if (typeof CSS !== 'undefined' && CSS.supports && !CSS.supports('selector(' + v + ')')) { let okSel = false; try { if (typeof document !== 'undefined') { document.createDocumentFragment().querySelector(v); okSel = true; } } catch { okSel = false; } if (!okSel) throw new E('בורר לא חוקי: ' + v, 'invalid'); }
+    return v;
+  }
+  /** פיצול רשימת בוררים בפסיקים של הרמה העליונה (בלי KolDetails — ב-node). */
+  const splitList = s => { if (g.KolDetails) return g.KolDetails.splitSel(s); const out = []; let d = 0, q = '', cur = ''; for (const ch of String(s)) { if (q) { if (ch === q) q = ''; cur += ch; continue; } if (ch === '"' || ch === "'") q = ch; else if (ch === '(' || ch === '[') d++; else if (ch === ')' || ch === ']') d--; if (ch === ',' && !d && !q) { out.push(cur.trim()); cur = ''; } else cur += ch; } if (cur.trim()) out.push(cur.trim()); return out; };
+  const normParts = s => splitList(s).map(normSel);
+  /** הכלל של המצב באותו הקשר של הבסיס: בדיוק הבורר, או כלל רשימה שאחד מחלקיו הוא הבורר (.btn:hover, .btn:focus). */
+  function stateRule(m, sel, base) {
+    const ctx = base ? base.parent : m.root, want = normParts(sel);
+    const all = K().cssAll(m).filter(r => r.type === 'rule' && !r.broken && r.parent === ctx);
+    const exact = all.filter(r => normSel(r.sel) === normSel(sel)), shared = all.filter(r => { const ps = normParts(r.sel); return want.every(w => ps.includes(w)); });
+    const after = list => list.filter(r => !base || r.from > base.to);
+    return after(exact).pop() || exact.pop() || after(shared).pop() || shared.pop() || null;
+  }
+  /**
+   * כתיבה למצב, על טקסט CSS: sets — [[מאפיין פיזי, ערך | null], …]. o: { sel (בורר המצב), baseFrom (-1 — אין בסיס), rtl }.
+   * יש כלל למצב (גם משותף לשני מצבים) ← ההצהרה בו · אין ← כלל חדש מיד אחרי כלל הבסיס (בלי בסיס — בסוף).
+   * איפוס: ההצהרה נמחקת; כלל מצב שנשאר ריק — נמחק. מחזיר { text, notes, shared (הבורר של כלל משותף) }.
+   */
+  function planState(text, o) {
+    const K2 = K(); let cur = text; const notes = []; let shared = '';
+    const baseOf = m => (o.baseFrom >= 0 ? K2.cssAll(m).find(x => x.type === 'rule' && x.from === o.baseFrom) || null : null);
+    for (const [phys, value] of o.sets) {
+      const m = K2.parseCss(cur), base = baseOf(m);
+      if (o.baseFrom >= 0 && !base) throw new K2.SrcError('הכלל השתנה בינתיים — נסו שוב', 'stale');
+      const r = stateRule(m, o.sel, base);
+      if (r && normSel(r.sel) !== normSel(o.sel)) shared = r.sel.replace(/\s+/g, ' ').trim();
+      if (value == null) {
+        if (!r) continue;
+        const res = planReset(m, r, phys, o.rtl); if (!res) continue;
+        if (res.whole) notes.push(res.whole);
+        cur = K2.applyPatches(cur, res.patches);
+        const m2 = K2.parseCss(cur), r2 = K2.cssAll(m2).find(x => x.type === 'rule' && x.from === r.from);
+        if (r2 && !r2.decls.length && blank(m2, r2) && !shared) cur = K2.applyPatches(cur, K2.css.removeNode(m2, r2).patches);
+        continue;
+      }
+      if (r) { cur = K2.applyPatches(cur, planRule(m, r, phys, value, o.rtl).patches); continue; }
+      const decls = [[logical(phys, o.rtl), value]];
+      if (!base) { cur = K2.applyPatches(cur, K2.css.addRule(m, m.root, o.sel, decls).patches); continue; }
+      const add = K2.css.addRule(m, base.parent === m.root ? m.root : base.parent, o.sel, decls).patches[0], body = add.text.replace(/^\s+/, '');
+      const lead = m.src.slice(0, base.from).match(/(\s*)$/)[1];
+      cur = K2.applyPatches(cur, [{ from: base.to, to: base.to, text: (lead.includes('\n') ? lead : m.nl) + body }]);
+    }
+    return { text: cur, notes, shared };
+  }
+
   /** שינוי max של נקודת שבירה: כל בלוק @media שתנאיו הם בדיוק המכשיר הישן ← התנאי החדש. { patches, blocks, rules }. */
   function mediaRetarget(text, oldMax, newMax) {
     const m = K().parseCss(text), patches = []; let rules = 0;
@@ -317,7 +394,11 @@
   // ── המפל, בדפדפן ─────────────────────────────────────────
   const INHERITED = /^(color|font-.*|line-height|letter-spacing|word-spacing|text-align|text-transform|direction|text-indent|white-space|visibility|cursor|quotes|list-style.*|text-shadow|text-decoration-color)$/;
   const cmp = (a, b) => { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
-  const rank = (r, important) => [important ? 1 : 0, r.inline ? 1 : 0, r.spec[0], r.spec[1], r.spec[2], r.order];
+  /** הדירוג במפל (V8: גם @layer ו-@scope — details.js: rankOf). */
+  const UNL = 999999999, INFP = 1e9;
+  const rank = (r, important) => (g.KolDetails && g.KolDetails.rankOf ? g.KolDetails.rankOf(r, important) : [important ? 1 : 0, r.inline ? 1 : 0, important ? -(r.layer ?? UNL) : (r.layer ?? UNL), r.spec[0], r.spec[1], r.spec[2], -(r.prox ?? INFP), r.order]);
+  /** דירוג של כלל שעוד לא קיים: בלי שכבה, בלי @scope (או של הכלל שלידו). */
+  const rankNew = (spec, order, near) => rank({ spec, order, layer: near ? near.layer : UNL, prox: near ? near.prox : INFP }, false);
   /** החלק האחרון של בורר (הנושא) — לבדיקה אם הכלל הוא "של המחלקה". */
   function subject(sel) {
     let depth = 0, q = '', last = 0;
@@ -335,7 +416,7 @@
     constructor(opt) { Object.assign(this, opt); }
     rtl(n) { const e = this.canvas.elOf(n); try { return this.canvas.frame.contentWindow.getComputedStyle(e).direction === 'rtl'; } catch { return true; } }
     computed(n, phys) { const e = this.canvas.elOf(n); if (!e) return ''; try { return this.canvas.frame.contentWindow.getComputedStyle(e).getPropertyValue(phys); } catch { return ''; } }
-    info(n) { return this.details.collect(n); }
+    info(n, pc) { return this.details.collect(n, pc ? { state: pc } : undefined); }
     docOf(path) { for (const s of this.sheets().values()) if (s.path === path) return s.doc; return null; }
     /** כל ההצהרות הפעילות שקובעות את המאפיין, מהחזקה לחלשה. */
     cands(info, phys, rtl) {
@@ -411,13 +492,26 @@
       return d && d.max ? Object.assign({}, t, { dev: d }) : t;
     }
     /** הכלל של המכשיר ליעד, מתוך פאנל "פרטים" (אותו בורר, אותו קובץ, @media של המכשיר). */
+    // ── V8: מצבים ──
+    /** היעד במצב: { pc, of (בורר ההורה, או null), sel (בורר המצב), label }. בלי מצב — היעד כמו שהוא. */
+    st(t, s) {
+      if (!t || !s || !s.pc || t.kind === 'inline') return t;
+      const base = t.kind === 'newclass' ? '.' + t.name : t.sel;
+      return Object.assign({}, t, { state: { pc: s.pc, of: s.of || null, label: s.label || s.pc, sel: stateSel(base, s.pc, s.of) } });
+    }
+    /** כלל המצב של היעד בפאנל "פרטים": אותו קובץ; בורר המצב (או רשימה שהוא חלק ממנה); במכשיר — בתוך ה-@media שלו. */
+    stOwn(info, t) {
+      const want = normParts(t.state.sel), path = t.r ? t.r.path : t.path, mx = t.dev ? t.dev.max : null;
+      return info.rules.filter(r => r.located && !r.inline && r.path === path && (mx == null ? !r.media : ruleMax(r) === mx) && (normSel(r.sel) === normSel(t.state.sel) || want.every(w => normParts(r.sel).includes(w)))).pop() || null;
+    }
     devOwn(info, t) {
-      const sel = normSel(t.kind === 'newclass' ? '.' + t.name : t.sel);
+      const sel = normSel(t.state ? t.state.sel : t.kind === 'newclass' ? '.' + t.name : t.sel);
       return info.rules.filter(r => r.located && !r.inline && normSel(r.sel) === sel && ruleMax(r) === t.dev.max && r.path === (t.r ? t.r.path : t.path)).pop() || null;
     }
     /** ההצהרה ביעד (לאיפוס): במכשיר — בכלל של המכשיר. */
     ownDecl(n, t, phys, info) {
       const rtl = this.rtl(n);
+      if (t.state && t.kind !== 'inline') { const r = this.stOwn(info || this.info(n, t.state.pc), t); return r && r.node ? declFor(r.node, phys, rtl) : null; }
       if (t.dev && t.kind !== 'inline') { const r = this.devOwn(info || this.info(n), t); return r && r.node ? declFor(r.node, phys, rtl) : null; }
       if (t.kind === 'rule') return declFor(t.r.node, phys, rtl);
       return null;
@@ -449,14 +543,21 @@
         own = this.devOwn(info, t);
         const oc = own && cs.filter(c => c.r === own);
         // כלל שעוד לא קיים: הייחודיות של החלק שחל (לא של כל הרשימה), ומיקום — מיד אחרי הכלל הבסיסי (בלי בסיס — בסוף הקובץ)
-        mineK = oc && oc.length ? oc[0].k : own ? rank(own, false) : [0, 0, ...(t.r ? t.r.spec : g.KolDetails.specificity(t.kind === 'newclass' ? '.' + t.name : t.sel)), t.r ? t.r.order + 0.5 : 1e9];
+        const sb = t.state ? this.stOwn(info, Object.assign({}, t, { dev: null })) : null;   // מצב × מכשיר: נכתב אחרי כלל המצב של המחשב
+        mineK = oc && oc.length ? oc[0].k : own ? rank(own, false) : rankNew(t.state ? g.KolDetails.specificity(splitList(t.state.sel)[0]) : t.r ? t.r.spec : g.KolDetails.specificity(t.kind === 'newclass' ? '.' + t.name : t.sel), sb ? sb.order + 0.5 : t.r ? t.r.order + 0.5 : 1e9, t.r);
         const by = cs.find(c => c.r !== own && cmp(c.k, mineK) > 0);
         if (!by) return { ok: true };
         return { ok: false, by, media: !!by.r.media && by.r.located && !by.r.external && !this.isDev(ruleMax(by.r)) };
       }
+      if (t.state && t.kind !== 'inline') {   // V8: היעד הוא כלל המצב (קיים, או שייכתב מיד אחרי הבסיס)
+        own = this.stOwn(info, t); const oc = own && cs.filter(c => c.r === own);
+        mineK = oc && oc.length ? oc[0].k : own ? rank(own, false) : rankNew(g.KolDetails.specificity(t.state.sel.split(',')[0]), t.r ? t.r.order + 0.5 : 1e9, t.r);
+        const by = cs.find(c => c.r !== own && cmp(c.k, mineK) > 0);
+        return by ? { ok: false, by, media: false } : { ok: true };
+      }
       if (t.kind === 'rule') { const d = declFor(t.r.node, phys, rtl); mineK = rank(t.r, d ? d.important : false); const own = cs.filter(c => c.r === t.r); if (own.length) mineK = own[0].k; }
-      else if (t.kind === 'inline') { const own = cs.find(c => c.r.inline); mineK = own ? own.k : [0, 1, 0, 0, 0, 1e9]; }
-      else mineK = [0, 0, ...g.KolDetails.specificity(t.sel), 1e9];
+      else if (t.kind === 'inline') { const own = cs.find(c => c.r.inline); mineK = own ? own.k : rank({ inline: true, spec: [0, 0, 0], order: 1e9 }, false); }
+      else mineK = rankNew(g.KolDetails.specificity(t.sel), 1e9);
       const by = cs.find(c => c.r !== t.r && !(t.kind === 'inline' && c.r.inline) && cmp(c.k, mineK) > 0);
       if (!by) return { ok: true };
       return { ok: false, by, media: !!by.r.media && by.r.located && !by.r.external };
@@ -469,6 +570,22 @@
       if (!Array.isArray(sets[0])) sets = [sets];
       if (!opt.unimportant) for (const [phys, value] of sets) checkValue(phys, value);
       const diff = (was, now) => { if (was === now) return []; let a = 0; const max = Math.min(was.length, now.length); while (a < max && was.charCodeAt(a) === now.charCodeAt(a)) a++; let b = 0; while (b < max - a && was.charCodeAt(was.length - 1 - b) === now.charCodeAt(now.length - 1 - b)) b++; return [{ from: a, to: was.length - b, text: now.slice(a, now.length - b) }]; };
+      if (t.state) {   // V8: כתיבה למצב — <יעד>:<מצב> מיד אחרי כלל היעד (במכשיר — בתוך ה-@media שלו)
+        if (t.kind === 'inline') throw new K2.SrcError('ל-style="" אין מצבים (ריחוף, מיקוד…). בוחרים ב"משנה את" את כלל המחלקה.', 'state');
+        if (opt.unimportant) return [];
+        let doc, text, off = 0, inHtml = false, baseFrom = -1;
+        if (t.kind === 'rule') { const src = t.r.src; baseFrom = t.r.node.from; if (src.html) { inHtml = true; doc = html; text = src.text; off = src.off; } else { doc = this.docOf(src.path); text = doc && doc.text(); } }
+        else { doc = this.docOf(t.path); text = doc && doc.text(); }
+        if (!doc) throw new K2.SrcError('קובץ העיצוב ' + (t.path || '') + ' אינו פתוח לעריכה', 'missing');
+        // מצב × מכשיר: הבלוק נכתב אחרי כלל המצב של המחשב, אם יש (אחרת — אחרי הבסיס): כך הוא מנצח אותו ברוחב של המכשיר
+        let devBase = baseFrom;
+        if (t.dev) { const m0 = K2.parseCss(text), b0 = baseFrom >= 0 ? K2.cssAll(m0).find(x => x.type === 'rule' && x.from === baseFrom) : null, sr = stateRule(m0, t.state.sel, b0); if (sr && (!b0 || sr.from > b0.from)) devBase = sr.from; }
+        const out = t.dev ? planDevice(text, { sel: t.state.sel, max: t.dev.max, baseFrom: devBase, rtl, sets }) : planState(text, { sel: t.state.sel, baseFrom, rtl, sets });
+        const ps = diff(text, out.text).map(p => ({ from: p.from + off, to: p.to + off, text: p.text }));
+        const ops = ps.length ? [inHtml ? { doc: html, html: true, patches: ps } : { doc, patches: ps }] : [];
+        if (t.kind === 'newclass' && ps.length) ops.unshift({ doc: html, html: true, patches: K2.html.addClass(this.canvas.m, n, t.name).patches });
+        return Object.assign(ops, { notes: out.notes, shared: out.shared });
+      }
       if (t.dev) {   // V7: כתיבה למכשיר — בתוך @media (max-width: <max>px) של נקודת השבירה
         if (t.kind === 'inline') throw new K2.SrcError('"רק האלמנט הזה" (style="") אינו יכול לקבל מכשיר — ל-style אין @media. בוחרים ב"משנה את" את כלל המחלקה (או "מחלקה חדשה" עם שם קריא), וכך הערך נכתב ל' + t.dev.label + ' בלבד.', 'device');
         if (opt.unimportant) return [];
@@ -526,5 +643,5 @@
     }
   }
 
-  g.KolStyle = { mediaRetarget, mediaCount, kolBreakpoints, mediaMax, devCond, ruleMax, devRule, devBlock, planDevice, flexParse, checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
+  g.KolStyle = { stateSel, checkState, checkSelector, stateRule, planState, removeDeclAt, mediaRetarget, mediaCount, kolBreakpoints, mediaMax, devCond, ruleMax, devRule, devBlock, planDevice, flexParse, checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
 })(typeof window !== 'undefined' ? window : globalThis);
