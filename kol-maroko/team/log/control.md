@@ -67,3 +67,4 @@
 - 2026-11-12 08:48 UTC — פריסה 1540 (77645e7, C1) — success. (1536–1539: A2/M1/#1460 — לפני.) נשלחה לבעלים בדיקת עשן לכניסה.
 - 2026-11-12 08:50 UTC — **בקרה (3) ב-505K — מסירה לבקרה (4).** STATE עודכן ("למסירה").
 - 2026-11-12 08:50 UTC — נפתחה **בקרה (4)** `session_018g4NYGbTsYKFmHndtZzAux` (Opus). הדופק של בקרה (3) הושבת (trig_011uX1Qhv5W8GqUKEDd996Qs); השעון השעתי עובר לבקרה (4). בקרה (3) מפסיקה לפעול.
+- 2026-11-12 08:52 UTC — **בקרה (4)** `session_018g4NYGbTsYKFmHndtZzAux` התחילה (Opus). sessions.json ו-.claude/teams/STATE.md עודכנו. שעון שעתי חדש `trig_01RiU9zPJ9mJZ5wfLqTZP1ct` (דקה 48); הישן `trig_01AdbGw9F91G3CCtPGk5whtP` הושבת. דופק 10 דק' `trig_01UKsevmTwwHsvqjGDbeGeAV` (09:02). הודעה ל-5 צ'אטי הקוד ולבעלים.
