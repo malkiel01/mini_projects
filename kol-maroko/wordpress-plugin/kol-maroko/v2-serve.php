@@ -48,10 +48,24 @@ function kol_maroko_v2_scope_refresh()
     }
 }
 
-function kol_maroko_v2_type($path)
+/**
+ * הסוג שהמניפסט מצהיר — רק כשגם הסיומת וגם הסוג הם מדיה מהרשימה הסגורה (שמע, וידאו, תמונה בלי SVG, גופן).
+ * הקלטה שהוחלפה בסוג אחר שומרת את הנתיב (media/audio/<מזהה>.mp3 עם תוכן m4a ← audio/mp4). כל דבר אחר — HTML,
+ * SVG, JS, טקסט, סוג לא מוכר, או נתיב שאינו מדיה — אינו נשמע, והסוג נקבע לפי הסיומת כמו קודם (2.0.1).
+ */
+function kol_maroko_v2_media_type($e, $declared)
+{
+    if (!is_string($declared) || !in_array($e, KOL_MAROKO_V2_MEDIA, true)) return null;
+    $t = strtolower(trim(explode(';', $declared)[0]));
+    $t = ['audio/x-m4a' => 'audio/mp4', 'audio/mp3' => 'audio/mpeg', 'audio/x-wav' => 'audio/wav', 'audio/wave' => 'audio/wav', 'audio/opus' => 'audio/ogg'][$t] ?? $t;
+    if (!preg_match('~^(audio|video|image|font)/~', $t) || $t === 'image/svg+xml' || !in_array($t, KOL_MAROKO_V2_TYPES, true)) return null;
+    return $t;
+}
+
+function kol_maroko_v2_type($path, $declared = null)
 {
     $e = strtolower((string)pathinfo($path, PATHINFO_EXTENSION));
-    $t = KOL_MAROKO_V2_TYPES[$e] ?? 'application/octet-stream';
+    $t = kol_maroko_v2_media_type($e, $declared) ?? KOL_MAROKO_V2_TYPES[$e] ?? 'application/octet-stream';
     $text = strpos($t, 'text/') === 0 || in_array($t, ['application/json', 'application/manifest+json', 'application/xml', 'image/svg+xml'], true);
     return [$t . ($text ? '; charset=utf-8' : ''), $t === 'application/octet-stream', in_array($e, KOL_MAROKO_V2_MEDIA, true)];
 }
@@ -195,7 +209,7 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
         kol_maroko_v2_status(500);
     }
     $size = (int)filesize($file);
-    [$type, $download, $media] = kol_maroko_v2_type($p);
+    [$type, $download, $media] = kol_maroko_v2_type($p, $f['type'] ?? null);
     $etag = '"' . $f['sha256'] . '"';
     // הגשה ישירה (כבויה כברירת מחדל; נדלקת רק אחרי שהבדיקה העצמית הוכיחה את הכותרות של השרת) — הפניה לגוש המדיה
     if ($code === 200 && $media && strpos(basename($file), '.') !== false && kol_maroko_opt('v2_direct_media', false) && !kol_maroko_v2_selftest_req()) {
