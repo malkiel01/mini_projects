@@ -147,7 +147,7 @@
       const vis = this.styler.visible(n, this.t, phys, this.info);
       if (!vis.ok) {
         const by = vis.by, w = h('div', { class: 'sg-over' + (vis.media ? ' media' : ''), 'data-over': phys });
-        const mine = this.t.kind === 'rule' ? ST().declFor(this.t.r.node, phys, this.styler.rtl(n)) : null;
+        const mine = this.t.state || this.t.dev ? this.styler.ownDecl(n, this.t, phys, this.info) : this.t.kind === 'rule' ? ST().declFor(this.t.r.node, phys, this.styler.rtl(n)) : null;
         if (vis.media) {
           w.append('הערך הנראה מגיע מתוך ' + by.r.media + ' (' + mediaWhen(by.r.media) + ') — שינוי כאן נכתב שם.');
           const D = this.styler.device();

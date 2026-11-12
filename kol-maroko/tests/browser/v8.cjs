@@ -279,6 +279,94 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const over = await page.evaluate(q => { const b = document.querySelector(q); return b.scrollWidth - b.clientWidth; }, body('adv'));
     ok(over <= 1, '1920: הפאנל "מתקדם" (עם "זהות") אינו חורג לרוחב', over);
     await page.screenshot({ path: path.join(shotDir, 'v8-1920-identity.png') });
+
+    // ═══ 6. המפל: 200 מקרים אקראיים — "מי מנצח" של הפאנל = getComputedStyle ═══
+    {
+      const cp = await ctx.newPage();
+      await cp.goto(base + '/editor.php'); await cp.waitForFunction(() => window.KolDetails && window.KolStyle && window.KolSrc, null, { timeout: 30000 });
+      const res = await cp.evaluate(() => {
+        let seed = 8; const rnd = n => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; }, pick = a => a[rnd(a.length)];
+        const SELS = ['.d', 'p', '.c .d', ':is(.c, #s) .d', ':where(.a) .d', ':where(#s .d)', 'p:not(.zz)', '#s p', ':is(#nope, .d)', '.a :is(.x, .y) .d', 'article > p', ':is(p, .d):where(.d)', ':not(#q, .w) p', '.b .c p.d', 'body :where(p)', '.d.d', ':nth-child(1 of .d)', 'p:has(span)', ':is(.a .b) :is(p)', '[class~="d"]'];
+        const SCOPED = ['.d', ':scope .d', 'p', ':scope p', '.c > .d', ':scope > p'];
+        const host = document.createElement('div'); host.id = 'v8-cascade'; document.body.append(host);
+        const bad = []; let total = 0; const why = { layer: 0, scope: 0, imp: 0, where: 0 };
+        for (let k = 0; k < 200; k++) {
+          host.innerHTML = '<div class="a ' + pick(['x', 'y', '']) + '"><section class="b ' + pick(['x', '']) + '" id="s"><article class="c ' + pick(['y', 'x', '']) + '"><p class="d ' + pick(['', 'w']) + '">t<span>s</span></p></article></section></div>';
+          const el = host.querySelector('p'), css = [];
+          if (rnd(3) === 0) css.push('@layer ' + pick(['L2, L1', 'L1, L2', 'L1.inner, L2']) + ';');
+          const nr = 6 + rnd(9);
+          for (let i = 0; i < nr; i++) {
+            const col = 'rgb(' + (k % 200 + 20) + ', ' + (i * 13 + 10) + ', ' + (rnd(200) + 30) + ')', imp = k % 3 === 0 && rnd(6) === 0 ? ' !important' : '';
+            const w = rnd(10);
+            if (w < 2) css.push('@layer ' + pick(['L1', 'L2', 'L1.inner', 'L3']) + ' { ' + pick(SELS) + ' { color: ' + col + imp + '; } }');
+            else if (w < 5) css.push('@scope (' + pick(['.b', '.c', '.a', '#s']) + ')' + pick(['', '', ' to (.c)', ' to (p)']) + ' { ' + pick(SCOPED) + ' { color: ' + col + imp + '; } }');
+            else if (w === 5) css.push('@layer { ' + pick(SELS) + ' { color: ' + col + imp + '; } }');
+            else css.push(pick(SELS) + ' { color: ' + col + imp + '; }');
+          }
+          const text = css.join('\n');
+          for (const st of document.querySelectorAll('style[data-kol-canvas="v8.css"]')) st.remove();
+          const st = document.createElement('style'); st.setAttribute('data-kol-canvas', 'v8.css'); st.textContent = text; document.head.append(st);
+          const canvas = { elOf: n => n.el, frame: { contentWindow: window }, doc: document, d2m: new Map(), m: { src: '' } };
+          const D = new KolDetails.Details(document.createElement('div'), { canvas, K: KolSrc, sheets: () => new Map([['v8.css', { path: 'v8.css', doc: { text: () => text } }]]), file: () => ({ path: 'index.html' }), openAt() {}, openEl() {} });
+          const info = D.collect({ el, attrs: [] }), cs = KolStyle.Styler.prototype.cands.call({}, info, 'color', false), w0 = cs[0];
+          const got = getComputedStyle(el).color, want = w0 ? w0.d.value.replace(/\s*!important/, '') : 'rgb(0, 0, 0)';
+          const norm = v => { const x = document.createElement('i'); x.style.color = v; document.body.append(x); const c = getComputedStyle(x).color; x.remove(); return c; };
+          total++; if (w0) { if (w0.r.layer < 999999999) why.layer++; if (w0.r.prox < 1e9) why.scope++; if (w0.d.important) why.imp++; if (/:where|:is|:not|:has/.test(w0.r.matched || '')) why.where++; }
+          if (norm(want) !== got) bad.push({ k, text, panel: w0 ? w0.r.sel + ' ' + w0.d.value + ' ' + JSON.stringify(w0.k) : 'none', got });
+        }
+        host.remove(); for (const st of document.querySelectorAll('style[data-kol-canvas="v8.css"]')) st.remove();
+        return { total, bad: bad.slice(0, 3), nbad: bad.length, why };
+      });
+      ok(res.total === 200 && res.nbad === 0 && res.why.layer >= 10 && res.why.scope >= 10 && res.why.imp >= 10 && res.why.where >= 10, 'המפל: 200 מקרים אקראיים (@layer מקונן / אנונימי / בסדר מוצהר, @scope עם קרבה ו-to, :is / :where / :not / :has / :nth-child(of), !important) — "מי מנצח" של הפאנל = getComputedStyle (' + (res.total - res.nbad) + '/200; מנצחים: ' + JSON.stringify(res.why) + ')', res);
+      await cp.close();
+    }
+
+    // ═══ 7. ביטול עד ההתחלה ═══
+    await tab(page, 'design'); await select(page, H2(1)); await sleep(150);
+    await page.screenshot({ path: path.join(shotDir, 'v8-1920-design.png') });
+    const overD = await page.evaluate(q => { const b = document.querySelector(q); return b.scrollWidth - b.clientWidth; }, body('design'));
+    ok(overD <= 1, '1920: הפאנל "עיצוב" (מצבים, מעבר, מאפיינים נוספים) אינו חורג לרוחב', overD);
+    ok(await undoFiles(page, o0), 'ביטול (Ctrl+Z) עד ההתחלה — כל הקבצים (index.html, כל ה-CSS, js/page.js, kol.json) זהים בייט בבייט');
+
+    // ═══ 8. טלפון (390) — מגע ═══
+    {
+      // השמירה האוטומטית משותפת: ה-390 נפתח רק אחרי שהביטול של הדסקטופ נשמר
+      await page.waitForFunction(() => { const S = Editor._state, ds = [S.doc, ...[...S.sheets.values()].map(x => x.doc)]; return ds.every(d => !d.dirty && !d.saving); }, null, { timeout: 20000 }); await sleep(1500);
+      const lc = await mk(390, 844), lp = await lc.newPage();
+      lp.on('pageerror', e => { errors.push(e.message); console.log('   ⚠️ 390: ' + e.message); });
+      lp.on('dialog', d => (d.type() === 'beforeunload' ? d.accept() : d.dismiss()));
+      await lp.goto(base + '/#/project'); await lp.waitForSelector('.pj-tree .pj-row');
+      await openPage(lp, 'index.html');
+      const l0 = await files(lp);
+      await select(lp, '.kadisha-lex-hero-btn'); await sleep(200);
+      await lp.evaluate(() => { document.querySelector('.ed-bar [data-panel="info"]').click(); Editor._tab('design'); }); await sleep(300);
+      const tb2 = await lp.evaluate(() => [...document.querySelectorAll('.ed-side-body.sg[aria-label="עיצוב"] .sg-state-seg [data-state]')].map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
+      ok(tb2.length === 8 && tb2.every(([w, hh]) => w >= 44 && hh >= 44), '390: כפתורי המצב ≥44px', tb2);
+      await lp.tap('.ed-side-body.sg[aria-label="עיצוב"] [data-state=":hover"]'); await sleep(300);
+      ok(await lp.evaluate(() => document.querySelector('.ed-side-body.sg[aria-label="עיצוב"] [data-state=":hover"]').getAttribute('aria-pressed')) === 'true', '390: הקשה על "ריחוף" — המצב נבחר');
+      const q = '.ed-side-body.sg[aria-label="עיצוב"] [data-field="color"] .sg-ctl input';
+      await lp.tap(q); await lp.fill(q, '#00aa00'); await lp.press(q, 'Enter'); await sleep(400);
+      const lx3 = (await files(lp))['css/lexicon.css'], st3 = await lp.evaluate(() => document.querySelector('.ed-side-body.sg[aria-label="עיצוב"] [data-field="color"] [data-st-state]')?.textContent || '');
+      ok(same(l0['css/lexicon.css'], o0['css/lexicon.css']) && /\.kadisha-lex-hero-btn:focus-visible \{[^}]*\}\n@media \(max-width: 767px\) \{\n\s+\.kadisha-lex-hero-btn:hover \{ color: #00aa00; \}\n\}/.test(lx3) && await cs(lp, '.kadisha-lex-hero-btn', 'color') === 'rgb(0, 170, 0)' && /נכתב במצב ריחוף/.test(st3),
+        '390 (טלפון) + ריחוף: צבע — .btn:hover בתוך @media (max-width: 767px), אחרי כלל הריחוף של המחשב (ולכן מנצח); הקנבס מציג בלי עכבר; "● נכתב במצב ריחוף"', { st3, m: lx3.slice(lx3.indexOf('.kadisha-lex-hero-btn:hover'), lx3.indexOf('.kadisha-lex-hero-btn:hover') + 260) });
+      const ow = await lp.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      ok(ow <= 1, '390: אין גלילה לרוחב', ow);
+      await lp.screenshot({ path: path.join(shotDir, 'v8-390-state.png') });
+      await lp.evaluate(() => Editor._tab('adv')); await sleep(300);
+      const tg = await lp.evaluate(() => [...document.querySelectorAll('.ed-side-body.sg[aria-label="מתקדם"] .sg-tag-btn')].map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
+      ok(tg.length >= 2 && tg.every(([w, hh]) => w >= 44 && hh >= 44), '390: כפתורי התגיות (✎ ✕) ≥44px', tg);
+      // גרירת תגית במגע
+      await lp.evaluate(() => { const d = document.querySelector('.ed-side-body.sg[aria-label="מתקדם"] [data-sec="identity"]'); d.scrollIntoView({ block: 'start' }); }); await sleep(200);
+      const g2 = await lp.evaluate(() => { const t = [...document.querySelectorAll('.ed-side-body.sg[aria-label="מתקדם"] [data-tag]')]; const a = t[1].querySelector('.sg-tag-grip').getBoundingClientRect(), b = t[0].getBoundingClientRect(); return { x: a.x + a.width / 2, y: a.y + a.height / 2, tx: b.right - 4, ty: b.y + b.height / 2 }; });
+      const cdp = await lc.newCDPSession(lp);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: g2.x, y: g2.y }] });
+      for (let i = 1; i <= 8; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: g2.x + (g2.tx - g2.x) * i / 8, y: g2.ty }] }); await sleep(20); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
+      ok(/class="kadisha-lex-gate kadisha-lex-hero-btn"/.test((await files(lp))['index.html']), '390: גרירת תגית באצבע — סדר המחלקות השתנה');
+      await lp.screenshot({ path: path.join(shotDir, 'v8-390-identity.png') });
+      ok(await undoFiles(lp, l0), '390: ביטול — זהים');
+      await lc.close();
+    }
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף', errors);
   } catch (e) { failed++; console.log('❌ הבדיקה נפלה: ' + (e.stack || e)); }
   finally { if (browser) await browser.close(); php.kill(); fs.rmSync(data, { recursive: true, force: true }); }

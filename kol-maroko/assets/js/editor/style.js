@@ -543,7 +543,8 @@
         own = this.devOwn(info, t);
         const oc = own && cs.filter(c => c.r === own);
         // כלל שעוד לא קיים: הייחודיות של החלק שחל (לא של כל הרשימה), ומיקום — מיד אחרי הכלל הבסיסי (בלי בסיס — בסוף הקובץ)
-        mineK = oc && oc.length ? oc[0].k : own ? rank(own, false) : rankNew(t.state ? g.KolDetails.specificity(t.state.sel) : t.r ? t.r.spec : g.KolDetails.specificity(t.kind === 'newclass' ? '.' + t.name : t.sel), t.r ? t.r.order + 0.5 : 1e9, t.r);
+        const sb = t.state ? this.stOwn(info, Object.assign({}, t, { dev: null })) : null;   // מצב × מכשיר: נכתב אחרי כלל המצב של המחשב
+        mineK = oc && oc.length ? oc[0].k : own ? rank(own, false) : rankNew(t.state ? g.KolDetails.specificity(splitList(t.state.sel)[0]) : t.r ? t.r.spec : g.KolDetails.specificity(t.kind === 'newclass' ? '.' + t.name : t.sel), sb ? sb.order + 0.5 : t.r ? t.r.order + 0.5 : 1e9, t.r);
         const by = cs.find(c => c.r !== own && cmp(c.k, mineK) > 0);
         if (!by) return { ok: true };
         return { ok: false, by, media: !!by.r.media && by.r.located && !by.r.external && !this.isDev(ruleMax(by.r)) };
@@ -576,7 +577,10 @@
         if (t.kind === 'rule') { const src = t.r.src; baseFrom = t.r.node.from; if (src.html) { inHtml = true; doc = html; text = src.text; off = src.off; } else { doc = this.docOf(src.path); text = doc && doc.text(); } }
         else { doc = this.docOf(t.path); text = doc && doc.text(); }
         if (!doc) throw new K2.SrcError('קובץ העיצוב ' + (t.path || '') + ' אינו פתוח לעריכה', 'missing');
-        const out = t.dev ? planDevice(text, { sel: t.state.sel, max: t.dev.max, baseFrom, rtl, sets }) : planState(text, { sel: t.state.sel, baseFrom, rtl, sets });
+        // מצב × מכשיר: הבלוק נכתב אחרי כלל המצב של המחשב, אם יש (אחרת — אחרי הבסיס): כך הוא מנצח אותו ברוחב של המכשיר
+        let devBase = baseFrom;
+        if (t.dev) { const m0 = K2.parseCss(text), b0 = baseFrom >= 0 ? K2.cssAll(m0).find(x => x.type === 'rule' && x.from === baseFrom) : null, sr = stateRule(m0, t.state.sel, b0); if (sr && (!b0 || sr.from > b0.from)) devBase = sr.from; }
+        const out = t.dev ? planDevice(text, { sel: t.state.sel, max: t.dev.max, baseFrom: devBase, rtl, sets }) : planState(text, { sel: t.state.sel, baseFrom, rtl, sets });
         const ps = diff(text, out.text).map(p => ({ from: p.from + off, to: p.to + off, text: p.text }));
         const ops = ps.length ? [inHtml ? { doc: html, html: true, patches: ps } : { doc, patches: ps }] : [];
         if (t.kind === 'newclass' && ps.length) ops.unshift({ doc: html, html: true, patches: K2.html.addClass(this.canvas.m, n, t.name).patches });
