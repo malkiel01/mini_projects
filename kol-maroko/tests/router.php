@@ -25,6 +25,11 @@ if ($trace = getenv('KOL_TEST_TRACE')) {
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $root = dirname(__DIR__);
+// הסטודיו (C1): '/' ו-index.php — דרך index.php, עם הכותרות; studio.html ישירות — חסום; index.html — 302, כמו ב-.htaccess שבשורש
+if ($path === '/' || $path === '/index.php') { chdir($root); require $root . '/index.php'; exit; }
+if ($path === '/studio.html') { http_response_code(403); exit; }
+if ($path === '/index.html') { $q = (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_QUERY); header('Location: /index.php' . ($q !== '' ? '?' . $q : ''), true, 302); exit; }
+if ($path === '/csp.php') { chdir($root); require $root . '/csp.php'; exit; }
 if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
 if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }
 if ($path === '/api.php' || $path === '/agent.php') {
@@ -47,7 +52,7 @@ if (str_starts_with($path, '/data/')) {
     if (getenv('KOL_TEST_DATA_OPEN')) { echo 'open'; exit; }
     http_response_code(403); exit;
 }
-$file = realpath($root . ($path === '/' ? '/index.html' : $path));
+$file = realpath($root . $path);
 if (!$file || !str_starts_with($file, $root . '/') || !is_file($file) || str_ends_with($file, '.php')) { http_response_code(404); exit; }
 $types = ['html' => 'text/html; charset=utf-8', 'js' => 'text/javascript; charset=utf-8', 'css' => 'text/css; charset=utf-8', 'svg' => 'image/svg+xml', 'json' => 'application/json'];
 header('Content-Type: ' . ($types[pathinfo($file, PATHINFO_EXTENSION)] ?? 'application/octet-stream'));
