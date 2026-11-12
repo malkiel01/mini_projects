@@ -135,13 +135,19 @@ function words_list(): array
     $rows = words_rows();
     $map = topic_slugs();
     $files = files_meta(array_values(array_unique(array_filter(array_map(fn($w) => file_id($w['audio']), $rows)))));
+    $fileFields = array_column(array_filter(fields_custom(), fn($f) => in_array($f['type'], ['image', 'audio'], true)), 'key');
     foreach ($rows as &$w) {
         $w['audio_src'] = audio_src($w['audio']);
         $f = file_id($w['audio']) ? ($files[$w['audio']] ?? null) : null;
         $w['audio_kind'] = $w['audio'] === '' ? '' : (!file_id($w['audio']) ? 'site' : (!$f ? 'missing' : (!empty($f['origin']) ? 'copy' : 'file')));
+        // N2: לתצוגה בטבלה — כתובת לכל ערך של שדה image / audio
+        $w['extra_src'] = [];
+        foreach ($fileFields as $k) if (file_id($w['extra'][$k] ?? null)) $w['extra_src'][$k] = media_url($w['extra'][$k]);
+        $w['extra_src'] = (object)$w['extra_src'];
+        $w['extra'] = (object)$w['extra'];
     }
     unset($w);
-    return ['words' => $rows, 'topics' => topics_used($rows, $map), 'fields' => fields_public($rows)];
+    return ['words' => $rows, 'topics' => topics_used($rows, $map), 'fields' => fields_public(words_rows())];
 }
 
 function word_input(array $b): array
