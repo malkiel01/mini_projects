@@ -140,7 +140,7 @@
         // המונה, "אין תוצאות", "טען עוד": לפי המצב — בכלל CSS של העורך (התכונות של העמוד אינן משתנות)
         const empty = L.matched === 0, moreOn = !!page && Math.min(L.matched, limit) < L.matched;
         // :where — בלי משקל: אלמנט נבחר ש"מוצג לעריכה" (canvas.show) גובר על ההסתרה של המצב
-        this.each('data-kol-empty', L.name, sel => { css += ':where(' + sel + ')' + (empty ? '{display:block!important}' : '{display:none!important}') + '\n'; });
+        this.each('data-kol-empty', L.name, sel => { css += (empty ? sel + '{display:block!important}' : ':where(' + sel + '){display:none!important}') + '\n'; });
         this.each('data-kol-more', L.name, sel => { if (!moreOn) css += ':where(' + sel + '){display:none!important}\n'; });
         if (searchN) { const se = c.m2d.get(searchN); if (se && 'value' in se) { const was = se.value; se.value = query; this.restore.push(() => { se.value = was; }); } }
         if (filterN && !fv) { /* "הכל" — כמו בעמוד */ }
