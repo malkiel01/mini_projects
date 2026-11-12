@@ -111,7 +111,7 @@ test('N2b · מיגרציה 20 על מסד בגודל אמיתי (1,500 הקלט
         $t0 = microtime(true);
         migrate($pdo);
         $ms = (int)((microtime(true) - $t0) * 1000);
-        eq(20, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'הגרסה');
+        eq(KOL_SCHEMA_VERSION, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'הגרסה — האחרונה (20 ומעליה)');
         $m = $GLOBALS['kol_migrate_20'] ?? [];
         eq($n, $m['recordings'] ?? null, 'הספירה לפני (מהמיגרציה)');
         eq($n, (int)$pdo->query('SELECT COUNT(*) FROM recordings')->fetchColumn(), 'הספירה אחרי');
@@ -177,7 +177,7 @@ test('N2b · מיגרציה 20: checksum שאינו תואם — ROLLBACK, וה�
     $pdo->exec(n2b_old_schema('recordings'));
     $pdo->exec("INSERT INTO recordings (id, word_id, state, name, at, deleted_at, deleted_word) VALUES (1, 1, 'site', 'א', 'x', NULL, NULL), (2, NULL, 'tool', 'ב', 'x', 'y', 7)");
     migrate($pdo);
-    eq(20, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'עכשיו — 20');
+    eq(KOL_SCHEMA_VERSION, (int)$pdo->query('PRAGMA user_version')->fetchColumn(), 'עכשיו — האחרונה (20 ומעליה)');
     eq([['id' => 1, 'field' => 'audio', 'deleted_field' => null], ['id' => 2, 'field' => 'audio', 'deleted_field' => 'audio']],
         $pdo->query('SELECT id, field, deleted_field FROM recordings ORDER BY id')->fetchAll(), 'השדה הראשי, והסל זוכר את המקום');
 });

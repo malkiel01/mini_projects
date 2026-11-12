@@ -27,6 +27,12 @@ header('Cache-Control: no-store');
 require_once __DIR__ . '/lib/csp.php';
 csp_api_headers();          // C1: תשובת API לעולם אינה מסמך — default-src 'none'; frame-ancestors 'none'; sandbox
 
+/** 🔁 המעבר (M3) — נטען רק בפעולות שלו, כדי שלא להוסיף זמן לכל בקשה אחרת. */
+function cutover_lib(): void
+{
+    require_once __DIR__ . '/lib/cutover.php';
+}
+
 function json_out(array $data, int $code = 200): never
 {
     http_response_code($code);
@@ -61,7 +67,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
                       'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read', 'mount_set',
                       'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
-                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open'];   // X1
+                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open',   // X1
+                      'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -233,6 +240,12 @@ try {
         'inbox_csv' => inbox_csv(require_role($user, 'editor'), $_GET),
         'forms_settings' => ($method === 'POST' ? forms_settings(require_role($user, 'editor'), $body, is_developer($user)) : forms_settings(require_role($user, 'editor'), [], false)),
         'mail_test' => forms_mail_test(require_developer($user), $body),
+        // 🔁 המעבר (M3, lib/cutover.php): קריאה — מפרסם ומעלה; ראיה, נקודת שחזור ו"מוכן למעבר" — בעלים בלבד. אינו מדליק דבר באתר
+        'cutover' => cutover_lib() ?? cutover_state(require_role($user, 'publisher')),
+        'cutover_evidence' => cutover_lib() ?? cutover_evidence_add(require_role($user, 'owner'), $body),
+        'cutover_evidence_revoke' => cutover_lib() ?? cutover_evidence_revoke(require_role($user, 'owner'), $body),
+        'cutover_snapshot' => cutover_lib() ?? cutover_snapshot(require_role($user, 'owner')),
+        'cutover_ready' => cutover_lib() ?? cutover_ready(require_role($user, 'owner')),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),

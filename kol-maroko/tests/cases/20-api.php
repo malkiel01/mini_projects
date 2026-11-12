@@ -35,6 +35,8 @@ const API_MIN_ROLE = [
     'pv_token' => 'editor',
     'builds' => 'editor', 'build_get' => 'editor', 'build_file' => 'editor', 'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
     'build_send' => 'publisher', 'kd_seed' => 'owner', 'kd_update' => 'owner', 'mount' => 'owner', 'mount_set' => 'owner', 'notices' => 'owner', 'notice_read' => 'owner',
+    // פרוסה M3 — המעבר
+    'cutover' => 'publisher', 'cutover_evidence' => 'owner', 'cutover_evidence_revoke' => 'owner', 'cutover_snapshot' => 'owner', 'cutover_ready' => 'owner',
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     // פרוסה F2b
     'pf_copy' => 'editor', 'pf_version' => 'editor', 'pf_version_restore' => 'editor', 'pf_search' => 'editor', 'pf_replace' => 'editor', 'pf_refs' => 'editor', 'pf_zip' => 'editor', 'pf_zip_import' => 'editor',
