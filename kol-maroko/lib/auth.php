@@ -68,7 +68,7 @@ const ACTION_ROLES = [
     'snapshot_create' => 'editor', 'snapshot_restore' => 'editor', 'trash_restore' => 'editor',
     'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor',
-    'font_upload' => 'editor', 'font_google_add' => 'editor', 'font_fetch' => 'editor',      // V9 — כמו pf_create (ממתין לאישור הבקרה)
+    'font_upload' => 'editor', 'font_google_add' => 'editor', 'font_fetch' => 'editor',      // V9 — כמו pf_create (אושר בידי הבקרה)
     'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor', 'pf_rename' => 'editor', 'pf_delete' => 'editor',
     'pf_restore' => 'editor', 'pf_copy' => 'editor', 'pf_version_restore' => 'editor', 'pf_replace' => 'editor', 'pf_zip_import' => 'editor',
     'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
