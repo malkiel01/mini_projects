@@ -38,6 +38,7 @@ try {
     $user = agent_auth();
     devlog_user($user);
     agent_rate($user);
+    agent_authorize($action, $user);                    // P1: מול ACTION_ROLES, כמו כל משתמש
     // מחיקה ונושאים מחזירים בכלי את כל הרשימה — לצ'אט מספיק "בוצע"
     $done = fn(array $r) => ['done' => true];
     // לפני הפעולה הראשונה של הצ'אט (ואחרי חצי שעה בלי פעולה) — נקודת שחזור: "בטל את מה שהצ'אט עשה" בלחיצה

@@ -367,7 +367,7 @@
   async function notices() {
     if (noticesShown) return;
     for (var t = 0; t < 60 && !(typeof state !== 'undefined' && state.user && state.user.role); t++) await new Promise(function (r) { setTimeout(r, 500); });
-    if (typeof state === 'undefined' || !state.user || state.user.role !== 'owner') return;
+    if (typeof state === 'undefined' || !state.user || typeof People !== 'undefined') return;   // P1: ההודעות — בפעמון (assets/js/people.js)
     noticesShown = true;
     var d;
     try { d = await api('notices'); } catch (e) { return; }

@@ -23,7 +23,7 @@ const AGENT_GONE = ['draft', 'draft_save', 'render', 'page', 'code', 'code_creat
 
 function agent_token_create(array $user, array $b): array
 {
-    if (!in_array($user['role'], ['editor', 'publisher', 'owner'], true)) throw new ApiError('אין הרשאה', 403);
+    require_role($user, 'editor');
     $id = 'kol-' . bin2hex(random_bytes(4));
     $secret = rtrim(strtr(base64_encode(random_bytes(24)), '+/', 'Az'), '=');
     $label = str($b['label'] ?? '', 60) ?: 'צ\'אט';
@@ -37,7 +37,7 @@ function agent_token_create(array $user, array $b): array
 /** הכניסות שלי (בעלים — של כולם). הסיסמה לא חוזרת לעולם — רק בעת היצירה. */
 function agent_tokens(array $user): array
 {
-    $all = $user['role'] === 'owner';
+    $all = role_at_least($user, 'page_owner');
     $st = db()->prepare('SELECT id, sub, name, label, created_at, expires_at, last_used FROM agent_tokens WHERE revoked = 0' . ($all ? '' : ' AND sub = ?') . ' ORDER BY created_at DESC');
     $st->execute($all ? [] : [$user['sub']]);
     return ['tokens' => array_map(fn($t) => $t + ['mine' => $t['sub'] === $user['sub'], 'expired' => $t['expires_at'] < now_iso()], $st->fetchAll())];
@@ -46,7 +46,7 @@ function agent_tokens(array $user): array
 function agent_token_revoke(array $user, array $b): array
 {
     $st = db()->prepare('UPDATE agent_tokens SET revoked = 1 WHERE id = ? AND (sub = ? OR ? = 1)');
-    $st->execute([(string)($b['id'] ?? ''), $user['sub'], $user['role'] === 'owner' ? 1 : 0]);
+    $st->execute([(string)($b['id'] ?? ''), $user['sub'], role_at_least($user, 'page_owner') ? 1 : 0]);
     if (!$st->rowCount()) throw new ApiError('הכניסה לא נמצאה', 404);
     audit_as($user, 'agent_revoke', (string)$b['id']);
     return agent_tokens($user);
@@ -79,13 +79,42 @@ function agent_auth(): array
         throw new ApiError('שם המשתמש או הסיסמה שגויים', 401);
     }
     if ($t['expires_at'] < now_iso()) throw new ApiError('הכניסה פגה. צרו חדשה בכלי (✨ ← עבודה מצ\'אט)', 401);
-    // החבר הוסר מהכלי — גם הכניסות שלו לא עובדות. בעלים (מנהל בפלטפורמה) אינו שורה בחברים
-    if (!member_by_sub($t['sub']) && $t['creator_role'] !== 'owner') throw new ApiError('המשתמש כבר לא חבר בכלי', 403);
+    // P1: מי שיצר את הכניסה הוסר או איבד את התפקיד — גם הכניסות שלו לא עובדות
+    $creator = user_by_sub((string)$t['sub']);
+    if (!$creator || $creator['status'] !== 'active' || !$creator['role']) throw new ApiError('המשתמש כבר לא חבר בכלי', 403);
     if ($f) setting_set($key, '{}');
     if (!$t['last_used'] || strtotime($t['last_used']) < time() - 60) {
         db()->prepare('UPDATE agent_tokens SET last_used = ? WHERE id = ?')->execute([now_iso(), $t['id']]);
     }
-    return ['sub' => $t['sub'], 'name' => $t['name'] . ' 🤖', 'email' => null, 'role' => 'editor', 'agent' => $t['id'], 'agent_label' => $t['label']];
+    $row = agent_user_row($t, $creator);
+    // התפקיד: של השורה שלו ב-users (ברירת מחדל: עורך), ולעולם לא מעל מי שיצר אותו
+    $role = ROLE_RANK[$row['role'] ?? 'editor'] <= ROLE_RANK[$creator['role']] ? ($row['role'] ?? 'editor') : $creator['role'];
+    return ['id' => (int)$row['id'], 'sub' => $t['sub'], 'name' => $t['name'] . ' 🤖', 'email' => null, 'role' => $role, 'agent' => $t['id'], 'agent_label' => $t['label']];
+}
+
+/** P1 (ש-19): כל כניסה מצ'אט היא שורה ב-users (agent = מזהה הכניסה), בתפקיד עורך כברירת מחדל. */
+function agent_user_row(array $t, array $creator): array
+{
+    $st = db()->prepare('SELECT * FROM users WHERE agent = ?');
+    $st->execute([$t['id']]);
+    if ($row = $st->fetch()) return $row;
+    db()->prepare("INSERT OR IGNORE INTO users (name, role, status, created_at, invited_by, agent) VALUES (?, 'editor', 'active', ?, ?, ?)")
+        ->execute([$t['name'] . ' 🤖 ' . $t['label'], now_iso(), $creator['id'], $t['id']]);
+    $st->execute([$t['id']]);
+    return $st->fetch();
+}
+
+/** כל פעולה של agent.php ← הפעולה המקבילה ב-ACTION_ROLES; נבדקת כמו כל משתמש. */
+const AGENT_ACTIONS = [
+    'help' => 'pf_tree', 'tree' => 'pf_tree', 'read' => 'pf_read', 'search' => 'pf_search', 'versions' => 'pf_versions', 'preview_url' => 'pv_token',
+    'words' => 'words', 'write' => 'pf_write', 'edit' => 'pf_write', 'create' => 'pf_create',
+    'words_save' => 'words_csv_import', 'word_save' => 'word_save', 'word_delete' => 'word_delete', 'topic_op' => 'topic_op',
+];
+
+function agent_authorize(string $action, array $user): void
+{
+    if (!isset(AGENT_ACTIONS[$action])) return;                 // פעולה לא מוכרת — 404 ב-match
+    require_role($user, ACTION_ROLES[AGENT_ACTIONS[$action]]);
 }
 
 function agent_base_url(): string

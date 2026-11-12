@@ -133,11 +133,11 @@ test('מסך המפתח: יומן הפעולות — כניסה, שמירה, מ�
     $s = http('POST', '/api.php?action=draft_save', ['user' => U_EDITOR, 'json' => ['page' => $d['page'], 'rev' => $d['rev']]]);
     eq(200, $s['status'], $s['body']);
     http('POST', '/api.php?action=lock', ['user' => U_EDITOR, 'json' => ['op' => 'release']]);
-    http('POST', '/api.php?action=member_add', ['user' => U_OWNER, 'json' => ['email' => 'new@example.test', 'role' => 'editor']]);
+    http('POST', '/api.php?action=person_invite', ['user' => U_OWNER, 'json' => ['email' => 'new@example.test', 'role' => 'editor']]);
     http('POST', '/api.php?action=disk_cap', ['user' => U_OWNER, 'json' => ['gb' => 6]]);
     $a = http('GET', '/api.php?action=dev-audit', ['user' => U_OWNER])['json'];
     $acts = array_column($a['rows'], 'action');
-    foreach (['login', 'draft_save', 'word_add', 'word_delete', 'snapshot_restore', 'member_add', 'disk_cap', 'dev_token_create'] as $x) ok(in_array($x, $acts, true), "חסרה פעולה: $x");
+    foreach (['login', 'draft_save', 'word_add', 'word_delete', 'snapshot_restore', 'person_invite', 'disk_cap', 'dev_token_create'] as $x) ok(in_array($x, $acts, true), "חסרה פעולה: $x");
     $only = http('GET', '/api.php?action=dev-audit&user=u-editor&act=word_add', ['user' => U_OWNER])['json']['rows'];
     ok($only && !array_filter($only, fn($x) => $x['sub'] !== 'u-editor' || $x['action'] !== 'word_add'), 'סינון לפי מי ומה');
 });
@@ -181,9 +181,9 @@ test('מסך המפתח: שירותי רקע ומצב הנתונים', function 
     ok($svc['snapshot']['last'] && $svc['snapshot']['ok'] === true, 'הנקודה היומית נוצרה בבקשה הראשונה');
     ok($svc['log_clean']['last'] && $svc['log_clean']['next'], 'ניקוי היומן: אחרון והבא');
     $st = array_column($s['stats'], 'value', 'id');
-    foreach (['words', 'words_audio', 'audio_site', 'audio_tool', 'files', 'versions', 'snapshots', 'members', 'db_size'] as $k) ok(array_key_exists($k, $st), "חסר $k");
+    foreach (['words', 'words_audio', 'audio_site', 'audio_tool', 'files', 'versions', 'snapshots', 'people', 'db_size'] as $k) ok(array_key_exists($k, $st), "חסר $k");
     eq((int)db()->query('SELECT COUNT(*) FROM words')->fetchColumn(), $st['words']);
-    eq(3, $st['members']);
+    ok(str_contains((string)$st['people'], 'עורך') && str_contains((string)$st['people'], 'מטריצת הרשאות: ✓'), 'שורת P1: ' . $st['people']);
     eq($st['words_audio'], $st['audio_site'] + $st['audio_tool']);
 });
 

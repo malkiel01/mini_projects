@@ -57,7 +57,7 @@ test('יומן: אזהרת PHP נרשמת עם קובץ ושורה, והבקשה
 });
 
 test('יומן: שגיאת 4xx רגילה (ApiError) נרשמת כאזהרה עם ההודעה, בלי שורת חריגה', function () {
-    $r = http('GET', '/api.php?action=members', ['user' => U_EDITOR]);
+    $r = http('GET', '/api.php?action=people', ['user' => U_EDITOR]);
     $rows = devlog_rows(['reqs' => [$r['headers']['x-request-id']]]);
     eq(1, count($rows));
     eq(['warn', 403], [$rows[0]['level'], $rows[0]['status']]);
@@ -119,7 +119,7 @@ test('יומן: תקלה במנגנון הרישום עצמו אינה מפיל�
     db()->exec('ALTER TABLE dev_log RENAME TO dev_log_hidden');
     try {
         $r = http('GET', '/api.php?action=words', ['user' => U_EDITOR]);
-        $bad = http('GET', '/api.php?action=members', ['user' => U_EDITOR]);
+        $bad = http('GET', '/api.php?action=people', ['user' => U_EDITOR]);
     } finally {
         db()->exec('ALTER TABLE dev_log_hidden RENAME TO dev_log');
     }

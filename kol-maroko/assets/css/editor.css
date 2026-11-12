@@ -344,4 +344,15 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .ed-bar [data-free-btn][aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); }
 .sz-h { position: absolute; background: #fff; border: 1.5px solid var(--brand, #36c); border-radius: 2px; touch-action: none; pointer-events: auto; }
 .sz-n, .sz-s { cursor: ns-resize; } .sz-e, .sz-w { cursor: ew-resize; } .sz-ne, .sz-sw { cursor: nesw-resize; } .sz-nw, .sz-se { cursor: nwse-resize; }
+.dv-h { position: absolute; z-index: 25; background: #e0c; border: 2px solid #fff; border-radius: 4px; cursor: col-resize; touch-action: none; pointer-events: auto; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.dv-h::after { content: '⇔'; position: absolute; inset: 0; display: grid; place-items: center; font-size: .6rem; color: #fff; }
+.gt-line { position: absolute; z-index: 24; pointer-events: auto; touch-action: none; cursor: col-resize; background: linear-gradient(90deg, transparent calc(50% - 1px), rgba(224, 0, 204, .85) calc(50% - 1px), rgba(224, 0, 204, .85) calc(50% + 1px), transparent calc(50% + 1px)); }
+.gt-line.h { cursor: row-resize; background: linear-gradient(0deg, transparent calc(50% - 1px), rgba(224, 0, 204, .85) calc(50% - 1px), rgba(224, 0, 204, .85) calc(50% + 1px), transparent calc(50% + 1px)); }
+.gt-line.ro { cursor: default; pointer-events: none; opacity: .45; }
+.gt-list { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 4px; }
+.gt-row { display: flex; align-items: center; gap: 4px; } .gt-row input { flex: 1; min-width: 0; font: .8rem ui-monospace, monospace; }
+.gt-row.drag { opacity: .5; } .gt-row.over { box-shadow: 0 -2px 0 #e0c; }
+.gt-grip { cursor: grab; touch-action: none; padding: 0 4px; user-select: none; } .gt-tag { font-size: .75rem; opacity: .7; }
+@media (pointer: coarse) { .gt-grip, .gt-row .btn { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; } }
+.ps-eq { position: absolute; z-index: 26; pointer-events: none; background: rgba(224, 0, 204, .25); border: 1px dashed #e0c; font: .7rem ui-monospace, monospace; color: #e0c; display: grid; place-items: center; }
 .sz-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }

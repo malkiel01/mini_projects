@@ -266,7 +266,7 @@ const PAGE = `<!doctype html>
     const stuck = await page.evaluate(() => ({ n: document.querySelector('[data-stuck]').dataset.stuck, text: document.querySelector('.dev-stuck').textContent, groups: document.querySelectorAll('.dev-stuck li').length }));
     ok(stuck.n === '4' && stuck.groups === 3 && /h2\.sub · t\/page\.html — 2/.test(stuck.text), `מסך המפתח: מונה "לא הצלחתי לשנות" — ${stuck.n} פתוחות, מקובצות לפי אלמנט (${stuck.groups} אלמנטים; h2.sub — 2)`);
     // חבר שאינו המפתח מדווח, ורואה רק את שלו
-    await call(page, 'member_add', { email: 'ed@example.test', role: 'editor' });
+    await call(page, 'person_invite', { email: 'ed@example.test', role: 'editor' })    // P1 (בלי פלטפורמה מדומה — "ממתינה", והמייל מתקשר בכניסה);
     const ctxE = await mk(1280, 800, { sub: 'u-ed', name: 'Ed Member', email: 'ed@example.test', email_verified: true }), pe = await ctxE.newPage();
     const errE = []; pe.on('pageerror', e => errE.push(e.message));
     await pe.goto(base + '/#/project'); await pe.waitForSelector('.pj-tree .pj-row');

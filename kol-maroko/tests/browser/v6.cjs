@@ -190,13 +190,214 @@ const PAGE = `<!doctype html>
     ok(await undoFiles(page, o0), 'ביטול — זהים');
     p = await page.evaluate(() => { const b = document.querySelector('[data-size-h="e"]'); b.dispatchEvent(new PointerEvent('pointerenter')); return document.querySelector('.sz-tip')?.textContent || ''; });
     ok(/גודל · width/.test(p), 'ידית גודל אומרת איזה מאפיין ישתנה לפני הגרירה', p);
+    // ═══ 6. V6b: ידית החלוקה בין עמודות — גרירה אמיתית (עכבר) ═══
+    await page.evaluate(() => Editor._tab('design'));
+    { const from = await lib(page, 'row2'), to = await at(page, 'section.kadisha-hero', 0.5, 1, -3); await drag(page, from, to); }
+    await page.evaluate(() => Editor._tab('adv')); await sleep(100);
+    await select(page, '.row-1'); await sleep(200);
+    const fRow = await files(page);
+    ok(/<div class="row-1"><div class="row-1-col"><\/div><div class="row-1-col"><\/div><\/div>/.test(fRow['index.html']), 'הכנה: "שורה של 2" מהספרייה (גרירה) — שתי עמודות ב-flex: 1 1 0');
+    p = await page.evaluate(() => { const b = document.querySelector('[data-divider="0"]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); b.dispatchEvent(new PointerEvent('pointerenter')); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height, title: b.title, tip: document.querySelector('.sz-tip')?.textContent || '', sp: !!document.querySelector('[data-sp-gap]:not([hidden])') }; });
+    await page.screenshot({ path: path.join(shots, 'v6b-1920-divider.png') });
+    ok(p && /^חלוקה · flex-grow לשניהם/.test(p.title) && /^חלוקה/.test(p.tip), 'רובריקת-שורה נבחרת: ידית חלוקה בצלע שבין העמודות; התווית בריחוף אומרת מה ישתנה (flex-grow לשניהם — הבסיס 0)', p);
+    const colW = () => page.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.row-1 > div')].map(e => e.getBoundingClientRect().width));
+    const w0 = await colW(), scl = await page.evaluate(() => Editor._state.canvas.scale);
+    await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.keyboard.down('Shift');
+    for (let i = 1; i <= 10; i++) { await page.mouse.move(p.x - (w0[0] + w0[1]) * 0.21 * scl * i / 10, p.y); await sleep(20); }
+    const liveTip = await page.evaluate(() => document.querySelector('.sz-tip:not([hidden])')?.textContent || '');
+    await page.mouse.up(); await page.keyboard.up('Shift'); await sleep(300);
+    let fD = await files(page); const w1 = await colW(), pct1 = w1[0] / (w1[0] + w1[1]) * 100;
+    ok(/^70% · 30%/.test(liveTip), 'בזמן הגרירה — האחוזים רצים ליד הסמן; Shift — צעדים של 5% (70% · 30%)', liveTip);
+    ok(Math.abs(pct1 - 70) < 0.6 && /flex-grow: 1\.4;/.test(fD['css/page.css']) && /flex-grow: 0\.6;/.test(fD['css/page.css']), 'בשחרור: 70% / 30% בקנבס, ו-flex-grow 1.4 / 0.6 (הסכום נשמר)', { pct1, css: fD['css/page.css'].slice(-300) });
+    ok(/class="row-1-col row-1-box"/.test(fD['index.html']) && /class="row-1-col row-1-box-2"/.test(fD['index.html']) && /\.row-1-col \{[^}]*flex: 1 1 0;/.test(fD['css/page.css']), 'הכלל המשותף (.row-1-col) לא נגע — לכל עמודה מחלקה משלה, HTML + CSS בעסקה אחת', fD['index.html'].slice(fD['index.html'].indexOf('row-1') - 12, fD['index.html'].indexOf('row-1') + 140));
+    ok(/^חלוקה · div\.row-1-col.* · 70% \/ 30%$/.test(await lastTx(page)) && (await st(page)).inequiv === 0, 'עסקה אחת עם שם ("חלוקה · … · 70% / 30%"); המודל שקול', await lastTx(page));
+    // ידית הרווח (V3) של העמודה — כותבת רווח בלבד, לא flex
+    await select(page, '.row-1 > div'); await sleep(200);
+    const fBefore = await files(page);
+    p = await page.evaluate(() => { const b = document.querySelector('[data-sp-gap]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, title: b.title, dv: !!document.querySelector('[data-divider]:not([hidden])') }; });
+    if (p) { await page.mouse.move(p.x, p.y); await page.mouse.down(); for (let i = 1; i <= 6; i++) { await page.mouse.move(p.x - i * 5, p.y); await sleep(20); } await page.mouse.up(); await sleep(250); }
+    fD = await files(page); const dCss = fD['css/page.css'].replace(fBefore['css/page.css'], '');
+    const changedCss = fD['css/page.css'] !== fBefore['css/page.css'], diffLines = fD['css/page.css'].split('\n').filter(l => !fBefore['css/page.css'].split('\n').includes(l));
+    const decls = t => (t.match(/[\w-]+: [^;]+;/g) || []).sort().join('|'), newDecl = decls(fD['css/page.css']).split('|').filter(d => !decls(fBefore['css/page.css']).split('|').includes(d));
+    ok(p && !p.dv && changedCss && newDecl.length && newDecl.every(d => /^(margin|gap|row-gap|column-gap)/.test(d)), 'ידית הרווח של V3 (ברצועה, כשעמודה נבחרת) — כותבת רווח בלבד; ידית החלוקה אינה מוצגת אז', { p, newDecl, diffLines });
+    ok(await undoFiles(page, fRow), 'ביטול — חזרה לשורה של 2 כמו שהיא');
+    // בסיס שאינו 0 — flex-basis באחוזים לזה שנגרר בלבד
+    await page.evaluate(() => { const S = Editor._state, c = S.canvas, n = c.nodeOf(c.doc.querySelector('.row-1 > div')), t = S.adv.target(n, S.styler.targets(n)); S.lay.write(new Map([[n, [['flex', '0 1 50%', t]]]]), 'הכנה · בסיס 50%'); });
+    await select(page, '.row-1'); await sleep(200);
+    p = await page.evaluate(() => { const b = document.querySelector('[data-divider="0"]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, title: b.title }; });
+    { const fb = await files(page), cw = await page.evaluate(() => { const e = Editor._state.canvas.doc.querySelector('.row-1'); return e.clientWidth; });
+      if (p) { await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.keyboard.down('Shift'); for (let i = 1; i <= 8; i++) { await page.mouse.move(p.x - cw * 0.1 * scl * i / 8, p.y); await sleep(20); } await page.mouse.up(); await page.keyboard.up('Shift'); await sleep(300); }
+      const fa = await files(page), nd = decls => (decls.match(/[\w-]+: [^;]+;/g) || []), add = nd(fa['css/page.css']).filter(d => !nd(fb['css/page.css']).includes(d)), w = await colW();
+      ok(p && /flex-basis % ל-div\.row-1-col/.test(p.title) && add.length === 1 && /^flex-basis: 60%;$/.test(add[0]) && Math.abs(w[0] / cw * 100 - 60) < 0.6, 'כשהבסיס אינו 0: ידית החלוקה כותבת flex-basis באחוזים (60%, Shift) רק לעמודה שנגררה', { p, add, w, cw }); }
+    ok(await undoFiles(page, fRow), 'ביטול — זהים');
+
+    // ═══ 7. V6b: grid — רשימת מסילות (הוספה / מחיקה / גרירה), וגרירת קו על הקנבס ═══
+    await select(page, '.row-1'); await sleep(200);
+    await page.selectOption('[data-field="display"] select', 'grid'); await sleep(250);
+    ok(await comp(page, 'display', '.row-1') === 'grid' && await page.isVisible('[data-track-list="grid-template-columns"]'), 'display ← grid: נכתב, וקבוצת "רשת" עם רשימת מסילות');
+    for (let i = 0; i < 3; i++) { await page.click('[data-track-add="grid-template-columns"]'); await sleep(200); }
+    fD = await files(page);
+    ok(/\.row-1 \{[^}]*grid-template-columns: 1fr 1fr 1fr;/.test(fD['css/page.css']), '"+ מסילה" ×3 — grid-template-columns: 1fr 1fr 1fr', fD['css/page.css'].slice(-260));
+    await page.fill('[data-track-list="grid-template-columns"] [data-track-i="2"]', '120px'); await page.press('[data-track-list="grid-template-columns"] [data-track-i="2"]', 'Enter'); await sleep(250);
+    // גרירה (⠿) של המסילה השלישית למקום הראשון
+    { const g = await page.$('[data-track-grip="2"]'), gb = await g.boundingBox(), t0 = await (await page.$('[data-track-grip="0"]')).boundingBox();
+      await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2); await page.mouse.down(); for (let i = 1; i <= 6; i++) { await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2 + (t0.y - gb.y - 4) * i / 6); await sleep(20); } await page.mouse.up(); await sleep(250); }
+    fD = await files(page);
+    ok(/grid-template-columns: 120px 1fr 1fr;/.test(fD['css/page.css']) && /^רשת|עמודות · div\.row-1 · סדר · מסילה 3 ← 1/.test(await lastTx(page)), 'ערך חופשי (120px) למסילה, וגרירת ⠿ — המסילה עברה לראש הרשימה; עסקה עם שם', { css: fD['css/page.css'].slice(-200), tx: await lastTx(page) });
+    await page.click('[data-track-del="1"]'); await sleep(250);
+    fD = await files(page);
+    ok(/grid-template-columns: 120px 1fr;/.test(fD['css/page.css']), '✕ — מחיקת מסילה', fD['css/page.css'].slice(-200));
+    p = await page.evaluate(() => { const b = document.querySelector('[data-grid-line="x0"]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, title: b.title, ro: b.classList.contains('ro') }; });
+    await page.screenshot({ path: path.join(shots, 'v6b-1920-grid.png') });
+    ok(p && !p.ro && /עמודה 1 \(120px\) — גרירה משנה את גודלה/.test(p.title), 'על הקנבס: קו בין המסילות, עם תווית ("מסילה · grid-template-columns · עמודה 1 (120px)")', p || await page.evaluate(() => { const S = Editor._state, L = S.lay; try { const cs0 = getComputedStyle(S.canvas.elOf(S.canvas.selected)); return { gtc: cs0.gridTemplateColumns, gtr: cs0.gridTemplateRows, decl: S.adv.curDeclared(S.canvas.selected, "grid-template-columns"), on: L.on(), n: S.canvas.label(S.canvas.selected), gl: L.gridLines(S.canvas.selected).length, els: [...document.querySelectorAll('.gt-line')].map(b => b.outerHTML.slice(0, 200)) }; } catch (e) { return e.stack; } }));
+    const c0 = await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('.row-1')).gridTemplateColumns.split(' ').map(parseFloat));
+    if (p) { await page.mouse.move(p.x, p.y); await page.mouse.down(); for (let i = 1; i <= 8; i++) { await page.mouse.move(p.x - 80 * scl * i / 8, p.y); await sleep(20); } await page.mouse.up(); await sleep(300); }
+    fD = await files(page); const c1 = await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('.row-1')).gridTemplateColumns.split(' ').map(parseFloat));
+    ok(/grid-template-columns: 200px 1fr;/.test(fD['css/page.css']) && Math.abs(c1[0] - 200) < 1 && /^מסילה · div\.row-1 · עמודה 1 · 200px 1fr$/.test(await lastTx(page)), 'גרירת הקו 80px (בעברית — שמאלה) — המסילה הראשונה 120px ← 200px, היחידה נשמרת; עסקה אחת', { c0, c1, tx: await lastTx(page) });
+    await page.fill('[data-track-list="grid-template-columns"] [data-track-i="0"]', '1fr'); await page.press('[data-track-list="grid-template-columns"] [data-track-i="0"]', 'Enter'); await sleep(250);
+    p = await page.evaluate(() => { const b = document.querySelector('[data-grid-line="x0"]'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    await page.mouse.move(p.x, p.y); await page.mouse.down(); for (let i = 1; i <= 8; i++) { await page.mouse.move(p.x + (c1[0] + c1[1]) * 0.1 * scl * i / 8, p.y); await sleep(20); } await page.mouse.up(); await sleep(300);
+    fD = await files(page);
+    ok(/grid-template-columns: 0\.8fr 1\.2fr;/.test(fD['css/page.css']), 'fr ← fr: גרירת הקו מחלקת מחדש את הסכום (0.8fr 1.2fr)', fD['css/page.css'].slice(-200));
+    await page.fill('[data-track-list="grid-template-columns"] [data-track-i="0"]', 'repeat(2, 1fr)'); await page.press('[data-track-list="grid-template-columns"] [data-track-i="0"]', 'Enter'); await sleep(250);
+    p = await page.evaluate(() => ({ kinds: [...document.querySelectorAll('[data-track-list="grid-template-columns"] .gt-row:not(.add)')].map(r => r.dataset.kind), ro: [...document.querySelectorAll('.gt-line:not([hidden])')].map(b => b.classList.contains('ro')) }));
+    ok(p.kinds[0] === 'repeat' && p.ro.length >= 1 && p.ro.every(Boolean), 'repeat() — מוצג כקבוצה אחת ברשימה, נערך כמו שהוא; הקווים על הקנבס אינם נגררים (אין ידית שנגררת ואינה משנה דבר)', p);
+    ok(await undoFiles(page, fRow) && (await st(page)).inequiv === 0, 'ביטול עד השורה — זהים; המודל שקול');
+
+    // ═══ 8. V6b: הצמדה למרווח שווה בין שלושה ═══
+    await undoFiles(page, o0);
+    await select(page, '.kadisha-hero-inner > :last-child'); await sleep(150);
+    await page.evaluate(() => { Editor._state.pos.pickRef = null; }); await page.click('[data-free-btn]'); await sleep(300);
+    const SUB = '.kadisha-hero-inner > :last-child';
+    const eqGeo = await page.evaluate(s => { const d = Editor._state.canvas.doc, e = d.querySelector(s), ref = e.offsetParent, kids = [...ref.children].filter(k => k !== e && k.getClientRects().length).map(k => k.getBoundingClientRect()).filter(b => b.width > 0); kids.sort((a, b) => a.top - b.top); let A = null, B = null; for (let i = kids.length - 2; i >= 0 && !A; i--) if (kids[i + 1].top - kids[i].bottom > 4) { A = kids[i]; B = kids[i + 1]; } const r = e.getBoundingClientRect(); return { want: B.bottom + (B.top - A.bottom), top: r.top, gap: B.top - A.bottom }; }, SUB);
+    {
+      const h = await page.evaluate(() => { const b = document.querySelector('[data-ps-move]').getBoundingClientRect(); return { x: b.left + 10, y: b.top + 10 }; });
+      const dy = (eqGeo.want - eqGeo.top + 0.5) * scl;   // חצי פיקסל מהמקום השווה — בתוך סף ההצמדה
+      await page.mouse.move(h.x, h.y); await page.mouse.down(); for (let i = 1; i <= 8; i++) { await page.mouse.move(h.x, h.y + dy * i / 8); await sleep(20); }
+      p = await page.evaluate(() => [...document.querySelectorAll('.ps-eq')].map(x => x.textContent));
+      await page.mouse.up(); await sleep(300);
+    }
+    const top2 = await page.evaluate(s => Editor._state.canvas.doc.querySelector(s).getBoundingClientRect().top, SUB);
+    ok(p.length === 2 && p.every(t => t === '=' + Math.round(eqGeo.gap)) && Math.abs(top2 - eqGeo.want) < 1, 'גרירה ליד "מרווח שווה": ההצמדה מניחה את האלמנט באותו מרווח מהאח הקודם כמו בין שני האחים, ושני הקטעים מסומנים "=" בזמן הגרירה', { p, top2, eqGeo });
+    ok(await undoFiles(page, o0), 'ביטול — זהים');
+    // ═══ 9. התרחיש המלא (03 §7.3), צעדים 1–10 ברצף אחד, בגרירה ובלחיצה אמיתיות ═══
+    await undoFiles(page, o0);
+    const tab = async id => { await page.evaluate(id => { if (!document.querySelector('.ed').classList.contains('info-open')) document.querySelector('.ed-bar [data-panel="info"]').click(); Editor._tab(id); }, id); await sleep(150); };
+    const fld = (id, phys) => '.ed-side-body.sg[aria-label="' + (id === 'adv' ? 'מתקדם' : 'עיצוב') + '"] [data-field="' + phys + '"]';
+    const typeIn = async (id, phys, v) => { const q = fld(id, phys) + ' .sg-ctl input'; await page.fill(q, v); await page.press(q, 'Enter'); await sleep(250); };
+    const selEl = () => page.evaluate(() => { const c = Editor._state.canvas, n = c.selected; return n ? c.elOf(n) : null; });
+    const LEAVES = '.kadisha-hero-inner :is(h1, p, span):not(:has(*)):not(:empty):not(:is(a, button) *)';
+    // צעד 1 — לחיצה (עכבר) על כל אחת משש הכותרות
+    const n6 = await page.evaluate(q => Editor._state.canvas.doc.querySelectorAll(q).length, LEAVES); let hit = 0;
+    for (let i = 0; i < n6; i++) {
+      const pt = await page.evaluate(([q, i]) => { const c = Editor._state.canvas, e = c.doc.querySelectorAll(q)[i]; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + r.width / 2) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale }; }, [LEAVES, i]);
+      await page.mouse.click(pt.x, pt.y); await sleep(120);
+      if (await page.evaluate(([q, i]) => { const c = Editor._state.canvas; return c.elOf(c.selected) === c.doc.querySelectorAll(q)[i]; }, [LEAVES, i])) hit++;
+    }
+    ok(n6 === 6 && hit === 6, 'צעד 1: לחיצה בעכבר על כל אחת משש הכותרות שעל התמונה — כל אחת נבחרת בנפרד', { n6, hit, all: await page.evaluate(q => [...Editor._state.canvas.doc.querySelectorAll(q)].map(e => e.localName + '.' + e.className + ':' + e.textContent.trim().slice(0, 20)), LEAVES) });
+    // צעד 2 — הכותרת בצרפתית אל מעל הכותרת בעברית
+    { const from = await at(page, '.kadisha-hero-eyebrow-line'), to = await at(page, 'h1.kadisha-hero-title', 0.5, 0.2, 0, false); await drag(page, from, to); }
+    let sc = await src(page);
+    ok(/<div class="kadisha-hero-inner">\n      <span class="kadisha-hero-eyebrow-line">La Voix du Maroc<\/span>\n      <h1 /.test(sc), 'צעד 2: גרירה — הכותרת בצרפתית לפני הכותרת בעברית');
+    // צעד 3 — כותרת שביעית, מקלידים בה, גודל וצבע
+    await select(page, 'p.kadisha-hero-subtitle-main'); await page.click('[data-ntab="lib"]'); await sleep(60);
+    await page.click('.ed-lib-item[data-lib="heading"]'); await sleep(250);
+    await page.keyboard.type('הכותרת השביעית'); await page.keyboard.press('Escape'); await sleep(300);
+    const NEW = await page.evaluate(() => { const e = [...Editor._state.canvas.doc.querySelectorAll('.kadisha-hero-inner *')].find(x => x.textContent.trim() === 'הכותרת השביעית'); return e ? e.localName + (e.className ? '.' + e.className.trim().split(/\s+/).join('.') : '') : null; });
+    const NEWSEL = await page.evaluate(() => { const all = [...Editor._state.canvas.doc.querySelectorAll('.kadisha-hero-inner > *')], i = all.findIndex(x => x.textContent.trim() === 'הכותרת השביעית'); return i < 0 ? 'nope' : '.kadisha-hero-inner > :nth-child(' + (i + 1) + ')'; });
+    await select(page, NEWSEL); await tab('design');
+    await page.evaluate(q => { const s = document.querySelector(q); const o = [...s.options].findIndex(x => /רק האלמנט|style=""/.test(x.textContent)); if (o >= 0) { s.selectedIndex = o; s.dispatchEvent(new Event('change', { bubbles: true })); } }, '.ed-side-body.sg[aria-label="עיצוב"] [data-target]'); await sleep(150);
+    await typeIn('design', 'font-size', '40px'); await typeIn('design', 'color', '#ffcc00');
+    ok(NEW && await comp(page, 'font-size', NEWSEL) === '40px' && await comp(page, 'color', NEWSEL) === 'rgb(255, 204, 0)', 'צעד 3: כותרת שביעית — מקלידים בה במקום, גודל 40px וצבע', { NEW, NEWSEL, src: (await src(page)).split('kadisha-hero-inner')[1]?.slice(0, 600) });
+    const newFs = () => page.evaluate(() => { const e = [...Editor._state.canvas.doc.querySelectorAll('*')].find(x => x.children.length === 0 && x.textContent.trim() === 'הכותרת השביעית'); return e ? getComputedStyle(e).fontSize : null; });
+    // צעד 4 — ידית המרווח (עכבר) עד אפס, ואחר כך 24
+    await tab('adv'); await select(page, 'h1.kadisha-hero-title'); await sleep(200);
+    const gdist = () => page.evaluate(() => { const d = Editor._state.canvas.doc, a = d.querySelector('h1.kadisha-hero-title'), b = a.nextElementSibling; return Math.round((b.getBoundingClientRect().top - a.getBoundingClientRect().bottom) * 100) / 100; });
+    { const g = await page.evaluate(() => { const b = document.querySelector('[data-sp-gap]'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }), d0 = await gdist();
+      await page.mouse.move(g.x, g.y); await page.mouse.down(); for (let i = 1; i <= 10; i++) { await page.mouse.move(g.x, g.y - d0 * scl * i / 10); await sleep(16); } await page.mouse.up(); await sleep(250); }
+    const z4 = await gdist();
+    { const g = await page.evaluate(() => { const b = document.querySelector('[data-sp-gap]'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); await page.mouse.click(g.x, g.y); await sleep(150); }
+    await page.fill('[data-gapbar] [data-bar-input]', '24'); await page.press('[data-gapbar] [data-bar-input]', 'Enter'); await sleep(250);
+    ok(z4 === 0 && await gdist() === 24, 'צעד 4: גרירת ידית המרווח עד 0, ואחר כך מקלידים 24 — המרחק הנמדד 0 ואז 24px', { z4, d: await gdist() });
+    // צעד 5 — מיקום חופשי ביחס אל הפס, ולפינה (גרירה בעכבר)
+    await select(page, '.kadisha-hero-credit'); await sleep(200);
+    await page.evaluate(() => { const s = document.querySelector('[data-free-ref]'); const i = [...s.options].findIndex(o => /^section\.kadisha-hero/.test(o.textContent)); s.selectedIndex = i; s.dispatchEvent(new Event('change', { bubbles: true })); }); await sleep(100);
+    await page.click('[data-free-btn]'); await sleep(300);
+    { const r = await rect(page, '.kadisha-hero-credit'), sc5 = await rect(page, 'section.kadisha-hero'), b = await page.evaluate(() => { const r = document.querySelector('[data-ps-move]').getBoundingClientRect(); return { x: r.left + 8, y: r.top + 8 }; });
+      const dx = (sc5.l + 24 - r.l) * scl, dy = (sc5.b - 24 - r.b) * scl;
+      await page.mouse.move(b.x, b.y); await page.mouse.down(); for (let i = 1; i <= 10; i++) { await page.mouse.move(b.x + dx * i / 10, b.y + dy * i / 10); await sleep(20); } await page.mouse.up(); await sleep(300); }
+    { const css = ((await files(page))['css/page.css'].match(/[^}]*kadisha-hero-credit[^{]*\{[^}]*\}/g) || []).join('\n'), par5 = await page.evaluate(() => Editor._state.canvas.doc.querySelector('.kadisha-hero-credit').parentElement.className);
+      const r = await rect(page, '.kadisha-hero-credit'), s5 = await rect(page, 'section.kadisha-hero');
+      ok(/kadisha-hero\b/.test(par5) && !/inner/.test(par5) && /inset-block-end: [\d.]+%/.test(css) && /inset-inline-end: [\d.]+%/.test(css) && s5.b - r.b < 40 && r.l - s5.l < 40, 'צעד 5: "✥ מיקום חופשי" ביחס אל הפס, וגרירה בעכבר לפינה התחתונה של התמונה — עוגן סוף / למטה', { par5, css, r, s5 }); }
+    // צעד 6 — מסירים את התמונה
+    await select(page, HERO); await sleep(150); const hh6 = await height(page);
+    await page.click('[data-bgt="remove"]'); await sleep(250);
+    ok(await comp(page, 'background-image') === 'none' && Math.abs(await height(page) - hh6) < 1, 'צעד 6: 🗑 — התמונה הוסרה, הפס נשאר בגובהו');
+    // צעד 7 — תמונה אחרת (העלאה מבורר הקבצים), מיקום וגודל
+    await tab('adv'); await select(page, HERO); await sleep(150);
+    if (!(await page.locator('[data-bg-add]:visible').count())) await tab('design');
+    await page.locator('[data-bg-add]:visible').first().click(); await page.waitForSelector('#sheet[open] [data-pick-file]', { state: 'attached' });
+    await page.setInputFiles('#sheet[open] [data-pick-file]', { name: 'other-hero.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==', 'base64') }); await sleep(900);
+    for (const [p7, v7] of [['background-position', '30% 40%'], ['background-size', '80% auto']]) { const q = await page.$('[data-field="' + p7 + '"] .sg-ctl input'); if (q) { await q.fill(v7); await q.press('Enter'); await sleep(250); } }
+    { const css = (await files(page))['css/page.css'];
+      ok(/background-image: url\('\.\.\/media\/other-hero\.png'\);/.test(css) && await comp(page, 'background-position') === '30% 40%' && /80%/.test(await comp(page, 'background-size')), 'צעד 7: תמונה אחרת (העלאה דרך הבורר), ולה מיקום 30% 40% וגודל 80%', { pos: await comp(page, 'background-position'), size: await comp(page, 'background-size') }); }
+    // צעד 8 — הפס כולו אל מתחת לשורת החיפוש (גרירה בידית הגרירה של הסרגל)
+    await page.evaluate(() => Editor._tab('design')); await select(page, HERO); await sleep(150);
+    { const to = await at(page, '.kadisha-lexicon-controls', 0.5, 1, -3); await sleep(80); const gb = await (await page.$('.ed-seltools [data-grip]')).boundingBox();
+      await drag(page, { x: gb.x + gb.width / 2, y: gb.y + gb.height / 2 }, to, { steps: 12, wiggle: { x: 40, y: 0 }, shell: true }); }
+    sc = await src(page);
+    ok(sc.indexOf('kadisha-lexicon-controls') < sc.indexOf('<section class="kadisha-hero ') && (await st(page)).inequiv === 0, 'צעד 8: גרירה — הפס כולו מתחת לשורת החיפוש');
+    // צעד 9 — "קוד": כל שינוי נראה בקבצים כשורה שהשתנתה; שינוי מספר בקוד ← הקנבס
+    const f9 = await files(page), lines = (a, b) => { const A = new Set(a.split('\n')); return b.split('\n').filter(l => !A.has(l)); };
+    const dh = lines(o0['index.html'], f9['index.html']), dc = lines(o0['css/page.css'], f9['css/page.css']);
+    const seen = { 2: dh.some(l => /La Voix du Maroc/.test(l)), 3: dh.some(l => /הכותרת השביעית/.test(l)) && dc.concat(dh).some(l => /font-size: 40px/.test(l)) && dc.concat(dh).some(l => /#ffcc00/.test(l)), 4: dc.some(l => /24px/.test(l)), 5: dc.some(l => /inset-block-end/.test(l)), 6: !/background-image: url\('[^']*'\)/.test(f9['css/page.css'].replace(/url\('\.\.\/media\/other-hero\.png'\)/, '')), 7: dc.some(l => /other-hero\.png/.test(l)) && dc.some(l => /30% 40%/.test(l)) && dc.some(l => /80% auto/.test(l)), 8: dh.some(l => /<section class="kadisha-hero /.test(l)) };
+    ok(Object.values(seen).every(Boolean), 'צעד 9: כל אחד מהשינויים (2–8) נראה בקבצים כשורה שהשתנתה', { seen, dh: dh.slice(0, 12), dc: dc.slice(0, 12) });
+    await page.click('[data-split]'); await page.waitForSelector('.ed-code .monaco-editor .view-lines'); await sleep(300);
+    const where = f9['css/page.css'].includes('font-size: 40px') ? 'css/page.css' : 'index.html';
+    await page.evaluate(w => { const P = Project._state, S = Editor._state; const id = [...P.docs.entries()].find(([, d]) => d.path === w || d.file?.path === w)?.[0] ?? (w === S.file.path ? S.file.id : null); if (w !== S.file.path) Project.splitEditor(document.querySelector('.ed-code'), id); const ed = P.split, m = ed.getModel(), i = m.getValue().indexOf('font-size: 40px') + 'font-size: '.length; ed.focus(); ed.setSelection(monaco.Selection.fromPositions(m.getPositionAt(i), m.getPositionAt(i + 2))); }, where);
+    await page.keyboard.type('52'); await sleep(700);
+    ok(await newFs() === '52px', 'צעד 9: בעורך הקוד (' + where + ') מקלידים 52 במקום 40 — והקנבס מתעדכן', await newFs());
+    await page.keyboard.press('Control+z'); await sleep(400); await page.click('[data-split]'); await sleep(150);
+    // צעד 10 — ביטול עד ההתחלה
+    let undos = 0; for (; undos < 60 && !same(await files(page), o0); undos++) { await page.evaluate(() => Editor._undo()); await sleep(40); }
+    ok(same(await files(page), o0) && (await st(page)).inequiv === 0, 'צעד 10: "בטל" ×' + undos + ' — כל הקבצים זהים בייט בבייט למצב ההתחלה', undos);
     await page.screenshot({ path: path.join(shots, 'v6-1920.png') });
     {
+      // הקבצים של הדסקטופ נשמרים בשרת (שמירה אוטומטית) — ה-390 נפתח רק אחרי שהביטול עד ההתחלה נשמר
+      await undoFiles(page, o0);
+      await page.waitForFunction(() => { const S = Editor._state, ds = [S.doc, ...[...S.sheets.values()].map(x => x.doc)]; return ds.every(d => !d.dirty && !d.saving); }, null, { timeout: 20000 });
       const lc = await mk(390, 844), lp = await lc.newPage(); lp.on('pageerror', e => errors.push('390: ' + e.message));
-      await openPage(lp, 'index.html'); await select(lp, H1); await sleep(150);
+      await openPage(lp, 'index.html');
+      ok(same(await files(lp), o0), '390: נפתח על הקבצים של ההתחלה (מה שהדסקטופ החזיר ושמר)');
+      await select(lp, H1); await sleep(150);
       const fb = await lp.$('[data-free-btn]'); if (fb) { await fb.tap(); await sleep(300); }
       const mvb = await lp.evaluate(() => { const b = document.querySelector('[data-ps-move]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); });
       ok(!!fb && mvb >= 44 && await comp(lp, 'position', H1) === 'absolute', '390px: "✥ מיקום חופשי" במגע — ידית הגרירה ≥44px', { mvb });
+      // ── V6b במגע (390): צעד 2, צעד 5 (גרירת האלמנט הממוקם), ידית החלוקה וקו מסילה — באצבע ──
+      /** גרירה באצבע על ידית במעטפת: כל האירועים לידית עצמה (כמו setPointerCapture), pointerType: touch. */
+      const tdrag = (pg, sel, dx, dy) => pg.evaluate(async ([sel, dx, dy]) => { const b = document.querySelector(sel), r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + Math.min(r.height / 2, 20); const f = (t, X, Y) => b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, clientX: X, clientY: Y, pointerId: 7, pointerType: 'touch', isPrimary: true, button: t === 'pointermove' ? -1 : 0, buttons: t === 'pointerup' ? 0 : 1 })); f('pointerdown', x, y); for (let i = 1; i <= 8; i++) { f('pointermove', x + dx * i / 8, y + dy * i / 8); await new Promise(r2 => setTimeout(r2, 20)); } f('pointerup', x + dx, y + dy); }, [sel, dx, dy]);
+      const l0 = await files(lp); const lscl = await lp.evaluate(() => Editor._state.canvas.scale);
+      { const r0 = await rect(lp, H1);
+        await tdrag(lp, '[data-ps-move]', -30, 40); await sleep(300); const r1 = await rect(lp, H1);
+        ok(Math.abs(r1.t - r0.t - 40 / lscl) < 3 && (await files(lp))['css/page.css'] !== l0['css/page.css'], '390 · צעד 5 במגע: גרירת האלמנט הממוקם באצבע — זז ונכתב בשחרור', { r0, r1 }); }
+      for (let i = 0; i < 8 && /position: absolute/.test((await files(lp))['css/page.css']); i++) { await lp.evaluate(() => Editor._undo()); await sleep(60); }
+      const lz = await files(lp);
+      { const from = await at(lp, '.kadisha-hero-eyebrow-line'), to = await at(lp, 'h1.kadisha-hero-title', 0.5, 0.15, 0, false); await drag(lp, from, to, { touch: true, hold: 450, steps: 8 }); }
+      ok(/<div class="kadisha-hero-inner">\n      <span class="kadisha-hero-eyebrow-line">La Voix du Maroc<\/span>\n      <h1 /.test(await src(lp)), '390 · צעד 2 במגע: לחיצה ארוכה וגרירה — הכותרת בצרפתית לפני הכותרת בעברית');
+      await lp.evaluate(() => { const S = Editor._state, c = S.canvas, hero = c.nodeOf(c.doc.querySelector('section.kadisha-hero')), par = hero.parent; S.build.addRow(2, par, par.kids.indexOf(hero) + 1); }); await sleep(250);
+      await lp.evaluate(() => Editor._tab('adv')); await select(lp, '.row-1'); await sleep(250);
+      { const d = await lp.evaluate(() => { const b = document.querySelector('[data-divider="0"]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; });
+        const w0 = await lp.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.row-1 > div')].map(e => e.getBoundingClientRect().width));
+        await lp.evaluate(() => { const c = Editor._state.canvas; c.doc.querySelector('.row-1').scrollIntoView({ block: 'center' }); c.draw(); }); await sleep(150); await lp.screenshot({ path: path.join(shots, 'v6b-390-divider.png') });
+        if (d) { await tdrag(lp, '[data-divider="0"]', -(w0[0] + w0[1]) * 0.2 * lscl, 0); await sleep(300); }
+        const w1 = await lp.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.row-1 > div')].map(e => e.getBoundingClientRect().width)), css = (await files(lp))['css/page.css'];
+        ok(d && d.w >= 44 && d.h >= 44 && w1[0] / (w1[0] + w1[1]) > 0.62 && /flex-grow: 1\.\d+;/.test(css), '390 · ידית החלוקה ≥44px, ובאצבע — העמודה הראשונה גדלה (~70%), flex-grow נכתב', { d, w0, w1 }); }
+      await lp.evaluate(() => { const S = Editor._state, c = S.canvas, n = c.selected, t = S.adv.target(n, S.styler.targets(n)); S.lay.write(new Map([[n, [['display', 'grid', t], ['grid-template-columns', '1fr 1fr', t]]]]), 'הכנה · grid'); }); await sleep(250);
+      { const l = await lp.evaluate(() => { const b = document.querySelector('[data-grid-line="x0"]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 20), w: r.width }; });
+        if (l) { await tdrag(lp, '[data-grid-line="x0"]', -60, 0); await sleep(300); }
+        const css = (await files(lp))['css/page.css'];
+        ok(l && l.w >= 44 && /grid-template-columns: 1\.\d+fr 0\.\d+fr;/.test(css), '390 · קו מסילה ≥44px, וגרירה באצבע — grid-template-columns נכתב (fr ← fr)', { l, css: (css.match(/grid-template-columns:[^;]*/) || [''])[0] }); }
+      ok(await undoFiles(lp, lz), '390 · ביטול — זהים');
       await lp.screenshot({ path: path.join(shots, 'v6-390.png') });
       await lc.close();
     }

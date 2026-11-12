@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>סטודיו — מטלות לקלוד</title>
+<meta name="theme-color" content="#2d4a8a">
+<link rel="icon" href="./assets/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./assets/css/app.css">
+<link rel="stylesheet" href="./assets/css/studio.css">
+</head>
+<body class="studio">
+
+<header class="top">
+  <a class="icon-btn" id="sBack" href="./index.html" aria-label="חזרה ללוח" title="חזרה ללוח">→</a>
+  <div class="titles">
+    <h1 id="sTitle">סטודיו</h1>
+    <div class="sub" id="sSub">צ'אט פיתוח מול Claude Platform</div>
+  </div>
+  <button type="button" class="icon-btn" id="sRefresh" aria-label="רענון" title="רענון" hidden>⟳</button>
+  <button type="button" class="icon-btn" id="sSettings" aria-label="הגדרות" title="הגדרות">⚙</button>
+</header>
+
+<!-- ── רשימת השיחות ─────────────────────────────────────────── -->
+<main id="sList" tabindex="-1">
+  <p class="s-note s-note--warn" id="sBlocked" hidden></p>
+  <section class="s-setup" id="sSetup" hidden></section>
+  <button type="button" class="btn primary btn--wide" id="sNew">＋ שיחה חדשה</button>
+  <div class="s-convs" id="sConvs" aria-live="polite"></div>
+  <p class="hint" id="sEmpty" hidden>עוד אין שיחות. שיחה חדשה פותחת סוכן בענן עם הריפו שלכם, ואפשר לבקש ממנו לבנות, לתקן ולפרוס.</p>
+</main>
+
+<!-- ── שיחה ─────────────────────────────────────────────────── -->
+<main id="sChat" class="s-chat" hidden>
+  <div class="s-meta" id="sMeta"></div>
+  <div class="s-log" id="sLog" aria-live="polite"></div>
+  <div class="s-strip" id="sStrip" hidden></div>
+  <form class="s-compose" id="sCompose">
+    <textarea id="sText" rows="1" placeholder="מה לבנות?" dir="auto" aria-label="הודעה לסוכן"></textarea>
+    <button type="button" class="btn ghost" id="sStop" hidden>⏹ עצור</button>
+    <button type="submit" class="btn primary" id="sSend">שלח</button>
+  </form>
+</main>
+
+<!-- ── שיחה חדשה ────────────────────────────────────────────── -->
+<dialog class="sheet" id="sNewDlg">
+  <form class="sheet-wrap s-form" id="sNewForm">
+    <header class="sheet-head"><h2>שיחה חדשה</h2>
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button></header>
+    <div class="sheet-body">
+      <label class="field"><span>שם השיחה (רשות)</span><input type="text" id="nTitle" maxlength="120" placeholder="למשל: אפליקציית רשימת קניות"></label>
+      <fieldset class="field"><legend>מסלול</legend>
+        <div class="s-engines" id="nEngines"></div>
+      </fieldset>
+      <label class="field"><span>ריפו (owner/name)</span><input type="text" id="nRepo" dir="ltr" required placeholder="malkiel01/mini_projects"></label>
+      <label class="field"><span>ענף בסיס</span><input type="text" id="nBranch" dir="ltr" value="main"></label>
+      <label class="field"><span>מודל</span><input type="text" id="nModel" dir="ltr" required>
+        <small class="hint">מזהה מודל של Anthropic. למשל claude-opus-5-5 או claude-sonnet-5-5.</small></label>
+      <label class="field"><span>תקרת תקציב לשיחה ($, 0 = בלי)</span><input type="number" id="nBudget" min="0" max="1000" step="1" dir="ltr">
+        <small class="hint">כשהשיחה מגיעה לתקרה היא נעצרת, ואפשר להעלות. תקציב אפשר לקבוע רק בפתיחה.</small></label>
+      <label class="s-check"><input type="checkbox" id="nMerge"> <span>הסוכן רשאי למזג ל-main בעצמו (מיזוג מפעיל פריסה)</span></label>
+      <button type="submit" class="btn primary btn--wide">פתיחה</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ── הגדרות ───────────────────────────────────────────────── -->
+<dialog class="sheet" id="sSetDlg">
+  <form class="sheet-wrap s-form" id="sSetForm">
+    <header class="sheet-head"><h2>הגדרות הסטודיו</h2>
+      <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button></header>
+    <div class="sheet-body">
+      <div class="s-conn" id="setConn"></div>
+      <label class="field"><span>מודל ברירת מחדל</span><input type="text" id="setModel" dir="ltr"></label>
+      <label class="field"><span>ריפו ברירת מחדל</span><input type="text" id="setRepo" dir="ltr" placeholder="owner/name"></label>
+      <label class="field"><span>תקרת תקציב ברירת מחדל ($)</span><input type="number" id="setBudget" min="0" max="1000" step="1" dir="ltr"></label>
+      <label class="s-check"><input type="checkbox" id="setMerge"> <span>ברירת מחדל: הסוכן רשאי למזג בעצמו</span></label>
+      <hr>
+      <h3 class="s-h3">עדכון כשהדף סגור (webhook)</h3>
+      <p class="hint">רשות. בלי זה, שיחה שרצה כשהדף סגור מתעדכנת פעם בדקה. עם זה — מיד. ב-Console של Anthropic: Webhooks ← Add endpoint, עם הכתובת הזו והאירועים
+        <span dir="ltr">session.status_idled, session.status_run_started, session.status_terminated, session.budget_reached</span>. את הסוד (whsec_…) שמוצג פעם אחת מדביקים כאן.</p>
+      <label class="field"><span>כתובת לרישום</span><input type="text" id="setHookUrl" dir="ltr" readonly></label>
+      <label class="field"><span>סוד החתימה</span><input type="password" id="setHookSecret" dir="ltr" autocomplete="off" placeholder="whsec_…"></label>
+      <p class="hint" id="setHookState"></p>
+      <button type="submit" class="btn primary btn--wide">שמירה</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script type="module" src="./assets/js/studio.js"></script>
+</body>
+</html>

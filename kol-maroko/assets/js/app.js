@@ -4,7 +4,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
 const state = { user: null, csrf: '', roles: {}, version: '' };
-const ROLE_NAMES = { owner: 'בעלים', publisher: 'מפרסם', editor: 'עורך' };
+// P1: חמשת התפקידים — השמות והדרגות מהשרת (me ← roles, rank)
 const ACTIONS = {
   publish: '🚀 פרסם', publish_failed: '⚠️ פרסום נכשל', version_create: '📦 יצר גרסה', import: '📥 ייבא את העמוד מהאתר',
   word_add: '📚 הוסיף מילה', word_edit: '📚 ערך מילה', word_delete: '📚 מחק מילה', site_switch: '🔀 החליף את מה שהאתר מציג',
@@ -13,7 +13,8 @@ const ACTIONS = {
   backup: '💾 הוריד גיבוי מלא', version_to_tool: '↩️ החזיר את הכלי לגרסה', topic_rename: '🏷️ שינה שם של נושא',
   agent_create: '🤖 יצר כניסה לצ\'אט', agent_revoke: '🤖 ביטל כניסה לצ\'אט', words_csv: '📊 עדכן מילים מאקסל', topic_rename: '🏷️ שינה שם של נושא', topic_delete: '🏷️ הסיר נושא',
   key_rotate: '🔑 יצר מפתח חדש', key_activate: '🔑 הפעיל מפתח חדש', site_set: '🔗 שינה כתובת אתר',
-  member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
+  person_invite: '✉️ הזמין עוזר', person_invite_failed: '⚠️ הזמנה ממתינה', owner_set: '⚙️ שינה הגדרה של בעל האתר', pkg_publish_pending: '⏳ ביקש לפרסם',
+  pkg_publish_approved: '✅ אישר פרסום', pkg_publish_rejected: '✋ דחה פרסום', login: '🔑 נכנס', member_add: '➕ הוסיף חבר', file_add: '⬆️ העלה קובץ', file_delete: '🗑️ מחק קובץ', disk_cap: '💽 שינה תקרת קבצים', restore: '↺ שחזר טיוטה', member_role: '🔁 שינה תפקיד', member_remove: '➖ הסיר חבר', member_linked: '🔗 חבר נכנס לראשונה',
 };
 
 // ── עזרים ────────────────────────────────────────────────
@@ -79,21 +80,23 @@ function sheet(title, ...body) {
 
 // ── ניתוב ────────────────────────────────────────────────
 const TABS = [
-  { id: 'studio', label: '🎨 סטודיו', min: 'editor' },
-  { id: 'words', label: '📚 נתונים', min: 'editor' },          // N3: המילים — הרשימה הראשונה
-  { id: 'code', label: '</> קוד', min: 'editor' },
-  { id: 'editor', label: '🎨 עורך', min: 'editor' },
-  { id: 'project', label: '📁 פרויקט', min: 'editor' },
-  { id: 'files', label: '🗂️ קבצים', min: 'editor' },
-  { id: 'restore', label: '↩️ שחזור', min: 'editor' },
-  { id: 'publish', label: '🚀 פרסום', min: 'editor' },
-  { id: 'inbox', label: '📬 פניות', min: 'editor' },                // M5 (assets/js/inbox.js) — את המונה מצייר Inbox על הקישור
-  { id: 'members', label: '👥 חברים', min: 'owner' },
-  { id: 'log', label: '📜 יומן', min: 'owner' },
-  { id: 'settings', label: '⚙️ הגדרות', min: 'owner' },
-  { id: 'dev', label: '🛠️ מפתח', min: 'editor', dev: true },      // מי מפתח — מהשרת (user.developer)
+  { id: 'studio', label: '🎨 סטודיו', min: 'content_editor' },
+  { id: 'words', label: '📚 נתונים', min: 'content_editor' },          // N3: המילים — הרשימה הראשונה
+  { id: 'code', label: '</> קוד', min: 'content_editor' },
+  { id: 'editor', label: '🎨 עורך', min: 'content_editor' },
+  { id: 'project', label: '📁 פרויקט', min: 'content_editor' },
+  { id: 'files', label: '🗂️ קבצים', min: 'content_editor' },
+  { id: 'restore', label: '↩️ שחזור', min: 'content_editor' },
+  { id: 'publish', label: '🚀 פרסום', min: 'content_editor' },
+  { id: 'inbox', label: '📬 פניות', min: 'content_editor' },                // M5 (assets/js/inbox.js) — את המונה מצייר Inbox על הקישור
+  { id: 'members', label: '👥 אנשים', min: 'page_owner' },          // P1 (assets/js/people.js)
+  { id: 'log', label: '📜 יומן', min: 'page_owner' },
+  { id: 'settings', label: '⚙️ בעל האתר', min: 'page_owner' },     // P1: לבעל העמוד — לקריאה, במילים
+  { id: 'dev', label: '🛠️ מפתח', min: 'content_editor', dev: true },  // מי מפתח — מהשרת (user.developer)
 ];
-const RANK = { editor: 1, publisher: 2, owner: 3 };
+const RANK = new Proxy({}, { get: (_, r) => (state.rank || {})[r] || 0 });
+// מסכים ישנים (פרסום, שחזור) מכירים editor / publisher / owner — בעל העמוד ובעל האתר הם "owner" שם
+const legacyRole = r => (RANK[r] >= RANK.page_owner ? 'owner' : RANK[r] >= RANK.publisher ? 'publisher' : 'editor');
 // המסמך המוקשח (editor.php — המדיניות המלאה של C1 שלב ב): בו רצים העורך החזותי ועורך הקוד בלבד. שאר המסכים — ב-index.php (הסטודיו, שלב א).
 const HARD = /\/editor\.php$/.test(location.pathname), HARD_TABS = ['editor', 'project'];
 // הפניה מוקדמת, לפני כל בקשה: מי שנכנס (או מרענן) ב-index.html#/editor עובר מיד למסמך המוקשח — פעם אחת, בלי טעינה כפולה
@@ -109,11 +112,12 @@ function route() {
   const nav = $('#tabs');
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: tabHref(t.id), 'aria-current': t === cur ? 'page' : null }, t.label)));
+  People.readOnly(cur.id);                                            // P1: עורך תוכן — "לקריאה בלבד"
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
   if (cur.id === 'inbox') return Inbox.view(main);                    // M5
-  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, state.user.role), files: () => Library.view(main, state.user.role === 'owner'),
-    publish: () => Publish.view(main, state.user.role), settings: () => Publish.settings(main), members: viewMembers, log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
+  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role)), files: () => Library.view(main, state.user.role === 'site_owner'),
+    publish: () => Publish.view(main, legacyRole(state.user.role)), settings: () => People.owner(main), members: () => People.view(main), log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
 
@@ -128,99 +132,22 @@ function viewStudio() {
   Studio.mount(main);
 }
 
-async function viewMembers() {
-  main.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
-  try { renderMembers(await api('members')); } catch (e) { main.replaceChildren(h('p', { class: 'error' }, e.message)); }
-}
-
-function roleSelect(value, name = 'role') {
-  return h('select', { name, 'aria-label': 'תפקיד' },
-    Object.entries(state.roles).map(([k, v]) => h('option', { value: k, selected: k === value }, v)));
-}
-
-async function act(action, body, okMsg) {
-  try {
-    const d = await api(action, body);
-    renderMembers(d);
-    if (okMsg) toast(okMsg);
-    return true;
-  } catch (e) { toast(e.message, true); return false; }
-}
-
-function renderMembers(d) {
-  const email = h('input', { type: 'email', name: 'email', dir: 'ltr', inputmode: 'email', placeholder: 'מייל', 'aria-label': 'מייל', required: true });
-  const role = roleSelect('editor');
-  const form = h('form', {
-    class: 'add-form', onsubmit: async e => {
-      e.preventDefault();
-      if (await act('member_add', { email: email.value, role: role.value }, 'נוסף. יוכל להיכנס אחרי שתאשר לו את הכלי בפלטפורמה')) email.value = '';
-    },
-  }, email, role, h('button', { class: 'btn primary', type: 'submit' }, h('span', { 'aria-hidden': 'true' }, '+'), ' חבר'));
-
-  const requests = d.requests.length ? [
-    h('h2', { class: 'sec-title' }, `ביקשו גישה · ${d.requests.length}`),
-    h('ul', { class: 'list' }, d.requests.map(r => h('li', { class: 'card', tabindex: 0, role: 'button', onclick: () => requestSheet(r) },
-      h('span', { class: 'avatar', style: `--h:${hue(r.sub)}`, 'aria-hidden': 'true' }, initials(r.name || r.email || '?')),
-      h('div', { class: 'body' },
-        h('div', { class: 'l1' }, h('span', {}, r.name || 'בלי שם'), h('span', { class: 't' }, when(r.at))),
-        h('div', { class: 'l2', dir: 'auto' }, r.email || '')),
-      h('span', { class: 'chip warn' }, 'ממתין')))),
-  ] : [];
-
-  main.replaceChildren(
-    h('p', { class: 'hint' }, 'מי עורך ומי מפרסם. עורך שומר טיוטות; מפרסם גם שולח לאתר. הכלי פתוח רק למי שאישרת לו גם בפלטפורמה.'),
-    form, ...requests,
-    h('h2', { class: 'sec-title' }, `חברים · ${d.members.length}`),
-    d.members.length
-      ? h('ul', { class: 'list' }, d.members.map(m => h('li', { class: 'card', tabindex: 0, role: 'button', onclick: () => memberSheet(m) },
-        h('span', { class: 'avatar', style: `--h:${hue(m.email || m.name)}`, 'aria-hidden': 'true' }, initials(m.name || m.email || '?')),
-        h('div', { class: 'body' },
-          h('div', { class: 'l1' }, h('span', {}, m.name || m.email)),
-          h('div', { class: 'l2' }, m.joined ? (m.last_seen ? `נכנס לאחרונה ${when(m.last_seen)}` : 'עוד לא נכנס') : 'הוזמן — עוד לא נכנס')),
-        h('span', { class: `chip role ${m.role === 'publisher' ? 'ok' : ''}` }, state.roles[m.role]))))
-      : h('p', { class: 'empty' }, 'עוד אין חברים. מייל ותפקיד, ואז "+ חבר".'));
-  document.querySelectorAll('.card[role=button]').forEach(c => c.addEventListener('keydown', e => { if (e.key === 'Enter') c.click(); }));
-}
-
-function requestSheet(r) {
-  const role = roleSelect('editor');
-  const dlg = sheet(r.name || r.email || 'בקשת גישה',
-    h('p', { class: 'muted', dir: 'auto' }, r.email || ''),
-    h('label', { class: 'f' }, h('span', {}, 'תפקיד'), role),
-    h('div', { class: 'row-btns' },
-      h('button', { type: 'button', class: 'btn primary', onclick: async () => { if (await act('member_add', { sub: r.sub, role: role.value }, 'נוסף')) dlg.close(); } }, '✓ הוספה'),
-      h('button', { type: 'button', class: 'btn ghost danger', onclick: async () => { if (await act('request_dismiss', { sub: r.sub })) dlg.close(); } }, '✕ התעלמות')));
-}
-
-function memberSheet(m) {
-  const role = roleSelect(m.role);
-  const quota = h('input', { type: 'number', min: 0, step: 10000, dir: 'ltr', value: m.ai_quota ?? '', placeholder: 'ברירת המחדל' });
-  const dlg = sheet(m.name || m.email,
-    h('dl', { class: 'cells' },
-      h('div', {}, h('dt', {}, 'מייל'), h('dd', { dir: 'ltr', class: 'one' }, m.email || '—')),
-      h('div', {}, h('dt', {}, 'נוסף'), h('dd', {}, when(m.added_at))),
-      h('div', {}, h('dt', {}, 'כניסה אחרונה'), h('dd', {}, m.last_seen ? when(m.last_seen) : '—'))),
-    h('label', { class: 'f' }, h('span', {}, 'תפקיד'), role),
-    h('label', { class: 'f' }, h('span', {}, '✨ מכסת בינה לחודש (טוקנים) — ריק: ברירת המחדל'), quota),
-    h('div', { class: 'row-btns' },
-      h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-        try {
-          await api('ai_quota_set', { member: m.id, tokens: +quota.value || 0, inherit: quota.value === '' });
-        } catch (e) { toast(e.message, true); return; }
-        if (await act('member_set', { id: m.id, role: role.value }, 'נשמר')) dlg.close();
-      } }, 'שמירה'),
-      h('button', {
-        type: 'button', class: 'btn ghost danger', onclick: async () => {
-          if (confirm(`להסיר את ${m.name || m.email} מהכלי?`) && await act('member_remove', { id: m.id }, 'הוסר')) dlg.close();
-        },
-      }, '🗑️ הסרה')));
-}
-
+const logFilter = { person: '', source: '' };
 async function viewLog() {
   main.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
   try {
-    const { audit } = await api('audit');
-    if (!audit.length) { main.replaceChildren(h('p', { class: 'empty' }, 'היומן ריק.')); return; }
+    const q = (logFilter.person ? '&person=' + encodeURIComponent(logFilter.person) : '') + (logFilter.source ? '&source=' + logFilter.source : '');
+    const { audit, people, all } = await api('audit', undefined, q);
+    // P1 (08 §6): סינון לפי אדם ולפי מקור
+    const sel = (key, opts, label) => {
+      const s = h('select', { 'aria-label': label, onchange: () => { logFilter[key] = s.value; viewLog(); } }, opts.map(([v, t]) => h('option', { value: v, selected: String(v) === logFilter[key] }, t)));
+      return s;
+    };
+    const filters = h('div', { class: 'toolbar log-filters' },
+      sel('person', [['', 'כל האנשים'], ...people.map(p => [String(p.id), p.name || p.email || ('#' + p.id)])], 'אדם'),
+      sel('source', [['', 'כל המקורות'], ['studio', 'סטודיו'], ['agent', '🤖 צ\'אט'], ['import', 'ייבוא'], ['ai', '✨ בינה'], ['system', 'מערכת']], 'מקור'));
+    const hint = h('p', { class: 'hint' }, all ? 'מי עשה מה בכלי — הכול, כולל החיבור והמכסות. 100 האחרונים.' : 'מי עשה מה בעמוד. 100 האחרונים.');
+    if (!audit.length) { main.replaceChildren(hint, filters, h('p', { class: 'empty' }, 'אין שורות.')); return; }
     const rows = []; let last = '';
     for (const a of audit) {
       const d = day(a.at);
@@ -233,7 +160,7 @@ async function viewLog() {
             h('span', { class: 't' }, new Date(a.at).toLocaleTimeString('he-IL', { timeStyle: 'short', timeZone: 'Asia/Jerusalem' }))),
           h('div', { class: 'l2', dir: 'auto' }, a.detail))));
     }
-    main.replaceChildren(h('p', { class: 'hint' }, 'מי עשה מה בכלי. 100 האחרונים.'), h('ul', { class: 'list' }, rows));
+    main.replaceChildren(hint, filters, h('ul', { class: 'list' }, rows));
   } catch (e) { main.replaceChildren(h('p', { class: 'error' }, e.message)); }
 }
 
@@ -241,13 +168,15 @@ async function viewLog() {
 (async () => {
   try {
     const d = await api('me');
-    Object.assign(state, { user: d.user, csrf: d.csrf, roles: d.roles, version: d.version || '' });
+    Object.assign(state, { user: d.user, csrf: d.csrf, roles: d.roles, rank: d.rank, version: d.version || '' });
     Dev.start(state);                                                  // 🐞 בכותרת, ושגיאות דפדפן ליומן
-    $('#who').textContent = `${d.user.name}${d.user.role ? ' · ' + ROLE_NAMES[d.user.role] : ''}`;
+    $('#who').textContent = `${d.user.name}${d.user.role ? ' · ' + state.roles[d.user.role] : ''}`;
     if (!d.user.role) {
-      viewGate('🔒', 'אין לך תפקיד בכלי', 'בעל המערכת יראה שביקשת גישה ויוסיף אותך כעורך או כמפרסם.');
+      if (d.user.removed) viewGate('🚪', 'הוסרת מהכלי', 'בעל העמוד הסיר אותך. לחזרה — פנה אליו.');
+      else viewGate('🔒', 'נכנסת. בעל העמוד עוד לא נתן לך תפקיד', 'הוא רואה שביקשת גישה, ויוסיף אותך בתפקיד המתאים.');
       return;
     }
+    People.bell();                                                     // P1: 🔔 הודעות
     route();
   } catch (e) {
     if (e.status === 401) viewGate('🔑', 'נדרשת כניסה', 'נכנסים לכלי דרך הכלים הדיגיטליים.');

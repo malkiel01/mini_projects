@@ -170,5 +170,5 @@ test('הסבה: data/words.json נושא את המזהים שהכרטיס נקש
 
 test('הסבה: ההכהיה מהכלי (0–100) ← 0–1 ב-page.css; 45 בתוך rgba() היה כיסוי מלא', function () {
     eq('0.45', mg_overlay(45)); eq('0.45', mg_overlay('45')); eq('0.4', mg_overlay(40)); eq('1', mg_overlay(100)); eq('1', mg_overlay(250));
-    eq('0.45', mg_overlay('0.45')); eq('0', mg_overlay(0)); eq('1', mg_overlay(1)); eq('var(--x)', mg_overlay('var(--x)'));
+    eq('0.45', mg_overlay('0.45')); eq('0', mg_overlay(0)); eq('1', mg_overlay(1)); eq('0.45', mg_overlay('var(--x)')); eq('0.45', mg_overlay('')); eq('0.45', mg_overlay('abc')); eq('0.45', mg_overlay('0.4;}body{x'));
 });

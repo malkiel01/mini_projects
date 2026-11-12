@@ -9,6 +9,7 @@
   "public": [
     "api.php",
     "health.php",
+    "studio-webhook.php",
     "privacy.html",
     "manifest.webmanifest",
     "service-worker.js",

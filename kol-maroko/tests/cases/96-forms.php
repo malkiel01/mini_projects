@@ -326,7 +326,7 @@ test('M5 מייל: בדיקה קודם (ברירת מחדל כבוי); תקצי�
     try {
         setting_set('forms_mail', '{}');
         eq(false, forms_mail_state()['on'], 'ברירת המחדל — כבוי');
-        $own = ['sub' => U_OWNER['sub'], 'name' => U_OWNER['name'], 'email' => U_OWNER['email'], 'role' => 'owner'];
+        $own = ['sub' => U_OWNER['sub'], 'name' => U_OWNER['name'], 'email' => U_OWNER['email'], 'role' => 'site_owner'];
         $code = throws(fn() => forms_settings($own, ['mail_on' => true], true), 'הדלקה בלי מייל בדיקה');
         eq(400, $code);
         throws(fn() => forms_mail_test($own, ['from' => "a@b.test\r\nBcc: x@evil.test", 'to' => 'c@d.test']), 'CRLF בשולח');

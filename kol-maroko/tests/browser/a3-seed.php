@@ -30,7 +30,7 @@ $f['loose'] = $store($mp3('loose'), 'הקלטה ישנה.mp3');
 $words = [1 => $f[1], 2 => $f[2], 3 => $f[3], 4 => $f[4], 5 => '', 6 => $U . 'x/6.mp3', 7 => $f[7], 8 => $f[8], 9 => $U . 'x/9.mp3', 10 => '', 11 => '', 12 => ''];
 $ins = $pdo->prepare('INSERT INTO words (id, wp_id, word, meaning, topics, audio, external_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
 foreach ($words as $id => $a) $ins->execute([$id, 100 + $id, "מילה $id", '<p>פירוש</p>', '[]', $a, '', now_iso()]);
-$pdo->prepare('INSERT INTO members (sub, email, name, role, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?)')->execute(['u-editor', 'editor@example.test', 'Editor Test', 'editor', 'test', now_iso()]);
+$pdo->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute(['u-editor', 'editor@example.test', 'Editor Test', 'editor', now_iso()]);     // P1
 rec_sync();
 $pdo->exec("UPDATE recordings SET duration = 1.5 WHERE word_id = 1");
 $pdo->exec("UPDATE recordings SET state = 'failed', f_code = 'missing', f_note = 'HTTP 404' WHERE word_id = 9");

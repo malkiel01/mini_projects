@@ -115,8 +115,8 @@ function ai_month_start(): string
 
 function ai_quota(array $user): ?int
 {
-    if ($user['role'] === 'owner') return null;
-    $m = member_by_sub($user['sub']);
+    if (($user['role'] ?? '') === 'site_owner') return null;
+    $m = isset($user['id']) ? user_get((int)$user['id']) : user_by_sub((string)$user['sub']);
     if ($m && $m['ai_quota'] !== null) return (int)$m['ai_quota'];
     return (int)(setting('ai_quota_default') ?? AI_QUOTA_DEFAULT);
 }
@@ -440,8 +440,8 @@ function ai_quota_set(array $owner, array $b): array
     $n = (int)($b['tokens'] ?? -1);
     if ($n < 0 || $n > 100_000_000) throw new ApiError('מכסה לא תקינה');
     if (isset($b['member'])) {
-        $m = member_get((int)$b['member']);
-        db()->prepare('UPDATE members SET ai_quota = ? WHERE id = ?')->execute([($b['inherit'] ?? false) ? null : $n, $m['id']]);
+        $m = people_get((int)$b['member']);                           // P1: users.id (המכסה עברה מ-members ל-users)
+        db()->prepare('UPDATE users SET ai_quota = ? WHERE id = ?')->execute([($b['inherit'] ?? false) ? null : $n, $m['id']]);
         audit_as($owner, 'ai_quota', ($m['name'] ?: $m['email']) . ': ' . (($b['inherit'] ?? false) ? 'ברירת מחדל' : $n));
     } else {
         setting_set('ai_quota_default', (string)$n);
