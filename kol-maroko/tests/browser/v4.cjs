@@ -229,6 +229,7 @@ const PAGE = `<!doctype html>
     ok(await undoFiles(page, p0), 'בטל — חזרה');
     // Navigator: גרירה בעץ
     await page.click('[data-ntab="tree"]'); await sleep(60);
+    await sleep(300); await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(100);   // סנכרון שממתין גולל את העץ אל הנבחר — לפני המדידה
     [from, to] = await navPts(page, "K.attrOf(x, 'id')?.value === 'b'", "K.attrOf(x, 'id')?.value === 'a'", 0.15);
     pk = await drag(page, from, to, { steps: 6 });
     ok(/<main class="main">\n  <h2 id="b" class="hd">כותרת ב<\/h2>\n  <h2 id="a" class="hd">כותרת א<\/h2>/.test(await src(page)), 'גרירה ב-Navigator: h2#b אל לפני h2#a — אותה פעולה כמו בקנבס', pk);
