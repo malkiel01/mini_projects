@@ -17,7 +17,7 @@ const API_MIN_ROLE = [
     'trash' => 'editor', 'trash_restore' => 'editor', 'trash_purge' => 'owner', 'backup' => 'owner',
     'code' => 'editor', 'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor', 'code_history' => 'editor', 'code_history_get' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor', 'import_info' => 'owner',
-    'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
+    'ai_status' => 'editor', 'ai_suggest' => 'editor', 'ai_suggest_files' => 'editor', 'ai_apply_files' => 'editor', 'ai_admin' => 'owner', 'secret_set' => 'owner', 'ai_quota_set' => 'owner', 'audit' => 'owner',
     'library' => 'editor',
     // פרוסה A2 — הבאת ההקלטות
     'rec_duration' => 'editor', 'rec_status' => 'owner', 'rec_fetch_plan' => 'owner', 'rec_scan_start' => 'owner', 'rec_scan_step' => 'owner',

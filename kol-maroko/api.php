@@ -56,7 +56,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
                       'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
-                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read'];
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read',
+                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open'];   // X1
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -210,6 +211,8 @@ try {
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status(require_role($user, 'editor')),
         'ai_suggest' => ai_suggest(require_role($user, 'editor'), $body),
+        'ai_suggest_files' => ai_suggest_files(require_role($user, 'editor'), $body),          // X1: ✨ על קבצי הפרויקט
+        'ai_apply_files' => ai_apply_files(require_role($user, 'editor'), $body),
         'ai_admin' => (require_role($user, 'owner') ? ai_admin() : []),
         'secret_set' => secret_set(require_role($user, 'owner'), $body),
         'ai_quota_set' => ai_quota_set(require_role($user, 'owner'), $body),
