@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
 require_once __DIR__ . '/lib/fields_bind.php';          // N2: שינוי מפתח — הקשירות בקבצי הפרויקט
 require_once __DIR__ . '/lib/forms.php';
+require_once __DIR__ . '/lib/fonts.php';          // V9: גופנים — העלאה, Google Fonts, "הבא לפרויקט"
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -78,7 +79,8 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read', 'mount_set', 'outbox_resend', 'site_wake', 'pull_line', 'pub_channel_set',
                       'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
                       'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open',   // X1
-                      'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready'];
+                      'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready',
+                      'font_upload', 'font_google_add', 'font_fetch'];   // V9
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -230,6 +232,11 @@ try {
         'pf_versions' => ($u ? pf_versions($_GET) : []),
         'pf_raw' => ($u ? pf_raw($_GET) : []),
         'pf_create' => pf_create($u, $body),
+        // V9: גופנים (lib/fonts.php)
+        'font_upload' => font_upload($u, $body),
+        'font_google_list' => font_google_list(),
+        'font_google_add' => font_google_add($u, $body),
+        'font_fetch' => font_fetch($u, $body),
         'pf_write' => pf_write($u, $body),
         'pf_mkdir' => pf_mkdir($u, $body),
         'pf_link' => pf_link($u, $body),

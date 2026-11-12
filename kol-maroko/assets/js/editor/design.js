@@ -142,6 +142,8 @@
       if (s.winner) { out.append('מ: ', at(s.winner)); if (s.winner.r.media) out.append(h('span', { class: 'sg-media' }, ' ' + s.winner.r.media)); if (s.winner.r.inline) out.append(' (style="" של האלמנט)'); }
       else if (s.inherited) { out.append('בירושה מ-' + s.inherited.label + ': ', at(s.inherited.winner)); }
       else out.append(h('span', { class: 'hint' }, 'ברירת מחדל של הדפדפן'));
+      const vc = this.varChip ? this.varChip(n, phys, s, this) : null; if (vc) out.prepend(vc);   // V9: ערך קשור למשתנה — צ'יפ
+      if (this.varBtn && !vc) { const vb = this.varBtn(n, phys, phys, this); if (vb) out.append(' ', vb); }   // V9: ⛓ קשר למשתנה / צור משתנה מהערך — בשורת המקור (לא גוזל רוחב מהשדה)
       const dr = this.devRow(n, phys); if (dr) out.prepend(dr);
       const sr = this.stRow(n, phys, s); if (sr) out.prepend(sr);
       const vis = this.styler.visible(n, this.t, phys, this.info);
@@ -418,19 +420,44 @@
       }
       return out;
     }
+    /** V9: גופן משתנה — מחוון בטווח שלו (font-weight רציף). */
+    weightRange(n, [lo, hi], fam) {
+      const row = h('div', { class: 'sg-field', 'data-field': 'font-weight', 'data-weights-of': fam }), { el: src, s } = this.srcLine(n, 'font-weight');
+      const cur = parseInt((s.winner ? s.declared : '') || s.value, 10) || 400;
+      const r = h('input', { type: 'range', min: lo, max: hi, step: 1, value: Math.min(hi, Math.max(lo, cur)), 'aria-label': 'משקל — ' + fam + ' (גופן משתנה ' + lo + '–' + hi + ')', 'data-weight-range': true, disabled: !this.canWrite() || null });
+      const out = h('output', { dir: 'ltr' }, String(r.value));
+      r.addEventListener('input', () => { out.textContent = r.value; this.preview(this.nodes(), [['font-weight', r.value]]); });
+      r.addEventListener('change', () => this.put([['font-weight', r.value]], 'משקל · ' + this.canvas.label(n) + ' · ' + cur + ' ← ' + r.value));
+      row.append(h('div', { class: 'sg-line' }, h('span', { class: 'sg-label' }, 'משקל'), h('span', { class: 'sg-ctl wide' }, r, out), this.resetBtn(n, 'font-weight', 'משקל')), src);
+      src.append(h('span', { class: 'hint' }, ' · ' + fam + ': גופן משתנה ' + lo + '–' + hi));
+      return row;
+    }
     drawType(n) {
       const sec = h('section', { class: 'sg-sec', 'data-sec': 'type' }, h('h3', { class: 'dt-h' }, 'טיפוגרפיה'));
       const fonts = this.fonts(), fam = this.styler.source(n, 'font-family', this.info), curFam = (fam.winner ? fam.declared : fam.value) || '';
-      // גופן: מהגופנים שהעמוד טוען ומגופני מערכת; הקלדה חופשית (רשימת גופנים מלאה — V9)
+      // גופן: מהגופנים שבפרויקט (קובץ, Google, בשימוש) ומגופני מערכת; הקלדה חופשית; "＋ הוסף גופן" (V9)
       const row = h('div', { class: 'sg-field', 'data-field': 'font-family' }), { el: src } = this.srcLine(n, 'font-family');
-      const dl = h('datalist', { id: 'sg-fonts' }, [...fonts.keys()].map(f => h('option', { value: "'" + f + "'" }, f + ' · בעמוד')), SYSTEM_FONTS.map(f => h('option', { value: f }, f + ' · מערכת')));
+      const gf = this.glob ? [...this.glob.fonts().values()] : [];
+      const dl = h('datalist', { id: 'sg-fonts' }, gf.length ? gf.map(f => h('option', { value: "'" + f.name + "'" }, f.name + ' · ' + ({ file: 'קובץ', google: 'Google', page: 'בעמוד' }[f.src]))) : [...fonts.keys()].map(f => h('option', { value: "'" + f + "'" }, f + ' · בעמוד')), SYSTEM_FONTS.map(f => h('option', { value: f }, f + ' · מערכת')));
       const inp = h('input', { type: 'text', dir: 'ltr', list: 'sg-fonts', value: curFam, 'aria-label': 'גופן', spellcheck: 'false', disabled: !this.canWrite() || null });
-      inp.addEventListener('change', () => { const v = inp.value.trim(); if (!v || !valid('font-family', v)) { inp.classList.add('bad'); return; } inp.classList.remove('bad'); this.put([['font-family', v]], 'גופן · ' + this.canvas.label(n) + ' · ' + (curFam || '—') + ' ← ' + v); });
-      row.append(h('div', { class: 'sg-line' }, h('span', { class: 'sg-label' }, 'גופן'), h('span', { class: 'sg-ctl wide' }, inp, dl), this.resetBtn(n, 'font-family', 'גופן')), src);
+      const write = v => this.put([['font-family', v]], 'גופן · ' + this.canvas.label(n) + ' · ' + (curFam || '—') + ' ← ' + v);
+      inp.addEventListener('change', () => {
+        let v = inp.value.trim();
+        const one = window.KolGlobals && window.KolGlobals.families(v);                 // שם אחד מהרשימה ← עם גופן גיבוי (או var של המשתנה שלו)
+        if (this.glob && one && one.length === 1 && !/var\(/.test(v) && gf.some(f => f.name.toLowerCase() === one[0].toLowerCase())) { try { v = this.glob.familyFor(one[0]); } catch { /* נבדק למטה */ } }
+        if (!v || !valid('font-family', v)) { inp.classList.add('bad'); return; } inp.classList.remove('bad'); write(v);
+      });
+      const add = this.glob ? h('button', { type: 'button', class: 'btn sm', 'data-font-add-here': true, title: 'הוסף גופן — קובץ מהמחשב או Google Fonts — ושים אותו כאן', disabled: !this.canWrite() || null, onclick: async () => { const fam = await this.glob.addFont(); if (fam) write(this.glob.familyFor(fam)); } }, '＋') : null;
+      row.append(h('div', { class: 'sg-line' }, h('span', { class: 'sg-label' }, 'גופן'), h('span', { class: 'sg-ctl wide' }, inp, dl, add), this.resetBtn(n, 'font-family', 'גופן')), src);
       sec.append(row);
       sec.append(this.num('font-size', 'גודל', { group: 'גודל גופן', units: ['pt'] }));
-      const first = curFam.split(',')[0].trim().replace(/^['"]|['"]$/g, ''), fi = fonts.get(first), ws = fi && fi.weights ? fi.weights : ['100', '200', '300', '400', '500', '600', '700', '800', '900'];
-      sec.append(this.choice('font-weight', 'משקל', ws.map(w => [w, w + ({ 400: ' · רגיל', 700: ' · מודגש' }[w] || '')]).concat([['normal', 'normal'], ['bold', 'bold']])));
+      // משקל: רק מה שהגופן מספק (V9) — @font-face בפרויקט / ה-<link> של Google; גופן משתנה — מחוון רציף בטווח שלו
+      const first = (window.KolGlobals ? window.KolGlobals.families(this.styler.computed(n, 'font-family'))[0] : curFam.split(',')[0].trim().replace(/^['"]|['"]$/g, '')) || '';
+      const wi = this.glob ? this.glob.weightsOf(first) : null, fi = fonts.get(first);
+      const ws = wi && wi.weights && wi.weights.length ? wi.weights : fi && fi.weights ? fi.weights : ['100', '200', '300', '400', '500', '600', '700', '800', '900'];
+      if (wi && wi.range) sec.append(this.weightRange(n, wi.range, first));
+      else sec.append(this.choice('font-weight', 'משקל', ws.map(w => [w, w + ({ 400: ' · רגיל', 700: ' · מודגש' }[w] || '')]).concat([['normal', 'normal'], ['bold', 'bold']])));
+      if (wi && wi.weights) { const last = sec.lastChild; last.dataset.weightsOf = first; last.querySelector('.sg-src')?.append(h('span', { class: 'hint', 'data-weights-hint': true }, ' · משקלים של ' + first + ': ' + ws.join(', '))); }
       sec.append(this.seg('font-style', 'נטוי', [['normal', 'A', 'רגיל'], ['italic', '𝐼', 'נטוי']]));
       sec.append(this.seg('text-decoration-line', 'קו', [['none', '∅', 'בלי קו'], ['underline', 'U̲', 'קו תחתון'], ['overline', 'Ō', 'קו עליון'], ['line-through', 'S̶', 'קו חוצה']]));
       sec.append(this.choice('text-decoration-style', 'סגנון הקו', [['solid', 'רציף'], ['double', 'כפול'], ['dotted', 'נקודות'], ['dashed', 'מקווקו'], ['wavy', 'גלי']]));
