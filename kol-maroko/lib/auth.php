@@ -77,6 +77,7 @@ const ACTION_ROLES = [
     'publish_preview' => 'publisher', 'publish' => 'publisher', 'republish' => 'publisher', 'version_send' => 'publisher',
     'site_ping' => 'publisher', 'site_switch' => 'publisher', 'build_send' => 'publisher', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher',
     'cutover' => 'publisher',
+    'outbox' => 'publisher', 'outbox_resend' => 'publisher', 'site_wake' => 'publisher',          // M7 — התור והדופק
     // ── בעל העמוד: האנשים, היומן, מחיקה סופית, ההסבה והגיבוי
     'people' => 'page_owner', 'person_invite' => 'page_owner', 'person_role' => 'page_owner', 'person_remove' => 'page_owner', 'person_retry' => 'page_owner',
     'request_dismiss' => 'page_owner', 'audit' => 'page_owner', 'backup' => 'page_owner',
@@ -85,6 +86,7 @@ const ACTION_ROLES = [
     // ── בעל האתר: החיבור, המפסק, המכסות, המפתחות, הסודות, מסך המפתח, DevLoop (08 §4)
     'owner_set' => 'site_owner', 'publish_decide' => 'site_owner',
     'disk_cap' => 'site_owner', 'publish_settings' => 'site_owner', 'key_rotate' => 'site_owner', 'key_activate' => 'site_owner', 'site_set' => 'site_owner',
+    'pull_line' => 'site_owner', 'pub_channel_set' => 'site_owner',                                   // M7 — שורת החיבור, הערוץ
     'import_run' => 'site_owner', 'import_info' => 'site_owner', 'audio_import' => 'site_owner', 'mount' => 'site_owner', 'mount_set' => 'site_owner', 'plugin_zip' => 'site_owner',
     'rec_status' => 'site_owner', 'rec_fetch_plan' => 'site_owner', 'rec_scan_start' => 'site_owner', 'rec_scan_step' => 'site_owner',
     'rec_fetch_start' => 'site_owner', 'rec_fetch_step' => 'site_owner', 'rec_job_op' => 'site_owner', 'rec_settings_set' => 'site_owner',

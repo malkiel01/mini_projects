@@ -46,7 +46,7 @@ test('M4-BC mount: חתום בלבד; ערך מרשימה סגורה; נשמר �
     kp_site();
     kp_reset();
     eq('full', kp_send('ping')['json']['v2_mount'] ?? null, 'ברירת המחדל — full (M-A)');
-    eq('2.1.0', kp_send('ping')['json']['plugin'] ?? null, 'גרסת התוסף');
+    eq(KOL_PLUGIN_EXPECTED, kp_send('ping')['json']['plugin'] ?? null, 'גרסת התוסף');
 
     $other = sodium_crypto_sign_secretkey(sodium_crypto_sign_keypair());
     eq(401, kp_send('mount', ['mount' => 'framed'], ['secret' => $other])['status'], 'חתימה של מפתח אחר');

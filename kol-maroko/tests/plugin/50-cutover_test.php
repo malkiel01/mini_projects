@@ -129,7 +129,7 @@ test('M2b המונה אחרי ההדלקה: בקשות, 404 עם 20 האחרונ
 test('M2b ping (שורה 26 ב-M3): protocol 2, גרסת התוסף, האם יש v2 באוויר, האם המפסק דולק, האם יש כתובת בדיקה', function () {
     kp_on_fakewp(function () {
         $p = kp_send('ping')['json'];
-        eq([2, '2.1.0', false, false, 0, false], [$p['protocol'], $p['plugin'], $p['v2_has_live'], $p['v2_on'], $p['v2_live'], $p['v2_preview']]);
+        eq([2, KOL_PLUGIN_EXPECTED, false, false, 0, false], [$p['protocol'], $p['plugin'], $p['v2_has_live'], $p['v2_on'], $p['v2_live'], $p['v2_preview']]);
         kp_live(kp_bundle('G'), 1);
         kp_opt('kol_maroko_v2_preview_hash', hash('sha256', 'z'));
         $p = kp_send('ping')['json'];

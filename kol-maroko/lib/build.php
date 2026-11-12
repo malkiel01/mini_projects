@@ -779,6 +779,7 @@ function build_send(array $user, array $b): array
 /** השליחה עצמה, אחרי כל הבדיקות (ואחרי אישור בעל האתר, כשנדרש). */
 function build_send_now(array $r, array $user, ?array $approver = null): array
 {
+    if (pub_channel() === 'pull') return build_queue($r, $user, $approver);
     $ping = site_call('ping', []);
     $proto = (int)($ping['protocol'] ?? 0);
     if ($proto < BUILD_PROTOCOL) {
@@ -818,16 +819,61 @@ function build_send_now(array $r, array $user, ?array $approver = null): array
         audit_as($user, 'pkg_send_failed', "גרסה $n · " . $e->getMessage());
         throw $e;
     }
+    build_mark_live($r, $user, $bytes, $sent, $approver);
+    return ['build' => build_public(build_row((int)$r['id'])), 'sent' => $sent, 'site' => $res];
+}
+
+/**
+ * הגרסה "באתר": הקודמת superseded, היומן וההודעות. בדחיפה — מיד אחרי תשובת האתר; במשיכה (M7) — רק כשהתוסף דיווח applied
+ * (outbox_effect). $sent < 0 — לא ידוע (במשיכה התוסף מחליט מה חסר לו).
+ */
+function build_mark_live(array $r, array $user, string $bytes, int $sent, ?array $approver = null, ?int $seq = null): void
+{
+    $n = (int)($r['version'] ?? json_decode($bytes, true)['version'] ?? 0);
+    $files = json_decode($r['files'], true);
     $pdo = db();
     $pdo->prepare("UPDATE pkg_builds SET status = 'superseded' WHERE status = 'live'")->execute();
     build_save((int)$r['id'], ['status' => 'live', 'manifest' => $bytes, 'sent_at' => now_iso(), 'sent_by' => $user['name'] ?? '', 'error' => null]);
-    audit_as($user, 'pkg_publish', "גרסה $n · " . count($files) . " קבצים · $sent נשלחו");
-    $what = ($user['name'] ?? '') . " פרסם/ה את גרסה $n (פרויקט הקבצים) — " . count($files) . " קבצים, $sent נשלחו" . ($approver ? ' · אושר בידי ' . ($approver['name'] ?? '') : '') . build_change_line($r);
+    $how = $sent >= 0 ? "$sent נשלחו" : "נמשך בידי האתר (#$seq)";
+    audit_as($user, 'pkg_publish', "גרסה $n · " . count($files) . " קבצים · $how");
+    $what = ($user['name'] ?? '') . " פרסם/ה את גרסה $n (פרויקט הקבצים) — " . count($files) . " קבצים, $how" . ($approver ? ' · אושר בידי ' . ($approver['name'] ?? '') : '') . build_change_line($r);
     notice_add('site_owner', 'publish', $what, (int)$r['id'], $user);
     // לבעל העמוד — פרסום של מישהו אחר (08 §7)
     if (!role_at_least($user, 'page_owner')) notice_add('page_owner', 'publish', $what, (int)$r['id'], $user);
     publish_pending_clear((int)$r['id']);
-    return ['build' => build_public(build_row((int)$r['id'])), 'sent' => $sent, 'site' => $res];
+}
+
+/**
+ * M7 — ערוץ המשיכה: המניפסט נכנס לתור, והבנייה נשארת "sending" ("⏳ ממתין למשיכה") עד שהתוסף מדווח. בתוך המניפסט החתום —
+ * גם seq ו-expires של הפקודה: התוסף משווה אותם למעטפה, ולכן אי אפשר לשדר מניפסט מהתור בתוך מעטפה אחרת. אין בדיקת ping
+ * (התוסף שמושך הוא 2.2 ומעלה) ואין asset_has / asset_put — התוסף מוריד את מה שחסר לו.
+ */
+function build_queue(array $r, array $user, ?array $approver = null): array
+{
+    $n = $r['version'] === null ? pkg_next_version() : (int)$r['version'];
+    $files = json_decode($r['files'], true);
+    $entry = (string)(json_decode($r['opts'], true)['entry'] ?? 'index.html');
+    $k = pub_key();
+    $bytes = '';
+    // קודם "sending" — התוסף עשוי למשוך ולדווח applied עוד לפני שהבקשה הזו מסתיימת (הדפיקה)
+    build_save((int)$r['id'], ['status' => 'sending', 'version' => $n, 'error' => null]);
+    $res = site_call('manifest', function (int $seq, int $exp) use ($n, $entry, $user, $files, $k, &$bytes) {
+        $man = ['site' => site_host(), 'page' => PUB_PAGE, 'version' => $n, 'time' => time(), 'nonce' => bin2hex(random_bytes(16)), 'entry' => $entry,
+            'published_by' => $user['name'] ?? '', 'seq' => $seq, 'expires' => $exp,
+            'files' => array_map(fn($f) => ['sha256' => $f['sha'], 'size' => $f['size'], 'type' => $f['type']], $files)];
+        $bytes = build_json($man);
+        return ['manifest' => $bytes, 'manifest_sig' => base64_encode(sodium_crypto_sign_detached($bytes, base64_decode($k['secret']))), 'kid' => $k['kid']];
+    }, $user, ['ref' => (int)$r['id'], 'label' => "גרסה $n"]);
+    db()->prepare("UPDATE pkg_builds SET manifest = ? WHERE id = ? AND status = 'sending'")->execute([$bytes, (int)$r['id']]);
+    audit_as($user, 'pkg_queue', "גרסה $n · " . count($files) . ' קבצים · בתור (#' . $res['seq'] . ')' . ($approver ? ' · אושר בידי ' . ($approver['name'] ?? '') : ''));
+    publish_pending_clear((int)$r['id']);
+    return ['build' => build_public(build_row((int)$r['id'])), 'sent' => 0, 'queued' => true, 'seq' => $res['seq'], 'site' => $res];
+}
+
+/** הקובץ של גוש בשרת שלנו — מהמדיה או מאחסון הגושים של פרויקט הקבצים. */
+function build_blob_path(array $f): string
+{
+    return ($f['src'] ?? '') === 'media' ? file_path(file_row((string)$f['file_id'])) : pf_blob_path((string)$f['sha']);
 }
 
 // ── אופן ההצבה (M4-BC) ───────────────────────────────────
@@ -858,6 +904,12 @@ function mount_set(array $owner, array $b): array
 {
     $m = (string)($b['mount'] ?? '');
     if (!isset(BUILD_MOUNTS[$m])) throw new ApiError('אופן הצבה לא מוכר', 422);
+    if (pub_channel() === 'pull') {
+        // M7: בתור. האופן נשמר כאן רק כשהתוסף מדווח applied (outbox_effect)
+        $r = site_call('mount', ['mount' => $m], $owner, ['label' => 'אופן ההצבה: ' . BUILD_MOUNTS[$m]['name']]);
+        audit_as($owner, 'mount_set', BUILD_MOUNTS[$m]['name'] . ' · בתור (#' . $r['seq'] . ')');
+        return mount_state() + ['queued' => true, 'seq' => $r['seq'], 'pending' => $m];
+    }
     $ping = site_call('ping', []);
     if (!array_key_exists('v2_mount', $ping)) {
         throw new ApiError('התוסף באתר הוא ' . ($ping['plugin'] ?? '1.x') . ' — לבחירת אופן ההצבה נדרש 2.1 (מטלה לבעלים)', 409,
@@ -888,7 +940,7 @@ function build_send_blobs(array $files): int
     }
     $sent = 0;
     foreach ($need as $sha => $f) {
-        $path = $f['src'] === 'media' ? file_path(file_row((string)$f['file_id'])) : pf_blob_path($sha);
+        $path = build_blob_path($f);
         $fh = @fopen($path, 'rb') ?: throw new ApiError('קובץ חסר בשרת שלנו: ' . $f['path'], 500);
         $size = (int)filesize($path);
         $parts = max(1, (int)ceil($size / PUB_PART));

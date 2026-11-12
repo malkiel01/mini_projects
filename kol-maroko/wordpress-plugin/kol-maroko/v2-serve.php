@@ -114,6 +114,14 @@ function kol_maroko_v2_private()
     return in_array($GLOBALS['kol_maroko_v2_mode'] ?? '', ['preview', 'self'], true);
 }
 
+/** M7: ה-CDN (Cloudflare / כל CDN שמכבד CDN-Cache-Control) לא שומר עותק — גרסה שהוחלה נראית מיד. הדפדפן — לפי Cache-Control. */
+function kol_maroko_v2_cdn_off()
+{
+    if (headers_sent()) return;
+    header('CDN-Cache-Control: no-store');
+    header('Cloudflare-CDN-Cache-Control: no-store');
+}
+
 function kol_maroko_v2_cache($value)
 {
     header('Cache-Control: ' . (kol_maroko_v2_private() ? 'private, no-store' : $value));
@@ -232,10 +240,15 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
     kol_maroko_v2_base_headers($type);
     if ($download) header('Content-Disposition: attachment');
     header('ETag: ' . $etag);
+    // M7 (Cloudflare של Bluehost, "Assets & Web Pages"): לשנה — רק מה שבאמת לפי hash: immutable במניפסט (שם עם hash), או ?v= שתואם
+    // ל-sha256 של הקובץ (8 תווים לפחות). מדיה בנתיב קבוע (media/audio/<id>.mp3 — מתחלף כשהקלטה מוחלפת) — כמו HTML: נבדק בכל
+    // טעינה (ETag ← 304), אחרת הדפדפן וה-CDN מגישים את הישנה שנה. ה-CDN לעולם אינו מחזיק עותק של מה שאינו לפי hash.
+    $v = isset($_GET['v']) && is_string($_GET['v']) ? strtolower($_GET['v']) : '';
+    $hashed = !empty($f['immutable']) || (strlen($v) >= 8 && strlen($v) <= 64 && ctype_xdigit($v) && strpos((string)$f['sha256'], $v) === 0);
     if ($code === 404) kol_maroko_v2_cache('no-store');
-    elseif ($media || !empty($f['immutable'])) kol_maroko_v2_cache('public, max-age=31536000, immutable');
-    // HTML ו"יפה" — נבדק מול השרת בכל טעינה (ETag ← 304), כדי שכיבוי המפסק יחזיר את העמוד המקורי מיד (H14, G7)
-    else kol_maroko_v2_cache('public, max-age=0, must-revalidate');
+    elseif ($hashed) kol_maroko_v2_cache('public, max-age=31536000, immutable');
+    // HTML, "יפה" ומדיה בנתיב קבוע — נבדק מול השרת בכל טעינה (ETag ← 304), כדי שכיבוי המפסק יחזיר את העמוד המקורי מיד (H14, G7)
+    else { kol_maroko_v2_cache('public, max-age=0, must-revalidate'); kol_maroko_v2_cdn_off(); }
 
     $inm = (string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '');
     if ($code === 200 && $inm !== '' && (trim($inm) === '*' || in_array($etag, array_map('trim', explode(',', str_replace('W/', '', $inm))), true))) {

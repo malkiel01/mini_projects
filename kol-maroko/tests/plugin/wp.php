@@ -95,10 +95,15 @@ function is_wp_error($x) { return $x instanceof WP_Error; }
 /** הבקשה העצמית — curl אמיתי לאותו שרת (8 תהליכים). מתעד כל כתובת שהתבקשה, כדי להוכיח שרק לאתר עצמו. */
 function wp_remote_request($url, $args = []) {
     update_option('test_remote', array_merge((array)get_option('test_remote', []), [$url]));
+    // M7: הבדיקות מוודאות שהתוסף מבקש redirection 0 ובדיקת תעודה — כמו בוורדפרס האמיתי
+    if (strpos($url, 'blob=') === false) update_option('test_remote_args', ['redirection' => $args['redirection'] ?? null, 'sslverify' => $args['sslverify'] ?? null]);
     $ch = curl_init($url);
     $hs = [];
     foreach ((array)($args['headers'] ?? []) as $k => $v) $hs[] = "$k: $v";
     $rh = [];
+    if (isset($args['method']) && $args['method'] !== 'GET') curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $args['method']);
+    if (isset($args['body'])) curl_setopt($ch, CURLOPT_POSTFIELDS, $args['body']);
+    if (isset($args['user-agent'])) curl_setopt($ch, CURLOPT_USERAGENT, $args['user-agent']);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $hs, CURLOPT_TIMEOUT => 15, CURLOPT_FOLLOWLOCATION => false, CURLOPT_PATH_AS_IS => true,
         CURLOPT_HEADERFUNCTION => function ($c, $l) use (&$rh) { if (strpos($l, ':')) { [$k, $v] = explode(':', $l, 2); $k = strtolower(trim($k)); $rh[$k] = isset($rh[$k]) ? (array)$rh[$k] + [99 => trim($v)] : trim($v); } return strlen($l); }]);
     $body = curl_exec($ch);
@@ -106,6 +111,14 @@ function wp_remote_request($url, $args = []) {
     return ['code' => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'headers' => $rh, 'body' => $body];
 }
 function wp_remote_retrieve_headers($r) { return $r['headers']; }
+function wp_remote_retrieve_body($r) { return $r['body']; }
+// ── wp-cron מדומה (M7): האירועים נרשמים באפשרות test_cron ──
+function wp_next_scheduled($hook) { $c = (array)get_option('test_cron', []); return $c[$hook]['at'] ?? false; }
+function wp_schedule_event($t, $rec, $hook) { $c = (array)get_option('test_cron', []); $c[$hook] = ['at' => $t, 'rec' => $rec]; update_option('test_cron', $c); return true; }
+function wp_schedule_single_event($t, $hook) { $c = (array)get_option('test_cron', []); $c[$hook] = ['at' => $t, 'rec' => 'once']; update_option('test_cron', $c); return true; }
+function wp_clear_scheduled_hook($hook) { $c = (array)get_option('test_cron', []); unset($c[$hook]); update_option('test_cron', $c); return 1; }
+function sanitize_textarea_field($s) { return trim((string)$s); }
+define('KOL_MAROKO_PULL_TEST_HTTP', true);          // M7: כתובת משיכה ב-http — רק כאן, ורק ל-127.0.0.1
 function wp_remote_retrieve_response_code($r) { return $r['code']; }
 
 final class WP_REST_Request
@@ -164,6 +177,16 @@ if ($path === '/__login') {
     setcookie('wordpress_logged_in_test', '1', ['path' => '/', 'httponly' => true]);
     header('Content-Type: text/plain');
     echo 'logged in';
+    exit;
+}
+if ($path === '/__pull') {                                // M7: "🔄 עדכן עכשיו" / ריצת cron — kol_maroko_pull_run
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(kol_maroko_pull_run($_GET['why'] ?? 'test'), JSON_UNESCAPED_UNICODE);
+    exit;
+}
+if ($path === '/__pull_check') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(kol_maroko_pull_check(), JSON_UNESCAPED_UNICODE);
     exit;
 }
 if ($path === '/wp-admin/admin-post.php' && $_SERVER['REQUEST_METHOD'] === 'POST') {      // admin_post_<action>, כמו וורדפרס

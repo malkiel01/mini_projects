@@ -12,6 +12,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/longtext.php';
+require_once __DIR__ . '/outbox.php';             // M7 — התור היוצא וערוץ המשיכה
 
 const PUB_PAGE = 'lexicon';
 const PUB_SITE_DEFAULT = 'https://maghreb.co.il';
@@ -61,7 +62,7 @@ function publish_settings(): array
     return [
         'key' => pub_key_line($k), 'kid' => $k['kid'], 'older' => array_map('pub_key_line', $old),
         'site' => site_url_setting(), 'endpoint' => site_url_setting() . PUB_ROUTE . 'publish', 'page' => PUB_PAGE,
-    ];
+    ] + pull_settings();
 }
 
 /**
@@ -161,8 +162,19 @@ function site_error(int $status, ?array $j, array $headers, string $raw): ApiErr
     return new ApiError("תשובה לא צפויה מהאתר ($status)", 502, ['code' => 'http_' . $status, 'body' => mb_substr(strip_tags($raw), 0, 300)]);
 }
 
-function site_call(string $action, array $payload): array
+/**
+ * המקור האחד לכל מה שיוצא לאתר. הערוץ (pub_channel) מחליט: push — POST חתום לאתר, ותשובה מיידית; pull (M7) — manifest, switch,
+ * activate ו-mount נכתבים לתור (outbox_add) ומוחזר {queued, seq}; ping מחזיר את הדופק — מה שהתוסף דיווח בפעם האחרונה.
+ * $payload — מערך, או Closure(seq, expires) לפקודה שצריכה את ה-seq בתוכה (המניפסט). שאר הפעולות (הישנות של 1.x) — תמיד push.
+ */
+function site_call(string $action, array|Closure $payload, ?array $user = null, array $meta = []): array
 {
+    if (pub_channel() === 'pull') {
+        if ($action === 'ping') return outbox_ping();
+        if (in_array($action, OUTBOX_ACTIONS, true)) return outbox_add($action, $payload, $user, $meta);
+        if (in_array($action, ['asset_has', 'asset_put'], true)) throw new ApiError('בערוץ המשיכה התוסף מוריד את הקבצים בעצמו', 500);
+    }
+    if ($payload instanceof Closure) $payload = $payload(0, 0);
     [$status, $j, $headers, $raw] = site_post($action, $payload);
     if ($status === 200 && is_array($j) && ($j['ok'] ?? false) === true) return $j;
     throw site_error($status, $j, $headers, $raw);
@@ -186,8 +198,9 @@ function site_ping(array $owner): array
 function site_switch(array $user, array $b): array
 {
     $on = ($b['enabled'] ?? null) === true;
-    $r = site_call('switch', ['enabled' => $on]);
-    audit_as($user, 'site_switch', $on ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר חזר לעמוד המקורי');
+    $r = site_call('switch', ['enabled' => $on], $user);
+    $what = $on ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר חזר לעמוד המקורי';
+    audit_as($user, 'site_switch', !empty($r['queued']) ? "בתור (#{$r['seq']}): $what" : $what);
     return ['site' => $r];
 }
 
