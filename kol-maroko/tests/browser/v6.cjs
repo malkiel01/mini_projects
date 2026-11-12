@@ -110,7 +110,7 @@ const PAGE = `<!doctype html>
     const height = page => page.evaluate(s => Editor._state.canvas.doc.querySelector(s).getBoundingClientRect().height, HERO);
     const lastTx = page => page.evaluate(() => { const t = Editor._state.tx; return t.length ? t[t.length - 1].label : ''; });
 
-    const H1 = 'h1.kadisha-hero-title';
+    const H1 = 'h1.kadisha-hero-title'; let p;
     const rect = (page, s) => page.evaluate(s => { const r = Editor._state.canvas.doc.querySelector(s).getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; }, s);
     const near = (a, b, d = 1) => Math.abs(a - b) <= d;
 
@@ -175,6 +175,21 @@ const PAGE = `<!doctype html>
     f1 = await files(page);
     ok(f1['index.html'] === o0['index.html'] && /position: absolute/.test(f1['css/page.css']), 'בלי "ביחס אל" — ביחס לממוקם הקרוב (.kadisha-hero-inner), בלי הזזה ב-HTML');
     ok(await undoFiles(page, o0), 'ביטול — זהים');
+    // ═══ 5. פריסה וגודל ═══
+    await select(page, 'section.kadisha-hero'); await sleep(150);
+    p = await page.evaluate(() => ({ flex: !!document.querySelector('[data-sec="flex"]'), jc: [...document.querySelectorAll('[data-field="justify-content"] button')].map(b => b.title), size: !!document.querySelector('[data-sec="size"]') }));
+    ok(p.flex && p.size && p.jc.some(t => /התחלה \(ימין\)/.test(t)), 'פריסה: הפס (flex, שורה, עברית) — "התחלה (ימין)" בציר הראשי; קבוצת "גודל"', p);
+    await page.click('[data-field="justify-content"] button[data-v="flex-end"]'); await sleep(250);
+    f1 = await files(page);
+    ok(/justify-content: flex-end/.test(f1['css/page.css']) && await comp(page, 'justify-content') === 'flex-end', 'יישור בציר הראשי — נכתב לכלל היעד ונראה בקנבס');
+    const h0 = (await rect(page, 'section.kadisha-hero')).h;
+    await page.evaluate(() => { const b = document.querySelector('[data-size-h="s"]'), r = b.getBoundingClientRect(), f = (t, x, y) => b.dispatchEvent(new PointerEvent(t, { bubbles: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1 })); const x = r.left + r.width / 2, y = r.top + r.height / 2; f('pointerdown', x, y); for (let i = 1; i <= 5; i++) f('pointermove', x, y + i * 12); f('pointerup', x, y + 60); });
+    await sleep(300);
+    f1 = await files(page); const h1 = (await rect(page, 'section.kadisha-hero')).h;
+    ok(/height: \d+px/.test(f1['css/page.css']) && h1 > h0 + 30, 'ידית גודל (התחתונה) — גרירה מגביהה את הפס; עסקה אחת בשחרור', { h0, h1 });
+    ok(await undoFiles(page, o0), 'ביטול — זהים');
+    p = await page.evaluate(() => { const b = document.querySelector('[data-size-h="e"]'); b.dispatchEvent(new PointerEvent('pointerenter')); return document.querySelector('.sz-tip')?.textContent || ''; });
+    ok(/גודל · width/.test(p), 'ידית גודל אומרת איזה מאפיין ישתנה לפני הגרירה', p);
     await page.screenshot({ path: path.join(shots, 'v6-1920.png') });
     {
       const lc = await mk(390, 844), lp = await lc.newPage(); lp.on('pageerror', e => errors.push('390: ' + e.message));

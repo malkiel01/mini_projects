@@ -342,3 +342,6 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .ps-guide { position: absolute; background: #e0c; } .ps-guide.v { width: 1px; } .ps-guide.h { height: 1px; }
 .ps-dist { position: absolute; z-index: 27; pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; }
 .ed-bar [data-free-btn][aria-pressed="true"] { background: var(--brand-soft); box-shadow: inset 0 -2px 0 var(--brand); }
+.sz-h { position: absolute; background: #fff; border: 1.5px solid var(--brand, #36c); border-radius: 2px; touch-action: none; pointer-events: auto; }
+.sz-n, .sz-s { cursor: ns-resize; } .sz-e, .sz-w { cursor: ew-resize; } .sz-ne, .sz-sw { cursor: nesw-resize; } .sz-nw, .sz-se { cursor: nwse-resize; }
+.sz-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }

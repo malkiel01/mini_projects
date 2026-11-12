@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/position.js', 'assets/js/editor/spacing.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/spacing.js'];
   const LS = 'kol-editor';
   const DEFAULT_DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   let DEVICES = DEFAULT_DEVICES;
@@ -834,7 +834,7 @@ const Editor = (() => {
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = () => { drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); }; c.onDropFile = (file, n) => dropFile(file, n);
+      c.onDraw = () => { drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
       S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
         highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } } });
@@ -843,7 +843,8 @@ const Editor = (() => {
       S.design.bgSection = n => S.bg.section(n);
       S.adv = new window.KolDesign.Design(el.advBody, dOpt('adv'));
       S.pos = new window.KolPos.Pos({ design: S.adv, write: writeStyle, act, joinTx, note, undo, phone, layer: () => c.layer, X: window.KolStruct, setDevice: () => { const d = DEVICES.slice().sort((a, b) => (+a.width || 1e9) - (+b.width || 1e9))[0]; if (d) setDevice(d.id); }, busy: () => !!S.bg?.mv || !!S.text?.active });
-      S.adv.extra = n => S.pos.section(n);
+      S.lay = new window.KolLayout.Layout({ design: S.adv, write: writeStyle, note, undo, phone, layer: () => c.layer, busy: () => !!S.bg?.mv || !!S.text?.active || !!S.pos?.dragging, on: () => S.tab === 'adv' && (infoOpen() || phone()) });
+      S.adv.extra = n => [...S.lay.sections(n), ...S.pos.section(n)];
       S.space = new window.KolSpacing.Spacing(c, { styler: S.styler, design: S.adv, write: writeStyle, preview, unpreview, canWrite: () => !!canWrite(), note, undo, phone, on: () => (S.spaceOn || (S.tab === 'adv' && (infoOpen() || phone())) ? 'adv' : S.tab === 'design' && infoOpen() ? 'design' : false), sheetHost: () => el.gapbar });
       S.adv.whyGap = n => S.space.whyNode(n);
       S.build = new window.KolBuild.Build({ canvas: c, nav: S.nav, navHost: el.libBody, toolsHost: el.seltools, K, X: window.KolStruct, styler: S.styler, act, multi, writeStyle, note, sheet, undo, canWrite: () => !!canWrite(),
