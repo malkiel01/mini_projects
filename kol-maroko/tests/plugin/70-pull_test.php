@@ -304,6 +304,22 @@ test('M7 H27: ריצה שנקטעה באמצע גוש גדול — הבאה ממ
     eq(9, (int)kp_get('kol_maroko_v2_live'), 'הוחל גם כשהשרת התעלם מה-Range');
 });
 
+test('M7 קצב: 429 מהכלי באמצע ההורדה — לא נכשל; ממשיך (משיכה נוספת בעוד דקה), ובסוף מוחל', function () {
+    $blobs = [];
+    $files = ['index.html' => '<p>R</p>', 'a.css' => 'p{}', 'b.js' => '1;', 'c.txt' => 'c'];
+    kpp_reset(['items' => [kpp_manifest($files, 4, 50, $blobs)], 'blobs' => $blobs, 'rate_after' => 1]);
+    $r = kpp_run();
+    eq([0, 0, true], [$r['applied'], $r['failed'], $r['pending']], json_encode($r, JSON_UNESCAPED_UNICODE));
+    eq([], kpp_last_report(), 'לא דווח כשל');
+    ok(isset(((array)kp_get('test_cron'))['kol_maroko_pull_now']), 'משיכה נוספת תוזמנה');
+    eq(0, (int)kp_get('kol_maroko_pull_cursor'), 'הסמן לא זז');
+    $c = kpp_cfg_get();
+    unset($c['rate_after']);
+    kpp_cfg($c);
+    eq(1, kpp_run()['applied']);
+    eq(4, (int)kp_get('kol_maroko_v2_live'));
+});
+
 test('M7 H28: שתי משיכות במקביל — אחת רצה, השנייה יוצאת מיד; אין החלה כפולה', function () {
     kpp_reset(['items' => [kpp_item('mount', ['mount' => 'framed'], 40)], 'slow' => 700000]);
     // נעילה שמוחזקת (ריצה אחרת באמצע) — יוצאת מיד

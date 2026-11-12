@@ -211,6 +211,7 @@ function kol_maroko_pull_blob($sha, $size, $type, $seq, $t0)
         $GLOBALS['kol_maroko_pull_chunks'] = (int)($GLOBALS['kol_maroko_pull_chunks'] ?? 0) + 1;
         $r = kol_maroko_pull_http('GET', 'blob=' . $sha, null, ['Range' => 'bytes=' . $have . '-' . ($have + $chunk - 1), 'Accept' => 'application/octet-stream']);
         if (isset($r['error'])) return ['code' => $r['code'] === 'redirect' ? 'redirect' : 'blob_http', 'message' => $r['error']];
+        if ($r['status'] === 429) { $GLOBALS['kol_maroko_pull_rate'] = true; return 'pending'; }   // 60 לדקה בכלי — ממשיכים בעוד דקה, לא נכשלים
         if ($r['status'] === 206) {
             if (!preg_match('~^bytes (\d+)-(\d+)/(\d+)$~', (string)($r['headers']['content-range'] ?? ''), $m) || (int)$m[1] !== $have || (int)$m[3] !== $size
                 || strlen($r['body']) !== (int)$m[2] - (int)$m[1] + 1) {
@@ -282,6 +283,7 @@ function kol_maroko_pull_run($why = 'manual')
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) { if ($lock) fclose($lock); return ['ok' => false, 'code' => 'busy', 'text' => 'משיכה אחרת רצה עכשיו']; }
     $t0 = microtime(true);
     $GLOBALS['kol_maroko_pull_chunks'] = 0;
+    $GLOBALS['kol_maroko_pull_rate'] = false;
     $results = array_values((array)kol_maroko_opt('pull_unreported', []));
     $applied = $failed = 0;
     $pending = false;
@@ -290,6 +292,7 @@ function kol_maroko_pull_run($why = 'manual')
         for ($page = 0; $page < 20; $page++) {
             $cursor = (int)kol_maroko_opt('pull_cursor', 0);
             $r = kol_maroko_pull_json('GET', 'after=' . $cursor);
+            if (($r['status'] ?? 0) === 429) { $GLOBALS['kol_maroko_pull_rate'] = true; $pending = true; break; }
             if (isset($r['error'])) { $error = $r; break; }
             $items = is_array($r['json']['items'] ?? null) ? $r['json']['items'] : [];
             foreach ($items as $item) {
@@ -318,6 +321,8 @@ function kol_maroko_pull_run($why = 'manual')
         flock($lock, LOCK_UN);
         fclose($lock);
     }
+    // לא הסתיים (תקציב / קצב) — ההמשך לא מחכה ל-cron הבא: משיכה נוספת בעוד ~דקה
+    if ($pending && function_exists('wp_schedule_single_event')) wp_schedule_single_event(time() + 65, 'kol_maroko_pull_now');
     $text = $error ? '✗ ' . $error['error'] : ('✓ ' . ($applied || $failed ? "הוחלו $applied" . ($failed ? ", נכשלו $failed" : '') : 'אין חדש') . ($pending ? ' · ממשיך בריצה הבאה' : ''));
     $last = ['at' => time(), 'why' => (string)$why, 'ok' => !$error, 'applied' => $applied, 'failed' => $failed, 'pending' => $pending, 'text' => $text,
         'code' => $error['code'] ?? '', 'cursor' => (int)kol_maroko_opt('pull_cursor', 0)];

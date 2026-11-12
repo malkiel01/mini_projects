@@ -350,7 +350,8 @@ function pull_blob_find(string $sha): ?array
         foreach ((array)json_decode((string)$b['files'], true) as $p => $f) {
             if (($f['sha'] ?? '') !== $sha) continue;
             $path = build_blob_path($f + ['path' => $p]);
-            if (is_file($path) && hash_equals($sha, (string)hash_file('sha256', $path))) return ['path' => $path, 'size' => (int)filesize($path), 'type' => (string)($f['type'] ?? '')];
+            // בלי hash_file בכל בקשה (גוש של 50MB בחלקים של 8MB היה נגזר שוב ושוב): התוסף מאמת sha256 וגודל לכל גוש (G5)
+            if (is_file($path)) return ['path' => $path, 'size' => (int)filesize($path), 'type' => (string)($f['type'] ?? '')];
         }
     }
     return null;

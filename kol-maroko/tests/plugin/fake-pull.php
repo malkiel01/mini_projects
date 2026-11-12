@@ -9,6 +9,7 @@
  *   redirect       כתובת: כל בקשה מקבלת 302 אליה (H23)
  *   ignore_range   מגיש את כל הקובץ ב-200 גם כשנשלח Range
  *   slow           מיקרו-שניות השהיה לכל תשובה (H28)
+ *   rate_after     אחרי N בקשות גוש — 429
  * כל בקשה נרשמת ב-<dir>/pull-log.json (נתיב, query, Range, האם האסימון תקין); כל דיווח — ב-<dir>/reports.json.
  */
 
@@ -44,6 +45,10 @@ if (!$okAuth) { http_response_code(401); header('Content-Type: application/json'
 
 if (isset($_GET['blob'])) {
     $sha = (string)$_GET['blob'];
+    // rate_after: אחרי N בקשות גוש — 429 (מגבלת 60 לדקה של הכלי)
+    if (isset($cfg['rate_after']) && count(array_filter(json_decode((string)@file_get_contents("$dir/pull-log.json"), true) ?: [], fn($l) => str_starts_with($l['query'], 'blob='))) > (int)$cfg['rate_after']) {
+        http_response_code(429); header('Content-Type: application/json'); echo '{"ok":false,"code":"rate"}'; exit;
+    }
     $file = $cfg['blobs'][$sha] ?? null;
     if (!$file || !is_file($file)) { http_response_code(404); exit; }
     $bytes = (string)file_get_contents($file);

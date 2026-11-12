@@ -739,3 +739,25 @@ node kol-maroko/tests/browser/v7.cjs     # 43 — על index.html המוסב, 19
   עוצר אחרי ההרשאה; `tests/fake-provision.php` מדמה את הפלטפורמה. **בדיקת דפדפן חדשה — הזהות גם בעוגייה `kol_test_user`**:
   בקשת מדיה בלי זהות מוחקת את ה-session.
 - **איפה הנתונים:** `data/kol.sqlite` בלבד. אין קובץ חדש, אין `--exclude` חדש.
+
+## 📥 משיכה במקום דחיפה (M7)
+
+החוזה: `docs/spec-v2/slices/M7-pull-not-push.md`. כל `POST` לאתר נחסם ב-Cloudflare של חברת האחסון — לכן **האתר יוצא אל הכלי**.
+הקוד: `lib/outbox.php` (התור, הדופק, האסימון), `pull.php` (הנקודה), `wordpress-plugin/kol-maroko/v2-pull.php` (התוסף 2.2), `assets/js/publish.js`.
+
+- **הערוץ** — `pub_channel()`: `pull` (ברירת מחדל ל-maghreb.co.il) או `push` (כל אתר אחר, ובדיקות). בעל האתר מחליף ב-⚙️ ← 🔗 חיבור לאתר.
+  `site_call()` הוא המקור האחד: בערוץ המשיכה `manifest` / `switch` / `activate` / `mount` נכנסים לתור, ו-`ping` מחזיר את הדופק.
+- **התור** — `site_outbox` (מיגרציה 24, ב-`data/kol.sqlite`; אין קובץ ואין `--exclude` חדש). המעטפה של היום + `seq` ו-`expires` **בתוך
+  החתימה** (manifest 7 ימים, השאר 24 שעות); במניפסט — גם בתוכו. פקודה חדשה מאותו סוג ⇒ הקודמת `superseded`. **"באתר" רק אחרי
+  `applied`** (`build_mark_live` מתוך `outbox_effect`).
+- **`pull.php`** — היחידה ב-`"public"` מבין החדשות. `?after=` (20 פקודות), `?blob=` (רק sha שבמניפסט שבתור, `Range` עד 8MB), `?ping`,
+  `POST ?report`. אסימון (32 בייט) ב-`Authorization: Bearer` או `X-Kol-Pull-Token`; נשמר כ-sha256, `hash_equals`; 60 לדקה; בלי עוגייה.
+  אסימון שגוי — נספר (`pull_bad`). הדיווח מסונן לרשימה סגורה (`PULL_STATE_KEYS`) ויכול לשנות רק את מה שהכלי **יודע** על האתר.
+- **שורת החיבור** — `kol-maroko:2:<kid>:<מפתח>:<כתובת pull.php>:<אסימון>`; מוצגת פעם אחת; שורה חדשה מבטלת את הקודמת.
+- **התוסף 2.2** — wp-cron (5 דקות, 1–60), "🔄 עדכן עכשיו", דפיקה `?kol-maroko-wake=1` (אחת לדקה). `flock` על `pull.lock`; תקציב 20
+  שניות (לפחות חלק אחד בריצה); גוש ממשיך מאותו בייט (`parts/<sha>.pull`); 3 אי-התאמות sha ⇒ `blob_mismatch`; 429 ⇒ ממשיך בעוד דקה.
+  הסמן (`pull_cursor`) מתקדם רק על פקודה חתומה. פקודה עם `seq` בדחיפה ⇒ `wrong_channel`. https בלבד, `redirection => 0`.
+- **הבדיקות:** `tests/cases/99-outbox.php` (H24–H26, הדיווח, הדופק, קצה לקצה מול התוסף האמיתי), `tests/plugin/70-pull_test.php`
+  (H18–H23, H27, H28, קצב, כתיבה רק בתוך uploads) מול `tests/plugin/fake-pull.php`, `tests/browser/m7.cjs` (1920 + 390).
+- **מה טרם:** האם שרת האתר (Bluehost) יוצא ב-HTTPS אל mbe-plus.com — "בדוק חיבור" בתוסף, מטלה (§2.7). פרסום ראשון עם ~1,500
+  הקלטות: ב-60 בקשות לדקה — כ-25 דקות של משיכה (ממשיך לבד).
