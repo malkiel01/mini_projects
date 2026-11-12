@@ -1,6 +1,6 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-12T07:50Z",
+  "updated": "2026-11-12T08:30Z",
   "spec": "session_018g4NYFVLVbyN6jb8ZTZRT1",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
@@ -8,7 +8,6 @@
   ],
   "code": {
     "V4": "session_018g4NYChvguP3UAsPoe1XqG",
-    "F2b": "session_018g4NYFHV7U272jiNfe6P9u",
     "C1": "session_018g4NYDvqMVieahjNt9213o",
     "A2": "session_018g4NYCmrLkEFdkgCFTBBE6",
     "M1": "session_018g4NYFzdrcm79E9rHgGcQZ"
@@ -26,7 +25,8 @@
     "session_018g4NYCNk2uBmYWuNbxSSJS (V2, נעצר על מגבלת Fable)",
     "session_018g4NYGkM9kM3jX2EPCZvti (V2 (2), נעצר 05:36)",
     "session_018g4NYCNk2uBmYWuNbxSSJS (V2, מוזגה 06:30)",
-    "session_018g4NYFpccNa8aQDJr15sQp (V3, מוזגה 07:12)"
+    "session_018g4NYFpccNa8aQDJr15sQp (V3, מוזגה 07:12)",
+    "session_018g4NYFHV7U272jiNfe6P9u (F2b, מוזגה 08:30)"
   ],
   "control": "session_018g4NYCjBqmqsHEct4XvhJj",
   "control_previous": [
