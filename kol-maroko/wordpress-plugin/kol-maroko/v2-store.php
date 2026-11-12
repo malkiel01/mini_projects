@@ -16,7 +16,7 @@
  *   live.json          הגרסה שבאוויר — עותק של manifest-<n>.json, מוחלף ב-rename() (אטומי)
  * כל התיקייה חסומה מגישה ישירה (.htaccess, web.config, index.html). מה שבתוכה מוגש רק דרך v2-serve.php.
  *
- * הקובץ הזה אינו מבצע include/eval לשום קובץ מהחבילה, אינו פונה לשום שרת ואינו נוגע ב-post_content.
+ * הקובץ הזה אינו מבצע include/eval לשום קובץ מהחבילה, אינו פונה לשום שרת (המשיכה — v2-pull.php) ואינו נוגע ב-post_content.
  */
 
 if (!defined('ABSPATH')) exit;
