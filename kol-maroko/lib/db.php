@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 18;
+const KOL_SCHEMA_VERSION = 17;
 
 final class ApiError extends RuntimeException
 {
@@ -402,10 +402,10 @@ function migrate(PDO $pdo): void
                 read_by  TEXT
             );
             SQL,
-        18 => <<<'SQL'
+        17 => <<<'SQL'
             -- פרוסה M3: המעבר (lib/cutover.php). ראיות מהבעלים לתנאים שרק הוא יודע — קובץ (במאגר הקיים, data/files/),
             -- קישור או הערה, עם שם ותאריך. ביטול — מסמן, לא מוחק. cutover_marks — המצב האחרון של כל תנאי, כדי לרשום
-            -- ביומן כל שינוי ולזהות ✓ שנפל (fell_at). 17 — שמור ל-V4.
+            -- ביומן כל שינוי ולזהות ✓ שנפל (fell_at).
             CREATE TABLE IF NOT EXISTS cutover_evidence (
                 id         INTEGER PRIMARY KEY,
                 cond       TEXT NOT NULL,
