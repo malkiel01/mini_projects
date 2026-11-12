@@ -24,13 +24,15 @@ $GLOBALS['wp_dir'] = $dir;
 
 function wp_opts_locked(callable $fn)
 {
-    $fh = fopen($GLOBALS['wp_dir'] . '/options.json', 'c+');
-    flock($fh, LOCK_EX);
-    $o = json_decode((string)stream_get_contents($fh), true) ?: [];
+    // נעילה על קובץ נפרד, וכתיבה אטומית (קובץ זמני ← rename): מי שקורא בלי נעילה (בדיקת הדפדפן) רואה תמיד קובץ שלם
+    $f = $GLOBALS['wp_dir'] . '/options.json';
+    $lock = fopen($f . '.lock', 'c');
+    flock($lock, LOCK_EX);
+    $o = json_decode((string)@file_get_contents($f), true) ?: [];
     [$o2, $ret] = $fn($o);
-    if ($o2 !== null) { ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($o2)); fflush($fh); }
-    flock($fh, LOCK_UN);
-    fclose($fh);
+    if ($o2 !== null) { $tmp = $f . '.' . getmypid() . '.tmp'; file_put_contents($tmp, json_encode($o2)); rename($tmp, $f); }
+    flock($lock, LOCK_UN);
+    fclose($lock);
     return $ret;
 }
 function get_option($k, $d = false) { return wp_opts_locked(fn($o) => [null, array_key_exists($k, $o) ? $o[$k] : $d]); }
@@ -49,6 +51,7 @@ function get_permalink($id) { return home_url('/lexicon/'); }
 function clean_post_cache($id) {}
 // ── מסך הניהול: "מחובר כמנהל" = העוגייה test_admin=1 (manage_options); nonce של וורדפרס = "nonce-<פעולה>" ──
 function current_user_can($cap) { return $cap === 'manage_options' && ($_COOKIE['test_admin'] ?? '') === '1'; }
+function wp_get_current_user() { return (object)['user_login' => ($_COOKIE['test_admin'] ?? '') === '1' ? 'admin<b>"' : '']; }
 function wp_die($m = '') { http_response_code(403); echo 'WP_DIE: ' . $m; exit; }
 function wp_create_nonce($a = -1) { return 'nonce-' . $a; }
 function wp_nonce_field($a = -1, $n = '_wpnonce', $r = true, $echo = true) { $h = '<input type="hidden" name="' . $n . '" value="nonce-' . $a . '">'; if ($echo) echo $h; return $h; }

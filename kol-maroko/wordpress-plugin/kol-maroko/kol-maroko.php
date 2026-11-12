@@ -139,7 +139,8 @@ function kol_maroko_handle($action, WP_REST_Request $req)
         return new WP_REST_Response(['ok' => true, 'version' => (int)kol_maroko_opt('last', 0), 'live' => (int)kol_maroko_opt('live', 0),
             'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION,
             'protocol' => KOL_MAROKO_PROTOCOL, 'v2_version' => (int)kol_maroko_opt('v2_last', 0), 'v2_live' => (int)kol_maroko_opt('v2_live', 0),
-            'v2_on' => (bool)kol_maroko_opt('v2_on', false)]);
+            'v2_on' => (bool)kol_maroko_opt('v2_on', false), 'v2_has_live' => kol_maroko_v2_live_manifest() !== null,
+            'v2_preview' => (bool)kol_maroko_opt('v2_preview_hash', ''), 'v2_stats' => kol_maroko_opt('v2_on', false) ? kol_maroko_v2_stats_public() : null]);
     }
     if (in_array($action, ['asset_has', 'asset_put', 'manifest', 'activate'], true)) return kol_maroko_v2_handle($action, $b);
     if ($action === 'asset') return kol_maroko_asset($b);

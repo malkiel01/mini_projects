@@ -22,6 +22,10 @@ const API_MIN_ROLE = [
     // פרוסה A2 — הבאת ההקלטות
     'rec_duration' => 'editor', 'rec_status' => 'owner', 'rec_fetch_plan' => 'owner', 'rec_scan_start' => 'owner', 'rec_scan_step' => 'owner',
     'rec_fetch_start' => 'owner', 'rec_fetch_step' => 'owner', 'rec_job_op' => 'owner', 'rec_settings_set' => 'owner',
+    // A3
+    'rec_replace' => 'editor', 'rec_versions' => 'editor', 'rec_revert' => 'editor', 'rec_rename' => 'editor', 'rec_connect' => 'editor',
+    'rec_disconnect' => 'editor', 'rec_delete' => 'editor', 'rec_restore' => 'editor', 'rec_purge' => 'owner', 'rec_versions_clean' => 'owner',
+    'rec_match' => 'editor', 'rec_add' => 'editor', 'rec_dedupe' => 'editor', 'rec_zip_start' => 'editor', 'rec_zip_step' => 'editor', 'rec_zip_get' => 'editor',
     // פרוסה F1
     'dev-report' => 'editor', 'dev-attach' => 'editor', 'dev-my-reports' => 'editor', 'dev-items' => 'editor',
     'dev-task-create' => 'owner', 'dev-task-set' => 'owner', 'dev-comment' => 'owner', 'dev-comment-delete' => 'owner', 'dev-verify' => 'owner',

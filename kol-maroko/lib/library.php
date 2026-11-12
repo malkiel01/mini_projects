@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/page.php';
 require_once __DIR__ . '/recordings.php';
+require_once __DIR__ . '/rec_actions.php';      // A3: הפעולות על הקלטה
 
 /** פירוש (HTML) → שורה אחת של טקסט, לרשימה ולחיפוש. */
 function library_plain(string $html): string
@@ -58,15 +59,26 @@ function library_list(): array
 {
     $words = words_rows();
     $recs = rec_rows();                       // A2: המצב, הקובץ והמקור — מהמודל
-    $ids = array_values(array_unique(array_filter(array_map(fn($r) => (string)$r['file_id'], $recs))));
+    // A3: הקלטות שאינן מחוברות למילה (לא בסל), ומספר הגרסאות של כל הקלטה
+    $loose = rec_db()->query('SELECT * FROM recordings WHERE word_id IS NULL AND deleted_at IS NULL ORDER BY id')->fetchAll();
+    $nv = [];
+    foreach (rec_db()->query('SELECT rec_id, COUNT(*) AS n FROM rec_versions GROUP BY rec_id')->fetchAll() as $v) $nv[(int)$v['rec_id']] = (int)$v['n'];
+    $ids = array_values(array_unique(array_filter(array_map(fn($r) => (string)$r['file_id'], [...array_values($recs), ...$loose]))));
     $files = files_meta($ids);
+    $fileOf = function (array $rec) use ($files): ?array {
+        $f = $files[$rec['file_id']] ?? null;
+        if (!$f || !empty($f['deleted_at'])) return null;
+        return ['id' => $f['id'], 'name' => $f['name'], 'size' => (int)$f['size'], 'at' => $f['at'], 'by' => $f['by_name'],
+            'origin' => (string)($rec['source'] ?: ($f['origin'] ?? '')), 'type' => $f['type'], 'sha' => $f['sha256'],
+            'duration' => $rec['duration'] === null ? null : (float)$rec['duration'], 'how' => $rec['how']];
+    };
 
     // מילים שמצביעות על אותה הקלטה — כל אחת רשומה בשורה של האחרת
     $share = [];
     foreach ($words as $w) if ($w['audio'] !== '') $share[$w['audio']][] = $w['id'];
 
     $rows = [];
-    $counts = ['words' => count($words), 'audio' => 0, 'site' => 0, 'tool' => 0, 'none' => 0, 'missing' => 0, 'failed' => 0];
+    $counts = ['words' => count($words), 'audio' => 0, 'site' => 0, 'tool' => 0, 'none' => 0, 'missing' => 0, 'failed' => 0, 'loose' => 0, 'trash' => 0];
     foreach ($words as $w) {
         $rec = $w['audio'] !== '' ? ($recs[$w['id']] ?? null) : null;
         $state = $rec ? ($rec['state'] === 'tool' ? 'tool' : 'site') : 'none';
@@ -74,6 +86,7 @@ function library_list(): array
         if ($state !== 'none') $counts['audio']++;
         $row = ['id' => $w['id'], 'word' => $w['word'], 'meaning' => library_plain($w['meaning']), 'topics' => $w['topics'],
             'external_id' => $w['external_id'], 'state' => $state, 'src' => '', 'missing' => false];
+        if ($rec) $row += ['rec' => (int)$rec['id'], 'name' => $rec['name'], 'versions' => $nv[(int)$rec['id']] ?? 0];
         if ($state === 'site') {
             $row['src'] = $rec['source'];
             if ($rec['state'] === 'failed') {             // ההבאה נכשלה — מתנגנת עדיין מהאתר, עם הסיבה
@@ -81,12 +94,9 @@ function library_list(): array
                 $counts['failed']++;
             }
         } elseif ($state === 'tool') {
-            $f = $files[$rec['file_id']] ?? null;
-            if ($f && empty($f['deleted_at'])) {
-                $row['src'] = media_url($f['id']);
-                $row['file'] = ['id' => $f['id'], 'name' => $f['name'], 'size' => (int)$f['size'], 'at' => $f['at'], 'by' => $f['by_name'],
-                    'origin' => (string)($rec['source'] ?: ($f['origin'] ?? '')), 'type' => $f['type'],
-                    'duration' => $rec['duration'] === null ? null : (float)$rec['duration'], 'how' => $rec['how']];
+            if ($file = $fileOf($rec)) {
+                $row['src'] = media_url($file['id']);
+                $row['file'] = $file;
             } else {                                  // המילה מצביעה על קובץ שאינו בספרייה — מופיעה, מסומנת
                 $row['missing'] = true;
                 $counts['missing']++;
@@ -97,7 +107,19 @@ function library_list(): array
         }
         $rows[] = $row;
     }
+    // A3: שורה לכל הקלטה לא מחוברת — המפתח שלה בדפדפן שלילי (-מזהה הרשומה), כדי לא להתנגש במזהה מילה
+    $extra = [];
+    foreach ($loose as $rec) {
+        $file = $fileOf($rec);
+        $state = $file ? 'tool' : 'site';
+        $counts['loose']++;
+        $extra[] = ['id' => -(int)$rec['id'], 'rec' => (int)$rec['id'], 'loose' => true, 'word' => $rec['name'] ?: 'הקלטה', 'name' => $rec['name'], 'meaning' => '',
+            'topics' => [], 'external_id' => '', 'state' => $state, 'src' => $file ? media_url($file['id']) : $rec['source'],
+            'missing' => !$file && $rec['file_id'] !== null, 'versions' => $nv[(int)$rec['id']] ?? 0] + ($file ? ['file' => $file] : []);
+    }
+    $trash = rec_trash();
+    $counts['trash'] = count($trash);
     $map = topic_slugs();
-    return ['rows' => $rows, 'counts' => $counts, 'topics' => array_map(fn($t) => ['name' => $t['name'], 'count' => $t['count']], topics_used($words, $map)),
+    return ['rows' => $rows, 'loose' => $extra, 'trash' => $trash, 'versions' => rec_versions_usage(), 'limits' => rec_limits(), 'counts' => $counts, 'topics' => array_map(fn($t) => ['name' => $t['name'], 'count' => $t['count']], topics_used($words, $map)),
         'host' => lex_host(), 'images' => library_site_images()];
 }
