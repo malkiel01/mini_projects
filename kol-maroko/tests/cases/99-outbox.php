@@ -290,9 +290,7 @@ test('M7 קצה לקצה מול התוסף האמיתי: פרסום ⇒ משיכ
     eq(200, $r['status'], $r['body']);
     $seq = $r['json']['seq'];
     $n = (int)build_row($b['id'])['version'];
-    $save = $GLOBALS['BASE'];
-    $GLOBALS['BASE'] = $GLOBALS['WP'];
-    try { $run = http('GET', '/__pull'); } finally { $GLOBALS['BASE'] = $save; }
+    $run = m7_site_pull();
     $j = $run['json'];
     eq([true, 1, 0], [$j['ok'] ?? null, $j['applied'] ?? null, $j['failed'] ?? null], $run['body']);
     eq('applied', m7_row($seq)['state']);
@@ -311,19 +309,44 @@ test('M7 קצה לקצה מול התוסף האמיתי: פרסום ⇒ משיכ
     setting_set('site_mount', 'full');
     $m = m1_post('mount_set', ['mount' => 'framed'], U_SITE);
     eq([200, true, 'full'], [$m['status'], $m['json']['queued'] ?? null, $m['json']['mount'] ?? null], $m['body']);
-    $GLOBALS['BASE'] = $GLOBALS['WP'];
-    try { $run = http('GET', '/__pull'); } finally { $GLOBALS['BASE'] = $save; }
+    $run = m7_site_pull();
     eq(1, $run['json']['applied'] ?? null, $run['body']);
     eq('framed', setting('site_mount'), 'נשמר אחרי applied');
     eq('framed', m1_wp_get('kol_maroko_v2_mount'), 'באתר');
     // ריצה נוספת — אין חדש, ושום דבר לא מוחל שוב
-    $GLOBALS['BASE'] = $GLOBALS['WP'];
-    try { $run = http('GET', '/__pull'); } finally { $GLOBALS['BASE'] = $save; }
+    $run = m7_site_pull();
     eq([0, 0], [$run['json']['applied'], $run['json']['failed']]);
+    // הדיווח נחסם בקצב (60 לדקה — קורה אחרי הורדה של הרבה גושים): ההחלה באתר נשמרת, הדיווח נשמר בתוסף ונשלח שוב בעוד דקה
+    m1_wp_opt('test_cron', null);
+    $m2 = m1_post('mount_set', ['mount' => 'bar'], U_SITE);
+    db()->exec("DELETE FROM settings WHERE k = 'pull_rate'");
+    setting_set('pull_rate', json_encode(['m' => intdiv(time(), 60), 'c' => PULL_RATE - 1]));        // נשארה בקשה אחת — המשיכה; הדיווח: 429
+    $run = m7_site_pull(false);
+    eq(1, $run['json']['applied'] ?? null, $run['body']);
+    ok(str_contains($run['json']['text'], 'יישלח שוב בעוד דקה'), $run['json']['text']);
+    eq('bar', m1_wp_get('kol_maroko_v2_mount'), 'הוחל באתר');
+    eq('delivered', m7_row($m2['json']['seq'])['state'], 'בכלי — עוד "נמשך"');
+    eq('framed', setting('site_mount'), 'הכלי אינו מנחש');
+    eq([$m2['json']['seq']], array_column((array)m1_wp_get('kol_maroko_pull_unreported'), 'seq'), 'הדיווח נשמר בתוסף');
+    ok(isset(((array)m1_wp_get('test_cron'))['kol_maroko_pull_now']), 'ניסיון חוזר בעוד דקה תוזמן');
+    $run = m7_site_pull();
+    eq([0, 0], [$run['json']['applied'], $run['json']['failed']], 'לא מוחל שוב');
+    eq('applied', m7_row($m2['json']['seq'])['state'], 'הדיווח הגיע');
+    eq('bar', setting('site_mount'));
+    eq([], (array)m1_wp_get('kol_maroko_pull_unreported'));
     m1_wp_opt('kol_maroko_pull_token', null);
     m1_wp_opt('kol_maroko_pull_url', null);
     m7_done();
 });
+
+/** "🔄 עדכן עכשיו" בתוסף האמיתי. המונה של 60 לדקה מתאפס לפני כל ריצה — הבדיקה הזו על הזרימה, לא על הקצב (הקצב — למטה ובנפרד). */
+function m7_site_pull(bool $resetRate = true): array
+{
+    if ($resetRate) db()->exec("DELETE FROM settings WHERE k = 'pull_rate'");
+    $save = $GLOBALS['BASE'];
+    $GLOBALS['BASE'] = $GLOBALS['WP'];
+    try { return http('GET', '/__pull'); } finally { $GLOBALS['BASE'] = $save; }
+}
 
 /** הגוש בתוסף האמיתי (בשני השמות האפשריים). */
 function kol_test_wp_blob(string $sha): bool

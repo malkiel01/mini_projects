@@ -317,13 +317,18 @@ function kol_maroko_pull_run($why = 'manual')
         // הדיווח — גם כשאין מה לדווח (הדופק). מה שלא נמסר נשמר לריצה הבאה
         $rep = kol_maroko_pull_json('POST', 'report', kol_maroko_pull_enc(['results' => array_slice($results, -100), 'state' => kol_maroko_pull_state()]));
         kol_maroko_set('pull_unreported', isset($rep['error']) ? array_slice($results, -100) : []);
+        // הדיווח לא נמסר (429 — מגבלת 60 לדקה אחרי הורדה של הרבה גושים; או תקלת רשת): הוא נשמר, ונשלח שוב בעוד דקה —
+        // לא ב-cron הבא, אחרת הכלי מראה "📥 נמשך" עוד 5 דקות אחרי שהפקודה כבר הוחלה
+        $reportLate = isset($rep['error']) && $results;
+        if ($reportLate) $pending = true;
     } finally {
         flock($lock, LOCK_UN);
         fclose($lock);
     }
     // לא הסתיים (תקציב / קצב) — ההמשך לא מחכה ל-cron הבא: משיכה נוספת בעוד ~דקה
     if ($pending && function_exists('wp_schedule_single_event')) wp_schedule_single_event(time() + 65, 'kol_maroko_pull_now');
-    $text = $error ? '✗ ' . $error['error'] : ('✓ ' . ($applied || $failed ? "הוחלו $applied" . ($failed ? ", נכשלו $failed" : '') : 'אין חדש') . ($pending ? ' · ממשיך בריצה הבאה' : ''));
+    $text = $error ? '✗ ' . $error['error'] : ('✓ ' . ($applied || $failed ? "הוחלו $applied" . ($failed ? ", נכשלו $failed" : '') : 'אין חדש')
+        . (!empty($reportLate) ? ' · הדיווח לכלי יישלח שוב בעוד דקה' : ($pending ? ' · ממשיך בריצה הבאה' : '')));
     $last = ['at' => time(), 'why' => (string)$why, 'ok' => !$error, 'applied' => $applied, 'failed' => $failed, 'pending' => $pending, 'text' => $text,
         'code' => $error['code'] ?? '', 'cursor' => (int)kol_maroko_opt('pull_cursor', 0)];
     kol_maroko_set('pull_last', $last);
