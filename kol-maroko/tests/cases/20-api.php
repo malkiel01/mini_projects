@@ -23,7 +23,7 @@ const API_MIN_ROLE = [
     'rec_duration' => 'editor', 'rec_status' => 'owner', 'rec_fetch_plan' => 'owner', 'rec_scan_start' => 'owner', 'rec_scan_step' => 'owner',
     'rec_fetch_start' => 'owner', 'rec_fetch_step' => 'owner', 'rec_job_op' => 'owner', 'rec_settings_set' => 'owner',
     // A3
-    'rec_replace' => 'editor', 'rec_versions' => 'editor', 'rec_revert' => 'editor', 'rec_rename' => 'editor', 'rec_connect' => 'editor',
+    'rec_replace' => 'editor', 'rec_versions' => 'editor', 'rec_revert' => 'editor', 'rec_rename' => 'editor', 'rec_connect' => 'editor', 'rec_move' => 'editor',
     'rec_disconnect' => 'editor', 'rec_delete' => 'editor', 'rec_restore' => 'editor', 'rec_purge' => 'owner', 'rec_versions_clean' => 'owner',
     'rec_match' => 'editor', 'rec_add' => 'editor', 'rec_dedupe' => 'editor', 'rec_zip_start' => 'editor', 'rec_zip_step' => 'editor', 'rec_zip_get' => 'editor',
     // פרוסה F1
@@ -35,6 +35,8 @@ const API_MIN_ROLE = [
     'pv_token' => 'editor',
     'builds' => 'editor', 'build_get' => 'editor', 'build_file' => 'editor', 'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
     'build_send' => 'publisher', 'kd_seed' => 'owner', 'kd_update' => 'owner', 'notices' => 'owner', 'notice_read' => 'owner',
+    // פרוסה M3 — המעבר
+    'cutover' => 'publisher', 'cutover_evidence' => 'owner', 'cutover_evidence_revoke' => 'owner', 'cutover_snapshot' => 'owner', 'cutover_ready' => 'owner',
     'pf_rename' => 'editor', 'pf_delete' => 'editor', 'pf_trash' => 'editor', 'pf_restore' => 'editor', 'pf_purge' => 'owner', 'pf_migrate' => 'owner', 'pf_migrate_last' => 'owner', 'pf_blank' => 'owner', 'pf_limits' => 'owner', 'pf_limits_set' => 'owner',
     // פרוסה F2b
     'pf_copy' => 'editor', 'pf_version' => 'editor', 'pf_version_restore' => 'editor', 'pf_search' => 'editor', 'pf_replace' => 'editor', 'pf_refs' => 'editor', 'pf_zip' => 'editor', 'pf_zip_import' => 'editor',

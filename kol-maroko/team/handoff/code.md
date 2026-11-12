@@ -14,3 +14,33 @@
 5. בחירה מרובה: `canvas.picked()`, `toggleMulti`.
 6. ערך מ-`@media` נערך שם (`Design.effTarget`).
 7. פתוח: `url()` בתוך `var()`; הביטול המשותף נשבר אחרי עריכה בעורך הקוד באמצע; Safari / Firefox / iOS לא נבדקו.
+
+## מ-V5 (2026-11-12)
+
+1. רקע — `editor/background.js`: חלק טהור (`KolBg.*`, נבדק ב-`tests/editor/background.mjs`) ו-`Bg` בדפדפן (`S.bg`).
+   **כל url() שנכתב — דרך `urlCss` / `checkUrl`**, לעולם לא בשרשור.
+2. כתיבה שאינה "מאפיין ← ערך" (הסרת שכבה, מחיקת כלל, HTML + CSS): `Bg.ruleOps(r, fn)` ← `screen.writeOps(list, label)`.
+3. `covered('background')` מחזיר עכשיו את כל הרכיבים — `planRule` על רכיב של קיצור כותב הצהרה מפורשת אחריו.
+4. `details.collect(n, { pseudo: 'before' })` — הכללים של פסאודו-אלמנט.
+5. כשהפאנל סגור (טלפון) `Design.t` לא מאותחל — לפני `D.put` מחוץ לפאנל: `Bg.ready(n)`.
+
+## מ-F2b (2026-11-12)
+- הקוד ב-`lib/project_ops.php`. כל פעולה שכותבת לקבצים אחרים — דרך `pf_put` (rev+1 ושורת היסטוריה).
+- `pf_refs_plan` / `pf_ref_scan` — מקור אחד ל"מי מפנה למי" (href/src/srcset/url()/@import/import/kol.json entry); שמיש ל-F3/F4/M1 לבדיקת הפניות שבורות.
+- ערך שנכתב לקובץ: `pf_ref_enc` לכתובות; מחרוזת JSON ל-kol.json — כל קוד חדש שכותב לקובץ לפי אותו כלל.
+- בממשק: `syncOpen()` מעדכן קובץ פתוח שהשרת שינה, כצעד שאפשר לבטל.
+- מטלה לבעלים (שרת חי): להוריד ZIP, להעלות חזרה (הכול "זהה"), ZIP של עשרות MB (post_max_size).
+
+## מ-N1 (2026-11-12, נרשם בידי בקרה (4))
+- data/words.json הוא קובץ וירטואלי (id -1, lib/project.php: pf_words_*), ונבנה מ-words_json() ב-lib/lexicon.php. אין לו שורה ב-pf_files. כל פעולה חדשה על העץ לפי id צריכה לטפל ב-pf_is_words($b).
+- מנוע אחד לשינויים בטבלה: words_plan / words_apply (תוכנית לפי id, אסימון "<חותמת הטבלה>.<חותמת התוכנית>", עסקה אחת, סל, ונקודת שחזור מעל 20 או במחיקה). N2/N3/V11 עוברות דרכו, ולא כותבות ישירות ל-words.
+- sort_order ריק = סדר מחושב (lex_sort). words_order_fill(true) לפני כל פעולה שמשנה סדר, בתוך העסקה. בעסקה שנפתחה ב-exec('BEGIN IMMEDIATE'), PDO::inTransaction() מחזירה false.
+- mbstring לא מכיר Windows-1255 (נזרק ValueError). להשתמש ב-cp1255_utf8().
+- פתוח: PV_WORDS קבוע בתצוגה ובבנייה (שינוי שם דרך kol.json משפיע רק על העץ); חיפוש בכל הקבצים לא כולל את הקובץ; kol-data.js עדיין 1.1.0.
+
+## מ-A3 (2026-11-12, נרשם בידי בקרה (4))
+- מילה ↔ הקלטה = words.audio; כל פעולה כותבת אותו ו-rec_sync. לא מחוברת = recordings.word_id NULL. סל = deleted_at. גרסאות = rec_versions (גרסה בלי קובץ = הכתובת שבאתר).
+- הנתיב היציב media/audio/<id>.<ext> מתעדכן בהחלפה (rec_tree_point) רק כשהעץ קיים; הסיומת נשארת המקורית גם כשהסוג משתנה → B1 בודקת Content-Type.
+- files_in_use כולל recordings ו-rec_versions; מחיקה מ-🗂️ קבצים של קובץ הקלטה נחסמת.
+- ZIP: בלי ZIP64 (תקרה ~4GB); צעד = 192MB או 4 שניות. לא נבדק בשרת החי.
+- מרוץ studio.js: תוקן ב-mount (mine = S).
