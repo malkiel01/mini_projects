@@ -21,6 +21,8 @@
     + 'iframe,object,embed,audio,video{pointer-events:none}iframe{outline:1px dashed #8a8f98;outline-offset:-1px}';   // הטמעה ומדיה: בקנבס הן דוממות — הלחיצה בוחרת, לא מפעילה
   const DEAD = 'iframe,object,embed,audio,video';
   const NONVIS = new Set('html head title meta link script style base noscript template'.split(' '));
+  /** <input type="hidden">: אין לו מראה בשום מצב (בדפדפן display:none !important) — נבחר מה-Navigator ונערך בפאנל, כמו סקריפט. */
+  const hiddenInput = n => n.tag === 'input' && /^hidden$/i.test(((K.attrOf(n, 'type') || {}).value || '').trim());
   const decode = bytes => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   const encode = text => new TextEncoder().encode(text);
   const noBom = s => s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
@@ -178,7 +180,7 @@
     visual(n) {
       if (!n) return 'none';
       for (let x = n; x; x = x.parent) if (x.tag === 'head') return 'nonvisual';
-      if (NONVIS.has(n.tag) && !(n.tag === 'template' && this.shownNote)) return 'nonvisual';
+      if ((NONVIS.has(n.tag) && !(n.tag === 'template' && this.shownNote)) || hiddenInput(n)) return 'nonvisual';
       const r = this.rectOf(n);
       return !r ? 'none' : this.shownNote && n === this.selected ? 'shown' : r.zero ? 'zero' : 'visible';
     }
@@ -196,7 +198,7 @@
       this.unshow();
       if (!n || !this.m2d.has(n) || !this.doc.body) return;
       for (let x = n; x; x = x.parent) if (x.tag === 'head') return;
-      if (NONVIS.has(n.tag) && n.tag !== 'template') return;
+      if ((NONVIS.has(n.tag) && n.tag !== 'template') || hiddenInput(n)) return;
       const win = this.frame.contentWindow, chain = [];
       for (let x = n.parent; x; x = x.parent) if (x.tag === 'template') chain.unshift(x);
       if (n.tag === 'template') chain.push(n);

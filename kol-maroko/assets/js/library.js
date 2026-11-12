@@ -17,7 +17,7 @@ const Library = (() => {
   const SIZES = { '': 'כל הגדלים', s: 'עד 50KB', m: '50KB–1MB', l: 'מעל 1MB' };
   const SORTS = { id: 'לפי מזהה', ab: 'לפי א"ב', state: 'לפי מצב' };
   const ORDER = { tool: 0, site: 1, none: 2 };
-  let D = null, host = null, isOwner = false;
+  let D = null, host = null, isOwner = false, pageOwner = false;   // isOwner — בעל האתר; pageOwner — בעל העמוד ומעלה (T1)
   let tab = '', q = '', st = '', topic = '', sort = 'id', shown = PAGE, durF = '', sizeF = '', fieldF = '';
   const chosen = new Set();                   // A3: הבחירה המרובה (מפתחות שורה)
   let selMode = false;                     // בטלפון — אחרי לחיצה ארוכה
@@ -494,8 +494,9 @@ const Library = (() => {
     else Media.view(box, isOwner);
   }
 
-  async function view(el, owner) {
-    host = el; isOwner = owner;
+  /** owner — בעל האתר (הבאה מהאתר, תקרת דיסק); page — בעל העמוד ומעלה (מחיקה סופית, ניקוי גרסאות — page_owner ב-ACTION_ROLES). */
+  async function view(el, owner, page = owner) {
+    host = el; isOwner = owner; pageOwner = page || owner;
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
     try { setD(await api('library')); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     // ברירת המחדל: "הקלטות" כשיש הקלטות
@@ -512,11 +513,11 @@ const Library = (() => {
   }
 
   /** מ-📚 מילים: "הצג בספרייה". */
-  function show(id) { pending = id; if (location.hash === '#/files') view(host || main, isOwner); else location.hash = '#/files'; }
+  function show(id) { pending = id; if (location.hash === '#/files') view(host || main, isOwner, pageOwner); else location.hash = '#/files'; }
 
   /** A3 — מה ש-library-actions.js צריך מבפנים. */
   const ctx = {
-    get D() { return D; }, get isOwner() { return isOwner; }, byId, safeSrc, reload, clearSel, play, stop, redraw, dur, clock, date, num,
+    get D() { return D; }, get isOwner() { return isOwner; }, get pageOwner() { return pageOwner; }, byId, safeSrc, reload, clearSel, play, stop, redraw, dur, clock, date, num,
     widOf, multi, fieldOf, primaryKey, slotRow, get fieldF() { return fieldF; },
     replace, focusTrash: () => { st = 'trash'; render(); }, titleOf: id => items.get(id)?.querySelector('.lib-title'),
     stoppedIf: id => { if (P.id === id) stop(); },

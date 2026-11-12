@@ -31,6 +31,7 @@ $words = [1 => $f[1], 2 => $f[2], 3 => $f[3], 4 => $f[4], 5 => '', 6 => $U . 'x/
 $ins = $pdo->prepare('INSERT INTO words (id, wp_id, word, meaning, topics, audio, external_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
 foreach ($words as $id => $a) $ins->execute([$id, 100 + $id, "מילה $id", '<p>פירוש</p>', '[]', $a, '', now_iso()]);
 $pdo->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute(['u-editor', 'editor@example.test', 'Editor Test', 'editor', now_iso()]);     // P1
+$pdo->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute(['u-pown', 'pown@example.test', 'Page Owner Test', 'page_owner', now_iso()]);     // T1
 rec_sync();
 $pdo->exec("UPDATE recordings SET duration = 1.5 WHERE word_id = 1");
 $pdo->exec("UPDATE recordings SET state = 'failed', f_code = 'missing', f_note = 'HTTP 404' WHERE word_id = 9");

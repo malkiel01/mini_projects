@@ -58,6 +58,12 @@ $GLOBALS['kol_files'] ??= [];
 $GLOBALS['kol_url'] ??= fn(array $f) => 'file/' . $f['id'];
 $w = $page['sections'][0]['columns'][0]['widgets'][0];
 [$html, $css] = lexicon_render($w, false, 'kol-w', '');
+// ההכהיה: הכלי הישן כותב את האחוז כמו שהוא (--ka-hero-overlay:45), ו-rgba(…, 45) נחתך ל-1 — כיסוי מלא, התמונה לא נראית.
+// זה באג של הכלי, שההסבה מתקנת (mg_overlay: 45 ← 0.45) ושהבעלים מתקן באתר (מטלה T14, "תקן ל-0.45"). הייחוס הוא העמוד
+// כפי שהוא נראה אחרי התיקון, ולכן כאן אותו יחס — אחרת ההשוואה מודדת את הבאג ולא את ההסבה.
+$fixed = str_replace('--ka-hero-overlay:45;', '--ka-hero-overlay:' . mg_overlay(45) . ';', $html, $n);
+if ($n !== 1) { fwrite(STDERR, "f3-seed: --ka-hero-overlay:45 לא נמצא פעם אחת בדיוק ברינדור הישן ($n)\n"); exit(1); }
+$html = $fixed;
 $old = "<!doctype html>\n<html lang=\"he\" dir=\"rtl\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>old</title>\n"
     . '<link rel="stylesheet" href="' . e(LEX_FONTS) . "\">\n<style>*, *::before, *::after { box-sizing: border-box; }\nbody { margin: 0; line-height: 1.6; }\n"
     . ".screen-reader-text { border: 0; clip: rect(1px, 1px, 1px, 1px); clip-path: inset(50%); height: 1px; margin: -1px; overflow: hidden; padding: 0; position: absolute; width: 1px; word-wrap: normal; }\n"

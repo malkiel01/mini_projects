@@ -116,7 +116,7 @@ function route() {
   if (cur.id !== 'studio') Studio.unmount();
   if (cur.id !== 'code') Code.unmount();
   if (cur.id === 'inbox') return Inbox.view(main);                    // M5
-  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role)), files: () => Library.view(main, state.user.role === 'site_owner'),
+  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role)), files: () => Library.view(main, state.user.role === 'site_owner', RANK[state.user.role] >= RANK.page_owner),
     publish: () => Publish.view(main, legacyRole(state.user.role)), settings: () => People.owner(main), members: () => People.view(main), log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
