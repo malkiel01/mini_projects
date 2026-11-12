@@ -839,7 +839,7 @@ const Editor = (() => {
         jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path, linkedPaths: () => { const out = []; if (c.m?.root) K.walk(c.m.root, n => { if (n.tag === 'link' && /stylesheet/i.test(K.attrOf(n, 'rel')?.value || '')) { const hr = K.attrOf(n, 'href'); if (hr) out.push(resolve(dirOf(S.file.path), hr.value)); } }); return out; },
         begin: (n, pt, all) => { if (S.text.begin(n, pt) && all && S.text.e) { const sl = c.doc.getSelection(); sl.selectAllChildren(S.text.e); } } });
       setTab(prefs.tab);
-      c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
+      c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);

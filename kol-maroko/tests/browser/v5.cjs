@@ -188,6 +188,7 @@ const PAGE = `<!doctype html>
       await openPage(lp, 'index.html');
       await select(lp, HERO); await sleep(150);
       const tb = await lp.$('[data-bgt="move"]');
+
       if (tb) { await tb.tap(); await sleep(150); }
       const bt = await lp.evaluate(() => [...document.querySelectorAll('.bg-move-b')].map(b => { const r = b.getBoundingClientRect(); return Math.min(r.width, r.height); }));
       const posA = await comp(lp, 'background-position');

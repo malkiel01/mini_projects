@@ -215,6 +215,8 @@
     constructor(D, o) { this.D = D; Object.assign(this, o); this.after = null; }
     get st() { return this.D.styler; }
     canWrite() { return this.D.canWrite(); }
+    /** יעד הכתיבה של ה-Design — גם כשהפאנל סגור (בטלפון) ולא צויר. */
+    ready(n) { const D = this.D; D.info = D.styler.info(n); D.list = D.styler.targets(n, D.info); D.t = D.target(n, D.list); }
     win() { return this.D.canvas.frame.contentWindow; }
     /** תיקונים לכלל מהמפל (r — מ-details.collect), מתוכננים על הטקסט העדכני: fn(m, rule) ← {patches} | null. */
     ruleOps(r, fn) {
@@ -402,6 +404,7 @@
       if (!L) { const im = this.image(n, D.styler.info(n)); L = im.layers.find(x => x.kind === 'url') || null; }
       if (L) { const base = L.loc.r.src.html ? this.filePath() : L.loc.r.path; return this.setUrl(n, L, relFrom(base, path)); }
       // אין תמונה: לכלל היעד — וגם כיסוי / מיקום / חזרה, אם אין ערך מחושב אחר
+      this.ready(n);
       const t = D.effTarget(n, 'background-image'), base = t.kind === 'inline' ? this.filePath() : t.path || this.filePath(), doc = t.kind === 'inline' ? null : this.docOf(t.path);
       const q = doc ? quoteOf(doc.text()) : "'", e = D.canvas.elOf(n), cs = this.win().getComputedStyle(e);
       const sets = [['background-image', urlCss(relFrom(base, path), t.kind === 'inline' ? "'" : q)]];
@@ -429,7 +432,7 @@
     addCover(n) {
       const D = this.D, rtl = this.st.rtl(n), info = D.styler.info(n), im = this.image(n, info), layer = 'linear-gradient(rgba(0, 0, 0, .45), rgba(0, 0, 0, .45))';
       if (im.w && im.w.r.node && !im.w.r.external && !im.w.r.inline) return this.write([() => this.ruleOps(im.w.r, (m, rn) => planAddLayer(m, rn, rtl, layer))], 'רקע · כיסוי חדש · ' + this.label(n));
-      D.put([['background-image', layer]], 'רקע · כיסוי חדש · ' + this.label(n));
+      this.ready(n); D.put([['background-image', layer]], 'רקע · כיסוי חדש · ' + this.label(n));
     }
     writePseudo(n, ov, sets, label) { if (!ov.rule) return; return this.D.write(new Map([[n, sets.map(([p, v]) => [p, v, ruleT(ov.rule, this.st)])]]), label + ' · ' + this.label(n)); }
     delCover(n, ov) { const r = this.write([() => this.ruleOps(ov.rule, (m, rn) => K().css.removeNode(m, rn))], 'כיסוי · מחיקת הכלל ' + ov.rule.sel.replace(/\s+/g, ' ')); if (r && r.length) this.note('הכיסוי נמחק (הכלל ' + ov.rule.sel.replace(/\s+/g, ' ') + ')', false, { label: 'בטל', run: this.undo }); }
@@ -470,7 +473,7 @@
       const commit = () => {
         if (!moved) return; moved = false;
         const sets = [['background-position', Math.round(px) + '% ' + Math.round(py) + '%']]; if (this.sized && sz != null) sets.push(['background-size', Math.round(sz) + '% auto']);
-        D.put(sets, 'רקע · הזזה · ' + this.label(n) + ' · ' + sets.map(x => x[1]).join(' / '));
+        this.ready(n); D.put(sets, 'רקע · הזזה · ' + this.label(n) + ' · ' + sets.map(x => x[1]).join(' / '));
         if (this.mv) this.place();
       };
       const nudge = (dx, dy) => { px = Math.max(0, Math.min(100, px + dx)); py = Math.max(0, Math.min(100, py + dy)); pv(); clearTimeout(this.t); this.t = setTimeout(commit, 500); };
