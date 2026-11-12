@@ -209,7 +209,9 @@
       info = info || this.info(n);
       const K2 = K(), cls = K2.classesOf(n), out = [], seen = new Set();
       const writable = r => r.located && !r.external && !r.inline && r.node && !r.node.broken;
-      const ofClass = r => { const s = subject(r.matched || r.sel); return cls.some(c => new RegExp('\\.' + c.replace(/[^\w-]/g, '\\$&') + '(?![\\w-])').test(s)); };
+      const e = this.canvas.elOf(n), hasCls = sel => { const s = subject(sel); return cls.some(c => new RegExp('\\.' + c.replace(/[^\w-]/g, '\\$&') + '(?![\\w-])').test(s)); };
+      /** "של המחלקה": אחד מחלקי הבורר שחל על האלמנט מסתיים במחלקה שלו (.x .hero-title, ולא .x h1 שבאותה רשימה). */
+      const ofClass = r => g.KolDetails.splitSel(r.sel).some(part => { let hit = false; try { hit = !!e && e.matches(part); } catch { hit = false; } return hit && hasCls(part); });
       const rules = info.rules.filter(r => writable(r) && !r.off);
       const mine = rules.filter(r => ofClass(r) && !r.media).sort((a, b) => cmp(rank(b, false), rank(a, false)));
       const add = t => { const key = t.kind + '|' + (t.path || '') + '|' + (t.line || '') + '|' + t.sel; if (seen.has(key)) return; seen.add(key); out.push(t); };
@@ -262,34 +264,53 @@
       if (!by) return { ok: true };
       return { ok: false, by, media: !!by.r.media && by.r.located && !by.r.external };
     }
-    /** תיקונים לכל קובץ: [{ doc, patches, html }] — או חריגה (SrcError) עם הסבר. */
-    plan(n, t, phys, value, opt = {}) {
-      const K2 = K(), rtl = this.rtl(n), html = this.doc(), file = this.file();
-      const fromRule = (r, fn) => {
-        const src = r.src;
-        if (src.html) { const res = fn(r.node, this.details.model('#' + src.off + ':' + src.path, src.text).m); return res && [{ doc: html, html: true, patches: res.patches.map(p => ({ from: p.from + src.off, to: p.to + src.off, text: p.text })), res }]; }
-        const doc = this.docOf(src.path); if (!doc) throw new K2.SrcError('קובץ העיצוב ' + src.path + ' אינו פתוח לעריכה', 'missing');
-        const m = K2.parseCss(doc.text());
-        const node = K2.cssAll(m).find(x => x.type === 'rule' && x.from === r.node.from && x.sel === r.node.sel);   // אותו כלל בטקסט העדכני
-        if (!node) throw new K2.SrcError('הכלל השתנה בינתיים — נסו שוב', 'stale');
-        const res = fn(node, m); return res && [{ doc, patches: res.patches, res }];
+    /** תיקונים לכל קובץ: [{ doc, patches, html }] — או חריגה (SrcError) עם הסבר.
+     *  sets: [[מאפיין פיזי, ערך | null (איפוס)], …] — כולם בעסקה אחת; כל אחד מתוכנן על הטקסט שאחרי הקודם, והתיקון לכל קובץ
+     *  הוא הקטע שבין התחילית לסיומת המשותפות. opt.unimportant — הסרת !important מהמאפיינים. */
+    plan(n, t, sets, opt = {}) {
+      const K2 = K(), rtl = this.rtl(n), html = this.doc();
+      if (!Array.isArray(sets[0])) sets = [sets];
+      const diff = (was, now) => { if (was === now) return []; let a = 0; const max = Math.min(was.length, now.length); while (a < max && was.charCodeAt(a) === now.charCodeAt(a)) a++; let b = 0; while (b < max - a && was.charCodeAt(was.length - 1 - b) === now.charCodeAt(now.length - 1 - b)) b++; return [{ from: a, to: was.length - b, text: now.slice(a, now.length - b) }]; };
+      const step = (m, rn, phys, value) => (opt.unimportant ? planUnimportant(m, rn, phys, rtl) : value == null ? planReset(m, rn, phys, rtl) : planRule(m, rn, phys, value, rtl));
+      /** כלל קיים: מתכננים ברצף על טקסט הגיליון (או תוכן ה-<style>). תחילת הכלל אינה זזה — כל התיקונים בתוכו. */
+      const onRule = (text, from, sel) => {
+        let cur = text; const notes = [];
+        for (const [phys, value] of sets) {
+          const m = K2.parseCss(cur), rn = K2.cssAll(m).find(x => x.type === 'rule' && x.from === from && x.sel === sel);
+          if (!rn) throw new K2.SrcError('הכלל השתנה בינתיים — נסו שוב', 'stale');
+          if (K2.cssAll(m).some(x => x.broken && x.from <= from && from <= x.to)) throw new K2.SrcError('הכלל נמצא באזור שבור ב-CSS — מתקנים אותו בעורך הקוד', 'broken');
+          const res = step(m, rn, phys, value); if (!res) continue;
+          if (res.whole) notes.push(res.whole);
+          cur = K2.applyPatches(cur, res.patches);
+        }
+        return { text: cur, notes };
       };
       if (t.kind === 'rule') {
-        if (opt.reset) return fromRule(t.r, (rn, m) => planReset(m, rn, phys, rtl)) || [];
-        if (opt.unimportant) return fromRule(t.r, (rn, m) => planUnimportant(m, rn, phys, rtl)) || [];
-        return fromRule(t.r, (rn, m) => planRule(m, rn, phys, value, rtl));
+        const src = t.r.src;
+        if (src.html) {
+          const out = onRule(src.text, t.r.node.from, t.r.node.sel), ps = diff(src.text, out.text).map(p => ({ from: p.from + src.off, to: p.to + src.off, text: p.text }));
+          return Object.assign(ps.length ? [{ doc: html, html: true, patches: ps }] : [], { notes: out.notes });
+        }
+        const doc = this.docOf(src.path); if (!doc) throw new K2.SrcError('קובץ העיצוב ' + src.path + ' אינו פתוח לעריכה', 'missing');
+        const was = doc.text(), out = onRule(was, t.r.node.from, t.r.node.sel), ps = diff(was, out.text);
+        return Object.assign(ps.length ? [{ doc, patches: ps }] : [], { notes: out.notes });
       }
       if (t.kind === 'inline') {
-        const st = K2.attrOf(n, 'style'), cur = st ? st.value : '', next = planInline(cur, phys, value, rtl, !!opt.reset);
-        if (next === cur) return [];
+        const st = K2.attrOf(n, 'style'), was = st ? st.value : '';
+        let cur = was;
+        for (const [phys, value] of sets) {
+          if (opt.unimportant) { const src = 'x{' + cur + '}', m = K2.parseCss(src), r = m.root.kids[0], res = r && planUnimportant(m, r, phys, rtl); if (res) cur = K2.applyPatches(src, res.patches).slice(2, -1); }
+          else cur = planInline(cur, phys, value, rtl, value == null);
+        }
+        if (cur === was) return [];
         const m = this.canvas.m;
-        return [{ doc: html, html: true, patches: (next.trim() ? K2.html.setAttr(m, n, 'style', next) : K2.html.removeAttr(m, n, 'style')).patches }];
+        return [{ doc: html, html: true, patches: (cur.trim() ? K2.html.setAttr(m, n, 'style', cur) : K2.html.removeAttr(m, n, 'style')).patches }];
       }
-      if (opt.reset || opt.unimportant) return [];
+      const decls = sets.filter(([, v]) => v != null);
+      if (!decls.length || opt.unimportant) return [];
       const doc = this.docOf(t.path); if (!doc) throw new K2.SrcError('קובץ העיצוב ' + t.path + ' אינו מקושר לעמוד', 'missing');
-      const m = K2.parseCss(doc.text()), ops = [{ doc, patches: planNewRule(m, t.sel, [[phys, value]], rtl).patches }];
+      const ops = [{ doc, patches: planNewRule(K2.parseCss(doc.text()), t.sel, decls, rtl).patches }];
       if (t.kind === 'newclass') ops.unshift({ doc: html, html: true, patches: K2.html.addClass(this.canvas.m, n, t.name).patches });
-      void file;
       return ops;
     }
   }

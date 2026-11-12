@@ -73,6 +73,7 @@
       this.frame.setAttribute('sandbox', 'allow-same-origin');             // בלי allow-scripts — זה כל העניין
       this.frame.setAttribute('title', 'קנבס');
       this.layer = document.createElement('div'); this.layer.className = 'spike-layer';
+      this.multi = new Set(); this.multiBoxes = []; this.keepMulti = false;
       this.boxSel = this.box('spike-box spike-sel'); this.boxHov = this.box('spike-box spike-hov'); this.boxDrop = this.box('spike-drop');
       host.replaceChildren(this.frame, this.layer);
     }
@@ -354,6 +355,7 @@
         if (e.pointerType === 'touch') { const t = tg, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
         const n = this.pick(tg);
         this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n } : null;
+        if (n && e.shiftKey && this.selected && this.selected !== n) { this.press = null; e.preventDefault(); this.toggleMulti(n); return; }   // Shift + לחיצה: בחירה מרובה (V3)
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
         else if (n && !(this.repeatUp && this.selected === n)) this.select(n);
         this.events.push('pointerdown:' + e.pointerType);
@@ -442,10 +444,20 @@
         const path = n ? K.pathOf(n) : null; this.edit.end();
         if (n && !this.m2d.has(n)) n = K.byPath(this.m, path);
       }
+      if (!this.keepMulti) this.multi.clear();
       const was = this.selected; this.unshow(); this.selected = n || null;
       if (this.sheets && (this.hiddenNodes.has(was) || this.hiddenNodes.has(this.selected))) this.recap();   // נבחר שהוסתר בעורך — מוצג כל עוד הוא נבחר
       this.show(this.selected); this.zeroAt = 0; this.draw(); if (this.onSelect) this.onSelect(this.selected);
     }
+    /** בחירה מרובה (Shift + לחיצה): האלמנט נוסף או יוצא; הנבחר הראשי נשאר. */
+    toggleMulti(n) {
+      if (!n || n === this.selected) return;
+      for (let p = n.parent; p; p = p.parent) if (p === this.selected) return;   // אלמנט שבתוך הנבחר — לא
+      if (this.multi.has(n)) this.multi.delete(n); else this.multi.add(n);
+      this.draw(); if (this.onSelect) this.onSelect(this.selected);
+    }
+    /** כל הנבחרים: הראשי, ואחריו מה שנוסף ב-Shift. */
+    picked() { return this.selected ? [this.selected, ...[...this.multi].filter(x => x !== this.selected && this.m2d.has(x))] : []; }
     /** Alt + לחיצה: כל האלמנטים שמתחת לנקודה, מהעליון לתחתון; מחזיר את זה שאחרי הנבחר. */
     under(x, y) {
       const stack = []; for (const d of this.doc.elementsFromPoint(x, y)) { const n = this.shownD2m.get(d) || this.d2m.get(d); if (n && !stack.includes(n)) stack.push(n); }
@@ -495,6 +507,9 @@
     draw() {
       if (!this.m2d) return;
       this.place(this.boxSel, this.selected); this.place(this.boxHov, this.hovered !== this.selected ? this.hovered : null);
+      const more = this.picked().slice(1);
+      while (this.multiBoxes.length < more.length) this.multiBoxes.push(this.box('spike-box ed-multi'));
+      this.multiBoxes.forEach((b, i) => { if (more[i]) this.place(b, more[i]); else b.hidden = true; });
       if (this.marksOn) this.drawMarks();
       if (this.onDraw) this.onDraw();
     }
