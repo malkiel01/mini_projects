@@ -23,6 +23,8 @@ devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת �
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: no-store');
+require_once __DIR__ . '/lib/csp.php';
+csp_api_headers();          // C1: תשובת API לעולם אינה מסמך — default-src 'none'; frame-ancestors 'none'; sandbox
 
 function json_out(array $data, int $code = 200): never
 {
@@ -70,6 +72,7 @@ try {
 
     $result = dev_route($action, $method, $user, $body) ?? match ($action) {
         'embed_key' => wp()->publicKeys(),
+        'csp-reports' => (require_developer($user) ? csp_reports($_GET) : []),     // C1: הפרות ה-CSP, מקובצות עם מונה
         'me' => $user
             ? me_state($user)
             : throw new ApiError('נדרשת כניסה דרך הכלים הדיגיטליים', 401),
