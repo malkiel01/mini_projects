@@ -24,16 +24,74 @@
     if (cur.trim()) out.push(cur.trim());
     return out;
   }
-  /** ייחודיות של בורר אחד: [מזהים, מחלקות / תכונות / פסאודו-מחלקות, תגיות / פסאודו-אלמנטים]. קירוב: ‎:is / :not נספרים לפי תוכנם, ‎:where — אפס. */
+  /** ייחודיות של בורר אחד: [מזהים, מחלקות / תכונות / פסאודו-מחלקות, תגיות / פסאודו-אלמנטים] — לפי Selectors 4, לא בקירוב (V8):
+   *  ‎:where() — אפס; ‎:is() / :not() / :has() — הבורר החזק ברשימה שבתוכם; ‎:nth-child(An+B of S) — פסאודו-מחלקה + S;
+   *  ‎::before ו-‎:before (הצורה הישנה) — פסאודו-אלמנט; ‎* ו-& — אפס. */
+  const PE_LEGACY = /^(before|after|first-line|first-letter)$/;
+  const maxSpec = list => splitSel(list).map(specificity).reduce((m, x) => (cmp(x, m) > 0 ? x : m), [0, 0, 0]);
   function specificity(sel) {
-    let s = sel.replace(/:where\((?:[^()]|\([^()]*\))*\)/g, '').replace(/"[^"]*"|'[^']*'/g, '');
-    s = s.replace(/:(is|not|has|matches)\(/g, ' (');
-    const a = (s.match(/#[\w-]+/g) || []).length;
-    const b = (s.match(/\.[\w-]+|\[[^\]]*\]|(?<!:):(?!:)[\w-]+/g) || []).length;
-    const c = (s.replace(/#[\w-]+|\.[\w-]+|\[[^\]]*\]|:+[\w-]+(\([^)]*\))?/g, ' ').match(/[a-zA-Z][\w-]*/g) || []).length + (s.match(/::[\w-]+/g) || []).length;
+    const s = String(sel); let a = 0, b = 0, c = 0, i = 0;
+    const ident = () => { const st = i; while (i < s.length && (/[\w-]/.test(s[i]) || s.charCodeAt(i) > 127 || s[i] === '\\')) i += s[i] === '\\' ? 2 : 1; return s.slice(st, i); };
+    const paren = () => { if (s[i] !== '(') return null; let d = 0, q = '', st = i + 1; for (; i < s.length; i++) { const ch = s[i]; if (q) { if (ch === '\\') i++; else if (ch === q) q = ''; continue; } if (ch === '"' || ch === "'") q = ch; else if (ch === '(') d++; else if (ch === ')') { d--; if (!d) { i++; return s.slice(st, i - 1); } } } return s.slice(st); };
+    while (i < s.length) {
+      const ch = s[i];
+      if (ch === '"' || ch === "'") { const q = ch; i++; while (i < s.length && s[i] !== q) i += s[i] === '\\' ? 2 : 1; i++; continue; }
+      if (ch === '#') { i++; ident(); a++; continue; }
+      if (ch === '.') { i++; ident(); b++; continue; }
+      if (ch === '[') { let q = ''; for (; i < s.length; i++) { if (q) { if (s[i] === q) q = ''; continue; } if (s[i] === '"' || s[i] === "'") q = s[i]; else if (s[i] === ']') { i++; break; } } b++; continue; }
+      if (ch === ':') {
+        if (s[i + 1] === ':') { i += 2; ident(); paren(); c++; continue; }
+        i++; const name = ident().toLowerCase(), arg = paren();
+        if (PE_LEGACY.test(name)) { c++; continue; }
+        if (name === 'where') continue;
+        if (/^(is|not|has|matches|-webkit-any|-moz-any)$/.test(name)) { const m = maxSpec(arg || ''); a += m[0]; b += m[1]; c += m[2]; continue; }
+        b++;
+        if (/^nth-(last-)?child$/.test(name) && arg) { const of = /\sof\s+([\s\S]+)$/i.exec(arg); if (of) { const m = maxSpec(of[1]); a += m[0]; b += m[1]; c += m[2]; } }
+        continue;
+      }
+      if (/[a-zA-Z_]/.test(ch) || ch.charCodeAt(0) > 127 || (ch === '-' && /[a-zA-Z_-]/.test(s[i + 1] || ''))) { ident(); c++; continue; }
+      if (ch === '\\') { i += 2; ident(); c++; continue; }
+      i++;
+    }
     return [a, b, c];
   }
   const covers = (short, long) => short === long || (!short.startsWith('--') && long.startsWith(short + '-'));
+
+  // ── V8: המפל המלא — @layer, @scope, מצב ─────────────────────────────
+  const STATE_ATTR = 'data-kol-st', UNLAYERED = 999999999, INF_PROX = 1e9;
+  /** מצבים שהקנבס מדמה (תכונה במקום פסאודו-מחלקה); מצב מבני (:nth-child, :has, :first-child…) חל ממילא ואינו מדומה. */
+  const DYNAMIC = /^:(hover|focus|focus-visible|focus-within|active|visited|link|any-link|target|checked|disabled|enabled|invalid|valid|in-range|out-of-range|placeholder-shown|open|indeterminate|required|optional|read-only|read-write|user-invalid|user-valid|autofill|popover-open|default|playing|paused)$/i;
+  const stateKey = st => String(st).replace(/^:+/, '').toLowerCase();
+  const stateRe = st => (DYNAMIC.test(st) ? new RegExp(String(st).replace(/[^\w-]/g, '\\$&') + '(?![\\w(-])', 'gi') : null);
+  /** מפתח מספרי של שכבה (גבוה = מנצח בהצהרה רגילה): 3 רמות, כל רמה — המקום בין האחיות (999 = כללים ישירות בהורה). */
+  function layerKey(lay, path) { let k = 0; for (let d = 0; d < 3; d++) { let idx = 999; if (d < path.length) { let node = lay.root; for (let j = 0; j <= d && node; j++) node = node.kids.get(path[j]); idx = node ? node.idx : 999; } k = k * 1000 + idx; } return k; }
+  /** עץ השכבות של המסמך, לפי ההופעה הראשונה של כל שם (בלוק או הצהרה), בסדר הגיליונות. */
+  function layerTree(doc) {
+    const root = { kids: new Map() }, anon = new WeakMap(); let an = 0;
+    const reg = path => { let node = root; for (const nm of path) { if (!node.kids.has(nm)) node.kids.set(nm, { idx: node.kids.size, kids: new Map() }); node = node.kids.get(nm); } };
+    const go = (list, path) => { for (const r of list) { const kind = r.constructor && r.constructor.name || ''; if (/LayerStatement/.test(kind)) { for (const nm of r.nameList || []) reg(path.concat(nm.split('.'))); continue; } if (/LayerBlock/.test(kind)) { let nm = r.name; if (!nm) { nm = '#anon' + (an++); anon.set(r, nm); } const p = path.concat(nm.split('.')); reg(p); go(r.cssRules, p); continue; } if (r.cssRules && !(r.selectorText != null && r.style)) go(r.cssRules, path); } };
+    for (const sh of doc.styleSheets) { let rules; try { rules = sh.cssRules; } catch { continue; } if (!sh.disabled) go(rules, []); }
+    return { root, anon };
+  }
+  /** @scope: הקרבה (מספר הדורות בין האלמנט לשורש הקרוב שחל), או null — לא חל. כמה @scope מקוננים — כולם צריכים לחול. */
+  function scopeMatch(e, part, scopes) {
+    let prox = null;
+    for (const sc of scopes) {
+      let found = null, hops = 0;
+      for (let root = e; root && root.nodeType === 1; root = root.parentElement, hops++) {
+        let isRoot = false; try { isRoot = sc.start ? root.matches(sc.start) : root === (sc.owner && sc.owner.parentElement); } catch { isRoot = false; }
+        if (!isRoot) continue;
+        if (sc.end) { let lim = false; for (let x = e; x && x !== root; x = x.parentElement) { try { if (x.matches(sc.end)) { lim = true; break; } } catch { /* */ } } if (lim) continue; }
+        if (sc === scopes[scopes.length - 1]) { let hit = false; const p2 = part.replace(/&/g, ':scope'); try { hit = e === root ? root.matches(p2.replace(/:scope/g, '*')) && !/[\s>+~]/.test(p2.trim()) || /^:scope$/.test(p2.trim()) : [...root.querySelectorAll(p2)].includes(e); } catch { hit = false; } if (!hit) continue; }
+        found = hops; break;
+      }
+      if (found == null) return null;
+      prox = found;
+    }
+    return prox;
+  }
+  /** הדירוג במפל: חשיבות, style="", שכבה (הפוכה ב-!important), ייחודיות, קרבת @scope, סדר. */
+  function rankOf(r, important) { const L = r.layer == null ? UNLAYERED : r.layer, P = r.prox == null ? INF_PROX : r.prox; return [important ? 1 : 0, r.inline ? 1 : 0, important ? -L : L, r.spec[0], r.spec[1], r.spec[2], -P, r.order]; }
 
   class Details {
     /** opt: { canvas, K, sheets(): Map<href, {path, doc}>, file(): {path}, openAt(path, line), openEl() } */
@@ -59,28 +117,43 @@
       const win = c.frame.contentWindow, file = this.file(), sheets = this.sheets();
       let order = 0;
       const lineAt = (src, at) => (src.html ? K.lineOf(c.m.src, src.off + at) : K.lineOf(src.text, at));
-      const walk = (list, ctx, src, rec, seen, media, off) => {
+      // V8: מצב (ריחוף / מיקוד / …) — הקנבס מסמן את האלמנט ב-data-kol-st, והחלק של הבורר נבדק עם התכונה במקום הפסאודו-מחלקה
+      const st = opt && opt.state ? opt.state : null, stRe = st ? stateRe(st) : null;
+      const stPart = part => (stRe ? part.replace(stRe, '[' + STATE_ATTR + '~="' + stateKey(st) + '"]') : part);
+      // V8: @layer — סדר השכבות לפי ההופעה הראשונה (גם @layer a, b;), שכבות מקוננות בתוך ההורה
+      const lay = layerTree(c.doc), anonOf = lay.anon;
+      const walk = (list, ctx, src, rec, seen, media, off, lpath, scopes) => {
         for (const r of list) {
           if (r.type === 1 || (r.selectorText != null && r.style)) {
+            if (r.selectorText.includes(STATE_ATTR)) continue;                       // V8: העותקים של מצב בקנבס — לא של הקובץ
             const id = ctx + '|' + norm(r.selectorText), i = seen.get(id) || 0; seen.set(id, i + 1);
-            let best = null, text = '';
+            let best = null, text = '', prox = INF_PROX, stHit = false;
             for (const part of splitSel(r.selectorText)) {
               let base = part, hit = false;
               if (pseudo) { const pm = /::?(before|after)\s*$/i.exec(part); if (!pm || pm[1].toLowerCase() !== pseudo) continue; base = part.slice(0, pm.index).trim() || '*'; }   // V5: ::before / ::after של האלמנט
-              try { hit = e.matches(base); } catch { hit = false; } if (hit) { const sp = specificity(part); if (!best || cmp(sp, best) > 0) { best = sp; text = part; } } }
+              const tb = stPart(base);
+              let px = INF_PROX;
+              if (scopes.length) { px = scopeMatch(e, tb, scopes); hit = px != null; if (!hit) px = INF_PROX; }
+              else { try { hit = e.matches(tb); } catch { hit = false; } }
+              if (hit) { const sp = specificity(part); if (!best || cmp(sp, best) > 0 || (!cmp(sp, best) && px < prox)) { best = sp; text = part; prox = px; stHit = tb !== base; } }
+            }
             if (best) {
               const mr = rec && rec.index.get(id) ? rec.index.get(id)[i] : null, decls = [];
               if (mr) for (const d of mr.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line: lineAt(src, d.from), d });
               else for (let j = 0; j < r.style.length; j++) { const p = r.style[j]; decls.push({ prop: p, value: r.style.getPropertyValue(p), important: r.style.getPropertyPriority(p) === 'important', line: 0 }); }
-              out.rules.push({ sel: mr ? mr.sel : r.selectorText, matched: text, spec: best, order: order++, media, off, path: src.path, external: !!src.external, line: mr ? lineAt(src, mr.from) : (src.html ? K.lineOf(c.m.src, src.off) : 1), decls, located: !!mr, node: mr, src });
+              out.rules.push({ sel: mr ? mr.sel : r.selectorText, matched: text, spec: best, order: order++, media, off, path: src.path, external: !!src.external, line: mr ? lineAt(src, mr.from) : (src.html ? K.lineOf(c.m.src, src.off) : 1), decls, located: !!mr, node: mr, src, layer: layerKey(lay, lpath), layerName: lpath.join('.'), prox, scoped: scopes.length > 0, stateHit: stHit });
             }
-            if (r.cssRules && r.cssRules.length) walk(r.cssRules, ctx, src, rec, seen, media, off);   // קינון CSS
+            if (r.cssRules && r.cssRules.length) walk(r.cssRules, ctx, src, rec, seen, media, off, lpath, scopes);   // קינון CSS
           } else if (r.cssRules) {
-            const cond = r.conditionText != null ? r.conditionText : (r.name || ''), kind = r.constructor && r.constructor.name || '';
+            const kind = r.constructor && r.constructor.name || '';
+            if (/LayerBlock/.test(kind)) { const nm = r.name || anonOf.get(r) || ''; walk(r.cssRules, ctx + '/' + norm('layer' + r.name), src, rec, seen, media + (media ? ' · ' : '') + '@layer ' + (r.name || '(בלי שם)'), off, lpath.concat(nm.split('.')), scopes); continue; }
+            if (/Scope/.test(kind)) { walk(r.cssRules, ctx + '/' + norm('scope' + (r.start ? '(' + r.start + ')' : '') + (r.end ? 'to(' + r.end + ')' : '')), src, rec, seen, media + (media ? ' · ' : '') + '@scope ' + (r.start || '') + (r.end ? ' to ' + r.end : ''), off, lpath, scopes.concat([{ start: r.start || null, end: r.end || null, owner: src.owner }])); continue; }
+            const cond = r.conditionText != null ? r.conditionText : (r.name || '');
             let on = true;
             if (/Media/.test(kind)) { try { on = win.matchMedia(cond).matches; } catch { on = true; } }
-            const at = /Media/.test(kind) ? 'media' : /Supports/.test(kind) ? 'supports' : /Layer/.test(kind) ? 'layer' : /Container/.test(kind) ? 'container' : /Scope/.test(kind) ? 'scope' : '';
-            walk(r.cssRules, ctx + '/' + norm(at + cond), src, rec, seen, media + (media ? ' · ' : '') + '@' + at + ' ' + cond, off || !on);
+            if (/Supports/.test(kind)) { try { on = win.CSS.supports(cond); } catch { on = true; } }
+            const at = /Media/.test(kind) ? 'media' : /Supports/.test(kind) ? 'supports' : /Container/.test(kind) ? 'container' : '';
+            walk(r.cssRules, ctx + '/' + norm(at + cond), src, rec, seen, media + (media ? ' · ' : '') + '@' + at + ' ' + cond, off || !on, lpath, scopes);
           }
         }
       };
@@ -94,16 +167,16 @@
         let rules; try { rules = sh.cssRules; } catch { out.notes.push({ text: 'קובץ עיצוב חיצוני שאינו בפרויקט, ואינו נקרא כאן: ' + src.path }); continue; }
         const rec = src.text != null ? this.model((src.html ? '#' + src.off + ':' : '') + src.path, src.text) : null;
         if (rec && rec.brokenLine) { const line = src.html ? K.lineOf(c.m.src, src.off) + rec.brokenLine - 1 : rec.brokenLine; out.notes.push({ text: 'שגיאה ב-CSS בשורה ' + line + ' של ' + src.path + ' — מה שאחריה עלול שלא להיקרא', path: src.path, line }); }
-        walk(rules, '', src, rec, new Map(), '', false);
+        src.owner = owner; walk(rules, '', src, rec, new Map(), '', false, [], []);
       }
-      const st = pseudo ? null : K.attrOf(n, 'style');
-      if (st && st.value.trim()) {
-        const line = st.from >= 0 ? K.lineOf(c.m.src, st.from) : 0, decls = [];
-        try { const m = K.parseCss('x{' + st.value + '}'), r = m.root.kids[0]; if (r) for (const d of r.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line }); } catch { /* סגנון שאינו נקרא — לא מוצג */ }
-        out.rules.push({ sel: 'style="…"', inline: true, spec: [0, 0, 0], order: order++, media: '', off: false, path: file.path, line, decls, located: line > 0, src: { inline: true } });
+      const sty = pseudo ? null : K.attrOf(n, 'style');
+      if (sty && sty.value.trim()) {
+        const line = sty.from >= 0 ? K.lineOf(c.m.src, sty.from) : 0, decls = [];
+        try { const m = K.parseCss('x{' + sty.value + '}'), r = m.root.kids[0]; if (r) for (const d of r.decls) decls.push({ prop: d.prop.trim(), value: d.value, important: d.important, line }); } catch { /* סגנון שאינו נקרא — לא מוצג */ }
+        out.rules.push({ sel: 'style="…"', inline: true, spec: [0, 0, 0], layer: UNLAYERED, prox: INF_PROX, order: order++, media: '', off: false, path: file.path, line, decls, located: line > 0, src: { inline: true } });
       }
       // מפל: לכל הצהרה — האם הצהרה חזקה ממנה (אותו מאפיין, או קיצור שמכסה אותו) דורסת אותה
-      const rank = (r, d) => [d.important ? 1 : 0, r.inline ? 1 : 0, r.spec[0], r.spec[1], r.spec[2], r.order];
+      const rank = (r, d) => rankOf(r, d.important);
       const all = [];
       for (const r of out.rules) if (!r.off) for (const d of r.decls) all.push({ r, d, k: rank(r, d), p: d.prop.startsWith('--') ? d.prop : d.prop.toLowerCase() });
       for (const x of all) {
@@ -111,7 +184,7 @@
         for (const y of all) if (y !== x && covers(y.p, x.p) && cmp(y.k, x.k) > 0 && (!by || cmp(y.k, by.k) > 0)) by = y;
         if (by) x.d.by = { sel: by.r.sel, path: by.r.path, line: by.d.line, important: by.d.important };
       }
-      out.rules.sort((a, b) => (a.off ? 1 : 0) - (b.off ? 1 : 0) || (b.inline ? 1 : 0) - (a.inline ? 1 : 0) || cmp(b.spec, a.spec) || b.order - a.order);
+      out.rules.sort((a, b) => (a.off ? 1 : 0) - (b.off ? 1 : 0) || cmp(rankOf(b, false), rankOf(a, false)));
       return out;
     }
     draw() {
@@ -159,5 +232,5 @@
     }
   }
   function cmp(a, b) { for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; }
-  window.KolDetails = { Details, specificity, splitSel };
+  window.KolDetails = { Details, specificity, splitSel, rankOf, stateKey, stateRe, STATE_ATTR, DYNAMIC, UNLAYERED, INF_PROX };
 })();

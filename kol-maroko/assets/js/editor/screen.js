@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js'];
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -341,6 +341,8 @@ const Editor = (() => {
     return act('קישור ' + path + ' לעמוד', m => K.html.insert(m, K.byPath(m, K.pathOf(head)), null, '<link rel="stylesheet" href="' + window.KolText.escAttr(href) + '">'), head);   // <link> שייך ל-<head> (KolStruct.why אינו מכניס לשם תוכן נראה)
   }
   /** הקובץ לכלל חדש: styles.page שב-kol.json, אם העמוד מקשר אליו; אחרת קובץ ה-CSS האחרון שהעמוד מקשר. */
+  /** V8: קובץ ה-CSS של ברירות המחדל לתגיות (styles.base), אם העמוד מקשר אליו. */
+  function basePath() { const want = S.kol?.styles?.base; return [...S.sheets.values()].some(x => x.path === want) ? want : null; }
   function pagePath() { const want = S.kol?.styles?.page, paths = [...S.sheets.values()].map(x => x.path); return paths.includes(want) ? want : paths[paths.length - 1] || null; }
   // ── עסקאות על כמה קבצים (V3): ביטול / החזרה משותפים לכל הקבצים שהעסקה נגעה בהם ──
   /** רושם עסקה: הקבצים שנערכו (מסמך שנערך כמה פעמים — כמה פעמים), והטקסט של כל אחד אחריה. */
@@ -375,12 +377,13 @@ const Editor = (() => {
     const paths = [...per.keys()].map(n => K.pathOf(n));
     // V7: שם העסקה כולל את המכשיר (כשכל הכתיבה היא למכשיר אחד)
     for (const sets of per.values()) for (const [, , t] of sets) { const tw = St.dev(t); if (tw && tw.dev) devs.add(tw.dev.label); }
+    { const sts = new Set(); for (const sets of per.values()) for (const [, , t] of sets) if (t && t.state) sts.add(t.state.pc); if (sts.size === 1) label += ' · מצב ' + [...sts][0]; }   // V8
     if (devs.size === 1) { const one = [...devs][0]; label = devLabel(label, { label: one }); } else if (!devs.size && writeDevice()) label = devLabel(label, writeDevice());   // גם כשהכתיבה הולכת ל-@media אחר — המכשיר שבו נעשתה
     try {
       [...per.values()].forEach((sets, i) => {
         const n = K.byPath(c.m, paths[i]); if (!n) return;
         const groups = new Map();
-        for (const [p, v, t] of sets) { const tw = St.dev(t); if (tw.dev) devs.add(tw.dev.label); const key = t.kind + '|' + t.sel + '|' + t.path + '|' + (t.media || '') + '|' + (t.name || '') + '|' + (tw.dev ? tw.dev.id : ''); if (!groups.has(key)) groups.set(key, { t, sets: [] }); groups.get(key).sets.push([p, v]); }
+        for (const [p, v, t] of sets) { const tw = St.dev(t); if (tw.dev) devs.add(tw.dev.label); const key = t.kind + '|' + t.sel + '|' + t.path + '|' + (t.media || '') + '|' + (t.name || '') + '|' + (tw.dev ? tw.dev.id : '') + '|' + (t.state ? t.state.sel : ''); if (!groups.has(key)) groups.set(key, { t, sets: [] }); groups.get(key).sets.push([p, v]); }
         for (const { t, sets: list } of groups.values()) {
           const cur = K.byPath(c.m, paths[i]), tt = St.dev(resolveTarget(cur, t));
           const ops = St.plan(cur, tt, list, opt);
@@ -442,7 +445,9 @@ const Editor = (() => {
     if (t.kind !== 'rule') return t;
     const list = S.styler.targets(n), same = list.filter(x => x.kind === 'rule' && x.sel === t.sel && x.path === t.path && (x.media || '') === (t.media || ''));
     const hit = same.find(x => x.line === t.line) || same[0] || t;
-    return 'dev' in t && hit !== t ? Object.assign({}, hit, { dev: t.dev }) : hit;   // V7: מכשיר שנקבע במפורש — נשמר
+    let out = 'dev' in t && hit !== t ? Object.assign({}, hit, { dev: t.dev }) : hit;   // V7: מכשיר שנקבע במפורש — נשמר
+    if (t.state && out !== t) out = Object.assign({}, out, { state: t.state });          // V8: והמצב
+    return out;
   }
   /** תצוגה בזמן גרירה / גלגלת: ה-DOM של הקנבס בלבד (style עם !important), והקובץ — רק בשחרור. */
   function preview(nodes, sets) {
@@ -950,10 +955,14 @@ const Editor = (() => {
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = () => { drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
-      S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath, getDevice: writeDevice, getDevices: () => DEVICES.map(d => ({ id: d.id, label: d.label, max: d.max })) });
+      c.onDraw = () => { S.states?.apply(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
+      S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath, basePath, getDevice: writeDevice, getDevices: () => DEVICES.map(d => ({ id: d.id, label: d.label, max: d.max })) });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
         highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } }, setDevice: id => setDevice(id) });
+      S.states = new window.KolStates.States({ canvas: c, K, note, onChange: () => drawAll() });   // V8: מצבים
+      S.ident = new window.KolIdentity.Identity({ canvas: c, styler: S.styler, writeOps, note, undo, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, html: () => S.doc, filePath: () => S.file?.path,
+        files: () => Project._state.files || [], openDoc: f => Project.docs.open(f.id), highlight: els => S.space?.highlight(els), canWrite: () => !!canWrite(), openInCode, phone, jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })) });
+      S.extra = new window.KolExtra.Extra({ canvas: c, styler: S.styler, writeOps, note, html: () => S.doc, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; } });
       S.design = new window.KolDesign.Design(el.designBody, dOpt('design'));
       S.bg = new window.KolBg.Bg(S.design, { writeOps, pick, note, undo, phone, rel: relRef, blocked: () => S.blocked || new Map(), docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, html: () => S.doc, filePath: () => S.file?.path, files: () => Project._state.files || [], layer: () => c.layer, sheet });
       S.design.bgSection = n => S.bg.section(n);
@@ -961,7 +970,8 @@ const Editor = (() => {
       S.pos = new window.KolPos.Pos({ design: S.adv, write: writeStyle, act, joinTx, note, undo, phone, layer: () => c.layer, X: window.KolStruct, setDevice: id => { const d = DEVICES.find(x => x.id === id) || DEVICES.slice().sort((a, b) => (+a.width || 1e9) - (+b.width || 1e9))[0]; if (d) setDevice(d.id); }, busy: () => !!S.bg?.mv || !!S.text?.active });
       S.lay = new window.KolLayout.Layout({ design: S.adv, write: writeStyle, note, undo, phone, layer: () => c.layer, busy: () => !!S.bg?.mv || !!S.text?.active || !!S.pos?.dragging, on: () => S.tab === 'adv' && (infoOpen() || phone()) });
       S.devs = new window.KolDevices.Devices({ design: S.adv, write: writeStyle, note, undo, device: writeDevice, devs: () => DEVICES, setDevice });
-      S.adv.extra = n => [...S.lay.sections(n), ...S.pos.section(n), ...S.devs.section(n)];
+      S.adv.extra = n => [...S.ident.section(n), ...S.lay.sections(n), ...S.pos.section(n), ...S.devs.section(n)];
+      for (const D of [S.design, S.adv]) { D.states = S.states; D.identity = S.ident; D.extraProps = (n, d) => S.extra.section(n, d); }
       S.nav.order = n => S.devs.seen(n);
       S.space = new window.KolSpacing.Spacing(c, { styler: S.styler, design: S.adv, write: writeStyle, preview, unpreview, canWrite: () => !!canWrite(), note, undo, phone, on: () => (S.spaceOn || (S.tab === 'adv' && (infoOpen() || phone())) ? 'adv' : S.tab === 'design' && infoOpen() ? 'design' : false), sheetHost: () => el.gapbar });
       S.adv.whyGap = n => S.space.whyNode(n);
