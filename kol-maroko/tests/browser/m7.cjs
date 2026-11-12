@@ -114,6 +114,7 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); for (;;) { try { 
     ok(run.ok && run.applied === 1, 'התוסף האמיתי משך והחיל', JSON.stringify(run).slice(0, 160));
     const applied = await until(() => page.$('.ob-row.ob-applied'), 20000);
     ok(applied && /הוחל באתר/.test(await applied.textContent()), '"✓ הוחל באתר" — בלי רענון');
+    ok(/ייתכן מטמון ב-CDN/.test(await page.textContent('.ob-row.ob-applied')), '"☁️ ייתכן מטמון ב-CDN" + Purge');
     ok(await page.$('.ob-pulse.ob-ok') && /לפני פחות מדקה/.test(await page.textContent('.ob-pulse')) && /תוסף 2\.2\.0/.test(await page.textContent('.ob-pulse')), 'הדופק — ירוק, "לפני פחות מדקה · תוסף 2.2.0"', await page.textContent('.ob-pulse'));
     ok((await call('build_get', undefined, '&id=' + b1.id)).build.status === 'live', 'הבנייה באתר — רק אחרי applied');
     const pkLive = await until(async () => /באתר/.test(await page.textContent('.pk')) && !/ממתין למשיכה/.test(await page.textContent('.pk')), 8000);

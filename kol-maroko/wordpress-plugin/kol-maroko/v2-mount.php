@@ -196,6 +196,10 @@ function kol_maroko_v2_wrap_render()
             header('X-Robots-Tag: noindex, nofollow');
             header('X-LiteSpeed-Cache-Control: no-cache');
             header('Vary: Cookie');
+        } else {
+            // M7: המעטפת מפנה לגרסה שבאוויר — עותק במטמון של ה-CDN ("Web Pages") היה מציג גרסה ישנה / מפסק ישן
+            header('Cache-Control: public, max-age=0, must-revalidate');
+            kol_maroko_v2_cdn_off();
         }
     }
     $frame = kol_maroko_v2_wrap_frame($w);

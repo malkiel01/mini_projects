@@ -438,7 +438,8 @@ const Publish = (() => {
         h('span', { class: `chip ${cls} ob-st` }, `${ic} ${label}${at ? ' ' + at : ''}`),
         h('span', { class: 'ob-what' }, h('b', {}, r.label), r.what && !r.label.includes(r.what) ? h('span', { class: 'muted' }, ' · ' + r.what) : null),
         h('small', { class: 'muted ob-meta' }, `#${r.seq} · ${r.created_by || ''} · ${when(r.created_at)}`),
-        h('span', { class: 'ob-why' }, r.reason ? h('span', { class: 'error' }, r.reason) : r.state === 'queued' ? h('span', { class: 'muted' }, 'האתר בודק כל 5 דקות') : null),
+        h('span', { class: 'ob-why' }, r.reason ? h('span', { class: 'error' }, r.reason) : r.state === 'queued' ? h('span', { class: 'muted' }, 'האתר בודק כל 5 דקות')
+          : r.cdn ? h('small', { class: 'muted ob-cdn' }, '☁️ ' + r.cdn) : null),
         resend || h('span', { class: 'ob-act' }));
     });
     box.replaceChildren(...[                                    // replaceChildren(null) כותב "null"

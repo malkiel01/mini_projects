@@ -13,3 +13,7 @@
   "📁 פרסום מפרויקט הקבצים"), ו-sandbox של מסגרת הבנייה (המחרוזת בצורת CSP במאפיין — שגיאת קונסול).
 - 2026-11-12 — 429 מהכלי (60 לדקה) באמצע הורדה — התוסף ממשיך בעוד דקה במקום להיכשל; pull.php בלי hash_file לכל Range.
   run.php 350 ✓ (רגיל ו-KOL_V2_REAL=1) · דפדפן ×2 סדרתי: m7 30 · m4bc 43 · m3 32 · m2 168 · p1 31 · m1 38 — הכול ✓.
+- 2026-11-12 — לבקשת הבקרה (Cloudflare של Bluehost, "Assets & Web Pages"): מדיה בנתיב קבוע כבר לא immutable לשנה (הקלטה שהוחלפה —
+  אותו נתיב); לשנה רק immutable במניפסט או `?v=` שתואם ל-sha256. כל מה שאינו לפי hash, וגם המעטפת (framed/bar) —
+  `CDN-Cache-Control` + `Cloudflare-CDN-Cache-Control: no-store`. בדיווח applied — "☁️ ייתכן מטמון ב-CDN … Purge". run.php 351 ✓ ×2 מצבים;
+  דפדפן: m7 ×2, m4bc, m3, m2, p1 — ✓.

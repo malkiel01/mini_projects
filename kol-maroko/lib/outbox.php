@@ -18,6 +18,7 @@ const OUTBOX_ACTIONS = ['manifest', 'switch', 'activate', 'mount'];
 const OUTBOX_TTL = ['manifest' => 7 * 86400, 'switch' => 86400, 'activate' => 86400, 'mount' => 86400];
 const OUTBOX_LIVE = ['queued', 'delivered'];
 const OUTBOX_LABELS = ['manifest' => 'פרסום גרסה', 'switch' => 'המפסק (העמוד המקורי / מהסטודיו)', 'activate' => 'חזרה לגרסה', 'mount' => 'אופן ההצבה'];
+const OUTBOX_CDN_NOTE = 'ייתכן מטמון ב-CDN: אם העמוד באתר עוד לא התעדכן אחרי כמה דקות — Bluehost ← Performance ← Cloudflare ← Purge (ניקוי מטמון)';
 const PULL_PAGE = 20;
 const PULL_RATE = 60;                       // בקשות לדקה לאסימון
 const PULL_CHUNK = 8 * 1024 * 1024;         // גוש — בחלקים של עד 8MB (Range)
@@ -414,7 +415,9 @@ function outbox_public(array $r): array
     return ['seq' => (int)$r['seq'], 'action' => $r['action'], 'label' => $r['label'] ?: (OUTBOX_LABELS[$r['action']] ?? $r['action']), 'what' => $what,
         'state' => $r['state'], 'created_at' => $r['created_at'], 'created_by' => $r['created_by'], 'expires' => (int)$r['expires'],
         'delivered_at' => $r['delivered_at'], 'applied_at' => $r['applied_at'], 'code' => $res['code'] ?? null,
-        'reason' => in_array($r['state'], ['failed', 'expired'], true) ? outbox_reason($res) : null, 'ref' => $r['ref']];
+        'reason' => in_array($r['state'], ['failed', 'expired'], true) ? outbox_reason($res) : null, 'ref' => $r['ref'],
+        // Cloudflare של חברת האחסון ("Assets & Web Pages"): התוסף שולח CDN-Cache-Control: no-store, אבל כלל של האחסון עשוי לגבור
+        'cdn' => $r['state'] === 'applied' && $r['action'] !== 'activate' ? OUTBOX_CDN_NOTE : null];
 }
 
 function outbox_list(array $user): array

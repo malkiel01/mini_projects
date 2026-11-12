@@ -304,6 +304,7 @@ test('M7 קצה לקצה מול התוסף האמיתי: פרסום ⇒ משיכ
     foreach (json_decode(build_row($b['id'])['files'], true) as $p => $f) ok(kol_test_wp_blob($f['sha']), "הגוש של $p באתר");
     $o = m1_get('outbox', '', U_PUBLISHER)['json'];
     eq('applied', $o['outbox'][0]['state']);
+    ok(str_contains((string)$o['outbox'][0]['cdn'], 'ייתכן מטמון ב-CDN') && str_contains($o['outbox'][0]['cdn'], 'Purge'), 'שורת "ייתכן מטמון ב-CDN" בדיווח applied');
     eq('ok', $o['pulse']['level'], 'הדופק');
     ok(str_contains($o['pulse']['text'], 'תוסף ' . KOL_PLUGIN_EXPECTED) && str_contains($o['pulse']['text'], "באוויר: גרסה $n"), $o['pulse']['text']);
     // אופן ההצבה — בתור, ונשמר בכלי רק אחרי applied

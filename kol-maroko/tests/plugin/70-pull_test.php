@@ -391,3 +391,14 @@ function kp_tree(string $root): array
     foreach ($it as $f) $out[] = substr((string)$f, strlen($root) + 1);
     return $out;
 }
+
+test('M7 מטמון ה-CDN (Cloudflare של Bluehost): המעטפת וכל מה שאינו לפי hash — CDN-Cache-Control: no-store; Cache-Control עם ETag', function () {
+    kpp_reset();
+    kp_live(kp_bundle('C'), 3);
+    foreach (['full', 'framed', 'bar'] as $m) {
+        kp_opt('kol_maroko_v2_mount', $m);
+        $r = kp_http('GET', '/lexicon/', ['Sec-Fetch-Dest: document']);
+        eq([200, 'no-store', 'no-store'], [$r['status'], kp_h($r, 'cdn-cache-control'), kp_h($r, 'cloudflare-cdn-cache-control')], "המסמך ב-$m");
+        ok(!str_contains((string)kp_h($r, 'cache-control'), 'immutable') && str_contains((string)kp_h($r, 'cache-control'), 'max-age=0'), "$m: " . kp_h($r, 'cache-control'));
+    }
+});
