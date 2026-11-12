@@ -78,6 +78,8 @@ function studioMigrate(): void {
             at INTEGER NOT NULL
         );
     ");
+    // שיחת צוות (lib/studio/team.php): מנהל + אפיון, קוד ובקרה באותו סשן
+    addColumn(db(), 'studio_convs', 'team', 'INTEGER NOT NULL DEFAULT 0');
 }
 
 /* ── הרשאה ─────────────────────────────────────────────────────── */
@@ -254,10 +256,11 @@ function studioCreateConv(array $user, array $in): array {
     if (!studioValidModel($model)) throw new AppError('צריך לבחור מודל (למשל מזהה המודל של חיבור ה-Anthropic)');
     $budget = max(0, min(100000, (int) ($in['budget_cents'] ?? ($s['budget_cents'] ?? 2000))));
     $merge = array_key_exists('allow_merge', $in) ? (int) (bool) $in['allow_merge'] : (int) ($s['allow_merge'] ?? 1);
+    $team = (int) (bool) ($in['team'] ?? false);
 
-    db()->prepare('INSERT INTO studio_convs (user_id, title, repo, base_branch, model, allow_merge, budget_cents, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)')
-        ->execute([$uid, $title, $repo, $branch, $model, $merge, $budget, nowTs(), nowTs()]);
+    db()->prepare('INSERT INTO studio_convs (user_id, title, repo, base_branch, model, allow_merge, budget_cents, team, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)')
+        ->execute([$uid, $title, $repo, $branch, $model, $merge, $budget, $team, nowTs(), nowTs()]);
     return studioConv($uid, (int) db()->lastInsertId());
 }
 
@@ -276,13 +279,25 @@ function studioEnsureSession(array $user, array $conv, string $key): array {
     if ($token === '') throw new AppError('לא חובר חשבון GitHub. הגדרות הלוח ← חיבורים ← "+ חיבור" ← GitHub');
     $s = studioEnsureSetup($user, $key, (string) $conv['model']);
 
+    // שיחת צוות: הסשן רץ על המנהל, שרשימת חברי הצוות שמורה בהגדרה שלו. המודל וההנחיה של השיחה חלים
+    // רק על המנהל; חברי הצוות רצים על מודל ברירת המחדל, כדי שהחלפת מודל בשיחה אחת לא תשנה אותם לכולן.
+    $agentId = (string) $s['agent_id'];
+    $agentVersion = (int) ($s['agent_version'] ?? 1);
+    $system = studioSystemPrompt($conv);
+    if ((int) ($conv['team'] ?? 0) === 1) {
+        $team = studioEnsureTeam($user, $key, studioDefaultModel($uid) ?: (string) $conv['model']);
+        $agentId = (string) $team['lead']['id'];
+        $agentVersion = (int) $team['lead']['version'];
+        $system .= studioTeamPrompt($conv);
+    }
+
     $def = [
         'agent' => [
             'type'    => 'agent_with_overrides',
-            'id'      => (string) $s['agent_id'],
-            'version' => (int) ($s['agent_version'] ?? 1),
+            'id'      => $agentId,
+            'version' => $agentVersion,
             'model'   => ['id' => (string) $conv['model']],
-            'system'  => studioSystemPrompt($conv),
+            'system'  => $system,
         ],
         'environment_id' => (string) $s['env_id'],
         'title'     => mb_substr((string) $conv['title'], 0, 120),
@@ -566,6 +581,7 @@ function studioPublicConv(array $c): array {
         'id' => (int) $c['id'], 'title' => (string) $c['title'], 'repo' => (string) $c['repo'],
         'base_branch' => (string) $c['base_branch'], 'model' => (string) $c['model'],
         'allow_merge' => (int) $c['allow_merge'] === 1, 'budget_cents' => (int) $c['budget_cents'],
+        'team' => (int) ($c['team'] ?? 0) === 1,
         'engine' => 'platform', 'has_session' => (string) $c['session_id'] !== '',
         'status' => (string) $c['status'], 'status_detail' => (string) $c['status_detail'],
         'pending' => count(json_decode((string) $c['pending_ids'], true) ?: []),
@@ -616,6 +632,11 @@ function studioPublicEvent(array $row): ?array {
         case 'agent.tool_result': case 'agent.mcp_tool_result':
             return $base + ['kind' => 'result', 'for' => (string) ($p['tool_use_id'] ?? ($p['mcp_tool_use_id'] ?? '')),
                             'error' => (bool) ($p['is_error'] ?? false), 'text' => studioBlocksText($p['content'] ?? [], 3000)];
+        // צוות: מה שהמנהל מסר לחבר צוות, ומה שחבר הצוות החזיר לו
+        case 'agent.thread_message_sent':
+            return $base + ['kind' => 'team_out', 'who' => (string) ($p['to_agent_name'] ?? ''), 'text' => studioBlocksText($p['content'] ?? [], 20000)];
+        case 'agent.thread_message_received':
+            return $base + ['kind' => 'team_in', 'who' => (string) ($p['from_agent_name'] ?? ''), 'text' => studioBlocksText($p['content'] ?? [], 50000)];
         case 'session.error':
             return $base + ['kind' => 'error', 'text' => (string) ($p['error']['message'] ?? ($p['error']['type'] ?? 'שגיאה')),
                             'retry' => (string) ($p['error']['retry_status']['type'] ?? '')];
@@ -638,3 +659,5 @@ function studioEventsSince(int $convId, int $seq, int $limit = 500): array {
     $last = $rows ? (int) end($rows)['seq'] : $seq;
     return ['events' => array_values(array_filter(array_map('studioPublicEvent', $rows))), 'last_seq' => $last];
 }
+
+require_once __DIR__ . '/team.php';

@@ -58,6 +58,14 @@
 .s-tool--err { border-color: var(--danger); }
 .s-tool pre { margin-block: var(--s1); padding: var(--s2); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto;
   direction: ltr; text-align: left; font-size: .78rem; max-height: 260px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.s-team { justify-self: stretch; font-size: .85rem; border-inline-start: 3px solid var(--violet); padding-inline-start: var(--s2); min-width: 0; }
+.s-team--in { border-color: var(--ok); }
+.s-team summary { cursor: pointer; display: flex; gap: var(--s2); align-items: baseline; min-height: 30px; list-style: none; }
+.s-team summary::-webkit-details-marker { display: none; }
+.s-team .n { flex: none; font-weight: 600; }
+.s-team .c { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.s-team__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: var(--s2) 0; overflow-wrap: anywhere; line-height: 1.5; }
+.s-team__body pre { overflow-x: auto; direction: ltr; text-align: left; padding: var(--s2); background: var(--surface); border-radius: 6px; font-size: .8rem; }
 .s-div { justify-self: center; font-size: .75rem; color: var(--muted); }
 .s-err { justify-self: stretch; padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--danger-soft); color: var(--danger); font-size: .88rem; }
 
