@@ -57,7 +57,7 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
-                      'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
+                      'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_move', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
                       'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read',
                       'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
@@ -136,6 +136,7 @@ try {
         'rec_revert' => rec_revert(require_role($user, 'editor'), $body),
         'rec_rename' => rec_rename(require_role($user, 'editor'), $body),
         'rec_connect' => rec_connect(require_role($user, 'editor'), $body),
+        'rec_move' => rec_move(require_role($user, 'editor'), $body),          // N2b: אותה מילה, שדה אחר
         'rec_disconnect' => rec_disconnect(require_role($user, 'editor'), $body),
         'rec_delete' => rec_delete(require_role($user, 'editor'), $body),
         'rec_restore' => rec_restore(require_role($user, 'editor'), $body),

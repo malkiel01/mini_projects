@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 19;
+const KOL_SCHEMA_VERSION = 20;
 
 final class ApiError extends RuntimeException
 {
@@ -475,14 +475,107 @@ function migrate(PDO $pdo): void
             );
             ALTER TABLE pkg_builds ADD COLUMN forms TEXT;
             SQL,
+        // N2b: הקלטה לכל "מקום" (רשימה, פריט, שדה) — בונה את recordings מחדש (SQLite אינו מסיר UNIQUE ב-ALTER). ב-PHP:
+        // ספירה ו-checksum לפני ואחרי, ואם לא תואם — חריגה, והעסקה כולה מתבטלת (migrate_recordings_slots)
+        20 => 'migrate_recordings_slots',
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
         $pdo->beginTransaction();
-        $pdo->exec($sql);
-        $pdo->exec("PRAGMA user_version = $n");
-        $pdo->commit();
+        try {
+            // בקשה מקבילה הקדימה (קראנו את הגרסה לפני העסקה) — לא מריצים את השלב פעמיים
+            if ((int)$pdo->query('PRAGMA user_version')->fetchColumn() >= $n) { $pdo->commit(); continue; }
+            str_starts_with($sql, 'migrate_') ? $sql($pdo) : $pdo->exec($sql);
+            $pdo->exec("PRAGMA user_version = $n");
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
     }
+}
+
+/** הסכמה של recordings מ-N2b. word_id — מזהה הפריט בתוך list (השם נשאר, כדי שכל שאילתה של A2/A3 תישאר). */
+const REC_SCHEMA = <<<'SQL'
+    CREATE TABLE %s (
+        id            INTEGER PRIMARY KEY,
+        list          TEXT NOT NULL DEFAULT 'words',  -- הרשימה ('words' — המילים)
+        word_id       INTEGER,                        -- הפריט. הקלטה לא מחוברת — NULL
+        field         TEXT NOT NULL DEFAULT 'audio',  -- המפתח של שדה השמע (הראשי — השדה שה-col שלו audio)
+        state         TEXT NOT NULL DEFAULT 'site' CHECK (state IN ('site','tool','failed')),
+        source        TEXT NOT NULL DEFAULT '',       -- הכתובת באתר. נשמרת תמיד, לעולם אינה מפתח
+        file_id       TEXT,                           -- ספריית המדיה (files.id)
+        name          TEXT NOT NULL DEFAULT '',
+        duration      REAL,                           -- שניות; נמדד בדפדפן, שייך ל-file_id
+        how           TEXT NOT NULL DEFAULT '',       -- linked · fetched · imported · replaced · uploaded · restored · deduped · moved
+        at            TEXT NOT NULL,
+        by_name       TEXT NOT NULL DEFAULT '',
+        scan          TEXT NOT NULL DEFAULT '',       -- '' (לא נסרקה) · ok · missing · blocked · error · skipped
+        scan_size     INTEGER,
+        scan_type     TEXT NOT NULL DEFAULT '',
+        scan_note     TEXT NOT NULL DEFAULT '',
+        scan_at       TEXT,
+        f_code        TEXT NOT NULL DEFAULT '',       -- למה ההבאה נכשלה (REC_REASONS)
+        f_note        TEXT NOT NULL DEFAULT '',
+        f_at          TEXT,
+        deleted_at    TEXT,                           -- A3: סל — המקום שממנו נמחקה נזכר לשחזור
+        deleted_by    TEXT NOT NULL DEFAULT '',
+        deleted_list  TEXT,
+        deleted_word  INTEGER,
+        deleted_field TEXT,
+        deleted_audio TEXT NOT NULL DEFAULT '',
+        UNIQUE (list, word_id, field)
+    )
+    SQL;
+
+/** ספירה ו-sha256 של עמודות הטבלה, לפי id. */
+function migrate_sum(PDO $pdo, string $table, array $cols): array
+{
+    $h = hash_init('sha256');
+    $n = 0;
+    $st = $pdo->query('SELECT ' . implode(', ', array_map(fn($c) => "\"$c\"", $cols)) . " FROM $table ORDER BY id");
+    while ($r = $st->fetch(PDO::FETCH_NUM)) { hash_update($h, json_encode($r, JSON_UNESCAPED_UNICODE) . "\n"); $n++; }
+    return [$n, hash_final($h)];
+}
+
+/**
+ * שלב 20 (N2b): recordings נבנית מחדש בתוך העסקה של migrate — CREATE חדשה → INSERT … SELECT → DROP הישנה → RENAME.
+ * המזהים (id) נשמרים, ולכן rec_versions.rec_id ממשיך להצביע נכון. הרשומות הקיימות — של השדה הראשי (המפתח של השדה
+ * שה-col שלו audio; בלי שורה ב-word_fields — 'audio'). לפני ואחרי: מספר השורות ו-checksum של כל העמודות המשותפות, ושל
+ * rec_versions; לא תואם — חריגה, והעסקה מתבטלת: המסד נשאר כמו שהיה.
+ */
+function migrate_recordings_slots(PDO $pdo): void
+{
+    $has = fn(string $t) => (bool)$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn();
+    $primary = 'audio';
+    if ($has('word_fields')) $primary = (string)($pdo->query("SELECT key FROM word_fields WHERE col = 'audio'")->fetchColumn() ?: 'audio');
+    $pdo->exec('DROP TABLE IF EXISTS recordings_n2b');
+    $pdo->exec(sprintf(REC_SCHEMA, 'recordings_n2b'));
+    if ($has('recordings')) {
+        $old = array_column($pdo->query('PRAGMA table_info(recordings)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $new = array_column($pdo->query('PRAGMA table_info(recordings_n2b)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $common = array_values(array_intersect($new, $old));
+        $vSum = fn() => $has('rec_versions') ? migrate_sum($pdo, 'rec_versions', array_column($pdo->query('PRAGMA table_info(rec_versions)')->fetchAll(PDO::FETCH_ASSOC), 'name')) : [0, ''];
+        $before = migrate_sum($pdo, 'recordings', $common);
+        $vBefore = $vSum();
+        $cl = implode(', ', array_map(fn($c) => "\"$c\"", $common));
+        $pdo->exec("INSERT INTO recordings_n2b ($cl) SELECT $cl FROM recordings");
+        if (!in_array('field', $old, true)) {
+            $pdo->prepare('UPDATE recordings_n2b SET field = ?')->execute([$primary]);
+            $pdo->prepare('UPDATE recordings_n2b SET deleted_list = \'words\', deleted_field = ? WHERE deleted_word IS NOT NULL')->execute([$primary]);
+        }
+        $pdo->exec('DROP TABLE recordings');
+        $pdo->exec('ALTER TABLE recordings_n2b RENAME TO recordings');
+        $after = migrate_sum($pdo, 'recordings', $common);
+        $vAfter = $vSum();
+        if ($before !== $after || $vBefore !== $vAfter) {
+            throw new RuntimeException("מיגרציה 20 בוטלה: ההקלטות לפני ואחרי אינן זהות (recordings {$before[0]} → {$after[0]}, rec_versions {$vBefore[0]} → {$vAfter[0]}). המסד לא השתנה");
+        }
+        $GLOBALS['kol_migrate_20'] = ['recordings' => $before[0], 'sha' => $before[1], 'versions' => $vBefore[0], 'versions_sha' => $vBefore[1]];
+    } else {
+        $pdo->exec('ALTER TABLE recordings_n2b RENAME TO recordings');
+    }
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_recordings_file ON recordings(file_id)');
 }
 
 function setting(string $k, ?string $default = null): ?string
