@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/report.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/report.js'];
   const LS = 'kol-editor';
   const DEFAULT_DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   let DEVICES = DEFAULT_DEVICES;
@@ -100,7 +100,7 @@ const Editor = (() => {
     finally { S.busy = false; }
   }
   function close() {
-    clearTimeout(S.timer); S.off?.(); S.off = null; S.sheetOff.forEach(f => f()); S.sheetOff = [];
+    S.text?.end(); clearTimeout(S.timer); S.off?.(); S.off = null; S.sheetOff.forEach(f => f()); S.sheetOff = [];
     S.doc = null; S.file = null; S.own = null;
   }
 
@@ -277,7 +277,31 @@ const Editor = (() => {
 
   // ── פעולות ────────────────────────────────────────────────
   const canWrite = () => S.doc && !S.readOnly && !S.doc.binary;
+  /** כותב תיקונים לקובץ כעסקה אחת עם שם; הקנבס מתעדכן מיד. false — הכתיבה נדחתה (וההודעה כבר הוצגה). */
+  function commit(patches, label) {
+    if (!patches.length) return true;
+    if (!canWrite()) { note(S.readOnly || 'הקובץ פתוח לקריאה בלבד', true); return false; }
+    S.own = patches;
+    try { S.doc.edit(patches, label); } catch (e) { S.own = null; note(e.message, true); return false; }
+    if (S.own) syncCanvas();
+    return true;
+  }
+  /** פעולה על המודל: fn(m) מחזירה {patches}. פעולה שנדחתה (SrcError) — הודעה, ו"פתח בקוד" לאזור שבור. */
+  function act(label, fn, n) {
+    const c = S.canvas; if (!c?.m) return false;
+    if (!canWrite()) { note(S.readOnly || 'הקובץ פתוח לקריאה בלבד', true); return false; }
+    if (c.src !== S.doc.text()) { clearTimeout(S.timer); syncCanvas(); }
+    let res;
+    try { res = fn(c.m); }
+    catch (e) {
+      if (!(e instanceof K.SrcError)) throw e;
+      if (e.code !== 'noop') note(e.message, true, e.code === 'broken' ? { label: '</> פתח בקוד', run: () => openInCode(n) } : null);
+      return false;
+    }
+    return commit(res.patches, label);
+  }
   function remove() {
+    S.text?.end();
     const c = S.canvas, n = c?.selected;
     if (!n) return note('בוחרים אלמנט, ואז מוחקים');
     if (!canWrite()) return note(S.readOnly || 'הקובץ פתוח לקריאה בלבד', true);
@@ -294,8 +318,8 @@ const Editor = (() => {
     if (next && c.m2d.has(next)) c.select(next);
     note('נמחק: ' + label + (inside ? ', עם ' + inside + ' אלמנטים בתוכו' : ''), false, { label: 'בטל', run: undo });
   }
-  function undo() { if (S.doc?.canUndo()) { S.doc.undo(); clearTimeout(S.timer); syncCanvas(); } else note('אין מה לבטל'); }
-  function redo() { if (S.doc?.canRedo()) { S.doc.redo(); clearTimeout(S.timer); syncCanvas(); } else note('אין מה להחזיר'); }
+  function undo() { S.text?.end(); if (S.doc?.canUndo()) { S.doc.undo(); clearTimeout(S.timer); syncCanvas(); } else note('אין מה לבטל'); }
+  function redo() { S.text?.end(); if (S.doc?.canRedo()) { S.doc.redo(); clearTimeout(S.timer); syncCanvas(); } else note('אין מה להחזיר'); }
   /** "פתח בקוד": עורך הקוד נפתח על הקובץ, והטווח של האלמנט מסומן. אלמנט שהדפדפן הוסיף — ההורה הכתוב שלו. */
   function openInCode(n) {
     n = n || S.canvas?.selected;
@@ -307,6 +331,7 @@ const Editor = (() => {
   function onKey(e) {
     if (!S.host || !S.canvas?.m || e.defaultPrevented || document.querySelector('dialog[open]')) return;   // גיליון פתוח — הקיצורים של העורך אינם פעילים
     const t = e.target, tag = t && t.nodeType === 1 ? t.localName : '';
+    if (S.text?.active) { if (t && t.ownerDocument !== document) S.text.key(e); return; }   // עריכת טקסט במקום: המקשים שייכים לטקסט
     if (t && t.ownerDocument === document && (/^(input|textarea|select)$/.test(tag) || t.isContentEditable || t.closest?.('dialog[open], .monaco-editor'))) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key, c = S.canvas;
     const hit = fn => { e.preventDefault(); fn(); };
@@ -325,6 +350,7 @@ const Editor = (() => {
     if (k === 'i' || k === 'I' || k === 'ן') return hit(() => { panel('info', true); el.infoBody.focus(); });
     if (k === 'Delete' || k === 'Backspace') return hit(remove);
     if (!c.selected) return;
+    if ((k === 'Enter' || k === 'F2') && (!t || t.ownerDocument !== document || t === document.body)) return hit(() => S.text.begin(c.selected));   // רק כשהמיקוד בקנבס — Enter על כפתור של המסך נשאר שלו
     if (k === 'Escape') return hit(() => c.step('parent'));
     if (k === 'ArrowUp') return hit(() => c.step('parent'));
     if (k === 'ArrowDown') return hit(() => c.step('child'));
@@ -333,7 +359,7 @@ const Editor = (() => {
   document.addEventListener('keydown', onKey);
 
   const KEYS = [['חיצים ↑ ↓', 'ההורה / הילד הראשון (בלי בחירה — מתחילים מ-body)'], ['חיצים ← →', 'האח הקודם / הבא'], ['Esc', 'ההורה (או ביטול מצב ההצבעה)'],
-    ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y', 'בטל · החזר'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['I', 'פרטים'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
+    ['לחיצה כפולה · Enter · F2', 'עריכת הטקסט במקום (Esc — סיום ושמירה)'], ['בעריכת טקסט: Ctrl+B · I · U', 'מודגש · נטוי · קו תחתון'], ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y', 'בטל · החזר'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['I', 'פרטים'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
     ['B', '🐞 לא הצלחתי לשנות את זה'], ['Shift+F10', 'תפריט ההקשר של האלמנט הנבחר'], ['1 · 2 · 3', 'רוחב הקנבס: מחשב · טאבלט · טלפון'], ['?', 'הרשימה הזו'],
     ['ב-Navigator: ↑ ↓', 'השורה הקודמת / הבאה'], ['ב-Navigator: ← →', 'קיפול / פתיחה, ההורה / הילד'], ['ב-Navigator: H · L', '👁 הסתרה בעורך · 🔒 נעילה'], ['בעורך הקוד: Ctrl+Alt+E', 'בחר בעורך החזותי']];
   function help() { sheet('קיצורי מקלדת', h('table', { class: 'ed-keys' }, h('tbody', {}, KEYS.map(([k, t]) => h('tr', {}, h('th', { scope: 'row', dir: 'ltr' }, h('kbd', {}, k)), h('td', {}, t)))))); }
@@ -438,6 +464,10 @@ const Editor = (() => {
       c.drag = false; c.repeatUp = true; c.marksOn = true;                  // V1a: בלי גרירה (V4); לחיצה חוזרת — ההורה
       S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); }, onToggle: saveMarks });
       S.info = new window.KolDetails.Details(el.infoBody, { canvas: c, K, sheets: () => S.sheets, file: () => S.file, openAt: (p, line) => Project.openAt(p, line), openEl: n => openInCode(n) });
+      S.text = new window.KolText.TextEdit(c, { canWrite: () => (canWrite() ? '' : S.readOnly || 'הקובץ פתוח לקריאה בלבד'), commit: (ps, label) => { if (c.src !== S.doc.text()) return false; return commit(ps, label); },
+        run: (label, fn) => act(label, fn), undo: () => { if (S.doc?.canUndo()) { S.doc.undo(); clearTimeout(S.timer); syncCanvas(); } }, redo: () => { if (S.doc?.canRedo()) { S.doc.redo(); clearTimeout(S.timer); syncCanvas(); } },
+        note, openInCode, onState: () => { el.root.classList.toggle('typing', !!S.text?.active); drawCrumbs(); } });
+      c.onDbl = (n, pt) => { if (S.pointing) return; S.text.begin(n, pt); };
       c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
@@ -457,8 +487,8 @@ const Editor = (() => {
       await open(first.id);
     } catch (e) { status(''); el.canvas.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
-  function unmount() { if (!S.host) return; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; }
+  function unmount() { if (!S.host) return; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
-  return { view, unmount, selectAt, _ctx: ctxMenu, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks };
+  return { view, unmount, selectAt, _ctx: ctxMenu, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: remove, _sync: syncCanvas, _marks: saveMarks, _act: act };
 })();

@@ -133,3 +133,16 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed :focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .ed-blocked summary { cursor: pointer; }
 .ed-blocked ul { margin: var(--s1) 0 0; padding-inline-start: 1.2em; font: .75rem/1.5 ui-monospace, monospace; overflow-wrap: anywhere; max-height: 8em; overflow: auto; }
+
+/* V2 — טקסט במקום: הסרגל הצף (בשכבה שמעל הקנבס; השכבה עצמה שקופה ללחיצות) */
+.ed-tbar { position: absolute; z-index: 4; display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 2px; align-items: center; max-width: calc(100% - 4px); padding: 3px; pointer-events: auto;
+  background: var(--surface, #fff); border: 1px solid var(--line, #c9ccd1); border-radius: var(--r, 8px); box-shadow: 0 4px 14px rgba(0, 0, 0, .18); }
+.ed-tbar[hidden] { display: none; }
+.ed-tb { flex: none; min-width: 34px; min-height: 34px; padding: 0 8px; white-space: nowrap; border: 0; border-radius: 6px; background: none; color: var(--ink, #1f2328); font: inherit; font-size: .9rem; cursor: pointer; }
+.ed-tb:hover:not(:disabled), .ed-tb:focus-visible { background: var(--brand-soft, #e8f0fe); }
+.ed-tb.on { background: var(--brand, #1a73e8); color: #fff; }
+.ed-tb:disabled { opacity: .4; cursor: default; }
+.ed-tb.b { font-weight: 700; } .ed-tb.i { font-style: italic; } .ed-tb.u { text-decoration: underline; }
+.ed-tb-in { flex: 1; min-width: 160px; min-height: 34px; padding: 0 8px; border: 1px solid var(--line, #c9ccd1); border-radius: 6px; font: inherit; font-size: .9rem; }
+.ed.typing .spike-sel > span { display: none; }
+@media (max-width: 999px) { .ed-tbar { border-radius: 0; justify-content: center; } .ed-tb { min-width: 44px; min-height: 44px; } }

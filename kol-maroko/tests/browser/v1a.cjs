@@ -297,6 +297,7 @@ const ATTACK = `<!doctype html>
     await clickIn(pm, '[data-test-target]', { touch: true });
     const sm = await st(pm);
     ok(sm.sel === tm && sm.box, '390px: הקשה (מגע) בוחרת אלמנט — ' + sm.sel);
+    await sleep(450);                                                     // מ-V2: שתי הקשות מהירות (עד 380ms) הן "הקשה כפולה" — עריכת טקסט; הקשה חוזרת איטית מזה עולה להורה
     await clickIn(pm, '[data-test-target]', { touch: true });
     ok((await st(pm)).sel !== tm && (await st(pm)).crumbs.length === sm.crumbs.length - 1, '390px: הקשה חוזרת עולה להורה');
     await pm.evaluate(() => Editor._state.canvas.doc.querySelector('[data-test-target]').removeAttribute('data-test-target'));

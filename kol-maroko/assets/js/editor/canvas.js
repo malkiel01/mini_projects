@@ -16,6 +16,8 @@
   const K = window.KolSrc;
   const OWNED = 'data-kol-canvas', CAP = 60, REAL = ':not([' + OWNED + '])';
   /** אלמנטים שאין להם מראה בעמוד — נבחרים ב-Navigator, ואינם "מוצגים לעריכה". */
+  /** עריכת טקסט במקום (V2): מסגרת לאלמנט הנערך, ו"הקלד כאן" לאלמנט ריק. contenteditable נוסף ל-DOM של הקנבס בלבד, לזמן העריכה. */
+  const EDIT_CSS = '[contenteditable="true"]{outline:2px solid #1a73e8!important;outline-offset:2px;cursor:text;min-height:1em;-webkit-user-modify:read-write}[contenteditable="true"]:empty::before{content:"הקלד כאן";opacity:.45}';
   const NONVIS = new Set('html head title meta link script style base noscript template'.split(' '));
   const decode = bytes => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   const encode = text => new TextEncoder().encode(text);
@@ -128,6 +130,7 @@
       }
       if (this.baseHref && head) { const b = doc.createElement('base'); b.setAttribute(OWNED, 'base'); b.setAttribute('href', this.baseHref); head.prepend(b); }
       this.capStyle = doc.createElement('style'); this.capStyle.setAttribute(OWNED, 'cap'); head.append(this.capStyle);
+      const ed = doc.createElement('style'); ed.setAttribute(OWNED, 'edit'); ed.textContent = EDIT_CSS; head.append(ed);   // V2: המראה של אלמנט בזמן עריכת טקסט — בקנבס בלבד
       this.recap();
     }
     /** מחליף את הטקסט של קובץ CSS מקושר (אחרי עריכה שלו), בלי לגעת בשאר. */
@@ -229,6 +232,7 @@
     }
     /** מחיל תיקוני טקסט על הקובץ שבקנבס — מכל מקור: פעולה חזותית, ביטול, או הקלדה בעורך הקוד. */
     patch(patches) {
+      if (this.edit) this.edit.abort();                                     // עריכת טקסט פתוחה שלא היא שכתבה — נסגרת; ה-DOM שלה עומד להתחלף
       const t0 = performance.now(), sel = this.selected, selPath = sel ? K.pathOf(sel) : null, hov = this.hovered;
       this.unshow();
       const u = K.update(this.m, patches);
@@ -331,6 +335,7 @@
       doc.addEventListener('contextmenu', e => { clearTimeout(this.longT); if (!this.longDone) ctxAt(e.target, e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
         if (e.button > 0) return;
+        if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
         clearTimeout(this.longT); this.longDone = false;
         if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(e.target); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
         if (e.pointerType === 'touch') { const t = e.target, x = e.clientX, y = e.clientY; this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600); }
@@ -343,6 +348,7 @@
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
         const p = this.press;
+        if (this.edit && this.edit.active) { if (this.hovered) { this.hovered = null; this.draw(); } return; }
         if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) clearTimeout(this.longT);
         if (p && p.id === e.pointerId) {
           if (this.drag && !p.drag && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) p.drag = true;
@@ -356,6 +362,10 @@
         clearTimeout(this.longT);
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);
+        if (p && !p.drag && e.type === 'pointerup' && e.pointerType === 'touch') {   // הקשה כפולה במגע = לחיצה כפולה (iOS אינו שולח dblclick)
+          const now = performance.now(), t = this.tap; this.tap = { at: now, x: e.clientX, y: e.clientY };
+          if (t && now - t.at < 380 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 24 && this.onDbl) { this.tap = null; const n = this.nodeOf(e.target); if (n) { e.preventDefault(); this.dblAt = now; return this.onDbl(n, { x: e.clientX, y: e.clientY }); } }
+        }
         if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent) return this.select(p.n.parent);   // לחיצה חוזרת — ההורה
         if (!p || !p.drag || e.type !== 'pointerup') return;
         const drop = this.dropAt(p.n, e.clientX, e.clientY);
@@ -366,13 +376,15 @@
       doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
       doc.addEventListener('pointerleave', () => { this.hovered = null; this.draw(); }, true);
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
-      doc.addEventListener('touchstart', e => { const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
+      doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(e.target); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
+      doc.addEventListener('touchstart', e => { if (this.edit && this.edit.active) return; const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
       doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
       // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
       doc.addEventListener('securitypolicyviolation', e => { if (this.onBlocked && /^https?:/i.test(e.blockedURI || '')) this.onBlocked(e.blockedURI, e.effectiveDirective || ''); });
       doc.addEventListener('keydown', e => { if (this.onKey) this.onKey(e); }, true);
       this.frame.contentWindow.addEventListener('resize', () => this.draw());
       this.events = [];
+      if (this.onListen) this.onListen(doc);
     }
     /** לאן הגרירה תנחית: אח של האלמנט הנגרר שמתחת לסמן, ולפניו או אחריו. */
     dropAt(n, x, y) {
@@ -391,6 +403,10 @@
       return { parent: n.parent, index, rect: r, after, sameRow, rtl };
     }
     select(n) {
+      if (this.edit && this.edit.active && !this.edit.busy) {               // בוחרים משהו אחר בזמן עריכת טקסט: קודם נכתב מה שהוקלד
+        const path = n ? K.pathOf(n) : null; this.edit.end();
+        if (n && !this.m2d.has(n)) n = K.byPath(this.m, path);
+      }
       const was = this.selected; this.unshow(); this.selected = n || null;
       if (this.sheets && (this.hiddenNodes.has(was) || this.hiddenNodes.has(this.selected))) this.recap();   // נבחר שהוסתר בעורך — מוצג כל עוד הוא נבחר
       this.show(this.selected); this.zeroAt = 0; this.draw(); if (this.onSelect) this.onSelect(this.selected);
