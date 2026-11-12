@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/spacing.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/spacing.js'];
   const LS = 'kol-editor';
   const DEFAULT_DEVICES = [{ id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280 }, { id: 'tablet', icon: '📱', label: 'טאבלט', width: 820, wide: true }, { id: 'mobile', icon: '📱', label: 'טלפון', width: 390 }];
   let DEVICES = DEFAULT_DEVICES;
@@ -388,6 +388,32 @@ const Editor = (() => {
     if (notes.length) note('האיפוס מחק את כל ההצהרה ' + notes.join(', ') + ' (הערך היה חלק מקיצור)', false, { label: 'בטל', run: undo });
     return docs;
   }
+  /** V5: כתיבה שתוכננה מחוץ ל-Styler (הסרת תמונה, החלפת url(), מחיקת כלל, HTML + CSS) — עסקה אחת.
+   *  list — תיקונים {doc, patches} או פונקציות שמחזירות אותם, כל אחת מתוכננת על הטקסט שאחרי הקודמות. */
+  function writeOps(list, label) {
+    unpreview();
+    if (!canWrite()) { note(S.readOnly || 'הקובץ פתוח לקריאה בלבד', true); return null; }
+    if (S.canvas.src !== S.doc.text()) { clearTimeout(S.timer); syncCanvas(); }
+    const docs = [];
+    try {
+      for (const p of list) {
+        for (const o of (typeof p === 'function' ? p() : [p]) || []) {
+          if (!o || !o.patches.length) continue;
+          if (o.doc === S.doc) { S.own = o.patches; S.doc.edit(o.patches, label); if (S.own) syncCanvas(); }
+          else o.doc.edit(o.patches, label);
+          docs.push(o.doc);
+        }
+      }
+    } catch (e) {
+      if (docs.length) pushTx(docs, label);
+      if (!(e instanceof K.SrcError)) console.error(e);
+      if (e.code !== 'noop') note(e.message, true);
+      drawAll(); return null;
+    }
+    if (!docs.length) { drawAll(); return []; }
+    pushTx(docs, label); drawAll();
+    return docs;
+  }
   /** היעד, על המפל העדכני: אותו סוג, בורר, קובץ ו-@media (השורה עשויה לזוז אחרי כתיבה קודמת באותה עסקה). */
   function resolveTarget(n, t) {
     if (t.kind !== 'rule') return t;
@@ -563,6 +589,8 @@ const Editor = (() => {
     const n = S.canvas?.selected, w = canWrite();
     el.addImg.disabled = !w; el.swap.disabled = !w;
     if (n && n.tag === 'img') { if (!el.swap.isConnected) el.addImg.after(el.swap); } else el.swap.remove();   // "החלף" בסרגל — רק כשנבחרה תמונה
+    const bgOn = !!(n && S.bg && S.bg.hasImage(n));                       // V5: "🖼 תמונת רקע" — החלף · הסר · הזז
+    if (bgOn) { if (!el.bgTools.isConnected) (el.swap.isConnected ? el.swap : el.addImg).after(el.bgTools); for (const b of el.bgTools.querySelectorAll('button')) b.disabled = !w; } else el.bgTools?.remove();
     drawHandle();
   }
 
@@ -643,7 +671,12 @@ const Editor = (() => {
     const c = S.canvas, path0 = n ? K.pathOf(n) : null;
     note('מעלה את ' + file.name + '…');
     let path; try { path = await uploadToProject(file); } catch (e) { return note(e.message, true); }
-    const t = path0 ? K.byPath(c.m, path0) : null;
+    let t = path0 ? K.byPath(c.m, path0) : null;
+    if (t && t.tag !== 'img' && S.bg) {                                       // V5: על רובריקה עם תמונת רקע — רקע או אלמנט?
+      let host = t; while (host && !S.bg.hasImage(host)) host = host.parent;
+      if (host) { const how = await S.bg.ask(host); if (!how) return; const cur = K.byPath(c.m, K.pathOf(host)); if (how === 'bg' && cur) { c.select(cur); return S.bg.usePath(cur, path); } }
+      t = path0 ? K.byPath(c.m, path0) : null;
+    }
     if (t && t.tag === 'img') { const had = !!K.attrOf(t, 'srcset'); if (act('החלפת תמונה · ' + c.label(t), m => ({ patches: K.html.setAttr(m, t, 'src', relRef(path)).patches.concat(had ? K.html.removeAttr(m, t, 'srcset').patches : []) }), t)) { c.select(K.byPath(c.m, path0)); note('התמונה הוחלפה' + (had ? ', וה-srcset שלה הוסר' : ''), false, { label: 'בטל', run: undo }); } }
     else if (insertImage(path, t)) note('נוספה תמונה', false, { label: 'בטל', run: undo });
   }
@@ -762,6 +795,11 @@ const Editor = (() => {
     el.panelBody = h('div', { class: 'ed-side-body' }, el.ptabs, el.infoBody, el.contentBody, el.designBody, el.advBody);
     el.addImg = h('button', { type: 'button', class: 'btn sm', 'data-add-img': true, title: 'הוספת תמונה — אחרי האלמנט הנבחר', disabled: true, onclick: addImage }, '＋🖼️', h('span', { class: 'ed-word' }, ' תמונה'));
     el.swap = h('button', { type: 'button', class: 'btn sm', 'data-swap-img': true, title: 'החלפת התמונה הנבחרת', onclick: swapImage }, '🖼️', h('span', { class: 'ed-word' }, ' החלף'));
+    const bgAct = fn => () => { const n = S.canvas?.selected; if (!n || !S.bg) return; S.text?.end(); const im = S.bg.image(n, S.styler.info(n)), L = im.layers.find(x => x.kind === 'url'); fn(n, L); };
+    el.bgTools = h('span', { class: 'ed-bgtools', role: 'group', 'aria-label': 'תמונת הרקע של הרובריקה', 'data-bg-tools': true }, h('span', { class: 'ed-word' }, '🖼 תמונת רקע:'),
+      h('button', { type: 'button', class: 'btn sm', 'data-bgt': 'replace', title: 'החלפת תמונת הרקע — מהספרייה או מהמחשב', onclick: bgAct((n, L) => S.bg.replace(n, L)) }, '🖼', h('span', { class: 'ed-word' }, ' החלף')),
+      h('button', { type: 'button', class: 'btn sm', 'data-bgt': 'remove', title: 'הסרת תמונת הרקע (הרובריקה והתוכן נשארים)', onclick: bgAct((n, L) => { if (L) S.bg.remove(n, L); else note('התמונה אינה כתובה בקובץ שנערך כאן', true); }) }, '🗑', h('span', { class: 'ed-word' }, ' הסר')),
+      h('button', { type: 'button', class: 'btn sm', 'data-bgt': 'move', title: 'הזזה והגדלה של התמונה בתוך הרובריקה — על הקנבס', onclick: bgAct(n => S.bg.move(n)) }, '✥', h('span', { class: 'ed-word' }, ' הזז')));
     el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.addImg, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'הפאנל — תוכן (עריכה) ופרטים: מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.spaceBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
@@ -786,11 +824,13 @@ const Editor = (() => {
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = () => { drawHandle(); S.build?.draw(); }; c.onDropFile = (file, n) => dropFile(file, n);
+      c.onDraw = () => { drawHandle(); S.build?.draw(); S.bg?.place(); }; c.onDropFile = (file, n) => dropFile(file, n);
       S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
         highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } } });
       S.design = new window.KolDesign.Design(el.designBody, dOpt('design'));
+      S.bg = new window.KolBg.Bg(S.design, { writeOps, pick, note, undo, phone, rel: relRef, blocked: () => S.blocked || new Map(), docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, html: () => S.doc, filePath: () => S.file?.path, files: () => Project._state.files || [], layer: () => c.layer, sheet });
+      S.design.bgSection = n => S.bg.section(n);
       S.adv = new window.KolDesign.Design(el.advBody, dOpt('adv'));
       S.space = new window.KolSpacing.Spacing(c, { styler: S.styler, design: S.adv, write: writeStyle, preview, unpreview, canWrite: () => !!canWrite(), note, undo, phone, on: () => (S.spaceOn || (S.tab === 'adv' && (infoOpen() || phone())) ? 'adv' : S.tab === 'design' && infoOpen() ? 'design' : false), sheetHost: () => el.gapbar });
       S.adv.whyGap = n => S.space.whyNode(n);
@@ -799,7 +839,7 @@ const Editor = (() => {
         jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path, linkedPaths: () => { const out = []; if (c.m?.root) K.walk(c.m.root, n => { if (n.tag === 'link' && /stylesheet/i.test(K.attrOf(n, 'rel')?.value || '')) { const hr = K.attrOf(n, 'href'); if (hr) out.push(resolve(dirOf(S.file.path), hr.value)); } }); return out; },
         begin: (n, pt, all) => { if (S.text.begin(n, pt) && all && S.text.e) { const sl = c.doc.getSelection(); sl.selectAllChildren(S.text.e); } } });
       setTab(prefs.tab);
-      c.onSelect = () => { drawCrumbs(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
+      c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);

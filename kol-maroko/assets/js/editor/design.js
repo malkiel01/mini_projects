@@ -339,8 +339,8 @@
         if (k.image) sec.append(h('p', { class: 'hint sg-contrast', 'data-contrast': 'image' }, 'ניגודיות: מתחת לטקסט יש תמונת רקע — היחס אינו מחושב. בודקים בעין.'));
         else sec.append(h('p', { class: 'sg-contrast' + (k.ratio < 4.5 ? ' low' : ''), 'data-contrast': round(k.ratio) }, 'ניגודיות טקסט / רקע: ' + k.ratio.toFixed(2) + ':1' + (k.ratio < 4.5 ? ' — ⚠️ נמוכה מ-4.5 (קשה לקריאה)' : ' ✓')));
       }
-      sec.append(h('p', { class: 'hint' }, 'תמונת רקע ומעבר צבע — V5.'));
-      return [sec];
+      const bg = this.bgSection ? this.bgSection(n) : null;                     // V5: background.js — "רקע"
+      return bg ? [sec, bg] : [sec];
     }
 
     // ── מרווחים ─────────────────────────────────────────────
