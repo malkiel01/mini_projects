@@ -104,14 +104,33 @@
       const D = this.D, rtl = this.rtl(n), out = [];
       for (const [p, v] of sets) {
         const t = D.effTarget(n, p);
-        if (v == null) { if (t.kind !== 'rule') continue; const d = ST().declFor(t.r.node, p, rtl); if (!d || ST().covered(d.prop, rtl).length > 1) continue; }
+        if (v == null) { if (t.kind !== 'rule' && !t.dev) continue; const d = D.styler.ownDecl(n, D.styler.dev(t), p, D.info); if (!d || ST().covered(d.prop, rtl).length > 1) continue; }   // V7: במכשיר — ההצהרה שב-@media
         out.push([p, v, t]);
       }
       return out;
     }
+    /** V7: איפה יש מיקום — "יש מיקום למחשב; בטלפון — עובר ממחשב" (במקום "לא נבדק ברוחב אחר" של V6). */
+    devNote(n) {
+      const st = this.D.styler, all = st.perDevice(n, 'position', this.D.info), devs = st.devs(), parts = [];
+      for (const x of all) {
+        const from = devs.find(d => d.id === x.from), v = x.value || 'static';
+        parts.push(x.d.label + ': ' + (x.own ? (/absolute|fixed/.test(v) ? 'יש מיקום' : v) : 'עובר מ' + (from ? from.label : 'ברירת המחדל') + (/absolute|fixed/.test(v) ? ' (ממוקם)' : ' (בזרימה)')));
+      }
+      const p = hh('p', { class: 'hint', 'data-device-note': true }, '📱 ' + parts.join(' · ') + ' ');
+      const small = devs.filter(d => d.max).pop();
+      if (small && st.device()?.id !== small.id) p.append(hh('button', { type: 'button', class: 'btn sm', 'data-dev-go': small.id, onclick: () => this.setDevice?.(small.id) }, 'הצג ב' + small.label));
+      return p;
+    }
     /** "חזרה לזרימה": נמחקים position, ההיסטים וה-translate (וה-width שהעורך כתב באחוזים — אם יש); ה-relative של הייחוס נשאר. */
     off(n) {
       this.ready(n);
+      const dev = this.D.styler.device();
+      if (dev) {   // V7: "חזרה לזרימה במכשיר הזה" — position: static ב-@media; הבסיס (המחשב) אינו נמחק
+        const sets = [['position', 'static'], ...SIDES.map(s => [s, null]), ['translate', null]];
+        const r = this.write(new Map([[n, this.setsFor(n, sets)]]), 'חזרה לזרימה · ' + this.label(n) + ' · ' + dev.label);
+        if (r) this.note('האלמנט חזר לזרימה ב' + dev.label + ' בלבד (position: static ב-@media). במחשב הוא נשאר במקומו.', false, { label: 'בטל', run: this.undo });
+        return r;
+      }
       const sets = [['position', null], ...SIDES.map(s => [s, null]), ['translate', null]];
       const per = new Map([[n, sets.map(([p]) => [p, null, this.D.effTarget(n, p)])]]);
       const r = this.write(per, 'חזרה לזרימה · ' + this.label(n));
@@ -247,7 +266,7 @@
         if (this.covered) sec.append(hh('p', { class: 'sg-over', 'data-covered': true }, '⚠️ האלמנט מכוסה ברובו — ', hh('button', { type: 'button', class: 'btn sm', 'data-front-fix': true, onclick: () => this.layerTo(n, 'front') }, 'הבא לחזית')));
         if (this.clipped) sec.append(hh('p', { class: 'sg-over', 'data-clipped': true }, '⚠️ נחתך ע״י overflow של ' + c.label(c.nodeOf(this.clipped))));
         if (this.collapsed) sec.append(hh('p', { class: 'sg-over', 'data-collapsed': true }, '⚠️ ' + c.label(c.nodeOf(this.collapsed)) + ' איבדה את גובהה (כל ילדיה ממוקמים) — ', hh('button', { type: 'button', class: 'btn sm', onclick: () => { const p = c.nodeOf(this.collapsed); const h0 = Math.round(this.collapsed.scrollHeight || 200); this.write(new Map([[p, [['min-height', h0 + 'px', this.st.targets(p)[0]]]]]), 'גובה מינימלי · ' + c.label(p)); } }, 'קבע גובה מינימלי')));
-        sec.append(hh('p', { class: 'hint', 'data-device-note': true }, '📱 הונח במחשב — לא נבדק ברוחב אחר. ', hh('button', { type: 'button', class: 'btn sm', onclick: () => this.setDevice?.('phone') }, 'הצג ב-390px')));
+        sec.append(this.devNote(n));
         sec.append(hh('p', { class: 'hint' }, 'סדר הקריאה (קורא מסך, מנוע חיפוש) — לפי המקור, ולא השתנה.'));
       }
       sec.append(D.choice('position', 'position', ['static', 'relative', 'absolute', 'fixed', 'sticky'].map(v => [v, v])));

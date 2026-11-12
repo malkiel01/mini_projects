@@ -15,6 +15,8 @@
   'use strict';
   const K = window.KolSrc;
   const OWNED = 'data-kol-canvas', CAP = 60, REAL = ':not([' + OWNED + '])';
+  /** בורר לפי המקום ב-DOM (לכללים של העורך בקנבס בלבד). */
+  const domSel = e => { let sel = ''; for (let x = e; x.parentElement; x = x.parentElement) sel = ' > :nth-child(' + (Array.prototype.indexOf.call(x.parentElement.children, x) + 1) + ')' + sel; return 'html' + sel; };
   /** אלמנטים שאין להם מראה בעמוד — נבחרים ב-Navigator, ואינם "מוצגים לעריכה". */
   /** עריכת טקסט במקום (V2): מסגרת לאלמנט הנערך, ו"הקלד כאן" לאלמנט ריק. contenteditable נוסף ל-DOM של הקנבס בלבד, לזמן העריכה. */
   const EDIT_CSS = '[contenteditable="true"]{outline:2px solid #1a73e8!important;outline-offset:2px;cursor:text;min-height:1em;-webkit-user-modify:read-write}[contenteditable="true"]:empty::before{content:"הקלד כאן";opacity:.45}'
@@ -95,7 +97,7 @@
       }
       this.render();
       const t3 = performance.now();
-      this.remap();
+      this.remap(); this.markDev();
       const t4 = performance.now();
       void this.doc.documentElement.offsetHeight;                          // פריסה בפועל
       const t5 = performance.now();
@@ -134,10 +136,30 @@
       if (this.baseHref && head) { const b = doc.createElement('base'); b.setAttribute(OWNED, 'base'); b.setAttribute('href', this.baseHref); head.prepend(b); }
       this.capStyle = doc.createElement('style'); this.capStyle.setAttribute(OWNED, 'cap'); head.append(this.capStyle);
       const ed = doc.createElement('style'); ed.setAttribute(OWNED, 'edit'); ed.textContent = EDIT_CSS; head.append(ed);   // V2: המראה של אלמנט בזמן עריכת טקסט — בקנבס בלבד
-      this.recap();
+      this.recap(); this.markDev();
     }
     /** מחליף את הטקסט של קובץ CSS מקושר (אחרי עריכה שלו), בלי לגעת בשאר. */
-    setSheet(href, text) { for (const st of this.doc.querySelectorAll('style[' + OWNED + ']')) if (st.getAttribute(OWNED) === href) st.textContent = noBom(text); }
+    setSheet(href, text) { for (const st of this.doc.querySelectorAll('style[' + OWNED + ']')) if (st.getAttribute(OWNED) === href) st.textContent = noBom(text); this.markDev(); }
+    /**
+     * V7: אלמנט שמוסתר במכשיר הנוכחי (display:none בתוך @media של נקודת שבירה שחל עכשיו) — מוצג בקנבס שקוף למחצה ומקווקו,
+     * ונבחר; הוא אינו נעלם. כלל CSS של העורך לפי מקום האלמנט ב-DOM (כמו "מוצג לעריכה") — הקובץ אינו משתנה.
+     */
+    markDev() {
+      const doc = this.doc, ST = window.KolStyle; this.devHidden = new Set();
+      if (!doc || !doc.documentElement || !ST || !this.sheets) return;
+      const win = this.frame.contentWindow, els = new Set();
+      const walk = list => { for (const r of list) {
+        if (!r.cssRules || r.conditionText == null || !/Media/.test(r.constructor && r.constructor.name || '')) continue;
+        const mx = ST.mediaMax(r.conditionText); let on = false; try { on = mx != null && (!this.devMaxes || this.devMaxes().includes(mx)) && win.matchMedia(r.conditionText).matches; } catch { on = false; }
+        if (on) for (const x of r.cssRules) if (x.style && x.style.getPropertyValue('display').trim() === 'none') { try { for (const e of doc.querySelectorAll(x.selectorText)) if (!e.closest('[' + OWNED + ']')) els.add(e); } catch { /* בורר שאינו נקרא */ } }
+      } };
+      for (const sh of doc.styleSheets) { const o = sh.ownerNode; if (!o || sh.disabled || /^(devhide|show|cap|edit)$/.test(o.getAttribute(OWNED) || '')) continue; try { walk(sh.cssRules); } catch { /* גיליון חיצוני */ } }
+      const text = [...els].map(e => domSel(e) + '{display:revert!important;opacity:.45!important;outline:2px dashed #b45309!important;outline-offset:-2px!important}').join('\n');
+      let st = this.devStyle;
+      if (!st || !st.isConnected) { if (!text) return; st = this.devStyle = doc.createElement('style'); st.setAttribute(OWNED, 'devhide'); (doc.head || doc.documentElement).append(st); }
+      if (st.textContent !== text) st.textContent = text;
+      if (this.d2m) for (const e of els) { const n = this.nodeOf(e); if (n) this.devHidden.add(n); }
+    }
     /** רשימה ארוכה: יותר מ-CAP אחים זהים במבנה ← הקנבס מציג CAP, בכלל CSS של העורך (ה-DOM והמיפוי נשארים שלמים). */
     recap() {
       if (!this.capStyle || !this.sheets) return;
@@ -215,7 +237,6 @@
         this.shownNote = 'מוצג לעריכה · תוכן תבנית';
       }
       // הסתרה (display:none, hidden, חלון סגור): נדרסת בכלל CSS של העורך, לפי מקום האלמנט ב-DOM — בלי לגעת בתכונות שלו
-      const domSel = e => { let sel = ''; for (let x = e; x.parentElement; x = x.parentElement) sel = ' > :nth-child(' + (Array.prototype.indexOf.call(x.parentElement.children, x) + 1) + ')' + sel; return 'html' + sel; };
       const path = []; for (let x = n; x; x = x.parent) path.unshift(x);
       let st = null, rules = '';
       const put = text => { if (!st) { st = this.doc.createElement('style'); st.setAttribute(OWNED, 'show'); (this.doc.head || this.doc.documentElement).append(st); this.shownUndo.push(() => st.remove()); } st.textContent = text; };
@@ -283,7 +304,7 @@
       for (const set of [this.hiddenNodes, this.lockedNodes]) for (const x of set) if (!this.m2d.has(x) || !alive(x)) set.delete(x);
       if (this.sheets) this.recap();
       this.show(this.selected);
-      this.zeroAt = 0; this.draw();
+      this.markDev(); this.zeroAt = 0; this.draw();
       return { mode: this.lastMode, why: this.lastWhy, timing: { op: 0, reparse: t1 - t0, dom: t2 - t1, map: t3 - t2, layout: t4 - t3, total: t4 - t0 } };
     }
     /** מחליף ב-DOM את הצמתים של אזור אחד. מחזיר false על כל אי-התאמה (לפני או אחרי השינוי) — ואז מרנדרים הכול. */
@@ -514,7 +535,7 @@
         this.scale = Math.min(1, hw / this.viewport); this.ox = Math.max(0, (hw - this.viewport * this.scale) / 2);
         f.cssText = 'position:absolute;top:0;left:' + this.ox + 'px;width:' + this.viewport + 'px;height:' + (hh / this.scale) + 'px;transform:scale(' + this.scale + ');transform-origin:0 0';
       }
-      this.zeroAt = 0; this.draw();
+      this.markDev(); this.zeroAt = 0; this.draw();
     }
     rectOf(n) {
       const d = n && this.elOf(n);
