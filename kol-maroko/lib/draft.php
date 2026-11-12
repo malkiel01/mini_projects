@@ -43,7 +43,9 @@ function lock_op(array $user, array $b): array
 {
     $pdo = db();
     $op = (string)($b['op'] ?? 'take');
-    $pdo->beginTransaction();
+    // T1: IMMEDIATE — קריאה ואחריה כתיבה בעסקה DEFERRED נכשלת מיד (SQLITE_BUSY_SNAPSHOT, בלי busy_timeout) כשבקשה אחרת
+    // כתבה בין השתיים. זה ה-500 שהופיע ב-v1b בעומס. IMMEDIATE לוקחת את נעילת הכתיבה בהתחלה, וממתינה לפי busy_timeout.
+    $pdo->exec('BEGIN IMMEDIATE');
     try {
         $l = lock_state();
         if ($op === 'release') {
@@ -54,9 +56,9 @@ function lock_op(array $user, array $b): array
                            ON CONFLICT(id) DO UPDATE SET sub = excluded.sub, name = excluded.name, since = excluded.since, beat = excluded.beat')
                 ->execute([$user['sub'], $user['name'], $since, time()]);
         }
-        $pdo->commit();
+        $pdo->exec('COMMIT');
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        $pdo->exec('ROLLBACK');
         throw $e;
     }
     return ['lock' => lock_view($user)];

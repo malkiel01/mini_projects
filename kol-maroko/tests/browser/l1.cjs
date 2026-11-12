@@ -3,7 +3,7 @@
  *
  * עמוד המילון (הזריעה של F3) — העמודה המיובאת היא display:contents, והרכיב התכווץ לרוחב התוכן (~717 מתוך 1580).
  * ב-1920 וב-1280: המסגרת + הפאנל = כל הרוחב, המסגרת עד תחתית המסך, והרכיב שבתוכה ממלא אותה.
- * "טלפון" — 390 ממורכז; טלפון אמיתי (390×844) — בלי פאנל, המסגרת לכל הרוחב. צילומים ל-dev/l1/.
+ * "טלפון" — 390 ממורכז; טלפון אמיתי (390×844) — בלי פאנל, המסגרת לכל הרוחב. צילומים לתיקייה זמנית (os.tmpdir()/kol-l1-shots, או KOL_SHOTS).
  * L1b: פלט הבנייה של הפרסום (build_version, דרך l1-build.php) — ב-1920, 1280 ו-390 המילון ממלא את השורה.
  */
 'use strict';
@@ -12,7 +12,8 @@ const { spawn, execFileSync } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), net = require('net');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SHOTS = path.join(ROOT, 'dev', 'l1');
+// T1: הצילומים — לתיקייה זמנית (כמו v6.cjs), לא לריפו: הרצה רגילה לא משנה קבצים במעקב. KOL_SHOTS=<תיקייה> — מיקום אחר.
+const SHOTS = process.env.KOL_SHOTS || path.join(os.tmpdir(), 'kol-l1-shots');
 const OWNER = { sub: 'u-owner', name: 'Owner Test', email: 'owner@example.test', email_verified: true, platform_admin: true };
 let failed = 0, ran = 0;
 const ok = (cond, what) => { ran++; if (cond) console.log('✅ ' + what); else { failed++; console.log('❌ ' + what); } return !!cond; };

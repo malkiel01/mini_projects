@@ -30,6 +30,7 @@ const Studio = (() => {
 
   let S = null;                 // מצב הסטודיו הפעיל
   let exiting = Promise.resolve();  // השמירה והשחרור של היציאה הקודמת — כניסה חוזרת מחכה להם
+  let gen = 0;                       // T1: מספר הכניסה. unmount() מקדם אותו — כניסה שעוד ממתינה (exiting / draft / lock) נעצרת
 
   const uid = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), b => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -772,10 +773,15 @@ parent.postMessage({kol:'ready'},'*');
 
   async function mount(host) {
     unmount();
+    // T1: עזיבה בזמן ההמתנה (לפני ש-S קיים, ולכן unmount() לא יכול לעצור דבר) — בלי הבדיקה, הסטודיו דרס את המסך
+    // שנפתח בינתיים (host.replaceChildren) והשאיר מאזינים ו-lock פעילים מחוץ לסטודיו.
+    const my = ++gen, live = () => my === gen;
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען את הטיוטה…'));
     await exiting;
+    if (!live()) return;
     let d;
-    try { d = await api('draft'); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    try { d = await api('draft'); } catch (e) { if (live()) host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    if (!live()) return;
     const btn = (a, ic, lbl, fn, cls = 'icon-btn') => h('button', { type: 'button', class: cls, 'data-a': a, 'aria-label': lbl, title: lbl, onclick: fn }, ic);
     const frame = h('iframe', { class: 'st-frame', title: 'תצוגת העמוד', sandbox: 'allow-scripts' });
     const side = h('aside', { class: 'st-side', 'aria-label': 'מאפייני הרכיב' });
@@ -813,12 +819,13 @@ parent.postMessage({kol:'ready'},'*');
 
     const mine = S;                            // A3: עזיבה (או כניסה מחדש) בזמן ההמתנה ל-lock — המסך הזה כבר לא פעיל
     const lock = d.lock.mine ? d.lock : (await api('lock', { op: 'take' }).catch(() => ({ lock: { mine: false, by: '?' } }))).lock;
-    if (S !== mine) return;
+    if (S !== mine || !live()) return;
     if (!lock.mine) readonly(`בעריכה אצל ${lock.by}. אפשר לצפות; העריכה תיפתח כשהוא יסיים`);
     S.beat = setInterval(beat, 30_000);
   }
 
   function unmount() {
+    gen++;
     if (!S) return;
     flush(S, true);
     clearInterval(S.beat); clearTimeout(S.rt);
