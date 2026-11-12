@@ -61,7 +61,7 @@
   function renderPage(s, page) {
     return new Promise(function (resolve) {
       var f = document.createElement('iframe');
-      f.setAttribute('sandbox', s.sandbox);
+      f.setAttribute('sandbox', String(s.sandbox).replace(/^sandbox\s*/, ''));     // PV_SANDBOX הוא בצורת CSP ("sandbox …") — המאפיין בלי המילה
       f.setAttribute('aria-hidden', 'true');
       f.tabIndex = -1;
       f.referrerPolicy = 'no-referrer';
@@ -90,7 +90,7 @@
     document.head.appendChild(l);
   })();
 
-  var STATUS = { building: ['בבנייה', 'warn'], built: ['מוכנה', 'ok'], failed: ['נכשלה', 'bad'], sending: ['בשליחה', 'warn'], live: ['באתר', 'ok'], superseded: ['הוחלפה', ''] };
+  var STATUS = { building: ['בבנייה', 'warn'], built: ['מוכנה', 'ok'], failed: ['נכשלה', 'bad'], sending: ['בשליחה / ממתין למשיכה', 'warn'], live: ['באתר', 'ok'], superseded: ['הוחלפה', ''] };
   var when = function (iso) { return iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jerusalem' }) : ''; };
   var mb = function (n) { return n == null ? '' : n < 1048576 ? Math.max(1, Math.round(n / 1024)) + 'KB' : (n / 1048576).toFixed(1) + 'MB'; };
   var where = function (x) { return x.file ? x.file + (x.line ? ':' + x.line : '') : ''; };
@@ -249,15 +249,28 @@
     var blocked = (b.report.warnings || []).some(function (w) { return w.block; });
     box.append(go, st);
     if (blocked) { st.textContent = 'החבילה גדולה מהמכסה — אי אפשר לשלוח.'; return box; }
+    // M7 — ערוץ המשיכה: אין "שליחה"; הגרסה נכנסת לתור והאתר מושך אותה. גם לפני שהאתר משך אי פעם — היא מחכה בתור
+    var pull = function (pulse) {
+      go.disabled = false;
+      if (b.status === 'sending') go.textContent = '↻ שוב לתור (מחליף את הקודם)';
+      else go.textContent = '🚀 לתור — האתר מושך';
+      if (!(b.error && b.error.send)) st.textContent = (b.status === 'sending' ? '⏳ בתור — ממתין למשיכה של האתר. ' : 'ערוץ משיכה: הגרסה נכנסת לתור, והאתר מושך אותה ומדווח. ') + (pulse ? pulse.text : 'האתר עוד לא משך מהכלי — הגרסה תחכה בתור.');
+    };
     api('site_ping', {}).then(function (r) {
       var p = r.site || {};
+      if (p.channel === 'pull') return pull(p.pulse);
       if ((p.protocol || 0) < 2) { st.textContent = 'הגרסה מוכנה ונשמרה. התוסף באתר הוא ' + (p.plugin || '1.x') + ' — לשליחה נדרש 2.0 (M2, מטלה לבעלים).'; return; }
       go.disabled = false; if (!(b.error && b.error.send)) st.textContent = 'התוסף באתר: ' + p.plugin + '. רק קבצים שהאתר עוד אינו מחזיק נשלחים; המניפסט — אחרון.';
-    }).catch(function (e) { st.replaceChildren(h('span', { class: 'error' }, 'האתר: ' + e.message)); });
+    }).catch(function (e) { if (e.data && e.data.code === 'no_heartbeat') return pull(null); st.replaceChildren(h('span', { class: 'error' }, 'האתר: ' + e.message)); });
     go.onclick = async function () {
       if (!confirm('לשלוח את הגרסה הזו לאתר?')) return;
       go.disabled = true; st.textContent = 'שולח…';
-      try { var r = await api('build_send', { id: b.id }); toast('גרסה ' + r.build.version + ' באתר ✓ (' + r.sent + ' קבצים נשלחו)'); buildSheet(b.id, role); refreshTab(); }
+      try {
+        var r = await api('build_send', { id: b.id });
+        // M7: בערוץ המשיכה — בתור; "באתר" רק כשהאתר מדווח שהחיל
+        toast(r.queued ? '⏳ גרסה ' + r.build.version + ' בתור (#' + r.seq + ') — ממתין למשיכה של האתר' : 'גרסה ' + r.build.version + ' באתר ✓ (' + r.sent + ' קבצים נשלחו)');
+        buildSheet(b.id, role); refreshTab();
+      }
       catch (e) { go.disabled = false; go.textContent = '↻ המשך שליחה'; st.replaceChildren(h('span', { class: 'error' }, e.message)); }
     };
     return box;

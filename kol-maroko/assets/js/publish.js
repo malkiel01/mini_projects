@@ -10,10 +10,21 @@ const Publish = (() => {
 
   // M1 — "📁 פרסום מפרויקט הקבצים" (assets/js/build.js): נטען כאן, כדי שלא לגעת ב-index.html
   let buildJs = null;
+  // createElement ולא h(): הסקריפט הזה נטען (defer) לפני app.js, וה-setTimeout למטה עשוי לרוץ לפניו — ו-Promise שנדחה היה נשמר לתמיד
   const buildReady = () => buildJs ??= new Promise((ok, fail) => {
     if (window.KolBuild) return ok();
-    document.head.append(h('script', { src: 'assets/js/build.js', onload: ok, onerror: () => { buildJs = null; fail(new Error('build.js לא נטען')); } }));
+    const sc = document.createElement('script');
+    sc.src = 'assets/js/build.js';
+    sc.onload = ok;
+    sc.onerror = () => { buildJs = null; fail(new Error('build.js לא נטען')); };
+    document.head.append(sc);
   });
+  // M7 — הסגנון של התור (assets/css/publish.css; אותו קובץ ש-build.js טוען)
+  if (!document.querySelector('link[data-kol-publish-css]')) {          // h() של app.js עוד לא קיים כאן (הסקריפט נטען לפניו)
+    const l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = 'assets/css/publish.css'; l.setAttribute('data-kol-publish-css', '');
+    document.head.append(l);
+  }
   if (document.readyState !== 'loading') setTimeout(() => buildReady().then(() => KolBuild.notices()).catch(() => {}), 0);
   else document.addEventListener('DOMContentLoaded', () => buildReady().then(() => KolBuild.notices()).catch(() => {}));
 
@@ -28,6 +39,7 @@ const Publish = (() => {
     let pk = more.length ? host.querySelector('.pk') : null;
     if (!more.length) { try { await buildReady(); pk = KolBuild.block(host, role); } catch (e) { pk = h('p', { class: 'error' }, e.message); } }
     host.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
+      canPublish ? (more.length ? host.querySelector('.ob') : outboxBlock(host, role)) : null,      // M7 — הדרך לאתר: התור והדופק
       pk,
       canPublish ? more.length ? host.querySelector('.co') : (el => (window.KolCutover ? KolCutover.mount(el) : document.head.append(h('script', { src: 'assets/js/cutover.js', onload: () => KolCutover.mount(el) })), el))(h('section', {})) : null,   // M3 — 🔁 מעבר (assets/js/cutover.js)
       h('h2', { class: 'sec-title' }, '🎨 פרסום הטיוטה (המסלול של היום)'),
@@ -65,7 +77,11 @@ const Publish = (() => {
         : 'להחזיר את האתר לעמוד המקורי, כמו שהיה לפני הכלי? הגרסאות כאן נשמרות, ואפשר להחליף שוב בכל רגע.';
       if (!confirm(msg)) return;
       btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
-      try { const r = await api('site_switch', { enabled: on }); toast(r.site.enabled ? 'האתר מציג את הגרסה מהסטודיו ✓' : 'האתר חזר לעמוד המקורי ✓'); show(r.site); }
+      try {
+        const r = await api('site_switch', { enabled: on });
+        if (r.site.queued) { toast(`⏳ בתור (#${r.site.seq}) — יוחל כשהאתר ימשוך`); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); Outbox.refresh(); return; }
+        toast(r.site.enabled ? 'האתר מציג את הגרסה מהסטודיו ✓' : 'האתר חזר לעמוד המקורי ✓'); show(r.site);
+      }
       catch (e) { toast(e.message, true); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
     };
     const show = st => {
@@ -198,12 +214,14 @@ const Publish = (() => {
         h('button', { type: 'button', class: 'btn ghost', style: 'align-self:end', onclick: async () => {
           try { await api('site_set', { site: site.value }); toast('נשמר'); } catch (e) { toast(e.message, true); }
         } }, 'שמירה')),
-      h('p', { class: 'hint endpoint', dir: 'ltr' }, 'POST ' + s.endpoint),
+      channelBlock(host, s),
+      s.channel === 'push' ? h('p', { class: 'hint endpoint', dir: 'ltr' }, 'POST ' + s.endpoint) : '',
       h('div', { class: 'row-btns wrap' },
         h('button', { type: 'button', class: 'btn primary', onclick: async () => {
           ping.textContent = 'בודק…';
           try {
             const r = (await api('site_ping', {})).site;
+            if (r.channel === 'pull') { ping.replaceChildren(h('b', { style: `color:var(--${r.pulse.level === 'ok' ? 'ok' : 'star'})` }, '📡 '), r.pulse.text); return; }
             ping.replaceChildren(h('b', { style: 'color:var(--ok)' }, '✓ האתר ענה. '),
               `גרסה אחרונה שהתקבלה: ${r.version || 'אין'} · ${r.enabled ? 'מוצגת בעמוד' : 'התוסף כבוי — העמוד מציג את התוכן המקורי'}${r.page_set ? '' : ' · לא נבחר עמוד בתוסף'}`);
           } catch (e) {
@@ -217,6 +235,43 @@ const Publish = (() => {
       importBlock(host, imp.imported),
       audioBlock(),
       aiBlock(host));
+  }
+
+  // ── M7: הערוץ ושורת החיבור (בעל האתר) ─────────────────────
+  function channelBlock(host, s) {
+    const lineBox = h('div');
+    let tokenTx;
+    const bad = s.bad && s.bad.count ? h('p', { class: 'hint' }, `אסימון שגוי ב-pull.php: ${s.bad.count} פעמים · האחרונה ${s.bad.at ? when(s.bad.at) : ''} · ${s.bad.ip || ''}`) : null;
+    const setCh = async c => {
+      if (c === s.channel) return;
+      if (!confirm(c === 'pull' ? 'לעבור לערוץ משיכה? מעכשיו כל פרסום נכנס לתור, והאתר מושך אותו (התוסף 2.2 עם שורת חיבור).'
+        : 'לעבור לערוץ דחיפה? הכלי ישלח ישירות לאתר — זה נחסם כשיש Cloudflare בדרך.')) return;
+      try { await api('pub_channel_set', { channel: c }); toast('נשמר'); settings(host); } catch (e) { toast(e.message, true); }
+    };
+    return h('div', { class: 'summary ob-channel' },
+      h('div', { class: 'line' }, h('b', {}, 'הערוץ'), h('span', { class: 'muted' }, s.channel === 'pull'
+        ? '📥 משיכה — האתר יוצא אל הכלי ומושך (אין בקשה נכנסת לאתר, ולכן Cloudflare אינו בדרך)'
+        : '📤 דחיפה — הכלי שולח לאתר (POST ל-wp-json)')),
+      h('div', { class: 'row-btns wrap' },
+        h('button', { type: 'button', class: `btn ${s.channel === 'pull' ? 'primary' : 'ghost'}`, 'aria-pressed': String(s.channel === 'pull'), onclick: () => setCh('pull') }, '📥 משיכה'),
+        h('button', { type: 'button', class: `btn ${s.channel === 'push' ? 'primary' : 'ghost'}`, 'aria-pressed': String(s.channel === 'push'), onclick: () => setCh('push') }, '📤 דחיפה')),
+      h('div', { class: 'line' }, h('b', {}, '📋 שורת חיבור לתוסף'), tokenTx = h('span', { class: 'muted' }, s.token_at
+        ? `— אסימון נוצר ${when(s.token_at)}. השורה מוצגת רק כשנוצרת; שורה חדשה מבטלת את הקודמת`
+        : '— עוד לא נוצרה. בלעדיה התוסף אינו יכול למשוך')),
+      h('button', { type: 'button', class: 'btn primary', style: 'justify-self:start', onclick: async () => {
+        if (s.token_at && !confirm('שורה חדשה מבטלת את האסימון הקודם — התוסף יפסיק למשוך עד שתדביקו בו את החדשה. להמשיך?')) return;
+        try {
+          const r = await api('pull_line', {});
+          s.token_at = r.token_at;
+          tokenTx.textContent = '— נוצרה עכשיו; הקודמת (אם הייתה) בוטלה';
+          lineBox.replaceChildren(h('div', { class: 'warnbox' },
+            h('b', {}, 'השורה — מוצגת פעם אחת. להעתיק עכשיו:'),
+            h('code', { class: 'keybox ob-line', dir: 'ltr' }, r.line), copyBtn(r.line),
+            h('p', {}, 'בוורדפרס: הגדרות ← קול מרוקו ← 📥 משיכה מהכלי ← "שורת חיבור" ← שמירה ובדיקה.')));
+        } catch (e) { toast(e.message, true); }
+      } }, s.token_at ? '🔁 שורה חדשה (מבטלת את הקודמת)' : '📋 יצירת שורת חיבור'),
+      lineBox, bad,
+      h('p', { class: 'hint', dir: 'ltr' }, 'GET ' + s.pull_url));
   }
 
   function copyBtn(text) {
@@ -331,6 +386,73 @@ const Publish = (() => {
           : h('p', { class: 'hint' }, 'עוד לא היה שימוש החודש.'));
     }).catch(e => box.replaceChildren(h('p', { class: 'error' }, e.message)));
     return box;
+  }
+
+  // ── M7: "📡 הדרך לאתר" — הדופק והתור ──────────────────────
+  const OB_STATE = {
+    queued: ['⏳', 'ממתין למשיכה', 'warn'], delivered: ['📥', 'נמשך', 'warn'], applied: ['✓', 'הוחל באתר', 'ok'],
+    failed: ['✗', 'נכשל', 'bad'], expired: ['⌛', 'פג תוקף', 'bad'], superseded: ['↷', 'הוחלפה בחדשה', ''],
+  };
+  const Outbox = { box: null, host: null, role: null, timer: null, refresh() { if (Outbox.box && Outbox.box.isConnected) fillOutbox(Outbox.box); } };
+  const time = iso => iso ? new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jerusalem' }) : '';
+
+  function outboxBlock(host, role) {
+    const box = h('section', { class: 'ob', 'aria-labelledby': 'ob-t' }, h('p', { class: 'empty' }, 'טוען את הדרך לאתר…'));
+    Object.assign(Outbox, { box, host, role });
+    fillOutbox(box);
+    return box;
+  }
+
+  async function fillOutbox(box) {
+    let d;
+    try { d = await api('outbox'); } catch (e) { box.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    if (d.channel !== 'pull' && !d.outbox.length) { box.replaceChildren(); box.hidden = true; return; }
+    box.hidden = false;
+    const p = d.pulse;
+    const status = h('p', { class: 'hint ob-wait', role: 'status' });
+    const check = h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
+      check.disabled = true;
+      const before = p.at || 0;
+      status.textContent = 'דפקתי על האתר — מחכה לדופק (עד 60 שניות)…';
+      try { await api('site_wake', {}); } catch (e) { status.textContent = e.message; check.disabled = false; return; }
+      const t0 = Date.now();
+      const poll = async () => {
+        let o;
+        try { o = await api('outbox'); } catch { o = null; }
+        // האתר משך — כל הלשונית מתרעננת (גם "📁 פרסום מפרויקט הקבצים": הגרסה עוברת ל"באתר" רק עכשיו)
+        if (o && (o.pulse.at || 0) > before) { toast('📡 האתר משך עכשיו'); if (Outbox.host && Outbox.host.isConnected) view(Outbox.host, Outbox.role); else fillOutbox(box); return; }
+        if (Date.now() - t0 > 60000) { status.textContent = 'האתר לא משך בתוך דקה — ממתין לדופק הבא (wp-cron, או "🔄 עדכן עכשיו" בוורדפרס).'; check.disabled = false; return; }
+        Outbox.timer = setTimeout(poll, 5000);
+      };
+      Outbox.timer = setTimeout(poll, 3000);
+    } }, '🔄 בדוק עכשיו');
+    const rows = d.outbox.slice(0, 12).map(r => {
+      const [ic, label, cls] = OB_STATE[r.state] || ['•', r.state, ''];
+      const at = r.state === 'applied' ? time(r.applied_at) : r.state === 'delivered' ? time(r.delivered_at) : '';
+      const resend = (r.state === 'failed' || r.state === 'expired') ? h('button', { type: 'button', class: 'btn ghost ob-resend', onclick: async ev => {
+        ev.target.disabled = true;
+        try { await api('outbox_resend', { seq: r.seq }); toast('נשלח שוב — בתור'); fillOutbox(box); if (Outbox.host) view(Outbox.host, Outbox.role); }
+        catch (e) { toast(e.message, true); ev.target.disabled = false; }
+      } }, '↻ שלח שוב') : null;
+      return h('li', { class: `ob-row ob-${r.state}`, 'data-seq': r.seq },
+        h('span', { class: `chip ${cls} ob-st` }, `${ic} ${label}${at ? ' ' + at : ''}`),
+        h('span', { class: 'ob-what' }, h('b', {}, r.label), r.what && !r.label.includes(r.what) ? h('span', { class: 'muted' }, ' · ' + r.what) : null),
+        h('small', { class: 'muted ob-meta' }, `#${r.seq} · ${r.created_by || ''} · ${when(r.created_at)}`),
+        h('span', { class: 'ob-why' }, r.reason ? h('span', { class: 'error' }, r.reason) : r.state === 'queued' ? h('span', { class: 'muted' }, 'האתר בודק כל 5 דקות') : null),
+        resend || h('span', { class: 'ob-act' }));
+    });
+    box.replaceChildren(...[                                    // replaceChildren(null) כותב "null"
+      h('h2', { class: 'sec-title', id: 'ob-t' }, '📡 הדרך לאתר'),
+      h('div', { class: `ob-pulse ob-${p.level}` },
+        h('span', { class: 'ob-dot', 'aria-hidden': 'true' }),
+        h('span', { class: 'ob-pulse-tx' }, h('b', {}, 'דופק האתר: '), p.text),
+        check),
+      p.level === 'warn' || p.level === 'bad' ? h('p', { class: 'hint ob-cron' }, p.never
+        ? 'בעל האתר: ⚙️ הגדרות ← 🔗 חיבור לאתר ← 📋 שורת חיבור, ולהדביק אותה בתוסף.'
+        : `ייתכן שאין ביקורים באתר, ו-wp-cron לא רץ. ${d.cron}`) : null,
+      d.waiting ? h('p', { class: 'hint' }, `${d.waiting} ממתינות למשיכה. ${d.apply_now}`) : null,
+      rows.length ? h('ol', { class: 'ob-rows' }, rows) : h('p', { class: 'empty' }, 'אין עדיין פקודות לאתר. כל פרסום, מפסק ואופן הצבה יופיעו כאן עם המצב שלהם.'),
+      status].filter(Boolean));
   }
 
   return { view, settings };
