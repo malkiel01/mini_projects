@@ -26,9 +26,11 @@ require_once __DIR__ . '/dev.php';
 
 const CUTOVER_SNAP_HOURS = 24;
 /** התנאים שרק הבעלים יודע — ראיה. המפתח — שם התנאי בקוד. */
-const CUTOVER_EVIDENCE = ['attack_kit', 'fidelity', 'q15', 'q4', 'owner_checklist'];
+const CUTOVER_EVIDENCE = ['attack_kit', 'site_compare', 'q15', 'q4', 'owner_checklist'];
+/** ההשוואה מול האתר: כמה צילומים (קבצים) לפחות — טלפון ומחשב. */
+const CUTOVER_SITE_SHOTS = 2;
 /** הסדר במסך = הסדר של 09 §6.1. */
-const CUTOVER_ORDER = ['fidelity', 'build', 'plugin', 'attack_kit', 'feedback', 'recordings', 'q15', 'q4', 'backup', 'owner_checklist'];
+const CUTOVER_ORDER = ['site_compare', 'build', 'plugin', 'attack_kit', 'feedback', 'recordings', 'q15', 'q4', 'backup', 'owner_checklist'];
 const CUTOVER_SWITCH_PATH = 'וורדפרס ← קול מרוקו ← העמוד החדש ← הדלק';
 const CUTOVER_KILL_RULE = 'משהו לא בסדר — מכבים את "העמוד החדש", והעמוד המקורי חוזר. לא מתקנים על האוויר: התיקון — בכלי, ואז שוב מצעד 2 (כתובת הבדיקה).';
 
@@ -184,7 +186,8 @@ function cutover_eval(array $f): array
 
     // ראיה מהבעלים
     $ev = [
-        'fidelity' => ['דוח הנאמנות עבר (09 §4)', 'להריץ את tests/browser/m3-fidelity.cjs (העמוד החי מול כתובת הבדיקה), ולצרף את הדוח: "עבר N/N"'],
+        // הכרעת הבקרה (2026-11-12): מול האתר האמיתי — אישור הבעלים עם צילומים, כמו ב-F3 (Cloudflare חוסם את הסקריפט מכאן)
+        'site_compare' => ['השוואה מול האתר — אישור הבעלים עם צילומים (טלפון + מחשב)', 'לפתוח את העמוד החי ואת כתובת הבדיקה בטלפון ובמחשב, להשוות (שורות 09 §4), ולצרף לפחות שני צילומים — טלפון ומחשב — עם הערה מה נבדק'],
         'attack_kit' => ['ערכת ההתקפה ירוקה, בשלושה דפדפנים (M2 §4)', 'להריץ את ערכת ההתקפה על כתובת הבדיקה ב-Chrome, Firefox ו-Safari, ולצרף צילום / קישור'],
         'q15' => ['[ש-15] ההשוואה מול וורדפרס הוכרעה', 'לכתוב את ההכרעה על כל הבדל (06 §5), או לקשר אליה'],
         'q4' => ['[ש-4] הוכרע מה שהאתר מציג בכל עמוד', 'לכתוב מה הוכרע: מה עובר לעמוד, ומי בונה. ⚠️ רכיבים שהאתר מציג היום בכל עמוד (נגישות, עוגיות, סטטיסטיקה) **אינם** בעמוד החדש עד שבעל העמוד מוסיף אותם בעצמו'],
@@ -193,8 +196,14 @@ function cutover_eval(array $f): array
     foreach ($ev as $k => [$title, $todo]) {
         $list = $f['evidence'][$k] ?? [];
         $last = $list[0] ?? null;
-        $rows[$k] = cutover_row($k, $title, $last ? 'ok' : 'bad', 'ראיה מהבעלים',
-            $last ? 'אושר ע"י ' . $last['by'] . ' · ' . $last['at'] : 'אין עדיין ראיה', $todo, ['evidence' => $list, 'evidence_kind' => true]);
+        $ok = (bool)$last;
+        $detail = $last ? 'אושר ע"י ' . $last['by'] . ' · ' . $last['at'] : 'אין עדיין ראיה';
+        if ($k === 'site_compare') {
+            $shots = count(array_filter($list, fn($e) => $e['file'] && !$e['file']['missing']));
+            $ok = $shots >= CUTOVER_SITE_SHOTS;
+            if ($last) $detail .= " · $shots צילומים" . ($ok ? '' : ' (נדרשים ' . CUTOVER_SITE_SHOTS . ': טלפון ומחשב)');
+        }
+        $rows[$k] = cutover_row($k, $title, $ok ? 'ok' : 'bad', 'ראיה מהבעלים', $detail, $todo, ['evidence' => $list, 'evidence_kind' => true]);
     }
 
     $rows = array_map(fn($k) => $rows[$k], CUTOVER_ORDER);
@@ -315,9 +324,9 @@ function cutover_steps(): array
 {
     return [
         '1. פרסום אחרון מהכלי: "🏗️ בנה גרסה מהפרויקט" ← שליחה. הגולשים עדיין רואים את העמוד הישן',
-        '2. כתובת הבדיקה באתר: דוח נאמנות (m3-fidelity.cjs: העמוד החי מול כתובת הבדיקה) + ערכת ההתקפה — על האתר האמיתי',
+        '2. כתובת הבדיקה באתר: השוואה מול העמוד החי בטלפון ובמחשב, עם צילומים (שורות 09 §4) + ערכת ההתקפה — על האתר האמיתי',
         '3. בעל האתר: ' . CUTOVER_SWITCH_PATH . ' (אישור כפול; המטמון מתנקה)',
-        '4. בדיקה מיידית: m3-fidelity.cjs על הכתובת האמיתית מול הדוח של צעד 2 — אותן תוצאות; ובדיקה ידנית קצרה: נטען, חיפוש, השמעה, משוב',
+        '4. בדיקה מיידית: הכתובת האמיתית מול הצילומים של צעד 2 (טלפון + מחשב) — אותה תמונה; ובדיקה ידנית קצרה: נטען, חיפוש, השמעה, משוב',
         '5. אחרי יום: מונה ה-404 והשגיאות בעמוד התוסף, תיבת הפניות, ו"הצג מקור" של העמוד — המילים בקוד המקור',
     ];
 }

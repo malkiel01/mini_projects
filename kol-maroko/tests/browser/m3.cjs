@@ -69,7 +69,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.goto(base + '/#/publish');
     await ready(page);
     const keys = await page.$$eval('.co-row', els => els.map(e => e.dataset.key));
-    ok(JSON.stringify(keys) === JSON.stringify(['fidelity', 'build', 'plugin', 'attack_kit', 'feedback', 'recordings', 'q15', 'q4', 'backup', 'owner_checklist']), 'עשר שורות, בסדר של 09 §6.1', keys.join(','));
+    ok(JSON.stringify(keys) === JSON.stringify(['site_compare', 'build', 'plugin', 'attack_kit', 'feedback', 'recordings', 'q15', 'q4', 'backup', 'owner_checklist']), 'עשר שורות, בסדר של 09 §6.1', keys.join(','));
     const meta = await page.$$eval('.co-row', els => els.map(e => ({ src: !!e.querySelector('.co-src')?.textContent.trim(), todo: !!e.querySelector('.co-todo'), ok: e.classList.contains('co-ok') })));
     ok(meta.every(m => m.src), 'לכל שורה — מאיפה המצב בא');
     ok(meta.every(m => m.ok || m.todo), 'לכל שורה שאינה ✓ — "מה לעשות"');

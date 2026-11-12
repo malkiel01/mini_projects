@@ -136,7 +136,7 @@
       h('p', { class: 'hint' }, r.todo || 'ראיה נוספת. נשמרת עם השם והתאריך, וביומן הפעולות.'),
       h('label', {}, 'הערה', note),
       h('label', {}, 'קישור', url),
-      h('label', {}, 'קובץ (צילום, PDF, דוח)', file),
+      h('label', {}, r.key === 'site_compare' ? 'צילום (אחד לכל ראיה — טלפון, ואחר כך מחשב)' : 'קובץ (צילום, PDF, דוח)', file),
       h('label', { class: 'co-confirm' }, confirmBox, ' אני מאשר/ת שהתנאי הזה מתקיים'),
       go, status));
   }

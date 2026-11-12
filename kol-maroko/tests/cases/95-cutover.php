@@ -32,6 +32,8 @@ function m3_facts(array $over = []): array
         'evidence' => array_fill_keys(CUTOVER_EVIDENCE, null),
     ];
     foreach (CUTOVER_EVIDENCE as $k) $f['evidence'][$k] = $ev();
+    $shot = fn(int $id, string $n) => ['id' => $id, 'note' => '', 'url' => '', 'file' => ['id' => str_repeat('a', 32), 'name' => $n, 'missing' => false], 'by' => 'בעלים', 'at' => $at];
+    $f['evidence']['site_compare'] = [$shot(3, 'phone.png'), $shot(2, 'desktop.png')];
     return array_replace_recursive($f, $over);
 }
 
@@ -108,6 +110,19 @@ test('M3 · eval: נקודת שחזור — מעל 24 שעות ✗; ישנה ש�
     eq('bad', m3_row(cutover_eval(m3_facts(['snap' => ['at' => $old], 'snap_verified' => ['id' => 2, 'at' => gmdate('c')]])), 'backup')['status'], 'אימות של נקודה אחרת');
     $f = m3_facts(); $f['snap'] = null;
     eq('bad', m3_row(cutover_eval($f), 'backup')['status']);
+});
+
+test('M3 · eval: ההשוואה מול האתר — ✓ רק עם שני צילומים (טלפון + מחשב); הערה בלבד או צילום אחד ✗; צילום שנמחק אינו נספר', function () {
+    $f = m3_facts();
+    $note = ['id' => 9, 'note' => 'נראה זהה', 'url' => '', 'file' => null, 'by' => 'בעלים', 'at' => gmdate('c')];
+    $f['evidence']['site_compare'] = [$note];
+    $r = m3_row(cutover_eval($f), 'site_compare');
+    eq('bad', $r['status'], 'הערה בלבד'); ok(str_contains($r['detail'], 'טלפון ומחשב'), $r['detail']);
+    $f = m3_facts(); array_pop($f['evidence']['site_compare']);
+    eq('bad', m3_row(cutover_eval($f), 'site_compare')['status'], 'צילום אחד');
+    $f = m3_facts(); $f['evidence']['site_compare'][1]['file']['missing'] = true;
+    eq('bad', m3_row(cutover_eval($f), 'site_compare')['status'], 'צילום שנמחק');
+    eq('ok', m3_row(cutover_eval(m3_facts()), 'site_compare')['status'], 'שני צילומים');
 });
 
 test('M3 · eval: כל ראיה חסרה ← ✗ עם "מה לעשות"; [ש-4] אומר מראש מה אינו בעמוד החדש', function () {
