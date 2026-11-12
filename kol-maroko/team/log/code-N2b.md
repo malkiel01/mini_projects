@@ -15,3 +15,4 @@
     `rec_field_dropped` (ספירה לאישור) ב-`field_delete`. שחזור שדה / מילה — `rec_sync` מחבר לפי מזהה הקובץ (בלי hook).
   - בדיקות: `tests/cases/98-rec-slots.php` (12), כולל מיגרציה על 1,500 הקלטות + 200 גרסאות + 40 בסל (זהים: words.json, rec_rows,
     rec_trash, files_in_use, rec_versions, כל השורות, שורות הספרייה) ו-ROLLBACK על checksum שאינו תואם. run.php 212 ✓.
+- 2026-11-12 · מוזג origin/main (3973282: M5, V4, X1, N2c). M5 לקחה את 19 — **המיגרציה של N2b היא 20** (KOL_SCHEMA_VERSION = 20). run.php 256 ✓.

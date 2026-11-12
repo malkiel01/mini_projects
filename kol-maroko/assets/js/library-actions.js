@@ -108,7 +108,7 @@ const LibActions = (() => {
       if (e.status === 409 && e.data?.conflict) {
         const c = e.data.conflict;
         const what = L().multi() ? `${c.field_label || 'הקלטה'}` : 'הקלטה';
-        if (await ask(`למילה "${c.word}" כבר יש ${what}`, h('p', {}, `ההקלטה הקיימת («${c.name}») תישאר בספרייה תחת "לא מחוברות" — היא לא נמחקת.`), 'החלף (הנוכחית תהפוך ללא מחוברת)')) {
+        if (await ask(`למילה "${c.word}" כבר יש ${what}`, h('p', {}, `ההקלטה הקיימת («${c.name}») תישאר בספרייה תחת "לא מחוברות" — היא לא נמחקת.`), L().multi() ? 'החלף (הנוכחית תהפוך ללא מחוברת)' : 'חבר בכל זאת')) {
           return link(recId, wid, word, field, { act, body: { ...(body || { rec_id: recId, word_id: wid, field }), replace: true } });
         }
         return false;

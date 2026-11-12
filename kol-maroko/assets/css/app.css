@@ -559,4 +559,5 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
   body.lib-wide .lib-c-dur { inline-size: 4.5rem; text-align: center; }
   body.lib-wide .lib-c-size { inline-size: 6rem; text-align: end; }
   body.lib-wide .lib-field-m { display: none; }
+  body.lib-wide .lib-row > .chip { flex: none; inline-size: 6.5rem; justify-content: center; text-align: center; }
 }

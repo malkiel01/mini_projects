@@ -203,7 +203,7 @@ const Library = (() => {
     const dups = st === 'dups' ? dupCount() : null;
     const sizeOk = r => !sizeF || (r.file && (sizeF === 's' ? r.file.size <= 51200 : sizeF === 'm' ? r.file.size > 51200 && r.file.size <= 1048576 : r.file.size > 1048576));
     const durOk = r => { if (!durF) return true; const d = durOf(r); if (durF === 'unknown') return r.state === 'tool' && d == null; return d != null && (durF === 'short' ? d <= 2 : durF === 'mid' ? d > 2 && d <= 10 : d > 10); };
-    const stOk = r => st === 'none' ? r.state === 'none' : st === 'loose' ? !!r.loose : st === 'failed' ? !!r.fetch
+    const stOk = r => st === 'all' ? true : st === 'none' ? r.state === 'none' : st === 'loose' ? !!r.loose : st === 'failed' ? !!r.fetch
       : st === 'dups' ? !!(r.file?.sha && !r.missing && dups.get(r.file.sha) > 1) : r.state !== 'none' && (!st || (r.state === st && !r.loose));
     const rows = D.all.filter(r => stOk(r) && sizeOk(r) && durOk(r) &&
       (!fieldF || r.field === fieldF || (!r.field && fieldF === primaryKey() && !r.loose)) &&
@@ -247,8 +247,8 @@ const Library = (() => {
         l3 ? h('small', { class: 'one' + (bad || r.fetch ? ' lib-bad' : '') }, l3) : null),
       // N2b: העמודות במחשב (שדה · משך · גודל) — רק במסך רחב (app.css, body.lib-wide)
       many ? h('span', { class: 'lib-c lib-c-field one', title: r.field_label || '' }, fl || (r.loose ? 'לא מחוברת' : '')) : null,
-      h('span', { class: 'lib-c lib-c-dur', dir: 'ltr' }, d != null ? clock(d) : ''),
-      h('span', { class: 'lib-c lib-c-size', dir: 'ltr' }, f ? Media.mb(f.size) : ''),
+      h('span', { class: 'lib-c lib-c-dur', dir: 'ltr', title: 'משך' }, d != null ? clock(d) : '—'),
+      h('span', { class: 'lib-c lib-c-size', dir: 'ltr', title: 'גודל' }, f ? Media.mb(f.size) : '—'),
       h('span', { class: `chip ${cls}` }, r.loose && !bad ? 'לא מחוברת' : label),
       r.state === 'none'
         ? h('button', { type: 'button', class: 'icon-btn', 'aria-label': `עריכת המילה: ${r.word}`, title: 'עריכת המילה', onclick: () => Words.open(wid) }, '✏️')
@@ -420,7 +420,7 @@ const Library = (() => {
           h('button', { type: 'button', class: 'btn ghost', onclick: () => { st = 'dups'; shown = PAGE; render(); } }, '👯 כפולות')),
         LibActions.versionsLine()),
       h('div', { class: 'w-filters lib-filters' + (multi() ? ' lib-f-field' : '') }, search,
-        sel('מצב', st, [['', 'כל ההקלטות'], ['site', 'באתר'], ['tool', 'בכלי'], ['none', multi() ? 'חסרות' : 'מילים בלי הקלטה'], ['loose', 'לא בשימוש (לא מחוברות)'],
+        sel('מצב', st, [['', 'כל ההקלטות'], ...(multi() ? [['all', 'הכול — גם חסרות (לגרירה)']] : []), ['site', 'באתר'], ['tool', 'בכלי'], ['none', multi() ? 'חסרות' : 'מילים בלי הקלטה'], ['loose', 'לא בשימוש (לא מחוברות)'],
           ['dups', 'כפולות (אותו קובץ)'], ['failed', 'נכשלו בהבאה'], ['trash', '🗑️ הסל']], pick),
         multi() ? sel('שדה', fieldF, [['', 'כל השדות'], ...D.fields.map(f => [f.key, f.label + (f.published ? '' : ' (פנימי)')])], v => { fieldF = v; shown = PAGE; render(); }) : null,
         sel('נושא', topic, [['', 'כל הנושאים'], ...D.topics.map(t => [t.name, `${t.name} (${t.count})`])], v => { topic = v; shown = PAGE; draw(); }),
