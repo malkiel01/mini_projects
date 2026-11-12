@@ -15,6 +15,7 @@
     "api.php?action=embed_key|media|platform_key|devapi-feed|devapi-comment|devapi-file|devapi-attach",
     "agent.php",
     "preview/index.php",
-    "form.php"
+    "form.php",
+    "pull.php"
   ]
 }

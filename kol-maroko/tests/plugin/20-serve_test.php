@@ -128,11 +128,19 @@ test('M2 מטמון: מדיה ו-immutable — לשנה; HTML ו"יפה" — max
     kp_opt('kol_maroko_v2_on', true);
     $year = 'public, max-age=31536000, immutable';
     $short = 'public, max-age=0, must-revalidate';
-    eq($year, kp_h(kp_http('GET', '/lexicon/media/w.mp3'), 'cache-control'), 'מדיה');
+    // M7: מדיה בנתיב קבוע (הקלטה שהוחלפה — אותו נתיב) — נבדקת בכל טעינה, וה-CDN אינו שומר; לשנה — רק לפי hash
+    $mp3 = kp_http('GET', '/lexicon/media/w.mp3');
+    eq([$short, 'no-store', 'no-store'], [kp_h($mp3, 'cache-control'), kp_h($mp3, 'cdn-cache-control'), kp_h($mp3, 'cloudflare-cdn-cache-control')], 'מדיה בנתיב קבוע');
+    $sha8 = substr(hash('sha256', $b['media/w.mp3']), 0, 8);
+    $hv = kp_http('GET', "/lexicon/media/w.mp3?v=$sha8");
+    eq([$year, null], [kp_h($hv, 'cache-control'), kp_h($hv, 'cdn-cache-control')], '?v= שתואם ל-hash');
+    eq($short, kp_h(kp_http('GET', '/lexicon/media/w.mp3?v=00000000'), 'cache-control'), '?v= שאינו תואם');
+    eq($short, kp_h(kp_http('GET', '/lexicon/media/w.mp3?v=' . substr($sha8, 0, 4)), 'cache-control'), '?v= קצר מ-8');
     eq($year, kp_h(kp_http('GET', '/lexicon/assets/app.3f2a.js'), 'cache-control'), 'immutable במניפסט');
     foreach (['/lexicon/', '/lexicon/x/', '/lexicon/a.css'] as $p) {
         $r = kp_http('GET', $p);
         eq($short, kp_h($r, 'cache-control'), $p);
+        eq('no-store', kp_h($r, 'cloudflare-cdn-cache-control'), "$p — ה-CDN אינו שומר");
         ok(preg_match('/^"[a-f0-9]{64}"$/', (string)kp_h($r, 'etag')) === 1, "$p — ETag");
     }
     $etag = kp_h(kp_http('GET', '/lexicon/'), 'etag');

@@ -31,6 +31,33 @@ function wp_mkdir_p($d) { return is_dir($d) || mkdir($d, 0775, true); }
 function sanitize_text_field($s) { return trim(strip_tags((string)$s)); }
 function get_permalink($id) { return home_url('/?p=' . (int)$id); }
 function clean_post_cache($id) {}
+// M7 — המשיכה מהכלי (tests/cases/99-outbox.php): HTTP אמיתי, wp-cron מדומה, ו-http רק ל-127.0.0.1
+final class WP_Error { public function __construct(public $c = '', public $m = '') {} public function get_error_message() { return $this->m; } }
+function is_wp_error($x) { return $x instanceof WP_Error; }
+function wp_remote_request($url, $args = []) {
+    $ch = curl_init($url);
+    $hs = [];
+    foreach ((array)($args['headers'] ?? []) as $k => $v) $hs[] = "$k: $v";
+    $rh = [];
+    if (($args['method'] ?? 'GET') !== 'GET') curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $args['method']);
+    if (isset($args['body'])) curl_setopt($ch, CURLOPT_POSTFIELDS, $args['body']);
+    if (isset($args['user-agent'])) curl_setopt($ch, CURLOPT_USERAGENT, $args['user-agent']);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $hs, CURLOPT_TIMEOUT => 30, CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_HEADERFUNCTION => function ($c, $l) use (&$rh) { if (strpos($l, ':')) { [$k, $v] = explode(':', $l, 2); $rh[strtolower(trim($k))] = trim($v); } return strlen($l); }]);
+    $body = curl_exec($ch);
+    if ($body === false) return new WP_Error('http', curl_error($ch));
+    return ['code' => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'headers' => $rh, 'body' => $body];
+}
+function wp_remote_retrieve_headers($r) { return $r['headers']; }
+function wp_remote_retrieve_response_code($r) { return $r['code']; }
+function wp_remote_retrieve_body($r) { return $r['body']; }
+function wp_next_scheduled($hook) { return ((array)get_option('test_cron', []))[$hook] ?? false; }
+function wp_schedule_event($t, $rec, $hook) { $c = (array)get_option('test_cron', []); $c[$hook] = $t; update_option('test_cron', $c); return true; }
+function wp_schedule_single_event($t, $hook) { return wp_schedule_event($t, 'once', $hook); }
+function wp_clear_scheduled_hook($hook) { $c = (array)get_option('test_cron', []); unset($c[$hook]); update_option('test_cron', $c); return 1; }
+function wp_date($f, $t) { return gmdate($f, (int)$t); }
+define('KOL_MAROKO_PULL_TEST_HTTP', true);
+
 final class WP_REST_Request
 {
     public function get_body() { return (string)file_get_contents('php://input'); }
@@ -173,6 +200,12 @@ function v2_real(string $action, WP_REST_Request $req)
     return $r;
 }
 
+// M7: "🔄 עדכן עכשיו" — הריצה של התוסף האמיתי, מול pull.php של הכלי (שורת החיבור באפשרויות)
+if ((string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) === '/__pull') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(kol_maroko_pull_run('test'), JSON_UNESCAPED_UNICODE);
+    exit;
+}
 if (!preg_match('~^/wp-json/kol-maroko/v1/(ping|asset|publish|switch|asset_has|asset_put|manifest|activate|mount)$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), $m)) { http_response_code(404); exit; }
 // B1: ניקוי באתר ממש לפני המניפסט — הגושים ב-v2_orphan נמחקים (גם אצל התוסף האמיתי). v2_orphan_keep — בכל מניפסט, לא פעם אחת
 if ($m[1] === 'manifest' && ($orph = (array)get_option('v2_orphan', []))) {

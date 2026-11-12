@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 2.1.0
+ * Version: 2.2.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -21,6 +21,9 @@
  * 2.1 (פרוסה M4-BC): POST …/mount {mount: full|bar|framed} (חתום) — העמוד כחלון פנימי באתר: הכותרת (והתחתית) של
  *   ערכת הנושא, ובאמצע iframe מבודד עם החבילה (v2-mount.php). full — כמו 2.0.
  *   המפסק כבוי (ברירת המחדל), או שאין גרסה v2 — האתר מגיש בדיוק מה שהגיש ב-1.x.
+ * 2.2 (פרוסה M7): משיכה במקום דחיפה — עם "שורת חיבור" התוסף **יוצא** לכתובת אחת (pull.php של הכלי, https), מושך את הפקודות
+ *   החתומות שבתור, מאמת (חתימה, site, page, seq עולה, expires), מוריד את הגושים לפי hash ומחיל (v2-pull.php). wp-cron כל 5 דקות,
+ *   "🔄 עדכן עכשיו", ודפיקה (?kol-maroko-wake=1). פקודה עם seq שמגיעה בדחיפה — wrong_channel. הדחיפה עצמה נשארת כמו שהיא.
  *
  * מסך ההגדרות (הגדרות ← קול מרוקו, מנהלים בלבד): המפתח הציבורי, העמוד, מתג "פעיל", הגרסאות שהתקבלו,
  * "חזרה לתוכן המקורי", ו"ייצוא העמוד הקיים" — קובץ ZIP עם התוכן, העיצוב והקבצים, להעלאה לסטודיו.
@@ -28,7 +31,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '2.1.0');
+define('KOL_MAROKO_VERSION', '2.2.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
@@ -40,6 +43,7 @@ require_once __DIR__ . '/v2-store.php';
 require_once __DIR__ . '/v2-mount.php';
 require_once __DIR__ . '/v2-serve.php';
 require_once __DIR__ . '/v2-admin.php';
+require_once __DIR__ . '/v2-pull.php';
 
 // ── עזרים ──────────────────────────────────────────────────
 
@@ -91,6 +95,8 @@ function kol_maroko_fail($code, $msg, $status = 400, $extra = [])
 
 kol_maroko_v2_maybe_serve();
 add_action('init', 'kol_maroko_v2_scope_refresh');
+// M7: הדפיקה — מתזמנת משיכה (לכל היותר אחת לדקה). אין בה תוכן, והבקשה ממשיכה כרגיל
+if (isset($_GET['kol-maroko-wake'])) kol_maroko_pull_wake();
 
 // ── נקודות הקבלה ──────────────────────────────────────────
 
@@ -119,6 +125,8 @@ function kol_maroko_verify($action, WP_REST_Request $req)
     }
     $b = json_decode($body, true);
     if (!is_array($b) || ($b['action'] ?? '') !== $action) return kol_maroko_fail('bad_request', 'בקשה לא תקינה', 400);
+    // M7 (H22): פקודה מהתור (seq / expires) — רק בערוץ המשיכה, שבו נבדק ה-seq. בדחיפה — נדחית
+    if (array_key_exists('seq', $b) || array_key_exists('expires', $b)) return kol_maroko_fail('wrong_channel', 'פקודה מהתור אינה מתקבלת בדחיפה', 409);
     if (($b['site'] ?? '') !== kol_maroko_host()) return kol_maroko_fail('wrong_site', 'האתר לא תואם', 403);
     if (($b['page'] ?? '') !== KOL_MAROKO_PAGE) return kol_maroko_fail('wrong_page', 'העמוד לא תואם', 403);
     $t = (int)($b['time'] ?? 0);
@@ -138,18 +146,22 @@ function kol_maroko_handle($action, WP_REST_Request $req)
 {
     $b = kol_maroko_verify($action, $req);
     if ($b instanceof WP_REST_Response) return $b;
-    if ($action === 'ping') {
-        return new WP_REST_Response(['ok' => true, 'version' => (int)kol_maroko_opt('last', 0), 'live' => (int)kol_maroko_opt('live', 0),
-            'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION,
-            'protocol' => KOL_MAROKO_PROTOCOL, 'v2_version' => (int)kol_maroko_opt('v2_last', 0), 'v2_live' => (int)kol_maroko_opt('v2_live', 0),
-            'v2_on' => (bool)kol_maroko_opt('v2_on', false), 'v2_has_live' => kol_maroko_v2_live_manifest() !== null,
-            'v2_preview' => (bool)kol_maroko_opt('v2_preview_hash', ''), 'v2_stats' => kol_maroko_opt('v2_on', false) ? kol_maroko_v2_stats_public() : null,
-            'v2_mount' => kol_maroko_v2_mount()]);
-    }
+    if ($action === 'ping') return new WP_REST_Response(kol_maroko_ping_data());
     if (in_array($action, ['asset_has', 'asset_put', 'manifest', 'activate', 'mount'], true)) return kol_maroko_v2_handle($action, $b);
     if ($action === 'asset') return kol_maroko_asset($b);
     if ($action === 'switch') return kol_maroko_switch($b);
     return kol_maroko_publish($b);
+}
+
+/** מצב התוסף — התשובה ל-ping, וגם מה שהמשיכה מדווחת לכלי (M7). */
+function kol_maroko_ping_data()
+{
+    return ['ok' => true, 'version' => (int)kol_maroko_opt('last', 0), 'live' => (int)kol_maroko_opt('live', 0),
+        'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION,
+        'protocol' => KOL_MAROKO_PROTOCOL, 'v2_version' => (int)kol_maroko_opt('v2_last', 0), 'v2_live' => (int)kol_maroko_opt('v2_live', 0),
+        'v2_on' => (bool)kol_maroko_opt('v2_on', false), 'v2_has_live' => kol_maroko_v2_live_manifest() !== null,
+        'v2_preview' => (bool)kol_maroko_opt('v2_preview_hash', ''), 'v2_stats' => kol_maroko_opt('v2_on', false) ? kol_maroko_v2_stats_public() : null,
+        'v2_mount' => kol_maroko_v2_mount()];
 }
 
 /** חלק של קובץ. החלקים בסדר (part = מה שכבר התקבל); בסוף — בדיקת sha256 ושינוי שם. */

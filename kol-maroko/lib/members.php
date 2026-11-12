@@ -285,7 +285,7 @@ function request_dismiss(array $actor, array $b): array
  * בעל העמוד — היומן של העמוד; בעל האתר — הכול (כולל החיבור והמכסות). סינון: person (users.id), kind (קידומת פעולה),
  * source (studio / agent / import / ai / system).
  */
-const AUDIT_SITE_ONLY = ['key_rotate', 'key_activate', 'site_set', 'disk_cap', 'secret_set', 'ai_quota', 'pf_limits', 'mount_set', 'import', 'audio_import', 'rec_fetch', 'owner_set', 'cutover'];
+const AUDIT_SITE_ONLY = ['key_rotate', 'key_activate', 'site_set', 'disk_cap', 'secret_set', 'ai_quota', 'pf_limits', 'mount_set', 'import', 'audio_import', 'rec_fetch', 'owner_set', 'cutover', 'pull_token', 'pub_channel'];
 
 function audit_list(array $actor, array $b): array
 {

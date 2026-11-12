@@ -198,7 +198,12 @@ const People = (() => {
         const o = st.options[id];
         if (!confirm('לשנות את אופן ההצבה באתר ל"' + o.name + '"? השינוי מיידי, בלי פרסום מחדש. אפשר לחזור בכל רגע.' + (o.loses.length ? '\n\nמה העמוד מפסיד:\n• ' + o.loses.join('\n• ') : ''))) return;
         save.disabled = true; status.textContent = 'שולח לאתר…';
-        try { const r = await api('mount_set', { mount: id }); cur = r.mount; status.textContent = '✓ באתר עכשיו: ' + st.options[cur].name; toast('נשמר באתר'); }
+        try {
+          const r = await api('mount_set', { mount: id });
+          // M7: בערוץ המשיכה — בתור; האופן משתנה כאן רק כשהאתר מדווח שהחיל
+          if (r.queued) { status.textContent = `⏳ בתור (#${r.seq}): ${st.options[id].name} — יוחל כשהאתר ימשוך. באתר עכשיו: ${st.options[r.mount].name}`; toast('בתור — ממתין למשיכה'); }
+          else { cur = r.mount; status.textContent = '✓ באתר עכשיו: ' + st.options[cur].name; toast('נשמר באתר'); }
+        }
         catch (e) { status.replaceChildren(h('span', { class: 'error' }, e.message)); }
         save.disabled = false;
       } }, 'שמירה באתר');

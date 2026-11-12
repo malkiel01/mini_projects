@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 23;
+const KOL_SCHEMA_VERSION = 24;
 
 final class ApiError extends RuntimeException
 {
@@ -552,6 +552,28 @@ function migrate(PDO $pdo): void
             SQL,
         // P1: משתמשי האפליקציה, ה-session שלה, audit.user_id/source, notices.user_id. הוספה בלבד — members ו-access_requests נשארים
         23 => 'migrate_people',
+        // M7: התור היוצא לאתר (lib/outbox.php). seq — AUTOINCREMENT: עולה בלבד ולעולם אינו חוזר, גם אחרי מחיקה.
+        // body — הבייטים בדיוק כפי שנחתמו (seq ו-expires בתוכם). ב-data/kol.sqlite (מוחרג) — אין קובץ ואין --exclude חדש
+        24 => <<<'SQL'
+            CREATE TABLE IF NOT EXISTS site_outbox (
+                seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+                action       TEXT NOT NULL,
+                body         TEXT NOT NULL DEFAULT '',
+                sig          TEXT NOT NULL DEFAULT '',
+                kid          TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL,
+                created_by   TEXT NOT NULL DEFAULT '',
+                expires      INTEGER NOT NULL DEFAULT 0,
+                state        TEXT NOT NULL DEFAULT 'queued'
+                             CHECK (state IN ('queued','delivered','applied','failed','superseded','expired')),
+                result       TEXT,
+                delivered_at TEXT,
+                applied_at   TEXT,
+                ref          TEXT,
+                label        TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_site_outbox_state ON site_outbox(state, seq);
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
