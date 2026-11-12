@@ -5,7 +5,7 @@
  *     (חיבור) ועל שורה מלאה (החלפה + גרסה) ← "גרסאות" ← "חזור" ← "העבר לפריט אחר…" ← מחיקה לסל ← שחזור — חזר לאותו פריט.
  *     בטלפון (390, מגע) — מתפריט השורה: "נתק מהפריט" ← משורה "חסרה" "🔗 חבר הקלטה מהספרייה". שם עוין — טקסט.
  * (2) "➕ הוסף לעמוד" ← Ctrl+Z — העמוד וה-CSS חוזרים בדיוק; ← שוב, ובטלפון "↶ בטל" באצבע; עמוד שהשתנה בינתיים — הביטול נעצר.
- * 1920 ו-390, צילומים ל-dev/n3b/. רץ מול tests/router.php ומסד זמני — data/ לא נפתחת.
+ * 1920 ו-390, צילומים (N3B_SHOTS, ברירת מחדל — תיקייה זמנית; הראיות ב-dev/n3b/). רץ מול tests/router.php ומסד זמני — data/ לא נפתחת.
  */
 'use strict';
 const { chromium } = require('playwright');
@@ -13,7 +13,8 @@ const { spawn } = require('child_process');
 const fs = require('fs'), os = require('os'), path = require('path'), net = require('net'), crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SHOTS = path.join(ROOT, 'dev', 'n3b');
+// הצילומים — לתיקייה זמנית (כדי שהרצה לא תלכלך את הריפו, כמו l1.cjs); N3B_SHOTS=kol-maroko/dev/n3b — לראיות ב-PR
+const SHOTS = process.env.N3B_SHOTS ? path.resolve(process.env.N3B_SHOTS) : path.join(os.tmpdir(), 'kol-n3b-shots');
 const OWNER = { sub: 'u-owner', name: 'Owner Test', email: 'owner@example.test', email_verified: true, platform_admin: true };
 const HOSTILE = '"><img src=x onerror=alert(1)>';
 let failed = 0, ran = 0;
