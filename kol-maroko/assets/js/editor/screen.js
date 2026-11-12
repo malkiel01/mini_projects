@@ -62,6 +62,7 @@ const Editor = (() => {
       try {                                                                 // הנעילה ורוחבי המכשיר — כבר בפתיחה, לא בכתיבה הראשונה
         const info = await Project.docs.info();
         if (info.lock?.by) S.readOnly = 'העמוד בעריכה אצל ' + info.lock.by + ' — כאן אפשר לראות ולבחור, לא לשנות';
+        Project.seed.draw(el.seed, () => { const host = S.host; unmount(); view(host); });   // שלד הזריעה: "העמוד של היום עוד לא יובא · 🔄 ייבוא עכשיו"
         DEVICES = devicesFrom(info.kol); if (!DEVICES.some(d => d.id === S.device)) S.device = DEVICES[0].id;
         drawDevices();
       } catch { /* בלי רשת — ברירות המחדל; הנעילה תתגלה בשמירה */ }
@@ -573,6 +574,7 @@ const Editor = (() => {
     el.where = h('span', { class: 'ed-where' });
     el.cap = h('button', { type: 'button', class: 'ed-strip', hidden: true, onclick: () => { S.canvas.showAll(!S.canvas.capOff); drawAll(); } });
     el.broken = h('p', { class: 'ed-strip warn', role: 'alert', hidden: true });
+    el.seed = h('p', { class: 'ed-strip warn ed-seed', role: 'alert', 'data-seed': true, hidden: true });
     el.blocked = h('details', { class: 'ed-strip ed-blocked', hidden: true });
     el.note = h('div', { class: 'ed-note', role: 'status', hidden: true });
     el.canvas = h('div', { class: 'ed-canvas' });
@@ -594,7 +596,7 @@ const Editor = (() => {
     el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.addImg, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'הפאנל — תוכן (עריכה) ופרטים: מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
-      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.cap, el.broken, el.blocked, el.point,
+      el.bar, h('div', { class: 'ed-path' }, el.crumbs, el.where), el.seed, el.cap, el.broken, el.blocked, el.point,
       h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navBody), el.mid, side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
     host.replaceChildren(el.root);
     status('טוען…');

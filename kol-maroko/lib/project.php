@@ -280,7 +280,15 @@ function pf_tree(array $user): array
         'kol' => pf_kol(),
         'lock' => lock_view($user),
         'can_purge' => $user['role'] === 'owner',
+        'seed_only' => pf_seed_only(),
     ];
+}
+
+/** הפרויקט עדיין שלד הזריעה: index.html זהה בייט בבייט לזה שנוצר עם הפרויקט — העמוד של היום עוד לא יובא, ואיש לא ערך. */
+function pf_seed_only(): bool
+{
+    $r = pf_by_path('index.html');
+    return $r !== null && $r['kind'] === 'file' && pf_blob_get($r['sha']) === pf_seed_files()['index.html'];
 }
 
 /** תוכן לעורך — כנתונים (JSON), לא כמסמך. טקסט UTF-8 ב-content; כל דבר אחר ב-b64. */

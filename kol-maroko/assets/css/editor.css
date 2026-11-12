@@ -189,3 +189,5 @@ button.ed-strip { cursor: pointer; min-height: 34px; }
 .ed-pick-item img { width: 100%; height: 72px; object-fit: contain; }
 .ed-pick-ic { display: flex; align-items: center; justify-content: center; width: 100%; height: 72px; font-size: 2rem; }
 .ed-pick-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-seed, .pj-seed { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); font-weight: 600; }
+.ed-seed[hidden], .pj-seed[hidden] { display: none; }

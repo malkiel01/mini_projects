@@ -61,11 +61,12 @@ const Project = (() => {
   // ── נתונים ────────────────────────────────────────────────
   async function refresh() {
     const d = await api('pf_tree');
-    S.files = d.files; S.trash = d.trash; S.limits = d.limits; S.kol = d.kol; S.canPurge = d.can_purge; S.loaded = true;
+    S.files = d.files; S.trash = d.trash; S.limits = d.limits; S.kol = d.kol; S.canPurge = d.can_purge; S.seedOnly = !!d.seed_only; S.loaded = true;
     S.byId = new Map(d.files.map(f => [f.id, f]));
     // לשונית של קובץ שנמחק או שונה שמו — מתעדכנת
     S.tabs = S.tabs.filter(id => S.byId.has(id) || S.docs.get(id)?.dirty);
     if (!S.tabs.includes(S.cur)) S.cur = S.tabs[S.tabs.length - 1] ?? null;
+    drawSeed(el.seed);
     if (el.mig) el.mig.hidden = !S.canPurge;                     // "ייבוא מחדש" — בעלים בלבד
     drawAll();
   }
@@ -136,7 +137,7 @@ const Project = (() => {
   const subs = new Map();
   function emit(doc, kind) { for (const cb of subs.get(doc.id) || []) { try { cb(kind); } catch (e) { console.error(e); } } }
   function handle(doc) {
-    const text = () => (doc.model ? doc.model.getValue() : doc.text ?? '');
+    const text = () => (doc.model && !doc.model.isDisposed() ? doc.model.getValue() : doc.text ?? doc.saved ?? '');   // מסמך שנסגר (ייבוא מחדש) — הטקסט האחרון, לא חריגה
     return {
       id: doc.id, text,
       get path() { return S.byId.get(doc.id)?.path || ''; },
@@ -183,7 +184,7 @@ const Project = (() => {
       return doc ? handle(doc) : null;
     },
     /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */
-    async info() { const d = await api('pf_tree'); S.kol = d.kol; return { lock: d.lock, kol: d.kol }; },
+    async info() { const d = await api('pf_tree'); S.kol = d.kol; S.seedOnly = !!d.seed_only; S.canPurge = d.can_purge; return { lock: d.lock, kol: d.kol, seedOnly: S.seedOnly }; },
     /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
     async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
   };
@@ -502,26 +503,37 @@ const Project = (() => {
       r.notes?.length ? h('ul', { class: 'list' }, r.notes.map(([kind, text]) => h('li', { class: 'card' }, h('div', { class: 'body' }, (NOTE_ICON[kind] || '•') + ' ' + text)))) : null,
       h('p', { class: 'hint' }, 'הקבצים: ' + (r.files || []).join(' · ')));
   }
+  /** "🔄 ייבוא מחדש": אישור אחד, pf_migrate (נקודת שחזור לפני; הקבצים הנוכחיים — לסל), ודוח. מחזיר true כשהייבוא נעשה. */
+  async function reimport(question) {
+    if (S.tabs.some(dirty) && !confirm('יש קבצים עם שינויים שלא נשמרו. להמשיך בלי לשמור אותם?')) return false;
+    if (!confirm(question || 'לייבא מחדש את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.')) return false;
+    try {
+      const r = await api('pf_migrate', {});
+      for (const d of S.docs.values()) { clearTimeout(d.timer); d.dirty = false; d.model?.dispose(); }
+      S.docs.clear(); S.tabs = []; S.cur = null; persist();
+      await refresh();
+      bc?.postMessage({ t: 'saved' });
+      migrateReport(r, 'הפרויקט יובא מחדש מהעמוד של היום');
+      return true;
+    } catch (e) { toast(e.message, true); return false; }
+  }
+  /** הפס "העמוד של היום עוד לא יובא" — כל עוד index.html הוא שלד הזריעה. בעלים: עם "ייבוא עכשיו"; אחרים — מי יכול. */
+  function drawSeed(box, after) {
+    if (!box) return;
+    box.hidden = !S.seedOnly;
+    if (!S.seedOnly) return;
+    box.replaceChildren(h('span', {}, '⚠️ העמוד של היום עוד לא יובא — מה שרואים כאן הוא שלד ריק, לא העמוד שבאתר.'),
+      S.canPurge ? h('button', { type: 'button', class: 'btn primary sm', 'data-seed-run': true, onclick: async () => { if (await reimport('לייבא עכשיו את העמוד של היום לפרויקט?\nנשמרת נקודת שחזור לפני.')) after?.(); } }, '🔄 ייבוא עכשיו')
+        : h('span', { class: 'hint' }, ' הייבוא — בידי בעל העמוד.'));
+  }
   async function migrateSheet() {
     let last = null;
     try { last = (await api('pf_migrate_last')).last; } catch { /* בלי הדוח הקודם */ }
-    const go = async (action, question, done) => {
-      if (S.tabs.some(dirty) && !confirm('יש קבצים עם שינויים שלא נשמרו. להמשיך בלי לשמור אותם?')) return;
-      if (!confirm(question)) return;
-      dlg.close();
-      try {
-        const r = await api(action, {});
-        for (const d of S.docs.values()) { clearTimeout(d.timer); d.dirty = false; d.model?.dispose(); }
-        S.docs.clear(); S.tabs = []; S.cur = null; persist();
-        await refresh();
-        bc?.postMessage({ t: 'saved' });
-        migrateReport(r, done);
-      } catch (e) { toast(e.message, true); }
-    };
+    const go = async () => { dlg.close(); await reimport(); };
     const dlg = sheet('🔄 ייבוא מחדש מהעמוד של היום',
       h('p', { class: 'hint' }, 'הפרויקט נבנה מחדש מהעמוד של היום. קבצי הפרויקט הנוכחי עוברים לסל (אפשר לשחזר), ונקודת שחזור נשמרת לפני. התיקייה from-current/ נשארת. העמוד הישן, הסטודיו, המילים והגרסאות — אינם משתנים.'),
       h('div', { class: 'pj-menu' },
-        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: () => go('pf_migrate', 'לייבא מחדש את הפרויקט מהעמוד של היום?\nקבצי הפרויקט הנוכחי יעברו לסל.', 'הפרויקט יובא מחדש מהעמוד של היום') }, '🔄 ייבוא מחדש'),
+        h('button', { type: 'button', class: 'btn primary', 'data-migrate-run': true, onclick: go }, '🔄 ייבוא מחדש'),
         last ? h('button', { type: 'button', class: 'btn', onclick: () => { dlg.close(); migrateReport(last, 'דוח הייבוא האחרון · ' + (last.at || '').slice(0, 10)); } }, '📋 דוח הייבוא האחרון') : null));
   }
 
@@ -579,6 +591,7 @@ const Project = (() => {
   async function view(host) {
     S.host = host;
     el.kol = h('p', { class: 'pj-warn', role: 'alert', hidden: true });
+    el.seed = h('p', { class: 'pj-warn pj-seed', role: 'alert', 'data-seed': true, hidden: true });
     el.tree = h('ul', { class: 'pj-tree', 'aria-label': 'קבצי הפרויקט' });
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
@@ -615,7 +628,7 @@ const Project = (() => {
     });
     host.replaceChildren(h('div', { class: 'pj' },
       h('p', { class: 'pj-note', role: 'note' }, 'הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא.'),
-      el.kol,
+      el.kol, el.seed,
       h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
 
     try { await loadMonaco(); } catch { toast('העורך המלא לא נטען — עורכים בתיבת טקסט', true); }
@@ -752,5 +765,5 @@ const Project = (() => {
       pf_migrate: '🔄 ייבא מחדש את הפרויקט מהעמוד של היום', pf_blank: '📄 התחיל פרויקט ריק', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
   });
 
-  return { oldTemplate: OLD_TPL, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
+  return { oldTemplate: OLD_TPL, seed: { get only() { return !!S.seedOnly; }, draw: drawSeed }, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();
