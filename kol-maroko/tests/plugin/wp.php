@@ -36,7 +36,8 @@ function wp_opts_locked(callable $fn)
 function get_option($k, $d = false) { return wp_opts_locked(fn($o) => [null, array_key_exists($k, $o) ? $o[$k] : $d]); }
 function update_option($k, $v, $autoload = null) { return wp_opts_locked(function ($o) use ($k, $v) { $o[$k] = $v; return [$o, true]; }); }
 function delete_option($k) { return wp_opts_locked(function ($o) use ($k) { unset($o[$k]); return [$o, true]; }); }
-function add_action(...$a) {}
+$GLOBALS['wp_hooks'] = [];
+function add_action($hook, $cb = null, ...$a) { $GLOBALS['wp_hooks'][$hook][] = $cb; }
 function add_filter(...$a) {}
 function do_action($hook, ...$a) { if ($hook !== 'init') update_option('test_actions', array_merge((array)get_option('test_actions', []), [[$hook, $a]])); }
 function home_url($p = '') { return 'http://' . $_SERVER['HTTP_HOST'] . $p; }
@@ -46,6 +47,44 @@ function wp_mkdir_p($d) { return is_dir($d) || @mkdir($d, 0775, true) || is_dir(
 function sanitize_text_field($s) { return trim(strip_tags((string)$s)); }
 function get_permalink($id) { return home_url('/lexicon/'); }
 function clean_post_cache($id) {}
+// ── מסך הניהול: "מחובר כמנהל" = העוגייה test_admin=1 (manage_options); nonce של וורדפרס = "nonce-<פעולה>" ──
+function current_user_can($cap) { return $cap === 'manage_options' && ($_COOKIE['test_admin'] ?? '') === '1'; }
+function wp_die($m = '') { http_response_code(403); echo 'WP_DIE: ' . $m; exit; }
+function wp_create_nonce($a = -1) { return 'nonce-' . $a; }
+function wp_nonce_field($a = -1, $n = '_wpnonce', $r = true, $echo = true) { $h = '<input type="hidden" name="' . $n . '" value="nonce-' . $a . '">'; if ($echo) echo $h; return $h; }
+function check_admin_referer($a = -1, $n = '_wpnonce') { if (($_POST[$n] ?? '') !== 'nonce-' . $a) wp_die('nonce'); return 1; }
+function sanitize_key($k) { return preg_replace('/[^a-z0-9_\-]/', '', strtolower((string)$k)); }
+function wp_unslash($v) { return $v; }
+function admin_url($p = '') { return home_url('/wp-admin/' . $p); }
+function wp_safe_redirect($u) { header('Location: ' . $u, true, 302); }
+function set_transient($k, $v, $t = 0) { update_option('_transient_' . $k, $v); }
+function get_transient($k) { return get_option('_transient_' . $k, false); }
+function delete_transient($k) { delete_option('_transient_' . $k); }
+function esc_html($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function esc_attr($s) { return esc_html($s); }
+function esc_url($s) { return esc_html($s); }
+function size_format($b) { return (int)$b . ' B'; }
+function wp_date($f, $t) { return gmdate($f, (int)$t); }
+function checked($a, $b = true, $echo = true) { $r = $a == $b ? ' checked="checked"' : ''; if ($echo) echo $r; return $r; }
+function submit_button($t = '', $c = '', $n = 'submit', $wrap = true) { echo '<button type="submit" name="' . $n . '">' . esc_html($t) . '</button>'; }
+final class WP_Error { public $m; public function __construct($c = '', $m = '') { $this->m = $m; } public function get_error_message() { return $this->m; } }
+function is_wp_error($x) { return $x instanceof WP_Error; }
+/** הבקשה העצמית — curl אמיתי לאותו שרת (8 תהליכים). מתעד כל כתובת שהתבקשה, כדי להוכיח שרק לאתר עצמו. */
+function wp_remote_request($url, $args = []) {
+    update_option('test_remote', array_merge((array)get_option('test_remote', []), [$url]));
+    $ch = curl_init($url);
+    $hs = [];
+    foreach ((array)($args['headers'] ?? []) as $k => $v) $hs[] = "$k: $v";
+    $rh = [];
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => $hs, CURLOPT_TIMEOUT => 15, CURLOPT_FOLLOWLOCATION => false, CURLOPT_PATH_AS_IS => true,
+        CURLOPT_HEADERFUNCTION => function ($c, $l) use (&$rh) { if (strpos($l, ':')) { [$k, $v] = explode(':', $l, 2); $k = strtolower(trim($k)); $rh[$k] = isset($rh[$k]) ? (array)$rh[$k] + [99 => trim($v)] : trim($v); } return strlen($l); }]);
+    $body = curl_exec($ch);
+    if ($body === false) return new WP_Error('http', curl_error($ch));
+    return ['code' => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'headers' => $rh, 'body' => $body];
+}
+function wp_remote_retrieve_headers($r) { return $r['headers']; }
+function wp_remote_retrieve_response_code($r) { return $r['code']; }
+
 final class WP_REST_Request
 {
     public function get_body() { return (string)file_get_contents('php://input'); }
@@ -100,6 +139,17 @@ if ($path === '/__login') {
     setcookie('wordpress_logged_in_test', '1', ['path' => '/', 'httponly' => true]);
     header('Content-Type: text/plain');
     echo 'logged in';
+    exit;
+}
+if ($path === '/wp-admin/admin-post.php' && $_SERVER['REQUEST_METHOD'] === 'POST') {      // admin_post_<action>, כמו וורדפרס
+    foreach ($GLOBALS['wp_hooks']['admin_post_' . sanitize_key($_POST['action'] ?? '')] ?? [] as $cb) $cb();
+    exit;
+}
+if ($path === '/wp-admin/options-general.php') {                                          // עמוד ההגדרות — קטע 2.0
+    if (!current_user_can('manage_options')) wp_die('אין הרשאה');
+    header('Content-Type: text/html; charset=utf-8');
+    kol_maroko_v2_admin_section();
+    kol_maroko_v2_selftest_html();
     exit;
 }
 header('Content-Type: text/html; charset=utf-8');
