@@ -253,6 +253,10 @@ function files_in_use(): array
     $json .= (string)setting('imported_css', '');
     // הקלטות של מילים: במילים עכשיו, ובעותקים שבגרסאות האחרונות
     $json .= implode('', db()->query("SELECT '\"' || audio || '\"' FROM words WHERE length(audio) = 32")->fetchAll(PDO::FETCH_COLUMN));
+    // N3b: קבצים בפריטי רשימות (שמע, תמונה) — הערך הוא מזהה קובץ בתוך data (JSON)
+    if (db()->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'list_items'")->fetchColumn()) {
+        $json .= implode('', db()->query('SELECT data FROM list_items')->fetchAll(PDO::FETCH_COLUMN));
+    }
     // A3: הקלטות בספרייה (גם לא מחוברות, גם בסל של ההקלטות) וגרסאות קודמות שלהן — הקובץ שלהן אינו "לא בשימוש"
     foreach (['recordings', 'rec_versions'] as $t) {
         if (db()->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn()) {

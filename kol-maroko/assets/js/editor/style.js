@@ -39,12 +39,25 @@
     if (p === 'grid-column-gap') return ['column-gap'];
     if (p === 'font') return ['font-style', 'font-weight', 'font-size', 'line-height', 'font-family'];
     if (p === 'text-decoration') return ['text-decoration-line', 'text-decoration-style', 'text-decoration-color'];
+    // V6: מיקום, flex, יישור, grid, overflow
+    if (p === 'inset') return ['top', 'right', 'bottom', 'left'];
+    if (p === 'inset-block') return ['top', 'bottom'];
+    if (p === 'inset-inline') return [rtl ? 'right' : 'left', rtl ? 'left' : 'right'];
+    if ((m = /^inset-(block|inline)-(start|end)$/.exec(p))) return [m[1] === 'block' ? (m[2] === 'start' ? 'top' : 'bottom') : (m[2] === 'start') === !!rtl ? 'right' : 'left'];
+    if (p === 'flex') return ['flex-grow', 'flex-shrink', 'flex-basis'];
+    if (p === 'flex-flow') return ['flex-direction', 'flex-wrap'];
+    if ((m = /^place-(items|content|self)$/.exec(p))) return ['align-' + m[1], 'justify-' + m[1]];
+    if (p === 'grid-area') return ['grid-row-start', 'grid-column-start', 'grid-row-end', 'grid-column-end'];
+    if ((m = /^grid-(row|column)$/.exec(p))) return ['grid-' + m[1] + '-start', 'grid-' + m[1] + '-end'];
+    if (p === 'grid-template') return ['grid-template-rows', 'grid-template-columns', 'grid-template-areas'];
+    if (p === 'overflow') return ['overflow-x', 'overflow-y'];
     if (p === 'background') return ['background-color', 'background-image', 'background-position', 'background-size', 'background-repeat', 'background-attachment', 'background-origin', 'background-clip'];   // V5: כל הרכיבים (לקריאה; הכתיבה — אחרי הקיצור)
     return [p];
   }
   /** השם שהעורך כותב להצהרה חדשה: מאפיין לוגי (margin-block-start), לא פיזי. */
   function logical(phys, rtl) {
     const m = /^(margin|padding)-(top|right|bottom|left)$/.exec(phys);
+    if (/^(top|right|bottom|left)$/.test(phys)) return phys === 'top' ? 'inset-block-start' : phys === 'bottom' ? 'inset-block-end' : (phys === 'right') === !!rtl ? 'inset-inline-start' : 'inset-inline-end';   // V6 — רק להצהרה חדשה
     if (!m) return phys;
     const s = m[2];
     return m[1] + (s === 'top' ? '-block-start' : s === 'bottom' ? '-block-end' : ((s === 'right') === rtl ? '-inline-start' : '-inline-end'));
@@ -93,6 +106,19 @@
     if (phys === 'text-decoration-line') out.line = nv; else if (phys === 'text-decoration-style') out.style = nv; else if (phys === 'text-decoration-color') out.color = nv; else return null;
     return [out.line || 'none', out.style, out.thick, out.color].filter(Boolean).join(' ');
   }
+  /** flex: none | auto | initial | <grow> [<shrink>] [<basis>] | <basis> ← [grow, shrink, basis]; null — לא מפורק. */
+  function flexParse(v) {
+    const t = splitTop(String(v).trim()), num = x => /^(\d+\.?\d*|\.\d+)$/.test(x);
+    if (t.length === 1) {
+      const k = t[0].toLowerCase();
+      if (k === 'none') return ['0', '0', 'auto']; if (k === 'auto') return ['1', '1', 'auto']; if (k === 'initial') return ['0', '1', 'auto'];
+      if (num(t[0])) return [t[0], '1', '0%']; if (/var\(/i.test(t[0])) return null; return ['1', '1', t[0]];
+    }
+    if (t.length === 2) { if (!num(t[0])) return null; return num(t[1]) ? [t[0], t[1], '0%'] : [t[0], '1', t[1]]; }
+    if (t.length === 3 && num(t[0]) && num(t[1])) return t;
+    return null;
+  }
+  function flexFlowParse(v) { const t = splitTop(v), dir = t.find(x => /^(row|row-reverse|column|column-reverse)$/i.test(x)), wrap = t.find(x => /^(nowrap|wrap|wrap-reverse)$/i.test(x)); if (t.length !== (dir ? 1 : 0) + (wrap ? 1 : 0)) return null; return [dir || 'row', wrap || 'nowrap']; }
   /** הערך החדש של קיצור כשמשנים רכיב אחד שלו; null — אי אפשר בבטחה (var() שעשוי להיות כמה ערכים, background). */
   function setComponent(prop, value, phys, nv, rtl) {
     const p = prop.trim().toLowerCase(), cov = covered(p, rtl), i = cov.indexOf(phys);
@@ -100,7 +126,9 @@
     if (cov.length === 1) return nv;
     if (p === 'font') return fontSet(value, phys, nv);
     if (p === 'text-decoration') return decoSet(value, phys, nv);
-    if (p === 'background') return null;
+    if (p === 'background' || p === 'grid-area' || p === 'grid-template' || /^grid-(row|column)$/.test(p)) return null;
+    if (p === 'flex') { const f = flexParse(value); if (!f) return null; f[i] = nv; return f.join(' '); }
+    if (p === 'flex-flow') { const f = flexFlowParse(value); if (!f) return null; f[i] = nv; return f.join(' '); }
     const t = splitTop(value);
     if (!t.length || t.some(x => /var\(|env\(/i.test(x))) return null;
     if (cov.length === 4) { if (t.length > 4) return null; const v = expand4(t); v[i] = nv; return compress4(v, t.length).join(' '); }
@@ -114,6 +142,10 @@
     if (i < 0) return null;
     if (cov.length === 1) return value;
     if (p === 'background') return g.KolBg ? g.KolBg.bgComponent(value, phys) : null;   // V5: background.js
+    if (p === 'flex') { const f = flexParse(value); return f ? f[i] : null; }
+    if (p === 'flex-flow') { const f = flexFlowParse(value); return f ? f[i] : null; }
+    if (/^grid-(row|column)$/.test(p)) { const f = String(value).split('/').map(x => x.trim()); return f[i] || (i === 1 && /^\d+$|^-?\d+$/.test(f[0]) ? 'auto' : f[0]); }
+    if (p === 'grid-area' || p === 'grid-template') return null;
     if (p === 'font') { const f = fontParse(value); if (!f) return null; return phys === 'font-size' ? f.size : phys === 'line-height' ? f.lh : phys === 'font-family' ? f.family : (f.pre.find(x => (phys === 'font-weight' ? WEIGHT : FSTYLE).test(x)) || 'normal'); }
     const t = splitTop(value); if (t.some(x => /var\(/i.test(x))) return null;
     if (cov.length === 4) return t.length <= 4 ? expand4(t)[i] : null;
@@ -326,5 +358,5 @@
     }
   }
 
-  g.KolStyle = { checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
+  g.KolStyle = { flexParse, checkValue, splitTop, covered, logical, setComponent, componentOf, fontParse, declFor, planRule, planReset, planUnimportant, planInline, planNewRule, subject, Styler, INHERITED };
 })(typeof window !== 'undefined' ? window : globalThis);

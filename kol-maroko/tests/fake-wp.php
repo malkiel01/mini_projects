@@ -66,7 +66,16 @@ function v2_handle(string $action, WP_REST_Request $req)
 {
     $b = kol_maroko_verify($action, $req);
     if ($b instanceof WP_REST_Response) return $b;
-    if ($action === 'ping') return new WP_REST_Response(['ok' => true, 'plugin' => '2.0.0-mock', 'protocol' => 2, 'version' => (int)get_option('v2_last', 0), 'live' => (int)get_option('v2_live', 0)]);
+    if ($action === 'ping') return new WP_REST_Response(['ok' => true, 'plugin' => '2.1.0-mock', 'protocol' => 2, 'version' => (int)get_option('v2_last', 0), 'live' => (int)get_option('v2_live', 0),
+        'v2_mount' => (string)get_option('v2_mount', 'full')]);
+    // M4-BC: mount {mount: full|bar|framed} — שינוי מיידי, בלי פרסום
+    if ($action === 'mount') {
+        $m = $b['mount'] ?? null;
+        if (!is_string($m) || !in_array($m, ['full', 'bar', 'framed'], true)) return kol_maroko_fail('bad_request', 'אופן הצבה לא מוכר', 400);
+        $prev = (string)get_option('v2_mount', 'full');
+        update_option('v2_mount', $m);
+        return new WP_REST_Response(['ok' => true, 'mount' => $m, 'previous' => $prev]);
+    }
     if ($action === 'asset_has') {
         $have = [];
         foreach ((array)($b['sha256'] ?? []) as $sha) if (is_string($sha) && preg_match('/^[a-f0-9]{64}$/', $sha) && is_file(v2_dir() . "/$sha")) $have[] = $sha;
@@ -160,10 +169,11 @@ function v2_real(string $action, WP_REST_Request $req)
         update_option('v2_last', (int)get_option('kol_maroko_v2_last', 0));
         update_option('v2_live', (int)get_option('kol_maroko_v2_live', 0));
     }
+    if ($action === 'mount') update_option('v2_mount', kol_maroko_v2_mount());
     return $r;
 }
 
-if (!preg_match('~^/wp-json/kol-maroko/v1/(ping|asset|publish|switch|asset_has|asset_put|manifest|activate)$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), $m)) { http_response_code(404); exit; }
+if (!preg_match('~^/wp-json/kol-maroko/v1/(ping|asset|publish|switch|asset_has|asset_put|manifest|activate|mount)$~', (string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), $m)) { http_response_code(404); exit; }
 // B1: ניקוי באתר ממש לפני המניפסט — הגושים ב-v2_orphan נמחקים (גם אצל התוסף האמיתי). v2_orphan_keep — בכל מניפסט, לא פעם אחת
 if ($m[1] === 'manifest' && ($orph = (array)get_option('v2_orphan', []))) {
     foreach ($orph as $sha) {

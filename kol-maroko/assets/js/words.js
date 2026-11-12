@@ -44,8 +44,37 @@ const Words = (() => {
     player.play().catch(reset);
   }
 
+  // ── N3: "📚 נתונים" — בורר רשימה בראש הלשונית. המילים — כאן; כל רשימה אחרת — assets/js/lists.js (נטען לפי הצורך) ──
+  let cur = 'words';
+  const CUR_KEY = 'kol.data.list';
+  try { cur = sessionStorage.getItem(CUR_KEY) || 'words'; } catch { /* מצב פרטי */ }
+  let listsJs = null;
+  const listsReady = () => (listsJs ??= typeof Lists !== 'undefined' ? Promise.resolve() : new Promise((ok, bad) => {
+    const sc = document.createElement('script');
+    sc.src = 'assets/js/lists.js?v=' + encodeURIComponent(state.version || '');
+    sc.onload = ok; sc.onerror = () => { listsJs = null; bad(new Error('lists.js לא נטען')); };
+    document.head.append(sc);
+  }));
+  function pick(key, host) { cur = key; try { sessionStorage.setItem(CUR_KEY, key); } catch { /* מצב פרטי */ } view(host); }
+  function bar(L, host) {
+    return h('nav', { class: 'd-lists', 'aria-label': 'רשימות' },
+      L.lists.map(l => h('button', { type: 'button', class: 'd-list' + (l.key === cur ? ' on' : ''), 'data-list': l.key, 'aria-pressed': l.key === cur ? 'true' : 'false', onclick: () => pick(l.key, host) },
+        h('span', { dir: 'auto' }, l.label), h('small', { class: 'muted' }, ' ' + l.count))),
+      h('button', { type: 'button', class: 'd-list d-new', 'data-new-list': true, onclick: () => fieldsReady().then(listsReady).then(() => Lists.create(key => pick(key, host))).catch(e => toast(e.message, true)) }, '➕ רשימה חדשה'));
+  }
+
   async function view(host) {
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
+    let L;
+    try { L = await api('lists'); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+    if (!L.lists.some(l => l.key === cur)) cur = 'words';
+    const inner = h('div', { class: 'd-inner' });
+    host.replaceChildren(bar(L, host), inner);
+    if (cur !== 'words') {
+      try { await fieldsReady(); await listsReady(); } catch (e) { inner.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      return Lists.view(inner, cur, { onRemoved: () => pick('words', host), onRenamed: key => pick(key, host), refreshBar: () => api('lists').then(x => host.firstChild.replaceWith(bar(x, host))).catch(() => {}) });
+    }
+    host = inner;
     try { D = await api('words'); if (custom().length) await fieldsReady(); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     shown = PAGE;
     draw(host);
@@ -58,8 +87,10 @@ const Words = (() => {
 
   // ── מהספרייה (library.js) ────────────────────────────────
   let pending = 0;
-  /** פותח את 📚 מילים על המילה הזו. */
-  function open(id) { pending = id; if (location.hash === '#/words') view(main); else location.hash = '#/words'; }
+  /** פותח את 📚 נתונים ← מילים על המילה הזו. */
+  /** N3b: מהספרייה (הקלטה של פריט ברשימה) — "📚 פתח את הרשימה". */
+  function openList(key) { cur = key; try { sessionStorage.setItem(CUR_KEY, key); } catch { /* מצב פרטי */ } if (location.hash === '#/words') view(main); else location.hash = '#/words'; }
+  function open(id) { pending = id; cur = 'words'; try { sessionStorage.setItem(CUR_KEY, 'words'); } catch { /* מצב פרטי */ } if (location.hash === '#/words') view(main); else location.hash = '#/words'; }
   /** "החלף / הקלט" — אותה פעולה כמו בטבלה, בלי לעבור מסך. מחזיר true אם ההקלטה הוחלפה. */
   async function replaceAudio(id) {
     D = await api('words');
@@ -376,5 +407,5 @@ const Words = (() => {
     if (!dl) { dl = h('datalist', { id: 'w-topics' }); document.body.append(dl); }
     dl.replaceChildren(...(D?.topics || []).map(t => h('option', { value: t.name })));
   }
-  return { view, open, replaceAudio };
+  return { view, open, openList, replaceAudio };
 })();

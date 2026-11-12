@@ -71,13 +71,13 @@ test('הסבה: ה-CSS של ערכת הנושא בייט בבייט; ערכי ה
         eq(MG_THEME_STYLE, $b['files']['css/theme-style.css'], 'theme-style.css כמו שהוא');
         $p = $b['files']['css/page.css'];
         ok(!str_contains($p, '!important') && !str_contains($p, '{{'), 'page.css: נשאר !important או תבנית');
-        foreach (['font-size: 64px', 'font-weight: 700', 'min-height:420px', "background-image: url('https://" . lex_host() . "/wp-content/uploads/hero.jpg')", '--ka-hero-overlay: 40', 'max-width: 700px', '@media (max-width: 600px)'] as $need) ok(str_contains($p, $need), "חסר ב-page.css: $need");
+        foreach (['font-size: 64px', 'font-weight: 700', 'min-height:420px', "background-image: url('https://" . lex_host() . "/wp-content/uploads/hero.jpg')", '--ka-hero-overlay: 0.4;', 'max-width: 700px', '@media (max-width: 600px)'] as $need) ok(str_contains($p, $need), "חסר ב-page.css: $need");
         ok($b['counts']['important_removed'] > 10, 'מספר ה-!important שהוסרו מדווח');
         foreach (['--ka-gold: #c9a227', '--ka-cream: #f5ebd6', '--ka-navy: #14213d'] as $v) ok(str_contains($b['files']['css/tokens.css'], $v), "חסר ב-tokens.css: $v");
         ok((bool)array_filter($b['notes'], fn($n) => $n[0] === 'warn' && str_contains($n[1], '.kadisha-hero-title · font-size')), 'אזהרה על !important של ערכת הנושא שמתנגש בערך מהפאנל');
         ok(str_contains($b['files']['js/lexicon.js'], "console.log('theme')") && !str_contains($b['files']['index.html'], 'js/lexicon.js'), 'lexicon.js — עותק לעיון, לא נטען');
         $kol = json_decode($b['files']['kol.json'], true);
-        eq(['version' => '1.2.0', 'modified' => false], $kol['system']['js/kol-data.js'] ?? null, 'kol.json רושם את kol-data.js כקובץ מערכת');
+        eq(['version' => '1.3.0', 'modified' => false], $kol['system']['js/kol-data.js'] ?? null, 'kol.json רושם את kol-data.js כקובץ מערכת');
         ok(!preg_match('/[\x{0590}-\x{05FF}]/u', preg_replace('~/\*[\s\S]*?\*/|//[^\n]*~', '', $b['files']['js/kol-data.js'])), 'ב-kol-data.js אין טקסט שהגולש רואה (עברית מחוץ להערות)');
     } finally { $done(); }
 });
@@ -166,4 +166,9 @@ test('הסבה: data/words.json נושא את המזהים שהכרטיס נקש
         ok(!array_key_exists('wp_id', $by[9003]) && !array_key_exists('external_id', $by[9003]), 'מילה בלי מזהה — בלי השדה');
         eq(['greet', 'food'], $by[9002]['topics']);
     } finally { $done(); }
+});
+
+test('הסבה: ההכהיה מהכלי (0–100) ← 0–1 ב-page.css; 45 בתוך rgba() היה כיסוי מלא', function () {
+    eq('0.45', mg_overlay(45)); eq('0.45', mg_overlay('45')); eq('0.4', mg_overlay(40)); eq('1', mg_overlay(100)); eq('1', mg_overlay(250));
+    eq('0.45', mg_overlay('0.45')); eq('0', mg_overlay(0)); eq('1', mg_overlay(1)); eq('var(--x)', mg_overlay('var(--x)'));
 });

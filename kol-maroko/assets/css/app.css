@@ -181,6 +181,13 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
     max-width: calc(100vw - 24px); z-index: 30; background: var(--ink); color: var(--bg); padding: var(--s2) var(--s4); border-radius: 99px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .toast.err { background: var(--danger); color: #fff; }
+/* N3b: ביטול "➕ הוסף לעמוד" — פס מעל ההודעות, נשאר עד ביטול / סגירה */
+.l-undo { position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + 52px + env(safe-area-inset-bottom)); margin: auto; width: fit-content;
+    max-width: calc(100vw - 24px); z-index: 30; display: flex; align-items: center; gap: var(--s2); padding: 6px 6px 6px var(--s3);
+    background: var(--surface); color: var(--ink); border: 1px solid var(--brand); border-radius: 99px; box-shadow: 0 4px 16px rgb(0 0 0 / .14); }
+.l-undo .one { min-width: 0; }
+.l-undo-k { color: var(--muted); }
+@media (pointer: coarse) { .l-undo-k { display: none; } }
 
 /* ===== הדפסה: רק האזור המודפס ===== */
 @media print {
@@ -506,6 +513,9 @@ body.lib-playing .toast { bottom: calc(100px + env(safe-area-inset-bottom)); }
 .lib-editing { cursor: default; }
 .lib-rename { inline-size: 100%; min-block-size: 36px; }
 .lib-acts { display: grid; gap: 6px; }
+/* N3b: בבחירת הקלטה — הנגן אינו מוחק את השם בטלפון (ברוחב ברירת המחדל, 300px, השם התכווץ לאפס) */
+.lib-pickword .use-row .lib-vplay { flex: 0 1 180px; min-inline-size: 0; inline-size: 180px; }
+@media (max-width: 480px) { .lib-pickword .use-row .lib-vplay { flex-basis: 120px; inline-size: 120px; } }
 .lib-act { justify-content: flex-start; text-align: start; }
 .lib-act small { color: var(--muted); font-weight: 400; }
 .lib-versions, .lib-trash, .lib-match, .lib-pickword { margin-block: var(--s1); }
@@ -538,3 +548,44 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
 .w-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
 .w-bulk[hidden] { display: none; }
 .pj-plan ul { margin: 4px 0; padding-inline-start: 18px; }
+
+/* N2b — שדה שמע בספרייה: עמודה, סינון, "פנימי", גרירה; במחשב — על כל הרוחב (body.lib-wide נקבע ב-library.js) */
+.lib-c { display: none; }
+.lib-field-m { font-weight: 600; color: var(--ink); }
+.lib-internal { font-size: .7rem; min-block-size: 0; padding: 0 6px; }
+.lib-fstat b { font-size: .85rem; }
+.lib-fieldsel { margin-block: var(--s1); }
+.lib-filters.lib-f-field { grid-template-columns: minmax(0, 1fr) repeat(6, auto); }
+@media (max-width: 860px) { .lib-filters.lib-f-field { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.lib-row.lib-target { outline: 2px dashed var(--brand); outline-offset: -2px; background: var(--brand-soft); }
+.lib-row.lib-dragging { opacity: .5; }
+.lib-dragtip { position: fixed; z-index: 40; inset-block-start: 12px; inset-inline: 0; margin-inline: auto; inline-size: max-content; max-inline-size: calc(100vw - 24px);
+  padding: 6px var(--s3); border-radius: 99px; background: var(--ink); color: var(--bg); font-size: .9rem; pointer-events: none; }
+@media (min-width: 1024px) {
+  body.lib-wide main { max-width: none; padding-inline: var(--s4); }
+  body.lib-wide .lib-p-row, body.lib-wide .lib-seek { max-inline-size: none; }
+  body.lib-wide .lib-c { display: block; flex: none; font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  body.lib-wide .lib-c-field { inline-size: 11rem; color: var(--ink); }
+  body.lib-wide .lib-c-dur { inline-size: 4.5rem; text-align: center; }
+  body.lib-wide .lib-c-size { inline-size: 6rem; text-align: end; }
+  body.lib-wide .lib-field-m { display: none; }
+  body.lib-wide .lib-row > .chip { flex: none; inline-size: 6.5rem; justify-content: center; text-align: center; }
+}
+/* N3: 📚 נתונים — בורר הרשימות, הטבלה של כל רשימה, גרירה בעכבר ובמגע. במחשב — על כל רוחב המסך */
+@media (min-width: 900px) { main:has(> .d-lists) { max-width: none; } }
+.d-lists { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: var(--s2); border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+.d-list { flex: none; min-height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; white-space: nowrap; }
+.d-list.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.d-list.on small { color: inherit; opacity: .7; }
+.d-list.d-new { border-style: dashed; color: var(--muted); }
+.l-filters { grid-template-columns: minmax(0, 1fr) auto; }
+@media (max-width: 600px) { .l-filters { grid-template-columns: 1fr; } }
+.l-table { min-inline-size: 560px; }
+.l-grip { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; min-width: 28px; min-height: 32px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border-radius: 6px; }
+.l-grip:focus-visible { outline: 2px solid var(--accent, #a3322a); }
+.l-grip:active { cursor: grabbing; }
+.l-table tr.l-dragging td { opacity: .45; }
+.l-ghost { position: fixed; inset: 0 auto auto 0; z-index: 50; pointer-events: none; padding: 6px 12px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: .85rem; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 6px 18px rgb(0 0 0 / .2); }
+.l-preview th input, .l-preview th select { width: 100%; margin-top: 4px; font-size: .8rem; }
+.l-from-csv { margin: var(--s2) 0; }
+.l-from-csv summary { cursor: pointer; }

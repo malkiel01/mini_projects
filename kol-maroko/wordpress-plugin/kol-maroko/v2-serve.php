@@ -176,6 +176,7 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
     if (!(int)kol_maroko_opt('v2_live', 0)) return;
     $GLOBALS['kol_maroko_v2_mode'] = null;
     $GLOBALS['kol_maroko_v2_cookie'] = null;
+    $pv = null;
     if (kol_maroko_opt('v2_on', false)) $GLOBALS['kol_maroko_v2_mode'] = 'on';
     elseif (kol_maroko_v2_selftest_req()) $GLOBALS['kol_maroko_v2_mode'] = 'self';
     elseif ($pv = kol_maroko_v2_preview_req()) {
@@ -184,6 +185,18 @@ function kol_maroko_v2_maybe_serve($method = null, $uri = null)
     } else return;
     $man = kol_maroko_v2_live_manifest();                   // קריאה אחת: כל הבקשה מוגשת מהמניפסט הזה
     if (!$man) return;
+
+    // M4-BC: אופן framed / bar — כתובת "יפה" של דף מקבלת מסמך מעטפת של וורדפרס (הכותרת של האתר + iframe מבודד).
+    // ההחלטה כאן, לפני שמנקים את הפלט ואת העוגיות: המעטפת היא עמוד של האתר, והחבילה עצמה רק בתוך ה-iframe
+    if ($path !== rtrim($scope, '/')) {
+        $rest = (string)substr($path, strlen($scope));
+        $wp = kol_maroko_v2_map($rest, $man);
+        if (kol_maroko_v2_wrap_wanted($rest, $wp)) {
+            if ($GLOBALS['kol_maroko_v2_mode'] === 'on') kol_maroko_v2_stat('request');
+            kol_maroko_v2_wrap_prepare($wp, $man, $scope, $GLOBALS['kol_maroko_v2_mode'] === 'preview' && isset($pv[1]) ? $pv[1] : null);
+            return;
+        }
+    }
     if ($GLOBALS['kol_maroko_v2_mode'] === 'on') kol_maroko_v2_stat('request');
 
     // מכאן הבקשה שלנו. שום פלט של וורדפרס או של תוסף אחר לא יוצא איתה, ושום עוגייה

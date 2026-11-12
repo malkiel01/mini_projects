@@ -37,41 +37,15 @@ const REC_REASONS = [
 
 // ── המודל ─────────────────────────────────────────────────
 
-/** המסד, עם הטבלה. CREATE IF NOT EXISTS — מוסיף בלבד, ובלי מספר מיגרציה (כמה פרוסות נבנות במקביל). */
+/**
+ * המסד. הטבלה recordings — בסכמה (lib/db.php, שלב 20: רשומה לכל מקום — רשימה, פריט, שדה). rec_versions — כאן,
+ * CREATE IF NOT EXISTS (מוסיף בלבד).
+ */
 function rec_db(): PDO
 {
     static $ready = null;
     $pdo = db();
     if ($ready !== $pdo) {
-        $pdo->exec(<<<'SQL'
-            CREATE TABLE IF NOT EXISTS recordings (
-                id        INTEGER PRIMARY KEY,
-                word_id   INTEGER UNIQUE,                 -- המפתח. הקלטה בלי מילה (ש-13) — NULL
-                state     TEXT NOT NULL DEFAULT 'site' CHECK (state IN ('site','tool','failed')),
-                source    TEXT NOT NULL DEFAULT '',       -- הכתובת באתר. נשמרת תמיד, לעולם אינה מפתח
-                file_id   TEXT,                           -- ספריית המדיה (files.id)
-                name      TEXT NOT NULL DEFAULT '',
-                duration  REAL,                           -- שניות; נמדד בדפדפן, שייך ל-file_id
-                how       TEXT NOT NULL DEFAULT '',       -- linked · fetched · imported · replaced
-                at        TEXT NOT NULL,
-                by_name   TEXT NOT NULL DEFAULT '',
-                scan      TEXT NOT NULL DEFAULT '',       -- '' (לא נסרקה) · ok · missing · blocked · error · skipped
-                scan_size INTEGER,
-                scan_type TEXT NOT NULL DEFAULT '',
-                scan_note TEXT NOT NULL DEFAULT '',
-                scan_at   TEXT,
-                f_code    TEXT NOT NULL DEFAULT '',       -- למה ההבאה נכשלה (REC_REASONS)
-                f_note    TEXT NOT NULL DEFAULT '',
-                f_at      TEXT
-            );
-            SQL);
-        // A3: סל (מחיקה רכה — הרשומה נשארת, בלי מילה) וגרסאות קודמות. מוסיף בלבד.
-        $cols = array_column($pdo->query('PRAGMA table_info(recordings)')->fetchAll(), 'name');
-        foreach (['deleted_at TEXT', "deleted_by TEXT NOT NULL DEFAULT ''", 'deleted_word INTEGER', "deleted_audio TEXT NOT NULL DEFAULT ''"] as $c) {
-            if (in_array(explode(' ', $c)[0], $cols, true)) continue;
-            try { $pdo->exec("ALTER TABLE recordings ADD COLUMN $c"); }
-            catch (PDOException $e) { if (!str_contains($e->getMessage(), 'duplicate column')) throw $e; }   // בקשה מקבילה הקדימה
-        }
         $pdo->exec(<<<'SQL'
             CREATE TABLE IF NOT EXISTS rec_versions (
                 id        INTEGER PRIMARY KEY,
@@ -106,55 +80,174 @@ function rec_file_ok(?string $fid, array $files): bool
     return $fid && isset($files[$fid]) && empty($files[$fid]['deleted_at']);
 }
 
+// ── המקומות (N2b) ─────────────────────────────────────────
+
 /**
- * הרשומות נגזרות מהמילים: לכל מילה עם הקלטה — רשומה אחת. מוסיף ומעדכן רק את הטבלה recordings; המילים והקבצים
- * אינם משתנים. כתובת שיש לה עותק בכלי (files.origin) — "בכלי", גם כשהמילה עדיין מצביעה על הכתובת.
+ * שדות השמע של המילה, לפי סדר השדות: [מפתח => ['key', 'label', 'primary', 'published']]. הראשי — השדה שה-col שלו audio
+ * (המפתח שלו יכול להשתנות, N2; הזהות היא col). מקום = (רשימה, פריט, שדה); היום רק 'words' (N3 — רשימות).
+ */
+function rec_audio_fields(): array
+{
+    $out = [];
+    foreach (fields_all() as $f) {
+        if ($f['type'] !== 'audio' && $f['col'] !== 'audio') continue;
+        $out[$f['key']] = ['key' => $f['key'], 'label' => $f['label'], 'primary' => $f['col'] === 'audio', 'published' => $f['published']];
+    }
+    return $out;
+}
+
+/** המפתח של השדה הראשי. */
+function rec_primary(): string
+{
+    foreach (rec_audio_fields() as $k => $f) if ($f['primary']) return $k;
+    return 'audio';
+}
+
+/** מפתח המקום, למפות בזיכרון. */
+function rec_slot_key(string $list, int $item, string $field): string
+{
+    return "$list|$item|$field";
+}
+
+// ── רשימות (N3b · N2b §2.6) ───────────────────────────────
+
+/**
+ * שדות השמע של כל רשימה (לא המילים): [רשימה => [מפתח => ['key', 'label', 'list_label', 'published']]]. ברשימה אין שדה ראשי —
+ * כל שדה שמע הוא "מותאם": הערך ב-list_items.data[מפתח] הוא מזהה קובץ בספרייה (N3).
+ */
+function rec_list_fields(): array
+{
+    $out = [];
+    foreach (lists_all() as $k => $l) {
+        foreach (list_fields($k) as $f) {
+            if ($f['type'] !== 'audio') continue;
+            $out[$k][$f['key']] = ['key' => $f['key'], 'label' => $f['label'], 'list_label' => $l['label'], 'published' => $f['published']];
+        }
+    }
+    return $out;
+}
+
+/**
+ * המפתח של שדה כלפי הספרייה (הדפדפן): במילים — מפתח השדה (כמו לפני); ברשימה — "<רשימה>.<מפתח>". נקודה אינה יכולה להופיע
+ * במפתח רשימה או שדה ([a-z][a-z0-9_]), ולכן הפירוק חד-משמעי (rec_fsplit).
+ */
+function rec_fkey(string $list, string $field): string
+{
+    return $list === 'words' ? $field : "$list.$field";
+}
+
+/** "<רשימה>.<מפתח>" ← [רשימה, מפתח]; בלי נקודה — [words, המפתח]. */
+function rec_fsplit(string $fk): array
+{
+    $p = strpos($fk, '.');
+    return $p === false ? ['words', $fk] : [substr($fk, 0, $p), substr($fk, $p + 1)];
+}
+
+/** הכותרת של פריט ברשימה, לשם ההקלטה ולשורה בספרייה: הערך הטקסטואלי הראשון לפי סדר השדות; בלי — "<שם פריט> #<מזהה>". */
+function rec_item_title(array $data, array $fields, string $itemLabel, int $id): string
+{
+    foreach ($fields as $f) {
+        if (in_array($f['type'], ['image', 'audio', 'number', 'bool', 'date'], true)) continue;
+        $v = $data[$f['key']] ?? null;
+        if (is_array($v)) $v = implode(', ', array_filter($v, 'is_string'));
+        if (!is_string($v)) continue;
+        if ($f['type'] === 'rich') $v = html_entity_decode(strip_tags($v), ENT_QUOTES | ENT_HTML5, 'UTF-8');     // טקסט רגיל — כמו שהוא (מוצג כטקסט)
+        $t = trim((string)preg_replace('/\s+/u', ' ', $v));
+        if ($t !== '') return mb_substr($t, 0, 200);
+    }
+    return trim(($itemLabel !== '' ? $itemLabel : 'פריט') . " #$id");
+}
+
+/**
+ * המקומות המלאים של כל הרשימות: [מפתח מקום => [פריט, שדה, ערך, ['word' => כותרת, 'updated_by'], רשימה]]. רק מזהה קובץ —
+ * ברשימה אין "כתובת באתר".
+ */
+function rec_list_slots(): array
+{
+    $out = [];
+    foreach (rec_list_fields() as $k => $afs) {
+        $l = list_get($k);
+        $fields = list_fields($k);
+        foreach (list_rows($k) as $r) {
+            $title = null;
+            foreach ($afs as $fk => $f) {
+                $v = $r['data'][$fk] ?? null;
+                if (!is_string($v) || !file_id($v)) continue;
+                $title ??= rec_item_title($r['data'], $fields, $l['item_label'], $r['id']);
+                $out[rec_slot_key($k, $r['id'], $fk)] = [$r['id'], $fk, $v, ['word' => $title, 'updated_by' => (string)($r['updated_by'] ?? '')], $k];
+            }
+        }
+    }
+    return $out;
+}
+
+/**
+ * הרשומות נגזרות מהמילים: לכל מקום שיש בו הקלטה — רשומה אחת. הראשי — words.audio (מזהה קובץ או כתובת באתר); כל שדה
+ * audio מותאם — words.extra[מפתח] (מזהה קובץ בלבד, N2 §2.2). מוסיף ומעדכן רק את הטבלה recordings; המילים והקבצים אינם
+ * משתנים. כתובת שיש לה עותק בכלי (files.origin) — "בכלי", גם כשהמילה עדיין מצביעה על הכתובת.
  */
 function rec_sync(): void
 {
     $pdo = rec_db();
-    $words = $pdo->query("SELECT id, word, audio, updated_by FROM words WHERE audio != ''")->fetchAll();
+    $fields = rec_audio_fields();
+    $primary = rec_primary();
+    $custom = array_keys(array_filter($fields, fn($f) => !$f['primary']));
+    // המקומות המלאים: [מפתח מקום => [wid, field, value, word, updated_by]]
+    $slots = [];
+    foreach ($pdo->query("SELECT id, word, audio, extra, updated_by FROM words WHERE audio != ''" . ($custom ? " OR extra != '{}'" : ''))->fetchAll() as $w) {
+        $wid = (int)$w['id'];
+        if ($w['audio'] !== '') $slots[rec_slot_key('words', $wid, $primary)] = [$wid, $primary, (string)$w['audio'], $w];
+        if (!$custom) continue;
+        $x = json_decode((string)$w['extra'], true);
+        foreach ($custom as $k) {
+            $v = is_array($x) ? ($x[$k] ?? null) : null;
+            if (is_string($v) && file_id($v)) $slots[rec_slot_key('words', $wid, $k)] = [$wid, $k, $v, $w];
+        }
+    }
+    // N3b: כל שדה audio של כל רשימה — אותם כללים (רשימה שנמחקה / פריט שנמחק / שדה שנמחק ⇒ "לא מחוברת"; חזרו ⇒ מתחברת)
+    $slots += rec_list_slots();
     $recs = [];
-    foreach ($pdo->query('SELECT * FROM recordings WHERE word_id IS NOT NULL')->fetchAll() as $r) $recs[(int)$r['word_id']] = $r;
+    foreach ($pdo->query('SELECT * FROM recordings WHERE word_id IS NOT NULL')->fetchAll() as $r) $recs[rec_slot_key((string)$r['list'], (int)$r['word_id'], $r['field'])] = $r;
+    $moved = [];                                       // N3b: מקומות ברשימה שהקובץ שלהם השתנה מחוץ לספרייה — הנתיב בעץ (אחרי העסקה)
     $files = [];
     $origin = [];
-    // A3: הקלטה "לא מחוברת" (word_id NULL, לא בסל) — מילה שמצביעה על הקובץ שלה מתחברת אליה מחדש (שם, משך וגרסאות נשמרים)
+    // A3: הקלטה "לא מחוברת" (word_id NULL, לא בסל) — מקום שמצביע על הקובץ שלה מתחבר אליה מחדש (שם, משך וגרסאות נשמרים)
     $loose = [];
-    foreach ($pdo->query('SELECT id, file_id FROM recordings WHERE word_id IS NULL AND deleted_at IS NULL AND file_id IS NOT NULL')->fetchAll() as $u) $loose[$u['file_id']] ??= (int)$u['id'];
+    foreach ($pdo->query('SELECT id, file_id FROM recordings WHERE word_id IS NULL AND deleted_at IS NULL AND file_id IS NOT NULL ORDER BY id')->fetchAll() as $u) $loose[$u['file_id']] ??= (int)$u['id'];
     foreach ($pdo->query("SELECT id, origin, deleted_at FROM files WHERE kind = 'audio'")->fetchAll() as $f) {
         $files[$f['id']] = $f;
         if (empty($f['deleted_at']) && ($f['origin'] ?? '') !== '' && !isset($origin[$f['origin']])) $origin[$f['origin']] = $f['id'];
     }
     $now = now_iso();
-    $ins = $pdo->prepare("INSERT INTO recordings (word_id, state, source, file_id, name, how, at) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $ins = $pdo->prepare('INSERT INTO recordings (list, word_id, field, state, source, file_id, name, how, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $upd = $pdo->prepare('UPDATE recordings SET state = ?, source = ?, file_id = ?, how = ?, duration = ?, scan = ?, scan_size = ?, scan_note = ?, f_code = ?, f_note = ? WHERE id = ?');
+    $relink = $pdo->prepare('UPDATE recordings SET list = ?, word_id = ?, field = ? WHERE id = ?');
     $pdo->exec('BEGIN IMMEDIATE');
     try {
-        $keep = [];
-        foreach ($words as $w) {
-            $wid = (int)$w['id'];
-            $keep[$wid] = true;
-            $r = $recs[$wid] ?? null;
-            $fid = file_id($w['audio']);
-            if ($fid) {                                    // המילה מצביעה על קובץ בכלי (הוחלפה, הועלתה, או ייבוא ה-ZIP)
+        foreach ($slots as $sk => [$wid, $field, $audio, $w]) {
+            $list = $slots[$sk][4] ?? 'words';
+            $r = $recs[$sk] ?? null;
+            $fid = file_id($audio);
+            if ($fid) {                                    // המקום מצביע על קובץ בכלי (הוחלף, הועלה, ייבוא ה-ZIP, או שדה מותאם)
                 $source = $r['source'] ?? '';
                 if ($source === '' && isset($files[$fid])) $source = (string)($files[$fid]['origin'] ?? '');
                 $state = 'tool';
                 $how = $r && $r['file_id'] === $fid ? $r['how'] : ($r ? 'replaced' : 'linked');
-            } else {                                       // כתובת באתר
-                $source = $w['audio'];
+            } else {                                       // כתובת באתר (רק בשדה הראשי)
+                $source = $audio;
                 $same = $r && $r['source'] === $source;
                 $fid = $same && rec_file_ok($r['file_id'], $files) ? $r['file_id'] : ($origin[$source] ?? null);
                 $state = $fid ? 'tool' : ($same && $r['state'] === 'failed' ? 'failed' : 'site');
                 $how = $fid ? ($same && $r['file_id'] === $fid ? $r['how'] : 'imported') : '';
             }
+            if ($list !== 'words' && $fid && (!$r || $r['file_id'] !== $fid)) $moved[] = [$list, $wid, $field, $fid, (string)($w['updated_by'] ?? '')];
             if (!$r && $fid && isset($loose[$fid])) {
-                $pdo->prepare('UPDATE recordings SET word_id = ? WHERE id = ?')->execute([$wid, $loose[$fid]]);
+                $relink->execute([$list, $wid, $field, $loose[$fid]]);
                 unset($loose[$fid]);
                 continue;
             }
             if (!$r) {
-                $ins->execute([$wid, $state, $source, $fid, mb_substr((string)$w['word'], 0, 200), $how, $now]);
+                $ins->execute([$list, $wid, $field, $state, $source, $fid, mb_substr((string)$w['word'], 0, 200), $how, $now]);
                 continue;
             }
             // A3: הקובץ הוחלף מחוץ לספרייה (📚 מילים) — הקודם נשמר כגרסה. הבאה (אותה כתובת, עותק בכלי) אינה החלפה.
@@ -169,12 +262,13 @@ function rec_sync(): void
             $was = [$r['state'], $r['source'], $r['file_id'], $r['how'], $r['duration'], $r['scan'], $r['scan_size'], $r['scan_note'], $r['f_code'], $r['f_note']];
             if ($row != $was) $upd->execute([...$row, $r['id']]);
         }
-        // מילה שאין לה עוד הקלטה: רשומה עם קובץ (או עם גרסאות) נשארת בספרייה כ"לא מחוברת" — רק כתובת בלי קובץ יורדת
+        // מקום שהתרוקן (גם שדה שנמחק, ומילה שנמחקה): רשומה עם קובץ (או עם גרסאות) נשארת בספרייה כ"לא מחוברת" — עם
+        // השדה שלה (לתווית "משדה שנמחק", ולשחזור) — רק כתובת בלי קובץ יורדת
         $del = $pdo->prepare('DELETE FROM recordings WHERE id = ?');
         $loosen = $pdo->prepare('UPDATE recordings SET word_id = NULL WHERE id = ?');
         $hasV = $pdo->prepare('SELECT 1 FROM rec_versions WHERE rec_id = ? LIMIT 1');
-        foreach ($recs as $wid => $r) {
-            if (isset($keep[$wid])) continue;
+        foreach ($recs as $sk => $r) {
+            if (isset($slots[$sk])) continue;
             $hasV->execute([$r['id']]);
             (rec_file_ok($r['file_id'], $files) || $hasV->fetchColumn()) ? $loosen->execute([$r['id']]) : $del->execute([$r['id']]);
         }
@@ -183,14 +277,29 @@ function rec_sync(): void
         $pdo->exec('ROLLBACK');
         throw $e;
     }
+    // N3b: הקובץ של מקום ברשימה הוחלף מהטבלה / מהקובץ / מהאקסל — הנתיב בעץ (media/audio/<רשימה>-<פריט>-<שדה>) מצביע עליו.
+    // אחרת החבילה (build_lists — נתיב שתפוס בעץ גובר) הייתה יוצאת עם הקובץ הקודם.
+    if ($moved && function_exists('rec_tree_point')) foreach ($moved as [$list, $wid, $field, $fid, $by]) rec_tree_point($wid, $fid, ['sub' => 'system', 'name' => $by !== '' ? $by : 'system'], $field, $list);
 }
 
-/** הרשומות לפי מזהה המילה (אחרי סנכרון). */
+/** הרשומות של השדה הראשי, לפי מזהה המילה (אחרי סנכרון) — כמו לפני N2b. */
 function rec_rows(): array
 {
     rec_sync();
+    $st = rec_db()->prepare("SELECT * FROM recordings WHERE list = 'words' AND field = ? AND word_id IS NOT NULL");
+    $st->execute([rec_primary()]);
     $out = [];
-    foreach (rec_db()->query('SELECT * FROM recordings WHERE word_id IS NOT NULL')->fetchAll() as $r) $out[(int)$r['word_id']] = $r;
+    foreach ($st->fetchAll() as $r) $out[(int)$r['word_id']] = $r;
+    return $out;
+}
+
+/** הרשומות של כל השדות המותאמים: [מזהה מילה => [מפתח => רשומה]]. בלי סנכרון (אחרי rec_rows). */
+function rec_rows_custom(): array
+{
+    $st = rec_db()->prepare("SELECT * FROM recordings WHERE list = 'words' AND field != ? AND word_id IS NOT NULL");
+    $st->execute([rec_primary()]);
+    $out = [];
+    foreach ($st->fetchAll() as $r) $out[(int)$r['word_id']][$r['field']] = $r;
     return $out;
 }
 
@@ -203,8 +312,11 @@ function rec_duration(array $user, array $b): array
     $d = $b['duration'] ?? null;
     if ((!$wid && !$rid) || !$fid || !is_numeric($d) || $d <= 0 || $d > 36000) throw new ApiError('משך לא תקין');
     rec_sync();
-    $st = rec_db()->prepare("UPDATE recordings SET duration = ? WHERE " . ($rid ? 'id' : 'word_id') . " = ? AND file_id = ? AND state = 'tool'");
-    $st->execute([round((float)$d, 2), $rid ?: $wid, $fid]);
+    // N2b: הקלטה של מילה — לפי המקום (המילה והשדה; בלי שדה — הראשי)
+    // N3b: שדה של רשימה — "<רשימה>.<מפתח>" (rec_fkey)
+    [$list, $field] = rec_fsplit(is_string($b['field'] ?? null) && $b['field'] !== '' ? $b['field'] : rec_primary());
+    $st = rec_db()->prepare("UPDATE recordings SET duration = ? WHERE " . ($rid ? 'id = ?' : 'list = ? AND word_id = ? AND field = ?') . " AND file_id = ? AND state = 'tool'");
+    $st->execute($rid ? [round((float)$d, 2), $rid, $fid] : [round((float)$d, 2), $list, $wid, $field, $fid]);
     return ['saved' => $st->rowCount() > 0];
 }
 
@@ -656,20 +768,30 @@ function rec_fetch_step(array $owner): array
     return rec_status($owner);
 }
 
-/** הקלטה שהובאה — בעץ הפרויקט כ-media/audio/<מזהה>.<סיומת> (רק כשהעץ כבר קיים; כשל כאן אינו מכשיל את ההבאה). */
-function rec_tree_link(int $wid, string $fid, array $user): void
+/**
+ * הנתיב היציב בעץ (N2b): הראשית — media/audio/<מזהה>.<סיומת>; שדה מותאם — media/audio/<מזהה>-<מפתח>.<סיומת> (06 §2.3).
+ * N3b: פריט ברשימה — media/audio/<רשימה>-<מזהה>-<מפתח>.<סיומת> (אותה צורה שהקובץ data/<רשימה>.json והחבילה כותבים, N3 §2.4).
+ */
+function rec_tree_path(int $wid, string $field, string $ext, string $list = 'words'): string
+{
+    if ($list !== 'words') return "media/audio/$list-$wid-$field" . ($ext !== '' ? ".$ext" : '');
+    return 'media/audio/' . $wid . ($field === '' || $field === rec_primary() ? '' : "-$field") . ($ext !== '' ? ".$ext" : '');
+}
+
+/** הקלטה שהובאה (או חוברה) — בעץ הפרויקט בנתיב של המקום (רק כשהעץ כבר קיים; כשל כאן אינו מכשיל את הפעולה). */
+function rec_tree_link(int $wid, string $fid, array $user, string $field = '', string $list = 'words'): void
 {
     try {
         if (!pf_seeded()) return;
         $f = file_row($fid);
-        $path = "media/audio/$wid.{$f['ext']}";
-        pf_tx(function () use ($path, $fid, $user) {
+        $path = rec_tree_path($wid, $field, (string)$f['ext'], $list);
+        pf_tx(function () use ($path, $fid, $user, $field, $list) {
             if (pf_by_path($path)) return;
             pf_free($path);
-            pf_insert($path, 'media', '', $user, $fid, 'הובאה מהאתר');
+            pf_insert($path, 'media', '', $user, $fid, $list === 'words' && ($field === '' || $field === rec_primary()) ? 'הובאה מהאתר' : 'הקלטה');
         });
     } catch (Throwable $e) {
-        devlog_write('warn', 'audio', 'tree_link', ['message' => 'ההקלטה הובאה, אך לא נוספה לעץ הפרויקט: ' . $e->getMessage(), 'user' => $user, 'data' => ['word_id' => $wid]]);
+        devlog_write('warn', 'audio', 'tree_link', ['message' => 'ההקלטה הובאה, אך לא נוספה לעץ הפרויקט: ' . $e->getMessage(), 'user' => $user, 'data' => ['list' => $list, 'word_id' => $wid, 'field' => $field]]);
     }
 }
 

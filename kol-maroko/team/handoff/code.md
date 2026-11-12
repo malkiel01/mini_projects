@@ -64,3 +64,10 @@
 - ping מחזיר `v2_mount`; מסך הבעלים מזהה תוסף ישן לפי היעדרו (409 `plugin_old`).
 - הבדיקות: `tests/plugin/60-mount_test.php` · `tests/cases/99-mount.php` · `tests/browser/m4bc.cjs` · `m2.cjs` סעיף ה.
 - באתר (מטלה): ערכת ההתקפה H1–H17 ב-Chrome/Firefox/Safari; מה `get_header()` מדפיס בערכה האמיתית (ש-24) — האם העמוד ברוחב מלא; כפילות og/title מתוסף SEO; LiteSpeed מול המעטפת.
+## מ-V6 (2026-11-12, חלקי — ראו team/log/code-V6.md "❌")
+
+1. `editor/position.js` (`S.pos`) — מיקום חופשי ושכבות; `editor/layout.js` (`S.lay`) — פריסה, גודל, ידיות גודל. שניהם
+   מוסיפים קבוצות ללשונית "מתקדם" דרך `S.adv.extra`.
+2. `screen.joinTx(k, label)` — מאחד k עסקאות אחרונות (HTML שהוזז דרך `act` + עיצוב דרך `writeStyle`).
+3. גיאומטריה למיקום — **אחרי** שהאלמנט יצא מהזרימה (preview של position:absolute), כי הייחוס עשוי להתכווץ.
+4. ידיות הגודל — `prepend` לשכבה (מתחת ל-`.sp` של V3); אחרת הן מכסות את ידית הרווח (v3.cjs נכשל).

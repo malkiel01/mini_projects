@@ -154,7 +154,41 @@ function build_collect(array $opts): array
         [$files, $wn] = build_words($files);
         $notes = array_merge($notes, $wn);
     }
+    [$files, $ln] = build_lists($files);                          // N3: כל רשימה רשומה — data/<key>.json, רק "מתפרסם"
+    $notes = array_merge($notes, $ln);
     return [$files, $out, $notes];
+}
+
+/**
+ * N3: כל רשימה רשומה ב-kol.json — הקובץ שלה מ-list_json($key, '') (רק "מתפרסם"), והקבצים שלה בחבילה: תמונה —
+ * media/images/<id>.<ext>, הקלטה — media/audio/<list>-<id>-<key>.<ext>. נתיב שתפוס בקובץ רגיל — הקובץ הרגיל נשאר.
+ */
+function build_lists(array $files): array
+{
+    $notes = [];
+    foreach (pf_list_paths() as $path => $key) {
+        if ($key === 'words' || pf_by_path($path)) continue;
+        $j = json_decode(list_json($key, ''), true);
+        $fields = array_column(array_filter(list_fields($key), fn($f) => $f['published'] && in_array($f['type'], ['image', 'audio'], true)), null, 'key');
+        $rows = array_column(list_rows($key), 'data', 'id');
+        $meta = files_meta(list_file_ids(array_map(fn($id, $d) => ['id' => $id, 'data' => $d], array_keys($rows), $rows), array_values($fields)));
+        $missing = 0;
+        foreach ($j['items'] as &$it) foreach ($fields as $fk => $f) {
+            $v = $rows[(int)$it['id']][$fk] ?? null;
+            if (!file_id($v)) continue;
+            $m = $meta[$v] ?? null;
+            $p = $m ? ($f['type'] === 'image' ? "media/images/$v.{$m['ext']}" : "media/audio/$key-{$it['id']}-$fk.{$m['ext']}") : '';
+            if ($p !== '' && $m['deleted_at'] === null && is_file(file_path($m))) {
+                $files[$p] ??= ['sha' => $m['sha256'] ?: hash_file('sha256', file_path($m)), 'size' => (int)$m['size'], 'type' => build_type($p), 'src' => 'media', 'file_id' => $m['id']];
+                $it[$fk] = $p;
+            } else { unset($it[$fk]); $missing++; }
+        }
+        unset($it);
+        $bytes = words_json_encode($j);
+        $files[$path] = ['sha' => pf_blob_put($bytes), 'size' => strlen($bytes), 'type' => 'application/json', 'src' => 'data'];
+        if ($missing) $notes[] = ['kind' => 'missing_audio', 'msg' => "$path: $missing קבצים (הקלטות / תמונות) חסרים בספרייה — יצאו בלעדיהם", 'count' => $missing];
+    }
+    return [$files, $notes];
 }
 
 /** כמו בתצוגה החיה: data/words.json קיים כשיש בפרויקט רשימה, או כש-kol.json מצהיר עליו. */
@@ -783,6 +817,48 @@ function build_send(array $user, array $b): array
     audit_as($user, 'pkg_publish', "גרסה $n · " . count($files) . " קבצים · $sent נשלחו");
     notice_add('owner', 'publish', ($user['name'] ?? '') . " פרסם/ה את גרסה $n (פרויקט הקבצים) — " . count($files) . " קבצים, $sent נשלחו", (int)$r['id'], $user);
     return ['build' => build_public(build_row((int)$r['id'])), 'sent' => $sent, 'site' => $res];
+}
+
+// ── אופן ההצבה (M4-BC) ───────────────────────────────────
+
+/** האופנים, ומה העמוד מפסיד בכל אחד — מוצג לבעל העמוד לפני הבחירה ("מגבלה שקטה היא נעילה", 08 §4). */
+const BUILD_MOUNTS = [
+    'full' => ['name' => 'עמוד מלא', 'text' => 'העמוד הוא כל המסך, בכתובת של העמוד באתר. בלי הכותרת והתחתית של האתר.', 'loses' => []],
+    'framed' => ['name' => 'חלון בתוך האתר', 'text' => 'הכותרת והתחתית של האתר, והעמוד כחלון ביניהן — בגובה התוכן, בלי פס גלילה כפול.', 'loses' => [
+        'position:fixed, sticky, יחידות vh ואפקטי גלילה מתייחסים לחלון (שגובהו כגובה העמוד), לא למסך',
+        'קישור שיוצא מהעמוד בלי target="_blank" נפתח בתוך החלון; ניווט של הלשונית כולה מתוך העמוד חסום',
+        'גוגל קורא פחות טוב תוכן שבתוך חלון',
+    ]],
+    'bar' => ['name' => 'פס האתר', 'text' => 'הכותרת של האתר למעלה, והעמוד ממלא את שאר המסך וגולל בתוכו. בלי התחתית של האתר.', 'loses' => [
+        'הגלילה היא בתוך העמוד (החלון), לא של הדף כולו',
+        'קישור שיוצא מהעמוד בלי target="_blank" נפתח בתוך החלון; ניווט של הלשונית כולה מתוך העמוד חסום',
+        'גוגל קורא פחות טוב תוכן שבתוך חלון',
+    ]],
+];
+
+/** המצב לממשק: האופן האחרון שנקבע מכאן, והאפשרויות. האמת — ב-ping של התוסף (v2_mount). */
+function mount_state(): array
+{
+    return ['mount' => setting('site_mount', 'full'), 'options' => BUILD_MOUNTS];
+}
+
+/** הפעולה החתומה `mount` לתוסף (2.1). שינוי מיידי באתר, בלי פרסום מחדש; ביומן של הכלי ושל התוסף. */
+function mount_set(array $owner, array $b): array
+{
+    $m = (string)($b['mount'] ?? '');
+    if (!isset(BUILD_MOUNTS[$m])) throw new ApiError('אופן הצבה לא מוכר', 422);
+    $ping = site_call('ping', []);
+    if (!array_key_exists('v2_mount', $ping)) {
+        throw new ApiError('התוסף באתר הוא ' . ($ping['plugin'] ?? '1.x') . ' — לבחירת אופן ההצבה נדרש 2.1 (מטלה לבעלים)', 409,
+            ['code' => 'plugin_old', 'plugin' => $ping['plugin'] ?? null]);
+    }
+    $r = site_call('mount', ['mount' => $m]);
+    $got = (string)($r['mount'] ?? '');
+    if ($got !== $m) throw new ApiError('האתר לא אישר את האופן', 502, ['code' => 'mount_mismatch', 'site' => $r]);
+    setting_set('site_mount', $m);
+    $prev = (string)($r['previous'] ?? '');
+    audit_as($owner, 'mount_set', (BUILD_MOUNTS[$prev]['name'] ?? $prev) . ' ← ' . BUILD_MOUNTS[$m]['name']);
+    return mount_state() + ['previous' => $prev, 'site' => ['v2_mount' => $m] + $ping];
 }
 
 /** asset_has ← asset_put. מה שהאתר כבר אישר (pkg_site_blobs, או asset_has) — לא נשלח שוב. מחזיר כמה נשלחו. */

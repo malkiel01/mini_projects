@@ -360,7 +360,11 @@
         rng.addEventListener('input', () => { out.textContent = val(); try { this.D.canvas.elOf(n).style.setProperty(v.name, val()); } catch { /* */ } });
         rng.addEventListener('change', () => { try { this.D.canvas.elOf(n).style.removeProperty(v.name); } catch { /* */ } this.D.write(new Map([[n, [[v.name, val(), ruleT(wv.r, this.st)]]]]), 'כיסוי · ' + v.name + ' · ' + cur + ' ← ' + val()); });
         box.append(hh('div', { class: 'sg-line' }, hh('span', { class: 'sg-label' }, 'עוצמה'), hh('span', { class: 'sg-ctl wide' }, rng, out)), hh('div', { class: 'sg-src' }, v.name + ' מ: ', at(D, wv.r, wv.d)));
-        if (big) box.append(hh('p', { class: 'hint', 'data-cover-big': true }, '⚠️ הערך ' + cur + ' גדול מ-1 — בתוך rgba() הוא נחתך ל-1 (כיסוי מלא). המחוון כותב בין 0 ל-1.'));
+        if (big) {
+          const fix = String(Math.round(Math.min(100, num)) / 100).replace(/^0\./, '0.');
+          box.append(hh('p', { class: 'hint sg-warn', 'data-cover-big': true }, '⚠️ הערך ' + cur + ' גדול מ-1 — בתוך rgba() הוא נחתך ל-1 (כיסוי מלא, התמונה אינה נראית). ',
+            hh('button', { type: 'button', class: 'btn sm', 'data-cover-fix': fix, disabled: !w || null, onclick: () => this.D.write(new Map([[n, [[v.name, fix, ruleT(wv.r, this.st)]]]]), 'כיסוי · ' + v.name + ' · ' + cur + ' ← ' + fix) }, 'תקן ל-' + fix)));
+        }
       }
       const cls = this.coverClass(n, ov);
       box.append(hh('div', { class: 'sg-bgacts' },

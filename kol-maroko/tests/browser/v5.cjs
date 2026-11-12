@@ -180,6 +180,17 @@ const PAGE = `<!doctype html>
     f1 = await files(page);
     ok(/\.kadisha-lexicon-intro \{[^}]*background-image: url\('\.\.\/media\/new-hero\.png'\);[^}]*background-size: cover;[^}]*background-position: center;[^}]*background-repeat: no-repeat;/.test(f1['css/page.css']) && f1['index.html'] === o0['index.html'], '"＋ תמונת רקע" — לכלל היעד: background-image, ואיתו cover / center / no-repeat; הטקסט לא השתנה', f1['css/page.css'].slice(f1['css/page.css'].indexOf('lexicon-intro'), f1['css/page.css'].indexOf('lexicon-intro') + 300));
     ok(await undoFiles(page, o0), 'ביטול — זהים');
+    // ═══ 9. קובץ שכבר בשרת עם --ka-hero-overlay: 45 (הסבה ישנה) — "תקן ל-0.45" ═══
+    {
+      const css0 = (await files(page))['css/page.css'], m0 = /--ka-hero-overlay: ([^;]+);/.exec(css0);
+      await page.evaluate(v => { const d = [...Editor._state.sheets.values()].find(x => x.path === 'css/page.css').doc, t = d.text(), i = t.indexOf('--ka-hero-overlay: ' + v + ';') + '--ka-hero-overlay: '.length; d.edit([{ from: i, to: i + v.length, text: '45' }], 'בדיקה'); }, m0 ? m0[1] : '');
+      await sleep(300); await select(page, HERO); await sleep(150);
+      const fx = await page.$('[data-cover-fix]'), full = await pseudo(page, 'background-color');
+      if (fx) { await fx.click(); await sleep(250); }
+      const css1 = (await files(page))['css/page.css'];
+      ok(!!m0 && !!fx && /, 1\)$|rgb\(10, 16, 32\)$/.test(full) && /--ka-hero-overlay: 0\.45;/.test(css1) && /0\.45\)$/.test(await pseudo(page, 'background-color')), 'הכהיה 45 (כיסוי מלא) ← אזהרה עם "תקן ל-0.45" — לחיצה כותבת 0.45 ב-css/page.css, והתמונה נראית דרך הכיסוי', { was: m0 && m0[1], full, now: await pseudo(page, 'background-color') });
+      ok(m0 && m0[1] === '0.45', 'ההסבה (lib/migrate.php) כותבת 0.45 ולא 45', m0 && m0[1]);
+    }
     await page.screenshot({ path: path.join(shots, 'v5-1920.png') });
 
     // ═══ 8. טלפון ═══

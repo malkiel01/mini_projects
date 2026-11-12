@@ -88,14 +88,17 @@ const Fields = (() => {
     save.onclick = async () => { save.disabled = true; try { await run(get() || null); dlg.close(); } catch { save.disabled = false; } };
   }
 
-  // ── "🧩 מבנה המילה" ─────────────────────────────────────────
-  async function structure(onChange) {
+  // ── "🧩 מבנה המילה" — ו-N3: אותו מסך לכל רשימה (list = המפתח שלה; השרת: lib/lists.php) ──
+  let LIST = null;
+  const withList = o => (LIST ? { ...o, list: LIST } : o);
+  async function structure(onChange, list = null, title = '') {
+    LIST = list;
     let S;
-    try { S = await api('fields'); } catch (e) { toast(e.message, true); return; }
+    try { S = await api('fields', undefined, LIST ? '&list=' + encodeURIComponent(LIST) : ''); } catch (e) { toast(e.message, true); return; }
     const can = S.can_structure;
     let drag = null;
     const reorder = async keys => {
-      try { S = await api('field_save', { order: keys }); toast('הסדר נשמר'); onChange(); draw(); } catch (e) { toast(e.message, true); }
+      try { S = await api('field_save', withList({ order: keys })); toast('הסדר נשמר'); onChange(); draw(); } catch (e) { toast(e.message, true); }
     };
     const draw = () => {
       const keys = S.fields.map(f => f.key);
@@ -106,25 +109,26 @@ const Fields = (() => {
         h('span', { class: 'use-tx' },
           h('b', { class: 'one' }, f.label, f.required ? h('span', { class: 'muted' }, ' *') : null),
           h('small', { dir: 'ltr', class: 'f-key' }, f.key),
-          h('small', {}, [TYPES[f.type] || f.type, f.builtin ? 'מובנה' : null, f.published ? 'מתפרסם' : '🔒 פנימי', `${f.filled} מילים עם ערך`].filter(Boolean).join(' · '))),
+          h('small', {}, [TYPES[f.type] || f.type, f.builtin ? 'מובנה' : null, f.published ? 'מתפרסם' : '🔒 פנימי', `${f.filled} ${LIST ? 'פריטים' : 'מילים'} עם ערך`].filter(Boolean).join(' · '))),
         can ? h('span', { class: 'f-acts' },
           h('button', { type: 'button', class: 'icon-btn', 'aria-label': `למעלה: ${f.label}`, disabled: !i, onclick: () => { const k = [...keys]; [k[i - 1], k[i]] = [k[i], k[i - 1]]; reorder(k); } }, '▲'),
           h('button', { type: 'button', class: 'btn sm ghost', 'data-edit': f.key, onclick: () => form(f) }, '✏️'),
-          h('button', { type: 'button', class: 'btn sm ghost', 'data-rekey': f.key, onclick: () => rekey('field', f.key, f.label, () => { onChange(); structure(onChange); }) }, '🔑'),
+          h('button', { type: 'button', class: 'btn sm ghost', 'data-rekey': f.key, onclick: () => rekey('field', f.key, f.label, () => { onChange(); structure(onChange, list, title); }, list) }, '🔑'),
           f.builtin ? null : h('button', { type: 'button', class: 'btn sm ghost danger', 'data-del': f.key, onclick: () => remove(f) }, '🗑️')) : null);
-      sheet('🧩 מבנה המילה',
-        h('p', { class: 'hint' }, 'השדות של כל מילה. כל שדה הוא עמודה בטבלה, מפתח ב-data/words.json ועמודה באקסל. "פנימי" — לא מגיע לעמוד.'),
+      sheet(LIST ? `🧩 מבנה — ${title || LIST}` : '🧩 מבנה המילה',
+        h('p', { class: 'hint' }, LIST ? `השדות של כל פריט. כל שדה הוא עמודה בטבלה, מפתח בקובץ data/${LIST}.json ועמודה באקסל. "פנימי" — לא מגיע לעמוד.`
+          : 'השדות של כל מילה. כל שדה הוא עמודה בטבלה, מפתח ב-data/words.json ועמודה באקסל. "פנימי" — לא מגיע לעמוד.'),
         can ? null : h('p', { class: 'hint' }, 'שינוי המבנה — למפרסם. ערכים אפשר לערוך בטבלה.'),
         h('ul', { class: 'list f-list' }, S.fields.map(li)),
         can ? h('div', { class: 'row-btns' }, h('button', { type: 'button', class: 'btn primary', 'data-add-field': true, onclick: () => form(null) }, '+ שדה')) : null);
     };
     const remove = async f => {
       let d;
-      try { d = await api('field_delete', { key: f.key, dry: true }); } catch (e) { toast(e.message, true); return; }
+      try { d = await api('field_delete', withList({ key: f.key, dry: true })); } catch (e) { toast(e.message, true); return; }
       if (d.needs === 'publisher' && !S.can_purge) { toast(`לשדה "${f.label}" יש ${d.values} ערכים — מחיקה רק למפרסם`, true); return; }
       const msg = `למחוק את השדה "${f.label}"? ${d.values} ערכים יעברו איתו לסל (שחזור — ב-↩️ שחזור).` + (d.bindings ? `\n${d.bindings} קשירות בקבצי העמוד יישארו בלי ערך.` : '');
       if (!confirm(msg)) return;
-      try { S = await api('field_delete', { key: f.key }); toast('השדה הועבר לסל'); onChange(); draw(); } catch (e) { toast(e.message, true); }
+      try { S = await api('field_delete', withList({ key: f.key })); toast('השדה הועבר לסל'); onChange(); draw(); } catch (e) { toast(e.message, true); }
     };
     // הוספה / עריכה
     const form = f => {
@@ -153,7 +157,7 @@ const Fields = (() => {
         h('label', { class: 'f' }, h('span', {}, 'הסוג'), type), optsBox,
         h('label', { class: 'line' }, pub, ' מתפרסם (מגיע לעמוד). בלי — הערה פנימית'),
         h('label', { class: 'line' }, req, ' חובה'),
-        cur.col ? null : h('label', { class: 'f' }, h('span', {}, 'ברירת מחדל (למילה חדשה)'), def),
+        cur.col ? null : h('label', { class: 'f' }, h('span', {}, LIST ? 'ברירת מחדל (לפריט חדש)' : 'ברירת מחדל (למילה חדשה)'), def),
         h('label', { class: 'f' }, h('span', {}, 'עזרה למזין'), help),
         h('label', { class: 'f' }, h('span', {}, 'כיוון'), dir), out,
         h('div', { class: 'row-btns' }, save, h('button', { type: 'button', class: 'btn ghost', onclick: () => draw() }, 'חזרה')));
@@ -169,7 +173,7 @@ const Fields = (() => {
       };
       const go = async extra => {
         save.disabled = true;
-        try { S = await api('field_save', body(extra)); toast(isNew ? 'השדה נוסף' : 'נשמר'); onChange(); draw(); }
+        try { S = await api('field_save', withList(body(extra))); toast(isNew ? 'השדה נוסף' : 'נשמר'); onChange(); draw(); }
         catch (e) {
           save.disabled = false;
           if (e.status === 422 && e.data?.convert) convert(e.data.convert);
@@ -187,7 +191,7 @@ const Fields = (() => {
         if (!label.value.trim()) { label.focus(); return; }
         if (isNew && !KEY_RX.test(key.value)) { key.focus(); toast('מפתח לא תקין', true); return; }
         if (!isNew && !cur.col && type.value !== cur.type) {
-          try { const r = await api('field_save', body({ dry: true })); if (r.convert && r.convert.failed_count) { convert(r.convert); return; } }
+          try { const r = await api('field_save', withList(body({ dry: true }))); if (r.convert && r.convert.failed_count) { convert(r.convert); return; } }
           catch (e) { toast(e.message, true); return; }
         }
         go({});
@@ -197,16 +201,20 @@ const Fields = (() => {
   }
 
   // ── "🔑 שנה מפתח" — לשדה ולנושא: כל הקשירות בקבצים, לפני ← אחרי, עם סימון לכל שורה ──
-  async function rekey(kind, key, label, done) {
+  // N3: kind "list" — המפתח של רשימה (list_key_*: data-kol-list / -search / -filter / … ו-kol.json); list — שדה של רשימה
+  async function rekey(kind, key, label, done, list = null) {
     const to = prompt(`מפתח חדש ל"${label}" (אותיות לטיניות קטנות, ספרות ו-_ ):`, key);
     if (!to || to === key) return;
     if (!KEY_RX.test(to)) { toast('מפתח לא תקין', true); return; }
+    const L = kind === 'field' && list ? { list } : {};
+    const [pre, act] = kind === 'list' ? ['list_key_preview', 'list_key_apply'] : ['field_key_preview', 'field_key_apply'];
     let p;
-    try { p = await api('field_key_preview', undefined, `&kind=${kind}&key=${encodeURIComponent(key)}&to=${encodeURIComponent(to)}`); } catch (e) { toast(e.message, true); return; }
+    try { p = await api(pre, undefined, `&kind=${kind}&key=${encodeURIComponent(key)}&to=${encodeURIComponent(to)}` + (L.list ? '&list=' + encodeURIComponent(L.list) : '')); } catch (e) { toast(e.message, true); return; }
     const boxes = new Map();
     const apply = h('button', { type: 'button', class: 'btn primary', 'data-rekey-apply': true }, 'החל');
     const dlg = sheet(`🔑 ${key} ← ${to}`,
-      h('p', {}, h('b', {}, `${p.hits.filter(x => !x.manual).length} קשירות ב-${p.files} קבצים`), kind === 'field' && p.values ? ` · ${p.values} ערכים יעברו למפתח החדש` : ''),
+      h('p', {}, h('b', {}, `${p.hits.filter(x => !x.manual).length} קשירות ב-${p.files} קבצים`), kind === 'field' && p.values ? ` · ${p.values} ערכים יעברו למפתח החדש` : '',
+        kind === 'list' && p.file?.to && p.file.to !== p.file.from ? h('span', { dir: 'ltr' }, ` · ${p.file.from} → ${p.file.to}`) : ''),
       p.hits.length ? h('ul', { class: 'list f-hits' }, p.hits.map(x => {
         const cb = h('input', { type: 'checkbox', checked: !x.manual, disabled: x.manual || null, 'aria-label': `${x.path}:${x.line}` });
         boxes.set(x.id, cb);
@@ -220,13 +228,14 @@ const Fields = (() => {
       apply.disabled = true;
       const skip = p.hits.filter(x => !x.manual && !boxes.get(x.id).checked).map(x => x.id);
       const revs = Object.fromEntries(p.hits.map(x => [x.file, x.rev]));
-      try { const r = await api('field_key_apply', { kind, key, to, skip, revs }); dlg.close(); toast(`המפתח שונה · ${r.replaced} קשירות עודכנו`); done(); }
+      try { const r = await api(act, { kind, key, to, skip, revs, ...L }); dlg.close(); toast(`המפתח שונה · ${r.replaced} קשירות עודכנו`); done(to); }
       catch (e) { apply.disabled = false; toast(e.message, true); }
     };
   }
 
   // ── "🏷️ נושאים" — כל הנושאים: סדר, שם, צבע, תמונה, מוסתר, מיזוג, מפתח, הסרה ──
   async function topics(onChange) {
+    LIST = null;
     let T;
     const load = async () => { T = await api('topics'); };
     try { await load(); } catch (e) { toast(e.message, true); return; }
@@ -281,5 +290,5 @@ const Fields = (() => {
     draw();
   }
 
-  return { structure, topics, cell, show, keyFrom, TYPES };
+  return { structure, topics, cell, show, keyFrom, rekey, TYPES };
 })();

@@ -27,6 +27,12 @@ header('Cache-Control: no-store');
 require_once __DIR__ . '/lib/csp.php';
 csp_api_headers();          // C1: תשובת API לעולם אינה מסמך — default-src 'none'; frame-ancestors 'none'; sandbox
 
+/** 🔁 המעבר (M3) — נטען רק בפעולות שלו, כדי שלא להוסיף זמן לכל בקשה אחרת. */
+function cutover_lib(): void
+{
+    require_once __DIR__ . '/lib/cutover.php';
+}
+
 function json_out(array $data, int $code = 200): never
 {
     http_response_code($code);
@@ -52,16 +58,18 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
                       'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
+                      'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place', 'list_place_undo',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
-                      'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
+                      'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_move', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
-                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read',
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read', 'mount_set',
                       'inbox_mark', 'inbox_delete', 'inbox_purge', 'mail_test',
-                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open'];   // X1
+                      'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open',   // X1
+                      'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -136,6 +144,7 @@ try {
         'rec_revert' => rec_revert(require_role($user, 'editor'), $body),
         'rec_rename' => rec_rename(require_role($user, 'editor'), $body),
         'rec_connect' => rec_connect(require_role($user, 'editor'), $body),
+        'rec_move' => rec_move(require_role($user, 'editor'), $body),          // N2b: אותה מילה, שדה אחר
         'rec_disconnect' => rec_disconnect(require_role($user, 'editor'), $body),
         'rec_delete' => rec_delete(require_role($user, 'editor'), $body),
         'rec_restore' => rec_restore(require_role($user, 'editor'), $body),
@@ -153,14 +162,30 @@ try {
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
         'word_move' => word_move(require_role($user, 'editor'), $body),          // N1: גרירה / "העבר ל…" בטבלה
-        'fields' => fields_state(require_role($user, 'editor')),                // N2: "מבנה המילה" — עורך (08 §3); "רוקן נכשלים" ומחיקה עם ערכים — מפרסם, בפונקציה
-        'field_save' => field_save(require_role($user, 'editor'), $body),
-        'field_delete' => field_delete(require_role($user, 'editor'), $body),
+        // N2: "מבנה המילה" — עורך (08 §3); "רוקן נכשלים" ומחיקה עם ערכים — מפרסם, בפונקציה. N3: עם list=<key> — המבנה של אותה רשימה
+        'fields' => ($u = require_role($user, 'editor')) && ($lk = list_param($_GET)) ? list_fields_state($u, $lk) : fields_state($u),
+        'field_save' => ($u = require_role($user, 'editor')) && ($lk = list_param($body)) ? list_field_save($u, $lk, $body) : field_save($u, $body),
+        'field_delete' => ($u = require_role($user, 'editor')) && ($lk = list_param($body)) ? list_field_delete($u, $lk, $body) : field_delete($u, $body),
         'topics' => topics_state(require_role($user, 'editor')),                // N2: מסך הנושאים
         'topic_save' => topic_save(require_role($user, 'editor'), $body),
         'topic_merge' => topic_merge(require_role($user, 'editor'), $body),
-        'field_key_preview' => field_key_preview(require_role($user, 'editor'), $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
-        'field_key_apply' => field_key_apply(require_role($user, 'editor'), $body),
+        'field_key_preview' => ($u = require_role($user, 'editor')) && ($lk = list_param($_GET + $body)) ? list_field_key($u, $lk, $_GET + $body, false) : field_key_preview($u, $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
+        'field_key_apply' => ($u = require_role($user, 'editor')) && ($lk = list_param($body)) ? list_field_key($u, $lk, $body, true) : field_key_apply($u, $body),
+        // N3: רשימות נוספות (lib/lists.php). יצירה / שינוי / מחיקה / שדות — עורך; מחיקת רשימה עם פריטים ו"החלף הכול" — מפרסם (בפונקציה)
+        'lists' => lists_state(require_role($user, 'editor')),
+        'list_create' => list_create(require_role($user, 'editor'), $body),
+        'list_save' => list_save(require_role($user, 'editor'), $body),
+        'list_delete' => list_delete(require_role($user, 'editor'), $body),
+        'list_key_preview' => list_key_preview(require_role($user, 'editor'), $_GET + $body),
+        'list_key_apply' => list_key_apply(require_role($user, 'editor'), $body),
+        'list_items' => (require_role($user, 'editor') ? list_items_state(list_param($_GET) ?? throw new ApiError('בחרו רשימה')) : []),
+        'list_item_save' => list_item_save(require_role($user, 'editor'), $body),
+        'list_item_delete' => list_item_delete(require_role($user, 'editor'), $body),
+        'list_item_move' => list_item_move(require_role($user, 'editor'), $body),
+        'list_csv' => (require_role($user, 'editor') ? list_csv(list_param($_GET) ?? throw new ApiError('בחרו רשימה')) : []),
+        'list_csv_import' => ($u = require_role($user, 'editor')) ? list_csv_import($u, list_param($body) ?? throw new ApiError('בחרו רשימה'), $body) : [],
+        'list_place' => list_place(require_role($user, 'editor'), $body),
+        'list_place_undo' => list_place_undo(require_role($user, 'editor'), $body),     // N3b: Ctrl+Z / "↶ בטל" אחרי "➕ הוסף לעמוד"
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),
@@ -219,6 +244,9 @@ try {
         'build_send' => build_send(require_role($user, 'publisher'), $body),
         'kd_seed' => (require_role($user, 'owner') ? build_kd_seed() : []),
         'kd_update' => build_kd_update(require_role($user, 'owner'), $body),
+        // אופן ההצבה באתר (M4-BC): עמוד מלא / חלון בתוך האתר / פס האתר — בעלים בלבד, פעולה חתומה לתוסף
+        'mount' => (require_role($user, 'owner') ? mount_state() : []),
+        'mount_set' => mount_set(require_role($user, 'owner'), $body),
         'notices' => notices_list(require_role($user, 'owner')),
         'notice_read' => notice_read(require_role($user, 'owner'), $body),
         // 📬 פניות (M5, lib/forms.php): קריאה, סימון וייצוא — עורך ומעלה; מחיקה ו"מחק ישנות" — מפרסם; מגבלות ומייל — המפתח
@@ -229,6 +257,12 @@ try {
         'inbox_csv' => inbox_csv(require_role($user, 'editor'), $_GET),
         'forms_settings' => ($method === 'POST' ? forms_settings(require_role($user, 'editor'), $body, is_developer($user)) : forms_settings(require_role($user, 'editor'), [], false)),
         'mail_test' => forms_mail_test(require_developer($user), $body),
+        // 🔁 המעבר (M3, lib/cutover.php): קריאה — מפרסם ומעלה; ראיה, נקודת שחזור ו"מוכן למעבר" — בעלים בלבד. אינו מדליק דבר באתר
+        'cutover' => cutover_lib() ?? cutover_state(require_role($user, 'publisher')),
+        'cutover_evidence' => cutover_lib() ?? cutover_evidence_add(require_role($user, 'owner'), $body),
+        'cutover_evidence_revoke' => cutover_lib() ?? cutover_evidence_revoke(require_role($user, 'owner'), $body),
+        'cutover_snapshot' => cutover_lib() ?? cutover_snapshot(require_role($user, 'owner')),
+        'cutover_ready' => cutover_lib() ?? cutover_ready(require_role($user, 'owner')),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),

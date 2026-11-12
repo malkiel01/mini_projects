@@ -1,5 +1,5 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.2.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.3.0)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
@@ -39,6 +39,12 @@
  *   1. אין כאן אף מילה שהגולש רואה. כל כיתוב הוא תוכן או תכונה של אלמנט בקובץ העמוד.
  *   2. הקובץ אינו נשען על מבנה העמוד: כל אלמנט נמצא לפי התכונה שלו בלבד. אפשר להזיז, לעטוף ולמחוק.
  *   3. בלי אחסון בדפדפן (localStorage וכדומה), והנתונים נטענים בכתובת יחסית: data/<שם הרשימה>.json
+ *
+ * כשהעמוד מוצג כחלון בתוך האתר (אופן "חלון" או "פס האתר"), הקובץ שולח לאתר שלוש הודעות בלבד, וזה כל המידע שיוצא:
+ *   {kol:"height", h} — גובה העמוד (כדי שהחלון יהיה בגובה התוכן, בלי פס גלילה כפול)
+ *   {kol:"title",  t} — הכותרת (<title>), לכותרת של הלשונית
+ *   {kol:"path",   p} — הדף שמוצג עכשיו (למשל about/index.html), לכתובת שבשורת הכתובת
+ * כשהעמוד הוא כל המסך — לא נשלח דבר. מחקתם את החלק הזה? החלון פשוט לא יתעדכן.
  */
 (function () {
   'use strict';
@@ -572,9 +578,66 @@
     Object.keys(names).forEach(function (name) { if (name) load(name); });
   }
 
+  // ── חלון בתוך האתר: גובה, כותרת ודף — רק כשיש מסמך מעל העמוד ──────
+
+  var root = (function () {
+    var me = document.currentScript && document.currentScript.src;
+    var m = me && /^(.*\/)js\/kol-data\.js(?:[?#].*)?$/.exec(me);
+    try { return m ? new URL(m[1]).pathname : null; } catch (e) { return null; }
+  })();
+
+  function tell(message) {
+    try { window.parent.postMessage(message, '*'); } catch (e) { /* אין מסמך מעל */ }
+  }
+
+  function framed() {
+    var sent = {};
+    var queued = false;
+    function height() {
+      var html = document.documentElement;
+      var h = html.getBoundingClientRect().height;
+      if (html.scrollHeight > html.clientHeight + 1) h = Math.max(h, html.scrollHeight);   // תוכן שגולש מעבר לחלון
+      return Math.min(50000, Math.ceil(h));
+    }
+    function sendHeight() {
+      queued = false;
+      var h = height();
+      if (h !== sent.h) { sent.h = h; tell({ kol: 'height', h: h }); }
+    }
+    function queue() { if (!queued) { queued = true; (window.requestAnimationFrame || setTimeout)(sendHeight); } }
+    function sendTitle() {
+      var t = String(document.title || '').slice(0, 200);
+      if (t !== sent.t) { sent.t = t; tell({ kol: 'title', t: t }); }
+    }
+    function sendPath() {
+      if (!root || location.pathname.indexOf(root) !== 0) return;
+      var p;
+      try { p = decodeURIComponent(location.pathname.slice(root.length)); } catch (e) { return; }
+      if (p === '' || p.charAt(p.length - 1) === '/') p += 'index.html';
+      tell({ kol: 'path', p: p });
+    }
+    if (window.ResizeObserver) {
+      var watch = new ResizeObserver(queue);
+      watch.observe(document.documentElement);
+      if (document.body) watch.observe(document.body);
+    }
+    window.addEventListener('load', queue);
+    window.addEventListener('resize', queue);
+    if (window.MutationObserver) {
+      new MutationObserver(sendTitle).observe(document.head || document.documentElement, { childList: true, subtree: true, characterData: true });
+    }
+    window.addEventListener('popstate', sendPath);
+    sendPath();
+    sendTitle();
+    queue();
+  }
+
+  var inFrame = false;
+  try { inFrame = window.parent !== window; } catch (e) { inFrame = true; }
+
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.2.0',
+    version: '1.3.0',
     prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },
@@ -583,4 +646,8 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
+  if (inFrame) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', framed);
+    else framed();
+  }
 })();

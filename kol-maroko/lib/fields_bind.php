@@ -153,6 +153,10 @@ function field_key_apply(array $user, array $b): array
         if ($kind === 'field') {
             fields_fill();
             $pdo->prepare('UPDATE word_fields SET key = ? WHERE key = ?')->execute([$new, $old]);
+            if ($x['type'] === 'audio' || $x['col'] === 'audio') {   // N2b: ההקלטות של השדה — אותה עסקה
+                require_once __DIR__ . '/rec_actions.php';
+                rec_field_renamed($old, $new, $user);
+            }
             if ($x['col'] === null) {                                 // הערכים: המפתח בכל מילה
                 $put = $pdo->prepare('UPDATE words SET extra = ? WHERE id = ?');
                 foreach ($pdo->query("SELECT id, extra FROM words WHERE extra <> '{}'")->fetchAll() as $r) {

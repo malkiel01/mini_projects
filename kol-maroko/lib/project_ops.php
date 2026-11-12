@@ -98,6 +98,17 @@ function pf_copy(array $user, array $b): array
         $warn = $int ? 'העותק כולל ' . (count($int) === 1 ? 'שדה פנימי אחד' : count($int) . ' שדות פנימיים') . ' (' . implode(', ', array_column($int, 'key')) . '), והוא יתפרסם כקובץ רגיל' : null;
         return ['copied' => ['from' => pf_words_path(), 'to' => $to, 'count' => 1], 'file' => pf_public($r), 'static_copy' => true, 'warning' => $warn];
     }
+    if (($lk = pf_list_of($b)) !== null) {        // N3: כמו המילים — עותק סטטי של הרשימה
+        $int = pf_list_file($lk)['internal'];
+        $r = pf_tx(function () use ($to, $user, $lk, $int) {
+            pf_free($to);
+            if (($n = pf_count()) >= ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $n + 1, $max);
+            return pf_insert($to, 'file', list_json($lk), $user, null, "עותק סטטי של הרשימה $lk — אינו מתעדכן ואינו מעדכן" . ($int ? ' · כולל שדות פנימיים (' . implode(', ', array_column($int, 'key')) . ') — יתפרסם כקובץ רגיל' : ''));
+        });
+        audit_as($user, 'pf_copy', "הרשימה $lk ← $to (עותק סטטי)");
+        $warn = $int ? 'העותק כולל ' . (count($int) === 1 ? 'שדה פנימי אחד' : count($int) . ' שדות פנימיים') . ' (' . implode(', ', array_column($int, 'key')) . '), והוא יתפרסם כקובץ רגיל' : null;
+        return ['copied' => ['from' => pf_list_file($lk)['path'], 'to' => $to, 'count' => 1], 'file' => pf_public($r), 'static_copy' => true, 'warning' => $warn];
+    }
     [$from, $first, $n] = pf_tx(function () use ($b, $to, $user) {
         [$from, $rows, $dir] = pf_target($b);
         if ($dir && str_starts_with($to . '/', $from . '/')) throw new ApiError('אי אפשר לשכפל תיקייה לתוך עצמה');
@@ -472,6 +483,7 @@ function pf_zip(array $user): never
         $n++;
     }
     if (($wp = pf_words_path()) !== null && !pf_by_path($wp)) { $z->addFromString($wp, words_json()); $n++; }   // N1: הקובץ של טבלת המילים
+    foreach (pf_list_paths() as $lp => $lk) if ($lk !== 'words' && !pf_by_path($lp)) { $z->addFromString($lp, list_json($lk)); $n++; }   // N3: הקובץ של כל רשימה
     if (!$z->close() || !$n) file_put_contents($tmp, "PK\x05\x06" . str_repeat("\0", 18));   // פרויקט ריק — ZIP ריק תקין
     audit_as($user, 'pf_zip', "$n פריטים");
     $name = 'kol-project-' . gmdate('Y-m-d') . '.zip';
@@ -588,6 +600,14 @@ function pf_zip_import(array $user, array $q, string $raw): array
             catch (ApiError $e) { $errors[] = "\"$wpath\" (טבלת המילים) — " . $e->getMessage() . ': ' . implode(' · ', array_map(fn($x) => "שורה {$x['line']}: {$x['msg']}", array_slice($e->extra['errors'] ?? [], 0, 3))); }
             if ($words) $here ? $replace[$wpath] = ['words' => true] : $add[] = $wpath;
         }
+    }
+    // N3: הקובץ של רשימה — זהה לטבלה: "זהה"; שונה — אינו נשמר כקובץ רגיל (שמירה בעורך הקבצים, עם "מה ישתנה")
+    foreach (pf_list_paths() as $lp => $lk) {
+        if ($lk === 'words' || !isset($zip['files'][$lp]) || isset($rows[$lp])) continue;
+        $lb = $zip['files'][$lp];
+        unset($zip['files'][$lp]);
+        if ($lb === list_json($lk)) $same[] = $lp;
+        else $errors[] = "\"$lp\" (הרשימה $lk) — שונה מהטבלה. ייבוא של רשימה מ-ZIP עוד לא נתמך: הסירו אותו מה-ZIP, ושמרו אותו בעורך הקבצים (\"מה ישתנה\")";
     }
     foreach ($zip['files'] as $path => $bytes) {
         $sha = hash('sha256', $bytes);

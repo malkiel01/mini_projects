@@ -14,7 +14,7 @@ require_once __DIR__ . '/devloop.php';
 require_once __DIR__ . '/forms.php';
 
 /** גרסת התוסף לוורדפרס שהריפו מצפה לה באתר. התוסף אינו נפרס לשרת הזה, ולכן המספר כתוב כאן; בדיקה אוטומטית משווה אותו לקובץ התוסף. */
-const KOL_PLUGIN_EXPECTED = '2.0.1';
+const KOL_PLUGIN_EXPECTED = '2.1.0';
 const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צילום רק למטלה שהוא עצמו פתח ב-15 הדקות האחרונות
 
 /**
@@ -368,6 +368,10 @@ function dev_health_checks(): array
             if ($res === false) return [false, 'העורך לא ענה: ' . $err, 'לבדוק שהעורך (word-processor) באוויר; טקסט ארוך לא ייפתח עד אז'];
             if ($status >= 500) return [false, "העורך ענה $status", 'תקלה בצד העורך — לדווח בצ\'אט שלו דרך הבעלים'];
             return [true, "העורך ענה ($status)", ''];
+        }],
+        'lists' => ['הרשימות (📚 נתונים): מספר, פריטים בכל אחת, נפח', function (): array {     // N3 (08 §5)
+            if (!function_exists('lists_dev_line')) require_once __DIR__ . '/lexicon.php';
+            return [true, lists_dev_line()['text'], ''];
         }],
     ];
 }
