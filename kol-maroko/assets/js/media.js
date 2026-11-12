@@ -5,7 +5,7 @@ const Media = (() => {
   const KINDS = { image: ['🖼️', 'תמונות'], audio: ['🎙️', 'שמע'], video: ['🎬', 'וידאו'], doc: ['📄', 'מסמכים'] };
   const ACCEPT = {
     image: 'image/jpeg,image/png,image/webp,image/gif',
-    audio: 'audio/*,.m4a,.mp3,.wav,.ogg,.webm',
+    audio: 'audio/*,.m4a,.mp3,.aac,.wav,.ogg,.opus,.webm,.flac',
     video: 'video/mp4,video/webm,video/quicktime',
     doc: '.pdf,.docx,.xlsx,.pptx,.zip,.txt',
   };
@@ -106,7 +106,7 @@ const Media = (() => {
       const main = h('button', { type: 'button', class: 'btn primary rec-main' }, '● התחלת הקלטה');
       const player = h('audio', { controls: true, hidden: true });
       const save = h('button', { type: 'button', class: 'btn primary', hidden: true }, '✓ שמירה');
-      const again = h('button', { type: 'button', class: 'btn ghost', hidden: true }, '↻ מחדש');
+      const again = h('button', { type: 'button', class: 'btn ghost', hidden: true }, '↻ הקלט שוב');
       const note = h('p', { class: 'hint' }, type.startsWith('audio/webm') || type.startsWith('audio/ogg')
         ? 'ההקלטה נשמרת כ-WebM. באייפון ישן ייתכן שלא תתנגן — אפשר להקליט מאייפון, או להעלות m4a / mp3.'
         : 'ההקלטה נשמרת כ-m4a — מתנגנת בכל מכשיר.');
