@@ -351,7 +351,7 @@
             for (const [k, label] of keys) { const o = mk('option', '', label); o.value = k; o.selected = M.pickArg === k; fs.append(o); }
             fs.addEventListener('change', () => { M.pickArg = fs.value; this.redraw(); }); row.append(fs);
           }
-          if (M.pick === 'search') { const q = mk('input', ''); q.type = 'search'; q.value = M.pickArg; q.placeholder = 'מילה'; q.setAttribute('aria-label', 'חיפוש מילה לתצוגה'); q.setAttribute('data-lv-pick-arg', ''); q.addEventListener('input', () => { M.pickArg = q.value; clearTimeout(this.qt); this.qt = setTimeout(() => this.redraw(false), 200); });   // בלי לבנות את הסרגל מחדש — המיקוד נשאר בשדה row.append(q); }
+          if (M.pick === 'search') { const q = mk('input', ''); q.type = 'search'; q.value = M.pickArg; q.placeholder = 'מילה'; q.setAttribute('aria-label', 'חיפוש מילה לתצוגה'); q.setAttribute('data-lv-pick-arg', ''); q.addEventListener('input', () => { M.pickArg = q.value; clearTimeout(this.qt); this.qt = setTimeout(() => this.redraw(false), 200); }); row.append(q); }   // בלי לבנות את הסרגל מחדש — המיקוד נשאר בשדה
           if (L.pickMiss) row.append(mk('span', 'hint', ' — אין מילה כזו'));
         }
         rows.push(row);
