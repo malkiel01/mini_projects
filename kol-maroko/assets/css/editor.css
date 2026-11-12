@@ -501,7 +501,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .fx-layer input[type=text] { flex: 1 1 52px; min-width: 44px; }
 .fx-in { display: inline-flex; align-items: center; gap: 2px; font-size: .78rem; }
 .fx-frow input[type=range] { flex: 1; min-width: 0; } .fx-val { font: .75rem ui-monospace, monospace; min-width: 4.5em; text-align: end; opacity: .85; }
-.bz-wrap svg.bz { width: 100%; max-width: 220px; height: auto; align-self: center; overflow: visible; touch-action: none; }
+.bz-wrap svg.bz { width: 100%; max-width: 140px; height: auto; align-self: center; overflow: visible; touch-action: none; }
 .bz .bz-box { fill: none; stroke: currentColor; stroke-opacity: .2; } .bz .bz-c { fill: none; stroke: var(--brand, #36c); stroke-width: 3; }
 .bz .bz-l { stroke: currentColor; stroke-opacity: .45; } .bz .bz-h { fill: #fff; stroke: #e0c; stroke-width: 2.5; cursor: grab; }
 .tf-origin { display: grid; grid-template-columns: repeat(3, 22px); gap: 2px; }

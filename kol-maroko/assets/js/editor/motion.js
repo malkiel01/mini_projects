@@ -77,7 +77,7 @@
     }
     /** עורך cubic-bezier: ריבוע, שתי ידיות גרירה (P1, P2); שחרור ← כתיבה. y חורג (−0.5…1.5) מותר. */
     bezier(n, D, phys, label, write) {
-      const cur = this.decl(D, n, phys) || (this.cs(n) || {}).transitionTimingFunction || 'ease', p = FX().bezierOf(String(cur).split(',')[0].trim()) || [0.25, 0.1, 0.25, 1], W = 160, H = 160, pad = 40;
+      const cur = this.decl(D, n, phys) || (this.cs(n) || {}).transitionTimingFunction || 'ease', p = FX().bezierOf(String(cur).split(',')[0].trim()) || [0.25, 0.1, 0.25, 1], W = 160, H = 160, pad = 28;
       const NS = 'http://www.w3.org/2000/svg', mk = (t, a) => { const e = document.createElementNS(NS, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
       const svg = mk('svg', { viewBox: '0 0 ' + W + ' ' + (H + pad * 2), class: 'bz', 'data-bezier': phys, role: 'img', 'aria-label': 'עקומה ' + cur });
       const X = x => x * W, Y = y => pad + (1 - y) * H, path = mk('path', { class: 'bz-c' }), l1 = mk('line', { class: 'bz-l' }), l2 = mk('line', { class: 'bz-l' });
