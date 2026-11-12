@@ -135,7 +135,11 @@
   /** הוספת html כילד ה-index של par. מחזיר { patches, start, model }. */
   function insert(m, par, index, html) {
     check(par, topTags(html), null);
-    const res = K().html.insert(m, par, index, html), p = res.patches[0];
+    let res;
+    const empty = !par.kids.length && par.et && !par.nodes.some(x => x.type !== 'text' || /\S/.test(x.value));
+    if (empty && !/[\r\n]/.test(m.src.slice(par.from, par.to)) && par.tag !== 'body' && par.tag !== 'head') res = { patches: [{ from: par.st[1], to: par.et[0], text: html }] };   // רובריקה ריקה שכתובה בשורה אחת — נשארת בשורה אחת
+    else res = K().html.insert(m, par, index, html);
+    const p = res.patches[0];
     const at = mapOff(res.patches, p.from), start = at + p.text.indexOf(html);
     const src = K().applyPatches(m.src, res.patches), want = intended(html);
     const model = verify(m, src, [{ start, len: html.length, parentFrom: mapOff(res.patches, par.from), html }], want ? want.tags.length : 0);

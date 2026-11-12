@@ -60,16 +60,35 @@ const PAGE = `<!doctype html>
     const at = (page, sel, fx = 0.5, fy = 0.5, dy = 0, scroll = true) => page.evaluate(([s, fx, fy, dy, scroll]) => { const c = Editor._state.canvas, e = c.doc.querySelector(s); if (!e) return null; if (scroll) e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + r.width * fx) * c.scale, y: f.top + (r.top + r.height * fy + dy) * c.scale }; }, [sel, fx, fy, dy, scroll]);
     const select = (page, sel) => page.evaluate(s => { const c = Editor._state.canvas, e = c.doc.querySelector(s), n = e && c.nodeOf(e); c.select(n); return !!n; }, sel);
     const dragTag = page => page.evaluate(() => { const t = document.querySelector('.dg-tag'), l = document.querySelector('.dg-line'); return { tag: t && !t.hidden ? t.textContent : '', bad: !!t && t.classList.contains('bad'), line: l && !l.hidden ? l.className : '' }; });
-    /** גרירה בעכבר מנקודה לנקודה, בצעדים; peek — מה הקו והתווית רגע לפני השחרור; esc — Esc במקום שחרור. */
+    /**
+     * גרירה מנקודה לנקודה (במסך של המעטפת), באירועי מצביע. לא page.mouse: ב-Chromium בלי תצוגה, תזוזה עם כפתור לחוץ מעל
+     * iframe עם sandbox בלי allow-scripts (הקנבס) אינה מסתיימת לעולם — נבדק בנפרד. האירועים נשלחים לאותם מאזינים:
+     * מעל הקנבס — למסמך שבמסגרת, בקואורדינטות שלה; מחוץ לו — לאלמנט שמתחת לנקודה במעטפת.
+     * peek — הקו והתווית רגע לפני השחרור; esc — Esc במקום שחרור; outside — שחרור על הסרגל.
+     */
+    const PD = () => {
+      const ed = Editor._state, c = ed.canvas;
+      const inFrame = (x, y) => { const f = c.frame.getBoundingClientRect(); return x >= f.left && x <= f.right && y >= f.top && y <= f.bottom; };
+      const fpt = (x, y) => { const f = c.frame.getBoundingClientRect(); return [(x - f.left) / c.scale, (y - f.top) / c.scale]; };
+      const fire = (t, type, x, y, cx, cy, touch) => t.dispatchEvent(new (t.ownerDocument.defaultView.PointerEvent)(type, { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: cy, pointerId: touch ? 2 : 1, pointerType: touch ? 'touch' : 'mouse', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }));
+      window.__pd = {
+        down(x, y, touch) { this.touch = !!touch; const top = document.elementFromPoint(x, y); this.frame = inFrame(x, y) && (!top || top.localName === 'iframe' || top.classList.contains('ed-canvas') || top.classList.contains('spike-layer')); if (this.frame) { const [fx, fy] = fpt(x, y); this.t = c.doc.elementFromPoint(fx, fy); fire(this.t, 'pointerdown', x, y, fx, fy, touch); } else { this.t = document.elementFromPoint(x, y); fire(this.t, 'pointerdown', x, y, x, y, touch); } },
+        move(x, y) { if (this.frame) { const [fx, fy] = fpt(x, y); fire(c.doc.elementFromPoint(fx, fy) || c.doc.documentElement, 'pointermove', x, y, fx, fy, this.touch); } else { const t = ed.build.drag.active ? (document.elementFromPoint(x, y) || document.body) : this.t; fire(t.localName === 'iframe' ? document.body : t, 'pointermove', x, y, x, y, this.touch); } },
+        up(x, y) { if (this.frame) { const [fx, fy] = fpt(x, y); fire(c.doc.elementFromPoint(fx, fy) || c.doc.documentElement, 'pointerup', x, y, fx, fy, this.touch); } else { const t = document.elementFromPoint(x, y) || document.body; fire(t.localName === 'iframe' ? document.body : t, 'pointerup', x, y, x, y, this.touch); } },
+      };
+    };
     const drag = async (page, from, to, opt = {}) => {
-      await page.mouse.move(from.x, from.y); await page.mouse.down();
+      await page.evaluate(PD);
+      await page.evaluate(([x, y, t]) => window.__pd.down(x, y, t), [from.x, from.y, !!opt.touch]);
+      if (opt.hold) await sleep(opt.hold);
       const steps = opt.steps || 8;
-      for (let i = 1; i <= steps; i++) { await page.mouse.move(from.x + (to.x - from.x) * i / steps, from.y + (to.y - from.y) * i / steps); await sleep(20); }
-      if (opt.wiggle) { await page.mouse.move(to.x + opt.wiggle.x, to.y + opt.wiggle.y, { steps: 4 }); await sleep(40); }
+      for (let i = 1; i <= steps; i++) { await page.evaluate(([x, y]) => window.__pd.move(x, y), [from.x + (to.x - from.x) * i / steps, from.y + (to.y - from.y) * i / steps]); await sleep(24); }
+      if (opt.wiggle) for (let i = 1; i <= 4; i++) { await page.evaluate(([x, y]) => window.__pd.move(x, y), [to.x + opt.wiggle.x * i / 4, to.y + opt.wiggle.y * i / 4]); await sleep(24); }
       await sleep(60);
       const peek = await dragTag(page);
       if (opt.esc) { await page.keyboard.press('Escape'); await sleep(40); }
-      await page.mouse.up(); await sleep(150);
+      const end = opt.end || (opt.wiggle ? { x: to.x + opt.wiggle.x, y: to.y + opt.wiggle.y } : to);
+      await page.evaluate(([x, y]) => window.__pd.up(x, y), [end.x, end.y]); await sleep(150);
       return peek;
     };
     const lib = async (page, id) => { await page.click('[data-ntab="lib"]'); await sleep(60); const b = await page.$(`.ed-lib-item[data-lib="${id}"]`); const r = await b.boundingBox(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
@@ -105,16 +124,16 @@ const PAGE = `<!doctype html>
     ok(/<p class="kadisha-hero-subtitle-main">[^<]*<\/p>\n      <h1 class="kadisha-hero-title">הכותרת השביעית<\/h1>/.test(s1) || /<\/p>\n      <p class="kadisha-hero-subtitle-main">הכותרת השביעית<\/p>/.test(s1) || /<h2>הכותרת השביעית<\/h2>/.test(s1), 'צעד 3: כותרת חדשה — עם התגית והמחלקות של השכנה, והטקסט שהוקלד במקום', s1.slice(s1.indexOf('kadisha-hero-inner'), s1.indexOf('kadisha-hero-inner') + 700));
     // צעד 8: הפס כולו אל מתחת לשורת החיפוש
     await select(page, 'section.kadisha-hero'); await sleep(120);
+    to = await at(page, '.kadisha-lexicon-controls', 0.5, 1, -3); await sleep(80);
     const grip = await page.$('.ed-seltools [data-grip]'), gb = await grip.boundingBox();
-    to = await at(page, '.kadisha-lexicon-controls', 0.5, 1, -3);
-    pk = await drag(page, { x: gb.x + gb.width / 2, y: gb.y + gb.height / 2 }, to, { steps: 12 });
+    pk = await drag(page, { x: gb.x + gb.width / 2, y: gb.y + gb.height / 2 }, to, { steps: 12, wiggle: { x: 40, y: 0 } });   // השפה התחתונה של שורת החיפוש ושל המונה שבתוכה — אחת; תזוזה אופקית עולה רמה
     s1 = await src(page); q = await st(page);
-    ok(/<\/div>\n\n?    <section class="kadisha-hero kadisha-hero--has-image"/.test(s1) && s1.indexOf('kadisha-lexicon-controls') < s1.indexOf('<section class="kadisha-hero ') && q.same && !q.inequiv, 'צעד 8: הפס כולו מתחת לשורת החיפוש, מוזח לשכניו', { pk, q, around: s1.slice(s1.indexOf('kadisha-lexicon-count') , s1.indexOf('kadisha-lexicon-count') + 400) });
+    ok(/kadisha-lexicon-count[^\n]*\n    <\/div>\s*\n    <section class="kadisha-hero kadisha-hero--has-image"[^\n]*\n      <div class="kadisha-container">\n        <div class="kadisha-hero-inner">/.test(s1) && s1.indexOf('kadisha-lexicon-controls') < s1.indexOf('<section class="kadisha-hero ') && q.same && !q.inequiv, 'צעד 8: הפס כולו מתחת לשורת החיפוש (בשפה המשותפת — תזוזה אופקית עולה רמה), מוזח לשכניו', { pk, q, around: s1.slice(s1.indexOf('kadisha-lexicon-count') , s1.indexOf('kadisha-lexicon-count') + 400) });
     // בדיקת הבעלים: רובריקה ↔ מתחת לפס, ובתוכה שתי רובריקות
-    await select(page, 'section.kadisha-hero');
-    await page.click('[data-ntab="lib"]'); await sleep(60); await page.click('.ed-lib-item[data-lib="row2"]'); await sleep(250);
+    from = await lib(page, 'row2'); to = await at(page, 'section.kadisha-hero', 0.5, 1, -3);
+    pk = await drag(page, from, to);
     let f1 = await files(page);
-    ok(/<\/section>\n    <div class="row-1"><div class="row-1-col"><\/div><div class="row-1-col"><\/div><\/div>/.test(f1['index.html']) && /\.row-1 \{[^}]*display: flex;[^}]*flex-direction: row;[^}]*flex-wrap: wrap;/.test(f1['css/page.css']) && /\.row-1-col \{[^}]*flex: 1 1 0;[^}]*min-width: 0;/.test(f1['css/page.css']), 'בדיקת הבעלים: "שורה של 2" — HTML + כלל CSS (row-1, row-1-col) בעסקה אחת', f1['css/page.css'].slice(-300));
+    ok(/<\/section>\s*\n    <div class="row-1"><div class="row-1-col"><\/div><div class="row-1-col"><\/div><\/div>/.test(f1['index.html']) && /\.row-1 \{[^}]*display: flex;[^}]*flex-direction: row;[^}]*flex-wrap: wrap;/.test(f1['css/page.css']) && /\.row-1-col \{[^}]*flex: 1 1 0;[^}]*min-width: 0;/.test(f1['css/page.css']), 'בדיקת הבעלים: "שורה של 2" נגררת מהספרייה אל מתחת לפס — HTML + כלל CSS (row-1, row-1-col) בעסקה אחת', { pk, css: f1['css/page.css'].slice(-200), html: f1['index.html'].slice(f1['index.html'].indexOf('</section>') - 50, f1['index.html'].indexOf('</section>') + 200) });
     const emptyH = await page.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.row-1-col')].map(e => Math.round(e.getBoundingClientRect().height)));
     ok(emptyH.length === 2 && emptyH.every(x => x >= 48) && !f1['index.html'].includes('min-height'), 'רובריקה ריקה אינה נעלמת: בקנבס ≥48px וקו מקווקו — ובקובץ אין גובה', emptyH);
     // גוררים כותרת מהספרייה אל האחת, וטקסט אל השנייה
@@ -123,7 +142,7 @@ const PAGE = `<!doctype html>
     from = await lib(page, 'text'); to = await page.evaluate(() => { const c = Editor._state.canvas, e = c.doc.querySelectorAll('.row-1-col')[1]; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + r.width / 2) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale }; });
     const pk2 = await drag(page, from, to);
     s1 = await src(page);
-    ok(/<div class="row-1"><div class="row-1-col"><h2>כותרת<\/h2><\/div><div class="row-1-col"><p>טקסט<\/p><\/div><\/div>/.test(s1), 'בדיקת הבעלים: כותרת אל הרובריקה האחת, טקסט אל השנייה (גרירה מהספרייה)', { pk, pk2, s: s1.slice(s1.indexOf('row-1') - 10, s1.indexOf('row-1') + 200) });
+    ok(/<div class="row-1"><div class="row-1-col"><h2>כותרת<\/h2><\/div><div class="row-1-col"><p>טקסט<\/p><\/div><\/div>/.test(s1) && /^ראשון · בתוך div\.row-1-col/.test(pk.tag), 'בדיקת הבעלים: כותרת אל הרובריקה האחת, טקסט אל השנייה (גרירה מהספרייה)', { pk, pk2, s: s1.slice(s1.indexOf('row-1') - 10, s1.indexOf('row-1') + 200) });
     await page.keyboard.press('Escape'); await sleep(100);
     // ↕ ובחזרה
     await select(page, '.row-1');
@@ -131,7 +150,7 @@ const PAGE = `<!doctype html>
     ok(await page.isVisible('[data-sec="layout"] [data-setdir="row"][aria-pressed="true"]'), 'הפאנל "מתקדם" ← "פריסה": המתג מציג את המצב המחושב (↔ שורה)');
     await page.click('[data-sec="layout"] [data-setdir="col"]'); await sleep(250);
     f1 = await files(page);
-    ok(/\.row-1 \{[^}]*flex-direction: column;/.test(f1['css/page.css']) && await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('.row-1')).flexDirection) === 'column' && /^כיוון · div\.row-1 · שורה ← עמודה$/.test((await st(page)).tx || ''), 'בדיקת הבעלים: ↔ ← ↕ — flex-direction: column בכלל של המחלקה, עסקה עם שם', (await st(page)).tx);
+    ok(/\.row-1 \{[^}]*flex-direction: column;/.test(f1['css/page.css']) && await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('.row-1')).flexDirection) === 'column' && /^כיוון · div\.row-1 · שורה ← עמודה/.test((await st(page)).note), 'בדיקת הבעלים: ↔ ← ↕ — flex-direction: column בכלל של המחלקה, עסקה עם שם', (await st(page)).note);
     await page.click('[data-sec="layout"] [data-setdir="row"]'); await sleep(250);
     f1 = await files(page);
     ok(/\.row-1 \{[^}]*flex-direction: row;/.test(f1['css/page.css']) && await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('.row-1')).flexDirection) === 'row', 'בדיקת הבעלים: ↕ ← ↔ — חזרה לשורה');

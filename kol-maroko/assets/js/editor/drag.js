@@ -90,8 +90,12 @@
       if (!n || n.tag === 'html' || n.tag === 'head') { const b = c.m.root && c.m.root.kids.find(k => k.tag === 'body'); if (!b) return null; n = b; }
       this.hover(n);
       let base;
-      const r = this.rect(n), pax = n.parent && n.tag !== 'body' ? this.axis(n.parent) : null;
-      const near = r && pax && (pax.axis === 'row' ? Math.min(fx - r.left, r.right - fx) < EDGE : Math.min(fy - r.top, r.bottom - fy) < EDGE);
+      const nearOf = x => { const r = this.rect(x), pax = x.parent && x.tag !== 'body' ? this.axis(x.parent) : null; if (!r || !pax) return false; const d = pax.axis === 'row' ? Math.min(fx - r.left, r.right - fx) : Math.min(fy - r.top, r.bottom - fy); return d >= -1 && d < EDGE; };
+      // 8px החיצוניים של רובריקה שייכים להורה — גם כשהסמן מעל ילד שלה
+      // כשכמה רובריקות מסתיימות באותה שפה — הפנימית; תזוזה אופקית (בשורה: אנכית) עולה משם רמה (level)
+      let edgeOf = null; for (let p = n; p && p.tag !== 'body' && p.parent; p = p.parent) if (!this.moving(p) && nearOf(p)) { edgeOf = p; break; }
+      if (edgeOf) n = edgeOf;
+      const r = this.rect(n), pax = n.parent && n.tag !== 'body' ? this.axis(n.parent) : null, near = nearOf(n);
       if (this.isBox(n) && !near) { const i = this.indexIn(n, fx, fy); base = { par: n, ref: i.ref }; }
       else if (n.parent && n.tag !== 'body') {
         const ax = pax || { axis: 'col', rev: false };
@@ -171,8 +175,18 @@
       this.autoscroll(nv.list, y, navR);
       return t;
     }
-    autoscroll(el, y, r) { if (y < r.top + SCROLL_ZONE) el.scrollTop -= 12; else if (y > r.bottom - SCROLL_ZONE) el.scrollTop += 12; }
-    autoscrollFrame(y, r) { const w = this.win(); if (y < r.top + SCROLL_ZONE) w.scrollBy(0, -14); else if (y > r.bottom - SCROLL_ZONE) w.scrollBy(0, 14); }
+    /** גלילה אוטומטית ליד הקצוות — רק אחרי שהייה של 250ms באזור (מעבר דרכו בדרך ליעד אינו גולל). */
+    zone(key, d) {
+      const a = this.active; if (!d) { if (a.zone && a.zone.key === key) a.zone = null; return 0; }
+      if (!a.zone || a.zone.key !== key || a.zone.d !== d) { a.zone = { key, d, at: performance.now() }; return 0; }
+      if (performance.now() - a.zone.at < 250) return 0;
+      clearTimeout(a.zoneT); a.zoneT = setTimeout(() => { if (this.active === a && a.zone && a.zone.key === key) this.track(a.px, a.py); }, 50);
+      return d;
+    }
+    autoscroll(el, y, r) { const d = this.zone('nav', y < r.top + SCROLL_ZONE ? -1 : y > r.bottom - SCROLL_ZONE ? 1 : 0); if (d) el.scrollTop += 12 * d; }
+    autoscrollFrame(y, r) { const host = this.canvas.host, hr = host.getBoundingClientRect(), top = Math.max(r.top, hr.top), bot = Math.min(r.bottom, hr.bottom);
+      const d = this.zone('frame', y < top + SCROLL_ZONE ? -1 : y > bot - SCROLL_ZONE ? 1 : 0); if (!d) return;
+      const w = this.win(), before = w.scrollY; w.scrollBy(0, 14 * d); if (w.scrollY === before) host.scrollTop += 14 * d; }
     // ── תקינות ותווית ──────────────────────────────────────
     withValid(t) {
       if (!t) return null;

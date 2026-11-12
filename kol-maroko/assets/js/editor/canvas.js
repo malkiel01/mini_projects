@@ -385,7 +385,7 @@
         if (this.ext && this.ext.active) { const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
         const p = this.press;
         if (this.edit && this.edit.active) { if (this.hovered) { this.hovered = null; this.draw(); } return; }
-        if (p && p.id === e.pointerId && this.onDragStart && !p.drag && (e.pointerType === 'touch' ? p.armed && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 : Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4)) {
+        if (p && p.id === e.pointerId && this.onDragStart && !p.drag && (e.pointerType === 'touch' ? p.armed && Math.hypot(e.clientX - p.x, e.clientY - p.y) * this.scale > 6 : Math.hypot(e.clientX - p.x, e.clientY - p.y) * this.scale > 4)) {
           p.drag = true; this.press = null; this.armed = null; clearTimeout(this.longT);       // V4: גרירה אחרי 4px — כדי שלחיצה תישאר בחירה
           const f = this.frame.getBoundingClientRect(); this.onDragStart(p.n, f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return;
         }
