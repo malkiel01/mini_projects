@@ -303,6 +303,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .ed-moveto-row { direction: ltr; font: .78rem ui-monospace, monospace; }
 .ed-tag-in { font: .85rem ui-monospace, monospace; width: 9em; }
 
+.ed-grip { display: none; }                                             /* ידיות הרוחב — במחשב בלבד (בטלפון ה-gap שלהן היה גוזל מהקנבס) */
 /* ── V4: העורך תופס את כל רוחב החלון ואת כל הגובה שמתחת ללשוניות (מחשב; הטלפון — כמו שהיה) ── */
 @media (min-width: 1000px) {
   main:has(> .ed) { max-width: none; padding: var(--s2) var(--s2) 0; }
