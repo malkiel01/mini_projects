@@ -52,6 +52,7 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
                       'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
+                      'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
@@ -153,14 +154,29 @@ try {
         'words_csv' => (require_role($user, 'editor') ? words_csv() : []),
         'words_csv_import' => words_csv_import(require_role($user, 'editor'), $body),
         'word_move' => word_move(require_role($user, 'editor'), $body),          // N1: גרירה / "העבר ל…" בטבלה
-        'fields' => fields_state(require_role($user, 'editor')),                // N2: "מבנה המילה" — עורך (08 §3); "רוקן נכשלים" ומחיקה עם ערכים — מפרסם, בפונקציה
-        'field_save' => field_save(require_role($user, 'editor'), $body),
-        'field_delete' => field_delete(require_role($user, 'editor'), $body),
+        // N2: "מבנה המילה" — עורך (08 §3); "רוקן נכשלים" ומחיקה עם ערכים — מפרסם, בפונקציה. N3: עם list=<key> — המבנה של אותה רשימה
+        'fields' => ($u = require_role($user, 'editor')) && ($lk = list_param($_GET)) ? list_fields_state($u, $lk) : fields_state($u),
+        'field_save' => ($u = require_role($user, 'editor')) && ($lk = list_param($body)) ? list_field_save($u, $lk, $body) : field_save($u, $body),
+        'field_delete' => ($u = require_role($user, 'editor')) && ($lk = list_param($body)) ? list_field_delete($u, $lk, $body) : field_delete($u, $body),
         'topics' => topics_state(require_role($user, 'editor')),                // N2: מסך הנושאים
         'topic_save' => topic_save(require_role($user, 'editor'), $body),
         'topic_merge' => topic_merge(require_role($user, 'editor'), $body),
-        'field_key_preview' => field_key_preview(require_role($user, 'editor'), $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
-        'field_key_apply' => field_key_apply(require_role($user, 'editor'), $body),
+        'field_key_preview' => ($u = require_role($user, 'editor')) && ($lk = list_param($_GET + $body)) ? list_field_key($u, $lk, $_GET + $body, false) : field_key_preview($u, $_GET + $body),     // kind=field (מפתח שדה) / topic (slug)
+        'field_key_apply' => ($u = require_role($user, 'editor')) && ($lk = list_param($body)) ? list_field_key($u, $lk, $body, true) : field_key_apply($u, $body),
+        // N3: רשימות נוספות (lib/lists.php). יצירה / שינוי / מחיקה / שדות — עורך; מחיקת רשימה עם פריטים ו"החלף הכול" — מפרסם (בפונקציה)
+        'lists' => lists_state(require_role($user, 'editor')),
+        'list_create' => list_create(require_role($user, 'editor'), $body),
+        'list_save' => list_save(require_role($user, 'editor'), $body),
+        'list_delete' => list_delete(require_role($user, 'editor'), $body),
+        'list_key_preview' => list_key_preview(require_role($user, 'editor'), $_GET + $body),
+        'list_key_apply' => list_key_apply(require_role($user, 'editor'), $body),
+        'list_items' => (require_role($user, 'editor') ? list_items_state(list_param($_GET) ?? throw new ApiError('בחרו רשימה')) : []),
+        'list_item_save' => list_item_save(require_role($user, 'editor'), $body),
+        'list_item_delete' => list_item_delete(require_role($user, 'editor'), $body),
+        'list_item_move' => list_item_move(require_role($user, 'editor'), $body),
+        'list_csv' => (require_role($user, 'editor') ? list_csv(list_param($_GET) ?? throw new ApiError('בחרו רשימה')) : []),
+        'list_csv_import' => ($u = require_role($user, 'editor')) ? list_csv_import($u, list_param($body) ?? throw new ApiError('בחרו רשימה'), $body) : [],
+        'list_place' => list_place(require_role($user, 'editor'), $body),
         'audio_import' => audio_import(require_role($user, 'owner'), $body),
         'snapshots' => (require_role($user, 'editor') ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual(require_role($user, 'editor'), $body),

@@ -369,6 +369,10 @@ function dev_health_checks(): array
             if ($status >= 500) return [false, "העורך ענה $status", 'תקלה בצד העורך — לדווח בצ\'אט שלו דרך הבעלים'];
             return [true, "העורך ענה ($status)", ''];
         }],
+        'lists' => ['הרשימות (📚 נתונים): מספר, פריטים בכל אחת, נפח', function (): array {     // N3 (08 §5)
+            if (!function_exists('lists_dev_line')) require_once __DIR__ . '/lexicon.php';
+            return [true, lists_dev_line()['text'], ''];
+        }],
     ];
 }
 

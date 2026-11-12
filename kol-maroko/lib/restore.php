@@ -52,6 +52,8 @@ function snap_state(): array
         'words' => $j($pdo->query('SELECT * FROM words ORDER BY id')->fetchAll()),
         'topics' => $j($pdo->query('SELECT * FROM topics ORDER BY slug')->fetchAll()),
         'fields' => $j($pdo->query('SELECT * FROM word_fields ORDER BY key')->fetchAll()),         // N2: מבנה המילה
+        'lists' => $j(['lists' => $pdo->query('SELECT * FROM lists ORDER BY key')->fetchAll(), 'fields' => $pdo->query('SELECT * FROM list_fields ORDER BY list, key')->fetchAll(),
+            'items' => $pdo->query('SELECT * FROM list_items ORDER BY list, id')->fetchAll()]),                              // N3: הרשימות
         'code' => $j($pdo->query('SELECT * FROM code_files ORDER BY path')->fetchAll()),
         'settings' => $j($settings),
         'files' => $j($pdo->query('SELECT id, deleted_at, deleted_by FROM files ORDER BY id')->fetchAll()),
@@ -170,6 +172,12 @@ function snapshot_apply(array $user, array $parts, string $note): array
         $put('words', $rows('words'));
         $put('topics', $rows('topics'));
         if (isset($parts['fields'])) $put('word_fields', $rows('fields'));        // נקודה מלפני N2 — המבנה נשאר כמו שהוא
+        if (isset($parts['lists'])) {                                            // נקודה מלפני N3 — הרשימות נשארות כמו שהן
+            $ls = $rows('lists');
+            $put('lists', $ls['lists'] ?? []);
+            $put('list_fields', $ls['fields'] ?? []);
+            $put('list_items', $ls['items'] ?? []);
+        }
         $put('code_files', $rows('code'));
         foreach (json_decode(blob_get($parts['settings']), true) ?: [] as $k => $v) {
             if (!in_array($k, SNAP_SETTINGS, true)) continue;
@@ -217,7 +225,7 @@ function trash_list(): array
     $fields = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'key' => json_decode($r['field'], true)['key'] ?? '?',
         'label' => json_decode($r['field'], true)['label'] ?? '?', 'values' => count(json_decode($r['vals'], true) ?: [])], $pdo->query('SELECT * FROM field_trash ORDER BY id DESC LIMIT 500')->fetchAll());
     require_once __DIR__ . '/forms.php';
-    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'fields' => $fields, 'forms' => forms_trash_list()];     // M5: פניות — אצוות
+    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'fields' => $fields, 'forms' => forms_trash_list(), 'lists' => list_trash_list()];     // M5: פניות — אצוות; N3: רשימות
 }
 
 function trash_restore(array $user, array $b): array
@@ -266,6 +274,9 @@ function trash_restore(array $user, array $b): array
     } elseif ($kind === 'field') {
         $detail = pf_tx(fn() => field_trash_restore($user, (int)$id));
         audit_as($user, 'trash_restore', $detail);
+    } elseif ($kind === 'list') {                                          // N3: רשימה / שדה ברשימה / פריט
+        $detail = pf_tx(fn() => list_trash_restore($user, (int)$id));
+        audit_as($user, 'trash_restore', $detail);
     } elseif ($kind === 'form') {                                          // M5: פניות (lib/forms.php) — אצווה שלמה, מפרסם ומעלה
         require_once __DIR__ . '/forms.php';
         forms_trash_restore($user, (int)$id);
@@ -288,9 +299,9 @@ function trash_purge(array $owner, array $b): array
         $pdo->prepare('DELETE FROM files WHERE id = ?')->execute([$f['id']]);
         @unlink(file_path($f));
         audit_as($owner, 'trash_purge', 'קובץ · ' . $f['name']);
-    } elseif ($kind === 'word' || $kind === 'topic' || $kind === 'field') {
-        $pdo->prepare('DELETE FROM ' . ['word' => 'words_trash', 'topic' => 'topic_trash', 'field' => 'field_trash'][$kind] . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
-        audit_as($owner, 'trash_purge', ['word' => 'מילה', 'topic' => 'נושא', 'field' => 'שדה'][$kind]);
+    } elseif ($kind === 'word' || $kind === 'topic' || $kind === 'field' || $kind === 'list') {
+        $pdo->prepare('DELETE FROM ' . ['word' => 'words_trash', 'topic' => 'topic_trash', 'field' => 'field_trash', 'list' => 'list_trash'][$kind] . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
+        audit_as($owner, 'trash_purge', ['word' => 'מילה', 'topic' => 'נושא', 'field' => 'שדה', 'list' => 'רשימה / פריט ברשימה'][$kind]);
     } elseif ($kind === 'form') {                                          // M5
         require_once __DIR__ . '/forms.php';
         forms_trash_purge($owner, (int)($b['id'] ?? 0));

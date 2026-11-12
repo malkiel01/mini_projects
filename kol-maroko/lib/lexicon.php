@@ -769,6 +769,8 @@ function words_json(?string $app = null): string
         $items[] = $item;
     }
     $j = $hasTopics ? ['topics' => topics_out($all, $app, $meta)] : [];          // "נושאים" שאינו מתפרסם — גם בלי הרשימה
+    // N3: לכל שדה בחירה — טבלת תוויות בראש הקובץ (kol-data.js: data-kol-filter="words:<key>" בונה כפתורים עם השמות). רק כשיש כאלה
+    foreach ($use as $f) if ($f['col'] === null && $f['type'] === 'choice') $j[$f['key']] = array_map(fn($o) => ['id' => (string)$o['value'], 'label' => (string)$o['label']], $f['options']);
     return words_json_encode($j + ['items' => $items]);
 }
 
@@ -979,7 +981,15 @@ function words_file_items(string $bytes, array $state, array $create, array $opt
     // {} ו-[] מתפענחים שניהם למערך ריק — ההבחנה לפי התו בקובץ. "items": {} אינו "רשימה ריקה" (שהייתה מעבירה הכול לסל)
     $is = fn(string $path, string $ch) => ($bytes[$scan['pos'][$path] ?? -1] ?? '') === $ch;
     if (!is_array($j) || !$is('', '{')) return ['errors' => [['line' => 1, 'col' => 1, 'msg' => 'הקובץ חייב להיות אובייקט: { "topics": [...], "items": [...] }']]];
-    foreach (array_keys($j) as $k) if (!in_array($k, ['topics', 'items'], true)) $add($errors, "/$k#key", "שדה לא מוכר \"$k\" בראש הקובץ — רק \"topics\" ו-\"items\". הסירו אותו כדי לשמור");
+    $choiceTop = array_column(array_filter(fields_custom($fields), fn($f) => $f['type'] === 'choice'), null, 'key');      // N3: טבלאות התוויות — לקריאה
+    foreach (array_keys($j) as $k) {
+        if (in_array($k, ['topics', 'items'], true)) continue;
+        if (isset($choiceTop[$k])) {
+            if ($j[$k] !== array_map(fn($o) => ['id' => (string)$o['value'], 'label' => (string)$o['label']], $choiceTop[$k]['options'])) $add($warnings, "/$k", "האפשרויות של \"$k\" נערכות ב-🧩 מבנה — השינוי כאן לא נשמר");
+            continue;
+        }
+        $add($errors, "/$k#key", "שדה לא מוכר \"$k\" בראש הקובץ — רק \"topics\" ו-\"items\". הסירו אותו כדי לשמור");
+    }
     if (!isset($j['items']) || !is_array($j['items']) || !array_is_list($j['items']) || !$is('/items', '[')) {
         $add($errors, isset($j['items']) ? '/items' : '', '"items" חסר, או שאינו רשימה');
         return ['errors' => $errors];
@@ -2077,3 +2087,5 @@ function topic_attrs(string $slug, array $u): void
     foreach (['color' => 'color', 'image' => 'image', 'hidden' => 'hidden', 'sort_order' => 'sort_order'] as $k => $col) if (array_key_exists($k, $u)) { $set[] = "$col = ?"; $vals[] = is_bool($u[$k]) ? (int)$u[$k] : $u[$k]; }
     if ($set) db()->prepare('UPDATE topics SET ' . implode(', ', $set) . ' WHERE slug = ?')->execute([...$vals, $slug]);
 }
+
+require_once __DIR__ . '/lists.php';           // N3: רשימות נוספות — המנוע והמתאמים (list_adapter)

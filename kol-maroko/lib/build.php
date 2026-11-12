@@ -154,7 +154,41 @@ function build_collect(array $opts): array
         [$files, $wn] = build_words($files);
         $notes = array_merge($notes, $wn);
     }
+    [$files, $ln] = build_lists($files);                          // N3: כל רשימה רשומה — data/<key>.json, רק "מתפרסם"
+    $notes = array_merge($notes, $ln);
     return [$files, $out, $notes];
+}
+
+/**
+ * N3: כל רשימה רשומה ב-kol.json — הקובץ שלה מ-list_json($key, '') (רק "מתפרסם"), והקבצים שלה בחבילה: תמונה —
+ * media/images/<id>.<ext>, הקלטה — media/audio/<list>-<id>-<key>.<ext>. נתיב שתפוס בקובץ רגיל — הקובץ הרגיל נשאר.
+ */
+function build_lists(array $files): array
+{
+    $notes = [];
+    foreach (pf_list_paths() as $path => $key) {
+        if ($key === 'words' || pf_by_path($path)) continue;
+        $j = json_decode(list_json($key, ''), true);
+        $fields = array_column(array_filter(list_fields($key), fn($f) => $f['published'] && in_array($f['type'], ['image', 'audio'], true)), null, 'key');
+        $rows = array_column(list_rows($key), 'data', 'id');
+        $meta = files_meta(list_file_ids(array_map(fn($id, $d) => ['id' => $id, 'data' => $d], array_keys($rows), $rows), array_values($fields)));
+        $missing = 0;
+        foreach ($j['items'] as &$it) foreach ($fields as $fk => $f) {
+            $v = $rows[(int)$it['id']][$fk] ?? null;
+            if (!file_id($v)) continue;
+            $m = $meta[$v] ?? null;
+            $p = $m ? ($f['type'] === 'image' ? "media/images/$v.{$m['ext']}" : "media/audio/$key-{$it['id']}-$fk.{$m['ext']}") : '';
+            if ($p !== '' && $m['deleted_at'] === null && is_file(file_path($m))) {
+                $files[$p] ??= ['sha' => $m['sha256'] ?: hash_file('sha256', file_path($m)), 'size' => (int)$m['size'], 'type' => build_type($p), 'src' => 'media', 'file_id' => $m['id']];
+                $it[$fk] = $p;
+            } else { unset($it[$fk]); $missing++; }
+        }
+        unset($it);
+        $bytes = words_json_encode($j);
+        $files[$path] = ['sha' => pf_blob_put($bytes), 'size' => strlen($bytes), 'type' => 'application/json', 'src' => 'data'];
+        if ($missing) $notes[] = ['kind' => 'missing_audio', 'msg' => "$path: $missing קבצים (הקלטות / תמונות) חסרים בספרייה — יצאו בלעדיהם", 'count' => $missing];
+    }
+    return [$files, $notes];
 }
 
 /** כמו בתצוגה החיה: data/words.json קיים כשיש בפרויקט רשימה, או כש-kol.json מצהיר עליו. */

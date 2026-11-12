@@ -173,6 +173,13 @@ function pv_inject(string $html, string $src): string
     return $tag . $html;
 }
 
+/** N3: נתיב בעץ ← מפתח רשימה רשומה (לא המילים, ולא נתיב שתפוס בקובץ רגיל). */
+function pv_list_at(string $path): ?string
+{
+    $k = pf_list_paths()[$path] ?? null;
+    return $k === null || $k === 'words' || pf_by_path($path) ? null : $k;
+}
+
 /** data/words.json — נבנה מטבלת המילים ברגע הבקשה. N1: הפונקציה האחת words_json (lib/lexicon.php). $app — כתובת האפליקציה, להקלטות שהועלו. */
 function pv_words(string $app): string
 {
@@ -215,6 +222,8 @@ function pv_serve(): never
 
         if ($path === PV_BRIDGE) pv_send((string)file_get_contents(dirname(__DIR__) . '/assets/js/preview-bridge.js'), null, 'bridge.js');
         if ($path === PV_WORDS) pv_send(pv_words($app), null, 'words.json');
+        // N3: data/<key>.json של כל רשימה רשומה (kol.json ← data, source "list:<key>") — מהטבלה, רק "מתפרסם"
+        if (($lk = pv_list_at($path)) !== null) pv_send(list_json($lk, $app), null, basename($path));
 
         $html = fn(string $bytes) => pv_inject($bytes, $root . PV_BRIDGE);
         $pvHtml = $html; $html = fn(string $bytes) => forms_meta_inject($pvHtml($bytes), forms_endpoint(true));    // M5: <meta> של form.php?test=1 (lib/forms.php)
