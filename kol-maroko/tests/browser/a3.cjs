@@ -38,7 +38,6 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
   try {
     for (let i = 0; i < 100; i++) { try { await fetch(base + '/api.php?action=embed_key'); break; } catch { await sleep(50); } }
     browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
-    // הספרייה נפתחת ישר (בלי לעבור קודם בסטודיו: יציאה ממנו באמצע הטעינה היא מרוץ של studio.js — לא של A3)
     const mk = async (width, height, user = OWNER) => {
       const c = await browser.newContext({ viewport: { width, height }, hasTouch: width < 600, acceptDownloads: true,
         permissions: ['microphone'], extraHTTPHeaders: { 'X-Test-User': JSON.stringify(user) } });
@@ -51,6 +50,19 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     const openLib = async page => {
       await page.goto(base + '/#/files');
       await page.waitForSelector('.lib-list .lib-row');
+    };
+    /** הרצף האמיתי: הסטודיו (/) ומיד הקבצים — היציאה מהסטודיו באמצע הטעינה (studio.js: mount ממתין ל-lock) לא זורקת ולא נתקעת. */
+    const fromStudio = async (page, errs) => {
+      // תשובת ה-lock מתעכבת — כך העזיבה בוודאות קורית בזמן ש-mount ממתין לה (בלי העיכוב המרוץ נדיר ותלוי עומס)
+      const slow = async route => { await sleep(1500); await route.continue().catch(() => {}); };
+      await page.route(/action=lock\b/, slow);
+      await page.goto(base + '/');
+      await page.waitForSelector('#main .studio');
+      await openLib(page);
+      await sleep(2000);                                   // ה-lock חוזר עכשיו — אחרי שהסטודיו כבר לא על המסך
+      await page.unroute(/action=lock\b/, slow);
+      ok(/#\/files$/.test(page.url()) && await page.locator('#main .lib-list').count() === 1 && await page.locator('#main .studio').count() === 0 && !errs.some(e => /beat/.test(e)),
+        'מהסטודיו מיד לקבצים — המסך הוא הקבצים, בלי שגיאה', errs);
     };
     const row = (page, id) => page.locator(`.lib-row[data-id="${id}"]`);
     const rowText = (page, id) => row(page, id).innerText().catch(() => '');
@@ -79,7 +91,7 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     const errors = [], foreign = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => { if (!r.url().startsWith(base) && !r.url().startsWith('blob:') && !r.url().startsWith('data:')) foreign.push(r.url()); });
-    await openLib(page);
+    await fromStudio(page, errors);
 
     // ── 1. השורות: לא מחוברת, משך, נכשלה ──
     const lid = await looseId(page, 'הקלטה ישנה');
@@ -296,7 +308,7 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     // ── 14. עורך: בלי מחיקה סופית ובלי ניקוי; השרת דוחה ──
     const ectx = await mk(1280, 900, EDITOR), ep = await ectx.newPage();
     ep.on('pageerror', e => errors.push(e.message));
-    await openLib(ep);
+    await fromStudio(ep, errors);
     const z = (await lib(ep)).loose.find(r => r.name === 'zzz');
     ok(!(await call(ep, 'rec_delete', { ids: [z.rec] })).error, 'עורך: מחיקה לסל');
     const purge = await call(ep, 'rec_purge', { id: z.rec, confirm: true });
@@ -313,7 +325,7 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     // ── 15. טלפון 390px ──
     const pctx = await mk(390, 780), pp = await pctx.newPage();
     pp.on('pageerror', e => errors.push(e.message));
-    await openLib(pp);
+    await fromStudio(pp, errors);
     ok(await pp.locator('.lib-row[data-id="1"] .lib-check').isHidden() && await pp.locator('.lib-row[data-id="1"] .lib-more').isVisible(), 'טלפון: בלי תיבות סימון; ⋯ בכל שורה');
     await pp.evaluate(() => document.querySelector('.lib-row[data-id="1"]').dispatchEvent(new Event('touchstart', { bubbles: true })));
     await sleep(800);
