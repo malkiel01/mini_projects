@@ -126,7 +126,7 @@ function renderConv() {
   $('#sSub').textContent = STATUS[c.status] || '';
   $('#sMeta').replaceChildren(
     badge(c.status),
-    el('span', {}, ['Platform · ', el('code', { text: c.model || '' })]),
+    el('span', {}, [c.team ? 'Platform · צוות · ' : 'Platform · ', el('code', { text: c.model || '' })]),
     el('code', { text: c.repo || '' }),
     el('span', { text: c.budget_cents ? `${money(c.cost_cents || 0)} מתוך ${money(c.budget_cents)}` : (c.cost_cents ? money(c.cost_cents) : 'בלי תקרת תקציב') }),
     el('span', { text: c.allow_merge ? 'מיזוג: מותר' : 'מיזוג: רק ידני' }),
@@ -174,6 +174,8 @@ function eventNode(e) {
       el('summary', {}, [el('span', { class: 'n', text: `${e.ask ? '🔐' : '🔧'} ${e.name}` }), el('span', { class: 'c', text: e.summary })]),
       e.summary ? el('pre', { text: e.summary }) : null,
     ]);
+    case 'team_out': return teamNode(`המנהל ← ${e.who || 'חבר צוות'}`, e.text, false);
+    case 'team_in': return teamNode(`${e.who || 'חבר צוות'} ← המנהל`, e.text, true);
     case 'result': return { result: e };
     case 'error': return el('div', { class: 's-err', text: `⚠ ${e.text}${e.retry === 'retrying' ? ' (מנסה שוב)' : ''}` });
     case 'idle': return el('div', { class: 's-div', text: `— ${IDLE_REASON[e.reason] || e.reason} —` });
@@ -181,6 +183,17 @@ function eventNode(e) {
     case 'note': return el('div', { class: 's-div', text: e.text });
     default: return null;
   }
+}
+
+/** הודעה בתוך הצוות: מקופלת כברירת מחדל, כדי שהשיחה עם בעל הלוח תישאר קריאה. */
+function teamNode(label, text, isReport) {
+  const body = el('div', { class: 's-team__body md', dir: 'auto' });
+  body.append(renderMarkdown(text || ''));
+  const first = (text || '').split('\n').find((l) => l.trim()) || '';
+  return el('details', { class: `s-team${isReport ? ' s-team--in' : ''}` }, [
+    el('summary', {}, [el('span', { class: 'n', text: `👥 ${label}` }), el('span', { class: 'c', dir: 'auto', text: first.slice(0, 120) })]),
+    body,
+  ]);
 }
 
 function appendEvents(events) {
@@ -300,6 +313,7 @@ function openNew() {
   $('#nModel').value = s.model || '';
   $('#nBudget').value = String(Math.round((s.budget_cents ?? 2000) / 100));
   $('#nMerge').checked = !!s.allow_merge;
+  $('#nTeam').checked = true;
   $('#nEngines').replaceChildren(...S.state.engines.map((g) => el('div', {
     class: `s-engine${g.enabled ? ' is-on' : ''}`, 'aria-disabled': g.enabled ? null : 'true',
   }, [el('b', { text: `${g.enabled ? '✓' : '🔒'} ${g.label}` }), el('small', { text: g.enabled ? 'קרדיט API' : (g.note || 'לא זמין') })])));
@@ -312,6 +326,7 @@ async function createConv(ev) {
     const r = await call('conv-create', {
       engine: 'platform', title: $('#nTitle').value, repo: $('#nRepo').value.trim(), base_branch: $('#nBranch').value.trim() || 'main',
       model: $('#nModel').value.trim(), budget_cents: Math.round(Number($('#nBudget').value || 0) * 100), allow_merge: $('#nMerge').checked,
+      team: $('#nTeam').checked,
     });
     $('#sNewDlg').close();
     S.state.convs.unshift(r.conv);
