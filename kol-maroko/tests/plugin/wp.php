@@ -108,7 +108,22 @@ function wp_remote_request($url, $args = []) {
         CURLOPT_HEADERFUNCTION => function ($c, $l) use (&$rh) { if (strpos($l, ':')) { [$k, $v] = explode(':', $l, 2); $k = strtolower(trim($k)); $rh[$k] = isset($rh[$k]) ? (array)$rh[$k] + [99 => trim($v)] : trim($v); } return strlen($l); }]);
     $body = curl_exec($ch);
     if ($body === false) return new WP_Error('http', curl_error($ch));
-    return ['code' => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'headers' => $rh, 'body' => $body];
+    return ['code' => (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE), 'headers' => new Kol_Test_Header_Dict($rh), 'body' => $body];
+}
+/**
+ * M7b: הכותרות של wp_remote_* — אובייקט, כמו בוורדפרס אמיתי (WpOrg\Requests\Utility\CaseInsensitiveDictionary: ArrayAccess +
+ * IteratorAggregate, **לא** מערך). (array) עליו מחזיר את המאפיין הפנימי ולא את הכותרות — הבאג של 2.2.0.
+ */
+final class Kol_Test_Header_Dict implements ArrayAccess, IteratorAggregate, Countable
+{
+    protected $data = [];
+    public function __construct(array $d = []) { foreach ($d as $k => $v) $this->data[strtolower((string)$k)] = $v; }
+    public function offsetExists($k): bool { return isset($this->data[strtolower((string)$k)]); }
+    #[\ReturnTypeWillChange] public function offsetGet($k) { return $this->data[strtolower((string)$k)] ?? null; }
+    public function offsetSet($k, $v): void { $this->data[strtolower((string)$k)] = $v; }
+    public function offsetUnset($k): void { unset($this->data[strtolower((string)$k)]); }
+    public function getIterator(): ArrayIterator { return new ArrayIterator($this->data); }
+    public function count(): int { return count($this->data); }
 }
 function wp_remote_retrieve_headers($r) { return $r['headers']; }
 function wp_remote_retrieve_body($r) { return $r['body']; }
