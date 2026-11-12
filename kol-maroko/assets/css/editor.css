@@ -356,3 +356,54 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 @media (pointer: coarse) { .gt-grip, .gt-row .btn { min-width: 44px; min-height: 44px; display: inline-grid; place-items: center; } }
 .ps-eq { position: absolute; z-index: 26; pointer-events: none; background: rgba(224, 0, 204, .25); border: 1px dashed #e0c; font: .7rem ui-monospace, monospace; color: #e0c; display: grid; place-items: center; }
 .sz-tip { position: absolute; z-index: 27; transform: translateX(-50%); pointer-events: none; font: .75rem ui-monospace, monospace; background: rgba(20, 20, 20, .82); color: #fff; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+
+/* ── V7: מכשירים ── */
+.ed { --devc: transparent; }
+.ed[data-devi="1"] { --devc: #7c3aed; }
+.ed[data-devi="2"] { --devc: #0369a1; }
+.ed[data-devi="3"] { --devc: #b45309; }
+.ed[data-devi="4"], .ed[data-devi="5"], .ed[data-devi="6"], .ed[data-devi="7"], .ed[data-devi="8"] { --devc: #be185d; }
+.ed:not([data-devi="0"]) .ed-info { box-shadow: inset 0 3px 0 var(--devc); border-color: var(--devc); }
+.ed:not([data-devi="0"]) .ed-dev button[aria-pressed="true"] { box-shadow: inset 0 -3px 0 var(--devc); }
+.ed-dev { align-items: center; }
+.ed-dev-name { padding-inline: 6px 2px; font-size: .8rem; white-space: nowrap; color: var(--devc, var(--ink)); font-weight: 700; }
+.ed[data-devi="0"] .ed-dev-name { color: var(--muted, inherit); font-weight: 400; }
+.ed-dev-w { width: 4.6em; min-height: 32px; border: 0; border-inline-start: 1px solid var(--line); background: var(--surface); font: inherit; font-size: .8rem; padding: 0 4px; }
+.ed-dev-px { font-size: .75rem; padding-inline-end: 4px; color: var(--muted, inherit); }
+.ed-dev-bp { min-width: 36px; min-height: var(--tap); border: 0; border-inline-start: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+.ed-devnote { margin: 0 0 6px; padding: 6px 8px; border-radius: var(--r); border-inline-start: 4px solid var(--devc); background: color-mix(in srgb, var(--devc) 10%, var(--surface)); font-size: .82rem; }
+.ed-devnote code { font-size: .78rem; }
+.sg-dev { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 2px 0; font-size: .78rem; }
+.sg-dev-sym { font-weight: 700; color: var(--devc, var(--brand)); }
+.sg-dev-sym.over { color: #b91c1c; }
+.sg-dev-sym.from { color: var(--muted, #6b7280); }
+.sg-dev-from { border: 0; background: none; padding: 0; color: var(--brand); text-decoration: underline dotted; cursor: pointer; font: inherit; min-height: 24px; }
+.sg-dev .btn.sm { padding: 1px 6px; font-size: .74rem; }
+.sg-devhide { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.sg-devhide-i { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; }
+.sg-devhide-i.on { color: #b45309; font-weight: 700; }
+.nv-row.devoff .nv-lab { opacity: .55; text-decoration: line-through dotted; }
+.nv-devhide, .nv-order { font-style: normal; font-size: .72rem; color: #b45309; }
+.nv-order { color: var(--brand); }
+.ed-bp-list { display: grid; gap: 6px; margin: 8px 0; }
+.ed-bp-row { display: grid; grid-template-columns: minmax(6em, 1fr) 6.5em 6.5em 44px; gap: 6px; align-items: center; }
+.ed-bp-row.head { font-size: .78rem; color: var(--muted, inherit); }
+.ed-bp-row input { min-height: 40px; min-width: 0; font: inherit; }
+.ed-bp-sum p { margin: 4px 0; font-size: .85rem; }
+@media (max-width: 999px) {
+  .ed-dev-name, .ed-dev-px, .ed-dev-w { display: none; }   /* בטלפון: הסרגל לא גדל בשורה (המקלדת מקטינה את החלון) — רוחב חופשי ונקודות שבירה מ-⚙ */
+  .ed-bp-row { grid-template-columns: minmax(5em, 1fr) 5em 5em 44px; }
+  .sg-dev .btn.sm { min-height: 36px; }
+}
+.sg-dev-others { color: var(--muted, #6b7280); }
+/* V7: שורת המכשיר בתוך תרשים הקופסה — לא מרחיבה את העמודות (התוויות אינן נחתכות) */
+.sg-box .sg-m, .sg-box .sg-p { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.sg-side, .sg-dev, .sg-field { min-width: 0; }
+.sg-dev-others { overflow-wrap: anywhere; }
+/* תרשים הקופסה בפאנל צר (גם לפני V7: 439px בפאנל של 308px) — כל צד נשבר לשתי שורות במקום לחרוג */
+.sg-side .sg-line { flex-wrap: wrap; }
+.sg-side .sg-ctl { flex: 1 1 100%; }
+.sg-side .sg-ctl input { width: 0; }
+.sg-core { overflow-wrap: anywhere; min-width: 0; }
+/* הפאנל "עיצוב" / "מתקדם": ריווח מהמסגרת, כמו ב"תוכן" וב"פרטים" (התוויות לא נוגעות בקצה ונחתכות — גם לפני V7) */
+.sg { padding: 0 var(--s2) var(--s2); }

@@ -101,5 +101,61 @@ ok(ST.componentOf('flex', '1 1 0', 'flex-basis', true) === '0' && ST.componentOf
 { const src = '.a { color: red; }\n', m6 = K.parseCss(src), r6 = rule(m6, '.a'), res = ST.planRule(m6, r6, 'right', '10%', true);
   k2('V6 · K2 · היסט חדש — inset-inline-start (לוגי) בכלל קיים', src, res.patches, (d, out) => out === '.a { color: red; inset-inline-start: 10%; }\n'); }
 
+
+// ── V7: מכשירים — K2 לכל סוג כתיבה חדש, על page.css של העמוד המוסב ──
+{
+  /** טקסט ← תיקון אחד (ה-diff), ו-K2 עליו. */
+  const asPatch = (a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; let j = 0; while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++; return [{ from: i, to: a.length - j, text: b.slice(i, b.length - j) }]; };
+  const SEL = '.kadisha-lexicon-page .kadisha-hero-subtitle-main', base0 = rule(K.parseCss(page), SEL);
+  const dev = (src, sets, sel = SEL, max = 767) => { const b = K.cssAll(K.parseCss(src)).find(r => r.type === 'rule' && r.sel === sel && r.parent.type !== 'at'); return ST.planDevice(src, { sel, max, baseFrom: b ? b.from : -1, rtl: true, sets }).text; };
+  ok(ST.mediaMax('(max-width: 767px)') === 767 && ST.mediaMax('(width <= 767px)') === 767 && ST.mediaMax('(  max-width:767px )') === 767 && ST.mediaMax('(767px >= width)') === 767
+    && ST.mediaMax('(min-width: 767px)') === null && ST.mediaMax('screen and (max-width: 767px)') === null && ST.mediaMax('print') === null && ST.mediaMax('(prefers-reduced-motion: reduce)') === null && ST.mediaMax('(max-width: 47em)') === null,
+    'V7 · נקודת שבירה = התנאי, בדיוק: max-width / width <= (רווחים לא משנים) — מכשיר; min-width, screen and, print, prefers-…, em — אינם מכשיר');
+  ok(ST.ruleMax({ media: '@media (max-width: 767px)' }) === 767 && ST.ruleMax({ media: '@supports (display: grid) · @media (max-width: 767px)' }) === null && ST.ruleMax({ media: '@media (max-width: 1024px) · @media (max-width: 767px)' }) === null && ST.ruleMax({ media: '' }) === null,
+    'V7 · @media מקונן ו-@supports סביב @media — נקראים כתנאי (אינם מכשיר), ומוצגים ונערכים כמו שהם');
+  // 1. בלוק חדש מיד אחרי הכלל הבסיסי
+  const t1 = dev(page, [['font-size', '28px']]);
+  k2('V7 · K2 · בלוק @media חדש — מיד אחרי הכלל הבסיסי, בסגנון הקובץ', page, asPatch(page, t1), (d, out, m2) => {
+    const b = K.cssAll(m2).find(n => n.type === 'at' && ST.mediaMax(n.sel) === 767), base = rule(m2, SEL);
+    return b && b.parent === m2.root && b.kids.length === 1 && b.kids[0].sel === SEL && b.kids[0].decls[0].value === '28px' && m2.root.kids.indexOf(b) === m2.root.kids.indexOf(base) + 1 && d.old === 0 && d.neu === 3 && /^@media \(max-width: 767px\) \{\n    \.kadisha-lexicon-page \.kadisha-hero-subtitle-main \{ font-size: 28px; \}\n\}$/.test(d.text);
+  });
+  // 2. הצהרה בכלל קיים בתוך @media
+  const t2 = dev(t1, [['font-size', '26px'], ['margin-bottom', '0']]);
+  k2('V7 · K2 · הצהרה בכלל קיים בתוך @media (ערך שמשתנה, והצהרה חדשה בשם לוגי)', t1, asPatch(t1, t2), (d, out) => d.old === 1 && d.neu === 1 && / \{ font-size: 26px; margin-block-end: 0; \}$/.test(d.text) && out.split('@media (max-width: 767px)').length === 2);
+  // 3. כלל חדש בתוך בלוק קיים (אלמנט אחר; הבסיס שלו לפני הבלוק)
+  const SEL2 = '.kadisha-lexicon-page .kadisha-hero-subtitle', t3 = dev(t2, [['display', 'none']], SEL2);
+  k2('V7 · K2 · כלל חדש בתוך בלוק @media קיים (בסופו) — הבסיס שלו לפני הבלוק', t2, asPatch(t2, t3), (d, out, m2) => { const b = K.cssAll(m2).find(n => n.type === 'at' && ST.mediaMax(n.sel) === 767); return b.kids.length === 2 && b.kids[1].sel === SEL2 && d.old === 0 && d.neu === 1 && out.split('@media (max-width: 767px)').length === 2; });
+  // בסיס שבא אחרי הבלוק — כלל בבלוק שלפניו היה נדרס: בלוק חדש אחרי הבסיס
+  { const src = '@media (max-width: 767px) {\n  .a { color: red; }\n}\n.b { color: blue; }\n', b = rule(K.parseCss(src), '.b'), out = ST.planDevice(src, { sel: '.b', max: 767, baseFrom: b.from, rtl: true, sets: [['color', 'green']] }).text;
+    ok(/^@media \(max-width: 767px\) \{\n  \.a \{ color: red; \}\n\}\n\.b \{ color: blue; \}\n@media \(max-width: 767px\) \{\n  \.b \{ color: green; \}\n\}\n$/.test(out), 'V7 · בלוק של המכשיר שלפני הכלל הבסיסי — אינו מתאים (היה נדרס): נוצר בלוק אחרי הבסיס', out); }
+  // 4. איפוס: ההצהרה האחרונה ← הכלל נמחק; הכלל האחרון ← הבלוק נמחק — הקובץ זהה למקור
+  const t4 = dev(t3, [['display', null]], SEL2), t5 = dev(t4, [['font-size', null], ['margin-bottom', null]]);
+  k2('V7 · K2 · איפוס ההצהרה האחרונה בכלל ← הכלל נמחק (הבלוק נשאר — יש בו כלל אחר)', t3, asPatch(t3, t4), (d, out) => out === t2);
+  k2('V7 · K2 · איפוס הכלל האחרון בבלוק ← גם הבלוק נמחק — הקובץ זהה בייט בבייט למקור', t4, asPatch(t4, t5), (d, out) => out === page);
+  { const src = '.a { color: red; }\n@media (max-width: 767px) {\n  /* טלפון */\n  .a { color: blue; }\n}\n', out = ST.planDevice(src, { sel: '.a', max: 767, baseFrom: 0, rtl: true, sets: [['color', null]] }).text;
+    ok(out === '.a { color: red; }\n@media (max-width: 767px) {\n  /* טלפון */\n}\n', 'V7 · בלוק עם הערה — נשאר (רק הכלל שהתרוקן נמחק)', out);
+    const back = ST.planDevice(out, { sel: '.a', max: 767, baseFrom: 0, rtl: true, sets: [['color', 'green']] }).text;
+    ok(/\/\* טלפון \*\/\n  \.a \{ color: green; \}\n\}/.test(back) && !K.cssAll(K.parseCss(back)).some(n => n.broken), 'V7 · כלל חדש בבלוק שיש בו רק הערה — נכתב בתוכו', back); }
+  // תנאי שנכתב ביד: width <= 767px — אותו מכשיר
+  { const src = '.a { color: red; }\n@media (width <= 767px) {\n  .a { margin: 0; }\n}\n', out = ST.planDevice(src, { sel: '.a', max: 767, baseFrom: 0, rtl: true, sets: [['color', 'blue']] }).text;
+    ok(out === '.a { color: red; }\n@media (width <= 767px) {\n  .a { margin: 0; color: blue; }\n}\n', 'V7 · @media (width <= 767px) שנכתב ביד — מזוהה כמכשיר, והכתיבה נכנסת לכלל שבו', out); }
+  // 5. עדכון max בכל הקבצים — לא נוגע ב-@media אחר
+  { const css2 = t2 + '@media (max-width: 782px) { .x { color: red; } }\n@media (min-width: 767px) { .y { color: red; } }\n', r = ST.mediaRetarget(css2, 767, 700);
+    k2('V7 · K2 · שינוי max: רק התנאי של הבלוק משתנה (782px ו-min-width — לא)', css2, r.patches, (d, out) => r.blocks === 1 && r.rules === 1 && d.old === 1 && d.text === '@media (max-width: 700px) {' && /max-width: 782px/.test(out) && /min-width: 767px/.test(out)); }
+  // 6. kol.json: רק הערך של breakpoints
+  { const kol = '{\n  "name": "קול מרוקו",\n  "entry": "index.html",\n  "breakpoints": [\n    { "id": "tablet", "label": "טאבלט", "max": 1024, "preview": 820 },\n    { "id": "mobile", "label": "טלפון", "max": 767, "preview": 390 }\n  ],\n  "styles": { "page": "css/page.css" }\n}\n';
+    const out = ST.kolBreakpoints(kol, [{ id: 'tablet', label: 'טאבלט', max: 1024, preview: 820 }, { id: 'mobile', label: 'טלפון "קטן"', max: 700, preview: 390 }]), d = lines(kol, out);
+    ok(d.old === 1 && d.neu === 1 && /"label": "טלפון \\"קטן\\"", "max": 700/.test(d.text) && JSON.parse(out).styles.page === 'css/page.css' && JSON.parse(out).breakpoints[1].label === 'טלפון "קטן"', 'V7 · K2 · kol.json: שורה אחת — הנקודה שהשתנתה; שאר הקובץ כמו שהוא; שם עם מרכאות — כמחרוזת JSON', d);
+    const fresh = ST.kolBreakpoints('{\n  "name": "x"\n}\n', [{ id: 'mobile', label: 'טלפון', max: 767, preview: 390 }]);
+    ok(JSON.parse(fresh).breakpoints[0].max === 767 && JSON.parse(fresh).name === 'x', 'V7 · kol.json בלי breakpoints — נוסף (ברירת המחדל נכתבת בשינוי הראשון)', fresh);
+    let thrown = ''; try { ST.kolBreakpoints('{ "a": ', []); } catch (e) { thrown = e.code; } ok(thrown === 'broken', 'V7 · kol.json שאינו JSON תקין — לא נכתב (מתקנים בקוד)'); }
+  // 7. <style> בעמוד HTML: התיקון מוזז למיקום שב-HTML, והמודל של ה-HTML שקול לניתוח מלא
+  { const html = '<!doctype html><html><head><style>\n.a { color: red; }\n</style></head><body><p class="a">x</p></body></html>', m = K.parseHtml(html);
+    let st = null; K.walk(m.root, n => { if (n.tag === 'style') st = n; });
+    const a = st.st[1], b = st.et[0], text = html.slice(a, b), out = ST.planDevice(text, { sel: '.a', max: 767, baseFrom: K.parseCss(text).root.kids[0].from, rtl: true, sets: [['color', 'blue']] }).text;
+    const ps = asPatch(text, out).map(p => ({ from: p.from + a, to: p.to + a, text: p.text })), inc = K.update(K.parseHtml(html), ps).model, full = K.parseHtml(K.applyPatches(html, ps));
+    ok(!K.sameModel(inc, full) && /<style>\n\.a \{ color: red; \}\n@media \(max-width: 767px\) \{\n  \.a \{ color: blue; \}\n\}\n<\/style>/.test(full.src), 'V7 · <style> בעמוד: בלוק @media אחרי הכלל, והמודל ההדרגתי של ה-HTML שקול לניתוח מלא', full.src); }
+}
+
 console.log('\n' + (failed ? '❌ ' + failed + ' מתוך ' + ran + ' נכשלו' : '✅ כל ' + ran + ' הבדיקות עברו'));
 process.exit(failed ? 1 : 0);

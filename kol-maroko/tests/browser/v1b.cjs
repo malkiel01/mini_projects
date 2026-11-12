@@ -412,8 +412,8 @@ const PAGE = `<!doctype html>
     kolC.breakpoints = [{ id: 'tablet', label: 'טאבלט', max: 1024, preview: 700 }, { id: 'small', label: 'נייד קטן', max: 480, preview: 360 }];
     await call(page, 'pf_write', { id: kolF.id, rev: kolF.rev, content: JSON.stringify(kolC, null, 2) });
     await openPage(page, 't/v.html');
-    const devs = await page.$$eval('.ed-dev button', b => b.map(x => x.title));
-    ok(devs.length === 3 && devs[1].includes('700px') && devs[2] === 'נייד קטן · 360px', 'רוחבי הקנבס נלקחים מ-kol.json של הפרויקט — ' + devs.join(' | '));
+    const devs = await page.$$eval('.ed-dev button[data-dev]', b => b.map(x => x.title));   // V7: כפתורי המכשיר בלבד (לא ⚙ "נקודות שבירה…"); התווית — "עד <max> · תצוגה <preview>"
+    ok(devs.length === 3 && devs[1].includes('תצוגה 700px') && devs[2].startsWith('נייד קטן · עד 480px · תצוגה 360px'), 'רוחבי הקנבס נלקחים מ-kol.json של הפרויקט — ' + devs.join(' | '));
     await page.evaluate(() => document.activeElement && document.activeElement.blur()); await page.keyboard.press('3'); await sleep(80);
     ok(await page.evaluate(() => Editor._state.canvas.viewport === 360), 'בחירת המכשיר השלישי — הקנבס ברוחב 360px');
     kolC.breakpoints = [{ id: 'tablet', label: 'טאבלט', max: 1024, preview: 820 }, { id: 'mobile', label: 'טלפון', max: 767, preview: 390 }];
