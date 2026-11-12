@@ -253,9 +253,9 @@ const Words = (() => {
     for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
     csvPlan(btoa(bin), false, host);
   }
-  async function csvPlan(b64, replace, host) {
+  async function csvPlan(b64, replace, host, create = []) {
     let r;
-    try { r = await api('words_csv_import', { csv_b64: b64, replace_all: replace }); }
+    try { r = await api('words_csv_import', { csv_b64: b64, replace_all: replace, create_fields: create }); }
     catch (e) {
       if (e.status === 422 && e.data?.errors) sheet('⬆️ מאקסל — לא יובא', h('p', { class: 'hint' }, `זוהה קידוד: ${e.data.encoding || '?'} · הטבלה לא השתנתה.`),
         h('div', { class: 'warnbox', 'data-csv-errors': true }, h('ul', {}, e.data.errors.slice(0, 50).map(x => h('li', { dir: 'auto' }, x.msg)))));
@@ -265,7 +265,13 @@ const Words = (() => {
     const p = r.plan, c = p.counts;
     const fold = (title, n, items) => n ? h('details', {}, h('summary', {}, `${title} (${n})`), h('ul', {}, items)) : null;
     const name = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', external_id: 'מספר מהאקסל' };
-    const all = h('input', { type: 'checkbox', checked: replace, onchange: e => { dlg.close(); csvPlan(b64, e.target.checked, host); } });
+    const all = h('input', { type: 'checkbox', checked: replace, onchange: e => { dlg.close(); csvPlan(b64, e.target.checked, host, create); } });
+    // N2: עמודה שאין לה שדה — "לא תיובא", עם הצעה ליצור שדה (מפרסם)
+    const canMake = RANK[state.user?.role] >= RANK.publisher;
+    const props = (p.field_proposals || []).length ? h('div', { class: 'warnbox', 'data-field-proposals': true }, h('p', {}, 'עמודות בלי שדה — לא ייובאו:'),
+      h('ul', {}, p.field_proposals.map(fp => h('li', {}, h('code', { dir: 'ltr' }, fp.key), ` · ${fp.count} ערכים · סוג משוער: ${fp.type} `,
+        canMake ? h('button', { type: 'button', class: 'btn sm', 'data-make-field': fp.key, onclick: () => { dlg.close(); csvPlan(b64, replace, host, [...create, fp.key]); } }, `+ צור שדה ${fp.key}`) : h('small', { class: 'muted' }, '(יצירת שדה — למפרסם)'))))) : null;
+    const made = (p.new_fields || []).length ? h('p', {}, 'שדות חדשים: ' + p.new_fields.map(f => `${f.key} (${f.type})`).join(', ')) : null;
     const apply = h('button', { type: 'button', class: 'btn primary', 'data-csv-apply': true }, replace ? `החל — ${c.trashed} לסל` : 'החל');
     const dlg = sheet('⬆️ מאקסל — מה ישתנה',
       h('p', { class: 'hint', 'data-csv-encoding': r.encoding }, `זוהה קידוד: ${r.encoding}`),
@@ -274,15 +280,15 @@ const Words = (() => {
       fold('ישתנו', c.changed, p.changed.map(w => h('li', {}, h('b', { dir: 'auto' }, w.word), h('ul', {}, Object.entries(w.fields).map(([k, [a, b]]) => h('li', { dir: 'auto' }, `${name[k] || k}: ${a || '—'} ← ${b || '—'}`)))))),
       fold('יתווספו', c.added, p.added.map(w => h('li', { dir: 'auto' }, w.word))),
       fold('יעברו לסל', c.trashed, p.trashed.map(w => h('li', { dir: 'auto' }, w.word))),
-      p.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + p.new_topics.map(t => t.name).join(', ')) : null,
+      p.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + p.new_topics.map(t => t.name).join(', ')) : null, props, made,
       h('label', { class: 'line' }, all, ' החלף הכול — מילה שאינה בגיליון עוברת לסל (מפרסם בלבד, עם נקודת שחזור)'),
       p.snapshot ? h('p', { class: 'hint' }, '↩️ לפני ההחלה תיווצר נקודת שחזור.') : null,
       h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
-    if (!c.changed && !c.added && !c.trashed && !c.moved && !c.topics) apply.disabled = true;
+    if (!c.changed && !c.added && !c.trashed && !c.moved && !c.topics && !c.new_fields) apply.disabled = true;
     apply.onclick = async () => {
       if (replace && !confirm(`${c.trashed} מילים יעברו לסל. להמשיך?`)) return;
       apply.disabled = true;
-      try { D = await api('words_csv_import', { csv_b64: b64, replace_all: replace, apply: true, token: p.token }); dlg.close(); toast('הטבלה עודכנה · ' + p.summary); draw(host); }
+      try { D = await api('words_csv_import', { csv_b64: b64, replace_all: replace, create_fields: create, apply: true, token: p.token }); dlg.close(); toast('הטבלה עודכנה · ' + p.summary); if (create.length) await fieldsReady(); draw(host); }
       catch (e) { apply.disabled = false; toast(e.message, true); }
     };
   }

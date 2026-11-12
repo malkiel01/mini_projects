@@ -148,6 +148,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok((await page.$$('.w-table tbody tr')).length === 1, 'סינון: "יש ערך"');
     await page.selectOption('[data-ffilter]', '');
 
+    // ── אקסל: עמודה בלי שדה — "לא תיובא" + "צור שדה" ─────────
+    const csv = await page.evaluate(() => fetch('api.php?action=words_csv').then(r => r.text()));
+    const lines = csv.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
+    const csv2 = [lines[0] + ',region', ...lines.slice(1).map((l, i) => l + (i === 0 ? ',צפון' : ','))].join('\n') + '\n';
+    await page.setInputFiles('input[type=file][accept=".csv,text/csv"]', { name: 'w.csv', mimeType: 'text/csv', buffer: Buffer.from(csv2) });
+    await page.waitForSelector('#sheet [data-make-field="region"]');
+    ok((await page.textContent('#sheet [data-field-proposals]')).includes('לא ייובאו'), 'עמודה בלי שדה — "לא תיובא"');
+    await page.click('#sheet [data-make-field="region"]');
+    await page.waitForFunction(() => document.querySelector('#sheet [data-csv-summary]')?.textContent.includes('שדות חדשים: 1'));
+    await page.click('#sheet [data-csv-apply]');
+    await page.waitForSelector('.w-table th[data-col="region"]');
+    ok((await words(page)).some(w => w.extra.region === 'צפון'), '"צור שדה" מאקסל — השדה והערך');
+
     // ── טלפון ──────────────────────────────────────────────────
     const pctx = await mk(390, 800), phone = await pctx.newPage();
     phone.on('pageerror', e => errors.push('phone: ' + e.message));
