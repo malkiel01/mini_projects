@@ -61,9 +61,9 @@ test('M2 הסרת התוסף אינה מוחקת: אין uninstall.php ואין 
     ok(str_contains((string)file_get_contents("$dir/v2-admin.php"), "\$op === 'wipe' && !empty(\$_POST['confirm'])"), 'מחיקה — רק בכפתור מפורש עם אישור');
 });
 
-test('M2 מה התוסף אינו עושה (07 §5.3): בקבצים החדשים — בלי include/require עם משתנה, eval, wp_remote_ (חוץ מהבדיקה העצמית לאתר עצמו), post_content', function () {
+test('M2 / M4-BC מה התוסף אינו עושה (07 §5.3): בקבצים החדשים — בלי include/require עם משתנה, eval, wp_remote_ (חוץ מהבדיקה העצמית לאתר עצמו), post_content', function () {
     $dir = dirname(__DIR__, 2) . '/wordpress-plugin/kol-maroko';
-    foreach (['v2-store.php', 'v2-serve.php', 'v2-admin.php'] as $name) {
+    foreach (['v2-store.php', 'v2-serve.php', 'v2-admin.php', 'v2-mount.php'] as $name) {
         $c = (string)file_get_contents("$dir/$name");
         // הקוד בלי הערות ובלי מחרוזות (tokenizer) — כדי שמילה בהערה לא תסתיר ולא תדמה
         $code = '';
@@ -87,5 +87,11 @@ test('M2 מה התוסף אינו עושה (07 §5.3): בקבצים החדשים
     // ההגשה מוציאה בייטים — לא מריצה ולא מדפיסה לתוך מסמך של האתר
     $serve = (string)file_get_contents("$dir/v2-serve.php");
     $serve = implode('', array_map(fn($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? ' ' : $t[1]) : $t, token_get_all($serve)));
+    // M4-BC: המעטפת — ערכת הנושא כן (זה תפקידה), אבל מהחבילה נכנס רק טקסט אחרי escape, ושום בייט של החבילה לא מודפס כמו שהוא
+    $mount = implode('', array_map(fn($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? ' ' : $t[1]) : $t, token_get_all((string)file_get_contents("$dir/v2-mount.php"))));
+    ok(!preg_match('/\b(readfile|fpassthru|fread)\s*\(/', $mount), 'המעטפת אינה מדפיסה קובץ מהחבילה');
+    ok(preg_match_all('/esc_attr\(\$(name|content|title)\)|esc_html\(\$w\[.head.\]\[.title.\]\)/', $mount) >= 3, 'הכותרת, התגים וה-title — esc_attr / esc_html');
+    ok(str_contains($mount, 'JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT'), 'JSON בתוך <script> — מוגן');
+    ok(!str_contains($mount, 'allow-same-origin') && !str_contains($mount, 'allow-top-navigation'), 'sandbox של ה-iframe — בלי allow-same-origin ובלי ניווט עליון');
     ok(str_contains($serve, 'fread($fh') && !preg_match('/\b(get_header|wp_head|get_footer|wp_footer|do_shortcode|apply_filters|the_content)\b/', $serve), 'בלי ערכת הנושא בהגשה');
 });

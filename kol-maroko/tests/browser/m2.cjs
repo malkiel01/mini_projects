@@ -1,5 +1,5 @@
 /**
- * פרוסה M2 — ערכת ההתקפה מול התוסף 2.0, בדפדפן (Chromium, Playwright):   node kol-maroko/tests/browser/m2.cjs
+ * פרוסה M2 (+ M4-BC: H16–H17 בתוך המעטפת) — ערכת ההתקפה מול התוסף, בדפדפן (Chromium, Playwright):   node kol-maroko/tests/browser/m2.cjs
  *
  * מפרסם את tests/attack-kit/ לאתר המדומה (tests/plugin/wp.php — טוען את קובץ התוסף האמיתי), בדיוק כמו הכלי:
  * asset_has ← asset_put ← manifest, חתום ב-Ed25519. מדליק את "העמוד החדש", מתחבר "כמנהל" (עוגייה HttpOnly, בלי
@@ -39,7 +39,16 @@ const MIME = { html: 'text/html', css: 'text/css', js: 'text/javascript', svg: '
   const optsFile = path.join(dir, 'options.json');
   // האתר המדומה כותב את הקובץ אטומית (rename); כאן — אותו דבר, וקריאה חוזרת למקרה נדיר של קובץ בדרך
   const opts = () => { for (let i = 0; ; i++) { try { return JSON.parse(fs.readFileSync(optsFile, 'utf8')); } catch (e) { if (i > 50) throw e; } } };
-  const setOpt = (k, v) => { const o = opts(); if (v === null) delete o[k]; else o[k] = v; fs.writeFileSync(optsFile + '.n', JSON.stringify(o)); fs.renameSync(optsFile + '.n', optsFile); };
+  // השרת כותב לאותו קובץ במקביל (test_hits, nonce, מונה) — כתיבה שלו יכולה לדרוס את שלנו. לכן: כותבים, ובודקים שנשאר
+  const setOpt1 = (k, v) => { const o = opts(); if (v === null) delete o[k]; else o[k] = v; fs.writeFileSync(optsFile + '.n', JSON.stringify(o)); fs.renameSync(optsFile + '.n', optsFile); };
+  const setOpt = (k, v) => {
+    for (let i = 0; i < 40; i++) {
+      setOpt1(k, v);
+      const t = Date.now(); while (Date.now() - t < 30) { /* רגע לכתיבה מתחרה */ }
+      if (JSON.stringify(opts()[k] ?? null) === JSON.stringify(v)) return;
+    }
+    throw new Error('setOpt ' + k + ' לא נשמר');
+  };
   fs.writeFileSync(optsFile, JSON.stringify({ kol_maroko_keys: 'k-m2:' + pub, kol_maroko_page_id: 7 }));
   fs.mkdirSync(path.join(dir, 'uploads'));
   const port = await freePort(), base = `http://127.0.0.1:${port}`;
@@ -247,6 +256,37 @@ const MIME = { html: 'text/html', css: 'text/css', js: 'text/javascript', svg: '
     ok((await op2.content()).includes('WP-SITE-PAGE'), 'דפדפן אחר (בלי אסימון) — העמוד הישן');
     await pv.close();
     await other.close();
+
+    // ════ ה. M4-BC — הערכה בתוך המעטפת (חלון בתוך האתר / פס האתר): H1–H15 מבפנים, H16–H17, והמעטפת מבחוץ ════
+    console.log('\n── ה. בתוך המעטפת (M4-BC) ──');
+    setOpt('kol_maroko_v2_on', true);
+    setOpt('kol_maroko_v2_preview_hash', null);
+    const KIT_TITLE = '🛡️ ערכת ההתקפה — קול מרוקו 2.0';
+    for (const mode of ['framed', 'bar']) {
+      const ms = await signed('mount', { mount: mode });
+      ok(ms.status === 200 && ms.json.mount === mode, `mount=${mode} (חתום)`, JSON.stringify(ms.json));
+      setOpt('test_hits', null);
+      lines.length = 0;
+      await page.goto(base + '/lexicon/');
+      const w = await until(() => lines.find(l => l.startsWith('KOLKIT2 ')), 15000);
+      const W = w ? JSON.parse(w.slice(8)) : { checks: [] };
+      ok(w && W.framed, `${mode}: הערכה רצה בתוך החלון`);
+      for (const k of W.checks) ok(k.ok, `${mode} · בתוך החלון · ${k.id} · ${k.name}`, k.text);
+      ok(['H16', 'H17'].every(id => W.checks.some(k => k.id === id)), `${mode}: H16 ו-H17 רצו`);
+      await sleep(800);
+      ok(page.url() === base + '/lexicon/', `${mode} · H16/H17: הכתובת של המעטפת לא זזה (לא wp-admin, לא probe.html, לא pwned)`, page.url());
+      ok(await page.title() === KIT_TITLE, `${mode} · H16: הכותרת של הלשונית — של הדף, לא PWNED`, await page.title());
+      const fr = await page.evaluate(() => { const f = document.getElementById('kol-maroko-frame'); return { h: f.getBoundingClientRect().height, style: f.style.height, sandbox: f.getAttribute('sandbox') }; });
+      ok(fr.h < 50000 && !['1000000000px', '321px', '4321px', '77px', '-5px', '0px'].includes(fr.style), `${mode} · H16: גובה החלון לא נקבע מהודעה מזויפת`, JSON.stringify(fr));
+      ok(!/allow-same-origin|allow-top-navigation/.test(fr.sandbox), `${mode}: sandbox בלי allow-same-origin`, fr.sandbox);
+      ok(await page.isVisible('#site-header'), `${mode} · H5: הכותרת של האתר — נראית`);
+      ok((await page.$('#site-footer')) !== null === (mode === 'framed'), `${mode}: התחתית של האתר — ${mode === 'framed' ? 'יש' : 'אין'}`);
+      await until(() => hits().some(h => h.action === 'kolkit_h15'), 4000);
+      const HH = hits();
+      ok(HH.length > 0 && HH.every(h => h.cookie === false), `${mode} · H2/H3/H15: מהחלון — אף בקשה לא נשאה את העוגייה של המחובר`, JSON.stringify(HH));
+      ok(page.context().pages().length >= 1 && !(await page.content()).includes('LOGGED-IN-USER-DATA'), `${mode}: נתוני המחובר לא הגיעו למעטפת`);
+    }
+    await signed('mount', { mount: 'full' });
   } catch (e) {
     ok(false, 'הריצה עצמה', e.stack);
   } finally {

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: קול מרוקו — קבלת גרסאות
  * Description: מקבל מסטודיו "קול מרוקו" גרסאות חתומות של עמוד אחד (Ed25519), בודק חתימה, זמן, nonce וגרסה, ומציג אותן בתבנית של העמוד הזה בלבד. בלי סיסמאות ובלי גישה מבחוץ לשום דבר אחר. כולל ייצוא של העמוד הקיים לסטודיו.
- * Version: 2.0.1
+ * Version: 2.1.0
  * Requires PHP: 7.4
  * Author: הכלים הדיגיטליים
  * Text Domain: kol-maroko
@@ -18,6 +18,8 @@
  * 2.0 (פרוסה M2) — המסלול החדש, לצד 1.x ובלי לשנות אותו:
  *   POST …/asset_has, …/asset_put, …/manifest, …/activate — חבילה חתומה לפי hash (v2-store.php).
  *   GET/HEAD /lexicon/** — כשהמפסק "העמוד החדש" דולק ויש גרסה v2: מוגש מהחבילה, לפני וורדפרס, מבודד (v2-serve.php).
+ * 2.1 (פרוסה M4-BC): POST …/mount {mount: full|bar|framed} (חתום) — העמוד כחלון פנימי באתר: הכותרת (והתחתית) של
+ *   ערכת הנושא, ובאמצע iframe מבודד עם החבילה (v2-mount.php). full — כמו 2.0.
  *   המפסק כבוי (ברירת המחדל), או שאין גרסה v2 — האתר מגיש בדיוק מה שהגיש ב-1.x.
  *
  * מסך ההגדרות (הגדרות ← קול מרוקו, מנהלים בלבד): המפתח הציבורי, העמוד, מתג "פעיל", הגרסאות שהתקבלו,
@@ -26,7 +28,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('KOL_MAROKO_VERSION', '2.0.1');
+define('KOL_MAROKO_VERSION', '2.1.0');
 if (!defined('KOL_MAROKO_AUDIO_PART')) define('KOL_MAROKO_AUDIO_PART', 300 * 1024 * 1024);   // גודל של כל קובץ בייצוא ההקלטות
 define('KOL_MAROKO_PAGE', 'lexicon');
 define('KOL_MAROKO_SKEW', 300);
@@ -35,6 +37,7 @@ define('KOL_MAROKO_MAX_FILE', 600 * 1024 * 1024);
 define('KOL_MAROKO_EXTS', 'jpg,jpeg,png,gif,webp,mp3,m4a,aac,ogg,webm,wav,mp4,mov,pdf,docx,xlsx,pptx,zip,txt');
 
 require_once __DIR__ . '/v2-store.php';
+require_once __DIR__ . '/v2-mount.php';
 require_once __DIR__ . '/v2-serve.php';
 require_once __DIR__ . '/v2-admin.php';
 
@@ -92,7 +95,7 @@ add_action('init', 'kol_maroko_v2_scope_refresh');
 // ── נקודות הקבלה ──────────────────────────────────────────
 
 add_action('rest_api_init', function () {
-    foreach (['ping', 'asset', 'publish', 'switch', 'asset_has', 'asset_put', 'manifest', 'activate'] as $action) {
+    foreach (['ping', 'asset', 'publish', 'switch', 'asset_has', 'asset_put', 'manifest', 'activate', 'mount'] as $action) {
         register_rest_route('kol-maroko/v1', '/' . $action, [
             'methods' => 'POST',
             'permission_callback' => '__return_true',     // ההגנה היא החתימה (נבדקת ב-kol_maroko_verify)
@@ -140,9 +143,10 @@ function kol_maroko_handle($action, WP_REST_Request $req)
             'enabled' => (bool)kol_maroko_opt('enabled', false), 'page_set' => (bool)kol_maroko_opt('page_id', 0), 'plugin' => KOL_MAROKO_VERSION,
             'protocol' => KOL_MAROKO_PROTOCOL, 'v2_version' => (int)kol_maroko_opt('v2_last', 0), 'v2_live' => (int)kol_maroko_opt('v2_live', 0),
             'v2_on' => (bool)kol_maroko_opt('v2_on', false), 'v2_has_live' => kol_maroko_v2_live_manifest() !== null,
-            'v2_preview' => (bool)kol_maroko_opt('v2_preview_hash', ''), 'v2_stats' => kol_maroko_opt('v2_on', false) ? kol_maroko_v2_stats_public() : null]);
+            'v2_preview' => (bool)kol_maroko_opt('v2_preview_hash', ''), 'v2_stats' => kol_maroko_opt('v2_on', false) ? kol_maroko_v2_stats_public() : null,
+            'v2_mount' => kol_maroko_v2_mount()]);
     }
-    if (in_array($action, ['asset_has', 'asset_put', 'manifest', 'activate'], true)) return kol_maroko_v2_handle($action, $b);
+    if (in_array($action, ['asset_has', 'asset_put', 'manifest', 'activate', 'mount'], true)) return kol_maroko_v2_handle($action, $b);
     if ($action === 'asset') return kol_maroko_asset($b);
     if ($action === 'switch') return kol_maroko_switch($b);
     return kol_maroko_publish($b);

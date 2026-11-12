@@ -40,7 +40,27 @@ function update_option($k, $v, $autoload = null) { return wp_opts_locked(functio
 function delete_option($k) { return wp_opts_locked(function ($o) use ($k) { unset($o[$k]); return [$o, true]; }); }
 $GLOBALS['wp_hooks'] = [];
 function add_action($hook, $cb = null, ...$a) { $GLOBALS['wp_hooks'][$hook][] = $cb; }
-function add_filter(...$a) {}
+function add_filter($hook, $cb = null, ...$a) { $GLOBALS['wp_filters'][$hook][] = $cb; }
+function apply_filters($hook, $v, ...$a) { foreach ($GLOBALS['wp_filters'][$hook] ?? [] as $cb) $v = $cb($v, ...$a); return $v; }
+function __return_true() { return true; }
+// ── ערכת נושא מדומה (M4-BC): הכותרת והתחתית של האתר, עם סימונים — כדי לראות שהמעטפת היא עמוד של האתר ──
+function status_header($c) { http_response_code((int)$c); }
+function language_attributes() { echo 'lang="he-IL" dir="rtl"'; }
+function bloginfo($k) { echo $k === 'charset' ? 'UTF-8' : 'Maghreb'; }
+function body_class($c = '') { echo 'class="' . htmlspecialchars('site ' . $c) . '"'; }
+function wp_body_open() {}
+function wp_is_block_theme() { return false; }
+function wp_head() { foreach ($GLOBALS['wp_hooks']['wp_head'] ?? [] as $cb) $cb(); }
+function wp_footer() { echo '<script>window.WP_FOOTER_RAN=1</script>'; }
+function get_header() {
+    $t = apply_filters('pre_get_document_title', '');
+    echo '<!doctype html><html lang="he-IL" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>'
+        . ($t !== '' ? $t : 'Maghreb site') . '</title>';
+    wp_head();
+    echo '<style>body{margin:0;font-family:sans-serif}#site-header{height:120px;background:#123;color:#fff}#site-footer{height:200px;background:#321;color:#fff}</style>'
+        . '</head><body class="site"><header id="site-header">SITE-HEADER <a href="/__site/other">תפריט</a></header>';
+}
+function get_footer() { echo '<footer id="site-footer">SITE-FOOTER</footer>'; wp_footer(); echo '</body></html>'; }
 function do_action($hook, ...$a) { if ($hook !== 'init') update_option('test_actions', array_merge((array)get_option('test_actions', []), [[$hook, $a]])); }
 function home_url($p = '') { return 'http://' . $_SERVER['HTTP_HOST'] . $p; }
 function wp_parse_url($u, $c = -1) { return parse_url($u, $c); }
@@ -112,6 +132,8 @@ require dirname(__DIR__, 2) . '/wordpress-plugin/kol-maroko/kol-maroko.php';
 
 // ── מכאן: "וורדפרס" — התוסף לא תפס את הבקשה ─────────────────
 ob_end_clean();
+// template_redirect — כמו וורדפרס אחרי הניתוב (M4-BC: מסמך המעטפת נרשם כאן כשהתוסף החליט עליו, ומסתיים ב-exit)
+foreach ($GLOBALS['wp_hooks']['template_redirect'] ?? [] as $cb) $cb();
 if (preg_match('~^/wp-json/kol-maroko/v1/([a-z_]+)$~', $path, $m)) {
     $r = $_SERVER['REQUEST_METHOD'] === 'POST' ? kol_maroko_handle($m[1], new WP_REST_Request()) : new WP_REST_Response(['code' => 'rest_no_route'], 404);
     http_response_code($r->status);

@@ -77,7 +77,7 @@ test('הסבה: ה-CSS של ערכת הנושא בייט בבייט; ערכי ה
         ok((bool)array_filter($b['notes'], fn($n) => $n[0] === 'warn' && str_contains($n[1], '.kadisha-hero-title · font-size')), 'אזהרה על !important של ערכת הנושא שמתנגש בערך מהפאנל');
         ok(str_contains($b['files']['js/lexicon.js'], "console.log('theme')") && !str_contains($b['files']['index.html'], 'js/lexicon.js'), 'lexicon.js — עותק לעיון, לא נטען');
         $kol = json_decode($b['files']['kol.json'], true);
-        eq(['version' => '1.2.0', 'modified' => false], $kol['system']['js/kol-data.js'] ?? null, 'kol.json רושם את kol-data.js כקובץ מערכת');
+        eq(['version' => '1.3.0', 'modified' => false], $kol['system']['js/kol-data.js'] ?? null, 'kol.json רושם את kol-data.js כקובץ מערכת');
         ok(!preg_match('/[\x{0590}-\x{05FF}]/u', preg_replace('~/\*[\s\S]*?\*/|//[^\n]*~', '', $b['files']['js/kol-data.js'])), 'ב-kol-data.js אין טקסט שהגולש רואה (עברית מחוץ להערות)');
     } finally { $done(); }
 });

@@ -785,6 +785,48 @@ function build_send(array $user, array $b): array
     return ['build' => build_public(build_row((int)$r['id'])), 'sent' => $sent, 'site' => $res];
 }
 
+// ── אופן ההצבה (M4-BC) ───────────────────────────────────
+
+/** האופנים, ומה העמוד מפסיד בכל אחד — מוצג לבעל העמוד לפני הבחירה ("מגבלה שקטה היא נעילה", 08 §4). */
+const BUILD_MOUNTS = [
+    'full' => ['name' => 'עמוד מלא', 'text' => 'העמוד הוא כל המסך, בכתובת של העמוד באתר. בלי הכותרת והתחתית של האתר.', 'loses' => []],
+    'framed' => ['name' => 'חלון בתוך האתר', 'text' => 'הכותרת והתחתית של האתר, והעמוד כחלון ביניהן — בגובה התוכן, בלי פס גלילה כפול.', 'loses' => [
+        'position:fixed, sticky, יחידות vh ואפקטי גלילה מתייחסים לחלון (שגובהו כגובה העמוד), לא למסך',
+        'קישור שיוצא מהעמוד בלי target="_blank" נפתח בתוך החלון; ניווט של הלשונית כולה מתוך העמוד חסום',
+        'גוגל קורא פחות טוב תוכן שבתוך חלון',
+    ]],
+    'bar' => ['name' => 'פס האתר', 'text' => 'הכותרת של האתר למעלה, והעמוד ממלא את שאר המסך וגולל בתוכו. בלי התחתית של האתר.', 'loses' => [
+        'הגלילה היא בתוך העמוד (החלון), לא של הדף כולו',
+        'קישור שיוצא מהעמוד בלי target="_blank" נפתח בתוך החלון; ניווט של הלשונית כולה מתוך העמוד חסום',
+        'גוגל קורא פחות טוב תוכן שבתוך חלון',
+    ]],
+];
+
+/** המצב לממשק: האופן האחרון שנקבע מכאן, והאפשרויות. האמת — ב-ping של התוסף (v2_mount). */
+function mount_state(): array
+{
+    return ['mount' => setting('site_mount', 'full'), 'options' => BUILD_MOUNTS];
+}
+
+/** הפעולה החתומה `mount` לתוסף (2.1). שינוי מיידי באתר, בלי פרסום מחדש; ביומן של הכלי ושל התוסף. */
+function mount_set(array $owner, array $b): array
+{
+    $m = (string)($b['mount'] ?? '');
+    if (!isset(BUILD_MOUNTS[$m])) throw new ApiError('אופן הצבה לא מוכר', 422);
+    $ping = site_call('ping', []);
+    if (!array_key_exists('v2_mount', $ping)) {
+        throw new ApiError('התוסף באתר הוא ' . ($ping['plugin'] ?? '1.x') . ' — לבחירת אופן ההצבה נדרש 2.1 (מטלה לבעלים)', 409,
+            ['code' => 'plugin_old', 'plugin' => $ping['plugin'] ?? null]);
+    }
+    $r = site_call('mount', ['mount' => $m]);
+    $got = (string)($r['mount'] ?? '');
+    if ($got !== $m) throw new ApiError('האתר לא אישר את האופן', 502, ['code' => 'mount_mismatch', 'site' => $r]);
+    setting_set('site_mount', $m);
+    $prev = (string)($r['previous'] ?? '');
+    audit_as($owner, 'mount_set', (BUILD_MOUNTS[$prev]['name'] ?? $prev) . ' ← ' . BUILD_MOUNTS[$m]['name']);
+    return mount_state() + ['previous' => $prev, 'site' => ['v2_mount' => $m] + $ping];
+}
+
 /** asset_has ← asset_put. מה שהאתר כבר אישר (pkg_site_blobs, או asset_has) — לא נשלח שוב. מחזיר כמה נשלחו. */
 function build_send_blobs(array $files): int
 {
