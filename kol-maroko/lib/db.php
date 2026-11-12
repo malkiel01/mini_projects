@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 13;
+const KOL_SCHEMA_VERSION = 16;
 
 final class ApiError extends RuntimeException
 {
@@ -356,6 +356,51 @@ function migrate(PDO $pdo): void
             );
             CREATE INDEX idx_pf_history_file ON pf_history(file_id, id);
             CREATE INDEX idx_pf_history_sha ON pf_history(sha);
+            SQL,
+        16 => <<<'SQL'
+            -- פרוסה M1: בנייה ופרסום של פרויקט הקבצים (lib/build.php). קובצי החבילה — לפי sha256 במאגר הקיים
+            -- (data/files/_project/); כאן רק הרשומות. files: JSON של נתיב ← {sha, size, type, src, file_id?}.
+            -- status: building · built · failed · sending · live · superseded. version — רק בשליחה (מונה משותף עם versions).
+            CREATE TABLE pkg_builds (
+                id        INTEGER PRIMARY KEY,
+                status    TEXT NOT NULL,
+                rev       INTEGER NOT NULL DEFAULT 0,
+                print     TEXT NOT NULL DEFAULT '',
+                opts      TEXT NOT NULL DEFAULT '{}',
+                files     TEXT NOT NULL DEFAULT '{}',
+                pages     TEXT NOT NULL DEFAULT '[]',
+                notes     TEXT NOT NULL DEFAULT '[]',
+                report    TEXT NOT NULL DEFAULT '{}',
+                error     TEXT,
+                version   INTEGER,
+                manifest  TEXT,
+                by_sub    TEXT NOT NULL,
+                by_name   TEXT NOT NULL DEFAULT '',
+                at        TEXT NOT NULL,
+                built_at  TEXT,
+                sent_at   TEXT,
+                sent_by   TEXT
+            );
+            CREATE INDEX idx_pkg_builds_status ON pkg_builds(status, id);
+            -- גושים שהאתר כבר אישר (asset_has / asset_put) — לא נשלחים שוב
+            CREATE TABLE pkg_site_blobs (
+                sha  TEXT NOT NULL,
+                site TEXT NOT NULL,
+                at   TEXT NOT NULL,
+                PRIMARY KEY (sha, site)
+            );
+            -- הודעות בכלי (הודעת פרסום לבעל האתר, [ש-7])
+            CREATE TABLE notices (
+                id       INTEGER PRIMARY KEY,
+                role_to  TEXT NOT NULL,
+                kind     TEXT NOT NULL,
+                text     TEXT NOT NULL,
+                build_id INTEGER,
+                by_name  TEXT NOT NULL DEFAULT '',
+                at       TEXT NOT NULL,
+                read_at  TEXT,
+                read_by  TEXT
+            );
             SQL,
     ];
     foreach ($steps as $n => $sql) {

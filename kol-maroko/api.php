@@ -15,6 +15,7 @@ require_once __DIR__ . '/lib/library.php';
 require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/preview.php';
 require_once __DIR__ . '/lib/migrate.php';
+require_once __DIR__ . '/lib/build.php';
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
 
@@ -50,7 +51,8 @@ const POST_ACTIONS = ['member_add', 'member_set', 'member_remove', 'request_dism
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
-                      'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set'];
+                      'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
+                      'build_start', 'build_page', 'build_fail', 'build_finish', 'build_send', 'kd_update', 'notice_read'];
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -167,6 +169,19 @@ try {
         'pf_blank' => pf_blank(require_role($user, 'owner')),
         // התצוגה החיה (F4, lib/preview.php): אסימון חתום וקצר-מועד לכתובת המבודדת — רק למי שמורשה לקרוא את הפרויקט
         'pv_token' => pv_token(require_role($user, 'editor')),
+        // בנייה ופרסום של פרויקט הקבצים (M1, lib/build.php): בנייה — עורך ומעלה; שליחה — מפרסם, רק גרסה שבנה בעצמו
+        'builds' => builds_list(require_role($user, 'editor')),
+        'build_get' => build_get(require_role($user, 'editor'), $_GET),
+        'build_file' => (require_role($user, 'editor') ? build_file($_GET) : []),
+        'build_start' => build_start(require_role($user, 'editor'), $body),
+        'build_page' => build_page(require_role($user, 'editor'), $body),
+        'build_fail' => build_fail(require_role($user, 'editor'), $body),
+        'build_finish' => build_finish(require_role($user, 'editor'), $body),
+        'build_send' => build_send(require_role($user, 'publisher'), $body),
+        'kd_seed' => (require_role($user, 'owner') ? build_kd_seed() : []),
+        'kd_update' => build_kd_update(require_role($user, 'owner'), $body),
+        'notices' => notices_list(require_role($user, 'owner')),
+        'notice_read' => notice_read(require_role($user, 'owner'), $body),
         'pf_limits' => (require_developer($user) ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set(require_developer($user), $body),
         'import_info' => (require_role($user, 'owner') ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),

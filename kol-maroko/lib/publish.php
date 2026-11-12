@@ -365,7 +365,7 @@ function republish(array $user, array $b): array
     $v = $st->fetch() ?: throw new ApiError('הגרסה לא נמצאה', 404);
     if (!empty($b['tool'])) version_to_tool($user, $v);
     $pdo = db();
-    $n = (int)$pdo->query('SELECT COALESCE(MAX(n), 0) + 1 FROM versions')->fetchColumn();
+    $n = pub_next_n();
     $pdo->prepare("INSERT INTO versions (n, at, sub, name, note, json, html, css, assets, status, words, code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
         ->execute([$n, now_iso(), $user['sub'], $user['name'], 'חזרה לגרסה ' . (int)$v['n'], $v['json'], $v['html'], $v['css'], $v['assets'], $v['words'], $v['code']]);
     audit_as($user, 'version_create', "גרסה $n — חזרה לגרסה {$v['n']}");
@@ -407,11 +407,22 @@ function version_to_tool(array $user, array $v): void
     audit_as($user, 'version_to_tool', 'הכלי חזר לגרסה ' . (int)$v['n']);
 }
 
+/**
+ * המספר הבא של גרסה — **מונה משותף** למסלול הטיוטה (versions) ולמסלול פרויקט הקבצים (pkg_builds, פרוסה M1), כדי שהתוסף
+ * לעולם לא יקבל מספר שכבר ראה. בלי גרסאות של המסלול החדש — בדיוק MAX(n) + 1, כמו קודם.
+ */
+function pub_next_n(): int
+{
+    $a = (int)db()->query('SELECT COALESCE(MAX(n), 0) FROM versions')->fetchColumn();
+    $b = (int)db()->query('SELECT COALESCE(MAX(version), 0) FROM pkg_builds')->fetchColumn();
+    return max($a, $b) + 1;
+}
+
 function version_create(array $user, array $page, string $note): int
 {
     $v = build_version($page);
     $pdo = db();
-    $n = (int)$pdo->query('SELECT COALESCE(MAX(n), 0) + 1 FROM versions')->fetchColumn();
+    $n = pub_next_n();
     $lex = page_has_lexicon($page);
     $pdo->prepare("INSERT INTO versions (n, at, sub, name, note, json, html, css, assets, status, words, code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)")
         ->execute([$n, now_iso(), $user['sub'], $user['name'], mb_substr($note, 0, 200), page_json($page),
@@ -442,7 +453,7 @@ function version_send(array $user, int $n, bool $renumbered = false): array
             $r = $e->extra['site'];
         } elseif (($e->extra['code'] ?? '') === 'old_version' && $siteN > $n && !$renumbered) {
             // באתר מספר גבוה משלנו (למשל המסד שלנו שוחזר מגיבוי) — הגרסה מקבלת מספר אחריו, ונשלחת שוב
-            $to = max($siteN, (int)db()->query('SELECT MAX(n) FROM versions')->fetchColumn()) + 1;
+            $to = max($siteN + 1, pub_next_n());
             db()->prepare('UPDATE versions SET n = ? WHERE n = ?')->execute([$to, $n]);
             return version_send($user, $to, true);
         } else {
