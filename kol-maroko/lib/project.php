@@ -21,6 +21,8 @@ const PF_LIMITS = [
     'text' => [2 * 1024 * 1024, 1024, 32 * 1024 * 1024, 'גודל קובץ (בייטים)'],
     'files' => [2000, 10, 100000, 'מספר קבצים בפרויקט'],
     'history' => [200, 5, 5000, 'גרסאות היסטוריה לקובץ'],
+    'zip' => [50 * 1024 * 1024, 1024, 1024 * 1024 * 1024, 'גודל ZIP להעלאה (בייטים)'],              // F2b
+    'unzip' => [200 * 1024 * 1024, 1024, 4 * 1024 * 1024 * 1024, 'גודל ZIP אחרי פתיחה (בייטים)'],   // F2b — פצצת ZIP
 ];
 const PF_WHO_CHANGES = 'את המגבלה משנה המפתח: 🛠️ מפתח ← 📏 מגבלות';
 const PF_AUTO_MERGE = 300;          // שמירות אוטומטיות רצופות של אותו עורך מתמזגות לשורת היסטוריה אחת
@@ -445,9 +447,9 @@ function pf_tx_note(array $b): ?string
 function pf_versions(array $q): array
 {
     $r = pf_row((int)($q['id'] ?? 0));
-    $st = db()->prepare('SELECT rev, at, name, note, size FROM pf_history WHERE file_id = ? ORDER BY id DESC');   // ההיסטוריה כבר מוגבלת בשמירה (pf_hist)
+    $st = db()->prepare('SELECT id, rev, at, name, note, size FROM pf_history WHERE file_id = ? ORDER BY id DESC');   // ההיסטוריה כבר מוגבלת בשמירה (pf_hist)
     $st->execute([$r['id']]);
-    return ['file' => pf_public($r), 'versions' => array_map(fn($h) => ['rev' => (int)$h['rev'], 'at' => $h['at'], 'by' => $h['name'], 'note' => $h['note'] === 'auto' ? 'שמירה אוטומטית' : $h['note'], 'size' => (int)$h['size']], $st->fetchAll())];
+    return ['file' => pf_public($r), 'versions' => array_map(fn($h) => ['hid' => (int)$h['id'], 'rev' => (int)$h['rev'], 'at' => $h['at'], 'by' => $h['name'], 'note' => $h['note'] === 'auto' ? 'שמירה אוטומטית' : $h['note'], 'size' => (int)$h['size']], $st->fetchAll())];
 }
 
 /** כל השורות החיות שמתחת לתיקייה (לא כולל שורת התיקייה עצמה). */
@@ -477,11 +479,12 @@ function pf_rename(array $user, array $b): array
 {
     pf_guard($user);
     $to = pf_path($b['to'] ?? null);
-    $from = pf_tx(function () use ($b, $to, $user) {
+    [$from, $refs] = pf_tx(function () use ($b, $to, $user) {
         [$from, $rows, $dir] = pf_target($b);
-        if ($from === $to) return $from;
+        if ($from === $to) return [$from, 0];
         if ($dir && str_starts_with($to . '/', $from . '/')) throw new ApiError('אי אפשר להעביר תיקייה לתוך עצמה');
         $skip = array_map(fn($r) => (int)$r['id'], $rows);
+        $plan = !empty($b['update_refs']) ? pf_refs_plan($from, $to) : [];      // F2b: ההפניות לנתיב הישן — לפני שהשורות זזות
         $st = db()->prepare('UPDATE pf_files SET path = ?, path_key = ?, updated_by = ?, updated_name = ?, updated_at = ? WHERE id = ?');
         foreach ($rows as $r) {
             $new = pf_path($to . substr($r['path'], strlen($from)));
@@ -489,10 +492,10 @@ function pf_rename(array $user, array $b): array
             $st->execute([$new, pf_key($new), $user['sub'], $user['name'] ?? '', now_iso(), $r['id']]);
             if ($r['kind'] !== 'dir') pf_hist(['path' => $new] + $r, $user, "שינוי שם מ-{$r['path']}");
         }
-        return $from;
+        return [$from, $plan ? pf_refs_apply($plan, $user, "עדכון הפניות: $from ← $to") : 0];
     });
-    audit_as($user, 'pf_rename', "$from ← $to");
-    return ['renamed' => ['from' => $from, 'to' => $to]];
+    audit_as($user, 'pf_rename', "$from ← $to" . ($refs ? " · $refs הפניות עודכנו" : ''));
+    return ['renamed' => ['from' => $from, 'to' => $to], 'refs' => $refs];
 }
 
 /** מחיקה = העברה לסל. תיקייה — כל מה שבתוכה, באותה קבוצה (משוחזרת יחד). */
@@ -676,3 +679,5 @@ function pf_seed_files(): array
     ];
     return $files;
 }
+
+require_once __DIR__ . '/project_ops.php';     // F2b: שכפול, גרסאות, חיפוש והחלפה, הפניות, ZIP
