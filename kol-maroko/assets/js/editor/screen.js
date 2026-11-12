@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js'];
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -864,6 +864,7 @@ const Editor = (() => {
     if (!S.host) return;
     drawState(); drawCrumbs(); S.nav?.refresh(); drawInfo(); drawTools(); saveMarks();
     if (S.build) { S.build.tools._n = null; S.build.draw(); }
+    S.lv?.drawStrip(); S.data?.drawLib();
     S.lay?.drawHandles(); S.pos?.drawHandle(); S.fx?.drawHandles(); S.mo?.drawHandles();   // ידיות הקנבס של V6 — גם אחרי כתיבת CSS בלבד (הקנבס אינו מצויר מחדש אז)
     const cap = S.canvas?.capInfo;
     el.cap.hidden = !cap;
@@ -910,6 +911,7 @@ const Editor = (() => {
     el.seltools = h('span', { class: 'ed-seltools-host' });
     el.cap = h('button', { type: 'button', class: 'ed-strip', hidden: true, onclick: () => { S.canvas.showAll(!S.canvas.capOff); drawAll(); } });
     el.broken = h('p', { class: 'ed-strip warn', role: 'alert', hidden: true });
+    el.lvStrip = h('div', { class: 'ed-strip lv-strip', hidden: true, 'data-lv-strips': true, role: 'group', 'aria-label': 'רשימות הנתונים בקנבס' });   // V11
     el.seed = h('p', { class: 'ed-strip warn ed-seed', role: 'alert', 'data-seed': true, hidden: true });
     el.blocked = h('details', { class: 'ed-strip ed-blocked', hidden: true });
     el.note = h('div', { class: 'ed-note', role: 'status', hidden: true });
@@ -949,7 +951,7 @@ const Editor = (() => {
     el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.addImg, el.freeBtn, el.hideBtn, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'הפאנל — תוכן (עריכה) ופרטים: מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.spaceBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
-      el.bar, h('div', { class: 'ed-path' }, el.seltools, el.crumbs, el.where), el.seed, el.cap, el.broken, el.blocked, el.point, el.gapbar,
+      el.bar, h('div', { class: 'ed-path' }, el.seltools, el.crumbs, el.where), el.seed, el.cap, el.lvStrip, el.broken, el.blocked, el.point, el.gapbar,
       h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navWrap), grip('nav'), el.mid, grip('info'), side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
     for (const id of ['nav', 'info']) if (prefs[id + 'W'] >= 200 && prefs[id + 'W'] <= 560) el.root.style.setProperty('--ed-' + id + '-w', prefs[id + 'W'] + 'px');
     host.replaceChildren(el.root);
@@ -966,12 +968,12 @@ const Editor = (() => {
         run: (label, fn) => act(label, fn), undo: () => { if (undoTx() || (S.doc?.canUndo() && (S.doc.undo(), true))) { clearTimeout(S.timer); syncCanvas(); } }, redo: () => { if (redoTx() || (S.doc?.canRedo() && (S.doc.redo(), true))) { clearTimeout(S.timer); syncCanvas(); } },
         note, openInCode, onState: () => { el.root.classList.toggle('typing', !!S.text?.active); drawCrumbs(); } });
       { const prev = c.onListen; c.onListen = doc => { if (prev) prev(doc); listenFrame(doc); }; if (c.ready && c.doc) listenFrame(c.doc); }
-      c.onDbl = (n, pt) => { if (S.pointing) return; S.text.begin(n, pt); };
+      c.onDbl = (n, pt) => { if (S.pointing) return; if (S.lv && S.lv.inList(n) && S.lv.binding(n) && /^(text|html)$/.test(S.lv.binding(n).kind) && S.lv.binding(n).field) { S.lv.scope = 'word'; S.lv.bar._key = ''; if (S.lv.beginValue(n)) return; } S.text.begin(n, pt); };   // V11: ערך קשור — "המילה הזו", במקום
       S.content = new window.KolContent.Content(el.contentBody, { canvas: c, file: () => S.file, files: () => Project._state.files || [], act, canWrite: () => !!canWrite(), begin: n => S.text.begin(n), openEl: n => openInCode(n), openAt: (p, line) => Project.openAt(p, line),
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = () => { S.states?.apply(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); S.fx?.drawHandles(); S.mo?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
+      c.onDraw = () => { S.states?.apply(); S.lv?.drawBoxes(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); S.fx?.drawHandles(); S.mo?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
       S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath, basePath, getDevice: writeDevice, getDevices: () => DEVICES.map(d => ({ id: d.id, label: d.label, max: d.max })) });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
         highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } }, setDevice: id => setDevice(id) });
@@ -1011,6 +1013,37 @@ const Editor = (() => {
         pick, rel: relRef, openInCode, linkSheet, removeOne, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, sheetsList: () => [...S.sheets.values()],
         jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path, linkedPaths: () => { const out = []; if (c.m?.root) K.walk(c.m.root, n => { if (n.tag === 'link' && /stylesheet/i.test(K.attrOf(n, 'rel')?.value || '')) { const hr = K.attrOf(n, 'href'); if (hr) out.push(resolve(dirOf(S.file.path), hr.value)); } }); return out; },
         begin: (n, pt, all) => { if (S.text.begin(n, pt) && all && S.text.e) { const sl = c.doc.getSelection(); sl.selectAllChildren(S.text.e); } } });
+      // V11: רשימת הנתונים בקנבס — הכרטיסים, "התבנית / המילה הזו", פאנל "נתונים"
+      S.lv = new window.KolList.ListView(c, { K, B: window.KolBind, strip: el.lvStrip, note, undo, sheet, canWrite: () => !!canWrite(),
+        resolve: ref => (S.file ? resolve(dirOf(S.file.path), ref) : null),
+        load: async path => {
+          let f = Project.docs.byPath(path); if (!f) { await Project.docs.reload(); f = Project.docs.byPath(path); }
+          if (!f) throw new Error('קובץ הנתונים ' + path + ' אינו בפרויקט — הרשימה ריקה בקנבס');
+          const d = await api('pf_read', undefined, '&id=' + f.id);
+          if (d.binary) throw new Error(path + ' אינו טקסט');
+          let data; try { data = JSON.parse(d.content); } catch (e) { throw new Error(path + ' אינו JSON תקין — ' + e.message); }
+          return { data, rev: d.file.rev, id: f.id, internal: d.file.internal || [] };
+        },
+        save: async (id, rev, content, check) => {
+          const p = await api('pf_write', { id, rev, content, tx: ['המילה הזו (עורך)'] });
+          if (!p.plan) { Project.docs.reload().catch(() => {}); return { data: JSON.parse(content), rev: p.file.rev }; }   // קובץ JSON רגיל (לא טבלה) — נשמר כמו שהוא
+          check(p.plan);
+          const d = await api('pf_write', { id, rev, content, apply: true, token: p.plan.token });
+          Project.docs.reload().catch(() => {});                              // קובץ פתוח בעורך הקוד — מתעדכן (syncOpen)
+          return { data: JSON.parse(d.content), rev: d.file.rev };
+        },
+        pushFx: (label, fx) => { S.tx.push({ docs: [], label, after: new Map(), fx: [fx] }); S.rtx = []; drawState(); },
+        pick: async kind => { const r = await Media.pick({ kind }); return Array.isArray(r) ? r[0] : r; },
+        kd: () => {
+          const sys = S.kol?.system?.['js/kol-data.js']; if (sys && sys.modified === true) return { modified: true };
+          const mine = (S.js || []).find(x => x.path === 'js/kol-data.js'); if (!mine || !S.kdSeed) return { modified: false };
+          const t = mine.doc.text(), ver = x => (/version:\s*'([\d.]+)'/.exec(x) || [])[1];
+          return { modified: ver(t) === ver(S.kdSeed) && t !== S.kdSeed };
+        },
+        openWord: (L, item) => S.data?.openWord(L, item) });
+      c.lv = S.lv; S.lv.onScope = () => drawInfo();
+      if (!S.kdSeed) fetch('assets/project-seed/kol-data.js', { credentials: 'same-origin' }).then(r => (r.ok ? r.text() : '')).then(t => { S.kdSeed = t; S.lv?.drawStrip(); }).catch(() => {});
+      S.data = new window.KolDataPanel.Data({ canvas: c, lv: S.lv, K, X: window.KolStruct, build: S.build, act, multi, writeOps, joinTx, html: () => S.doc, styler: S.styler, write: writeStyle, note, sheet, undo, canWrite: () => !!canWrite(), api: (a, b, q) => api(a, b, q), pagePath, docOf: docOfP, select: n => { c.select(n); c.reveal(n); }, content: S.content, libHost: el.libBody, drawAll: () => drawAll() });
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };

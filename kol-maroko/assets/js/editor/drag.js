@@ -84,6 +84,7 @@
     canvasTarget(fx, fy) {
       const c = this.canvas; let el = null;
       try { el = c.doc.elementFromPoint(fx, fy); } catch { el = null; }
+      if (el && c.lv) c.lv.focusAt(el);                                    // V11: הכרטיס שמתחת לסמן — היעד בתוכו
       let n = el ? c.nodeOf(el) : null;
       while (n && this.moving(n)) n = n.parent;
       if (!n || n.tag === 'html' || n.tag === 'head') { const b = c.m.root && c.m.root.kids.find(k => k.tag === 'body'); if (!b) return null; n = b; }

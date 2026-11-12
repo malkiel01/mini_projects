@@ -50,7 +50,7 @@ const PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-
     const w1 = (await call('word_save', { word: 'אַבָּא', meaning: '<p>אב</p>', topics: [] })).id;
     await call('word_save', { word: 'בסלאמה', meaning: '<p>לשלום</p>', topics: [] });
     const seed = (await call('kd_seed')).content;
-    ok(/version: '1\.3\.0'/.test(seed), 'kol-data.js בזרע — 1.3.0');
+    ok(/version: '1\.[3-9]\.0'/.test(seed), 'kol-data.js בזרע — 1.3.0 ומעלה');
     const tree = await call('pf_tree');
     const kd = tree.files.find(f => f.path === 'js/kol-data.js');
     if (kd) await call('pf_write', { id: kd.id, rev: kd.rev, content: seed }); else await call('pf_create', { path: 'js/kol-data.js', content: seed });
@@ -68,7 +68,7 @@ const PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-
     await pv.waitForSelector('#list .card');
     const meta = await pv.getAttribute('meta[name="kol-form-endpoint"]', 'content');
     ok(meta === `${base}/form.php?test=1`, 'meta של הכתובת בעמוד שמוגש — ?test=1', meta);
-    ok(await pv.evaluate(() => window.KolData.version) === '1.3.0', 'KolData.version 1.3.0');
+    ok(await pv.evaluate(() => window.KolData.version) >= '1.3.0', 'KolData.version ≥ 1.3.0 (V11: 1.4.0)');
     await pv.click('#list .card:nth-of-type(1) .fb');
     ok(await pv.isVisible('#dlg') && await pv.textContent('#dw') === 'אַבָּא', 'פתיחת חלון המשוב מכרטיס, עם המילה');
     ok(await pv.$eval('[name=word_id]', e => e.value) === String(w1), 'word_id ← המילה (data-kol-value)');

@@ -66,6 +66,7 @@
       if (link) kids.push(...this.link(link, link !== n));
       else if (!/^(html|head|body|title|meta|link|script|style|base|template|source|track|option)$/.test(tag) && !this.inHead(n)) kids.push(this.group('קישור', h('p', { class: 'hint' }, 'האלמנט הזה אינו קישור.'), this.btn('🔗 הוסף קישור', () => this.addLink(n), ro, 'add-link')));
       const bg = this.background(n); if (bg) kids.push(bg);
+      if (this.dataSection) { try { kids.unshift(...(this.dataSection(n) || [])); } catch (e) { console.error(e); } }   // V11: "📊 נתונים" — קשירה, מכל, רכיבי רשימה (data.js)
       this.host.replaceChildren(...kids.filter(Boolean));
       for (const e of this.host.querySelectorAll('input, select, textarea, button[data-w]')) if (ro) e.disabled = true;
     }
