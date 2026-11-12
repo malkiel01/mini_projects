@@ -421,7 +421,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .sg-tag.unused { background: var(--surface); border-style: dashed; }
 .sg-tag.drag { opacity: .6; cursor: grabbing; }
 .sg-tag code { overflow-wrap: anywhere; }
-.sg-tag small { color: var(--muted); }
+.sg-tag small { color: var(--muted); margin-inline: 4px 2px; white-space: nowrap; }
 .sg-tag-grip { color: var(--muted); }
 .sg-tag-btn { border: 0; background: none; cursor: pointer; min-width: 28px; min-height: 28px; border-radius: 999px; color: var(--ink); }
 .sg-tag-btn:hover { background: var(--surface); }

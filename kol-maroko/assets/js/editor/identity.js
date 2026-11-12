@@ -216,7 +216,7 @@
       cls.forEach((c, i) => {
         const els = this.els('.' + c), rules = this.rulesUsing(c), unused = !rules && !this.inJs(c);
         const tag = h('span', { class: 'sg-tag' + (unused ? ' unused' : ''), role: 'listitem', 'data-tag': c, 'data-i': i, title: c + ' · ' + els.length + ' אלמנטים · ' + rules + ' כללים' + (unused ? ' · לא משמשת לעיצוב (אין לה כלל, ואינה ב-JS)' : '') },
-          h('span', { class: 'sg-tag-grip', 'aria-hidden': 'true' }, '⋮⋮'), h('code', { dir: 'ltr' }, c), h('small', { 'data-tag-count': els.length + '/' + rules }, ' ' + els.length + '·' + rules + (unused ? ' · לא משמשת' : '')),
+          h('span', { class: 'sg-tag-grip', 'aria-hidden': 'true' }, '⋮⋮'), h('code', { dir: 'ltr' }, c), h('small', { 'data-tag-count': els.length + '/' + rules }, els.length + ' אלמ׳ · ' + rules + ' כללים' + (unused ? ' · לא משמשת לעיצוב' : '')),
           h('button', { type: 'button', class: 'sg-tag-btn', 'data-tag-rename': c, title: 'שינוי שם בכל הפרויקט', 'aria-label': 'שינוי שם של ' + c + ' בכל הפרויקט', disabled: !this.canWrite() || null, onclick: () => this.renameDialog(c) }, '✎'),
           h('button', { type: 'button', class: 'sg-tag-btn', 'data-tag-remove': c, title: 'הסרת המחלקה מהאלמנט', 'aria-label': 'הסרת ' + c, disabled: !this.canWrite() || null, onclick: () => this.writeOps([() => [{ doc: this.html(), html: true, patches: K2.html.removeClass(this.c.m, K2.byPath(this.c.m, path), c).patches }]], 'הסרת מחלקה .' + c + ' · ' + this.c.label(n)) }, '✕'));
         tag.addEventListener('mouseenter', () => this.highlight(els)); tag.addEventListener('mouseleave', () => this.highlight(null));
@@ -231,7 +231,7 @@
         this.writeOps([() => [{ doc: this.html(), html: true, patches: K2.html.addClass(this.c.m, K2.byPath(this.c.m, path), v).patches }]], 'הוספת מחלקה .' + v + ' · ' + this.c.label(n));
       });
       row.append(h('div', { class: 'sg-line' }, h('span', { class: 'sg-label' }, 'מחלקות')), box, h('div', { class: 'sg-line' }, h('span', { class: 'sg-ctl wide' }, add, dl)),
-        h('p', { class: 'hint' }, 'מספר ליד כל מחלקה: אלמנטים · כללים. ריחוף מסמן בקנבס; גרירה — שינוי סדר; ✎ — שם חדש בכל הפרויקט.'));
+        h('p', { class: 'hint' }, 'ליד כל מחלקה: כמה אלמנטים נושאים אותה · כמה כללים משתמשים בה. ריחוף מסמן בקנבס; גרירה — שינוי סדר; ✎ — שם חדש בכל הפרויקט.'));
       return row;
     }
     /** גרירת תגית לשינוי סדר (עכבר ומגע): בשחרור — class="" בסדר החדש. */
