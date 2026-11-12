@@ -38,12 +38,20 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
   try {
     for (let i = 0; i < 100; i++) { try { await fetch(base + '/api.php?action=embed_key'); break; } catch { await sleep(50); } }
     browser = await chromium.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
-    const mk = (width, height, user = OWNER) => browser.newContext({ viewport: { width, height }, hasTouch: width < 600, acceptDownloads: true,
-      permissions: ['microphone'], extraHTTPHeaders: { 'X-Test-User': JSON.stringify(user) } });
+    // הספרייה נפתחת ישר (בלי לעבור קודם בסטודיו: יציאה ממנו באמצע הטעינה היא מרוץ של studio.js — לא של A3)
+    const mk = async (width, height, user = OWNER) => {
+      const c = await browser.newContext({ viewport: { width, height }, hasTouch: width < 600, acceptDownloads: true,
+        permissions: ['microphone'], extraHTTPHeaders: { 'X-Test-User': JSON.stringify(user) } });
+      await c.addInitScript(() => { try { sessionStorage.setItem('kol-lib-tab', 'audio'); } catch { /* */ } });
+      return c;
+    };
     const call = (page, action, body, query = '') => page.evaluate(([a, b, q]) => api(a, b ?? undefined, q).catch(e => ({ error: e.message, status: e.status })), [action, body ?? null, query]);
     const lib = page => call(page, 'library');
     const word = async (page, id) => (await lib(page)).rows.find(r => r.id === id);
-    const openLib = async page => { await page.goto(base + '/#/files'); await page.waitForSelector('.lib-list .lib-row'); };
+    const openLib = async page => {
+      await page.goto(base + '/#/files');
+      await page.waitForSelector('.lib-list .lib-row');
+    };
     const row = (page, id) => page.locator(`.lib-row[data-id="${id}"]`);
     const rowText = (page, id) => row(page, id).innerText().catch(() => '');
     const sheetText = page => page.$eval('#sheet-body', e => e.innerText).catch(() => '');
@@ -71,8 +79,6 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     const errors = [], foreign = [];
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => { if (!r.url().startsWith(base) && !r.url().startsWith('blob:') && !r.url().startsWith('data:')) foreign.push(r.url()); });
-    await page.goto(base + '/');
-    await page.evaluate(() => sessionStorage.setItem('kol-lib-tab', 'audio'));
     await openLib(page);
 
     // ── 1. השורות: לא מחוברת, משך, נכשלה ──
@@ -290,8 +296,6 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     // ── 14. עורך: בלי מחיקה סופית ובלי ניקוי; השרת דוחה ──
     const ectx = await mk(1280, 900, EDITOR), ep = await ectx.newPage();
     ep.on('pageerror', e => errors.push(e.message));
-    await ep.goto(base + '/');
-    await ep.evaluate(() => sessionStorage.setItem('kol-lib-tab', 'audio'));
     await openLib(ep);
     const z = (await lib(ep)).loose.find(r => r.name === 'zzz');
     ok(!(await call(ep, 'rec_delete', { ids: [z.rec] })).error, 'עורך: מחיקה לסל');
@@ -309,8 +313,6 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
     // ── 15. טלפון 390px ──
     const pctx = await mk(390, 780), pp = await pctx.newPage();
     pp.on('pageerror', e => errors.push(e.message));
-    await pp.goto(base + '/');
-    await pp.evaluate(() => sessionStorage.setItem('kol-lib-tab', 'audio'));
     await openLib(pp);
     ok(await pp.locator('.lib-row[data-id="1"] .lib-check').isHidden() && await pp.locator('.lib-row[data-id="1"] .lib-more').isVisible(), 'טלפון: בלי תיבות סימון; ⋯ בכל שורה');
     await pp.evaluate(() => document.querySelector('.lib-row[data-id="1"]').dispatchEvent(new Event('touchstart', { bubbles: true })));
