@@ -14,3 +14,12 @@
 5. בחירה מרובה: `canvas.picked()`, `toggleMulti`.
 6. ערך מ-`@media` נערך שם (`Design.effTarget`).
 7. פתוח: `url()` בתוך `var()`; הביטול המשותף נשבר אחרי עריכה בעורך הקוד באמצע; Safari / Firefox / iOS לא נבדקו.
+
+## מ-V5 (2026-11-12)
+
+1. רקע — `editor/background.js`: חלק טהור (`KolBg.*`, נבדק ב-`tests/editor/background.mjs`) ו-`Bg` בדפדפן (`S.bg`).
+   **כל url() שנכתב — דרך `urlCss` / `checkUrl`**, לעולם לא בשרשור.
+2. כתיבה שאינה "מאפיין ← ערך" (הסרת שכבה, מחיקת כלל, HTML + CSS): `Bg.ruleOps(r, fn)` ← `screen.writeOps(list, label)`.
+3. `covered('background')` מחזיר עכשיו את כל הרכיבים — `planRule` על רכיב של קיצור כותב הצהרה מפורשת אחריו.
+4. `details.collect(n, { pseudo: 'before' })` — הכללים של פסאודו-אלמנט.
+5. כשהפאנל סגור (טלפון) `Design.t` לא מאותחל — לפני `D.put` מחוץ לפאנל: `Bg.ready(n)`.
