@@ -468,7 +468,7 @@
       const rules = info.rules.filter(r => writable(r) && !r.off);
       // V10: מחלקות של מערכת התנועה (kol-in-*, kol-sc, bg-slides-N…) — כלל שלהן אינו היעד הראשון (ב-css/motion.css הוא משותף)
       const SYS = /^(kol-in(-[\w-]+)?|kol-sc|is-in|kol-motion-on|kol-slides-[\w-]+|bg-slides-\d+)$/, own = cls.filter(c => !SYS.test(c));
-      const sysOnly = r => !own.some(c => new RegExp('\\.' + c.replace(/[^\w-]/g, '\\$&') + '(?![\\w-])').test(subject(r.sel)));
+      const sysOnly = r => !own.some(c => new RegExp('\\.' + c.replace(/[^\w-]/g, '\\$&') + '(?![\\w-])').test(r.sel));
       const mine = rules.filter(r => ofClass(r) && !r.media).sort((a, b) => (sysOnly(a) - sysOnly(b)) || cmp(rank(b, false), rank(a, false)));
       const add = t => { const key = t.kind + '|' + (t.path || '') + '|' + (t.line || '') + '|' + t.sel; if (seen.has(key)) return; seen.add(key); out.push(t); };
       const ruleT = (r, why) => ({ kind: 'rule', sel: r.sel, path: r.path, line: r.line, media: r.media, r, why, count: this.count(r.sel) });

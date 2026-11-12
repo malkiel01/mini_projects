@@ -4,7 +4,7 @@
  * על index.html המוסב (העמוד האמיתי), ושש כותרות שנוספות לו בתחילת הבדיקה (כל אחת בכלל משלה, עם הצהרה זהה):
  * Shift + לחיצה בעכבר על שש הכותרות ← "צור מחלקה משותפת" (עם "העבר את המשותף") ← צבע — כולן משתנות, קובץ אחד בשורה אחת;
  * ריחוף ← צבע: הקנבס מציג בלי עכבר, וכלל :hover מיד אחרי הבסיס; ריחוף אמיתי בעכבר לא נשבר; מצב × מכשיר; מצב של הורה;
- * "מאפיינים נוספים": clip-path, mix-blend-mode, writing-mode, scroll-snap-type — נכתבים, נראים ונמחקים; "צפה כ-CSS";
+ * "מאפיינים נוספים": clip-path, cursor (mix-blend-mode — מ-V10 בשליטה ייעודית), writing-mode, scroll-snap-type — נכתבים, נראים ונמחקים; "צפה כ-CSS";
  * כלל היעד: תגית, בורר בהקלדה, ✓ / נדרס; זהות: id עם ההפניות, תגיות מחלקות, שינוי שם בכל הפרויקט (diff, JS לבחירה),
  * תכונות (on* ו-javascript: נדחים; " & < — ישויות); 200 מקרים אקראיים של המפל (@layer, @scope, :is/:where) מול
  * getComputedStyle; ביטול עד ההתחלה — קבצים זהים. ובטלפון (390) — מגע, כפתורים ≥44px. צילומים (1920, 390) — ל-tmpdir.
@@ -162,7 +162,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await select(page, H2(3)); await sleep(150); await pickTarget('design', '^\\.v8-t3 ');
     const X = body('design') + ' [data-sec="extra-design"]';
     const addProp = async (name, value) => { await page.fill(X + ' [data-extra-new-name]', name); await page.fill(X + ' [data-extra-new-value]', value); await page.click(X + ' [data-extra-add]'); await sleep(300); };
-    for (const [p, v, want] of [['clip-path', 'circle(40%)', 'circle(40%)'], ['mix-blend-mode', 'multiply', 'multiply'], ['writing-mode', 'vertical-rl', 'vertical-rl'], ['scroll-snap-type', 'x mandatory', 'x mandatory']]) {
+    for (const [p, v, want] of [['clip-path', 'circle(40%)', 'circle(40%)'], ['cursor', 'crosshair', 'crosshair'], ['writing-mode', 'vertical-rl', 'vertical-rl'], ['scroll-snap-type', 'x mandatory', 'x mandatory']]) {
       await addProp(p, v);
       pc = (await files(page))['css/page.css'];
       const row = await page.evaluate(([q, pp]) => !!document.querySelector(q + ' [data-extra="' + pp + '"]'), [X, p]);
