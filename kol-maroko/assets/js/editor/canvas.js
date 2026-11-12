@@ -240,7 +240,7 @@
         if (tpl !== n) { let top = n; while (top.parent !== tpl) top = top.parent; tops = [top]; }
         let after = te;
         for (const t of tops) {
-          const src = this.elOf(t); if (!src) continue;
+          const src = this.shownMap.get(t) || this.m2d.get(t); if (!src) continue;   // V11: מהתבנית עצמה, לא מכרטיס מצויר
           const c = src.cloneNode(true); c.setAttribute(OWNED, 'shown'); after.after(c); after = c; pair(t, c);
           this.shownUndo.push(() => c.remove());
         }
