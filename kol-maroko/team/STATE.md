@@ -3,6 +3,7 @@
 **עדכון אחרון:** 2026-11-12 13:22 UTC — מסירה מבקרה (4) לבקרה (5).
 
 ## ⏩ למסירה — קרא קודם (בקרה (5))
+- **13:35 — בקרה (5) `session_018g4NYCik48sdEyBfXuc6it` קיבלה.** ענף הבקרה מוזג מ-main (התנגשות ב-`handoff/code.md` — שני החלקים נשמרו).
 - **מסירה מבקרה (4)** `session_018g4NYGbTsYKFmHndtZzAux` (479K) ב-13:22 UTC. כל מה שלמטה עדכני.
 - **בקוד עכשיו (5):** **V6** `session_018g4NYDuHr3SfYobKszmsRH` (אותו צ'אט של V5; בתחילתו תיקון hero_overlay=45 ב-migrate.php + כפתור "תקן" בעורך) · **N2b** `session_018g4NYEQzGfT4EMaYTQyNTx` (הקלטה שנייה; מיגרציה שבונה את recordings מחדש — לדרוש ספירה+checksum לפני/אחרי; מספר 20) · **M3** `session_018g4NYDNtjMmzAwj16DgwP2` (מסך המעבר; ~390K — אולי handoff) · **N3** `session_018g4NYFmV6HzEJaDBHun6cG` (רשימות; "➕ הוסף לעמוד" כותב HTML — הזרקה) · **M4-BC** `session_018g4NYF927z2Fc5UWgJ4gag` (חלון פנימי באתר, ש-1=ג; תוסף 2.1.0; H16–H17).
 - **מיגרציות:** ב-main **19** (M5). אין מספרים שמורים — הראשון שמוכן לוקח max+1 (N2b צפויה 20).
