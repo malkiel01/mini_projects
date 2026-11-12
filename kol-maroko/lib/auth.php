@@ -64,7 +64,7 @@ const ACTION_ROLES = [
     'draft_save' => 'editor', 'lock' => 'editor', 'revision_restore' => 'editor', 'file_delete' => 'editor', 'editor_session' => 'editor',
     'longtext_sync' => 'editor', 'longtext_link' => 'editor', 'longtext_open' => 'editor',
     'field_save' => 'editor', 'field_delete' => 'editor', 'topic_save' => 'editor', 'topic_merge' => 'editor', 'field_key_apply' => 'editor',
-    'list_create' => 'editor', 'list_save' => 'editor', 'list_delete' => 'editor', 'list_key_apply' => 'editor', 'list_place' => 'editor',
+    'list_create' => 'editor', 'list_save' => 'editor', 'list_delete' => 'editor', 'list_key_apply' => 'editor', 'list_place' => 'editor', 'list_place_undo' => 'editor',
     'snapshot_create' => 'editor', 'snapshot_restore' => 'editor', 'trash_restore' => 'editor',
     'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor',

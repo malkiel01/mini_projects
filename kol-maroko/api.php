@@ -61,7 +61,7 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
                       'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
                       'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
-                      'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place',
+                      'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place', 'list_place_undo',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
@@ -199,6 +199,7 @@ try {
         'list_csv' => ($u ? list_csv(list_param($_GET) ?? throw new ApiError('בחרו רשימה')) : []),
         'list_csv_import' => ($u = $u) ? list_csv_import($u, list_param($body) ?? throw new ApiError('בחרו רשימה'), $body) : [],
         'list_place' => list_place($u, $body),
+        'list_place_undo' => list_place_undo($u, $body),     // N3b: Ctrl+Z / "↶ בטל" אחרי "➕ הוסף לעמוד"
         'audio_import' => audio_import($u, $body),
         'snapshots' => ($u ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual($u, $body),
