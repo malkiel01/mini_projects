@@ -383,6 +383,7 @@
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
         if (this.ext && this.ext.active) { const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
+        if (this.press && e.pointerType === 'mouse' && e.buttons === 0) this.press = null;   // השחרור אבד (מחוץ לחלון) — אין לחיצה
         const p = this.press;
         if (this.edit && this.edit.active) { if (this.hovered) { this.hovered = null; this.draw(); } return; }
         if (p && p.id === e.pointerId && this.onDragStart && !p.drag && (e.pointerType === 'touch' ? p.armed && Math.hypot(e.clientX - p.x, e.clientY - p.y) * this.scale > 6 : Math.hypot(e.clientX - p.x, e.clientY - p.y) * this.scale > 4)) {
@@ -400,7 +401,7 @@
       }, true);
       const up = e => {
         clearTimeout(this.longT);
-        if (this.ext && this.ext.active) { this.press = null; this.ext.end(e.type === 'pointerup'); return; }
+        if (this.ext && this.ext.active) { this.press = null; const f = this.frame.getBoundingClientRect(); this.ext.end(e.type === 'pointerup', f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
         if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; ctxAt(p.t, p.x, p.y); return; }
         this.armed = null;
         const p = this.press; this.press = null; this.boxDrop.hidden = true;

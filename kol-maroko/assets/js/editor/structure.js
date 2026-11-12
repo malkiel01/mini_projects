@@ -76,7 +76,8 @@
    * שלו הם בדיוק העץ המבוקש, והעליונים שבהם ילדים של ההורה שמתחיל ב-parentFrom. delta — כמה אלמנטים נוספו בסך הכול.
    * מחזיר את המודל החדש, או זורק SrcError (code: 'parse') עם הסבר.
    */
-  function verify(m, src, pieces, delta) {
+  function verify(m, src, pieces, delta, patches) {
+    void patches;
     const fresh = K().parseHtml(src);
     const bad = why => { throw E('הדפדפן היה קורא את התוצאה אחרת ממה שנועד (' + why + ') — הקובץ לא שונה', 'parse'); };
     if (fresh.count !== m.count + delta) bad('מספר האלמנטים ' + fresh.count + ' במקום ' + (m.count + delta));
@@ -142,7 +143,7 @@
     const p = res.patches[0];
     const at = mapOff(res.patches, p.from), start = at + p.text.indexOf(html);
     const src = K().applyPatches(m.src, res.patches), want = intended(html);
-    const model = verify(m, src, [{ start, len: html.length, parentFrom: mapOff(res.patches, par.from), html }], want ? want.tags.length : 0);
+    const model = verify(m, src, [{ start, len: html.length, parentFrom: mapOff(res.patches, par.from), html }], want ? want.tags.length : 0, res.patches);
     return { patches: res.patches, start, model, src };
   }
   /** הזזה של אלמנט אחד: הטווח עובר (עם השורה הריקה שצמודה אליו), ההזחה — של השכנים החדשים. */
@@ -162,7 +163,7 @@
       start = mapOff(ps, ins.from) + ins.text.length - tail.length - body.length;
     }
     const src = K().applyPatches(m.src, ps);
-    const model = verify(m, src, start >= 0 ? [{ start, len: body.length, parentFrom: mapOff(ps, par.from), html: body }] : [], 0);
+    const model = verify(m, src, start >= 0 ? [{ start, len: body.length, parentFrom: mapOff(ps, par.from), html: body }] : [], 0, ps);
     return { patches: ps, start, model, src };
   }
   /** כמה אלמנטים נגררים יחד: נוחתים ברצף, בסדר המקור, לפני האח ref (null — בסוף par). תיקון אחד. */
@@ -230,7 +231,7 @@
     }
     const lead = p.text.slice(0, p.text.length - out.length), patches = [{ from: p.from, to: p.to, text: lead + copy }];
     const src = K().applyPatches(m.src, patches), start = mapOff(patches, p.from) + lead.length, want = intended(copy);
-    const model = verify(m, src, [{ start, len: copy.length, parentFrom: mapOff(patches, n.parent.from), html: copy }], want ? want.tags.length : 0);
+    const model = verify(m, src, [{ start, len: copy.length, parentFrom: mapOff(patches, n.parent.from), html: copy }], want ? want.tags.length : 0, patches);
     return { patches, start, model, src, changes };
   }
   /** עטיפה ברובריקה (<div> כברירת מחדל) — אחים רצופים, בתוך השורה. */
@@ -249,7 +250,7 @@
     const open = '<' + tag + (cls ? ' class="' + escAttr(cls) + '"' : '') + '>', close = '</' + tag + '>', last = nodes[nodes.length - 1], e = K().endOf(m, last);
     const patches = [{ from: nodes[0].from, to: nodes[0].from, text: open }, { from: e, to: e, text: close }];
     const src = K().applyPatches(m.src, patches), start = nodes[0].from, html = open + m.src.slice(nodes[0].from, e) + close;
-    const model = verify(m, src, [{ start, len: html.length, parentFrom: mapOff(patches, par.from), html }], 1);
+    const model = verify(m, src, [{ start, len: html.length, parentFrom: mapOff(patches, par.from), html }], 1, patches);
     return { patches, start, model, src };
   }
   /** פירוק: הרובריקה מוסרת, הילדים נשארים במקומה. */
@@ -258,7 +259,7 @@
     const w = n.parent && why(n.parent, n.kids.map(k => k.tag), null);
     if (w && !w.code) throw E('אחרי הפירוק ' + w.msg, 'invalid');
     const res = K().html.unwrap(m, n), src = K().applyPatches(m.src, res.patches);
-    return { patches: res.patches, model: verify(m, src, [], -1), src };
+    return { patches: res.patches, model: verify(m, src, [], -1, res.patches), src };
   }
   /** החלפת תגית: השם בפתיחה ובסגירה בלבד. */
   function retag(m, n, tag) {
@@ -274,7 +275,7 @@
     if (w && !w.code) throw E(w.msg, 'invalid');
     const res = K().html.retag(m, n, tag), src = K().applyPatches(m.src, res.patches);
     const html = src.slice(n.from, n.from + (n.to - n.from) + (n.et ? 2 * (tag.length - n.tag.length) : tag.length - n.tag.length));
-    return { patches: res.patches, model: verify(m, src, [{ start: n.from, len: html.length, parentFrom: n.parent.from, html }], 0), src };
+    return { patches: res.patches, model: verify(m, src, [{ start: n.from, len: html.length, parentFrom: n.parent.from, html }], 0, res.patches), src };
   }
   /** הדבקה: קטע HTML (מהלוח של העורך או מלוח המערכת) כילד ה-index של par. */
   function paste(m, par, index, html) {

@@ -23,12 +23,12 @@
       c.ext = this.drag;
       c.onDragStart = (n, x, y) => { if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true); const sel = c.picked(); this.drag.start({ nodes: sel.includes(n) && sel.length > 1 ? sel : [n] }, x, y); };
       const mv = e => { if (this.drag.active) this.drag.move(e.clientX, e.clientY); };
-      const up = e => { if (this.drag.active) { this.swallow = true; setTimeout(() => { this.swallow = false; }, 0); this.drag.end(e.type === 'pointerup'); } };
+      const up = e => { if (this.drag.active) { this.swallow = true; setTimeout(() => { this.swallow = false; }, 0); this.drag.end(e.type === 'pointerup', e.clientX, e.clientY); } };
       window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
       this.off = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); };
       this.navDrag();
       this.tools = h('div', { class: 'ed-seltools', hidden: true, role: 'toolbar', 'aria-label': 'האלמנט הנבחר' });
-      this.plus = [0, 1].map(i => { const b = h('button', { type: 'button', class: 'ed-plus', hidden: true, 'data-plus': i ? 'after' : 'before', 'aria-label': i ? 'הוספה אחרי' : 'הוספה לפני', title: i ? 'הוספה אחרי' : 'הוספה לפני' }, '＋'); b.addEventListener('click', () => this.plusAt(b)); return b; });
+      this.plus = [0, 1].map(i => { const b = h('button', { type: 'button', class: 'ed-plus', hidden: true, 'data-plus': i ? 'after' : 'before', 'aria-label': i ? 'הוספה אחרי' : 'הוספה לפני', title: i ? 'הוספה אחרי' : 'הוספה לפני' }, '＋'); b.addEventListener('click', () => { this.plusHold = false; this.plusClick(b); }); b.addEventListener('pointerenter', () => { this.plusHold = true; }); b.addEventListener('pointerleave', () => { this.plusHold = false; this.plusAt = performance.now(); setTimeout(() => this.draw(), 320); }); return b; });
       c.layer.append(this.tools, ...this.plus);
       this.library();
     }
@@ -46,15 +46,19 @@
         const top = r.top > 34 ? r.top - 32 : r.top + r.height + 4;
         t.style.cssText = 'left:' + Math.max(0, r.left) + 'px;top:' + Math.max(0, top) + 'px';
       }
-      const hv = c.hovered && !this.drag.active ? c.hovered : null, hr = hv && hv.parent && hv.tag !== 'body' && c.rectOf(hv);
-      if (!hr || !this.canWrite() || hr.zero) { this.plus.forEach(b => { b.hidden = true; }); return; }
+      // "＋" מחוץ לאלמנט (לפניו / אחריו, לפי ציר הרובריקה); יציאה מהקנבס אל ה-"＋" — 300ms חסד, כדי שאפשר יהיה ללחוץ עליו
+      let hv = c.hovered && !this.drag.active ? c.hovered : null;
+      if (!hv && !this.drag.active && this.plusN && (this.plusHold || performance.now() - this.plusAt < 300)) { hv = this.plusN; clearTimeout(this.plusT); this.plusT = setTimeout(() => this.draw(), 320); }
+      const hr = hv && hv.parent && hv.tag !== 'body' && c.rectOf(hv);
+      if (!hr || !this.canWrite() || hr.zero || hr.height < 12 || hr.width < 40) { this.plus.forEach(b => { b.hidden = true; }); this.plusN = null; return; }
+      if (hv === c.hovered) { this.plusN = hv; this.plusAt = performance.now(); }
       const ax = this.drag.axis(hv.parent);
       this.plus.forEach((b, i) => {
         b.hidden = false; b._n = hv; b._after = !!i;
         let x, y;
-        if (ax.axis === 'row') { const start = ax.rev ? hr.left + hr.width : hr.left, end = ax.rev ? hr.left : hr.left + hr.width; x = (i ? end : start) - 11; y = hr.top + hr.height / 2 - 11; }
-        else { x = hr.left + hr.width / 2 - 11; y = (i ? hr.top + hr.height : hr.top) - 11; }
-        b.style.cssText = 'left:' + x + 'px;top:' + y + 'px';
+        if (ax.axis === 'row') { const start = ax.rev ? hr.left + hr.width : hr.left, end = ax.rev ? hr.left : hr.left + hr.width; x = (i ? end : start) + ((i ? !ax.rev : ax.rev) ? 2 : -24); y = hr.top + hr.height / 2 - 11; }
+        else { x = hr.left + hr.width / 2 - 11; y = i ? hr.top + hr.height + 2 : hr.top - 24; }
+        b.style.cssText = 'left:' + x + 'px;top:' + Math.max(0, y) + 'px';
       });
     }
     drawTools(n) {
@@ -70,7 +74,7 @@
         b('מחיקה (Delete)', '🗑️', () => this.remove(), !w),
         b('עוד פעולות', '⋯', () => this.menu(n), false, { 'data-more': true }));
     }
-    plusAt(b) {
+    plusClick(b) {
       const n = b._n; if (!n || !n.parent) return;
       const ref = b._after ? n.parent.kids[n.parent.kids.indexOf(n) + 1] || null : n;
       this.chooser(n.parent, ref);
@@ -189,10 +193,14 @@
       const moved = nodes.filter(n => this.X.bindingOf(n) !== this.X.bindingOf(t.par) && [...this.attrsDeep(n)].some(a => /^data-kol-/.test(a)));
       if (moved.length && !(await this.confirm('הזזה', ['האלמנט עובר אל מחוץ לרובריקה שקוד הנתונים (js/kol-data.js) קשור אליה — ' + moved.map(n => c.label(n)).join(', ') + ' עלול להפסיק לעבוד']))) return;
       const label = 'גרירה · ' + (nodes.length > 1 ? nodes.length + ' אלמנטים' : c.label(nodes[0])) + ' · אל ' + (t.ref ? 'לפני ' + c.label(t.ref) : 'סוף ' + c.label(t.par));
-      const paths = nodes.map(n => K.pathOf(n)), outs = nodes.map(n => K.outer(c.m, n));
-      const ok = this.act(label, m => this.X.move(m, paths.map(p => K.byPath(m, p)), K.byPath(m, P), refP ? K.byPath(m, refP) : null), nodes[0]);
+      const paths = nodes.map(n => K.pathOf(n)), outs = nodes.map(n => K.outer(c.m, n)); let start = -1;
+      const ok = this.act(label, m => { const r = this.X.move(m, paths.map(p => K.byPath(m, p)), K.byPath(m, P), refP ? K.byPath(m, refP) : null); start = nodes.length === 1 ? r.start : -1; return r; }, nodes[0]);
       if (!ok) return;
-      this.reselect(outs);
+      // הבחירה (והפאנל שמתעדכן איתה) — בתמונה הבאה: הקובץ והקנבס כבר עודכנו, והשחרור נשאר מהיר גם בעמוד גדול
+      requestAnimationFrame(() => {
+        if (start >= 0) { let hit = null; K.walk(c.m.root, x => { if (!hit && x.from === start && !x.implied) hit = x; }); if (hit) { c.select(hit); return; } }
+        this.reselect(outs);
+      });
     }
     /** אחרי הזזה: בוחרים את מה שהוזז (לפי הטקסט שלו, מהקרוב לסמן). */
     reselect(outs) {
@@ -408,7 +416,7 @@
     /** קטע מבחוץ (לא מהעורך): בלי סקריפטים, מסגרות, אירועים (on…) וכתובות javascript: — ומה שהוסר נאמר. */
     clean(html) {
       const removed = new Set();
-      if (!/[<&]/.test(html)) return { html: '<p>' + window.KolText.escText(html.trim()).replace(/\r?\n/g, '<br>') + '</p>', removed: [] };
+      if (!/</.test(html)) return { html: '<p>' + window.KolText.escText(html.trim()).replace(/\r?\n/g, '<br>') + '</p>', removed: [] };
       const d = new DOMParser().parseFromString('<!doctype html><body>' + html, 'text/html');
       for (const e of d.body.querySelectorAll('script, iframe, object, embed, frame, frameset, base, meta, link, style, noscript, template')) { removed.add('<' + e.localName + '>'); e.remove(); }
       for (const e of d.body.querySelectorAll('*')) for (const a of [...e.attributes]) {

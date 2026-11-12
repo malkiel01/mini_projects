@@ -23,7 +23,6 @@
       this.active = null;
       this.onKey = e => { if (this.active && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.cancel(); } };
       document.addEventListener('keydown', this.onKey, true);
-      c.doc && c.doc.addEventListener('keydown', this.onKey, true);
     }
     /** מתחילים גרירה. x, y — במסך של המעטפת. */
     start(src, x, y) {
@@ -237,11 +236,13 @@
       }
     }
     /** שחרור: commit=false (Esc, מחוץ ליעד) — דבר אינו נכתב. */
-    end(commit = true) {
+    /** x, y — נקודת השחרור (במסך של המעטפת); מחוץ לקנבס ול-Navigator — אין יעד. */
+    end(commit = true, x, y) {
       const a = this.active; if (!a) return;
-      cancelAnimationFrame(a.raf); clearTimeout(a.hoverT);
+      cancelAnimationFrame(a.raf); clearTimeout(a.hoverT); clearTimeout(a.zoneT);
+      if (x != null) { a.px = x; a.py = y; }
       let t = null;
-      if (commit && a.px != null) { this.track(a.px, a.py); t = a.last; }
+      if (commit && a.px != null) { a.last = null; this.track(a.px, a.py); t = a.last; }
       this.active = null; this.hide();
       if (a.shown) { this.canvas.unshow(); this.canvas.show(this.canvas.selected); }
       if (!commit || !t || t.noop) { if (this.onCancel) this.onCancel(t); return; }

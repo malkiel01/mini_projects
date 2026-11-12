@@ -501,6 +501,8 @@ const Editor = (() => {
     S.build.paste(d.getData('text/html') || d.getData('text/plain') || (S.build.clip ? S.build.clip.html : ''));
   }
   document.addEventListener('paste', onPaste);
+  /** מסמך הקנבס (נוצר פעם אחת לכל מסגרת): הדבקה ו-Esc בזמן גרירה גם כשהמיקוד בקנבס. */
+  function listenFrame(doc) { doc.addEventListener('paste', onPaste); doc.addEventListener('keydown', e => { if (e.key === 'Escape' && S.build?.drag.active) { e.preventDefault(); e.stopPropagation(); S.build.drag.cancel(); } }, true); }
 
   const KEYS = [['חיצים ↑ ↓', 'ההורה / הילד הראשון (בלי בחירה — מתחילים מ-body)'], ['חיצים ← →', 'האח הקודם / הבא'], ['Esc', 'ההורה (או ביטול מצב ההצבעה)'],
     ['לחיצה כפולה · Enter · F2', 'עריכת הטקסט במקום (Esc — סיום ושמירה)'], ['בעריכת טקסט: Ctrl+B · I · U', 'מודגש · נטוי · קו תחתון'], ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y', 'בטל · החזר'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['T', 'הפאנל — לשונית "תוכן"'], ['I', 'הפאנל — לשונית "פרטים"'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
@@ -699,8 +701,8 @@ const Editor = (() => {
     if (!el.note) return;
     clearTimeout(note.t);
     el.note.className = 'ed-note' + (err ? ' err' : '');
-    el.note.replaceChildren(h('span', {}, text), action ? h('button', { type: 'button', class: 'btn sm', onclick: () => { el.note.hidden = true; action.run(); } }, action.label) : null,
-      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', onclick: () => { el.note.hidden = true; } }, '✕'));
+    el.note.replaceChildren(...[h('span', {}, text), action ? h('button', { type: 'button', class: 'btn sm', onclick: () => { el.note.hidden = true; action.run(); } }, action.label) : null,
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', onclick: () => { el.note.hidden = true; } }, '✕')].filter(Boolean));   // replaceChildren(null) כותב "null"
     el.note.hidden = false;
     note.t = setTimeout(() => { el.note.hidden = true; }, err || action ? 12000 : 5000);
   }
@@ -762,6 +764,7 @@ const Editor = (() => {
       S.text = new window.KolText.TextEdit(c, { canWrite: () => (canWrite() ? '' : S.readOnly || 'הקובץ פתוח לקריאה בלבד'), commit: (ps, label) => { if (c.src !== S.doc.text()) return false; return commit(ps, label); },
         run: (label, fn) => act(label, fn), undo: () => { if (undoTx() || (S.doc?.canUndo() && (S.doc.undo(), true))) { clearTimeout(S.timer); syncCanvas(); } }, redo: () => { if (redoTx() || (S.doc?.canRedo() && (S.doc.redo(), true))) { clearTimeout(S.timer); syncCanvas(); } },
         note, openInCode, onState: () => { el.root.classList.toggle('typing', !!S.text?.active); drawCrumbs(); } });
+      { const prev = c.onListen; c.onListen = doc => { if (prev) prev(doc); listenFrame(doc); }; if (c.ready && c.doc) listenFrame(c.doc); }
       c.onDbl = (n, pt) => { if (S.pointing) return; S.text.begin(n, pt); };
       S.content = new window.KolContent.Content(el.contentBody, { canvas: c, file: () => S.file, files: () => Project._state.files || [], act, canWrite: () => !!canWrite(), begin: n => S.text.begin(n), openEl: n => openInCode(n), openAt: (p, line) => Project.openAt(p, line),
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
