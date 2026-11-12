@@ -362,6 +362,19 @@ function rec_job_set(array $j): array
     return $j;
 }
 
+/**
+ * צעד אחד בכל רגע (שתי לשוניות פתוחות, או לחיצה כפולה, לא מורידות את אותה הקלטה פעמיים). null — צעד אחר רץ עכשיו.
+ * הנעילה משתחררת כשהבקשה מסתיימת (גם אם נפלה).
+ */
+function rec_lock()
+{
+    $dir = files_dir() . '/tmp';
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true)) throw new ApiError('אין גישה לתיקיית הקבצים', 500);
+    $fh = fopen($dir . '/rec.lock', 'c');
+    if (!$fh || !flock($fh, LOCK_EX | LOCK_NB)) { if ($fh) fclose($fh); return null; }
+    return $fh;
+}
+
 /** כמה מקום פנוי: התקרה פחות מה שבשימוש. */
 function rec_free(): int
 {
@@ -414,6 +427,8 @@ function rec_scan_step(array $owner): array
     @set_time_limit(120);
     $j = rec_job();
     if (($j['phase'] ?? '') !== 'scan' || ($j['status'] ?? '') !== 'running') return rec_status($owner);
+    if (!($lock = rec_lock())) return ['busy' => true] + rec_status($owner);
+    $j = rec_job();
     $pdo = rec_db();
     $cfg = rec_settings();
     $t0 = microtime(true);
@@ -425,7 +440,11 @@ function rec_scan_step(array $owner): array
         if (!$batch) break;
         $reqs = [];
         foreach ($batch as $r) $reqs[$r['id']] = ['method' => 'HEAD', 'url' => $r['source']];
-        foreach (rec_http($reqs, $cfg['conc'], $cfg['timeout']) as $id => $res) {
+        $all = rec_http($reqs, $cfg['conc'], $cfg['timeout']);
+        $block = false;
+        foreach ($batch as $row) {                      // לפי הסדר — "חמש חסימות רצופות" נספרות כמו שנשלחו
+            $id = $row['id'];
+            $res = $all[$id];
             $h = $res['headers'];
             $size = isset($h['content-length']) && ctype_digit($h['content-length']) ? (int)$h['content-length'] : null;
             $type = mb_substr(strtolower(trim(explode(';', $h['content-type'] ?? '')[0])), 0, 60);
@@ -439,8 +458,9 @@ function rec_scan_step(array $owner): array
             $set->execute([$s, $s === 'ok' ? $size : null, $type, mb_substr($note, 0, 300), now_iso(), $id]);
             if ($s === 'ok') $okSeen++;
             $run = $s === 'blocked' ? $run + 1 : 0;
+            if ($okSeen === 0 && $run >= REC_BLOCK_RUN) $block = true;
         }
-        if ($okSeen === 0 && $run >= REC_BLOCK_RUN) {           // חסימה גורפת: עוצרים — לא 1,494 כישלונות
+        if ($block) {           // חסימה גורפת: עוצרים — לא 1,494 כישלונות
             $j = rec_job_set(['status' => 'blocked', 'blocked' => true, 'block_run' => $run, 'ok_seen' => $okSeen] + $j);
             devlog_write('warn', 'audio', 'scan_blocked', ['message' => 'האתר חוסם את הכלי — הסריקה נעצרה', 'user' => $owner, 'data' => ['blocked_in_row' => $run]]);
             return rec_status($owner);
@@ -505,6 +525,8 @@ function rec_fetch_step(array $owner): array
     @set_time_limit(120);
     $j = rec_job();
     if (($j['phase'] ?? '') !== 'fetch' || ($j['status'] ?? '') !== 'running') return rec_status($owner);
+    if (!($lock = rec_lock())) return ['busy' => true] + rec_status($owner);
+    $j = rec_job();
     $pdo = rec_db();
     $cfg = rec_settings();
     $t0 = microtime(true);
