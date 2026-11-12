@@ -153,3 +153,4 @@
 - 2026-11-12 19:58 UTC — T15: הצילום מהבעלים — MyNames (רשם) עם 'ניהול איזור CDN' (Cloudflare מובנה), אבל של mbe-plus.co.il. מטלות מבקשות את maghreb.co.il. הנחיה: לצלם בלבד, לא לכבות CDN.
 - 2026-11-12 19:55 UTC — פריסה **1583** (2d46df9 — V8) **success**.
 - 2026-11-12 20:02 UTC — T15: נמצא Cloudflare של Bluehost. הכרעה: (א) תמיכה, רשות + (ג) M7; לא לכבות. מטמון ← M7.
+- 2026-11-12 20:06 UTC — T15: SECURITY ב-Bluehost — IP Blocker, Hotlink Protection (אין שליטה על WAF של Cloudflare). לבדוק בביקורת M7: מדיה שנטענת מתוך החלון (Referer) לא נחסמת ב-Hotlink.
