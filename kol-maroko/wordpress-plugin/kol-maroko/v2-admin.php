@@ -18,12 +18,41 @@ add_action('admin_post_kol_maroko_v2', function () {
     check_admin_referer('kol_maroko_v2');
     $op = sanitize_key($_POST['op'] ?? '');
     $msg = 'נשמר.';
-    if ($op === 'on' || $op === 'off') {
-        kol_maroko_set('v2_on', $op === 'on');
+    if ($op === 'on') {
+        // אישור כפול (M3 §2): הסימון בטופס, ומספר הגרסה שהאישור ניתן עליה — אם הגרסה שבאוויר התחלפה בינתיים, לא מדליקים
+        $live = (int)kol_maroko_opt('v2_live', 0);
+        if (!$live) $msg = 'אין גרסה 2.0 באוויר — אין מה להדליק.';
+        elseif (empty($_POST['confirm']) || (int)($_POST['version'] ?? 0) !== $live) $msg = 'לא הודלק: חסר אישור, או שהגרסה שבאוויר התחלפה מאז שהמסך נטען.';
+        else {
+            kol_maroko_set('v2_on', true);
+            kol_maroko_v2_stats_reset();
+            kol_maroko_v2_purge();
+            kol_maroko_v2_log('on', $live);
+            $msg = 'העמוד החדש דולק — גרסה ' . $live . '.';
+        }
+    } elseif ($op === 'off') {                           // כיבוי — לחיצה אחת, בלי אישור (G7)
+        kol_maroko_set('v2_on', false);
         kol_maroko_v2_purge();
-        $msg = $op === 'on' ? 'העמוד החדש דולק.' : 'העמוד החדש כבוי — האתר מגיש את העמוד כמו קודם.';
+        kol_maroko_v2_log('off', (int)kol_maroko_opt('v2_live', 0));
+        $msg = 'העמוד החדש כבוי — האתר מגיש את העמוד כמו קודם.';
+    } elseif ($op === 'preview_new') {
+        // כתובת הבדיקה: 128 ביט אקראי. נשמר רק ה-hash; הכתובת מוצגת פעם אחת, בתשובה הזו — לא נשמרת בשום מקום
+        $tok = bin2hex(random_bytes(16));
+        kol_maroko_set('v2_preview_hash', hash('sha256', $tok));
+        kol_maroko_v2_log('preview_new', (int)kol_maroko_opt('v2_live', 0));
+        $url = home_url(kol_maroko_v2_scope()) . '?kol_preview=' . $tok;
+        echo '<!doctype html><html lang="he" dir="rtl"><meta charset="utf-8"><title>כתובת בדיקה</title><body style="font:16px system-ui;margin:24px">'
+            . '<h1>כתובת הבדיקה</h1><p>מוצגת <b>פעם אחת</b> — העתיקו אותה עכשיו. היא מציגה את העמוד החדש לפני שהגולשים רואים אותו; '
+            . 'כפתור "כתובת חדשה" מבטל אותה.</p><p><input readonly dir="ltr" size="90" value="' . esc_attr($url) . '" onclick="this.select()"></p>'
+            . '<p><a href="' . esc_url(admin_url('options-general.php?page=kol-maroko#kol-v2')) . '">חזרה לעמוד התוסף</a></p></body></html>';
+        exit;
+    } elseif ($op === 'preview_off') {
+        delete_option('kol_maroko_v2_preview_hash');
+        kol_maroko_v2_log('preview_off', 0);
+        $msg = 'כתובת הבדיקה בוטלה.';
     } elseif ($op === 'activate') {
         $r = kol_maroko_v2_activate_n((int)($_POST['n'] ?? 0));
+        if ($r === true) kol_maroko_v2_log('activate', (int)$_POST['n']);
         $msg = $r === true ? 'הגרסה ' . (int)$_POST['n'] . ' באוויר.' : 'לא הוחזר: ' . $r->data['message'];
     } elseif ($op === 'quota') {
         $q = [];
@@ -57,14 +86,32 @@ add_action('admin_post_kol_maroko_v2', function () {
     exit;
 });
 
+/** היומן של התוסף: מי, מתי, מה, איזו גרסה. 100 האחרונים. */
+function kol_maroko_v2_log($op, $version)
+{
+    $u = function_exists('wp_get_current_user') ? wp_get_current_user() : null;
+    $who = $u && !empty($u->user_login) ? sanitize_text_field((string)$u->user_login) : 'studio';
+    $log = (array)kol_maroko_opt('v2_log', []);
+    array_unshift($log, ['at' => time(), 'who' => substr($who, 0, 60), 'op' => (string)$op, 'version' => (int)$version]);
+    kol_maroko_set('v2_log', array_slice($log, 0, 100));
+}
+
+/** המונה מתחיל מאפס בכל הדלקה. */
+function kol_maroko_v2_stats_reset()
+{
+    $root = kol_maroko_v2_ensure();
+    @file_put_contents("$root/stats.json", json_encode(kol_maroko_v2_stats_new()), LOCK_EX);
+}
+
 /** מחיקה מפורשת (כפתור בלבד — לא בהסרת התוסף): החבילות, המניפסטים והמצב של 2.0. */
 function kol_maroko_v2_wipe()
 {
     kol_maroko_set('v2_on', false);
     $root = kol_maroko_v2_dir();
     foreach (['blobs', 'parts'] as $d) foreach (glob("$root/$d/*") ?: [] as $f) if (is_file($f) && basename($f) !== 'index.html') @unlink($f);
-    foreach (glob("$root/{manifest-*.json,live.json,live.json.tmp*,rate.json,publish.lock}", GLOB_BRACE) ?: [] as $f) @unlink($f);
-    foreach (['v2_live', 'v2_last', 'v2_versions', 'v2_nonces', 'v2_selftest', 'v2_selftest_result', 'v2_purge'] as $k) delete_option('kol_maroko_' . $k);
+    foreach (glob("$root/{manifest-*.json,live.json,live.json.tmp*,rate.json,publish.lock,stats.json}", GLOB_BRACE) ?: [] as $f) @unlink($f);
+    kol_maroko_v2_log('wipe', 0);
+    foreach (['v2_live', 'v2_last', 'v2_versions', 'v2_nonces', 'v2_selftest', 'v2_selftest_result', 'v2_purge', 'v2_preview_hash'] as $k) delete_option('kol_maroko_' . $k);
     kol_maroko_v2_lock_files(true);
     kol_maroko_v2_purge();
 }
@@ -87,12 +134,57 @@ function kol_maroko_v2_admin_section()
     if ($msg) echo '<div class="notice notice-info"><p>' . esc_html($msg) . '</p></div>';
     echo '<p>חבילה חתומה מהסטודיו, מוגשת בכתובת <code dir="ltr">' . esc_html(kol_maroko_v2_scope()) . '</code> לפני וורדפרס — בלי ערכת הנושא, בלי עוגיות, '
         . 'ובמקור אטום (ארגז חול). כל עוד המפסק כבוי, הגולשים רואים את העמוד כמו היום.</p>';
+    $info_live = (array)($info[$live] ?? []);
+    $confirm_text = 'הגולשים יראו מעכשיו את הגרסה ' . $live . ', שפורסמה ב-' . (isset($info_live['at']) ? wp_date('d.m.Y H:i', (int)$info_live['at']) : '?')
+        . ' ע"י ' . (string)($info_live['by'] ?? '?') . '. להדליק?';
     echo '<table class="form-table"><tr><th>המפסק</th><td><b>' . ($on ? '🟢 דולק' : '⚪ כבוי') . '</b>'
-        . ($on && !$live ? ' — אבל עוד לא התקבלה גרסה, ולכן העמוד הישן מוגש.' : '') . '<form method="post" action="' . $post . '" style="display:inline;margin-inline-start:12px">' . $nonce
-        . '<input type="hidden" name="op" value="' . ($on ? 'off' : 'on') . '"><button class="button' . ($on ? '' : ' button-primary') . '"'
-        . ($on ? '' : ' onclick="return confirm(\'להדליק את העמוד החדש? הגולשים יראו אותו מיד.\')"') . '>' . ($on ? 'כיבוי — חזרה לעמוד הישן' : 'הדלקה') . '</button></form></td></tr>';
+        . ($on && !$live ? ' — אבל עוד לא התקבלה גרסה, ולכן העמוד הישן מוגש.' : '');
+    if ($on) {
+        echo '<form method="post" action="' . $post . '" style="display:inline;margin-inline-start:12px">' . $nonce
+            . '<input type="hidden" name="op" value="off"><button class="button">כיבוי — חזרה לעמוד הישן</button></form>';
+    } elseif ($live) {
+        echo '<form method="post" action="' . $post . '" style="margin-top:8px" onsubmit="return confirm(this.dataset.q)" data-q="' . esc_attr($confirm_text) . '">' . $nonce
+            . '<input type="hidden" name="op" value="on"><input type="hidden" name="version" value="' . (int)$live . '">'
+            . '<label><input type="checkbox" name="confirm" value="1" required> ' . esc_html($confirm_text) . '</label> '
+            . '<button class="button button-primary">הדלקה</button></form>';
+    }
+    echo '</td></tr>';
     echo '<tr><th>באוויר</th><td>' . ($live ? 'גרסה ' . $live : 'אין') . ' · האחרונה שהתקבלה: ' . (int)kol_maroko_opt('v2_last', 0)
         . ' · נפח: ' . esc_html(size_format(kol_maroko_v2_usage())) . ' · פרוטוקול ' . KOL_MAROKO_PROTOCOL . '</td></tr></table>';
+
+    // כתובת הבדיקה
+    echo '<h3>כתובת בדיקה</h3><p>העמוד החדש, באתר האמיתי, לפני שהגולשים רואים אותו (רק כשהמפסק כבוי). הכתובת מוצגת פעם אחת כשנוצרת; '
+        . 'מה שנשמר כאן — רק טביעה שלה. ' . (kol_maroko_opt('v2_preview_hash', '') ? '<b>יש כתובת פעילה.</b>' : 'אין כתובת פעילה.') . '</p>'
+        . '<form method="post" action="' . $post . '" style="display:inline">' . $nonce . '<input type="hidden" name="op" value="preview_new"><button class="button">'
+        . (kol_maroko_opt('v2_preview_hash', '') ? 'כתובת חדשה (הקודמת מתבטלת)' : 'יצירת כתובת בדיקה') . '</button></form> ';
+    if (kol_maroko_opt('v2_preview_hash', '')) {
+        echo '<form method="post" action="' . $post . '" style="display:inline">' . $nonce . '<input type="hidden" name="op" value="preview_off"><button class="button">ביטול הכתובת</button></form>';
+    }
+
+    // המונה מאז ההדלקה
+    $st = kol_maroko_v2_stats();
+    if ($on && $st) {
+        echo '<h3>מאז ההדלקה (' . esc_html(wp_date('d.m.Y H:i', (int)$st['since'])) . ')</h3><p>בקשות: ' . (int)$st['requests'] . ' · 404: ' . (int)$st['not_found']
+            . ' · שגיאות: ' . (int)$st['errors'] . '</p>';
+        foreach (['last404' => '404 אחרונים', 'last_errors' => 'שגיאות אחרונות'] as $k => $label) {
+            if (empty($st[$k])) continue;
+            echo '<details><summary>' . esc_html($label) . '</summary><ul dir="ltr">';
+            foreach ((array)$st[$k] as $row) echo '<li><code>' . esc_html((string)($row['path'] ?? '')) . '</code> · ' . esc_html(wp_date('d.m H:i', (int)($row['at'] ?? 0))) . '</li>';
+            echo '</ul></details>';
+        }
+    }
+
+    // היומן
+    $log = (array)kol_maroko_opt('v2_log', []);
+    if ($log) {
+        $names = ['on' => 'הדלקה', 'off' => 'כיבוי', 'activate' => 'חזרה לגרסה', 'preview_new' => 'כתובת בדיקה חדשה', 'preview_off' => 'ביטול כתובת בדיקה', 'wipe' => 'מחיקת החבילות'];
+        echo '<details><summary>יומן (' . count($log) . ')</summary><table class="widefat striped" style="max-width:700px"><tbody>';
+        foreach (array_slice($log, 0, 30) as $row) {
+            echo '<tr><td>' . esc_html(wp_date('d.m.Y H:i', (int)($row['at'] ?? 0))) . '</td><td>' . esc_html((string)($row['who'] ?? '')) . '</td><td>'
+                . esc_html($names[$row['op'] ?? ''] ?? (string)($row['op'] ?? '')) . '</td><td>' . ((int)($row['version'] ?? 0) ?: '') . '</td></tr>';
+        }
+        echo '</tbody></table></details>';
+    }
 
     if ($saved) {
         echo '<table class="widefat striped" style="max-width:760px"><thead><tr><th>גרסה</th><th>מתי</th><th>מי</th><th>קבצים</th><th>נפח</th><th></th></tr></thead><tbody>';

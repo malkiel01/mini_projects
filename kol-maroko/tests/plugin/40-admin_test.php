@@ -42,7 +42,7 @@ test('M2 עמוד התוסף: המפסק (ברירת מחדל כבוי), "החז
     kp_live(kp_bundle('B'), 2, false);
     $page = kp_http('GET', '/wp-admin/options-general.php', [KP_ADMIN])['body'];
     ok(str_contains($page, '⚪ כבוי') && str_contains($page, 'גרסה 2') && substr_count($page, 'החזר לגרסה זו') === 1, 'כבוי; גרסה 2 באוויר; "החזר" לגרסה 1 בלבד');
-    eq(302, kp_admin('on')['status']);
+    eq(302, kp_admin('on', ['confirm' => 1, 'version' => 2])['status']);
     eq(true, kp_get('kol_maroko_v2_on'));
     ok(str_contains(kp_http('GET', '/lexicon/')['body'], 'VERSION-B'), 'דולק ← החדש מוגש');
     kp_admin('activate', ['n' => 1]);
