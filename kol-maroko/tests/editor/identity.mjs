@@ -84,5 +84,18 @@ const e1 = K.applyPatches(page, K.css.addRule(K.parseCss(page), K.parseCss(page)
 const e2 = K.applyPatches(e1, ST.planRule(em, er, 'color', 'red', true).patches);
 ok(er && er.decls.length === 0 && !K.cssAll(em).some(x => x.broken) && changed(e1, e2).length === 1 && /\.hero-title \{ color: red; \}/.test(e2), 'כלל ריק (.hero-title) נוצר תקין; צבע אחריו — שורה אחת', changed(e1, e2));
 
+// ── 6. שקילות המודל: עדכון הדרגתי אחרי כל כתיבת HTML חדשה = ניתוח מלא (ובביטול) ──
+const eqv = (src, ps) => { const out = K.applyPatches(src, ps), inc = K.update(K.parseHtml(src), ps).model, e1 = K.sameModel(inc, K.parseHtml(out)), back = K.update(inc, K.invertPatches(src, ps)).model; return e1 == null && K.sameModel(back, K.parseHtml(src)) == null; };   // update משנה את המודל במקומו — משווים לפני הביטול
+{
+  const m0 = K.parseHtml(html), h1 = K.all(m0).find(x => x.tag === 'h1'), h3 = K.all(m0).find(x => x.tag === 'h3');
+  ok(eqv(html, ID.setAttr(m0, h1, 'aria-label', 'a "b" & <c>').patches), 'שקילות: תכונה חדשה');
+  ok(eqv(html, ID.setAttr(m0, h1, 'id', 'x').patches) && eqv(html, K.html.removeAttr(m0, h1, 'id').patches), 'שקילות: שינוי / מחיקה של תכונה');
+  // מחלקה לכמה אלמנטים — תיקון אחרי תיקון, כמו בעסקה
+  let cur = html; for (const tag of ['h1', 'h2', 'h3']) { const m = K.parseHtml(cur), n = K.all(m).find(x => x.tag === tag); const ps = K.html.addClass(m, n, 'shared-x').patches; ok(eqv(cur, ps), 'שקילות: מחלקה משותפת ל-<' + tag + '>'); cur = K.applyPatches(cur, ps); }
+  const rn = ID.renameHtml(cur, 'shared-x', 'shared-y'); ok(rn.count === 3 && eqv(cur, rn.patches), 'שקילות: שינוי שם בעמוד (3 מופעים, תיקון אחד לכל אחד)');
+  const ord = K.parseHtml(html), on = K.all(ord).find(x => x.tag === 'h3'); ok(eqv(html, ID.setAttr(ord, on, 'class', 'b a').patches) || !on, 'שקילות: סדר מחלקות חדש');
+  void h3;
+}
+
 console.log(failed ? '❌ ' + failed + ' מתוך ' + ran + ' נכשלו' : '✅ כל ' + ran + ' הבדיקות עברו');
 process.exit(failed ? 1 : 0);
