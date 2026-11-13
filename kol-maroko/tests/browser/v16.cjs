@@ -490,9 +490,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const a0 = await act(), nS = await pb.evaluate(() => document.querySelectorAll('.kol-slides__slide').length);
     await pb.click('.kol-slides__next'); await sleep(900);
     const a1 = await act(), a1b = (await sleep(1300), await act());
-    await pb.mouse.move(5, 5); await sleep(2600);
-    const a2 = await act();
-    ok(a1 === (a0 + 1) % nS && a1b === a1 && a2 !== a1, 'מצגת: "הבאה" ← השקופית הבאה; כשהעכבר עליה — עומדת; כשלא — ממשיכה לבד (כל שנייה)', [a0, a1, a1b, a2]);
+    // בלי עכבר — ממשיכה לבד: דגימה כל 200ms (לא רגע אחד — מספר המעברים ב-X שניות תלוי בשלב של הטיימר, ו-3 מעברים ב-3 שקופיות חוזרים לאותה)
+    await pb.mouse.move(5, 5);
+    const seq = []; for (let i = 0; i < 14; i++) { await sleep(200); seq.push(await act()); }
+    const moved = seq.some(x => x !== a1), steps = seq.every((x, i) => i === 0 ? true : x === seq[i - 1] || x === (seq[i - 1] + 1) % nS);
+    ok(a1 === (a0 + 1) % nS && a1b === a1 && moved && steps, 'מצגת: "הבאה" ← השקופית הבאה; כשהעכבר עליה — עומדת; כשלא — ממשיכה לבד, שקופית אחת בכל פעם (גם מהאחרונה לראשונה)', [a0, a1, a1b, seq.join('')]);
     // קרוסלה
     await pb.evaluate(() => document.querySelector('.kol-carousel').scrollIntoView({ block: 'center' })); await sleep(200);
     st = await pb.evaluate(() => { const t = document.querySelector('.kol-carousel__track'), s = t.children[0].getBoundingClientRect().width; return Math.round(t.clientWidth / s * 10) / 10; });
@@ -531,6 +533,113 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(st.links >= 4 && st.toggle === 'none' && /x mandatory/.test(st.snap) && st.arrows === 'none' && st.lottie, 'בלי JS (390): התפריט — כל הקישורים גלויים (בלי המבורגר); המצגת — scroll-snap; Lottie — התמונה', st);
     await ctxNo2.close(); await pb.close();
 
+    // ═══ 12. V16c — טופס (בונה + אחרי שליחה), רשתות, מפה, תבניות מוכנות ═══
+    await page.setViewportSize({ width: 1920, height: 1080 }); await sleep(300);
+    pg = await text(page, 'kit.html');
+    ok(/<script src="js\/kol-data\.js" defer><\/script>/.test(pg) && await exists(page, 'js/kol-data.js') && (await kol(page)).system['js/kol-data.js'], 'טופס נוסף ← js/kol-data.js בפרויקט ו-<script> בעמוד (בלעדיו אין שליחה)');
+    const fsel = async (sel, i = 0) => { await page.evaluate(([s, i]) => { const c = Editor._state.canvas, C = window.KolComp, r = C.instances(c.m, 'form')[0].node, n = C.findAllIn(r, s)[i]; c.select(n); c.reveal(n); }, [sel, i]); await tab(page, 'content'); await sleep(250); };
+    const fhtml = () => instText(page, 'form');
+    await fsel('.kol-form__input', 0);
+    ok(await page.$('[data-kf-field="name"]') !== null && await page.$('[data-kf-form="contact"]') !== null, 'בחירת שדה ← "✏️ שדה" ו"📝 טופס" בפאנל');
+    ok(await page.evaluate(() => { const o = [...document.querySelector('[data-kf-in="type"]').options].find(x => x.value === 'file'); return o && o.disabled; }) && await page.$('[data-kf-nofile]') !== null, 'סוג "קובץ" — מושבת, עם ההסבר (M5 אינה מקבלת קבצים)');
+    // סוג ← בחירה, עם אפשרויות
+    await page.selectOption('[data-kf-in="type"]', 'select'); await sleep(350);
+    await fsel('.kol-form__field', 0);
+    await page.fill('[data-kf-in="options"]', 'אוכל\nחגים\nשוק'); await page.evaluate(() => document.querySelector('[data-kf-in="options"]').dispatchEvent(new Event('change'))); await sleep(350);
+    let fh = await fhtml();
+    ok(/<select class="kol-form__input" id="kf-name" name="name" required>[\s\S]*<option>אוכל<\/option>[\s\S]*<option>שוק<\/option>/.test(fh), 'סוג שדה ← "בחירה" עם אפשרויות (HTML רגיל)', fh.slice(0, 600));
+    let nu = 0; while (/<select[^>]*id="kf-name"/.test(await fhtml()) && nu++ < 6) await undo(page);
+    ok(/<input class="kol-form__input" id="kf-name"/.test(await fhtml()), 'Ctrl+Z ← השדה חזר להיות טקסט (' + nu + ' צעדים)', nu);
+    // חובה, pattern + הודעה (אלמנט), רוחב
+    await fsel('.kol-form__field', 1);
+    await page.fill('[data-kf-in="pattern"]', '[^@]+@[^@]+'); await page.evaluate(() => document.querySelector('[data-kf-in="pattern"]').dispatchEvent(new Event('change'))); await sleep(300);
+    await fsel('.kol-form__field', 1); await page.selectOption('[data-kf-in="width"]', 'third'); await sleep(300);
+    fh = await fhtml();
+    ok(/<div class="kol-form__field kol-form__field--third" data-kol-field>\s*<label class="kol-form__label" for="kf-email">אימייל<\/label>\s*<input class="kol-form__input" id="kf-email" name="email" type="email" required pattern="\[\^@\]\+@\[\^@\]\+">[\s\S]*?<small class="kol-form__msg" data-kol-msg hidden>הערך אינו בפורמט הנכון<\/small>/.test(fh), 'pattern + הודעה כאלמנט (data-kol-msg) + רוחב "שליש"', fh.slice(0, 900));
+    await undo(page); await undo(page);
+    // ➕ שדה (אחרי הנבחר), ↑ (סדר)
+    await fsel('.kol-form__field', 2); n0 = await txN(page);
+    await page.click('[data-kf="add-field"]'); await sleep(350);
+    fh = await fhtml();
+    ok(/name="field-1" type="text"/.test(fh) && await txN(page) === n0 + 1 && await stateOf(page, '.kol-form') === 'linked', '"➕ שדה" ← field-1, פעולה אחת, הטופס מקושר');
+    await fsel('.kol-form__field', 3); await page.click('[data-kf="up"]'); await sleep(300);
+    fh = await fhtml();
+    ok(fh.indexOf('name="field-1"') < fh.indexOf('name="message"'), '↑ — השדה החדש לפני "הודעה"');
+    // ➕ שלב ← שני fieldset, מצב "שלב 2" בקנבס (הקובץ זהה), "נשלח" בקנבס
+    await page.click('[data-kf="add-step"]'); await sleep(400);
+    fh = await fhtml();
+    ok((fh.match(/<fieldset class="kol-form__step" data-kol-step>/g) || []).length === 2 && /<legend class="kol-form__legend">שלב 2<\/legend>/.test(fh) && !/kol-form__fields/.test(fh), '"➕ שלב" ← שני שלבים (fieldset עם data-kol-step); השדות הקיימים — בשלב 1', fh.slice(0, 300));
+    await fsel('.kol-form__step', 1);
+    const f0 = await text(page, 'kit.html');
+    await page.selectOption('[data-kit-state="step"]', '1'); await sleep(300);
+    st = await page.evaluate(() => { const c = Editor._state.canvas, steps = [...c.doc.querySelectorAll('.kol-form__step')]; return steps.map(x => getComputedStyle(x).display); });
+    ok(st[0] === 'none' && st[1] !== 'none' && await text(page, 'kit.html') === f0, 'מצב בקנבס "שלב 2" — רק השלב השני מוצג, הקובץ זהה', st);
+    await page.selectOption('[data-kit-state="step"]', ''); await page.click('[data-kf="show-done"]'); await sleep(300);
+    st = await page.evaluate(() => getComputedStyle(Editor._state.canvas.doc.querySelector('.kol-form__done')).display);
+    ok(st !== 'none' && await text(page, 'kit.html') === f0, '"👁 הצג נשלח" ← הודעת התודה בקנבס (נערכת במקום), הקובץ זהה', st);
+    await page.selectOption('[data-kit-state="sent"]', '');
+    // הפניה לעמוד
+    await fsel('.kol-form__field', 0);
+    await page.selectOption('[data-kf-in="redirect-page"]', 'about.html').catch(() => page.selectOption('[data-kf-in="redirect-page"]', { index: 1 })); await sleep(300);
+    ok(/<form class="kol-form" data-kol-form="contact" data-kol-component="form" data-kol-redirect="[^"]+\.html"|data-kol-redirect="[^"]+\.html"/.test(await fhtml()), 'אחרי שליחה ← הפניה לעמוד בפרויקט (data-kol-redirect)');
+    await undo(page);
+    // webhook: כתובת פנימית — נדחית; https — נשמרת
+    await page.fill('[data-kf-in="webhook"]', 'https://127.0.0.1/hook'); await page.click('[data-kf="hook-save"]'); await sleep(400);
+    ok(/נדחתה/.test(await page.evaluate(() => document.querySelector('.ed-note')?.textContent || '')), 'webhook לכתובת IP פנימית — נדחה');
+    await page.fill('[data-kf-in="webhook"]', 'https://hooks.example.com/kol'); await page.click('[data-kf="hook-save"]'); await sleep(400);
+    ok(/webhook פעיל/.test(await page.evaluate(() => document.querySelector('[data-kf-hook-state]').textContent)) && (await call(page, 'forms_hook_state', undefined, '&form=contact')).url === 'https://hooks.example.com/kol', 'webhook https — נשמר, ובפאנל: "webhook פעיל"');
+    await call(page, 'forms_hook_set', { form: 'contact', url: '' });
+    await flush(page);
+    // התצוגה החיה: שלבים, אימות לפני מעבר, שליחה ← בתיבה (הרישום מה-HTML: גם field-1)
+    const tok4 = (await call(page, 'pv_token')).token, pf = await ctx.newPage(); const pfErr = []; pf.on('pageerror', e => pfErr.push(e.message));
+    await pf.route(u => !u.href.startsWith(base) && !/^(data|blob|about):/.test(u.protocol), r => r.abort());
+    await pf.goto(`${base}/preview/${tok4}/kit.html`); await sleep(1500);
+    await pf.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));   // החלון הקופץ (אחרי שנייה — הוגדר למעלה)
+    await pf.evaluate(() => document.querySelector('.kol-form').scrollIntoView({ block: 'center' }));
+    st = await pf.evaluate(() => { const f = document.querySelector('.kol-form'), s = [...f.querySelectorAll('.kol-form__step')]; return { on: f.classList.contains('kol-steps-on'), vis: s.map(x => !x.hidden), next: !f.querySelector('[data-kol-step-next]').hidden, submit: f.querySelector('.kol-form__submit').hidden, bar: f.querySelector('[data-kol-step-bar]').hidden }; });
+    ok(st.on && st.vis.join() === 'true,false' && st.next && st.submit && !st.bar, 'תצוגה חיה: שלב 1 מתוך 2, "הבא", פס התקדמות; "שליחה" — רק בשלב האחרון', st);
+    await pf.click('.kol-form [data-kol-step-next]'); await sleep(200);
+    ok(await pf.evaluate(() => !document.querySelectorAll('.kol-form__step')[0].hidden), '"הבא" עם שדה חובה ריק — נשאר בשלב 1 (אימות לפני מעבר)');
+    await pf.fill('#kf-name', 'דנה'); await pf.fill('#kf-email', 'dana@example.test'); await pf.fill('#kf-field-1', 'ערך מהשדה החדש'); await pf.fill('#kf-message', 'שלום V16');
+    await pf.click('.kol-form [data-kol-step-next]'); await sleep(200);
+    st = await pf.evaluate(() => ({ s: [...document.querySelectorAll('.kol-form__step')].map(x => !x.hidden).join(), sub: !document.querySelector('.kol-form__submit').hidden, pct: document.querySelector('[data-kol-step-bar]').style.getPropertyValue('--kol-step-pct') }));
+    ok(st.s === 'false,true' && st.sub && st.pct === '100%', '"הבא" ← שלב 2, "שליחה" מופיע, הפס 100%', st);
+    await sleep(2600);
+    await pf.fill('.kol-form__step:nth-of-type(2) input[type=text]', 'שלב שני').catch(() => null);
+    await pf.click('.kol-form__submit'); await sleep(1500);
+    st = await pf.evaluate(() => ({ done: !document.querySelector('.kol-form__done').hidden, err: !document.querySelector('.kol-form__error').hidden }));
+    const inbox = await call(page, 'inbox', undefined, '&filter=test');
+    const got = (inbox.items || inbox.entries || []).find(x => JSON.stringify(x).includes('שלום V16'));
+    ok(st.done && !st.err && got && JSON.stringify(got).includes('ערך מהשדה החדש'), 'שליחה ← "תודה" מוצג, והפנייה בתיבה — כולל השדה שנוסף בבונה (הרישום נגזר מה-HTML)', { st, got: got && JSON.stringify(got).slice(0, 300) });
+    // רשתות ומפה
+    await pf.evaluate(() => document.querySelector('.kol-share').scrollIntoView({ block: 'center' }));
+    st = await pf.evaluate(() => { const a = document.querySelector('.kol-share [data-kol-share="whatsapp"]'), f = document.querySelector('.kol-share [data-kol-share="facebook"]'); return { wa: a.href, fb: f.href, copy: getComputedStyle(document.querySelector('.kol-share__btn--copy')).display }; });
+    ok(/^https:\/\/wa\.me\/\?text=.+kit\.html/.test(st.wa) && /sharer\.php\?u=.+kit\.html/.test(st.fb) && st.copy !== 'none', 'כפתורי שיתוף: הקישורים מקבלים את כתובת העמוד; "העתקת קישור" — עם JS', st);
+    await pf.evaluate(() => document.querySelector('.kol-sembed').scrollIntoView({ block: 'center' })); await pf.click('.kol-sembed__link'); await sleep(200);
+    st = await pf.evaluate(() => { const f = document.querySelector('.kol-sembed__frame'); return f && { src: f.getAttribute('src'), sb: f.getAttribute('sandbox') }; });
+    ok(st && /^https:\/\/www\.instagram\.com\/p\/EXAMPLE\/embed/.test(st.src) && /allow-scripts/.test(st.sb) && !/top-navigation/.test(st.sb), 'הטמעת פוסט: רק אחרי לחיצה — iframe בארגז חול', st);
+    await pf.evaluate(() => document.querySelector('.kol-map').scrollIntoView({ block: 'center' })); await pf.click('.kol-map__show'); await sleep(200);
+    st = await pf.evaluate(() => { const f = document.querySelector('.kol-map__frame'); return f && { src: f.getAttribute('src'), sb: f.getAttribute('sandbox'), open: !!document.querySelector('.kol-map__open') }; });
+    ok(st && /^https:\/\/www\.google\.com\/maps\?q=.+&z=15&output=embed$/.test(st.src) && st.sb && st.open, 'מפה: לחיצה ← embed של Google Maps (בלי מפתח) בארגז חול; "פתח במפות" נשאר', st);
+    ok(!pfErr.filter(m => !/network error/i.test(m)).length, 'V16c — אין שגיאות JS בתצוגה החיה', pfErr);
+    await pf.close();
+    // תבניות מוכנות: "📄 תבניות" ← "📦 מוכנות"
+    await page.evaluate(() => { document.querySelector('[data-ntab="tpl"]').click(); }); await sleep(800);
+    st = await page.evaluate(() => ({ secs: [...document.querySelectorAll('[data-kit-tpl-grid="sections"] [data-kit-tpl]')].map(x => x.dataset.kitTpl), pages: [...document.querySelectorAll('[data-kit-tpl-grid="pages"] [data-kit-tpl]')].map(x => x.dataset.kitTpl) }));
+    ok(st.secs.length === 5 && st.pages.join() === 'page-404,page-about,page-contact', '"📄 תבניות" ← "📦 מוכנות": 5 מקטעים ו-3 עמודים', st);
+    await selMain(page); n0 = await txN(page);
+    await page.click('[data-kit-tpl="faq"]'); await sleep(1800);
+    pg = await text(page, 'kit.html');
+    ok(/<section class="tk-faq">\s*<h2 class="tk-faq__title">שאלות נפוצות<\/h2>[\s\S]*data-kol-component="accordion"/.test(pg) && await txN(page) === n0 + 1 && /^תבנית מוכנה · שאלות נפוצות/.test(await lastTx(page)), 'מקטע "שאלות נפוצות" ← ה-HTML בעמוד עם מופע אקורדיון (רכיב שכבר בפרויקט — בלי העתקה), פעולה אחת', await lastTx(page));
+    const cssAll = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+    ok(/\/\* תבנית: שאלות נפוצות \*\/[\s\S]*\.tk-faq \{[^}]*var\(--page-width/.test(cssAll) && !/#[0-9a-f]{3,6}\b/i.test((cssAll.split('/* תבנית: שאלות נפוצות */')[1] || '').split('/* תבנית')[0]), 'ה-CSS של התבנית — לסוף קובץ העיצוב, עם המשתנים של הפרויקט (בלי צבע קבוע)');
+    await undo(page); await sleep(400);
+    ok(!/tk-faq/.test(await text(page, 'kit.html')), 'Ctrl+Z אחד — התבנית יצאה');
+    await page.click('[data-kit-tpl="page-contact"]'); await sleep(2500);
+    const cp = await text(page, 'contact.html');
+    ok(cp && /<title>צור קשר<\/title>/.test(cp) && /<link rel="stylesheet" href="css\/tokens\.css">/.test(cp) && /data-kol-component="form"/.test(cp) && /data-kol-component="map"/.test(cp) && /components\/map\/style\.css/.test(cp) && /js\/kol-data\.js/.test(cp) && await exists(page, 'components/map/template.html'), 'עמוד "צור קשר" ← contact.html: הכותרת, קובצי העיצוב, טופס + מפה + רשתות, הרכיבים בפרויקט, kol-data.js', (cp || '').slice(0, 700));
+    await undo(page); await sleep(1200);
+    ok(!await exists(page, 'contact.html'), 'Ctrl+Z — העמוד החדש לסל');
     // ═══ 10. טלפון (390): גיליון; הקשה = "הוסף אחרי הנבחר"; לחיצה ארוכה = גרירה; כל רכיב עובד ב-390 ═══
     await flush(page);
     // מכל ממוקם (absolute) עם כפתור — כמו כפתור על תמונת hero; ל"אחרי הנבחר" כשהכפתור נבחר
@@ -596,6 +705,37 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(st.popup.x >= 0 && st.popup.right <= st.vw && st.popup.close[0] >= st.popup.x && st.popup.close[1] <= st.popup.right, '390: החלון הקופץ בתוך המסך (box-sizing), וה-✕ שלם בתוכו', st.popup);
     ok(st.popup.bg > .6 && st.popup.fg < .3 && st.offcanvas.bg > .6 && st.offcanvas.fg < .3, 'חלון קופץ וחלונית מהצד בתוך מקטע כהה: טקסט כהה על הרקע הבהיר שלהם (לא לבן על לבן)', { popup: [st.popup.bg, st.popup.fg], offcanvas: [st.offcanvas.bg, st.offcanvas.fg] });
     ok(st.popup.close[2] >= 44 && st.popup.close[3] >= 44 && st.offcanvas.close[2] >= 44 && st.pin[0] >= 44 && st.pin[1] >= 44 && st.arrow[0] >= 44 && st.dotHit, 'מגע (pointer: coarse): ✕, נקודה על תמונה, חיצי המצגת — 44px; נקודת המצגת נלחצת גם 18px מעליה', st);
+    // מגע: תפריט נפתח (הכפתור והקישורים) ושורות תוכן עניינים — 44px
+    st = await pm.evaluate(() => { const d = document.querySelector('.kol-drop'); d.open = true; const h = s => Math.round(document.querySelector(s).getBoundingClientRect().height); const out = { btn: h('.kol-drop__btn'), link: h('.kol-drop__link'), toc: h('.kol-toc__link') }; d.open = false; return out; });
+    ok(st.btn >= 44 && st.link >= 44 && st.toc >= 44, 'מגע: תפריט נפתח (כפתור, קישור) ושורת תוכן עניינים — 44px', st);
+    // Lottie: data-kol-src מאתר אחר — לא נטען (אין בקשה החוצה), התמונה נשארת; מהאתר עצמו — מנגן
+    { const pl = await ph.newPage(), KL = path.join(ROOT, 'assets/kit/components/lottie/'), ext = []; const lerr = []; pl.on('pageerror', e => lerr.push(e.message));
+      await pl.route(u => !u.href.startsWith(base), r => { ext.push(r.request().url()); return r.abort(); });
+      for (const f of ['script.js', 'lottie_light.min.js', 'sample.json']) await pl.route(base + '/__v16/lottie/' + f, r => r.fulfill({ contentType: f.endsWith('.json') ? 'application/json' : 'text/javascript', body: fs.readFileSync(KL + f, 'utf8') }));
+      const tpl = fs.readFileSync(KL + 'template.html', 'utf8');
+      const pg2 = srcAttr => '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>' + fs.readFileSync(KL + 'style.css', 'utf8') + '</style></head><body>' + tpl.replace('<figure class="kol-lottie"', '<figure class="kol-lottie" data-kol-src="' + srcAttr + '"') + '<script src="/__v16/lottie/script.js"></script></body></html>';
+      await pl.route(base + '/__v16/lottie-ext.html', r => r.fulfill({ contentType: 'text/html', body: pg2('https://evil.example.com/anim.json') }));
+      await pl.route(base + '/__v16/lottie-own.html', r => r.fulfill({ contentType: 'text/html', body: pg2('lottie/sample.json') }));
+      await pl.goto(base + '/__v16/lottie-ext.html'); await sleep(1500);
+      st = await pl.evaluate(() => ({ ready: document.querySelector('.kol-lottie').classList.contains('is-ready'), svg: !!document.querySelector('.kol-lottie__stage svg'), poster: document.querySelector('.kol-lottie__poster').getBoundingClientRect().height > 0 }));
+      ok(!ext.length && !st.ready && !st.svg && st.poster, 'Lottie עם data-kol-src מאתר אחר: אין בקשה החוצה, לא מנגן — התמונה נשארת', { ext, st });
+      await pl.goto(base + '/__v16/lottie-own.html'); await sleep(2000);
+      st = await pl.evaluate(() => ({ ready: document.querySelector('.kol-lottie').classList.contains('is-ready'), svg: !!document.querySelector('.kol-lottie__stage svg') }));
+      ok(st.ready && st.svg && !ext.length && !lerr.length, 'Lottie עם קובץ מהאתר עצמו (נתיב יחסי) — מנגן', { st, ext, lerr });
+      await pl.close(); }
+    // החלונות: aria-labelledby ← הכותרת, id ייחודי לכל מופע (נוצר בסקריפט)
+    st = await pm.evaluate(() => [...document.querySelectorAll('dialog.kol-popup__dlg, dialog.kol-offcanvas__dlg')].map(d => { const id = d.getAttribute('aria-labelledby'), t = id && document.getElementById(id); return { id, ok: !!t && d.contains(t) && /__title$/.test(t.className), n: id ? document.querySelectorAll('#' + CSS.escape(id)).length : 0 }; }));
+    ok(st.length >= 2 && st.every(x => x.ok && x.n === 1) && new Set(st.map(x => x.id)).size === st.length, 'חלון קופץ / חלונית מהצד: aria-labelledby ← הכותרת שלהם, id ייחודי לכל מופע', st);
+    // "חזרה לראש" (fixed, בפינה) לא מכסה חץ של קרוסלה שבתחתית המסך באותה פינה — עולה מעליו; החץ לחיץ
+    { const pq = await ph.newPage(), KB = path.join(ROOT, 'assets/kit/components/back-to-top/');
+      await pq.route(base + '/__v16/top.html', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0}' + fs.readFileSync(KB + 'style.css', 'utf8') + '.arw{position:absolute;inset-inline-end:16px;bottom:24px;inline-size:44px;block-size:44px}</style></head><body><div style="block-size:2400px;position:relative"><button class="arw" type="button">‹</button></div>' + fs.readFileSync(KB + 'template.html', 'utf8') + '<script>' + fs.readFileSync(KB + 'script.js', 'utf8') + '</script></body></html>' }));
+      await pq.goto(base + '/__v16/top.html'); await pq.evaluate(() => scrollTo(0, document.documentElement.scrollHeight)); await sleep(700);
+      st = await pq.evaluate(() => { const a = document.querySelector('.arw').getBoundingClientRect(), t = document.querySelector('.kol-top'), tr = t.getBoundingClientRect(); return { shown: t.classList.contains('is-shown'), hit: document.elementFromPoint(a.left + a.width / 2, a.top + a.height / 2)?.className, overlap: !(tr.bottom <= a.top || tr.top >= a.bottom || tr.right <= a.left || tr.left >= a.right), lift: t.style.getPropertyValue('--kol-top-lift') }; });
+      ok(st.shown && st.hit === 'arw' && !st.overlap, '390: "חזרה לראש" עולה מעל חץ שבאותה פינה — החץ לחיץ במגע', st);
+      await pq.evaluate(() => scrollTo(0, 900)); await sleep(500);
+      st = await pq.evaluate(() => document.querySelector('.kol-top').style.getPropertyValue('--kol-top-lift'));
+      ok(!st, 'כשאין מתחתיו דבר — חוזר למקומו', st);
+      await pq.close(); }
     st = await pm.evaluate(() => [...document.querySelectorAll('.kol-hotspot__tip')].map(t => t.textContent.trim()));
     let named = 0; for (const t of st) named += await pm.getByRole('button', { name: t, exact: true }).count() > 0 ? 1 : 0;
     ok(st.length === 3 && named === 3, 'נקודה על תמונה: לכל נקודה שם לקורא מסך — טקסט ההסבר עצמו (לא עותק ב-aria-label שיתיישן)', { tips: st, named });

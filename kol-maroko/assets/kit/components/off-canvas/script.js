@@ -1,4 +1,4 @@
-/* רכיב מוכן: חלונית מהצד (kit 1.0.0) — משפר בלבד. החלון הוא <dialog data-kol-dialog="שם"> (02 §8.2): כל אלמנט עם
+/* רכיב מוכן: חלונית מהצד (kit 1.0.1) — משפר בלבד. החלון הוא <dialog data-kol-dialog="שם"> (02 §8.2): כל אלמנט עם
    data-kol-open="שם" בעמוד פותח אותו, data-kol-close סוגר; Esc ולחיצה על הרקע — סוגרים. "מתי נפתח" — תכונות על החלון:
    data-kol-trigger: click (רק בלחיצה) · delay (אחרי data-kol-delay שניות) · scroll (בגלילה ל-data-kol-scroll%) · exit (העכבר יוצא למעלה);
    data-kol-once: visitor (פעם אחת לגולש — נזכר בדפדפן שלו) · session (פעם בביקור) · always. */
@@ -13,6 +13,9 @@
   const init = dlg => {
     if (dlg.kolDlg) return;
     dlg.kolDlg = true;
+    // שם לקורא מסך: aria-labelledby ← הכותרת (id ייחודי לכל מופע, נוצר כאן — בתבנית אין id שיוכפל); מה שבעל העמוד הגדיר — נשאר
+    const ttl = dlg.querySelector('.kol-offcanvas__title');
+    if (ttl && !dlg.hasAttribute('aria-labelledby') && !dlg.hasAttribute('aria-label')) { if (!ttl.id) { let i = 1; while (document.getElementById('kol-offcanvas-t' + i)) i++; ttl.id = 'kol-offcanvas-t' + i; } dlg.setAttribute('aria-labelledby', ttl.id); }
     dlg.addEventListener('close', () => { mark(dlg); if (back && back.focus) back.focus(); });
     dlg.addEventListener('click', e => { if (e.target === dlg) close(dlg); });
     const t = dlg.getAttribute('data-kol-trigger') || 'click';

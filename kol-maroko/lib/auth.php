@@ -71,6 +71,7 @@ const ACTION_ROLES = [
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor',
     'font_upload' => 'editor', 'font_google_add' => 'editor', 'font_fetch' => 'editor',      // V9 — כמו pf_create (אושר בידי הבקרה)
     'kit_copy' => 'editor', 'kit_undo' => 'editor', 'kit_update' => 'editor', 'kit_revert' => 'editor',   // V16 — כמו pf_create
+    'forms_hook_state' => 'editor', 'forms_hook_set' => 'publisher',                                   // V16c — webhook שולח החוצה: מפרסם
     'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor', 'pf_rename' => 'editor', 'pf_delete' => 'editor',
     'pf_restore' => 'editor', 'pf_copy' => 'editor', 'pf_version_restore' => 'editor', 'pf_replace' => 'editor', 'pf_zip_import' => 'editor',
     'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',

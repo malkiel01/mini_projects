@@ -393,9 +393,12 @@
       for (const ev of ['click', 'auxclick', 'dblclick', 'submit', 'dragstart', 'contextmenu']) doc.addEventListener(ev, stop, true);
       // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
       this.deadTags = DEAD.split(',').map(t => doc.getElementsByTagName(t));
+      // V14: התפריט נפתח בשחרור הלחיצה הארוכה, וה-click של אותו שחרור היה נוחת על הפריט שמתחת לאצבע (גם "מחק") — בולעים אותו, פעם אחת
+      const swallowClick = () => { const top = window, eat = ev => { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); off(); }, off = () => { top.removeEventListener('click', eat, true); clearTimeout(tm); }, tm = setTimeout(off, 350); top.addEventListener('click', eat, true); };
       const ctxAt = (t, x, y) => { const n = this.nodeOf(t); if (n && this.onContext) { const f = this.frame.getBoundingClientRect(); this.onContext(n, f.left + x * this.scale, f.top + y * this.scale); } };
-      doc.addEventListener('contextmenu', e => { if (this.onDragStart && this.press && this.press.touch) return; clearTimeout(this.longT); if (!this.longDone) ctxAt(this.hit(e), e.clientX, e.clientY); this.longDone = false; }, true);
+      doc.addEventListener('contextmenu', e => { if (this.lastPT === 'touch' || (this.onDragStart && this.press && this.press.touch)) return;   /* V14: במגע התפריט — רק מהלחיצה הארוכה (ctxAt); contextmenu של הדפדפן (Android, הקשה כפולה) לא פותח אותו */ clearTimeout(this.longT); if (!this.longDone) ctxAt(this.hit(e), e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
+        this.lastPT = e.pointerType;   // V14: לפני בדיקת הכפתור — לחיצה ימנית בעכבר אחרי הקשה (מכשיר היברידי) פותחת תפריט
         if (e.button > 0) return;
         if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
         if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) { this.press = null; return; }   // V11: עריכת ערך של המילה
@@ -406,8 +409,8 @@
         if (e.pointerType === 'touch') {
           const t = tg, x = e.clientX, y = e.clientY;
           // V4: לחיצה ארוכה (400ms) מחמשת גרירה; תזוזה אחריה — גרירה, ושחרור בלי תזוזה — תפריט ההקשר
-          if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; try { navigator.vibrate?.(12); } catch { /* V14: רטט קצר — אם יש */ } } }, 400);
-          else this.longT = setTimeout(() => { this.longDone = true; this.held = this.press && this.press.n; /* V14 */ this.press = null; ctxAt(t, x, y); }, 600);
+          if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; if (this.selected !== p.n && !this.picked().includes(p.n)) this.select(p.n); try { navigator.vibrate?.(12); } catch { /* V14: רטט קצר — אם יש */ } } }, 400);
+          else this.longT = setTimeout(() => { this.longDone = true; this.held = this.press && this.press.n; /* V14 */ this.press = null; swallowClick(); ctxAt(t, x, y); }, 600);
         }
         const n = this.pick(tg);
         if (n !== this.held) this.held = null;                              // V14: אלמנט אחר — הלחיצה הארוכה כבר אינה רלוונטית
@@ -415,7 +418,7 @@
         if (n && e.shiftKey && this.selected && this.selected !== n) { this.press = null; e.preventDefault(); this.toggleMulti(n); return; }   // Shift + לחיצה: בחירה מרובה (V3)
         if (n && e.altKey && this.onAltDrag && e.pointerType !== 'touch') this.alt = { n, x: e.clientX, y: e.clientY, id: e.pointerId, on: false };   // V13: Alt + גרירה — מכחול "הדבק סגנון"
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
-        else if (n && !(this.repeatUp && this.selected === n)) this.select(n);
+        else if (n && !(this.repeatUp && this.selected === n) && e.pointerType !== 'touch') this.select(n);   // V14: במגע — בחירה רק בהקשה (בשחרור בלי תזוזה), לא בתחילת החלקה
         this.events.push('pointerdown:' + e.pointerType);
       }, true);
       doc.addEventListener('pointermove', e => {
@@ -430,7 +433,7 @@
           p.drag = true; this.press = null; this.armed = null; clearTimeout(this.longT);       // V4: גרירה אחרי 4px — כדי שלחיצה תישאר בחירה
           const f = this.frame.getBoundingClientRect(); this.onDragStart(p.n, f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return;
         }
-        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) clearTimeout(this.longT);
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 8) { clearTimeout(this.longT); if (p.touch && !p.armed) p.scrolled = true; }   // V14: תזוזה לפני לחיצה ארוכה = גלילה, לא בחירה
         if (p && p.id === e.pointerId) {
           if (this.drag && !p.drag && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6) p.drag = true;
           if (p.drag) { p.drop = this.dropAt(p.n, e.clientX, e.clientY); this.drawDrop(p.drop); }
@@ -443,16 +446,17 @@
         clearTimeout(this.longT);
         if (this.alt) { const A = this.alt; this.alt = null; if (A.on) { this.press = null; this.onAltDrag(e.type === 'pointerup' ? 'drop' : 'cancel', A.n, this.pick(this.hit(e))); return; } }
         if (this.ext && this.ext.active) { this.press = null; const f = this.frame.getBoundingClientRect(); this.ext.end(e.type === 'pointerup', f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
-        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; this.held = p.n; /* V14 */ ctxAt(p.t, p.x, p.y); return; }
+        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; this.held = p.n; /* V14 */ swallowClick(); ctxAt(p.t, p.x, p.y); return; }
         this.armed = null;
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);
-        if (p && !p.drag && e.type === 'pointerup' && e.pointerType === 'touch') {   // הקשה כפולה במגע = לחיצה כפולה (iOS אינו שולח dblclick)
+        if (p && !p.drag && !p.scrolled && e.type === 'pointerup' && e.pointerType === 'touch') {   // הקשה כפולה במגע = לחיצה כפולה (iOS אינו שולח dblclick)
           const now = performance.now(), t = this.tap; this.tap = { at: now, x: e.clientX, y: e.clientY };
           if (t && now - t.at < 380 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 24 && this.onDbl) { this.tap = null; const n = this.nodeOf(this.hit(e)); if (n) { e.preventDefault(); this.dblAt = now; return this.onDbl(n, { x: e.clientX, y: e.clientY }); } }
         }
         if (p && !p.drag && e.type === 'pointerup' && p.touch && this.held === p.n && this.selected === p.n) { if (this.onHeldTap) this.onHeldTap(p.n); return; }   // V14: במגע, הקשה אחרי לחיצה ארוכה — נשאר על הנבחר (ההורה — ⬆ בסרגל, עם רמז)
-        if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent) { const from = p.n; this.select(p.n.parent); if (this.onUpLevel) this.onUpLevel(from, this.selected); return; }   // לחיצה חוזרת — ההורה (T2: עם רמז)
+        if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent && !(p.touch && p.scrolled)) { const from = p.n; this.select(p.n.parent); if (this.onUpLevel) this.onUpLevel(from, this.selected); return; }   // לחיצה חוזרת — ההורה (T2: עם רמז; V14: לא אחרי החלקה)
+        if (p && p.touch && !p.drag && e.type === 'pointerup' && !p.scrolled && this.selected !== p.n) return this.select(p.n);   // V14: הקשה במגע בוחרת
         if (!p || !p.drag || e.type !== 'pointerup') return;
         const drop = this.dropAt(p.n, e.clientX, e.clientY);
         if (!drop) return;
@@ -464,7 +468,7 @@
       // מגע: גרירה של אלמנט שכבר נבחר אינה גוללת את העמוד
       doc.addEventListener('dblclick', e => { if (this.edit && this.edit.owns(e.target)) return; if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) return; if (this.dblAt && performance.now() - this.dblAt < 600) return; const n = this.nodeOf(this.hit(e)); if (n && this.onDbl) this.onDbl(n, { x: e.clientX, y: e.clientY }); }, true);
       doc.addEventListener('touchmove', e => { if ((this.armed && this.press === this.armed) || (this.ext && this.ext.active)) e.preventDefault(); }, { capture: true, passive: false });
-      doc.addEventListener('touchstart', e => { if (this.edit && this.edit.active) return; const n = this.nodeOf(e.target); for (let p = n; p; p = p.parent) if (p === this.selected) { e.preventDefault(); break; } }, { capture: true, passive: false });
+      // V14: החלקה על הקנבס היא תמיד גלילה — גם על הנבחר ועל הורה שלו. גרירה רק אחרי לחיצה ארוכה (armed ← touchmove נעצר) או מ-⠿
       doc.addEventListener('scroll', () => { clearTimeout(this.longT); this.draw(); }, true);
       // משאב של העמוד שהמדיניות של העורך חסמה (הקנבס יורש אותה) — העורך אומר זאת, לא שותק
       doc.addEventListener('securitypolicyviolation', e => { if (this.onBlocked && /^https?:/i.test(e.blockedURI || '')) this.onBlocked(e.blockedURI, e.effectiveDirective || ''); });

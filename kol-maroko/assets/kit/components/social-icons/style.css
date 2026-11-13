@@ -1,0 +1,12 @@
+/* רכיב מוכן: אייקוני רשתות (kit 1.0.0). הסמלים — SVG בתוך הקובץ (Simple Icons, CC0); השם לקוראי מסך — בתוך הקישור. */
+.kol-social { --kol-social-size: 40px; display: flex; flex-wrap: wrap; gap: 10px; }
+.kol-social__link { --c: #555; display: grid; place-items: center; inline-size: var(--kol-social-size); block-size: var(--kol-social-size); color: #fff; background: var(--kol-social-color, var(--c)); text-decoration: none; transition: transform .15s; }
+.kol-social__link--facebook { --c: #1463d6; } .kol-social__link--instagram { --c: #c1358a; } .kol-social__link--youtube { --c: #e00; } .kol-social__link--tiktok { --c: #111; } .kol-social__link--x { --c: #111; }
+.kol-social--circle .kol-social__link { border-radius: 50%; }
+.kol-social--square .kol-social__link { border-radius: 10px; }
+.kol-social--plain .kol-social__link { background: none; color: var(--kol-social-color, var(--c)); }
+.kol-social__link:hover { transform: translateY(-2px); }
+.kol-social__link:focus-visible { outline: 3px solid var(--color-accent, #a3322a); outline-offset: 2px; }
+.kol-social__svg { inline-size: 50%; block-size: 50%; fill: currentColor; }
+.kol-social__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .kol-social__link { transition: none; } }

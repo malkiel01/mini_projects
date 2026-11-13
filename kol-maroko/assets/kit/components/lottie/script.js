@@ -1,4 +1,4 @@
-/* רכיב מוכן: Lottie (kit 1.0.0) — משפר בלבד: טוען את הנגן שבאותה תיקייה (lottie_light.min.js — קובץ בפרויקט, לא CDN) רק כשיש
+/* רכיב מוכן: Lottie (kit 1.0.1) — משפר בלבד: טוען את הנגן שבאותה תיקייה (lottie_light.min.js — קובץ בפרויקט, לא CDN) רק כשיש
    אנימציה בעמוד, ומנגן את data-kol-src (ריק — sample.json שבתיקייה). מנגן רק כשנראה במסך; prefers-reduced-motion — הפריים הראשון. */
 (() => {
   const me = document.currentScript && document.currentScript.src, base = me ? me.replace(/[?#].*$/, '').replace(/[^/]*$/, '') : '';
@@ -8,7 +8,10 @@
     if (root.kolLottie) return;
     root.kolLottie = true;
     const stage = root.querySelector('.kol-lottie__stage'); if (!stage || !base) return;
-    const src = root.getAttribute('data-kol-src') || base + 'sample.json';
+    // רק מהאתר עצמו: data-kol-src מבחוץ (https://… של אתר אחר) — לא נטען (בלי בקשה החוצה); נשארת התמונה
+    let src = base + 'sample.json';
+    const own = root.getAttribute('data-kol-src');
+    if (own) { let u = null; try { u = new URL(own, location.href); } catch { /* */ } if (!u || u.origin !== new URL(base).origin) return; src = u.href; }   // המקור — של הסקריפט עצמו (בתצוגה החיה location.origin הוא "null")
     let L; try { L = await player(); } catch { return; }
     if (!L) return;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;

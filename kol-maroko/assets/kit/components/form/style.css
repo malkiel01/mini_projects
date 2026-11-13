@@ -1,0 +1,35 @@
+/* רכיב מוכן: טופס (kit 1.0.0). השליחה — js/kol-data.js (M5): data-kol-form, data-kol-form-done / -error, data-kol-trap;
+   שלבים (fieldset[data-kol-step]) והפניה (data-kol-redirect) — kol-data.js 1.5.0. רוחב שדה: --full / --half / --third. */
+.kol-form { --kol-form-accent: var(--color-accent, #a3322a); --kol-form-gap: 14px; display: grid; gap: var(--kol-form-gap); }
+.kol-form__fields, .kol-form__step { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--kol-form-gap); }
+.kol-form__step { margin: 0; padding: 0; border: 0; min-inline-size: 0; }
+.kol-form__legend { grid-column: 1 / -1; padding: 0; font-weight: 700; font-size: 1.1rem; }
+.kol-form__field { grid-column: span 6; display: grid; gap: 4px; align-content: start; min-inline-size: 0; }
+.kol-form__field--half { grid-column: span 3; }
+.kol-form__field--third { grid-column: span 2; }
+.kol-form__label { font-weight: 600; }
+.kol-form__input { inline-size: 100%; box-sizing: border-box; min-block-size: 44px; padding: 8px 12px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 10px; background: var(--color-bg, #fff); color: inherit; font: inherit; }
+textarea.kol-form__input { min-block-size: 110px; resize: vertical; }
+.kol-form__input:focus-visible, .kol-form__choice input:focus-visible { outline: 2px solid var(--kol-form-accent); outline-offset: 1px; border-color: var(--kol-form-accent); }
+.kol-form__input:user-invalid { border-color: #b91c1c; }
+.kol-form__choices { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.kol-form__choice { display: inline-flex; align-items: center; gap: 6px; min-block-size: 36px; }
+.kol-form__choice input { inline-size: 18px; block-size: 18px; accent-color: var(--kol-form-accent); margin: 0; }
+.kol-form__help { opacity: .75; font-size: .85rem; }
+.kol-form__msg { color: #b91c1c; font-size: .85rem; }
+.kol-form__trap { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+.kol-form__actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.kol-form__submit, .kol-form__next { padding: 12px 24px; border: 0; border-radius: 999px; background: var(--kol-form-accent); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+.kol-form__prev { padding: 12px 20px; border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.kol-form__submit:focus-visible, .kol-form__next:focus-visible, .kol-form__prev:focus-visible { outline: 3px solid var(--kol-form-accent); outline-offset: 2px; }
+.kol-form__submit[disabled] { opacity: .6; cursor: wait; }
+.kol-form__progress { block-size: 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 12%, transparent); overflow: hidden; }
+.kol-form__bar { display: block; block-size: 100%; inline-size: var(--kol-step-pct, 0%); background: var(--kol-form-accent); transition: inline-size .3s; }
+.kol-form__done, .kol-form__error { margin: 0; padding: 12px 16px; border-radius: 10px; font-weight: 600; }
+.kol-form__done { background: color-mix(in srgb, #15803d 12%, var(--color-bg, #fff)); color: #15803d; }
+.kol-form__error { background: color-mix(in srgb, #b91c1c 10%, var(--color-bg, #fff)); color: #b91c1c; }
+.kol-form [hidden] { display: none !important; }
+/* שלבים: kol-data.js (ומצב "שלב" בקנבס) — kol-steps-on על הטופס, is-current על השלב המוצג */
+.kol-form.kol-steps-on .kol-form__step:not(.is-current) { display: none; }
+@media (max-width: 767px) { .kol-form__field--half, .kol-form__field--third { grid-column: span 6; } }
+@media (prefers-reduced-motion: reduce) { .kol-form__bar { transition: none; } }
