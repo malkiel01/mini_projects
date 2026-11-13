@@ -120,7 +120,8 @@ const png = (w, h, rgb) => {
     const mdrag = async (page, a, b, steps = 12) => { await page.mouse.move(a.x, a.y); await page.mouse.down(); for (let i = 1; i <= steps; i++) { await page.mouse.move(a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps); await sleep(20); } await sleep(80); await page.mouse.up(); await sleep(600); };
     const tabP = async (page, id) => { if (!(await page.isVisible(`[data-ptab="${id}"]`))) await page.click('.ed-bar [data-panel="info"]'); await page.click(`[data-ptab="${id}"]`); await sleep(400); };
     const undo = async page => { await page.keyboard.press('Control+z'); await sleep(700); };
-    const step = async (name, fn) => { console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); } };
+    const step = async (name, fn) => { console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
+      if (process.env.E2E_TRACE) console.log('   [trace] ' + JSON.stringify(await page.evaluate(() => { try { const S = Editor._state, e = S.canvas.doc.querySelector('.kadisha-hero'); return { cls: e && e.className, jpg: [...S.sheets.values()].some(x => /hero\.jpg/.test(x.doc.text())), html: (S.doc.text().match(/<section[^>]*kadisha-hero[^>]*>/) || [''])[0] }; } catch (x) { return String(x); } }))); };
 
     const ctx = await mk(1920, 1080), page = await ctx.newPage();
     watch(page, '1920');
@@ -312,7 +313,7 @@ const png = (w, h, rgb) => {
 
     // ═══ 9. רכיב ═══
     await step('9. רכיב: שמור, גרור, שני מופעים', async () => {
-      await click(page, '.kadisha-lexicon-controls', 0, 0.01, 0.98);
+      await click(page, '.kadisha-lexicon-controls input[type="search"], .kadisha-lexicon-controls input', 0);
       let sel = await crumb(page);
       // הלחיצה נופלת על ילד — בעל העמוד עולה דרך שביל הפירורים שמעל הקנבס
       if (!/kadisha-lexicon-controls/.test(sel || '')) { await page.locator('.ed-crumb', { hasText: 'kadisha-lexicon-controls' }).first().click().catch(e => console.log('   (שביל: ' + e.message.split('\n')[0] + ')')); await sleep(400); sel = await crumb(page); }
@@ -342,7 +343,8 @@ const png = (w, h, rgb) => {
       const mon = await page.$('.monaco-editor');
       ok(!!mon, '◫ מבט מפוצל — עורך הקוד לצד הקנבס');
       // הקלדה בקוד: לחיצה על השורה של "אסף ותיעד", End, ולפני </p>
-      await page.click('.monaco-editor .view-line:has-text("אסף ותיעד")'); await sleep(200);
+      await page.click('.monaco-editor .view-lines'); await sleep(200);
+      await page.keyboard.press('Control+f'); await sleep(300); await page.keyboard.type('אסף ותיעד'); await page.keyboard.press('Enter'); await page.keyboard.press('Escape'); await sleep(200);
       await page.keyboard.press('End'); await sleep(100);
       for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowLeft');
       await page.keyboard.type(' ומשפחתו'); await sleep(1500);
