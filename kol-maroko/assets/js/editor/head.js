@@ -262,7 +262,7 @@
       const tab = h('div', { class: 'hd-tab', 'data-hd-tab': true, style: v.theme ? '--hd-theme:' + v.theme : null },
         v.icon ? h('img', { class: 'hd-fav', alt: '', src: this.o.url(v.icon) || '' }) : h('span', { class: 'hd-fav none' }, '🌐'), h('span', { class: 'hd-tab-t' }, v.title || 'ללא כותרת'));
       // גוגל
-      const count = h('span', { class: 'hd-count', 'data-hd-count': true }), gT = h('b', {}, v.title || 'ללא כותרת'), gD = h('span', {}, v.description || 'גוגל יבחר קטע מהעמוד');
+      const count = h('span', { class: 'hd-count', dir: 'ltr', 'data-hd-count': true }), gT = h('b', {}, v.title || 'ללא כותרת'), gD = h('span', {}, v.description || 'גוגל יבחר קטע מהעמוד');
       const setCount = t => { count.textContent = t.length + ' / 160'; count.classList.toggle('over', t.length > 160); gD.textContent = t || 'גוגל יבחר קטע מהעמוד'; };
       setCount(v.description);
       const google = h('div', { class: 'hd-google', 'data-hd-google': true, 'aria-label': 'כך העמוד ייראה בתוצאות של גוגל' }, h('small', { dir: 'ltr' }, this.o.pageUrl()), gT, gD, v.noindex ? h('em', { class: 'hd-noidx' }, '🚫 לא יופיע בחיפוש') : null);
@@ -272,9 +272,10 @@
         v.ogImage ? h('img', { alt: '', src: this.o.url(v.ogImage) || '' }) : h('div', { class: 'hd-noimg' }, 'אין תמונת שיתוף'), h('small', { dir: 'ltr' }, this.o.host_()), h('b', {}, ogT || 'ללא כותרת'), h('span', {}, ogD || ''));
       const image = (key, label, also) => {
         const cur = v[key], btns = h('div', { class: 'hd-btns' },
-          h('button', { type: 'button', class: 'btn sm', 'data-hd-pick': key, disabled: ro || null, onclick: async () => { const p = await this.o.pick('image', label); if (!p) return; const ref = this.o.rel(p); if (this.set(key, ref, label) && also) { const s2 = scan(K, this.m); if (s2.values[also] !== ref && this.o.act('הגדרות · ' + label, mm => this.wrap(() => planSet(K, mm, also, ref)))) this.o.joinTx(2, 'הגדרות · ' + label + ' · ' + short(ref)); } } }, cur ? '🖼 החלף' : '🖼 בחר מהספרייה'),
+          h('button', { type: 'button', class: 'btn sm', 'data-hd-pick': key, disabled: ro || null, onclick: async () => { const p = await this.o.pick('image', label); if (!p) return; const ref = key === 'ogImage' ? this.shareUrl(p) : this.o.rel(p); if (this.set(key, ref, label) && also) { const s2 = scan(K, this.m); if (s2.values[also] !== ref && this.o.act('הגדרות · ' + label, mm => this.wrap(() => planSet(K, mm, also, ref)))) this.o.joinTx(2, 'הגדרות · ' + label + ' · ' + short(ref)); } } }, cur ? '🖼 החלף' : '🖼 בחר מהספרייה'),
           cur ? h('button', { type: 'button', class: 'btn sm ghost', 'data-hd-clear': key, disabled: ro || null, onclick: () => { if (this.set(key, '', label) && also && scan(K, this.m).fields[also][0]) { if (this.o.act('הגדרות · ' + label, mm => this.wrap(() => planSet(K, mm, also, '')))) this.o.joinTx(2, 'הגדרות · ' + label + ' · ריק'); } } }, '🗑 הסר') : null);
-        return h('div', { class: 'hd-img' }, cur ? h('img', { class: 'hd-thumb', alt: '', src: this.o.url(cur) || '' }) : null, h('code', { dir: 'ltr' }, cur || '—'), btns);
+        const warn = key === 'ogImage' ? this.shareWarn(cur) : null;
+        return h('div', { class: 'hd-img' }, cur ? h('img', { class: 'hd-thumb', alt: '', src: this.o.url(cur) || '' }) : null, h('code', { dir: 'ltr' }, cur || '—'), btns, warn);
       };
       const linkBox = (k, base, label) => {
         const on = this.linked(s, k);
@@ -323,6 +324,13 @@
       this.box.replaceChildren(...body.filter(Boolean));
       if (!this.o.phone()) this.o.host.querySelector('.hd-body').replaceChildren(this.box);
       this.mountCode();
+    }
+    /** V15b: og:image — וואטסאפ / פייסבוק אינם קוראים כתובת יחסית: https://<האתר>/lexicon/<נתיב>. בלי כתובת אתר — יחסי, ואזהרה. */
+    shareUrl(p) { const site = this.o.site ? this.o.site() : ''; return site ? site + this.o.base() + String(p).split('/').map(encodeURIComponent).join('/') : this.o.rel(p); }
+    shareWarn(cur) {
+      if (!cur || /^https?:\/\//i.test(cur)) return null;
+      const site = this.o.site ? this.o.site() : '';
+      return h('p', { class: 'hd-dup', 'data-hd-share-warn': site ? 'relative' : 'nosite' }, site ? '⚠️ הכתובת יחסית — וואטסאפ ופייסבוק צריכים כתובת מלאה. "🖼 החלף" ובחירה מחדש תכתוב ' + site + this.o.base() + '…' : '⚠️ תמונת שיתוף לא תוצג בוואטסאפ עד שמוגדרת כתובת האתר (⚙️ בעל האתר ← כתובת האתר).');
     }
     dupNote(s, key) {
       if (!s.fields[key] || s.fields[key].length < 2) return null;
