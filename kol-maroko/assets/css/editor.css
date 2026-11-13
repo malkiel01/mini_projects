@@ -595,10 +595,10 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
   .ed-bar::-webkit-scrollbar { display: none; }
   .ed-bar .ed-page { flex: 0 0 104px; min-width: 0; }
   .ed-bar [data-panel] { order: -1; }   /* 🌳 ℹ️ — ראשונים, תמיד גלויים */
-  /* שורת השביל: סרגל הנבחר בשורה אחת ופירורי הלחם מתחתיו — כך הם אינם מתכווצים לאפס כשאלמנט נבחר */
-  .ed-path { flex-wrap: wrap; row-gap: 0; padding-block: 0; }
-  .ed-seltools-host { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
-  .ed-crumbs { flex: 1 1 100%; order: 2; }
+  /* שורת השביל — שורה אחת (בחירה אינה מזיזה את הקנבס בין שתי הקשות): סרגל הנבחר עד 62% וגולל, ופירורי הלחם ביתר — לא מתכווצים לאפס */
+  .ed-path { flex-wrap: nowrap; gap: 4px; padding-inline: 4px; height: 48px; min-height: 48px; }
+  .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
+  .ed-crumbs { flex: 1 1 0; min-width: 34%; }
   .ed-where { display: none; }
   .ed { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   /* הגיליון: ידית, שלושה גבהים */

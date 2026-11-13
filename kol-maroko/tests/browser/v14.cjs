@@ -110,9 +110,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ═══ 2. בחירה (V1) — הקשה, הקשה חוזרת = הורה, פירורי לחם ═══
     const H1 = 'h1';
+    const cvTop = () => page.evaluate(() => Math.round(document.querySelector('.ed-canvas').getBoundingClientRect().top));
+    const top0 = await cvTop();
     let p = await at(page, H1); await tap(page, p);
     const s1 = await selName(page);
+    ok(await cvTop() === top0, 'בחירה אינה מזיזה את הקנבס (אחרת ההקשה השנייה של הקשה כפולה נוחתת על אלמנט אחר)', [top0, await cvTop()]);
     ok(/^h1/.test(s1 || ''), 'V1 · הקשה בוחרת (h1)', s1);
+    await sleep(500);                                                       // אחרי חלון ההקשה הכפולה
     p = await at(page, H1, 0, 0.5, 0.5, false); await tap(page, p);
     const s2 = await selName(page);
     ok(s2 && !/^h1/.test(s2), 'V1 · הקשה חוזרת על הנבחר — עולה להורה', s2);
@@ -202,7 +206,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     st = await page.evaluate(() => [...document.querySelectorAll('.ed-seltools [data-ts-mv]')].map(b => b.dataset.tsMv + ':' + Math.round(b.getBoundingClientRect().width)));
     ok(st.length === 2 && st.every(x => +x.split(':')[1] >= 40), 'סרגל הנבחר במגע: ⬆ ⬇ (החלפה עם האח)', st);
     i0 = await idx();
-    await tap(page, await rectOf(page, '.ed-seltools [data-ts-mv="down"]').then(r => ({ x: r.cx, y: r.cy })));
+    await page.evaluate(() => document.querySelector('.ed-seltools [data-ts-mv="down"]').scrollIntoView({ inline: 'center', block: 'nearest' }));
+    st = await page.evaluate(() => { const b = document.querySelector('.ed-seltools [data-ts-mv="down"]'), r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, top: document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === b }; });
+    ok(st.top, '⬇ נגיש בהקשה (סרגל הנבחר גולל בתוך שורת השביל)', st);
+    await tap(page, st);
     ok(await idx() === i0 + 1, '⬇ — האלמנט אחרי האח', [i0, await idx()]);
     await undo(page);
     ok(await idx() === i0, 'Ctrl+Z מחזיר');
@@ -349,8 +356,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(t6 && /מיקום|חופשי|position/.test(await lastTx(page) + (await page.evaluate(() => document.querySelector('[data-free-btn]').getAttribute('aria-pressed')))), 'V6 · "✥ מיקום חופשי" — הקשה (' + await lastTx(page) + ')');
       if (await page.evaluate(() => document.querySelector('[data-free-btn]').getAttribute('aria-pressed') === 'true')) await undo(page);
       // V7 · עריכה במצב "טלפון" — נכתבת ל-@media
-      st = await page.evaluate(() => ({ dev: Editor._state.device, w: Editor._state.canvas.viewport, host: Editor._state.canvas.host.clientWidth, scale: Editor._state.canvas.scale }));
-      ok(st.scale === 1 && (!st.w || st.w <= st.host + 1), 'V7 · בטלפון, מצב "טלפון" נערך ברוחב האמיתי (קנה מידה 1)', st);
+      st = await page.evaluate(() => ({ dev: Editor._state.device, w: Editor._state.canvas.viewport, host: Editor._state.canvas.host.clientWidth, frameW: Math.round(Editor._state.canvas.frame.getBoundingClientRect().width), scale: Editor._state.canvas.scale }));
+      ok(st.scale === 1 && st.dev === 'mobile' && st.frameW === st.host, 'V7 · בטלפון, מצב "טלפון" נערך ברוחב האמיתי (קנה מידה 1, המסגרת = רוחב הקנבס)', st);
       // V8 · מצב :hover — כפתור המצב בפאנל
       await select(page, H1); await page.evaluate(() => { document.querySelector('.ed-bar [data-panel="info"]').click(); Editor._tab('design'); }); await sleep(500);
       const hv = await page.evaluate(() => { const b = document.querySelector('.ed-info .sg-state-seg [data-state=":hover"]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, h: r.height }; });

@@ -42,7 +42,13 @@
     /** בטלפון, מכשיר צר שרוחבו קרוב לרוחב המסך (עד ‎+30%) נערך ברוחב הקנבס עצמו — קנה מידה 1, בלי הקטנה. רחב ממנו — מוקטן כמו קודם. */
     realWidth() {
       const c = this.S.canvas, orig = c.setViewport.bind(c);
-      c.setViewport = w => { const hw = c.host.clientWidth; if (this.phone() && w && hw && w > hw && w <= hw * 1.3) w = null; this.zoom = 1; if (this.fit) { this.fit.hidden = true; this.el.root.classList.remove('ts-zoomed'); c.zoomed = false; this.spacer?.remove(); } return orig(w); };
+      c.setViewport = w => {
+        const hw = c.host.clientWidth, real = !!(this.phone() && w && hw && w > hw && w <= hw * 1.3);
+        this.zoom = 1; if (this.fit) { this.fit.hidden = true; this.el.root.classList.remove('ts-zoomed'); c.zoomed = false; this.spacer?.remove(); }
+        const out = orig(real ? null : w);
+        c.realW = real; if (real) c.viewport = w;                            // המכשיר נשאר "טלפון · 390" (נקודות השבירה), רק בלי הקטנה
+        return out;
+      };
       if (c.m) c.setViewport(c.viewport);
     }
 
@@ -96,7 +102,9 @@
       if (side && !this.land() && panes) { const top = side.getBoundingClientRect().top, cur = parseFloat(r.style.getPropertyValue('--ts-cover')) || 0, bot = panes.getBoundingClientRect().bottom + cur; cover = Math.max(0, Math.round(bot - top)); }
       if (this.height === 'full' && side) cover = 0;                         // מלא — הקנבס מתחת לגיליון; אין מה לשמור עליו גלוי
       if ((parseFloat(r.style.getPropertyValue('--ts-cover')) || 0) !== cover) r.style.setProperty('--ts-cover', cover + 'px');
-      clearTimeout(this.keepT); this.keepT = setTimeout(() => this.keep(), 60);
+      // גלילה אל הנבחר — רק כשהגיליון עצמו השתנה (נפתח, גובה, מקלדת), לא על כל שינוי מחלקה בעורך (גרירה, הקלדה)
+      const key = [side ? side.className : '', this.height, cover, this.kb].join('|');
+      if (key !== this.layoutKey) { this.layoutKey = key; clearTimeout(this.keepT); this.keepT = setTimeout(() => this.keep(), 60); }
     }
 
     // ── האלמנט הנבחר — גלוי מעל הגיליון ─────────────────────
@@ -207,9 +215,10 @@
       this.fit = h('button', { type: 'button', class: 'btn sm ts-fit', 'data-ts-fit': true, hidden: true, onclick: () => this.setZoom(1) }, '⤢ התאם');
       (c.host.parentElement || c.host).append(this.fit);                   // מחוץ למכל הגולל — נשאר במקומו
       const pts = new Map(); let d0 = 0, z0 = 1;
+      const scr = e => { const f = c.frame.getBoundingClientRect(); return [f.left + e.clientX * c.scale, f.top + e.clientY * c.scale]; };   // במסך — קנה המידה משתנה באמצע הצביטה
       const listen = doc => {
-        const down = e => { if (e.pointerType !== 'touch') return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); z0 = this.zoom; c.press = null; c.armed = null; clearTimeout(c.longT); } };
-        const move = e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]); if (pts.size === 2 && d0 > 10) { const [a, b] = [...pts.values()]; this.setZoom(z0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / d0); e.preventDefault(); } };
+        const down = e => { if (e.pointerType !== 'touch') return; pts.set(e.pointerId, scr(e)); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); z0 = this.zoom; c.press = null; c.armed = null; clearTimeout(c.longT); } };
+        const move = e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, scr(e)); if (pts.size === 2 && d0 > 10) { const [a, b] = [...pts.values()]; this.setZoom(z0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / d0); e.preventDefault(); } };
         const up = e => { pts.delete(e.pointerId); if (pts.size < 2) d0 = 0; };
         doc.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
       };
@@ -225,7 +234,7 @@
       c.zoomed = z > 1;
       if (z === 1) { c.setViewport(c.zoomBase.vp); c.host.scrollLeft = 0; c.host.scrollTop = 0; return; }
       // רוחב העמוד נשאר כמו שהוא (המכשיר); המסגרת מוגדלת ב-z, והמכל גולל
-      const hw = c.host.clientWidth, hh = c.host.clientHeight, vp = c.zoomBase.vp || hw, s = Math.min(1, hw / vp) * z;
+      const hw = c.host.clientWidth, hh = c.host.clientHeight, vp = c.realW ? hw : c.zoomBase.vp || hw, s = Math.min(1, hw / vp) * z;
       c.scale = s; c.ox = 0;
       c.frame.style.cssText = 'position:absolute;top:0;left:0;width:' + vp + 'px;height:' + (hh / s) + 'px;transform:scale(' + s + ');transform-origin:0 0';
       if (this.spacer) this.spacer.remove();
