@@ -8,7 +8,7 @@
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
 | `appraisers` שמאות מקרקעין | מושהה עד הודעה של הבעלים | `session_018g4NYFwUcVefmCvwGAazWA` |
-| `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — בקרה (7), דקה 48 (`trig_01SnCf3dTo5pCUfX7RptD571`) | `session_018g4NYDvggGfQE65Uogdgt6` (בקרה 7, Opus) |
+| `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — בקרה (8), דקה 48 (`trig_01XJxsx6S4PqbvMTWEv5BxnE`) | `session_018g4NYGX9uwxscA1qjoWV4P` (בקרה 8, Opus) |
 
 ## ממתין לבעלים
 
