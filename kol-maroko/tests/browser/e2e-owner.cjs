@@ -16,7 +16,13 @@
  *  9. רכיב: "🧩 שמור כרכיב" ← לשונית 🧩 רכיבים ← גרירה לקנבס ← שני מופעים.
  * 10. קוד: "</> פתח בקוד" ← הקלדה בעורך הקוד ← חזרה לעורך — הקנבס מסונכרן; ◫ מבט מפוצל.
  * 11. 🚀 פרסום: בנייה ← "לתור" ← "⏳ ממתין למשיכה" — עד התור (האתר: tests/fake-wp.php, בלי אתר אמיתי).
- * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.
+ * 13. 🗂️ קבצים ← 🎙️ הקלטות: כל ההקלטות, ▶ השמעה, 🔁 החלפה מהמכשיר + 🕘 גרסאות וחזרה, מחיקה לסל ו-♻️ שחזור, ➕ הוספה.
+ * 14. 📚 נתונים: "+ מילה" (לטבלה), 🧩 "+ שדה" (ובספרייה של העורך), "➕ רשימה חדשה" (קובץ ב-data/).
+ * 15. 👥 אנשים: "+ הוסף עוזר" עם תפקיד.
+ * 16. ↩️ שחזור: 📌 נקודה ← מחיקת מילה ← "↩️ שחזור לנקודה הזו".
+ * 17. 🐞 בעורך: הצבעה על אלמנט ← "פתיחת מטלה" ← DevLoop.
+ * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
+ * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
  * כל מקום שבו בעל העמוד **אינו יכול** לשנות משהו שהוא רואה — מודפס בסוף כ"ממצא" (🔴/🟡/⚪) ונרשם ב-team/log/code-E2E.md.
  * צילומים — ל-tmpdir (kol-e2e-shots), לבדיקה בעין.
@@ -52,6 +58,14 @@ const png = (w, h, rgb) => {
   const RED = path.join(data, 'hero-red.png'), GREEN = path.join(data, 'photo-green.png');
   fs.writeFileSync(RED, png(320, 180, [200, 40, 40])); fs.writeFileSync(GREEN, png(200, 200, [30, 160, 60]));
   execFileSync('php', [path.join(__dirname, 'f3-seed.php'), data, path.join(data, 'old.html')]);
+  // WAV — צליל קצר (ההקלטה "מהמכשיר" של בעל העמוד), ושתי הקלטות שכבר בכלי (כמו ב-m1); השאר — "באתר"
+  const wav = (n, f) => { const pcm = Buffer.alloc(n * 2); for (let i = 0; i < n; i++) pcm.writeInt16LE(Math.round(f ? 8000 * Math.sin(i / f) : 0), i * 2); const hd = Buffer.alloc(44); hd.write('RIFF', 0); hd.writeUInt32LE(36 + pcm.length, 4); hd.write('WAVEfmt ', 8); hd.writeUInt32LE(16, 16); hd.writeUInt16LE(1, 20); hd.writeUInt16LE(1, 22); hd.writeUInt32LE(16000, 24); hd.writeUInt32LE(32000, 28); hd.writeUInt16LE(2, 32); hd.writeUInt16LE(16, 34); hd.write('data', 36); hd.writeUInt32LE(pcm.length, 40); return Buffer.concat([hd, pcm]); };
+  const TONE = path.join(data, 'my-recording.wav'), TONE2 = path.join(data, 'new-word.wav');
+  fs.writeFileSync(TONE, wav(8000, 5)); fs.writeFileSync(TONE2, wav(6000, 9)); fs.writeFileSync(path.join(data, 'rec.wav'), wav(3200, 0));
+  execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+    foreach ([1, 2] as $w) { $t = KOL_DATA_DIR . "/rec$w.wav"; copy(KOL_DATA_DIR . '/rec.wav', $t);
+      $id = file_store($t, "rec$w.wav", ['sub' => 'u-owner', 'name' => 'Owner Test'], 'audio/wav');
+      db()->prepare('UPDATE words SET audio = ? WHERE id = ?')->execute([$id, $w]); }`, data, ROOT]);
   const [port, wpPort] = [await freePort(), await freePort()];
   const base = `http://127.0.0.1:${port}`, wp = `http://127.0.0.1:${wpPort}`;
   // בעל האתר מחבר את האתר (ערוץ משיכה, M7) — לא חלק מהתרחיש של בעל העמוד. רק לפני הפרסום: site_url משנה את מקור הייבוא
@@ -68,7 +82,9 @@ const png = (w, h, rgb) => {
     for (let i = 0; i < 100; i++) { try { await fetch(base + '/api.php?action=embed_key'); await fetch(wp + '/'); break; } catch { await sleep(50); } }
     browser = await chromium.launch();
     const mk = (width, height) => browser.newContext({ viewport: { width, height }, hasTouch: width < 600, isMobile: width < 600, extraHTTPHeaders: { 'X-Test-User': JSON.stringify(OWNER) } });
-    const watch = (page, tag) => { page.on('pageerror', e => { errors.push(tag + ': ' + e.message); console.log('   ⚠️ שגיאה בדף (' + tag + '): ' + e.message); }); page.on('dialog', d => d.accept()); };
+    // רק מתעד: כל קריאה ל-play() של רכיב שמע (גם new Audio() שאינו ב-DOM)
+    const PLAYS = () => { const o = HTMLMediaElement.prototype.play; HTMLMediaElement.prototype.play = function () { (window.__plays = window.__plays || []).push(this.currentSrc || this.src); return o.apply(this, arguments); }; };
+    const watch = (page, tag) => { page.addInitScript(PLAYS); page.on('pageerror', e => { errors.push(tag + ': ' + e.message); console.log('   ⚠️ שגיאה בדף (' + tag + '): ' + e.message); }); page.on('dialog', d => d.accept()); };
 
     // ── קריאה בלבד (לאימות) ──
     const call = (page, action, body, query = '') => page.evaluate(([a, b, q]) => api(a, b ?? undefined, q), [action, body ?? null, query]);
@@ -121,7 +137,9 @@ const png = (w, h, rgb) => {
     const mdrag = async (page, a, b, steps = 12) => { await page.mouse.move(a.x, a.y); await page.mouse.down(); for (let i = 1; i <= steps; i++) { await page.mouse.move(a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps); await sleep(20); } await sleep(80); await page.mouse.up(); await sleep(600); };
     const tabP = async (page, id) => { if (!(await page.isVisible(`[data-ptab="${id}"]`))) await page.click('.ed-bar [data-panel="info"]'); await page.click(`[data-ptab="${id}"]`); await sleep(400); };
     const undo = async page => { await page.keyboard.press('Control+z'); await sleep(700); };
-    const step = async (name, fn) => { console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
+    // E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0, הייבוא), לפיתוח הבדיקה
+    const ONLY = process.env.E2E_ONLY ? process.env.E2E_ONLY.split(',').map(x => x.trim()) : null;
+    const step = async (name, fn) => { if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
       if (process.env.E2E_TRACE) console.log('   [trace] ' + JSON.stringify(await page.evaluate(() => { try { const S = Editor._state, e = S.canvas.doc.querySelector('.kadisha-hero'); return { cls: e && e.className, jpg: [...S.sheets.values()].some(x => /hero\.jpg/.test(x.doc.text())), html: (S.doc.text().match(/<section[^>]*kadisha-hero[^>]*>/) || [''])[0] }; } catch (x) { return String(x); } }))); };
 
     const ctx = await mk(1920, 1080), page = await ctx.newPage();
@@ -380,6 +398,166 @@ const png = (w, h, rgb) => {
       await shot(page, 'e2e-11-publish-1920');
       if (go) await go.click();
       ok(await until(async () => (await call(page, 'build_get', undefined, '&id=' + b1.id)).build.status === 'sending', 15000), 'הגרסה בתור ("⏳ ממתין למשיכה") — לא "באתר"');
+    });
+
+
+    // ═══ 13. קבצי השמע ═══
+    const libRow = (pg, n) => pg.locator('#main .lib-row').filter({ hasText: new RegExp('#' + n + '(?!\\d)') }).first();
+    const rowTxt = async (pg, n) => (await libRow(pg, n).textContent()).replace(/\s+/g, ' ');
+    await step('13. הקלטות: לראות, לשמוע, להחליף, גרסאות, להוסיף, למחוק ולשחזר', async () => {
+      await page.click('a:has-text("🗂️ קבצים")');
+      await page.waitForSelector('#main .lib-row', { timeout: 20000 });
+      const head = (await page.textContent('#main')).replace(/\s+/g, ' ');
+      ok(/1,494 הקלטות/.test(head) && /באתר/.test(head) && /בכלי/.test(head), '🗂️ קבצים ← 🎙️ הקלטות: כל ההקלטות (1,494) — "באתר" ו"בכלי"', head.slice(0, 160));
+      // לשמוע
+      await libRow(page, 1).locator('button:has-text("▶")').first().click(); await sleep(1200);
+      const playing = await page.evaluate(() => (window.__plays || []).length > 0);
+      ok(playing, '▶ — ההקלטה מתנגנת', await page.evaluate(() => window.__plays || []));
+      await libRow(page, 1).locator('button:has-text("▶"), button:has-text("⏸")').first().click().catch(() => {}); await sleep(300);
+      // להחליף הקלטה שבאתר
+      ok(/באתר/.test(await rowTxt(page, 3)), '#3 — "באתר" לפני ההחלפה');
+      await libRow(page, 3).locator('button:has-text("🔁")').click(); await sleep(500);
+      const [fc] = await Promise.all([page.waitForEvent('filechooser', { timeout: 8000 }), page.click('dialog[open] :text("העלאה מהמכשיר")')]);
+      await fc.setFiles(TONE); await sleep(2500);
+      ok(/my-recording\.wav/.test(await rowTxt(page, 3)) && /גרסה קודמת/.test(await rowTxt(page, 3)), '🔁 ← "העלאה מהמכשיר" — ההקלטה הוחלפה, והקודמת נשמרה כגרסה', (await rowTxt(page, 3)).slice(0, 160));
+      // גרסאות ← חזרה
+      await libRow(page, 3).locator('button:has-text("⋯")').click(); await sleep(400);
+      await page.click('dialog[open] button:has-text("🕘 גרסאות")'); await sleep(900);
+      ok(/ההקלטה שבאתר/.test(await page.textContent('dialog[open]')), '🕘 גרסאות — ההקלטה שבאתר שמורה');
+      await page.click('dialog[open] button:has-text("↩️ חזור לגרסה הזו")'); await sleep(1500);
+      if (await page.isVisible('dialog[open]')) await page.click('dialog[open] [data-close]').catch(() => {});
+      await sleep(500);
+      ok(/באתר/.test(await rowTxt(page, 3)), '"↩️ חזור לגרסה הזו" — #3 שוב ההקלטה שבאתר', (await rowTxt(page, 3)).slice(0, 160));
+      await shot(page, 'e2e-13-audio-1920');
+      // למחוק לסל ← לשחזר
+      await libRow(page, 1).locator('button:has-text("⋯")').click(); await sleep(400);
+      await page.click('dialog[open] button:has-text("🗑️ מחיקה לסל")'); await sleep(500);
+      await page.click('dialog[open] button:has-text("מחיקה לסל")'); await sleep(1500);
+      const w1 = (await call(page, 'words')).words.find(w => w.id === 1);
+      ok(w1 && !w1.audio, '🗑️ מחיקה לסל — המילה #1 "בלי הקלטה"', w1 && w1.audio);
+      await page.locator('#main button', { hasText: 'בסל' }).first().click(); await sleep(1200);
+      const rst = page.locator('#main button:has-text("♻️ שחזור")').first();
+      ok(await rst.isVisible().catch(() => false), '"🗑️ בסל" — ההקלטה שנמחקה, עם "שחזור"');
+      await rst.click(); await sleep(1500);
+      const w1b = (await call(page, 'words')).words.find(w => w.id === 1);
+      ok(w1b && w1b.audio, '↩️ שחזור — ההקלטה חזרה, מחוברת למילה', w1b && w1b.audio);
+      // להוסיף
+      await page.click('#main button:has-text("🎙️ הקלטות")').catch(() => {}); await sleep(600);
+      const [fc2] = await Promise.all([page.waitForEvent('filechooser', { timeout: 8000 }), page.click('button:has-text("➕ הוספת הקלטות")')]);
+      await fc2.setFiles(TONE2); await sleep(2500);
+      const after = (await page.textContent('#main')).replace(/\s+/g, ' ');
+      ok(/new-word/.test(after) || /לא מחוברת|לא בשימוש/.test(after), '➕ הוספת הקלטות — ההקלטה החדשה בספרייה', after.slice(0, 200));
+      await shot(page, 'e2e-13-audio-add-1920');
+    });
+
+    // ═══ 14. נתונים: מילה חדשה, ובעמוד ═══
+    await step('14. 📚 נתונים: מילה, שדה ורשימה חדשים', async () => {
+      await page.click('a:has-text("📚 נתונים")');
+      await page.waitForSelector('#main button:has-text("+ מילה")', { timeout: 20000 });
+      await page.click('#main button:has-text("+ מילה")'); await sleep(600);
+      const dlg = 'dialog[open]';
+      const inputs = await page.$$(dlg + ' input[type="text"], ' + dlg + ' input:not([type])');
+      ok(inputs.length > 0, '"+ מילה" — הטופס נפתח');
+      await inputs[0].fill('מילה של בעל העמוד');
+      const mean = await page.$(dlg + ' [contenteditable="true"], ' + dlg + ' textarea');
+      if (mean) { await mean.click(); await page.keyboard.type('פירוש שכתבתי בעצמי'); }
+      await page.click(dlg + ' button:has-text("✓ שמירה")'); await sleep(1500);
+      const ws = (await call(page, 'words')).words;
+      const mine = ws.find(w => w.word === 'מילה של בעל העמוד');
+      ok(!!mine && /פירוש שכתבתי/.test(mine.meaning || ''), 'המילה נשמרה בטבלה, עם הפירוש', mine);
+      ok(ws.length === 1497, '1,497 מילים', ws.length);
+      const tabN = (await page.textContent('#main [data-list="words"]').catch(() => '')).replace(/\D/g, '');
+      if (tabN && tabN !== '1497') finding('⚪', '📚 נתונים: אחרי "+ מילה" הסיכום אומר 1497, אבל הלשונית "מילים" נשארת על ' + tabN + ' עד רענון. צילום: e2e-14-words-1920.png');
+      await shot(page, 'e2e-14-words-1920');
+      // 🧩 מבנה המילה — שדה חדש
+      await page.click('#main [data-structure]'); await sleep(800);
+      const st = (await page.textContent('dialog[open], #sheet[open]').catch(() => '')).replace(/\s+/g, ' ');
+      ok(/\+ שדה/.test(st), '🧩 מבנה המילה — רשימת השדות, עם "+ שדה"', st.slice(0, 200));
+      await page.click('dialog[open] [data-add-field]'); await sleep(600);
+      await page.locator('dialog[open] input').first().fill('דוגמה');
+      await page.locator('dialog[open] select').first().selectOption('longtext');
+      await page.click('dialog[open] [data-f-save]'); await sleep(1500);
+      const st2 = (await page.textContent('dialog[open]').catch(() => '')).replace(/\s+/g, ' ');
+      ok(/דוגמה/.test(st2), '"+ שדה" ← "דוגמה" (טקסט ארוך) — השדה במבנה', st2.slice(0, 300));
+      await shot(page, 'e2e-14-structure-1920');
+      await page.click('dialog[open] [data-close]').catch(() => {}); await sleep(400);
+      // ➕ רשימה חדשה
+      await page.click('#main [data-new-list]'); await sleep(600);
+      await page.locator('dialog[open] input').first().fill('פתגמים');
+      await page.locator('dialog[open] input').nth(1).fill('פתגם');
+      await page.click('dialog[open] [data-l-create]'); await sleep(2000);
+      if (await page.isVisible('dialog[open] [data-close]')) await page.click('dialog[open] [data-close]').catch(() => {});
+      const tabs = (await page.textContent('#main')).replace(/\s+/g, ' ').slice(0, 120);
+      ok(/פתגמים/.test(tabs), '"➕ רשימה חדשה" ← "פתגמים" — לשונית חדשה ב-📚', tabs);
+      const files = (await call(page, 'pf_tree').catch(() => null)) || (await call(page, 'pf_files').catch(() => null));
+      const paths = JSON.stringify(files || '');
+      ok(/data\/[a-z0-9_]+\.json/.test(paths) && (paths.match(/data\/[a-z0-9_]+\.json/g) || []).length >= 2, 'קובץ הנתונים של הרשימה החדשה — בעץ הפרויקט (data/*.json)', (paths.match(/data\/[a-z0-9_]+\.json/g) || []));
+      // השדה החדש — בספרייה של העורך
+      await page.click('a:has-text("🎨 עורך")'); await ready(page);
+      await page.click('[data-ntab="lib"]'); await sleep(500);
+      const lib = (await page.textContent('[data-dp-fields], .ed-libbody').catch(() => '')).replace(/\s+/g, ' ');
+      ok(/דוגמה/.test(lib), 'בעורך, "＋ ספרייה" ← השדות של words — "דוגמה" מוכן לגרירה לכרטיס', lib.slice(0, 200));
+    });
+
+    // ═══ 15. אנשים ותפקידים ═══
+    await step('15. 👥 אנשים: עוזר ותפקיד', async () => {
+      await page.click('a:has-text("👥 אנשים")');
+      await page.waitForSelector('#main button:has-text("הוסף עוזר")', { timeout: 20000 });
+      const form = page.locator('#main form').first();
+      await form.locator('input[type="email"], input[name="email"]').fill('helper@example.test');
+      const nm = form.locator('input[name="name"]'); if (await nm.count()) await nm.fill('עוזר בדיקה');
+      await form.locator('select[name="role"]').selectOption({ label: 'עורך תוכן' }).catch(async () => form.locator('select[name="role"]').selectOption({ index: 0 }));
+      await form.locator('button[type="submit"]').click(); await sleep(1500);
+      const t = (await page.textContent('#main')).replace(/\s+/g, ' ');
+      ok(/helper@example\.test|עוזר בדיקה/.test(t), '"+ הוסף עוזר" — העוזר ברשימה', t.slice(0, 300));
+      await shot(page, 'e2e-15-people-1920');
+    });
+
+    // ═══ 16. נקודות שחזור ═══
+    await step('16. ↩️ שחזור: נקודה, שינוי, חזרה', async () => {
+      await page.click('a:has-text("↩️ שחזור")');
+      await page.waitForSelector('#main button:has-text("📌 נקודה עכשיו")', { timeout: 20000 });
+      await page.fill('#main .toolbar input', 'לפני ניסוי של בעל העמוד');
+      await page.click('#main button:has-text("📌 נקודה עכשיו")'); await sleep(1500);
+      ok(/לפני ניסוי של בעל העמוד/.test(await page.textContent('#main')), '📌 נקודה עכשיו — ברשימה, עם ההערה');
+      const before = (await call(page, 'words')).words.length;
+      // שינוי: מחיקת המילה שהוסיף (📚 ← ✏️ ← 🗑️ מחיקה)
+      await page.click('a:has-text("📚 נתונים")'); await page.waitForSelector('#main .w-table-wrap, #main table', { timeout: 20000 });
+      await page.fill('#main input[placeholder^="חיפוש"]', 'מילה של בעל העמוד'); await sleep(900);
+      ok(await page.locator('#main tr[data-word]').count() === 1, 'חיפוש "מילה של בעל העמוד" — שורה אחת');
+      await page.locator('#main tr[data-word] button:has-text("✏️")').first().click(); await sleep(600);
+      await page.click('dialog[open] button:has-text("🗑️ מחיקה")'); await sleep(600);
+      if (await page.isVisible('dialog[open] button:has-text("מחיקה")')) await page.click('dialog[open] button:has-text("מחיקה") >> nth=-1').catch(() => {});
+      await sleep(1200);
+      const mid = (await call(page, 'words')).words.length;
+      ok(mid === before - 1, 'המילה נמחקה', { before, mid });
+      await page.click('a:has-text("↩️ שחזור")'); await page.waitForSelector('#main li', { timeout: 20000 });
+      const li = page.locator('#main li', { hasText: 'לפני ניסוי של בעל העמוד' }).first();
+      await li.locator('button').first().click(); await sleep(700);
+      await page.click('button:has-text("↩️ שחזור לנקודה הזו")'); await sleep(3000);
+      const back = (await call(page, 'words')).words;
+      ok(back.length === before && back.some(w => w.word === 'מילה של בעל העמוד'), '"↩️ שחזור לנקודה הזו" — המילה חזרה', back.length);
+      await shot(page, 'e2e-16-restore-1920');
+    });
+
+    // ═══ 17. 🐞 "לא הצלחתי לשנות את זה" ═══
+    await step('17. 🐞 דיווח מהעורך ← מטלה', async () => {
+      await page.click('a:has-text("🎨 עורך")'); await ready(page);
+      await page.click('[data-bug]'); await sleep(400);
+      ok(await page.getAttribute('[data-bug]', 'aria-pressed') === 'true', '🐞 — מצב הצבעה');
+      await click(page, '.kadisha-hero-subtitle-main');
+      await page.waitForSelector('#sheet[open] [data-bug-send]', { timeout: 8000 });
+      await page.fill('#sheet[open] textarea', 'ניסיתי לשנות את הגופן של שורת המשנה'); await sleep(300);
+      await page.click('#sheet[open] [data-bug-send]');
+      const done = await until(async () => /נפתחה מטלה/.test(await page.textContent('#sheet[open]')), 15000);
+      ok(done, '"פתיחת מטלה" — "✅ נפתחה מטלה …"', await page.textContent('#sheet[open] [role=status]').catch(() => ''));
+      await shot(page, 'e2e-17-bug-1920');
+      await page.click('#sheet[open] [data-close]').catch(() => {}); await sleep(300);
+      // DevLoop — המטלה ברשימה (🐞 בראש המסך)
+      await page.click('header button:has-text("🐞"), .top button:has-text("🐞"), a:has-text("🐞")').catch(() => {}); await sleep(1500);
+      const dl = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
+      ok(/ניסיתי לשנות את הגופן|שורת המשנה|kadisha-hero-subtitle-main/.test(dl), 'DevLoop — המטלה מופיעה ברשימה', dl.slice(0, 300));
+      await shot(page, 'e2e-17-devloop-1920');
     });
 
     // ═══ 12. 390 — מגע ═══
