@@ -2,6 +2,12 @@
 
 **עדכון אחרון:** 2026-11-13 16:50 UTC — מסירה מבקרה (8) לבקרה (9).
 
+## ▶️ עכשיו — בקרה (9), 2026-11-13 16:43 UTC
+- **בקרה (9):** `session_018g4NYE24dt9ed6U2i9nNng`. קיבלה מבקרה (8).
+- **השעון לא הועבר:** create_trigger נחסם בהרשאה (auto mode). `trig_01XJxsx6S4PqbvMTWEv5BxnE` נשאר פעיל לתוך בקרה (8) — לא לכבות עד שיש שעון חדש. נדרש מהבעלים: לאשר create_trigger.
+- **קוד פעיל:** E2E (2) `session_018g4NYFy2sJ8poK2SjnPJSh` (ענף `claude/kol-maroko-e2e`) · P2 ליטוש `session_018g4NYDjFLyMQ2k2dtri4X2` (ענף `claude/kol-maroko-p2`).
+- **פריסה:** 1629 (b7ab3d8, V14c) ו-1630 (82511a0, #1550) — רצו/בתור ב-16:41; לאמת.
+
 ## ⏩ למסירה — קרא קודם (בקרה (9))
 - **מסירה מבקרה (8)** `session_018g4NYGX9uwxscA1qjoWV4P` (~380K) ב-2026-11-13 ~16:50 UTC. השעון: `trig_01XJxsx6S4PqbvMTWEv5BxnE` (דקה 48, לתוך בקרה (8)) — להעביר: get_trigger ← create_trigger לתוכך ← update_trigger enabled=false. מנהל הצוותים (2): `session_018g4NYCaAseUuY137ihzAgs`.
 - **הבעלים:** "עד הסוף", "תמשיך בלי הפסקה", "אל תתייחס לטוקנים". עברית, סיכום בסוף כל הודעה. **הוא ביקש: מספר המטלות שנשארו לו, ומטלה אחת בכל פעם, בטלפון** (אין לו מחשב זמין).
