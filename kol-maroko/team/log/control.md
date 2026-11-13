@@ -174,3 +174,5 @@
 - 2026-11-12 23:25 UTC — **V11 #1516 מוזגה** → 32130ae (סבב אחד; reviews/V11.md: run.php 362, editor 12, דפדפן ×2 סדרתי 24/24 ירוק — v2–v11, m5, m4bc; 1920 ו-390 בעין; "המילה הזו" דרך pf_write הקיים, הכרטיסים לא בקובץ). handoff 'מ-V11'. KM-023 → verify. צ'אט V11 רדום.
 - 2026-11-12 23:27 UTC — **V12 נפתחה** `session_018g4NYGbMg51MeBUrX477eD` (Opus, ענף claude/kol-maroko-v12). KM-024 → in_progress.
 - 2026-11-12 23:35 UTC — פריסה **1596** (970bec1 — HEAD; כוללת V11 #1516, #1517) **success**. V11 בשרת.
+- 2026-11-13 00:43 UTC — **V12 #1518 מוזגה** → 237b730 (סבב אחד; reviews/V12.md: run.php 362, editor ✓, דפדפן ×2 סדרתי 26/26; 1920 בעין; build.php — שורה אחת מותרת; שם רכיב/הגדרות — נבדקו להזרקה). ⚪ עריכת תבנית בלי CSS העמוד. KM-024 → verify.
+- 2026-11-13 00:44 UTC — **V13 נפתחה** `session_018g4NYCJATMUpEdQDRCFG3E` (Opus). KM (V13) → in_progress.
