@@ -7,7 +7,8 @@
  */
 (function () {
   'use strict';
-  const ROW = 30, PAD = 8;
+  const COARSE = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null, PAD = 8;
+  const rowH = () => (COARSE && COARSE.matches ? 44 : 30);   // V14: במגע — שורה של 44px; חי (2-in-1 שעובר למצב טאבלט, אמולציה)
   const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
   class Navigator {
@@ -30,14 +31,15 @@
       this.list.addEventListener('click', e => this.onClick(e));
       // V13: תפריט ההקשר על שורה — לחיצה ימנית, או לחיצה ארוכה במגע
       const rowAt = e => { const el = e.target.closest && e.target.closest('.nv-row'); return el ? this.rows[+el.dataset.i] : null; };
-      this.list.addEventListener('contextmenu', e => { const r = rowAt(e); if (!r || !this.onContext) return; e.preventDefault(); clearTimeout(this.longT); if (this.longDone) { this.longDone = false; return; } this.onContext(r.n, e.clientX, e.clientY); });
+      this.list.addEventListener('contextmenu', e => { const r = rowAt(e); if (!r || !this.onContext) return; e.preventDefault(); if (this.lastTouch) return;   /* V14: במגע (Chrome לאנדרואיד שולח contextmenu בלחיצה ארוכה) — התפריט נפתח בשחרור, לא כאן */ clearTimeout(this.longT); if (this.longDone) { this.longDone = false; return; } this.onContext(r.n, e.clientX, e.clientY); });
       // V14: במגע התפריט נפתח בשחרור אחרי לחיצה ארוכה בלי תזוזה — לחיצה ארוכה ואז תזוזה היא גרירה (build.navDrag), לא תפריט
-      this.list.addEventListener('pointerdown', e => { clearTimeout(this.longT); this.longDone = false; this.longAt = null; if (e.pointerType !== 'touch') return; const r = rowAt(e), x = e.clientX, y = e.clientY; if (r) this.longT = setTimeout(() => { this.longAt = { n: r.n, x, y }; }, 550); });
-      this.list.addEventListener('pointermove', e => { const L = this.longAt; if (e.pointerType === 'touch' && L && Math.hypot(e.clientX - L.x, e.clientY - L.y) > 8) this.longAt = null; }, { passive: true });
-      this.list.addEventListener('pointerup', e => { clearTimeout(this.longT); const L = this.longAt; this.longAt = null; if (e.pointerType === 'touch' && L && this.onContext && !(this.busy && this.busy())) { this.longDone = true; this.onContext(L.n, L.x, L.y); } }, { passive: true });
+      this.list.addEventListener('pointerdown', e => { clearTimeout(this.longT); this.longDone = false; this.longAt = null; this.lastTouch = e.pointerType === 'touch'; if (e.pointerType !== 'touch') return; const r = rowAt(e), x = e.clientX, y = e.clientY; if (r) this.longT = setTimeout(() => { this.longAt = { n: r.n, x, y }; }, 550); });
+      this.list.addEventListener('pointermove', e => { const L = this.longAt; if (e.pointerType === 'touch' && L && Math.hypot(e.clientX - L.x, e.clientY - L.y) > 4) this.longAt = null; /* V14: כמו סף הגרירה (build.navDrag) — לא גם גרירה וגם תפריט */ }, { passive: true });
+      this.list.addEventListener('pointerup', e => { clearTimeout(this.longT); if (e.pointerType === 'touch') setTimeout(() => { this.lastTouch = false; }, 800); const L = this.longAt; this.longAt = null; if (e.pointerType === 'touch' && L && this.onContext) { this.longDone = true; const eat = ev => { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); off(); }, off = () => { window.removeEventListener('click', eat, true); clearTimeout(tm); }, tm = setTimeout(off, 350); window.addEventListener('click', eat, true);   /* V14: ה-click של השחרור לא נוחת על פריט בתפריט */ this.onContext(L.n, L.x, L.y); } }, { passive: true });
       for (const ev of ['pointercancel', 'scroll']) this.list.addEventListener(ev, () => { clearTimeout(this.longT); this.longAt = null; }, { passive: true });
       this.list.addEventListener('keydown', e => this.onKeys(e));
       new ResizeObserver(() => this.draw()).observe(this.list);
+      if (COARSE && COARSE.addEventListener) COARSE.addEventListener('change', () => this.refresh());   // V14: גובה השורה השתנה — מחשבים הכול מחדש
     }
     textOf(n) { let s = ''; for (const x of n.nodes) if (x.type === 'text') { s += x.value; if (s.length > 200) break; } return s.replace(/\s+/g, ' ').trim(); }
     name(n) { const id = this.K.attrOf(n, 'id'), c = this.K.classesOf(n)[0]; return n.tag + (id ? '#' + id.value : c ? '.' + c : ''); }
@@ -58,13 +60,13 @@
         else { const go = (n, depth) => { rows.push({ n, depth }); if (!this.collapsed.has(n)) for (const k of n.kids) go(k, depth + 1); }; go(m.root, 0); }
       }
       rows.forEach((r, i) => this.index.set(r.n, i));
-      this.space.style.height = rows.length * ROW + 'px';
+      this.space.style.height = rows.length * rowH() + 'px';
       this.count.textContent = q ? rows.length + ' תוצאות' : (m ? m.count + ' אלמנטים' : '');
       this.draw();
     }
     /** מצייר רק את השורות שבחלון הגלילה. */
     draw() {
-      const top = this.list.scrollTop, H = this.list.clientHeight || 400, first = Math.max(0, Math.floor(top / ROW) - 6), last = Math.min(this.rows.length, Math.ceil((top + H) / ROW) + 6);
+      const top = this.list.scrollTop, H = this.list.clientHeight || 400, first = Math.max(0, Math.floor(top / rowH()) - 6), last = Math.min(this.rows.length, Math.ceil((top + H) / rowH()) + 6);
       const sel = this.canvas.selected, out = [];
       for (let i = first; i < last; i++) out.push(this.row(this.rows[i], i, sel));
       this.space.replaceChildren(...out);
@@ -73,7 +75,7 @@
     }
     row(r, i, sel) {
       const n = r.n, c = this.canvas, e = mk('div', 'nv-row' + (n === sel ? ' sel' : '') + (c.hiddenNodes.has(n) ? ' off' : '') + (c.devHidden && c.devHidden.has(n) ? ' devoff' : '') + (n.broken ? ' broken' : ''));
-      e.id = this.uid + '-' + i; e.dataset.i = i; e.style.top = i * ROW + 'px'; e.style.paddingLeft = PAD + Math.min(r.depth, 24) * 12 + 'px';
+      e.id = this.uid + '-' + i; e.dataset.i = i; e.style.top = i * rowH() + 'px'; e.style.height = rowH() + 'px'; e.style.paddingLeft = PAD + Math.min(r.depth, 24) * 12 + 'px';
       e.setAttribute('role', 'treeitem'); e.setAttribute('aria-level', r.depth + 1); e.setAttribute('aria-selected', String(n === sel));
       const open = !this.collapsed.has(n), tw = mk('button', 'nv-tw', n.kids.length && !this.query ? (open ? '▾' : '▸') : '');
       tw.type = 'button'; tw.tabIndex = -1; tw.dataset.act = 'fold';
@@ -119,7 +121,7 @@
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const sel = this.canvas.selected, i = sel ? this.index.get(sel) : undefined, k = e.key;
       const go = j => { const r = this.rows[Math.max(0, Math.min(this.rows.length - 1, j))]; if (r) this.pick(r.n); };
-      const page = Math.max(1, Math.floor(this.list.clientHeight / ROW) - 1);
+      const page = Math.max(1, Math.floor(this.list.clientHeight / rowH()) - 1);
       const hit = fn => { e.preventDefault(); e.stopPropagation(); fn(); };
       if (k === 'ArrowDown') return hit(() => go(i == null ? 0 : i + 1));
       if (k === 'ArrowUp') return hit(() => go(i == null ? 0 : i - 1));
@@ -145,9 +147,9 @@
     }
     scrollTo(n) {
       const i = n ? this.index.get(n) : undefined; if (i == null) return;
-      const top = i * ROW, st = this.list.scrollTop, H = this.list.clientHeight;
-      if (H && (top < st || top + ROW > st + H)) this.list.scrollTop = Math.max(0, top - H / 2 + ROW / 2);
+      const top = i * rowH(), st = this.list.scrollTop, H = this.list.clientHeight;
+      if (H && (top < st || top + rowH() > st + H)) this.list.scrollTop = Math.max(0, top - H / 2 + rowH() / 2);
     }
   }
-  window.KolNavigator = { Navigator, ROW };
+  window.KolNavigator = { Navigator, get ROW() { return rowH(); } };
 })();

@@ -82,6 +82,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await s.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
       return mid;
     };
+    // מאזיני touchmove שאינם passive על ה-document (CDP) — רק בזמן גרירה
+    const tmCount = async page => { const c = await cdpOf(page); const { result } = await c.send('Runtime.evaluate', { expression: 'document' }); const { listeners } = await c.send('DOMDebugger.getEventListeners', { objectId: result.objectId }); return listeners.filter(l => l.type === 'touchmove' && !l.passive).length; };
     const rectOf = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, cx: r.x + r.width / 2, cy: r.y + r.height / 2 }; }, sel);
     const sheetOpen = page => page.evaluate(() => document.getElementById('sheet').open);
     /** T2: גרירה אל צד ה-<span> של השורה (ולא לתוכו — E2E 🟡1) נשארת באותה רובריקה, ובטלפון שואלת את שאלת V7 ("בכל המכשירים / רק כאן") — עונים "בכל המכשירים". */
@@ -99,6 +101,37 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await ctx.close();
     }
 
+    // ═══ 0. Monaco (project.js / code.js): ה-flake של v12 ("_amdLoaderGlobal has already been declared") נסגר ב-V16 (data-monaco-loader);
+    //      V14 מוסיף: איפוס בכישלון — תג שנכשל ב-error מוסר והניסיון הבא טוען מחדש; ב-timeout התג נשאר והניסיון הבא מחכה לו ═══
+    {
+      const LD = '**/monaco/vs/loader.js';
+      const fresh = async () => { const c0 = await mk(390, 844), pg = await c0.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(base + '/index.php#/words', { waitUntil: 'domcontentloaded' }); await pg.waitForFunction(() => typeof Project !== 'undefined' && !!Project.loadMonaco && typeof Code !== 'undefined' && !!Code.loadMonaco, null, { timeout: 20000 }); return { c0, pg, errs }; };
+      const loaders = pg => pg.evaluate(() => document.querySelectorAll('script[data-monaco-loader]').length);
+      // (א) loader.js חסום ← כישלון ← שחרור ← ניסיון חוזר מצליח, עם תג אחד ובלי שגיאת דף
+      { const { c0, pg, errs } = await fresh();
+        await pg.route(LD, r => r.abort());
+        const r1 = await pg.evaluate(() => Project.loadMonaco().then(() => 'ok', e => 'fail:' + e.message));
+        const after1 = await loaders(pg);
+        await pg.unroute(LD);
+        const r2 = await pg.evaluate(() => Project.loadMonaco().then(m => !!m && !!window.monaco, e => 'fail:' + e.message));
+        await sleep(300);
+        ok(/^fail/.test(r1) && after1 === 0 && r2 === true && await loaders(pg) === 1 && !errs.length, 'Monaco: loader.js חסום ← כישלון (התג הוסר) ← ניסיון חוזר מצליח — תג אחד, בלי שגיאת דף', { r1, after1, r2, n: await loaders(pg), errs });
+        await c0.close(); }
+      // (ב) Code.loadMonaco ו-Project.loadMonaco חופפים — loader אחד, אותו אובייקט
+      { const { c0, pg, errs } = await fresh();
+        const r = await pg.evaluate(async () => { const [a, b, c] = await Promise.all([Code.loadMonaco(), Project.loadMonaco(), Code.loadMonaco()]); return { same: a === b && b === c && !!a }; });
+        await sleep(300);
+        ok(r.same && await loaders(pg) === 1 && !errs.length, 'Monaco: Code.loadMonaco + Project.loadMonaco חופפים — loader.js אחד, אותו אובייקט, בלי שגיאת דף', { r, n: await loaders(pg), errs });
+        await c0.close(); }
+      // (ג) רשת איטית: Code מוותר ב-timeout (15s) בזמן ש-Project עוד מחכה (20s) — התג אינו מוסר, Project מצליח, ניסיון חוזר של Code מצליח
+      { const { c0, pg, errs } = await fresh();
+        await pg.route(LD, async r => { await sleep(16500); try { await r.continue(); } catch { /* */ } });
+        const r = await pg.evaluate(async () => { const pc = Code.loadMonaco().then(() => 'ok', e => 'fail'), pp = Project.loadMonaco().then(() => 'ok', e => 'fail'); const [c, p] = await Promise.all([pc, pp]); const c2 = await Code.loadMonaco().then(() => 'ok', () => 'fail'); return { c, p, c2 }; });
+        await sleep(300);
+        ok(r.c === 'fail' && r.p === 'ok' && r.c2 === 'ok' && await loaders(pg) === 1 && !errs.length, 'Monaco: רשת איטית — Code ב-timeout לא מסיר את התג; Project מצליח, וניסיון חוזר של Code מצליח, בלי שגיאת דף', { r, n: await loaders(pg), errs });
+        await c0.close(); }
+    }
+
     // ═══ 1. 390×844 — המסך ═══
     const ctx = await mk(390, 844), page = await newPage(ctx, '390');
     await openEd(page);
@@ -112,6 +145,64 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(st.oneRow && st.barR <= st.w + 1, '390: הסרגל העליון בשורה אחת (מה שלא נכנס — גולל בתוך הסרגל)', st);
     ok(st.nav && st.info, '390: 🌳 ו-ℹ️ גלויים בסרגל בלי לגלול', st);
     await shot(page, 'v14-390-start');
+
+    // ═══ 1b. 🔴 בעלים: החלקה על הקנבס היא תמיד גלילה — מגע אמיתי (CDP), מכל נקודת התחלה ═══
+    {
+      const swipe = async (from, dy = -300) => { const c = await cdpOf(page), tp = (x, y) => [{ x: Math.round(x), y: Math.round(y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+        await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp(from.x, from.y) });
+        for (let i = 1; i <= 15; i++) { await c.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: tp(from.x, from.y + dy * i / 15) }); await sleep(16); }
+        await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(700); };
+      const snap = () => page.evaluate(() => { const S = Editor._state, c = S.canvas; return { y: Math.round(c.frame.contentWindow.scrollY), sel: c.selected ? c.label(c.selected) : null, doc: S.doc.text().length + ':' + S.doc.text().slice(-200), css: [...S.sheets.values()].map(x => x.doc.text()).join('').length }; });
+      const top0 = () => page.evaluate(() => Editor._state.canvas.frame.contentWindow.scrollTo(0, 0));
+      const pointOn = (sel, fy = 0.5) => page.evaluate(([q, fy]) => { const c = Editor._state.canvas, e = c.doc.querySelector(q); if (!e) return null; const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(), hr = c.host.getBoundingClientRect(); const y = Math.min(hr.bottom - 20, Math.max(hr.top + 20, f.top + (r.top + r.height * fy) * c.scale)); return { x: f.left + (r.left + r.width / 2) * c.scale, y }; }, [sel, fy]);
+      const check = async (label, sel, fy) => { await top0(); await sleep(200); const p0 = await pointOn(sel, fy); if (!p0) return ok(false, label + ' — לא נמצא ' + sel); const a = await snap(); await swipe(p0); const b = await snap();
+        ok(b.y > a.y + 100 && b.sel === a.sel && b.doc === a.doc && b.css === a.css, label + ' — גולל (' + a.y + '→' + b.y + '), הבחירה והקבצים לא השתנו', { a: { y: a.y, sel: a.sel }, b: { y: b.y, sel: b.sel }, same: b.doc === a.doc && b.css === a.css }); };
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(300);
+      await check('החלקה למעלה שמתחילה על הכותרת (כלום לא נבחר)', 'h1');
+      await select(page, 'h1'); await sleep(600);
+      await check('החלקה שמתחילה על הכותרת הנבחרת', 'h1');
+      await select(page, '.kadisha-page'); await sleep(600);
+      await check('החלקה בתוך רובריקה גדולה שנבחרה (הורה של כל העמוד)', 'h1');
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(300);
+      await check('החלקה שמתחילה על תמונת הרקע של הרובריקה (section.kadisha-hero)', 'section.kadisha-hero', 0.8);
+      // אלמנט במיקום חופשי (absolute), נבחר
+      const tF = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+      await select(page, '.kadisha-hero-subtitle-main, h1 + *'); await sleep(300);
+      await page.evaluate(() => { const S = Editor._state; S.pos.on(S.canvas.selected, S.pos.pickRef); }); await sleep(900);
+      const freeOk = await page.evaluate(() => Editor._state.pos.isFree(Editor._state.canvas.selected));
+      ok(freeOk, 'הוכן אלמנט במיקום חופשי לבדיקת ההחלקה');
+      const fsel = await page.evaluate(() => { const c = Editor._state.canvas, e = c.elOf(c.selected); e.setAttribute('data-v14-free', ''); return true; });
+      await check('החלקה שמתחילה על אלמנט במיקום חופשי (absolute, נבחר)', '[data-v14-free]', 0.6);
+      st = await page.evaluate(() => { const b = document.querySelector('[data-ps-move]'); if (!b || b.hidden) return null; const cs = getComputedStyle(b), af = getComputedStyle(b, '::after'); return { pe: cs.pointerEvents, ta: cs.touchAction, grip: af.pointerEvents, w: parseFloat(af.width), h: parseFloat(af.height) }; });
+      ok(st && st.pe === 'none' && st.grip === 'auto' && st.w >= 44 && st.h >= 44, 'מיקום חופשי במגע: התיבה אינה תופסת את האלמנט (החלקה עוברת), והגרירה — מידית ✥ של 44px', st);
+      { await top0(); await sleep(300);
+        const g = await page.evaluate(() => { const b = document.querySelector('[data-ps-move]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top - 24 }; });
+        const r0 = await page.evaluate(() => { const r = document.querySelector('[data-v14-free]') ? Editor._state.canvas.doc.querySelector('[data-v14-free]').getBoundingClientRect() : null; return r && { l: Math.round(r.left), t: Math.round(r.top) }; });
+        const css0 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+        if (g) await realDrag(page, g, { x: g.x - 30, y: g.y + 40 }, { steps: 10, stepMs: 30 });
+        await sleep(400);
+        const css1 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+        ok(!!g && css1 !== css0, 'מיקום חופשי: גרירה במגע אמיתי (CDP) מהידית ✥ — מזיזה את האלמנט (נכתב ל-CSS)', { g, r0, changed: css1 !== css0 }); }
+      for (let i = 0; i < 6 && await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) !== tF; i++) await undo(page);
+      ok(await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) === tF, 'Ctrl+Z מחזיר את המיקום החופשי');
+      // הקשה בלי תזוזה — עדיין בוחרת
+      await top0(); await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(400);
+      const tp1 = await pointOn('h1'); await page.touchscreen.tap(tp1.x, tp1.y); await sleep(300);
+      ok(/^h1/.test(await selName(page) || ''), 'הקשה בלי תזוזה — עדיין בוחרת (h1)');
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(500);
+    }
+
+    // ═══ 1c. 🟡 בעלים: כלי תמונת הרקע בטלפון — עם תוויות, במסגרת, לא מתבלבלים עם 🗑️/✥ ═══
+    {
+      await select(page, 'section.kadisha-hero'); await sleep(500);
+      st = await page.evaluate(() => { const g = document.querySelector('.ed-bar [data-bg-tools]'); if (!g) return null; g.scrollIntoView({ inline: 'center', block: 'nearest' });
+        const lab = g.querySelector(':scope > .ed-word'), bs = [...g.querySelectorAll('[data-bgt]')];
+        return { label: lab && lab.offsetWidth > 0 ? lab.textContent.trim() : '', btns: bs.map(b => ({ k: b.dataset.bgt, txt: b.textContent.trim(), vis: [...b.querySelectorAll('.ed-word')].every(w => w.offsetWidth > 0), aria: b.getAttribute('aria-label') || '', h: Math.round(b.getBoundingClientRect().height) })), border: getComputedStyle(g).borderStyle };
+      });
+      ok(st && /תמונת רקע/.test(st.label) && st.btns.length === 3 && st.btns.every(b => b.vis && /תמונת רקע/.test(b.aria)) && /החלף/.test(st.btns[0].txt) && /הסר/.test(st.btns[1].txt) && /הזז/.test(st.btns[2].txt) && st.border === 'dashed',
+        '390: כלי תמונת הרקע — קבוצה במסגרת עם "🖼 תמונת רקע:", ולכל כפתור תווית גלויה (החלף · הסר · הזז) ו-aria-label מלא', st);
+      await page.evaluate(() => { Editor._state.canvas.select(null); document.querySelector('.ed-bar').scrollLeft = 0; }); await sleep(300);
+    }
 
     // ═══ 2. בחירה (V1) — הקשה, הקשה חוזרת = הורה, פירורי לחם ═══
     const H1 = 'h1';
@@ -217,7 +308,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.evaluate(() => { Editor._state.nav.refresh(); Editor._state.nav.sync(); }); await sleep(200);
     st = await page.evaluate(() => { const r = document.querySelector('.nv-row.sel'); if (!r) return null; const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, h: b.height }; });
     if (st) {
-      const from = st, to = { x: st.x, y: st.y + 70 }, tN = await page.evaluate(() => Editor._state.doc.text());
+      const ROWH = await page.evaluate(() => window.KolNavigator.ROW);   // 44 במגע (V14c), 30 בעכבר — הגרירה בשורות, לא בפיקסלים
+      const from = st, to = { x: st.x, y: st.y + Math.round(70 / 30 * ROWH) }, tN = await page.evaluate(() => Editor._state.doc.text());
       const mid = await realDrag(page, from, to, { hold: 650, steps: 10, during: () => page.evaluate(() => !!Editor._state.build.drag.active) });
       const par0 = (await placeOf(page)).par;
       await answerAll(page);
@@ -291,15 +383,27 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await undo(page);
       ok(await page.evaluate(() => Editor._state.doc.text()) === tq, 'V13 · Ctrl+Z מחזיר');
       await page.evaluate(() => Editor._state.menu?.close());
+      // במגע אמיתי (CDP): לחיצה ארוכה ← שחרור ← התפריט פתוח, ושום פריט לא הופעל (ה-click של השחרור נבלע)
+      for (const sel of ['h1', '.kadisha-hero-subtitle-main, h1 + *']) {
+        await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(500);
+        const lp = await at(page, sel); const tL = await page.evaluate(() => Editor._state.doc.text() + '|' + Editor._state.tx.length);
+        const c = await cdpOf(page), tp = [{ x: Math.round(lp.x), y: Math.round(lp.y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+        await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp }); await sleep(750);
+        await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(600);
+        const r = await page.evaluate(t => ({ menu: !!document.querySelector('.ed-ctx'), same: Editor._state.doc.text() + '|' + Editor._state.tx.length === t, tx: Editor._state.tx.length ? Editor._state.tx[Editor._state.tx.length - 1].label : '' }), tL);
+        ok(r.menu && r.same, 'לחיצה ארוכה במגע אמיתי (' + sel.split(',')[0] + ') — התפריט פתוח, ושום פעולה לא רצה (ה-click של השחרור לא נוחת על פריט)', r);
+        await page.evaluate(() => Editor._state.menu?.close()); await sleep(300);
+      }
     }
 
     // ═══ 9. הקלדה (V2) + מקלדת וירטואלית ═══
     {
+      if (process.env.V14_DEBUG) await page.evaluate(() => { const M = Editor._state.menu, o = M.open.bind(M); window.__mo = []; M.open = (...a) => { window.__mo.push(new Error().stack.split('\n').slice(1, 6).join(' | ')); return o(...a); }; });
       const p3 = await at(page, H1);
       await page.touchscreen.tap(p3.x, p3.y); await sleep(120); await page.touchscreen.tap(p3.x, p3.y); await sleep(500);
       await page.evaluate(() => Editor._state.touch.fakeKeyboard(320)); await sleep(300);
       const act = await page.evaluate(() => !!Editor._state.text?.active);
-      ok(act, 'V2 · הקשה כפולה — עריכת טקסט במקום');
+      ok(act, 'V2 · הקשה כפולה — עריכת טקסט במקום', await page.evaluate(() => { const c = Editor._state.canvas; return { sel: c.selected && c.label(c.selected), ev: c.events.slice(-12), held: c.held && c.label(c.held), menu: !!document.querySelector('.ed-ctx'), mo: window.__mo, sheet: document.getElementById('sheet').open }; }));
       st = await page.evaluate(() => { const b = document.querySelector('.ed-tbar:not([hidden])'); const r = b && b.getBoundingClientRect(); return r ? { bottom: Math.round(r.bottom), top: Math.round(r.top), ih: innerHeight, pos: getComputedStyle(b).position } : null; });
       ok(st && st.pos === 'fixed' && Math.abs(st.bottom - (st.ih - 320)) <= 2, 'מקלדת: שורת העיצוב (B I קישור…) צמודה מעל המקלדת', st);
       await page.keyboard.press('Control+End'); await page.keyboard.type(' ב'); await sleep(100);
@@ -375,8 +479,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       let p4 = await at(page, H1);
       p4 = await page.evaluate(p => { const host = Editor._state.canvas.host, r = host.getBoundingClientRect(); host.scrollLeft += p.x - (r.left + r.width / 2); return p; }, p4);
       p4 = await at(page, H1, 0, 0.5, 0.5, false);
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(450);   // הקשה על הנבחר עולה להורה — מתחילים בלי בחירה
       await tap(page, p4);
-      ok(/^h1/.test(await selName(page) || ''), 'במצב מוגדל — הקשה בוחרת את האלמנט שמתחת לאצבע');
+      ok(/^h1/.test(await selName(page) || ''), 'במצב מוגדל — הקשה בוחרת את האלמנט שמתחת לאצבע', await page.evaluate(p => { const c = Editor._state.canvas, f = c.frame.getBoundingClientRect(); const t = c.doc.elementFromPoint((p.x - f.left) / c.scale, (p.y - f.top) / c.scale); return { sel: c.selected && c.label(c.selected), at: t && t.localName + '.' + t.className, ev: c.events.slice(-6), text: !!Editor._state.text?.active, menu: !!document.querySelector('.ed-ctx'), p, hostR: c.host.getBoundingClientRect().toJSON() }; }, p4));
       await shot(page, 'v14-390-zoom');
       await tap(page, await rectOf(page, '[data-ts-fit]').then(r => ({ x: r.cx, y: r.cy })));
       st = await page.evaluate(() => ({ z: Editor._state.touch.zoom, fit: document.querySelector('[data-ts-fit]').hidden }));
@@ -473,8 +578,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await select(page, H1); await sleep(200);
       await page.evaluate(() => document.querySelector('.ed-bar [data-panel="nav"]').click()); await sleep(300);
       await page.evaluate(() => { const N = Editor._state.nav; N.refresh(); N.sync(); }); await sleep(200);
-      const rowInfo = await page.evaluate(sel => { const c = Editor._state.canvas, n = c.nodeOf(c.doc.querySelector(sel)), N = Editor._state.nav, i = N.index.get(n); N.list.scrollTop = Math.max(0, i * 30 - 60); N.draw(); const row = N.list.querySelector('.nv-row[data-i="' + i + '"]'); const b = row && row.querySelector('[data-ts-rowmv]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, lab: c.label(n), selNow: c.label(c.selected) }; }, MV);
+      const rowInfo = await page.evaluate(sel => { const c = Editor._state.canvas, n = c.nodeOf(c.doc.querySelector(sel)), N = Editor._state.nav, i = N.index.get(n); N.list.scrollTop = Math.max(0, i * window.KolNavigator.ROW - 60); N.draw(); const row = N.list.querySelector('.nv-row[data-i="' + i + '"]'); const b = row && row.querySelector('[data-ts-rowmv]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: Math.round(r.width), h: Math.round(r.height), rowH: Math.round(row.getBoundingClientRect().height), lab: c.label(n), selNow: c.label(c.selected) }; }, MV);
       if (rowInfo) {
+        ok(rowInfo.w >= 44 && rowInfo.h >= 44 && rowInfo.rowH >= 44, 'Navigator במגע: שורה של 44px, ו-↕ של 44×44', rowInfo);
         await tap(page, rowInfo); await sleep(300);
         st = await page.evaluate(() => ({ open: document.getElementById('sheet').open, title: document.querySelector('#sheet h2, #sheet .sheet-title, #sheet header')?.textContent || document.getElementById('sheet').textContent.slice(0, 80) }));
         ok(st.open && st.title.includes(rowInfo.lab.split(' ')[0]) && rowInfo.selNow !== rowInfo.lab, '↕ על שורה שאינה הנבחרת — "העבר אל…" לשורה הזו (' + rowInfo.lab + ')', { st, rowInfo });
@@ -483,9 +589,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         ok((await page.evaluate(() => Editor._state.doc.text())) !== tR && /למטה/.test(await lastTx(page)), '↕ ← ↓ — השורה ירדה');
         await undo(page);
       } else ok(false, '↕ לא נמצא בשורה');
+      // contextmenu אחרי מגע (Chrome לאנדרואיד בלחיצה ארוכה) — אינו פותח את התפריט באמצע
+      await closeSheet(page);
+      const cmx = await page.evaluate(() => { const L = Editor._state.nav.list, row = L.querySelector('.nv-row:not(.sel)'), r = row.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 5, isPrimary: true, clientX: x, clientY: y }));
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        const opened = !!document.querySelector('.ed-ctx'); row.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerType: 'touch', pointerId: 5 })); Editor._state.menu?.close(); return opened; });
+      ok(!cmx, 'Navigator: contextmenu שהדפדפן שולח בלחיצה ארוכה במגע — אינו פותח את התפריט באמצע (רק השחרור)');
       // גלילה אוטומטית בקצה התחתון של ה-Navigator, בזמן גרירה במגע
+      await page.evaluate(() => { Editor._state.touch.set('full'); }); await sleep(450);
       await page.evaluate(() => { const N = Editor._state.nav; N.list.scrollTop = 0; N.draw(); }); await sleep(200);
-      const nr = await page.evaluate(() => { const L = Editor._state.nav.list, lr = L.getBoundingClientRect(), row = [...L.querySelectorAll('.nv-row')].find(r => { const q = r.getBoundingClientRect(); return q.top >= lr.top && q.bottom <= lr.bottom - 70 && !/^(html|head|body)$/.test(r.querySelector('b').textContent); }), rr = row.getBoundingClientRect(); return { x: rr.x + rr.width / 2, y: rr.y + rr.height / 2, bottom: lr.bottom, max: L.scrollHeight - L.clientHeight }; });
+      const nr = await page.evaluate(() => { const L = Editor._state.nav.list, lr = L.getBoundingClientRect(), row = [...L.querySelectorAll('.nv-row')].find(r => { const q = r.getBoundingClientRect(); return q.top >= lr.top && q.bottom <= lr.bottom - 50 && !/^(html|head|body)$/.test(r.querySelector('b').textContent); }), rr = row.getBoundingClientRect(); return { x: rr.x + rr.width / 2, y: rr.y + rr.height / 2, bottom: lr.bottom, max: L.scrollHeight - L.clientHeight }; });
       const s0 = await page.evaluate(() => Editor._state.nav.list.scrollTop);
       const cdp = await cdpOf(page), tp = (x, y) => [{ x: Math.round(x), y: Math.round(y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp(nr.x, nr.y) }); await sleep(650);
@@ -493,6 +607,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       for (let i = 0; i < 40; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: tp(nr.x + (i % 2), nr.bottom - 8) }); await sleep(30); }
       const s1 = await page.evaluate(() => Editor._state.nav.list.scrollTop), dAct = await page.evaluate(() => ({ drag: !!Editor._state.build.drag.active, ctx: !!document.querySelector('.ed-ctx') }));
       await page.evaluate(() => Editor._state.build.drag.cancel()); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
+      await page.evaluate(() => Editor._state.touch.set('half')); await sleep(300);
       ok(s1 > s0 + 20 && nr.max > 40, 'Navigator: גלילה אוטומטית כשהאצבע בקצה התחתון, בזמן גרירה', { s0, s1, max: nr.max, dAct, nr });
       await page.evaluate(() => document.querySelector('.ed-nav .ed-side-head .icon-btn').click()); await sleep(200);
     }
@@ -512,8 +627,79 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(!bgB.start && !bgB.move && !/none|pan-x(?!.*pan-y)/.test(bgB.ta) && bgB.host === 'auto', 'בהגדלה: גרירה באצבע על רקע — גוללת (העורך אינו עוצר את המגע; המכל גולל)', bgB);
       const elPt = await at(page, H1, 0, 0.5, 0.5, false);
       const elB = await blocked(elPt);
-      ok(elB.start, 'בהגדלה: גרירה על האלמנט הנבחר — אינה גוללת (המגע נעצר)', elB);
+      ok(!elB.start && !elB.move, 'בהגדלה: החלקה גם על האלמנט הנבחר — גוללת (כלל הבעלים: החלקה היא תמיד גלילה; גרירה — רק אחרי לחיצה ארוכה או מ-⠿)', elB);
       await page.evaluate(() => Editor._state.touch.setZoom(1)); await sleep(300);
+    }
+
+    // ═══ 13e. V15 במגע: בורר העמוד, מנהל העמודים, הגדרות העמוד — 44px; סידור תגיות ב-⇅ במגע ═══
+    {
+      const SMALL = root => page.evaluate(sel => { const r0 = document.querySelector(sel); if (!r0) return ['אין ' + sel]; const out = [];
+        for (const e of r0.querySelectorAll('button, input, select, textarea, [role="button"]')) { if (!e.getClientRects().length || e.disabled && e.closest('[hidden]')) continue; const r = e.getBoundingClientRect(), d = Object.keys(e.dataset).join(',') || e.className; if (r.height < 4 || r.width < 4) continue;   // עזרים נסתרים (Monaco)
+          if (e.type === 'checkbox' || e.type === 'radio') { const l = e.closest('label'); if (!l || l.getBoundingClientRect().height < 44) out.push('☐ ' + d); continue; }
+          if (r.height < 44 || (/icon-btn|linkish/.test(e.className) && r.width < 44)) out.push(Math.round(r.width) + '×' + Math.round(r.height) + ' ' + d); }
+        return out; }, root);
+      await page.evaluate(() => { document.querySelector('.ed-bar').scrollLeft = 0; }); await tapSel('[data-pages-btn]'); await sleep(500);
+      st = { open: await sheetOpen(page), small: await SMALL('#sheet'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) };
+      ok(st.open && !st.small.length && st.sw, 'V15 · 📄 בורר העמוד בהקשה — גיליון, כל השליטות ≥44px', st);
+      await page.evaluate(() => [...document.querySelectorAll('#sheet .pg-pfoot button')].find(b => /כל העמודים/.test(b.textContent))?.click()); await sleep(700);
+      st = { small: await SMALL('[data-pg-mgr]'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) };
+      ok(!st.small.length && st.sw, 'V15 · מנהל העמודים — כל השליטות ≥44px, בלי גלילה אופקית', st);
+      await closeSheet(page); await page.evaluate(() => document.querySelector('[data-pg-close]')?.click()); await sleep(300);
+      await page.evaluate(() => Editor._state.head.show()); await sleep(700);
+      st = { small: await SMALL('#sheet'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) };
+      ok(!st.small.length && st.sw, 'V15 · ⚙️ הגדרות העמוד — כל השליטות (וגם תיבות הסימון — דרך התווית) ≥44px', st);
+      // ⇅ במגע: סידור שורה ברשימת התגיות של <head>
+      const tH = await page.evaluate(() => Editor._state.doc.text());
+      const dr = await page.evaluate(() => { const hs = [...document.querySelectorAll('#sheet .hd-drag')].filter(b => b.getClientRects().length && !b.disabled); if (hs.length < 3) return null; const list = hs[0].closest('[data-i]').parentElement; hs[0].scrollIntoView({ block: 'center' }); const a = hs[0].getBoundingClientRect(), c = hs[2].getBoundingClientRect(); return { x: a.x + a.width / 2, y: a.y + a.height / 2, ty: c.y + c.height * 0.8, n: hs.length }; });
+      if (dr) {
+        await realDrag(page, dr, { x: dr.x, y: dr.ty }, { steps: 10, stepMs: 40 }); await sleep(500);
+        const tH1 = await page.evaluate(() => Editor._state.doc.text());
+        ok(tH1 !== tH, 'V15 · ⇅ במגע — שורה ברשימת התגיות של <head> זזה (' + await lastTx(page) + ')', { n: dr.n });
+        if (tH1 !== tH) await undo(page);
+        ok(await page.evaluate(() => Editor._state.doc.text()) === tH, 'V15 · Ctrl+Z מחזיר את סדר התגיות');
+      } else ok(false, 'V15 · אין שלוש שורות ⇅ ברשימת התגיות');
+      await closeSheet(page); await sleep(200);
+    }
+
+    // ═══ 13f. V16 במגע: ספריית הרכיבים המוכנים — 44px, הקשה מוסיפה אחרי הנבחר, לחיצה ארוכה גוררת לקנבס ═══
+    {
+      const SM = sel => page.evaluate(q => { const r0 = document.querySelector(q); if (!r0) return ['אין ' + q]; return [...r0.querySelectorAll('button, input, select')].filter(e => e.getClientRects().length).map(e => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, d: Object.keys(e.dataset).join(',') }; }).filter(x => x.h > 3 && (x.h < 44 || (/kitClose/.test(x.d) && x.w < 44))).map(x => Math.round(x.w) + '×' + Math.round(x.h) + ' ' + x.d); }, sel);
+      await select(page, H1); await sleep(500);
+      await page.evaluate(() => { if (!document.querySelector('.ed').classList.contains('nav-open')) document.querySelector('.ed-bar [data-panel="nav"]').click(); }); await sleep(300);
+      await tapSel('[data-ntab="comp"]'); await sleep(800);
+      st = { small: await SM('[data-comp-body]'), items: await page.evaluate(() => document.querySelectorAll('[data-comp-body] [data-kit-item]').length) };
+      ok(st.items > 3 && !st.small.length, 'V16 · 🧩 הרכיבים המוכנים בגיליון — חיפוש, קטגוריות ו"⤢ לוח רחב" ≥44px', st);
+      await tapSel('[data-comp-body] [data-kit-wide]'); await sleep(600);
+      st = { small: await SM('[data-kit-board]'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), w: await page.evaluate(() => { const b = document.querySelector('[data-kit-board]'); return b ? Math.round(b.getBoundingClientRect().width) : 0; }) };
+      ok(st.w >= 380 && !st.small.length && st.sw, 'V16 · "⤢ לוח רחב" בטלפון — לוח ברוחב המסך, ✕ וקטגוריות ≥44px', st);
+      // הקשה על כרטיס ← נוסף אחרי הנבחר (כולל העתקה לפרויקט), Ctrl+Z מחזיר
+      const t0k = await page.evaluate(() => Editor._state.doc.text()), n0k = await page.evaluate(() => Editor._state.tx.length);
+      const card = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-kit-board] [data-kit-item]')].find(x => x.getClientRects().length && x.getAttribute('aria-disabled') !== 'true'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, name: b.dataset.kitItem, h: Math.round(r.height) }; });
+      if (card) {
+        ok(card.h >= 44, 'V16 · כרטיס רכיב ≥44px (' + card.h + ')');
+        await tap(page, card); await page.waitForFunction(n => Editor._state.tx.length > n, n0k, { timeout: 15000 }).catch(() => {}); await sleep(800);
+        const t1k = await page.evaluate(() => Editor._state.doc.text());
+        ok(t1k !== t0k && new RegExp('data-kol-component="' + card.name).test(t1k), 'V16 · הקשה על "' + card.name + '" — נוסף לעמוד (' + await lastTx(page) + ')');
+        await undo(page); await sleep(600);
+        ok(await page.evaluate(() => Editor._state.doc.text()) === t0k, 'V16 · Ctrl+Z מחזיר את העמוד');
+      } else ok(false, 'V16 · אין כרטיס רכיב זמין בלוח');
+      // לחיצה ארוכה על כרטיס ← גרירה לקנבס
+      await page.evaluate(() => document.querySelector('[data-kit-board] [data-kit-close]')?.click()); await sleep(400);
+      const card2 = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-comp-body] [data-kit-item]')].find(x => x.getClientRects().length && x.getAttribute('aria-disabled') !== 'true'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, name: b.dataset.kitItem }; });
+      const tgt = await at(page, H1, 0, 0.5, 0.9);
+      const t2k = await page.evaluate(() => Editor._state.doc.text());
+      if (card2 && tgt) {
+        const tm0 = await tmCount(page); let tm1 = -1;
+        const mid = await realDrag(page, card2, tgt, { hold: 650, steps: 12, stepMs: 40, during: async () => { tm1 = await tmCount(page); return page.evaluate(() => !!Editor._state.build.drag.active); } });
+        await page.waitForFunction(t => Editor._state.doc.text() !== t, t2k, { timeout: 15000 }).catch(() => {}); await sleep(600);
+        const t3k = await page.evaluate(() => Editor._state.doc.text());
+        ok(mid === true && t3k !== t2k, 'V16 · לחיצה ארוכה על "' + card2.name + '" ← גרירה לקנבס במגע — נוסף (' + await lastTx(page) + ')', { mid });
+        const tm2 = await tmCount(page);
+        ok(tm1 === tm0 + 1 && tm2 === tm0, 'מאזין touchmove שאינו passive על ה-document — רק בזמן הגרירה (לא כל עוד העורך פתוח)', { tm0, tm1, tm2 });
+        if (t3k !== t2k) { await undo(page); await sleep(600); }
+        ok(await page.evaluate(() => Editor._state.doc.text()) === t2k, 'V16 · Ctrl+Z מחזיר את הגרירה');
+      } else ok(false, 'V16 · כרטיס / יעד לגרירה לא נמצא', { card2, tgt });
+      await page.evaluate(() => { document.querySelector('[data-ntab="tree"]')?.click(); document.querySelector('.ed-nav .ed-side-head .icon-btn')?.click(); }); await sleep(300);
     }
 
     // ═══ 13b. E2E 🟡3: מיקום חופשי מהמחשב — אזהרה בטלפון, ו"בזרימה בטלפון בלבד" ═══
@@ -576,6 +762,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(Math.abs(st.w - st.iw * 0.4) < 4 && st.h >= st.ih - 2 && st.top <= 1, 'מצב רוחב (844×390): הגיליון בצד, ברוחב 40%', st);
       await pg.evaluate(() => document.querySelector('.ed-info .ed-side-head .icon-btn').click()); await sleep(400);
       st = await pg.evaluate(() => { const e = document.querySelector('.ed').getBoundingClientRect(), cv = document.querySelector('.ed-canvas').getBoundingClientRect(); return { edTop: Math.round(e.top), edBot: Math.round(e.bottom), cvH: Math.round(cv.height), cvBot: Math.round(cv.bottom), ih: innerHeight, sh: document.documentElement.scrollHeight }; });
+      st.hint = await pg.evaluate(() => { try { localStorage.removeItem('kol-editor-landhint'); } catch { /* */ } const T = Editor._state.touch; T.landHinted = false; T.layout(); return (document.querySelector('.ed-note:not([hidden])') || {}).textContent || ''; });
+      st.again = await pg.evaluate(() => { const T = Editor._state.touch; T.landHinted = false; document.querySelector('.ed-note .icon-btn')?.click(); T.layout(); return !!document.querySelector('.ed-note:not([hidden])'); });
+      ok(!st.again, 'מצב רוחב: הרמז מוצג פעם אחת למכשיר, לא בכל פתיחה', st.again);
+      ok(/סובבו/.test(st.hint), 'מצב רוחב: רמז — לכותרת וללשוניות מסובבים לאורך', st.hint);
       ok(st.edTop <= 1 && st.edBot <= st.ih + 1 && st.cvBot <= st.ih + 1 && st.cvH >= 200, 'מצב רוחב: העורך על כל המסך (מעל כותרת האפליקציה), והקנבס ' + st.cvH + 'px מתוך ' + st.ih, st);
       await shot(pg, 'v14-landscape'); await c3.close();
     }
@@ -618,12 +808,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }
       ok(!bad.length && depth === 0, '§2.7 · כל כלל CSS של V14 בתוך max-width: 999px או pointer: coarse', bad);
       ok(['top', 'right', 'bottom', 'left'].every(k => blk.includes('env(safe-area-inset-' + k + ')')), '§2.1 · אזור בטוח בכל ארבעת הקצוות (env(safe-area-inset-*))');
+      { const leaks = blk.split(/[{}]/).filter((_, i) => i % 2 === 0).flatMap(h => h.split(',')).map(x => x.trim()).filter(x => /^#sheet\b/.test(x));
+        ok(!leaks.length, 'editor.css נטען בכל המסכים — כל כלל של V14 על #sheet מוגבל לעורך (body:has(.ed))', leaks); }
       { const all = css.replace(/\/\*[\s\S]*?\*\//g, ''); let d = 0, mn = 0; for (const ch of all) { if (ch === '{') d++; else if (ch === '}') { d--; mn = Math.min(mn, d); } }
         ok(d === 0 && mn === 0, 'editor.css כולו מאוזן (עומק 0) — אף בלוק אינו בולע את הבלוקים שאחריו', { d, mn }); }
       // מסך מגע ≥1000px (לפטופ / טאבלט גדול): הפריסה של המחשב, וכללי pointer: coarse חלים
       { const c7 = await mk(1024, 768), pg = await newPage(c7, '1024-touch'); await openEd(pg);
         await pg.evaluate(() => { const c = Editor._state.canvas; c.select(c.nodeOf(c.doc.querySelector('h1'))); }); await sleep(500);
         st = await pg.evaluate(() => ({ coarse: matchMedia('(pointer: coarse)').matches, phoneCls: [...document.querySelector('.ed').classList].filter(c => /^ts-(row|third|half|full|fs)$/.test(c)), crumb: Math.round(document.querySelector('.ed-crumb').getBoundingClientRect().height), mv: [...document.querySelectorAll('.ed-seltools [data-ts-mv]')].map(b => Math.round(b.getBoundingClientRect().height)), side: getComputedStyle(document.querySelector('.ed-info')).position }));
+        st.fs = await pg.evaluate(() => { const b = document.querySelector('[data-ts-fs]'); return !!b && !b.hidden; });
+        ok(!st.fs, '1024 במגע: ⛶ מוסתר (מסך מלא פועל רק מתחת ל-1000px)', st);
         ok(st.coarse && !st.phoneCls.length && st.crumb >= 44 && st.mv.length === 2 && st.mv.every(x => x >= 44) && st.side !== 'fixed', '1024 במגע: פריסת מחשב (פאנל בצד), וכללי המגע חלים — פירורים ו-⬆ ⬇ של 44px', st);
         await c7.close(); }
       for (const [w, hh] of [[1920, 1080], [1366, 768]]) {
@@ -636,6 +830,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         st.tabs = await pg.evaluate(() => [...document.querySelectorAll('[data-ts-grip]')].map(g => g.tabIndex));
         ok(!st.cls.length && st.tabs.every(x => x === -1) && st.grips.every(x => x === 0) && !st.mv && !st.navtools && st.cover === '0px' && !st.fit && !st.pal, w + ': אין שום סימן של V14 (ידיות גיליון, ⬆ ⬇, סרגל Navigator, קיצור הקנבס)', st);
         ok(st.l <= 16 && st.r <= 16, w + ': העורך ממלא את המסך, בלי ריק בצדדים', st);
+        if (w === 1366) {   // Navigator: גובה השורה מתעדכן חי כשהקלט הופך למגע (2-in-1 / אמולציה)
+          const rows = () => pg.evaluate(() => { const rs = [...document.querySelectorAll('.ed-nav .nv-row')].slice(0, 4).map(r => r.getBoundingClientRect()); return { h: rs.map(r => Math.round(r.height)), gap: rs.slice(1).map((r, i) => Math.round(r.top - rs[i].top)), coarse: matchMedia('(pointer: coarse)').matches, R: window.KolNavigator.ROW }; });
+          await pg.evaluate(() => { const e = document.querySelector('.ed'); if (!e.classList.contains('nav-open')) document.querySelector('.ed-bar [data-panel="nav"]').click(); }); await sleep(300);
+          const r0 = await rows();
+          const cd = await pg.context().newCDPSession(pg); await cd.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await sleep(600);
+          const r1 = await rows();
+          ok(r0.R === 30 && r0.h.every(x => x === 30) && r0.gap.every(x => x === 30) && r1.coarse && r1.R === 44 && r1.h.every(x => x === 44) && r1.gap.every(x => x === 44), '1366: Navigator — גובה השורה ומרווח השורות מתעדכנים חי כשהקלט הופך למגע (30 ← 44)', { r0, r1 });
+        }
         await shot(pg, 'v14-' + w); await c5.close();
       }
     }

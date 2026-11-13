@@ -172,7 +172,7 @@
       const nv = this.nav; if (!nv) return;
       let p0 = null;
       nv.list.addEventListener('pointerdown', e => {
-        if (e.button > 0 || e.target.closest('[data-act]')) return;
+        if (e.button > 0 || e.target.closest('[data-act], [data-ts-rowmv]')) return;   // V14: ↕ של השורה אינו מתחיל גרירה
         const row = e.target.closest('.nv-row'), r = row && nv.rows[+row.dataset.i]; if (!r) return;
         p0 = { x: e.clientX, y: e.clientY, n: r.n, id: e.pointerId, touch: e.pointerType === 'touch', t: performance.now() };
       });

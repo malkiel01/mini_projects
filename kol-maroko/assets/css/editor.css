@@ -329,6 +329,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .sg-pos9 button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); cursor: pointer; padding: 0; }
 .sg-pos9 button[aria-pressed=true] { background: var(--accent, #36c); color: #fff; }
 .ed-bgtools { display: inline-flex; gap: 4px; align-items: center; }
+.ed-bgtools > .ed-word { white-space: nowrap; }   /* "🖼 תמונת רקע:" לא נשבר לשלוש שורות (1920) */
 .bg-move { position: absolute; z-index: 30; outline: 2px dashed #f90; outline-offset: -2px; cursor: move; touch-action: none; background: rgba(255, 153, 0, .06); pointer-events: auto; }
 .bg-move:focus { outline-style: solid; }
 .bg-move-bar { position: absolute; inset-inline-start: 50%; transform: translateX(50%); bottom: 6px; display: flex; gap: 4px; align-items: center; padding: 4px; border-radius: 10px; background: rgba(20, 20, 20, .82); color: #fff; cursor: default; direction: ltr; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 8px); }
@@ -824,6 +825,10 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
   .ed-crumbs { flex: 1 1 0; min-width: 34%; }
   .ed-where { display: none; }
+  /* V14 (🟡 בעלים): כלי תמונת הרקע — עם תוויות ובמסגרת, כדי שלא יתבלבלו עם 🗑️ "מחק אלמנט" ועם ✥ "מיקום חופשי" שלידם */
+  .ed-bar .ed-bgtools { display: inline-flex; align-items: center; gap: 2px; flex: none; padding: 0 4px; border: 1px dashed var(--brand, #36c); border-radius: var(--r); background: var(--brand-soft); }
+  .ed-bar .ed-bgtools .ed-word { display: inline; white-space: nowrap; font-size: .8rem; }
+  .ed-bar .ed-bgtools > .ed-word:first-child { font-weight: 600; }
   .ts-freewarn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .ts-freewarn[hidden] { display: none; }
   .ts-freewarn span { flex: 1 1 200px; }
@@ -890,10 +895,25 @@ dialog.hd-sheet .hd { padding: 0; }
   .sg-step { min-width: 44px; min-height: 44px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
   .ed-seltools .ts-mv { min-width: 44px; min-height: 44px; }
   .ed-libbody [data-lib], .ed-lib-item, .tp-bar .btn, .tp-row .ed-lib-item, .ed-moveto-row, .ed-menu .btn { min-height: 44px; }
-  .ts-rowmv { opacity: .7; width: 34px; }
+  .nv-row { height: 44px; }   /* שורת Navigator במגע — 44px (ROW ב-navigator.js) */
+  .nv-row .nv-tw, .nv-row .nv-ic { height: 44px; min-width: 44px; }
+  .ts-rowmv { opacity: .7; }
   .ed-crumb { min-height: 44px; }
+  /* V14 (🔴 בעלים): במגע תיבת המיקום החופשי אינה מכסה את האלמנט — החלקה עליו גוללת; הגרירה — מידית ✥ של 44px מעליו */
+  .ps-move { pointer-events: none; touch-action: none; }   /* האלמנט עצמו — שקוף לאירועים (ההחלקה עוברת); touch-action של התיבה חל על הידית ::after */
+  .ps-move::after { content: '✥'; pointer-events: auto; touch-action: none; position: absolute; left: 50%; top: 0; width: 44px; height: 44px; transform: translate(-50%, calc(-100% - 2px));
+    display: grid; place-items: center; border-radius: 50%; background: var(--brand, #36c); color: #fff; font-size: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
   /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */
   .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }
   .tp-row .icon-btn { min-width: 44px; min-height: 44px; }
   .ed-ctx-head .icon-btn { min-width: 44px; min-height: 44px; }
+  /* V15 במגע: בורר העמוד, מנהל העמודים והגדרות העמוד (בגיליון בטלפון, בצד בטאבלט) — 44px */
+  body:has(.ed) #sheet .btn, body:has(.ed) #sheet .icon-btn, body:has(.ed) #sheet .pg-search, body:has(.ed) #sheet .hd-in, .pg-pop .btn, .pg-pop .pg-search, .pg-mgr .btn, .pg-mgr .icon-btn, .ed-hd .btn, .ed-hd .icon-btn, .ed-hd .hd-in { min-height: 44px; }   /* #sheet — רק כשהעורך פתוח (editor.css נטען בכל המסכים) */
+  body:has(.ed) #sheet .icon-btn, .pg-mgr .icon-btn, .ed-hd .icon-btn, body:has(.ed) #sheet .hd-color, .ed-hd .hd-color { min-width: 44px; min-height: 44px; }
+  body:has(.ed) #sheet .linkish[data-code], .ed-hd .linkish[data-code] { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }   /* רק "</>" של שורות התגיות בהגדרות העמוד — לא קישורים בתוך טקסט */
+  .hd-check { min-height: 44px; }
+  .hd-check input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+  /* V16 במגע: ספריית הרכיבים המוכנים — חיפוש, קטגוריות, "⤢ לוח רחב" ו-✕ — 44px */
+  .ed .kit-cat, .ed .kit-q, .ed .btn[data-kit-wide], .ed .icon-btn[data-kit-close] { min-height: 44px; }
+  .ed .icon-btn[data-kit-close] { min-width: 44px; }
 }

@@ -28,6 +28,17 @@
       c.onHeldTap = n => { if (this.hintAt && performance.now() - this.hintAt < 8000) return; this.hintAt = performance.now(); this.o.note?.('נשאר על ' + c.label(n) + ' — לבחירת ההורה: ↑ "בחר הורה" בסרגל הנבחר, או פירורי הלחם'); };
       this.mo = new MutationObserver(() => this.layout()); this.mo.observe(this.el.root, { attributes: true, attributeFilter: ['class'] });
       const rs = () => this.layout(); window.addEventListener('resize', rs); this.offs.push(() => window.removeEventListener('resize', rs));
+      // גרירה פעילה (לחיצה ארוכה על כרטיס / פריט בספרייה): הדפדפן אינו מתחיל לגלול — אחרת pointercancel מסיים את הגרירה.
+      // המאזין (לא passive) רשום רק מ-drag.start ועד drag.end — שאר הזמן הגלילה אינה ממתינה ל-main thread
+      const D = this.S.build?.drag;
+      if (D) {
+        const tm = e => { if (D.active) e.preventDefault(); };
+        let on = false; const add = () => { if (!on) { on = true; document.addEventListener('touchmove', tm, { capture: true, passive: false }); } }, rm = () => { if (on) { on = false; document.removeEventListener('touchmove', tm, { capture: true }); } };
+        const st = D.start.bind(D), en = D.end.bind(D);
+        D.start = (...a) => { add(); return st(...a); };
+        D.end = (...a) => { try { return en(...a); } finally { if (!D.active) rm(); } };
+        this.offs.push(() => { rm(); D.start = st; D.end = en; });
+      }
       this.layout();
     }
     unmount() { this.mo?.disconnect(); this.offs.forEach(f => f()); this.offs = []; }
@@ -66,7 +77,7 @@
     fullBtn() {
       const bar = this.el.bar; if (!bar) return;
       let on = false; try { on = localStorage.getItem(LS_FS) === '1'; } catch { /* */ }
-      this.fsBtn = h('button', { type: 'button', class: 'icon-btn ts-fsb', 'data-ts-fs': true, 'aria-pressed': 'false', 'aria-label': 'מסך מלא לעורך — הקנבס מעל כותרת האפליקציה והלשוניות', title: 'מסך מלא לעורך', hidden: !this.touchy() || null, onclick: () => this.setFull(!this.el.root.classList.contains('ts-fs')) }, '⛶');
+      this.fsBtn = h('button', { type: 'button', class: 'icon-btn ts-fsb', 'data-ts-fs': true, 'aria-pressed': 'false', 'aria-label': 'מסך מלא לעורך — הקנבס מעל כותרת האפליקציה והלשוניות', title: 'מסך מלא לעורך', hidden: !this.phone() || null, onclick: () => this.setFull(!this.el.root.classList.contains('ts-fs')) }, '⛶');
       const ref = bar.querySelector('[data-panel="nav"]'); if (ref) ref.before(this.fsBtn); else bar.prepend(this.fsBtn);
       this.setFull(on, true);
     }
@@ -122,7 +133,8 @@
       const r = this.el.root; if (!r.isConnected) return;
       for (const k of HEIGHTS) r.classList.toggle('ts-' + k, this.phone() && k === this.height);
       for (const g of r.querySelectorAll('[data-ts-grip]')) { g.tabIndex = this.phone() ? 0 : -1; if (this.phone()) g.removeAttribute('aria-hidden'); else g.setAttribute('aria-hidden', 'true'); }   // במחשב — אין עצירת Tab בלתי נראית
-      if (this.fsBtn) this.fsBtn.hidden = !this.touchy();
+      if (this.fsBtn) this.fsBtn.hidden = !this.phone();   // ⛶ — רק מתחת ל-1000px, שם מסך מלא פועל
+      if (this.land() && !this.landHinted) { this.landHinted = true; let seen = false; try { seen = localStorage.getItem('kol-editor-landhint') === '1'; localStorage.setItem('kol-editor-landhint', '1'); } catch { /* */ } if (!seen) this.o.note?.('מצב רוחב — העורך על כל המסך. לכותרת וללשוניות של האפליקציה: סובבו את המכשיר לאורך'); }                   // מסך מלא — רק מתחת ל-1000px (שם הוא פועל)
       const side = this.openSide(), panes = r.querySelector('.ed-panes');
       let cover = 0;
       if (side && !this.land() && panes) { const top = side.getBoundingClientRect().top, cur = parseFloat(r.style.getPropertyValue('--ts-cover')) || 0, bot = panes.getBoundingClientRect().bottom + cur; cover = Math.max(0, Math.round(bot - top)); }
@@ -276,6 +288,8 @@
         const down = e => { if (e.pointerType !== 'touch') return; pts.set(e.pointerId, scr(e)); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); z0 = this.zoom; c.press = null; c.armed = null; clearTimeout(c.longT); } };
         const move = e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, scr(e)); if (pts.size === 2 && d0 > 10) { const [a, b] = [...pts.values()]; this.setZoom(z0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / d0); e.preventDefault(); } };
         const up = e => { pts.delete(e.pointerId); if (pts.size < 2) d0 = 0; };
+        // שתי אצבעות בקנבס = הצביטה שלנו, לא הגדלה של כל הדף; אצבע אחת — הדפדפן גולל כרגיל (רק touchstart, פעם אחת לתנועה)
+        doc.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { capture: true, passive: false });
         doc.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
       };
       const prev = c.onListen; c.onListen = doc => { if (prev) prev(doc); listen(doc); }; if (c.doc) listen(c.doc);

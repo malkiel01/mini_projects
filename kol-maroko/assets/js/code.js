@@ -9,10 +9,12 @@ const Code = (() => {
 
   // ── Monaco ─────────────────────────────────────────────
   let monaco = null;
+  let monacoP = null;   // V14: טעינה שבדרך — אחת; כישלון מאפס אותה. תג שנכשל ב-error אמיתי (data-failed) מוסר; ב-timeout התג נשאר (אולי עוד יורד) והניסיון הבא מחכה לו
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
     if (window.monaco) return Promise.resolve(monaco = window.monaco);      // כבר נטען במסך 📁 פרויקט
-    return new Promise((ok, fail) => {
+    if (monacoP) return monacoP;
+    return (monacoP = new Promise((ok, fail) => {
       const t = setTimeout(() => fail(new Error('העורך לא נטען')), 15000);
       // ה-workers מכתובת אחרת — דרך blob, אחרת הדפדפן חוסם
       window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob(
@@ -24,13 +26,14 @@ const Code = (() => {
       /* V16: loader.js פעם אחת לדף — גם project.js טוען אותו; טעינה כפולה = "_amdLoaderGlobal has already been declared" */
       if (window.require?.config) return go();
       const was = document.querySelector('script[data-monaco-loader]');
-      if (was) { was.addEventListener('load', go); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
+      if (was && was.dataset.failed) was.remove();   // V14: נכשל קודם — טוענים תג חדש
+      else if (was) { was.addEventListener('load', go); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
       const s = document.createElement('script');
-      s.src = MONACO + '/loader.js'; s.dataset.monacoLoader = '1';
+      s.src = MONACO + '/loader.js'; s.dataset.monacoLoader = '1'; s.addEventListener('load', () => { s.dataset.loaded = '1'; }); s.addEventListener('error', () => { s.dataset.failed = '1'; });
       s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
       s.onload = go;
       document.head.append(s);
-    });
+    }).catch(e => { monacoP = null; document.querySelector('script[data-monaco-loader][data-failed]')?.remove(); throw e; }));
   }
 
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;
@@ -198,7 +201,7 @@ const Code = (() => {
     C = null;
   }
 
-  return { view, unmount };
+  return { view, unmount, loadMonaco };
 })();
 
 // ── עבודה מצ'אט ──────────────────────────────────────────

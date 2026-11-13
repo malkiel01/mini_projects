@@ -40,10 +40,12 @@ const Project = (() => {
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 
   // ── Monaco, מהאפליקציה עצמה ───────────────────────────────
+  let monacoP = null;   // V14: טעינה שבדרך — אחת; כישלון מאפס אותה. תג שנכשל ב-error אמיתי (data-failed) מוסר; ב-timeout התג נשאר (אולי עוד יורד) והניסיון הבא מחכה לו
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
     if (window.monaco) return Promise.resolve(monaco = window.monaco);
-    return new Promise((ok, fail) => {
+    if (monacoP) return monacoP;
+    return (monacoP = new Promise((ok, fail) => {
       const t = setTimeout(() => fail(new Error('העורך לא נטען')), 20000);
       window.MonacoEnvironment = { getWorkerUrl: () => VS + '/base/worker/workerMain.js' };
       const done = () => {
@@ -52,13 +54,14 @@ const Project = (() => {
       };
       if (window.require?.config) return done();
       const was = document.querySelector('script[data-monaco-loader]');   /* V16: loader.js פעם אחת לדף (גם code.js טוען אותו) */
-      if (was) { was.addEventListener('load', done); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
+      if (was && was.dataset.failed) was.remove();   // V14: נכשל קודם — טוענים תג חדש
+      else if (was) { was.addEventListener('load', done); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
       const s = document.createElement('script');
-      s.src = VS + '/loader.js'; s.dataset.monacoLoader = '1';
+      s.src = VS + '/loader.js'; s.dataset.monacoLoader = '1'; s.addEventListener('load', () => { s.dataset.loaded = '1'; }); s.addEventListener('error', () => { s.dataset.failed = '1'; });
       s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
       s.onload = done;
       document.head.append(s);
-    });
+    }).catch(e => { monacoP = null; document.querySelector('script[data-monaco-loader][data-failed]')?.remove(); throw e; }));
   }
 
   // ── נתונים ────────────────────────────────────────────────
