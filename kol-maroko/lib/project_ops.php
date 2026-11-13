@@ -1035,6 +1035,23 @@ function page_set_404(array $user, array $b): array
         db()->prepare('UPDATE pf_files SET path = ?, path_key = ?, updated_by = ?, updated_name = ?, updated_at = ? WHERE id = ?')->execute(['404.html', pf_key('404.html'), $user['sub'], $user['name'] ?? '', now_iso(), $src['id']]);
         $r = pf_row((int)$src['id']);
         pf_hist($r, $user, "דף 404 (היה $from)");
+        // דף 404 מוגש בכל עומק כתובת — הפניה יחסית לקובץ בפרויקט נשברת. כל הפניה כזו ← /lexicon/<נתיב> (כמו בתבנית "לא נמצא")
+        $s = pf_blob_get($r['sha']);
+        if (mb_check_encoding($s, 'UTF-8')) {
+            $live = array_flip(array_column(db()->query('SELECT path FROM pf_files WHERE deleted_at IS NULL')->fetchAll(), 'path'));
+            $plan = [];
+            foreach (pf_ref_scan($from, $s) as [$off, $len, $val, $kd]) {
+                if ($val[0] === '/' || $kd === 'entry') continue;
+                $t = pf_ref_resolve($from, $val, $kd);
+                if ($t === null && preg_match('#^(\./|\.\./)+$#', $val) && substr_count($val, '../') === substr_count($from, '/')) $t = '';   // "../../" — שורש העמוד
+                if ($t === null || ($t !== '' && !pf_exists_in($live, $t))) continue;
+                $abs = page_base() . ($t === '' || $t === 'index.html' ? '' : pf_ref_enc($t) . (str_ends_with($val, '/') ? '/' : ''));
+                $plan[] = [$off, $len, $abs];
+            }
+            usort($plan, fn($x, $y) => $y[0] <=> $x[0]);
+            foreach ($plan as [$off, $len, $abs]) $s = substr_replace($s, $abs, $off, $len);
+            if ($plan) { pf_put($r, $s, $user, 'דף 404: הפניות לנתיב מוחלט (' . count($plan) . ')'); $r = pf_row((int)$src['id']); }
+        }
         if (is_array($cfg['pages'] ?? null)) page_kol_set($user, 'pages', array_map(fn($p) => $p === $from ? '404.html' : $p, $cfg['pages']), "דף 404: $from");
         return $r;
     });

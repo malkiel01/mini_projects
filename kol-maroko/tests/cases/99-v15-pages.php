@@ -151,6 +151,14 @@ test('V15 §2.4 עמוד ראשי, דף 404, סדר ("auto" ← רשימה, וח
     ok(str_contains(v15_text('404.html'), '<a href="/lexicon/">לעמוד הראשי</a>'), 'תבנית "לא נמצא" עם קישור לראשי');
     eq(409, v15_post('page_set_404', ['path' => 'team/dana/index.html'])['status'], 'כבר יש 404.html — 409');
     ok((array_values(array_filter(v15_list()['pages'], fn($p) => $p['path'] === '404.html'))[0]['is404'] ?? false), '🚫 מסומן ברשימה');
+    // עמוד קיים בתת-תיקייה ← 404.html: ההפניות היחסיות הופכות ל-/lexicon/… ונשארות תקינות בכל עומק (ביקורת 🟡1)
+    $nf = pf_by_path('404.html');
+    eq(200, http('POST', '/api.php?action=pf_delete', ['user' => U_EDITOR, 'json' => ['id' => (int)$nf['id']]])['status']);
+    v15_put('err/deep/index.html', v15_page('שגיאה', "  <link rel=\"stylesheet\" href=\"../../css/v15.css\">\n", "  <img src=\"../../media/x.png\"> <a href=\"../../\">בית</a> <a href=\"../../team/dana/\">דנה</a> <a href=\"https://example.com/x\">חוץ</a> <a href=\"#top\">עוגן</a>\n"));
+    $n = v15_post('page_set_404', ['path' => 'err/deep/index.html']);
+    eq(200, $n['status'], $n['body']);
+    $t = v15_text('404.html');
+    foreach (['href="/lexicon/css/v15.css"', 'src="/lexicon/media/x.png"', 'href="/lexicon/"', 'href="/lexicon/team/dana/"', 'href="https://example.com/x"', 'href="#top"'] as $w) ok(str_contains($t, $w), "404 מתת-תיקייה: $w", $t);
     // סדר
     $o = v15_post('pages_order', ['order' => ['odot/index.html', 'index.html', '404.html']]);
     eq(200, $o['status'], $o['body']);
