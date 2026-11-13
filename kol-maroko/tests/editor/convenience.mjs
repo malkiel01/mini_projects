@@ -64,6 +64,14 @@ bad(['templates/a/../../x', 'templates/a/template.json', 'templates/a/template.h
 bad(['/etc/passwd'], 'נתיב מוחלט');
 bad(['templates/a/template.html'], 'חסר template.json');
 bad(['templates/A B/template.html', 'templates/A B/template.json'], 'שם תבנית לא חוקי');
+// T2 (V13 ⚪): גם תיקיות נבדקות
+const okT = ['templates/a/template.html', 'templates/a/template.json'];
+ok(T.checkZip(['templates/', 'templates/a/', 'templates/a/img/', 'media/', 'media/x/'].concat(okT).map(name => ({ name }))).name === 'a', 'checkZip: תיקיות בתוך התבנית ו-media/ — מותרות');
+bad(['evil/'].concat(okT), 'תיקייה מחוץ ל-templates/ ו-media/');
+bad(['kol.json/'].concat(okT), 'תיקייה בשם של קובץ מערכת');
+bad(['templates/a/../../x/'].concat(okT), 'תיקייה עם ..');
+bad(['/'].concat(okT), 'תיקייה "/"');
+bad(['templates/b/'].concat(okT), 'תיקייה של תבנית שנייה');
 
 // ── חיפוש ──
 ok(P.score('צל', 'צל וקו מתאר') >= 80 && P.score('letter', 'letter-spacing') >= 60 && P.score('xyz', 'צבע') === 0 && P.score('הוסף כותרת', 'הוסף כותרת') === 100, 'ציון החיפוש');

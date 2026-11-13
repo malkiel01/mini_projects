@@ -214,9 +214,9 @@ const PAGE = `<!doctype html>
     let pt2 = await canvasPt(page, '.sub'); await page.mouse.click(pt2.x, pt2.y);
     await page.waitForSelector('#sheet[open] .ed-shot img', { timeout: 15000 });
     await page.waitForFunction(() => { const i = document.querySelector('.ed-shot img'); return i.complete && i.naturalWidth > 0; });
-    const rep = await page.evaluate(() => ({ info: document.querySelector('.ed-report-info').textContent, w: document.querySelector('.ed-shot img').naturalWidth, chart: document.querySelector('.ed-shot').textContent.includes('תרשים'), pointing: !document.querySelector('.ed-point').hidden, sel: Editor._state.canvas.label(Editor._state.canvas.selected) }));
+    const rep = await page.evaluate(() => ({ info: document.querySelector('.ed-report-info').textContent, w: document.querySelector('.ed-shot img').naturalWidth, chart: document.querySelector('.ed-shot').textContent.includes('תרשים'), nul: document.querySelector('.ed-shot').textContent.includes('null'), pointing: !document.querySelector('.ed-point').hidden, sel: Editor._state.canvas.label(Editor._state.canvas.selected) }));
     ok(rep.sel === 'h2.sub' && !rep.pointing, 'הצבעה על אלמנט בקנבס פותחת את הדיווח עליו');
-    ok(rep.w >= 600 && !rep.chart, `צילום הקנבס מוצג בדיווח (${rep.w}px, צילום מלא ולא תרשים)`);
+    ok(rep.w >= 600 && !rep.chart && !rep.nul, `צילום הקנבס מוצג בדיווח (${rep.w}px, צילום מלא ולא תרשים; בלי "null" מתחתיו — T2)`);
     ok(rep.info.includes('שביל: html › body › h2.sub') && rep.info.includes('תגית: <h2> · מחלקות: .sub') && rep.info.includes('קובץ: t/page.html · שורות 8') && /רוחב הקנבס: 1280px/.test(rep.info), 'הדיווח כולל שביל, תגית ומחלקות, קובץ ושורות, ורוחב הקנבס');
     await page.fill('#sheet textarea', 'רציתי להגדיל את הכותרת');
     await page.click('[data-bug-send]');
@@ -469,6 +469,21 @@ const PAGE = `<!doctype html>
     await openPage(pm, 't/page.html');
     const layM = await pm.evaluate(() => { const cv = document.querySelector('.ed-canvas').getBoundingClientRect(); return { scroll: document.documentElement.scrollWidth <= innerWidth, cvW: cv.width, cvH: cv.height, navHidden: getComputedStyle(document.querySelector('.ed-nav')).display === 'none', infoHidden: getComputedStyle(document.querySelector('.ed-info')).display === 'none', taps: [...document.querySelectorAll('.ed-bar button, .ed-bar select')].map(b => b.getBoundingClientRect()).every(r => r.height >= 34 && r.width >= 34 && r.right <= innerWidth + 1) }; });
     ok(layM.scroll && layM.cvW > 350 && layM.cvH > 400 && layM.navHidden && layM.infoHidden && layM.taps, `390px: הקנבס על כל המסך (${Math.round(layM.cvW)}×${Math.round(layM.cvH)}), הפאנלים סגורים, וכל כפתורי הסרגל ניתנים להקשה`);
+    // T2 (ביקורת): בסרגל שגולל (שורה אחת, V14) — שום כפתור אינו מכוסה: בכמה מצבי גלילה, elementFromPoint במרכז כל כפתור גלוי מחזיר אותו
+    { const cov = await pm.evaluate(async () => { const bar = document.querySelector('.ed-bar'), out = [], max = Math.max(0, bar.scrollWidth - bar.clientWidth);
+        for (const f of [0, 0.25, 0.5, 0.75, 1]) {
+          bar.scrollLeft = (getComputedStyle(bar).direction === 'rtl' ? -1 : 1) * max * f; await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const br = bar.getBoundingClientRect();
+          for (const b of bar.querySelectorAll('button, select')) {
+            const r = b.getBoundingClientRect(); if (!r.width || !r.height) continue;
+            const x = r.left + r.width / 2, y = r.top + r.height / 2; if (x < br.left + 1 || x > br.right - 1 || x < 0 || x > innerWidth) continue;   // מחוץ לחלון הגלילה — לא נבדק במצב הזה
+            const hit = document.elementFromPoint(x, y);
+            if (!hit || !(hit === b || b.contains(hit))) out.push({ f, btn: (b.title || b.getAttribute('aria-label') || b.textContent || b.className).slice(0, 30), hit: hit ? (hit.title || hit.className || hit.tagName).slice(0, 30) : null });
+          }
+        }
+        bar.scrollLeft = 0; return { max, bad: out };
+      });
+      ok(!cov.bad.length, '390px: בכל מצב גלילה של הסרגל (0–100%, גלילה ' + cov.max + 'px) — מרכז כל כפתור גלוי הוא הכפתור עצמו, שום כפתור אינו מכוסה (📄 על 🖥️)', cov); }
     await pm.tap('[data-panel="nav"]'); await sleep(150);
     const sheetM = await pm.evaluate(() => { const r = document.querySelector('.ed-nav').getBoundingClientRect(); return { fixed: getComputedStyle(document.querySelector('.ed-nav')).position === 'fixed', bottom: Math.abs(r.bottom - innerHeight) < 2, w: r.width, h: r.height, rows: document.querySelectorAll('.nv-row').length }; });
     ok(sheetM.fixed && sheetM.bottom && sheetM.w === 390 && sheetM.h > 300 && sheetM.rows > 5, `390px: Navigator — גיליון מלמטה (${sheetM.w}×${Math.round(sheetM.h)}), עם שורות`);

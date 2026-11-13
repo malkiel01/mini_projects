@@ -268,8 +268,9 @@
       const self = at === n;
       return h('section', { class: 'ct-group ct-bg', 'data-group': 'תמונת רקע' }, h('h3', { class: 'dt-h' }, 'תמונת רקע'),
         h('p', { class: 'ct-say' }, self ? 'לאלמנט הזה (' : 'האלמנט יושב על ', h('code', { dir: 'ltr' }, this.lab(at)), self ? ') יש תמונת רקע. היא אינה אלמנט — היא כתובה ב-CSS.' : ', שיש לו תמונת רקע. היא אינה אלמנט — היא כתובה ב-CSS.'),
-        h('p', { class: 'dt-note', 'data-f': 'bg-note' }, '❌ החלפה והסרה של תמונת רקע עדיין אינן על המסך — הן מגיעות בשלב "רקע" (V5). עד אז: בקוד.'),
-        h('div', { class: 'ct-btns' }, decl ? this.btn('</> פתח את ההצהרה בקוד (' + decl.path + ':' + decl.line + ')', () => this.openAt(decl.path, decl.line), false, 'bg-code') : null, self ? null : this.btn('↑ בחר את ' + this.lab(at), () => { c.select(at); c.reveal(at); })));
+        /* T2 (E2E 🟡2): החלפה והסרה כבר על המסך — בלשונית 🎨 עיצוב, "תמונת רקע" (V5) */
+        h('p', { class: 'dt-note', 'data-f': 'bg-note' }, 'החלפה, הסרה והוספה של תמונת רקע — בלשונית 🎨 עיצוב, בקבוצה "רקע"' + (self ? '.' : ' של ' + this.lab(at) + '.')),
+        h('div', { class: 'ct-btns' }, this.btn('🎨 תמונת הרקע בעיצוב', () => { if (!self) { c.select(at); c.reveal(at); } document.querySelector('.ed-ptabs [data-ptab="design"]')?.click(); setTimeout(() => document.querySelector('.ed-info [data-sec="bg"]')?.scrollIntoView({ block: 'start' }), 60); }, false, 'bg-design'), decl ? this.btn('</> פתח את ההצהרה בקוד (' + decl.path + ':' + decl.line + ')', () => this.openAt(decl.path, decl.line), false, 'bg-code') : null, self ? null : this.btn('↑ בחר את ' + this.lab(at), () => { c.select(at); c.reveal(at); })));
     }
   }
 

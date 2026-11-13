@@ -114,6 +114,7 @@ const Words = (() => {
 
   function draw(host) {
     topicsList();
+    { const t = document.querySelector('.d-list[data-list="words"] small'); if (t) t.textContent = ' ' + D.words.length; }   // T2 (E2E ⚪8): הלשונית "מילים" — עם הסיכום
     const search = h('input', { type: 'search', class: 'w-search', placeholder: 'חיפוש מילה או פירוש…', value: q, 'aria-label': 'חיפוש',
       oninput: e => { q = e.target.value; shown = PAGE; list(); } });
     const topicSel = h('select', { 'aria-label': 'נושא', onchange: e => { topic = e.target.value; shown = PAGE; list(); } },

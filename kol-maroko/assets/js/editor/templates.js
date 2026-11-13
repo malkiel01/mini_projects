@@ -115,10 +115,14 @@
   }
   /** בדיקת התוכן: תבנית אחת (templates/<שם>/…, עם template.json ו-template.html) ו-media/ בלבד. */
   function checkZip(list) {
-    const names = list.map(x => x.name).filter(n => !/\/$/.test(n) && !/^__MACOSX\//.test(n) && !/(^|\/)\.DS_Store$/.test(n));
-    const bad = names.find(n => n.includes('\\') || n.startsWith('/') || /^[a-z]:/i.test(n) || n.split('/').some(s => s === '..' || s === '.') || /[\u0000-\u001f]/.test(n));
-    if (bad) throw new Error('נתיב לא חוקי ב-ZIP: ' + bad);
-    const tpls = new Set(); for (const n of names) { const m = /^templates\/([^/]+)\//.exec(n); if (m) tpls.add(m[1]); else if (!/^media\/[^/].*/.test(n)) throw new Error('ב-ZIP של תבנית מותר רק templates/<שם>/ ו-media/ — נמצא: ' + n); }
+    const all = list.map(x => x.name).filter(n => !/^__MACOSX\//.test(n) && !/(^|\/)\.DS_Store$/.test(n));
+    const names = all.filter(n => !/\/$/.test(n));
+    // T2 (V13 ⚪): גם תיקיות (שם שמסתיים ב-/) נבדקות — נתיב, וגבול התבנית
+    const bad = all.map(n => n.replace(/\/$/, '')).find(n => n === '' || n.includes('\\') || n.startsWith('/') || /^[a-z]:/i.test(n) || n.split('/').some(s => s === '..' || s === '.' || s === '') || /[\u0000-\u001f]/.test(n));
+    if (bad != null) throw new Error('נתיב לא חוקי ב-ZIP: ' + (bad || '/'));
+    const dirOut = all.filter(n => /\/$/.test(n)).find(n => !/^(templates|media)\/$/.test(n) && !/^templates\/[^/]+\//.test(n) && !/^media\/[^/]/.test(n));
+    if (dirOut) throw new Error('ב-ZIP של תבנית מותר רק templates/<שם>/ ו-media/ — נמצאה תיקייה: ' + dirOut);
+    const tpls = new Set(all.filter(n => /\/$/.test(n)).map(n => (/^templates\/([^/]+)\//.exec(n) || [])[1]).filter(Boolean)); for (const n of names) { const m = /^templates\/([^/]+)\//.exec(n); if (m) tpls.add(m[1]); else if (!/^media\/[^/].*/.test(n)) throw new Error('ב-ZIP של תבנית מותר רק templates/<שם>/ ו-media/ — נמצא: ' + n); }
     if (tpls.size !== 1) throw new Error(tpls.size ? 'ב-ZIP יש יותר מתבנית אחת: ' + [...tpls].join(', ') : 'ב-ZIP אין תיקייה templates/<שם>/');
     const name = [...tpls][0]; checkName(name);
     for (const f of ['template.html', 'template.json']) if (!names.includes('templates/' + name + '/' + f)) throw new Error('חסר templates/' + name + '/' + f);
@@ -296,7 +300,8 @@
     async importZip(file) {
       if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true);
       let info; try { info = checkZip(zipList(new Uint8Array(await file.arrayBuffer()))); } catch (e) { this.sheet('📦 ייבוא תבנית', h('p', { class: 'error', 'data-tpl-import-err': true }, e.message)); return null; }
-      const send = async q => { let res, data; try { res = await fetch('api.php?action=pf_zip_import' + q, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Kol': '1', 'X-CSRF': state.csrf }, body: file }); data = await res.json(); } catch { throw new Error(res ? 'תשובה לא תקינה מהשרת' : 'אין חיבור לשרת'); } if (!data.ok) throw new Error(data.error || 'שגיאה'); return data; };
+      const scope = '&scope=' + encodeURIComponent('templates/' + info.name + '/,media/');   // T2 (V13 🟡A): השרת אוכף את הגבול, לא רק checkZip
+      const send = async q => { let res, data; try { res = await fetch('api.php?action=pf_zip_import' + scope + q, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Kol': '1', 'X-CSRF': state.csrf }, body: file }); data = await res.json(); } catch { throw new Error(res ? 'תשובה לא תקינה מהשרת' : 'אין חיבור לשרת'); } if (!data.ok) throw new Error(data.error || 'שגיאה'); return data; };
       let plan0; try { plan0 = (await send('')).plan; } catch (e) { this.sheet('📦 ייבוא תבנית', h('p', { class: 'error', 'data-tpl-import-err': true }, e.message)); return null; }
       const li = (title, items, key) => (items.length ? h('details', { open: true, 'data-tpl-imp': key }, h('summary', {}, title + ' · ' + items.length), h('ul', {}, items.map(p => h('li', { dir: 'ltr' }, p)))) : null);
       const can = !plan0.errors.length && plan0.counts.add + plan0.counts.replace > 0;

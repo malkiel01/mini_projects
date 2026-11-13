@@ -408,7 +408,12 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     await openPage(page, 'index.html');
     await clickFresh(page, 'h1.kadisha-hero-title');
     const bgTxt = await ctText();
-    ok(await page.isVisible('.ct [data-f="bg-note"]') && /V5/.test(await page.textContent('.ct [data-f="bg-note"]')) && bgTxt.includes('section.kadisha-hero') && /css\/[a-z.-]+\.css:\d+/.test(await page.textContent('.ct [data-w="bg-code"]')), 'index.html: כותרת שעל התמונה — הפאנל אומר במפורש שזו תמונת רקע (CSS) של section.kadisha-hero, שהחלפה והסרה שלה אינן על המסך (V5), ומוביל להצהרה בקוד', bgTxt.slice(-260));
+    ok(await page.isVisible('.ct [data-f="bg-note"]') && /🎨 עיצוב/.test(await page.textContent('.ct [data-f="bg-note"]')) && !/V5|אינן על המסך/.test(await page.textContent('.ct [data-f="bg-note"]')) && bgTxt.includes('section.kadisha-hero') && /css\/[a-z.-]+\.css:\d+/.test(await page.textContent('.ct [data-w="bg-code"]')), 'index.html: כותרת שעל התמונה — הפאנל אומר במפורש שזו תמונת רקע (CSS) של section.kadisha-hero, שהחלפה והסרה שלה בלשונית 🎨 עיצוב (T2 — לא עוד "אינן על המסך"), ומוביל להצהרה בקוד', bgTxt.slice(-260));
+    // T2 (E2E 🟡2): "🎨 תמונת הרקע בעיצוב" — בוחר את בעל הרקע ופותח את הלשונית, על הקבוצה "רקע" עם "🖼 החלף" / "🗑 הסר"
+    await page.click('.ct [data-w="bg-design"]'); await sleep(300);
+    { const g = await page.evaluate(() => { const S = Editor._state, sec = document.querySelector('.ed-info [data-sec="bg"]'); return { sel: S.canvas.label(S.canvas.selected), tab: S.tab, sec: !!sec && sec.getClientRects().length > 0, btns: sec ? [...sec.querySelectorAll('button')].map(b => b.textContent).join(' | ') : '' }; });
+      ok(/section\.kadisha-hero/.test(g.sel) && g.tab === 'design' && g.sec && /החלף/.test(g.btns), '"🎨 תמונת הרקע בעיצוב": נבחר ' + g.sel + ', לשונית עיצוב, הקבוצה "רקע" עם החלפה', g); }
+    await page.click('.ed-ptabs [data-ptab="content"]'); await sleep(150);
     ok(await page.$$eval('.ed-ptabs [role="tab"]', t => t.map(x => x.textContent + ':' + x.getAttribute('aria-selected')).join('|')) === '✏️ תוכן:true|🎨 עיצוב:false|📐 מתקדם:false|ℹ️ פרטים:false|🌐 כללי:false', 'לשונית "תוכן" היא הראשונה בפאנל, והיא הפתוחה (ואחריה "עיצוב" ו"מתקדם" של V3, "פרטים", ו"כללי" של V9)');
     await clickFresh(page, '.kadisha-lex-hero-btn'); await page.evaluate(() => { const c = Editor._state.canvas; let n = c.selected; while (n && n.tag !== 'button') n = n.parent; c.select(n); });
     const hb0 = await src(page);

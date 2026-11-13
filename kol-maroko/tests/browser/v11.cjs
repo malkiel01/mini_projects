@@ -130,9 +130,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(same(await files(page), await files(page)) && !(await page.evaluate(() => /פירוש מתוקן/.test(Editor._state.doc.text()))), '"המילה הזו" אינה נוגעת ב-index.html');
     await page.evaluate(() => Editor._undo()); await sleep(2000); await page.waitForFunction(() => !Editor._state.lv.busy, null, { timeout: 15000 });
     after = await word(page, target);
-    const noLang = t => String(t).replace(/ lang="[^"]*"/g, '');
-    ok(noLang(after.meaning) === noLang(before.meaning), 'Ctrl+Z של העורך מחזיר גם את המילה (פעולה הפוכה דרך אותו מנוע)', { before: before.meaning.slice(0, 60), after: after.meaning.slice(0, 60) });
-    if (after.meaning !== before.meaning) console.log('   ⚠️ ידוע (לא של V11): sanitize_rich של השרת מסיר lang= מ-<span> בכל שמירה של פירוש — הביטול מחזיר את הטקסט, בלי lang (team/log/code-V11.md)');
+    ok(after.meaning === before.meaning, 'Ctrl+Z של העורך מחזיר גם את המילה, בייט בבייט — כולל lang= (T2: sanitize_rich שומר אותו)', { before: before.meaning.slice(0, 120), after: after.meaning.slice(0, 120) });
     await page.evaluate(() => Editor._redo()); await sleep(1500); await page.waitForFunction(() => !Editor._state.lv.busy, null, { timeout: 15000 });
     ok(/מתוקן/.test((await word(page, target)).meaning), 'Ctrl+Y — שוב הערך החדש');
     await page.evaluate(() => Editor._undo()); await sleep(1500); await page.waitForFunction(() => !Editor._state.lv.busy, null, { timeout: 15000 });
@@ -291,7 +289,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForFunction(() => !Editor._state.lv.busy, null, { timeout: 15000 });
     ok(same(await files(page), o0), 'Ctrl+Z עד ההתחלה: index.html ו-CSS — זהים בייט בבייט');
     const w1 = await call(page, 'words');
-    ok(same(w1.words.map(w => [w.id, w.word, noLang(w.meaning), w.topics, w.audio]), w0.words.map(w => [w.id, w.word, noLang(w.meaning), w.topics, w.audio])), 'והטבלה — כמו בהתחלה (פרט ל-lang= שהשרת מסיר — ראו למעלה)');
+    ok(same(w1.words.map(w => [w.id, w.word, w.meaning, w.topics, w.audio]), w0.words.map(w => [w.id, w.word, w.meaning, w.topics, w.audio])), 'והטבלה — כמו בהתחלה, בייט בבייט (כולל lang=)');
 
     // ═══ 16. בדיקת "10 שינויים בתבנית" — ה-diff רק בתוך <template> ═══
     await select(page, '.kadisha-word-title', 0); await tab(page, 'content');

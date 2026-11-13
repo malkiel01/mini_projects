@@ -49,6 +49,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.waitForSelector('.d-lists [data-list="words"]');
     await page.waitForSelector('.w-table tbody tr');
     ok(await page.getAttribute('.d-lists [data-list="words"]', 'aria-pressed') === 'true', 'המילים — הרשימה הראשונה, נבחרת');
+    // T2 (E2E ⚪8): "+ מילה" ← הלשונית "מילים" מתעדכנת יחד עם הסיכום, בלי רענון
+    { const cnt = () => page.evaluate(() => ({ tab: document.querySelector('.d-lists [data-list="words"] small').textContent.trim(), sum: document.querySelector('.summary b').textContent.trim() }));
+      const c0 = await cnt();
+      await page.click('button.btn.primary:has-text("מילה")'); await page.waitForSelector('dialog[open] input[required]');
+      await page.fill('dialog[open] input[required]', 'בדיקת-מונה'); await page.click('dialog[open] button:has-text("✓ שמירה")');
+      await page.waitForFunction(n => document.querySelector('.summary b').textContent.trim() === String(n), Number(c0.sum) + 1, { timeout: 8000 }).catch(() => {});
+      const c1 = await cnt();
+      ok(c0.tab === c0.sum && c1.sum === String(Number(c0.sum) + 1) && c1.tab === c1.sum, '"+ מילה": הלשונית "מילים" והסיכום — אותו מספר, לפני ואחרי (' + c0.tab + ' ← ' + c1.tab + ')', { c0, c1 });
+      const id = (await call(page, 'words')).words.find(w => w.word === 'בדיקת-מונה')?.id; if (id) await call(page, 'word_delete', { id }); }
 
     // ── ➕ רשימה חדשה ─────────────────────────────────────────
     await page.click('[data-new-list]');
