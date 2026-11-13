@@ -1,6 +1,6 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-13T16:50Z",
+  "updated": "2026-11-13T16:43Z",
   "spec": "session_018g4NYGmY6iWXmmRw38khnp",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
@@ -62,9 +62,11 @@
     "session_018g4NYCPcN9QLqxpbp9z9Wp (V16b מוזגה 12:58 — ממשיך כ-V16c)",
     "session_018g4NYCPcN9QLqxpbp9z9Wp (V16 מוזגה 13.11 — רדום)",
     "session_018g4NYDtBMwiRBE3bxxFVJp (V14 מוזגה 13.11 — רדום)",
-    "session_018g4NYCQ7dY3rTeMXBgbzvi (E2E מוזגה 13.11 — רדום)"
+    "session_018g4NYCQ7dY3rTeMXBgbzvi (E2E מוזגה 13.11 — רדום)",
+    "session_018g4NYFy2sJ8poK2SjnPJSh (E2E (2) מוזגה 13.11 — רדום)",
+    "session_018g4NYDjFLyMQ2k2dtri4X2 (P2 מוזגה 13.11 — רדום)"
   ],
-  "control": "session_018g4NYGX9uwxscA1qjoWV4P",
+  "control": "session_018g4NYE24dt9ed6U2i9nNng",
   "control_previous": [
     "session_018g4NYCik48sdEyBfXuc6it",
     "session_018g4NYDHwbDK3tiZ7BUZYwp",
@@ -72,8 +74,9 @@
     "session_018g4NYCjBqmqsHEct4XvhJj",
     "session_018g4NYGbTsYKFmHndtZzAux",
     "session_018g4NYFoe4n9RX5DwKoREdJ",
-    "session_018g4NYDvggGfQE65Uogdgt6"
+    "session_018g4NYDvggGfQE65Uogdgt6",
+    "session_018g4NYGX9uwxscA1qjoWV4P"
   ],
   "tasks": "session_018g4NYFkoAv3UHd7gDhGzXT",
-  "clock": "trig_01XJxsx6S4PqbvMTWEv5BxnE"
+  "clock": "trig_01MyEpfQR9j1ZGFd46myzVf7"
 }
