@@ -155,3 +155,8 @@
 ## מ-V15 (2026-11-13, נרשם בידי בקרה (7))
 - עמוד = שורה ב-pf_files (קובץ html), לא תיקייה חדשה. פעולות `page_*` (publisher) + `pages_list` (content_editor); `page_slug` הוא השער לכתובות. head.js כותב ל-<head> רק דרך setText/setAttr (מקודד).
 - "קבע כדף 404" ממיר הפניות יחסיות ל-/lexicon/ (pf_exists_in + pf_ref_enc). פתוח (V15b): ?query/#frag, תבניות ברשימה, og:image מוחלט.
+
+## מ-V16a (2026-11-13, נרשם בידי בקרה (7))
+- רכיבים מוכנים = `assets/kit/components/<שם>/` (בכלי) → מועתקים ל-`components/<תיקייה>/` בפרויקט. פעולות `kit_*` (editor; list/get — content_editor). undo/revert בודקים rev מול `after` (409 אם השתנה); ב-kol.json — רק המפתח של הרכיב.
+- רכיב שטוען תוכן חיצוני — `external` ב-kit.json, נטען רק בלחיצה (video-embed).
+- editor.css: בלוק V16 **לפני** סמן V14 (v14 בודקת שכל מה שאחריו — לטלפון). שער איזון CSS — ב-T2.
