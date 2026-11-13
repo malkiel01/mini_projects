@@ -37,7 +37,10 @@
   const INTERACTIVE = new Set(['a', 'button']);
   /* T2 (E2E 🟡1): אלמנטי שורה — תוכן בלוק (כותרת, רובריקה, פסקה) אינו נכנס לתוכם; לפניהם או אחריהם. <a> — שקוף ב-HTML5, לא כאן */
   const PHRASING = new Set('span b i em strong small label code mark s u q cite abbr sub sup time button'.split(' '));
-  const blockyIn = (par, tags) => !!par && PHRASING.has(par.tag) && tags.some(t => BLOCKY.has(t));
+  /* רק כשבלוק נכנס מבחוץ לשורה שאין בה בלוקים: סידור מחדש בתוך אותו הורה, או יעד שכבר מכיל בלוקים (כרטיס <button><div>…) — מותר (ביקורת T2) */
+  const blockyIn = (par, tags, moving) => !!par && PHRASING.has(par.tag) && tags.some(t => BLOCKY.has(t))
+    && !(moving && moving.length && moving.every(n => n.parent === par))
+    && !(par.kids || []).some(k => BLOCKY.has(k.tag) && !(moving || []).includes(k));
   const IDREF_LIST = new Set(['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns', 'aria-flowto', 'aria-details', 'aria-errormessage', 'aria-activedescendant', 'headers']);
   const IDREF_ONE = new Set(['for', 'list', 'form']);
 
@@ -126,7 +129,7 @@
       const bad = tags.find(t => BLOCKY.has(t) || (HEADINGS.has(par.tag) && HEADINGS.has(t)));
       if (bad) return { msg: '<' + par.tag + '> אינו יכול להכיל ' + (bad === 'div' ? 'רובריקה' : '<' + bad + '>') + ' — הפוך אותו ל-<div> והכנס', fix: { kind: 'retag', tag: 'div' } };
     }
-    if (blockyIn(par, tags)) { const bad = tags.find(t => BLOCKY.has(t)); return { msg: '<' + par.tag + '> הוא חלק משורה — <' + bad + '> נכנס לפניו או אחריו, לא לתוכו', code: 'inline' }; }   // T2
+    if (blockyIn(par, tags, moving)) { const bad = tags.find(t => BLOCKY.has(t)); return { msg: '<' + par.tag + '> הוא חלק משורה — <' + bad + '> נכנס לפניו או אחריו, לא לתוכו', code: 'inline' }; }   // T2
     for (const t of tags) if (INTERACTIVE.has(t)) for (let p = par; p; p = p.parent) if (INTERACTIVE.has(p.tag)) return { msg: '<' + t + '> בתוך <' + p.tag + '> — הדפדפן סוגר את הראשון. מכניסים לפני או אחרי' };
     return null;
   }

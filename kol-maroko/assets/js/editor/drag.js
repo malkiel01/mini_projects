@@ -68,7 +68,7 @@
     isBox(n) {
       if (!n || !this.X.canHold(n) || n.tag === 'html' || n.tag === 'head') return false;
       if (n.tag === 'body') return true;
-      if (this.active && this.X.blockyIn && this.X.blockyIn(n, this.tags())) return false;   // T2: כותרת / רובריקה מעל <span> — לפניו או אחריו
+      if (this.active && this.X.blockyIn && this.X.blockyIn(n, this.tags(), this.active.src.nodes)) return false;   // T2: כותרת / רובריקה מעל <span> — לפניו או אחריו
       return !n.nodes.some(x => x.type === 'text' && /\S/.test(x.value));
     }
     /** הילד שלפניו נכנסים, לפי מיקום הסמן על ציר הרובריקה. */
@@ -110,7 +110,7 @@
       } else base = { par: n, ref: null };
       /* T2 (E2E 🟡1): כותרת / רובריקה שהיעד שלה בתוך שורה (<span> בתוך <span>…) — יוצאת לצד השורה החיצונית, לפי הסמן */
       if (this.X.blockyIn) { const tg = this.tags();
-        for (let i = 0; i < 8 && base.par.parent && this.X.blockyIn(base.par, tg); i++) {
+        for (let i = 0; i < 8 && base.par.parent && this.X.blockyIn(base.par, tg, this.active.src.nodes); i++) {
           const sp = base.par, rr = this.rect(sp), ax = this.axis(sp.parent);
           const after = !rr ? true : ax.axis === 'row' ? (ax.rev ? fx < rr.left + rr.width / 2 : fx > rr.left + rr.width / 2) : fy > rr.top + rr.height / 2;
           const sibs = sp.parent.kids, k = sibs.indexOf(sp);
@@ -207,7 +207,7 @@
       if (!t) return null;
       /* T2 (E2E 🟡1): יעד בתוך שורה (<span>…) לבלוק — גם מה-Navigator: לפני השורה כשהיעד בתחילתה, אחרת אחריה */
       if (this.X.blockyIn) { const tg = this.tags();
-        for (let i = 0; i < 8 && t.par.parent && this.X.blockyIn(t.par, tg); i++) {
+        for (let i = 0; i < 8 && t.par.parent && this.X.blockyIn(t.par, tg, this.active.src.nodes); i++) {
           const sp = t.par, first = sp.kids.find(k => !this.moving(k)), sibs = sp.parent.kids, k = sibs.indexOf(sp);
           t = Object.assign({}, t, { par: sp.parent, ref: t.ref && t.ref === first ? sp : sibs.slice(k + 1).find(x => !this.moving(x)) || null });
         } }
