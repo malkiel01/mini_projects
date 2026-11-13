@@ -28,6 +28,7 @@
  * 22. V15: ⚙️ כותרת / תיאור / תמונת שיתוף (העלאה), 📄 שמור את העמוד כתבנית ← ➕ עמוד "מתבנית עמוד", ⭐ ראשי וחזרה, 🚫 404.
  * 23. V16a: 🧩 רכיבים מוכנים — חיפוש, לחיצה ← אחרי הנבחר, הגדרה בפאנל, ➕ פריט, גרירה מהלוח הרחב, Ctrl+Z; 390 — הקשה בגיליון ← אחרי הנבחר.
  * 24. V16b: תוכן עניינים ("↻ בנה מהכותרות"), תפריט ("↻ מהעמודים"), חלון קופץ (מתי / כמה פעמים) ← ▶️ נפתח לבד, נקודות על תמונה (גרירת נקודה), מצגת (➕), חלונית מהצד.
+ * 25. T2: סידור מחדש בתוך כפתור (גרירה + Ctrl+Z); 390 — 📄 בזרימה (לא מכסה 🖥️), ⚙️ ו-▶️ דרך 📄.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -151,7 +152,9 @@ const png = (w, h, rgb) => {
     // E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0, הייבוא), לפיתוח הבדיקה
     const ONLY = process.env.E2E_ONLY ? process.env.E2E_ONLY.split(',').map(x => x.trim()) : null;
     /** גיליון / חלון שנשאר פתוח מהצעד הקודם — סוגרים ב-✕, כמו אדם, לפני שעוברים מסך. */
-    const closeAll = async pg => { for (let k = 0; k < 4; k++) { const x = await pg.$('#sheet[open] [data-close], dialog[open] [data-close]'); if (!x) break; await x.click().catch(() => {}); await sleep(300); } };
+    // התצוגה החיה (▶️) נסגרת ב-✕ שבתוך הדף החי (#lv-close) — כמו אדם
+    const closeAll = async pg => { if (await pg.isVisible('.pj-live').catch(() => false)) { const fr = pg.frames().find(f => /live\.php/.test(f.url())); if (fr) await fr.click('#lv-close', { timeout: 5000 }).catch(() => {}); await sleep(500); }
+      for (let k = 0; k < 4; k++) { const x = await pg.$('#sheet[open] [data-close], dialog[open] [data-close]'); if (!x) break; await x.click().catch(() => {}); await sleep(300); } };
     const step = async (name, fn) => { if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; await closeAll(page).catch(() => {}); if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
       if (process.env.E2E_TRACE) console.log('   [trace] ' + JSON.stringify(await page.evaluate(() => { try { const S = Editor._state, e = S.canvas.doc.querySelector('.kadisha-hero'); return { cls: e && e.className, jpg: [...S.sheets.values()].some(x => /hero\.jpg/.test(x.doc.text())), html: (S.doc.text().match(/<section[^>]*kadisha-hero[^>]*>/) || [''])[0] }; } catch (x) { return String(x); } }))); };
 
@@ -234,6 +237,7 @@ const png = (w, h, rgb) => {
       const h1 = await html(page), added = (h1.match(/<h2[^>]*>כותרת<\/h2>/g) || []).length - (h0.match(/<h2[^>]*>כותרת<\/h2>/g) || []).length;
       ok(added === 1, '"＋ ספרייה" ← "H כותרת" נגררה אל ה-hero — כותרת חדשה בעמוד');
       const parent = await page.evaluate(() => { const e = [...Editor._state.canvas.doc.querySelectorAll('.kadisha-hero h2')].pop(); return e ? e.parentElement.localName + '.' + e.parentElement.className : null; });
+      ok(parent && !/^(p|span)\./.test(parent), 'T2: הכותרת שנגררה אל השורה — לידה (אחות), לא בתוך ה-span', parent);
       if (parent && /^(p|span)\./.test(parent)) finding('🟡', 'כותרת שנגררת מהספרייה אל שורה בכותרת העמוד נכנסת **לתוך** ' + parent + ' (h2 בתוך ' + parent.split('.')[0] + ' — HTML לא תקין), ולא אחריה. צילום: e2e-04-heading-1920.png');
       ok(!!parent, 'הכותרת החדשה בתוך ה-hero', parent);
       await shot(page, 'e2e-04-heading-1920');
@@ -250,6 +254,12 @@ const png = (w, h, rgb) => {
       ok(await page.isVisible('[data-bg-tools]'), 'בסרגל: "🖼 תמונת רקע: החלף · הסר · הזז"', await page.evaluate(() => ({ has: Editor._state.bg.hasImage(Editor._state.canvas.selected), bg: getComputedStyle(Editor._state.canvas.doc.querySelector('.kadisha-hero')).backgroundImage.slice(0, 120), cls: Editor._state.canvas.doc.querySelector('.kadisha-hero').className, css: [...Editor._state.sheets.values()].map(x => x.path + ':' + (x.doc.text().match(/[^\n]*hero\.jpg[^\n]*/) || [''])[0].slice(0, 160)).filter(x => /jpg/.test(x)) })));
       await tabP(page, 'content');
       const say = await page.textContent('.ct-bg').catch(() => '');
+      ok(!/עדיין אינן על המסך/.test(say) && /עיצוב/.test(say), 'T2: לשונית "✏️ תוכן" מפנה ל"🎨 עיצוב ← רקע" (לא "עדיין אינן על המסך")', say.slice(0, 160));
+      if (await page.isVisible('[data-w="bg-design"]')) {
+        await page.click('[data-w="bg-design"]'); await sleep(700);
+        ok(await page.getAttribute('[data-ptab="design"]', 'aria-selected') === 'true' || await page.isVisible('[data-bg-add], [data-bg-replace]'), '"🎨 תמונת הרקע בעיצוב" — לשונית עיצוב, בקבוצה "רקע"');
+        await tabP(page, 'content');
+      } else ok(false, 'כפתור "🎨 תמונת הרקע בעיצוב" בלשונית תוכן');
       if (/עדיין אינן על המסך/.test(say)) finding('🟡', 'לשונית "✏️ תוכן" של רובריקה עם תמונת רקע (ושל כל אלמנט שיושב עליה) אומרת "❌ החלפה והסרה של תמונת רקע עדיין אינן על המסך — הן מגיעות בשלב V5. עד אז: בקוד" — אבל הן כבר על המסך (הסרגל, לשונית עיצוב). בעל העמוד שמחפש שם יחשוב שאי אפשר. content.js:265');
       await page.click('[data-bg-tools] button:has-text("הסר")'); await sleep(700);
       ok(!/hero\.jpg/.test(await allCss(page)), '🗑 הסר — התמונה יצאה מה-CSS');
@@ -262,6 +272,7 @@ const png = (w, h, rgb) => {
       ok(/url\(['"]?\.\.\/media\/hero-red\.png/.test(await allCss(page)), '🎨 עיצוב ← "＋ תמונת רקע" ← ⬆️ העלאה מהמחשב — התמונה החדשה ברקע', (await allCss(page)).match(/background-image[^;]*/g));
       ok(await page.isVisible('[data-bg-tools]'), 'הכלים חזרו לסרגל');
       const stale = await page.isVisible('text=התמונה הוסרה. מה שנשאר');
+      ok(!stale, 'T2: אחרי הוספת תמונת רקע חדשה — "התמונה הוסרה. מה שנשאר" אינה מוצגת');
       if (stale) finding('⚪', 'בלשונית עיצוב, אחרי הסרה והוספה של תמונת רקע, ההודעה "התמונה הוסרה. מה שנשאר:" עדיין מוצגת מעל התמונה החדשה. צילום: e2e-05-bg-1920.png');
       await shot(page, 'e2e-05-bg-1920');
       // אלמנט תמונה: ＋🖼️ תמונה אחרי הכותרת ← 🖼️ החלף ← 🗑️
@@ -942,7 +953,8 @@ const png = (w, h, rgb) => {
       const inner = opened ? true : await (async () => { for (const f of page.frames()) { if (await f.evaluate(() => [...document.querySelectorAll('dialog[data-kol-dialog]')].some(x => x.open)).catch(() => false)) return true; } return false; })();
       ok(opened === true || inner === true, '▶️ — החלון הקופץ נפתח לבד אחרי שנייה', { live: fr && fr.url().slice(-60), frames: page.frames().map(f => f.url().slice(-50)) });
       await shot(page, 'e2e-24-live-popup-1920');
-      await page.keyboard.press('Escape'); await sleep(300);
+      await closeAll(page);
+      ok(!(await page.isVisible('.pj-live')), '✕ — התצוגה החיה נסגרה');
       // 390: חלונית מהצד — ✕ באזור מגע של 44px לפחות
       const c6 = await mk(390, 844), pz = await c6.newPage(); watch(pz, '390-kit2');
       await pz.goto(base + '/editor.php#/editor/index.html'); await ready(pz); await sleep(1200);
@@ -950,6 +962,43 @@ const png = (w, h, rgb) => {
       ok(!!x44, '390: ✕ של החלון הקופץ בקנבס', x44);
       await shot(pz, 'e2e-24-kit2-390');
       await c6.close();
+    });
+
+
+    // ═══ 25. T2: סידור מחדש בתוך כפתור; 390 — 📄 בזרימה, ⚙️ ו-▶️ דרך 📄 ═══
+    await step('25. T2: סידור מחדש בתוך כפתור; 390 — 📄, ⚙️, ▶️', async () => {
+      if (!page.url().includes('editor')) await page.click('a:has-text("🎨 עורך")');
+      await ready(page); await closeAll(page);
+      // בתוך כפתור "הקדמה": גרירת הטקסט אל לפני הסמל
+      const btnOrder = () => page.evaluate(() => [...Editor._state.canvas.doc.querySelector('.kadisha-lex-hero-btn').children].map(e => e.className.replace('kadisha-lex-hero-btn-', '')));
+      const b0 = await btnOrder();
+      await click(page, '.kadisha-lex-hero-btn-text', 0);
+      await drag(page, await at(page, '.kadisha-lex-hero-btn-text', 0), await at(page, '.kadisha-lex-hero-btn-icon', 0, 0.85, 0.5));
+      const b1 = await btnOrder();
+      ok(JSON.stringify(b1) !== JSON.stringify(b0) && b1.length === b0.length, 'גרירה בתוך הכפתור "הקדמה" — הטקסט והסמל החליפו מקום (סידור מחדש בתוך button מותר)', { b0, b1 });
+      const act = await page.evaluate(() => { const a = document.activeElement; return a ? a.tagName + (a.className ? '.' + String(a.className).split(' ')[0] : '') : null; });
+      await page.click('.ed-bar button:has-text("↶")'); await sleep(800);
+      const b2 = await btnOrder();
+      ok(JSON.stringify(b2) === JSON.stringify(b0), '↶ — הסדר בכפתור חזר', { b0, b1, b2, focus: act, last: await page.evaluate(() => (Editor._state.tx.slice(-3) || []).map(t => t.label)) });
+      // 390
+      const c7 = await mk(390, 844), pw = await c7.newPage(); watch(pw, '390-t2');
+      await pw.goto(base + '/editor.php#/editor/index.html'); await ready(pw); await sleep(1000);
+      const cover = await pw.evaluate(() => { const pg = document.querySelector('[data-pages-btn]'), d = document.querySelector('[data-dev="desktop"]'); if (!pg || !d) return { pg: !!pg, d: !!d }; const r = d.getBoundingClientRect(), at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); const p = pg.getBoundingClientRect(); return { devHit: !!(at && (at === d || d.contains(at))), pgW: Math.round(p.width), pgPos: getComputedStyle(pg).position, overlap: !(p.right <= r.left || p.left >= r.right || p.bottom <= r.top || p.top >= r.bottom) }; });
+      ok(cover.devHit && !cover.overlap && cover.pgW >= 34, '390: 📄 בזרימת הסרגל — לא מכסה את 🖥️, ורוחבו ≥34px', cover);
+      ok(!(await pw.isVisible('.ed-bar [data-head-btn]')) && !(await pw.isVisible('.ed-bar [data-ed-live-btn]')), '390: ⚙️ ו-▶️ אינם בסרגל (דרך 📄)');
+      await pw.tap('[data-pages-btn]'); await sleep(600);
+      ok(await pw.isVisible('[data-pg-pop] [data-pg-head]'), '390: 📄 ← "⚙️ הגדרות העמוד" בגיליון');
+      await shot(pw, 'e2e-25-pages-390');
+      await pw.tap('[data-pg-pop] [data-pg-head]'); await sleep(800);
+      ok(await pw.isVisible('[data-hd-form]'), '390: ⚙️ — הגדרות העמוד נפתחות');
+      await shot(pw, 'e2e-25-settings-390');
+      await closeAll(pw); await pw.keyboard.press('Escape'); await sleep(300);
+      await pw.tap('[data-pages-btn]'); await sleep(500); await pw.tap('[data-pg-pop] [data-pg-manage]'); await sleep(900);
+      await pw.tap('[data-pg-row="index.html"]').catch(() => {}); await sleep(400);
+      await pw.tap('[data-pg-act="live"]'); await sleep(1200);
+      ok(await pw.isVisible('.pj-live iframe'), '390: 📄 ← 📄 כל העמודים ← "▶️ תצוגה חיה" — נפתחת');
+      await shot(pw, 'e2e-25-live-390');
+      await c7.close();
     });
 
     // ═══ 12. 390 — מגע ═══
