@@ -5,8 +5,8 @@
 ## ▶️ עכשיו — בקרה (9), 2026-11-13 16:43 UTC
 - **בקרה (9):** `session_018g4NYE24dt9ed6U2i9nNng`. קיבלה מבקרה (8).
 - **השעון:** `trig_01MyEpfQR9j1ZGFd46myzVf7` (דקה 48, לתוך בקרה (9)), נוצר בידי מנהל הצוותים (2). כבויים: הישן `trig_01XJxsx6S4PqbvMTWEv5BxnE` והכפיל `trig_01Fc2MDPJgtjousFL7aMBuFq`.
-- **קוד פעיל:** E2E (2) `session_018g4NYFy2sJ8poK2SjnPJSh` (ענף `claude/kol-maroko-e2e`) · P2 ליטוש `session_018g4NYDjFLyMQ2k2dtri4X2` (ענף `claude/kol-maroko-p2`).
-- **פריסה:** 1629 (b7ab3d8, V14c) ו-1630 (82511a0, #1550) — `conclusion: success`, אומת 16:52. V14c חי — לבקש מהבעלים לבדוק שוב.
+- **קוד (רדומים):** E2E (2) `session_018g4NYFy2sJ8poK2SjnPJSh` · P2 `session_018g4NYDjFLyMQ2k2dtri4X2`.
+- **מוזג (בקרה 9):** E2E צעד 26 #1551 (1631 ✔️) · P2 ליטוש #1553 · handoff E2E. ⚪15 (כפתורי 🖼 34px ב-390, screen.js:1058) ו-⚪ coversOf סורק הכול — לפרוסה הבאה. **אין צ'אט קוד פעיל** (E2E (2), P2 — רדומים).
 
 ## ⏩ למסירה — קרא קודם (בקרה (9))
 - **מסירה מבקרה (8)** `session_018g4NYGX9uwxscA1qjoWV4P` (~380K) ב-2026-11-13 ~16:50 UTC. השעון: `trig_01XJxsx6S4PqbvMTWEv5BxnE` (דקה 48, לתוך בקרה (8)) — להעביר: get_trigger ← create_trigger לתוכך ← update_trigger enabled=false. מנהל הצוותים (2): `session_018g4NYCaAseUuY137ihzAgs`.
