@@ -679,10 +679,22 @@ function page_base(): string
     return '/' . (defined('PUB_PAGE') ? PUB_PAGE : 'lexicon') . '/';
 }
 
+/**
+ * V15b: מקור האתר (https://מארח[:פורט]) מכתובת האתר שבהגדרות הפרסום — ל-og:image מוחלט (וואטסאפ / פייסבוק אינם קוראים כתובת
+ * יחסית). אין כתובת, או כתובת שאינה http(s) — '' (והטופס מזהיר).
+ */
+function page_site(): string
+{
+    $u = function_exists('site_url_setting') ? site_url_setting() : rtrim((string)(setting('site_url') ?? ''), '/');
+    $p = parse_url($u);
+    if (!is_array($p) || !in_array(strtolower($p['scheme'] ?? ''), ['http', 'https'], true) || !preg_match('/^[a-z0-9.-]+$/i', $p['host'] ?? '')) return '';
+    return strtolower($p['scheme']) . '://' . strtolower($p['host']) . (isset($p['port']) ? ':' . (int)$p['port'] : '');
+}
+
 /** האם הנתיב הוא עמוד (pages: "auto" — כל .html מחוץ ל-components/, ולא תבנית ישנה). */
 function page_is(string $p): bool
 {
-    return (bool)preg_match('/\.html?$/i', $p) && !str_starts_with($p, 'components/') && !preg_match('#^from-current/[^/]+\.html?$#i', $p);
+    return (bool)preg_match('/\.html?$/i', $p) && !str_starts_with($p, 'components/') && !str_starts_with($p, 'templates/') && !preg_match('#^from-current/[^/]+\.html?$#i', $p);   // V15b: templates/ (V13) — לא עמודים
 }
 
 /** about/index.html ← "about/"; index.html ← ""; x.html ← "x.html". */
@@ -787,7 +799,8 @@ function pages_list(array $q = []): array
         $n = substr($t['path'], strlen('templates/'), -strlen('/template.json'));
         if (is_array($m) && ($m['kind'] ?? '') === 'page' && !str_contains($n, '/') && pf_by_path("templates/$n/template.html")) $tpls[] = ['name' => $n, 'label' => mb_substr((string)($m['label'] ?? $n), 0, 80)];
     }
-    return ['pages' => $pages, 'entry' => $entry, 'mode' => $list === null ? 'auto' : 'list', 'base' => $base, 'moves' => pages_moves($rows), 'broken' => array_slice($broken, 0, 200), 'templates' => $tpls];
+    return ['pages' => $pages, 'entry' => $entry, 'mode' => $list === null ? 'auto' : 'list', 'base' => $base, 'moves' => pages_moves($rows), 'broken' => array_slice($broken, 0, 200), 'templates' => $tpls,
+        'site' => page_site()];
 }
 
 /** §2.6: עמודים שהכתובת שלהם השתנתה מאז הגרסה שבאתר: הנתיב הישן (בגרסה החיה, ואינו קיים היום) ← החדש. */
@@ -1019,6 +1032,8 @@ function page_set_entry(array $user, array $b): array
 /**
  * "קבע כדף 404": עמוד קיים ← 404.html (שינוי שם; הקישורים אליו אינם מעודכנים — דף 404 אינו יעד של קישור), או יצירה מתבנית
  * "לא נמצא" עם קישור לעמוד הראשי. 404.html קיים — 409 (קודם מוחקים / משנים אותו).
+ * דף 404 מוגש בכל עומק כתובת, ולכן בעמוד קיים כל הפניה יחסית לקובץ בפרויקט הופכת ל-/lexicon/<נתיב> (?query ו-#frag נשמרים),
+ * בעסקה אחת עם שורת היסטוריה.
  */
 function page_set_404(array $user, array $b): array
 {
@@ -1041,7 +1056,9 @@ function page_set_404(array $user, array $b): array
             $live = array_flip(array_column(db()->query('SELECT path FROM pf_files WHERE deleted_at IS NULL')->fetchAll(), 'path'));
             $plan = [];
             foreach (pf_ref_scan($from, $s) as [$off, $len, $val, $kd]) {
-                if ($val[0] === '/' || $kd === 'entry') continue;
+                $val = preg_split('/[?#]/', $val, 2)[0];                     // ?v=2 / #top — נשארים אחרי הנתיב (רק הנתיב מוחלף)
+                if ($val === '' || $val[0] === '/' || $kd === 'entry') continue;
+                $len = strlen($val);
                 $t = pf_ref_resolve($from, $val, $kd);
                 if ($t === null && preg_match('#^(\./|\.\./)+$#', $val) && substr_count($val, '../') === substr_count($from, '/')) $t = '';   // "../../" — שורש העמוד
                 if ($t === null || ($t !== '' && !pf_exists_in($live, $t))) continue;

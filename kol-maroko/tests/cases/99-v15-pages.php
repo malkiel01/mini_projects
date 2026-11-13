@@ -80,6 +80,13 @@ test('V15 §2.4 ➕ מתבנית עמוד (V13: templates/<שם>/, kind: page) �
     v15_put('templates/strip/template.html', '<div>x</div>');
     $l = v15_list();
     eq([['name' => 'landing', 'label' => 'דף נחיתה']], $l['templates'], 'רק תבניות עמוד ברשימה');
+    ok(!array_filter(array_column($l['pages'], 'path'), fn($p) => str_starts_with($p, 'templates/')), 'templates/ — אינם עמודים ברשימה (auto)');
+    $was = setting('site_url');
+    setting_set('site_url', 'https://Example.org:8443/wp/');
+    eq('https://example.org:8443', v15_list()['site'], 'כתובת האתר ל-og:image — המקור בלבד');
+    setting_set('site_url', 'javascript:alert(1)');
+    eq('', v15_list()['site'], 'כתובת שאינה http(s) — ריקה (והטופס מזהיר)');
+    setting_set('site_url', $was ?? PUB_SITE_DEFAULT);
     $r = v15_post('page_create', ['slug' => 'promo/summer', 'title' => 'קיץ', 'start' => 'tpl', 'template' => 'landing']);
     eq(200, $r['status'], $r['body']);
     $t = v15_text('promo/summer/index.html');
@@ -154,11 +161,11 @@ test('V15 §2.4 עמוד ראשי, דף 404, סדר ("auto" ← רשימה, וח
     // עמוד קיים בתת-תיקייה ← 404.html: ההפניות היחסיות הופכות ל-/lexicon/… ונשארות תקינות בכל עומק (ביקורת 🟡1)
     $nf = pf_by_path('404.html');
     eq(200, http('POST', '/api.php?action=pf_delete', ['user' => U_EDITOR, 'json' => ['id' => (int)$nf['id']]])['status']);
-    v15_put('err/deep/index.html', v15_page('שגיאה', "  <link rel=\"stylesheet\" href=\"../../css/v15.css\">\n", "  <img src=\"../../media/x.png\"> <a href=\"../../\">בית</a> <a href=\"../../team/dana/\">דנה</a> <a href=\"https://example.com/x\">חוץ</a> <a href=\"#top\">עוגן</a>\n"));
+    v15_put('err/deep/index.html', v15_page('שגיאה', "  <link rel=\"stylesheet\" href=\"../../css/v15.css?v=2\">\n", "  <img src=\"../../media/x.png#frag\"> <a href=\"../../#top\">בית-עוגן</a> <a href=\"../../\">בית</a> <a href=\"../../team/dana/\">דנה</a> <a href=\"https://example.com/x\">חוץ</a> <a href=\"#top\">עוגן</a>\n"));
     $n = v15_post('page_set_404', ['path' => 'err/deep/index.html']);
     eq(200, $n['status'], $n['body']);
     $t = v15_text('404.html');
-    foreach (['href="/lexicon/css/v15.css"', 'src="/lexicon/media/x.png"', 'href="/lexicon/"', 'href="/lexicon/team/dana/"', 'href="https://example.com/x"', 'href="#top"'] as $w) ok(str_contains($t, $w), "404 מתת-תיקייה: $w", $t);
+    foreach (['href="/lexicon/css/v15.css?v=2"', 'src="/lexicon/media/x.png#frag"', 'href="/lexicon/#top"', 'href="/lexicon/"', 'href="/lexicon/team/dana/"', 'href="https://example.com/x"', 'href="#top"'] as $w) ok(str_contains($t, $w), "404 מתת-תיקייה: $w", $t);
     // סדר
     $o = v15_post('pages_order', ['order' => ['odot/index.html', 'index.html', '404.html']]);
     eq(200, $o['status'], $o['body']);
