@@ -525,7 +525,8 @@ const png = (w, h, rgb) => {
       ok(/לפני ניסוי של בעל העמוד/.test(await page.textContent('#main')), '📌 נקודה עכשיו — ברשימה, עם ההערה');
       const before = (await call(page, 'words')).words.length;
       // שינוי: מחיקת המילה שהוסיף (📚 ← ✏️ ← 🗑️ מחיקה)
-      await page.click('a:has-text("📚 נתונים")'); await page.waitForSelector('#main .w-table-wrap, #main table', { timeout: 20000 });
+      await page.click('a:has-text("📚 נתונים")'); await page.waitForSelector('#main [data-list="words"]', { timeout: 20000 });
+      await page.click('#main [data-list="words"]'); await page.waitForSelector('#main .w-table-wrap, #main table', { timeout: 20000 });   // 📚 נפתח על הרשימה האחרונה ("פתגמים" מצעד 14)
       await page.fill('#main input[placeholder^="חיפוש"]', 'מילה של בעל העמוד'); await sleep(900);
       ok(await page.locator('#main tr[data-word]').count() === 1, 'חיפוש "מילה של בעל העמוד" — שורה אחת');
       await page.locator('#main tr[data-word] button:has-text("✏️")').first().click(); await sleep(600);
