@@ -135,3 +135,9 @@
 - "המילה הזו" נשמרת דרך `pf_write` (plan → apply עם token) — אותו מנוע של N1; אין API חדש. "התבנית" — דרך המודל ו-Ctrl+Z כרגיל.
 - פתוח: `sanitize_rich` מסיר `lang=` (לאפיון); "החלף הקלטה" ו"נשלח/שגיאה" לא נבדקו בדפדפן; רשימה מקוננת בתבנית — לא מצוירת; קטע N3 — העתק בצד הלקוח של `list_snippet` (שינוי באחד — גם בשני).
 - v1a/v1b (390 — כפתורים ≥34px; תפריט הקשר של עורך הקוד) נכשלים **גם ב-main** — לא לייחס לפרוסה.
+
+## מ-V12 (2026-11-13, נרשם בידי בקרה (7))
+- רכיב = `components/<שם>/{template.html, component.json, style.css, script.js}`; מופע = ה-HTML המלא בעמוד עם `data-kol-component`. הלוגיקה הטהורה — `component-state.js` (נבדקת ב-`tests/editor/component-state.mjs`); המסך — `components.js`.
+- כל הגדרה של מופע עוברת `checkField` / `checkAttrName` / `checkUrl` / `checkVarValue` — **יעד חדש = בדיקה חדשה שם**.
+- יצירת קבצים בשרת = `pf_create` + `attachFx` לביטול (כמו V9). `build_is_config` מוציא `template.html` של רכיב מהחבילה.
+- פתוח: עריכת תבנית בלי CSS העמוד (נראה שבור — אייקון על placeholder); רכיב מקונן — רמה אחת; repeater — מבנה פריט; שינוי שם רכיב — אין פעולה.
