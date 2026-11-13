@@ -1203,7 +1203,7 @@ const Editor = (() => {
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
       /* T2 (E2E ⚪5): לחיצה על הנבחר עולה להורה — אומרים, ומציעים לחזור */
       c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } }, true);
-      S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
+      S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone, note });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);

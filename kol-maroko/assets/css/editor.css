@@ -814,7 +814,7 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-bar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; padding-bottom: 1px; }
   .ed-bar::-webkit-scrollbar { display: none; }
   .ed-bar .ed-page { flex: 0 0 104px; min-width: 0; }
-  .ed-bar [data-panel], .ed-bar .ts-pal { order: -1; }   /* 🌳 ℹ️ 🔎 — ראשונים, תמיד גלויים */
+  .ed-bar [data-panel], .ed-bar .ts-pal, .ed-bar .ts-fsb { order: -1; }   /* 🌳 ℹ️ 🔎 — ראשונים, תמיד גלויים */
   /* שורת השביל — שורה אחת (בחירה אינה מזיזה את הקנבס בין שתי הקשות): סרגל הנבחר עד 62% וגולל, ופירורי הלחם ביתר — לא מתכווצים לאפס */
   .ed-path { flex-wrap: nowrap; gap: 4px; padding-inline: 4px; height: 48px; min-height: 48px; }
   .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
@@ -827,7 +827,13 @@ dialog.hd-sheet .hd { padding: 0; }
   .sp.phone .sp-h { background: radial-gradient(circle, #e67e22 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; border: 0; opacity: 1; }
   .fx-rad { background: radial-gradient(circle, #fff 0 3.5px, #e0c 4px 7px, transparent 7.5px) !important; border: 0 !important; box-shadow: none !important; }   /* ידית הרדיוס (V10) — נקודה, לא עיגול של 44px על הטקסט */
   .sp.phone .sp-h-padding { background: radial-gradient(circle, #4c9a2a 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; }
-  .ed { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  .ed { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); gap: 4px; }
+  /* מסך מלא (⛶; במצב רוחב — תמיד): העורך מעל כותרת האפליקציה והלשוניות, עם האזור הבטוח בכל הקצוות */
+  .ed.ts-fs { position: fixed; inset: 0; z-index: 25; height: auto; min-height: 0; margin: 0; background: var(--bg, #f6f7f9);
+    padding: calc(4px + env(safe-area-inset-top)) calc(4px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(4px + env(safe-area-inset-left)); }
+  .ed-ctx { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+  .ed-note { bottom: calc(var(--s2) + env(safe-area-inset-bottom)); }
+  .ed.ts-kb.typing .ed-tbar { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   /* הגיליון: ידית, שלושה גבהים */
   .ts-grip { display: flex; justify-content: center; align-items: center; flex: none; height: 22px; cursor: grab; touch-action: none; }
   .ts-grip-bar { width: 44px; height: 5px; border-radius: 3px; background: var(--line, #c9ccd1); }
@@ -835,6 +841,7 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed .ed-side.ed-info, .ed .ed-side.ed-nav { width: auto; }   /* הגיליון ברוחב המסך ("‎.ed-info { width: 320px }" של המחשב גבר עליו) */
   .ed-side .sg-target { position: static; }   /* בגיליון נמוך תיבת "חל על" הדביקה (~200px) כיסתה את השליטות שמתחתיה */
   .ed.ts-row .ed-side { height: calc(min(132px, 30dvh) + env(safe-area-inset-bottom)); }
+  .ed.ts-third .ed-side { height: 36dvh; }
   .ed.ts-half .ed-side { height: 50dvh; }
   .ed.ts-full .ed-side { height: calc(100dvh - 56px); }
   .ed .ed-side.ts-dragging { transition: none; }
@@ -853,10 +860,13 @@ dialog.hd-sheet .hd { padding: 0; }
   /* צביטה: הקנבס המוגדל גולל */
   .ed.ts-zoomed .ed-canvas.spike-canvas { overflow: auto; }
   .ed-panes { position: relative; }
-  .ts-fit { position: absolute; z-index: 8; top: 6px; inset-inline-end: 6px; min-height: 40px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+  .ed .ts-fit.btn { min-height: 44px; } .ts-fit { position: absolute; z-index: 8; top: 6px; inset-inline-end: 6px; min-height: 44px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
   .ts-fit[hidden] { display: none; }
 }
 @media (max-width: 999px) and (orientation: landscape) and (max-height: 599px) {
+  .ed, .ed.ts-fs { position: fixed; inset: 0; z-index: 25; height: auto; min-height: 0; margin: 0; background: var(--bg, #f6f7f9);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  .ts-fsb { display: none; }
   /* מצב רוחב: הגיליון בצד, ברוחב 40% */
   .ed .ed-side, .ed.ts-row .ed-side, .ed.ts-half .ed-side, .ed.ts-full .ed-side { top: 0; bottom: 0; height: auto; width: 40vw; inset-inline: auto 0; border-radius: 0 14px 14px 0; padding-top: env(safe-area-inset-top); }
   .ts-grip { display: none; }
@@ -874,7 +884,9 @@ dialog.hd-sheet .hd { padding: 0; }
   .sp-num { transform: translate(-50%, -84px); }
   .sz-tip, .fx-tip { transform: translate(-50%, -44px); }
   .sg-step { min-width: 44px; min-height: 44px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
-  .ts-mv { min-width: 40px; min-height: 40px; }
+  .ed-seltools .ts-mv { min-width: 44px; min-height: 44px; }
+  .ed-libbody [data-lib], .ed-lib-item, .tp-bar .btn, .tp-row .ed-lib-item, .ed-moveto-row, .ed-menu .btn { min-height: 44px; }
+  .ts-rowmv { opacity: .7; width: 34px; }
   .ed-crumb { min-height: 44px; }
   /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */
   .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }
