@@ -379,7 +379,7 @@ const PAGE = `<!doctype html>
       const l0 = await files(lp); const lscl = await lp.evaluate(() => Editor._state.canvas.scale);
       { const r0 = await rect(lp, H1);
         await tdrag(lp, '[data-ps-move]', -30, 40); await sleep(300); const r1 = await rect(lp, H1);
-        ok(Math.abs(r1.t - r0.t - 40 / lscl) < 3 && (await files(lp))['css/page.css'] !== l0['css/page.css'], '390 · צעד 5 במגע: גרירת האלמנט הממוקם באצבע — זז ונכתב בשחרור', { r0, r1 }); }
+        ok(Math.abs(r1.t - r0.t - 40 / lscl) < 3 + 6 / lscl /* V14: קנבס ברוחב אמיתי — ההצמדה (6px) יכולה לתפוס קו */ && (await files(lp))['css/page.css'] !== l0['css/page.css'], '390 · צעד 5 במגע: גרירת האלמנט הממוקם באצבע — זז ונכתב בשחרור', { r0, r1 }); }
       for (let i = 0; i < 8 && /position: absolute/.test((await files(lp))['css/page.css']); i++) { await lp.evaluate(() => Editor._undo()); await sleep(60); }
       const lz = await files(lp);
       { const from = await at(lp, '.kadisha-hero-eyebrow-line'), to = await at(lp, 'h1.kadisha-hero-title', 0.5, 0.15, 0, false); await drag(lp, from, to, { touch: true, hold: 450, steps: 8 }); }

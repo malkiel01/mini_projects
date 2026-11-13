@@ -406,7 +406,7 @@
         if (e.pointerType === 'touch') {
           const t = tg, x = e.clientX, y = e.clientY;
           // V4: לחיצה ארוכה (400ms) מחמשת גרירה; תזוזה אחריה — גרירה, ושחרור בלי תזוזה — תפריט ההקשר
-          if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; } }, 400);
+          if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; try { navigator.vibrate?.(12); } catch { /* V14: רטט קצר — אם יש */ } } }, 400);
           else this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600);
         }
         const n = this.pick(tg);

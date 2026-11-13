@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js', 'assets/js/editor/touch.js'];   /* V14: touch.js */
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -1138,6 +1138,7 @@ const Editor = (() => {
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
       /* T2 (E2E ⚪5): לחיצה על הנבחר עולה להורה — אומרים, ומציעים לחזור */
       c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } }, true);
+      S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);
@@ -1168,7 +1169,7 @@ const Editor = (() => {
     if (id === 'hist') S.hist?.draw();
     if (id === 'tpl') S.tpl?.load().catch(e => note(e.message, true));
   }
-  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
   return { view, unmount, selectAt, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
