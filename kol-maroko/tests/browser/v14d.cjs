@@ -161,13 +161,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(r.rev1 > r.rev0 && !r.dirty && r.same && r.srv === r.rev1, 'תיבת טקסט: 💾 נשמר לשרת (pf_write) — rev עולה, התוכן זהה', r);
       await ctap(page, await rectOf(page, '.pj-main [data-key="undo"]')); await page.evaluate(async () => Project._save(Project._state.cur)); await sleep(200);
       ok(await val() === v0, 'ביטול ושמירה — חזרה לקובץ המקורי');
-      // לשונית "קוד" של העורך החזותי — בלי Monaco
+      // לשונית "קוד" של העורך החזותי. index.html נפתח כש-Monaco חסום, ואחר כך Monaco נטען (בקרה 🟡2): המסמך עדיין בלי model — תיבת טקסט
+      await page.evaluate(() => Project.openAt('index.html', 1)); await sleep(500);
+      await page.unroute('**/monaco/vs/loader.js');
+      const lm = await page.evaluate(() => Project.loadMonaco().then(() => !!window.monaco, () => false));
       await page.goto(base + '/editor.php#/editor/index.html'); await ready(page); await sleep(500);
+      ok(lm && await page.evaluate(() => !Project._state.docs.get(Project.docs.byPath('index.html').id).model), 'Monaco נטען אחרי שהקובץ נפתח בלעדיו — המסמך נשאר בלי model', lm);
       await page.evaluate(() => { if (!document.querySelector('.ed').classList.contains('split')) document.querySelector('[data-split]').click(); });
       await sleep(300);
       await ctap(page, await rectOf(page, '.ed-tabs [data-tab="code"]'));
       st = await page.evaluate(() => { const ta = document.querySelector('.ed-code textarea.pj-split'), k = document.querySelector('.ed-code [data-keys]'); return { ta: !!(ta && ta.offsetParent), h: ta ? Math.round(ta.getBoundingClientRect().height) : 0, keys: !!(k && !k.hidden && k.offsetParent), err: /לא נטען/.test(document.querySelector('.ed-code').textContent) }; });
-      ok(st.ta && st.h > 200 && st.keys && !st.err, 'עורך חזותי בלי Monaco — לשונית "קוד": תיבת טקסט על המסך, עם שורת המקשים (לא "עורך הקוד לא נטען")', st);
+      ok(st.ta && st.h > 200 && st.keys && !st.err, 'עורך חזותי, מסמך בלי Monaco (גם כש-Monaco כבר נטען) — לשונית "קוד": תיבת טקסט על המסך, עם שורת המקשים (לא "עורך הקוד לא נטען")', st);
       // בחירה בקנבס ← הטווח בקוד; הקלדה בקוד ← הקנבס
       await ctap(page, await rectOf(page, '.ed-tabs [data-tab="canvas"]'));
       await select(page, 'h1.kadisha-hero-title'); await sleep(200);
@@ -264,12 +268,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
           return new Promise(res => setTimeout(() => {
             const c3 = P.coversOf(box), s3 = P.covScans;
             d.querySelector('h1').append(d.createTextNode(' '));
-            setTimeout(() => { const e = P.coversOf(box), s4 = P.covScans; box.remove(); d.querySelector('h1').lastChild.remove(); res({ n: a.length, s0, s1, s2, s3, s4, sameArr: a === b && b === c3, eLen: e.length }); }, 30);
+            const sync = P.coversOf(box), s35 = P.covScans;                     // באותה משימה — לפני ה-callback של ה-MutationObserver (בקרה 🟡1)
+            d.querySelector('h1').lastChild.remove(); d.querySelector('h1').append(d.createTextNode(' '));
+            setTimeout(() => { const e = P.coversOf(box), s4 = P.covScans; box.remove(); d.querySelector('h1').lastChild.remove(); res({ n: a.length, s0, s1, s2, s3, s35, syncNew: sync !== c3, s4, sameArr: a === b && b === c3, eLen: e.length }); }, 30);
           }, 30));
         });
         ok(r.n >= 1 && r.s1 === r.s0 + 1 && r.s2 === r.s1 && r.sameArr, 'coversOf: סריקה אחת; ציור חוזר של הפאנל — מהמטמון', r);
         ok(r.s3 === r.s2, 'ציור השכבות של העורך (מסגרות, ידיות) — אינו מבטל את המטמון', r);
-        ok(r.s4 === r.s3 + 1 && r.eLen >= 1, 'שינוי בעמוד עצמו — סריקה חדשה', r);
+        ok(r.s35 === r.s3 + 1 && r.syncNew, 'שינוי בעמוד ו-coversOf באותה משימה (לפני ה-MutationObserver) — סריקה חדשה, לא תוצאה ישנה', r);
+        ok(r.s4 === r.s35 + 1 && r.eLen >= 1, 'שינוי נוסף בעמוד — סריקה חדשה', r);
       }
       ok(same(await files(page), o0), 'העורך ב-390 — הקבצים זהים למצב ההתחלה');
       await ctx.close();

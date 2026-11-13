@@ -158,9 +158,11 @@
       if (this.covDoc !== d) {
         this.covMo?.disconnect(); this.covDoc = d; this.covGen = (this.covGen || 0) + 1; this.covMemo = new WeakMap();
         const skip = n => { const x = n.nodeType === 1 ? n : n.parentElement; return !!(x && x.closest && x.closest('[data-kol-canvas]')); };
-        this.covMo = new (this.win().MutationObserver)(rs => { if (rs.some(m => !skip(m.target) || [...m.addedNodes, ...m.removedNodes].some(x => !skip(x)))) this.covGen++; });
+        this.covReal = rs => rs.some(m => !skip(m.target) || [...m.addedNodes, ...m.removedNodes].some(x => !skip(x)));
+        this.covMo = new (this.win().MutationObserver)(rs => { if (this.covReal(rs)) this.covGen++; });
         try { this.covMo.observe(d, { subtree: true, childList: true, attributes: true, characterData: true }); } catch { /* */ }
       }
+      { const rs = this.covMo.takeRecords(); if (rs.length && this.covReal(rs)) this.covGen++; }   // שינוי באותה משימה — ה-callback (microtask) עוד לא רץ
       const key = this.covGen + '|' + Math.round(r.left) + ',' + Math.round(r.top) + ',' + Math.round(r.width) + ',' + Math.round(r.height) + '|' + d.documentElement.clientWidth;
       const was = this.covMemo.get(e); if (was && was.key === key) { this.covHits = (this.covHits || 0) + 1; return was.out; }
       const out = this.coversScan(e, d, r); this.covScans = (this.covScans || 0) + 1;

@@ -455,6 +455,7 @@ const Project = (() => {
       if (now - (doc.fbAt || 0) > 1000 || doc.fbKind !== kind || /\s/.test(e.data || '')) fbSnap(doc);
       doc.fbAt = now; doc.fbKind = kind;
     });
+    ta.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); save(doc.id); } });   // Ctrl+S — גם בלשונית "קוד" של העורך
     (doc.views = doc.views || new Set()).add(ta);
     return ta;
   }
@@ -491,6 +492,7 @@ const Project = (() => {
     if (!a) return;
     if (a.ed) {
       const ed = a.ed;
+      if ((k === 'undo' || k === 'redo') && ed.getOption(monaco.editor.EditorOption.readOnly)) return;   // לקריאה בלבד (423)
       if (k === 'undo' || k === 'redo') { const m = ed.getModel(); if (m) m[k](); }
       else if (k === 'find') { ed.focus(); ed.getAction('actions.find')?.run(); return; }
       else if (k === 'Tab') ed.trigger('kol-keys', 'tab', null);
@@ -1356,7 +1358,7 @@ const Project = (() => {
    */
   function splitEditor(host, id) {
     const doc = S.docs.get(id);
-    if (!monaco && doc && !doc.binary && doc.text != null) {   // V14d: Monaco לא נטען (למשל בטלפון) — תיבת טקסט עם אותו מסמך ואותה שמירה, לא שגיאה
+    if (doc && !doc.model && !doc.binary && doc.text != null) {   // (גם קובץ שנפתח לפני ש-Monaco נטען — כמו drawEditor)   // V14d: Monaco לא נטען (למשל בטלפון) — תיבת טקסט עם אותו מסמך ואותה שמירה, לא שגיאה
       const ta = fbArea(doc, S.byId.get(id)?.path || ''); ta.classList.add('pj-split');
       S.splitId = id; S.splitTa = ta;
       el.splitKeys = el.splitKeys || keyBar(splitEd); el.splitKeys.hidden = !touchy();
