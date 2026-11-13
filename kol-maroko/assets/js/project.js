@@ -51,8 +51,10 @@ const Project = (() => {
         window.require(['vs/editor/editor.main'], m => { clearTimeout(t); ok(monaco = m); }, e => { clearTimeout(t); fail(e); });
       };
       if (window.require?.config) return done();
+      const was = document.querySelector('script[data-monaco-loader]');   /* V16: loader.js פעם אחת לדף (גם code.js טוען אותו) */
+      if (was) { was.addEventListener('load', done); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
       const s = document.createElement('script');
-      s.src = VS + '/loader.js';
+      s.src = VS + '/loader.js'; s.dataset.monacoLoader = '1';
       s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
       s.onload = done;
       document.head.append(s);

@@ -1,0 +1,11 @@
+/* רכיב מוכן: נקודות על תמונה (kit 1.0.0). מיקום כל נקודה — --x / --y באחוזים מהתמונה (על הנקודה עצמה); ההסבר — בריחוף, בפוקוס, בהקשה. */
+.kol-hotspot { --kol-hotspot-color: var(--color-accent, #a3322a); position: relative; margin: 0; }
+.kol-hotspot__img { display: block; inline-size: 100%; block-size: auto; border-radius: 12px; }
+.kol-hotspot__pin { position: absolute; left: var(--x, 50%); top: var(--y, 50%); translate: -50% -50%; padding: 0; border: 0; background: none; cursor: pointer; }
+.kol-hotspot__dot { display: block; inline-size: 22px; block-size: 22px; border-radius: 50%; background: var(--kol-hotspot-color); box-shadow: 0 0 0 4px rgba(255, 255, 255, .85); }
+.kol-hotspot__pin:focus-visible .kol-hotspot__dot { outline: 3px solid #fff; outline-offset: 3px; }
+.kol-hotspot__tip { position: absolute; inset-block-end: calc(100% + 10px); left: 50%; translate: -50% 0; inline-size: max-content; max-inline-size: 220px; padding: 6px 10px; border-radius: 8px; background: #1b1b1f; color: #fff; font-size: .9rem; opacity: 0; visibility: hidden; transition: opacity .15s; pointer-events: none; }
+.kol-hotspot__pin:hover .kol-hotspot__tip, .kol-hotspot__pin:focus .kol-hotspot__tip, .kol-hotspot.is-tips .kol-hotspot__tip { opacity: 1; visibility: visible; }
+@media (prefers-reduced-motion: no-preference) { .kol-hotspot__dot { animation: kol-hotspot-pulse 2s infinite; } }
+@keyframes kol-hotspot-pulse { 50% { box-shadow: 0 0 0 9px rgba(255, 255, 255, .35); } }
+@media (prefers-reduced-motion: reduce) { .kol-hotspot__tip { transition: none; } .kol-hotspot__dot { animation: none; } }

@@ -31,7 +31,7 @@ function kt_text(string $p): ?string { $r = pf_by_path($p); return $r ? pf_blob_
 
 test('V16 ספרייה: כל רכיב מוכן — kit.json (גרסה, קטגוריה מהרשימה, תיאור, תמונה מקדימה) ו-component.json באותו שם', function () {
     $names = kit_names();
-    ok(count($names) >= 20, 'לפחות 20 רכיבים (V16a): ' . count($names));
+    ok(count($names) >= 32, 'לפחות 32 רכיבים (V16a + V16b): ' . count($names));
     foreach ($names as $n) {
         $k = kit_read($n);
         ok(preg_match('/^\d+\.\d+\.\d+$/', (string)($k['meta']['version'] ?? '')) === 1, "$n: גרסה");
@@ -48,12 +48,14 @@ test('V16 כללים (§2.1): אין מקור חיצוני חוץ ממה שהו�
     foreach (kit_names() as $n) {
         $k = kit_read($n);
         $ext = array_values(array_filter((array)($k['meta']['external'] ?? []), 'is_string'));
+        $links = array_values(array_filter((array)($k['meta']['links'] ?? []), 'is_string'));      // קישורים (ניווט) — לא נטענים
         foreach ($k['files'] as $f => $s) {
             $s = preg_replace('~data:image/svg\+xml,[^"]*~', '', $s);         // תמונת מציין מקום — לא בקשה
             preg_match_all('~https?://([a-z0-9.-]+)~i', $s, $m);
             foreach ($m[1] as $host) {
                 if ($f === 'template.html' && $ext) continue;                       // קישור (href) לסרטון — לא נטען
-                ok(in_array(strtolower($host), $ext, true), "$n/$f: מקור חיצוני שלא הוצהר — $host");
+                if (strtolower($host) === 'www.w3.org') continue;                   // מרחב שמות של SVG / XML — לא בקשה
+                ok(in_array(strtolower($host), array_merge($ext, $links), true), "$n/$f: כתובת חיצונית שלא הוצהרה (external / links ב-kit.json) — $host");
             }
         }
         if (isset($k['files']['script.js'])) {
@@ -70,9 +72,26 @@ test('V16 כללים (§2.1): אין מקור חיצוני חוץ ממה שהו�
         $tpl = $k['files']['template.html'];
         preg_match_all('~<img\b[^>]*>~i', $tpl, $im);
         foreach ($im[0] as $tag) ok(preg_match('~\balt="~', $tag) === 1, "$n: <img> בלי alt");
-        ok(!preg_match('~<script\b|\son[a-z]+\s*=|\sstyle\s*=~i', $tpl), "$n: בתבנית אין <script>, on* או style= (עיצוב — ב-style.css, הגדרות — דרך הסכמה)");
-        ok(preg_match('~^<[a-z]+ class="kol-~', ltrim($tpl)) === 1, "$n: שורש התבנית — אלמנט עם מחלקת kol-*");
+        ok(!preg_match('~<script\b|\son[a-z]+\s*=~i', $tpl), "$n: בתבנית אין <script> או on*");
+        preg_match_all('~\sstyle\s*=\s*"([^"]*)"~i', $tpl, $sm);
+        foreach ($sm[1] as $decl) foreach (array_filter(array_map('trim', explode(';', $decl))) as $d) ok(str_starts_with($d, '--'), "$n: style= בתבנית — רק משתני CSS (נתון של החלק, כמו מיקום נקודה), לא עיצוב: $d");
+        ok(preg_match('~^<[a-z][a-z0-9]* class="kol-~', ltrim($tpl)) === 1, "$n: שורש התבנית — אלמנט עם מחלקת kol-*");
     }
+});
+
+test('V16 קבצים נוספים (kit.json files): מועתקים עם הרכיב, שם פשוט בלבד; Lottie — הנגן בפרויקט, בלי CDN ובלי eval', function () {
+    ok(in_array('lottie', kit_names(), true), 'יש Lottie');
+    $k = kit_read('lottie');
+    ok(isset($k['files']['lottie_light.min.js'], $k['files']['sample.json']), 'הנגן והדוגמה — חלק מהרכיב');
+    ok(str_contains($k['files']['lottie_light.min.js'], 'MIT'), 'הרישיון בתוך הקובץ שמועתק');
+    ok(!preg_match('~\beval\(|new Function\(~', $k['files']['lottie_light.min.js']), 'lottie_light — בלי eval / new Function');
+    ok(is_array(json_decode($k['files']['sample.json'], true)), 'sample.json — JSON תקין');
+    eq(KIT_FILES, kit_names_of(['files' => ['../x.js', 'a/b.js', 'kit.json', 'x.php', 'X.js']]), 'שמות לא תקינים — לא נכנסים');
+    eq(array_merge(KIT_FILES, ['ok.js']), kit_names_of(['files' => ['ok.js', 'template.html']]), 'שם תקין — נכנס, בלי כפילות');
+    kt_reset();
+    $r = kit_copy(KT_ED, ['name' => 'lottie']);
+    ok(count($r['ids']) === 6 && kt_text('components/lottie/lottie_light.min.js') === $k['files']['lottie_light.min.js'], 'הועתקו 6 קבצים, כולל הנגן');
+    ok(!kt_item('lottie')['installed'][0]['modified'], 'לא שונה (ה-hash כולל את הקבצים הנוספים)');
 });
 
 test('V16 kit_copy: שימוש ראשון ← components/<שם>/ (גרסה בהיסטוריה) + kol.json system; שימוש שני — אין העתקה', function () {
@@ -201,6 +220,36 @@ test('V16 kit_update: קובץ שהגרסה החדשה אינה כוללת — �
     ok(count($u['removed']) === 1 && pf_by_path('components/quote/script.js') === null, 'script.js — לסל');
     kit_revert(KT_ED, ['folder' => 'quote'] + $u);
     eq("/* ישן */\n", kt_text('components/quote/script.js'), 'ביטול — חזר');
+});
+test('V16 מגבלת הקבצים (pf_limit files): kit_update take שיוצר קובץ, ו-kit_revert שמחזיר קובץ מהסל — 413 במגבלה, בלי לגעת בדבר', function () {
+    $def = (string)PF_LIMITS['files'][0];
+    try {
+        // take: הגרסה החדשה מוסיפה קובץ (style.css חסר בפרויקט) — בדיוק במגבלה ← 413
+        kt_reset();
+        kit_copy(KT_ED, ['name' => 'counter']);
+        pf_delete(KT_ED, ['path' => 'components/counter/style.css']);
+        $c = pf_kol()['config']; $c['system']['components/counter/']['version'] = '0.9.0'; $c['system']['components/counter/']['hash'] = kit_hash(kit_proj('counter'));
+        pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'ישן'));
+        setting_set('pf_limit_files', (string)pf_count());
+        eq(413, throws(fn() => kit_update(KT_ED, ['folder' => 'counter', 'action' => 'take'])), 'take במגבלה — 413');
+        ok(pf_by_path('components/counter/style.css') === null && pf_kol()['config']['system']['components/counter/']['version'] === '0.9.0', 'לא נוצר קובץ, והרשומה לא זזה');
+        setting_set('pf_limit_files', $def);
+        $u = kit_update(KT_ED, ['folder' => 'counter', 'action' => 'take']);
+        ok(count($u['created']) === 1 && pf_by_path('components/counter/style.css') !== null, 'מתחת למגבלה — נוצר');
+        // revert: מחזיר מהסל קובץ שהעדכון הוציא — כשהפרויקט במגבלה ← 413
+        kt_reset();
+        kit_copy(KT_ED, ['name' => 'quote']);
+        pf_create(KT_ED, ['path' => 'components/quote/script.js', 'content' => "/* ישן */\n"]);
+        $c = pf_kol()['config']; $c['system']['components/quote/']['version'] = '0.9.0'; $c['system']['components/quote/']['hash'] = kit_hash(kit_proj('quote'));
+        pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'ישן'));
+        $u = kit_update(KT_ED, ['folder' => 'quote', 'action' => 'take']);
+        setting_set('pf_limit_files', (string)pf_count());
+        eq(413, throws(fn() => kit_revert(KT_ED, ['folder' => 'quote'] + $u)), 'revert שמחזיר קובץ — במגבלה ← 413');
+        ok(pf_by_path('components/quote/script.js') === null && pf_kol()['config']['system']['components/quote/']['version'] !== '0.9.0', 'לא חזר דבר (גם לא הרשומה)');
+        setting_set('pf_limit_files', $def);
+        kit_revert(KT_ED, ['folder' => 'quote'] + $u);
+        eq("/* ישן */\n", kt_text('components/quote/script.js'), 'מתחת למגבלה — חזר');
+    } finally { setting_set('pf_limit_files', $def); }
 });
 
 test('V16 kit_update: שונה ← בלי force — 409; "השאר את שלי" — modified: true והגרסה החדשה; "קח את החדשה" (force) — נדרס, בהיסטוריה', function () {

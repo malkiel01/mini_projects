@@ -1,0 +1,15 @@
+{
+  "name": "slides",
+  "label": "מצגת",
+  "icon": "🎞",
+  "category": "תנועה",
+  "fields": [
+    {"id": "items", "label": "שקופיות", "control": "repeater", "target": {"children": ".kol-slides__slide"}},
+    {"id": "auto", "label": "הפעלה אוטומטית — כל כמה שניות (0 — כבוי)", "control": "number", "target": {"attr": "data-kol-autoplay"}},
+    {"id": "height", "label": "גובה", "control": "size", "target": {"var": "--kol-slides-h"}},
+    {"id": "accent", "label": "צבע הנקודה הפעילה", "control": "color", "target": {"var": "--kol-slides-accent"}}
+  ],
+  "states": [
+    {"id": "slide", "label": "שקופית", "item": "שקופית", "each": ".kol-slides__slide", "class": "is-active", "scroll": true}
+  ]
+}

@@ -89,7 +89,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ═══ 1. הספרייה: חיפוש, קטגוריות, תמונה מקדימה, תגים ═══
     let st = await page.evaluate(() => { const b = document.querySelector('[data-kit]'); return { cards: b.querySelectorAll('.kit-card').length, prev: b.querySelectorAll('.kit-card img.kit-prev').length, cats: [...b.querySelectorAll('[data-kit-cat]')].map(x => x.dataset.kitCat), tags: [...new Set([...b.querySelectorAll('.kit-tag')].map(x => x.dataset.kitState))] }; });
-    ok(st.cards === items.length && st.prev === items.length && st.cats.length === 10 && st.tags.join() === 'kit', 'בלשונית "🧩 רכיבים": כרטיס לכל רכיב עם תמונה מקדימה, "הכול" + 9 קטגוריות, תג "יועתק לפרויקט"', st);
+    ok(st.cards === items.length && st.prev === items.length && st.cats.length === 10 && st.tags.join() === 'kit' && items.length >= 32, 'בלשונית "🧩 רכיבים": כרטיס לכל רכיב עם תמונה מקדימה, "הכול" + 9 קטגוריות, תג "יועתק לפרויקט"', st);
     await page.fill('[data-kit-q="lib"]', 'אקורד'); await sleep(200);
     st = await page.evaluate(() => [...document.querySelectorAll('[data-kit-grid="lib"] .kit-card')].map(x => x.dataset.kitItem));
     ok(st[0] === 'accordion' && st.length <= 2 && !st.includes('counter'), 'חיפוש "אקורד" ← אקורדיון (ולשוניות, שבטלפון הן אקורדיון)', st);
@@ -160,10 +160,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }, name);
       if (st && st.ok) {
         await page.keyboard.press('Control+End'); await page.keyboard.type('✓'); await page.keyboard.press('Escape'); await sleep(250);
-        const after = await page.evaluate(p => window.KolSrc.textOf(Editor._state.canvas.m, window.KolSrc.byPath(Editor._state.canvas.m, p)), st.path);
+        const after = await page.evaluate(p => { const m = Editor._state.canvas.m, n = window.KolSrc.byPath(m, p); return window.KolSrc.textOf(m, n) + (/✓/.test(window.KolComp.outerOf(m, n)) && !/✓/.test(window.KolSrc.textOf(m, n)) ? '✓' : ''); }, st.path);
         ok(after === st.before + '✓', it.name + ': טקסט נערך במקום ("' + st.before.slice(0, 24) + '")', after);
         await undo(page);
-      } else ok(false, it.name + ': אין טקסט לעריכה במקום', st);
+      } else ok(it.name === 'anchor', it.name + ': אין טקסט לעריכה במקום' + (it.name === 'anchor' ? ' — עוגן הוא נקודה בלי טקסט (תקין)' : ''), st);
       // הגדרה אחת מהפאנל (השדה הראשון שאינו repeater)
       await selInst(page, name);
       await tab(page, 'content');
@@ -219,7 +219,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ═══ 6. ▶️ תצוגה חיה: ההתנהגות של כל רכיב (JS של הרכיב רץ) ═══
     const tok = (await call(page, 'pv_token')).token, pvUrl = `${base}/preview/${tok}/kit.html`;
     const pv = await ctx.newPage(); const pvErr = []; pv.on('pageerror', e => pvErr.push(e.message));
-    await pv.route(u => !u.href.startsWith(base) && !/^(data|blob|about):/.test(u.protocol), r => r.abort());   // שום רשת חיצונית — הנגן של YouTube אינו נטען (הבדיקה: רק שה-iframe נוצר כמו שצריך)
+    const pvExt = [];   // כל בקשה החוצה — נרשמת ונחסמת
+    await pv.route(u => !u.href.startsWith(base) && !/^(data|blob|about):/.test(u.protocol), r => { pvExt.push(r.request().url()); return r.abort(); });   // שום רשת חיצונית — הנגן של YouTube אינו נטען (הבדיקה: רק שה-iframe נוצר כמו שצריך)
     await pv.goto(pvUrl); await sleep(800);
     const q = (s, fn, arg) => pv.evaluate(([s, fn, arg]) => { const e = document.querySelector(s); return e ? new Function('e', 'arg', 'return (' + fn + ')(e, arg)')(e, arg) : '∅'; }, [s, fn.toString(), arg]);
     const vis = (s) => pv.evaluate(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; }, s);
@@ -269,7 +270,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     st = await q('.kol-stars__bar', e => Math.round(e.getBoundingClientRect().width));
     ok(st === 110, 'דירוג כוכבים: 5 כוכבים של 22px', st);
     // וידאו מוטמע
-    await into('.kol-embed'); await pv.click('.kol-embed__link'); await sleep(300);
+    await into('.kol-embed'); await sleep(400);
+    st = await pv.evaluate(() => ({ frames: document.querySelectorAll('iframe').length, ext: performance.getEntriesByType('resource').map(e => e.name).filter(u => !u.startsWith(location.origin) && !/^(data|blob):/.test(u)) }));
+    ok(st.frames === 0 && !st.ext.length && !pvExt.length, 'וידאו מוטמע: לפני לחיצה — אין iframe בעמוד, ואין שום בקשה החוצה (גם לא תמונה מ-YouTube)', { ...st, pvExt });
+    await pv.click('.kol-embed__link'); await sleep(300);
     st = await pv.evaluate(() => { const f = document.querySelector('.kol-embed__frame'); return f && { src: f.getAttribute('src'), sb: f.getAttribute('sandbox'), title: f.title }; });
     ok(st && /^https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ\?/.test(st.src) && /allow-scripts/.test(st.sb) && !/allow-top-navigation/.test(st.sb) && st.title === 'צפייה בסרטון', 'וידאו מוטמע: רק אחרי לחיצה — iframe של youtube-nocookie בארגז חול, שם מהתבנית', st);
     // שמע
@@ -293,7 +297,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ═══ 7. בלי JS: התוכן גלוי ═══
     const ctxNo = await browser.newContext({ viewport: { width: 1280, height: 900 }, javaScriptEnabled: false, extraHTTPHeaders: { 'X-Test-User': JSON.stringify(OWNER) } });
     const nj = await ctxNo.newPage(); await nj.goto(pvUrl); await sleep(500);
-    st = await nj.evaluate(() => [...document.querySelectorAll('[data-kol-component]')].map(e => ({ n: e.getAttribute('data-kol-component'), h: Math.round(e.getBoundingClientRect().height), t: e.innerText.trim().length, img: [...e.querySelectorAll('img')].some(i => i.getBoundingClientRect().height > 20) })).filter(x => !(x.h > 10 && (x.t > 0 || x.img))));
+    st = await nj.evaluate(() => [...document.querySelectorAll('[data-kol-component]')].map(e => ({ n: e.getAttribute('data-kol-component'), h: Math.round(e.getBoundingClientRect().height), t: e.innerText.trim().length, img: [...e.querySelectorAll('img')].some(i => i.getBoundingClientRect().height > 20) })).filter(x => x.n !== 'anchor' && !(x.h > 10 && (x.t > 0 || x.img))));
     ok(!st.length, 'בלי JS: כל מופע גלוי — עם הטקסט / התמונות שלו', st);
     st = await nj.evaluate(() => ({
       tab1: getComputedStyle(document.querySelector('.kol-tabs__panel')).display, tab2: getComputedStyle(document.querySelectorAll('.kol-tabs__panel')[1]).display,
@@ -380,6 +384,127 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(st.tag === 'mod' && !st.upd, 'התג ← "בפרויקט · שונה", בלי הצעת עדכון', st);
     await shot(page, 'v16-1920-panel');
 
+
+    // ═══ 11. V16b — ניווט, חלונות, תנועה: הפעולות בעורך (מהעמודים / מהכותרות / גרירת נקודה) והתצוגה החיה ═══
+    await page.setViewportSize({ width: 1920, height: 1080 }); await sleep(300);
+    // תוויות עם סוגריים ולטינית ב-RTL — <bdi>: "(" משמאל ל-")" בתוך הסוגריים הלטיניים, והם מימין למילים בעברית
+    await selInst(page, 'video-embed'); await tab(page, 'content'); await sleep(300);
+    st = await page.evaluate(() => { const k = document.querySelector('[data-comp-field="url"] .ct-k'), b = k && k.querySelector('bdi'); if (!b) return { bdi: false, txt: k && k.textContent };
+      const t = b.firstChild, r = new Range(), at = i => { r.setStart(t, i); r.setEnd(t, i + 1); return r.getBoundingClientRect(); }, L = t.length;
+      const he = new Range(); he.selectNodeContents(k.firstChild); const hr = he.getBoundingClientRect();
+      return { bdi: true, txt: b.textContent, dir: getComputedStyle(b).direction, open: at(0).left, close: at(L - 1).left, y: at(1).left, heLeft: hr.left, sameLine: Math.abs(at(0).top - hr.bottom + hr.height / 2) < hr.height / 2 && hr.height < 30 }; });
+    ok(st.bdi && st.txt === '(YouTube / Vimeo)' && st.open < st.y && st.y < st.close && (!st.sameLine || st.close < st.heLeft), 'תווית "כתובת הסרטון (YouTube / Vimeo)": הסוגריים ב-<bdi> — "(" לפני YouTube ו-")" אחרי Vimeo (ובשורה אחת עם העברית — משמאל לה)', st);
+    // "↻ מהעמודים" (תפריט)
+    await selInst(page, 'nav-menu'); await tab(page, 'content');
+    await page.click('[data-kit-action="pages"]'); await sleep(500);
+    const pagesList = await page.evaluate(async () => (await Project.docs.files()).filter(f => f.kind === 'file' && /\.html?$/i.test(f.path) && !/^components\//.test(f.path) && !Project.oldTemplate(f.path)).map(f => f.path).sort());
+    st = await page.evaluate(() => { const c = Editor._state.canvas, C = window.KolComp, r = C.instances(c.m, 'nav-menu')[0].node; return C.findAllIn(r, '.kol-nav__link').map(a => [window.KolSrc.attrOf(a, 'href').value, window.KolSrc.textOf(c.m, a)]); });
+    ok(st.length === pagesList.length && st.some(x => x[0] === 'kit.html' && x[1] === 'רכיבים') && /^פריטים מהעמודים/.test(await lastTx(page)) && await stateOf(page, '.kol-nav') === 'linked', 'תפריט: "↻ מהעמודים" ← קישור לכל עמוד (הכותרת שלו), פעולה אחת, המופע מקושר', { st, pagesList });
+    await undo(page);
+    // "↻ מהכותרות" (תוכן עניינים)
+    await selInst(page, 'toc'); await tab(page, 'content');
+    await page.click('[data-kit-action="toc"]'); await sleep(500);
+    pg = await text(page, 'kit.html');
+    st = await page.evaluate(() => { const c = Editor._state.canvas, C = window.KolComp, K = window.KolSrc, r = C.instances(c.m, 'toc')[0].node; return C.findAllIn(r, '.kol-toc__item').map(li => ({ href: K.attrOf(C.findIn(li, '.kol-toc__link'), 'href').value, sub: K.classesOf(li).includes('kol-toc__item--sub'), t: K.textOf(c.m, C.findIn(li, '.kol-toc__link')) })); });
+    const h2s = await page.evaluate(() => { const c = Editor._state.canvas; return [...c.doc.querySelectorAll('h2, h3')].filter(e => !e.closest('.kol-toc')).map(e => ({ id: e.id, t: e.textContent.replace(/\s+/g, ' ').trim(), tag: e.localName })); });
+    ok(st.length === h2s.length && st.length > 3 && st.every((x, i) => x.href === '#' + h2s[i].id && x.t === h2s[i].t && x.sub === (h2s[i].tag === 'h3')) && h2s.every(x => x.id), 'תוכן עניינים: "↻ מהכותרות" ← שורה לכל h2 / h3 בעמוד (h3 — משנה), וכל כותרת קיבלה id — בקובץ, פעולה אחת', { st: st.slice(0, 4), h2s: h2s.slice(0, 4) });
+    ok(/<h2 class="kol-slides__title" id="[^"]+">/.test(pg), 'ה-id נכתב לכותרת עצמה (גלוי, נערך)');
+    // hotspot: הידיות רק ברכיב הנבחר; גרירה ← --x / --y בנקודה, פעולה אחת
+    await selMain(page); await sleep(200);
+    ok(await page.evaluate(() => document.querySelectorAll('[data-kit-handles] .kit-handle').length) === 0, 'ידיות הנקודות — רק כשהרכיב נבחר');
+    await selInst(page, 'hotspot'); await sleep(300);
+    st = await page.evaluate(() => [...document.querySelectorAll('[data-kit-handles] .kit-handle')].map(b => { const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }));
+    ok(st.length === 3, 'hotspot נבחר ← 3 ידיות על הנקודות', st.length);
+    const hp0 = await page.evaluate(() => { const c = Editor._state.canvas, img = c.doc.querySelector('.kol-hotspot__img'), r = img.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { l: f.left + r.left * c.scale, t: f.top + r.top * c.scale, w: r.width * c.scale, h: r.height * c.scale }; });
+    n0 = await txN(page);
+    await page.mouse.move(st[0].x, st[0].y); await page.mouse.down(); await page.mouse.move(hp0.l + hp0.w * 0.5, hp0.t + hp0.h * 0.25, { steps: 8 }); await page.mouse.up(); await sleep(500);
+    pg = await text(page, 'kit.html');
+    const pin = /<button class="kol-hotspot__pin" type="button" style="--x: ([\d.]+)%; --y: ([\d.]+)%">/.exec(pg);
+    ok(pin && Math.abs(+pin[1] - 50) < 3 && Math.abs(+pin[2] - 25) < 3 && await txN(page) === n0 + 1 && /^גרירת נקודה/.test(await lastTx(page)) && await stateOf(page, '.kol-hotspot') === 'linked', 'גרירת הנקודה בקנבס ← style="--x: 50%; --y: 25%" על הנקודה, פעולה אחת, המופע מקושר', pin && pin.slice(1));
+    await shot(page, 'v16-1920-hotspot');
+    await undo(page);
+    // הגדרות שמשפיעות על ההתנהגות בתצוגה החיה: מצגת — אוטומטית כל 1 שנייה; חלון קופץ — אחרי 1 שנייה, פעם לגולש
+    await selInst(page, 'slides'); await tab(page, 'content');
+    await page.fill('[data-comp-panel] [data-cf="auto"]', '1'); await page.evaluate(() => document.querySelector('[data-comp-panel] [data-cf="auto"]').dispatchEvent(new Event('change'))); await sleep(300);
+    await selInst(page, 'popup'); await tab(page, 'content');
+    await page.selectOption('[data-comp-panel] [data-cf="trigger"]', 'delay'); await sleep(300);
+    await page.fill('[data-comp-panel] [data-cf="delay"]', '1'); await page.evaluate(() => document.querySelector('[data-comp-panel] [data-cf="delay"]').dispatchEvent(new Event('change'))); await sleep(300);
+    await page.selectOption('[data-comp-panel] [data-cf="once"]', 'visitor'); await sleep(300);
+    pg = await text(page, 'kit.html');
+    ok(/data-kol-autoplay="1"/.test(pg) && /data-kol-trigger="delay" data-kol-delay="1"[^>]*data-kol-once="visitor"/.test(pg), 'בפאנל: "מתי נפתח" = אחרי 1 שנייה, פעם לגולש — תכונות גלויות על <dialog>', pg.match(/<dialog class="kol-popup__dlg"[^>]*>/));
+    await flush(page);
+    const tok3 = (await call(page, 'pv_token')).token, pb = await ctx.newPage(); const pbErr = []; pb.on('pageerror', e => pbErr.push(e.message));
+    await pb.goto(`${base}/preview/${tok3}/kit.html`); await sleep(1700);
+    st = await pb.evaluate(() => ({ open: document.querySelector('.kol-popup__dlg').open, modal: document.querySelector('.kol-popup__dlg').matches(':modal') }));
+    ok(st.open && st.modal, 'חלון קופץ: נפתח לבד אחרי שנייה (modal)', st);
+    await pb.keyboard.press('Escape'); await sleep(200);
+    ok(!(await pb.evaluate(() => document.querySelector('.kol-popup__dlg').open)), 'Esc סוגר');
+    // "פעם לגולש" — localStorage; בתצוגה החיה (מקור אטום) אין זיכרון, ולכן נבדק בדף רגיל על אותו שרת
+    { const pz = await ctx.newPage(), K16 = path.join(ROOT, 'assets/kit/components/popup/');
+      const tpl = fs.readFileSync(K16 + 'template.html', 'utf8').replace('data-kol-trigger="click" data-kol-delay="5"', 'data-kol-trigger="delay" data-kol-delay="1"').replace('data-kol-once="session"', 'data-kol-once="visitor"');
+      await pz.route(base + '/__v16/popup.html', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>' + fs.readFileSync(K16 + 'style.css', 'utf8') + '</style></head><body>' + tpl + '<script>' + fs.readFileSync(K16 + 'script.js', 'utf8') + '</script></body></html>' }));
+      await pz.goto(base + '/__v16/popup.html'); await sleep(1600);
+      const o1 = await pz.evaluate(() => document.querySelector('.kol-popup__dlg').open);
+      await pz.keyboard.press('Escape'); await sleep(150); await pz.reload(); await sleep(1600);
+      const o2 = await pz.evaluate(() => document.querySelector('.kol-popup__dlg').open);
+      ok(o1 && !o2, '"פעם לגולש": נפתח אחרי שנייה, ואחרי טעינה מחדש — לא שוב (localStorage)', [o1, o2]); await pz.close(); }
+    await pb.click('.kol-popup__open'); await sleep(200);
+    ok(await pb.evaluate(() => document.querySelector('.kol-popup__dlg').open), 'כפתור עם data-kol-open פותח בכל זאת');
+    await pb.click('.kol-popup__close'); await sleep(150);
+    ok(!(await pb.evaluate(() => document.querySelector('.kol-popup__dlg').open)), 'data-kol-close סוגר');
+    // חלונית מהצד
+    await pb.click('.kol-offcanvas__open'); await sleep(400);
+    st = await pb.evaluate(() => { const d = document.querySelector('.kol-offcanvas__dlg'), r = d.getBoundingClientRect(); return { open: d.open, right: Math.round(innerWidth - r.right), h: Math.round(r.height), vh: innerHeight }; });
+    ok(st.open && st.right === 0 && st.h === st.vh, 'חלונית מהצד: נפתחת בגובה המסך, מתחילת השורה (ימין ב-RTL)', st);
+    await pb.keyboard.press('Escape'); await sleep(150);
+    // מצגת: נקודות כמספר השקופיות, חץ, הפעלה אוטומטית
+    await pb.evaluate(() => document.querySelector('.kol-slides').scrollIntoView({ block: 'center' })); await sleep(200);
+    st = await pb.evaluate(() => ({ ready: document.querySelector('.kol-slides').classList.contains('is-ready'), dots: document.querySelectorAll('.kol-slides__dot').length, n: document.querySelectorAll('.kol-slides__slide').length, labels: [...document.querySelectorAll('.kol-slides__dot .kol-slides__vh')].map(x => x.textContent).join() }));
+    ok(st.ready && st.dots === st.n && st.labels === '1,2,3', 'מצגת: נקודה לכל שקופית (משוכפלת מהראשונה, המספר כטקסט)', st);
+    const act = () => pb.evaluate(() => [...document.querySelectorAll('.kol-slides__slide')].findIndex(x => x.classList.contains('is-active')));
+    await pb.hover('.kol-slides__next'); await pb.click('.kol-slides__next'); await sleep(900);
+    const a1 = await act();
+    await pb.mouse.move(5, 5); await sleep(2600);
+    const a2 = await act();
+    ok(a1 === 1 && a2 !== 1, 'מצגת: "הבאה" ← שקופית 2; ואוטומטית (כל שנייה, כשהעכבר לא עליה) — ממשיכה', [a1, a2]);
+    // קרוסלה
+    await pb.evaluate(() => document.querySelector('.kol-carousel').scrollIntoView({ block: 'center' })); await sleep(200);
+    st = await pb.evaluate(() => { const t = document.querySelector('.kol-carousel__track'), s = t.children[0].getBoundingClientRect().width; return Math.round(t.clientWidth / s * 10) / 10; });
+    await pb.click('.kol-carousel__next'); await sleep(900);
+    const ca = await pb.evaluate(() => [...document.querySelectorAll('.kol-carousel__slide')].findIndex(x => x.classList.contains('is-active')));
+    ok(st >= 2.8 && st <= 3.3 && ca === 2, 'קרוסלה: 3 בכל מבט; "הבאה" ← מבט שלם קדימה (5 כרטיסים: עד הסוף — כרטיסים 3–5)', { per: st, ca });
+    // כותרת מונפשת
+    st = await pb.evaluate(() => [...document.querySelectorAll('.kol-headline__word')].map(w => getComputedStyle(w).animationName));
+    ok(st.join() === 'kol-hl-3,kol-hl-3,kol-hl-3', 'כותרת מונפשת: CSS בלבד (kol-hl-3 לכל מילה)', st);
+    // hotspot
+    await pb.evaluate(() => document.querySelector('.kol-hotspot').scrollIntoView({ block: 'center' })); await pb.hover('.kol-hotspot__pin'); await sleep(250);
+    ok(await pb.evaluate(() => getComputedStyle(document.querySelector('.kol-hotspot__tip')).visibility === 'visible'), 'נקודות על תמונה: ריחוף ← ההסבר');
+    // תפריט נפתח
+    await pb.evaluate(() => document.querySelector('.kol-drop').scrollIntoView({ block: 'center' })); await pb.click('.kol-drop__btn'); await sleep(150);
+    const d1 = await pb.evaluate(() => document.querySelector('.kol-drop').open);
+    await pb.mouse.click(5, 5); await sleep(150);
+    ok(d1 && !(await pb.evaluate(() => document.querySelector('.kol-drop').open)), 'תפריט נפתח: נפתח בלחיצה, נסגר בלחיצה בחוץ');
+    // חזרה לראש
+    await pb.evaluate(() => scrollTo(0, 2000)); await sleep(300);
+    ok(await pb.evaluate(() => document.querySelector('.kol-top').classList.contains('is-shown')), 'חזרה לראש: מופיע אחרי גלילה');
+    await pb.click('.kol-top'); await sleep(1500);
+    ok(await pb.evaluate(() => scrollY) < 5, 'חזרה לראש: לחיצה ← לראש העמוד');
+    // תוכן עניינים: is-here
+    await pb.evaluate(() => { const a = document.querySelectorAll('.kol-toc__link')[2]; document.getElementById(decodeURIComponent(a.getAttribute('href').slice(1))).scrollIntoView({ block: 'start' }); }); await sleep(500);
+    st = await pb.evaluate(() => [...document.querySelectorAll('.kol-toc__item')].map(x => x.classList.contains('is-here')).indexOf(true));
+    ok(st === 2, 'תוכן עניינים: השורה של הכותרת שעל המסך — is-here', st);
+    // Lottie: הנגן מהפרויקט (components/lottie/), לא מ-CDN
+    await pb.evaluate(() => document.querySelector('.kol-lottie').scrollIntoView({ block: 'center' })); await sleep(2500);
+    st = await pb.evaluate(() => ({ ready: document.querySelector('.kol-lottie').classList.contains('is-ready'), svg: !!document.querySelector('.kol-lottie__stage svg'), src: [...document.scripts].map(s => s.getAttribute('src')).filter(x => /lottie/.test(x || '')) }));
+    ok(st.ready && st.svg && st.src.length && st.src.every(x => /components\/lottie\/(script|lottie_light\.min)\.js$/.test(x)), 'Lottie: הנגן נטען מ-components/lottie/ (קובץ בפרויקט), והאנימציה מצוירת', st);
+    ok(!pbErr.filter(m => !/network error|'caches' property/i.test(m)).length, 'V16b — אין שגיאות JS בתצוגה החיה', pbErr);
+    // בלי JS: התפריט — רשימת קישורים; המצגת — גלילה עם scroll-snap
+    const ctxNo2 = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false, extraHTTPHeaders: { 'X-Test-User': JSON.stringify(OWNER) } });
+    const nj2 = await ctxNo2.newPage(); await nj2.goto(`${base}/preview/${tok3}/kit.html`); await sleep(400);
+    st = await nj2.evaluate(() => ({ links: [...document.querySelectorAll('.kol-nav__link')].filter(a => a.getBoundingClientRect().width > 0).length, toggle: getComputedStyle(document.querySelector('.kol-nav__toggle')).display, snap: getComputedStyle(document.querySelector('.kol-slides__track')).scrollSnapType, arrows: getComputedStyle(document.querySelector('.kol-slides__next')).display, lottie: document.querySelector('.kol-lottie__poster').getBoundingClientRect().height > 0 }));
+    ok(st.links >= 4 && st.toggle === 'none' && /x mandatory/.test(st.snap) && st.arrows === 'none' && st.lottie, 'בלי JS (390): התפריט — כל הקישורים גלויים (בלי המבורגר); המצגת — scroll-snap; Lottie — התמונה', st);
+    await ctxNo2.close(); await pb.close();
+
     // ═══ 10. טלפון (390): גיליון; הקשה = "הוסף אחרי הנבחר"; לחיצה ארוכה = גרירה; כל רכיב עובד ב-390 ═══
     await flush(page);
     const ph = await mk(390, 844), pp = await ph.newPage();
@@ -413,8 +538,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(held && (await text(pp, 'kit.html')).match(/data-kol-component="quote-2"/g).length === c0 + 1, '390: לחיצה ארוכה ← גרירה, והשחרור בקנבס מוסיף', { held });
     await undo(pp); await flush(pp);
     // כל רכיב ב-390, בתצוגה החיה: בלי גלילה לרוחב, כל מופע ברוחב המסך
-    const tok2 = (await call(pp, 'pv_token')).token, pm = await ph.newPage(); await pm.goto(`${base}/preview/${tok2}/kit.html`); await sleep(800);
-    st = await pm.evaluate(() => ({ sw: document.documentElement.scrollWidth, wide: [...document.querySelectorAll('[data-kol-component]')].filter(e => e.getBoundingClientRect().width > 391 || e.getBoundingClientRect().height < 10).map(e => e.getAttribute('data-kol-component')),
+    const tok2 = (await call(pp, 'pv_token')).token, pm = await ph.newPage(); await pm.goto(`${base}/preview/${tok2}/kit.html`); await sleep(1500); await pm.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+    st = await pm.evaluate(() => ({ sw: document.documentElement.scrollWidth, wide: [...document.querySelectorAll('[data-kol-component]')].filter(e => e.getAttribute('data-kol-component') !== 'anchor' && (e.getBoundingClientRect().width > 391 || e.getBoundingClientRect().height < 10)).map(e => e.getAttribute('data-kol-component')),
       tabs: getComputedStyle(document.querySelector('.kol-tabs')).display, tabOrder: (() => { const t = document.querySelector('.kol-tabs__tab').getBoundingClientRect(), p = document.querySelector('.kol-tabs__panel').getBoundingClientRect(); return p.top >= t.bottom - 1; })() }));
     ok(st.sw <= 391 && !st.wide.length, '390: כל ' + items.length + ' הרכיבים — בתוך רוחב המסך, בלי גלילה לרוחב', st);
     ok(st.tabs === 'block' && st.tabOrder, '390: לשוניות ← אקורדיון (הלוח מתחת ללשונית שלו)', st);
@@ -429,6 +554,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pm.evaluate(() => { const d = document.querySelector('.kol-lightbox__dlg'), ev = (t, x) => d.dispatchEvent(new PointerEvent(t, { clientX: x, bubbles: true, pointerType: 'touch' })); ev('pointerdown', 300); ev('pointerup', 150); }); await sleep(150);
     const sw1 = await pm.evaluate(() => document.querySelector('.kol-lightbox__cap').textContent);
     ok(sw0 === 'תמונה 1' && sw1 !== sw0, '390: lightbox — החלקה מחליפה תמונה', [sw0, sw1]);
+    await pm.keyboard.press('Escape'); await sleep(150);
+    // תפריט ב-390: המבורגר ← חלונית מהצד; Esc סוגר
+    await pm.evaluate(() => document.querySelector('.kol-nav').scrollIntoView({ block: 'center' })); await sleep(150);
+    st = await pm.evaluate(() => ({ btn: getComputedStyle(document.querySelector('.kol-nav__toggle')).display, off: document.querySelector('.kol-nav__list').getBoundingClientRect().left >= 390 - 1 }));
+    await pm.tap('.kol-nav__toggle'); await sleep(450);
+    const navOpen = await pm.evaluate(() => { const r = document.querySelector('.kol-nav__list').getBoundingClientRect(); return { open: document.querySelector('.kol-nav').classList.contains('is-open'), right: Math.round(390 - r.right), h: Math.round(r.height), exp: document.querySelector('.kol-nav__toggle').getAttribute('aria-expanded') }; });
+    ok(st.btn === 'block' && st.off && navOpen.open && navOpen.right === 0 && navOpen.h > 800 && navOpen.exp === 'true', '390: תפריט — המבורגר; הקשה ← החלונית מהצד (ימין, בגובה המסך)', { st, navOpen });
+    await pm.keyboard.press('Escape'); await sleep(200);
+    ok(!(await pm.evaluate(() => document.querySelector('.kol-nav').classList.contains('is-open'))), '390: Esc סוגר את החלונית');
     await shot(pm, 'v16-390-live');
     await ph.close();
     // ═══ END ═══

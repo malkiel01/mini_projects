@@ -16,7 +16,7 @@ const ok = (cond, what, got) => { ran++; if (cond) console.log('✅ ' + what); e
 
 const KIT = path.join(root, 'assets/kit/components');
 const names = fs.readdirSync(KIT).filter(n => fs.existsSync(path.join(KIT, n, 'kit.json'))).sort();
-ok(names.length >= 20, 'לפחות 20 רכיבים מוכנים', names.length);
+ok(names.length >= 32, 'לפחות 32 רכיבים מוכנים (V16a + V16b)', names.length);
 const SAMPLE = { text: 'טקסט בדיקה', number: '7', size: '14px', color: '#123456', select: null, toggle: null, media: 'media/x.png', link: 'https://example.com/a', rich: 'טקסט', font: 'serif' };
 
 for (const name of names) {
@@ -61,13 +61,13 @@ for (const name of names) {
   ok(states.length <= 8, name + ': עד 8 מצבים');
   for (const s of states) {
     const sels = Array.isArray(s.options) ? s.options.map(o => o.on).filter(x => x != null && x !== '') : [s.each || s.on].filter(x => x != null && x !== '');
-    for (const sel of sels) { let hits = []; try { hits = C.findAllIn(inst.node, sel); } catch (e) { hits = null; } ok(hits && hits.length > 0, name + ' · מצב ' + s.id + ': הבורר ' + sel + ' מוצא אלמנט', hits === null ? 'בורר לא תקין' : 0); }
+    for (const sel of sels) { let hits = []; try { hits = C.findAllIn(inst.node, sel); } catch (e) { hits = null; } ok(hits && (hits.length > 0 || s.optional), name + ' · מצב ' + s.id + ': הבורר ' + sel + ' מוצא אלמנט', hits === null ? 'בורר לא תקין' : 0); }
     const touches = Array.isArray(s.options) ? s.options.every(o => o.root || o.attr || o.class) : (s.attr || s.class);
     ok(!!touches && typeof s.label === 'string' && s.label, name + ' · מצב ' + s.id + ': שם, ומה הוא משנה (מחלקה / תכונה)');
   }
   // כל אלמנט — עם מחלקה; טקסט גלוי — בתוך אלמנט (לא בתכונה)
   const noClass = [];
-  K.walk(inst.node, n => { if (n.implied || !n.tag) return; if (/^(br|source|track|wbr)$/.test(n.tag)) return; if (!K.classesOf(n).length && !/^(p|b|strong|span|time|cite|summary|li|em|i|small)$/.test(n.tag)) noClass.push(n.tag); });
+  K.walk(inst.node, n => { if (n.implied || !n.tag) return; if (/^(br|source|track|wbr|path|g|circle|rect)$/.test(n.tag)) return; if (!K.classesOf(n).length && !/^(p|b|strong|span|time|cite|summary|li|em|i|small)$/.test(n.tag)) noClass.push(n.tag); });
   ok(!noClass.length, name + ': כל אלמנט מבני — עם מחלקה (יעד עיצוב)', noClass);
   const attrText = [];
   K.walk(inst.node, n => { if (!n.attrs) return; for (const a of n.attrs) if (/^(title|placeholder|aria-label|value)$/i.test(a.name) && /[֐-׿A-Za-z]/.test(a.value) && n.tag !== 'input') attrText.push(n.tag + '[' + a.name + ']'); });

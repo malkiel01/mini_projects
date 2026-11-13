@@ -11,6 +11,8 @@
  */
 (function () {
   'use strict';
+  /* V16: סוגריים בתווית ("כתובת הסרטון (YouTube / Vimeo)") — כל אחד ב-<bdi>, שהלטינית לא תהפוך אותם ב-RTL. הכיוון — לפי האות הראשונה שבפנים. */
+  const bidiLabel = s => String(s == null ? '' : s).split(/(\([^()]*\))/).filter(Boolean).map(x => (x[0] === '(' ? h('bdi', {}, x) : x));
   const K = () => window.KolSrc, C = () => window.KolComp;
   const TPL_RE = /^components\/([^/]+)\/template\.html$/;
   const JSON_RE = /^components\/([^/]+)\/component\.json$/;
@@ -228,7 +230,7 @@
       const { values, missing } = C().readValues(this.c.m, root, sch.fields), out = [];
       if (!sch.fields.length) out.push(h('p', { class: 'hint', 'data-comp-nofields': true }, 'לרכיב עוד אין הגדרות. בוחרים חלק בו (בקנבס או ב-Navigator) ← "➕ הוסף הגדרה".'));
       for (const f of sch.fields) {
-        const row = h('div', { class: 'ct-row cm-field', 'data-comp-field': f.id }, h('span', { class: 'ct-k' }, f.label));
+        const row = h('div', { class: 'ct-row cm-field', 'data-comp-field': f.id }, h('span', { class: 'ct-k' }, ...bidiLabel(f.label)));   /* V16: <bdi> */
         if (f.bad) { row.append(h('span', { class: 'ed-warn' }, '⚠️ ' + f.bad)); out.push(row); continue; }
         if (missing.includes(f.id)) { const ctl = h('input', { type: 'text', class: 'ct-in', disabled: true, 'data-comp-missing': f.id }); row.append(ctl, h('span', { class: 'hint ct-hint' }, 'החלק ' + (f.target.text || f.target.src || f.target.children || f.target.on || '') + ' חסר במופע הזה')); out.push(row); continue; }
         row.append(this.control(root, f, values[f.id], ro));

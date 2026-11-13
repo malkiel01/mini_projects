@@ -17,13 +17,18 @@ const Code = (() => {
       // ה-workers מכתובת אחרת — דרך blob, אחרת הדפדפן חוסם
       window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob(
         [`self.MonacoEnvironment={baseUrl:'${MONACO}/../'};importScripts('${MONACO}/base/worker/workerMain.js');`], { type: 'text/javascript' })) };
-      const s = document.createElement('script');
-      s.src = MONACO + '/loader.js';
-      s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
-      s.onload = () => {
+      const go = () => {
         window.require.config({ paths: { vs: MONACO } });
         window.require(['vs/editor/editor.main'], m => { clearTimeout(t); monaco = m; ok(m); }, e => { clearTimeout(t); fail(e); });
       };
+      /* V16: loader.js פעם אחת לדף — גם project.js טוען אותו; טעינה כפולה = "_amdLoaderGlobal has already been declared" */
+      if (window.require?.config) return go();
+      const was = document.querySelector('script[data-monaco-loader]');
+      if (was) { was.addEventListener('load', go); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
+      const s = document.createElement('script');
+      s.src = MONACO + '/loader.js'; s.dataset.monacoLoader = '1';
+      s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
+      s.onload = go;
       document.head.append(s);
     });
   }
