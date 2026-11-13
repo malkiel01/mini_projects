@@ -1,0 +1,13 @@
+{
+  "name": "alert",
+  "label": "התראה",
+  "icon": "⚠️",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "kind", "label": "סוג (info · success · warning · danger)", "control": "select", "options": ["info", "success", "warning", "danger"], "target": {"class": "kol-alert--{value}"}},
+    {"id": "close", "label": "כפתור ✕", "control": "select", "options": ["close", "fixed"], "target": {"class": "kol-alert--{value}"}}
+  ],
+  "states": [
+    {"id": "live", "label": "כפתור הסגירה", "options": [{"label": "עם ✕ (אחרי JS)", "root": "is-ready"}, {"label": "נסגרה", "root": "is-ready is-closed"}]}
+  ]
+}

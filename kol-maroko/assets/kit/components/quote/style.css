@@ -1,0 +1,10 @@
+/* רכיב מוכן: ציטוט (kit 1.0.0) */
+.kol-quote { --kol-quote-accent: var(--color-accent, #a3322a); margin: 0; padding: 8px 0; }
+.kol-quote--line { border-inline-start: 4px solid var(--kol-quote-accent); padding-inline-start: 20px; }
+.kol-quote--box { padding: 24px; border-radius: 14px; background: color-mix(in srgb, var(--kol-quote-accent) 7%, var(--color-bg, #fff)); }
+.kol-quote__text { margin: 0 0 12px; font-size: 1.2rem; font-style: italic; }
+.kol-quote__text > p { margin: 0; }
+.kol-quote__by { display: flex; align-items: center; gap: 10px; }
+.kol-quote__img { inline-size: 44px; block-size: 44px; border-radius: 50%; object-fit: cover; }
+.kol-quote__name { font-style: normal; font-weight: 700; }
+.kol-quote__role { opacity: .75; }

@@ -1,0 +1,11 @@
+{
+  "name": "video-embed",
+  "label": "וידאו מוטמע",
+  "icon": "▶️",
+  "category": "מדיה",
+  "fields": [
+    {"id": "url", "label": "כתובת הסרטון (YouTube / Vimeo)", "control": "link", "target": {"attr": "href", "on": ".kol-embed__link"}},
+    {"id": "img", "label": "התמונה עד לחיצה", "control": "media", "target": {"src": ".kol-embed__img"}},
+    {"id": "ratio", "label": "יחס (16x9 · 4x3 · 9x16)", "control": "select", "options": ["16x9", "4x3", "9x16"], "target": {"class": "kol-embed--{value}"}}
+  ]
+}

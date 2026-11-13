@@ -1,0 +1,22 @@
+/* רכיב מוכן: נגן שמע (kit 1.0.0). בלי JS — <audio controls>; עם JS (is-ready) — הנגן המעוצב, וה-<audio> מוסתר. */
+.kol-audio { --kol-audio-accent: var(--color-accent, #a3322a); display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 999px; background: color-mix(in srgb, var(--kol-audio-accent) 8%, var(--color-bg, #fff)); flex-wrap: wrap; }
+.kol-audio__el { inline-size: 100%; }
+/* בלי JS: השם, ומתחתיו הנגן הרגיל */
+.kol-audio:not(.is-ready) { border-radius: 14px; }
+.kol-audio:not(.is-ready) .kol-audio__info { order: -1; inline-size: 100%; }
+.kol-audio__play, .kol-audio__time, .kol-audio:not(.is-ready) .kol-audio__seekwrap { display: none; }
+.kol-audio.is-ready .kol-audio__el { display: none; }
+.kol-audio.is-ready { flex-wrap: nowrap; }
+.kol-audio.is-ready .kol-audio__play { display: grid; }
+.kol-audio.is-ready .kol-audio__time { display: block; }
+.kol-audio__play { place-items: center; flex: none; inline-size: 44px; block-size: 44px; border: 0; border-radius: 50%; background: var(--kol-audio-accent); color: #fff; cursor: pointer; }
+.kol-audio__play:focus-visible { outline: 2px solid var(--kol-audio-accent); outline-offset: 3px; }
+.kol-audio__icon { inline-size: 0; block-size: 0; border-style: solid; border-width: 8px 0 8px 13px; border-color: transparent transparent transparent currentColor; margin-inline-start: 3px; }
+.kol-audio.is-playing .kol-audio__icon { inline-size: 12px; block-size: 14px; border: 0; border-inline: 4px solid currentColor; margin: 0; }
+.kol-audio__t-pause, .kol-audio.is-playing .kol-audio__t-play { display: none; }
+.kol-audio.is-playing .kol-audio__t-pause { display: inline; }
+.kol-audio__info { display: grid; flex: 1; min-inline-size: 0; gap: 2px; }
+.kol-audio__title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kol-audio__seek { inline-size: 100%; accent-color: var(--kol-audio-accent); margin: 0; }
+.kol-audio__time { font-variant-numeric: tabular-nums; font-size: .9rem; flex: none; }
+.kol-audio__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -1,0 +1,20 @@
+/* רכיב מוכן: קופסה מתהפכת (kit 1.0.0). ריחוף / פוקוס (גם בלי JS) / is-flipped (הקשה במגע, עם JS) — הופכים. */
+.kol-flip { --kol-flip-h: 220px; --kol-flip-front: color-mix(in srgb, var(--color-accent, #a3322a) 10%, var(--color-bg, #fff)); --kol-flip-back: var(--color-accent, #a3322a); perspective: 900px; block-size: var(--kol-flip-h); border-radius: 16px; }
+.kol-flip:focus-visible { outline: 2px solid var(--color-accent, #a3322a); outline-offset: 3px; }
+.kol-flip__inner { position: relative; block-size: 100%; transition: transform .6s; transform-style: preserve-3d; }
+.kol-flip__front, .kol-flip__back { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 20px; text-align: center; border-radius: 16px; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.kol-flip__front { background: var(--kol-flip-front); }
+.kol-flip__back { background: var(--kol-flip-back); color: #fff; transform: rotateY(180deg); }
+.kol-flip--x .kol-flip__back { transform: rotateX(180deg); }
+.kol-flip__icon { font-size: 2.6rem; line-height: 1; }
+.kol-flip__title { margin: 0; }
+.kol-flip__text { margin: 0; }
+.kol-flip__link { color: inherit; font-weight: 700; }
+@media (hover: hover) { .kol-flip--y:hover .kol-flip__inner { transform: rotateY(180deg); } .kol-flip--x:hover .kol-flip__inner { transform: rotateX(180deg); } }
+.kol-flip--y:focus-within .kol-flip__inner, .kol-flip--y.is-flipped .kol-flip__inner { transform: rotateY(180deg); }
+.kol-flip--x:focus-within .kol-flip__inner, .kol-flip--x.is-flipped .kol-flip__inner { transform: rotateX(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .kol-flip__inner { transition: none; transform: none !important; }
+  .kol-flip__back { transform: none; opacity: 0; transition: opacity .2s; }
+  .kol-flip:hover .kol-flip__back, .kol-flip:focus-within .kol-flip__back, .kol-flip.is-flipped .kol-flip__back { opacity: 1; }
+}
