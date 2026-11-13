@@ -4,7 +4,7 @@
 
 ## ▶️ עכשיו — בקרה (9), 2026-11-13 16:43 UTC
 - **בקרה (9):** `session_018g4NYE24dt9ed6U2i9nNng`. קיבלה מבקרה (8).
-- **השעון לא הועבר:** create_trigger נחסם בהרשאה (auto mode). `trig_01XJxsx6S4PqbvMTWEv5BxnE` נשאר פעיל לתוך בקרה (8) — לא לכבות עד שיש שעון חדש. נדרש מהבעלים: לאשר create_trigger.
+- **השעון:** `trig_01Fc2MDPJgtjousFL7aMBuFq` (דקה 48, לתוך בקרה (9)), נוצר בידי בקרה (8); הישן כבוי. כפיל זהה `trig_01MyEpfQR9j1ZGFd46myzVf7` — כיבוי נחסם בהרשאה; התעוררות שנייה באותה דקה = לא לעשות דבר.
 - **קוד פעיל:** E2E (2) `session_018g4NYFy2sJ8poK2SjnPJSh` (ענף `claude/kol-maroko-e2e`) · P2 ליטוש `session_018g4NYDjFLyMQ2k2dtri4X2` (ענף `claude/kol-maroko-p2`).
 - **פריסה:** 1629 (b7ab3d8, V14c) ו-1630 (82511a0, #1550) — רצו/בתור ב-16:41; לאמת.
 
