@@ -48,6 +48,7 @@ const ACTION_ROLES = [
     'snapshots' => 'content_editor', 'snapshot_preview' => 'content_editor', 'trash' => 'content_editor',
     'code' => 'content_editor', 'code_history' => 'content_editor', 'code_history_get' => 'content_editor',
     'font_google_list' => 'content_editor', 'pf_tree' => 'content_editor', 'pf_read' => 'content_editor', 'pf_versions' => 'content_editor', 'pf_raw' => 'content_editor', 'pf_trash' => 'content_editor',
+    'pages_list' => 'content_editor',                                                    // V15
     'pf_version' => 'content_editor', 'pf_search' => 'content_editor', 'pf_refs' => 'content_editor', 'pf_zip' => 'content_editor', 'pv_token' => 'content_editor',
     'builds' => 'content_editor', 'build_get' => 'content_editor', 'build_file' => 'content_editor', 'ai_status' => 'content_editor', 'longtexts' => 'content_editor',
     'word_save' => 'content_editor', 'word_delete' => 'content_editor', 'topic_op' => 'content_editor', 'words_csv_import' => 'content_editor', 'word_move' => 'content_editor',
@@ -77,6 +78,7 @@ const ACTION_ROLES = [
     'publish_preview' => 'publisher', 'publish' => 'publisher', 'republish' => 'publisher', 'version_send' => 'publisher',
     'site_ping' => 'publisher', 'site_switch' => 'publisher', 'build_send' => 'publisher', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher',
     'cutover' => 'publisher',
+    'page_create' => 'publisher', 'page_move' => 'publisher', 'page_set_entry' => 'publisher', 'page_set_404' => 'publisher', 'pages_order' => 'publisher',   // V15: עמודים — מפרסם ומעלה
     'outbox' => 'publisher', 'outbox_resend' => 'publisher', 'site_wake' => 'publisher',          // M7 — התור והדופק
     // ── בעל העמוד: האנשים, היומן, מחיקה סופית, ההסבה והגיבוי
     'people' => 'page_owner', 'person_invite' => 'page_owner', 'person_role' => 'page_owner', 'person_remove' => 'page_owner', 'person_retry' => 'page_owner',
