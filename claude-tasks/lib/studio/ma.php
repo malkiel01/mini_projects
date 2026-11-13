@@ -94,6 +94,10 @@ function maCall(string $key, string $method, string $path, ?array $body = null, 
 function maCreateAgent(string $key, array $def): array   { return maCall($key, 'POST', '/v1/agents', $def); }
 function maUpdateAgent(string $key, string $id, array $def): array { return maCall($key, 'POST', '/v1/agents/' . rawurlencode($id), $def); }
 function maCreateEnvironment(string $key, array $def): array { return maCall($key, 'POST', '/v1/environments', $def); }
+function maListEnvironments(string $key): array { return maCall($key, 'GET', '/v1/environments', null, ['limit' => 100]); }
+function maCreateVault(string $key, array $def): array { return maCall($key, 'POST', '/v1/vaults', $def); }
+function maCreateCredential(string $key, string $vaultId, array $def): array { return maCall($key, 'POST', '/v1/vaults/' . rawurlencode($vaultId) . '/credentials', $def); }
+function maDeleteCredential(string $key, string $vaultId, string $credId): array { return maCall($key, 'DELETE', '/v1/vaults/' . rawurlencode($vaultId) . '/credentials/' . rawurlencode($credId)); }
 function maCreateSession(string $key, array $def): array { return maCall($key, 'POST', '/v1/sessions', $def); }
 function maGetSession(string $key, string $id): array    { return maCall($key, 'GET', '/v1/sessions/' . rawurlencode($id)); }
 function maUpdateSession(string $key, string $id, array $patch): array { return maCall($key, 'POST', '/v1/sessions/' . rawurlencode($id), $patch); }
