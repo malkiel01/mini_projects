@@ -462,8 +462,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await select(page, H1); await sleep(200);
       await page.evaluate(() => document.querySelector('.ed-bar [data-panel="nav"]').click()); await sleep(300);
       await page.evaluate(() => { const N = Editor._state.nav; N.refresh(); N.sync(); }); await sleep(200);
-      const rowInfo = await page.evaluate(sel => { const c = Editor._state.canvas, n = c.nodeOf(c.doc.querySelector(sel)), N = Editor._state.nav, i = N.index.get(n); N.list.scrollTop = Math.max(0, i * 30 - 60); N.draw(); const row = N.list.querySelector('.nv-row[data-i="' + i + '"]'); const b = row && row.querySelector('[data-ts-rowmv]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, lab: c.label(n), selNow: c.label(c.selected) }; }, MV);
+      const rowInfo = await page.evaluate(sel => { const c = Editor._state.canvas, n = c.nodeOf(c.doc.querySelector(sel)), N = Editor._state.nav, i = N.index.get(n); N.list.scrollTop = Math.max(0, i * window.KolNavigator.ROW - 60); N.draw(); const row = N.list.querySelector('.nv-row[data-i="' + i + '"]'); const b = row && row.querySelector('[data-ts-rowmv]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: Math.round(r.width), h: Math.round(r.height), rowH: Math.round(row.getBoundingClientRect().height), lab: c.label(n), selNow: c.label(c.selected) }; }, MV);
       if (rowInfo) {
+        ok(rowInfo.w >= 44 && rowInfo.h >= 44 && rowInfo.rowH >= 44, 'Navigator במגע: שורה של 44px, ו-↕ של 44×44', rowInfo);
         await tap(page, rowInfo); await sleep(300);
         st = await page.evaluate(() => ({ open: document.getElementById('sheet').open, title: document.querySelector('#sheet h2, #sheet .sheet-title, #sheet header')?.textContent || document.getElementById('sheet').textContent.slice(0, 80) }));
         ok(st.open && st.title.includes(rowInfo.lab.split(' ')[0]) && rowInfo.selNow !== rowInfo.lab, '↕ על שורה שאינה הנבחרת — "העבר אל…" לשורה הזו (' + rowInfo.lab + ')', { st, rowInfo });
@@ -472,9 +473,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         ok((await page.evaluate(() => Editor._state.doc.text())) !== tR && /למטה/.test(await lastTx(page)), '↕ ← ↓ — השורה ירדה');
         await undo(page);
       } else ok(false, '↕ לא נמצא בשורה');
+      // contextmenu אחרי מגע (Chrome לאנדרואיד בלחיצה ארוכה) — אינו פותח את התפריט באמצע
+      await closeSheet(page);
+      const cmx = await page.evaluate(() => { const L = Editor._state.nav.list, row = L.querySelector('.nv-row:not(.sel)'), r = row.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', pointerId: 5, isPrimary: true, clientX: x, clientY: y }));
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        const opened = !!document.querySelector('.ed-ctx'); row.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerType: 'touch', pointerId: 5 })); Editor._state.menu?.close(); return opened; });
+      ok(!cmx, 'Navigator: contextmenu שהדפדפן שולח בלחיצה ארוכה במגע — אינו פותח את התפריט באמצע (רק השחרור)');
       // גלילה אוטומטית בקצה התחתון של ה-Navigator, בזמן גרירה במגע
+      await page.evaluate(() => { Editor._state.touch.set('full'); }); await sleep(450);
       await page.evaluate(() => { const N = Editor._state.nav; N.list.scrollTop = 0; N.draw(); }); await sleep(200);
-      const nr = await page.evaluate(() => { const L = Editor._state.nav.list, lr = L.getBoundingClientRect(), row = [...L.querySelectorAll('.nv-row')].find(r => { const q = r.getBoundingClientRect(); return q.top >= lr.top && q.bottom <= lr.bottom - 70 && !/^(html|head|body)$/.test(r.querySelector('b').textContent); }), rr = row.getBoundingClientRect(); return { x: rr.x + rr.width / 2, y: rr.y + rr.height / 2, bottom: lr.bottom, max: L.scrollHeight - L.clientHeight }; });
+      const nr = await page.evaluate(() => { const L = Editor._state.nav.list, lr = L.getBoundingClientRect(), row = [...L.querySelectorAll('.nv-row')].find(r => { const q = r.getBoundingClientRect(); return q.top >= lr.top && q.bottom <= lr.bottom - 50 && !/^(html|head|body)$/.test(r.querySelector('b').textContent); }), rr = row.getBoundingClientRect(); return { x: rr.x + rr.width / 2, y: rr.y + rr.height / 2, bottom: lr.bottom, max: L.scrollHeight - L.clientHeight }; });
       const s0 = await page.evaluate(() => Editor._state.nav.list.scrollTop);
       const cdp = await cdpOf(page), tp = (x, y) => [{ x: Math.round(x), y: Math.round(y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp(nr.x, nr.y) }); await sleep(650);
@@ -482,6 +491,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       for (let i = 0; i < 40; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: tp(nr.x + (i % 2), nr.bottom - 8) }); await sleep(30); }
       const s1 = await page.evaluate(() => Editor._state.nav.list.scrollTop), dAct = await page.evaluate(() => ({ drag: !!Editor._state.build.drag.active, ctx: !!document.querySelector('.ed-ctx') }));
       await page.evaluate(() => Editor._state.build.drag.cancel()); await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
+      await page.evaluate(() => Editor._state.touch.set('half')); await sleep(300);
       ok(s1 > s0 + 20 && nr.max > 40, 'Navigator: גלילה אוטומטית כשהאצבע בקצה התחתון, בזמן גרירה', { s0, s1, max: nr.max, dAct, nr });
       await page.evaluate(() => document.querySelector('.ed-nav .ed-side-head .icon-btn').click()); await sleep(200);
     }
@@ -633,6 +643,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(Math.abs(st.w - st.iw * 0.4) < 4 && st.h >= st.ih - 2 && st.top <= 1, 'מצב רוחב (844×390): הגיליון בצד, ברוחב 40%', st);
       await pg.evaluate(() => document.querySelector('.ed-info .ed-side-head .icon-btn').click()); await sleep(400);
       st = await pg.evaluate(() => { const e = document.querySelector('.ed').getBoundingClientRect(), cv = document.querySelector('.ed-canvas').getBoundingClientRect(); return { edTop: Math.round(e.top), edBot: Math.round(e.bottom), cvH: Math.round(cv.height), cvBot: Math.round(cv.bottom), ih: innerHeight, sh: document.documentElement.scrollHeight }; });
+      st.hint = await pg.evaluate(() => (document.querySelector('.ed-note:not([hidden])') || {}).textContent || '');
+      ok(/סובבו/.test(st.hint), 'מצב רוחב: רמז — לכותרת וללשוניות מסובבים לאורך', st.hint);
       ok(st.edTop <= 1 && st.edBot <= st.ih + 1 && st.cvBot <= st.ih + 1 && st.cvH >= 200, 'מצב רוחב: העורך על כל המסך (מעל כותרת האפליקציה), והקנבס ' + st.cvH + 'px מתוך ' + st.ih, st);
       await shot(pg, 'v14-landscape'); await c3.close();
     }
@@ -681,6 +693,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       { const c7 = await mk(1024, 768), pg = await newPage(c7, '1024-touch'); await openEd(pg);
         await pg.evaluate(() => { const c = Editor._state.canvas; c.select(c.nodeOf(c.doc.querySelector('h1'))); }); await sleep(500);
         st = await pg.evaluate(() => ({ coarse: matchMedia('(pointer: coarse)').matches, phoneCls: [...document.querySelector('.ed').classList].filter(c => /^ts-(row|third|half|full|fs)$/.test(c)), crumb: Math.round(document.querySelector('.ed-crumb').getBoundingClientRect().height), mv: [...document.querySelectorAll('.ed-seltools [data-ts-mv]')].map(b => Math.round(b.getBoundingClientRect().height)), side: getComputedStyle(document.querySelector('.ed-info')).position }));
+        st.fs = await pg.evaluate(() => { const b = document.querySelector('[data-ts-fs]'); return !!b && !b.hidden; });
+        ok(!st.fs, '1024 במגע: ⛶ מוסתר (מסך מלא פועל רק מתחת ל-1000px)', st);
         ok(st.coarse && !st.phoneCls.length && st.crumb >= 44 && st.mv.length === 2 && st.mv.every(x => x >= 44) && st.side !== 'fixed', '1024 במגע: פריסת מחשב (פאנל בצד), וכללי המגע חלים — פירורים ו-⬆ ⬇ של 44px', st);
         await c7.close(); }
       for (const [w, hh] of [[1920, 1080], [1366, 768]]) {

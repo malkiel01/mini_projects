@@ -880,7 +880,9 @@ dialog.hd-sheet .hd { padding: 0; }
   .sg-step { min-width: 44px; min-height: 44px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
   .ed-seltools .ts-mv { min-width: 44px; min-height: 44px; }
   .ed-libbody [data-lib], .ed-lib-item, .tp-bar .btn, .tp-row .ed-lib-item, .ed-moveto-row, .ed-menu .btn { min-height: 44px; }
-  .ts-rowmv { opacity: .7; width: 34px; }
+  .nv-row { height: 44px; }   /* שורת Navigator במגע — 44px (ROW ב-navigator.js) */
+  .nv-row .nv-tw, .nv-row .nv-ic { height: 44px; min-width: 44px; }
+  .ts-rowmv { opacity: .7; }
   .ed-crumb { min-height: 44px; }
   /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */
   .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }

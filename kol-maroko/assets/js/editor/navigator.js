@@ -7,7 +7,7 @@
  */
 (function () {
   'use strict';
-  const ROW = 30, PAD = 8;
+  const ROW = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 44 : 30, PAD = 8;   // V14: במגע — שורה של 44px
   const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
   class Navigator {
@@ -30,11 +30,11 @@
       this.list.addEventListener('click', e => this.onClick(e));
       // V13: תפריט ההקשר על שורה — לחיצה ימנית, או לחיצה ארוכה במגע
       const rowAt = e => { const el = e.target.closest && e.target.closest('.nv-row'); return el ? this.rows[+el.dataset.i] : null; };
-      this.list.addEventListener('contextmenu', e => { const r = rowAt(e); if (!r || !this.onContext) return; e.preventDefault(); clearTimeout(this.longT); if (this.longDone) { this.longDone = false; return; } this.onContext(r.n, e.clientX, e.clientY); });
+      this.list.addEventListener('contextmenu', e => { const r = rowAt(e); if (!r || !this.onContext) return; e.preventDefault(); if (this.lastTouch) return;   /* V14: במגע (Chrome לאנדרואיד שולח contextmenu בלחיצה ארוכה) — התפריט נפתח בשחרור, לא כאן */ clearTimeout(this.longT); if (this.longDone) { this.longDone = false; return; } this.onContext(r.n, e.clientX, e.clientY); });
       // V14: במגע התפריט נפתח בשחרור אחרי לחיצה ארוכה בלי תזוזה — לחיצה ארוכה ואז תזוזה היא גרירה (build.navDrag), לא תפריט
-      this.list.addEventListener('pointerdown', e => { clearTimeout(this.longT); this.longDone = false; this.longAt = null; if (e.pointerType !== 'touch') return; const r = rowAt(e), x = e.clientX, y = e.clientY; if (r) this.longT = setTimeout(() => { this.longAt = { n: r.n, x, y }; }, 550); });
+      this.list.addEventListener('pointerdown', e => { clearTimeout(this.longT); this.longDone = false; this.longAt = null; this.lastTouch = e.pointerType === 'touch'; if (e.pointerType !== 'touch') return; const r = rowAt(e), x = e.clientX, y = e.clientY; if (r) this.longT = setTimeout(() => { this.longAt = { n: r.n, x, y }; }, 550); });
       this.list.addEventListener('pointermove', e => { const L = this.longAt; if (e.pointerType === 'touch' && L && Math.hypot(e.clientX - L.x, e.clientY - L.y) > 8) this.longAt = null; }, { passive: true });
-      this.list.addEventListener('pointerup', e => { clearTimeout(this.longT); const L = this.longAt; this.longAt = null; if (e.pointerType === 'touch' && L && this.onContext && !(this.busy && this.busy())) { this.longDone = true; this.onContext(L.n, L.x, L.y); } }, { passive: true });
+      this.list.addEventListener('pointerup', e => { clearTimeout(this.longT); const L = this.longAt; this.longAt = null; if (e.pointerType === 'touch' && L && this.onContext) { this.longDone = true; this.onContext(L.n, L.x, L.y); } }, { passive: true });
       for (const ev of ['pointercancel', 'scroll']) this.list.addEventListener(ev, () => { clearTimeout(this.longT); this.longAt = null; }, { passive: true });
       this.list.addEventListener('keydown', e => this.onKeys(e));
       new ResizeObserver(() => this.draw()).observe(this.list);

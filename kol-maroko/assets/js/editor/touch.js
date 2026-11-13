@@ -69,7 +69,7 @@
     fullBtn() {
       const bar = this.el.bar; if (!bar) return;
       let on = false; try { on = localStorage.getItem(LS_FS) === '1'; } catch { /* */ }
-      this.fsBtn = h('button', { type: 'button', class: 'icon-btn ts-fsb', 'data-ts-fs': true, 'aria-pressed': 'false', 'aria-label': 'מסך מלא לעורך — הקנבס מעל כותרת האפליקציה והלשוניות', title: 'מסך מלא לעורך', hidden: !this.touchy() || null, onclick: () => this.setFull(!this.el.root.classList.contains('ts-fs')) }, '⛶');
+      this.fsBtn = h('button', { type: 'button', class: 'icon-btn ts-fsb', 'data-ts-fs': true, 'aria-pressed': 'false', 'aria-label': 'מסך מלא לעורך — הקנבס מעל כותרת האפליקציה והלשוניות', title: 'מסך מלא לעורך', hidden: !this.phone() || null, onclick: () => this.setFull(!this.el.root.classList.contains('ts-fs')) }, '⛶');
       const ref = bar.querySelector('[data-panel="nav"]'); if (ref) ref.before(this.fsBtn); else bar.prepend(this.fsBtn);
       this.setFull(on, true);
     }
@@ -125,7 +125,8 @@
       const r = this.el.root; if (!r.isConnected) return;
       for (const k of HEIGHTS) r.classList.toggle('ts-' + k, this.phone() && k === this.height);
       for (const g of r.querySelectorAll('[data-ts-grip]')) { g.tabIndex = this.phone() ? 0 : -1; if (this.phone()) g.removeAttribute('aria-hidden'); else g.setAttribute('aria-hidden', 'true'); }   // במחשב — אין עצירת Tab בלתי נראית
-      if (this.fsBtn) this.fsBtn.hidden = !this.touchy();
+      if (this.fsBtn) this.fsBtn.hidden = !this.phone();
+      if (this.land() && !this.landHinted) { this.landHinted = true; this.o.note?.('מצב רוחב — העורך על כל המסך. לכותרת וללשוניות של האפליקציה: סובבו את המכשיר לאורך'); }                   // מסך מלא — רק מתחת ל-1000px (שם הוא פועל)
       const side = this.openSide(), panes = r.querySelector('.ed-panes');
       let cover = 0;
       if (side && !this.land() && panes) { const top = side.getBoundingClientRect().top, cur = parseFloat(r.style.getPropertyValue('--ts-cover')) || 0, bot = panes.getBoundingClientRect().bottom + cur; cover = Math.max(0, Math.round(bot - top)); }
