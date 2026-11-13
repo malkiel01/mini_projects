@@ -149,14 +149,31 @@
       return r;
     }
     /** P2 (E2E 🟡3): אלמנטים גלויים שהאלמנט הממוקם מסתיר — המרכז שלהם נופל עליו. לא צאצאים ולא אבות; עד 3. */
+    /* V14d (P2 ⚪): הסריקה רצה בכל ציור של הפאנל. התוצאה נשמרת לאלמנט עד שהעמוד משתנה באמת (MutationObserver על המסמך שבקנבס,
+       בלי השכבות של העורך) או שהמלבן / רוחב הקנבס משתנים; והסריקה עצמה מדלגת על השכבות של העורך כענף שלם. */
     coversOf(e) {
       if (!e || !/^(absolute|fixed)$/.test(this.win().getComputedStyle(e).position)) return [];
-      const d = this.c.doc, r = e.getBoundingClientRect(), out = [];
-      if (r.width < 1 || r.height < 1) return out;
-      const root = e.offsetParent || d.body;
-      for (const k of root.querySelectorAll('*')) {
+      const d = this.c.doc, r = e.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return [];
+      if (this.covDoc !== d) {
+        this.covMo?.disconnect(); this.covDoc = d; this.covGen = (this.covGen || 0) + 1; this.covMemo = new WeakMap();
+        const skip = n => { const x = n.nodeType === 1 ? n : n.parentElement; return !!(x && x.closest && x.closest('[data-kol-canvas]')); };
+        this.covReal = rs => rs.some(m => !skip(m.target) || [...m.addedNodes, ...m.removedNodes].some(x => !skip(x)));
+        this.covMo = new (this.win().MutationObserver)(rs => { if (this.covReal(rs)) this.covGen++; });
+        try { this.covMo.observe(d, { subtree: true, childList: true, attributes: true, characterData: true }); } catch { /* */ }
+      }
+      { const rs = this.covMo.takeRecords(); if (rs.length && this.covReal(rs)) this.covGen++; }   // שינוי באותה משימה — ה-callback (microtask) עוד לא רץ
+      const key = this.covGen + '|' + Math.round(r.left) + ',' + Math.round(r.top) + ',' + Math.round(r.width) + ',' + Math.round(r.height) + '|' + d.documentElement.clientWidth;
+      const was = this.covMemo.get(e); if (was && was.key === key) { this.covHits = (this.covHits || 0) + 1; return was.out; }
+      const out = this.coversScan(e, d, r); this.covScans = (this.covScans || 0) + 1;
+      this.covMemo.set(e, { key, out }); return out;
+    }
+    coversScan(e, d, r) {
+      const out = [], root = e.offsetParent || d.body;
+      const walk = d.createTreeWalker(root, 1, { acceptNode: k => (k.hasAttribute('data-kol-canvas') ? 2 : 1) });   // 2 = FILTER_REJECT: השכבות של העורך — כל הענף
+      for (let k = walk.nextNode(); k; k = walk.nextNode()) {
         if (out.length >= 3) break;
-        if (k === e || e.contains(k) || k.contains(e) || k.closest('[data-kol-canvas]') || out.some(o => o.contains(k) || k.contains(o))) continue;
+        if (k === e || e.contains(k) || k.contains(e) || out.some(o => o.contains(k) || k.contains(o))) continue;
         const b = k.getBoundingClientRect(); if (b.width < 4 || b.height < 4) continue;
         const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
         if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) continue;

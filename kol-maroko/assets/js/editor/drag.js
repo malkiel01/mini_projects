@@ -46,6 +46,7 @@
     }
     track(x, y) {
       const a = this.active, c = this.canvas, fr = c.frame.getBoundingClientRect(), navR = this.nav && this.nav.list.getBoundingClientRect();
+      if (this.overX && this.overX(x, y)) { a.last = null; this.draw(null); return; }   // V14d: מעל ✕ (touch.js) — אין יעד; שחרור שם = ביטול
       let t = null;
       if (navR && navR.width && x >= navR.left && x <= navR.right && y >= navR.top && y <= navR.bottom && this.nav.list.offsetParent) { t = this.navTarget(x, y, navR); this.autoscroll(this.nav.list, y, navR); }
       else if (x >= fr.left && x <= fr.right && y >= fr.top && y <= fr.bottom) { t = this.canvasTarget((x - fr.left) / c.scale, (y - fr.top) / c.scale, x, y); this.autoscrollFrame(y, fr); }

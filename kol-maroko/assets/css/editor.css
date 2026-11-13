@@ -922,3 +922,10 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed .kit-cat, .ed .kit-q, .ed .btn[data-kit-wide], .ed .icon-btn[data-kit-close] { min-height: 44px; }
   .ed .icon-btn[data-kit-close] { min-width: 44px; }
 }
+@media (max-width: 999px), (any-pointer: coarse) {
+  /* V14d: ✕ לביטול גרירה במגע — למעלה במרכז, מעל הכול; שחרור עליו = ביטול (touch.js) */
+  .ts-dragx { position: fixed; z-index: 10000; top: calc(env(safe-area-inset-top) + 6px); left: 50%; transform: translateX(-50%); min-width: 120px; min-height: 48px; display: grid; place-items: center; padding: 0 16px;
+    border-radius: 24px; background: #3c4043; color: #fff; font: 600 15px/1 system-ui, sans-serif; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: none; transition: transform .12s, background .12s; }
+  .ts-dragx.on { background: #b3261e; transform: translateX(-50%) scale(1.1); }
+  .ts-dragx[hidden] { display: none; }
+}

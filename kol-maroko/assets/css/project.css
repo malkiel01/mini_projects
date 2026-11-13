@@ -110,3 +110,17 @@ main:has(> .pj) { max-width: none; }                                    /* V4: �
 .pj-lt-docs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .pj-lt-docs .btn { width: 100%; justify-content: flex-start; flex-wrap: wrap; gap: 4px; }
 .pj-lt-docs p { margin: 2px 4px 0; }
+
+/* V14d: שורת מקשים לקוד — רק בטלפון / במגע. בסוף העמודה של העורך: .pj (וגם העורך החזותי) בגובה --vvh, ולכן השורה צמודה מעל המקלדת */
+.pj-keys { display: none; }
+.pj-splitbox { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }   /* לשונית "קוד" בעורך החזותי: העורך + שורת המקשים */
+.ed-code .pj-splitbox > .pj-split { flex: 1 1 0; height: auto; min-height: 0; }
+.pj-splitbox > textarea.pj-split { width: 100%; border: 0; resize: none; }
+@media (max-width: 999px), (pointer: coarse) {
+  .pj-keys:not([hidden]) { display: flex; flex: none; gap: 4px; padding: 4px; border-top: 1px solid var(--line); background: var(--surface); overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .pj-keys::-webkit-scrollbar { display: none; }
+  .pj-key { flex: none; min-width: 44px; min-height: 44px; padding: 0 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg, var(--surface)); color: var(--ink);
+    font: 600 1.05rem/1 ui-monospace, SFMono-Regular, Menlo, monospace; touch-action: manipulation; user-select: none; -webkit-user-select: none; cursor: pointer; }
+  .pj-key:active { background: var(--brand-soft); }
+  body:has(.pj-keys:not([hidden])) .toast { bottom: calc(var(--tap, 48px) + 72px + env(safe-area-inset-bottom)); }   /* ההודעה אינה מכסה את המקשים */
+}
