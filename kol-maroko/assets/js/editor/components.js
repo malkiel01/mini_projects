@@ -11,6 +11,8 @@
  */
 (function () {
   'use strict';
+  /* V16: סוגריים בתווית ("כתובת הסרטון (YouTube / Vimeo)") — כל אחד ב-<bdi>, שהלטינית לא תהפוך אותם ב-RTL. הכיוון — לפי האות הראשונה שבפנים. */
+  const bidiLabel = s => String(s == null ? '' : s).split(/(\([^()]*\))/).filter(Boolean).map(x => (x[0] === '(' ? h('bdi', {}, x) : x));
   const K = () => window.KolSrc, C = () => window.KolComp;
   const TPL_RE = /^components\/([^/]+)\/template\.html$/;
   const JSON_RE = /^components\/([^/]+)\/component\.json$/;
@@ -157,13 +159,23 @@
       this.note('נוסף הרכיב ' + cp.schema.label + (cp.x.js ? ' — יש לרכיב קוד (script.js): בקנבס הוא אינו רץ, ראו ▶️ תצוגה חיה' : ''), false, { label: 'בטל', run: this.undo });
     }
     /** כמו "לחיצה" בספרייה (V4): אחרי הנבחר; רובריקה נבחרת — בסופה; בלי בחירה — בסוף ה-body. */
-    here() {
+    here() { return this.unpinned(this.here0()); }   /* V16 */
+    here0() {
       const bd = this.build, m = this.c.m; let n = this.c.selected;
       for (let x = n; x; x = x.parent) if (x.tag === 'head') n = null;
       if (!n || n.tag === 'html') return { par: bd.body(), ref: null };
       if (bd.drag.isBox(n) && !this.X.inTemplate(n) && n.tag !== 'template' && n.tag !== 'body') return { par: n, ref: null };
       if (n.tag === 'body') return { par: n, ref: null };
       void m; return { par: n.parent, ref: n.parent.kids[n.parent.kids.indexOf(n) + 1] || null };
+    }
+    /* V16: "אחרי הנבחר" בתוך מכל ממוקם (absolute / fixed — כפתור על תמונת hero) — לא לתוכו, שם הרכיב נפרש מחוץ למסך:
+       עולים מעל המכל הממוקם החיצוני, והרכיב נכנס אחריו, בזרימה הרגילה של העמוד. גרירה (יעד מפורש) — כמו שהיא. */
+    unpinned(at) {
+      if (!at || !at.par) return at;
+      const pinned = x => { try { const el = this.c.elOf(x); const p = el && el.ownerDocument.defaultView.getComputedStyle(el).position; return p === 'absolute' || p === 'fixed'; } catch { return false; } };
+      let out = at;
+      for (let x = at.par; x && x.parent && x.tag !== 'body'; x = x.parent) if (pinned(x)) out = { par: x.parent, ref: x.parent.kids[x.parent.kids.indexOf(x) + 1] || null };
+      return out;
     }
     /** שורות ההמשך של ה-HTML מוזחות להזחה של האחים במקום ההוספה (template.html כתוב מעמודה 0). */
     indentIn(par, ref, html) {
@@ -228,7 +240,7 @@
       const { values, missing } = C().readValues(this.c.m, root, sch.fields), out = [];
       if (!sch.fields.length) out.push(h('p', { class: 'hint', 'data-comp-nofields': true }, 'לרכיב עוד אין הגדרות. בוחרים חלק בו (בקנבס או ב-Navigator) ← "➕ הוסף הגדרה".'));
       for (const f of sch.fields) {
-        const row = h('div', { class: 'ct-row cm-field', 'data-comp-field': f.id }, h('span', { class: 'ct-k' }, f.label));
+        const row = h('div', { class: 'ct-row cm-field', 'data-comp-field': f.id }, h('span', { class: 'ct-k' }, ...bidiLabel(f.label)));   /* V16: <bdi> */
         if (f.bad) { row.append(h('span', { class: 'ed-warn' }, '⚠️ ' + f.bad)); out.push(row); continue; }
         if (missing.includes(f.id)) { const ctl = h('input', { type: 'text', class: 'ct-in', disabled: true, 'data-comp-missing': f.id }); row.append(ctl, h('span', { class: 'hint ct-hint' }, 'החלק ' + (f.target.text || f.target.src || f.target.children || f.target.on || '') + ' חסר במופע הזה')); out.push(row); continue; }
         row.append(this.control(root, f, values[f.id], ro));

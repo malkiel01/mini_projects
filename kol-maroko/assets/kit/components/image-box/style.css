@@ -1,5 +1,5 @@
-/* רכיב מוכן: קופסת תמונה (kit 1.0.0) */
-.kol-imgbox { margin: 0; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: var(--color-bg, #fff); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+/* רכיב מוכן: קופסת תמונה (kit 1.0.1) */
+.kol-imgbox { margin: 0; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: var(--color-bg, #fff); color: var(--color-text, #16192b); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
 .kol-imgbox__img { display: block; inline-size: 100%; block-size: auto; object-fit: cover; aspect-ratio: 16 / 10; }
 .kol-imgbox--square .kol-imgbox__img { aspect-ratio: 1; }
 .kol-imgbox--tall .kol-imgbox__img { aspect-ratio: 3 / 4; }

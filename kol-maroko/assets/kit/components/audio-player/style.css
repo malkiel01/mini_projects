@@ -1,5 +1,5 @@
-/* רכיב מוכן: נגן שמע (kit 1.0.0). בלי JS — <audio controls>; עם JS (is-ready) — הנגן המעוצב, וה-<audio> מוסתר. */
-.kol-audio { --kol-audio-accent: var(--color-accent, #a3322a); display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 999px; background: color-mix(in srgb, var(--kol-audio-accent) 8%, var(--color-bg, #fff)); flex-wrap: wrap; }
+/* רכיב מוכן: נגן שמע (kit 1.0.1). בלי JS — <audio controls>; עם JS (is-ready) — הנגן המעוצב, וה-<audio> מוסתר. */
+.kol-audio { --kol-audio-accent: var(--color-accent, #a3322a); display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 999px; background: color-mix(in srgb, var(--kol-audio-accent) 8%, var(--color-bg, #fff)); color: var(--color-text, #16192b); flex-wrap: wrap; }
 .kol-audio__el { inline-size: 100%; }
 /* בלי JS: השם, ומתחתיו הנגן הרגיל */
 .kol-audio:not(.is-ready) { border-radius: 14px; }

@@ -1,0 +1,14 @@
+{
+  "name": "back-to-top",
+  "label": "חזרה לראש",
+  "icon": "⬆",
+  "category": "ניווט",
+  "fields": [
+    {"id": "side", "label": "פינה (end · start)", "control": "select", "options": ["end", "start"], "target": {"class": "kol-top--{value}"}},
+    {"id": "color", "label": "צבע", "control": "color", "target": {"var": "--kol-top-color"}},
+    {"id": "after", "label": "מופיע אחרי גלילה של (פיקסלים)", "control": "number", "target": {"attr": "data-kol-after"}}
+  ],
+  "states": [
+    {"id": "shown", "label": "הכפתור", "options": [{"label": "אחרי גלילה (אחרי JS)", "root": "is-ready is-shown"}, {"label": "לפני גלילה (מוסתר)", "root": "is-ready"}]}
+  ]
+}
