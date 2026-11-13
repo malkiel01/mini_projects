@@ -24,6 +24,7 @@
  * 18. V13: לחיצה ימנית ← העתק / הדבק סגנון, 🕘 היסטוריה (חזרה לצעד), Ctrl+E, 📄 שמור כתבנית ← גרירה לקנבס, 🗜 ZIP.
  * 19. 🛠️ מפתח: 📋 מטלות (הדיווח), 📜 יומן, 👣 פעולות (של התרחיש), 🩺 תקינות (כל ❌ עם 🔧).
  * 20. 390: 📁 עץ הקבצים ← css/page.css ← הקלדה ← 💾 שמירה.
+ * 21. 390 במגע (V14): גיליון תחתון וידית הגובה, האלמנט גלוי מעל הגיליון, ⬆⬇, לחיצה ארוכה ← תפריט, צביטה ← "⤢ התאם", 🔎.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -681,6 +682,69 @@ const png = (w, h, rgb) => {
       ok(await pq.evaluate(() => [...Project._state.docs.values()].every(d => !d.dirty)), '390: "נשמר" — אין שינויים שלא נשמרו');
       await shot(pq, 'e2e-20-code-390');
       await c3.close();
+    });
+
+
+    // ═══ 21. 390 במגע — V14: גיליון, ⬆⬇, לחיצה ארוכה, צביטה, 🔎 ═══
+    await step('21. 390 במגע (V14): גיליון, ⬆⬇, לחיצה ארוכה, צביטה, 🔎', async () => {
+      const c4 = await mk(390, 844), pt = await c4.newPage(); watch(pt, '390-v14');
+      await pt.goto(base + '/editor.php#/editor/index.html'); await ready(pt); await sleep(800);
+      const cdp = await c4.newCDPSession(pt);
+      const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((q, i) => ({ x: q.x, y: q.y, id: i + 1, radiusX: 4, radiusY: 4, force: 1 })) });
+      // הקשה על כותרת המשנה ← הגיליון של הפאנל נפתח, והאלמנט נשאר גלוי מעליו
+      await tap(pt, '.kadisha-hero-subtitle-main'); await sleep(700);
+      if (!(await pt.isVisible('.ed-info'))) { await pt.click('.ed-bar [data-panel="info"]').catch(() => {}); await sleep(600); }
+      const geo = async () => pt.evaluate(() => { const info = document.querySelector('.ed-info'), c = Editor._state.canvas, e = c.elOf(c.selected); const f = c.frame.getBoundingClientRect(), r = e.getBoundingClientRect(); return { sheetTop: Math.round(info.getBoundingClientRect().top), sheetH: Math.round(info.getBoundingClientRect().height), elBottom: Math.round(f.top + r.bottom * c.scale), elTop: Math.round(f.top + r.top * c.scale) }; });
+      const g0 = await geo();
+      ok(g0.elBottom <= g0.sheetTop + 2 && g0.elTop >= 0, 'הפאנל כגיליון תחתון — האלמנט הנבחר גלוי מעליו', g0);
+      await shot(pt, 'e2e-21-sheet-390');
+      // ידית הגיליון: גרירה למעלה ← גבוה יותר; למטה ← נמוך
+      const grip = await box(pt, '[data-ts-grip="info"]');
+      ok(!!grip, 'ידית אחיזה בראש הגיליון');
+      if (grip) {
+        await tdrag(pt, grip, { x: grip.x, y: grip.y - 300 }); await sleep(500);
+        const g1 = await geo();
+        ok(g1.sheetH > g0.sheetH + 100, 'גרירת הידית למעלה — הגיליון גבוה יותר', { before: g0.sheetH, after: g1.sheetH });
+        const grip2 = await box(pt, '[data-ts-grip="info"]');
+        await tdrag(pt, grip2, { x: grip2.x, y: grip2.y + 300 }); await sleep(500);
+        const g2 = await geo();
+        ok(g2.sheetH < g1.sheetH - 100, 'וגרירה למטה — נמוך שוב', { full: g1.sheetH, after: g2.sheetH });
+      }
+      // ⬆ ⬇ בסרגל הנבחר
+      const o0 = await heroOrder(pt);
+      await pt.click('[data-ts-mv="down"], [data-ts-mv="next"]').catch(async () => pt.click('[data-ts-mv] >> nth=1')); await sleep(800);
+      const o1 = await heroOrder(pt);
+      ok(JSON.stringify(o0) !== JSON.stringify(o1) && o1.indexOf('p.kadisha-hero-subtitle-main') === o0.indexOf('p.kadisha-hero-subtitle-main') + 1, '⬇ בסרגל הנבחר — שורת המשנה ירדה מקום אחד', { o0, o1 });
+      await pt.click('.ed-bar button:has-text("↶")'); await sleep(800);
+      ok(JSON.stringify(await heroOrder(pt)) === JSON.stringify(o0), '↶ — הסדר חזר');
+      // לחיצה ארוכה ← תפריט ההקשר
+      const lp = await at(pt, 'h1');
+      await pt.evaluate(PD); await pt.evaluate(([x, y]) => window.__pd.down(x, y, true), [lp.x, lp.y]); await sleep(900);
+      await pt.evaluate(([x, y]) => window.__pd.up(x, y), [lp.x, lp.y]); await sleep(700);
+      const menu = await pt.$$eval('.ed-ctx [role=menuitem], .ed-ctx button, #sheet[open] .ed-menu button', a => a.map(x => x.textContent.trim().slice(0, 20)));
+      ok(menu.length >= 5 && menu.some(t => /שכפל|העתק/.test(t)), 'לחיצה ארוכה על הכותרת — תפריט ההקשר (שכפל, העתק…)', menu.slice(0, 8));
+      await shot(pt, 'e2e-21-longpress-390');
+      await pt.keyboard.press('Escape'); await closeAll(pt); await sleep(300);
+      if (await pt.isVisible('.ed-ctx')) await pt.mouse.click(5, 300);
+      // צביטה בקנבס ← הגדלה; "⤢ התאם" ← 100%
+      const fr = await pt.evaluate(() => { const r = Editor._state.canvas.frame.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 200) }; });
+      await touch('touchStart', [{ x: fr.x - 30, y: fr.y }, { x: fr.x + 30, y: fr.y }]);
+      for (let i = 1; i <= 10; i++) { await touch('touchMove', [{ x: fr.x - 30 - i * 10, y: fr.y }, { x: fr.x + 30 + i * 10, y: fr.y }]); await sleep(30); }
+      await touch('touchEnd', []); await sleep(700);
+      const fitTxt = await pt.textContent('[data-ts-fit]').catch(() => '');
+      ok(await pt.isVisible('[data-ts-fit]') && /\d{3}%/.test(fitTxt) && !/100%/.test(fitTxt), 'צביטה בשתי אצבעות — הקנבס מוגדל ("⤢ התאם · N%")', fitTxt);
+      await shot(pt, 'e2e-21-pinch-390');
+      if (await pt.isVisible('[data-ts-fit]')) { await pt.tap('[data-ts-fit]'); await sleep(500); }
+      ok(!(await pt.isVisible('[data-ts-fit]')), '"⤢ התאם" — חזרה ל-100%');
+      // 🔎 — חיפוש פעולה או שליטה (במקום Ctrl+E)
+      await tap(pt, 'h1'); await sleep(400);
+      await pt.tap('[data-ts-palette]'); await sleep(600);
+      const pal = await pt.$('.pl-in');
+      ok(!!pal, '🔎 — שדה "פעולה או שליטה"');
+      if (pal) { await pal.type('צבע טקסט'); await sleep(400); await pt.keyboard.press('Enter'); await sleep(800); }
+      ok(await pt.isVisible('[data-color="color"]'), '🔎 ← "צבע טקסט" — השדה בפאנל, גלוי');
+      await shot(pt, 'e2e-21-palette-390');
+      await cdp.detach(); await c4.close();
     });
 
     // ═══ 12. 390 — מגע ═══
