@@ -752,10 +752,9 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-bar .ed-pagebtn-t { display: none; }
   .ed-bar [data-ed-live-btn], .ed-bar [data-head-btn] { display: none; }   /* ⚙️ — בתפריט 📄 (הסרגל נשאר בגובה של main; v2 מקלדת) */
 }
-@media (max-width: 999px) {                                             /* V15: 📄 בשורה של בורר הקובץ — לא מוסיף שורה לסרגל (v2: הקנבס לא זז בין שתי הקשות) */
-  .ed-bar { position: relative; }
-  .ed-bar .ed-page { margin-inline-end: 48px; }
-  .ed-bar .ed-pagebtn { position: absolute; inset-inline-end: 0; top: 0; min-height: var(--tap); width: 44px; }
+/* V15b: "לא להופיע בחיפוש" ותיבות סימון בטופס — כל השורה לחיצה, ≥44px; כתובת העמוד בלוח */
+.hd-check { min-height: 44px; cursor: pointer; padding-block: 4px; }
+.pg-addr { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; overflow-wrap: anywhere; }
 /* V14 — העורך במגע. כל כלל כאן בתוך max-width: 999px או pointer: coarse — המחשב (≥1000px, עכבר) אינו משתנה. */
 @media (max-width: 999px) {
   /* סרגל עליון בשורה אחת: מה שלא נכנס — גולל בתוך הסרגל, לא את העמוד */
