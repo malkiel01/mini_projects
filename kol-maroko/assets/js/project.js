@@ -128,6 +128,7 @@ const Project = (() => {
   }
 
   function changed(doc, e) {
+    if (!doc.model && doc.views) for (const ta of doc.views) { if (!ta.isConnected) doc.views.delete(ta); else if (ta.value !== doc.text) fbSet(ta, doc.text); }   // V14d: שינוי מבחוץ (העורך החזותי, ↶) — גם בתיבות הטקסט הפתוחות
     emit(doc, 'text', e ? { undo: !!e.isUndoing, redo: !!e.isRedoing } : null);
     const now = doc.model ? doc.model.getValue() : doc.text;
     const was = doc.dirty;
@@ -431,10 +432,93 @@ const Project = (() => {
     el.tabs.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
+  // ── V14d: שורת מקשים לקוד בטלפון ─────────────────────────
+  // בסוף העמודה של העורך — ו-.pj בגובה --vvh (בלי המקלדת), ולכן היא צמודה מעל המקלדת. אותה שורה ל-Monaco ולתיבת הטקסט
+  // (כש-Monaco לא נטען). הכפתורים אינם לוקחים את המיקוד מהעורך — המקלדת נשארת פתוחה.
+  const touchy = () => phone() || matchMedia('(pointer: coarse)').matches;
+  const KEYS = ['<', '>', '/', '=', '"', "'", '{', '}', '(', ')', ';', ':', '#', '.'];
+  function fbSnap(doc) { (doc.undo = doc.undo || []).push(doc.text); if (doc.undo.length > 300) doc.undo.shift(); doc.redo = []; }
+  function fbStep(doc, redo) {
+    const from = redo ? doc.redo : doc.undo; if (!from?.length) return false;
+    (redo ? (doc.undo = doc.undo || []) : (doc.redo = doc.redo || [])).push(doc.text);
+    doc.text = from.pop(); doc.fbAt = 0; changed(doc); return true;
+  }
+  /** העורך הפעיל: { doc, ed } (Monaco) או { doc, ta } (תיבת הטקסט); null — אין קובץ טקסט פתוח. */
+  /** תיבת טקסט למסמך (כש-Monaco לא נטען): אותו מסמך, אותה שמירה ואותו rev; היסטוריה משותפת (doc.undo / doc.redo) עם העורך החזותי.
+   *  הקלדה רצופה = צעד אחד; Ctrl+Z / ↶ — ההיסטוריה שלנו, לא של הדפדפן. */
+  function fbArea(doc, label) {
+    const ta = h('textarea', { class: 'code-area pj-fallback', dir: 'ltr', spellcheck: 'false', wrap: 'off', 'aria-label': label, oninput: () => { doc.text = ta.value; changed(doc); } });
+    ta.value = doc.text;
+    ta.addEventListener('beforeinput', e => {
+      if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') { e.preventDefault(); fbStep(doc, e.inputType === 'historyRedo'); return; }
+      const now = performance.now(), kind = e.inputType.startsWith('delete') ? 'del' : 'ins';
+      if (now - (doc.fbAt || 0) > 1000 || doc.fbKind !== kind || /\s/.test(e.data || '')) fbSnap(doc);
+      doc.fbAt = now; doc.fbKind = kind;
+    });
+    (doc.views = doc.views || new Set()).add(ta);
+    return ta;
+  }
+  /** טקסט חדש לתיבה — הסמן בסוף הקטע שהשתנה (לא בסוף הקובץ), והגלילה נשמרת. */
+  function fbSet(ta, text) {
+    const old = ta.value, top = ta.scrollTop; let a = 0, z = 0;
+    while (a < old.length && a < text.length && old[a] === text[a]) a++;
+    while (z < old.length - a && z < text.length - a && old[old.length - 1 - z] === text[text.length - 1 - z]) z++;
+    ta.value = text; const p = text.length - z; ta.setSelectionRange(p, p); ta.scrollTop = top;
+  }
+  /** מסמן טווח בתיבת הטקסט וגולל אליו (focus — רק כשמבקשים). */
+  function fbMark(ta, from, to, focus) {
+    const n = ta.value.length; from = Math.max(0, Math.min(from, n)); to = Math.max(from, Math.min(to, n));
+    if (focus) ta.focus({ preventScroll: true });
+    ta.setSelectionRange(from, to);
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18, row = ta.value.slice(0, from).split('\n').length - 1;
+    ta.scrollTop = Math.max(0, row * lh - ta.clientHeight / 2);
+  }
+  /** העורך הפעיל במסך 📁: { doc, ed } (Monaco) או { doc, ta } (תיבת הטקסט); null — אין קובץ טקסט פתוח. */
+  function activeEd() {
+    const doc = S.docs.get(S.cur); if (!doc || doc.binary) return null;
+    if (doc.model && S.editor && S.editor.getModel() === doc.model) return { doc, ed: S.editor };
+    if (el.fb && el.fbDoc === doc && el.fb.isConnected) return { doc, ta: el.fb };
+    return null;
+  }
+  /** העורך שבלשונית "קוד" של העורך החזותי. */
+  function splitEd() {
+    const doc = S.docs.get(S.splitId); if (!doc || doc.binary) return null;
+    if (doc.model && S.split && S.split.getModel() === doc.model) return { doc, ed: S.split };
+    if (S.splitTa && S.splitTa.isConnected) return { doc, ta: S.splitTa };
+    return null;
+  }
+  function keyDo(k, a) {
+    if (!a) return;
+    if (a.ed) {
+      const ed = a.ed;
+      if (k === 'undo' || k === 'redo') { const m = ed.getModel(); if (m) m[k](); }
+      else if (k === 'find') { ed.focus(); ed.getAction('actions.find')?.run(); return; }
+      else if (k === 'Tab') ed.trigger('kol-keys', 'tab', null);
+      else ed.trigger('kol-keys', 'type', { text: k });                         // כמו הקלדה: סגירה אוטומטית של סוגריים ותגיות
+      ed.focus(); return;
+    }
+    const { doc, ta } = a;
+    if (ta.readOnly) return;
+    if (k === 'find') { searchSheet(); return; }
+    if (k === 'undo' || k === 'redo') { fbStep(doc, k === 'redo'); ta.focus(); return; }
+    const text = k === 'Tab' ? '  ' : k, s0 = ta.selectionStart, e0 = ta.selectionEnd;
+    fbSnap(doc); doc.fbAt = 0;
+    ta.setRangeText(text, s0, e0, 'end'); doc.text = ta.value; changed(doc); ta.focus();
+  }
+  function keyBar(target) {
+    const b = (label, k, aria) => h('button', { type: 'button', class: 'pj-key', tabindex: '-1', 'data-key': k, 'aria-label': aria || label, title: aria || label, onclick: () => keyDo(k, target()) }, label);
+    const row = h('div', { class: 'pj-keys', role: 'toolbar', 'aria-label': 'מקשים לקוד', 'data-keys': true, dir: 'ltr', hidden: true },
+      b('⇥', 'Tab', 'Tab — הזחה'), ...KEYS.map(k => b(k, k)), b('↶', 'undo', 'ביטול'), b('↷', 'redo', 'חזרה'), b('🔎', 'find', 'חיפוש'));
+    row.addEventListener('pointerdown', e => { if (e.target.closest('.pj-key')) e.preventDefault(); });   // בלי mousedown — המיקוד נשאר בעורך
+    row.addEventListener('mousedown', e => e.preventDefault());
+    return row;
+  }
+
   function drawEditor() {
     if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
     el.ed.hidden = el.view.hidden = true;
+    el.fb = el.fbDoc = null; if (el.keys) el.keys.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
       el.view.replaceChildren(...[h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
@@ -449,6 +533,7 @@ const Project = (() => {
         if (prefs.views[f.id]) S.editor.restoreViewState(prefs.views[f.id]);
       }
       S.editor.layout();
+      if (el.keys) el.keys.hidden = !touchy();
       /* T2: ציור חוזר (שחזור הלשוניות, עץ) אינו מושך את המיקוד כשהוא כבר בתוך העורך — אחרת תפריט ההקשר של Monaco
          (שמחזיק את המיקוד בתוך .monaco-editor) נסגר מיד אחרי שנפתח (v1b) */
       if (!phone() && !el.ed.contains(document.activeElement)) S.editor.focus();
@@ -456,9 +541,10 @@ const Project = (() => {
     }
     el.view.hidden = false;
     if (doc.text != null && !doc.binary) {                       // העורך לא נטען: תיבת טקסט, כדי שתמיד אפשר לערוך ולשמור
-      const ta = h('textarea', { class: 'code-area pj-fallback', dir: 'ltr', spellcheck: 'false', 'aria-label': f.path, oninput: () => { doc.text = ta.value; changed(doc); } });
-      ta.value = doc.text;
+      const ta = fbArea(doc, f.path);
+      el.fb = ta; el.fbDoc = doc;
       el.view.replaceChildren(ta);
+      if (el.keys) el.keys.hidden = !touchy();
       return;
     }
     const x = ext(f.path), type = f.media_info?.type || '';
@@ -1212,7 +1298,7 @@ const Project = (() => {
     host.replaceChildren(h('div', { class: 'pj' },
       h('p', { class: 'pj-note', role: 'note' }, 'השינויים בקבצים נשמרים כאן, ומגיעים לאתר כשמפרסמים מ-🚀 פרסום.'),   /* T2 (E2E 🟡10): הפרסום מהקבצים עובד — הנוסח הישן אמר שלא */
       el.kol, el.seed,
-      h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
+      h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view, el.keys = keyBar(activeEd)))));
 
     try { await loadMonaco(); } catch { toast('העורך המלא לא נטען — עורכים בתיבת טקסט', true); }
     if (S.host !== host) return;
@@ -1270,6 +1356,17 @@ const Project = (() => {
    */
   function splitEditor(host, id) {
     const doc = S.docs.get(id);
+    if (!monaco && doc && !doc.binary && doc.text != null) {   // V14d: Monaco לא נטען (למשל בטלפון) — תיבת טקסט עם אותו מסמך ואותה שמירה, לא שגיאה
+      const ta = fbArea(doc, S.byId.get(id)?.path || ''); ta.classList.add('pj-split');
+      S.splitId = id; S.splitTa = ta;
+      el.splitKeys = el.splitKeys || keyBar(splitEd); el.splitKeys.hidden = !touchy();
+      host.replaceChildren(h('div', { class: 'pj-splitbox' }, ta, el.splitKeys));
+      const ed = { updateOptions(o) { if (o && 'readOnly' in o) ta.readOnly = !!o.readOnly; }, layout() {}, focus() { ta.focus(); } };
+      return { ed, fallback: true, offset: () => ta.selectionStart,
+        mark(from, to) { fbMark(ta, from, to, false); },
+        selection: () => ({ from: ta.selectionStart, to: ta.selectionEnd }),
+        onCursor(cb) { const f = () => cb(); ta.addEventListener('click', f); ta.addEventListener('keyup', f); return { dispose() { ta.removeEventListener('click', f); ta.removeEventListener('keyup', f); } }; } };
+    }
     if (!monaco || !doc?.model) return null;
     if (!S.split) {
       el.split = h('div', { class: 'pj-split', dir: 'ltr' });
@@ -1278,8 +1375,10 @@ const Project = (() => {
       S.split.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.splitId));
       addPick(S.split, () => S.splitId);
     }
-    S.splitId = id;
-    host.replaceChildren(el.split);
+    S.splitId = id; S.splitTa = null;
+    el.splitKeys = el.splitKeys || keyBar(splitEd); el.splitKeys.hidden = !touchy();
+    el.splitBox = el.splitBox || h('div', { class: 'pj-splitbox' }, el.split, el.splitKeys);   // V14d: שורת המקשים מתחת לעורך (בטלפון / במגע)
+    host.replaceChildren(el.splitBox);
     S.split.setModel(doc.model); S.split.layout();
     const ed = S.split, m = doc.model;
     return { ed, offset: () => m.getOffsetAt(ed.getPosition()),
@@ -1301,6 +1400,13 @@ const Project = (() => {
       const ln = Math.min(line, m.getLineCount());
       S.editor.revealLineInCenter(ln); S.editor.setPosition({ lineNumber: ln, column: 1 }); S.editor.focus();
       if (cols?.col) S.editor.setSelection(new monaco.Range(ln, cols.col, ln, cols.col + (cols.len || 0)));   // ההתאמה מהחיפוש בכל הקבצים
+    }
+    const d = S.docs.get(f.id);
+    if (!m && d && d.text != null && (line > 0 || range) && el.fb && el.fbDoc === d) {   // V14d: בלי Monaco — קופצים לשורה (או לטווח) בתיבת הטקסט
+      const ls = d.text.split('\n'), ln = Math.max(1, Math.min(line || 1, ls.length));
+      const from = range ? range.from : ls.slice(0, ln - 1).reduce((a, l) => a + l.length + 1, 0) + (cols?.col ? cols.col - 1 : 0);
+      fbMark(el.fb, from, range ? range.to : from + (cols?.len || 0), true);
+      return;
     }
     if (S.editor && m && range) {
       if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
