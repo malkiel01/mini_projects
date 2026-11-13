@@ -752,11 +752,9 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-bar .ed-pagebtn-t { display: none; }
   .ed-bar [data-ed-live-btn], .ed-bar [data-head-btn] { display: none; }   /* ⚙️ — בתפריט 📄 (הסרגל נשאר בגובה של main; v2 מקלדת) */
 }
-@media (max-width: 999px) {                                             /* V15: 📄 בשורה של בורר הקובץ — לא מוסיף שורה לסרגל (v2: הקנבס לא זז בין שתי הקשות) */
-  .ed-bar { position: relative; }
-  .ed-bar .ed-page { margin-inline-end: 48px; }
-  .ed-bar .ed-pagebtn { position: absolute; inset-inline-end: 0; top: 0; min-height: var(--tap); width: 44px; }
-}   /* V16: הסוגר החסר של @media של V15 — בלעדיו כל הכללים אחריו (כולל V14 ו-V16) נבלעו בתוכו */
+/* V15b: "לא להופיע בחיפוש" ותיבות סימון בטופס — כל השורה לחיצה, ≥44px; כתובת העמוד בלוח */
+.hd-check { min-height: 44px; cursor: pointer; padding-block: 4px; }
+.pg-addr { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; overflow-wrap: anywhere; }
 /* V16: ספריית הרכיבים המוכנים (kit.js) — בלשונית "🧩 רכיבים", והלוח הרחב מעל הקנבס */
 .kit { display: grid; gap: var(--s2); margin-bottom: var(--s3); }
 .kit-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
@@ -876,4 +874,4 @@ dialog.hd-sheet .hd { padding: 0; }
   .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }
   .tp-row .icon-btn { min-width: 44px; min-height: 44px; }
   .ed-ctx-head .icon-btn { min-width: 44px; min-height: 44px; }
-}   /* V16: הסוגר החסר של @media (pointer: coarse) של V14 */
+}

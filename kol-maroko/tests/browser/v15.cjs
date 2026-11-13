@@ -116,7 +116,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.click('[data-hd-pick="ogImage"]'); await sleep(500);
     s = await html(page);
     g = await page.evaluate(() => ({ img: document.querySelector('[data-hd-card] img')?.src || '', t: document.querySelector('[data-hd-card] b').textContent }));
-    ok(/<meta property="og:image" content="media\/share.png">/.test(s) && /share\.png/.test(g.img) && g.t === 'מילון מרוקאי', 'תמונת שיתוף ← og:image; כרטיס וואטסאפ / פייסבוק עם התמונה והכותרת', g);
+    const site = await page.evaluate(() => Editor._pages().data.site);
+    ok(/^https?:\/\//.test(site) && s.includes('<meta property="og:image" content="' + site + '/lexicon/media/share.png">') && /share\.png/.test(g.img) && g.t === 'מילון מרוקאי', 'תמונת שיתוף ← og:image בכתובת מלאה (' + site + '/lexicon/…) — וואטסאפ קורא אותה; הכרטיס מציג אותה מהתצוגה המבודדת', g);
+    // כתובת יחסית (נכתבה בקוד) — אזהרה; בלי כתובת אתר — "לא תוצג בוואטסאפ עד שמוגדרת כתובת האתר"
+    await page.evaluate(() => { const K = window.KolSrc; Editor._act('בדיקה', m => window.KolHead.planSet(K, m, 'ogImage', 'media/share.png')); }); await sleep(400);
+    ok((await page.getAttribute('[data-hd-share-warn]', 'data-hd-share-warn')) === 'relative', 'og:image יחסי — אזהרה "וואטסאפ צריך כתובת מלאה"');
+    await page.evaluate(() => { Editor._pages().data.site = ''; Editor._head().draw(); }); await sleep(200);
+    ok((await page.getAttribute('[data-hd-share-warn]', 'data-hd-share-warn')) === 'nosite' && /עד שמוגדרת כתובת האתר/.test(await page.textContent('[data-hd-share-warn]')), 'בלי כתובת אתר — "תמונת שיתוף לא תוצג בוואטסאפ עד שמוגדרת כתובת האתר"');
+    await page.evaluate(s0 => { Editor._pages().data.site = s0; }, site); await undo(page);
+    g = await page.evaluate(() => { const l = document.querySelector('[data-hd="noindex"] label').getBoundingClientRect(); return l.height; });
+    ok(g >= 44, '"לא להופיע בחיפוש" — כל השורה לחיצה, ≥44px', g);
     // og:title — "כמו הכותרת", ניתוק
     ok(await page.isChecked('[data-hd-link="ogTitle"]') && await page.isDisabled('[data-hd-in="ogTitle"]'), 'og:title — "כמו הכותרת" כברירת מחדל');
     await page.uncheck('[data-hd-link="ogTitle"]'); await sleep(400);
@@ -301,7 +310,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     g = await page.evaluate(() => { const m = document.querySelector('[data-pg-mgr]').getBoundingClientRect(), pv = document.querySelector('[data-pg-preview]'), l = document.querySelector('[data-pg-list]').getBoundingClientRect(); return { w: m.width, h: m.height, l: l.width, pv: pv ? pv.getBoundingClientRect().width : 0, sb: pv?.getAttribute('sandbox'), rows: [...document.querySelectorAll('[data-pg-row]')].map(r => r.dataset.pgRow), vw: innerWidth, vh: innerHeight }; });
     ok(g.w >= g.vw - 40 && g.h >= g.vh - 40 && g.pv > 900 && g.sb === '', '1920: "📄 עמודים" — מסך מלא; הרשימה ותצוגה מקדימה (iframe sandbox בלי סקריפטים) של העמוד הנבחר', g);
     ok(g.rows[0] === 'index.html' && g.rows.includes('about/index.html'), 'הרשימה: הראשי ראשון (⭐), about/', g.rows);
-    g = await page.evaluate(() => ({ star: /⭐/.test(document.querySelector('[data-pg-row="index.html"]').textContent), url: document.querySelector('[data-pg-row="about/index.html"] small').textContent, when: /שונה/.test(document.querySelector('[data-pg-row="about/index.html"]').textContent) }));
+    g = await page.evaluate(() => ({ star: /⭐/.test(document.querySelector('[data-pg-row="index.html"]').textContent), url: document.querySelector('[data-pg-row="about/index.html"] small bdi').textContent, when: /שונה/.test(document.querySelector('[data-pg-row="about/index.html"]').textContent) }));
     ok(g.star && g.url === '/lexicon/about/' && g.when, 'כל שורה: שם (מ-<title>), כתובת /lexicon/about/, מתי שונה', g);
     await shot(page, 'v15-1920-pages');
     // ✎ שינוי כתובת: about/ ← odot/ — תצוגת הקישורים, סימון, הפניה

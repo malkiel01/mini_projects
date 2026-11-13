@@ -74,7 +74,7 @@
       const draw = () => {
         const t = q.value.trim().toLowerCase(), cur = this.o.current();
         list.replaceChildren(...this.data.pages.filter(p => !t || (p.title + ' ' + p.path).toLowerCase().includes(t)).map(p => hh('button', { type: 'button', role: 'option', class: 'pg-opt', 'aria-selected': String(p.path === cur), 'data-pg-open': p.path, onclick: () => { this.closePicker(); this.go(p.path); } },
-          hh('b', {}, this.label(p)), hh('small', { dir: 'ltr' }, this.data.base + urlOf(p.path)))));
+          hh('b', {}, this.label(p)), hh('small', {}, hh('bdi', { dir: 'ltr' }, this.data.base + urlOf(p.path))))));
         if (!list.children.length) list.append(hh('p', { class: 'muted' }, 'אין עמוד כזה'));
       };
       q.addEventListener('input', draw);
@@ -129,7 +129,7 @@
         const row = hh('div', { class: 'pg-row' + (p.path === this.sel ? ' sel' : '') + (p.listed ? '' : ' unlisted'), role: 'listitem', 'data-i': i, 'data-pg-row': p.path, tabindex: '0', onclick: e => { if (e.target.closest('button')) return; this.sel = p.path; this.drawMgr(); },
           onkeydown: e => { if (e.key === 'Enter') { this.sel = p.path; this.drawMgr(); } } },
           hh('button', { type: 'button', class: 'icon-btn pg-drag', 'data-drag': true, 'aria-label': 'גרירה לסידור', title: 'גרירה לסידור' + (phone ? ' (או לחיצה ארוכה על השורה)' : ''), disabled: !pub || null }, '⇅'),
-          hh('span', { class: 'pg-name' }, hh('b', {}, this.label(p)), hh('small', { dir: 'ltr' }, d.base + urlOf(p.path)), hh('small', { class: 'muted' }, (p.listed ? '' : 'לא ברשימה · ') + 'שונה ' + (g.when ? g.when(p.at) : p.at) + (p.by ? ' · ' + p.by : ''))),
+          hh('span', { class: 'pg-name' }, hh('b', {}, this.label(p)), hh('small', {}, hh('bdi', { dir: 'ltr' }, d.base + urlOf(p.path))), hh('small', { class: 'muted' }, (p.listed ? '' : 'לא ברשימה · ') + 'שונה ' + (g.when ? g.when(p.at) : p.at) + (p.by ? ' · ' + p.by : ''))),
           hh('button', { type: 'button', class: 'icon-btn', 'data-up': true, 'aria-label': 'למעלה', disabled: !pub || i === 0 || null, onclick: () => this.reorder(i, i - 1) }, '↑'),
           hh('button', { type: 'button', class: 'icon-btn', 'data-down': true, 'aria-label': 'למטה', disabled: !pub || i === d.pages.length - 1 || null, onclick: () => this.reorder(i, i + 1) }, '↓'));
         list.append(row);
@@ -152,7 +152,7 @@
       const b = (label, fn, attr, off, cls) => hh('button', Object.assign({ type: 'button', class: 'btn sm ' + (cls || ''), disabled: off || null, onclick: fn }, attr), label);
       const url = this.o.pvUrl(p.path);
       return hh('div', { class: 'pg-detail', 'data-pg-detail': p.path },
-        hh('div', { class: 'pg-dhead' }, hh('div', {}, hh('h3', {}, this.label(p)), hh('code', { dir: 'ltr' }, d.base + urlOf(p.path)), hh('small', { class: 'muted', dir: 'ltr' }, ' · ' + p.path)),
+        hh('div', { class: 'pg-dhead' }, hh('div', {}, hh('h3', {}, this.label(p)), hh('p', { class: 'pg-addr' }, hh('bdi', { dir: 'ltr' }, hh('code', {}, d.base + urlOf(p.path))), ' · ', hh('bdi', { dir: 'ltr', class: 'muted' }, p.path))),
           hh('div', { class: 'pg-acts' },
             b('🎨 פתח בעורך', () => { this.mgrClose && !this.o.phone() && this.mgrClose(); if (this.o.phone()) document.getElementById('sheet')?.close(); this.go(p.path); }, { 'data-pg-act': 'open' }, p.path === this.o.current(), 'primary'),
             b('▶️ תצוגה חיה', () => this.o.live(p.path), { 'data-pg-act': 'live' }),
