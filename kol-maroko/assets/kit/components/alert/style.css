@@ -1,0 +1,14 @@
+/* רכיב מוכן: התראה (kit 1.0.0). ✕ מופיע רק עם JS (is-ready); "נסגרה" — is-closed. */
+.kol-alert { --kol-alert-c: #1d4ed8; display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--kol-alert-c) 35%, transparent); background: color-mix(in srgb, var(--kol-alert-c) 9%, var(--color-bg, #fff)); }
+.kol-alert--success { --kol-alert-c: #15803d; }
+.kol-alert--warning { --kol-alert-c: #b45309; }
+.kol-alert--danger { --kol-alert-c: #b91c1c; }
+.kol-alert__icon { font-size: 1.3rem; line-height: 1.2; flex: none; }
+.kol-alert__body { flex: 1; min-inline-size: 0; }
+.kol-alert__title { display: block; color: var(--kol-alert-c); }
+.kol-alert__text { margin: 2px 0 0; }
+.kol-alert__close { display: none; flex: none; border: 0; background: transparent; color: inherit; font: inherit; font-size: 1.1rem; min-inline-size: 36px; min-block-size: 36px; border-radius: 8px; cursor: pointer; }
+.kol-alert__close:hover, .kol-alert__close:focus-visible { background: color-mix(in srgb, var(--kol-alert-c) 15%, transparent); }
+.kol-alert.is-ready.kol-alert--close .kol-alert__close { display: block; }
+.kol-alert.is-closed { display: none; }
+.kol-alert__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

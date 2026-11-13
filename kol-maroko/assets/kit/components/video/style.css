@@ -1,0 +1,4 @@
+/* רכיב מוכן: וידאו מקובץ (kit 1.0.0) — <video> רגיל, בלי JS. */
+.kol-video { margin: 0; }
+.kol-video__el { display: block; inline-size: 100%; block-size: auto; aspect-ratio: 16 / 9; border-radius: 12px; background: #111; object-fit: cover; }
+.kol-video__cap { margin-top: 6px; font-size: .9rem; opacity: .8; }

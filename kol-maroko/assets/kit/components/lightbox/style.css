@@ -1,0 +1,19 @@
+/* רכיב מוכן: גלריה עם lightbox (kit 1.0.0). בלי JS — כל תמונה קישור לקובץ, והחלון לא נפתח. */
+.kol-lightbox { --kol-lightbox-cols: 4; --kol-lightbox-gap: 8px; }
+.kol-lightbox__grid { display: grid; grid-template-columns: repeat(var(--kol-lightbox-cols), minmax(0, 1fr)); gap: var(--kol-lightbox-gap); }
+.kol-lightbox__item { display: block; border-radius: 8px; overflow: hidden; }
+.kol-lightbox__item:focus-visible { outline: 3px solid var(--color-accent, #a3322a); outline-offset: 2px; }
+.kol-lightbox__img { display: block; inline-size: 100%; aspect-ratio: 1; object-fit: cover; transition: transform .25s; }
+.kol-lightbox__item:hover .kol-lightbox__img { transform: scale(1.04); }
+.kol-lightbox__dlg[open] { position: fixed; inset: 0; inline-size: 100%; block-size: 100%; max-inline-size: none; max-block-size: none; margin: 0; padding: 0; border: 0; background: rgba(10, 10, 12, .93); color: #fff; display: grid; place-items: center; z-index: 1000; touch-action: pan-y; }
+.kol-lightbox__dlg::backdrop { background: transparent; }
+.kol-lightbox__fig { margin: 0; display: grid; gap: 8px; justify-items: center; max-inline-size: 92vw; }
+.kol-lightbox__big { max-inline-size: 92vw; max-block-size: 80vh; object-fit: contain; border-radius: 6px; }
+.kol-lightbox__prev, .kol-lightbox__next, .kol-lightbox__close { position: absolute; border: 0; background: rgba(255, 255, 255, .14); color: #fff; font-size: 1.8rem; line-height: 1; inline-size: 48px; block-size: 48px; border-radius: 50%; cursor: pointer; }
+.kol-lightbox__prev:focus-visible, .kol-lightbox__next:focus-visible, .kol-lightbox__close:focus-visible { outline: 2px solid #fff; }
+.kol-lightbox__prev { inset-inline-start: 12px; inset-block-start: 50%; }
+.kol-lightbox__next { inset-inline-end: 12px; inset-block-start: 50%; }
+.kol-lightbox__close { inset-inline-end: 12px; inset-block-start: 12px; font-size: 1.2rem; }
+.kol-lightbox__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 767px) { .kol-lightbox { --kol-lightbox-cols: 2; } }
+@media (prefers-reduced-motion: reduce) { .kol-lightbox__img { transition: none; } }
