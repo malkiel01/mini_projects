@@ -174,6 +174,7 @@
     linkOf(n) { for (let x = n; x; x = x.parent) if (x.tag === 'a') return x; return null; }
     kindOf(href) {
       if (/^tel:/i.test(href)) return 'tel'; if (/^mailto:/i.test(href)) return 'mail'; if (href[0] === '#') return 'anchor';
+      if (this.pages && this.pages.data && this.pages.target(this.file().path, href) !== undefined) return 'page';   /* V15: about/, ../, /lexicon/x/ — גם שבור */
       const p = this.resolve(href); if (p && this.files().some(f => f.path === p)) return /\.html?$/i.test(p) ? 'page' : 'file';
       return 'url';
     }
@@ -181,7 +182,11 @@
       const c = this.canvas, href = this.attr(a, 'href') || '', kind = this.kindOf(href), lab = this.lab(a), set = (v, what) => this.setAttr(a, 'href', v, (what || 'יעד קישור') + ' · ' + lab);
       const KINDS = [['url', 'כתובת'], ['page', 'עמוד בפרויקט'], ['anchor', 'עוגן בעמוד'], ['file', 'קובץ מהספרייה'], ['tel', 'טלפון'], ['mail', 'מייל']];
       let ctl;
-      if (kind === 'page') { const pages = this.files().filter(f => f.kind === 'file' && /\.html?$/i.test(f.path)).map(f => f.path), cur = this.resolve(href); ctl = this.select(cur, pages.map(p => [p, p]), v => set(this.rel(v)), 'href'); }
+      if (kind === 'page' && this.pages && this.pages.data) {   /* V15 §2.5: העמודים לפי הסדר + עוגנים; נכתב יחסי ויפה (about/) */
+        const opts = this.pages.linkOptions(this.file().path).map(([v, l]) => [v, l]), dead = this.pages.target(this.file().path, href) === null;
+        if (!opts.some(([v]) => v === href)) opts.unshift([href, (dead ? '⛔ קישור שבור: ' : '') + href]);
+        ctl = h('div', { class: 'ct-btns' }, this.select(href, opts, v => set(v), 'href'), dead ? h('p', { class: 'dt-note ct-dead', 'data-f': 'broken-link' }, '⛔ קישור שבור: ' + href + ' — אין עמוד כזה בפרויקט') : null);
+      } else if (kind === 'page') { const pages = this.files().filter(f => f.kind === 'file' && /\.html?$/i.test(f.path)).map(f => f.path), cur = this.resolve(href); ctl = this.select(cur, pages.map(p => [p, p]), v => set(this.rel(v)), 'href'); }
       else if (kind === 'anchor') { const ids = K.all(c.m).map(x => this.attr(x, 'id')).filter(Boolean), cur = href.slice(1); ctl = this.select(cur, (ids.includes(cur) ? [] : [[cur, cur ? '#' + cur + ' — אין מזהה כזה בעמוד' : '— בוחרים —']]).concat(ids.map(i => [i, '#' + i])), v => set('#' + v), 'href'); }
       else if (kind === 'file') ctl = h('div', { class: 'ct-btns' }, h('code', { dir: 'ltr' }, href), this.btn('בחר קובץ', async () => { const p = await this.pick('any', 'בחירת קובץ'); if (p) { const cur = this.linkOf(this.n); if (cur) this.setAttr(cur, 'href', this.rel(p), 'יעד קישור · ' + this.lab(cur)); } }, false, 'pick-file'));
       else if (kind === 'tel') ctl = this.input(href.replace(/^tel:/i, ''), v => set('tel:' + v.replace(/[^\d+*#]/g, '')), { key: 'href', dir: 'ltr', placeholder: '+972…' });
@@ -189,7 +194,8 @@
       else ctl = this.input(href, v => { if (!T.SAFE_HREF.test(v)) return this.note('כתובת של קישור אינה יכולה להיות קוד (javascript:)', true); set(v); }, { key: 'href', dir: 'ltr', placeholder: 'https://…' });
       const change = v => {
         if (v === kind) return;
-        if (v === 'page') { const pages = this.files().filter(f => f.kind === 'file' && /\.html?$/i.test(f.path) && f.path !== this.file().path); const dir = this.file().path.replace(/[^/]*$/, ''); pages.sort((x, y) => (y.path.startsWith(dir) ? 1 : 0) - (x.path.startsWith(dir) ? 1 : 0) || x.path.localeCompare(y.path)); /* קודם עמודים מאותה תיקייה */ set(pages[0] ? this.rel(pages[0].path) : this.rel(this.file().path)); }
+        if (v === 'page' && this.pages && this.pages.data) { const o = this.pages.linkOptions(this.file().path)[0]; set(o ? o[0] : './'); }   /* V15 */
+        else if (v === 'page') { const pages = this.files().filter(f => f.kind === 'file' && /\.html?$/i.test(f.path) && f.path !== this.file().path); const dir = this.file().path.replace(/[^/]*$/, ''); pages.sort((x, y) => (y.path.startsWith(dir) ? 1 : 0) - (x.path.startsWith(dir) ? 1 : 0) || x.path.localeCompare(y.path)); /* קודם עמודים מאותה תיקייה */ set(pages[0] ? this.rel(pages[0].path) : this.rel(this.file().path)); }
         else if (v === 'anchor') { const id = K.all(c.m).map(x => this.attr(x, 'id')).find(Boolean); set('#' + (id || '')); }
         else if (v === 'file') this.pick('any', 'בחירת קובץ').then(p => { const cur = this.linkOf(this.n); if (p && cur) this.setAttr(cur, 'href', this.rel(p), 'יעד קישור · ' + this.lab(cur)); else this.draw(); });
         else set(v === 'tel' ? 'tel:' : v === 'mail' ? 'mailto:' : 'https://');

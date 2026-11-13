@@ -663,3 +663,375 @@ function pf_zip_import(array $user, array $q, string $raw): array
     audit_as($user, 'pf_zip_import', count($add) . ' נוספו · ' . count($replace) . ' הוחלפו');
     return ['plan' => $plan, 'done' => ['add' => count($add), 'replace' => count($replace), 'dirs' => count($newDirs), 'words' => $wdone], 'snapshot' => $snap];
 }
+
+// ── V15: עמודים (docs/spec-v2/slices/V15-page-settings-pages.md §2.4, §2.6) ──────────────
+//
+// עמוד = קובץ HTML רגיל בעץ. pages_list קוראת; כל השאר כותבות דרך אותו מנוע (pf_insert / pf_put / pf_hist), בעסקה אחת,
+// עם שורת היסטוריה לכל קובץ. הגבול (כלל העל, חצי 1): כתובת של עמוד היא "slug" — PAGE_SLUG בלבד — ולכן אין ערך שיוצא
+// מ-/lexicon/: לא .., לא / בהתחלה, לא //. השרת בודק את זה בעצמו (400), לא סומך על הטופס.
+
+const PAGE_SLUG = '/^[a-z0-9-]+(\/[a-z0-9-]+)*$/';
+const PAGE_RESERVED = ['components', 'from-current', '__kol'];
+
+/** הכתובת של העמוד באתר (בסיס הכלי). */
+function page_base(): string
+{
+    return '/' . (defined('PUB_PAGE') ? PUB_PAGE : 'lexicon') . '/';
+}
+
+/** האם הנתיב הוא עמוד (pages: "auto" — כל .html מחוץ ל-components/, ולא תבנית ישנה). */
+function page_is(string $p): bool
+{
+    return (bool)preg_match('/\.html?$/i', $p) && !str_starts_with($p, 'components/') && !preg_match('#^from-current/[^/]+\.html?$#i', $p);
+}
+
+/** about/index.html ← "about/"; index.html ← ""; x.html ← "x.html". */
+function page_url(string $p): string
+{
+    if ($p === 'index.html') return '';
+    return str_ends_with($p, '/index.html') ? substr($p, 0, -strlen('index.html')) : $p;
+}
+
+function page_title(string $html): string
+{
+    if (!preg_match('~<title\b[^>]*>(.*?)</title\s*>~is', $html, $m)) return '';
+    return mb_substr(trim(preg_replace('/\s+/u', ' ', html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8')) ?? ''), 0, 120);
+}
+
+/** slug תקין או 400. זה הגבול של "כתובת מחוץ ל-/lexicon/ אינה אפשרית". */
+function page_slug(mixed $s): string
+{
+    if (!is_string($s) || !preg_match(PAGE_SLUG, $s) || strlen($s) > 120) throw new ApiError('כתובת של עמוד: אותיות לטיניות קטנות, ספרות ומקף, ו-/ בין חלקים (למשל about או team/dana). בלי .. ובלי / בהתחלה או בסוף', 400);
+    if (in_array(explode('/', $s)[0], PAGE_RESERVED, true)) throw new ApiError("\"$s\" שמורה למערכת", 400);
+    return $s;
+}
+
+/** kol.json כטקסט + תצורה, לכתיבה. בלי kol.json תקין — אין כתיבה (קודם מתקנים את הקובץ). */
+function page_kol_row(): array
+{
+    $r = pf_by_path('kol.json');
+    if (!$r || $r['kind'] !== 'file') throw new ApiError('אין kol.json בשורש הפרויקט', 409);
+    $s = pf_blob_get($r['sha']);
+    $c = json_decode($s, true);
+    if (!is_array($c) || array_is_list($c)) throw new ApiError('kol.json אינו JSON תקין — מתקנים אותו בעורך הקוד, ואז שוב', 409);
+    return [$r, $s, $c];
+}
+
+/** מחליף ערך עליון אחד ב-kol.json במקום (שאר הקובץ — כמו שהוא); בלי המפתח — נוסף בתחילת האובייקט. */
+function page_kol_set(array $user, string $key, mixed $value, string $note): void
+{
+    [$r, $s, $c] = page_kol_row();
+    $enc = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $rx = '/("' . preg_quote($key, '/') . '"\s*:\s*)("(?:[^"\\\\]|\\\\.)*"|\[[^\[\]]*\]|true|false|null|-?\d+(?:\.\d+)?)/';
+    $out = array_key_exists($key, $c) ? preg_replace($rx, '$1' . str_replace(['\\', '$'], ['\\\\', '\\$'], $enc), $s, 1) : preg_replace('/\{/', '{' . "\n  \"$key\": " . str_replace(['\\', '$'], ['\\\\', '\\$'], $enc) . ',', $s, 1);
+    $chk = is_string($out) ? json_decode($out, true) : null;
+    if (!is_array($chk) || ($chk[$key] ?? null) !== $value) {                // מבנה שהביטוי אינו מכיר — כותבים את האובייקט מחדש (מעוצב)
+        $c[$key] = $value;
+        $out = json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+    }
+    if ($out !== $s) pf_put($r, $out, $user, $note);
+}
+
+/** כל העמודים, לפי הסדר: pages (רשימה מפורשת) ואחריה מה שאינו ברשימה; "auto" — לפי נתיב, הראשי ראשון. */
+function pages_rows(): array
+{
+    $cfg = pf_kol()['config'] ?? [];
+    $rows = array_values(array_filter(db()->query("SELECT * FROM pf_files WHERE deleted_at IS NULL AND kind = 'file' ORDER BY path_key")->fetchAll(), fn($r) => page_is($r['path'])));
+    $entry = is_string($cfg['entry'] ?? null) ? $cfg['entry'] : 'index.html';
+    $list = is_array($cfg['pages'] ?? null) ? array_values(array_filter($cfg['pages'], 'is_string')) : null;
+    $pos = fn($p) => $list !== null ? (($i = array_search($p, $list, true)) === false ? 10000 : $i) : ($p === $entry ? -1 : 0);
+    usort($rows, fn($a, $b) => $pos($a['path']) <=> $pos($b['path']) ?: strcmp($a['path'], $b['path']));
+    return [$rows, $entry, $list];
+}
+
+/** 📄 עמודים: רשימה, ההזזות מאז הפרסום האחרון, וקישורים לעמודים שאינם קיימים. קריאה בלבד. */
+function pages_list(array $q = []): array
+{
+    [$rows, $entry, $list] = pages_rows();
+    $live = array_flip(array_column(db()->query('SELECT path FROM pf_files WHERE deleted_at IS NULL')->fetchAll(), 'path'));
+    $pages = [];
+    $texts = [];
+    foreach ($rows as $r) {
+        $s = pf_blob_get($r['sha']);
+        $texts[$r['path']] = $s;
+        $pages[] = ['id' => (int)$r['id'], 'path' => $r['path'], 'url' => page_url($r['path']), 'title' => mb_check_encoding($s, 'UTF-8') ? page_title($s) : '',
+            'at' => $r['updated_at'], 'by' => $r['updated_name'], 'entry' => $r['path'] === $entry, 'is404' => $r['path'] === '404.html',
+            'listed' => $list === null || in_array($r['path'], $list, true), 'rev' => (int)$r['rev'],
+            'ids' => mb_check_encoding($s, 'UTF-8') && preg_match_all('/\sid\s*=\s*(?:"([^"<>]{1,80})"|\'([^\'<>]{1,80})\')/', $s, $im) ? array_slice(array_values(array_unique(array_filter(array_map(fn($a, $b) => $a !== '' ? $a : $b, $im[1], $im[2])))), 0, 60) : []];   // §2.5: עוגנים בעמוד
+    }
+    // §2.5 / §2.6: קישור לעמוד שאינו קיים ("קישור שבור: about/") — גם כתובת "יפה" (תיקייה), שהבנייה אינה בודקת
+    $base = page_base();
+    $broken = [];
+    $exists = fn(string $t) => isset($live[$t]) || isset($live[rtrim($t, '/') . '/index.html']) || $t === '';
+    foreach ($texts as $p => $s) {
+        if (!mb_check_encoding($s, 'UTF-8')) continue;
+        $nl = null;
+        foreach (pf_ref_scan($p, $s) as [$off, $len, $val, $kind]) {
+            if ($kind !== 'attr' || !preg_match('/\bhref\s*=\s*["\']?$/i', substr($s, max(0, $off - 12), min(12, $off)))) continue;
+            $v = str_starts_with($val, $base) ? '/' . substr($val, strlen($base)) : ($val === rtrim($base, '/') ? '/' : $val);
+            if (str_starts_with($val, '/') && !str_starts_with($val, $base) && $val !== rtrim($base, '/')) continue;   // מחוץ לעמוד — לא שלנו
+            $t = pf_ref_resolve($p, $v, 'attr');
+            if ($t === null && $v !== '/' && !str_starts_with($v, './')) continue;
+            $t ??= '';
+            $pretty = str_ends_with(preg_split('/[?#]/', $val, 2)[0], '/') || !preg_match('/\.[a-z0-9]{1,6}$/i', $t);
+            if (!$pretty || $exists($t)) continue;
+            $nl ??= pf_lines($s);
+            [$line] = pf_pos($nl, $s, $off);
+            $broken[] = ['path' => $p, 'line' => $line, 'href' => $val, 'msg' => "קישור שבור: $val"];
+        }
+    }
+    return ['pages' => $pages, 'entry' => $entry, 'mode' => $list === null ? 'auto' : 'list', 'base' => $base, 'moves' => pages_moves($rows), 'broken' => array_slice($broken, 0, 200)];
+}
+
+/** §2.6: עמודים שהכתובת שלהם השתנתה מאז הגרסה שבאתר: הנתיב הישן (בגרסה החיה, ואינו קיים היום) ← החדש. */
+function pages_moves(array $rows): array
+{
+    $live = db()->query("SELECT files FROM pkg_builds WHERE status = 'live' ORDER BY version DESC LIMIT 1")->fetch();
+    if (!$live) return [];
+    $old = json_decode((string)$live['files'], true) ?: [];
+    $now = array_flip(array_column(db()->query('SELECT path FROM pf_files WHERE deleted_at IS NULL')->fetchAll(), 'path'));
+    $out = [];
+    $st = db()->prepare('SELECT DISTINCT path FROM pf_history WHERE file_id = ? AND path IS NOT NULL');
+    foreach ($rows as $r) {
+        if (isset($old[$r['path']])) continue;
+        $st->execute([$r['id']]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $p) {
+            if ($p !== $r['path'] && isset($old[$p]) && !isset($now[$p]) && page_is($p)) { $out[] = ['from' => $p, 'to' => $r['path'], 'from_url' => page_url($p), 'to_url' => page_url($r['path'])]; break; }
+        }
+    }
+    return $out;
+}
+
+/** <head> של עמוד חדש: הקבצים המשותפים של kol.json styles, יחסית למקום העמוד. */
+function page_blank(string $path, string $title, array $cfg): string
+{
+    $links = '';
+    $seen = [];
+    foreach ((array)($cfg['styles'] ?? []) as $css) {
+        if (!is_string($css) || isset($seen[$css]) || !pf_by_path($css)) continue;
+        $seen[$css] = true;
+        $links .= '  <link rel="stylesheet" href="' . htmlspecialchars(pf_ref_enc(pf_rel($path, $css)), ENT_QUOTES) . "\">\n";
+    }
+    $t = htmlspecialchars($title, ENT_QUOTES | ENT_HTML5);
+    return "<!doctype html>\n<html lang=\"he\" dir=\"rtl\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>$t</title>\n$links</head>\n<body>\n  <main>\n    <h1>$t</h1>\n  </main>\n</body>\n</html>\n";
+}
+
+/** הפניה מהכתובת הישנה (§2.6 "השאר הפניה"): קובץ רגיל, נראה בעץ. */
+function page_redirect_html(string $from, string $to): string
+{
+    $rel = htmlspecialchars(pf_ref_enc(pf_rel($from, $to === 'index.html' ? 'index.html' : $to)), ENT_QUOTES);
+    $rel = preg_replace('#(^|/)index\.html$#', '$1', $rel) ?: './';
+    $canon = htmlspecialchars(page_base() . page_url($to), ENT_QUOTES);
+    return "<!doctype html>\n<html lang=\"he\" dir=\"rtl\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>הועבר</title>\n  <meta name=\"robots\" content=\"noindex\">\n  <meta http-equiv=\"refresh\" content=\"0; url=$rel\">\n  <link rel=\"canonical\" href=\"$canon\">\n</head>\n<body>\n  <p>העמוד עבר: <a href=\"$rel\">$rel</a></p>\n</body>\n</html>\n";
+}
+
+function page_notfound_html(array $cfg): string
+{
+    $b = htmlspecialchars(page_base(), ENT_QUOTES);
+    $links = '';
+    foreach ((array)($cfg['styles'] ?? []) as $css) if (is_string($css) && pf_by_path($css)) $links .= '  <link rel="stylesheet" href="' . htmlspecialchars($b . pf_ref_enc($css), ENT_QUOTES) . "\">\n";
+    return "<!doctype html>\n<html lang=\"he\" dir=\"rtl\">\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n  <title>העמוד לא נמצא</title>\n  <meta name=\"robots\" content=\"noindex\">\n$links</head>\n<body>\n  <main>\n    <h1>העמוד לא נמצא</h1>\n    <p><a href=\"$b\">לעמוד הראשי</a></p>\n  </main>\n</body>\n</html>\n";
+}
+
+/**
+ * ➕ עמוד חדש: slug + שם, "מתחיל מ": blank (ה-<head> עם הקבצים המשותפים) / copy (from = נתיב עמוד קיים) / redirect (to = עמוד
+ * קיים — "השאר הפניה" בכתובת הישנה). נוצר <slug>/index.html בעסקה אחת; ברשימה מפורשת — נוסף בסופה.
+ */
+function page_create(array $user, array $b): array
+{
+    pf_seed($user);
+    pf_guard($user);
+    $slug = page_slug($b['slug'] ?? null);
+    $path = pf_path($slug . '/index.html');
+    $kind = (string)($b['start'] ?? 'blank');
+    $title = trim(preg_replace('/[\x00-\x1F\x7F]+/u', ' ', (string)($b['title'] ?? '')) ?? '');
+    if (mb_strlen($title) > 120) throw new ApiError('השם ארוך מדי (עד 120 תווים)');
+    $r = pf_tx(function () use ($user, $slug, $path, $kind, $title, $b) {
+        $cfg = pf_kol()['config'] ?? [];
+        if ($kind === 'copy') {
+            $src = pf_by_path(pf_path($b['from'] ?? null));
+            if (!$src || $src['kind'] !== 'file' || !page_is($src['path'])) throw new ApiError('העמוד לשכפול לא נמצא', 404);
+            $bytes = pf_blob_get($src['sha']);
+            // הפניות יחסיות — מהמקום החדש (אותו מנוע של F2b)
+            $plan = [];
+            foreach (pf_ref_scan($src['path'], $bytes) as [$off, $len, $val, $kd]) {
+                $t = pf_ref_resolve($src['path'], $val, $kd);
+                if ($t === null || $val[0] === '/' || $kd === 'entry') continue;
+                $new = pf_ref_value($val, $path, $t, $kd);
+                if ($new !== $val && pf_ref_resolve($path, $val, $kd) !== $t) $plan[] = [$off, $len, $new];
+            }
+            usort($plan, fn($x, $y) => $y[0] <=> $x[0]);
+            foreach ($plan as [$off, $len, $new]) $bytes = substr_replace($bytes, $new, $off, $len);
+            if ($title !== '' && preg_match('~(<title\b[^>]*>)(.*?)(</title\s*>)~is', $bytes, $m, PREG_OFFSET_CAPTURE)) $bytes = substr_replace($bytes, htmlspecialchars($title, ENT_QUOTES | ENT_HTML5), $m[2][1], strlen($m[2][0]));
+            $note = "שכפול של {$src['path']}";
+        } elseif ($kind === 'redirect') {
+            $to = pf_by_path(pf_path($b['to'] ?? null));
+            if (!$to || !page_is($to['path'])) throw new ApiError('העמוד שאליו מפנים לא נמצא', 404);
+            $bytes = page_redirect_html($path, $to['path']);
+            $note = 'הפניה אל ' . $to['path'];
+        } elseif ($kind === 'blank') {
+            if ($title === '') throw new ApiError('חסר שם לעמוד');
+            $bytes = page_blank($path, $title, $cfg);
+            $note = 'עמוד חדש';
+        } else throw new ApiError('"מתחיל מ" לא מוכר');
+        pf_free($path);
+        if (($n = pf_count()) >= ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $n + 1, $max);
+        $r = pf_insert($path, 'file', $bytes, $user, null, $note);
+        if (is_array($cfg['pages'] ?? null) && !in_array($path, $cfg['pages'], true)) page_kol_set($user, 'pages', array_values(array_merge($cfg['pages'], [$path])), "עמוד חדש: $path");
+        return $r;
+    });
+    audit_as($user, 'page_create', $path . ($kind !== 'blank' ? " · $kind" : ''));
+    return ['file' => pf_public($r), 'url' => page_url($path)];
+}
+
+/**
+ * שינוי כתובת (§2.4): about/ ← odot/. בלי apply — התוכנית: הקובץ (או התיקייה) שזזים, כל קישור שיתעדכן (עם מספר, שורה,
+ * ישן ← חדש), ומה שנמצא בקוד JS ("לבדיקה ידנית" — לא מוחלף). עם apply + token — עסקה אחת: הזזה + הקישורים שנבחרו
+ * (pick — מספרי השורות בתוכנית; בלי — כולם) + (redirect) הפניה בכתובת הישנה.
+ */
+function page_move(array $user, array $b): array
+{
+    pf_guard($user);
+    $from = pf_path($b['from'] ?? null);
+    $slug = page_slug($b['to'] ?? null);
+    $run = function (bool $apply) use ($user, $b, $from, $slug) {
+        $src = pf_by_path($from);
+        if (!$src || $src['kind'] !== 'file' || !page_is($from)) throw new ApiError('העמוד לא נמצא', 404);
+        if ($from === 'index.html' || $from === '404.html') throw new ApiError($from === 'index.html' ? 'index.html שבשורש הוא הכתובת של העמוד עצמו (/lexicon/) — אי אפשר להזיז אותו. אפשר לקבוע עמוד אחר כראשי' : 'דף ה-404 נקבע בשם 404.html', 400);
+        $dirMove = str_ends_with($from, '/index.html');
+        $unitFrom = $dirMove ? substr($from, 0, -strlen('/index.html')) : $from;
+        $unitTo = $dirMove ? $slug : $slug . '/index.html';
+        $newPath = $slug . '/index.html';
+        if ($unitFrom === $unitTo) throw new ApiError('זו כבר הכתובת', 400);
+        if ($dirMove && str_starts_with($unitTo . '/', $unitFrom . '/')) throw new ApiError('אי אפשר להזיז עמוד לתוך עצמו', 400);
+        $rows = $dirMove ? array_values(array_filter(array_merge([pf_by_path($unitFrom)], pf_children($unitFrom)))) : [$src];
+        $plan = pf_refs_plan($unitFrom, $unitTo);
+        // /lexicon/about/ — כתובת מלאה בתוך העמוד: אותו עדכון, בתוך הבסיס
+        $base = page_base();
+        $in = fn(string $p) => $p === $unitFrom || str_starts_with($p, $unitFrom . '/');
+        $map = fn(string $p) => $in($p) ? $unitTo . substr($p, strlen($unitFrom)) : $p;
+        $manual = [];
+        foreach (pf_texts() as [$r, $s]) {
+            $fo = $r['path'];
+            $nl = null;
+            foreach (pf_ref_scan($fo, $s) as [$off, $len, $val, $kind]) {
+                if ($kind !== 'attr' || !str_starts_with($val, $base)) continue;
+                $t = pf_ref_resolve($fo, '/' . substr($val, strlen($base)), 'attr');
+                if ($t === null || !$in($t) && !$in(rtrim($t, '/') . '/index.html')) continue;
+                $tt = $in($t) ? $t : rtrim($t, '/') . '/index.html';
+                $nv = $base . pf_ref_enc(page_url($map($tt)));
+                if (str_ends_with($val, '/') && !str_ends_with($nv, '/')) $nv .= '/';
+                if ($nv === $val) continue;
+                $nl ??= pf_lines($s);
+                [$line, $col, $start] = pf_pos($nl, $s, $off);
+                $plan[] = ['id' => (int)$r['id'], 'path' => $fo, 'rev' => (int)$r['rev'], 'line' => $line, 'col' => $col, 'kind' => 'attr', 'old' => $val, 'new' => $nv,
+                    'text' => pf_line_at($s, $start, $off, $len), 'off' => $off, 'len' => $len, 'sha' => $r['sha']];
+            }
+            // קישור שנכתב ב-JS — לבדיקה ידנית (לא מוחלף)
+            $js = preg_match('/\.(m?js|cjs|jsx|ts)$/i', $fo);
+            $chunks = $js ? [[0, $s]] : [];
+            if (!$js && page_is($fo)) { preg_match_all('~<script\b[^>]*>(.*?)</script\s*>~is', $s, $mm, PREG_OFFSET_CAPTURE); foreach ($mm[1] as [$c, $o]) $chunks[] = [$o, $c]; }
+            $needle = '/(["\'`])[^"\'`\n]*?(?<![a-z0-9-])' . preg_quote($dirMove ? page_url($from) : $from, '/') . '/';
+            foreach ($chunks as [$o0, $c]) {
+                if (!preg_match_all($needle, $c, $hm, PREG_OFFSET_CAPTURE)) continue;
+                foreach ($hm[0] as [$hit, $ho]) {
+                    $nl ??= pf_lines($s);
+                    [$line] = pf_pos($nl, $s, $o0 + $ho);
+                    $manual[] = ['path' => $fo, 'line' => $line, 'text' => mb_substr(trim($hit), 0, 120)];
+                }
+            }
+        }
+        foreach ($plan as $i => &$x) $x['n'] = $i;
+        unset($x);
+        $token = hash('sha256', json_encode([$from, $slug, array_map(fn($x) => [$x['id'], $x['sha'], $x['off'], $x['new']], $plan)]));
+        $pub = fn() => array_map(fn($x) => array_diff_key($x, ['off' => 1, 'len' => 1, 'sha' => 1]), $plan);
+        $view = ['from' => $from, 'to' => $newPath, 'from_url' => page_url($from), 'to_url' => page_url($newPath), 'unit' => ['from' => $unitFrom, 'to' => $unitTo, 'files' => count(array_filter($rows, fn($r) => $r['kind'] !== 'dir'))],
+            'links' => $pub(), 'manual' => array_slice($manual, 0, 200), 'token' => $token];
+        if (!$apply) return $view;
+        if (!hash_equals($token, (string)($b['token'] ?? ''))) throw new ApiError('הפרויקט השתנה מאז התצוגה — פותחים שוב את "שינוי כתובת"', 409);
+        $pick = isset($b['pick']) && is_array($b['pick']) ? array_flip(array_map('intval', $b['pick'])) : null;
+        $chosen = array_values(array_filter($plan, fn($x) => $pick === null || isset($pick[$x['n']])));
+        $skip = array_map(fn($r) => (int)$r['id'], $rows);
+        $st = db()->prepare('UPDATE pf_files SET path = ?, path_key = ?, updated_by = ?, updated_name = ?, updated_at = ? WHERE id = ?');
+        foreach ($rows as $r) {
+            $np = pf_path($unitTo . substr($r['path'], strlen($unitFrom)));
+            pf_free($np, $skip, $r['kind'] === 'dir');
+            $st->execute([$np, pf_key($np), $user['sub'], $user['name'] ?? '', now_iso(), $r['id']]);
+            if ($r['kind'] !== 'dir') pf_hist(['path' => $np] + $r, $user, "שינוי כתובת מ-{$r['path']}");
+        }
+        $n = $chosen ? pf_refs_apply($chosen, $user, "עדכון קישורים: " . page_url($from) . ' ← ' . page_url($newPath)) : 0;
+        $cfg = pf_kol()['config'] ?? [];
+        if (is_array($cfg['pages'] ?? null)) page_kol_set($user, 'pages', array_map(fn($p) => $in($p) ? $map($p) : $p, $cfg['pages']), 'סדר העמודים: ' . $from . ' ← ' . $newPath);
+        if (($cfg['entry'] ?? null) === $from) page_kol_set($user, 'entry', $newPath, 'העמוד הראשי: ' . $newPath);
+        $redir = null;
+        if (!empty($b['redirect'])) {
+            pf_free($from);
+            $redir = pf_insert($from, 'file', page_redirect_html($from, $newPath), $user, null, 'הפניה אל ' . $newPath);
+        }
+        return $view + ['done' => ['links' => $n, 'redirect' => $redir ? pf_public($redir) : null]];
+    };
+    if (empty($b['apply'])) return $run(false);
+    $out = pf_tx(fn() => $run(true));
+    audit_as($user, 'page_move', "$from ← {$out['to']} · {$out['done']['links']} קישורים" . ($out['done']['redirect'] ? ' · הפניה' : ''));
+    return $out;
+}
+
+/** "קבע כעמוד הראשי": entry ב-kol.json. */
+function page_set_entry(array $user, array $b): array
+{
+    pf_guard($user);
+    $p = pf_path($b['path'] ?? null);
+    pf_tx(function () use ($user, $p) {
+        $r = pf_by_path($p);
+        if (!$r || $r['kind'] !== 'file' || !page_is($p) || $p === '404.html') throw new ApiError('העמוד לא נמצא', 404);
+        page_kol_set($user, 'entry', $p, "העמוד הראשי: $p");
+    });
+    audit_as($user, 'page_set_entry', $p);
+    return ['entry' => $p];
+}
+
+/**
+ * "קבע כדף 404": עמוד קיים ← 404.html (שינוי שם; הקישורים אליו אינם מעודכנים — דף 404 אינו יעד של קישור), או יצירה מתבנית
+ * "לא נמצא" עם קישור לעמוד הראשי. 404.html קיים — 409 (קודם מוחקים / משנים אותו).
+ */
+function page_set_404(array $user, array $b): array
+{
+    pf_guard($user);
+    $from = isset($b['path']) && $b['path'] !== '' ? pf_path($b['path']) : null;
+    $r = pf_tx(function () use ($user, $from) {
+        if (pf_by_path('404.html')) throw new ApiError('כבר יש 404.html בפרויקט — משנים אותו, או מוחקים קודם', 409);
+        $cfg = pf_kol()['config'] ?? [];
+        if ($from === null) return pf_insert('404.html', 'file', page_notfound_html($cfg), $user, null, 'דף 404 מתבנית "לא נמצא"');
+        $src = pf_by_path($from);
+        if (!$src || $src['kind'] !== 'file' || !page_is($from)) throw new ApiError('העמוד לא נמצא', 404);
+        if ($from === ($cfg['entry'] ?? 'index.html')) throw new ApiError('זה העמוד הראשי — קודם קובעים עמוד ראשי אחר', 409);
+        pf_free('404.html', [(int)$src['id']]);
+        db()->prepare('UPDATE pf_files SET path = ?, path_key = ?, updated_by = ?, updated_name = ?, updated_at = ? WHERE id = ?')->execute(['404.html', pf_key('404.html'), $user['sub'], $user['name'] ?? '', now_iso(), $src['id']]);
+        $r = pf_row((int)$src['id']);
+        pf_hist($r, $user, "דף 404 (היה $from)");
+        if (is_array($cfg['pages'] ?? null)) page_kol_set($user, 'pages', array_map(fn($p) => $p === $from ? '404.html' : $p, $cfg['pages']), "דף 404: $from");
+        return $r;
+    });
+    audit_as($user, 'page_set_404', $from ?? 'תבנית');
+    return ['file' => pf_public($r)];
+}
+
+/** סדר העמודים (§2.4): רשימה מפורשת ב-pages, או "auto" ("חזור לאוטומטי"). רק עמודים קיימים. */
+function pages_order(array $user, array $b): array
+{
+    pf_guard($user);
+    $want = $b['order'] ?? null;
+    pf_tx(function () use ($user, $want) {
+        if ($want === 'auto') { page_kol_set($user, 'pages', 'auto', 'סדר העמודים: אוטומטי'); return; }
+        if (!is_array($want) || !$want || count($want) > 500) throw new ApiError('סדר: רשימת נתיבים');
+        $seen = [];
+        foreach ($want as $p) {
+            $p = pf_path($p);
+            if (isset($seen[$p]) || !page_is($p) || !pf_by_path($p)) throw new ApiError("\"$p\" אינו עמוד בפרויקט", 400);
+            $seen[$p] = true;
+        }
+        page_kol_set($user, 'pages', array_keys($seen), 'סדר העמודים');
+    });
+    audit_as($user, 'pages_order', is_array($want) ? count($want) . ' עמודים' : 'auto');
+    return pages_list();
+}
