@@ -412,12 +412,14 @@
         const n = this.pick(tg);
         this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n, touch: e.pointerType === 'touch' } : null;
         if (n && e.shiftKey && this.selected && this.selected !== n) { this.press = null; e.preventDefault(); this.toggleMulti(n); return; }   // Shift + לחיצה: בחירה מרובה (V3)
+        if (n && e.altKey && this.onAltDrag && e.pointerType !== 'touch') this.alt = { n, x: e.clientX, y: e.clientY, id: e.pointerId, on: false };   // V13: Alt + גרירה — מכחול "הדבק סגנון"
         if (n && e.altKey) { this.press = null; this.select(this.under(e.clientX, e.clientY)); }          // Alt: האלמנט הבא מבין המונחים זה על זה
         else if (n && !(this.repeatUp && this.selected === n)) this.select(n);
         this.events.push('pointerdown:' + e.pointerType);
       }, true);
       doc.addEventListener('pointermove', e => {
         this.events.push('pointermove:' + e.pointerType);
+        if (this.alt && this.alt.id === e.pointerId) { const A = this.alt; if (!A.on && Math.hypot(e.clientX - A.x, e.clientY - A.y) * this.scale > 6) { A.on = true; this.onAltDrag('start', A.n); } if (A.on) { this.onAltDrag('move', A.n, this.pick(this.hit(e))); return; } }
         if (this.ext && this.ext.active) { if (this.lv) this.lv.focusAt(e.target); const f = this.frame.getBoundingClientRect(); this.ext.move(f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
         this.pt = { x: e.clientX, y: e.clientY };                           // V4: "＋" מופיע רק ליד שפת האלמנט
         if (this.press && e.pointerType === 'mouse' && e.buttons === 0) this.press = null;   // השחרור אבד (מחוץ לחלון) — אין לחיצה
@@ -438,6 +440,7 @@
       }, true);
       const up = e => {
         clearTimeout(this.longT);
+        if (this.alt) { const A = this.alt; this.alt = null; if (A.on) { this.press = null; this.onAltDrag(e.type === 'pointerup' ? 'drop' : 'cancel', A.n, this.pick(this.hit(e))); return; } }
         if (this.ext && this.ext.active) { this.press = null; const f = this.frame.getBoundingClientRect(); this.ext.end(e.type === 'pointerup', f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
         if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; ctxAt(p.t, p.x, p.y); return; }
         this.armed = null;

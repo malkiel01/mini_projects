@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js'];
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -124,6 +124,7 @@ const Editor = (() => {
       c.setViewport(deviceWidth());
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
+      if (S.hist) { S.hist.untrackAll(); if (!doc.binary) S.hist.track(doc); for (const x of S.sheets.values()) S.hist.track(x.doc); S.hist.draw(); }   // V13: היסטוריה אחת לעמוד ולקובצי ה-CSS שלו
       if (S.readOnly) note(S.readOnly);
       mountCode();
       S.comp?.opened(f);                                                    // V12: תבנית של רכיב ← "עורך את הרכיב"
@@ -278,9 +279,10 @@ const Editor = (() => {
       list.replaceChildren(...(items.length ? items.map(x => h('div', { class: 'ed-mine-row' }, h('code', {}, x.code), h('span', {}, x.title.replace(R.LABEL + ': ', '')), h('b', {}, R.STATUS[x.status] || x.status))) : [h('p', { class: 'hint' }, 'עוד לא דיווחת על דבר.')]));
     } catch (e) { if (list._turn === turn) list.replaceChildren(h('p', { class: 'hint' }, e.message)); }
   }
-  /** תפריט ההקשר של אלמנט (לחיצה ימנית; לחיצה ארוכה במגע; מקש התפריט / Shift+F10). */
-  function ctxMenu(n) {
+  /** תפריט ההקשר של אלמנט (לחיצה ימנית; לחיצה ארוכה במגע; מקש התפריט / Shift+F10). V13: התפריט הצף (contextmenu.js). */
+  function ctxMenu(n, x, y, from) {
     const c = S.canvas; if (!c?.m || !n) return;
+    if (S.menu) { if (x == null && c.elOf(n)) { const r = c.rectOf(n); if (r) { const f = c.layer.getBoundingClientRect(); x = f.left + r.left + 12; y = f.top + r.top + 12; } } return S.menu.open(n, x, y, from); }
     c.select(n);
     const dlg = document.getElementById('sheet'), go = fn => () => { dlg.close(); fn(); };
     const item = (label, fn, off) => h('button', { type: 'button', class: 'btn ed-menu-item', disabled: !!off, onclick: go(fn) }, label);
@@ -361,7 +363,7 @@ const Editor = (() => {
     const cd = await Project.docs.open(cf.id); if (!cd || cd.binary) { note('הקובץ ' + path + ' לא נפתח', true); return false; }
     const href = relRef(path), head = S.canvas.m.root && S.canvas.m.root.kids.find(k => k.tag === 'head' && !k.implied);
     if (!head) { note('לעמוד אין <head> כתוב — מקשרים בעורך הקוד', true); return false; }
-    if (!S.sheets.has(href)) { S.sheets.set(href, { path, doc: cd }); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } })); }
+    if (!S.sheets.has(href)) { S.sheets.set(href, { path, doc: cd }); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } })); S.hist?.track(cd); }
     return act('קישור ' + path + ' לעמוד', m => K.html.insert(m, K.byPath(m, K.pathOf(head)), null, '<link rel="stylesheet" href="' + window.KolText.escAttr(href) + '">'), head);   // <link> שייך ל-<head> (KolStruct.why אינו מכניס לשם תוכן נראה)
   }
   /** הקובץ לכלל חדש: styles.page שב-kol.json, אם העמוד מקשר אליו; אחרת קובץ ה-CSS האחרון שהעמוד מקשר. */
@@ -373,27 +375,38 @@ const Editor = (() => {
   // ── עסקאות על כמה קבצים (V3): ביטול / החזרה משותפים לכל הקבצים שהעסקה נגעה בהם ──
   /** רושם עסקה: הקבצים שנערכו (מסמך שנערך כמה פעמים — כמה פעמים), והטקסט של כל אחד אחריה. */
   function pushTx(docs, label) {
+    if (S.hist?.merge(docs, label)) return;                                // V13: אותו ערך ברצף (גרירת מחוון, חיצים) — שורה אחת
     const after = new Map(); for (const d of docs) after.set(d, d.text());
-    S.tx.push({ docs, label, after }); S.rtx = []; if (S.tx.length > 300) S.tx.shift();
+    const t = { docs, label, after }; S.hist?.pushed(t);
+    S.tx.push(t); S.rtx = []; if (S.tx.length > 500) S.tx.shift();      // V13: עד 500 צעדים
+    S.hist?.draw();
   }
   const txLive = (t, key) => t && t.docs.every(d => d.text() === t[key].get(d));
   function undoTx() {
     const t = S.tx[S.tx.length - 1];
     if (!txLive(t, 'after')) { S.tx = []; S.rtx = []; return false; }        // מאז נערך משהו מחוץ לעורך החזותי — כל קובץ לפי ההיסטוריה שלו
     S.tx.pop(); const before = new Map();
-    for (const d of t.docs.slice().reverse()) if (d.canUndo()) d.undo();
+    const run = () => {
+      if (t.code) { for (const d of t.docs) { let i = 0; while (d.text() !== t.before.get(d) && d.canUndo() && i++ < 5000) d.undo(); } }   // V13: הקלדה בעורך הקוד — עד הטקסט שלפניה
+      else for (const d of t.docs.slice().reverse()) if (d.canUndo()) d.undo();
+    };
+    if (S.hist) S.hist.quiet(run); else run();
     if (t.fx) for (const f of t.fx.slice().reverse()) f.undo();             // V9: קבצים שנוצרו בשרת עם העסקה (גופן) — לסל
     for (const d of t.docs) before.set(d, d.text());
-    t.before = before; S.rtx.push(t); return true;
+    t.before = before; S.rtx.push(t); S.hist?.draw(); return true;
   }
   function redoTx() {
     const t = S.rtx[S.rtx.length - 1];
     if (!txLive(t, 'before')) { S.rtx = []; return false; }
     S.rtx.pop();
-    for (const d of t.docs) if (d.canRedo()) d.redo();
+    const run = () => {
+      if (t.code) { for (const d of t.docs) { let i = 0; while (d.text() !== t.after.get(d) && d.canRedo() && i++ < 5000) d.redo(); } }
+      else for (const d of t.docs) if (d.canRedo()) d.redo();
+    };
+    if (S.hist) S.hist.quiet(run); else run();
     if (t.fx) for (const f of t.fx) f.redo();
     for (const d of t.docs) t.after.set(d, d.text());
-    S.tx.push(t); return true;
+    S.tx.push(t); S.hist?.draw(); return true;
   }
   /** כתיבת עיצוב: per — Map<אלמנט, [[מאפיין, ערך | null, יעד], …]>. כל אלמנט וכל יעד מתוכננים מחדש על הטקסט העדכני
    *  (אחרי מה שכבר נכתב באותה עסקה), וכל הקבצים נרשמים כעסקה אחת. מחזיר את הקבצים שנכתבו, או null. */
@@ -464,9 +477,11 @@ const Editor = (() => {
   /** V6: מאחד את k העסקאות האחרונות לאחת (HTML שהוזז + עיצוב שנכתב — ביטול אחד). */
   function joinTx(k, label) {
     if (k < 2 || S.tx.length < k) return;
-    const parts = S.tx.splice(S.tx.length - k, k), docs = parts.flatMap(t => t.docs), after = new Map(), fx = parts.flatMap(t => t.fx || []);
+    const parts = S.tx.splice(S.tx.length - k, k), docs = parts.flatMap(t => t.docs), after = new Map(), fx = parts.flatMap(t => t.fx || []), before = new Map();
     for (const d of docs) after.set(d, d.text());
-    S.tx.push(fx.length ? { docs, label, after, fx } : { docs, label, after }); S.rtx = [];
+    for (const t of parts.slice().reverse()) if (t.before) for (const [d, x] of t.before) before.set(d, x);   // V13: הטקסט שלפני הראשונה
+    const t = fx.length ? { docs, label, after, fx } : { docs, label, after }; t.before = before; t.at = Date.now();
+    S.tx.push(t); S.rtx = []; S.hist?.draw();
   }
   /** V9: פעולה בשרת שנעשתה יחד עם העסקה האחרונה (העלאת גופן) — הביטול / ההחזרה שלה. */
   function attachFx(fx) { const t = S.tx[S.tx.length - 1]; if (t) (t.fx = t.fx || []).push(fx); }
@@ -549,7 +564,11 @@ const Editor = (() => {
     Project.openAt(S.file.path, 0, { from: n.from, to: K.endOf(S.canvas.m, n) });
   }
   function onKey(e) {
-    if (!S.host || !S.canvas?.m || e.defaultPrevented || document.querySelector('dialog[open]')) return;   // גיליון פתוח — הקיצורים של העורך אינם פעילים
+    if (!S.host || !S.canvas?.m || e.defaultPrevented) return;
+    const mod0 = e.ctrlKey || e.metaKey, k0 = e.key, code0 = e.code;
+    // V13: Ctrl+S — שמירה, בכל מקום (גם בשדה ובעריכת טקסט; בעורך הקוד — שלו)
+    if (mod0 && !e.altKey && !e.shiftKey && (code0 === 'KeyS' || k0 === 's' || k0 === 'S' || k0 === 'ד') && !e.target?.closest?.('.monaco-editor')) { e.preventDefault(); return saveNow(); }
+    if (document.querySelector('dialog[open]') || S.palette?.el || S.menu?.el) return;   // גיליון / חיפוש / תפריט פתוח — הקיצורים של העורך אינם פעילים
     const t = e.target, tag = t && t.nodeType === 1 ? t.localName : '';
     if (S.text?.active) { if (t && t.ownerDocument !== document) S.text.key(e); return; }   // עריכת טקסט במקום: המקשים שייכים לטקסט
     if (t && t.ownerDocument === document && (/^(input|textarea|select)$/.test(tag) || t.isContentEditable || t.closest?.('dialog[open], .monaco-editor'))) return;
@@ -557,6 +576,11 @@ const Editor = (() => {
     const hit = fn => { e.preventDefault(); fn(); };
     if (S.pointing && k === 'Escape') return hit(() => pointing(false));
     if ((k === 'ContextMenu' || (k === 'F10' && e.shiftKey)) && c.selected) return hit(() => ctxMenu(c.selected));
+    // V13: Ctrl+E — חיפוש פעולה · Ctrl+P — תצוגה חיה · Ctrl+Shift+C / V — העתק / הדבק סגנון
+    if (mod && !e.altKey && !e.shiftKey && (e.code === 'KeyE' || k === 'e' || k === 'E' || k === 'ק')) return hit(() => S.palette?.open());
+    if (mod && !e.altKey && !e.shiftKey && (e.code === 'KeyP' || k === 'p' || k === 'P' || k === 'פ')) return hit(liveNow);
+    if (mod && e.shiftKey && !e.altKey && (e.code === 'KeyC' || k === 'c' || k === 'C' || k === 'ב') && c.selected) return hit(() => S.sc?.copy(c.selected));
+    if (mod && e.shiftKey && !e.altKey && (e.code === 'KeyV' || k === 'v' || k === 'V' || k === 'ה') && c.selected) return hit(() => (S.sc?.clip ? S.sc.paste() : note('אין סגנון בלוח — Ctrl+Shift+C על אלמנט קודם', true)));
     if (mod && !e.altKey && k.toLowerCase() === 'z') return hit(e.shiftKey ? redo : undo);
     if (mod && !e.altKey && k.toLowerCase() === 'y') return hit(redo);
     if (mod && e.shiftKey && !e.altKey && (k === 'm' || k === 'M' || k === 'צ' || e.code === 'KeyM')) return hit(() => { const i = DEVICES.findIndex(d => d.id === curDevice().id); setDevice(DEVICES[(i + 1) % DEVICES.length].id); });   // V7
@@ -580,7 +604,7 @@ const Editor = (() => {
     if (k === 'Delete' || k === 'Backspace') return hit(remove);
     if (!c.selected) return;
     if ((k === 'Enter' || k === 'F2') && (!t || t.ownerDocument !== document || t === document.body)) return hit(() => S.text.begin(c.selected));   // רק כשהמיקוד בקנבס — Enter על כפתור של המסך נשאר שלו
-    if (k === 'Escape') return hit(() => c.step('parent'));
+    if (k === 'Escape') return hit(() => { if (c.selected.parent && !/^html$/.test(c.selected.parent.tag)) c.step('parent'); else { c.select(null); } });   // V13: בראש העץ — ביטול הבחירה
     if (k === 'ArrowUp') return hit(() => c.step('parent'));
     if (k === 'ArrowDown') return hit(() => c.step('child'));
     if (k === 'ArrowLeft' || k === 'ArrowRight') { const rtl = c.frame.contentWindow.getComputedStyle(c.doc.documentElement).direction === 'rtl'; return hit(() => c.step((k === 'ArrowLeft') === rtl ? 'next' : 'prev')); }
@@ -601,10 +625,24 @@ const Editor = (() => {
   function listenFrame(doc) { doc.addEventListener('paste', onPaste); doc.addEventListener('keydown', e => { if (e.key === 'Escape' && S.build?.drag.active) { e.preventDefault(); e.stopPropagation(); S.build.drag.cancel(); } }, true); }
 
   const KEYS = [['חיצים ↑ ↓', 'ההורה / הילד הראשון (בלי בחירה — מתחילים מ-body)'], ['חיצים ← →', 'האח הקודם / הבא'], ['Esc', 'ההורה (או ביטול מצב ההצבעה)'],
-    ['לחיצה כפולה · Enter · F2', 'עריכת הטקסט במקום (Esc — סיום ושמירה)'], ['בעריכת טקסט: Ctrl+B · I · U', 'מודגש · נטוי · קו תחתון'], ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y', 'בטל · החזר'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['T', 'הפאנל — לשונית "תוכן"'], ['I', 'הפאנל — לשונית "פרטים"'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
+    ['לחיצה כפולה · Enter · F2', 'עריכת הטקסט במקום (Esc — סיום ושמירה)'], ['בעריכת טקסט: Ctrl+B · I · U', 'מודגש · נטוי · קו תחתון'], ['Delete', 'מחיקת האלמנט הנבחר'], ['Ctrl+Z · Ctrl+Y · Ctrl+Shift+Z', 'בטל · החזר — גם עריכה בעורך הקוד של העמוד (היסטוריה אחת, 🕘)'], ['Ctrl+C · Ctrl+V · Ctrl+X · Ctrl+D', 'העתק · הדבק אחרי · גזור · שכפל'], ['Ctrl+Shift+C · Ctrl+Shift+V', 'העתק סגנון · הדבק סגנון (Alt + גרירה מאלמנט לאלמנט — מכחול)'], ['Ctrl+E', 'חיפוש פעולה — כל הפעולות וכל השליטות בפאנל'], ['Ctrl+S', 'שמירה עכשיו'], ['Ctrl+P', '▶️ תצוגה חיה'], ['לחיצה ימנית · לחיצה ארוכה', 'תפריט ההקשר — בקנבס וב-Navigator'], ['C', '</> פתח בקוד'], ['N', 'Navigator — עץ האלמנטים'], ['T', 'הפאנל — לשונית "תוכן"'], ['I', 'הפאנל — לשונית "פרטים"'], ['S', 'מבט מפוצל — קוד לצד הקנבס'],
     ['M', '📏 ידיות מרווח על הקנבס'], ['Alt + ↑ ↓', 'שוליים בצד שנבחר −1 / +1 (Shift — 10)'], ['Alt + ← →', 'בחירת הצד (עליון · ימין · תחתון · שמאל)'], ['Shift + לחיצה', 'בחירה מרובה — שינוי עיצוב חל על כולם'], ['בשדה מספר: ↑ ↓ · גלגלת', '+1 / −1 · Shift ×10 · Alt ×0.1 (גם בגרירה על התווית)'],
-    ['B', '🐞 לא הצלחתי לשנות את זה'], ['Shift+F10', 'תפריט ההקשר של האלמנט הנבחר'], ['1 · 2 · 3 · Ctrl+Shift+M', 'המכשיר: מחשב · טאבלט · טלפון — הקנבס ברוחב שלו, וכל שינוי עיצוב נכתב אליו (@media)'], ['?', 'הרשימה הזו'],
+    ['B', '🐞 לא הצלחתי לשנות את זה'], ['Shift+F10 · מקש התפריט', 'תפריט ההקשר של האלמנט הנבחר'], ['ב-Mac', 'Cmd במקום Ctrl'], ['1 · 2 · 3 · Ctrl+Shift+M', 'המכשיר: מחשב · טאבלט · טלפון — הקנבס ברוחב שלו, וכל שינוי עיצוב נכתב אליו (@media)'], ['?', 'הרשימה הזו'],
     ['ב-Navigator: ↑ ↓', 'השורה הקודמת / הבאה'], ['ב-Navigator: ← →', 'קיפול / פתיחה, ההורה / הילד'], ['ב-Navigator: H · L', '👁 הסתרה בעורך · 🔒 נעילה'], ['בעורך הקוד: Ctrl+Alt+E', 'בחר בעורך החזותי']];
+  /** V13: Ctrl+S — כל מה שלא נשמר (העמוד וקובצי ה-CSS שלו), עכשיו. */
+  async function saveNow() {
+    S.text?.end?.();
+    const dirty = [...Project._state.docs.values()].filter(d => d.dirty && !d.binary);
+    if (!dirty.length) return note('הכול כבר שמור');
+    try { for (const d of dirty) await Project._save(d.id); note('💾 נשמר · ' + dirty.length + (dirty.length === 1 ? ' קובץ' : ' קבצים')); } catch (e) { note(e.message, true); }
+    drawState();
+  }
+  /** V13: Ctrl+P — ▶️ תצוגה חיה של העמוד (אחרי שמירה), בחלון משלה. */
+  async function liveNow() {
+    if (!S.file) return;
+    try { for (const d of [...Project._state.docs.values()].filter(x => x.dirty && !x.binary)) await Project._save(d.id); } catch (e) { note(e.message, true); }
+    window.open('live.php?path=' + encodeURIComponent(S.file.path), 'kol-live');
+  }
   function help() { sheet('קיצורי מקלדת', h('table', { class: 'ed-keys' }, h('tbody', {}, KEYS.map(([k, t]) => h('tr', {}, h('th', { scope: 'row', dir: 'ltr' }, h('kbd', {}, k)), h('td', {}, t)))))); }
   /** V7: בורר המכשיר — כפתור לכל מכשיר, הרוחב (חופשי — "טלפון · 430px": לאיזה מכשיר הרוחב שייך), ו"נקודות שבירה…". */
   function drawDevices() {
@@ -956,9 +994,11 @@ const Editor = (() => {
     el.navBody = h('div', { class: 'ed-side-body nv' });
     el.libBody = h('div', { class: 'ed-side-body ed-libbody', hidden: true });
     el.compBody = h('div', { class: 'ed-side-body ed-libbody ed-compbody', hidden: true, 'data-comp-body': true });   // V12
-    const navTab = id => h('button', { type: 'button', role: 'tab', 'data-ntab': id, 'aria-selected': String(id === 'tree'), onclick: () => navTabs(id) }, { tree: '🌳 עץ', lib: '＋ ספרייה', comp: '🧩 רכיבים' }[id]);
-    el.navTabs = h('div', { class: 'ed-ntabs', role: 'tablist', 'aria-label': 'עץ, ספרייה או רכיבים' }, navTab('tree'), navTab('lib'), navTab('comp'));
-    el.navWrap = h('div', { class: 'ed-navwrap' }, el.navTabs, el.navBody, el.libBody, el.compBody);
+    el.tplBody = h('div', { class: 'ed-side-body ed-libbody ed-tplbody', hidden: true, 'data-tpl-body': true });   // V13: 📄 תבניות
+    el.histBody = h('div', { class: 'ed-side-body ed-libbody ed-histbody', hidden: true, 'data-hist-body': true });   // V13: 🕘 היסטוריה
+    const navTab = id => h('button', { type: 'button', role: 'tab', 'data-ntab': id, 'aria-selected': String(id === 'tree'), title: { tree: 'עץ האלמנטים', lib: 'הוספה מהספרייה', comp: 'רכיבים', tpl: 'תבניות — מקטעים ועמודים שמורים', hist: 'היסטוריה — כל צעד בשמו, וגרסאות' }[id], onclick: () => navTabs(id) }, { tree: '🌳 עץ', lib: '＋ ספרייה', comp: '🧩 רכיבים', tpl: '📄 תבניות', hist: '🕘 היסטוריה' }[id]);
+    el.navTabs = h('div', { class: 'ed-ntabs', role: 'tablist', 'aria-label': 'עץ, ספרייה, רכיבים, תבניות או היסטוריה' }, navTab('tree'), navTab('lib'), navTab('comp'), navTab('tpl'), navTab('hist'));
+    el.navWrap = h('div', { class: 'ed-navwrap' }, el.navTabs, el.navBody, el.libBody, el.compBody, el.tplBody, el.histBody);
     el.infoBody = h('div', { class: 'ed-side-body dt', tabindex: '-1', role: 'tabpanel', 'aria-label': 'פרטים' });
     el.contentBody = h('div', { class: 'ed-side-body ct', tabindex: '-1', role: 'tabpanel', 'aria-label': 'תוכן' });
     el.designBody = h('div', { class: 'ed-side-body sg', tabindex: '-1', role: 'tabpanel', 'aria-label': 'עיצוב' });
@@ -1080,8 +1120,20 @@ const Editor = (() => {
         note, sheet, undo, canWrite: () => !!canWrite(), pick, rel: relRef, refPath, file: () => S.file, doc: () => S.doc, pages: pagesDocs, styler: S.styler,
         openPath: async p => { const f = Project.docs.byPath(p); if (!f) return note('הקובץ ' + p + ' אינו בפרויקט', true); if (![...el.page.options].some(o => o.value === String(f.id))) el.page.append(h('option', { value: f.id }, f.path)); el.page.value = f.id; await open(f.id); },
         linkSheet, drawAll: () => drawAll(), host: el.compBody, strip: el.compStrip });
+      // V13: היסטוריה עם שמות, העתק / הדבק / אפס סגנון, תבניות, תפריט ההקשר ו-Ctrl+E
+      S.hist = new window.KolHistory.History({ S, host: el.histBody, undo, redo, drawState, note, sheet, api: (a, b, q) => api(a, b, q), writeOps, canWrite: () => !!canWrite(), pathOf: d => d.path || '' });
+      S.sc = new window.KolStyleCopy.StyleCopy({ canvas: c, styler: S.styler, writeStyle, writeOps, joinTx, txCount: () => S.tx.length, state: () => S, note, sheet, undo, canWrite: () => !!canWrite(), html: () => S.doc, file: () => S.file, devs: () => DEVICES.filter(d => d.max) });
+      c.onAltDrag = (phase, n, t) => { if (!canWrite()) return; S.sc.altDrag(phase, n, t); };
+      S.tpl = new window.KolTemplates.Templates({ canvas: c, build: S.build, comp: () => S.comp, styler: S.styler, writeOps, joinTx, txCount: () => S.tx.length, state: () => S, pushFx: (label, fx) => { S.tx.push({ docs: [], label, after: new Map(), fx: [fx] }); S.rtx = []; drawState(); S.hist?.draw(); },
+        note, sheet, undo, canWrite: () => !!canWrite(), file: () => S.file, doc: () => S.doc, pagePath, docOf: docOfP, sheets: () => [...new Set([...S.sheets.values()])], api: (a, b, q) => api(a, b, q), pvUrl: p => (S.token ? pvUrl(p) : ''), host: el.tplBody, shoot: n => window.KolReport.shoot(c, n) });
+      S.actions = new window.KolCtx.Actions({ S, K, canvas: () => S.canvas, build: () => S.build, sc: () => S.sc, comp: () => S.comp, tpl: () => S.tpl, canWrite: () => !!canWrite(), readOnly: () => S.readOnly, note, undo, redo, joinTx, openInCode, report: n => reportSheet(n),
+        panel, setTab, select: n => { if (n) { c.select(n); c.reveal(n); } }, editText: n => S.text.begin(n), save: saveNow, live: liveNow, help, split: () => split(), addImage, addLib: id => { const it = S.build.items().find(x => x.id === id); if (it) S.build.addHere(it); },
+        hist: () => { panel('nav', true); navTabs('hist'); }, tpls: () => { panel('nav', true); navTabs('tpl'); }, recent: id => S.palette?.used('a:' + id) });
+      S.menu = new window.KolCtx.Menu(S.actions, { c: () => S.canvas, phone, mac: /Mac|iPhone|iPad/.test(navigator.platform || '') });
+      S.palette = new window.KolPalette.Palette({ actions: S.actions, canvas: c, panel, setTab, designHost: () => el.designBody, advHost: () => el.advBody, note, phone });
+      S.nav.onContext = (n, x, y) => ctxMenu(n, x, y, 'nav');
       setTab(prefs.tab);
-      c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
+      c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
       /* T2 (E2E ⚪5): לחיצה על הנבחר עולה להורה — אומרים, ומציעים לחזור */
       c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } });
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
@@ -1109,10 +1161,13 @@ const Editor = (() => {
     if (!el.navTabs) return;
     for (const b of el.navTabs.children) b.setAttribute('aria-selected', String(b.dataset.ntab === id));
     el.navBody.hidden = id !== 'tree'; el.libBody.hidden = id !== 'lib'; if (el.compBody) el.compBody.hidden = id !== 'comp'; if (S.build?.lib) S.build.lib.hidden = id !== 'lib';
+    if (el.tplBody) el.tplBody.hidden = id !== 'tpl'; if (el.histBody) el.histBody.hidden = id !== 'hist';
     if (id === 'tree') S.nav?.draw();
+    if (id === 'hist') S.hist?.draw();
+    if (id === 'tpl') S.tpl?.load().catch(e => note(e.message, true));
   }
-  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
-  return { view, unmount, selectAt, _glob: () => S.glob, _ctx: ctxMenu, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
+  return { view, unmount, selectAt, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
 })();

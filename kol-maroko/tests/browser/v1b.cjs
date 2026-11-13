@@ -230,10 +230,10 @@ const PAGE = `<!doctype html>
     await page.click('#sheet [data-close]');
     // תפריט ההקשר
     pt2 = await canvasPt(page, '#t1'); await page.mouse.click(pt2.x, pt2.y, { button: 'right' });
-    await page.waitForSelector('#sheet[open] .ed-menu');
-    const menuItems = await page.$$eval('.ed-menu-item', b => b.map(x => x.textContent));
+    await page.waitForSelector('.ed-ctx');                                  // V13: התפריט הצף
+    const menuItems = await page.$$eval('.ed-ctx .ed-menu-item', b => b.map(x => x.textContent));
     ok(menuItems.some(x => x.includes('בחר הורה')) && menuItems.some(x => x.includes('פתח בקוד')) && menuItems.some(x => x.includes('לא הצלחתי לשנות')) && (await st(page)).sel === 'h1#t1', 'לחיצה ימנית על אלמנט: תפריט הקשר עם "בחר הורה", "פתח בקוד", "🐞 לא הצלחתי"');
-    await page.click('.ed-menu-item:has-text("לא הצלחתי")');
+    await page.click('.ed-ctx .ed-menu-item:has-text("לא הצלחתי")');
     await page.waitForSelector('#sheet[open] [data-bug-send]');
     await page.click('[data-bug-send]');                                   // בלי טקסט — לא חובה
     await page.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
@@ -254,8 +254,8 @@ const PAGE = `<!doctype html>
     // אלמנט מוסתר / בתבנית — גם עליו מדווחים
     await navSearch(page, '.wordx'); await navClick(page); await navSearch(page, '');
     await page.keyboard.press('Shift+F10').catch(() => {});
-    await page.evaluate(() => { if (!document.querySelector('#sheet[open] .ed-menu')) Editor._ctx(Editor._state.canvas.selected); });
-    await page.click('.ed-menu-item:has-text("לא הצלחתי")');
+    await page.evaluate(() => { if (!document.querySelector('.ed-ctx')) Editor._ctx(Editor._state.canvas.selected); });
+    await page.click('.ed-ctx .ed-menu-item:has-text("לא הצלחתי")');
     await page.waitForSelector('#sheet[open] .ed-shot img'); await page.click('[data-bug-send]');
     await page.waitForFunction(() => /נפתחה מטלה KM-\d+/.test(document.querySelector('#sheet').textContent), null, { timeout: 15000 });
     await page.click('#sheet [data-close]');
