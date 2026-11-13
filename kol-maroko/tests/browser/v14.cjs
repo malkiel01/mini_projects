@@ -505,6 +505,36 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page.evaluate(() => Editor._state.touch.setZoom(1)); await sleep(300);
     }
 
+    // ═══ 13e. V15 במגע: בורר העמוד, מנהל העמודים, הגדרות העמוד — 44px; סידור תגיות ב-⇅ במגע ═══
+    {
+      const SMALL = root => page.evaluate(sel => { const r0 = document.querySelector(sel); if (!r0) return ['אין ' + sel]; const out = [];
+        for (const e of r0.querySelectorAll('button, input, select, textarea, [role="button"]')) { if (!e.getClientRects().length || e.disabled && e.closest('[hidden]')) continue; const r = e.getBoundingClientRect(), d = Object.keys(e.dataset).join(',') || e.className; if (r.height < 4 || r.width < 4) continue;   // עזרים נסתרים (Monaco)
+          if (e.type === 'checkbox' || e.type === 'radio') { const l = e.closest('label'); if (!l || l.getBoundingClientRect().height < 44) out.push('☐ ' + d); continue; }
+          if (r.height < 44 || (/icon-btn|linkish/.test(e.className) && r.width < 44)) out.push(Math.round(r.width) + '×' + Math.round(r.height) + ' ' + d); }
+        return out; }, root);
+      await page.evaluate(() => { document.querySelector('.ed-bar').scrollLeft = 0; }); await tapSel('[data-pages-btn]'); await sleep(500);
+      st = { open: await sheetOpen(page), small: await SMALL('#sheet'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) };
+      ok(st.open && !st.small.length && st.sw, 'V15 · 📄 בורר העמוד בהקשה — גיליון, כל השליטות ≥44px', st);
+      await page.evaluate(() => [...document.querySelectorAll('#sheet .pg-pfoot button')].find(b => /כל העמודים/.test(b.textContent))?.click()); await sleep(700);
+      st = { small: await SMALL('[data-pg-mgr]'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) };
+      ok(!st.small.length && st.sw, 'V15 · מנהל העמודים — כל השליטות ≥44px, בלי גלילה אופקית', st);
+      await closeSheet(page); await page.evaluate(() => document.querySelector('[data-pg-close]')?.click()); await sleep(300);
+      await page.evaluate(() => Editor._state.head.show()); await sleep(700);
+      st = { small: await SMALL('#sheet'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) };
+      ok(!st.small.length && st.sw, 'V15 · ⚙️ הגדרות העמוד — כל השליטות (וגם תיבות הסימון — דרך התווית) ≥44px', st);
+      // ⇅ במגע: סידור שורה ברשימת התגיות של <head>
+      const tH = await page.evaluate(() => Editor._state.doc.text());
+      const dr = await page.evaluate(() => { const hs = [...document.querySelectorAll('#sheet .hd-drag')].filter(b => b.getClientRects().length && !b.disabled); if (hs.length < 3) return null; const list = hs[0].closest('[data-i]').parentElement; hs[0].scrollIntoView({ block: 'center' }); const a = hs[0].getBoundingClientRect(), c = hs[2].getBoundingClientRect(); return { x: a.x + a.width / 2, y: a.y + a.height / 2, ty: c.y + c.height * 0.8, n: hs.length }; });
+      if (dr) {
+        await realDrag(page, dr, { x: dr.x, y: dr.ty }, { steps: 10, stepMs: 40 }); await sleep(500);
+        const tH1 = await page.evaluate(() => Editor._state.doc.text());
+        ok(tH1 !== tH, 'V15 · ⇅ במגע — שורה ברשימת התגיות של <head> זזה (' + await lastTx(page) + ')', { n: dr.n });
+        if (tH1 !== tH) await undo(page);
+        ok(await page.evaluate(() => Editor._state.doc.text()) === tH, 'V15 · Ctrl+Z מחזיר את סדר התגיות');
+      } else ok(false, 'V15 · אין שלוש שורות ⇅ ברשימת התגיות');
+      await closeSheet(page); await sleep(200);
+    }
+
     // ═══ 13b. E2E 🟡3: מיקום חופשי מהמחשב — אזהרה בטלפון, ו"בזרימה בטלפון בלבד" ═══
     {
       const t0 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
