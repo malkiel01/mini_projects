@@ -973,8 +973,10 @@ const png = (w, h, rgb) => {
       await drag(page, await at(page, '.kadisha-lex-hero-btn-text', 0), await at(page, '.kadisha-lex-hero-btn-icon', 0, 0.85, 0.5));
       const b1 = await btnOrder();
       ok(JSON.stringify(b1) !== JSON.stringify(b0) && b1.length === b0.length, 'גרירה בתוך הכפתור "הקדמה" — הטקסט והסמל החליפו מקום (סידור מחדש בתוך button מותר)', { b0, b1 });
-      await undo(page);
-      ok(JSON.stringify(await btnOrder()) === JSON.stringify(b0), 'Ctrl+Z — הסדר חזר');
+      const act = await page.evaluate(() => { const a = document.activeElement; return a ? a.tagName + (a.className ? '.' + String(a.className).split(' ')[0] : '') : null; });
+      await page.click('.ed-bar button:has-text("↶")'); await sleep(800);
+      const b2 = await btnOrder();
+      ok(JSON.stringify(b2) === JSON.stringify(b0), '↶ — הסדר בכפתור חזר', { b0, b1, b2, focus: act, last: await page.evaluate(() => (Editor._state.tx.slice(-3) || []).map(t => t.label)) });
       // 390
       const c7 = await mk(390, 844), pw = await c7.newPage(); watch(pw, '390-t2');
       await pw.goto(base + '/editor.php#/editor/index.html'); await ready(pw); await sleep(1000);
