@@ -170,7 +170,7 @@ const ATTACK = `<!doctype html>
     ok(pw.length === 0 && pwnedReq.length === 0 && s.title === 'התקפה' && new URL(page.url()).hash.startsWith('#/editor'), 'התקפה: <script>, onclick, onerror, javascript: — שום קוד לא רץ (0 הודעות, 0 בקשות, הכותרת לא שונתה, אין ניווט)');
     await clickIn(page, '#evil-class');
     s = await st(page);
-    ok(s.sel === 'div#evil-class' && await page.evaluate(() => !document.querySelector('.ed img, .spike-layer img, .ed-crumbs img') && [...document.querySelectorAll('.ed-crumb')].every(b => b.children.length === 0)), 'שם מחלקה שהוא HTML מוצג כטקסט בלבד (שביל, תווית, הודעה)');
+    ok(s.sel === 'div#evil-class' && await page.evaluate(() => [...document.querySelectorAll('.ed img, .spike-layer img, .ed-crumbs img')].every(i => i.classList.contains('kit-prev') && /^assets\/kit\//.test(i.getAttribute('src') || '') && ![...i.attributes].some(a => /^on/i.test(a.name))) && [...document.querySelectorAll('.ed-crumb')].every(b => b.children.length === 0)), 'שם מחלקה שהוא HTML מוצג כטקסט בלבד (שביל, תווית, הודעה) — התמונות היחידות במעטפת הן תצוגות המקדימות של ערכת הרכיבים (V16, T2)');
     await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#evil-class'))); });
     await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
     ok(await page.evaluate(() => !document.querySelector('.ed-note img') && document.querySelector('.ed-note').textContent.includes('נמחק')) && (await page.evaluate(() => window.__msgs.length)) === 0, 'גם בהודעת המחיקה — טקסט בלבד');
