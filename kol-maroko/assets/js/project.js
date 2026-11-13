@@ -1205,7 +1205,7 @@ const Project = (() => {
       upload(e.target.closest('[data-dir]')?.dataset.dir || '', [...e.dataTransfer.files]);
     });
     host.replaceChildren(h('div', { class: 'pj' },
-      h('p', { class: 'pj-note', role: 'note' }, 'הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא.'),
+      h('p', { class: 'pj-note', role: 'note' }, 'השינויים בקבצים נשמרים כאן, ומגיעים לאתר כשמפרסמים מ-🚀 פרסום.'),   /* T2 (E2E 🟡10): הפרסום מהקבצים עובד — הנוסח הישן אמר שלא */
       el.kol, el.seed,
       h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
 

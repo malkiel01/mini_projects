@@ -41,7 +41,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     page.on('dialog', d => d.accept());
     await page.goto(base + '/#/project');
     await page.waitForSelector('.pj-tree .pj-row');
-    ok((await page.textContent('.pj-note')).includes('הקבצים כאן עדיין אינם מתפרסמים'), 'הסרגל הקבוע: הקבצים עדיין אינם מתפרסמים');
+    ok((await page.textContent('.pj-note')).includes('מ-🚀 פרסום') && !(await page.textContent('.pj-note')).includes('אינם מתפרסמים'), 'הסרגל הקבוע: השינויים מגיעים לאתר מ-🚀 פרסום (T2 — לא עוד "אינם מתפרסמים")');
     const names = await page.$$eval('.pj-tree .pj-name .one', els => els.map(e => e.textContent));
     ok(['css', 'from-current', 'js', 'index.html', 'kol.json'].every(n => names.includes(n)), 'העץ מציג את השלד ואת from-current/');
     await page.click('.pj-tree .pj-name:has-text("index.html")');
