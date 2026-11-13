@@ -25,6 +25,7 @@
  * 19. 🛠️ מפתח: 📋 מטלות (הדיווח), 📜 יומן, 👣 פעולות (של התרחיש), 🩺 תקינות (כל ❌ עם 🔧).
  * 20. 390: 📁 עץ הקבצים ← css/page.css ← הקלדה ← 💾 שמירה.
  * 21. 390 במגע (V14): גיליון תחתון וידית הגובה, האלמנט גלוי מעל הגיליון, ⬆⬇, לחיצה ארוכה ← תפריט, צביטה ← "⤢ התאם", 🔎.
+ * 22. V15: ⚙️ כותרת / תיאור / תמונת שיתוף (העלאה), 📄 שמור את העמוד כתבנית ← ➕ עמוד "מתבנית עמוד", ⭐ ראשי וחזרה, 🚫 404.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -745,6 +746,62 @@ const png = (w, h, rgb) => {
       ok(await pt.isVisible('[data-color="color"]'), '🔎 ← "צבע טקסט" — השדה בפאנל, גלוי');
       await shot(pt, 'e2e-21-palette-390');
       await cdp.detach(); await c4.close();
+    });
+
+
+    // ═══ 22. V15: הגדרות העמוד, עמוד חדש מתבנית, ⭐ ראשי, 🚫 404 ═══
+    await step('22. עמודים (V15): ⚙️ הגדרות, תבנית עמוד ← עמוד חדש, ⭐ ראשי, 🚫 404', async () => {
+      if (!page.url().includes('editor')) await page.click('a:has-text("🎨 עורך")');
+      await ready(page); await closeAll(page);
+      // ⚙️ — כותרת, תיאור, תמונת שיתוף (מהבורר האמיתי: העלאה מהמחשב)
+      await page.click('[data-head-btn]'); await sleep(600);
+      ok(await page.isVisible('[data-hd-form]'), '⚙️ בסרגל — הגדרות העמוד');
+      const fill = async (k, v) => { const f = page.locator(`[data-hd-in="${k}"]`); await f.click({ clickCount: 3 }); await f.fill(v); await f.press(k === 'description' ? 'Tab' : 'Enter'); await sleep(600); };
+      await fill('title', 'קול מרוקו — המילון');
+      await fill('description', 'מילים, פתגמים וברכות בערבית־היהודית של מרוקו, עם ההגייה');
+      let H = await html(page);
+      ok(/<title>קול מרוקו — המילון<\/title>/.test(H), 'כותרת ← <title>', (H.match(/<title>[^<]*<\/title>/) || [])[0]);
+      ok(/<meta name="description" content="מילים, פתגמים/.test(H), 'תיאור ← meta description');
+      await page.click('[data-hd-pick="ogImage"]'); await sleep(600);
+      const [fc] = await Promise.all([page.waitForEvent('filechooser', { timeout: 8000 }), page.click('#sheet[open] [data-pick-upload], dialog[open] [data-pick-upload]')]);
+      await fc.setFiles(GREEN); await until(() => page.evaluate(() => !document.getElementById('sheet').open), 15000); await sleep(800);
+      H = await html(page);
+      ok(/<meta property="og:image" content="[^"]*photo-green\.png">/.test(H), '"תמונת שיתוף" ← ⬆️ העלאה מהמחשב — og:image', (H.match(/<meta property="og:image"[^>]*>/) || [])[0]);
+      ok(/photo-green/.test(await page.evaluate(() => document.querySelector('[data-hd-card] img')?.src || '')), 'כרטיס השיתוף (וואטסאפ / פייסבוק) עם התמונה');
+      await shot(page, 'e2e-22-settings-1920');
+      await page.click('[data-head-btn]'); await sleep(400);
+      // 📄 שמור את העמוד כתבנית ← ➕ עמוד חדש "מתבנית עמוד"
+      await page.click('[data-ntab="tpl"]'); await sleep(400);
+      await page.click('[data-tpl-save-page]'); await sleep(600);
+      await page.fill('[data-ts="label"]', 'עמוד המילון'); await page.fill('[data-ts="name"]', 'lexicon-page');
+      await page.click('[data-ts-go]'); await until(() => page.evaluate(() => !document.getElementById('sheet').open), 15000); await sleep(1000);
+      await page.click('[data-pages-btn]'); await sleep(400);
+      await page.click('[data-pg-pop] [data-pg-new]'); await sleep(400);
+      await page.fill('[data-pg-f="title"]', 'פתגמים');
+      await page.selectOption('[data-pg-f="start"]', 'tpl'); await sleep(200);
+      const tplOpt = await page.$$eval('[data-pg-f="template"] option', a => a.map(o => o.value));
+      ok(tplOpt.includes('lexicon-page'), '"➕ עמוד" ← "מתחיל מ: תבנית עמוד" — "עמוד המילון" ברשימה', tplOpt);
+      await page.selectOption('[data-pg-f="template"]', 'lexicon-page');
+      const slug = await page.inputValue('[data-pg-f="slug"]');
+      await page.click('[data-pg-create]');
+      await ready(page, slug + '/index.html').catch(() => {}); await sleep(600);
+      const P = await page.evaluate(() => Editor._state.file.path);
+      const newH = await page.evaluate(() => Editor._state.doc.text());
+      ok(P === slug + '/index.html' && /kadisha-hero/.test(newH), 'העמוד החדש (' + P + ') נוצר מהתבנית ונפתח בעורך', { P, html: newH.replace(/\s+/g, ' ').slice(0, 600), tpl: await page.evaluate(async () => { try { const f = Project.docs.byPath('templates/lexicon-page/template.html'); return f ? (await Project.docs.open(f.id)).text().slice(0, 300) : 'אין קובץ'; } catch (e) { return e.message; } }) });
+      await shot(page, 'e2e-22-newpage-1920');
+      // 📄 כל העמודים ← ⭐ קבע כראשי ← בחזרה; 🚫 צור דף 404
+      await page.click('[data-pages-btn]'); await sleep(300); await page.click('[data-pg-pop] [data-pg-manage]'); await sleep(700);
+      await page.click(`[data-pg-row="${P}"]`); await sleep(300); await page.click('[data-pg-act="entry"]'); await sleep(900);
+      ok(await page.evaluate(p => /⭐/.test(document.querySelector(`[data-pg-row="${p}"]`).textContent), P), '⭐ קבע כראשי — העמוד החדש מסומן ⭐');
+      await page.click('[data-pg-row="index.html"]'); await sleep(300); await page.click('[data-pg-act="entry"]'); await sleep(900);
+      ok(await page.evaluate(() => /⭐/.test(document.querySelector('[data-pg-row="index.html"]').textContent)), '⭐ בחזרה ל-index.html');
+      await page.click('[data-pg-404new]'); await sleep(1200);
+      ok(await page.evaluate(() => /🚫/.test(document.querySelector('[data-pg-row="404.html"]')?.textContent || '')), '🚫 צור דף 404 — 404.html ברשימה');
+      await shot(page, 'e2e-22-pages-1920');
+      await page.click('[data-pg-close]').catch(() => {}); await sleep(400);
+      // חזרה ל-index.html מהבורר
+      await page.click('[data-pages-btn]'); await sleep(300); await page.click('[data-pg-pop] [data-pg-open="index.html"]'); await ready(page, 'index.html');
+      ok(true, 'חזרה ל-index.html מהבורר "📄"');
     });
 
     // ═══ 12. 390 — מגע ═══
