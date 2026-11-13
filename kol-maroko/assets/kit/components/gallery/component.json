@@ -1,0 +1,12 @@
+{
+  "name": "gallery",
+  "label": "גלריה",
+  "icon": "🖼️",
+  "category": "מדיה",
+  "fields": [
+    {"id": "items", "label": "תמונות", "control": "repeater", "target": {"children": ".kol-gallery__item"}},
+    {"id": "layout", "label": "פריסה (grid — רשת · masonry — מוזאיקה)", "control": "select", "options": ["grid", "masonry"], "target": {"class": "kol-gallery--{value}"}},
+    {"id": "cols", "label": "עמודות", "control": "number", "target": {"var": "--kol-gallery-cols"}},
+    {"id": "gap", "label": "רווח", "control": "size", "target": {"var": "--kol-gallery-gap"}}
+  ]
+}

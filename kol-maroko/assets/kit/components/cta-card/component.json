@@ -1,0 +1,12 @@
+{
+  "name": "cta-card",
+  "label": "כרטיס הנעה לפעולה",
+  "icon": "📣",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "layout", "label": "פריסה (stack · side · cover)", "control": "select", "options": ["stack", "side", "cover"], "target": {"class": "kol-cta--{value}"}},
+    {"id": "img", "label": "התמונה", "control": "media", "target": {"src": ".kol-cta__img"}},
+    {"id": "link", "label": "לאן הכפתור מוביל", "control": "link", "target": {"attr": "href", "on": ".kol-cta__btn"}},
+    {"id": "accent", "label": "צבע הכפתור", "control": "color", "target": {"var": "--kol-cta-accent"}}
+  ]
+}

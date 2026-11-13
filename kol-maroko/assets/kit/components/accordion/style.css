@@ -1,0 +1,38 @@
+/* רכיב מוכן: אקורדיון (kit 1.0.0). קובץ רגיל של הפרויקט — משנים כאן או בעורך. */
+.kol-acc {
+  --kol-acc-gap: 8px;
+  --kol-acc-accent: var(--color-accent, #a3322a);
+  display: grid;
+  gap: var(--kol-acc-gap);
+}
+.kol-acc__item {
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 10px;
+  background: var(--color-bg, #fff);
+}
+.kol-acc__title {
+  cursor: pointer;
+  padding: 12px 16px;
+  font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kol-acc__title::-webkit-details-marker { display: none; }
+.kol-acc__title::before {
+  content: "";
+  inline-size: .55em;
+  block-size: .55em;
+  border-inline-end: 2px solid var(--kol-acc-accent);
+  border-block-end: 2px solid var(--kol-acc-accent);
+  transform: rotate(45deg);
+  transition: transform .2s;
+  flex: none;
+}
+.kol-acc__item[open] > .kol-acc__title::before { transform: rotate(-135deg); }
+.kol-acc__title:focus-visible { outline: 2px solid var(--kol-acc-accent); outline-offset: 2px; border-radius: 8px; }
+.kol-acc__body { padding: 0 16px 12px; }
+.kol-acc__body > :first-child { margin-top: 0; }
+.kol-acc__body > :last-child { margin-bottom: 0; }
+@media (prefers-reduced-motion: reduce) { .kol-acc__title::before { transition: none; } }

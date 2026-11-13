@@ -1,0 +1,12 @@
+{
+  "name": "counter",
+  "label": "מונה",
+  "icon": "🔢",
+  "category": "מספרים",
+  "fields": [
+    {"id": "num", "label": "המספר", "control": "text", "target": {"text": ".kol-counter__num"}},
+    {"id": "from", "label": "סופר מ-", "control": "number", "target": {"attr": "data-kol-from", "on": ".kol-counter__num"}},
+    {"id": "dur", "label": "משך הספירה (מילישניות)", "control": "number", "target": {"attr": "data-kol-duration", "on": ".kol-counter__num"}},
+    {"id": "color", "label": "צבע המספר", "control": "color", "target": {"var": "--kol-counter-color"}}
+  ]
+}

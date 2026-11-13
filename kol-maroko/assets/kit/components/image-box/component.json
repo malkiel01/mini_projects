@@ -1,0 +1,12 @@
+{
+  "name": "image-box",
+  "label": "קופסת תמונה",
+  "icon": "🖼",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "img", "label": "התמונה", "control": "media", "target": {"src": ".kol-imgbox__img"}},
+    {"id": "alt", "label": "תיאור התמונה (alt)", "control": "text", "target": {"attr": "alt", "on": ".kol-imgbox__img"}},
+    {"id": "link", "label": "הקישור", "control": "link", "target": {"attr": "href", "on": ".kol-imgbox__link"}},
+    {"id": "ratio", "label": "יחס התמונה", "control": "select", "options": ["wide", "square", "tall"], "target": {"class": "kol-imgbox--{value}"}}
+  ]
+}
