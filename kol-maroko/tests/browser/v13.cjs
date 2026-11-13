@@ -422,6 +422,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.setInputFiles('[data-tpl-import-file]', epath); await page.waitForSelector('#sheet[open] [data-tpl-import-err]');
     ok(/מותר רק templates/.test(await page.evaluate(() => document.querySelector('[data-tpl-import-err]').textContent)) && (await text(page, 'index.html')) === idxBefore, 'ZIP עם קובץ מחוץ לתבנית (index.html) — נדחה, ושום דבר לא נכתב');
     await closeSheet(page);
+    // תבנית מיובאת עם קוד (on…, <script>) — שואלים לפני ההוספה
+    const codeZip = await page.evaluate(() => { const T = window.KolTemplates, e = new TextEncoder(); return btoa(String.fromCharCode(...T.zipBuild([['templates/codey/template.html', e.encode('<div class="cx"><p onclick="alert(1)">x</p><script>alert(2)</script></div>\n')], ['templates/codey/template.json', e.encode('{"name":"codey","label":"קוד","kind":"section"}\n')], ['templates/codey/style.css', e.encode('')]]))); });
+    const cpath = path.join(data, 'codey.zip'); fs.writeFileSync(cpath, Buffer.from(codeZip, 'base64'));
+    await page.setInputFiles('[data-tpl-import-file]', cpath); await page.waitForSelector('#sheet[open] [data-tpl-import-go]'); await page.click('[data-tpl-import-go]'); await page.waitForSelector('[data-tpl="codey"]', { timeout: 10000 });
+    await select(page, 'div.box p'); await page.click('[data-tpl="codey"]'); await page.waitForSelector('#sheet[open] [data-choice="clean"]', { timeout: 8000 });
+    ok(/onclick/.test(await page.evaluate(() => document.querySelector('[data-ask]').textContent)) && /<script>/.test(await page.evaluate(() => document.querySelector('[data-ask]').textContent)), 'תבנית עם קוד — שאלה לפני ההוספה, עם מה שנמצא (onclick, <script>)');
+    await page.click('[data-choice="clean"]'); await sleep(900);
+    h = await text(page, 'v13b.html');
+    ok(/class="cx"/.test(h) && !/onclick|<script>alert/.test(h), '"הכנס בלי הקוד" — נוסף בלי onclick ובלי <script>', h);
+    await undo(page);
     ok(await page.evaluate(() => !!document.querySelector('[data-tpl-project-zip]')), 'הפרויקט כולו — קישור ל-ZIP של F2b');
     // תבנית עמוד
     await page.evaluate(() => Editor._state.tpl.save(null)); await page.waitForSelector('[data-ts="name"]');

@@ -76,7 +76,7 @@
     pushed(t) {
       t.before = t.before || new Map(); t.at = Date.now();
       for (const d of t.docs) { if (!t.before.has(d)) t.before.set(d, this.seen.has(d) ? this.seen.get(d) : null); this.pend.delete(d); }
-      for (const d of t.docs) if (this.offs.has(d)) this.seen.set(d, d.text());
+      for (const d of t.docs) if (this.offs.has(d)) this.seen.set(d, t.after && t.after.has(d) ? t.after.get(d) : d.text());   // אותה מחרוזת — "לפני" של הבאה = "אחרי" של זו (בלי עותק)
     }
     /** ביטול / החזרה מהקנבס: השינויים אינם "קוד", ונקודת המוצא — הטקסט שאחריהם. */
     quiet(fn) {

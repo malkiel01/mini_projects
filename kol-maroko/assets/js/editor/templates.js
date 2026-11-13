@@ -213,15 +213,15 @@
         css = take.map(r => (r.media ? r.media + ' {\n  ' + r.text.replace(/\n/g, '\n  ') + '\n}' : r.text)).join('\n\n') + (take.length ? '\n' : '');
       }
       const json = JSON.stringify({ name, label: meta.label.slice(0, 80), kind: meta.kind, created: new Date().toISOString(), from: this.file()?.path || '' }, null, 2) + '\n';
-      const ids = [];
+      const ids = []; let thumbErr = '';
       try {
         for (const [f, content] of [['template.html', html.replace(/\s*$/, '\n')], ['style.css', css], ['template.json', json]]) { const d = await this.api('pf_create', { path: base + f, content }); ids.push(d.file.id); }
-        try { const shot = await this.shoot(n || (m.root && (m.root.kids.find(k => k.tag === 'body') || m.root))); if (shot && shot.blob) { const up = await Media.upload(new File([shot.blob], name + '-thumb.png', { type: 'image/png' })); const d = await this.api('pf_link', { path: base + 'thumb.png', file_id: up.id }); if (d && d.file) ids.push(d.file.id); } } catch (e) { console.warn('thumb', e); }
+        try { const shot = await this.shoot(n || (m.root && (m.root.kids.find(k => k.tag === 'body') || m.root))); if (shot && shot.blob) { const up = await Media.upload(new File([shot.blob], name + '-thumb.png', { type: 'image/png' })); const d = await this.api('pf_link', { path: base + 'thumb.png', file_id: up.id }); if (d && d.file) ids.push(d.file.id); } } catch (e) { thumbErr = e.message || 'הצילום נכשל'; }
       } catch (e) { await Promise.all(ids.map(id => this.api('pf_delete', { id }).catch(() => null))); throw e; }
       await Project.docs.reload(); this.ver++;
       this.pushFx('שמור כתבנית · ' + name, { undo: () => Promise.all(ids.map(id => this.api('pf_delete', { id }).catch(() => null))).then(() => Project.docs.reload()).then(() => this.load()), redo: () => this.api('pf_restore', { ids }).then(() => Project.docs.reload()).then(() => this.load()).catch(e => this.note('השחזור של קובצי התבנית נכשל: ' + e.message, true)) });
       await this.load();
-      this.note('נשמרה התבנית ' + meta.label + ' (templates/' + name + '/) — בלשונית "📄 תבניות"', false, { label: 'בטל', run: this.undo });
+      this.note('נשמרה התבנית ' + meta.label + ' (templates/' + name + '/) — בלשונית "📄 תבניות"' + (thumbErr ? ' · בלי צילום (' + thumbErr + ')' : ''), !!thumbErr, { label: 'בטל', run: this.undo });
       return name;
     }
 
@@ -244,6 +244,13 @@
       const used = new Set(); for (const e of c.doc.querySelectorAll('[class]')) for (const x of e.classList) used.add(x); for (const t2 of pageCss) for (const x of cssClasses(t2)) used.add(x);
       const p = plan(tp.css, tp.html, pageCss, used);
       let html = renameHtml(tp.html, p.rename), css = dropSame(renameCss(tp.css, p.rename), pageCss);
+      // תבנית שיובאה מ-ZIP יכולה לשאת קוד: סקריפטים, on…, javascript: — שואלים (כמו הדבקה מבחוץ), לא מכניסים בשקט
+      const cl = this.build.clean(html);
+      if (cl.removed.length) {
+        const go = await this.build.ask('קוד בתוך התבנית', ['בתבנית ' + lab + ' יש קוד שירוץ בעמוד: ' + cl.removed.join(', ')], [['clean', 'הכנס בלי הקוד'], ['keep', 'הכנס כמו שהוא'], ['cancel', 'בטל']]);
+        if (!go || go === 'cancel') return;
+        if (go === 'clean') html = cl.html;
+      }
       const at = t || (this.comp() ? this.comp().here() : null); if (!at || !at.par) return this.note('אין לאן להוסיף', true);
       if (this.comp()) html = this.comp().indentIn(at.par, at.ref, html.replace(/\s+$/, ''));
       const n0 = this.txCount(), it = { id: 'tpl-' + name, label: 'תבנית ' + lab, html };
