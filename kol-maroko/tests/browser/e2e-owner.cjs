@@ -26,6 +26,7 @@
  * 20. 390: 📁 עץ הקבצים ← css/page.css ← הקלדה ← 💾 שמירה.
  * 21. 390 במגע (V14): גיליון תחתון וידית הגובה, האלמנט גלוי מעל הגיליון, ⬆⬇, לחיצה ארוכה ← תפריט, צביטה ← "⤢ התאם", 🔎.
  * 22. V15: ⚙️ כותרת / תיאור / תמונת שיתוף (העלאה), 📄 שמור את העמוד כתבנית ← ➕ עמוד "מתבנית עמוד", ⭐ ראשי וחזרה, 🚫 404.
+ * 23. V16a: 🧩 רכיבים מוכנים — חיפוש, לחיצה ← אחרי הנבחר, הגדרה בפאנל, ➕ פריט, גרירה מהלוח הרחב, Ctrl+Z; 390 — הקשה בגיליון ← אחרי הנבחר.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -804,6 +805,74 @@ const png = (w, h, rgb) => {
       // חזרה ל-index.html מהבורר
       await page.click('[data-pages-btn]'); await sleep(300); await page.click('[data-pg-pop] [data-pg-open="index.html"]'); await ready(page, 'index.html');
       ok(true, 'חזרה ל-index.html מהבורר "📄"');
+    });
+
+
+    // ═══ 23. V16a: רכיבים מוכנים ═══
+    const nComp = (pg, n) => pg.evaluate(n => Editor._state.canvas.doc.querySelectorAll(`[data-kol-component="${n}"]`).length, n);
+    const compsTab = async pg => { if (!(await pg.isVisible('[data-ntab="comp"]'))) await pg.click('.ed-bar [data-panel="nav"]'); await pg.click('[data-ntab="comp"]'); await sleep(500); await pg.waitForFunction(() => Editor._state.kit && Editor._state.kit.items.length >= 20, null, { timeout: 15000 }); };
+    await step('23. רכיבים מוכנים (V16a): חיפוש, הוספה, הגדרה, ➕ פריט, גרירה מהלוח, 390', async () => {
+      if (!page.url().includes('editor')) await page.click('a:has-text("🎨 עורך")');
+      await ready(page); await closeAll(page);
+      await compsTab(page);
+      ok(await page.locator('[data-kit-grid="lib"] .kit-card').count() >= 20, 'לשונית "🧩 רכיבים" — 20 רכיבים מוכנים, עם תמונה מקדימה');
+      await page.fill('[data-kit-q="lib"]', 'אקורד'); await sleep(300);
+      ok(await page.isVisible('[data-kit-item="accordion"]'), 'חיפוש "אקורד" ← אקורדיון');
+      await page.fill('[data-kit-q="lib"]', ''); await sleep(300);
+      // לחיצה על כרטיס ← נכנס אחרי הנבחר
+      await click(page, '.kadisha-hero-subtitle', 1);
+      const tx0 = await page.evaluate(() => Editor._state.tx.length);
+      await page.click('[data-kit-item="accordion"]'); await sleep(2200);
+      if (await page.isVisible('#sheet[open] [data-kit-as], #sheet[open] [data-kit-take]')) { await page.click('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]'); await sleep(2000); }
+      ok(await nComp(page, 'accordion') === 1, 'לחיצה על "אקורדיון" — נכנס לעמוד (אחרי הנבחר)', await nComp(page, 'accordion'));
+      ok(await page.evaluate(() => !!Project.docs.byPath('components/accordion/template.html')), 'components/accordion/ הועתק לפרויקט (שימוש ראשון)');
+      await shot(page, 'e2e-23-kit-add-1920');
+      // הגדרה מהפאנל
+      await click(page, '[data-kol-component="accordion"]', 0, 0.02, 0.02);
+      for (let k = 0; k < 4 && !(await page.isVisible('[data-comp-panel]')); k++) { await page.click('.ed-seltools-host [aria-label="בחר הורה"]').catch(() => {}); await sleep(300); }
+      await tabP(page, 'content');
+      const fields = await page.$$eval('[data-comp-panel] [data-cf]', a => a.map(x => x.tagName + ':' + x.dataset.cf + ':' + (x.type || '')));
+      ok(fields.length > 0, 'הפאנל — ההגדרות של הרכיב', fields);
+      const h0 = await html(page);
+      const tf = await page.$('[data-comp-panel] input[data-cf][type="text"], [data-comp-panel] input[data-cf]:not([type]), [data-comp-panel] select[data-cf], [data-comp-panel] input[type="checkbox"][data-cf]');
+      if (tf) { const tag = await tf.evaluate(e => e.tagName + ':' + e.type); if (/SELECT/.test(tag)) { const opts = await tf.$$eval('option', o => o.map(x => x.value)); await tf.selectOption(opts[opts.length - 1]); } else if (/checkbox/.test(tag)) await tf.click(); else { await tf.fill('הגדרה של בעל העמוד'); await tf.press('Enter'); } await sleep(900); }
+      ok((await html(page)) !== h0, 'שינוי הגדרה בפאנל — העמוד השתנה');
+      // ➕ פריט
+      const items0 = await page.evaluate(() => { const e = Editor._state.canvas.doc.querySelector('[data-kol-component="accordion"]'); return e ? e.querySelectorAll('details, .kol-acc-item, [class*="item"]').length : -1; });
+      await click(page, '[data-kol-component="accordion"] summary, [data-kol-component="accordion"] details', 0);
+      if (await page.isVisible('[data-kit-add-item]')) { await page.click('[data-kit-add-item]'); await sleep(900); }
+      const items1 = await page.evaluate(() => { const e = Editor._state.canvas.doc.querySelector('[data-kol-component="accordion"]'); return e ? e.querySelectorAll('details, .kol-acc-item, [class*="item"]').length : -1; });
+      ok(items1 > items0, '"➕ פריט" — עוד פריט באקורדיון', { items0, items1 });
+      // גרירה מהלוח הרחב
+      await page.click('[data-kit-wide]'); await sleep(500);
+      ok(await page.isVisible('[data-kit-board]'), '"לוח רחב" — כל הרכיבים בגדול');
+      await drag(page, await box(page, '[data-kit-grid="board"] [data-kit-item="quote"]'), await at(page, '.kadisha-lexicon-count', 0, 0.5, 0.9)); await sleep(2200);
+      if (await page.isVisible('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]')) { await page.click('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]'); await sleep(2000); }
+      ok(await nComp(page, 'quote') >= 1, 'גרירת "ציטוט" מהלוח לקנבס — בעמוד', await nComp(page, 'quote'));
+      await shot(page, 'e2e-23-kit-board-1920');
+      await closeAll(page); if (await page.isVisible('[data-kit-board]')) await page.click('[data-kit-close]').catch(() => {});
+      // Ctrl+Z
+      await undo(page); await sleep(600);
+      ok(await nComp(page, 'quote') === 0, 'Ctrl+Z — הציטוט הוסר');
+      void tx0;
+      // 390: גיליון ← הקשה = "הוסף אחרי הנבחר"
+      await saved(page);
+      const c5 = await mk(390, 844), pk = await c5.newPage(); watch(pk, '390-kit');
+      await pk.goto(base + '/editor.php#/editor/index.html'); await ready(pk); await sleep(800);
+      await tap(pk, 'h1'); await sleep(400);
+      await pk.tap('.ed-bar [data-panel="nav"]').catch(() => {}); await sleep(400);
+      await pk.tap('[data-ntab="comp"]'); await sleep(600);
+      await pk.waitForFunction(() => Editor._state.kit && Editor._state.kit.items.length >= 20, null, { timeout: 15000 });
+      await pk.tap('[data-kit-wide]'); await sleep(500);
+      ok(await pk.isVisible('[data-kit-board]'), '390: "לוח רחב" — גיליון מלמטה');
+      await shot(pk, 'e2e-23-kit-390');
+      const n0 = await nComp(pk, 'counter');
+      await pk.tap('[data-kit-grid="board"] [data-kit-item="counter"]'); await sleep(2500);
+      if (await pk.isVisible('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]')) { await pk.tap('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]'); await sleep(2000); }
+      const after = await pk.evaluate(() => { const c = Editor._state.canvas, h = c.doc.querySelector('h1'); let x = h.nextElementSibling; return x ? (x.getAttribute('data-kol-component') || x.localName) : null; });
+      ok(await nComp(pk, 'counter') === n0 + 1 && after === 'counter', '390: הקשה על "מונה" — נכנס מיד אחרי הכותרת הנבחרת', { after });
+      await shot(pk, 'e2e-23-kit-390-added');
+      await c5.close();
     });
 
     // ═══ 12. 390 — מגע ═══
