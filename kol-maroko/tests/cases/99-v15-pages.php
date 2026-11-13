@@ -81,6 +81,10 @@ test('V15 §2.4 ➕ מתבנית עמוד (V13: templates/<שם>/, kind: page) �
     $l = v15_list();
     eq([['name' => 'landing', 'label' => 'דף נחיתה']], $l['templates'], 'רק תבניות עמוד ברשימה');
     ok(!array_filter(array_column($l['pages'], 'path'), fn($p) => str_starts_with($p, 'templates/')), 'templates/ — אינם עמודים ברשימה (auto)');
+    eq(404, v15_post('page_set_entry', ['path' => 'templates/landing/template.html'])['status'], 'תבנית — לא עמוד ראשי');
+    eq(404, v15_post('page_set_404', ['path' => 'templates/landing/template.html'])['status'], 'תבנית — לא דף 404');
+    eq(400, v15_post('pages_order', ['order' => ['templates/landing/template.html']])['status'], 'תבנית — לא בסדר העמודים');
+    eq(404, v15_post('page_move', ['from' => 'templates/landing/template.html', 'to' => 'x'])['status'], 'תבנית — לא זזה כעמוד');
     $was = setting('site_url');
     setting_set('site_url', 'https://Example.org:8443/wp/');
     eq('https://example.org:8443', v15_list()['site'], 'כתובת האתר ל-og:image — המקור בלבד');

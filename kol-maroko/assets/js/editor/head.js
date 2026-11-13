@@ -262,7 +262,7 @@
       const tab = h('div', { class: 'hd-tab', 'data-hd-tab': true, style: v.theme ? '--hd-theme:' + v.theme : null },
         v.icon ? h('img', { class: 'hd-fav', alt: '', src: this.o.url(v.icon) || '' }) : h('span', { class: 'hd-fav none' }, '🌐'), h('span', { class: 'hd-tab-t' }, v.title || 'ללא כותרת'));
       // גוגל
-      const count = h('span', { class: 'hd-count', 'data-hd-count': true }), gT = h('b', {}, v.title || 'ללא כותרת'), gD = h('span', {}, v.description || 'גוגל יבחר קטע מהעמוד');
+      const count = h('span', { class: 'hd-count', dir: 'ltr', 'data-hd-count': true }), gT = h('b', {}, v.title || 'ללא כותרת'), gD = h('span', {}, v.description || 'גוגל יבחר קטע מהעמוד');
       const setCount = t => { count.textContent = t.length + ' / 160'; count.classList.toggle('over', t.length > 160); gD.textContent = t || 'גוגל יבחר קטע מהעמוד'; };
       setCount(v.description);
       const google = h('div', { class: 'hd-google', 'data-hd-google': true, 'aria-label': 'כך העמוד ייראה בתוצאות של גוגל' }, h('small', { dir: 'ltr' }, this.o.pageUrl()), gT, gD, v.noindex ? h('em', { class: 'hd-noidx' }, '🚫 לא יופיע בחיפוש') : null);
