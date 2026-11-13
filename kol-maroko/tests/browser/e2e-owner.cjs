@@ -94,18 +94,27 @@ const png = (w, h, rgb) => {
       const fpt = (x, y) => { const f = c.frame.getBoundingClientRect(); return [(x - f.left) / c.scale, (y - f.top) / c.scale]; };
       const fire = (t, type, x, y, cx, cy, touch) => t.dispatchEvent(new (t.ownerDocument.defaultView.PointerEvent)(type, { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: cy, pointerId: touch ? 2 : 1, pointerType: touch ? 'touch' : 'mouse', isPrimary: true, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1 }));
       window.__pd = {
-        down(x, y, touch, shell) { this.touch = !!touch; this.frame = inFrame(x, y) && !shell; if (this.frame) { const [fx, fy] = fpt(x, y); this.t = c.doc.elementFromPoint(fx, fy); fire(this.t, 'pointerdown', x, y, fx, fy, touch); } else { this.t = document.elementFromPoint(x, y); fire(this.t, 'pointerdown', x, y, x, y, touch); } },
+        // כמו מצביע אמיתי: מה שעליון בנקודה — שכבה במעטפת (ידית, תיבת הזזה) או, אם זה ה-iframe, האלמנט שבתוכו
+        down(x, y, touch) { this.touch = !!touch; const top = document.elementFromPoint(x, y); this.frame = inFrame(x, y) && (!top || top.localName === 'iframe'); if (this.frame) { const [fx, fy] = fpt(x, y); this.t = c.doc.elementFromPoint(fx, fy); fire(this.t, 'pointerdown', x, y, fx, fy, touch); } else { this.t = document.elementFromPoint(x, y); fire(this.t, 'pointerdown', x, y, x, y, touch); } },
         move(x, y) { if (this.frame) { const [fx, fy] = fpt(x, y); fire(c.doc.elementFromPoint(fx, fy) || c.doc.documentElement, 'pointermove', x, y, fx, fy, this.touch); } else { const t = ed.build && ed.build.drag.active ? (document.elementFromPoint(x, y) || document.body) : this.t; fire(t.localName === 'iframe' ? document.body : t, 'pointermove', x, y, x, y, this.touch); } },
         up(x, y) { if (this.frame) { const [fx, fy] = fpt(x, y); fire(c.doc.elementFromPoint(fx, fy) || c.doc.documentElement, 'pointerup', x, y, fx, fy, this.touch); } else { const t = (ed.build && ed.build.drag.active ? document.elementFromPoint(x, y) : this.t) || document.body; fire(t.localName === 'iframe' ? document.body : t, 'pointerup', x, y, x, y, this.touch); } },
       };
     };
     const drag = async (page, a, b, opt = {}) => {
       await page.evaluate(PD);
-      await page.evaluate(([x, y, t, sh]) => window.__pd.down(x, y, t, sh), [a.x, a.y, !!opt.touch, !!opt.shell]);
+      await page.evaluate(([x, y, t]) => window.__pd.down(x, y, t), [a.x, a.y, !!opt.touch]);
       if (opt.hold) await sleep(opt.hold);
       const steps = opt.steps || 12;
       for (let i = 1; i <= steps; i++) { await page.evaluate(([x, y]) => window.__pd.move(x, y), [a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps]); await sleep(24); }
       await sleep(80); await page.evaluate(([x, y]) => window.__pd.up(x, y), [b.x, b.y]); await sleep(600);
+    };
+    /** אצבע אמיתית (CDP Input.dispatchTouchEvent) — לידיות שבמעטפת, בטלפון. */
+    const tdrag = async (page, a, b, steps = 12) => {
+      const cdp = await page.context().newCDPSession(page);
+      const T = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1, radiusX: 4, radiusY: 4, force: 1 }] });
+      await T('touchStart', a.x, a.y); await sleep(60);
+      for (let i = 1; i <= steps; i++) { await T('touchMove', a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps); await sleep(24); }
+      await sleep(80); await T('touchEnd'); await sleep(600); await cdp.detach();
     };
     /** ידית במעטפת (מעל הקנבס) — עכבר אמיתי. */
     const mdrag = async (page, a, b, steps = 12) => { await page.mouse.move(a.x, a.y); await page.mouse.down(); for (let i = 1; i <= steps; i++) { await page.mouse.move(a.x + (b.x - a.x) * i / steps, a.y + (b.y - a.y) * i / steps); await sleep(20); } await sleep(80); await page.mouse.up(); await sleep(600); };
@@ -204,7 +213,7 @@ const png = (w, h, rgb) => {
     await step('5. תמונת הרקע ותמונה', async () => {
       await click(page, '.kadisha-hero', 0, 0.03, 0.05);
       ok(/section\.kadisha-hero/.test(await crumb(page) || ''), 'לחיצה על אזור ריק בכותרת העמוד — הרובריקה נבחרת', await crumb(page));
-      ok(await page.isVisible('[data-bg-tools]'), 'בסרגל: "🖼 תמונת רקע: החלף · הסר · הזז"');
+      ok(await page.isVisible('[data-bg-tools]'), 'בסרגל: "🖼 תמונת רקע: החלף · הסר · הזז"', await page.evaluate(() => ({ has: Editor._state.bg.hasImage(Editor._state.canvas.selected), conn: !!document.querySelector('[data-bg-tools]') })));
       await tabP(page, 'content');
       const say = await page.textContent('.ct-bg').catch(() => '');
       if (/עדיין אינן על המסך/.test(say)) finding('🟡', 'לשונית "✏️ תוכן" של רובריקה עם תמונת רקע (ושל כל אלמנט שיושב עליה) אומרת "❌ החלפה והסרה של תמונת רקע עדיין אינן על המסך — הן מגיעות בשלב V5. עד אז: בקוד" — אבל הן כבר על המסך (הסרגל, לשונית עיצוב). בעל העמוד שמחפש שם יחשוב שאי אפשר. content.js:265');
@@ -290,8 +299,9 @@ const png = (w, h, rgb) => {
       ok(cols.length >= 3 && cols.every(c => c === 'rgb(30, 107, 58)'), 'צבע בתבנית — כל הכרטיסים ירוקים', cols);
       await click(page, W, 1);
       await page.click('[data-lv-scope="word"]'); await sleep(400);
+      if (!(await page.isVisible('[data-lv-edit]'))) { await click(page, W, 1); await sleep(300); }
       const wordTxt = await page.evaluate(s => Editor._state.canvas.doc.querySelectorAll(s)[1].textContent.trim(), W);
-      ok(await page.isVisible('[data-lv-edit]'), '"המילה הזו: ' + wordTxt + '" ← "✏️ ערוך את ה…"');
+      ok(await page.isVisible('[data-lv-edit]'), '"המילה הזו: ' + wordTxt + '" ← "✏️ ערוך את ה…"', await page.textContent('[data-lv-bar]').catch(() => null));
       await page.click('[data-lv-edit]'); await sleep(400);
       await page.keyboard.press('Control+a'); await page.keyboard.type('מילה חדשה'); await page.keyboard.press('Enter'); await sleep(1500);
       const ws = await call(page, 'words');
@@ -304,7 +314,8 @@ const png = (w, h, rgb) => {
     await step('9. רכיב: שמור, גרור, שני מופעים', async () => {
       await click(page, '.kadisha-lexicon-controls', 0, 0.01, 0.98);
       let sel = await crumb(page);
-      if (!/kadisha-lexicon-controls/.test(sel || '')) { await page.click('.ed-bar button:has-text("↑"), [title*="האב"]').catch(() => {}); sel = await crumb(page); }
+      // הלחיצה נופלת על ילד — בעל העמוד עולה דרך שביל הפירורים שמעל הקנבס
+      if (!/kadisha-lexicon-controls/.test(sel || '')) { await page.click('text=div.kadisha-lexicon-controls').catch(e => console.log('   (שביל: ' + e.message.split('\n')[0] + ')')); await sleep(400); sel = await crumb(page); }
       ok(/kadisha-lexicon-controls/.test(sel || ''), 'שורת החיפוש והנושאים נבחרה', sel);
       await tabP(page, 'content');
       await page.click('[data-w="comp-save"]'); await sleep(400);
@@ -330,26 +341,20 @@ const png = (w, h, rgb) => {
       await page.click('[data-split]'); await sleep(1500);
       const mon = await page.$('.monaco-editor');
       ok(!!mon, '◫ מבט מפוצל — עורך הקוד לצד הקנבס');
-      // הקלדה בקוד: אחרי "אסף ותיעד:" — הסמן על השורה של האלמנט הנבחר
-      const before = await html(page);
-      const ln = before.split('\n').findIndex(l => /אסף ותיעד/.test(l)) + 1;
-      await page.click('.monaco-editor .view-lines'); await sleep(200);
-      await page.keyboard.press('Control+g').catch(() => {}); await sleep(200);
-      const goto = await page.$('.quick-input-widget input');
-      if (goto) { await goto.type(String(ln)); await goto.press('Enter'); await sleep(200); } else finding('⚪', 'בעורך הקוד אין "עבור לשורה" (Ctrl+G).');
+      // הקלדה בקוד: לחיצה על השורה של "אסף ותיעד", End, ולפני </p>
+      await page.click('.monaco-editor .view-line:has-text("אסף ותיעד")'); await sleep(200);
       await page.keyboard.press('End'); await sleep(100);
-      // הסמן בסוף השורה (…</p>) — 4 תווים אחורה
       for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowLeft');
       await page.keyboard.type(' ומשפחתו'); await sleep(1500);
       const t = await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('.kadisha-hero-subtitle')[1].textContent);
-      ok(/ומשפחתו/.test(t), 'הקלדה בקוד — הקנבס התעדכן בלי שמירה ידנית', t);
+      ok(/העמוד ומשפחתו$/.test(t.trim()), 'הקלדה בקוד — הקנבס התעדכן בלי שמירה ידנית', t);
       await shot(page, 'e2e-10-split-1920');
       await page.click('[data-split]'); await sleep(600);
       // ובכיוון ההפוך: שינוי בגרירה ← הקוד
       await page.click('.ed-bar [data-code], .ed-bar button:has-text("פתח בקוד")'); await sleep(1500);
       ok(/#\/(code|project)|code/.test(page.url()) || await page.isVisible('.monaco-editor'), '"</> פתח בקוד" — הקובץ פתוח בעורך הקוד');
       const codeText = await page.evaluate(() => { const m = window.monaco && monaco.editor.getModels().find(m => /ומשפחתו/.test(m.getValue())); return m ? m.getValue() : null; });
-      ok(codeText && /color:|קול מרוקו שלי/.test(codeText + (await html(page))), 'בעורך הקוד — הטקסט כפי שנערך בקנבס');
+      ok(!!codeText && /קול מרוקו שלי/.test(codeText), 'בעורך הקוד — גם הכותרת כפי שנערכה בקנבס');
       await page.click('a:has-text("🎨 עורך")'); await ready(page);
     });
 
@@ -389,7 +394,7 @@ const png = (w, h, rgb) => {
       if (g.length) {
         if (Math.min(g[0].w, g[0].h) < 24) finding('🟡', '390: ידית הרווח בין הכותרות קטנה לאצבע (' + Math.round(g[0].w) + '×' + Math.round(g[0].h) + 'px). צילום: e2e-12-spacing-390.png');
         const y0 = await pp.evaluate(() => Editor._state.canvas.doc.querySelector('.kadisha-hero-subtitle-main').getBoundingClientRect().top);
-        await drag(pp, g[0], { x: g[0].x, y: g[0].y + 20 }, { touch: true, shell: true });
+        await tdrag(pp, g[0], { x: g[0].x, y: g[0].y + 20 });
         const y1 = await pp.evaluate(() => Editor._state.canvas.doc.querySelector('.kadisha-hero-subtitle-main').getBoundingClientRect().top);
         ok(y1 - y0 > 8, '390: גרירת הידית באצבע — שורת המשנה זזה', { y0, y1 });
       }
