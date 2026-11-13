@@ -444,7 +444,9 @@ const Project = (() => {
         if (prefs.views[f.id]) S.editor.restoreViewState(prefs.views[f.id]);
       }
       S.editor.layout();
-      if (!phone()) S.editor.focus();
+      /* T2: ציור חוזר (שחזור הלשוניות, עץ) אינו מושך את המיקוד כשהוא כבר בתוך העורך — אחרת תפריט ההקשר של Monaco
+         (שמחזיק את המיקוד בתוך .monaco-editor) נסגר מיד אחרי שנפתח (v1b) */
+      if (!phone() && !el.ed.contains(document.activeElement)) S.editor.focus();
       return;
     }
     el.view.hidden = false;
@@ -1223,8 +1225,10 @@ const Project = (() => {
       await refresh();
       if (first) {                                               // הלשוניות והמיקום מהביקור הקודם
         const want = prefs.tabs.filter(id => S.byId.has(id)), cur = S.byId.has(prefs.cur) ? prefs.cur : want[0] ?? null;
+        const was = S.cur;                                         /* T2: קובץ שנפתח בינתיים (openAt) — לא נדרס בקובץ מהביקור הקודם */
         for (const id of want) await openFile(id, false);
-        S.cur = cur; persist();
+        if (S.cur === was) S.cur = cur;
+        persist();
       }
       drawAll();
       if (phone() && !S.cur) side(true);                         // בטלפון, בלי קובץ פתוח: העץ עצמו, לא מסך ריק עם כפתור

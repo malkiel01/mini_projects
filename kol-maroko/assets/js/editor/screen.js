@@ -96,12 +96,31 @@ const Editor = (() => {
       // V12: template.html של רכיב — נפתח בקנבס עם style.css שלו (לתבנית אין <head> ואין <link>)
       { const cm = /^components\/([^/]+)\/template\.html$/.exec(f.path), cf = cm && Project.docs.byPath('components/' + cm[1] + '/style.css');
         S.canvas.extraSheets = [];
-        if (cf) { const cd = await Project.docs.open(cf.id).catch(() => null); if (cd && !cd.binary) { const href = 'style.css'; S.sheets.set(href, { path: cf.path, doc: cd }); S.canvas.extraSheets = [href]; S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(cf.path, cd.text())); drawInfo(); } })); } } }
+        /* T2: גם קובצי ה-CSS של העמוד שממנו נכנסו לעריכה (S.comp.back; אחרת — העמוד הראשון שיש בו מופע), לפני style.css של הרכיב —
+           כמו בעמוד עצמו. כל אחד מסמך משותף: שינוי בו מגיע לקנבס. רק <link> לקבצים בפרויקט; <style> שבתוך העמוד — לא. */
+        if (cm) {
+          const n = S.comp?.counts.get(cm[1]), from = S.comp?.back || (n && [...n.pages].sort()[0]), pf = from && Project.docs.byPath(from);
+          const pd = pf && await Project.docs.open(pf.id).catch(() => null);
+          // כיוון העמוד (<html dir>) — לתבנית אין <html>, ובלעדיו המאפיינים הלוגיים (padding-inline-…) מתהפכים. כלל של העורך, לא בקובץ
+          const dir = pd && !pd.binary && (/^\s*(?:<!--[\s\S]*?-->\s*|<!doctype[^>]*>\s*)*<html\b[^>]*\bdir\s*=\s*["']?(rtl|ltr)\b/i.exec(pd.text()) || [])[1];
+          if (dir) S.canvas.extraSheets.push('page:dir:' + dir.toLowerCase());
+          if (pd && !pd.binary) for (const m of pd.text().matchAll(/<link\b[^>]*>/gi)) {
+            if (!/\brel\s*=\s*["']?[^"'>]*\bstylesheet\b/i.test(m[0])) continue;
+            const href = (/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[0]) || []).slice(1).find(x => x != null);
+            const path = resolve(dirOf(from), href || ''), sf = path && Project.docs.byPath(path), key = 'page:' + path;
+            if (!sf || S.sheets.has(key) || /^components\//.test(path)) continue;          // style.css של רכיב — נטען למטה, פעם אחת
+            const sd = await Project.docs.open(sf.id).catch(() => null);
+            if (!sd || sd.binary) continue;
+            S.sheets.set(key, { path, doc: sd }); S.canvas.extraSheets.push(key);
+            S.sheetOff.push(sd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(key, cssForCanvas(path, sd.text())); drawInfo(); } }));
+          }
+        }
+        if (cf) { const cd = await Project.docs.open(cf.id).catch(() => null); if (cd && !cd.binary) { const href = 'style.css'; S.sheets.set(href, { path: cf.path, doc: cd }); S.canvas.extraSheets.push(href); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(cf.path, cd.text())); drawInfo(); } })); } } }
       const c = S.canvas;
       c.baseHref = S.token ? pvUrl(dirOf(f.path)) : '';
       c.verify = !!state.user?.developer || prefs.verify === true;         // מצב פיתוח: שקילות אחרי כל פעולה
       c.capOff = false;
-      await c.load(src, href => { const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });
+      await c.load(src, href => { if (/^page:dir:(rtl|ltr)$/.test(href)) return ':root { direction: ' + href.slice(9) + '; }'; const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });   /* T2: page:dir */
       c.setViewport(deviceWidth());
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
@@ -347,8 +366,10 @@ const Editor = (() => {
   }
   /** הקובץ לכלל חדש: styles.page שב-kol.json, אם העמוד מקשר אליו; אחרת קובץ ה-CSS האחרון שהעמוד מקשר. */
   /** V8: קובץ ה-CSS של ברירות המחדל לתגיות (styles.base), אם העמוד מקשר אליו. */
-  function basePath() { const want = S.kol?.styles?.base; return [...S.sheets.values()].some(x => x.path === want) ? want : null; }
-  function pagePath() { const want = S.kol?.styles?.page, paths = [...S.sheets.values()].map(x => x.path); return paths.includes(want) ? want : paths[paths.length - 1] || null; }
+  /* T2: קובצי ה-CSS של העמוד בעריכת תבנית ('page:…') — לתצוגה ולכללים הקיימים בלבד; כלל חדש נכתב ל-style.css של הרכיב, כמו קודם */
+  const ownSheets = () => [...S.sheets].filter(([k]) => !k.startsWith('page:')).map(([, x]) => x);
+  function basePath() { const want = S.kol?.styles?.base; return ownSheets().some(x => x.path === want) ? want : null; }
+  function pagePath() { const want = S.kol?.styles?.page, paths = ownSheets().map(x => x.path); return paths.includes(want) ? want : paths[paths.length - 1] || null; }
   // ── עסקאות על כמה קבצים (V3): ביטול / החזרה משותפים לכל הקבצים שהעסקה נגעה בהם ──
   /** רושם עסקה: הקבצים שנערכו (מסמך שנערך כמה פעמים — כמה פעמים), והטקסט של כל אחד אחריה. */
   function pushTx(docs, label) {

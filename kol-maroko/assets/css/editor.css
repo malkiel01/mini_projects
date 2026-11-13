@@ -516,7 +516,8 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 @media (pointer: coarse) { .sg-fx button, .sg-fx select, .sg-fx input:not([type=checkbox]):not([type=range]), [data-sec="motion"] button, [data-sec="motion"] select { min-height: 44px; } .sg-fx .sg-swatch, .sg-fx .sg-reset { min-width: 44px; } }
 .sg-fx label.sg-line { justify-content: flex-start; gap: 6px; } .sg-fx input[type=checkbox] { width: auto; height: auto; min-height: 0; flex: none; margin: 0; }
 @media (pointer: coarse) { .sg-fx input[type=checkbox] { width: 24px; height: 24px; } .sg-fx label.sg-line { min-height: 44px; } }
-@media (max-width: 999px) { .ed-bar [data-play] { display: none; } }   /* V10: כמו V7 — בטלפון הסרגל לא מתארך (המקלדת); "↻ הצג שוב" בפאנל */
+/* T2: ▶ גם בטלפון — סמל בלבד (ed-word מוסתר), בשורה הקיימת של הסרגל; הסרגל אינו מתארך (נמדד: 130px עם ובלי) */
+@media (max-width: 999px) { .ed-bar [data-play] { min-width: 36px; min-height: 36px; padding: 0 var(--s1); justify-content: center; } }
 
 /* ── V11: רשימת הנתונים בקנבס ── */
 .lv-twin { position: absolute; box-sizing: border-box; outline: 1px solid rgba(26, 115, 232, .55); outline-offset: -1px; background: rgba(26, 115, 232, .05); pointer-events: none; }
