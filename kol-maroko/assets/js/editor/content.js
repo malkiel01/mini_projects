@@ -194,7 +194,7 @@
       else ctl = this.input(href, v => { if (!T.SAFE_HREF.test(v)) return this.note('כתובת של קישור אינה יכולה להיות קוד (javascript:)', true); set(v); }, { key: 'href', dir: 'ltr', placeholder: 'https://…' });
       const change = v => {
         if (v === kind) return;
-        if (v === 'page' && this.pages && this.pages.data) { const o = this.pages.linkOptions(this.file().path)[0]; set(o ? o[0] : './'); }   /* V15 */
+        if (v === 'page' && this.pages && this.pages.data) { const dir = this.file().path.replace(/[^/]*$/, ''), os = this.pages.linkOptions(this.file().path).filter(x => !x[0].includes('#')), o = os.find(x => x[2].startsWith(dir) && !x[2].slice(dir.length).includes('/')) || os[0]; set(o ? o[0] : './'); }   /* V15 — קודם עמוד מאותה תיקייה (כמו V2) */
         else if (v === 'page') { const pages = this.files().filter(f => f.kind === 'file' && /\.html?$/i.test(f.path) && f.path !== this.file().path); const dir = this.file().path.replace(/[^/]*$/, ''); pages.sort((x, y) => (y.path.startsWith(dir) ? 1 : 0) - (x.path.startsWith(dir) ? 1 : 0) || x.path.localeCompare(y.path)); /* קודם עמודים מאותה תיקייה */ set(pages[0] ? this.rel(pages[0].path) : this.rel(this.file().path)); }
         else if (v === 'anchor') { const id = K.all(c.m).map(x => this.attr(x, 'id')).find(Boolean); set('#' + (id || '')); }
         else if (v === 'file') this.pick('any', 'בחירת קובץ').then(p => { const cur = this.linkOf(this.n); if (p && cur) this.setAttr(cur, 'href', this.rel(p), 'יעד קישור · ' + this.lab(cur)); else this.draw(); });
