@@ -6,7 +6,8 @@
 - **בקרה (9):** `session_018g4NYE24dt9ed6U2i9nNng`. קיבלה מבקרה (8).
 - **השעון:** `trig_01MyEpfQR9j1ZGFd46myzVf7` (דקה 48, לתוך בקרה (9)), נוצר בידי מנהל הצוותים (2). כבויים: הישן `trig_01XJxsx6S4PqbvMTWEv5BxnE` והכפיל `trig_01Fc2MDPJgtjousFL7aMBuFq`.
 - **קוד (רדומים):** E2E (2) `session_018g4NYFy2sJ8poK2SjnPJSh` · P2 `session_018g4NYDjFLyMQ2k2dtri4X2`.
-- **מוזג (בקרה 9):** E2E צעד 26 #1551 (1631 ✔️) · P2 ליטוש #1553 · handoff E2E. ⚪15 (כפתורי 🖼 34px ב-390, screen.js:1058) ו-⚪ coversOf סורק הכול — לפרוסה הבאה. **אין צ'אט קוד פעיל** (E2E (2), P2 — רדומים).
+- **מוזג (בקרה 9):** E2E צעד 26 #1551 · handoff E2E #1552 · בקרה #1554 · P2 ליטוש #1553 — פריסה 1634 (3b14a33) ✔️. אפיון V14 §2.2 "החלקה = תמיד גלילה" — בענף הבקרה, למיזוג הבא.
+- **V14d #1555 מוזגה** (שורת מקשים + חלופה ל-Monaco, ✕ ביטול גרירה, 100% טאבלט/מחשב, 7.3 ב-390, coversOf במטמון). **אין צ'אט קוד פעיל.** הבא: לפי הלוח / מה שהבעלים יחזיר מהבדיקות.
 
 ## ⏩ למסירה — קרא קודם (בקרה (9))
 - **מסירה מבקרה (8)** `session_018g4NYGX9uwxscA1qjoWV4P` (~380K) ב-2026-11-13 ~16:50 UTC. השעון: `trig_01XJxsx6S4PqbvMTWEv5BxnE` (דקה 48, לתוך בקרה (8)) — להעביר: get_trigger ← create_trigger לתוכך ← update_trigger enabled=false. מנהל הצוותים (2): `session_018g4NYCaAseUuY137ihzAgs`.
