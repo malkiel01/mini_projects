@@ -105,3 +105,20 @@
   לגלול בתזוזה הראשונה ו-pointercancel סיים את הגרירה — touch.js עוצר את touchmove כשגרירה של העורך פעילה (מתקן גם כל גרירה אחרת
   שמתחילה בלחיצה ארוכה מחוץ לקנבס).
 - בדיקות: v14 — 122.
+
+## 2026-11-13 — V14c: תיקוני הביקורת של בקרה (8) על #1545
+- **loadMonaco (project.js, code.js):** המיזוג לקח את `data-monaco-loader` של V16. V14 מוסיף **איפוס בכישלון**: תג ה-loader מוסר רק ב-`error`
+  אמיתי (`data-failed`), **לא ב-timeout** — אחרת Code (timeout 15s) היה מסיר את התג ש-Project עוד מחכה לו (20s), ובמקרה האיטי
+  ניסיון חוזר ברשת איטית מחזיר בדיוק את `_amdLoaderGlobal already declared`. ב-timeout רק ההבטחה מתאפסת והתג נשאר; בניסיון חוזר מחכים לו.
+- **v14 (סעיף 0):** ה-flake של v12 נסגר ב-V16 (data-monaco-loader); V14 מוסיף איפוס בכישלון. שלוש בדיקות: (א) loader.js חסום (`page.route`)
+  ← כישלון → שחרור → ניסיון חוזר מצליח, תג אחד, בלי שגיאת דף; (ב) חפיפה Code+Project; (ג) רשת איטית — Code ב-timeout לא מסיר את התג,
+  Project מצליח, וניסיון חוזר של Code מצליח. **בלי האיפוס — (א) נכשלת** (התג המת נשאר, הניסיון החוזר נתקע).
+- **ROW של Navigator (navigator.js):** היה קבוע בטעינה; עכשיו `rowH()` חי, עם מאזין `change` על `matchMedia('(pointer: coarse)')`
+  (`refresh`) וגובה מפורש ב-`row()` — 2-in-1 שעובר למצב טאבלט / אמולציה מקבל שורות של 44px בלי הקשה על השורה הלא נכונה. בדיקה ב-1366
+  עם `Emulation.setTouchEmulationEnabled`.
+- **touchmove (touch.js):** המאזין שאינו passive רשום רק מ-`drag.start` עד `drag.end` (עטיפה שלהם), לא כל עוד העורך פתוח — גלילה רגילה
+  אינה ממתינה ל-main thread. בדיקה: `DOMDebugger.getEventListeners` על ה-document לפני, בזמן ואחרי הגרירה (0 → 1 → 0).
+- **`#sheet .linkish` (editor.css):** היה דולף לכל האפליקציה (editor.css נטען בכל מסך) ומשנה קישורים בתוך טקסט. הוגבל ל-`body:has(.ed)`
+  (וכל כללי ה-`#sheet` של V14), ו-`</>` רק ל-`linkish[data-code]`. בדיקה סטטית: אין כלל `#sheet` לא מוגבל.
+- ⚪ תפריט ה-Navigator מתבטל כבר ב-4px (כמו סף הגרירה); `lastTouch` מתאפס 800ms אחרי שחרור במגע; רמז הרוחב — פעם אחת למכשיר
+  (`localStorage`), וההערות על השורות הנכונות.

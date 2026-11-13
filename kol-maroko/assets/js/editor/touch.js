@@ -28,9 +28,17 @@
       c.onHeldTap = n => { if (this.hintAt && performance.now() - this.hintAt < 8000) return; this.hintAt = performance.now(); this.o.note?.('נשאר על ' + c.label(n) + ' — לבחירת ההורה: ↑ "בחר הורה" בסרגל הנבחר, או פירורי הלחם'); };
       this.mo = new MutationObserver(() => this.layout()); this.mo.observe(this.el.root, { attributes: true, attributeFilter: ['class'] });
       const rs = () => this.layout(); window.addEventListener('resize', rs); this.offs.push(() => window.removeEventListener('resize', rs));
-      // גרירה פעילה (לחיצה ארוכה על כרטיס / פריט בספרייה): הדפדפן אינו מתחיל לגלול — אחרת pointercancel מסיים את הגרירה
-      const tm = e => { if (this.S.build?.drag?.active) e.preventDefault(); };
-      document.addEventListener('touchmove', tm, { capture: true, passive: false }); this.offs.push(() => document.removeEventListener('touchmove', tm, { capture: true }));
+      // גרירה פעילה (לחיצה ארוכה על כרטיס / פריט בספרייה): הדפדפן אינו מתחיל לגלול — אחרת pointercancel מסיים את הגרירה.
+      // המאזין (לא passive) רשום רק מ-drag.start ועד drag.end — שאר הזמן הגלילה אינה ממתינה ל-main thread
+      const D = this.S.build?.drag;
+      if (D) {
+        const tm = e => { if (D.active) e.preventDefault(); };
+        let on = false; const add = () => { if (!on) { on = true; document.addEventListener('touchmove', tm, { capture: true, passive: false }); } }, rm = () => { if (on) { on = false; document.removeEventListener('touchmove', tm, { capture: true }); } };
+        const st = D.start.bind(D), en = D.end.bind(D);
+        D.start = (...a) => { add(); return st(...a); };
+        D.end = (...a) => { try { return en(...a); } finally { if (!D.active) rm(); } };
+        this.offs.push(() => { rm(); D.start = st; D.end = en; });
+      }
       this.layout();
     }
     unmount() { this.mo?.disconnect(); this.offs.forEach(f => f()); this.offs = []; }
@@ -125,8 +133,8 @@
       const r = this.el.root; if (!r.isConnected) return;
       for (const k of HEIGHTS) r.classList.toggle('ts-' + k, this.phone() && k === this.height);
       for (const g of r.querySelectorAll('[data-ts-grip]')) { g.tabIndex = this.phone() ? 0 : -1; if (this.phone()) g.removeAttribute('aria-hidden'); else g.setAttribute('aria-hidden', 'true'); }   // במחשב — אין עצירת Tab בלתי נראית
-      if (this.fsBtn) this.fsBtn.hidden = !this.phone();
-      if (this.land() && !this.landHinted) { this.landHinted = true; this.o.note?.('מצב רוחב — העורך על כל המסך. לכותרת וללשוניות של האפליקציה: סובבו את המכשיר לאורך'); }                   // מסך מלא — רק מתחת ל-1000px (שם הוא פועל)
+      if (this.fsBtn) this.fsBtn.hidden = !this.phone();   // ⛶ — רק מתחת ל-1000px, שם מסך מלא פועל
+      if (this.land() && !this.landHinted) { this.landHinted = true; let seen = false; try { seen = localStorage.getItem('kol-editor-landhint') === '1'; localStorage.setItem('kol-editor-landhint', '1'); } catch { /* */ } if (!seen) this.o.note?.('מצב רוחב — העורך על כל המסך. לכותרת וללשוניות של האפליקציה: סובבו את המכשיר לאורך'); }                   // מסך מלא — רק מתחת ל-1000px (שם הוא פועל)
       const side = this.openSide(), panes = r.querySelector('.ed-panes');
       let cover = 0;
       if (side && !this.land() && panes) { const top = side.getBoundingClientRect().top, cur = parseFloat(r.style.getPropertyValue('--ts-cover')) || 0, bot = panes.getBoundingClientRect().bottom + cur; cover = Math.max(0, Math.round(bot - top)); }

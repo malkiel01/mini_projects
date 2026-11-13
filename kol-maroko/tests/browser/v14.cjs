@@ -82,6 +82,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await s.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(400);
       return mid;
     };
+    // מאזיני touchmove שאינם passive על ה-document (CDP) — רק בזמן גרירה
+    const tmCount = async page => { const c = await cdpOf(page); const { result } = await c.send('Runtime.evaluate', { expression: 'document' }); const { listeners } = await c.send('DOMDebugger.getEventListeners', { objectId: result.objectId }); return listeners.filter(l => l.type === 'touchmove' && !l.passive).length; };
     const rectOf = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, cx: r.x + r.width / 2, cy: r.y + r.height / 2 }; }, sel);
     const sheetOpen = page => page.evaluate(() => document.getElementById('sheet').open);
     const closeSheet = page => page.evaluate(() => { const d = document.getElementById('sheet'); if (d.open) d.close(); });
@@ -94,16 +96,35 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await ctx.close();
     }
 
-    // ═══ 0. Monaco: קריאות חופפות — loader.js נטען פעם אחת (v12 נפל לסירוגין: "_amdLoaderGlobal has already been declared") ═══
+    // ═══ 0. Monaco (project.js / code.js): ה-flake של v12 ("_amdLoaderGlobal has already been declared") נסגר ב-V16 (data-monaco-loader);
+    //      V14 מוסיף: איפוס בכישלון — תג שנכשל ב-error מוסר והניסיון הבא טוען מחדש; ב-timeout התג נשאר והניסיון הבא מחכה לו ═══
     {
-      const c0 = await mk(390, 844), pg = await c0.newPage(), errs0 = [];
-      pg.on('pageerror', e => errs0.push(e.message));
-      await pg.goto(base + '/index.php#/words', { waitUntil: 'domcontentloaded' });   // מסך שבו Monaco עוד לא נטען
-      await pg.waitForFunction(() => typeof Project !== 'undefined' && !!Project.loadMonaco, null, { timeout: 20000 });
-      const st0 = await pg.evaluate(async () => { const pre = document.querySelectorAll('script[src$="monaco/vs/loader.js"]').length; const ms = await Promise.all([Project.loadMonaco(), Project.loadMonaco(), Project.loadMonaco()]); return { pre, loaders: document.querySelectorAll('script[src$="monaco/vs/loader.js"]').length, same: ms.every(m => m === ms[0]) && !!ms[0] }; });
-      await sleep(500);
-      ok(st0.loaders === 1 && st0.same && !errs0.length, 'Monaco: שלוש קריאות חופפות ל-loadMonaco — loader.js אחד, אותו אובייקט, בלי שגיאת דף', { st0, errs0 });
-      await c0.close();
+      const LD = '**/monaco/vs/loader.js';
+      const fresh = async () => { const c0 = await mk(390, 844), pg = await c0.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(base + '/index.php#/words', { waitUntil: 'domcontentloaded' }); await pg.waitForFunction(() => typeof Project !== 'undefined' && !!Project.loadMonaco && typeof Code !== 'undefined' && !!Code.loadMonaco, null, { timeout: 20000 }); return { c0, pg, errs }; };
+      const loaders = pg => pg.evaluate(() => document.querySelectorAll('script[data-monaco-loader]').length);
+      // (א) loader.js חסום ← כישלון ← שחרור ← ניסיון חוזר מצליח, עם תג אחד ובלי שגיאת דף
+      { const { c0, pg, errs } = await fresh();
+        await pg.route(LD, r => r.abort());
+        const r1 = await pg.evaluate(() => Project.loadMonaco().then(() => 'ok', e => 'fail:' + e.message));
+        const after1 = await loaders(pg);
+        await pg.unroute(LD);
+        const r2 = await pg.evaluate(() => Project.loadMonaco().then(m => !!m && !!window.monaco, e => 'fail:' + e.message));
+        await sleep(300);
+        ok(/^fail/.test(r1) && after1 === 0 && r2 === true && await loaders(pg) === 1 && !errs.length, 'Monaco: loader.js חסום ← כישלון (התג הוסר) ← ניסיון חוזר מצליח — תג אחד, בלי שגיאת דף', { r1, after1, r2, n: await loaders(pg), errs });
+        await c0.close(); }
+      // (ב) Code.loadMonaco ו-Project.loadMonaco חופפים — loader אחד, אותו אובייקט
+      { const { c0, pg, errs } = await fresh();
+        const r = await pg.evaluate(async () => { const [a, b, c] = await Promise.all([Code.loadMonaco(), Project.loadMonaco(), Code.loadMonaco()]); return { same: a === b && b === c && !!a }; });
+        await sleep(300);
+        ok(r.same && await loaders(pg) === 1 && !errs.length, 'Monaco: Code.loadMonaco + Project.loadMonaco חופפים — loader.js אחד, אותו אובייקט, בלי שגיאת דף', { r, n: await loaders(pg), errs });
+        await c0.close(); }
+      // (ג) רשת איטית: Code מוותר ב-timeout (15s) בזמן ש-Project עוד מחכה (20s) — התג אינו מוסר, Project מצליח, ניסיון חוזר של Code מצליח
+      { const { c0, pg, errs } = await fresh();
+        await pg.route(LD, async r => { await sleep(16500); try { await r.continue(); } catch { /* */ } });
+        const r = await pg.evaluate(async () => { const pc = Code.loadMonaco().then(() => 'ok', e => 'fail'), pp = Project.loadMonaco().then(() => 'ok', e => 'fail'); const [c, p] = await Promise.all([pc, pp]); const c2 = await Code.loadMonaco().then(() => 'ok', () => 'fail'); return { c, p, c2 }; });
+        await sleep(300);
+        ok(r.c === 'fail' && r.p === 'ok' && r.c2 === 'ok' && await loaders(pg) === 1 && !errs.length, 'Monaco: רשת איטית — Code ב-timeout לא מסיר את התג; Project מצליח, וניסיון חוזר של Code מצליח, בלי שגיאת דף', { r, n: await loaders(pg), errs });
+        await c0.close(); }
     }
 
     // ═══ 1. 390×844 — המסך ═══
@@ -585,10 +606,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const tgt = await at(page, H1, 0, 0.5, 0.9);
       const t2k = await page.evaluate(() => Editor._state.doc.text());
       if (card2 && tgt) {
-        const mid = await realDrag(page, card2, tgt, { hold: 650, steps: 12, stepMs: 40, during: () => page.evaluate(() => !!Editor._state.build.drag.active) });
+        const tm0 = await tmCount(page); let tm1 = -1;
+        const mid = await realDrag(page, card2, tgt, { hold: 650, steps: 12, stepMs: 40, during: async () => { tm1 = await tmCount(page); return page.evaluate(() => !!Editor._state.build.drag.active); } });
         await page.waitForFunction(t => Editor._state.doc.text() !== t, t2k, { timeout: 15000 }).catch(() => {}); await sleep(600);
         const t3k = await page.evaluate(() => Editor._state.doc.text());
         ok(mid === true && t3k !== t2k, 'V16 · לחיצה ארוכה על "' + card2.name + '" ← גרירה לקנבס במגע — נוסף (' + await lastTx(page) + ')', { mid });
+        const tm2 = await tmCount(page);
+        ok(tm1 === tm0 + 1 && tm2 === tm0, 'מאזין touchmove שאינו passive על ה-document — רק בזמן הגרירה (לא כל עוד העורך פתוח)', { tm0, tm1, tm2 });
         if (t3k !== t2k) { await undo(page); await sleep(600); }
         ok(await page.evaluate(() => Editor._state.doc.text()) === t2k, 'V16 · Ctrl+Z מחזיר את הגרירה');
       } else ok(false, 'V16 · כרטיס / יעד לגרירה לא נמצא', { card2, tgt });
@@ -655,7 +679,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(Math.abs(st.w - st.iw * 0.4) < 4 && st.h >= st.ih - 2 && st.top <= 1, 'מצב רוחב (844×390): הגיליון בצד, ברוחב 40%', st);
       await pg.evaluate(() => document.querySelector('.ed-info .ed-side-head .icon-btn').click()); await sleep(400);
       st = await pg.evaluate(() => { const e = document.querySelector('.ed').getBoundingClientRect(), cv = document.querySelector('.ed-canvas').getBoundingClientRect(); return { edTop: Math.round(e.top), edBot: Math.round(e.bottom), cvH: Math.round(cv.height), cvBot: Math.round(cv.bottom), ih: innerHeight, sh: document.documentElement.scrollHeight }; });
-      st.hint = await pg.evaluate(() => (document.querySelector('.ed-note:not([hidden])') || {}).textContent || '');
+      st.hint = await pg.evaluate(() => { try { localStorage.removeItem('kol-editor-landhint'); } catch { /* */ } const T = Editor._state.touch; T.landHinted = false; T.layout(); return (document.querySelector('.ed-note:not([hidden])') || {}).textContent || ''; });
+      st.again = await pg.evaluate(() => { const T = Editor._state.touch; T.landHinted = false; document.querySelector('.ed-note .icon-btn')?.click(); T.layout(); return !!document.querySelector('.ed-note:not([hidden])'); });
+      ok(!st.again, 'מצב רוחב: הרמז מוצג פעם אחת למכשיר, לא בכל פתיחה', st.again);
       ok(/סובבו/.test(st.hint), 'מצב רוחב: רמז — לכותרת וללשוניות מסובבים לאורך', st.hint);
       ok(st.edTop <= 1 && st.edBot <= st.ih + 1 && st.cvBot <= st.ih + 1 && st.cvH >= 200, 'מצב רוחב: העורך על כל המסך (מעל כותרת האפליקציה), והקנבס ' + st.cvH + 'px מתוך ' + st.ih, st);
       await shot(pg, 'v14-landscape'); await c3.close();
@@ -699,6 +725,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }
       ok(!bad.length && depth === 0, '§2.7 · כל כלל CSS של V14 בתוך max-width: 999px או pointer: coarse', bad);
       ok(['top', 'right', 'bottom', 'left'].every(k => blk.includes('env(safe-area-inset-' + k + ')')), '§2.1 · אזור בטוח בכל ארבעת הקצוות (env(safe-area-inset-*))');
+      { const leaks = blk.split(/[{}]/).filter((_, i) => i % 2 === 0).flatMap(h => h.split(',')).map(x => x.trim()).filter(x => /^#sheet\b/.test(x));
+        ok(!leaks.length, 'editor.css נטען בכל המסכים — כל כלל של V14 על #sheet מוגבל לעורך (body:has(.ed))', leaks); }
       { const all = css.replace(/\/\*[\s\S]*?\*\//g, ''); let d = 0, mn = 0; for (const ch of all) { if (ch === '{') d++; else if (ch === '}') { d--; mn = Math.min(mn, d); } }
         ok(d === 0 && mn === 0, 'editor.css כולו מאוזן (עומק 0) — אף בלוק אינו בולע את הבלוקים שאחריו', { d, mn }); }
       // מסך מגע ≥1000px (לפטופ / טאבלט גדול): הפריסה של המחשב, וכללי pointer: coarse חלים
@@ -719,6 +747,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         st.tabs = await pg.evaluate(() => [...document.querySelectorAll('[data-ts-grip]')].map(g => g.tabIndex));
         ok(!st.cls.length && st.tabs.every(x => x === -1) && st.grips.every(x => x === 0) && !st.mv && !st.navtools && st.cover === '0px' && !st.fit && !st.pal, w + ': אין שום סימן של V14 (ידיות גיליון, ⬆ ⬇, סרגל Navigator, קיצור הקנבס)', st);
         ok(st.l <= 16 && st.r <= 16, w + ': העורך ממלא את המסך, בלי ריק בצדדים', st);
+        if (w === 1366) {   // Navigator: גובה השורה מתעדכן חי כשהקלט הופך למגע (2-in-1 / אמולציה)
+          const rows = () => pg.evaluate(() => { const rs = [...document.querySelectorAll('.ed-nav .nv-row')].slice(0, 4).map(r => r.getBoundingClientRect()); return { h: rs.map(r => Math.round(r.height)), gap: rs.slice(1).map((r, i) => Math.round(r.top - rs[i].top)), coarse: matchMedia('(pointer: coarse)').matches, R: window.KolNavigator.ROW }; });
+          await pg.evaluate(() => { const e = document.querySelector('.ed'); if (!e.classList.contains('nav-open')) document.querySelector('.ed-bar [data-panel="nav"]').click(); }); await sleep(300);
+          const r0 = await rows();
+          const cd = await pg.context().newCDPSession(pg); await cd.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await sleep(600);
+          const r1 = await rows();
+          ok(r0.R === 30 && r0.h.every(x => x === 30) && r0.gap.every(x => x === 30) && r1.coarse && r1.R === 44 && r1.h.every(x => x === 44) && r1.gap.every(x => x === 44), '1366: Navigator — גובה השורה ומרווח השורות מתעדכנים חי כשהקלט הופך למגע (30 ← 44)', { r0, r1 });
+        }
         await shot(pg, 'v14-' + w); await c5.close();
       }
     }

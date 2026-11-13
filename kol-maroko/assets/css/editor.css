@@ -894,9 +894,9 @@ dialog.hd-sheet .hd { padding: 0; }
   .tp-row .icon-btn { min-width: 44px; min-height: 44px; }
   .ed-ctx-head .icon-btn { min-width: 44px; min-height: 44px; }
   /* V15 במגע: בורר העמוד, מנהל העמודים והגדרות העמוד (בגיליון בטלפון, בצד בטאבלט) — 44px */
-  #sheet .btn, #sheet .icon-btn, #sheet .pg-search, #sheet .hd-in, .pg-pop .btn, .pg-pop .pg-search, .pg-mgr .btn, .pg-mgr .icon-btn, .ed-hd .btn, .ed-hd .icon-btn, .ed-hd .hd-in { min-height: 44px; }
-  #sheet .icon-btn, .pg-mgr .icon-btn, .ed-hd .icon-btn, #sheet .hd-color, .ed-hd .hd-color { min-width: 44px; min-height: 44px; }
-  #sheet .linkish, .ed-hd .linkish { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
+  body:has(.ed) #sheet .btn, body:has(.ed) #sheet .icon-btn, body:has(.ed) #sheet .pg-search, body:has(.ed) #sheet .hd-in, .pg-pop .btn, .pg-pop .pg-search, .pg-mgr .btn, .pg-mgr .icon-btn, .ed-hd .btn, .ed-hd .icon-btn, .ed-hd .hd-in { min-height: 44px; }   /* #sheet — רק כשהעורך פתוח (editor.css נטען בכל המסכים) */
+  body:has(.ed) #sheet .icon-btn, .pg-mgr .icon-btn, .ed-hd .icon-btn, body:has(.ed) #sheet .hd-color, .ed-hd .hd-color { min-width: 44px; min-height: 44px; }
+  body:has(.ed) #sheet .linkish[data-code], .ed-hd .linkish[data-code] { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }   /* רק "</>" של שורות התגיות בהגדרות העמוד — לא קישורים בתוך טקסט */
   .hd-check { min-height: 44px; }
   .hd-check input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
   /* V16 במגע: ספריית הרכיבים המוכנים — חיפוש, קטגוריות, "⤢ לוח רחב" ו-✕ — 44px */
