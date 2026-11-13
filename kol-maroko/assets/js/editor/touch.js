@@ -9,7 +9,7 @@
 (() => {
   'use strict';
   const PHONE = '(max-width: 999px)', COARSE = '(pointer: coarse)', LAND = '(max-width: 999px) and (orientation: landscape) and (max-height: 599px)';
-  const LS = 'kol-editor-sheet', HEIGHTS = ['row', 'half', 'full'];
+  const LS = 'kol-editor-sheet', LS_FS = 'kol-editor-fs', HEIGHTS = ['row', 'third', 'half', 'full'];
   const mq = q => window.matchMedia(q).matches;
   const h = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) { if (v == null || v === false) continue; if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? '' : v); } e.append(...kids.flat().filter(x => x != null)); return e; };
 
@@ -21,8 +21,8 @@
       if (!HEIGHTS.includes(this.height)) this.height = 'half';
       this.zoom = 1; this.vvFake = null;
       this.realWidth();
-      this.paletteBtn();
-      this.sheets(); this.selTools(); this.navTools(); this.repeat(); this.keyboard(); this.pinch();
+      this.paletteBtn(); this.fullBtn();
+      this.sheets(); this.selTools(); this.navTools(); this.navRows(); this.repeat(); this.keyboard(); this.pinch();
       const c = this.S.canvas, prev = c.onSelect;
       c.onSelect = (...a) => { if (prev) prev(...a); this.afterSelect(); };
       this.mo = new MutationObserver(() => this.layout()); this.mo.observe(this.el.root, { attributes: true, attributeFilter: ['class'] });
@@ -61,18 +61,32 @@
       const upd = () => { this.palBtn.hidden = !this.touchy(); }; window.addEventListener('resize', upd); this.offs.push(() => window.removeEventListener('resize', upd));
     }
 
-    // ── הגיליון: שלושה גבהים ────────────────────────────────
+    // ── מסך מלא: העורך מעל כותרת האפליקציה והלשוניות (במצב רוחב — תמיד) ──
+    fullBtn() {
+      const bar = this.el.bar; if (!bar) return;
+      let on = false; try { on = localStorage.getItem(LS_FS) === '1'; } catch { /* */ }
+      this.fsBtn = h('button', { type: 'button', class: 'icon-btn ts-fsb', 'data-ts-fs': true, 'aria-pressed': 'false', 'aria-label': 'מסך מלא לעורך — הקנבס מעל כותרת האפליקציה והלשוניות', title: 'מסך מלא לעורך', hidden: !this.touchy() || null, onclick: () => this.setFull(!this.el.root.classList.contains('ts-fs')) }, '⛶');
+      const ref = bar.querySelector('[data-panel="nav"]'); if (ref) ref.before(this.fsBtn); else bar.prepend(this.fsBtn);
+      this.setFull(on, true);
+    }
+    setFull(on, quiet) {
+      on = !!on && this.phone(); this.el.root.classList.toggle('ts-fs', on); this.fsBtn?.setAttribute('aria-pressed', String(on));
+      if (!quiet) try { localStorage.setItem(LS_FS, on ? '1' : '0'); } catch { /* */ }
+    }
+
+    // ── הגיליון: ארבעה גבהים — שורה · שליש · חצי · מלא ────────────────────────────────
     sheets() {
       for (const side of this.el.root.querySelectorAll('.ed-side')) {
         const id = side.classList.contains('ed-nav') ? 'nav' : 'info';
         const grip = h('div', { class: 'ts-grip', 'data-ts-grip': id, role: 'button', tabindex: '0', 'aria-label': 'גובה הגיליון — גרירה למעלה / למטה; הקשה מחליפה (שורה · חצי · מלא)', title: 'גרירה: שורה · חצי · מלא · למטה — סגירה' }, h('span', { class: 'ts-grip-bar' }));
         side.prepend(grip);
+        side.addEventListener('transitionend', e => { if (e.target === side && e.propertyName === 'height') this.layout(); });   // הקנבס מתקצר לפי הגובה הסופי, לא באמצע המעבר
         grip.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.cycle(); } });
         const head = side.querySelector('.ed-side-head');
         for (const t of [grip, head]) if (t) t.addEventListener('pointerdown', e => this.gripDown(e, side, id, t === grip));
       }
     }
-    px(k) { const vh = this.vh(); return k === 'row' ? Math.min(132, vh * 0.3) : k === 'half' ? Math.round(vh * 0.5) : Math.round(vh - 56); }
+    px(k) { const vh = this.vh(); return k === 'row' ? Math.min(132, vh * 0.3) : k === 'third' ? Math.round(vh * 0.36) : k === 'half' ? Math.round(vh * 0.5) : Math.round(vh - 56); }
     vh() { const v = this.vv(); return v ? v.height : window.innerHeight; }
     gripDown(e, side, id, isGrip) {
       if (!this.phone() || this.land() || getComputedStyle(side).position !== 'fixed') return;
@@ -106,6 +120,8 @@
     layout() {
       const r = this.el.root; if (!r.isConnected) return;
       for (const k of HEIGHTS) r.classList.toggle('ts-' + k, this.phone() && k === this.height);
+      for (const g of r.querySelectorAll('[data-ts-grip]')) { g.tabIndex = this.phone() ? 0 : -1; if (this.phone()) g.removeAttribute('aria-hidden'); else g.setAttribute('aria-hidden', 'true'); }   // במחשב — אין עצירת Tab בלתי נראית
+      if (this.fsBtn) this.fsBtn.hidden = !this.touchy();
       const side = this.openSide(), panes = r.querySelector('.ed-panes');
       let cover = 0;
       if (side && !this.land() && panes) { const top = side.getBoundingClientRect().top, cur = parseFloat(r.style.getPropertyValue('--ts-cover')) || 0, bot = panes.getBoundingClientRect().bottom + cur; cover = Math.max(0, Math.round(bot - top)); }
@@ -209,7 +225,7 @@
         if (bar.hidden) return;
         const m = this.moves(n), w = B.canWrite();
         const b = (k, icon, label) => h('button', { type: 'button', class: 'btn sm', 'data-ts-nv': k, 'aria-label': label, title: label, disabled: !w || !m || !m[k] || null, onclick: () => { const mm = this.moves(this.S.canvas.selected); if (mm && mm[k]) { mm[k](); draw(); } } }, icon);
-        bar.replaceChildren(h('span', { class: 'ts-navname' }, this.S.canvas.label(n)), b('up', '↑', 'למעלה'), b('down', '↓', 'למטה'), b('in', '⤵', 'הכנס לרובריקה שלפני'), b('out', '⤴', 'הוצא מהרובריקה'),
+        bar.replaceChildren(h('span', { class: 'ts-navname' }, this.S.canvas.label(n)), b('up', '↑', 'למעלה'), b('down', '↓', 'למטה'), b('in', '→', 'פנימה — לתוך הרובריקה שלפני'), b('out', '←', 'החוצה — אל מחוץ לרובריקה'),
           h('button', { type: 'button', class: 'btn sm', 'data-ts-nv': 'to', disabled: !w || !m || null, onclick: () => B.moveSheet(this.S.canvas.selected) }, '↕ העבר אל…'));
       };
       this.drawNav = draw;
@@ -217,6 +233,19 @@
       const c = this.S.canvas, prev = c.onSelect; c.onSelect = (...a) => { if (prev) prev(...a); draw(); };
       const prevCh = c.onChange; c.onChange = (...a) => { if (prevCh) prevCh(...a); draw(); this.warnFree(); };
       draw();
+    }
+
+    /** לכל שורה ב-Navigator (במגע): "↕" — ↑ ↓ → ← והעברה לכל יעד, לשורה הזו (גם כשאינה הנבחרת). */
+    navRows() {
+      const N = this.S.nav, B = this.S.build; if (!N || !B) return;
+      const orig = N.row.bind(N);
+      N.row = (r, i, sel) => {
+        const e = orig(r, i, sel); if (!this.touchy() || !r.n.parent || window.KolStruct.ROOTS.has(r.n.tag)) return e;
+        const b = h('button', { type: 'button', class: 'nv-ic ts-rowmv', 'data-ts-rowmv': i, tabindex: '-1', 'aria-label': 'הזזת השורה — למעלה, למטה, פנימה, החוצה, או לכל יעד', title: 'הזזה: ↑ ↓ → ← או "העבר אל…"' }, '↕');
+        b.addEventListener('click', ev => { ev.stopPropagation(); if (!B.canWrite()) return; B.moveSheet(r.n); });
+        e.insertBefore(b, e.querySelector('.nv-ic')); return e;
+      };
+      N.draw();
     }
 
     // ── −/+ : לחיצה ארוכה חוזרת ומאיצה ──────────────────────
