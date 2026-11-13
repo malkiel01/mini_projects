@@ -28,6 +28,11 @@
       this.search.addEventListener('keydown', e => { if (e.key === 'ArrowDown' || e.key === 'Enter') { e.preventDefault(); this.list.focus(); if (this.rows[0] && !this.index.has(this.canvas.selected)) this.pick(this.rows[0].n); } });
       this.list.addEventListener('scroll', () => this.draw(), { passive: true });
       this.list.addEventListener('click', e => this.onClick(e));
+      // V13: תפריט ההקשר על שורה — לחיצה ימנית, או לחיצה ארוכה במגע
+      const rowAt = e => { const el = e.target.closest && e.target.closest('.nv-row'); return el ? this.rows[+el.dataset.i] : null; };
+      this.list.addEventListener('contextmenu', e => { const r = rowAt(e); if (!r || !this.onContext) return; e.preventDefault(); clearTimeout(this.longT); if (this.longDone) { this.longDone = false; return; } this.onContext(r.n, e.clientX, e.clientY); });
+      this.list.addEventListener('pointerdown', e => { clearTimeout(this.longT); this.longDone = false; if (e.pointerType !== 'touch') return; const r = rowAt(e), x = e.clientX, y = e.clientY; if (r) this.longT = setTimeout(() => { if (this.onContext) { this.longDone = true; this.onContext(r.n, x, y); } }, 550); });
+      for (const ev of ['pointerup', 'pointercancel', 'scroll']) this.list.addEventListener(ev, () => clearTimeout(this.longT), { passive: true });
       this.list.addEventListener('keydown', e => this.onKeys(e));
       new ResizeObserver(() => this.draw()).observe(this.list);
     }
