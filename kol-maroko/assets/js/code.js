@@ -9,23 +9,29 @@ const Code = (() => {
 
   // ── Monaco ─────────────────────────────────────────────
   let monaco = null;
+  let monacoP = null;                                                       // טעינה אחת גם בקריאות חופפות (loader.js פעמיים — "_amdLoaderGlobal has already been declared")
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
     if (window.monaco) return Promise.resolve(monaco = window.monaco);      // כבר נטען במסך 📁 פרויקט
-    return new Promise((ok, fail) => {
+    if (monacoP) return monacoP;
+    return (monacoP = new Promise((ok, fail) => {
       const t = setTimeout(() => fail(new Error('העורך לא נטען')), 15000);
       // ה-workers מכתובת אחרת — דרך blob, אחרת הדפדפן חוסם
       window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob(
         [`self.MonacoEnvironment={baseUrl:'${MONACO}/../'};importScripts('${MONACO}/base/worker/workerMain.js');`], { type: 'text/javascript' })) };
-      const s = document.createElement('script');
-      s.src = MONACO + '/loader.js';
-      s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
-      s.onload = () => {
+      const done = () => {
         window.require.config({ paths: { vs: MONACO } });
         window.require(['vs/editor/editor.main'], m => { clearTimeout(t); monaco = m; ok(m); }, e => { clearTimeout(t); fail(e); });
       };
+      if (window.require?.config) return done();                           // ה-loader כבר נטען (מסך אחר)
+      const prev = document.querySelector('script[src$="monaco/vs/loader.js"]');
+      if (prev) { prev.addEventListener('load', done); prev.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
+      const s = document.createElement('script');
+      s.src = MONACO + '/loader.js';
+      s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
+      s.onload = done;
       document.head.append(s);
-    });
+    }).catch(e => { monacoP = null; throw e; }));
   }
 
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;

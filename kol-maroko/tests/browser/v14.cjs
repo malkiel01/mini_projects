@@ -94,6 +94,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await ctx.close();
     }
 
+    // ═══ 0. Monaco: קריאות חופפות — loader.js נטען פעם אחת (v12 נפל לסירוגין: "_amdLoaderGlobal has already been declared") ═══
+    {
+      const c0 = await mk(390, 844), pg = await c0.newPage(), errs0 = [];
+      pg.on('pageerror', e => errs0.push(e.message));
+      await pg.goto(base + '/index.php#/words', { waitUntil: 'domcontentloaded' });   // מסך שבו Monaco עוד לא נטען
+      await pg.waitForFunction(() => typeof Project !== 'undefined' && !!Project.loadMonaco, null, { timeout: 20000 });
+      const st0 = await pg.evaluate(async () => { const pre = document.querySelectorAll('script[src$="monaco/vs/loader.js"]').length; const ms = await Promise.all([Project.loadMonaco(), Project.loadMonaco(), Project.loadMonaco()]); return { pre, loaders: document.querySelectorAll('script[src$="monaco/vs/loader.js"]').length, same: ms.every(m => m === ms[0]) && !!ms[0] }; });
+      await sleep(500);
+      ok(st0.loaders === 1 && st0.same && !errs0.length, 'Monaco: שלוש קריאות חופפות ל-loadMonaco — loader.js אחד, אותו אובייקט, בלי שגיאת דף', { st0, errs0 });
+      await c0.close();
+    }
+
     // ═══ 1. 390×844 — המסך ═══
     const ctx = await mk(390, 844), page = await newPage(ctx, '390');
     await openEd(page);
