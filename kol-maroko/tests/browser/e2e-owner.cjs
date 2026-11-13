@@ -425,7 +425,7 @@ const png = (w, h, rgb) => {
       ok((await call(page, 'build_get', undefined, '&id=' + b1.id)).build.status === 'live', 'הגרסה "באתר"');
       // מה שבאוויר אצל האתר — העמוד עם השינויים של בעל העמוד
       let liveHtml = '';
-      try { const man = JSON.parse(fs.readFileSync(path.join(wpDir, 'v2', 'live.json'), 'utf8')); liveHtml = fs.readFileSync(path.join(wpDir, 'v2', 'blobs', man.files[man.entry || 'index.html'].sha256), 'utf8'); } catch (e) { liveHtml = 'ERR ' + e.message; }
+      try { const man = JSON.parse(fs.readFileSync(path.join(wpDir, 'uploads', 'kol-maroko', 'v2', 'live.json'), 'utf8')); liveHtml = fs.readFileSync(path.join(wpDir, 'uploads', 'kol-maroko', 'v2', 'blobs', man.files[man.entry || 'index.html'].sha256), 'utf8'); } catch (e) { liveHtml = 'ERR ' + e.message; }
       ok(/קול מרוקו שלי/.test(liveHtml) && /ומשפחתו/.test(liveHtml), 'באתר: index.html עם הכותרת והטקסט שבעל העמוד שינה', liveHtml.slice(0, 120));
       await shot(page, 'e2e-11-applied-1920');
     });
