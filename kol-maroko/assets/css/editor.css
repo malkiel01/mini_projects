@@ -639,3 +639,76 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .scp-sum { font-weight: 600; }
 .scp-shared { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .85rem; }
 .scp-tip { position: absolute; z-index: 6; pointer-events: none; padding: 2px 8px; background: var(--ink); color: var(--surface); border-radius: 6px; font-size: .78rem; white-space: nowrap; }
+/* V14 — העורך במגע. כל כלל כאן בתוך max-width: 999px או pointer: coarse — המחשב (≥1000px, עכבר) אינו משתנה. */
+@media (max-width: 999px) {
+  /* סרגל עליון בשורה אחת: מה שלא נכנס — גולל בתוך הסרגל, לא את העמוד */
+  .ed-bar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; padding-bottom: 1px; }
+  .ed-bar::-webkit-scrollbar { display: none; }
+  .ed-bar .ed-page { flex: 0 0 104px; min-width: 0; }
+  .ed-bar [data-panel], .ed-bar .ts-pal { order: -1; }   /* 🌳 ℹ️ 🔎 — ראשונים, תמיד גלויים */
+  /* שורת השביל — שורה אחת (בחירה אינה מזיזה את הקנבס בין שתי הקשות): סרגל הנבחר עד 62% וגולל, ופירורי הלחם ביתר — לא מתכווצים לאפס */
+  .ed-path { flex-wrap: nowrap; gap: 4px; padding-inline: 4px; height: 48px; min-height: 48px; }
+  .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
+  .ed-crumbs { flex: 1 1 0; min-width: 34%; }
+  .ed-where { display: none; }
+  .ts-freewarn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ts-freewarn[hidden] { display: none; }
+  .ts-freewarn span { flex: 1 1 200px; }
+  /* E2E ⚪7: ידיות 📏 — נקודה של 12px באמצע אזור מגע של 44px, כדי שלא יכסו את הכותרת */
+  .sp.phone .sp-h { background: radial-gradient(circle, #e67e22 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; border: 0; opacity: 1; }
+  .fx-rad { background: radial-gradient(circle, #fff 0 3.5px, #e0c 4px 7px, transparent 7.5px) !important; border: 0 !important; box-shadow: none !important; }   /* ידית הרדיוס (V10) — נקודה, לא עיגול של 44px על הטקסט */
+  .sp.phone .sp-h-padding { background: radial-gradient(circle, #4c9a2a 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; }
+  .ed { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  /* הגיליון: ידית, שלושה גבהים */
+  .ts-grip { display: flex; justify-content: center; align-items: center; flex: none; height: 22px; cursor: grab; touch-action: none; }
+  .ts-grip-bar { width: 44px; height: 5px; border-radius: 3px; background: var(--line, #c9ccd1); }
+  .ed-side-head { touch-action: none; }
+  .ed .ed-side.ed-info, .ed .ed-side.ed-nav { width: auto; }   /* הגיליון ברוחב המסך ("‎.ed-info { width: 320px }" של המחשב גבר עליו) */
+  .ed-side .sg-target { position: static; }   /* בגיליון נמוך תיבת "חל על" הדביקה (~200px) כיסתה את השליטות שמתחתיה */
+  .ed.ts-row .ed-side { height: calc(min(132px, 30dvh) + env(safe-area-inset-bottom)); }
+  .ed.ts-half .ed-side { height: 50dvh; }
+  .ed.ts-full .ed-side { height: calc(100dvh - 56px); }
+  .ed .ed-side.ts-dragging { transition: none; }
+  .ed-side { transition: height .18s ease, bottom .12s ease; }
+  /* הקנבס מתקצר עד ראש הגיליון — האלמנט הנבחר נגלל אל מעליו */
+  .ed-panes { margin-bottom: var(--ts-cover, 0px); }
+  /* מקלדת: הגיליון ושורת עיצוב הטקסט צמודים מעליה */
+  .ed.ts-kb .ed-side { bottom: var(--ts-kb, 0px); max-height: calc(100dvh - var(--ts-kb, 0px) - 8px); padding-bottom: 0; }
+  .ed.ts-kb.typing .ed-tbar { position: fixed !important; left: 0 !important; right: 0 !important; top: auto !important; bottom: var(--ts-kb, 0px) !important; max-width: none; z-index: 40; border-radius: 0; }
+  /* Navigator: הזזת השורה הנבחרת */
+  .ts-navtools { display: flex; align-items: center; gap: 4px; padding: 4px var(--s1); border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; }
+  .ts-navtools[hidden] { display: none; }
+  .ts-navtools .btn { min-width: 44px; min-height: 44px; flex: none; }
+  .ts-navname { flex: 1 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: .75rem ui-monospace, monospace; color: var(--muted); direction: ltr; }
+  .nv-row .nv-tw { width: 34px; }
+  /* צביטה: הקנבס המוגדל גולל */
+  .ed.ts-zoomed .ed-canvas.spike-canvas { overflow: auto; }
+  .ed-panes { position: relative; }
+  .ts-fit { position: absolute; z-index: 8; top: 6px; inset-inline-end: 6px; min-height: 40px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); }
+  .ts-fit[hidden] { display: none; }
+}
+@media (max-width: 999px) and (orientation: landscape) and (max-height: 599px) {
+  /* מצב רוחב: הגיליון בצד, ברוחב 40% */
+  .ed .ed-side, .ed.ts-row .ed-side, .ed.ts-half .ed-side, .ed.ts-full .ed-side { top: 0; bottom: 0; height: auto; width: 40vw; inset-inline: auto 0; border-radius: 0 14px 14px 0; padding-top: env(safe-area-inset-top); }
+  .ts-grip { display: none; }
+  .ed-panes { margin-bottom: 0; }
+}
+@media (min-width: 768px) and (max-width: 999px) and (orientation: portrait) {
+  /* טאבלט: הפאנל בצד (320px), ה-Navigator — גיליון */
+  .ed .ed-side.ed-info { position: static; height: auto; width: 320px; border-radius: var(--r); box-shadow: none; z-index: auto; padding-bottom: 0; }
+  .ed-info .ts-grip { display: none; }
+}
+@media (pointer: coarse) {
+  /* ידיות: אזור מגע של 44×44 סביב הנקודה הנראית */
+  .sp-h::after, .sp-fs::after, .ed-handle::after, .sz-h::after, .fx-rad::after, .tf-rot::after, .bz-h::after { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
+  /* הערך הצף — מעל האצבע, לא מתחתיה */
+  .sp-num { transform: translate(-50%, -84px); }
+  .sz-tip, .fx-tip { transform: translate(-50%, -44px); }
+  .sg-step { min-width: 44px; min-height: 44px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+  .ts-mv { min-width: 40px; min-height: 40px; }
+  .ed-crumb { min-height: 44px; }
+  /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */
+  .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }
+  .tp-row .icon-btn { min-width: 44px; min-height: 44px; }
+  .ed-ctx-head .icon-btn { min-width: 44px; min-height: 44px; }
+}
