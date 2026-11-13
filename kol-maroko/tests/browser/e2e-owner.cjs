@@ -21,6 +21,7 @@
  * 15. 👥 אנשים: "+ הוסף עוזר" עם תפקיד.
  * 16. ↩️ שחזור: 📌 נקודה ← מחיקת מילה ← "↩️ שחזור לנקודה הזו".
  * 17. 🐞 בעורך: הצבעה על אלמנט ← "פתיחת מטלה" ← DevLoop.
+ * 18. V13: לחיצה ימנית ← העתק / הדבק סגנון, 🕘 היסטוריה (חזרה לצעד), Ctrl+E, 📄 שמור כתבנית ← גרירה לקנבס, 🗜 ZIP.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -564,6 +565,54 @@ const png = (w, h, rgb) => {
       const dl = await page.evaluate(() => document.body.innerText);
       ok(!!code && dl.includes(code), 'DevLoop ← "מטלות ממתינות לך" — ' + code + ' ברשימה', dl.replace(/\s+/g, ' ').slice(0, 300));
       await shot(page, 'e2e-17-devloop-1920');
+    });
+
+
+    // ═══ 18. V13: תפריט הקשר, Ctrl+E, תבניות, היסטוריה ═══
+    const ctxItem = async (pg, sel, txt, i = 0, fx, fy) => { const pt = await at(pg, sel, i, fx, fy); await pg.mouse.click(pt.x, pt.y); await sleep(300); await pg.mouse.click(pt.x, pt.y, { button: 'right' }); await sleep(500); const it = pg.locator('.ed-ctx [role=menuitem], .ed-ctx button').filter({ hasText: txt }).first(); const dis = await it.getAttribute('aria-disabled'); await it.click(); await sleep(700); return dis !== 'true'; };
+    await step('18. נוחות (V13): לחיצה ימנית, Ctrl+E, תבניות, היסטוריה', async () => {
+      if (!page.url().includes('editor')) { await page.click('a:has-text("🎨 עורך")'); }
+      await ready(page);
+      // העתק / הדבק סגנון: מהכותרת אל שורת המשנה
+      const fs0 = await cs(page, '.kadisha-hero-subtitle-main', 'fontSize'), fsH = await cs(page, 'h1', 'fontSize');
+      ok(await ctxItem(page, 'h1', 'העתק סגנון'), 'לחיצה ימנית על הכותרת ← "🎨 העתק סגנון"');
+      await ctxItem(page, '.kadisha-hero-subtitle-main', 'הדבק סגנון');
+      if (await page.isVisible('#sheet[open] button.primary')) { await page.click('#sheet[open] button.primary'); await sleep(900); }
+      const fs1 = await cs(page, '.kadisha-hero-subtitle-main', 'fontSize');
+      ok(fs1 === fsH && fs1 !== fs0, 'לחיצה ימנית על שורת המשנה ← "🖌 הדבק סגנון" — הגודל של הכותרת', { fs0, fsH, fs1 });
+      // 🕘 היסטוריה — הצעד בשמו, ולחיצה על הצעד שלפניו מחזירה
+      await page.click('[data-ntab="hist"]'); await sleep(600);
+      const hist = await page.$$eval('[data-hist]', a => a.map(x => x.textContent.trim()));
+      ok(hist.some(t => /הדבק סגנון/.test(t)), '🕘 היסטוריה — "הדבק סגנון" ברשימה, בשמו', hist.slice(-4));
+      const prev = await page.$$eval('[data-hist]', a => { const i = a.findIndex(x => /הדבק סגנון/.test(x.textContent)); return i > 0 ? a[i - 1].dataset.hist : null; });
+      if (prev) { await page.click(`[data-hist="${prev}"]`); await sleep(900); }
+      ok(await cs(page, '.kadisha-hero-subtitle-main', 'fontSize') === fs0, 'לחיצה על הצעד שלפני — שורת המשנה חזרה לגודלה');
+      await shot(page, 'e2e-18-history-1920');
+      // Ctrl+E — "צבע טקסט" לאלמנט הנבחר
+      await click(page, 'h1');
+      await page.keyboard.press('Control+e'); await sleep(500);
+      await page.keyboard.type('צבע טקסט'); await sleep(400); await page.keyboard.press('Enter'); await sleep(700);
+      const focused = await page.evaluate(() => { const a = document.activeElement; return a && (a.closest('[data-field], .sg-row, .sg-line') || a).textContent.replace(/\s+/g, ' ').slice(0, 60); });
+      ok(/צבע טקסט/.test(focused || '') || await page.isVisible('[data-color="color"]'), 'Ctrl+E ← "צבע טקסט" ← Enter — השדה בפאנל', focused);
+      await page.keyboard.press('Escape'); await sleep(200);
+      // 📄 שמור כתבנית ← הלשונית ← הוספה לעמוד ← Ctrl+Z
+      await ctxItem(page, '.kadisha-hero', 'שמור כתבנית', 0, 0.03, 0.05);
+      await page.fill('[data-ts="label"]', 'פס פתיחה'); await page.fill('[data-ts="name"]', 'hero-band');
+      await page.click('[data-ts-go]'); await until(() => page.evaluate(() => !document.getElementById('sheet').open), 15000); await sleep(1000);
+      await page.click('[data-ntab="tpl"]'); await sleep(600);
+      ok(await page.isVisible('.ed-lib-item[data-lib="tpl-hero-band"]'), 'לחיצה ימנית ← "📄 שמור כתבנית" — "▤ פס פתיחה" בלשונית 📄 תבניות');
+      const n0 = await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('.kadisha-hero').length);
+      await drag(page, await box(page, '.ed-lib-item[data-lib="tpl-hero-band"]'), await at(page, '.kadisha-lexicon-count', 0, 0.5, 0.9)); await sleep(1200);
+      const n1 = await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('[class*="kadisha-hero"]:is(section)').length);
+      ok(n1 === n0 + 1, 'גרירת התבנית לקנבס — עוד פס פתיחה בעמוד', { n0, n1 });
+      await shot(page, 'e2e-18-template-1920');
+      await undo(page); await sleep(500);
+      ok(await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('[class*="kadisha-hero"]:is(section)').length) === n0, 'Ctrl+Z — הפס שנוסף הוסר');
+      // 🗜 ZIP של התבנית — הורדה
+      const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.click('[data-tpl-export="hero-band"]')]);
+      const zp = path.join(data, 'tpl.zip'); await dl.saveAs(zp);
+      const zb = fs.readFileSync(zp);
+      ok(zb.slice(0, 2).toString() === 'PK' && zb.includes('template.html'), '🗜 — ZIP של התבנית הורד (template.html בתוכו)', zb.length);
     });
 
     // ═══ 12. 390 — מגע ═══
