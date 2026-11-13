@@ -393,11 +393,13 @@
       for (const ev of ['click', 'auxclick', 'dblclick', 'submit', 'dragstart', 'contextmenu']) doc.addEventListener(ev, stop, true);
       // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
       this.deadTags = DEAD.split(',').map(t => doc.getElementsByTagName(t));
+      // V14: התפריט נפתח בשחרור הלחיצה הארוכה, וה-click של אותו שחרור היה נוחת על הפריט שמתחת לאצבע (גם "מחק") — בולעים אותו, פעם אחת
+      const swallowClick = () => { const top = window, eat = ev => { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); off(); }, off = () => { top.removeEventListener('click', eat, true); clearTimeout(tm); }, tm = setTimeout(off, 350); top.addEventListener('click', eat, true); };
       const ctxAt = (t, x, y) => { const n = this.nodeOf(t); if (n && this.onContext) { const f = this.frame.getBoundingClientRect(); this.onContext(n, f.left + x * this.scale, f.top + y * this.scale); } };
       doc.addEventListener('contextmenu', e => { if (this.lastPT === 'touch' || (this.onDragStart && this.press && this.press.touch)) return;   /* V14: במגע התפריט — רק מהלחיצה הארוכה (ctxAt); contextmenu של הדפדפן (Android, הקשה כפולה) לא פותח אותו */ clearTimeout(this.longT); if (!this.longDone) ctxAt(this.hit(e), e.clientX, e.clientY); this.longDone = false; }, true);
       doc.addEventListener('pointerdown', e => {
+        this.lastPT = e.pointerType;   // V14: לפני בדיקת הכפתור — לחיצה ימנית בעכבר אחרי הקשה (מכשיר היברידי) פותחת תפריט
         if (e.button > 0) return;
-        this.lastPT = e.pointerType;   // V14
         if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
         if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) { this.press = null; return; }   // V11: עריכת ערך של המילה
         clearTimeout(this.longT); this.longDone = false;
@@ -408,7 +410,7 @@
           const t = tg, x = e.clientX, y = e.clientY;
           // V4: לחיצה ארוכה (400ms) מחמשת גרירה; תזוזה אחריה — גרירה, ושחרור בלי תזוזה — תפריט ההקשר
           if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; if (this.selected !== p.n && !this.picked().includes(p.n)) this.select(p.n); try { navigator.vibrate?.(12); } catch { /* V14: רטט קצר — אם יש */ } } }, 400);
-          else this.longT = setTimeout(() => { this.longDone = true; this.held = this.press && this.press.n; /* V14 */ this.press = null; ctxAt(t, x, y); }, 600);
+          else this.longT = setTimeout(() => { this.longDone = true; this.held = this.press && this.press.n; /* V14 */ this.press = null; swallowClick(); ctxAt(t, x, y); }, 600);
         }
         const n = this.pick(tg);
         if (n !== this.held) this.held = null;                              // V14: אלמנט אחר — הלחיצה הארוכה כבר אינה רלוונטית
@@ -444,7 +446,7 @@
         clearTimeout(this.longT);
         if (this.alt) { const A = this.alt; this.alt = null; if (A.on) { this.press = null; this.onAltDrag(e.type === 'pointerup' ? 'drop' : 'cancel', A.n, this.pick(this.hit(e))); return; } }
         if (this.ext && this.ext.active) { this.press = null; const f = this.frame.getBoundingClientRect(); this.ext.end(e.type === 'pointerup', f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
-        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; this.held = p.n; /* V14 */ ctxAt(p.t, p.x, p.y); return; }
+        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; this.held = p.n; /* V14 */ swallowClick(); ctxAt(p.t, p.x, p.y); return; }
         this.armed = null;
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);

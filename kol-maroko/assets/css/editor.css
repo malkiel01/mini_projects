@@ -329,6 +329,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .sg-pos9 button { width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); cursor: pointer; padding: 0; }
 .sg-pos9 button[aria-pressed=true] { background: var(--accent, #36c); color: #fff; }
 .ed-bgtools { display: inline-flex; gap: 4px; align-items: center; }
+.ed-bgtools > .ed-word { white-space: nowrap; }   /* "🖼 תמונת רקע:" לא נשבר לשלוש שורות (1920) */
 .bg-move { position: absolute; z-index: 30; outline: 2px dashed #f90; outline-offset: -2px; cursor: move; touch-action: none; background: rgba(255, 153, 0, .06); pointer-events: auto; }
 .bg-move:focus { outline-style: solid; }
 .bg-move-bar { position: absolute; inset-inline-start: 50%; transform: translateX(50%); bottom: 6px; display: flex; gap: 4px; align-items: center; padding: 4px; border-radius: 10px; background: rgba(20, 20, 20, .82); color: #fff; cursor: default; direction: ltr; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 8px); }
@@ -899,7 +900,7 @@ dialog.hd-sheet .hd { padding: 0; }
   .ts-rowmv { opacity: .7; }
   .ed-crumb { min-height: 44px; }
   /* V14 (🔴 בעלים): במגע תיבת המיקום החופשי אינה מכסה את האלמנט — החלקה עליו גוללת; הגרירה — מידית ✥ של 44px מעליו */
-  .ps-move { pointer-events: none; touch-action: auto; }
+  .ps-move { pointer-events: none; touch-action: none; }   /* האלמנט עצמו — שקוף לאירועים (ההחלקה עוברת); touch-action של התיבה חל על הידית ::after */
   .ps-move::after { content: '✥'; pointer-events: auto; touch-action: none; position: absolute; left: 50%; top: 0; width: 44px; height: 44px; transform: translate(-50%, calc(-100% - 2px));
     display: grid; place-items: center; border-radius: 50%; background: var(--brand, #36c); color: #fff; font-size: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
   /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */

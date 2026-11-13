@@ -175,7 +175,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await check('החלקה שמתחילה על אלמנט במיקום חופשי (absolute, נבחר)', '[data-v14-free]', 0.6);
       st = await page.evaluate(() => { const b = document.querySelector('[data-ps-move]'); if (!b || b.hidden) return null; const cs = getComputedStyle(b), af = getComputedStyle(b, '::after'); return { pe: cs.pointerEvents, ta: cs.touchAction, grip: af.pointerEvents, w: parseFloat(af.width), h: parseFloat(af.height) }; });
       ok(st && st.pe === 'none' && st.grip === 'auto' && st.w >= 44 && st.h >= 44, 'מיקום חופשי במגע: התיבה אינה תופסת את האלמנט (החלקה עוברת), והגרירה — מידית ✥ של 44px', st);
-      for (let i = 0; i < 5 && await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) !== tF; i++) await undo(page);
+      { await top0(); await sleep(300);
+        const g = await page.evaluate(() => { const b = document.querySelector('[data-ps-move]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top - 24 }; });
+        const r0 = await page.evaluate(() => { const r = document.querySelector('[data-v14-free]') ? Editor._state.canvas.doc.querySelector('[data-v14-free]').getBoundingClientRect() : null; return r && { l: Math.round(r.left), t: Math.round(r.top) }; });
+        const css0 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+        if (g) await realDrag(page, g, { x: g.x - 30, y: g.y + 40 }, { steps: 10, stepMs: 30 });
+        await sleep(400);
+        const css1 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+        ok(!!g && css1 !== css0, 'מיקום חופשי: גרירה במגע אמיתי (CDP) מהידית ✥ — מזיזה את האלמנט (נכתב ל-CSS)', { g, r0, changed: css1 !== css0 }); }
+      for (let i = 0; i < 6 && await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) !== tF; i++) await undo(page);
       ok(await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) === tF, 'Ctrl+Z מחזיר את המיקום החופשי');
       // הקשה בלי תזוזה — עדיין בוחרת
       await top0(); await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(400);
@@ -375,6 +383,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await undo(page);
       ok(await page.evaluate(() => Editor._state.doc.text()) === tq, 'V13 · Ctrl+Z מחזיר');
       await page.evaluate(() => Editor._state.menu?.close());
+      // במגע אמיתי (CDP): לחיצה ארוכה ← שחרור ← התפריט פתוח, ושום פריט לא הופעל (ה-click של השחרור נבלע)
+      for (const sel of ['h1', '.kadisha-hero-subtitle-main, h1 + *']) {
+        await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(500);
+        const lp = await at(page, sel); const tL = await page.evaluate(() => Editor._state.doc.text() + '|' + Editor._state.tx.length);
+        const c = await cdpOf(page), tp = [{ x: Math.round(lp.x), y: Math.round(lp.y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+        await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp }); await sleep(750);
+        await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(600);
+        const r = await page.evaluate(t => ({ menu: !!document.querySelector('.ed-ctx'), same: Editor._state.doc.text() + '|' + Editor._state.tx.length === t, tx: Editor._state.tx.length ? Editor._state.tx[Editor._state.tx.length - 1].label : '' }), tL);
+        ok(r.menu && r.same, 'לחיצה ארוכה במגע אמיתי (' + sel.split(',')[0] + ') — התפריט פתוח, ושום פעולה לא רצה (ה-click של השחרור לא נוחת על פריט)', r);
+        await page.evaluate(() => Editor._state.menu?.close()); await sleep(300);
+      }
     }
 
     // ═══ 9. הקלדה (V2) + מקלדת וירטואלית ═══
