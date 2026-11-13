@@ -240,7 +240,8 @@ const png = (w, h, rgb) => {
       let H = await html(page);
       ok(/<img[^>]*src="media\/hero-red\.png"/.test(H), '"＋🖼️ תמונה" ← בחירה מהספרייה — <img> בעמוד', H.match(/<img[^>]*>/g));
       await click(page, '.kadisha-hero img');
-      ok(await page.isVisible('[data-swap-img]'), 'תמונה נבחרת — "🖼️ החלף" בסרגל');
+      ok(await page.isVisible('[data-swap-img]'), 'תמונה נבחרת — "🖼️ החלף" בסרגל', { sel: await crumb(page), imgs: await page.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.kadisha-hero img')].map(e => e.outerHTML.slice(0, 100) + ' ' + JSON.stringify(e.getBoundingClientRect()))) });
+      await shot(page, 'e2e-05-img-select-1920');
       await page.click('[data-swap-img]'); await sleep(500);
       const [fc2] = await Promise.all([page.waitForEvent('filechooser', { timeout: 8000 }), page.click('#sheet[open] [data-pick-upload]')]);
       await fc2.setFiles(GREEN);
@@ -317,8 +318,8 @@ const png = (w, h, rgb) => {
     await step('9. רכיב: שמור, גרור, שני מופעים', async () => {
       await click(page, '.kadisha-lexicon-controls input[type="search"], .kadisha-lexicon-controls input', 0);
       let sel = await crumb(page);
-      // הלחיצה נופלת על ילד — בעל העמוד עולה דרך שביל הפירורים שמעל הקנבס
-      if (!/kadisha-lexicon-controls/.test(sel || '')) { await page.locator('.ed-crumb', { hasText: 'kadisha-lexicon-controls' }).first().click().catch(e => console.log('   (שביל: ' + e.message.split('\n')[0] + ')')); await sleep(400); sel = await crumb(page); }
+      // הלחיצה נופלת על ילד — בעל העמוד עולה ב"↑ בחר הורה" שליד שביל הפירורים (השביל מקצר שמות ארוכים ל-…)
+      for (let k = 0; k < 4 && !/kadisha-lexicon-controls/.test(sel || ''); k++) { await page.click('.ed-seltools-host [aria-label="בחר הורה"], .ed-seltools-host [title="בחר הורה"]'); await sleep(300); sel = await crumb(page); }
       ok(/kadisha-lexicon-controls/.test(sel || ''), 'שורת החיפוש והנושאים נבחרה', sel);
       await tabP(page, 'content');
       await page.click('[data-w="comp-save"]'); await sleep(400);
