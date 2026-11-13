@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js', /* V15 */ 'assets/js/editor/head.js', 'assets/js/editor/pages.js', /* V14 */ 'assets/js/editor/touch.js'];
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js', /* V15 */ 'assets/js/editor/head.js', 'assets/js/editor/pages.js', /* V14 */ 'assets/js/editor/touch.js', 'assets/js/editor/kit.js'];   /* V16: kit.js */
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -1062,7 +1062,7 @@ const Editor = (() => {
         note, pick, url: refUrl, resolve: refPath, rel: relRef, details: S.info, removeEl: remove, tagField: n => S.build?.tagField(n) });
       el.handle = h('button', { type: 'button', class: 'ed-handle', hidden: true, 'aria-label': 'שינוי גודל התמונה — גרירה (Shift: בלי לשמור יחס)', title: 'גרירה משנה את הרוחב ושומרת יחס · Shift — חופשי' }); el.handle.addEventListener('pointerdown', handleDown);
       el.size = h('span', { class: 'ed-size', hidden: true }); c.layer.append(el.handle, el.size);
-      c.onDraw = () => { S.comp?.drawTags(); S.states?.apply(); S.lv?.drawBoxes(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); S.fx?.drawHandles(); S.mo?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
+      c.onDraw = () => { S.comp?.drawTags(); S.kit?.draw(); /* V16 */ S.states?.apply(); S.lv?.drawBoxes(); drawHandle(); S.build?.draw(); S.bg?.place(); S.pos?.drawHandle(); S.lay?.drawHandles(); S.fx?.drawHandles(); S.mo?.drawHandles(); }; c.onDropFile = (file, n) => dropFile(file, n);
       S.styler = new window.KolStyle.Styler({ canvas: c, details: S.info, sheets: () => S.sheets, file: () => S.file, doc: () => S.doc, pagePath, basePath, getDevice: writeDevice, getDevices: () => DEVICES.map(d => ({ id: d.id, label: d.label, max: d.max })) });
       const dOpt = mode => ({ mode, canvas: c, styler: S.styler, nodes: () => c.picked(), write: writeStyle, preview, unpreview, openAt: (p, line) => Project.openAt(p, line), canWrite: () => !!canWrite(), sheets: () => S.sheets,
         highlight: els => S.space?.highlight(els), hint: phys => S.space?.hint(phys), layout: (n, d) => S.build?.layoutSection(n, d), pickSide: side => { if (S.space) { S.space.side = side; S.space.sidePicked = c.selected; } }, setDevice: id => setDevice(id) });
@@ -1169,6 +1169,8 @@ const Editor = (() => {
       }
       S.content.pages = S.pages;
       S.pages.load().then(() => drawAll());
+      /* V16: ספריית הרכיבים המוכנים (kit.js) — הלשונית, הלוח הרחב, העתקה בשימוש ראשון, מצבים בקנבס, "➕ פריט" */
+      S.kit = window.KolKit ? new window.KolKit.Kit({ comp: S.comp, canvas: c, build: S.build, mid: el.mid, host: el.compBody, act, writeOps, joinTx, attachFx, txCount: () => S.tx.length, note, sheet, undo, canWrite: () => !!canWrite(), phone }) : null;
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
       S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone, note });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
@@ -1202,7 +1204,7 @@ const Editor = (() => {
     if (id === 'hist') S.hist?.draw();
     if (id === 'tpl') S.tpl?.load().catch(e => note(e.message, true));
   }
-  function unmount() { if (!S.host) return; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  function unmount() { if (!S.host) return; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.kit?.unmount(); S.kit = null; /* V16 */ S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
   return { view, unmount, selectAt, _head: () => S.head, _pages: () => S.pages, _openPage: openPage, _live: livePage, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };

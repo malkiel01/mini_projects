@@ -1,0 +1,14 @@
+{
+  "name": "audio-player",
+  "label": "נגן שמע",
+  "icon": "🎧",
+  "category": "מדיה",
+  "fields": [
+    {"id": "src", "label": "קובץ השמע", "control": "media", "target": {"src": ".kol-audio__el"}},
+    {"id": "title", "label": "שם ההקלטה", "control": "text", "target": {"text": ".kol-audio__title"}},
+    {"id": "accent", "label": "צבע", "control": "color", "target": {"var": "--kol-audio-accent"}}
+  ],
+  "states": [
+    {"id": "ui", "label": "הנגן", "options": [{"label": "מעוצב (אחרי JS)", "root": "is-ready"}, {"label": "מתנגן", "root": "is-ready is-playing"}]}
+  ]
+}

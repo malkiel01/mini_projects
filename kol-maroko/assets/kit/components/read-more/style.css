@@ -1,0 +1,9 @@
+/* רכיב מוכן: קרא עוד (kit 1.0.0). בלי JS — כל הטקסט גלוי והכפתור מוסתר. עם JS: is-ready ← מקופל; is-open ← פתוח. */
+.kol-more { --kol-more-h: 4.5em; --kol-more-accent: var(--color-accent, #a3322a); }
+.kol-more__body > :first-child { margin-top: 0; }
+.kol-more__btn { display: none; margin-top: 8px; padding: 6px 14px; border: 1px solid var(--kol-more-accent); border-radius: 999px; background: transparent; color: var(--kol-more-accent); font: inherit; font-weight: 600; cursor: pointer; }
+.kol-more__btn:focus-visible { outline: 2px solid var(--kol-more-accent); outline-offset: 2px; }
+.kol-more.is-ready:not(.is-short) .kol-more__btn { display: inline-block; }
+.kol-more.is-ready:not(.is-open):not(.is-short) .kol-more__body { max-height: var(--kol-more-h); overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.kol-more__close, .kol-more.is-open .kol-more__open { display: none; }
+.kol-more.is-open .kol-more__close { display: inline; }

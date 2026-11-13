@@ -755,6 +755,53 @@ dialog.hd-sheet .hd { padding: 0; }
 /* V15b: "לא להופיע בחיפוש" ותיבות סימון בטופס — כל השורה לחיצה, ≥44px; כתובת העמוד בלוח */
 .hd-check { min-height: 44px; cursor: pointer; padding-block: 4px; }
 .pg-addr { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; overflow-wrap: anywhere; }
+/* V16: ספריית הרכיבים המוכנים (kit.js) — בלשונית "🧩 רכיבים", והלוח הרחב מעל הקנבס */
+.kit { display: grid; gap: var(--s2); margin-bottom: var(--s3); }
+.kit-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); }
+.kit-head h4 { margin: 0; }
+.kit-q { width: 100%; min-height: 36px; }
+.kit-cats { display: flex; flex-wrap: wrap; gap: 4px; }
+.kit-cat { border: 1px solid var(--line); background: var(--surface); color: inherit; border-radius: 999px; padding: 2px 10px; min-height: 30px; font: inherit; font-size: .8rem; cursor: pointer; }
+.kit-cat[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.kit-cat:disabled { opacity: .45; cursor: default; }
+.kit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 132px), 1fr)); gap: var(--s2); }
+.kit-cell { display: grid; gap: 4px; min-width: 0; }
+.kit-card { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: inherit; font: inherit; font-size: .82rem; text-align: start; cursor: grab; touch-action: pan-y; min-width: 0; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.kit-card:hover, .kit-card:focus-visible { border-color: var(--brand); }
+.kit-card.kit-hold { outline: 2px solid var(--brand); }
+.kit-prev { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 6px; background: var(--bg); pointer-events: none; }
+.kit-noprev { display: grid; place-items: center; font-size: 1.6rem; }
+.kit-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kit-tag { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kit-tag[data-kit-state="in"] { color: var(--ok); }
+.kit-tag[data-kit-state="mod"], .kit-tag[data-kit-state="taken"] { color: #b45309; }
+.kit-tag[data-kit-state="upd"] { color: #7c3aed; font-weight: 600; }
+.kit-upd { justify-self: stretch; }
+.ed-mid { position: relative; }
+.kit-board { position: absolute; inset: auto 0 0 0; height: min(60%, 600px); z-index: 30; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); background: var(--surface); border-top: 2px solid var(--brand); box-shadow: 0 -8px 24px rgba(16, 24, 40, .18); overflow: hidden; }
+.kit-board.kit-dragging { opacity: 0; pointer-events: none; transition: opacity .15s; }
+.kit-bhead { display: flex; align-items: center; gap: var(--s3); }
+.kit-bhead .hint { flex: 1; margin: 0; }
+.kit-bfilters { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--s2); min-width: 0; }
+.kit-bfilters .kit-cats { flex-wrap: nowrap; overflow-x: auto; min-width: 0; scrollbar-width: thin; }
+.kit-bfilters .kit-cat { white-space: nowrap; flex: none; }
+.kit-bfilters .kit-q { width: min(280px, 40%); flex: none; }
+.kit-board .kit-grid { flex: 1; min-height: 0; overflow: auto; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); align-content: start; }
+.kit-group select { min-height: 34px; max-width: 100%; }
+.kit-st { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kit-chip { position: absolute; z-index: 4; display: flex; gap: 4px; pointer-events: auto; direction: rtl; }
+.kit-chip-b { border: 0; border-radius: 6px; padding: 2px 8px; min-height: 26px; background: #7c3aed; color: #fff; font: 600 12px/22px system-ui, sans-serif; cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.kit-chip-b:disabled { opacity: .5; }
+.kit-cmp section { margin-block: var(--s2); }
+.kit-cmp2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
+.kit-cmp2 pre { max-height: 240px; overflow: auto; font-size: .75rem; background: var(--bg); padding: 6px; border-radius: 6px; white-space: pre-wrap; }
+@media (max-width: 999px) {
+  .kit-board { position: fixed; inset: auto 0 0 0; height: 70vh; height: min(70dvh, calc(var(--vvh, 100dvh) - 60px)); border-radius: 14px 14px 0 0; z-index: 60; }
+  .kit-board .kit-grid { grid-template-columns: repeat(auto-fill, minmax(min(46%, 150px), 1fr)); }
+  .kit-chip-b { min-height: 34px; font-size: 13px; }
+  .kit-cmp2 { grid-template-columns: 1fr; }
+}
+
 /* V14 — העורך במגע. כל כלל כאן בתוך max-width: 999px או pointer: coarse — המחשב (≥1000px, עכבר) אינו משתנה. */
 @media (max-width: 999px) {
   /* סרגל עליון בשורה אחת: מה שלא נכנס — גולל בתוך הסרגל, לא את העמוד */

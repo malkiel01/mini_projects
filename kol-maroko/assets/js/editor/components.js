@@ -376,8 +376,8 @@
     }
     /** "שמור ועדכן מופעים": כל המופעים בכל העמודים — לכל אחד ה-diff; מקושרים ← עדכון (הערכים נשמרים); שונים ← עדכן / נתק / דלג.
      *  "החל" — כל הקבצים בעסקה אחת (Ctrl+Z אחד). */
-    async applyAll() {
-      const sn = this.snap; if (!sn) return;
+    async applyAll(base) {
+      const sn = base || this.snap; if (!sn) return;   /* V16: base — עדכון רכיב מוכן מהכלי: הבסיס להשוואה = התבנית / הסכמה שלפני העדכון */
       const x = this.comps.get(sn.name); if (!x || !x.tpl) return;
       const oldS = sn.json != null ? C().parseSchema(sn.json, sn.name) : x.schema, newS = x.schema;
       if (newS.error) return this.note('component.json אינו תקין — ' + newS.error, true);
@@ -413,7 +413,7 @@
       go.addEventListener('click', () => {
         dlg.close();
         const todo = rows.filter(r => !r.same && r.choice !== 'skip').sort((a, b) => (a.p.path === b.p.path ? b.i - a.i : a.p.path.localeCompare(b.p.path)));
-        if (!todo.length) { this.snap = Object.assign({}, sn, { tpl: newT, json: x.json ? x.json.text() : sn.json }); return this.note('אין מה לעדכן'); }
+        if (!todo.length) { if (!base) this.snap = Object.assign({}, sn, { tpl: newT, json: x.json ? x.json.text() : sn.json }); return this.note('אין מה לעדכן'); }   /* V16 */
         const ops = todo.map(r => () => {
           const m = K().parseHtml(r.p.doc.text()), inst = C().instances(m, sn.name)[r.i]; if (!inst) return [];
           if (r.choice === 'detach') return [{ doc: r.p.doc, patches: K().html.removeAttr(m, inst.node, C().MARK).patches }];
@@ -421,7 +421,7 @@
         });
         const docs = this.writeOps(ops, 'עדכון מופעים · ' + (newS.label || sn.name) + ' · ' + todo.length + ' מופעים ב-' + new Set(todo.map(r => r.p.path)).size + ' קבצים');
         if (!docs) return;
-        this.snap = Object.assign({}, sn, { tpl: newT, json: x.json ? x.json.text() : sn.json });
+        if (!base) this.snap = Object.assign({}, sn, { tpl: newT, json: x.json ? x.json.text() : sn.json });   /* V16 */
         this.recount();
         this.note('עודכנו ' + todo.filter(r => r.choice === 'update').length + ' מופעים' + (todo.some(r => r.choice === 'detach') ? ', נותקו ' + todo.filter(r => r.choice === 'detach').length : ''), false, { label: 'בטל', run: this.undo });
       });

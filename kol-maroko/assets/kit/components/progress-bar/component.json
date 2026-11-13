@@ -1,0 +1,14 @@
+{
+  "name": "progress-bar",
+  "label": "פס התקדמות",
+  "icon": "📊",
+  "category": "מספרים",
+  "fields": [
+    {"id": "value", "label": "כמה מלא (למשל 72%)", "control": "size", "target": {"var": "--kol-progress-value"}},
+    {"id": "color", "label": "צבע הפס", "control": "color", "target": {"var": "--kol-progress-color"}},
+    {"id": "height", "label": "עובי", "control": "size", "target": {"var": "--kol-progress-h"}}
+  ],
+  "states": [
+    {"id": "fill", "label": "מילוי", "options": [{"label": "לפני שנכנס למסך (אחרי JS)", "root": "is-ready"}, {"label": "מלא (אחרי JS)", "root": "is-ready is-in"}]}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "star-rating",
+  "label": "דירוג כוכבים",
+  "icon": "⭐",
+  "category": "מספרים",
+  "fields": [
+    {"id": "value", "label": "הדירוג (0–5)", "control": "number", "target": {"var": "--kol-stars-value"}},
+    {"id": "text", "label": "הטקסט", "control": "text", "target": {"text": ".kol-stars__text"}},
+    {"id": "color", "label": "צבע הכוכבים", "control": "color", "target": {"var": "--kol-stars-color"}},
+    {"id": "size", "label": "גודל כוכב", "control": "size", "target": {"var": "--kol-stars-size"}}
+  ]
+}
