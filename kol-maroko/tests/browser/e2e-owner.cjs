@@ -54,8 +54,9 @@ const png = (w, h, rgb) => {
   execFileSync('php', [path.join(__dirname, 'f3-seed.php'), data, path.join(data, 'old.html')]);
   const [port, wpPort] = [await freePort(), await freePort()];
   const base = `http://127.0.0.1:${port}`, wp = `http://127.0.0.1:${wpPort}`;
-  // בעל האתר כבר חיבר את האתר (ערוץ משיכה, M7) — תנאי מוקדם, לא חלק מהתרחיש של בעל העמוד
-  execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+  // בעל האתר מחבר את האתר (ערוץ משיכה, M7) — לא חלק מהתרחיש של בעל העמוד. רק לפני הפרסום: site_url משנה את מקור הייבוא
+  // (התמונה של ה-hero נלקחת מהאתר), ולכן בייבוא — האתר של ברירת המחדל, כמו אצל הבעלים.
+  const connectSite = () => execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     setting_set('site_url', $argv[3]); setting_set('pub_channel', 'pull'); setting_set('pull_url', $argv[4]);
     file_put_contents($argv[5] . '/options.json', json_encode(['kol_maroko_keys' => pub_key_line(pub_key())]));`, data, ROOT, wp, base + '/pull.php', wpDir]);
   const env = { ...process.env, PHP_CLI_SERVER_WORKERS: '6' };
@@ -197,7 +198,8 @@ const png = (w, h, rgb) => {
       await page.click('[data-ntab="lib"]'); await sleep(300);
       const src = await box(page, '.ed-lib-item[data-lib="heading"]');
       const h0 = await html(page);
-      await drag(page, src, await at(page, '.kadisha-hero-subtitle', 1, 0.5, 0.9), { shell: true }); await sleep(500);
+      // אל השורה "LA VOIX DU MAROC / THE VOICE OF MOROCCO" — בעין, עוד כותרת על התמונה
+      await drag(page, src, await at(page, '.kadisha-hero-eyebrow', 0, 0.5, 0.9)); await sleep(500);
       const h1 = await html(page), added = (h1.match(/<h2[^>]*>כותרת<\/h2>/g) || []).length - (h0.match(/<h2[^>]*>כותרת<\/h2>/g) || []).length;
       ok(added === 1, '"＋ ספרייה" ← "H כותרת" נגררה אל ה-hero — כותרת חדשה בעמוד');
       const parent = await page.evaluate(() => { const e = [...Editor._state.canvas.doc.querySelectorAll('.kadisha-hero h2')].pop(); return e ? e.parentElement.localName + '.' + e.parentElement.className : null; });
@@ -327,7 +329,7 @@ const png = (w, h, rgb) => {
       await page.click('[data-ntab="comp"]'); await sleep(500);
       const src = await box(page, '.ed-lib-item[data-lib="comp-search-bar"]');
       ok(!!src, 'לשונית "🧩 רכיבים" — הרכיב ברשימה');
-      await drag(page, src, await at(page, '.kadisha-hero-subtitle', 1, 0.5, 0.9), { shell: true }); await sleep(900);
+      await drag(page, src, await at(page, '.kadisha-hero-subtitle', 1, 0.5, 0.9)); await sleep(900);
       const n = ((await html(page)).match(/data-kol-component="search-bar"/g) || []).length;
       ok(n === 2, 'גרירה לקנבס — שני מופעים בעמוד', n);
       await shot(page, 'e2e-09-component-1920');
@@ -362,6 +364,7 @@ const png = (w, h, rgb) => {
 
     // ═══ 11. בנייה ופרסום — עד התור ═══
     await step('11. בנייה ופרסום עד התור', async () => {
+      connectSite();
       await saved(page);
       await page.click('a:has-text("🚀 פרסום")');
       await page.waitForSelector('.pk .btn.primary', { timeout: 20000 });
