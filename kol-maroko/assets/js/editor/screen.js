@@ -1152,7 +1152,8 @@ const Editor = (() => {
       S.palette = new window.KolPalette.Palette({ actions: S.actions, canvas: c, panel, setTab, designHost: () => el.designBody, advHost: () => el.advBody, note, phone });
       S.nav.onContext = (n, x, y) => ctxMenu(n, x, y, 'nav');
       /* V15: ⚙️ הגדרות העמוד (head.js) ו-📄 עמודים (pages.js) */
-      S.head = new window.KolHead.Head({ canvas: c, K, act, joinTx, note, openInCode, pick, rel: relRef, url: p => refUrl(p), canWrite: () => !!canWrite(), phone, host: el.hdSide,
+      S.head = new window.KolHead.Head({ canvas: c, K, act, joinTx, note, openInCode, pick, rel: relRef, site: () => S.pages?.data?.site || '', base: () => S.pages?.data?.base || '/lexicon/',
+        url: p => { const sb = (S.pages?.data?.site || '\u0000') + (S.pages?.data?.base || '/lexicon/'); if (p.startsWith(sb)) { let q = p.slice(sb.length); try { q = decodeURIComponent(q); } catch { /* כמו שהוא */ } return S.token ? pvUrl(q) : ''; } return refUrl(p); }, /* V15b: og:image מוחלט ← התצוגה המבודדת */ canWrite: () => !!canWrite(), phone, host: el.hdSide,
         openAt: off => { const n = nodeAt(off); if (n) openInCode(n); else openInCode(); },
         pageUrl: () => (S.pages?.data?.base || '/lexicon/') + window.KolPages.urlOf(S.file?.path || ''), host_: () => location.host,
         editBody: () => { const b = c.m?.root?.kids?.find(k => k.tag === 'body'); if (!b) return note('לעמוד אין <body>', true); S.head.hide(); c.select(b); c.reveal(b); panel('info', true); setTab('design'); },
