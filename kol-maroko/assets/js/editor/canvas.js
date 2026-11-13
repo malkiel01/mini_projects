@@ -453,8 +453,8 @@
           if (t && now - t.at < 380 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 24 && this.onDbl) { this.tap = null; const n = this.nodeOf(this.hit(e)); if (n) { e.preventDefault(); this.dblAt = now; return this.onDbl(n, { x: e.clientX, y: e.clientY }); } }
         }
         if (p && !p.drag && e.type === 'pointerup' && p.touch && this.held === p.n && this.selected === p.n) { if (this.onHeldTap) this.onHeldTap(p.n); return; }   // V14: במגע, הקשה אחרי לחיצה ארוכה — נשאר על הנבחר (ההורה — ⬆ בסרגל, עם רמז)
-        if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent && !(p.touch && p.scrolled)) return this.select(p.n.parent);
-        if (p && p.touch && !p.drag && e.type === 'pointerup' && !p.scrolled && this.selected !== p.n) return this.select(p.n);   // V14: הקשה במגע בוחרת   // לחיצה חוזרת — ההורה
+        if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent && !(p.touch && p.scrolled)) { const from = p.n; this.select(p.n.parent); if (this.onUpLevel) this.onUpLevel(from, this.selected); return; }   // לחיצה חוזרת — ההורה (T2: עם רמז; V14: לא אחרי החלקה)
+        if (p && p.touch && !p.drag && e.type === 'pointerup' && !p.scrolled && this.selected !== p.n) return this.select(p.n);   // V14: הקשה במגע בוחרת
         if (!p || !p.drag || e.type !== 'pointerup') return;
         const drop = this.dropAt(p.n, e.clientX, e.clientY);
         if (!drop) return;

@@ -27,6 +27,7 @@
  * 21. 390 במגע (V14): גיליון תחתון וידית הגובה, האלמנט גלוי מעל הגיליון, ⬆⬇, לחיצה ארוכה ← תפריט, צביטה ← "⤢ התאם", 🔎.
  * 22. V15: ⚙️ כותרת / תיאור / תמונת שיתוף (העלאה), 📄 שמור את העמוד כתבנית ← ➕ עמוד "מתבנית עמוד", ⭐ ראשי וחזרה, 🚫 404.
  * 23. V16a: 🧩 רכיבים מוכנים — חיפוש, לחיצה ← אחרי הנבחר, הגדרה בפאנל, ➕ פריט, גרירה מהלוח הרחב, Ctrl+Z; 390 — הקשה בגיליון ← אחרי הנבחר.
+ * 24. V16b: תוכן עניינים ("↻ בנה מהכותרות"), תפריט ("↻ מהעמודים"), חלון קופץ (מתי / כמה פעמים) ← ▶️ נפתח לבד, נקודות על תמונה (גרירת נקודה), מצגת (➕), חלונית מהצד.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -878,6 +879,77 @@ const png = (w, h, rgb) => {
       ok(await nComp(pk, 'counter') === n0 + 1 && after === 'counter', '390: הקשה על "מונה" — נכנס מיד אחרי האלמנט הנבחר (' + selBefore + ')', { after, selBefore });
       await shot(pk, 'e2e-23-kit-390-added');
       await c5.close();
+    });
+
+
+    // ═══ 24. V16b: ניווט, חלונות, תנועה ═══
+    await step('24. רכיבים מוכנים חלק 2 (V16b): תוכן עניינים, תפריט, חלון קופץ, נקודות, מצגת, חלונית', async () => {
+      if (!page.url().includes('editor')) await page.click('a:has-text("🎨 עורך")');
+      await ready(page); await closeAll(page);
+      await compsTab(page);
+      ok(await page.locator('[data-kit-grid="lib"] .kit-card').count() >= 32, 'לשונית "🧩 רכיבים" — 32 רכיבים מוכנים (V16a + V16b)', await page.locator('[data-kit-grid="lib"] .kit-card').count());
+      // הוספה אחרי הכותרת: לחיצה על הכותרת, לחיצה על הכרטיס — הרכיב החדש נבחר
+      const addKit = async name => {
+        await click(page, 'h1'); if (!/^h1/.test(await crumb(page) || '')) { await click(page, '.kadisha-hero', 0, 0.03, 0.05); await click(page, 'h1'); }
+        await page.fill('[data-kit-q="lib"]', ''); await sleep(150);
+        await page.click(`[data-kit-grid="lib"] [data-kit-item="${name}"]`); await sleep(2200);
+        if (await page.isVisible('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]')) { await page.click('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]'); await sleep(2000); }
+        await tabP(page, 'content');
+        return nComp(page, name);
+      };
+      // תוכן עניינים ← "↻ בנה מהכותרות"
+      ok(await addKit('toc') === 1, '"תוכן עניינים" — בעמוד, אחרי הכותרת');
+      await page.click('[data-kit-action="toc"]'); await sleep(900);
+      const toc = await page.evaluate(() => { const d = Editor._state.canvas.doc, t = d.querySelector('[data-kol-component="toc"]'); return [...t.querySelectorAll('.kol-toc__link')].map(a => ({ href: a.getAttribute('href'), t: a.textContent.trim(), ok: !!d.getElementById(decodeURIComponent((a.getAttribute('href') || '#').slice(1))) })); });
+      ok(toc.length >= 1 && toc.every(x => /^#./.test(x.href) && x.ok), '"↻ בנה מהכותרות" — שורה לכל כותרת, והקישור מגיע לכותרת (id נוסף לה)', toc.slice(0, 5));
+      // תפריט ← "↻ מהעמודים"
+      ok(await addKit('nav-menu') === 1, '"תפריט" — בעמוד');
+      await page.click('[data-kit-action="pages"]'); await sleep(900);
+      const nav = await page.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('[data-kol-component="nav-menu"] a')].map(a => a.getAttribute('href') + '|' + a.textContent.trim()));
+      ok(nav.length >= 2 && nav.some(x => /ptgmym/.test(x)), '"↻ מהעמודים של הפרויקט" — קישור לכל עמוד (כולל "פתגמים" מצעד 22)', nav);
+      // חלון קופץ ← "מתי נפתח" / "כמה פעמים"
+      ok(await addKit('popup') === 1, '"חלון קופץ" — בעמוד');
+      await page.selectOption('[data-comp-panel] [data-cf="trigger"]', 'delay'); await sleep(400);
+      const dl = page.locator('[data-comp-panel] [data-cf="delay"]'); await dl.fill('1'); await dl.press('Enter'); await sleep(500);
+      await page.selectOption('[data-comp-panel] [data-cf="once"]', 'always'); await sleep(500);
+      let H = await html(page);
+      ok(/data-kol-trigger="delay"/.test(H) && /data-kol-delay="1"/.test(H) && /data-kol-once="always"/.test(H), 'בפאנל: "מתי נפתח" = אחרי 1 שנייה, "כמה פעמים" = תמיד — תכונות גלויות על <dialog>', (H.match(/<dialog[^>]*>/) || [])[0]);
+      // נקודות על תמונה ← גרירת נקודה
+      ok(await addKit('hotspot') === 1, '"נקודות על תמונה" — בעמוד');
+      const hs = await page.$$eval('[data-kit-handles] .kit-handle', a => a.map(b => { const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }));
+      ok(hs.length >= 1, 'הרכיב נבחר ← ידיות על הנקודות', hs.length);
+      const pin0 = (await html(page)).match(/kol-hotspot__pin"[^>]*style="--x: ([\d.]+)%; --y: ([\d.]+)%"/);
+      if (hs.length) await mdrag(page, hs[0], { x: hs[0].x - 60, y: hs[0].y + 30 });
+      const pin1 = (await html(page)).match(/kol-hotspot__pin"[^>]*style="--x: ([\d.]+)%; --y: ([\d.]+)%"/);
+      ok(pin0 && pin1 && (pin0[1] !== pin1[1] || pin0[2] !== pin1[2]), 'גרירת נקודה בקנבס ← --x / --y בקובץ', { before: pin0 && pin0.slice(1), after: pin1 && pin1.slice(1) });
+      await shot(page, 'e2e-24-hotspot-1920');
+      // מצגת ← ➕ פריט
+      ok(await addKit('slides') === 1, '"מצגת" — בעמוד');
+      const sl0 = await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('[data-kol-component="slides"] .kol-slides__slide, [data-kol-component="slides"] [class*="__slide"]').length);
+      if (await page.isVisible('[data-kit-add-item]')) { await page.click('[data-kit-add-item]'); await sleep(900); }
+      const sl1 = await page.evaluate(() => Editor._state.canvas.doc.querySelectorAll('[data-kol-component="slides"] .kol-slides__slide, [data-kol-component="slides"] [class*="__slide"]').length);
+      ok(sl1 === sl0 + 1, '"➕ פריט" — עוד שקופית', { sl0, sl1 });
+      // חלונית מהצד
+      ok(await addKit('off-canvas') === 1, '"חלונית מהצד" — בעמוד');
+      await shot(page, 'e2e-24-kit2-1920');
+      // ▶️ תצוגה חיה — החלון הקופץ נפתח אחרי שנייה
+      await saved(page);
+      await page.click('[data-ed-live-btn]'); await sleep(800);
+      ok(await page.isVisible('.pj-live[data-ed-live] iframe'), '▶️ — התצוגה החיה של העמוד שבעורך נפתחת');
+      const fr = await until(() => page.frames().find(f => /live\.php/.test(f.url())), 10000);
+      // הדף החי במקור אטום — קוראים דרך המסגרת של Playwright (כמו שהדפדפן מציג), לא דרך העמוד
+      const opened = fr ? await until(() => fr.evaluate(() => { const fs = [document, ...[...document.querySelectorAll('iframe')].map(f => { try { return f.contentDocument; } catch { return null; } }).filter(Boolean)]; return fs.some(d => [...d.querySelectorAll('dialog[data-kol-dialog]')].some(x => x.open)); }).catch(() => false), 6000) : null;
+      const inner = opened ? true : await (async () => { for (const f of page.frames()) { if (await f.evaluate(() => [...document.querySelectorAll('dialog[data-kol-dialog]')].some(x => x.open)).catch(() => false)) return true; } return false; })();
+      ok(opened === true || inner === true, '▶️ — החלון הקופץ נפתח לבד אחרי שנייה', { live: fr && fr.url().slice(-60), frames: page.frames().map(f => f.url().slice(-50)) });
+      await shot(page, 'e2e-24-live-popup-1920');
+      await page.keyboard.press('Escape'); await sleep(300);
+      // 390: חלונית מהצד — ✕ באזור מגע של 44px לפחות
+      const c6 = await mk(390, 844), pz = await c6.newPage(); watch(pz, '390-kit2');
+      await pz.goto(base + '/editor.php#/editor/index.html'); await ready(pz); await sleep(1200);
+      const x44 = await pz.evaluate(() => { const d = Editor._state.canvas.doc, x = d.querySelector('[data-kol-component="popup"] [class*="close"], [data-kol-component="popup"] button'); if (!x) return null; const r = x.getBoundingClientRect(), a = getComputedStyle(x, '::after'); return { w: Math.round(r.width), h: Math.round(r.height), after: a.content !== 'none' ? [a.width, a.height] : null }; });
+      ok(!!x44, '390: ✕ של החלון הקופץ בקנבס', x44);
+      await shot(pz, 'e2e-24-kit2-390');
+      await c6.close();
     });
 
     // ═══ 12. 390 — מגע ═══

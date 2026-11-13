@@ -138,6 +138,13 @@ const PAGE = `<!doctype html>
     ok(/<\/section>\s*\n    <div class="row-1"><div class="row-1-col"><\/div><div class="row-1-col"><\/div><\/div>/.test(f1['index.html']) && /\.row-1 \{[^}]*display: flex;[^}]*flex-direction: row;[^}]*flex-wrap: wrap;/.test(f1['css/page.css']) && /\.row-1-col \{[^}]*flex: 1 1 0;[^}]*min-width: 0;/.test(f1['css/page.css']), 'בדיקת הבעלים: "שורה של 2" נגררת מהספרייה אל מתחת לפס — HTML + כלל CSS (row-1, row-1-col) בעסקה אחת', { pk, css: f1['css/page.css'].slice(-200), html: f1['index.html'].slice(f1['index.html'].indexOf('</section>') - 50, f1['index.html'].indexOf('</section>') + 200) });
     const emptyH = await page.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.row-1-col')].map(e => Math.round(e.getBoundingClientRect().height)));
     ok(emptyH.length === 2 && emptyH.every(x => x >= 48) && !f1['index.html'].includes('min-height'), 'רובריקה ריקה אינה נעלמת: בקנבס ≥48px וקו מקווקו — ובקובץ אין גובה', emptyH);
+    // T2 (E2E 🟡1): כותרת מהספרייה אל השורה "LA VOIX DU MAROC" (<span>) — נכנסת לצד ה-span, לא לתוכו
+    { const s0 = await src(page), hs0 = await page.evaluate(() => [...Editor._state.canvas.doc.querySelector('.kadisha-hero-eyebrow').parentElement.children].filter(e => /^H[1-6]$/.test(e.tagName)).length);
+      await drag(page, await lib(page, 'heading'), await at(page, '.kadisha-hero-eyebrow', 0.5, 0.5));
+      const r = await page.evaluate(() => { const d = Editor._state.canvas.doc, sp = d.querySelector('.kadisha-hero-eyebrow'), hs = [...sp.parentElement.children].filter(e => /^H[1-6]$/.test(e.tagName)); return { inSpan: !!sp.querySelector('h1,h2,h3,h4,h5,h6,div,p'), sib: hs.length, near: [sp.previousElementSibling, sp.nextElementSibling].some(e => e && /^H[1-6]$/.test(e.tagName)) }; });
+      ok(!r.inSpan && r.near && r.sib === hs0 + 1 && (await src(page)) !== s0, 'כותרת שנגררת אל <span> של שורה — נכתבת לפניו או אחריו, לא בתוכו', r);
+      await page.evaluate(() => Editor._undo()); await sleep(200);
+      ok((await src(page)) === s0, 'והביטול מחזיר את הקובץ'); }
     // גוררים כותרת מהספרייה אל האחת, וטקסט אל השנייה
     from = await lib(page, 'heading'); to = await at(page, '.row-1-col', 0.5, 0.5);
     pk = await drag(page, from, to);
@@ -274,6 +281,12 @@ const PAGE = `<!doctype html>
     await paste(page, '<p onclick="steal()" class="x">טקסט<img src=x onerror="alert(1)"></p><script>alert(2)</script><a href=" javascript:alert(3)">קישור</a><iframe src="https://evil.example"></iframe>');
     await sleep(250); s1 = await src(page);
     ok(!/onclick|onerror|<script|javascript:|<iframe/i.test(s1) && /<p class="x">טקסט<img src="x"><\/p><a>קישור<\/a>/.test(s1) && /הוסרו/.test((await st(page)).note), 'הדבקה מבחוץ (עוינת): סקריפט, iframe, on… ו-javascript: — מוסרים, ומה שהוסר נאמר', { note: (await st(page)).note, s: s1.slice(s1.indexOf('<p id="t3"'), s1.indexOf('<p id="t3"') + 200) });
+    ok(await undoFiles(page, p0), 'בטל — חזרה');
+    // T2 (V13 🟡B): <animate> / <set> שהופכים href ל-javascript: אחרי הטעינה — יורדים; <animate> תמים — נשאר
+    await select(page, '#t3');
+    await paste(page, '<svg id="t2svg" width="10" height="10"><a href="#ok"><animate attributeName="href" values="#a;javascript:alert(4)" dur="1s"/><set attributeName="xlink:href" to=" JavaScript:alert(5)"/><animate attributeName="HREF" from="#a" by="&#x09;javascript:alert(6)"/><animate attributeName="opacity" values="0;1" dur="1s"/><rect width="10" height="10"/></a></svg>');
+    await sleep(250); s1 = await src(page);
+    ok(/<svg id="t2svg"/.test(s1) && !/javascript/i.test(s1) && (s1.match(/<animate\b/g) || []).length === 1 && /attributeName="opacity"/.test(s1) && !/<set\b/.test(s1) && /attributeName="href"/.test((await st(page)).note), 'הדבקה מבחוץ: <animate> / <set> עם href ← javascript: (ב-values, to, by; רישיות ורווחים) — יורדים, ונאמר; <animate> של opacity — נשאר', { note: (await st(page)).note, s: s1.slice(s1.indexOf('<svg id="t2svg"'), s1.indexOf('<svg id="t2svg"') + 260) });
     ok(await undoFiles(page, p0), 'בטל — חזרה');
     await select(page, '#t3'); await paste(page, '</div></main><p>x</p><main><div>');
     await sleep(250); s1 = await src(page);

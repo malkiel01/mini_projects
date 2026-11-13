@@ -146,5 +146,18 @@ ok(d1.some(x => x.kind === 'data' && x.text.includes('החיפוש')), 'אזהר
 ok(d2.some(x => x.kind === 'id' && /aria-controls|data-panel/.test(x.text)), 'אזהרה: id שכפתור מפנה אליו (aria-controls)', d2);
 ok(d3.some(x => x.kind === 'id' && x.text.includes('aria-labelledby')), 'אזהרה: id שה-section מפנה אליו', d3);
 
+// ── T2 (E2E 🟡1): כותרת / רובריקה אינה נכנסת לתוך <span> (שורה) ──
+{ const sp = q(m, '.kadisha-hero-eyebrow'), w = X.why(sp, ['h2'], null), w2 = X.why(sp, ['span'], null), w3 = X.why(sp.parent, ['h2'], null);
+  ok(sp && w && w.code === 'inline' && !w2 && !w3 && X.blockyIn(sp, ['div']) && !X.blockyIn(sp, ['b']) && !X.blockyIn(q(m, 'a') || { tag: 'a' }, ['div']), '<h2> / <div> לתוך <span> — נדחה ("לפניו או אחריו"); <span> לתוכו — מותר; <h2> לצידו — מותר; <a> אינו נחסם', { w, w2, w3 }); }
+
+// ── T2 (ביקורת): כרטיס שהוא <button> / <label> / <span> עם בלוקים בפנים — הסידור מחדש בתוכו נשאר מותר ──
+{ const card = '<!doctype html><html><body><button class="card" id="cb"><div id="ca">A</div><div id="cbb">B</div></button><div id="out">חוץ</div><span id="sp"><span>x</span></span></body></html>';
+  const mc = K.parseHtml(card), cb = q(mc, '#cb'), A = q(mc, '#ca'), B = q(mc, '#cbb'), out = q(mc, '#out'), sp = q(mc, '#sp');
+  let err = ''; let res = null; try { res = X.move(mc, [B], cb, A); } catch (e) { err = e.message; }
+  ok(!err && res && /<button class="card" id="cb"><div id="cbb">B<\/div><div id="ca">A<\/div><\/button>/.test(res.src), 'סידור מחדש של בלוקים בתוך <button> שכבר מכיל אותם — מותר (כמו ב-main)', err || (res && res.src));
+  ok(!X.why(cb, ['div'], [B]) && !X.blockyIn(cb, ['div'], [B]), 'why / blockyIn: אותו הורה — מותר');
+  ok(!X.why(cb, ['div'], [out]), 'בלוק מבחוץ אל <button> שכבר מכיל בלוקים — מותר (המבנה כבר כזה)');
+  ok(!!X.why(sp, ['div'], [out]) && X.why(sp, ['div'], [out]).code === 'inline' && !!X.why(sp, ['h2'], null), 'בלוק מבחוץ אל <span> שאין בו בלוקים — עדיין נדחה (E2E 🟡1)'); }
+
 console.log('\n' + (ran - failed) + '/' + ran + (failed ? ' — נכשלו ' + failed : ' — הכול עבר'));
 process.exit(failed ? 1 : 0);

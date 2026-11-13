@@ -437,8 +437,8 @@ const Project = (() => {
     el.ed.hidden = el.view.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
-      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
-        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ')));
+      el.view.replaceChildren(...[h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
+        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ'))].filter(x => x != null && x !== false));
       return;
     }
     if (doc.model && S.editor) {
@@ -449,7 +449,9 @@ const Project = (() => {
         if (prefs.views[f.id]) S.editor.restoreViewState(prefs.views[f.id]);
       }
       S.editor.layout();
-      if (!phone()) S.editor.focus();
+      /* T2: ציור חוזר (שחזור הלשוניות, עץ) אינו מושך את המיקוד כשהוא כבר בתוך העורך — אחרת תפריט ההקשר של Monaco
+         (שמחזיק את המיקוד בתוך .monaco-editor) נסגר מיד אחרי שנפתח (v1b) */
+      if (!phone() && !el.ed.contains(document.activeElement)) S.editor.focus();
       return;
     }
     el.view.hidden = false;
@@ -1208,7 +1210,7 @@ const Project = (() => {
       upload(e.target.closest('[data-dir]')?.dataset.dir || '', [...e.dataTransfer.files]);
     });
     host.replaceChildren(h('div', { class: 'pj' },
-      h('p', { class: 'pj-note', role: 'note' }, 'הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא.'),
+      h('p', { class: 'pj-note', role: 'note' }, 'השינויים בקבצים נשמרים כאן, ומגיעים לאתר כשמפרסמים מ-🚀 פרסום.'),   /* T2 (E2E 🟡10): הפרסום מהקבצים עובד — הנוסח הישן אמר שלא */
       el.kol, el.seed,
       h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
 
@@ -1228,8 +1230,10 @@ const Project = (() => {
       await refresh();
       if (first) {                                               // הלשוניות והמיקום מהביקור הקודם
         const want = prefs.tabs.filter(id => S.byId.has(id)), cur = S.byId.has(prefs.cur) ? prefs.cur : want[0] ?? null;
+        const was = S.cur;                                         /* T2: קובץ שנפתח בינתיים (openAt) — לא נדרס בקובץ מהביקור הקודם */
         for (const id of want) await openFile(id, false);
-        S.cur = cur; persist();
+        if (S.cur === was) S.cur = cur;
+        persist();
       }
       drawAll();
       if (phone() && !S.cur) side(true);                         // בטלפון, בלי קובץ פתוח: העץ עצמו, לא מסך ריק עם כפתור
