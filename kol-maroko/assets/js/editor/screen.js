@@ -257,7 +257,7 @@ const Editor = (() => {
     const shotBox = h('div', { class: 'ed-shot' }, h('span', { class: 'hint' }, 'מצלם את הקנבס…')), tried = h('textarea', { rows: 3, 'aria-label': 'מה ניסית לשנות (לא חובה)', placeholder: 'מה ניסית לשנות? (לא חובה)' });
     const msg = h('p', { class: 'hint', role: 'status' }), sendBtn = h('button', { type: 'button', class: 'btn primary', 'data-bug-send': true }, 'פתיחת מטלה'), list = h('div', { class: 'ed-mine' });
     let shot = null;
-    const shooting = new Promise(r => setTimeout(r, 60)).then(() => R.shoot(c, n)).then(s => { shot = s; const img = h('img', { alt: 'צילום הקנבס, האלמנט מסומן' }); img.src = URL.createObjectURL(s.blob); shotBox.replaceChildren(img, s.full ? null : h('span', { class: 'hint' }, 'תרשים — הדפדפן אינו מרשה צילום מלא')); }, () => { shotBox.replaceChildren(h('span', { class: 'hint' }, 'הצילום לא הצליח — המטלה תיפתח בלעדיו')); });
+    const shooting = new Promise(r => setTimeout(r, 60)).then(() => R.shoot(c, n)).then(s => { shot = s; const img = h('img', { alt: 'צילום הקנבס, האלמנט מסומן' }); img.src = URL.createObjectURL(s.blob); shotBox.replaceChildren(...[img, s.full ? null : h('span', { class: 'hint' }, 'תרשים — הדפדפן אינו מרשה צילום מלא')].filter(Boolean)); /* T2 (E2E ⚪9): replaceChildren(null) כותב "null" */ }, () => { shotBox.replaceChildren(h('span', { class: 'hint' }, 'הצילום לא הצליח — המטלה תיפתח בלעדיו')); });
     sendBtn.addEventListener('click', async () => {
       sendBtn.disabled = true; msg.textContent = 'שולח…';
       try {
@@ -937,14 +937,16 @@ const Editor = (() => {
     el.broken.hidden = !broken;
     if (broken) el.broken.textContent = '⚠️ בקובץ יש קוד שבור (' + broken + ') — האזור מסומן, ואי אפשר לשנות אותו מכאן';
   }
-  function note(text, err, action) {
+  function note(text, err, action, soft) {
     if (!el.note) return;
-    clearTimeout(note.t);
+    clearTimeout(note.t); note.soft?.();
+    /* T2: soft — רמז שאינו מכסה עבודה: נסגר בלחיצה הבאה מחוץ לו (למשל בספרייה שמתחתיו), ואחרי 6 שניות */
+    if (soft) { const off = e => { if (!el.note.contains(e.target)) { el.note.hidden = true; note.soft?.(); } }; const cd = S.canvas?.doc; document.addEventListener('pointerdown', off, true); cd?.addEventListener('pointerdown', off, true); note.soft = () => { document.removeEventListener('pointerdown', off, true); cd?.removeEventListener('pointerdown', off, true); note.soft = null; }; }
     el.note.className = 'ed-note' + (err ? ' err' : '');
     el.note.replaceChildren(...[h('span', {}, text), action ? h('button', { type: 'button', class: 'btn sm', onclick: () => { el.note.hidden = true; action.run(); } }, action.label) : null,
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', onclick: () => { el.note.hidden = true; } }, '✕')].filter(Boolean));   // replaceChildren(null) כותב "null"
     el.note.hidden = false;
-    note.t = setTimeout(() => { el.note.hidden = true; }, err || action ? 12000 : 5000);
+    note.t = setTimeout(() => { el.note.hidden = true; note.soft?.(); }, soft ? 6000 : err || action ? 12000 : 5000);
   }
 
   /** V4: ידית בין פאנל צד לקנבס — גרירה משנה את רוחב הפאנל (200–560px), נשמר בדפדפן. */
@@ -1135,7 +1137,7 @@ const Editor = (() => {
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
       /* T2 (E2E ⚪5): לחיצה על הנבחר עולה להורה — אומרים, ומציעים לחזור */
-      c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } });
+      c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } }, true);
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);

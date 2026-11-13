@@ -214,9 +214,9 @@ const PAGE = `<!doctype html>
     let pt2 = await canvasPt(page, '.sub'); await page.mouse.click(pt2.x, pt2.y);
     await page.waitForSelector('#sheet[open] .ed-shot img', { timeout: 15000 });
     await page.waitForFunction(() => { const i = document.querySelector('.ed-shot img'); return i.complete && i.naturalWidth > 0; });
-    const rep = await page.evaluate(() => ({ info: document.querySelector('.ed-report-info').textContent, w: document.querySelector('.ed-shot img').naturalWidth, chart: document.querySelector('.ed-shot').textContent.includes('תרשים'), pointing: !document.querySelector('.ed-point').hidden, sel: Editor._state.canvas.label(Editor._state.canvas.selected) }));
+    const rep = await page.evaluate(() => ({ info: document.querySelector('.ed-report-info').textContent, w: document.querySelector('.ed-shot img').naturalWidth, chart: document.querySelector('.ed-shot').textContent.includes('תרשים'), nul: document.querySelector('.ed-shot').textContent.includes('null'), pointing: !document.querySelector('.ed-point').hidden, sel: Editor._state.canvas.label(Editor._state.canvas.selected) }));
     ok(rep.sel === 'h2.sub' && !rep.pointing, 'הצבעה על אלמנט בקנבס פותחת את הדיווח עליו');
-    ok(rep.w >= 600 && !rep.chart, `צילום הקנבס מוצג בדיווח (${rep.w}px, צילום מלא ולא תרשים)`);
+    ok(rep.w >= 600 && !rep.chart && !rep.nul, `צילום הקנבס מוצג בדיווח (${rep.w}px, צילום מלא ולא תרשים; בלי "null" מתחתיו — T2)`);
     ok(rep.info.includes('שביל: html › body › h2.sub') && rep.info.includes('תגית: <h2> · מחלקות: .sub') && rep.info.includes('קובץ: t/page.html · שורות 8') && /רוחב הקנבס: 1280px/.test(rep.info), 'הדיווח כולל שביל, תגית ומחלקות, קובץ ושורות, ורוחב הקנבס');
     await page.fill('#sheet textarea', 'רציתי להגדיל את הכותרת');
     await page.click('[data-bug-send]');
