@@ -829,6 +829,7 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-bar .ed-bgtools { display: inline-flex; align-items: center; gap: 2px; flex: none; padding: 0 4px; border: 1px dashed var(--brand, #36c); border-radius: var(--r); background: var(--brand-soft); }
   .ed-bar .ed-bgtools .ed-word { display: inline; white-space: nowrap; font-size: .8rem; }
   .ed-bar .ed-bgtools > .ed-word:first-child { font-weight: 600; }
+  .ed-bar .ed-bgtools .btn { min-height: 44px; }   /* P2 (E2E ⚪15): כמו 📄 — מטרת מגע 44, לא 34 */
   .ts-freewarn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .ts-freewarn[hidden] { display: none; }
   .ts-freewarn span { flex: 1 1 200px; }

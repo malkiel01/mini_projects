@@ -149,6 +149,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(up && /נבחר ההורה/.test(up.text) && up.span[2] >= 260 && up.btn && up.btn[0] >= 0 && up.btn[1] <= up.w && up.btn[3] > up.span[3], '390: הרמז "נבחר ההורה" — הטקסט ברוחב ' + (up && up.span[2]) + 'px, והכפתור "↩ חזרה" מתחתיו ובתוך המסך', up);
       await shot(page, 'p2-uplevel-390');
       await page.evaluate(() => { document.querySelector('.ed-note').hidden = true; });
+      // E2E ⚪15: כפתורי "🖼 תמונת רקע" בסרגל — 44 (הסגנון בלבד: בעמוד הזה אין רובריקה עם תמונת רקע)
+      const bgt = await page.evaluate(() => { const g = document.querySelector('[data-bg-tools]'); if (!g) return null; const was = g.hidden, par = g.parentElement; g.hidden = false; const bar = document.querySelector('.ed-bar'); if (!bar.contains(g)) bar.append(g); const hs = [...g.querySelectorAll('.btn')].map(b => Math.round(b.getBoundingClientRect().height)); g.hidden = was; if (par !== g.parentElement) par.append(g); return hs; });
+      ok(bgt && bgt.length === 3 && bgt.every(x => x >= 44), '390: כפתורי "🖼 תמונת רקע" (החלף / הסר / הזז) בסרגל — ≥44', bgt);
       // 📄 ← ▶️
       const pg = await center(page, '[data-pages-btn]'); await touchTap(page, pg); await sleep(600);
       const lv = await page.evaluate(() => { const b = document.querySelector('[data-pg-pop] [data-pg-live]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, at = document.elementFromPoint(x, y); return { h: Math.round(r.height), x, y, vis: r.width > 0, hit: !!at && (at === b || b.contains(at)), at: at && at.outerHTML.slice(0, 80), vh: innerHeight }; });
