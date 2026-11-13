@@ -73,6 +73,22 @@ test('V15 §2.4 ➕ עמוד חדש: ריק (עם ה-CSS המשותף של style
     ok(str_contains($t, 'href="../../css/v15.css"') && str_contains($t, 'src="../../media/x.png"') && str_contains($t, '<title>דנה</title>'), 'שכפול לעומק אחר: ההפניות מתוקנות, השם חדש', $t);
 });
 
+test('V15 §2.4 ➕ מתבנית עמוד (V13: templates/<שם>/, kind: page) — ההפניות מתוקנות למקום החדש; תבנית מקטע — 400', function () {
+    v15_put('templates/landing/template.json', '{"label":"דף נחיתה","kind":"page"}');
+    v15_put('templates/landing/template.html', v15_page('נחיתה', "  <link rel=\"stylesheet\" href=\"css/v15.css\">\n", "  <img src=\"media/x.png\">\n"));
+    v15_put('templates/strip/template.json', '{"label":"פס","kind":"section"}');
+    v15_put('templates/strip/template.html', '<div>x</div>');
+    $l = v15_list();
+    eq([['name' => 'landing', 'label' => 'דף נחיתה']], $l['templates'], 'רק תבניות עמוד ברשימה');
+    $r = v15_post('page_create', ['slug' => 'promo/summer', 'title' => 'קיץ', 'start' => 'tpl', 'template' => 'landing']);
+    eq(200, $r['status'], $r['body']);
+    $t = v15_text('promo/summer/index.html');
+    ok(str_contains($t, 'href="../../css/v15.css"') && str_contains($t, 'src="../../media/x.png"') && str_contains($t, '<title>קיץ</title>'), 'מתבנית: הפניות מהמקום החדש, השם חדש', $t);
+    eq(400, v15_post('page_create', ['slug' => 'x2', 'title' => 'x', 'start' => 'tpl', 'template' => 'strip'])['status'], 'תבנית מקטע — 400');
+    eq(400, v15_post('page_create', ['slug' => 'x3', 'title' => 'x', 'start' => 'tpl', 'template' => '../landing'])['status'], 'שם תבנית עם ../ — 400');
+    eq(404, v15_post('page_create', ['slug' => 'x4', 'title' => 'x', 'start' => 'tpl', 'template' => 'nope'])['status'], 'תבנית שאינה — 404');
+});
+
 test('V15 §2.4 הגבול: כתובת מחוץ ל-/lexicon/ — אין נתיב שמגיע לשם; השרת 400', function () {
     foreach (['../wp-admin', '/etc', 'a//b', 'a/../b', 'A', 'a b', 'a/', '', '..', 'about/index.html', "a\0", 'components/x', '%2e%2e', 'a_b', str_repeat('a', 130)] as $bad) {
         eq(400, v15_post('page_create', ['slug' => $bad, 'title' => 'x', 'start' => 'blank'])['status'], 'יצירה: ' . json_encode($bad));

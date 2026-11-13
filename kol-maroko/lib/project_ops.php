@@ -780,7 +780,14 @@ function pages_list(array $q = []): array
             $broken[] = ['path' => $p, 'line' => $line, 'href' => $val, 'msg' => "קישור שבור: $val"];
         }
     }
-    return ['pages' => $pages, 'entry' => $entry, 'mode' => $list === null ? 'auto' : 'list', 'base' => $base, 'moves' => pages_moves($rows), 'broken' => array_slice($broken, 0, 200)];
+    // V13: תבניות עמוד — "מתחיל מ: תבנית"
+    $tpls = [];
+    foreach (db()->query("SELECT path, sha FROM pf_files WHERE deleted_at IS NULL AND kind = 'file' AND path LIKE 'templates/%/template.json'")->fetchAll() as $t) {
+        $m = json_decode(pf_blob_get($t['sha']), true);
+        $n = substr($t['path'], strlen('templates/'), -strlen('/template.json'));
+        if (is_array($m) && ($m['kind'] ?? '') === 'page' && !str_contains($n, '/') && pf_by_path("templates/$n/template.html")) $tpls[] = ['name' => $n, 'label' => mb_substr((string)($m['label'] ?? $n), 0, 80)];
+    }
+    return ['pages' => $pages, 'entry' => $entry, 'mode' => $list === null ? 'auto' : 'list', 'base' => $base, 'moves' => pages_moves($rows), 'broken' => array_slice($broken, 0, 200), 'templates' => $tpls];
 }
 
 /** §2.6: עמודים שהכתובת שלהם השתנתה מאז הגרסה שבאתר: הנתיב הישן (בגרסה החיה, ואינו קיים היום) ← החדש. */
@@ -864,6 +871,25 @@ function page_create(array $user, array $b): array
             foreach ($plan as [$off, $len, $new]) $bytes = substr_replace($bytes, $new, $off, $len);
             if ($title !== '' && preg_match('~(<title\b[^>]*>)(.*?)(</title\s*>)~is', $bytes, $m, PREG_OFFSET_CAPTURE)) $bytes = substr_replace($bytes, htmlspecialchars($title, ENT_QUOTES | ENT_HTML5), $m[2][1], strlen($m[2][0]));
             $note = "שכפול של {$src['path']}";
+        } elseif ($kind === 'tpl') {                                         // V13: תבנית עמוד — templates/<שם>/template.html (העמוד כולו)
+            $name = (string)($b['template'] ?? '');
+            if (!preg_match('/^[\p{L}\p{N}_-]{1,60}$/u', $name)) throw new ApiError('שם תבנית לא תקין', 400);
+            $meta = pf_by_path("templates/$name/template.json");
+            $tp = pf_by_path("templates/$name/template.html");
+            if (!$meta || !$tp) throw new ApiError("התבנית $name לא נמצאה", 404);
+            if ((json_decode(pf_blob_get($meta['sha']), true)['kind'] ?? '') !== 'page') throw new ApiError("$name היא תבנית של מקטע, לא של עמוד — מוסיפים אותה בעורך", 400);
+            $bytes = pf_blob_get($tp['sha']);
+            $plan = [];                                                    // ההפניות בתבנית — יחסיות לשורש (העמוד שנשמר); מהמקום החדש
+            foreach (pf_ref_scan('index.html', $bytes) as [$off, $len, $val, $kd]) {
+                $t = pf_ref_resolve('index.html', $val, $kd);
+                if ($t === null || $val[0] === '/' || $kd === 'entry') continue;
+                $new = pf_ref_value($val, $path, $t, $kd);
+                if ($new !== $val) $plan[] = [$off, $len, $new];
+            }
+            usort($plan, fn($x, $y) => $y[0] <=> $x[0]);
+            foreach ($plan as [$off, $len, $new]) $bytes = substr_replace($bytes, $new, $off, $len);
+            if ($title !== '' && preg_match('~(<title\b[^>]*>)(.*?)(</title\s*>)~is', $bytes, $m, PREG_OFFSET_CAPTURE)) $bytes = substr_replace($bytes, htmlspecialchars($title, ENT_QUOTES | ENT_HTML5), $m[2][1], strlen($m[2][0]));
+            $note = "מתבנית $name";
         } elseif ($kind === 'redirect') {
             $to = pf_by_path(pf_path($b['to'] ?? null));
             if (!$to || !page_is($to['path'])) throw new ApiError('העמוד שאליו מפנים לא נמצא', 404);

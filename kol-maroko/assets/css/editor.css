@@ -589,6 +589,56 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .cm-board li > code { order: 5; flex-basis: 100%; overflow-wrap: anywhere; color: var(--muted, #5f6368); }
 .cm-color input[type="color"] { flex: none; width: 40px; min-width: 40px; height: 34px; padding: 2px; }
 
+/* ── V13: תפריט ההקשר (צף), Ctrl+E, היסטוריה, תבניות, העתק / הדבק סגנון ── */
+.ed-ctx { position: fixed; z-index: 60; width: 300px; max-height: min(78vh, 640px); overflow: auto; padding: 4px; gap: 0; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 10px 32px rgba(0, 0, 0, .22); }
+.ed-ctx-head { display: flex; align-items: center; gap: var(--s1); padding: 2px 6px 4px; border-bottom: 1px solid var(--line); font-size: .85rem; position: sticky; top: -4px; background: var(--surface); z-index: 1; }
+.ed-ctx-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; direction: ltr; text-align: start; }
+.ed-ctx-g { display: flex; flex-direction: column; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.ed-ctx-g:last-child { border-bottom: 0; }
+.ed .ed-ctx-item, .ed-ctx-item { display: flex; align-items: center; gap: 8px; min-height: 34px; border: 0; background: none; padding: 0 8px; border-radius: 6px; flex-wrap: wrap; position: relative; cursor: pointer; font-size: .9rem; }
+.ed-ctx-item:hover, .ed-ctx-item:focus-visible { background: var(--brand-soft); outline: none; }
+.ed-ctx-item[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.ed-ctx-ic { width: 1.6em; text-align: center; flex: none; }
+.ed-ctx-lab { flex: 1; min-width: 0; text-align: start; }
+.ed-ctx-key { flex: none; font: .72rem ui-monospace, monospace; color: var(--muted); }
+.ed-ctx-why { display: none; flex-basis: 100%; padding-inline-start: 2.3em; color: var(--danger, #b3261e); font-size: .78rem; }
+.ed-ctx-item[aria-disabled="true"]:hover .ed-ctx-why, .ed-ctx-item[aria-disabled="true"]:focus .ed-ctx-why { display: block; }
+@media (max-width: 999px) { .ed-ctx { inset-inline: 0; bottom: 0; top: auto !important; left: 0 !important; width: auto; max-height: 70vh; border-radius: 14px 14px 0 0; } .ed-ctx-item { min-height: 44px; } .ed-ctx-why { display: block; } }
+.pl { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start; padding: 12vh 16px 16px; background: rgba(0, 0, 0, .25); }
+.pl-box { width: min(620px, 100%); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 16px 48px rgba(0, 0, 0, .3); padding: var(--s2); display: flex; flex-direction: column; gap: var(--s1); max-height: 72vh; }
+.pl-in { min-height: 44px; font-size: 16px; padding: 0 var(--s2); border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); color: var(--ink); }
+.pl-list { overflow: auto; display: flex; flex-direction: column; }
+.pl-row { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 8px; border: 0; background: none; color: inherit; border-radius: 6px; text-align: start; cursor: pointer; font: inherit; flex-wrap: wrap; }
+.pl-row.on { background: var(--brand-soft); }
+.pl-row[aria-disabled="true"] { opacity: .55; }
+.pl-ic { width: 1.6em; text-align: center; }
+.pl-lab { flex: 1; min-width: 0; }
+.pl-key { font-size: .75rem; color: var(--muted); }
+.pl-why { flex-basis: 100%; padding-inline-start: 2.3em; font-size: .78rem; color: var(--muted); }
+.pl-foot { margin: 0; font-size: .75rem; }
+.ed-flash { outline: 3px solid var(--brand, #1a73e8) !important; outline-offset: 2px; border-radius: 6px; transition: outline-color .4s; }
+.hs-list { display: flex; flex-direction: column; gap: 1px; margin-bottom: var(--s2); }
+.hs-row { display: flex; align-items: flex-start; gap: 6px; min-height: 32px; padding: 4px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); text-align: start; font: inherit; font-size: .82rem; cursor: pointer; }
+.hs-row:hover { background: var(--brand-soft); }
+.hs-row.cur { background: var(--brand-soft); font-weight: 600; box-shadow: inset 3px 0 0 var(--brand, #1a73e8); }
+.hs-row.undone { opacity: .5; font-style: italic; }
+.hs-ic { flex: none; width: 1.8em; text-align: center; color: var(--muted); font-family: ui-monospace, monospace; font-size: .75rem; padding-top: 2px; }
+.hs-lab { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hs-file summary { cursor: pointer; font: .8rem ui-monospace, monospace; padding: 4px 0; text-align: start; }
+.hs-vlist { margin: 0; padding-inline-start: 1.2em; display: flex; flex-direction: column; gap: 4px; font-size: .8rem; }
+.hs-vbtn { display: flex; gap: 4px; margin-top: 2px; }
+.tp-row { display: flex; align-items: stretch; gap: 4px; }
+.tp-row .ed-lib-item { flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; }
+.tp-thumb { width: 100%; max-height: 72px; object-fit: cover; object-position: top; border-radius: 4px; border: 1px solid var(--line); background: #fff; }
+.tp-grid { grid-template-columns: 1fr; }
+.tp-bar { flex-wrap: wrap; }
+.ed-ntabs { flex-wrap: wrap; }
+.scp-lines { display: flex; flex-direction: column; gap: var(--s2); max-height: 46vh; overflow: auto; }
+.scp-el b { font-family: ui-monospace, monospace; }
+.scp-pre { margin: 4px 0 0; padding: 6px 8px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: .78rem/1.45 ui-monospace, monospace; white-space: pre-wrap; text-align: left; }
+.scp-sum { font-weight: 600; }
+.scp-shared { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .85rem; }
+.scp-tip { position: absolute; z-index: 6; pointer-events: none; padding: 2px 8px; background: var(--ink); color: var(--surface); border-radius: 6px; font-size: .78rem; white-space: nowrap; }
 /* V15 — ⚙️ הגדרות העמוד (head.js) ו-📄 עמודים (pages.js) */
 .ed-bar .ed-pagebtn { flex: 0 1 auto; min-width: 4.5em; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ed-pagebtn-t { font-weight: 600; }

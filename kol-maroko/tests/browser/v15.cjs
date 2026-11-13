@@ -253,6 +253,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await ready(page, 'about/index.html'); await sleep(500);
     s = await html(page);
     ok(/<title>אודות<\/title>/.test(s) && /<link rel="stylesheet" href="\.\.\/css\//.test(s), 'נוצר about/index.html (עם ה-CSS המשותף) ונפתח בעורך', headOf(s));
+    // ➕ מתבנית עמוד (V13)
+    await call(page, 'pf_create', { path: 'templates/landing/template.json', content: '{"label":"דף נחיתה","kind":"page"}' });
+    await call(page, 'pf_create', { path: 'templates/landing/template.html', content: '<!doctype html>\n<html lang="he" dir="rtl">\n<head>\n  <meta charset="utf-8">\n  <title>נחיתה</title>\n</head>\n<body>\n  <h1>TPL-LANDING</h1>\n</body>\n</html>\n' });
+    await page.evaluate(() => Editor._pages().load());
+    await page.click('[data-pages-btn]'); await sleep(400); await page.click('[data-pg-pop] [data-pg-new]'); await sleep(400);
+    await page.fill('[data-pg-f="title"]', 'קיץ'); await page.selectOption('[data-pg-f="start"]', 'tpl'); await sleep(100);
+    ok(await page.isVisible('[data-pg-f="template"]') && (await page.inputValue('[data-pg-f="template"]')) === 'landing', '"מתחיל מ: תבנית עמוד" — התבניות של V13 (kind: page)');
+    await page.click('[data-pg-create]'); await ready(page, 'kytz/index.html').catch(() => {}); await sleep(400);
+    ok(/TPL-LANDING/.test(await html(page)) && /<title>קיץ<\/title>/.test(await html(page)), 'נוצר מהתבנית (kytz/) ונפתח', await page.evaluate(() => Editor._state.file.path));
+    await page.click('[data-pages-btn]'); await sleep(300); await page.click('[data-pg-pop] [data-pg-open="about/index.html"]'); await ready(page, 'about/index.html'); await sleep(300);
     // מעבר שומר את הנוכחי, באותו מכשיר
     await page.click('[data-dev="tablet"]'); await sleep(300);
     await page.evaluate(() => { Editor._head().show(); });

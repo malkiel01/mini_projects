@@ -123,7 +123,7 @@ function build_mine(array $user, array $b, string $status = 'building'): array
 /** האם הקובץ יוצא מהחבילה כברירת מחדל (07 §2): kol.json, components/<שם>/component.json ו-template.html (V12 — מקור לעורך, לא לגולש). */
 function build_is_config(string $path): bool
 {
-    return $path === 'kol.json' || (bool)preg_match('~^components/[^/]+/(component\.json|template\.html)$~', $path);
+    return $path === 'kol.json' || (bool)preg_match('~^components/[^/]+/(component\.json|template\.html)$|^templates/~', $path);   // V13: templates/ — תבניות של העורך, לא לגולש
 }
 
 /**

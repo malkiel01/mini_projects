@@ -172,19 +172,20 @@
     create(pre = {}) {
       const d = this.data, name = hh('input', { class: 'hd-in', 'data-pg-f': 'title', placeholder: 'למשל: אודות', required: true });
       const slug = hh('input', { class: 'hd-in', dir: 'ltr', 'data-pg-f': 'slug', placeholder: 'about', pattern: SLUG.source, spellcheck: 'false' });
-      const start = hh('select', { class: 'hd-in', 'data-pg-f': 'start' }, hh('option', { value: 'blank' }, 'ריק — עם קובצי העיצוב המשותפים (kol.json ← styles)'), hh('option', { value: 'copy' }, 'שכפול של עמוד קיים'), hh('option', { value: 'tpl', disabled: true }, 'תבנית עמוד (V13) — עדיין אין תבניות'));
+      const start = hh('select', { class: 'hd-in', 'data-pg-f': 'start' }, hh('option', { value: 'blank' }, 'ריק — עם קובצי העיצוב המשותפים (kol.json ← styles)'), hh('option', { value: 'copy' }, 'שכפול של עמוד קיים'), hh('option', { value: 'tpl', disabled: !(d.templates || []).length || null }, (d.templates || []).length ? 'תבנית עמוד (מ-📄 תבניות)' : 'תבנית עמוד — אין עדיין ("שמור את העמוד כתבנית" בעורך)'));
+      const tpl = hh('select', { class: 'hd-in', 'data-pg-f': 'template' }, (d.templates || []).map(t => hh('option', { value: t.name }, t.label + ' — templates/' + t.name + '/')));
       const from = hh('select', { class: 'hd-in', 'data-pg-f': 'from' }, (d.pages || []).map(p => hh('option', { value: p.path }, (p.title || p.path) + ' — ' + p.path)));
       const err = hh('p', { class: 'error', hidden: true, 'data-pg-err': true }), url = hh('code', { dir: 'ltr', 'data-pg-url': true });
       let touched = false;
-      const sync = () => { if (!touched) slug.value = slugify(name.value); url.textContent = d.base + (slug.value ? slug.value + '/' : '…/'); from.closest('label').hidden = start.value !== 'copy'; };
+      const sync = () => { if (!touched) slug.value = slugify(name.value); url.textContent = d.base + (slug.value ? slug.value + '/' : '…/'); from.closest('label').hidden = start.value !== 'copy'; tpl.closest('label').hidden = start.value !== 'tpl'; };
       name.addEventListener('input', sync); slug.addEventListener('input', () => { touched = true; sync(); }); start.addEventListener('change', sync);
       if (pre.start) start.value = pre.start; if (pre.from) from.value = pre.from;
       if (pre.from) { const src = this.byPath(pre.from); name.value = (src?.title || '') + ' (עותק)'; slug.value = slugify(urlOf(pre.from).replace(/\/$/, '').split('/').pop() || 'page') + '-copy'; touched = true; }
       const go = async () => {
         err.hidden = true;
-        if (start.value === 'blank' && !name.value.trim()) { err.hidden = false; err.textContent = 'חסר שם לעמוד'; return; }
+        if (start.value !== 'copy' && !name.value.trim() && start.value === 'blank') { err.hidden = false; err.textContent = 'חסר שם לעמוד'; return; }
         if (!SLUG.test(slug.value)) { err.hidden = false; err.textContent = 'כתובת: אותיות לטיניות קטנות, ספרות ומקף; / בין חלקים. בלי .. ובלי / בהתחלה'; return; }
-        const r = await this.run('עמוד חדש', () => this.o.api('page_create', { slug: slug.value, title: name.value.trim(), start: start.value, from: start.value === 'copy' ? from.value : undefined }));
+        const r = await this.run('עמוד חדש', () => this.o.api('page_create', { slug: slug.value, title: name.value.trim(), start: start.value, from: start.value === 'copy' ? from.value : undefined, template: start.value === 'tpl' ? tpl.value : undefined }));
         if (!r) return;
         document.getElementById('sheet')?.close();
         this.o.note('נוצר ' + r.file.path + ' — נפתח בעורך'); this.sel = r.file.path; this.mgrClose && this.mgrClose();
@@ -192,7 +193,7 @@
       };
       const f = hh('form', { class: 'pg-form', 'data-pg-form': 'create', onsubmit: e => { e.preventDefault(); go(); } },
         hh('label', { class: 'hd-lab' }, 'שם (הכותרת של העמוד)', name), hh('label', { class: 'hd-lab' }, 'כתובת', slug), hh('p', { class: 'hint' }, 'הכתובת באתר: ', url),
-        hh('label', { class: 'hd-lab' }, 'מתחיל מ', start), hh('label', { class: 'hd-lab' }, 'העמוד לשכפול', from), err,
+        hh('label', { class: 'hd-lab' }, 'מתחיל מ', start), hh('label', { class: 'hd-lab' }, 'העמוד לשכפול', from), hh('label', { class: 'hd-lab' }, 'התבנית', tpl), err,
         hh('div', { class: 'row-btns' }, hh('button', { type: 'submit', class: 'btn primary', 'data-pg-create': true }, 'צור ופתח')));
       sync();
       this.o.sheet('➕ עמוד חדש', f); name.focus();
