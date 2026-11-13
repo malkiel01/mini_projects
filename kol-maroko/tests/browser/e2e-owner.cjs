@@ -29,6 +29,8 @@
  * 23. V16a: 🧩 רכיבים מוכנים — חיפוש, לחיצה ← אחרי הנבחר, הגדרה בפאנל, ➕ פריט, גרירה מהלוח הרחב, Ctrl+Z; 390 — הקשה בגיליון ← אחרי הנבחר.
  * 24. V16b: תוכן עניינים ("↻ בנה מהכותרות"), תפריט ("↻ מהעמודים"), חלון קופץ (מתי / כמה פעמים) ← ▶️ נפתח לבד, נקודות על תמונה (גרירת נקודה), מצגת (➕), חלונית מהצד.
  * 25. T2: סידור מחדש בתוך כפתור (גרירה + Ctrl+Z); 390 — 📄 בזרימה (לא מכסה 🖥️), ⚙️ ו-▶️ דרך 📄.
+ * 26. V16c: טופס (➕ שדה, webhook נדחה/נשמר/הוסר, שליחה בתצוגה החיה ← בתיבה, לא ל-webhook), מפה רק בלחיצה, שיתוף/רשתות,
+ *     📄 תבניות ← 📦 מוכנות; V14c ב-390 במגע CDP: החלקה על הקנבס = גלילה, "🖼 תמונת רקע:" עם תוויות, 🖼 החלף.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -999,6 +1001,161 @@ const png = (w, h, rgb) => {
       ok(await pw.isVisible('.pj-live iframe'), '390: 📄 ← 📄 כל העמודים ← "▶️ תצוגה חיה" — נפתחת');
       await shot(pw, 'e2e-25-live-390');
       await c7.close();
+    });
+
+    // ═══ 26. V16c: טופס (בונה, webhook, שליחה), רשתות, מפה, תבניות מוכנות; V14c: 390 במגע CDP — החלקה = גלילה, "🖼 תמונת רקע:" ═══
+    await step('26. V16c (טופס, webhook, מפה, רשתות, תבניות) · V14c (390: החלקה = גלילה, 🖼 תמונת רקע)', async () => {
+      if (!page.url().includes('editor')) await page.click('a:has-text("🎨 עורך")');
+      await ready(page); await closeAll(page);
+      // בעל העמוד אינו מגיע לאינטרנט מהבדיקה: Google / רשתות — נחסמים (כמו ב-v16), ורק נבדק שהבקשה יוצאת רק אחרי לחיצה
+      const outside = [];
+      await ctx.route(u => /google\.com|instagram\.com|facebook\.com|wa\.me/.test(u.host), r => { outside.push(r.request().url()); return r.abort(); });
+      await compsTab(page);
+      const addKit = async name => {
+        await click(page, 'h1'); if (!/^h1/.test(await crumb(page) || '')) { await click(page, '.kadisha-hero', 0, 0.03, 0.05); await click(page, 'h1'); }
+        await page.fill('[data-kit-q="lib"]', ''); await sleep(150);
+        await page.click(`[data-kit-grid="lib"] [data-kit-item="${name}"]`); await sleep(2200);
+        if (await page.isVisible('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]')) { await page.click('#sheet[open] [data-kit-take], #sheet[open] [data-kit-as]'); await sleep(2000); }
+        return nComp(page, name);
+      };
+      const formHtml = async () => ((await html(page)).match(/<form class="kol-form"[\s\S]*?<\/form>/) || [''])[0];
+      // ── טופס: הוספה, לחיצה על שדה ← "✏️ שדה" ו-"📝 טופס" בפאנל ──
+      ok(await addKit('form') === 1, '"טופס" — בעמוד, אחרי הכותרת');
+      ok(/js\/kol-data\.js/.test(await html(page)), 'טופס נוסף ← <script> של js/kol-data.js בעמוד (בלעדיו אין שליחה)');
+      await click(page, '[data-kol-component="form"] .kol-form__input', 0); await tabP(page, 'content');
+      ok(await page.isVisible('[data-kf-field]') && await page.isVisible('[data-kf-form]'), 'לחיצה על שדה בטופס ← "✏️ שדה" ו-"📝 טופס" בפאנל', await crumb(page));
+      ok(await page.$eval('[data-kf-in="type"] option[value="file"]', o => o.disabled).catch(() => false) && await page.isVisible('[data-kf-nofile]'), 'סוג "קובץ" — מושבת, עם הסבר');
+      // ➕ שדה ← field-1 בטופס
+      await click(page, '[data-kol-component="form"] .kol-form__input', 1); await tabP(page, 'content');
+      await page.click('[data-kf="add-field"]'); await sleep(700);
+      ok(/name="field-1"/.test(await formHtml()), '"➕ שדה" — שדה חדש (field-1) בטופס', (await formHtml()).slice(0, 300));
+      await shot(page, 'e2e-26-form-1920');
+      // קריאה בלבד: תווית שדה על הרובריקה הכהה — האם נקראת? (V16b: לכל משטח עם רקע — צבע טקסט משלו)
+      const lab = await page.evaluate(() => { const d = Editor._state.canvas.doc, l = d.querySelector('[data-kol-component="form"] .kol-form__label'), lum = c => { const m = (c.match(/[\d.]+/g) || []).map(Number); return m.length < 3 || m[3] === 0 ? null : (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255; };
+        let bg = null; for (let e = l; e && bg == null; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (lum(c) != null) bg = c; }
+        return { fg: getComputedStyle(l).color, bg, fgL: lum(getComputedStyle(l).color), bgL: bg && lum(bg) }; });
+      if (lab.bgL != null && Math.abs(lab.fgL - lab.bgL) < 0.35) finding('⚪', 'תווית שדה בטופס (' + lab.fg + ') על הרובריקה הכהה (' + lab.bg + ') — כמעט לא נקראת; הטופס לא קובע צבע טקסט משלו (assets/kit/components/form/style.css). צילום: e2e-26-form-1920.png');
+      // webhook דרך הפאנל: IP — נדחה; נקודה בסוף — נדחה; https — נשמר ("webhook פעיל")
+      const hookTry = async url => { await page.fill('[data-kf-in="webhook"]', url); await page.click('[data-kf="hook-save"]'); await sleep(700); return page.evaluate(() => ({ note: (document.querySelector('.ed-note') || {}).textContent || '', err: !!document.querySelector('.ed-note.err'), st: (document.querySelector('[data-kf-hook-state]') || {}).textContent || '' })); };
+      let hk = await hookTry('https://127.0.0.1/hook');
+      ok(/נדחתה/.test(hk.note) && !/פעיל/.test(hk.st), 'webhook לכתובת IP — "הכתובת נדחתה", לא נשמר', hk);
+      hk = await hookTry('https://x.example.com./hook');
+      ok(/נדחתה/.test(hk.note) && !/פעיל/.test(hk.st), 'webhook עם נקודה בסוף שם המתחם — נדחה', hk);
+      hk = await hookTry('https://hooks.example.com/kol');
+      ok(/webhook פעיל/.test(hk.st), 'webhook https — נשמר, ובפאנל: "webhook פעיל"', hk);
+      await shot(page, 'e2e-26-webhook-1920');
+      // ── מפה, כפתורי שיתוף, אייקוני רשתות ──
+      ok(await addKit('map') === 1, '"מפה" — בעמוד');
+      ok(await page.evaluate(() => !Editor._state.canvas.doc.querySelector('.kol-map iframe')), 'מפה בקנבס — תמונה עד לחיצה, בלי iframe');
+      ok(await addKit('share-buttons') === 1, '"כפתורי שיתוף" — בעמוד');
+      ok(await addKit('social-icons') === 1, '"אייקוני רשתות" — בעמוד');
+      await shot(page, 'e2e-26-kit3-1920');
+      // ── ▶️ תצוגה חיה: שליחת הטופס ← "תודה" ובתיבה; הפנייה מהתצוגה החיה אינה יוצאת ל-webhook; מפה רק בלחיצה; קישורי שיתוף ──
+      await saved(page);
+      await page.click('[data-ed-live-btn]'); await sleep(1500);
+      // התצוגה החיה (live.php ומה שבתוכה) — לא הקנבס של העורך, שגם בו יש טופס
+      const lv = await until(async () => { for (const f of page.frames()) { let a = f, inLive = false; while (a) { if (/live\.php|\/preview\//.test(a.url())) inLive = true; a = a.parentFrame(); } if (inLive && await f.$('.kol-form').catch(() => null)) return f; } return null; }, 10000);
+      ok(!!lv, '▶️ — הטופס בתצוגה החיה');
+      if (lv) {
+        // החלון הקופץ מצעד 24 נפתח לבד — סוגרים ב-✕ שלו, כמו גולש
+        // גולש אנושי: כמה שניות על העמוד לפני השליחה (מלכודת הספאם של M5 דוחה שליחה מיידית)
+        await sleep(3000);
+        for (const d of await lv.$$('dialog[open] [class$="__close"]')) await d.click().catch(() => {});
+        await sleep(300);
+        const out0 = outside.length;
+        ok(await lv.evaluate(() => !document.querySelector('.kol-map__frame')), 'תצוגה חיה: המפה — עדיין בלי iframe (לפני לחיצה)');
+        for (const [sel, v] of [['#kf-name', 'שרה E2E'], ['#kf-email', 'sara@example.test'], ['#kf-message', 'פנייה מתרחיש הבעלים']]) await lv.fill(sel, v).catch(() => {});
+        if (await lv.$('#kf-field-1')) await lv.fill('#kf-field-1', 'שדה חדש E2E');
+        await lv.click('.kol-form .kol-form__submit'); await sleep(1800);
+        const sent = await lv.evaluate(() => ({ done: !document.querySelector('.kol-form__done').hidden, err: !document.querySelector('.kol-form__error').hidden }));
+        const inbox = await call(page, 'inbox', undefined, '&filter=test');
+        const got = (inbox.items || inbox.entries || []).find(x => JSON.stringify(x).includes('פנייה מתרחיש הבעלים'));
+        ok(sent.done && !sent.err && !!got, 'שליחה ← "תודה" בטופס, והפנייה בתיבה', { sent, got: got && JSON.stringify(got).slice(0, 200) });
+        ok(!got || JSON.stringify(got).includes('שדה חדש E2E'), 'השדה שנוסף ב-"➕ שדה" נשלח מיד (הרישום נגזר מה-HTML)', got && JSON.stringify(got).slice(0, 300));
+        const hs = await call(page, 'forms_hook_state', undefined, '&form=contact');
+        ok(hs.pending === 0 && !hs.last, 'פנייה מהתצוגה החיה (בדיקה) — לא נשלחה ל-webhook', hs);
+        await shot(page, 'e2e-26-live-sent-1920');
+        // שיתוף — הקישור מכיל את כתובת העמוד
+        const wa = await lv.$eval('.kol-share [data-kol-share="whatsapp"]', a => a.href).catch(() => '');
+        ok(/^https:\/\/wa\.me\/\?text=/.test(wa) && /index\.html|live|preview/.test(decodeURIComponent(wa)), 'כפתורי שיתוף: וואטסאפ — עם כתובת העמוד', wa);
+        // מפה ← לחיצה ← iframe בארגז חול
+        await lv.click('.kol-map__show'); await sleep(600);
+        const mp = await lv.evaluate(() => { const f = document.querySelector('.kol-map__frame'); return f && { src: f.getAttribute('src'), sb: f.getAttribute('sandbox'), open: !!document.querySelector('.kol-map__open') }; });
+        ok(mp && /^https:\/\/www\.google\.com\/maps\?/.test(mp.src) && !!mp.sb && mp.open, 'מפה: לחיצה ← iframe של Google Maps בארגז חול; "פתח במפות" נשאר', mp);
+        ok(outside.length > out0 || !!mp, 'הבקשה ל-Google — רק אחרי הלחיצה', outside.slice(0, 3));
+        await shot(page, 'e2e-26-live-map-1920');
+      }
+      await closeAll(page);
+      // webhook ← ריק ו"שמור" ← הוסר
+      // אחרי סגירת התצוגה החיה הקנבס עוד מתייצב — לוחצים שוב אם הלחיצה נחתה על משהו אחר
+      for (let k = 0; k < 3 && !(await page.isVisible('[data-kf-in="webhook"]')); k++) { await sleep(500); await click(page, '[data-kol-component="form"] .kol-form__input', 0); await tabP(page, 'content'); }
+      hk = await hookTry('');
+      ok(/אין webhook/.test(hk.st), 'webhook ריק ← "שמור" — הוסר', hk);
+      // ── 📄 תבניות ← "📦 מוכנות": מקטע "שאלות נפוצות" ← בעמוד; Ctrl+Z ──
+      await click(page, 'h1');
+      if (!(await page.isVisible('[data-ntab="tpl"]'))) await page.click('.ed-bar [data-panel="nav"]');
+      await page.click('[data-ntab="tpl"]'); await sleep(800);
+      const tp = await page.evaluate(() => ({ secs: [...document.querySelectorAll('[data-kit-tpl-grid="sections"] [data-kit-tpl]')].map(x => x.dataset.kitTpl), pages: [...document.querySelectorAll('[data-kit-tpl-grid="pages"] [data-kit-tpl]')].map(x => x.dataset.kitTpl) }));
+      ok(tp.secs.length === 5 && tp.pages.length === 3, '"📄 תבניות" ← "📦 מוכנות": 5 מקטעים ו-3 עמודים', tp);
+      await shot(page, 'e2e-26-templates-1920');
+      await page.click('[data-kit-tpl="faq"]'); await sleep(2000);
+      ok(/class="tk-faq"/.test(await html(page)) && await page.evaluate(() => !!Editor._state.canvas.doc.querySelector('.tk-faq')), 'לחיצה על "שאלות נפוצות" — המקטע בעמוד ובקנבס');
+      const tcss = ((Object.values(await files(page)).find(t => t.includes('/* תבנית: שאלות נפוצות */')) || '').split('/* תבנית: שאלות נפוצות */')[1] || '');
+      ok(/var\(--/.test(tcss) && !/#[0-9a-f]{3,6}\b/i.test(tcss.split('/* תבנית')[0]), 'ה-CSS של התבנית — במשתנים של הפרויקט, בלי צבע קבוע', tcss.slice(0, 200));
+      await shot(page, 'e2e-26-faq-1920');
+      await undo(page); await sleep(500);
+      ok(!/tk-faq/.test(await html(page)), 'Ctrl+Z — התבנית יצאה');
+      // 1920: "🖼 תמונת רקע:" בשורה אחת (V14c: nowrap)
+      await click(page, '.kadisha-hero', 0, 0.03, 0.05);
+      for (let k = 0; k < 6 && !/^section\.kadisha-hero/.test(await crumb(page) || ''); k++) { await page.click('.ed-seltools-host [aria-label="בחר הורה"]').catch(() => {}); await sleep(300); }
+      const lab19 = await page.evaluate(() => { const w = document.querySelector('.ed-bar [data-bg-tools] > .ed-word'); return w && w.offsetWidth ? { t: w.textContent.trim(), h: Math.round(w.getBoundingClientRect().height), lh: parseFloat(getComputedStyle(w).lineHeight) || 20 } : null; });
+      ok(lab19 && /תמונת רקע/.test(lab19.t) && lab19.h <= lab19.lh * 1.5 + 2, '1920: "🖼 תמונת רקע:" בסרגל — בשורה אחת', { sel: await crumb(page), lab19 });
+      await ctx.unroute(u => /google\.com|instagram\.com|facebook\.com|wa\.me/.test(u.host)).catch(() => {});
+      await saved(page);
+
+      // ── V14c · 390, מגע אמיתי (CDP Input.dispatchTouchEvent) ──
+      const c8 = await mk(390, 844), pq = await c8.newPage(); watch(pq, '390-v14c');
+      await pq.goto(base + '/editor.php#/editor/index.html'); await ready(pq); await sleep(1200);
+      const cdp = await c8.newCDPSession(pq);
+      const tp1 = (x, y) => [{ x: Math.round(x), y: Math.round(y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+      const swipe = async (p, dy = -300) => { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp1(p.x, p.y) }); for (let i = 1; i <= 15; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: tp1(p.x, p.y + dy * i / 15) }); await sleep(16); } await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(800); };
+      const snap = () => pq.evaluate(() => { const S = Editor._state, c = S.canvas; return { y: Math.round(c.frame.contentWindow.scrollY), sel: c.selected ? c.label(c.selected) : null, files: S.doc.text().length + '|' + [...S.sheets.values()].map(x => x.doc.text().length).join(',') }; });
+      // נקודה על אלמנט בתוך שטח הקנבס הגלוי (לא מגלגלת אליו — האצבע במקום שבו הוא נראה)
+      const onScreen = (sel, fy = 0.5) => pq.evaluate(([q, fy]) => { const c = Editor._state.canvas, e = c.doc.querySelector(q); if (!e) return null; const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(), hr = c.host.getBoundingClientRect(); return { x: f.left + (r.left + r.width / 2) * c.scale, y: Math.min(hr.bottom - 30, Math.max(hr.top + 30, f.top + (r.top + r.height * fy) * c.scale)) }; }, [sel, fy]);
+      const swipeCheck = async (label, sel, fy) => {
+        // חזרה לראש העמוד — החלקה למטה, כמו אדם
+        for (let k = 0; k < 6 && (await snap()).y > 0; k++) { const h0 = await onScreen('body', 0.01) || { x: 195, y: 300 }; await swipe({ x: 195, y: Math.max(h0.y, 250) }, 400); }
+        const p = await onScreen(sel, fy); if (!p) return ok(false, label + ' — לא נמצא ' + sel);
+        const a = await snap(); await swipe(p); const b = await snap();
+        ok(b.y > a.y + 100 && b.sel === a.sel && b.files === a.files, label + ' — העמוד גלל (' + a.y + '→' + b.y + '), הבחירה והקבצים לא השתנו', { a, b });
+      };
+      await swipeCheck('390: החלקה באצבע שמתחילה על הכותרת (כלום לא נבחר)', 'h1');
+      // הקשה בוחרת; החלקה מעל הנבחר — עדיין גלילה, לא גרירה
+      for (let k = 0; k < 6 && (await snap()).y > 0; k++) await swipe({ x: 195, y: 300 }, 400);
+      { const p = await onScreen('h1'); await pq.touchscreen.tap(p.x, p.y); await sleep(700); }
+      ok(/^h1/.test(await crumb(pq) || ''), '390: הקשה על הכותרת — נבחרה', await crumb(pq));
+      await swipeCheck('390: החלקה שמתחילה על הכותרת הנבחרת', 'h1');
+      await swipeCheck('390: החלקה שמתחילה על תמונת הרקע של הרובריקה', 'section.kadisha-hero', 0.85);
+      await shot(pq, 'e2e-26-swipe-390');
+      // "🖼 תמונת רקע:" — בחירת הרובריקה (הקשה על הכותרת ← "↑ בחר הורה"), הקבוצה בסרגל עם תוויות
+      for (let k = 0; k < 6 && (await snap()).y > 0; k++) await swipe({ x: 195, y: 300 }, 400);
+      { const p = await onScreen('h1'); await pq.touchscreen.tap(p.x, p.y); await sleep(600); }
+      for (let k = 0; k < 6 && !/^section\.kadisha-hero/.test(await crumb(pq) || ''); k++) { const up = await pq.$('.ed-seltools-host [aria-label="בחר הורה"]'); if (!up) break; await up.tap().catch(() => up.click()); await sleep(400); }
+      ok(/^section\.kadisha-hero/.test(await crumb(pq) || ''), '390: "↑ בחר הורה" עד הרובריקה של הכותרת', await crumb(pq));
+      const grp = pq.locator('.ed-bar [data-bg-tools]');
+      if (await grp.count()) await grp.scrollIntoViewIfNeeded().catch(() => {});
+      const bg = await pq.evaluate(() => { const g = document.querySelector('.ed-bar [data-bg-tools]'); if (!g || !g.offsetWidth) return null; const lab = g.querySelector(':scope > .ed-word'), r = g.getBoundingClientRect();
+        return { label: lab && lab.offsetWidth ? lab.textContent.trim() : '', inView: r.left >= -1 && r.right <= innerWidth + 1, btns: [...g.querySelectorAll('[data-bgt]')].map(b => ({ txt: b.textContent.trim(), words: [...b.querySelectorAll('.ed-word')].every(w => w.offsetWidth > 0), aria: b.getAttribute('aria-label') || '', h: Math.round(b.getBoundingClientRect().height) })) }; });
+      ok(bg && /🖼 תמונת רקע:/.test(bg.label) && bg.btns.length === 3 && bg.btns.every(b => b.words && /תמונת רקע/.test(b.aria)) && /החלף/.test(bg.btns[0].txt) && /הסר/.test(bg.btns[1].txt) && /הזז/.test(bg.btns[2].txt), '390: בסרגל — "🖼 תמונת רקע:" ולכל כפתור תווית גלויה (החלף · הסר · הזז)', bg);
+      if (bg && bg.btns.some(b => b.h < 44)) finding('⚪', '390: כפתורי "🖼 תמונת רקע:" בגובה ' + bg.btns.map(b => b.h).join('/') + 'px — מתחת ל-44 (screen.js:1058). צילום: e2e-26-bgtools-390.png');
+      await shot(pq, 'e2e-26-bgtools-390');
+      // "החלף" בהקשה ← הבורר נפתח
+      const rep = await pq.$('.ed-bar [data-bg-tools] [data-bgt="replace"]');
+      if (rep) { await rep.tap().catch(() => rep.click()); await sleep(900); }
+      ok(await pq.isVisible('#sheet[open], dialog[open]'), '390: הקשה על "🖼 החלף" — בורר התמונות נפתח');
+      await shot(pq, 'e2e-26-bgpick-390');
+      await closeAll(pq);
+      await cdp.detach(); await c8.close();
     });
 
     // ═══ 12. 390 — מגע ═══
