@@ -1,0 +1,11 @@
+{
+  "name": "quote",
+  "label": "ציטוט",
+  "icon": "❝",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "style", "label": "סגנון (line — קו · box — קופסה)", "control": "select", "options": ["line", "box"], "target": {"class": "kol-quote--{value}"}},
+    {"id": "img", "label": "תמונה", "control": "media", "target": {"src": ".kol-quote__img"}},
+    {"id": "accent", "label": "צבע", "control": "color", "target": {"var": "--kol-quote-accent"}}
+  ]
+}
