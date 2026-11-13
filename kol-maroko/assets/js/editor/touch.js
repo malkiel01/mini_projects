@@ -288,6 +288,8 @@
         const down = e => { if (e.pointerType !== 'touch') return; pts.set(e.pointerId, scr(e)); if (pts.size === 2) { const [a, b] = [...pts.values()]; d0 = Math.hypot(a[0] - b[0], a[1] - b[1]); z0 = this.zoom; c.press = null; c.armed = null; clearTimeout(c.longT); } };
         const move = e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, scr(e)); if (pts.size === 2 && d0 > 10) { const [a, b] = [...pts.values()]; this.setZoom(z0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / d0); e.preventDefault(); } };
         const up = e => { pts.delete(e.pointerId); if (pts.size < 2) d0 = 0; };
+        // שתי אצבעות בקנבס = הצביטה שלנו, לא הגדלה של כל הדף; אצבע אחת — הדפדפן גולל כרגיל (רק touchstart, פעם אחת לתנועה)
+        doc.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { capture: true, passive: false });
         doc.addEventListener('pointerdown', down, true); doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
       };
       const prev = c.onListen; c.onListen = doc => { if (prev) prev(doc); listen(doc); }; if (c.doc) listen(c.doc);
