@@ -213,7 +213,7 @@ const png = (w, h, rgb) => {
     await step('5. תמונת הרקע ותמונה', async () => {
       await click(page, '.kadisha-hero', 0, 0.03, 0.05);
       ok(/section\.kadisha-hero/.test(await crumb(page) || ''), 'לחיצה על אזור ריק בכותרת העמוד — הרובריקה נבחרת', await crumb(page));
-      ok(await page.isVisible('[data-bg-tools]'), 'בסרגל: "🖼 תמונת רקע: החלף · הסר · הזז"', await page.evaluate(() => ({ has: Editor._state.bg.hasImage(Editor._state.canvas.selected), conn: !!document.querySelector('[data-bg-tools]') })));
+      ok(await page.isVisible('[data-bg-tools]'), 'בסרגל: "🖼 תמונת רקע: החלף · הסר · הזז"', await page.evaluate(() => ({ has: Editor._state.bg.hasImage(Editor._state.canvas.selected), bg: getComputedStyle(Editor._state.canvas.doc.querySelector('.kadisha-hero')).backgroundImage.slice(0, 120), cls: Editor._state.canvas.doc.querySelector('.kadisha-hero').className, css: [...Editor._state.sheets.values()].map(x => x.path + ':' + (x.doc.text().match(/[^\n]*hero\.jpg[^\n]*/) || [''])[0].slice(0, 160)).filter(x => /jpg/.test(x)) })));
       await tabP(page, 'content');
       const say = await page.textContent('.ct-bg').catch(() => '');
       if (/עדיין אינן על המסך/.test(say)) finding('🟡', 'לשונית "✏️ תוכן" של רובריקה עם תמונת רקע (ושל כל אלמנט שיושב עליה) אומרת "❌ החלפה והסרה של תמונת רקע עדיין אינן על המסך — הן מגיעות בשלב V5. עד אז: בקוד" — אבל הן כבר על המסך (הסרגל, לשונית עיצוב). בעל העמוד שמחפש שם יחשוב שאי אפשר. content.js:265');
@@ -315,7 +315,7 @@ const png = (w, h, rgb) => {
       await click(page, '.kadisha-lexicon-controls', 0, 0.01, 0.98);
       let sel = await crumb(page);
       // הלחיצה נופלת על ילד — בעל העמוד עולה דרך שביל הפירורים שמעל הקנבס
-      if (!/kadisha-lexicon-controls/.test(sel || '')) { await page.click('text=div.kadisha-lexicon-controls').catch(e => console.log('   (שביל: ' + e.message.split('\n')[0] + ')')); await sleep(400); sel = await crumb(page); }
+      if (!/kadisha-lexicon-controls/.test(sel || '')) { await page.locator('.ed-crumb', { hasText: 'kadisha-lexicon-controls' }).first().click().catch(e => console.log('   (שביל: ' + e.message.split('\n')[0] + ')')); await sleep(400); sel = await crumb(page); }
       ok(/kadisha-lexicon-controls/.test(sel || ''), 'שורת החיפוש והנושאים נבחרה', sel);
       await tabP(page, 'content');
       await page.click('[data-w="comp-save"]'); await sleep(400);
