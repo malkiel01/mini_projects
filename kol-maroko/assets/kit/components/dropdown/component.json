@@ -1,0 +1,14 @@
+{
+  "name": "dropdown",
+  "label": "תפריט נפתח",
+  "icon": "▾",
+  "category": "ניווט",
+  "fields": [
+    {"id": "items", "label": "קישורים", "control": "repeater", "target": {"children": ".kol-drop__item"}},
+    {"id": "align", "label": "הרשימה נפתחת אל (start · end)", "control": "select", "options": ["start", "end"], "target": {"class": "kol-drop--{value}"}},
+    {"id": "accent", "label": "צבע", "control": "color", "target": {"var": "--kol-drop-accent"}}
+  ],
+  "states": [
+    {"id": "open", "label": "הרשימה", "options": [{"label": "פתוחה", "on": "", "attr": "open"}]}
+  ]
+}

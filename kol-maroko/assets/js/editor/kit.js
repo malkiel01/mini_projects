@@ -21,6 +21,8 @@
   const CATS = ['תוכן', 'קופסאות', 'מספרים', 'מדיה', 'ניווט', 'חלונות', 'תנועה', 'טפסים', 'רשתות'];
   const TAG = { kit: ['📦', 'יועתק לפרויקט'], in: ['✓', 'בפרויקט'], mod: ['✎', 'בפרויקט · שונה'], taken: ['⚠', 'השם תפוס'], upd: ['⬆', 'יש גרסה חדשה'] };
   const SAFE_SEL = /^[\w\s.#>\-\[\]="':]+$/;
+  /** סוגריים בטקסט רגיל (option, title) — בין FSI ל-PDI (בידוד, כמו <bdi>), שלטינית בתוכם לא תהפוך אותם ב-RTL. */
+  const iso = s => String(s == null ? '' : s).replace(/\([^()]*\)/g, m => '\u2068' + m + '\u2069');
 
   class Kit {
     /** opt: { comp, canvas, build, mid, host, act, writeOps, joinTx, attachFx, txCount, note, sheet, undo, canWrite, phone, select(n) } */
@@ -38,7 +40,7 @@
       window.KolKitLive = this;
       this.load();
     }
-    unmount() { document.removeEventListener('keydown', this.onKey); this.board.remove(); this.chip.remove(); this.box.remove(); }
+    unmount() { document.removeEventListener('keydown', this.onKey); this.board.remove(); this.chip.remove(); this.box.remove(); if (this.hl) this.hl.remove(); }
 
     // ── הנתונים ──────────────────────────────────────────
     async load() {
@@ -223,7 +225,9 @@
     raw(name) {
       const x = this.comp.comps.get(name), t = x && x.json ? x.json.text() : '';
       const hit = this.stCache.get(name); if (hit && hit.t === t) return hit.v;
-      let v = { states: [] }; try { const j = JSON.parse(t); v = { states: Array.isArray(j.states) ? j.states.filter(s => s && typeof s === 'object' && typeof s.id === 'string').slice(0, 8) : [] }; } catch { /* */ }
+      const arr = (x, n) => (Array.isArray(x) ? x.filter(s => s && typeof s === 'object').slice(0, n) : []);
+      let v = { states: [], actions: [], drag: [] };
+      try { const j = JSON.parse(t); v = { states: arr(j.states, 8).filter(s => typeof s.id === 'string'), actions: arr(j.actions, 4).filter(s => typeof s.id === 'string' && typeof s.label === 'string'), drag: arr(j.drag, 2).filter(s => typeof s.each === 'string' && typeof s.box === 'string' && /^--[\w-]+$/.test(s.x || '') && /^--[\w-]+$/.test(s.y || ''))}; } catch { /* */ }
       this.stCache.set(name, { t, v }); return v;
     }
     keyOf(root, s) { return (K().attrOf(root, C().MARK) || {}).value + '@' + K().pathOf(root).join('.') + '#' + s.id; }
@@ -283,7 +287,11 @@
           }
         }
       }
-      for (const [k, n] of scroll) { if (this.scrolled.get(k) === n) continue; this.scrolled.set(k, n); const el = c.elOf(n); if (el && el.parentElement) { const p = el.parentElement; try { p.scrollTo({ left: el.offsetLeft - p.offsetLeft - (p.clientWidth - el.offsetWidth) / 2 * 0, top: 0, behavior: 'instant' }); } catch { /* */ } } }
+      for (const [k, n] of scroll) {
+        if (this.scrolled.get(k) === n) continue; this.scrolled.set(k, n);
+        const el = c.elOf(n), p = el && el.parentElement; if (!p) continue;
+        try { const rtl = el.ownerDocument.defaultView.getComputedStyle(p).direction === 'rtl', er = el.getBoundingClientRect(), pr = p.getBoundingClientRect(); p.scrollBy({ left: rtl ? er.right - pr.right : er.left - pr.left, behavior: 'instant' }); } catch { /* */ }
+      }
     }
     /** שם מחלקה / תכונה ממצב ב-component.json (קובץ שבעל העמוד עורך): מחלקה — שם תקין; תכונה — לא on*, style, srcdoc, src, href. */
     okName(kind, name) {
@@ -300,14 +308,16 @@
       for (const s of def.states) {
         const sel = h('select', { 'data-kit-state': s.id, 'aria-label': 'מצב בקנבס · ' + (s.label || s.id) });
         const cur = this.modes.get(this.keyOf(root, s)) || '';
-        for (const o of this.opts(root, s)) sel.append(h('option', { value: o.value, selected: o.value === cur || null }, o.label));
+        for (const o of this.opts(root, s)) sel.append(h('option', { value: o.value, selected: o.value === cur || null }, iso(o.label)));
         sel.addEventListener('change', () => this.set(root, s, sel.value));
-        kids.push(h('label', { class: 'kit-st' }, h('span', {}, (s.label || s.id) + ': '), sel));
+        kids.push(h('label', { class: 'kit-st' }, h('span', {}, iso(s.label || s.id) + ': '), sel));
       }
       const rep = this.rep(root);
       if (rep) kids.push(h('button', { type: 'button', class: 'btn sm', 'data-kit-add-item': true, disabled: !this.canWrite() || null, onclick: () => this.addItem(n) }, '➕ פריט (' + rep.f.label + ')'));
+      for (const a of def.actions) kids.push(h('button', { type: 'button', class: 'btn sm', 'data-kit-action': a.id, disabled: !this.canWrite() || null, onclick: () => this.action(root, a) }, iso(a.label)));
+      if (def.drag.length) kids.push(h('p', { class: 'hint', 'data-kit-drag-hint': true }, '✥ את הנקודות גוררים על הקנבס — הידיות העגולות. המיקום נכתב לנקודה עצמה (' + def.drag.map(d => d.x + ' / ' + d.y).join(', ') + ').'));
       if (!kids.length) return [];
-      return [h('section', { class: 'ct-group kit-group', 'data-group': 'מצב בקנבס', 'data-kit-panel': true }, h('h3', { class: 'dt-h' }, '👁 מצב בקנבס'),
+      return [h('section', { class: 'ct-group kit-group', 'data-group': 'מצב בקנבס', 'data-kit-panel': true }, h('h3', { class: 'dt-h' }, def.states.length ? '👁 מצב בקנבס' : '🧩 הרכיב'),
         def.states.length ? h('p', { class: 'hint' }, 'בקנבס סקריפטים אינם רצים — כאן בוחרים איזה מצב לראות ולערוך. רק בקנבס: הקובץ אינו משתנה. ▶️ תצוגה חיה — ההתנהגות עצמה.') : null, ...kids)];
     }
     rep(root) {
@@ -342,6 +352,103 @@
       }
       if (nw) { this.c.select(nw); this.c.reveal(nw); }
     }
+    // ── פעולות מהסכמה ("actions"): פריטים מהעמודים · תוכן עניינים מהכותרות ──
+    /** הפריטים נבנים מהפריט הראשון (אותו HTML, אותן מחלקות) — רק הקישור והטקסט מתחלפים. כל הכתיבות — פעולה אחת. */
+    itemHtml(tpl, linkSel, href, text, addCls, dropCls) {
+      let out = tpl;
+      const step = fn => { const mm = K().parseHtml(out), r = C().rootOf(mm); if (!r) return; const ps = fn(mm, r); if (ps && ps.length) out = K().applyPatches(out, ps.sort((x, y) => y.from - x.from)); };
+      const esc = ps => ps.map(p => ({ from: p.from, to: p.to, text: p.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') }));
+      step((mm, r) => { const a = C().findIn(r, linkSel) || (r.tag === 'a' ? r : null); return a ? esc(K().html.setAttr(mm, a, 'href', href).patches) : []; });
+      step((mm, r) => { const a = C().findIn(r, linkSel) || r; return K().html.setText(mm, a, text).patches; });
+      if (addCls || dropCls) step((mm, r) => { const cl = K().classesOf(r).filter(x => x !== dropCls); if (addCls && !cl.includes(addCls)) cl.push(addCls); return esc(K().html.setAttr(mm, r, 'class', cl.join(' ')).patches); });
+      return out;
+    }
+    async action(root, a) {
+      if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true);
+      const sel = a.pages || a.toc; if (typeof sel !== 'string' || !SAFE_SEL.test(sel)) return this.note('הפעולה ב-component.json — בורר לא תקין', true);
+      const linkSel = typeof a.link === 'string' && SAFE_SEL.test(a.link) ? a.link : 'a';
+      const m = this.c.m, items = this.targets(root, sel).filter((x, i, all) => x.parent === all[0].parent);
+      if (!items.length) return this.note('אין פריט לדוגמה (' + sel + ') ברכיב', true);
+      const tpl = C().outerOf(m, items[0]), P = K().pathOf(root), lab = this.c.label(root);
+      const ind = m.src.slice(K().leadOf(m, items[0]), items[0].from).replace(/^[\s\S]*[\r\n]/, '');
+      let rows = [], heads = [];
+      if (a.pages) {
+        const cur = this.comp.file && this.comp.file(); const curPath = cur && cur.path;
+        for (const p of await this.comp.pages()) {
+          const t = p.doc.text(), ti = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(t) || [])[1];
+          const title = (ti || p.path.replace(/\.html?$/i, '').replace(/^.*\//, '')).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim().slice(0, 80) || p.path;
+          rows.push({ href: p.path === curPath ? (this.comp.rel(p.path) || p.path) : this.comp.rel(p.path), text: title });
+        }
+        if (!rows.length) return this.note('אין עמודים בפרויקט', true);
+      } else {
+        const lv = String(a.levels || 'h2,h3').split(',').map(x => x.trim().toLowerCase()).filter(x => /^h[1-6]$/.test(x)); if (!lv.length) return;
+        const taken = new Set(); K().walk(m.root, x => { const i = !x.implied && K().attrOf(x, 'id'); if (i) taken.add(i.value); });
+        const inside = x => { for (let p = x; p; p = p.parent) if (p === root) return true; return false; };
+        K().walk(m.root, x => {
+          if (x.implied || !lv.includes(x.tag) || inside(x)) return;
+          const tx = C().outerOf(m, x).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim(); if (!tx) return;
+          const has = K().attrOf(x, 'id');
+          let id = has && has.value;
+          if (!id) { const base = tx.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'section'; id = base; let i = 2; while (taken.has(id)) id = base + '-' + i++; taken.add(id); heads.push([K().pathOf(x), id]); }
+          rows.push({ href: '#' + id, text: tx.slice(0, 120), sub: x.tag !== lv[0] });
+        });
+        if (!rows.length) return this.note('אין בעמוד כותרות ' + lv.join(' / ') + ' (מחוץ לרכיב)', true);
+      }
+      const html = rows.map(r => this.itemHtml(tpl, linkSel, r.href, r.text, r.sub && a.sub, !r.sub && a.sub)).join('\n' + ind);
+      const ok = this.act((a.pages ? 'פריטים מהעמודים' : 'תוכן עניינים מהכותרות') + ' · ' + lab + ' · ' + rows.length, mm => {
+        const rr = K().byPath(mm, P), its = this.targets(rr, sel).filter((x, i, all) => x.parent === all[0].parent);
+        const ps = [{ from: its[0].from, to: K().endOf(mm, its[its.length - 1]), text: html }];
+        for (const [hp, id] of heads) { const hn = K().byPath(mm, hp); if (hn) ps.push(...K().html.setAttr(mm, hn, 'id', id).patches); }
+        return { patches: ps.sort((x, y) => x.from - y.from) };
+      }, root);
+      if (ok) this.note((a.pages ? rows.length + ' קישורים — מהעמודים של הפרויקט' : rows.length + ' שורות מהכותרות' + (heads.length ? ' · ' + heads.length + ' כותרות קיבלו id' : '')) + ' — פעולה אחת', false, { label: 'בטל', run: this.undo });
+    }
+
+    // ── גרירה של נקודה ("drag"): ידית עגולה על הקנבס ← --x / --y באחוזים מהתמונה, על הנקודה עצמה ──
+    drawHandles() {
+      const c = this.c; if (!this.hl) { this.hl = h('div', { class: 'kit-handles', 'data-kit-handles': true }); c.layer.append(this.hl); }
+      const want = [];
+      if (c.m && c.m2d && c.m.src.indexOf(C().MARK) >= 0 && !this.build.drag.active && !c.edit?.active) {
+        const sel = c.selected, sr = sel && C().instanceOf(sel);
+        for (const inst of C().instances(c.m)) {
+          if (inst.node !== sr) continue;                                   // רק ברכיב הנבחר — שלא יכסו את הקנבס
+          for (const d of this.raw(inst.name).drag) {
+            const box = this.targets(inst.node, d.box)[0]; if (!box) continue;
+            for (const n of this.targets(inst.node, d.each)) { const r = c.rectOf(n); if (r && !r.zero) want.push({ n, d, root: inst.node, box, r }); }
+          }
+        }
+      }
+      const kids = this.hl.children;
+      while (kids.length > want.length) kids[kids.length - 1].remove();
+      want.forEach((w, i) => {
+        let b = kids[i];
+        if (!b) { b = h('button', { type: 'button', class: 'kit-handle', 'aria-label': 'גרירת הנקודה', title: '✥ גרירה — מזיזה את הנקודה על התמונה' }); b.addEventListener('pointerdown', e => this.dragStart(e, b)); this.hl.append(b); }
+        b._w = w; b.dataset.kitHandle = i;
+        b.style.cssText = 'left:' + (w.r.left + w.r.width / 2) + 'px;top:' + (w.r.top + w.r.height / 2) + 'px';
+      });
+    }
+    dragStart(e, b) {
+      const w = b._w; if (!w || !this.canWrite()) return;
+      e.preventDefault(); e.stopPropagation(); try { b.setPointerCapture(e.pointerId); } catch { /* */ }
+      const c = this.c, el = c.elOf(w.n), lr = c.layer.getBoundingClientRect(), br = c.rectOf(w.box);
+      if (!el || !br || !br.width || !br.height) return;
+      const pct = ev => { const x = (ev.clientX - lr.left - br.left) / br.width * 100, y = (ev.clientY - lr.top - br.top) / br.height * 100; return [Math.round(Math.min(100, Math.max(0, x)) * 10) / 10, Math.round(Math.min(100, Math.max(0, y)) * 10) / 10]; };
+      let last = null; b.classList.add('on');
+      const mv = ev => { last = pct(ev); el.style.setProperty(w.d.x, last[0] + '%'); el.style.setProperty(w.d.y, last[1] + '%'); b.style.left = (ev.clientX - lr.left) + 'px'; b.style.top = (ev.clientY - lr.top) + 'px'; };
+      const up = () => {
+        b.removeEventListener('pointermove', mv); b.removeEventListener('pointerup', up); b.removeEventListener('pointercancel', up); b.classList.remove('on');
+        el.style.removeProperty(w.d.x); el.style.removeProperty(w.d.y);
+        if (!last) return this.c.draw();
+        const P = K().pathOf(w.n), v = last;
+        this.act('גרירת נקודה · ' + c.label(w.root) + ' · ' + v[0] + '% / ' + v[1] + '%', m => {
+          const n = K().byPath(m, P), st = K().attrOf(n, 'style'), cur = st ? st.value : '';
+          const next = C().styleEdit(C().styleEdit(cur, w.d.x, v[0] + '%'), w.d.y, v[1] + '%');
+          return { patches: K().html.setAttr(m, n, 'style', next).patches.map(p => ({ from: p.from, to: p.to, text: p.text.replace(/</g, '&lt;').replace(/>/g, '&gt;') })) };
+        }, w.n);
+      };
+      b.addEventListener('pointermove', mv); b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
+    }
+
     /** הסרגל הקטן על הקנבס, ליד המופע הנבחר: מצב ▸ (מחזורי — גם במגע) ו-➕ פריט. */
     drawChip() {
       const c = this.c, n = c.selected, root = n && c.m && C().instanceOf(n), ch = this.chip;
@@ -361,7 +468,7 @@
       ch.hidden = !ch.children.length;
       if (!ch.hidden) { ch.style.cssText = 'left:0;top:0'; const w = ch.offsetWidth; ch.style.cssText = 'left:' + Math.max(0, r.left + (r.width - w) / 2) + 'px;top:' + (r.top > 30 ? r.top - 26 : r.top + r.height + 4) + 'px'; }   // מעל המופע, באמצע — בין תווית הבחירה לתג ◆
     }
-    draw() { try { this.apply(); this.drawChip(); } catch (e) { console.error(e); } }
+    draw() { try { this.apply(); this.drawChip(); this.drawHandles(); } catch (e) { console.error(e); } }
   }
 
   window.KolKit = { Kit };

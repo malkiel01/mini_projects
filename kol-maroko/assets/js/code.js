@@ -9,7 +9,7 @@ const Code = (() => {
 
   // ── Monaco ─────────────────────────────────────────────
   let monaco = null;
-  let monacoP = null;                                                       // טעינה אחת גם בקריאות חופפות (loader.js פעמיים — "_amdLoaderGlobal has already been declared")
+  let monacoP = null;   // V14: טעינה שבדרך — אחת; כישלון מאפס אותה (ומסיר את התג שנכשל), כך שהניסיון הבא טוען מחדש
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
     if (window.monaco) return Promise.resolve(monaco = window.monaco);      // כבר נטען במסך 📁 פרויקט
@@ -19,19 +19,20 @@ const Code = (() => {
       // ה-workers מכתובת אחרת — דרך blob, אחרת הדפדפן חוסם
       window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob(
         [`self.MonacoEnvironment={baseUrl:'${MONACO}/../'};importScripts('${MONACO}/base/worker/workerMain.js');`], { type: 'text/javascript' })) };
-      const done = () => {
+      const go = () => {
         window.require.config({ paths: { vs: MONACO } });
         window.require(['vs/editor/editor.main'], m => { clearTimeout(t); monaco = m; ok(m); }, e => { clearTimeout(t); fail(e); });
       };
-      if (window.require?.config) return done();                           // ה-loader כבר נטען (מסך אחר)
-      const prev = document.querySelector('script[src$="monaco/vs/loader.js"]');
-      if (prev) { prev.addEventListener('load', done); prev.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
+      /* V16: loader.js פעם אחת לדף — גם project.js טוען אותו; טעינה כפולה = "_amdLoaderGlobal has already been declared" */
+      if (window.require?.config) return go();
+      const was = document.querySelector('script[data-monaco-loader]');
+      if (was) { was.addEventListener('load', go); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
       const s = document.createElement('script');
-      s.src = MONACO + '/loader.js';
+      s.src = MONACO + '/loader.js'; s.dataset.monacoLoader = '1'; s.addEventListener('load', () => { s.dataset.loaded = '1'; });
       s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
-      s.onload = done;
+      s.onload = go;
       document.head.append(s);
-    }).catch(e => { monacoP = null; throw e; }));
+    }).catch(e => { monacoP = null; document.querySelector('script[data-monaco-loader]:not([data-loaded])')?.remove(); throw e; }));
   }
 
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;

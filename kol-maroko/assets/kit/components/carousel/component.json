@@ -1,0 +1,14 @@
+{
+  "name": "carousel",
+  "label": "קרוסלה",
+  "icon": "🎠",
+  "category": "תנועה",
+  "fields": [
+    {"id": "items", "label": "שקופיות", "control": "repeater", "target": {"children": ".kol-carousel__slide"}},
+    {"id": "per", "label": "כמה בכל מבט", "control": "number", "target": {"var": "--kol-carousel-per"}},
+    {"id": "gap", "label": "רווח", "control": "size", "target": {"var": "--kol-carousel-gap"}}
+  ],
+  "states": [
+    {"id": "slide", "label": "שקופית", "item": "שקופית", "each": ".kol-carousel__slide", "class": "is-active", "scroll": true}
+  ]
+}

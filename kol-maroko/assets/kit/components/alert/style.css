@@ -1,5 +1,5 @@
-/* רכיב מוכן: התראה (kit 1.0.0). ✕ מופיע רק עם JS (is-ready); "נסגרה" — is-closed. */
-.kol-alert { --kol-alert-c: #1d4ed8; display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--kol-alert-c) 35%, transparent); background: color-mix(in srgb, var(--kol-alert-c) 9%, var(--color-bg, #fff)); }
+/* רכיב מוכן: התראה (kit 1.0.1). ✕ מופיע רק עם JS (is-ready); "נסגרה" — is-closed. */
+.kol-alert { --kol-alert-c: #1d4ed8; display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--kol-alert-c) 35%, transparent); background: color-mix(in srgb, var(--kol-alert-c) 9%, var(--color-bg, #fff)); color: var(--color-text, #16192b); }
 .kol-alert--success { --kol-alert-c: #15803d; }
 .kol-alert--warning { --kol-alert-c: #b45309; }
 .kol-alert--danger { --kol-alert-c: #b91c1c; }

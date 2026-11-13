@@ -40,8 +40,7 @@ const Project = (() => {
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 
   // ── Monaco, מהאפליקציה עצמה ───────────────────────────────
-  // שתי קריאות חופפות (למשל עורך הקוד ו"פתח בקוד" יחד) — טעינה אחת: loader.js שנטען פעמיים זורק "_amdLoaderGlobal has already been declared"
-  let monacoP = null;
+  let monacoP = null;   // V14: טעינה שבדרך — אחת; כישלון מאפס אותה (ומסיר את התג שנכשל), כך שהניסיון הבא טוען מחדש
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
     if (window.monaco) return Promise.resolve(monaco = window.monaco);
@@ -54,14 +53,14 @@ const Project = (() => {
         window.require(['vs/editor/editor.main'], m => { clearTimeout(t); ok(monaco = m); }, e => { clearTimeout(t); fail(e); });
       };
       if (window.require?.config) return done();
-      const prev = document.querySelector('script[src$="monaco/vs/loader.js"]');   // כבר בדרך (מסך אחר) — מחכים לו, לא טוענים שוב
-      if (prev) { prev.addEventListener('load', done); prev.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
+      const was = document.querySelector('script[data-monaco-loader]');   /* V16: loader.js פעם אחת לדף (גם code.js טוען אותו) */
+      if (was) { was.addEventListener('load', done); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
       const s = document.createElement('script');
-      s.src = VS + '/loader.js';
+      s.src = VS + '/loader.js'; s.dataset.monacoLoader = '1'; s.addEventListener('load', () => { s.dataset.loaded = '1'; });
       s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
       s.onload = done;
       document.head.append(s);
-    }).catch(e => { monacoP = null; throw e; }));   // כישלון — הניסיון הבא טוען מחדש
+    }).catch(e => { monacoP = null; document.querySelector('script[data-monaco-loader]:not([data-loaded])')?.remove(); throw e; }));
   }
 
   // ── נתונים ────────────────────────────────────────────────

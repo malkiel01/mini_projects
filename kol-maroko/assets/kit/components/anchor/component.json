@@ -1,0 +1,10 @@
+{
+  "name": "anchor",
+  "label": "עוגן",
+  "icon": "⚓",
+  "category": "ניווט",
+  "fields": [
+    {"id": "id", "label": "שם העוגן (הקישור: #השם)", "control": "text", "target": {"attr": "id"}},
+    {"id": "offset", "label": "מרווח מלמעלה בקפיצה", "control": "size", "target": {"var": "--kol-anchor-offset"}}
+  ]
+}
