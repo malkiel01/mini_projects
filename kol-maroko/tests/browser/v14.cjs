@@ -141,6 +141,56 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(st.nav && st.info, '390: 🌳 ו-ℹ️ גלויים בסרגל בלי לגלול', st);
     await shot(page, 'v14-390-start');
 
+    // ═══ 1b. 🔴 בעלים: החלקה על הקנבס היא תמיד גלילה — מגע אמיתי (CDP), מכל נקודת התחלה ═══
+    {
+      const swipe = async (from, dy = -300) => { const c = await cdpOf(page), tp = (x, y) => [{ x: Math.round(x), y: Math.round(y), id: 1, radiusX: 4, radiusY: 4, force: 1 }];
+        await c.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: tp(from.x, from.y) });
+        for (let i = 1; i <= 15; i++) { await c.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: tp(from.x, from.y + dy * i / 15) }); await sleep(16); }
+        await c.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(700); };
+      const snap = () => page.evaluate(() => { const S = Editor._state, c = S.canvas; return { y: Math.round(c.frame.contentWindow.scrollY), sel: c.selected ? c.label(c.selected) : null, doc: S.doc.text().length + ':' + S.doc.text().slice(-200), css: [...S.sheets.values()].map(x => x.doc.text()).join('').length }; });
+      const top0 = () => page.evaluate(() => Editor._state.canvas.frame.contentWindow.scrollTo(0, 0));
+      const pointOn = (sel, fy = 0.5) => page.evaluate(([q, fy]) => { const c = Editor._state.canvas, e = c.doc.querySelector(q); if (!e) return null; const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(), hr = c.host.getBoundingClientRect(); const y = Math.min(hr.bottom - 20, Math.max(hr.top + 20, f.top + (r.top + r.height * fy) * c.scale)); return { x: f.left + (r.left + r.width / 2) * c.scale, y }; }, [sel, fy]);
+      const check = async (label, sel, fy) => { await top0(); await sleep(200); const p0 = await pointOn(sel, fy); if (!p0) return ok(false, label + ' — לא נמצא ' + sel); const a = await snap(); await swipe(p0); const b = await snap();
+        ok(b.y > a.y + 100 && b.sel === a.sel && b.doc === a.doc && b.css === a.css, label + ' — גולל (' + a.y + '→' + b.y + '), הבחירה והקבצים לא השתנו', { a: { y: a.y, sel: a.sel }, b: { y: b.y, sel: b.sel }, same: b.doc === a.doc && b.css === a.css }); };
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(300);
+      await check('החלקה למעלה שמתחילה על הכותרת (כלום לא נבחר)', 'h1');
+      await select(page, 'h1'); await sleep(600);
+      await check('החלקה שמתחילה על הכותרת הנבחרת', 'h1');
+      await select(page, '.kadisha-page'); await sleep(600);
+      await check('החלקה בתוך רובריקה גדולה שנבחרה (הורה של כל העמוד)', 'h1');
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(300);
+      await check('החלקה שמתחילה על תמונת הרקע של הרובריקה (section.kadisha-hero)', 'section.kadisha-hero', 0.8);
+      // אלמנט במיקום חופשי (absolute), נבחר
+      const tF = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+      await select(page, '.kadisha-hero-subtitle-main, h1 + *'); await sleep(300);
+      await page.evaluate(() => { const S = Editor._state; S.pos.on(S.canvas.selected, S.pos.pickRef); }); await sleep(900);
+      const freeOk = await page.evaluate(() => Editor._state.pos.isFree(Editor._state.canvas.selected));
+      ok(freeOk, 'הוכן אלמנט במיקום חופשי לבדיקת ההחלקה');
+      const fsel = await page.evaluate(() => { const c = Editor._state.canvas, e = c.elOf(c.selected); e.setAttribute('data-v14-free', ''); return true; });
+      await check('החלקה שמתחילה על אלמנט במיקום חופשי (absolute, נבחר)', '[data-v14-free]', 0.6);
+      st = await page.evaluate(() => { const b = document.querySelector('[data-ps-move]'); if (!b || b.hidden) return null; const cs = getComputedStyle(b), af = getComputedStyle(b, '::after'); return { pe: cs.pointerEvents, ta: cs.touchAction, grip: af.pointerEvents, w: parseFloat(af.width), h: parseFloat(af.height) }; });
+      ok(st && st.pe === 'none' && st.grip === 'auto' && st.w >= 44 && st.h >= 44, 'מיקום חופשי במגע: התיבה אינה תופסת את האלמנט (החלקה עוברת), והגרירה — מידית ✥ של 44px', st);
+      for (let i = 0; i < 5 && await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) !== tF; i++) await undo(page);
+      ok(await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) === tF, 'Ctrl+Z מחזיר את המיקום החופשי');
+      // הקשה בלי תזוזה — עדיין בוחרת
+      await top0(); await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(400);
+      const tp1 = await pointOn('h1'); await page.touchscreen.tap(tp1.x, tp1.y); await sleep(300);
+      ok(/^h1/.test(await selName(page) || ''), 'הקשה בלי תזוזה — עדיין בוחרת (h1)');
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(500);
+    }
+
+    // ═══ 1c. 🟡 בעלים: כלי תמונת הרקע בטלפון — עם תוויות, במסגרת, לא מתבלבלים עם 🗑️/✥ ═══
+    {
+      await select(page, 'section.kadisha-hero'); await sleep(500);
+      st = await page.evaluate(() => { const g = document.querySelector('.ed-bar [data-bg-tools]'); if (!g) return null; g.scrollIntoView({ inline: 'center', block: 'nearest' });
+        const lab = g.querySelector(':scope > .ed-word'), bs = [...g.querySelectorAll('[data-bgt]')];
+        return { label: lab && lab.offsetWidth > 0 ? lab.textContent.trim() : '', btns: bs.map(b => ({ k: b.dataset.bgt, txt: b.textContent.trim(), vis: [...b.querySelectorAll('.ed-word')].every(w => w.offsetWidth > 0), aria: b.getAttribute('aria-label') || '', h: Math.round(b.getBoundingClientRect().height) })), border: getComputedStyle(g).borderStyle };
+      });
+      ok(st && /תמונת רקע/.test(st.label) && st.btns.length === 3 && st.btns.every(b => b.vis && /תמונת רקע/.test(b.aria)) && /החלף/.test(st.btns[0].txt) && /הסר/.test(st.btns[1].txt) && /הזז/.test(st.btns[2].txt) && st.border === 'dashed',
+        '390: כלי תמונת הרקע — קבוצה במסגרת עם "🖼 תמונת רקע:", ולכל כפתור תווית גלויה (החלף · הסר · הזז) ו-aria-label מלא', st);
+      await page.evaluate(() => { Editor._state.canvas.select(null); document.querySelector('.ed-bar').scrollLeft = 0; }); await sleep(300);
+    }
+
     // ═══ 2. בחירה (V1) — הקשה, הקשה חוזרת = הורה, פירורי לחם ═══
     const H1 = 'h1';
     const cvTop = () => page.evaluate(() => Math.round(document.querySelector('.ed-canvas').getBoundingClientRect().top));
@@ -317,11 +367,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ═══ 9. הקלדה (V2) + מקלדת וירטואלית ═══
     {
+      if (process.env.V14_DEBUG) await page.evaluate(() => { const M = Editor._state.menu, o = M.open.bind(M); window.__mo = []; M.open = (...a) => { window.__mo.push(new Error().stack.split('\n').slice(1, 6).join(' | ')); return o(...a); }; });
       const p3 = await at(page, H1);
       await page.touchscreen.tap(p3.x, p3.y); await sleep(120); await page.touchscreen.tap(p3.x, p3.y); await sleep(500);
       await page.evaluate(() => Editor._state.touch.fakeKeyboard(320)); await sleep(300);
       const act = await page.evaluate(() => !!Editor._state.text?.active);
-      ok(act, 'V2 · הקשה כפולה — עריכת טקסט במקום');
+      ok(act, 'V2 · הקשה כפולה — עריכת טקסט במקום', await page.evaluate(() => { const c = Editor._state.canvas; return { sel: c.selected && c.label(c.selected), ev: c.events.slice(-12), held: c.held && c.label(c.held), menu: !!document.querySelector('.ed-ctx'), mo: window.__mo, sheet: document.getElementById('sheet').open }; }));
       st = await page.evaluate(() => { const b = document.querySelector('.ed-tbar:not([hidden])'); const r = b && b.getBoundingClientRect(); return r ? { bottom: Math.round(r.bottom), top: Math.round(r.top), ih: innerHeight, pos: getComputedStyle(b).position } : null; });
       ok(st && st.pos === 'fixed' && Math.abs(st.bottom - (st.ih - 320)) <= 2, 'מקלדת: שורת העיצוב (B I קישור…) צמודה מעל המקלדת', st);
       await page.keyboard.press('Control+End'); await page.keyboard.type(' ב'); await sleep(100);
@@ -397,8 +448,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       let p4 = await at(page, H1);
       p4 = await page.evaluate(p => { const host = Editor._state.canvas.host, r = host.getBoundingClientRect(); host.scrollLeft += p.x - (r.left + r.width / 2); return p; }, p4);
       p4 = await at(page, H1, 0, 0.5, 0.5, false);
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(450);   // הקשה על הנבחר עולה להורה — מתחילים בלי בחירה
       await tap(page, p4);
-      ok(/^h1/.test(await selName(page) || ''), 'במצב מוגדל — הקשה בוחרת את האלמנט שמתחת לאצבע');
+      ok(/^h1/.test(await selName(page) || ''), 'במצב מוגדל — הקשה בוחרת את האלמנט שמתחת לאצבע', await page.evaluate(p => { const c = Editor._state.canvas, f = c.frame.getBoundingClientRect(); const t = c.doc.elementFromPoint((p.x - f.left) / c.scale, (p.y - f.top) / c.scale); return { sel: c.selected && c.label(c.selected), at: t && t.localName + '.' + t.className, ev: c.events.slice(-6), text: !!Editor._state.text?.active, menu: !!document.querySelector('.ed-ctx'), p, hostR: c.host.getBoundingClientRect().toJSON() }; }, p4));
       await shot(page, 'v14-390-zoom');
       await tap(page, await rectOf(page, '[data-ts-fit]').then(r => ({ x: r.cx, y: r.cy })));
       st = await page.evaluate(() => ({ z: Editor._state.touch.zoom, fit: document.querySelector('[data-ts-fit]').hidden }));
@@ -544,7 +596,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(!bgB.start && !bgB.move && !/none|pan-x(?!.*pan-y)/.test(bgB.ta) && bgB.host === 'auto', 'בהגדלה: גרירה באצבע על רקע — גוללת (העורך אינו עוצר את המגע; המכל גולל)', bgB);
       const elPt = await at(page, H1, 0, 0.5, 0.5, false);
       const elB = await blocked(elPt);
-      ok(elB.start, 'בהגדלה: גרירה על האלמנט הנבחר — אינה גוללת (המגע נעצר)', elB);
+      ok(!elB.start && !elB.move, 'בהגדלה: החלקה גם על האלמנט הנבחר — גוללת (כלל הבעלים: החלקה היא תמיד גלילה; גרירה — רק אחרי לחיצה ארוכה או מ-⠿)', elB);
       await page.evaluate(() => Editor._state.touch.setZoom(1)); await sleep(300);
     }
 

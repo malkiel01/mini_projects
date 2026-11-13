@@ -819,6 +819,10 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
   .ed-crumbs { flex: 1 1 0; min-width: 34%; }
   .ed-where { display: none; }
+  /* V14 (🟡 בעלים): כלי תמונת הרקע — עם תוויות ובמסגרת, כדי שלא יתבלבלו עם 🗑️ "מחק אלמנט" ועם ✥ "מיקום חופשי" שלידם */
+  .ed-bar .ed-bgtools { display: inline-flex; align-items: center; gap: 2px; flex: none; padding: 0 4px; border: 1px dashed var(--brand, #36c); border-radius: var(--r); background: var(--brand-soft); }
+  .ed-bar .ed-bgtools .ed-word { display: inline; white-space: nowrap; font-size: .8rem; }
+  .ed-bar .ed-bgtools > .ed-word:first-child { font-weight: 600; }
   .ts-freewarn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .ts-freewarn[hidden] { display: none; }
   .ts-freewarn span { flex: 1 1 200px; }
@@ -889,6 +893,10 @@ dialog.hd-sheet .hd { padding: 0; }
   .nv-row .nv-tw, .nv-row .nv-ic { height: 44px; min-width: 44px; }
   .ts-rowmv { opacity: .7; }
   .ed-crumb { min-height: 44px; }
+  /* V14 (🔴 בעלים): במגע תיבת המיקום החופשי אינה מכסה את האלמנט — החלקה עליו גוללת; הגרירה — מידית ✥ של 44px מעליו */
+  .ps-move { pointer-events: none; touch-action: auto; }
+  .ps-move::after { content: '✥'; pointer-events: auto; touch-action: none; position: absolute; left: 50%; top: 0; width: 44px; height: 44px; transform: translate(-50%, calc(-100% - 2px));
+    display: grid; place-items: center; border-radius: 50%; background: var(--brand, #36c); color: #fff; font-size: 20px; box-shadow: 0 2px 6px rgba(0, 0, 0, .3); }
   /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */
   .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }
   .tp-row .icon-btn { min-width: 44px; min-height: 44px; }
