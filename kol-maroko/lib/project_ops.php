@@ -833,8 +833,10 @@ function kit_undo(array $user, array $b): array
         foreach ($ids as $id) {
             $r = pf_row($id, false);
             if (!str_starts_with($r['path'], "components/$folder/")) throw new ApiError('הקובץ אינו חלק מהרכיב', 422);
-            $st->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $id]);
+            // נערך אחרי ההעתקה (📁 קבצים, עורך הקוד, "ערוך את הרכיב") — לא לסל בשקט
+            if ((int)$r['rev'] !== 1 && $r['deleted_at'] === null) throw new ApiError("\"{$r['path']}\" נערך אחרי ההעתקה — הביטול לא ימחק אותו. מוחקים את הרכיב בעצמכם (🧩 רכיבים ← 🗑), אם רוצים", 409, ['edited' => $r['path']]);
         }
+        foreach ($ids as $id) $st->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $id]);
         if (isset(kit_sys()[$folder])) kit_sys_put($user, $folder, null, "ביטול רכיב מוכן: components/$folder/");
     });
     audit_as($user, 'kit_undo', "components/$folder/");
@@ -866,48 +868,78 @@ function kit_update(array $user, array $b): array
             return ['before' => [], 'created' => []];
         }
         if ($changed && empty($b['force'])) throw new ApiError('הרכיב שונה בפרויקט — "יש גרסה חדשה — השוואה"', 409, ['modified' => true]);
-        $before = []; $created = [];
+        $before = []; $after = []; $created = []; $removed = [];
         $files = kit_files_for($k, $folder);
+        $new = array_filter(array_keys($files), fn($f) => !(($r = pf_by_path("components/$folder/$f")) && $r['kind'] === 'file'));
+        if (($n = pf_count()) + count($new) > ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $n + count($new), $max);
         foreach ($files as $f => $bytes) {
             $p = "components/$folder/$f";
             $r = pf_by_path($p);
-            if ($r && $r['kind'] === 'file') { if (pf_blob_get($r['sha']) !== $bytes) { $before[$p] = (int)$r['rev']; pf_put($r, $bytes, $user, $note); } }
-            else { pf_free($p); $created[] = (int)pf_insert($p, 'file', $bytes, $user, null, $note)['id']; }
+            if ($r && $r['kind'] === 'file') { if (pf_blob_get($r['sha']) !== $bytes) { $before[$p] = (int)$r['rev']; $after[$p] = (int)pf_put($r, $bytes, $user, $note)['rev']; } }
+            else { pf_free($p); $r2 = pf_insert($p, 'file', $bytes, $user, null, $note); $created[] = (int)$r2['id']; }
         }
-        $kr = pf_by_path('kol.json');
-        if ($kr) $before['kol.json'] = (int)$kr['rev'];
+        // קובץ שהגרסה החדשה כבר אינה כוללת (למשל script.js שהוסר) — לסל, כמו בעדכון של קובץ מערכת; Ctrl+Z מחזיר
+        $batch = bin2hex(random_bytes(6));
+        foreach (KIT_FILES as $f) {
+            if (isset($files[$f]) || !($r = pf_by_path("components/$folder/$f")) || $r['kind'] !== 'file') continue;
+            db()->prepare('UPDATE pf_files SET deleted_at = ?, deleted_by = ?, deleted_name = ?, deleted_batch = ? WHERE id = ?')->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $r['id']]);
+            $removed[] = (int)$r['id'];
+        }
         kit_sys_put($user, $folder, ['version' => $k['version'], 'modified' => false, 'kit' => $k['name'], 'hash' => kit_hash($files)], $note);
-        return ['before' => $before, 'created' => $created];
+        return ['before' => $before, 'after' => $after, 'created' => $created, 'removed' => $removed, 'entry' => $e];
     });
     audit_as($user, 'kit_update', "components/$folder/ · $act");
     return $res + ['kol' => pf_kol()];
 }
 
-/** ביטול העדכון (Ctrl+Z): כל קובץ חוזר לתוכן שהיה לו ב-rev שלפני העדכון (מההיסטוריה — שינוי רגיל, rev+1); קבצים שנוצרו — לסל. */
+/**
+ * ביטול העדכון (Ctrl+Z): כל קובץ חוזר לתוכן שהיה לו ב-rev שלפני העדכון (מההיסטוריה — שינוי רגיל, rev+1) — **רק אם לא השתנה מאז**
+ * (after: [נתיב => rev אחרי העדכון]; אחרת 409, כמו pf_version_restore); קבצים שנוצרו — לסל (גם הם — רק אם לא נערכו); קבצים שהוסרו —
+ * חוזרים; ב-kol.json חוזר **רק המפתח של הרכיב** (entry — הרשומה שלפני), לא הקובץ כולו.
+ */
 function kit_revert(array $user, array $b): array
 {
     pf_guard($user);
     $folder = (string)($b['folder'] ?? '');
     if (!preg_match(KIT_NAME, $folder)) throw new ApiError('תיקייה לא תקינה');
     $prev = is_array($b['before'] ?? null) ? $b['before'] : [];
-    $created = array_values(array_unique(array_map('intval', (array)($b['created'] ?? []))));
-    pf_tx(function () use ($folder, $prev, $created, $user) {
+    $after = is_array($b['after'] ?? null) ? $b['after'] : [];
+    $ints = fn($k) => array_values(array_unique(array_map('intval', (array)($b[$k] ?? []))));
+    $created = $ints('created'); $removed = $ints('removed');
+    $entry = $b['entry'] ?? null;
+    if ($entry !== null) {
+        if (!is_array($entry) || !is_string($entry['version'] ?? null) || !preg_match('/^\d+\.\d+\.\d+$/', $entry['version']) || !is_string($entry['kit'] ?? null) || !in_array($entry['kit'], kit_names(), true)
+            || !is_string($entry['hash'] ?? '') || !preg_match('/^[0-9a-f]{0,40}$/', (string)($entry['hash'] ?? ''))) throw new ApiError('הרשומה הקודמת אינה תקינה', 422);
+        $entry = ['version' => $entry['version'], 'modified' => !empty($entry['modified']), 'kit' => $entry['kit'], 'hash' => (string)($entry['hash'] ?? '')];
+    }
+    $inside = fn(string $p) => (bool)preg_match('~^components/' . preg_quote($folder, '~') . '/[a-z0-9][a-z0-9._-]{0,60}\.(json|html|css|js|svg)$~', $p);
+    pf_tx(function () use ($folder, $prev, $after, $created, $removed, $entry, $inside, $user) {
+        $todo = [];
         foreach ($prev as $p => $rev) {
-            if (!is_string($p) || ($p !== 'kol.json' && !preg_match('~^components/' . preg_quote($folder, '~') . '/(' . implode('|', array_map('preg_quote', KIT_FILES)) . ')$~', $p))) throw new ApiError('הקובץ אינו חלק מהרכיב', 422);
+            if (!is_string($p) || $p === 'kol.json') continue;                 // kol.json — רק המפתח (entry), למטה
+            if (!$inside($p)) throw new ApiError('הקובץ אינו חלק מהרכיב', 422);
             $r = pf_by_path($p);
             if (!$r || $r['kind'] !== 'file') continue;
+            if (!isset($after[$p]) || (int)$r['rev'] !== (int)$after[$p]) throw new ApiError("\"$p\" השתנה אחרי העדכון — הביטול לא ידרוס את השינוי. משחזרים גרסה ידנית (🕘 גרסאות)", 409, ['changed' => $p]);
             $st = db()->prepare('SELECT sha FROM pf_history WHERE file_id = ? AND rev = ? ORDER BY id DESC LIMIT 1');
             $st->execute([$r['id'], (int)$rev]);
             $sha = $st->fetchColumn();
             if (!is_string($sha) || !is_file(pf_blob_path($sha))) throw new ApiError("הגרסה הקודמת של \"$p\" אינה בהיסטוריה", 409);
-            pf_put($r, pf_blob_get($sha), $user, 'ביטול עדכון רכיב מוכן');
+            $todo[] = [$r, $sha];
         }
-        $batch = bin2hex(random_bytes(6));
+        $rows = [];
         foreach ($created as $id) {
             $r = pf_row($id, false);
-            if (!str_starts_with($r['path'], "components/$folder/")) throw new ApiError('הקובץ אינו חלק מהרכיב', 422);
-            db()->prepare('UPDATE pf_files SET deleted_at = ?, deleted_by = ?, deleted_name = ?, deleted_batch = ? WHERE id = ? AND deleted_at IS NULL')->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $id]);
+            if (!$inside($r['path'])) throw new ApiError('הקובץ אינו חלק מהרכיב', 422);
+            if ($r['deleted_at'] === null && (int)$r['rev'] !== 1) throw new ApiError("\"{$r['path']}\" נערך אחרי העדכון — הביטול לא ימחק אותו", 409, ['changed' => $r['path']]);
+            $rows[] = $r;
         }
+        foreach ($removed as $id) { $r = pf_row($id, false); if (!$inside($r['path'])) throw new ApiError('הקובץ אינו חלק מהרכיב', 422); }
+        foreach ($todo as [$r, $sha]) pf_put($r, pf_blob_get($sha), $user, 'ביטול עדכון רכיב מוכן');
+        $batch = bin2hex(random_bytes(6));
+        foreach ($rows as $r) db()->prepare('UPDATE pf_files SET deleted_at = ?, deleted_by = ?, deleted_name = ?, deleted_batch = ? WHERE id = ? AND deleted_at IS NULL')->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $r['id']]);
+        foreach ($removed as $id) { $r = pf_row($id, false); if ($r['deleted_at'] === null) continue; pf_free($r['path']); db()->prepare('UPDATE pf_files SET deleted_at = NULL, deleted_by = NULL, deleted_name = NULL, deleted_batch = NULL WHERE id = ?')->execute([$id]); }
+        if ($entry !== null) kit_sys_put($user, $folder, $entry, 'ביטול עדכון רכיב מוכן');
     });
     audit_as($user, 'kit_revert', "components/$folder/");
     return ['kol' => pf_kol()];

@@ -150,10 +150,55 @@ test('V16 kit_update: לא שונה ← גרסה חדשה נכתבת (שינוי
     ok(isset($r['before']['components/counter/style.css']) && !isset($r['before']['components/counter/template.html']), 'before — רק מה שהשתנה (+kol.json): ' . json_encode($r['before']));
     $i = kt_item('counter')['installed'][0];
     ok(!$i['update'] && !$i['modified'] && $i['version'] === '1.0.0', json_encode($i));
-    kit_revert(KT_ED, ['folder' => 'counter', 'before' => $r['before'], 'created' => $r['created']]);
+    kit_revert(KT_ED, ['folder' => 'counter'] + $r);
     eq($old, kt_text('components/counter/style.css'), 'ביטול — חזר');
     eq('0.9.0', pf_kol()['config']['system']['components/counter/']['version'], 'ביטול — גם הרשומה');
     eq(422, throws(fn() => kit_revert(KT_ED, ['folder' => 'counter', 'before' => ['index.html' => 1], 'created' => []])), 'revert לקובץ מחוץ לרכיב — נדחה');
+});
+
+test('V16 ביטול עם בדיקת גרסה: kit_undo / kit_revert — קובץ שנערך בינתיים ← 409, לא נדרס ולא לסל; kol.json — רק המפתח של הרכיב', function () {
+    kt_reset();
+    // kit_undo: קובץ שנערך אחרי ההעתקה
+    $r = kit_copy(KT_ED, ['name' => 'quote']);
+    $t = pf_by_path('components/quote/style.css');
+    pf_tx(fn() => pf_put($t, kt_text('components/quote/style.css') . "\n/* שלי */\n", KT_ED, 'שלי'));
+    $code = 0; try { kit_undo(KT_ED, ['folder' => 'quote', 'ids' => $r['ids']]); } catch (ApiError $e) { $code = $e->getCode(); $msg = $e->getMessage(); }
+    eq(409, $code, 'נערך אחרי ההעתקה — 409');
+    ok(str_contains((string)kt_text('components/quote/style.css'), '/* שלי */') && pf_by_path('components/quote/template.html') !== null && isset(pf_kol()['config']['system']['components/quote/']), 'שום קובץ לא עבר לסל, והרשומה נשארה');
+    // kit_revert: קובץ שהשתנה אחרי העדכון
+    kit_copy(KT_ED, ['name' => 'counter']);
+    pf_tx(fn() => pf_put(pf_by_path('components/counter/style.css'), "/* 0.9.0 */\n", KT_ED, 'ישן'));
+    $c = pf_kol()['config']; $c['system']['components/counter/']['version'] = '0.9.0'; $c['system']['components/counter/']['hash'] = kit_hash(kit_proj('counter'));
+    pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'ישן'));
+    $u = kit_update(KT_ED, ['folder' => 'counter', 'action' => 'take']);
+    ok(isset($u['after']['components/counter/style.css'], $u['entry']['version']) && $u['entry']['version'] === '0.9.0', 'kit_update מחזיר after ו-entry');
+    $edit = kt_text('components/counter/style.css') . "\n/* אחרי העדכון */\n";
+    pf_tx(fn() => pf_put(pf_by_path('components/counter/style.css'), $edit, KT_ED, 'שלי'));
+    eq(409, throws(fn() => kit_revert(KT_ED, ['folder' => 'counter'] + $u)), 'השתנה אחרי העדכון — 409');
+    eq($edit, kt_text('components/counter/style.css'), 'השינוי לא נדרס');
+    eq('1.0.0', pf_kol()['config']['system']['components/counter/']['version'], 'גם הרשומה לא זזה (עסקה אחת)');
+    // kol.json: שינוי אחר בינתיים (מפתח אחר) — נשמר; הביטול מחזיר רק את המפתח של הרכיב
+    pf_tx(fn() => pf_put(pf_by_path('components/counter/style.css'), kit_read('counter')['files']['style.css'], KT_ED, 'חזרה'));
+    $u2 = ['after' => ['components/counter/style.css' => (int)pf_by_path('components/counter/style.css')['rev']]] + $u;
+    $c = pf_kol()['config']; $c['entry'] = 'other.html';
+    pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'שינוי אחר'));
+    kit_revert(KT_ED, ['folder' => 'counter'] + $u2);
+    eq('other.html', pf_kol()['config']['entry'], 'kol.json: השינוי האחר נשמר');
+    eq('0.9.0', pf_kol()['config']['system']['components/counter/']['version'], 'kol.json: המפתח של הרכיב — חזר');
+    eq(422, throws(fn() => kit_revert(KT_ED, ['folder' => 'counter', 'entry' => ['version' => 'x', 'kit' => 'counter']])), 'רשומה לא תקינה — 422');
+    eq(422, throws(fn() => kit_revert(KT_ED, ['folder' => 'counter', 'removed' => [(int)pf_by_path('index.html')['id']]])), 'removed מחוץ לרכיב — 422');
+});
+
+test('V16 kit_update: קובץ שהגרסה החדשה אינה כוללת — לסל, וביטול מחזיר אותו', function () {
+    kt_reset();
+    kit_copy(KT_ED, ['name' => 'quote']);                                   // לציטוט אין script.js
+    pf_create(KT_ED, ['path' => 'components/quote/script.js', 'content' => "/* ישן */\n"]);
+    $c = pf_kol()['config']; $c['system']['components/quote/']['version'] = '0.9.0'; $c['system']['components/quote/']['hash'] = kit_hash(kit_proj('quote'));
+    pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'ישן'));
+    $u = kit_update(KT_ED, ['folder' => 'quote', 'action' => 'take']);
+    ok(count($u['removed']) === 1 && pf_by_path('components/quote/script.js') === null, 'script.js — לסל');
+    kit_revert(KT_ED, ['folder' => 'quote'] + $u);
+    eq("/* ישן */\n", kt_text('components/quote/script.js'), 'ביטול — חזר');
 });
 
 test('V16 kit_update: שונה ← בלי force — 409; "השאר את שלי" — modified: true והגרסה החדשה; "קח את החדשה" (force) — נדרס, בהיסטוריה', function () {

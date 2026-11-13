@@ -204,7 +204,7 @@
       await Project.docs.reload(); for (const p of ['template.html', 'component.json', 'style.css', 'script.js']) await this.sync(base + p);
       await this.sync('kol.json');
       await this.comp.load();
-      const fx = { undo: () => api('kit_revert', { folder: i.folder, before: r.before, created: r.created }).then(() => this.resync(base)).catch(e => this.note('ביטול העדכון נכשל: ' + e.message, true)),
+      const fx = { undo: () => api('kit_revert', { folder: i.folder, before: r.before, after: r.after, created: r.created, removed: r.removed, entry: r.entry }).then(() => this.resync(base)).catch(e => this.note('ביטול העדכון נכשל: ' + e.message, true)),
         redo: () => api('kit_update', { folder: i.folder, action: 'take', force: true }).then(x => { r = x; }).then(() => this.resync(base)).catch(e => this.note(e.message, true)) };
       this.comp.pushFx('עדכון רכיב מוכן · ' + it.label + ' ' + i.version + ' ← ' + it.version, fx);
       this.note('הרכיב ' + it.label + ' עודכן ל-' + it.version + ' — שינוי קבצים רגיל (בהיסטוריה, Ctrl+Z)', false, { label: 'בטל', run: this.undo });
