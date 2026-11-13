@@ -141,3 +141,8 @@
 - כל הגדרה של מופע עוברת `checkField` / `checkAttrName` / `checkUrl` / `checkVarValue` — **יעד חדש = בדיקה חדשה שם**.
 - יצירת קבצים בשרת = `pf_create` + `attachFx` לביטול (כמו V9). `build_is_config` מוציא `template.html` של רכיב מהחבילה.
 - פתוח: עריכת תבנית בלי CSS העמוד (נראה שבור — אייקון על placeholder); רכיב מקונן — רמה אחת; repeater — מבנה פריט; שינוי שם רכיב — אין פעולה.
+
+## מ-V13 (2026-11-13, נרשם בידי בקרה (7))
+- תבניות = `templates/<שם>/{template.html, style.css, template.json, thumb.png}`; `window.KolTemplates` / `Editor._state.tpl` (load, read, insert, save, exportZip, importZip; טהורים: plan, renameHtml, renameCss, dropSame, zipBuild, zipList, checkZip). `build_is_config` מוציא `templates/` מהחבילה.
+- תפריט ההקשר צף: `.ed-ctx` (לא `#sheet .ed-menu`). היסטוריה — 500 צעדים, עם שמות.
+- פתוח (ב-T2): scope של ייבוא ZIP נאכף רק בלקוח; `build.clean` לא בודק `<animate>`/`<set>` על href.
