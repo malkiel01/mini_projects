@@ -25,6 +25,7 @@
       this.sheets(); this.selTools(); this.navTools(); this.navRows(); this.repeat(); this.keyboard(); this.pinch();
       const c = this.S.canvas, prev = c.onSelect;
       c.onSelect = (...a) => { if (prev) prev(...a); this.afterSelect(); };
+      c.onHeldTap = n => { if (this.hintAt && performance.now() - this.hintAt < 8000) return; this.hintAt = performance.now(); this.o.note?.('נשאר על ' + c.label(n) + ' — לבחירת ההורה: ↑ "בחר הורה" בסרגל הנבחר, או פירורי הלחם'); };
       this.mo = new MutationObserver(() => this.layout()); this.mo.observe(this.el.root, { attributes: true, attributeFilter: ['class'] });
       const rs = () => this.layout(); window.addEventListener('resize', rs); this.offs.push(() => window.removeEventListener('resize', rs));
       this.layout();

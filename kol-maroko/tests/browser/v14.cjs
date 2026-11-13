@@ -120,6 +120,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     p = await at(page, H1, 0, 0.5, 0.5, false); await tap(page, p);
     const s2 = await selName(page);
     ok(s2 && !/^h1/.test(s2), 'V1 · הקשה חוזרת על הנבחר — עולה להורה', s2);
+    // E2E סבב 4: לחיצה ארוכה בוחרת; הקשה אחריה על אותו אלמנט — נשאר (לא ההורה), עם רמז
+    {
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(500);
+      const lp = await at(page, H1);
+      await page.evaluate(PT); await page.evaluate(([x, y]) => window.__pt.down(x, y), [lp.x, lp.y]); await sleep(700); await page.evaluate(([x, y]) => window.__pt.up(x, y), [lp.x, lp.y]); await sleep(300);
+      await page.evaluate(() => Editor._state.menu?.close()); await sleep(450);
+      const lp2 = await at(page, H1, 0, 0.5, 0.5, false); await tap(page, lp2); await sleep(200);
+      st = await page.evaluate(() => ({ sel: Editor._state.canvas.label(Editor._state.canvas.selected), note: (document.querySelector('.ed-note:not([hidden])') || {}).textContent || '' }));
+      ok(/^h1/.test(st.sel) && /הורה/.test(st.note), 'לחיצה ארוכה ← הקשה על אותה כותרת: נשארת נבחרת, ורמז ל"בחר הורה"', st);
+      await sleep(500); await tap(page, lp2); await sleep(200);
+      ok(/^h1/.test(await selName(page)), 'וגם הקשה נוספת — עדיין הכותרת (ההורה — רק בכפתור / בפירורים)');
+      await page.evaluate(() => { const b = [...document.querySelectorAll('.ed-seltools button')].find(x => /בחר הורה/.test(x.getAttribute('aria-label') || '')); b.click(); }); await sleep(200);
+      ok(!/^h1/.test(await selName(page)), '"↑ בחר הורה" בסרגל — עולה להורה');
+      await select(page, H1); await sleep(500);
+    }
     st = await page.evaluate(() => { const cr = [...document.querySelectorAll('.ed-crumb')]; return cr.map(b => ({ t: b.textContent, h: b.getBoundingClientRect().height })); });
     ok(st.length >= 3 && st.every(x => x.h >= 44), 'פירורי לחם — כל פירור 44px לפחות במגע', st);
     await page.evaluate(() => { const cr = [...document.querySelectorAll('.ed-crumb')]; cr[1].scrollIntoView({ inline: 'center' }); });
@@ -476,12 +491,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await select(page, H1); await sleep(600);
       await page.evaluate(() => Editor._state.touch.setZoom(2)); await sleep(300);
       const bgPt = await page.evaluate(() => { const c = Editor._state.canvas, host = c.host.getBoundingClientRect(); for (let y = host.top + 20; y < host.bottom - 20; y += 15) for (let x = host.left + 20; x < host.right - 20; x += 15) { const f = c.frame.getBoundingClientRect(), t = c.doc.elementFromPoint((x - f.left) / c.scale, (y - f.top) / c.scale); if (t && c.selected && !c.elOf(c.selected).contains(t)) return { x, y }; } return null; });
-      const scr = () => page.evaluate(() => { const c = Editor._state.canvas; return Math.round(c.frame.contentWindow.scrollY) + Math.round(c.host.scrollLeft) * 1000; });
-      const a0 = await scr(); await realDrag(page, bgPt, { x: bgPt.x, y: bgPt.y - 120 }, { steps: 10 }); const a1 = await scr();
-      ok(a1 !== a0, 'בהגדלה: גרירה באצבע על רקע — גוללת', { a0, a1 });
+      // הגלילה עצמה — של הדפדפן; מה שקובע אם היא קורית: האם העורך עוצר את אירועי המגע (preventDefault) ואם touch-action מתיר
+      const blocked = pt => page.evaluate(p => { const c = Editor._state.canvas, f = c.frame.getBoundingClientRect(), x = (p.x - f.left) / c.scale, y = (p.y - f.top) / c.scale, t = c.doc.elementFromPoint(x, y), W = c.doc.defaultView;
+        const mk = type => { const tc = new W.Touch({ identifier: 9, target: t, clientX: x, clientY: y }); return new W.TouchEvent(type, { bubbles: true, cancelable: true, composed: true, touches: type === 'touchend' ? [] : [tc], targetTouches: type === 'touchend' ? [] : [tc], changedTouches: [tc] }); };
+        const a = mk('touchstart'), b = mk('touchmove'); t.dispatchEvent(a); t.dispatchEvent(b); t.dispatchEvent(mk('touchend'));
+        let ta = ''; for (let e = t; e; e = e.parentElement) { const v = W.getComputedStyle(e).touchAction; if (v !== 'auto') { ta = v; break; } }
+        return { start: a.defaultPrevented, move: b.defaultPrevented, ta, host: getComputedStyle(c.host).overflow, tag: t.localName }; }, pt);
+      const bgB = await blocked(bgPt);
+      ok(!bgB.start && !bgB.move && !/none|pan-x(?!.*pan-y)/.test(bgB.ta) && bgB.host === 'auto', 'בהגדלה: גרירה באצבע על רקע — גוללת (העורך אינו עוצר את המגע; המכל גולל)', bgB);
       const elPt = await at(page, H1, 0, 0.5, 0.5, false);
-      const b0 = await scr(); await realDrag(page, elPt, { x: elPt.x, y: elPt.y - 80 }, { steps: 8 }); const b1 = await scr();
-      ok(b1 === b0, 'בהגדלה: גרירה על האלמנט הנבחר — אינה גוללת', { b0, b1 });
+      const elB = await blocked(elPt);
+      ok(elB.start, 'בהגדלה: גרירה על האלמנט הנבחר — אינה גוללת (המגע נעצר)', elB);
       await page.evaluate(() => Editor._state.touch.setZoom(1)); await sleep(300);
     }
 
@@ -496,7 +516,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await select(page, MV); await sleep(600);
       st = await page.evaluate(() => { const w = document.querySelector('[data-ts-freewarn]'); return { free: Editor._state.pos.isFree(Editor._state.canvas.selected), shown: !!w && !w.hidden, text: w ? w.textContent : '' }; });
       ok(freeD && st.free && st.shown && /מחשב/.test(st.text), 'E2E · מיקום חופשי שנקבע במחשב — בטלפון מופיעה אזהרה', st);
-      await tapSel('[data-ts-flow]'); await sleep(700);
+      const fl = await page.evaluate(() => { const b = document.querySelector('[data-ts-flow]'); b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(), t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { x: r.x + r.width / 2, y: r.y + r.height / 2, top: t === b || b.contains(t), dis: b.disabled, at: t && t.className }; });
+      ok(fl.top && !fl.dis, '"⇩ בזרימה" — גלוי ונגיש בהקשה', fl);
+      await tap(page, fl); await sleep(700);
       st = await page.evaluate(() => { const S = Editor._state; return { free: S.pos.isFree(S.canvas.selected), shown: !document.querySelector('[data-ts-freewarn]').hidden, css: [...S.sheets.values()].map(x => x.doc.text()).join('\n') }; });
       ok(!st.free && !st.shown && /@media[^{]*max-width[^{]*\{[^@]*position:\s*static/.test(st.css), '"⇩ בזרימה בטלפון בלבד" — position: static ב-@media, והאזהרה נעלמת', { free: st.free, shown: st.shown });
       await page.evaluate(() => document.querySelector('.ed-dev [data-dev="desktop"]').click()); await sleep(600);
