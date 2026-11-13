@@ -490,9 +490,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const a0 = await act(), nS = await pb.evaluate(() => document.querySelectorAll('.kol-slides__slide').length);
     await pb.click('.kol-slides__next'); await sleep(900);
     const a1 = await act(), a1b = (await sleep(1300), await act());
-    await pb.mouse.move(5, 5); await sleep(2600);
-    const a2 = await act();
-    ok(a1 === (a0 + 1) % nS && a1b === a1 && a2 !== a1, 'מצגת: "הבאה" ← השקופית הבאה; כשהעכבר עליה — עומדת; כשלא — ממשיכה לבד (כל שנייה)', [a0, a1, a1b, a2]);
+    // בלי עכבר — ממשיכה לבד: דגימה כל 200ms (לא רגע אחד — מספר המעברים ב-X שניות תלוי בשלב של הטיימר, ו-3 מעברים ב-3 שקופיות חוזרים לאותה)
+    await pb.mouse.move(5, 5);
+    const seq = []; for (let i = 0; i < 14; i++) { await sleep(200); seq.push(await act()); }
+    const moved = seq.some(x => x !== a1), steps = seq.every((x, i) => i === 0 ? true : x === seq[i - 1] || x === (seq[i - 1] + 1) % nS);
+    ok(a1 === (a0 + 1) % nS && a1b === a1 && moved && steps, 'מצגת: "הבאה" ← השקופית הבאה; כשהעכבר עליה — עומדת; כשלא — ממשיכה לבד, שקופית אחת בכל פעם (גם מהאחרונה לראשונה)', [a0, a1, a1b, seq.join('')]);
     // קרוסלה
     await pb.evaluate(() => document.querySelector('.kol-carousel').scrollIntoView({ block: 'center' })); await sleep(200);
     st = await pb.evaluate(() => { const t = document.querySelector('.kol-carousel__track'), s = t.children[0].getBoundingClientRect().width; return Math.round(t.clientWidth / s * 10) / 10; });
