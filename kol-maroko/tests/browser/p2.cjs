@@ -65,7 +65,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         ok(p.h >= 44 && (sel === '.kol-map__open' || sel === '.kol-acc__title' || p.w >= 44) && hit === sel, '390 מגע: ' + name + ' — ' + Math.round(p.w) + '×' + Math.round(p.h) + ' (≥44), והקשה במרכז מפעילה אותו', { p, hit });
       }
       // נקודות המצגת: 12 בעין, אזור הקשה 44 — הקשה 18px מהמרכז עדיין על הנקודה, ולא על השכנה
-      const dots = await page.evaluate(() => [...document.querySelectorAll('.kol-slides__dot')].map(d => { const r = d.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }));
+      const dots = await page.evaluate(() => { document.querySelector('.kol-slides__dots').scrollIntoView({ block: 'center' }); return 0; }) || await page.evaluate(() => [...document.querySelectorAll('.kol-slides__dot')].map(d => { const r = d.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; }));
       if (dots.length >= 2) {
         await page.evaluate(() => { window.__dot = -1; document.querySelectorAll('.kol-slides__dot').forEach((d, i) => d.addEventListener('click', ev => { window.__dot = i; ev.preventDefault(); ev.stopPropagation(); }, true)); });
         const d = dots[1], gap = Math.abs(dots[1].x - dots[0].x);
@@ -79,8 +79,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     }
     {
       const { ctx, page } = await kitPage(1366, 900, false);
-      const s = await page.evaluate(() => { const r = q => document.querySelector(q).getBoundingClientRect(); return { social: Math.round(r('.kol-social__link').height), submit: Math.round(r('.kol-form__submit').height), map: Math.round(r('.kol-map__open').height) }; });
-      ok(s.social === 40 && s.submit < 44 && s.map < 30, 'מחשב (עכבר): העיצוב לא השתנה — אייקון 40, כפתור הטופס והקישור בגודלם', s);
+      const s = await page.evaluate(() => { const r = q => document.querySelector(q).getBoundingClientRect(), mb = q => getComputedStyle(document.querySelector(q)).minBlockSize; return { coarse: matchMedia('(pointer: coarse)').matches, social: Math.round(r('.kol-social__link').height), submit: mb('.kol-form__submit'), map: getComputedStyle(document.querySelector('.kol-map__open')).display, acc: mb('.kol-acc__title') }; });
+      ok(!s.coarse && s.social === 40 && s.submit === 'auto' && s.map === 'inline' && /^(auto|0px)$/.test(s.acc), 'מחשב (עכבר): העיצוב לא השתנה — אייקון 40, כפתור הטופס והקישור בגודלם', s);
       await ctx.close();
     }
 
@@ -151,10 +151,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page.evaluate(() => { document.querySelector('.ed-note').hidden = true; });
       // 📄 ← ▶️
       const pg = await center(page, '[data-pages-btn]'); await touchTap(page, pg); await sleep(600);
-      const lv = await page.evaluate(() => { const b = document.querySelector('[data-pg-pop] [data-pg-live]'); if (!b) return null; const r = b.getBoundingClientRect(); return { h: Math.round(r.height), x: r.left + r.width / 2, y: r.top + r.height / 2, vis: r.width > 0 }; });
-      ok(lv && lv.vis && lv.h >= 44, '390: 📄 ← "▶️ תצוגה חיה" בגיליון, ≥44', lv);
+      const lv = await page.evaluate(() => { const b = document.querySelector('[data-pg-pop] [data-pg-live]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, at = document.elementFromPoint(x, y); return { h: Math.round(r.height), x, y, vis: r.width > 0, hit: !!at && (at === b || b.contains(at)), at: at && at.outerHTML.slice(0, 80), vh: innerHeight }; });
+      ok(lv && lv.vis && lv.hit && lv.h >= 44, '390: 📄 ← "▶️ תצוגה חיה" בגיליון, ≥44', lv);
       await shot(page, 'p2-pages-390');
-      if (lv) { await touchTap(page, lv); await sleep(1200); }
+      if (lv) { await touchTap(page, lv); await sleep(1500); }
       ok(await page.isVisible('.pj-live iframe'), '390: 📄 ← ▶️ — התצוגה החיה נפתחת בשתי הקשות (במקום ארבע)');
       await ctx.close();
     }
