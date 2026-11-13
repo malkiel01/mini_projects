@@ -181,7 +181,7 @@
       const guess = slug(n ? (K().classesOf(n)[0] || K().attrOf(n, 'id')?.value || n.tag) : (this.file()?.path || 'page').replace(/\.html?$/, '').split('/').pop() + '-page');
       const lab = h('input', { type: 'text', class: 'ct-in', value: '', 'data-ts': 'label', 'aria-label': 'שם לתצוגה', placeholder: page ? 'למשל: עמוד נחיתה' : 'למשל: פס עליון' });
       const nm = h('input', { type: 'text', class: 'ct-in', dir: 'ltr', value: this.free(guess), 'data-ts': 'name', 'aria-label': 'שם (תיקייה)' });
-      lab.addEventListener('input', () => { if (!nm.dataset.touched) nm.value = this.free(slug(lab.value) === 'template' ? guess : slug(lab.value)); });
+      lab.addEventListener('input', () => { const s2 = slug(lab.value); if (!nm.dataset.touched) nm.value = this.free(s2 === 'template' || s2.length < 3 ? guess : s2); });   // שם בעברית ← השם מההקשר
       nm.addEventListener('input', () => { nm.dataset.touched = '1'; });
       const rules = page ? [] : (this.comp() ? this.comp().ownRules(n) : []);
       rules.forEach(r => { r.act = 'copy'; });

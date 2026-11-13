@@ -34,7 +34,7 @@
         { id: 'wrap-row', icon: '▭', label: 'עטוף ברובריקה ↔ (שורה)', keys: '', why: any(w, root, tpl), run: n => this.wrapRow(n) },
         { id: 'move-out', icon: '⤴', label: 'הוצא מהרובריקה', keys: 'Alt+Shift+↑', why: any(w, root, n => (!n.parent || !n.parent.parent || ROOTS.test(n.parent.tag) ? 'האלמנט כבר ברמה העליונה של העמוד' : '')), run: n => B().moveTo(n, n.parent.parent, n.parent, 'הוצא מ-' + c().label(n.parent)) },
         { id: 'parent', icon: '↑', label: 'בחר הורה', keys: 'Esc', why: n => (n.parent ? '' : 'לאלמנט אין הורה'), run: n => this.select(n.parent) },
-        { id: 'similar', icon: '⁂', label: 'בחר את כל הדומים (אותה מחלקה)', keys: '', why: n => (this.K.classesOf(n).length ? (this.similar(n).length > 1 ? '' : 'אין עוד אלמנט עם המחלקה .' + this.K.classesOf(n)[0]) : 'לאלמנט אין מחלקה'), run: n => this.selectSimilar(n) },
+        { id: 'similar', icon: '⁂', label: 'בחר את כל הדומים (אותה מחלקה)', keys: '', why: n => (this.K.classesOf(n).length ? (this.similar(n).length > 1 ? '' : 'אין עוד אלמנט עם ' + (this.K.classesOf(n).length > 1 ? 'אחת המחלקות שלו' : 'המחלקה .' + this.K.classesOf(n)[0])) : 'לאלמנט אין מחלקה'), run: n => this.selectSimilar(n) },
         { id: 'copy-style', icon: '🎨', label: 'העתק סגנון', keys: 'Ctrl+Shift+C', why: any(root), run: n => this.sc().copy(n) },
         { id: 'paste-style', icon: '🖌', label: 'הדבק סגנון', keys: 'Ctrl+Shift+V', why: any(w, n => (n.tag === 'html' || n.tag === 'head' ? 'ל-<' + n.tag + '> אין מראה' : ''), () => (this.sc().clip ? '' : 'אין סגנון בלוח — "העתק סגנון" קודם')), run: n => { if (!c().picked().includes(n)) c().select(n); this.sc().paste(); } },
         { id: 'reset-style', icon: '⟲', label: 'אפס סגנון', keys: '', why: any(w, n => (n.tag === 'html' || n.tag === 'head' ? 'ל-<' + n.tag + '> אין מראה' : '')), run: n => this.sc().reset(n) },
@@ -84,11 +84,17 @@
       await B.setDir(box, 'row');
       const k = this.S.tx.length - n0; if (k > 1) this.joinTx(k, 'עטיפה ברובריקה ↔ · ' + c.label(n));
     }
-    similar(n) { const cls = this.K.classesOf(n)[0]; if (!cls) return []; const c = this.c(), out = []; this.K.walk(c.m.root, x => { if (!x.implied && this.K.classesOf(x).includes(cls) && c.elOf(x)) out.push(x); }); return out; }
+    /** "הדומים": המחלקה של האלמנט שמשותפת להכי הרבה אלמנטים (אחת מהן — כשיש כמה). */
+    simClass(n) {
+      const c = this.c(), count = new Map(); if (!c.m || !c.m.root) return null;
+      this.K.walk(c.m.root, x => { if (!x.implied && c.elOf(x)) for (const k of this.K.classesOf(x)) count.set(k, (count.get(k) || 0) + 1); });
+      return this.K.classesOf(n).filter(k => !/^(kol-|is-in$)/.test(k)).sort((a, b) => (count.get(b) || 0) - (count.get(a) || 0))[0] || null;
+    }
+    similar(n) { const cls = this.simClass(n); if (!cls) return []; const c = this.c(), out = []; this.K.walk(c.m.root, x => { if (!x.implied && this.K.classesOf(x).includes(cls) && c.elOf(x)) out.push(x); }); return out; }
     selectSimilar(n) {
-      const c = this.c(), all = this.similar(n);
+      const c = this.c(), all = this.similar(n), cls = this.simClass(n);
       c.select(n); for (const x of all) if (x !== n) c.toggleMulti(x);
-      this.note('נבחרו ' + all.length + ' אלמנטים עם המחלקה .' + this.K.classesOf(n)[0] + ' — שינוי עיצוב חל על כולם');
+      this.note('נבחרו ' + all.length + ' אלמנטים עם המחלקה .' + cls + ' — שינוי עיצוב חל על כולם');
     }
     /** מריצים פעולה — הסיבה, כשאינה אפשרית. */
     exec(a, n) {

@@ -124,7 +124,7 @@
           let t = St.targets(n)[0];
           if (t.kind === 'inline' && (gr.dev != null || gr.state)) t = { kind: 'newclass', sel: '.' + St.suggest(n), name: St.suggest(n), path: St.pagePath(), why: 'class', count: 1 };
           t = Object.assign({}, t, { dev: gr.dev != null && t.kind !== 'inline' ? this.devOf(gr.dev) : null });
-          if (gr.state) t = St.st(t, { pc: gr.state, label: gr.state });
+          if (gr.state) t = St.st(t, { pc: ':' + gr.state, label: gr.state });
           const docs = this.writeStyle(new Map([[n, gr.sets.map(([ph, v]) => [ph, v, t])]]), 'הדבק סגנון · ' + c.label(n));
           if (docs == null) { const k = this.txCount() - n0; if (k > 1) this.joinTx(k, 'הדבק סגנון (חלקי)'); return false; }
           count += gr.sets.length;
