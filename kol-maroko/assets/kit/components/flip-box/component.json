@@ -1,0 +1,15 @@
+{
+  "name": "flip-box",
+  "label": "קופסה מתהפכת",
+  "icon": "🔄",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "axis", "label": "כיוון ההיפוך (y — לצד · x — למעלה)", "control": "select", "options": ["y", "x"], "target": {"class": "kol-flip--{value}"}},
+    {"id": "height", "label": "גובה", "control": "size", "target": {"var": "--kol-flip-h"}},
+    {"id": "front", "label": "רקע הצד הקדמי", "control": "color", "target": {"var": "--kol-flip-front"}},
+    {"id": "back", "label": "רקע הצד האחורי", "control": "color", "target": {"var": "--kol-flip-back"}}
+  ],
+  "states": [
+    {"id": "side", "label": "הצד", "options": [{"label": "הצד האחורי", "on": "", "class": "is-flipped"}]}
+  ]
+}

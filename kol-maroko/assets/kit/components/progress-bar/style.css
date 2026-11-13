@@ -1,0 +1,7 @@
+/* רכיב מוכן: פס התקדמות (kit 1.0.0). הרוחב — המשתנה --kol-progress-value; האחוז הכתוב — טקסט רגיל לידו. */
+.kol-progress { --kol-progress-value: 72%; --kol-progress-color: var(--color-accent, #a3322a); --kol-progress-h: 10px; }
+.kol-progress__head { display: flex; justify-content: space-between; gap: 8px; margin-block-end: 6px; font-weight: 600; }
+.kol-progress__track { block-size: var(--kol-progress-h); border-radius: 999px; background: color-mix(in srgb, currentColor 12%, transparent); overflow: hidden; }
+.kol-progress__bar { block-size: 100%; inline-size: var(--kol-progress-value); border-radius: inherit; background: var(--kol-progress-color); transition: inline-size 1.2s cubic-bezier(.2, .7, .2, 1); }
+.kol-progress.is-ready:not(.is-in) .kol-progress__bar { inline-size: 0; }
+@media (prefers-reduced-motion: reduce) { .kol-progress__bar { transition: none; } }

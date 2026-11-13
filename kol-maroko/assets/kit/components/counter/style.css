@@ -1,0 +1,4 @@
+/* רכיב מוכן: מונה (kit 1.0.0). המספר הסופי כתוב בקובץ — כך רואים אותו גוגל, קנבס, ומי שאין לו JS. */
+.kol-counter { --kol-counter-color: var(--color-accent, #a3322a); text-align: center; }
+.kol-counter__value { display: block; font-size: 2.8rem; font-weight: 800; line-height: 1.1; color: var(--kol-counter-color); font-variant-numeric: tabular-nums; }
+.kol-counter__label { margin: 4px 0 0; }

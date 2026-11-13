@@ -1,0 +1,12 @@
+{
+  "name": "icon-box",
+  "label": "קופסת אייקון",
+  "icon": "⭐",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "layout", "label": "פריסה (top — מעל · side — לצד)", "control": "select", "options": ["top", "side"], "target": {"class": "kol-iconbox--{value}"}},
+    {"id": "link", "label": "הקישור", "control": "link", "target": {"attr": "href", "on": ".kol-iconbox__link"}},
+    {"id": "color", "label": "צבע האייקון", "control": "color", "target": {"var": "--kol-iconbox-color"}},
+    {"id": "size", "label": "גודל האייקון", "control": "size", "target": {"var": "--kol-iconbox-size"}}
+  ]
+}

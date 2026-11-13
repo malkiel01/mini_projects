@@ -1,0 +1,12 @@
+/* רכיב מוכן: ספירה לאחור (kit 1.0.0). בלי JS: שורת התאריך בלבד. עם JS: is-ready — המספרים; is-done — "אחרי שנגמר". */
+.kol-countdown { --kol-countdown-color: var(--color-accent, #a3322a); display: grid; gap: 10px; justify-items: center; text-align: center; }
+.kol-countdown__units { display: none; gap: 10px; }
+.kol-countdown.is-ready .kol-countdown__units { display: flex; }
+.kol-countdown__unit { display: grid; min-inline-size: 72px; padding: 10px 6px; border-radius: 12px; background: color-mix(in srgb, var(--kol-countdown-color) 9%, var(--color-bg, #fff)); }
+.kol-countdown__n { font-size: 2rem; line-height: 1.1; color: var(--kol-countdown-color); font-variant-numeric: tabular-nums; }
+.kol-countdown__l { font-size: .85rem; }
+.kol-countdown__date { margin: 0; }
+.kol-countdown__done { display: none; }
+.kol-countdown.is-done .kol-countdown__done { display: block; }
+.kol-countdown.is-done .kol-countdown__units, .kol-countdown.is-done .kol-countdown__date { display: none; }
+@media (max-width: 420px) { .kol-countdown__unit { min-inline-size: 60px; } .kol-countdown__n { font-size: 1.5rem; } }

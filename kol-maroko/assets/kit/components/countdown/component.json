@@ -1,0 +1,13 @@
+{
+  "name": "countdown",
+  "label": "ספירה לאחור",
+  "icon": "⏳",
+  "category": "מספרים",
+  "fields": [
+    {"id": "until", "label": "עד מתי (2026-12-31T20:00:00+02:00)", "control": "text", "target": {"attr": "data-kol-until"}},
+    {"id": "color", "label": "צבע המספרים", "control": "color", "target": {"var": "--kol-countdown-color"}}
+  ],
+  "states": [
+    {"id": "run", "label": "הספירה", "options": [{"label": "סופרת (אחרי JS)", "root": "is-ready"}, {"label": "אחרי שנגמר", "root": "is-ready is-done"}]}
+  ]
+}
