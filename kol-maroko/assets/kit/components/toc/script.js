@@ -3,7 +3,7 @@
   const init = root => {
     if (root.kolToc) return;
     root.kolToc = true;
-    const rows = [...root.querySelectorAll('.kol-toc__item')].map(li => { const a = li.querySelector('.kol-toc__link'), id = a && decodeURIComponent((a.getAttribute('href') || '').replace(/^#/, '')); return { li, h: id ? document.getElementById(id) : null }; }).filter(r => r.h);
+    const rows = [...root.querySelectorAll('.kol-toc__item')].map(li => { const a = li.querySelector('.kol-toc__link'), raw = a && (a.getAttribute('href') || '').replace(/^#/, ''); let id = raw; try { id = raw && decodeURIComponent(raw); } catch { /* href כמו "#%" — כמו שהוא */ } return { li, h: id ? document.getElementById(id) : null }; }).filter(r => r.h);
     if (!rows.length || !('IntersectionObserver' in window)) return;
     const seen = new Set();
     const io = new IntersectionObserver(es => {

@@ -1,7 +1,7 @@
 /* רכיב מוכן: חלון קופץ (kit 1.0.0) — <dialog>. "מתי נפתח" — התכונות data-kol-trigger / delay / scroll / once על החלון. */
 .kol-popup__open { padding: 10px 18px; border: 0; border-radius: 999px; background: var(--color-accent, #a3322a); color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
 .kol-popup__open:focus-visible { outline: 2px solid var(--color-accent, #a3322a); outline-offset: 3px; }
-.kol-popup__dlg { --kol-popup-w: 480px; --kol-popup-accent: var(--color-accent, #a3322a); inline-size: min(var(--kol-popup-w), calc(100vw - 32px)); max-block-size: calc(100vh - 32px); padding: 28px; border: 0; border-radius: 18px; background: var(--color-bg, #fff); color: inherit; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+.kol-popup__dlg { --kol-popup-w: 480px; --kol-popup-accent: var(--color-accent, #a3322a); inline-size: min(var(--kol-popup-w), calc(100vw - 32px)); box-sizing: border-box; max-block-size: calc(100vh - 32px); padding: 28px; border: 0; border-radius: 18px; background: var(--color-bg, #fff); color: var(--color-text, #16192b); box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
 .kol-popup__dlg[open] { position: fixed; inset: 0; margin: auto; z-index: 1000; }
 .kol-popup__dlg::backdrop { background: rgba(10, 10, 14, .55); }
 .kol-popup__close { position: absolute; inset-block-start: 10px; inset-inline-end: 10px; inline-size: 36px; block-size: 36px; border: 0; border-radius: 50%; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; font-size: 1rem; cursor: pointer; }
@@ -13,3 +13,5 @@
 @media (prefers-reduced-motion: no-preference) { .kol-popup__dlg[open] { animation: kol-popup-in .25s ease-out; } }
 @keyframes kol-popup-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { .kol-popup__dlg[open] { animation: none; } }
+/* מגע: ✕ — מטרה של 44px לפחות */
+@media (pointer: coarse) { .kol-popup__close { inline-size: 44px; block-size: 44px; inset-block-start: 6px; inset-inline-end: 6px; } }

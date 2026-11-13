@@ -463,6 +463,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await pz.keyboard.press('Escape'); await sleep(150); await pz.reload(); await sleep(1600);
       const o2 = await pz.evaluate(() => document.querySelector('.kol-popup__dlg').open);
       ok(o1 && !o2, '"פעם לגולש": נפתח אחרי שנייה, ואחרי טעינה מחדש — לא שוב (localStorage)', [o1, o2]); await pz.close(); }
+    // תוכן עניינים: href שבור ("#%") — decodeURIComponent לא עוצר את הסקריפט; שאר השורות מסומנות
+    { const pt = await ctx.newPage(), KT = path.join(ROOT, 'assets/kit/components/toc/'), terr = []; pt.on('pageerror', e => terr.push(e.message));
+      let hi = 0; const tpl = fs.readFileSync(KT + 'template.html', 'utf8').replace(/href="#"/g, () => 'href="#h' + (++hi) + '"').replace(/<\/ul>|<\/ol>/, m => '<li class="kol-toc__item"><a class="kol-toc__link" href="#%">שבור</a></li>' + m);
+      const heads = [...tpl.matchAll(/href="#([^"%]+)"/g)].map(m => '<h2 id="' + m[1] + '" style="margin-block: 40vh">' + m[1] + '</h2>').join('');
+      await pt.route(base + '/__v16/toc.html', r => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>' + fs.readFileSync(KT + 'style.css', 'utf8') + '</style></head><body>' + tpl + heads + '<script>' + fs.readFileSync(KT + 'script.js', 'utf8') + '</script></body></html>' }));
+      await pt.goto(base + '/__v16/toc.html'); await sleep(500);
+      await pt.evaluate(() => document.querySelectorAll('h2')[0].scrollIntoView()); await sleep(400);
+      st = await pt.evaluate(() => ({ here: document.querySelectorAll('.kol-toc__item.is-here').length, rows: document.querySelectorAll('.kol-toc__item').length }));
+      ok(!terr.length && st.here === 1 && st.rows > 2, 'תוכן עניינים עם href="#%": אין שגיאה, והסימון "כאן" עובד בשאר השורות', { terr, st }); await pt.close(); }
     await pb.click('.kol-popup__open'); await sleep(200);
     ok(await pb.evaluate(() => document.querySelector('.kol-popup__dlg').open), 'כפתור עם data-kol-open פותח בכל זאת');
     await pb.click('.kol-popup__close'); await sleep(150);
@@ -477,11 +486,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     st = await pb.evaluate(() => ({ ready: document.querySelector('.kol-slides').classList.contains('is-ready'), dots: document.querySelectorAll('.kol-slides__dot').length, n: document.querySelectorAll('.kol-slides__slide').length, labels: [...document.querySelectorAll('.kol-slides__dot .kol-slides__vh')].map(x => x.textContent).join() }));
     ok(st.ready && st.dots === st.n && st.labels === '1,2,3', 'מצגת: נקודה לכל שקופית (משוכפלת מהראשונה, המספר כטקסט)', st);
     const act = () => pb.evaluate(() => [...document.querySelectorAll('.kol-slides__slide')].findIndex(x => x.classList.contains('is-active')));
-    await pb.hover('.kol-slides__next'); await pb.click('.kol-slides__next'); await sleep(900);
-    const a1 = await act();
+    await pb.hover('.kol-slides__next'); await sleep(300);   // העכבר על המצגת — ההפעלה האוטומטית עוצרת; מאיפה שהיא נמצאת עכשיו
+    const a0 = await act(), nS = await pb.evaluate(() => document.querySelectorAll('.kol-slides__slide').length);
+    await pb.click('.kol-slides__next'); await sleep(900);
+    const a1 = await act(), a1b = (await sleep(1300), await act());
     await pb.mouse.move(5, 5); await sleep(2600);
     const a2 = await act();
-    ok(a1 === 1 && a2 !== 1, 'מצגת: "הבאה" ← שקופית 2; ואוטומטית (כל שנייה, כשהעכבר לא עליה) — ממשיכה', [a1, a2]);
+    ok(a1 === (a0 + 1) % nS && a1b === a1 && a2 !== a1, 'מצגת: "הבאה" ← השקופית הבאה; כשהעכבר עליה — עומדת; כשלא — ממשיכה לבד (כל שנייה)', [a0, a1, a1b, a2]);
     // קרוסלה
     await pb.evaluate(() => document.querySelector('.kol-carousel').scrollIntoView({ block: 'center' })); await sleep(200);
     st = await pb.evaluate(() => { const t = document.querySelector('.kol-carousel__track'), s = t.children[0].getBoundingClientRect().width; return Math.round(t.clientWidth / s * 10) / 10; });
@@ -564,6 +575,30 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await undo(pp); await flush(pp);
     // כל רכיב ב-390, בתצוגה החיה: בלי גלילה לרוחב, כל מופע ברוחב המסך
     const tok2 = (await call(pp, 'pv_token')).token, pm = await ph.newPage(); await pm.goto(`${base}/preview/${tok2}/kit.html`); await sleep(1500); await pm.evaluate(() => document.querySelectorAll("dialog[open]").forEach(d => d.close()));
+    // 390 (מגע): החלון הקופץ בתוך המסך וה-✕ שלם; חלון / חלונית במקטע כהה — טקסט כהה על הרקע שלהם; מטרות מגע 44; שם לכל נקודה
+    st = await pm.evaluate(() => {
+      const lum = c => { const m = c.match(/[\d.]+/g); const [r, g, b] = m.map(Number); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+      const body = document.body, was = body.getAttribute('style'); body.style.color = '#fff'; body.style.background = '#1b1b1f';
+      const out = {};
+      for (const [k, sel, txt] of [['popup', '.kol-popup__dlg', '.kol-popup__title'], ['offcanvas', '.kol-offcanvas__dlg', '.kol-offcanvas__title']]) {
+        const d = document.querySelector(sel); d.showModal(); d.getAnimations().forEach(a => a.finish()); const r = d.getBoundingClientRect(), ce = d.querySelector('[class$="__close"]'), cb = ce.getBoundingClientRect();
+        out[k] = { x: Math.round(r.left), right: Math.round(r.right), bg: +lum(getComputedStyle(d).backgroundColor).toFixed(2), fg: +lum(getComputedStyle(d.querySelector(txt)).color).toFixed(2), close: [Math.round(cb.left), Math.round(cb.right), ce.offsetWidth, ce.offsetHeight] };
+        d.close();
+      }
+      if (was == null) body.removeAttribute('style'); else body.setAttribute('style', was);
+      const sz = s => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; };
+      const dot = document.querySelector('.kol-slides__dot'); dot.scrollIntoView({ block: 'center' }); const dr = dot.getBoundingClientRect();
+      out.pin = sz('.kol-hotspot__pin'); out.arrow = sz('.kol-slides__next');
+      out.dotHit = document.elementFromPoint(dr.left + dr.width / 2, dr.top + dr.height / 2 - 18) === dot;
+      out.vw = document.documentElement.clientWidth;
+      return out;
+    });
+    ok(st.popup.x >= 0 && st.popup.right <= st.vw && st.popup.close[0] >= st.popup.x && st.popup.close[1] <= st.popup.right, '390: החלון הקופץ בתוך המסך (box-sizing), וה-✕ שלם בתוכו', st.popup);
+    ok(st.popup.bg > .6 && st.popup.fg < .3 && st.offcanvas.bg > .6 && st.offcanvas.fg < .3, 'חלון קופץ וחלונית מהצד בתוך מקטע כהה: טקסט כהה על הרקע הבהיר שלהם (לא לבן על לבן)', { popup: [st.popup.bg, st.popup.fg], offcanvas: [st.offcanvas.bg, st.offcanvas.fg] });
+    ok(st.popup.close[2] >= 44 && st.popup.close[3] >= 44 && st.offcanvas.close[2] >= 44 && st.pin[0] >= 44 && st.pin[1] >= 44 && st.arrow[0] >= 44 && st.dotHit, 'מגע (pointer: coarse): ✕, נקודה על תמונה, חיצי המצגת — 44px; נקודת המצגת נלחצת גם 18px מעליה', st);
+    st = await pm.evaluate(() => [...document.querySelectorAll('.kol-hotspot__tip')].map(t => t.textContent.trim()));
+    let named = 0; for (const t of st) named += await pm.getByRole('button', { name: t, exact: true }).count() > 0 ? 1 : 0;
+    ok(st.length === 3 && named === 3, 'נקודה על תמונה: לכל נקודה שם לקורא מסך — טקסט ההסבר עצמו (לא עותק ב-aria-label שיתיישן)', { tips: st, named });
     st = await pm.evaluate(() => ({ sw: document.documentElement.scrollWidth, wide: [...document.querySelectorAll('[data-kol-component]')].filter(e => e.getAttribute('data-kol-component') !== 'anchor' && (e.getBoundingClientRect().width > 391 || e.getBoundingClientRect().height < 10)).map(e => e.getAttribute('data-kol-component')),
       tabs: getComputedStyle(document.querySelector('.kol-tabs')).display, tabOrder: (() => { const t = document.querySelector('.kol-tabs__tab').getBoundingClientRect(), p = document.querySelector('.kol-tabs__panel').getBoundingClientRect(); return p.top >= t.bottom - 1; })() }));
     ok(st.sw <= 391 && !st.wide.length, '390: כל ' + items.length + ' הרכיבים — בתוך רוחב המסך, בלי גלילה לרוחב', st);
