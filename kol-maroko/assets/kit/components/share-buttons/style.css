@@ -1,0 +1,13 @@
+/* רכיב מוכן: כפתורי שיתוף (kit 1.0.0). הקישורים — כתובות share רגילות; JS משלים את כתובת העמוד ומעתיק קישור. */
+.kol-share { display: flex; flex-wrap: wrap; gap: 8px; }
+.kol-share__btn { display: inline-flex; align-items: center; gap: 8px; min-block-size: 40px; padding: 6px 14px; border: 0; border-radius: 999px; color: #fff; text-decoration: none; font: inherit; font-weight: 600; cursor: pointer; background: #555; }
+.kol-share__btn:focus-visible { outline: 3px solid var(--color-accent, #a3322a); outline-offset: 2px; }
+.kol-share__btn--whatsapp { background: #128c4b; } .kol-share__btn--facebook { background: #1463d6; } .kol-share__btn--x { background: #111; } .kol-share__btn--telegram { background: #1d84c4; } .kol-share__btn--email { background: #6b5b4b; } .kol-share__btn--copy { background: var(--color-accent, #a3322a); }
+.kol-share__svg { inline-size: 18px; block-size: 18px; fill: currentColor; flex: none; }
+.kol-share__glyph { font-size: 1.05rem; line-height: 1; }
+.kol-share--icons .kol-share__label { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.kol-share--icons .kol-share__btn { inline-size: 42px; justify-content: center; padding: 0; }
+.kol-share__btn--copy { display: none; }
+.kol-share.is-ready .kol-share__btn--copy { display: inline-flex; }
+.kol-share__done, .kol-share.is-copied .kol-share__btn--copy .kol-share__label { display: none; }
+.kol-share.is-copied .kol-share__done { display: inline; }

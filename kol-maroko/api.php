@@ -82,7 +82,7 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'ai_suggest_files', 'ai_apply_files', 'longtext_link', 'longtext_open',   // X1
                       'cutover_evidence', 'cutover_evidence_revoke', 'cutover_snapshot', 'cutover_ready',
                       'font_upload', 'font_google_add', 'font_fetch',   // V9
-                      'kit_copy', 'kit_undo', 'kit_update', 'kit_revert'];   // V16
+                      'kit_copy', 'kit_undo', 'kit_update', 'kit_revert', 'forms_hook_set'];   // V16
 
 try {
     if (in_array($action, POST_ACTIONS, true) && $method !== 'POST') throw new ApiError('נדרש POST', 405);
@@ -307,6 +307,8 @@ try {
         'inbox_csv' => inbox_csv($u, $_GET),
         'forms_settings' => ($method === 'POST' ? forms_settings($u, $body, is_developer($user)) : forms_settings($u, [], false)),
         'mail_test' => forms_mail_test($u, $body),
+        'forms_hook_set' => forms_hook_set($u, $body),                      // V16c: webhook לטופס
+        'forms_hook_state' => ($u ? forms_hook_state($_GET) : []),
         // 🔁 המעבר (M3, lib/cutover.php): קריאה — מפרסם ומעלה; ראיה, נקודת שחזור ו"מוכן למעבר" — בעלים בלבד. אינו מדליק דבר באתר
         'cutover' => cutover_lib() ?? cutover_state($u),
         'cutover_evidence' => cutover_lib() ?? cutover_evidence_add($u, $body),

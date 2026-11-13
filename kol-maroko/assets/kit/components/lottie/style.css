@@ -1,4 +1,4 @@
-/* רכיב מוכן: Lottie (kit 1.0.0). עד שהאנימציה נטענת (ובלי JS) — התמונה; אחר כך (is-ready) — האנימציה. */
+/* רכיב מוכן: Lottie (kit 1.0.1). עד שהאנימציה נטענת (ובלי JS) — התמונה; אחר כך (is-ready) — האנימציה. */
 .kol-lottie { --kol-lottie-w: 240px; margin: 0 auto; inline-size: min(var(--kol-lottie-w), 100%); text-align: center; }
 .kol-lottie__poster, .kol-lottie__stage { display: block; inline-size: 100%; aspect-ratio: 1; }
 .kol-lottie__stage { display: none; }

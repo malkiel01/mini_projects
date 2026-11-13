@@ -1,0 +1,12 @@
+{
+  "name": "social-embed",
+  "label": "הטמעת פוסט",
+  "icon": "🧷",
+  "category": "רשתות",
+  "fields": [
+    {"id": "url", "label": "הקישור לפוסט (נפתח בלי JS)", "control": "link", "target": {"attr": "href", "on": ".kol-sembed__link"}},
+    {"id": "embed", "label": "כתובת ההטמעה (https — \"embed\" של הרשת)", "control": "link", "target": {"attr": "data-kol-embed", "on": ".kol-sembed__link"}},
+    {"id": "img", "label": "התמונה עד לחיצה", "control": "media", "target": {"src": ".kol-sembed__img"}},
+    {"id": "height", "label": "גובה המסגרת", "control": "size", "target": {"var": "--kol-sembed-h"}}
+  ]
+}

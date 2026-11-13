@@ -1,0 +1,12 @@
+/* רכיב מוכן: מפה (kit 1.0.0). עד לחיצה — תמונה מהפרויקט; ה-embed של Google נטען רק אחרי לחיצה. "פתח במפות" — תמיד גלוי
+   (גם בהצבה שאינה מאפשרת iframe חיצוני, ובלי JS). */
+.kol-map { --kol-map-h: 360px; margin: 0; }
+.kol-map__show { position: relative; display: block; inline-size: 100%; padding: 0; border: 0; border-radius: 12px; overflow: hidden; background: #e7e2db; color: var(--color-text, #16192b); cursor: pointer; }
+.kol-map:not(.is-ready) .kol-map__show { cursor: default; }
+.kol-map__img { display: block; inline-size: 100%; block-size: var(--kol-map-h); object-fit: cover; }
+.kol-map__label { position: absolute; inset: 50% auto auto 50%; translate: -50% -50%; padding: 10px 18px; border-radius: 999px; background: rgba(0, 0, 0, .7); color: #fff; font-weight: 700; display: none; }
+.kol-map.is-ready .kol-map__label { display: block; }
+.kol-map__show:focus-visible { outline: 3px solid var(--color-accent, #a3322a); outline-offset: 2px; }
+.kol-map__frame { display: block; inline-size: 100%; block-size: var(--kol-map-h); border: 0; border-radius: 12px; }
+.kol-map__cap { margin-top: 6px; }
+.kol-map__open { font-weight: 600; color: var(--color-accent, #a3322a); }
