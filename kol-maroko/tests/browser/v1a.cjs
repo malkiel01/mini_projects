@@ -170,7 +170,7 @@ const ATTACK = `<!doctype html>
     ok(pw.length === 0 && pwnedReq.length === 0 && s.title === 'התקפה' && new URL(page.url()).hash.startsWith('#/editor'), 'התקפה: <script>, onclick, onerror, javascript: — שום קוד לא רץ (0 הודעות, 0 בקשות, הכותרת לא שונתה, אין ניווט)');
     await clickIn(page, '#evil-class');
     s = await st(page);
-    ok(s.sel === 'div#evil-class' && await page.evaluate(() => !document.querySelector('.ed img, .spike-layer img, .ed-crumbs img') && [...document.querySelectorAll('.ed-crumb')].every(b => b.children.length === 0)), 'שם מחלקה שהוא HTML מוצג כטקסט בלבד (שביל, תווית, הודעה)');
+    ok(s.sel === 'div#evil-class' && await page.evaluate(() => [...document.querySelectorAll('.ed img, .spike-layer img, .ed-crumbs img')].every(i => i.classList.contains('kit-prev') && /^assets\/kit\//.test(i.getAttribute('src') || '') && ![...i.attributes].some(a => /^on/i.test(a.name))) && [...document.querySelectorAll('.ed-crumb')].every(b => b.children.length === 0)), 'שם מחלקה שהוא HTML מוצג כטקסט בלבד (שביל, תווית, הודעה) — התמונות היחידות במעטפת הן תצוגות המקדימות של ערכת הרכיבים (V16, T2)');
     await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#evil-class'))); });
     await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
     ok(await page.evaluate(() => !document.querySelector('.ed-note img') && document.querySelector('.ed-note').textContent.includes('נמחק')) && (await page.evaluate(() => window.__msgs.length)) === 0, 'גם בהודעת המחיקה — טקסט בלבד');
@@ -197,6 +197,11 @@ const ATTACK = `<!doctype html>
     ok((await st(page)).sel === 'span', 'לחיצה בוחרת את האלמנט העמוק ביותר שמתחת לסמן');
     await clickIn(page, '.in span');
     ok((await st(page)).sel === 'div.in', 'לחיצה חוזרת — ההורה');
+    { const t = await page.textContent('.ed-note').catch(() => ''), vis = await page.isVisible('.ed-note');   // T2 (E2E ⚪5): עם רמז, ו"חזרה ל-"
+      ok(vis && /נבחר ההורה: div\.in/.test(t) && /חזרה ל-span/.test(t), 'לחיצה חוזרת — ההודעה אומרת שנבחר ההורה, ומציעה "↩ חזרה ל-span"', t);
+      await page.click('.ed-note button:has-text("חזרה ל-")'); await sleep(60);
+      ok((await st(page)).sel === 'span', '"↩ חזרה ל-span" — הבחירה חוזרת');
+      await clickIn(page, '.in span'); }
     await page.keyboard.press('Escape'); await sleep(40);
     ok((await st(page)).sel === 'section.wrap', 'Esc — ההורה');
     await page.keyboard.press('ArrowDown'); await sleep(40); await page.keyboard.press('ArrowDown'); await sleep(40);

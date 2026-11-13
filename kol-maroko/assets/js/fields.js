@@ -279,8 +279,8 @@ const Fields = (() => {
       const dry = async () => {
         try {
           const d = await api('topic_merge', { from: t.slug, to: sel.value, dry: true });
-          info.replaceChildren(h('p', {}, `${d.words} מילים יקבלו את "${sel.selectedOptions[0].text}". "${t.name}" יעבור לסל.`),
-            d.bindings.length ? h('p', { class: 'hint' }, `${d.bindings.length} קשירות בקבצי העמוד ל-${t.slug} — אחרי המיזוג: 🔑 בנושא היעד, או עדכון ידני.`) : null);
+          info.replaceChildren(...[h('p', {}, `${d.words} מילים יקבלו את "${sel.selectedOptions[0].text}". "${t.name}" יעבור לסל.`),
+            d.bindings.length ? h('p', { class: 'hint' }, `${d.bindings.length} קשירות בקבצי העמוד ל-${t.slug} — אחרי המיזוג: 🔑 בנושא היעד, או עדכון ידני.`) : null].filter(x => x != null && x !== false));
         } catch (e) { info.replaceChildren(h('p', { class: 'error' }, e.message)); }
       };
       sel.addEventListener('change', dry);

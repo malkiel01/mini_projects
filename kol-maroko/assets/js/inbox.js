@@ -153,7 +153,7 @@ const Inbox = (() => {
     const lim = d.limits.map(l => h('label', { class: 'ib-limit' }, h('span', {}, l.label), h('input', { type: 'number', min: l.min, max: l.max, value: l.value, 'data-k': l.id, 'aria-label': l.label }),
       h('small', {}, `ברירת מחדל ${l.default} · ${l.min}–${l.max}`)));
     const health = h('ul', { class: 'dev-checks', id: 'ib-health' });
-    el.replaceChildren(
+    el.replaceChildren(...[
       h('h2', { class: 'sec-title' }, '📬 טפסים ופניות'),
       h('dl', { class: 'cells' },
         h('div', {}, h('dt', {}, 'פניות היום'), h('dd', {}, String(d.today))),
@@ -184,7 +184,7 @@ const Inbox = (() => {
         const limits = {};
         for (const l of lim) { const i = l.querySelector('input'); limits[i.dataset.k] = parseInt(i.value, 10); }
         try { await api('forms_settings', { limits }); toast('נשמר'); devView(el); } catch (e) { toast(e.message, true); }
-      } }, 'שמירת המגבלות'));
+      } }, 'שמירת המגבלות')].filter(x => x != null && x !== false));
     probe(health, d.endpoint);
   }
 

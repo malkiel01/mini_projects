@@ -405,6 +405,7 @@
     async replace(n, L) { const p = await this.pick('image', L ? 'החלפת תמונת הרקע' : 'תמונת רקע'); if (p) this.usePath(n, p, L); }
     usePath(n, path, L) {
       const D = this.D;
+      if (this.after && this.after.n === n) this.after = null;             // T2 (E2E ⚪4): "התמונה הוסרה" אינה נשארת מעל תמונה חדשה
       if (!L) { const im = this.image(n, D.styler.info(n)); L = im.layers.find(x => x.kind === 'url') || null; }
       if (L) { const base = L.loc.r.src.html ? this.filePath() : L.loc.r.path; return this.setUrl(n, L, relFrom(base, path)); }
       // אין תמונה: לכלל היעד — וגם כיסוי / מיקום / חזרה, אם אין ערך מחושב אחר

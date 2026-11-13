@@ -97,12 +97,31 @@ const Editor = (() => {
       // V12: template.html של רכיב — נפתח בקנבס עם style.css שלו (לתבנית אין <head> ואין <link>)
       { const cm = /^components\/([^/]+)\/template\.html$/.exec(f.path), cf = cm && Project.docs.byPath('components/' + cm[1] + '/style.css');
         S.canvas.extraSheets = [];
-        if (cf) { const cd = await Project.docs.open(cf.id).catch(() => null); if (cd && !cd.binary) { const href = 'style.css'; S.sheets.set(href, { path: cf.path, doc: cd }); S.canvas.extraSheets = [href]; S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(cf.path, cd.text())); drawInfo(); } })); } } }
+        /* T2: גם קובצי ה-CSS של העמוד שממנו נכנסו לעריכה (S.comp.back; אחרת — העמוד הראשון שיש בו מופע), לפני style.css של הרכיב —
+           כמו בעמוד עצמו. כל אחד מסמך משותף: שינוי בו מגיע לקנבס. רק <link> לקבצים בפרויקט; <style> שבתוך העמוד — לא. */
+        if (cm) {
+          const n = S.comp?.counts.get(cm[1]), from = S.comp?.back || (n && [...n.pages].sort()[0]), pf = from && Project.docs.byPath(from);
+          const pd = pf && await Project.docs.open(pf.id).catch(() => null);
+          // כיוון העמוד (<html dir>) — לתבנית אין <html>, ובלעדיו המאפיינים הלוגיים (padding-inline-…) מתהפכים. כלל של העורך, לא בקובץ
+          const dir = pd && !pd.binary && (/^\s*(?:<!--[\s\S]*?-->\s*|<!doctype[^>]*>\s*)*<html\b[^>]*\bdir\s*=\s*["']?(rtl|ltr)\b/i.exec(pd.text()) || [])[1];
+          if (dir) S.canvas.extraSheets.push('page:dir:' + dir.toLowerCase());
+          if (pd && !pd.binary) for (const m of pd.text().matchAll(/<link\b[^>]*>/gi)) {
+            if (!/\brel\s*=\s*["']?[^"'>]*\bstylesheet\b/i.test(m[0])) continue;
+            const href = (/\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(m[0]) || []).slice(1).find(x => x != null);
+            const path = resolve(dirOf(from), href || ''), sf = path && Project.docs.byPath(path), key = 'page:' + path;
+            if (!sf || S.sheets.has(key) || /^components\//.test(path)) continue;          // style.css של רכיב — נטען למטה, פעם אחת
+            const sd = await Project.docs.open(sf.id).catch(() => null);
+            if (!sd || sd.binary) continue;
+            S.sheets.set(key, { path, doc: sd }); S.canvas.extraSheets.push(key);
+            S.sheetOff.push(sd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(key, cssForCanvas(path, sd.text())); drawInfo(); } }));
+          }
+        }
+        if (cf) { const cd = await Project.docs.open(cf.id).catch(() => null); if (cd && !cd.binary) { const href = 'style.css'; S.sheets.set(href, { path: cf.path, doc: cd }); S.canvas.extraSheets.push(href); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(cf.path, cd.text())); drawInfo(); } })); } } }
       const c = S.canvas;
       c.baseHref = S.token ? pvUrl(dirOf(f.path)) : '';
       c.verify = !!state.user?.developer || prefs.verify === true;         // מצב פיתוח: שקילות אחרי כל פעולה
       c.capOff = false;
-      await c.load(src, href => { const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });
+      await c.load(src, href => { if (/^page:dir:(rtl|ltr)$/.test(href)) return ':root { direction: ' + href.slice(9) + '; }'; const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });   /* T2: page:dir */
       c.setViewport(deviceWidth());
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
@@ -226,9 +245,9 @@ const Editor = (() => {
     el.point.hidden = !on;
     if (on) {
       const n = c.selected;
-      el.point.replaceChildren(h('span', {}, '🐞 מצביעים על מה שלא הצלחת לשנות — לחיצה על כל דבר בקנבס.'),
+      el.point.replaceChildren(...[h('span', {}, '🐞 מצביעים על מה שלא הצלחת לשנות — לחיצה על כל דבר בקנבס.'),
         n ? h('button', { type: 'button', class: 'btn sm', 'data-bug-selected': true, onclick: () => { pointing(false); reportSheet(n); } }, 'האלמנט הנבחר: ' + c.label(n)) : null,
-        h('button', { type: 'button', class: 'btn sm', onclick: () => pointing(false) }, 'ביטול (Esc)'));
+        h('button', { type: 'button', class: 'btn sm', onclick: () => pointing(false) }, 'ביטול (Esc)')].filter(x => x != null && x !== false));
       (el.point.querySelector('button') || el.point).focus();
     }
   }
@@ -239,7 +258,7 @@ const Editor = (() => {
     const shotBox = h('div', { class: 'ed-shot' }, h('span', { class: 'hint' }, 'מצלם את הקנבס…')), tried = h('textarea', { rows: 3, 'aria-label': 'מה ניסית לשנות (לא חובה)', placeholder: 'מה ניסית לשנות? (לא חובה)' });
     const msg = h('p', { class: 'hint', role: 'status' }), sendBtn = h('button', { type: 'button', class: 'btn primary', 'data-bug-send': true }, 'פתיחת מטלה'), list = h('div', { class: 'ed-mine' });
     let shot = null;
-    const shooting = new Promise(r => setTimeout(r, 60)).then(() => R.shoot(c, n)).then(s => { shot = s; const img = h('img', { alt: 'צילום הקנבס, האלמנט מסומן' }); img.src = URL.createObjectURL(s.blob); shotBox.replaceChildren(img, s.full ? null : h('span', { class: 'hint' }, 'תרשים — הדפדפן אינו מרשה צילום מלא')); }, () => { shotBox.replaceChildren(h('span', { class: 'hint' }, 'הצילום לא הצליח — המטלה תיפתח בלעדיו')); });
+    const shooting = new Promise(r => setTimeout(r, 60)).then(() => R.shoot(c, n)).then(s => { shot = s; const img = h('img', { alt: 'צילום הקנבס, האלמנט מסומן' }); img.src = URL.createObjectURL(s.blob); shotBox.replaceChildren(...[img, s.full ? null : h('span', { class: 'hint' }, 'תרשים — הדפדפן אינו מרשה צילום מלא')].filter(Boolean)); /* T2 (E2E ⚪9): replaceChildren(null) כותב "null" */ }, () => { shotBox.replaceChildren(h('span', { class: 'hint' }, 'הצילום לא הצליח — המטלה תיפתח בלעדיו')); });
     sendBtn.addEventListener('click', async () => {
       sendBtn.disabled = true; msg.textContent = 'שולח…';
       try {
@@ -351,8 +370,10 @@ const Editor = (() => {
   }
   /** הקובץ לכלל חדש: styles.page שב-kol.json, אם העמוד מקשר אליו; אחרת קובץ ה-CSS האחרון שהעמוד מקשר. */
   /** V8: קובץ ה-CSS של ברירות המחדל לתגיות (styles.base), אם העמוד מקשר אליו. */
-  function basePath() { const want = S.kol?.styles?.base; return [...S.sheets.values()].some(x => x.path === want) ? want : null; }
-  function pagePath() { const want = S.kol?.styles?.page, paths = [...S.sheets.values()].map(x => x.path); return paths.includes(want) ? want : paths[paths.length - 1] || null; }
+  /* T2: קובצי ה-CSS של העמוד בעריכת תבנית ('page:…') — לתצוגה ולכללים הקיימים בלבד; כלל חדש נכתב ל-style.css של הרכיב, כמו קודם */
+  const ownSheets = () => [...S.sheets].filter(([k]) => !k.startsWith('page:')).map(([, x]) => x);
+  function basePath() { const want = S.kol?.styles?.base; return ownSheets().some(x => x.path === want) ? want : null; }
+  function pagePath() { const want = S.kol?.styles?.page, paths = ownSheets().map(x => x.path); return paths.includes(want) ? want : paths[paths.length - 1] || null; }
   // ── עסקאות על כמה קבצים (V3): ביטול / החזרה משותפים לכל הקבצים שהעסקה נגעה בהם ──
   /** רושם עסקה: הקבצים שנערכו (מסמך שנערך כמה פעמים — כמה פעמים), והטקסט של כל אחד אחריה. */
   function pushTx(docs, label) {
@@ -953,14 +974,16 @@ const Editor = (() => {
     el.page.replaceChildren(...files.map(f => h('option', { value: f.id, 'data-old-tpl': Project.oldTemplate(f.path) || null, title: Project.oldTemplate(f.path) ? 'תבנית ישנה (עם {{…}}) — העמוד עצמו הוא index.html' : null }, f.path)));
     if ([...el.page.options].some(o => o.value === cur)) el.page.value = cur;
   }
-  function note(text, err, action) {
+  function note(text, err, action, soft) {
     if (!el.note) return;
-    clearTimeout(note.t);
+    clearTimeout(note.t); note.soft?.();
+    /* T2: soft — רמז שאינו מכסה עבודה: נסגר בלחיצה הבאה מחוץ לו (למשל בספרייה שמתחתיו), ואחרי 6 שניות */
+    if (soft) { const off = e => { if (!el.note.contains(e.target)) { el.note.hidden = true; note.soft?.(); } }; const cd = S.canvas?.doc; document.addEventListener('pointerdown', off, true); cd?.addEventListener('pointerdown', off, true); note.soft = () => { document.removeEventListener('pointerdown', off, true); cd?.removeEventListener('pointerdown', off, true); note.soft = null; }; }
     el.note.className = 'ed-note' + (err ? ' err' : '');
     el.note.replaceChildren(...[h('span', {}, text), action ? h('button', { type: 'button', class: 'btn sm', onclick: () => { el.note.hidden = true; action.run(); } }, action.label) : null,
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', onclick: () => { el.note.hidden = true; } }, '✕')].filter(Boolean));   // replaceChildren(null) כותב "null"
     el.note.hidden = false;
-    note.t = setTimeout(() => { el.note.hidden = true; }, err || action ? 12000 : 5000);
+    note.t = setTimeout(() => { el.note.hidden = true; note.soft?.(); }, soft ? 6000 : err || action ? 12000 : 5000);
   }
 
   /** V4: ידית בין פאנל צד לקנבס — גרירה משנה את רוחב הפאנל (200–560px), נשמר בדפדפן. */
@@ -1097,7 +1120,12 @@ const Editor = (() => {
         seedUrl: name => 'assets/project-seed/' + encodeURIComponent(name), api: (a, b) => api(a, b) });
       S.design.fx = n => S.fx.sections(n); S.design.transition = (n, d) => S.mo.transition(n, d);
       { const ex = S.adv.extra; S.adv.extra = n => [...ex(n), ...S.mo.sections(n)]; }
-      el.bar.append(S.mo.button());
+      /* T2: בטלפון ▶ (V10), ⚙️ ו-▶️ (V15) אינם בסרגל — לא כפתור מוסתר 0×0 בו (v1a / v1b), ולא שורה רביעית (המקלדת, V7/V10). ▶ / ⏸ בפאנל;
+         ⚙️ ו-▶️ — דרך 📄 (V15). במחשב כל אחד חוזר למקום שלו (סמן) */
+      { const pb = S.mo.button(), mq = matchMedia('(max-width: 999px)'); el.bar.append(pb);
+        const items = [el.hdBtn, el.liveBtn, pb].filter(b => b && b.isConnected).map(b => { const m = document.createComment('T2'); b.before(m); return [b, m]; });
+        const place = () => { for (const [b, m] of items) { if (mq.matches) b.remove(); else if (!b.isConnected && m.isConnected) m.after(b); } };
+        place(); mq.addEventListener('change', place); S.playMq = () => mq.removeEventListener('change', place); }
       S.build = new window.KolBuild.Build({ canvas: c, nav: S.nav, navHost: el.libBody, toolsHost: el.seltools, K, X: window.KolStruct, styler: S.styler, act, multi, writeStyle, note, sheet, undo, canWrite: () => !!canWrite(), device: writeDevice, devices: () => S.devs,
         pick, rel: relRef, openInCode, linkSheet, removeOne, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, sheetsList: () => [...S.sheets.values()],
         jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path, linkedPaths: () => { const out = []; if (c.m?.root) K.walk(c.m.root, n => { if (n.tag === 'link' && /stylesheet/i.test(K.attrOf(n, 'rel')?.value || '')) { const hr = K.attrOf(n, 'href'); if (hr) out.push(resolve(dirOf(S.file.path), hr.value)); } }); return out; },
@@ -1173,6 +1201,8 @@ const Editor = (() => {
       S.kit = window.KolKit ? new window.KolKit.Kit({ comp: S.comp, canvas: c, build: S.build, mid: el.mid, host: el.compBody, act, writeOps, joinTx, attachFx, txCount: () => S.tx.length, note, sheet, undo, canWrite: () => !!canWrite(), phone }) : null;
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
+      /* T2 (E2E ⚪5): לחיצה על הנבחר עולה להורה — אומרים, ומציעים לחזור */
+      c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } }, true);
       S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone, note });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
@@ -1204,7 +1234,7 @@ const Editor = (() => {
     if (id === 'hist') S.hist?.draw();
     if (id === 'tpl') S.tpl?.load().catch(e => note(e.message, true));
   }
-  function unmount() { if (!S.host) return; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.kit?.unmount(); S.kit = null; /* V16 */ S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.kit?.unmount(); S.kit = null; /* V16 */ S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
   return { view, unmount, selectAt, _head: () => S.head, _pages: () => S.pages, _openPage: openPage, _live: livePage, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };

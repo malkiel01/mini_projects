@@ -465,10 +465,10 @@ parent.postMessage({kol:'ready'},'*');
       if (f) { fileCache[f.id] = f; onPick(f); }
     };
     fileInfo(id).then(f => {
-      box.replaceChildren(
+      box.replaceChildren(...[
         f ? (f.kind === 'image' ? h('img', { class: 'thumb lg', src: f.url, alt: '' }) : h('span', { class: 'use-ic', 'aria-hidden': 'true' }, TYPES[{ audio: 'audio', video: 'video', doc: 'file' }[f.kind]].icon)) : null,
         h('span', { class: 'use-tx' }, h('b', { class: 'one' }, f ? f.name : id ? 'הקובץ חסר' : 'לא נבחר'), f ? h('small', {}, Media.mb(f.size)) : null),
-        h('button', { type: 'button', class: 'btn sm ghost', disabled: S.readonly, onclick: choose }, f ? '🔁 החלפה' : label));
+        h('button', { type: 'button', class: 'btn sm ghost', disabled: S.readonly, onclick: choose }, f ? '🔁 החלפה' : label)].filter(x => x != null && x !== false));
     });
     return box;
   }

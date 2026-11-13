@@ -131,6 +131,14 @@ const PAGE = `<!doctype html>
     let f2 = await files(page);
     ok(!/--has-image::before/.test(f2[Object.keys(f2).find(k => /::before/.test(o0[k] || '') && /has-image::before/.test(o0[k]))] || '') && await pseudo(page, 'content') === 'none', '"הסר גם אותו" — הכלל של ה-::before נמחק, והכיסוי נעלם', Object.keys(f2));
     ok(await undoFiles(page, o0), 'ביטול עד ההתחלה — כל הקבצים זהים בייט בבייט');
+    // T2 (E2E ⚪4): אחרי 🗑 הסר ← ＋ תמונת רקע — "התמונה הוסרה. מה שנשאר" אינה נשארת מעל התמונה החדשה
+    await select(page, HERO); await sleep(100);
+    await page.click('[data-bgt="remove"]'); await sleep(250);
+    const hadAfter = await page.evaluate(() => !!document.querySelector('[data-bg-after]'));
+    await page.evaluate(async () => { await api('pf_create', { path: 'media/t2-bg.svg', content: '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="#c33"/></svg>' }); await Project.docs.reload(); const S = Editor._state; S.bg.usePath(S.canvas.selected, 'media/t2-bg.svg'); }); await sleep(300);
+    p = await page.evaluate(() => ({ after: !!document.querySelector('[data-bg-after]'), bi: getComputedStyle(Editor._state.canvas.elOf(Editor._state.canvas.selected)).backgroundImage }));
+    ok(hadAfter && !p.after, '🗑 הסר ← ＋ תמונת רקע: ההודעה "התמונה הוסרה. מה שנשאר" יורדת עם התמונה החדשה', { hadAfter, ...p });
+    ok(await undoFiles(page, o0), 'וביטול — כל הקבצים זהים בייט בבייט');
 
     // ═══ 3. להחליף — מהמחשב, בגרירה על הפס ═══
     await select(page, HERO); await sleep(100);
