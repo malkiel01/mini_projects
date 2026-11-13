@@ -188,3 +188,11 @@
 5. **loadMonaco:** `data-monaco-loader`; התג מוסר רק ב-error (`data-failed`), לא ב-timeout.
 6. **בדיקות:** v14.cjs. **כל שינוי מגע — ב-CDP `Input.dispatchTouchEvent`** (cdpOf, realDrag, swipe), לא PointerEvent סינתטי: touch-action, click אחרי touchend, pointercancel וגלילה ב-iframe מופיעים רק כך (שתי רגרסיות 🔴 נתפסו רק בבדיקה כזו).
 7. **לא נעשה:** שורת מקשים לקוד + חלופה כש-Monaco לא נטען; ✕ לביטול גרירה; "100%" לטאבלט/מחשב בטלפון; תרחיש 7.3 ב-390; מכשירים אמיתיים (iOS Safari, Chrome אנדרואיד) — מטלה לבעלים.
+
+## מ-V14d (2026-11-13, נרשם בידי בקרה (9))
+1. **שורת מקשים לקוד:** project.js `keyBar(target)` / `keyDo` — ב-📁 (`activeEd`) ובלשונית "קוד" של העורך (`splitEd`, עטיפה `.pj-splitbox`). רק במגע/טלפון; הכפתורים בלי מיקוד (pointerdown preventDefault). ↶/↷ חסומים ב-readOnly.
+2. **בלי Monaco:** `fbArea(doc)` — תיבת טקסט על אותו מסמך; היסטוריה ב-`doc.undo/redo` (משותפת עם `edit()`); שינוי מבחוץ מתעדכן בכל `doc.views` דרך `changed()`. ההחלטה לפי `!doc.model`, לא `!monaco`. Ctrl+S בתיבה.
+3. **touch.js:** ✕ (`D.overX`, `lastPT`) — רק לגרירה מאצבע; "100%" = `actual()`/`fullZ()`; setViewport באותו מכשיר שומר הגדלה וגלילה.
+4. **position.js `coversOf`:** מטמון WeakMap + MutationObserver (בלי `[data-kol-canvas]`) + takeRecords.
+5. **בדיקות:** `tests/browser/v14d.cjs` (V14D_ONLY=1..6; §6 = 7.3 ב-390 ב-CDP). מלכודת: מסמך של Project אינו נושא `path` — `Project.docs.byPath(p).id` (v6.cjs צעד 9 מחפש לפי d.path ומקבל null).
+6. **פתוח:** מכשירים אמיתיים (iOS Safari, Chrome אנדרואיד) — מטלה לבעלים.
