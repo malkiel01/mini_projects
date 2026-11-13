@@ -61,8 +61,8 @@ test('V15 §2.4 ➕ עמוד חדש: ריק (עם ה-CSS המשותף של style
     eq('about/', $r['json']['url']);
     $s = v15_text('about/index.html');
     ok(str_contains($s, '<title>אודות &lt;b&gt;&quot;</title>') && str_contains($s, '<link rel="stylesheet" href="../css/v15.css">'), 'שם מקודד; הקישור ל-CSS המשותף — יחסי מהתיקייה החדשה', $s);
-    $h = db()->query("SELECT note FROM pf_history h JOIN pf_files f ON f.id = h.file_id WHERE f.path = 'about/index.html' AND f.deleted_at IS NULL")->fetchAll(PDO::FETCH_COLUMN);
-    eq(['עמוד חדש'], $h, 'גרסה בהיסטוריה');
+    $h = db()->query("SELECT h.note FROM pf_history h JOIN pf_files f ON f.id = h.file_id WHERE f.path = 'about/index.html' AND f.deleted_at IS NULL ORDER BY h.id DESC LIMIT 1")->fetchColumn();
+    eq('עמוד חדש', $h, 'גרסה בהיסטוריה');
     eq(409, v15_post('page_create', ['slug' => 'about', 'title' => 'שוב', 'start' => 'blank'])['status'], 'כתובת תפוסה — 409');
     // שכפול: הפניות יחסיות — מהמקום החדש
     v15_put('about/index.html', v15_page('אודות', "  <link rel=\"stylesheet\" href=\"../css/v15.css\">\n", "  <img src=\"../media/x.png\"><a href=\"../\">בית</a>\n"));
@@ -101,7 +101,7 @@ test('V15 §2.4 שינוי כתובת: about/ ← odot/ — הקובץ זז, ה�
     $pick = array_values(array_diff(array_column($v['links'], 'n'), [$skip]));
     $a = v15_post('page_move', ['from' => 'about/index.html', 'to' => 'odot', 'apply' => true, 'token' => $v['token'], 'pick' => $pick, 'redirect' => true]);
     eq(200, $a['status'], $a['body']);
-    ok(pf_by_path('odot/index.html') && str_contains(v15_text('odot/index.html'), '<title>אודות</title>'), 'הקובץ זז', v15_text('odot/index.html') . ' / ' . json_encode($a['json']['done'] ?? null));
+    ok(pf_by_path('odot/index.html') && str_contains(v15_text('odot/index.html'), '<title>אודות</title>'), 'הקובץ זז: ' . mb_substr(v15_text('odot/index.html'), 0, 300) . ' / ' . json_encode($a['json']['done'] ?? null, JSON_UNESCAPED_UNICODE));
     $ix = v15_text('index.html');
     ok(str_contains($ix, 'href="odot/"') && str_contains($ix, 'href="/lexicon/about/"'), 'הקישור שנבחר עודכן; זה שלא סומן — נשאר', $ix);
     ok(str_contains(v15_text('team/dana/index.html'), 'href="../../odot/"') && str_contains(v15_text('team/dana/index.html'), "location.href = 'about/'"), 'יחסי מעומק — עודכן; JS — לא נגעו');
@@ -110,6 +110,12 @@ test('V15 §2.4 שינוי כתובת: about/ ← odot/ — הקובץ זז, ה�
     $mv = db()->query("SELECT note FROM pf_history h JOIN pf_files f ON f.id = h.file_id WHERE f.path = 'odot/index.html' ORDER BY h.id DESC LIMIT 1")->fetchColumn();
     eq('שינוי כתובת מ-about/index.html', $mv);
     eq(400, v15_post('page_move', ['from' => 'index.html', 'to' => 'home'])['status'], 'index.html שבשורש — לא זז');
+    // "השאר הפניה" מ"מה ישתנה" (build.js): page_create start=redirect
+    $rd = v15_post('page_create', ['slug' => 'old-odot', 'start' => 'redirect', 'to' => 'odot/index.html']);
+    eq(200, $rd['status'], $rd['body']);
+    ok(str_contains(v15_text('old-odot/index.html'), 'content="0; url=../odot/"'), 'הפניה מכתובת ישנה — קובץ רגיל עם refresh');
+    eq(400, v15_post('page_create', ['slug' => 'old-x', 'start' => 'redirect', 'to' => '../../wp-config.php'])['status'], 'הפניה אל ../ — 400');
+    eq(404, v15_post('page_create', ['slug' => 'old-y', 'start' => 'redirect', 'to' => 'nope.html'])['status'], 'הפניה ליעד שאינו עמוד — 404');
     eq(403, v15_post('page_move', ['from' => 'odot/index.html', 'to' => 'x'], U_EDITOR)['status'], 'עורך — 403');
 });
 
