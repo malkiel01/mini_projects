@@ -18,7 +18,9 @@ require_once __DIR__ . '/../errors.php';
 require_once __DIR__ . '/ma.php';
 
 /** גרסת הגדרת הסוכן. שינוי בכלים או בהנחיית הבסיס — להעלות, והסוכן יתעדכן לבד בשימוש הבא. */
-const STUDIO_AGENT_REV = 1;
+const STUDIO_AGENT_REV = 2;
+/** שרת ה-MCP של GitHub: דרכו הסוכן פותח PR וממזג. האסימון יושב בכספת של הפלטפורמה, לא בסביבה. */
+const STUDIO_GITHUB_MCP = 'https://api.githubcopilot.com/mcp/';
 /** מרווח מינימלי בין שתי משיכות אירועים לאותה שיחה, גם אם כמה לשוניות פתוחות. */
 const STUDIO_SYNC_GAP = 4;
 /** תקרת עמודים במשיכה אחת — כדי שבקשה אחת לא תחרוג מזמן הריצה של PHP. */
@@ -161,7 +163,7 @@ function studioSystemPrompt(array $conv): string {
     $name = substr($repo, (int) strrpos($repo, '/') + 1);
     $base = (string) $conv['base_branch'];
     $merge = (int) $conv['allow_merge'] === 1
-        ? "מיזוג: יש לך הרשאה למזג בעצמך. אחרי פתיחת ה-PR בדוק ב-GitHub שאין קונפליקטים ושהבדיקות עברו; אם כן — מזג ל-$base (PUT /repos/$repo/pulls/<מספר>/merge), ואז בדוק את תוצאת הפריסה (GET /repos/$repo/actions/runs?branch=$base) ודווח אם conclusion הוא success. יש קונפליקט, בדיקה נכשלה, או ש-GitHub חוסם — אל תעקוף ואל תפתור לבד: עצור, הסבר מה קרה ושאל."
+        ? "מיזוג: יש לך הרשאה למזג בעצמך. אחרי פתיחת ה-PR בדוק ב-GitHub שאין קונפליקטים ושהבדיקות עברו; אם כן — מזג ל-$base (בכלי GitHub, או PUT /repos/$repo/pulls/<מספר>/merge), ואז בדוק את תוצאת הפריסה (ריצות ה-Actions על $base) ודווח אם conclusion הוא success. יש קונפליקט, בדיקה נכשלה, או ש-GitHub חוסם — אל תעקוף ואל תפתור לבד: עצור, הסבר מה קרה ושאל."
         : "מיזוג: אין לך הרשאה למזג. אחרי פתיחת ה-PR תן את הקישור אליו ועצור. בעל הלוח ימזג בעצמו.";
     return <<<TXT
 אתה סוכן פיתוח תוכנה שעובד בתוך "מטלות לקלוד — סטודיו", עבור בעל הלוח.
@@ -172,7 +174,7 @@ function studioSystemPrompt(array $conv): string {
 1. לפני כל שינוי קרא את CLAUDE.md שבשורש הריפו (אם קיים) ואת ה-README של הפרויקט שביקשו ממך לעבוד עליו, ופעל לפיהם.
 2. עבוד רק על הפרויקט שהוגדר לך. אל תשנה פרויקטים אחרים או קוד משותף בלי שביקשו.
 3. לכל שינוי קוד: ענף חדש מ-$base המעודכן, commit, push לענף, ו-PR אל $base.
-4. את ה-PR פותחים דרך ה-API של GitHub (curl אל https://api.github.com/repos/$repo/pulls). ההזדהות מוזרקת לבד לבקשות אל GitHub — אל תחפש אסימון ואל תבקש אותו. קיבלת 401 או 403 — דווח על כך ואל תנסה לעקוף.
+4. את ה-PR פותחים בכלי GitHub שמחוברים אליך (שרת ה-MCP בשם github: יצירת PR, קריאת מצב, מיזוג). אם הכלים האלה אינם זמינים — דרך ה-API של GitHub ב-curl (https://api.github.com/repos/$repo/pulls). ההזדהות מוזרקת לבד — אל תחפש אסימון ואל תבקש אותו. קיבלת 401 או 403 בשתי הדרכים — דווח על כך ואל תנסה לעקוף.
 5. הרץ את הבדיקות הרלוונטיות לפני פתיחת ה-PR, ודווח מה רץ ומה התוצאה.
 6. אסור: push ישיר ל-$base, force push, מחיקת ענפים או היסטוריה.
 7. $merge
@@ -187,12 +189,58 @@ function studioAgentDef(string $model): array {
         'name'   => 'מטלות לקלוד — סטודיו',
         'model'  => $model,
         'system' => studioBaseSystem(),
+        // חיבור הריפו לסשן נותן git בלבד; פתיחת PR ומיזוג עוברים דרך שרת ה-MCP של GitHub.
+        'mcp_servers' => [['type' => 'url', 'name' => 'github', 'url' => STUDIO_GITHUB_MCP]],
         'tools'  => [[
             'type' => 'agent_toolset_20260401',
             // "הרשאות מלאות": כל כלי רץ בלי לעצור לאישור. הבלם הוא התקציב של הסשן.
             'default_config' => ['enabled' => true, 'permission_policy' => ['type' => 'always_allow']],
+        ], [
+            'type' => 'mcp_toolset',
+            'mcp_server_name' => 'github',
+            // ברירת המחדל של הפלטפורמה לכלי MCP היא לעצור לאישור בכל קריאה — כאן, כמו בשאר הכלים, בלי.
+            'default_config' => ['permission_policy' => ['type' => 'always_allow']],
         ]],
     ];
+}
+
+/**
+ * כספת בפלטפורמה עם אסימון ה-GitHub, כדי ששרת ה-MCP של GitHub יזדהה. נוצרת פעם אחת לכל משתמש;
+ * האסימון הוחלף בחיבורים — האישור בכספת מוחלף. מחזיר את מזהה הכספת, או '' אם ההקמה נכשלה:
+ * אז הסשן נפתח בלי הכספת, והסוכן נשען על ה-API של GitHub דרך curl.
+ */
+function studioEnsureVault(int $uid, string $key, string $token): string {
+    $s = studioSettings($uid);
+    $v = is_array($s['vault'] ?? null) ? $s['vault'] : [];
+    $fp = hash('sha256', $token);
+    if (($v['id'] ?? '') !== '' && ($v['cred'] ?? '') !== '' && ($v['fp'] ?? '') === $fp) return (string) $v['id'];
+    try {
+        if (($v['id'] ?? '') === '') {
+            $made = maCreateVault($key, ['display_name' => 'claude-tasks-studio']);
+            if (($made['id'] ?? '') === '') throw new MaError('הפלטפורמה לא החזירה מזהה כספת');
+            $v = ['id' => (string) $made['id']];
+            studioSaveSettings($uid, ['vault' => $v]);
+        }
+        // כתובת שרת ה-MCP ייחודית בכספת — מוחקים את האישור הישן לפני שיוצרים חדש
+        if (($v['cred'] ?? '') !== '') {
+            try { maDeleteCredential($key, (string) $v['id'], (string) $v['cred']); } catch (MaError $e) { if ($e->http !== 404) throw $e; }
+            $v['cred'] = '';
+            studioSaveSettings($uid, ['vault' => $v]);
+        }
+        $c = maCreateCredential($key, (string) $v['id'], [
+            'display_name' => 'GitHub',
+            'auth' => ['type' => 'static_bearer', 'mcp_server_url' => STUDIO_GITHUB_MCP, 'token' => $token],
+        ]);
+        if (($c['id'] ?? '') === '') throw new MaError('הפלטפורמה לא החזירה מזהה אישור');
+        $v['cred'] = (string) $c['id'];
+        $v['fp'] = $fp;
+        studioSaveSettings($uid, ['vault' => $v, 'vault_error' => '']);
+        return (string) $v['id'];
+    } catch (AppError $e) {
+        studioSaveSettings($uid, ['vault_error' => mb_substr($e->getMessage(), 0, 300)]);
+        error_log('[studio] vault: ' . $e->getMessage());
+        return '';
+    }
 }
 
 /**
@@ -204,10 +252,20 @@ function studioEnsureSetup(array $user, string $key, string $model): array {
     $s = studioSettings($uid);
 
     if (($s['env_id'] ?? '') === '') {
-        $env = maCreateEnvironment($key, [
-            'name'   => 'claude-tasks-studio',
-            'config' => ['type' => 'cloud', 'networking' => ['type' => 'unrestricted']],
-        ]);
+        $envName = 'claude-tasks-studio';
+        try {
+            $env = maCreateEnvironment($key, [
+                'name'   => $envName,
+                'config' => ['type' => 'cloud', 'networking' => ['type' => 'unrestricted']],
+            ]);
+        } catch (MaError $e) {
+            // שם סביבה ייחודי בפלטפורמה: אם היא כבר קיימת (הקמה קודמת שנקטעה) — משתמשים בה
+            if ($e->http !== 409) throw $e;
+            $env = [];
+            foreach ((array) (maListEnvironments($key)['data'] ?? []) as $row) {
+                if (is_array($row) && ($row['name'] ?? '') === $envName && empty($row['archived_at'])) { $env = $row; break; }
+            }
+        }
         if (($env['id'] ?? '') === '') throw new MaError('הפלטפורמה לא החזירה מזהה סביבה');
         $s = studioSaveSettings($uid, ['env_id' => (string) $env['id']]);
     }
@@ -309,11 +367,28 @@ function studioEnsureSession(array $user, array $conv, string $key): array {
         ]],
         'metadata' => ['app' => 'claude-tasks-studio', 'conv_id' => (string) $conv['id']],
     ];
+    // כלי GitHub (MCP) הם תוספת, לא תנאי: בלי כספת הסשן נפתח בלעדיהם — בדיוק כמו סוכן עם git בלבד —
+    // כדי ששרת MCP בלי הזדהות לא יפיל או יתקע שיחה. אותו דבר אם הפלטפורמה דוחה את הסשן כשהם מצורפים.
+    $plain = $def;
+    $plain['agent']['mcp_servers'] = [];
+    $plain['agent']['tools'] = [studioAgentDef('')['tools'][0]];
+    $vaultId = studioEnsureVault($uid, $key, $token);
+    if ($vaultId === '') {
+        $def = $plain;
+    } else {
+        $def['vault_ids'] = [$vaultId];
+    }
     // תקציב אפשר לצרף רק ביצירה (אחר כך רק לשנות או להסיר) — ולכן הוא נקבע כאן.
     if ((int) $conv['budget_cents'] > 0) {
         $def['budget'] = ['type' => 'limit', 'max_list_cost' => ['amount' => (string) (int) $conv['budget_cents'], 'currency' => 'USD']];
     }
-    $sess = maCreateSession($key, $def);
+    try {
+        $sess = maCreateSession($key, $def);
+    } catch (MaError $e) {
+        if ($e->http !== 400 || $vaultId === '') throw $e;
+        $sess = maCreateSession($key, $plain);   // נכשל גם כך — השגיאה של הניסיון הזה היא שנזרקת
+        studioSaveSettings($uid, ['vault_error' => mb_substr('הסשן נפתח בלי כלי GitHub: ' . $e->getMessage(), 0, 300)]);
+    }
     if (($sess['id'] ?? '') === '') throw new MaError('הפלטפורמה לא החזירה מזהה סשן');
     studioUpdateConv((int) $conv['id'], ['session_id' => (string) $sess['id']]);
     return studioConv($uid, (int) $conv['id']);
@@ -325,7 +400,8 @@ function studioEnsureSession(array $user, array $conv, string $key): array {
 function studioAppendEvents(int $convId, array $events): int {
     if (!$events) return 0;
     $pdo = db();
-    $pdo->beginTransaction();
+    // נעילת כתיבה מראש: שני סנכרונים של אותה שיחה לא מקצים את אותו מספר סידורי
+    $pdo->exec('BEGIN IMMEDIATE');
     try {
         $seq = (int) ($pdo->query('SELECT COALESCE(MAX(seq), 0) m FROM studio_events WHERE conv_id = ' . $convId)->fetch()['m']);
         $ins = $pdo->prepare('INSERT OR IGNORE INTO studio_events (conv_id, seq, ev_id, type, payload, at) VALUES (?,?,?,?,?,?)');
@@ -338,10 +414,10 @@ function studioAppendEvents(int $convId, array $events): int {
             $ins->execute([$convId, $seq + 1, $id, $type, json_encode($e, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $at]);
             if ($ins->rowCount() > 0) { $seq++; $added++; }
         }
-        $pdo->commit();
+        $pdo->exec('COMMIT');
         return $added;
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        $pdo->exec('ROLLBACK');
         throw $e;
     }
 }
