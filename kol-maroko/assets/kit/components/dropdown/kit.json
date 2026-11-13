@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "category": "ניווט",
+  "description": "כפתור שפותח רשימת קישורים. בלי JS — <details>: נפתח ונסגר בלחיצה.",
+  "preview": "preview.svg"
+}

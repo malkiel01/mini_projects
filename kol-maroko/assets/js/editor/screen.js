@@ -1173,7 +1173,7 @@ const Editor = (() => {
       S.kit = window.KolKit ? new window.KolKit.Kit({ comp: S.comp, canvas: c, build: S.build, mid: el.mid, host: el.compBody, act, writeOps, joinTx, attachFx, txCount: () => S.tx.length, note, sheet, undo, canWrite: () => !!canWrite(), phone }) : null;
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
-      S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
+      S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone, note });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);

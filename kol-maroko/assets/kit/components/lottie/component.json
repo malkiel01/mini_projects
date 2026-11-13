@@ -1,0 +1,12 @@
+{
+  "name": "lottie",
+  "label": "Lottie",
+  "icon": "🌀",
+  "category": "תנועה",
+  "fields": [
+    {"id": "src", "label": "קובץ האנימציה (.json) — ריק: הדוגמה", "control": "media", "target": {"attr": "data-kol-src"}},
+    {"id": "poster", "label": "תמונה עד שהאנימציה נטענת", "control": "media", "target": {"src": ".kol-lottie__poster"}},
+    {"id": "loop", "label": "בלולאה", "control": "toggle", "target": {"attr": "data-kol-loop"}},
+    {"id": "size", "label": "רוחב", "control": "size", "target": {"var": "--kol-lottie-w"}}
+  ]
+}

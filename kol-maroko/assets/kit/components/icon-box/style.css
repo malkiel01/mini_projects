@@ -1,5 +1,5 @@
-/* רכיב מוכן: קופסת אייקון (kit 1.0.0). האייקון הוא טקסט (אימוג'י / תו) — נערך במקום, או מוחלף בתמונה. */
-.kol-iconbox { --kol-iconbox-color: var(--color-accent, #a3322a); --kol-iconbox-size: 2.5rem; display: flex; gap: 14px; padding: 20px; border-radius: 14px; background: var(--color-bg, #fff); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
+/* רכיב מוכן: קופסת אייקון (kit 1.0.1). האייקון הוא טקסט (אימוג'י / תו) — נערך במקום, או מוחלף בתמונה. */
+.kol-iconbox { --kol-iconbox-color: var(--color-accent, #a3322a); --kol-iconbox-size: 2.5rem; display: flex; gap: 14px; padding: 20px; border-radius: 14px; background: var(--color-bg, #fff); color: var(--color-text, #16192b); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); }
 .kol-iconbox--top { flex-direction: column; align-items: center; text-align: center; }
 .kol-iconbox--side { flex-direction: row; align-items: flex-start; text-align: start; }
 .kol-iconbox__icon { font-size: var(--kol-iconbox-size); line-height: 1; color: var(--kol-iconbox-color); flex: none; }

@@ -1,0 +1,16 @@
+/* רכיב מוכן: קרוסלה (kit 1.0.0). --kol-carousel-per כרטיסים בכל מבט; בטלפון — אחד וקצת. */
+.kol-carousel { --kol-carousel-per: 3; --kol-carousel-gap: 16px; position: relative; }
+.kol-carousel__track { display: flex; gap: var(--kol-carousel-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-block: 4px; overscroll-behavior-x: contain; }
+.kol-carousel__track::-webkit-scrollbar { display: none; }
+.kol-carousel__slide { flex: 0 0 calc((100% - (var(--kol-carousel-per) - 1) * var(--kol-carousel-gap)) / var(--kol-carousel-per)); scroll-snap-align: start; border-radius: 14px; overflow: hidden; background: var(--color-bg, #fff); color: var(--color-text, #16192b); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); padding-block-end: 12px; }
+.kol-carousel__img { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+.kol-carousel__title { margin: 10px 14px 4px; font-size: 1.1rem; }
+.kol-carousel__text { margin: 0 14px; }
+.kol-carousel__prev, .kol-carousel__next { position: absolute; inset-block-start: 50%; translate: 0 -50%; z-index: 2; inline-size: 44px; block-size: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .85); color: #222; font-size: 1.6rem; line-height: 1; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); }
+.kol-carousel__prev { inset-inline-start: 8px; }
+.kol-carousel__next { inset-inline-end: 8px; }
+.kol-carousel__prev:focus-visible, .kol-carousel__next:focus-visible { outline: 3px solid var(--color-accent, #a3322a); }
+.kol-carousel__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.kol-carousel__prev, .kol-carousel__next { display: none; }
+.kol-carousel.is-ready .kol-carousel__prev, .kol-carousel.is-ready .kol-carousel__next { display: block; }
+@media (max-width: 767px) { .kol-carousel { --kol-carousel-per: 1.2; } }

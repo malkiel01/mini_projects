@@ -1,0 +1,27 @@
+/* רכיב מוכן: כותרת מונפשת (kit 1.0.0) — CSS בלבד. המילים זו על זו (grid), וכל אחת בתורה. */
+.kol-headline { --kol-hl-t: 7.5s; --kol-hl-accent: var(--color-accent, #a3322a); }
+.kol-headline__words { display: inline-grid; vertical-align: bottom; color: var(--kol-hl-accent); }
+.kol-headline__word { grid-area: 1 / 1; white-space: nowrap; }
+.kol-headline--rotate .kol-headline__word { opacity: 0; animation: kol-hl-3 var(--kol-hl-t) infinite both; }
+.kol-headline--rotate .kol-headline__word:nth-child(2) { animation-delay: calc(var(--kol-hl-t) / var(--kol-hl-k, 3)); }
+.kol-headline--rotate .kol-headline__word:nth-child(3) { animation-delay: calc(var(--kol-hl-t) / var(--kol-hl-k, 3) * 2); }
+.kol-headline--rotate .kol-headline__word:nth-child(4) { animation-delay: calc(var(--kol-hl-t) / var(--kol-hl-k, 3) * 3); }
+.kol-headline--n2 { --kol-hl-k: 2; } .kol-headline--n3 { --kol-hl-k: 3; } .kol-headline--n4 { --kol-hl-k: 4; }
+@keyframes kol-hl-2 { 0% { opacity: 0; transform: translateY(.5em); } 6.0% { opacity: 1; transform: none; } 44.0% { opacity: 1; transform: none; } 50.0%, 100% { opacity: 0; transform: translateY(-.5em); } }
+.kol-headline--n2 .kol-headline__word { animation-name: kol-hl-2; }
+@keyframes kol-hl-3 { 0% { opacity: 0; transform: translateY(.5em); } 4.0% { opacity: 1; transform: none; } 29.33% { opacity: 1; transform: none; } 33.33%, 100% { opacity: 0; transform: translateY(-.5em); } }
+.kol-headline--n3 .kol-headline__word { animation-name: kol-hl-3; }
+@keyframes kol-hl-4 { 0% { opacity: 0; transform: translateY(.5em); } 3.0% { opacity: 1; transform: none; } 22.0% { opacity: 1; transform: none; } 25.0%, 100% { opacity: 0; transform: translateY(-.5em); } }
+.kol-headline--n4 .kol-headline__word { animation-name: kol-hl-4; }
+/* mark: המילה הראשונה, וקו שנמתח מתחתיה */
+.kol-headline--mark .kol-headline__word:not(:first-child) { display: none; }
+.kol-headline--mark .kol-headline__word:first-child { background: linear-gradient(var(--kol-hl-accent), var(--kol-hl-accent)) no-repeat 100% 100% / 0 .12em; animation: kol-hl-mark 1.2s .3s ease-out forwards; }
+.kol-headline--mark .kol-headline__words { color: inherit; }
+@keyframes kol-hl-mark { to { background-size: 100% .12em; } }
+/* עצור (מצב בקנבס, או לבחירה) — רק המילה שמסומנת is-shown */
+.kol-headline.is-paused .kol-headline__word { animation: none; opacity: 0; }
+.kol-headline.is-paused .kol-headline__word.is-shown { opacity: 1; display: inline; }
+@media (prefers-reduced-motion: reduce) {
+  .kol-headline .kol-headline__word { animation: none !important; opacity: 0; }
+  .kol-headline .kol-headline__word:first-child { opacity: 1; background-size: 100% .12em; }
+}

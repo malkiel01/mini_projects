@@ -1,0 +1,14 @@
+{
+  "name": "toc",
+  "label": "תוכן עניינים",
+  "icon": "📑",
+  "category": "ניווט",
+  "fields": [
+    {"id": "items", "label": "שורות", "control": "repeater", "target": {"children": ".kol-toc__item"}},
+    {"id": "style", "label": "סגנון (box · plain)", "control": "select", "options": ["box", "plain"], "target": {"class": "kol-toc--{value}"}},
+    {"id": "accent", "label": "צבע", "control": "color", "target": {"var": "--kol-toc-accent"}}
+  ],
+  "actions": [
+    {"id": "toc", "label": "↻ בנה מהכותרות של העמוד (h2, h3)", "toc": ".kol-toc__item", "link": ".kol-toc__link", "levels": "h2,h3", "sub": "kol-toc__item--sub"}
+  ]
+}

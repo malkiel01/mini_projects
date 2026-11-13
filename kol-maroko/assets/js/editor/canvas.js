@@ -407,9 +407,10 @@
           const t = tg, x = e.clientX, y = e.clientY;
           // V4: לחיצה ארוכה (400ms) מחמשת גרירה; תזוזה אחריה — גרירה, ושחרור בלי תזוזה — תפריט ההקשר
           if (this.onDragStart) this.longT = setTimeout(() => { const p = this.press; if (p) { p.armed = true; p.t = t; this.armed = p; try { navigator.vibrate?.(12); } catch { /* V14: רטט קצר — אם יש */ } } }, 400);
-          else this.longT = setTimeout(() => { this.longDone = true; this.press = null; ctxAt(t, x, y); }, 600);
+          else this.longT = setTimeout(() => { this.longDone = true; this.held = this.press && this.press.n; /* V14 */ this.press = null; ctxAt(t, x, y); }, 600);
         }
         const n = this.pick(tg);
+        if (n !== this.held) this.held = null;                              // V14: אלמנט אחר — הלחיצה הארוכה כבר אינה רלוונטית
         this.press = n ? { n, x: e.clientX, y: e.clientY, id: e.pointerId, drag: false, was: this.selected === n, touch: e.pointerType === 'touch' } : null;
         if (n && e.shiftKey && this.selected && this.selected !== n) { this.press = null; e.preventDefault(); this.toggleMulti(n); return; }   // Shift + לחיצה: בחירה מרובה (V3)
         if (n && e.altKey && this.onAltDrag && e.pointerType !== 'touch') this.alt = { n, x: e.clientX, y: e.clientY, id: e.pointerId, on: false };   // V13: Alt + גרירה — מכחול "הדבק סגנון"
@@ -442,7 +443,7 @@
         clearTimeout(this.longT);
         if (this.alt) { const A = this.alt; this.alt = null; if (A.on) { this.press = null; this.onAltDrag(e.type === 'pointerup' ? 'drop' : 'cancel', A.n, this.pick(this.hit(e))); return; } }
         if (this.ext && this.ext.active) { this.press = null; const f = this.frame.getBoundingClientRect(); this.ext.end(e.type === 'pointerup', f.left + e.clientX * this.scale, f.top + e.clientY * this.scale); return; }
-        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; ctxAt(p.t, p.x, p.y); return; }
+        if (this.armed && this.press === this.armed && e.type === 'pointerup' && !this.armed.drag) { const p = this.armed; this.armed = null; this.press = null; this.longDone = true; this.held = p.n; /* V14 */ ctxAt(p.t, p.x, p.y); return; }
         this.armed = null;
         const p = this.press; this.press = null; this.boxDrop.hidden = true;
         this.events.push(e.type + ':' + e.pointerType);
@@ -450,6 +451,7 @@
           const now = performance.now(), t = this.tap; this.tap = { at: now, x: e.clientX, y: e.clientY };
           if (t && now - t.at < 380 && Math.hypot(e.clientX - t.x, e.clientY - t.y) < 24 && this.onDbl) { this.tap = null; const n = this.nodeOf(this.hit(e)); if (n) { e.preventDefault(); this.dblAt = now; return this.onDbl(n, { x: e.clientX, y: e.clientY }); } }
         }
+        if (p && !p.drag && e.type === 'pointerup' && p.touch && this.held === p.n && this.selected === p.n) { if (this.onHeldTap) this.onHeldTap(p.n); return; }   // V14: במגע, הקשה אחרי לחיצה ארוכה — נשאר על הנבחר (ההורה — ⬆ בסרגל, עם רמז)
         if (p && !p.drag && e.type === 'pointerup' && this.repeatUp && p.was && this.selected === p.n && p.n.parent) return this.select(p.n.parent);   // לחיצה חוזרת — ההורה
         if (!p || !p.drag || e.type !== 'pointerup') return;
         const drop = this.dropAt(p.n, e.clientX, e.clientY);

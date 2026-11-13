@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "category": "מדיה",
   "description": "סרטון מ-YouTube / Vimeo — תמונה עד לחיצה, ואז נגן youtube-nocookie בארגז חול. בלי JS — קישור לסרטון.",
   "preview": "preview.svg",

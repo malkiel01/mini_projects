@@ -1,0 +1,15 @@
+{
+  "name": "animated-headline",
+  "label": "כותרת מונפשת",
+  "icon": "✨",
+  "category": "תנועה",
+  "fields": [
+    {"id": "style", "label": "סגנון (rotate — מתחלפת · mark — קו מסמן)", "control": "select", "options": ["rotate", "mark"], "target": {"class": "kol-headline--{value}"}},
+    {"id": "count", "label": "כמה מילים מתחלפות", "control": "select", "options": ["2", "3", "4"], "target": {"class": "kol-headline--n{value}"}},
+    {"id": "time", "label": "כל המחזור (שניות, למשל 7.5s)", "control": "text", "target": {"var": "--kol-hl-t"}},
+    {"id": "accent", "label": "צבע המילה", "control": "color", "target": {"var": "--kol-hl-accent"}}
+  ],
+  "states": [
+    {"id": "word", "label": "מילה מוצגת (עצור)", "item": "מילה", "each": ".kol-headline__word", "class": "is-shown", "root": "is-paused"}
+  ]
+}

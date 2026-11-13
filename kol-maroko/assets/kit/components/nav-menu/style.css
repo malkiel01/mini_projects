@@ -1,0 +1,29 @@
+/* רכיב מוכן: תפריט (kit 1.0.0). מחשב: שורה של קישורים. טלפון (≤767px) עם JS: המבורגר, והרשימה — חלונית מהצד (is-open). */
+.kol-nav { --kol-nav-accent: var(--color-accent, #a3322a); position: relative; }
+.kol-nav__list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.kol-nav--center .kol-nav__list { justify-content: center; }
+.kol-nav--end .kol-nav__list { justify-content: flex-end; }
+.kol-nav__link { display: block; padding: 8px 4px; color: inherit; text-decoration: none; font-weight: 600; border-block-end: 2px solid transparent; }
+.kol-nav__link:hover, .kol-nav__link:focus-visible, .kol-nav__link[aria-current="page"] { color: var(--kol-nav-accent); border-block-end-color: var(--kol-nav-accent); }
+.kol-nav__toggle { display: none; inline-size: 44px; block-size: 44px; border: 0; border-radius: 10px; background: transparent; color: inherit; cursor: pointer; }
+.kol-nav__toggle:focus-visible { outline: 2px solid var(--kol-nav-accent); }
+.kol-nav__bars, .kol-nav__bars::before, .kol-nav__bars::after { display: block; inline-size: 22px; block-size: 2px; margin: auto; background: currentColor; border-radius: 2px; position: relative; transition: transform .2s; }
+.kol-nav__bars::before, .kol-nav__bars::after { content: ""; position: absolute; }
+.kol-nav__bars::before { inset-block-start: -7px; }
+.kol-nav__bars::after { inset-block-start: 7px; }
+.kol-nav__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 767px) {
+  .kol-nav.is-ready .kol-nav__toggle { display: block; }
+  .kol-nav.is-ready .kol-nav__list { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 900; inline-size: min(82vw, 320px); flex-direction: column; flex-wrap: nowrap; gap: 0; padding: 64px 20px 20px; background: var(--color-bg, #fff); color: var(--color-text, #16192b); box-shadow: 0 0 40px rgba(0, 0, 0, .25); transform: translateX(105%); transition: transform .25s; overflow: auto; }
+  .kol-nav.is-ready.kol-nav--from-end .kol-nav__list { inset-inline-start: auto; inset-inline-end: 0; transform: translateX(-105%); }
+  .kol-nav.is-ready:dir(ltr) .kol-nav__list { transform: translateX(-105%); }
+  .kol-nav.is-ready.kol-nav--from-end:dir(ltr) .kol-nav__list { transform: translateX(105%); }
+  .kol-nav.is-ready.is-open .kol-nav__list { transform: none; }
+  .kol-nav.is-open .kol-nav__toggle { position: fixed; z-index: 901; inset-block-start: 10px; inset-inline-start: 10px; }
+  .kol-nav.is-open.kol-nav--from-end .kol-nav__toggle { inset-inline-start: auto; inset-inline-end: 10px; }
+  .kol-nav.is-open .kol-nav__bars { background: transparent; }
+  .kol-nav.is-open .kol-nav__bars::before { transform: translateY(7px) rotate(45deg); }
+  .kol-nav.is-open .kol-nav__bars::after { transform: translateY(-7px) rotate(-45deg); }
+  .kol-nav.is-ready .kol-nav__link { padding: 12px 4px; border-block-end: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .kol-nav__list, .kol-nav__bars, .kol-nav__bars::before, .kol-nav__bars::after { transition: none !important; } }

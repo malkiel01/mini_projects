@@ -1,6 +1,6 @@
-/* רכיב מוכן: וידאו מוטמע (kit 1.0.0). עד לחיצה — תמונה מהפרויקט וקישור; שום דבר לא נטען מבחוץ. */
+/* רכיב מוכן: וידאו מוטמע (kit 1.0.1). עד לחיצה — תמונה מהפרויקט וקישור; שום דבר לא נטען מבחוץ. */
 .kol-embed { margin: 0; }
-.kol-embed__link, .kol-embed__frame { position: relative; display: block; inline-size: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #111; border: 0; }
+.kol-embed__link, .kol-embed__frame { position: relative; display: block; inline-size: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #111; color: #fff; border: 0; }
 .kol-embed--4x3 .kol-embed__link, .kol-embed--4x3 .kol-embed__frame { aspect-ratio: 4 / 3; }
 .kol-embed--9x16 .kol-embed__link, .kol-embed--9x16 .kol-embed__frame { aspect-ratio: 9 / 16; max-inline-size: 360px; margin-inline: auto; }
 .kol-embed__img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
