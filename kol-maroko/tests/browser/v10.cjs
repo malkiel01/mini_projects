@@ -351,6 +351,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pp.tap('.ed-ptabs [data-ptab="adv"]'); await sleep(300);
     await pp.evaluate(r => { const d = document.querySelector(r + '[data-sec="transform"]'); d.scrollIntoView(); if (!d.open) d.querySelector('summary').click(); }, A_); await sleep(300);
     await pp.screenshot({ path: path.join(shotDir, 'v10-390-adv.png') });
+    // T2: בטלפון ▶ אינו בסרגל (גם לא מוסתר בו) — ▶ / ⏸ בפאנל, באנימציית הכניסה, בהקשה
+    await pp.evaluate(() => { const c = Editor._state.canvas, e = c.doc.querySelector('.v10-t'); c.select(c.nodeOf(e)); c.reveal(c.nodeOf(e)); }); await sleep(300);
+    await pp.evaluate(r => { const d = document.querySelector(r + '[data-sec="entrance"]'); d.scrollIntoView(); if (!d.open) d.querySelector('summary').click(); }, A_); await sleep(300);
+    await pp.selectOption(A_ + '[data-in]', 'fade-up'); await sleep(600);                      // אנימציית כניסה בהקשה — נכתבת
+    await pp.evaluate(r => document.querySelector(r + '[data-play-panel]')?.scrollIntoView({ block: 'center' }), A_); await sleep(200);
+    st = await pp.evaluate(r => ({ bar: !!document.querySelector('.ed-bar [data-play]'), btn: (b => b && b.offsetParent ? Math.round(b.getBoundingClientRect().height) : 0)(document.querySelector(r + '[data-play-panel]')) }), A_);
+    ok(!st.bar && st.btn >= 34, '390: ▶ אינו בסרגל (הסרגל אינו גדל בשורה), וכפתור ▶ בפאנל — ניתן להקשה', st);
+    if (st.btn) { await pp.tap(A_ + '[data-play-panel]'); await sleep(200); }
+    st = await pp.evaluate(r => { const c = Editor._state.canvas, e = c.doc.querySelector('.v10-t'), b = document.querySelector(r + '[data-play-panel]'); return { an: c.frame.contentWindow.getComputedStyle(e).animationName, pressed: b && b.getAttribute('aria-pressed'), t: b && b.textContent }; }, A_);
+    ok(st.an !== 'none' && st.pressed === 'true' && /עצור/.test(st.t), '390 (הקשה): "▶ הפעל אנימציות בקנבס" מהפאנל — האנימציה רצה, והכפתור הופך ל"⏸ עצור"', st);
+    if (st.pressed === 'true') { await pp.tap(A_ + '[data-play-panel]'); await sleep(150); }
     for (let i = 0; i < 3; i++) { await pp.evaluate(() => Editor._undo()); await sleep(200); }
     await ctxP.close();
     ok(!errors.length, 'אין שגיאות JavaScript בדף', errors.slice(0, 3));

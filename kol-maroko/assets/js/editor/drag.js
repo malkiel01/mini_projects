@@ -68,6 +68,7 @@
     isBox(n) {
       if (!n || !this.X.canHold(n) || n.tag === 'html' || n.tag === 'head') return false;
       if (n.tag === 'body') return true;
+      if (this.active && this.X.blockyIn && this.X.blockyIn(n, this.tags())) return false;   // T2: כותרת / רובריקה מעל <span> — לפניו או אחריו
       return !n.nodes.some(x => x.type === 'text' && /\S/.test(x.value));
     }
     /** הילד שלפניו נכנסים, לפי מיקום הסמן על ציר הרובריקה. */
@@ -107,6 +108,14 @@
         let ref = after ? sibs.slice(i + 1).find(k => !this.moving(k)) || null : n;
         base = { par: n.parent, ref };
       } else base = { par: n, ref: null };
+      /* T2 (E2E 🟡1): כותרת / רובריקה שהיעד שלה בתוך שורה (<span> בתוך <span>…) — יוצאת לצד השורה החיצונית, לפי הסמן */
+      if (this.X.blockyIn) { const tg = this.tags();
+        for (let i = 0; i < 8 && base.par.parent && this.X.blockyIn(base.par, tg); i++) {
+          const sp = base.par, rr = this.rect(sp), ax = this.axis(sp.parent);
+          const after = !rr ? true : ax.axis === 'row' ? (ax.rev ? fx < rr.left + rr.width / 2 : fx > rr.left + rr.width / 2) : fy > rr.top + rr.height / 2;
+          const sibs = sp.parent.kids, k = sibs.indexOf(sp);
+          base = { par: sp.parent, ref: after ? sibs.slice(k + 1).find(x => !this.moving(x)) || null : sp };
+        } }
       return this.level(base, fx, fy);
     }
     /** רמות באותו מקום: הבסיס, ולמעלה — "אחרי הרובריקה" כשהיעד בסוף שלה (או "לפניה" כשבתחילתה); למטה — לתוך האח שלפני. */

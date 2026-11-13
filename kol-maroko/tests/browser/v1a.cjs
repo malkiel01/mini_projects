@@ -197,6 +197,11 @@ const ATTACK = `<!doctype html>
     ok((await st(page)).sel === 'span', 'לחיצה בוחרת את האלמנט העמוק ביותר שמתחת לסמן');
     await clickIn(page, '.in span');
     ok((await st(page)).sel === 'div.in', 'לחיצה חוזרת — ההורה');
+    { const t = await page.textContent('.ed-note').catch(() => ''), vis = await page.isVisible('.ed-note');   // T2 (E2E ⚪5): עם רמז, ו"חזרה ל-"
+      ok(vis && /נבחר ההורה: div\.in/.test(t) && /חזרה ל-span/.test(t), 'לחיצה חוזרת — ההודעה אומרת שנבחר ההורה, ומציעה "↩ חזרה ל-span"', t);
+      await page.click('.ed-note button:has-text("חזרה ל-")'); await sleep(60);
+      ok((await st(page)).sel === 'span', '"↩ חזרה ל-span" — הבחירה חוזרת');
+      await clickIn(page, '.in span'); }
     await page.keyboard.press('Escape'); await sleep(40);
     ok((await st(page)).sel === 'section.wrap', 'Esc — ההורה');
     await page.keyboard.press('ArrowDown'); await sleep(40); await page.keyboard.press('ArrowDown'); await sleep(40);

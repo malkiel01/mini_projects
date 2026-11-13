@@ -35,6 +35,9 @@
   /** תוכן "בלוק" — פותח בדפדפן סגירה אוטומטית של <p> (ושל כותרת, כשזו כותרת). */
   const BLOCKY = new Set('address article aside blockquote details dialog dir div dl fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup hr main menu nav ol p pre section table ul li dd dt'.split(' '));
   const INTERACTIVE = new Set(['a', 'button']);
+  /* T2 (E2E 🟡1): אלמנטי שורה — תוכן בלוק (כותרת, רובריקה, פסקה) אינו נכנס לתוכם; לפניהם או אחריהם. <a> — שקוף ב-HTML5, לא כאן */
+  const PHRASING = new Set('span b i em strong small label code mark s u q cite abbr sub sup time button'.split(' '));
+  const blockyIn = (par, tags) => !!par && PHRASING.has(par.tag) && tags.some(t => BLOCKY.has(t));
   const IDREF_LIST = new Set(['aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns', 'aria-flowto', 'aria-details', 'aria-errormessage', 'aria-activedescendant', 'headers']);
   const IDREF_ONE = new Set(['for', 'list', 'form']);
 
@@ -123,6 +126,7 @@
       const bad = tags.find(t => BLOCKY.has(t) || (HEADINGS.has(par.tag) && HEADINGS.has(t)));
       if (bad) return { msg: '<' + par.tag + '> אינו יכול להכיל ' + (bad === 'div' ? 'רובריקה' : '<' + bad + '>') + ' — הפוך אותו ל-<div> והכנס', fix: { kind: 'retag', tag: 'div' } };
     }
+    if (blockyIn(par, tags)) { const bad = tags.find(t => BLOCKY.has(t)); return { msg: '<' + par.tag + '> הוא חלק משורה — <' + bad + '> נכנס לפניו או אחריו, לא לתוכו', code: 'inline' }; }   // T2
     for (const t of tags) if (INTERACTIVE.has(t)) for (let p = par; p; p = p.parent) if (INTERACTIVE.has(p.tag)) return { msg: '<' + t + '> בתוך <' + p.tag + '> — הדפדפן סוגר את הראשון. מכניסים לפני או אחרי' };
     return null;
   }
@@ -333,5 +337,5 @@
   /** הזזה שמוציאה אלמנט מתוך רובריקה עם data-kol-list / filter / form / dialog (או מכניסה לתוכה) — משנה למה הוא שייך. */
   function bindingOf(n) { for (let p = n; p; p = p.parent) for (const a of p.attrs) if (/^data-kol-(list|filter|form|dialog)$/.test(a.name)) return p; return null; }
 
-  g.KolStruct = { LIB, TAGS, TAG_RE, TPL_MSG, ROOTS, canHold, inTemplate, why, check, insert, move, move1, order, duplicate, wrap, unwrap, retag, paste, withFix, deps, bindingOf, diff, verify, intended, topTags, reindent, mapOff, label, isVoid };
+  g.KolStruct = { LIB, TAGS, TAG_RE, TPL_MSG, ROOTS, canHold, inTemplate, why, check, insert, move, move1, order, duplicate, wrap, unwrap, retag, paste, withFix, deps, bindingOf, diff, verify, intended, topTags, reindent, mapOff, label, isVoid, blockyIn };
 })(typeof window !== 'undefined' ? window : globalThis);

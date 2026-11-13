@@ -1036,7 +1036,9 @@ const Editor = (() => {
         seedUrl: name => 'assets/project-seed/' + encodeURIComponent(name), api: (a, b) => api(a, b) });
       S.design.fx = n => S.fx.sections(n); S.design.transition = (n, d) => S.mo.transition(n, d);
       { const ex = S.adv.extra; S.adv.extra = n => [...ex(n), ...S.mo.sections(n)]; }
-      el.bar.append(S.mo.button());
+      /* T2: בטלפון ▶ אינו בסרגל (שורה רביעית — המקלדת, V7/V10) וגם לא כפתור מוסתר 0×0 בו; ▶ / ⏸ בפאנל, ליד "↻ הצג שוב" */
+      { const pb = S.mo.button(), mq = matchMedia('(max-width: 999px)'), place = () => { if (mq.matches) pb.remove(); else if (!pb.isConnected) el.bar.append(pb); };
+        place(); mq.addEventListener('change', place); S.playMq = () => mq.removeEventListener('change', place); }
       S.build = new window.KolBuild.Build({ canvas: c, nav: S.nav, navHost: el.libBody, toolsHost: el.seltools, K, X: window.KolStruct, styler: S.styler, act, multi, writeStyle, note, sheet, undo, canWrite: () => !!canWrite(), device: writeDevice, devices: () => S.devs,
         pick, rel: relRef, openInCode, linkSheet, removeOne, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, sheetsList: () => [...S.sheets.values()],
         jsTexts: () => (S.js || []).map(x => ({ path: x.path, text: x.doc.text() })), filePath: () => S.file?.path, linkedPaths: () => { const out = []; if (c.m?.root) K.walk(c.m.root, n => { if (n.tag === 'link' && /stylesheet/i.test(K.attrOf(n, 'rel')?.value || '')) { const hr = K.attrOf(n, 'href'); if (hr) out.push(resolve(dirOf(S.file.path), hr.value)); } }); return out; },
@@ -1080,6 +1082,8 @@ const Editor = (() => {
         linkSheet, drawAll: () => drawAll(), host: el.compBody, strip: el.compStrip });
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = n => ctxMenu(n);
+      /* T2 (E2E ⚪5): לחיצה על הנבחר עולה להורה — אומרים, ומציעים לחזור */
+      c.onUpLevel = (from, to) => note('נבחר ההורה: ' + c.label(to) + ' — לחיצה על אלמנט שכבר נבחר עולה רמה', false, { label: '↩ חזרה ל-' + c.label(from), run: () => { const e = c.elOf(from); if (e && e.isConnected) { c.select(from); c.reveal(from); } } });
       c.onBlocked = (uri, dir) => { if (!S.blocked || S.blocked.has(uri)) return; S.blocked.set(uri, dir); clearTimeout(S.blockedT); S.blockedT = setTimeout(drawBlocked, 100); };
       S.split = false; if (prefs.split) split(true);
       if (!phone() && prefs.infoOpen !== false) panel('info', true);
@@ -1107,7 +1111,7 @@ const Editor = (() => {
     el.navBody.hidden = id !== 'tree'; el.libBody.hidden = id !== 'lib'; if (el.compBody) el.compBody.hidden = id !== 'comp'; if (S.build?.lib) S.build.lib.hidden = id !== 'lib';
     if (id === 'tree') S.nav?.draw();
   }
-  function unmount() { if (!S.host) return; S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
   return { view, unmount, selectAt, _glob: () => S.glob, _ctx: ctxMenu, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
