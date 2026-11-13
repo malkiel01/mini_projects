@@ -83,7 +83,9 @@
       const pub = this.o.canPublish();
       const foot = hh('div', { class: 'pg-pfoot' }, hh('button', { type: 'button', class: 'btn sm', 'data-pg-new': true, disabled: !pub || null, title: pub ? 'עמוד חדש' : 'יצירת עמוד — למפרסם ומעלה', onclick: () => { this.closePicker(); this.create(); } }, '➕ עמוד חדש'),
         hh('button', { type: 'button', class: 'btn sm', 'data-pg-manage': true, onclick: () => { this.closePicker(); this.manager(); } }, '📄 כל העמודים'),
-        this.o.headSettings ? hh('button', { type: 'button', class: 'btn sm', 'data-pg-head': true, onclick: () => { this.closePicker(); this.o.headSettings(); } }, '⚙️ הגדרות העמוד') : null);
+        this.o.headSettings ? hh('button', { type: 'button', class: 'btn sm', 'data-pg-head': true, onclick: () => { this.closePicker(); this.o.headSettings(); } }, '⚙️ הגדרות העמוד') : null,
+        // P2 (E2E ⚪14): בטלפון ▶️ אינו בסרגל (T2) — הקשה אחת מכאן, במקום שלוש דרך "כל העמודים"
+        this.o.phone() && this.o.current() ? hh('button', { type: 'button', class: 'btn sm', 'data-pg-live': true, onclick: () => { const cur = this.o.current(); this.closePicker(); this.o.live(cur); } }, '▶️ תצוגה חיה') : null);
       const box = hh('div', { class: 'pg-pop', role: 'dialog', 'aria-label': 'בחירת עמוד', 'data-pg-pop': true }, q, list, foot);
       if (this.o.phone()) { this.pop = this.o.sheet('📄 עמוד', box); this.pop.addEventListener('close', () => { this.pop = null; }, { once: true }); }
       else {

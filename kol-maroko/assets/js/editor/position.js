@@ -95,7 +95,8 @@
       if (txs > 1) this.joinTx(txs, label);
       this.anchor.set(cur, anchor);
       const fresh = K().byPath(c.m, K().pathOf(cur)); if (fresh) c.select(fresh);
-      this.note((moveHtml ? 'האלמנט הועבר ב-HTML להיות ילד ישיר של ' + this.label(refNow) + '. ' : '') + (refStatic ? 'נוסף position:relative ל-' + this.label(refNow) + '. ' : '') + 'האלמנט יצא מהזרימה — אחיו נסגרים על מקומו.', false, { label: 'בטל', run: this.undo });
+      const ov = this.coversText(c.elOf(fresh || cur));   // P2 (E2E 🟡3): מה שמתחתיו — כבר בהודעה, לא רק כשמקישים ולא מצליחים
+      this.note((moveHtml ? 'האלמנט הועבר ב-HTML להיות ילד ישיר של ' + this.label(refNow) + '. ' : '') + (refStatic ? 'נוסף position:relative ל-' + this.label(refNow) + '. ' : '') + 'האלמנט יצא מהזרימה — אחיו נסגרים על מקומו.' + (ov ? ' ⚠️ ' + ov : '') + (this.D.styler.device() ? '' : ' המיקום חל בכל המכשירים — כדאי לבדוק ב📱.'), false, { label: 'בטל', run: this.undo });
       this.after(fresh || cur);
       return true;
     }
@@ -146,6 +147,28 @@
       const r = this.write(new Map([[n, this.setsFor(n, insets(g0.rect, g0.W, g0.H, g0.m, anchor, this.rtl(n), this.unit))]]), label);
       this.after(n);
       return r;
+    }
+    /** P2 (E2E 🟡3): אלמנטים גלויים שהאלמנט הממוקם מסתיר — המרכז שלהם נופל עליו. לא צאצאים ולא אבות; עד 3. */
+    coversOf(e) {
+      if (!e || !/^(absolute|fixed)$/.test(this.win().getComputedStyle(e).position)) return [];
+      const d = this.c.doc, r = e.getBoundingClientRect(), out = [];
+      if (r.width < 1 || r.height < 1) return out;
+      const root = e.offsetParent || d.body;
+      for (const k of root.querySelectorAll('*')) {
+        if (out.length >= 3) break;
+        if (k === e || e.contains(k) || k.contains(e) || k.closest('[data-kol-canvas]') || out.some(o => o.contains(k) || k.contains(o))) continue;
+        const b = k.getBoundingClientRect(); if (b.width < 4 || b.height < 4) continue;
+        const cx = b.left + b.width / 2, cy = b.top + b.height / 2;
+        if (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom) continue;
+        if (![...k.childNodes].some(x => x.nodeType === 3 && x.textContent.trim()) && !/^(img|svg|video|picture|input|button|select|textarea|iframe)$/.test(k.localName)) continue;
+        const t = d.elementFromPoint(cx, cy);
+        if (t && (t === e || e.contains(t))) out.push(k);
+      }
+      return out;
+    }
+    coversText(e) {
+      const ks = this.coversOf(e); if (!ks.length) return '';
+      return 'האלמנט מכסה את ' + ks.map(k => { const n = this.c.nodeOf(k); return n ? this.c.label(n) : k.localName; }).join(', ') + ' — כדי להגיע אליהם: 🌳 Navigator, או "↑ בחר הורה".';
     }
     /** אחרי כתיבה: מכוסה? נחתך? הרובריקה איבדה גובה? */
     after(n) {
@@ -264,6 +287,7 @@
         sec.append(hh('div', { class: 'sg-line' }, hh('span', { class: 'sg-label' }, 'עוגן'), grid, hh('button', { type: 'button', class: 'btn sm', 'data-unit': this.unit, onclick: () => { this.unit = this.unit === 'px' ? 'pct' : 'px'; D.draw(); } }, this.unit === 'px' ? 'px → %' : '% → px')));
         sec.append(hh('p', { class: 'hint' }, 'שינוי עוגן אינו מזיז את האלמנט. גרירה על הקנבס — לפינה הקרובה; חיצים — פיקסל, Shift — 10.'));
         if (this.covered) sec.append(hh('p', { class: 'sg-over', 'data-covered': true }, '⚠️ האלמנט מכוסה ברובו — ', hh('button', { type: 'button', class: 'btn sm', 'data-front-fix': true, onclick: () => this.layerTo(n, 'front') }, 'הבא לחזית')));
+        { const ov = this.coversText(e); if (ov) sec.append(hh('p', { class: 'sg-over media', 'data-covers': true }, '⚠️ ' + ov)); }
         if (this.clipped) sec.append(hh('p', { class: 'sg-over', 'data-clipped': true }, '⚠️ נחתך ע״י overflow של ' + c.label(c.nodeOf(this.clipped))));
         if (this.collapsed) sec.append(hh('p', { class: 'sg-over', 'data-collapsed': true }, '⚠️ ' + c.label(c.nodeOf(this.collapsed)) + ' איבדה את גובהה (כל ילדיה ממוקמים) — ', hh('button', { type: 'button', class: 'btn sm', onclick: () => { const p = c.nodeOf(this.collapsed); const h0 = Math.round(this.collapsed.scrollHeight || 200); this.write(new Map([[p, [['min-height', h0 + 'px', this.st.targets(p)[0]]]]]), 'גובה מינימלי · ' + c.label(p)); } }, 'קבע גובה מינימלי')));
         sec.append(this.devNote(n));

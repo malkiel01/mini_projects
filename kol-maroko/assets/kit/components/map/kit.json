@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "category": "רשתות",
   "description": "מפה של Google Maps לפי כתובת — תמונה עד לחיצה, ואז embed (בלי מפתח API) בארגז חול; ותמיד גם קישור \"פתח במפות\".",
   "preview": "preview.svg",

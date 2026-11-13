@@ -94,11 +94,15 @@
       if (c.m.src.indexOf(C().MARK) >= 0) for (const i of C().instances(c.m)) { const r = c.rectOf(i.node); if (r && !r.zero && r.top < H && r.top + r.height > 0) want.push({ n: i.node, r, b: this.badge(i.node) }); }
       const kids = this.tags.children;
       while (kids.length > want.length) kids[kids.length - 1].remove();
+      const placed = [];   // P2 (V16c ⚪2): תווית שחופפת לתווית קודמת (מופעים צמודים / נצמדים לראש הקנבס) — יורדת שורה
       want.forEach((w, i) => {
         let b = kids[i];
         if (!b) { b = h('button', { type: 'button', class: 'ed-comp-tag' }); b.addEventListener('click', () => { if (b._n) { c.select(b._n); c.reveal(b._n); } }); this.tags.append(b); }
         b._n = w.n; b.dataset.compTag = w.b ? w.b.state : ''; b.textContent = w.b ? w.b.icon : ''; b.title = w.b ? w.b.title + ' — לחיצה בוחרת את המופע' : '';
-        b.style.cssText = 'left:' + Math.max(0, w.r.left + w.r.width) + 'px;top:' + Math.max(0, w.r.top - 18) + 'px;transform:translateX(-100%)';   // בפינה הנגדית לתווית הבחירה
+        const R = Math.max(0, w.r.left + w.r.width), bw = b.offsetWidth || 0; let top = Math.max(0, w.r.top - 18);
+        for (let k = 0; k < 8 && placed.some(p => p.l < R && R - bw < p.r && Math.abs(p.t - top) < 19); k++) top += 19;
+        placed.push({ l: R - bw, r: R, t: top });
+        b.style.cssText = 'left:' + R + 'px;top:' + top + 'px;transform:translateX(-100%)';   // בפינה הנגדית לתווית הבחירה
       });
     }
 

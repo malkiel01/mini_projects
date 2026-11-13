@@ -842,6 +842,10 @@ dialog.hd-sheet .hd { padding: 0; }
     padding: calc(4px + env(safe-area-inset-top)) calc(4px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(4px + env(safe-area-inset-left)); }
   .ed-ctx { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
   .ed-note { bottom: calc(var(--s2) + env(safe-area-inset-bottom)); }
+  /* P2 (V14c ⚪1): ברוחב טלפון — הטקסט בשורה מלאה, והכפתור ("חזרה ל-…" ארוך) מתחתיו, נחתך ב-… במקום לדחוס את הטקסט לעמודה */
+  .ed-note { flex-wrap: wrap; row-gap: 2px; padding-block: 6px 4px; }
+  .ed-note span { flex: 1 1 calc(100% - 52px); }
+  .ed-note .btn { order: 1; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; }
   .ed.ts-kb.typing .ed-tbar { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   /* הגיליון: ידית, שלושה גבהים */
   .ts-grip { display: flex; justify-content: center; align-items: center; flex: none; height: 22px; cursor: grab; touch-action: none; }

@@ -6,6 +6,9 @@
  * "תגיות" (אותו פאנל, היעד = התגית); "⛓ צור משתנה מהערך" (+ "החלף גם ב-N"); שינוי שם משתנה; Google Fonts (<link> בכל
  * העמודים) ו"⬇ הבא לפרויקט" (דרך השרת — אם יש רשת); מחיקת גופן בשימוש ← "החלף בכל מקום"; ביטול עד ההתחלה — קבצים זהים
  * וקובצי הגופן בסל. ובטלפון (390) — מגע, כפתורים ≥44px. צילומים (1920, 390) — ל-tmpdir.
+ *
+ * רשת (P2): סעיף 8 פונה מהשרת ל-fonts.googleapis.com / fonts.gstatic.com באמת (font_http, בלי מארח חלופי לבדיקות). בלי רשת —
+ * הסעיף מדלג, והדילוג מופיע בשורת הסיכום (לא "כל הבדיקות עברו" סתם). V9_OFFLINE=1 — לא לנסות בכלל; V9_REQUIRE_NET=1 — דילוג = כישלון.
  */
 'use strict';
 const { chromium } = require('playwright');
@@ -14,7 +17,7 @@ const fs = require('fs'), os = require('os'), path = require('path'), net = requ
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const OWNER = { sub: 'u-owner', name: 'Owner Test', email: 'owner@example.test', email_verified: true, platform_admin: true };
-let failed = 0, ran = 0;
+let failed = 0, ran = 0; const skipped = [];
 let T0 = Date.now(); const ok = (cond, what, got) => { ran++; const dt = ((Date.now() - T0) / 1000).toFixed(1); T0 = Date.now(); if (cond) console.log('✅ [' + dt + 's] ' + what); else { failed++; console.log('❌ ' + what + (got !== undefined ? '\n   התקבל: ' + JSON.stringify(got).slice(0, 900) : '')); } };
 const freePort = () => new Promise(r => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -169,7 +172,8 @@ const FX = path.join(ROOT, 'tests', 'fixtures', 'fonts');
 
     // ═══ 8. Google Fonts + "הבא לפרויקט" (דרך השרת; דורש רשת) ═══
     let net = true;
-    try { await call(page, 'font_google_add', { family: 'Secular One', weights: [400] }); } catch (e) { net = false; console.log('   ⏭ אין רשת ל-fonts.googleapis.com: ' + e.message); }
+    if (process.env.V9_OFFLINE) { net = false; skipped.push('סעיף 8 — Google Fonts (V9_OFFLINE)'); }
+    else try { await call(page, 'font_google_add', { family: 'Secular One', weights: [400] }); } catch (e) { net = false; skipped.push('סעיף 8 — Google Fonts (אין רשת: ' + e.message + ')'); console.log('   ⏭ אין רשת ל-fonts.googleapis.com: ' + e.message); if (process.env.V9_REQUIRE_NET) ok(false, 'V9_REQUIRE_NET: יש רשת ל-Google Fonts', e.message); }
     if (net) {
       await page.click('[data-font-add]'); await sleep(150); await page.click('[data-add-tab="google"]'); await page.waitForSelector('[data-gf="Secular One"]', { timeout: 10000 });
       st = await page.evaluate(() => ({ n: document.querySelectorAll('[data-gf]').length, heb: document.querySelector('[data-gf-heb]').checked, roboto: !!document.querySelector('[data-gf="Roboto"]') }));
@@ -235,6 +239,6 @@ const FX = path.join(ROOT, 'tests', 'fixtures', 'fonts');
     console.log('\nצילומים: ' + shotDir);
   } catch (e) { failed++; console.log('❌ חריגה: ' + (e.stack || e.message)); }
   finally { await browser?.close(); php.kill(); }
-  console.log('\n' + (failed ? '❌ נכשלו ' + failed + ' מתוך ' + ran : '✅ כל ' + ran + ' הבדיקות עברו'));
+  console.log('\n' + (failed ? '❌ נכשלו ' + failed + ' מתוך ' + ran : '✅ כל ' + ran + ' הבדיקות ' + (skipped.length ? 'שרצו ' : '') + 'עברו') + (skipped.length ? '\n⏭ דולג: ' + skipped.join(' · ') : ''));
   process.exit(failed ? 1 : 0);
 })();
