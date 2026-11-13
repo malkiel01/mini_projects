@@ -432,8 +432,8 @@ const Project = (() => {
     el.ed.hidden = el.view.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
-      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
-        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ')));
+      el.view.replaceChildren(...[h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
+        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ'))].filter(x => x != null && x !== false));
       return;
     }
     if (doc.model && S.editor) {

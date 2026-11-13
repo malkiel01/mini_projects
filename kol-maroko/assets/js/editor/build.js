@@ -75,12 +75,12 @@
       grip.addEventListener('pointerdown', e => { if (!this.canWrite() || this.X.ROOTS.has(n.tag)) return; e.preventDefault(); const sel = this.canvas.picked(); this.drag.start({ nodes: sel.length > 1 ? sel : [n] }, e.clientX, e.clientY); });
       const box = this.X.canHold(n) && !this.X.ROOTS.has(n.tag) && n.tag !== 'template';
       const ax = box ? this.dirState(n) : null;
-      this.tools.replaceChildren(grip,
+      this.tools.replaceChildren(...[grip,
         b('בחר הורה', '↑', () => { if (n.parent) { this.canvas.select(n.parent); this.canvas.reveal(n.parent); } }, !n.parent),
         ax ? b('כיוון הרובריקה: ' + ax.text + ' — לחיצה מחליפה', ax.icon, () => this.toggleDir(n), !w, { 'data-dir': ax.kind }) : null,
         b('שכפול (Ctrl+D)', '⧉', () => this.duplicate(), !w || this.X.ROOTS.has(n.tag), { 'data-dup': true }),
         b('מחיקה (Delete)', '🗑️', () => this.remove(), !w),
-        b('עוד פעולות', '⋯', () => this.menu(n), false, { 'data-more': true }));
+        b('עוד פעולות', '⋯', () => this.menu(n), false, { 'data-more': true })].filter(x => x != null && x !== false));
     }
     plusClick(b) {
       const n = b._n; if (!n || !n.parent) return;
