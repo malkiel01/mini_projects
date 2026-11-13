@@ -104,12 +104,12 @@
       const sel = hh('select', { 'aria-label': 'אנימציית כניסה', 'data-in': true, disabled: !w || null }, hh('option', { value: '' }, 'בלי'), FX().ENTRANCES.map(([k, l]) => hh('option', { value: k, selected: k === id || null }, l)));
       sel.addEventListener('change', () => this.setEntrance(n, sel.value, mode));
       const out = [hh('div', { class: 'sg-line' }, hh('span', { class: 'sg-label' }, 'אנימציה'), hh('span', { class: 'sg-ctl wide' }, sel))];
-      if (!id) { out.push(hh('p', { class: 'hint' }, 'נכתב: מחלקה kol-in על האלמנט ו-@keyframes ב-css/motion.css (נוצר בשימוש הראשון).')); return out; }
+      if (!id) { out.push(hh('p', { class: 'hint' }, 'נכתב: מחלקה kol-in על האלמנט ו-@keyframes ב-css/motion.css (נוצר בשימוש הראשון).'), hh('div', { class: 'sg-bgacts' }, this.playPanel())); return out; }
       out.push(hh('div', { class: 'sg-field' }, hh('div', { class: 'sg-line' }, hh('span', { class: 'sg-label' }, 'מתי'), hh('span', { class: 'sg-seg', role: 'group', 'aria-label': 'מתי' }, [['load', 'בטעינה'], ['view', 'כשנראה — פעם אחת'], ['repeat', 'בכל כניסה']].map(([v, t]) => hh('button', { type: 'button', 'aria-pressed': String(v === mode), 'data-in-mode': v, disabled: !w || null, onclick: () => this.setEntrance(n, id, v) }, t))))));
       out.push(D.num('--kol-in-dur', 'משך', { units: ['s', 'ms'], step: 0.1 }), D.num('--kol-in-delay', 'השהיה', { units: ['s', 'ms'], step: 0.1 }));
       out.push(D.choice('--kol-in-ease', 'עקומה', [['ease', 'ease'], ['ease-out', 'ease-out'], ['ease-in-out', 'ease-in-out'], ['linear', 'linear'], ['cubic-bezier(.2, .8, .2, 1)', 'רכה']]));
       out.push(this.bezier(n, D, '--kol-in-ease', 'כניסה · עקומה'));
-      out.push(hh('div', { class: 'sg-bgacts' }, hh('button', { type: 'button', class: 'btn sm', 'data-in-replay': true, onclick: () => this.replay(n) }, '↻ הצג שוב')));
+      out.push(hh('div', { class: 'sg-bgacts' }, hh('button', { type: 'button', class: 'btn sm', 'data-in-replay': true, onclick: () => this.replay(n) }, '↻ הצג שוב'), this.playPanel()));
       out.push(hh('p', { class: 'hint' }, mode === 'load' ? 'בטעינה — CSS בלבד.' : '"כשנראה במסך" — js/kol-motion.js (קובץ מערכת, גלוי). בלעדיו (או בלי JS) — האנימציה רצה בטעינה. מי שביקש פחות תנועה — רואה את המצב הסופי.'));
       return out;
     }
@@ -286,6 +286,12 @@
     }
 
     // ── הקנבס: הפעלה, "הצג שוב", גלילה מדומה ──
+    /** T2: ▶ / ⏸ בפאנל — גם בטלפון, שבו ▶ אינו בסרגל. */
+    playPanel() {
+      const lab = () => (this.playing ? '⏸ עצור אנימציות בקנבס' : '▶ הפעל אנימציות בקנבס');
+      const b = hh('button', { type: 'button', class: 'btn sm', 'data-play-panel': true, 'aria-pressed': String(!!this.playing), onclick: () => { this.setPlay(!this.playing); b.setAttribute('aria-pressed', String(!!this.playing)); b.textContent = lab(); } }, lab());
+      return b;
+    }
     setPlay(on) { this.playing = on; this.c.setPlay(on); if (this.playBtn) { this.playBtn.setAttribute('aria-pressed', String(on)); this.playBtn.lastChild.textContent = on ? ' עצור אנימציות' : ' הפעל אנימציות'; } }
     button() { this.playBtn = hh('button', { type: 'button', class: 'btn sm', 'data-play': true, 'aria-pressed': 'false', title: 'אנימציות בקנבס — מושהות כברירת מחדל (CSS של העורך, הקובץ אינו משתנה)', onclick: () => this.setPlay(!this.playing) }, '▶', hh('span', { class: 'ed-word' }, ' הפעל אנימציות')); return this.playBtn; }
     replay(n) { const e = this.c.elOf(n); if (!e) return; e.setAttribute('data-kol-replay', ''); e.style.animationName = 'none'; void e.offsetWidth; e.style.animationName = ''; clearTimeout(this.rt); this.rt = setTimeout(() => { e.removeAttribute('data-kol-replay'); }, 4000); }

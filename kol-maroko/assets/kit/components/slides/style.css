@@ -1,0 +1,25 @@
+/* רכיב מוכן: מצגת (kit 1.0.0). שקופית אחת ברוחב מלא; scroll-snap — עובד גם בלי JS. */
+.kol-slides { --kol-slides-h: 420px; --kol-slides-accent: var(--color-accent, #a3322a); position: relative; border-radius: 16px; overflow: hidden; }
+.kol-slides__track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
+.kol-slides__track::-webkit-scrollbar { display: none; }
+.kol-slides__slide { flex: 0 0 100%; scroll-snap-align: start; position: relative; block-size: var(--kol-slides-h); }
+.kol-slides__img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.kol-slides__body { position: absolute; inset: auto 0 0; padding: 24px 64px 40px; color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .65)); }
+.kol-slides__title { margin: 0 0 6px; font-size: clamp(1.3rem, 3vw, 2rem); }
+.kol-slides__text { margin: 0; }
+.kol-slides__prev, .kol-slides__next { position: absolute; inset-block-start: 50%; translate: 0 -50%; z-index: 2; inline-size: 44px; block-size: 44px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .85); color: #222; font-size: 1.6rem; line-height: 1; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); }
+.kol-slides__prev { inset-inline-start: 8px; }
+.kol-slides__next { inset-inline-end: 8px; }
+.kol-slides__prev:focus-visible, .kol-slides__next:focus-visible { outline: 3px solid var(--color-accent, #a3322a); }
+.kol-slides__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.kol-slides__prev, .kol-slides__next, .kol-slides__dots { display: none; }
+.kol-slides.is-ready .kol-slides__prev, .kol-slides.is-ready .kol-slides__next { display: block; }
+.kol-slides.is-ready .kol-slides__dots { display: flex; }
+.kol-slides__dots { position: absolute; inset-block-end: 12px; inset-inline: 0; justify-content: center; gap: 8px; }
+.kol-slides__dot { inline-size: 12px; block-size: 12px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: transparent; cursor: pointer; }
+.kol-slides__dot[aria-current="true"] { background: var(--kol-slides-accent); border-color: var(--kol-slides-accent); }
+.kol-slides__dot:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (max-width: 767px) { .kol-slides { --kol-slides-h: 300px; } .kol-slides__body { padding: 16px 16px 36px; } .kol-slides__prev, .kol-slides__next { inline-size: 36px; block-size: 36px; } }
+@media (prefers-reduced-motion: reduce) { .kol-slides__track { scroll-behavior: auto; } }
+/* מגע: חיצים 44px גם בטלפון; נקודה — העיגול 12px, אזור הלחיצה 44px */
+@media (pointer: coarse) { .kol-slides__prev, .kol-slides__next { inline-size: 44px; block-size: 44px; } .kol-slides__dots { gap: 32px; } .kol-slides__dot { position: relative; } .kol-slides__dot::after { content: ""; position: absolute; inset: -16px; } }

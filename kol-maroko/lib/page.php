@@ -93,6 +93,13 @@ function sanitize_rich(string $html): string
     return trim($out);
 }
 
+/* T2: lang= בטקסט עשיר — רק ערך BCP47 תקין בקירוב (שפה 2–3 אותיות, ותגיות משנה אלפאנומריות); אחרת התכונה יורדת */
+function rich_lang(string $v): string
+{
+    $v = trim($v);
+    return strlen($v) <= 35 && preg_match('/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8}){0,4}$/D', $v) ? $v : '';
+}
+
 function rich_clean(DOMNode $node): void
 {
     foreach (iterator_to_array($node->childNodes) as $child) {
@@ -108,6 +115,7 @@ function rich_clean(DOMNode $node): void
         }
         $href = $tag === 'a' ? safe_href($child->getAttribute('href')) : '';
         $dir = pick($child->getAttribute('dir'), ['rtl', 'ltr', 'auto'], '');
+        $lang = rich_lang($child->getAttribute('lang'));                            // T2: ar / he / en-US — נשמר
         // עיצוב שבא מהאתר (ייבוא) או מהעורך: style מסונן ומחלקות — נשמרים
         $keep = array_filter(['style' => sanitize_style($child->getAttribute('style')), 'class' => legacy_cls($child->getAttribute('class'))]);
         $img = $tag === 'img' && preg_match('/^kol-file:[0-9a-f]{32}$/', $child->getAttribute('src'))
@@ -118,6 +126,7 @@ function rich_clean(DOMNode $node): void
         if ($tag === 'img' && !$img) { $node->removeChild($child); continue; }
         foreach (($img ?? []) + $span + $keep as $k => $v) if ($v !== '0') $child->setAttribute($k, $v);
         if ($dir) $child->setAttribute('dir', $dir);
+        if ($lang) $child->setAttribute('lang', $lang);
         if ($tag === 'a') {
             if ($href === '') {
                 while ($child->firstChild) $node->insertBefore($child->firstChild, $child);

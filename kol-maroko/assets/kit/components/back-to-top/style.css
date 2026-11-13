@@ -1,0 +1,7 @@
+/* רכיב מוכן: חזרה לראש (kit 1.0.0). עם JS: מוסתר עד גלילה (is-ready), מופיע (is-shown). */
+.kol-top { --kol-top-color: var(--color-accent, #a3322a); position: fixed; z-index: 800; inset-block-end: 20px; inset-inline-end: 20px; display: grid; place-items: center; inline-size: 48px; block-size: 48px; border-radius: 50%; background: var(--kol-top-color); color: #fff; text-decoration: none; font-size: 1.4rem; box-shadow: 0 4px 14px rgba(0, 0, 0, .25); transition: opacity .25s, transform .25s; }
+.kol-top--start { inset-inline-end: auto; inset-inline-start: 20px; }
+.kol-top:focus-visible { outline: 3px solid var(--kol-top-color); outline-offset: 3px; }
+.kol-top.is-ready:not(.is-shown) { opacity: 0; transform: translateY(12px); pointer-events: none; }
+.kol-top__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .kol-top { transition: none; } }

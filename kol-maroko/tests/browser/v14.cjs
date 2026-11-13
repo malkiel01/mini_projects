@@ -84,6 +84,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     };
     const rectOf = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, cx: r.x + r.width / 2, cy: r.y + r.height / 2 }; }, sel);
     const sheetOpen = page => page.evaluate(() => document.getElementById('sheet').open);
+    /** T2: גרירה אל צד ה-<span> של השורה (ולא לתוכו — E2E 🟡1) נשארת באותה רובריקה, ובטלפון שואלת את שאלת V7 ("בכל המכשירים / רק כאן") — עונים "בכל המכשירים". */
+    /** T2: איפה האלמנט נחת — אח ישיר באותה רובריקה, לא בתוך שורה (<span>…), ומה שלפניו. ובקובץ — אין <p> / <h*> / <div> בתוך <span>. */
+    const placeOf = page => page.evaluate(() => { const e = Editor._state.canvas.doc.querySelector(window.__mv), prev = e && e.previousElementSibling;
+      return { par: e && e.parentElement && e.parentElement.className, inLine: !!(e && e.closest('span, b, i, em, strong, small, label, a')), prev: prev ? prev.className : '', blockInSpan: /<span\b[^>]*>(?:(?!<\/span>)[\s\S])*<(p|div|h[1-6])\b/.test(Editor._state.doc.text()) }; });
+    const answerAll = page => page.evaluate(() => { const d = document.getElementById('sheet'), b = d.open && /סדר ב/.test(d.textContent) && d.querySelector('[data-choice="all"]'); if (b) b.click(); return !!b; }).then(x => (x ? sleep(400) : null));
     const closeSheet = page => page.evaluate(() => { const d = document.getElementById('sheet'); if (d.open) d.close(); });
 
     // ═══ הכנה ═══
@@ -214,8 +219,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (st) {
       const from = st, to = { x: st.x, y: st.y + 70 }, tN = await page.evaluate(() => Editor._state.doc.text());
       const mid = await realDrag(page, from, to, { hold: 650, steps: 10, during: () => page.evaluate(() => !!Editor._state.build.drag.active) });
-      const tN1 = await page.evaluate(() => Editor._state.doc.text());
+      const par0 = (await placeOf(page)).par;
+      await answerAll(page);
+      const tN1 = await page.evaluate(() => Editor._state.doc.text()), pl = await placeOf(page);
       ok(mid === true && tN1 !== tN, 'Navigator: לחיצה ארוכה על שורה ← גרירה במגע (' + await lastTx(page) + ')', { mid });
+      ok(pl.par === par0 && !pl.inLine && /kadisha-hero-eyebrow/.test(pl.prev) && !pl.blockInSpan, 'Navigator · נחת אחרי שורת ה-eyebrow, באותה רובריקה — לא בתוך ה-<span> (T2 / E2E 🟡1)', pl);
       if (tN1 !== tN) await undo(page);
       ok(await page.evaluate(() => Editor._state.doc.text()) === tN, 'Navigator: Ctrl+Z מחזיר');
     } else ok(false, 'Navigator: השורה הנבחרת לא נמצאה');
@@ -242,7 +250,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const sibAfter = await page.evaluate(() => { const e = Editor._state.canvas.doc.querySelector(window.__mv); let s = e.nextElementSibling; while (s && !s.getClientRects().length) s = s.nextElementSibling; if (s) s.setAttribute('data-v14-after', ''); return !!s; });
       const to = sibAfter ? await at(page, '[data-v14-after]', 0, 0.5, 0.85, false) : { x: from.x, y: from.y + 80 };
       const mid = await touchDrag(page, from, to, { hold: 500, steps: 10, during: () => page.evaluate(() => { const d = Editor._state.build.drag; const tag = document.querySelector('.dg-tag:not([hidden])'); return { active: !!d.active, tag: tag ? tag.textContent : '' }; }) });
-      const after = await idx(), txt1 = await page.evaluate(() => Editor._state.doc.text());
+      const par4 = (await placeOf(page)).par;
+      await answerAll(page);
+      const after = await idx(), txt1 = await page.evaluate(() => Editor._state.doc.text()), pl4 = await placeOf(page);
+      ok(pl4.par === par4 && !pl4.inLine && /kadisha-hero-eyebrow/.test(pl4.prev) && !pl4.blockInSpan, 'V4 · נחת אחרי האח שאליו נגרר (' + pl4.prev + '), באותה רובריקה — לא בתוך ה-<span>', pl4);
       ok(mid && mid.active && /מעל|מתחת|אחרי|לפני|בתוך|בסוף/.test(mid.tag), 'V4 · לחיצה ארוכה על הנבחר ← גרירה במגע, עם תווית היעד', { mid, tgt });
       const moved4 = txt1 !== txt0 && /^גרירה/.test(await lastTx(page));
       ok(moved4, 'V4 · השחרור הזיז את האלמנט (' + await lastTx(page) + ')', [i0, after]);

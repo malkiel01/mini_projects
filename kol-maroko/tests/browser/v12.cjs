@@ -198,7 +198,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ═══ 6. "✏️ ערוך את הרכיב" ← "שמור ועדכן מופעים" (3 מופעים בשני קבצים) ═══
     await select(page, CS, 0); await tab(page, 'content');
+    // T2: מה שנראה בעמוד — אותו מראה בעריכת התבנית (CSS העמוד נטען גם שם; לפני T2 אייקון החיפוש עלה על ה-placeholder)
+    const look = () => page.evaluate(() => { const c = Editor._state.canvas, w = c.frame.contentWindow, q = s => c.doc.querySelector(':not([data-kol-canvas]) > ' + s) || c.doc.querySelector(s);
+      return ['.kadisha-lexicon-search-icon', '.kadisha-lexicon-search', '.kadisha-lexicon-search-wrap'].map(s => { const e = q(s); if (!e) return null; const cs = w.getComputedStyle(e); return [s, cs.position, cs.paddingInlineStart, cs.paddingInlineEnd, cs.fontSize, cs.display, cs.borderTopWidth].join('|'); }); });
+    const lookPage = await look();
     await page.click('[data-w="comp-edit"]'); await ready(page, 'components/search-bar/template.html'); await sleep(800);
+    { const lt = await look(), pg = await page.evaluate(() => { const S = Editor._state, ks = [...S.canvas.doc.querySelectorAll('style[data-kol-canvas]')].map(e => e.getAttribute('data-kol-canvas')).filter(Boolean); return { ks, own: [...S.sheets].filter(([k]) => !k.startsWith('page:')).map(([, x]) => x.path) }; });
+      ok(lookPage.every(Boolean) && JSON.stringify(lt) === JSON.stringify(lookPage), 'עריכת תבנית: קובצי ה-CSS של העמוד שממנו נכנסו חלים גם בקנבס — האייקון, השדה והעטיפה מעוצבים כמו בעמוד', { page: lookPage, tpl: lt });
+      ok(pg.ks.includes('page:dir:rtl') && pg.ks.some(k => k.startsWith('page:css/')) && pg.ks.indexOf('style.css') > Math.max(...pg.ks.map((k, i) => (k.startsWith('page:') ? i : -1))) && pg.own.length === 1 && pg.own[0] === 'components/search-bar/style.css', 'הסדר: CSS העמוד ואחריו style.css של הרכיב; כלל חדש — רק ל-style.css של הרכיב (pagePath)', pg); }
     st = await page.evaluate(() => { const S = Editor._state; return { css: !!S.canvas.doc.querySelector('style[data-kol-canvas="style.css"]'), strip: !document.querySelector('[data-comp-strip]').hidden && document.querySelector('[data-comp-strip]').textContent, fs: getComputedStyle(S.canvas.doc.querySelector('.kadisha-lexicon-search-wrap')).position }; });
     ok(st.css && /עורך את הרכיב שורת חיפוש/.test(st.strip) && /3 מופעים ב-2 עמודים/.test(st.strip), 'template.html נפתח בקנבס עם style.css שלו; הפס: "עורך את הרכיב" · 3 מופעים ב-2 עמודים', st);
     const idxB = await text(page, 'index.html'), abB = await text(page, 'about.html');

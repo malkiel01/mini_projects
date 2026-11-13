@@ -572,10 +572,39 @@ function pf_zip_open(string $raw): array
  * ייבוא ZIP. בלי apply — התוכנית: מה יתווסף, מה יוחלף, מה זהה, ומה בפרויקט לא ישתנה (קבצים שאינם ב-ZIP — אינם נמחקים).
  * עם apply ו-token מהתוכנית — ביצוע; לפני החלפה נוצרת נקודת שחזור. הפרויקט השתנה מאז התוכנית — 409.
  */
+/**
+ * T2 (V13 🟡A): scope — קידומות מופרדות בפסיק, כל אחת מסתיימת ב-/ (למשל "templates/hero/,media/"). כשהוא נשלח, כל קובץ, קובץ גדול
+ * ותיקייה ב-ZIP חייבים להיות בתוכו (תיקייה — גם הורה של קידומת: "templates"); אחרת — הייבוא כולו נדחה, לפני כל תכנון. בלי scope — כמו קודם.
+ * ממה זה מגן: ZIP עוין שנשלח דרך הלקוח האמיתי ("📦 ייבוא תבנית") — ZIP שהדפדפן (checkZip) ו-libzip מפענחים אחרת, כך שהלקוח רואה רק
+ * templates/ ו-media/ והשרת היה כותב גם index.html / kol.json. זו **אינה** הגנה מפני לקוח משקר: מי שבונה בקשה בעצמו יכול לא לשלוח
+ * scope — וההרשאה שלו היא ממילא של ייבוא הפרויקט המלא (F2b, editor).
+ */
+function pf_zip_scope(array $zip, mixed $scope): void
+{
+    if ($scope === null || $scope === '') return;
+    if (!is_string($scope) || strlen($scope) > 2000) throw new ApiError('scope לא תקין');
+    $pre = [];
+    foreach (explode(',', $scope) as $x) {
+        if ($x === '' || !str_ends_with($x, '/')) throw new ApiError('scope לא תקין: כל קידומת מסתיימת ב-/');
+        pf_path(substr($x, 0, -1));
+        $pre[] = $x;
+    }
+    $in = function (string $p, bool $dir) use ($pre): bool {
+        foreach ($pre as $x) if (str_starts_with($p . ($dir ? '/' : ''), $x) || ($dir && str_starts_with($x, $p . '/'))) return true;
+        return false;
+    };
+    $out = [];
+    foreach (array_keys($zip['files']) as $p) if (!$in((string)$p, false)) $out[] = $p;
+    foreach ($zip['big'] as $b) if (!$in((string)$b['path'], false)) $out[] = $b['path'];
+    foreach ($zip['dirs'] as $d) if (!$in((string)$d, true)) $out[] = $d . '/';
+    if ($out) throw new ApiError('ב-ZIP יש קבצים מחוץ למותר (' . implode(', ', $pre) . '): ' . implode(', ', array_slice($out, 0, 5)) . (count($out) > 5 ? ' ועוד ' . (count($out) - 5) : ''), 400);
+}
+
 function pf_zip_import(array $user, array $q, string $raw): array
 {
     pf_seed($user);
     $zip = pf_zip_open($raw);
+    pf_zip_scope($zip, $q['scope'] ?? null);                                     // T2 (V13 🟡A): ייבוא תבנית — הגבול נאכף בשרת
     $rows = [];
     foreach (db()->query('SELECT * FROM pf_files WHERE deleted_at IS NULL')->fetchAll() as $r) $rows[$r['path']] = $r;
     $mediaSha = [];
@@ -1123,7 +1152,7 @@ function kit_read(string $name): array
     $schema = json_decode((string)@file_get_contents("$dir/component.json"), true);
     if (!is_array($meta) || !is_array($schema)) throw new ApiError("הרכיב המוכן \"$name\" פגום בכלי", 500);
     $files = [];
-    foreach (KIT_FILES as $f) if (is_file("$dir/$f")) $files[$f] = (string)file_get_contents("$dir/$f");
+    foreach (kit_names_of($meta) as $f) if (is_file("$dir/$f")) $files[$f] = (string)file_get_contents("$dir/$f");
     $ver = is_string($meta['version'] ?? null) && preg_match('/^\d+\.\d+\.\d+$/', $meta['version']) ? $meta['version'] : '1.0.0';
     return ['name' => $name, 'version' => $ver, 'meta' => $meta, 'schema' => $schema, 'files' => $files,
         'label' => pf_label((string)($schema['label'] ?? $name), 60)];
@@ -1137,6 +1166,13 @@ function kit_files_for(array $k, string $folder): array
         $files['component.json'] = (string)preg_replace('/("name"\s*:\s*)"' . preg_quote($k['name'], '/') . '"/', '${1}"' . $folder . '"', $files['component.json'], 1);
     }
     return $files;
+}
+
+/** הקבצים שמועתקים: ארבעת הקבצים של רכיב + "files" מ-kit.json (למשל נגן Lottie, דוגמה) — שם פשוט, בלי תיקייה, סיומת מוכרת. */
+function kit_names_of(array $meta): array
+{
+    $extra = array_values(array_filter((array)($meta['files'] ?? []), fn($f) => is_string($f) && preg_match('/^[a-z0-9][a-z0-9._-]{0,60}\.(js|json|css|svg)$/', $f) && !in_array($f, KIT_FILES, true) && $f !== 'kit.json'));
+    return array_merge(KIT_FILES, array_slice($extra, 0, 8));
 }
 
 function kit_hash(array $files): string
@@ -1158,11 +1194,11 @@ function kit_sys(?array $cfg = null): array
     return $out;
 }
 
-/** הקבצים של components/<תיקייה>/ בפרויקט (רק KIT_FILES שקיימים): [שם => בייטים]. */
-function kit_proj(string $folder): array
+/** הקבצים של components/<תיקייה>/ בפרויקט (KIT_FILES + files של הרכיב המוכן, שקיימים): [שם => בייטים]. */
+function kit_proj(string $folder, ?array $names = null): array
 {
     $out = [];
-    foreach (KIT_FILES as $f) { $r = pf_by_path("components/$folder/$f"); if ($r && $r['kind'] === 'file') $out[$f] = pf_blob_get($r['sha']); }
+    foreach ($names ?? KIT_FILES as $f) { $r = pf_by_path("components/$folder/$f"); if ($r && $r['kind'] === 'file') $out[$f] = pf_blob_get($r['sha']); }
     return $out;
 }
 
@@ -1182,7 +1218,7 @@ function kit_list(): array
         $inst = [];
         foreach ($sys as $folder => $e) {
             if ($e['kit'] !== $n) continue;
-            $cur = kit_proj($folder);
+            $cur = kit_proj($folder, kit_names_of($k['meta']));
             if (!$cur) continue;                                             // נמחק מהפרויקט — כאילו לא הועתק
             $changed = !empty($e['modified']) || kit_hash($cur) !== (string)($e['hash'] ?? '');
             $inst[] = ['folder' => $folder, 'version' => (string)($e['version'] ?? '0.0.0'), 'modified' => $changed,
@@ -1235,7 +1271,7 @@ function kit_copy(array $user, array $b): array
     if (!preg_match(KIT_NAME, $as) || strlen($as) > 40) throw new ApiError('שם התיקייה — באנגלית, אותיות קטנות, ספרות ומקפים (kebab-case), עד 40 תווים');
     $res = pf_tx(function () use ($k, $as, $user) {
         $sys = kit_sys();
-        if (isset($sys[$as]) && $sys[$as]['kit'] === $k['name'] && kit_proj($as)) return ['copied' => false, 'folder' => $as, 'ids' => []];
+        if (isset($sys[$as]) && $sys[$as]['kit'] === $k['name'] && kit_proj($as, kit_names_of($k['meta']))) return ['copied' => false, 'folder' => $as, 'ids' => []];
         if (kit_taken($as)) {
             $free = $k['name']; for ($i = 2; kit_taken($free) || isset($sys[$free]); $i++) $free = $k['name'] . '-' . $i;
             throw new ApiError("כבר יש בפרויקט components/$as/ משלכם", 409, ['taken' => $as, 'free' => $free]);
@@ -1292,7 +1328,7 @@ function kit_update(array $user, array $b): array
         $e = kit_sys()[$folder] ?? null;
         if (!$e) throw new ApiError("components/$folder/ אינו רכיב מוכן", 404);
         $k = kit_read((string)$e['kit']);
-        $cur = kit_proj($folder);
+        $cur = kit_proj($folder, kit_names_of($k['meta']));
         $changed = !empty($e['modified']) || kit_hash($cur) !== (string)($e['hash'] ?? '');
         $note = 'עדכון רכיב מוכן: ' . $k['label'] . ' ' . ($e['version'] ?? '?') . ' ← ' . $k['version'];
         if ($act === 'keep') {
@@ -1366,7 +1402,11 @@ function kit_revert(array $user, array $b): array
             if ($r['deleted_at'] === null && (int)$r['rev'] !== 1) throw new ApiError("\"{$r['path']}\" נערך אחרי העדכון — הביטול לא ימחק אותו", 409, ['changed' => $r['path']]);
             $rows[] = $r;
         }
-        foreach ($removed as $id) { $r = pf_row($id, false); if (!$inside($r['path'])) throw new ApiError('הקובץ אינו חלק מהרכיב', 422); }
+        $back = 0;
+        foreach ($removed as $id) { $r = pf_row($id, false); if (!$inside($r['path'])) throw new ApiError('הקובץ אינו חלק מהרכיב', 422); if ($r['deleted_at'] !== null) $back++; }
+        // הקבצים שחוזרים מהסל — בתוך מגבלת הקבצים של הפרויקט (מה שנוצר בעדכון יוצא באותה פעולה)
+        $out = count(array_filter($rows, fn($r) => $r['deleted_at'] === null));
+        if ($back > $out && ($n = pf_count()) - $out + $back > ($max = pf_limit('files'))) pf_over('יותר מדי קבצים בפרויקט', $n - $out + $back, $max);
         foreach ($todo as [$r, $sha]) pf_put($r, pf_blob_get($sha), $user, 'ביטול עדכון רכיב מוכן');
         $batch = bin2hex(random_bytes(6));
         foreach ($rows as $r) db()->prepare('UPDATE pf_files SET deleted_at = ?, deleted_by = ?, deleted_name = ?, deleted_batch = ? WHERE id = ? AND deleted_at IS NULL')->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $r['id']]);

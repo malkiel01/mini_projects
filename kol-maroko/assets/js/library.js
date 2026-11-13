@@ -283,13 +283,13 @@ const Library = (() => {
     if (!chosen.size) return;
     const rows = [...chosen].map(byId).filter(Boolean);
     const all = filtered().filter(r => r.state !== 'none' && r.rec);
-    selBar.replaceChildren(
+    selBar.replaceChildren(...[
       h('b', {}, `נבחרו ${num(chosen.size)}`),
       all.some(r => !chosen.has(r.id)) ? h('button', { type: 'button', class: 'btn ghost sm', onclick: () => { all.forEach(r => chosen.add(r.id)); draw(); drawSel(); } }, `בחר את כל המסוננות (${num(all.length)})`) : null,
       h('button', { type: 'button', class: 'btn ghost sm', onclick: () => LibActions.download(rows) }, '⬇️ הורדה'),
       h('button', { type: 'button', class: 'btn ghost sm', onclick: () => LibActions.disconnect(rows) }, '⛓️ ניתוק'),
       h('button', { type: 'button', class: 'btn ghost sm danger', onclick: () => LibActions.remove(rows) }, '🗑️ מחיקה'),
-      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'ביטול הבחירה', onclick: clearSel }, '✕'));
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'ביטול הבחירה', onclick: clearSel }, '✕')].filter(x => x != null && x !== false));
   }
   function clearSel() { chosen.clear(); selMode = false; if (D && listEl) draw(); drawSel(); }
   function redraw(id) {
@@ -459,7 +459,7 @@ const Library = (() => {
 
   function imagesView(box) {
     const sub = h('div', { class: 'lib-files lib-images' });
-    box.replaceChildren(
+    box.replaceChildren(...[
       D.images.length ? h('h2', { class: 'sec-title' }, `באתר · ${D.images.length}`) : null,
       D.images.length ? h('ul', { class: 'list' }, D.images.map(im => {
         const src = safeSrc(im.url);
@@ -471,7 +471,7 @@ const Library = (() => {
           h('span', { class: 'use-tx' }, h('b', { class: 'one' }, im.label), h('small', { dir: 'ltr' }, im.url.replace(/^https:\/\//, ''))),
           h('span', { class: 'chip' }, 'באתר'), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
       })) : null,
-      h('h2', { class: 'sec-title' }, 'בכלי'), sub);
+      h('h2', { class: 'sec-title' }, 'בכלי'), sub].filter(x => x != null && x !== false));
     sessionStorage.setItem('kol-files-kind', 'image');
     Media.view(sub, isOwner);
   }

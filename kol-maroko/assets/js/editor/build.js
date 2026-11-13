@@ -75,12 +75,12 @@
       grip.addEventListener('pointerdown', e => { if (!this.canWrite() || this.X.ROOTS.has(n.tag)) return; e.preventDefault(); const sel = this.canvas.picked(); this.drag.start({ nodes: sel.length > 1 ? sel : [n] }, e.clientX, e.clientY); });
       const box = this.X.canHold(n) && !this.X.ROOTS.has(n.tag) && n.tag !== 'template';
       const ax = box ? this.dirState(n) : null;
-      this.tools.replaceChildren(grip,
+      this.tools.replaceChildren(...[grip,
         b('בחר הורה', '↑', () => { if (n.parent) { this.canvas.select(n.parent); this.canvas.reveal(n.parent); } }, !n.parent),
         ax ? b('כיוון הרובריקה: ' + ax.text + ' — לחיצה מחליפה', ax.icon, () => this.toggleDir(n), !w, { 'data-dir': ax.kind }) : null,
         b('שכפול (Ctrl+D)', '⧉', () => this.duplicate(), !w || this.X.ROOTS.has(n.tag), { 'data-dup': true }),
         b('מחיקה (Delete)', '🗑️', () => this.remove(), !w),
-        b('עוד פעולות', '⋯', () => this.menu(n), false, { 'data-more': true }));
+        b('עוד פעולות', '⋯', () => this.menu(n), false, { 'data-more': true })].filter(x => x != null && x !== false));
     }
     plusClick(b) {
       const n = b._n; if (!n || !n.parent) return;
@@ -454,6 +454,14 @@
         const v = a.value.replace(/[\s\u0000-\u001f]+/g, '').toLowerCase();
         if (/^on/i.test(a.name)) { removed.add(a.name); e.removeAttribute(a.name); }
         else if (/^(href|src|action|formaction|xlink:href|poster|data|srcset)$/i.test(a.name) && /^(javascript|vbscript|data:text\/html)/.test(v)) { removed.add(a.name + '="' + v.slice(0, 12) + '…"'); e.removeAttribute(a.name); }
+      }
+      // T2 (V13 🟡B): <animate> / <set> של SVG שמכוונים לתכונת כתובת (href, xlink:href…) — הערך ב-to / from / by / values (רשימה ב-;)
+      // הופך לכתובת אחרי הטעינה, ולכן הבדיקה למעלה אינה תופסת אותו. כתובת מסוכנת — האלמנט כולו יורד
+      const BAD = v => /^(javascript|vbscript|data:text\/html)/.test(v.replace(/[\s\u0000-\u001f]+/g, '').toLowerCase());
+      for (const e of [...d.body.querySelectorAll('*')].filter(x => /^(animate|set|animatemotion|animatetransform)$/i.test(x.localName))) {
+        const an = (e.getAttribute('attributeName') || e.getAttribute('attributename') || '').trim().toLowerCase();
+        if (!/^(xlink:)?(href|src|action|formaction|poster|data)$/.test(an)) continue;
+        if (['to', 'from', 'by', 'values'].some(k => (e.getAttribute(k) || '').split(';').some(BAD))) { removed.add('<' + e.localName + ' attributeName="' + an + '">'); e.remove(); }
       }
       return { html: d.body.innerHTML.trim(), removed: [...removed] };
     }

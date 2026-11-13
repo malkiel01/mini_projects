@@ -752,6 +752,11 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-bar .ed-pagebtn-t { display: none; }
   .ed-bar [data-ed-live-btn], .ed-bar [data-head-btn] { display: none; }   /* ⚙️ — בתפריט 📄 (הסרגל נשאר בגובה של main; v2 מקלדת) */
 }
+/* T2: 📄 בטלפון — 44px, בזרימה הרגילה של הסרגל. V15 מיקמה אותו absolute בקצה (וחסכה 48px ליד בורר הקובץ); מאז V14 הסרגל הוא שורה אחת
+   שגוללת, ו-absolute כיסה את 🖥️ בכל מצב גלילה (ביקורת T2). בלי margin, בלי absolute — רק רוחב הקשה (בלעדיו 📄 מתכווץ ל-14px) */
+@media (max-width: 999px) {
+  .ed-bar .ed-pagebtn { position: static; flex: none; min-height: var(--tap); width: 44px; }
+}
 /* V15b: "לא להופיע בחיפוש" ותיבות סימון בטופס — כל השורה לחיצה, ≥44px; כתובת העמוד בלוח */
 .hd-check { min-height: 44px; cursor: pointer; padding-block: 4px; }
 .pg-addr { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; overflow-wrap: anywhere; }
@@ -801,6 +806,11 @@ dialog.hd-sheet .hd { padding: 0; }
   .kit-chip-b { min-height: 34px; font-size: 13px; }
   .kit-cmp2 { grid-template-columns: 1fr; }
 }
+/* V16b: ידיות גרירה של נקודות (hotspot) */
+.kit-handles { position: absolute; inset: 0; pointer-events: none; }
+.kit-handle { position: absolute; z-index: 5; inline-size: 26px; block-size: 26px; margin: -13px 0 0 -13px; padding: 0; border: 3px solid #fff; border-radius: 50%; background: #7c3aed; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); cursor: grab; pointer-events: auto; touch-action: none; }
+.kit-handle.on { cursor: grabbing; background: #5b21b6; }
+@media (max-width: 999px) { .kit-handle { inline-size: 34px; block-size: 34px; margin: -17px 0 0 -17px; } }
 
 /* V14 — העורך במגע. כל כלל כאן בתוך max-width: 999px או pointer: coarse — המחשב (≥1000px, עכבר) אינו משתנה. */
 @media (max-width: 999px) {

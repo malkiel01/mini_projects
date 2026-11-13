@@ -1,0 +1,17 @@
+{
+  "name": "hotspot",
+  "label": "נקודות על תמונה",
+  "icon": "📍",
+  "category": "תנועה",
+  "fields": [
+    {"id": "items", "label": "נקודות", "control": "repeater", "target": {"children": ".kol-hotspot__pin"}},
+    {"id": "img", "label": "התמונה", "control": "media", "target": {"src": ".kol-hotspot__img"}},
+    {"id": "color", "label": "צבע הנקודות", "control": "color", "target": {"var": "--kol-hotspot-color"}}
+  ],
+  "states": [
+    {"id": "tips", "label": "ההסברים", "options": [{"label": "כל ההסברים גלויים", "root": "is-tips"}]}
+  ],
+  "drag": [
+    {"each": ".kol-hotspot__pin", "box": ".kol-hotspot__img", "x": "--x", "y": "--y"}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "off-canvas",
+  "label": "חלונית מהצד",
+  "icon": "📥",
+  "category": "חלונות",
+  "fields": [
+    {"id": "trigger", "label": "מתי נפתח (click · delay · scroll · exit)", "control": "select", "options": ["click", "delay", "scroll", "exit"], "target": {"attr": "data-kol-trigger", "on": ".kol-offcanvas__dlg"}},
+    {"id": "delay", "label": "אחרי כמה שניות (delay)", "control": "number", "target": {"attr": "data-kol-delay", "on": ".kol-offcanvas__dlg"}},
+    {"id": "scroll", "label": "בגלילה לכמה אחוזים (scroll)", "control": "number", "target": {"attr": "data-kol-scroll", "on": ".kol-offcanvas__dlg"}},
+    {"id": "once", "label": "כמה פעמים (visitor — פעם לגולש · session — פעם בביקור · always)", "control": "select", "options": ["visitor", "session", "always"], "target": {"attr": "data-kol-once", "on": ".kol-offcanvas__dlg"}},
+    {"id": "name", "label": "שם החלון (data-kol-open=\"השם\" בכל כפתור פותח אותו)", "control": "text", "target": {"attr": "data-kol-dialog", "on": ".kol-offcanvas__dlg"}},
+    {"id": "side", "label": "נפתחת מ- (start · end)", "control": "select", "options": ["start", "end"], "target": {"class": "kol-offcanvas--{value}"}},
+    {"id": "width", "label": "רוחב", "control": "size", "target": {"var": "--kol-offcanvas-w"}}
+  ],
+  "states": [
+    {"id": "open", "label": "החלונית", "options": [{"label": "החלונית פתוחה", "on": ".kol-offcanvas__dlg", "attr": "open"}]}
+  ]
+}
