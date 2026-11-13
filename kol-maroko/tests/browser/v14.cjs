@@ -607,6 +607,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }
       ok(!bad.length && depth === 0, '§2.7 · כל כלל CSS של V14 בתוך max-width: 999px או pointer: coarse', bad);
       ok(['top', 'right', 'bottom', 'left'].every(k => blk.includes('env(safe-area-inset-' + k + ')')), '§2.1 · אזור בטוח בכל ארבעת הקצוות (env(safe-area-inset-*))');
+      { const all = css.replace(/\/\*[\s\S]*?\*\//g, ''); let d = 0, mn = 0; for (const ch of all) { if (ch === '{') d++; else if (ch === '}') { d--; mn = Math.min(mn, d); } }
+        ok(d === 0 && mn === 0, 'editor.css כולו מאוזן (עומק 0) — אף בלוק אינו בולע את הבלוקים שאחריו', { d, mn }); }
+      // מסך מגע ≥1000px (לפטופ / טאבלט גדול): הפריסה של המחשב, וכללי pointer: coarse חלים
+      { const c7 = await mk(1024, 768), pg = await newPage(c7, '1024-touch'); await openEd(pg);
+        await pg.evaluate(() => { const c = Editor._state.canvas; c.select(c.nodeOf(c.doc.querySelector('h1'))); }); await sleep(500);
+        st = await pg.evaluate(() => ({ coarse: matchMedia('(pointer: coarse)').matches, phoneCls: [...document.querySelector('.ed').classList].filter(c => /^ts-(row|third|half|full|fs)$/.test(c)), crumb: Math.round(document.querySelector('.ed-crumb').getBoundingClientRect().height), mv: [...document.querySelectorAll('.ed-seltools [data-ts-mv]')].map(b => Math.round(b.getBoundingClientRect().height)), side: getComputedStyle(document.querySelector('.ed-info')).position }));
+        ok(st.coarse && !st.phoneCls.length && st.crumb >= 44 && st.mv.length === 2 && st.mv.every(x => x >= 44) && st.side !== 'fixed', '1024 במגע: פריסת מחשב (פאנל בצד), וכללי המגע חלים — פירורים ו-⬆ ⬇ של 44px', st);
+        await c7.close(); }
       for (const [w, hh] of [[1920, 1080], [1366, 768]]) {
         const c5 = await mk(w, hh, false), pg = await newPage(c5, String(w)); await openEd(pg);
         await pg.evaluate(() => { const c = Editor._state.canvas; c.select(c.nodeOf(c.doc.querySelector('h1'))); }); await sleep(400);
