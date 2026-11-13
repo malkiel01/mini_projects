@@ -1,6 +1,6 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-13T16:43Z",
+  "updated": "2026-11-13T17:36Z",
   "spec": "session_018g4NYGmY6iWXmmRw38khnp",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
@@ -8,7 +8,9 @@
     "session_018g4NYFVLVbyN6jb8ZTZRT1",
     "session_018g4NYDGj9nDDPBwcKYPGw2"
   ],
-  "code": {},
+  "code": {
+    "V14d": "session_018g4NYFZVXPirzx7a4Nz3Np"
+  },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
     "session_018g4NYE4wmn5gkTxqMgwnZm (F1)",
