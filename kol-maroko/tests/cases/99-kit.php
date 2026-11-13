@@ -103,9 +103,9 @@ test('V16 kit_copy: שימוש ראשון ← components/<שם>/ (גרסה בה�
     eq(null, kt_text('components/accordion/kit.json'), 'kit.json אינו מועתק');
     $st = db()->prepare('SELECT note FROM pf_history WHERE path = ? ORDER BY id DESC LIMIT 1');
     $st->execute(['components/accordion/template.html']);
-    eq('רכיב מוכן: אקורדיון 1.0.0', $st->fetchColumn(), 'ההיסטוריה');
+    eq('רכיב מוכן: אקורדיון ' . kit_read('accordion')['version'], $st->fetchColumn(), 'ההיסטוריה');
     $sys = pf_kol()['config']['system']['components/accordion/'] ?? null;
-    ok($sys && $sys['version'] === '1.0.0' && $sys['modified'] === false && $sys['kit'] === 'accordion' && strlen($sys['hash']) === 40, json_encode($sys));
+    ok($sys && $sys['version'] === kit_read('accordion')['version'] && $sys['modified'] === false && $sys['kit'] === 'accordion' && strlen($sys['hash']) === 40, json_encode($sys));
     ok(isset(pf_kol()['config']['system']['js/kol-data.js']) || true, 'קובצי מערכת אחרים נשמרים');
     $i = kt_item('accordion')['installed'][0];
     ok($i['folder'] === 'accordion' && !$i['modified'] && !$i['update'] && $i['same'], json_encode($i));
@@ -265,7 +265,7 @@ test('V16 kit_update: שונה ← בלי force — 409; "השאר את שלי" 
     eq($mine, kt_text('components/alert/style.css'), 'שלי נשאר');
     kit_update(KT_ED, ['folder' => 'alert', 'action' => 'keep']);
     $e = pf_kol()['config']['system']['components/alert/'];
-    ok($e['modified'] === true && $e['version'] === '1.0.0', 'השאר את שלי: ' . json_encode($e));
+    ok($e['modified'] === true && $e['version'] === kit_read('alert')['version'], 'השאר את שלי: ' . json_encode($e));
     eq($mine, kt_text('components/alert/style.css'), 'הקבצים לא נגעו');
     $i = kt_item('alert')['installed'][0];
     ok(!$i['update'] && $i['modified'], 'אחרי "השאר" — אין הצעה, ונשאר "שונה"');

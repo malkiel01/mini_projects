@@ -1,5 +1,5 @@
-/* רכיב מוכן: כרטיס הנעה לפעולה (kit 1.0.0) */
-.kol-cta { --kol-cta-accent: var(--color-accent, #a3322a); display: grid; border-radius: 16px; overflow: hidden; background: var(--color-bg, #fff); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); position: relative; }
+/* רכיב מוכן: כרטיס הנעה לפעולה (kit 1.0.1) */
+.kol-cta { --kol-cta-accent: var(--color-accent, #a3322a); display: grid; border-radius: 16px; overflow: hidden; background: var(--color-bg, #fff); color: var(--color-text, #16192b); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); position: relative; }
 .kol-cta--side { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: center; }
 .kol-cta__img { display: block; inline-size: 100%; block-size: 100%; min-block-size: 200px; object-fit: cover; }
 .kol-cta__body { padding: 24px; display: grid; gap: 8px; justify-items: start; }

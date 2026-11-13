@@ -1,4 +1,4 @@
-/* רכיב מוכן: אקורדיון (kit 1.0.0). קובץ רגיל של הפרויקט — משנים כאן או בעורך. */
+/* רכיב מוכן: אקורדיון (kit 1.0.1). קובץ רגיל של הפרויקט — משנים כאן או בעורך. */
 .kol-acc {
   --kol-acc-gap: 8px;
   --kol-acc-accent: var(--color-accent, #a3322a);
@@ -9,6 +9,7 @@
   border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   border-radius: 10px;
   background: var(--color-bg, #fff);
+  color: var(--color-text, #16192b);   /* רקע משלו — גם צבע טקסט משלו (לא יורש ממקטע כהה) */
 }
 .kol-acc__title {
   cursor: pointer;

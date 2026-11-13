@@ -2,7 +2,7 @@
 .kol-carousel { --kol-carousel-per: 3; --kol-carousel-gap: 16px; position: relative; }
 .kol-carousel__track { display: flex; gap: var(--kol-carousel-gap); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-block: 4px; overscroll-behavior-x: contain; }
 .kol-carousel__track::-webkit-scrollbar { display: none; }
-.kol-carousel__slide { flex: 0 0 calc((100% - (var(--kol-carousel-per) - 1) * var(--kol-carousel-gap)) / var(--kol-carousel-per)); scroll-snap-align: start; border-radius: 14px; overflow: hidden; background: var(--color-bg, #fff); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); padding-block-end: 12px; }
+.kol-carousel__slide { flex: 0 0 calc((100% - (var(--kol-carousel-per) - 1) * var(--kol-carousel-gap)) / var(--kol-carousel-per)); scroll-snap-align: start; border-radius: 14px; overflow: hidden; background: var(--color-bg, #fff); color: var(--color-text, #16192b); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); padding-block-end: 12px; }
 .kol-carousel__img { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .kol-carousel__title { margin: 10px 14px 4px; font-size: 1.1rem; }
 .kol-carousel__text { margin: 0 14px; }

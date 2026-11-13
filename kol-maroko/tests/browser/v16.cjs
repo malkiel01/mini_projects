@@ -80,7 +80,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const compTab = async pg => { await pg.evaluate(() => document.querySelector('[data-ntab="comp"]').click()); await sleep(300); };
     await compTab(page);
     await page.waitForFunction(() => Editor._state.kit && Editor._state.kit.items.length >= 20, null, { timeout: 15000 });
-    const items = await page.evaluate(() => Editor._state.kit.items.map(x => ({ name: x.name, label: x.label, category: x.category, js: x.js, external: x.external })));
+    const items = await page.evaluate(() => Editor._state.kit.items.map(x => ({ name: x.name, label: x.label, category: x.category, version: x.version, js: x.js, external: x.external })));
     ok(items.length >= 20, 'הספרייה: ' + items.length + ' רכיבים מוכנים מ-kit_list', items.map(x => x.name));
     const kol = async pg => JSON.parse(await text(pg, 'kol.json'));
     const instText = (pg, name, i = 0) => pg.evaluate(([n, i]) => { const S = Editor._state, c = S.canvas, C = window.KolComp; const inst = C.instances(c.m, n)[i]; return inst ? C.outerOf(c.m, inst.node) : null; }, [name, i]);
@@ -105,7 +105,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     let pg = await text(page, 'kit.html'), kj = await kol(page);
     ok(/<section class="kol-acc kol-acc--one" data-kol-component="accordion">/.test(pg) && /<link rel="stylesheet" href="components\/accordion\/style\.css">/.test(pg) && /<script defer src="components\/accordion\/script\.js"><\/script>/.test(pg), 'העמוד: המופע (data-kol-component), <link> ו-<script defer> פעם אחת', pg.slice(0, 900));
     ok(await exists(page, 'components/accordion/template.html') && await exists(page, 'components/accordion/script.js') && !await exists(page, 'components/accordion/kit.json'), 'components/accordion/ הועתק (בלי kit.json)');
-    ok(kj.system['components/accordion/'] && kj.system['components/accordion/'].version === '1.0.0' && kj.system['components/accordion/'].modified === false && kj.system['js/kol-data.js'], 'kol.json system: "components/accordion/": {version, modified: false} — וקובצי המערכת האחרים נשמרו', kj.system);
+    ok(kj.system['components/accordion/'] && kj.system['components/accordion/'].version === items.find(x => x.name === 'accordion').version && kj.system['components/accordion/'].modified === false && kj.system['js/kol-data.js'], 'kol.json system: "components/accordion/": {version, modified: false} — וקובצי המערכת האחרים נשמרו', kj.system);
     ok(await txN(page) === n0 + 1 && /רכיב מוכן · אקורדיון · הועתק לפרויקט/.test(await lastTx(page)), 'פעולה אחת: "רכיב מוכן · אקורדיון · הועתק לפרויקט"', await lastTx(page));
     st = await page.evaluate(() => document.querySelector('[data-kit-item="accordion"]').dataset.kitTag);
     ok(st === 'in', 'התג בספרייה ← "בפרויקט"', st);
@@ -266,6 +266,21 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     st = await q('.kol-countdown', e => ({ ready: e.classList.contains('is-ready'), d: +e.querySelector('[data-kol-unit="d"]').textContent, s: e.querySelector('[data-kol-unit="s"]').textContent, done: e.classList.contains('is-done') }));
     ok(st.ready && st.d > 0 && /^\d\d$/.test(st.s) && !st.done, 'ספירה לאחור: ימים / שניות מתעדכנים, לא הסתיים', st);
     await pv.evaluate(() => { const e = document.querySelector('.kol-countdown'); e.setAttribute('data-kol-until', '2001-01-01T00:00:00Z'); e.kolCd = false; }); await pv.addScriptTag({ path: path.join(ROOT, 'assets/kit/components/countdown/script.js') }).catch(() => null); await sleep(300);
+    // רכיב עם רקע משלו — גם צבע טקסט משלו: כל העמוד בתוך "מקטע כהה" (טקסט לבן), וכל טקסט על רקע בהיר של רכיב — כהה
+    st = await pv.evaluate(() => {
+      const b = document.body, was = b.getAttribute('style'); b.style.color = '#fff'; b.style.background = '#1b1b1f';
+      const lum = c => { const m = c.match(/[\d.]+/g); if (!m) return null; const [r, g, bl, a = 1] = m.map(Number); return a < .5 ? null : (0.2126 * r + 0.7152 * g + 0.0722 * bl) / 255; };
+      const bad = [];
+      for (const root of document.querySelectorAll('[data-kol-component]')) for (const e of [root, ...root.querySelectorAll('*')]) {
+        if (![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+        const r = e.getBoundingClientRect(); if (!r.width || getComputedStyle(e).visibility === 'hidden') continue;
+        let bg = null; for (let x = e; x && x !== root.parentElement; x = x.parentElement) { const l = lum(getComputedStyle(x).backgroundColor); if (l != null) { bg = l; break; } }
+        if (bg != null && bg > .6 && lum(getComputedStyle(e).color) > .5) bad.push(root.getAttribute('data-kol-component') + ' · ' + e.className);
+      }
+      if (was == null) b.removeAttribute('style'); else b.setAttribute('style', was);
+      return [...new Set(bad)];
+    });
+    ok(!st.length, 'בתוך מקטע כהה: אין טקסט בהיר על רקע בהיר של רכיב (רקע משלו ← צבע טקסט משלו)', st);
     // דירוג
     st = await q('.kol-stars__bar', e => Math.round(e.getBoundingClientRect().width));
     ok(st === 110, 'דירוג כוכבים: 5 כוכבים של 22px', st);
@@ -379,7 +394,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(st.vis && st.files.includes('style.css') && st.pres >= 3, '"שתיהן זו לצד זו": שלי / החדשה לכל קובץ שונה, וההבדלים', st);
     await page.click('[data-kit-keep]'); await sleep(1200);
     kj = await kol(page);
-    ok(kj.system['components/alert/'].modified === true && kj.system['components/alert/'].version === '1.0.0' && /border-width: 3px/.test(await text(page, 'components/alert/style.css')), '"השאר את שלי": modified: true, הגרסה סומנה — והקובץ שלי לא נגע', kj.system['components/alert/']);
+    ok(kj.system['components/alert/'].modified === true && kj.system['components/alert/'].version === items.find(x => x.name === 'alert').version && /border-width: 3px/.test(await text(page, 'components/alert/style.css')), '"השאר את שלי": modified: true, הגרסה סומנה — והקובץ שלי לא נגע', kj.system['components/alert/']);
     st = await page.evaluate(() => ({ tag: document.querySelector('[data-kit-item="alert"]').dataset.kitTag, upd: !!document.querySelector('[data-kit-update="alert"]') }));
     ok(st.tag === 'mod' && !st.upd, 'התג ← "בפרויקט · שונה", בלי הצעת עדכון', st);
     await shot(page, 'v16-1920-panel');
@@ -507,6 +522,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // ═══ 10. טלפון (390): גיליון; הקשה = "הוסף אחרי הנבחר"; לחיצה ארוכה = גרירה; כל רכיב עובד ב-390 ═══
     await flush(page);
+    // מכל ממוקם (absolute) עם כפתור — כמו כפתור על תמונת hero; ל"אחרי הנבחר" כשהכפתור נבחר
+    const kitSrc = await text(page, 'kit.html');
+    await putFile(page, 'kit.html', kitSrc.replace(/<\/body>/i, '  <div class="t-pin" style="position: absolute; inset-inline-start: 12px; inset-block-start: 12px; inline-size: 120px"><a class="t-pin__btn" href="#">כפתור</a></div>\n</body>'));
     const ph = await mk(390, 844), pp = await ph.newPage();
     pp.on('pageerror', e => errors.push('390: ' + e.message));
     await pp.goto(base + '/editor.php#/editor/' + encodeURIComponent('kit.html')); await ready(pp, 'kit.html'); await sleep(800);
@@ -524,6 +542,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     st = await pp.evaluate(() => { const c = Editor._state.canvas, C = window.KolComp, h = c.doc.querySelector('.kit-h'), n = c.nodeOf(h); const i = n.parent.kids.indexOf(n); return { next: (window.KolSrc.attrOf(n.parent.kids[i + 1], 'data-kol-component') || {}).value, sheet: !document.querySelector('[data-kit-board]').hidden }; });
     ok((await text(pp, 'kit.html')).match(/data-kol-component="icon-box"/g).length === c0 + 1 && st.next === 'icon-box' && !st.sheet, '390: הקשה על כרטיס ← נוסף אחרי הנבחר (הכותרת), והגיליון נסגר', st);
     await undo(pp);
+    // "אחרי הנבחר" כשהנבחר — כפתור בתוך מכל absolute: לא לתוך המכל (שם הוא נפרש מחוץ למסך) — אחרי המכל, בזרימה
+    await select(pp, '.t-pin__btn'); await sleep(200);
+    await pp.evaluate(() => Editor._state.kit.use('icon-box')); await sleep(1500);
+    st = await pp.evaluate(() => { const c = Editor._state.canvas, pin = c.doc.querySelector('.t-pin'), ins = [...c.doc.querySelectorAll('[data-kol-component="icon-box"]')].find(e => !e.closest('.kit-h') && e.previousElementSibling === pin) || null, r = ins && ins.getBoundingClientRect();
+      return { inside: !!pin.querySelector('[data-kol-component]'), after: !!ins, x: r && Math.round(r.left), right: r && Math.round(r.right), vw: c.doc.documentElement.clientWidth }; });
+    ok(!st.inside && st.after && st.x >= 0 && st.right <= st.vw, '390: "אחרי הנבחר" על כפתור במכל ממוקם (absolute) ← הרכיב אחרי המכל, בתוך המסך — לא בתוכו', st);
+    await undo(pp); await sleep(300);
     // לחיצה ארוכה ← גרירה לקנבס
     await pp.evaluate(() => document.querySelector('[data-kit-wide]') && (document.querySelector('.ed-bar [data-panel="nav"]').click(), 0)); await sleep(200);
     await pp.evaluate(() => { document.querySelector('[data-kit-wide]').click(); const b = document.querySelector('.ed-bar [data-panel="nav"]'); if (b.getAttribute('aria-pressed') === 'true') b.click(); }); await sleep(300);

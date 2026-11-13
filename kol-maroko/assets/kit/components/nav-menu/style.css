@@ -14,7 +14,7 @@
 .kol-nav__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 767px) {
   .kol-nav.is-ready .kol-nav__toggle { display: block; }
-  .kol-nav.is-ready .kol-nav__list { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 900; inline-size: min(82vw, 320px); flex-direction: column; flex-wrap: nowrap; gap: 0; padding: 64px 20px 20px; background: var(--color-bg, #fff); box-shadow: 0 0 40px rgba(0, 0, 0, .25); transform: translateX(105%); transition: transform .25s; overflow: auto; }
+  .kol-nav.is-ready .kol-nav__list { position: fixed; inset-block: 0; inset-inline-start: 0; z-index: 900; inline-size: min(82vw, 320px); flex-direction: column; flex-wrap: nowrap; gap: 0; padding: 64px 20px 20px; background: var(--color-bg, #fff); color: var(--color-text, #16192b); box-shadow: 0 0 40px rgba(0, 0, 0, .25); transform: translateX(105%); transition: transform .25s; overflow: auto; }
   .kol-nav.is-ready.kol-nav--from-end .kol-nav__list { inset-inline-start: auto; inset-inline-end: 0; transform: translateX(-105%); }
   .kol-nav.is-ready:dir(ltr) .kol-nav__list { transform: translateX(-105%); }
   .kol-nav.is-ready.kol-nav--from-end:dir(ltr) .kol-nav__list { transform: translateX(105%); }

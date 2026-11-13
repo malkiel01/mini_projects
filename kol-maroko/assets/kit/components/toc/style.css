@@ -1,6 +1,6 @@
 /* רכיב מוכן: תוכן עניינים (kit 1.0.0). השורות כתובות בקובץ ("↻ בנה מהכותרות" בעורך). עם JS: is-here על השורה של הכותרת שעל המסך. */
 .kol-toc { --kol-toc-accent: var(--color-accent, #a3322a); }
-.kol-toc--box { padding: 14px 18px; border-radius: 12px; background: color-mix(in srgb, var(--kol-toc-accent) 6%, var(--color-bg, #fff)); }
+.kol-toc--box { padding: 14px 18px; border-radius: 12px; background: color-mix(in srgb, var(--kol-toc-accent) 6%, var(--color-bg, #fff)); color: var(--color-text, #16192b); }
 .kol-toc__title { margin: 0 0 6px; font-weight: 700; }
 .kol-toc__list { margin: 0; padding-inline-start: 1.2em; }
 .kol-toc__item--sub { margin-inline-start: 1.2em; list-style-type: circle; font-size: .95em; }
