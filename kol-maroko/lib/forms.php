@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/devlog.php';
+require_once __DIR__ . '/net.php';         // V16c: בדיקת מארח / IP משותפת לבקשות החוצה
 
 /** המגבלות (08 §4.2): ברירת מחדל, מינימום, מקסימום, והנוסח לבעל העמוד. */
 const FORMS_LIMITS = [
@@ -749,16 +750,17 @@ function forms_hook_url_check(string $url): string
     if (strtolower($p['scheme']) !== 'https') return 'רק https';
     if (isset($p['user']) || isset($p['pass'])) return 'כתובת עם שם משתמש';
     if (isset($p['port']) && (int)$p['port'] !== 443) return 'פורט שאינו 443';
-    $host = rtrim(strtolower($p['host']), '.');
+    $host = strtolower($p['host']);
+    if (str_ends_with($host, '.')) return 'שם מתחם עם נקודה בסוף';      // ההצמדה ב-curl לא חלה עליו (ראו net.php)
     if (filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) || preg_match('/^[0-9.]+$|^0x|^\[/i', $host)) return 'כתובת IP — רק שם מתחם';
     if ($host === 'localhost' || preg_match('/\.(localhost|local|internal|lan|home|corp|intranet)$/', $host) || !str_contains($host, '.')) return 'שם פנימי';
-    if (!preg_match('/^[a-z0-9.-]+$/', $host)) return 'שם מתחם לא תקין';
+    if (net_host($host) === '') return 'שם מתחם לא תקין';
     return '';
 }
 
 function forms_hook_ip_ok(string $ip): bool
 {
-    return (bool)filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+    return net_ip_public($ip);
 }
 
 /** הגדרת webhook לטופס (מפרסם ומעלה). url ריק — הסרה. הכתובת נבדקת כאן, ושוב בכל שליחה (ה-DNS יכול להשתנות). */
@@ -819,7 +821,8 @@ function forms_hook_enqueue(int $entry, string $form): void
 function forms_hook_post(string $url, string $json): array
 {
     if (($why = forms_hook_url_check($url)) !== '') return [0, "הכתובת נדחתה: $why"];
-    $host = rtrim(strtolower((string)parse_url($url, PHP_URL_HOST)), '.');
+    $host = net_host((string)parse_url($url, PHP_URL_HOST));                 // זהה למארח שב-URL ש-curl מקבל — אחרת RESOLVE לא חל
+    if ($host === '') return [0, 'הכתובת נדחתה: שם מתחם לא תקין'];
     $resolve = $GLOBALS['kol_hook_resolve'] ?? null;
     $ips = $resolve !== null ? (array)($resolve[$host] ?? []) : (gethostbynamel($host) ?: []);
     if (!$ips) return [0, "לא הצלחתי לפנות אל $host (DNS)"];

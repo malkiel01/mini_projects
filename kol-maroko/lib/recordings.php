@@ -20,6 +20,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/page.php';
 require_once __DIR__ . '/devlog.php';
 require_once __DIR__ . '/project.php';
+require_once __DIR__ . '/net.php';         // V16c: בדיקת מארח / IP משותפת לבקשות החוצה
 
 const REC_UPLOADS = '/wp-content/uploads/';
 const REC_UA = 'KolMaroko-AudioFetch/1.0 (read-only copy of this site\'s own recordings, started by the site owner)';
@@ -331,8 +332,10 @@ function rec_url_check(string $url): string
     if (strtolower($p['scheme']) !== 'https') return 'רק https';
     if (isset($p['user']) || isset($p['pass'])) return 'כתובת עם שם משתמש';
     if (isset($p['port']) && (int)$p['port'] !== 443) return 'פורט שאינו 443';
-    $host = rtrim(strtolower($p['host']), '.');
+    $host = strtolower($p['host']);
+    if (str_ends_with($host, '.')) return 'שם מתחם עם נקודה בסוף';      // ההצמדה ב-curl לא חלה עליו (ראו net.php)
     if (filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) || preg_match('/^[0-9.]+$|^0x/i', $host)) return 'כתובת IP';
+    if (net_host($host) === '') return 'שם מתחם לא תקין';
     if ($host === 'localhost' || str_ends_with($host, '.localhost')) return 'localhost';
     if (preg_replace('/^www\./', '', $host) !== lex_host()) return 'דומיין אחר';
     $path = (string)($p['path'] ?? '');
@@ -345,7 +348,7 @@ function rec_url_check(string $url): string
 /** כתובת IP שמותר להתחבר אליה: לא פרטית, לא שמורה, לא loopback / link-local. */
 function rec_ip_public(string $ip): bool
 {
-    return (bool)filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE);
+    return net_ip_public($ip);
 }
 
 /**
@@ -366,7 +369,8 @@ function rec_target(string $url): array
         foreach ($map as $from => $to) if (str_starts_with($url, $from . '/')) return [$to . substr($url, strlen($from)), [], ''];
         return ['', [], 'network'];
     }
-    $host = rtrim(strtolower((string)parse_url($url, PHP_URL_HOST)), '.');
+    $host = net_host((string)parse_url($url, PHP_URL_HOST));                 // זהה למארח שב-URL ש-curl מקבל — אחרת RESOLVE לא חל
+    if ($host === '') return ['', [], 'bad_url'];
     $ips = @gethostbynamel($host) ?: [];
     if (!$ips) return ['', [], 'network'];
     foreach ($ips as $ip) if (!rec_ip_public($ip)) return ['', [], 'bad_url'];

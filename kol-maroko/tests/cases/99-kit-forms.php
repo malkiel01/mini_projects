@@ -97,3 +97,46 @@ test('V16c webhook: פנייה ← בתיבה, ואז POST (JSON) לכתובת; 
     eq(0, $sent, 'פנייה מהתצוגה החיה (test) — לא נשלחת ל-webhook');
     unset($GLOBALS['kol_hook_fake']); kf_reset();
 });
+
+test('V16c webhook (ביקורת #1548 🔴): נקודה בסוף שם המארח — נדחית בשמירה ובשליחה (ההצמדה ב-curl לא הייתה חלה); המארח שנשלח = מפתח ה-RESOLVE', function () {
+    kf_reset();
+    foreach (['https://hooks.example.com./in', 'https://hooks.example.com../in', 'https://a..example.com/in', 'https://-a.example.com/in', 'https://a_b.example.com/in', 'https://.example.com/in'] as $bad) {
+        ok(forms_hook_url_check($bad) !== '', 'נדחית: ' . $bad);
+    }
+    eq(400, throws(fn() => forms_hook_set(KF_PUB, ['form' => 'contact', 'url' => 'https://hooks.example.com./in'])), 'שמירה עם נקודה בסוף — 400');
+    // גם אם כתובת כזאת כבר שמורה (גרסה קודמת / ישירות בהגדרות) — השליחה דוחה אותה, בלי לפנות
+    m5_live(['contact' => ['fields' => ['message'], 'required' => [], 'external' => false, 'trap' => true, 'files' => false]]);
+    setting_set('forms_webhooks', json_encode(['contact' => 'https://hooks.example.com./in']));
+    $seen = 0; $GLOBALS['kol_hook_fake'] = function () use (&$seen) { $seen++; return [200, '']; };
+    m5_recv(['_form' => 'contact', 'message' => 'נקודה']);
+    $q = forms_hook_queue(); $last = end($q);
+    ok($seen === 0 && str_contains((string)$last['last'], 'נקודה בסוף'), 'שמורה מראש — לא נשלחה: ' . json_encode($last, JSON_UNESCAPED_UNICODE));
+    // כתובת תקינה: המארח שב-URL שנשלח זהה תו-בתו למארח שאליו הוצמד ה-IP
+    kf_reset(); forms_hook_set(KF_PUB, ['form' => 'contact', 'url' => 'https://Hooks.Example.com/in']);
+    $got = null; $GLOBALS['kol_hook_fake'] = function (string $url, string $ip) use (&$got) { $got = [$url, $ip]; return [200, '']; };
+    m5_recv(['_form' => 'contact', 'message' => 'תקין']);
+    ok($got && net_host((string)parse_url($got[0], PHP_URL_HOST)) === 'hooks.example.com' && !str_ends_with((string)parse_url($got[0], PHP_URL_HOST), '.') && $got[1] === '93.184.216.34', 'נשלח: מארח בלי נקודה, IP שנבדק', $got);
+    unset($GLOBALS['kol_hook_fake']); kf_reset();
+});
+
+test('V16c בקשות החוצה (ביקורת #1548 🟡): בדיקת IP אחת לכולם (net_ip_public) — CGNAT, 198.18/15, 192.0.0/24, multicast נחסמים; אותו דפוס בהקלטות ובגופנים', function () {
+    foreach (['100.64.0.1', '100.127.255.254', '198.18.0.1', '198.19.1.1', '192.0.0.170', '224.0.0.1', '239.1.1.1', '127.0.0.1', '10.0.0.5', '169.254.169.254', '0.0.0.0', '::1', 'fe80::1', 'fd00::1', '::ffff:127.0.0.1'] as $ip) {
+        ok(!net_ip_public($ip) && !forms_hook_ip_ok($ip) && !rec_ip_public($ip) && !font_ip_ok($ip), "נחסם בכל השלושה: $ip");
+    }
+    foreach (['93.184.216.34', '100.63.255.255', '100.128.0.1', '198.20.0.1', '2606:4700::1111'] as $ip) ok(net_ip_public($ip), "ציבורי: $ip");
+    kf_reset();
+    $GLOBALS['kol_hook_resolve']['cgnat.example.com'] = ['100.64.1.2'];
+    setting_set('forms_webhooks', json_encode(['contact' => 'https://cgnat.example.com/in']));
+    m5_live(['contact' => ['fields' => ['message'], 'required' => [], 'external' => false, 'trap' => true, 'files' => false]]);
+    $seen = 0; $GLOBALS['kol_hook_fake'] = function () use (&$seen) { $seen++; return [200, '']; };
+    m5_recv(['_form' => 'contact', 'message' => 'cgnat']);
+    $q = forms_hook_queue(); ok($seen === 0 && str_contains((string)end($q)['last'], '100.64.1.2'), 'webhook: DNS ← 100.64.1.2 (CGNAT) — נחסם');
+    unset($GLOBALS['kol_hook_fake']); kf_reset();
+    // הקלטות (A2): נקודה בסוף — נדחית; rec_target — לא בונה הצמדה לשם לא תקין
+    $h = lex_host();
+    eq('שם מתחם עם נקודה בסוף', rec_url_check("https://$h./wp-content/uploads/a.mp3"), 'הקלטה עם נקודה בסוף המארח — נדחית (לפני כל בדיקה אחרת)');
+    eq('שם מתחם עם נקודה בסוף', rec_url_check('https://maghreb.co.il./wp-content/uploads/a.mp3'), 'גם בשם מתחם אמיתי');
+    ok(rec_url_check("https://a..$h/wp-content/uploads/a.mp3") !== '', 'הקלטה עם תווית ריקה — נדחית');
+    // גופנים (V9): המארח חייב להיות בדיוק אחד משניים — נקודה בסוף נדחית כבר היום
+    eq(400, throws(fn() => font_url_ok('https://fonts.gstatic.com./s/x.woff2')), 'גופן עם נקודה בסוף — נדחה');
+});
