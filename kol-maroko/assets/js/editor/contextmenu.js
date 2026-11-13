@@ -113,7 +113,7 @@
       this.close(); const c = this.c(); if (!c || !n) return;
       if (!c.picked().includes(n)) c.select(n);
       this.back = document.activeElement;
-      const items = this.A.list().filter(a => !a.hidden), groups = [['copy', 'paste-before', 'paste-after', 'paste-in', 'duplicate', 'delete'], ['wrap-col', 'wrap-row', 'move-out', 'move-to'], ['parent', 'similar'], ['copy-style', 'paste-style', 'reset-style'], ['save-component', 'save-template'], ['edit-text', 'open-code', 'bug']];
+      const items = this.A.list().filter(a => !a.hidden), groups = [['copy', 'paste-before', 'paste-after', 'paste-in', 'duplicate', 'delete'], ['wrap-col', 'wrap-row', 'move-out', 'move-to'], ['parent', 'similar'], ['copy-style', 'paste-style', 'reset-style'], ['save-component', 'save-template'], ['edit-text', 'open-code', 'bug', /* V15 */ 'page-settings']];
       const btn = a => { const why = a.why ? a.why(n) : ''; const b = h('button', { type: 'button', role: 'menuitem', class: 'btn ed-menu-item ed-ctx-item', 'data-ctx': a.id, 'aria-disabled': why ? 'true' : null, title: why || (a.keys ? a.label + ' · ' + a.keys : a.label) },
         h('span', { class: 'ed-ctx-ic', 'aria-hidden': 'true' }, a.icon), h('span', { class: 'ed-ctx-lab' }, a.label), a.keys ? h('kbd', { class: 'ed-ctx-key', dir: 'ltr' }, a.keys.replace(/Ctrl/g, this.mac ? '⌘' : 'Ctrl')) : null, why ? h('span', { class: 'ed-ctx-why', 'data-why': a.id }, why) : null);
         b.addEventListener('click', () => { if (why) { this.A.note('⛔ ' + a.label + ': ' + why, true); return; } this.close(); this.A.exec(a, n); }); return b; };

@@ -215,6 +215,7 @@
         }))) : null;
     };
     out.push(fileList('➕', 'נוספו', df.added), fileList('✏️', 'השתנו', df.changed), fileList('➖', 'נמחקו', df.removed));
+    out.push(pagesBox(df, role));   /* V15 §2.6: עמודים — חדש / שונה / נמחק / כתובת שהשתנתה; קישורים שבורים לעמודים */
     if ((rep.excluded || []).length) out.push(h('details', {}, h('summary', {}, '🚫 יצאו מהחבילה (' + rep.excluded.length + ')'), h('ul', { class: 'pk-files' }, rep.excluded.map(function (x) { return h('li', {}, h('code', { dir: 'ltr' }, x.path), ' — ' + x.why); }))));
     // נתונים
     var w = rep.data;
@@ -227,6 +228,38 @@
     out.push(h('div', { class: 'row-btns wrap' }, h('button', { type: 'button', class: 'btn', onclick: function () { viewSheet(g, id, role); } }, '▶️ תצוגה של הגרסה הבנויה'),
       h('button', { type: 'button', class: 'btn ghost', onclick: function () { $('#sheet').close(); rebuild(role, {}); } }, '🏗️ בנה שוב')));
     body.replaceChildren.apply(body, out.filter(Boolean));
+  }
+
+  /* V15 §2.6: "מה ישתנה" בעמודים. הזזה = נתיב ישן שבגרסה החיה ואינו קיים היום, והקובץ שזז (מהיסטוריית הקובץ — pages_list.moves). */
+  function pagesBox(df, role) {
+    var box = h('div', { class: 'pk-pages', 'data-pk-pages': true }, h('h3', { class: 'sec-title' }, '📄 עמודים'), h('p', { class: 'muted' }, 'טוען…'));
+    var isPage = function (p) { return /\.html?$/i.test(p) && !/^components\//.test(p) && !/^from-current\/[^/]+\.html?$/i.test(p); };
+    api('pages_list').then(function (d) {
+      var moves = d.moves || [], from = {}, to = {};
+      moves.forEach(function (m) { from[m.from] = m; to[m.to] = m; });
+      var add = (df.added || []).filter(function (f) { return isPage(f.path) && !to[f.path]; }), chg = (df.changed || []).filter(function (f) { return isPage(f.path); }),
+        rem = (df.removed || []).filter(function (f) { return isPage(f.path) && !from[f.path]; });
+      var line = function (ic, label, list) { return list.length ? h('li', {}, ic + ' ' + label + ' (' + list.length + '): ', list.map(function (f) { return f.path; }).join(', ')) : null; };
+      var kids = [h('h3', { class: 'sec-title' }, '📄 עמודים'),
+        h('p', { 'data-pk-pages-count': true }, 'חדשים ' + add.length + ' · שונו ' + chg.length + ' · נמחקו ' + rem.length + ' · כתובת השתנתה ' + moves.length),
+        h('ul', { class: 'pk-files' }, line('➕', 'חדשים', add), line('✏️', 'שונו', chg), line('➖', 'נמחקו', rem))];
+      var canPub = role === 'publisher' || role === 'owner';
+      moves.forEach(function (m) {
+        var b = h('button', { type: 'button', class: 'btn sm', 'data-pk-redirect': m.from, disabled: !canPub || null, onclick: function () {
+          var slug = m.from_url.replace(/\/$/, '');
+          if (!/^[a-z0-9-]+(\/[a-z0-9-]+)*$/.test(slug)) { toast('הכתובת הישנה אינה בצורה של תיקייה — יוצרים הפניה בקוד', true); return; }
+          b.disabled = true;
+          api('page_create', { slug: slug, start: 'redirect', to: m.to }).then(function (r) { toast('נוצרה הפניה: ' + r.file.path + ' — בונים שוב כדי שתיכנס לגרסה'); b.textContent = '✓ נוצרה ' + r.file.path; })
+            .catch(function (e) { b.disabled = false; toast(e.message, true); });
+        } }, '↪ השאר הפניה');
+        kids.push(h('div', { class: 'warnbox', 'data-pk-move': m.from }, h('b', {}, '⚠️ כתובת השתנתה: '), h('code', { dir: 'ltr' }, d.base + m.from_url), ' ← ', h('code', { dir: 'ltr' }, d.base + m.to_url),
+          h('p', {}, 'קישורים מבחוץ (גוגל, וואטסאפ) לכתובת הישנה יקבלו 404. "השאר הפניה" יוצר את ' + m.from + ' עם meta refresh + canonical — קובץ רגיל בעץ.'), b));
+      });
+      if ((d.broken || []).length) kids.push(h('div', { class: 'warnbox', 'data-pk-broken': d.broken.length }, h('b', {}, 'קישורים שבורים לעמודים (' + d.broken.length + ')'),
+        h('ul', {}, d.broken.slice(0, 50).map(function (x) { return h('li', {}, x.msg, ' · ', h('button', { type: 'button', class: 'linkish', dir: 'ltr', onclick: function () { $('#sheet').close(); openCode({ file: x.path, line: x.line }); } }, x.path + ':' + x.line)); }))));
+      box.replaceChildren.apply(box, kids.filter(Boolean));
+    }).catch(function (e) { box.replaceChildren(h('h3', { class: 'sec-title' }, '📄 עמודים'), h('p', { class: 'error' }, e.message)); });
+    return box;
   }
 
   function rebuild(role, opts) {

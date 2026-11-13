@@ -146,3 +146,12 @@
 - תבניות = `templates/<שם>/{template.html, style.css, template.json, thumb.png}`; `window.KolTemplates` / `Editor._state.tpl` (load, read, insert, save, exportZip, importZip; טהורים: plan, renameHtml, renameCss, dropSame, zipBuild, zipList, checkZip). `build_is_config` מוציא `templates/` מהחבילה.
 - תפריט ההקשר צף: `.ed-ctx` (לא `#sheet .ed-menu`). היסטוריה — 500 צעדים, עם שמות.
 - פתוח (ב-T2): scope של ייבוא ZIP נאכף רק בלקוח; `build.clean` לא בודק `<animate>`/`<set>` על href.
+
+## מ-V14 (2026-11-13, נרשם בידי בקרה (7))
+- `touch.js` (`window.KolTouch.Touch`, `S.touch`) — עוטף setViewport / drawTools / onSelect / onDraw / onChange / onListen; מותקן אחרי `c.onContext` (הצורה של V13, 3 ארגומנטים). מודול חדש שעוטף אותם — לשים לב לסדר ההרכבה.
+- במגע: גיליונות בחצי גובה, לחיצה ארוכה = תפריט ההקשר, 🔎 בסרגל = Ctrl+E, צביטה = הגדלה. בלוק CSS `/* V14 */` בסוף editor.css (`@media (max-width: 999px)`).
+- פתוח (V14b): אזורי מגע 34–40px, מעט קנבס ב-768 ובמצב רוחב, גלילה בקצוות, safe-area.
+
+## מ-V15 (2026-11-13, נרשם בידי בקרה (7))
+- עמוד = שורה ב-pf_files (קובץ html), לא תיקייה חדשה. פעולות `page_*` (publisher) + `pages_list` (content_editor); `page_slug` הוא השער לכתובות. head.js כותב ל-<head> רק דרך setText/setAttr (מקודד).
+- "קבע כדף 404" ממיר הפניות יחסיות ל-/lexicon/ (pf_exists_in + pf_ref_enc). פתוח (V15b): ?query/#frag, תבניות ברשימה, og:image מוחלט.
