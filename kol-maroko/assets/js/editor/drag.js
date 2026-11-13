@@ -205,6 +205,12 @@
     // ── תקינות ותווית ──────────────────────────────────────
     withValid(t) {
       if (!t) return null;
+      /* T2 (E2E 🟡1): יעד בתוך שורה (<span>…) לבלוק — גם מה-Navigator: לפני השורה כשהיעד בתחילתה, אחרת אחריה */
+      if (this.X.blockyIn) { const tg = this.tags();
+        for (let i = 0; i < 8 && t.par.parent && this.X.blockyIn(t.par, tg); i++) {
+          const sp = t.par, first = sp.kids.find(k => !this.moving(k)), sibs = sp.parent.kids, k = sibs.indexOf(sp);
+          t = Object.assign({}, t, { par: sp.parent, ref: t.ref && t.ref === first ? sp : sibs.slice(k + 1).find(x => !this.moving(x)) || null });
+        } }
       const a = this.active, s = a.src, w = this.X.why(t.par, this.tags(), s.nodes);
       t.bad = w; t.noop = false;
       if (!w && s.nodes && s.nodes.length === 1 && s.nodes[0].parent === t.par) {

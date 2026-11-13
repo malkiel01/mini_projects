@@ -84,6 +84,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     };
     const rectOf = (page, sel) => page.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, top: r.top, bottom: r.bottom, left: r.left, right: r.right, cx: r.x + r.width / 2, cy: r.y + r.height / 2 }; }, sel);
     const sheetOpen = page => page.evaluate(() => document.getElementById('sheet').open);
+    /** T2: גרירה אל צד ה-<span> של השורה (ולא לתוכו — E2E 🟡1) נשארת באותה רובריקה, ובטלפון שואלת את שאלת V7 ("בכל המכשירים / רק כאן") — עונים "בכל המכשירים". */
+    const answerAll = page => page.evaluate(() => { const d = document.getElementById('sheet'), b = d.open && /סדר ב/.test(d.textContent) && d.querySelector('[data-choice="all"]'); if (b) b.click(); return !!b; }).then(x => (x ? sleep(400) : null));
     const closeSheet = page => page.evaluate(() => { const d = document.getElementById('sheet'); if (d.open) d.close(); });
 
     // ═══ הכנה ═══
@@ -194,6 +196,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (st) {
       const from = st, to = { x: st.x, y: st.y + 70 }, tN = await page.evaluate(() => Editor._state.doc.text());
       const mid = await realDrag(page, from, to, { hold: 650, steps: 10, during: () => page.evaluate(() => !!Editor._state.build.drag.active) });
+      await answerAll(page);
       const tN1 = await page.evaluate(() => Editor._state.doc.text());
       ok(mid === true && tN1 !== tN, 'Navigator: לחיצה ארוכה על שורה ← גרירה במגע (' + await lastTx(page) + ')', { mid });
       if (tN1 !== tN) await undo(page);
@@ -222,6 +225,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const sibAfter = await page.evaluate(() => { const e = Editor._state.canvas.doc.querySelector(window.__mv); let s = e.nextElementSibling; while (s && !s.getClientRects().length) s = s.nextElementSibling; if (s) s.setAttribute('data-v14-after', ''); return !!s; });
       const to = sibAfter ? await at(page, '[data-v14-after]', 0, 0.5, 0.85, false) : { x: from.x, y: from.y + 80 };
       const mid = await touchDrag(page, from, to, { hold: 500, steps: 10, during: () => page.evaluate(() => { const d = Editor._state.build.drag; const tag = document.querySelector('.dg-tag:not([hidden])'); return { active: !!d.active, tag: tag ? tag.textContent : '' }; }) });
+      await answerAll(page);
       const after = await idx(), txt1 = await page.evaluate(() => Editor._state.doc.text());
       ok(mid && mid.active && /מעל|מתחת|אחרי|לפני|בתוך|בסוף/.test(mid.tag), 'V4 · לחיצה ארוכה על הנבחר ← גרירה במגע, עם תווית היעד', { mid, tgt });
       const moved4 = txt1 !== txt0 && /^גרירה/.test(await lastTx(page));
