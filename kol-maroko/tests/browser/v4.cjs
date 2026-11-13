@@ -282,6 +282,12 @@ const PAGE = `<!doctype html>
     await sleep(250); s1 = await src(page);
     ok(!/onclick|onerror|<script|javascript:|<iframe/i.test(s1) && /<p class="x">טקסט<img src="x"><\/p><a>קישור<\/a>/.test(s1) && /הוסרו/.test((await st(page)).note), 'הדבקה מבחוץ (עוינת): סקריפט, iframe, on… ו-javascript: — מוסרים, ומה שהוסר נאמר', { note: (await st(page)).note, s: s1.slice(s1.indexOf('<p id="t3"'), s1.indexOf('<p id="t3"') + 200) });
     ok(await undoFiles(page, p0), 'בטל — חזרה');
+    // T2 (V13 🟡B): <animate> / <set> שהופכים href ל-javascript: אחרי הטעינה — יורדים; <animate> תמים — נשאר
+    await select(page, '#t3');
+    await paste(page, '<svg id="t2svg" width="10" height="10"><a href="#ok"><animate attributeName="href" values="#a;javascript:alert(4)" dur="1s"/><set attributeName="xlink:href" to=" JavaScript:alert(5)"/><animate attributeName="HREF" from="#a" by="&#x09;javascript:alert(6)"/><animate attributeName="opacity" values="0;1" dur="1s"/><rect width="10" height="10"/></a></svg>');
+    await sleep(250); s1 = await src(page);
+    ok(/<svg id="t2svg"/.test(s1) && !/javascript/i.test(s1) && (s1.match(/<animate\b/g) || []).length === 1 && /attributeName="opacity"/.test(s1) && !/<set\b/.test(s1) && /attributeName="href"/.test((await st(page)).note), 'הדבקה מבחוץ: <animate> / <set> עם href ← javascript: (ב-values, to, by; רישיות ורווחים) — יורדים, ונאמר; <animate> של opacity — נשאר', { note: (await st(page)).note, s: s1.slice(s1.indexOf('<svg id="t2svg"'), s1.indexOf('<svg id="t2svg"') + 260) });
+    ok(await undoFiles(page, p0), 'בטל — חזרה');
     await select(page, '#t3'); await paste(page, '</div></main><p>x</p><main><div>');
     await sleep(250); s1 = await src(page);
     ok(/<p id="t3">שלישי<\/p><p>x<\/p><main><div><\/div><\/main><\/div>\n  <label for="nm">/.test(s1) && (await st(page)).inequiv === 0, 'הדבקה מבחוץ שסוגרת את הרובריקה ("</div></main>…") — מנורמלת לקטע סגור; הרובריקה לא נפתחת', s1.slice(s1.indexOf('<p id="t3"'), s1.indexOf('<p id="t3"') + 160));

@@ -455,6 +455,14 @@
         if (/^on/i.test(a.name)) { removed.add(a.name); e.removeAttribute(a.name); }
         else if (/^(href|src|action|formaction|xlink:href|poster|data|srcset)$/i.test(a.name) && /^(javascript|vbscript|data:text\/html)/.test(v)) { removed.add(a.name + '="' + v.slice(0, 12) + '…"'); e.removeAttribute(a.name); }
       }
+      // T2 (V13 🟡B): <animate> / <set> של SVG שמכוונים לתכונת כתובת (href, xlink:href…) — הערך ב-to / from / by / values (רשימה ב-;)
+      // הופך לכתובת אחרי הטעינה, ולכן הבדיקה למעלה אינה תופסת אותו. כתובת מסוכנת — האלמנט כולו יורד
+      const BAD = v => /^(javascript|vbscript|data:text\/html)/.test(v.replace(/[\s\u0000-\u001f]+/g, '').toLowerCase());
+      for (const e of [...d.body.querySelectorAll('*')].filter(x => /^(animate|set|animatemotion|animatetransform)$/i.test(x.localName))) {
+        const an = (e.getAttribute('attributeName') || e.getAttribute('attributename') || '').trim().toLowerCase();
+        if (!/^(xlink:)?(href|src|action|formaction|poster|data)$/.test(an)) continue;
+        if (['to', 'from', 'by', 'values'].some(k => (e.getAttribute(k) || '').split(';').some(BAD))) { removed.add('<' + e.localName + ' attributeName="' + an + '">'); e.remove(); }
+      }
       return { html: d.body.innerHTML.trim(), removed: [...removed] };
     }
 

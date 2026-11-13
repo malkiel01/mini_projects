@@ -572,10 +572,36 @@ function pf_zip_open(string $raw): array
  * ייבוא ZIP. בלי apply — התוכנית: מה יתווסף, מה יוחלף, מה זהה, ומה בפרויקט לא ישתנה (קבצים שאינם ב-ZIP — אינם נמחקים).
  * עם apply ו-token מהתוכנית — ביצוע; לפני החלפה נוצרת נקודת שחזור. הפרויקט השתנה מאז התוכנית — 409.
  */
+/**
+ * T2 (V13 🟡A): scope — קידומות מופרדות בפסיק, כל אחת מסתיימת ב-/ (למשל "templates/hero/,media/"). כשהוא נשלח, כל קובץ, קובץ גדול
+ * ותיקייה ב-ZIP חייבים להיות בתוכו (תיקייה — גם הורה של קידומת: "templates"); אחרת — הייבוא כולו נדחה, לפני כל תכנון. בלי scope — כמו קודם.
+ */
+function pf_zip_scope(array $zip, mixed $scope): void
+{
+    if ($scope === null || $scope === '') return;
+    if (!is_string($scope) || strlen($scope) > 2000) throw new ApiError('scope לא תקין');
+    $pre = [];
+    foreach (explode(',', $scope) as $x) {
+        if ($x === '' || !str_ends_with($x, '/')) throw new ApiError('scope לא תקין: כל קידומת מסתיימת ב-/');
+        pf_path(substr($x, 0, -1));
+        $pre[] = $x;
+    }
+    $in = function (string $p, bool $dir) use ($pre): bool {
+        foreach ($pre as $x) if (str_starts_with($p . ($dir ? '/' : ''), $x) || ($dir && str_starts_with($x, $p . '/'))) return true;
+        return false;
+    };
+    $out = [];
+    foreach (array_keys($zip['files']) as $p) if (!$in((string)$p, false)) $out[] = $p;
+    foreach ($zip['big'] as $b) if (!$in((string)$b['path'], false)) $out[] = $b['path'];
+    foreach ($zip['dirs'] as $d) if (!$in((string)$d, true)) $out[] = $d . '/';
+    if ($out) throw new ApiError('ב-ZIP יש קבצים מחוץ למותר (' . implode(', ', $pre) . '): ' . implode(', ', array_slice($out, 0, 5)) . (count($out) > 5 ? ' ועוד ' . (count($out) - 5) : ''), 400);
+}
+
 function pf_zip_import(array $user, array $q, string $raw): array
 {
     pf_seed($user);
     $zip = pf_zip_open($raw);
+    pf_zip_scope($zip, $q['scope'] ?? null);                                     // T2 (V13 🟡A): ייבוא תבנית — הגבול נאכף בשרת
     $rows = [];
     foreach (db()->query('SELECT * FROM pf_files WHERE deleted_at IS NULL')->fetchAll() as $r) $rows[$r['path']] = $r;
     $mediaSha = [];
