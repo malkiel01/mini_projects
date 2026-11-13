@@ -184,6 +184,8 @@ test('V16 ביטול עם בדיקת גרסה: kit_undo / kit_revert — קוב�
     pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'שינוי אחר'));
     kit_revert(KT_ED, ['folder' => 'counter'] + $u2);
     eq('other.html', pf_kol()['config']['entry'], 'kol.json: השינוי האחר נשמר');
+    $c = pf_kol()['config']; $c['entry'] = 'index.html';                       // מחזירים — בדיקות אחרות (V15) קוראות את entry
+    pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'החזרה'));
     eq('0.9.0', pf_kol()['config']['system']['components/counter/']['version'], 'kol.json: המפתח של הרכיב — חזר');
     eq(422, throws(fn() => kit_revert(KT_ED, ['folder' => 'counter', 'entry' => ['version' => 'x', 'kit' => 'counter']])), 'רשומה לא תקינה — 422');
     eq(422, throws(fn() => kit_revert(KT_ED, ['folder' => 'counter', 'removed' => [(int)pf_by_path('index.html')['id']]])), 'removed מחוץ לרכיב — 422');
