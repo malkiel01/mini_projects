@@ -11,7 +11,7 @@
 import { $, el, toast, timeAgo } from './core.js';
 import { renderMarkdown } from './markdown.js';
 
-const S = { state: null, conv: null, lastSeq: 0, timer: null, ticks: 0, busy: false, pending: [] };
+const S = { state: null, conv: null, lastSeq: 0, timer: null, ticks: 0, busy: false, pending: [], archived: false };
 
 const STATUS = {
   new: 'חדשה', running: 'עובד', idle: 'ממתין לך', needs_action: 'מחכה לאישור',
@@ -47,7 +47,7 @@ const badge = (status) => el('span', { class: `s-badge s-badge--${status}`, text
 
 async function loadState() {
   try {
-    S.state = await call('state');
+    S.state = await call('state', { archived: S.archived });
   } catch (e) {
     showBlocked(e);
     return false;
@@ -83,7 +83,15 @@ function renderSetup() {
 function renderList() {
   renderSetup();
   const convs = S.state.convs;
-  $('#sEmpty').hidden = convs.length > 0;
+  $('#sEmpty').hidden = convs.length > 0 || S.archived;
+  // מעבר בין השיחות הפעילות לארכיון — נוצר כאן, פעם אחת
+  let toggle = $('#sArchToggle');
+  if (!toggle) {
+    toggle = el('button', { type: 'button', class: 'btn sm ghost', id: 'sArchToggle', onclick: async () => { S.archived = !S.archived; if (await loadState()) renderList(); } });
+    $('#sList').append(toggle);
+  }
+  toggle.textContent = S.archived ? '← חזרה לשיחות הפעילות' : '🗄 ארכיון';
+  $('#sNew').hidden = S.archived;
   $('#sConvs').replaceChildren(...convs.map((c) => el('button', { type: 'button', class: 's-conv', onclick: () => openConv(c.id) }, [
     el('span', { class: 't', text: c.title }),
     el('span', { class: 'st' }, badge(c.status)),
@@ -130,6 +138,8 @@ function renderConv() {
     el('code', { text: c.repo || '' }),
     el('span', { text: c.budget_cents ? `${money(c.cost_cents || 0)} מתוך ${money(c.budget_cents)}` : (c.cost_cents ? money(c.cost_cents) : 'בלי תקרת תקציב') }),
     el('span', { text: c.allow_merge ? 'מיזוג: מותר' : 'מיזוג: רק ידני' }),
+    el('button', { type: 'button', class: 'btn sm ghost', text: '✎ שם', onclick: renameConv }),
+    el('button', { type: 'button', class: 'btn sm ghost', text: c.archived ? '↩ שחזור' : '🗄 לארכיון', onclick: archiveConv }),
   );
   const running = c.status === 'running';
   $('#sStop').hidden = !running;
@@ -270,6 +280,28 @@ async function act(action, payload = {}) {
   await refresh(false);
 }
 
+async function renameConv() {
+  const title = (prompt('שם השיחה', S.conv.title || '') || '').trim();
+  if (!title || title === S.conv.title) return;
+  try {
+    S.conv = (await call('conv-update', { id: S.conv.id, title })).conv;
+    renderConv();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/** ארכיון רק מסתיר את השיחה מהרשימה. הסשן בפלטפורמה וההיסטוריה נשארים, ואפשר לשחזר. */
+async function archiveConv() {
+  const to = !S.conv.archived;
+  if (to && !confirm('להעביר את השיחה לארכיון? ההיסטוריה נשמרת ואפשר לשחזר.')) return;
+  try {
+    await call('conv-update', { id: S.conv.id, archived: to });
+    toast(to ? 'הועברה לארכיון' : 'שוחזרה', 'ok');
+    S.archived = false;
+    history.replaceState(null, '', location.pathname);
+    await showList();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 async function send() {
   const box = $('#sText');
   const text = box.value.trim();
@@ -340,6 +372,7 @@ function openSettings() {
   $('#setConn').replaceChildren(
     el('div', { text: `${c.anthropic ? '✓' : '✗'} מפתח Anthropic ${c.anthropic ? 'מחובר' : 'חסר'}` }),
     el('div', { text: `${c.github ? '✓' : '✗'} GitHub ${c.github ? `מחובר (${c.github_login || 'אסימון'})` : 'חסר'}` }),
+    c.github_tools_error ? el('div', { class: 's-err', text: `כלי GitHub לפתיחת PR לא הוקמו בפעם האחרונה: ${c.github_tools_error}` }) : null,
     el('div', { class: 'hint' }, ['החיבורים מנוהלים בלוח: ', el('a', { href: './index.html', text: 'הגדרות ← חיבורים' })]),
   );
   $('#setModel').value = s.model || '';

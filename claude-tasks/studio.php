@@ -67,6 +67,8 @@ try {
                 'anthropic' => studioKey($uid) !== '',
                 'github'    => $gh !== null,
                 'github_login' => (string) ($gh['login'] ?? ''),
+                // הכספת של כלי GitHub (פתיחת PR) נכשלה בהקמה האחרונה — מוצג בהגדרות, כדי שלא יתגלה רק באמצע עבודה
+                'github_tools_error' => (string) ($s['vault_error'] ?? ''),
             ],
             'settings' => [
                 'model' => studioDefaultModel($uid),
