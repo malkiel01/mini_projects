@@ -1120,8 +1120,11 @@ const Editor = (() => {
         seedUrl: name => 'assets/project-seed/' + encodeURIComponent(name), api: (a, b) => api(a, b) });
       S.design.fx = n => S.fx.sections(n); S.design.transition = (n, d) => S.mo.transition(n, d);
       { const ex = S.adv.extra; S.adv.extra = n => [...ex(n), ...S.mo.sections(n)]; }
-      /* T2: בטלפון ▶ אינו בסרגל (שורה רביעית — המקלדת, V7/V10) וגם לא כפתור מוסתר 0×0 בו; ▶ / ⏸ בפאנל, ליד "↻ הצג שוב" */
-      { const pb = S.mo.button(), mq = matchMedia('(max-width: 999px)'), place = () => { if (mq.matches) pb.remove(); else if (!pb.isConnected) el.bar.append(pb); };
+      /* T2: בטלפון ▶ (V10), ⚙️ ו-▶️ (V15) אינם בסרגל — לא כפתור מוסתר 0×0 בו (v1a / v1b), ולא שורה רביעית (המקלדת, V7/V10). ▶ / ⏸ בפאנל;
+         ⚙️ ו-▶️ — דרך 📄 (V15). במחשב כל אחד חוזר למקום שלו (סמן) */
+      { const pb = S.mo.button(), mq = matchMedia('(max-width: 999px)'); el.bar.append(pb);
+        const items = [el.hdBtn, el.liveBtn, pb].filter(b => b && b.isConnected).map(b => { const m = document.createComment('T2'); b.before(m); return [b, m]; });
+        const place = () => { for (const [b, m] of items) { if (mq.matches) b.remove(); else if (!b.isConnected && m.isConnected) m.after(b); } };
         place(); mq.addEventListener('change', place); S.playMq = () => mq.removeEventListener('change', place); }
       S.build = new window.KolBuild.Build({ canvas: c, nav: S.nav, navHost: el.libBody, toolsHost: el.seltools, K, X: window.KolStruct, styler: S.styler, act, multi, writeStyle, note, sheet, undo, canWrite: () => !!canWrite(), device: writeDevice, devices: () => S.devs,
         pick, rel: relRef, openInCode, linkSheet, removeOne, pagePath, docOf: path => { for (const x of S.sheets.values()) if (x.path === path) return x.doc; return null; }, sheetsList: () => [...S.sheets.values()],
