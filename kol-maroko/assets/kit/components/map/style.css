@@ -10,3 +10,5 @@
 .kol-map__frame { display: block; inline-size: 100%; block-size: var(--kol-map-h); border: 0; border-radius: 12px; }
 .kol-map__cap { margin-top: 6px; }
 .kol-map__open { font-weight: 600; color: var(--color-accent, #a3322a); }
+/* P2: מגע — "פתח במפות" אזור הקשה של 44 */
+@media (pointer: coarse) { .kol-map__open { display: inline-flex; align-items: center; min-block-size: 44px; } }

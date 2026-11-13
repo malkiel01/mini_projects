@@ -37,3 +37,5 @@
 .kol-acc__body > :first-child { margin-top: 0; }
 .kol-acc__body > :last-child { margin-bottom: 0; }
 @media (prefers-reduced-motion: reduce) { .kol-acc__title::before { transition: none; } }
+/* P2: מגע — כותרת הפריט לפחות 44 גובה */
+@media (pointer: coarse) { .kol-acc__title { min-block-size: 44px; box-sizing: border-box; } }

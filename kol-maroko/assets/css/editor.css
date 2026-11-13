@@ -829,6 +829,7 @@ dialog.hd-sheet .hd { padding: 0; }
   .ed-bar .ed-bgtools { display: inline-flex; align-items: center; gap: 2px; flex: none; padding: 0 4px; border: 1px dashed var(--brand, #36c); border-radius: var(--r); background: var(--brand-soft); }
   .ed-bar .ed-bgtools .ed-word { display: inline; white-space: nowrap; font-size: .8rem; }
   .ed-bar .ed-bgtools > .ed-word:first-child { font-weight: 600; }
+  .ed-bar .ed-bgtools .btn { min-height: 44px; }   /* P2 (E2E ⚪15): כמו 📄 — מטרת מגע 44, לא 34 */
   .ts-freewarn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .ts-freewarn[hidden] { display: none; }
   .ts-freewarn span { flex: 1 1 200px; }
@@ -842,6 +843,10 @@ dialog.hd-sheet .hd { padding: 0; }
     padding: calc(4px + env(safe-area-inset-top)) calc(4px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(4px + env(safe-area-inset-left)); }
   .ed-ctx { padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
   .ed-note { bottom: calc(var(--s2) + env(safe-area-inset-bottom)); }
+  /* P2 (V14c ⚪1): ברוחב טלפון — הטקסט בשורה מלאה, והכפתור ("חזרה ל-…" ארוך) מתחתיו, נחתך ב-… במקום לדחוס את הטקסט לעמודה */
+  .ed-note { flex-wrap: wrap; row-gap: 2px; padding-block: 6px 4px; }
+  .ed-note span { flex: 1 1 calc(100% - 52px); }
+  .ed-note .btn { order: 1; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; justify-content: flex-start; }
   .ed.ts-kb.typing .ed-tbar { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   /* הגיליון: ידית, שלושה גבהים */
   .ts-grip { display: flex; justify-content: center; align-items: center; flex: none; height: 22px; cursor: grab; touch-action: none; }

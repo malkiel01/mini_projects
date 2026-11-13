@@ -33,3 +33,5 @@ textarea.kol-form__input { min-block-size: 110px; resize: vertical; }
 .kol-form.kol-steps-on .kol-form__step:not(.is-current) { display: none; }
 @media (max-width: 767px) { .kol-form__field--half, .kol-form__field--third { grid-column: span 6; } }
 @media (prefers-reduced-motion: reduce) { .kol-form__bar { transition: none; } }
+/* P2: מגע — כפתורי הטופס לפחות 44 גובה */
+@media (pointer: coarse) { .kol-form__submit, .kol-form__next, .kol-form__prev { min-block-size: 44px; } .kol-form__choice { min-block-size: 44px; } }

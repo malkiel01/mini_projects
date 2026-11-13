@@ -10,3 +10,5 @@
 .kol-social__svg { inline-size: 50%; block-size: 50%; fill: currentColor; }
 .kol-social__vh { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .kol-social__link { transition: none; } }
+/* P2: מגע — לפחות 44×44 (גודל גדול יותר שבעל העמוד קבע — נשמר) */
+@media (pointer: coarse) { .kol-social__link { min-inline-size: 44px; min-block-size: 44px; } }

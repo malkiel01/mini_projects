@@ -103,7 +103,7 @@
 
   function section(kit, root, n) {
     const m = kit.c.m, out = [], ro = !kit.canWrite(), P = K().pathOf(root);
-    const btn = (t, fn, key, off) => h('button', { type: 'button', class: 'btn sm', 'data-kf': key, disabled: ro || off || null, onclick: fn }, t);
+    const btn = (t, fn, key, off) => h('button', { type: 'button', class: 'btn sm ghost', 'data-kf': key, disabled: ro || off || null, onclick: fn }, t);
     const fld = fieldOf(root, n);
     if (fld) {
       const p = readField(m, fld);

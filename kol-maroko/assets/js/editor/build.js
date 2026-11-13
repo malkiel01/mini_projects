@@ -539,7 +539,7 @@
     remove(cut) {
       const c = this.canvas, ns = this.X.order(c.picked()); if (!ns.length) return this.note('בוחרים אלמנט, ואז מוחקים');
       const d = this.X.deps(c.m, ns, this.jsTexts());
-      if (d.length) return this.confirm(cut ? 'גזירה' : 'מחיקה', d.map(x => x.text)).then(ok => ok && this.doRemove(ns.map(n => this.K.pathOf(n)), cut));
+      if (d.length) return this.confirm(cut ? 'גזירה' : 'מחיקה', d.map(x => x.text)).then(ok => (ok ? this.doRemove(ns.map(n => this.K.pathOf(n)), cut) : (this.note((cut ? 'הגזירה' : 'המחיקה') + ' בוטלה — לא השתנה דבר', false, null, true), false)));   // P2 (V14c ⚪2): ביטול האישור — אומרים
       return this.doRemove(ns.map(n => this.K.pathOf(n)), cut);
     }
     doRemove(paths, cut) {
