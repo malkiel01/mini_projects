@@ -9,14 +9,14 @@ const P1_GET_DEV = ['dev-items', 'dev-my-reports', 'dev-file', 'dev-tokens', 'de
 
 function p1_api_actions(): array
 {
-    preg_match_all("/^        '([a-z_-]+)' => /m", (string)file_get_contents(KOL_ROOT . '/api.php'), $m);
+    preg_match_all("/^        '([a-z0-9_-]+)' => /m", (string)file_get_contents(KOL_ROOT . '/api.php'), $m);
     return $m[1];
 }
 
 function p1_method(string $action): string
 {
     preg_match('/const POST_ACTIONS = \[(.*?)\];/s', (string)file_get_contents(KOL_ROOT . '/api.php'), $m);
-    preg_match_all("/'([a-z_]+)'/", $m[1], $mm);
+    preg_match_all("/'([a-z0-9_]+)'/", $m[1], $mm);
     if (str_starts_with($action, 'dev')) return in_array($action, P1_GET_DEV, true) ? 'GET' : 'POST';
     if ($action === 'forms_settings') return 'GET';
     return in_array($action, $mm[1], true) ? 'POST' : 'GET';
