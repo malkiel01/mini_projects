@@ -73,6 +73,7 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
+                      'page_create', 'page_move', 'page_set_entry', 'page_set_404', 'pages_order',      // V15
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
                       'rec_replace', 'rec_revert', 'rec_rename', 'rec_connect', 'rec_move', 'rec_disconnect', 'rec_delete', 'rec_restore', 'rec_purge',
                       'rec_versions_clean', 'rec_match', 'rec_add', 'rec_dedupe', 'rec_zip_start', 'rec_zip_step',
@@ -254,6 +255,13 @@ try {
         'pf_refs' => ($u ? pf_refs($_GET) : []),
         'pf_zip' => pf_zip($u),
         'pf_zip_import' => pf_zip_import($u, $_GET, (string)file_get_contents('php://input')),
+        // V15 — עמודים (lib/project_ops.php)
+        'pages_list' => ($u ? pages_list($_GET) : []),
+        'page_create' => page_create($u, $body),
+        'page_move' => page_move($u, $body),
+        'page_set_entry' => page_set_entry($u, $body),
+        'page_set_404' => page_set_404($u, $body),
+        'pages_order' => pages_order($u, $body),
         // ההסבה (F3, lib/migrate.php) — בעלים בלבד
         'pf_migrate' => pf_migrate($u, $body),
         'pf_migrate_last' => ($u ? pf_migrate_last() : []),
