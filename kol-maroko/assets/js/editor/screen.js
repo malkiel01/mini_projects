@@ -9,7 +9,7 @@
 'use strict';
 
 const Editor = (() => {
-  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js', 'assets/js/editor/touch.js'];   /* V14: touch.js */
+  const JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/text.js', 'assets/js/editor/navigator.js', 'assets/js/editor/details.js', 'assets/js/editor/content.js', 'assets/js/editor/report.js', 'assets/js/editor/background.js', 'assets/js/editor/style.js', 'assets/js/editor/globals.js', 'assets/js/editor/structure.js', 'assets/js/editor/drag.js', 'assets/js/editor/build.js', 'assets/js/editor/design.js', 'assets/js/editor/identity.js', 'assets/js/editor/states.js', 'assets/js/editor/extra.js', 'assets/js/editor/position.js', 'assets/js/editor/layout.js', 'assets/js/editor/devices.js', 'assets/js/editor/spacing.js', 'assets/js/editor/effects.js', 'assets/js/editor/motion.js', 'assets/js/editor/bind.js', 'assets/js/editor/listview.js', 'assets/js/editor/data.js', 'assets/js/editor/component-state.js', 'assets/js/editor/components.js', 'assets/js/editor/history.js', 'assets/js/editor/stylecopy.js', 'assets/js/editor/contextmenu.js', 'assets/js/editor/palette.js', 'assets/js/editor/templates.js', /* V15 */ 'assets/js/editor/head.js', 'assets/js/editor/pages.js', /* V14 */ 'assets/js/editor/touch.js'];
   const LS = 'kol-editor';
   /** V7: המכשירים = "מחשב" (הבסיס, בלי @media) ונקודות השבירה שב-kol.json (02 §5) — מהרחב לצר. */
   const DESKTOP = { id: 'desktop', icon: '🖥️', label: 'מחשב', width: 1280, max: null };
@@ -33,6 +33,7 @@ const Editor = (() => {
   const el = {};
   let loading = null, K = null;
   let prefs = {}; try { prefs = JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch { prefs = {}; }
+  const uid = () => String(state.user?.id ?? state.user?.sub ?? state.user?.email ?? '');   // V15: העמוד הפתוח — לכל משתמש
   const keep = () => { try { localStorage.setItem(LS, JSON.stringify(prefs)); } catch { /* אחסון חסום — לא חוסם עבודה */ } };
 
   const loadJs = () => (loading = loading || JS.reduce((p, src) => p.then(() => new Promise((ok, bad) => {
@@ -64,7 +65,7 @@ const Editor = (() => {
       if (!doc) throw new Error('הקובץ לא נפתח');
       if (S.host === null) return;
       S.tx = []; S.rtx = []; S.pv.clear();
-      S.file = f; S.doc = doc; S.readOnly = ''; prefs.page = f.path; keep(); S.blocked = new Map(); drawBlocked();
+      S.file = f; S.doc = doc; S.readOnly = ''; prefs.page = f.path; /* V15: העמוד הפתוח — לכל משתמש */ { const u = uid(); if (u) { const m = prefs.pageBy && typeof prefs.pageBy === 'object' ? prefs.pageBy : {}; delete m[u]; m[u] = f.path; for (const k of Object.keys(m).slice(0, Math.max(0, Object.keys(m).length - 20))) delete m[k]; prefs.pageBy = m; } } keep(); S.pages?.drawBtn(); S.blocked = new Map(); drawBlocked();
       try {                                                                 // הנעילה ורוחבי המכשיר — כבר בפתיחה, לא בכתיבה הראשונה
         const info = await Project.docs.info();
         if (info.lock?.by) S.readOnly = 'העמוד בעריכה אצל ' + info.lock.by + ' — כאן אפשר לראות ולבחור, לא לשנות';
@@ -277,6 +278,7 @@ const Editor = (() => {
       item('🕘 גרסאות של הקובץ', () => Project.versions(S.file)),
       item('⋯ מבנה — שכפול, עטיפה, פירוק, העברה, העתקה', () => S.build?.menu(n), false),
       item('↕ העבר אל…', () => S.build?.moveSheet(n), !canWrite() || /^(html|head|body)$/.test(n.tag)),
+      /^(html|head|body)$/.test(n.tag) ? item('⚙️ הגדרות העמוד — כותרת, שיתוף, סמל, קוד', () => S.head?.show()) : null,   // V15
       item('🗑️ מחיקה', remove, !canWrite()),
       item('🐞 לא הצלחתי לשנות את זה', () => reportSheet(n))));
   }
@@ -915,6 +917,41 @@ const Editor = (() => {
     const broken = S.canvas?.m?.marks || 0;
     el.broken.hidden = !broken;
     if (broken) el.broken.textContent = '⚠️ בקובץ יש קוד שבור (' + broken + ') — האזור מסומן, ואי אפשר לשנות אותו מכאן';
+    /* V15 */ drawHeadStrip(); S.head?.refresh(); S.pages?.drawBroken(S.canvas, K, S.file?.path); S.pages?.drawBtn();
+  }
+  /* V15: קוד מותאם בראש / בסוף העמוד — בקנבס אינו רץ (03 §2) */
+  function drawHeadStrip() {
+    if (!el.headStrip || !S.canvas?.m || !window.KolHead) return;
+    let sc; try { sc = window.KolHead.scan(K, S.canvas.m); } catch { sc = null; }
+    const parts = sc ? [sc.headCode && 'בראש העמוד', sc.bodyCode && 'בסוף העמוד'].filter(Boolean) : [];
+    el.headStrip.hidden = !parts.length;
+    if (parts.length) el.headStrip.replaceChildren(h('span', {}, '⌨️ קוד ' + parts.join(' ו') + ' — בקנבס אינו רץ · '), h('button', { type: 'button', class: 'linkish', 'data-headstrip-live': true, onclick: () => livePage() }, '▶️ תצוגה חיה'), ' · ', h('button', { type: 'button', class: 'linkish', onclick: () => S.head?.show() }, '⚙️ הגדרות העמוד'));
+  }
+  /* V15: ▶️ תצוגה חיה — העמוד שבעורך (לא תמיד entry) */
+  async function livePage(path) {
+    path = path || S.file?.path; if (!path) return;
+    if (S.file && S.file.path === path) { try { await Project._save(S.file.id); } catch { /* נשמר אוטומטית בהמשך */ } }
+    document.querySelector('.pj-live[data-ed-live]')?.remove();
+    const box = h('div', { class: 'pj-live', 'data-ed-live': path }, h('iframe', { src: 'live.php?embed=1&path=' + encodeURIComponent(path), title: 'תצוגה חיה: ' + path }));
+    document.body.append(box);
+    if (!livePage.bc) { try { livePage.bc = new BroadcastChannel('kol-pf'); livePage.bc.addEventListener('message', e => { if (e.data && e.data.t === 'close') document.querySelector('.pj-live[data-ed-live]')?.remove(); }); } catch { /* בלי ערוץ — Escape */ } }
+    const esc = e => { if (e.key === 'Escape') { box.remove(); document.removeEventListener('keydown', esc); } }; document.addEventListener('keydown', esc);
+  }
+  /* V15: מעבר עמוד — הנוכחי נשמר (אין שינוי שאובד), הבא נפתח באותו מכשיר */
+  async function openPage(path, fresh) {
+    let f = Project.docs.byPath(path); if (!f || fresh) { await Project.docs.reload(); f = Project.docs.byPath(path); }
+    if (!f) { note('העמוד ' + path + ' אינו בפרויקט', true); return; }
+    if (S.file && !fresh) { try { await Project._save(S.file.id); } catch (e) { note('העמוד הנוכחי לא נשמר: ' + e.message, true); return; } }
+    const m = prefs.devByPage && typeof prefs.devByPage === 'object' ? prefs.devByPage : {}; m[path] = S.device; prefs.devByPage = m; keep();
+    await refreshPageList();
+    el.page.value = f.id; await open(f.id);
+    try { history.replaceState(history.state, '', '#/editor/' + encodeURIComponent(path)); } catch { /* כתובת שאינה ניתנת לשינוי — רענון יפתח מהזיכרון */ }
+  }
+  async function refreshPageList() {
+    const files = (await Project.docs.files()).filter(f => f.kind === 'file' && /\.html?$/i.test(f.path)).sort((a, b) => a.path.localeCompare(b.path));
+    const cur = el.page.value;
+    el.page.replaceChildren(...files.map(f => h('option', { value: f.id, 'data-old-tpl': Project.oldTemplate(f.path) || null, title: Project.oldTemplate(f.path) ? 'תבנית ישנה (עם {{…}}) — העמוד עצמו הוא index.html' : null }, f.path)));
+    if ([...el.page.options].some(o => o.value === cur)) el.page.value = cur;
   }
   function note(text, err, action) {
     if (!el.note) return;
@@ -942,7 +979,7 @@ const Editor = (() => {
   }
   async function view(host, wantPath) {
     S.host = host;
-    el.page = h('select', { class: 'ed-page', 'aria-label': 'עמוד', onchange: () => open(+el.page.value) });
+    el.page = h('select', { class: 'ed-page', 'aria-label': 'עמוד', onchange: () => { const f = (Project._state.files || []).find(x => x.id === +el.page.value); if (f && S.pages) openPage(f.path); else open(+el.page.value); } });   // V15: מעבר שומר את הנוכחי
     el.status = h('span', { class: 'ed-status', role: 'status' });
     el.undo = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'בטל (Ctrl+Z)', title: 'בטל (Ctrl+Z)', disabled: true, onclick: undo }, '↶');
     el.redo = h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'החזר (Ctrl+Y)', title: 'החזר (Ctrl+Y)', disabled: true, onclick: redo }, '↷');
@@ -959,6 +996,11 @@ const Editor = (() => {
     el.seed = h('p', { class: 'ed-strip warn ed-seed', role: 'alert', 'data-seed': true, hidden: true });
     el.blocked = h('details', { class: 'ed-strip ed-blocked', hidden: true });
     el.note = h('div', { class: 'ed-note', role: 'status', hidden: true });
+    /* V15 */ el.headStrip = h('p', { class: 'ed-strip ed-headstrip', 'data-head-strip': true, hidden: true });
+    el.hdBtn = h('button', { type: 'button', class: 'icon-btn', 'data-head-btn': true, 'aria-label': 'הגדרות העמוד — כותרת, תיאור, תמונת שיתוף, סמל, קוד בראש העמוד', title: '⚙️ הגדרות העמוד — כותרת, תיאור, שיתוף, סמל, שפה, קוד בראש העמוד', onclick: () => (S.head?.open ? S.head.hide() : S.head?.show()) }, '⚙️');
+    el.liveBtn = h('button', { type: 'button', class: 'icon-btn', 'data-ed-live-btn': true, 'aria-label': 'תצוגה חיה — העמוד שבעורך', title: '▶️ תצוגה חיה — העמוד שבעורך, כפי שירוץ אצל הגולש', onclick: () => livePage() }, '▶️');
+    el.hdSide = h('aside', { class: 'ed-side ed-hd', 'aria-label': 'הגדרות העמוד', 'data-head-side': true }, h('div', { class: 'ed-side-head' }, h('strong', {}, '⚙️ הגדרות העמוד'), h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירת הגדרות העמוד', onclick: () => S.head?.hide() }, '✕')), h('div', { class: 'ed-side-body hd-body' }));
+    el.pgOverlay = h('div', { class: 'ed-pgover', 'data-pg-overlay': true });
     el.canvas = h('div', { class: 'ed-canvas' });
     const toggle = (id, icon, label) => h('button', { type: 'button', class: 'icon-btn', 'data-panel': id, 'aria-pressed': 'false', 'aria-label': label, title: label, onclick: () => panel(id) }, icon);
     const side = (id, title, body) => h('aside', { class: 'ed-side ed-' + id, 'aria-label': title },
@@ -995,11 +1037,11 @@ const Editor = (() => {
       h('button', { type: 'button', class: 'btn sm', 'data-bgt': 'move', title: 'הזזה והגדלה של התמונה בתוך הרובריקה — על הקנבס', onclick: bgAct(n => S.bg.move(n)) }, '✥', h('span', { class: 'ed-word' }, ' הזז')));
     el.freeBtn = h('button', { type: 'button', class: 'btn sm', 'data-free-btn': true, 'aria-pressed': 'false', title: 'מיקום חופשי — האלמנט יוצא מהזרימה ונגרר לכל מקום ברובריקת הייחוס', disabled: true, onclick: () => { const n = S.canvas?.selected; if (!n || !S.pos) return; S.text?.end(); if (S.pos.isFree(n)) S.pos.off(n); else S.pos.on(n, S.pos.pickRef); } }, '✥', h('span', { class: 'ed-word' }, ' מיקום חופשי'));
     el.hideBtn = h('button', { type: 'button', class: 'btn sm', 'data-devhide-btn': true, 'aria-pressed': 'false', disabled: true, onclick: () => { const n = S.canvas?.selected; if (!n || !S.devs) return; S.text?.end(); const d = curDevice(); S.devs.set(n, d, !(d.max ? S.canvas.devHidden?.has(n) : S.devs.hidden(n, d))); } }, '👁', h('span', { class: 'ed-word' }, ' הסתר'));
-    el.bar = h('div', { class: 'ed-bar' }, el.page, el.dev, el.undo, el.redo, el.del, el.addImg, el.freeBtn, el.hideBtn, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'הפאנל — תוכן (עריכה) ופרטים: מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), el.splitBtn, el.spaceBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
+    el.bar = h('div', { class: 'ed-bar' }, el.page, /* V15 */ h('span', { class: 'ed-pghost', 'data-pg-host': true }), el.dev, el.undo, el.redo, el.del, el.addImg, el.freeBtn, el.hideBtn, el.code, toggle('nav', '🌳', 'Navigator — עץ האלמנטים (N)'), toggle('info', 'ℹ️', 'הפאנל — תוכן (עריכה) ופרטים: מה האלמנט, איפה הוא בקוד, ואיזה עיצוב חל עליו (I)'), /* V15 */ el.hdBtn, el.liveBtn, el.splitBtn, el.spaceBtn, el.bug, h('button', { type: 'button', class: 'icon-btn', 'data-help': true, 'aria-label': 'קיצורי מקלדת (?)', title: 'קיצורי מקלדת (?)', onclick: help }, '?'), el.status);
     el.mid = h('div', { class: 'ed-mid' }, el.tabs, h('div', { class: 'ed-panes' }, el.canvas, el.pane));
     el.root = h('section', { class: 'ed', 'aria-label': 'העורך החזותי' },
-      el.bar, h('div', { class: 'ed-path' }, el.seltools, el.crumbs, el.where), el.seed, el.cap, el.lvStrip, el.compStrip, el.broken, el.blocked, el.point, el.gapbar,
-      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navWrap), grip('nav'), el.mid, grip('info'), side('info', 'האלמנט הנבחר', el.panelBody)), el.note);
+      el.bar, h('div', { class: 'ed-path' }, el.seltools, el.crumbs, el.where), el.seed, /* V15 */ el.headStrip, el.cap, el.lvStrip, el.compStrip, el.broken, el.blocked, el.point, el.gapbar,
+      h('div', { class: 'ed-body' }, side('nav', 'Navigator', el.navWrap), grip('nav'), el.mid, grip('info'), side('info', 'האלמנט הנבחר', el.panelBody), /* V15 */ el.hdSide), el.note, el.pgOverlay);
     for (const id of ['nav', 'info']) if (prefs[id + 'W'] >= 200 && prefs[id + 'W'] <= 560) el.root.style.setProperty('--ed-' + id + '-w', prefs[id + 'W'] + 'px');
     host.replaceChildren(el.root);
     status('טוען…');
@@ -1009,7 +1051,7 @@ const Editor = (() => {
       const c = S.canvas = new window.KolCanvas.Canvas(el.canvas);
       c.devMaxes = () => DEVICES.filter(d => d.max).map(d => d.max);   // V7: רק @media של נקודות שבירה הוא "מוסתר במכשיר"
       c.drag = false; c.repeatUp = true; c.marksOn = true;                  // V1a: בלי גרירה (V4); לחיצה חוזרת — ההורה
-      S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); }, onToggle: saveMarks });
+      S.nav = new window.KolNavigator.Navigator(el.navBody, { canvas: c, K, onPick: n => { c.select(n); c.reveal(n); if (n.tag === 'head' && S.head) S.head.show(); /* V15: ראש העמוד ← הטופס */ }, onToggle: saveMarks });
       S.info = new window.KolDetails.Details(el.infoBody, { canvas: c, K, sheets: () => S.sheets, file: () => S.file, openAt: (p, line) => Project.openAt(p, line), openEl: n => openInCode(n) });
       S.text = new window.KolText.TextEdit(c, { canWrite: () => (canWrite() ? '' : S.readOnly || 'הקובץ פתוח לקריאה בלבד'), commit: (ps, label) => { if (c.src !== S.doc.text()) return false; return commit(ps, label); },
         run: (label, fn) => act(label, fn), undo: () => { if (undoTx() || (S.doc?.canUndo() && (S.doc.undo(), true))) { clearTimeout(S.timer); syncCanvas(); } }, redo: () => { if (redoTx() || (S.doc?.canRedo() && (S.doc.redo(), true))) { clearTimeout(S.timer); syncCanvas(); } },
@@ -1109,6 +1151,23 @@ const Editor = (() => {
       S.menu = new window.KolCtx.Menu(S.actions, { c: () => S.canvas, phone, mac: /Mac|iPhone|iPad/.test(navigator.platform || '') });
       S.palette = new window.KolPalette.Palette({ actions: S.actions, canvas: c, panel, setTab, designHost: () => el.designBody, advHost: () => el.advBody, note, phone });
       S.nav.onContext = (n, x, y) => ctxMenu(n, x, y, 'nav');
+      /* V15: ⚙️ הגדרות העמוד (head.js) ו-📄 עמודים (pages.js) */
+      S.head = new window.KolHead.Head({ canvas: c, K, act, joinTx, note, openInCode, pick, rel: relRef, url: p => refUrl(p), canWrite: () => !!canWrite(), phone, host: el.hdSide,
+        openAt: off => { const n = nodeAt(off); if (n) openInCode(n); else openInCode(); },
+        pageUrl: () => (S.pages?.data?.base || '/lexicon/') + window.KolPages.urlOf(S.file?.path || ''), host_: () => location.host,
+        editBody: () => { const b = c.m?.root?.kids?.find(k => k.tag === 'body'); if (!b) return note('לעמוד אין <body>', true); S.head.hide(); c.select(b); c.reveal(b); panel('info', true); setTab('design'); },
+        onState: on => { el.root.classList.toggle('hd-open', on && !phone()); el.hdBtn.setAttribute('aria-pressed', String(!!on)); S.canvas?.setViewport(deviceWidth()); } });
+      S.pages = new window.KolPages.Pages({ headSettings: () => S.head?.show(), liveTitle: () => { try { return c.m ? window.KolHead.scan(K, c.m).values.title : ''; } catch { return ''; } }, api: (a, b, q) => api(a, b, q), note, sheet, current: () => S.file?.path, openPath: (p, fresh) => openPage(p, fresh), pvUrl: p => (S.token ? pvUrl(p) : ''), phone, live: p => livePage(p),
+        canPublish: () => RANK[state.user?.role] >= RANK.publisher, reload: () => Project.docs.reload(), anchor: () => el.root, overlay: () => el.pgOverlay,
+        onManager: on => el.root.classList.toggle('pg-open', !!on && !phone()) });
+      el.bar.querySelector('[data-pg-host]').replaceWith(S.pages.btn);
+      if (S.actions) {                                                  // V13: תפריט ההקשר וחיפוש הפעולה
+        const L = S.actions.list.bind(S.actions), G = S.actions.global.bind(S.actions);
+        S.actions.list = () => [...L(), { id: 'page-settings', icon: '⚙️', label: 'הגדרות העמוד — כותרת, שיתוף, סמל, קוד', keys: '', why: n => (/^(html|head|body)$/.test(n.tag) ? '' : 'על <html>, <head> או <body>'), run: () => S.head?.show() }];
+        S.actions.global = () => [...G(), { id: 'page-settings', icon: '⚙️', label: 'הגדרות העמוד', keys: '', run: () => S.head?.show() }, { id: 'pages', icon: '📄', label: 'עמודים — חדש, כתובת, סדר, 404', keys: '', run: () => S.pages?.manager() }];
+      }
+      S.content.pages = S.pages;
+      S.pages.load().then(() => drawAll());
       setTab(prefs.tab);
       c.onSelect = () => { if (S.bg?.mv && S.bg.mv.n !== c.selected) S.bg.stop(); drawCrumbs(); drawTools(); S.nav.sync(); drawInfo(); markInCode(); if (el.gapbar) el.gapbar.hidden = true; }; c.onKey = onKey; c.onContext = (n, x, y) => ctxMenu(n, x, y);
       S.touch?.unmount(); S.touch = new window.KolTouch.Touch({ S, el, panel, phone });   /* V14: מגע — גיליון בשלושה גבהים, האלמנט גלוי מעליו, מקלדת, ↑ ↓, צביטה */
@@ -1126,7 +1185,7 @@ const Editor = (() => {
       if (!files.length) { status(''); el.canvas.replaceChildren(h('p', { class: 'empty' }, 'אין בפרויקט קובץ HTML. יוצרים אחד ב-📁 פרויקט.')); return; }
       el.page.replaceChildren(...files.map(f => h('option', { value: f.id, 'data-old-tpl': Project.oldTemplate(f.path) || null, title: Project.oldTemplate(f.path) ? 'תבנית ישנה (עם {{…}}) — העמוד עצמו הוא index.html' : null }, f.path)));   // הטקסט — הנתיב בלבד; הסימון בתכונה ובעץ
       // העמוד האחרון שנפתח, ובלעדיו index.html. קובץ תבנית ישן (from-current/) נפתח רק כשמבקשים אותו במפורש — לא מהזיכרון ולא כ"ראשון"
-      const old = f => Project.oldTemplate(f.path), mem = files.find(f => f.path === prefs.page && !old(f));
+      const old = f => Project.oldTemplate(f.path), mine = prefs.pageBy && prefs.pageBy[uid()], mem = files.find(f => f.path === (prefs.pageBy ? mine : prefs.page) && !old(f));   // V15: לכל משתמש
       const first = files.find(f => f.path === wantPath) || mem || files.find(f => f.path === 'index.html') || files.find(f => !old(f)) || files[0];
       el.page.value = first.id;
       await open(first.id);
@@ -1145,5 +1204,5 @@ const Editor = (() => {
   function unmount() { if (!S.host) return; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
-  return { view, unmount, selectAt, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
+  return { view, unmount, selectAt, _head: () => S.head, _pages: () => S.pages, _openPage: openPage, _live: livePage, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
 })();
