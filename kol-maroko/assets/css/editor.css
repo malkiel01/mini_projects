@@ -584,3 +584,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
 .cm-rule select { width: auto; margin-inline-start: auto; }
 .cm-shared { background: #f3e8ff; }
 .ed-ntabs button { padding: 0 4px; white-space: nowrap; }
+.cm-board li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.cm-board li > b { flex: 1; min-width: 0; }
+.cm-board li > code { order: 5; flex-basis: 100%; overflow-wrap: anywhere; color: var(--muted, #5f6368); }
+.cm-color input[type="color"] { flex: none; width: 40px; min-width: 40px; height: 34px; padding: 2px; }

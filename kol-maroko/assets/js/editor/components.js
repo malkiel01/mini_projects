@@ -68,7 +68,7 @@
           let m; try { m = K().parseHtml(t); } catch { continue; }
           for (const i of C().instances(m)) { const o = out.get(i.name) || { total: 0, linked: 0, modified: 0, pages: new Set() }; const s = C().state(m, i.node, this.comp(i.name)).state; o.total++; if (s === 'linked') o.linked++; if (s === 'modified') o.modified++; o.pages.add(p.path); out.set(i.name, o); }
         }
-        this.counts = out; this.drawLib();
+        this.counts = out; this.drawLib(); this.drawStrip();
       }, 250);
     }
 
@@ -372,7 +372,7 @@
       el.replaceChildren(h('b', {}, '✏️ עורך את הרכיב ' + lab), h('span', { class: 'hint' }, ' · components/' + this.snap.name + '/template.html' + (x && x.css ? ' + style.css' : '') + (n ? ' · ' + n.total + ' מופעים ב-' + n.pages.size + ' עמודים' : ' · אין מופעים')),
         h('button', { type: 'button', class: 'btn sm primary', 'data-comp-apply': true, onclick: () => this.applyAll() }, '💾 שמור ועדכן מופעים'),
         h('button', { type: 'button', class: 'btn sm', 'data-comp-json-open': true, onclick: () => Project.openAt('components/' + this.snap.name + '/component.json', 1) }, '{ } component.json'),
-        this.back ? h('button', { type: 'button', class: 'btn sm', 'data-comp-back': true, onclick: () => this.openPath(this.back) }, '↩ חזרה ל-' + this.back) : null);
+        this.back ? h('button', { type: 'button', class: 'btn sm', 'data-comp-back': true, onclick: () => this.openPath(this.back) }, '↩ חזרה ל-' + this.back) : '');
     }
     /** "שמור ועדכן מופעים": כל המופעים בכל העמודים — לכל אחד ה-diff; מקושרים ← עדכון (הערכים נשמרים); שונים ← עדכן / נתק / דלג.
      *  "החל" — כל הקבצים בעסקה אחת (Ctrl+Z אחד). */

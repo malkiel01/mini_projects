@@ -223,6 +223,186 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(await text(page, 'about.html') === ab, 'Ctrl+Y — שוב');
     await shot(page, 'v12-1920-template');
 
+
+    // ═══ 7. כל יעד בסכמה — דרך הפאנל ═══
+    const ACC_T = '<section class="acc acc--plain">\n  <h3 class="acc-title">כותרת</h3>\n  <a class="acc-link" href="#">קישור</a>\n  <img class="acc-img" src="media/a.png" alt="">\n  <ul class="acc-list">\n    <li class="acc-item">פריט 1</li>\n    <li class="acc-item">פריט 2</li>\n    <li class="acc-item">פריט 3</li>\n  </ul>\n  <details class="acc-d"><summary>עוד</summary></details>\n</section>\n';
+    const ACC_J = { name: 'accordion', label: 'אקורדיון', icon: '▤', category: 'תוכן', fields: [
+      { id: 'title', label: 'כותרת', control: 'text', target: { text: '.acc-title' }, default: 'כותרת ברירת מחדל' },
+      { id: 'open', label: 'פתוח בהתחלה', control: 'toggle', target: { attr: 'open', on: '.acc-d' } },
+      { id: 'gap', label: 'רווח', control: 'size', target: { var: '--acc-gap' } },
+      { id: 'style', label: 'סגנון', control: 'select', options: ['plain', 'boxed'], target: { class: 'acc--{value}' } },
+      { id: 'items', label: 'פריטים', control: 'repeater', target: { children: '.acc-list > .acc-item' } },
+      { id: 'img', label: 'תמונה', control: 'media', target: { src: '.acc-img' } },
+      { id: 'href', label: 'קישור', control: 'link', target: { attr: 'href', on: '.acc-link' } },
+      { id: 'color', label: 'צבע', control: 'color', target: { var: '--acc-color' } } ] };
+    for (const [f, c] of [['template.html', ACC_T], ['component.json', JSON.stringify(ACC_J, null, 2) + '\n'], ['style.css', '.acc { gap: var(--acc-gap, 8px); color: var(--acc-color, #222); }\n.acc-title { font-size: 1.5rem; }\n']]) await call(page, 'pf_create', { path: 'components/accordion/' + f, content: c });
+    await openPage(page, 'about.html');
+    await select(page, '.about-text');
+    await page.click('[data-ntab="comp"]'); await sleep(200);
+    await page.click('.ed-lib-item[data-lib="comp-accordion"]'); await sleep(900);
+    ab = await text(page, 'about.html');
+    ok(/<p class="about-text">עמוד שני.<\/p>\n    <section class="acc acc--plain" data-kol-component="accordion">\n      <h3 class="acc-title">כותרת ברירת מחדל<\/h3>/.test(ab) && (ab.match(/components\/accordion\/style\.css/g) || []).length === 1, 'הוספה: ערך ברירת המחדל (default) של ההגדרה נכתב; <link> של הרכיב השני', ab.slice(ab.indexOf('<p class="about-text"'), ab.indexOf('<p class="about-text"') + 200));
+    const AC = '[data-kol-component="accordion"]';
+    await select(page, AC); await tab(page, 'content');
+    st = await page.evaluate(() => [...document.querySelectorAll('[data-comp-field]')].map(r => r.dataset.compField));
+    ok(st.join() === 'title,open,gap,style,items,img,href,color', 'הפאנל: כל השדות, בסדר של הסכמה', st);
+    const setF = async (id, v) => { const sel = '[data-comp-field="' + id + '"] [data-cf="' + id + '"]'; const tag = await page.$eval(sel, e => e.localName + (e.type ? ':' + e.type : '')); if (tag.startsWith('select')) await page.selectOption(sel, v); else if (tag === 'input:checkbox') { await page.click(sel); } else { await page.fill(sel, v); await page.press(sel, 'Tab'); } await sleep(450); return text(page, 'about.html'); };
+    const accOf = t => { const i = t.indexOf('<section class="acc'); return t.slice(i, t.indexOf('</section>', i) + 10); };
+    let a1 = accOf(await setF('title', 'שאלות נפוצות'));
+    ok(/<h3 class="acc-title">שאלות נפוצות<\/h3>/.test(a1), 'text: הכותרת');
+    a1 = accOf(await setF('open', true));
+    ok(/<details class="acc-d" open>/.test(a1), 'attr (toggle): open');
+    a1 = accOf(await setF('gap', '24px'));
+    ok(/<section class="acc acc--plain" data-kol-component="accordion" style="--acc-gap: 24px">/.test(a1), 'var: --acc-gap ב-style של השורש', a1.slice(0, 120));
+    a1 = accOf(await setF('style', 'boxed'));
+    ok(/class="acc acc--boxed"/.test(a1) && !/acc--plain/.test(a1), 'class: acc--plain ← acc--boxed (הקודמת מוסרת)');
+    a1 = accOf(await setF('img', 'media/b.jpg'));
+    ok(/<img class="acc-img" src="media\/b\.jpg"/.test(a1), 'src: התמונה');
+    a1 = accOf(await setF('href', 'https://example.org/a?b=1&c=2'));
+    ok(/href="https:\/\/example\.org\/a\?b=1&amp;c=2"/.test(a1), 'attr: href (מקודד)');
+    await page.evaluate(() => { const i = document.querySelector('[data-cf-color="color"]'); i.value = '#aa3300'; i.dispatchEvent(new Event('change')); }); await sleep(450);
+    a1 = accOf(await text(page, 'about.html'));
+    ok(/--acc-gap: 24px; --acc-color: #aa3300/.test(a1), 'var (צבע): --acc-color', a1.slice(0, 160));
+    ok(await stateOf(page, AC) === 'linked', 'אחרי כל ההגדרות — המופע מקושר');
+    const before = await text(page, 'about.html');
+    await setF('href', 'javascript:alert(1)');
+    const n1 = await page.evaluate(() => document.querySelector('.ed-note.err')?.textContent || '');
+    await setF('gap', '1px; } body { display:none');
+    const n2 = await page.evaluate(() => document.querySelector('.ed-note.err')?.textContent || '');
+    ok(await text(page, 'about.html') === before && /javascript/.test(n1) && /לא תקין/.test(n2), 'הזרקה מהפאנל (javascript:, ; } בערך משתנה) — נדחית עם הסבר, הקובץ לא השתנה', { same: await text(page, 'about.html') === before, n1, n2 });
+    // repeater: הפאנל — כפתורים וגרירה
+    await select(page, AC); await tab(page, 'content');
+    await page.click('[data-rep-add="items"]'); await sleep(450);
+    ok((accOf(await text(page, 'about.html')).match(/<li class="acc-item">/g) || []).length === 4, 'repeater: "＋ פריט" ← 4 פריטים');
+    await page.click('[data-rep-del="3"]'); await sleep(450);
+    await page.click('[data-rep-down="0"]'); await sleep(450);
+    let items = () => text(page, 'about.html').then(t => [...accOf(t).matchAll(/<li class="acc-item">([^<]*)<\/li>/g)].map(x => x[1]));
+    ok((await items()).join() === 'פריט 2,פריט 1,פריט 3', 'repeater: מחיקה, ↓', await items());
+    let g = await (await page.$('[data-rep-grip="2"]')).boundingBox(), r0 = await (await page.$('[data-rep="0"]')).boundingBox();
+    await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2); await page.mouse.down(); for (let i = 1; i <= 8; i++) { await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2 + (r0.y + 4 - g.y - g.height / 2) * i / 8); await sleep(30); } await page.mouse.up(); await sleep(500);
+    ok((await items()).join() === 'פריט 3,פריט 2,פריט 1' && /סדר בגרירה · פריטים/.test(await lastTx(page)), 'repeater: גרירה בפאנל (⠿) — השלישי לראש הרשימה', await items());
+    // גרירה בקנבס (V4): פריט 1 (האחרון) אל לפני הראשון
+    await select(page, AC + ' .acc-item', 2);
+    g = await (await page.$('[data-grip]')).boundingBox();
+    to = await at(page, AC + ' .acc-item', 0, 0.5, 0.2);
+    await drag(page, { x: g.x + g.width / 2, y: g.y + g.height / 2 }, to, { shell: true }); await sleep(500);
+    ok((await items()).join() === 'פריט 1,פריט 3,פריט 2' && await stateOf(page, AC) === 'linked', 'repeater בקנבס: גרירת פריט (V4) — הסדר השתנה, והמופע מקושר', await items());
+    // חלק חסר
+    await page.evaluate(() => { const S = Editor._state, K = window.KolSrc, c = S.canvas, n = c.nodeOf(c.doc.querySelector('[data-kol-component="accordion"] .acc-img')); Editor._act('מחיקת תמונה', m => K.html.remove(m, K.byPath(m, K.pathOf(n))), n); }); await sleep(400);
+    await select(page, AC); await tab(page, 'content');
+    st = await page.evaluate(() => { const r = document.querySelector('[data-comp-field="img"]'); return r && { dis: !!r.querySelector('[data-comp-missing][disabled]'), txt: r.textContent }; });
+    ok(st && st.dis && /החלק \.acc-img חסר במופע הזה/.test(st.txt) && await stateOf(page, AC) === 'modified', 'יעד שהבורר שלו חסר: "החלק .acc-img חסר במופע הזה" — מושבת; המופע "שונה"', st);
+    await undo(page);
+    // component.json שגוי ← שגיאה עם שורה; תיקון ← הפאנל מתעדכן
+    const accJ = await text(page, 'components/accordion/component.json');
+    await page.evaluate(async () => { const f = Project.docs.byPath('components/accordion/component.json'), d = await Project.docs.open(f.id), t = d.text(); d.edit([{ from: t.indexOf('"fields"'), to: t.indexOf('"fields"'), text: '"oops" ' }], 'שבירה'); }); await sleep(500);
+    await select(page, AC); await tab(page, 'content');
+    st = await page.evaluate(() => { const e = document.querySelector('[data-comp-json-error]'); return e && { line: e.dataset.compJsonError, t: e.textContent }; });
+    ok(st && st.line === '6' && /שורה 6/.test(st.t), 'component.json לא תקין (עריכה בקוד / 📁) ← הפאנל מציג את השגיאה עם שורה', st);
+    await page.evaluate(async t => { const f = Project.docs.byPath('components/accordion/component.json'), d = await Project.docs.open(f.id), was = d.text(); d.edit([{ from: 0, to: was.length, text: t.replace('"label": "כותרת"', '"label": "כותרת ראשית"') }], 'תיקון'); }, accJ); await sleep(500);
+    await select(page, AC); await tab(page, 'content');
+    ok(await page.evaluate(() => !document.querySelector('[data-comp-json-error]') && /כותרת ראשית/.test(document.querySelector('[data-comp-field="title"]').textContent)), 'תיקון ב-component.json ← הפאנל מתעדכן (שם השדה החדש)');
+
+    // ═══ 8. העיצוב: כלל ב-style.css של רכיב ═══
+    await select(page, AC + ' .acc-title'); await tab(page, 'design');
+    st = await page.evaluate(() => { const e = document.querySelector('[data-comp-shared]'); return e && { n: e.dataset.compShared, t: e.textContent, local: !!e.querySelector('[data-comp-local]'), tgt: document.querySelector('[data-tinfo]').textContent }; });
+    ok(st && /components\/accordion\/style\.css/.test(st.tgt) && /ישנה את כל 1 המופעים/.test(st.t) && st.local, 'עיצוב, יעד ב-style.css של הרכיב: "ישנה את כל N המופעים — או כתוב לעמוד הזה בלבד"', st);
+    await page.click('[data-comp-local]'); await sleep(300);
+    ok(await page.evaluate(() => !/^components\//.test(document.querySelector('[data-tinfo] span[dir="ltr"]').textContent)), '"כתוב לעמוד הזה בלבד" ← היעד עובר לקובץ של העמוד');
+    await shot(page, 'v12-1920-design');
+
+    // ═══ 9. "הוסף לכל העמודים" ═══
+    await select(page, AC); await tab(page, 'content');
+    nA = await txN(page);
+    await page.click('[data-w="comp-all"]'); await sleep(900);
+    const idxAll = await text(page, 'index.html');
+    ok(/data-kol-component="accordion"/.test(idxAll) && (idxAll.match(/components\/accordion\/style\.css/g) || []).length === 1 && await txN(page) === nA + 1, '"הוסף לכל העמודים": index.html קיבל את הרכיב ואת ה-<link> — פעולה אחת', await lastTx(page));
+    await undo(page);
+    ok(!/data-kol-component="accordion"/.test(await text(page, 'index.html')), 'Ctrl+Z — העמוד האחר חוזר');
+
+    // ═══ 10. מחיקת רכיב ═══
+    await page.click('[data-ntab="comp"]'); await sleep(200);
+    const abD = await text(page, 'about.html');
+    await page.click('[data-comp-del="accordion"]'); await sleep(500);
+    st = await page.evaluate(() => { const w = document.querySelector('[data-comp-del-warn]'); return w && w.textContent; });
+    ok(st && /נתק את 1 המופעים קודם\?/.test(st), 'מחיקה עם מופע: "נתק את 1 המופעים קודם?"', st);
+    await page.click('[data-comp-del-go]'); await sleep(1500);
+    ab = await text(page, 'about.html');
+    ok(!/data-kol-component="accordion"/.test(ab) && /<section class="acc acc--boxed"/.test(ab) && !(await exists(page, 'components/accordion/component.json')), 'המופע נותק (HTML רגיל נשאר), והקבצים — לסל');
+    await undo(page); await sleep(1500);
+    ok(await text(page, 'about.html') === abD && await exists(page, 'components/accordion/component.json'), 'Ctrl+Z: הסימון חוזר והקבצים משוחזרים מהסל');
+
+
+    // ═══ 11. "הגדרות הרכיב" בעריכת התבנית — כל סוג של "הוסף הגדרה" ═══
+    await openPage(page, 'components/search-bar/template.html');
+    await tab(page, 'content');
+    const addS = async (sel, i, kind, label, fill) => {
+      await select(page, sel, i); await tab(page, 'content');
+      await page.click('[data-w="comp-add-setting"]'); await sleep(250);
+      await page.selectOption('[data-as="kind"]', kind); await sleep(100);
+      if (fill) await fill();
+      await page.fill('[data-as="label"]', label); await page.click('[data-as-go]'); await sleep(700);
+      return JSON.parse(await text(page, 'components/search-bar/component.json')).fields.slice(-1)[0];
+    };
+    await select(page, CS); await tab(page, 'content');
+    ok(await page.$('[data-comp-board="search-bar"]') !== null, 'בעריכת התבנית — לוח "⚙ הגדרות הרכיב" בלשונית "תוכן"');
+    let fl = await addS('.kadisha-lexicon-search', 0, 'attr', 'טקסט החיפוש', () => page.selectOption('[data-as="attr"]', 'placeholder'));
+    ok(fl.control === 'text' && fl.target.attr === 'placeholder' && fl.target.on === '.kadisha-lexicon-search', 'תכונה: placeholder של שדה החיפוש', fl);
+    fl = await addS('.kadisha-lexicon-count', 0, 'class', 'גודל המונה', () => page.fill('[data-as="options"]', 'count-sm count-lg'));
+    ok(fl.control === 'select' && fl.target.class === '{value}' && fl.target.on === '.kadisha-lexicon-count' && fl.options.join() === 'count-sm,count-lg', 'מחלקה מתוך קבוצה: האפשרויות שהוקלדו', fl);
+    fl = await addS('.kadisha-lexicon-topic-filter', 0, 'children', 'הנושאים');
+    ok(fl.control === 'repeater' && fl.target.children === '.kadisha-lexicon-topic-filter > .kadisha-lex-topic-btn', 'הילדים — רשימה: repeater', fl);
+    fl = await addS('.kadisha-lexicon-controls', 0, 'var', 'צבע הרקע', () => page.selectOption('[data-as="prop"]', 'background-color'));
+    const scss = await text(page, 'components/search-bar/style.css');
+    ok(fl.control === 'color' && fl.target.var === '--search-bar-' + fl.id.replace(/_/g, '-') && new RegExp('background-color: var\\(' + fl.target.var + ', [^)]+\\)').test(scss), 'משתנה CSS: הערך הפך ל-var(--…, <הערך>) ב-style.css', { fl, css: scss.slice(-200) });
+    fl = await addS('.kadisha-lexicon-search-icon', 0, 'text', 'סמל');
+    ok(fl.target.text === '.kadisha-lexicon-search-icon', 'טקסט: מחלקה קיימת', fl);
+    // חלק בלי מחלקה ← מחלקה חדשה בשם קריא, בתבנית ובמופעים המקושרים
+    fl = await addS('.kadisha-lex-scope > span', 0, 'text', 'Label');
+    const tplNow = await text(page, 'components/search-bar/template.html'), idxNow = await text(page, 'index.html');
+    ok(/^\.search-bar__label$/.test(fl.target.text) && /class="search-bar__label"/.test(tplNow), 'חלק בלי מחלקה: מחלקה חדשה בשם קריא (search-bar__label) — בתבנית', { fl: fl.target, ok: /search-bar__label/.test(tplNow) });
+    ok(/<span class="search-bar__label">הרחב את החיפוש/.test(idxNow) && (/<span class="search-bar__label">/.test(await text(page, 'about.html'))), '…והמחלקה החדשה נכתבה גם למופעים המקושרים בעמודים (כדי שיישארו מקושרים)');
+    st = await page.evaluate(() => [...document.querySelectorAll('[data-board-field]')].map(x => x.dataset.boardField));
+    ok(st.length === 7, 'הלוח: 7 הגדרות, עם יעד וסוג לכל אחת', st);
+    await page.click('[data-board-del="' + st[st.length - 1] + '"]'); await sleep(500);
+    ok(JSON.parse(await text(page, 'components/search-bar/component.json')).fields.length === 6, 'מחיקת הגדרה מהלוח ← component.json');
+    await undo(page);
+    await shot(page, 'v12-1920-board');
+    await page.click('[data-comp-back]').catch(() => {}); await sleep(1500);
+
+    // ═══ 12. על כל המסך — 1920, 1366; 390 במגע ═══
+    await openPage(page, 'index.html');
+    await page.click('[data-ntab="comp"]'); await sleep(200);
+    await select(page, CS); await tab(page, 'content');
+    const fill = pg => pg.evaluate(() => { const r = s => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; }, ed = r('.ed'), nav = r('.ed-navwrap'), lib = r('[data-comp-body]'), grid = r('[data-comp-body] .cm-grid'), panel = r('[data-comp-panel]'), info = r('.ed-info, .ed-side.info, [data-panel-body="info"]') || r('.ct'); return { edW: ed && ed.width, vw: innerWidth, libW: lib && Math.round(lib.width), navW: nav && Math.round(nav.width), gridW: grid && Math.round(grid.width), panelW: panel && Math.round(panel.width), ctW: info && Math.round(info.width), hs: document.documentElement.scrollWidth <= innerWidth }; });
+    st = await fill(page);
+    ok(st.edW >= st.vw - 20 && st.libW >= st.navW - 24 && st.gridW >= st.libW - 30 && st.panelW >= st.ctW - 40 && st.hs, '1920: העורך על כל המסך; לשונית הרכיבים והלוח ממלאים את הרוחב שלהם (בלי רוחב קבוע שמשאיר ריק)', st);
+    await shot(page, 'v12-1920-panel');
+    const ctx2 = await mk(1366, 768), p2 = await ctx2.newPage();
+    p2.on('pageerror', e => { errors.push(e.message); console.log('   ⚠️ (1366) ' + e.message); });
+    await p2.goto(base + '/#/project'); await p2.waitForSelector('.pj-tree .pj-row');
+    await openPage(p2, 'index.html'); await p2.click('[data-ntab="comp"]'); await sleep(200); await select(p2, CS); await tab(p2, 'content');
+    st = await fill(p2);
+    ok(st.edW >= st.vw - 20 && st.libW >= st.navW - 24 && st.gridW >= st.libW - 30 && st.panelW >= st.ctW - 40 && st.hs, '1366: אותו דבר', st);
+    await p2.screenshot({ path: path.join(shotDir, 'v12-1366-panel.png') }); await ctx2.close();
+    const ctxP = await mk(390, 844), pp = await ctxP.newPage();
+    pp.on('pageerror', e => { errors.push(e.message); console.log('   ⚠️ (390) ' + e.message); });
+    await pp.goto(base + '/#/project'); await pp.waitForSelector('.pj-tree .pj-row');
+    await openPage(pp, 'about.html');
+    await pp.evaluate(() => document.querySelector('.ed-bar [data-panel="nav"]').click()); await sleep(300);
+    await pp.tap('[data-ntab="comp"]'); await sleep(300);
+    const abP = await text(pp, 'about.html'), nP = (abP.match(/data-kol-component="search-bar"/g) || []).length;
+    const bt = await pp.$('.ed-lib-item[data-lib="comp-search-bar"]'); const bb = await bt.boundingBox();
+    await pp.tap('.ed-lib-item[data-lib="comp-search-bar"]'); await sleep(900);
+    const abP2 = await text(pp, 'about.html');
+    st = await pp.evaluate(() => ({ hs: document.documentElement.scrollWidth <= innerWidth }));
+    ok((abP2.match(/data-kol-component="search-bar"/g) || []).length === nP + 1 && bb.height >= 34 && st.hs, '390 (הקשה): לשונית הרכיבים, הקשה מוסיפה מופע; כפתור ≥34px; בלי גלילה אופקית', { n: nP, bb, st });
+    await pp.screenshot({ path: path.join(shotDir, 'v12-390.png') }); await ctxP.close();
+
+    // ═══ 13. הבנייה: template.html מחוץ לחבילה כברירת מחדל ═══
+    const php2 = execFileSync('php', ['-r', 'define("KOL_DATA_DIR", $argv[1]); foreach (["db","build"] as $l) require_once $argv[2] . "/lib/$l.php"; echo json_encode([build_is_config("components/a/template.html"), build_is_config("components/a/component.json"), build_is_config("components/a/style.css"), build_is_config("components/a/script.js"), build_is_config("x/components/a/template.html")]);', data, ROOT]).toString();
+    ok(php2.trim() === '[true,true,false,false,false]', 'build.php: template.html ו-component.json יוצאים מהחבילה כברירת מחדל; style.css / script.js — נכנסים', php2);
+
     console.log('\nצילומים: ' + shotDir);
     ok(!errors.length, 'אין שגיאות JavaScript בדף', errors.slice(0, 3));
   } catch (e) { failed++; console.log('❌ חריגה: ' + (e.stack || e.message)); }
