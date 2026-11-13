@@ -27,7 +27,7 @@
     constructor(opt) {
       Object.assign(this, opt); this.c = this.canvas;
       this.items = []; this.q = ''; this.cat = ''; this.modes = new Map(); this.stCache = new Map(); this.scrolled = new Map();
-      this.box = h('div', { class: 'kit', 'data-kit': true }); if (this.host) this.host.prepend(this.box);
+      this.box = h('div', { class: 'kit', 'data-kit': true }); if (this.host) this.host.append(this.box);   // אחרי הרכיבים של בעל העמוד (V12)
       this.board = h('div', { class: 'kit-board', hidden: true, 'data-kit-board': true, role: 'dialog', 'aria-label': 'ספריית הרכיבים המוכנים' });
       if (this.mid) this.mid.append(this.board);
       this.chip = h('div', { class: 'kit-chip', hidden: true, 'data-kit-chip': true, role: 'toolbar', 'aria-label': 'הרכיב הנבחר' }); this.c.layer.append(this.chip);

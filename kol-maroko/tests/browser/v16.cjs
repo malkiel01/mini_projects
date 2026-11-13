@@ -219,6 +219,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ═══ 6. ▶️ תצוגה חיה: ההתנהגות של כל רכיב (JS של הרכיב רץ) ═══
     const tok = (await call(page, 'pv_token')).token, pvUrl = `${base}/preview/${tok}/kit.html`;
     const pv = await ctx.newPage(); const pvErr = []; pv.on('pageerror', e => pvErr.push(e.message));
+    await pv.route(u => !u.href.startsWith(base) && !/^(data|blob|about):/.test(u.protocol), r => r.abort());   // שום רשת חיצונית — הנגן של YouTube אינו נטען (הבדיקה: רק שה-iframe נוצר כמו שצריך)
     await pv.goto(pvUrl); await sleep(800);
     const q = (s, fn, arg) => pv.evaluate(([s, fn, arg]) => { const e = document.querySelector(s); return e ? new Function('e', 'arg', 'return (' + fn + ')(e, arg)')(e, arg) : '∅'; }, [s, fn.toString(), arg]);
     const vis = (s) => pv.evaluate(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; }, s);
@@ -286,7 +287,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pv.keyboard.press('Escape'); await sleep(150);
     ok(cap2 === 'תמונה 3' && !(await q('.kol-lightbox__dlg', e => e.open)), 'lightbox: חץ ← התמונה הבאה (RTL); Esc ← נסגר', cap2);
     for (const s of ['.kol-iconbox', '.kol-imgbox', '.kol-iconlist', '.kol-quote', '.kol-cta', '.kol-video']) ok(await vis(s), 'תצוגה חיה: ' + s + ' מוצג');
-    ok(!pvErr.filter(m => !/network error|'caches' property/i.test(m)).length, 'אין שגיאות JS בתצוגה החיה (רשת חיצונית — חסומה בסביבת הבדיקה)', pvErr);
+    ok(!pvErr.filter(m => !/network error/i.test(m)).length, 'אין שגיאות JS בתצוגה החיה (הרשת החיצונית חסומה בבדיקה — רק "network error" של המסגרת)', pvErr);
     await pv.close();
 
     // ═══ 7. בלי JS: התוכן גלוי ═══
