@@ -171,3 +171,11 @@
 - **`note(text, err, action, soft)`** — `soft`: רמז שנסגר בלחיצה הבאה או אחרי 6ש'.
 - `sanitize_rich` שומר `lang=` (BCP47 קצר). `build.clean` מסירה `<animate>/<set>` שמכוונים href/src ל-javascript:.
 - **פתוח:** בעריכת תבנית — `<style>` שבעמוד ו-`lang` לא נטענים; Safari / Firefox / iOS — לא נבדקו.
+
+## מ-V16 (2026-11-13, נרשם בידי בקרה (8))
+- **מפה:** רכיבים — `assets/kit/components/<שם>/` (kit.json גרסה; שינוי ברכיב שכבר ב-main ← להעלות גרסה, אחרת אין "⬆ יש גרסה חדשה"). עורך: `assets/js/editor/kit.js` (ספרייה, מצבים, actions, drag, תבניות), `kit-form.js` (בונה הטופס, כפתור "שמור" של ה-webhook). שרת: `lib/project_ops.php` kit_*, `lib/forms.php` forms_hook_*, **`lib/net.php` — כל בקשה החוצה חדשה עוברת דרכו** (net_host / net_ip_public).
+- **מגע 44:** בלוק `@media (pointer: coarse)` בסוף style.css של הרכיב; אזור קטן בעין — `::after` עם inset שלילי (נקודות המצגת). בדיקה: v16 קטע 10.
+- **בדיקות:** `tests/browser/v16.cjs`, `tests/cases/99-kit.php`, `99-kit-forms.php`, `tests/editor/kit-rules.mjs` (רץ על כל רכיב חדש). ב-99-kit — לנקות רכיב כבד בסוף (kt_reset), אחרת M7 "קצה לקצה" נשבר.
+- **מלכודות:** בתצוגה החיה `location.origin === "null"` — להשוות למקור הסקריפט; בדיקה שתלויה בטיימר — לדגום, לא רגע אחד; דף שנסגר באותו context משנה `document.hidden`; v9 פונה ל-Google Fonts ברשת.
+- **פתוח (⚪ מבקרה 8):** מגע 40–42 ב-social-icons/style.css:2, form/style.css:22 (כפתורים), map/style.css:11 (קישור), נקודות מצגת 12×12 ואקורדיון 42; תוויות חופפות בעורך (social/share/slides צמודים); כפתור "שמור" של ה-webhook (kit-form.js:190) נראה כטקסט.
+- יומן מלא: `team/log/code-V16.md`. מיגרציה 26 — לא נוצלה.
