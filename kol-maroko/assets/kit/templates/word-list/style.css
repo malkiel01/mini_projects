@@ -1,0 +1,9 @@
+.tk-words { max-inline-size: min(var(--page-width, 1100px), 100%); margin: 48px auto; padding: 0 16px; display: grid; gap: 12px; }
+.tk-words__title { margin: 0; font-size: clamp(1.6rem, 3.5vw, 2.2rem); }
+.tk-words__search { inline-size: min(420px, 100%); padding: 10px 14px; font: inherit; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 10px; }
+.tk-words__count { margin: 0; opacity: .7; }
+.tk-words__items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 12px; }
+.tk-words__item { padding: 14px; border-radius: 12px; background: var(--color-bg, #fff); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); display: grid; gap: 6px; align-content: start; }
+.tk-words__word { margin: 0; color: var(--color-accent, #a3322a); }
+.tk-words__play, .tk-words__more { justify-self: start; padding: 6px 14px; border: 1px solid currentColor; border-radius: 999px; background: none; font: inherit; cursor: pointer; }
+.tk-words__play.is-playing { background: var(--color-accent, #a3322a); color: #fff; border-color: transparent; }

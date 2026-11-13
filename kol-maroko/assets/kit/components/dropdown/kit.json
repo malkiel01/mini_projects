@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "category": "ניווט",
   "description": "כפתור שפותח רשימת קישורים. בלי JS — <details>: נפתח ונסגר בלחיצה.",
   "preview": "preview.svg"

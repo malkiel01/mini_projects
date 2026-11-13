@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "category": "תנועה",
   "description": "אנימציית Lottie מקובץ .json שבפרויקט. הנגן (lottie-web light, MIT) מועתק לפרויקט — לא מ-CDN. בלי JS — התמונה הראשונה.",
   "preview": "preview.svg",

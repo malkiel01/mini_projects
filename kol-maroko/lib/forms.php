@@ -17,6 +17,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/devlog.php';
+require_once __DIR__ . '/net.php';         // V16c: בדיקת מארח / IP משותפת לבקשות החוצה
 
 /** המגבלות (08 §4.2): ברירת מחדל, מינימום, מקסימום, והנוסח לבעל העמוד. */
 const FORMS_LIMITS = [
@@ -303,6 +304,7 @@ function forms_receive(array $post, array $files, int $len, string $ip, bool $te
     $pdo->prepare('INSERT INTO form_entries (form, fields, word_id, page, test, at) VALUES (?, ?, ?, ?, ?, ?)')
         ->execute([$form, json_encode($keep, JSON_UNESCAPED_UNICODE), $word === null ? null : (int)$word, $page, $test ? 1 : 0, now_iso()]);
     if (!$test) forms_mail_tick();
+    if (!$test) { forms_hook_enqueue((int)$pdo->lastInsertId(), $form); forms_hook_tick(1); }   // V16c: webhook — אחרי השמירה בתיבה
     return [200, ['ok' => true]];
 }
 
@@ -426,6 +428,7 @@ function inbox_list(array $user, array $q): array
 {
     forms_clean();
     forms_mail_tick();
+    forms_hook_tick();                                                        // V16c: ניסיון חוזר של webhook
     if (!empty($q['count'])) return ['unread' => forms_unread()];
     [$where, $args] = forms_where($q);
     $off = max(0, (int)($q['offset'] ?? 0));
@@ -650,7 +653,7 @@ function forms_dev_state(): array
     return ['today' => $n($today . 'T00:00:00Z'), 'week' => $n(gmdate('Y-m-d', time() - 6 * 86400) . 'T00:00:00Z'), 'rejects' => $rej,
         'mail' => ['on' => (bool)$m['on'], 'from' => $m['from'], 'to' => count($m['to']), 'last_sent' => $m['last_sent'], 'fails' => (int)$m['fails'],
             'last_test' => $m['last_test'], 'last_error' => $m['last_error'], 'auto_off' => $m['auto_off']],
-        'limits' => $limits, 'endpoint' => forms_endpoint(), 'registered' => array_keys(forms_live())];
+        'limits' => $limits, 'endpoint' => forms_endpoint(), 'registered' => array_keys(forms_live()), 'webhooks' => forms_hook_state([]) + ['forms' => array_map(fn($u) => (string)parse_url($u, PHP_URL_HOST), forms_hooks())]];   // V16c
 }
 
 /** שורה ב"שירותי רקע" (dev_services). */
@@ -719,4 +722,156 @@ function forms_trash_purge(array $owner, int $id): void
     if ($batch === false) throw new ApiError('לא נמצא בסל', 404);
     $pdo->prepare('DELETE FROM forms_trash WHERE batch = ?')->execute([$batch]);
     audit_as($owner, 'trash_purge', 'פניות');
+}
+
+// ── V16c: webhook — הפנייה נשלחת (JSON) לכתובת https שבעל העמוד הגדיר לטופס, אחרי השמירה בתיבה ─────────────
+// ההגדרה: settings.forms_webhooks = { "<טופס>": "https://…" } (מפרסם ומעלה — זה שולח נתונים החוצה).
+// התור: settings.forms_hook_queue — [{id, entry, form, url, tries, next, last}]. אין טבלה ואין מיגרציה: התור קטן וחסום
+// (FORMS_HOOK_MAX), והפנייה עצמה כבר שמורה ב-form_entries — כישלון אינו מאבד דבר. כל כישלון — ביומן (devlog) ובמסך המפתח.
+// הבקשה: רק https, פורט 443, בלי כתובת IP / localhost / שם פנימי, כל כתובת שה-DNS מחזיר — ציבורית, והחיבור מוצמד אליה
+// (CURLOPT_RESOLVE), בלי הפניות — אותו מבנה של rec_url_check / font_http.
+
+const FORMS_HOOK_WAIT = [60, 300, 1800, 7200, 21600];   // לפני ניסיון 2…6
+const FORMS_HOOK_MAX = 300;
+const FORMS_HOOK_TIMEOUT = 5;
+
+function forms_hooks(): array
+{
+    $j = json_decode((string)setting('forms_webhooks', '{}'), true);
+    return is_array($j) ? array_filter($j, fn($v, $k) => is_string($k) && is_string($v), ARRAY_FILTER_USE_BOTH) : [];
+}
+
+/** '' — מותר; אחרת — למה לא. (A2 rec_url_check: אותה בדיקה, בלי הדומיין של האתר ובלי תיקיית ההעלאות.) */
+function forms_hook_url_check(string $url): string
+{
+    if ($url === '' || strlen($url) > 2000 || preg_match('/[\x00-\x20\x7f\\\\]/', $url)) return 'כתובת לא תקינה';
+    $p = parse_url($url);
+    if (!$p || !isset($p['scheme'], $p['host'])) return 'כתובת לא תקינה';
+    if (strtolower($p['scheme']) !== 'https') return 'רק https';
+    if (isset($p['user']) || isset($p['pass'])) return 'כתובת עם שם משתמש';
+    if (isset($p['port']) && (int)$p['port'] !== 443) return 'פורט שאינו 443';
+    $host = strtolower($p['host']);
+    if (str_ends_with($host, '.')) return 'שם מתחם עם נקודה בסוף';      // ההצמדה ב-curl לא חלה עליו (ראו net.php)
+    if (filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) || preg_match('/^[0-9.]+$|^0x|^\[/i', $host)) return 'כתובת IP — רק שם מתחם';
+    if ($host === 'localhost' || preg_match('/\.(localhost|local|internal|lan|home|corp|intranet)$/', $host) || !str_contains($host, '.')) return 'שם פנימי';
+    if (net_host($host) === '') return 'שם מתחם לא תקין';
+    return '';
+}
+
+function forms_hook_ip_ok(string $ip): bool
+{
+    return net_ip_public($ip);
+}
+
+/** הגדרת webhook לטופס (מפרסם ומעלה). url ריק — הסרה. הכתובת נבדקת כאן, ושוב בכל שליחה (ה-DNS יכול להשתנות). */
+function forms_hook_set(array $user, array $b): array
+{
+    if (ROLE_RANK[$user['role']] < ROLE_RANK['publisher']) throw new ApiError('webhook שולח את הפניות החוצה — רק מפרסם ומעלה', 403);
+    $form = (string)($b['form'] ?? '');
+    if (!preg_match(FORMS_NAME_RE, $form)) throw new ApiError('שם טופס לא תקין');
+    $url = trim((string)($b['url'] ?? ''));
+    $hooks = forms_hooks();
+    if ($url === '') unset($hooks[$form]);
+    else {
+        if (($why = forms_hook_url_check($url)) !== '') throw new ApiError("הכתובת נדחתה: $why");
+        $hooks[$form] = $url;
+    }
+    setting_set('forms_webhooks', json_encode($hooks, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    audit_as($user, 'forms_webhook', $form . ' ← ' . ($url === '' ? 'הוסר' : (string)parse_url($url, PHP_URL_HOST)));
+    return forms_hook_state(['form' => $form]);
+}
+
+/** מצב ה-webhook של טופס (לפאנל ולמסך המפתח): הכתובת, ומה ממתין / נכשל. */
+function forms_hook_state(array $q): array
+{
+    $form = (string)($q['form'] ?? '');
+    $queue = array_values(array_filter(forms_hook_queue(), fn($x) => $form === '' || $x['form'] === $form));
+    return ['url' => $form !== '' ? (forms_hooks()[$form] ?? '') : null, 'pending' => count(array_filter($queue, fn($x) => $x['state'] === 'pending')),
+        'failed' => array_slice(array_values(array_filter($queue, fn($x) => $x['state'] === 'failed')), -10), 'last' => setting('forms_hook_last') ? json_decode((string)setting('forms_hook_last'), true) : null];
+}
+
+function forms_hook_queue(): array
+{
+    $j = json_decode((string)setting('forms_hook_queue', '[]'), true);
+    return is_array($j) ? array_values(array_filter($j, 'is_array')) : [];
+}
+
+function forms_hook_save(array $q): void
+{
+    $q = array_values($q);
+    if (count($q) > FORMS_HOOK_MAX) {                                          // החסם: קודם נשלחו / נכשלו ישנים, ורק אז ממתינים
+        usort($q, fn($a, $b) => ($a['state'] === 'pending') <=> ($b['state'] === 'pending') ?: $a['id'] <=> $b['id']);
+        $q = array_slice($q, count($q) - FORMS_HOOK_MAX);
+        usort($q, fn($a, $b) => $a['id'] <=> $b['id']);
+    }
+    setting_set('forms_hook_queue', json_encode($q, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+}
+
+/** אחרי השמירה בתיבה (forms_receive): אם לטופס יש webhook — לתור. */
+function forms_hook_enqueue(int $entry, string $form): void
+{
+    $url = forms_hooks()[$form] ?? null;
+    if (!$url) return;
+    $q = forms_hook_queue();
+    $q[] = ['id' => (int)(end($q)['id'] ?? 0) + 1, 'entry' => $entry, 'form' => $form, 'url' => $url, 'tries' => 0, 'next' => 0, 'state' => 'pending', 'last' => ''];
+    forms_hook_save($q);
+}
+
+/** POST אחד. [status, שגיאה] — status 0 כשלא הגענו. בבדיקות: $GLOBALS['kol_hook_fake'] / ['kol_hook_resolve']. */
+function forms_hook_post(string $url, string $json): array
+{
+    if (($why = forms_hook_url_check($url)) !== '') return [0, "הכתובת נדחתה: $why"];
+    $host = net_host((string)parse_url($url, PHP_URL_HOST));                 // זהה למארח שב-URL ש-curl מקבל — אחרת RESOLVE לא חל
+    if ($host === '') return [0, 'הכתובת נדחתה: שם מתחם לא תקין'];
+    $resolve = $GLOBALS['kol_hook_resolve'] ?? null;
+    $ips = $resolve !== null ? (array)($resolve[$host] ?? []) : (gethostbynamel($host) ?: []);
+    if (!$ips) return [0, "לא הצלחתי לפנות אל $host (DNS)"];
+    foreach ($ips as $ip) if (!forms_hook_ip_ok($ip)) return [0, "$host נפתר לכתובת פנימית ($ip) — נחסם"];
+    $ip = $ips[0];
+    if (isset($GLOBALS['kol_hook_fake'])) return ($GLOBALS['kol_hook_fake'])($url, $ip, $json);
+    if (!function_exists('curl_init')) return [0, 'אין curl בשרת'];
+    $got = 0;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => $json,
+        CURLOPT_RESOLVE => ["$host:443:$ip"], CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXREDIRS => 0,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_TIMEOUT => FORMS_HOOK_TIMEOUT, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_USERAGENT => 'KolMaroko-Webhook/1',
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8', 'Accept: */*'],
+        CURLOPT_WRITEFUNCTION => function ($c, $chunk) use (&$got) { $got += strlen($chunk); return $got > 65536 ? 0 : strlen($chunk); },
+    ]);
+    curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($status === 0) return [0, "לא הצלחתי לפנות אל $host: " . ($err ?: 'שגיאה')];
+    return [$status, $status >= 200 && $status < 300 ? '' : "$host ענה $status" . ($status >= 300 && $status < 400 ? ' (הפניות אינן נעקבות)' : '')];
+}
+
+/** שליחה של מה שהגיע זמנו (לכל היותר $max). נקרא אחרי כל פנייה, בפתיחת התיבה ובמסך המפתח. ניסיון חוזר: FORMS_HOOK_WAIT. */
+function forms_hook_tick(int $max = 2): void
+{
+    $q = forms_hook_queue();
+    $due = array_keys(array_filter($q, fn($x) => $x['state'] === 'pending' && (int)$x['next'] <= time()));
+    if (!$due) return;
+    $st = db()->prepare('SELECT * FROM form_entries WHERE id = ?');
+    foreach (array_slice($due, 0, $max) as $k) {
+        $x = &$q[$k];
+        $st->execute([(int)$x['entry']]);
+        $e = $st->fetch();
+        if (!$e) { $x['state'] = 'failed'; $x['last'] = 'הפנייה נמחקה מהתיבה'; unset($x); continue; }
+        $json = json_encode(['form' => $e['form'], 'entry' => (int)$e['id'], 'at' => $e['at'], 'page' => $e['page'], 'fields' => json_decode($e['fields'], true) ?: (object)[]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        [$status, $err] = forms_hook_post((string)$x['url'], (string)$json);
+        $x['tries']++;
+        if ($err === '') { $x['state'] = 'sent'; $x['last'] = (string)$status; }
+        else {
+            $x['last'] = $err;
+            if ($x['tries'] > count(FORMS_HOOK_WAIT)) $x['state'] = 'failed';
+            else $x['next'] = time() + FORMS_HOOK_WAIT[$x['tries'] - 1];
+            devlog_write($x['state'] === 'failed' ? 'error' : 'warn', 'forms', 'form.webhook', ['message' => "webhook של \"{$x['form']}\" (פנייה #{$x['entry']}) — ניסיון {$x['tries']}: $err" . ($x['state'] === 'failed' ? ' — נכשל סופית; הפנייה שמורה בתיבה' : ''), 'action' => 'form']);
+        }
+        setting_set('forms_hook_last', json_encode(['at' => now_iso(), 'form' => $x['form'], 'entry' => (int)$x['entry'], 'ok' => $err === '', 'msg' => $err === '' ? "נשלח ($status)" : $err], JSON_UNESCAPED_UNICODE));
+        unset($x);
+    }
+    forms_hook_save($q);
 }

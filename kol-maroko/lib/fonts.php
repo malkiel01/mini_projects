@@ -16,6 +16,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/project.php';
+require_once __DIR__ . '/net.php';         // V16c: בדיקת IP משותפת לבקשות החוצה
 
 const FONT_DIR = 'media/fonts/';
 const FONT_MAX = 2 * 1024 * 1024;           // קובץ גופן בודד (העלאה והורדה)
@@ -261,9 +262,7 @@ function font_url_ok(string $url): string
 /** כתובת IP ציבורית בלבד (לא loopback, פרטית, link-local, שמורה, multicast). */
 function font_ip_ok(string $ip): bool
 {
-    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false
-        && !preg_match('/^(0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|192\.0\.0\.|198\.1[89]\.|2(2[4-9]|[3-5]\d)\.)/', $ip)
-        && !preg_match('/^(::|::1|f[cd]|fe[89ab]|ff|::ffff:)/i', $ip);
+    return net_ip_public($ip);                                               // אותה רשימה — במקום אחד (net.php)
 }
 
 /**

@@ -1,0 +1,8 @@
+{
+  "label": "עמוד \"אודות\"",
+  "kind": "page",
+  "file": "about.html",
+  "title": "אודות",
+  "description": "עמוד שלם: פתיחה, הסיפור, ציטוט ושאלות נפוצות.",
+  "components": ["quote", "accordion"]
+}

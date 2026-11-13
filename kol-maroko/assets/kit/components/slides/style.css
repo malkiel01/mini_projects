@@ -1,4 +1,4 @@
-/* רכיב מוכן: מצגת (kit 1.0.0). שקופית אחת ברוחב מלא; scroll-snap — עובד גם בלי JS. */
+/* רכיב מוכן: מצגת (kit 1.0.1). שקופית אחת ברוחב מלא; scroll-snap — עובד גם בלי JS. */
 .kol-slides { --kol-slides-h: 420px; --kol-slides-accent: var(--color-accent, #a3322a); position: relative; border-radius: 16px; overflow: hidden; }
 .kol-slides__track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
 .kol-slides__track::-webkit-scrollbar { display: none; }

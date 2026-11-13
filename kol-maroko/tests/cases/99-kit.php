@@ -295,3 +295,23 @@ test('V16 kit: kol.json שבור — 409 לפני שנוגעים בקבצים; �
     $r = b_post('kit_copy', ['name' => 'quote'], U_CONTENT);
     eq(403, $r['status'], 'עורכת תוכן — 403');
 });
+
+test('V16c kit_update: קובץ נוסף ("files") שהגרסה הקודמת העתיקה ונשמט — לסל; קובץ שבעל העמוד הוסיף — לא נוגעים; ביטול מחזיר', function () {
+    kt_reset();
+    $r = kit_copy(KT_ED, ['name' => 'lottie']);
+    eq(['lottie_light.min.js', 'sample.json'], kit_sys()['lottie']['files'] ?? null, 'ההעתקה רושמת ב-kol.json מה הועתק מ-"files"');
+    // כאילו גרסה 0.9.0 העתיקה גם old-extra.js (ושם לא תקין ברשימה — מתעלמים); בעל העמוד הוסיף mine.js
+    pf_create(KT_ED, ['path' => 'components/lottie/old-extra.js', 'content' => "/* ישן */\n"]);
+    pf_create(KT_ED, ['path' => 'components/lottie/mine.js', 'content' => "/* שלי */\n"]);
+    $c = pf_kol()['config']; $e = &$c['system']['components/lottie/'];
+    $e['version'] = '0.9.0'; $e['files'] = ['lottie_light.min.js', 'sample.json', 'old-extra.js', '../index.html', 'a/b.js']; unset($e);
+    pf_tx(fn() => pf_put(pf_by_path('kol.json'), json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", KT_ED, 'ישן'));
+    $u = kit_update(KT_ED, ['folder' => 'lottie', 'action' => 'take']);
+    ok(pf_by_path('components/lottie/old-extra.js') === null && count($u['removed']) === 1, 'old-extra.js — הועתק בגרסה הקודמת ונשמט ← לסל');
+    ok(pf_by_path('components/lottie/mine.js') !== null && pf_by_path('index.html') !== null, 'mine.js של בעל העמוד ו-index.html (שם לא תקין ברשימה) — לא נגעו');
+    eq(['lottie_light.min.js', 'sample.json'], kit_sys()['lottie']['files'], 'הרשימה — של הגרסה החדשה');
+    kit_revert(KT_ED, ['folder' => 'lottie'] + $u);
+    eq("/* ישן */\n", kt_text('components/lottie/old-extra.js'), 'ביטול — חזר');
+    ok(in_array('old-extra.js', kit_sys()['lottie']['files'], true), 'ביטול — גם הרשימה ב-kol.json');
+    kt_reset();                                                              // הפרויקט נקי לבדיקות שאחרי (M7 מפרסם את כולו)
+});

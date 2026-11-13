@@ -1,5 +1,5 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.4.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.5.0)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
@@ -31,6 +31,13 @@
  *   data-kol-form-error              כמוהו — מוצג כשהשליחה נכשלה. בזמן השליחה: הכפתור מושבת, ו-aria-busy על הטופס.
  *   data-kol-trap                    שדה מלכודת (מוסתר מבני אדם): בוט שממלא אותו — נענה "התקבל", והפנייה אינה נשמרת.
  *                                    (הצורה הישנה — data-kol-form-done="טקסט" על ה-<form> ו-data-kol-form-status — עובדת גם היא.)
+ *   data-kol-step                    (1.5.0) על <fieldset> בתוך הטופס: שלב. כשיש שניים ומעלה — שלב אחד בכל פעם (is-current, ו-
+ *                                    kol-steps-on על הטופס), "הבא" בודק את השדות של השלב, ופס ההתקדמות מתמלא. בלי JS — כל השלבים
+ *                                    גלויים, טופס אחד. הכפתורים: data-kol-step-next / data-kol-step-prev; הפס: data-kol-step-bar
+ *                                    (המשתנה --kol-step-pct). כפתור השליחה — רק בשלב האחרון.
+ *   data-kol-redirect="thanks.html"  (1.5.0) על הטופס: אחרי שליחה שהצליחה — מעבר לעמוד (נתיב יחסי) או לכתובת https.
+ *   data-kol-msg                     (1.5.0) אלמנט בתוך השדה: ההודעה כשהשדה אינו תקין (pattern / חובה). מוצג רק אז.
+ *                                    תיבות סימון עם אותו name — נשלחות כערך אחד, מופרד בפסיקים.
  *   data-kol-active-class="is-on"    איזו מחלקה לשים על כפתור סינון / השמעה פעיל (בנוסף ל-aria-pressed).
  *   data-kol-prerendered             (נכתב בפרסום) המכל כבר מכיל את הרשימה כ-HTML, למי שאין לו JS ולמנועי חיפוש.
  *                                    כל פריט כתוב מסומן data-kol-pre; בציור הראשון הם מוסרים והרשימה נבנית מחדש — בלי
@@ -542,6 +549,64 @@
     return found.filter(function (element) { return element !== form && !element.hasAttribute('data-kol-form'); });
   }
 
+  // ── שלבים, הודעת שדה והפניה (1.5.0) ──────────────────────
+
+  function steps(form) { return all('[data-kol-step]', form).filter(function (step) { return closest(step.parentNode, '[data-kol-form]') === form; }); }
+
+  function showStep(form, index) {
+    var list = steps(form);
+    if (list.length < 2) return;
+    index = Math.max(0, Math.min(list.length - 1, index));
+    form.classList.add('kol-steps-on');
+    list.forEach(function (step, i) { step.hidden = i !== index; step.classList.toggle('is-current', i === index); });
+    form.setAttribute('data-kol-step-at', String(index));
+    var last = index === list.length - 1;
+    all('[data-kol-step-prev]', form).forEach(function (b) { b.hidden = index === 0; });
+    all('[data-kol-step-next]', form).forEach(function (b) { b.hidden = last; });
+    all('button[type=submit], input[type=submit], button:not([type])', form).forEach(function (b) { if (!b.hasAttribute('data-kol-step-next') && !b.hasAttribute('data-kol-step-prev')) b.hidden = !last; });
+    all('[data-kol-step-bar]', form).forEach(function (bar) { bar.hidden = false; bar.style.setProperty('--kol-step-pct', Math.round((index + 1) / list.length * 100) + '%'); });
+  }
+
+  function stepValid(step) {
+    var fields = all('input, select, textarea', step);
+    for (var i = 0; i < fields.length; i++) if (fields[i].checkValidity && !fields[i].checkValidity()) { if (fields[i].reportValidity) fields[i].reportValidity(); return false; }
+    return true;
+  }
+
+  function fieldMessage(control, show) {
+    var field = closest(control, '[data-kol-field]') || control.parentNode;
+    if (!field) return;
+    all('[data-kol-msg]', field).forEach(function (element) { element.hidden = !show; });
+  }
+
+  document.addEventListener('invalid', function (event) { if (closest(event.target, '[data-kol-form]')) fieldMessage(event.target, true); }, true);
+  document.addEventListener('input', function (event) {
+    var control = event.target;
+    if (control.checkValidity && closest(control, '[data-kol-form]') && control.checkValidity()) fieldMessage(control, false);
+  });
+
+  document.addEventListener('click', function (event) {
+    var b = closest(event.target, '[data-kol-step-next], [data-kol-step-prev]');
+    var form = b && closest(b, '[data-kol-form]');
+    if (!form) return;
+    event.preventDefault();
+    var at = parseInt(form.getAttribute('data-kol-step-at') || '0', 10) || 0;
+    if (b.hasAttribute('data-kol-step-next')) { if (!stepValid(steps(form)[at])) return; showStep(form, at + 1); }
+    else showStep(form, at - 1);
+    var first = steps(form)[parseInt(form.getAttribute('data-kol-step-at'), 10)];
+    if (first) { var f = first.querySelector('input:not([type=hidden]), select, textarea'); if (f) f.focus(); }
+  });
+
+  function redirect(form) {
+    var to = (form.getAttribute('data-kol-redirect') || '').trim();
+    if (!to) return false;
+    var url;
+    try { url = new URL(to, location.href); } catch (e) { return false; }
+    if (url.protocol !== 'https:' && url.origin !== location.origin) return false;
+    location.assign(url.href);
+    return true;
+  }
+
   function finish(form, ok) {
     form.removeAttribute('aria-busy');
     all('button, input[type=submit]', form).forEach(function (button) {
@@ -552,7 +617,7 @@
     // הצורה הישנה: הנוסח בתכונה של הטופס, בתוך data-kol-form-status
     var text = form.getAttribute(ok ? 'data-kol-form-done' : 'data-kol-form-error') || '';
     all('[data-kol-form-status]', form).forEach(function (element) { element.textContent = text; });
-    if (ok) form.reset();
+    if (ok) { form.reset(); if (redirect(form)) return; if (steps(form).length > 1) showStep(form, 0); }
   }
 
   document.addEventListener('submit', function (event) {
@@ -565,6 +630,10 @@
     var endpoint = meta && meta.getAttribute('content');
     if (!endpoint || !window.fetch || !window.FormData) { finish(form, false); return; }
     var data = new FormData(form);
+    // תיבות סימון עם אותו שם — ערך אחד (M5 מקבלת רק טקסט לכל שדה)
+    var many = {};
+    all('input[type=checkbox][name]', form).forEach(function (box) { many[box.name] = (many[box.name] || 0) + 1; });
+    Object.keys(many).forEach(function (name) { if (many[name] > 1) data.set(name, data.getAll(name).join(', ')); });
     var trap = '';
     all('[data-kol-trap]', form).forEach(function (element) {
       if (element.name) data.delete(element.name);
@@ -587,6 +656,7 @@
   // ── התחלה ─────────────────────────────────────────────────
 
   function start() {
+    all('[data-kol-form]').forEach(function (form) { if (steps(form).length > 1 && !form.hasAttribute('data-kol-step-at')) showStep(form, 0); });
     var names = {};
     all('[data-kol-list]').forEach(function (element) { names[element.getAttribute('data-kol-list')] = true; });
     Object.keys(names).forEach(function (name) { if (name) load(name); });
@@ -651,7 +721,7 @@
 
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.4.0',
+    version: '1.5.0',
     prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },
