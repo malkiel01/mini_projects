@@ -239,7 +239,8 @@ const png = (w, h, rgb) => {
       await page.click('#sheet[open] [data-pick="media/hero-red.png"]'); await sleep(900);
       let H = await html(page);
       ok(/<img[^>]*src="media\/hero-red\.png"/.test(H), '"＋🖼️ תמונה" ← בחירה מהספרייה — <img> בעמוד', H.match(/<img[^>]*>/g));
-      await click(page, '.kadisha-hero img');
+      // התמונה שנוספה כבר נבחרת (לחיצה נוספת עליה = "בחר הורה" — כך בנוי העורך)
+      ok(/^img/.test(await crumb(page) || ''), 'התמונה שנוספה — נבחרת', await crumb(page));
       ok(await page.isVisible('[data-swap-img]'), 'תמונה נבחרת — "🖼️ החלף" בסרגל', { sel: await crumb(page), imgs: await page.evaluate(() => [...Editor._state.canvas.doc.querySelectorAll('.kadisha-hero img')].map(e => e.outerHTML.slice(0, 100) + ' ' + JSON.stringify(e.getBoundingClientRect()))) });
       await shot(page, 'e2e-05-img-select-1920');
       await page.click('[data-swap-img]'); await sleep(500);
@@ -249,7 +250,7 @@ const png = (w, h, rgb) => {
       H = await html(page);
       ok(/<img[^>]*src="media\/photo-green\.png"/.test(H) && !/<img[^>]*hero-red/.test(H), '"🖼️ החלף" ← העלאה — התמונה הוחלפה', H.match(/<img[^>]*>/g));
       await shot(page, 'e2e-05-img-1920');
-      await click(page, '.kadisha-hero img');
+      if (!/^img/.test(await crumb(page) || '')) { await click(page, 'h1'); await click(page, '.kadisha-hero img'); }
       await page.click('.ed-bar button:has-text("🗑️")'); await sleep(600);
       ok(!/<img[^>]*photo-green/.test(await html(page)), '🗑️ — התמונה הוסרה מהעמוד');
     });
@@ -319,8 +320,8 @@ const png = (w, h, rgb) => {
       await click(page, '.kadisha-lexicon-controls input[type="search"], .kadisha-lexicon-controls input', 0);
       let sel = await crumb(page);
       // הלחיצה נופלת על ילד — בעל העמוד עולה ב"↑ בחר הורה" שליד שביל הפירורים (השביל מקצר שמות ארוכים ל-…)
-      for (let k = 0; k < 4 && !/kadisha-lexicon-controls/.test(sel || ''); k++) { await page.click('.ed-seltools-host [aria-label="בחר הורה"], .ed-seltools-host [title="בחר הורה"]'); await sleep(300); sel = await crumb(page); }
-      ok(/kadisha-lexicon-controls/.test(sel || ''), 'שורת החיפוש והנושאים נבחרה', sel);
+      for (let k = 0; k < 4 && !/kadisha-lexicon-controls|kadisha-lex-panel-search/.test(sel || ''); k++) { await page.click('.ed-seltools-host [aria-label="בחר הורה"], .ed-seltools-host [title="בחר הורה"]'); await sleep(300); sel = await crumb(page); }
+      ok(/kadisha-lexicon-controls|kadisha-lex-panel-search/.test(sel || ''), 'שורת החיפוש והנושאים נבחרה', sel);
       await tabP(page, 'content');
       await page.click('[data-w="comp-save"]'); await sleep(400);
       await page.fill('[data-cs="label"]', 'שורת חיפוש'); await page.fill('[data-cs="name"]', 'search-bar');
