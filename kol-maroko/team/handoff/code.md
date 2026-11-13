@@ -179,3 +179,12 @@
 - **מלכודות:** בתצוגה החיה `location.origin === "null"` — להשוות למקור הסקריפט; בדיקה שתלויה בטיימר — לדגום, לא רגע אחד; דף שנסגר באותו context משנה `document.hidden`; v9 פונה ל-Google Fonts ברשת.
 - **פתוח (⚪ מבקרה 8):** מגע 40–42 ב-social-icons/style.css:2, form/style.css:22 (כפתורים), map/style.css:11 (קישור), נקודות מצגת 12×12 ואקורדיון 42; תוויות חופפות בעורך (social/share/slides צמודים); כפתור "שמור" של ה-webhook (kit-form.js:190) נראה כטקסט.
 - יומן מלא: `team/log/code-V16.md`. מיגרציה 26 — לא נוצלה.
+
+## מ-V14 (2026-11-13, נרשם בידי בקרה (8))
+1. **touch.js (KolTouch):** גיליון 4 גבהים (row/third/half/full, `kol-editor-sheet`); ⛶ מסך מלא (<1000px, `kol-editor-fs`; ברוחב תמיד); הקנבס מתקצר עד ראש הגיליון (`--ts-cover`), הנבחר נגלל מעליו 420ms אחרי הבחירה; visualViewport (`--ts-kb`; בבדיקות `fakeKeyboard(px)`); ⬆⬇ בסרגל הנבחר; ↕ ב-Navigator; −/+ חוזר בלחיצה ארוכה; צביטה עד 300% (`setZoom`); 🔎 חיפוש פעולה; `c.realW`. touchmove לא-passive — רק מ-drag.start עד drag.end.
+2. **מגע בקנבס (canvas.js):** הקשה = שחרור בלי תזוזה >8px; תזוזה לפני לחיצה ארוכה = גלילה (`p.scrolled`); לחיצה ארוכה (400ms) מחמשת גרירה ובוחרת; contextmenu של הדפדפן אחרי מגע — מתעלם (`lastPT`); הקשה על אותו אלמנט אחרי לחיצה ארוכה — נשארת (`held`); ה-click של השחרור נבלע (`swallowClick`, 350ms). **החלקה = תמיד גלילה** (הבעלים) — משנה את spec §2.2.
+3. **Navigator:** ROW חי (`rowH()`, matchMedia), 44 במגע; התפריט בשחרור. בבדיקות — `window.KolNavigator.ROW`, לא 30.
+4. **CSS:** בלוק V14 בסוף editor.css, כל כלל תחת max-width:999px או pointer:coarse (בדיקה סטטית ב-v14). `#sheet` — רק תחת `body:has(.ed)`.
+5. **loadMonaco:** `data-monaco-loader`; התג מוסר רק ב-error (`data-failed`), לא ב-timeout.
+6. **בדיקות:** v14.cjs. **כל שינוי מגע — ב-CDP `Input.dispatchTouchEvent`** (cdpOf, realDrag, swipe), לא PointerEvent סינתטי: touch-action, click אחרי touchend, pointercancel וגלילה ב-iframe מופיעים רק כך (שתי רגרסיות 🔴 נתפסו רק בבדיקה כזו).
+7. **לא נעשה:** שורת מקשים לקוד + חלופה כש-Monaco לא נטען; ✕ לביטול גרירה; "100%" לטאבלט/מחשב בטלפון; תרחיש 7.3 ב-390; מכשירים אמיתיים (iOS Safari, Chrome אנדרואיד) — מטלה לבעלים.
