@@ -551,12 +551,16 @@ const png = (w, h, rgb) => {
       await page.click('#sheet[open] [data-bug-send]');
       const done = await until(async () => /נפתחה מטלה/.test(await page.textContent('#sheet[open]')), 15000);
       ok(done, '"פתיחת מטלה" — "✅ נפתחה מטלה …"', await page.textContent('#sheet[open] [role=status]').catch(() => ''));
+      if (await page.evaluate(() => [...document.querySelectorAll('#sheet[open] .ed-shot')].some(e => /\bnull\b/.test(e.textContent)))) finding('⚪', 'בגיליון "🐞 לא הצלחתי לשנות את זה" מתחת לצילום כתוב "null" — replaceChildren(img, null) כשהצילום מלא (screen.js:240). צילום: e2e-17-bug-1920.png');
+      const code = ((await page.textContent('#sheet[open]')).match(/נפתחה מטלה ([A-Z]+-\d+)/) || [])[1];
+      ok(!!code && await until(async () => (await page.textContent('#sheet[open] .ed-mine')).includes(code), 8000), '"הדיווחים שלי" בגיליון — ' + code);
       await shot(page, 'e2e-17-bug-1920');
       await page.click('#sheet[open] [data-close]').catch(() => {}); await sleep(300);
-      // DevLoop — המטלה ברשימה (🐞 בראש המסך)
-      await page.click('header button:has-text("🐞"), .top button:has-text("🐞"), a:has-text("🐞")').catch(() => {}); await sleep(1500);
-      const dl = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
-      ok(/ניסיתי לשנות את הגופן|שורת המשנה|kadisha-hero-subtitle-main/.test(dl), 'DevLoop — המטלה מופיעה ברשימה', dl.slice(0, 300));
+      // DevLoop — 🐞 בראש המסך ← "📋 … מטלות ממתינות לך" ← המטלה ברשימה
+      await page.click('header button:has-text("🐞"), header a:has-text("🐞"), button[aria-label*="דיווח"]').catch(() => {}); await sleep(1000);
+      await page.click('a:has-text("מטלות ממתינות"), button:has-text("מטלות ממתינות")').catch(e => console.log('   (רשימת המטלות: ' + e.message.split('\n')[0] + ')')); await sleep(1500);
+      const dl = await page.evaluate(() => document.body.innerText);
+      ok(!!code && dl.includes(code), 'DevLoop ← "מטלות ממתינות לך" — ' + code + ' ברשימה', dl.replace(/\s+/g, ' ').slice(0, 300));
       await shot(page, 'e2e-17-devloop-1920');
     });
 
