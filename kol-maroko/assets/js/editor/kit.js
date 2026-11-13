@@ -23,6 +23,8 @@
   const SAFE_SEL = /^[\w\s.#>\-\[\]="':]+$/;
   /** סוגריים בטקסט רגיל (option, title) — בין FSI ל-PDI (בידוד, כמו <bdi>), שלטינית בתוכם לא תהפוך אותם ב-RTL. */
   const iso = s => String(s == null ? '' : s).replace(/\([^()]*\)/g, m => '\u2068' + m + '\u2069');
+  const g_txt = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const g_esc = s => g_txt(s).replace(/"/g, '&quot;');
 
   class Kit {
     /** opt: { comp, canvas, build, mid, host, act, writeOps, joinTx, attachFx, txCount, note, sheet, undo, canWrite, phone, select(n) } */
@@ -37,6 +39,7 @@
       if (orig) this.comp.content.compSection = n => [...orig(n), ...this.section(n)];
       this.onKey = e => { if (e.key === 'Escape' && !this.board.hidden) { e.preventDefault(); this.openBoard(false); } };
       document.addEventListener('keydown', this.onKey);
+      this.wrapTpl();
       window.KolKitLive = this;
       this.load();
     }
@@ -44,8 +47,8 @@
 
     // ── הנתונים ──────────────────────────────────────────
     async load() {
-      try { const r = await api('kit_list'); this.items = r.items || []; } catch (e) { this.items = []; this.err = e.message; }
-      this.drawLib();
+      try { const r = await api('kit_list'); this.items = r.items || []; this.tpls = r.templates || []; } catch (e) { this.items = []; this.tpls = []; this.err = e.message; }
+      this.drawLib(); this.drawTpls();
     }
     item(name) { return this.items.find(x => x.name === name) || null; }
     /** הרכיב בפרויקט שהועתק מ-name (התיקייה הראשונה שרשומה). */
@@ -134,6 +137,93 @@
         h('div', { class: 'kit-bfilters' }, ...this.filters('board')), this.grid('board'));
     }
 
+    // ── V16c: תבניות מוכנות — לשונית "מוכנות" בתוך "📄 תבניות" (V13), בלי לגעת ב-templates.js ──
+    wrapTpl() {
+      const T = this.tpl && this.tpl(); if (!T || T._kitWrapped) return;
+      const orig = T.draw.bind(T), self = this; T._kitWrapped = true;
+      T.draw = function () { orig(); self.drawTpls(); };
+    }
+    drawTpls() {
+      const T = this.tpl && this.tpl(); if (!T || !T.host) return;
+      let box = T.host.querySelector('[data-kit-tpls]');
+      if (!box) { box = h('section', { class: 'kit-tpls', 'data-kit-tpls': true }); T.host.append(box); }   // אחרי התבניות של בעל העמוד (V13)
+      const list = this.tpls || [], cell = (t, where) => {
+        const b = h('button', { type: 'button', class: 'kit-card', 'data-kit-tpl': t.name, role: 'listitem', title: t.label + ' — ' + t.description + (t.components.length ? ' · רכיבים שיועתקו לפרויקט: ' + t.components.join(', ') : '') + (t.kind === 'page' ? ' · לחיצה — עמוד חדש (' + t.file + ')' : ' — גרירה לקנבס או לחיצה (אחרי הנבחר)') },
+          t.preview ? h('img', { class: 'kit-prev', src: t.preview, alt: '', loading: 'lazy', draggable: 'false' }) : null, h('span', { class: 'kit-name' }, (t.kind === 'page' ? '📄 ' : '▤ ') + t.label), h('span', { class: 'kit-tag' }, t.kind === 'page' ? 'עמוד חדש · ' + t.file : 'מקטע — מועתק לעמוד'));
+        if (t.kind === 'page') b.addEventListener('click', () => this.usePage(t)); else this.dragOn(b, { id: 'kittpl-' + t.name, icon: '▤', label: t.label, html: '<section></section>', run: tg => this.useTpl(t, tg) }, where);
+        return h('div', { class: 'kit-cell' }, b);
+      };
+      const sec = list.filter(t => t.kind !== 'page'), pages = list.filter(t => t.kind === 'page');
+      box.replaceChildren(h('h4', { class: 'dp-h' }, '📦 מוכנות'), h('p', { class: 'hint' }, 'תבנית מוכנה = העתקה: ה-HTML נכנס לעמוד, ה-CSS — לסוף קובץ העיצוב, והרכיבים שבה מועתקים לפרויקט (components/). הצבעים — המשתנים של הפרויקט; התמונות — מצייני מקום (לחיצה ← 🖼️ החלף).'),
+        h('div', { class: 'kit-grid', role: 'list', 'data-kit-tpl-grid': 'sections', 'aria-label': 'מקטעים מוכנים' }, sec.map(t => cell(t, 'lib'))),
+        h('h4', { class: 'dp-h' }, 'עמודים'), h('div', { class: 'kit-grid', role: 'list', 'data-kit-tpl-grid': 'pages', 'aria-label': 'עמודים מוכנים' }, pages.map(t => cell(t, 'lib'))));
+    }
+    async tplFiles(t) {
+      const get = async f => { const r = await fetch(t.base + f, { credentials: 'same-origin' }); if (!r.ok) throw new Error('התבנית ' + t.name + ' — ' + f + ' לא נטען'); return r.text(); };
+      return { html: await get('template.html'), css: await get('style.css').catch(() => '') };
+    }
+    /** הרכיבים שבתבנית: כל אחד — בפרויקט (שימוש שני — כמו שהוא; ראשון — kit_copy; שם תפוס של בעל העמוד — בשם פנוי, והתבנית מתעדכנת). */
+    async tplComps(t, html) {
+      const fx = [], ren = new Map();
+      for (const name of t.components) {
+        const it = this.item(name); if (!it) continue;
+        const i = this.inst(it);
+        if (i) { if (i.folder !== name) ren.set(name, i.folder); continue; }
+        const as = it.taken ? this.free(name) : name;
+        const r = await api('kit_copy', { name, as });
+        if (r.copied) fx.push({ undo: () => api('kit_undo', { folder: r.folder, ids: r.ids }).catch(() => null), redo: () => api('kit_copy', { name, as: r.folder }).catch(() => null) });
+        if (r.folder !== name) ren.set(name, r.folder);
+      }
+      for (const [a, b] of ren) html = html.split('data-kol-component="' + a + '"').join('data-kol-component="' + b + '"');
+      if (fx.length) { await Project.docs.reload(); await this.comp.load(); }
+      return { html, fx, folders: t.components.map(n => ren.get(n) || n) };
+    }
+    async useTpl(t, target) {
+      if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true);
+      const T = this.tpl && this.tpl(); if (!T) return;
+      let f; try { f = await this.tplFiles(t); } catch (e) { return this.note(e.message, true); }
+      const n0 = this.txCount();
+      let cs; try { cs = await this.tplComps(t, f.html); } catch (e) { return this.note(e.message, true); }
+      const orig = T.read; T.read = async () => ({ html: cs.html, css: f.css, meta: { label: t.label, kind: 'section' } });
+      let r; try { r = await T.insert('kit-' + t.name, target); } finally { T.read = orig; }
+      if (this.txCount() === n0) { for (const x of cs.fx) await x.undo(); await Project.docs.reload(); await this.comp.load(); this.load(); return; }
+      for (const folder of new Set(cs.folders)) await this.comp.ensureAssets(folder);
+      if ((t.requires || []).includes('js/kol-data.js') && window.KolKitForm) await window.KolKitForm.ensureKd(this);
+      const k = this.txCount() - n0; if (k > 1) this.joinTx(k, 'תבנית מוכנה · ' + t.label);
+      for (const x of cs.fx) this.attachFx({ undo: x.undo, redo: x.redo });
+      this.relabel('תבנית מוכנה · ' + t.label + (cs.fx.length ? ' · ' + cs.fx.length + ' רכיבים הועתקו לפרויקט' : ''));
+      this.comp.recount(); this.loadSoon();
+      this.note('נוספה התבנית ' + t.label + (cs.fx.length ? ' — והרכיבים שבה הועתקו לפרויקט (components/)' : '') + (r && r.rename && r.rename.size ? ' · מחלקות ששונו: ' + [...r.rename].map(([a, b]) => a + '←' + b).join(', ') : ''), false, { label: 'בטל', run: this.undo });
+    }
+    /** תבנית עמוד ← קובץ .html חדש: ה-<head> של העמוד הפתוח (קובצי העיצוב), ה-CSS של התבנית — לסוף קובץ העיצוב שלו, והרכיבים — לפי §2.1. */
+    async usePage(t) {
+      if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true);
+      let f; try { f = await this.tplFiles(t); } catch (e) { return this.note(e.message, true); }
+      const base = (t.file || t.name + '.html').replace(/\.html$/, ''); let path = base + '.html'; for (let i = 2; Project.docs.byPath(path); i++) path = base + '-' + i + '.html';
+      const T = this.tpl && this.tpl(), n0 = this.txCount();
+      let cs; try { cs = await this.tplComps(t, f.html); } catch (e) { return this.note(e.message, true); }
+      const m = this.c.m, head = m.root && m.root.kids.find(k => k.tag === 'head' && !k.implied);
+      // קובצי העיצוב של העמוד הפתוח — בנתיב מהשורש (העמוד החדש — בשורש הפרויקט); כתובת חיצונית (גופנים) — כמו שהיא
+      const links = []; if (head) K().walk(head, x => { if (x.tag !== 'link' || !/stylesheet/i.test((K().attrOf(x, 'rel') || {}).value || '')) return; const hr = (K().attrOf(x, 'href') || {}).value || ''; const pp = this.comp.refPath ? this.comp.refPath(hr) : null; links.push('<link rel="stylesheet" href="' + g_esc(pp || hr) + '">'); });
+      for (const folder of new Set(cs.folders)) { const x = this.comp.comps.get(folder); if (x && x.css) links.push('<link rel="stylesheet" href="' + g_esc(x.css) + '">'); }
+      const scripts = [];
+      if ((t.requires || []).includes('js/kol-data.js')) scripts.push('<script src="js/kol-data.js" defer></script>');
+      for (const folder of new Set(cs.folders)) { const x = this.comp.comps.get(folder); if (x && x.js) scripts.push('<script defer src="' + g_esc(x.js) + '"></script>'); }
+      const lang = (m.src.match(/<html\b[^>]*\blang="([^"]*)"/i) || [])[1] || 'he', dir = (m.src.match(/<html\b[^>]*\bdir="([^"]*)"/i) || [])[1] || 'rtl';
+      const doc = '<!doctype html>\n<html lang="' + g_esc(lang) + '" dir="' + g_esc(dir) + '">\n<head>\n  <meta charset="utf-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1">\n  <title>' + g_txt(t.title || t.label) + '</title>\n  ' + [...new Set(links)].join('\n  ') + (scripts.length ? '\n  ' + scripts.join('\n  ') : '') + '\n</head>\n<body>\n  ' + cs.html.trim().replace(/\n/g, '\n  ') + '\n</body>\n</html>\n';
+      if ((t.requires || []).includes('js/kol-data.js') && !Project.docs.byPath('js/kol-data.js') && window.KolKitForm) await window.KolKitForm.ensureKd(this, { script: false });
+      let d; try { d = await api('pf_create', { path, content: doc }); } catch (e) { for (const x of cs.fx) await x.undo(); return this.note(e.message, true); }
+      // ה-CSS של התבנית — לסוף קובץ העיצוב של העמוד (אותו קובץ שהעמוד החדש מקשר)
+      const cssPath = T && T.pagePath ? T.pagePath() : null, cssDoc = cssPath && T.docOf ? T.docOf(cssPath) : null;
+      if (f.css.trim() && cssDoc) this.writeOps([() => { const was = cssDoc.text(), end = was.replace(/\s+$/, '').length; return [{ doc: cssDoc, patches: [{ from: end, to: was.length, text: (end ? '\n\n' : '') + '/* תבנית: ' + t.label.replace(/\*\//g, '') + ' */\n' + f.css.trim() + '\n' }] }]; }], 'CSS של תבנית · ' + t.label);
+      const fx = { undo: () => api('pf_delete', { id: d.file.id }).then(() => Project.docs.reload()).catch(() => null), redo: () => api('pf_restore', { ids: [d.file.id] }).then(() => Project.docs.reload()).catch(() => null) };
+      if (this.txCount() > n0) { const k = this.txCount() - n0; if (k > 1) this.joinTx(k, 'עמוד מתבנית · ' + t.label + ' · ' + path); this.attachFx(fx); } else this.comp.pushFx('עמוד מתבנית · ' + t.label + ' · ' + path, fx);
+      for (const x of cs.fx) this.attachFx({ undo: x.undo, redo: x.redo });
+      this.relabel('עמוד מתבנית · ' + t.label + ' · ' + path);
+      await Project.docs.reload(); this.loadSoon();
+      this.note('נוצר העמוד ' + path + ' מהתבנית ' + t.label + (cs.fx.length ? ' — והרכיבים שבו הועתקו לפרויקט' : ''), false, { label: 'פתח את ' + path, run: () => this.comp.openPath(path) });
+    }
+
     // ── שימוש: העתקה בפעם הראשונה ← המסלול של V12 ──────────
     async use(name, t) {
       if (!this.canWrite()) return this.note('הקובץ פתוח לקריאה בלבד', true);
@@ -171,6 +261,7 @@
       const n0 = this.txCount();
       await this.comp.add(folder, t);
       if (this.txCount() === n0) return false;
+      if (this.raw(folder).builder === 'form' && window.KolKitForm) { const n1 = this.txCount(); await window.KolKitForm.ensureKd(this); const k = this.txCount() - n0; if (this.txCount() > n1 && k > 1) this.joinTx(k, 'הוספת רכיב · ' + folder); }
       if (fx) { this.attachFx(fx); this.relabel('רכיב מוכן · ' + ((it && it.label) || folder) + ' · הועתק לפרויקט (components/' + folder + '/)'); }
       const ext = it && it.external && it.external.length ? ' · בתצוגה החיה בלבד הוא טוען מבחוץ: ' + it.external.join(', ') + ' (בעורך — תמונה עד לחיצה)' : '';
       if (fx || ext) this.note((fx ? 'הרכיב "' + ((it && it.label) || folder) + '" הועתק לפרויקט (components/' + folder + '/) ונוסף לעמוד — הקבצים שלכם מעכשיו' : 'נוסף ' + folder) + ext, false, { label: 'בטל', run: this.undo });
@@ -226,8 +317,8 @@
       const x = this.comp.comps.get(name), t = x && x.json ? x.json.text() : '';
       const hit = this.stCache.get(name); if (hit && hit.t === t) return hit.v;
       const arr = (x, n) => (Array.isArray(x) ? x.filter(s => s && typeof s === 'object').slice(0, n) : []);
-      let v = { states: [], actions: [], drag: [] };
-      try { const j = JSON.parse(t); v = { states: arr(j.states, 8).filter(s => typeof s.id === 'string'), actions: arr(j.actions, 4).filter(s => typeof s.id === 'string' && typeof s.label === 'string'), drag: arr(j.drag, 2).filter(s => typeof s.each === 'string' && typeof s.box === 'string' && /^--[\w-]+$/.test(s.x || '') && /^--[\w-]+$/.test(s.y || ''))}; } catch { /* */ }
+      let v = { states: [], actions: [], drag: [], builder: null };
+      try { const j = JSON.parse(t); v = { states: arr(j.states, 8).filter(s => typeof s.id === 'string'), actions: arr(j.actions, 4).filter(s => typeof s.id === 'string' && typeof s.label === 'string'), drag: arr(j.drag, 2).filter(s => typeof s.each === 'string' && typeof s.box === 'string' && /^--[\w-]+$/.test(s.x || '') && /^--[\w-]+$/.test(s.y || '')), builder: j.builder === 'form' ? 'form' : null }; } catch { /* */ }
       this.stCache.set(name, { t, v }); return v;
     }
     keyOf(root, s) { return (K().attrOf(root, C().MARK) || {}).value + '@' + K().pathOf(root).join('.') + '#' + s.id; }
@@ -316,8 +407,9 @@
       if (rep) kids.push(h('button', { type: 'button', class: 'btn sm', 'data-kit-add-item': true, disabled: !this.canWrite() || null, onclick: () => this.addItem(n) }, '➕ פריט (' + rep.f.label + ')'));
       for (const a of def.actions) kids.push(h('button', { type: 'button', class: 'btn sm', 'data-kit-action': a.id, disabled: !this.canWrite() || null, onclick: () => this.action(root, a) }, iso(a.label)));
       if (def.drag.length) kids.push(h('p', { class: 'hint', 'data-kit-drag-hint': true }, '✥ את הנקודות גוררים על הקנבס — הידיות העגולות. המיקום נכתב לנקודה עצמה (' + def.drag.map(d => d.x + ' / ' + d.y).join(', ') + ').'));
-      if (!kids.length) return [];
-      return [h('section', { class: 'ct-group kit-group', 'data-group': 'מצב בקנבס', 'data-kit-panel': true }, h('h3', { class: 'dt-h' }, def.states.length ? '👁 מצב בקנבס' : '🧩 הרכיב'),
+      const extra = def.builder === 'form' && window.KolKitForm ? window.KolKitForm.section(this, root, n) : [];
+      if (!kids.length) return extra;
+      return [...extra, h('section', { class: 'ct-group kit-group', 'data-group': 'מצב בקנבס', 'data-kit-panel': true }, h('h3', { class: 'dt-h' }, def.states.length ? '👁 מצב בקנבס' : '🧩 הרכיב'),
         def.states.length ? h('p', { class: 'hint' }, 'בקנבס סקריפטים אינם רצים — כאן בוחרים איזה מצב לראות ולערוך. רק בקנבס: הקובץ אינו משתנה. ▶️ תצוגה חיה — ההתנהגות עצמה.') : null, ...kids)];
     }
     rep(root) {

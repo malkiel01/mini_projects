@@ -1171,8 +1171,13 @@ function kit_files_for(array $k, string $folder): array
 /** הקבצים שמועתקים: ארבעת הקבצים של רכיב + "files" מ-kit.json (למשל נגן Lottie, דוגמה) — שם פשוט, בלי תיקייה, סיומת מוכרת. */
 function kit_names_of(array $meta): array
 {
-    $extra = array_values(array_filter((array)($meta['files'] ?? []), fn($f) => is_string($f) && preg_match('/^[a-z0-9][a-z0-9._-]{0,60}\.(js|json|css|svg)$/', $f) && !in_array($f, KIT_FILES, true) && $f !== 'kit.json'));
-    return array_merge(KIT_FILES, array_slice($extra, 0, 8));
+    return array_merge(KIT_FILES, kit_extra_names((array)($meta['files'] ?? [])));
+}
+/** V16c: שמות "files" תקינים בלבד (שם פשוט, סיומת מוכרת, לא אחד מקובצי הרכיב) — עד 8. גם לרשימה שנשמרה ב-kol.json (מה שהועתק). */
+function kit_extra_names(array $names): array
+{
+    $ok = array_filter($names, fn($f) => is_string($f) && preg_match('/^[a-z0-9][a-z0-9._-]{0,60}\.(js|json|css|svg)$/', $f) && !in_array($f, KIT_FILES, true) && $f !== 'kit.json');
+    return array_slice(array_values(array_unique($ok)), 0, 8);
 }
 
 function kit_hash(array $files): string
@@ -1232,7 +1237,25 @@ function kit_list(): array
             'js' => isset($k['files']['script.js']), 'installed' => $inst, 'taken' => !$inst && kit_taken($n),
         ];
     }
-    return ['items' => $items, 'categories' => KIT_CATEGORIES];
+    return ['items' => $items, 'categories' => KIT_CATEGORIES, 'templates' => kit_templates()];
+}
+
+const KIT_TPL_DIR = __DIR__ . '/../assets/kit/templates';
+/** V16c: התבניות המוכנות (assets/kit/templates/<שם>/template.json) — מקטע / עמוד, הרכיבים שבהן ומה הן צריכות. הקבצים — סטטיים. */
+function kit_templates(): array
+{
+    $out = [];
+    foreach ((array)@scandir(KIT_TPL_DIR) as $d) {
+        if (!is_string($d) || !preg_match(KIT_NAME, $d) || !is_file(KIT_TPL_DIR . "/$d/template.json") || !is_file(KIT_TPL_DIR . "/$d/template.html")) continue;
+        $m = json_decode((string)file_get_contents(KIT_TPL_DIR . "/$d/template.json"), true);
+        if (!is_array($m)) continue;
+        $comps = array_values(array_filter((array)($m['components'] ?? []), fn($c) => is_string($c) && preg_match(KIT_NAME, $c) && in_array($c, kit_names(), true)));
+        $file = is_string($m['file'] ?? null) && preg_match('/^[a-z0-9][a-z0-9-]{0,40}\.html$/', $m['file']) ? $m['file'] : null;
+        $out[] = ['name' => $d, 'label' => pf_label((string)($m['label'] ?? $d), 60), 'kind' => ($m['kind'] ?? '') === 'page' ? 'page' : 'section', 'description' => pf_label((string)($m['description'] ?? ''), 200),
+            'components' => $comps, 'requires' => array_values(array_intersect((array)($m['requires'] ?? []), ['js/kol-data.js'])), 'file' => $file, 'title' => pf_label((string)($m['title'] ?? ''), 80),
+            'preview' => is_file(KIT_TPL_DIR . "/$d/preview.svg") ? "assets/kit/templates/$d/preview.svg" : null, 'base' => "assets/kit/templates/$d/"];
+    }
+    return $out;
 }
 const KIT_CATEGORIES = ['תוכן', 'קופסאות', 'מספרים', 'מדיה', 'ניווט', 'חלונות', 'תנועה', 'טפסים', 'רשתות'];
 
@@ -1281,7 +1304,7 @@ function kit_copy(array $user, array $b): array
         $ids = [];
         $files = kit_files_for($k, $as);
         foreach ($files as $f => $bytes) { $p = "components/$as/$f"; pf_free($p); $ids[] = (int)pf_insert($p, 'file', $bytes, $user, null, $note)['id']; }
-        kit_sys_put($user, $as, ['version' => $k['version'], 'modified' => false, 'kit' => $k['name'], 'hash' => kit_hash($files)], $note);
+        kit_sys_put($user, $as, ['version' => $k['version'], 'modified' => false, 'kit' => $k['name'], 'hash' => kit_hash($files), 'files' => kit_extra_names(array_keys($files))], $note);
         return ['copied' => true, 'folder' => $as, 'ids' => $ids];
     });
     if ($res['copied']) audit_as($user, 'kit_copy', "{$k['name']} {$k['version']} ← components/$as/");
@@ -1348,12 +1371,13 @@ function kit_update(array $user, array $b): array
         }
         // קובץ שהגרסה החדשה כבר אינה כוללת (למשל script.js שהוסר) — לסל, כמו בעדכון של קובץ מערכת; Ctrl+Z מחזיר
         $batch = bin2hex(random_bytes(6));
-        foreach (KIT_FILES as $f) {
+        // V16c: גם קבצים נוספים ("files") שהגרסה הקודמת העתיקה — לפי הרשימה ב-kol.json; קובץ שבעל העמוד הוסיף לתיקייה — לא נוגעים
+        foreach (array_merge(KIT_FILES, kit_extra_names((array)($e['files'] ?? []))) as $f) {
             if (isset($files[$f]) || !($r = pf_by_path("components/$folder/$f")) || $r['kind'] !== 'file') continue;
             db()->prepare('UPDATE pf_files SET deleted_at = ?, deleted_by = ?, deleted_name = ?, deleted_batch = ? WHERE id = ?')->execute([now_iso(), $user['sub'], $user['name'] ?? '', $batch, $r['id']]);
             $removed[] = (int)$r['id'];
         }
-        kit_sys_put($user, $folder, ['version' => $k['version'], 'modified' => false, 'kit' => $k['name'], 'hash' => kit_hash($files)], $note);
+        kit_sys_put($user, $folder, ['version' => $k['version'], 'modified' => false, 'kit' => $k['name'], 'hash' => kit_hash($files), 'files' => kit_extra_names(array_keys($files))], $note);
         return ['before' => $before, 'after' => $after, 'created' => $created, 'removed' => $removed, 'entry' => $e];
     });
     audit_as($user, 'kit_update', "components/$folder/ · $act");
@@ -1378,7 +1402,8 @@ function kit_revert(array $user, array $b): array
     if ($entry !== null) {
         if (!is_array($entry) || !is_string($entry['version'] ?? null) || !preg_match('/^\d+\.\d+\.\d+$/', $entry['version']) || !is_string($entry['kit'] ?? null) || !in_array($entry['kit'], kit_names(), true)
             || !is_string($entry['hash'] ?? '') || !preg_match('/^[0-9a-f]{0,40}$/', (string)($entry['hash'] ?? ''))) throw new ApiError('הרשומה הקודמת אינה תקינה', 422);
-        $entry = ['version' => $entry['version'], 'modified' => !empty($entry['modified']), 'kit' => $entry['kit'], 'hash' => (string)($entry['hash'] ?? '')];
+        $entry = ['version' => $entry['version'], 'modified' => !empty($entry['modified']), 'kit' => $entry['kit'], 'hash' => (string)($entry['hash'] ?? '')]
+            + (isset($b['entry']['files']) ? ['files' => kit_extra_names((array)$b['entry']['files'])] : []);
     }
     $inside = fn(string $p) => (bool)preg_match('~^components/' . preg_quote($folder, '~') . '/[a-z0-9][a-z0-9._-]{0,60}\.(json|html|css|js|svg)$~', $p);
     pf_tx(function () use ($folder, $prev, $after, $created, $removed, $entry, $inside, $user) {

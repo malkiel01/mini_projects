@@ -1,0 +1,12 @@
+{
+  "name": "social-icons",
+  "label": "אייקוני רשתות",
+  "icon": "🌐",
+  "category": "רשתות",
+  "fields": [
+    {"id": "items", "label": "רשתות", "control": "repeater", "target": {"children": ".kol-social__link"}},
+    {"id": "shape", "label": "צורה (circle · square · plain)", "control": "select", "options": ["circle", "square", "plain"], "target": {"class": "kol-social--{value}"}},
+    {"id": "size", "label": "גודל", "control": "size", "target": {"var": "--kol-social-size"}},
+    {"id": "color", "label": "צבע (ריק — צבעי הרשתות)", "control": "color", "target": {"var": "--kol-social-color"}}
+  ]
+}

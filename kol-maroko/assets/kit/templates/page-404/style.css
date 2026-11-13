@@ -1,0 +1,6 @@
+.tk-404 { min-block-size: 70vh; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 48px 16px; text-align: center; }
+.tk-404__code { margin: 0; font-size: clamp(5rem, 18vw, 10rem); font-weight: 800; line-height: 1; color: var(--color-accent, #a3322a); }
+.tk-404__title { margin: 0; font-size: clamp(1.5rem, 4vw, 2.4rem); }
+.tk-404__text { margin: 0; }
+.tk-404__home { padding: 12px 24px; border-radius: 999px; background: var(--color-accent, #a3322a); color: #fff; text-decoration: none; font-weight: 700; }
+.tk-404__home:focus-visible { outline: 3px solid var(--color-accent, #a3322a); outline-offset: 3px; }

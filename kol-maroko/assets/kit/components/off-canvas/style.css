@@ -1,4 +1,4 @@
-/* רכיב מוכן: חלונית מהצד (kit 1.0.0) — <dialog> בגובה המסך, מתחילת השורה או מסופה. */
+/* רכיב מוכן: חלונית מהצד (kit 1.0.1) — <dialog> בגובה המסך, מתחילת השורה או מסופה. */
 .kol-offcanvas__open { padding: 10px 18px; border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
 .kol-offcanvas__open:focus-visible { outline: 2px solid var(--color-accent, #a3322a); outline-offset: 3px; }
 .kol-offcanvas__dlg { --kol-offcanvas-w: 360px; box-sizing: border-box; inline-size: min(var(--kol-offcanvas-w), 88vw); max-inline-size: none; block-size: 100%; max-block-size: none; margin: 0; padding: 56px 24px 24px; border: 0; background: var(--color-bg, #fff); color: var(--color-text, #16192b); box-shadow: 0 0 60px rgba(0, 0, 0, .3); }
