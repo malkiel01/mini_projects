@@ -766,7 +766,7 @@ const png = (w, h, rgb) => {
       const [fc] = await Promise.all([page.waitForEvent('filechooser', { timeout: 8000 }), page.click('#sheet[open] [data-pick-upload], dialog[open] [data-pick-upload]')]);
       await fc.setFiles(GREEN); await until(() => page.evaluate(() => !document.getElementById('sheet').open), 15000); await sleep(800);
       H = await html(page);
-      ok(/<meta property="og:image" content="[^"]*photo-green\.png">/.test(H), '"תמונת שיתוף" ← ⬆️ העלאה מהמחשב — og:image', (H.match(/<meta property="og:image"[^>]*>/) || [])[0]);
+      ok(/<meta property="og:image" content="[^"]*photo-green(-\d+)?\.png">/.test(H), '"תמונת שיתוף" ← ⬆️ העלאה מהמחשב — og:image', (H.match(/<meta property="og:image"[^>]*>/) || [])[0]);
       ok(/photo-green/.test(await page.evaluate(() => document.querySelector('[data-hd-card] img')?.src || '')), 'כרטיס השיתוף (וואטסאפ / פייסבוק) עם התמונה');
       await shot(page, 'e2e-22-settings-1920');
       await page.click('[data-head-btn]'); await sleep(400);
