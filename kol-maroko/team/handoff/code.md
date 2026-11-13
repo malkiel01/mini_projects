@@ -160,3 +160,14 @@
 - רכיבים מוכנים = `assets/kit/components/<שם>/` (בכלי) → מועתקים ל-`components/<תיקייה>/` בפרויקט. פעולות `kit_*` (editor; list/get — content_editor). undo/revert בודקים rev מול `after` (409 אם השתנה); ב-kol.json — רק המפתח של הרכיב.
 - רכיב שטוען תוכן חיצוני — `external` ב-kit.json, נטען רק בלחיצה (video-embed).
 - editor.css: בלוק V16 **לפני** סמן V14 (v14 בודקת שכל מה שאחריו — לטלפון). שער איזון CSS — ב-T2.
+
+## מ-T2 (2026-11-13, נרשם בידי בקרה (8))
+- **כפתור שמוסתר בטלפון — לא `display:none` בתוך `.ed-bar`.** כפתור 0×0 מפיל את v1a/v1b ("כפתורי הסרגל ≥34px"). מוציאים מה-DOM ב-matchMedia ומחזירים למקום (סמן הערה) — הבלוק `/* T2 */` ב-screen.js (▶, ⚙️, ▶️). כפתור חדש שלא צריך בטלפון — להוסיף ל-`items`.
+- **בסרגל הטלפון (שורה אחת שגוללת, V14) — שום `position:absolute`.** v1b בודקת בחמישה מצבי גלילה ש-elementFromPoint במרכז כל כפתור מחזיר אותו.
+- **בלוק בתוך שורה:** `KolStruct.blockyIn(par, tags, moving)` — בלוק מבחוץ ל-`span/b/i/…/label/button` בלי בלוקים — נדחה (`code: 'inline'`), הגרירה יוצאת לצד השורה (`withValid`). סידור מחדש באותו הורה, או יעד שכבר מכיל בלוקים — מותר. `<a>` — לא נחסם.
+- **`replaceChildren(...)` — בלי ארגומנט null/false**; עוטפים ב-`filter`. נאכף ב-`tests/editor/replace-children.mjs`.
+- **שער CSS:** `tests/cases/99-css-balance.php` — @media פתוח עוצר את הפריסה. לפני מחיקת בלוק פתוח — לבדוק מה היה בתוכו (V15b מחקה את 📄 44px).
+- **ייבוא ZIP חלקי:** `pf_zip_import` מקבל `scope` (קידומות, בפסיק); השרת דוחה כל ZIP עם משהו מחוצה לו.
+- **`note(text, err, action, soft)`** — `soft`: רמז שנסגר בלחיצה הבאה או אחרי 6ש'.
+- `sanitize_rich` שומר `lang=` (BCP47 קצר). `build.clean` מסירה `<animate>/<set>` שמכוונים href/src ל-javascript:.
+- **פתוח:** בעריכת תבנית — `<style>` שבעמוד ו-`lang` לא נטענים; Safari / Firefox / iOS — לא נבדקו.

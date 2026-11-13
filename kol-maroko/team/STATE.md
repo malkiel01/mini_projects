@@ -1,17 +1,18 @@
 # מצב — הזיכרון הנייד של הבקרה
 
-**עדכון אחרון:** 2026-11-13 12:21 UTC — מסירה מבקרה (7) לבקרה (8).
+**עדכון אחרון:** 2026-11-13 14:20 UTC — בקרה (8).
 
 ## ⏩ עכשיו — בקרה (8) `session_018g4NYGX9uwxscA1qjoWV4P`
 - **השעון:** `trig_01XJxsx6S4PqbvMTWEv5BxnE` (דקה 48, לתוך בקרה (8)). הישן `trig_01SnCf3dTo5pCUfX7RptD571` כבוי. בקרה (7) `…DvggGfQE65Uogdgt6` הפסיקה (מעבירה רק את דוח הדפדפן של T2).
 - **הבעלים:** "עד הסוף", "תמשיך בלי הפסקה", "אל תתייחס לטוקנים". עברית, סיכום בסוף כל הודעה. צ'אטי הקוד בעומק 8 — **אין להם send_later**: הבקרה מעירה אותם.
-- **סדר מיזוג: T2 ← V16b ← V14.**
-  1. **T2 #1532 @74db4ce** (`…FgrHM8HpJ8E599LTe`): ביקורת קוד ✓ (🟡 blockyIn תוקן). סבב דפדפן ×2 רץ אצל בקרה (7) — הדוח יגיע אליי. אין 🔴 ← מיזוג.
-  2. **V16b #1544 @9d75a2c** (V16 `…CPcN9QLqxpbp9z9Wp`): ביקורת ✓ (`reviews/V16b.md`), 🟡/⚪ תוקנו ב-c4f4bff. אחרי T2: סבב ממוקד (run.php, v16, v13, v12, e2e-owner; צילומי popup ב-390 ובמקטע כהה) ← מיזוג ← להודיע ל-V16 "#1544 מוזג" ← V16c (טפסים + webhook — לבדוק SSRF כמו V9; קבצים יתומים ב-kit_update; aria-labelledby; "חזרה לראש" מול חץ הקרוסלה ב-390).
-  3. **V14 #1545 @733d0c3** (`…DtBMwiRBE3bxxFVJp`, לא דוחף עד אישור): אחרי V16b — ממזג main, לוקח את data-monaco-loader של V16, משאיר איפוס הבטחה בכישלון + בדיקת v14. אחר כך ביקורת מלאה (טרם נעשתה) ← מיזוג.
-  - **E2E** `…CQ7dY3rTeMXBgbzvi`: סבב אחרי כל מיזוג; ה-PR שלו (בדיקות/יומן) ממוזג.
+- **מוזג (בקרה 8):** V16b #1544 (9728e05, פריסה 1624 ✓) · T2 #1532 (8cf9490) + E2E #1547 (2abeac1) — פריסה לאמת. T2 רדום.
+- **פתוחים:**
+  1. **V14 #1545** (`…DtBMwiRBE3bxxFVJp`): 5 🟡 תוקנו (75dfdb0, `reviews/V14c.md`); מוסיף 🔴 גלילת קנבס בטלפון תופסת אלמנטים + 🟡 כלי הרקע בלי תווית (ממצאי הבעלים). ← SHA ← סבב דפדפן ← מיזוג.
+  2. **V16c #1548** (V16 `…CPcN9QLqxpbp9z9Wp`): ביקורת קוד+אבטחה (`reviews/V16c.md`); 🔴 נקודה בסוף מארח (DNS rebinding) תוקן ב-lib/net.php (096768e, אומת גם ב-A2). מתקן flake מצגת ב-v16.cjs:489 ← SHA ← סבב דפדפן ← מיזוג.
+  - **E2E** `…CQ7dY3rTeMXBgbzvi`: סבב על T2.
+- **הבעלים בודק בטלפון עכשיו (מטלה אחת בכל פעם):** ✔️ 📏 הצמדה · ✔️ רקע הסר/↶/החלף · ✔️ מיקום חופשי. הבא: טקסט בלחיצה כפולה, גרירת כותרת, תצוגה חיה. נשארו ~29 פריטים לבדיקה; F2/F3/F4/M7 — רק ✅.
 - **מיגרציות:** ב-main 24. V14=27; 25, 26, 28 שמורים.
-- **אחרי כל מיזוג:** send_later 6–7 דק' ← actions_list (perPage 1, status completed, branch main) ← `conclusion: success` · לוח `dev/open-items.json` (KM-039 = V16) · להודיע לצ'אטים `git merge origin/main`.
+- **אחרי כל מיזוג:** send_later 7 דק' ← `gh api repos/malkiel01/mini_projects/actions/workflows/deploy.yml/runs?branch=main&per_page=1 --jq '.workflow_runs[0]|{run_number,conclusion,head_sha}'` (actions_list מחזיר הודעת squash ענקית). במיזוג — תמיד commit_message קצר ← `conclusion: success` · לוח `dev/open-items.json` (KM-039 = V16) · להודיע לצ'אטים `git merge origin/main`.
 - **ביקורת:** סוכן-משנה ברקע לכל PR; דפדפן — **טורי בלבד**. שעות רק מ-`date -u`.
 - **אצל הבעלים:** M3 (המתג באתר), M6 אחרי Q30, site_switch, T14 "תקן ל-0.45".
 
