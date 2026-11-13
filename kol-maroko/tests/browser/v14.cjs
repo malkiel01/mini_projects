@@ -300,7 +300,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await page.evaluate(() => { Editor._state.nav.refresh(); Editor._state.nav.sync(); }); await sleep(200);
     st = await page.evaluate(() => { const r = document.querySelector('.nv-row.sel'); if (!r) return null; const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, h: b.height }; });
     if (st) {
-      const from = st, to = { x: st.x, y: st.y + 70 }, tN = await page.evaluate(() => Editor._state.doc.text());
+      const ROWH = await page.evaluate(() => window.KolNavigator.ROW);   // 44 במגע (V14c), 30 בעכבר — הגרירה בשורות, לא בפיקסלים
+      const from = st, to = { x: st.x, y: st.y + Math.round(70 / 30 * ROWH) }, tN = await page.evaluate(() => Editor._state.doc.text());
       const mid = await realDrag(page, from, to, { hold: 650, steps: 10, during: () => page.evaluate(() => !!Editor._state.build.drag.active) });
       const par0 = (await placeOf(page)).par;
       await answerAll(page);
