@@ -15,13 +15,15 @@
  *  8. כרטיס מילה: "התבנית — חל על כל המילים" (כל הכרטיסים) · "המילה הזו" ← ✏️ ← הטבלה.
  *  9. רכיב: "🧩 שמור כרכיב" ← לשונית 🧩 רכיבים ← גרירה לקנבס ← שני מופעים.
  * 10. קוד: "</> פתח בקוד" ← הקלדה בעורך הקוד ← חזרה לעורך — הקנבס מסונכרן; ◫ מבט מפוצל.
- * 11. 🚀 פרסום: בנייה ← "לתור" ← "⏳ ממתין למשיכה" — עד התור (האתר: tests/fake-wp.php, בלי אתר אמיתי).
+ * 11. ⚙️ שורת חיבור ← 🚀 בנייה ← "לתור" ← "🔄 בדוק עכשיו" ← האתר מושך ← "✓ הוחל באתר" (tests/fake-wp.php, בלי אתר אמיתי).
  * 13. 🗂️ קבצים ← 🎙️ הקלטות: כל ההקלטות, ▶ השמעה, 🔁 החלפה מהמכשיר + 🕘 גרסאות וחזרה, מחיקה לסל ו-♻️ שחזור, ➕ הוספה.
  * 14. 📚 נתונים: "+ מילה" (לטבלה), 🧩 "+ שדה" (ובספרייה של העורך), "➕ רשימה חדשה" (קובץ ב-data/).
  * 15. 👥 אנשים: "+ הוסף עוזר" עם תפקיד.
  * 16. ↩️ שחזור: 📌 נקודה ← מחיקת מילה ← "↩️ שחזור לנקודה הזו".
  * 17. 🐞 בעורך: הצבעה על אלמנט ← "פתיחת מטלה" ← DevLoop.
  * 18. V13: לחיצה ימנית ← העתק / הדבק סגנון, 🕘 היסטוריה (חזרה לצעד), Ctrl+E, 📄 שמור כתבנית ← גרירה לקנבס, 🗜 ZIP.
+ * 19. 🛠️ מפתח: 📋 מטלות (הדיווח), 📜 יומן, 👣 פעולות (של התרחיש), 🩺 תקינות (כל ❌ עם 🔧).
+ * 20. 390: 📁 עץ הקבצים ← css/page.css ← הקלדה ← 💾 שמירה.
  * 12. 390 במגע: הקשה בוחרת, ידית המרווח במגע, צבע מהפאנל.   (רץ אחרון)
  * E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0); E2E_TRACE=1 — מצב הרובריקה העליונה אחרי כל צעד.
  *
@@ -77,6 +79,10 @@ const png = (w, h, rgb) => {
   const env = { ...process.env, PHP_CLI_SERVER_WORKERS: '6' };
   const php = spawn('php', ['-S', `127.0.0.1:${port}`, path.join(ROOT, 'tests', 'router.php')], { cwd: ROOT, env: { ...env, KOL_TEST_DATA: data }, stdio: 'ignore' });
   const wpPhp = spawn('php', ['-S', `127.0.0.1:${wpPort}`, path.join(ROOT, 'tests', 'fake-wp.php')], { cwd: ROOT, env: { ...env, KOL_TEST_WP: wpDir }, stdio: 'ignore' });
+  // "בוורדפרס": הדבקת שורת החיבור בתוסף, ו"🔄 עדכן עכשיו" (wp-cron) — הצד של האתר, לא של הכלי (כמו ב-m7)
+  const wpOpt = (k, v) => { const f = path.join(wpDir, 'options.json'); const o = JSON.parse(fs.readFileSync(f, 'utf8')); if (v === undefined) delete o[k]; else o[k] = v; fs.writeFileSync(f, JSON.stringify(o)); };
+  const wpGet = k => JSON.parse(fs.readFileSync(path.join(wpDir, 'options.json'), 'utf8'))[k];
+  const sitePull = async () => (await fetch(wp + '/__pull')).json();
   let browser;
   const errors = [];
   try {
@@ -386,9 +392,17 @@ const png = (w, h, rgb) => {
     });
 
     // ═══ 11. בנייה ופרסום — עד התור ═══
-    await step('11. בנייה ופרסום עד התור', async () => {
+    await step('11. בנייה ופרסום עד "הוחל באתר"', async () => {
       connectSite();
       await saved(page);
+      // ⚙️ בעל האתר ← "📋 יצירת שורת חיבור" ← מודבקת בתוסף בוורדפרס
+      await page.click('a:has-text("⚙️ בעל האתר")');
+      await page.waitForSelector('.ob-channel', { timeout: 20000 });
+      await page.click('.ob-channel button:has-text("שורת חיבור")');
+      const line = (await (await page.waitForSelector('.ob-line')).textContent()).trim();
+      const m = line.match(/^kol-maroko:2:([^:]+):([^:]+):(.+):([A-Za-z0-9_-]{43})$/);
+      ok(!!m, '⚙️ בעל האתר ← "📋 שורת חיבור" — השורה מוצגת', line.slice(0, 40));
+      if (m) { wpOpt('kol_maroko_pull_url', m[3]); wpOpt('kol_maroko_pull_token', m[4]); }
       await page.click('a:has-text("🚀 פרסום")');
       await page.waitForSelector('.pk .btn.primary', { timeout: 20000 });
       await page.click('.pk .btn.primary');
@@ -401,6 +415,19 @@ const png = (w, h, rgb) => {
       await shot(page, 'e2e-11-publish-1920');
       if (go) await go.click();
       ok(await until(async () => (await call(page, 'build_get', undefined, '&id=' + b1.id)).build.status === 'sending', 15000), 'הגרסה בתור ("⏳ ממתין למשיכה") — לא "באתר"');
+      await closeAll(page);
+      // "🔄 בדוק עכשיו" ← האתר מושך ← "✓ הוחל באתר"
+      await page.click('.ob-pulse button:has-text("בדוק עכשיו")'); await sleep(800);
+      const run = await sitePull();
+      ok(run.ok && run.applied >= 1, 'התוסף (fake-wp) משך והחיל', JSON.stringify(run).slice(0, 160));
+      const applied = await until(() => page.$('.ob-row.ob-applied'), 20000);
+      ok(applied && /הוחל באתר/.test(await applied.textContent()), '"✓ הוחל באתר" — בלי רענון');
+      ok((await call(page, 'build_get', undefined, '&id=' + b1.id)).build.status === 'live', 'הגרסה "באתר"');
+      // מה שבאוויר אצל האתר — העמוד עם השינויים של בעל העמוד
+      let liveHtml = '';
+      try { const man = JSON.parse(fs.readFileSync(path.join(wpDir, 'uploads', 'kol-maroko', 'v2', 'live.json'), 'utf8')); liveHtml = fs.readFileSync(path.join(wpDir, 'uploads', 'kol-maroko', 'v2', 'blobs', man.files[man.entry || 'index.html'].sha256), 'utf8'); } catch (e) { liveHtml = 'ERR ' + e.message; }
+      ok(/קול מרוקו שלי/.test(liveHtml) && /ומשפחתו/.test(liveHtml), 'באתר: index.html עם הכותרת והטקסט שבעל העמוד שינה', liveHtml.slice(0, 120));
+      await shot(page, 'e2e-11-applied-1920');
     });
 
 
@@ -614,6 +641,46 @@ const png = (w, h, rgb) => {
       const zp = path.join(data, 'tpl.zip'); await dl.saveAs(zp);
       const zb = fs.readFileSync(zp);
       ok(zb.slice(0, 2).toString() === 'PK' && zb.includes('template.html'), '🗜 — ZIP של התבנית הורד (template.html בתוכו)', zb.length);
+    });
+
+
+    // ═══ 19. 🛠️ מסך המפתח ═══
+    await step('19. 🛠️ מפתח: מטלות, יומן, פעולות, תקינות', async () => {
+      await page.click('a:has-text("🛠️ מפתח")');
+      await page.waitForSelector('.dev-subs', { timeout: 20000 }); await sleep(1500);
+      const tasks = (await page.textContent('.dev-body')).replace(/\s+/g, ' ');
+      ok(/לא הצלחתי לשנות/.test(tasks), '📋 מטלות — שורת "🐞 לא הצלחתי לשנות" (הדיווח מצעד 17)', tasks.slice(0, 160));
+      const sub = async t => { await page.click('.dev-subs a:has-text("' + t + '")'); await sleep(2500); return (await page.textContent('.dev-body')).replace(/\s+/g, ' '); };
+      const log = await sub('📜 יומן');
+      ok(/שורות מתוך/.test(log) && /request/.test(log) && /העתקה לצ'אט/.test(log), '📜 יומן — כל בקשה, עם "📋 העתקה לצ\'אט"', log.slice(0, 160));
+      const audit = await sub('👣 פעולות');
+      ok(/ייבא מחדש/.test(audit) && /(עוזר|הוסיף|הזמין)/.test(audit) && /שחזר/.test(audit), '👣 פעולות — הייבוא, העוזר והשחזור של התרחיש', audit.slice(0, 300));
+      const health = await sub('🩺 תקינות');
+      const reds = await page.$$eval('.dev-body li, .dev-body .row, .dev-body > div > div', a => a.filter(x => /^❌/.test(x.textContent.trim())).map(x => x.textContent.replace(/\s+/g, ' ').slice(0, 140)));
+      ok(/✅/.test(health) && /אדומות מתוך/.test(health), '🩺 תקינות — הבדיקות רצות, עם ✅ / ❌', health.slice(0, 160));
+      const nX = (health.match(/❌/g) || []).length, nW = (health.match(/🔧/g) || []).length;
+      ok(nX > 0 ? nW >= nX : true, 'כל ❌ — עם 🔧 "מה לעשות" (' + nX + ' אדומות בסביבת הבדיקה: build.json, data/.htaccess תחת php -S, וכו\')', { nX, nW, reds });
+      await shot(page, 'e2e-19-dev-1920');
+    });
+
+    // ═══ 20. 📁 עץ הקבצים ועורך הקוד — בטלפון ═══
+    await step('20. 390: 📁 עץ הקבצים ועורך הקוד', async () => {
+      const c3 = await mk(390, 844), pq = await c3.newPage(); watch(pq, '390-code');
+      await pq.goto(base + '/#/project'); await pq.waitForSelector('.pj-tree .pj-row', { timeout: 20000 }); await sleep(800);
+      ok(await pq.evaluate(() => document.documentElement.scrollWidth - innerWidth) <= 1, '390: 📁 — בלי גלילה אופקית');
+      const banner = (await pq.textContent('#main')).replace(/\s+/g, ' ');
+      if (/הקבצים כאן עדיין אינם מתפרסמים/.test(banner)) finding('🟡', '📁 פרויקט אומר "הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא" — אבל הפרסום מהקבצים כבר עובד (צעד 11: "✓ הוחל באתר" עם השינויים). בעל העמוד שעורך כאן יחשוב שהעבודה שלו לא תגיע לאתר. צילום: e2e-20-tree-390.png');
+      await shot(pq, 'e2e-20-tree-390');
+      await pq.locator('.pj-tree .pj-row', { hasText: 'page.css' }).first().tap(); await sleep(2500);
+      ok(await pq.isVisible('.monaco-editor'), '390: הקשה על css/page.css — עורך הקוד נפתח');
+      await pq.locator('.monaco-editor .view-line').first().tap(); await sleep(300);
+      await pq.keyboard.press('Home'); await pq.keyboard.type('/* נערך בטלפון */\n'); await sleep(500);
+      await pq.click('#main button:has-text("💾 שמירה")'); await sleep(1500);
+      const t = await pq.evaluate(async () => { const f = Project.docs.byPath('css/page.css'); return (await Project.docs.open(f.id)).text(); });
+      ok(/נערך בטלפון/.test(t), '390: הקלדה ← 💾 שמירה — הקובץ נשמר', t.slice(0, 80));
+      ok(await pq.evaluate(() => [...Project._state.docs.values()].every(d => !d.dirty)), '390: "נשמר" — אין שינויים שלא נשמרו');
+      await shot(pq, 'e2e-20-code-390');
+      await c3.close();
     });
 
     // ═══ 12. 390 — מגע ═══
