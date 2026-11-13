@@ -21,6 +21,7 @@
       if (!HEIGHTS.includes(this.height)) this.height = 'half';
       this.zoom = 1; this.vvFake = null;
       this.realWidth();
+      this.paletteBtn();
       this.sheets(); this.selTools(); this.navTools(); this.repeat(); this.keyboard(); this.pinch();
       const c = this.S.canvas, prev = c.onSelect;
       c.onSelect = (...a) => { if (prev) prev(...a); this.afterSelect(); };
@@ -50,6 +51,14 @@
         return out;
       };
       if (c.m) c.setViewport(c.viewport);
+    }
+
+    // ── V13 במגע: חיפוש פעולה (Ctrl+E) מכפתור — במגע אין מקלדת ────
+    paletteBtn() {
+      const bar = this.el.bar; if (!bar || !this.S.palette) return;
+      this.palBtn = h('button', { type: 'button', class: 'icon-btn ts-pal', 'data-ts-palette': true, 'aria-label': 'חיפוש פעולה או שליטה (Ctrl+E)', title: 'חיפוש פעולה או שליטה (Ctrl+E)', hidden: !this.touchy() || null, onclick: () => this.S.palette.open() }, '🔎');
+      const ref = bar.querySelector('[data-panel="info"]'); if (ref) ref.after(this.palBtn); else bar.append(this.palBtn);
+      const upd = () => { this.palBtn.hidden = !this.touchy(); }; window.addEventListener('resize', upd); this.offs.push(() => window.removeEventListener('resize', upd));
     }
 
     // ── הגיליון: שלושה גבהים ────────────────────────────────
@@ -204,6 +213,7 @@
           h('button', { type: 'button', class: 'btn sm', 'data-ts-nv': 'to', disabled: !w || !m || null, onclick: () => B.moveSheet(this.S.canvas.selected) }, '↕ העבר אל…'));
       };
       this.drawNav = draw;
+      const c0 = this.S.canvas, prevDraw = c0.onDraw; c0.onDraw = (...a) => { if (prevDraw) prevDraw(...a); if (this.navN !== c0.selected) { this.navN = c0.selected; draw(); } };   // בחירה שלא עברה דרך onSelect (ביטול, היסטוריה)
       const c = this.S.canvas, prev = c.onSelect; c.onSelect = (...a) => { if (prev) prev(...a); draw(); };
       const prevCh = c.onChange; c.onChange = (...a) => { if (prevCh) prevCh(...a); draw(); this.warnFree(); };
       draw();

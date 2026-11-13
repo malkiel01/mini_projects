@@ -243,13 +243,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(await idx() === i0, 'V4 · ביטול הגרירה — אין שינוי');
     }
 
+    const btn = async sel => { const r = await rectOf(page, sel); return r && r.w ? { x: r.cx, y: r.cy } : null; };
+    const tapSel = async sel => { await page.evaluate(s => { const e = document.querySelector(s); if (e) e.scrollIntoView({ block: 'nearest', inline: 'center' }); }, sel); const b = await btn(sel); if (!b) return false; await tap(page, b); return true; };
     // ═══ 8. לחיצה ארוכה על אלמנט לא נבחר — תפריט הקשר כגיליון ═══
     {
       await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(200);
       const p2 = await at(page, H1);
       await page.evaluate(PT); await page.evaluate(([x, y]) => window.__pt.down(x, y), [p2.x, p2.y]); await sleep(700); await page.evaluate(([x, y]) => window.__pt.up(x, y), [p2.x, p2.y]); await sleep(400);
-      ok(await sheetOpen(page), 'לחיצה ארוכה — תפריט ההקשר נפתח כגיליון');
-      await closeSheet(page);
+      st = await page.evaluate(() => { const m = document.querySelector('.ed-ctx'); if (!m) return null; const r = m.getBoundingClientRect(), it = [...m.querySelectorAll('.ed-ctx-item')].filter(b => b.getClientRects().length); return { w: Math.round(r.width), bottom: Math.round(r.bottom), iw: innerWidth, ih: innerHeight, n: it.length, minH: Math.min(...it.map(b => b.getBoundingClientRect().height)), close: Math.round(m.querySelector('[data-ctx-close]').getBoundingClientRect().width) }; });
+      ok(st && st.w === st.iw && Math.abs(st.bottom - st.ih) <= 1 && st.n >= 10 && st.minH >= 44 && st.close >= 44, 'V13 · לחיצה ארוכה — תפריט ההקשר כגיליון מלמטה, ברוחב המסך, פריטים ו-✕ של 44px', st);
+      // פעולה מהתפריט בהקשה: "שכפל" ← Ctrl+Z
+      const tq = await page.evaluate(() => Editor._state.doc.text());
+      await page.evaluate(() => document.querySelector('.ed-ctx [data-ctx="duplicate"]').scrollIntoView({ block: 'nearest' }));
+      const dupOk = await tapSel('.ed-ctx [data-ctx="duplicate"]'); await sleep(500);
+            ok(await page.evaluate(() => !document.querySelector('.ed-ctx')) && (await page.evaluate(() => Editor._state.doc.text())) !== tq && /שכפ/.test(await lastTx(page)), 'V13 · "שכפל" מהתפריט במגע — בוצע, והתפריט נסגר (' + await lastTx(page) + ')');
+      await undo(page);
+      ok(await page.evaluate(() => Editor._state.doc.text()) === tq, 'V13 · Ctrl+Z מחזיר');
+      await page.evaluate(() => Editor._state.menu?.close());
     }
 
     // ═══ 9. הקלדה (V2) + מקלדת וירטואלית ═══
@@ -342,8 +352,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     }
 
     // ═══ 13. הטבלה של §2.4 — פעולה במגע לכל פרוסה ═══
-    const btn = async sel => { const r = await rectOf(page, sel); return r && r.w ? { x: r.cx, y: r.cy } : null; };
-    const tapSel = async sel => { await page.evaluate(s => { const e = document.querySelector(s); if (e) e.scrollIntoView({ block: 'nearest', inline: 'center' }); }, sel); const b = await btn(sel); if (!b) return false; await tap(page, b); return true; };
     {
       // V5 · החלפת תמונת רקע — הכפתור בסרגל
       const sec = await page.evaluate(() => { const c = Editor._state.canvas; for (const e of c.doc.querySelectorAll('body *')) { const bg = c.frame.contentWindow.getComputedStyle(e).backgroundImage; if (/url\(/.test(bg) && e.getClientRects().length) { const n = c.nodeOf(e); if (n) { c.select(n); return e.localName + '.' + e.className; } } } return null; });
@@ -379,6 +387,44 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await tapSel('[data-ntab="lib"]'); await sleep(300);
       const libItem = await page.evaluate(() => { const b = document.querySelector('.ed-libbody [data-lib]'); if (!b) return null; const r = b.getBoundingClientRect(); return { h: r.height }; });
       ok(libItem && libItem.h >= 36, 'V4 · הספרייה בגיליון — פריטים להקשה', libItem);
+      await page.evaluate(() => document.querySelector('.ed-nav .ed-side-head .icon-btn').click()); await sleep(200);
+    }
+
+    // ═══ 13a. V13 במגע: חיפוש פעולה מכפתור, היסטוריה, תבניות ═══
+    {
+      await select(page, H1); await sleep(300);
+      st = await page.evaluate(() => { document.querySelector('.ed-bar').scrollLeft = 0; const b = document.querySelector('[data-ts-palette]'), r = b && b.getBoundingClientRect(); return b ? { hidden: b.hidden, inView: r.left >= 0 && r.right <= innerWidth, w: Math.round(r.width) } : null; });
+      ok(st && !st.hidden && st.inView, 'V13 · 🔎 חיפוש פעולה (Ctrl+E) — כפתור בסרגל, גלוי במגע', st);
+      await tapSel('[data-ts-palette]'); await sleep(400);
+      st = await page.evaluate(() => { const p = document.querySelector('[data-palette]'); if (!p) return null; const rows = [...p.querySelectorAll('.pl-row')].filter(b => b.getClientRects().length); return { n: rows.length, minH: Math.min(...rows.map(b => b.getBoundingClientRect().height)), sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+      ok(st && st.n > 3 && st.minH >= 44 && st.sw <= st.iw, 'V13 · החיפוש נפתח בהקשה; שורות 44px, בלי גלילה אופקית', st);
+      await page.fill('[data-palette] .pl-in', 'שכפל'); await sleep(300);
+      const tq2 = await page.evaluate(() => Editor._state.doc.text());
+      const row = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-palette] .pl-row')].find(x => /שכפל/.test(x.textContent) && x.getAttribute('aria-disabled') !== 'true'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+      if (row) { await tap(page, row); await sleep(500); }
+      ok(row && (await page.evaluate(() => Editor._state.doc.text())) !== tq2, 'V13 · פעולה מהחיפוש בהקשה ("שכפל") — בוצעה');
+      if (row) await undo(page);
+      await page.evaluate(() => Editor._state.palette?.close());
+      // היסטוריה ותבניות — לשוניות בגיליון ה-Navigator
+      await page.evaluate(() => { if (!document.querySelector('.ed').classList.contains('nav-open')) document.querySelector('.ed-bar [data-panel="nav"]').click(); }); await sleep(300);
+      const th = await tapSel('[data-ntab="hist"]'); await sleep(400);
+      st = await page.evaluate(() => { const rows = [...document.querySelectorAll('[data-hist-list] .hs-row')].filter(b => b.getClientRects().length); const tabs = [...document.querySelectorAll('.ed-ntabs button')].map(b => Math.round(b.getBoundingClientRect().height)); return { n: rows.length, minH: rows.length ? Math.min(...rows.map(b => b.getBoundingClientRect().height)) : 0, tabs, sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+      ok(th && st.n >= 2 && st.minH >= 44 && st.tabs.every(x => x >= 44) && st.sw <= st.iw, 'V13 · 🕘 היסטוריה בגיליון — שורות ולשוניות 44px', st);
+      // קפיצה בהיסטוריה בהקשה: לשורת "התחלה" ובחזרה
+      const tH = await page.evaluate(() => Editor._state.doc.text());
+      const nTx = await page.evaluate(() => Editor._state.tx.length);
+      if (nTx) {
+        await tapSel('[data-hist="start"]'); await sleep(700);
+        const back = await page.evaluate(() => Editor._state.tx.length);
+        ok(back === 0, 'V13 · הקשה על "התחלה" בהיסטוריה — חזרה לתחילת העריכה', { nTx, back });
+        await tapSel('[data-hist="r' + (nTx - 1) + '"]'); await sleep(700);
+        ok(await page.evaluate(() => Editor._state.doc.text()) === tH, 'V13 · הקשה על השורה האחרונה — חזרה למצב העדכני');
+      } else ok(true, 'V13 · אין עסקאות — דילוג על הקפיצה בהיסטוריה');
+      const tt = await tapSel('[data-ntab="tpl"]'); await sleep(800);
+      st = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-tpl-save-page], [data-tpl-import]')].filter(x => x.getClientRects().length); return { n: b.length, minH: b.length ? Math.min(...b.map(x => x.getBoundingClientRect().height)) : 0, sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+      ok(tt && st.n >= 2 && st.minH >= 34 && st.sw <= st.iw, 'V13 · 📄 תבניות בגיליון — נפתחות בהקשה, בלי גלילה אופקית', st);
+      await shot(page, 'v14-390-v13-templates');
+      await tapSel('[data-ntab="tree"]'); await sleep(200);
       await page.evaluate(() => document.querySelector('.ed-nav .ed-side-head .icon-btn').click()); await sleep(200);
     }
 
@@ -435,6 +481,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const pt = await pg.evaluate(() => { const c = Editor._state.canvas, e = c.doc.querySelector('h1'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + r.width / 2) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale }; });
       await pg.touchscreen.tap(pt.x, pt.y); await sleep(300);
       ok(await pg.evaluate(() => /^h1/.test(Editor._state.canvas.label(Editor._state.canvas.selected)) && document.querySelectorAll('.ed-seltools [data-ts-mv]').length === 2), '768: הקשה בוחרת, ו-⬆ ⬇ בסרגל הנבחר');
+      // V13 ב-768: לחיצה ארוכה ← תפריט ההקשר (גיליון, 44px); 🔎 בסרגל
+      await pg.evaluate(() => Editor._state.canvas.select(null)); await sleep(500);
+      await pg.evaluate(PT); await pg.evaluate(([x, y]) => window.__pt.down(x, y), [pt.x, pt.y]); await sleep(700); await pg.evaluate(([x, y]) => window.__pt.up(x, y), [pt.x, pt.y]); await sleep(400);
+      st = await pg.evaluate(() => { const m = document.querySelector('.ed-ctx'); if (!m) return null; const r = m.getBoundingClientRect(), it = [...m.querySelectorAll('.ed-ctx-item')].filter(b => b.getClientRects().length); return { w: Math.round(r.width), iw: innerWidth, minH: Math.min(...it.map(b => b.getBoundingClientRect().height)), pal: !document.querySelector('[data-ts-palette]').hidden }; });
+      ok(st && st.w === st.iw && st.minH >= 44 && st.pal, '768 · V13: לחיצה ארוכה — תפריט ההקשר כגיליון, פריטים 44px; 🔎 בסרגל', st);
+      await pg.evaluate(() => Editor._state.menu?.close());
       await shot(pg, 'v14-768'); await c4.close();
     }
 
@@ -455,9 +507,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         await pg.evaluate(() => { const c = Editor._state.canvas; c.select(c.nodeOf(c.doc.querySelector('h1'))); }); await sleep(400);
         st = await pg.evaluate(() => {
           const ed = document.querySelector('.ed'), r = ed.getBoundingClientRect();
-          return { cls: [...ed.classList].filter(c => /^ts-/.test(c)), grips: [...document.querySelectorAll('[data-ts-grip]')].map(g => g.getBoundingClientRect().height), mv: document.querySelectorAll('[data-ts-mv]').length, navtools: !document.querySelector('[data-ts-navtools]').hidden, cover: getComputedStyle(document.querySelector('.ed-panes')).marginBottom, bar: getComputedStyle(document.querySelector('.ed-bar')).flexWrap, l: Math.round(r.left), r: Math.round(innerWidth - r.right), fit: !document.querySelector('[data-ts-fit]').hidden };
+          return { cls: [...ed.classList].filter(c => /^ts-/.test(c)), grips: [...document.querySelectorAll('[data-ts-grip]')].map(g => g.getBoundingClientRect().height), mv: document.querySelectorAll('[data-ts-mv]').length, navtools: !document.querySelector('[data-ts-navtools]').hidden, cover: getComputedStyle(document.querySelector('.ed-panes')).marginBottom, bar: getComputedStyle(document.querySelector('.ed-bar')).flexWrap, l: Math.round(r.left), r: Math.round(innerWidth - r.right), fit: !document.querySelector('[data-ts-fit]').hidden, pal: !!document.querySelector('[data-ts-palette]') && !document.querySelector('[data-ts-palette]').hidden };
         });
-        ok(!st.cls.length && st.grips.every(x => x === 0) && !st.mv && !st.navtools && st.cover === '0px' && !st.fit, w + ': אין שום סימן של V14 (ידיות גיליון, ⬆ ⬇, סרגל Navigator, קיצור הקנבס)', st);
+        ok(!st.cls.length && st.grips.every(x => x === 0) && !st.mv && !st.navtools && st.cover === '0px' && !st.fit && !st.pal, w + ': אין שום סימן של V14 (ידיות גיליון, ⬆ ⬇, סרגל Navigator, קיצור הקנבס)', st);
         ok(st.l <= 16 && st.r <= 16, w + ': העורך ממלא את המסך, בלי ריק בצדדים', st);
         await shot(pg, 'v14-' + w); await c5.close();
       }

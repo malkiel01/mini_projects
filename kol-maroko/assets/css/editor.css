@@ -645,7 +645,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
   .ed-bar { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; padding-bottom: 1px; }
   .ed-bar::-webkit-scrollbar { display: none; }
   .ed-bar .ed-page { flex: 0 0 104px; min-width: 0; }
-  .ed-bar [data-panel] { order: -1; }   /* 🌳 ℹ️ — ראשונים, תמיד גלויים */
+  .ed-bar [data-panel], .ed-bar .ts-pal { order: -1; }   /* 🌳 ℹ️ 🔎 — ראשונים, תמיד גלויים */
   /* שורת השביל — שורה אחת (בחירה אינה מזיזה את הקנבס בין שתי הקשות): סרגל הנבחר עד 62% וגולל, ופירורי הלחם ביתר — לא מתכווצים לאפס */
   .ed-path { flex-wrap: nowrap; gap: 4px; padding-inline: 4px; height: 48px; min-height: 48px; }
   .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
@@ -656,6 +656,7 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
   .ts-freewarn span { flex: 1 1 200px; }
   /* E2E ⚪7: ידיות 📏 — נקודה של 12px באמצע אזור מגע של 44px, כדי שלא יכסו את הכותרת */
   .sp.phone .sp-h { background: radial-gradient(circle, #e67e22 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; border: 0; opacity: 1; }
+  .fx-rad { background: radial-gradient(circle, #fff 0 3.5px, #e0c 4px 7px, transparent 7.5px) !important; border: 0 !important; box-shadow: none !important; }   /* ידית הרדיוס (V10) — נקודה, לא עיגול של 44px על הטקסט */
   .sp.phone .sp-h-padding { background: radial-gradient(circle, #4c9a2a 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; }
   .ed { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   /* הגיליון: ידית, שלושה גבהים */
@@ -706,4 +707,8 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
   .sg-step { min-width: 44px; min-height: 44px; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
   .ts-mv { min-width: 40px; min-height: 40px; }
   .ed-crumb { min-height: 44px; }
+  /* V13 במגע: שורות החיפוש, ההיסטוריה והתבניות — 44px */
+  .pl-row, .hs-row, .ed-ctx-item, .ed-ntabs button { min-height: 44px; }
+  .tp-row .icon-btn { min-width: 44px; min-height: 44px; }
+  .ed-ctx-head .icon-btn { min-width: 44px; min-height: 44px; }
 }
