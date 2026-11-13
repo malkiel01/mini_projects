@@ -108,7 +108,23 @@
     }
 
     // ── האלמנט הנבחר — גלוי מעל הגיליון ─────────────────────
-    afterSelect() { if (!this.phone()) return; clearTimeout(this.keepT); this.keepT = setTimeout(() => this.keep(), 420); }   // אחרי חלון ההקשה הכפולה (380ms) — גלילה באמצע הייתה מפילה את ההקשה השנייה על אלמנט אחר
+    /** E2E 🟡3: אלמנט במיקום חופשי שנקבע במכשיר רחב יותר (המחשב) חל גם כאן — ועלול לכסות תוכן. אזהרה, ו"בזרימה רק במכשיר הזה" (position: static ב-@media). */
+    warnFree() {
+      const S = this.S, c = S.canvas, n = c && c.selected;
+      if (!this.warn) { this.warn = h('div', { class: 'ed-strip warn ts-freewarn', role: 'status', 'data-ts-freewarn': true, hidden: true }); this.el.gapbar?.after(this.warn); }
+      const w = this.warn; w.hidden = true;
+      try {
+        const dev = S.styler?.device?.(); if (!this.phone() || !n || !dev || !S.pos?.isFree(n) || this.warnOff === n) return;
+        const rows = S.styler.perDevice(n, 'position'), row = rows.find(x => x.d.id === dev.id);
+        if (!row || row.own || !/^(absolute|fixed)$/.test(row.value)) return;
+        const from = rows.find(x => x.d.id === row.from), canW = S.build?.canWrite();
+        w.replaceChildren(h('span', {}, '✥ ' + c.label(n) + ' ממוקם חופשית ' + (from ? 'מ"' + from.d.label + '"' : '') + ' — וזה חל גם ב"' + dev.label + '", שם הוא עלול לכסות תוכן.'),
+          h('button', { type: 'button', class: 'btn sm', 'data-ts-flow': true, disabled: !canW || null, onclick: () => { if (S.pos.off(n)) w.hidden = true; } }, '⇩ בזרימה ב"' + dev.label + '" בלבד'),
+          h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'סגירה', onclick: () => { this.warnOff = n; w.hidden = true; } }, '✕'));
+        w.hidden = false;
+      } catch (e) { console.error(e); }
+    }
+    afterSelect() { this.warnFree(); if (!this.phone()) return; clearTimeout(this.keepT); this.keepT = setTimeout(() => this.keep(), 420); }   // אחרי חלון ההקשה הכפולה (380ms) — גלילה באמצע הייתה מפילה את ההקשה השנייה על אלמנט אחר
     /** גולל את הקנבס כך שהאלמנט הנבחר (או הטקסט שנערך) בתוך השטח הגלוי — ראשו, כשהוא גבוה ממנו. */
     keep(n) {
       if (!this.phone()) return;
@@ -189,7 +205,7 @@
       };
       this.drawNav = draw;
       const c = this.S.canvas, prev = c.onSelect; c.onSelect = (...a) => { if (prev) prev(...a); draw(); };
-      const prevCh = c.onChange; c.onChange = (...a) => { if (prevCh) prevCh(...a); draw(); };
+      const prevCh = c.onChange; c.onChange = (...a) => { if (prevCh) prevCh(...a); draw(); this.warnFree(); };
       draw();
     }
 

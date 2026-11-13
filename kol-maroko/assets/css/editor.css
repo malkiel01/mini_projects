@@ -600,6 +600,12 @@ html.ed-dragging, html.ed-dragging * { cursor: grabbing !important; user-select:
   .ed-seltools-host { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow-x: auto; scrollbar-width: none; }
   .ed-crumbs { flex: 1 1 0; min-width: 34%; }
   .ed-where { display: none; }
+  .ts-freewarn { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ts-freewarn[hidden] { display: none; }
+  .ts-freewarn span { flex: 1 1 200px; }
+  /* E2E ⚪7: ידיות 📏 — נקודה של 12px באמצע אזור מגע של 44px, כדי שלא יכסו את הכותרת */
+  .sp.phone .sp-h { background: radial-gradient(circle, #e67e22 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; border: 0; opacity: 1; }
+  .sp.phone .sp-h-padding { background: radial-gradient(circle, #4c9a2a 0 5px, #fff 5.5px 7px, transparent 7.5px) !important; }
   .ed { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
   /* הגיליון: ידית, שלושה גבהים */
   .ts-grip { display: flex; justify-content: center; align-items: center; flex: none; height: 22px; cursor: grab; touch-action: none; }

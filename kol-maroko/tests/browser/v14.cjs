@@ -382,6 +382,27 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page.evaluate(() => document.querySelector('.ed-nav .ed-side-head .icon-btn').click()); await sleep(200);
     }
 
+    // ═══ 13b. E2E 🟡3: מיקום חופשי מהמחשב — אזהרה בטלפון, ו"בזרימה בטלפון בלבד" ═══
+    {
+      const t0 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
+      await page.evaluate(() => document.querySelector('.ed-dev [data-dev="desktop"]').click()); await sleep(600);
+      await select(page, MV); await sleep(300);
+      await page.evaluate(() => { const S = Editor._state; S.pos.on(S.canvas.selected, S.pos.pickRef); }); await sleep(600);
+      const freeD = await page.evaluate(() => Editor._state.pos.isFree(Editor._state.canvas.selected));
+      await page.evaluate(() => document.querySelector('.ed-dev [data-dev="mobile"]').click()); await sleep(600);
+      await select(page, MV); await sleep(600);
+      st = await page.evaluate(() => { const w = document.querySelector('[data-ts-freewarn]'); return { free: Editor._state.pos.isFree(Editor._state.canvas.selected), shown: !!w && !w.hidden, text: w ? w.textContent : '' }; });
+      ok(freeD && st.free && st.shown && /מחשב/.test(st.text), 'E2E · מיקום חופשי שנקבע במחשב — בטלפון מופיעה אזהרה', st);
+      await tapSel('[data-ts-flow]'); await sleep(700);
+      st = await page.evaluate(() => { const S = Editor._state; return { free: S.pos.isFree(S.canvas.selected), shown: !document.querySelector('[data-ts-freewarn]').hidden, css: [...S.sheets.values()].map(x => x.doc.text()).join('\n') }; });
+      ok(!st.free && !st.shown && /@media[^{]*max-width[^{]*\{[^@]*position:\s*static/.test(st.css), '"⇩ בזרימה בטלפון בלבד" — position: static ב-@media, והאזהרה נעלמת', { free: st.free, shown: st.shown });
+      await page.evaluate(() => document.querySelector('.ed-dev [data-dev="desktop"]').click()); await sleep(600);
+      await select(page, MV); await sleep(300);
+      ok(await page.evaluate(() => Editor._state.pos.isFree(Editor._state.canvas.selected)), 'במחשב — האלמנט נשאר במיקום החופשי');
+      for (let i = 0; i < 6 && await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) !== t0; i++) await undo(page);
+      ok(await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n')) === t0, 'Ctrl+Z מחזיר את ה-CSS');
+      await page.evaluate(() => document.querySelector('.ed-dev [data-dev="mobile"]').click()); await sleep(600);
+    }
     ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '390: בסוף — עדיין אין גלילה אופקית');
     await flush(page);
     await ctx.close();
