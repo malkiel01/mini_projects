@@ -791,6 +791,8 @@ const png = (w, h, rgb) => {
       await shot(page, 'e2e-22-newpage-1920');
       // 📄 כל העמודים ← ⭐ קבע כראשי ← בחזרה; 🚫 צור דף 404
       await page.click('[data-pages-btn]'); await sleep(300); await page.click('[data-pg-pop] [data-pg-manage]'); await sleep(700);
+      const rows = await page.$$eval('[data-pg-row]', a => a.map(x => x.dataset.pgRow));
+      if (rows.some(r => /^templates\//.test(r))) finding('🟡', '📄 עמודים מציג את תבנית העמוד (' + rows.find(r => /^templates\//.test(r)) + ') כעמוד באתר, עם כתובת /lexicon/templates/… — "📄 שמור את העמוד כתבנית" (V13) יוצר "עמוד" ברשימה (V15). הבנייה מוציאה את templates/, אבל בעל העמוד רואה עמוד שאינו עמוד. צילום: e2e-22-pages-1920.png');
       await page.click(`[data-pg-row="${P}"]`); await sleep(300); await page.click('[data-pg-act="entry"]'); await sleep(900);
       ok(await page.evaluate(p => /⭐/.test(document.querySelector(`[data-pg-row="${p}"]`).textContent), P), '⭐ קבע כראשי — העמוד החדש מסומן ⭐');
       await page.click('[data-pg-row="index.html"]'); await sleep(300); await page.click('[data-pg-act="entry"]'); await sleep(900);
