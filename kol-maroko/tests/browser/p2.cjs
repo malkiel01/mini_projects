@@ -149,9 +149,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(up && /נבחר ההורה/.test(up.text) && up.span[2] >= 260 && up.btn && up.btn[0] >= 0 && up.btn[1] <= up.w && up.btn[3] > up.span[3], '390: הרמז "נבחר ההורה" — הטקסט ברוחב ' + (up && up.span[2]) + 'px, והכפתור "↩ חזרה" מתחתיו ובתוך המסך', up);
       await shot(page, 'p2-uplevel-390');
       await page.evaluate(() => { document.querySelector('.ed-note').hidden = true; });
-      // E2E ⚪15: כפתורי "🖼 תמונת רקע" בסרגל — 44 (הסגנון בלבד: בעמוד הזה אין רובריקה עם תמונת רקע)
-      const bgt = await page.evaluate(() => { const g = document.querySelector('[data-bg-tools]'); if (!g) return null; const was = g.hidden, par = g.parentElement; g.hidden = false; const bar = document.querySelector('.ed-bar'); if (!bar.contains(g)) bar.append(g); const hs = [...g.querySelectorAll('.btn')].map(b => Math.round(b.getBoundingClientRect().height)); g.hidden = was; if (par !== g.parentElement) par.append(g); return hs; });
-      ok(bgt && bgt.length === 3 && bgt.every(x => x >= 44), '390: כפתורי "🖼 תמונת רקע" (החלף / הסר / הזז) בסרגל — ≥44', bgt);
+      // E2E ⚪15: כפתורי "🖼 תמונת רקע" בסרגל — 44. הכלים נכנסים לסרגל רק כשנבחר אלמנט עם תמונת רקע — זורעים רובריקה כזו ובוחרים בה
+      await page.evaluate(() => { const c = Editor._state.canvas, i = c.m.src.indexOf('</h1>') + 5;
+        Editor._act('P2 · רובריקה עם רקע', () => ({ patches: [{ from: i, to: i, text: '\n    <section class="p2-bg" style="background-image:url(p2-bg.png);min-height:60px;padding:24px"><p>על רקע</p></section>' }] })); });
+      await sleep(900);
+      await touchTap(page, await page.evaluate(() => { const c = Editor._state.canvas, e = c.doc.querySelector('.p2-bg'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(), f = c.frame.getBoundingClientRect();   /* הקנבס מקוצר עד ראש הגיליון — קודם לגלול אליה */ return { x: f.left + (r.left + 10) * c.scale, y: f.top + (r.top + 8) * c.scale }; })); await sleep(600);
+      const bgt = await page.evaluate(() => { const c = Editor._state.canvas; const sel = c.selected && c.label(c.selected), g = document.querySelector('.ed-bar [data-bg-tools]'); return { sel, hs: g ? [...g.querySelectorAll('.btn')].map(b => Math.round(b.getBoundingClientRect().height)) : null }; });
+      ok(/p2-bg/.test(bgt.sel || '') && bgt.hs && bgt.hs.length === 3 && bgt.hs.every(x => x >= 44), '390: הקשה על רובריקה עם תמונת רקע ← "🖼 תמונת רקע" בסרגל, ושלושת הכפתורים (החלף / הסר / הזז) ≥44', bgt);
+      await shot(page, 'p2-bgtools-390');
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(300);
       // 📄 ← ▶️
       const pg = await center(page, '[data-pages-btn]'); await touchTap(page, pg); await sleep(600);
       const lv = await page.evaluate(() => { const b = document.querySelector('[data-pg-pop] [data-pg-live]'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, at = document.elementFromPoint(x, y); return { h: Math.round(r.height), x, y, vis: r.width > 0, hit: !!at && (at === b || b.contains(at)), at: at && at.outerHTML.slice(0, 80), vh: innerHeight }; });
