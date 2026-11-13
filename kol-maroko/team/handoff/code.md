@@ -160,3 +160,31 @@
 - רכיבים מוכנים = `assets/kit/components/<שם>/` (בכלי) → מועתקים ל-`components/<תיקייה>/` בפרויקט. פעולות `kit_*` (editor; list/get — content_editor). undo/revert בודקים rev מול `after` (409 אם השתנה); ב-kol.json — רק המפתח של הרכיב.
 - רכיב שטוען תוכן חיצוני — `external` ב-kit.json, נטען רק בלחיצה (video-embed).
 - editor.css: בלוק V16 **לפני** סמן V14 (v14 בודקת שכל מה שאחריו — לטלפון). שער איזון CSS — ב-T2.
+
+## מ-T2 (2026-11-13, נרשם בידי בקרה (8))
+- **כפתור שמוסתר בטלפון — לא `display:none` בתוך `.ed-bar`.** כפתור 0×0 מפיל את v1a/v1b ("כפתורי הסרגל ≥34px"). מוציאים מה-DOM ב-matchMedia ומחזירים למקום (סמן הערה) — הבלוק `/* T2 */` ב-screen.js (▶, ⚙️, ▶️). כפתור חדש שלא צריך בטלפון — להוסיף ל-`items`.
+- **בסרגל הטלפון (שורה אחת שגוללת, V14) — שום `position:absolute`.** v1b בודקת בחמישה מצבי גלילה ש-elementFromPoint במרכז כל כפתור מחזיר אותו.
+- **בלוק בתוך שורה:** `KolStruct.blockyIn(par, tags, moving)` — בלוק מבחוץ ל-`span/b/i/…/label/button` בלי בלוקים — נדחה (`code: 'inline'`), הגרירה יוצאת לצד השורה (`withValid`). סידור מחדש באותו הורה, או יעד שכבר מכיל בלוקים — מותר. `<a>` — לא נחסם.
+- **`replaceChildren(...)` — בלי ארגומנט null/false**; עוטפים ב-`filter`. נאכף ב-`tests/editor/replace-children.mjs`.
+- **שער CSS:** `tests/cases/99-css-balance.php` — @media פתוח עוצר את הפריסה. לפני מחיקת בלוק פתוח — לבדוק מה היה בתוכו (V15b מחקה את 📄 44px).
+- **ייבוא ZIP חלקי:** `pf_zip_import` מקבל `scope` (קידומות, בפסיק); השרת דוחה כל ZIP עם משהו מחוצה לו.
+- **`note(text, err, action, soft)`** — `soft`: רמז שנסגר בלחיצה הבאה או אחרי 6ש'.
+- `sanitize_rich` שומר `lang=` (BCP47 קצר). `build.clean` מסירה `<animate>/<set>` שמכוונים href/src ל-javascript:.
+- **פתוח:** בעריכת תבנית — `<style>` שבעמוד ו-`lang` לא נטענים; Safari / Firefox / iOS — לא נבדקו.
+
+## מ-V16 (2026-11-13, נרשם בידי בקרה (8))
+- **מפה:** רכיבים — `assets/kit/components/<שם>/` (kit.json גרסה; שינוי ברכיב שכבר ב-main ← להעלות גרסה, אחרת אין "⬆ יש גרסה חדשה"). עורך: `assets/js/editor/kit.js` (ספרייה, מצבים, actions, drag, תבניות), `kit-form.js` (בונה הטופס, כפתור "שמור" של ה-webhook). שרת: `lib/project_ops.php` kit_*, `lib/forms.php` forms_hook_*, **`lib/net.php` — כל בקשה החוצה חדשה עוברת דרכו** (net_host / net_ip_public).
+- **מגע 44:** בלוק `@media (pointer: coarse)` בסוף style.css של הרכיב; אזור קטן בעין — `::after` עם inset שלילי (נקודות המצגת). בדיקה: v16 קטע 10.
+- **בדיקות:** `tests/browser/v16.cjs`, `tests/cases/99-kit.php`, `99-kit-forms.php`, `tests/editor/kit-rules.mjs` (רץ על כל רכיב חדש). ב-99-kit — לנקות רכיב כבד בסוף (kt_reset), אחרת M7 "קצה לקצה" נשבר.
+- **מלכודות:** בתצוגה החיה `location.origin === "null"` — להשוות למקור הסקריפט; בדיקה שתלויה בטיימר — לדגום, לא רגע אחד; דף שנסגר באותו context משנה `document.hidden`; v9 פונה ל-Google Fonts ברשת.
+- **פתוח (⚪ מבקרה 8):** מגע 40–42 ב-social-icons/style.css:2, form/style.css:22 (כפתורים), map/style.css:11 (קישור), נקודות מצגת 12×12 ואקורדיון 42; תוויות חופפות בעורך (social/share/slides צמודים); כפתור "שמור" של ה-webhook (kit-form.js:190) נראה כטקסט.
+- יומן מלא: `team/log/code-V16.md`. מיגרציה 26 — לא נוצלה.
+
+## מ-V14 (2026-11-13, נרשם בידי בקרה (8))
+1. **touch.js (KolTouch):** גיליון 4 גבהים (row/third/half/full, `kol-editor-sheet`); ⛶ מסך מלא (<1000px, `kol-editor-fs`; ברוחב תמיד); הקנבס מתקצר עד ראש הגיליון (`--ts-cover`), הנבחר נגלל מעליו 420ms אחרי הבחירה; visualViewport (`--ts-kb`; בבדיקות `fakeKeyboard(px)`); ⬆⬇ בסרגל הנבחר; ↕ ב-Navigator; −/+ חוזר בלחיצה ארוכה; צביטה עד 300% (`setZoom`); 🔎 חיפוש פעולה; `c.realW`. touchmove לא-passive — רק מ-drag.start עד drag.end.
+2. **מגע בקנבס (canvas.js):** הקשה = שחרור בלי תזוזה >8px; תזוזה לפני לחיצה ארוכה = גלילה (`p.scrolled`); לחיצה ארוכה (400ms) מחמשת גרירה ובוחרת; contextmenu של הדפדפן אחרי מגע — מתעלם (`lastPT`); הקשה על אותו אלמנט אחרי לחיצה ארוכה — נשארת (`held`); ה-click של השחרור נבלע (`swallowClick`, 350ms). **החלקה = תמיד גלילה** (הבעלים) — משנה את spec §2.2.
+3. **Navigator:** ROW חי (`rowH()`, matchMedia), 44 במגע; התפריט בשחרור. בבדיקות — `window.KolNavigator.ROW`, לא 30.
+4. **CSS:** בלוק V14 בסוף editor.css, כל כלל תחת max-width:999px או pointer:coarse (בדיקה סטטית ב-v14). `#sheet` — רק תחת `body:has(.ed)`.
+5. **loadMonaco:** `data-monaco-loader`; התג מוסר רק ב-error (`data-failed`), לא ב-timeout.
+6. **בדיקות:** v14.cjs. **כל שינוי מגע — ב-CDP `Input.dispatchTouchEvent`** (cdpOf, realDrag, swipe), לא PointerEvent סינתטי: touch-action, click אחרי touchend, pointercancel וגלילה ב-iframe מופיעים רק כך (שתי רגרסיות 🔴 נתפסו רק בבדיקה כזו).
+7. **לא נעשה:** שורת מקשים לקוד + חלופה כש-Monaco לא נטען; ✕ לביטול גרירה; "100%" לטאבלט/מחשב בטלפון; תרחיש 7.3 ב-390; מכשירים אמיתיים (iOS Safari, Chrome אנדרואיד) — מטלה לבעלים.
