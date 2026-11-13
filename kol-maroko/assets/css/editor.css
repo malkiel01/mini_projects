@@ -697,3 +697,13 @@ dialog.hd-sheet .hd { padding: 0; }
 @media (min-width: 1000px) and (max-width: 1499px) { .ed-bar .ed-word { display: none; } }
 .hd, .pg-mgr, .pg-form { min-width: 0; }                               /* V15: בתוך .sheet-body (grid) — לא מתרחב מעבר לגיליון */
 .hd-check input[type="checkbox"], .pg-links input[type="checkbox"] { inline-size: 22px; block-size: 22px; min-height: 0; width: auto; flex: none; padding: 0; }
+@media (max-width: 999px) {                                             /* V15: בטלפון הסרגל לא גדל — 📄 בלי שם, ▶️ דרך 📄 עמודים / פס הקוד */
+  .ed-bar .ed-pagebtn { min-width: 0; max-width: none; padding-inline: 6px; }
+  .ed-bar .ed-pagebtn-t { display: none; }
+  .ed-bar [data-ed-live-btn], .ed-bar [data-head-btn] { display: none; }   /* ⚙️ — בתפריט 📄 (הסרגל נשאר בגובה של main; v2 מקלדת) */
+}
+@media (max-width: 999px) {                                             /* V15: 📄 בשורה של בורר הקובץ — לא מוסיף שורה לסרגל (v2: הקנבס לא זז בין שתי הקשות) */
+  .ed-bar { position: relative; }
+  .ed-bar .ed-page { margin-inline-end: 48px; }
+  .ed-bar .ed-pagebtn { position: absolute; inset-inline-end: 0; top: 0; min-height: var(--tap); width: 44px; }
+}

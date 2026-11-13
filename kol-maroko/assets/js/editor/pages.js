@@ -82,7 +82,8 @@
       draw();
       const pub = this.o.canPublish();
       const foot = hh('div', { class: 'pg-pfoot' }, hh('button', { type: 'button', class: 'btn sm', 'data-pg-new': true, disabled: !pub || null, title: pub ? 'עמוד חדש' : 'יצירת עמוד — למפרסם ומעלה', onclick: () => { this.closePicker(); this.create(); } }, '➕ עמוד חדש'),
-        hh('button', { type: 'button', class: 'btn sm', 'data-pg-manage': true, onclick: () => { this.closePicker(); this.manager(); } }, '📄 כל העמודים'));
+        hh('button', { type: 'button', class: 'btn sm', 'data-pg-manage': true, onclick: () => { this.closePicker(); this.manager(); } }, '📄 כל העמודים'),
+        this.o.headSettings ? hh('button', { type: 'button', class: 'btn sm', 'data-pg-head': true, onclick: () => { this.closePicker(); this.o.headSettings(); } }, '⚙️ הגדרות העמוד') : null);
       const box = hh('div', { class: 'pg-pop', role: 'dialog', 'aria-label': 'בחירת עמוד', 'data-pg-pop': true }, q, list, foot);
       if (this.o.phone()) { this.pop = this.o.sheet('📄 עמוד', box); this.pop.addEventListener('close', () => { this.pop = null; }, { once: true }); }
       else {

@@ -400,7 +400,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const ctxP = await mk(390, 844), pp = await ctxP.newPage();
     pp.on('pageerror', e => { errors.push(e.message); console.log('   ⚠️ 390: ' + e.message); });
     await pp.goto(base + '/editor.php#/editor/index.html'); await ready(pp, 'index.html'); await sleep(800);
-    await pp.tap('[data-head-btn]'); await sleep(600);
+    await pp.tap('[data-pages-btn]'); await sleep(500); await pp.tap('#sheet [data-pg-head]'); await sleep(600);
     g = await pp.evaluate(() => ({ sheet: document.getElementById('sheet').open && !!document.querySelector('#sheet [data-hd-form]'), side: getComputedStyle(document.querySelector('.ed-hd')).display, hs: document.documentElement.scrollWidth <= innerWidth }));
     ok(g.sheet && g.side === 'none' && g.hs, '390: ⚙️ הגדרות העמוד — גיליון', g);
     await pp.fill('#sheet [data-hd-in="title"]', 'בטלפון'); await pp.press('#sheet [data-hd-in="title"]', 'Enter'); await sleep(500);

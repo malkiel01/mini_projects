@@ -1105,7 +1105,7 @@ const Editor = (() => {
         pageUrl: () => (S.pages?.data?.base || '/lexicon/') + window.KolPages.urlOf(S.file?.path || ''), host_: () => location.host,
         editBody: () => { const b = c.m?.root?.kids?.find(k => k.tag === 'body'); if (!b) return note('לעמוד אין <body>', true); S.head.hide(); c.select(b); c.reveal(b); panel('info', true); setTab('design'); },
         onState: on => { el.root.classList.toggle('hd-open', on && !phone()); el.hdBtn.setAttribute('aria-pressed', String(!!on)); S.canvas?.setViewport(deviceWidth()); } });
-      S.pages = new window.KolPages.Pages({ liveTitle: () => { try { return c.m ? window.KolHead.scan(K, c.m).values.title : ''; } catch { return ''; } }, api: (a, b, q) => api(a, b, q), note, sheet, current: () => S.file?.path, openPath: (p, fresh) => openPage(p, fresh), pvUrl: p => (S.token ? pvUrl(p) : ''), phone, live: p => livePage(p),
+      S.pages = new window.KolPages.Pages({ headSettings: () => S.head?.show(), liveTitle: () => { try { return c.m ? window.KolHead.scan(K, c.m).values.title : ''; } catch { return ''; } }, api: (a, b, q) => api(a, b, q), note, sheet, current: () => S.file?.path, openPath: (p, fresh) => openPage(p, fresh), pvUrl: p => (S.token ? pvUrl(p) : ''), phone, live: p => livePage(p),
         canPublish: () => RANK[state.user?.role] >= RANK.publisher, reload: () => Project.docs.reload(), anchor: () => el.root, overlay: () => el.pgOverlay,
         onManager: on => el.root.classList.toggle('pg-open', !!on && !phone()) });
       el.bar.querySelector('[data-pg-host]').replaceWith(S.pages.btn);
