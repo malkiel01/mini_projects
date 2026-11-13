@@ -152,7 +152,9 @@ const png = (w, h, rgb) => {
     // E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0, הייבוא), לפיתוח הבדיקה
     const ONLY = process.env.E2E_ONLY ? process.env.E2E_ONLY.split(',').map(x => x.trim()) : null;
     /** גיליון / חלון שנשאר פתוח מהצעד הקודם — סוגרים ב-✕, כמו אדם, לפני שעוברים מסך. */
-    const closeAll = async pg => { for (let k = 0; k < 4; k++) { const x = await pg.$('#sheet[open] [data-close], dialog[open] [data-close]'); if (!x) break; await x.click().catch(() => {}); await sleep(300); } };
+    // התצוגה החיה (▶️) נסגרת ב-✕ שבתוך הדף החי (#lv-close) — כמו אדם
+    const closeAll = async pg => { if (await pg.isVisible('.pj-live').catch(() => false)) { const fr = pg.frames().find(f => /live\.php/.test(f.url())); if (fr) await fr.click('#lv-close', { timeout: 5000 }).catch(() => {}); await sleep(500); }
+      for (let k = 0; k < 4; k++) { const x = await pg.$('#sheet[open] [data-close], dialog[open] [data-close]'); if (!x) break; await x.click().catch(() => {}); await sleep(300); } };
     const step = async (name, fn) => { if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; await closeAll(page).catch(() => {}); if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
       if (process.env.E2E_TRACE) console.log('   [trace] ' + JSON.stringify(await page.evaluate(() => { try { const S = Editor._state, e = S.canvas.doc.querySelector('.kadisha-hero'); return { cls: e && e.className, jpg: [...S.sheets.values()].some(x => /hero\.jpg/.test(x.doc.text())), html: (S.doc.text().match(/<section[^>]*kadisha-hero[^>]*>/) || [''])[0] }; } catch (x) { return String(x); } }))); };
 
@@ -951,7 +953,8 @@ const png = (w, h, rgb) => {
       const inner = opened ? true : await (async () => { for (const f of page.frames()) { if (await f.evaluate(() => [...document.querySelectorAll('dialog[data-kol-dialog]')].some(x => x.open)).catch(() => false)) return true; } return false; })();
       ok(opened === true || inner === true, '▶️ — החלון הקופץ נפתח לבד אחרי שנייה', { live: fr && fr.url().slice(-60), frames: page.frames().map(f => f.url().slice(-50)) });
       await shot(page, 'e2e-24-live-popup-1920');
-      await page.keyboard.press('Escape'); await sleep(300);
+      await closeAll(page);
+      ok(!(await page.isVisible('.pj-live')), '✕ — התצוגה החיה נסגרה');
       // 390: חלונית מהצד — ✕ באזור מגע של 44px לפחות
       const c6 = await mk(390, 844), pz = await c6.newPage(); watch(pz, '390-kit2');
       await pz.goto(base + '/editor.php#/editor/index.html'); await ready(pz); await sleep(1200);
