@@ -113,7 +113,7 @@ const Project = (() => {
             doc.saved = d.content;
             if (monaco) {
               doc.model = monaco.editor.createModel(d.content, LANGS[ext(f.path)] || 'plaintext');
-              doc.model.onDidChangeContent(() => changed(doc));
+              doc.model.onDidChangeContent(e => changed(doc, e));   // V13: ביטול / החזרה בעורך הקוד — להיסטוריה המשותפת
             } else doc.text = d.content;                       // העורך לא נטען — תיבת טקסט פשוטה
           }
         } catch (e) { S.docs.delete(id); S.tabs = S.tabs.filter(x => x !== id); if (S.cur === id) S.cur = S.tabs[0] ?? null; persist(); toast(e.message, true); }
@@ -122,8 +122,8 @@ const Project = (() => {
     drawAll();
   }
 
-  function changed(doc) {
-    emit(doc, 'text');
+  function changed(doc, e) {
+    emit(doc, 'text', e ? { undo: !!e.isUndoing, redo: !!e.isRedoing } : null);
     const now = doc.model ? doc.model.getValue() : doc.text;
     const was = doc.dirty;
     doc.dirty = now !== doc.saved;
@@ -137,7 +137,7 @@ const Project = (() => {
   // מקור אמת אחד לכל קובץ פתוח: הטקסט, ההיסטוריה (ביטול / חזרה) וה-rev. עורך הקוד והעורך החזותי (assets/js/editor)
   // עובדים על אותו מסמך — תיקון מכאן או משם נכנס לאותה היסטוריה, ונשמר באותה שמירה (pf_write, אותו rev, אותן גרסאות).
   const subs = new Map();
-  function emit(doc, kind) { for (const cb of subs.get(doc.id) || []) { try { cb(kind); } catch (e) { console.error(e); } } }
+  function emit(doc, kind, info) { for (const cb of subs.get(doc.id) || []) { try { cb(kind, info); } catch (e) { console.error(e); } } }
   function handle(doc) {
     const text = () => (doc.model && !doc.model.isDisposed() ? doc.model.getValue() : doc.text ?? doc.saved ?? '');   // מסמך שנסגר (ייבוא מחדש) — הטקסט האחרון, לא חריגה
     return {
