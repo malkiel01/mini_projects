@@ -139,7 +139,9 @@ const png = (w, h, rgb) => {
     const undo = async page => { await page.keyboard.press('Control+z'); await sleep(700); };
     // E2E_ONLY=13,14 — רק הצעדים האלה (וצעד 0, הייבוא), לפיתוח הבדיקה
     const ONLY = process.env.E2E_ONLY ? process.env.E2E_ONLY.split(',').map(x => x.trim()) : null;
-    const step = async (name, fn) => { if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
+    /** גיליון / חלון שנשאר פתוח מהצעד הקודם — סוגרים ב-✕, כמו אדם, לפני שעוברים מסך. */
+    const closeAll = async pg => { for (let k = 0; k < 4; k++) { const x = await pg.$('#sheet[open] [data-close], dialog[open] [data-close]'); if (!x) break; await x.click().catch(() => {}); await sleep(300); } };
+    const step = async (name, fn) => { if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; await closeAll(page).catch(() => {}); if (ONLY && !name.startsWith('0.') && !ONLY.includes(name.split('.')[0])) return; console.log('\n── ' + name + ' ──'); try { await fn(); } catch (e) { failed++; ran++; console.log('❌ חריגה ב"' + name + '": ' + String(e.message || e).split('\n')[0].slice(0, 400)); }
       if (process.env.E2E_TRACE) console.log('   [trace] ' + JSON.stringify(await page.evaluate(() => { try { const S = Editor._state, e = S.canvas.doc.querySelector('.kadisha-hero'); return { cls: e && e.className, jpg: [...S.sheets.values()].some(x => /hero\.jpg/.test(x.doc.text())), html: (S.doc.text().match(/<section[^>]*kadisha-hero[^>]*>/) || [''])[0] }; } catch (x) { return String(x); } }))); };
 
     const ctx = await mk(1920, 1080), page = await ctx.newPage();
