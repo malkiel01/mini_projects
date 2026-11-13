@@ -892,4 +892,7 @@ dialog.hd-sheet .hd { padding: 0; }
   #sheet .linkish, .ed-hd .linkish { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
   .hd-check { min-height: 44px; }
   .hd-check input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+  /* V16 במגע: ספריית הרכיבים המוכנים — חיפוש, קטגוריות, "⤢ לוח רחב" ו-✕ — 44px */
+  .ed .kit-cat, .ed .kit-q, .ed .btn[data-kit-wide], .ed .icon-btn[data-kit-close] { min-height: 44px; }
+  .ed .icon-btn[data-kit-close] { min-width: 44px; }
 }

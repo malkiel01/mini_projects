@@ -28,6 +28,9 @@
       c.onHeldTap = n => { if (this.hintAt && performance.now() - this.hintAt < 8000) return; this.hintAt = performance.now(); this.o.note?.('נשאר על ' + c.label(n) + ' — לבחירת ההורה: ↑ "בחר הורה" בסרגל הנבחר, או פירורי הלחם'); };
       this.mo = new MutationObserver(() => this.layout()); this.mo.observe(this.el.root, { attributes: true, attributeFilter: ['class'] });
       const rs = () => this.layout(); window.addEventListener('resize', rs); this.offs.push(() => window.removeEventListener('resize', rs));
+      // גרירה פעילה (לחיצה ארוכה על כרטיס / פריט בספרייה): הדפדפן אינו מתחיל לגלול — אחרת pointercancel מסיים את הגרירה
+      const tm = e => { if (this.S.build?.drag?.active) e.preventDefault(); };
+      document.addEventListener('touchmove', tm, { capture: true, passive: false }); this.offs.push(() => document.removeEventListener('touchmove', tm, { capture: true }));
       this.layout();
     }
     unmount() { this.mo?.disconnect(); this.offs.forEach(f => f()); this.offs = []; }

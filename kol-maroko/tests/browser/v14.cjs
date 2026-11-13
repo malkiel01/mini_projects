@@ -535,6 +535,44 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await closeSheet(page); await sleep(200);
     }
 
+    // ═══ 13f. V16 במגע: ספריית הרכיבים המוכנים — 44px, הקשה מוסיפה אחרי הנבחר, לחיצה ארוכה גוררת לקנבס ═══
+    {
+      const SM = sel => page.evaluate(q => { const r0 = document.querySelector(q); if (!r0) return ['אין ' + q]; return [...r0.querySelectorAll('button, input, select')].filter(e => e.getClientRects().length).map(e => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, d: Object.keys(e.dataset).join(',') }; }).filter(x => x.h > 3 && (x.h < 44 || (/kitClose/.test(x.d) && x.w < 44))).map(x => Math.round(x.w) + '×' + Math.round(x.h) + ' ' + x.d); }, sel);
+      await select(page, H1); await sleep(500);
+      await page.evaluate(() => { if (!document.querySelector('.ed').classList.contains('nav-open')) document.querySelector('.ed-bar [data-panel="nav"]').click(); }); await sleep(300);
+      await tapSel('[data-ntab="comp"]'); await sleep(800);
+      st = { small: await SM('[data-comp-body]'), items: await page.evaluate(() => document.querySelectorAll('[data-comp-body] [data-kit-item]').length) };
+      ok(st.items > 3 && !st.small.length, 'V16 · 🧩 הרכיבים המוכנים בגיליון — חיפוש, קטגוריות ו"⤢ לוח רחב" ≥44px', st);
+      await tapSel('[data-comp-body] [data-kit-wide]'); await sleep(600);
+      st = { small: await SM('[data-kit-board]'), sw: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), w: await page.evaluate(() => { const b = document.querySelector('[data-kit-board]'); return b ? Math.round(b.getBoundingClientRect().width) : 0; }) };
+      ok(st.w >= 380 && !st.small.length && st.sw, 'V16 · "⤢ לוח רחב" בטלפון — לוח ברוחב המסך, ✕ וקטגוריות ≥44px', st);
+      // הקשה על כרטיס ← נוסף אחרי הנבחר (כולל העתקה לפרויקט), Ctrl+Z מחזיר
+      const t0k = await page.evaluate(() => Editor._state.doc.text()), n0k = await page.evaluate(() => Editor._state.tx.length);
+      const card = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-kit-board] [data-kit-item]')].find(x => x.getClientRects().length && x.getAttribute('aria-disabled') !== 'true'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, name: b.dataset.kitItem, h: Math.round(r.height) }; });
+      if (card) {
+        ok(card.h >= 44, 'V16 · כרטיס רכיב ≥44px (' + card.h + ')');
+        await tap(page, card); await page.waitForFunction(n => Editor._state.tx.length > n, n0k, { timeout: 15000 }).catch(() => {}); await sleep(800);
+        const t1k = await page.evaluate(() => Editor._state.doc.text());
+        ok(t1k !== t0k && new RegExp('data-kol-component="' + card.name).test(t1k), 'V16 · הקשה על "' + card.name + '" — נוסף לעמוד (' + await lastTx(page) + ')');
+        await undo(page); await sleep(600);
+        ok(await page.evaluate(() => Editor._state.doc.text()) === t0k, 'V16 · Ctrl+Z מחזיר את העמוד');
+      } else ok(false, 'V16 · אין כרטיס רכיב זמין בלוח');
+      // לחיצה ארוכה על כרטיס ← גרירה לקנבס
+      await page.evaluate(() => document.querySelector('[data-kit-board] [data-kit-close]')?.click()); await sleep(400);
+      const card2 = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-comp-body] [data-kit-item]')].find(x => x.getClientRects().length && x.getAttribute('aria-disabled') !== 'true'); if (!b) return null; b.scrollIntoView({ block: 'nearest' }); const r = b.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, name: b.dataset.kitItem }; });
+      const tgt = await at(page, H1, 0, 0.5, 0.9);
+      const t2k = await page.evaluate(() => Editor._state.doc.text());
+      if (card2 && tgt) {
+        const mid = await realDrag(page, card2, tgt, { hold: 650, steps: 12, stepMs: 40, during: () => page.evaluate(() => !!Editor._state.build.drag.active) });
+        await page.waitForFunction(t => Editor._state.doc.text() !== t, t2k, { timeout: 15000 }).catch(() => {}); await sleep(600);
+        const t3k = await page.evaluate(() => Editor._state.doc.text());
+        ok(mid === true && t3k !== t2k, 'V16 · לחיצה ארוכה על "' + card2.name + '" ← גרירה לקנבס במגע — נוסף (' + await lastTx(page) + ')', { mid });
+        if (t3k !== t2k) { await undo(page); await sleep(600); }
+        ok(await page.evaluate(() => Editor._state.doc.text()) === t2k, 'V16 · Ctrl+Z מחזיר את הגרירה');
+      } else ok(false, 'V16 · כרטיס / יעד לגרירה לא נמצא', { card2, tgt });
+      await page.evaluate(() => { document.querySelector('[data-ntab="tree"]')?.click(); document.querySelector('.ed-nav .ed-side-head .icon-btn')?.click(); }); await sleep(300);
+    }
+
     // ═══ 13b. E2E 🟡3: מיקום חופשי מהמחשב — אזהרה בטלפון, ו"בזרימה בטלפון בלבד" ═══
     {
       const t0 = await page.evaluate(() => [...Editor._state.sheets.values()].map(x => x.doc.text()).join('\n'));
