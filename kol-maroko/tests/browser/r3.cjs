@@ -82,6 +82,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       ok(r.peek.active && !r.peek.textSel, '(ב) section.kadisha-hero נבחר, גרירה מתוך טקסט ה-h1 — גרירה (לא בחירת טקסט)', r);
       ok(!r.after.textSel, '(ב) אחרי השחרור — אין בחירת טקסט כחולה', r.after);
     }
+    // (ד) הדיוק של הבעלים: h1 **לא** נבחר — mouse down באמצע מילה, תזוזה 30px, שחרור = האלמנט זז, ואין בחירת טקסט (לא רק מהשפה הדקה)
+    for (const [s, name] of [['h1.kadisha-hero-title', 'h1'], ['p.kadisha-hero-subtitle-main', 'p']]) {
+      await openPage(page, 'index.html');
+      await page.evaluate(() => Editor._state.canvas.select(null)); await sleep(150);
+      const src0 = await page.evaluate(() => Editor._state.doc.text());
+      const mid = await page.evaluate(q => { const c = Editor._state.canvas, e = c.doc.querySelector(q); e.scrollIntoView({ block: 'center' }); const w = c.doc.createTreeWalker(e, 4); let t; while ((t = w.nextNode()) && t.data.trim().length < 4); const i = Math.floor(t.data.trim().length / 2) + t.data.indexOf(t.data.trim()), rg = c.doc.createRange(); rg.setStart(t, i); rg.setEnd(t, i + 1); const r = rg.getClientRects()[0], f = c.frame.getBoundingClientRect(); return { x: f.left + (r.left + r.width / 2) * c.scale, y: f.top + (r.top + r.height / 2) * c.scale, h: e.getBoundingClientRect().height * c.scale / 2 }; }, s);
+      const pre = await st(page);
+      const r = await mouseDrag(page, mid, { x: mid.x, y: mid.y + (name === 'h1' ? 1 : -1) * (30 + mid.h) }, { steps: 6 });
+      const moved = (await page.evaluate(() => Editor._state.doc.text())) !== src0;
+      ok(pre.sel === null && r.peek.active && !r.peek.textSel && !r.after.textSel && moved && /^גרירה · /.test(r.after.tx || ''), '(ד) ' + name + ' לא נבחר: down באמצע מילה ← 30px מעבר לשפה ← up — האלמנט זז, getSelection() ריק', { pre, r, moved });
+    }
     // (ג) בחירת טקסט שכבר קיימת על ה-h1 (מהעתקה / מעריכה קודמת): לחיצה עליה מתחילה גרירה מקורית של הטקסט (pointercancel) — לא
     {
       await openPage(page, 'index.html');
