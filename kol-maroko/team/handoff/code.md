@@ -196,3 +196,9 @@
 4. **position.js `coversOf`:** מטמון WeakMap + MutationObserver (בלי `[data-kol-canvas]`) + takeRecords.
 5. **בדיקות:** `tests/browser/v14d.cjs` (V14D_ONLY=1..6; §6 = 7.3 ב-390 ב-CDP). מלכודת: מסמך של Project אינו נושא `path` — `Project.docs.byPath(p).id` (v6.cjs צעד 9 מחפש לפי d.path ומקבל null).
 6. **פתוח:** מכשירים אמיתיים (iOS Safari, Chrome אנדרואיד) — מטלה לבעלים.
+
+## מ-R1 (2026-11-14 — עורך ריק אחרי מעבר לסטודיו)
+- `Project.docs.open` של מסמך שעוד נטען **ממתין** לו (`doc.ready` ב-`project.js`). לפני R1 פותח שני קיבל handle עם `text() === ''` — כך נבנה קנבס ריק. כל קוד חדש שמחזיק מסמך "חלקי" ב-`S.docs` — אותו כלל.
+- `screen.js` `open`: דור (`S.gen`) + `gone()` אחרי **כל** await. await חדש ב-`open` בלי `if (gone()) return;` אחריו — באג.
+- אחרי `c.load` נבדק `c.src === doc.text()`; אי-התאמה ← טעינה מחדש + `KolLog` `editor-canvas-mismatch`. כשל טעינה ← `editor-open-failed` + הודעה.
+- מרוצים לא נראים מקומית: `r1.cjs` מראה איך — `page.route` שמשהה `pf_read` (או את כל ה-API, `R1_LAG`) ושחזור דטרמיניסטי ("מישהו פתח לפני").
