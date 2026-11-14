@@ -95,6 +95,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         await page.evaluate(n => { location.hash = '#/editor/' + encodeURIComponent(n + '-c.html'); }, name);
         ok(await page.waitForFunction(n => { const S = Editor._state; return S.file && S.file.path === n + '-c.html' && S.canvas && S.canvas.m && !S.busy && S.canvas.doc.querySelector('#r1c'); }, name, { timeout: 20000 }).then(() => true, () => false), 'חזרה לעורך אחרי יציאה באמצע טעינה — הקנבס מלא', await st(page));
         await page.unroute(/action=pf_read/, slow);
+        // 7. רשת הביטחון: גם אם מרוץ אחר יחזיר מסמך שהקריאה הראשונה שלו ריקה — הקנבס נטען מחדש מהטקסט, ונרשם ביומן
+        const net = await page.evaluate(async n => {
+          const logs = []; const was = window.KolLog; window.KolLog = r => { logs.push(r); };
+          const orig = Project.docs.open, f = Project.docs.byPath(n + '-a.html');
+          Project.docs.open = async id => { const d = await orig(id); if (id !== f.id) return d; let first = true; return new Proxy(d, { get: (t, k) => (k === 'text' ? () => (first ? (first = false, '') : t.text()) : t[k]) }); };
+          try { await Editor._openPage(n + '-a.html'); } finally { Project.docs.open = orig; window.KolLog = was; }
+          const S = Editor._state; return { n: window.KolSrc.all(S.canvas.m).length, h1: !!S.canvas.doc.querySelector('#r1h'), logs: logs.map(r => r.type) };
+        }, name);
+        ok(net.n > 3 && net.h1 && net.logs.includes('editor-canvas-mismatch'), 'רשת ביטחון: קנבס שלא תואם לקובץ נטען מחדש ונרשם ביומן (לא ריק בשקט)', net);
         if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'r1-race.png') });
         ok(r.t1 > 50 && r.t1 === r.t2, 'שני Docs.open במקביל לאותו קובץ — שניהם עם הטקסט המלא', r);
         ok(r.other > 50 && r.file === name + '-b.html' && r.n > 3 && r.h1, 'קובץ שמישהו אחר פתח רגע לפני העורך — הקנבס מלא (לא html/head/body ריקים)', r);

@@ -134,6 +134,15 @@ const Editor = (() => {
       c.capOff = false;
       await c.load(src, href => { if (/^page:dir:(rtl|ltr)$/.test(href)) return ':root { direction: ' + href.slice(9) + '; }'; const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });   /* T2: page:dir */
       if (gone()) return;
+      /* R1: רשת ביטחון — הקנבס חייב להיות הטקסט של המסמך. אם לא (מסמך שהגיע לפני שנטען, או כל מרוץ אחר) — טוענים מחדש,
+         ואומרים על המסך ורושמים ביומן; קנבס ריק בשקט לעולם לא. קובץ ריק באמת — אומרים שהוא ריק. */
+      if (!doc.binary && c.src !== doc.text()) {
+        const rec = { type: 'editor-canvas-mismatch', level: 'error', message: 'הקנבס נטען מטקסט אחר מזה של הקובץ (' + c.src.length + ' ≠ ' + doc.text().length + ') — נטען מחדש', file: f.path };
+        console.error('[editor]', rec); if (typeof window.KolLog === 'function') window.KolLog(rec);
+        await c.load(doc.text(), c.sheets);
+        if (gone()) return;
+      }
+      if (!doc.binary && !doc.text().trim()) note('הקובץ ' + f.path + ' ריק — אין בו מה להציג. פותחים אותו ב-</> קוד, או משחזרים גרסה מ-↩️ שחזור.', true);
       c.setViewport(deviceWidth());
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
@@ -145,7 +154,13 @@ const Editor = (() => {
       if (!pending) { try { const p = JSON.parse(sessionStorage.getItem(PICK) || 'null'); sessionStorage.removeItem(PICK); if (p && Date.now() - p.at < 30000) pending = p; } catch { /* אין אחסון */ } }
       if (pending && pending.path === f.path) applyAt(pending.off);
       pending = null;
-    } catch (e) { if (!gone()) { status(''); note(e.message, true); } }
+    } catch (e) {
+      if (!gone()) {                                                      // R1: כשל בטעינה — על המסך, עם הסיבה, וביומן המפתח
+        status(''); note('העמוד לא נטען: ' + e.message + (e.status ? ' (' + e.status + ')' : ''), true);
+        const rec = { type: 'editor-open-failed', level: 'error', message: e.message, status: e.status || 0, file: S.file?.path || String(id) };
+        console.error('[editor]', rec); if (typeof window.KolLog === 'function') window.KolLog(rec);
+      }
+    }
     finally { if (gen === S.gen) S.busy = false; }
   }
   function close() {
