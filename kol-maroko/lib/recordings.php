@@ -12,7 +12,8 @@
  * ⚠️ הגבולות של השרת המוריד (§4.5): רק https, רק הדומיין של האתר, רק תחת /wp-content/uploads/; בלי IP, בלי
  *    localhost ובלי כתובת שנפתרת לרשת פנימית (הכתובת שנפתרה ננעלת — CURLOPT_RESOLVE); הפניה נבדקת מחדש כמו כתובת
  *    חדשה; בלי עוגיות, בלי הרשאה, בלי פרוקסי; רק GET / HEAD; תקרת גודל ותקרת זמן, וקובץ חלקי נמחק.
- *    מסלול ההורדה היחיד: rec_fetch_step ← rec_http. (נבדק ב-tests/cases/85-recordings.php.)
+ *    מסלול ההורדה היחיד: rec_fetch_step ← rec_http; ומ-R2 גם site_image_take (lib/site_images.php — תמונה של העמוד באתר,
+ *    בלחיצה בבורר) ← rec_http. (נבדק ב-tests/cases/85-recordings.php.)
  */
 
 declare(strict_types=1);

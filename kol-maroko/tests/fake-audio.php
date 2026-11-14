@@ -8,6 +8,7 @@
  *   …/cut/…    Content-Length גדול, והחיבור נסגר באמצע
  *   …/flaky/…  נופל באמצע בפעם הראשונה, ותקין מהשנייה ("שרת שנופל באמצע")
  *   …/text/…   טקסט שמוצהר כ-audio/mpeg     …/slow/…  4 שניות עד הבייט הראשון
+ *   /wp-content/uploads/img/<n>.png  תמונה (R2) · img-html/<n>.png דף HTML · img-text/<n>.png טקסט כ-image/png
  *   …/redir-in/<n>.mp3   302 ל-ok/<n>.mp3     …/redir-out/…  302 לדומיין אחר     …/redir-admin/…  302 ל-/wp-admin/
  *
  * ⚠️ רץ רק בשרת המובנה של PHP ורק כש-KOL_TEST_AUDIO מוגדר (התיקייה tests/ אינה נפרסת, וחסומה ב-.htaccess).
@@ -27,6 +28,18 @@ function mp3(int $frames): string
     return "ID3\x03\x00\x00\x00\x00\x00\x00" . str_repeat("\xff\xfb\x90\x64" . str_repeat("\x00", 413), $frames);
 }
 
+// R2: תמונות (בורר העורך — "באתר"): img/<n>.png תמונה אמיתית · img-html/… דף HTML · img-text/… טקסט שמוצהר כ-image/png
+if (preg_match('~^/wp-content/uploads/(img(?:-html|-text)?)/(\d+)\.png$~', $path, $m)) {
+    $body = match ($m[1]) {
+        'img' => (function () { $im = imagecreatetruecolor(40, 30); imagefill($im, 0, 0, imagecolorallocate($im, 200, 120, 40)); ob_start(); imagepng($im); return ob_get_clean(); })(),
+        'img-html' => '<!doctype html><html><body>not an image</body></html>',
+        default => str_repeat("plain text\n", 30),
+    };
+    header('Content-Type: ' . ($m[1] === 'img-html' ? 'text/html' : 'image/png'));
+    header('Content-Length: ' . strlen($body));
+    if ($_SERVER['REQUEST_METHOD'] !== 'HEAD') echo $body;
+    exit;
+}
 if (!preg_match('~^/wp-content/uploads/([a-z-]+)/(\d+)\.mp3$~', $path, $m)) { http_response_code(404); echo 'not found'; exit; }
 [, $kind, $n] = $m;
 $head = $_SERVER['REQUEST_METHOD'] === 'HEAD';

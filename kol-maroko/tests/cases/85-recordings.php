@@ -186,6 +186,14 @@ test('A2 · בלי לחיצה שום בייט אינו יורד: הספרייה,
         foreach (glob(KOL_ROOT . '/{lib,.}/*.php', GLOB_BRACE) as $f) {
             if (str_ends_with($f, 'recordings.php')) continue;
             $c = (string)file_get_contents($f);
+            if (str_ends_with($f, '/site_images.php')) {                    // R2: בחירה בבורר (לחיצה) — רק site_image_take, ופעם אחת
+                $c = (string)preg_replace('~/\*.*?\*/|//[^\n]*~s', '', $c);
+                preg_match_all('~function (\w+)\(.*?\n}~s', $c, $sf, PREG_SET_ORDER);
+                eq(['site_image_take'], array_values(array_map(fn($x) => $x[1], array_filter($sf, fn($x) => str_contains($x[0], 'rec_http(')))), 'site_images.php: מי קורא ל-rec_http');
+                eq(1, substr_count($c, 'rec_http('), 'site_images.php: קריאה אחת');
+                ok(!preg_match('/rec_fetch_step\(|rec_scan_step\(|curl_init|file_get_contents|fsockopen/', $c), 'site_images.php: רק rec_http');
+                continue;
+            }
             ok(!preg_match('/rec_http\(|rec_fetch_step\(|rec_scan_step\(/', preg_replace('~\'rec_(fetch|scan)_step\' => rec_\1_step\(\$u\)~', '', $c)), basename($f) . ' מפעיל הורדה');
         }
     } finally { $clean(); }

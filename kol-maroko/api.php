@@ -18,6 +18,7 @@ require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
 require_once __DIR__ . '/lib/fields_bind.php';          // N2: שינוי מפתח — הקשירות בקבצי הפרויקט
 require_once __DIR__ . '/lib/forms.php';
+require_once __DIR__ . '/lib/site_images.php';    // R2: תמונות "באתר" בבורר של העורך
 require_once __DIR__ . '/lib/fonts.php';          // V9: גופנים — העלאה, Google Fonts, "הבא לפרויקט"
 
 devlog_begin('api');        // מזהה בקשה, אזהרות PHP, ושורת הבקשה ביומן (lib/devlog.php)
@@ -71,7 +72,7 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place', 'list_place_undo',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
-                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
+                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'site_image_take', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'page_create', 'page_move', 'page_set_entry', 'page_set_404', 'pages_order',      // V15
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
@@ -242,6 +243,8 @@ try {
         'pf_write' => pf_write($u, $body),
         'pf_mkdir' => pf_mkdir($u, $body),
         'pf_link' => pf_link($u, $body),
+        'site_images' => ($u ? site_images_pick() : []),                 // R2
+        'site_image_take' => site_image_take($u, $body),
         'pf_rename' => pf_rename($u, $body),
         'pf_delete' => pf_delete($u, $body),
         'pf_trash' => ($u ? pf_trash() : []),

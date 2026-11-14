@@ -78,7 +78,21 @@ function file_public(array $f): array
         'id' => $f['id'], 'name' => $f['name'], 'type' => $f['type'], 'kind' => $f['kind'], 'size' => (int)$f['size'],
         'w' => $f['w'] ? (int)$f['w'] : null, 'h' => $f['h'] ? (int)$f['h'] : null, 'by' => $f['by_name'], 'at' => $f['at'],
         'url' => media_url($f['id']),
-    ];
+    ] + (file_is_source($f) ? ['source' => true, 'origin' => (string)$f['origin']] : []);
+}
+
+/**
+ * R2 (הבעלים): "קובץ מקור" — העותק בכלי של תמונה מהאתר המקורי (lib/site_images.php: files.origin + תמונה). תמיד אפשר להחזיר
+ * אותו, ואין מחיקה שלו — לא לסל ולא סופית — חוץ מבעל האתר (site_owner, התפקיד העליון = platform_admin). נאכף כאן, בשרת.
+ */
+function file_is_source(array $f): bool
+{
+    return (string)($f['origin'] ?? '') !== '' && ($f['kind'] ?? '') === 'image';
+}
+
+function file_guard_source(array $user, array $f): void
+{
+    if (file_is_source($f) && ($user['role'] ?? '') !== 'site_owner') throw new ApiError('זה קובץ מקור מהאתר המקורי — תמיד אפשר להחזיר אותו, ורק בעל האתר יכול למחוק אותו', 403);
 }
 
 function file_path(array $f): string
@@ -271,6 +285,7 @@ function files_in_use(): array
 function file_delete(array $user, array $b): array
 {
     $f = file_row((string)($b['id'] ?? ''));
+    file_guard_source($user, $f);                                          // R2
     if (isset(files_in_use()[$f['id']])) throw new ApiError('הקובץ בשימוש בעמוד. הסירו אותו מהעמוד קודם');
     // לסל המחזור (lib/restore.php) — הקובץ נשאר בשרת; מחיקה סופית רק משם, רק לבעלים
     db()->prepare('UPDATE files SET deleted_at = ?, deleted_by = ? WHERE id = ?')->execute([now_iso(), $user['name'], $f['id']]);

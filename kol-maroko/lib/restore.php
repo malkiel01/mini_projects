@@ -294,6 +294,7 @@ function trash_purge(array $owner, array $b): array
     if (($b['confirm'] ?? null) !== true) throw new ApiError('מחיקה סופית דורשת אישור מפורש');
     if ($kind === 'file') {
         $f = file_row((string)($b['id'] ?? ''));
+        file_guard_source($owner, $f);                                     // R2: קובץ מקור — רק בעל האתר
         if (!$f['deleted_at']) throw new ApiError('אפשר למחוק סופית רק מהסל');
         if (file_in_versions($f['id'])) throw new ApiError('גרסה שמורה מפנה לקובץ הזה — הוא לא נמחק סופית', 409);
         $pdo->prepare('DELETE FROM files WHERE id = ?')->execute([$f['id']]);

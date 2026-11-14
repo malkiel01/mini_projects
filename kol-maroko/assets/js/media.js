@@ -266,6 +266,7 @@ const Media = (() => {
       input, summary, ups, tabs,
       rows.length ? h('ul', { class: 'list' }, rows.map(f => h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: () => fileSheet(f, host, isOwner) },
         thumb(f), h('span', { class: 'use-tx' }, h('b', { class: 'one' }, base(f.name)), h('small', {}, meta(f))),
+        f.source ? h('span', { class: 'chip', title: 'עותק של קובץ מהאתר המקורי' }, 'מקור') : null,   // R2
         f.in_use ? h('span', { class: 'chip ok' }, 'בשימוש') : null, h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))))
         : h('p', { class: 'empty' }, filter ? 'אין קבצים מהסוג הזה.' : 'עוד אין קבצים. "⬆️ העלאה" כדי להתחיל.'));
   }
@@ -278,10 +279,13 @@ const Media = (() => {
     const dlg = sheet(f.name, preview,
       h('div', { class: 'row-btns' },
         h('a', { class: 'btn ghost', href: `api.php?action=file&id=${f.id}&download=1`, download: f.name }, '⬇️ הורדה'),
-        h('button', { type: 'button', class: 'btn ghost danger', disabled: f.in_use, title: f.in_use ? 'בשימוש בעמוד' : null, onclick: async () => {
+        // R2: קובץ מקור — רק בעל האתר מוחק (נאכף בשרת: file_guard_source)
+        f.source && !isOwner ? null : h('button', { type: 'button', class: 'btn ghost danger', 'data-file-delete': true, disabled: f.in_use, title: f.in_use ? 'בשימוש בעמוד' : null, onclick: async () => {
           if (!confirm(`להעביר את "${f.name}" לסל המחזור? (שחזור — ב-↩️ שחזור)`)) return;
           try { await api('file_delete', { id: f.id }); dlg.close(); toast('הועבר לסל'); view(host, isOwner); } catch (e) { toast(e.message, true); }
         } }, '🗑️ מחיקה')),
+      f.source ? h('p', { class: 'hint', 'data-file-source': true }, '📦 קובץ מקור — עותק של הקובץ מהאתר המקורי. תמיד אפשר להחזיר אותו לעמוד; ' + (isOwner ? 'מחיקה — רק לבעל האתר.' : 'רק בעל האתר יכול למחוק אותו.'),
+        h('br'), h('small', { dir: 'ltr', style: 'display:block;overflow-wrap:anywhere' }, f.origin)) : null,
       h('dl', { class: 'cells' },
         h('div', {}, h('dt', {}, 'גודל'), h('dd', {}, mb(f.size))),
         f.w ? h('div', {}, h('dt', {}, 'מידות'), h('dd', { dir: 'ltr' }, `${f.w}×${f.h}`)) : null,

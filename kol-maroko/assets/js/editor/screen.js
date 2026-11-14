@@ -865,18 +865,26 @@ const Editor = (() => {
       const accept = kind === 'image' ? 'image/*' : kind === 'audio' ? 'audio/*' : kind === 'video' ? 'video/*' : '';
       const up = h('input', { type: 'file', accept: accept || null, hidden: true, 'data-pick-file': true });
       up.addEventListener('change', async () => { const f = up.files[0]; if (!f) return; msg.textContent = 'מעלה…'; try { finish(await uploadToProject(f)); } catch (e) { msg.textContent = '⚠️ ' + e.message; } });
-      const thumb = (k, url) => { if (k === 'image' && url) { const im = h('img', { alt: '', loading: 'lazy' }); im.src = url; return im; } return h('span', { class: 'ed-pick-ic', 'aria-hidden': 'true' }, k === 'audio' ? '🔊' : k === 'video' ? '🎬' : '📄'); };
-      const item = (label, sub, k, url, run) => h('button', { type: 'button', class: 'ed-pick-item', role: 'option', 'data-pick': label, title: label, onclick: async () => { msg.textContent = 'בוחר…'; try { finish(await run()); } catch (e) { msg.textContent = '⚠️ ' + e.message; } } }, thumb(k, url), h('span', { class: 'ed-pick-name', dir: 'ltr' }, label), h('span', { class: 'hint' }, sub));
-      sheet(title, h('div', { class: 'ed-pick-bar' }, h('button', { type: 'button', class: 'btn primary', 'data-pick-upload': true, onclick: () => up.click() }, '⬆️ העלאה מהמחשב'), up), msg, grid);
+      const thumb = (k, url, site) => { if (k === 'image' && url) { const im = h('img', { alt: '', loading: 'lazy', referrerpolicy: site && /^https?:/i.test(url) ? 'no-referrer' : null }); im.src = url; return im; } return h('span', { class: 'ed-pick-ic', 'aria-hidden': 'true' }, k === 'audio' ? '🔊' : k === 'video' ? '🎬' : '📄'); };
+      const item = (label, sub, k, url, run, site) => h('button', { type: 'button', class: 'ed-pick-item', role: 'option', 'data-pick': label, 'data-pick-site': site || null, title: site ? label + ' — ' + site : label, onclick: async () => { msg.textContent = site ? 'מביא את התמונה מהאתר…' : 'בוחר…'; try { finish(await run()); } catch (e) { msg.textContent = '⚠️ ' + e.message; } } }, thumb(k, url, site), h('span', { class: 'ed-pick-name', dir: site ? null : 'ltr' }, label), h('span', { class: 'hint' }, sub));
+      const srcBox = h('div', { 'data-pick-src': true });
+      sheet(title, h('div', { class: 'ed-pick-bar' }, h('button', { type: 'button', class: 'btn primary', 'data-pick-upload': true, onclick: () => up.click() }, '⬆️ העלאה מהמחשב'), up), msg, srcBox, grid);
       dlg.addEventListener('close', onClose);
       (async () => {
         try {
           const files = await Project.docs.reload(), want = f => kind === 'any' || kindOfFile(f) === kind, linked = new Set(files.filter(f => f.kind === 'media').map(f => f.media));
           const rows = files.filter(f => f.kind !== 'dir' && want(f) && (kind !== 'any' || f.path !== S.file.path)).sort((a, b) => a.path.localeCompare(b.path)).map(f => item(f.path, 'בפרויקט', kindOfFile(f), S.token ? pvUrl(f.path) : '', async () => f.path));
+          // R2: תמונות העמוד שעדיין כתובת באתר (תמונת הרקע של המילון) — בחירה מביאה עותק לספרייה של הכלי ומקשרת אותו לפרויקט
+          // R2 (הבעלים): אזור נפרד "מקור" — הקבצים מהאתר המקורי, שתמיד אפשר להחזיר (המקור נשאר במקומו; קובץ מקור נמחק רק בידי בעל האתר)
+          let site = []; if (kind === 'image') { try { site = (await api('site_images')).images || []; } catch { site = []; } }
+          const copies = new Set(site.map(s => s.file?.id).filter(Boolean));
+          const srcRows = site.map(s => item(s.label, s.file ? 'מקור · עותק בכלי' : 'מקור · באתר', 'image', s.file ? s.file.url : s.url, async () => { const r = await api('site_image_take', { url: s.url }); return linkToProject(r.file.id, r.file.name); }, s.url));
+          srcBox.replaceChildren(...(srcRows.length ? [h('h3', { class: 'dt-h', 'data-pick-src-h': true }, 'מקור — מהאתר המקורי · ' + srcRows.length), h('div', { class: 'ed-pick', role: 'listbox', 'aria-label': 'מקור' }, ...srcRows), h('h3', { class: 'dt-h' }, 'הפרויקט והספרייה')] : []));
           let lib = []; try { lib = (await api('files')).files || []; } catch { lib = []; }
-          for (const f of lib) if (!linked.has(f.id) && (kind === 'any' || f.kind === kind)) rows.push(item(f.name, 'בספרייה של הכלי', f.kind, f.url, () => linkToProject(f.id, f.name)));
+          for (const f of lib) if (!linked.has(f.id) && !copies.has(f.id) && (kind === 'any' || f.kind === kind)) rows.push(item(f.name, 'בספרייה של הכלי', f.kind, f.url, () => linkToProject(f.id, f.name)));
           grid.replaceChildren(...rows);
-          msg.textContent = rows.length ? rows.length + ' קבצים. בחירה בקובץ מהספרייה מקשרת אותו לפרויקט (תחת media/).' : 'אין עדיין קבצים מהסוג הזה — מעלים אחד מהמחשב.';
+          const all = rows.length + srcRows.length;
+          msg.textContent = all ? all + ' קבצים. בחירה בקובץ מהספרייה' + (srcRows.length ? ' או מהמקור' : '') + ' מקשרת אותו לפרויקט (תחת media/).' : 'אין עדיין קבצים מהסוג הזה — מעלים אחד מהמחשב.';
         } catch (e) { msg.textContent = '⚠️ ' + e.message; }
       })();
     });
