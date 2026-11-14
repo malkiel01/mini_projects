@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-14T23:05:00Z",
+  "updated": "2026-11-14T23:00:00Z",
   "repo": "malkiel01/mini_projects",
   "note": "מפת הדרכים: מטלה לכל פרוסה שבלוח. 🧪 = נפרס וממתין לאימות שלך (✅ עובד אצלי / ↩️ לא עובד); ❓ = שאלה אליך; ⚠️ = שגיאה מהיומן שנפתחה לבד. בכל מטלה יש שיח — כתבו שם, ו-Claude יענה.",
   "items": [
@@ -346,7 +346,7 @@
       "area": "עורך חזותי",
       "slice": "V4",
       "status": "closed",
-      "status_at": "2026-11-14T23:20:00Z",
+      "status_at": "2026-11-14T23:00:00Z",
       "kind": "feature",
       "priority": "normal",
       "opened": "2026-11-10",
@@ -669,7 +669,7 @@
       "area": "קבצים",
       "slice": "R2",
       "status": "closed",
-      "status_at": "2026-11-14T23:30:00Z",
+      "status_at": "2026-11-14T23:00:00Z",
       "kind": "feature",
       "priority": "high",
       "opened": "2026-11-15",
