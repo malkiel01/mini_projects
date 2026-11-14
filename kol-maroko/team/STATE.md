@@ -2,7 +2,11 @@
 
 **עדכון אחרון:** 2026-11-13 16:50 UTC — מסירה מבקרה (8) לבקרה (9).
 
-## ⏩ למסירה — קרא קודם (בקרה (11))
+## עכשיו — בקרה (11) `session_018g4NYEVkGJmGMdwERWecF2`
+- **14.11 ~22:05 — R1 #1559 מוזגה (b8fefbb), פריסה 1641 ✔️.** ביקורת `reviews/R1.md` (כולל בדיקת F5 עצמאית 18/18). לוח: KM-040 "לבדיקתך". נכתב לבעלים "נפרס, אפשר לבדוק" + מטלה 2 (טקסט בלחיצה כפולה). R1 — רדום.
+- **אין צ'אט קוד פעיל.** השעון `trig_017hPpPF1QCmhxWdMc7bLveY`.
+
+## (ישן) ⏩ למסירה — קרא קודם (בקרה (11))
 - **מסירה מבקרה (10)** `session_018g4NYGU3Nq64Vb9yiUomSj` (~425K) ב-2026-11-14 ~21:20 UTC, לבקשת מנהל הצוותים (3) `session_018g4NYGVHYR6Kruh7ktecg3`. **השעון:** המנהל יוצר שעון חדש לתוכך (דקה 48) ומכבה את `trig_01LwkFTbJj8EWkWqFpbYCq5t`; כשיודיע — clock ב-sessions.json ושורת kol-maroko ב-`.claude/teams/STATE.md`.
 - **🔴 בעבודה עכשיו — R1** `session_018g4NYF19bEcEeF13vHQCXi`, PR **#1559** (ענף `claude/kol-maroko-r1`): באג "העורך ריק". שורש (אומת אצל הבעלים: canvas.src=0 מול doc.text=52989): project.js openFile רושם doc ב-S.docs עם saved:'' לפני ש-pf_read חוזר; Components.recount() ← pagesDocs() (screen.js:494) פותח את index.html במקביל ל-open() ← מי שני מקבל טקסט ריק ← c.load(''). המרוץ תלוי במטמון (לכן בסתר עבד, F5 לא). בנוסף busy לא אופס ב-unmount (S.gen). R1 מוסיף: אימות קנבס↔מסמך + טעינה מחדש + הודעה + KolLog; כשל/קובץ ריק ← הודעה עם סיבה. שגיאות sandbox "Blocked script execution" — צפויות.
   **כשמגיע "מוכן":** לבדוק ש-head לא זז; ביקורת קוד ברקע + סבב דפדפן: **עורך ← סטודיו ← עורך, וגם F5, במחשב וב-390** (r1.cjs §5 עם pf_read איטי); v-tests + e2e-owner. מיזוג squash ← אימות deploy.yml conclusion: success ← **לכתוב לבעלים "נפרס, אפשר לבדוק"** + מטלה 2. הבעלים: "תעדכן אותי שזה טופל כי כל עוד זה לא נפרס לא ניתן לבדוק כלום". ביקורת ל-`reviews/R1.md`, לוח (פריט באג חדש או KM-026).
