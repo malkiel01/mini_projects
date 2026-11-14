@@ -460,7 +460,9 @@ const Library = (() => {
   function imagesView(box) {
     const sub = h('div', { class: 'lib-files lib-images' });
     box.replaceChildren(...[
-      D.images.length ? h('h2', { class: 'sec-title' }, `באתר · ${D.images.length}`) : null,
+      // R2 (הבעלים): "מקור" — הקבצים מהאתר המקורי, באזור נפרד. תמיד אפשר להחזיר אותם; קובץ מקור נמחק רק בידי בעל האתר
+      D.images.length ? h('h2', { class: 'sec-title', 'data-src-sec': true }, `מקור · ${D.images.length}`) : null,
+      D.images.length ? h('p', { class: 'hint' }, 'הקבצים מהאתר המקורי. תמיד אפשר להחזיר אותם לעמוד (בעורך: "＋ תמונת רקע" ← "מקור"). "📥 עותק בכלי" שומר עותק קבוע — זמין גם אם האתר הישן ייעלם; רק בעל האתר יכול למחוק אותו.') : null,
       D.images.length ? h('ul', { class: 'list' }, D.images.map(im => {
         const src = safeSrc(im.url);
         return h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: () => sheet(im.label,
@@ -469,11 +471,27 @@ const Library = (() => {
           h('p', { class: 'hint' }, im.replaced ? 'בעמוד מוצגת עכשיו תמונה אחרת, מהכלי. התמונה הזו נשארת באתר.' : 'התמונה נמצאת באתר ומוצגת משם. מחליפים אותה ב-🎨 סטודיו ← המילון ← רקע.')) },
           src ? h('img', { class: 'thumb', src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🖼️'),
           h('span', { class: 'use-tx' }, h('b', { class: 'one' }, im.label), h('small', { dir: 'ltr' }, im.url.replace(/^https:\/\//, ''))),
-          h('span', { class: 'chip' }, 'באתר'), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
+          h('span', { class: 'chip', 'data-src-state': im.url }, 'באתר'), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')),
+          h('div', { class: 'row-btns', 'data-src-copy': im.url }));
       })) : null,
       h('h2', { class: 'sec-title' }, 'בכלי'), sub].filter(x => x != null && x !== false));
     sessionStorage.setItem('kol-files-kind', 'image');
     Media.view(sub, isOwner);
+    if (D.images.length) srcCopies(box, sub);
+  }
+  /** R2: לכל קובץ מקור — "✓ עותק בכלי", או "📥 עותק בכלי" שמוריד אותו עכשיו (site_image_take: רק תמונה של העמוד באתר). */
+  async function srcCopies(box, sub) {
+    let list = []; try { list = (await api('site_images')).images || []; } catch { return; }
+    for (const im of list) {
+      const at = [...box.querySelectorAll('[data-src-copy]')].find(x => x.dataset.srcCopy === im.url), chip = [...box.querySelectorAll('[data-src-state]')].find(x => x.dataset.srcState === im.url);
+      if (!at) continue;
+      if (im.file) { if (chip) chip.textContent = 'באתר · ✓ עותק בכלי'; at.replaceChildren(); continue; }
+      at.replaceChildren(h('button', { type: 'button', class: 'btn sm', 'data-src-take': true, onclick: async e => {
+        e.target.disabled = true; e.target.textContent = 'מביא…';
+        try { await api('site_image_take', { url: im.url }); toast('נשמר עותק בכלי'); Media.view(sub, isOwner); srcCopies(box, sub); }
+        catch (err) { toast(err.message, true); e.target.disabled = false; e.target.textContent = '📥 עותק בכלי'; }
+      } }, '📥 עותק בכלי'));
+    }
   }
 
   /** N2b: במחשב — ההקלטות על כל הרוחב (body.lib-wide מסיר את max-width של main; app.css, כללי .lib-*). */
@@ -482,7 +500,8 @@ const Library = (() => {
 
   function render() {
     wide(tab === 'audio');
-    const tabs = [['audio', '🎙️ הקלטות', D.counts.audio], ['images', '🖼️ תמונות', D.images.length], ['files', '🗂️ קבצים', '']];
+    // R2: בלי מונה ללשונית התמונות — המונה הקודם ספר רק את "באתר" (1) כשהיו גם תמונות בכלי; בלשונית עצמה כל חלק סופר את שלו
+    const tabs = [['audio', '🎙️ הקלטות', D.counts.audio], ['images', '🖼️ תמונות', ''], ['files', '🗂️ קבצים', '']];
     const box = h('div', {});
     host.replaceChildren(
       h('div', { class: 'seg-tabs', role: 'tablist' }, tabs.map(([k, l, n]) =>

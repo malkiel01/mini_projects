@@ -31,6 +31,17 @@
   const noBom = s => s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
   /** הניתוח של הדפדפן עצמו, כשסקריפטים כבויים (DOMParser) — אמת המידה שמולה נבדק המודל. */
   const browserParse = src => new DOMParser().parseFromString(noBom(src), 'text/html');
+  /**
+   * R2: לפני שהעץ שנותח נכנס למסמך של הקנבס — <link rel=stylesheet> מקבל disabled (דפדפן אינו מבקש גיליון מושבת), ו-<base>
+   * של העורך נכנס כבר עכשיו. בלי זה ה-<link> נטענו מול כתובת העורך (404 ל-css/base.css וכו') לפני ש-restyle החליף אותם.
+   * רק ב-DOM של הקנבס — המודל והמקור אינם משתנים. restyle מסיר את ה-disabled הזמני מגיליון שאינו בפרויקט ("באתר").
+   */
+  const QUIET = 'data-kol-quiet';
+  function quiet(root, baseHref) {
+    for (const l of root.querySelectorAll('link[rel~="stylesheet" i]:not([disabled])')) { l.setAttribute('disabled', ''); l.setAttribute(QUIET, ''); }
+    const head = root.head;
+    if (baseHref && head) { const b = root.createElement('base'); b.setAttribute(OWNED, 'base'); b.setAttribute('href', baseHref); head.prepend(b); }
+  }
   const kidsOf = d => Array.prototype.filter.call(d.localName === 'template' && d.content ? d.content.children : d.children, x => !x.hasAttribute(OWNED));
 
   function mapTrees(m, root) {
@@ -110,6 +121,7 @@
     render() {
       if (this.lv) this.lv.clear();                                         // V11: הכרטיסים יצוירו מחדש אחרי המיפוי (remap)
       const parsed = browserParse(this.src), doc = this.doc, win = this.frame.contentWindow, sx = win ? win.scrollX : 0, sy = win ? win.scrollY : 0;
+      quiet(parsed, this.baseHref);                                         // R2: בלי בקשות רשת שגויות לפני ש-restyle מחליף את ה-<link>
       const root = doc.adoptNode(parsed.documentElement);
       if (doc.documentElement) doc.replaceChild(root, doc.documentElement); else doc.appendChild(root);
       this.restyle();
@@ -127,14 +139,15 @@
       const links = Array.from(doc.querySelectorAll('link[rel~="stylesheet" i]'));
       if (this.sheets) {
         for (const l of links) {
-          const href = l.getAttribute('href') || '', text = this.sheets(href);
+          const href = l.getAttribute('href') || '', text = this.sheets(href), q = l.hasAttribute(QUIET);
+          l.removeAttribute(QUIET);
           this.linked.push({ href, inProject: text != null });
-          if (text == null) continue;                                       // לא מהפרויקט ("באתר"): נטען מהכתובת שלו
+          if (text == null) { if (q) l.removeAttribute('disabled'); continue; }   // לא מהפרויקט ("באתר"): נטען מהכתובת שלו
           l.setAttribute('disabled', ''); l.after(mk(text, href));
         }
         for (const href of this.extraSheets || []) { const text = this.sheets(href); if (text != null) head.append(mk(text, href)); }   // V12: style.css של רכיב שתבנית שלו פתוחה
       } else {
-        for (const l of links) l.setAttribute('disabled', '');
+        for (const l of links) { l.setAttribute('disabled', ''); l.removeAttribute(QUIET); }
         this.styleEl = mk(this.cssSrc, null);
         if (links[0]) links[0].after(this.styleEl); else head.append(this.styleEl);
       }
@@ -342,6 +355,7 @@
       if (r.whole && /^(pre|textarea|listing)$/.test(r.parent.tag) && html[0] === '\n') html = html.slice(1);
       const range = doc.createRange(); range.selectNodeContents(d.localName === 'template' ? doc.body : d);
       const frag = range.createContextualFragment(html), fresh = Array.from(frag.childNodes);
+      quiet(frag, null);                                                    // R2: <link> חדש — כמו ברינדור מלא
       if (fresh.length !== r.newCount) return false;
       for (let i = 0; i < fresh.length; i++) { const x = r.nodes[i], t = fresh[i].nodeType; if ((x.type === 'el') !== (t === 1) || (x.type === 'text') !== (t === 3) || (x.type === 'el' && fresh[i].localName !== x.node.tag)) return false; }
       const ref = list[r.index + r.oldCount] || null;
