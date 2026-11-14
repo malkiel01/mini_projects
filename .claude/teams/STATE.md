@@ -3,12 +3,12 @@
 של הסוכן המנהל (הסקיל `app-team`, `references/manager.md`). המצב של כל צוות — ב-`<app>/team/STATE.md`.
 מעדכן את הרשימה מי שפותח צוות, סוגר אותו או מחליף בקרה — באותו PR.
 
-**מנהל הצוותים:** `session_018g4NYCaAseUuY137ihzAgs` (מנהל (2)) — שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5`, כל שעה בדקה 13. (הקודם `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
+**מנהל הצוותים:** `session_018g4NYGVHYR6Kruh7ktecg3` (מנהל (3), מ-2026-11-14 ~15:14 UTC) — שעון `trig_01BNGJ8SmxZdndUqBsepanVL`, כל שעה בדקה 13. (הקודמים: `session_018g4NYCaAseUuY137ihzAgs` (2), שעון `trig_01BZB6y4xZ89mb5tZx96FKZ5` — כבוי; `session_018g4NYEPge9auac98GHiahZ`, שעון `trig_01Hd5HvT6Skm94NGZAuzYd4w` — כבוי.)
 
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
 | `appraisers` שמאות מקרקעין | מושהה עד הודעה של הבעלים | `session_018g4NYFwUcVefmCvwGAazWA` |
-| `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — מועבר לבקרה (10), דקה 48 (`trig_01MyEpfQR9j1ZGFd46myzVf7`, נוצר בידי מנהל הצוותים (2)) | `session_018g4NYGU3Nq64Vb9yiUomSj` (בקרה 10, Opus) |
+| `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — דקה 48, לתוך בקרה (10) (`trig_01LwkFTbJj8EWkWqFpbYCq5t`, נוצר בידי מנהל הצוותים (2)) | `session_018g4NYGU3Nq64Vb9yiUomSj` (בקרה 10, Opus) |
 
 ## ממתין לבעלים
 
