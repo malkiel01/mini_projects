@@ -27,7 +27,7 @@ const Editor = (() => {
   }
   DEVICES = devicesFrom(null);
   const SYNC_MS = 120;                                                     // הקלדה בקוד ← קנבס: הרבה מתחת ל-300ms
-  const S = { tx: [], rtx: [], pv: new Map(), kol: null, host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false, nav: null, info: null, split: false, code: null, codeOff: null, mute: false, fromCode: false, curT: 0 };
+  const S = { tx: [], rtx: [], pv: new Map(), kol: null, host: null, canvas: null, doc: null, off: null, file: null, sheets: new Map(), sheetOff: [], readOnly: '', device: matchMedia('(max-width: 999px)').matches ? 'mobile' : 'desktop', timer: 0, own: null, token: null, busy: false, gen: 0, nav: null, info: null, split: false, code: null, codeOff: null, mute: false, fromCode: false, curT: 0 };
   let pending = null; const PICK = 'kol-editor-pick';
   const phone = () => matchMedia('(max-width: 999px)').matches;
   const el = {};
@@ -54,20 +54,25 @@ const Editor = (() => {
   const cssForCanvas = (path, text) => (S.token ? text.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/g, (all, q, ref) => { const p = resolve(dirOf(path), ref.trim()); return p == null ? all : 'url("' + pvUrl(p) + '")'; }) : text);
 
   // ── טעינת עמוד ────────────────────────────────────────────
+  /* R1: כל open שייך לדור (S.gen) ולקנבס שבו התחיל. open חדש, או unmount (יציאה מהעורך), מקדמים את הדור — וה-open הישן
+     נעצר באותו await, בלי לכתוב S.file / S.doc / מאזינים לקנבס של כניסה אחרת. busy אינו חוסם open חדש ואינו נתקע אחרי יציאה. */
   async function open(id) {
-    if (S.busy) return; S.busy = true;
+    const gen = ++S.gen, c0 = S.canvas, gone = () => gen !== S.gen || !c0 || S.canvas !== c0;
+    S.busy = true;
     try {
       close();
       const files = await Project.docs.files(), f = files.find(x => x.id === id);
+      if (gone()) return;
       if (!f) throw new Error('הקובץ אינו בפרויקט');
       status('טוען…');
       const doc = await Project.docs.open(id);
+      if (gone()) return;
       if (!doc) throw new Error('הקובץ לא נפתח');
-      if (S.host === null) return;
       S.tx = []; S.rtx = []; S.pv.clear();
       S.file = f; S.doc = doc; S.readOnly = ''; prefs.page = f.path; /* V15: העמוד הפתוח — לכל משתמש */ { const u = uid(); if (u) { const m = prefs.pageBy && typeof prefs.pageBy === 'object' ? prefs.pageBy : {}; delete m[u]; m[u] = f.path; for (const k of Object.keys(m).slice(0, Math.max(0, Object.keys(m).length - 20))) delete m[k]; prefs.pageBy = m; } } keep(); S.pages?.drawBtn(); S.blocked = new Map(); drawBlocked();
       try {                                                                 // הנעילה ורוחבי המכשיר — כבר בפתיחה, לא בכתיבה הראשונה
         const info = await Project.docs.info();
+        if (gone()) return;
         if (info.lock?.by) S.readOnly = 'העמוד בעריכה אצל ' + info.lock.by + ' — כאן אפשר לראות ולבחור, לא לשנות';
         Project.seed.draw(el.seed, () => { const host = S.host; unmount(); view(host); });   // שלד הזריעה: "העמוד של היום עוד לא יובא · 🔄 ייבוא עכשיו"
         S.kol = info.kol?.config || null; DEVICES = devicesFrom(info.kol); S.freeW = 0; { const mine = prefs.devByPage && prefs.devByPage[f.path]; if (mine && DEVICES.some(d => d.id === mine)) S.device = mine; } if (!DEVICES.some(d => d.id === S.device)) S.device = DEVICES[0].id;   // V7: המכשיר — לכל עמוד, בדפדפן
@@ -76,9 +81,12 @@ const Editor = (() => {
       let src;
       if (doc.binary) {                                                     // לא UTF-8: רואים ובוחרים, לא כותבים
         src = new TextDecoder('windows-1255').decode(await Project.docs.bytes(id));
+        if (gone()) return;
         S.readOnly = 'הקובץ אינו בקידוד UTF-8 — נפתח לקריאה בלבד. כדי לערוך: שומרים אותו מחדש כ-UTF-8.';
       } else src = doc.text();
-      try { S.token = (await api('pv_token')); } catch { S.token = null; }  // תמונות ומדיה של הפרויקט — מכתובת התצוגה המבודדת (F4)
+      let tok = null; try { tok = await api('pv_token'); } catch { tok = null; }   // תמונות ומדיה של הפרויקט — מכתובת התצוגה המבודדת (F4)
+      if (gone()) return;
+      S.token = tok;
       // קובצי ה-CSS שהעמוד מקשר אליהם — מהפרויקט, לא מהרשת; כל אחד מהם מסמך משותף, ושינוי בו מגיע לקנבס
       S.sheets = new Map();
       for (const m of src.matchAll(/<link\b[^>]*>/gi)) {
@@ -86,14 +94,15 @@ const Editor = (() => {
         const path = resolve(dirOf(f.path), href || ''), cf = path && Project.docs.byPath(path);
         if (!cf || S.sheets.has(href)) continue;
         const cd = await Project.docs.open(cf.id);
+        if (gone()) return;
         if (!cd || cd.binary) continue;
         S.sheets.set(href, { path, doc: cd });
         S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } }));
       }
       // V7: kol.json — המכשירים מתעדכנים כשהקובץ משתנה (נקודות שבירה, ביטול שלהן, או עריכה בקוד)
-      { const kf = Project.docs.byPath('kol.json'), kd = kf && await Project.docs.open(kf.id).catch(() => null); if (kd && !kd.binary) S.sheetOff.push(kd.on(kind => { if (kind === 'text') kolChanged(kd.text()); })); }
+      { const kf = Project.docs.byPath('kol.json'), kd = kf && await Project.docs.open(kf.id).catch(() => null); if (gone()) return; if (kd && !kd.binary) S.sheetOff.push(kd.on(kind => { if (kind === 'text') kolChanged(kd.text()); })); }
       S.js = [];                                                            // V4: קובצי ה-JS של הפרויקט — לאזהרה "ייתכן ש-js/… נשען על…" (קריאה בלבד)
-      for (const jf of files.filter(x => x.kind === 'file' && /\.m?js$/i.test(x.path)).slice(0, 20)) { try { const jd = await Project.docs.open(jf.id); if (jd && !jd.binary) S.js.push({ path: jf.path, doc: jd }); } catch { /* לא נפתח — בלי אזהרה ממנו */ } }
+      for (const jf of files.filter(x => x.kind === 'file' && /\.m?js$/i.test(x.path)).slice(0, 20)) { try { const jd = await Project.docs.open(jf.id); if (gone()) return; if (jd && !jd.binary) S.js.push({ path: jf.path, doc: jd }); } catch { /* לא נפתח — בלי אזהרה ממנו */ } }
       // V12: template.html של רכיב — נפתח בקנבס עם style.css שלו (לתבנית אין <head> ואין <link>)
       { const cm = /^components\/([^/]+)\/template\.html$/.exec(f.path), cf = cm && Project.docs.byPath('components/' + cm[1] + '/style.css');
         S.canvas.extraSheets = [];
@@ -102,6 +111,7 @@ const Editor = (() => {
         if (cm) {
           const n = S.comp?.counts.get(cm[1]), from = S.comp?.back || (n && [...n.pages].sort()[0]), pf = from && Project.docs.byPath(from);
           const pd = pf && await Project.docs.open(pf.id).catch(() => null);
+          if (gone()) return;
           // כיוון העמוד (<html dir>) — לתבנית אין <html>, ובלעדיו המאפיינים הלוגיים (padding-inline-…) מתהפכים. כלל של העורך, לא בקובץ
           const dir = pd && !pd.binary && (/^\s*(?:<!--[\s\S]*?-->\s*|<!doctype[^>]*>\s*)*<html\b[^>]*\bdir\s*=\s*["']?(rtl|ltr)\b/i.exec(pd.text()) || [])[1];
           if (dir) S.canvas.extraSheets.push('page:dir:' + dir.toLowerCase());
@@ -111,17 +121,19 @@ const Editor = (() => {
             const path = resolve(dirOf(from), href || ''), sf = path && Project.docs.byPath(path), key = 'page:' + path;
             if (!sf || S.sheets.has(key) || /^components\//.test(path)) continue;          // style.css של רכיב — נטען למטה, פעם אחת
             const sd = await Project.docs.open(sf.id).catch(() => null);
+            if (gone()) return;
             if (!sd || sd.binary) continue;
             S.sheets.set(key, { path, doc: sd }); S.canvas.extraSheets.push(key);
             S.sheetOff.push(sd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(key, cssForCanvas(path, sd.text())); drawInfo(); } }));
           }
         }
-        if (cf) { const cd = await Project.docs.open(cf.id).catch(() => null); if (cd && !cd.binary) { const href = 'style.css'; S.sheets.set(href, { path: cf.path, doc: cd }); S.canvas.extraSheets.push(href); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(cf.path, cd.text())); drawInfo(); } })); } } }
+        if (cf) { const cd = await Project.docs.open(cf.id).catch(() => null); if (gone()) return; if (cd && !cd.binary) { const href = 'style.css'; S.sheets.set(href, { path: cf.path, doc: cd }); S.canvas.extraSheets.push(href); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(cf.path, cd.text())); drawInfo(); } })); } } }
       const c = S.canvas;
       c.baseHref = S.token ? pvUrl(dirOf(f.path)) : '';
       c.verify = !!state.user?.developer || prefs.verify === true;         // מצב פיתוח: שקילות אחרי כל פעולה
       c.capOff = false;
       await c.load(src, href => { if (/^page:dir:(rtl|ltr)$/.test(href)) return ':root { direction: ' + href.slice(9) + '; }'; const s = S.sheets.get(href); return s ? cssForCanvas(s.path, s.doc.text()) : null; });   /* T2: page:dir */
+      if (gone()) return;
       c.setViewport(deviceWidth());
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
@@ -133,8 +145,8 @@ const Editor = (() => {
       if (!pending) { try { const p = JSON.parse(sessionStorage.getItem(PICK) || 'null'); sessionStorage.removeItem(PICK); if (p && Date.now() - p.at < 30000) pending = p; } catch { /* אין אחסון */ } }
       if (pending && pending.path === f.path) applyAt(pending.off);
       pending = null;
-    } catch (e) { status(''); note(e.message, true); }
-    finally { S.busy = false; }
+    } catch (e) { if (!gone()) { status(''); note(e.message, true); } }
+    finally { if (gen === S.gen) S.busy = false; }
   }
   function close() {
     S.text?.end(); clearTimeout(S.timer); S.off?.(); S.off = null; S.sheetOff.forEach(f => f()); S.sheetOff = [];
@@ -1212,7 +1224,7 @@ const Editor = (() => {
         const rec = { type: 'editor-inequivalent', level: 'error', message: 'המודל ההדרגתי אינו שקול לניתוח מלא: ' + diff, file: S.file?.path, patches: JSON.stringify(patches).slice(0, 500) };
         console.error('[editor]', rec); if (typeof window.KolLog === 'function') window.KolLog(rec);
       };
-      new ResizeObserver(() => { if (S.canvas === c && c.m) c.setViewport(deviceWidth()); }).observe(el.canvas);
+      S.ro?.disconnect(); S.ro = new ResizeObserver(() => { if (S.canvas === c && c.m) c.setViewport(deviceWidth()); }); S.ro.observe(el.canvas);   // R1: מנותק ב-unmount
       const files = (await Project.docs.files()).filter(f => f.kind === 'file' && /\.html?$/i.test(f.path)).sort((a, b) => a.path.localeCompare(b.path));
       if (S.host !== host) return;
       if (!files.length) { status(''); el.canvas.replaceChildren(h('p', { class: 'empty' }, 'אין בפרויקט קובץ HTML. יוצרים אחד ב-📁 פרויקט.')); return; }
@@ -1234,7 +1246,7 @@ const Editor = (() => {
     if (id === 'hist') S.hist?.draw();
     if (id === 'tpl') S.tpl?.load().catch(e => note(e.message, true));
   }
-  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.kit?.unmount(); S.kit = null; /* V16 */ S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
+  function unmount() { if (!S.host) return; S.playMq?.(); S.playMq = null; S.touch?.unmount(); S.touch = null; /* V14 */ S.menu?.close(); S.palette?.close(); S.hist?.untrackAll(); S.kit?.unmount(); S.kit = null; /* V16 */ S.comp?.unmount(); S.comp = null; S.build?.unmount(); S.build = null; S.pointing = false; S.codeOff?.dispose(); S.codeOff = null; S.code = null; close(); S.ro?.disconnect(); S.ro = null; S.gen++; S.busy = false; /* R1: open שעוד רץ — נעצר */ S.host = null; S.canvas = null; S.nav = null; S.info = null; S.text = null; S.content = null; }
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'editor') unmount(); });
 
   return { view, unmount, selectAt, _head: () => S.head, _pages: () => S.pages, _openPage: openPage, _live: livePage, _glob: () => S.glob, _ctx: ctxMenu, _save: saveNow, _prefs: o => { Object.assign(prefs, o); if (o.device) S.device = o.device; keep(); }, _state: S, _undo: undo, _redo: redo, _remove: () => removeOne(), _removeWarn: remove, _sync: syncCanvas, _marks: saveMarks, _act: act, _tab: setTab, _pick: pick, _drop: dropFile, _insertImage: insertImage };
