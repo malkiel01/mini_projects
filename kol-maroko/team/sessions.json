@@ -1,6 +1,6 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
-  "updated": "2026-11-14T06:19Z",
+  "updated": "2026-11-14T22:13Z",
   "spec": "session_018g4NYGmY6iWXmmRw38khnp",
   "spec_previous": [
     "session_018g4NYDLWsSr9Pt3MYTmbcK",
@@ -8,7 +8,10 @@
     "session_018g4NYFVLVbyN6jb8ZTZRT1",
     "session_018g4NYDGj9nDDPBwcKYPGw2"
   ],
-  "code": {},
+  "code": {
+    "R2": "session_018g4NYGcc5XrHRBPV2m3Scn",
+    "R3": "session_018g4NYF4md1jaisRAjMTDsQ"
+  },
   "code_previous": [
     "session_018g4NYD9DUA7W2FJRnSxYT5",
     "session_018g4NYE4wmn5gkTxqMgwnZm (F1)",
@@ -65,9 +68,10 @@
     "session_018g4NYCQ7dY3rTeMXBgbzvi (E2E מוזגה 13.11 — רדום)",
     "session_018g4NYFy2sJ8poK2SjnPJSh (E2E (2) מוזגה 13.11 — רדום)",
     "session_018g4NYDjFLyMQ2k2dtri4X2 (P2 מוזגה 13.11 — רדום)",
-    "session_018g4NYFZVXPirzx7a4Nz3Np (V14d מוזגה 13.11 — רדום)"
+    "session_018g4NYFZVXPirzx7a4Nz3Np (V14d מוזגה 13.11 — רדום)",
+    "session_018g4NYF19bEcEeF13vHQCXi (R1 מוזגה 22:05 — רדום)"
   ],
-  "control": "session_018g4NYGU3Nq64Vb9yiUomSj",
+  "control": "session_018g4NYEVkGJmGMdwERWecF2",
   "control_previous": [
     "session_018g4NYCik48sdEyBfXuc6it",
     "session_018g4NYDHwbDK3tiZ7BUZYwp",
@@ -77,8 +81,9 @@
     "session_018g4NYFoe4n9RX5DwKoREdJ",
     "session_018g4NYDvggGfQE65Uogdgt6",
     "session_018g4NYGX9uwxscA1qjoWV4P",
-    "session_018g4NYE24dt9ed6U2i9nNng"
+    "session_018g4NYE24dt9ed6U2i9nNng",
+    "session_018g4NYGU3Nq64Vb9yiUomSj"
   ],
   "tasks": "session_018g4NYFkoAv3UHd7gDhGzXT",
-  "clock": "trig_01LwkFTbJj8EWkWqFpbYCq5t"
+  "clock": "trig_017hPpPF1QCmhxWdMc7bLveY"
 }
