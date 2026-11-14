@@ -391,6 +391,8 @@
     listen() {
       const doc = this.doc, stop = e => { e.preventDefault(); e.stopPropagation(); };
       for (const ev of ['click', 'auxclick', 'dblclick', 'submit', 'dragstart', 'contextmenu']) doc.addEventListener(ev, stop, true);
+      // R3: גרירה בעכבר על טקסט — הדפדפן התחיל בחירת טקסט (כחול) ולכד את העכבר במסגרת, והגרירה לא יצאה לדרך. בקנבס אין בחירת טקסט, חוץ מבתוך טקסט שנערך
+      doc.addEventListener('selectstart', e => { const t = e.target && e.target.nodeType === 1 ? e.target : e.target && e.target.parentElement; if ((this.edit && this.edit.active && t && this.edit.owns(t)) || (this.lv && this.lv.valueEdit && t && this.lv.valueEdit.owns(t))) return; e.preventDefault(); }, true);
       // תפריט ההקשר: לחיצה ימנית, או לחיצה ארוכה במגע (iOS אינו שולח contextmenu)
       this.deadTags = DEAD.split(',').map(t => doc.getElementsByTagName(t));
       // V14: התפריט נפתח בשחרור הלחיצה הארוכה, וה-click של אותו שחרור היה נוחת על הפריט שמתחת לאצבע (גם "מחק") — בולעים אותו, פעם אחת
@@ -403,6 +405,8 @@
         if (this.edit && this.edit.owns(e.target)) { this.press = null; return; }   // בתוך טקסט שנערך: הלחיצה מציבה את הסמן, ותו לא
         if (this.lv && this.lv.valueEdit && this.lv.valueEdit.owns(e.target)) { this.press = null; return; }   // V11: עריכת ערך של המילה
         clearTimeout(this.longT); this.longDone = false; this.eatUp = false;
+        // R3: בחירת טקסט שנשארה (מעריכה, מהעתקה) — לחיצה עליה בעכבר מתחילה גרירה מקורית של הטקסט (pointercancel), לא גרירה של האלמנט
+        if (e.pointerType === 'mouse' && !(this.edit && this.edit.active)) { try { const s = doc.getSelection(); if (s && s.rangeCount && !s.isCollapsed) s.removeAllRanges(); } catch { /* */ } }
         const tg = this.hit(e);
         if (this.lv) this.lv.focusAt(tg);                                   // V11: הכרטיס שנלחץ — הכרטיס הנוכחי
         if (this.onPoint) { const f = this.onPoint, n = this.nodeOf(tg); this.onPoint = null; this.press = null; e.preventDefault(); if (n) f(n); return; }   // "מצביעים על כל דבר" — גם נעול, גם נבחר
