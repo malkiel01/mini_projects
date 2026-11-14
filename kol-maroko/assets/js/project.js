@@ -110,6 +110,9 @@ const Project = (() => {
       const doc = { id, rev: f.rev, dirty: false, model: null, saved: '', binary: false, saving: false, timer: 0, conflict: false };
       S.docs.set(id, doc);
       if (f.kind === 'file' && !(IMG.test(ext(f.path)) && ext(f.path) !== 'svg') && !AUD.test(ext(f.path)) && !VID.test(ext(f.path))) {
+        /* R1: המסמך רשום כבר עכשיו, אבל הטקסט שלו עוד בדרך (pf_read). כל מי שפותח אותו בינתיים (ספירת הרכיבים, העורך החזותי,
+           לשונית שחוזרת) — ממתין ל-ready, ולא מקבל text() === '' (קנבס ריק: html / head / body "לא במקור"). */
+        let done; doc.ready = new Promise(r => { done = r; });
         try {
           const d = await api('pf_read', undefined, `&id=${id}`);
           doc.rev = d.file.rev;
@@ -122,8 +125,9 @@ const Project = (() => {
             } else doc.text = d.content;                       // העורך לא נטען — תיבת טקסט פשוטה
           }
         } catch (e) { S.docs.delete(id); S.tabs = S.tabs.filter(x => x !== id); if (S.cur === id) S.cur = S.tabs[0] ?? null; persist(); toast(e.message, true); }
+        finally { doc.ready = null; done(); }
       } else doc.binary = true;
-    }
+    } else if (S.docs.get(id).ready) await S.docs.get(id).ready;            // R1: נטען כרגע בידי מישהו אחר — מחכים לו
     drawAll();
   }
 
@@ -188,7 +192,8 @@ const Project = (() => {
       if (!S.loaded) await refresh();
       try { await loadMonaco(); } catch { /* בלי Monaco — מסמך טקסט פשוט, עם היסטוריה משלו */ }
       if (!S.docs.has(id)) { const cur = S.cur; await openFile(id, false); S.cur = cur ?? id; persist(); }
-      const doc = S.docs.get(id);
+      else if (S.docs.get(id).ready) await S.docs.get(id).ready;             // R1: מסמך שעוד נטען — לא מחזירים אותו ריק
+      const doc = S.docs.get(id);                                             // נכשל בטעינה ← נמחק ← null
       return doc ? handle(doc) : null;
     },
     /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */

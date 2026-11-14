@@ -181,7 +181,9 @@ const PAGE = `<!doctype html>
     await page.keyboard.press('Escape');
     await page.evaluate(() => { const ed = Project._state.editor, m = ed.getModel(); ed.setPosition(m.getPositionAt(m.getValue().indexOf('מחלקה זדונית') + 2)); ed.focus(); });
     await page.keyboard.press('Control+Alt+e');
-    await page.waitForFunction(() => location.hash.startsWith('#/editor') && Editor._state.canvas && Editor._state.canvas.selected, null, { timeout: 15000 }).catch(() => {});
+    /* R1: המעבר הוא ניווט (index.php ← editor.php). ב-index.php ה-hash כבר "#/editor" לפני ש-Editor קיים — בלי typeof הפרדיקט זרק,
+       ההמתנה נפסקה מיד, והבדיקה נשענה על 200ms (~1 שנייה בפועל, בענף וב-main כאחד). ממתינים עד 15 שניות, גם דרך הניווט. */
+    for (const t0 = Date.now(); Date.now() - t0 < 15000;) { if (await page.waitForFunction(() => location.hash.startsWith('#/editor') && typeof Editor !== 'undefined' && Editor._state.canvas && Editor._state.canvas.selected, null, { timeout: 15000 }).then(() => true, () => false)) break; await sleep(100); }
     await sleep(200);
     ok((await st(page)).sel === 'div#evil-class', '"בחר בעורך" בקיצור (Ctrl+Alt+E): העורך החזותי נפתח, והאלמנט שהסמן בתוכו נבחר — ' + (await st(page)).sel);
     await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row');
