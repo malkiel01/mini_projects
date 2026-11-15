@@ -29,6 +29,7 @@ async function open(as) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true });
   await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }]);
   await ctx.setExtraHTTPHeaders({ 'X-Dev-Now': String(NOW) });   // "עכשיו" קבוע לשרת — אותם נרות בכל ריצה
+  await ctx.clock.setFixedTime(NOW * 1000);   // ואותו "עכשיו" בדפדפן — אחרת הטווח שהדפדפן מחשב מתחיל אחרי ה"עכשיו" של השרת (422)
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message));
@@ -96,7 +97,7 @@ try {
 
   // ── שינוי טווח: התרחיש מוסתר, ומבקשים "↻" — בלי בקשת תחזית ──
   reqs.length = 0;
-  // שבוע (לא יום): השעון של הדפדפן אמיתי, והשרת ב"עכשיו" קבוע — טווח של יום היה מתחיל אחרי ה"עכשיו" של השרת
+  // שבוע: השעון של הדפדפן והשרת קבועים לאותו NOW (open), כך שהטווח לא תלוי בתאריך שבו הבדיקה רצה
   await o.locator('select[aria-label="טווח"]').selectOption('w');
   await loaded(o);
   await panel.locator('.hint.warn').waitFor();
