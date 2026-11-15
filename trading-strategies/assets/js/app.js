@@ -116,7 +116,7 @@ function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n !
 // לשוניות: שוק · ניתוח · התראות · יומן · עוד (spec-stage-a 1).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more', alerts: 'alerts', 'method-files': 'more' };
+  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>

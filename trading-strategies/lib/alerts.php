@@ -49,7 +49,8 @@ function ts_alerts_list(int $uid): array
     ts_alerts_expire(time());
     $st = ts_db()->prepare("SELECT * FROM alerts WHERE user_id = ? ORDER BY status = 'expired', id DESC");
     $st->execute([$uid]);
-    return array_map('ts_alert_out', $st->fetchAll());
+    // התווית של הזוג (18.1) — הסימול לא מוצג למשתמש
+    return array_map(fn($r) => ts_alert_out($r) + ['label' => ts_pair_label((string)$r['asset'])['label']], $st->fetchAll());
 }
 
 /** השיטות שמותרות בהתראות למשתמש (מופעלות, alerts: true, לא דוגמה) */
