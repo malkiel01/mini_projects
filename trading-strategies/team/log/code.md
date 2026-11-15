@@ -12,3 +12,13 @@
 - `ts_market_candles` מחזיר גם `provider_candles`. `admin_state` מחזיר `fetch_log`; במסך המנהל ← 🗄️ מאגר — טבלה "יומן בקשות נרות".
 - בדיקות ב-`tests/market.php` לכל ארבעת הקריטריונים, ולפער באמצע שמתמלא באותה בקשה.
 - ענף `claude/trading-strategies-s2-cache`.
+
+## 2026-11-15 — 4א/5ג: barrier triangle, וההערה על running
+- `ts_ew_triangle_kind($p, $tol = 0.05)`: מחזירה גם `barrier` לפי 17.1.2 — `|D − B| ≤ fib_tolerance × |A|` ו-C לפני סוף A. barrier נבדק לפני מתכנס.
+- ההערה השגויה "running — לא מזוהה" תוקנה: משולש running מזוהה בתוך כל סוג (עמ' 49). נוספו בדיקות שמוכיחות את זה (מתכנס רץ, barrier רץ).
+- 8 בדיקות חדשות ב-`tests/elliott-patterns.php`. ענף `claude/trading-strategies-4a5c-barrier`.
+## 2026-11-15 — תיקון: `tests/forecast-ui.mjs` נכשל ב-422
+- החתימה: `422 ?action=method_overlay&…&from=1794175200&to=1794780000` — `from` אחרי ה"עכשיו" הקבוע של השרת (`X-Dev-Now: 1794094200`), ולכן `ts_market_candles` זורק "טווח לא תקין".
+- הסיבה: הבדיקה קיבעה את השעון רק לשרת. הדפדפן חישב את הטווח מהתאריך האמיתי. הבדיקה עברה רק כשהתאריך האמיתי היה בתוך שבוע מ-NOW (2026-11-07), ולכן התחילה להיכשל לבד.
+- התיקון: `ctx.clock.setFixedTime(NOW * 1000)` ב-`open()` של הבדיקה. אין שינוי בקוד האפליקציה.
+- הערה לבקרה (לא תוקן כאן): `market_candles` ב-`api.php` לא מעביר `ts_now()`, בניגוד ל-`method_overlay`. זה משפיע רק בפיתוח.
