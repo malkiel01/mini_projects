@@ -11,3 +11,4 @@
 - **חדש מהספר:** zigzag לרוב בגל 2 / flat לרוב בגל 4 (עמ' 42, 46); running triangle נפוץ מאוד (עמ' 49); נקודות אורתודוקסיות (עמ' 55); thrust אחרי triangle (עמ' 51, לא בציון); ספירת גלים 9/13/17 מול 7/11/15 (עמ' 54).
 - **שלנו:** גבולות regular/expanded/running, zigzag כפול מול שילוב, `pivot_pct` (5, 0.5–30), `allow_leading_diagonal` (false), טבלת זיהוי.
 - שם בתצוגה "אליוט" ב-17.1.9. בלי קוד, בלי `owner-brief.md`. הספר וה-OCR לא בריפו.
+- 20:45 — ביקורת הבקרה על #1582: (1) "90% לא בספר" — **בספר**, עמ' 89 (כללי flat; ב-OCR "pereent"). הוספתי את העמוד ואת ההנחיות 100–138% ו-100–165% מאותו עמוד. (2) "תשע מתוך עשר" — הציטוט נכון: עמ' 49, "Never label a correction prematurely this way, or you'll find yourself wrong nine times out of ten. A running triangle, in contrast, is much more common" — המשפט על running flat; running triangle הוא משפט נפרד. לא שיניתי.
