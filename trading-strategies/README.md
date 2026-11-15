@@ -15,7 +15,7 @@
 ## השלבים
 
 1. **שלב 1** — אסטרטגיות (עם גרסאות), יומן עסקאות ידני, סטטיסטיקה. ✅ (#1259)
-2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ✅ PR 2 ענן MBE (TS-003) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352 · ✅ 4א/2 #1356 · ✅ 4ב/2 #1357 · ✅ 4א/3 #1359) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
+2. **שלב א' המורחב** (spec-stage-a, פרק 14): ✅ PR 1 ספקים, מאגר ולשונית "שוק" (TS-002, #1265) · ~~PR 2 ענן MBE (TS-003)~~ — נמחק (spec-stage-a 19.1) · ✅ PR 3 ציור על הגרף (TS-004) · ✅ PR 4 פרופיל, שיטות, בדיקה לאחור וניתוח (TS-005) · 4א/4ב גלי אליוט ובונה השיטות (TS-008, בעבודה — 17.3: ✅ 4א/1 #1350 · ✅ 4ב/1 #1352 · ✅ 4א/2 #1356 · ✅ 4ב/2 #1357 · ✅ 4א/3 #1359) · ✅ PR 5 התראות (TS-006) · ✅ PR 6 חיבור ליומן (TS-007).
 
 ## שלב א' — PR 1: ספקים, מאגר ולשונית "שוק"
 
@@ -36,46 +36,16 @@
 - **ניווט**: שוק · יומן · עוד; היומן של שלב 1 — שלוש תת-לשוניות. "ניתוח" ו"התראות" — עם ה-PR-ים שלהם.
 - `"restricted": true` (✅6).
 
-## שלב א' — PR 2: ענן MBE (פרקים 3.7, 9)
+## ענן MBE — נמחק (spec-stage-a 19.1)
 
-- **מודול הכוננים** (`lib/drives/`, `assets/js/drives/` — **עותק מסונכרן מ-`mbe-cloud/drives/`, לא עורכים**; 📁 קבצים בלבד,
-  `layers.json`). שלוש השורות ב-`api.php` לפי `mbe-cloud/docs/api-guide.md` 3.2, **לפני** ה-session שלנו. ה-`sub` — מהשער
-  (`PLATFORM_USER`), אף פעם לא מהבקשה; הענן מוודא שזה אותו חשבון בכל אסימון.
-- **`app.json`:** `"public": ["api.php?action=drives_key"]` — רק המפתח הציבורי, שהענן מוריד בלי עוגייה. כל השאר — דרך השער.
-- **`data/drives.sqlite`** — המפתח הפרטי של האפליקציה והחיבורים של המשתמשים. בתוך `trading-strategies/data/*`, **מוחרג
-  בפריסה** (deploy.yml) ונעול ב-`.htaccess`. מפתח שנדרס = כל המשתמשים מנותקים.
-- **"☁️ ענן MBE"** במסך "עוד" — **לקריאה בלבד** (PR 2ג, `mbe-cloud/docs/spec-6-admin-layers.md` §5.3): מנהל הענן קובע
-  אילו שכבות פעילות, לכל המשתמשים. אין מתג ואין ניתוק (`disconnect` מחזיר `admin-managed`). שורה: "📁 קבצים · פעיל" /
-  "לא פעיל באפליקציה הזו" / "לא מחובר", עם "🔒 נקבע בידי מנהל הענן". בפתיחת המסך — `drives.ensure()` **פעם אחת** (לא
-  בכל טעינה של האפליקציה): לא מחובר והמנהל הדליק — הפניה אחת לענן וחזרה מחוברת; המודול מגן מלולאות. "☁️ חיבור לענן
-  MBE" (`drives.connect()`) נשאר רק כשלא מחובר; `layer-off` — הודעה בלי כפתור. בלי חיבור — הכול עובד.
-- **"💾 שמור לענן שלי"** בגרף (`assets/js/cloud.js`): `אסטרטגיות למסחר/נתונים/<ספק>/<סימול>/<מסגרת>.csv` בענן של המשתמש עצמו,
-  ישירות מהדפדפן. CSV לפי 3.7 — המחרוזות של הספק כמו שהן (בלי float), ממוין, בלי כפילויות, בלי הנר הפתוח; שמירה חוזרת
-  ממזגת ולא משנה נר קיים (`ifRev`). ספק ש-`personal_copy` שלו כבוי — בלי הכפתור.
-- **ההרשאה — `files.app`** (`mbe-cloud/docs/spec-3-files-scopes.md`): האפליקציה רואה רק מה שיצרה, או מה שהמשתמש בחר בבורר
-  של הענן. "שמור לענן שלי" כותב לתוך **התיקייה של האפליקציה** בענן (📁 אסטרטגיות למסחר), ועובד גם ב-`files` המלא.
-- **"📚 קובצי שיטות"** (מנהל; `admin_method_files*` — `ts_require_admin` בשרת): המנהל בוחר פעם אחת את
-  `אסטרטגיות למסחר/שיטות/` **בבורר של הענן** (`drives.pick({kind:'folder'})`; בחזרה `?cloud=picked` → `drives.picked()`,
-  ו-`?cloud=pick-cancelled` → בלי שינוי), ונשמר רק ה-id. ההענקה על התיקייה חלה גם על מה שיתווסף אליה אחר כך (spec-3 §3).
-  רשימה (שם, גודל, תאריך) והעלאה ישר לענן. `drives_pick*` מאחורי השער — ב-`public` רק `drives_key`. גישה שבוטלה או תיקייה שנמחקה — "בחרו שוב את תיקיית השיטות". אצלנו נשמר רק מזהה התיקייה — **אין נקודת קצה שמגישה תוכן**. צ'אט האפיון
-  קורא דרך שיתוף לקריאה ומפתח קריאה בענן (api-guide 7), לא דרכנו.
+PR 2 ו-2ב (חיבור לענן MBE, "☁️ ענן MBE" ב"עוד", "📚 קובצי שיטות", "💾 שמור לענן שלי", העותק בגרף ו"🧪 הרץ על העותק שלי")
+**נמחקו** — נבנו מהבנה שגויה של הדרישה (הבעלים רצה רק להעלות ספר לקריאה). אין `drives_*` ב-`api.php` ואין `public` ב-`app.json`.
 
-## שלב א' — PR 2ב: שימוש חוזר בעותק (3.7, ✅14)
-
-- **השרת לא קורא קבצים מהענן** — הכול בדפדפן (`drives.suite`), ובפעולה של המשתמש בלבד.
-- **בגרף — תצוגה בלבד** (`assets/js/market.js`): טווח ישן מ-60 יום נקרא מהעותק בדפדפן, ומהשרת מבקשים רק את מה שהעותק
-  לא מכסה (השרת גובר בחפיפה). הנרות של העותק לא נשלחים לשרת ולא נכנסים למאגר. בשורת המידע: "🧪 N מהעותק שלך בענן".
-- **"🧪 הרץ על העותק שלי"** בניתוח (מופיע רק כשיש עותק של הנכס והמסגרת): הדפדפן שולח את העותק בבקשה אחת
-  (`analysis_copy`, CSV ב-gzip+base64 — 100,000 נרות הם ~8MB טקסט ופחות מ-1MB מכווצים), ו**השרת לא סומך על מה שקיבל**
-  (`lib/copy.php`): עד 100,000 נרות וגוף עד 6MB; אותו ספק, סימול ומסגרת (שורת ההערה וההצהרה); `t` עולה ממש ומיושר
-  (`meta()['align']`: Binance ו-ECB — UTC; אחרים — דקה שלמה); מחרוזות עשרוניות לא שליליות ו-`l ≤ o,c ≤ h`; בלי נר עתידי או
-  פתוח. כל חריגה — **422** עם "שורה N: …", בלי התוכן, ובלי לכתוב דבר.
-- **איך זה רץ:** `cred_scope = u:<id>`, `source = copy` (מיגרציה 7: `source` במפתח של `backtests`), בלי state — חישוב מלא.
-  **אף נר לא נכתב ל-`candles`.** המאגר גובר בחפיפה; פער בין סוף העותק לתחילת המאגר — מהספק, בתקציב. נספר בתקרת 30 לדקה.
-- **בכרטיס:** התוצאה מהעותק לצד הרגילה — "🧪 מהעותק שלך · N נרות מהעותק + M מהספק · שנים". מתג "לשקלול — התוצאה
-  מהעותק" (`analysis_copy_use`, טבלת `copy_blend`; ברירת מחדל — הרגילה); כשנבחרה — "🧪 שקלול לפי העותק שלך".
-- **ה-cron של ההתראות לא משתמש בה:** `ts_analysis(..., $withCopy = false)` — רק `api.php` מבקש את העותק.
-
+- **`lib/drives/` ו-`assets/js/drives/` נשארים** — עותק מסונכרן בלבד, כי `mbe-cloud/drives/apps.json` עדיין רושם את האפליקציה ושער
+  הפריסה (`sync.php --check`) דורש אותו. אף קוד לא טוען אותם. הסרה — רק אחרי שצ'אט ענן MBE מוחק את השורה שם.
+- **נתונים בשרת לא נמחקו:** `data/drives.sqlite`, הטבלה `copy_blend`, שורות `source = 'copy'` ב-`backtests` (מיגרציה 7 נשארת),
+  וההגדרה `method_files_folder` — לא נקראים יותר. כל הקריאות של `backtests` מסננות `source = 'provider'`.
+- **בענן של המשתמשים** — הקבצים שכבר נשמרו (`אסטרטגיות למסחר/נתונים/…`) נשארים שלהם; האפליקציה לא מוחקת אותם.
 
 ## שלב א' — PR 3: ציור על הגרף (פרק 7)
 
@@ -162,7 +132,6 @@
 - **הניתוח עצמו** (התנאים עכשיו) — על 300 הנרות הסגורים האחרונים מהמאגר, בכל פתיחה; הבדיקה לאחור — שמורה עד יום.
 - **רמת הסיכון בעסקה** — מרחק הסטופ ב-ATR(14): עד 1.5 נמוכה, עד 3 בינונית, מעל — גבוהה; ויחס סיכוי/סיכון מול המינימום שבפרופיל.
 - **אופק מרבי** (6.4) — מתוך הבדיקות לאחור השמורות בלבד (לא מריץ מסגרות נוספות על חשבון התקציב).
-- **העותק האישי בענן** (3.7) כמקור היסטוריה — PR 2ב: תצוגה בגרף, ו"🧪 הרץ על העותק שלי" — התוצאה של המשתמש בלבד.
 
 ### הכרעות של כותב הקוד (PR 1)
 
@@ -272,7 +241,7 @@
 - **ברשימת השיטות** (`registry.php`) — מופיעה בניהול **כבויה** עד שמנהל מפעיל (6.7). לא שיטת דוגמה (משתמשים רגילים רואים
   אותה אחרי הפעלה), **לא בהתראות** (`alerts: false`, הכרעת בעל המערכת). מסגרות: שעה ומעלה (✅18).
 - **tick** (17.1.9 ג): `ts_params_for_asset` — שיטה ש-`meta.tick` שלה true מקבלת `$p['tick'] = 10^−decimals` של הנכס,
-  בניתוח, בבדיקה לאחור ובעותק. הוא בתוך ה-hash של הבדיקה לאחור. לשיטות אחרות — שום שינוי.
+  בניתוח ובבדיקה לאחור. הוא בתוך ה-hash של הבדיקה לאחור. לשיטות אחרות — שום שינוי.
 - **ו1:** שיטה עם `meta.analyze_from_state` — הכרטיס ממשיך **ממצב המנוע של הבדיקה לאחור** (אותה גרסה ואותם פרמטרים),
   רק על הנרות החדשים. אין מצב — מהחלון האחרון (`warmup_bars` לפני), והכרטיס אומר "חושב בלי בדיקה לאחור".
 - **הכרטיס:** "שיטה שלנו על בסיס כללי הספר (Frost & Prechter)" (ז0); תנאי "בדוק בעצמך" ב-`met: null` — בבלוק נפרד, לא
@@ -354,13 +323,12 @@ lib/push.php        Web Push עם VAPID (בלי תוכן)
 bin/alerts-cron.php ה-cron — CLI בלבד (bin/.htaccess חוסם)
 sw.js, manifest.webmanifest   Service Worker לפוש בלבד; התקנה
 assets/js/alerts.js לשונית התראות
-assets/js/cloud.js  ענן MBE: "שמור לענן שלי", קובצי שיטות, העותק, השורה לקריאה בלבד
-lib/drives/, assets/js/drives/  מודול הכוננים — עותק מסונכרן מ-mbe-cloud/drives/ (לא עורכים)
+lib/drives/, assets/js/drives/  מודול הכוננים — עותק מסונכרן מ-mbe-cloud/drives/, לא בשימוש (לא עורכים, 19.1)
 assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיטות
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
-                    · no-polling.mjs · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · drives-api.php · cloud-csv.mjs · cloud-ui.mjs · copy-api.php · copy-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-chart.php · elliott-chart-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-chart.php · elliott-chart-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -394,7 +362,6 @@ php trading-strategies/tests/market.php        # ספקים, זמנים, מפת�
 php trading-strategies/tests/market-api.php    # בידוד, מנהל, מפתחות לא דולפים, רישוי, מתג ראשי, 429
 node trading-strategies/tests/decimal-js.mjs && node trading-strategies/tests/indicators-js.mjs
 php trading-strategies/tests/drawings-api.php  # שרטוטים: בידוד, CSRF, ולידציה, תקרת 500
-node trading-strategies/tests/no-polling.mjs   # Playwright: 20 שניות בלי פעולה — אף בקשה לשרת
 node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר ובמגע (לחיצה ארוכה), גרירה, ביטול/שחזור
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
@@ -415,11 +382,6 @@ php trading-strategies/tests/alerts-api.php    # cron כ-CLI עם זמן מדו�
 node trading-strategies/tests/alerts-ui.mjs    # Playwright בטלפון: התראות, תיבה, תג, "התראה מזה", בלי polling
 php trading-strategies/tests/journal-api.php   # "פתח עסקה מזה", שיטה ותמונה בעסקה, פילוח לפי שיטה, המרה לפי ECB, פוש, לוג ה-cron
 node trading-strategies/tests/journal-ui.mjs   # Playwright בטלפון: מכרטיס ניתוח לטופס העסקה ליומן, סטטיסטיקה לפי שיטה
-php trading-strategies/tests/drives-api.php    # ענן MBE: drives_key פתוח, שאר drives_* דרך השער, בידוד, קובצי שיטות למנהל בלבד
-node trading-strategies/tests/cloud-csv.mjs    # ה-CSV של העותק בענן: עשרוני, מיזוג, נתיב
-node trading-strategies/tests/cloud-ui.mjs     # Playwright בטלפון עם ענן מדומה: ensure פעם אחת, בלי מתג וניתוק, "שמור לענן שלי", קובצי שיטות
-php trading-strategies/tests/copy-api.php      # העותק: נרות מזויפים לא נוגעים במאגר ובאחרים, 422 לכל מגבלה, צירוף, קצב ושקלול
-node trading-strategies/tests/copy-ui.mjs      # Playwright: "🧪 הרץ על העותק שלי", בחירת השקלול, הגרף מהעותק
 php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/dev-prepend.php
 #   ואז http://127.0.0.1:8123/trading-strategies/  (העוגייה dev_as=bob — משתמש אחר; owner — מנהל ראשי)
 ```

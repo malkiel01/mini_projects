@@ -4,7 +4,6 @@
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
-import { parseCsv } from './cloud.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
 
@@ -259,11 +258,8 @@ export function mountMarket(ctx) {
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
     const forecastSlot = h('div', {});
-    // 💾 שמור לענן שלי (3.7) — רק כשתנאי הספק מתירים עותק אישי
-    const saveBtn = p.personal_copy === false ? null : h('button', { class: 'btn ghost sm', type: 'button',
-      on: { click: async e => { e.target.disabled = true; try { await ctx.cloud.saveCandles({ provider, symbol, tf: st.tf, sec: TF_SEC[st.tf], rows: raw }); } finally { e.target.disabled = false; } } } }, '💾 שמור לענן שלי');
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live)), custom,
-      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, forecastSlot, inds, info, saveBtn ? h('div', {}, saveBtn) : null,
+      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, forecastSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -307,7 +303,6 @@ export function mountMarket(ctx) {
     onTeardown(() => { forecast.destroy(); draw.destroy(); chart.remove(); osc.remove(); });
 
     let data = [];
-    let raw = [];   // הנרות כמו מהשרת (מחרוזות) — לעותק בענן, בלי float
     let ws = null;
     function drawIndicators() {
       const c = data.map(x => x.close), hh = data.map(x => x.high), ll = data.map(x => x.low);
@@ -357,30 +352,10 @@ export function mountMarket(ctx) {
       info.textContent = 'טוען…';
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
-        // העותק האישי בענן (3.7) — תצוגה בלבד: טווח ישן מ-60 יום נקרא מהעותק בדפדפן, לפני פנייה לספק. הנרות שלו לא נשלחים
-        // לשרת ולא נכנסים למאגר; מהשרת מבקשים רק את מה שהעותק לא מכסה, והשרת גובר בחפיפה
-        const rq = rangeQuery();
-        const sec = TF_SEC[st.tf];
-        const edge = Math.floor(Date.now() / 1000) - 60 * 86400;
-        let copy = [];
-        if (rq.from < edge && ctx.cloud) {
-          const node = await ctx.cloud.findCopy({ provider, symbol, tf: st.tf });
-          if (node) {
-            const { meta, rows } = parseCsv(await ctx.cloud.readCopy(node));
-            if (meta.provider === provider && meta.symbol === symbol && meta.tf === st.tf) copy = rows.filter(x => x.t >= rq.from && x.t < edge && x.t <= rq.to);
-          }
-        }
-        const q = { ...rq };
-        if (copy.length && copy[0].t <= rq.from + sec) q.from = Math.min(copy.at(-1).t + sec, edge);
-        const r = await api('market_candles', null, { asset, tf: st.tf, ...q });
-        raw = r.candles;
-        const byT = new Map(copy.map(x => [x.t, x]));
-        for (const x of r.candles) byT.set(x.t, x);
-        let rows = [...byT.values()].sort((a, b) => a.t - b.t);
+        const r = await api('market_candles', null, { asset, tf: st.tf, ...rangeQuery() });
+        let rows = r.candles;
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
-        const fromServer = new Set(r.candles.map(x => x.t));
-        const nCopy = rows.filter(x => !fromServer.has(x.t)).length;
         data = rows.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
         candle.applyOptions({ priceFormat: priceFormat(rows) });
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
@@ -391,7 +366,6 @@ export function mountMarket(ctx) {
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
-          nCopy ? ` · 🧪 ${nCopy.toLocaleString('he-IL')} מהעותק שלך בענן (תצוגה בלבד)` : '',
           capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
           r.stream ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
           n ? '' : ' · אין נתונים בטווח הזה');

@@ -188,7 +188,7 @@ function ts_admin_methods(): array
         $m = ts_method($id);
         $meta = $m->meta();
         $kind = $meta['kind'] ?? 'code';
-        $st = ts_db()->prepare('SELECT COUNT(*) AS n, MAX(computed_at) AS at FROM backtests WHERE method_id = ?');
+        $st = ts_db()->prepare("SELECT COUNT(*) AS n, MAX(computed_at) AS at FROM backtests WHERE method_id = ? AND source = 'provider'");
         $st->execute([$id]);
         $bt = $st->fetch();
         $out[] = ['id' => $id, 'name' => $meta['name'], 'source' => $meta['source'], 'sample' => !empty($meta['sample']),
@@ -483,12 +483,9 @@ function ts_max_horizon(TsMethod $m, array $p, string $asset, string $scope): ?a
 
 /**
  * כרטיסי ניתוח לנכס ומסגרת, לכל שיטה שנבחרה, ושקלול (6.5). כל שיטה — בדיקה לאחור (או השמורה) וניתוח של המצב
- * אחרי הנר האחרון שנסגר.
- *
- * $withCopy — גם התוצאה מהעותק האישי של המשתמש (3.7), לצד הרגילה, ובשקלול רק אם בחר בה. רק מהדפדפן (api.php):
- * ה-cron של ההתראות (8.2) קורא בלי — ומשתמש רק בתוצאות שהשרת חישב מנתוני הספק.
+ * אחרי הנר האחרון שנסגר. רק מתוצאות שהשרת חישב מנתוני הספק (source = 'provider').
  */
-function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $now = null, bool $withCopy = false): array
+function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $now = null): array
 {
     [$provider, $symbol] = ts_asset_split($asset);
     if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
@@ -549,20 +546,16 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
                 'rr_below_min' => $rr !== null && dec_cmp($rr, $profile['min_rr']) < 0, 'risk_pct' => $profile['risk_pct'],
                 'position_qty' => $qty];
         }
-        $copy = $withCopy ? ts_bt_copy_row($uid, $m, $p, $asset, $tf, $market) : null;
-        $useCopy = $copy !== null && $copy['certainty'] !== null && ts_copy_used($uid, $asset, $tf, $id);
         // met: null — "בדוק בעצמך" (תנאי שהמחשב לא בודק, 17.1.9 ז); לא נהפך ל-false
         $cards[] = $card + ['status' => 'ok', 'bias' => $a['bias'], 'conditions' => array_map(fn($c) => ['id' => $c['id'], 'text' => $c['text'],
             'side' => $c['side'], 'met' => $c['met'] === null ? null : (bool)$c['met']], $a['conditions']), 'signal_ago' => $a['signal_ago'] ?? null,
             'basis' => $basis, 'param_notes' => ts_param_notes($m),
             'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,
-            'max_horizon' => ts_max_horizon($m, $p, $asset, $acc['scope'])]
-            + ($withCopy ? ['backtest_copy' => $copy, 'copy_used' => $useCopy] : []);
+            'max_horizon' => ts_max_horizon($m, $p, $asset, $acc['scope'])];
     }
-    // בשקלול — הוודאות של התוצאה שהמשתמש בחר (ברירת מחדל — הרגילה)
     $blend = ts_blend(array_map(fn($c) => ['id' => $c['method']['id'], 'bias' => $c['bias'],
-        'certainty' => !empty($c['copy_used']) ? $c['backtest_copy']['certainty'] : $c['certainty']], $cards), $profile['preferred_methods']);
+        'certainty' => $c['certainty']], $cards), $profile['preferred_methods']);
     return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'label' => ts_pair_label("$provider:$symbol")['label'], 'provider' => $provider, 'tf' => $tf, 'market' => $market,
         'decimals' => $dec, 'last_t' => $rows ? $rows[count($rows) - 1]['t'] : null, 'cards' => $cards, 'blend' => $blend,
         'profile' => ['min_certainty' => $profile['min_certainty'], 'min_rr' => $profile['min_rr'], 'risk_pct' => $profile['risk_pct']],
