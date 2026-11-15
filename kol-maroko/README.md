@@ -27,6 +27,14 @@
 `publish.php`), `lib/code.php` (מנוע התבנית בלבד — `lib/lexicon.php` עדיין קורא אותו). ההסבה עברה ל-`tests/support/`
 — כלי בדיקות בלבד: בדיקות הדפדפן זורעות דרכו את "העמוד המוסב".
 
+**מה נשאר מ-`code.php` ומ-`page.php`, ולמה (לא נמחקו כולם):**
+- `lib/code.php` — רק מנוע התבנית: `tpl_tree` / `tpl_render`, `lexicon_context`, `tpl_clean_html`, `css_scope`, `lexicon_frame`,
+  `code_files` (קריאה), `theme_lexicon_css` / `theme_style_css`, `LEX_TPL`. הסיבה: `lib/lexicon.php` (`lexicon_render`) קורא להם,
+  ו-M6 אינה נוגעת בו (§5); והארכיון מרנדר דרכם גרסה ישנה. הפעולות (`code_state/create/save/reset/history*`) — נמחקו.
+- `lib/page.php` — רק העזרים המשותפים: `e`, `str`, `pick`, `color`, `safe_href`, `file_id`, `kid`, `sanitize_rich`, `size_label`.
+  הסיבה: עשרות קבצים משתמשים בהם, ו-`library.php` / `recordings.php` (שאסור לגעת בהם) דורשים את הקובץ. המודל הישן
+  (`page_normalize`, `page_render`, הרכיבים) עבר ל-`legacy_read.php`.
+
 האפיון המלא: [`docs/spec.md`](docs/spec.md). התקנה באתר: [`docs/install.md`](docs/install.md) · Cloudflare: [`docs/cloudflare.md`](docs/cloudflare.md).
 
 ## הצוות והדרישה (מ-2026-11-10)
