@@ -6,12 +6,19 @@
  *   coverage   אילו טווחים כבר נמשכו לכל מפתח — כדי לפנות לספק רק על החסר. מכסה רק נרות סגורים.
  *   tails      מתי נמשך לאחרונה הקצה (הנר הפתוח) — התוקף שלו לפי מסגרת הזמן.
  *   search     תוצאות חיפוש ואינדקס סימולים — 24 שעות.
+ *   fetch_log  יומן בקשות הנרות (18.2, S2): לכל בקשה — כמה נרות נמשכו מהספק וכמה הוגשו. 7 ימים, עד 2000 שורות.
  *
  * cred_scope: '' — מאגר משותף (ספק בלי מפתח שתנאיו מתירים); 'u:<user_id>' — נמשך במפתח אישי, רק של אותו משתמש;
  * 'c:<cred_id>' — ספק מהמנהל (ב), משותף למי שקיבל אותו.
  */
 
 declare(strict_types=1);
+
+/** סוג המאגר לפי cred_scope (3.6, ✅2): משותף / אישי / מהמנהל */
+function ts_scope_kind(string $scope): string
+{
+    return $scope === '' ? 'shared' : (str_starts_with($scope, 'u:') ? 'personal' : 'granted');
+}
 
 function ts_cache_path(): string
 {
@@ -60,6 +67,21 @@ function ts_cache(): PDO
                 exchange TEXT NOT NULL, tz TEXT NOT NULL, updated_at INTEGER NOT NULL
             );
             PRAGMA user_version = 1;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 2 (S2): רק מוסיפה טבלה — לא נוגעת בנרות שכבר במאגר
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 2) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS fetch_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                provider TEXT NOT NULL, symbol TEXT NOT NULL, tf TEXT NOT NULL, kind TEXT NOT NULL,
+                from_t INTEGER NOT NULL, to_t INTEGER NOT NULL,
+                provider_calls INTEGER NOT NULL, provider_candles INTEGER NOT NULL, served INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS fetch_log_at ON fetch_log(at);
+            PRAGMA user_version = 2;
             COMMIT;
             SQL);
     }

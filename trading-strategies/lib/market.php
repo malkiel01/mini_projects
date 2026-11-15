@@ -23,6 +23,7 @@ const TS_MAX_CANDLES = 5000;        // לבקשה אחת של גרף
 const TS_WATCHLIST_MAX = 100;       // spec-stage-a 2
 const TS_SEARCH_TTL = 86400;        // 24 שעות לתוצאות חיפוש
 const TS_MAX_SEGMENTS = 4;          // לכל היותר כמה פניות לספק בבקשת גרף אחת
+const TS_FETCH_LOG_MAX = 2000;      // יומן בקשות הנרות (18.2) — כמה שורות נשמרות לכל היותר
 
 // ── הגדרות ספק (מנהל) ─────────────────────────────────────
 
@@ -374,12 +375,14 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $cache = ts_cache();
     $out = [];
     $calls = 0;
+    $fetched = 0;                               // כמה נרות הגיעו מהספק בבקשה הזו (יומן הבקשות, 18.2)
 
     // היסטוריה ישנה מהמאגר — לבקשה הזו בלבד (3.6)
     if ($from < $poolStart) {
         $oldTo = min($to, $poolStart - 1);
         $out = ts_provider_call($uid, $provider, $acc, fn($pp, $s) => $pp->candles($symbol, $tf, $from, $oldTo, $s));
         $calls++;
+        $fetched += count($out);
     }
 
     $rf = max($from, $poolStart);
@@ -401,6 +404,7 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         foreach (array_slice($missing, -TS_MAX_SEGMENTS) as [$a, $b]) {
             $rows = ts_provider_call($uid, $provider, $acc, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s));
             $calls++;
+            $fetched += count($rows);
             $cache->beginTransaction();
             foreach ($rows as $r) {
                 if ($r['t'] < $poolStart - $sec) continue;
@@ -426,13 +430,48 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $by = [];
     foreach ($out as $r) $by[$r['t']] = $r;
     ksort($by);
+    ts_fetch_log($uid, $provider, $symbol, $tf, $scope, $from, $to, $calls, $fetched, count($by), $now);
     return [
         'asset' => "$provider:$symbol", 'provider' => $provider, 'symbol' => $symbol, 'tf' => $tf,
-        'candles' => array_values($by), 'capped' => $capped, 'provider_calls' => $calls,
+        'candles' => array_values($by), 'capped' => $capped, 'provider_calls' => $calls, 'provider_candles' => $fetched,
         'meta' => ts_asset_meta("$provider:$symbol"), 'delay' => $meta['delay'], 'source' => $acc['source'],
         'stream' => $acc['source'] === 'public' ? $p->stream() : null, 'stream_interval' => $meta['tfs'][$tf],
         'tail_ttl' => ts_tail_ttl($tf),
     ];
+}
+
+/**
+ * שורה ביומן בקשות הנרות (18.2, S2) — כדי למדוד במסך המפתח שהשרת פונה לספק רק על החסר. יומן הוא לא תנאי לתשובה:
+ * כשל בכתיבה לא מפיל את הבקשה. שומרים 2000 שורות לכל היותר; הניקוי היומי מוחק ישנות מ-7 ימים.
+ */
+function ts_fetch_log(int $uid, string $provider, string $symbol, string $tf, string $scope, int $from, int $to, int $calls, int $fetched, int $served, int $now): void
+{
+    try {
+        $c = ts_cache();
+        $c->prepare('INSERT INTO fetch_log (at, user_id, provider, symbol, tf, kind, from_t, to_t, provider_calls, provider_candles, served)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$now, $uid, $provider, $symbol, $tf, ts_scope_kind($scope), $from, $to, $calls, $fetched, $served]);
+        $id = (int)$c->lastInsertId();
+        if ($id % 100 === 0) $c->prepare('DELETE FROM fetch_log WHERE id <= ?')->execute([$id - TS_FETCH_LOG_MAX]);
+    } catch (Throwable $e) {
+        error_log('trading-strategies fetch_log: ' . $e->getMessage());
+    }
+}
+
+/** היומן למסך המפתח — האחרונות קודם, עם שם המשתמש מהמסד הראשי */
+function ts_fetch_log_recent(int $limit = 100): array
+{
+    $st = ts_cache()->prepare('SELECT * FROM fetch_log ORDER BY id DESC LIMIT ?');
+    $st->bindValue(1, $limit, PDO::PARAM_INT);
+    $st->execute();
+    $rows = $st->fetchAll();
+    $names = [];
+    foreach (ts_db()->query('SELECT id, display_name FROM users')->fetchAll() as $u) $names[(int)$u['id']] = $u['display_name'];
+    return array_map(fn($r) => [
+        'at' => (int)$r['at'], 'user' => $names[(int)$r['user_id']] ?? '', 'asset' => $r['provider'] . ':' . $r['symbol'],
+        'provider' => $r['provider'], 'tf' => $r['tf'], 'kind' => $r['kind'], 'from' => (int)$r['from_t'], 'to' => (int)$r['to_t'],
+        'provider_calls' => (int)$r['provider_calls'], 'provider_candles' => (int)$r['provider_candles'], 'served' => (int)$r['served'],
+    ], $rows);
 }
 
 /** איחוד טווחים חופפים או צמודים של מפתח אחד — כדי שהטבלה לא תתנפח */
@@ -468,6 +507,7 @@ function ts_cache_cleanup(?int $now = null): int
     $c->prepare("DELETE FROM search WHERE fetched_at < ? AND q NOT LIKE '\\_\\_%' ESCAPE '\\'")->execute([$now - TS_SEARCH_TTL]);
     $c->prepare('DELETE FROM tails WHERE fetched_at < ?')->execute([$now - 86400]);
     $c->prepare('DELETE FROM asset_meta WHERE updated_at < ?')->execute([$now - 180 * 86400]);
+    $c->prepare('DELETE FROM fetch_log WHERE at < ?')->execute([$now - 7 * 86400]);
     return $n;
 }
 
