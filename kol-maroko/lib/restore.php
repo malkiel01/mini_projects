@@ -4,7 +4,8 @@
  *
  * נקודות שחזור — צילום מלא של מה שבכלי: הטיוטה, המילים, הנושאים, קבצי הקוד, ה-CSS/JS שיובאו ומצב הקבצים
  * (פעיל / בסל). נוצרות אוטומטית לפני פעולות של צ'אט, לפני כל ייבוא ופעולה גורפת, ופעם ביום; וידנית. כל רכיב נשמר
- * פעם אחת לפי התוכן שלו (blobs, דחוס) — 1,500 מילים שלא השתנו לא נשמרות שוב. נקודות לא נמחקות לעולם (אין API).
+ * פעם אחת לפי התוכן שלו (blobs, דחוס) — 1,500 מילים שלא השתנו לא נשמרות שוב. נקודות לא נמחקות — חוץ מ"איפוס"
+ * (R5): רק בעל האתר, באישור מפורש, יוצר נקודת "מקור" (kind = origin) של המצב הנוכחי ומוחק את כל השאר.
  * שחזור יוצר קודם נקודה של המצב הנוכחי — ולכן גם שחזור ניתן לביטול, בדיוק (בייט בבייט).
  *
  * סל המחזור — קבצים, מילים ופעולות על נושאים. מחיקה = לסל; מחיקה סופית רק משם, רק לבעלים ובאישור מפורש. קובץ
@@ -73,18 +74,21 @@ function snap_fingerprint(): string
 
 // ── נקודות ────────────────────────────────────────────────
 
-/** נקודה חדשה. מצב זהה לנקודה האחרונה — לא נוצרת שנייה (חוזרת האחרונה). */
-function snapshot_create(array $user, string $reason, string $kind = 'auto'): int
+const SNAP_ORIGIN = 'origin';            // R5: נקודת "מקור" — אחת לכל היותר; לא נמחקת בשום ניקוי, רק מוחלפת באיפוס הבא
+
+/** נקודה חדשה. מצב זהה לנקודה האחרונה — לא נוצרת שנייה (חוזרת האחרונה), אלא אם $force. */
+function snapshot_create(array $user, string $reason, string $kind = 'auto', bool $force = false): int
 {
     $parts = snap_parts();
     $pdo = db();
     $last = $pdo->query('SELECT id, parts FROM snapshots ORDER BY id DESC LIMIT 1')->fetch();
-    if ($last && json_decode($last['parts'], true) == $parts) return (int)$last['id'];
+    if (!$force && $last && json_decode($last['parts'], true) == $parts) return (int)$last['id'];
     $meta = [
         'words' => (int)$pdo->query('SELECT COUNT(*) FROM words')->fetchColumn(),
         'code' => (int)$pdo->query('SELECT COUNT(*) FROM code_files')->fetchColumn(),
         'files' => (int)$pdo->query('SELECT COUNT(*) FROM files WHERE deleted_at IS NULL')->fetchColumn(),
         'rev' => (int)draft_row()['rev'],
+        'project' => isset($parts['project']),                              // R5: האם הנקודה כוללת את קובצי העמוד
     ];
     $pdo->prepare('INSERT INTO snapshots (at, sub, name, reason, kind, parts, meta) VALUES (?, ?, ?, ?, ?, ?, ?)')
         ->execute([now_iso(), $user['sub'], $user['name'], mb_substr($reason, 0, 200), $kind, json_encode($parts), json_encode($meta)]);
@@ -107,12 +111,46 @@ function snapshot_daily(): void
     snapshot_create(['sub' => 'system', 'name' => 'אוטומטי'], 'נקודה יומית', 'daily');
 }
 
+/** הרשימה: נקודת "מקור" ראשונה, ואחריה מהחדשה לישנה. project — האם יש בה את קובצי העמוד (נקודה מלפני F2a — אין). */
 function snapshots_list(array $q): array
 {
     $off = max(0, (int)($q['offset'] ?? 0));
-    $rows = db()->query('SELECT id, at, name, reason, kind, meta FROM snapshots ORDER BY id DESC LIMIT 50 OFFSET ' . $off)->fetchAll();
-    return ['snapshots' => array_map(fn($r) => ['id' => (int)$r['id'], 'meta' => json_decode($r['meta'], true)] + $r, $rows),
-        'total' => (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'offset' => $off];
+    $rows = db()->query("SELECT id, at, name, reason, kind, meta, parts FROM snapshots ORDER BY (kind = 'origin') DESC, id DESC LIMIT 50 OFFSET " . $off)->fetchAll();
+    return ['snapshots' => array_map(function ($r) {
+        $parts = json_decode($r['parts'], true) ?: [];
+        unset($r['parts']);
+        return ['id' => (int)$r['id'], 'meta' => json_decode($r['meta'], true), 'project' => isset($parts['project'])] + $r;
+    }, $rows), 'total' => (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'offset' => $off];
+}
+
+/**
+ * R5 — איפוס (הבעלים, 15.11: "נאפס את נקודות השחזור, וניצור נקודת שחזור למקור, ומכאן נתחיל דף חדש").
+ * רק בעל האתר, רק עם confirm: true. בעסקה אחת: נקודת "מקור" של המצב הנוכחי, מחיקת כל שאר הנקודות (גם "מקור" קודם),
+ * ומחיקת התוכן (blobs) שאף נקודה שנשארה לא מפנה אליו. קובצי הפרויקט עצמם (pf, על הדיסק) — לא נוגעים בהם.
+ */
+function snapshots_reset(array $user, array $b): array
+{
+    if (!role_at_least($user, 'site_owner')) throw new ApiError('איפוס נקודות השחזור — רק בעל האתר', 403);
+    if (($b['confirm'] ?? null) !== true) throw new ApiError('איפוס נקודות השחזור דורש אישור מפורש');
+    $l = lock_state();
+    if ($l && $l['sub'] !== $user['sub']) throw new ApiError("הטיוטה בעריכה אצל {$l['name']}. אחרי שיסיים — שוב", 423);
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $before = (int)$pdo->query('SELECT COUNT(*) FROM snapshots')->fetchColumn();
+        $id = snapshot_create($user, 'מקור', SNAP_ORIGIN, true);
+        $pdo->prepare('DELETE FROM snapshots WHERE id <> ?')->execute([$id]);
+        $keep = array_values(json_decode((string)snapshot_row($id)['parts'], true) ?: []);
+        $del = $pdo->prepare('DELETE FROM blobs WHERE sha NOT IN (' . implode(',', array_fill(0, count($keep), '?')) . ')');
+        $del->execute($keep);
+        $blobs = $del->rowCount();
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    audit_as($user, 'snapshots_reset', "נמחקו $before נקודות · נוצרה נקודת מקור #$id");
+    return ['origin' => $id, 'deleted' => $before, 'blobs' => $blobs] + snapshots_list([]);
 }
 
 function snapshot_row(int $id): array

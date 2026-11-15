@@ -71,7 +71,7 @@ const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_r
                       'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
                       'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place', 'list_place_undo',
                       'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
-                      'snapshot_create', 'snapshot_restore', 'trash_restore', 'trash_purge',
+                      'snapshot_create', 'snapshot_restore', 'snapshots_reset', 'trash_restore', 'trash_purge',
                       'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'site_image_take', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'page_create', 'page_move', 'page_set_entry', 'page_set_404', 'pages_order',      // V15
@@ -215,6 +215,7 @@ try {
         'snapshots' => ($u ? snapshots_list($_GET) : []),
         'snapshot_create' => snapshot_manual($u, $body),
         'snapshot_restore' => snapshot_restore($u, $body),
+        'snapshots_reset' => snapshots_reset($u, $body),
         'snapshot_preview' => ($u ? snapshot_preview($_GET) : []),
         'trash' => ($u ? trash_list() : []),
         'trash_restore' => trash_restore($u, $body),

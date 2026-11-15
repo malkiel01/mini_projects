@@ -97,7 +97,7 @@ const ACTION_ROLES = [
     'rec_fetch_start' => 'site_owner', 'rec_fetch_step' => 'site_owner', 'rec_job_op' => 'site_owner', 'rec_settings_set' => 'site_owner',
     'cutover_evidence' => 'site_owner', 'cutover_evidence_revoke' => 'site_owner', 'cutover_snapshot' => 'site_owner', 'cutover_ready' => 'site_owner',
     'pf_limits' => 'site_owner', 'pf_limits_set' => 'site_owner', 'ai_admin' => 'site_owner', 'secret_set' => 'site_owner', 'ai_quota_set' => 'site_owner',
-    'mail_test' => 'site_owner', 'csp-reports' => 'site_owner',
+    'mail_test' => 'site_owner', 'csp-reports' => 'site_owner', 'snapshots_reset' => 'site_owner',     // R5 — איפוס נקודות השחזור
     'dev-task-create' => 'site_owner', 'dev-task-set' => 'site_owner', 'dev-comment' => 'site_owner', 'dev-comment-delete' => 'site_owner', 'dev-verify' => 'site_owner',
     'dev-file' => 'site_owner', 'dev-tokens' => 'site_owner', 'dev-token-create' => 'site_owner', 'dev-token-revoke' => 'site_owner', 'dev-item-log' => 'site_owner',
     'dev-log-links' => 'site_owner', 'dev-task-from-log' => 'site_owner', 'dev-log' => 'site_owner', 'dev-audit' => 'site_owner', 'dev-health' => 'site_owner',
