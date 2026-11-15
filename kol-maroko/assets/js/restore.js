@@ -44,25 +44,62 @@ const Restore = (() => {
     ].filter(Boolean));
   }
 
-  /** R5: איפוס — רק בעל האתר (נאכף גם בשרת). הקלדה של "איפוס" פותחת את הכפתור. */
+  /**
+   * R5/R6: איפוס — רק בעל האתר (נאכף גם בשרת). R6 (הבעלים, 15.11: "לחצתי ולא קרה כלום"):
+   * הכפתור תמיד לחיץ, ולחיצה בלי אישור אומרת בשורה אדומה מה חסר; ההקלדה מנורמלת (תווי כיוון, ניקוד, רווחים);
+   * Enter בשדה = לחיצה (ולא שליחת הטופס של החלון, שסוגרת אותו); כל תוצאה — בתוך החלון, וכל לחיצה ותוצאה — ליומן.
+   */
+  const WORD = 'איפוס';
+  const norm = v => String(v || '').normalize('NFC')
+    .replace(/[֑-ׇ​-‏‪-‮⁠-⁩﻿­\s]/g, '');   // טעמים וניקוד, כיוון, רוחב-אפס, רווחים מכל סוג
+  const log = (step, msg, status) => { try { window.KolUi && window.KolUi('snapshots_reset.' + step, msg, status); } catch { /* היומן לא עוצר את המסך */ } };
+  const WHY = { 0: 'אין חיבור לשרת', 403: 'אין הרשאה — רק בעל האתר', 423: 'הטיוטה נעולה' };
+
   function resetSheet(total, body) {
-    const typed = h('input', { 'data-snap-reset-type': true, placeholder: 'איפוס', autocomplete: 'off', 'aria-label': 'לאישור — כתבו: איפוס' });
-    const status = h('p', { class: 'hint', role: 'status' });
-    const go = h('button', { type: 'button', class: 'btn danger snap-reset-go', disabled: true, 'data-snap-reset-go': true, onclick: async () => {
-      go.disabled = true; status.textContent = 'מאפס…';
+    const typed = h('input', { 'data-snap-reset-type': true, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done', 'aria-label': `לאישור — כתבו: ${WORD}` });
+    const status = h('p', { class: 'hint', role: 'status', 'aria-live': 'polite', 'data-snap-reset-status': '' });
+    const say = (cls, text, state) => { status.dataset.snapResetStatus = state; status.replaceChildren(h('span', { class: cls }, text)); };
+    let busy = false, done = false;
+    const run = async () => {
+      if (busy) return;
+      if (done) { dlg.close(); return; }
+      const v = norm(typed.value);
+      if (v !== WORD) {
+        const msg = v ? `כתבתם "${typed.value.trim()}". כדי לאפס — כתבו בדיוק: ${WORD}` : `כדי לאפס — כתבו בשדה את המילה: ${WORD}`;
+        say('error', '⚠️ ' + msg, 'need');
+        log('blocked', v ? `הוקלד: ${JSON.stringify(typed.value).slice(0, 80)}` : 'בלי הקלדה');
+        typed.focus();
+        return;
+      }
+      busy = true; go.disabled = true; say('hint', '⏳ מאפס…', 'busy');
+      log('click', `אישור · ${total} נקודות`);
       try {
         const r = await api('snapshots_reset', { confirm: true });
-        dlg.close();
-        toast(`נמחקו ${r.deleted} נקודות · נוצרה נקודת מקור #${r.origin}`);
-        points(body, 0, [], true);
-      } catch (err) { status.replaceChildren(h('span', { class: 'error' }, err.message)); go.disabled = typed.value.trim() !== 'איפוס'; }
-    } }, '🧹 איפוס');
-    typed.addEventListener('input', () => { go.disabled = typed.value.trim() !== 'איפוס'; });
+        done = true;
+        const msg = `נמחקו ${r.deleted} נקודות · נקודת מקור #${r.origin}`;
+        say('ok', '✅ ' + msg, 'ok');
+        log('ok', msg);
+        go.textContent = '✓ סגירה'; go.classList.remove('danger'); go.classList.add('primary');
+        typed.disabled = true;
+        toast(msg);
+        points(body, 0, [], true).catch(e => say('error', `האיפוס בוצע, אבל הרשימה לא נטענה: ${e.message}`, 'ok'));
+      } catch (err) {
+        const st = err.status ?? 0;
+        const why = WHY[st] ? `${WHY[st]} (${st || 'רשת'})` : `שגיאה ${st || ''}`.trim();
+        say('error', `❌ האיפוס לא בוצע — ${why}: ${err.message}`, 'error');
+        log('error', err.message, st);
+      } finally { busy = false; go.disabled = false; }
+    };
+    const go = h('button', { type: 'button', class: 'btn danger snap-reset-go', 'data-snap-reset-go': true, onclick: run }, '🧹 איפוס');
+    // Enter (גם "סיום" במקלדת של הטלפון): בלי preventDefault — הטופס של החלון (method="dialog") נשלח, והחלון נסגר בלי כלום
+    typed.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); run(); } });
+    typed.addEventListener('input', () => { if (status.dataset.snapResetStatus === 'need' && norm(typed.value) === WORD) say('hint', 'אפשר ללחוץ "🧹 איפוס".', 'ready'); });
+    log('open', `${total} נקודות`);
     const dlg = sheet('🧹 איפוס נקודות השחזור',
       h('p', { class: 'error', 'data-snap-reset-text': true }, `כל ${total} הנקודות יימחקו. תיווצר נקודה אחת "מקור" של המצב הנוכחי. אי אפשר לבטל.`),
       h('p', { class: 'hint' }, 'נקודת המקור מוצגת בראש הרשימה, לא נמחקת בשום ניקוי, ומוחלפת רק באיפוס הבא. העמוד, המילים והקבצים עצמם לא משתנים.'),
       h('p', {}, h('a', { class: 'btn ghost', href: 'api.php?action=backup', download: '' }, '💾 הורד גיבוי קודם')),
-      h('label', { class: 'field' }, h('span', {}, 'לאישור — כתבו: איפוס'), typed),
+      h('label', { class: 'field' }, h('span', {}, `לאישור — כתבו: ${WORD}`), typed),
       h('div', { class: 'row-btns' }, go), status);
   }
 

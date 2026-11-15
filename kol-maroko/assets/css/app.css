@@ -611,3 +611,6 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
 .snap-reset-row { justify-content: flex-end; margin-bottom: var(--s2); }
 .btn.danger.snap-reset-go { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn.danger.snap-reset-go:disabled { opacity: .45; }
+/* R6: התוצאה של האיפוס — בתוך החלון */
+[data-snap-reset-status] > span { display: block; font-weight: 600; }
+[data-snap-reset-status] > .ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--surface)); border-radius: var(--r); padding: var(--s2) var(--s3); }
