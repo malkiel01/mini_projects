@@ -1366,6 +1366,7 @@ admin_log         id, user_id, action, target, at
 | יכולת | קבצים / actions | מוחלף ב- | למה לא עכשיו |
 | --- | --- | --- | --- |
 | 🔮 "תחזית שיטה" כמצב נפרד | `lib/forecast.php` (`ts_method_overlay`), `method_overlay`, `assets/js/forecast.js`, `tests/forecast-*` | **S4** (✅22) | זו התצוגה היחידה של אליוט בגרף היום |
+| 🧭 מסך הניתוח הנפרד | `#/analysis/`, כפתור 🧭 בגרף; התצוגה ב-`assets/js/analysis.js` (ה-action `analysis` נשאר) | **S4** (2.15) | הכרטיס צריך לעבור לפס שמתחת לגרף לפני שהמסך נמחק |
 | "↻ רענן" בלבד | `assets/js/market.js` | **S3** (✅23) | הכפתור נשאר גם אחרי S3. רק "בלי רענון אוטומטי" מתבטל |
 | בחירת נכס לפי סימול | `market_search`, `watchlist*`, `symbol_pref` — התצוגה ב-`market.js` | **S1** | ה-actions נשארים (S1 בנוי עליהם). מה שמשתנה: הסימול מוסתר מהמשתמש |
 | שם "גלי אליוט — כניסה לגל 3" | `lib/methods/elliott-w3.php` | ✅25 | כבר הוחלף (#1581) |
