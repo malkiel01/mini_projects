@@ -16,7 +16,8 @@
 | תפקיד | session | מה עושה עכשיו |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.11. מעירים כשצריך עדכון אפיון |
-| קוד (S) | `session_018g4NYGrqqR7BTByrKbVovy` (Opus) | S1 מוזג (#1595). הבא: S3 רענון — צ'אט קוד חדש לפי PROTOCOL 11 |
+| קוד (S3) | `session_018g4NYG7sBtHJh6uW5fLyxh` (Opus) | S3 רענון (18.3), ענף `claude/trading-strategies-s3-refresh` |
+| קוד קודם | `session_018g4NYGrqqR7BTByrKbVovy` (Opus) | רדום. #1591, #1592, #1595 (S1); המסירה — #1596 (טיוטה, יתמזג עם S3) |
 | קוד-מחיקה | `session_018g4NYCQjLZtvssney3gT8G` (Opus) | **סיים — #1590 מוזג, רדום.** היה: מחיקה לפי פרק 19.1: קובצי שיטות, שמור לענן, העותק בגרף, הרץ על העותק, `personal_copy`, מסך ☁️, `drives_*` ב-api.php, `public` ב-app.json, `no-polling.mjs`. **`lib/drives` ו-`assets/js/drives` נשארים** (שער `sync.php --check`). בלי מחיקת נתונים בשרת |
 | קוד ישן | `session_018g4NYDzGyUVdfFLtGcVpLr` (Haiku, טעות פתיחה) | רדום. לא מעירים |
 | מטלות | — | עוד לא נפתח |
@@ -29,7 +30,7 @@
 
 ## הצעד הבא
 
-1. S3 רענון (18.3) — צ'אט קוד חדש (Opus, `model` מפורש), אחר כך S4–S7. לאפיון בעדכון הבא: 🟡 שורות 406, 515 עדיין מתארות `drives_key` ב-`public`.
+1. S3 רענון (18.3) — בצ'אט הקוד החדש; ביקורת ומיזוג, ואיתו #1596 (מסירה). אחר כך S4–S7. לאפיון בעדכון הבא: 🟡 שורות 406, 515 עדיין מתארות `drives_key` ב-`public`.
    הערה פתוחה מהקוד: `market_candles` ב-`api.php` לא מעביר `ts_now()` (רק בפיתוח) — לצרף לפרוסה מתאימה.
 2. אחרי המחיקה: פרוסות app-rules מהסקר (`dev/audit.md`) — A1 DevLoop, A2 התחברות עם ניתוק, A3 בדיקות בשער הפריסה. DevLoop ו-`deploy.yml` — של הבקרה (PROTOCOL 8).
 3. אחרי S1: S3 רענון ← S4 ← S5 ← S6 ← S7 (18.8).
