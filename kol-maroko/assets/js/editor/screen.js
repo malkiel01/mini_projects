@@ -146,6 +146,7 @@ const Editor = (() => {
       c.setViewport(deviceWidth());
       loadMarks();
       if (!doc.binary) S.off = doc.on(kind => (kind === 'text' ? onDocText() : drawState()));
+      for (const x of S.sheets.values()) if (x.doc && x.doc !== doc && !x.doc.binary) S.sheetOff.push(x.doc.on(kind => { if (kind === 'state') drawState(); }));   // R4
       if (S.hist) { S.hist.untrackAll(); if (!doc.binary) S.hist.track(doc); for (const x of S.sheets.values()) S.hist.track(x.doc); S.hist.draw(); }   // V13: היסטוריה אחת לעמוד ולקובצי ה-CSS שלו
       if (S.readOnly) note(S.readOnly);
       mountCode();
@@ -392,7 +393,7 @@ const Editor = (() => {
     const cd = await Project.docs.open(cf.id); if (!cd || cd.binary) { note('הקובץ ' + path + ' לא נפתח', true); return false; }
     const href = relRef(path), head = S.canvas.m.root && S.canvas.m.root.kids.find(k => k.tag === 'head' && !k.implied);
     if (!head) { note('לעמוד אין <head> כתוב — מקשרים בעורך הקוד', true); return false; }
-    if (!S.sheets.has(href)) { S.sheets.set(href, { path, doc: cd }); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } })); S.hist?.track(cd); }
+    if (!S.sheets.has(href)) { S.sheets.set(href, { path, doc: cd }); S.sheetOff.push(cd.on(kind => { if (kind === 'text' && S.canvas) { S.canvas.setSheet(href, cssForCanvas(path, cd.text())); drawInfo(); } else if (kind === 'state') drawState(); })); S.hist?.track(cd); }
     return act('קישור ' + path + ' לעמוד', m => K.html.insert(m, K.byPath(m, K.pathOf(head)), null, '<link rel="stylesheet" href="' + window.KolText.escAttr(href) + '">'), head);   // <link> שייך ל-<head> (KolStruct.why אינו מכניס לשם תוכן נראה)
   }
   /** הקובץ לכלל חדש: styles.page שב-kol.json, אם העמוד מקשר אליו; אחרת קובץ ה-CSS האחרון שהעמוד מקשר. */
@@ -782,7 +783,13 @@ const Editor = (() => {
   function drawState() {
     const d = S.doc; if (!d) return;
     if (d.errorStatus === 423 && !S.readOnly) { S.readOnly = d.error; note(d.error + ' — כאן אפשר לראות ולבחור, לא לשנות', true); S.code?.ed.updateOptions({ readOnly: true }); }   // נעילת העריכה הקיימת
-    status(S.readOnly ? '🔒 לקריאה בלבד' : d.conflict ? '⚠️ הקובץ השתנה בינתיים' : d.saving ? 'שומר…' : d.dirty ? (d.error ? '⚠️ ' + d.error : 'לא נשמר') : 'נשמר · גרסה ' + d.rev);
+    // R4: המצב של העמוד **ושל קובצי ה-CSS שלו** — קובץ CSS שלא נשמר (תמונת רקע, צבע) אינו מוצג "נשמר" בגלל שהעמוד עצמו נקי
+    const others = [...S.sheets.values()].map(x => x.doc).filter(x => x && x !== d && !x.binary), bad = others.find(x => x.conflict) || others.find(x => x.dirty && x.error);
+    const nm = x => (x.path || '').split('/').pop();
+    status(S.readOnly ? '🔒 לקריאה בלבד' : d.conflict ? '⚠️ הקובץ השתנה בינתיים' : bad ? '⚠️ ' + nm(bad) + (bad.conflict ? ' השתנה בינתיים — לא נשמר' : ' לא נשמר: ' + bad.error) : d.saving || others.some(x => x.saving) ? 'שומר…' : d.dirty ? (d.error ? '⚠️ ' + d.error : 'לא נשמר') : others.some(x => x.dirty) ? 'לא נשמר' : 'נשמר · גרסה ' + d.rev);
+    const sig = bad && !bad.conflict ? bad.path + ':' + bad.error : '';
+    if (sig && sig !== S.saveWarn) note('⚠️ השינוי ב-' + bad.path + ' עוד לא נשמר (' + bad.error + '). מנסים שוב לבד; אל תסגרו את הלשונית עד שיופיע "נשמר".', true, { label: 'שמור עכשיו', run: () => saveNow() });
+    S.saveWarn = sig;
     el.undo.disabled = !(S.tx.length || d.canUndo()) || !!S.readOnly; el.redo.disabled = !(S.rtx.length || d.canRedo()) || !!S.readOnly;
   }
   function drawCrumbs() {
