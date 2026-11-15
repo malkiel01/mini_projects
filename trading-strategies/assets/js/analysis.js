@@ -12,7 +12,7 @@ const RISK_LEVELS = [['low', 'נמוכה'], ['medium', 'בינונית'], ['high
 const MARKET_LABEL = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות', indices: 'מדדים', commodities: 'סחורות' };
 
 export function mountAnalysis(ctx) {
-  const { h, api, toast, setHead, render, field, numInput, seg, segVal, select, num, sep } = ctx;
+  const { h, api, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairMain, assetPicker } = ctx;
   const ME = () => ctx.me();
   const years = (a, b) => {
     const y = t => new Date(t * 1000).getUTCFullYear();
@@ -45,7 +45,7 @@ export function mountAnalysis(ctx) {
     const prov = id => providers.find(p => p.id === id);
     // שם הזוג במילים (18.1) — הסימול לא מוצג
     const { labels } = await api('pair_labels', null, { assets: assets.join(',') });
-    const assetSel = select('asset', assets.map(a => [a, (labels[a]?.label || 'נכס') + ' · ' + (prov(a.split(':')[0])?.name || a.split(':')[0])]), st.asset, { 'aria-label': 'נכס' });
+    const assetSel = assetPicker(assets, labels, st.asset, a => prov(a.split(':')[0])?.name || a.split(':')[0]);
     const tfBox = h('div');
     const methodBox = h('div', { class: 'chips', role: 'group', 'aria-label': 'שיטות' });
     const out = h('div', { class: 'stack', 'aria-live': 'polite' });
@@ -95,7 +95,7 @@ export function mountAnalysis(ctx) {
 
     render(
       h('div', { class: 'block stack' },
-        h('div', { class: 'toolbar pick' }, assetSel, h('a', { class: 'btn ghost sm', href: '#/chart/' + encodeURIComponent(st.asset) }, '📈 גרף')),
+        assetSel, h('div', { class: 'toolbar pick' }, h('a', { class: 'btn ghost sm', href: '#/chart/' + encodeURIComponent(st.asset) }, '📈 גרף')),
         tfBox, h('p', { class: 'hint' }, 'מסגרות הזמן — לפי טווח ההשקעה בפרופיל. ', h('a', { href: '#/profile' }, 'פרופיל')),
         methodBox, h('div', {}, go)),
       out, disclaimer());
@@ -103,7 +103,7 @@ export function mountAnalysis(ctx) {
 
   function certaintyBlock(c, r) {
     const bt = c.backtest || {};
-    const sym = (r.label || 'נכס') + ' ' + TF_LABEL[c.tf];
+    const sym = [pairMain(r), ' ', TF_LABEL[c.tf]];   // BTC ⇄ USDT שעה (18.1.1)
     if (bt.status === 'ok') {
       return h('div', { class: 'summary' },
         h('div', { class: 'line' }, h('span', { class: 'muted' }, 'ודאות'), h('b', { class: 'num' }, bt.certainty + '%'),

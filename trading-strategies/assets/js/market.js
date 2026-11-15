@@ -62,7 +62,7 @@ export function atr(hh, ll, cc, n = 14) {
 }
 
 export function mountMarket(ctx) {
-  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep } = ctx;
+  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub } = ctx;
   const ME = () => ctx.me();
   let teardownFns = [];
   const onTeardown = fn => teardownFns.push(fn);
@@ -78,13 +78,13 @@ export function mountMarket(ctx) {
   const splitAsset = a => { const i = a.indexOf(':'); return [a.slice(0, i), a.slice(i + 1)]; };
 
   // ── שוק: בחירת זוג בשם (18.1) + המעקב שלי ─────────────
-  // המשתמש בוחר "מה" ו"מול מה" בשמות. הסימול נשאר בפנים (asset) ולא מוצג.
+  // המשתמש בוחר שני צדדים. כל צד — הקוד ומתחתיו השם בעברית; זוג — BTC ⇄ USDT (18.1.1). הסימול נשאר בפנים (asset).
   async function viewMarket() {
-    setHead('שוק', 'בוחרים מה, ומול מה');
+    setHead('שוק', 'בוחרים זוג');
     const [provs, { watchlist }, cat] = await Promise.all([providers(), api('watchlist'), api('pairs')]);
     const available = provs.filter(p => p.available);
     const results = h('div', { class: 'stack', 'aria-live': 'polite' });
-    const q = h('input', { type: 'search', name: 'q', placeholder: 'ביטקוין, דולר מול שקל, אפל…', 'aria-label': 'חיפוש זוג', maxlength: 40, autocomplete: 'off' });
+    const q = h('input', { type: 'search', name: 'q', placeholder: 'ביטקוין, USD/ILS, אפל…', 'aria-label': 'חיפוש זוג', maxlength: 40, autocomplete: 'off' });
     let base = sessionStorage.getItem('ts-pair-base') || cat.default;
     if (!cat.bases.some(b => b.code === base)) base = cat.default;
     const KIND = [['crypto', 'קריפטו'], ['currency', 'מטבעות']];
@@ -100,14 +100,16 @@ export function mountMarket(ctx) {
             const inp = h('input', { type: 'radio', name: 'pair-base', value: b.code });
             inp.checked = b.code === base;
             inp.addEventListener('change', () => { base = b.code; try { sessionStorage.setItem('ts-pair-base', base); } catch { /* ריק */ } drawVs(); });
-            return h('label', {}, inp, h('span', {}, b.name));
+            // הקוד, ומתחתיו השם בעברית (18.1.1)
+            return h('label', {}, inp, h('span', { class: 'pair' }, h('span', { class: 'pair-main', dir: 'ltr' }, h('b', {}, b.code)), h('small', { class: 'pair-sub' }, b.name)));
           })) : null;
       }));
     };
     const drawVs = () => {
       const b = cat.bases.find(x => x.code === base);
-      vs.replaceChildren(h('h2', { class: 'sec-title' }, (b ? b.name : '') + ' מול מה?'),
-        b?.quotes.length ? h('ul', { class: 'list' }, b.quotes.map(x => pairRow({ asset: x.asset, label: x.label, computed: x.computed, market: b.kind === 'crypto' ? 'crypto' : 'forex' }, watchlist)))
+      // "BTC ⇄ ?" — הצד השני (בלי המילה "מול")
+      vs.replaceChildren(h('h2', { class: 'sec-title vs-title' }, b ? pairMain({ base: { code: b.code }, quote: { code: '?' } }) : '?'),
+        b?.quotes.length ? h('ul', { class: 'list' }, b.quotes.map(x => pairRow({ asset: x.asset, label: x.label, base: x.base, quote: x.quote, computed: x.computed, market: b.kind === 'crypto' ? 'crypto' : 'forex' }, watchlist)))
           : h('p', { class: 'empty' }, 'אין ספק לזוג הזה'));
     };
     const go = async e => {
@@ -120,7 +122,7 @@ export function mountMarket(ctx) {
         const pp = await api('pair_parse', null, { q: v });
         if (pp.pair) {
           if (pp.asset) { location.hash = assetUrl(pp.asset); return; }
-          results.replaceChildren(h('p', { class: 'empty', role: 'status' }, `${pp.label}: ${pp.message}`));
+          results.replaceChildren(h('p', { class: 'empty', role: 'status' }, pairLabel(pp, { sub: false }), ': ', pp.message));
           return;
         }
         // צד אחד מהקטלוג — בוחרים אותו ברשימה
@@ -144,7 +146,7 @@ export function mountMarket(ctx) {
     const watchRow = (w, i, list) => {
       const row = h('li', { class: 'card', tabindex: '0', role: 'button', on: { click: e => { if (!e.target.closest('button')) location.hash = assetUrl(w.asset); }, keydown: e => { if (e.key === 'Enter') location.hash = assetUrl(w.asset); } } },
         h('span', { class: 'use-ic', 'aria-hidden': 'true' }, { crypto: '🪙', forex: '💱', stocks: '🏢', indices: '📊' }[w.meta?.market] || '📈'),
-        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, w.label), w.computed ? h('span', { class: 'chip' }, 'מחושב') : null),
+        h('div', { class: 'body' }, h('div', { class: 'l1' }, pairLabel(w), w.computed ? h('span', { class: 'chip' }, 'מחושב') : null),
           h('div', { class: 'l2' }, provName(w.provider))),
         editing ? h('span', { class: 'row-btns' },
           h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למעלה', disabled: i === 0, on: { click: () => move(list, i, -1) } }, '▲'),
@@ -186,16 +188,16 @@ export function mountMarket(ctx) {
     const alt = x.alternatives?.length ? h('button', { type: 'button', class: 'chip', on: { click: () => chooseProvider(x) } }, `+${x.alternatives.length} ספקים`) : null;
     return h('li', { class: 'card', style: 'cursor:default' },
       h('a', { class: 'body', href: assetUrl(x.asset), style: 'text-decoration:none;color:inherit' },
-        h('div', { class: 'l1' }, h('span', {}, x.label), x.computed ? h('span', { class: 'chip' }, 'מחושב') : null, h('span', { class: 't' }, MARKET_LABEL[x.market] || x.market)),
+        h('div', { class: 'l1' }, pairLabel(x), x.computed ? h('span', { class: 'chip' }, 'מחושב') : null, h('span', { class: 't' }, MARKET_LABEL[x.market] || x.market)),
         h('div', { class: 'l2' }, provName(splitAsset(x.asset)[0]), x.exchange && x.exchange !== provName(splitAsset(x.asset)[0]) ? [sep(), x.exchange] : null)),
       alt, star);
   }
   let route = null;
 
   function chooseProvider(x) {
-    const s = sheet(`${x.label} — מאיזה ספק?`);
+    const s = sheet('מאיזה ספק?');
     const all = [{ asset: x.asset, provider: x.provider, name: x.name }, ...x.alternatives];
-    s.body.append(h('p', { class: 'hint' }, 'אותו זוג אצל כמה ספקים. הבחירה נשמרת — בפעם הבאה יוצג הספק הזה.'),
+    s.body.append(h('p', {}, pairLabel(x)), h('p', { class: 'hint' }, 'אותו זוג אצל כמה ספקים. הבחירה נשמרת — בפעם הבאה יוצג הספק הזה.'),
       h('ul', { class: 'list' }, all.map(a => h('li', {}, h('button', { class: 'use-row', type: 'button', on: { click: async () => {
         await api('symbol_pref', { asset: a.asset }); s.close(); location.hash = assetUrl(a.asset);
       } } }, h('span', { class: 'use-tx' }, h('b', {}, provName(a.provider)), h('small', {}, a.name)), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))))));
@@ -206,10 +208,12 @@ export function mountMarket(ctx) {
     const [provider, symbol] = splitAsset(asset);
     // הכותרת — שם הזוג במילים (18.1); הסימול נשאר בפנים
     const [provs, { labels }] = await Promise.all([providers(), api('pair_labels', null, { assets: asset })]);
-    const label = labels[asset]?.label || 'גרף';
-    const sub = pp => (pp ? pp.name : provider) + (labels[asset]?.computed ? ' · מחושב (1/x)' : '');
+    // הכותרת: BTC ⇄ USDT; מתחת — השמות בעברית והספק (18.1.1)
+    const L = labels[asset] || { label: 'גרף' };
+    const label = () => pairMain(L);
+    const sub = pp => [pairSub(L), pairSub(L) ? ' · ' : '', (pp ? pp.name : provider) + (L.computed ? ' · מחושב (1/x)' : '')];
     const p = provs.find(x => x.id === provider);
-    setHead(label, sub(p), { back: true });
+    setHead(label(), sub(p), { back: true, docTitle: L.label });
     if (!p?.available) {
       render(h('p', { class: 'error' }, 'אין לכם חיבור לספק הזה. '), h('a', { class: 'btn ghost', href: '#/providers' }, 'ספקי נתונים'));
       return;
@@ -238,7 +242,7 @@ export function mountMarket(ctx) {
     const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
     // "🔮 תחזית שיטה" (17.2.2) — הכפתור כאן, וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
     const forecastBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'תחזית שיטה', 'aria-pressed': 'false' }, '🔮');
-    setHead(label, sub(p), { back: true, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
+    setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
@@ -648,7 +652,7 @@ export function mountMarket(ctx) {
       h('p', { class: 'hint' }, 'למשתמש מוצג רק השם. הנכס הראשון שיש לו ספק — הוא שנפתח. "1/" — זוג מחושב (ההופכי).'),
       h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
         h('thead', {}, h('tr', {}, h('th', {}, 'זוג'), h('th', {}, 'נכסים (לפי סדר)'))),
-        h('tbody', {}, rows.map(r => h('tr', {}, h('td', {}, r.label, r.computed ? ' · מחושב' : ''),
+        h('tbody', {}, rows.map(r => h('tr', {}, h('td', {}, pairLabel(r), r.computed ? ' · מחושב' : ''),
           h('td', {}, h('span', { dir: 'ltr' }, r.assets.join(' · ')))))))));
   }
 
