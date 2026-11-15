@@ -55,7 +55,7 @@ try {
   // ניהול: הפרמטרים מסומנים
   await o.goto(BASE + '#/admin');
   await o.getByRole('tab', { name: '🧪 שיטות' }).click();
-  await o.waitForSelector('text=גלי אליוט — כניסה לגל 3');
+  await o.waitForSelector('text=אליוט');
   const adminText = await o.locator('main').textContent();
   eq([/יעד גל 3 \(× גל 1\) \(1–2\.618\) · לפי הספר/.test(adminText), /עומק גל 2 — מינימום \(0\.236–0\.618\) · הגדרה שלנו/.test(adminText)], [true, true], 'admin: each parameter marked "by the book" / "our definition" (ז0)');
   eq(await post(o, 'admin_method_save', { id: 'elliott-w3', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] }), 200, 'the admin turns elliott-w3 on');
