@@ -341,6 +341,7 @@ lib/methods/        שיטה לכל קובץ (base.php — הממשק; registry.
 lib/backtest.php    מנוע הבדיקה לאחור, Wilson ושקלול — טהור
 lib/elliott.php     אליוט: ATR בזרימה, נקודות מפנה (zigzag), הכללים הקשיחים, ציון, ספירות חלופיות והקרנה → overlay — טהור
 lib/expr.php        מנתח ביטויים בשפה סגורה לשיטות מוגדרות — בלי eval
+lib/elliott-patterns.php  אליוט 4א/5: סיווג flat (רגיל/מורחב), triangle (מתכנס/מתפשט) ואלכסוני סוגר — לפי בדיקת הספר, טהור
 lib/overlay.php     חוזה ה-overlay (17.2.3) ובדיקתו
 lib/forecast.php    "🔮 תחזית שיטה" — method_overlay
 lib/builder.php     בונה השיטות — שמירה וגרסאות, בדיקה, "🧪 נסה" (מנהל בלבד)
@@ -397,6 +398,7 @@ node trading-strategies/tests/no-polling.mjs   # Playwright: 20 שניות בל�
 node trading-strategies/tests/drawings-ui.mjs  # Playwright: ציור בעכבר ובמגע (לחיצה ארוכה), גרירה, ביטול/שחזור
 php trading-strategies/tests/backtest.php      # המנוע: כללי 6.2, בלי הצצה, מצטבר = מלא, Wilson, שקלול, tick
 php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנה, כללים 1–6, elliott-w3 (17.1.9 ט 1–15), רמות מוחלטות 6.2(ח)
+php trading-strategies/tests/elliott-patterns.php # אליוט 4א/5: flat, triangle, אלכסוני סוגר — לפי עמודי הבדיקה מול הספר
 php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספירות חלופיות, הקרנה, רמת ביטול, החוזה של ה-overlay, בלי הצצה
 php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay, method_overlay: מי רואה, סגורים בלבד, זמנים מיושרים, בלי ודאות, 429
 php trading-strategies/tests/builder-api.php   # בונה השיטות: 403, admin_log, גרסאות, "🧪 נסה" לא שומר, נפח נדחה, מיגרציה 8
