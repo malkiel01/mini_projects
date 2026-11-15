@@ -46,7 +46,9 @@ export function mountAnalysis(ctx) {
     }
     st.asset = assets.includes(st.asset) ? st.asset : assets[0];
     const prov = id => providers.find(p => p.id === id);
-    const assetSel = select('asset', assets.map(a => [a, '\u2066' + a.slice(a.indexOf(':') + 1) + '\u2069 · ' + (prov(a.split(':')[0])?.name || a.split(':')[0])]), st.asset, { 'aria-label': 'נכס' });
+    // שם הזוג במילים (18.1) — הסימול לא מוצג
+    const { labels } = await api('pair_labels', null, { assets: assets.join(',') });
+    const assetSel = select('asset', assets.map(a => [a, (labels[a]?.label || 'נכס') + ' · ' + (prov(a.split(':')[0])?.name || a.split(':')[0])]), st.asset, { 'aria-label': 'נכס' });
     const tfBox = h('div');
     const methodBox = h('div', { class: 'chips', role: 'group', 'aria-label': 'שיטות' });
     const out = h('div', { class: 'stack', 'aria-live': 'polite' });
@@ -151,7 +153,7 @@ export function mountAnalysis(ctx) {
 
   function certaintyBlock(c, r) {
     const bt = c.backtest || {};
-    const sym = r.symbol + ' ' + TF_LABEL[c.tf];
+    const sym = (r.label || 'נכס') + ' ' + TF_LABEL[c.tf];
     if (bt.status === 'ok') {
       return h('div', { class: 'summary' },
         h('div', { class: 'line' }, h('span', { class: 'muted' }, 'ודאות'), h('b', { class: 'num' }, bt.certainty + '%'),

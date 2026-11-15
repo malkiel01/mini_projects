@@ -10,7 +10,6 @@ export function mountAlerts(ctx) {
   const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, sep } = ctx;
   const ME = () => ctx.me();
   const when = t => { try { return new Date(t * 1000).toLocaleString('he-IL', { timeZone: ME().user.timezone, day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
-  const sym = a => a.slice(a.indexOf(':') + 1);
   const setBadge = n => {
     const el = document.querySelector('.bottom-nav a[data-tab="alerts"] .badge');
     if (el) { el.textContent = n ? String(n) : ''; el.hidden = !n; }
@@ -49,7 +48,7 @@ export function mountAlerts(ctx) {
       alerts.length ? h('ul', { class: 'list' }, alerts.map(a => {
         const [cls, label] = STATUS[a.status];
         return h('li', { class: 'card', style: 'cursor:default;flex-wrap:wrap' },
-          h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', { class: 'num' }, sym(a.asset)), h('span', { class: 't' }, TF_LABEL[a.tf])),
+          h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, a.label), h('span', { class: 't' }, TF_LABEL[a.tf])),
             h('div', { class: 'l2 wrap' }, describe(a, methods)),
             h('div', { style: 'margin-top:4px' }, h('span', { class: 'chip ' + cls }, label), ' ',
               h('small', { class: 'muted' }, a.status === 'expired' ? '' : 'עד ' + when(a.expires_at), a.last_fired_at ? [sep(), 'נשלחה ' + when(a.last_fired_at)] : null))),
@@ -107,7 +106,9 @@ export function mountAlerts(ctx) {
     const [{ methods }, { watchlist }, { providers }] = await Promise.all([api('alerts'), api('watchlist'), api('market_providers')]);
     const assets = [...new Set([...(pre.asset ? [pre.asset] : []), ...watchlist.map(w => w.asset)])];
     if (!assets.length) { toast('בחרו קודם נכס ב"שוק" או הוסיפו נכס למעקב', true); return; }
-    const assetSel = select('asset', assets.map(a => [a, '⁦' + sym(a) + '⁩ · ' + (providers.find(p => p.id === a.split(':')[0])?.name || '')]), pre.asset || assets[0], { 'aria-label': 'נכס' });
+    // שם הזוג במילים (18.1) — הסימול לא מוצג
+    const { labels } = await api('pair_labels', null, { assets: assets.join(',') });
+    const assetSel = select('asset', assets.map(a => [a, (labels[a]?.label || 'נכס') + ' · ' + (providers.find(p => p.id === a.split(':')[0])?.name || '')]), pre.asset || assets[0], { 'aria-label': 'נכס' });
     const tfBox = h('div');
     const level = numInput('level', pre.level || '', 'למשל 65000');
     const days = h('input', { type: 'number', min: 1, max: 90, value: 30, inputmode: 'numeric', dir: 'ltr' });
