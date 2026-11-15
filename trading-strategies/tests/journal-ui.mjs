@@ -46,14 +46,14 @@ const post = (p, action, body) => p.evaluate(async ([a, bd]) => {
 try {
   const o = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main form');
+  await o.waitForSelector('main [role="combobox"]');
   await post(o, 'admin_method_save', { id: 'test-cross-b', enabled: true, markets: ['crypto'], timeframes: ['h4'] });
   // מ-F1 (18.1.2) שיטת קוד שאינה sample מופעלת בלי שורה — כאן נבדקת רק test-cross-b, ולכן המנהל מכבה את האחרות
   for (const id of ['test-cross-a', 'elliott-w3']) await post(o, 'admin_method_save', { id, enabled: false, markets: ['crypto'], timeframes: ['h4'] });
 
   const a = await open('alice');
   await a.goto(BASE + '#/market');
-  await a.waitForSelector('main form');
+  await a.waitForSelector('main [role="combobox"]');
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
   await a.goto(BASE + '#/analysis/' + encodeURIComponent('binance:BTCUSDT'));
   await a.locator('fieldset[aria-label="מסגרת זמן"] label', { hasText: '4 ש׳' }).click();

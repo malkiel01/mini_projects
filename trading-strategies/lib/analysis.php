@@ -66,6 +66,8 @@ function ts_profile(int $uid): array
         'quiet_hours' => $has && $r['quiet_hours'] !== null ? json_decode($r['quiet_hours'], true) : null,
         'max_alerts_per_day' => $has ? (int)$r['max_alerts_per_day'] : 10,
         'saved' => $has,
+        // הלשוניות של מסך השוק (18.1.4) — בפרופיל, נשמרות ב-users.market_tabs (lib/tabs.php)
+        'market_tabs' => function_exists('ts_market_tabs') ? ts_market_tabs($uid) : null,
     ];
 }
 

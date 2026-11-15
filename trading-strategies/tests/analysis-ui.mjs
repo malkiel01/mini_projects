@@ -90,7 +90,7 @@ try {
   await post(o, 'admin_method_save', { id: 'elliott-w3', enabled: false, markets: ['crypto'], timeframes: ['h1', 'h4'] });
   const a = await open('alice');
   await a.goto(BASE + '#/market');
-  await a.waitForSelector('main form');
+  await a.waitForSelector('main [role="combobox"]');
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
   await a.goto(BASE + '#/analysis');
   await a.waitForSelector('main .empty');

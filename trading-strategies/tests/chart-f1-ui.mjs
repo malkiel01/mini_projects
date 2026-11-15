@@ -134,12 +134,17 @@ try {
   eq(ls.some(l => l.by === 'forecast') && ls.some(l => l.by === 'drawings'), true, `labels from the method and from the drawings (${ls.length})`);
   eq(overlaps(ls), [], 'criterion 8: no two labels overlap (measureText rectangles)');
   eq(ls.some(l => l.by === 'forecast' && /^רמת ביטול/.test(l.text)), true, 'the method label wins over an overlapping drawing label (the leading count first)');
+  // 🟡 F1 → S1.2: "רמת ביטול…" לא עוברת מעל מספרי הציר — התווית נגמרת משמאל לעמודת המספרים
+  const axW = await a.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsAxisW());
+  const hl = ls.filter(l => l.by === 'forecast' && / · /.test(l.text));
+  eq([axW > 20, hl.length > 0, hl.filter(l => l.x + l.w > W - axW + 1).map(l => l.text)], [true, true, []], 'the level labels end left of the price-axis numbers (no "רמת ביטול" over 82,500)');
   const fibTexts = ls.filter(l => l.by === 'drawings').map(l => l.text);
   eq(fibTexts.length === new Set(fibTexts).size, true, 'two identical Fibonacci drawings → each level label once (the first one)');
   // השרטוט מתחיל לפני 40 יום ונגמר לפני 10, מתוך 90 בתצוגה — התוויות בקצה הימני שלו, לא בשמאלי
   const fibR = ls.filter(l => l.by === 'drawings').map(l => Math.round(l.x + l.w));
   eq(fibR.length > 0 && Math.max(...fibR) - Math.min(...fibR) <= 1 && fibR[0] > W / 2, true, `Fibonacci labels right-aligned at the right end of the drawing (${fibR.join(',')})`);
-  eq(ls.filter(l => l.by === 'forecast' && / · /.test(l.text)).every(l => l.x + l.w >= W - 8), true, 'level labels on the right edge (the present)');
+  eq(hl.every(l => l.x + l.w >= W - axW - 8), true, 'level labels on the right edge (the present), next to the axis numbers');
+  eq(hl.every(l => /· [\d,.]+$/.test(l.text)), true, 'a shortened level label keeps its price');
   eq(ls.filter(l => / · \d/.test(l.text)).every(l => !/\.00\b/.test(l.text)), true, 'level prices without ".00"');
   eq(await noHScroll(a), true, 'no horizontal scroll at 390px');
   await shot(a, 'f1-elliott-light', false);
