@@ -523,9 +523,27 @@ export function mountMarket(ctx) {
       S.cache.by.length ? h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'ספק'), h('th', {}, 'סוג'), h('th', { class: 'n' }, 'נרות'), h('th', { class: 'n' }, 'הוותיק'))),
         h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' }[r.kind]),
           h('td', { class: 'n num' }, r.candles.toLocaleString('he-IL')), h('td', { class: 'n num' }, new Date(r.oldest * 1000).toLocaleDateString('he-IL')))))) : h('p', { class: 'empty' }, 'המאגר ריק.'),
+      adminFetchLog(S.fetch_log || []),
       h('div', { class: 'row-btns wrap' },
         h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { const r = await api('admin_cache_cleanup', {}); toast(`נמחקו ${r.deleted} נרות ישנים`); reload(); } } }, '🧹 ניקוי ישנים מ-60 יום'),
         h('button', { class: 'btn ghost danger', type: 'button', on: { click: () => confirmSheet('ריקון המאגר', 'כל הנרות יימחקו. הגרפים יימשכו שוב מהספקים.', 'ריקון', async () => { await api('admin_cache_clear', {}); reload(); }) } }, 'ריקון הכול')));
+  }
+
+  // יומן בקשות הנרות (18.2, S2): כמה נרות נמשכו מהספק בכל בקשה, מול כמה הוגשו — 0 = הכול מהמאגר
+  function adminFetchLog(rows) {
+    const kind = { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' };
+    const time = t => new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return h('section', { class: 'block' },
+      h('h3', {}, 'יומן בקשות נרות'),
+      h('p', { class: 'hint' }, '"מהספק" — כמה נרות נמשכו מהספק בבקשה. 0 — הכול הוגש מהמאגר. מאגר משותף נמשך פעם אחת לכולם; אישי — כל משתמש לעצמו.'),
+      rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'מתי'), h('th', {}, 'מי'), h('th', {}, 'נכס'), h('th', {}, 'מאגר'), h('th', { class: 'n' }, 'מהספק'), h('th', { class: 'n' }, 'הוגשו'))),
+        h('tbody', {}, rows.map(r => h('tr', {},
+          h('td', { class: 'num' }, time(r.at)), h('td', {}, r.user || '—'),
+          h('td', {}, h('span', { dir: 'ltr' }, r.asset + ' · ' + r.tf)), h('td', {}, kind[r.kind] || r.kind),
+          h('td', { class: 'n num' }, r.provider_candles.toLocaleString('he-IL') + (r.provider_calls ? ` (${r.provider_calls})` : '')),
+          h('td', { class: 'n num' }, r.served.toLocaleString('he-IL')))))))
+        : h('p', { class: 'empty' }, 'אין עדיין בקשות.'));
   }
 
   function adminLog(S) {
