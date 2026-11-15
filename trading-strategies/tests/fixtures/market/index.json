@@ -35,7 +35,10 @@
     "body": {
       "USD": "United States Dollar",
       "ILS": "Israeli New Shekel",
-      "EUR": "Euro"
+      "EUR": "Euro",
+      "GBP": "British Pound",
+      "JPY": "Japanese Yen",
+      "CHF": "Swiss Franc"
     }
   },
   {

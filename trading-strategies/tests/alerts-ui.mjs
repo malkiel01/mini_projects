@@ -62,7 +62,7 @@ try {
   await a.locator('dialog fieldset[aria-label="כיוון"] label', { hasText: 'לונג' }).click();
   await a.locator('dialog').getByRole('button', { name: 'שמירה' }).click();
   await a.waitForSelector('main .card');
-  eq((await a.locator('main .card').first().textContent()).includes('BTCUSDT'), true, 'the new price alert is listed');
+  eq((await a.locator('main .card').first().textContent()).includes('ביטקוין מול טתר'), true, 'the new price alert is listed — the pair in words, not the symbol (18.1)');
   eq((await a.locator('main .card .chip').first().textContent()), 'פעילה', 'active');
   eq(await noHScroll(a), true, 'alerts: no horizontal scroll on a phone');
   eq(await a.evaluate(() => getComputedStyle(document.querySelector('main .card')).direction), 'rtl', 'RTL');
