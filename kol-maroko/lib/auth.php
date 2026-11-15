@@ -76,7 +76,7 @@ const ACTION_ROLES = [
     'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
     'ai_suggest_files' => 'editor', 'ai_apply_files' => 'editor', 'forms_settings' => 'editor',
     // ── מפרסם
-    'site_ping' => 'publisher', 'site_switch' => 'publisher', 'build_send' => 'publisher', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher',
+    'site_ping' => 'publisher', 'build_send' => 'publisher', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher',
     'cutover' => 'publisher',
     'page_create' => 'publisher', 'page_move' => 'publisher', 'page_set_entry' => 'publisher', 'page_set_404' => 'publisher', 'pages_order' => 'publisher',   // V15: עמודים — מפרסם ומעלה
     'outbox' => 'publisher', 'outbox_resend' => 'publisher', 'site_wake' => 'publisher',          // M7 — התור והדופק

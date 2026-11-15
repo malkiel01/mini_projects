@@ -16,7 +16,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-const KOL_MAROKO_PULL_ACTIONS = ['manifest', 'switch', 'activate', 'mount'];
+const KOL_MAROKO_PULL_ACTIONS = ['manifest', 'activate', 'mount'];      // 2.3: switch (1.x) — הוסר
 const KOL_MAROKO_PULL_MAX_TTL = 8 * 86400;
 const KOL_MAROKO_PULL_TRIES = 3;
 const KOL_MAROKO_PULL_CHUNK = 8 * 1024 * 1024;
@@ -285,8 +285,7 @@ function kol_maroko_pull_apply(array $b, $t0)
         return $done(kol_maroko_v2_manifest($b, $b['seq']));
     }
     if ($action === 'mount') return $done(kol_maroko_v2_mount_set($b));
-    if ($action === 'activate') return $done(kol_maroko_v2_activate($b));
-    return $done(kol_maroko_switch($b));
+    return $done(kol_maroko_v2_activate($b));
 }
 
 /** מה התוסף מדווח על עצמו — אותם שמות של ping, ועוד הסמן והמשיכה האחרונה. אין כאן שום מידע על האתר מעבר לתוסף (07 §5.3). */

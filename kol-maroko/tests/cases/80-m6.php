@@ -72,7 +72,7 @@ test('M6 §2.2: הפעולות שנמחקו — 404 ב-api.php; ובמטריצת
         eq(404, $r['status'], "GET $a");
         if (!in_array($a, ['code', 'versions', 'revisions', 'draft'], true)) eq(404, http('POST', "/api.php?action=$a", ['user' => U_OWNER, 'json' => []])['status'], "POST $a");
     }
-    foreach (['archive', 'archive_view', 'archive_html', 'site_settings', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'site_switch'] as $a) {
+    foreach (['archive', 'archive_view', 'archive_html', 'site_settings', 'key_rotate', 'key_activate', 'site_set', 'site_ping'] as $a) {
         ok(array_key_exists($a, ACTION_ROLES), "$a חסרה ב-ACTION_ROLES");
     }
 });
