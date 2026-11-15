@@ -15,19 +15,21 @@ function eq($got, $want, string $what): void
     echo "✗ $what: got " . var_export($got, true) . ', want ' . var_export($want, true) . "\n";
 }
 
-// ── שטוח (עמ' 45–46) ─────────────────────────────────
-// רגיל: B לא עובר את תחילת A (100), C מסתיים מעט מעבר לסוף A (110)
-eq(ts_ew_flat_kind([100, 110, 104, 110.5]), 'regular', 'flat regular: B stays above start of A, C slightly beyond A end (p.45–46)');
-// מורחב: B עובר את תחילת A (98), C מסתיים הרבה מעבר לסוף A (118)
-eq(ts_ew_flat_kind([100, 110, 98, 118]), 'expanded', 'flat expanded: B beyond start of A, C well beyond A end (p.46)');
-// C לא מגיע לסוף A — לא שטוח (זה לא "מעט מעבר")
-eq(ts_ew_flat_kind([100, 110, 104, 109]), null, 'flat: C short of A end is not a flat');
-// B לא מתכנס — B לא יורד מסוף A: לא שטוח
+// ── שטוח (עמ' 45–46, 89; 2.8) — הסיווג לפי B ו-C מול A ─────
+// רגיל: B בערך בגובה תחילת A (b = 0.95), C בסוף A או מעבר (c = 1.0 ≥ b)
+eq(ts_ew_flat_kind([100, 110, 100.5, 110.5]), 'regular', 'flat regular: b≈1 (B ~ start of A), C at or beyond end of A (p.45–46, 2.8)');
+// מורחב: B מעבר לתחילת A (b = 1.2), C מעבר לסוף B (c = 1.4 > b) (עמ' 46)
+eq(ts_ew_flat_kind([100, 110, 98, 112]), 'expanded', 'flat expanded: b > 1.05 and c > b (p.46, 2.8)');
+// running: b = 1.2 ו-c = 1.0 < b — נדיר ולא מזוהה (allow_running_flat כבוי, עמ' 48–49)
+eq(ts_ew_flat_kind([100, 110, 98, 108]), null, 'flat running: not classified (allow_running_flat off, p.48–49)');
+// B קטן מ-90% מ-A (b = 0.6): לא שטוח — כלל (עמ' 89)
+eq(ts_ew_flat_kind([100, 110, 104, 110.5]), null, 'flat: B must retrace at least 90% of A (p.89)');
+// B לא יורד (עולה מעל סוף A): לא שטוח
 eq(ts_ew_flat_kind([100, 110, 111, 118]), null, 'flat: B must retrace A');
-// B עובר את תחילת A, אבל C מעט מעבר: לא מורחב, ולא רגיל (B מתחת לתחילת A)
-eq(ts_ew_flat_kind([100, 110, 98, 111]), null, 'flat: beyond start of A without well-beyond C is not classified');
-// ירידה — אותו דבר במראה
-eq(ts_ew_flat_kind([200, 190, 196, 190 - 0.5]), 'regular', 'flat regular, downward (mirror)');
+// רגיל בלי C מעבר לסוף A (b = 0.95, c = 0.85 < b): לא נכנס לסוג
+eq(ts_ew_flat_kind([100, 110, 100.5, 109]), null, 'flat regular needs C at or beyond end of A (c >= b)');
+// ירידה — אותו דבר במראה (A יורד): b = 0.95, c = 1.0
+eq(ts_ew_flat_kind([200, 190, 199.5, 189.5]), 'regular', 'flat regular, downward (mirror)');
 
 // ── משולש (עמ' 49–50) ───────────────────────────────
 // מתכנס: C מתחת לסוף A (109 < 110), D מעל סוף B (103.5 > 102)
