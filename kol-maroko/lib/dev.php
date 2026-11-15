@@ -14,7 +14,7 @@ require_once __DIR__ . '/devloop.php';
 require_once __DIR__ . '/forms.php';
 
 /** גרסת התוסף לוורדפרס שהריפו מצפה לה באתר. התוסף אינו נפרס לשרת הזה, ולכן המספר כתוב כאן; בדיקה אוטומטית משווה אותו לקובץ התוסף. */
-const KOL_PLUGIN_EXPECTED = '2.2.1';
+const KOL_PLUGIN_EXPECTED = '2.3.0';
 const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צילום רק למטלה שהוא עצמו פתח ב-15 הדקות האחרונות
 
 /**
@@ -355,7 +355,7 @@ function dev_health_checks(): array
                 return [false, 'ה-ping החתום נכשל: ' . $e->getMessage(), 'ב-⚙️ בעל האתר ← 🔗 חיבור לאתר ← "בדיקת חיבור" מופיע ההסבר המלא; לוודא שהתוסף מותקן ופעיל באתר ושהמפתח הציבורי הודבק בו (docs/install.md)'];
             }
             $p = (string)($r['plugin'] ?? '');
-            $state = (!empty($r['enabled']) ? 'האתר מציג את העמוד מהכלי' : 'האתר מציג את העמוד המקורי') . ' · גרסה חיה ' . (int)($r['live'] ?? 0);
+            $state = (!empty($r['v2_on']) ? 'המפסק "העמוד החדש" דולק' : 'המפסק "העמוד החדש" כבוי — העמוד המקורי') . ' · גרסה חיה ' . (int)($r['v2_live'] ?? 0);
             if ($p === '') return [false, "ה-ping החתום עבר, אבל התוסף לא דיווח גרסה · $state", 'התוסף באתר ישן מאוד — להתקין את ' . KOL_PLUGIN_EXPECTED . ' (מטלה לבעלים)'];
             if (version_compare($p, KOL_PLUGIN_EXPECTED, '<')) return [false, "ה-ping החתום עבר · באתר מותקן תוסף $p, ובריפו " . KOL_PLUGIN_EXPECTED . " · $state",
                 'להתקין באתר את התוסף המעודכן מ-wordpress-plugin/ (מטלה לבעלים; docs/install.md)'];

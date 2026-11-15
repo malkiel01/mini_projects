@@ -115,7 +115,7 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); for (;;) { try { 
     const applied = await until(() => page.$('.ob-row.ob-applied'), 20000);
     ok(applied && /הוחל באתר/.test(await applied.textContent()), '"✓ הוחל באתר" — בלי רענון');
     ok(/ייתכן מטמון ב-CDN/.test(await page.textContent('.ob-row.ob-applied')), '"☁️ ייתכן מטמון ב-CDN" + Purge');
-    ok(await page.$('.ob-pulse.ob-ok') && /לפני פחות מדקה/.test(await page.textContent('.ob-pulse')) && /תוסף 2\.2\.1/.test(await page.textContent('.ob-pulse')), 'הדופק — ירוק, "לפני פחות מדקה · תוסף 2.2.1"', await page.textContent('.ob-pulse'));
+    ok(await page.$('.ob-pulse.ob-ok') && /לפני פחות מדקה/.test(await page.textContent('.ob-pulse')) && /תוסף 2\.3\.0/.test(await page.textContent('.ob-pulse')), 'הדופק — ירוק, "לפני פחות מדקה · תוסף 2.3.0"', await page.textContent('.ob-pulse'));
     ok((await call('build_get', undefined, '&id=' + b1.id)).build.status === 'live', 'הבנייה באתר — רק אחרי applied');
     const pkLive = await until(async () => /באתר/.test(await page.textContent('.pk')) && !/ממתין למשיכה/.test(await page.textContent('.pk')), 8000);
     ok(pkLive, 'גם ברשימת הבניות — "באתר", בלי רענון', pkLive ? '' : (await page.textContent('#main')).slice(0, 400) + ' / ' + errors.join(' / '));
@@ -135,14 +135,14 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); for (;;) { try { 
 
     // ════ ה. פג תוקף ← שלח שוב ════
     console.log('\n── ה. פג תוקף ──');
-    const sw = await call('site_switch', { enabled: false });
+    const sw = { site: await call('mount_set', { mount: 'full' }) };     // M6b: site_switch (1.x) הוסר — פקודה אחרת בתור
     php(`db()->prepare('UPDATE site_outbox SET expires = ? WHERE seq = ?')->execute([time() - 1, (int)$argv[3]]);`, String(sw.site.seq));
     await page.goto(base + '/#/publish');
     const exp = await until(() => page.$(`.ob-row.ob-expired[data-seq="${sw.site.seq}"]`), 10000);
     ok(exp && /פג תוקף/.test(await exp.textContent()) && /שלח שוב/.test(await exp.textContent()), '"⌛ פג תוקף" + הסבר + "↻ שלח שוב"');
     await shot(page, 'm7-expired-1920.png');
     await page.click(`.ob-row.ob-expired[data-seq="${sw.site.seq}"] .ob-resend`);
-    ok(await until(async () => { const o = await call('outbox'); return o.outbox[0].seq > sw.site.seq && o.outbox[0].state === 'queued' && o.outbox[0].action === 'switch'; }, 8000), 'נשלחה שוב — seq חדש בתור');
+    ok(await until(async () => { const o = await call('outbox'); return o.outbox[0].seq > sw.site.seq && o.outbox[0].state === 'queued' && o.outbox[0].action === 'mount'; }, 8000), 'נשלחה שוב — seq חדש בתור');
 
     // ════ ו. 390 ════
     console.log('\n── ו. טלפון ──');
