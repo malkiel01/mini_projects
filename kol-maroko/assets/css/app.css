@@ -604,3 +604,10 @@ label.check { display: flex; align-items: center; gap: 6px; margin-block: var(--
 .f-check input { width: 20px; height: 20px; }
 .log-filters select { width: auto; max-width: 50%; }
 .mount-opt input[type=radio] { width: auto; min-height: 0; display: inline-block; vertical-align: middle; }
+/* R5 — נקודות שחזור: "מקור" בראש הרשימה, ומה כל נקודה כוללת */
+.snap-origin .use-row { background: var(--brand-soft); border-radius: var(--r); }
+.use-tx .snap-has { color: var(--muted); }
+.use-tx .snap-has.warn { color: var(--danger); font-weight: 600; }
+.snap-reset-row { justify-content: flex-end; margin-bottom: var(--s2); }
+.btn.danger.snap-reset-go { background: var(--danger); color: #fff; border-color: var(--danger); }
+.btn.danger.snap-reset-go:disabled { opacity: .45; }

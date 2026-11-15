@@ -3,43 +3,70 @@
 'use strict';
 
 const Restore = (() => {
-  const KIND = { manual: ['📌', 'ידנית'], auto: ['🛟', 'אוטומטית'], chat: ['🤖', 'לפני צ\'אט'], daily: ['📅', 'יומית'], pre_restore: ['↩️', 'לפני שחזור'] };
+  const KIND = { manual: ['📌', 'ידנית'], auto: ['🛟', 'אוטומטית'], chat: ['🤖', 'לפני צ\'אט'], daily: ['📅', 'יומית'], pre_restore: ['↩️', 'לפני שחזור'], origin: ['📌', 'מקור'] };
+  // R5: נקודה מלפני קובצי הפרויקט (F2a) — שחזור אליה לא משנה את העמוד, ולכן זה כתוב ליד הנקודה ובאישור
+  const NO_PROJECT = '⚠️ בלי קובצי העמוד — שחזור לא ישנה את העמוד';
+  const has = s => (s.project ? 'כולל את קובצי העמוד' : NO_PROJECT);
   let tab = sessionStorage.getItem('kol-restore-tab') || 'points';
 
-  async function view(host, role) {
+  async function view(host, role, site = false) {
     const tabs = h('div', { class: 'seg-tabs', role: 'tablist' }, [['points', '🛟 נקודות שחזור'], ['trash', '🗑️ סל המחזור'], ...(role === 'owner' ? [['backup', '💾 גיבוי']] : [])]
-      .map(([k, l]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === k), onclick: () => { tab = k; sessionStorage.setItem('kol-restore-tab', k); view(host, role); } }, l)));
+      .map(([k, l]) => h('button', { type: 'button', role: 'tab', 'aria-selected': String(tab === k), onclick: () => { tab = k; sessionStorage.setItem('kol-restore-tab', k); view(host, role, site); } }, l)));
     const body = h('div', {}, h('p', { class: 'empty' }, 'טוען…'));
     host.replaceChildren(h('p', { class: 'hint' }, 'כל שינוי ניתן לשחזור. נקודות שחזור נוצרות לבד — לפני צ\'אט, לפני כל ייבוא ופעולה גורפת, ופעם ביום — ולא נמחקות. שחזור יוצר קודם נקודה של המצב הנוכחי, כך שגם אותו אפשר לבטל.'), tabs, body);
     try {
-      if (tab === 'points') await points(body, 0);
+      if (tab === 'points') await points(body, 0, [], site);
       else if (tab === 'trash') await trash(body, role);
       else backup(body);
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
   // ── נקודות שחזור ────────────────────────────────────────
-  async function points(body, offset, keep = []) {
+  async function points(body, offset, keep = [], site = false) {
     const d = await api('snapshots', undefined, `&offset=${offset}`);
     const rows = [...keep, ...d.snapshots];
     const note = h('input', { maxlength: 200, placeholder: 'למשל: לפני שינוי גדול' });
     body.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
       h('div', { class: 'toolbar' }, note, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-        try { await api('snapshot_create', { note: note.value }); toast('נשמרה נקודה'); points(body, 0); } catch (e) { toast(e.message, true); }
+        try { await api('snapshot_create', { note: note.value }); toast('נשמרה נקודה'); points(body, 0, [], site); } catch (e) { toast(e.message, true); }
       } }, '📌 נקודה עכשיו')),
+      site ? h('div', { class: 'row-btns snap-reset-row' }, h('button', { type: 'button', class: 'btn ghost danger', 'data-snap-reset': true, onclick: () => resetSheet(d.total, body) }, '🧹 איפוס נקודות השחזור')) : null,
       rows.length ? h('ul', { class: 'list' }, rows.map(s => {
         const [ic, kl] = KIND[s.kind] || ['🛟', s.kind];
-        return h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: () => pointSheet(s, body) },
+        return h('li', { 'data-snap': s.id, class: s.kind === 'origin' ? 'snap-origin' : null }, h('button', { type: 'button', class: 'use-row', onclick: () => pointSheet(s, body, site) },
           h('span', { class: 'use-ic', 'aria-hidden': 'true' }, ic),
-          h('span', { class: 'use-tx' }, h('b', { class: 'one' }, `#${s.id} · ${s.reason}`),
-            h('small', {}, `${when(s.at)} · ${s.name} · ${kl} · ${s.meta.words ?? 0} מילים`)),
+          h('span', { class: 'use-tx' }, h('b', { class: 'one' }, s.kind === 'origin' ? `📌 מקור · #${s.id}` : `#${s.id} · ${s.reason}`),
+            h('small', {}, `${when(s.at)} · ${s.name} · ${kl} · ${s.meta.words ?? 0} מילים`),
+            h('small', { class: s.project ? 'snap-has' : 'snap-has warn', 'data-snap-project': String(!!s.project) }, has(s))),
           h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
       })) : h('p', { class: 'empty' }, 'עוד אין נקודות.'),
-      rows.length < d.total ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: () => points(body, offset + 50, rows) }, `עוד (${d.total - rows.length})`) : null,
+      rows.length < d.total ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: () => points(body, offset + 50, rows, site) }, `עוד (${d.total - rows.length})`) : null,
     ].filter(Boolean));
   }
 
-  function pointSheet(s, body) {
+  /** R5: איפוס — רק בעל האתר (נאכף גם בשרת). הקלדה של "איפוס" פותחת את הכפתור. */
+  function resetSheet(total, body) {
+    const typed = h('input', { 'data-snap-reset-type': true, placeholder: 'איפוס', autocomplete: 'off', 'aria-label': 'לאישור — כתבו: איפוס' });
+    const status = h('p', { class: 'hint', role: 'status' });
+    const go = h('button', { type: 'button', class: 'btn danger snap-reset-go', disabled: true, 'data-snap-reset-go': true, onclick: async () => {
+      go.disabled = true; status.textContent = 'מאפס…';
+      try {
+        const r = await api('snapshots_reset', { confirm: true });
+        dlg.close();
+        toast(`נמחקו ${r.deleted} נקודות · נוצרה נקודת מקור #${r.origin}`);
+        points(body, 0, [], true);
+      } catch (err) { status.replaceChildren(h('span', { class: 'error' }, err.message)); go.disabled = typed.value.trim() !== 'איפוס'; }
+    } }, '🧹 איפוס');
+    typed.addEventListener('input', () => { go.disabled = typed.value.trim() !== 'איפוס'; });
+    const dlg = sheet('🧹 איפוס נקודות השחזור',
+      h('p', { class: 'error', 'data-snap-reset-text': true }, `כל ${total} הנקודות יימחקו. תיווצר נקודה אחת "מקור" של המצב הנוכחי. אי אפשר לבטל.`),
+      h('p', { class: 'hint' }, 'נקודת המקור מוצגת בראש הרשימה, לא נמחקת בשום ניקוי, ומוחלפת רק באיפוס הבא. העמוד, המילים והקבצים עצמם לא משתנים.'),
+      h('p', {}, h('a', { class: 'btn ghost', href: 'api.php?action=backup', download: '' }, '💾 הורד גיבוי קודם')),
+      h('label', { class: 'field' }, h('span', {}, 'לאישור — כתבו: איפוס'), typed),
+      h('div', { class: 'row-btns' }, go), status);
+  }
+
+  function pointSheet(s, body, site) {
     const frame = h('iframe', { class: 'ver-frame', sandbox: 'allow-scripts', title: `נקודה ${s.id}` });
     const status = h('p', { class: 'hint', role: 'status' });
     const dlg = sheet(`🛟 נקודה #${s.id}`,
@@ -47,17 +74,18 @@ const Restore = (() => {
         h('div', {}, h('dt', {}, 'מתי'), h('dd', {}, when(s.at))),
         h('div', {}, h('dt', {}, 'למה'), h('dd', {}, s.reason)),
         h('div', {}, h('dt', {}, 'מי'), h('dd', {}, s.name)),
-        h('div', {}, h('dt', {}, 'מה בה'), h('dd', {}, `${s.meta.words ?? 0} מילים · ${s.meta.code ? s.meta.code + ' קבצי קוד' : 'תבנית מובנית'} · ${s.meta.files ?? 0} קבצים`))),
+        h('div', {}, h('dt', {}, 'מה בה'), h('dd', {}, `${s.meta.words ?? 0} מילים · ${s.meta.code ? s.meta.code + ' קבצי קוד' : 'תבנית מובנית'} · ${s.meta.files ?? 0} קבצים`)),
+        h('div', {}, h('dt', {}, 'קובצי העמוד'), h('dd', { class: s.project ? null : 'error', 'data-snap-sheet-project': String(!!s.project) }, has(s)))),
       h('p', { class: 'hint' }, 'שחזור מחזיר את הטיוטה, המילים, הנושאים, קבצי הקוד ומצב הקבצים לנקודה הזו. לפני כן נשמרת נקודה של המצב הנוכחי — אפשר לחזור ממנו. האתר לא משתנה עד פרסום.'),
       h('div', { class: 'row-btns' }, h('button', { type: 'button', class: 'btn primary', onclick: async e => {
-        if (!confirm(`לשחזר לנקודה #${s.id}?`)) return;
+        if (!confirm(`לשחזר לנקודה #${s.id}?${s.project ? '' : `\n\n${NO_PROJECT}: הנקודה נוצרה לפני שקובצי העמוד נשמרו בנקודות. יחזרו רק המילים, הנושאים, קבצי הקוד ומצב הקבצים.`}`)) return;
         e.target.disabled = true; status.textContent = 'משחזר…';
         try {
           const r = await api('snapshot_restore', { id: s.id });
           dlg.close();
           toast(`שוחזר · המצב הקודם נשמר כנקודה #${r.pre}`);
           if (r.missing.length) alert(`${r.missing.length} קבצים מהנקודה נמחקו סופית ולא חזרו.`);
-          points(body, 0);
+          points(body, 0, [], site);
         } catch (err) { status.replaceChildren(h('span', { class: 'error' }, err.message)); e.target.disabled = false; }
       } }, '↩️ שחזור לנקודה הזו')),
       status, frame);
