@@ -4,6 +4,7 @@ import * as D from './decimal.js';
 import { mountMarket } from './market.js';
 import { mountAnalysis } from './analysis.js';
 import { mountAlerts } from './alerts.js';
+import { mountCombo } from './combobox.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -143,6 +144,8 @@ const MARKET_SHORT = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מ�
 function setHead(title, sub = '', { back = false, actions = [], docTitle = null } = {}) {
   $('#title').replaceChildren(title instanceof Node ? title : String(title));
   $('#subtitle').replaceChildren(...[sub].flat().filter(x => x != null && x !== false));
+  // תווית זוג + ספק: השמות מתקצרים והספק נשאר שלם (🟡 F1 — "Binance" נחתך)
+  $('#subtitle').classList.toggle('parts', [sub].flat().some(x => x instanceof Node));
   if (title instanceof Node) title = docTitle || title.textContent;
   $('#back').hidden = !back;
   $('#head-actions').replaceChildren(...actions);
@@ -702,6 +705,20 @@ async function editTrade(id = null, pre = {}) {
     onMarket(i.market);
   });
 
+  // בחירה מהשוק (combobox, 18.1.3 סעיף "איפה"): נכס מהרשימה ממלא נכס, שוק, מטבע ומכפיל — כמו "פתח עסקה" מכרטיס ניתוח
+  const fromMarket = t ? null : mountCombo({ h, api, pairLabel }, { label: 'נכס מהשוק', placeholder: 'מהשוק: ביטקוין, דולר, אפל…', name: 'trade-asset', onPick: async it => {
+    try {
+      const p = (await api('trade_prefill', null, { asset: it.asset })).prefill;
+      fld.symbol.value = p.symbol;
+      const r = marketSeg.querySelector(`input[value="${p.market}"]`);
+      if (r) r.checked = true;
+      fld.currency.value = p.currency;
+      fld.multiplier.value = p.multiplier ?? '';
+      fld.multiplier.dataset.touched = '1';
+      onMarket(p.market);
+    } catch (e) { toast(e.message, true); }
+  } });
+
   // אסטרטגיה + גרסה → צ'קליסט
   const sid0 = v.strategy_id ?? pre.strategy_id ?? '';
   const stratSel = select('strategy', [['', 'בלי אסטרטגיה'], ...strategies.filter(s => s.status !== 'archived' || s.id === sid0).map(s => [String(s.id), s.name])], sid0, { 'aria-label': 'אסטרטגיה' });
@@ -817,6 +834,7 @@ async function editTrade(id = null, pre = {}) {
   sh.body.append(datalist,
     result, fromAnalysis,
     group('בסיס', '',
+      fromMarket ? h('div', { class: 'f wide' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'בחירה מהשוק'), fromMarket.el) : null,
       h('div', { class: 'fields two' }, field('נכס', fld.symbol), field('מטבע', fld.currency)),
       h('div', { class: 'f' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'שוק'), marketSeg),
       optBox,

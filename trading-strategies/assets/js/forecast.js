@@ -34,7 +34,7 @@ function loadChosen() {
   } catch { return []; }
 }
 
-export function mountForecast({ chart, series, h, host, isAdmin = () => false, api, toast, getTf, getSec, getTimes, col, buttons, board, onChange }) {
+export function mountForecast({ chart, series, h, host, isAdmin = () => false, api, toast, getTf, getSec, getTimes, col, buttons, board, onChange, axisWidth = () => 0 }) {
   let chosen = loadChosen();     // [{id, color}] — לפי סדר הבחירה; הראשונה מובילה
   const res = new Map();         // id → התשובה האחרונה מ-chart_refresh
   const selected = new Map();    // id → מזהה התרחיש המודגש
@@ -58,6 +58,14 @@ export function mountForecast({ chart, series, h, host, isAdmin = () => false, a
     ctx.direction = 'rtl';   // טקסט עברי עם מספר: "רמת ביטול … · 82,912.72", ולא המספר בהתחלה (הקנבס של הגרף LTR)
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
+    // נצמדת לימין ואין לה מקום (טלפון): מקצרים את התיאור ב-"…", והמחיר שבסוף נשאר (🟡 F1 — לא גולשים אל מספרי הציר)
+    if (align === 'right' && ctx.measureText(s).width + 6 > x) {
+      const i = s.lastIndexOf(' · ');
+      const tail = i > 0 ? s.slice(i) : '';
+      let head = i > 0 ? s.slice(0, i) : s;
+      while (head.length > 1 && ctx.measureText(head + '…' + tail).width + 6 > x) head = head.slice(0, -1);
+      s = head.trimEnd() + '…' + tail;
+    }
     const w = ctx.measureText(s).width + 6;
     let left = align === 'right' ? x - w : x - 3;
     left = Math.max(0, Math.min(left, W - w));
@@ -82,7 +90,8 @@ export function mountForecast({ chart, series, h, host, isAdmin = () => false, a
     }
     if (it.kind === 'hline') {
       const y = yOf(it.price);
-      return y === null ? null : { s: `${it.text} · ${price(id, it.price)}`, x: W - 6, y, c: col(ROLE[it.role] || '--muted'), align: 'right' };
+      // משמאל לעמודת המספרים של הציר — לא מעליהם (🟡 F1: "רמת ביטול" כיסתה את 82,500)
+      return y === null ? null : { s: `${it.text} · ${price(id, it.price)}`, x: W - 6 - axisWidth(), y, c: col(ROLE[it.role] || '--muted'), align: 'right' };
     }
     if (it.kind === 'label') {
       const x = xOf(it.t), y = yOf(it.price);

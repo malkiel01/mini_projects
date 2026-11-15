@@ -423,6 +423,15 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 9) {
+        // לשוניות במסך השוק (spec-stage-a 18.1.4, S1.2): עמודה חדשה, ריקה — null = ברירת המחדל. לא נוגעת בשום נתון קיים
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN market_tabs TEXT;
+            PRAGMA user_version = 9;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

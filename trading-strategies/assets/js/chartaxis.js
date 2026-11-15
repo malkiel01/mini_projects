@@ -55,6 +55,7 @@ const T_STEPS = [MIN, 5 * MIN, 15 * MIN, 30 * MIN, HOUR, 2 * HOUR, 4 * HOUR, 6 *
 export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmtTime = () => '', time = true }) {
   let requestUpdate = () => {};
   let shown = { price: [], time: [] };   // מה צויר בפעם האחרונה — לבדיקות
+  let priceW = 0;   // רוחב עמודת המספרים בצד ימין — תוויות של קווים אופקיים נצמדות משמאל לה (🟡 F1)
   let cross = null;   // {x, y, t} — הסמן, כדי להראות את המחיר והזמן שלו (אין עוד ציר שמראה אותם)
   const onCross = p => { cross = p?.point && p.time !== undefined ? { x: p.point.x, y: p.point.y, t: p.time } : p?.point ? { x: p.point.x, y: p.point.y, t: null } : null; requestUpdate(); };
   chart.subscribeCrosshairMove(onCross);
@@ -79,6 +80,8 @@ export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmt
     const step = niceStep((top - bot) / Math.max(2, H / 56));
     const dec = Math.min(getDec(), Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)));
     ctx.font = '10px system-ui, sans-serif';
+    // הרוחב לפי המספר הרחב בטווח — יציב בין ציור לציור, גם כשמספר נופל מחוץ למסך
+    priceW = Math.max(...[top, bot].map(v => ctx.measureText(fmtNum(v, dec)).width)) + 8;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     for (let v = Math.ceil(bot / step) * step; v <= top; v += step) {
@@ -178,6 +181,8 @@ export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmt
   return {
     update: () => requestUpdate(),
     shown: () => ({ price: [...shown.price], time: [...shown.time] }),
+    /** רוחב עמודת מספרי המחיר (פיקסלים), כולל ריווח */
+    priceWidth: () => priceW,
     destroy() {
       try { chart.unsubscribeCrosshairMove(onCross); series.detachPrimitive(primitive); } catch { /* ריק */ }
     },

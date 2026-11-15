@@ -42,12 +42,12 @@ const post = (p, action, body) => p.evaluate(async ([a, bd]) => {
 try {
   const o = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main form');
+  await o.waitForSelector('main [role="combobox"]');
   for (const id of ['test-cross-a', 'test-cross-b']) await post(o, 'admin_method_save', { id, enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] });
 
   const a = await open('alice');
   await a.goto(BASE + '#/market');
-  await a.waitForSelector('main form');
+  await a.waitForSelector('main [role="combobox"]');
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
   await a.goto(BASE + '#/alerts');
   await a.waitForSelector('main .empty');
@@ -102,7 +102,7 @@ try {
   await a.evaluate(() => sessionStorage.setItem('ts-alerts-tab', 'inbox'));
   await a.goto(BASE + '#/market');
   await a.reload();
-  await a.waitForSelector('main form');
+  await a.waitForSelector('main [role="combobox"]');
   eq(await a.locator('nav.bottom-nav a[data-tab="alerts"] .badge').textContent(), '1', 'unread badge on the tab (from me — no polling)');
   await a.goto(BASE + '#/alerts');
   await a.waitForSelector('main .use-row.unread');

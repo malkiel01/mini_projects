@@ -67,6 +67,7 @@ require_once __DIR__ . '/lib/auth.php';
 require_once __DIR__ . '/lib/store.php';
 require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
+require_once __DIR__ . '/lib/tabs.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
 require_once __DIR__ . '/lib/forecast.php';
@@ -125,7 +126,7 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
-    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
+    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_method_validate', 'admin_method_dry_run'];
@@ -326,6 +327,16 @@ try {
 
         case 'market_candles':
             out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
+
+        // לשוניות במסך השוק (18.1.4). market_tab — מהמאגר בלבד, בלי ספק, ולכן לא בתקרה של TS_DATA
+        case 'market_tabs':
+            out(['ok' => true] + ts_market_tabs_out($uid));
+
+        case 'market_tabs_save':
+            out(['ok' => true] + ts_market_tabs_save($uid, $in['tabs'] ?? null));
+
+        case 'market_tab':
+            out(['ok' => true] + ts_market_tab($uid, $_GET['id'] ?? ''));
 
         case 'watchlist':
             out(['ok' => true, 'watchlist' => ts_watchlist($uid)]);
