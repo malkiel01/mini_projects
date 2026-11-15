@@ -5,8 +5,8 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYCGcBnrLJ86NSM4bh1",
-    "slice": "S1.2 לשוניות + combobox (18.1.3–18.1.4)",
+    "session": "session_018g4NYEqqFf5DTC33BEFxAS",
+    "slice": "S4 ניתוח מתחת לגרף (18.4)",
     "model": "claude-opus-5-5"
   },
   "control": "session_018g4NYCfKgd2Qi5hvnpDFRU",
@@ -31,6 +31,11 @@
     {
       "session": "session_018g4NYCMUPJKcJaE5QK2TYs",
       "done": "#1601 F1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCGcBnrLJ86NSM4bh1",
+      "done": "#1603 S1.2; handoff #1604",
       "model": "claude-opus-5-5 — רדום"
     }
   ],

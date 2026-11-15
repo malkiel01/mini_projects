@@ -16,7 +16,8 @@
 | תפקיד | session | מה עושה עכשיו |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.11. מעירים כשצריך עדכון אפיון |
-| קוד (S1.2) | `session_018g4NYCGcBnrLJ86NSM4bh1` (Opus) | S1.2 (18.1.3–18.1.4): לשוניות בשוק + combobox + 🟡 מ-F1 |
+| קוד (S4) | `session_018g4NYEqqFf5DTC33BEFxAS` (Opus) | S4 (18.4): ניתוח מתחת לגרף, 🧭 מוסר. מאחד את המסירות #1602+#1604 — לסגור את שתיהן אחרי S4 |
+| קוד קודם | `session_018g4NYCGcBnrLJ86NSM4bh1` (Opus) | רדום. #1603 S1.2 |
 | קוד קודם | `session_018g4NYCMUPJKcJaE5QK2TYs` (Opus) | רדום. #1601 F1 |
 | קוד קודם | `session_018g4NYG7sBtHJh6uW5fLyxh` (Opus) | רדום. #1598 S3, #1599 S1.1 |
 | קוד קודם | `session_018g4NYGrqqR7BTByrKbVovy` (Opus) | רדום. #1591, #1592, #1595 (S1); המסירה — #1596 (טיוטה, יתמזג עם S3) |
