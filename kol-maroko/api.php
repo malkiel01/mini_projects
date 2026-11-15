@@ -67,7 +67,7 @@ const PUBLIC_ACTIONS = ['embed_key', 'media', 'platform_key'];
 const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_retry', 'request_dismiss', 'notices_read', 'owner_set', 'publish_decide',
                       'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'longtext_sync',
                       'key_rotate', 'key_activate', 'site_set', 'site_ping',
-                      'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
+                      'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
                       'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
                       'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place', 'list_place_undo',
                       'agent_token_create', 'agent_token_revoke',
@@ -140,7 +140,6 @@ try {
         'key_activate' => key_activate($u),
         'site_set' => site_set($u, $body),
         'site_ping' => site_ping($u),
-        'site_switch' => site_switch($u, $body),
         'words' => ($u ? words_list() : []),
         'library' => ($u ? library_list() : []),
         // הבאת ההקלטות מהאתר (A2, lib/recordings.php) — בעל האתר בלבד. המשך — לכל עורך (נמדד בהשמעה)

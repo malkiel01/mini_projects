@@ -1,6 +1,6 @@
 <?php
 /**
- * M2 §2 "שדרוג" ו"מה התוסף אינו עושה": אפשרויות 1.4 / 1.6 נקראות כמו שהן ואינן משתנות; פעולות 1.x ממשיכות;
+ * M2 §2 "שדרוג" ו"מה התוסף אינו עושה": אפשרויות 1.4 / 1.6 נקראות כמו שהן ואינן משתנות; פעולות 1.x — הוסרו ב-2.3 (M6b);
  * הסרה אינה מוחקת; ובקריאת הקוד — בלי include/eval של קובץ חבילה, בלי פנייה לשרת אחר, בלי post_content.
  */
 
@@ -20,7 +20,7 @@ function kp_fixture(string $name): array
 }
 
 foreach (['options-1.4.json' => '1.4.0', 'options-1.6.json' => '1.6.0'] as $fx => $ver) {
-    test("M2 שדרוג $ver ← 2.0: ping, פרסום v1 והגשת v1 זהים; אפשרויות 1.x לא השתנו; התקנה אינה משנה דבר לגולשים", function () use ($fx) {
+    test("M2 / M6b שדרוג $ver ← 2.3: ping; 1.x (publish / asset / switch) אינו מתקבל ואינו מוצג; אפשרויות 1.x לא השתנו; התקנה אינה משנה דבר לגולשים", function () use ($fx) {
         $o = kp_fixture($fx);
         $p = kp_send('ping')['json'];
         eq([true, $o['kol_maroko_last'], $o['kol_maroko_live'], $o['kol_maroko_enabled'], true], [$p['ok'], $p['version'], $p['live'], $p['enabled'], $p['page_set']], 'שדות 1.x');
@@ -30,17 +30,18 @@ foreach (['options-1.4.json' => '1.4.0', 'options-1.6.json' => '1.6.0'] as $fx =
         // אף אפשרות של 1.x לא נכתבה מחדש (חוץ מ-nonces, שכל בקשה חתומה מוסיפה לו — כמו ב-1.x)
         $after = kp_opts();
         foreach ($o as $k => $v) if ($k !== 'kol_maroko_nonces') eq($v, $after[$k] ?? null, "האפשרות $k לא השתנתה");
-        // פרסום v1 — כמו היום
+        // M6b (2.3): פרסום 1.x, asset ו-switch — הוסרו; הנתונים של 1.x נשארים כמו שהם, ואינם מוצגים
         $n = $o['kol_maroko_last'] + 1;
-        $r = kp_send('publish', ['version' => $n, 'html' => '<p>v1 עדיין עובד</p><script>x</script>', 'css' => 'p{}']);
-        eq([200, $n], [$r['status'], $r['json']['version'] ?? null], $r['body']);
-        eq('<p>v1 עדיין עובד</p>', kp_get("kol_maroko_v_$n")['html'] ?? null, 'v1: הסינון של 1.x עדיין פועל על המסלול הישן');
-        eq([$n, $n], [kp_get('kol_maroko_last'), kp_get('kol_maroko_live')]);
-        eq(200, kp_send('switch', ['enabled' => false])['status'], 'switch של 1.x');
+        foreach (['publish' => ['version' => $n, 'html' => '<p>v1</p>', 'css' => ''], 'asset' => [], 'switch' => ['enabled' => true]] as $a => $body) {
+            ok(kp_send($a, $body)['status'] !== 200, "/v1/$a — אינו מתקבל");
+        }
+        eq(null, kp_get("kol_maroko_v_$n"), 'לא נשמרה גרסה 1.x');
+        eq([$o['kol_maroko_last'], $o['kol_maroko_live'], $o['kol_maroko_enabled']], [kp_get('kol_maroko_last'), kp_get('kol_maroko_live'), kp_get('kol_maroko_enabled')], 'האפשרויות של 1.x לא נמחקו ולא השתנו');
+        ok(kp_site_page_all(), 'גם כש-enabled של 1.x דולק — העמוד המקורי של וורדפרס (אין הצגה של 1.x)');
         // v2 אחרי v1 — המונה משותף
-        eq('old_version', kp_publish(kp_manifest(kp_bundle(), $n))['json']['code'] ?? null);
-        eq(200, kp_publish(kp_manifest(kp_bundle(), $n + 1, [], false))['status']);
-        eq($n, kp_get('kol_maroko_last'), 'v2 לא נגע במונה של 1.x');
+        eq('old_version', kp_publish(kp_manifest(kp_bundle(), $n - 1))['json']['code'] ?? null, 'המונה משותף: מספר של 1.x שכבר התקבל — נדחה');
+        eq(200, kp_publish(kp_manifest(kp_bundle(), $n, [], false))['status']);
+        eq($n - 1, kp_get('kol_maroko_last'), 'v2 לא נגע במונה של 1.x');
         ok(kp_site_page_all(), 'גם אחרי פרסום v2 — המפסק כבוי, שום דבר לא נתפס');
     });
 }

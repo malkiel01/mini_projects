@@ -4,7 +4,7 @@
  *
  * חוק הברזל: לכלי אין גישה לאתר. כל מה שיוצא אליו חתום ב-Ed25519 במפתח שנמצא רק במסד שלנו; התוסף מחזיק רק את המפתח
  * הציבורי. כאן: המפתחות (pub_key, key_rotate, key_activate), כתובת האתר (site_set), השליחה החתומה (site_post / site_call —
- * דחיפה, או התור של M7 במשיכה), בדיקת החיבור (site_ping) והמפסק (site_switch). הפרסום עצמו — lib/build.php (M1).
+ * דחיפה, או התור של M7 במשיכה) ובדיקת החיבור (site_ping). המפסק — רק בוורדפרס (M6b: site_switch הוסר). הפרסום עצמו — lib/build.php (M1).
  *
  * כל בקשה חתומה על הגוף כולו, ובגוף: action, site, page, time, nonce — אי אפשר להעביר בקשה לנקודה אחרת, לאתר
  * אחר או לעמוד אחר, ולא לשלוח אותה פעמיים.
@@ -164,7 +164,7 @@ function site_error(int $status, ?array $j, array $headers, string $raw): ApiErr
 }
 
 /**
- * המקור האחד לכל מה שיוצא לאתר. הערוץ (pub_channel) מחליט: push — POST חתום לאתר, ותשובה מיידית; pull (M7) — manifest, switch,
+ * המקור האחד לכל מה שיוצא לאתר. הערוץ (pub_channel) מחליט: push — POST חתום לאתר, ותשובה מיידית; pull (M7) — manifest,
  * activate ו-mount נכתבים לתור (outbox_add) ומוחזר {queued, seq}; ping מחזיר את הדופק — מה שהתוסף דיווח בפעם האחרונה.
  * $payload — מערך, או Closure(seq, expires) לפקודה שצריכה את ה-seq בתוכה (המניפסט). שאר הפעולות (ping בדחיפה, asset_has / asset_put
  * של 2.0) — push. M6: פרסום 1.x (publish / asset) נמחק — אין בכלי שום קריאה ל-site_call('publish').
@@ -193,19 +193,6 @@ function site_ping(array $owner): array
         throw new ApiError($e->getMessage(), $e->getCode(), $e->extra + ['server_ip' => gethostbyname('mbe-plus.com')]);
     }
     return ['ok' => true, 'site' => $r];
-}
-
-/**
- * המפסק — מה האתר מציג: העמוד מהכלי (enabled) או העמוד המקורי. "חזרה לעמוד המקורי" — התוסף מכבה את ההחלפה, והאתר
- * מציג שוב את התבנית שלו ואת המילים שבוורדפרס (הם לא נמחקו ולא שונו). אפשר להחליף שוב בכל רגע.
- */
-function site_switch(array $user, array $b): array
-{
-    $on = ($b['enabled'] ?? null) === true;
-    $r = site_call('switch', ['enabled' => $on], $user);
-    $what = $on ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר חזר לעמוד המקורי';
-    audit_as($user, 'site_switch', !empty($r['queued']) ? "בתור (#{$r['seq']}): $what" : $what);
-    return ['site' => $r];
 }
 
 // ── מספור ──────────────────────────────────────────────────
