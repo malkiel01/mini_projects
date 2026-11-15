@@ -273,6 +273,8 @@ function ts_asset_market(string $asset): string
 {
     $meta = ts_asset_meta($asset);
     if ($meta && $meta['market']) return $meta['market'];
+    // זוג מהקטלוג (18.1) בלי פרטים מהחיפוש: לפי הצד הראשון — קריפטו או מט"ח
+    if (($key = ts_pair_of_asset($asset)) !== null) return (TS_PAIR_SIDES[explode('/', $key)[0]][2] ?? '') === 'crypto' ? 'crypto' : 'forex';
     [$provider] = ts_asset_split($asset);
     return ts_provider($provider)->meta()['markets'][0] ?? 'crypto';
 }
@@ -305,7 +307,10 @@ function ts_bt_history(int $uid, string $asset, string $tf, int $from, int $now)
         $step = max(1, (int)($meta['max_per_call'] ?? 1000)) * $sec;
         for ($a = $from; $oldCalls && $a < $poolStart; $a += $step) {
             $b = min($a + $step - 1, $poolStart - 1);
-            $old = ts_provider_call($uid, $provider, $acc, fn($p, $s) => $p->candles($symbol, $tf, $a, $b, $s));
+            // זוג מחושב ("1/USDILS", 18.1): הספק נותן את הכיוון המקורי, והופכים
+            $inv = str_starts_with($symbol, '1/');
+            $old = ts_provider_call($uid, $provider, $acc, fn($p, $s) => $p->candles($inv ? substr($symbol, 2) : $symbol, $tf, $a, $b, $s));
+            if ($inv) $old = ts_pair_invert_candles($old);
             $calls++;
             foreach ($old as $r) $rows[$r['t']] = $r;
         }
@@ -558,7 +563,7 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
     // בשקלול — הוודאות של התוצאה שהמשתמש בחר (ברירת מחדל — הרגילה)
     $blend = ts_blend(array_map(fn($c) => ['id' => $c['method']['id'], 'bias' => $c['bias'],
         'certainty' => !empty($c['copy_used']) ? $c['backtest_copy']['certainty'] : $c['certainty']], $cards), $profile['preferred_methods']);
-    return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'provider' => $provider, 'tf' => $tf, 'market' => $market,
+    return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'label' => ts_pair_label("$provider:$symbol")['label'], 'provider' => $provider, 'tf' => $tf, 'market' => $market,
         'decimals' => $dec, 'last_t' => $rows ? $rows[count($rows) - 1]['t'] : null, 'cards' => $cards, 'blend' => $blend,
         'profile' => ['min_certainty' => $profile['min_certainty'], 'min_rr' => $profile['min_rr'], 'risk_pct' => $profile['risk_pct']],
         'account_size' => $account, 'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'provider_calls' => $calls];

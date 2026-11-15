@@ -17,6 +17,9 @@
  * שוק (spec-stage-a 2–3):
  * GET  ?action=market_providers          הספקים כפי שהמשתמש רואה אותם (מחובר, זמין, מה צריך)
  * GET  ?action=market_search&q=          חיפוש בכל הספקים שלו                     ← נספר בתקרת 30 לדקה
+ * GET  ?action=pairs                     זוגות בשם (18.1): "מה" ו"מול מה" — רק מה שיש לו ספק למשתמש
+ * GET  ?action=pair_parse&q=             "ביטקוין מול ין" → זוג; בלי ספק — "אין ספק לזוג הזה" (בלי פנייה לספק)
+ * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס ("ביטקוין מול דולר") — הסימול לא מוצג למשתמש
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
  * GET  ?action=watchlist                 "המעקב שלי"
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
@@ -325,6 +328,21 @@ try {
             out(['ok' => true]);
 
         // ── שוק ──
+        case 'pairs':
+            // בחירת זוג בשם (18.1): "מה" ו"מול מה" — רק זוגות שיש להם ספק למשתמש. בלי פנייה לספק
+            out(['ok' => true] + ts_pairs_for($uid));
+
+        case 'pair_parse':
+            // "ביטקוין מול ין" → הזוג. זוג בלי ספק — הודעה, לא שגיאה, ולא נשלחת בקשה לספק (18.1 קריטריון 3)
+            $pp = ts_pair_parse((string)($_GET['q'] ?? ''));
+            $pa = $pp && $pp['known'] ? ts_pair_asset($uid, $pp['pair']) : null;
+            out(['ok' => true, 'pair' => $pp ? $pp['pair'] : null, 'label' => $pp['label'] ?? null, 'asset' => $pa,
+                'message' => $pp && !$pa ? 'אין ספק לזוג הזה' : null]);
+
+        case 'pair_labels':
+            $as = array_slice(array_filter(explode(',', (string)($_GET['assets'] ?? ''))), 0, 200);
+            out(['ok' => true, 'labels' => ts_pair_labels($as)]);
+
         case 'market_providers':
             out(['ok' => true, 'providers' => ts_providers_for($uid), 'shared_enabled' => ts_shared_enabled()]);
 
@@ -390,7 +408,7 @@ try {
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
-                'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
+                'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);

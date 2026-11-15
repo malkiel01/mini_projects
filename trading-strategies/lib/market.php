@@ -17,6 +17,8 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/cache.php';
 require_once __DIR__ . '/secret.php';
 require_once __DIR__ . '/providers/registry.php';
+require_once __DIR__ . '/decimal.php';
+require_once __DIR__ . '/pairs.php';
 
 const TS_POOL_DAYS = 60;            // ✅4 — המאגר המשותף שומר 60 יום
 const TS_MAX_CANDLES = 5000;        // לבקשה אחת של גרף
@@ -303,7 +305,7 @@ function ts_market_search(int $uid, mixed $q): array
         usort($list, fn($a, $b) => [($pref[$norm] ?? '') !== $a['provider'], $order[$a['provider']]]
             <=> [($pref[$norm] ?? '') !== $b['provider'], $order[$b['provider']]]);
         $first = $list[0];
-        $out[] = $first + ['alternatives' => array_map(fn($r) => ['asset' => $r['asset'], 'provider' => $r['provider'], 'name' => $r['name']],
+        $out[] = $first + ts_pair_label($first['asset']) + ['alternatives' => array_map(fn($r) => ['asset' => $r['asset'], 'provider' => $r['provider'], 'name' => $r['name']],
             array_slice($list, 1))];
     }
     return ['results' => array_slice($out, 0, 40), 'errors' => $errors];
@@ -355,6 +357,9 @@ function ts_tail_ttl(string $tf): int
 function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed $to, ?int $now = null): array
 {
     [$provider, $symbol] = ts_asset_split($asset);
+    // זוג מחושב (18.1): "1/USDILS" — נמשך ונשמר במאגר כמו USDILS, ומוחזר הפוך (1/x)
+    $inverse = str_starts_with($symbol, '1/');
+    if ($inverse) $symbol = substr($symbol, 2);
     if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
     $acc = ts_access($uid, $provider) ?? throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
     $p = ts_provider($provider);
@@ -431,11 +436,16 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     foreach ($out as $r) $by[$r['t']] = $r;
     ksort($by);
     ts_fetch_log($uid, $provider, $symbol, $tf, $scope, $from, $to, $calls, $fetched, count($by), $now);
+    $candles = array_values($by);
+    if ($inverse) $candles = ts_pair_invert_candles($candles);
+    $asset = ($inverse ? "$provider:1/" : "$provider:") . $symbol;
     return [
-        'asset' => "$provider:$symbol", 'provider' => $provider, 'symbol' => $symbol, 'tf' => $tf,
-        'candles' => array_values($by), 'capped' => $capped, 'provider_calls' => $calls, 'provider_candles' => $fetched,
+        'asset' => $asset, 'provider' => $provider, 'symbol' => ($inverse ? '1/' : '') . $symbol, 'tf' => $tf,
+        'label' => ts_pair_label($asset)['label'], 'computed' => $inverse,
+        'candles' => $candles, 'capped' => $capped, 'provider_calls' => $calls, 'provider_candles' => $fetched,
         'meta' => ts_asset_meta("$provider:$symbol"), 'delay' => $meta['delay'], 'source' => $acc['source'],
-        'stream' => $acc['source'] === 'public' ? $p->stream() : null, 'stream_interval' => $meta['tfs'][$tf],
+        // זוג מחושב — בלי זרם חי: הספק משדר את הכיוון המקורי
+        'stream' => $acc['source'] === 'public' && !$inverse ? $p->stream() : null, 'stream_interval' => $meta['tfs'][$tf],
         'tail_ttl' => ts_tail_ttl($tf),
     ];
 }
@@ -554,7 +564,7 @@ function ts_watchlist(int $uid): array
     $st->execute([$uid]);
     return array_map(function ($r) {
         [$provider, $symbol] = explode(':', $r['asset'], 2);
-        return ['asset' => $r['asset'], 'provider' => $provider, 'symbol' => $symbol, 'meta' => ts_asset_meta($r['asset'])];
+        return ['asset' => $r['asset'], 'provider' => $provider, 'symbol' => $symbol, 'meta' => ts_asset_meta($r['asset'])] + ts_pair_label($r['asset']);
     }, $st->fetchAll());
 }
 
