@@ -1,6 +1,10 @@
 <?php
 /**
- * בחירת זוג בשם (spec-stage-a 18.1, S1; owner-brief 2ג.1). המשתמש רואה "ביטקוין מול דולר", לא BTCUSDT.
+ * בחירת זוג בשם (spec-stage-a 18.1, S1; owner-brief 2ג.1). המשתמש רואה את שני הצדדים מופרדים, לא BTCUSDT.
+ *
+ * **התצוגה (18.1.1, S1.1):** כל תווית יוצאת עם base ו-quote ({code, name}) — הדפדפן מצייר שורה ראשית `BTC ⇄ USDT`
+ * (אייקון SVG, משמאל לימין, הבסיס ראשון) ומתחתיה השמות בעברית. המילה "מול" לא מוצגת לעולם. לטקסט רגיל (פוש, משפט) —
+ * 'label' = "BTC ⇄ USDT" ו-'name' = "ביטקוין ⇄ טתר"; הדפדפן מחליף את התו ⇄ באייקון.
  * בפנים הנכס נשאר provider:symbol (פרק 2) — הקטלוג רק ממפה שמות לנכסים.
  *
  * - **צד** — קוד (BTC, USD, ILS) עם שם עברי ואנגלי וסוג (crypto / currency).
@@ -42,7 +46,8 @@ const TS_PAIR_EXTRA_NAMES = [
     'INR' => 'רופי', 'TRY' => 'לירה טורקית', 'FDUSD' => 'דולר (FDUSD)',
 ];
 
-const TS_PAIR_SEP = ' מול ';
+/** המפריד בטקסט רגיל. בממשק — האייקון assets/icon-vs.svg במקומו (18.1.1) */
+const TS_PAIR_SEP = ' ⇄ ';
 
 /** הזוגות הקבועים: "BASE/QUOTE" → נכסים בסדר העדפה. נבנה פעם אחת לכל ריצה */
 function ts_pairs_catalog(): array
@@ -97,6 +102,19 @@ function ts_pair_name(string $key): string
     return ts_pair_side_name($b) . TS_PAIR_SEP . ts_pair_side_name($q);
 }
 
+/** שני הצדדים של זוג מהקטלוג: {code, name} לכל אחד, ו-label/name לטקסט רגיל */
+function ts_pair_view(string $key): array
+{
+    [$b, $q] = explode('/', $key);
+    return ts_pair_view_of(['code' => $b, 'name' => ts_pair_side_name($b)], ['code' => $q, 'name' => ts_pair_side_name($q)]);
+}
+
+function ts_pair_view_of(array $base, array $quote): array
+{
+    return ['label' => $base['code'] . TS_PAIR_SEP . $quote['code'], 'name' => $base['name'] . TS_PAIR_SEP . $quote['name'],
+        'base' => $base, 'quote' => $quote];
+}
+
 /** נכס → הזוג בקטלוג (או null). אותו נכס יכול להופיע רק בזוג אחד */
 function ts_pair_of_asset(string $asset): ?string
 {
@@ -141,7 +159,7 @@ function ts_pairs_for(int $uid, ?array $access = null): array
         $bases[$b] ??= ['code' => $b, 'name' => ts_pair_side_name($b), 'en' => TS_PAIR_SIDES[$b][1] ?? $b,
             'kind' => TS_PAIR_SIDES[$b][2] ?? 'currency', 'quotes' => []];
         if ($asset) $bases[$b]['quotes'][] = ['code' => $q, 'name' => ts_pair_side_name($q), 'en' => TS_PAIR_SIDES[$q][1] ?? $q,
-            'pair' => $key, 'label' => ts_pair_name($key), 'asset' => $asset, 'computed' => $p['computed']];
+            'pair' => $key, 'asset' => $asset, 'computed' => $p['computed']] + ts_pair_view($key);
     }
     $order = array_flip(array_keys(TS_PAIR_SIDES));
     uasort($bases, fn($x, $y) => ($order[$x['code']] ?? 99) <=> ($order[$y['code']] ?? 99));
@@ -160,7 +178,7 @@ function ts_pair_parse(string $text): ?array
     $codes = array_map('ts_pair_side_find', $parts);
     if (in_array(null, $codes, true) || $codes[0] === $codes[1]) return null;
     $key = $codes[0] . '/' . $codes[1];
-    return ['pair' => $key, 'known' => isset(ts_pairs_catalog()[$key]), 'label' => ts_pair_name($key)];
+    return ['pair' => $key, 'known' => isset(ts_pairs_catalog()[$key])] + ts_pair_view($key);
 }
 
 function ts_pair_side_find(string $s): ?string
@@ -177,28 +195,37 @@ function ts_pair_side_find(string $s): ?string
 }
 
 /**
- * התווית של נכס לתצוגה — בלי סימול (18.1 קריטריון 1). מהקטלוג; אחרת מהחיפוש (asset_meta): מניה — "שם החברה מול
- * המטבע"; קריפטו/מט"ח שלא בקטלוג — שני הצדדים מהשם של הספק. מחזיר ['label' => …, 'computed' => bool].
+ * התווית של נכס לתצוגה — בלי סימול מחובר (18.1 קריטריון 1, 18.1.1). מהקטלוג; אחרת מהחיפוש (asset_meta): מניה —
+ * הסימול של החברה (AAPL) ושם החברה מול המטבע; קריפטו/מט"ח שלא בקטלוג — שני הצדדים מהשם של הספק ("ETH / BTC").
+ * מחזיר label, name, base, quote ו-computed. בלי מידע על הנכס — 'נכס', בלי base/quote.
  */
 function ts_pair_label(string $asset): array
 {
     $key = ts_pair_of_asset($asset);
-    if ($key !== null) return ['label' => ts_pair_name($key), 'computed' => ts_pairs_catalog()[$key]['computed']];
+    if ($key !== null) return ts_pair_view($key) + ['computed' => ts_pairs_catalog()[$key]['computed']];
     $computed = false;
     if (preg_match('/^([a-z0-9]+):1\/(.+)$/', $asset, $m)) { $asset = "$m[1]:$m[2]"; $computed = true; }
     $meta = function_exists('ts_asset_meta') ? ts_asset_meta($asset) : null;
-    $label = null;
-    if ($meta) {
-        $parts = preg_split('/\s+(?:\/|→)\s+/u', (string)$meta['name']);
-        if (in_array($meta['market'], ['crypto', 'forex'], true) && count($parts) === 2) {
-            $names = array_map(fn($x) => ts_pair_side_name(strtoupper(trim($x))), $parts);
-            $label = $names[0] . TS_PAIR_SEP . $names[1];
-        } else {
-            $label = $meta['name'] . ($meta['currency'] !== '' ? TS_PAIR_SEP . ts_pair_side_name(strtoupper($meta['currency'])) : '');
-        }
-        if ($computed) $label = implode(TS_PAIR_SEP, array_reverse(explode(TS_PAIR_SEP, $label, 2)));
+    if (!$meta) return ['label' => 'נכס', 'name' => 'נכס', 'base' => null, 'quote' => null, 'computed' => $computed];
+    $parts = preg_split('/\s*(?:\/|→)\s*/u', (string)$meta['name']);
+    if (in_array($meta['market'], ['crypto', 'forex'], true) && count($parts) === 2) {
+        [$b, $q] = array_map(fn($x) => strtoupper(trim($x)), $parts);
+        $base = ['code' => $b, 'name' => ts_pair_side_name($b)];
+        $quote = ['code' => $q, 'name' => ts_pair_side_name($q)];
+    } else {
+        $sym = explode(':', $asset, 2)[1] ?? '';
+        $base = ['code' => strtoupper(explode('.', $sym)[0]), 'name' => (string)$meta['name']];
+        $cur = strtoupper((string)$meta['currency']);
+        $quote = ['code' => $cur !== '' ? $cur : '—', 'name' => $cur !== '' ? ts_pair_side_name($cur) : ''];
     }
-    return ['label' => $label ?? 'נכס', 'computed' => $computed];
+    if ($computed) [$base, $quote] = [$quote, $base];
+    return ts_pair_view_of($base, $quote) + ['computed' => $computed];
+}
+
+/** רק שדות התצוגה (label, name, base, quote) — לצירוף לתשובה שיש בה כבר name או computed משלה */
+function ts_pair_pick(array $l): array
+{
+    return ['label' => $l['label'], 'pair_name' => $l['name'], 'base' => $l['base'], 'quote' => $l['quote']];
 }
 
 /** תוויות לכמה נכסים בבת אחת — לרשימות (מעקב, התראות) */
@@ -213,7 +240,7 @@ function ts_pair_labels(array $assets): array
 function ts_pairs_admin(): array
 {
     $out = [];
-    foreach (ts_pairs_catalog() as $key => $p) $out[] = ['pair' => $key, 'label' => ts_pair_name($key), 'assets' => $p['assets'], 'computed' => $p['computed']];
+    foreach (ts_pairs_catalog() as $key => $p) $out[] = ['pair' => $key, 'assets' => $p['assets'], 'computed' => $p['computed']] + ts_pair_view($key);
     return $out;
 }
 

@@ -442,13 +442,13 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $asset = ($inverse ? "$provider:1/" : "$provider:") . $symbol;
     return [
         'asset' => $asset, 'provider' => $provider, 'symbol' => ($inverse ? '1/' : '') . $symbol, 'tf' => $tf,
-        'label' => ts_pair_label($asset)['label'], 'computed' => $inverse,
+        'computed' => $inverse,
         'candles' => $candles, 'capped' => $capped, 'provider_calls' => $calls, 'provider_candles' => $fetched,
         'meta' => ts_asset_meta("$provider:$symbol"), 'delay' => $meta['delay'], 'source' => $acc['source'],
         // זוג מחושב — בלי זרם חי: הספק משדר את הכיוון המקורי
         'stream' => $acc['source'] === 'public' && !$inverse ? $p->stream() : null, 'stream_interval' => $meta['tfs'][$tf],
         'tail_ttl' => ts_tail_ttl($tf),
-    ];
+    ] + ts_pair_pick(ts_pair_label($asset));
 }
 
 /**

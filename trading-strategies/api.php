@@ -19,7 +19,7 @@
  * GET  ?action=market_search&q=          חיפוש בכל הספקים שלו                     ← נספר בתקרת 30 לדקה
  * GET  ?action=pairs                     זוגות בשם (18.1): "מה" ו"מול מה" — רק מה שיש לו ספק למשתמש
  * GET  ?action=pair_parse&q=             "ביטקוין מול ין" → זוג; בלי ספק — "אין ספק לזוג הזה" (בלי פנייה לספק)
- * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס ("ביטקוין מול דולר") — הסימול לא מוצג למשתמש
+ * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס: base/quote (קוד ושם) — "BTC ⇄ USD", לא הסימול המחובר (18.1.1)
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
  * GET  ?action=chart_refresh&asset=&tf=&from=&to=&methods=a,b   הגרף (18.3, S3): נרות + תוצאת כל שיטה שנבחרה בבקשה אחת;
  *                                        שיטה בלי נר סגור חדש לא רצה שוב (lib/refresh.php) ← נספר בתקרת 30 לדקה
@@ -308,7 +308,7 @@ try {
             // "ביטקוין מול ין" → הזוג. זוג בלי ספק — הודעה, לא שגיאה, ולא נשלחת בקשה לספק (18.1 קריטריון 3)
             $pp = ts_pair_parse((string)($_GET['q'] ?? ''));
             $pa = $pp && $pp['known'] ? ts_pair_asset($uid, $pp['pair']) : null;
-            out(['ok' => true, 'pair' => $pp ? $pp['pair'] : null, 'label' => $pp['label'] ?? null, 'asset' => $pa,
+            out(['ok' => true, 'pair' => $pp ? $pp['pair'] : null, 'label' => $pp['label'] ?? null, 'base' => $pp['base'] ?? null, 'quote' => $pp['quote'] ?? null, 'asset' => $pa,
                 'message' => $pp && !$pa ? 'אין ספק לזוג הזה' : null]);
 
         case 'pair_labels':

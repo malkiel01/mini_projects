@@ -556,10 +556,10 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
     }
     $blend = ts_blend(array_map(fn($c) => ['id' => $c['method']['id'], 'bias' => $c['bias'],
         'certainty' => $c['certainty']], $cards), $profile['preferred_methods']);
-    return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'label' => ts_pair_label("$provider:$symbol")['label'], 'provider' => $provider, 'tf' => $tf, 'market' => $market,
+    return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'provider' => $provider, 'tf' => $tf, 'market' => $market,
         'decimals' => $dec, 'last_t' => $rows ? $rows[count($rows) - 1]['t'] : null, 'cards' => $cards, 'blend' => $blend,
         'profile' => ['min_certainty' => $profile['min_certainty'], 'min_rr' => $profile['min_rr'], 'risk_pct' => $profile['risk_pct']],
-        'account_size' => $account, 'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'provider_calls' => $calls];
+        'account_size' => $account, 'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'provider_calls' => $calls] + ts_pair_pick(ts_pair_label("$provider:$symbol"));
 }
 
 // ── "פתח עסקה מזה" (פרק 11) ─────────────────────────────
