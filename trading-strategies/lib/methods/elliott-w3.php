@@ -33,7 +33,7 @@ final class TsMethodElliottW3 extends TsMethod
     {
         return [
             'id' => 'elliott-w3',
-            'name' => 'גלי אליוט — כניסה לגל 3',
+            'name' => 'אליוט',
             'source' => 'Frost & Prechter, פרק 1 (כלל 1), פרק 4 (יחסים)',
             'label' => 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)',
             'sample' => false,

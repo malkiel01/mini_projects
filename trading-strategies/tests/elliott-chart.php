@@ -79,7 +79,7 @@ eq(call('alice', 'method_overlay', null, $q)[0], 404, 'off → the forecast refu
 call('owner', 'admin_method_save', ['id' => 'elliott-w3', 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4'], 'params' => ['pivot_atr_mult' => 2]]);
 [$c, $r] = call('alice', 'method_overlay', null, $q);
 $ov = $r['overlay'] ?? [];
-eq([$c, $r['status'] ?? null, $r['title'] ?? null, $r['basis'] ?? null], [200, 'ok', 'תרחיש לפי שיטת גלי אליוט — כניסה לגל 3 — לא ייעוץ', 'לפי כללי השיטה, לא נבדק לאחור'], 'on → "תרחיש לפי שיטת גלי אליוט — כניסה לגל 3 — לא ייעוץ", not backtested (✅15)');
+eq([$c, $r['status'] ?? null, $r['title'] ?? null, $r['basis'] ?? null], [200, 'ok', 'תרחיש לפי שיטת אליוט — לא ייעוץ', 'לפי כללי השיטה, לא נבדק לאחור'], 'on → "תרחיש לפי שיטת אליוט — לא ייעוץ", not backtested (✅15)');
 eq([array_key_exists('counts', $ov), count($ov['check'] ?? []) >= 4, $r['method']['label'] ?? null], [false, true, 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)'], 'the chart gets the contract and the "check yourself" guidelines, with the method label');
 $sc = $ov['projection']['scenarios'] ?? [];
 eq(count($sc) > 0 || is_string($ov['note'] ?? null), true, 'either counts (scenarios) or a note why there are none (' . count($sc) . ' scenarios)');
