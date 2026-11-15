@@ -1,7 +1,7 @@
 /**
  * פרוסה M1 — בנייה ופרסום של פרויקט הקבצים, בדפדפן (Chromium, Playwright):   node kol-maroko/tests/browser/m1.cjs
  *
- *  א. הפרויקט המוסב (f3-seed.php + 🪄 ההסבה): "🏗️ בנה גרסה מהפרויקט" מהלשונית — כתיבה מראש במסגרת המבודדת, מתחת ל-20 שניות.
+ *  א. הפרויקט המוסב (f3-seed.php + ההסבה — מ-tests/support/, M6): "🏗️ בנה גרסה מהפרויקט" מהלשונית — כתיבה מראש במסגרת המבודדת, מתחת ל-20 שניות.
  *  ב. "מה ישתנה": פרסום ראשון, תצוגה של הגרסה הבנויה, ו"התוסף באתר הוא 1.x" (התוסף האמיתי, tests/fake-wp.php).
  *  ג. שליחה למקבל המדומה v2, ו**החבילה מתיקייה סטטית**: המילים נראות עם JS כבוי; עם JS — בלי כפילות, החיפוש עובד,
  *     ההקלטה מתנגנת, 0 בקשות שנכשלו, 0 שגיאות קונסול. זו ההוכחה ש"החבילה עומדת בפני עצמה" (R2).
@@ -31,7 +31,7 @@ const until = async (fn, ms = 10000) => { const t = Date.now(); for (;;) { try {
   // שתי הקלטות בספרייה (WAV קצר), והאתר המדומה כיעד: המפתח הציבורי מודבק בו
   execFileSync('php', ['-r', `
     define('KOL_DATA_DIR', $argv[1]);
-    foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+    foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     $n = 3200; $pcm = str_repeat(pack('v', 0), $n);
     $wav = 'RIFF' . pack('V', 36 + strlen($pcm)) . 'WAVEfmt ' . pack('VvvVVvv', 16, 1, 1, 16000, 32000, 2, 16) . 'data' . pack('V', strlen($pcm)) . $pcm;
     foreach ([1, 2] as $w) { $t = KOL_DATA_DIR . "/rec$w.wav"; file_put_contents($t, $wav);

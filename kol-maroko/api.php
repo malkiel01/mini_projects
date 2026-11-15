@@ -8,13 +8,13 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/members.php';
-require_once __DIR__ . '/lib/import.php';
+require_once __DIR__ . '/lib/site.php';           // M6: המפתחות והחיבור (לשעבר publish.php)
+require_once __DIR__ . '/lib/restore.php';
 require_once __DIR__ . '/lib/ai.php';
 require_once __DIR__ . '/lib/agent.php';
 require_once __DIR__ . '/lib/library.php';
 require_once __DIR__ . '/lib/dev.php';
 require_once __DIR__ . '/lib/preview.php';
-require_once __DIR__ . '/lib/migrate.php';
 require_once __DIR__ . '/lib/build.php';
 require_once __DIR__ . '/lib/fields_bind.php';          // N2: שינוי מפתח — הקשירות בקבצי הפרויקט
 require_once __DIR__ . '/lib/forms.php';
@@ -64,15 +64,15 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 // media — קובץ בכתובת חתומה לזמן מוגבל (התצוגה המבודדת בסטודיו לא שולחת עוגייה). בלי חתימה — 403.
 // platform_key — המפתח הציבורי של provision / grant_status (P1, sso.md §6). אין בו סוד.
 const PUBLIC_ACTIONS = ['embed_key', 'media', 'platform_key'];
-const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_retry', 'request_dismiss', 'notices_read', 'owner_set', 'publish_decide', 'lock', 'draft_save', 'render', 'revision_restore',
-                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'editor_session', 'longtext_sync',
-                      'publish', 'republish', 'version_send', 'key_rotate', 'key_activate', 'site_set', 'site_ping', 'import_run',
-                      'ai_suggest', 'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
+const POST_ACTIONS = ['person_invite', 'person_role', 'person_remove', 'person_retry', 'request_dismiss', 'notices_read', 'owner_set', 'publish_decide',
+                      'upload_init', 'upload_chunk', 'upload_done', 'file_delete', 'disk_cap', 'longtext_sync',
+                      'key_rotate', 'key_activate', 'site_set', 'site_ping',
+                      'secret_set', 'ai_quota_set', 'word_save', 'word_delete', 'site_switch', 'topic_op', 'words_csv_import', 'audio_import', 'word_move',
                       'field_save', 'field_delete', 'topic_save', 'topic_merge', 'field_key_apply',
                       'list_create', 'list_save', 'list_delete', 'list_key_apply', 'list_item_save', 'list_item_delete', 'list_item_move', 'list_csv_import', 'list_place', 'list_place_undo',
-                      'code_create', 'code_save', 'code_reset', 'agent_token_create', 'agent_token_revoke',
+                      'agent_token_create', 'agent_token_revoke',
                       'snapshot_create', 'snapshot_restore', 'snapshots_reset', 'trash_restore', 'trash_purge',
-                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'site_image_take', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set', 'pf_migrate', 'pf_blank',
+                      'pf_create', 'pf_write', 'pf_mkdir', 'pf_link', 'site_image_take', 'pf_rename', 'pf_delete', 'pf_restore', 'pf_purge', 'pf_limits_set',
                       'pf_copy', 'pf_version_restore', 'pf_replace', 'pf_zip_import',
                       'page_create', 'page_move', 'page_set_entry', 'page_set_404', 'pages_order',      // V15
                       'rec_duration', 'rec_scan_start', 'rec_scan_step', 'rec_fetch_start', 'rec_fetch_step', 'rec_job_op', 'rec_settings_set',
@@ -119,12 +119,6 @@ try {
         'owner_set' => owner_set($u, $body),
         'publish_decide' => publish_decide($u, $body),
         'notices_read' => notices_read_all($u),
-        'draft' => draft_get($u),
-        'draft_save' => draft_save($u, $body),
-        'lock' => lock_op($u, $body),
-        'render' => ($u ? render_preview($body) : []),
-        'revisions' => ($u ? revisions_list() : []),
-        'revision_restore' => revision_restore($u, $body),
         'files' => ($u ? files_list() : []),
         'upload_init' => upload_init($u, $body),
         'upload_chunk' => upload_chunk($u, $_GET),
@@ -133,24 +127,20 @@ try {
         'disk_cap' => disk_cap_set($u, $body),
         'file' => file_send(file_row((string)($u ? ($_GET['id'] ?? '') : '')), isset($_GET['download'])),
         'media' => file_send(media_check($_GET)),
-        'editor_session' => editor_session($u, $body),
         'longtext_sync' => longtext_sync($u, $body),
         'longtexts' => ($u ? longtexts_list() : []),          // X1: 🔗 חבר למסמך קיים
         'longtext_link' => longtext_link($u, $body),
         'longtext_open' => longtext_open($u, $body),
-        'publish_preview' => publish_preview($u),
-        'publish' => publish($u, $body),
-        'republish' => republish($u, $body),
-        'version_send' => version_send($u, (int)($body['n'] ?? 0)),
-        'versions' => ($u ? versions_list($_GET) : []),
-        'version_preview' => ($u ? version_preview($_GET) : []),
-        'publish_settings' => ($u ? publish_settings() : []),
+        // M6 — 🗄️ ארכיון: הגרסאות שפורסמו בפורמט הישן, לקריאה בלבד (lib/legacy_read.php). פרסום 1.x נמחק
+        'archive' => ($u ? archive_list($_GET) : []),
+        'archive_view' => ($u ? archive_view($_GET) : []),
+        'archive_html' => ($u ? archive_html($_GET) : []),
+        'site_settings' => ($u ? site_settings() : []),
         'key_rotate' => key_rotate($u),
         'key_activate' => key_activate($u),
         'site_set' => site_set($u, $body),
         'site_ping' => site_ping($u),
         'site_switch' => site_switch($u, $body),
-        'import_run' => import_run($u, $body),
         'words' => ($u ? words_list() : []),
         'library' => ($u ? library_list() : []),
         // הבאת ההקלטות מהאתר (A2, lib/recordings.php) — בעל האתר בלבד. המשך — לכל עורך (נמדד בהשמעה)
@@ -216,17 +206,10 @@ try {
         'snapshot_create' => snapshot_manual($u, $body),
         'snapshot_restore' => snapshot_restore($u, $body),
         'snapshots_reset' => snapshots_reset($u, $body),
-        'snapshot_preview' => ($u ? snapshot_preview($_GET) : []),
         'trash' => ($u ? trash_list() : []),
         'trash_restore' => trash_restore($u, $body),
         'trash_purge' => trash_purge($u, $body),
         'backup' => backup_download($u),
-        'code' => ($u ? code_state() : []),
-        'code_create' => code_create($u),
-        'code_save' => code_save($u, $body),
-        'code_reset' => code_reset($u),
-        'code_history' => ($u ? code_history($_GET) : []),
-        'code_history_get' => ($u ? code_history_get($_GET) : []),
         'agent_tokens' => agent_tokens($u),
         'agent_token_create' => agent_token_create($u, $body),
         'agent_token_revoke' => agent_token_revoke($u, $body),
@@ -274,10 +257,6 @@ try {
         'page_set_entry' => page_set_entry($u, $body),
         'page_set_404' => page_set_404($u, $body),
         'pages_order' => pages_order($u, $body),
-        // ההסבה (F3, lib/migrate.php) — בעלים בלבד
-        'pf_migrate' => pf_migrate($u, $body),
-        'pf_migrate_last' => ($u ? pf_migrate_last() : []),
-        'pf_blank' => pf_blank($u),
         // התצוגה החיה (F4, lib/preview.php): אסימון חתום וקצר-מועד לכתובת המבודדת — רק למי שמורשה לקרוא את הפרויקט
         'pv_token' => pv_token($u),
         // בנייה ופרסום של פרויקט הקבצים (M1, lib/build.php): בנייה — עורך ומעלה; שליחה — מפרסם, רק גרסה שבנה בעצמו
@@ -321,9 +300,7 @@ try {
         'cutover_ready' => cutover_lib() ?? cutover_ready($u),
         'pf_limits' => ($u ? pf_limits() : []),
         'pf_limits_set' => pf_limits_set($u, $body),
-        'import_info' => ($u ? ['imported' => json_decode((string)setting('imported_from', 'null'), true)] : []),
         'ai_status' => ai_status($u),
-        'ai_suggest' => ai_suggest($u, $body),
         'ai_suggest_files' => ai_suggest_files($u, $body),          // X1: ✨ על קבצי הפרויקט
         'ai_apply_files' => ai_apply_files($u, $body),
         'ai_admin' => ($u ? ai_admin() : []),

@@ -47,7 +47,7 @@ function pub_channel_set(array $owner, array $b): array
     if (!in_array($c, ['push', 'pull'], true)) throw new ApiError('ערוץ לא מוכר', 422);
     setting_set('pub_channel', $c);
     audit_as($owner, 'pub_channel', $c === 'pull' ? 'ערוץ: משיכה (האתר מושך מהכלי)' : 'ערוץ: דחיפה (הכלי שולח לאתר)');
-    return publish_settings();
+    return site_settings();
 }
 
 // ── התור ──────────────────────────────────────────────────
@@ -240,7 +240,7 @@ function pull_line(array $owner): array
     $k = pub_key();
     $line = 'kol-maroko:2:' . $k['kid'] . ':' . $k['public'] . ':' . pull_url() . ':' . $token;
     audit_as($owner, 'pull_token', 'אסימון משיכה חדש — הקודם בוטל');
-    return ['line' => $line] + publish_settings();
+    return ['line' => $line] + site_settings();
 }
 
 function pull_settings(): array

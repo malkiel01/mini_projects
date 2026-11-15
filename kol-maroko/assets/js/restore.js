@@ -53,7 +53,7 @@ const Restore = (() => {
   const norm = v => String(v || '').normalize('NFC')
     .replace(/[֑-ׇ​-‏‪-‮⁠-⁩﻿­\s]/g, '');   // טעמים וניקוד, כיוון, רוחב-אפס, רווחים מכל סוג
   const log = (step, msg, status) => { try { window.KolUi && window.KolUi('snapshots_reset.' + step, msg, status); } catch { /* היומן לא עוצר את המסך */ } };
-  const WHY = { 0: 'אין חיבור לשרת', 403: 'אין הרשאה — רק בעל האתר', 423: 'הטיוטה נעולה' };
+  const WHY = { 0: 'אין חיבור לשרת', 403: 'אין הרשאה — רק בעל האתר', 423: 'נעול — מישהו אחר עורך' };
 
   function resetSheet(total, body) {
     const typed = h('input', { 'data-snap-reset-type': true, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done', 'aria-label': `לאישור — כתבו: ${WORD}` });
@@ -104,18 +104,19 @@ const Restore = (() => {
   }
 
   function pointSheet(s, body, site) {
-    const frame = h('iframe', { class: 'ver-frame', sandbox: 'allow-scripts', title: `נקודה ${s.id}` });
     const status = h('p', { class: 'hint', role: 'status' });
     const dlg = sheet(`🛟 נקודה #${s.id}`,
       h('dl', { class: 'cells' },
         h('div', {}, h('dt', {}, 'מתי'), h('dd', {}, when(s.at))),
         h('div', {}, h('dt', {}, 'למה'), h('dd', {}, s.reason)),
         h('div', {}, h('dt', {}, 'מי'), h('dd', {}, s.name)),
-        h('div', {}, h('dt', {}, 'מה בה'), h('dd', {}, `${s.meta.words ?? 0} מילים · ${s.meta.code ? s.meta.code + ' קבצי קוד' : 'תבנית מובנית'} · ${s.meta.files ?? 0} קבצים`)),
+        h('div', {}, h('dt', {}, 'מה בה'), h('dd', {}, `${s.meta.words ?? 0} מילים · ${s.meta.files ?? 0} קבצים`)),
         h('div', {}, h('dt', {}, 'קובצי העמוד'), h('dd', { class: s.project ? null : 'error', 'data-snap-sheet-project': String(!!s.project) }, has(s)))),
-      h('p', { class: 'hint' }, 'שחזור מחזיר את הטיוטה, המילים, הנושאים, קבצי הקוד ומצב הקבצים לנקודה הזו. לפני כן נשמרת נקודה של המצב הנוכחי — אפשר לחזור ממנו. האתר לא משתנה עד פרסום.'),
+      // M6: הטיוטה של הסטודיו הישן — נשמרת בנקודה וחוזרת בשחזור, אבל אין לה מסך
+      s.legacy ? h('p', { class: 'hint', 'data-snap-legacy': true }, '🗄️ כולל גם את העמוד הישן (לא בשימוש) — חוזר למסד בשחזור, ואין לו מסך.') : null,
+      h('p', { class: 'hint' }, 'שחזור מחזיר את קובצי העמוד, המילים, הנושאים, הרשימות ומצב הקבצים לנקודה הזו. לפני כן נשמרת נקודה של המצב הנוכחי — אפשר לחזור ממנו. האתר לא משתנה עד פרסום.'),
       h('div', { class: 'row-btns' }, h('button', { type: 'button', class: 'btn primary', onclick: async e => {
-        if (!confirm(`לשחזר לנקודה #${s.id}?${s.project ? '' : `\n\n${NO_PROJECT}: הנקודה נוצרה לפני שקובצי העמוד נשמרו בנקודות. יחזרו רק המילים, הנושאים, קבצי הקוד ומצב הקבצים.`}`)) return;
+        if (!confirm(`לשחזר לנקודה #${s.id}?${s.project ? '' : `\n\n${NO_PROJECT}: הנקודה נוצרה לפני שקובצי העמוד נשמרו בנקודות. יחזרו רק המילים, הנושאים ומצב הקבצים.`}`)) return;
         e.target.disabled = true; status.textContent = 'משחזר…';
         try {
           const r = await api('snapshot_restore', { id: s.id });
@@ -125,10 +126,7 @@ const Restore = (() => {
           points(body, 0, [], site);
         } catch (err) { status.replaceChildren(h('span', { class: 'error' }, err.message)); e.target.disabled = false; }
       } }, '↩️ שחזור לנקודה הזו')),
-      status, frame);
-    api('snapshot_preview', undefined, `&id=${s.id}`).then(r => {
-      frame.srcdoc = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">${r.fonts ? `<link rel="stylesheet" href="${r.fonts}">` : ''}<style>body{margin:0;font-family:system-ui,Arial,sans-serif}${r.css.replace(/<\/style/gi, '')}</style></head><body>${r.html}</body></html>`;
-    }).catch(e => frame.replaceWith(h('p', { class: 'error' }, e.message)));
+      status);
   }
 
   // ── סל המחזור ──────────────────────────────────────────

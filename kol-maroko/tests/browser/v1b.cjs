@@ -350,7 +350,7 @@ const PAGE = `<!doctype html>
     await page.waitForFunction(() => location.pathname.endsWith('/editor.php') && typeof Editor !== 'undefined' && Editor._state.file && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
     ok(new URL(page.url()).hash === '#/editor/' + encodeURIComponent('t/page.html'), 'index.html#/editor מפנה ל-editor.php — העורך נפתח תמיד תחת המדיניות');
     const tabsH = await page.$$eval('#tabs a', a => a.map(x => x.getAttribute('href')));
-    ok(tabsH.includes('#/editor') && tabsH.includes('#/project') && tabsH.includes('index.php#/words') && tabsH.includes('index.php#/studio'), 'במסמך המוקשח: העורך ועורך הקוד במקום; שאר הלשוניות מובילות ל-index.php');
+    ok(tabsH.includes('#/editor') && tabsH.includes('#/project') && tabsH.includes('index.php#/words') && !tabsH.includes('#/studio') && !tabsH.includes('#/code'), 'במסמך המוקשח: העורך ועורך הקוד במקום; שאר הלשוניות מובילות ל-index.php');
     const blocked = await page.evaluate(async () => {
       const out = {}, v = []; document.addEventListener('securitypolicyviolation', e => v.push(e.effectiveDirective));
       const s = document.createElement('script'); s.textContent = 'window.__inline = 1'; document.head.append(s); out.inline = window.__inline === 1;
@@ -424,14 +424,15 @@ const PAGE = `<!doctype html>
     // הנעילה מתגלה בפתיחה, לא בכתיבה הראשונה
     const ctxL = await mk(1280, 800, { sub: 'u-ed', name: 'Ed Member', email: 'ed@example.test', email_verified: true }), pl = await ctxL.newPage();
     await pl.goto(base + '/#/words'); await pl.waitForFunction(() => typeof state !== 'undefined' && state.user);
-    await call(pl, 'lock', { op: 'take' });
+    // M6: lock_op נמחק — נעילה שנשארה מהסטודיו הישן (שורה ב-edit_lock) עדיין חלה עד שפגה; נכתבת ישר למסד
+    execFileSync('php', ['-r', '$p = new PDO("sqlite:" . $argv[1] . "/kol.sqlite"); $p->exec("PRAGMA busy_timeout = 5000"); $p->prepare("INSERT OR REPLACE INTO edit_lock (id, sub, name, since, beat) VALUES (1, ?, ?, ?, ?)")->execute(["u-ed", "Ed Member", time(), (int)$argv[2]]);', data, String(Math.floor(Date.now() / 1000))]);
     await openPage(page, 't/v.html');
     const locked = await page.evaluate(() => ({ status: document.querySelector('.ed-status').textContent, ro: Editor._state.readOnly, dirty: Editor._state.doc.dirty }));
     await page.evaluate(() => { const c = Editor._state.canvas; c.select(c.d2m.get(c.doc.querySelector('#keep'))); }); await sleep(60);
     ok(locked.status.includes('לקריאה בלבד') && locked.ro.includes('Ed Member') && !locked.dirty && (await st(page)).sel === 'h1#keep' && await page.isDisabled('.ed-bar [aria-label^="מחיקת"]'), 'נעילה אצל חבר אחר מתגלה כבר בפתיחה: "לקריאה בלבד", רואים ובוחרים, המחיקה כבויה — ' + locked.ro);
     await page.keyboard.press('Delete'); await sleep(150);
     ok(await page.evaluate(() => !!Editor._state.canvas.doc.querySelector('#keep') && !Editor._state.doc.dirty), 'בזמן נעילה: Delete אינו כותב דבר');
-    await call(pl, 'lock', { op: 'release' }); await ctxL.close();
+    execFileSync('php', ['-r', '$p = new PDO("sqlite:" . $argv[1] . "/kol.sqlite"); $p->exec("PRAGMA busy_timeout = 5000"); $p->prepare("INSERT OR REPLACE INTO edit_lock (id, sub, name, since, beat) VALUES (1, ?, ?, ?, ?)")->execute(["u-ed", "Ed Member", time(), (int)$argv[2]]);', data, String(0)]); await ctxL.close();
     await openPage(page, 't/v.html');
     ok(await page.evaluate(() => !Editor._state.readOnly), 'אחרי שחרור הנעילה — העריכה חוזרת');
 

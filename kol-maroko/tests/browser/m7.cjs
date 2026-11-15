@@ -29,7 +29,7 @@ const until = async (fn, ms = 8000) => { const t = Date.now(); for (;;) { try { 
   execFileSync('php', [path.join(__dirname, 'f3-seed.php'), data, path.join(data, 'old.html')]);
   const [port, wpPort] = [await freePort(), await freePort()];
   const base = `http://127.0.0.1:${port}`, wp = `http://127.0.0.1:${wpPort}`;
-  const php = (code, ...args) => execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php"; ${code}`, data, ROOT, ...args]).toString();
+  const php = (code, ...args) => execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php"; ${code}`, data, ROOT, ...args]).toString();
   php(`setting_set('site_url', $argv[3]); setting_set('pub_channel', 'pull'); setting_set('pull_url', $argv[4]);
        file_put_contents($argv[5] . '/options.json', json_encode(['kol_maroko_keys' => pub_key_line(pub_key())]));`, wp, base + '/pull.php', wpDir);
   const env = { ...process.env, PHP_CLI_SERVER_WORKERS: '6' };

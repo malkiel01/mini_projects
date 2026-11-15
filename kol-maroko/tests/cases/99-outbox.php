@@ -73,7 +73,7 @@ test('M7 שורת החיבור: kol-maroko:2:<kid>:<מפתח>:<כתובת>:<אס
     eq(hash('sha256', $tok2), setting('pull_token_hash'));
     $all = json_encode(db()->query('SELECT * FROM settings')->fetchAll()) . json_encode(db()->query('SELECT * FROM audit')->fetchAll());
     ok(!str_contains($all, $tok2), 'האסימון עצמו אינו במסד');
-    $s = m1_get('publish_settings', '', U_SITE)['json'];
+    $s = m1_get('site_settings', '', U_SITE)['json'];
     ok(!str_contains(json_encode($s), $tok2), 'ולא בהגדרות');
     eq(['pull', true], [$s['channel'], $s['token_at'] !== null]);
     m7_done();
@@ -88,7 +88,7 @@ test('M7 H24: pull.php בלי אסימון / שגוי / ישן אחרי "החל�
     $new = substr(strrchr(m1_post('pull_line', [], U_SITE)['json']['line'], ':'), 1);
     eq(401, m7_pull('after=0', $old)['status'], 'הישן אחרי החלפה');
     eq($bad0 + 4, (int)json_decode((string)setting('pull_bad'), true)['count'], 'נספר');
-    eq($bad0 + 4, (int)m1_get('publish_settings', '', U_SITE)['json']['bad']['count'], 'במסך');
+    eq($bad0 + 4, (int)m1_get('site_settings', '', U_SITE)['json']['bad']['count'], 'במסך');
     $r = m7_pull('after=0', $new);
     eq(200, $r['status'], $r['body']);
     eq(200, m7_pull('after=0', $new, 'GET', null, [], 'x')['status'], 'X-Kol-Pull-Token (כשהשרת מסיר Authorization)');

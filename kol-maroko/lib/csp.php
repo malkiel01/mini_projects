@@ -51,7 +51,7 @@ function csp_report_uri(string $policy): string
 function csp_site(): string
 {
     try {
-        require_once __DIR__ . '/publish.php';
+        require_once __DIR__ . '/site.php';
         $u = parse_url(site_url_setting());
         if (is_array($u) && ($u['scheme'] ?? '') === 'https' && preg_match('/^[A-Za-z0-9.-]+$/', (string)($u['host'] ?? ''))) return 'https://' . $u['host'];
     } catch (Throwable $e) {}
