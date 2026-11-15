@@ -13,7 +13,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/files.php';
-require_once __DIR__ . '/draft.php';
+require_once __DIR__ . '/legacy_read.php';   // M6: draft_row / lock_state — לקריאה בלבד
 
 /** המגבלות: ברירת מחדל, מינימום, מקסימום, שם. הערך בפועל — הגדרה שהמפתח משנה (מסך המפתח ← מגבלות). */
 const PF_LIMITS = [
@@ -894,11 +894,6 @@ function pf_seed_files(): array
     $mine = function_exists('code_files') ? (code_files() ?? []) : [];
     $own = fn(string $p) => isset($mine[$p]) ? 'הקובץ שנערך בלשונית </> קוד (code_files)' : null;
     $css = function_exists('theme_lexicon_css') ? theme_lexicon_css() . "\n\n" . LEX_CSS_MARK . "\n" . LEX_TPL_SIZES : '';
-    $base = '';
-    try {
-        $base = (string)(page_render(json_decode((string)draft_row()['json'], true))['css'] ?? '');
-    } catch (Throwable) {
-    }
     $d = 'from-current/';
     $files += [
         $d . 'lexicon.html' => $html($own('lexicon.html') ?? 'התבנית המובנית LEX_TPL (lib/code.php) — הקובץ עוד לא נוצר בלשונית הקוד', $mine['lexicon.html'] ?? (defined('LEX_TPL') ? LEX_TPL : '')),
@@ -908,7 +903,6 @@ function pf_seed_files(): array
         $d . 'theme-style.css' => $code('style.css של ערכת הנושא, מיום הייבוא (theme_style_css)', function_exists('theme_style_css') ? theme_style_css() : ''),
         $d . 'imported.css' => $code('CSS שיובא מהעמוד באתר (ההגדרה imported_css)', (string)setting('imported_css', '')),
         $d . 'preview.css' => $code('CSS לתצוגה בלבד בסטודיו (ההגדרה preview_css)', (string)setting('preview_css', '')),
-        $d . 'page-base.css' => $code('ה-CSS הבסיסי שהכלי מייצר לעמוד (page_render ב-lib/page.php), לפי הטיוטה של היום', $base),
     ];
     return $files;
 }

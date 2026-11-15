@@ -17,7 +17,6 @@ function l3_reset(): void
         ok($r['status'] === 200, "ניקוי $k: " . json_encode($r['json'], JSON_UNESCAPED_UNICODE));
     }
     db()->exec('DELETE FROM list_trash');
-    $r = b_post('lock', ['op' => 'release'], U_EDITOR);
 }
 
 function l3_create(string $key = 'proverbs', string $label = 'פתגמים', array $more = [], array $user = U_EDITOR): array

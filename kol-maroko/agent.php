@@ -7,7 +7,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/lib/members.php';
-require_once __DIR__ . '/lib/import.php';
+require_once __DIR__ . '/lib/restore.php';
 require_once __DIR__ . '/lib/agent.php';
 require_once __DIR__ . '/lib/devlog.php';
 

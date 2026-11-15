@@ -63,8 +63,8 @@ test('P1 הרשאות: המטריצה — כל פעולה × 5 תפקידים + 
     ok($n > 1000, "נבדקו $n צירופים");
 });
 
-test('P1 הרשאות: עורך תוכן — כותב מילים, ונדחה (403, עם ההסבר) בכל כתיבה לקבצי הפרויקט, לקוד ולטיוטה', function () {
-    foreach (['pf_write', 'pf_create', 'pf_delete', 'code_save', 'draft_save', 'pf_zip_import', 'list_place', 'build_start', 'publish', 'build_send'] as $a) {
+test('P1 הרשאות: עורך תוכן — כותב מילים, ונדחה (403, עם ההסבר) בכל כתיבה לקבצי הפרויקט', function () {
+    foreach (['pf_write', 'pf_create', 'pf_delete', 'pf_zip_import', 'list_place', 'build_start', 'build_send'] as $a) {      // M6: code_save, draft_save, publish — נמחקו
         $r = http('POST', "/api.php?action=$a", ['user' => U_CONTENT, 'json' => ['path' => 'x.html', 'content' => 'x']]);
         eq(403, $r['status'], $a);
         ok(str_contains((string)$r['json']['error'], 'עורך תוכן') || str_contains((string)$r['json']['error'], 'מפרסם'), "$a: ההסבר — " . $r['json']['error']);
@@ -72,7 +72,7 @@ test('P1 הרשאות: עורך תוכן — כותב מילים, ונדחה (40
     $w = http('POST', '/api.php?action=word_save', ['user' => U_CONTENT, 'json' => ['word' => 'עורך-תוכן-P1', 'meaning' => 'בדיקה']]);
     eq(200, $w['status'], $w['body']);
     eq(200, http('GET', '/api.php?action=pf_tree', ['user' => U_CONTENT])['status'], 'קריאה של קבצי הפרויקט');
-    eq(200, http('GET', '/api.php?action=code', ['user' => U_CONTENT])['status'], 'קריאה של הקוד');
+    eq(200, http('GET', '/api.php?action=archive', ['user' => U_CONTENT])['status'], 'קריאה של 🗄️ ארכיון (M6; לשעבר "קריאה של הקוד")');
 });
 
 test('P1 הרשאות: אדם בלי תפקיד — 403 לכל פעולה, נרשם ב"ביקשו גישה", ובעל העמוד מקבל הודעה', function () {

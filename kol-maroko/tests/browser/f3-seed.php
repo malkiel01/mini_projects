@@ -10,7 +10,8 @@ if (PHP_SAPI !== 'cli' || $argc < 3 || !is_dir($argv[1])) exit(1);
 define('KOL_DATA_DIR', $argv[1]);
 $root = dirname(__DIR__, 2);
 if (realpath(KOL_DATA_DIR) === realpath($root . '/data')) exit("לא על data/\n");
-foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate'] as $lib) require_once "$root/lib/$lib.php";
+foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview'] as $lib) require_once "$root/lib/$lib.php";
+require_once "$root/tests/support/migrate.php";             // M6: ההסבה — כלי בדיקות בלבד (mg_overlay)
 
 $pdo = db();
 $themeLex = (string)file_get_contents("$root/dev/spike/fixtures/lexicon.base.css");

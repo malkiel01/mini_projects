@@ -81,19 +81,14 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     page.on('pageerror', e => { errors.push(e.message); console.log('   ⚠️ שגיאה בדף אחרי בדיקה ' + ran + ': ' + e.message + ' ' + String(e.stack || '').split('\n').slice(1, 4).join(' | ').slice(0, 400)); });
     await page.goto(base + '/#/project');
     await page.waitForSelector('.pj-tree .pj-row');
-    // ── 0. הפרויקט עדיין שלד הזריעה: פס "העמוד של היום עוד לא יובא · 🔄 ייבוא עכשיו" — ב"📁 פרויקט" וב"🎨 עורך" ──
-    ok(await page.isVisible('.pj-seed') && /עוד לא יובא/.test(await page.textContent('.pj-seed')) && await page.isVisible('.pj-seed [data-seed-run]'), '"📁 פרויקט": שלד הזריעה ← פס "העמוד של היום עוד לא יובא", עם "🔄 ייבוא עכשיו"');
+    // ── 0. הפרויקט עדיין שלד הזריעה: פס "index.html הוא עדיין השלד הריק" — ב"📁 פרויקט" וב"🎨 עורך". M6: בלי כפתור ייבוא (ההסבה הוסרה) ──
+    ok(await page.isVisible('.pj-seed') && /השלד הריק/.test(await page.textContent('.pj-seed')) && !(await page.$('.pj-seed [data-seed-run]')), '"📁 פרויקט": שלד הזריעה ← הפס, בלי "🔄 ייבוא עכשיו" (M6)');
     await page.goto(base + '/editor.php#/editor'); await page.waitForFunction(() => Editor._state.file && Editor._state.canvas && Editor._state.canvas.m && !Editor._state.busy, null, { timeout: 30000 });
-    await page.waitForSelector('.ed-seed:not([hidden]) [data-seed-run]');
-    ok(/עוד לא יובא/.test(await page.textContent('.ed-seed')), '"🎨 עורך": אותו פס, מעל הקנבס');
-    const accept = d => d.accept(); page.on('dialog', accept);
-    await page.click('.ed-seed [data-seed-run]');
-    await page.waitForFunction(() => { try { return Editor._state.file && Editor._state.file.path === 'index.html' && Editor._state.doc && /kadisha-hero/.test(Editor._state.doc.text()) && !Editor._state.busy; } catch { return false; } }, null, { timeout: 30000 });
-    page.off('dialog', accept); await sleep(200);
-    ok(!(await page.isVisible('.ed-seed')) && await page.isVisible('#sheet[open]') && /יובא מחדש/.test(await page.textContent('#sheet-title')), '"🔄 ייבוא עכשיו" (אישור אחד): העמוד של היום יובא, העורך נפתח עליו, הפס נעלם, והדוח מוצג');
-    await page.evaluate(() => document.getElementById('sheet').close());
+    await page.waitForSelector('.ed-seed:not([hidden])');
+    ok(/השלד הריק/.test(await page.textContent('.ed-seed')) && !(await page.$('.ed-seed [data-seed-run]')), '"🎨 עורך": אותו פס, מעל הקנבס — בלי כפתור');
+    await call(page, 'pf_migrate', {});                            // הזריעה של הבדיקה (tests/support/, M6)
     await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row');
-    ok(!(await page.isVisible('.pj-seed')), 'וגם ב"📁 פרויקט" הפס נעלם');
+    ok(!(await page.isVisible('.pj-seed')), 'אחרי שהעמוד נכתב — הפס נעלם');
     await call(page, 'pf_create', { path: 't/page.html', content: PAGE });
     await call(page, 'pf_create', { path: 't/one.html', content: '<!doctype html><title>one</title><h1 id="top">one</h1>' });
 
@@ -460,19 +455,15 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
     ok(kb.typing && kb.host === 'li.it' && kb.bottom <= kb.barTop + 1 && kb.top >= 0 && kb.barTop + 1 >= 0 && kb.barTop < kb.vh, '390px: כשהמקלדת עולה (החלון הנראה מתכווץ), האלמנט הנערך נגלל אל מעליה — מעל הסרגל הצף', kb);
     await pm.keyboard.press('Escape'); await sleep(80);
     await pm.setViewportSize({ width: 390, height: 780 });
-    // "🔄 ייבוא מחדש" נגיש בטלפון — בתפריט ⋯ של עורך הקוד (רשימת הקבצים סגורה שם)
+    // M6: "🔄 ייבוא מחדש" הוסר — גם מהתפריט ⋯ של עורך הקוד בטלפון
     await pm.goto(base + '/#/project'); await pm.waitForSelector('.pj-tree .pj-row', { state: 'attached' }); await pm.waitForSelector('[data-ed]');
     await pm.tap('[data-ed]'); await sleep(200);
-    ok(await pm.evaluate(() => [...document.querySelectorAll('#sheet[open] button')].some(b => b.textContent.includes('ייבוא מחדש מהעמוד של היום') && b.getBoundingClientRect().height >= 34)), '390px: "🔄 ייבוא מחדש מהעמוד של היום" בתפריט ⋯ של עורך הקוד', await pm.evaluate(() => (document.querySelector('#sheet[open]') || {}).textContent || 'אין גיליון פתוח'));
+    ok(await pm.evaluate(() => !!document.querySelector('#sheet[open]') && ![...document.querySelectorAll('#sheet[open] button')].some(b => b.textContent.includes('ייבוא מחדש'))), '390px: אין "ייבוא מחדש" בתפריט ⋯ של עורך הקוד (M6)');
     await cm.close();
 
-    // ── 8. "פרויקט אחד" (הכרעת הבעלים): ייבוא מחדש במקום "פרויקט חדש", בלי "פרויקט ריק"; ותבניות ישנות ──
+    // ── 8. "פרויקט אחד" (הכרעת הבעלים): M6 — בלי ייבוא מחדש ובלי "פרויקט ריק"; ותבניות ישנות ──
     await page.goto(base + '/#/project'); await page.waitForSelector('.pj-tree .pj-row');
-    const migBtn = await page.textContent('.pj-side-btns [data-migrate]');
-    await page.click('.pj-side-btns [data-migrate]'); await page.waitForSelector('#sheet[open] [data-migrate-run]');
-    const migSheet = await page.evaluate(() => ({ title: document.getElementById('sheet-title').textContent, blank: !!document.querySelector('#sheet [data-blank-run]'), text: document.getElementById('sheet').textContent }));
-    ok(migBtn.includes('🔄 ייבוא מחדש מהעמוד של היום') && migSheet.title.includes('ייבוא מחדש') && !migSheet.blank && !/פרויקט ריק|פרויקט חדש/.test(migSheet.text + migBtn), 'מנהל הקבצים: "🔄 ייבוא מחדש מהעמוד של היום" (לא "פרויקט חדש"), ואין "📄 פרויקט ריק"', migSheet);
-    await page.evaluate(() => document.getElementById('sheet').close());
+    ok(!(await page.$('.pj-side-btns [data-migrate]')) && !(await page.$('[data-blank-run]')), 'מנהל הקבצים: אין "🔄 ייבוא מחדש" ואין "📄 פרויקט ריק" — M6, הפרויקט הוא המקור');
     const tpl = await page.evaluate(() => [...document.querySelectorAll('.pj-row:not(.pj-dir)')].map(r => ({ dir: r.dataset.dir, name: r.querySelector('.one').textContent, chip: !!r.querySelector('[data-old-tpl]') })));
     ok(tpl.some(r => r.chip) && tpl.every(r => r.chip === (r.dir === 'from-current' && /\.html?$/i.test(r.name))), 'בעץ: קובצי התבנית של from-current/ מסומנים "תבנית ישנה" — ורק הם', tpl.filter(r => r.chip !== (r.dir === 'from-current' && /\.html?$/i.test(r.name))));
     await page.evaluate(() => { localStorage.setItem('kol-editor', JSON.stringify({ page: 'from-current/lexicon.html' })); });

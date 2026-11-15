@@ -29,12 +29,12 @@ test('פרויקט: נוצר עם שלד ברירת המחדל ועם from-curre
     eq(200, $t['status']);
     $paths = array_column($t['json']['files'], 'id', 'path');
     foreach (['index.html', 'css/tokens.css', 'css/base.css', 'css/page.css', 'js/page.js', 'kol.json'] as $p) ok(isset($paths[$p]), "חסר $p");
-    foreach (['lexicon.html', 'lexicon.css', 'lexicon.js', 'lexicon-template.html', 'theme-style.css', 'imported.css', 'preview.css', 'page-base.css'] as $p) {
+    foreach (['lexicon.html', 'lexicon.css', 'lexicon.js', 'lexicon-template.html', 'theme-style.css', 'imported.css', 'preview.css'] as $p) {      // M6: page-base.css — נבנה מהטיוטה, כבר לא נוצר
         ok(isset($paths["from-current/$p"]), "חסר from-current/$p");
         ok(str_contains(strtok(pf_get($paths["from-current/$p"]), "\n"), 'from-current · '), "שורת המקור של $p");
     }
     ok(str_contains(pf_get($paths['from-current/lexicon-template.html']), LEX_TPL), 'התבנית המובנית הועתקה כמו שהיא');
-    ok(str_contains(pf_get($paths['from-current/page-base.css']), '.kol-page'), 'ה-CSS הבסיסי של העמוד');
+    ok(!isset($paths['from-current/page-base.css']), 'M6: page-base.css אינו נבנה מהטיוטה');
     eq(true, $t['json']['kol']['valid'], 'kol.json תקין');
     eq('index.html', $t['json']['kol']['config']['entry']);
     eq(count($paths), count(pf_paths()), 'קריאה שנייה אינה זורעת שוב');
@@ -231,8 +231,8 @@ test('פרויקט: הרשאות, נעילת העריכה ויומן הפעול�
     eq(403, http('POST', '/api.php?action=pf_create', ['user' => U_EDITOR, 'csrf' => false, 'json' => ['path' => 'perm/x.html']])['status'], 'בלי CSRF');
     foreach ([U_EDITOR, U_PUBLISHER, U_OWNER] as $i => $u) eq(200, pf_new("perm/$i.html", 'x', $u)['status'], 'כל תפקיד כותב');
 
-    // נעילה אצל המפרסם — העורך אינו כותב; אחרי שחרור — כותב
-    http('POST', '/api.php?action=lock', ['user' => U_PUBLISHER, 'json' => ['op' => 'take']]);
+    // נעילה אצל המפרסם — העורך אינו כותב; אחרי שחרור — כותב. M6: lock_op נמחק — נעילה שנשארה מהסטודיו הישן (שורה ב-edit_lock) עדיין חלה עד שפגה
+    db()->prepare('INSERT OR REPLACE INTO edit_lock (id, sub, name, since, beat) VALUES (1, ?, ?, ?, ?)')->execute([U_PUBLISHER['sub'], 'מפרסם', time(), time()]);
     $f = pf_paths()['perm/0.html'];
     foreach ([['pf_create', ['path' => 'perm/locked.html']], ['pf_write', ['id' => $f, 'rev' => 1, 'content' => 'y']], ['pf_mkdir', ['path' => 'perm/d']],
               ['pf_rename', ['id' => $f, 'to' => 'perm/z.html']], ['pf_delete', ['id' => $f]], ['pf_restore', ['ids' => [$f]]]] as [$a, $body]) {
@@ -240,7 +240,7 @@ test('פרויקט: הרשאות, נעילת העריכה ויומן הפעול�
     }
     eq(200, http('GET', "/api.php?action=pf_read&id=$f", ['user' => U_EDITOR])['status'], 'קריאה מותרת גם כשנעול');
     eq(200, http('POST', '/api.php?action=pf_write', ['user' => U_PUBLISHER, 'json' => ['id' => $f, 'rev' => 1, 'content' => 'של המחזיק בנעילה']])['status']);
-    http('POST', '/api.php?action=lock', ['user' => U_PUBLISHER, 'json' => ['op' => 'release']]);
+    db()->exec('UPDATE edit_lock SET beat = 0 WHERE id = 1');                // פגה (LOCK_TTL) — כמו נעילה ישנה שאיש אינו מחדש
 
     $before = (int)db()->query('SELECT MAX(id) FROM audit')->fetchColumn();
     $id = pf_new('audit/a.html', 'x')['json']['file']['id'];

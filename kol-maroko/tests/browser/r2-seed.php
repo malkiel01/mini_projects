@@ -8,7 +8,7 @@ if (PHP_SAPI !== 'cli' || $argc < 2 || !is_dir($argv[1])) exit(1);
 define('KOL_DATA_DIR', $argv[1]);
 $root = dirname(__DIR__, 2);
 if (realpath(KOL_DATA_DIR) === realpath($root . '/data')) exit("לא על data/\n");
-foreach (['members', 'import', 'library'] as $lib) require_once "$root/lib/$lib.php";
+foreach (['members', 'site', 'restore', 'library'] as $lib) require_once "$root/lib/$lib.php";
 setting_set('site_url', 'https://maghreb.co.il');
 $json = (string)db()->query('SELECT json FROM draft WHERE id = 1')->fetchColumn();
 $n = 0;

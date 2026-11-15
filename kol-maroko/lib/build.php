@@ -22,7 +22,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/preview.php';
-require_once __DIR__ . '/publish.php';
+require_once __DIR__ . '/site.php';          // M6: המפתחות, החיבור ו-site_call (לשעבר publish.php)
 require_once __DIR__ . '/restore.php';
 require_once __DIR__ . '/forms.php';
 

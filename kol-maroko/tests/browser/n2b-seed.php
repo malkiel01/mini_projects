@@ -9,7 +9,7 @@ if (PHP_SAPI !== 'cli' || $argc < 3 || !is_dir($argv[1]) || !is_dir($argv[2])) e
 define('KOL_DATA_DIR', $argv[1]);
 $root = dirname(__DIR__, 2);
 if (realpath(KOL_DATA_DIR) === realpath($root . '/data')) exit("לא על data/\n");
-foreach (['members', 'import', 'dev', 'library'] as $lib) require_once "$root/lib/$lib.php";
+foreach (['members', 'site', 'restore', 'dev', 'library'] as $lib) require_once "$root/lib/$lib.php";
 $pdo = db();
 setting_set('site_url', 'https://maghreb.co.il');
 $who = ['sub' => 'u-owner', 'name' => 'Owner Test', 'role' => 'site_owner'];

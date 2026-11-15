@@ -278,7 +278,10 @@ const ATTACK = `<!doctype html>
     // ── 7. נעילת העריכה הקיימת ──
     const ctx2 = await mk(1000, 700, { sub: 'u-two', name: 'Second Editor', email: 'two@example.test', email_verified: true, platform_admin: true }), p2 = await ctx2.newPage();
     await p2.goto(base + '/#/project'); await p2.waitForSelector('.pj-tree .pj-row');
-    const lock = await p2.evaluate(() => api('lock', { op: 'take' }).then(r => r.lock, e => ({ error: e.message })));
+    // M6: lock_op נמחק עם הסטודיו הישן — נעילה שנשארה ממנו (שורה ב-edit_lock) עדיין חלה עד שפגה; כאן היא נכתבת ישר למסד
+    const dbLock = beat => execFileSync('php', ['-r', '$p = new PDO("sqlite:" . $argv[1] . "/kol.sqlite"); $p->exec("PRAGMA busy_timeout = 5000"); $p->prepare("INSERT OR REPLACE INTO edit_lock (id, sub, name, since, beat) VALUES (1, ?, ?, ?, ?)")->execute(["u-two", "Second Editor", time(), (int)$argv[2] ?: 0]);', data, String(beat)]);
+    dbLock(Math.floor(Date.now() / 1000));
+    const lock = { mine: true };
     await page.evaluate(() => { document.querySelector('#sheet').close(); });
     await clickIn(page, '#evil-click'); await page.keyboard.press('Delete'); await goAnyway(page);
     await page.waitForFunction(() => Editor._state.readOnly, null, { timeout: 10000 }).catch(() => {});
@@ -288,7 +291,7 @@ const ATTACK = `<!doctype html>
     await clickIn(page, '#t1').catch(() => {}); await clickIn(page, '.in span');
     const srcRo = (await st(page)).src; await page.keyboard.press('Delete'); await goAnyway(page); await sleep(100);
     ok((await st(page)).sel === 'span' && (await st(page)).src === srcRo, 'מי שאינו רשאי לערוך — רואה ובוחר, ואינו כותב');
-    await p2.evaluate(() => api('lock', { op: 'release' })); await ctx2.close();
+    dbLock(0); await ctx2.close();                                  // פגה
     ok(errors.length === 0, 'אין שגיאות JavaScript בדף (1280px)' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
     await ctx.close();
 
