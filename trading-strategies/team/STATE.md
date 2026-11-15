@@ -16,7 +16,8 @@
 | תפקיד | session | מה עושה עכשיו |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.11. מעירים כשצריך עדכון אפיון |
-| קוד (F1) | `session_018g4NYCMUPJKcJaE5QK2TYs` (Opus) | F1 (18.1.2): 🔮 תפריט עם סימון מרובה, אליוט מופעלת, מסך מלא, ציר בתוך הגרף, תוויות |
+| קוד (S1.2) | `session_018g4NYCGcBnrLJ86NSM4bh1` (Opus) | S1.2 (18.1.3–18.1.4): לשוניות בשוק + combobox + 🟡 מ-F1 |
+| קוד קודם | `session_018g4NYCMUPJKcJaE5QK2TYs` (Opus) | רדום. #1601 F1 |
 | קוד קודם | `session_018g4NYG7sBtHJh6uW5fLyxh` (Opus) | רדום. #1598 S3, #1599 S1.1 |
 | קוד קודם | `session_018g4NYGrqqR7BTByrKbVovy` (Opus) | רדום. #1591, #1592, #1595 (S1); המסירה — #1596 (טיוטה, יתמזג עם S3) |
 | קוד-מחיקה | `session_018g4NYCQjLZtvssney3gT8G` (Opus) | **סיים — #1590 מוזג, רדום.** היה: מחיקה לפי פרק 19.1: קובצי שיטות, שמור לענן, העותק בגרף, הרץ על העותק, `personal_copy`, מסך ☁️, `drives_*` ב-api.php, `public` ב-app.json, `no-polling.mjs`. **`lib/drives` ו-`assets/js/drives` נשארים** (שער `sync.php --check`). בלי מחיקת נתונים בשרת |
@@ -43,3 +44,6 @@
 - לחפש בספר גם "percent"/"pereent", לא רק "90%" — ה-OCR משבש.
 - צ'אט חדש נפתח עם `model` מפורש (Opus) — אחרת הוא יורש את המודל הנוכחי.
 - force-push חסום; ממזגים main לענף.
+
+## לקח (בקרה 2)
+- צ'אט קוד שנפתח בלי `send_message` מאושר — לא יכול להודיע על PR. פותחים עם `extra_allowed_tools: ["mcp__claude-code-remote__send_message"]`, ובשעון בודקים PR-ים פתוחים של האפליקציה.
