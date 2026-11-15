@@ -43,8 +43,9 @@ const noHScroll = p => p.evaluate(() => document.scrollingElement.scrollWidth <=
 const shot = async (p, name) => { if (SHOTS) await p.screenshot({ path: join(SHOTS, name + '.png'), fullPage: true }); };
 const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint[aria-live]')?.textContent || ''), null, { timeout: 30000 });
 
-// 18.1.1: כל תווית זוג במסך — [טקסט הראשית, טקסט המשנית, כמה SVG בין הקודים, כיוון, הבסיס ראשון]
-const pairs = p => p.evaluate(() => [...document.querySelectorAll('.pair-main')].filter(m => m.querySelectorAll('b').length === 2).map(m => {
+// 18.1.1: כל תווית זוג גלויה במסך — [טקסט הראשית, טקסט המשנית, כמה SVG בין הקודים, כיוון, הבסיס ראשון]
+// (גלויה: בלי השורה של המסך המלא, שמוסתרת עד ⛶ — F1)
+const pairs = p => p.evaluate(() => [...document.querySelectorAll('.pair-main')].filter(m => m.querySelectorAll('b').length === 2 && m.getClientRects().length).map(m => {
   const bs = [...m.querySelectorAll('b')];
   const between = [...m.childNodes].slice([...m.childNodes].indexOf(bs[0]) + 1, [...m.childNodes].indexOf(bs[1]));
   const sub = m.parentElement?.querySelector(':scope > .pair-sub') || document.querySelector('#subtitle .pair-sub');
@@ -83,6 +84,9 @@ try {
   eq((await a.locator('input[name="pair-base"]:checked').evaluate(i => i.closest('label').innerText)).replace(/\s+/g, ' ').trim(), 'BTC ביטקוין', 'Bitcoin is the default first side: the code, and its Hebrew name below (18.1, 18.1.1)');
   const head2 = a.locator('main h2.sec-title').nth(1);
   eq([(await head2.innerText()).replace(/\s+/g, ' ').trim(), await head2.locator('svg.vs').count()], ['BTC ?', 1], 'the second list: "BTC ⇄ ?" — the icon, not the word');
+  // 🟡 מ-S1.1 (F1): על המסך BTC משמאל, "?" מימין — הכותרת כולה LTR, ומיושרת לימין
+  const [xb, xq] = await head2.locator('b').evaluateAll(els => els.map(e => e.getBoundingClientRect().left));
+  eq([xb < xq, await head2.getAttribute('dir')], [true, 'ltr'], 'the heading reads "BTC ⇄ ?" left to right on screen (not "? ⇄ BTC")');
   const ps = await rules(a, 'market');
   eq(ps.filter(x => !x.main.endsWith('?')).map(x => [x.main, x.sub]), [['BTC USD', 'ביטקוין דולר'], ['BTC USDT', 'ביטקוין טתר']], '"with what" — only pairs with a provider; USDC (Binance) shows as USD');
   eq(await noHScroll(a), true, 'market screen: no horizontal scroll at 390px');

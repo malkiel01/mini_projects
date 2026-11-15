@@ -7,6 +7,7 @@
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
+import { mountAxis, labelBoard } from './chartaxis.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
 
@@ -107,8 +108,9 @@ export function mountMarket(ctx) {
     };
     const drawVs = () => {
       const b = cat.bases.find(x => x.code === base);
-      // "BTC ⇄ ?" — הצד השני (בלי המילה "מול")
-      vs.replaceChildren(h('h2', { class: 'sec-title vs-title' }, b ? pairMain({ base: { code: b.code }, quote: { code: '?' } }) : '?'),
+      // "BTC ⇄ ?" — הצד השני (בלי המילה "מול"). הכותרת כולה LTR (לא רק ה-span שבתוכה): "?" הוא תו ניטרלי, ובמנוע שלא
+      // מכבד את ה-dir של ה-inline-flex הוא קפץ לפני BTC ("? ⇄ BTC", 🟡 מ-S1.1). מיושרת לימין כמו שאר הכותרות
+      vs.replaceChildren(h('h2', { class: 'sec-title vs-title', dir: 'ltr' }, b ? pairMain({ base: { code: b.code }, quote: { code: '?' } }) : '?'),
         b?.quotes.length ? h('ul', { class: 'list' }, b.quotes.map(x => pairRow({ asset: x.asset, label: x.label, base: x.base, quote: x.quote, computed: x.computed, market: b.kind === 'crypto' ? 'crypto' : 'forex' }, watchlist)))
           : h('p', { class: 'empty' }, 'אין ספק לזוג הזה'));
     };
@@ -240,11 +242,14 @@ export function mountMarket(ctx) {
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
     const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
-    // "🔮 תחזית שיטה" (17.2.2) — הכפתור כאן, וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
-    const forecastBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'תחזית שיטה', 'aria-pressed': 'false' }, '🔮');
+    // "🔮 שיטות על הגרף" (17.2.2, 18.1.2) — הכפתור כאן, התפריט וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
+    const fcBtn = () => h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'שיטות על הגרף', 'aria-pressed': 'false', 'aria-expanded': 'false' }, '🔮');
+    const forecastBtn = fcBtn();
+    // ⛶ מסך מלא (18.1.2 סעיף 3) — בשורת הכפתורים של הגרף (בכותרת אין מקום בטלפון)
+    const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', on: { click: () => fsEnter() } }, '⛶');
     setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
 
-    const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load('change'); } });
+    const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
     const from = h('input', { type: 'date', 'aria-label': 'מתאריך', value: st.from || '' });
     const to = h('input', { type: 'date', 'aria-label': 'עד תאריך', value: st.to || '' });
@@ -276,8 +281,13 @@ export function mountMarket(ctx) {
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
     const forecastSlot = h('div', {});
-    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, everySel, upd, live)), custom,
-      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, forecastSlot, inds, info,
+    // במסך מלא: שורה צפה מעל הגרף — תווית הזוג, 🔮 ו-✕ (18.1.2 סעיף 3)
+    const forecastBtnFs = fcBtn();
+    const fsExit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'יציאה ממסך מלא', title: 'יציאה ממסך מלא', on: { click: () => fsLeave() } }, '✕');
+    const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsExit);
+    const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
+    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, everySel, upd, live, fsBtn)), custom,
+      wrap, drawSlot, forecastSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -288,38 +298,88 @@ export function mountMarket(ctx) {
     const base = {
       autoSize: true,
       layout: { background: { color: col('--surface') }, textColor: col('--muted'), fontFamily: 'system-ui, sans-serif', attributionLogo: true },
-      grid: { vertLines: { color: col('--line') }, horzLines: { color: col('--line') } },
-      rightPriceScale: { borderColor: col('--line') },
+      // הצירים — בתוך שטח הגרף (chartaxis.js), בלי עמודת מחירים ובלי פס זמן: הנרות מגיעים עד הקצה (18.1.2 סעיף 4).
+      // גם קווי הרשת — שם, לפי אותם סימונים
+      grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+      rightPriceScale: { visible: false },
+      leftPriceScale: { visible: false },
       // minBarSpacing נמוך — כדי ש"5 שנים" (1,825 נרות) ייכנסו כולם גם ברוחב של טלפון
-      timeScale: { borderColor: col('--line'), timeVisible: TF_SEC[st.tf] < 86400, secondsVisible: false, minBarSpacing: 0.05,
+      timeScale: { visible: false, borderColor: col('--line'), timeVisible: TF_SEC[st.tf] < 86400, secondsVisible: false, minBarSpacing: 0.05, rightOffset: 0,
         // סוג הסימון מהספרייה: 0 שנה · 1 חודש · 2 יום · 3 שעה — כך רואים תאריך במעבר יום, ושעה בתוכו
         tickMarkFormatter: (t, type) => fmtT(t, type === 0 ? { year: 'numeric' } : type === 1 ? { month: 'short' }
           : type === 2 ? { day: 'numeric', month: 'numeric' } : { hour: '2-digit', minute: '2-digit' }) },
       localization: { timeFormatter: t => fmtT(t, { day: 'numeric', month: 'numeric', year: '2-digit', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : {}) }) },
-      crosshair: { mode: 0 },
+      crosshair: { mode: 0, vertLine: { labelVisible: false }, horzLine: { labelVisible: false } },
     };
     const chart = LW.createChart(box, base);
     const up = col('--ok'), down = col('--danger');
     const candle = chart.addCandlestickSeries({ upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false });
     const volume = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    // הנפח — מעל פס דק בתחתית, שבו מספרי ציר הזמן (בתוך הגרף, 18.1.2 סעיף 4)
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0.05 } });
     const lines = {
       sma20: chart.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false, lastValueVisible: false }),
       sma50: chart.addLineSeries({ color: col('--star'), lineWidth: 2, priceLineVisible: false, lastValueVisible: false }),
       ema20: chart.addLineSeries({ color: col('--muted'), lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }),
     };
     const osc = LW.createChart(oscBox, { ...base, timeScale: { ...base.timeScale, visible: false } });
-    const oscSeries = osc.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false });
+    const oscSeries = osc.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    // ציר הזמן: תאריך במעבר יום/חודש/שנה, ושעה בתוך היום; הסמן — תאריך ושעה
+    const fmtTick = (t, kind) => fmtT(t, kind === 'year' ? { year: 'numeric' } : kind === 'month' ? { month: 'short', year: '2-digit' }
+      : kind === 'day' ? { day: 'numeric', month: 'numeric' } : kind === 'time' ? { hour: '2-digit', minute: '2-digit' }
+        : { day: 'numeric', month: 'numeric', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { year: '2-digit' }) });
+    let dec = 2;   // הספרות של הנכס (priceFormat) — לסמן ולציר
+    const axis = mountAxis({ chart, series: candle, col, getDec: () => dec, getTimes: () => data.map(x => x.time), fmtTime: fmtTick });
+    const oscAxis = mountAxis({ chart: osc, series: oscSeries, col, getDec: () => 2, time: false });
+    // לוח התוויות — משותף לשיטות ולשרטוטים, כדי שתוויות לא יחפפו (18.1.2 סעיף 5)
+    const board = labelBoard();
+    box.tsLabels = () => board.rects();   // לבדיקות: המלבנים של התוויות שצוירו בפעם האחרונה
+    box.tsAxis = () => axis.shown();      // לבדיקות: המספרים שעל הצירים
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
-    const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet,
+    const forecast = mountForecast({ chart, series: candle, h, host: wrap, isAdmin: () => !!ME().is_admin, api, toast, col, board,
+      buttons: [forecastBtn, forecastBtnFs],
+      onChange: () => (forecast.methods().length ? load('pick') : schedule()),
+      getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time) });
+    forecastSlot.append(forecast.panel);
+    // השרטוטים — אחרי השיטות: הם מצוירים מעליהן, אבל בחפיפת תוויות התווית של השיטה המובילה גוברת (18.1.2 סעיף 5)
+    const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet, board,
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
     drawSlot.append(draw.bar);
-    const forecast = mountForecast({ chart, series: candle, asset, api, h, sheet, toast, col, button: forecastBtn,
-      onChange: () => (forecast.methods().length ? load('pick') : schedule()),
-      getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
-    forecastSlot.append(forecast.panel);
-    onTeardown(() => { forecast.destroy(); draw.destroy(); chart.remove(); osc.remove(); });
+    onTeardown(() => { fsLeave(true); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
+
+    // ── מסך מלא (18.1.2 סעיף 3): רק הגרף. Fullscreen API כשיש, אחרת שכבה שמכסה את המסך (אותו class).
+    // יציאה: ✕, Esc, או "חזור" — רשומה בהיסטוריה (אותה כתובת, כך שהניתוב לא מתחלף), ו"חזור" רק מוציא ממסך מלא.
+    let fsOn = false;
+    function fsEnter() {
+      if (fsOn) return;
+      fsOn = true;
+      wrap.classList.add('fs');
+      document.body.classList.add('chart-fs');
+      try { history.pushState({ tsFs: true }, ''); } catch { /* ריק */ }
+      // הבקשה אסינכרונית: יצאו לפני שהסתיימה (Esc או "חזור" מהר) — יוצאים גם מה-Fullscreen API
+      if (wrap.requestFullscreen && document.fullscreenEnabled) {
+        wrap.requestFullscreen({ navigationUI: 'hide' }).then(() => { if (!fsOn && document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {}); }, () => {});
+      }
+      fsExit.focus();
+    }
+    /** quiet — בלי לגעת בהיסטוריה (חזור כבר קרה, או שעוזבים את המסך) */
+    function fsLeave(quiet = false) {
+      if (!fsOn) return;
+      fsOn = false;
+      wrap.classList.remove('fs');
+      document.body.classList.remove('chart-fs');
+      if (document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {});
+      if (!quiet && history.state?.tsFs) history.back();
+      if (!quiet) fsBtn.focus();
+    }
+    const fsPop = () => { if (fsOn && !history.state?.tsFs) fsLeave(true); };
+    const fsChange = () => { if (fsOn && document.fullscreenElement !== wrap) fsLeave(); };
+    const fsKey = e => { if (e.key === 'Escape' && fsOn && !forecast.popOpen()) fsLeave(); };
+    window.addEventListener('popstate', fsPop);
+    document.addEventListener('fullscreenchange', fsChange);
+    document.addEventListener('keydown', fsKey);
+    onTeardown(() => { window.removeEventListener('popstate', fsPop); document.removeEventListener('fullscreenchange', fsChange); document.removeEventListener('keydown', fsKey); });
 
     let data = [];
     let ws = null;
@@ -404,7 +464,9 @@ export function mountMarket(ctx) {
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
         data = rows.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
-        candle.applyOptions({ priceFormat: priceFormat(rows) });
+        const pf = priceFormat(rows);
+        dec = pf.precision;
+        candle.applyOptions({ priceFormat: pf });
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
         // רענון אוטומטי ובחירת שיטה — לא מזיזים את התצוגה של המשתמש

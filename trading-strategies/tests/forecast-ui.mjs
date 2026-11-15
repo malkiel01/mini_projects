@@ -61,14 +61,14 @@ try {
   const btn = o.getByRole('button', { name: 'תחזית שיטה' });
   eq(await btn.getAttribute('aria-pressed'), 'false', 'the 🔮 button in the chart header, off');
 
-  // ── בחירת שיטה ──
+  // ── בחירת שיטה: תפריט נפתח מעל הגרף (F1, 18.1.2) ──
   await btn.click();
-  const dlg = o.locator('dialog[open]');
-  await dlg.waitFor();
-  eq((await dlg.locator('h2').textContent()).trim(), '🔮 תחזית שיטה', 'the method picker sheet');
-  eq(/לא ייעוץ, בלי אחוז ודאות/.test(await dlg.textContent()), true, 'the sheet says: not advice, no certainty percentage');
+  const pop = o.locator('.fc-pop');
+  await pop.locator('.fc-opt').first().waitFor();
+  eq([await o.locator('dialog[open]').count(), await btn.getAttribute('aria-expanded')], [0, 'true'], 'the 🔮 menu — a popover, not a sheet');
+  eq(/לא ייעוץ, בלי אחוז ודאות/.test(await pop.textContent()), true, 'the menu says: not advice, no certainty percentage');
   reqs.length = 0;
-  await dlg.getByRole('button', { name: /חציית ממוצעים 20\/50/ }).click();
+  await pop.locator('.fc-opt', { hasText: /חציית ממוצעים 20\/50/ }).locator('input').check();
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 30000 });
   eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'one request (chart_refresh: candles + the method) after the user chose a method');
@@ -78,6 +78,8 @@ try {
   eq(/אינו ייעוץ השקעות/.test(await panel.locator('.disclaimer').textContent()), true, 'the fixed disclaimer');
   eq(/\d\s*%/.test(await panel.textContent()), false, 'no percentage anywhere in the forecast panel (no certainty)');
   eq(await btn.getAttribute('aria-pressed'), 'true', 'the 🔮 button shows the mode is on');
+  await o.locator('.quote-head').click();   // לחיצה מחוץ לתפריט — נסגר
+  eq([await pop.isHidden(), await btn.getAttribute('aria-expanded')], [true, 'false'], 'a click outside the menu closes it');
   const sc = panel.locator('.forecast-scenarios button');
   const nsc = await sc.count();
   eq(nsc >= 1 && await sc.first().getAttribute('aria-pressed') === 'true', true, `scenarios listed (${nsc}), the leading one pressed`);
@@ -109,13 +111,14 @@ try {
   await o.waitForTimeout(300);
   eq(await canvasPrint(o) !== after, true, 'hide → the drawing is removed from the canvas');
 
-  // ── משתמש רגיל: שיטת הדוגמה לא מוצעת לו ──
+  // ── משתמש רגיל: שיטת הדוגמה לא מוצעת לו (גם כשהיא מופעלת), שיטה מהספר — כן ──
   const { p: a } = await open('alice');
   await a.goto(CHART);
   await loaded(a);
   await a.getByRole('button', { name: 'תחזית שיטה' }).click();
-  await a.locator('dialog[open]').waitFor();
-  eq(/אין שיטות זמינות/.test(await a.locator('dialog[open]').textContent()), true, 'a regular user is not offered the sample method');
+  await a.locator('.fc-pop .fc-opt').first().waitFor();
+  const names = await a.locator('.fc-pop .fc-opt').allTextContents();
+  eq([names.some(t => /חציית ממוצעים/.test(t)), names.some(t => /אליוט/.test(t))], [false, true], 'a regular user is not offered the sample method; the book method is (18.1.2)');
   await shot(a, 'forecast-none');
 } catch (e) {
   fail++;
