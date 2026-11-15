@@ -279,7 +279,7 @@ jobs:
           )
           for w in 0 30 90 180; do
             sleep $w
-            $SSH "$DEST" "$REMOTE"; code=$?
+            code=0; $SSH "$DEST" "$REMOTE" || code=$?   # בלי "|| code" ה-bash -e של השלב יוצא בכשל הראשון, ולולאת הנסיונות לא רצה
             if [ $code -eq 3 ]; then echo "::error::mbe-cloud/data קיים בשרת בלי cloud.sqlite — צריך בדיקה ידנית לפני פריסה"; exit 3; fi
             if [ $code -eq 0 ]; then exit 0; fi
             echo "::warning::העברת הנתונים — נסיון נכשל (קוד $code), מנסה שוב"
