@@ -11,7 +11,7 @@
 | `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — דקה 48, לתוך בקרה (12) (`trig_01FnY5VNEHj6GeeD2BEF2jxx`, נוצר בידי מנהל הצוותים (3); הישן `trig_017hPpPF1QCmhxWdMc7bLveY` כבוי) | `session_018g4NYE2VgSchStksNm4cLo` (בקרה 12, Opus; קודם בקרה 11 `session_018g4NYEVkGJmGMdwERWecF2`) |
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
-| `trading-strategies` אסטרטגיות למסחר | בהקמה — נפתח 2026-11-15; מחכה לדרישה של הבעלים, ואחריה אפיון, קוד (סקר) ומטלות; שעון — דקה 28 (`trig_011akd72ySr6xv8Et9sCqVmr`); הצוות הישן (6 צ'אטים) אורכב | `session_018g4NYD5bBLt7vBTVv77Nbn` |
+| `trading-strategies` אסטרטגיות למסחר | פעיל — אפיון 2.11 (אליוט); קוד: S1 זוג בשם; מחיקה 19.1 (#1590) בביקורת; שעון — דקה 28 (`trig_017QYqEf5rV1DHua7TQyyuvw`) | `session_018g4NYCfKgd2Qi5hvnpDFRU` (בקרה 2) |
 
 ## ממתין לבעלים
 
