@@ -9,7 +9,7 @@
     "slice": "4א/5ב כלל E ← S2 מטמון",
     "model": "claude-opus-5-5"
   },
-  "control": "session_018g4NYD5bBLt7vBTVv77Nbn",
+  "control": "session_018g4NYCfKgd2Qi5hvnpDFRU",
   "tasks": null,
   "clock": "trig_011akd72ySr6xv8Et9sCqVmr (כל שעה בדקה 28, נוצר בידי מנהל הצוותים)",
   "code_previous": [
@@ -18,5 +18,16 @@
       "done": "4א/4 אומת, #1581 שם, #1580 4א/5",
       "model": "claude-haiku-5-5 (טעות פתיחה) — רדום"
     }
-  ]
+  ],
+  "control_previous": [
+    {
+      "session": "session_018g4NYD5bBLt7vBTVv77Nbn",
+      "done": "עד #1589, מסירה ב-STATE"
+    }
+  ],
+  "code_delete": {
+    "session": "session_018g4NYCQjLZtvssney3gT8G",
+    "slice": "מחיקה לפי פרק 19.1",
+    "model": "claude-opus-5-5"
+  }
 }
