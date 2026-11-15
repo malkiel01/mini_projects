@@ -2,7 +2,9 @@
  * R5 — איפוס נקודות השחזור ונקודת "מקור" (הבעלים, 15.11). Chromium, Playwright, ב-1280 וב-390:
  *   node kol-maroko/tests/browser/r5.cjs
  * בעל האתר רואה "🧹 איפוס"; בעלת העמוד — לא. נקודה בלי קובצי העמוד מסומנת ⚠️ ברשימה, בגיליון ובאישור השחזור.
- * האיפוס: הטקסט עם N, הכפתור נעול עד שמקלידים "איפוס", ואחריו — נקודה אחת "📌 מקור" בראש; שחזור אליה מחזיר מילה.
+ * האיפוס: הטקסט עם N, ואחריו — נקודה אחת "📌 מקור" בראש; שחזור אליה מחזיר מילה.
+ * R6 ("לחצתי ולא קרה כלום"): הכפתור תמיד לחיץ ולחיצה בלי אישור אומרת מה חסר; RLM/ניקוד/רווח קשיח מנורמלים; Enter = לחיצה;
+ * 423 מהשרת — גלוי בחלון; ההצלחה — "נמחקו N · נקודת מקור #X" בחלון; כל לחיצה ותוצאה — ביומן המפתח (KolUi).
  */
 'use strict';
 const { chromium } = require('playwright');
@@ -48,6 +50,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       page.on('pageerror', e => errors.push(e.message));
       page.dialogs = [];
       page.on('dialog', d => { page.dialogs.push(d.message()); d.accept(); });
+      page.uiLog = [];                                                      // R6: KolUi → dev-client-error (kind: ui)
+      page.on('request', r => { if (r.url().includes('action=dev-client-error')) { try { const b = JSON.parse(r.postData()); if (b.kind === 'ui') page.uiLog.push(b); } catch {} } });
       return page;
     };
     const call = (page, a, b) => page.evaluate(([a, b]) => api(a, b).catch(e => ({ error: e.message })), [a, b]);
@@ -99,13 +103,48 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await page.waitForSelector('#sheet[open] [data-snap-reset-text]');
       ok((await page.locator('[data-snap-reset-text]').innerText()).includes(`כל ${total} הנקודות יימחקו`), tag + 'הטקסט: "כל N הנקודות יימחקו…"');
       ok(await page.locator('#sheet a[href="api.php?action=backup"]').count() === 1, tag + 'קישור "💾 הורד גיבוי קודם"');
-      ok(await page.locator('[data-snap-reset-go]').isDisabled(), tag + 'הכפתור נעול לפני ההקלדה');
-      await page.fill('[data-snap-reset-type]', 'אולי');
-      ok(await page.locator('[data-snap-reset-go]').isDisabled(), tag + 'נעול גם בטקסט אחר');
-      await page.fill('[data-snap-reset-type]', 'איפוס');
+      // R6: הכפתור תמיד לחיץ; בלי אישור — שורה אדומה בתוך החלון, ושום בקשה לא יוצאת
+      const go = page.locator('[data-snap-reset-go]'), st = page.locator('[data-snap-reset-status]'), field = page.locator('[data-snap-reset-type]');
+      const resets = [];
+      const onReq = r => { if (r.url().includes('action=snapshots_reset')) resets.push(r.url()); };
+      page.on('request', onReq);
+      ok(!(await go.isDisabled()), tag + 'R6: הכפתור לחיץ גם לפני ההקלדה');
+      ok(await field.getAttribute('placeholder') === null, tag + 'R6: אין placeholder שנראה כמו ערך');
+      await go.click();
+      ok(await st.getAttribute('data-snap-reset-status') === 'need' && (await st.innerText()).includes('כתבו בשדה את המילה: איפוס')
+        && await st.locator('.error').count() === 1 && await page.locator('#sheet[open]').count() === 1, tag + 'R6: לחיצה בלי הקלדה — שורה אדומה "מה חסר", החלון פתוח', await st.innerText());
+      await field.fill('אולי');
+      await go.click();
+      ok((await st.innerText()).includes('כתבתם "אולי"'), tag + 'R6: טקסט אחר — אומר מה הוקלד ומה צריך', await st.innerText());
+      ok(resets.length === 0, tag + 'R6: בלי אישור לא נשלחה בקשה לשרת', resets);
+      await page.screenshot({ path: path.join(SHOTS, `r6-need-${width}.png`) });
+
+      // R6: שגיאה מהשרת (423) — גלויה בתוך החלון, עם הקוד והסיבה
+      await page.route('**/api.php?action=snapshots_reset*', r => r.fulfill({ status: 423, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'הטיוטה בעריכה אצל מישהו אחר' }) }), { times: 1 });
+      await field.fill('איפוס');
+      await go.click();
+      await page.waitForFunction(() => document.querySelector('[data-snap-reset-status]').dataset.snapResetStatus === 'error');
+      ok((await st.innerText()).includes('423') && (await st.innerText()).includes('בעריכה אצל'), tag + 'R6: 423 — "האיפוס לא בוצע" עם הקוד והסיבה, בתוך החלון', await st.innerText());
+      ok(!(await go.isDisabled()), tag + 'R6: אחרי שגיאה — אפשר לנסות שוב');
+
+      // R6: תווים בלתי נראים מהמקלדת (RLM/LRM, ניקוד, רווח קשיח) — עדיין "איפוס". ב-390: Enter במקלדת במקום לחיצה
+      await field.fill(width === 390 ? '‎אִיפוּס ' : '‏איפוס ‏');
       await page.screenshot({ path: path.join(SHOTS, `r5-reset-${width}.png`) });
-      await page.click('[data-snap-reset-go]');
-      await page.waitForFunction(() => document.querySelectorAll('[data-snap]').length === 1 && !document.querySelector('#sheet[open]'));
+      if (width === 390) await field.press('Enter'); else await go.click();
+      await page.waitForFunction(() => document.querySelector('[data-snap-reset-status]')?.dataset.snapResetStatus === 'ok' && document.querySelectorAll('[data-snap]').length === 1, null, { timeout: 15000 }).catch(async e => { console.log('   בחלון: ' + await st.innerText()); throw e; });
+      const okText = await st.innerText();
+      ok(new RegExp(`נמחקו ${total} נקודות · נקודת מקור #\\d+`).test(okText) && await page.locator('#sheet[open]').count() === 1,
+        tag + `R6: ${width === 390 ? 'Enter' : 'לחיצה'} עם תווים נסתרים — "נמחקו N · נקודת מקור #X" בתוך החלון`, okText);
+      ok(await page.evaluate(() => { const s = document.querySelector('#sheet'); return s.scrollWidth <= s.clientWidth + 1; }), tag + 'R6: החלון לא גולש לרוחב');
+      await page.screenshot({ path: path.join(SHOTS, `r6-ok-${width}.png`) });
+      await go.click();                                                     // "✓ סגירה"
+      await page.waitForFunction(() => !document.querySelector('#sheet[open]'));
+      page.off('request', onReq);
+      ok(resets.length === 2, tag + 'R6: בדיוק שתי בקשות (423 ואז ההצלחה)', resets);
+      await sleep(300);
+      const logged = page.uiLog.map(x => x.action);
+      ok(['snapshots_reset.open', 'snapshots_reset.blocked', 'snapshots_reset.error', 'snapshots_reset.click', 'snapshots_reset.ok'].every(a => logged.includes(a))
+        && page.uiLog.find(x => x.action === 'snapshots_reset.error').status === 423, tag + 'R6: יומן המפתח — פתיחה, חסימה, שגיאה (423), לחיצה והצלחה', page.uiLog);
       const first = page.locator('[data-snap]').first();
       ok((await first.innerText()).includes('📌 מקור') && await first.evaluate(e => e.classList.contains('snap-origin')), tag + 'אחרי: נקודה אחת "📌 מקור"', await first.innerText());
       const d = await page.evaluate(() => api('snapshots'));

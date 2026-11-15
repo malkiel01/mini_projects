@@ -53,7 +53,7 @@ const Dev = (() => {
   function report(x) {
     const sig = [x.kind, String(x.message).replace(/\d+/g, '#'), x.source || '', x.line || ''].join('|');
     const prev = sent.get(sig), now = Date.now();
-    if (prev && now - prev.at < 60000) { prev.pending++; return; }      // נספרת — תישלח עם הבאה
+    if (x.kind !== 'ui' && prev && now - prev.at < 60000) { prev.pending++; return; }      // נספרת — תישלח עם הבאה (ui — כל לחיצה נרשמת)
     const times = prev ? prev.pending + 1 : 1;
     sent.set(sig, { at: now, pending: 0 });
     const body = { ...x, message: String(x.message).slice(0, 1000), stack: x.stack ? String(x.stack).slice(0, 3000) : '',
@@ -71,6 +71,9 @@ const Dev = (() => {
     const { type, at, ...rest } = rec || {};
     report({ kind: 'audio', message: `${type || 'log'}: ${JSON.stringify(rest).slice(0, 600)}`, action: 'library' });
   };
+
+  // R6: פעולה במסך (לחיצה ותוצאתה) — ליומן המפתח, כדי לראות בדיעבד מה קרה אצל המשתמש. status: קוד שגיאה (0 — אין חיבור)
+  window.KolUi = (action, message, status) => report({ kind: 'ui', action: String(action).slice(0, 60), message, ...(status === undefined ? {} : { status }) });
 
   // ── החיבור ────────────────────────────────────────────────
   const devApi = (action, { body, params } = {}) => api(action, body, params ? '&' + new URLSearchParams(params) : '');

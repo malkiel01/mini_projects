@@ -124,6 +124,18 @@ function snapshots_list(array $q): array
 }
 
 /**
+ * R6: עסקה שקוראת ואחר כך כותבת. ב-DEFERRED (beginTransaction) הכתיבה הראשונה אחרי קריאה נכשלת מיד ב-"database is locked"
+ * (SQLITE_BUSY_SNAPSHOT, בלי busy_timeout) אם בקשה אחרת כתבה בינתיים — כך נפל האיפוס כשהיומן (KolUi) נכתב במקביל.
+ * כתיבה ריקה לפני כל קריאה לוקחת את נעילת הכתיבה וממתינה לפי busy_timeout. לא BEGIN IMMEDIATE ב-exec: אז inTransaction()
+ * מחזיר false, ו-pf_tx שבתוך השחזור היה פותח עסקה שנייה.
+ */
+function snap_tx_begin(PDO $pdo): void
+{
+    $pdo->beginTransaction();
+    $pdo->exec('UPDATE draft SET rev = rev WHERE id = 1');
+}
+
+/**
  * R5 — איפוס (הבעלים, 15.11: "נאפס את נקודות השחזור, וניצור נקודת שחזור למקור, ומכאן נתחיל דף חדש").
  * רק בעל האתר, רק עם confirm: true. בעסקה אחת: נקודת "מקור" של המצב הנוכחי, מחיקת כל שאר הנקודות (גם "מקור" קודם),
  * ומחיקת התוכן (blobs) שאף נקודה שנשארה לא מפנה אליו. קובצי הפרויקט עצמם (pf, על הדיסק) — לא נוגעים בהם.
@@ -135,14 +147,15 @@ function snapshots_reset(array $user, array $b): array
     $l = lock_state();
     if ($l && $l['sub'] !== $user['sub']) throw new ApiError("הטיוטה בעריכה אצל {$l['name']}. אחרי שיסיים — שוב", 423);
     $pdo = db();
-    $pdo->beginTransaction();
+    snap_tx_begin($pdo);
     try {
         $before = (int)$pdo->query('SELECT COUNT(*) FROM snapshots')->fetchColumn();
         $id = snapshot_create($user, 'מקור', SNAP_ORIGIN, true);
         $pdo->prepare('DELETE FROM snapshots WHERE id <> ?')->execute([$id]);
-        $keep = array_values(json_decode((string)snapshot_row($id)['parts'], true) ?: []);
-        $del = $pdo->prepare('DELETE FROM blobs WHERE sha NOT IN (' . implode(',', array_fill(0, count($keep), '?')) . ')');
-        $del->execute($keep);
+        // R6: משתנה אחד (json_each) — בלי "?" לכל גוש, כך שאין תקרה של מספר משתנים ב-SQLite (999 / 32766)
+        $keep = array_values(array_filter(json_decode((string)snapshot_row($id)['parts'], true) ?: [], 'is_string'));
+        $del = $pdo->prepare('DELETE FROM blobs WHERE sha NOT IN (SELECT value FROM json_each(?))');
+        $del->execute([json_encode($keep)]);
         $blobs = $del->rowCount();
         $pdo->commit();
     } catch (Throwable $e) {
@@ -199,7 +212,7 @@ function snapshot_apply(array $user, array $parts, string $note): array
         }
     };
     $missing = [];
-    $pdo->beginTransaction();
+    snap_tx_begin($pdo);
     try {
         $d = draft_row();
         $json = blob_get($parts['draft']);
