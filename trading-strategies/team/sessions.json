@@ -5,8 +5,8 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYG7sBtHJh6uW5fLyxh",
-    "slice": "S3 רענון (18.3)",
+    "session": "session_018g4NYCMUPJKcJaE5QK2TYs",
+    "slice": "F1 שיטות על הגרף (18.1.2) — תפריט עם סימון מרובה",
     "model": "claude-opus-5-5"
   },
   "control": "session_018g4NYCfKgd2Qi5hvnpDFRU",
@@ -21,6 +21,11 @@
     {
       "session": "session_018g4NYGrqqR7BTByrKbVovy",
       "done": "#1591, #1592, #1595 S1; handoff #1596",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYG7sBtHJh6uW5fLyxh",
+      "done": "#1598 S3, #1599 S1.1",
       "model": "claude-opus-5-5 — רדום"
     }
   ],
