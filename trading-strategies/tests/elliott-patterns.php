@@ -42,6 +42,16 @@ eq(ts_ew_triangle_kind([100, 110, 102, 109, 103.5, 107]), 'contracting', 'triang
 eq(ts_ew_triangle_kind([100, 110, 102, 112, 100.5, 115]), 'expanding', 'triangle expanding (p.49)');
 // C מעל סוף A, D מעל סוף B — לא משולש
 eq(ts_ew_triangle_kind([100, 110, 102, 112, 103, 115]), null, 'triangle: mixed converge/diverge is not classified');
+// ── סוף E: נסיגה נטו של הגל הקודם (עמ' 49, מצילום הבעלים; 17.1.2, 2.9) ──
+// הדוגמה של האפיון: גל 3 עולה נגמר ב-100, משולש בגל 4 (A יורד). מתפשט, E מסתיים ב-99 < 100 — משולש
+eq(ts_ew_triangle_kind([100, 90, 98, 88, 99.5, 99]), 'expanding', 'triangle end of E: E ends below the end of wave 3 (net retracement, p.49)');
+// אותו מתפשט, אבל E מסתיים ב-101 — מעל סוף גל 3: אין נסיגה נטו, לא משולש
+eq(ts_ew_triangle_kind([100, 90, 98, 88, 101.5, 101]), null, 'triangle end of E: E ends above the end of wave 3 — not a triangle (p.49)');
+// E מסתיים בדיוק בתחילת המשולש — אין נסיגה נטו
+eq(ts_ew_triangle_kind([100, 90, 98, 88, 100.5, 100]), null, 'triangle end of E: E exactly at the start — no net retracement');
+// running (B חורג מתחילת A, 97 < 100), מתכנס, A עולה — E חייב להסתיים מעל 100
+eq(ts_ew_triangle_kind([100, 110, 97, 108, 99, 101]), 'contracting', 'running contracting triangle: E ends beyond the start (p.49)');
+eq(ts_ew_triangle_kind([100, 110, 97, 108, 98, 99.5]), null, 'running contracting triangle: E back short of the start — not a triangle (p.49)');
 // מספר לא נכון של נקודות
 eq(ts_ew_triangle_kind([100, 110, 102, 109, 103.5]), null, 'triangle needs 6 pivots');
 
