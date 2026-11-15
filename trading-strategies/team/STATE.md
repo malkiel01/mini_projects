@@ -1,14 +1,14 @@
 # מצב — הזיכרון הנייד של הבקרה
 
-**עודכן:** 2026-11-15 ~21:20 UTC, בידי בקרה (1) `session_018g4NYD5bBLt7vBTVv77Nbn` — מעבר לבקרה (2) בגלל גודל הקשר (515K).
+**עודכן:** 2026-11-15 ~21:35 UTC, בידי בקרה (2) `session_018g4NYCfKgd2Qi5hvnpDFRU` (הקודמת: `session_018g4NYD5bBLt7vBTVv77Nbn`, ארכיון). שעון: `trig_017QYqEf5rV1DHua7TQyyuvw`.
 
 ## איפה עומדים
 
 - **הדרישה:** `docs/owner-brief.md` 1–2ו — מעודכנת ומוזגת. השיטה הראשונה: **"אליוט"**. הספר (Frost & Prechter) — רק מקור לאפיון; לא בריפו.
   מבנה גרפי נבדק מול צילום מהבעלים, לא מול OCR (2ה.1). ה-PDF בדרייב לא קריא לכלים — מבקשים צילום עמוד.
-- **אפיון:** `spec-stage-a.md` גרסה 2.11 ב-main. פרק 17.1.2 (אליוט מול הספר), פרק 18 (S1–S7), פרק 19 (מה נשאר ומה נמחק). הכרעות ✅22–✅28.
+- **אפיון:** `spec-stage-a.md` גרסה 2.12 ב-main (#1593: 19.1/19.3 מיושרים עם המחיקה). פרק 17.1.2 (אליוט מול הספר), פרק 18 (S1–S7), פרק 19 (מה נשאר ומה נמחק). הכרעות ✅22–✅28.
 - **הלוח:** `team/board.md` (עדכני ל-#1589).
-- **פריסות:** כל הפריסות עד #1589 — `success` (run 1667). 1666 (#1588) — cancelled כי 1667 עקף אותה; תקין.
+- **מוזגו בבקרה (2):** #1591 (forecast-ui 422) — run 1668 `success`; #1592 (barrier) — run 1669 `success`; #1590 (מחיקה 19.1), #1593 (אפיון 2.12) — ראו יומן הבקרה.
 - **תיקון בפריסה (#1583):** בשלב העברת נתוני ענן MBE ב-`deploy.yml`, `$SSH …; code=$?` תחת `bash -e` לא ניסה שוב. תוקן ל-`code=0; $SSH … || code=$?`. הבעלים ביקש את זה במפורש.
 
 ## הצוות (`team/sessions.json`)
@@ -16,8 +16,8 @@
 | תפקיד | session | מה עושה עכשיו |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.11. מעירים כשצריך עדכון אפיון |
-| קוד (S) | `session_018g4NYGrqqR7BTByrKbVovy` (Opus) | בתור: (1) תיקון `tests/forecast-ui.mjs` — 422 ב-`method_overlay`, גם על main; (2) barrier triangle + תיקון הערה שורה 66 ב-`lib/elliott-patterns.php` (running triangle **כן** מזוהה); (3) S1 זוג בשם |
-| קוד-מחיקה | `session_018g4NYCQjLZtvssney3gT8G` (Opus) | PR מחיקה לפי פרק 19.1: קובצי שיטות, שמור לענן, העותק בגרף, הרץ על העותק, `personal_copy`, מסך ☁️, `drives_*` ב-api.php, `public` ב-app.json, `no-polling.mjs`. **`lib/drives` ו-`assets/js/drives` נשארים** (שער `sync.php --check`). בלי מחיקת נתונים בשרת |
+| קוד (S) | `session_018g4NYGrqqR7BTByrKbVovy` (Opus) | S1 זוג בשם. לצרף: 🟡 `app.js:119` `'method-files'` (ביקורת remove-cloud) |
+| קוד-מחיקה | `session_018g4NYCQjLZtvssney3gT8G` (Opus) | **סיים — #1590 מוזג, רדום.** היה: מחיקה לפי פרק 19.1: קובצי שיטות, שמור לענן, העותק בגרף, הרץ על העותק, `personal_copy`, מסך ☁️, `drives_*` ב-api.php, `public` ב-app.json, `no-polling.mjs`. **`lib/drives` ו-`assets/js/drives` נשארים** (שער `sync.php --check`). בלי מחיקת נתונים בשרת |
 | קוד ישן | `session_018g4NYDzGyUVdfFLtGcVpLr` (Haiku, טעות פתיחה) | רדום. לא מעירים |
 | מטלות | — | עוד לא נפתח |
 
@@ -29,7 +29,8 @@
 
 ## הצעד הבא
 
-1. לבדוק את ה-PR-ים שיגיעו (מחיקה; forecast-ui; barrier) — ביקורת, מיזוג, `conclusion: success`.
+1. S1 מהקוד — ביקורת, מיזוג, `conclusion: success`. לאפיון בעדכון הבא: 🟡 שורות 406, 515 עדיין מתארות `drives_key` ב-`public`.
+   הערה פתוחה מהקוד: `market_candles` ב-`api.php` לא מעביר `ts_now()` (רק בפיתוח) — לצרף לפרוסה מתאימה.
 2. אחרי המחיקה: פרוסות app-rules מהסקר (`dev/audit.md`) — A1 DevLoop, A2 התחברות עם ניתוק, A3 בדיקות בשער הפריסה. DevLoop ו-`deploy.yml` — של הבקרה (PROTOCOL 8).
 3. אחרי S1: S3 רענון ← S4 ← S5 ← S6 ← S7 (18.8).
 4. צ'אט מטלות — לפתוח כשיש מטלה ראשונה לבעלים (למשל ניקוי בשרת).
