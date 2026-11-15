@@ -56,7 +56,8 @@ $f = ts_pairs_for(1, $noKey);
 eq([$f['default'], $f['bases'][0]['code'], $f['bases'][0]['name']], ['BTC', 'BTC', 'ביטקוין'], 'Bitcoin is first and the default (18.1)');
 $btc = $f['bases'][0];
 eq(array_map(fn($q) => [$q['name'], $q['label'], $q['asset']], $btc['quotes']),
-    [['דולר', 'ביטקוין מול דולר', 'binance:BTCUSDC'], ['טתר', 'ביטקוין מול טתר', 'binance:BTCUSDT']], 'Bitcoin: vs dollar and vs tether, from Binance');
+    [['דולר', 'BTC ⇄ USD', 'binance:BTCUSDC'], ['טתר', 'BTC ⇄ USDT', 'binance:BTCUSDT']], 'Bitcoin: vs dollar and vs tether, from Binance — USDC shows as USD (the catalog side, 18.1.1)');
+eq([$btc['quotes'][0]['base'], $btc['quotes'][0]['quote']], [['code' => 'BTC', 'name' => 'ביטקוין'], ['code' => 'USD', 'name' => 'דולר']], '18.1.1: each side as {code, name}');
 $usd = array_values(array_filter($f['bases'], fn($b) => $b['code'] === 'USD'))[0];
 eq(in_array('שקל', array_column($usd['quotes'], 'name'), true), true, 'dollar: shekel is in "vs what"');
 eq(in_array('ביטקוין', array_column($usd['quotes'], 'name'), true), false, '"vs what" lists only pairs that exist ("dollar vs bitcoin" is not one)');
@@ -69,7 +70,7 @@ eq(array_sum(array_map(fn($b) => count($b['quotes']), $none['bases'])), 0, 'no p
 // ── קריטריון 3: זוג בלי ספק — הודעה, לא שגיאה, ולא נשלחת בקשה לספק ──
 $before = calls();
 $p = ts_pair_parse('ביטקוין מול ין');
-eq([$p['pair'], $p['known'], $p['label']], ['BTC/JPY', false, 'ביטקוין מול ין יפני'], 'criterion 3: "Bitcoin vs Yen" is recognized, and there is no such pair');
+eq([$p['pair'], $p['known'], $p['label'], $p['name']], ['BTC/JPY', false, 'BTC ⇄ JPY', 'ביטקוין ⇄ ין יפני'], 'criterion 3: "Bitcoin vs Yen" is recognized, and there is no such pair');
 eq(ts_pair_asset(1, 'BTC/JPY'), null, 'criterion 3: no asset for it');
 eq(calls() - $before, 0, 'criterion 3: no request to any provider');
 eq(ts_pair_parse('bitcoin vs dollar')['pair'], 'BTC/USD', 'search in English');
@@ -96,23 +97,30 @@ eq([$hl['h'], $hl['l']], ['1', '0.25'], 'computed: high = 1/low, low = 1/high');
 
 // ── קריטריון 1: תווית בלי סימול ──
 $lb = ts_pair_label('binance:BTCUSDT');
-eq($lb['label'], 'ביטקוין מול טתר', 'label from the catalog');
+eq([$lb['label'], $lb['name'], $lb['base']['code'], $lb['quote']['code']], ['BTC ⇄ USDT', 'ביטקוין ⇄ טתר', 'BTC', 'USDT'], 'label from the catalog: codes separated, Hebrew names below (18.1.1)');
 eq(str_contains(ts_pair_label('ecb:USDILS')['label'], 'USDILS'), false, 'criterion 1: the label has no symbol');
 // מניה מהחיפוש — שם החברה מול המטבע
 ts_cred_save(1, 'twelvedata', 'good-alice-0001', 'א');
 ts_market_search(1, 'AAPL');
-eq(ts_pair_label('twelvedata:AAPL')['label'], 'Apple Inc מול דולר', 'a stock from the search: company name vs currency');
+$al = ts_pair_label('twelvedata:AAPL');
+eq([$al['label'], $al['name']], ['AAPL ⇄ USD', 'Apple Inc ⇄ דולר'], 'a stock from the search: AAPL ⇄ USD, and company name ⇄ currency (18.1.1)');
 $r = ts_market_search(1, 'AAPL')['results'][0];
-eq([$r['label'], $r['computed']], ['Apple Inc מול דולר', false], 'search results carry the label');
+eq([$r['label'], $r['base']['code'], $r['computed']], ['AAPL ⇄ USD', 'AAPL', false], 'search results carry the label');
 $c = ts_market_candles(1, 'binance:BTCUSDT', 'h1', time() - 3 * 3600, time());
-eq($c['label'], 'ביטקוין מול טתר', 'market_candles carries the label (chart header)');
+eq([$c['label'], $c['base']['code'], $c['quote']['code']], ['BTC ⇄ USDT', 'BTC', 'USDT'], 'market_candles carries the label (chart header)');
 ts_watchlist_add(1, 'binance:BTCUSDT');
-eq(ts_watchlist(1)[0]['label'], 'ביטקוין מול טתר', 'the watchlist carries the label');
+eq(ts_watchlist(1)[0]['label'], 'BTC ⇄ USDT', 'the watchlist carries the label');
 eq(ts_asset_market('twelvedata:BTC/USD'), 'crypto', 'a catalog pair without search details: market from the first side');
+
+// ── 18.1.1 קריטריון 2: המילה "מול" לא בשום תווית ──
+$all = [];
+foreach (ts_pairs_admin() as $x) $all[] = $x['label'] . ' ' . $x['name'];
+foreach (['binance:BTCUSDT', 'ecb:USDILS', 'ecb:1/USDILS', 'twelvedata:AAPL'] as $x) { $l = ts_pair_label($x); $all[] = $l['label'] . ' ' . $l['name']; }
+eq(array_values(array_filter($all, fn($t) => str_contains($t, 'מול'))), [], '18.1.1 criterion 2: no pair label (main or Hebrew line) contains the word "מול"');
 
 // ── קריטריון 4: הסימול נגיש למנהל (מסך המפתח) ──
 $adm = array_values(array_filter(ts_pairs_admin(), fn($x) => $x['pair'] === 'BTC/USDT'))[0];
-eq([$adm['label'], $adm['assets']], ['ביטקוין מול טתר', ['binance:BTCUSDT']], 'criterion 4: the admin catalog shows the symbols');
+eq([$adm['label'], $adm['assets']], ['BTC ⇄ USDT', ['binance:BTCUSDT']], 'criterion 4: the admin catalog shows the symbols');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

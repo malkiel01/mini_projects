@@ -24,6 +24,50 @@ function h(tag, props = {}, ...kids) {
   return el;
 }
 const sep = () => h('i', { class: 'sep', 'aria-hidden': 'true' }, '·');
+
+// ── זוג (18.1.1, S1.1): שני הקודים מופרדים באייקון "מול", ומתחת השמות בעברית — לעולם לא המילה "מול" ──
+const SVG_NS = 'http://www.w3.org/2000/svg';
+/** האייקון — assets/icon-vs.svg, בצבע הטקסט. labelled: "מול" לקורא מסך בלבד; אחרת מוסתר (כפילות בשורה המשנית) */
+function vsIcon(labelled = true) {
+  const s = document.createElementNS(SVG_NS, 'svg');
+  s.setAttribute('class', 'vs');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('focusable', 'false');
+  if (labelled) { s.setAttribute('role', 'img'); s.setAttribute('aria-label', 'מול'); } else s.setAttribute('aria-hidden', 'true');
+  const u = document.createElementNS(SVG_NS, 'use');
+  u.setAttribute('href', 'assets/icon-vs.svg#vs');
+  s.append(u);
+  return s;
+}
+/** טקסט מהשרת ("BTC ⇄ USDT חצה את 65000") — התו ⇄ הופך לאייקון */
+const withVs = text => String(text ?? '').split('⇄').flatMap((t, i) => (i ? [vsIcon(), t] : [t]));
+/** השורה הראשית: BTC ⇄ USDT — משמאל לימין, הבסיס ראשון, גם בממשק עברי (18.1.1 קריטריון 4) */
+function pairMain(p) {
+  if (!p?.base || !p?.quote) return h('span', { class: 'pair-main' }, withVs(p?.label || 'נכס'));
+  return h('span', { class: 'pair-main', dir: 'ltr' }, h('b', {}, p.base.code), ' ', vsIcon(), ' ', h('b', {}, p.quote.code));
+}
+/** השורה המשנית: ביטקוין ⇄ טתר — קטנה, בצבע משני */
+function pairSub(p) {
+  if (!p?.base || !p?.quote || (!p.base.name && !p.quote.name)) return null;
+  return h('small', { class: 'pair-sub' }, p.base.name, ' ', vsIcon(false), ' ', p.quote.name);
+}
+/** התווית המלאה של זוג. sub: false — במקום צר, השורה הראשית בלבד */
+const pairLabel = (p, { sub = true } = {}) => h('span', { class: 'pair' }, pairMain(p), sub ? pairSub(p) : null);
+/**
+ * בחירת נכס (ניתוח, התראה): כפתורי בחירה עם תווית הזוג — לא <select>, שאין בו מקום לאייקון (18.1.1).
+ * .value — הנכס שנבחר; אירוע change עולה מהכפתור לקבוצה, כמו ב-select.
+ */
+function assetPicker(assets, labels, value, provName = () => '') {
+  const box = h('div', { class: 'chips asset-pick', role: 'radiogroup', 'aria-label': 'נכס' }, assets.map(a => {
+    const inp = h('input', { type: 'radio', name: 'asset', value: a });
+    inp.checked = a === value;
+    const sub = pairSub(labels[a]), pn = provName(a);
+    return h('label', {}, inp, h('span', { class: 'pair' }, pairMain(labels[a]),
+      h('small', { class: 'pair-sub' }, sub ? [...sub.childNodes] : [], sub && pn ? ' · ' : '', pn)));
+  }));
+  Object.defineProperty(box, 'value', { get: () => box.querySelector('input:checked')?.value ?? value });
+  return box;
+}
 const num = (v, cls = '') => h('span', { class: 'num ' + cls }, v);
 
 function toast(msg, err = false) {
@@ -95,9 +139,11 @@ const marketName = m => ME.lists.markets[m]?.name || m;
 const MARKET_SHORT = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות' };
 
 // ── שלד: ניווט, כותרת ───────────────────────────────────
-function setHead(title, sub = '', { back = false, actions = [] } = {}) {
-  $('#title').textContent = title;
-  $('#subtitle').textContent = sub;
+/** title/sub — טקסט, או אלמנט (תווית זוג); docTitle — הכותרת של הלשונית, כשה-title אלמנט */
+function setHead(title, sub = '', { back = false, actions = [], docTitle = null } = {}) {
+  $('#title').replaceChildren(title instanceof Node ? title : String(title));
+  $('#subtitle').replaceChildren(...[sub].flat().filter(x => x != null && x !== false));
+  if (title instanceof Node) title = docTitle || title.textContent;
   $('#back').hidden = !back;
   $('#head-actions').replaceChildren(...actions);
   document.title = title === 'אסטרטגיות למסחר' ? title : `${title} · אסטרטגיות למסחר`;
@@ -1075,7 +1121,7 @@ function editInstrument(i) {
     render(h('p', { class: 'error', role: 'alert' }, e.message));
     return;
   }
-  const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME,
+  const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub, withVs, assetPicker, me: () => ME,
     setMe: v => { ME = v; }, reload: () => route(),
     openTrade: pre => editTrade(null, pre) };
   N = mountAlerts(ctx);

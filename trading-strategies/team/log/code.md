@@ -38,3 +38,8 @@
 - **בדיקות:** `tests/refresh-api.php` (25) ו-`tests/refresh-ui.mjs` (38, שעון מזויף) — כל 6 הקריטריונים. עודכנו: `forecast-ui.mjs` ו-`elliott-chart-ui.mjs` (סופרות `chart_refresh`); ב-`builder-ui`, `elliott-card-ui` ו-`elliott-chart-ui` נוסף שעון קבוע לדפדפן, כי הגרף מבקש עכשיו לפי `X-Dev-Now`.
 - **לא נבנה:** בחירה של כמה שיטות בגרף — S5. הבדיקה בדפדפן עם שיטה אחת; השרת נבדק עם שתיים. מסך "🧭 ניתוח" לא מתרענן לבד — נשאלה האפיון.
 - ענף `claude/trading-strategies-s3-refresh`.
+## 2026-11-15 — S1.1 (18.1.1): תווית זוג עם אייקון "מול"
+- **שרת:** כל תווית יוצאת עם `base` ו-`quote` ({code, name}), `label` = "BTC ⇄ USDT" ו-`name` = "ביטקוין ⇄ טתר" (טקסט רגיל). USDC של Binance מוצג `USD` (הצד מהקטלוג). מניה: `AAPL ⇄ USD`, ומתחת שם החברה ⇄ המטבע. בפוש ובתיבה — `BTC ⇄ USDT` במקום הסימול המחובר.
+- **דפדפן:** `assets/icon-vs.svg` (⇄, `currentColor`); `pairLabel`/`pairMain`/`pairSub`/`withVs`/`assetPicker` ב-`app.js`. בכל מקום: בחירת הצדדים (קוד ומתחתיו שם), "BTC ⇄ ?", שורות הזוגות, המעקב, כותרת הגרף (השמות בעברית בשורת המשנה), חיפוש בלי ספק, בחירת נכס בניתוח ובהתראה (כפתורים במקום `<select>`), רשימת ההתראות והתיבה.
+- **בדיקות:** `tests/pairs-ui.mjs` (42): בכל מסך — אין "מול" בתוויות, SVG אחד בין הקודים, LTR והבסיס ראשון, אין סימול מחובר; ניגוד האייקון ≥ 3:1 בבהיר ובכהה. `tests/pairs.php` ו-`tests/alerts-api.php` עודכנו לצורה החדשה.
+- ענף `claude/trading-strategies-s1-1-pair-icon`. בתחילתו — עדכון `team/handoff/code.md` אחרי S3.

@@ -395,3 +395,18 @@ a.use-row { text-decoration: none; color: inherit; }
 .builder-out .ok { color: var(--ok); }
 .toolbar.wrap { flex-wrap: wrap; }
 .toolbar input[dir="ltr"] { min-width: 0; flex: 1 1 140px; }
+
+/* ── זוג (18.1.1, S1.1): BTC ⇄ USDT, ומתחת השמות בעברית ── */
+.pair { display: inline-flex; flex-direction: column; min-width: 0; gap: 1px; }
+.pair-main { display: inline-flex; align-items: center; gap: .3em; unicode-bidi: isolate; white-space: nowrap; }
+.pair-main b { font-weight: 700; letter-spacing: .02em; }
+.pair-sub { display: inline-flex; align-items: center; gap: .3em; font-size: .8em; color: var(--muted); font-weight: 400; }
+svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-align: -.125em; }
+.pair-sub svg.vs { width: .9em; height: .9em; }
+#subtitle .pair-sub { font-size: 1em; }
+/* צד או נכס בתוך chip: ה-chip הוא ה-.pair עצמו (שתי שורות); מה שבתוכו — לא עוד chip */
+.chips label > .pair { flex-direction: column; align-items: center; justify-content: center; gap: 0; border-radius: 14px;
+  padding: 4px var(--s3); line-height: 1.2; }
+.chips label > .pair span, .chips label > .pair small { min-height: 0; padding: 0; border: 0; border-radius: 0; }
+.chips input:checked + .pair .pair-sub { color: inherit; opacity: .85; }
+.asset-pick label > .pair { align-items: flex-start; }
