@@ -61,7 +61,7 @@ async function api(action, body = null, query = {}) {
   } catch {
     throw new Error(res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
   }
-  if (!res.ok || !data.ok) throw new Error(data?.error || 'שגיאה');
+  if (!res.ok || !data.ok) { const e = new Error(data?.error || 'שגיאה'); e.status = res.status; throw e; }
   return data;
 }
 

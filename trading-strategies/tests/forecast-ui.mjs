@@ -1,5 +1,5 @@
 // "🔮 תחזית שיטה" בדפדפן אמיתי, ברוחב טלפון (spec-stage-a 17.2.2, ✅15, ✅13; PR 4ב/2): הפאנל, הניסוח, הציור על
-// הקנבס (לא HTML), "↻" בלבד, ובלי polling. node trading-strategies/tests/forecast-ui.mjs (Playwright; ספקים מדומים, בלי רשת)
+// הקנבס (לא HTML), ובקשה אחת לגרף ולשיטה (chart_refresh, 18.3). הרענון האוטומטי עצמו — tests/refresh-ui.mjs. node trading-strategies/tests/forecast-ui.mjs (Playwright; ספקים מדומים, בלי רשת)
 // SHOTS=<תיקייה> — שומר צילומי מסך (deviceScaleFactor 2) לבקרה.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
@@ -71,7 +71,7 @@ try {
   await dlg.getByRole('button', { name: /חציית ממוצעים 20\/50/ }).click();
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 30000 });
-  eq(reqs.filter(a => a === 'method_overlay').length, 1, 'one method_overlay request — only after the user chose a method');
+  eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'one request (chart_refresh: candles + the method) after the user chose a method');
   eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת חציית ממוצעים 20/50 — לא ייעוץ', 'the title "תרחיש לפי שיטת X — לא ייעוץ" (✅15)');
   const chips = await panel.locator('.chip').allTextContents();
   eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('לא נבדקה לאחור'), chips.includes('🧪 שיטת דוגמה — לא מהספר')], [true, true, true], 'marked "by the method rules, not backtested", "not backtested" and the sample label');
@@ -90,24 +90,18 @@ try {
   eq(await o.evaluate(() => document.documentElement.dir), 'rtl', 'RTL');
   await shot(o, 'forecast-on');
 
-  // ── בלי polling (✅13): 20 שניות בלי פעולה — אף בקשה ──
-  reqs.length = 0;
-  await o.waitForTimeout(20000);
-  eq(reqs, [], 'no request to the server for 20 s without a user action');
-
-  // ── שינוי טווח: התרחיש מוסתר, ומבקשים "↻" — בלי בקשת תחזית ──
+  // ── שינוי טווח: הנרות והתרחיש באותה בקשה (18.3) ──
   reqs.length = 0;
   // שבוע: השעון של הדפדפן והשרת קבועים לאותו NOW (open), כך שהטווח לא תלוי בתאריך שבו הבדיקה רצה
   await o.locator('select[aria-label="טווח"]').selectOption('w');
   await loaded(o);
-  await panel.locator('.hint.warn').waitFor();
-  eq(reqs.includes('method_overlay'), false, 'a range change does not re-run the forecast by itself');
-  eq(/"↻" מרענן גם את התרחיש/.test(await panel.textContent()), true, 'it asks for "↻"');
+  await panel.locator('.chips').waitFor();
+  eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'a range change → one request for the candles and the scenario together');
   reqs.length = 0;
   await o.getByRole('button', { name: 'רענן' }).click();
+  await loaded(o);
   await panel.locator('.chips').waitFor();
-  await o.waitForFunction(() => !document.querySelector('.forecast-panel .hint.warn'));
-  eq(reqs.filter(a => a === 'method_overlay').length, 1, '"↻" refreshes the candles and the forecast (one request)');
+  eq(reqs.filter(a => a === 'chart_refresh').length, 1, '"↻" refreshes the candles and the forecast (one request)');
 
   // ── הסתרה ──
   await panel.getByRole('button', { name: 'הסתרה' }).click();

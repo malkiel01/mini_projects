@@ -7,6 +7,9 @@
  *   tails      מתי נמשך לאחרונה הקצה (הנר הפתוח) — התוקף שלו לפי מסגרת הזמן.
  *   search     תוצאות חיפוש ואינדקס סימולים — 24 שעות.
  *   fetch_log  יומן בקשות הנרות (18.2, S2): לכל בקשה — כמה נרות נמשכו מהספק וכמה הוגשו. 7 ימים, עד 2000 שורות.
+ *   method_results  תוצאה שמורה של שיטה לכל מפתח חישוב (18.3, S3): נכס, מסגרת, הנרות הסגורים, שיטה וגרסה, פרמטרים.
+ *                   חישוב שנגזר מהנרות — נמחק בניקוי היומי אחרי יומיים, ונבנה מחדש לבד.
+ *   method_runs     המונה למסך המפתח: כמה פעמים שיטה רצה באמת, וכמה פעמים הוחזרה התוצאה השמורה.
  *
  * cred_scope: '' — מאגר משותף (ספק בלי מפתח שתנאיו מתירים); 'u:<user_id>' — נמשך במפתח אישי, רק של אותו משתמש;
  * 'c:<cred_id>' — ספק מהמנהל (ב), משותף למי שקיבל אותו.
@@ -82,6 +85,22 @@ function ts_cache(): PDO
             );
             CREATE INDEX IF NOT EXISTS fetch_log_at ON fetch_log(at);
             PRAGMA user_version = 2;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 3 (S3): רק מוסיפה טבלאות — לא נוגעת בנרות ובשום נתון קיים
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 3) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS method_results (
+                k TEXT PRIMARY KEY, method_id TEXT NOT NULL, result TEXT NOT NULL, at INTEGER NOT NULL
+            ) WITHOUT ROWID;
+            CREATE INDEX IF NOT EXISTS method_results_at ON method_results(at);
+            CREATE TABLE IF NOT EXISTS method_runs (
+                method_id TEXT PRIMARY KEY, runs INTEGER NOT NULL DEFAULT 0, reused INTEGER NOT NULL DEFAULT 0,
+                last_run_at INTEGER NOT NULL DEFAULT 0, last_reused_at INTEGER NOT NULL DEFAULT 0
+            );
+            PRAGMA user_version = 3;
             COMMIT;
             SQL);
     }

@@ -3,25 +3,26 @@
 // (Primitive של Lightweight Charts, כמו הציור), כולל הקרנה קדימה. הזמנים העתידיים (t + k·tf) נכנסים לציר כנקודות ריקות
 // (whitespace) בסדרה נפרדת, כך שציר הזמן מתרחב ימינה בלי לגעת בנרות.
 //
-// בלי אחוז ודאות; הציון — רק במילים (✅16), כשיש לשיטה ציון. בקשה לשרת **רק** בפעולה של המשתמש: בחירת שיטה או "↻".
-// שינוי טווח או מסגרת מסתיר את התרחיש ומבקש "↻" (✅13) — אין רענון אוטומטי.
+// בלי אחוז ודאות; הציון — רק במילים (✅16), כשיש לשיטה ציון.
+//
+// **הרענון (18.3, S3, ✅23):** המודול הזה לא פונה לשרת בעצמו. התוצאה מגיעה בבקשה של הגרף (chart_refresh ב-market.js) —
+// בקשה אחת לנרות ולכל השיטות שנבחרו, גם בפתיחה, בשינוי טווח או מסגרת, ב-"↻" וברענון האוטומטי. בחירת שיטה מבקשת מהגרף
+// טעינה (onChange). רענון שלא נסגר בו נר — אותה תוצאה מהשרת, והתרחיש שהמשתמש סימן נשאר מסומן.
 
 import { timeToLogical } from './drawings.js';
 
 const ROLE = { stop: '--danger', target: '--ok', invalidation: '--danger' };
 
-export function mountForecast({ chart, series, asset, api, h, sheet, toast, getTf, getSec, getTimes, col, fmtPrice, button }) {
+export function mountForecast({ chart, series, asset, api, h, sheet, toast, getTf, getSec, getTimes, col, fmtPrice, button, onChange }) {
   let methodId = null;     // השיטה שנבחרה (null — כבוי)
   let res = null;          // התשובה האחרונה מ-method_overlay
   let selected = null;     // מזהה התרחיש המודגש
-  let stale = false;
-  let busy = false;
   let requestUpdate = () => {};
 
   const whitespace = chart.addLineSeries({ visible: false, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
   const xOf = t => { const l = timeToLogical(getTimes(), getSec(), t); return l === null ? null : chart.timeScale().logicalToCoordinate(l); };
   const yOf = p => series.priceToCoordinate(p);
-  const items = () => (res && !stale && res.overlay ? res.overlay.items : []);
+  const items = () => (res && res.overlay ? res.overlay.items : []);
   const isOn = it => !it.scenario || it.scenario === selected;
   // מחיר לתצוגה לפי ה-tick של הנכס (מהשרת) — float לתצוגה בלבד
   const price = v => (Number.isInteger(res?.tick_decimals) ? (+v).toFixed(res.tick_decimals) : fmtPrice(v));
@@ -105,13 +106,13 @@ export function mountForecast({ chart, series, asset, api, h, sheet, toast, getT
   function paint(scroll = false) {
     const ov = res?.overlay;
     // סימונים על נרות — של הספרייה (גם הם על הקנבס)
-    series.setMarkers(stale || !ov ? [] : ov.items.filter(x => x.kind === 'marker' && isOn(x)).map(x => ({ time: x.t,
+    series.setMarkers(!ov ? [] : ov.items.filter(x => x.kind === 'marker' && isOn(x)).map(x => ({ time: x.t,
       position: x.side === 'long' ? 'belowBar' : 'aboveBar', shape: x.side === 'long' ? 'arrowUp' : 'arrowDown',
       color: col(x.side === 'long' ? '--ok' : '--danger'), text: x.text })));
     // ציר הזמן ימינה: נקודות ריקות עד הזמן העתידי הרחוק ביותר
     const sec = getSec();
     let far = null;
-    if (ov && !stale) for (const it of ov.items) for (const t of [it.t, it.t1, it.t2, ...(it.points || []).map(p => p.t)]) if (t > ov.as_of) far = Math.max(far ?? t, t);
+    if (ov) for (const it of ov.items) for (const t of [it.t, it.t1, it.t2, ...(it.points || []).map(p => p.t)]) if (t > ov.as_of) far = Math.max(far ?? t, t);
     const ws = [];
     if (far !== null) for (let t = ov.as_of + sec; t <= far; t += sec) ws.push({ time: t });
     whitespace.setData(ws);
@@ -124,6 +125,7 @@ export function mountForecast({ chart, series, asset, api, h, sheet, toast, getT
   function renderPanel() {
     button.setAttribute('aria-pressed', String(!!methodId));
     panel.hidden = !methodId;
+    panel.dataset.asOf = res?.overlay?.as_of ?? '';   // הנר הסגור האחרון של התוצאה — לבדיקות ולמסך המפתח
     if (!methodId) { panel.replaceChildren(); return; }
     const close = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => off() } }, 'הסתרה');
     if (!res) { panel.replaceChildren(h('p', { class: 'hint' }, 'טוען תרחיש…')); return; }
@@ -143,29 +145,29 @@ export function mountForecast({ chart, series, asset, api, h, sheet, toast, getT
           on: { click: () => { selected = s.id; paint(); } } }, s.label)))
       : h('p', { class: 'hint' }, res.overlay.note || 'אין כרגע תרחיש לפי כללי השיטה');
     panel.replaceChildren(head, chips,
-      stale ? h('p', { class: 'hint warn' }, 'הטווח או מסגרת הזמן השתנו — "↻" מרענן גם את התרחיש') : list,
+      list,
       // אליוט: ההנחיות שהמחשב לא מודד (17.1.3) — "בדוק בעצמך"
       res.overlay.check?.length ? h('details', { class: 'param-notes' }, h('summary', {}, '🔎 בדוק בעצמך — מה שהמחשב כאן לא מודד'),
         h('ul', {}, res.overlay.check.map(x => h('li', {}, x)))) : null,
       h('p', { class: 'disclaimer' }, '⚖️ ' + res.disclaimer));
   }
 
-  async function fetchIt() {
-    if (!methodId || busy) return;
-    const times = getTimes();
-    if (!times.length) { res = null; stale = true; paint(); return; }
-    busy = true;
-    try {
-      res = await api('method_overlay', null, { asset, tf: getTf(), method: methodId, from: times[0], to: times.at(-1) + getSec() });
-      stale = false;
-      selected = res.overlay?.projection.scenarios.find(s => s.primary)?.id ?? res.overlay?.projection.scenarios[0]?.id ?? null;
-    } catch (e) {
-      toast(e.message, true);
-      res = { status: 'error', title: 'תחזית שיטה', message: e.message };
-    } finally {
-      busy = false;
-      paint(true);
-    }
+  /** התוצאה של השיטה מתוך תשובת chart_refresh. נר חדש — הגרף זז ימינה אל ההקרנה; אותו נר — לא נוגעים בתצוגה */
+  function onResult(r) {
+    if (!methodId) return;
+    const next = r?.methods?.[methodId] || { status: 'error', title: 'תחזית שיטה', message: 'אין תשובה לשיטה' };
+    const moved = !res || res.overlay?.as_of !== next.overlay?.as_of;
+    res = next;
+    const ids = res.overlay?.projection.scenarios.map(s => s.id) || [];
+    if (!ids.includes(selected)) selected = res.overlay?.projection.scenarios.find(s => s.primary)?.id ?? ids[0] ?? null;
+    paint(moved);
+  }
+
+  /** הבקשה נכשלה. בלי תוצאה קודמת — הודעה בפאנל; עם תוצאה — היא נשארת (הגרף מציג "עודכן לפני X") */
+  function onError(e) {
+    if (!methodId || res) return;
+    res = { status: 'error', title: 'תחזית שיטה', message: e.message };
+    paint();
   }
 
   async function pick() {
@@ -178,23 +180,21 @@ export function mountForecast({ chart, series, asset, api, h, sheet, toast, getT
     for (const m of methods) {
       const ok = m.timeframes.includes(tf);
       s.body.append(h('button', { type: 'button', class: 'btn ghost block', disabled: !ok, 'aria-pressed': String(m.id === methodId),
-        on: { click: () => { s.close(); methodId = m.id; res = null; renderPanel(); fetchIt(); } } },
+        on: { click: () => { s.close(); if (m.id === methodId) return; methodId = m.id; res = null; selected = null; renderPanel(); onChange(); } } },
         m.name, m.label ? h('small', { class: 'muted' }, ' · ' + m.label) : null, ok ? null : h('small', { class: 'muted' }, ' · לא במסגרת הזו')));
     }
     if (methodId) s.body.append(h('button', { type: 'button', class: 'btn ghost block', on: { click: () => { s.close(); off(); } } }, 'הסתרת התחזית'));
   }
 
-  function off() { methodId = null; res = null; selected = null; stale = false; paint(); }
+  function off() { methodId = null; res = null; selected = null; paint(); onChange(); }
 
   return {
     panel,
-    /** אחרי טעינת נרות: "↻" — מרענן גם את התרחיש; שינוי טווח/מסגרת — מסתיר ומבקש "↻" */
-    onLoad(isRefresh) {
-      if (!methodId) return;
-      if (isRefresh) fetchIt();
-      else { stale = true; paint(); }
-    },
+    /** השיטות שנבחרו — נשלחות בכל בקשה של הגרף. ריק = אין ניתוח פעיל, ואין רענון אוטומטי (18.3) */
+    methods: () => (methodId ? [methodId] : []),
+    onResult,
+    onError,
     destroy() { try { series.detachPrimitive(primitive); } catch { /* ריק */ } },
-    state: () => ({ methodId, stale, selected, items: items().length }),
+    state: () => ({ methodId, selected, asOf: res?.overlay?.as_of ?? null, items: items().length }),
   };
 }
