@@ -3,7 +3,8 @@
  * שכבת השוק (spec-stage-a 2–3): מי מגיע לאיזה ספק ובאיזה מפתח, המאגר, החיפוש, המעקב והתקרות.
  *
  * הכלל: הדפדפן לא פונה לספק (חוץ מ-WebSocket ציבורי של Binance). כל בקשת נתונים — אחת, לשרת שלנו, שעונה מהמאגר
- * ופונה לספק רק על החסר. אין רענון אוטומטי (✅13): הנר הפתוח מתחדש רק כשמשתמש לוחץ "רענן", ורק אם עבר התוקף.
+ * ופונה לספק רק על החסר. הנר הפתוח מתחדש רק אם עבר התוקף — גם ברענון האוטומטי של הגרף (18.3, lib/refresh.php),
+ * כך שרענון כל 30–60 שניות לא פונה לספק בכל פעם.
  *
  * דרך חיבור לכל (משתמש, ספק) — ts_access():
  *   1. ספק משלי (א) — המפתח של המשתמש; המאגר 'u:<id>' — רק שלו.
@@ -441,13 +442,13 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $asset = ($inverse ? "$provider:1/" : "$provider:") . $symbol;
     return [
         'asset' => $asset, 'provider' => $provider, 'symbol' => ($inverse ? '1/' : '') . $symbol, 'tf' => $tf,
-        'label' => ts_pair_label($asset)['label'], 'computed' => $inverse,
+        'computed' => $inverse,
         'candles' => $candles, 'capped' => $capped, 'provider_calls' => $calls, 'provider_candles' => $fetched,
         'meta' => ts_asset_meta("$provider:$symbol"), 'delay' => $meta['delay'], 'source' => $acc['source'],
         // זוג מחושב — בלי זרם חי: הספק משדר את הכיוון המקורי
         'stream' => $acc['source'] === 'public' && !$inverse ? $p->stream() : null, 'stream_interval' => $meta['tfs'][$tf],
         'tail_ttl' => ts_tail_ttl($tf),
-    ];
+    ] + ts_pair_pick(ts_pair_label($asset));
 }
 
 /**
@@ -518,6 +519,7 @@ function ts_cache_cleanup(?int $now = null): int
     $c->prepare('DELETE FROM tails WHERE fetched_at < ?')->execute([$now - 86400]);
     $c->prepare('DELETE FROM asset_meta WHERE updated_at < ?')->execute([$now - 180 * 86400]);
     $c->prepare('DELETE FROM fetch_log WHERE at < ?')->execute([$now - 7 * 86400]);
+    $c->prepare('DELETE FROM method_results WHERE at < ?')->execute([$now - 2 * 86400]);   // חישוב שנגזר — נבנה מחדש לבד
     return $n;
 }
 
@@ -553,6 +555,8 @@ function ts_cache_clear(?string $provider): int
         $st->execute($provider ? [$provider] : []);
         if ($t === 'candles') $n = $st->rowCount();
     }
+    // תוצאות השיטות (18.3) נגזרות מהנרות: מאגר שהתרוקן — גם הן, כדי שהחישוב הבא ירוץ על מה שנמשך מחדש
+    if (!$provider) $c->exec('DELETE FROM method_results');
     return $n;
 }
 

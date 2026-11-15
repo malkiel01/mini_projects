@@ -1,5 +1,5 @@
 // "🔮 תחזית שיטה" בדפדפן אמיתי, ברוחב טלפון (spec-stage-a 17.2.2, ✅15, ✅13; PR 4ב/2): הפאנל, הניסוח, הציור על
-// הקנבס (לא HTML), "↻" בלבד, ובלי polling. node trading-strategies/tests/forecast-ui.mjs (Playwright; ספקים מדומים, בלי רשת)
+// הקנבס (לא HTML), ובקשה אחת לגרף ולשיטה (chart_refresh, 18.3). הרענון האוטומטי עצמו — tests/refresh-ui.mjs. node trading-strategies/tests/forecast-ui.mjs (Playwright; ספקים מדומים, בלי רשת)
 // SHOTS=<תיקייה> — שומר צילומי מסך (deviceScaleFactor 2) לבקרה.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
@@ -61,23 +61,25 @@ try {
   const btn = o.getByRole('button', { name: 'תחזית שיטה' });
   eq(await btn.getAttribute('aria-pressed'), 'false', 'the 🔮 button in the chart header, off');
 
-  // ── בחירת שיטה ──
+  // ── בחירת שיטה: תפריט נפתח מעל הגרף (F1, 18.1.2) ──
   await btn.click();
-  const dlg = o.locator('dialog[open]');
-  await dlg.waitFor();
-  eq((await dlg.locator('h2').textContent()).trim(), '🔮 תחזית שיטה', 'the method picker sheet');
-  eq(/לא ייעוץ, בלי אחוז ודאות/.test(await dlg.textContent()), true, 'the sheet says: not advice, no certainty percentage');
+  const pop = o.locator('.fc-pop');
+  await pop.locator('.fc-opt').first().waitFor();
+  eq([await o.locator('dialog[open]').count(), await btn.getAttribute('aria-expanded')], [0, 'true'], 'the 🔮 menu — a popover, not a sheet');
+  eq(/לא ייעוץ, בלי אחוז ודאות/.test(await pop.textContent()), true, 'the menu says: not advice, no certainty percentage');
   reqs.length = 0;
-  await dlg.getByRole('button', { name: /חציית ממוצעים 20\/50/ }).click();
+  await pop.locator('.fc-opt', { hasText: /חציית ממוצעים 20\/50/ }).locator('input').check();
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 30000 });
-  eq(reqs.filter(a => a === 'method_overlay').length, 1, 'one method_overlay request — only after the user chose a method');
+  eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'one request (chart_refresh: candles + the method) after the user chose a method');
   eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת חציית ממוצעים 20/50 — לא ייעוץ', 'the title "תרחיש לפי שיטת X — לא ייעוץ" (✅15)');
   const chips = await panel.locator('.chip').allTextContents();
   eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('לא נבדקה לאחור'), chips.includes('🧪 שיטת דוגמה — לא מהספר')], [true, true, true], 'marked "by the method rules, not backtested", "not backtested" and the sample label');
   eq(/אינו ייעוץ השקעות/.test(await panel.locator('.disclaimer').textContent()), true, 'the fixed disclaimer');
   eq(/\d\s*%/.test(await panel.textContent()), false, 'no percentage anywhere in the forecast panel (no certainty)');
   eq(await btn.getAttribute('aria-pressed'), 'true', 'the 🔮 button shows the mode is on');
+  await o.locator('.quote-head').click();   // לחיצה מחוץ לתפריט — נסגר
+  eq([await pop.isHidden(), await btn.getAttribute('aria-expanded')], [true, 'false'], 'a click outside the menu closes it');
   const sc = panel.locator('.forecast-scenarios button');
   const nsc = await sc.count();
   eq(nsc >= 1 && await sc.first().getAttribute('aria-pressed') === 'true', true, `scenarios listed (${nsc}), the leading one pressed`);
@@ -90,24 +92,18 @@ try {
   eq(await o.evaluate(() => document.documentElement.dir), 'rtl', 'RTL');
   await shot(o, 'forecast-on');
 
-  // ── בלי polling (✅13): 20 שניות בלי פעולה — אף בקשה ──
-  reqs.length = 0;
-  await o.waitForTimeout(20000);
-  eq(reqs, [], 'no request to the server for 20 s without a user action');
-
-  // ── שינוי טווח: התרחיש מוסתר, ומבקשים "↻" — בלי בקשת תחזית ──
+  // ── שינוי טווח: הנרות והתרחיש באותה בקשה (18.3) ──
   reqs.length = 0;
   // שבוע: השעון של הדפדפן והשרת קבועים לאותו NOW (open), כך שהטווח לא תלוי בתאריך שבו הבדיקה רצה
   await o.locator('select[aria-label="טווח"]').selectOption('w');
   await loaded(o);
-  await panel.locator('.hint.warn').waitFor();
-  eq(reqs.includes('method_overlay'), false, 'a range change does not re-run the forecast by itself');
-  eq(/"↻" מרענן גם את התרחיש/.test(await panel.textContent()), true, 'it asks for "↻"');
+  await panel.locator('.chips').waitFor();
+  eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'a range change → one request for the candles and the scenario together');
   reqs.length = 0;
   await o.getByRole('button', { name: 'רענן' }).click();
+  await loaded(o);
   await panel.locator('.chips').waitFor();
-  await o.waitForFunction(() => !document.querySelector('.forecast-panel .hint.warn'));
-  eq(reqs.filter(a => a === 'method_overlay').length, 1, '"↻" refreshes the candles and the forecast (one request)');
+  eq(reqs.filter(a => a === 'chart_refresh').length, 1, '"↻" refreshes the candles and the forecast (one request)');
 
   // ── הסתרה ──
   await panel.getByRole('button', { name: 'הסתרה' }).click();
@@ -115,13 +111,14 @@ try {
   await o.waitForTimeout(300);
   eq(await canvasPrint(o) !== after, true, 'hide → the drawing is removed from the canvas');
 
-  // ── משתמש רגיל: שיטת הדוגמה לא מוצעת לו ──
+  // ── משתמש רגיל: שיטת הדוגמה לא מוצעת לו (גם כשהיא מופעלת), שיטה מהספר — כן ──
   const { p: a } = await open('alice');
   await a.goto(CHART);
   await loaded(a);
   await a.getByRole('button', { name: 'תחזית שיטה' }).click();
-  await a.locator('dialog[open]').waitFor();
-  eq(/אין שיטות זמינות/.test(await a.locator('dialog[open]').textContent()), true, 'a regular user is not offered the sample method');
+  await a.locator('.fc-pop .fc-opt').first().waitFor();
+  const names = await a.locator('.fc-pop .fc-opt').allTextContents();
+  eq([names.some(t => /חציית ממוצעים/.test(t)), names.some(t => /אליוט/.test(t))], [false, true], 'a regular user is not offered the sample method; the book method is (18.1.2)');
   await shot(a, 'forecast-none');
 } catch (e) {
   fail++;

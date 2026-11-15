@@ -15,12 +15,15 @@
     --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
     --r: 10px; --tap: 40px; --head: 48px;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+    /* הצבעים של השיטות על הגרף (18.1.2) — הראשונה --brand; בלי אדום וירוק, שהם הסטופ והיעד */
+    --m2: #b5560f; --m3: #7a3fa0; --m4: #0f7c86; --m5: #a4206a; --m6: #5b6b00; --m7: #8a5a00; --m8: #4a5a7a;
 }
 @media (prefers-color-scheme: dark) {
     :root {
         --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
         --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
         --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+        --m2: #f0a15e; --m3: #c39be0; --m4: #5fc7cf; --m5: #f08cc4; --m6: #c2d468; --m7: #e5c07b; --m8: #aab8d6;
     }
 }
 
@@ -314,9 +317,42 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 /* גרף */
 .chart-tools { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .chart-tools .seg { max-width: 100%; }
-.chart-tools .toolbar { margin: 0; }
+.chart-tools .toolbar { margin: 0; flex-wrap: wrap; row-gap: 4px; }
+.chart-tools .toolbar .fs-open { margin-inline-start: auto; min-height: 36px; min-width: 36px; }
 .chart-tools select { width: auto; }
-.chart-wrap { display: grid; gap: 4px; margin-bottom: var(--s2); }
+.chart-wrap { position: relative; display: grid; gap: 4px; margin-bottom: var(--s2); }
+
+/* 🔮 התפריט הנפתח מעל הגרף (18.1.2, F1): תיבות סימון, כמה שיטות יחד. הגרף נשאר גלוי מתחתיו */
+.fc-pop { position: absolute; top: 8px; inset-inline-end: 8px; z-index: 4; inline-size: min(280px, calc(100% - 16px));
+    max-block-size: calc(100% - 16px); overflow: auto; display: grid; gap: 6px; padding: 10px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); }
+.fc-pop-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.fc-pop-head b { font-size: .9rem; }
+.fc-pop-head small, .fc-opt small { font-size: .75rem; }
+.fc-opts { display: grid; gap: 2px; }
+.fc-opt { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.fc-opt:hover { background: var(--brand-soft); }
+.fc-opt input { flex: none; inline-size: 20px; block-size: 20px; min-height: 0; accent-color: var(--brand); }
+.fc-opt.off { opacity: .55; cursor: default; }
+.fc-opt-tx { display: grid; min-width: 0; line-height: 1.25; }
+.fc-note { margin: 0; font-size: .75rem; color: var(--muted); }
+.fc-none { justify-self: start; color: var(--muted); background: var(--bg); }
+.fc-admin { font-size: .8rem; }
+.fc-dot { flex: none; inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--mc, var(--brand)); }
+
+/* ⛶ מסך מלא (18.1.2 סעיף 3): רק הגרף, גם לרוחב. Fullscreen API או שכבה — אותו מראה */
+.fs-bar { display: none; }
+.chart-wrap.fs { position: fixed; inset: 0; z-index: 50; margin: 0; gap: 0; display: flex; flex-direction: column; background: var(--surface);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.chart-wrap.fs .chart-box { flex: 1 1 auto; block-size: auto; min-block-size: 0; border: 0; border-radius: 0; }
+.chart-wrap.fs .chart-box.osc { flex: 0 0 120px; border-top: 1px solid var(--line); }
+.chart-wrap.fs .fs-bar { position: absolute; z-index: 3; top: calc(8px + env(safe-area-inset-top)); inset-inline-end: calc(8px + env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 10px; background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--line); border-radius: 99px; box-shadow: var(--shadow); }
+.chart-wrap.fs .fs-bar .icon-btn { min-height: 36px; min-width: 36px; }
+.chart-wrap.fs .fc-pop { top: calc(56px + env(safe-area-inset-top)); }
+.fs-pair { font-size: .9rem; padding-inline: 4px; }
+body.chart-fs { overflow: hidden; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }
@@ -374,8 +410,9 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 a.use-row { text-decoration: none; color: inherit; }
 
 /* ===== 🔮 תחזית שיטה (spec-stage-a 17.2.2) ===== */
+.forecast-list { display: grid; }
 .forecast-panel { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); background: var(--surface);
-    border: 1px solid var(--line); border-inline-start: 3px solid var(--brand); border-radius: var(--r); }
+    border: 1px solid var(--line); border-inline-start: 3px solid var(--mc, var(--brand)); border-radius: var(--r); }
 .forecast-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .forecast-head h3 { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; }
 .forecast-scenarios { display: flex; flex-wrap: wrap; gap: var(--s1); }
@@ -395,3 +432,20 @@ a.use-row { text-decoration: none; color: inherit; }
 .builder-out .ok { color: var(--ok); }
 .toolbar.wrap { flex-wrap: wrap; }
 .toolbar input[dir="ltr"] { min-width: 0; flex: 1 1 140px; }
+
+/* ── זוג (18.1.1, S1.1): BTC ⇄ USDT, ומתחת השמות בעברית ── */
+.pair { display: inline-flex; flex-direction: column; min-width: 0; gap: 1px; }
+.pair-main { display: inline-flex; align-items: center; gap: .3em; unicode-bidi: isolate; white-space: nowrap; }
+.pair-main b { font-weight: 700; letter-spacing: .02em; }
+.pair-main[dir="ltr"] { direction: ltr; flex-direction: row; }
+.vs-title[dir="ltr"] { direction: ltr; text-align: right; unicode-bidi: isolate; }
+.pair-sub { display: inline-flex; align-items: center; gap: .3em; font-size: .8em; color: var(--muted); font-weight: 400; }
+svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-align: -.125em; }
+.pair-sub svg.vs { width: .9em; height: .9em; }
+#subtitle .pair-sub { font-size: 1em; }
+/* צד או נכס בתוך chip: ה-chip הוא ה-.pair עצמו (שתי שורות); מה שבתוכו — לא עוד chip */
+.chips label > .pair { flex-direction: column; align-items: center; justify-content: center; gap: 0; border-radius: 14px;
+  padding: 4px var(--s3); line-height: 1.2; }
+.chips label > .pair span, .chips label > .pair small { min-height: 0; padding: 0; border: 0; border-radius: 0; }
+.chips input:checked + .pair .pair-sub { color: inherit; opacity: .85; }
+.asset-pick label > .pair { align-items: flex-start; }

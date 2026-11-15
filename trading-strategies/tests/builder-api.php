@@ -98,7 +98,7 @@ $x = $am['ma-cross-def'] ?? [];
 eq([$x['kind'] ?? null, $x['enabled'] ?? null, $x['version'] ?? null, $x['label'] ?? null, $x['definition']['id'] ?? null], ['defined', false, 1, 'מוגדרת ידנית', 'ma-cross-def'], 'listed: defined, OFF, version 1, "מוגדרת ידנית", with its definition');
 eq([$am['sample-ma-cross']['kind'] ?? null, array_keys($am)[0]], ['code', 'sample-ma-cross'], 'code methods stay "code", and come first');
 eq((int)$db->query("SELECT COUNT(*) FROM admin_log WHERE action = 'method_define' AND target = 'ma-cross-def v1'")->fetchColumn(), 1, 'the save is in admin_log');
-eq(array_column(call('alice', 'methods')[1]['methods'], 'id'), [], 'OFF → a regular user does not see it');
+eq(in_array('ma-cross-def', array_column(call('alice', 'methods')[1]['methods'], 'id'), true), false, 'OFF → a regular user does not see it (a defined method stays off until enabled, 18.1.2)');
 eq(call('owner', 'admin_method_save', ['definition' => ['id' => 'sample-ma-cross'] + $def])[0], 422, 'save with a code-method id → 422');
 
 // ── הפעלה, ניתוח, ו"מוגדרת ידנית" עד N ≥ 30 ──
@@ -108,7 +108,7 @@ eq([isset($vis['ma-cross-def']), $vis['ma-cross-def']['label'] ?? null, $vis['ma
 [$c, $r] = call('alice', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => 'ma-cross-def']);
 $card = $r['cards'][0] ?? [];
 eq([$c, $card['status'] ?? null, ($card['backtest']['n'] ?? 0) >= 30], [200, 'ok', true], 'analysis with the defined method: card + backtest (N ≥ 30 on the fixed set)');
-$mm = call('alice', 'methods')[1]['methods'][0] ?? [];
+$mm = array_column(call('alice', 'methods')[1]['methods'], null, 'id')['ma-cross-def'] ?? [];
 eq(array_key_exists('label', $mm) ? $mm['label'] : 'missing', null, 'after a backtest with N ≥ 30 — no longer "מוגדרת ידנית" (17.2.1)');
 $row1 = $db->query("SELECT method_version, n FROM backtests WHERE method_id = 'ma-cross-def' AND tf = 'h1'")->fetch(PDO::FETCH_ASSOC);
 eq((int)$row1['method_version'], 1, 'the stored backtest is of version 1');

@@ -126,6 +126,10 @@ function ts_profile_sync_risk(int $uid): void
 
 // ── שיטות (6.7) ──────────────────────────────────────────
 
+/**
+ * ההגדרות של שיטה. בלי שורה ב-`methods`: שיטת קוד מהספר (לא `sample`) — מופעלת; שיטת הבדיקה ושיטה מוגדרת — כבויות
+ * (18.1.2, F1; 6.7). שורה עם enabled = 0 — ההחלטה של המנהל גוברת.
+ */
 function ts_method_settings(string $id): array
 {
     $m = ts_method($id)->meta();
@@ -133,12 +137,18 @@ function ts_method_settings(string $id): array
     $st->execute([$id]);
     $r = $st->fetch();
     return [
-        'enabled' => $r ? (bool)$r['enabled'] : false,
+        'enabled' => $r ? (bool)$r['enabled'] : ts_method_on_by_default($m),
         'markets' => $r ? (json_decode($r['markets'], true) ?: $m['markets']) : $m['markets'],
         'timeframes' => $r ? (json_decode($r['timeframes'], true) ?: $m['timeframes']) : $m['timeframes'],
         'params' => $r ? (json_decode($r['params'], true) ?: []) : [],
         'note' => $r ? $r['note'] : '',
     ];
+}
+
+/** שיטה מהספר = שיטת קוד ש-sample שלה לא true (18.1.2) */
+function ts_method_on_by_default(array $meta): bool
+{
+    return ($meta['kind'] ?? 'code') === 'code' && empty($meta['sample']);
 }
 
 /** "מוגדרת ידנית" עד שיש לשיטה המוגדרת (בגרסה הנוכחית) בדיקה לאחור עם N ≥ 30 (17.2.1). לשיטת קוד — התווית שלה */
@@ -556,10 +566,10 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
     }
     $blend = ts_blend(array_map(fn($c) => ['id' => $c['method']['id'], 'bias' => $c['bias'],
         'certainty' => $c['certainty']], $cards), $profile['preferred_methods']);
-    return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'label' => ts_pair_label("$provider:$symbol")['label'], 'provider' => $provider, 'tf' => $tf, 'market' => $market,
+    return ['asset' => "$provider:$symbol", 'symbol' => $symbol, 'provider' => $provider, 'tf' => $tf, 'market' => $market,
         'decimals' => $dec, 'last_t' => $rows ? $rows[count($rows) - 1]['t'] : null, 'cards' => $cards, 'blend' => $blend,
         'profile' => ['min_certainty' => $profile['min_certainty'], 'min_rr' => $profile['min_rr'], 'risk_pct' => $profile['risk_pct']],
-        'account_size' => $account, 'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'provider_calls' => $calls];
+        'account_size' => $account, 'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'provider_calls' => $calls] + ts_pair_pick(ts_pair_label("$provider:$symbol"));
 }
 
 // ── "פתח עסקה מזה" (פרק 11) ─────────────────────────────

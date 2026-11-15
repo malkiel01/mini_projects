@@ -86,6 +86,8 @@ try {
   eq(decodeURIComponent(new URL(o.url()).hash), '#/analysis/binance:BTCUSDT', '🧭 on the chart opens the analysis of that asset');
 
   // ── משתמש רגיל: שיטת הדוגמה לא קיימת בשבילו ──
+  // אליוט מופעלת בלי שורה (F1, 18.1.2) — המנהל מכבה אותה, כדי שהדוגמה תהיה השיטה היחידה שמופעלת
+  await post(o, 'admin_method_save', { id: 'elliott-w3', enabled: false, markets: ['crypto'], timeframes: ['h1', 'h4'] });
   const a = await open('alice');
   await a.goto(BASE + '#/market');
   await a.waitForSelector('main form');

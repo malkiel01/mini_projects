@@ -50,7 +50,7 @@ function ts_alerts_list(int $uid): array
     $st = ts_db()->prepare("SELECT * FROM alerts WHERE user_id = ? ORDER BY status = 'expired', id DESC");
     $st->execute([$uid]);
     // התווית של הזוג (18.1) — הסימול לא מוצג למשתמש
-    return array_map(fn($r) => ts_alert_out($r) + ['label' => ts_pair_label((string)$r['asset'])['label']], $st->fetchAll());
+    return array_map(fn($r) => ts_alert_out($r) + ts_pair_pick(ts_pair_label((string)$r['asset'])), $st->fetchAll());
 }
 
 /** השיטות שמותרות בהתראות למשתמש (מופעלות, alerts: true, לא דוגמה) */
@@ -229,7 +229,7 @@ function ts_alert_deliver(array $a, string $state, array $d, int $now): array
     $cnt->execute([$uid, $dayStart]);
     if ((int)$cnt->fetchColumn() >= $prof['max_alerts_per_day']) return ['capped' => true];
 
-    $symbol = explode(':', $a['asset'], 2)[1];
+    $symbol = ts_pair_label((string)$a['asset'])['label'];   // "BTC ⇄ USDT" — לא הסימול המחובר (18.1.1)
     $tfName = TS_TIMEFRAMES[$a['tf']];
     if ($a['kind'] === 'price') {
         $title = "$symbol חצה את {$a['level']}";

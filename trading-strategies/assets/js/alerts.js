@@ -7,7 +7,7 @@ const KINDS = [['price', 'מחיר חצה רמה'], ['method', 'שיטה'], ['bl
 const STATUS = { active: ['ok', 'פעילה'], paused: ['warn', 'מושהית'], expired: ['', 'פגה'] };
 
 export function mountAlerts(ctx) {
-  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, sep } = ctx;
+  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, sep, pairLabel, withVs, assetPicker } = ctx;
   const ME = () => ctx.me();
   const when = t => { try { return new Date(t * 1000).toLocaleString('he-IL', { timeZone: ME().user.timezone, day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
   const setBadge = n => {
@@ -36,7 +36,7 @@ export function mountAlerts(ctx) {
       inbox.events.length ? h('ul', { class: 'list' }, inbox.events.map(e => h('li', {},
         h('a', { class: 'use-row' + (e.read ? '' : ' unread'), href: e.payload.link || '#/alerts', on: { click: () => { if (!e.read) api('inbox_read', { ids: [e.id] }).catch(() => {}); } } },
           h('span', { class: 'use-ic', 'aria-hidden': 'true' }, e.payload.kind === 'price' ? '📏' : '🧭'),
-          h('span', { class: 'use-tx' }, h('b', {}, e.payload.title), h('small', { class: 'wrap' }, e.payload.body),
+          h('span', { class: 'use-tx' }, h('b', {}, withVs(e.payload.title)), h('small', { class: 'wrap' }, withVs(e.payload.body)),
             h('small', {}, when(e.fired_at), e.delivered.push === 'quiet' ? ' · בשעות השקטות — בלי פוש' : '')),
           h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))))
         : h('p', { class: 'empty' }, 'אין עדיין הודעות. כשתנאי של התראה מתקיים — ההודעה תופיע כאן.'));
@@ -48,7 +48,7 @@ export function mountAlerts(ctx) {
       alerts.length ? h('ul', { class: 'list' }, alerts.map(a => {
         const [cls, label] = STATUS[a.status];
         return h('li', { class: 'card', style: 'cursor:default;flex-wrap:wrap' },
-          h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, a.label), h('span', { class: 't' }, TF_LABEL[a.tf])),
+          h('div', { class: 'body' }, h('div', { class: 'l1' }, pairLabel(a), h('span', { class: 't' }, TF_LABEL[a.tf])),
             h('div', { class: 'l2 wrap' }, describe(a, methods)),
             h('div', { style: 'margin-top:4px' }, h('span', { class: 'chip ' + cls }, label), ' ',
               h('small', { class: 'muted' }, a.status === 'expired' ? '' : 'עד ' + when(a.expires_at), a.last_fired_at ? [sep(), 'נשלחה ' + when(a.last_fired_at)] : null))),
@@ -108,7 +108,7 @@ export function mountAlerts(ctx) {
     if (!assets.length) { toast('בחרו קודם נכס ב"שוק" או הוסיפו נכס למעקב', true); return; }
     // שם הזוג במילים (18.1) — הסימול לא מוצג
     const { labels } = await api('pair_labels', null, { assets: assets.join(',') });
-    const assetSel = select('asset', assets.map(a => [a, (labels[a]?.label || 'נכס') + ' · ' + (providers.find(p => p.id === a.split(':')[0])?.name || '')]), pre.asset || assets[0], { 'aria-label': 'נכס' });
+    const assetSel = assetPicker(assets, labels, pre.asset || assets[0], a => providers.find(p => p.id === a.split(':')[0])?.name || '');
     const tfBox = h('div');
     const level = numInput('level', pre.level || '', 'למשל 65000');
     const days = h('input', { type: 'number', min: 1, max: 90, value: 30, inputmode: 'numeric', dir: 'ltr' });
@@ -136,7 +136,7 @@ export function mountAlerts(ctx) {
       if (location.hash.startsWith('#/alerts')) ctx.reload(); else location.hash = '#/alerts';
     } });
     sh.body.append(
-      h('div', { class: 'fields two' }, field('נכס', assetSel, true), h('label', { class: 'f' }, h('span', {}, 'מסגרת זמן'), tfBox), field('תוקף (ימים)', days)),
+      h('div', { class: 'fields two' }, h('div', { class: 'f wide' }, h('span', {}, 'נכס'), assetSel), h('label', { class: 'f' }, h('span', {}, 'מסגרת זמן'), tfBox), field('תוקף (ימים)', days)),
       h('div', { class: 'f' }, h('span', {}, 'כיוון'), seg('side', SIDES, pre.side || 'both', { grid: 3, label: 'כיוון' })),
       methods.length ? h('div', { class: 'f' }, h('span', {}, 'תנאי'), seg('kind', KINDS, kind, { grid: 3, label: 'תנאי', onChange: v => { kind = v; drawKind(); } }))
         : h('p', { class: 'hint' }, 'אין עדיין שיטות שמותרות בהתראות — רק התראת מחיר.'),
