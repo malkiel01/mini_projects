@@ -12,3 +12,8 @@
 - `ts_market_candles` מחזיר גם `provider_candles`. `admin_state` מחזיר `fetch_log`; במסך המנהל ← 🗄️ מאגר — טבלה "יומן בקשות נרות".
 - בדיקות ב-`tests/market.php` לכל ארבעת הקריטריונים, ולפער באמצע שמתמלא באותה בקשה.
 - ענף `claude/trading-strategies-s2-cache`.
+
+## 2026-11-15 — 4א/5ג: barrier triangle, וההערה על running
+- `ts_ew_triangle_kind($p, $tol = 0.05)`: מחזירה גם `barrier` לפי 17.1.2 — `|D − B| ≤ fib_tolerance × |A|` ו-C לפני סוף A. barrier נבדק לפני מתכנס.
+- ההערה השגויה "running — לא מזוהה" תוקנה: משולש running מזוהה בתוך כל סוג (עמ' 49). נוספו בדיקות שמוכיחות את זה (מתכנס רץ, barrier רץ).
+- 8 בדיקות חדשות ב-`tests/elliott-patterns.php`. ענף `claude/trading-strategies-4a5c-barrier`.
