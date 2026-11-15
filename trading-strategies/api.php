@@ -17,6 +17,9 @@
  * שוק (spec-stage-a 2–3):
  * GET  ?action=market_providers          הספקים כפי שהמשתמש רואה אותם (מחובר, זמין, מה צריך)
  * GET  ?action=market_search&q=          חיפוש בכל הספקים שלו                     ← נספר בתקרת 30 לדקה
+ * GET  ?action=pairs                     זוגות בשם (18.1): "מה" ו"מול מה" — רק מה שיש לו ספק למשתמש
+ * GET  ?action=pair_parse&q=             "ביטקוין מול ין" → זוג; בלי ספק — "אין ספק לזוג הזה" (בלי פנייה לספק)
+ * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס ("ביטקוין מול דולר") — הסימול לא מוצג למשתמש
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
  * GET  ?action=watchlist                 "המעקב שלי"
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
@@ -31,9 +34,6 @@
  * POST action=profile_save
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
- * POST action=analysis_copy {asset, tf, methods, csv_gz}   "🧪 הרץ על העותק שלי" (3.7): העותק מהענן, מאומת בשרת (422),
- *                                        בתחום שלי בלבד, לא נכתב למאגר ← נספר בתקרת 30 לדקה
- * POST action=analysis_copy_use {asset, tf, method_id, use}   איזו תוצאה נכנסת לשקלול — מהעותק או הרגילה
  * GET  ?action=method_overlay&asset=&tf=&method=&from=&to=   "🔮 תחזית שיטה" (17.2.2): תרחיש לפי כללי השיטה על הנרות
  *                                        המוצגים — overlay (17.2.3), בלי ודאות, לא בשקלול ולא בהתראות ← נספר בתקרת 30 לדקה
  *
@@ -43,14 +43,14 @@
  * GET  ?action=push_key                  המפתח הציבורי של VAPID
  * POST action=alert_save | alert_status | alert_delete | inbox_read | push_subscribe | push_unsubscribe
  *
- * ענן MBE (spec-stage-a 3.7, 9): drives_* — מודול הכוננים (lib/drives, מסונכרן). השמירה והקריאה — מהדפדפן ישירות לענן
- *      של המשתמש עצמו (drives.suite). אין כאן נקודת קצה שמגישה תוכן של קבצים.
+ * ענן MBE — נמחק (spec-stage-a 19.1): אין כאן drives_*. lib/drives ו-assets/js/drives נשארים כעותק מסונכרן בלבד
+ *      (שער הפריסה של mbe-cloud/drives), ואף קוד לא טוען אותם.
  *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
- * GET  ?action=admin_state | admin_methods | admin_method_files (התיקייה של קובצי השיטות בענן של המנהל — מזהה בלבד)
+ * GET  ?action=admin_state | admin_methods
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
- *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save | admin_method_files_folder
+ *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
  * בונה השיטות (17.2, ✅19): POST admin_method_save {definition} (חדשה או גרסה חדשה) | admin_method_validate {definition}
  *      | admin_method_dry_run {definition, asset, tf} ("🧪 נסה", לא נשמר; נספר בתקרת 30) · GET admin_method_list
  *      | admin_method_versions&id=
@@ -67,7 +67,6 @@ require_once __DIR__ . '/lib/roles.php';
 require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
-require_once __DIR__ . '/lib/copy.php';
 require_once __DIR__ . '/lib/forecast.php';
 require_once __DIR__ . '/lib/builder.php';
 require_once __DIR__ . '/lib/alerts.php';
@@ -108,26 +107,6 @@ function input(int $max = 1_000_000, int $tooBig = 413): array
 $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-// ענן MBE — מודול הכוננים (mbe-cloud/docs/api-guide.md 3.2). עותק מסונכרן: לא עורכים את lib/drives/ ואת assets/js/drives/.
-// לפני ה-session שלנו: drives_key נקרא מהענן בלי עוגייה (ב-public של app.json); כל השאר — המשתמש מהשער, ורק הוא.
-// drives.sqlite (המפתח הפרטי של האפליקציה והחיבורים) ב-data/ — מוחרג בפריסה (trading-strategies/data/*).
-if (str_starts_with($action, 'drives_')) {
-    require_once __DIR__ . '/lib/drives/Drives.php';
-    (new \SuiteCloud\Drives([
-        'client'   => 'trading-strategies',
-        'name'     => 'אסטרטגיות למסחר',
-        'dataDir'  => defined('TS_DB_PATH') ? TS_DB_PATH . '.drives' : __DIR__ . '/data',
-        'endpoint' => 'https://mbe-plus.com/mini_projects/trading-strategies/api.php',
-        'user'     => function (): ?string {
-            $id = ts_identity();
-            return $id ? (string)ts_user_for($id)['id'] : null;
-        },
-        'back'     => 'https://mbe-plus.com/mini_projects/trading-strategies/',
-        // בבדיקות בלבד (TS_DEV) — ענן מדומה מ-tests/fixtures; בשרת: הענן האמיתי
-        'http'     => defined('TS_DEV') && ($fx = getenv('TS_HTTP_FIXTURES')) ? fn(string $url, array $h, string $body) => ts_http_fixture($fx, $url, [...$h, 'X-Test-Body: ' . $body], 'POST') : null,
-    ]))->serve($action);
-}
-
 try {
     $session = ts_session();
 } catch (Throwable $e) {
@@ -142,13 +121,13 @@ $tz = $user['timezone'];
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
-    'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe', 'admin_method_files_folder',
+    'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
-    'analysis_copy', 'analysis_copy_use', 'admin_method_validate', 'admin_method_dry_run'];
+    'admin_method_validate', 'admin_method_dry_run'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'analysis', 'method_overlay', 'admin_method_dry_run', 'analysis_copy', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'analysis', 'method_overlay', 'admin_method_dry_run', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -156,8 +135,7 @@ if (in_array($action, TS_WRITE, true)) {
     if (!hash_equals($csrf, (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) fail('פג תוקף הדף — רעננו ונסו שוב', 403);
 }
 
-// העותק (3.7) — גוף גדול יותר, וחריגה היא 422 (מה שנכשל — לא התוכן)
-$in = !in_array($action, TS_WRITE, true) ? [] : ($action === 'analysis_copy' ? input(TS_COPY_MAX_BODY, 422) : input());
+$in = !in_array($action, TS_WRITE, true) ? [] : input();
 $id = (int)($in['id'] ?? $_GET['id'] ?? 0);
 if (str_starts_with($action, 'admin_')) {
     try {
@@ -248,17 +226,11 @@ try {
             out(['ok' => true, 'push_devices' => ts_push_count($uid)]);
 
         case 'analysis':
-            out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? '', null, true));
+            out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? ''));
 
         case 'method_overlay':
             out(['ok' => true] + ts_method_overlay($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['method'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
 
-        case 'analysis_copy':
-            out(['ok' => true] + ts_analysis_copy($uid, $in));
-
-        case 'analysis_copy_use':
-            ts_copy_use($uid, $in);
-            out(['ok' => true]);
 
         case 'strategies':
             out(['ok' => true, 'strategies' => ts_strategies_list($uid, $tz)]);
@@ -325,6 +297,21 @@ try {
             out(['ok' => true]);
 
         // ── שוק ──
+        case 'pairs':
+            // בחירת זוג בשם (18.1): "מה" ו"מול מה" — רק זוגות שיש להם ספק למשתמש. בלי פנייה לספק
+            out(['ok' => true] + ts_pairs_for($uid));
+
+        case 'pair_parse':
+            // "ביטקוין מול ין" → הזוג. זוג בלי ספק — הודעה, לא שגיאה, ולא נשלחת בקשה לספק (18.1 קריטריון 3)
+            $pp = ts_pair_parse((string)($_GET['q'] ?? ''));
+            $pa = $pp && $pp['known'] ? ts_pair_asset($uid, $pp['pair']) : null;
+            out(['ok' => true, 'pair' => $pp ? $pp['pair'] : null, 'label' => $pp['label'] ?? null, 'asset' => $pa,
+                'message' => $pp && !$pa ? 'אין ספק לזוג הזה' : null]);
+
+        case 'pair_labels':
+            $as = array_slice(array_filter(explode(',', (string)($_GET['assets'] ?? ''))), 0, 200);
+            out(['ok' => true, 'labels' => ts_pair_labels($as)]);
+
         case 'market_providers':
             out(['ok' => true, 'providers' => ts_providers_for($uid), 'shared_enabled' => ts_shared_enabled()]);
 
@@ -390,22 +377,10 @@ try {
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
-                'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
+                'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
-
-        // 📚 קובצי שיטות (spec-stage-a 9.3): הקבצים בענן של המנהל; כאן רק איזו תיקייה נבחרה — לא תוכן
-        case 'admin_method_files':
-            out(['ok' => true, 'folder' => json_decode((string)ts_setting('method_files_folder', 'null'), true)]);
-
-        case 'admin_method_files_folder':
-            $fid = $in['id'] ?? null; $fpath = $in['path'] ?? null;
-            if (!is_string($fid) || !preg_match('/^[A-Za-z0-9_:.-]{1,80}$/', $fid)) fail('מזהה תיקייה לא תקין', 422);
-            $fpath = ts_text($fpath, 300);
-            ts_setting_set('method_files_folder', json_encode(['id' => $fid, 'path' => $fpath, 'by' => $uid, 'at' => time()], JSON_UNESCAPED_UNICODE));
-            ts_admin_log($uid, 'method_files_folder', "$fid $fpath");
-            out(['ok' => true]);
 
         case 'admin_method_save':
             // עם definition — בונה השיטות (17.2): שיטה מוגדרת חדשה או גרסה חדשה שלה; בלי — הגדרות של שיטה קיימת (6.7)
