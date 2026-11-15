@@ -1,5 +1,5 @@
 /**
- * R1 — עורך ← סטודיו ← עורך: הקנבס נטען בכל חזרה (Chromium, Playwright):   node kol-maroko/tests/browser/r1.cjs
+ * R1 — עורך ← לשונית אחרת (M6: 📚 נתונים, במקום הסטודיו שהוסר) ← עורך: הקנבס נטען בכל חזרה (Chromium, Playwright):   node kol-maroko/tests/browser/r1.cjs
  * רץ מול tests/router.php ומסד זמני. 1280px ו-390px (מגע); חזרה אחרי טעינה מלאה, חזרה מהירה באמצע טעינה, וחזרה ב"אחורה".
  */
 'use strict';
@@ -42,7 +42,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       if (!QUICK) {
       // 1. אחרי טעינה מלאה: עורך ← סטודיו ← עורך (בלשוניות)
       for (let k = 1; k <= 3; k++) {
-        await tab(page, 'סטודיו'); await page.waitForFunction(() => /index\.php/.test(location.pathname) || location.hash.startsWith('#/studio'), null, { timeout: 10000 }); await sleep(800);
+        await tab(page, 'נתונים'); await page.waitForFunction(() => /index\.php/.test(location.pathname) || location.hash.startsWith('#/words'), null, { timeout: 10000 }); await sleep(800);
         await tab(page, 'עורך');
         const good = await loaded(page);
         if (SHOTS && k === 1) await page.screenshot({ path: path.join(SHOTS, 'r1-' + w + '-back.png') });
@@ -50,12 +50,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       }
       // 2. מהר: באמצע הטעינה ← סטודיו ← עורך
       for (let k = 1; k <= 3; k++) {
-        await tab(page, 'סטודיו'); await sleep(150 * k); await tab(page, 'עורך'); await sleep(100 * k);
-        await tab(page, 'סטודיו'); await sleep(200); await tab(page, 'עורך');
+        await tab(page, 'נתונים'); await sleep(150 * k); await tab(page, 'עורך'); await sleep(100 * k);
+        await tab(page, 'נתונים'); await sleep(200); await tab(page, 'עורך');
         ok(await loaded(page), w + ': מעבר מהיר ' + k + ' (באמצע טעינה) — הקנבס נטען', await st(page));
       }
       // 3. "אחורה" בדפדפן (bfcache / hash באותו מסמך)
-      await tab(page, 'סטודיו'); await sleep(1500); await page.goBack(); 
+      await tab(page, 'נתונים'); await sleep(1500); await page.goBack(); 
       ok(await loaded(page), w + ': "אחורה" מהסטודיו לעורך — הקנבס נטען', await st(page));
       // 4. באותו מסמך: hash יוצא מ-#/editor וחוזר מיד (unmount באמצע open)
       await page.goto(base + '/editor.php#/editor'); await loaded(page);

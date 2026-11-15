@@ -1,5 +1,9 @@
 <?php
 /**
+ * ⚠️ M6: כלי בדיקות בלבד. ההסבה הוסרה מהכלי (אין פעולה ב-api.php ואין כפתור); הקוד שלה עבר לכאן כמו שהוא, כי בדיקות הדפדפן
+ * של העורך (v1b–v16, r2–r5, m1, m3, m7, c1) זורעות את "העמוד המוסב" דרכו — הנתב של שרת הבדיקות (tests/router.php) עונה
+ * ל-pf_migrate מכאן. tests/ חסומה בשרת (.htaccess), והקובץ אינו נטען מאף קובץ שבייצור.
+ *
  * פרוסה F3 — ההסבה: "צור פרויקט מהעמוד של היום" (docs/spec-v2/09-migration.md §1–§5, 02-project-model.md §2, §8).
  *
  * יוצרת פרויקט קבצים מהמצב הנוכחי של הכלי: התבנית (lexicon.html — של בעל העמוד אם שינה אותה, אחרת LEX_TPL), ה-CSS
@@ -14,12 +18,12 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/lexicon.php';
-require_once __DIR__ . '/project.php';
-require_once __DIR__ . '/draft.php';
+require_once dirname(__DIR__, 2) . '/lib/lexicon.php';
+require_once dirname(__DIR__, 2) . '/lib/project.php';
+require_once dirname(__DIR__, 2) . '/lib/legacy_read.php';
 
 const MG_LIST = 'words';
-const MG_SEED = __DIR__ . '/../assets/project-seed/';
+const MG_SEED = __DIR__ . '/../../assets/project-seed/';
 const MG_FORM_DONE = 'תודה! המשוב יישלח לתיבת הפניות. השליחה עדיין אינה פעילה.';
 // שדות התבנית הישנה ← שדות data/words.json. null — אין מקבילה: התכונה מוסרת (ומדווח)
 const MG_WORD_FIELDS = ['word' => 'word', 'meaning' => 'meaning', 'audio' => 'audio', 'id' => 'id', 'wp_id' => 'wp_id', 'data_id' => 'id',

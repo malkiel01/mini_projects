@@ -136,14 +136,14 @@ test('X1 📝: "🔗 חבר למסמך קיים" — רשימה (שם, תארי�
     eq(false, $s['overwrote'], 'ה-hash נשמר בחיבור — אין "עריכה ביד"');
 });
 
-test('X1 📝: אזור שנמחק ביד — 404 ברור; הטיוטה הישנה (בלי path) — כמו היום; longtexts_get נשאר', function () {
+test('X1 📝: אזור שנמחק ביד — 404 ברור; M6: הטיוטה הישנה (בלי path) — 410; longtexts_get נשאר', function () {
     $wp = x1_wp();
     x1_file('lt/d.html', X1_PAGE);
     $wp->docs['gone'] = ['html' => '<p>x</p>', 'css' => ''];
     eq(404, throws(fn() => longtext_sync(X1_ED, ['doc' => 'gone', 'path' => 'lt/d.html'])));
-    $r = longtext_sync(X1_ED, ['doc' => 'gone']);
-    eq('gone', $r['doc']);
-    eq('<p>x</p>', longtexts_get(['gone'])['gone']['html']);
+    eq(410, throws(fn() => longtext_sync(X1_ED, ['doc' => 'gone'])), 'בלי path — רכיב בטיוטה הישנה, שאינה עוד');
+    db()->prepare("INSERT OR REPLACE INTO longtexts (doc, html, css, updated_at, updated_by) VALUES ('gone', '<p>x</p>', '', '', '')")->execute();
+    eq('<p>x</p>', longtexts_get(['gone'])['gone']['html'], 'הטבלה הישנה נקראת');
     ok(function_exists('longtexts_get'));
     unset($GLOBALS['kol_wp_fake']);
 });

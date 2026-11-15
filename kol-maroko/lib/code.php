@@ -1,22 +1,18 @@
 <?php
 /**
- * קבצי הקוד של העמוד (הכרעת בעל המערכת, 2026-10-25: "כל הקוד ניתן לעריכה ולשינוי לחלוטין, כמו ב-VS Code";
- * JS — כל עורך).
+ * מנוע התבנית של רכיב המילון הישן (Mustache מוגבל) ושלושת קובצי הקוד שלו — **לקריאה בלבד** מאז M6.
  *
- * שלושה קבצים: lexicon.html — תבנית (Mustache: {{משתנה}}, {{{HTML}}}, {{#רשימה}}…{{/רשימה}}, {{^ריק}}…{{/ריק}}),
- * lexicon.css (גם הוא תבנית — הגדלים מהפאנל), lexicon.js. בלי הקבצים — רכיב המילון מרונדר מהתבנית המובנית,
- * והאתר טוען את ה-CSS וה-JS של ערכת הנושא. עם הקבצים — שלנו במקומם: התוסף מוריד את של ערכת הנושא בעמוד הזה
- * (data-kol-own) ומריץ את שלנו.
+ * `</> קוד` הוסר מהממשק ומה-API (M6 §2.1): אין עוד יצירה, שמירה, היסטוריה או איפוס של code_files. מה שנשאר כאן הוא מה
+ * שנדרש כדי לרנדר עמוד בפורמט הישן — "🗄️ ארכיון" ונקודות שחזור ישנות (lib/legacy_read.php) — ומה ש-lib/lexicon.php
+ * קורא (lexicon_render, שאינו משתנה ב-M6): tpl_render, lexicon_context, tpl_clean_html, css_scope, lexicon_frame.
+ * הטבלאות code_files ו-code_history נשארות במסד כמו שהן.
  *
- * התבנית אינה קוד שרת: אין בה ביטויים, קריאות או גישה לשום דבר מעבר לנתונים שהיא מקבלת. ה-JS רץ בעמוד באתר.
- * כל שמירה נכנסת להיסטוריה; כל גרסה שומרת עותק של הקבצים ("פרסום מחדש" מחזיר גם אותם).
+ * התבנית אינה קוד שרת: אין בה ביטויים, קריאות או גישה לשום דבר מעבר לנתונים שהיא מקבלת.
  */
 
 declare(strict_types=1);
 
 const CODE_FILES = ['lexicon.html' => 'html', 'lexicon.css' => 'css', 'lexicon.js' => 'javascript'];
-const CODE_FILE_MAX = 400_000;
-const CODE_HISTORY = 50;                 // לכל קובץ
 const LEX_CSS_MARK = '/* ── הגדלים מהפאנל (סטודיו ← המילון) ── */';
 
 // ── התבנית ────────────────────────────────────────────────
@@ -109,32 +105,6 @@ function code_files(): ?array
     return $out;
 }
 
-function code_snapshot(): ?string
-{
-    $c = code_files();
-    return $c === null ? null : json_encode($c, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-}
-
-function code_state(): array
-{
-    $files = [];
-    foreach (db()->query('SELECT path, content, updated_at, updated_by FROM code_files')->fetchAll() as $r) {
-        $files[$r['path']] = ['content' => $r['content'], 'rev' => $r['updated_at'], 'by' => $r['updated_by'], 'lang' => CODE_FILES[$r['path']] ?? 'plaintext'];
-    }
-    return ['active' => (bool)$files, 'files' => $files, 'help' => LEX_TPL_HELP];
-}
-
-/** יצירת הקבצים מהעמוד כמו שהוא: התבנית המובנית, ה-CSS וה-JS של ערכת הנושא (מהייבוא) והגדלים. */
-function code_create(array $user): array
-{
-    if (code_files() !== null) throw new ApiError('הקבצים כבר קיימים');
-    $files = ['lexicon.html' => LEX_TPL, 'lexicon.css' => theme_lexicon_css() . "\n\n" . LEX_CSS_MARK . "\n" . LEX_TPL_SIZES, 'lexicon.js' => (string)setting('preview_js', '')];
-    $st = db()->prepare('INSERT INTO code_files (path, content, updated_at, updated_by) VALUES (?, ?, ?, ?)');
-    foreach ($files as $p => $c) $st->execute([$p, $c, now_iso(), $user['name']]);
-    audit_as($user, 'code_create', 'קבצי הקוד של העמוד');
-    return code_state();
-}
-
 /** ה-CSS של המילון מערכת הנושא. ייבוא חדש שומר אותו בנפרד; בייבוא ישן הוא בסוף preview_css (אחרי style.css). */
 function theme_lexicon_css(): string
 {
@@ -142,62 +112,6 @@ function theme_lexicon_css(): string
     $all = (string)setting('preview_css', '');
     $at = mb_strpos($all, '/**' . "\n" . ' * קול מרוקו - עיצוב עמוד המילון');
     return $at === false ? "/* ה-CSS של המילון לא נמצא בייבוא. אפשר להדביק כאן את lexicon.css מערכת הנושא. */" : mb_substr($all, $at);
-}
-
-function code_save(array $user, array $b): array
-{
-    $path = (string)($b['path'] ?? '');
-    if (!isset(CODE_FILES[$path])) throw new ApiError('קובץ לא מוכר');
-    $content = (string)($b['content'] ?? '');
-    if (strlen($content) > CODE_FILE_MAX) throw new ApiError('הקובץ גדול מ-400KB');
-    if (!mb_check_encoding($content, 'UTF-8')) throw new ApiError('הקובץ אינו UTF-8');
-    if ($path !== 'lexicon.js') tpl_tree($content);               // תבנית שבורה — לא נשמרת (עם מספר השורה)
-    $pdo = db();
-    $st = $pdo->prepare('SELECT content, updated_at, updated_by FROM code_files WHERE path = ?');
-    $st->execute([$path]);
-    $cur = $st->fetch();
-    if (!$cur) throw new ApiError('אין עדיין קבצי קוד — "יצירת הקבצים" קודם', 409);
-    if (isset($b['rev']) && $b['rev'] !== $cur['updated_at']) {
-        throw new ApiError("הקובץ השתנה בינתיים ({$cur['updated_by']}). טענו מחדש לפני שמירה", 409, ['rev' => $cur['updated_at']]);
-    }
-    if ($cur['content'] === $content) return ['rev' => $cur['updated_at']];
-    $pdo->beginTransaction();
-    $pdo->prepare('INSERT INTO code_history (path, content, at, by_name) VALUES (?, ?, ?, ?)')->execute([$path, $cur['content'], $cur['updated_at'], $cur['updated_by']]);
-    $pdo->prepare('DELETE FROM code_history WHERE path = ? AND id NOT IN (SELECT id FROM code_history WHERE path = ? ORDER BY id DESC LIMIT ' . CODE_HISTORY . ')')->execute([$path, $path]);
-    $rev = now_iso() . '.' . substr(bin2hex(random_bytes(3)), 0, 4);         // שתי שמירות באותה שנייה — rev שונה
-    $pdo->prepare('UPDATE code_files SET content = ?, updated_at = ?, updated_by = ? WHERE path = ?')->execute([$content, $rev, $user['name'], $path]);
-    $pdo->commit();
-    audit_as($user, 'code_save', $path);
-    return ['rev' => $rev];
-}
-
-function code_history(array $q): array
-{
-    $st = db()->prepare('SELECT id, at, by_name, length(content) AS size FROM code_history WHERE path = ? ORDER BY id DESC');
-    $st->execute([(string)($q['path'] ?? '')]);
-    return ['history' => $st->fetchAll()];
-}
-
-function code_history_get(array $q): array
-{
-    $st = db()->prepare('SELECT path, content, at, by_name FROM code_history WHERE id = ?');
-    $st->execute([(int)($q['id'] ?? 0)]);
-    return ['item' => $st->fetch() ?: throw new ApiError('לא נמצא', 404)];
-}
-
-/** חזרה לתבנית המובנית: הקבצים נמחקים (ההיסטוריה שלהם נשארת), והאתר חוזר לקבצים של ערכת הנושא בפרסום הבא. */
-function code_reset(array $user): array
-{
-    snapshot_create($user, 'לפני חזרה לתבנית המובנית');
-    $pdo = db();
-    $pdo->beginTransaction();
-    foreach ($pdo->query('SELECT path, content, updated_at, updated_by FROM code_files')->fetchAll() as $r) {
-        $pdo->prepare('INSERT INTO code_history (path, content, at, by_name) VALUES (?, ?, ?, ?)')->execute([$r['path'], $r['content'], $r['updated_at'], $r['updated_by']]);
-    }
-    $pdo->exec('DELETE FROM code_files');
-    $pdo->commit();
-    audit_as($user, 'code_reset', 'חזרה לתבנית המובנית');
-    return code_state();
 }
 
 // ── הנתונים שהתבנית מקבלת ─────────────────────────────────
@@ -358,15 +272,6 @@ const LEX_TPL_SIZES = <<<'CSS'
     .kadisha-lexicon-page .kadisha-hero-credit { font-size: {{m_credit_size}}px !important; }
 }
 CSS;
-
-const LEX_TPL_HELP = [
-    'כללי' => '{{שם}} — טקסט (מוגן). {{{שם}}} — HTML כמו שהוא. {{#שם}}…{{/שם}} — רשימה (חוזר לכל פריט) או "אם יש". {{^שם}}…{{/שם}} — "אם אין". {{! הערה }}.',
-    'מהפאנל' => 'title_he, subtitle_main_he, title_fr, title_en, subtitle_he, credit_he, gate_before, gate_after, more_label, less_label, hero_overlay, hero_min_height, title_size, subtitle_size, title_en_size, title_weight, intro_max_width, feedback, show_ids',
-    'מחושב' => 'hero (כתובת התמונה), eyebrow, has_gates, intro_style, count, empty, has_topics, editor (בסטודיו), preview_note; ל-CSS: hero_min_css, main_size, credit_size, m_title_size, m_main_size, m_subtitle_size, m_title_en_size, m_credit_size',
-    'gates (המבוא)' => 'i, label, html, more',
-    'topics (הנושאים)' => 'slug, name, count',
-    'words (המילים)' => 'id, wp_id, data_id, word, search, search_full, slugs, topics (name), has_topics, single, meaning (HTML), audio (כתובת), ext_id, feedback_id',
-];
 
 // ── אבטחה: מה שנכתב בכלי לא רץ באתר (הכרעה 2026-10-25, סגירת החור שמצא צ'אט האפיון) ─────────
 //

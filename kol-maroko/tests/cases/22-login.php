@@ -44,16 +44,16 @@ test('P1 כניסה: ה-CSRF הוא של session חי של המשתמש — אס
     $a2 = p1_raw('GET', '/api.php?action=me', P1_A);                 // session שני, מדפדפן אחר
     $c1 = p1_cookie($a1)['value'];
     ok($a1['json']['csrf'] !== $a2['json']['csrf'], 'לכל session אסימון משלו');
-    $body = ['op' => 'release'];
-    eq(200, p1_raw('POST', '/api.php?action=lock', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $a1['json']['csrf']], $body)['status'], 'האסימון של ה-session');
+    $body = [];                                                      // M6: לשעבר lock (נמחק) — פעולת POST אחרת, אותה בדיקה
+    eq(200, p1_raw('POST', '/api.php?action=notices_read', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $a1['json']['csrf']], $body)['status'], 'האסימון של ה-session');
     // טעינה ראשונה: בקשות מקבילות בלי עוגייה — האסימון של session חי אחר של אותו משתמש מתקבל
-    eq(200, p1_raw('POST', '/api.php?action=lock', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $a2['json']['csrf']], $body)['status'], 'אסימון של session חי של אותו משתמש');
+    eq(200, p1_raw('POST', '/api.php?action=notices_read', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $a2['json']['csrf']], $body)['status'], 'אסימון של session חי של אותו משתמש');
     $b = p1_raw('GET', '/api.php?action=me', P1_B);
     db()->prepare("UPDATE users SET role = 'editor' WHERE sub = '7002'")->execute();
-    eq(403, p1_raw('POST', '/api.php?action=lock', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $b['json']['csrf']], $body)['status'], 'אסימון של משתמש אחר');
-    eq(403, p1_raw('POST', '/api.php?action=lock', P1_A, $c1, ['X-CSRF: ' . $a1['json']['csrf']], $body)['status'], 'בלי X-Kol');
+    eq(403, p1_raw('POST', '/api.php?action=notices_read', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $b['json']['csrf']], $body)['status'], 'אסימון של משתמש אחר');
+    eq(403, p1_raw('POST', '/api.php?action=notices_read', P1_A, $c1, ['X-CSRF: ' . $a1['json']['csrf']], $body)['status'], 'בלי X-Kol');
     db()->prepare('DELETE FROM sessions WHERE id = ?')->execute([login_sid_hash(p1_cookie($a2)['value'])]);
-    eq(403, p1_raw('POST', '/api.php?action=lock', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $a2['json']['csrf']], $body)['status'], 'session שנמחק — האסימון שלו לא תקף');
+    eq(403, p1_raw('POST', '/api.php?action=notices_read', P1_A, $c1, ['X-Kol: 1', 'X-CSRF: ' . $a2['json']['csrf']], $body)['status'], 'session שנמחק — האסימון שלו לא תקף');
     db()->prepare("UPDATE users SET role = NULL WHERE sub = '7002'")->execute();
 });
 

@@ -85,15 +85,9 @@ const WAV = (() => { const n = 800, b = Buffer.alloc(44 + n); b.write('RIFF', 0)
     ok(A.inline && A.v.includes('script-src-elem:report'), 'סקריפט בתוך הדף — רץ (שלב א אינו שובר דבר) ומדווח כ"דיווח בלבד"');
     ok(await until(async () => (await reports({ policy: 'studio', directive: 'object-src', disposition: 'enforce' })).length && (await reports({ policy: 'studio', directive: 'script-src-elem', disposition: 'report' })).length),
       'הדוחות הגיעו ליומן מהדפדפן עצמו (report-uri, עם העוגייה) — מקובצים לפי מדיניות, הנחיה ומקור');
-    // התצוגה הישנה (srcdoc בלי same-origin): הסקריפט שלה רץ, והעמוד מרונדר בה
+    // M6: התצוגה הישנה (srcdoc של הסטודיו הישן) — נמחקה עם הסטודיו. מי שמגיע ל-#/studio מועבר ל-🎨 עורך (editor.php, שלב ב)
     await page.goto(base + '/#/studio');
-    const legacy = await until(async () => { for (const fr of page.frames()) { if (fr === page.mainFrame()) continue; const t = await fr.evaluate(() => document.body && document.body.innerText.trim().length).catch(() => 0); if (t > 20) return t; } return 0; }, 15000);
-    ok(legacy > 20, `התצוגה של הסטודיו הישן (srcdoc) מרונדרת — הסקריפט שבה רץ תחת שלב א (${legacy} תווים)`);
-    // הפרה בתוך התצוגה הישנה: המסגרת היא sandbox בלי allow-same-origin — מקור אטום. הדפדפן שולח את הדוח שלה כבקשה
-    // ממקור זר, בלי העוגייה (SameSite) — והשרת אינו קולט דוח בלי זהות. פער ידוע (README); לשלב ב אין בו צורך: המסך הישן
-    // נשאר בשלב א עד שהוא מוסר.
-    const fromFrame = await until(() => seen().filter(t => t.uri.startsWith('/csp.php') && !t.user).length);
-    ok(fromFrame && !(await reports({ doc: 'about:srcdoc', policy: 'studio' })).length, `הפרות בתוך התצוגה הישנה (מקור אטום): הדוח נשלח בלי זהות (${fromFrame}) — ואינו נקלט; פער מתועד`);
+    ok(await until(() => /\/editor\.php$/.test(new URL(page.url()).pathname) && new URL(page.url()).hash === '#/editor', 15000), `#/studio ← 🎨 עורך (${page.url()})`);
     const direct = await page.goto(base + '/studio.html');
     ok(direct.status() === 403 && !(await page.content()).includes('app.js'), 'studio.html (המעטפת) בכתובת ישירה — 403, בלי הסטודיו (אין כתובת שמגישה אותו בלי הכותרות)');
     const old = await page.goto(base + '/index.html?pwa-launch=1#/words');

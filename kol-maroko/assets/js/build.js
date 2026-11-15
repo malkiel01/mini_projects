@@ -325,7 +325,7 @@
     var old = h('iframe', { sandbox: 'allow-scripts', title: 'העמוד של היום', loading: 'lazy' });
     var mk = function (w) { var l = h('label', {}, h('input', { type: 'radio', name: 'pkw', checked: w === cur, onchange: function () { cur = w; fit(); } }), h('span', {}, w + 'px')); return l; };
     seg.append(mk(1280), mk(390));
-    var cells = [['הגרסה הבנויה', frameEl(viewUrl(g), 'הגרסה הבנויה')], ['העמוד של היום (הטיוטה שבאתר)', old]].map(function (c) { return h('figure', {}, h('figcaption', {}, c[0]), h('div', { class: 'pk-scale' }, c[1])); });
+    var cells = [['הגרסה הבנויה', frameEl(viewUrl(g), 'הגרסה הבנויה')], ['הגרסה האחרונה בפורמט הישן (🗄️ ארכיון)', old]].map(function (c) { return h('figure', {}, h('figcaption', {}, c[0]), h('div', { class: 'pk-scale' }, c[1])); });
     stage.append.apply(stage, cells);
     function fit() {
       cells.forEach(function (c) {
@@ -334,10 +334,11 @@
         box.style.height = Math.round((cur === 1280 ? 800 : 780) * k) + 'px';
       });
     }
-    api('versions').then(function (v) {
-      if (!v.live) { old.replaceWith(h('p', { class: 'hint' }, 'אין גרסה באתר מהטיוטה להשוואה.')); return; }
-      return api('version_preview', undefined, '&n=' + v.live.n).then(function (r) {
-        old.srcdoc = '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>body{margin:0;font-family:system-ui,Arial,sans-serif}' + r.css.replace(/<\/style/gi, '') + '</style></head><body>' + r.html + '</body></html>';
+    // M6: הצד הישן — מ-🗄️ ארכיון (לקריאה בלבד): הגרסה האחרונה שהייתה באתר בפורמט הישן
+    api('archive').then(function (v) {
+      if (!v.last_live) { old.replaceWith(h('p', { class: 'hint' }, 'אין גרסה בפורמט הישן להשוואה.')); return; }
+      return api('archive_view', undefined, '&n=' + v.last_live).then(function (r) {
+        old.srcdoc = '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">' + (r.fonts ? '<link rel="stylesheet" href="' + r.fonts + '">' : '') + '<style>body{margin:0;font-family:system-ui,Arial,sans-serif}' + r.css.replace(/<\/style/gi, '') + '</style></head><body>' + r.html + '</body></html>';
       });
     }).catch(function (e) { old.replaceWith(h('p', { class: 'error' }, e.message)); });
     wrap.append(seg, stage);

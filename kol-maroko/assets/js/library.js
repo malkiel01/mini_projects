@@ -468,7 +468,7 @@ const Library = (() => {
         return h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: () => sheet(im.label,
           src ? h('img', { class: 'file-preview', src, alt: im.label, referrerpolicy: 'no-referrer' }) : h('p', { class: 'error' }, 'הכתובת אינה כתובת https באתר'),
           h('label', { class: 'f' }, h('span', {}, 'הכתובת באתר'), h('input', { readonly: true, dir: 'ltr', value: im.url })),
-          h('p', { class: 'hint' }, im.replaced ? 'בעמוד מוצגת עכשיו תמונה אחרת, מהכלי. התמונה הזו נשארת באתר.' : 'התמונה נמצאת באתר ומוצגת משם. מחליפים אותה ב-🎨 סטודיו ← המילון ← רקע.')) },
+          h('p', { class: 'hint' }, im.replaced ? 'בעמוד מוצגת עכשיו תמונה אחרת, מהכלי. התמונה הזו נשארת באתר.' : 'התמונה נמצאת באתר ומוצגת משם. מחליפים אותה ב-🎨 עורך: בוחרים את האזור, ובלשונית 🎨 עיצוב ← תמונת רקע.')) },
           src ? h('img', { class: 'thumb', src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🖼️'),
           h('span', { class: 'use-tx' }, h('b', { class: 'one' }, im.label), h('small', { dir: 'ltr' }, im.url.replace(/^https:\/\//, ''))),
           h('span', { class: 'chip', 'data-src-state': im.url }, 'באתר'), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')),

@@ -127,17 +127,14 @@ test('מסך המפתח: היומן מסונן לפי סוג, משתמש, פעו
 
 test('מסך המפתח: יומן הפעולות — כניסה, שמירה, מחיקה, שינוי חברים ושינוי הגדרות, עם סינון', function () {
     http('POST', '/api.php?action=word_save', ['user' => U_EDITOR, 'json' => ['word' => 'לפעולות', 'meaning' => 'x']]);
-    http('POST', '/api.php?action=lock', ['user' => U_EDITOR, 'json' => ['op' => 'take']]);
-    $d = http('GET', '/api.php?action=draft', ['user' => U_EDITOR])['json'];
-    $d['page']['settings']['title'] = 'כותרת מהבדיקה ' . time();
-    $s = http('POST', '/api.php?action=draft_save', ['user' => U_EDITOR, 'json' => ['page' => $d['page'], 'rev' => $d['rev']]]);
+    // M6: "שמירה" — לשעבר draft_save בטיוטה הישנה (נמחקה); עכשיו כתיבה לקובץ בפרויקט
+    $s = http('POST', '/api.php?action=pf_create', ['user' => U_EDITOR, 'json' => ['path' => 'audit/t' . time() . '.css', 'content' => '/* מהבדיקה */']]);
     eq(200, $s['status'], $s['body']);
-    http('POST', '/api.php?action=lock', ['user' => U_EDITOR, 'json' => ['op' => 'release']]);
     http('POST', '/api.php?action=person_invite', ['user' => U_OWNER, 'json' => ['email' => 'new@example.test', 'role' => 'editor']]);
     http('POST', '/api.php?action=disk_cap', ['user' => U_OWNER, 'json' => ['gb' => 6]]);
     $a = http('GET', '/api.php?action=dev-audit', ['user' => U_OWNER])['json'];
     $acts = array_column($a['rows'], 'action');
-    foreach (['login', 'draft_save', 'word_add', 'word_delete', 'snapshot_restore', 'person_invite', 'disk_cap', 'dev_token_create'] as $x) ok(in_array($x, $acts, true), "חסרה פעולה: $x");
+    foreach (['login', 'pf_create', 'word_add', 'word_delete', 'snapshot_restore', 'person_invite', 'disk_cap', 'dev_token_create'] as $x) ok(in_array($x, $acts, true), "חסרה פעולה: $x");
     $only = http('GET', '/api.php?action=dev-audit&user=u-editor&act=word_add', ['user' => U_OWNER])['json']['rows'];
     ok($only && !array_filter($only, fn($x) => $x['sub'] !== 'u-editor' || $x['action'] !== 'word_add'), 'סינון לפי מי ומה');
 });

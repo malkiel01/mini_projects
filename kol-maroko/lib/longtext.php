@@ -12,7 +12,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/draft.php';
 require_once __DIR__ . '/WordProcessorClient.php';
 require_once __DIR__ . '/project.php';
 require_once __DIR__ . '/ai.php';
@@ -52,34 +51,11 @@ function doc_id(mixed $v): string
     return is_string($v) && preg_match('/^[A-Za-z0-9:_-]{1,40}$/', $v) ? $v : '';
 }
 
-/**
- * כתובת ל-iframe. עורך שמחזיק בנעילת העמוד — עריכה; אחרים — צפייה. $doc ריק — מסמך חדש (המזהה חוזר, והדפדפן
- * שם אותו ברכיב).
- */
-function editor_session(array $user, array $b): array
-{
-    $doc = doc_id($b['doc'] ?? '');
-    $l = lock_state();
-    $can = $l && $l['sub'] === $user['sub'] ? 'edit' : 'view';
-    if ($doc === '' && $can !== 'edit') throw new ApiError('בעריכה אצל מישהו אחר', 423);
-    $s = wp_try(fn() => wp()->embedSession($doc ?: null, ['id' => $user['sub'], 'name' => $user['name'] ?: 'עורך'], $can,
-        'document', null, 'קול מרוקו — טקסט'));
-    return ['embed_url' => $s['embed_url'], 'doc' => $s['doc'], 'can' => $can, 'host_js' => KOL_WP_URL . 'assets/js/host.js'];
-}
-
-/** אחרי שמירה בעורך: מושכים את ה-HTML וה-CSS, מסננים ושומרים. עם path — לאזור בקובץ (X1); בלי — רכיב הטיוטה הישנה (עד M6). */
+/** אחרי שמירה בעורך: מושכים את ה-HTML וה-CSS, מסננים ושומרים לאזור בקובץ (X1). M6: בלי path (רכיב בטיוטה הישנה) — אין עוד. */
 function longtext_sync(array $user, array $b): array
 {
-    if (isset($b['path'])) return lt_sync_file($user, $b);
-    $doc = doc_id($b['doc'] ?? '');
-    if ($doc === '') throw new ApiError('מזהה מסמך לא תקין');
-    $h = wp_try(fn() => lt_wp()->export($doc, 'html'));
-    $html = sanitize_doc((string)($h['html'] ?? ''));
-    $css = sanitize_css((string)($h['css'] ?? ''));
-    db()->prepare('INSERT INTO longtexts (doc, html, css, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(doc) DO UPDATE SET html = excluded.html, css = excluded.css, updated_at = excluded.updated_at, updated_by = excluded.updated_by')
-        ->execute([$doc, $html, $css, now_iso(), $user['sub']]);
-    return ['doc' => $doc, 'chars' => mb_strlen(strip_tags($html))];
+    if (!isset($b['path'])) throw new ApiError('טקסט ארוך מסונכרן לקובץ בפרויקט — חסר path', 410);
+    return lt_sync_file($user, $b);
 }
 
 function longtexts_get(array $docs): array

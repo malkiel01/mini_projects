@@ -35,7 +35,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const base = `http://127.0.0.1:${port}`, wp = `http://127.0.0.1:${wpPort}`;
   execFileSync('php', ['-r', `
     define('KOL_DATA_DIR', $argv[1]);
-    foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+    foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     $now = now_iso();
     foreach ([['u-pub', 'pub@example.test', 'Pub Test', 'publisher'], ['u-ed', 'ed@example.test', 'Ed Test', 'editor']] as $m)
       db()->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute([...$m, $now]);   // P1

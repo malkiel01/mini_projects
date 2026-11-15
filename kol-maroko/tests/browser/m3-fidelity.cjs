@@ -365,7 +365,7 @@ async function selfTest() {
   const base = `http://127.0.0.1:${port}`, wp = `http://127.0.0.1:${wpPort}`;
   execFileSync('php', ['-r', `
     define('KOL_DATA_DIR', $argv[1]);
-    foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+    foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     setting_set('site_url', $argv[3]);
     file_put_contents($argv[4] . '/options.json', json_encode(['kol_maroko_keys' => pub_key_line(pub_key()), 'kol_v2_mock' => true]));
   `, data, ROOT, wp, wpDir]);

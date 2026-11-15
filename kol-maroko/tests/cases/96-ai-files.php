@@ -197,14 +197,11 @@ test('X1 ✨: סירוב / תשובה שנקטעה / מבנה לא צפוי — 
     eq('error', db()->query("SELECT status FROM ai_usage ORDER BY rowid DESC LIMIT 1")->fetchColumn());
 });
 
-test('X1 ✨: המודל הישן נמחק — ai_page_view / ai_apply / AI_EDIT / AI_ADD_TYPES אינם; הסטודיו הישן מקבל "העוזר עבר ל-📁 פרויקט"', function () {
-    foreach (['ai_page_view', 'ai_apply', 'ai_request'] as $f) ok(!function_exists($f), $f);
+test('X1 ✨: המודל הישן נמחק — ai_page_view / ai_apply / AI_EDIT / AI_ADD_TYPES אינם; M6: גם ai_suggest של הסטודיו הישן — 404', function () {
+    foreach (['ai_page_view', 'ai_apply', 'ai_request', 'ai_suggest'] as $f) ok(!function_exists($f), $f);
     foreach (['AI_EDIT', 'AI_ADD_TYPES'] as $c) ok(!defined($c), $c);
-    $m = '';
-    try { ai_suggest(X1_ED, ['prompt' => 'abc']); } catch (ApiError $e) { $m = $e->getMessage(); }
-    ok(str_contains($m, 'העוזר עבר ל-📁 פרויקט'));
     $r = http('POST', '/api.php?action=ai_suggest', ['user' => U_EDITOR, 'json' => ['prompt' => 'abc']]);
-    eq(410, $r['status']);
+    eq(404, $r['status']);
     unset($GLOBALS['kol_ai_fake']);
 });
 

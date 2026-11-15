@@ -15,7 +15,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/draft.php';
 require_once __DIR__ . '/secrets.php';
 require_once __DIR__ . '/members.php';
 require_once __DIR__ . '/project.php';
@@ -163,11 +162,6 @@ function ai_call(array $body, string $key): array
 
 // ── עוזר הבינה על קבצי הפרויקט (פרוסה X1 §2.1) ─────────────
 
-/** הסטודיו הישן (aiSheet ב-studio.js) עד M6: העוזר עבר לקבצים. */
-function ai_suggest(array $user, array $b): array
-{
-    throw new ApiError('העוזר עבר ל-📁 פרויקט: פותחים קובץ ולוחצים ✨ (על המילים — ב-📚)', 410, ['moved' => 'project']);
-}
 
 /** קובץ טקסט שהעוזר רשאי לראות ולכתוב: בתוך הפרויקט, לא media/, לא בינארי. מחזיר [נתיב, סוג, תוכן, rev] או שגיאה. */
 function ai_file(string $path): array

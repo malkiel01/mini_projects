@@ -40,7 +40,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const base = `http://127.0.0.1:${port}`;
   execFileSync('php', ['-r', `
     define('KOL_DATA_DIR', $argv[1]);
-    foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+    foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     foreach ([['502', 'page@example.test', 'בעלת העמוד', 'page_owner'], ['503', 'pub@example.test', 'מפרסם', 'publisher']] as $m)
       db()->prepare("INSERT INTO users (sub, email, name, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)")->execute([...$m, now_iso()]);
     db()->exec("INSERT INTO words (word, meaning, updated_at) VALUES ('שלום', 'hello', '2026-01-01T00:00:00Z')");
@@ -144,8 +144,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(/לקריאה בלבד/.test(ro) && /התפקיד שלך: עורך תוכן — מילים, הקלטות ופניות\. לשינוי עיצוב ופרסום — פנה לבעל העמוד/.test(ro), 'הקוד — "לקריאה בלבד" עם המשפט');
     const cs = await helper.evaluate(async () => { try { await api('pf_write', { id: 1, content: 'x', rev: 1 }); return 200; } catch (e) { return [e.status, e.message]; } });
     ok(Array.isArray(cs) && cs[0] === 403 && /עורך תוכן/.test(cs[1]), 'שמירת קוד — נדחית בשרת (403)', JSON.stringify(cs));
-    const cr = await helper.evaluate(async () => { try { await api('code', undefined); return 200; } catch (e) { return e.status; } });
-    ok(cr === 200, 'קריאת הקוד — מותרת');
+    const cr = await helper.evaluate(async () => { try { await api('pf_tree', undefined); return 200; } catch (e) { return e.status; } });
+    ok(cr === 200, 'קריאת הקוד (pf_tree; M6: לשעבר code) — מותרת');
 
     // ════ ד. בלי תפקיד ════
     console.log('\n── ד. בלי תפקיד ──');

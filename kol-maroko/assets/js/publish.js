@@ -1,10 +1,9 @@
-// קול מרוקו — פרסום לאתר והגדרות (docs/spec.md, פרק 6; docs/install.md, docs/cloudflare.md).
+// קול מרוקו — 🚀 פרסום: הדרך לאתר (M7), 🏗️ בנה גרסה מהפרויקט (M1, build.js), 🔁 מעבר (M3, cutover.js) ו-🗄️ ארכיון (M6);
+// והגדרות החיבור לאתר (⚙️ בעל האתר). M6: פרסום הטיוטה (1.x) והייבוא מהאתר — נמחקו (docs/spec-v2/slices/M6-remove-old-studio.md).
 'use strict';
 
 const Publish = (() => {
-  const STATUS = { live: ['באתר', 'ok'], failed: ['נכשלה', 'bad'], pending: ['לא נשלחה', 'warn'], superseded: ['הוחלפה', ''] };
-  const TYPE_NAMES = { heading: 'כותרת', text: 'טקסט', longtext: 'טקסט ארוך', button: 'כפתור', divider: 'קו', spacer: 'רווח', image: 'תמונה',
-    gallery: 'גלריה', audio: 'הקלטה', video: 'וידאו', file: 'קובץ', code: 'קוד', raw: 'קטע מקורי', lexicon: 'המילון' };
+  const STATUS = { live: ['הייתה באתר', 'ok'], failed: ['נכשלה', 'bad'], pending: ['לא נשלחה', 'warn'], superseded: ['הוחלפה', ''] };
   const DOCS = 'https://github.com/malkiel01/mini_projects/blob/main/kol-maroko/docs/';
   const when = iso => new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Jerusalem' });
 
@@ -29,117 +28,59 @@ const Publish = (() => {
   else document.addEventListener('DOMContentLoaded', () => buildReady().then(() => KolBuild.notices()).catch(() => {}));
 
   // ── פרסום ────────────────────────────────────────────────
-  async function view(host, role, more = []) {
-    if (!more.length) host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
-    let d;
-    try { d = await api('versions', undefined, `&offset=${more.length}`); } catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
-    d.versions = [...more, ...d.versions];
+  async function view(host, role) {
+    host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
     const canPublish = role === 'publisher' || role === 'owner';
-    const live = d.live;
-    let pk = more.length ? host.querySelector('.pk') : null;
-    if (!more.length) { try { await buildReady(); pk = KolBuild.block(host, role); } catch (e) { pk = h('p', { class: 'error' }, e.message); } }
+    let pk;
+    try { await buildReady(); pk = KolBuild.block(host, role); } catch (e) { pk = h('p', { class: 'error' }, e.message); }
     host.replaceChildren(...[                                   // replaceChildren(null) כותב "null"
-      canPublish ? (more.length ? host.querySelector('.ob') : outboxBlock(host, role)) : null,      // M7 — הדרך לאתר: התור והדופק
-      pk,
-      canPublish ? more.length ? host.querySelector('.co') : (el => (window.KolCutover ? KolCutover.mount(el) : document.head.append(h('script', { src: 'assets/js/cutover.js', onload: () => KolCutover.mount(el) })), el))(h('section', {})) : null,   // M3 — 🔁 מעבר (assets/js/cutover.js)
-      h('h2', { class: 'sec-title' }, '🎨 פרסום הטיוטה (המסלול של היום)'),
-      h('div', { class: 'summary' },
-        h('div', { class: 'line' }, live
-          ? [h('span', { class: 'muted' }, 'באתר עכשיו:'), h('b', {}, `גרסה ${live.n}`), h('span', { class: 'muted' }, `· ${live.name} · ${when(live.at)}`)]
-          : [h('b', {}, 'עוד לא פורסם')]),
-        canPublish
-          ? h('button', { type: 'button', class: 'btn primary', onclick: () => publishSheet(host, role) }, '🚀 פרסום הטיוטה לאתר')
-          : h('p', { class: 'hint' }, 'רק מפרסם יכול לשלוח לאתר. הטיוטה שלך נשמרת.')),
-      canPublish ? siteBlock(host, role, !!live) : null,
-      h('h2', { class: 'sec-title' }, 'גרסאות'),
-      d.versions.length
-        ? h('ul', { class: 'list' }, d.versions.map(v => {
-          const [label, cls] = STATUS[v.status] || [v.status, ''];
-          return h('li', {}, h('button', { type: 'button', class: 'use-row', onclick: () => versionSheet(v, host, role, d.versions[0].n) },
-            h('span', { class: 'use-ic', 'aria-hidden': 'true' }, String(v.n)),
-            h('span', { class: 'use-tx' }, h('b', { class: 'one' }, v.note || `גרסה ${v.n}`), h('small', {}, `${v.name} · ${when(v.at)} · ${v.files} קבצים`)),
-            h('span', { class: `chip ${cls}` }, label), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
-        }))
-        : h('p', { class: 'empty' }, 'כל פרסום יוצר כאן גרסה קפואה. אפשר לחזור לכל אחת.'),
-      d.versions.length < d.total ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: () => view(host, role, d.versions) }, `עוד גרסאות (${d.total - d.versions.length})`) : null,
+      canPublish ? outboxBlock(host, role) : null,                 // M7 — הדרך לאתר: התור והדופק
+      pk,                                                          // M1 — 🏗️ בנה גרסה מהפרויקט
+      canPublish ? (el => (window.KolCutover ? KolCutover.mount(el) : document.head.append(h('script', { src: 'assets/js/cutover.js', onload: () => KolCutover.mount(el) })), el))(h('section', {})) : null,   // M3 — 🔁 מעבר (assets/js/cutover.js)
+      // M6: המפסק של 1.x ("להציג באתר את הגרסה מהסטודיו") הוסר — הוא הדליק את הגרסה הישנה. המפסק "העמוד החדש" — בוורדפרס (🔁 מעבר מציג את מצבו)
+      archiveBlock(),                                              // M6 — 🗄️ ארכיון
     ].filter(Boolean));
   }
 
-  // מה האתר מציג: הגרסה מהסטודיו, או העמוד המקורי (התבנית והמילים שבוורדפרס — לא נמחקו ולא שונו).
-  // המעבר בין השניים — בלחיצה, ואפשר לחזור בכל רגע.
-  function siteBlock(host, role, published) {
-    const line = h('div', { class: 'line' }, h('span', { class: 'muted' }, 'בודק מה האתר מציג…'));
-    const btns = h('div', { class: 'row-btns wrap' });
-    const box = h('div', { class: 'summary site-state' }, line, btns,
-      h('p', { class: 'hint' }, 'העמוד המקורי לא נמחק: חזרה אליו מחזירה את האתר בדיוק למה שהיה לפני הכלי, כולל המילים שבוורדפרס.'));
-    const flip = async on => {
-      const msg = on ? 'להציג באתר את הגרסה האחרונה מהסטודיו (במקום העמוד המקורי)?'
-        : 'להחזיר את האתר לעמוד המקורי, כמו שהיה לפני הכלי? הגרסאות כאן נשמרות, ואפשר להחליף שוב בכל רגע.';
-      if (!confirm(msg)) return;
-      btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
-      try {
-        const r = await api('site_switch', { enabled: on });
-        if (r.site.queued) { toast(`⏳ בתור (#${r.site.seq}) — יוחל כשהאתר ימשוך`); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); Outbox.refresh(); return; }
-        toast(r.site.enabled ? 'האתר מציג את הגרסה מהסטודיו ✓' : 'האתר חזר לעמוד המקורי ✓'); show(r.site);
-      }
-      catch (e) { toast(e.message, true); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
+  // ── M6: 🗄️ ארכיון — הגרסאות שפורסמו בפורמט הישן, לקריאה בלבד. אין כאן אף כפתור שמשנה משהו ──
+  function archiveBlock() {
+    const list = h('div', {}, h('p', { class: 'empty' }, 'טוען…'));
+    const box = h('details', { class: 'arch', 'data-archive': true },
+      h('summary', {}, h('h2', { class: 'sec-title', style: 'display:inline' }, '🗄️ ארכיון — הגרסאות בפורמט הישן')),
+      h('p', { class: 'hint' }, 'מה שפורסם מהסטודיו הישן, לפני המעבר לפרויקט הקבצים — לקריאה בלבד. אפשר לראות כל גרסה ולהוריד אותה כ-HTML. העמוד שבאתר נבנה מ-📁 פרויקט.'),
+      list);
+    let loaded = false;
+    const load = async (more = []) => {
+      let d;
+      try { d = await api('archive', undefined, `&offset=${more.length}`); } catch (e) { list.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      const all = [...more, ...d.versions];
+      if (!all.length) { list.replaceChildren(h('p', { class: 'empty' }, 'אין גרסאות בפורמט הישן.')); return; }
+      list.replaceChildren(
+        h('ul', { class: 'list' }, all.map(v => {
+          const [label, cls] = STATUS[v.status] || [v.status, ''];
+          return h('li', {}, h('button', { type: 'button', class: 'use-row', 'data-archive-n': v.n, onclick: () => archiveSheet(v) },
+            h('span', { class: 'use-ic', 'aria-hidden': 'true' }, String(v.n)),
+            h('span', { class: 'use-tx' }, h('b', { class: 'one' }, v.note || `גרסה ${v.n}`), h('small', {}, `${v.name} · ${when(v.at)}`)),
+            h('span', { class: `chip ${v.n === d.last_live ? 'ok' : cls}` }, v.n === d.last_live ? 'האחרונה שהייתה באתר' : label), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')));
+        })),
+        all.length < d.total ? h('button', { type: 'button', class: 'btn ghost w-more', onclick: () => load(all) }, `עוד גרסאות (${d.total - all.length})`) : null);
     };
-    const show = st => {
-      line.replaceChildren(h('span', { class: 'muted' }, 'האתר מציג:'),
-        st.enabled ? h('b', { style: 'color:var(--ok)' }, `🎨 הגרסה מהסטודיו (${st.live})`) : h('b', {}, '🏛️ העמוד המקורי'));
-      btns.replaceChildren(st.enabled
-        ? h('button', { type: 'button', class: 'btn ghost danger', onclick: () => flip(false) }, '↩️ חזרה לעמוד המקורי')
-        : h('button', { type: 'button', class: 'btn primary', disabled: !st.live, title: st.live ? null : 'קודם פרסום', onclick: () => flip(true) }, '▶️ להציג באתר את הגרסה מהסטודיו'));
-    };
-    if (!published) { line.replaceChildren(h('span', { class: 'muted' }, 'האתר מציג את העמוד המקורי. אחרי הפרסום הראשון — אפשר להחליף.')); return box; }
-    api('site_ping', {}).then(r => show(r.site)).catch(e => line.replaceChildren(h('span', { class: 'error' }, e.message), ' ', helpLink(e)));
+    box.addEventListener('toggle', () => { if (box.open && !loaded) { loaded = true; load(); } });
     return box;
   }
 
-  async function publishSheet(host, role) {
-    const body = h('div', { class: 'pub' }, h('p', { class: 'empty' }, 'בודק את הטיוטה…'));
-    const dlg = sheet('🚀 פרסום לאתר', body);
-    let p;
-    try { p = await api('publish_preview'); } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
-    const c = p.checks, df = p.diff;
-    const names = list => list.map(x => TYPE_NAMES[x.type] || x.type).reduce((m, t) => (m[t] = (m[t] || 0) + 1, m), {});
-    const line = (ic, label, list) => list.length ? h('li', {}, h('span', { 'aria-hidden': 'true' }, ic), ` ${label}: `,
-      Object.entries(names(list)).map(([t, n]) => `${t}${n > 1 ? ' ×' + n : ''}`).join(', ')) : null;
-    const diffBox = df.first
-      ? h('p', { class: 'hint' }, 'הפרסום הראשון — כל העמוד נשלח.', df.words ? ` 📚 ${df.words.total} מילים.` : '')
-      : h('ul', { class: 'diff' },
-        line('➕', 'נוספו', df.added), line('✏️', 'השתנו', df.changed), line('➖', 'נמחקו', df.removed),
-        df.layout ? h('li', {}, '🧱 סדר הפסים או העמודות השתנה') : null, df.settings ? h('li', {}, '⚙️ הגדרות העמוד השתנו') : null,
-        wordsLine(df.words));
-    const wd = df.words;
-    if (!df.first && !df.added.length && !df.changed.length && !df.removed.length && !df.layout && !df.settings && !(wd && (wd.added || wd.changed || wd.removed))) {
-      diffBox.replaceChildren(h('li', {}, '✓ אין שינויים מאז הגרסה שבאתר'));
-    }
-    const note = h('input', { maxlength: 200, placeholder: 'מה השתנה (לא חובה)' });
-    const go = h('button', { type: 'button', class: 'btn primary', disabled: !!c.errors.length }, '🚀 פרסום');
-    const status = h('p', { class: 'hint', role: 'status' });
-    go.onclick = async () => {
-      go.disabled = true; status.textContent = `שולח ${c.files} קבצים (${Media.mb(c.bytes)}) והגרסה… זה יכול לקחת דקה.`;
-      try {
-        const r = await api('publish', { note: note.value });
-        dlg.close(); toast(`גרסה ${r.n} באתר ✓`); view(host, role);
-      } catch (e) {
-        go.disabled = false;
-        status.replaceChildren(h('span', { class: 'error' }, e.message), ' ', helpLink(e));
-      }
-    };
-    body.replaceChildren(...[
-      h('h3', { class: 'sec-title' }, 'מה ישתנה'), diffBox,
-      c.errors.length ? h('div', { class: 'error' }, h('b', {}, 'חוסם פרסום:'), h('ul', {}, c.errors.map(x => h('li', {}, x.msg)))) : null,
-      c.warnings.length ? h('div', { class: 'warnbox' }, h('b', {}, 'כדאי לדעת:'), h('ul', {}, c.warnings.map(x => h('li', {}, x.msg)))) : null,
-      h('p', { class: 'hint' }, `${c.files} קבצים · ${Media.mb(c.bytes)}. קבצים שכבר באתר לא נשלחים שוב.`),
-      h('label', { class: 'f' }, h('span', {}, 'הערה לגרסה'), note), go, status].filter(Boolean));
-  }
-
-  function wordsLine(w) {
-    if (!w || !(w.added || w.changed || w.removed)) return null;
-    return h('li', {}, h('span', { 'aria-hidden': 'true' }, '📚'), ' מילים: ',
-      [w.added && `${w.added} נוספו`, w.changed && `${w.changed} השתנו`, w.removed && `${w.removed} נמחקו`].filter(Boolean).join(', '), ` (סך הכול ${w.total})`);
+  function archiveSheet(v) {
+    const frame = h('iframe', { class: 'ver-frame', sandbox: 'allow-scripts', title: `תצוגה של גרסה ${v.n}` });
+    sheet(`🗄️ גרסה ${v.n} (הפורמט הישן)`,
+      h('dl', { class: 'cells' },
+        h('div', {}, h('dt', {}, 'מי ומתי'), h('dd', {}, `${v.name} · ${when(v.at)}`)),
+        h('div', {}, h('dt', {}, 'הערה'), h('dd', {}, v.note || '—'))),
+      h('div', { class: 'row-btns' }, h('a', { class: 'btn ghost', href: `api.php?action=archive_html&n=${v.n}`, download: `kol-maroko-v${v.n}.html`, 'data-archive-download': true }, '⬇️ הורד כ-HTML')),
+      h('p', { class: 'hint' }, 'לקריאה בלבד. אין מכאן חזרה לגרסה הזו באתר — העמוד שבאתר נבנה מ-📁 פרויקט.'),
+      frame);
+    api('archive_view', undefined, `&n=${v.n}`).then(r => {
+      frame.srcdoc = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">${r.fonts ? `<link rel="stylesheet" href="${r.fonts}">` : ''}<style>body{margin:0;font-family:system-ui,Arial,sans-serif}${r.css.replace(/<\/style/gi, '')}</style></head><body>${r.html}</body></html>`;
+    }).catch(e => frame.replaceWith(h('p', { class: 'error' }, e.message)));
   }
 
   function helpLink(e) {
@@ -147,46 +88,11 @@ const Publish = (() => {
     return doc ? h('a', { href: DOCS + doc, target: '_blank', rel: 'noopener' }, 'איך מתקנים') : '';
   }
 
-  function versionSheet(v, host, role, newest) {
-    const frame = h('iframe', { class: 'ver-frame', sandbox: 'allow-scripts', title: `תצוגה של גרסה ${v.n}` });
-    const canPublish = role === 'publisher' || role === 'owner';
-    const btns = [];
-    if (canPublish && (v.status === 'failed' || v.status === 'pending') && v.n === newest) {
-      btns.push(h('button', { type: 'button', class: 'btn primary', onclick: () => run('version_send', { n: v.n }, 'נשלחה שוב') }, '↻ שליחה שוב'));
-    }
-    // חזרה לכל גרסה שאינה זו שבאתר: אותו תוכן בדיוק, כפרסום חדש (מה שאחריה לא נמחק)
-    const tool = h('input', { type: 'checkbox' });
-    if (canPublish && !(v.status === 'live')) {
-      btns.push(h('button', { type: 'button', class: 'btn primary', onclick: () => {
-        if (confirm(`לחזור לגרסה ${v.n}? האתר יציג בדיוק את מה שהיה בה — כפרסום חדש.${tool.checked ? ' גם הטיוטה, המילים והקוד בכלי יחזרו אליה (המצב הנוכחי נשמר כנקודת שחזור).' : ''}`)) {
-          run('republish', { n: v.n, tool: tool.checked }, `האתר חזר לגרסה ${v.n}`);
-        }
-      } }, '⤴️ חזרה לגרסה הזו'));
-    }
-    const status = h('p', { class: 'hint', role: 'status' });
-    const dlg = sheet(`גרסה ${v.n}`,
-      h('dl', { class: 'cells' },
-        h('div', {}, h('dt', {}, 'מצב'), h('dd', {}, (STATUS[v.status] || [v.status])[0])),
-        h('div', {}, h('dt', {}, 'מי ומתי'), h('dd', {}, `${v.name} · ${when(v.at)}`))),
-      v.error ? h('p', { class: 'error' }, v.error) : null,
-      btns.length ? h('div', { class: 'row-btns' }, btns) : null,
-      btns.length && v.status !== 'live' ? h('label', { class: 'switch' }, tool, h('span', {}, 'גם הכלי יחזור לגרסה הזו (טיוטה, מילים, קוד)')) : null,
-      status, frame);
-    async function run(action, body, ok) {
-      status.textContent = 'שולח…';
-      try { await api(action, body); dlg.close(); toast(ok); view(host, role); }
-      catch (e) { status.replaceChildren(h('span', { class: 'error' }, e.message), ' ', helpLink(e)); }
-    }
-    api('version_preview', undefined, `&n=${v.n}`).then(r => {
-      frame.srcdoc = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><style>body{margin:0;font-family:system-ui,Arial,sans-serif}${r.css.replace(/<\/style/gi, '')}</style></head><body>${r.html}</body></html>`;
-    }).catch(e => frame.replaceWith(h('p', { class: 'error' }, e.message)));
-  }
-
   // ── הגדרות (בעלים) ───────────────────────────────────────
   async function settings(host) {
     host.replaceChildren(h('p', { class: 'empty' }, 'טוען…'));
-    let s, imp;
-    try { [s, imp] = await Promise.all([api('publish_settings'), api('import_info')]); }
+    let s;
+    try { s = await api('site_settings'); }
     catch (e) { host.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     const keyBox = h('code', { class: 'keybox', dir: 'ltr' }, s.key);
     const ping = h('p', { class: 'hint', role: 'status' });
@@ -201,7 +107,7 @@ const Publish = (() => {
       } }, '✓ הדבקתי — להפעיל')));
     host.replaceChildren(
       h('h2', { class: 'sec-title' }, '🔗 חיבור לאתר'),
-      h('p', { class: 'hint' }, 'לכלי אין גישה לאתר. הוא רק שולח גרסה חתומה, והתוסף באתר בודק אותה מול המפתח הציבורי הזה.'),
+      h('p', { class: 'hint' }, 'לכלי אין גישה לאתר. כל מה שיוצא אליו חתום, והתוסף באתר בודק אותו מול המפתח הציבורי הזה.'),
       h('div', { class: 'summary' },
         h('div', { class: 'line' }, h('b', {}, 'המפתח הציבורי'), h('span', { class: 'muted' }, '— להדביק בוורדפרס: הגדרות ← קול מרוקו')),
         keyBox, h('div', { class: 'row-btns' }, copyBtn(s.key),
@@ -215,7 +121,6 @@ const Publish = (() => {
           try { await api('site_set', { site: site.value }); toast('נשמר'); } catch (e) { toast(e.message, true); }
         } }, 'שמירה')),
       channelBlock(host, s),
-      s.channel === 'push' ? h('p', { class: 'hint endpoint', dir: 'ltr' }, 'POST ' + s.endpoint) : '',
       h('div', { class: 'row-btns wrap' },
         h('button', { type: 'button', class: 'btn primary', onclick: async () => {
           ping.textContent = 'בודק…';
@@ -223,7 +128,7 @@ const Publish = (() => {
             const r = (await api('site_ping', {})).site;
             if (r.channel === 'pull') { ping.replaceChildren(h('b', { style: `color:var(--${r.pulse.level === 'ok' ? 'ok' : 'star'})` }, '📡 '), r.pulse.text); return; }
             ping.replaceChildren(h('b', { style: 'color:var(--ok)' }, '✓ האתר ענה. '),
-              `גרסה אחרונה שהתקבלה: ${r.version || 'אין'} · ${r.enabled ? 'מוצגת בעמוד' : 'התוסף כבוי — העמוד מציג את התוכן המקורי'}${r.page_set ? '' : ' · לא נבחר עמוד בתוסף'}`);
+              `${r.plugin ? 'תוסף ' + r.plugin + ' · ' : ''}${r.enabled ? 'העמוד מהכלי מוצג' : 'המפסק כבוי — העמוד מציג את התוכן המקורי'}${r.page_set ? '' : ' · לא נבחר עמוד בתוסף'}`);
           } catch (e) {
             ping.replaceChildren(h('span', { class: 'error' }, e.message), ' ', helpLink(e),
               e.data?.server_ip ? h('div', { class: 'hint' }, `כתובת ה-IP של השרת שלנו (לכלל ב-Cloudflare): `, h('code', { dir: 'ltr' }, e.data.server_ip)) : '');
@@ -232,7 +137,6 @@ const Publish = (() => {
         h('a', { class: 'btn ghost', href: DOCS + 'install.md', target: '_blank', rel: 'noopener' }, '📘 מדריך התקנה'),
         h('a', { class: 'btn ghost', href: DOCS + 'cloudflare.md', target: '_blank', rel: 'noopener' }, '☁️ Cloudflare')),
       ping,
-      importBlock(host, imp.imported),
       audioBlock(),
       aiBlock(host));
   }
@@ -278,46 +182,6 @@ const Publish = (() => {
     return h('button', { type: 'button', class: 'btn ghost', onclick: async () => {
       try { await navigator.clipboard.writeText(text); toast('הועתק'); } catch { toast('לא הצלחתי להעתיק — סמנו והעתיקו ידנית', true); }
     } }, '📋 העתקה');
-  }
-
-  function importBlock(host, last) {
-    const ups = h('div', { class: 'ups' });
-    const result = h('div');
-    const input = h('input', { type: 'file', accept: '.zip,application/zip', hidden: true, onchange: async () => {
-      const f = input.files[0];
-      input.value = '';
-      if (!f) return;
-      if (!confirm('הייבוא מחליף את הטיוטה ואת המילים בכלי במה שבאתר. הטיוטה הנוכחית נשמרת בהיסטוריה (🕘). באתר עצמו שום דבר לא משתנה. להמשיך?')) return;
-      const row = Media.progressRow();
-      ups.replaceChildren(row.el);
-      try {
-        const id = await Media.upload(f, (got, total, left, note) => row.set(f.name, got, total, left, note), 'import');
-        row.set(f.name, 1, 1, null, 'ממיר את העמוד ומכניס את הקבצים… זה יכול לקחת כמה דקות.');
-        const r = await api('import_run', { id });
-        ups.replaceChildren();
-        const st = r.stats;
-        result.replaceChildren(h('div', { class: 'summary' },
-          h('div', { class: 'line' }, h('b', { style: 'color:var(--ok)' }, '✓ העמוד יובא לטיוטה')),
-          st.lexicon ? h('p', {}, h('b', {}, `📚 ${st.lexicon.words} מילים`), ` · ${st.lexicon.audio} עם הקלטה · ${st.lexicon.topics} נושאים. ההקלטות נשארות באתר; המילים — בלשונית 📚 מילים.`) : null,
-          st.lexicon ? h('p', { class: 'hint' }, 'העמוד נבנה באותו עיצוב כמו באתר. מה שבאתר לא משתנה עד שתפרסמו ותבחרו להציג את הגרסה מהסטודיו.') : null,
-          st.lexicon ? null : h('p', {}, `${st.sections} פסים · ${Object.values(st.widgets).reduce((a, b) => a + b, 0)} רכיבים · ${st.files} קבצים`),
-          st.lexicon ? null : h('p', { class: 'hint' }, Object.entries(st.widgets).map(([t, n]) => `${TYPE_NAMES[t] || t} ${n}`).join(' · ')),
-          st.raw ? h('p', { class: 'hint' }, `${st.raw} קטעים מקוריים (🏛️) — מוצגים כמו באתר, ונערכים כ-HTML.`) : null,
-          st.entries ? h('p', { class: 'hint' }, `${st.entries} רשומות של ${(st.entry_types || []).join(', ')} נשמרו (מילים והקלטות).`) : null,
-          st.source === 'server' ? h('p', { class: 'hint' }, 'העמוד צולם בשרת (לא כמו שהמבקר רואה) — אם משהו חסר, שלחו את האבחון לצ\'אט.') : null,
-          !st.lexicon && (st.widgets.text || 0) + (st.widgets.raw || 0) <= 1 && !st.files ? h('div', { class: 'warnbox' }, h('b', {}, 'נראה שכמעט כלום לא יובא.'),
-            ' כנראה תוסף ישן באתר. התקינו את הגרסה האחרונה (1.2), ושלחו את "🔎 אבחון" מהגדרות התוסף לצ\'אט.') : null,
-          st.missing.length ? h('div', { class: 'warnbox' }, h('b', {}, `${st.missing.length} קבצים לא נמצאו בייצוא:`), h('ul', {}, st.missing.slice(0, 20).map(m => h('li', { dir: 'ltr' }, m)))) : null,
-          h('a', { class: 'btn primary', href: '#/studio' }, '🎨 לסטודיו')));
-      } catch (e) {
-        ups.replaceChildren(h('p', { class: 'error' }, e.message));
-      }
-    } });
-    return h('section', {},
-      h('h2', { class: 'sec-title' }, '📥 ייבוא העמוד הקיים מהאתר'),
-      h('p', { class: 'hint' }, 'כל התוכן, ההקלטות והעיצוב של העמוד היום — לטיוטה, לעריכה. בוורדפרס: הגדרות ← קול מרוקו ← "⬇️ ייצוא העמוד", ואת הקובץ שירד מעלים כאן.'),
-      last ? h('p', { class: 'hint' }, `ייבוא אחרון: ${when(last.at)} · ${last.meta?.url || ''}`) : null,
-      input, h('button', { type: 'button', class: 'btn primary', onclick: () => input.click() }, '📥 העלאת קובץ הייצוא'), ups, result);
   }
 
   // אופן ההצבה באתר (M4-BC) — עבר ל"⚙️ בעל האתר" (P1, assets/js/people.js: People.mountBlock)
