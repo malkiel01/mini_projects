@@ -3,9 +3,9 @@
   "spec": null,
   "code": {
     "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
-    "slice": "4א/4 אליוט בגרף",
-    "branch": "claude/trading-strategies-ts-4a4-elliott-chart",
-    "model": "claude-haiku-5-5 (תוקן ל-Opus בהמשך)"
+    "slice": "4א/5 דפוסים (4א/4 מוזג)",
+    "branch": "claude/trading-strategies-ts-4a5-patterns",
+    "model": "claude-haiku-5-5 (לתקן: לפתוח ב-Opus)"
   },
   "control": "session_018g4NYD5bBLt7vBTVv77Nbn",
   "tasks": null,
