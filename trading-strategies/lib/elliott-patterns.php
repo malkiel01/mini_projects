@@ -41,8 +41,8 @@ function ts_ew_pat_frame(array $p): ?array
  * [ספר, עמ' 89]: B תמיד מחזיר לפחות 90% מ-A. [ספר, עמ' 45–46, 89]: B בערך בגובה A (רגיל), או מעבר לו (מורחב/רץ);
  * C מסתיים בסוף A או מעבר לו ברגיל ובמורחב.
  * הסיווג לפי B ו-C, כמו בספר [שלנו, 2.8]: b = |B|/|A|, c = |C|/|A|:
- *   b < 0.9 → לא שטוח;  0.9 ≤ b ≤ 1.05 ו-c ≥ b → regular;  b > 1.05 ו-c > b → expanded;  b > 1.05 ו-c < b → running.
- * running מחזיר null (allow_running_flat כבוי, עמ' 48–49). אין סף נפרד על המרחק של C מסוף A (הספר לא נותן כזה).
+ *   b < 0.9 → לא שטוח;  0.9 ≤ b ≤ 1.05 ו-c ≥ b → regular;  b > 1.05 ו-c > b → expanded;  b > 1.05 ו-c < 1.0 → running.
+ * running מחזיר null (allow_running_flat כבוי, עמ' 48–49). מקרים אחרים (למשל 0.9 ≤ b ≤ 1.05 עם c < b) — לא מסווגים. אין סף נפרד על המרחק של C מסוף A (הספר לא נותן כזה).
  * לא נבדקים: A אינו triangle; C דחף או אלכסוני (דורש תתי-גלים, לא נקודות מפנה).
  */
 function ts_ew_flat_kind(array $p): ?string
@@ -56,7 +56,7 @@ function ts_ew_flat_kind(array $p): ?string
     $c = ($x[3] - $x[2]) / $a;
     if ($b < TS_EW_FLAT_B_MIN) return null;
     if ($b <= TS_EW_FLAT_B_REG_MAX) return $c >= $b ? 'regular' : null;
-    return $c > $b ? 'expanded' : null;       // b > 1.05 וגם c < b: running — כבוי
+    return $c > $b ? 'expanded' : null;       // b > 1.05 ו-c < 1.0: running — כבוי; בין לבין — לא מסווג
 }
 
 /**

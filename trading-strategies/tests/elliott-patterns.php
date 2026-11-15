@@ -20,8 +20,12 @@ function eq($got, $want, string $what): void
 eq(ts_ew_flat_kind([100, 110, 100.5, 110.5]), 'regular', 'flat regular: b≈1 (B ~ start of A), C at or beyond end of A (p.45–46, 2.8)');
 // מורחב: B מעבר לתחילת A (b = 1.2), C מעבר לסוף B (c = 1.4 > b) (עמ' 46)
 eq(ts_ew_flat_kind([100, 110, 98, 112]), 'expanded', 'flat expanded: b > 1.05 and c > b (p.46, 2.8)');
-// running: b = 1.2 ו-c = 1.0 < b — נדיר ולא מזוהה (allow_running_flat כבוי, עמ' 48–49)
-eq(ts_ew_flat_kind([100, 110, 98, 108]), null, 'flat running: not classified (allow_running_flat off, p.48–49)');
+// running: b = 1.2 ו-c = 0.9 < 1.0 — נדיר ולא מזוהה (allow_running_flat כבוי, עמ' 48–49)
+eq(ts_ew_flat_kind([100, 110, 98, 107]), null, 'flat running: b > 1.05 and c < 1.0 — not classified (allow_running_flat off, p.48–49)');
+// b = 1.2 ו-c = 1.1 — לא מורחב (c < b), ולא רץ (c ≥ 1.0): לא מסווג לכלום (2.8)
+eq(ts_ew_flat_kind([100, 110, 98, 109]), null, 'flat: b > 1.05 with 1.0 <= c < b is not classified (2.8)');
+// b בתוך הסבולת (0.95) ו-c < b (0.85): לא רגיל, ולא רץ — לא מסווג לכלום (2.8)
+eq(ts_ew_flat_kind([100, 110, 100.5, 109]), null, 'flat: b in 0.9–1.05 with c < b is not running (2.8)');
 // B קטן מ-90% מ-A (b = 0.6): לא שטוח — כלל (עמ' 89)
 eq(ts_ew_flat_kind([100, 110, 104, 110.5]), null, 'flat: B must retrace at least 90% of A (p.89)');
 // B לא יורד (עולה מעל סוף A): לא שטוח
