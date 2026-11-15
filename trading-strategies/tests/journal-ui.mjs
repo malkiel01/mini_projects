@@ -48,6 +48,8 @@ try {
   await o.goto(BASE + '#/market');
   await o.waitForSelector('main form');
   await post(o, 'admin_method_save', { id: 'test-cross-b', enabled: true, markets: ['crypto'], timeframes: ['h4'] });
+  // מ-F1 (18.1.2) שיטת קוד שאינה sample מופעלת בלי שורה — כאן נבדקת רק test-cross-b, ולכן המנהל מכבה את האחרות
+  for (const id of ['test-cross-a', 'elliott-w3']) await post(o, 'admin_method_save', { id, enabled: false, markets: ['crypto'], timeframes: ['h4'] });
 
   const a = await open('alice');
   await a.goto(BASE + '#/market');

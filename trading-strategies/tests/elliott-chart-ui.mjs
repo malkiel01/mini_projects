@@ -49,6 +49,15 @@ const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelect
 // "טביעת אצבע" של מה שמצויר בקנבסים של הגרף הראשי
 const canvasPrint = p => p.evaluate(() => [...document.querySelectorAll('.chart-box:not(.osc) canvas')].map(c => c.toDataURL().length).join(','));
 
+// 🔮 → התפריט מעל הגרף → סימון שיטה → סגירה ב-Esc (F1, 18.1.2: בלי sheet ובלי מסך אחר)
+async function pickMethod(p, name) {
+  await p.getByRole('button', { name: 'תחזית שיטה' }).first().click();
+  const pop = p.locator('.fc-pop');
+  await pop.locator('.fc-opt').first().waitFor();
+  await pop.locator('.fc-opt', { hasText: name }).locator('input').check();
+  await p.keyboard.press('Escape');
+}
+
 try {
   const { p: o, reqs } = await open('owner');
   await o.goto(BASE + '#/market');
@@ -57,11 +66,8 @@ try {
   await o.goto(CHART);
   await loaded(o);
   const before = await canvasPrint(o);
-  await o.getByRole('button', { name: 'תחזית שיטה' }).click();
-  const dlg = o.locator('dialog[open]');
-  await dlg.waitFor();
   reqs.length = 0;
-  await dlg.getByRole('button', { name: /אליוט/ }).click();
+  await pickMethod(o, 'אליוט');
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 60000 });
   eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת אליוט — לא ייעוץ', 'the Elliott forecast title (✅15)');

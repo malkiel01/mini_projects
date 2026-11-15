@@ -75,7 +75,8 @@ function call(string $as, string $action, ?array $body = null, array $query = []
 }
 foreach (['alice', 'owner'] as $u) $tokens[$u] = call($u, 'me')[1]['csrf'];
 $q = ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'method' => 'elliott-w3', 'from' => $NOW - 90 * 86400, 'to' => $NOW];
-eq(call('alice', 'method_overlay', null, $q)[0], 404, 'off → the forecast refuses elliott-w3');
+call('owner', 'admin_method_save', ['id' => 'elliott-w3', 'enabled' => false, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4'], 'params' => []]);
+eq(call('alice', 'method_overlay', null, $q)[0], 404, 'the admin turned it off → the forecast refuses elliott-w3');
 call('owner', 'admin_method_save', ['id' => 'elliott-w3', 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4'], 'params' => ['pivot_atr_mult' => 2]]);
 [$c, $r] = call('alice', 'method_overlay', null, $q);
 $ov = $r['overlay'] ?? [];

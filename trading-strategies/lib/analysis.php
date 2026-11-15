@@ -126,6 +126,10 @@ function ts_profile_sync_risk(int $uid): void
 
 // ── שיטות (6.7) ──────────────────────────────────────────
 
+/**
+ * ההגדרות של שיטה. בלי שורה ב-`methods`: שיטת קוד מהספר (לא `sample`) — מופעלת; שיטת הבדיקה ושיטה מוגדרת — כבויות
+ * (18.1.2, F1; 6.7). שורה עם enabled = 0 — ההחלטה של המנהל גוברת.
+ */
 function ts_method_settings(string $id): array
 {
     $m = ts_method($id)->meta();
@@ -133,12 +137,18 @@ function ts_method_settings(string $id): array
     $st->execute([$id]);
     $r = $st->fetch();
     return [
-        'enabled' => $r ? (bool)$r['enabled'] : false,
+        'enabled' => $r ? (bool)$r['enabled'] : ts_method_on_by_default($m),
         'markets' => $r ? (json_decode($r['markets'], true) ?: $m['markets']) : $m['markets'],
         'timeframes' => $r ? (json_decode($r['timeframes'], true) ?: $m['timeframes']) : $m['timeframes'],
         'params' => $r ? (json_decode($r['params'], true) ?: []) : [],
         'note' => $r ? $r['note'] : '',
     ];
+}
+
+/** שיטה מהספר = שיטת קוד ש-sample שלה לא true (18.1.2) */
+function ts_method_on_by_default(array $meta): bool
+{
+    return ($meta['kind'] ?? 'code') === 'code' && empty($meta['sample']);
 }
 
 /** "מוגדרת ידנית" עד שיש לשיטה המוגדרת (בגרסה הנוכחית) בדיקה לאחור עם N ≥ 30 (17.2.1). לשיטת קוד — התווית שלה */

@@ -79,13 +79,17 @@ $db = new PDO('sqlite:' . "$tmp.sqlite");
 $E = 'elliott-w3';
 $q = ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $E];
 
-// 6.7: חדשה = כבויה
+// 18.1.2 (F1): שיטה מהספר בלי שורה ב-methods — מופעלת; המנהל מכבה — כבויה
 $am = array_column(call('owner', 'admin_methods')[1]['methods'], null, 'id');
 $em = $am[$E] ?? [];
 eq([$em['enabled'] ?? null, $em['sample'] ?? null, $em['alerts'] ?? null, $em['all_timeframes'] ?? null, $em['label'] ?? null],
-    [false, false, false, ['h1', 'h4', 'd1', 'w1'], 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)'], 'admin: elliott-w3 listed OFF, not a sample, not in alerts, h1 and up (✅18), with "our method based on the book"');
+    [true, false, false, ['h1', 'h4', 'd1', 'w1'], 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)'], 'admin: elliott-w3 listed ON with no row (book method, 18.1.2), not a sample, not in alerts, h1 and up (✅18), with "our method based on the book"');
 eq([$em['param_defs']['w3_mult']['ours'] ?? null, $em['param_defs']['w2_min']['ours'] ?? null], [false, true], 'admin: each parameter marked from the book / our definition (ז0)');
-eq(call('alice', 'analysis', null, $q)[0], 404, 'off → a regular user cannot run it');
+eq((int)$db->query("SELECT COUNT(*) FROM methods WHERE id = 'elliott-w3'")->fetchColumn(), 0, 'no row for elliott-w3 in methods');
+eq(isset(array_column(call('alice', 'methods')[1]['methods'], null, 'id')[$E]), true, 'no row → a regular user sees it, with no admin setting (18.1.2 criterion 1)');
+eq(call('owner', 'admin_method_save', ['id' => $E, 'enabled' => false, 'markets' => ['crypto', 'stocks'], 'timeframes' => ['h1', 'h4'], 'params' => []])[0], 200, 'the admin turns it off');
+eq(call('alice', 'analysis', null, $q)[0], 404, 'admin turned it off → a regular user cannot run it (the admin decision wins)');
+eq(array_column(call('alice', 'methods')[1]['methods'], 'id'), [], 'admin turned it off → nothing offered to a regular user (18.1.2 criterion 2)');
 eq(call('owner', 'admin_method_save', ['id' => $E, 'enabled' => true, 'markets' => ['crypto', 'stocks'], 'timeframes' => ['h1', 'h4'], 'params' => ['w2_min' => 0.7, 'w2_max' => 0.6]])[0], 422, 'admin: w2_max ≤ w2_min → rejected (validate)');
 eq(call('owner', 'admin_method_save', ['id' => $E, 'enabled' => true, 'markets' => ['crypto', 'stocks'], 'timeframes' => ['h1', 'h4'], 'params' => []])[0], 200, 'the admin turns it on');
 $vis = array_column(call('alice', 'methods')[1]['methods'], null, 'id');
