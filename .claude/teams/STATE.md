@@ -8,7 +8,7 @@
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
 | `appraisers` שמאות מקרקעין | מושהה עד הודעה של הבעלים | `session_018g4NYFwUcVefmCvwGAazWA` |
-| `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — דקה 48, לתוך בקרה (11) (`trig_017hPpPF1QCmhxWdMc7bLveY`, נוצר בידי מנהל הצוותים (3); הישן `trig_01LwkFTbJj8EWkWqFpbYCq5t` כבוי) | `session_018g4NYEVkGJmGMdwERWecF2` (בקרה 11, Opus; קודם בקרה 10 `session_018g4NYGU3Nq64Vb9yiUomSj`) |
+| `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — דקה 48, מועבר לתוך בקרה (12) בידי מנהל הצוותים (3) (עד ההודעה: `trig_017hPpPF1QCmhxWdMc7bLveY` לתוך בקרה 11) | `session_018g4NYE2VgSchStksNm4cLo` (בקרה 12, Opus; קודם בקרה 11 `session_018g4NYEVkGJmGMdwERWecF2`) |
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
 
