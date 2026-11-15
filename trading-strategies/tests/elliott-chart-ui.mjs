@@ -60,10 +60,10 @@ try {
   const dlg = o.locator('dialog[open]');
   await dlg.waitFor();
   reqs.length = 0;
-  await dlg.getByRole('button', { name: /גלי אליוט — כניסה לגל 3/ }).click();
+  await dlg.getByRole('button', { name: /אליוט/ }).click();
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 60000 });
-  eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת גלי אליוט — כניסה לגל 3 — לא ייעוץ', 'the Elliott forecast title (✅15)');
+  eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת אליוט — לא ייעוץ', 'the Elliott forecast title (✅15)');
   const chips = await panel.locator('.chip').allTextContents();
   eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('שיטה שלנו על בסיס כללי הספר (Frost & Prechter)')], [true, true], 'marked "not backtested", with "our method based on the book"');
   await panel.locator('details summary', { hasText: '🔎 בדוק בעצמך' }).click();
