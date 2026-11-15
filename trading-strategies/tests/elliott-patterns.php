@@ -52,6 +52,26 @@ eq(ts_ew_triangle_kind([100, 90, 98, 88, 100.5, 100]), null, 'triangle end of E:
 // running (B חורג מתחילת A, 97 < 100), מתכנס, A עולה — E חייב להסתיים מעל 100
 eq(ts_ew_triangle_kind([100, 110, 97, 108, 99, 101]), 'contracting', 'running contracting triangle: E ends beyond the start (p.49)');
 eq(ts_ew_triangle_kind([100, 110, 97, 108, 98, 99.5]), null, 'running contracting triangle: E back short of the start — not a triangle (p.49)');
+// ── barrier (17.1.2): הקו B-D אופקי — |D − B| ≤ fib_tolerance × |A|, ו-C לפני סוף A ──
+// A = 10, סבולת 0.05 ⇒ |D − B| ≤ 0.5. D ב-102.3 מול B ב-102 (0.3) — barrier, גם אם D מעל B (היה עונה גם על מתכנס)
+eq(ts_ew_triangle_kind([100, 110, 102, 109, 102.3, 107]), 'barrier', 'triangle barrier: B-D line flat within fib_tolerance × |A|, C below end of A (17.1.2)');
+// D מעט מתחת ל-B (101.6, 0.4) — עדיין barrier
+eq(ts_ew_triangle_kind([100, 110, 102, 109, 101.6, 107]), 'barrier', 'triangle barrier: D slightly below B is still flat');
+// D ב-103 (1.0 > 0.5) — לא אופקי: מתכנס
+eq(ts_ew_triangle_kind([100, 110, 102, 109, 103, 107]), 'contracting', 'triangle: B-D not flat beyond the tolerance → contracting');
+// סבולת אחרת: 0.2 ⇒ |D − B| ≤ 2 — אותו משולש הוא barrier
+eq(ts_ew_triangle_kind([100, 110, 102, 109, 103, 107], 0.2), 'barrier', 'triangle barrier uses the fib_tolerance passed in');
+// C מעבר לסוף A (112 > 110) — לא barrier, גם כש-B-D אופקי
+eq(ts_ew_triangle_kind([100, 110, 102, 112, 102.2, 107]), null, 'triangle barrier needs C before the end of A');
+// במראה (A יורד)
+eq(ts_ew_triangle_kind([200, 190, 198, 191, 197.7, 193]), 'barrier', 'triangle barrier, downward (mirror)');
+
+// ── running (עמ' 49, "נפוץ מאוד"): B חורג מתחילת A — מזוהה, לא נפסל ──
+// מתכנס רץ: B ב-97, מתחת לתחילת A (100). הסוג נשאר contracting
+eq(ts_ew_triangle_kind([100, 110, 97, 108, 99, 101]), 'contracting', 'running triangle (B beyond the start of A) is classified, not rejected (p.49)');
+// barrier רץ: B ב-97, D ב-97.3
+eq(ts_ew_triangle_kind([100, 110, 97, 108, 97.3, 101]), 'barrier', 'running barrier triangle is classified (p.49)');
+
 // מספר לא נכון של נקודות
 eq(ts_ew_triangle_kind([100, 110, 102, 109, 103.5]), null, 'triangle needs 6 pivots');
 
