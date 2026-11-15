@@ -8,6 +8,7 @@ const Project = (() => {
   const VS = new URL('assets/vendor/monaco/vs', location.href).href;
   const LS = 'kol-project';
   const AUTOSAVE_MS = 1500;
+  const RETRY_MS = [3000, 8000, 20000, 45000, 90000];      // R4: ניסיון חוזר אחרי כשל רגעי בשמירה
   const LANGS = { html: 'html', htm: 'html', css: 'css', js: 'javascript', mjs: 'javascript', cjs: 'javascript', json: 'json', webmanifest: 'json', map: 'json',
     svg: 'xml', xml: 'xml', md: 'markdown', markdown: 'markdown', ts: 'typescript', scss: 'scss', less: 'less', yml: 'yaml', yaml: 'yaml', php: 'php',
     sql: 'sql', ini: 'ini', sh: 'shell' };
@@ -229,7 +230,20 @@ const Project = (() => {
       if (!doc.dirty) { doc.error = ''; doc.errorStatus = 0; }
       drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
       if (doc.dirty && !doc.conflict && !doc.error) { clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), AUTOSAVE_MS); }
+      // R4: כשל רגעי (אין חיבור, 408/429, 5xx של השרת) — ננסה שוב לבד, בהמתנה שגדלה. בלי זה השינוי נשאר רק בדפדפן,
+      // והעורך החזותי (שמראה את מצב העמוד, לא של קובץ ה-CSS) אמר "נשמר" — כך נעלמה תמונת רקע שנבחרה (הבעלים, 15.11).
+      else if (doc.dirty && !doc.conflict && transient(doc.errorStatus)) {
+        doc.retries = (doc.retries || 0) + 1;
+        clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), RETRY_MS[Math.min(doc.retries, RETRY_MS.length) - 1]);
+      }
+      if (!doc.dirty || !doc.error) doc.retries = 0;
     }
+  }
+  /** R4: כשל שעשוי לעבור לבד — ננסה שוב. 4xx אחר (הרשאה, נעילה, קובץ גדול) — לא: הוא מוצג ונשאר עד פעולה. */
+  const transient = status => status === 0 || status === 408 || status === 429 || status >= 500;
+  /** R4: שמירה מיידית של כל מה שלא נשמר — כשהלשונית מוסתרת / נסגרת (בטלפון: מעבר לאפליקציה אחרת; אין beforeunload). */
+  function flushAll() {
+    for (const d of S.docs.values()) if (d.dirty && !d.binary && !d.saving && !d.conflict && !S.byId.get(d.id)?.linked) { clearTimeout(d.timer); save(d.id, true); }
   }
 
   // ── N1: data/words.json — הקובץ של טבלת המילים ─────────────
@@ -1438,6 +1452,9 @@ const Project = (() => {
   document.addEventListener('keydown', e => {
     if (S.host && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(S.cur); }
   });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });   // R4
+  window.addEventListener('pagehide', flushAll);
+  window.addEventListener('online', flushAll);
   window.addEventListener('beforeunload', e => { keepView(); if ([...S.docs.values()].some(d => d.dirty)) { e.preventDefault(); e.returnValue = ''; } });
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'project') unmount(); });
 
