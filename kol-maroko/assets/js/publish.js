@@ -1,4 +1,4 @@
-// קול מרוקו — 🚀 פרסום: הדרך לאתר (M7), 🏗️ בנה גרסה מהפרויקט (M1, build.js), 🔁 מעבר (M3, cutover.js), המפסק, ו-🗄️ ארכיון (M6);
+// קול מרוקו — 🚀 פרסום: הדרך לאתר (M7), 🏗️ בנה גרסה מהפרויקט (M1, build.js), 🔁 מעבר (M3, cutover.js) ו-🗄️ ארכיון (M6);
 // והגדרות החיבור לאתר (⚙️ בעל האתר). M6: פרסום הטיוטה (1.x) והייבוא מהאתר — נמחקו (docs/spec-v2/slices/M6-remove-old-studio.md).
 'use strict';
 
@@ -37,7 +37,7 @@ const Publish = (() => {
       canPublish ? outboxBlock(host, role) : null,                 // M7 — הדרך לאתר: התור והדופק
       pk,                                                          // M1 — 🏗️ בנה גרסה מהפרויקט
       canPublish ? (el => (window.KolCutover ? KolCutover.mount(el) : document.head.append(h('script', { src: 'assets/js/cutover.js', onload: () => KolCutover.mount(el) })), el))(h('section', {})) : null,   // M3 — 🔁 מעבר (assets/js/cutover.js)
-      canPublish ? siteBlock() : null,                             // המפסק
+      // M6: המפסק של 1.x ("להציג באתר את הגרסה מהסטודיו") הוסר — הוא הדליק את הגרסה הישנה. המפסק "העמוד החדש" — בוורדפרס (🔁 מעבר מציג את מצבו)
       archiveBlock(),                                              // M6 — 🗄️ ארכיון
     ].filter(Boolean));
   }
@@ -81,38 +81,6 @@ const Publish = (() => {
     api('archive_view', undefined, `&n=${v.n}`).then(r => {
       frame.srcdoc = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">${r.fonts ? `<link rel="stylesheet" href="${r.fonts}">` : ''}<style>body{margin:0;font-family:system-ui,Arial,sans-serif}${r.css.replace(/<\/style/gi, '')}</style></head><body>${r.html}</body></html>`;
     }).catch(e => frame.replaceWith(h('p', { class: 'error' }, e.message)));
-  }
-
-  // המפסק — מה האתר מציג: העמוד מהכלי, או העמוד המקורי (התבנית והמילים שבוורדפרס — לא נמחקו ולא שונו).
-  // המעבר בין השניים — בלחיצה, ואפשר לחזור בכל רגע. במשיכה (M7) הפקודה נכנסת לתור, והאתר מחיל אותה כשהוא מושך.
-  function siteBlock() {
-    const line = h('div', { class: 'line' }, h('span', { class: 'muted' }, 'בודק מה האתר מציג…'));
-    const btns = h('div', { class: 'row-btns wrap' });
-    const box = h('section', { 'data-site-switch': true }, h('h2', { class: 'sec-title' }, '🔀 המפסק'),
-      h('div', { class: 'summary site-state' }, line, btns,
-        h('p', { class: 'hint' }, 'העמוד המקורי לא נמחק: חזרה אליו מחזירה את האתר בדיוק למה שהיה לפני הכלי, כולל המילים שבוורדפרס.')));
-    const flip = async on => {
-      const msg = on ? 'להציג באתר את העמוד מהכלי (במקום העמוד המקורי)?'
-        : 'להחזיר את האתר לעמוד המקורי, כמו שהיה לפני הכלי? אפשר להחליף שוב בכל רגע.';
-      if (!confirm(msg)) return;
-      btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
-      try {
-        const r = await api('site_switch', { enabled: on });
-        if (r.site.queued) { toast(`⏳ בתור (#${r.site.seq}) — יוחל כשהאתר ימשוך`); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); Outbox.refresh(); return; }
-        toast(r.site.enabled ? 'האתר מציג את העמוד מהכלי ✓' : 'האתר חזר לעמוד המקורי ✓'); show(r.site);
-      }
-      catch (e) { toast(e.message, true); btns.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
-    };
-    const show = st => {
-      const known = typeof st.enabled === 'boolean';
-      line.replaceChildren(h('span', { class: 'muted' }, 'האתר מציג:'),
-        !known ? h('b', {}, 'לא ידוע — האתר עוד לא דיווח') : st.enabled ? h('b', { style: 'color:var(--ok)' }, '🎨 העמוד מהכלי') : h('b', {}, '🏛️ העמוד המקורי'));
-      btns.replaceChildren(
-        h('button', { type: 'button', class: 'btn primary', onclick: () => flip(true) }, '▶️ להציג באתר את העמוד מהכלי'),
-        h('button', { type: 'button', class: 'btn ghost danger', onclick: () => flip(false) }, '↩️ חזרה לעמוד המקורי'));
-    };
-    api('site_ping', {}).then(r => show(r.site)).catch(e => { line.replaceChildren(h('span', { class: 'error' }, e.message), ' ', helpLink(e)); show({}); });
-    return box;
   }
 
   function helpLink(e) {
