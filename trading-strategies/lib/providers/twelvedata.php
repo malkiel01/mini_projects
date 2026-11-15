@@ -31,7 +31,6 @@ final class TsProvTwelveData extends TsProvider
             'limits' => ['per_min' => 8, 'per_day' => 800],   // התוכנית החינמית; המנהל יכול לדרוס
             'delay' => 'realtime',
             'share' => false,
-            'personal_copy' => true,
             'terms' => 'בתוכנית החינמית — שימוש אישי. נתונים במפתח של משתמש מוגשים רק לו (cred_scope).',
             'bounds' => 'יום/שבוע/חודש — לפי מושב המסחר, חצות באזור הזמן של הבורסה',
             'max_per_call' => 5000,
