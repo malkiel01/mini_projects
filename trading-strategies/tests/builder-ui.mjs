@@ -29,6 +29,7 @@ async function open(as) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true });
   await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }]);
   await ctx.setExtraHTTPHeaders({ 'X-Dev-Now': String(NOW) });   // "עכשיו" קבוע לשרת — אותם נרות בכל ריצה
+  await ctx.clock.setFixedTime(NOW * 1000);   // ואותו "עכשיו" בדפדפן — הגרף מבקש chart_refresh, שהשרת עונה בו לפי X-Dev-Now (18.3)
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message));

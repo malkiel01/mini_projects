@@ -21,6 +21,8 @@
  * GET  ?action=pair_parse&q=             "ביטקוין מול ין" → זוג; בלי ספק — "אין ספק לזוג הזה" (בלי פנייה לספק)
  * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס ("ביטקוין מול דולר") — הסימול לא מוצג למשתמש
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
+ * GET  ?action=chart_refresh&asset=&tf=&from=&to=&methods=a,b   הגרף (18.3, S3): נרות + תוצאת כל שיטה שנבחרה בבקשה אחת;
+ *                                        שיטה בלי נר סגור חדש לא רצה שוב (lib/refresh.php) ← נספר בתקרת 30 לדקה
  * GET  ?action=watchlist                 "המעקב שלי"
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
  * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
@@ -68,6 +70,7 @@ require_once __DIR__ . '/lib/market.php';
 require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
 require_once __DIR__ . '/lib/forecast.php';
+require_once __DIR__ . '/lib/refresh.php';
 require_once __DIR__ . '/lib/builder.php';
 require_once __DIR__ . '/lib/alerts.php';
 require_once __DIR__ . '/lib/fx.php';
@@ -127,7 +130,7 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_method_validate', 'admin_method_dry_run'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'analysis', 'method_overlay', 'admin_method_dry_run', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'method_overlay', 'admin_method_dry_run', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -318,6 +321,9 @@ try {
         case 'market_search':
             out(['ok' => true] + ts_market_search($uid, $_GET['q'] ?? ''));
 
+        case 'chart_refresh':
+            out(['ok' => true] + ts_chart_refresh($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null, $_GET['methods'] ?? ''));
+
         case 'market_candles':
             out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
 
@@ -377,7 +383,7 @@ try {
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
-                'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
+                'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'method_runs' => ts_method_runs(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);

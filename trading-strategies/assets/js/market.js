@@ -1,6 +1,9 @@
 // לשונית "שוק", ספקי נתונים וממשק המנהל — spec-stage-a פרקים 1.1, 2–4.
-// בלי polling (✅13): פנייה לשרת רק מפעולה של המשתמש (פתיחת מסך, חיפוש, "רענן", שמירה). זמן אמת — רק WebSocket
-// ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף, ולא מתחבר מחדש לבד בלולאה.
+// פנייה לשרת מפעולה של המשתמש (פתיחת מסך, חיפוש, "רענן", שמירה) — ובגרף גם **רענון אוטומטי כשהניתוח פעיל** (18.3, ✅23):
+// הלשונית גלויה ונבחרה שיטה → בקשה אחת (chart_refresh) כל 60 שניות, או 30 לבחירת המשתמש — נרות ותוצאת כל השיטות יחד.
+// לשונית מוסתרת — עוצר, וחוזר מיד כשהיא גלויה. 429 — מדלגים עד הפעם הבאה, בלי הודעה קופצת ובלי ניסיון חוזר.
+// זמן אמת למחיר — רק WebSocket ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף,
+// ולא מתחבר מחדש לבד בלולאה.
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
@@ -229,7 +232,7 @@ export function mountMarket(ctx) {
         toast(inWl ? 'נוסף למעקב' : 'הוסר מהמעקב');
       } catch (e) { toast(e.message, true); }
     } } }, inWl ? '⭐' : '☆');
-    const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load(true) } }, '↻');
+    const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load('manual') } }, '↻');
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
     const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
@@ -237,13 +240,13 @@ export function mountMarket(ctx) {
     const forecastBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'תחזית שיטה', 'aria-pressed': 'false' }, '🔮');
     setHead(label, sub(p), { back: true, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
 
-    const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load(); } });
+    const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
     const from = h('input', { type: 'date', 'aria-label': 'מתאריך', value: st.from || '' });
     const to = h('input', { type: 'date', 'aria-label': 'עד תאריך', value: st.to || '' });
     const custom = h('div', { class: 'fields two', hidden: st.range !== 'custom' }, field('מתאריך', from), field('עד תאריך', to));
-    rangeSel.addEventListener('change', () => { st.range = rangeSel.value; custom.hidden = st.range !== 'custom'; save(); if (st.range !== 'custom') load(); });
-    [from, to].forEach(el => el.addEventListener('change', () => { st.from = from.value; st.to = to.value; save(); if (from.value) load(); }));
+    rangeSel.addEventListener('change', () => { st.range = rangeSel.value; custom.hidden = st.range !== 'custom'; save(); if (st.range !== 'custom') load('change'); });
+    [from, to].forEach(el => el.addEventListener('change', () => { st.from = from.value; st.to = to.value; save(); if (from.value) load('change'); }));
     const inds = h('div', { class: 'chips', role: 'group', 'aria-label': 'אינדיקטורים' }, IND.map(([k, l]) => {
       const c = h('input', { type: 'checkbox', value: k });
       c.checked = st.ind.includes(k);
@@ -253,12 +256,23 @@ export function mountMarket(ctx) {
 
     const info = h('p', { class: 'hint', 'aria-live': 'polite' });
     const live = h('span', { class: 'chip', hidden: true });
+    // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X"
+    const EVERY = [60, 30];
+    let every = 60;
+    try { const v = +localStorage.getItem('ts-refresh-every'); if (EVERY.includes(v)) every = v; } catch { /* ריק */ }
+    const everySel = select('every', [['60', '⟳ כל דקה'], ['30', '⟳ כל 30 ש׳']], String(every), { 'aria-label': 'קצב הרענון האוטומטי', hidden: true });
+    everySel.addEventListener('change', () => {
+      every = +everySel.value;
+      try { localStorage.setItem('ts-refresh-every', String(every)); } catch { /* ריק */ }
+      schedule();
+    });
+    const upd = h('span', { class: 'chip refresh-age', hidden: true });
     const box = h('div', { class: 'chart-box' });
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
     const forecastSlot = h('div', {});
-    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live)), custom,
+    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, everySel, upd, live)), custom,
       h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, forecastSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
@@ -298,6 +312,7 @@ export function mountMarket(ctx) {
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
     drawSlot.append(draw.bar);
     const forecast = mountForecast({ chart, series: candle, asset, api, h, sheet, toast, col, button: forecastBtn,
+      onChange: () => (forecast.methods().length ? load('pick') : schedule()),
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
     forecastSlot.append(forecast.panel);
     onTeardown(() => { forecast.destroy(); draw.destroy(); chart.remove(); osc.remove(); });
@@ -343,16 +358,44 @@ export function mountMarket(ctx) {
         ch !== null ? h('span', { class: 'num ' + (ch >= 0 ? 'pos' : 'neg') }, (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%') : null,
         h('span', { class: 'muted' }, fmtT(last.time, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })));
     }
+    // ── הטעינה: בקשה אחת לנרות ולכל השיטות (18.3) ──
+    // mode: open — פתיחת הגרף · change — טווח או מסגרת · manual — "↻" · pick — בחירת שיטה · auto — הרענון האוטומטי
     let loading = false;
-    async function load(isRefresh = false) {
-      if (loading) return;
+    let pending = null;      // פעולה של המשתמש בזמן שבקשה אחרת רצה — נטענת מיד אחריה
+    let timer = null;
+    let lastOk = 0;          // מתי הגיעה התשובה האחרונה (שעון הדפדפן)
+    const analysisOn = () => forecast.methods().length > 0;
+    const active = () => document.visibilityState === 'visible' && analysisOn();
+    function ago(ms) {
+      const s = Math.max(0, Math.round(ms / 1000));
+      return s < 60 ? `${s} ש׳` : `${Math.round(s / 60)} דק׳`;
+    }
+    function showAge() {
+      everySel.hidden = !analysisOn();
+      upd.hidden = !analysisOn() || !lastOk;
+      if (!upd.hidden) upd.textContent = 'עודכן לפני ' + ago(Date.now() - lastOk);
+    }
+    const ageTick = setInterval(showAge, 5000);
+    /** הטיימר הבא — רק כשהניתוח פעיל. אחרת אין טיימר בכלל (אין שיטה, או לשונית מוסתרת) */
+    function schedule() {
+      clearTimeout(timer);
+      timer = null;
+      if (active()) timer = setTimeout(() => load('auto'), every * 1000);
+      showAge();
+    }
+    async function load(mode = 'change') {
+      if (loading) { if (mode !== 'auto') pending = mode; return; }
+      const auto = mode === 'auto';
+      if (auto && !active()) { schedule(); return; }
       loading = true;
+      clearTimeout(timer);
+      timer = null;
       refresh.disabled = true;
-      closeLive();
-      info.textContent = 'טוען…';
+      if (!auto && mode !== 'pick') { closeLive(); info.textContent = 'טוען…'; }
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
-        const r = await api('market_candles', null, { asset, tf: st.tf, ...rangeQuery() });
+        const r = await api('chart_refresh', null, { asset, tf: st.tf, ...rangeQuery(), methods: forecast.methods().join(',') });
+        lastOk = Date.now();
         let rows = r.candles;
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
@@ -360,23 +403,30 @@ export function mountMarket(ctx) {
         candle.applyOptions({ priceFormat: priceFormat(rows) });
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
-        chart.timeScale().fitContent();
+        // רענון אוטומטי ובחירת שיטה — לא מזיזים את התצוגה של המשתמש
+        if (mode === 'open' || mode === 'change' || mode === 'manual') chart.timeScale().fitContent();
         draw.redraw();
-        forecast.onLoad(isRefresh);
+        forecast.onResult(r);
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
           capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
-          r.stream ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
+          r.stream || analysisOn() ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
           n ? '' : ' · אין נתונים בטווח הזה');
-        if (isRefresh) toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
-        if (r.stream && n) openLive(r.stream, r.stream_interval);
+        if (mode === 'manual') toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
+        if (r.stream && n && !ws) openLive(r.stream, r.stream_interval);
       } catch (e) {
-        info.textContent = '';
-        info.append(h('span', { class: 'error' }, e.message));
+        // רענון אוטומטי שנכשל (גם 429) — בשקט: הנתונים הקודמים נשארים, ו"עודכן לפני X" מראה כמה הם ישנים.
+        // אין ניסיון חוזר מיידי — הפעם הבאה בקצב הרגיל (18.3 קריטריון 5)
+        if (!auto) {
+          info.textContent = '';
+          info.append(h('span', { class: 'error' }, e.message));
+          forecast.onError(e);
+        }
       } finally {
         loading = false;
         refresh.disabled = false;
+        if (pending) { const m = pending; pending = null; load(m); } else schedule();
       }
     }
     // WebSocket ציבורי של Binance — ישירות לספק. אין התחברות חוזרת אוטומטית בלולאה: נותק → הודעה, ו"↻" מחבר.
@@ -402,10 +452,19 @@ export function mountMarket(ctx) {
       ws.onclose = () => { if (ws) { ws = null; live.className = 'chip bad'; live.textContent = 'נותק — ↻'; } };
     }
     function closeLive() { if (ws) { const w = ws; ws = null; w.close(); } live.hidden = true; }
-    const vis = () => { if (document.hidden) { closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה'; } else if (streamSpec && !ws) openLive(...streamSpec); };
+    // לשונית מוסתרת — הרענון עוצר (אין טיימר); גלויה שוב — בקשה אחת מיד, ואז בקצב הרגיל (18.3 קריטריון 2)
+    const vis = () => {
+      if (document.visibilityState !== 'visible') {
+        clearTimeout(timer); timer = null;
+        closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה';
+        return;
+      }
+      if (streamSpec && !ws) openLive(...streamSpec);
+      if (analysisOn()) load('auto');
+    };
     document.addEventListener('visibilitychange', vis);
-    onTeardown(() => { document.removeEventListener('visibilitychange', vis); streamSpec = null; closeLive(); });
-    await Promise.all([load(), draw.load()]);
+    onTeardown(() => { document.removeEventListener('visibilitychange', vis); clearTimeout(timer); clearInterval(ageTick); pending = null; streamSpec = null; closeLive(); });
+    await Promise.all([load('open'), draw.load()]);
   }
 
   // ── ספקי נתונים (המשתמש) ───────────────────────────────
@@ -542,6 +601,7 @@ export function mountMarket(ctx) {
         h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' }[r.kind]),
           h('td', { class: 'n num' }, r.candles.toLocaleString('he-IL')), h('td', { class: 'n num' }, new Date(r.oldest * 1000).toLocaleDateString('he-IL')))))) : h('p', { class: 'empty' }, 'המאגר ריק.'),
       adminFetchLog(S.fetch_log || []),
+      adminMethodRuns(S.method_runs || []),
       adminPairs(S.pairs || []),
       h('div', { class: 'row-btns wrap' },
         h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { const r = await api('admin_cache_cleanup', {}); toast(`נמחקו ${r.deleted} נרות ישנים`); reload(); } } }, '🧹 ניקוי ישנים מ-60 יום'),
@@ -563,6 +623,22 @@ export function mountMarket(ctx) {
           h('td', { class: 'n num' }, r.provider_candles.toLocaleString('he-IL') + (r.provider_calls ? ` (${r.provider_calls})` : '')),
           h('td', { class: 'n num' }, r.served.toLocaleString('he-IL')))))))
         : h('p', { class: 'empty' }, 'אין עדיין בקשות.'));
+  }
+
+  // מונה ריצות השיטות (18.3, S3): "רצה" — חישוב אמיתי; "מהשמור" — אותו נר סגור, התוצאה הקודמת חזרה בלי להריץ
+  function adminMethodRuns(rows) {
+    const time = t => (t ? new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+    return h('section', { class: 'block method-runs' },
+      h('h3', {}, 'ריצות שיטה ברענון'),
+      h('p', { class: 'hint' }, '"רצה" עולה רק כשנסגר נר חדש (או השתנו הפרמטרים). רענון בלי נר חדש — "מהשמור", והשיטה לא רצה.'),
+      rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'שיטה'), h('th', { class: 'n' }, 'רצה'), h('th', { class: 'n' }, 'מהשמור'), h('th', {}, 'ריצה אחרונה'))),
+        h('tbody', {}, rows.map(r => h('tr', { 'data-method': r.method_id },
+          h('td', {}, h('span', { dir: 'ltr' }, r.method_id)),
+          h('td', { class: 'n num runs' }, r.runs.toLocaleString('he-IL')),
+          h('td', { class: 'n num reused' }, r.reused.toLocaleString('he-IL')),
+          h('td', { class: 'num' }, time(r.last_run_at)))))))
+        : h('p', { class: 'empty' }, 'אף שיטה עוד לא רצה ברענון.'));
   }
 
   // קטלוג הזוגות (18.1 קריטריון 4): כאן — ורק כאן — הסימולים גלויים, לבדיקה
