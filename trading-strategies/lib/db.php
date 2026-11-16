@@ -135,7 +135,7 @@ function ts_migrate(PDO $db): void
         // שלב א' (spec-stage-a.md): מנהלים, ספקי נתונים, מעקב, תקרות. הנרות — במסד נפרד (lib/cache.php)
         $db->exec(<<<'SQL'
             BEGIN;
-            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן
+            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן. מיגרציה 18: chief / editor (פרק 24)
             CREATE TABLE app_roles (
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 role TEXT NOT NULL CHECK (role IN ('admin')),
@@ -567,6 +567,101 @@ function ts_migrate(PDO $db): void
             BEGIN;
             DELETE FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope LIKE 'u:%';
             PRAGMA user_version = 16;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 17) {
+        // למידה עצמית, שלב א' (spec-stage-a 23.3, L1): שורה לכל עסקה שהסתיימה — לא נמחקת ולא משתנה. CREATE / ADD בלבד.
+        // המפתח הייחודי (23.3) — חישוב חוזר לא מכפיל; trade_id = 0 כשאינה עסקה של משתמש (NULL היה נחשב שונה בכל שורה).
+        // users.learn_off — הכיבוי של עסקאות המשתמש (✅36, ל3); נקרא ב-L2, כשנכתבות שורות trade
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE method_outcomes (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL CHECK (source IN ('backtest','live','trade')),
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                params_hash TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                t_signal INTEGER NOT NULL,
+                t_entry INTEGER,
+                t_exit INTEGER NOT NULL,
+                side TEXT NOT NULL CHECK (side IN ('long','short')),
+                entry TEXT,
+                stop TEXT,
+                exit_level TEXT,
+                exit TEXT,
+                result TEXT NOT NULL CHECK (result IN ('win','loss','horizon','skipped_gap')),
+                win INTEGER NOT NULL DEFAULT 0,
+                r REAL,
+                mae_r REAL,
+                mfe_r REAL,
+                atr TEXT,
+                market TEXT NOT NULL,
+                month INTEGER NOT NULL,
+                quarter INTEGER NOT NULL,
+                weekday INTEGER NOT NULL,
+                hour INTEGER,
+                holidays TEXT NOT NULL DEFAULT '[]',
+                features TEXT,
+                user_id INTEGER,
+                trade_id INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX method_outcomes_key ON method_outcomes
+                (source, method_id, method_version, params_hash, provider, asset, tf, t_signal, trade_id);
+            CREATE INDEX method_outcomes_method ON method_outcomes (method_id, method_version, source);
+            ALTER TABLE users ADD COLUMN learn_off INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 17;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 18) {
+        // עורך ראשי ועורך משני (spec-stage-a 24.4, ✅38): ב-SQLite אי אפשר לשנות CHECK — לכן הטבלה נבנית מחדש, כמו
+        // backtests_v7. כל שורה עוברת: admin → editor, ואותו granted_by ו-granted_at. בטרנזקציה אחת — נכשל באמצע,
+        // הכול חוזר. העורך מהשער (platform_admin) לא שורה כאן. תפקיד אחד למשתמש (user_id — המפתח)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE app_roles_v18 (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('chief', 'editor')),
+                granted_by INTEGER NOT NULL,
+                granted_at INTEGER NOT NULL
+            );
+            INSERT INTO app_roles_v18 (user_id, role, granted_by, granted_at)
+                SELECT user_id, CASE role WHEN 'admin' THEN 'editor' ELSE role END, granted_by, granted_at FROM app_roles
+                WHERE user_id IN (SELECT id FROM users);
+            DROP TABLE app_roles;
+            ALTER TABLE app_roles_v18 RENAME TO app_roles;
+            PRAGMA user_version = 18;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 19) {
+        // למידה, L4 (spec-stage-a 23.8א, ✅37): ממצא חריג → פריט DevLoop אחד. המפתח (שיטה, גרסה, מקור, סוג, פלח, פרמטר) → הקוד,
+        // כדי שאותו ממצא שוב יגיב בפריט הקיים ולא יפתח חדש. sig — המספרים בדיווח האחרון; total — כמה עסקאות היו אז. CREATE בלבד
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS learning_findings (
+                k TEXT PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                dim TEXT NOT NULL,
+                value TEXT NOT NULL,
+                code TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                sig TEXT NOT NULL,
+                total INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS learning_findings_method ON learning_findings (method_id, method_version);
+            PRAGMA user_version = 19;
             COMMIT;
             SQL);
     }

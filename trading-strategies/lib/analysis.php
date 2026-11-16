@@ -22,6 +22,7 @@ require_once __DIR__ . '/market.php';
 require_once __DIR__ . '/backtest.php';
 require_once __DIR__ . '/method-colors.php';
 require_once __DIR__ . '/journal.php';
+require_once __DIR__ . '/learn.php';
 
 final class TsBudget extends RuntimeException {}
 
@@ -167,7 +168,7 @@ function ts_method_label(TsMethod $m): ?string
 /** השיטות שהמשתמש רואה: מופעלות, ושיטת דוגמה — רק למנהל */
 function ts_methods_visible(int $uid): array
 {
-    $admin = ts_is_admin($uid);
+    $admin = ts_is_editor($uid);
     $out = [];
     foreach (ts_method_ids() as $id) {
         $m = ts_method($id);
@@ -245,7 +246,7 @@ function ts_admin_method_save(int $uid, array $in): void
     // שהבדיקות לאחור והיומן לא יערבבו את הערך הישן עם החדש. מנהל אחר — דרך הצעה (lib/tune.php). הפעלה, שווקים, מסגרות
     // והערה — כמו קודם, כל מנהל.
     $changed = $m->params($params) !== $m->params(ts_method_settings($id)['params']);
-    if ($changed) ts_require_primary_admin();
+    if ($changed) ts_require_chief();
     ts_db()->prepare('INSERT INTO methods (id, enabled, markets, timeframes, params, note, tune) VALUES (?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, markets = excluded.markets, timeframes = excluded.timeframes,
                         params = excluded.params, note = excluded.note, tune = methods.tune + ?')
@@ -427,9 +428,23 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     // נבדק היה נמשך שוב בפעם הבאה. המשך מהמצב = ריצה אחת, ולכן כשהכול הספיק — אותה תוצאה כמו קודם
     $s = $state ?? ts_bt_init($m, $p);
     $runUntil = microtime(true) + $max;
+    $trades = [];   // למידה (23.4, L1): כל עסקה שהסתיימה בריצה הזו → method_outcomes
+    $onTrade = function (array $t) use (&$trades): void { $trades[] = $t; };
     foreach (array_chunk(ts_bt_floats($rows), 2000) as $i => $chunk) {
         if ($i > 0 && microtime(true) > $runUntil) { $complete = false; break; }
-        $s = ts_bt_run($m, $p, $chunk, $cost, $s);
+        $s = ts_bt_run($m, $p, $chunk, $cost, $s, null, $onTrade);
+    }
+    // קודם השורות, ואחר כך המצב: כשל בכתיבה → שום דבר לא נשמר, והריצה הבאה מחשבת שוב את אותן עסקאות (בלי כפילות — 23.3)
+    $added = ts_outcomes_write(['source' => 'backtest', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $hash,
+        'provider' => $provider, 'asset' => $asset, 'tf' => $tf, 'cred_scope' => (string)$scope, 'market' => $market,
+        'decimals' => ts_tick_decimals($rows), 'now' => $now], $trades);
+    // שינוי דפוס (23.8, L4): רק כשנוספו עסקאות. ממצא חריג → DevLoop. כשל כאן לא מפיל את הבדיקה לאחור — רק נרשם
+    if ($added > 0) {
+        try {
+            ts_learn_findings_sync($meta['id'], (int)$meta['version'], 'backtest', $now);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning findings: ' . $e->getMessage());
+        }
     }
     if (!$complete) {
         if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
@@ -736,6 +751,8 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
         // met: null — "בדוק בעצמך" (תנאי שהמחשב לא בודק, 17.1.9 ז); לא נהפך ל-false
         $cards[] = $card + ['status' => 'ok', 'bias' => $a['bias'], 'conditions' => array_map(fn($c) => ['id' => $c['id'], 'text' => $c['text'],
             'side' => $c['side'], 'met' => $c['met'] === null ? null : (bool)$c['met']], $a['conditions']), 'signal_ago' => $a['signal_ago'] ?? null,
+            // מידע בלבד (פיבונאצ'י S25): לא תנאי — לא נספר, ולא "בדוק בעצמך"
+            'info' => array_map(fn($x) => ['id' => $x['id'], 'text' => $x['text']], $a['info'] ?? []),
             'basis' => $basis, 'param_notes' => ts_param_notes($m),
             'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,

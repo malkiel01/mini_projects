@@ -1,6 +1,6 @@
 // יומן השיטה (spec-stage-a 18.6, S6, ✅27): מה כל שיטה אמרה, מתי, ומה קרה אחר כך. בראש — סיכום לכל (שיטה, גרסה):
 // כמה תרחישים נכנסו לאזור, כמה הגיעו לביטול, כמה אף אחד, וכמה עוד לא ידוע. מתחת — הרשומות, העדכניות קודם.
-// התוצאה נקבעת בשרת ב-cron (מנרות סגורים) — כאן רק קריאה. המנהל רואה הכול; משתמש — רק נכסים שהוא רואה (השרת מסנן).
+// התוצאה נקבעת בשרת ב-cron (מנרות סגורים) — כאן רק קריאה. עורך רואה הכול; משתמש — רק נכסים שהוא רואה (השרת מסנן).
 // כל טקסט — textContent (h()).
 import { TF_LABEL } from './card.js';
 
@@ -56,7 +56,7 @@ export function mountMethodJournal(ctx) {
       h('div', { class: 'body' },
         h('div', { class: 'l1' }, pairMain(r), h('span', { class: 't' }, TF_LABEL[r.tf] || r.tf)),
         h('div', { class: 'l2' }, r.method.name, ' · v' + r.method.version, ' · ', h('span', { class: 'num' }, when(r.as_of)),
-          r.scope_kind && r.scope_kind !== 'shared' ? h('span', { class: 'muted' }, r.scope_kind === 'personal' ? ' · 🔑 מפתח אישי' : ' · מפתח מהמנהל') : null),
+          r.scope_kind && r.scope_kind !== 'shared' ? h('span', { class: 'muted' }, r.scope_kind === 'personal' ? ' · 🔑 מפתח אישי' : ' · מפתח מהעורך') : null),
         ...said(r)),
       chip);
   }
@@ -93,7 +93,7 @@ export function mountMethodJournal(ctx) {
       } } }, 'עוד רשומות') : null;
       host.replaceChildren(
         h('p', { class: 'hint' }, 'רשומה לכל שיטה, נכס, מסגרת ונר סגור. התוצאה נקבעת אחרי שעבר טווח הזמן של התרחיש, מנרות סגורים בלבד — עד אז "עוד לא ידוע". '
-          + (d.is_admin ? 'כמנהל — כל היומן.' : 'רק נכסים שאתם רואים.')),
+          + (d.is_admin ? 'כעורך — כל היומן.' : 'רק נכסים שאתם רואים.')),
         h('h2', { class: 'sec-title' }, 'סיכום לפי גרסה'),
         summary(d.summary),
         h('h2', { class: 'sec-title' }, 'רשומות'),
