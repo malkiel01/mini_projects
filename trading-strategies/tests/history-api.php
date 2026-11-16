@@ -147,7 +147,10 @@ $codes = [];
 for ($i = 0; $i < 32; $i++) $codes[] = call('dave', 'market_history', null, ['asset' => $A, 'tf' => 'h1', 'before' => $first])[0];
 eq(in_array(429, $codes, true), true, 'market_history counts in the 30-per-minute cap per user (429 before 32 calls in a minute)');
 
-$err = is_file("$tmp.error.log") ? trim((string)file_get_contents("$tmp.error.log")) : '';
-eq($err, '', 'no PHP errors on the server');
+// אזהרות הפעלה של PHP עצמו (למשל "JIT … disabled. in Unknown on line 0" ב-runner של הפריסה, ריצה 1789) — לא של הקוד;
+// כל השאר נספר (כמו ב-builder-removed-api.php ו-prefill-api.php)
+$err = array_values(array_filter(explode("\n", is_file("$tmp.error.log") ? (string)file_get_contents("$tmp.error.log") : ''),
+    fn($l) => trim($l) !== '' && !str_contains($l, ' in Unknown on line 0')));
+eq($err, [], 'no PHP errors on the server');
 echo $fail ? "✗ $fail/$n נכשלו\n" : "✓ $n בדיקות עברו\n";
 exit($fail ? 1 : 0);

@@ -37,6 +37,7 @@
  * פרופיל, שיטות וניתוח (פרקים 5–6):
  * GET  ?action=profile                   הפרופיל שלי
  * POST action=profile_save
+ * POST action=history_set {on: bool}   H1 (18.1.8): אותות העבר של השיטות על הגרף — בפרופיל (profile.history)
  * POST action=method_colors_save        {colors: {method_id: צבע}} — הצבע של כל שיטה בפרופיל (18.5); צבע לשיטה אחת בלבד
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
@@ -264,7 +265,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
     }
 }
 
-const TS_WRITE = ['logout', 'password_set', 'learn_off_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
+const TS_WRITE = ['logout', 'password_set', 'learn_off_set', 'history_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
@@ -332,6 +333,9 @@ try {
             out(['ok' => true]);
 
         // ל3 / ✅36 (L2): העסקאות שלי בלמידה — המשתמש עצמו בלבד
+        case 'history_set':   // H1 (18.1.8): המתג "היסטוריה" בתפריט השיטות
+            out(['ok' => true, 'history' => ts_history_set($uid, $in['on'] ?? null)]);
+
         case 'learn_off_set':
             out(['ok' => true, 'learn_off' => ts_learn_off_set($uid, $in['off'] ?? null)]);
 

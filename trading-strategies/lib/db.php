@@ -731,6 +731,13 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 23) {
+        // H1 (18.1.8 סעיף 4): המתג "היסטוריה" — אותות העבר של השיטות על הגרף. ברירת מחדל דולק (0 = דולק). ALTER בלבד,
+        // אידמפוטנטית (כמו 20); ב-data/app.sqlite (כבר מוחרג) — אין --exclude חדש
+        $cols = array_column($db->query('PRAGMA table_info(users)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $db->exec("BEGIN;\n" . ($cols && !in_array('history_off', $cols, true) ? "ALTER TABLE users ADD COLUMN history_off INTEGER NOT NULL DEFAULT 0;\n" : '')
+            . "PRAGMA user_version = 23;\nCOMMIT;");
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
