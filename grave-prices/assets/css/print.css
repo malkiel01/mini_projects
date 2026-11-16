@@ -21,44 +21,40 @@ body { background: #e9ebef; color: #000; font-family: Arial, 'Arial Hebrew', 'Li
 /* כל המידות בתוכן ב-em מגודל הבסיס (10.5pt) — כך print.js מקטין את הכול יחד כשהתוכן לא נכנס בעמוד */
 .content { flex: 1 1 auto; min-height: 0; overflow: hidden; font-size: 10.5pt; }
 
-/* הכותרות */
-h1 { font-size: 1.62em; font-weight: 700; text-align: center; }
-h2 { font-size: 1.43em; font-weight: 400; text-align: center; margin-top: 0.675em; }
-.valid { font-size: 1.05em; text-align: center; margin: 0.27em 0 1.35em; }
-.content > .block:first-child h2 { margin-top: 0; }
-/* שתיהן בדף אחד — זה לצד זה: ישראל מימין (הראשון ב-RTL), חו"ל משמאל */
-.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; margin-top: 2.5mm; }
-.cols h2 { font-size: 1.15em; margin-top: 0; }
-.cols .valid { margin-bottom: 0.8em; }
-.cols .pl .c-amt { width: 16mm; }
-.cols .pl .c-cur { width: 5mm; }
-.cols .pl .cur { padding-left: 0; }
-.cols .pl tr.section td, .cols .pl tr.subsection td { font-size: 1.1em; }
-.none { font-size: 1.24em; text-align: center; margin-top: 8.1em; }
+/* סולם טיפוגרפי אחד (05 סעיף 1) — כל סוג שורה נראה אותו דבר בכל מחירון ובכל תצורה; אין כאן כלל שתלוי בקבוצה.
+   גודל ב-em מהבסיס; מרווח של רכיב שגודלו שונה מהבסיס — מחולק בגודל שלו, כך שהמרווח שבאפיון נשמר ביחידות הבסיס. */
+h1 { font-size: 1.6em; font-weight: 700; text-align: center; margin: 0 0 calc(0.3em / 1.6); }
+h2 { font-size: 1.3em; font-weight: 400; text-align: center; margin-top: calc(0.5em / 1.3); }
+h2.aud { font-weight: 700; }   /* both: "תושבי ישראל" / "תושבי חו"ל" */
+.valid { font-size: 1em; text-align: center; margin: 0.2em 0 1em; }
+/* שתיהן בדף אחד — זה לצד זה: ישראל מימין (הראשון ב-RTL), חו"ל משמאל; האגרות במרוכז מתחת, לרוחב הדף */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; }
+.none { font-size: 1.2em; text-align: center; margin-top: 8em; }
 
-/* השורות */
+/* השורות — עמודות המחיר ברוחב קבוע, זהה בכל עמוד ובכל עמודה */
 .pl { width: 100%; border-collapse: collapse; font-size: 1em; line-height: 1.25; }
-.pl .c-amt { width: 27mm; }
-.pl .c-cur { width: 31mm; }
-.pl td, .pl th { padding: 0 0.27em; vertical-align: baseline; text-align: right; }
+.pl .c-amt { width: 22mm; }
+.pl .c-cur { width: 6mm; }
+.pl td { padding: 0 0.27em; vertical-align: baseline; text-align: right; }
 .pl .amt { font-weight: 700; text-align: right; direction: ltr; white-space: nowrap; }   /* direction ltr: הספרות מיושרות לימין העמודה */
-.pl .cur { font-weight: 700; text-align: right; padding-right: 0; }
+.pl .cur { font-weight: 700; text-align: right; padding-right: 0; padding-left: 0; }
 .pl .plain { font-weight: 400; font-size: .85em; text-decoration: none; }
-.pl tr.section td { text-align: center; font-weight: 700; font-size: 1.24em; text-decoration: underline; padding-top: 1.09em; padding-bottom: 0.435em; }
-.pl tr.subsection td { font-weight: 700; font-size: 1.24em; padding-top: 0.87em; padding-bottom: 0.327em; }
-.pl tr.section + tr.subsection td { padding-top: 0.218em; }
 .pl tr.indent td.lb { padding-right: 0; }
-.pl tr.heading td { padding-top: 0; }
-.pl tr.fee td { font-size: 0.857em; font-weight: 700; }
-.pl tr.note td { font-size: 0.81em; }
-.pl tr.gap td { padding-top: 1.08em; }
-/* פס בית עלמין (חו"ל): רקע אפור על כל הרוחב, ממורכז ומודגש */
-.pl tr.band td { background: #d9d9d9; text-align: center; font-weight: 700; font-size: 1em; padding: 0.189em 0.27em; }
-.pl tr.band + tr td { padding-top: 0.216em; }
-.pl tr:not(.band) + tr.band td { border-top: 0.675em solid #fff; }
-/* חו"ל: התשלומים בכתב רגיל, כמו במקור; המחיר מודגש */
-.pl.abroad tr.fee td.lb { font-weight: 400; font-size: 0.905em; }
-.pl.abroad tr.subsection td { font-size: 1.1em; text-decoration: underline; padding-top: 1.35em; }
+.pl tr.section td { text-align: center; font-weight: 700; font-size: 1.2em; text-decoration: underline;
+    padding-top: calc(1em / 1.2); padding-bottom: calc(0.4em / 1.2); }
+.pl tr.band td { background: #d9d9d9; text-align: center; font-weight: 700; padding: 0.2em 0.27em; }
+.pl tr:not(.band) + tr.band td { border-top: 0.6em solid #fff; }   /* 0.6em מעל הפס — לבן, כדי שהרקע לא יתפוס אותו */
+.pl tr.subsection td { font-weight: 700; font-size: 1.2em; padding-top: calc(0.8em / 1.2); padding-bottom: calc(0.3em / 1.2); }
+.pl tr.section + tr.subsection td, .pl tr.sp + tr.subsection td, .pl tr:first-child.subsection td { padding-top: 0; }
+.pl tr.heading td { padding-top: 0.2em; }
+.pl tr.fee td { font-size: 0.9em; }
+.pl tr.fee td.lb { font-weight: 400; }
+.pl tr.note td { font-size: 0.85em; }
+.pl tr.sp td { height: 1em; padding: 0; }   /* רווח: תחילת אזור האגרות, וחזרה מהזחה */
+.pl tr.sp:first-child { display: none; }
+/* both: "תשלומי אגרות" ממורכז מעל האגרות המרוכזות */
+.fees { margin-top: 1em; }
+.fees .pl tr.subsection td { text-align: center; }
 
 /* החתימות — שם מעל תפקיד, שלוש עמודות שוות (04 סעיף 4): 18mm ריקים מעל השם לחתימה ביד, בלי קו; שם 9pt מודגש,
    תפקיד 8.5pt רגיל, 4mm עד נייר המכתבים. במידות קבועות (mm/pt) — fit() מקטין רק את .content, לא את החתימות */
