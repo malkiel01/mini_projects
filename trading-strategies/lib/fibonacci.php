@@ -352,8 +352,25 @@ function ts_fib_box(array $z, float $m0): array
 }
 
 /**
- * התרחיש על הרשת (22.5, F-2): A-B-X, קופסת שוויון לכל אזור (box), ו-Z6 (22.5ג) — אזור שבתוכו נופל יעד 100% (של A-B-X, או
- * T של קופסה של אזור כלשהו, באחד הצדדים) [שלנו — כל הקופסאות, ופעם אחת לאזור]: z6 = true והציון + 1. base — הציון של F-1.
+ * האזור של צד שהקופסה שלו מייצגת אותו (22.5ב): הציון הגבוה ביותר; בשוויון — האמצע הקרוב ל-$close. הציון — **לפני Z6** (base),
+ * כי Z6 עצמו נגזר מהבחירה הזו. רק אזור עם קופסה. מחזיר את האינדקס, או null.
+ */
+function ts_fib_best_zone(array $zones, ?float $close): ?int
+{
+    $b = null; $bs = null; $bd = null;
+    foreach ($zones as $i => $z) {
+        if (empty($z['box'])) continue;
+        $sc = $z['base'] ?? $z['score'];
+        $d = $close === null ? 0.0 : abs(($z['lo'] + $z['hi']) / 2 - $close);
+        if ($b === null || $sc > $bs || ($sc === $bs && $d < $bd - TS_FIB_EPS)) { $b = $i; $bs = $sc; $bd = $d; }
+    }
+    return $b;
+}
+
+/**
+ * התרחיש על הרשת (22.5, F-2): A-B-X, קופסת שוויון לכל אזור (box), ו-Z6 (22.5ג). יעדי ה-100% של Z6 (הכרעת הבקרה, ביקורת
+ * #1685 🟡1, לפי 22.5ב): של A-B-X, ו-T של הקופסה של **האזור המוביל בכל צד** (ts_fib_best_zone, לפי הסגירה של הרשת).
+ * אזור שבתוכו נופל אחד מהם — z6 = true והציון + 1, פעם אחת. base — הציון של F-1.
  * לא משנה טווחים, גבולות או רמות (22.5ה). הרשת נבנית מנרות ≤ הנר האחרון, ולכן גם היעדים — אות בנר c רואה רק ≤ c − 1.
  */
 function ts_fib_project(array $g, ?array $abx): array
@@ -362,10 +379,9 @@ function ts_fib_project(array $g, ?array $abx): array
     $hits = $abx ? [$abx['targets'][1]['price']] : [];   // 100%
     foreach (['support', 'resistance'] as $key) {
         $m0 = $g[$key]['move']['price'] ?? null;
-        foreach ($g[$key]['zones'] as $i => $z) {
-            $g[$key]['zones'][$i]['box'] = $m0 === null ? null : ts_fib_box($z, (float)$m0);
-            if ($m0 !== null) $hits[] = $g[$key]['zones'][$i]['box']['T'];
-        }
+        foreach ($g[$key]['zones'] as $i => $z) $g[$key]['zones'][$i]['box'] = $m0 === null ? null : ts_fib_box($z, (float)$m0);
+        $top = ts_fib_best_zone($g[$key]['zones'], isset($g['close']) ? (float)$g['close'] : null);
+        if ($top !== null) $hits[] = $g[$key]['zones'][$top]['box']['T'];
     }
     foreach (['support', 'resistance'] as $key) {
         foreach ($g[$key]['zones'] as $i => $z) {
@@ -403,14 +419,12 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
     $line = fn(float $v, string $text, bool $faint) => ['kind' => 'polyline', 'style' => 'dashed', 'text' => $text,
         'points' => [['t' => $t0, 'price' => $v], ['t' => $end, 'price' => $v]]]
         + ($faint || !$inZone($v) ? ['single' => true] : ['bold' => true]);
+    // האזור המוביל בצד — אותה בחירה כמו ב-Z6 (ts_fib_best_zone)
     $best = function (string $key) use ($g, $close) {
-        $b = null;
-        foreach ($g[$key]['zones'] as $z) {
-            if (!$z['box']) continue;
-            $d = abs(($z['lo'] + $z['hi']) / 2 - $close);
-            if ($b === null || $z['score'] > $b['score'] || ($z['score'] === $b['score'] && $d < $b['d'])) $b = $z + ['d' => $d];
-        }
-        return $b ? ['lo' => $b['lo'], 'hi' => $b['hi'], 'T' => $b['box']['T'], 'side' => $key] : null;
+        $i = ts_fib_best_zone($g[$key]['zones'], $close);
+        if ($i === null) return null;
+        $b = $g[$key]['zones'][$i];
+        return ['lo' => $b['lo'], 'hi' => $b['hi'], 'T' => $b['box']['T'], 'side' => $key];
     };
     $boxes = [];
     if ($x && $x['box_t'] !== null) $boxes[] = ['lo' => $x['zone'][0], 'hi' => $x['zone'][1], 'T' => $x['box_t'], 'side' => $x['side'] === 'long' ? 'support' : 'resistance'];

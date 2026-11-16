@@ -87,6 +87,17 @@ eq(array_column($gz2['support']['zones'], 'score'), [3, 3], 'Z6 is not added twi
 $gb = ts_fib_project(['support' => $side(100.0, [$zone(110.0, 112.0, 2)]), 'resistance' => $side(null, [$zone(121.5, 122.5, 2), $zone(117.0, 117.5, 2)])], null);
 eq([r2($gb['support']['zones'][0]['box']['T']), array_column($gb['resistance']['zones'], 'z6')], [122.0, [true, false]],
     'Z6 from a box: T 122 of the support zone falls in the resistance zone [121.5, 122.5] → +1; 61.8% of the box (117.4) — no');
+// ביקורת #1685 🟡1 (22.5ב): רק T של **האזור המוביל בכל צד** — אזור שאינו מוביל לא מעניק Z6 לאחר
+// תמיכה: [110, 112] בציון 3 (מוביל, T = 122) ו-[105, 106] בציון 2 (T = 111 — נופל בתוך [110.5, 111.5] של ההתנגדות)
+$gl = ts_fib_project(['close' => 115.0, 'support' => $side(100.0, [$zone(110.0, 112.0, 3), $zone(105.0, 106.0, 2)]),
+    'resistance' => $side(null, [$zone(121.5, 122.5, 2), $zone(110.5, 111.5, 2)])], null);
+eq([r2(array_map(fn($q) => $q['box']['T'], $gl['support']['zones'])), array_column($gl['resistance']['zones'], 'z6')], [[122.0, 111.0], [true, false]],
+    'review 🟡1: Z6 only from the leading zone of each side — T 122 of the leader counts; T 111 of a lesser zone does not');
+// בשוויון — הקרוב לסגירה. הציון המוביל נקבע לפני Z6
+$tie = fn(float $close) => array_column(ts_fib_project(['close' => $close, 'support' => $side(100.0, [$zone(110.0, 112.0, 2), $zone(105.0, 106.0, 2)]),
+    'resistance' => $side(null, [$zone(121.5, 122.5, 2), $zone(110.5, 111.5, 2)])], null)['resistance']['zones'], 'z6');
+eq([$tie(113.0), $tie(104.0)], [[true, false], [false, true]], 'review 🟡1: a tie — the zone nearer the close leads');
+
 // בגרף: יעד בתוך אזור — מודגש; יעד לבד — דהוי
 $gs = ts_fib_project(['support' => $side(null, [$zone(169.9, 170.2, 2)]), 'resistance' => $side(null, [])], $abx100(150.0, 20.0));
 [$si] = ts_fib_scenario($gs, null, ['t' => 1_000_000, 'c' => 160.0], $H, 60);
@@ -156,14 +167,31 @@ $half = json_decode(json_encode(ts_bt_run($m, $P, array_slice($F, 0, 2500), $cos
 eq(json_encode(ts_bt_run($m, $P, $F, $cost, $half)), json_encode($whole), 'incremental (split at 2,500, state through JSON) = full, in the defaults');
 
 // ── קריטריון 9: הממצא עם תרחיש ובלעדיו ─────────────────────
+// אותם נרות, פעם עם התרחיש ופעם בלעדיו ($scenario = false), ובשני אופקים שונים (התרחיש משתנה איתם) — הממצא זהה לגמרי
+$finding = function (array $c, bool $scen, array $o = []) use ($m, $H) {
+    $m->scenario = $scen;
+    try { return ts_forecast_split(ts_overlay_check($m->overlay($c, $m->params($o), $H), $H)); } finally { $m->scenario = true; }
+};
+$same = 0; $withScen = 0; $cases = 0;
+foreach ([2000, 3300, 4100, count($F)] as $end) {
+    $c = array_slice($F, 0, $end);
+    [$on, $fcOn] = $finding($c, true);
+    [$off, $fcOff] = $finding($c, false);
+    [$on300] = $finding($c, true, ['horizon_bars' => 300]);
+    $cases++;
+    if ($fcOn['items']) $withScen++;
+    $strip = fn(array $f) => array_map(fn($it) => array_diff_key($it, ['note' => 1]), $f['items']);
+    if ($strip($on) === $strip($off) && $strip($on) === $strip($on300) && $fcOff['items'] === []) $same++;
+}
+eq([$same, $cases, $withScen > 0], [4, 4, true], 'criterion 9: the finding (zones, bounds, scores, singles) is identical with the scenario shown, hidden, and with another horizon');
 $gF = $grid($F);
-[$fin, $fc] = ts_forecast_split(ts_overlay_check($m->overlay($F, $P, $H), $H));
+[$fin] = $finding($F, false);
 $fz = array_values(array_filter($fin['items'], fn($it) => $it['kind'] === 'zone'));
-$gzs = [...$gF['support']['zones'], ...$gF['resistance']['zones']];
-eq(array_map(fn($it) => [r3($it['p1']), r3($it['p2']), $it['score']], $fz), array_map(fn($q) => [r3($q['lo']), r3($q['hi']), $q['score']], $gzs),
-    'criterion 9: the finding zones = the grid zones — bounds and scores (with Z6), whatever the scenario');
-eq([count($fc['items']) > 0, array_filter($fin['items'], fn($it) => ts_forecast_item($it, $fin['as_of'])), array_filter($fc['items'], fn($it) => !ts_forecast_item($it, $fc['as_of']))],
-    [true, [], []], 'criterion 9: the scenario is only after the last closed candle (dashed / transparent), and nothing of it is in the finding');
+eq(array_map(fn($it) => [r3($it['p1']), r3($it['p2']), $it['score']], $fz),
+    array_map(fn($q) => [r3($q['lo']), r3($q['hi']), $q['score']], [...$gF['support']['zones'], ...$gF['resistance']['zones']]),
+    'criterion 9: … and it is the grid itself (scores with Z6), with no scenario at all');
+[, $fc] = $finding($F, true);
+eq(array_values(array_filter($fc['items'], fn($it) => !ts_forecast_item($it, $fc['as_of']))), [], 'the scenario is only after the last closed candle');
 
 // ── 22.5ד: כיוון התרחיש ───────────────────────────────────
 $items = fn(array $c, array $p = []) => ts_forecast_split(ts_overlay_check($m->overlay($c, $m->params($p), $H), $H))[1];
@@ -198,6 +226,20 @@ $prim = array_values(array_filter($jI, fn($it) => !empty($it['primary'])));
 eq(array_map(fn($it) => $it['kind'] === 'zone' ? [$it['p1'], $it['p2'], $it['text']] : [$it['role'], $it['price']], $prim),
     [[119.5, 120.5, 'אזור חפיפה שבתוכו הקרנה'], ['invalidation', 170.0]],
     '22.5ו: the journal zone — the nearest zone in the direction that holds a target (120 in 119.5–120.5; 130–131 is nearer but holds none)');
+
+// ביקורת #1685 🟡2: אות בלי A-B-X בכיוון שלו → רמת הביטול = הסטופ של האות; עם A-B-X בכיוון → X
+$gS = ts_fib_project(['close' => 175.0, 'support' => $side(120.0, [$zone(169.1, 169.44, 3)]), 'resistance' => $side(null, [])], null);
+$xL = ['side' => 'long', 'ago' => 0, 'stop' => 168.6, 'zone' => [169.1, 169.44], 'box_t' => 218.54];
+$invOf = fn(array $it) => array_values(array_map(fn($q) => [$q['price'], $q['text']], array_filter($it, fn($q) => ($q['role'] ?? '') === 'invalidation')));
+[$noAbx] = ts_fib_scenario($gS, $xL, ['t' => 1_000_000, 'c' => 175.0], $H, 60);
+eq($invOf($noAbx), [[168.6, 'רמת הביטול — הסטופ של האות']], 'review 🟡2: a long signal with no A-B-X → the invalidation level is the signal stop');
+$up = ts_fib_abx([['type' => 'L', 'p' => 150.0, 't' => 1, 'ct' => 2], ['type' => 'H', 'p' => 200.0, 't' => 3, 'ct' => 4], ['type' => 'L', 'p' => 165.0, 't' => 5, 'ct' => 6]]);
+[$withAbx] = ts_fib_scenario(ts_fib_project($gS, $up), $xL, ['t' => 1_000_000, 'c' => 175.0], $H, 60);
+eq($invOf($withAbx), [[165.0, 'רמת הביטול — סגירה מתחת ל-X של A-B-X']], 'review 🟡2: the same signal with A-B-X up → the invalidation level is X (165)');
+$down = ts_fib_abx([['type' => 'H', 'p' => 200.0, 't' => 1, 'ct' => 2], ['type' => 'L', 'p' => 150.0, 't' => 3, 'ct' => 4], ['type' => 'H', 'p' => 170.0, 't' => 5, 'ct' => 6]]);
+[$oppAbx] = ts_fib_scenario(ts_fib_project($gS, $down), $xL, ['t' => 1_000_000, 'c' => 175.0], $H, 60);
+eq([$invOf($oppAbx), count(array_filter($oppAbx, fn($q) => str_starts_with($q['text'] ?? '', 'A-B-X')))], [[[168.6, 'רמת הביטול — הסטופ של האות']], 0],
+    'review 🟡2: A-B-X against the signal → not shown, and the invalidation is the stop');
 
 // ── ביצועים: הנתיב המהיר = החישוב המלא, בכל נר ──────────────
 // אותה זרימה פעמיים: פעם עם הנתיב המהיר (ts_fib_grid), ופעם בלי (הרשת הקודמת בלי pl → תמיד ts_fib_side)

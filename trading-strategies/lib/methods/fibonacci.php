@@ -24,6 +24,9 @@ require_once dirname(__DIR__) . '/fibonacci.php';
 
 final class TsMethodFibonacci extends TsMethod
 {
+    /** false — overlay בלי התרחיש (22.5ה, F-2 קריטריון 9: הממצא זהה עם תרחיש ובלעדיו — tests/fibonacci-f2.php) */
+    public bool $scenario = true;
+
     public function meta(): array
     {
         return [
@@ -186,7 +189,7 @@ final class TsMethodFibonacci extends TsMethod
             $items[] = ['kind' => 'hline', 'price' => (float)$x['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה'];
             $items[] = ['kind' => 'hline', 'price' => (float)$x['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה'];
         }
-        [$scen, $proj] = $g ? ts_fib_scenario($g, $alive ? $x : null, $candles[count($candles) - 1], $tf, $bars) : [[], []];
+        [$scen, $proj] = $g && $this->scenario ? ts_fib_scenario($g, $alive ? $x : null, $candles[count($candles) - 1], $tf, $bars) : [[], []];
         $items = [...$items, ...$scen];
         $ov = ['as_of' => $last, 'range' => ['from' => $first, 'to' => $last], 'items' => $items, 'projection' => ['bars' => $bars, 'scenarios' => $proj]];
         if (!$items) $ov['note'] = $g ? 'אין כרגע אזור חפיפה ולא רמות' : 'אין מספיק נרות לחישוב';
