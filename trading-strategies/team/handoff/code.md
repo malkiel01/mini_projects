@@ -5,6 +5,8 @@
 > **עדכון 2026-11-15 (צ'אט F1):** F1 בנוי וממוזג (#1601) — הסעיף "F1 — מה נבנה" למטה.
 > **עדכון 2026-11-15 (צ'אט S1.2):** F1 (#1601) ו-S1.2 (#1603) ממוזגים — הסעיף בסוף. הבא בתור — לפי `team/board.md` (18.8: S4).
 > **עדכון 2026-11-16 (צ'אט S4):** S4 בנוי וממוזג (#1605) — הסעיף "S4 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S5).
+> **עדכון 2026-11-16 (צ'אט S5):** S5 בנוי וממוזג (#1608) — הסעיף "S5 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8).
+> **עדכון 2026-11-16 (צ'אט S6):** S6 בנוי וממוזג (#1611) — הסעיף "S6 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S7, שנשען על היומן).
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -133,7 +135,7 @@
   - `forecast.js` — הפס: `.an-panel` → `.an-bar` (כותרת + `tools`: בורר הקצב ו"עודכן לפני"), `.an-tfs`, שקלול, ו-`.forecast-panel.analysis-card[data-method]` לכל שיטה עם `.an-sec.finding/.scenario/.prob`.
   - `chosen` = `[{id, color, hide, fold}]` — "הסתר תרחיש" והקיפול נשמרים ב-`ts-forecast-methods`.
   - `mountForecast` מקבל עכשיו `ctx, asset, pair, tools, tfs, setTf`; מחזיר גם `needsBacktest`, `backtesting`, `onAnalysis`.
-  - **ל-S5:** המקרא ובחירת הצבע — ב-`.an-bar` או ליד `.fc-dot` שב-`.an-fold`. הצבע עובר דרך `--mc`.
+  - ~~ל-S5: המקרא ובחירת הצבע~~ — נבנו ב-S5 (#1608): הבחירה בתפריט, המקרא מעל הגרף.
 - **הוסר:** 🧭, `viewAnalysis`, הלשונית "ניתוח" (4 לשוניות), `method_overlay`/`ts_method_overlay`. `#/analysis/X` → `#/chart/X`; קישור ההתראות → `#/chart/`.
 - **בדיקות:**
   - `tests/analysis-ui.mjs` — נכתב מחדש ל-S4 (נתוני `wave`, שעון קבוע). שם: הגרף לא זז כשהניתוח נדלק, רענון 30 שניות בלי `analysis`, קיפול, שקלול, כהה.
@@ -141,3 +143,50 @@
   - בדיקה שפותחת גרף עם שיטה: `localStorage ts-forecast-methods` + `sessionStorage ts-chart:<asset>` ({tf}) ואז reload; לחכות ש-`.an-sec.prob` בלי "מריץ בדיקה לאחור" (ראו `journal-ui`).
   - בנתוני `wave` לשיטת הדוגמה אין אות פעיל — אין לה תרחיש. לתרחיש — אליוט.
 - **פתוח:** ⚪ `alerts-ui.mjs` ("mark all read — no badge") נכשל לפעמים בהרצה מקבילה של כל הבדיקות, גם ב-main לפני S4. לבד — עובר.
+
+## S5 — מה נבנה (18.5, #1608)
+
+- **השרת — צבע לכל שיטה בפרופיל:**
+  - `lib/method-colors.php`: `TS_METHOD_PALETTE` (= `PALETTE` ב-`forecast.js`), `ts_method_colors($uid)` (תמיד אובייקט — `{}` ב-JSON), `ts_method_colors_save`.
+  - `users.method_colors` — מיגרציה 10, ALTER בלבד. `ts_profile()['method_colors']`, ולכן גם ב-`me`.
+  - הפעולה `method_colors_save` {colors}. המפה נשמרת שלמה: צבע לשיטה אחת בלבד (422), רק מהפלטה, עד 8.
+- **הדפדפן (`forecast.js`):**
+  - **הפרופיל הוא האמת.** `reconcile()` בעלייה, `colorFor()` בסימון, `remember()` שולח רק כשהמפה השתנתה. צבע ששמור לשיטה אחרת (לא על הגרף) יורד ממנה.
+  - **בתפריט:** `.fc-row` = `.fc-opt` (התווית עם תיבת הסימון — כמו קודם) + `.fc-colors` (רדיו `name="fc-color-<id>"`, `value="--m5"`). תפוס — `disabled`.
+  - **המקרא:** `.fc-legend` / `.fc-leg[data-method]` — שכבה בראש `.chart-wrap`. רשום בלוח התוויות (`by: 'legend'`) לפני שהשיטות מציירות.
+  - **הסתרה במקרא:** `off` ב-`ts-forecast-methods`. `shown()` — מה שמצויר; `methods()` — עדיין כל המסומנות.
+  - **כל הציור בצבע השיטה** — גם רמות (היו אדום/ירוק לפי role) וגם סימונים על נרות. הכיוון — בצורת החץ.
+  - **כפתור הפס "הסתרה" → "הסרה"** (מבטל סימון).
+- **בדיקות:**
+  - `tests/method-colors-api.php`, `tests/method-colors-ui.mjs`.
+  - `box.tsForecast()` מחזיר עכשיו גם `drawn` ({m, k, c, alt} לכל ציור — כולל `marker` ו-`text`) ו-`colors` (המפה מהפרופיל).
+  - **נתונים שבהם גם לאליוט וגם לשיטת הדוגמה יש ציור:** `wave` עם `NOW = 1794094200 + 5 * 86400`. ב-NOW הרגיל לשיטת הדוגמה אין אות.
+  - **חלופות של אליוט** לא יוצאות בנתוני `wave`. הבדיקה מוסיפה חלופה לתשובה דרך `page.route`.
+- **מוסכמה חדשה — חובה בכל בדיקת UI שקוראת ל-`post()`:** לחכות ל-`main [role="combobox"]` ולא ל-`main`.
+  - אחרת `post()` קורא ל-`me` לפני שה-`me` של הדף חזר, ונפתחו שני sessions. הדף נשאר עם csrf ישן, וכל כתיבה מהדף מקבלת 403.
+  - עכשיו הגרף כותב (שמירת צבע), ולכן זה צץ.
+- **פתוח:**
+  - **⚪ `market-tabs-ui`** נכשלה פעם אחת בהרצה מקבילה (ההמתנה הראשונה ל-combobox), כמו ב-#1603. לבד — עוברת 2/2.
+  - **הפלטה** לא שונתה מ-F1. הניגוד ≥ 3:1 נבדק, אבל `--brand` ו-`--m8` (כחול ואפור-כחול) קרובים זה לזה בעין.
+
+## S6 — מה נבנה (18.6, #1611)
+
+- **הטבלה:** `method_journal` ב-`data/app.sqlite` (מיגרציה 11). **לא** במאגר הנרות — הוא מתרוקן ומתנקה.
+  - `UNIQUE (method_id, method_version, asset, tf, cred_scope, as_of, kind)` + `INSERT OR IGNORE` — רשומה לא משוכתבת לעולם.
+  - `outcome`: `NULL` = עוד לא ידוע; `zone` / `invalidated` / `neither`; `none` = אין תרחיש (וכל רשומת `backtest`).
+  - המחירים (`zone_lo`, `zone_hi`, `invalidation`) — מחרוזות עשרוניות לפי `tick_decimals`.
+  - **בלי `user_id`** (✅27). מי רואה — לפי `cred_scope`.
+- **הכתיבה (`lib/journal.php`):**
+  - `ts_journal_analysis` — נקרא רק מ-`ts_method_result` כש-`ran` (נר סגור חדש). נרשם התרחיש המוביל (`primary`).
+  - `ts_journal_backtest` — מ-`ts_backtest`, רק בחישוב חדש.
+  - שתיהן בולעות שגיאות (`error_log`) — לא מפילות רענון.
+  - **שינוי בצורת `forecast` (S4) ישבור את `ts_journal_said`** — לעדכן אותה יחד.
+- **התוצאה:** `ts_journal_resolve` נקרא מ-`ts_alerts_run` (אחרי ההתראות, לפני הניקוי), עם אותו `$used` ותקרת זמן; `$sum['journal']` בפלט ה-cron.
+  - רק כש-`until_t + נר <= now`. הנרות — `ts_market_candles` במשתמש של ההיקף (`ts_journal_uid_for`: `''`→0, `u:N`→N, `c:N`→משויך ראשון).
+  - הכלל — `ts_journal_outcome` (טהורה): הראשון שנגע; שניהם באותו נר → `invalidated` + `same_candle`.
+- **הקריאה:** `method_journal` (GET) → `ts_journal_list`: עמוד של 50 (`before`), `summary` על כל מה שהמשתמש רואה, סינון `method`/`version`/`outcome`/`kind`. `scope_kind` — רק למנהל.
+- **המסך:** `assets/js/method-journal.js` — `view(host)` ו-`viewMethodJournal()`. `#/method-journal` ("עוד") ולשונית `journal` בניהול (`ctx.journalView`).
+- **בדיקות:** `tests/method-journal-api.php` (כולל בדיקה עצמאית של התוצאה מנוסחת `wave`), `tests/method-journal-ui.mjs`.
+  - ה-cron בבדיקה: `bin/alerts-cron.php --now=<until_t + 3660>` עם אותו `TS_DB_PATH`.
+- **ל-S7:** היומן הוא מקור הראיות. הסיכום לפי גרסה כבר שם (`summary[].zone_pct` מתוך מה שהוכרע).
+- **פתוח:** ההכרעות שלי (README, "הכרעות של כותב הקוד (S6)") לא אושרו מול האפיון — במיוחד שהמסך פתוח גם למשתמש רגיל.
