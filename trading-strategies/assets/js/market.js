@@ -378,13 +378,12 @@ export function mountMarket(ctx) {
     const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load('manual') } }, '↻');
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
-    const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
     // "🔮 שיטות על הגרף" (17.2.2, 18.1.2) — הכפתור כאן, התפריט וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
     const fcBtn = () => h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'שיטות על הגרף', 'aria-pressed': 'false', 'aria-expanded': 'false' }, '🔮');
     const forecastBtn = fcBtn();
     // ⛶ מסך מלא (18.1.2 סעיף 3) — בשורת הכפתורים של הגרף (בכותרת אין מקום בטלפון)
     const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', on: { click: () => fsEnter() } }, '⛶');
-    setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
+    setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [forecastBtn, drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
@@ -402,7 +401,8 @@ export function mountMarket(ctx) {
 
     const info = h('p', { class: 'hint', 'aria-live': 'polite' });
     const live = h('span', { class: 'chip', hidden: true });
-    // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X"
+    // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X".
+    // שניהם בשורת הכותרת של הפס שמתחת לגרף (S4) — לא בשורת הכפתורים, כדי שהגרף לא יירד בשורה כשהניתוח נדלק בטלפון
     const EVERY = [60, 30];
     let every = 60;
     try { const v = +localStorage.getItem('ts-refresh-every'); if (EVERY.includes(v)) every = v; } catch { /* ריק */ }
@@ -423,7 +423,7 @@ export function mountMarket(ctx) {
     const fsExit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'יציאה ממסך מלא', title: 'יציאה ממסך מלא', on: { click: () => fsLeave() } }, '✕');
     const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsExit);
     const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
-    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, everySel, upd, live, fsBtn)), custom,
+    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsBtn)), custom,
       wrap, drawSlot, forecastSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
@@ -475,11 +475,14 @@ export function mountMarket(ctx) {
     box.tsAxisW = () => axis.priceWidth(); // לבדיקות: רוחב עמודת המספרים
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
-    const forecast = mountForecast({ chart, series: candle, h, host: wrap, isAdmin: () => !!ME().is_admin, api, toast, col, board, axisWidth: () => axis.priceWidth(),
-      buttons: [forecastBtn, forecastBtnFs],
+    // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
+    const forecast = mountForecast({ ctx, asset, pair: L, chart, series: candle, h, host: wrap, isAdmin: () => !!ME().is_admin, api, toast, col, board, axisWidth: () => axis.priceWidth(),
+      buttons: [forecastBtn, forecastBtnFs], tools: [everySel, upd], tfs: () => tfs,
+      setTf: v => { const i = tfSeg.querySelector(`input[value="${v}"]`); if (i && !i.checked) { i.checked = true; i.dispatchEvent(new Event('change')); } },
       onChange: () => (forecast.methods().length ? load('pick') : schedule()),
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time) });
     forecastSlot.append(forecast.panel);
+    box.tsForecast = () => forecast.state();   // לבדיקות: השיטות, והפריטים של הממצא ושל התרחיש
     // השרטוטים — אחרי השיטות: הם מצוירים מעליהן, אבל בחפיפת תוויות התווית של השיטה המובילה גוברת (18.1.2 סעיף 5)
     const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet, board,
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
@@ -611,6 +614,8 @@ export function mountMarket(ctx) {
         if (mode === 'open' || mode === 'change' || mode === 'manual') chart.timeScale().fitContent();
         draw.redraw();
         forecast.onResult(r);
+        // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום
+        if (!auto && forecast.needsBacktest()) runBacktest(mode === 'manual');
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
@@ -631,6 +636,23 @@ export function mountMarket(ctx) {
         loading = false;
         refresh.disabled = false;
         if (pending) { const m = pending; pending = null; load(m); } else schedule();
+      }
+    }
+    // הבדיקה לאחור (6.2) דרך analysis — פעם אחת לכל מסגרת ושילוב שיטות בפתיחה; "↻ רענן" מריץ שוב. התשובה מחליפה את הכרטיסים
+    const btTried = new Set();
+    async function runBacktest(force) {
+      const ids = forecast.methods();
+      const key = st.tf + '|' + ids.join(',');
+      if (!ids.length || (!force && btTried.has(key))) return;
+      btTried.add(key);
+      const tf = st.tf;
+      forecast.backtesting(true);
+      try {
+        const a = await api('analysis', null, { asset, tf, methods: ids.join(',') });
+        if (tf === st.tf && forecast.methods().join(',') === ids.join(',')) forecast.onAnalysis(a); else forecast.backtesting(false);
+      } catch (e) {
+        forecast.backtesting(false);
+        if (e.status !== 429) toast(e.message, true);
       }
     }
     // WebSocket ציבורי של Binance — ישירות לספק. אין התחברות חוזרת אוטומטית בלולאה: נותק → הודעה, ו"↻" מחבר.

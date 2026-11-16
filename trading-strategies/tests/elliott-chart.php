@@ -47,6 +47,24 @@ $e = $m->overlay([], $m->params(), $H);
 eq([$e['items'], is_string($e['note'] ?? null)], [[], true], 'no candles → empty overlay with a note');
 eq(ts_method('sample-ma-cross')->overlay(array_slice($F, 0, 1301), ts_method('sample-ma-cross')->params(), $H)['items'][0]['kind'] ?? null, 'marker', 'other methods keep the default overlay (4ב/2)');
 
+// ── S4 (18.4) קריטריון 1: הספירה עם התרחיש ובלעדיו — אותו JSON ──
+require_once dirname(__DIR__) . '/lib/forecast.php';
+$same = 0; $cut = 0; $tot = 0;
+foreach (range(300, 4999, 211) as $i) {
+    $part = array_slice($F, 0, $i + 1);
+    $raw = ts_ew_overlay($part, $H, ["pivot_atr_mult" => 2.0]);
+    if (!$raw['counts']) continue;
+    $tot++;
+    [$fd, $fc] = ts_forecast_split($raw);
+    // הספירה (counts) והפריטים של הממצא — כמו שהמנוע החזיר, בלי התרחיש
+    if (json_encode($fd['counts']) === json_encode(ts_ew_overlay($part, $H, ["pivot_atr_mult" => 2.0])["counts"])
+        && $fd['items'] === array_values(array_filter($raw['items'], fn($x) => !ts_forecast_item($x, $raw['as_of'])))) $same++;
+    $ok = true;
+    foreach ($fc['items'] as $it) if (($it['kind'] === 'zone' ? $it['t1'] : ($it['points'][0]['t'] ?? $raw['as_of'])) < $raw['as_of']) $ok = false;
+    if ($ok) $cut++;
+}
+eq([$tot > 3, $same, $cut], [true, $tot, $tot], "the count with and without the scenario is the same JSON, and every scenario starts at the last closed candle ($tot windows)");
+
 // ── API ──────────────────────────────────────────────────
 $probe = stream_socket_server('tcp://127.0.0.1:0');
 $port = (int)substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
@@ -74,21 +92,28 @@ function call(string $as, string $action, ?array $body = null, array $query = []
     return [(int)explode(' ', $http_response_header[0])[1], json_decode($raw, true) ?? $raw];
 }
 foreach (['alice', 'owner'] as $u) $tokens[$u] = call($u, 'me')[1]['csrf'];
-$q = ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'method' => 'elliott-w3', 'from' => $NOW - 90 * 86400, 'to' => $NOW];
+$q = ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => 'elliott-w3', 'from' => $NOW - 90 * 86400, 'to' => $NOW];
+// אליוט על הגרף — דרך chart_refresh (S3/S4); המצב הנפרד method_overlay בוטל (19.2)
+$ew = fn(array $x = []) => (fn($cr) => [$cr[0], $cr[1]['methods']['elliott-w3'] ?? null, $cr[1]])(call('alice', 'chart_refresh', null, $x + $q));
 call('owner', 'admin_method_save', ['id' => 'elliott-w3', 'enabled' => false, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4'], 'params' => []]);
-eq(call('alice', 'method_overlay', null, $q)[0], 404, 'the admin turned it off → the forecast refuses elliott-w3');
+eq($ew()[1]['status'] ?? null, 'unavailable', 'the admin turned it off → the chart gets "unavailable" for elliott-w3');
 call('owner', 'admin_method_save', ['id' => 'elliott-w3', 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4'], 'params' => ['pivot_atr_mult' => 2]]);
-[$c, $r] = call('alice', 'method_overlay', null, $q);
+[$c, $r, $all] = $ew();
 $ov = $r['overlay'] ?? [];
-eq([$c, $r['status'] ?? null, $r['title'] ?? null, $r['basis'] ?? null], [200, 'ok', 'תרחיש לפי שיטת אליוט — לא ייעוץ', 'לפי כללי השיטה, לא נבדק לאחור'], 'on → "תרחיש לפי שיטת אליוט — לא ייעוץ", not backtested (✅15)');
-eq([array_key_exists('counts', $ov), count($ov['check'] ?? []) >= 4, $r['method']['label'] ?? null], [false, true, 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)'], 'the chart gets the contract and the "check yourself" guidelines, with the method label');
-$sc = $ov['projection']['scenarios'] ?? [];
+$fc = $r['forecast'] ?? [];
+eq([$c, $r['status'] ?? null, $r['title'] ?? null, $r['basis'] ?? null], [200, 'ok', 'תרחיש לפי שיטת אליוט — לא ייעוץ', 'לפי כללי השיטה, לא נבדק לאחור'], 'on → "תרחיש לפי שיטת אליוט — לא ייעוץ", not backtested');
+eq([array_key_exists('counts', $ov), count($ov['check'] ?? []) >= 4, $r['method']['label'] ?? null], [false, true, 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)'], 'the finding: no internal counts; the and the "check yourself" guidelines, with the method label');
+$sc = $fc['scenarios'] ?? [];
 eq(count($sc) > 0 || is_string($ov['note'] ?? null), true, 'either counts (scenarios) or a note why there are none (' . count($sc) . ' scenarios)');
 foreach ($sc as $s) eq(preg_match('/^התאמה (גבוהה|בינונית) · דחף (עולה|יורד), \d גלים — הבא: /u', $s['label']), 1, 'scenario label: words, direction, waves and the next one — ' . $s['label']);
-eq(count(array_filter($ov['items'] ?? [], fn($x) => $x['kind'] === 'hline' && $x['role'] === 'invalidation')) === count($sc), true, 'one red invalidation line per count');
+eq(count(array_filter($fc['items'] ?? [], fn($x) => $x['kind'] === 'hline' && $x['role'] === 'invalidation')) === count($sc), true, 'one red invalidation line per count — in the scenario layer');
+eq(array_count_values(array_column(array_filter($ov['items'] ?? [], fn($x) => $x['kind'] === 'polyline'), 'style')), $sc ? ['solid' => count($sc)] : [], 'the finding: the count in a solid line only');
+eq(array_unique(array_column(array_filter($fc['items'] ?? [], fn($x) => $x['kind'] === 'polyline'), 'style')), $sc ? ['dashed'] : [], 'the scenario: dashed lines only');
 eq(array_sum(array_map(fn($s) => $s['primary'] ? 1 : 0, $sc)), $sc ? 1 : 0, 'exactly one leading count; the rest are alternates');
-eq(call('alice', 'method_overlay', null, ['tf' => 'm15'] + $q)[1]['status'] ?? null, 'unsupported', 'm15 → unsupported (✅18)');
-eq(preg_match('/קנה|מכור|המלצ|כדאי|\bיעד\b/u', json_encode($r, JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend/target" wording (6.6, ✅15)');
+$card = $all['analysis']['cards'][0] ?? [];
+eq([$card['method']['id'] ?? null, $card['backtest']['status'] ?? null], ['elliott-w3', 'missing'], 'the elliott card comes with the chart, with no backtest run (S4, 18.3)');
+eq($ew(['tf' => 'm15'])[1]['status'] ?? null, 'unsupported', 'm15 → unsupported (✅18)');
+eq(preg_match('/קנה|מכור|המלצ|כדאי|\bיעד\b/u', json_encode($r, JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend/target" wording (6.6)');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

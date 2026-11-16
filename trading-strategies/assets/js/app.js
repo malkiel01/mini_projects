@@ -162,10 +162,10 @@ function setTab(tab) {
 const main = $('#main');
 function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); }
 
-// לשוניות: שוק · ניתוח · התראות · יומן · עוד (spec-stage-a 1).
+// לשוניות: שוק · התראות · יומן · עוד (spec-stage-a 1). "ניתוח" — בפס שמתחת לגרף, לא לשונית (S4, 18.4).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more', alerts: 'alerts' };
+  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
@@ -189,7 +189,11 @@ async function route() {
     else if (name === 'providers') await M.viewProviders();
     else if (name === 'admin') await M.viewAdmin();
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
-    else if (name === 'analysis') await A.viewAnalysis(id ? decodeURIComponent(id) : null);
+    else if (name === 'analysis') {
+      // מסך "🧭 ניתוח" הוסר (S4, 18.4): הכרטיס בפס שמתחת לגרף. כתובת ישנה (התראה, סימנייה) → הגרף של אותו נכס
+      history.replaceState(null, '', id ? '#/chart/' + id : '#/market');
+      return route();
+    }
     else if (name === 'profile') await A.viewProfile();
     else if (name === 'alerts') await N.viewAlerts();
     else await M.viewMarket();

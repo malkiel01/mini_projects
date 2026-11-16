@@ -127,14 +127,15 @@ try {
   eq((await a.locator('#mtab-panel .pair-main').first().innerText()).replace(/\s+/g, ' ').trim(), 'BTC USDT', 'the favorites row: BTC ⇄ USDT');
   await rules(a, 'market + watchlist');
 
-  // ── ניתוח: בחירת הנכס — כפתורים עם התווית (לא <select>, שאין בו אייקון) ──
-  await a.goto(BASE + '#/analysis');
-  await a.locator('[role="radiogroup"][aria-label="נכס"], main .empty').first().waitFor();
-  if (await a.locator('[role="radiogroup"][aria-label="נכס"]').count()) {
-    eq(await a.locator('select[aria-label="נכס"]').count(), 0, 'analysis: the asset picker is not a <select>');
-    await rules(a, 'analysis');
-  }
-  eq(SYMBOL.test(await visible(a)), false, 'S1 criterion 1: no symbol on the analysis screen');
+  // ── הפס שמתחת לגרף (S4): כרטיס הניתוח — הזוג בתווית, לא בסימול ──
+  await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
+  await loaded(a);
+  await a.evaluate(() => localStorage.setItem('ts-forecast-methods', JSON.stringify([{ id: 'elliott-w3', color: '--brand' }])));
+  await a.reload();
+  await loaded(a);
+  await a.locator('.analysis-card .an-sec.prob').waitFor({ timeout: 60000 });
+  await rules(a, 'analysis panel');
+  eq(SYMBOL.test(await visible(a)), false, 'S1 criterion 1: no symbol in the analysis panel under the chart');
 
   // ── התראה חדשה: אותה בחירה ──
   await a.goto(BASE + '#/alerts');

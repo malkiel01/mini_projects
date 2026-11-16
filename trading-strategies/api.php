@@ -22,7 +22,8 @@
  * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס: base/quote (קוד ושם) — "BTC ⇄ USD", לא הסימול המחובר (18.1.1)
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
  * GET  ?action=chart_refresh&asset=&tf=&from=&to=&methods=a,b   הגרף (18.3, S3): נרות + תוצאת כל שיטה שנבחרה בבקשה אחת;
- *                                        שיטה בלי נר סגור חדש לא רצה שוב (lib/refresh.php) ← נספר בתקרת 30 לדקה
+ *                                        שיטה בלי נר סגור חדש לא רצה שוב (lib/refresh.php); וכרטיס הניתוח (S4) עם
+ *                                        הבדיקה לאחור השמורה בלבד ← נספר בתקרת 30 לדקה
  * GET  ?action=watchlist                 "המעקב שלי"
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
  * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
@@ -36,8 +37,6 @@
  * POST action=profile_save
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
- * GET  ?action=method_overlay&asset=&tf=&method=&from=&to=   "🔮 תחזית שיטה" (17.2.2): תרחיש לפי כללי השיטה על הנרות
- *                                        המוצגים — overlay (17.2.3), בלי ודאות, לא בשקלול ולא בהתראות ← נספר בתקרת 30 לדקה
  *
  * התראות (פרק 8) — הבדיקה עצמה רק ב-cron (bin/alerts-cron.php, CLI); כאן רק ניהול ותיבה:
  * GET  ?action=alerts                    ההתראות שלי והשיטות שמותרות בהן
@@ -131,7 +130,7 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_method_validate', 'admin_method_dry_run'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'method_overlay', 'admin_method_dry_run', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_method_dry_run', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -231,10 +230,6 @@ try {
 
         case 'analysis':
             out(['ok' => true] + ts_analysis($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['methods'] ?? ''));
-
-        case 'method_overlay':
-            out(['ok' => true] + ts_method_overlay($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['method'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
-
 
         case 'strategies':
             out(['ok' => true, 'strategies' => ts_strategies_list($uid, $tz)]);

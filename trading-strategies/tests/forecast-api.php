@@ -1,5 +1,6 @@
 <?php
-// בדיקות "🔮 תחזית שיטה" וחוזה ה-overlay (spec-stage-a 17.2.2, 17.2.3, 17.2.5; ✅15, ✅13; PR 4ב/2).
+// בדיקות השיטות על הגרף וחוזה ה-overlay (spec-stage-a 17.2.2, 17.2.3, 17.2.5; PR 4ב/2), ו-S4 (18.4): ממצא · תרחיש ·
+// הסתברות — התרחיש נפרד מהממצא, מתחיל אחרי הנר הסגור האחרון, והרענון לא מריץ בדיקה לאחור. המצב הנפרד (method_overlay) בוטל.
 // php trading-strategies/tests/forecast-api.php — חלק טהור, ואחריו php -S עם שער מדומה וספקים מדומים. בלי רשת.
 if (PHP_SAPI !== 'cli') exit;
 
@@ -68,6 +69,26 @@ foreach ([
 eq($rej, 10, 'the contract rejects: unknown kind, unaligned or too-far future time, short polyline, unknown style/role/side, NaN, reversed zone, long text');
 eq(ts_overlay_check(['items' => [['kind' => 'label', 't' => 1010 * $H, 'price' => 1.0, 'text' => 'x']]] + $base, $H)['items'][0]['t'], 1010 * $H, 'a future time exactly bars × tf ahead is allowed');
 
+// ── S4 (18.4): ממצא ותרחיש — נפרדים, והתרחיש לא משנה את הממצא ──
+require_once dirname(__DIR__) . '/lib/forecast.php';
+$raw = ts_overlay_check($m->overlay(array_slice($F, 0, 1301), $P, $H), $H);
+$c1 = ts_overlay_compute($m, $P, 'h1', array_map(fn($x) => $x, json_decode(file_get_contents(__DIR__ . '/fixtures/backtest/candles-h1.json'), true)));
+[$fd, $fc] = ts_forecast_split($raw);
+eq(array_column($fd['items'], 'kind'), ['marker', 'hline', 'hline'], 'finding: the signal marker, stop and exit levels (what already happened)');
+eq(array_column($fc['items'], 'kind'), ['zone', 'polyline'], 'scenario: the zone and the dashed line');
+eq([array_key_exists('projection', $fd), count($fc['scenarios']), $fc['bars']], [false, 1, 50], 'the scenarios live only in the forecast field');
+$starts = [];
+foreach ($fc['items'] as $it) $starts[] = $it['kind'] === 'zone' ? $it['t1'] : $it['points'][0]['t'];
+foreach ($fc['scenarios'] as $sc) $starts[] = $sc['points'][0]['t'];
+eq(min($starts) >= $raw['as_of'], true, 'every scenario item starts at the last closed candle or after it (criterion 3)');
+$noFc = $raw; $noFc['items'] = array_values(array_filter($raw['items'], fn($x) => !ts_forecast_item($x, $raw['as_of']))); unset($noFc['projection']);
+eq(json_encode($fd), json_encode($noFc), 'the finding = the method output without the scenario items, byte for byte (criterion 1)');
+eq([array_keys($c1), $c1['overlay']['items'] === array_values(array_filter($c1['overlay']['items'], fn($x) => !ts_forecast_item($x, $c1['overlay']['as_of'])))],
+    [['method', 'title', 'basis', 'disclaimer', 'tf', 'status', 'overlay', 'forecast', 'candles', 'tick_decimals'], true], 'ts_overlay_compute: overlay (finding) and forecast in separate fields');
+// הקו נחתך בנר האחרון: נקודה לפני as_of → נקודה על הקו
+eq(ts_forecast_clip([['t' => 0, 'price' => 10.0], ['t' => 10, 'price' => 20.0]], 4), [['t' => 4, 'price' => 14.0], ['t' => 10, 'price' => 20.0]], 'clip: the line starts at as_of, on the same line');
+eq(ts_forecast_clip([['t' => 0, 'price' => 10.0], ['t' => 3, 'price' => 20.0]], 4), [], 'clip: a line that ends before as_of is dropped');
+
 // ── API ──────────────────────────────────────────────────
 $probe = stream_socket_server('tcp://127.0.0.1:0');
 $port = (int)substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
@@ -99,44 +120,64 @@ foreach (['alice', 'bob', 'owner', 'dave'] as $u) $tokens[$u] = call($u, 'me')[1
 $db = new PDO('sqlite:' . "$tmp.sqlite");
 $S = 'sample-ma-cross';
 $q = ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'method' => $S, 'from' => $NOW - 30 * 86400, 'to' => $NOW];
+/** השיטה על הגרף — דרך chart_refresh (הבקשה היחידה של הגרף, 18.3). מחזיר [קוד, התוצאה של השיטה, התשובה כולה] */
+function fc(string $as, array $q): array
+{
+    [$c, $r] = call($as, 'chart_refresh', null, ['asset' => $q['asset'], 'tf' => $q['tf'], 'from' => $q['from'], 'to' => $q['to'], 'methods' => $q['method']]);
+    return [$c, $r['methods'][$q['method']] ?? null, $r];
+}
 
-eq(call('owner', 'method_overlay', null, $q)[0], 404, 'method off → 404 even for the admin');
+eq([fc('owner', $q)[0], fc('owner', $q)[1]['status']], [200, 'unavailable'], 'method off → "unavailable" even for the admin (the chart still loads)');
 $mset = ['id' => $S, 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4', 'd1'], 'params' => [], 'note' => ''];
 eq(call('owner', 'admin_method_save', $mset)[0], 200, 'the admin turns the sample method on');
-eq(call('alice', 'method_overlay', null, $q)[0], 404, 'a regular user cannot run the sample method by id (shown to admins only)');
+eq(fc('alice', $q)[1]['status'], 'unavailable', 'a regular user cannot run the sample method by id (shown to admins only)');
 $btBefore = (int)$db->query('SELECT COUNT(*) FROM backtests')->fetchColumn();
-[$c, $r] = call('owner', 'method_overlay', null, $q);
+[$c, $r, $all] = fc('owner', $q);
 $ov = $r['overlay'] ?? [];
-eq([$c, $r['status'] ?? null, $r['title'] ?? null, $r['basis'] ?? null], [200, 'ok', 'תרחיש לפי שיטת חציית ממוצעים 20/50 — לא ייעוץ', 'לפי כללי השיטה, לא נבדק לאחור'], 'the forecast: title "תרחיש לפי שיטת X — לא ייעוץ", marked "not backtested" (✅15)');
+eq([$c, $r['status'] ?? null, $r['title'] ?? null, $r['basis'] ?? null], [200, 'ok', 'תרחיש לפי שיטת חציית ממוצעים 20/50 — לא ייעוץ', 'לפי כללי השיטה, לא נבדק לאחור'], 'the scenario: title "תרחיש לפי שיטת X — לא ייעוץ", marked "not backtested"');
 eq($r['disclaimer'], 'ניתוח אוטומטי לפי כללי שיטות מסחר וביצועי עבר. אינו ייעוץ השקעות ואינו מתחשב בנתונים האישיים שלך. ביצועי עבר אינם מבטיחים תוצאות בעתיד.', 'the fixed disclaimer (6.6)');
-eq([array_key_exists('certainty', $r), array_key_exists('blend', $r), $r['backtested']], [false, false, false], 'no certainty, no blending — and "not backtested" when there is no stored backtest');
-eq([$r['method']['label'], $r['method']['sample']], ['🧪 שיטת דוגמה — לא מהספר', true], 'the sample label travels with the forecast');
-eq([array_keys($ov), $ov['as_of'] + 3600 <= $NOW, $ov['as_of'] + 7200 > $NOW, $ov['range']['from'] >= $q['from']], [['as_of', 'range', 'items', 'projection'], true, true, true], 'overlay contract keys; only closed candles (as_of = last closed hour); the range shown');
+eq([array_key_exists('certainty', $r), array_key_exists('blend', $r), $r['backtested']], [false, false, false], 'the scenario has no certainty and no blending — and "not backtested" when there is no stored backtest');
+eq([$r['method']['label'], $r['method']['sample']], ['🧪 שיטת דוגמה — לא מהספר', true], 'the sample label travels with the result');
+eq([array_keys($ov), $ov['as_of'] + 3600 <= $NOW, $ov['as_of'] + 7200 > $NOW, $ov['range']['from'] >= $q['from']], [['as_of', 'range', 'items'], true, true, true], 'finding keys; only closed candles (as_of = last closed hour); the range shown');
 $fut = [];
-foreach ($ov['items'] as $it) foreach (array_merge([$it['t'] ?? null, $it['t1'] ?? null, $it['t2'] ?? null], array_column($it['points'] ?? [], 't')) as $t) if ($t !== null && $t > $ov['as_of']) $fut[] = ($t - $ov['as_of']) % 3600;
+foreach ($r['forecast']['items'] as $it) foreach (array_merge([$it['t'] ?? null, $it['t1'] ?? null, $it['t2'] ?? null], array_column($it['points'] ?? [], 't')) as $t) if ($t !== null && $t > $ov['as_of']) $fut[] = ($t - $ov['as_of']) % 3600;
 eq([count($fut) > 0, array_unique($fut)], [true, [0]], 'future times aligned to the timeframe (t + k·tf, 17.2.2)');
-eq((int)$db->query('SELECT COUNT(*) FROM backtests')->fetchColumn(), $btBefore, 'the forecast does not run or store a backtest');
-// "נבדקה לאחור" — אחרי שיש תוצאה שמורה (מהניתוח)
-call('owner', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $S]);
-eq(call('owner', 'method_overlay', null, $q)[1]['backtested'], true, 'after the analysis stored a backtest → backtested: true (the "not backtested" mark goes away)');
-eq(call('owner', 'method_overlay', null, ['tf' => 'h4'] + $q)[1]['backtested'], false, 'other timeframe → still not backtested');
+$late = array_filter($ov['items'], fn($it) => max([$it['t'] ?? 0, $it['t2'] ?? 0, ...array_column($it['points'] ?? [], 't')]) > $ov['as_of']);
+eq($late, [], 'the finding never reaches past the last closed candle');
+
+// ── S4: הכרטיס באותה בקשה, עם הבדיקה לאחור השמורה בלבד ──
+$card = $all['analysis']['cards'][0] ?? [];
+eq([$card['method']['id'] ?? null, $card['status'] ?? null, $card['backtest']['status'] ?? null, array_key_exists('certainty', $card) ? $card['certainty'] : 'x'], [$S, 'ok', 'missing', null], 'chart_refresh carries the card: no stored backtest → "missing", no certainty (criterion 4)');
+eq(array_keys($all['analysis']), ['decimals', 'last_t', 'cards', 'blend', 'profile', 'account_size', 'disclaimer'], 'the card part of chart_refresh: cards, blend, profile, decimals');
+eq((int)$db->query('SELECT COUNT(*) FROM backtests')->fetchColumn(), $btBefore, 'the chart (and its refresh) does not run or store a backtest (18.3)');
+// הבדיקה לאחור — רק מ-analysis (פעולה של המשתמש)
+$an = call('owner', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $S])[1];
+$bt = $an['cards'][0]['backtest'];
+[, $r2, $all2] = fc('owner', $q);
+$b2 = $all2['analysis']['cards'][0]['backtest'];
+eq([$r2['backtested'], $b2['mode'], $b2['n'], $b2['computed_at'], $b2['stale']], [true, 'stored', $bt['n'], $bt['computed_at'], false], 'after the analysis stored a backtest → the chart card shows it (stored, same N), and "not backtested" goes away');
+eq(fc('owner', ['tf' => 'h4'] + $q)[1]['backtested'], false, 'other timeframe → still not backtested');
+// עבר יותר מיום: הגרף מציג את השמורה (stale), ולא מחשב
+$db->exec("UPDATE backtests SET computed_at = computed_at - 2 * 86400 WHERE method_id = '$S'");
+$at = (int)$db->query("SELECT computed_at FROM backtests WHERE method_id = '$S' AND tf = 'h1'")->fetchColumn();
+$b3 = fc('owner', $q)[2]['analysis']['cards'][0]['backtest'];
+eq([$b3['mode'], $b3['stale'], $b3['computed_at'], (int)$db->query("SELECT computed_at FROM backtests WHERE method_id = '$S' AND tf = 'h1'")->fetchColumn()],
+    ['stored', true, $at, $at], 'a stored backtest older than a day → the chart shows it marked stale, and does not recompute it (18.3)');
+// התרחיש לא משנה את הכיוון ולא את השקלול (קריטריון 5): אותה תשובה בדיוק בשתי בקשות, והכרטיס = הכרטיס של analysis
+$x1 = fc('owner', $q)[2]; $x2 = fc('owner', $q)[2];
+eq(json_encode($x1['analysis']), json_encode($x2['analysis']), 'the card part is identical on a refresh without a new candle');
 // מסגרת או שוק שהשיטה לא מוגדרת להם
-[$c, $r] = call('owner', 'method_overlay', null, ['tf' => 'm15'] + $q);
-eq([$c, $r['status'], $r['overlay']], [200, 'unsupported', null], 'a timeframe the method is not set for → unsupported, no overlay');
+[$c, $r] = fc('owner', ['tf' => 'm15'] + $q);
+eq([$c, $r['status'], $r['overlay'], $r['forecast']], [200, 'unsupported', null, null], 'a timeframe the method is not set for → unsupported, no finding and no scenario');
 // קלט לא תקין
-eq([call('owner', 'method_overlay', null, ['asset' => 'nope'] + $q)[0], call('owner', 'method_overlay', null, ['tf' => 'x9'] + $q)[0], call('owner', 'method_overlay', null, ['method' => 'zzz'] + $q)[0]], [422, 422, 404], 'bad asset / timeframe → 422; unknown method → 404');
+eq([fc('owner', ['asset' => 'nope'] + $q)[0], fc('owner', ['tf' => 'x9'] + $q)[0], fc('owner', ['method' => 'zzz'] + $q)[1]['status']], [422, 422, 'unavailable'], 'bad asset / timeframe → 422; unknown method → unavailable');
+eq(call('owner', 'method_overlay', null, $q)[0], 404, 'the separate forecast mode (method_overlay) is gone (19.2)');
 // שיטה שאינה דוגמה — למשתמש רגיל; ובידוד: אין בה נתונים של משתמש אחר
 call('owner', 'admin_method_save', ['id' => 'test-cross-a'] + $mset);
-[$c, $ra] = call('alice', 'method_overlay', null, ['method' => 'test-cross-a'] + $q);
-[$c2, $rb] = call('bob', 'method_overlay', null, ['method' => 'test-cross-a'] + $q);
-eq([$c, $ra['status'], $c2, json_encode($ra['overlay']) === json_encode($rb['overlay'])], [200, 'ok', 200, true], 'an enabled non-sample method → regular users get the same forecast for the same shared candles');
+[$c, $ra] = fc('alice', ['method' => 'test-cross-a'] + $q);
+[$c2, $rb] = fc('bob', ['method' => 'test-cross-a'] + $q);
+eq([$c, $ra['status'], $c2, json_encode($ra['overlay']) === json_encode($rb['overlay'])], [200, 'ok', 200, true], 'an enabled non-sample method → regular users get the same result for the same shared candles');
 eq(preg_match('/קנה|מכור|המלצ|כדאי/u', json_encode($ra, JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend" wording (6.6)');
-
-// ── תקרת 30 לדקה (✅3): התחזית נספרת ─────────────────────
-if ((int)date('s') > 45) sleep(61 - (int)date('s'));
-$codes = [];
-for ($i = 0; $i < 31; $i++) $codes[] = call('dave', 'method_overlay', null, $q)[0];
-eq(array_count_values($codes), [404 => 30, 429 => 1], 'method_overlay counts in the 30-per-minute data limit');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

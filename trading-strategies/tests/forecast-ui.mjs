@@ -72,11 +72,15 @@ try {
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 30000 });
   eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'one request (chart_refresh: candles + the method) after the user chose a method');
-  eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת חציית ממוצעים 20/50 — לא ייעוץ', 'the title "תרחיש לפי שיטת X — לא ייעוץ" (✅15)');
+  // S4 (18.4): הכותרת — שם השיטה; שלוש כותרות: ממצא · תרחיש · הסתברות; "תרחיש לפי שיטת X — לא ייעוץ" בתוך התרחיש
+  eq((await panel.locator('h3').textContent()).trim(), 'חציית ממוצעים 20/50', 'the block title is the method name (S4)');
+  eq(await panel.locator('.an-sec > h4').allTextContents(), ['ממצא', 'תרחיש', 'הסתברות'], 'three separate headings: finding, scenario, probability (18.4 criterion 2)');
+  const scen = panel.locator('.an-sec.scenario');
+  eq(/תרחיש לפי שיטת חציית ממוצעים 20\/50 — לא ייעוץ/.test(await scen.textContent()), true, 'the scenario says "תרחיש לפי שיטת X — לא ייעוץ" (6.6)');
   const chips = await panel.locator('.chip').allTextContents();
-  eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('לא נבדקה לאחור'), chips.includes('🧪 שיטת דוגמה — לא מהספר')], [true, true, true], 'marked "by the method rules, not backtested", "not backtested" and the sample label');
+  eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('🧪 שיטת דוגמה — לא מהספר')], [true, true], 'the scenario marked "by the method rules, not backtested", and the sample label');
   eq(/אינו ייעוץ השקעות/.test(await panel.locator('.disclaimer').textContent()), true, 'the fixed disclaimer');
-  eq(/\d\s*%/.test(await panel.textContent()), false, 'no percentage anywhere in the forecast panel (no certainty)');
+  eq(/\d\s*%/.test(await scen.textContent()), false, 'no percentage in the scenario (the scenario has no certainty, ✅26)');
   eq(await btn.getAttribute('aria-pressed'), 'true', 'the 🔮 button shows the mode is on');
   await o.locator('.quote-head').click();   // לחיצה מחוץ לתפריט — נסגר
   eq([await pop.isHidden(), await btn.getAttribute('aria-expanded')], [true, 'false'], 'a click outside the menu closes it');
@@ -87,7 +91,7 @@ try {
   const after = await canvasPrint(o);
   eq(after !== before, true, 'the scenario is drawn on the chart canvas');
   const body = await o.evaluate(() => document.body.innerText);
-  eq([/סטופ לפי כללי השיטה/.test(body), /רמת היציאה ברווח/.test(body)], [false, false], 'the method texts on the chart are canvas, not HTML');
+  eq(/סטופ לפי כללי השיטה/.test(body), false, 'the method texts on the chart are canvas, not HTML');
   eq(await noHScroll(o), true, 'no horizontal scroll on a phone');
   eq(await o.evaluate(() => document.documentElement.dir), 'rtl', 'RTL');
   await shot(o, 'forecast-on');
