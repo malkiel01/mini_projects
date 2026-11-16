@@ -12,7 +12,7 @@
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1 מוזגו; קוד: 21.2 מילוי ברקע, PR #1630 (`session_018g4NYDfNSRC7LtU7guPJPm`); שעון — דקה 28 (`trig_018C9hwAgkgTdUqZ5wdPfnFa`, נוצר בידי מנהל הצוותים (4); הישן `trig_01J4cir8Aoh8ogFyCwPHG4dh` כבוי) | `session_018g4NYEtPnhDAxdzNLibMdV` (בקרה 5; קודם בקרה 4 `session_018g4NYDsD5GNc3L8rqyUQ4B`) |
-| `org-budget-proposals` הצעות תקציב לארגונים | פעיל — B1 (הדוח מאוזן) מוזג #1635; שעון — דקה 38 (`trig_013qCk9g1qS7xKb8qLpQrDgX`) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2) |
+| `org-budget-proposals` הצעות תקציב לארגונים | פעיל — B1 (הדוח מאוזן) מוזג #1635; שעון — דקה 38 (`trig_018qY4uvqcdJKapxU9pU8kcu`) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2) |
 
 ## ממתין לבעלים
 
