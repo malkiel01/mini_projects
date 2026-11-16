@@ -57,6 +57,8 @@
  * בונה השיטות (17.2, ✅19): POST admin_method_save {definition} (חדשה או גרסה חדשה) | admin_method_validate {definition}
  *      | admin_method_dry_run {definition, asset, tf} ("🧪 נסה", לא נשמר; נספר בתקרת 30) · GET admin_method_list
  *      | admin_method_versions&id=
+ * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
+ *      (נספר בתקרת 30) | admin_tune_apply {id} (המנהל הראשי בלבד)
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
  * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
@@ -77,6 +79,7 @@ require_once __DIR__ . '/lib/builder.php';
 require_once __DIR__ . '/lib/alerts.php';
 require_once __DIR__ . '/lib/journal.php';
 require_once __DIR__ . '/lib/fx.php';
+require_once __DIR__ . '/lib/tune.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
@@ -131,9 +134,9 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
-    'admin_method_validate', 'admin_method_dry_run'];
+    'admin_method_validate', 'admin_method_dry_run', 'admin_tune_propose', 'admin_tune_apply'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_method_dry_run', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_method_dry_run', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -422,6 +425,16 @@ try {
 
         case 'admin_method_versions':
             out(['ok' => true, 'versions' => ts_builder_versions($_GET['id'] ?? null)]);
+
+        // שכלול (18.7, S7): הצעה — כל מנהל; "החל" — רק המנהל הראשי (נבדק ב-ts_tune_apply)
+        case 'admin_tune_list':
+            out(['ok' => true, 'proposals' => ts_tune_list($_GET['method'] ?? null), 'can_apply' => ts_is_primary_admin()]);
+
+        case 'admin_tune_propose':
+            out(['ok' => true, 'proposal' => ts_tune_propose($uid, $in)]);
+
+        case 'admin_tune_apply':
+            out(['ok' => true, 'proposal' => ts_tune_apply($uid, $in['id'] ?? null), 'methods' => ts_admin_methods()]);
 
         case 'admin_costs_save':
             out(['ok' => true, 'costs' => ts_costs_save($uid, $in['costs'] ?? null)]);
