@@ -35,24 +35,46 @@ function rowsFor(rows) {
     return rows.filter((_, i) => keep[i]);
 }
 
-/** רווח לפני שורה — כמו במקור: חזרה מהזחה, ותחילת התשלומים / ההערות. */
-function gapBefore(r, prev) {
-    if (!prev) return false;
-    if (r.kind === 'item' && !r.indent && prev.kind === 'item' && prev.indent) return true;
-    return (r.kind === 'fee' || r.kind === 'note') && prev.kind !== 'fee' && prev.kind !== 'note' && prev.kind !== 'subsection';
+/** טבלת שורות (אותו סולם בכל מקום — 05 סעיף 1). gap — שורת רווח לפניה: חזרה מהזחה, ותחילת אזור האגרות. */
+function table(rows, gaps) {
+    return `<table class="pl"><colgroup><col><col class="c-amt"><col class="c-cur"></colgroup>
+        <tbody>${rows.map((r, i) => `${gaps.has(i) ? '<tr class="sp"><td colspan="3"></td></tr>' : ''}<tr class="${r.kind}${r.indent ? ' indent' : ''}">
+          <td class="lb"${r.priced ? '' : ' colspan="3"'}>${r.html}</td>
+          ${r.priced ? `<td class="amt">${amount(r.price)}</td><td class="cur">₪</td>` : ''}
+        </tr>`).join('')}</tbody></table>`;
 }
 
-/** כותרת המשנה, התאריך והשורות של מחירון אחד */
-function block(e) {
-    const rows = rowsFor(e.rows);
-    const body = !rows.some(r => r.priced)
+/**
+ * מחירון אחד: כותרת הקבוצה, התאריך והשורות. both — כותרת "תושבי …" (בלי subtitle) ורק השורות שלפני אזור האגרות;
+ * האגרות — במרוכז, ב-feesBlock.
+ */
+function block(e, both) {
+    const src = both ? e.rows.slice(0, e.layout.fee_start) : e.rows;
+    const feeRow = both ? null : e.rows[e.layout.fee_start];
+    const rows = rowsFor(src);
+    const gaps = new Set();
+    rows.forEach((r, i) => {
+        const prev = rows[i - 1];
+        if (!prev) return;
+        if (r === feeRow || (r.kind === 'item' && !r.indent && prev.kind === 'item' && prev.indent)) gaps.add(i);
+    });
+    // אזור האגרות מתחיל בשורה שהוסתרה (כותרת בלי מחירים) — הרווח עובר לשורה הראשונה שנשארה בו
+    if (feeRow && !rows.includes(feeRow)) {
+        const first = rows.findIndex(r => e.rows.indexOf(r) > e.layout.fee_start);
+        if (first > 0) gaps.add(first);
+    }
+    const body = !rows.some(r => r.priced) && !both
         ? `<p class="none">טרם הוזנו מחירים במחירון הזה</p>`
-        : `<table class="pl ${esc(e.audience)}"><colgroup><col><col class="c-amt"><col class="c-cur"></colgroup>
-            <tbody>${rows.map((r, i) => `<tr class="${r.kind}${r.indent ? ' indent' : ''}${gapBefore(r, rows[i - 1]) ? ' gap' : ''}">
-              <td class="lb"${r.priced ? '' : ' colspan="3"'}>${r.html}</td>
-              ${r.priced ? `<td class="amt">${amount(r.price)}</td><td class="cur">₪</td>` : ''}
-            </tr>`).join('')}</tbody></table>`;
-    return `<div class="block"><h2>${esc(e.subtitle)}</h2><p class="valid">המחירון בתוקף החל מ- ${esc(dmy(e.effective_from))}</p>${body}</div>`;
+        : table(rows, gaps);
+    const title = both ? `<h2 class="aud">${esc(e.audience_name)}</h2>` : `<h2>${esc(e.subtitle)}</h2>`;
+    return `<div class="block">${title}<p class="valid">המחירון בתוקף החל מ- ${esc(dmy(e.effective_from))}</p>${body}</div>`;
+}
+
+/** אזור האגרות המרוכז של both (05 סעיף 2) — השורות והציון "(לתושבי …)" מהשרת (GET fees), כדי שהמסך וההדפסה לא יחלקו */
+function feesBlock(f) {
+    if (!f.rows.length) return '';
+    const rows = f.rows.map(r => ({ ...r, indent: 0, priced: r.kind === 'fee' }));
+    return `<div class="fees">${table([{ kind: 'subsection', html: esc(f.title), priced: false }, ...rows], new Set())}</div>`;
 }
 
 /** החתימות — סט אחד לכל ההדפסות (⚙️ הגדרות); ה-API מחזיר אותו בכל מחירון */
@@ -105,7 +127,8 @@ async function resolve(q) {
         if (!['one', 'split', 'both'].includes(mode)) throw new Error('תצורת הדפסה לא מוכרת');
         if (mode === 'one' && !!il === !!abroad) throw new Error('צריך מחירון אחד');
         if (mode !== 'one' && !(il && abroad)) throw new Error('להדפסה משותפת צריך מחירון מכל קבוצה');
-        const [me, eIl, eAb] = await Promise.all([get('me'), il ? get('edition', { pid: il }) : null, abroad ? get('edition', { pid: abroad }) : null]);
+        const [me, eIl, eAb, fees] = await Promise.all([get('me'), il ? get('edition', { pid: il }) : null,
+            abroad ? get('edition', { pid: abroad }) : null, mode === 'both' ? get('fees', { il, abroad }) : null]);
         const back = eIl && eAb ? './' : './#/e/' + encodeURIComponent((eIl || eAb).pid);
         document.getElementById('back').href = back;
         document.title = 'מחירון ' + [eIl, eAb].filter(Boolean).map(e => e.audience_name + ' ' + dmy(e.effective_from)).join(' + ');
@@ -115,16 +138,16 @@ async function resolve(q) {
             await document.fonts.ready;
         };
         if (mode === 'one' || mode === 'split') {
-            box.innerHTML = [eIl, eAb].filter(Boolean).map(e => sheet(block(e), e)).join('');
+            box.innerHTML = [eIl, eAb].filter(Boolean).map(e => sheet(block(e, false), e)).join('');
             await wait();
             box.querySelectorAll('.page').forEach(p => fit(p, MIN_ONE));
         } else {
-            // זה לצד זה (הכרעת הבעלים 12:20): כותרת אחת, ישראל מימין וחו"ל משמאל, חתימות פעם אחת ברוחב מלא.
-            // לא נכנס ב-70% — שני עמודים כמו split.
-            box.innerHTML = sheet(`<div class="cols">${block(eIl)}${block(eAb)}</div>`, eIl);
+            // זה לצד זה (הכרעת הבעלים 12:20; 05 סעיף 2): כותרת אחת, ישראל מימין וחו"ל משמאל, האגרות במרוכז לרוחב
+            // הדף, חתימות פעם אחת. ההקטנה — לכל העמוד יחד. לא נכנס ב-70% — שני עמודים כמו split.
+            box.innerHTML = sheet(`<div class="cols">${block(eIl, true)}${block(eAb, true)}</div>${feesBlock(fees)}`, eIl);
             await wait();
             if (!fit(box.querySelector('.page'), MIN_BOTH)) {
-                box.innerHTML = sheet(block(eIl), eIl) + sheet(block(eAb), eAb);
+                box.innerHTML = sheet(block(eIl, false), eIl) + sheet(block(eAb, false), eAb);
                 await wait();
                 box.querySelectorAll('.page').forEach(p => fit(p, MIN_ONE));
             }
