@@ -176,7 +176,7 @@ function ts_prefill_day_add(array $acc, int $now, int $n): void
 
 /**
  * ריצה אחת של המילוי. נקרא מ-ts_alerts_run, בתוך הנעילה. $used — פניות לספק שכבר נעשו בריצה (התראות, יומן), ומתעדכן;
- * $usedKey — אותו דבר לפי מפתח ("ספק|היקף"), מההתראות; $budget — דריסה של התקרה לדקה (--budget, לבדיקות); $t0 —
+ * $usedKey — אותו דבר לפי מפתח ("ספק|היקף"), מההתראות ומהיומן; $budget — דריסה של התקרה לדקה (--budget, לבדיקות); $t0 —
  * תחילת הריצה (תקרת הזמן המשותפת, 4 דקות). חריגה במפתח אחד — מדלגים רק עליו (key_errors).
  */
 function ts_prefill_run(int $now, array &$used, ?array $budget, float $t0, array $usedKey = []): array

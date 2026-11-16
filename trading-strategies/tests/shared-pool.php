@@ -241,6 +241,21 @@ $s1 = $snap();
 $c->beginTransaction(); ts_cache_pool_merge($c, 'twelvedata'); $c->commit();
 eq($snap(), $s1, 'criterion 6: a second run changes nothing (idempotent)');
 
+// ── חוב טכני: היומן נספר גם לפי מפתח ($usedKey) — כדי שהמילוי ינכה את מה שהיומן לקח ממפתח אישי ──
+ts_cred_save($A, 'finnhub', 'good-fin-a00001', '');
+$fAsOf = $now - 10 * 86400;
+$fAsOf -= $fAsOf % 86400;
+$db->prepare("INSERT INTO method_journal (method_id, method_version, asset, tf, cred_scope, as_of, kind, said, zone_lo, zone_hi, until_t, created_at)
+              VALUES ('sample-ma-cross', 1, 'finnhub:AAPL', 'd1', ?, ?, 'analysis', '{}', '1', '2', ?, ?)")->execute(["u:$A", $fAsOf, $fAsOf + 3 * 86400, $fAsOf]);
+$fid = (int)$db->lastInsertId();
+$used = ['finnhub' => 0]; $usedKey = ['finnhub|u:7' => 5];
+$h0 = $httpN();
+$js = ts_journal_resolve($now, $used, null, microtime(true), $usedKey);
+$fCalls = $httpN() - $h0;
+eq([$fCalls > 0, $used['finnhub'], $usedKey["finnhub|u:$A"] ?? 0, $usedKey['finnhub|u:7']], [true, $fCalls, $fCalls, 5],
+    'journal: a provider call through A\'s own key is counted in $usedKey["finnhub|u:A"] too (not only $used) — another key untouched');
+eq($db->query("SELECT outcome FROM method_journal WHERE id = $fid")->fetchColumn() !== null, true, 'journal: … and the record is decided');
+
 // המיגרציה רצה פעם אחת כשהמאגר נפתח (user_version 4)
 eq((int)$c->query('PRAGMA user_version')->fetchColumn(), 4, 'cache.sqlite at version 4');
 eq((int)$db->query('PRAGMA user_version')->fetchColumn() >= 16, true, 'app.sqlite at version 16 (prefill_state of twelvedata u:% removed)');
