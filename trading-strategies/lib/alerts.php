@@ -35,9 +35,36 @@ const TS_ALERT_SIDES = ['long' => 'לונג', 'short' => 'שורט', 'both' => '
 
 // ── ניהול ההתראות של המשתמש ─────────────────────────────
 
+/** השיטות שההתראה נשענת עליהן ואינן קיימות יותר (שיטה מוגדרת מבונה השיטות שנמחק — 21.1). התראת מחיר — אף אחת */
+function ts_alert_removed_methods(array $r): array
+{
+    if ($r['kind'] === 'price') return [];
+    $ids = $r['kind'] === 'method' ? [$r['method_id']] : (json_decode((string)$r['methods'], true) ?: []);
+    return array_values(array_filter($ids, fn($id) => !ts_method_exists($id)));
+}
+
+/**
+ * התראה על שיטה שהוסרה → "מושהית" (21.1 קריטריון 4). ה-cron לא מריץ אותה, ובמסך — "מושהית — השיטה הוסרה".
+ * השורה עצמה נשארת. נקרא מה-cron ומרשימת ההתראות. מחזיר כמה הושהו.
+ */
+function ts_alerts_pause_removed(?int $uid = null): int
+{
+    $sql = "SELECT * FROM alerts WHERE status = 'active' AND kind != 'price'" . ($uid !== null ? ' AND user_id = ?' : '');
+    $st = ts_db()->prepare($sql);
+    $st->execute($uid !== null ? [$uid] : []);
+    $upd = ts_db()->prepare("UPDATE alerts SET status = 'paused' WHERE id = ? AND status = 'active'");
+    $n = 0;
+    foreach ($st->fetchAll() as $r) {
+        if (!ts_alert_removed_methods($r)) continue;
+        $upd->execute([$r['id']]);
+        $n += $upd->rowCount();
+    }
+    return $n;
+}
+
 function ts_alert_out(array $r): array
 {
-    return ['id' => (int)$r['id'], 'asset' => $r['asset'], 'tf' => $r['tf'], 'side' => $r['side'], 'kind' => $r['kind'],
+    return ['method_removed' => (bool)ts_alert_removed_methods($r), 'id' => (int)$r['id'], 'asset' => $r['asset'], 'tf' => $r['tf'], 'side' => $r['side'], 'kind' => $r['kind'],
         'method_id' => $r['method_id'], 'methods' => json_decode($r['methods'], true) ?: [], 'level' => $r['level'],
         'status' => $r['status'], 'last_state' => $r['last_state'],
         'last_checked_at' => $r['last_checked_at'] !== null ? (int)$r['last_checked_at'] : null,
@@ -48,6 +75,7 @@ function ts_alert_out(array $r): array
 function ts_alerts_list(int $uid): array
 {
     ts_alerts_expire(time());
+    ts_alerts_pause_removed($uid);
     $st = ts_db()->prepare("SELECT * FROM alerts WHERE user_id = ? ORDER BY status = 'expired', id DESC");
     $st->execute([$uid]);
     // התווית של הזוג (18.1) — הסימול לא מוצג למשתמש
@@ -114,6 +142,7 @@ function ts_alert_status(int $uid, mixed $id, mixed $status): array
     $cur = ts_alert_get($uid, $id);
     $status = ts_enum($status, ['active' => 1, 'paused' => 1], 'מצב');
     if ($cur['status'] === 'expired') throw new TsInvalid('ההתראה פגה. צרו חדשה.');
+    if ($status === 'active' && $cur['method_removed']) throw new TsInvalid('השיטה הוסרה — אי אפשר להפעיל את ההתראה מחדש.');
     ts_db()->prepare('UPDATE alerts SET status = ?, last_state = CASE WHEN ? = \'active\' THEN NULL ELSE last_state END WHERE id = ? AND user_id = ?')
         ->execute([$status, $status, $id, $uid]);
     return ts_alert_get($uid, $id);
@@ -297,6 +326,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
         'errors' => 0, 'calls' => [], 'stopped' => false, 'cleanup' => false];
     try {
         $sum['expired'] = ts_alerts_expire($now);
+        $sum['paused_removed'] = ts_alerts_pause_removed();   // שיטה שהוסרה (21.1) — לא מריצים
         $rows = ts_db()->query("SELECT * FROM alerts WHERE status = 'active' ORDER BY COALESCE(last_checked_at, 0), id")->fetchAll();
         // קיבוץ לפי (נכס, מסגרת, היקף מפתח): ספק משלי — היקף של המשתמש, ציבורי — משותף
         $groups = [];
