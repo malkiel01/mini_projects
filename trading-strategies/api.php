@@ -442,7 +442,7 @@ try {
             out(['ok' => true] + ts_chart_refresh($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null, $_GET['methods'] ?? ''));
 
         case 'market_candles':
-            out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null));
+            out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null, ts_now()));
 
         // לשוניות במסך השוק (18.1.4). market_tab — מהמאגר בלבד, בלי ספק, ולכן לא בתקרה של TS_DATA
         case 'market_tabs':

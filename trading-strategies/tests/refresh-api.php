@@ -119,6 +119,15 @@ eq([call('alice', 'chart_refresh', null, ['tf' => 'x9'] + $q)[0], call('alice', 
     call('alice', 'chart_refresh', null, ['methods' => implode(',', array_map(fn($i) => "m$i", range(1, 9)))] + $q)[0]], [422, 422, 422], 'bad timeframe / asset / more than 8 methods → 422');
 eq(array_key_exists('method_runs', call('alice', 'admin_state')[1]), false, 'the counter is only in the admin state (a regular user gets 403)');
 
+// ── חוב טכני: market_candles מקבל את "עכשיו" מ-ts_now() — X-Dev-Now חל גם עליו, כמו על chart_refresh ──
+$mc = ['asset' => 'binance:BTCUSDT', 'tf' => 'h1'];
+[$c, $m1] = call('bob', 'market_candles', null, $mc);
+[$c2, $m2] = call('bob', 'market_candles', null, $mc + ['to' => $NOW + 30 * 86400]);
+eq([$c, end($m1['candles'])['t'] ?? null, $c2, end($m2['candles'])['t'] ?? null], [200, $NOW - 1800, 200, $NOW - 1800],
+    'market_candles with X-Dev-Now: the last candle is the open one of the fixed "now" (not of the real clock), and "to" in the future is cut to it');
+[$c, $m3] = call('bob', 'market_candles', null, $mc, $NOW - 86400);
+eq([$c, end($m3['candles'])['t'] ?? null], [200, $NOW - 86400 - 1800], '… another X-Dev-Now → the candles of that "now"');
+
 // ── התקרה (✅3): בקשת רענון אחת = ספירה אחת, לא משנה כמה שיטות ──
 if ((int)date('s') > 40) sleep(61 - (int)date('s'));
 $codes = [];

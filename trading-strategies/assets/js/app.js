@@ -178,7 +178,12 @@ function journalTabs(active) {
 }
 
 let M = null, A = null, N = null, J = null;
-async function route() {
+// ניווט אחד בכל פעם, לפי הסדר. בלי זה, מעבר מהיר (גרף → שוק לפני שהגרף נטען) מריץ שני מסכים במקביל, והאיטי מביניהם
+// מצייר את עצמו מעל המסך הנכון — למשל הגרף מעל השוק (גם הרעידה ב-market-tabs-ui). כל ניווט קורא את location.hash
+// כשהוא מתחיל, ולכן האחרון בתור הוא תמיד מה שנשאר במסך; teardown שבתחילתו סוגר את מה שהקודם פתח.
+let routing = Promise.resolve();
+function route() { routing = routing.then(routeNow, routeNow); return routing; }
+async function routeNow() {
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
   M?.teardown();
@@ -199,7 +204,7 @@ async function route() {
     else if (name === 'analysis') {
       // מסך "🧭 ניתוח" הוסר (S4, 18.4): הכרטיס בפס שמתחת לגרף. כתובת ישנה (התראה, סימנייה) → הגרף של אותו נכס
       history.replaceState(null, '', id ? '#/chart/' + id : '#/market');
-      return route();
+      return routeNow();   // בתוך התור — route() היה מחכה לעצמו
     }
     else if (name === 'profile') await A.viewProfile();
     else if (name === 'alerts') await N.viewAlerts();

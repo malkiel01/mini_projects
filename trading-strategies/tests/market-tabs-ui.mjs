@@ -188,7 +188,7 @@ try {
   await a.goto(BASE + '#/market');
   await combo(a).waitFor();
   const drag = async (from, to) => {
-    // פס הלשוניות נבנה אחרי ה-combobox — מחכים ללשוניות עצמן (הרעידה הידועה בבדיקה 38: boundingBox החזיר null)
+    // הלשוניות קיימות לפני הגרירה (אחרי reload — ה-combobox והשורה נבנים יחד, אבל ליתר ביטחון)
     await a.getByRole('tab', { name: from }).waitFor();
     await a.getByRole('tab', { name: to }).waitFor();
     const f = await a.getByRole('tab', { name: from }).boundingBox(), t = await a.getByRole('tab', { name: to }).boundingBox();
@@ -196,7 +196,9 @@ try {
     await a.mouse.down();
     for (let i = 1; i <= 8; i++) await a.mouse.move(f.x + f.width / 2 + (t.x + t.width / 2 - f.x - f.width / 2) * i / 8, f.y + f.height / 2);
     await a.mouse.up();
-    await a.waitForTimeout(400);
+    // השחרור שומר את הסדר (market_tabs_save), ובתשובה כל הכפתורים נבנים מחדש. גרירה שמתחילה לפני כן תופסת כפתור
+    // שיוחלף — boundingBox מחזיר null (הרעידה בבדיקה 38). מחכים לסוף השמירה, לא לזמן קבוע
+    await a.waitForFunction(() => !document.querySelector('main [role="tablist"]')?.hasAttribute('aria-busy'));
   };
   await drag('💱 מט"ח', '₿ קריפטו');
   eq((await tabNames(a)).slice(0, 3), ['⭐ מועדפים', '💱 מט"ח', '₿ קריפטו'], 'criterion 4: dragging changes the order');
@@ -303,7 +305,7 @@ try {
   eq(errors.filter(e => !/^4(04|22) /.test(e)), [], 'no page errors');
 } catch (e) {
   fail++;
-  console.log('✗ exception:', e.message);
+  console.log('✗ exception:', e.message, (e.stack || '').split('\n').find(l => l.includes('market-tabs-ui')) || '');
 } finally {
   await b.close();
   srv.kill();
