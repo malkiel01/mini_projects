@@ -477,6 +477,88 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
 }
 
 /**
+ * S25 (F-3, 2.31) — מתרחב / מתכווץ / סימטרי, מקווי ה-50% של הטווחים המקוננים [שלנו — ההגדרה]. $mids — מהפנימי (i = 1) החוצה.
+ * כולם בתוך $thr זה מזה → symmetric; עולים ממש → expanding; יורדים ממש → contracting. פחות משלושה, או לא מונוטוני — unknown [שלנו].
+ */
+function ts_fib_s25_classify(array $mids, float $thr): string
+{
+    if (count($mids) < 3) return 'unknown';
+    if (max($mids) - min($mids) <= $thr + TS_FIB_EPS) return 'symmetric';
+    $up = true; $down = true;
+    for ($i = 1; $i < count($mids); $i++) {
+        if (!($mids[$i] > $mids[$i - 1])) $up = false;
+        if (!($mids[$i] < $mids[$i - 1])) $down = false;
+    }
+    return $up ? 'expanding' : ($down ? 'contracting' : 'unknown');
+}
+
+/** המילים של S25 בכרטיס (22.9, F-3 קריטריון 2) */
+const TS_FIB_S25_WORDS = ['expanding' => 'מתרחב', 'contracting' => 'מתכווץ', 'symmetric' => 'סימטרי', 'unknown' => 'לא ידוע'];
+
+/**
+ * S25 על החלון (F-3 קריטריון 1). K — הנר עם הגוף הארוך ביותר במהלך (S15) של צד התמיכה (מ-M0 עד H); אם אין צד תמיכה — של צד
+ * ההתנגדות, במראה [שלנו]. טווח מקונן i = 1..3: מהשפל המאושר ה-i לפני K ועד השיא המאושר ה-i אחרי K, במחירי גוף
+ * (ts_fib_pivot_body). בהתנגדות — הכול במראה: "עולים" במראה = מתרחב. הסף — zone_atr × ATR של הרשת.
+ * מידע בלבד (S26): לא נוגע ברשת, באזורים, בציונים או באותות. מחזיר {state, side, k_t, ranges: [[lo, hi]], mids}.
+ */
+function ts_fib_market(array $w, array $piv, ?array $g, array $p): array
+{
+    $out = ['state' => 'unknown', 'side' => null, 'k_t' => null, 'ranges' => [], 'mids' => []];
+    if (!$g) return $out;
+    $key = $g['support']['start'] ? 'support' : ($g['resistance']['start'] ? 'resistance' : null);
+    if ($key === null || !$g[$key]['move']) return $out;
+    $sign = $key === 'support' ? 1 : -1;
+    $idx = array_flip(array_column($w, 't'));
+    $i0 = $idx[$g[$key]['move']['t']] ?? null;
+    $iH = $idx[$g[$key]['start']['t']] ?? null;
+    if ($i0 === null || $iH === null || $i0 > $iH) return $out;
+    $iK = $i0;
+    for ($i = $i0; $i <= $iH; $i++) if (abs($w[$i]['c'] - $w[$i]['o']) > abs($w[$iK]['c'] - $w[$iK]['o'])) $iK = $i;
+    $kt = $w[$iK]['t'];
+    // במראה: "שפל לפני K" של ההתנגדות הוא שיא, ו"שיא אחרי K" — שפל
+    $lowT = $sign === 1 ? 'L' : 'H';
+    $before = array_values(array_filter(array_reverse($piv), fn($x) => $x['type'] === $lowT && $x['t'] < $kt));
+    $after = array_values(array_filter($piv, fn($x) => $x['type'] !== $lowT && $x['t'] > $kt));
+    $n = min(3, count($before), count($after));
+    $ranges = []; $mids = [];
+    for ($i = 0; $i < $n; $i++) {
+        $a = ts_fib_pivot_body($w, $before[$i] + ['v' => 0.0]);
+        $b = ts_fib_pivot_body($w, $after[$i] + ['v' => 0.0]);
+        $ranges[] = [min($a, $b), max($a, $b)];
+        $mids[] = $sign * ($a + $b) / 2;   // במראה — כך "עולים" = מתרחב בשני הצדדים
+    }
+    $state = ts_fib_s25_classify($mids, (float)$p['zone_atr'] * (float)$g['atr']);
+    return ['state' => $state, 'side' => $key, 'k_t' => $kt, 'ranges' => $ranges, 'mids' => array_map(fn($m) => $sign * $m, $mids)];
+}
+
+/**
+ * ואקום (Z10, F-3 קריטריון 3): שני אזורים סמוכים **באותו צד**, בלי אף רמה ביניהם (גם בודדת, משני הצדדים [שלנו]), ובמרחק
+ * ≥ zone_max_atr × ATR (של הבנייה של הצד). מידע בלבד. מחזיר [{side, lo, hi}] — lo/hi: הגבולות שבין שני האזורים.
+ */
+function ts_fib_vacuums(?array $g, array $p): array
+{
+    if (!$g) return [];
+    $levels = [];
+    foreach (['support', 'resistance'] as $key) {
+        foreach ($g[$key]['zones'] as $z) foreach ($z['levels'] as $l) $levels[] = $l['price'];
+        foreach ($g[$key]['singles'] as $l) $levels[] = $l['price'];
+    }
+    $out = [];
+    foreach (['support', 'resistance'] as $key) {
+        $zs = $g[$key]['zones'];
+        usort($zs, fn($a, $b) => $a['lo'] <=> $b['lo']);
+        $min = (float)$p['zone_max_atr'] * (float)($g[$key]['atr'] ?? $g['atr']);
+        for ($i = 1; $i < count($zs); $i++) {
+            $lo = $zs[$i - 1]['hi']; $hi = $zs[$i]['lo'];
+            if ($hi - $lo < $min - TS_FIB_EPS) continue;
+            if (array_filter($levels, fn($v) => $v > $lo + TS_FIB_EPS && $v < $hi - TS_FIB_EPS)) continue;
+            $out[] = ['side' => $key, 'lo' => $lo, 'hi' => $hi];
+        }
+    }
+    return $out;
+}
+
+/**
  * נר אחד בזרימה של השיטה (step, ts_fib_grid_of): ATR, zigzag, החלון, נקודות המפנה שבחלון, שלוש האחרונות ל-A-B-X (k, בגוף —
  * לא נחתכות בחלון), והרשת — רק כש-$grid (ts_fib_grid_of מדלג על הנרות שאין להם השפעה).
  */

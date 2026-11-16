@@ -92,6 +92,11 @@ try {
   eq(/לא נבדק לאחור|ודאות מוצגת רק מ-30|מריץ בדיקה לאחור/.test(probText) || (/ודאות\s*\d+%/.test(probText) && probN >= 30) || probText, true,
     'criterion 11: the card — certainty only from N = 30 ("not backtested" below it)');
 
+  // F-3 קריטריון 2: "השוק: …" בכרטיס — מידע, לא תנאי ולא "בדוק בעצמך"
+  const info = panel.locator('[data-info="market"]');
+  eq([await info.count(), /^השוק: (מתרחב|מתכווץ|סימטרי|לא ידוע)$/.test((await info.first().textContent()) || ''),
+    await panel.locator('.manual-conds [data-info], .conds [data-info]').count()], [1, true, 0], 'F-3: "השוק: …" in the card, outside the conditions');
+
   // ── קריטריון 10 ──
   const purple = await u.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--m3').trim());
   let st = await state(u);

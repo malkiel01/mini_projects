@@ -71,6 +71,8 @@ export function cardParts(ctx) {
       h('p', { class: 'verdict ' + c.bias }, h('span', { class: 'dir-ic ' + c.bias, 'aria-hidden': 'true' }, c.bias === 'long' ? '↗' : c.bias === 'short' ? '↘' : '–'), h('b', {}, verdict)),
       h('ul', { class: 'conds' }, auto.map(x => h('li', { class: x.met ? 'met' : '' }, h('span', { 'aria-hidden': 'true' }, x.met ? '✓' : '○'),
         h('span', {}, x.text), h('small', { class: 'muted' }, SIDE[x.side]), h('span', { class: 'sr-only' }, x.met ? 'מתקיים' : 'לא מתקיים')))),
+      // מידע של השיטה (פיבונאצ'י S25 — "השוק: מתרחב"): לא תנאי, לא נספר
+      ...(c.info || []).map(x => h('p', { class: 'an-line info', 'data-info': x.id }, x.text)),
       manual.length ? h('div', { class: 'manual-conds' }, h('b', {}, '🔎 בדוק בעצמך — מה שהמחשב כאן לא בודק'),
         h('ul', { class: 'conds' }, manual.map(x => h('li', { class: 'manual' }, h('span', { 'aria-hidden': 'true' }, '?'), h('span', {}, x.text),
           h('small', { class: 'muted' }, 'לא נבדק במחשב'))))) : null,
