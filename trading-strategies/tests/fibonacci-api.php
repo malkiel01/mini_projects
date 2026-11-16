@@ -70,8 +70,10 @@ eq([$c, $res['status'] ?? null, $res['title'] ?? null], [200, 'ok', "תרחיש 
 $items = $res['overlay']['items'] ?? [];
 $zones = array_values(array_filter($items, fn($x) => $x['kind'] === 'zone'));
 $singles = array_values(array_filter($items, fn($x) => !empty($x['single'])));
-eq([count($zones) > 0, count($singles) > 0, array_unique(array_column($zones, 'extend')), $res['forecast']['items'] ?? null, $res['forecast']['scenarios'] ?? null],
-    [true, true, [true], [], []], 'criterion 10 (server): zones (extend right) and single levels in the finding; no scenario layer in F-1 (' . count($zones) . ' zones, ' . count($singles) . ' singles)');
+$asOf = $res['forecast']['as_of'] ?? null;
+$late = array_filter($res['forecast']['items'] ?? [], fn($x) => ($x['t1'] ?? $x['points'][0]['t'] ?? $asOf) >= $asOf || ($x['role'] ?? '') === 'invalidation');
+eq([count($zones) > 0, count($singles) > 0, array_unique(array_column($zones, 'extend')), count($late) === count($res['forecast']['items'] ?? [])],
+    [true, true, [true], true], 'criterion 10 (server): zones (extend right) and single levels in the finding; the scenario (F-2) only after the last candle (' . count($zones) . ' zones, ' . count($singles) . ' singles)');
 eq(array_filter($zones, fn($z) => $z['t2'] !== $res['overlay']['as_of']), [], 'every zone reaches the last closed candle (and the chart draws it on to the edge — R3)');
 
 // הכרטיס: "הסתברות: לא נבדק לאחור" — בלי בדיקה לאחור, וגם עם פחות מ-30 אותות
@@ -86,7 +88,7 @@ $bt = $r2['cards'][0]['backtest'] ?? [];
 eq([$c, in_array($bt['status'] ?? null, ['ok', 'insufficient'], true), ($bt['status'] ?? null) === 'ok' ? ($bt['n'] ?? 0) >= 30 : ($bt['certainty'] ?? null) === null],
     [200, true, true], 'criterion 11: after a backtest — certainty only from N ≥ 30, otherwise none (status ' . ($bt['status'] ?? '?') . ', N ' . ($bt['n'] ?? '?') . ')');
 $row = $db->query("SELECT method_version, state FROM backtests WHERE method_id = 'fibonacci' AND tf = 'h1'")->fetch(PDO::FETCH_ASSOC);
-eq([$row !== false, (int)($row['method_version'] ?? 0)], [true, 1], 'the backtest is stored under fibonacci v1');
+eq([$row !== false, (int)($row['method_version'] ?? 0)], [true, 2], 'the backtest is stored under fibonacci v2 (F-2)');
 eq(call('alice', 'chart_refresh', null, ['tf' => 'm15'] + $q)[1]['methods'][$F]['status'] ?? null, 'unsupported', 'm15 → unsupported (h1 and up)');
 eq(preg_match('/קנה|מכור|המלצ|כדאי|\bיעד\b/u', json_encode([$res, $card], JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend/target" wording (6.6)');
 

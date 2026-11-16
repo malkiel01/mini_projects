@@ -206,12 +206,13 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     ctx.globalAlpha = on ? 1 : 0.3;   // החלופות עמומות (17.1.7)
     ctx.setLineDash([]);
     ctx.lineWidth = 2;
-    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on, ...(it.single ? { faint: true } : {}), ...(it.extend ? { extend: true } : {}) });
+    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on, ...(it.single ? { faint: true } : {}), ...(it.bold ? { bold: true } : {}), ...(it.extend ? { extend: true } : {}), ...(it.scen ? { scen: true } : {}) });
     if (it.kind === 'zone') {
       // extend — האזור נמשך ימינה עד קצה הגרף (פיבונאצ'י, R3), לא רק עד הנר האחרון
       const x1 = xOf(it.t1), x2 = it.extend ? W : xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
       if ([x1, x2, y1, y2].includes(null)) return;
       mark();
+      if (it.single) ctx.globalAlpha *= 0.35;   // קופסה דהויה (פיבונאצ'י בלי כיוון, 22.5ד)
       ctx.fillStyle = c; ctx.globalAlpha *= 0.14;
       ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
       ctx.globalAlpha /= 0.14; ctx.strokeStyle = c; ctx.lineWidth = 1;
@@ -235,6 +236,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       if (it.extend) pts[pts.length - 1][0] = W;   // עד קצה הגרף (R3)
       mark();
       if (it.single) { ctx.globalAlpha *= 0.35; ctx.lineWidth = 1; }   // רמה בודדת — דהויה (Z9)
+      if (it.bold) ctx.lineWidth = 3;   // יעד בתוך אזור חפיפה — מודגש (פיבונאצ'י, 22.5ד)
       ctx.strokeStyle = c;
       ctx.setLineDash(it.style === 'dashed' || it.scen ? [7, 5] : []);   // ממצא — קו מלא; תרחיש — מקווקו (18.4 קריטריון 3)
       ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
@@ -437,7 +439,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     const hide = h('button', { class: 'btn ghost sm', type: 'button', 'aria-pressed': String(hidden),
       on: { click: () => { set(id, 'hide', !hidden); paint(); } } }, hidden ? 'הצג תרחיש' : 'הסתר תרחיש');
     const titleLine = h('p', { class: 'an-line' }, h('b', {}, r.title), ' ', h('span', { class: 'chip warn' }, r.basis));
-    if (!sc.length) return sub('scenario', 'תרחיש', titleLine, h('p', { class: 'hint' }, r.overlay?.note || 'אין כרגע תרחיש לפי כללי השיטה'), c ? C.horizon(c) : null);
+    // בלי תרחיש, אבל עם פריטים אחרי הנר האחרון (פיבונאצ'י בלי כיוון — קופסאות דהויות, 22.5ד): גם הם ניתנים להסתרה
+    if (!sc.length) return sub('scenario', 'תרחיש', titleLine, h('p', { class: 'hint' }, r.overlay?.note || 'אין כרגע תרחיש לפי כללי השיטה'), c ? C.horizon(c) : null,
+      (fc?.items || []).length ? h('div', {}, hide) : null);
     const on = selected.get(id);
     const mine = (fc.items || []).filter(it => !it.scenario || it.scenario === on);
     const zone = mine.find(it => it.kind === 'zone');
