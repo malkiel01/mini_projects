@@ -245,11 +245,18 @@ function ts_admin_method_save(int $uid, array $in): void
     }
     if ($err = $m->validate($m->params($params))) throw new TsInvalid($err);
     $note = ts_text($in['note'] ?? '', 500, true);
-    ts_db()->prepare('INSERT INTO methods (id, enabled, markets, timeframes, params, note) VALUES (?, ?, ?, ?, ?, ?)
+    // שכלול (18.7, ✅24): שינוי פרמטר משנה את התוצאה על נרות זהים — רק המנהל הראשי, והגרסה עולה (tune + 1), כדי
+    // שהבדיקות לאחור והיומן לא יערבבו את הערך הישן עם החדש. מנהל אחר — דרך הצעה (lib/tune.php). הפעלה, שווקים, מסגרות
+    // והערה — כמו קודם, כל מנהל.
+    $changed = $m->params($params) !== $m->params(ts_method_settings($id)['params']);
+    if ($changed) ts_require_primary_admin();
+    ts_db()->prepare('INSERT INTO methods (id, enabled, markets, timeframes, params, note, tune) VALUES (?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, markets = excluded.markets, timeframes = excluded.timeframes,
-                        params = excluded.params, note = excluded.note')
-        ->execute([$id, $enabled ? 1 : 0, json_encode($markets), json_encode($tfs), json_encode((object)$params), $note]);
-    ts_admin_log($uid, 'method_save', "$id enabled=" . ($enabled ? 1 : 0) . ' ' . json_encode($params));
+                        params = excluded.params, note = excluded.note, tune = methods.tune + ?')
+        ->execute([$id, $enabled ? 1 : 0, json_encode($markets), json_encode($tfs), json_encode((object)$params), $note, $changed ? 1 : 0, $changed ? 1 : 0]);
+    ts_method_forget();
+    ts_admin_log($uid, 'method_save', "$id enabled=" . ($enabled ? 1 : 0) . ' ' . json_encode($params)
+        . ($changed ? ' v' . $meta['version'] . ' → v' . ts_method($id)->meta()['version'] : ''));
 }
 
 /** עמלה והחלקה לכל שוק, באחוזים (מחרוזות) */

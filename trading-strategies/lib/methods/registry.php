@@ -80,7 +80,23 @@ function ts_method(string $id): TsMethod
 {
     $made = &ts_method_cache();
     if (isset($made[$id])) return $made[$id];
-    if (isset(ts_methods_all()[$id])) return $made[$id] = new (ts_methods_all()[$id])();
-    $row = ts_defined_rows()[$id] ?? throw new InvalidArgumentException('שיטה לא מוכרת');
-    return $made[$id] = new TsDefinedMethod(['version' => $row[1]] + $row[0]);
+    if (isset(ts_methods_all()[$id])) {
+        $m = new (ts_methods_all()[$id])();
+    } else {
+        $row = ts_defined_rows()[$id] ?? throw new InvalidArgumentException('שיטה לא מוכרת');
+        $m = new TsDefinedMethod(['version' => $row[1]] + $row[0]);
+    }
+    $m->tune = ts_method_tune($id);
+    return $made[$id] = $m;
+}
+
+/**
+ * methods.tune של השיטה (18.7). בלי קובץ מסד — אף החלה לא קרתה, ובדיקות טהורות לא פותחות מסד.
+ */
+function ts_method_tune(string $id): int
+{
+    if (!function_exists('ts_db') || !is_file(ts_db_path())) return 0;
+    $st = ts_db()->prepare('SELECT tune FROM methods WHERE id = ?');
+    $st->execute([$id]);
+    return (int)$st->fetchColumn();
 }
