@@ -189,7 +189,7 @@ try {
   // ── כמה שיטות יחד (שינוי מהבעלים): בבקשה אחת, כל אחת בצבע משלה ──
   const { p: o, reqs: oreqs } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   eq(await post(o, 'admin_method_save', { id: 'sample-ma-cross', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4', 'd1'] }), 200, 'the admin turns on the sample method');
   await o.goto(CHART);
   await loaded(o);

@@ -20,6 +20,7 @@ require_once __DIR__ . '/store.php';
 require_once __DIR__ . '/roles.php';
 require_once __DIR__ . '/market.php';
 require_once __DIR__ . '/backtest.php';
+require_once __DIR__ . '/method-colors.php';
 
 final class TsBudget extends RuntimeException {}
 
@@ -68,6 +69,8 @@ function ts_profile(int $uid): array
         'saved' => $has,
         // הלשוניות של מסך השוק (18.1.4) — בפרופיל, נשמרות ב-users.market_tabs (lib/tabs.php)
         'market_tabs' => function_exists('ts_market_tabs') ? ts_market_tabs($uid) : null,
+        // הצבע של כל שיטה (18.5) — {method_id: צבע מהפלטה}; אותה שיטה, אותו צבע בכל הזוגות (lib/method-colors.php)
+        'method_colors' => ts_method_colors($uid),
     ];
 }
 

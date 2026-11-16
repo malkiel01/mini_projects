@@ -61,7 +61,7 @@ async function pickMethod(p, name) {
 try {
   const { p: o, reqs } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   eq(await post(o, 'admin_method_save', { id: 'elliott-w3', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'], params: { pivot_atr_mult: 2 } }), 200, 'the admin turns elliott-w3 on (sensitivity 2)');
   await o.goto(CHART);
   await loaded(o);
