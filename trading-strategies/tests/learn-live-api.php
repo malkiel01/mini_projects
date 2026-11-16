@@ -75,12 +75,13 @@ $id = (string)$ALICE;
 eq([$c, str_contains($raw, 'user_id'), $j['rows'] ?? null], [200, false, 1], 'criterion 4: admin_learn for a secondary editor — no user_id');
 [$c, , $csv] = call('carol', 'admin_learn_csv', null, ['method' => $M, 'source' => 'trade']);
 $head = str_getcsv(explode("\n", ltrim($csv, "\u{FEFF}"))[0]);
-eq([$c, in_array('user_id', $head, true)], [200, false], 'criterion 4: CSV of a secondary editor — no user_id column');
+eq([$c, in_array('user_id', $head, true), in_array('trade_id', $head, true)], [200, false, false], 'criterion 4 / R2 ⚪4: CSV of a secondary editor — no user_id, no trade_id');
 [$c, , $csv] = call('owner', 'admin_learn_csv', null, ['method' => $M, 'source' => 'trade']);
 $lines = array_values(array_filter(explode("\n", ltrim($csv, "\u{FEFF}"))));
 $head = str_getcsv($lines[0]);
 $col = array_search('user_id', $head, true);
 eq([$c, $col !== false, $col !== false ? str_getcsv($lines[1])[$col] : null], [200, true, $id], 'criterion 4: the chief editor\'s CSV has user_id');
+eq(in_array('trade_id', $head, true), true, 'R2 ⚪4: … and trade_id');
 eq([call('alice', 'admin_learn', null, ['method' => $M])[0], call('alice', 'admin_learn_csv', null, ['method' => $M])[0]], [403, 403], 'a user — no learning screen, no export');
 // התשובות שמשתמש אחר מקבל (בוב): אין בהן שורות של אליס ולא user_id שלה
 foreach (['me', 'trades', 'stats', 'method_journal'] as $a) {

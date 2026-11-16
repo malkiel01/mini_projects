@@ -50,12 +50,12 @@ $bt = ts_bt_run($M, $P, ts_bt_floats(array_slice($C, 0, $K + 1)), $cost, null, n
 $TO = $C[$K]['t'];
 eq((int)$bt['last_t'], $TO, 'the backtest ends at candle K');
 $db = ts_db();
-$putBt = function (array $s, int $to, string $scope = '', ?string $hash = null, ?int $version = null) use ($db, $meta, $ASSET, $HASH) {
+$putBt = function (array $s, int $to, string $scope = '', ?string $hash = null, ?int $version = null, int $at = 1) use ($db, $meta, $ASSET, $HASH) {
     $res = ts_bt_result($s);
     $db->prepare("INSERT OR REPLACE INTO backtests (method_id, method_version, provider, asset, tf, params_hash, cred_scope, n, wins, expectancy_r, max_dd, from_t, to_t, state, computed_at)
                   VALUES (?, ?, 'binance', ?, 'h1', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
         ->execute([$meta['id'], $version ?? $meta['version'], $ASSET, $hash ?? $HASH, $scope, $res['n'], $res['wins'], $res['expectancy_r'], $res['max_dd'],
-            $res['from_t'], $to, json_encode($s), 1]);
+            $res['from_t'], $to, json_encode($s), $at]);
 };
 $putBt($bt, $TO);
 
@@ -111,8 +111,20 @@ eq([(int)$l['base_t'], (int)$l['last_t'], (int)$l['method_version'], $l['params_
 $db->exec("DELETE FROM learn_live");
 $putBt($bt, $TO, '', 'otherhash');
 $cnt = count($liveRows());
+$c1 = $calls;
 $s = ts_learn_live_cron($end, $used, null, microtime(true), $load($end));
 eq([$s['skipped'], $s['advanced'], count($liveRows())], [1, 0, $cnt], 'parameters changed since the backtest (hash) → skipped, nothing written');
+// ביקורת L2 🟡1: ה-hash נבדק **לפני** המשיכה, והבדיקה הזו מושהית (at נשמר) — לא נמשכת שוב, ולא חוסמת את התור
+eq($calls - $c1, 0, 'R2 🟡1: hash mismatch → no candles fetched');
+$pk = $db->query('SELECT state, last_t, at FROM learn_live')->fetch();
+eq([$pk['state'], (int)$pk['last_t'], (int)$pk['at']], ['', 0, $end], 'R2 🟡1: parked — empty state, at saved');
+$c1 = $calls;
+$s = ts_learn_live_cron($end + $H, $used, null, microtime(true), $load($end + $H));
+eq([$s['skipped'], $s['checked'], $calls - $c1], [1, 0, 0], 'R2 🟡1: next run — skipped at once, no fetch, nothing checked');
+$putBt($bt, $TO, '', null, null, $end + 10);   // הבדיקה לאחור חושבה מחדש — עם הפרמטרים של היום
+$s = ts_learn_live_cron($end, $used, null, microtime(true), $load($end));
+eq([$s['advanced'], count($liveRows())], [1, $cnt], 'R2 🟡1: the backtest recomputed → live resumes from it, no duplicates');
+$db->exec("DELETE FROM learn_live");
 $putBt($bt, $TO, '', null, (int)$meta['version'] + 5);
 $s = ts_learn_live_cron($end, $used, null, microtime(true), $load($end));
 eq([$s['skipped'], $s['advanced']], [1, 0], 'another method version → skipped');
@@ -131,7 +143,8 @@ foreach ([[1, '201', 'א'], [2, '202', 'ב']] as [$id, $sub, $nm]) {
     $db->prepare('INSERT INTO users (id, platform_sub, display_name, created_at, last_login_at) VALUES (?, ?, ?, 1, 1)')->execute([$id, $sub, $nm]);
 }
 $GLOBALS['ts_current'] = null;
-$snap = ['asset' => $ASSET, 'tf' => 'h1', 'method_id' => 'elliott-w3', 'method_version' => 3, 'as_of' => 1767225600];
+$EV = (int)ts_method('elliott-w3')->meta()['version'];
+$snap = ['asset' => $ASSET, 'tf' => 'h1', 'method_id' => 'elliott-w3', 'method_version' => $EV, 'as_of' => 1767225600];
 $trade = fn(array $o) => $o + ['symbol' => 'BTCUSDT', 'market' => 'crypto', 'currency' => 'USDT', 'multiplier' => '1', 'direction' => 'long',
     'opened_at' => '2026-01-01T10:00', 'entry_price' => '100', 'quantity' => '2', 'entry_fees' => '1',
     'exits' => [['exited_at' => '2026-01-02T12:00', 'price' => '96', 'quantity' => '2', 'fees' => '1']]];
@@ -141,7 +154,7 @@ $r = $trades(1);
 // סיכון 2 × 2 = 4; נטו (96−100)×2 − 2 = −10 → ‎−2.5R
 eq(count($r), 1, 'criterion 2: a closed trade with method_id and planned_stop → one trade row');
 eq([$r[0]['method_id'], (int)$r[0]['method_version'], $r[0]['asset'], $r[0]['tf'], $r[0]['result'], (float)$r[0]['r'], $r[0]['stop'], $r[0]['exit'], (int)$r[0]['trade_id'], (int)$r[0]['t_signal']],
-    ['elliott-w3', 3, $ASSET, 'h1', 'loss', -2.5, '98', '96', $tid, 1767225600], 'criterion 2: R by planned_stop, after fees; the snapshot gives asset, tf, version, signal time');
+    ['elliott-w3', $EV, $ASSET, 'h1', 'loss', -2.5, '98', '96', $tid, 1767225600], 'criterion 2: R by planned_stop, after fees; the snapshot gives asset, tf, version, signal time');
 ts_trade_save(1, ['id' => $tid] + $trade(['planned_stop' => '98', 'exits' => [['exited_at' => '2026-01-02T12:00', 'price' => '120', 'quantity' => '2']]]), 'UTC');
 eq([count($trades(1)), (float)$trades(1)[0]['r']], [1, -2.5], 'editing the trade later does not change or add the row (23.3)');
 ts_trade_save(1, $trade(['method_id' => 'elliott-w3', 'analysis_snapshot' => $snap]), 'UTC');
@@ -157,6 +170,20 @@ ts_trade_save(1, ['id' => $open] + $trade(['planned_stop' => '98']), 'UTC');
 $t1 = $trades(1);
 eq([count($t1), (int)end($t1)['trade_id']], [2, $open], 'a trade closed later (by an edit) → its row then');
 
+// ביקורת L2 🟡2: התמונה מהדפדפן — גרסה מעל הנוכחית → הנוכחית; זמן אות אחרי הכניסה או בעתיד → זמן הכניסה
+$curV = (int)ts_method('elliott-w3')->meta()['version'];
+$bad = ts_trade_save(1, $trade(['planned_stop' => '98', 'method_id' => 'elliott-w3', 'analysis_snapshot' => ['method_version' => 99, 'as_of' => 1767225600 + 3 * 86400] + $snap]), 'UTC');
+$rb = $db->query("SELECT method_version, t_signal FROM method_outcomes WHERE source = 'trade' AND trade_id = $bad")->fetch();
+eq([(int)$rb['method_version'], (int)$rb['t_signal']], [$curV, (int)strtotime('2026-01-01T10:00Z')], 'R2 🟡2: version 99 → the current one; as_of after the entry → the entry time');
+$bad = ts_trade_save(1, $trade(['planned_stop' => '98', 'method_id' => 'elliott-w3', 'analysis_snapshot' => ['method_version' => 0, 'as_of' => 'x'] + $snap]), 'UTC');
+$rb = $db->query("SELECT method_version, t_signal FROM method_outcomes WHERE source = 'trade' AND trade_id = $bad")->fetch();
+eq([(int)$rb['method_version'], (int)$rb['t_signal']], [$curV, (int)strtotime('2026-01-01T10:00Z')], 'R2 🟡2: version 0 / as_of not a number → the current one and the entry time');
+// ⚪3: בלי as_of, שינוי זמן הכניסה משנה את t_signal — ועדיין שורה אחת לעסקה
+$noAs = $snap; unset($noAs['as_of']);
+$tx = ts_trade_save(1, $trade(['planned_stop' => '98', 'method_id' => 'elliott-w3', 'analysis_snapshot' => $noAs]), 'UTC');
+ts_trade_save(1, ['id' => $tx] + $trade(['planned_stop' => '98', 'opened_at' => '2026-01-01T08:00']), 'UTC');
+eq((int)$db->query("SELECT COUNT(*) FROM method_outcomes WHERE source = 'trade' AND trade_id = $tx")->fetchColumn(), 1, 'R2 ⚪3: editing opened_at → still one row for the trade');
+
 // קריטריון 3: משתמש שכיבה
 ts_learn_off_set(2, true);
 ts_trade_save(2, $trade(['planned_stop' => '98', 'method_id' => 'elliott-w3', 'analysis_snapshot' => $snap]), 'UTC');
@@ -170,9 +197,11 @@ eq($failed, true, 'learn_off_set: only true / false');
 
 // קריטריון 4 (בתהליך): user_id לא חוזר מ-ts_outcomes, ובייצוא — רק כשמבקשים (העורך הראשי). בדיקת ה-API — tests/learn-live-api.php
 $o = ts_outcomes('elliott-w3', ['source' => 'trade']);
-eq([count($o), array_key_exists('user_id', $o[0])], [3, false], 'criterion 4: ts_outcomes has no user_id');
-eq([str_contains(ts_learn_csv('elliott-w3', null, 'trade', false), 'user_id'), str_contains(ts_learn_csv('elliott-w3', null, 'trade', true), 'user_id')], [false, true],
-    'criterion 4: CSV — user_id only with $withUser');
+eq([count($o), array_key_exists('user_id', $o[0])], [6, false], 'criterion 4: ts_outcomes has no user_id');
+$h0 = str_getcsv(explode("\n", ltrim(ts_learn_csv('elliott-w3', null, 'trade', false), "\u{FEFF}"))[0]);
+$h1 = str_getcsv(explode("\n", ltrim(ts_learn_csv('elliott-w3', null, 'trade', true), "\u{FEFF}"))[0]);
+eq([in_array('user_id', $h0, true), in_array('trade_id', $h0, true), in_array('user_id', $h1, true), in_array('trade_id', $h1, true)], [false, false, true, true],
+    'criterion 4 / R2 ⚪4: CSV — user_id and trade_id only with $withUser');
 
 echo $fail ? "$fail/$n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

@@ -202,8 +202,9 @@ function ts_learn_csv(string $methodId, ?int $version, ?string $source, bool $wi
 {
     $cols = ['id', 'source', 'method_id', 'method_version', 'params_hash', 'provider', 'asset', 'tf', 'cred_scope', 't_signal', 't_entry', 't_exit',
         'side', 'entry', 'stop', 'exit_level', 'exit', 'result', 'win', 'r', 'mae_r', 'mfe_r', 'atr', 'market', 'month', 'quarter', 'weekday', 'hour',
-        'holidays', 'features', 'trade_id', 'created_at'];
-    if ($withUser) $cols[] = 'user_id';
+        'holidays', 'features', 'created_at'];
+    // מי ואיזו עסקה (ל3, ביקורת L2 ⚪4) — רק לעורך הראשי. trade_id לבד מצביע על עסקה של משתמש מסוים
+    if ($withUser) array_push($cols, 'trade_id', 'user_id');
     $sql = 'SELECT ' . implode(', ', $cols) . ' FROM method_outcomes WHERE method_id = ?';
     $args = [$methodId];
     if ($version !== null) { $sql .= ' AND method_version = ?'; $args[] = $version; }
@@ -979,7 +980,7 @@ function ts_learn_live_cron(int $now, array &$used, ?array $budget, float $t0, ?
     $db = ts_db();
     $live = [];
     foreach ($db->query('SELECT * FROM learn_live')->fetchAll() as $l) $live["$l[method_id]|$l[provider]|$l[asset]|$l[tf]|$l[cred_scope]"] = $l;
-    $bts = $db->query("SELECT method_id, method_version, provider, asset, tf, params_hash, cred_scope, to_t, state FROM backtests
+    $bts = $db->query("SELECT method_id, method_version, provider, asset, tf, params_hash, cred_scope, to_t, state, computed_at FROM backtests
                        WHERE source = 'provider' ORDER BY method_id, asset, tf")->fetchAll();
     $key = fn($b) => "$b[method_id]|$b[provider]|$b[asset]|$b[tf]|$b[cred_scope]";
     usort($bts, fn($a, $b) => (int)($live[$key($a)]['at'] ?? 0) <=> (int)($live[$key($b)]['at'] ?? 0));   // הישן קודם (יציב)
@@ -996,6 +997,21 @@ function ts_learn_live_cron(int $now, array &$used, ?array $budget, float $t0, ?
             if ((string)$b['cred_scope'] !== '') { $sum['private']++; continue; }
             $l = $live[$key($b)] ?? null;
             if ($l && ((int)$l['method_version'] !== (int)$b['method_version'] || $l['params_hash'] !== $b['params_hash'])) $l = null;   // גרסה / פרמטרים אחרים — מחדש
+            // מושהית (state ריק — ה-hash לא תאם לפרמטרים של היום, ביקורת L2 🟡1): לא נוגעים עד שהבדיקה לאחור מחושבת מחדש
+            if ($l && $l['state'] === '') {
+                if ((int)$b['computed_at'] <= (int)$l['at']) { $sum['skipped']++; continue; }
+                $l = null;
+            }
+            $market = ts_asset_market($b['asset']);
+            $cost = ts_cost_for($market);
+            $park = function () use ($save, $meta, $b, $l, $now, &$sum): void {
+                $save->execute([$meta['id'], $b['provider'], $b['asset'], $b['tf'], '', $meta['version'], $b['params_hash'], (int)$b['to_t'], 0, '',
+                    (int)($l['written'] ?? 0), $now]);
+                $sum['skipped']++;
+            };
+            // הפרמטרים או העמלות השתנו מאז הבדיקה — לא ממשיכים מהמצב הישן, ו**לפני** שמושכים נרות. שיטה שמקבלת tick (אליוט) —
+            // ה-hash תלוי בנרות, ונבדק אחרי המשיכה
+            if (empty($meta['tick']) && ts_bt_hash(ts_learn_params_for($m, $b['asset'], $b['tf'], 0), $cost) !== $b['params_hash']) { $park(); continue; }
             $state = json_decode((string)($l['state'] ?? $b['state']), true);
             $base = $l ? (int)$l['base_t'] : (int)$b['to_t'];
             if (!is_array($state) || !isset($state['last_t'])) { $sum['skipped']++; continue; }
@@ -1004,11 +1020,8 @@ function ts_learn_live_cron(int $now, array &$used, ?array $budget, float $t0, ?
             if (microtime(true) > $until) { $sum['stopped'] = true; $sum['deferred']++; continue; }
             try {
                 $rows = $load($b['asset'], $b['tf'], (int)$state['last_t'] + 1 - TS_LEARN_LIVE_CONTEXT * $sec);
-                $market = ts_asset_market($b['asset']);
-                $cost = ts_cost_for($market);
                 $p = ts_learn_params_for($m, $b['asset'], $b['tf'], ts_tick_decimals($rows));
-                // הפרמטרים או העמלות השתנו מאז הבדיקה — לא ממשיכים מהמצב הישן; הכרטיס הבא יחשב בדיקה חדשה
-                if (ts_bt_hash($p, $cost) !== $b['params_hash']) { $sum['skipped']++; continue; }
+                if (ts_bt_hash($p, $cost) !== $b['params_hash']) { $park(); continue; }
                 $trades = [];
                 $s = ts_bt_run($m, $p, ts_bt_floats($rows), $cost, $state, $until, function (array $t) use (&$trades, $base): void {
                     if ((int)$t['t_signal'] > $base) $trades[] = $t;
@@ -1063,16 +1076,26 @@ function ts_learn_trade(int $uid, int $tradeId, ?int $now = null): int
     $ex->execute([$tradeId]);
     $c = ts_trade_calc($t + ['exits' => $ex->fetchAll()]);
     if ($c['status'] !== 'closed' || $c['r_full'] === null || $c['closed_at'] === null) return 0;
+    // שורה אחת לעסקה (ביקורת L2 ⚪3): t_signal במפתח יכול להשתנות בעריכה (opened_at) — לא מוסיפים שורה שנייה לאותה עסקה
+    $dup = $db->prepare("SELECT 1 FROM method_outcomes WHERE source = 'trade' AND trade_id = ? LIMIT 1");
+    $dup->execute([$tradeId]);
+    if ($dup->fetchColumn()) return 0;
     $m = ts_method((string)$t['method_id']);
-    $version = is_int($snap['method_version'] ?? null) ? $snap['method_version'] : (int)$m->meta()['version'];
     $opened = (int)strtotime((string)$t['opened_at']);
+    // התמונה מגיעה מהדפדפן (ביקורת L2 🟡2) — לא סומכים עליה: גרסה רק בין 1 לגרסה הנוכחית של השיטה, וזמן האות לא אחרי
+    // הכניסה (ולא בעתיד). אחרת — הגרסה הנוכחית וזמן הכניסה
+    $cur = (int)$m->meta()['version'];
+    $sv = $snap['method_version'] ?? null;
+    $version = is_int($sv) && $sv >= 1 && $sv <= $cur ? $sv : $cur;
+    $asOf = $snap['as_of'] ?? null;
+    $tSignal = is_int($asOf) && $asOf > 0 && $asOf <= $opened && $asOf <= ($now ?? time()) ? $asOf : $opened;
     $win = dec_sign($c['net']) > 0;
     $f = fn(?string $v) => $v === null || $v === '' ? null : (float)$v;
     [$provider] = explode(':', $asset, 2);
     return ts_outcomes_write(['source' => 'trade', 'method_id' => (string)$t['method_id'], 'method_version' => $version, 'params_hash' => '',
         'provider' => $provider, 'asset' => $asset, 'tf' => $tf, 'cred_scope' => '', 'market' => ts_asset_market($asset), 'decimals' => 10,
         'now' => $now ?? time(), 'user_id' => $uid, 'trade_id' => $tradeId], [[
-        't_signal' => is_int($snap['as_of'] ?? null) ? $snap['as_of'] : $opened, 't_entry' => $opened, 't_exit' => (int)strtotime((string)$c['closed_at']),
+        't_signal' => $tSignal, 't_entry' => $opened, 't_exit' => (int)strtotime((string)$c['closed_at']),
         'side' => $t['direction'], 'entry' => $f($t['entry_price']), 'stop' => $f($t['planned_stop']), 'target' => $f($t['planned_target'] ?? null),
         'exit' => $f($c['avg_exit']), 'result' => $win ? 'win' : 'loss', 'win' => $win, 'r' => (float)$c['r_full'],
         'mae_r' => null, 'mfe_r' => null, 'atr' => null, 'features' => null]]);
