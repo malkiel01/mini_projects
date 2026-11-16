@@ -38,7 +38,8 @@ const MAX = PALETTE.length;   // = TS_REFRESH_MAX_METHODS בשרת
 // והולכת ונחלשת לאורך ההמשך. תווית קבועה: "הדמיית המשך — לא תחזית". רק ציור: לא משנה ממצא, תרחיש, אותות או התראות.
 export const SIM_LABEL = 'הדמיית המשך — לא תחזית';
 const SIM_EXTRA = 0.5;   // אחרי סוף התרחיש — עוד 50% מאורכו
-const SIM_MIN = 20, SIM_MAX = 90;   // נרות — גם תרחיש של נר אחד מקבל המשך שאפשר לראות
+const SIM_MIN = 20, SIM_MAX = 240;   // נרות — גם תרחיש של נר אחד מקבל המשך שאפשר לראות
+const SIM_VIEW = 0.08;   // לפחות 8% מהנרות שנטענו
 /** עוצמת ההמשך לפי הוודאות (0–100): 15% עד 75%. בלי ודאות (לא נבדק לאחור) — חלש, 28% */
 export function simAlpha(certainty) {
   const c = certainty == null ? NaN : +certainty;
@@ -300,7 +301,12 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     // תרחיש קצר (יעד כבר בנר הבא): המעבר אל היעד נפרש על 12 נרות לפחות — לא נר-רפאים אחד ענק
     const SPREAD = 12;
     if (nPath < SPREAD) { for (const q of path) q.t = last.time + (q.t - last.time) * SPREAD / nPath; nPath = SPREAD; }
-    const total = Math.max(SIM_MIN, Math.min(SIM_MAX, Math.round(nPath * (1 + SIM_EXTRA))));
+    // האורך — הגדול מבין: התרחיש ועוד 50%, האופק של השיטה (forecast.bars) ועוד 50%, ו-8% מהנרות שנטענו (הטווח שנבחר —
+    // כדי שההמשך ייראה גם ב"3 חודשים"); בין SIM_MIN ל-SIM_MAX. לפי מה שנטען ולא לפי התצוגה: התצוגה ברגע הציור תלויה
+    // בתזמון (fitContent מוחל במסגרת הבאה), וההמשך צריך להיות זהה בכל ציור
+    const vis = times.length;
+    const horizon = Number.isFinite(+r?.forecast?.bars) ? +r.forecast.bars : 0;
+    const total = Math.max(SIM_MIN, Math.min(SIM_MAX, Math.round(Math.max(nPath * (1 + SIM_EXTRA), horizon * (1 + SIM_EXTRA), vis * SIM_VIEW))));
     const rnd = seeded(id + ':' + last.time + ':' + (sc.id ?? ''));
     const bars = [];
     let prev = last.close;
