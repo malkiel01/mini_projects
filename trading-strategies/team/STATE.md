@@ -1,6 +1,6 @@
 # מצב — הזיכרון הנייד של הבקרה
 
-**עודכן:** 2026-11-16 ~02:05 UTC, בידי בקרה (3) `session_018g4NYE6Q5mocKiUUxqKEyR`. השעון: `trig_01BkHqJw3mPZG75puVqoh6rh` (דקה 28).
+**עודכן:** 2026-11-16 ~02:45 UTC, בידי בקרה (4) `session_018g4NYDsD5GNc3L8rqyUQ4B`. השעון `trig_01J4cir8Aoh8ogFyCwPHG4dh` (דקה 28).
 
 ## איפה עומדים
 
@@ -24,10 +24,12 @@
 | #1615 | S7 שכלול + method_colors 2.20 (מיגרציה 12) | 1689 |
 | #1614, #1613 | אפיון 2.20, מסירת S6 | 1691 (1690 בוטלה בתור — 1691 כוללת אותה) |
 
-| #1618 | A1 DevLoop (מיגרציה 13, `TS-`) | **לאמת** |
-| #1617, #1616 | אפיון 2.21, מסירת S7 | **לאמת** |
+| #1618 | A1 DevLoop (מיגרציה 13, `TS-`) | 1692 |
+| #1617, #1616 | אפיון 2.21, מסירת S7 | 1694 (1693 בוטלה בתור) |
+| #1620 | A3 בדיקות PHP בשער + ראיות TS- | 1695 — השלב 'trading-strategies tests (PHP)' ירוק |
+| #1623, #1621, #1619 | A2 התחברות עם ניתוק (מיגרציה 14), אפיון 2.22–2.23, מסירת A1 | ממתין לאימות |
 
-**S1–S7 ו-A1 בנויים ומוזגו.** A3 — ב-PR של הבקרה (deploy.yml). נשאר A2.
+**S1–S7, A1, A2, A3 בנויים ומוזגו.** ביקורת A2: `team/reviews/a2.md` (שני סבבים, סוקר עומק).
 - ביקורות: `team/reviews/*.md`. #1602, #1604 (מסירות) נסגרו — אוחדו ב-#1605.
 
 ## הצוות (`team/sessions.json`)
@@ -35,8 +37,9 @@
 | תפקיד | session | מצב |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.19 |
-| קוד | — | A1 (`…E8kDskU8RmVtkTf3g`) מוזג, מעדכן handoff ויוצא. הבא: A2 |
-| קוד קודמים | `…DT3XMHmjb6sxQf6nU` S7 · `…CtoJQjiN4ojLGwKMh` S6 · `…E8YZGBZvopSjFJYG7` S5 · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
+| קוד (A2) | `session_018g4NYDGPpCv1Pc3LgfvmVx` (Opus) | נפתח 02:00 — מחכה לפרק האפיון לפני PR |
+| אפיון | (אותו) | פרק 20.1 (A2), גרסאות 2.22–2.23 ב-#1621 (טיוטה) — רדום |
+| קוד קודמים | `…E8kDskU8RmVtkTf3g` A1 (handoff #1619 — עם A2) · `…DT3XMHmjb6sxQf6nU` S7 · `…CtoJQjiN4ojLGwKMh` S6 · `…E8YZGBZvopSjFJYG7` S5 · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
 | מטלות | — | עוד לא נפתח |
 
 ## ממתין לבעלים
@@ -50,7 +53,9 @@
 
 ## הצעד הבא
 
-1. לאמת פריסה של A3 (PR הבקרה: בדיקות ה-PHP בשער + ראיות TS-) — שהשלב החדש ירוק ב-CI. אם נכשל שם ולא אצלנו — לבדוק הרחבות PHP. אחר כך **A2** (התחברות עם ניתוק, `platform/docs/sso.md`) — צ'אט קוד חדש.
+1. **לאמת** את הריצה של מיזוג #1619 (האחרונה כוללת את #1623 ו-#1621) — `conclusion: success`, כולל 'trading-strategies tests (PHP)'. אחרי זה — קוד A2 מעדכן handoff (PR קטן, למזג עם המיזוג הבא).
+   - ש8 (Google כשמנותקת — לא עכשיו), ש9 (שכחתי סיסמה — בלי מייל; איפוס רק המנהל הראשי) — ברירות מחדל, נשאלו.
+   - ⚪ לבעלים: מנהל ראשי שהודח בזמן ניתוק נשאר עד הכניסה הבאה דרך השער (לפי 20.1 ו').
 2. מטלה לבעלים: אסימון `tsd_…` (עוד ← 🐞 פיתוח ← 🔑 גישה ל-Claude) → `TS_DEVLOOP_TOKEN` בשני מקומות: Secrets של הריפו (ראיות פריסה) ומשתני הסביבה של Claude Code. + ניקוי השרת. → צ'אט מטלות.
 3. בקשה לפלטפורמה: שורה ב"מי משתמש" ב-`devloop/README.md` (מחוץ להרשאה).
 4. פרוסות app-rules מהסקר (`dev/audit.md`): A1 DevLoop, A2 התחברות עם ניתוק, A3 בדיקות בשער הפריסה.

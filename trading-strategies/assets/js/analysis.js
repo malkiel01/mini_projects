@@ -9,7 +9,7 @@ const RISK_LEVELS = [['low', 'נמוכה'], ['medium', 'בינונית'], ['high
 const MARKET_LABEL = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות', indices: 'מדדים', commodities: 'סחורות' };
 
 export function mountAnalysis(ctx) {
-  const { h, api, toast, setHead, render, field, numInput, seg, segVal, select, sep } = ctx;
+  const { h, api, sheet, toast, setHead, render, field, numInput, seg, segVal, select, sep } = ctx;
   const ME = () => ctx.me();
 
   // ── פרופיל (5) + ההגדרות של שלב 1 — מסך אחד ─────────────
@@ -87,7 +87,31 @@ export function mountAnalysis(ctx) {
       h('div', { class: 'block stack' },
         h('div', { class: 'fields two' }, field('מטבע בסיס להצגה', f.base_currency), field('גודל חשבון', f.account_size), field('אזור זמן', f.timezone, true))),
       err, h('div', {}, h('button', { class: 'btn primary', type: 'submit' }, 'שמירה')));
-    render(form);
+    render(form, passwordBlock());
+  }
+
+  // "סיסמה לאפליקציה" (spec-stage-a 20.1 ד'): לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים, ושם רק אם המנהל הפעיל
+  // כניסה בסיסמה. נקבעת כשמחוברים; לא נמחקת כשהאפליקציה מתחברת שוב.
+  function passwordBlock() {
+    const has = !!ME().has_password;
+    const open = () => {
+      const pw = h('input', { type: 'password', autocomplete: 'new-password', dir: 'ltr', minlength: 10, maxlength: 200 });
+      const s = sheet('סיסמה לאפליקציה', { onSave: async () => {
+        await api('password_set', { password: pw.value });
+        ctx.setMe(await api('me'));
+        toast('הסיסמה נשמרה');
+        render(document.querySelector('main form'), passwordBlock());
+      } });
+      s.body.append(field('סיסמה חדשה — לפחות 10 תווים', pw, true),
+        h('p', { class: 'hint' }, 'נכנסים בה עם המייל ' + (ME().user.email || '') + '.'));
+    };
+    return h('section', { class: 'pw-block' },
+      h('h2', { class: 'sec-title' }, '🔑 סיסמה לאפליקציה'),
+      h('div', { class: 'block stack' },
+        h('p', { class: 'hint' }, has ? 'יש לך סיסמה.' : 'אין לך סיסמה.',
+          ' היא משמשת רק כשהאפליקציה מנותקת מהכלים הדיגיטליים והמנהל פתח כניסה בסיסמה. אחרת — נכנסים דרך הכלים הדיגיטליים.'),
+        ME().user.email ? h('div', {}, h('button', { class: 'btn ghost', type: 'button', on: { click: open } }, has ? 'החלפת סיסמה' : 'קביעת סיסמה'))
+          : h('p', { class: 'hint' }, 'אין מייל בחשבון, ולכן אין כניסה בסיסמה.')));
   }
 
   // ── ניהול שיטות (6.7) + עמלות — השרת בודק מנהל בכל פעולה ──
