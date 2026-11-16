@@ -2,12 +2,36 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>מחירוני קברים</title>
 <link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/devloop.css">
 </head>
 <body>
-<main><h1>מחירוני קברים</h1><p>האפליקציה בפיתוח.</p></main>
+<a class="skip" href="#view">דילוג לתוכן</a>
+<header class="top">
+  <a class="icon-btn back" id="back" href="#/" aria-label="חזרה" hidden>›</a>
+  <div class="titles"><h1 id="title">מחירוני קברים</h1><div class="sub" id="sub"></div></div>
+  <a class="icon-btn" id="dev-btn" href="#/dev" aria-label="מסך המפתח" title="מסך המפתח" hidden>🛠️</a>
+  <span id="me-btn"></span>
+</header>
+<main id="view" tabindex="-1"><p class="empty">טוען…</p></main>
+
+<dialog id="print-dlg" aria-labelledby="print-title">
+  <form method="dialog">
+    <div class="sheet-head"><h2 id="print-title">🖨️ הדפסה</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <div class="list">
+        <button class="use-row" value="il"><span class="use-ic">🇮🇱</span><span class="use-tx"><b>תושבי ישראל</b><small>עמוד אחד</small></span></button>
+        <button class="use-row" value="abroad"><span class="use-ic">🌍</span><span class="use-tx"><b>תושבי חו"ל</b><small>עמוד אחד</small></span></button>
+        <button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>דף נפרד לכל קבוצה</b><small>שני עמודים: ישראל, ואחריו חו"ל</small></span></button>
+        <button class="use-row" value="both"><span class="use-ic">📄</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>עמוד אחד, עמודת מחיר לכל קבוצה</small></span></button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<script src="assets/js/devloop.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
