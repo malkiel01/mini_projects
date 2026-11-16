@@ -355,6 +355,36 @@ table.grid tr.has-err td, table.grid tr.has-err th.title { background: color-mix
 .grid-zoom .z-val { min-width: 92px; text-align: center; font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .grid-layout { display: flex; flex-direction: column; }
 .grid-layout .grid-issues { order: -1; }   /* בטלפון — מעל הטבלאות */
+.grid-issues li .bad b { color: var(--danger); }
+
+/* ===== B1 — ההצעה לא מאוזנת: פס עליון, תיבה, והתא עצמו באדום (budget_integrity) ===== */
+.int-bar { display: flex; align-items: center; gap: var(--s2); width: 100%; min-height: 44px; margin: 0 0 var(--s3); padding: var(--s2) var(--s3);
+    border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); border-radius: var(--r); background: var(--danger-soft); color: var(--danger);
+    font: inherit; text-align: start; cursor: pointer; }
+.int-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.int-bar span { font-size: .85rem; flex: none; }
+.int-bar:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+.int-box { margin: 0 0 var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--danger-soft); color: var(--danger); font-size: .9rem; }
+.int-box p { margin: 0 0 var(--s1); }
+.int-box p:last-child { margin-bottom: 0; }
+.int-box .row-btns { margin: 0 0 var(--s2); flex-wrap: wrap; }
+.int-txt { color: var(--danger) !important; }
+.int-cell { color: var(--danger) !important; font-weight: 700; background: var(--danger-soft); border-radius: 4px; padding-inline: 2px; }
+li.card.int-bad { box-shadow: inset -3px 0 0 var(--danger); }
+.int-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+.int-list button { width: 100%; min-height: 44px; text-align: start; font: inherit; font-size: .9rem; color: var(--danger); background: var(--danger-soft);
+    border: 0; border-radius: var(--r); padding: var(--s2) var(--s3); cursor: pointer; }
+table.grid tr.int-bad th.title { box-shadow: inset -3px 0 0 var(--danger); }
+table.grid tfoot td.int-cell { color: var(--danger) !important; background: var(--danger-soft) !important; border-radius: 0; }
+.doc .doc-warn { color: #b3261e; }
+.doc .doc-warn h2 { font-size: calc(var(--fs-title) * 1pt); margin-bottom: 4mm; }
+.doc .doc-warn li { margin-bottom: 1.5mm; }
+.doc .dt .int-cell, .doc .dt tr.int-cell td { color: #b3261e !important; background: #fdecea !important; border-radius: 0; padding-inline: 1.5mm; }
+@media print {
+    /* במסמך המודפס — האזהרה בראש נשארת; הסימון על התאים — רק במסך */
+    .doc .dt .int-cell, .doc .dt tr.int-cell td { color: inherit !important; background: inherit !important; font-weight: inherit; }
+    .doc .dt tr.tot td.int-cell { background: #f2f2f2 !important; font-weight: 700; }
+}
 
 @media (min-width: 900px) {
     body.grid-mode main { max-width: 1280px; }
