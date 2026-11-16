@@ -8,7 +8,8 @@
     "session": "session_018g4NYEoXMKKD28MYYmYaoC",
     "slice": "21.3 Twelve Data משותף (2.25, ✅31)",
     "model": "claude-opus-5-5",
-    "opened_by": "מנהל הצוותים (4) — בקרה (5) בעומק 8"
+    "opened_by": "מנהל הצוותים (4) — בקרה (5) בעומק 8",
+    "done": "#1642 21.3 (סבב 2); handoff #1644 — יצא (392K)"
   },
   "control": "session_018g4NYEtPnhDAxdzNLibMdV",
   "tasks": null,
