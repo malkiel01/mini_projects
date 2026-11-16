@@ -5,8 +5,8 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYE8YZGBZvopSjFJYG7",
-    "slice": "S5 כמה שיטות, לכל אחת צבע (18.5)",
+    "session": "session_018g4NYCtoJQjiN4ojLGwKMh",
+    "slice": "S6 יומן של שיטה (18.6)",
     "model": "claude-opus-5-5"
   },
   "control": "session_018g4NYE6Q5mocKiUUxqKEyR",
@@ -41,6 +41,11 @@
     {
       "session": "session_018g4NYEqqFf5DTC33BEFxAS",
       "done": "#1605 S4; handoff #1606",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYE8YZGBZvopSjFJYG7",
+      "done": "#1608 S5; handoff #1610",
       "model": "claude-opus-5-5 — רדום"
     }
   ],
