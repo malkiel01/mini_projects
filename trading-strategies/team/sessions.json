@@ -10,7 +10,8 @@
     "slice": "F-1 פיבונאצ'י — ממצא ואותות (פרק 22, 2.27)",
     "model": "claude-opus-5-5",
     "opened_by": "בקרה (6)",
-    "branch": "claude/trading-strategies-fib-f1"
+    "branch": "claude/trading-strategies-fib-f1",
+    "done": "#1662 F-1 מוזג — רדום (405K)"
   },
   "control": "session_018g4NYFqH3tqWT9nYnCRNjr",
   "tasks": null,
