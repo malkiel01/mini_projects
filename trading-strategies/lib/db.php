@@ -476,6 +476,39 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 12) {
+        // שכלול שיטה (spec-stage-a 18.7, S7): עמודה וטבלה חדשות בלבד — לא נוגעת בשום נתון קיים.
+        // methods.tune — כמה פעמים "החל" שינה פרמטר של השיטה. הגרסה של השיטה = גרסת הקוד (או ההגדרה) + tune, ולכן כל
+        // החלה מעלה את meta().version (6.7), והבדיקות לאחור והיומן (18.6) עוברים לגרסה החדשה.
+        // method_proposals — הצעת שינוי פרמטר: הערך הנוכחי, הערך המועמד, והביצועים של שניהם בתוך הדגימה ומחוצה לה
+        // (results, JSON). status: open → applied, או stale כשהגרסה או הערך זזו לפני ההחלה. לא נמחקת לעולם.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE methods ADD COLUMN tune INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE method_proposals (
+                id INTEGER PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                param TEXT NOT NULL,
+                current_value TEXT NOT NULL,
+                candidate_value TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                split_t INTEGER NOT NULL,
+                results TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','applied','stale')),
+                created_by INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                applied_by INTEGER,
+                applied_at INTEGER,
+                new_version INTEGER
+            );
+            CREATE INDEX method_proposals_method ON method_proposals(method_id, id);
+            PRAGMA user_version = 12;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

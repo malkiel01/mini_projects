@@ -141,7 +141,7 @@ final class TsDefinedMethod extends TsMethod
             'markets' => $d['markets'], 'timeframes' => $d['timeframes'], 'params' => $params,
             'horizon_bars' => is_int($d['horizon_bars']) ? $d['horizon_bars'] : (int)$d['params'][substr($d['horizon_bars'], 1)]['default'],
             'warmup' => $this->warmup(),
-            'version' => $d['version'], 'incremental' => true, 'alerts' => false,
+            'version' => $d['version'] + $this->tune, 'incremental' => true, 'alerts' => false,
         ];
     }
 

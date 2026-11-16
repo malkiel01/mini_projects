@@ -55,7 +55,7 @@ final class TsMethodElliottW3 extends TsMethod
             'levels' => 'absolute',   // 6.2(ח)
             'tick' => true,           // צריכה את ה-tick של הנכס ($p['tick']) — "יעד ≤ tick → אין אות"
             'analyze_from_state' => true,   // ו1: הכרטיס ממשיך ממצב המנוע של הבדיקה לאחור
-            'version' => 1,
+            'version' => 1 + $this->tune,   // + החלות (18.7)
             'incremental' => true,
             'alerts' => false,        // לא נקבע באפיון — כבוי עד שיוכרע
         ];

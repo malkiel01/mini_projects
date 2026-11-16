@@ -335,6 +335,7 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .fc-opt input { flex: none; inline-size: 20px; block-size: 20px; min-height: 0; accent-color: var(--brand); }
 .fc-opt.off { opacity: .55; cursor: default; }
 .fc-opt-tx { display: grid; min-width: 0; line-height: 1.25; }
+.fc-max { margin: 0; font-size: .8rem; font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-radius: var(--r); padding: var(--s1) var(--s2); }
 .fc-note { margin: 0; font-size: .75rem; color: var(--muted); }
 .fc-none { justify-self: start; color: var(--muted); background: var(--bg); }
 .fc-admin { font-size: .8rem; }
@@ -548,3 +549,16 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .mj-sum .mj-m { white-space: nowrap; max-inline-size: 9rem; overflow: hidden; text-overflow: ellipsis; }
 .mj-sum td.zone .pct { display: block; }
 .method-journal > .btn { justify-self: center; }
+
+/* שכלול (18.7, S7): הצעת שינוי פרמטר במסך ניהול השיטות */
+.tune { margin-top: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.tune > summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; gap: var(--s2); }
+.tune > * + * { margin-top: var(--s2); }
+.tune-list { margin-top: var(--s2); }
+.tune-prop { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); background: var(--surface); list-style: none; }
+.tune-prop + .tune-prop { margin-top: var(--s2); }
+.tune-tbl { width: 100%; margin: var(--s2) 0; }
+.tune-tbl th[scope="row"] { text-align: start; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.tune-tbl td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tune-tbl thead th { text-align: end; }
+.tune-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
