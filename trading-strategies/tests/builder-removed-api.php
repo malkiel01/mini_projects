@@ -155,7 +155,10 @@ eq($counts(), $before, 'criterion 3: no data deleted — the defined row, its ve
 eq((int)$db->query("SELECT COUNT(*) FROM alerts")->fetchColumn(), 3, 'the alerts are paused, not deleted');
 $cols = array_column($db->query('PRAGMA table_info(methods)')->fetchAll(), 'name');
 eq(array_values(array_intersect(['kind', 'definition', 'definition_version'], $cols)), ['kind', 'definition', 'definition_version'], 'the columns stay');
-eq(trim((string)@file_get_contents("$tmp.error.log")), '', 'no PHP error in the server log');
+// אזהרות הפעלה של PHP עצמו (למשל "JIT … disabled. in Unknown on line 0" ב-runner של הפריסה) — לא של הקוד; כל השאר נספר
+$phpErr = array_values(array_filter(explode("\n", (string)@file_get_contents("$tmp.error.log")),
+    fn($l) => preg_match('/PHP (Fatal error|Parse error|Warning|Notice|Deprecated)/', $l) && !str_contains($l, ' in Unknown on line 0')));
+eq($phpErr, [], 'no PHP error in the server log');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);
