@@ -16,7 +16,7 @@
 | המסכים | `index.html` + `assets/js/app.js` — רשימה בשתי קבוצות + 🖨️ הדפסה משותפת (`#/`), מחירון (`#/e/<pid>`, ✏️ עריכה, 📜 שינויים), מחירון חדש לקבוצה (`#/new/il\|abroad`), מפתח (`#/dev/…`) |
 | העריכה | `lib/edit.php` — כל כתיבה בטרנזקציה וביומן (`audit`) עם הערך הקודם; מחירון בתוקף — 409 `need_confirm` בלי `confirm_in_effect` |
 | ההדפסה | `print.html?il=<pid>&abroad=<pid>&mode=one\|split\|both` + `assets/js/print.js`, `assets/css/print.css` (`&preview=1` — בלי חלון ההדפסה). הקישור הישן `?e=<pid>&mode=…` ממשיך לעבוד |
-| נתוני ההתחלה | `lib/seed/` — העתקים של `docs/spec/seed/`: `editions.json` (ישראל 2024, 2025; ומהם ישראל 15/06/2026) ו-`abroad-2026-06-15.json`. כל מחירון נטען רק אם אין עדיין מחירון לאותה קבוצה באותו תאריך |
+| נתוני ההתחלה | `lib/seed/` — העתקים של `docs/spec/seed/`: `editions.json` (ישראל 2024, 2025), `israel-2026-06-15.json` ו-`abroad-2026-06-15.json`. כל מחירון נטען רק אם אין עדיין מחירון לאותה קבוצה באותו תאריך |
 | המיגרציות | `lib/db.php` — `gp_migrations()`; לפני מיגרציה על מסד קיים — גיבוי `data/app.sqlite.v<גרסה>-<זמן>.bak` (העתקה בלבד) |
 | נייר המכתבים | `assets/img/letterhead-top.jpg`, `letterhead-bottom.jpg` |
 | נתוני ריצה בשרת | `data/` — `app.sqlite`, `sessions/`, `devloop/`; מוחרגת מהפריסה וחסומה מהדפדפן |

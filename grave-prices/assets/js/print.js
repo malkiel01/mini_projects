@@ -79,8 +79,8 @@ function fit(p, min) {
     return c.scrollHeight <= c.clientHeight + 1;
 }
 
-/** החתימות ב"שתיהן בדף אחד": של המחירון שתאריכו מאוחר יותר (שאלה 16); באותו תאריך — של חו"ל */
-const signer = (il, ab) => il.effective_from > ab.effective_from ? il : ab;
+/** החתימות ב"שתיהן בדף אחד": של המחירון שתאריכו מאוחר יותר (שאלה 16); באותו תאריך — של ישראל, הבלוק הראשון */
+const signer = (il, ab) => ab.effective_from > il.effective_from ? ab : il;
 
 /** פרמטרים → {il, abroad, mode}. קישור ישן (e=) — משלימים את הקבוצה השנייה ממה שבתוקף היום. */
 async function resolve(q) {

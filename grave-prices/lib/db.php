@@ -91,8 +91,8 @@ function gp_migrations(): array
             // פרוסה 03: מחירון שייך לקבוצה אחת — 03-per-audience.md סעיף 2. לא מוחקת דבר.
             gp_rebuild_editions($pdo);
             gp_migrate_abroad($pdo);
-            gp_seed_one($pdo, gp_seed_abroad(), 'seed-abroad-2026-06-15');
-            gp_seed_one($pdo, gp_seed_il_2026(), 'seed-il-2026-06-15');
+            gp_seed_one($pdo, gp_seed_file('abroad-2026-06-15.json'), 'seed-abroad-2026-06-15');
+            gp_seed_one($pdo, gp_seed_file('israel-2026-06-15.json'), 'seed-il-2026-06-15');
         },
     ];
 }
@@ -219,29 +219,10 @@ function gp_seed_one(PDO $pdo, array $e, string $action): void
     gp_audit_pdo($pdo, $action, $id, ['rows' => count($e['rows'])]);
 }
 
-/** lib/seed/abroad-2026-06-15.json (העתק של docs/spec/seed) */
-function gp_seed_abroad(): array
+/** נתוני ההתחלה של מחירון אחד — lib/seed/<file> (העתק של docs/spec/seed) */
+function gp_seed_file(string $file): array
 {
-    return json_decode((string)file_get_contents(__DIR__ . '/seed/abroad-2026-06-15.json'), true, 512, JSON_THROW_ON_ERROR)['edition'];
-}
-
-/**
- * ישראל 15/06/2026 — העותק של 15/03/2025 מ-editions.json (לא מהמסד, שאולי נערך), עם שני השינויים בהר הזיתים:
- * שדה 50,000 → 60,000, מכפלה 75,000 → 80,000 (03-per-audience.md, "תוספת הבקרה").
- */
-function gp_seed_il_2026(): array
-{
-    $seed = json_decode((string)file_get_contents(__DIR__ . '/seed/editions.json'), true, 512, JSON_THROW_ON_ERROR);
-    $base = array_values(array_filter($seed['editions'], fn($e) => $e['effective_from'] === '2025-03-15'))[0]
-        ?? throw new RuntimeException('אין 2025-03-15 בנתוני ההתחלה');
-    $rows = array_map(fn($r) => ['kind' => $r['kind'], 'indent' => $r['indent'], 'label' => $r['label'], 'price' => $r['prices']['il'] ?? null], $base['rows']);
-    $at = array_search('הר הזיתים (חלקה סגורה)', array_column($rows, 'label'), true);
-    $change = [1 => [50000, 60000], 2 => [75000, 80000]];
-    foreach ($change as $k => [$was, $now]) {
-        if ($at === false || ($rows[$at + $k]['price'] ?? null) !== $was) throw new RuntimeException('הר הזיתים לא נמצא כמצופה בנתוני ההתחלה');
-        $rows[$at + $k]['price'] = $now;
-    }
-    return ['audience' => 'il', 'effective_from' => '2026-06-15', 'subtitle' => GP_SUBTITLES['il'], 'signatures' => $base['signatures'], 'rows' => $rows];
+    return json_decode((string)file_get_contents(__DIR__ . '/seed/' . $file), true, 512, JSON_THROW_ON_ERROR)['edition'];
 }
 
 function gp_pid(): string

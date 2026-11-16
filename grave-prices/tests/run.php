@@ -60,6 +60,17 @@ check('כותרות משנה', $ab['subtitle'] === 'רכישת קבר בחיים
 check('השורה הראשונה במחיר', $e25['rows'][2]['price'] === 16947 && $e25['rows'][2]['priced'] === true);
 check('כותרת בלי מחיר', $e25['rows'][0]['kind'] === 'section' && $e25['rows'][0]['price'] === null && !$e25['rows'][0]['priced']);
 check('שלוש חתימות', count($e25['signatures']) === 3 && $e25['signatures'][0]['name'] === 'אבשלום מלכה');
+// seed/israel-2026-06-15.json = 2025 מ-editions.json, חוץ משתי השורות של הר הזיתים
+$s25 = array_values(array_filter(json_decode(file_get_contents(__DIR__ . '/../lib/seed/editions.json'), true)['editions'], fn($e) => $e['effective_from'] === '2025-03-15'))[0];
+$s26 = gp_seed_file('israel-2026-06-15.json');
+$diff = [];
+foreach ($s25['rows'] as $k => $r) {
+    $x = $s26['rows'][$k];
+    if ([$r['kind'], $r['indent'], $r['label']] !== [$x['kind'], $x['indent'], $x['label']]) $diff[] = "row $k";
+    elseif (($r['prices']['il'] ?? null) !== ($x['price'] ?? null)) $diff[] = ($r['prices']['il'] ?? 'null') . '→' . ($x['price'] ?? 'null');
+}
+check('seed ישראל 2026 = 2025 חוץ מהר הזיתים', count($s25['rows']) === count($s26['rows']) && $diff === ['50000→60000', '75000→80000']
+    && $s26['signatures'] === $s25['signatures'], implode(', ', $diff));
 check('ביומן: seed', (int)$pdo->query("SELECT COUNT(*) FROM audit WHERE action IN ('seed-il-2026-06-15', 'seed-abroad-2026-06-15')")->fetchColumn() === 2);
 check('מסד ריק — אין גיבוי', glob("$tmp/*.bak") === []);
 
