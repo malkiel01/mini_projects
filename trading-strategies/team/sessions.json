@@ -195,5 +195,11 @@
   ],
   "code_active": {
     "L6": "session_018g4NYFDbCXUe2YE98dU6aG (claude/trading-strategies-learning-l6)"
+  },
+  "code_h1b": {
+    "session": "session_018g4NYCwp7KEZBFCdoiVfBD",
+    "branch": "claude/trading-strategies-history-h1b",
+    "opened_by": "מנהל הצוותים (5) לבקשת בקרה (9)",
+    "task": "H1b ספירות עבר + H1c אותות על מנות ישנות (18.1.8)"
   }
 }
