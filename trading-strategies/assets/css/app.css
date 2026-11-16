@@ -331,6 +331,33 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .chart-tools select { width: auto; }
 .chart-wrap { position: relative; display: grid; gap: 4px; margin-bottom: var(--s2); }
 
+/* T1 — חלונית הסבר על נקודת תחזית (18.1.6): צפה מעל הגרף, ✕ בפינה, וזנב שמצביע על הנקודה — מעליה או מתחתיה (charttip.js).
+   המיקום (left/top, --tail-x) — בפיקסלים מהגאומטריה של הגרף, ולכן פיזי ולא לוגי */
+.ctip { position: absolute; z-index: 5; inline-size: 280px; background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); font-size: .85rem; line-height: 1.35; text-align: start; }
+.ctip-body { display: grid; gap: 3px; padding: 8px 12px 8px; overflow: auto; border-radius: inherit; }
+.ctip-head { display: flex; align-items: flex-start; gap: var(--s2); }
+.ctip-title { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; padding-top: 2px; }
+/* ✕ ויעדי הלחיצה: 40px לנגיעה, בלי להגדיל את החלונית (שוליים שליליים) */
+.ctip .ctip-x { flex: none; min-height: var(--tap); min-width: var(--tap); margin-block: -10px -12px; margin-inline-end: -10px; font-size: .9rem; color: var(--muted); }
+.ctip-sub { color: var(--muted); font-size: .8rem; }
+.ctip-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.ctip-tag { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; font-size: .75rem; font-weight: 600;
+    color: var(--mc, var(--brand)); background: color-mix(in srgb, var(--mc, var(--brand)) 14%, var(--surface)); }
+.ctip-tag.danger { color: var(--danger); background: var(--danger-soft); }
+.ctip-text { color: var(--ink); }
+.ctip-inv { font-size: .8rem; color: var(--muted); }
+.ctip-inv bdi { color: var(--ink); font-weight: 600; }
+.ctip-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; }
+.ctip-links a, .ctip-more { min-height: var(--tap); margin-block: -8px; display: inline-flex; align-items: center; padding: 0; border: 0; background: none;
+    color: var(--brand); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+.ctip-links a:hover, .ctip-more:hover { text-decoration: underline; }
+.ctip-note { color: var(--muted); font-size: .7rem; }
+.ctip-tail { position: absolute; left: calc(var(--tail-x, 50%) - 6px); inline-size: 12px; block-size: 12px; background: var(--surface);
+    border: 1px solid var(--line); transform: rotate(45deg); pointer-events: none; }   /* הזנב לא תופס מגע — הנקודה שמתחתיו נשארת לחיצה */
+.ctip[data-side="above"] .ctip-tail { bottom: -7px; border-top-color: transparent; border-left-color: transparent; }
+.ctip[data-side="below"] .ctip-tail { top: -7px; border-bottom-color: transparent; border-right-color: transparent; }
+
 /* 🔮 התפריט הנפתח מעל הגרף (18.1.2, F1): תיבות סימון, כמה שיטות יחד. הגרף נשאר גלוי מתחתיו */
 .fc-pop { position: absolute; top: 8px; inset-inline-end: 8px; z-index: 4; inline-size: min(300px, 90%, calc(100% - 16px));
     max-block-size: calc(100% - 16px); overflow: auto; display: grid; gap: 6px; padding: 10px; background: var(--surface);
@@ -575,6 +602,17 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .tune-tbl td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tune-tbl thead th { text-align: end; }
 .tune-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
+
+/* למידה (פרק 23, L3): לשונית בכרטיס השיטה — אותו מבנה כמו השכלול */
+.learn { margin-top: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.learn > summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; gap: var(--s2); }
+.learn > div > * + * { margin-top: var(--s2); }
+.learn-tbl, .learn-counts { width: 100%; }
+.learn-tbl th[scope="row"] { text-align: start; font-weight: 400; white-space: nowrap; }
+.learn-tbl td.num, .learn-counts td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.learn-tbl thead th:not(:first-child) { text-align: end; }
+.learn-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
+.learn-tbl tr.learn-few th, .learn-tbl tr.learn-few td { color: var(--muted); }
 
 /* כניסה במצב מנותק (A2) — מסך אחד, כפתור אחד */
 .login { max-inline-size: 360px; margin: var(--s4) auto; text-align: center; align-items: stretch; }

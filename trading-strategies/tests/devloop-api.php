@@ -1,5 +1,5 @@
 <?php
-// DevLoop (A1, PROTOCOL 7) מקצה לקצה: רק המנהל הראשי הוא המפתח; מנהל רגיל ומשתמש — 403; קודים TS-; 🐞 עם הקשר;
+// DevLoop (A1, PROTOCOL 7) מקצה לקצה: עורך ראשי הוא המפתח; עורך משני — עוקב, משתמש — 🐞 בלבד (ר2); קודים TS-; 🐞 עם הקשר;
 // אימות; אסימון של Claude בלי עוגייה (devapi-…); אסימון שמת כשמי שיצר אותו כבר לא המנהל הראשי; צילום; היומן המחובר;
 // והנתונים — רק בתיקייה של DevLoop (בשרת: data/_dev, שמוחרגת מ-rsync).
 // php trading-strategies/tests/devloop-api.php
@@ -62,12 +62,10 @@ eq([$c, $me['is_primary_admin'], is_string($me['version'] ?? null) && $me['versi
 [$c, $r] = call('owner', 'dev-items');
 eq($c, 200, 'owner dev-items');
 eq(count(array_filter($r['items'] ?? [], fn($x) => str_starts_with($x['code'], 'TS-'))) > 0, true, 'items from dev/open-items.json (TS-)');
-foreach (['alice', 'carol'] as $u) {
-    eq(call($u, 'dev-items')[0], 403, "$u dev-items → 403");
-    eq(call($u, 'dev-report', ['title' => 'x', 'context' => []])[0], 403, "$u dev-report → 403");
-    eq(call($u, 'dev-tokens')[0], 403, "$u dev-tokens → 403");
-    eq(call($u, 'dev-log')[0], 403, "$u dev-log → 403");
-}
+// ר2 (24.2): עורך משני (carol) — צפייה, תגובה ופתיחה, בלי אסימונים; משתמש (alice) — 🐞 בלבד. הטבלה המלאה — tests/roles-api.php
+foreach (['alice', 'carol'] as $u) eq(call($u, 'dev-tokens')[0], 403, "$u dev-tokens → 403");
+eq([call('alice', 'dev-items')[0], call('alice', 'dev-log')[0]], [403, 403], 'alice (user) dev-items / dev-log → 403');
+eq([call('carol', 'dev-items')[0], call('carol', 'dev-log')[0]], [200, 200], 'carol (editor) sees items and the log');
 eq(call('none', 'dev-items')[0], 401, 'no identity → 401');
 eq(call('owner', 'dev-report', ['title' => 'x'], [], ['X-CSRF: wrong'])[0], 403, 'dev-report without CSRF → 403');
 eq(call('owner', 'dev-report', null, [], [], 'title=x', 'application/x-www-form-urlencoded')[0], 415, 'dev-report not JSON → 415');
