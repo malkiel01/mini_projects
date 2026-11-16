@@ -1,6 +1,6 @@
 <?php
 /**
- * פיבונאצ'י — המנוע (spec-stage-a פרק 22, F-1). טהור: בלי מסד, בלי רשת, בלי שעון. float (עיקרון 6).
+ * פיבונאצ'י — המנוע (spec-stage-a פרק 22, F-1 ו-F-2 — התרחיש: A-B-X, קופסת השוויון, Z6, יעד חלופי). טהור: בלי מסד, בלי רשת, בלי שעון. float (עיקרון 6).
  *
  * המקור לכללים: team/handoff/fibonacci-book-check.md (Constance Brown, *Fibonacci Analysis*). כל כלל כאן — עם המספר שלו
  * שם (R, S, Z, E) ועם הסעיף בפרק 22. מה שמסומן [שלנו] — הגדרה שלנו כדי שמחשב יוכל להריץ, לא טענה על הספר.
@@ -20,6 +20,12 @@ require_once __DIR__ . '/elliott.php';
 /** היחסים — רק אלה (R1, 22.3). לא 23.6, לא 75, לא 78.6 */
 const TS_FIB_RATIOS = [0.382, 0.5, 0.618];
 
+/** יחסי ההקרנה של A-B-X — רק R5 (22.5א, עמ' 87). לא 261.8 (R7); עמ' 102 — מחוץ ל-F-2 (פ1) */
+const TS_FIB_PROJ = [0.618, 1.0, 1.382, 1.5, 1.618];
+
+/** box_target (22.5ח, 2.32): היעד החלופי — חלק מהקופסה, מאמצע האזור עד T. רק אלה */
+const TS_FIB_BOX_TARGETS = [0.5, 0.618, 1.0];
+
 /** סבולת השוואות של float (מרחק "עד" סף — כולל) [שלנו] */
 const TS_FIB_EPS = 1e-9;
 
@@ -32,17 +38,51 @@ function ts_fib_bot(array $c): float { return min($c['o'], $c['c']); }
  * (t — נר הקיצון, ct — נר האישור).
  * $p — הפרמטרים של השיטה (close_atr, strong_atr, max_ranges, zone_atr, zone_max_atr). $prev — הרשת של הנר הקודם:
  * צד שנקודת ההתחלה שלו לא השתנתה **נשאר נעול** (הכרעת הבקרה על 22.3(7), "ג" — ראו ts_fib_side).
- * מחזיר null כשאין ATR בנר האחרון (חימום). אחרת {atr, close, t, support, resistance}.
+ * $abx — שלוש נקודות המפנה האחרונות של הזיגזג, במחיר הגוף (ts_fib_pivot_body) — ל-A-B-X (22.5א, F-2).
+ * מחזיר null כשאין ATR בנר האחרון (חימום). אחרת {atr, close, t, pl, support, resistance, abx} — ולכל אזור גם box ו-z6 (22.5).
  */
-function ts_fib_grid(array $win, array $pivots, array $p, ?array $prev = null): ?array
+function ts_fib_grid(array $win, array $pivots, array $p, ?array $prev = null, array $abx = []): ?array
 {
     $n = count($win);
     if ($n < 2 || ($atr = $win[$n - 1]['a'] ?? null) === null) return null;
-    $mirror = array_map(fn($c) => ['t' => $c['t'], 'o' => -$c['o'], 'h' => -$c['l'], 'l' => -$c['h'], 'c' => -$c['c'], 'a' => $c['a']], $win);
-    $flip = array_map(fn($x) => ['type' => $x['type'] === 'H' ? 'L' : 'H'] + $x, $pivots);
-    return ['atr' => (float)$atr, 'close' => (float)$win[$n - 1]['c'], 't' => $win[$n - 1]['t'],
-        'support' => ts_fib_side($win, $pivots, $p, (float)$atr, 1, $prev['support'] ?? null),
-        'resistance' => ts_fib_side($mirror, $flip, $p, (float)$atr, -1, $prev['resistance'] ?? null)];
+    $pl = $pivots ? $pivots[count($pivots) - 1]['t'] : null;
+    $out = ['atr' => (float)$atr, 'close' => (float)$win[$n - 1]['c'], 't' => $win[$n - 1]['t'], 'pl' => $pl];
+    // נתיב מהיר (ביצועים, F-2): הרשת של הנר הקודם, ואין נקודת מפנה חדשה — כל צד נבדק מול הנר החדש בלבד (ts_fib_side_next).
+    // צד שלא ניתן לקבוע כך — מחושב במלואו, בדיוק כמו קודם. התוצאה זהה לחישוב המלא (tests/fibonacci.php בודק על כל נר)
+    $fast = $prev !== null && $prev['t'] === $win[$n - 2]['t'] && array_key_exists('pl', $prev) && $prev['pl'] === $pl;
+    $c = $win[$n - 1];
+    $w0 = $win[0]['t'];
+    foreach (['support' => 1, 'resistance' => -1] as $key => $sign) {
+        $side = $fast ? ts_fib_side_next($prev[$key], $c, $w0, $sign, $p) : null;
+        if ($side === null) {
+            $w = $sign === 1 ? $win : array_map(fn($c) => ['t' => $c['t'], 'o' => -$c['o'], 'h' => -$c['l'], 'l' => -$c['h'], 'c' => -$c['c'], 'a' => $c['a']], $win);
+            $pv = $sign === 1 ? $pivots : array_map(fn($x) => ['type' => $x['type'] === 'H' ? 'L' : 'H'] + $x, $pivots);
+            $side = ts_fib_side($w, $pv, $p, (float)$atr, $sign, $prev[$key] ?? null);
+        }
+        $out[$key] = $side;
+    }
+    return ts_fib_project($out, ts_fib_abx($abx));
+}
+
+/**
+ * הצד אחרי נר אחד נוסף, בלי לעבור על כל החלון — או null כשצריך חישוב מלא (ts_fib_side). נקרא רק כשהרשת הקודמת היא של
+ * הנר הקודם ואין נקודת מפנה חדשה. אז נקודת ההתחלה לא משתנה כל עוד: נקודת המפנה שלה עוד בחלון, היא לא הנר הראשון בחלון,
+ * נר הבנייה עוד בחלון, והגוף של הנר החדש לא עבר אותה (נקודות מפנה חדשות יותר נפסלו כבר — בנר שעדיין בחלון). ואז הצד נעול,
+ * וטווח יוצא רק לפי S17 מול הנר החדש (הטווחים הקודמים כבר סוננו מול כל הנרות שלפניו). צד ריק בלי נקודת מפנה מתאימה
+ * נשאר ריק: נר חדש רק פוסל נקודות מפנה, לא מכשיר.
+ */
+function ts_fib_side_next(array $prev, array $c, int $w0, int $sign, array $p): ?array
+{
+    if (!array_key_exists('pv', $prev)) return null;
+    if ($prev['start'] === null) return $prev['pv'] === null ? $prev : null;
+    if ($prev['pv'] < $w0 || $prev['start']['t'] <= $w0 || $prev['built_t'] < $w0) return null;
+    $top = $sign === 1 ? max($c['o'], $c['c']) : -min($c['o'], $c['c']);
+    if ($top > $sign * $prev['start']['price']) return null;
+    $bot = $sign === 1 ? min($c['o'], $c['c']) : -max($c['o'], $c['c']);
+    $kept = array_values(array_filter($prev['ranges'], fn($r) => $bot >= $sign * $r['end'] - TS_FIB_EPS));
+    if (count($kept) === count($prev['ranges'])) return $prev;
+    [$zones, $singles] = ts_fib_zones($kept, (float)$prev['atr'], $p);
+    return ['ranges' => $kept, 'zones' => $zones, 'singles' => $singles] + $prev;
 }
 
 /**
@@ -57,7 +97,8 @@ function ts_fib_grid(array $win, array $pivots, array $p, ?array $prev = null): 
 function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?array $prev = null): array
 {
     $n = count($w);
-    $out = ['start' => null, 'built_t' => null, 'atr' => null, 'ranges' => [], 'dropped' => [], 'zones' => [], 'singles' => []];
+    // pv — נקודת המפנה (t של הקיצון) שממנה נקבעה נקודת ההתחלה, או null כשאין כזו (לנתיב המהיר — ts_fib_side_next)
+    $out = ['start' => null, 'built_t' => null, 'atr' => null, 'pv' => null, 'move' => null, 'ranges' => [], 'dropped' => [], 'zones' => [], 'singles' => []];
     $idx = [];
     foreach ($w as $i => $c) $idx[$c['t']] = $i;
     // הגוף הגבוה ביותר אחרי כל נר, והנמוך ביותר אחריו (לבדיקת "לא עבר" ו"נמחק") — O(n)
@@ -77,7 +118,7 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
         $i = $idx[$pv['t']];
         $ic = $idx[$pv['ct'] ?? $pv['t']] ?? $i;
         for ($j = $i + 1; $j <= $ic; $j++) if (ts_fib_top($w[$j]) > ts_fib_top($w[$i])) $i = $j;
-        if ($sufTop[$i + 1] <= ts_fib_top($w[$i])) { $iH = $i; break; }
+        if ($sufTop[$i + 1] <= ts_fib_top($w[$i])) { $iH = $i; $out['pv'] = $pv['t']; break; }
     }
     if ($iH === null || $iH === 0) return $out;
     $H = ts_fib_top($w[$iH]);
@@ -88,7 +129,7 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
         $after = $sufBot[$idx[$prev['built_t']] + 1];
         $kept = array_values(array_filter($prev['ranges'], fn($r) => $after >= $sign * $r['end'] - TS_FIB_EPS));
         [$zones, $singles] = ts_fib_zones($kept, (float)$prev['atr'], $p);
-        return ['ranges' => $kept, 'zones' => $zones, 'singles' => $singles] + $prev;
+        return ['pv' => $out['pv'], 'ranges' => $kept, 'zones' => $zones, 'singles' => $singles] + $prev;
     }
 
     // 2. המהלך: מהשפל הנמוך ביותר (בגוף) בחלון שלפני H, ועד H
@@ -148,6 +189,8 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
     $close = $w[$n - 1]['c'];
     $back = fn(float $v) => $sign * $v;
     $out['start'] = ['price' => $back($H), 't' => $w[$iH]['t']];
+    // M0 — תחילת המהלך (22.3(2), בגוף): הבסיס של קופסת השוויון (22.5ב). ננעל עם הצד
+    $out['move'] = ['price' => $back(ts_fib_bot($w[$i0])), 't' => $w[$i0]['t']];
     $out['built_t'] = $w[$n - 1]['t'];
     $out['atr'] = $atr;
     $id = 0;
@@ -207,7 +250,8 @@ function ts_fib_zones(array $ranges, float $atr, array $p): array
 
 /**
  * האות בנר $c לפי הרשת שחושבה מנרות ≤ c − 1 (22.6). לונג: אזור תמיכה בציון ≥ min_score שהנר נגע בו (l ≤ גבול עליון)
- * ונסגר מעליו. סטופ מתחת לאזור (M1), יעד — הגבול התחתון של אזור ההתנגדות הבא מעל (M2), ויחס ≥ min_rr. שורט — במראה.
+ * ונסגר מעליו. סטופ מתחת לאזור ומתחת לפתיל של נר האות (M1; הכרעת הבעלים, פ10), יעד — הגבול התחתון של אזור ההתנגדות הבא מעל (M2); אין כזה — T של קופסת השוויון של
+ * אזור האות (F-2, 22.5ב). יחס ≥ min_rr. שורט — במראה. הציון — כולל Z6 (ts_fib_project).
  * מחזיר אות {side, entry, stop, target, zone: [lo, hi], score, rr} או null.
  */
 function ts_fib_signal(array $g, array $c, array $p): ?array
@@ -222,7 +266,9 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     if ($long !== null) {
         $tgt = null;
         foreach ($g['resistance']['zones'] as $z) if ($z['lo'] > $c['c'] && ($tgt === null || $z['lo'] < $tgt)) $tgt = $z['lo'];
-        $sig = ts_fib_levels('long', $c['c'], $long['lo'] - $buf, $tgt, $long, $p);
+        // הסטופ (הכרעת הבעלים, פ10 — אפיון 2.34): מתחת לאזור **ומתחת לפתיל של נר האות**, ועוד stop_atr × ATR (M1)
+        // יעד חלופי (F-2, 22.6): אין אזור התנגדות מעל → T של קופסת השוויון של **אזור האות** (22.5ב)
+        $sig = ts_fib_levels('long', $c['c'], min($long['lo'], $c['l']) - $buf, $tgt ?? ts_fib_box_target($long, $p), $long, $p, $tgt === null ? 'box' : 'zone');
         if ($sig) return $sig;
     }
     $short = null;
@@ -233,20 +279,310 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     if ($short === null) return null;
     $tgt = null;
     foreach ($g['support']['zones'] as $z) if ($z['hi'] < $c['c'] && ($tgt === null || $z['hi'] > $tgt)) $tgt = $z['hi'];
-    return ts_fib_levels('short', $c['c'], $short['hi'] + $buf, $tgt, $short, $p);
+    return ts_fib_levels('short', $c['c'], max($short['hi'], $c['h']) + $buf, $tgt ?? ts_fib_box_target($short, $p), $short, $p, $tgt === null ? 'box' : 'zone');
 }
 
-/** הרמות של אות, או null: אין יעד (לפני F-2 — אין אות), סיכון ≤ 0, או יחס סיכוי-סיכון < min_rr */
-function ts_fib_levels(string $side, float $entry, float $stop, ?float $target, array $z, array $p): ?array
+/** היעד החלופי של אזור (22.5ב, 22.5ח): אמצע + box_target × (T − אמצע); בלי קופסה — null */
+function ts_fib_box_target(array $z, array $p): ?float
+{
+    if (empty($z['box'])) return null;
+    $b = $z['box'];
+    $bt = (float)($p['box_target'] ?? 1);
+    return abs($bt - 1) < 1e-12 ? $b['T'] : $b['mid'] + $bt * ($b['T'] - $b['mid']);   // 1 — T עצמו, בלי עיגול נוסף
+}
+
+/**
+ * הרמות של אות, או null: אין יעד, יעד שאינו מעבר לכניסה (T ≤ הכניסה בלונג — F-2 קריטריון 7), סיכון ≤ 0, או יחס < min_rr.
+ * $via — מאיפה היעד: zone (האזור הבא, M2) או box (קופסת השוויון של אזור האות, 22.5ב)
+ */
+function ts_fib_levels(string $side, float $entry, float $stop, ?float $target, array $z, array $p, string $via = 'zone'): ?array
 {
     if ($target === null) return null;
     $d = $side === 'long' ? 1 : -1;
     $risk = $d * ($entry - $stop);
-    if ($risk <= 0) return null;
+    if ($risk <= 0 || $d * ($target - $entry) <= 0) return null;
     $rr = $d * ($target - $entry) / $risk;
     if ($rr < $p['min_rr'] - TS_FIB_EPS) return null;
     return ['side' => $side, 'entry' => $entry, 'stop' => $stop, 'target' => $target, 'zone' => [$z['lo'], $z['hi']],
-        'score' => $z['score'], 'rr' => $rr];
+        'score' => $z['score'], 'z6' => $z['z6'] ?? false, 'rr' => $rr, 'via' => $via,
+        'box_t' => $z['box']['T'] ?? null];
+}
+
+/**
+ * מחיר נקודת מפנה בגוף (22.5א לפי 2.29): שיא — max(o,c) הגבוה ביותר מנר הקיצון ועד נר האישור, כולל שניהם; שפל — במראה.
+ * $win — החלון, שכבר כולל את נר האישור. נר הקיצון שיצא מהחלון (חלון קצר מהתנודה) — מה שנשאר ממנו בחלון.
+ */
+function ts_fib_pivot_body(array $win, array $pv): float
+{
+    $hi = $pv['type'] === 'H';
+    $v = null;
+    for ($i = count($win) - 1; $i >= 0 && $win[$i]['t'] >= $pv['t']; $i--) {
+        if ($win[$i]['t'] > $pv['ct']) continue;
+        $b = $hi ? ts_fib_top($win[$i]) : ts_fib_bot($win[$i]);
+        if ($v === null || ($hi ? $b > $v : $b < $v)) $v = $b;
+    }
+    return $v ?? (float)$pv['v'];
+}
+
+/**
+ * A-B-X (22.5א, P1, P3) [שלנו — איך בוחרים]: שלוש נקודות המפנה המאושרות האחרונות, בגוף. $k — [{type, p, t, ct}], עד שלוש.
+ * מעלה: A שפל, B שיא, X שפל ו-X > A → X + r × (B − A). מטה — במראה. X שעבר את A — אין (S17). r — רק R5.
+ * מחזיר {dir: up|down, a, b, x, targets: [{r, price}]} או null.
+ */
+function ts_fib_abx(array $k): ?array
+{
+    if (count($k) < 3) return null;
+    [$A, $B, $X] = array_slice($k, -3);
+    $up = $A['type'] === 'L';
+    if ($up ? !($X['p'] > $A['p'] + TS_FIB_EPS) : !($X['p'] < $A['p'] - TS_FIB_EPS)) return null;
+    $len = abs($B['p'] - $A['p']);
+    $d = $up ? 1 : -1;
+    return ['dir' => $up ? 'up' : 'down', 'a' => $A, 'b' => $B, 'x' => $X,
+        'targets' => array_map(fn($r) => ['r' => $r, 'price' => $X['p'] + $d * $r * $len], TS_FIB_PROJ)];
+}
+
+/**
+ * קופסת השוויון של אזור (22.5ב, P4, P5, P9): הגובה מתחילת המהלך M0 ועד אמצע האזור, מועתק מעבר לאזור באותו כיוון.
+ * T = 2 × אמצע − M0 (תמיכה — מעלה; התנגדות — מטה, כי M0 שלה מעליה). יעדי ביניים — 38.2 / 50 / 61.8 מהאמצע עד T.
+ */
+function ts_fib_box(array $z, float $m0): array
+{
+    $mid = ($z['lo'] + $z['hi']) / 2;
+    $T = 2 * $mid - $m0;
+    return ['m0' => $m0, 'mid' => $mid, 'T' => $T, 'levels' => array_map(fn($r) => ['r' => $r, 'price' => $mid + $r * ($T - $mid)], TS_FIB_RATIOS)];
+}
+
+/**
+ * האזור של צד שהקופסה שלו מייצגת אותו (22.5ב): הציון הגבוה ביותר; בשוויון — האמצע הקרוב ל-$close. הציון — **לפני Z6** (base),
+ * כי Z6 עצמו נגזר מהבחירה הזו. רק אזור עם קופסה. מחזיר את האינדקס, או null.
+ */
+function ts_fib_best_zone(array $zones, ?float $close): ?int
+{
+    $b = null; $bs = null; $bd = null;
+    foreach ($zones as $i => $z) {
+        if (empty($z['box'])) continue;
+        $sc = $z['base'] ?? $z['score'];
+        $d = $close === null ? 0.0 : abs(($z['lo'] + $z['hi']) / 2 - $close);
+        if ($b === null || $sc > $bs || ($sc === $bs && $d < $bd - TS_FIB_EPS)) { $b = $i; $bs = $sc; $bd = $d; }
+    }
+    return $b;
+}
+
+/**
+ * התרחיש על הרשת (22.5, F-2): A-B-X, קופסת שוויון לכל אזור (box), ו-Z6 (22.5ג). יעדי ה-100% של Z6 (הכרעת הבקרה, ביקורת
+ * #1685 🟡1, לפי 22.5ב): של A-B-X, ו-T של הקופסה של **האזור המוביל בכל צד** (ts_fib_best_zone, לפי הסגירה של הרשת).
+ * אזור שבתוכו נופל אחד מהם — z6 = true והציון + 1, פעם אחת. base — הציון של F-1.
+ * לא משנה טווחים, גבולות או רמות (22.5ה). הרשת נבנית מנרות ≤ הנר האחרון, ולכן גם היעדים — אות בנר c רואה רק ≤ c − 1.
+ */
+function ts_fib_project(array $g, ?array $abx): array
+{
+    $g['abx'] = $abx;
+    $hits = $abx ? [$abx['targets'][1]['price']] : [];   // 100%
+    foreach (['support', 'resistance'] as $key) {
+        $m0 = $g[$key]['move']['price'] ?? null;
+        foreach ($g[$key]['zones'] as $i => $z) $g[$key]['zones'][$i]['box'] = $m0 === null ? null : ts_fib_box($z, (float)$m0);
+        $top = ts_fib_best_zone($g[$key]['zones'], isset($g['close']) ? (float)$g['close'] : null);
+        if ($top !== null) $hits[] = $g[$key]['zones'][$top]['box']['T'];
+    }
+    foreach (['support', 'resistance'] as $key) {
+        foreach ($g[$key]['zones'] as $i => $z) {
+            $base = $z['base'] ?? $z['score'];
+            $in = (bool)array_filter($hits, fn($t) => $t >= $z['lo'] - TS_FIB_EPS && $t <= $z['hi'] + TS_FIB_EPS);
+            $g[$key]['zones'][$i] = ['base' => $base, 'z6' => $in, 'score' => $base + (int)$in] + $z;
+        }
+    }
+    return $g;
+}
+
+/**
+ * התרחיש בגרף וביומן (22.5ד, 22.5ו, F-2) — פריטים של overlay שכולם **אחרי הנר האחרון** (מקווקו / שקוף), ו-projection.scenarios.
+ * $x — אות בתוקף או null; $last — הנר האחרון; $tf — אורך נר בשניות; $bars — האופק (horizon_bars).
+ *
+ * - **כיוון** [שלנו]: אות בתוקף — בכיוון שלו; אחרת — בכיוון A-B-X; אין A-B-X — אין כיוון: רק קופסאות השוויון של שני הצדדים,
+ *   דהויות, ובלי תרחיש ליומן ("אין תרחיש").
+ * - **A-B-X** — רק כשהוא באותו כיוון. **קופסה:** של אזור האות; בלי אות — של האזור בציון הגבוה בצד של הכיוון (שוויון — הקרוב
+ *   למחיר). יעד בתוך אזור חפיפה — מודגש (bold); יעד לבד — רמה בודדת, דהויה (single, R8).
+ * - **ליומן** (primary): אזור החפיפה הקרוב בכיוון שבתוכו יש יעד; אחרת הפס 61.8%–100% של A-B-X (בלי A-B-X — של הקופסה
+ *   [שלנו]). רמת הביטול — X של A-B-X; בלי A-B-X (אות בלבד) — הסטופ של האות [שלנו]. הטווח — עד סוף האופק.
+ * מחזיר [items, scenarios].
+ */
+function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): array
+{
+    $dir = $x ? ($x['side'] === 'long' ? 'up' : 'down') : ($g['abx']['dir'] ?? null);
+    $abx = $dir !== null && ($g['abx']['dir'] ?? null) === $dir ? $g['abx'] : null;
+    $k = max(1, $bars - ($x['ago'] ?? 0));
+    $t0 = $last['t'];
+    $end = $t0 + $k * $tf;
+    $close = (float)$last['c'];
+    $zones = [...$g['support']['zones'], ...$g['resistance']['zones']];
+    $inZone = fn(float $v) => (bool)array_filter($zones, fn($z) => $v >= $z['lo'] - TS_FIB_EPS && $v <= $z['hi'] + TS_FIB_EPS);
+    $pct = fn(float $r) => rtrim(rtrim(number_format(100 * $r, 1, '.', ''), '0'), '.') . '%';
+    $line = fn(float $v, string $text, bool $faint) => ['kind' => 'polyline', 'style' => 'dashed', 'text' => $text,
+        'points' => [['t' => $t0, 'price' => $v], ['t' => $end, 'price' => $v]]]
+        + ($faint || !$inZone($v) ? ['single' => true] : ['bold' => true]);
+    // האזור המוביל בצד — אותה בחירה כמו ב-Z6 (ts_fib_best_zone)
+    $best = function (string $key) use ($g, $close) {
+        $i = ts_fib_best_zone($g[$key]['zones'], $close);
+        if ($i === null) return null;
+        $b = $g[$key]['zones'][$i];
+        return ['lo' => $b['lo'], 'hi' => $b['hi'], 'T' => $b['box']['T'], 'side' => $key];
+    };
+    $boxes = [];
+    if ($x && $x['box_t'] !== null) $boxes[] = ['lo' => $x['zone'][0], 'hi' => $x['zone'][1], 'T' => $x['box_t'], 'side' => $x['side'] === 'long' ? 'support' : 'resistance'];
+    elseif ($dir !== null) $boxes[] = $best($dir === 'up' ? 'support' : 'resistance');
+    else { $boxes[] = $best('support'); $boxes[] = $best('resistance'); }
+    $boxes = array_values(array_filter($boxes));
+    $faint = $dir === null;
+
+    $items = []; $targets = [];
+    if ($abx) {
+        foreach ($abx['targets'] as $t) {
+            $items[] = $line($t['price'], 'A-B-X ' . $pct($t['r']), false);
+            $targets[] = $t['price'];
+        }
+    }
+    foreach ($boxes as $b) {
+        $box = ts_fib_box($b, 2 * (($b['lo'] + $b['hi']) / 2) - $b['T']);
+        $items[] = ['kind' => 'zone', 't1' => $t0, 't2' => $end, 'p1' => $box['mid'], 'p2' => $box['T'], 'box' => $b['side'],
+            'text' => 'קופסת שוויון — מאמצע האזור עד ההקרנה'] + ($faint ? ['single' => true] : []);
+        $items[] = $line($box['T'], 'קופסת שוויון 100%', $faint);
+        foreach ($box['levels'] as $l) $items[] = $line($l['price'], 'קופסת שוויון ' . $pct($l['r']), true);
+        $targets = [...$targets, $box['T'], ...array_column($box['levels'], 'price')];
+    }
+    if ($dir === null) return [$items, []];
+
+    // ליומן (22.5ו): האזור הקרוב בכיוון שבתוכו יש יעד
+    $up = $dir === 'up';
+    $jz = null;
+    foreach ($zones as $z) {
+        if ($up ? !($z['lo'] > $close) : !($z['hi'] < $close)) continue;
+        if (!array_filter($targets, fn($v) => $v >= $z['lo'] - TS_FIB_EPS && $v <= $z['hi'] + TS_FIB_EPS)) continue;
+        if ($jz === null || ($up ? $z['lo'] < $jz['lo'] : $z['hi'] > $jz['hi'])) $jz = $z;
+    }
+    $main = $abx ? $abx['targets'][1]['price'] : ($boxes[0]['T'] ?? null);
+    $head = [];
+    if ($jz) $band = [$jz['lo'], $jz['hi'], 'אזור חפיפה שבתוכו הקרנה'];
+    elseif ($abx) $band = [$abx['targets'][0]['price'], $main, 'בין הקרנה 61.8% להקרנה 100% של A-B-X'];
+    elseif ($boxes) $band = [ts_fib_box($boxes[0], 2 * (($boxes[0]['lo'] + $boxes[0]['hi']) / 2) - $boxes[0]['T'])['levels'][2]['price'], $boxes[0]['T'], 'בין 61.8% ל-100% של קופסת השוויון'];
+    else $band = null;
+    if ($band) $head[] = ['kind' => 'zone', 't1' => $t0, 't2' => $end, 'p1' => (float)min($band[0], $band[1]), 'p2' => (float)max($band[0], $band[1]),
+        'primary' => true, 'text' => $band[2]];
+    $inv = $abx ? $abx['x']['p'] : ($x['stop'] ?? null);
+    if ($inv !== null) $head[] = ['kind' => 'hline', 'price' => (float)$inv, 'role' => 'invalidation', 'primary' => true,
+        'text' => $abx ? 'רמת הביטול — סגירה ' . ($up ? 'מתחת ל-X' : 'מעל X') . ' של A-B-X' : 'רמת הביטול — הסטופ של האות'];
+    $path = $main !== null ? [['t' => $t0, 'price' => $close], ['t' => $end, 'price' => (float)$main]] : [];
+    if ($path) $head[] = ['kind' => 'polyline', 'style' => 'dashed', 'points' => $path];
+    $label = 'לפי כללי השיטה — ' . ($up ? 'מעלה' : 'מטה') . ($abx ? ' (A-B-X)' : '') . ", עד $k נרות";
+    return [[...$head, ...$items], $path ? [['id' => 's1', 'primary' => true, 'score' => null, 'points' => $path, 'label' => $label]] : []];
+}
+
+/**
+ * S25 (F-3, 2.31) — מתרחב / מתכווץ / סימטרי, מקווי ה-50% של הטווחים המקוננים [שלנו — ההגדרה]. $mids — מהפנימי (i = 1) החוצה.
+ * כולם בתוך $thr זה מזה → symmetric; עולים ממש → expanding; יורדים ממש → contracting. פחות משלושה, או לא מונוטוני — unknown [שלנו].
+ */
+function ts_fib_s25_classify(array $mids, float $thr): string
+{
+    if (count($mids) < 3) return 'unknown';
+    if (max($mids) - min($mids) <= $thr + TS_FIB_EPS) return 'symmetric';
+    $up = true; $down = true;
+    for ($i = 1; $i < count($mids); $i++) {
+        if (!($mids[$i] > $mids[$i - 1])) $up = false;
+        if (!($mids[$i] < $mids[$i - 1])) $down = false;
+    }
+    return $up ? 'expanding' : ($down ? 'contracting' : 'unknown');
+}
+
+/** המילים של S25 בכרטיס (22.9, F-3 קריטריון 2) */
+const TS_FIB_S25_WORDS = ['expanding' => 'מתרחב', 'contracting' => 'מתכווץ', 'symmetric' => 'סימטרי', 'unknown' => 'לא ידוע'];
+
+/**
+ * S25 על החלון (F-3 קריטריון 1). K — הנר עם הגוף הארוך ביותר במהלך (S15) של צד התמיכה (מ-M0 עד H); אם אין צד תמיכה — של צד
+ * ההתנגדות, במראה [שלנו]. טווח מקונן i = 1..3: מהשפל המאושר ה-i לפני K ועד השיא המאושר ה-i אחרי K, במחירי גוף
+ * (ts_fib_pivot_body). בהתנגדות — הכול במראה: "עולים" במראה = מתרחב. הסף — zone_atr × ATR של הרשת.
+ * מידע בלבד (S26): לא נוגע ברשת, באזורים, בציונים או באותות. מחזיר {state, side, k_t, ranges: [[lo, hi]], mids}.
+ */
+function ts_fib_market(array $w, array $piv, ?array $g, array $p): array
+{
+    $out = ['state' => 'unknown', 'side' => null, 'k_t' => null, 'ranges' => [], 'mids' => []];
+    if (!$g) return $out;
+    $key = $g['support']['start'] ? 'support' : ($g['resistance']['start'] ? 'resistance' : null);
+    if ($key === null || !$g[$key]['move']) return $out;
+    $sign = $key === 'support' ? 1 : -1;
+    $idx = array_flip(array_column($w, 't'));
+    $i0 = $idx[$g[$key]['move']['t']] ?? null;
+    $iH = $idx[$g[$key]['start']['t']] ?? null;
+    if ($i0 === null || $iH === null || $i0 > $iH) return $out;
+    $iK = $i0;
+    for ($i = $i0; $i <= $iH; $i++) if (abs($w[$i]['c'] - $w[$i]['o']) > abs($w[$iK]['c'] - $w[$iK]['o'])) $iK = $i;
+    $kt = $w[$iK]['t'];
+    // במראה: "שפל לפני K" של ההתנגדות הוא שיא, ו"שיא אחרי K" — שפל
+    $lowT = $sign === 1 ? 'L' : 'H';
+    $before = array_values(array_filter(array_reverse($piv), fn($x) => $x['type'] === $lowT && $x['t'] < $kt));
+    $after = array_values(array_filter($piv, fn($x) => $x['type'] !== $lowT && $x['t'] > $kt));
+    $n = min(3, count($before), count($after));
+    $ranges = []; $mids = [];
+    for ($i = 0; $i < $n; $i++) {
+        $a = ts_fib_pivot_body($w, $before[$i] + ['v' => 0.0]);
+        $b = ts_fib_pivot_body($w, $after[$i] + ['v' => 0.0]);
+        $ranges[] = [min($a, $b), max($a, $b)];
+        $mids[] = $sign * ($a + $b) / 2;   // במראה — כך "עולים" = מתרחב בשני הצדדים
+    }
+    $state = ts_fib_s25_classify($mids, (float)$p['zone_atr'] * (float)$g['atr']);
+    return ['state' => $state, 'side' => $key, 'k_t' => $kt, 'ranges' => $ranges, 'mids' => array_map(fn($m) => $sign * $m, $mids)];
+}
+
+/**
+ * ואקום (Z10, F-3 קריטריון 3): שני אזורים סמוכים **באותו צד**, בלי אף רמה ביניהם (גם בודדת, משני הצדדים [שלנו]), ובמרחק
+ * ≥ zone_max_atr × ATR (של הבנייה של הצד). מידע בלבד. מחזיר [{side, lo, hi}] — lo/hi: הגבולות שבין שני האזורים.
+ */
+function ts_fib_vacuums(?array $g, array $p): array
+{
+    if (!$g) return [];
+    $levels = [];
+    foreach (['support', 'resistance'] as $key) {
+        foreach ($g[$key]['zones'] as $z) foreach ($z['levels'] as $l) $levels[] = $l['price'];
+        foreach ($g[$key]['singles'] as $l) $levels[] = $l['price'];
+    }
+    $out = [];
+    foreach (['support', 'resistance'] as $key) {
+        $zs = $g[$key]['zones'];
+        usort($zs, fn($a, $b) => $a['lo'] <=> $b['lo']);
+        $min = (float)$p['zone_max_atr'] * (float)($g[$key]['atr'] ?? $g['atr']);
+        for ($i = 1; $i < count($zs); $i++) {
+            $lo = $zs[$i - 1]['hi']; $hi = $zs[$i]['lo'];
+            if ($hi - $lo < $min - TS_FIB_EPS) continue;
+            if (array_filter($levels, fn($v) => $v > $lo + TS_FIB_EPS && $v < $hi - TS_FIB_EPS)) continue;
+            $out[] = ['side' => $key, 'lo' => $lo, 'hi' => $hi];
+        }
+    }
+    return $out;
+}
+
+/**
+ * נר אחד בזרימה של השיטה (step, ts_fib_grid_of): ATR, zigzag, החלון, נקודות המפנה שבחלון, שלוש האחרונות ל-A-B-X (k, בגוף —
+ * לא נחתכות בחלון), והרשת — רק כש-$grid (ts_fib_grid_of מדלג על הנרות שאין להם השפעה).
+ */
+function ts_fib_advance(array $s, array $c, array $p, bool $grid = true): array
+{
+    $s['a'] = ts_ew_atr_step($s['a'], $c, (int)$p['atr_len']);
+    [$s['z'], $pv] = ts_ew_zz_step($s['z'], $c, $s['a']['v'], (float)$p['pivot_atr_mult']);
+    $s['w'][] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $s['a']['v']];
+    $max = (int)$p['lookback_bars'];
+    if (count($s['w']) > $max) $s['w'] = array_slice($s['w'], -$max);
+    if ($pv) {
+        $s['piv'][] = ['type' => $pv['type'], 't' => $pv['t'], 'ct' => $pv['ct']];
+        $s['k'] = array_slice([...($s['k'] ?? []), ['type' => $pv['type'], 'p' => ts_fib_pivot_body($s['w'], $pv), 't' => $pv['t'], 'ct' => $pv['ct']]], -3);
+    }
+    $from = $s['w'][0]['t'];
+    while ($s['piv'] && $s['piv'][0]['t'] < $from) array_shift($s['piv']);
+    if ($grid) $s['g'] = ts_fib_grid($s['w'], $s['piv'], $p, $s['g'], $s['k'] ?? []);   // צד שנקודת ההתחלה שלו לא זזה — נעול (22.3(7), "ג")
+    return $s;
+}
+
+/** המצב ההתחלתי של הזרימה (בלי x — האות, שהוא של השיטה) */
+function ts_fib_init(): array
+{
+    return ['a' => ts_ew_atr_init(), 'z' => ts_ew_zz_init(), 'w' => [], 'piv' => [], 'k' => [], 'g' => null];
 }
 
 /**
@@ -256,21 +592,8 @@ function ts_fib_levels(string $side, float $entry, float $stop, ?float $target, 
  */
 function ts_fib_grid_of(array $candles, array $p): ?array
 {
-    $a = ts_ew_atr_init();
-    $z = ts_ew_zz_init();
-    $win = [];
-    $piv = [];
-    $g = null;
-    $max = (int)$p['lookback_bars'];
-    $from = count($candles) - $max - 1;
-    foreach ($candles as $k => $c) {
-        $a = ts_ew_atr_step($a, $c, (int)$p['atr_len']);
-        [$z, $pv] = ts_ew_zz_step($z, $c, $a['v'], (float)$p['pivot_atr_mult']);
-        if ($pv) $piv[] = ['type' => $pv['type'], 't' => $pv['t'], 'ct' => $pv['ct']];
-        $win[] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $a['v']];
-        if (count($win) > $max) $win = array_slice($win, -$max);
-        while ($piv && $piv[0]['t'] < $win[0]['t']) array_shift($piv);
-        if ($k >= $from) $g = ts_fib_grid($win, $piv, $p, $g);
-    }
-    return $g;
+    $s = ts_fib_init();
+    $from = count($candles) - (int)$p['lookback_bars'] - 1;
+    foreach ($candles as $k => $c) $s = ts_fib_advance($s, $c, $p, $k >= $from);
+    return $s['g'];
 }

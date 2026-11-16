@@ -687,6 +687,7 @@ function ts_cache_cleanup(?int $now = null): int
     $c->prepare('DELETE FROM asset_meta WHERE updated_at < ?')->execute([$now - 180 * 86400]);
     $c->prepare('DELETE FROM fetch_log WHERE at < ?')->execute([$now - 7 * 86400]);
     $c->prepare('DELETE FROM method_results WHERE at < ?')->execute([$now - 2 * 86400]);   // חישוב שנגזר — נבנה מחדש לבד
+    $c->prepare('DELETE FROM bt_partial WHERE at < ?')->execute([$now - 86400]);   // בדיקה לאחור חלקית שלא נמשכה ביום — מתחילה מחדש
     return $n;
 }
 
@@ -723,7 +724,7 @@ function ts_cache_clear(?string $provider): int
         if ($t === 'candles') $n = $st->rowCount();
     }
     // תוצאות השיטות (18.3) נגזרות מהנרות: מאגר שהתרוקן — גם הן, כדי שהחישוב הבא ירוץ על מה שנמשך מחדש
-    if (!$provider) $c->exec('DELETE FROM method_results');
+    if (!$provider) { $c->exec('DELETE FROM method_results'); $c->exec('DELETE FROM bt_partial'); }
     return $n;
 }
 

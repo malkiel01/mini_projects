@@ -1,4 +1,4 @@
-// F-1 — פיבונאצ'י בגרף, בדפדפן אמיתי (spec-stage-a 22.9, קריטריונים 10 ו-11).
+// F-1 / F-2 — פיבונאצ'י בגרף, בדפדפן אמיתי (spec-stage-a 22.9, F-1 קריטריונים 10 ו-11; F-2 — התרחיש, קריטריון 9).
 // node trading-strategies/tests/fibonacci-ui.mjs   (Playwright; ספקים מדומים, בלי רשת, שעון קבוע)
 // SHOTS=<תיקייה מחוץ לריפו> — צילומים (deviceScaleFactor 2) ברוחב 390.
 //
@@ -60,7 +60,8 @@ async function openPop(p) {
   await pop(p).locator('.fc-opt, .fc-none').first().waitFor();
 }
 const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint[aria-live]')?.textContent || ''), null, { timeout: 30000 });
-const mine = st => st.drawn.filter(d => d.m === F);
+const mine = st => st.drawn.filter(d => d.m === F && !d.scen);   // הממצא בלבד — התרחיש (F-2) נבדק בנפרד
+const scen = st => st.drawn.filter(d => d.m === F && d.scen);
 
 try {
   // ── קריטריון 11: כבויה — לא בתפריט; המנהל מפעיל — בתפריט ──
@@ -85,7 +86,16 @@ try {
   const panel = u.locator(`.forecast-panel[data-method="${F}"]`);
   await panel.locator('.an-sec.prob').waitFor({ timeout: 60000 });
   await u.waitForFunction(id => (document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.k === 'zone'), F, { timeout: 60000 });
-  eq(/לא נבדק לאחור|ודאות מוצגת רק מ-30|מריץ בדיקה לאחור/.test(await panel.locator('.an-sec.prob').textContent()), true, 'criterion 11: the card — "not backtested" (no certainty under N = 30)');
+  const probText = await panel.locator('.an-sec.prob').textContent();
+  // F-2: היעד החלופי נותן אותות גם כאן — עם N ≥ 30 הוודאות מוצגת. מתחת ל-30 — "לא נבדק לאחור" / בלי ודאות
+  const probN = Number((probText.match(/ב-(\d+) אותות/) || [])[1] || 0);
+  eq(/לא נבדק לאחור|ודאות מוצגת רק מ-30|מריץ בדיקה לאחור/.test(probText) || (/ודאות\s*\d+%/.test(probText) && probN >= 30) || probText, true,
+    'criterion 11: the card — certainty only from N = 30 ("not backtested" below it)');
+
+  // F-3 קריטריון 2: "השוק: …" בכרטיס — מידע, לא תנאי ולא "בדוק בעצמך"
+  const info = panel.locator('[data-info="market"]');
+  eq([await info.count(), /^השוק: (מתרחב|מתכווץ|סימטרי|לא ידוע)$/.test((await info.first().textContent()) || ''),
+    await panel.locator('.manual-conds [data-info], .conds [data-info]').count()], [1, true, 0], 'F-3: "השוק: …" in the card, outside the conditions');
 
   // ── קריטריון 10 ──
   const purple = await u.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--m3').trim());
@@ -94,13 +104,25 @@ try {
   const singles = mine(st).filter(d => d.faint);
   eq([zones.length > 0, [...new Set(zones.map(d => d.c))], zones.every(d => d.extend)], [true, [purple], true], 'criterion 10: zones in the method color (S5), drawn to the chart edge (R3)');
   eq([singles.length > 0, [...new Set(singles.map(d => d.c))], singles.every(d => d.k === 'polyline' && d.extend)], [true, [purple], true], 'criterion 10: single levels — faded lines in the method color, to the edge');
-  eq(mine(st).filter(d => d.k === 'polyline' && !d.faint).length, 0, 'no other lines: F-1 has no scenario');
+  eq(mine(st).filter(d => d.k === 'polyline' && !d.faint).length, 0, 'the finding has no other lines (the scenario is a separate layer)');
+  // F-2 (22.5ד): התרחיש — רק אחרי הנר האחרון, מקווקו; "הסתר תרחיש" מסתיר אותו, והממצא לא משתנה (22.5ה, קריטריון 9)
+  const sc0 = scen(st);
+  eq([sc0.length > 0, [...new Set(sc0.map(d => d.c))]], [true, [purple]], 'F-2: the scenario layer is drawn, in the method color');
+  // הסקאלה של המחיר מתחשבת גם בתרחיש, ולכן רמה בודדת בקצה יכולה לצאת מהתצוגה — משווים את האזורים
+  const findingCount = mine(st).filter(d => d.k === 'zone').length;
+  await panel.locator('.an-sec.scenario button', { hasText: 'הסתר תרחיש' }).click();
+  await u.waitForFunction(id => !(document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.scen), F);
+  st = await state(u);
+  eq([scen(st).length, mine(st).filter(d => d.k === 'zone').length], [0, findingCount], 'F-2 criterion 9: "hide scenario" hides only the scenario — the finding is the same');
+  await panel.locator('.an-sec.scenario button', { hasText: 'הצג תרחיש' }).click();
+  await u.waitForFunction(id => (document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.scen), F);
+  st = await state(u);
   await shot(u, 'fib-chart');
 
   const solo = panel.locator('.fc-solo');
   eq([await solo.textContent(), await solo.getAttribute('aria-pressed')], ['הסתר רמות בודדות', 'false'], 'the "hide single levels" button');
   await solo.click();
-  await u.waitForFunction(id => !(document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.faint), F);
+  await u.waitForFunction(id => !(document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.faint && !d.scen), F);
   st = await state(u);
   eq([mine(st).filter(d => d.faint).length, mine(st).filter(d => d.k === 'zone').length, st.methods.find(m => m.id === F).solo], [0, zones.length, true],
     'criterion 10: "hide single levels" hides them — the zones stay');
@@ -112,7 +134,7 @@ try {
   st = await state(u);
   eq([mine(st).filter(d => d.faint).length, st.methods.find(m => m.id === F).solo], [0, true], 'the choice survives a reload (localStorage)');
   await u.locator(`.forecast-panel[data-method="${F}"] .fc-solo`).click();
-  await u.waitForFunction(id => (document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.faint), F);
+  await u.waitForFunction(id => (document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.faint && !d.scen), F);
   eq(mine(await state(u)).filter(d => d.faint).length, singles.length, 'show again → the same single levels');
 } catch (e) {
   fail++;
