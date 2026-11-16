@@ -31,6 +31,19 @@ const TS_PAIR_SIDES = [
     'ADA' => ['קרדנו', 'Cardano', 'crypto'],
     'DOGE' => ["דוג'קוין", 'Dogecoin', 'crypto'],
     'LTC' => ['לייטקוין', 'Litecoin', 'crypto'],
+    // עוד 12 — כדי שבלשונית "₿ קריפטו" יהיו 20 הגדולים (18.1.4). רק מול טתר: לא לכולם יש זוג USDC ב-Binance
+    'TRX' => ['טרון', 'TRON', 'crypto'],
+    'AVAX' => ["אוולנץ'", 'Avalanche', 'crypto'],
+    'LINK' => ["צ'יינלינק", 'Chainlink', 'crypto'],
+    'DOT' => ['פולקדוט', 'Polkadot', 'crypto'],
+    'TON' => ['טון', 'Toncoin', 'crypto'],
+    'SHIB' => ['שיבה אינו', 'Shiba Inu', 'crypto'],
+    'BCH' => ['ביטקוין קאש', 'Bitcoin Cash', 'crypto'],
+    'NEAR' => ['ניר', 'NEAR Protocol', 'crypto'],
+    'UNI' => ['יוניסוואפ', 'Uniswap', 'crypto'],
+    'XLM' => ['סטלר', 'Stellar', 'crypto'],
+    'ATOM' => ['קוסמוס', 'Cosmos', 'crypto'],
+    'ETC' => ["את'ריום קלאסיק", 'Ethereum Classic', 'crypto'],
     'USD' => ['דולר', 'US Dollar', 'currency'],
     'EUR' => ['אירו', 'Euro', 'currency'],
     'ILS' => ['שקל', 'Israeli Shekel', 'currency'],
@@ -60,6 +73,7 @@ function ts_pairs_catalog(): array
         $raw["$c/USD"] = ["twelvedata:$c/USD", "binance:{$c}USDC"];
         $raw["$c/USDT"] = ["binance:{$c}USDT"];
     }
+    foreach (['TRX', 'AVAX', 'LINK', 'DOT', 'TON', 'SHIB', 'BCH', 'NEAR', 'UNI', 'XLM', 'ATOM', 'ETC'] as $c) $raw["$c/USDT"] = ["binance:{$c}USDT"];
     // מט"ח עיקרי — כל כיוון, ECB (יומי, בלי מפתח) ו-Twelve Data (תוך-יומי, מפתח אישי)
     $fx = ['USD', 'EUR', 'ILS', 'GBP', 'JPY', 'CHF'];
     foreach ($fx as $a) foreach ($fx as $b) {
@@ -206,6 +220,11 @@ function ts_pair_label(string $asset): array
     $computed = false;
     if (preg_match('/^([a-z0-9]+):1\/(.+)$/', $asset, $m)) { $asset = "$m[1]:$m[2]"; $computed = true; }
     $meta = function_exists('ts_asset_meta') ? ts_asset_meta($asset) : null;
+    // מניה, מדד או סחורה מהרשימות של הלשוניות (18.1.4) — גם בלי חיפוש קודם
+    if (!$meta && function_exists('ts_tab_list_label') && ($l = ts_tab_list_label($asset))) {
+        if ($computed) [$l['base'], $l['quote']] = [$l['quote'], $l['base']];
+        return ts_pair_view_of($l['base'], $l['quote']) + ['computed' => $computed];
+    }
     if (!$meta) return ['label' => 'נכס', 'name' => 'נכס', 'base' => null, 'quote' => null, 'computed' => $computed];
     $parts = preg_split('/\s*(?:\/|→)\s*/u', (string)$meta['name']);
     if (in_array($meta['market'], ['crypto', 'forex'], true) && count($parts) === 2) {

@@ -240,7 +240,7 @@ function ts_alert_deliver(array $a, string $state, array $d, int $now): array
         $body = "לפי {$d['name']}, תנאי ה$side מתקיימים על $symbol (נר של $tfName). ודאות {$d['certainty']}% מהבדיקה לאחור — של השיטה על הנכס בעבר, לא של העסקה הבאה.";
     }
     $payload = ['title' => $title, 'body' => $body . ' ' . TS_ALERT_DISCLAIMER, 'asset' => $a['asset'], 'tf' => $a['tf'],
-        'kind' => $a['kind'], 'state' => $state, 'link' => '#/analysis/' . rawurlencode($a['asset'])] + array_intersect_key($d, ['certainty' => 1, 'price' => 1, 'level' => 1]);
+        'kind' => $a['kind'], 'state' => $state, 'link' => '#/chart/' . rawurlencode($a['asset'])] + array_intersect_key($d, ['certainty' => 1, 'price' => 1, 'level' => 1]);
     $delivered = ['inbox' => true];
     if (in_array('push', $prof['alert_channels'], true)) {
         $delivered['push'] = ts_in_quiet($prof['quiet_hours'], $tz, $now) ? 'quiet' : ts_push_user($uid, $now);

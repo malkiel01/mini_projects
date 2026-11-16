@@ -44,7 +44,7 @@ foreach (['alice', 'owner'] as $u) $tokens[$u] = call($u, 'me')[1]['csrf'];
 $db = new PDO('sqlite:' . "$tmp.sqlite");
 
 // המיגרציה
-eq((int)$db->query('PRAGMA user_version')->fetchColumn(), 8, 'migration 8 ran');
+eq((int)$db->query('PRAGMA user_version')->fetchColumn() >= 8, true, 'migration 8 ran (and later ones: 9 — market_tabs, S1.2)');
 $cols = array_column($db->query('PRAGMA table_info(methods)')->fetchAll(PDO::FETCH_ASSOC), 'name');
 eq([in_array('kind', $cols, true), in_array('definition', $cols, true), in_array('definition_version', $cols, true), (bool)$db->query("SELECT name FROM sqlite_master WHERE name = 'method_versions'")->fetchColumn()],
     [true, true, true, true], 'methods: kind, definition, definition_version; table method_versions');

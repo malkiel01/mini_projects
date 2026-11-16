@@ -104,8 +104,8 @@ eq($s['fired'], 1, 'condition reset and met again → fired again');
 $inbox = call('alice', 'inbox')[1];
 eq([count($inbox['events']), $inbox['unread']], [2, 2], 'two messages in alice\'s inbox');
 $ev = $inbox['events'][0]['payload'];
-eq([str_contains($ev['title'], 'BTC ⇄ USDT'), str_contains($ev['title'] . $ev['body'], 'BTCUSDT'), str_contains($ev['body'], 'אינו ייעוץ השקעות'), $ev['link']], [true, false, true, '#/analysis/binance%3ABTCUSDT'],
-    'the message: the pair "BTC ⇄ USDT" (not the joined symbol, 18.1.1), the short disclaimer, a link to the analysis card');
+eq([str_contains($ev['title'], 'BTC ⇄ USDT'), str_contains($ev['title'] . $ev['body'], 'BTCUSDT'), str_contains($ev['body'], 'אינו ייעוץ השקעות'), $ev['link']], [true, false, true, '#/chart/binance%3ABTCUSDT'],
+    'the message: the pair "BTC ⇄ USDT" (not the joined symbol, 18.1.1), the short disclaimer, a link to the chart — the card is under it (S4)');
 eq(preg_match('/קנה|מכור|המלצ|כדאי/u', json_encode($inbox, JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend" wording in alerts');
 eq(call('bob', 'inbox')[1]['events'], [], 'bob\'s inbox is empty');
 eq(call('alice', 'me')[1]['unread'], 2, 'unread count for the tab');

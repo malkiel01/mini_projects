@@ -207,7 +207,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ניווט תחתון: ארבע לשוניות (אפיון פרק 2) */
 body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
     background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; text-decoration: none;
     color: var(--muted); font-size: .75rem; }
@@ -409,12 +409,34 @@ body.chart-fs { overflow: hidden; }
 .use-tx small.wrap, .card .l2.wrap { white-space: normal; overflow: visible; }
 a.use-row { text-decoration: none; color: inherit; }
 
-/* ===== 🔮 תחזית שיטה (spec-stage-a 17.2.2) ===== */
+/* ===== 🔮 שיטות על הגרף והפס שמתחת (spec-stage-a 17.2.2, 18.1.2, 18.4) ===== */
 .forecast-list { display: grid; }
 .forecast-panel { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); background: var(--surface);
     border: 1px solid var(--line); border-inline-start: 3px solid var(--mc, var(--brand)); border-radius: var(--r); }
 .forecast-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .forecast-head h3 { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; }
+/* ── הפס שמתחת לגרף (S4, 18.4): ממצא · תרחיש · הסתברות ── */
+.an-panel { gap: var(--s2); margin-bottom: var(--s2); }
+.an-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); min-width: 0; }
+.an-title { flex: 1 1 auto; margin: 0; font-size: .9rem; font-weight: 600; color: var(--muted); }
+.an-bar select { width: auto; flex: none; }
+.an-tfs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); font-size: .85rem; }
+.an-tfs .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.an-prof { font-size: .8rem; margin-inline-start: auto; }
+.forecast-blocks { display: grid; }
+.an-fold { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 4px 0; min-height: 40px; background: none; border: 0;
+    color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.an-fold h3 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; margin: 0; }
+.an-brief { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-chev { flex: none; color: var(--muted); }
+.an-body { display: grid; gap: var(--s2); min-width: 0; }
+.an-body[hidden] { display: none; }
+.an-sec { display: grid; gap: var(--s2); min-width: 0; padding-block-start: var(--s2); border-top: 1px solid var(--line); }
+.an-sec > h4 { margin: 0; font-size: .8rem; font-weight: 700; letter-spacing: .02em; color: var(--mc, var(--brand)); }
+.an-sec .summary { margin: 0; }
+.an-line { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.bt-none { font-weight: 600; }
+.blend-card { margin-bottom: var(--s2); }
 .forecast-scenarios { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .forecast-scenarios .btn { white-space: normal; text-align: start; }
 .forecast-scenarios .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
@@ -449,3 +471,48 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .chips label > .pair span, .chips label > .pair small { min-height: 0; padding: 0; border: 0; border-radius: 0; }
 .chips input:checked + .pair .pair-sub { color: inherit; opacity: .85; }
 .asset-pick label > .pair { align-items: flex-start; }
+
+/* ===== בחירה מרשימה — combobox (18.1.3): הרשימה מתחת לשדה, ברוחב שלו (בטלפון — ברוחב המסך), נגללת ===== */
+.combo { position: relative; margin-bottom: var(--s2); scroll-margin-top: 84px; }   /* מתחת לכותרת הדביקה */
+.combo > input { width: 100%; }
+.combo-pop { position: absolute; inset-inline: 0; top: calc(100% + 4px); z-index: 30; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .14); overflow-y: auto; overscroll-behavior: contain;
+    max-height: min(60vh, calc(var(--vvh, 100vh) - 160px)); }
+.combo-list { list-style: none; margin: 0; padding: 0; }
+.combo-opt { display: flex; align-items: center; gap: var(--s2); min-height: 52px; padding: 6px var(--s3); cursor: pointer; border-top: 1px solid var(--line); }
+.combo-opt:first-child { border-top: 0; }
+.combo-opt[aria-selected="true"], .combo-opt:hover { background: var(--brand-soft); }
+.combo-opt .t { margin-inline-start: auto; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.combo-msg { margin: 0; padding: var(--s3); color: var(--muted); text-align: center; }
+.combo-msg[hidden], .combo-list[hidden] { display: none; }
+
+/* ===== לשוניות במסך השוק (18.1.4): שורה אחת שנגללת לצדדים — לא עוטפת ===== */
+.mtabs-bar { display: flex; align-items: center; gap: var(--s1); margin-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.mtabs { display: flex; flex: 1; min-width: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.mtabs::-webkit-scrollbar { display: none; }
+.mtab { flex: none; min-height: var(--tap); padding: 0 var(--s3); border: 0; border-bottom: 2px solid transparent; background: none;
+    color: var(--muted); white-space: nowrap; font: inherit; font-size: .9rem; cursor: pointer; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; }
+.mtab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.mtab-add { color: var(--brand); }
+.mtab.dragging { background: var(--brand-soft); border-radius: var(--r) var(--r) 0 0; box-shadow: 0 2px 10px rgba(0, 0, 0, .15); cursor: grabbing; }
+.mtabs.dragging { overflow-x: hidden; touch-action: none; }
+.mtab-tools { justify-content: space-between; }
+.needs { background: var(--brand-soft); border-radius: var(--r); padding: var(--s2) var(--s3); margin: 0 0 var(--s2); font-size: .9rem; }
+
+/* שורה ברשימה: התווית, מחיר ושינוי יומי (מהמאגר), ⭐ */
+.mrow { cursor: default; gap: var(--s1); }
+.mrow > .body { display: block; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mrow .mq { flex: none; display: grid; justify-items: end; text-align: end; line-height: 1.2; }
+.mrow .mq .p { font-weight: 600; }
+.mrow .mq small { font-size: .78rem; }
+.mrow.locked .body, .mrow.locked .mq { opacity: .5; }
+.mrow .star { flex: none; }
+.chip-btn { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; font-size: .875rem; cursor: pointer; }
+.chip-btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+/* הכותרת המשנית של הגרף (🟡 F1): השמות בעברית מתקצרים, והספק ("Binance") נשאר שלם */
+#subtitle.parts { display: flex; align-items: center; gap: .3em; min-width: 0; }
+#subtitle.parts > .pair-sub { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#subtitle.parts > .sub-tail { flex: none; white-space: nowrap; }
+.asset-chosen { padding: 2px 0 6px; }

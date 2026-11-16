@@ -8,6 +8,7 @@ import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
 import { mountAxis, labelBoard } from './chartaxis.js';
+import { mountCombo, invalidateCatalog } from './combobox.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
 
@@ -78,122 +79,257 @@ export function mountMarket(ctx) {
   const assetUrl = a => '#/chart/' + encodeURIComponent(a);
   const splitAsset = a => { const i = a.indexOf(':'); return [a.slice(0, i), a.slice(i + 1)]; };
 
-  // ── שוק: בחירת זוג בשם (18.1) + המעקב שלי ─────────────
-  // המשתמש בוחר שני צדדים. כל צד — הקוד ומתחתיו השם בעברית; זוג — BTC ⇄ USDT (18.1.1). הסימול נשאר בפנים (asset).
+  // ── שוק: בחירה מרשימה (18.1.3) ולשוניות (18.1.4) ─────────
+  // מלמעלה למטה: ה-combobox, שורת לשוניות (נגללת לצדדים), והרשימה של הלשונית הפתוחה. הראשונה — "⭐ מועדפים" (המעקב).
+  // פתיחת לשונית — market_tab: מחיר ושינוי יומי מהמאגר בלבד (ש6), בלי פנייה לספק. הסימול לא מוצג — רק התווית (18.1.1).
   async function viewMarket() {
-    setHead('שוק', 'בוחרים זוג');
-    const [provs, { watchlist }, cat] = await Promise.all([providers(), api('watchlist'), api('pairs')]);
-    const available = provs.filter(p => p.available);
-    const results = h('div', { class: 'stack', 'aria-live': 'polite' });
-    const q = h('input', { type: 'search', name: 'q', placeholder: 'ביטקוין, USD/ILS, אפל…', 'aria-label': 'חיפוש זוג', maxlength: 40, autocomplete: 'off' });
-    let base = sessionStorage.getItem('ts-pair-base') || cat.default;
-    if (!cat.bases.some(b => b.code === base)) base = cat.default;
-    const KIND = [['crypto', 'קריפטו'], ['currency', 'מטבעות']];
-    const what = h('div', { class: 'stack' });
-    const vs = h('div', { class: 'stack' });
-    const match = (b, t) => !t || [b.name, b.en, b.code].some(x => x.toLowerCase().includes(t));
-    const drawWhat = (filter = '') => {
-      const t = filter.trim().toLowerCase();
-      what.replaceChildren(...KIND.map(([k, l]) => {
-        const list = cat.bases.filter(b => b.kind === k && b.quotes.length && match(b, t));
-        return list.length ? h('div', { class: 'chips', role: 'radiogroup', 'aria-label': l },
-          list.map(b => {
-            const inp = h('input', { type: 'radio', name: 'pair-base', value: b.code });
-            inp.checked = b.code === base;
-            inp.addEventListener('change', () => { base = b.code; try { sessionStorage.setItem('ts-pair-base', base); } catch { /* ריק */ } drawVs(); });
-            // הקוד, ומתחתיו השם בעברית (18.1.1)
-            return h('label', {}, inp, h('span', { class: 'pair' }, h('span', { class: 'pair-main', dir: 'ltr' }, h('b', {}, b.code)), h('small', { class: 'pair-sub' }, b.name)));
-          })) : null;
-      }));
+    setHead('שוק', 'בוחרים מהרשימה');
+    const [provs, T, wl0] = await Promise.all([providers(), api('market_tabs'), api('watchlist')]);
+    const watchlist = wl0.watchlist;
+    let tabs = T.tabs, removed = T.removed;
+    const MAX = T.max, MAX_ASSETS = T.max_assets;
+    let cur = sessionStorage.getItem('ts-market-tab');
+    if (!tabs.some(t => t.id === cur)) cur = 'favorites';
+    const combo = mountCombo(ctx, { label: 'בחירת נכס', recent: () => watchlist, onPick: it => {
+      if (it.alternatives?.length) chooseProvider(it); else location.hash = assetUrl(it.asset);
+    } });
+    const strip = h('div', { class: 'mtabs', role: 'tablist', 'aria-label': 'לשוניות' });
+    const panel = h('div', { class: 'mtab-panel', role: 'tabpanel', id: 'mtab-panel' });
+    const manage = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סידור לשוניות', title: 'סידור לשוניות', on: { click: () => manageTabs() } }, '⚙️');
+
+    const saveTabs = async next => {
+      const r = await api('market_tabs_save', { tabs: next });
+      tabs = r.tabs; removed = r.removed;
+      if (!tabs.some(t => t.id === cur)) cur = 'favorites';
+      drawStrip();
     };
-    const drawVs = () => {
-      const b = cat.bases.find(x => x.code === base);
-      // "BTC ⇄ ?" — הצד השני (בלי המילה "מול"). הכותרת כולה LTR (לא רק ה-span שבתוכה): "?" הוא תו ניטרלי, ובמנוע שלא
-      // מכבד את ה-dir של ה-inline-flex הוא קפץ לפני BTC ("? ⇄ BTC", 🟡 מ-S1.1). מיושרת לימין כמו שאר הכותרות
-      vs.replaceChildren(h('h2', { class: 'sec-title vs-title', dir: 'ltr' }, b ? pairMain({ base: { code: b.code }, quote: { code: '?' } }) : '?'),
-        b?.quotes.length ? h('ul', { class: 'list' }, b.quotes.map(x => pairRow({ asset: x.asset, label: x.label, base: x.base, quote: x.quote, computed: x.computed, market: b.kind === 'crypto' ? 'crypto' : 'forex' }, watchlist)))
-          : h('p', { class: 'empty' }, 'אין ספק לזוג הזה'));
-    };
-    const go = async e => {
-      e?.preventDefault();
-      const v = q.value.trim();
-      if (!v) { results.replaceChildren(); drawWhat(); return; }
-      results.replaceChildren(h('p', { class: 'loading' }, 'מחפש…'));
-      try {
-        // "ביטקוין מול ין" — שני צדדים: זוג, או "אין ספק לזוג הזה" (בלי פנייה לספק, 18.1)
-        const pp = await api('pair_parse', null, { q: v });
-        if (pp.pair) {
-          if (pp.asset) { location.hash = assetUrl(pp.asset); return; }
-          results.replaceChildren(h('p', { class: 'empty', role: 'status' }, pairLabel(pp, { sub: false }), ': ', pp.message));
-          return;
-        }
-        // צד אחד מהקטלוג — בוחרים אותו ברשימה
-        const t = v.toLowerCase();
-        const hit = cat.bases.find(b => b.quotes.length && match(b, t));
-        if (hit) { base = hit.code; results.replaceChildren(); drawWhat(); drawVs(); return; }
-        // אחרת — חיפוש אצל הספקים (מניות, ושאר הזוגות), עם השם של הזוג
-        const r = await api('market_search', null, { q: v });
-        results.replaceChildren(
-          ...r.errors.map(m => h('p', { class: 'error' }, m)),
-          r.results.length ? h('ul', { class: 'list' }, r.results.map(x => pairRow(x, watchlist))) : h('p', { class: 'empty' }, 'לא נמצא. נסו שם אחר, או חברו עוד ספק ב"עוד ← ספקי נתונים".'));
-      } catch (ex) { results.replaceChildren(h('p', { class: 'error', role: 'alert' }, ex.message)); }
-    };
-    q.addEventListener('input', () => { if (!q.value.trim()) results.replaceChildren(); drawWhat(q.value); });
-    drawWhat(); drawVs();
-    const wl = h('ul', { class: 'list' });
+    function openTab(id) {
+      cur = id;
+      try { sessionStorage.setItem('ts-market-tab', id); } catch { /* ריק */ }
+      strip.querySelectorAll('[role="tab"]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.id === id)); b.tabIndex = b.dataset.id === id ? 0 : -1; });
+      strip.querySelector(`[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      drawTab();
+    }
+    function drawStrip() {
+      strip.replaceChildren(...tabs.map(t => h('button', { role: 'tab', type: 'button', class: 'mtab', id: 'mtab-' + t.id, 'data-id': t.id,
+        'aria-controls': 'mtab-panel', 'aria-selected': String(t.id === cur), tabindex: t.id === cur ? '0' : '-1',
+        'data-fixed': t.kind === 'favorites' ? '1' : null,
+        on: { click: e => { if (strip.dataset.dragged) { e.preventDefault(); return; } openTab(t.id); } } }, t.name)),
+      h('button', { class: 'mtab mtab-add', type: 'button', on: { click: () => addTab() } }, '➕ לשונית'));
+    }
+    // מקלדת בשורת הלשוניות: חצים, Home/End (ARIA tabs). RTL — ימינה זה "הקודם"
+    strip.addEventListener('keydown', e => {
+      const ids = tabs.map(t => t.id);
+      const i = ids.indexOf(cur);
+      const rtl = getComputedStyle(strip).direction === 'rtl';
+      const d = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[e.key];
+      let j = d ? (i + d + ids.length) % ids.length : e.key === 'Home' ? 0 : e.key === 'End' ? ids.length - 1 : -1;
+      if (j < 0 || !e.target.closest('[role="tab"]')) return;
+      e.preventDefault();
+      openTab(ids[j]);
+      strip.querySelector(`[data-id="${CSS.escape(ids[j])}"]`).focus();
+    });
+    dragTabs(strip, async order => {
+      const byId = Object.fromEntries(tabs.map(t => [t.id, t]));
+      await saveTabs(order.map(id => byId[id]).filter(Boolean)).catch(e => { toast(e.message, true); drawStrip(); });
+    });
+
+    // ── הרשימה של לשונית ──
     let editing = false;
-    const drawWl = list => {
-      wl.replaceChildren(...(list.length ? list.map((w, i) => watchRow(w, i, list)) : [h('li', { class: 'empty' }, 'עוד אין נכסים במעקב. מחפשים, ומסמנים ☆.')]));
-    };
-    const watchRow = (w, i, list) => {
-      const row = h('li', { class: 'card', tabindex: '0', role: 'button', on: { click: e => { if (!e.target.closest('button')) location.hash = assetUrl(w.asset); }, keydown: e => { if (e.key === 'Enter') location.hash = assetUrl(w.asset); } } },
-        h('span', { class: 'use-ic', 'aria-hidden': 'true' }, { crypto: '🪙', forex: '💱', stocks: '🏢', indices: '📊' }[w.meta?.market] || '📈'),
-        h('div', { class: 'body' }, h('div', { class: 'l1' }, pairLabel(w), w.computed ? h('span', { class: 'chip' }, 'מחושב') : null),
-          h('div', { class: 'l2' }, provName(w.provider))),
-        editing ? h('span', { class: 'row-btns' },
-          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למעלה', disabled: i === 0, on: { click: () => move(list, i, -1) } }, '▲'),
-          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למטה', disabled: i === list.length - 1, on: { click: () => move(list, i, 1) } }, '▼'),
-          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'הסרה מהמעקב', on: { click: async () => { const r = await api('watchlist_remove', { asset: w.asset }); watchlist.splice(0, Infinity, ...r.watchlist); drawWl(watchlist); } } }, '✕'))
-          : h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'));
-      return row;
-    };
-    const move = async (list, i, d) => {
+    async function drawTab() {
+      const tab = tabs.find(t => t.id === cur);
+      const my = cur;
+      panel.setAttribute('aria-labelledby', 'mtab-' + cur);
+      panel.replaceChildren(h('p', { class: 'loading' }, 'טוען…'));
+      let r;
+      try { r = await api('market_tab', null, { id: cur }); } catch (e) { if (my === cur) panel.replaceChildren(h('p', { class: 'error', role: 'alert' }, e.message)); return; }
+      if (my !== cur) return;
+      const rows = r.rows;
+      const head = [];
+      if (r.needs) head.push(h('p', { class: 'needs', role: 'note' }, `הנכסים בלשונית הזו מגיעים מ-${r.needs.name}, שצריך בו מפתח אישי. `, h('a', { href: '#/providers' }, 'חיבור ספק')));
+      if (tab.kind === 'favorites' && rows.length) {
+        head.push(h('div', { class: 'toolbar mtab-tools' }, h('span', { class: 'muted' }, `${rows.length} במעקב`),
+          h('button', { class: 'btn ghost sm', type: 'button', 'aria-pressed': String(editing), on: { click: () => { editing = !editing; drawTab(); } } }, editing ? 'סיום' : '✏️ סידור')));
+      }
+      if (tab.kind === 'custom') {
+        const add = mountCombo(ctx, { label: 'הוספת נכס ללשונית', placeholder: 'הוספת נכס ללשונית…', name: 'tab-add', onPick: async it => {
+          if (tab.assets.includes(it.asset)) { toast('כבר בלשונית'); return; }
+          if (tab.assets.length >= MAX_ASSETS) { toast(`עד ${MAX_ASSETS} נכסים בלשונית`, true); return; }
+          try { await saveTabs(tabs.map(t => (t.id === tab.id ? { ...t, assets: [...t.assets, it.asset] } : t))); drawTab(); } catch (e) { toast(e.message, true); }
+        } });
+        head.push(add.el);
+      }
+      const empty = tab.kind === 'favorites' ? 'סמנו ⭐ ליד נכס כדי להוסיף' : tab.kind === 'custom' ? 'בוחרים נכסים בשדה שלמעלה.' : 'אין נכסים בלשונית.';
+      panel.replaceChildren(...head, rows.length
+        ? h('ul', { class: 'list mrows' }, rows.map((x, i) => marketRow(x, { tab, i, rows, needs: r.needs })))
+        : h('p', { class: 'empty' }, empty));
+    }
+
+    function marketRow(x, { tab, i, rows, needs }) {
+      const inWl = () => watchlist.some(w => w.asset === x.asset);
+      const star = x.asset ? h('button', { class: 'icon-btn star', type: 'button', 'aria-pressed': String(inWl()), 'aria-label': inWl() ? 'הסרה מהמועדפים' : 'הוספה למועדפים',
+        on: { click: async () => {
+          try {
+            const r = await api(inWl() ? 'watchlist_remove' : 'watchlist_add', { asset: x.asset });
+            watchlist.splice(0, Infinity, ...r.watchlist);
+            star.textContent = inWl() ? '⭐' : '☆';
+            star.setAttribute('aria-pressed', String(inWl()));
+            star.setAttribute('aria-label', inWl() ? 'הסרה מהמועדפים' : 'הוספה למועדפים');
+            toast(inWl() ? 'נוסף למועדפים' : 'הוסר מהמועדפים');
+            if (tab.kind === 'favorites') drawTab();
+          } catch (e) { toast(e.message, true); }
+        } } }, inWl() ? '⭐' : '☆') : null;
+      const quote = h('span', { class: 'mq', dir: 'ltr' },
+        h('span', { class: 'num p' }, x.price != null ? fmtQuote(x.price) : '—'),
+        x.change_pct != null ? h('small', { class: 'num ' + (x.change_pct.startsWith('-') ? 'neg' : x.change_pct === '0.00' ? '' : 'pos') },
+          (x.change_pct.startsWith('-') || x.change_pct === '0.00' ? '' : '+') + x.change_pct + '%') : null);
+      const body = [h('div', { class: 'l1' }, pairLabel(x), x.computed ? h('span', { class: 'chip' }, 'מחושב') : null)];
+      const go = () => (x.locked ? lockedSheet(x, needs) : (location.hash = assetUrl(x.asset)));
+      let btns = null;
+      if (tab.kind === 'favorites' && editing) {
+        btns = h('span', { class: 'row-btns' },
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למעלה', disabled: i === 0, on: { click: () => moveFav(rows, i, -1) } }, '▲'),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למטה', disabled: i === rows.length - 1, on: { click: () => moveFav(rows, i, 1) } }, '▼'));
+      } else if (tab.kind === 'custom') {
+        btns = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'הסרה מהלשונית', on: { click: async () => {
+          try { await saveTabs(tabs.map(t => (t.id === tab.id ? { ...t, assets: t.assets.filter(a => a !== x.asset) } : t))); drawTab(); } catch (e) { toast(e.message, true); }
+        } } }, '✕');
+      }
+      return h('li', { class: 'card mrow' + (x.locked ? ' locked' : '') },
+        h('button', { class: 'body', type: 'button', title: x.locked ? 'צריך לחבר ספק' : null, on: { click: go } }, body), quote, star, btns);
+    }
+    const moveFav = async (rows, i, d) => {
+      const list = rows.map(r => r.asset);
       const [x] = list.splice(i, 1); list.splice(i + d, 0, x);
-      drawWl(list);
-      await api('watchlist_order', { assets: list.map(w => w.asset) });
+      await api('watchlist_order', { assets: list });
+      const w = await api('watchlist'); watchlist.splice(0, Infinity, ...w.watchlist);
+      drawTab();
     };
-    const editBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סידור המעקב', on: { click: () => { editing = !editing; drawWl(watchlist); } } }, '✏️');
-    drawWl(watchlist);
-    const connected = available.map(p => p.name).join(' · ');
-    render(
-      h('form', { class: 'toolbar', on: { submit: go } }, q, h('button', { class: 'btn primary', type: 'submit' }, '🔎 חיפוש')),
-      results,
-      h('h2', { class: 'sec-title' }, 'מה?'), what, vs,
-      h('p', { class: 'hint' }, 'ספקים: ', connected || 'אין ספקים', '. ', h('a', { href: '#/providers' }, 'חיבור ספקים'), ' — מניות ומט"ח תוך-יומי צריכים ספק עם מפתח.'),
-      h('div', { class: 'toolbar', style: 'justify-content:space-between;margin-top:12px' }, h('h2', { class: 'sec-title' }, '⭐ המעקב שלי'), watchlist.length ? editBtn : null),
-      wl);
+    // ש7: נכס בלי ספק — הסבר וקישור, לא גרף
+    function lockedSheet(x, needs) {
+      const s = sheet('צריך לחבר ספק');
+      s.body.append(h('p', {}, pairLabel(x)),
+        h('p', {}, needs ? `הנתונים של הנכס הזה מגיעים מ-${needs.name}, ושם צריך מפתח אישי (יש גם חינמי).` : 'אין לכם חיבור לספק של הנכס הזה.'),
+        h('a', { class: 'btn primary', href: '#/providers', on: { click: () => s.close() } }, '🔌 חיבור ספק'));
+    }
+
+    // ── "➕ לשונית": מובנית שהוסרה, או לשונית משלי ──
+    function addTab() {
+      if (tabs.length >= MAX) { toast(`עד ${MAX} לשוניות. מסירים אחת ב-⚙️, ואז מוסיפים.`, true); return; }
+      const s = sheet('➕ לשונית');
+      const name = h('input', { name: 'tab-name', maxlength: 30, placeholder: 'למשל: הארוך שלי', autocomplete: 'off' });
+      const chosen = [];
+      const chosenList = h('ul', { class: 'list' });
+      const drawChosen = () => chosenList.replaceChildren(...(chosen.length ? chosen.map((it, k) => h('li', { class: 'card', style: 'cursor:default' },
+        h('div', { class: 'body' }, pairLabel(it)),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'הסרה', on: { click: () => { chosen.splice(k, 1); drawChosen(); } } }, '✕')))
+        : [h('li', { class: 'empty' }, 'עוד לא נבחרו נכסים')]));
+      const pickAsset = mountCombo(ctx, { label: 'נכס ללשונית', placeholder: 'נכס ללשונית…', name: 'new-tab-asset', onPick: it => {
+        if (!chosen.some(c => c.asset === it.asset) && chosen.length < MAX_ASSETS) chosen.push(it);
+        drawChosen();
+      } });
+      drawChosen();
+      const create = h('button', { class: 'btn primary', type: 'button', on: { click: async () => {
+        const n = name.value.trim();
+        if (!n) { toast('חסר שם ללשונית', true); name.focus(); return; }
+        const id = 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
+        try { await saveTabs([...tabs, { id, kind: 'custom', name: n, assets: chosen.map(c => c.asset) }]); s.close(); openTab(id); } catch (e) { toast(e.message, true); }
+      } } }, 'יצירת הלשונית');
+      s.body.append(
+        removed.length ? h('div', { class: 'group' }, h('h3', {}, 'לשוניות מובנות שהוסרו'),
+          h('div', { class: 'chips' }, removed.map(b => h('button', { class: 'chip-btn', type: 'button', on: { click: async () => {
+            try { await saveTabs([...tabs, { id: b.id, kind: 'builtin' }]); s.close(); openTab(b.id); } catch (e) { toast(e.message, true); }
+          } } }, b.name)))) : null,
+        h('div', { class: 'group' }, h('h3', {}, 'לשונית משלי'), field('שם', name, true), h('div', { class: 'f wide' }, h('span', {}, 'נכסים'), pickAsset.el), chosenList, create));
+    }
+
+    // ── ⚙️ סידור והסרה (גם בלי גרירה — מקלדת וקורא מסך) ──
+    function manageTabs() {
+      const s = sheet('סידור לשוניות');
+      const box = h('ul', { class: 'list' });
+      const draw = () => box.replaceChildren(...tabs.map((t, i) => h('li', { class: 'card', style: 'cursor:default' },
+        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, t.name)), t.kind === 'favorites' ? h('div', { class: 'l2' }, 'תמיד ראשונה') : t.kind === 'custom' ? h('div', { class: 'l2' }, `משלי · ${t.assets.length} נכסים`) : null),
+        t.kind === 'favorites' ? null : h('span', { class: 'row-btns' },
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t.name} — למעלה`, disabled: i <= 1, on: { click: () => mv(i, -1) } }, '▲'),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t.name} — למטה`, disabled: i === tabs.length - 1, on: { click: () => mv(i, 1) } }, '▼'),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': `הסרה של ${t.name}`, on: { click: () => rm(t) } }, '✕')))));
+      const mv = async (i, d) => {
+        const next = [...tabs]; const [x] = next.splice(i, 1); next.splice(i + d, 0, x);
+        try { await saveTabs(next); draw(); } catch (e) { toast(e.message, true); }
+      };
+      const rm = t => {
+        const go = async () => { try { await saveTabs(tabs.filter(x => x.id !== t.id)); draw(); drawTab(); } catch (e) { toast(e.message, true); } };
+        if (t.kind === 'custom') confirmSheet('מחיקת לשונית', `הלשונית "${t.name}" והרשימה שבה יימחקו.`, 'מחיקה', go); else go();
+      };
+      draw();
+      s.body.append(h('p', { class: 'hint' }, 'אפשר גם לגרור לשונית בשורה (בטלפון — לחיצה ארוכה ואז גרירה). מובנית שהוסרה חוזרת דרך "➕ לשונית".'), box);
+    }
+
+    drawStrip();
+    const connected = provs.filter(p => p.available).map(p => p.name).join(' · ');
+    render(combo.el, h('div', { class: 'mtabs-bar' }, strip, manage), panel,
+      h('p', { class: 'hint', style: 'margin-top:12px' }, 'ספקים: ', connected || 'אין ספקים', '. ', h('a', { href: '#/providers' }, 'חיבור ספקים'), ' — מניות, מדדים ומט"ח תוך-יומי צריכים ספק עם מפתח.'));
+    openTab(cur);
   }
 
-  // שורה של זוג — מהקטלוג או מהחיפוש. השם במילים; הסימול לא מוצג (18.1)
-  function pairRow(x, watchlist) {
-    const inWl = () => watchlist.some(w => w.asset === x.asset);
-    const star = h('button', { class: 'icon-btn', type: 'button', 'aria-pressed': String(inWl()), 'aria-label': inWl() ? 'הסרה מהמעקב' : 'הוספה למעקב',
-      on: { click: async () => {
-        try {
-          const r = await api(inWl() ? 'watchlist_remove' : 'watchlist_add', { asset: x.asset });
-          watchlist.splice(0, Infinity, ...r.watchlist);
-          star.textContent = inWl() ? '⭐' : '☆';
-          star.setAttribute('aria-pressed', String(inWl()));
-          toast(inWl() ? 'נוסף למעקב' : 'הוסר מהמעקב');
-        } catch (e) { toast(e.message, true); }
-      } } }, inWl() ? '⭐' : '☆');
-    const alt = x.alternatives?.length ? h('button', { type: 'button', class: 'chip', on: { click: () => chooseProvider(x) } }, `+${x.alternatives.length} ספקים`) : null;
-    return h('li', { class: 'card', style: 'cursor:default' },
-      h('a', { class: 'body', href: assetUrl(x.asset), style: 'text-decoration:none;color:inherit' },
-        h('div', { class: 'l1' }, pairLabel(x), x.computed ? h('span', { class: 'chip' }, 'מחושב') : null, h('span', { class: 't' }, MARKET_LABEL[x.market] || x.market)),
-        h('div', { class: 'l2' }, provName(splitAsset(x.asset)[0]), x.exchange && x.exchange !== provName(splitAsset(x.asset)[0]) ? [sep(), x.exchange] : null)),
-      alt, star);
+  // מחיר בשורה: מפריד אלפים; מתחת ל-1 — עד 8 ספרות (שיבה אינו), מעל 1,000 — 2
+  function fmtQuote(v) {
+    const a = Math.abs(parseFloat(v));
+    return D.fmt(v, a >= 1000 ? 2 : a >= 1 ? 4 : 8);
   }
+
+  /**
+   * גרירה לסידור הלשוניות (18.1.4 קריטריון 4). עכבר — גוררים; מגע — לחיצה ארוכה (450ms) ואז גרירה, כדי שגלילה לצדדים
+   * תישאר גלילה. "⭐ מועדפים" (data-fixed) לא נגררת, ושום לשונית לא עוברת לפניה. onDrop(ids) — הסדר החדש.
+   */
+  function dragTabs(strip, onDrop) {
+    let st = null;
+    const tabOf = el => el?.closest?.('.mtab[role="tab"]');
+    const end = () => {
+      if (!st) return;
+      clearTimeout(st.timer);
+      const was = st.on;
+      st.el.classList.remove('dragging');
+      strip.classList.remove('dragging');
+      st = null;
+      if (was) {
+        strip.dataset.dragged = '1';
+        setTimeout(() => { delete strip.dataset.dragged; }, 0);   // הלחיצה שאחרי השחרור — לא בוחרת לשונית
+        onDrop([...strip.querySelectorAll('.mtab[role="tab"]')].map(b => b.dataset.id));
+      }
+    };
+    const begin = () => { st.on = true; st.el.classList.add('dragging'); strip.classList.add('dragging'); navigator.vibrate?.(15); };
+    strip.addEventListener('pointerdown', e => {
+      const el = tabOf(e.target);
+      if (!el || el.dataset.fixed || e.button > 0) return;
+      st = { el, x: e.clientX, y: e.clientY, on: false, touch: e.pointerType !== 'mouse', id: e.pointerId };
+      if (st.touch) st.timer = setTimeout(() => { if (st) begin(); }, 450);
+    });
+    strip.addEventListener('pointermove', e => {
+      if (!st || e.pointerId !== st.id) return;
+      const dist = Math.hypot(e.clientX - st.x, e.clientY - st.y);
+      if (!st.on) {
+        if (st.touch) { if (dist > 8) { clearTimeout(st.timer); st = null; } return; }   // גלילה, לא גרירה
+        if (dist < 6) return;
+        begin();
+        try { strip.setPointerCapture(e.pointerId); } catch { /* ריק */ }
+      }
+      // מחליפים מקום עם הלשונית שמתחת לאצבע — בלי לעבור את המועדפים
+      const over = [...strip.querySelectorAll('.mtab[role="tab"]:not([data-fixed])')].find(b => {
+        const r = b.getBoundingClientRect();
+        return b !== st.el && e.clientX >= r.left && e.clientX <= r.right;
+      });
+      if (!over) return;
+      const all = [...strip.children];
+      if (all.indexOf(st.el) < all.indexOf(over)) over.after(st.el); else over.before(st.el);
+    });
+    // בזמן גרירה במגע — הדף לא נגלל
+    strip.addEventListener('touchmove', e => { if (st?.on) e.preventDefault(); }, { passive: false });
+    strip.addEventListener('pointerup', end);
+    strip.addEventListener('pointercancel', () => { if (st && !st.on) { clearTimeout(st.timer); st = null; } else end(); });
+    strip.addEventListener('contextmenu', e => { if (st) e.preventDefault(); });
+  }
+
   let route = null;
 
   function chooseProvider(x) {
@@ -213,7 +349,8 @@ export function mountMarket(ctx) {
     // הכותרת: BTC ⇄ USDT; מתחת — השמות בעברית והספק (18.1.1)
     const L = labels[asset] || { label: 'גרף' };
     const label = () => pairMain(L);
-    const sub = pp => [pairSub(L), pairSub(L) ? ' · ' : '', (pp ? pp.name : provider) + (L.computed ? ' · מחושב (1/x)' : '')];
+    // השמות בעברית — מתקצרים כשאין מקום; הספק — ב-sub-tail, תמיד שלם (🟡 F1: "Binance" נחתך ל-"…ce")
+    const sub = pp => { const s = pairSub(L); return [s, h('span', { class: 'sub-tail' }, (s ? '· ' : '') + (pp ? pp.name : provider) + (L.computed ? ' · מחושב (1/x)' : ''))]; };
     const p = provs.find(x => x.id === provider);
     setHead(label(), sub(p), { back: true, docTitle: L.label });
     if (!p?.available) {
@@ -241,13 +378,12 @@ export function mountMarket(ctx) {
     const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load('manual') } }, '↻');
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
-    const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
     // "🔮 שיטות על הגרף" (17.2.2, 18.1.2) — הכפתור כאן, התפריט וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
     const fcBtn = () => h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'שיטות על הגרף', 'aria-pressed': 'false', 'aria-expanded': 'false' }, '🔮');
     const forecastBtn = fcBtn();
     // ⛶ מסך מלא (18.1.2 סעיף 3) — בשורת הכפתורים של הגרף (בכותרת אין מקום בטלפון)
     const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', on: { click: () => fsEnter() } }, '⛶');
-    setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
+    setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [forecastBtn, drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
@@ -265,7 +401,8 @@ export function mountMarket(ctx) {
 
     const info = h('p', { class: 'hint', 'aria-live': 'polite' });
     const live = h('span', { class: 'chip', hidden: true });
-    // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X"
+    // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X".
+    // שניהם בשורת הכותרת של הפס שמתחת לגרף (S4) — לא בשורת הכפתורים, כדי שהגרף לא יירד בשורה כשהניתוח נדלק בטלפון
     const EVERY = [60, 30];
     let every = 60;
     try { const v = +localStorage.getItem('ts-refresh-every'); if (EVERY.includes(v)) every = v; } catch { /* ריק */ }
@@ -286,7 +423,7 @@ export function mountMarket(ctx) {
     const fsExit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'יציאה ממסך מלא', title: 'יציאה ממסך מלא', on: { click: () => fsLeave() } }, '✕');
     const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsExit);
     const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
-    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, everySel, upd, live, fsBtn)), custom,
+    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsBtn)), custom,
       wrap, drawSlot, forecastSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
@@ -335,13 +472,17 @@ export function mountMarket(ctx) {
     const board = labelBoard();
     box.tsLabels = () => board.rects();   // לבדיקות: המלבנים של התוויות שצוירו בפעם האחרונה
     box.tsAxis = () => axis.shown();      // לבדיקות: המספרים שעל הצירים
+    box.tsAxisW = () => axis.priceWidth(); // לבדיקות: רוחב עמודת המספרים
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
-    const forecast = mountForecast({ chart, series: candle, h, host: wrap, isAdmin: () => !!ME().is_admin, api, toast, col, board,
-      buttons: [forecastBtn, forecastBtnFs],
+    // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
+    const forecast = mountForecast({ ctx, asset, pair: L, chart, series: candle, h, host: wrap, isAdmin: () => !!ME().is_admin, api, toast, col, board, axisWidth: () => axis.priceWidth(),
+      buttons: [forecastBtn, forecastBtnFs], tools: [everySel, upd], tfs: () => tfs,
+      setTf: v => { const i = tfSeg.querySelector(`input[value="${v}"]`); if (i && !i.checked) { i.checked = true; i.dispatchEvent(new Event('change')); } },
       onChange: () => (forecast.methods().length ? load('pick') : schedule()),
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time) });
     forecastSlot.append(forecast.panel);
+    box.tsForecast = () => forecast.state();   // לבדיקות: השיטות, והפריטים של הממצא ושל התרחיש
     // השרטוטים — אחרי השיטות: הם מצוירים מעליהן, אבל בחפיפת תוויות התווית של השיטה המובילה גוברת (18.1.2 סעיף 5)
     const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet, board,
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
@@ -473,6 +614,8 @@ export function mountMarket(ctx) {
         if (mode === 'open' || mode === 'change' || mode === 'manual') chart.timeScale().fitContent();
         draw.redraw();
         forecast.onResult(r);
+        // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום
+        if (!auto && forecast.needsBacktest()) runBacktest(mode === 'manual');
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
@@ -493,6 +636,23 @@ export function mountMarket(ctx) {
         loading = false;
         refresh.disabled = false;
         if (pending) { const m = pending; pending = null; load(m); } else schedule();
+      }
+    }
+    // הבדיקה לאחור (6.2) דרך analysis — פעם אחת לכל מסגרת ושילוב שיטות בפתיחה; "↻ רענן" מריץ שוב. התשובה מחליפה את הכרטיסים
+    const btTried = new Set();
+    async function runBacktest(force) {
+      const ids = forecast.methods();
+      const key = st.tf + '|' + ids.join(',');
+      if (!ids.length || (!force && btTried.has(key))) return;
+      btTried.add(key);
+      const tf = st.tf;
+      forecast.backtesting(true);
+      try {
+        const a = await api('analysis', null, { asset, tf, methods: ids.join(',') });
+        if (tf === st.tf && forecast.methods().join(',') === ids.join(',')) forecast.onAnalysis(a); else forecast.backtesting(false);
+      } catch (e) {
+        forecast.backtesting(false);
+        if (e.status !== 429) toast(e.message, true);
       }
     }
     // WebSocket ציבורי של Binance — ישירות לספק. אין התחברות חוזרת אוטומטית בלולאה: נותק → הודעה, ו"↻" מחבר.
@@ -545,9 +705,9 @@ export function mountMarket(ctx) {
       else if (p.own) {
         status = h('span', { class: 'chip ' + (p.own.last_test_ok ? 'ok' : 'bad') }, `${p.own.last_test_ok ? 'מחובר' : 'החיבור נכשל'} · נבדק ${fmt(p.own.last_test_at)} · ••••${p.own.last4}`);
         actions = h('div', { class: 'row-btns wrap' },
-          h('button', { class: 'btn ghost sm', type: 'button', on: { click: async e => { e.target.disabled = true; try { await api('cred_test', { provider: p.id }); toast('החיבור תקין'); } catch (ex) { toast(ex.message, true); } PROVIDERS = null; route(); } } }, 'בדוק חיבור'),
+          h('button', { class: 'btn ghost sm', type: 'button', on: { click: async e => { e.target.disabled = true; try { await api('cred_test', { provider: p.id }); toast('החיבור תקין'); } catch (ex) { toast(ex.message, true); } PROVIDERS = null; invalidateCatalog(); route(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'החלפת מפתח'),
-          h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק', `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; toast('נותק'); route(); }) } }, 'ניתוק'));
+          h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק', `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; invalidateCatalog(); toast('נותק'); route(); }) } }, 'ניתוק'));
       } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהמנהל');
       else {
         status = h('span', { class: 'chip warn' }, 'לא מחובר');
@@ -569,7 +729,7 @@ export function mountMarket(ctx) {
     const s = sheet(`חיבור ${p.name}`, { saveLabel: 'בדיקה ושמירה', onSave: async () => {
       await api('cred_save', { provider: p.id, secret: secret.value, label: label.value });
       secret.value = '';
-      PROVIDERS = null;
+      PROVIDERS = null; invalidateCatalog();
       toast(`${p.name} מחובר`);
       route();
     } });

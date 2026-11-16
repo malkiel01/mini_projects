@@ -66,6 +66,8 @@ function ts_profile(int $uid): array
         'quiet_hours' => $has && $r['quiet_hours'] !== null ? json_decode($r['quiet_hours'], true) : null,
         'max_alerts_per_day' => $has ? (int)$r['max_alerts_per_day'] : 10,
         'saved' => $has,
+        // הלשוניות של מסך השוק (18.1.4) — בפרופיל, נשמרות ב-users.market_tabs (lib/tabs.php)
+        'market_tabs' => function_exists('ts_market_tabs') ? ts_market_tabs($uid) : null,
     ];
 }
 
@@ -388,6 +390,63 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     return ts_bt_out($s, $now, $incremental ? 'incremental' : 'full', $calls);
 }
 
+/** צורת התוצאה השמורה. 2 — S4: ממצא ותרחיש בשדות נפרדים. תוצאות בצורה הישנה פשוט לא נמצאות (ונמחקות אחרי יומיים) */
+const TS_RESULT_FORMAT = 2;
+
+/** מפתח החישוב (18.3) — כל מה שהתוצאה תלויה בו, ושום דבר אחר */
+function ts_method_key(TsMethod $m, array $p, string $asset, string $tf, string $scope, array $rows): string
+{
+    $meta = $m->meta();
+    ksort($p);
+    return hash('sha256', json_encode([TS_RESULT_FORMAT, $asset, $tf, $scope, $rows ? $rows[0]['t'] : null, $rows ? end($rows)['t'] : null, count($rows),
+        $meta['id'], $meta['version'], $p], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+
+/**
+ * הבדיקה לאחור השמורה בלבד — בלי לחשב (הגרף, 18.3/18.4). אותה גרסה ואותם פרמטרים ועמלות; גם אם עבר יותר מיום
+ * (stale: true — הניתוח הבא שהמשתמש פותח יחשב מחדש). אין שמורה → status: missing, "לא נבדק לאחור".
+ */
+function ts_backtest_stored(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market, int $now): array
+{
+    [$provider] = ts_asset_split($asset);
+    $scope = (string)(ts_access($uid, $provider)['scope'] ?? '');
+    $meta = $m->meta();
+    $st = ts_db()->prepare("SELECT state, computed_at FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
+        AND cred_scope = ? AND params_hash = ? AND source = 'provider'");
+    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, $scope, ts_bt_hash($p, ts_cost_for($market))]);
+    $row = $st->fetch();
+    if (!$row) return ['status' => 'missing', 'message' => 'לא נבדק לאחור', 'provider_calls' => 0];
+    return ts_bt_out(json_decode($row['state'], true), (int)$row['computed_at'], 'stored', 0)
+        + ['stale' => (int)$row['computed_at'] <= $now - TS_BT_STALE];
+}
+
+/**
+ * הניתוח של הכרטיס (התנאים עכשיו), שמור לפי מפתח החישוב (18.3): הנרות הסגורים של החלון, שיטה+גרסה, פרמטרים, ומתי
+ * חושבה הבדיקה לאחור שהוא ממשיך ממנה (ו1). מפתח שכבר חושב — מהשמור, והשיטה לא רצה (2ה.4). $state — רק כשצריך.
+ */
+function ts_card_analyze(TsMethod $m, array $p, string $asset, string $tf, string $scope, array $rows, array $fl, array $bt, Closure $state, int $now): array
+{
+    $k = hash('sha256', 'card|' . ts_method_key($m, $p, $asset, $tf, $scope, $rows) . '|' . ($bt['computed_at'] ?? '-'));
+    $c = ts_cache();
+    try {
+        $st = $c->prepare('SELECT result FROM method_results WHERE k = ?');
+        $st->execute([$k]);
+        $hit = $st->fetchColumn();
+        if (is_string($hit) && is_array($v = json_decode($hit, true))) return $v;
+    } catch (Throwable $e) {
+        error_log('trading-strategies card cache: ' . $e->getMessage());
+    }
+    $v = ts_analyze_for_card($m, $p, $fl, $state());
+    $json = json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PRESERVE_ZERO_FRACTION);
+    if ($json === false) return $v;   // NaN/INF — לא נשמר, רק מוחזר
+    try {
+        $c->prepare('INSERT OR REPLACE INTO method_results (k, method_id, result, at) VALUES (?, ?, ?, ?)')->execute([$k, $m->meta()['id'], $json, $now]);
+    } catch (Throwable $e) {
+        error_log('trading-strategies card cache: ' . $e->getMessage());
+    }
+    return json_decode($json, true);
+}
+
 function ts_bt_out(array $s, int $at, string $mode, int $calls): array
 {
     $r = ts_bt_result($s);
@@ -497,12 +556,24 @@ function ts_max_horizon(TsMethod $m, array $p, string $asset, string $scope): ?a
  */
 function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $now = null): array
 {
-    [$provider, $symbol] = ts_asset_split($asset);
+    ts_asset_split($asset);
     if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
     $ids = is_string($methods) ? array_values(array_filter(explode(',', $methods))) : [];
     if (!$ids) throw new TsInvalid('בחרו שיטה אחת לפחות');
     if (count($ids) > 10) throw new TsInvalid('עד 10 שיטות בניתוח אחד');
-    $now ??= ts_now();
+    $prepared = [];
+    foreach (array_unique($ids) as $id) $prepared[$id] = ts_method_for($uid, $id);
+    return ts_analysis_cards($uid, $asset, $tf, $prepared, $now ?? ts_now(), true);
+}
+
+/**
+ * הכרטיסים והשקלול לשיטות שכבר נטענו ([id => [m, set, p]]). $runBt — האם להריץ בדיקה לאחור כשאין שמורה עדכנית.
+ * **בגרף (chart_refresh, S4 18.4) — false:** הרענון לא מריץ בדיקה לאחור (18.3), והכרטיס מציג את השמורה, גם אם עברה יום.
+ * הניתוח עצמו (התנאים עכשיו) נשמר לפי מפתח החישוב — אותו נר סגור אחרון ואותה בדיקה לאחור → לא רץ שוב (2ה.4).
+ */
+function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared, int $now, bool $runBt): array
+{
+    [$provider, $symbol] = ts_asset_split($asset);
     $acc = ts_access($uid, $provider) ?? throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
     $profile = ts_profile($uid);
     $market = ts_asset_market($asset);
@@ -510,12 +581,7 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
 
     // ניתוח המצב עכשיו — חלון של נרות אחרונים מהמאגר (פנייה לספק רק על החסר)
     $warm = 300;
-    $prepared = [];
-    foreach (array_unique($ids) as $id) {
-        [$m, $set, $p] = ts_method_for($uid, $id);
-        $prepared[$id] = [$m, $set, $p];
-        $warm = max($warm, (int)($p['warmup_bars'] ?? $m->meta()['warmup'] ?? 0) + $m->horizon($p) + 10);
-    }
+    foreach ($prepared as [$m, , $p]) $warm = max($warm, (int)($p['warmup_bars'] ?? $m->meta()['warmup'] ?? 0) + $m->horizon($p) + 10);
     $recent = ts_market_candles($uid, $asset, $tf, $now - min($warm, TS_MAX_CANDLES) * $sec, $now, $now);
     $rows = array_values(array_filter($recent['candles'], fn($c) => $c['t'] + $sec <= $now));
     $calls = $recent['provider_calls'];
@@ -539,8 +605,9 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
         }
         $p = ts_params_for_asset($m, $p, $dec);
         // הבדיקה לאחור קודם — הכרטיס של שיטה עם מצב ארוך ממשיך מהמצב שלה (ו1)
-        $bt = ts_backtest($uid, $m, $p, $asset, $tf, $market, $now);
-        [$a, $basis] = ts_analyze_for_card($m, $p, $fl, !empty($meta['analyze_from_state']) ? ts_bt_state($uid, $m, $p, $asset, $tf, $market) : null);
+        $bt = $runBt ? ts_backtest($uid, $m, $p, $asset, $tf, $market, $now) : ts_backtest_stored($uid, $m, $p, $asset, $tf, $market, $now);
+        [$a, $basis] = ts_card_analyze($m, $p, $asset, $tf, (string)$acc['scope'], $rows, $fl, $bt,
+            fn() => !empty($meta['analyze_from_state']) ? ts_bt_state($uid, $m, $p, $asset, $tf, $market) : null, $now);
         $lv = $a['levels'];
         $levels = $lv ? ['entry' => ts_level_str($lv['entry'], $dec), 'stop' => ts_level_str($lv['stop'], $dec), 'target' => ts_level_str($lv['target'], $dec)] : null;
         $calls += $bt['provider_calls'] ?? 0;

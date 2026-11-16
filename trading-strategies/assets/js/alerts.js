@@ -1,6 +1,7 @@
 // לשונית "התראות" — spec-stage-a פרק 8. התיבה, ההתראות שלי, ופוש.
 // הבדיקה עצמה רצה רק ב-cron בשרת. כאן — בלי polling ובלי טיימרים: פנייה לשרת רק מפעולה של המשתמש (פתיחת המסך,
 // שמירה, השהיה, מחיקה). פוש — Service Worker (sw.js) שמושך את ההודעה מהתיבה רק כשמגיע פוש.
+import { assetField } from './combobox.js';
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const SIDES = [['long', 'לונג'], ['short', 'שורט'], ['both', 'שניהם']];
 const KINDS = [['price', 'מחיר חצה רמה'], ['method', 'שיטה'], ['blend', 'שקלול']];
@@ -104,11 +105,10 @@ export function mountAlerts(ctx) {
   // ── התראה חדשה — גם מכרטיס ניתוח (pre) ──
   async function newAlert(pre = {}) {
     const [{ methods }, { watchlist }, { providers }] = await Promise.all([api('alerts'), api('watchlist'), api('market_providers')]);
-    const assets = [...new Set([...(pre.asset ? [pre.asset] : []), ...watchlist.map(w => w.asset)])];
-    if (!assets.length) { toast('בחרו קודם נכס ב"שוק" או הוסיפו נכס למעקב', true); return; }
-    // שם הזוג במילים (18.1) — הסימול לא מוצג
-    const { labels } = await api('pair_labels', null, { assets: assets.join(',') });
-    const assetSel = assetPicker(assets, labels, pre.asset || assets[0], a => providers.find(p => p.id === a.split(':')[0])?.name || '');
+    // הנכס — מרשימה (combobox, 18.1.3), לא טקסט חופשי. ההתחלה: מהכרטיס, או הראשון במועדפים
+    const first = pre.asset || watchlist[0]?.asset || null;
+    const { labels } = first ? await api('pair_labels', null, { assets: first }) : { labels: {} };
+    const assetSel = assetField(ctx, { value: first, labels, recent: () => watchlist });
     const tfBox = h('div');
     const level = numInput('level', pre.level || '', 'למשל 65000');
     const days = h('input', { type: 'number', min: 1, max: 90, value: 30, inputmode: 'numeric', dir: 'ltr' });
@@ -119,13 +119,14 @@ export function mountAlerts(ctx) {
     }));
     let kind = methods.length ? (pre.kind || 'price') : 'price';
     const kindBox = h('div');
-    const tfs = () => (providers.find(p => p.id === assetSel.value.split(':')[0])?.tfs || []);
+    const tfs = () => (providers.find(p => p.id === (assetSel.value || '').split(':')[0])?.tfs || []);
     const drawTf = () => { tfBox.replaceChildren(select('tf', tfs().map(t => [t, TF_LABEL[t]]), tfs().includes(pre.tf) ? pre.tf : (tfs().includes('h1') ? 'h1' : tfs()[0]), { 'aria-label': 'מסגרת זמן' })); };
     const drawKind = () => kindBox.replaceChildren(
       kind === 'price' ? field('רמת מחיר', level, true) : kind === 'method' ? field('שיטה', methodSel, true) : h('div', { class: 'f wide' }, h('span', {}, 'שיטות (2 לפחות)'), blendBox));
     assetSel.addEventListener('change', drawTf);
     drawTf(); drawKind();
     const sh = sheet('התראה חדשה', { saveLabel: 'שמירה', onSave: async () => {
+      if (!assetSel.value) throw new Error('בחרו נכס מהרשימה');
       const body = { asset: assetSel.value, tf: tfBox.querySelector('select').value, side: segVal(sh.body, 'side'), kind, days: +days.value };
       if (kind === 'price') body.level = level.value.trim();
       if (kind === 'method') body.method_id = methodSel.value;
