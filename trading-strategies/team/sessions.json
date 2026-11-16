@@ -5,11 +5,11 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYDnBi3cR5V4TF8WRTm",
-    "slice": "תיקון רעידה ב-tests/market-api.php (מפתחות בדיקה בלי חלון hex)",
+    "session": "session_018g4NYE8aJBheQh1TYiJZ3U",
+    "slice": "F-1 פיבונאצ'י — ממצא ואותות (פרק 22, 2.27)",
     "model": "claude-opus-5-5",
-    "opened_by": "בקרה (6) — עומק 5",
-    "branch": "claude/trading-strategies-flaky-key-test"
+    "opened_by": "בקרה (6)",
+    "branch": "claude/trading-strategies-fib-f1"
   },
   "control": "session_018g4NYEHws3rFjuBNuDFXRb",
   "tasks": null,
@@ -79,6 +79,14 @@
       "session": "session_018g4NYEoXMKKD28MYYmYaoC",
       "done": "#1642 21.3 (סבב 2); handoff #1644 — יצא (392K)",
       "model": "claude-opus-5-5 — יצא (392K)"
+    },
+    {
+      "session": "session_018g4NYDnBi3cR5V4TF8WRTm",
+      "slice": "תיקון רעידה ב-tests/market-api.php (מפתחות בדיקה בלי חלון hex)",
+      "model": "claude-opus-5-5",
+      "opened_by": "בקרה (6) — עומק 5",
+      "branch": "claude/trading-strategies-flaky-key-test",
+      "done": "#1646 — רדום"
     }
   ],
   "control_previous": [
