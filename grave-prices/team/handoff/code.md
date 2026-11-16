@@ -52,9 +52,17 @@
 - חתימות בהדפסה: `.sigs{direction:ltr}` — הסט מוצג משמאל לימין, כמו המקור (ביקורת 03 סבב 1); במסך ⚙️ באותו סדר.
 - הדפסת חו"ל: פס `band` אפור; "תשלומי אגרות" (subsection) עם קו תחתון ותשלומים בכתב רגיל — רק ב-`.pl.abroad`, כמו במקור.
 
+## פרוסה 04
+
+- `gp_layout(rows)` ב-`lib/editions.php` — מקור האמת לגבולות מקטע (`ends`), `fee_start` ומיקומי ➕ (`add_row`, `add_block`,
+  `add_fee` — אינדקס השורה שלפניה מוצג הכפתור). `gp_edition` מחזיר `layout` (בלי `ends`) ו-`block` בכל כותרת. `heading` —
+  רק השורות המוזחות; כותרת באזור האגרות — היא בלבד. ההחלטות — `team/log/code.md`.
+- `block-add` / `block-delete` ב-`lib/edit.php`; היומן של `block-delete` שומר את כל השורות עם המחירים ואת `after`.
+- חתימות בהדפסה במידות קבועות (mm/pt) מחוץ ל-`.content`, כך ש-`fit()` מקטין רק את השורות.
+
 ## בדיקות
 
-`php grave-prices/tests/run.php` — 156 בדיקות. `$legacy(name, version, edit)` בונה מסד ישן (01/02) עם עריכות, ואז
+`php grave-prices/tests/run.php` — 194 בדיקות. `$legacy(name, version, edit)` בונה מסד ישן (01/02) עם עריכות, ואז
 `gp_migrate`: כל השורות, רשומות המחיר, המחירונים והיומן — זהים; `migrate-abroad`; ישראל 2026 של הבעלים לא נדרס; גיבוי;
 פריסה שנייה בלי כפילויות; כשל באמצע → הכול חוזר ו-`foreign_keys` חוזר לפעול. בדיקת דפדפן (Playwright, 390px): שרת
 `php -S` עם router שמציב `PLATFORM_USER` ו-`GP_DATA_DIR` זמני; ההדפסות ב-`page.pdf` מול `team/source/`.

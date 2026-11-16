@@ -90,7 +90,7 @@ $am = call('owner', 'admin_methods')[1];
 $smp = array_values(array_filter($am['methods'], fn($x) => $x['id'] === $SAMPLE))[0] ?? [];
 // מ-4א/3 גם elliott-w3 ברשימה (כבויה) — ולכן לפי מזהה, לא לפי מקום
 eq([array_column($am['methods'], 'id'), $smp['enabled'], $smp['sample'], $smp['version'], $smp['alerts'], array_column($am['methods'], 'enabled')],
-    [[$SAMPLE, 'elliott-w3'], false, true, 1, false, [false, true]], 'the code methods are listed; the sample OFF by default (sample, version 1, not for alerts), the book method ON (18.1.2)');
+    [[$SAMPLE, 'elliott-w3', 'fibonacci'], false, true, 1, false, [false, true, false]], 'the code methods are listed; the sample OFF by default (sample, version 1, not for alerts), the book method ON (18.1.2), Fibonacci OFF until an admin turns it on (22.1)');
 eq(array_column(call('owner', 'methods')[1]['methods'], 'id'), ['elliott-w3'], 'the sample, off → not offered even to the admin; the book method is');
 eq(call('owner', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $SAMPLE])[0], 404, 'off → analysis refuses it');
 foreach ([['params' => ['fast' => 60]], ['params' => ['fast' => 1]], ['params' => ['fast' => 2.5]], ['params' => ['zzz' => 1]], ['markets' => ['options']], ['timeframes' => ['mn1']], ['timeframes' => []]] as $bad) {

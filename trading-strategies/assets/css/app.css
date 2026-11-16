@@ -318,7 +318,16 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .chart-tools { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .chart-tools .seg { max-width: 100%; }
 .chart-tools .toolbar { margin: 0; flex-wrap: wrap; row-gap: 4px; }
-.chart-tools .toolbar .fs-open { margin-inline-start: auto; min-height: 36px; min-width: 36px; }
+.chart-tools .toolbar .fs-pick { position: relative; margin-inline-start: auto; display: inline-flex; }
+.chart-tools .toolbar .fs-open { min-height: 36px; min-width: 36px; }
+/* L1 (18.1.5): התפריט שנפתח מ-⛶ — לגובה / לרוחב (רק כשהמסך לאורך) */
+.fs-menu { position: absolute; z-index: 20; top: calc(100% + 4px); inset-inline-end: 0; display: flex; flex-direction: column; min-inline-size: 140px;
+    padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.fs-menu[hidden] { display: none; }
+.fs-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; font: inherit; color: var(--ink); background: none;
+    border: 0; border-radius: calc(var(--r) - 2px); cursor: pointer; text-align: start; }
+.fs-item:hover, .fs-item:focus-visible { background: var(--brand-soft); outline: none; }
+.fs-ico { inline-size: 1.4em; text-align: center; }
 .chart-tools select { width: auto; }
 .chart-wrap { position: relative; display: grid; gap: 4px; margin-bottom: var(--s2); }
 
@@ -376,6 +385,11 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .chart-wrap.fs .fc-pop { top: calc(56px + env(safe-area-inset-top)); }
 .fs-pair { font-size: .9rem; padding-inline: 4px; }
 body.chart-fs { overflow: hidden; }
+/* L1 (18.1.5 סעיף 2.2): "לרוחב" בלי נעילת כיוון — השכבה מסובבת 90° עם כיוון השעון (קוראים כשהחלק העליון של הטלפון שמאלה).
+   רוחב = גובה המסך, גובה = רוחב המסך (--fs-w/--fs-h מ-market.js). המגע מומר ב-rotate.js */
+.chart-wrap.fs.fs-turn { inset: auto; top: 0; left: 0; width: var(--fs-w); height: var(--fs-h); padding: 0;
+    transform-origin: 0 0; transform: translateX(var(--fs-h)) rotate(90deg); }
+.chart-wrap.fs.fs-turn .chart-box { touch-action: none; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }

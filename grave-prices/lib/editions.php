@@ -64,6 +64,9 @@ function gp_edition(string $pid): array
             'html' => gp_label_html($r['label']), 'priced' => $priced,
             'price' => $priced && $r['amount'] !== null ? (int)$r['amount'] : null];
     }
+    $layout = gp_layout($rows);
+    foreach ($layout['ends'] as $i => $end) $rows[$i]['block'] = $end - $i - 1;   // כותרת: כמה שורות במקטע שלה
+    unset($layout['ends']);
     return [
         'pid' => $e['pid'],
         'audience' => $e['audience'],
@@ -73,5 +76,60 @@ function gp_edition(string $pid): array
         'future' => $e['effective_from'] > gp_today(),   // עתידי: נמחק ומשנה תאריך; עריכתו בלי אישור "כבר בתוקף"
         'signatures' => gp_signatures(),   // הסט הגלובלי — לא של המחירון
         'rows' => $rows,
+        'layout' => $layout,   // איפה כפתורי ➕ במצב עריכה (04 סעיף 2)
     ];
+}
+
+/** רמה לכל כותרת (04 סעיף 1): מספר קטן = גבוהה יותר */
+const GP_LEVELS = ['section' => 1, 'band' => 1, 'subsection' => 2, 'heading' => 3];
+
+/**
+ * גבולות המקטעים ואזור האגרות (04 סעיף 1), על שורות לפי הסדר (צריך רק kind ו-indent).
+ * - fee_start: השורה הראשונה מסוג fee/note; כותרת subsection שמיד לפניה שייכת לאזור האגרות. אין — סוף המחירון.
+ * - ends[i]: לכל כותרת — האינדקס שבו המקטע שלה נגמר (לא כולל). עד כותרת שרמתה שווה או גבוהה יותר, או עד אזור
+ *   האגרות. heading — רק השורות המוזחות שאחריה (כמו בהדפסה: שורה לא מוזחת שאחריה כבר לא "תחתיה"). כותרת שבתוך
+ *   אזור האגרות — המקטע שלה היא עצמה בלבד, כדי שמחיקתה לא תמחק את האגרות.
+ * - add_row: לפני אילו שורות ➕ שורה — לפני כותרת רמה 1–2 ולפני אזור האגרות, כשהשורה שמעל היא item או כותרת
+ *   שהמקטע שלה ריק (נגמר כאן). לא לפני heading: השורות שמעליה הן עדיין חלק מאותו מקטע.
+ * - add_block: בסוף כל מקטע רמה 1; אין כותרת רמה 1 — לפני אזור האגרות.
+ * - add_fee: אחרי האגרה האחרונה באזור האגרות; אין — לפני ההערה הראשונה בו (או בסוף).
+ */
+function gp_layout(array $rows): array
+{
+    $n = count($rows);
+    $fee = $n;
+    foreach ($rows as $i => $r) if ($r['kind'] === 'fee' || $r['kind'] === 'note') { $fee = $i; break; }
+    if ($fee < $n && $fee > 0 && $rows[$fee - 1]['kind'] === 'subsection') $fee--;
+    $ends = [];
+    foreach ($rows as $i => $r) {
+        if (!isset(GP_LEVELS[$r['kind']])) continue;
+        $lv = GP_LEVELS[$r['kind']];
+        $j = $i + 1;
+        if ($i < $fee) {
+            for (; $j < $fee; $j++) {
+                $k = $rows[$j];
+                if (isset(GP_LEVELS[$k['kind']]) ? GP_LEVELS[$k['kind']] <= $lv : $lv === 3 && !$k['indent']) break;
+            }
+        }
+        $ends[$i] = $j;
+    }
+    $addRow = [];
+    foreach (array_merge(array_keys(array_filter($ends, fn($e, $i) => $i < $fee && GP_LEVELS[$rows[$i]['kind']] < 3, ARRAY_FILTER_USE_BOTH)), [$fee]) as $p) {
+        if ($p === 0 || in_array($p, $addRow, true)) continue;
+        $prev = $p - 1;
+        if ($rows[$prev]['kind'] === 'item' || (isset($ends[$prev]) && $ends[$prev] === $p)) $addRow[] = $p;
+    }
+    $addBlock = [];
+    foreach ($ends as $h => $e) if ($h < $fee && GP_LEVELS[$rows[$h]['kind']] === 1 && !in_array($e, $addBlock, true)) $addBlock[] = $e;
+    if (!$addBlock) $addBlock[] = $fee;
+    $lastFee = null;
+    $firstNote = null;
+    for ($i = $fee; $i < $n; $i++) {
+        if ($rows[$i]['kind'] === 'fee') $lastFee = $i;
+        if ($rows[$i]['kind'] === 'note') $firstNote ??= $i;
+    }
+    $addFee = $lastFee !== null ? $lastFee + 1 : ($firstNote ?? $n);
+    sort($addRow);
+    sort($addBlock);
+    return ['fee_start' => $fee, 'ends' => $ends, 'add_row' => $addRow, 'add_block' => $addBlock, 'add_fee' => $addFee];
 }

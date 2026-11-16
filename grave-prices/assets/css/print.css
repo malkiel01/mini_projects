@@ -60,9 +60,12 @@ h2 { font-size: 1.43em; font-weight: 400; text-align: center; margin-top: 0.675e
 .pl.abroad tr.fee td.lb { font-weight: 400; font-size: 0.905em; }
 .pl.abroad tr.subsection td { font-size: 1.1em; text-decoration: underline; padding-top: 1.35em; }
 
-/* החתימות — שם מעל תפקיד, שלוש עמודות שוות */
-.sigs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 10.5pt; margin: 4mm 0 5mm; }
+/* החתימות — שם מעל תפקיד, שלוש עמודות שוות (04 סעיף 4): 18mm ריקים מעל השם לחתימה ביד, בלי קו; שם 9pt מודגש,
+   תפקיד 8.5pt רגיל, 4mm עד נייר המכתבים. במידות קבועות (mm/pt) — fit() מקטין רק את .content, לא את החתימות */
+.sigs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; margin: 18mm 0 4mm; line-height: 1.2; }
 .sigs div { display: grid; gap: 0.5mm; }
+.sigs b { font-size: 9pt; font-weight: 700; }
+.sigs span { font-size: 8.5pt; font-weight: 400; }
 /* כמו המקור (israel-2025-03-15.pdf): הסט מוצג משמאל לימין — הראשון (גזבר) משמאל, האחרון (יו"ר) מימין */
 .sigs { direction: ltr; }
 .sigs div { direction: rtl; }
