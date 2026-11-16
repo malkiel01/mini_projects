@@ -30,6 +30,8 @@ $grid = fn(array $c, array $o = []) => ts_fib_grid_of($c, $m->params($o));
 $tp = fn(?array $abx) => $abx ? r2(array_column($abx['targets'], 'price')) : null;
 $H = 3600;
 
+// למידה (פרק 23.3, L1): השדות שהאות מצרף ל-method_outcomes.features — ציון האזור, רוחב האזור ב-ATR, rr; ולא נכנסים למצב
+eq(array_keys($m->meta()['learn'] ?? []), ['score', 'zone_atr', 'rr'], 'meta().learn (23.3): zone score, zone width in ATR, rr');
 eq([$m->meta()['version'], TS_FIB_PROJ], [2, [0.618, 1.0, 1.382, 1.5, 1.618]], 'version 2 (F-2 changes scores and signals); projection ratios = R5 only (22.5א)');
 
 // ── קריטריון 1: A-B-X מטה ─────────────────────────────────
@@ -105,6 +107,15 @@ $abxLines = array_values(array_filter($si, fn($it) => str_starts_with($it['text'
 eq(array_map(fn($it) => [$it['text'], !empty($it['bold']), !empty($it['single']), $it['style']], $abxLines), [
     ['A-B-X 61.8%', false, true, 'dashed'], ['A-B-X 100%', true, false, 'dashed'], ['A-B-X 138.2%', false, true, 'dashed'],
     ['A-B-X 150%', false, true, 'dashed'], ['A-B-X 161.8%', false, true, 'dashed']], 'criterion 5 (chart): the 100% target in a zone — bold; the others alone — faint (R8)');
+
+$sL = $m->init($m->params(['lookback_bars' => 500]));
+$NTL = fib_bars([120, 175, 150, [155, 'body' => 5], 200, 185]);
+$NTL[] = ['t' => $NTL[count($NTL) - 1]['t'] + $H, 'o' => 185.0, 'h' => 185.5, 'l' => 169.3, 'c' => 175.0];
+$fs = null;
+foreach ($NTL as $cc) { [$sL, $sg] = $m->step($sL, $cc, $m->params(['lookback_bars' => 500])); if ($sg) $fs = $sg; }
+eq([array_keys($fs['features'] ?? []), $fs['features']['score'] ?? null, round($fs['features']['rr'] ?? 0, 9) === round($fs['rr'] ?? -1, 9),
+    round($fs['features']['zone_atr'] ?? 0, 6) === round(0.34 / ts_fib_grid_of(array_slice($NTL, 0, -1), $m->params(['lookback_bars' => 500]))['atr'], 6), isset($sL['x']['features'])],
+    [['score', 'zone_atr', 'rr'], $fs['score'] ?? -1, true, true, false], 'learn: the signal carries the features (zone width 0.34 / ATR), and they stay out of the state');
 
 // ── קריטריון 7: יעד חלופי ──────────────────────────────────
 // אות לונג על [169.10, 169.44], בלי אזור התנגדות מעל → T של הקופסה של אותו אזור

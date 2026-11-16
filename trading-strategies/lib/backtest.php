@@ -47,10 +47,18 @@ function ts_bt_init(TsMethod $m, array $p): array
 /**
  * מריץ (או ממשיך) בדיקה לאחור על נרות סגורים, ממוינים. $cost = ['fee' => שבר לכל צד, 'slip' => שבר].
  * $deadline — microtime שאחריו TsBacktestTimeout (null — בלי תקרה; בבדיקות).
+ *
+ * $onTrade (למידה, 23.3–23.4, L1) — נקרא לכל עסקה **שהסתיימה**, ברגע היציאה (בלי הצצה לעתיד — עסקה פתוחה לא יוצאת):
+ * {t_signal, t_entry, t_exit, side, entry, stop, target, exit, result win|loss|horizon|skipped_gap, win, r, mae_r, mfe_r,
+ * atr, features}. mae_r / mfe_r — הירידה המרבית נגד העסקה והעלייה המרבית בעדה, ב-R, מהכניסה ועד נר היציאה (כולל);
+ * atr — ATR(14) של Wilder בנר האות; features — מה שהשיטה צירפה לאות (meta().learn). פער (ח) — שורה skipped_gap בלי R.
+ * **רק כש-$onTrade נמסר** המצב מחזיק גם את ה-ATR ואת השפל/השיא של העסקה הפתוחה; בלעדיו — המצב בדיוק כמו קודם.
  */
-function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $state = null, ?float $deadline = null): array
+function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $state = null, ?float $deadline = null, ?callable $onTrade = null): array
 {
     $s = $state ?? ts_bt_init($m, $p);
+    $learn = $onTrade !== null;
+    if ($learn) $s['atr'] ??= ['n' => 0, 'sum' => 0.0, 'v' => null, 'pc' => null];
     $H = $m->horizon($p);
     $abs = ($m->meta()['levels'] ?? 'relative') === 'absolute';   // (ח)
     $fee = (float)($cost['fee'] ?? 0); $slip = (float)($cost['slip'] ?? 0);
@@ -71,6 +79,9 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
                     : $c['o'] >= $q['stop'] || ($q['target'] !== null && $c['o'] <= $q['target']);
                 if ($gap) {
                     $s['skipped_gap'] = ($s['skipped_gap'] ?? 0) + 1;
+                    if ($learn) $onTrade(['t_signal' => $q['sig_t'], 't_entry' => null, 't_exit' => $c['t'], 'side' => $q['side'], 'entry' => null,
+                        'stop' => $q['stop'], 'target' => $q['target'], 'exit' => null, 'result' => 'skipped_gap', 'win' => false, 'r' => null,
+                        'mae_r' => null, 'mfe_r' => null, 'atr' => $q['atr'] ?? null, 'features' => $q['features'] ?? null]);
                 } else {
                     $s['pos'] = ['side' => $q['side'], 'entry' => $entry, 'risk' => $dir * ($entry - $q['stop']),
                         'stop' => $q['stop'], 'target' => $q['target'], 'bars' => 0, 'sig_t' => $q['sig_t'], 'entry_t' => $c['t']];
@@ -80,6 +91,9 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
                     'stop' => $entry - $dir * $q['stop_d'], 'target' => $q['target_d'] === null ? null : $entry + $dir * $q['target_d'],
                     'bars' => 0, 'sig_t' => $q['sig_t'], 'entry_t' => $c['t']];
             }
+            if ($learn && $s['pos'] !== null) {
+                $s['pos'] += ['lo' => $entry, 'hi' => $entry, 'atr' => $q['atr'] ?? null] + (isset($q['features']) ? ['features' => $q['features']] : []);
+            }
             $s['pend'] = null;
         }
 
@@ -88,6 +102,7 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
             $pos = &$s['pos'];
             $pos['bars']++;
             $dir = $pos['side'] === 'long' ? 1 : -1;
+            if ($learn) { $pos['lo'] = min($pos['lo'] ?? $pos['entry'], $c['l']); $pos['hi'] = max($pos['hi'] ?? $pos['entry'], $c['h']); }
             $hitStop = $dir > 0 ? $c['l'] <= $pos['stop'] : $c['h'] >= $pos['stop'];
             $hitTarget = $pos['target'] !== null && ($dir > 0 ? $c['h'] >= $pos['target'] : $c['l'] <= $pos['target']);
             $exit = null; $win = false;
@@ -110,11 +125,31 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
                 $s['eq'] += $r;
                 if ($s['eq'] > $s['peak']) $s['peak'] = $s['eq'];
                 if ($s['peak'] - $s['eq'] > $s['dd']) $s['dd'] = $s['peak'] - $s['eq'];
+                if ($learn) {
+                    $risk = $pos['risk'];
+                    $adv = $dir > 0 ? $pos['entry'] - $pos['lo'] : $pos['hi'] - $pos['entry'];
+                    $fav = $dir > 0 ? $pos['hi'] - $pos['entry'] : $pos['entry'] - $pos['lo'];
+                    $onTrade(['t_signal' => $pos['sig_t'], 't_entry' => $pos['entry_t'], 't_exit' => $c['t'], 'side' => $pos['side'],
+                        'entry' => $pos['entry'], 'stop' => $pos['stop'], 'target' => $pos['target'], 'exit' => $exit,
+                        'result' => $hitStop ? 'loss' : ($hitTarget ? 'win' : 'horizon'), 'win' => $win, 'r' => $r,
+                        'mae_r' => $risk > 0 ? max(0.0, $adv / $risk) : null, 'mfe_r' => $risk > 0 ? max(0.0, $fav / $risk) : null,
+                        'atr' => $pos['atr'] ?? null, 'features' => $pos['features'] ?? null]);
+                }
                 unset($pos);
                 $s['pos'] = null;
             } else {
                 unset($pos);
             }
+        }
+
+        // ATR של Wilder לנר הזה (למידה: ה-ATR בנר האות) — אותו סדר פעולות כמו ts_atr
+        if ($learn) {
+            $a = $s['atr'];
+            $tr = ts_tr($c['h'], $c['l'], $a['pc']);
+            if ($a['n'] < 14) { $a['sum'] += $tr; if ($a['n'] === 13) $a['v'] = $a['sum'] / 14; } else $a['v'] = ($a['v'] * 13 + $tr) / 14;
+            $a['n']++;
+            $a['pc'] = $c['c'];
+            $s['atr'] = $a;
         }
 
         // השיטה רואה את הנר רק עכשיו — אחרי שנסגר
@@ -130,6 +165,10 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
             } elseif ($risk > 0) {
                 $s['pend'] = ['side' => $sig['side'], 'stop_d' => $risk,
                     'target_d' => $sig['target'] === null ? null : abs($sig['target'] - $sig['entry']), 'sig_t' => $c['t']];
+            }
+            if ($learn && $s['pend'] !== null && $s['pend']['sig_t'] === $c['t']) {
+                $s['pend']['atr'] = $s['atr']['v'];
+                if (!empty($sig['features']) && is_array($sig['features'])) $s['pend']['features'] = $sig['features'];
             }
         }
         $s['bars']++;

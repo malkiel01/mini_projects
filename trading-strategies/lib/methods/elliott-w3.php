@@ -58,6 +58,11 @@ final class TsMethodElliottW3 extends TsMethod
             'version' => 1 + $this->tune,   // + החלות (18.7)
             'incremental' => true,
             'alerts' => false,        // לא נקבע באפיון — כבוי עד שיוכרע
+            // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            'learn' => [
+                'w2_depth' => 'עומק גל 2 (חלק מגל 1)',
+                'w1_atr' => 'אורך גל 1 ב-ATR (בנר האישור)',
+            ],
         ];
     }
 
@@ -105,6 +110,9 @@ final class TsMethodElliottW3 extends TsMethod
         if (!$e['ok']) return [$s, null];
         $sig = ['side' => $e['side'], 'entry' => $c['c'], 'stop' => $e['stop'], 'target' => $e['target']];
         $s['x'] = $sig + ['ago' => 0, 'alive' => true];
+        $catr = $s['piv'][2]['catr'] ?? null;
+        $w1 = abs($s['piv'][1]['v'] - $s['piv'][0]['v']);
+        $sig['features'] = ['w2_depth' => $e['r'], 'w1_atr' => $catr ? $w1 / $catr : null];   // meta().learn — לא נכנס למצב
         return [$s, $sig];
     }
 

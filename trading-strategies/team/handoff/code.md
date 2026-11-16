@@ -19,6 +19,7 @@
 > **עדכון 2026-11-16 (צ'אט F-1):** פיבונאצ'י F-1 (פרק 22) בנוי — הסעיף "F-1 — פיבונאצ'י" בסוף. PR טיוטה, ממתין לביקורת. **מיגרציה הבאה — עדיין 17; `cache.sqlite` — 5.**
 > **עדכון 2026-11-16 (צ'אט bt-incomplete):** בדיקה לאחור חלקית נשמרת (`bt_partial`) וממשיכה. **`cache.sqlite` — המיגרציה הבאה 6.** הסעיף "בדיקה לאחור שלא הספיקה" בסוף.
 > **עדכון 2026-11-16 (צ'אט T1):** חלונית ההסבר על הגרף (18.1.6) — הסעיף "T1 — חלונית הסבר" בסוף.
+> **עדכון 2026-11-16 (צ'אט L1):** למידה עצמית — `method_outcomes` ו-backtest. **`app.sqlite` — המיגרציה הבאה 18; `cache.sqlite` — 6.** הסעיף "L1 — למידה עצמית" בסוף.
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -398,6 +399,11 @@
   (label). לא נוגעות ברשת. בכרטיס: שדה `info` (`lib/analysis.php` מעביר, `card.js` מציג, `data-info`).
 - אם `conditions()` של שיטה אחרת תרצה מידע שאינו תנאי — אותו `info`.
 
+## פיבונאצ'י — למידה (פרק 23.3, L1)
+
+- `meta().learn` — `score` (ציון האזור, כולל Z6), `zone_atr` (רוחב האזור ב-ATR של הרשת שהאות נבדק מולה), `rr`. האות מצרף
+  `features` אחרי ש-`x` נקבע — לא נכנס למצב. `fibonacci-api.php` בודק: שורה לכל עסקה, features, בלי כפילות בהרצה חוזרת.
+
 ## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
 
 - **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
@@ -464,3 +470,13 @@
 - **בדיקות:** `tests/chart-tip-ui.mjs` — הספירה בנרות האחרונים, בקצה; `center()` גורר את הגרף שמאלה. חלון שני עם "עכשיו"
   אחר — **משתמש אחר**, אחרת `method_colors_save` מחזיר 422 (זמן הצבע "בעתיד").
 - **צילומים:** `team/shots/chart-tip/` (מוחרג מהפריסה עם כל `team/`).
+## L1 — למידה עצמית: המסד, התגיות ו-backtest (פרק 23, 2.35)
+
+- **`lib/learn.php`:** `ts_learn_tags`, `ts_learn_holiday_regions`, `ts_outcomes_write` (INSERT OR IGNORE, מחזיר כמה חדשות), `ts_outcomes($methodId, $f)` —
+  תמיד שיטה אחת, ובלי `user_id`.
+- **המנוע:** `ts_bt_run(m, p, candles, cost, state, deadline, $onTrade)`. בלי `$onTrade` — שום שינוי במצב. עם — `$s['atr']`, `pos.lo/hi/atr/features`,
+  `pend.atr/features`. מצב ישן בלי השדות — ממשיך (ATR מתחמם מחדש, MAE/MFE מהכניסה).
+- **שיטה שרוצה `features`:** `meta()['learn'] = [שם => תיאור]`, והאות מחזיר `'features' => [שם => מספר]`. לא להכניס אותן למצב השיטה.
+- **L2 צריך:** cron ל-`live` (אותו `$onTrade` על נרות סגורים אחרי `to_t`), `trade` בסגירת עסקה עם `method_id` + `planned_stop`, ודילוג על
+  `users.learn_off = 1`. ההגדרה בממשק — עוד לא.
+- **החגים:** לבנות מחדש — `php lib/learn/holidays-build.php` (מחליף את `holidays.json`).
