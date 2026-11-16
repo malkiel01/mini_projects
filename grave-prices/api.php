@@ -57,6 +57,7 @@ try {
                              'version' => (string)(json_decode((string)file_get_contents(__DIR__ . '/app.json'), true)['version'] ?? '')],
         'GET editions'   => gp_editions((string)($_GET['audience'] ?? '')),
         'GET edition'    => gp_edition((string)($_GET['pid'] ?? '')),
+        'GET fees'       => gp_fees((string)($_GET['il'] ?? ''), (string)($_GET['abroad'] ?? '')),   // הדף המשותף — 05
         'POST print-log' => gp_print_log($uid, $in),
         'GET history'    => gp_history((string)($_GET['pid'] ?? '')),
 

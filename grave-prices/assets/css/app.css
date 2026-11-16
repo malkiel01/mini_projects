@@ -199,3 +199,5 @@ dialog.ask .sheet-foot { border-top: 0; }
 .add-strip .btn { min-height: 44px; flex: 0 1 auto; font-weight: 500; }
 .prices.editing td.amt { padding-inline-end: 0; }
 .prices.editing input.price { inline-size: 5.2em; }
+/* תג "כללית ✓" / "רק ל…" ליד אגרה במצב עריכה (05 סעיף 4) */
+.prices .gp-shared { min-height: 18px; margin-inline-start: 4px; vertical-align: middle; font-size: .7rem; }
