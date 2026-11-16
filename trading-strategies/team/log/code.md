@@ -161,6 +161,7 @@
   ⚪4 CSV: `trade_id` (כמו `user_id`) — רק לעורך הראשי.
   בדיקות: `learn-live.php` 32 → 39, `learn-live-api.php` 17 → 18. כל `tests/*.php` ירוקים; `learn-ui`, `learn-switch-ui` ירוקים.
 - 2026-11-16 — פיבונאצ'י, `learn_params` (23.9, L5b אחרי #1709; בקרה (8)): stop_atr (צעד 0.25), box_target (0.5 / 0.618 / 1), zone_atr (צעד 0.1). משנה ספירה: לא — אותות זהים ל-main, `zones.json` זהה. `fibonacci-f3.php` — 32 (שכנים בתוך 22.10).
+- 2026-11-16 — L2 מוזג (#1711). L6 — **לא התחלתי**: הצ'אט ב-~517K טוקנים, ופרוסה שלמה (שרת, כרטיס, הצעה, בדיקות, סבבי ביקורת) הייתה עוברת את 600K. כתבתי את ההעברה ל-L6 ב-`team/handoff/code.md` ("הבא: L6"), כולל ההערה של הבקרה על החפיפה backtest / live. יוצא.
 - 2026-11-16 — **L6** (23.7, ענף `claude/trading-strategies-learning-l6`, בקרה (8)): ההסתברות בכרטיס. `ts_learn_live_line` — "בפועל מאז" רק מ-`live`
   של השיטה וגרסתה, בשוק × מסגרת, ונפילה לכל השווקים (ל2); `ts_learn_switch_sync` ב-cron (אחרי live) — רווחי סמך שלא חופפים → הצעה
   `@certainty` ב-`method_proposals` (origin learning); "החל" (`ts_tune_apply`, עורך ראשי) — בלי גרסה. הכרטיס: `certainty_basis`, `live`
