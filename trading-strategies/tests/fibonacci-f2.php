@@ -106,6 +106,12 @@ eq([count($nt), $nt[0]['side'] ?? null, r2($nt[0]['zone'] ?? []), $gNT['resistan
     [1, 'long', [169.1, 169.44], 'none', 218.54, 'box'], 'criterion 7: long on a zone with no resistance zone above → target = T of the box of that zone');
 eq(round($nt[0]['rr'], 6), round((218.54 - 175) / (175 - $nt[0]['stop']), 6), 'criterion 7: rr from T');
 eq($m->signals($NT, $m->params(['lookback_bars' => 500, 'min_rr' => 5 + floor($nt[0]['rr'] - 4)])), [], 'criterion 7: rr < min_rr → no signal');
+// box_target (22.5ח, 2.32): 0.618 → יעד הביניים 199.72; ברירת המחדל 1 → T. ערך אחר — נדחה
+$n618 = $m->signals($NT, $m->params(['lookback_bars' => 500, 'box_target' => 0.618]));
+eq([$P['box_target'], r2($n618[0]['target'] ?? 0), r2($m->signals($NT, $m->params(['lookback_bars' => 500, 'box_target' => 0.5]))[0]['target'] ?? 0)], [1.0, 199.72, 193.91],
+    '22.5ח: box_target — default 1 (T); 0.618 → 199.72, 0.5 → 193.905');
+eq([$m->validate($m->params(['box_target' => 0.7])) !== null, $m->validate($m->params(['box_target' => 0.618])), $m->validate($P)], [true, null, null],
+    '22.5ח: box_target only 0.5 / 0.618 / 1');
 // T ≤ הכניסה → אין אות (ישירות על רשת: הקופסה של האזור מסתיימת מתחת לסגירה)
 $gT = ['atr' => 2.0, 'close' => 180.0, 'support' => ['zones' => [['lo' => 169.1, 'hi' => 169.44, 'score' => 3, 'box' => ['T' => 174.0]]]], 'resistance' => ['zones' => []]];
 eq(ts_fib_signal($gT, ['t' => 1, 'o' => 180.0, 'h' => 180.5, 'l' => 169.3, 'c' => 175.0], $P), null, 'criterion 7: T ≤ entry → no signal');
@@ -171,12 +177,16 @@ $E = fib_bars([140, 200, 150, 205, 195]);
 $fE = $items($E);
 eq([$fE['scenarios'], array_filter($fE['items'], fn($it) => empty($it['single']))], [[], []], '22.5ד: no A-B-X and no signal → only faint boxes, no scenario');
 
+// 6.6: בלי "יעד" / קנה / מכור / המלצה בתרחיש — גם בתוויות של הקופסה והיומן
+$words = json_encode([$fD, $fN, $fE, $items($EX), $m->meta()['params']], JSON_UNESCAPED_UNICODE);
+eq(preg_match('/יעד|קנה|מכור|המלצ|כדאי/u', $words), 0, '6.6: no "target/buy/sell/recommend" wording in the scenario and the parameter labels');
+
 // ── קריטריון 10: יומן ──────────────────────────────────────
 $rows = fn(array $c) => array_map(fn($x) => ['t' => $x['t'], 'o' => (string)$x['o'], 'h' => (string)$x['h'], 'l' => (string)$x['l'], 'c' => (string)$x['c'], 'v' => '0'], $c);
 [$jD] = ts_journal_said(ts_overlay_compute($m, $P, 'h1', $rows($D)), 'h1');
 $lastD = $D[count($D) - 1]['t'];
 eq([$jD['scenario']['invalidation'] ?? null, $jD['scenario']['until'] ?? null, $jD['scenario']['zone'] ?? null, $jD['scenario']['text'] ?? null],
-    ['170', $lastD + 60 * $H, ['lo' => '120', 'hi' => '139.1'], 'בין יעד 61.8% ליעד 100% של A-B-X'],
+    ['170', $lastD + 60 * $H, ['lo' => '120', 'hi' => '139.1'], 'בין הקרנה 61.8% להקרנה 100% של A-B-X'],
     'criterion 10: X (170) as the invalidation level, horizon_bars, and — no zone with a target — the band 61.8%–100% of A-B-X');
 [$jE] = ts_journal_said(ts_overlay_compute($m, $P, 'h1', $rows($E)), 'h1');
 eq($jE['scenario'], null, 'criterion 10: no A-B-X and no signal → "no scenario"');
@@ -186,7 +196,7 @@ $gJ = ts_fib_project(['support' => $side(null, []), 'resistance' => $side(null, 
 [$jI] = ts_fib_scenario($gJ, null, ['t' => 1_000_000, 'c' => 160.0], $H, 60);
 $prim = array_values(array_filter($jI, fn($it) => !empty($it['primary'])));
 eq(array_map(fn($it) => $it['kind'] === 'zone' ? [$it['p1'], $it['p2'], $it['text']] : [$it['role'], $it['price']], $prim),
-    [[119.5, 120.5, 'אזור חפיפה שבתוכו יעד'], ['invalidation', 170.0]],
+    [[119.5, 120.5, 'אזור חפיפה שבתוכו הקרנה'], ['invalidation', 170.0]],
     '22.5ו: the journal zone — the nearest zone in the direction that holds a target (120 in 119.5–120.5; 130–131 is nearer but holds none)');
 
 // ── ביצועים: הנתיב המהיר = החישוב המלא, בכל נר ──────────────

@@ -48,6 +48,8 @@ final class TsMethodFibonacci extends TsMethod
                 'stop_atr' => ['label' => 'סטופ מתחת לאזור (× ATR)', 'default' => 0.25, 'min' => 0, 'max' => 1, 'int' => false, 'ours' => true],
                 'min_rr' => ['label' => 'יחס סיכוי-סיכון מינימלי', 'default' => 2, 'min' => 1, 'max' => 5, 'int' => false, 'ours' => true],
                 'horizon_bars' => ['label' => 'אופק (נרות)', 'default' => 60, 'min' => 10, 'max' => 300, 'int' => true, 'ours' => true],
+                // 22.5ח (2.32): איזה חלק של קופסת השוויון הוא היעד החלופי — 1 (T), 0.618 או 0.5 (יעדי הביניים, P5). רק שלושת אלה (validate)
+                'box_target' => ['label' => 'רמת יציאה חלופית — חלק מקופסת השוויון', 'default' => 1, 'min' => 0.5, 'max' => 1, 'int' => false, 'ours' => true],
             ],
             'horizon_bars' => 60,
             'warmup' => 300,
@@ -66,7 +68,10 @@ final class TsMethodFibonacci extends TsMethod
 
     public function validate(array $p): ?string
     {
-        return (float)$p['zone_max_atr'] < (float)$p['zone_atr'] ? 'רוחב האזור המרבי חייב להיות לפחות מרחק הרמות באזור' : null;
+        if ((float)$p['zone_max_atr'] < (float)$p['zone_atr']) return 'רוחב האזור המרבי חייב להיות לפחות מרחק הרמות באזור';
+        $bt = (float)($p['box_target'] ?? 1);
+        if (!array_filter(TS_FIB_BOX_TARGETS, fn($v) => abs($v - $bt) < 1e-9)) return 'רמת יציאה חלופית — חלק מקופסת השוויון: 0.5, 0.618 או 1';
+        return null;
     }
 
     public function init(array $p): array

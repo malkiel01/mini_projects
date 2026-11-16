@@ -23,6 +23,9 @@ const TS_FIB_RATIOS = [0.382, 0.5, 0.618];
 /** יחסי ההקרנה של A-B-X — רק R5 (22.5א, עמ' 87). לא 261.8 (R7); עמ' 102 — מחוץ ל-F-2 (פ1) */
 const TS_FIB_PROJ = [0.618, 1.0, 1.382, 1.5, 1.618];
 
+/** box_target (22.5ח, 2.32): היעד החלופי — חלק מהקופסה, מאמצע האזור עד T. רק אלה */
+const TS_FIB_BOX_TARGETS = [0.5, 0.618, 1.0];
+
 /** סבולת השוואות של float (מרחק "עד" סף — כולל) [שלנו] */
 const TS_FIB_EPS = 1e-9;
 
@@ -264,7 +267,7 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
         $tgt = null;
         foreach ($g['resistance']['zones'] as $z) if ($z['lo'] > $c['c'] && ($tgt === null || $z['lo'] < $tgt)) $tgt = $z['lo'];
         // יעד חלופי (F-2, 22.6): אין אזור התנגדות מעל → T של קופסת השוויון של **אזור האות** (22.5ב)
-        $sig = ts_fib_levels('long', $c['c'], $long['lo'] - $buf, $tgt ?? ($long['box']['T'] ?? null), $long, $p, $tgt === null ? 'box' : 'zone');
+        $sig = ts_fib_levels('long', $c['c'], $long['lo'] - $buf, $tgt ?? ts_fib_box_target($long, $p), $long, $p, $tgt === null ? 'box' : 'zone');
         if ($sig) return $sig;
     }
     $short = null;
@@ -275,7 +278,16 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     if ($short === null) return null;
     $tgt = null;
     foreach ($g['support']['zones'] as $z) if ($z['hi'] < $c['c'] && ($tgt === null || $z['hi'] > $tgt)) $tgt = $z['hi'];
-    return ts_fib_levels('short', $c['c'], $short['hi'] + $buf, $tgt ?? ($short['box']['T'] ?? null), $short, $p, $tgt === null ? 'box' : 'zone');
+    return ts_fib_levels('short', $c['c'], $short['hi'] + $buf, $tgt ?? ts_fib_box_target($short, $p), $short, $p, $tgt === null ? 'box' : 'zone');
+}
+
+/** היעד החלופי של אזור (22.5ב, 22.5ח): אמצע + box_target × (T − אמצע); בלי קופסה — null */
+function ts_fib_box_target(array $z, array $p): ?float
+{
+    if (empty($z['box'])) return null;
+    $b = $z['box'];
+    $bt = (float)($p['box_target'] ?? 1);
+    return abs($bt - 1) < 1e-12 ? $b['T'] : $b['mid'] + $bt * ($b['T'] - $b['mid']);   // 1 — T עצמו, בלי עיגול נוסף
 }
 
 /**
@@ -417,7 +429,7 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
     foreach ($boxes as $b) {
         $box = ts_fib_box($b, 2 * (($b['lo'] + $b['hi']) / 2) - $b['T']);
         $items[] = ['kind' => 'zone', 't1' => $t0, 't2' => $end, 'p1' => $box['mid'], 'p2' => $box['T'], 'box' => $b['side'],
-            'text' => 'קופסת שוויון — מאמצע האזור עד היעד'] + ($faint ? ['single' => true] : []);
+            'text' => 'קופסת שוויון — מאמצע האזור עד ההקרנה'] + ($faint ? ['single' => true] : []);
         $items[] = $line($box['T'], 'קופסת שוויון 100%', $faint);
         foreach ($box['levels'] as $l) $items[] = $line($l['price'], 'קופסת שוויון ' . $pct($l['r']), true);
         $targets = [...$targets, $box['T'], ...array_column($box['levels'], 'price')];
@@ -434,8 +446,8 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
     }
     $main = $abx ? $abx['targets'][1]['price'] : ($boxes[0]['T'] ?? null);
     $head = [];
-    if ($jz) $band = [$jz['lo'], $jz['hi'], 'אזור חפיפה שבתוכו יעד'];
-    elseif ($abx) $band = [$abx['targets'][0]['price'], $main, 'בין יעד 61.8% ליעד 100% של A-B-X'];
+    if ($jz) $band = [$jz['lo'], $jz['hi'], 'אזור חפיפה שבתוכו הקרנה'];
+    elseif ($abx) $band = [$abx['targets'][0]['price'], $main, 'בין הקרנה 61.8% להקרנה 100% של A-B-X'];
     elseif ($boxes) $band = [ts_fib_box($boxes[0], 2 * (($boxes[0]['lo'] + $boxes[0]['hi']) / 2) - $boxes[0]['T'])['levels'][2]['price'], $boxes[0]['T'], 'בין 61.8% ל-100% של קופסת השוויון'];
     else $band = null;
     if ($band) $head[] = ['kind' => 'zone', 't1' => $t0, 't2' => $end, 'p1' => (float)min($band[0], $band[1]), 'p2' => (float)max($band[0], $band[1]),
