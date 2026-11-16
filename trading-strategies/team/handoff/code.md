@@ -663,3 +663,14 @@
 - **החוזה:** משתמש רק ב-`forecast.scenarios[].points` — כל שיטה שמחזירה תרחיש עם נקודות מקבלת המשך, בלי קוד נוסף.
 - **התצוגה זזה ימינה** כשההמשך מופיע (`lastSimKey`) או בנר חדש — `scrollToRealTime` לא סופר נקודות ריקות.
 - **`text(..., force)`** — תווית שמצוירת גם כשהיא חופפת. רק ל"הדמיית המשך — לא תחזית".
+## תנועות מגע על הגרף (gestures.js) — מה נבנה
+
+- `mountGestures({ chart, series: candle, box })` ב-`viewChart`. הספרייה: `vertTouchDrag: false`, `pinch: false`; הצביטה שלנו (capture על `box`, שתי אצבעות).
+- **ציר הנרות הוא `candle.priceScale()`**. `chart.priceScale('right')` לא משפיע על הנרות (שני הצירים מוסתרים, ו-`priceScaleId` של הסדרה ריק) — מי שמשנה שוליים/מצב לציר המחיר: דרך הסדרה.
+- `box.tsHeights()` לבדיקות: גובה הנרות הנראים, גובה הנפח, `k`, והאם האינדיקטורים על אותו ציר.
+- **בדיקת מגע:** CDP `Input.dispatchTouchEvent` עם `id` לכל אצבע; גלילת הדף נמדדת כסכום `scrollY` ו-`scrollTop` של האבות. אחרי כל תנועה ~1.5 ש' (קינטי).
+### T1 — גרירה ושקיפות (בקשת הבעלים)
+- **`tip.pos`** — המקום שהמשתמש גרר אליו (במערכת של wrap). `place()` → `placeDragged()` כשיש. `open()` של פריט אחר מאפס.
+- **`.ctip-pin`** — אח של החלונית ב-wrap (לא בתוכה: לגוף יש overflow), `pointer-events: none`. `dataset` (ax/ay/sx/sy) — לבדיקות.
+- **הגרירה** — `pointerdown` על החלונית (לא על כפתור/קישור) + `setPointerCapture`; ההזזה מ-`clientX/Y`, שבשכבה המסובבת כבר
+  מומרים ב-rotate.js. `.ctip` עם `touch-action: none`; כשהגוף נגלל (`.scrolls`) — רק מהכותרת.
