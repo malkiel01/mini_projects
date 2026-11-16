@@ -152,7 +152,8 @@ export function mountAnalysis(ctx) {
               toast('נשמר'); ctx.reload();
             } catch (e) { toast(e.message, true); }
           } } }, 'שמירה'),
-          tunePanel(m, T.proposals.filter(x => x.method === m.id), primary));
+          tunePanel(m, T.proposals.filter(x => x.method === m.id), primary),
+          learnPanel(m));
       };
       const costIn = Object.fromEntries(Object.entries(S.costs).map(([mk, c]) => [mk, [numInput('fee', c.fee), numInput('slip', c.slip)]]));
       box.replaceChildren(
@@ -230,6 +231,69 @@ export function mountAnalysis(ctx) {
       h('div', { class: 'fields two' }, field('פרמטר', param), field('ערך מועמד', value), h('div', { class: 'f wide' }, h('span', {}, 'נכס'), asset), field('מסגרת זמן', tf), field('נימוק', note, true)),
       h('div', {}, go), out,
       props.length ? h('ul', { class: 'list tune-list' }, props.map(x => proposalCard(m, x, primary))) : null);
+    return det;
+  }
+
+  // ── למידה (פרק 23, L3): N ותוצאות לפי פלח, עם מינימום N (23.6). לכל העורכים; נטען רק כשפותחים ──
+  const LEARN_DIM = { market: 'שוק', tf: 'מסגרת', market_tf: 'שוק × מסגרת', month: 'חודש', quarter: 'רבעון', weekday: 'יום', hour: 'שעה (UTC)', holidays: 'חגים' };
+  const LEARN_SRC = [['backtest', 'בדיקה לאחור'], ['live', 'בפועל מאז'], ['trade', 'עסקאות']];
+  const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+  const DAYS = ['שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת', 'ראשון'];
+  const REGION = { US: 'ארה"ב', EU: 'אירופה', UK: 'בריטניה', JP: 'יפן', CN: 'סין', IL: 'ישראל', XMAS: 'חג המולד – ראש השנה', none: 'בלי חג' };
+  function learnValue(dim, v) {
+    if (dim === 'market') return MARKET_LABEL[v] || v;
+    if (dim === 'tf') return TF_LABEL[v] || v;
+    if (dim === 'market_tf') { const [a, b] = v.split('|'); return `${MARKET_LABEL[a] || a} · ${TF_LABEL[b] || b}`; }
+    if (dim === 'month') return MONTHS[+v - 1] || v;
+    if (dim === 'quarter') return 'רבעון ' + v;
+    if (dim === 'weekday') return DAYS[+v - 1] || v;
+    if (dim === 'hour') return String(v).padStart(2, '0') + ':00';
+    if (dim === 'holidays') return REGION[v] || v;
+    return v;
+  }
+  function learnPanel(m) {
+    const out = h('div', { 'aria-live': 'polite' });
+    const src = select('learn-source', LEARN_SRC, 'backtest');
+    let ver = null;
+    let loaded = false;
+    const load = async () => {
+      out.replaceChildren(h('p', { class: 'loading' }, 'טוען…'));
+      let L;
+      try { L = await api('admin_learn', null, { method: m.id, source: src.value, ...(ver ? { version: ver } : {}) }); }
+      catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      const versions = [...new Set([m.version, ...L.counts.map(c => c.version)])].sort((a, b) => b - a);
+      const verSel = select('learn-version', versions.map(v => [String(v), 'גרסה ' + v + (v === m.version ? ' (נוכחית)' : '')]), String(L.version));
+      verSel.addEventListener('change', () => { ver = +verSel.value; load(); });
+      const q = new URLSearchParams({ action: 'admin_learn_csv', method: m.id, version: String(L.version), source: L.source });
+      const cell = c => (c.enough
+        ? [h('td', { class: 'num', dir: 'ltr' }, String(c.n)), h('td', { class: 'num', dir: 'ltr' }, c.win_pct + '%'),
+          h('td', { class: 'num', dir: 'ltr' }, (Math.round(c.expectancy_r * 100) / 100) + 'R'),
+          h('td', { class: 'num', dir: 'ltr' }, c.certainty === null ? '—' : c.certainty + '%')]
+        : [h('td', { class: 'num', dir: 'ltr' }, String(c.n)), h('td', { colspan: 3, class: 'muted' }, `אין מספיק נתונים (${c.n})`)]);
+      const row = (label, c) => h('tr', { class: c.enough ? '' : 'learn-few', 'data-enough': String(c.enough) }, h('th', { scope: 'row' }, label), ...cell(c));
+      const byDim = {};
+      for (const sg of L.segments) (byDim[sg.dim] ??= []).push(sg);
+      out.replaceChildren(
+        h('p', { class: 'hint' }, `${L.rows.toLocaleString('he-IL')} שורות במסד לשיטה הזו · ≈ ${Math.max(1, Math.round(L.size / 1024)).toLocaleString('he-IL')} KB`),
+        L.counts.length ? h('table', { class: 'tbl learn-counts' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'גרסה'), h('th', {}, 'מקור'), h('th', {}, 'N'))),
+          h('tbody', {}, L.counts.map(c => h('tr', {}, h('td', {}, String(c.version)), h('td', {}, (LEARN_SRC.find(s => s[0] === c.source) || [, c.source])[1]),
+            h('td', { class: 'num', dir: 'ltr' }, String(c.n))))))
+          : h('p', { class: 'hint' }, 'עוד אין עסקאות במסד. הן נכתבות כשבדיקה לאחור מחושבת.'),
+        h('div', { class: 'fields two' }, field('גרסה', verSel), field('מקור', src)),
+        h('p', { class: 'hint' }, `פלח עם פחות מ-${L.min_n} עסקאות — "אין מספיק נתונים", בלי אחוז ובלי תוחלת.`,
+          L.gaps ? ` ${L.gaps} אותות לא נפתחו (פער מעבר לרמה) — לא בסטטיסטיקה.` : ''),
+        h('table', { class: 'tbl learn-tbl' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'פלח'), h('th', {}, 'N'), h('th', {}, 'הצלחה'), h('th', {}, 'תוחלת'), h('th', {}, 'ודאות'))),
+          h('tbody', { 'data-dim': 'total' }, row('הכול', L.total)),
+          Object.keys(LEARN_DIM).filter(d => byDim[d]).map(d => h('tbody', { 'data-dim': d },
+            h('tr', { class: 'tune-part' }, h('th', { colspan: 5, scope: 'colgroup' }, LEARN_DIM[d])),
+            byDim[d].map(sg => row(learnValue(d, sg.value), sg))))),
+        h('div', {}, h('a', { class: 'btn ghost sm', href: 'api.php?' + q, download: '' }, '⬇️ ייצוא CSV')));
+    };
+    src.addEventListener('change', load);
+    const det = h('details', { class: 'learn' }, h('summary', {}, '📚 למידה'), out);
+    det.addEventListener('toggle', () => { if (det.open && !loaded) { loaded = true; load(); } });
     return det;
   }
 

@@ -462,3 +462,9 @@
 - **L2 צריך:** cron ל-`live` (אותו `$onTrade` על נרות סגורים אחרי `to_t`), `trade` בסגירת עסקה עם `method_id` + `planned_stop`, ודילוג על
   `users.learn_off = 1`. ההגדרה בממשק — עוד לא.
 - **החגים:** לבנות מחדש — `php lib/learn/holidays-build.php` (מחליף את `holidays.json`).
+
+## L3 — לשונית "למידה" (פרק 23)
+
+- `admin_learn&method=&version=&source=` → `counts`, `total`, `segments [{dim, value, n, enough, win_pct, expectancy_r, certainty}]`, `gaps`, `rows`, `size`.
+  ‏N < 30 — שאר השדות `null`. L4/L5 צריכים לקרוא את אותן שורות — כדאי לבנות על `ts_learn_stats` / אותה שאילתה.
+- המסך — `learnPanel(m)` ב-`analysis.js`. L4 (ממצאים) ו-L5 (מיקומים, הצעות) נכנסים לאותו `<details class="learn">`.

@@ -576,6 +576,17 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .tune-tbl thead th { text-align: end; }
 .tune-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
 
+/* למידה (פרק 23, L3): לשונית בכרטיס השיטה — אותו מבנה כמו השכלול */
+.learn { margin-top: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.learn > summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; gap: var(--s2); }
+.learn > div > * + * { margin-top: var(--s2); }
+.learn-tbl, .learn-counts { width: 100%; }
+.learn-tbl th[scope="row"] { text-align: start; font-weight: 400; white-space: nowrap; }
+.learn-tbl td.num, .learn-counts td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.learn-tbl thead th:not(:first-child) { text-align: end; }
+.learn-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
+.learn-tbl tr.learn-few th, .learn-tbl tr.learn-few td { color: var(--muted); }
+
 /* כניסה במצב מנותק (A2) — מסך אחד, כפתור אחד */
 .login { max-inline-size: 360px; margin: var(--s4) auto; text-align: center; align-items: stretch; }
 .login-ic { font-size: 2.4rem; }

@@ -126,3 +126,88 @@ function ts_outcomes(string $methodId, array $f = []): array
     return array_map(fn($r) => ['holidays' => json_decode($r['holidays'], true) ?: [], 'features' => $r['features'] !== null ? json_decode($r['features'], true) : null] + $r,
         $st->fetchAll());
 }
+
+// ── L3 (23.10, 23.5–23.6): סטטיסטיקה לפי פלח, ו-CSV ─────────────────
+
+/** הפלחים (23.5): כל תגית לבד, ועוד צירוף אחד שתמיד קיים — שוק × מסגרת. holidays — אזור לכל ערך, ו"none" לעסקה בלי חג */
+const TS_LEARN_DIMS = ['market', 'tf', 'market_tf', 'month', 'quarter', 'weekday', 'hour', 'holidays'];
+
+/** N, הצלחות, אחוז, תוחלת ו-ודאות — רק כש-N ≥ 30 (23.6). פחות — רק N, בלי שום מספר שנגזר ממנו */
+function ts_learn_cell(int $n, int $wins, float $sumR): array
+{
+    $enough = $n >= TS_MIN_SIGNALS;
+    return ['n' => $n, 'enough' => $enough, 'wins' => $enough ? $wins : null, 'win_pct' => $enough ? round(100 * $wins / $n, 1) : null,
+        'expectancy_r' => $enough ? round($sumR / $n, 4) : null, 'certainty' => $enough ? ts_certainty($wins, $n) : null];
+}
+
+/**
+ * לשונית "למידה" של שיטה אחת (23.10, L3). $version — ברירת המחדל: הגרסה הנוכחית. $source — מקור אחד (23.7: לא מערבבים).
+ * מחזיר: counts (N לפי מקור וגרסה), total, segments [{dim, value, …ts_learn_cell}], gaps (skipped_gap — בלי R, לא בסטטיסטיקה),
+ * rows ו-size (≈ 300 בתים לשורה, 23.3). אין כאן user_id בכלל.
+ */
+function ts_learn_stats(string $methodId, ?int $version = null, string $source = 'backtest'): array
+{
+    if (!in_array($source, TS_LEARN_SOURCES, true)) throw new TsInvalid('מקור לא מוכר');
+    $db = ts_db();
+    $st = $db->prepare('SELECT source, method_version, COUNT(*) AS n FROM method_outcomes WHERE method_id = ? GROUP BY source, method_version ORDER BY method_version DESC, source');
+    $st->execute([$methodId]);
+    $counts = array_map(fn($r) => ['source' => $r['source'], 'version' => (int)$r['method_version'], 'n' => (int)$r['n']], $st->fetchAll());
+    $all = array_sum(array_column($counts, 'n'));
+
+    $st = $db->prepare("SELECT win, r, market, tf, month, quarter, weekday, hour, holidays, result FROM method_outcomes
+        WHERE method_id = ? AND method_version = ? AND source = ?");
+    $st->execute([$methodId, $version, $source]);
+    $acc = []; $tot = [0, 0, 0.0]; $gaps = 0;
+    foreach ($st->fetchAll() as $r) {
+        if ($r['result'] === 'skipped_gap' || $r['r'] === null) { $gaps++; continue; }
+        $w = (int)$r['win']; $x = (float)$r['r'];
+        $tot = [$tot[0] + 1, $tot[1] + $w, $tot[2] + $x];
+        $hol = json_decode((string)$r['holidays'], true) ?: [];
+        $keys = [['market', $r['market']], ['tf', $r['tf']], ['market_tf', $r['market'] . '|' . $r['tf']], ['month', (string)$r['month']],
+            ['quarter', (string)$r['quarter']], ['weekday', (string)$r['weekday']]];
+        if ($r['hour'] !== null) $keys[] = ['hour', (string)$r['hour']];
+        foreach ($hol ?: ['none'] as $h) $keys[] = ['holidays', (string)$h];
+        foreach ($keys as [$d, $v]) {
+            $c = $acc[$d][$v] ?? [0, 0, 0.0];
+            $acc[$d][$v] = [$c[0] + 1, $c[1] + $w, $c[2] + $x];
+        }
+    }
+    $segments = [];
+    foreach (TS_LEARN_DIMS as $d) {
+        $vals = $acc[$d] ?? [];
+        uksort($vals, fn($a, $b) => is_numeric($a) && is_numeric($b) ? (int)$a <=> (int)$b : strcmp((string)$a, (string)$b));
+        foreach ($vals as $v => [$n, $w, $s]) $segments[] = ['dim' => $d, 'value' => (string)$v] + ts_learn_cell($n, $w, $s);
+    }
+    return ['method' => $methodId, 'version' => $version, 'source' => $source, 'counts' => $counts,
+        'total' => ts_learn_cell($tot[0], $tot[1], $tot[2]), 'segments' => $segments, 'gaps' => $gaps, 'min_n' => TS_MIN_SIGNALS,
+        'rows' => $all, 'size' => $all * 300];
+}
+
+/**
+ * ייצוא CSV (23.10) — כל השורות של שיטה אחת (ואפשר גרסה / מקור), כמו שהן במסד. user_id — רק כש-$withUser (העורך הראשי, ל3);
+ * אחרת העמודה לא קיימת בכלל. מחרוזת CSV עם BOM (עברית באקסל).
+ */
+function ts_learn_csv(string $methodId, ?int $version, ?string $source, bool $withUser): string
+{
+    $cols = ['id', 'source', 'method_id', 'method_version', 'params_hash', 'provider', 'asset', 'tf', 'cred_scope', 't_signal', 't_entry', 't_exit',
+        'side', 'entry', 'stop', 'exit_level', 'exit', 'result', 'win', 'r', 'mae_r', 'mfe_r', 'atr', 'market', 'month', 'quarter', 'weekday', 'hour',
+        'holidays', 'features', 'trade_id', 'created_at'];
+    if ($withUser) $cols[] = 'user_id';
+    $sql = 'SELECT ' . implode(', ', $cols) . ' FROM method_outcomes WHERE method_id = ?';
+    $args = [$methodId];
+    if ($version !== null) { $sql .= ' AND method_version = ?'; $args[] = $version; }
+    if ($source !== null) {
+        if (!in_array($source, TS_LEARN_SOURCES, true)) throw new TsInvalid('מקור לא מוכר');
+        $sql .= ' AND source = ?'; $args[] = $source;
+    }
+    $st = ts_db()->prepare($sql . ' ORDER BY id');
+    $st->execute($args);
+    $f = fopen('php://temp', 'w+');
+    fwrite($f, "\xEF\xBB\xBF");
+    fputcsv($f, $cols, ',', '"', '');
+    foreach ($st as $r) fputcsv($f, array_map(fn($v) => $v === null ? '' : (string)$v, array_values($r)), ',', '"', '');
+    rewind($f);
+    $out = (string)stream_get_contents($f);
+    fclose($f);
+    return $out;
+}
