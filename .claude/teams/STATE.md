@@ -12,6 +12,7 @@
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1, A3 מוזגו; קוד: A2 התחברות עם ניתוק (`session_018g4NYDGPpCv1Pc3LgfvmVx`); שעון — דקה 28 (`trig_01J4cir8Aoh8ogFyCwPHG4dh`) | `session_018g4NYDsD5GNc3L8rqyUQ4B` (בקרה 4) |
+| `org-budget-proposals` הצעות תקציב לארגונים | בהקמה — נפתח 2026-11-16 (אפליקציה קיימת, הכול מוזג; הצ'אטים הישנים בארכיון); ממתין לדרישה של הבעלים | `session_018g4NYFsGrFQCUGf3CgaSYk` |
 
 ## ממתין לבעלים
 
