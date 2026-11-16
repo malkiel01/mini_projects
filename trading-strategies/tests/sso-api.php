@@ -67,7 +67,7 @@ function eq($got, $want, string $what): void
 function req(array &$c, string $action, array $query = [], ?array $body = null, string $as = 'none', string $plat = 'detached'): array
 {
     global $port;
-    $h = ["X-Dev-As: $as", "X-Dev-Platform: $plat", 'X-Dev-Password: ' . ($GLOBALS['PW'] ?? '0')];
+    $h = ["X-Dev-As: $as", "X-Dev-Platform: $plat", 'X-Dev-Password: ' . ($GLOBALS['PW'] ?? '0'), ...($GLOBALS['EXTRA'] ?? [])];
     if ($c) $h[] = 'Cookie: ' . implode('; ', array_map(fn($k, $v) => "$k=$v", array_keys($c), $c));
     if ($body !== null) { $h[] = 'Content-Type: application/json'; $h[] = 'X-CSRF: ' . ($c['@csrf'] ?? ''); }
     $ctx = stream_context_create(['http' => ['method' => $body !== null ? 'POST' : 'GET', 'header' => implode("\r\n", $h),
@@ -417,6 +417,86 @@ foreach (['connected', 'detached', 'unknown'] as $pm) {
     [$code] = req($dv, 'devapi-feed', [], null, 'none', $pm);
     eq($code, 401, "devapi-feed without token → 401 (not a login screen) — $pm");
 }
+
+// ── 8ד. ביקורת סבב 1 ──
+// 🟡1 — הנעילה אטומית: 4 תהליכים במקביל, שגיאה אחת כל אחד → fails = 4 בדיוק (בלי עדכון שאבד); 5 במקביל → נעול
+$lockRun = function (string $key, int $nproc) use ($db) {
+    $code = 'define("TS_DB_PATH", getenv("TS_DB_PATH")); require "' . dirname(__DIR__) . '/lib/auth.php"; ts_lock_fail(getenv("K"));';
+    $ps = [];
+    for ($i = 0; $i < $nproc; $i++) $ps[] = proc_open(['php', '-r', $code], [], $pp, null, ['TS_DB_PATH' => $db, 'K' => $key] + getenv());
+    foreach ($ps as $p) proc_close($p);
+};
+$lost = 0;
+for ($trial = 0; $trial < 5; $trial++) {
+    $lockRun("race:$trial", 4);
+    if ((int)$pdo->query("SELECT fails FROM login_locks WHERE lock_key = 'race:$trial'")->fetchColumn() !== 4) $lost++;
+}
+eq($lost, 0, '🟡1: concurrent failures are all counted');
+$lockRun('race:five', 5);
+eq((int)$pdo->query("SELECT locked_until > strftime('%s','now') FROM login_locks WHERE lock_key = 'race:five'")->fetchColumn(), 1, '🟡1: 5 concurrent failures → locked');
+$pdo->exec("UPDATE login_locks SET locked_until = 1 WHERE lock_key = 'race:five'");
+$lockRun('race:five', 1);
+eq($pdo->query("SELECT fails || '/' || locked_until FROM login_locks WHERE lock_key = 'race:five'")->fetchColumn(), '1/0', '🟡1: expired lock starts over');
+
+// 🟡2 — devapi-* במנותקת: המפתח רק כש-grant_status מאשר
+grant(true);
+$dv = [];
+login($dv, ['sub' => '100', 'email' => 'owner@test.local', 'name' => 'בעל המערכת']);
+req($dv, 'me');
+[$code, $tk] = req($dv, 'dev-token-create', [], ['label' => 'Claude']);
+$GLOBALS['EXTRA'] = ['X-Dev-Token: ' . ($tk['token'] ?? '')];
+$nb = [];
+[$code] = req($nb, 'devapi-feed');
+eq($code, 200, '🟡2: detached, grant true → devapi works');
+grant(false);
+[$code] = req($nb, 'devapi-feed');
+eq($code, 200, '🟡2: grant answer cached 5 minutes');
+$pdo->exec("DELETE FROM settings WHERE k LIKE 'dev_grant:%'");
+[$code] = req($nb, 'devapi-feed');
+eq($code >= 400 && $code < 500, true, '🟡2: detached, grant false → token refused');
+grant(null);
+[$code] = req($nb, 'devapi-feed');
+eq($code >= 400 && $code < 500, true, '🟡2: detached, no answer → token refused (fail closed)');
+[$code] = req($nb, 'devapi-feed', [], null, 'none', 'connected');
+eq($code, 200, '🟡2: connected → no grant_status needed');
+$GLOBALS['EXTRA'] = [];
+grant(true);
+
+// 🟡3 — מייל כפול: מייל שתפוס בשורה אחרת לא מועתק; שתי שורות עם סיסמה לאותו מייל → 409, נרשם
+$e1 = [];
+login($e1, ['sub' => '906', 'email' => 'carol@test.local', 'name' => 'חדש']);   // 906 קיים (new@test.local)
+eq([$pdo->query("SELECT email FROM users WHERE platform_sub = '906'")->fetchColumn(), (int)$pdo->query("SELECT COUNT(*) FROM users WHERE lower(email) = 'carol@test.local'")->fetchColumn()],
+    ['new@test.local', 1], '🟡3: an email used by another row is not copied');
+eq((int)$pdo->query("SELECT COUNT(*) FROM admin_log WHERE action = 'account_conflict' AND target LIKE 'email in use%'")->fetchColumn(), 1, '🟡3: logged');
+$h1 = password_hash('dup password 1', PASSWORD_DEFAULT);
+$pdo->exec("UPDATE users SET email = 'dup@test.local', password_hash = '$h1' WHERE platform_sub IN ('905', '906')");   // מצב ישן, לפני התיקון
+$GLOBALS['PW'] = '1';
+$d3 = [];
+[$code, $j] = req($d3, 'login', [], ['email' => 'dup@test.local', 'password' => 'dup password 1']);
+eq([$code, $j['error'] ?? null, isset($d3['ts_session'])], [409, 'יש כמה חשבונות באותו מייל — פנו למנהל', false], '🟡3: two accounts with a password → no login');
+[$code, $j] = req($d3, 'login', [], ['email' => 'dup@test.local', 'password' => 'wrong password']);
+eq([$code, $j['error'] ?? null], [401, 'מייל או סיסמה שגויים'], '🟡3: wrong password → the usual message');
+$pdo->exec('DELETE FROM login_locks');
+// ⚪ 72 בתים; החלפת סיסמה סוגרת כניסות אחרות בסיסמה
+$q1 = []; $q2 = [];
+login($q1, ['sub' => '102', 'email' => 'bob@test.local', 'name' => 'בוב']);
+req($q1, 'me');
+[$code] = req($q1, 'password_set', [], ['password' => str_repeat('a', 73)]);
+eq($code, 422, '⚪ password over 72 bytes → 422');
+req($q1, 'password_set', [], ['password' => 'first password 1']);
+req($q2, 'login', [], ['email' => 'bob@test.local', 'password' => 'first password 1']);
+[$code] = req($q2, 'me');
+eq($code, 200, '⚪ second session by password');
+req($q1, 'password_set', [], ['password' => 'second password 2']);
+[$code] = req($q2, 'me');
+[$code1] = req($q1, 'me');
+eq([$code, $code1], [401, 200], '⚪ changing the password closes other password sessions');
+$GLOBALS['PW'] = '0';
+// ⚪ sso_states שפגו נמחקים בכל יצירה
+$pdo->exec("INSERT INTO sso_states (state_hash, created_at, expires_at) VALUES ('old', 1, 2)");
+$cs = [];
+start($cs);
+eq((int)$pdo->query("SELECT COUNT(*) FROM sso_states WHERE state_hash = 'old'")->fetchColumn(), 0, '⚪ expired sso_states cleaned');
 
 // ── 9. המצב מהמעטפת עצמה (live): config + מטמון ──
 $l = [];

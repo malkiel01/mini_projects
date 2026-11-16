@@ -18,6 +18,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/roles.php';
+require_once __DIR__ . '/auth.php';   // מנותקת: ts_identity, ts_platform_mode, ts_grant_status (is_developer)
 require_once __DIR__ . '/devloop.php';
 
 /** שגיאה של המודול — ההודעה בעברית, והקוד הוא מצב ה-HTTP. RuntimeException: ביומן רק כהודעת הבקשה, לא כחריגה. */
@@ -39,15 +40,30 @@ devloop_setup([
         strtr($msg, array_combine(array_map(fn($k) => '{' . $k . '}', array_keys($vars)), array_map('strval', $vars)) ?: []), $status),
     'user_names'   => fn() => array_column(ts_db()->query('SELECT id, display_name FROM users')->fetchAll(), 'display_name', 'id'),
     'is_developer' => function (int $id): bool {
-        $st = ts_db()->prepare('SELECT 1 FROM users WHERE id = ? AND platform_admin = 1');
+        $st = ts_db()->prepare('SELECT platform_sub FROM users WHERE id = ? AND platform_admin = 1');
         $st->execute([$id]);
-        return (bool)$st->fetchColumn();
+        $sub = $st->fetchColumn();
+        if ($sub === false) return false;
+        // מחוברת — השער כבר אכף את ההרשאה. אחרת (מנותקת / unknown) — גם grant_status (20.1 ו', ביקורת A2 🟡2)
+        return ts_identity() !== null || ts_platform_mode() === 'connected' || ts_dev_granted((int)$id, (string)$sub);
     },
     'audit'        => function (string $actor, string $action, string $kind = '', int $id = 0, array $data = []): void {
         $uid = (int)preg_replace('/\D/', '', $actor);
         if ($uid) ts_admin_log($uid, $action, "$kind:$id");
     },
 ]);
+
+/**
+ * המפתח במנותקת: grant_status, שמור 5 דקות (settings). רק true נשמר; false או אין תשובה — לא מפתח (נכשלים סגור).
+ */
+function ts_dev_granted(int $uid, string $sub): bool
+{
+    $key = 'dev_grant:' . $uid;
+    if ((int)ts_setting($key, '0') > time() - TS_GRANT_TTL) return true;
+    if (ts_grant_status($sub) !== true) return false;
+    ts_setting_set($key, (string)time());
+    return true;
+}
 
 /** פעולות של DevLoop בעוגייה (למפתח). devloop-client-error — לכל משתמש מחובר: שגיאות JavaScript ליומן. */
 const TS_DEV_ACTIONS = ['dev-items', 'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-report',

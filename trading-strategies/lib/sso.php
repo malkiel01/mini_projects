@@ -170,7 +170,7 @@ function ts_sso_start(): string
     $db = ts_db();
     $db->prepare('INSERT INTO sso_states (state_hash, created_at, expires_at) VALUES (?, ?, ?)')
         ->execute([hash('sha256', $state), $now, $now + TS_SSO_STATE_TTL]);
-    if (random_int(1, 20) === 1) ts_sso_cleanup();
+    ts_sso_cleanup();   // בכל יצירה — הטבלה לא גדלה בלי גבול
     ts_sso_cookie($state);
     return ts_platform_sso_url(http_build_query(['client' => TS_CLIENT_ID, 'state' => $state, 'return' => ts_sso_return()]));
 }
@@ -179,7 +179,7 @@ function ts_sso_cleanup(): void
 {
     $now = time();
     $db = ts_db();
-    $db->prepare('DELETE FROM sso_states WHERE expires_at < ?')->execute([$now - 86400]);
+    $db->prepare('DELETE FROM sso_states WHERE expires_at < ?')->execute([$now]);
     $db->prepare('DELETE FROM sso_jti WHERE exp < ?')->execute([$now]);
 }
 

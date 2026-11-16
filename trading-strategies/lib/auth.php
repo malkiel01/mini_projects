@@ -73,7 +73,17 @@ function ts_user_for(array $id): array
     $now = time();
     $st = $db->prepare('SELECT id FROM users WHERE platform_sub = ?');
     $st->execute([$id['sub']]);
-    if (!$st->fetchColumn() && $id['email'] !== null) ts_user_conflict_check($id);
+    $existing = $st->fetchColumn();
+    if (!$existing && $id['email'] !== null) ts_user_conflict_check($id);
+    if ($existing && $id['email'] !== null) {
+        // מייל שתפוס בשורה אחרת לא מועתק לשורה הזו (ביקורת A2 🟡3) — אחרת שתי שורות באותו מייל, והכניסה בסיסמה נשברת
+        $st = $db->prepare('SELECT id FROM users WHERE lower(email) = ? AND id <> ? LIMIT 1');
+        $st->execute([$id['email'], $existing]);
+        if ($other = $st->fetchColumn()) {
+            ts_auth_log((int)$existing, 'account_conflict', 'email in use by user ' . $other . ' — not updated');
+            $id['email'] = null;   // COALESCE משאיר את המייל הקודם
+        }
+    }
     $admin = $id['platform_admin'] === null ? null : ($id['platform_admin'] ? 1 : 0);
     $db->prepare('INSERT INTO users (platform_sub, display_name, email, created_at, last_login_at, platform_admin) VALUES (?, ?, ?, ?, ?, ?)
                   ON CONFLICT(platform_sub) DO UPDATE SET display_name = excluded.display_name,
@@ -247,13 +257,17 @@ function ts_lock_locked(string $key): bool
 
 function ts_lock_fail(string $key): void
 {
+    // אטומי (ביקורת A2 🟡1): ההוספה היא פקודה אחת — בקשות במקביל לא קוראות את אותו fails ודורסות זו את זו.
+    // נעילה שפגה — סופרים מחדש מ-1. ה-UPDATE השני רק נועל מי שהגיע ל-5, ואפשר להריץ אותו כמה פעמים.
     $db = ts_db();
-    $st = $db->prepare('SELECT fails, locked_until FROM login_locks WHERE lock_key = ?');
-    $st->execute([$key]);
-    $r = $st->fetch();
-    $fails = $r && (int)$r['locked_until'] === 0 ? (int)$r['fails'] + 1 : 1;   // נעילה שפגה — סופרים מחדש
-    $until = $fails >= TS_LOGIN_MAX_FAILS ? time() + TS_LOGIN_LOCK : 0;
-    $db->prepare('INSERT OR REPLACE INTO login_locks (lock_key, fails, locked_until) VALUES (?, ?, ?)')->execute([$key, $until ? 0 : $fails, $until]);
+    $now = time();
+    $db->prepare('INSERT INTO login_locks (lock_key, fails, locked_until) VALUES (:k, 1, 0)
+                   ON CONFLICT(lock_key) DO UPDATE SET
+                       fails = CASE WHEN locked_until > 0 AND locked_until <= :now THEN 1 ELSE fails + 1 END,
+                       locked_until = CASE WHEN locked_until > 0 AND locked_until <= :now THEN 0 ELSE locked_until END')
+        ->execute([':k' => $key, ':now' => $now]);
+    $db->prepare('UPDATE login_locks SET locked_until = ?, fails = 0 WHERE lock_key = ? AND locked_until = 0 AND fails >= ?')
+        ->execute([$now + TS_LOGIN_LOCK, $key, TS_LOGIN_MAX_FAILS]);
 }
 
 function ts_lock_clear(string $key): void
@@ -273,9 +287,21 @@ function ts_password_login(mixed $email, mixed $password, string $ip): array
     if ($email === '' || $password === '' || mb_strlen($email) > 200 || strlen($password) > 200) throw new TsLoginError(TS_LOGIN_FAIL_MSG, 400);
     $keys = ['email:' . $email, 'ip:' . $ip];
     foreach ($keys as $k) if (ts_lock_locked($k)) throw new TsLoginError('יותר מדי ניסיונות — נסו שוב בעוד רבע שעה', 429);
-    $st = ts_db()->prepare('SELECT * FROM users WHERE lower(email) = ? AND password_hash IS NOT NULL ORDER BY id LIMIT 1');
+    $st = ts_db()->prepare('SELECT * FROM users WHERE lower(email) = ? AND password_hash IS NOT NULL ORDER BY id LIMIT 2');
     $st->execute([$email]);
-    $user = $st->fetch() ?: null;
+    $rows = $st->fetchAll();
+    if (count($rows) > 1) {
+        // שני חשבונות עם סיסמה לאותו מייל (ביקורת A2 🟡3): לא מנחשים לאיזה להיכנס. סיסמה נכונה לאחד מהם — "פנו למנהל"
+        // ונרשם; אחרת — כמו כל שגיאה
+        foreach ($rows as $r) {
+            if (password_verify($password, $r['password_hash'])) {
+                ts_auth_log((int)$r['id'], 'account_conflict', 'password login: ' . count($rows) . ' accounts with this email');
+                throw new TsLoginError('יש כמה חשבונות באותו מייל — פנו למנהל', 409);
+            }
+        }
+        $rows = [];
+    }
+    $user = $rows[0] ?? null;
     static $dummy = null;
     $dummy ??= password_hash('x', PASSWORD_DEFAULT);
     $ok = password_verify($password, $user['password_hash'] ?? $dummy) && $user !== null;
@@ -300,11 +326,13 @@ function ts_password_set(int $uid, mixed $password): void
 {
     $password = is_string($password) ? $password : '';
     if (mb_strlen($password) < TS_PASSWORD_MIN) throw new TsInvalid('סיסמה — לפחות ' . TS_PASSWORD_MIN . ' תווים');
-    if (strlen($password) > 200) throw new TsInvalid('הסיסמה ארוכה מדי');
+    if (strlen($password) > 72) throw new TsInvalid('הסיסמה ארוכה מדי — עד 72 בתים');   // bcrypt קורא רק 72 בתים
     $st = ts_db()->prepare('SELECT email FROM users WHERE id = ?');
     $st->execute([$uid]);
     if (!$st->fetchColumn()) throw new TsInvalid('אין מייל בחשבון — אי אפשר להיכנס בסיסמה');
     ts_db()->prepare('UPDATE users SET password_hash = ?, password_set_at = ? WHERE id = ?')->execute([password_hash($password, PASSWORD_DEFAULT), time(), $uid]);
+    // כניסות אחרות בסיסמה הישנה נסגרות; הנוכחית נשארת
+    ts_db()->prepare("DELETE FROM sessions WHERE user_id = ? AND via = 'password' AND token_hash <> ?")->execute([$uid, ts_current()['token_hash'] ?? '']);
 }
 
 /** איפוס בידי המנהל הראשי (ש9): הסיסמה נמחקת, וה-sessions של הסיסמה נסגרים. */

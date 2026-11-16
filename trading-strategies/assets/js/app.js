@@ -1087,7 +1087,7 @@ const LOGIN_ERRORS = {
 function viewLogin(login, msg = '') {
   const err = (location.hash.match(/^#\/login\/(\w+)/) || [])[1];
   if (err) history.replaceState(null, '', location.pathname);
-  const text = msg || (err ? LOGIN_ERRORS[err] || LOGIN_ERRORS.invalid : '');
+  const text = msg || (err ? (Object.hasOwn(LOGIN_ERRORS, err) ? LOGIN_ERRORS[err] : LOGIN_ERRORS.invalid) : '');
   setHead('אסטרטגיות למסחר', 'לתכנון וניתוח בלבד');
   const box = h('p', { class: 'error', role: 'alert', hidden: !text }, text);
   // מייל וסיסמה — רק כשהמנהל השאיר כניסה בסיסמה (login.password). Google — לא בפרוסה הזו (ש8)
