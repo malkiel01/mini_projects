@@ -10,9 +10,9 @@
     "slice": "L6",
     "branch": "claude/trading-strategies-learning-l6"
   },
-  "control": "session_018g4NYDrFHGumG4hGvNK11M",
+  "control": "session_018g4NYEzwT38A6cJcANFTqV",
   "tasks": null,
-  "clock": "trig_01AhicpPsrrfEGR4f97H9K4K (דקה 28, נוצר בידי מנהל הצוותים (5); של בקרה 7 trig_01FLjvXemEmKVuyfZbh9oGqH כבוי)",
+  "clock": "trig_016u7nXaCHNq1GdcHMws2BED (דקה 28, נוצר בידי מנהל הצוותים (5); של בקרה 8 trig_01AhicpPsrrfEGR4f97H9K4K כבוי)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -144,6 +144,10 @@
     {
       "session": "session_018g4NYFqH3tqWT9nYnCRNjr",
       "done": "#1662–#1700: פיבונאצ'י F-1..F-3, L1 מסך מלא, 500, חובות, למידה L1, אפיון 2.28–2.36; מסירה ב-STATE (476K)"
+    },
+    {
+      "session": "session_018g4NYDrFHGumG4hGvNK11M",
+      "done": "#1701–#1718: T1 חלונית, R1, למידה L2–L6 (פרק 23), מגע, הדמיית המשך; מסירה ב-STATE (~350K)"
     },
     "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)"
   ],
