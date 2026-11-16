@@ -665,6 +665,37 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 20) {
+        // למידה, L5 (spec-stage-a 23.9): ערך בתוך הטווח ← הצעת S7, גם לפלח שוק × מסגרת. ADD / CREATE בלבד.
+        // methods.seg_params — {"forex|h1": {"stop_atr": 0.6}}: ערך של פלח שהוחל; השיטה משתמשת בו כשהוא קיים, ובכללי בשאר.
+        // method_proposals.segment ('' = כללי), .origin (admin = הוזן ביד, learning = מהסטטיסטיקה), .stats (הסטטיסטיקה, רווח
+        // הסמך ו-N). learning_values — כמה שורות היו כשהסטטיסטיקה חושבה לאחרונה (הצעה כל 30 שורות חדשות לפלח)
+        // אידמפוטנטית: ADD COLUMN רק לעמודה שאין (SQLite בלי IF NOT EXISTS לעמודה; roles-api מריץ שוב מ-17)
+        // טבלה שאין בכלל (מסד בדיקה חלקי) — לא נוגעים בה
+        $has = function (string $t, string $c) use ($db): bool {
+            $cols = array_column($db->query("PRAGMA table_info($t)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+            return !$cols || in_array($c, $cols, true);
+        };
+        $add = ($has('methods', 'seg_params') ? '' : "ALTER TABLE methods ADD COLUMN seg_params TEXT NOT NULL DEFAULT '{}';\n")
+            . ($has('method_proposals', 'segment') ? '' : "ALTER TABLE method_proposals ADD COLUMN segment TEXT NOT NULL DEFAULT '';\n")
+            . ($has('method_proposals', 'origin') ? '' : "ALTER TABLE method_proposals ADD COLUMN origin TEXT NOT NULL DEFAULT 'admin';\n")
+            . ($has('method_proposals', 'stats') ? '' : "ALTER TABLE method_proposals ADD COLUMN stats TEXT;\n");
+        $db->exec("BEGIN;\n" . $add . <<<'SQL'
+            CREATE TABLE IF NOT EXISTS learning_values (
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                segment TEXT NOT NULL,
+                param TEXT NOT NULL,
+                n_at INTEGER NOT NULL,
+                result TEXT NOT NULL,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, method_version, source, segment, param)
+            );
+            PRAGMA user_version = 20;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

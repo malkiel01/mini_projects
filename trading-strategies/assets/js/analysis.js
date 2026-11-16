@@ -142,6 +142,10 @@ export function mountAnalysis(ctx) {
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
           h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})` + (d.ours === true ? ' · הגדרה שלנו' : d.ours === false ? ' · לפי הספר' : ''), inputs[k]))),
           field('הערה', note, true),
+          // 🟡4 (L5): ערך לפלח גובר על הכללי בפלח שלו — אזהרה ליד הפרמטרים
+          Object.keys(m.seg_params || {}).length ? h('p', { class: 'chip warn seg-warn', style: 'margin:4px 0' },
+            '⚠️ יש ערכים לפלח (' + Object.entries(m.seg_params).map(([sg, ps]) => `${learnValue('market_tf', sg)}: ${Object.entries(ps).map(([k, v]) => `${k} = ${v}`).join(', ')}`).join(' · ')
+            + '). שינוי ערך כללי לא חל עליהם — בפלח הזה גובר הערך שלו. ביטול — ב"📚 למידה".') : null,
           h('p', { class: 'hint' }, primary ? 'שינוי פרמטר מעלה את גרסת השיטה, והבדיקות לאחור שלה מחושבות מחדש בפתיחה הבאה.'
             : 'שינוי פרמטר — רק עורך ראשי. אפשר להציע ערך ב"הצעת שינוי פרמטר" למטה.'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
@@ -153,7 +157,7 @@ export function mountAnalysis(ctx) {
             } catch (e) { toast(e.message, true); }
           } } }, 'שמירה'),
           tunePanel(m, T.proposals.filter(x => x.method === m.id), primary),
-          learnPanel(m));
+          learnPanel(m, primary));
       };
       const costIn = Object.fromEntries(Object.entries(S.costs).map(([mk, c]) => [mk, [numInput('fee', c.fee), numInput('slip', c.slip)]]));
       box.replaceChildren(
@@ -197,6 +201,8 @@ export function mountAnalysis(ctx) {
       }) } }, 'החל');
     return h('li', { class: 'tune-prop', 'data-id': String(x.id), 'data-status': x.status },
       h('div', { class: 'l1' }, h('span', {}, `${d.label}: ${fmtVal(x.current)} → ${fmtVal(x.candidate)}`), h('span', { class: 'chip ' + cls }, st)),
+      x.origin === 'learning' || x.segment ? h('p', { class: 'hint tune-origin' }, x.origin === 'learning' ? '📚 מהלמידה' : '',
+        x.segment ? [x.origin === 'learning' ? sep() : '', 'לפלח: ' + learnValue('market_tf', x.segment)] : '') : null,
       h('p', { class: 'hint' }, x.asset.replace(/^[^:]+:/, ''), sep(), TF_LABEL[x.tf] || x.tf, sep(), `גרסה ${x.method_version}`,
         x.created_by ? [sep(), x.created_by] : null, x.new_version ? [sep(), `→ גרסה ${x.new_version}`] : null),
       x.note ? h('p', { class: 'hint' }, x.note) : null,
@@ -251,7 +257,51 @@ export function mountAnalysis(ctx) {
     if (dim === 'holidays') return REGION[v] || v;
     return v;
   }
-  function learnPanel(m) {
+  // ── המיקומים (23.9, L5): ערך אחד בנוסחה קבועה, בתוך הטווח בלבד. הצעה — ב"הצעת שינוי פרמטר"; "החל" — רק הראשי ──
+  const DECISION = { paused: ['מושהה — 23.9 בבדיקה', ''], propose: ['הצעה', 'ok'], out_of_range: ['מחוץ לטווח — לבעלים', 'warn'], ci_includes_current: ['רווח הסמך כולל את הנוכחי — אין הצעה', ''],
+    same: ['כמו הנוכחי', ''], not_enough: ['אין מספיק נתונים', ''] };
+  /** 🟡4 (L5): הערכים שהוחלו לפלח — עם "↺ בטל" (רק העורך הראשי; מעלה גרסה) */
+  function segValues(m, primary) {
+    const rows = Object.entries(m.seg_params || {}).flatMap(([sg, ps]) => Object.entries(ps).map(([k, v]) => [sg, k, v]));
+    if (!rows.length) return null;
+    return h('div', { class: 'learn-seg' },
+      h('h3', { class: 'learn-h' }, 'ערכים לפלח (גוברים על הכללי בפלח שלהם)'),
+      h('ul', { class: 'learn-findings' }, rows.map(([sg, k, v]) => h('li', { 'data-segment': sg, 'data-param': k },
+        h('div', { class: 'l1' }, h('span', {}, `${(m.param_defs[k] || {}).label || k} · ${learnValue('market_tf', sg)}`), h('span', { class: 'chip' }, `${v} (כללי: ${m.params[k] ?? (m.param_defs[k] || {}).default})`)),
+        h('button', { class: 'btn ghost sm', type: 'button', disabled: !primary, on: { click: () => ctx.confirmSheet('ביטול ערך לפלח',
+          `${m.name}: "${(m.param_defs[k] || {}).label || k}" ב${learnValue('market_tf', sg)} יחזור לערך הכללי. הגרסה של השיטה עולה, והבדיקות לאחור מחושבות מחדש.`, 'בטל', async () => {
+            await api('admin_seg_param_clear', { method: m.id, segment: sg, param: k }); toast('בוטל — גרסה חדשה'); ctx.reload();
+          }) } }, '↺ בטל'),
+        primary ? null : h('small', { class: 'muted' }, ' רק העורך הראשי מבטל')))));
+  }
+  function learnValues(m, L) {
+    if (!(L.values || []).length) return null;
+    const asset = assetField(ctx, { value: 'binance:BTCUSDT', labels: { 'binance:BTCUSDT': { label: 'BTC ⇄ USDT' } }, label: 'נכס למדידה' });
+    const tf = select('learn-tf', m.timeframes.map(t => [t, TF_LABEL[t] || t]), m.timeframes.includes('h1') ? 'h1' : m.timeframes[0]);
+    const msg = h('div', { 'aria-live': 'polite' });
+    const go = h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+      go.disabled = true; msg.replaceChildren(h('p', { class: 'loading' }, 'מודד את הנוכחי מול המועמד, בתוך הדגימה ומחוצה לה…'));
+      try {
+        const r = await api('admin_learn_propose', { method: m.id, asset: asset.value, tf: tf.value });
+        toast(r.proposals ? `${r.proposals} הצעות חדשות` : 'אין הצעה חדשה'); ctx.reload();
+      } catch (e) { msg.replaceChildren(h('p', { class: 'error' }, e.message)); go.disabled = false; }
+    } } }, '🔍 חשב הצעות');
+    const segText = s => (s ? learnValue('market_tf', s) : 'כל השווקים');
+    return h('div', { class: 'learn-values' },
+      h('h3', { class: 'learn-h' }, 'איפה למקם — ערך בתוך הטווח'),
+      h('ul', { class: 'learn-findings' }, L.values.map(v => {
+        const [lbl, cls] = DECISION[v.decision] || [v.decision, ''];
+        const c = v.candidate;
+        return h('li', { 'data-param': v.param, 'data-segment': v.segment, 'data-decision': v.decision },
+          h('div', { class: 'l1' }, h('span', {}, `${v.label} · ${segText(v.segment)}`), h('span', { class: 'chip ' + cls }, lbl)),
+          h('p', { class: 'hint' }, `נוכחי ${v.current}`, c ? ` · מוצע ${c.value} (רווח סמך ${c.ci[0]}–${c.ci[1]}, N = ${c.n})` : '',
+            ` · טווח ${v.range[0]}–${v.range[1]} · ${v.in_sample} מתוך ${v.rows} עסקאות (70% הראשונות)`));
+      })),
+      h('div', { class: 'fields two' }, h('div', { class: 'f wide' }, h('span', {}, 'נכס'), asset), field('מסגרת זמן', tf)),
+      h('div', {}, go), msg);
+  }
+
+  function learnPanel(m, primary = false) {
     const out = h('div', { 'aria-live': 'polite' });
     const src = select('learn-source', LEARN_SRC, 'backtest');
     let ver = null;
@@ -289,6 +339,8 @@ export function mountAnalysis(ctx) {
           h('p', { class: 'hint' }, f.text),
           f.code ? h('a', { class: 'learn-item', href: '#/dev/tasks/' + f.code }, `⚠️ ${f.code} — לדיון`) : null)))
           : h('p', { class: 'hint learn-none' }, 'אין ממצאים — אף פלח לא שונה מהשאר במובהקות, וגם לא 30 העסקאות האחרונות.'),
+        segValues(m, primary),
+        learnValues(m, L),
         h('p', { class: 'hint' }, `פלח עם פחות מ-${L.min_n} עסקאות — "אין מספיק נתונים", בלי אחוז ובלי תוחלת.`,
           L.gaps ? ` ${L.gaps} אותות לא נפתחו (פער מעבר לרמה) — לא בסטטיסטיקה.` : ''),
         h('table', { class: 'tbl learn-tbl' },
