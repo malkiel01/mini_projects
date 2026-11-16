@@ -56,7 +56,7 @@ function block(e) {
 }
 
 /** החתימות — סט אחד לכל ההדפסות (⚙️ הגדרות); ה-API מחזיר אותו בכל מחירון */
-const sigs = e => `<div class="sigs">${e.signatures.map(s => `<div><b>${esc(s.name)}</b><b>${esc(s.role)}</b></div>`).join('')}</div>`;
+const sigs = e => `<div class="sigs">${e.signatures.map(s => `<div><b>${esc(s.name)}</b><span>${esc(s.role)}</span></div>`).join('')}</div>`;
 
 /** עמוד: נייר מכתבים, הכותרת, התוכן, החתימות, נייר מכתבים תחתון */
 function sheet(inner, signer) {
