@@ -430,7 +430,7 @@ try {
 
         case 'pair_labels':
             $as = array_slice(array_filter(explode(',', (string)($_GET['assets'] ?? ''))), 0, 200);
-            out(['ok' => true, 'labels' => ts_pair_labels($as)]);
+            out(['ok' => true, 'labels' => ts_pair_labels($as, $uid)]);
 
         case 'market_providers':
             out(['ok' => true, 'providers' => ts_providers_for($uid), 'shared_enabled' => ts_shared_enabled()]);

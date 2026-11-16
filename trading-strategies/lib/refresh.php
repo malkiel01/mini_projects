@@ -27,6 +27,8 @@ function ts_chart_refresh(int $uid, mixed $asset, mixed $tf, mixed $from, mixed 
 {
     if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
     [$provider] = ts_asset_split($asset);
+    // מסגרת שהספק לא נותן (21.3, 2.26): הגרף כולו — הנרות, השיטות והכרטיס — על אותו זוג בספק שנותן אותה
+    if (($alt = ts_pair_tf_asset($uid, (string)$asset, $tf)) !== null) [$asset, $provider] = [$alt, explode(':', $alt, 2)[0]];
     $ids = is_string($methods) && $methods !== '' ? array_values(array_unique(explode(',', $methods))) : [];
     if (count($ids) > TS_REFRESH_MAX_METHODS) throw new TsInvalid('יותר מדי שיטות בבקשה אחת (עד ' . TS_REFRESH_MAX_METHODS . ')');
     $now ??= ts_now();

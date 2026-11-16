@@ -483,6 +483,10 @@ function ts_tail_ttl(string $tf): int
 function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed $to, ?int $now = null): array
 {
     [$provider, $symbol] = ts_asset_split($asset);
+    // מסגרת שהספק לא נותן, בזוג מהקטלוג (21.3, 2.26): מט"ח תוך-יומי ב-ECB → אותו זוג בספק שנותן אותה (Twelve Data)
+    if (is_string($tf) && isset(TS_TF_SECONDS[$tf]) && ($alt = ts_pair_tf_asset($uid, (string)$asset, $tf)) !== null) {
+        return ts_market_candles($uid, $alt, $tf, $from, $to, $now);
+    }
     // זוג מחושב (18.1): "1/USDILS" — נמשך ונשמר במאגר כמו USDILS, ומוחזר הפוך (1/x)
     $inverse = str_starts_with($symbol, '1/');
     if ($inverse) $symbol = substr($symbol, 2);

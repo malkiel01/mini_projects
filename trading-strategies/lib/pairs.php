@@ -252,10 +252,41 @@ function ts_pair_pick(array $l): array
 }
 
 /** תוויות לכמה נכסים בבת אחת — לרשימות (מעקב, התראות) */
-function ts_pair_labels(array $assets): array
+/**
+ * מסגרת זמן שהספק של הנכס לא נותן (21.3 (1), 2.26 — ECB יומי בלבד): נכס אחר באותו זוג, שהספק שלו נותן אותה ויש למשתמש
+ * דרך אליו (למשל מט"ח תוך-יומי → Twelve Data, במפתח האפליקציה). null — אין, או שהספק נותן אותה בעצמו.
+ */
+function ts_pair_tf_asset(int $uid, string $asset, string $tf): ?string
+{
+    $prov = explode(':', $asset, 2)[0];
+    if (!isset(TS_PROVIDERS[$prov]) || isset(ts_provider($prov)->meta()['tfs'][$tf])) return null;
+    $key = ts_pair_of_asset($asset);
+    if ($key === null) return null;
+    foreach (ts_pairs_catalog()[$key]['assets'] as $a) {
+        $p = explode(':', $a, 2)[0];
+        if ($a !== $asset && isset(TS_PROVIDERS[$p]) && isset(ts_provider($p)->meta()['tfs'][$tf]) && ts_access($uid, $p) !== null) return $a;
+    }
+    return null;
+}
+
+/** מסגרות הזמן של נכס למשתמש: של הספק שלו, ועוד מה שזוג מאותו קטלוג נותן דרך ספק אחר (ts_pair_tf_asset) */
+function ts_pair_tfs(int $uid, string $asset): array
+{
+    $prov = explode(':', $asset, 2)[0];
+    if (!isset(TS_PROVIDERS[$prov])) return [];
+    $own = ts_provider($prov)->meta()['tfs'];
+    return array_values(array_filter(array_keys(TS_TF_SECONDS), fn($tf) => isset($own[$tf]) || ts_pair_tf_asset($uid, $asset, $tf) !== null));
+}
+
+/** התוויות, ו-$uid — גם מסגרות הזמן של כל נכס למשתמש (tfs) */
+function ts_pair_labels(array $assets, ?int $uid = null): array
 {
     $out = [];
-    foreach (array_unique($assets) as $a) if (is_string($a)) $out[$a] = ts_pair_label($a);
+    foreach (array_unique($assets) as $a) {
+        if (!is_string($a)) continue;
+        $out[$a] = ts_pair_label($a);
+        if ($uid !== null) $out[$a]['tfs'] = ts_pair_tfs($uid, $a);
+    }
     return $out;
 }
 

@@ -132,6 +132,22 @@ $app2 = ts_cred_save(0, 'twelvedata', 'good-app-000002', '', 'admin');
 ts_app_key_set('twelvedata', $app2);
 eq([ts_pair_asset($A, 'EUR/USD'), ts_pair_asset($C, 'EUR/USD')], ['ecb:EURUSD', 'twelvedata:EUR/USD'],
     'pairs: through the app key EUR/USD goes to ECB; with an own key — Twelve Data first, as before');
+// קריטריון 10 (2.26): ביומי — ECB, 0 פניות במפתח האפליקציה; בשעה — ECB לא נותן → מפתח האפליקציה; BTC/USD → Binance
+$u0 = $usage($app2);
+$d = ts_market_candles($A, 'ecb:EURUSD', 'd1', $now - 10 * 86400, $now, $now);
+eq([$d['provider'], $usage($app2)], ['ecb', $u0], 'criterion 10: EUR/USD daily → ECB, 0 calls with the app key');
+$h = ts_market_candles($A, 'ecb:EURUSD', 'h1', $now - 86400, $now, $now);
+eq([$h['asset'], $h['source'], $usage($app2) > $u0], ['twelvedata:EUR/USD', 'app', true], 'criterion 10: the same pair hourly → the app key (ECB is daily only)');
+eq(ts_pair_tfs($A, 'ecb:EURUSD'), array_keys(TS_TF_SECONDS), 'criterion 10: the chart offers the intraday frames for EUR/USD');
+require_once __DIR__ . '/../lib/prefill.php';
+$pool = ts_prefill_pool(0, false);
+$fxTd = array_values(array_filter($pool, fn($x) => str_starts_with($x, 'twelvedata:') && ts_pair_of_asset($x) !== null && count(ts_pairs_catalog()[ts_pair_of_asset($x)]['assets']) > 1));
+eq([in_array('ecb:EURUSD', $pool, true), $fxTd], [true, []], 'criterion 10: the background queue takes these pairs from the free provider — none through the app key');
+ts_app_key_set('twelvedata', null);
+eq([ts_pair_tf_asset($A, 'ecb:EURUSD', 'd1'), ts_pair_tf_asset($B, 'ecb:EURUSD', 'h1'), ts_pair_tfs($B, 'ecb:EURUSD')], [null, null, ['d1']],
+    '… daily stays ECB; with no way to Twelve Data (no app key, no own key) EUR/USD is daily-only');
+ts_app_key_set('twelvedata', $app2);
+eq(ts_pair_asset($A, 'BTC/USD'), ts_pairs_catalog()['BTC/USD']['assets'][1], 'criterion 10: BTC/USD → Binance');
 ts_symbol_pref_set($A, 'twelvedata:EUR/USD');
 eq(ts_pair_asset($A, 'EUR/USD'), 'twelvedata:EUR/USD', 'pairs: an explicit choice of the user wins');
 

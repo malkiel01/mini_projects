@@ -363,7 +363,8 @@ export function mountMarket(ctx) {
     const key = 'ts-chart:' + asset;
     let st = {};
     try { st = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { /* ריק */ }
-    const tfs = p.tfs;
+    // זוג מהקטלוג — גם המסגרות שספק אחר נותן לו (21.3, 2.26: מט"ח תוך-יומי)
+    const tfs = L.tfs?.length ? L.tfs : p.tfs;
     st.tf = tfs.includes(st.tf) ? st.tf : (tfs.includes('h1') ? 'h1' : tfs.includes('d1') ? 'd1' : tfs[0]);
     st.range ??= DEFAULT_RANGE[st.tf];
     st.ind ??= ['sma20', 'vol'];

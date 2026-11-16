@@ -146,6 +146,15 @@ try {
   await bp.locator('main .card').first().waitFor();
   eq(await bp.locator('main .card', { hasText: 'Twelve Data' }).locator('.chip').innerText(), '✓ מפתח האפליקציה — פתוח לכולם', 'bob sees Twelve Data open through the app key');
   await shot(bp, 'shared-providers-app');
+  // קריטריון 10 (2.26): EUR/USD נפתח ב-ECB (יומי), ומסגרת "שעה" — דרך מפתח האפליקציה
+  await bp.goto(BASE + '#/chart/' + encodeURIComponent('ecb:EURUSD'));
+  const tfH1 = bp.locator('main fieldset.seg input[name="tf"][value="h1"]');
+  await tfH1.waitFor({ state: 'attached' });
+  eq(await bp.locator('main fieldset.seg input[name="tf"]').count() > 1, true, 'criterion 10: EUR/USD (ECB, daily only) offers intraday frames too');
+  const resp = bp.waitForResponse(r => r.url().includes('action=chart_refresh') && r.url().includes('tf=h1'));
+  await tfH1.check({ force: true });
+  const j = await (await resp).json();
+  eq([j.asset, j.source], ['twelvedata:EUR/USD', 'app'], 'criterion 10: hourly → the same pair through the app key');
   await bp.context().close();
   eq(errors, [], 'no console errors and no failed requests');
 } catch (e) {
