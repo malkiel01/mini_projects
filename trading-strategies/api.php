@@ -68,8 +68,18 @@
  * בלי משתמש, באסימון X-Dev-Token (tsd_…): devapi-feed | devapi-comment | devapi-file | devapi-attach ("public" ב-app.json)
  * כל בקשה נרשמת ביומן המובנה (data/_dev/log.sqlite, 30 יום) — פעולה, מצב, משך, מי; גוף הבקשה לא נרשם.
  *
+ * הכניסה (A2 — spec-stage-a 20.1; lib/auth.php, lib/sso.php), לפני ה-session:
+ * GET  ?action=login_config              {mode: connected|detached|unknown, platform, password}
+ * GET  ?action=platform_key              המפתח הציבורי של האפליקציה (grant_status) — "public"
+ * GET  ?action=sso_start                 "כניסה עם הכלים הדיגיטליים" (מנותקת) → הפניה למעטפת
+ * GET  ?action=sso_callback&token&state  החזרה מהמעטפת: כל בדיקות sso.md §2 → session → הפניה לאפליקציה — "public"
+ * POST action=login {email, password}    מנותקת + login.password בלבד; 5 שגיאות → רבע שעה; grant_status לפני session
+ * POST action=logout                     יציאה מהאפליקציה (לא מהפלטפורמה)
+ * POST action=password_set {password}    "סיסמה לאפליקציה" · admin_password_reset {user_id} (המנהל הראשי)
+ * בלי משתמש: 401 עם login (כמו login_config); המעטפת לא עונה: 503 עם login.mode = unknown.
+ *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
- * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
+ * או מזהות חתומה שנבדקה (lib/auth.php, lib/sso.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
  */
 
 declare(strict_types=1);
@@ -142,13 +152,56 @@ if (in_array($action, TS_DEVAPI_ACTIONS, true)) {
     }
 }
 
+// הכניסה (A2 — spec-stage-a 20.1, lib/auth.php, lib/sso.php) — לפני ה-session: מי שמגיע לכאן עוד לא מחובר.
+// platform_key ו-sso_callback ב-"public" (במחוברת השער חל); השאר נקראות רק כשמנותקת, ואז השער לא חל על האפליקציה.
+// sso_start / sso_callback — ניווט של הדפדפן (הפניה), לא JSON.
+if (in_array($action, ['login_config', 'platform_key', 'sso_start', 'sso_callback', 'login'], true)) {
+    try {
+        if ($action === 'login_config') out(['ok' => true] + ts_login_config());
+        if ($action === 'platform_key') {
+            header('Cache-Control: public, max-age=3600');
+            out(ts_app_key_public());
+        }
+        if ($action === 'login') {
+            if ($method !== 'POST') fail('נדרש POST', 405);
+            // JSON בלבד: טופס מאתר אחר לא יכול לשלוח אותו בלי preflight
+            if (!str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE'] ?? '')), 'application/json')) fail('נדרש JSON', 415);
+            $in = input(10_000);
+            try {
+                [, $csrf] = ts_password_login($in['email'] ?? null, $in['password'] ?? null, (string)($_SERVER['REMOTE_ADDR'] ?? ''));
+            } catch (TsLoginError $e) {
+                fail($e->getMessage(), $e->getCode() ?: 400);
+            }
+            out(['ok' => true]);
+        }
+        $to = $action === 'sso_start' ? ts_sso_start() : ts_sso_callback($_GET, (string)($_COOKIE[TS_SSO_COOKIE] ?? ''));
+        http_response_code(302);
+        header('Location: ' . $to);
+        exit;
+    } catch (Throwable $e) {
+        devloop_log_error($e);
+        error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
+        fail('תקלה זמנית — נסו שוב בעוד רגע', 503);
+    }
+}
+
 try {
     $session = ts_session();
+} catch (TsUnavailable) {
+    out(['ok' => false, 'error' => 'אין חיבור לכלים הדיגיטליים כרגע — נסו שוב בעוד כמה דקות', 'login' => ['mode' => 'unknown', 'platform' => false, 'password' => false]], 503);
+} catch (TsNoAccess $e) {
+    out(['ok' => false, 'error' => $e->getMessage(), 'login' => ts_login_config() + ['denied' => true]], 401);
+} catch (TsConflict $e) {
+    fail($e->getMessage(), 403);
 } catch (Throwable $e) {
     error_log('trading-strategies session: ' . $e->getMessage());
     fail('תקלה זמנית במסד — נסו שוב בעוד רגע', 503);
 }
-if (!$session) fail('אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל', 401);
+if (!$session) {
+    // מנותקת — מסך כניסה; מחוברת — אין הרשאה (השער לא נתן זהות)
+    $login = ts_login_config();
+    out(['ok' => false, 'error' => $login['mode'] === 'connected' ? TS_NO_ACCESS_MSG : 'צריך להיכנס', 'login' => $login], 401);
+}
 [$user, $csrf] = $session;
 $uid = (int)$user['id'];
 $tz = $user['timezone'];
@@ -177,7 +230,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
     }
 }
 
-const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
+const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
@@ -230,7 +283,17 @@ try {
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
             ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
-                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'unread' => ts_inbox_unread($uid), 'version' => ts_app_version()]);
+                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'login_via' => ts_current()['via'] ?? 'gate',
+                'has_password' => !empty($user['password_hash']), 'unread' => ts_inbox_unread($uid), 'version' => ts_app_version()]);
+
+        case 'logout':
+            // יציאה מהאפליקציה בלבד — לא נוגעת בפלטפורמה (auth.md §5). מחוברת: השער יפתח session חדש בבקשה הבאה
+            ts_session_drop();
+            out(['ok' => true]);
+
+        case 'password_set':
+            ts_password_set($uid, $in['password'] ?? null);
+            out(['ok' => true]);
 
         case 'settings':
             ts_settings_save($uid, $in);
@@ -452,7 +515,7 @@ try {
                                    ORDER BY l.id DESC LIMIT 100')->fetchAll();
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
                 'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
-                'users' => ts_db()->query('SELECT id, display_name, email FROM users ORDER BY display_name')->fetchAll(),
+                'users' => ts_db()->query('SELECT id, display_name, email, password_hash IS NOT NULL AS has_password FROM users ORDER BY display_name')->fetchAll(),
                 'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'method_runs' => ts_method_runs(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
         case 'admin_methods':
@@ -540,6 +603,10 @@ try {
         case 'admin_role_add':
             ts_admin_grant($uid, (int)($in['user_id'] ?? 0));
             out(['ok' => true, 'admins' => ts_admins_list()]);
+
+        case 'admin_password_reset':
+            ts_password_reset($uid, (int)($in['user_id'] ?? 0));
+            out(['ok' => true]);
 
         case 'admin_role_remove':
             ts_admin_revoke($uid, (int)($in['user_id'] ?? 0));
