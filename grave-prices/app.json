@@ -2,10 +2,19 @@
   "id": "grave-prices",
   "name": "מחירוני קברים",
   "icon": "🪦",
-  "description": "מחירונים של קברים — בפיתוח.",
+  "description": "מחירוני חברה קדישא לתושבי ישראל ולתושבי חו\"ל, לפי שנים — צפייה והדפסה בעמוד A4, בנפרד לכל קבוצה או שתיהן בדף אחד.",
   "category": "daily",
   "entry": "index.html",
-  "version": "0.0",
+  "version": "0.1",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach",
+    "api.php?action=sso_callback"
+  ],
+  "sso": {
+    "return": [
+      "https://mbe-plus.com/mini_projects/grave-prices/api.php?action=sso_callback"
+    ]
+  }
 }
