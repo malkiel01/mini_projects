@@ -7,6 +7,8 @@ return function (string $url, array $headers): array {
     if (!str_starts_with($key, 'good-')) {
         return [200, json_encode(['code' => 401, 'status' => 'error', 'message' => "**apikey** parameter is incorrect: $key (request $url?apikey=$key)"])];
     }
+    // מפתח "good-rate…" — הספק מגביל את הקצב (429 בגוף, כמו Twelve Data) — לבדיקה של 21.3 🟡3
+    if (str_starts_with($key, 'good-rate')) return [200, json_encode(['code' => 429, 'status' => 'error', 'message' => 'You have run out of API credits for the current minute.'])];
     $path = (string)parse_url($url, PHP_URL_PATH);
     parse_str((string)parse_url($url, PHP_URL_QUERY), $q);
     if ($path === '/api_usage') return [200, json_encode(['current_usage' => 1, 'plan_limit' => 8])];

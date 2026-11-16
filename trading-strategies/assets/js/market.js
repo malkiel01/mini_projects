@@ -355,14 +355,16 @@ export function mountMarket(ctx) {
     const sub = pp => { const s = pairSub(L); return [s, h('span', { class: 'sub-tail' }, (s ? '· ' : '') + (pp ? pp.name : provider) + (L.computed ? ' · מחושב (1/x)' : ''))]; };
     const p = provs.find(x => x.id === provider);
     setHead(label(), sub(p), { back: true, docTitle: L.label });
-    if (!p?.available) {
+    // pool (21.3): ספק משותף בלי דרך אליו — מה שבמאגר מוצג, בלי השלמה
+    if (!p?.available && !p?.pool) {
       render(h('p', { class: 'error' }, 'אין לכם חיבור לספק הזה. '), h('a', { class: 'btn ghost', href: '#/providers' }, 'ספקי נתונים'));
       return;
     }
     const key = 'ts-chart:' + asset;
     let st = {};
     try { st = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { /* ריק */ }
-    const tfs = p.tfs;
+    // זוג מהקטלוג — גם המסגרות שספק אחר נותן לו (21.3, 2.26: מט"ח תוך-יומי)
+    const tfs = L.tfs?.length ? L.tfs : p.tfs;
     st.tf = tfs.includes(st.tf) ? st.tf : (tfs.includes('h1') ? 'h1' : tfs.includes('d1') ? 'd1' : tfs[0]);
     st.range ??= DEFAULT_RANGE[st.tf];
     st.ind ??= ['sma20', 'vol'];
@@ -623,7 +625,9 @@ export function mountMarket(ctx) {
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
           capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
           r.stream || analysisOn() ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
-          n ? '' : ' · אין נתונים בטווח הזה');
+          n ? '' : ' · אין נתונים בטווח הזה',
+          // 21.3: אין דרך להשלים (תקרה, או אין מפתח זמין) — מוצג מה שבמאגר
+          r.notice ? h('span', { class: 'chart-notice', role: 'status' }, ' · ' + r.notice) : '');
         if (mode === 'manual') toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
         if (r.stream && n && !ws) openLive(r.stream, r.stream_interval);
       } catch (e) {
@@ -709,17 +713,12 @@ export function mountMarket(ctx) {
         actions = h('div', { class: 'row-btns wrap' },
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async e => { e.target.disabled = true; try { await api('cred_test', { provider: p.id }); toast('החיבור תקין'); } catch (ex) { toast(ex.message, true); } PROVIDERS = null; invalidateCatalog(); route(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'החלפת מפתח'),
-          // מילוי ברקע במפתח שלי (21.2): לפי התקרות של הספק, רק לנכסים שלי, ונשמר רק לי
-          p.own.prefill != null ? h('label', { class: 'switch' }, (() => {
-            const c = h('input', { type: 'checkbox', 'aria-label': 'מילוי ברקע במפתח שלי', on: { change: async () => {
-              try { await api('prefill_set', { on: c.checked }); PROVIDERS = null; toast(c.checked ? 'המילוי ברקע הופעל' : 'המילוי ברקע כובה'); }
-              catch (ex) { c.checked = !c.checked; toast(ex.message, true); }
-              c.parentNode.querySelector('.prefill-label').textContent = c.checked ? 'מילוי ברקע במפתח שלי — פעיל' : 'מילוי ברקע במפתח שלי — כבוי';
-            } } });
-            c.checked = p.own.prefill;
-            return c;
-          })(), h('span', { class: 'prefill-label' }, p.own.prefill ? 'מילוי ברקע במפתח שלי — פעיל' : 'מילוי ברקע במפתח שלי — כבוי')) : null,
-          h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק', `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; invalidateCatalog(); toast('נותק'); route(); }) } }, 'ניתוק'));
+          h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק',
+            p.share ? `המפתח של ${p.name} יימחק. מה שנמשך בו נשאר במאגר המשותף.` : `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; invalidateCatalog(); toast('נותק'); route(); }) } }, 'ניתוק'));
+      } else if (p.source === 'app') {
+        // 21.3: מפתח האפליקציה — לכולם. מפתח אישי אפשר להוסיף כגיבוי
+        status = h('span', { class: 'chip ok' }, '✓ מפתח האפליקציה — פתוח לכולם');
+        actions = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'מפתח משלי (גיבוי)');
       } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהמנהל');
       else {
         status = h('span', { class: 'chip warn' }, 'לא מחובר');
@@ -728,10 +727,12 @@ export function mountMarket(ctx) {
       return h('li', { class: 'card', style: 'cursor:default;flex-wrap:wrap' },
         h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, p.name), h('span', { class: 't' }, DELAY_LABEL[p.delay] || '')),
           h('div', { class: 'l2' }, p.markets.map(m => MARKET_LABEL[m] || m).join(', '), sep(), p.tfs.map(t => TF_LABEL[t]).join(' · ')),
-          h('div', { style: 'margin-top:6px' }, status)),
+          h('div', { style: 'margin-top:6px' }, status),
+          // 21.3 (2): המפתח האישי בספק משותף — גיבוי, ומה שנמשך בו לכולם
+          p.needs_key && p.share && p.own ? h('p', { class: 'hint pool-note' }, 'משמש כשאין מפתח אפליקציה זמין. מה שנמשך בו נשמר במאגר המשותף.') : null),
         actions);
     };
-    render(h('p', { class: 'hint' }, 'Binance ו-ECB פתוחים לכולם. לספק עם מפתח — מחברים מפתח משלכם: הוא נשמר מוצפן בשרת, משמש רק לבקשות שלכם, ולא מוצג שוב (רק ארבעת התווים האחרונים).'),
+    render(h('p', { class: 'hint' }, 'Binance ו-ECB פתוחים לכולם. לספק עם מפתח — מחברים מפתח משלכם: הוא נשמר מוצפן בשרת, ולא מוצג שוב (רק ארבעת התווים האחרונים).'),
       h('ul', { class: 'list' }, provs.map(row)));
   }
 
@@ -749,6 +750,7 @@ export function mountMarket(ctx) {
       p.key_help?.note ? h('p', { class: 'hint' }, p.key_help.note) : null,
       p.key_help?.url ? h('p', {}, h('a', { href: p.key_help.url, target: '_blank', rel: 'noopener noreferrer' }, 'לקבלת מפתח ↗')) : null,
       h('div', { class: 'fields' }, field(p.key_help?.label || 'מפתח', secret, true), field('תווית', label, true)),
+      p.share ? h('p', { class: 'hint pool-note' }, 'משמש כשאין מפתח אפליקציה זמין. מה שנמשך בו נשמר במאגר המשותף.') : null,
       h('p', { class: 'hint' }, 'בשמירה המפתח נבדק מול הספק. הוא נשמר מוצפן, ולא יוצג שוב.'));
   }
 
@@ -792,6 +794,7 @@ export function mountMarket(ctx) {
       const lim = numInput('daily_limit', '100');
       return h('li', { class: 'card', style: 'cursor:default;display:block' },
         h('div', { class: 'l1' }, h('span', {}, provName(c.provider) + (c.label ? ' · ' + c.label : '')), h('span', { class: 't num' }, '••••' + c.last4)),
+        appKeyRow(c),
         h('ul', { class: 'stack', style: 'list-style:none;margin:8px 0' }, c.grants.length ? c.grants.map(g => h('li', { class: 'toolbar' },
           h('span', { style: 'flex:1' }, g.name || g.email, ' · ', num(String(g.daily_limit)), ' ביום'),
           h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ביטול שיוך', on: { click: async () => { await api('admin_grant_delete', { cred_id: c.id, user_id: g.user_id }); reload(); } } }, '✕'))) : h('li', { class: 'muted' }, 'לא שויך לאף משתמש')),
@@ -801,6 +804,24 @@ export function mountMarket(ctx) {
         h('div', { class: 'row-btns' },
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => { try { await api('admin_cred_test', { id: c.id }); toast('החיבור תקין'); } catch (e) { toast(e.message, true); } reload(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('מחיקת מפתח', 'המפתח והשיוכים שלו יימחקו.', 'מחיקה', async () => { await api('admin_cred_delete', { id: c.id }); reload(); }) } }, 'מחיקה')));
+    };
+    // מפתח האפליקציה (21.3): מפתח אחד לכל ספק משותף, שהאפליקציה פונה בו בשביל כולם. רק המנהל הראשי מסמן
+    const appKeyRow = c => {
+      const ak = (S.app_keys || {})[c.provider];
+      if (!ak) return null;
+      const box = h('input', { type: 'checkbox', 'aria-label': 'מפתח האפליקציה', disabled: !S.is_primary_admin }); box.checked = !!c.app_key;
+      box.addEventListener('change', async () => {
+        try { await api('admin_app_key', { provider: c.provider, cred_id: box.checked ? c.id : null }); toast(box.checked ? 'מפתח האפליקציה סומן' : 'הסימון בוטל'); }
+        catch (e) { toast(e.message, true); }
+        reload();
+      });
+      const lim = numInput('app_user_limit', String(ak.user_limit));
+      return h('div', { class: 'stack app-key' },
+        h('label', { class: 'switch' }, box, h('span', {}, h('b', {}, '⭐ מפתח האפליקציה'), c.app_key ? ' · פעיל — לכל המשתמשים' : '')),
+        h('p', { class: 'hint' }, 'פונים בו בשביל כולם, ומה שנמשך נשמר במאגר המשותף. לכל ספק — מפתח אחד.', S.is_primary_admin ? '' : ' רק המנהל הראשי מסמן.'),
+        c.app_key && S.is_primary_admin ? h('div', { class: 'toolbar' }, field('פניות ליום למשתמש', lim), h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+          try { await api('admin_app_key', { provider: c.provider, cred_id: c.id, user_limit: lim.value.trim() }); toast('נשמר'); reload(); } catch (e) { toast(e.message, true); }
+        } } }, 'שמירה')) : null);
     };
     const add = () => {
       const prov = select('provider', S.providers.filter(p => p.needs_key).map(p => [p.id, p.name]), '');
@@ -812,7 +833,7 @@ export function mountMarket(ctx) {
     return h('div', { class: 'stack' },
       h('div', { class: 'block stack' },
         h('label', { class: 'switch' }, sw, h('span', {}, h('b', {}, 'המתג הראשי — ספקים מהמנהל'), S.shared_enabled ? ' · דלוק' : ' · כבוי')),
-        h('p', { class: 'hint' }, 'כבוי בשלב א\' (הכרעה ✅2) עד שתיבחר תוכנית מסחרית שמתירה הצגה לצד שלישי. כשכבוי — מפתח ושיוכים נשמרים, אבל אף משתמש לא מקבל דרכם נתונים.',
+        h('p', { class: 'hint' }, 'כבוי בשלב א\' (הכרעה ✅2) עד שתיבחר תוכנית מסחרית שמתירה הצגה לצד שלישי. כשכבוי — מפתח ושיוכים נשמרים, אבל אף משתמש לא מקבל דרכם נתונים. מפתח האפליקציה (⭐) — לא תלוי במתג.',
           S.is_primary_admin ? '' : ' רק המנהל הראשי משנה את המתג.')),
       h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', type: 'button', on: { click: add } }, '+ מפתח לחלוקה')),
       S.creds.length ? h('ul', { class: 'list' }, S.creds.map(credRow)) : h('p', { class: 'empty' }, 'אין מפתחות לחלוקה.'));
@@ -848,7 +869,7 @@ export function mountMarket(ctx) {
     return h('div', { class: 'stack' },
       h('div', { class: 'summary' }, h('div', { class: 'line' }, h('span', { class: 'muted' }, 'גודל המאגר'), h('b', { class: 'num' }, kb.toLocaleString('he-IL') + ' KB'),
         h('span', { class: 'muted' }, ' · ניקוי אחרון ' + (S.cache.cleanup_at ? new Date(S.cache.cleanup_at * 1000).toLocaleString('he-IL') : '—')))),
-      h('p', { class: 'hint' }, 'המאגר שומר 60 יום אחורה ומתנקה פעם ביום. נתונים שנמשכו במפתח אישי — רק של אותו משתמש.'),
+      h('p', { class: 'hint' }, 'המאגר שומר 60 יום אחורה ומתנקה פעם ביום. Binance, ECB ו-Twelve Data — מאגר משותף, בכל מפתח. Finnhub במפתח אישי — רק של אותו משתמש.'),
       S.cache.by.length ? h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'ספק'), h('th', {}, 'סוג'), h('th', { class: 'n' }, 'נרות'), h('th', { class: 'n' }, 'הוותיק'))),
         h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' }[r.kind]),
           h('td', { class: 'n num' }, r.candles.toLocaleString('he-IL')), h('td', { class: 'n num' }, new Date(r.oldest * 1000).toLocaleDateString('he-IL')))))) : h('p', { class: 'empty' }, 'המאגר ריק.'),

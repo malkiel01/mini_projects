@@ -1,5 +1,5 @@
 // בדיקת ממשק 21.2 (spec-stage-a, ✅30) — המילוי ברקע בטלפון: בשורה של לשונית, נכס שמולא לפני 4 ימים — המחיר ו"לפני 4
-// ימים" בקטן; נכס שלא מולא — "—". בספקי הנתונים, עם מפתח Twelve Data — "מילוי ברקע במפתח שלי — פעיל", ואפשר לכבות.
+// ימים" בקטן; נכס שלא מולא — "—". 21.3 (✅31): אין מתג מילוי; בלי מפתח — מה שבמאגר מוצג, עם ההודעה; מפתח האפליקציה.
 // node trading-strategies/tests/prefill-ui.mjs   (SHOTS=<dir> — צילומי מסך)
 import { createRequire } from 'module';
 import { spawnSync, spawn } from 'child_process';
@@ -81,24 +81,81 @@ try {
     await a.context().close();
   }
 
-  // ── ההגדרה: "מילוי ברקע במפתח שלי" ──
+  // ── 21.3 (✅31): אין מתג מילוי; ליד המפתח האישי — הוא גיבוי, ומה שנמשך בו לכולם ──
   const a = await open('alice');
   await a.goto(BASE + '#/providers');
   await a.locator('main .card').first().waitFor();
   eq(await post(a, 'cred_save', { provider: 'twelvedata', secret: 'good-Alice1234567' }), 200, 'alice connects a Twelve Data key');
   await a.reload();
-  const sw = a.locator('main input[aria-label="מילוי ברקע במפתח שלי"]');
-  await sw.waitFor();
-  eq([await sw.count(), await sw.isChecked(), await a.locator('main .prefill-label').innerText()], [1, true, 'מילוי ברקע במפתח שלי — פעיל'],
-    'the settings show "מילוי ברקע במפתח שלי — פעיל", only on the provider with a key');
-  await shot(a, 'prefill-settings-on');
-  await sw.click();
-  await a.waitForFunction(() => document.querySelector('main .prefill-label')?.textContent.includes('כבוי'));
-  await a.reload();
-  await sw.waitFor();
-  eq([await sw.isChecked(), await a.locator('main .prefill-label').innerText()], [false, 'מילוי ברקע במפתח שלי — כבוי'], 'criterion 5: turned off — and it stays off after a reload');
+  await a.locator('main .pool-note').waitFor();
+  eq([await a.locator('main input[aria-label="מילוי ברקע במפתח שלי"]').count(), await a.locator('main .prefill-label').count()], [0, 0], '21.3 criterion 8: no prefill switch');
+  eq(await a.locator('main .pool-note').innerText(), 'משמש כשאין מפתח אפליקציה זמין. מה שנמשך בו נשמר במאגר המשותף.', '21.3 (2): the note next to the personal Twelve Data key');
   eq(await noHScroll(a), true, 'settings: no horizontal scroll');
-  await shot(a, 'prefill-settings-off');
+  await shot(a, 'shared-providers-own');
+  // אליס פותחת את AAPL בשלושה ימים אחרונים — נשמר במאגר המשותף
+  const got = await a.evaluate(async now => (await fetch(`api.php?action=chart_refresh&asset=twelvedata:AAPL&tf=h1&from=${now - 3 * 86400}&to=${now}&methods=`)).status, NOW);
+  eq(got, 200, 'alice fetches AAPL (3 days) with her own key');
+
+  // ── 21.3 קריטריון 5: בוב — בלי מפתח ובלי מפתח אפליקציה ──
+  for (const dark of [false, true]) {
+    const w = dark ? 'dark' : 'light';
+    const bp = await open('bob', dark);
+    await bp.goto(BASE + '#/market');
+    await bp.locator('main [role="combobox"]').waitFor();
+    await bp.locator('main [role="tab"]', { hasText: 'נאסד' }).click();
+    await row(bp, 0).waitFor();
+    const aapl = bp.locator('#mtab-panel .mrow', { hasText: 'AAPL' }).first();
+    eq([await aapl.evaluate(el => el.classList.contains('locked')), /\d/.test(await aapl.locator('.mq .p').innerText())], [false, true], `${w}: criterion 5 — AAPL (data in the pool) is shown with a price`);
+    eq([await bp.locator('#mtab-panel .mrow.locked').count() > 0, await bp.locator('#mtab-panel .needs').count()], [true, 1], `${w}: criterion 5 — assets without data are grey, and the ש7 line`);
+    await shot(bp, `shared-tab-nokey-${w}`);
+    await aapl.locator('.body').click();
+    const note = bp.locator('main .chart-notice');
+    await note.waitFor();
+    eq((await note.innerText()).trim(), '· מוצג מה שבמאגר — אין מפתח זמין להשלמה', `${w}: criterion 5 — the chart shows what is in the pool, with the message`);
+    const ratio = await note.evaluate(el => {
+      const rgb = s => s.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+      const L = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+      let bg = 'rgba(0, 0, 0, 0)', e = el;
+      while (e && /rgba\(.*, 0\)|transparent/.test(bg)) { bg = getComputedStyle(e).backgroundColor; e = e.parentElement; }
+      const [x, y] = [L(rgb(getComputedStyle(el).color)), L(rgb(bg))].sort((p, q) => q - p);
+      return (x + 0.05) / (y + 0.05);
+    });
+    eq(ratio >= 4.5, true, `${w}: the message is readable (contrast ${ratio.toFixed(2)} ≥ 4.5)`);
+    eq(await noHScroll(bp), true, `${w}: chart — no horizontal scroll`);
+    await shot(bp, `shared-chart-pool-${w}`);
+    await bp.context().close();
+  }
+
+  // ── מפתח האפליקציה: המנהל הראשי מסמן במסך "🤝 לחלוקה" → לבוב הכול פתוח ──
+  const o = await open('owner');
+  await o.goto(BASE + '#/providers');
+  await o.locator('main .card').first().waitFor();
+  eq(await post(o, 'admin_cred_save', { provider: 'twelvedata', secret: 'good-AppKey123456', label: 'אפליקציה' }), 200, 'the owner adds a Twelve Data key');
+  await o.evaluate(() => sessionStorage.setItem('ts-admin-tab', 'shared'));
+  await o.goto(BASE + '#/admin');
+  const box = o.locator('main input[aria-label="מפתח האפליקציה"]');
+  await box.waitFor();
+  await box.check();
+  await o.locator('main .app-key', { hasText: 'פעיל — לכל המשתמשים' }).waitFor();
+  eq(await o.locator('main .app-key input[name="app_user_limit"]').inputValue(), '100', 'marked — 100 a day per user by default');
+  eq(await noHScroll(o), true, 'admin: no horizontal scroll');
+  await shot(o, 'shared-admin-app-key');
+  await o.context().close();
+  const bp = await open('bob');
+  await bp.goto(BASE + '#/providers');
+  await bp.locator('main .card').first().waitFor();
+  eq(await bp.locator('main .card', { hasText: 'Twelve Data' }).locator('.chip').innerText(), '✓ מפתח האפליקציה — פתוח לכולם', 'bob sees Twelve Data open through the app key');
+  await shot(bp, 'shared-providers-app');
+  // קריטריון 10 (2.26): EUR/USD נפתח ב-ECB (יומי), ומסגרת "שעה" — דרך מפתח האפליקציה
+  await bp.goto(BASE + '#/chart/' + encodeURIComponent('ecb:EURUSD'));
+  const tfH1 = bp.locator('main fieldset.seg input[name="tf"][value="h1"]');
+  await tfH1.waitFor({ state: 'attached' });
+  eq(await bp.locator('main fieldset.seg input[name="tf"]').count() > 1, true, 'criterion 10: EUR/USD (ECB, daily only) offers intraday frames too');
+  const resp = bp.waitForResponse(r => r.url().includes('action=chart_refresh') && r.url().includes('tf=h1'));
+  await tfH1.check({ force: true });
+  const j = await (await resp).json();
+  eq([j.asset, j.source], ['twelvedata:EUR/USD', 'app'], 'criterion 10: hourly → the same pair through the app key');
+  await bp.context().close();
   eq(errors, [], 'no console errors and no failed requests');
 } catch (e) {
   fail++;

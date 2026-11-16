@@ -166,10 +166,11 @@ call('carol', 'cred_save', ['provider' => 'twelvedata', 'secret' => 'good-Carol7
 $qa = ['asset' => 'twelvedata:AAPL', 'tf' => 'h1', 'methods' => $SAMPLE];
 $ow = call('owner', 'analysis', null, $qa)[1]['cards'][0];
 eq([$ow['backtest']['status'], $ow['certainty'], $ow['backtest']['win_pct'], $ow['backtest']['mode']], ['insufficient', null, null, 'full'], 'flat prices → N < 30 → "not enough data", no percentage');
+// 21.3 (✅31): Twelve Data — מאגר משותף. התוצאה שנמשכה במפתח של הבעלים — גם של קרול, בלי ריצה שנייה
 $ca = call('carol', 'analysis', null, $qa)[1]['cards'][0];
-eq($ca['backtest']['mode'], 'full', 'carol (own key) does not get the owner\'s personal result — her own run');
+eq($ca['backtest']['mode'], 'stored', '21.3: carol (own key) gets the shared result — no second run');
 $scopes = $db->query("SELECT cred_scope FROM backtests WHERE asset = 'twelvedata:AAPL' ORDER BY cred_scope")->fetchAll(PDO::FETCH_COLUMN);
-eq($scopes, ['u:' . $uidOf('103'), 'u:' . $uidOf('100')], 'two personal results, one per key owner (cred_scope)');
+eq($scopes, [''], '21.3: one shared result (cred_scope \'\')');
 call('owner', 'admin_role_remove', ['user_id' => $carol]);
 eq(call('carol', 'analysis', null, $qa)[0], 404, 'carol no longer admin → the sample method is gone for her');
 

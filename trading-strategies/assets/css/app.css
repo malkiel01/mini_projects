@@ -518,6 +518,8 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .mtabs.dragging { overflow-x: hidden; touch-action: none; }
 .mtab-tools { justify-content: space-between; }
 .needs { background: var(--brand-soft); border-radius: var(--r); padding: var(--s2) var(--s3); margin: 0 0 var(--s2); font-size: .9rem; }
+.chart-notice { color: var(--ink); font-weight: 600; }   /* 21.3: מוצג מה שבמאגר — אין מפתח זמין להשלמה */
+.app-key { border-top: 1px solid var(--line); padding-top: var(--s2); margin-top: var(--s2); }
 
 /* שורה ברשימה: התווית, מחיר ושינוי יומי (מהמאגר), ⭐ */
 .mrow { cursor: default; gap: var(--s1); }
