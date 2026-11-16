@@ -69,8 +69,9 @@
 ### בקרה (10) — 2026-11-16 ~23:35 UTC
 - נכנסה (`session_018g4NYFkoRSgSNeEbLjxxZ2`, עומק 6). שעון `trig_01Qfe8vGQMoxE3CTn5Jo9VRJ` (ממנהל הצוותים 5).
 - ריצה 1790 (#1725) **נכשלה** — אותה חתימה כמו 1789 (אזהרת JIT ב-history-api). **✅ 1791 (#1726) — success**, מכילה הכול.
-- **✅ H1b — #1727 מוזג (e7150a4)**: ספירות אליוט שהושלמו (עד 5, בלי חפיפה, 40 נקודות מפנה) + zone לאותות פיבונאצ'י; TS_RESULT_FORMAT 3, בלי מיגרציה. בדקתי: כל ה-PHP, check-apps, sync, past-signals-ui 34, forecast 33, tip 79, legend-none 9, history-ui 14, gestures 25, landscape 61. פריסה ⏳.
+- **✅ H1b — #1727 מוזג (e7150a4)**: ספירות אליוט שהושלמו (עד 5, בלי חפיפה, 40 נקודות מפנה) + zone לאותות פיבונאצ'י; TS_RESULT_FORMAT 3, בלי מיגרציה. בדקתי: כל ה-PHP, check-apps, sync, past-signals-ui 34, forecast 33, tip 79, legend-none 9, history-ui 14, gestures 25, landscape 61. **✅ ריצה 1792 — success.**
 - **בעבודה — H1c** (אותו צ'אט, ענף `claude/trading-strategies-history-h1c`): החלטות (1) חלון [תחילת מנה, before+אופק+300] ו-(2) תקרת 50 על כל הטווח — אושרו. (3) לא בתקרת 30 לדקה של הספק — בתנאי תקרה נפרדת לחישוב (CPU) או מטמון למנה, עם בדיקה.
+- **H1c — #1728 (48d1494), סבב 2:** בדקתי — הכול ירוק (past-batch-ui 9). cache מיגרציה **7** (history_runs) → הבאה **8**. 🟡 נשלח לקוד: method_history לא ב-TS_DATA, ts_rate_hit ו-ts_history_run_hit נקראים *אחרי* ts_market_candles — before משתנה = פניות לספק בלי גבול. ⚪ history-api נכשלה פעם 1/28 בסבב מלא, ואז 3/3 (תלויית זמן?). ⚪ שיטה שנבחרת אחרי שמנות נטענו — בלי אותות עליהן (פרוסה אפשרית).
 - קוד H1b/H1c `session_018g4NYCwp7KEZBFCdoiVfBD` — עובד (קורא lib/elliott.php); קיבל הודעה לדווח לבקרה (10).
 
 ### מסירה מבקרה (9) לבקרה (10) — 2026-11-16 ~23:30 UTC (379K) — בקרה (10) `session_018g4NYFkoRSgSNeEbLjxxZ2`, שעון `trig_01Qfe8vGQMoxE3CTn5Jo9VRJ`
