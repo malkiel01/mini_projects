@@ -658,6 +658,14 @@
 - **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
   `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
 
+## הדמיית המשך (בקשת הבעלים, 2026-11-16)
+- **`forecast.js`:** `simOf(id)` (ב-`paint`, נשמר ב-`sims`) → `drawSim` (ב-`draw`, לפני התוויות). `simAlpha` ו-`SIM_LABEL` מיוצאים.
+- **החוזה:** משתמש רק ב-`forecast.scenarios[].points` — כל שיטה שמחזירה תרחיש עם נקודות מקבלת המשך, בלי קוד נוסף.
+- **התצוגה זזה ימינה** פעם אחת לכל צירוף שיטות + נר אחרון (`lastSimKey`), עד רבע מרוחבה — `scrollToRealTime` לא סופר נקודות ריקות.
+  - **בתוך `requestAnimationFrame` כפול.** `fitContent()` של Lightweight Charts מוחל במסגרת הבאה: `getVisibleLogicalRange()` מיד אחריו
+    מחזיר את הטווח הישן, ו-`setVisibleLogicalRange` דורס את ה-fit (הגרף נשאר על ~60 נרות). מי שמגדיר טווח אחרי `fitContent` — לחכות.
+- **האורך לפי מה שנטען** (`getTimes().length`), לא לפי התצוגה — אותה סיבה: התצוגה ברגע הציור תלויה בתזמון.
+- **`text(..., force)`** — תווית שמצוירת גם כשהיא חופפת. רק ל"הדמיית המשך — לא תחזית".
 ## תנועות מגע על הגרף (gestures.js) — מה נבנה
 
 - `mountGestures({ chart, series: candle, box })` ב-`viewChart`. הספרייה: `vertTouchDrag: false`, `pinch: false`; הצביטה שלנו (capture על `box`, שתי אצבעות).
@@ -669,3 +677,11 @@
 - **`.ctip-pin`** — אח של החלונית ב-wrap (לא בתוכה: לגוף יש overflow), `pointer-events: none`. `dataset` (ax/ay/sx/sy) — לבדיקות.
 - **הגרירה** — `pointerdown` על החלונית (לא על כפתור/קישור) + `setPointerCapture`; ההזזה מ-`clientX/Y`, שבשכבה המסובבת כבר
   מומרים ב-rotate.js. `.ctip` עם `touch-action: none`; כשהגוף נגלל (`.scrolls`) — רק מהכותרת.
+
+## תוויות קצרות וודאות בחלונית (בקשות הבעלים, 2026-11-16)
+- **`shortLabel(it)`** (forecast.js, מיוצא) — מה שמופיע על הגרף. שיטה שרוצה ניסוח משלה — שדה `label` בפריט (עד 3 מילים). הטקסט
+  המלא נשאר ב-`text`, ומוצג בחלונית כהסבר כשאין `tip.explain`.
+- **`text(ctx, s, …)`** — `s` מחרוזת או מערך שורות; `r.text` בלוח התוויות — השורות מחוברות ב-" · ". תוויות רמה: [ביטוי, מחיר].
+- **`certLine(card)`** — שורת הוודאות היחידה (כרטיס מקופל, חלונית). לא לשכפל את הכלל.
+- **למה הוודאות לא ב-`tip` בשרת:** תוצאת השיטה (`method_results`) נשמרת במטמון בלי "נבדקה לאחור" במפתח (18.3) — ודאות בתוכה הייתה
+  מתיישנת. הכרטיס (`an.cards`) מגיע באותה תשובה של `chart_refresh`.
