@@ -263,7 +263,7 @@ $stream = function (array $C, array $p) use ($m) {
         $n0 = count($s['piv']); $last0 = $n0 ? end($s['piv']) : null;
         [$s, $x] = $m->step($s, $c, $p);
         if ($s['piv'] && end($s['piv']) !== $last0) $piv[] = end($s['piv']);
-        if ($x) $sig[] = ['t' => $c['t']] + $x;
+        if ($x) $sig[] = ['t' => $c['t']] + array_diff_key($x, ['features' => 1]);   // features (למידה) — תלוי בהיסטוריית ה-ATR, לא חלק מהאות
     }
     return [$piv, $sig];
 };

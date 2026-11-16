@@ -22,6 +22,7 @@ require_once __DIR__ . '/market.php';
 require_once __DIR__ . '/backtest.php';
 require_once __DIR__ . '/method-colors.php';
 require_once __DIR__ . '/journal.php';
+require_once __DIR__ . '/learn.php';
 
 final class TsBudget extends RuntimeException {}
 
@@ -427,10 +428,16 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     // נבדק היה נמשך שוב בפעם הבאה. המשך מהמצב = ריצה אחת, ולכן כשהכול הספיק — אותה תוצאה כמו קודם
     $s = $state ?? ts_bt_init($m, $p);
     $runUntil = microtime(true) + $max;
+    $trades = [];   // למידה (23.4, L1): כל עסקה שהסתיימה בריצה הזו → method_outcomes
+    $onTrade = function (array $t) use (&$trades): void { $trades[] = $t; };
     foreach (array_chunk(ts_bt_floats($rows), 2000) as $i => $chunk) {
         if ($i > 0 && microtime(true) > $runUntil) { $complete = false; break; }
-        $s = ts_bt_run($m, $p, $chunk, $cost, $s);
+        $s = ts_bt_run($m, $p, $chunk, $cost, $s, null, $onTrade);
     }
+    // קודם השורות, ואחר כך המצב: כשל בכתיבה → שום דבר לא נשמר, והריצה הבאה מחשבת שוב את אותן עסקאות (בלי כפילות — 23.3)
+    ts_outcomes_write(['source' => 'backtest', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $hash,
+        'provider' => $provider, 'asset' => $asset, 'tf' => $tf, 'cred_scope' => (string)$scope, 'market' => $market,
+        'decimals' => ts_tick_decimals($rows), 'now' => $now], $trades);
     if (!$complete) {
         if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
         return ['status' => 'incomplete', 'provider_calls' => $calls,
