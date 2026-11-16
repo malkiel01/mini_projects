@@ -506,8 +506,8 @@ export function mountMarket(ctx) {
     let cross = null;
     chart.subscribeCrosshairMove(e => { cross = e.point ? { x: e.point.x, y: e.point.y } : null; });
     box.tsCross = () => cross;                                         // לבדיקות: איפה הסמן (L1 קריטריון 5)
-    // תנועות מגע (gestures.js): אצבע אחת במאונך גוללת את הדף; צביטה אופקית — טווח הזמן; צביטה אנכית — מכווצת את הגובה
-    const gest = mountGestures({ chart, series: candle, box });
+    // תנועות מגע (gestures.js): אצבע אחת — לרוחב בזמן, לגובה גוללת את הדף; שתי אצבעות — צביטה (זמן / גובה) או גרירה (זמן / מחיר)
+    const gest = mountGestures({ chart, series: candle, shifted: [candle, ...Object.values(lines)], box, blocked: () => draw.isCapturing() });
     // לבדיקות: הגובה (px) של הנרות הנראים ושל עמודות הנפח, ומקדם הכיווץ
     box.tsHeights = () => {
       const r = chart.timeScale().getVisibleLogicalRange();
@@ -755,7 +755,8 @@ export function mountMarket(ctx) {
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
         // רענון אוטומטי ובחירת שיטה — לא מזיזים את התצוגה של המשתמש
-        if (mode === 'open' || mode === 'change' || mode === 'manual') chart.timeScale().fitContent();
+        // נתונים חדשים (פתיחה, מסגרת, טווח, ↻): גם ציר המחיר חוזר ל-autoScale — טווח מוקפא של הנתונים הקודמים לא מתאים להם
+        if (mode === 'open' || mode === 'change' || mode === 'manual') { chart.timeScale().fitContent(); gest.reset(); }
         draw.redraw();
         forecast.onResult(r);
         // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום

@@ -4,6 +4,8 @@
 //   - אצבע אחת לאורך הגרף → טווח הזמן זז (כמו קודם).
 //   - צביטה אופקית → פחות נרות על המסך (טווח הזמן קטן).
 //   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חזרה לגובה הרגיל, לא מעבר.
+//   - (בקרה 9, הבעלים: "2 אצבעות רק לגובה יגללו למעלה ולמטה") שתי אצבעות שזזות יחד לגובה → ציר המחיר זז, בלי לשנות
+//     גובה וטווח זמן; "↺" מחזיר. שתי אצבעות יחד לרוחב — לא עושות כלום.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
@@ -89,6 +91,23 @@ try {
   eq(rb[0] < ra[0] - 5, true, `one finger along the chart moves the time axis (${ra} → ${rb})`);
   eq(Math.abs(span(rb) - span(ra)) < 1, true, 'and keeps the number of candles');
 
+  // ── שתי אצבעות יחד לרוחב → כלום (רק לגובה) ──
+  const rTwo0 = await range();
+  await gesture([[R.x + R.w * 0.65, midY - 40, R.x + R.w * 0.25, midY - 40], [R.x + R.w * 0.65, midY + 40, R.x + R.w * 0.25, midY + 40]]);
+  eq([await range(), (await heights()).k, await p.locator('.chart-reset').isHidden()], [rTwo0, 1, true], 'two fingers together sideways do nothing (only up/down)');
+
+  // ── שתי אצבעות יחד לגובה → ציר המחיר זז (הנרות יורדים), הגובה לא משתנה; "↺" מחזיר ──
+  const priceAt = () => p.evaluate(s => { const b = document.querySelector(s); return b.tsPriceAt(b.offsetHeight / 2); }, sel);
+  const hv0 = await heights(), pv0 = await priceAt(), rv0 = await range();
+  eq(await p.locator('.chart-reset').isHidden(), true, 'no "↺" while the price axis is normal');
+  await gesture([[cx - 40, midY - 80, cx - 40, midY + 40], [cx + 40, midY - 80, cx + 40, midY + 40]]);
+  const hv1 = await heights(), pv1 = await priceAt();
+  eq(pv1 > pv0, true, `two fingers down together → the candles move down (the price in the middle rises: ${pv0} → ${pv1})`);
+  eq([hv1.k, Math.abs(hv1.price - hv0.price) <= 2, await range()], [1, true, rv0], 'a two-finger vertical drag keeps the height and the time range');
+  await p.locator('.chart-reset').click();
+  await settle(300);
+  eq([Math.abs((await priceAt()) - pv0) / pv0 < 1e-4, await p.locator('.chart-reset').isHidden()], [true, true], '"↺" brings the price axis back and hides');
+
   // ── צביטה אופקית: מתרחקות → פחות נרות; מתקרבות → יותר ──
   const h0 = await heights();
   await gesture([[cx - 30, midY, cx - 150, midY], [cx + 30, midY, cx + 150, midY]]);
@@ -113,6 +132,28 @@ try {
   await gesture([[cx, midY - 30, cx, midY - 160], [cx, midY + 30, cx, midY + 160]]);
   const hd = await heights();
   eq([hd.k, Math.abs(hd.price - h0.price) <= 2, Math.abs(hd.vol - h0.vol) <= 2], [1, true, true], `vertical pinch out → back to the normal height, not beyond (${JSON.stringify(hd)})`);
+
+  // ── אחרי כיווץ: גרירה בזמן (לתוך התחזית / לאחור) לא משנה את טווח המחיר (הבעלים: "ככל שאני נכנס לעומק התחזית הגרף גדל") ──
+  const edges = () => p.evaluate(s => { const b = document.querySelector(s); return [b.tsPriceAt(10), b.tsPriceAt(b.offsetHeight - 10)]; }, sel);
+  await gesture([[cx, midY - 120, cx, midY - 50], [cx, midY + 120, cx, midY + 50]]);   // מכווצים שוב
+  await gesture([[cx - 30, midY, cx - 150, midY], [cx + 30, midY, cx + 150, midY]]);   // מתקרבים בזמן — הגרירה תחליף את הנרות שעל המסך
+  const e0 = await edges(), hs0 = await heights(), rz = await range();
+  await gesture([[R.x + R.w * 0.8, midY, R.x + R.w * 0.25, midY]]);   // שמאלה — קדימה בזמן, לתוך התחזית
+  const e1 = await edges();
+  await gesture([[R.x + R.w * 0.2, midY, R.x + R.w * 0.9, midY]]);    // ימינה — אחורה
+  await gesture([[R.x + R.w * 0.2, midY, R.x + R.w * 0.9, midY]]);
+  const e2 = await edges(), rz2 = await range();
+  eq(Math.abs(rz2[0] - rz[0]) > 5, true, `the drags really moved in time (${rz} → ${rz2})`);
+  const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) / Math.abs(b[i]) < 1e-6);
+  eq([same(e1, e0), same(e2, e0)], [true, true], `after squeezing, dragging in time keeps the price range (${e0.map(Math.round)} → ${e1.map(Math.round)} → ${e2.map(Math.round)})`);
+  eq((await heights()).k, hs0.k, 'and the squeeze');
+
+  // "↺" — חוזרים ל-autoScale: הטווח מתאים את עצמו שוב לנרות שעל המסך
+  await p.locator('.chart-reset').click();
+  await settle(300);
+  const e3 = await edges();
+  eq([(await heights()).k, same(e3, e0), await p.locator('.chart-reset').isHidden()], [1, false, true], `"↺" after a squeeze → normal height and automatic price range again (${e3.map(Math.round)})`);
+
 } catch (e) {
   fail++;
   console.log('✗', e.stack);
