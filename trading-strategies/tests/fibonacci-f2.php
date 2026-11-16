@@ -131,6 +131,15 @@ $WKm = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c[
 $wm = $m->signals($WKm, $PS);
 eq([count($wm), $wm[0]['side'] ?? null, round($wm[0]['stop'] ?? 0, 6)], [1, 'short', round($K - $wk[0]['stop'], 6)], 'פ10 (short, mirror): the stop is above the signal candle wick');
 
+// קריטריון 12 (✅33, 2.34) — הדוגמה: אזור [169.10, 169.44], l_c = 168.80, ATR = 2 → סטופ 168.30
+$g12 = ['atr' => 2.0, 'close' => 180.0, 'support' => ['zones' => [['lo' => 169.1, 'hi' => 169.44, 'score' => 3, 'box' => ['mid' => 169.27, 'T' => 218.54]]]], 'resistance' => ['zones' => []]];
+$s12 = ts_fib_signal($g12, ['t' => 1, 'o' => 180.0, 'h' => 180.5, 'l' => 168.8, 'c' => 175.0], $P);
+eq([round($s12['stop'] ?? 0, 9), ($s12['stop'] ?? 999) < min(169.1, 168.8)], [168.3, true], 'criterion 12 (✅33): stop < min(zone bottom, l_c) — 168.80 − 0.25 × 2 = 168.30');
+// קריטריון 13 (✅33): על 5,000 הנרות — אין אות שהפתיל של נר האות כבר עבר את הסטופ שלו (לפני ✅33 — 10)
+$byT5 = array_column($F, null, 't');
+$pierced = array_filter($m->signals($F, $P), fn($q) => $q['side'] === 'long' ? $byT5[$q['t']]['l'] <= $q['stop'] : $byT5[$q['t']]['h'] >= $q['stop']);
+eq(count($pierced), 0, 'criterion 13 (✅33): 0 default signals whose own candle wick already passed the stop (5,000 h1 candles)');
+
 // box_target (22.5ח, 2.32): 0.618 → יעד הביניים 199.72; ברירת המחדל 1 → T. ערך אחר — נדחה
 $n618 = $m->signals($NT, $m->params(['lookback_bars' => 500, 'box_target' => 0.618]));
 eq([$P['box_target'], r2($n618[0]['target'] ?? 0), r2($m->signals($NT, $m->params(['lookback_bars' => 500, 'box_target' => 0.5]))[0]['target'] ?? 0)], [1.0, 199.72, 193.91],
