@@ -10,7 +10,8 @@
 //   - **גרירה לגובה** (המרכז זז יותר, ובעיקר במאונך) — מזיזה את ציר המחיר: הנרות זזים עם האצבעות. ההזזה היא היסט קבוע על
 //     הטווח של autoScale (`autoscaleInfoProvider`), כך שהיא לא קופצת חזרה.
 //   - **גרירה לרוחב בשתי אצבעות — אין** (הבעלים: "2 אצבעות רק לגובה"). התנועה ננעלת ולא עושה כלום.
-// - **"↺"** (בפינת הגרף, רק כשציר המחיר זז או כווץ) — מחזיר את ציר המחיר לרגיל.
+// - **"↺"** (בפינת הגרף, מרגע שהציר הותאם ביד) — מחזיר את ציר המחיר לרגיל, כולל autoScale.
+// - **הקפאת הטווח:** אחרי התאמה ידנית, גרירה בזמן לא משנה את טווח המחיר (ראו למטה).
 // - בזמן שהשרטוט תופס את המגע (`blocked()`) — לא נוגעים.
 // הקואורדינטות דרך clientX/clientY — כך גם בשכבה המסובבת (rotate.js ממיר אותן).
 
@@ -28,13 +29,24 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
   let off = 0;          // היסט ציר המחיר (במחיר; 0 = רגיל)
   let g = null;         // התנועה שבעבודה
 
-  // ── ציר המחיר: כיווץ (scaleMargins) והיסט (autoscaleInfoProvider) ──
-  const provider = orig => {
-    const r = orig();
-    if (!r || !off || !r.priceRange) return r;
+  // ── ציר המחיר: כיווץ (scaleMargins), היסט והקפאה (autoscaleInfoProvider) ──
+  // מרגע שהמשתמש התאים את הציר בעצמו (כיווץ או גרירה לגובה) — הטווח של כל סדרה **מוקפא** על מה שהיה באותו רגע. בלי זה
+  // autoScale מתאים את הטווח לנרות שעל המסך בכל גרירה בזמן: בכניסה לתחזית יש פחות נרות, הטווח מצטמק והנרות "מתנפחים" —
+  // והכיווץ מתבטל בפועל (הבעלים: "ככל שאני נכנס לעומק התחזית הגרף גדל, בלי קשר לכמה צמצמתי אותו"). "↺" — חזרה ל-autoScale.
+  let frozen = null;    // Map: סדרה → הטווח שלה ברגע ההקפאה; null — autoScale רגיל
+  const providerOf = s => orig => {
+    let r = orig();
+    if (frozen) {
+      if (!frozen.has(s) && r?.priceRange) frozen.set(s, { ...r.priceRange });
+      const pr = frozen.get(s);
+      if (pr) r = { ...(r || {}), priceRange: { ...pr } };
+    }
+    if (!r?.priceRange || !off) return r;
     return { ...r, priceRange: { minValue: r.priceRange.minValue + off, maxValue: r.priceRange.maxValue + off } };
   };
-  for (const s of shifted) s.applyOptions({ autoscaleInfoProvider: provider });
+  const providers = shifted.map(s => [s, providerOf(s)]);
+  for (const [s, pv] of providers) s.applyOptions({ autoscaleInfoProvider: pv });
+  const freeze = () => { if (!frozen) frozen = new Map(); };
 
   const reset = document.createElement('button');
   reset.type = 'button';
@@ -43,7 +55,8 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
   reset.title = 'ציר המחיר לרגיל';
   reset.setAttribute('aria-label', 'החזרת ציר המחיר לרגיל');
   reset.hidden = true;
-  reset.addEventListener('click', e => { e.stopPropagation(); k = 1; off = 0; applyPrice(); });
+  reset.addEventListener('click', e => { e.stopPropagation(); unfreeze(); });
+  function unfreeze() { k = 1; off = 0; frozen = null; applyPrice(); }
   box.append(reset);
 
   function applyPrice() {
@@ -51,8 +64,8 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
     series.priceScale().applyOptions({ scaleMargins: { top: PRICE.top + m, bottom: PRICE.bottom + m } });
     const vh = 1 - VOL.top - VOL.bottom;
     chart.priceScale('vol').applyOptions({ scaleMargins: { top: 1 - VOL.bottom - vh * k, bottom: VOL.bottom } });
-    for (const s of shifted) s.applyOptions({ autoscaleInfoProvider: provider });   // מחשב מחדש את autoScale
-    reset.hidden = k === 1 && off === 0;
+    for (const [s, pv] of providers) s.applyOptions({ autoscaleInfoProvider: pv });   // מחשב מחדש את autoScale
+    reset.hidden = !frozen;
   }
 
   // ── עזרים ──
@@ -85,6 +98,7 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
       g.mode = dd > dc ? (g.vertical ? 'squeeze' : 'zoom')
         : Math.abs(c.y - g.c0.y) > Math.abs(c.x - g.c0.x) ? 'price' : 'none';   // לרוחב בשתי אצבעות — כלום
     }
+    if (g.mode === 'squeeze' || g.mode === 'price') freeze();
     if (g.mode === 'squeeze') {
       k = Math.min(1, Math.max(MIN_K, g.k0 * Math.max(Math.abs(a.y - b.y), 20) / g.ax0));
       applyPrice();
@@ -122,7 +136,8 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
   return {
     vScale: () => k,
     offset: () => off,
-    reset() { k = 1; off = 0; applyPrice(); },
+    /** חזרה לרגיל — "↺", וגם כשהנתונים מתחלפים (מסגרת, טווח, רענון ידני) */
+    reset: unfreeze,
     destroy() {
       reset.remove();
       box.removeEventListener('touchstart', onStart, true);

@@ -132,6 +132,28 @@ try {
   await gesture([[cx, midY - 30, cx, midY - 160], [cx, midY + 30, cx, midY + 160]]);
   const hd = await heights();
   eq([hd.k, Math.abs(hd.price - h0.price) <= 2, Math.abs(hd.vol - h0.vol) <= 2], [1, true, true], `vertical pinch out → back to the normal height, not beyond (${JSON.stringify(hd)})`);
+
+  // ── אחרי כיווץ: גרירה בזמן (לתוך התחזית / לאחור) לא משנה את טווח המחיר (הבעלים: "ככל שאני נכנס לעומק התחזית הגרף גדל") ──
+  const edges = () => p.evaluate(s => { const b = document.querySelector(s); return [b.tsPriceAt(10), b.tsPriceAt(b.offsetHeight - 10)]; }, sel);
+  await gesture([[cx, midY - 120, cx, midY - 50], [cx, midY + 120, cx, midY + 50]]);   // מכווצים שוב
+  await gesture([[cx - 30, midY, cx - 150, midY], [cx + 30, midY, cx + 150, midY]]);   // מתקרבים בזמן — הגרירה תחליף את הנרות שעל המסך
+  const e0 = await edges(), hs0 = await heights(), rz = await range();
+  await gesture([[R.x + R.w * 0.8, midY, R.x + R.w * 0.25, midY]]);   // שמאלה — קדימה בזמן, לתוך התחזית
+  const e1 = await edges();
+  await gesture([[R.x + R.w * 0.2, midY, R.x + R.w * 0.9, midY]]);    // ימינה — אחורה
+  await gesture([[R.x + R.w * 0.2, midY, R.x + R.w * 0.9, midY]]);
+  const e2 = await edges(), rz2 = await range();
+  eq(Math.abs(rz2[0] - rz[0]) > 5, true, `the drags really moved in time (${rz} → ${rz2})`);
+  const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) / Math.abs(b[i]) < 1e-6);
+  eq([same(e1, e0), same(e2, e0)], [true, true], `after squeezing, dragging in time keeps the price range (${e0.map(Math.round)} → ${e1.map(Math.round)} → ${e2.map(Math.round)})`);
+  eq((await heights()).k, hs0.k, 'and the squeeze');
+
+  // "↺" — חוזרים ל-autoScale: הטווח מתאים את עצמו שוב לנרות שעל המסך
+  await p.locator('.chart-reset').click();
+  await settle(300);
+  const e3 = await edges();
+  eq([(await heights()).k, same(e3, e0), await p.locator('.chart-reset').isHidden()], [1, false, true], `"↺" after a squeeze → normal height and automatic price range again (${e3.map(Math.round)})`);
+
 } catch (e) {
   fail++;
   console.log('✗', e.stack);

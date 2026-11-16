@@ -755,7 +755,8 @@ export function mountMarket(ctx) {
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
         // רענון אוטומטי ובחירת שיטה — לא מזיזים את התצוגה של המשתמש
-        if (mode === 'open' || mode === 'change' || mode === 'manual') chart.timeScale().fitContent();
+        // נתונים חדשים (פתיחה, מסגרת, טווח, ↻): גם ציר המחיר חוזר ל-autoScale — טווח מוקפא של הנתונים הקודמים לא מתאים להם
+        if (mode === 'open' || mode === 'change' || mode === 'manual') { chart.timeScale().fitContent(); gest.reset(); }
         draw.redraw();
         forecast.onResult(r);
         // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום
