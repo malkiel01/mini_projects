@@ -7,8 +7,9 @@
  *   (ts_cached_quote), כך שלשונית שנפתחת לא נשארת עם "—".
  * - **מי משלם:** לא התקרה של 30 לדקה למשתמש — ה-cron אינו משתמש. רק התקרה של הספק, ובחלק ממנה בלבד:
  *   [שלנו] עד **חצי** מהתקרה לדקה בכל ריצה, ועד **25%** מהתקרה היומית — לכל מפתח. השאר פנוי לבקשות של משתמשים.
- * - **רישוי (ש10, ברירת המחדל):** Binance ו-ECB — מילוי משותף (cred_scope ''). Twelve Data — רק במפתח **של המשתמש**,
- *   לנכסים שלו, ונשמר ב-u:<id>: לעולם לא במפתח של המנהל ולא לאחרים. המשתמש יכול לכבות (users.prefill_off).
+ * - **מאגר משותף (21.3, ✅31):** הכול נשמר ב-cred_scope ''. Binance ו-ECB — בלי מפתח. Twelve Data — **רק במפתח
+ *   האפליקציה** (ts_app_cred), בתקרות שלו; בלי מפתח אפליקציה — לא ממולא. לעולם לא במפתח של משתמש: הרקע לא מוציא את
+ *   המכסה האישית של מישהו בשביל כולם. (users.prefill_off — נשאר במסד, בלי תפקיד.)
  * - **הסדר:** מועדפים (לפי מספר המשתמשים שסימנו), אחר כך נפתחו ב-7 הימים האחרונים (fetch_log), אחר כך השאר לפי סדר
  *   הקטלוג. נכס שנכשל בפעם האחרונה — לסוף התור.
  * - **בלי ניסיון חוזר:** 429 או שגיאה — הנכס לסוף התור (ולא לפני שעה), והמפתח הזה לא מקבל עוד פנייה בריצה הזו.
@@ -22,7 +23,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/market.php';
 require_once __DIR__ . '/tabs.php';
 
-/** כל כמה שניות לנכס, לפי ספק. ספק שאינו כאן — לא ממולא. needs_key → רק במפתח של המשתמש (ש10) */
+/** כל כמה שניות לנכס, לפי ספק. ספק שאינו כאן — לא ממולא. needs_key → רק במפתח האפליקציה (21.3) */
 const TS_PREFILL_EVERY = [
     'binance' => 0,              // כל ריצה — בלי מפתח, משותף, תקרה גבוהה
     'ecb' => 86400,              // ECB מפרסם שער אחד ליום
@@ -34,21 +35,6 @@ const TS_PREFILL_DAY_SHARE = 4;    // [שלנו] רבע מהתקרה היומי�
 const TS_PREFILL_LOG_MAX = 60;     // כמה נכסים נרשמים בסיכום הריצה
 const TS_PREFILL_FAIL_WAIT = 3600; // [שלנו] נכס שנכשל — לא לפני שעה (ולא בכל ריצה של 15 דקות)
 const TS_PREFILL_RANGE = 7 * 86400; // הנרות שמבקשים: שבוע — כדי שגם אחרי סופ"ש ארוך יחזור נר
-
-// ── ההגדרה של המשתמש ─────────────────────────────────────
-
-function ts_prefill_on(int $uid): bool
-{
-    $st = ts_db()->prepare('SELECT prefill_off FROM users WHERE id = ?');
-    $st->execute([$uid]);
-    return (int)$st->fetchColumn() === 0;
-}
-
-function ts_prefill_set(int $uid, mixed $on): void
-{
-    if (!is_bool($on)) throw new TsInvalid('ערך לא תקין');
-    ts_db()->prepare('UPDATE users SET prefill_off = ? WHERE id = ?')->execute([$on ? 0 : 1, $uid]);
-}
 
 // ── התור ─────────────────────────────────────────────────
 
@@ -123,30 +109,10 @@ function ts_prefill_keys(int $now, int &$bad = 0): array
     foreach (TS_PREFILL_EVERY as $provider => $_) {
         if (!isset(TS_PROVIDERS[$provider])) continue;
         $meta = ts_provider($provider)->meta();
-        if ($meta['needs_key']) {
-            // ש10: רק מי שחיבר מפתח משלו ולא כיבה — המועדפים, הפתיחות והלשוניות שלו
-            $st = ts_db()->prepare("SELECT u.id FROM provider_creds c JOIN users u ON u.id = c.user_id
-                                    WHERE c.owner = 'user' AND c.provider_id = ? AND u.prefill_off = 0 ORDER BY u.id");
-            $st->execute([$provider]);
-            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $uid) {
-                $uid = (int)$uid;
-                // מפתח פגום (לא מתפענח) או לשוניות פגומות — מדלגים רק על המשתמש הזה (ביקורת 21-2 🔴1)
-                try {
-                    $acc = ts_access($uid, $provider);
-                    if (!$acc || $acc['source'] !== 'own') continue;
-                    $mine = array_fill_keys(array_map(fn($w) => ts_prefill_base($w['asset']), ts_watchlist($uid)), true);
-                    $keys[] = ['provider' => $provider, 'uid' => $uid, 'scope' => $acc['scope'], 'acc' => $acc,
-                        'queue' => ts_prefill_order($provider, $fav, array_map('ts_prefill_base', ts_prefill_recent($now, $uid)), ts_prefill_pool($uid, true), $mine)];
-                } catch (Throwable $e) {
-                    $bad++;
-                    error_log("trading-strategies prefill key $provider u:$uid: " . $e->getMessage());
-                }
-            }
-            continue;
-        }
         try {
-            $acc = ts_access(0, $provider);   // בלי משתמש — רק מה שפתוח לכולם
+            $acc = ts_access(0, $provider);   // בלי משתמש — רק מה שפתוח לכולם, או מפתח האפליקציה (21.3)
             if (!$acc || $acc['scope'] !== '') continue;
+            if ($meta['needs_key'] && $acc['source'] !== 'app') continue;   // לעולם לא במפתח של משתמש
             $shared ??= ts_prefill_pool(0, false);
             $keys[] = ['provider' => $provider, 'uid' => 0, 'scope' => '', 'acc' => $acc, 'queue' => ts_prefill_order($provider, $fav, $recent, $shared)];
         } catch (Throwable $e) {
@@ -261,6 +227,8 @@ function ts_prefill_key(array $key, int $now, array &$used, ?array $budget, floa
         $ok = true;
         try {
             $r = ts_market_candles($key['uid'], $asset, TS_PREFILL_TF, $now - TS_PREFILL_RANGE, $now, $now);
+            // המפתח בתקרה, והוגש רק מה שבמאגר — לא מולא (21.3): לסוף התור, כמו שגיאה
+            if ($r['notice'] !== null) throw new TsCapError($r['notice']);
             $n = (int)$r['provider_calls'];
             $mark->execute([$provider, $sym, $key['scope'], $now, $r['candles'] ? 0 : 1]);
             $sum['filled']++;

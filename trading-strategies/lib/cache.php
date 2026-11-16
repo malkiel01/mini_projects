@@ -11,8 +11,8 @@
  *                   חישוב שנגזר מהנרות — נמחק בניקוי היומי אחרי יומיים, ונבנה מחדש לבד.
  *   method_runs     המונה למסך המפתח: כמה פעמים שיטה רצה באמת, וכמה פעמים הוחזרה התוצאה השמורה.
  *
- * cred_scope: '' — מאגר משותף (ספק בלי מפתח שתנאיו מתירים); 'u:<user_id>' — נמשך במפתח אישי, רק של אותו משתמש;
- * 'c:<cred_id>' — ספק מהמנהל (ב), משותף למי שקיבל אותו.
+ * cred_scope: '' — מאגר משותף (ספק שתנאיו מתירים, או שהבעלים הכריע — Twelve Data, 21.3); 'u:<user_id>' — נמשך במפתח
+ * אישי, רק של אותו משתמש (Finnhub); 'c:<cred_id>' — ספק מהמנהל (ב), משותף למי שקיבל אותו.
  */
 
 declare(strict_types=1);
@@ -104,5 +104,44 @@ function ts_cache(): PDO
             COMMIT;
             SQL);
     }
+    // גרסה 4 (21.3, ✅31): Twelve Data — מאגר אחד. הנרות של u:% ו-c:% עוברים ל-''
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 4) {
+        $db->beginTransaction();
+        try {
+            ts_cache_pool_merge($db, 'twelvedata');
+            $db->exec('PRAGMA user_version = 4');
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+    }
     return $db;
+}
+
+/**
+ * מעביר את הנרות של ספק מהיקפים אישיים (u:%) ומשיוכים (c:%) למאגר המשותף '' (21.3 (2)). נר שכבר יש ב-'' באותו t —
+ * נשאר זה עם fetched_at המאוחר (נר סגור זהה ממילא). אחר כך נמחקות השורות המקוריות, ואיתן הטווחים, הקצוות והחיפושים
+ * של אותם היקפים (נבנים מחדש לפי הצורך). אידמפוטנטי: בריצה שנייה אין מה להעביר. ספק אחר — לא נוגעים.
+ * בתוך טרנזקציה של מי שקורא. מחזיר כמה שורות נמחקו מההיקפים.
+ */
+function ts_cache_pool_merge(PDO $db, string $provider): int
+{
+    $scoped = "(cred_scope LIKE 'u:%' OR cred_scope LIKE 'c:%')";
+    $db->prepare(<<<SQL
+        INSERT INTO candles (provider, symbol, tf, t, o, h, l, c, v, fetched_at, cred_scope)
+            SELECT provider, symbol, tf, t, o, h, l, c, v, fetched_at, '' FROM candles
+            WHERE provider = ? AND $scoped
+            ORDER BY fetched_at
+        ON CONFLICT (provider, symbol, tf, cred_scope, t) DO UPDATE SET
+            o = excluded.o, h = excluded.h, l = excluded.l, c = excluded.c, v = excluded.v, fetched_at = excluded.fetched_at
+            WHERE excluded.fetched_at > candles.fetched_at
+        SQL)->execute([$provider]);
+    $n = 0;
+    foreach (['candles', 'coverage', 'tails', 'search'] as $t) {
+        $st = $db->prepare("DELETE FROM $t WHERE provider = ? AND $scoped");
+        $st->execute([$provider]);
+        if ($t === 'candles') $n = $st->rowCount();
+    }
+    return $n;
 }

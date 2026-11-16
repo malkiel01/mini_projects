@@ -33,7 +33,7 @@ function ts_chart_refresh(int $uid, mixed $asset, mixed $tf, mixed $from, mixed 
 
     $r = ts_market_candles($uid, $asset, $tf, $from, $to, $now);
     $rows = ts_closed_rows($r['candles'], $tf, $now);
-    $scope = (string)(ts_access($uid, $provider)['scope'] ?? '');
+    $scope = (string)(ts_scope_for($uid, $provider) ?? '');
     $out = [];
     $runs = 0;
     $reused = 0;

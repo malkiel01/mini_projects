@@ -360,6 +360,8 @@ function ts_bt_hash(array $p, array $cost): string
 function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market, int $now): array
 {
     [$provider] = ts_asset_split($asset);
+    // ספק משותף בלי דרך אליו (21.3): אין במה לחשב — רק מה שכבר שמור במאגר המשותף
+    if (!ts_access($uid, $provider) && ts_pool_only($uid, $provider)) return ts_backtest_stored($uid, $m, $p, $asset, $tf, $market, $now);
     $acc = ts_access($uid, $provider) ?? throw new TsInvalid('אין לכם חיבור לספק הזה');
     $scope = $acc['scope'];
     $meta = $m->meta();
@@ -416,7 +418,7 @@ function ts_method_key(TsMethod $m, array $p, string $asset, string $tf, string 
 function ts_backtest_stored(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market, int $now): array
 {
     [$provider] = ts_asset_split($asset);
-    $scope = (string)(ts_access($uid, $provider)['scope'] ?? '');
+    $scope = (string)(ts_scope_for($uid, $provider) ?? '');
     $meta = $m->meta();
     $st = ts_db()->prepare("SELECT state, computed_at FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
         AND cred_scope = ? AND params_hash = ? AND source = 'provider'");
@@ -521,7 +523,7 @@ function ts_param_notes(TsMethod $m): ?array
 function ts_bt_state(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market): ?array
 {
     [$provider] = ts_asset_split($asset);
-    $scope = ts_access($uid, $provider)['scope'] ?? null;
+    $scope = ts_scope_for($uid, $provider);
     $meta = $m->meta();
     $st = ts_db()->prepare("SELECT state FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
         AND cred_scope = ? AND params_hash = ? AND source = 'provider'");
@@ -581,7 +583,9 @@ function ts_analysis(int $uid, mixed $asset, mixed $tf, mixed $methods, ?int $no
 function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared, int $now, bool $runBt): array
 {
     [$provider, $symbol] = ts_asset_split($asset);
-    $acc = ts_access($uid, $provider) ?? throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
+    // ספק משותף בלי דרך אליו (21.3) — הניתוח רץ על מה שבמאגר המשותף
+    $acc = ts_access($uid, $provider) ?? (ts_pool_only($uid, $provider) ? ['source' => 'pool', 'scope' => '']
+        : throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".'));
     $profile = ts_profile($uid);
     $market = ts_asset_market($asset);
     $sec = TS_TF_SECONDS[$tf];

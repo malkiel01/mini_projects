@@ -192,7 +192,9 @@ function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0): 
         if (($used[$provider] ?? 0) >= $cap) { $sum['deferred']++; continue; }
         $uid = ts_journal_uid_for($row['cred_scope']);
         $acc = $uid === null ? null : ts_access($uid, $provider);
-        if (!$acc || (string)$acc['scope'] !== $row['cred_scope']) { $sum['skipped']++; continue; }
+        // ספק משותף (21.3): רשומה ישנה ב-u:N מוכרעת מהמאגר המשותף, במפתח של בעליה — והיא נשארת רק שלו
+        $pooled = $acc && ts_provider($provider)->meta()['share'];
+        if (!$acc || ((string)$acc['scope'] !== $row['cred_scope'] && !$pooled)) { $sum['skipped']++; continue; }
         try {
             $r = ts_market_candles($uid, $row['asset'], $row['tf'], (int)$row['as_of'] + $sec, $until + $sec, $now);
             $used[$provider] = ($used[$provider] ?? 0) + $r['provider_calls'];

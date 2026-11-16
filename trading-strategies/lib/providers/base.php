@@ -13,7 +13,13 @@ require_once dirname(__DIR__) . '/http.php';
 require_once dirname(__DIR__) . '/secret.php';
 
 /** שגיאה מהספק — ההודעה כבר נקייה מהמפתח, ומוצגת למשתמש כמו שהיא */
-final class TsProviderError extends RuntimeException {}
+class TsProviderError extends RuntimeException {}
+
+/**
+ * תקרה שלנו (לא שגיאה של הספק): התקרה היומית של המפתח, של המשתמש במפתח, או שאין מפתח זמין בכלל (21.3). מי שקורא
+ * יכול לעבור למפתח הבא בסדר (ts_provider_call_chain), או להציג את מה שבמאגר עם ההודעה.
+ */
+final class TsCapError extends TsProviderError {}
 
 const TS_TF_SECONDS = ['m1' => 60, 'm5' => 300, 'm15' => 900, 'm30' => 1800, 'h1' => 3600, 'h4' => 14400,
     'd1' => 86400, 'w1' => 604800, 'mn1' => 2678400];   // חודש — 31 יום, לחישובי טווח בלבד

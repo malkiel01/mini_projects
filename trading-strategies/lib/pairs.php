@@ -152,6 +152,10 @@ function ts_pair_asset(int $uid, string $key, ?array $access = null): ?string
         ? !empty($access[explode(':', $a, 2)[0]]) : ts_access($uid, explode(':', $a, 2)[0]) !== null));
     if (!$ok) return null;
     if ($access === null) {
+        // מפתח האפליקציה (21.3) — רק כשאין לזוג ספק אחר: מט"ח ב-ECB וקריפטו ב-Binance לא אוכלים את הפניות המשותפות
+        $app = fn($a) => array_column(ts_access_chain($uid, explode(':', $a, 2)[0]), 'source') === ['app'] ? 1 : 0;
+        $rank = array_map($app, $ok);
+        array_multisort($rank, SORT_ASC, SORT_NUMERIC, array_keys($ok), SORT_ASC, $ok);
         $st = ts_db()->prepare('SELECT provider_id FROM symbol_prefs WHERE user_id = ? AND norm = ?');
         $st->execute([$uid, ts_norm_symbol(explode(':', $ok[0], 2)[1])]);
         $pref = $st->fetchColumn();

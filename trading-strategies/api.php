@@ -27,7 +27,6 @@
  * GET  ?action=watchlist                 "המעקב שלי"
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
  * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
- * POST action=prefill_set {on}                                     מילוי ברקע במפתח שלי (21.2) — הפעלה וכיבוי
  *
  * ציור על הגרף (פרק 7):
  * GET  ?action=drawings&asset=           השרטוטים שלי על הנכס (כל המסגרות; הדפדפן מסנן לפי tf)
@@ -52,7 +51,8 @@
  *
  * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
  * GET  ?action=admin_state | admin_methods
- * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
+ * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_app_key {provider, cred_id|null, user_limit?} (ראשי, 21.3)
+ *      | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
  *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
  * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
@@ -232,8 +232,8 @@ const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
-    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete', 'prefill_set',
-    'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
+    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
+    'admin_provider_save', 'admin_shared_switch', 'admin_app_key', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_tune_propose', 'admin_tune_apply'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
@@ -485,11 +485,6 @@ try {
             ts_cred_test_mine($uid, $in['provider'] ?? '');
             out(['ok' => true, 'providers' => ts_providers_for($uid)]);
 
-        case 'prefill_set':
-            // מילוי ברקע במפתח שלי (21.2) — הפעלה וכיבוי
-            ts_prefill_set($uid, $in['on'] ?? null);
-            out(['ok' => true, 'providers' => ts_providers_for($uid)]);
-
         case 'cred_delete':
             ts_cred_delete_mine($uid, $in['provider'] ?? '');
             out(['ok' => true, 'providers' => ts_providers_for($uid)]);
@@ -517,7 +512,7 @@ try {
             $log = ts_db()->query('SELECT l.action, l.target, l.at, u.display_name FROM admin_log l LEFT JOIN users u ON u.id = l.user_id
                                    ORDER BY l.id DESC LIMIT 100')->fetchAll();
             out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
-                'shared_enabled' => ts_shared_enabled(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
+                'shared_enabled' => ts_shared_enabled(), 'app_keys' => ts_app_keys_state(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email, password_hash IS NOT NULL AS has_password FROM users ORDER BY display_name')->fetchAll(),
                 'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'method_runs' => ts_method_runs(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
@@ -566,6 +561,14 @@ try {
             ts_setting_set('shared_providers', $on ? '1' : '0');
             ts_admin_log($uid, 'shared_switch', $on ? 'on' : 'off');
             out(['ok' => true, 'shared_enabled' => $on]);
+
+        // מפתח האפליקציה (21.3, ✅31): מפתח של המנהל שהאפליקציה פונה בו בשביל כולם — רק המנהל הראשי מסמן
+        case 'admin_app_key':
+            ts_require_primary_admin();
+            ts_app_key_set($in['provider'] ?? null, $in['cred_id'] ?? null, $in['user_limit'] ?? null);
+            ts_admin_log($uid, 'app_key', (string)($in['provider'] ?? '') . ' cred:' . (string)($in['cred_id'] ?? '-')
+                . (isset($in['user_limit']) ? ' limit:' . (string)$in['user_limit'] : ''));
+            out(['ok' => true, 'app_keys' => ts_app_keys_state(), 'creds' => ts_admin_creds()]);
 
         case 'admin_cred_save':
             $cid = ts_cred_save($uid, $in['provider'] ?? null, $in['secret'] ?? null, $in['label'] ?? '', 'admin');

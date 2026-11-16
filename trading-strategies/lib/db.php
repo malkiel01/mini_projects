@@ -563,6 +563,17 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 16) {
+        // Twelve Data — מאגר משותף (spec-stage-a 21.3 (2), ✅31): התור של המילוי במפתחות אישיים לא בשימוש יותר. רק
+        // שורות prefill_state של Twelve Data ב-u:% נמחקות; בדיקות לאחור ויומן השיטה ב-u:% — נשארים כמו שהם.
+        // users.prefill_off נשארת (לא מוחקים עמודה של מיגרציה שרצה)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            DELETE FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope LIKE 'u:%';
+            PRAGMA user_version = 16;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

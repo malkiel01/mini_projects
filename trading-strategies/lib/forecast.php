@@ -110,7 +110,7 @@ function ts_overlay_backtested(int $uid, TsMethod $m, string $asset, string $tf)
 {
     $meta = $m->meta();
     [$provider] = ts_asset_split($asset);
-    $scope = ts_access($uid, $provider)['scope'] ?? null;
+    $scope = ts_scope_for($uid, $provider);
     $st = ts_db()->prepare("SELECT 1 FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
         AND cred_scope = ? AND source = 'provider' LIMIT 1");
     $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, (string)$scope]);

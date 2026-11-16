@@ -103,7 +103,7 @@ try {
   eq(await o.locator('main .mj-row').count(), 1, 'the admin screen has a "📓 יומן השיטה" tab with the same journal');
   eq(await noHScroll(o), true, 'admin: no horizontal scroll with the extra tab');
 
-  // ── קריטריון 4: מפתח אישי של אליס — לא אצל בוב ──
+  // ── קריטריון 4: רשומה במפתח אישי של אליס — לא אצל בוב (21.3: רק רשומה ישנה, ב-u:N) ──
   const a = await open('alice');
   await a.goto(BASE + '#/market');
   await a.waitForSelector('main [role="combobox"]');
@@ -115,6 +115,13 @@ try {
   await waitList(a);
   eq((await rows(a)).some(x => x.asset === 'twelvedata:AAPL'), true, 'criterion 4: alice sees her AAPL record (from "עוד")');
   const bb = await open('bob', { width: 320, dark: true });
+  await bb.goto(BASE + '#/market');
+  await bb.waitForSelector('main [role="combobox"]');
+  // 21.3 (✅31): Twelve Data — מאגר משותף. רשומה חדשה — של כולם
+  eq((await get(bb, 'method_journal', {})).rows.some(x => x.asset === 'twelvedata:AAPL'), true, '21.3: a new Twelve Data record is shared — bob sees it');
+  // רשומה ישנה ב-u:N (מלפני 21.3) נשארת רק של בעליה: קריטריון 4 של 18.6 נבדק עליה
+  const upd = spawnSync('php', ['-r', `$d = new PDO('sqlite:' . $argv[1]); $d->exec("UPDATE method_journal SET cred_scope = 'u:' || (SELECT id FROM users WHERE platform_sub = '101') WHERE asset = 'twelvedata:AAPL'");`, DB], { encoding: 'utf8' });
+  eq(upd.status, 0, 'the record is made a legacy personal one (u:<alice>)');
   await bb.goto(BASE + '#/method-journal');
   await waitList(bb);
   const rb = await rows(bb);

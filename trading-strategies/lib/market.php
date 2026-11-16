@@ -6,10 +6,14 @@
  * ופונה לספק רק על החסר. הנר הפתוח מתחדש רק אם עבר התוקף — גם ברענון האוטומטי של הגרף (18.3, lib/refresh.php),
  * כך שרענון כל 30–60 שניות לא פונה לספק בכל פעם.
  *
- * דרך חיבור לכל (משתמש, ספק) — ts_access():
- *   1. ספק משלי (א) — המפתח של המשתמש; המאגר 'u:<id>' — רק שלו.
- *   2. ספק מהמנהל (ב) — רק כשהמתג הראשי דלוק (✅2, כבוי בשלב א'); המאגר 'c:<cred>' — משותף למי שקיבל.
- *   3. ספק בלי מפתח (Binance, ECB) — לכולם; המאגר '' — משותף, כי התנאים מתירים (meta share).
+ * דרכי חיבור לכל (משתמש, ספק) — ts_access_chain(), בסדר; כשחסר במאגר פונים בראשונה שלא בתקרה:
+ *   1. מפתח האפליקציה (21.3, ✅31) — מפתח של המנהל שהמנהל הראשי סימן; רק בספק משותף שצריך מפתח (Twelve Data).
+ *      100 פניות ליום למשתמש (user_limit).
+ *   2. ספק משלי (א) — המפתח של המשתמש.
+ *   3. ספק מהמנהל (ב) — רק כשהמתג הראשי דלוק (✅2, כבוי בשלב א').
+ *   ספק בלי מפתח (Binance, ECB) — לכולם.
+ * המאגר: ספק משותף (meta share — Binance, ECB, Twelve Data) — '' לכולם, בכל מפתח. אחרת (Finnhub) — 'u:<id>' רק שלו,
+ * 'c:<cred>' למי ששויך.
  */
 
 declare(strict_types=1);
@@ -53,19 +57,95 @@ function ts_shared_enabled(): bool
 
 // ── גישה לספק ─────────────────────────────────────────────
 
-/**
- * איך המשתמש מגיע לספק: [source own|shared|public, scope, secret|null, usage key, daily limit|null] — או null.
- */
-function ts_access(int $uid, string $provider): ?array
+const TS_APP_USER_LIMIT = 100;      // 21.3 [שלנו]: פניות ליום למשתמש במפתח האפליקציה; המנהל הראשי יכול לשנות
+
+/** ספק שיש בו "מפתח אפליקציה" (21.3): צריך מפתח, ומאגר משותף. Finnhub — לא (share=false) */
+function ts_app_key_allowed(string $provider): bool
 {
-    if (!isset(TS_PROVIDERS[$provider]) || !ts_provider_settings($provider)['enabled']) return null;
+    if (!isset(TS_PROVIDERS[$provider])) return false;
+    $m = ts_provider($provider)->meta();
+    return $m['needs_key'] && $m['share'];
+}
+
+/** מפתח האפליקציה של הספק — שורת provider_creds של המנהל שהמנהל הראשי סימן (app_key:<ספק>), או null */
+function ts_app_cred(string $provider): ?array
+{
+    if (!ts_app_key_allowed($provider)) return null;
+    $id = (int)ts_setting("app_key:$provider", '0');
+    if ($id <= 0) return null;
+    $st = ts_db()->prepare("SELECT * FROM provider_creds WHERE id = ? AND owner = 'admin' AND provider_id = ?");
+    $st->execute([$id, $provider]);
+    return $st->fetch() ?: null;
+}
+
+function ts_app_user_limit(string $provider): int
+{
+    $v = (int)ts_setting("app_key_limit:$provider", (string)TS_APP_USER_LIMIT);
+    return $v > 0 ? $v : TS_APP_USER_LIMIT;
+}
+
+/** סימון מפתח האפליקציה (המנהל הראשי — נבדק ב-api.php). $credId null — ביטול. $limit — פניות ליום למשתמש */
+function ts_app_key_set(mixed $provider, mixed $credId, mixed $limit = null): void
+{
+    if (!is_string($provider) || !ts_app_key_allowed($provider)) throw new TsInvalid('לספק הזה אין מפתח אפליקציה');
+    if ($credId === null || $credId === 0 || $credId === '') {
+        ts_db()->prepare('DELETE FROM settings WHERE k = ?')->execute(["app_key:$provider"]);
+    } else {
+        $id = is_int($credId) ? $credId : (is_string($credId) && ctype_digit($credId) ? (int)$credId : 0);
+        $row = ts_admin_cred_row($id);
+        if ($row['provider_id'] !== $provider) throw new TsInvalid('המפתח הזה של ספק אחר');
+        ts_setting_set("app_key:$provider", (string)$id);
+    }
+    if ($limit !== null && $limit !== '') {
+        $l = is_int($limit) ? $limit : (is_string($limit) && ctype_digit($limit) ? (int)$limit : -1);
+        if ($l < 1 || $l > 1_000_000) throw new TsInvalid('תקרה למשתמש — מספר שלם חיובי');
+        ts_setting_set("app_key_limit:$provider", (string)$l);
+    }
+}
+
+/** מצב מפתחות האפליקציה למסך המנהל: ספק → {cred_id|null, user_limit} */
+function ts_app_keys_state(): array
+{
+    $out = [];
+    foreach (array_keys(TS_PROVIDERS) as $id) {
+        if (!ts_app_key_allowed($id)) continue;
+        $out[$id] = ['cred_id' => isset(ts_app_cred($id)['id']) ? (int)ts_app_cred($id)['id'] : null, 'user_limit' => ts_app_user_limit($id)];
+    }
+    return $out;
+}
+
+/**
+ * כל הדרכים של המשתמש לספק, בסדר (21.3 (1)). כל אחת: [source app|own|shared|public, scope, secret|null, usage key,
+ * user_limit|null, cred_id]. ריק — אין דרך לפנות לספק.
+ *   1. מפתח האפליקציה (רק בספק משותף שצריך מפתח). user_limit — 100 ליום (לא ל-cron, uid 0).
+ *   2. המפתח של המשתמש.
+ *   3. שיוך מהמנהל — רק כשהמתג הראשי דלוק (✅2).
+ *   ספק בלי מפתח — public.
+ * ההיקף: בספק משותף (meta share) — תמיד '' (מאגר אחד, בכל מפתח). אחרת — u:<id> / c:<cred>.
+ */
+function ts_access_chain(int $uid, string $provider): array
+{
+    if (!isset(TS_PROVIDERS[$provider]) || !ts_provider_settings($provider)['enabled']) return [];
     $meta = ts_provider($provider)->meta();
     $db = ts_db();
-
+    if (!$meta['needs_key']) {
+        return [['source' => 'public', 'scope' => $meta['share'] ? '' : "u:$uid", 'secret' => null, 'usage' => "provider:$provider",
+            'user_limit' => null, 'cred_id' => null]];
+    }
+    $out = [];
+    if ($app = ts_app_cred($provider)) {
+        // מפתח האפליקציה משמש את כולם: מפתח פגום (לא מתפענח) — מדלגים עליו, ולא מפילים את כל המשתמשים
+        try {
+            $out[] = ['source' => 'app', 'scope' => '', 'secret' => ts_decrypt($app['secret']), 'usage' => 'cred:' . $app['id'],
+                'user_limit' => $uid > 0 ? ts_app_user_limit($provider) : null, 'cred_id' => (int)$app['id']];
+        } catch (Throwable $e) {
+            error_log("trading-strategies app key $provider: " . $e->getMessage());
+        }
+    }
     $st = $db->prepare("SELECT id, secret FROM provider_creds WHERE owner = 'user' AND user_id = ? AND provider_id = ?");
     $st->execute([$uid, $provider]);
     if ($c = $st->fetch()) {
-        return ['source' => 'own', 'scope' => "u:$uid", 'secret' => ts_decrypt($c['secret']), 'usage' => 'cred:' . $c['id'],
+        $out[] = ['source' => 'own', 'scope' => $meta['share'] ? '' : "u:$uid", 'secret' => ts_decrypt($c['secret']), 'usage' => 'cred:' . $c['id'],
             'user_limit' => null, 'cred_id' => (int)$c['id']];
     }
     if (ts_shared_enabled()) {
@@ -73,15 +153,34 @@ function ts_access(int $uid, string $provider): ?array
                             WHERE g.user_id = ? AND c.owner = 'admin' AND c.provider_id = ? ORDER BY c.id LIMIT 1");
         $st->execute([$uid, $provider]);
         if ($c = $st->fetch()) {
-            return ['source' => 'shared', 'scope' => 'c:' . $c['id'], 'secret' => ts_decrypt($c['secret']), 'usage' => 'cred:' . $c['id'],
+            $out[] = ['source' => 'shared', 'scope' => $meta['share'] ? '' : 'c:' . $c['id'], 'secret' => ts_decrypt($c['secret']), 'usage' => 'cred:' . $c['id'],
                 'user_limit' => (int)$c['daily_limit'], 'cred_id' => (int)$c['id']];
         }
     }
-    if (!$meta['needs_key']) {
-        return ['source' => 'public', 'scope' => $meta['share'] ? '' : "u:$uid", 'secret' => null, 'usage' => "provider:$provider",
-            'user_limit' => null, 'cred_id' => null];
-    }
-    return null;
+    return $out;
+}
+
+/** הדרך הראשונה של המשתמש לספק (ts_access_chain), או null */
+function ts_access(int $uid, string $provider): ?array
+{
+    return ts_access_chain($uid, $provider)[0] ?? null;
+}
+
+/**
+ * ההיקף שהמשתמש קורא ממנו את המאגר. ספק משותף — '' לכולם, גם בלי שום מפתח (21.3 (3): מה שבמאגר מוצג). אחרת —
+ * ההיקף של הדרך שלו, או null כשאין לו.
+ */
+function ts_scope_for(int $uid, string $provider): ?string
+{
+    if (!isset(TS_PROVIDERS[$provider]) || !ts_provider_settings($provider)['enabled']) return null;
+    if (ts_provider($provider)->meta()['share']) return '';
+    return ts_access($uid, $provider)['scope'] ?? null;
+}
+
+/** ספק משותף שצריך מפתח, ולמשתמש אין דרך אליו: רואים מה שבמאגר, בלי להשלים (21.3 (3)) */
+function ts_pool_only(int $uid, string $provider): bool
+{
+    return ts_app_key_allowed($provider) && ts_provider_settings($provider)['enabled'] && !ts_access_chain($uid, $provider);
 }
 
 /** כמה פניות נשארו היום לספק (ולמשתמש, בספק מהמנהל) — לתקציב של הבדיקה לאחור (6.2 ה) */
@@ -109,16 +208,40 @@ function ts_usage_take(int $uid, string $provider, array $acc, int $n = 1): void
     $get = $db->prepare('SELECT calls FROM provider_usage WHERE key = ? AND user_id = ? AND day = ?');
     $get->execute([$acc['usage'], 0, $day]);
     if ((int)$get->fetchColumn() + $n > ts_provider_limits($provider)['per_day']) {
-        throw new TsProviderError(ts_provider($provider)->meta()['name'] . ': הגענו לתקרה היומית של הספק. נסו שוב מחר.');
+        throw new TsCapError(ts_provider($provider)->meta()['name'] . ': הגענו לתקרה היומית של הספק. נסו שוב מחר.');
     }
     if ($acc['user_limit'] !== null) {
         $get->execute([$acc['usage'], $uid, $day]);
-        if ((int)$get->fetchColumn() + $n > $acc['user_limit']) throw new TsProviderError('הגעתם לתקרה היומית שהמנהל קבע לספק הזה.');
+        if ((int)$get->fetchColumn() + $n > $acc['user_limit']) {
+            throw new TsCapError($acc['source'] === 'app'
+                ? 'הגעתם לתקרה היומית (' . $acc['user_limit'] . ' פניות) במפתח האפליקציה. נסו שוב מחר.'
+                : 'הגעתם לתקרה היומית שהמנהל קבע לספק הזה.');
+        }
     }
     $add = $db->prepare('INSERT INTO provider_usage (key, user_id, day, calls) VALUES (?, ?, ?, ?)
                          ON CONFLICT(key, user_id, day) DO UPDATE SET calls = calls + excluded.calls');
     $add->execute([$acc['usage'], 0, $day, $n]);
     if ($acc['user_limit'] !== null) $add->execute([$acc['usage'], $uid, $day, $n]);
+}
+
+/**
+ * פנייה לספק בדרך הראשונה שלא בתקרה (21.3 (1)): מפתח האפליקציה בתקרה — המפתח האישי, ואחריו השיוך. $chain מתקצר:
+ * דרך שהגיעה לתקרה לא נשאלת שוב באותה בקשה. $acc — הדרך שענתה. כולן בתקרה (או אין) — TsCapError.
+ */
+function ts_provider_call_chain(int $uid, string $provider, array &$chain, callable $fn, ?array &$acc = null, int $n = 1): mixed
+{
+    $last = null;
+    while ($chain) {
+        try {
+            $r = ts_provider_call($uid, $provider, $chain[0], $fn, $n);
+            $acc = $chain[0];
+            return $r;
+        } catch (TsCapError $e) {
+            $last = $e;
+            array_shift($chain);
+        }
+    }
+    throw $last ?? new TsCapError('אין מפתח זמין להשלמה');
 }
 
 /** מריץ פנייה לספק; כל שגיאה יוצאת נקייה מהמפתח */
@@ -166,13 +289,13 @@ function ts_providers_for(int $uid): array
         $out[] = [
             'id' => $id, 'name' => $m['name'], 'markets' => $m['markets'], 'tfs' => array_keys($m['tfs']),
             'needs_key' => $m['needs_key'], 'key_help' => $m['key_help'], 'delay' => $m['delay'], 'terms' => $m['terms'],
-            'bounds' => $m['bounds'], 'enabled' => $settings['enabled'],
+            'bounds' => $m['bounds'], 'enabled' => $settings['enabled'], 'share' => $m['share'],
             'available' => $acc !== null, 'source' => $acc['source'] ?? null,
+            // 21.3: יש מפתח אפליקציה; pool — בלי דרך לספק, אבל מה שבמאגר המשותף מוצג
+            'app_key' => $settings['enabled'] && ts_app_cred($id) !== null, 'pool' => $acc === null && $settings['enabled'] && ts_app_key_allowed($id),
             'stream' => $acc && $acc['source'] === 'public' ? $p->stream() : null,
             'own' => $own ? ['last4' => $own['last4'], 'label' => $own['label'], 'last_test_at' => $own['last_test_at'] !== null ? (int)$own['last_test_at'] : null,
-                'last_test_ok' => $own['last_test_ok'] !== null ? (bool)$own['last_test_ok'] : null,
-                // מילוי ברקע במפתח שלי (21.2) — רק בספק עם מפתח שהמילוי תומך בו
-                'prefill' => function_exists('ts_prefill_on') && isset(TS_PREFILL_EVERY[$id]) ? ts_prefill_on($uid) : null] : null,
+                'last_test_ok' => $own['last_test_ok'] !== null ? (bool)$own['last_test_ok'] : null] : null,
         ];
     }
     return $out;
@@ -242,7 +365,7 @@ function ts_cred_test_mine(int $uid, mixed $provider): bool
     return ts_cred_test_row($row);
 }
 
-/** מחיקת מפתח — וגם כל מה שנמשך בו (המאגר האישי של אותו ספק) */
+/** מחיקת מפתח — וגם כל מה שנמשך בו (המאגר האישי של אותו ספק). בספק משותף (21.3) מה שנמשך נשאר במאגר של כולם */
 function ts_cred_delete_mine(int $uid, mixed $provider): void
 {
     $st = ts_db()->prepare("DELETE FROM provider_creds WHERE owner = 'user' AND user_id = ? AND provider_id = ?");
@@ -364,7 +487,13 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $inverse = str_starts_with($symbol, '1/');
     if ($inverse) $symbol = substr($symbol, 2);
     if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
-    $acc = ts_access($uid, $provider) ?? throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
+    // הדרכים לספק, בסדר (21.3). ספק משותף בלי שום דרך — רק מה שבמאגר, בלי להשלים
+    $chain = ts_access_chain($uid, $provider);
+    $poolOnly = !$chain && ts_pool_only($uid, $provider);
+    if (!$chain && !$poolOnly) throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
+    $acc = $chain[0] ?? ['source' => 'pool', 'scope' => '', 'secret' => null, 'usage' => '', 'user_limit' => null, 'cred_id' => null];
+    $used = null;                               // הדרך שענתה בפועל (21.3: נמדד ב-provider_usage)
+    $notice = null;                             // אין דרך להשלים (תקרה / אין מפתח) — מוצג מה שבמאגר
     $p = ts_provider($provider);
     $meta = $p->meta();
     if (!isset($meta['tfs'][$tf])) throw new TsInvalid($meta['name'] . ' לא נותן את מסגרת הזמן הזו');
@@ -388,9 +517,13 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     // היסטוריה ישנה מהמאגר — לבקשה הזו בלבד (3.6)
     if ($from < $poolStart) {
         $oldTo = min($to, $poolStart - 1);
-        $out = ts_provider_call($uid, $provider, $acc, fn($pp, $s) => $pp->candles($symbol, $tf, $from, $oldTo, $s));
-        $calls++;
-        $fetched += count($out);
+        try {
+            $out = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $from, $oldTo, $s), $used);
+            $calls++;
+            $fetched += count($out);
+        } catch (TsCapError $e) {
+            $notice = $e->getMessage();
+        }
     }
 
     $rf = max($from, $poolStart);
@@ -410,7 +543,14 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
 
         $ins = $cache->prepare('INSERT OR REPLACE INTO candles (provider, symbol, tf, t, o, h, l, c, v, fetched_at, cred_scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach (array_slice($missing, -TS_MAX_SEGMENTS) as [$a, $b]) {
-            $rows = ts_provider_call($uid, $provider, $acc, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s));
+            if ($notice !== null) break;
+            try {
+                $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
+            } catch (TsCapError $e) {
+                // כל הדרכים בתקרה (או אין): לא נכשלים — מגישים מה שבמאגר, עם ההודעה (21.3, קריטריונים 4–5)
+                $notice = $e->getMessage();
+                break;
+            }
             $calls++;
             $fetched += count($rows);
             $cache->beginTransaction();
@@ -438,6 +578,12 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $by = [];
     foreach ($out as $r) $by[$r['t']] = $r;
     ksort($by);
+    if ($notice !== null) {
+        // אין נרות בכלל — כמו קודם: שגיאה (נכס בלי נתונים ובלי מפתח — ש7, אפור)
+        if (!$by) throw $poolOnly ? new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".') : new TsCapError($notice);
+        $notice = $poolOnly ? 'מוצג מה שבמאגר — אין מפתח זמין להשלמה' : "$notice מוצג מה שבמאגר.";
+    }
+    $acc = $used ?? $acc;
     ts_fetch_log($uid, $provider, $symbol, $tf, $scope, $from, $to, $calls, $fetched, count($by), $now);
     $candles = array_values($by);
     if ($inverse) $candles = ts_pair_invert_candles($candles);
@@ -449,7 +595,7 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         'meta' => ts_asset_meta("$provider:$symbol"), 'delay' => $meta['delay'], 'source' => $acc['source'],
         // זוג מחושב — בלי זרם חי: הספק משדר את הכיוון המקורי
         'stream' => $acc['source'] === 'public' && !$inverse ? $p->stream() : null, 'stream_interval' => $meta['tfs'][$tf],
-        'tail_ttl' => ts_tail_ttl($tf),
+        'tail_ttl' => ts_tail_ttl($tf), 'notice' => $notice,
     ] + ts_pair_pick(ts_pair_label($asset));
 }
 
@@ -623,7 +769,8 @@ function ts_admin_creds(): array
             'last_test_at' => $r['last_test_at'] !== null ? (int)$r['last_test_at'] : null,
             'last_test_ok' => $r['last_test_ok'] !== null ? (bool)$r['last_test_ok'] : null,
             'grants' => array_map(fn($x) => ['user_id' => (int)$x['user_id'], 'daily_limit' => (int)$x['daily_limit'],
-                'name' => $x['display_name'], 'email' => $x['email']], $g->fetchAll())];
+                'name' => $x['display_name'], 'email' => $x['email']], $g->fetchAll()),
+            'app_key' => (int)ts_setting('app_key:' . $r['provider_id'], '0') === (int)$r['id'] && ts_app_key_allowed($r['provider_id'])];
     }, $rows);
 }
 
@@ -638,6 +785,10 @@ function ts_admin_cred_delete(int $id): void
 {
     $row = ts_admin_cred_row($id);
     ts_db()->prepare('DELETE FROM provider_creds WHERE id = ?')->execute([$id]);
+    // מפתח האפליקציה שנמחק — אין מפתח אפליקציה (21.3 קריטריון 9), והמערכת עוברת למפתח האישי
+    if ((int)ts_setting('app_key:' . $row['provider_id'], '0') === $id) {
+        ts_db()->prepare('DELETE FROM settings WHERE k = ?')->execute(['app_key:' . $row['provider_id']]);
+    }
     ts_cache_drop_scope($row['provider_id'], "c:$id");
 }
 
