@@ -435,9 +435,17 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
         $s = ts_bt_run($m, $p, $chunk, $cost, $s, null, $onTrade);
     }
     // קודם השורות, ואחר כך המצב: כשל בכתיבה → שום דבר לא נשמר, והריצה הבאה מחשבת שוב את אותן עסקאות (בלי כפילות — 23.3)
-    ts_outcomes_write(['source' => 'backtest', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $hash,
+    $added = ts_outcomes_write(['source' => 'backtest', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $hash,
         'provider' => $provider, 'asset' => $asset, 'tf' => $tf, 'cred_scope' => (string)$scope, 'market' => $market,
         'decimals' => ts_tick_decimals($rows), 'now' => $now], $trades);
+    // שינוי דפוס (23.8, L4): רק כשנוספו עסקאות. ממצא חריג → DevLoop. כשל כאן לא מפיל את הבדיקה לאחור — רק נרשם
+    if ($added > 0) {
+        try {
+            ts_learn_findings_sync($meta['id'], (int)$meta['version'], 'backtest', $now);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning findings: ' . $e->getMessage());
+        }
+    }
     if (!$complete) {
         if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
         return ['status' => 'incomplete', 'provider_calls' => $calls,

@@ -561,7 +561,12 @@ try {
             if (!ts_method_exists($lm)) throw new TsNotFound('שיטה לא מוכרת');
             $lv = isset($_GET['version']) && $_GET['version'] !== '' ? (int)$_GET['version'] : null;
             if ($action === 'admin_learn') {
-                out(['ok' => true] + ts_learn_stats($lm, $lv ?? (int)ts_method($lm)->meta()['version'], (string)($_GET['source'] ?? 'backtest')));
+                $lst = ts_learn_stats($lm, $lv ?? (int)ts_method($lm)->meta()['version'], (string)($_GET['source'] ?? 'backtest'));
+                // שינויי דפוס (23.8, L4) — מחושבים בכל פתיחה (קריאה בלבד); code — הפריט ב-DevLoop, אם נפתח (⚠️)
+                $codes = ts_learn_finding_codes($lm);
+                $lst['findings'] = array_map(fn($f) => $f + ['code' => $codes[$f['key']] ?? null, 'text' => ts_learn_finding_text($f),
+                    'segment' => ts_learn_segment_text($f['dim'], $f['value'])], ts_learn_findings($lm, (int)$lst['version'], $lst['source']));
+                out(['ok' => true] + $lst);
             }
             $src = isset($_GET['source']) && $_GET['source'] !== '' ? (string)$_GET['source'] : null;
             $csv = ts_learn_csv($lm, $lv, $src, ts_is_primary_admin());

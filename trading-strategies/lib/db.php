@@ -640,6 +640,31 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 19) {
+        // למידה, L4 (spec-stage-a 23.8א, ✅37): ממצא חריג → פריט DevLoop אחד. המפתח (שיטה, גרסה, מקור, סוג, פלח, פרמטר) → הקוד,
+        // כדי שאותו ממצא שוב יגיב בפריט הקיים ולא יפתח חדש. sig — המספרים בדיווח האחרון; total — כמה עסקאות היו אז. CREATE בלבד
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS learning_findings (
+                k TEXT PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                dim TEXT NOT NULL,
+                value TEXT NOT NULL,
+                code TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                sig TEXT NOT NULL,
+                total INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS learning_findings_method ON learning_findings (method_id, method_version);
+            PRAGMA user_version = 19;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

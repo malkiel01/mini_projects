@@ -71,6 +71,8 @@ try {
     'a segment of 29 — "not enough data (29)", no percentage');
   eq(await dayRow('רביעי').locator('td').last().evaluate(e => getComputedStyle(e).color) !== await dayRow('שישי').locator('td').last().evaluate(e => getComputedStyle(e).color),
     true, '… and grey');
+  eq([await d.locator('h3.learn-h').textContent(), await d.locator('.learn-none').count()], ['שינויי דפוס (p < 0.01)', 1],
+    'L4: the pattern-changes section — here, without findings (50% vs 34% in 30/29 — not significant)');
   eq(await d.locator('tbody[data-dim]').evaluateAll(bs => bs.map(x => x.dataset.dim)), ['total', 'market', 'tf', 'market_tf', 'month', 'quarter', 'weekday', 'hour', 'holidays'],
     'the total, then every tag, and market × tf');
   const href = await d.getByRole('link', { name: /CSV/ }).getAttribute('href');
