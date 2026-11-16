@@ -166,8 +166,13 @@
   `charttip.js` → `pastContent` ("אות לונג · היה"). המתג — `histRow()` בתפריט, `me.profile.history`, `history_set`. ליד ∅ — `.fc-leg-past`.
   לבדיקות: `tsForecast().past` ({m, t, side, result, alpha, label, x, y}), `.pastN`, `.history`.
 - **מיגרציה 23** (`users.history_off`). **הבאה ב-app.sqlite — 24; cache.sqlite — 7.**
-- **נשאר:** H1b — ספירות אליוט שהושלמו (סעיף 2, קריטריון 5) ואזורי פיבונאצ'י (סעיף 3, קריטריון 6). H1c — מנות ישנות (סעיף 6, קריטריון 12; קריטריון 11
-  על 20,000) — **ממתין להכרעת הבקרה** על ההצעה: `method_history&before=` לכל מנה, עם חימום, ורק אותות לפני תחילת הטווח הקודם.
+- **H1b (בנוי):** `history.counts` — `TsMethod::pastCounts()` (ברירת מחדל `[]`; אליוט → `ts_ew_past_counts` ב-`lib/elliott.php`: `ts_ew_counts` על קידומת,
+  k=5, מ-`n−2` אחורה, בלי נקודה משותפת, עד 5, ב-40 נקודות המפנה האחרונות; הנקודה האחרונה — של ההווה, לא עבר). `items[].zone` — `[lo, hi]` מ-`x.zone`
+  במצב השיטה בנר האות (פיבונאצ'י), אחרת null. `TS_RESULT_FORMAT` 2 → 3 (תוצאות H1a במטמון לא נמצאות — מחושבות מחדש). בדפדפן: `pastOf` מחזיר גם
+  `kind: 'pastcount'` → `drawPastCount` (קו + 1–5 + "היה", 50%), מלבן האזור ב-`drawPast`; חלונית "ספירה · היה" (`pastCountContent`). לבדיקות:
+  `tsForecast().pastCounts` ({m, t, alpha, labels, was, dashed, mid}), `past[].zone`. בדיקות: `past-counts.php` (21), `past-signals-api.php` (19), `past-signals-ui.mjs` (34).
+- **נשאר:** H1c — מנות ישנות (סעיף 6, קריטריון 12; קריטריון 11 על 20,000): `method_history&before=`, נרות וחימום מ-cache.sqlite (`history` + המאגר),
+  רק אותות עם t < תחילת הטווח הקודם, תקרת 50 על כל הטווח.
 - **סט הבדיקה:** `TS_KLINES_SHAPE=wave` ו-`X-Dev-Now: 1794342600` — אליוט בלי ספירה נוכחית (∅) ועם 12 אותות עבר בשעה, 3 חודשים.
 
 ## מוסכמות שגיליתי

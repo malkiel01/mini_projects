@@ -159,6 +159,13 @@ final class TsMethodElliottW3 extends TsMethod
         return $ov;
     }
 
+    /** ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2) — אותה רגישות ואותו ATR כמו בהווה (overlay) */
+    public function pastCounts(array $candles, array $p, int $tf): array
+    {
+        $prm = ts_ew_params(['pivot_atr_mult' => (float)$p['pivot_atr_mult'], 'atr_len' => (int)$p['atr_len']]);
+        return ts_ew_past_counts(ts_ew_pivots($candles, $prm['pivot_atr_mult'], $prm['atr_len']), $tf, $prm);
+    }
+
     public function conditions(array $s, array $p): array
     {
         $piv = $s['piv'];

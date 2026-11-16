@@ -1,6 +1,7 @@
 // H1 (spec-stage-a 18.1.8) בדפדפן: אליוט על BTC/USDT בשעה, בלי ספירה נוכחית — "∅" במקרא, ולידו "N אותות בעבר בגרף"; אותות העבר
 // על הגרף — עמומים (50%), בצבע השיטה, לא קדימה מהנר האחרון; לחיצה על חץ → "אות לונג · היה" עם התוצאה ו"על הנרות שבגרף בלבד".
 // המתג "היסטוריה" בתפריט — כבוי: 0 פריטי עבר, ונשמר אחרי טעינה. קריטריונים 1, 7, 9; טלפון 390 ו-320 כהה.
+// H1b: ספירת עבר של אליוט — עמומה, 1–5 ו"היה", בלי קו מקווקו; לחיצה → "ספירה · היה" (קריטריון 5). פיבונאצ'י — מלבן אזור לכל אות (6).
 // node trading-strategies/tests/past-signals-ui.mjs   (Playwright; בלי רשת)  ·  SHOTS=<תיקייה מחוץ לריפו> — צילומים
 import { createRequire } from 'module';
 import { spawn, execFileSync } from 'child_process';
@@ -78,6 +79,23 @@ try {
   eq(await noHScroll(a), true, 'no horizontal scroll at 390');
   await shot(a, 'h1a-past-390');
 
+  // ── H1b, קריטריון 5: ספירת עבר — עמומה, 1–5, "היה", בלי מקווקו קדימה ──
+  const counts = s.pastCounts.filter(x => x.m === 'elliott-w3');
+  eq(counts.length >= 1, true, `criterion 5: completed Elliott counts on the chart (${counts.length})`);
+  eq(counts.map(x => [x.alpha, x.labels, x.was, x.dashed]), counts.map(() => [0.5, ['1', '2', '3', '4', '5'], 'היה', false]), '… dimmed (50%), labels 1–5, "היה", no dashed line');
+  eq(counts.every(x => x.t <= lastT), true, '… all in the past');
+  {
+    const c = counts.at(-1);
+    const [cx, cy] = await toScreen(a, c.mid);
+    await a.touchscreen.tap(cx, cy);
+    await a.locator('.ctip').waitFor({ timeout: 5000 });
+    const ct = await a.locator('.ctip').innerText();
+    eq([(await a.locator('.ctip-title').textContent()).trim(), /דחף (עולה|יורד) שלם, 5 גלים/.test(ct), /רמת ביטול|אזור תרחיש/.test(ct)], ['ספירה · היה', true, false],
+      'a tap on a past count → "ספירה · היה", a complete impulse, no invalidation and no target');
+    await shot(a, 'h1b-count-tip-390');
+    await a.keyboard.press('Escape');
+  }
+
   // ── החלונית: לחיצה על חץ → "אות … · היה" ──
   const W = await a.evaluate(() => document.querySelector('.chart-box:not(.osc)').clientWidth);
   const target = past.filter(x => x.x > 40 && x.x < W - 60).sort((x, y) => y.t - x.t)[0];
@@ -149,6 +167,24 @@ try {
   eq(await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast().past.filter(x => x.m === 'sample-ma-cross').length <= 50), true, '… and no more than 50 drawn');
   eq(/\bnull\b/.test(await o.locator('.fc-pop').innerText()), false, 'the menu has no stray "null" (replaceChildren with a null child)');
   await shot(o, 'h1a-cap-390');
+  // ── H1b, קריטריון 6: פיבונאצ'י — לכל אות עבר מלבן האזור שלו, מנר האות עד היציאה ──
+  eq(await o.evaluate(async () => { const me = await (await fetch('api.php?action=me')).json();
+    return (await fetch('api.php?action=admin_method_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': me.csrf },
+      body: JSON.stringify({ id: 'fibonacci', enabled: true, markets: ['crypto'], timeframes: ['h1'] }) })).status; }), 200, 'the owner turns on fibonacci');
+  await o.locator('.quote-head').click();
+  await o.getByRole('button', { name: 'תחזית שיטה' }).click();   // התפריט טוען את רשימת השיטות מחדש כשנפתח
+  await o.locator('.fc-pop .fc-opt', { hasText: /פיבונאצ/ }).locator('input').check();
+  await o.waitForFunction(() => (document.querySelector('.chart-box:not(.osc)').tsForecast().pastN || {}).fibonacci != null, null, { timeout: 60000 });
+  await o.locator('.quote-head').click();
+  await o.waitForTimeout(300);
+  {
+    const fp = (await st(o)).past.filter(x => x.m === 'fibonacci' && x.result !== 'open');
+    eq(fp.length >= 1, true, `fibonacci past signals in view (${fp.length})`);
+    eq(fp.filter(x => x.zone && x.zone.w > 0 && x.zone.h > 0 && Math.abs(x.zone.x - x.x) < 1).length, fp.length, 'criterion 6: every fibonacci past signal has its zone rectangle, from the signal candle');
+    eq((await st(o)).past.filter(x => x.m === 'sample-ma-cross').every(x => x.zone === null), true, '… a method without zones — no rectangle');
+    await shot(o, 'h1b-fib-zones-390');
+  }
+  await o.getByRole('button', { name: 'תחזית שיטה' }).click();
   await o.locator('.quote-head').click();
 
   const nb = await open('bob', { width: 320, scheme: 'dark' });

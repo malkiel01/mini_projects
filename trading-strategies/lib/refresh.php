@@ -89,7 +89,7 @@ function ts_method_result(TsMethod $m, array $p, string $asset, string $tf, stri
     $res = ts_overlay_compute($m, $p, $tf, $rows);
     // H1 (18.1.8): אותות העבר — אותו מנוע, אותם נרות; נשמרים יחד עם התוצאה עד הנר הבא. כשל — בלי היסטוריה, לא בלי השיטה
     try {
-        $res['history'] = ts_history_signals($m, $p, $asset, $rows);
+        $res['history'] = ts_history_signals($m, $p, $asset, $rows, TS_TF_SECONDS[$tf]);
     } catch (Throwable $e) {
         error_log('trading-strategies history ' . $m->meta()['id'] . ': ' . $e->getMessage());
         $res['history'] = null;

@@ -528,8 +528,11 @@ function ts_bt_partial_drop(string $k): void
     }
 }
 
-/** צורת התוצאה השמורה. 2 — S4: ממצא ותרחיש בשדות נפרדים. תוצאות בצורה הישנה פשוט לא נמצאות (ונמחקות אחרי יומיים) */
-const TS_RESULT_FORMAT = 2;
+/**
+ * צורת התוצאה השמורה. 2 — S4: ממצא ותרחיש בשדות נפרדים; 3 — H1b: history עם ספירות עבר (counts) ואזור לכל אות (zone).
+ * תוצאות בצורה הישנה פשוט לא נמצאות (ונמחקות אחרי יומיים)
+ */
+const TS_RESULT_FORMAT = 3;
 
 /** מפתח החישוב (18.3) — כל מה שהתוצאה תלויה בו, ושום דבר אחר */
 function ts_method_key(TsMethod $m, array $p, string $asset, string $tf, string $scope, array $rows): string

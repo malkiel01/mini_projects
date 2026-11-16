@@ -184,3 +184,6 @@
   תוצאת השיטה ב-`ts_method_result`; `forecast.js` — `drawPast`, `pastAnchor`, חלונית "· היה" (`charttip.js`), המתג "היסטוריה" + תקרה בתפריט,
   "N אותות בעבר בגרף" ליד ∅. מיגרציה 23 (`users.history_off`). תוקן גם "null" שהודפס בתפריט 🔮 (replaceChildren). בדיקות: `past-signals.php` (18),
   `past-signals-api.php` (14), `past-signals-ui.mjs` (23); `roles-api.php` — user_version 23. מנות ישנות (סעיף 6 / קריטריון 12) — הצעה לבקרה (H1c).
+- 2026-11-17 — **H1b** (18.1.8 סעיפים 2–3, בקרה (9)), ענף `claude/trading-strategies-history-h1b`: ספירות אליוט שהושלמו בעבר (`ts_ew_past_counts`,
+  `TsMethod::pastCounts`) ואזור פיבונאצ'י לכל אות עבר (`zone`), באותו `history` ובאותו מתג. `TS_RESULT_FORMAT` → 3. בדיקות: `past-counts.php` (21, חדשה),
+  `past-signals-api.php` 14 → 19, `past-signals-ui.mjs` 23 → 34, `past-signals.php` (counts ריק). בלי מיגרציה.
