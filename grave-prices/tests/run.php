@@ -424,6 +424,98 @@ check('"בתוקף היום" — לכל קבוצה בנפרד (01/07/2026 שנו
     && array_column($cur, 'effective_from') === ['2026-07-01', '2026-07-01'] && $cur[1]['pid'] === $ab9['pid']);
 check('foreign_key_check ריק בסוף', $pdo->query('PRAGMA foreign_key_check')->fetchAll() === []);
 
+// --- פרוסה 04: גבולות מקטע, ➕ ו-🗑️ (04-structure-edit.md סעיף 6)
+$seedRows = fn(string $f) => json_decode((string)file_get_contents(__DIR__ . "/../lib/seed/$f.json"), true)['edition']['rows'];
+$li = gp_layout(array_map(fn($r) => $r + ['indent' => 0], $seedRows('israel-2026-06-15')));
+check('04/1 ישראל: אזור האגרות מ-24', $li['fee_start'] === 24, (string)$li['fee_start']);
+check('04/1 ישראל: ➕ שורה לפני קבורת מכפלה, חריגה, מכפלה, הר הזיתים, אגרות', $li['add_row'] === [6, 15, 18, 21, 24], json_encode($li['add_row']));
+check('04/1 ישראל: ➕ מקטע בסוף פטורות ובסוף חריגה', $li['add_block'] === [15, 24], json_encode($li['add_block']));
+check('04/1 ישראל: ➕ אגרה אחרי שמור מחיים (לפני ההערות)', $li['add_fee'] === 26, (string)$li['add_fee']);
+check('04/7 ישראל: "חלקות חריגה" עד האגרות', $li['ends'][15] === 24 && $li['ends'][0] === 15);
+check('04/6 ישראל: הר הזיתים — 2 שורות', $li['ends'][21] === 24);
+check('04/1 ישראל: heading — רק השורות המוזחות', $li['ends'][8] === 11 && $li['ends'][12] === 15);
+$la = gp_layout(array_map(fn($r) => $r + ['indent' => 0], $seedRows('abroad-2026-06-15')));
+check('04/2 חו"ל: "תשלומי אגרות" באזור האגרות', $la['fee_start'] === 24 && $la['ends'][24] === 25, json_encode($la['ends']));
+check('04/2 חו"ל: ➕ מקטע אחרי כל אחד מארבעת הפסים', $la['add_block'] === [11, 16, 21, 24], json_encode($la['add_block']));
+check('04/2 חו"ל: ➕ שורה — לפני כל פס ולפני האגרות, לא אחרי "תשלומי אגרות"', $la['add_row'] === [11, 16, 21, 24], json_encode($la['add_row']));
+check('04/2 חו"ל: ➕ אגרה אחרי שמור מחיים', $la['add_fee'] === 30);
+$l0 = gp_layout([['kind' => 'item', 'indent' => 0], ['kind' => 'subsection', 'indent' => 0], ['kind' => 'item', 'indent' => 0]]);
+check('04 בלי כותרת רמה 1: ➕ מקטע לפני אזור האגרות (בסוף)', $l0['add_block'] === [3] && $l0['add_row'] === [1, 3] && $l0['add_fee'] === 3, json_encode($l0));
+check('04 מחירון ריק', gp_layout([]) === ['fee_start' => 0, 'ends' => [], 'add_row' => [], 'add_block' => [0], 'add_fee' => 0]);
+
+// על עותקים עתידיים (בלי "כבר בתוקף") של ישראל וחו"ל 15/06/2026
+$ci = gp_edition_create($uid, ['effective_from' => '2033-01-01', 'base_pid' => $p26])['pid'];
+$ca = gp_edition_create($uid, ['effective_from' => '2033-01-01', 'base_pid' => $pab])['pid'];
+$eci = gp_edition($ci);
+check('04 שכפול (raise ריק): שורות ומחירים זהים', array_map(fn($r) => [$r['kind'], $r['label'], $r['price']], $eci['rows'])
+    === array_map(fn($r) => [$r['kind'], $r['label'], $r['price']], gp_edition($p26)['rows']));
+check('04 gp_edition: layout ו-block בכותרות', $eci['layout']['add_row'] === [6, 15, 18, 21, 24] && $eci['rows'][21]['block'] === 2
+    && !isset($eci['layout']['ends']) && !isset($eci['rows'][22]['block']));
+// 3 — ➕ שורה לפני "קבורת מכפלה:" = after השורה האחרונה של "קבורת שדה"
+$r = gp_row_save($uid, ['pid' => $ci, 'after' => $eci['rows'][5]['pid'], 'kind' => 'item', 'indent' => 0, 'label' => 'בדיקה']);
+gp_price_set($uid, ['pid' => $ci, 'row' => $r['row'], 'amount' => 1000]);
+$x = gp_edition($ci)['rows'];
+check('04/3 השורה החדשה אחרי "צמוד…מחוץ לירושלים" ולפני "קבורת מכפלה:"', $x[6]['label'] === 'בדיקה' && $x[6]['price'] === 1000
+    && str_contains($x[5]['label'], 'צמוד לבן זוג') && str_contains($x[5]['label'], 'מחוץ לירושלים') && str_contains($x[7]['label'], 'קבורת מכפלה'));
+// 4 — ➕ מקטע בחו"ל, אחרי הפס הראשון (after = השורה האחרונה במקטע)
+$eca = gp_edition($ca);
+$b = gp_block_add($uid, ['pid' => $ca, 'after' => $eca['rows'][10]['pid'], 'kind' => 'band', 'label' => 'הר המנוחות צפון']);
+$x = gp_edition($ca)['rows'];
+check('04/4 פס חדש אחרי המקטע, ושורה ריקה תחתיו', $x[11]['pid'] === $b['row'] && $x[11]['kind'] === 'band' && $x[11]['label'] === 'הר המנוחות צפון'
+    && $x[12]['pid'] === $b['item'] && $x[12]['kind'] === 'item' && $x[12]['price'] === null && $x[13]['kind'] === 'band', json_encode(array_slice($x, 10, 4), JSON_UNESCAPED_UNICODE));
+check('04/4 ביומן block-add', gp_history($ca)['history'][0]['action'] === 'block-add');
+$b2 = gp_block_add($uid, ['pid' => $ca, 'after' => '', 'kind' => 'subsection', 'label' => 'בסוף']);
+$x = gp_edition($ca)['rows'];
+$k = array_search($b2['row'], array_column($x, 'pid'), true);
+check('04 block-add בלי after — לפני האגרות ("תשלומי אגרות")', $x[$k + 2]['label'] === 'תשלומי אגרות' && $x[$k - 1]['label'] === '**כל החלקות** ((מכפלה))');
+// 15 — שגיאות, וכלום לא השתנה
+$before = gp_edition($ci)['rows'];
+check('04/15 block-add עם band בישראל — 400', $err(fn() => gp_block_add($uid, ['pid' => $ci, 'kind' => 'band', 'label' => 'x']))[0] === 400);
+check('04/15 block-add עם section בחו"ל — 400', $err(fn() => gp_block_add($uid, ['pid' => $ca, 'kind' => 'section', 'label' => 'x']))[0] === 400);
+check('04 block-add בלי שם — 400', $err(fn() => gp_block_add($uid, ['pid' => $ci, 'kind' => 'section', 'label' => ' ']))[0] === 400);
+$r = $err(fn() => gp_block_delete($uid, ['pid' => $ci, 'row' => $before[2]['pid']]));
+check('04/15 block-delete על item — 400 בעברית', $r[0] === 400 && preg_match('/\p{Hebrew}/u', $r[1]) === 1);
+check('04/15 כלום לא השתנה', gp_edition($ci)['rows'] === $before);
+// 9 — מחירון בתוקף: 409 ולא השתנה
+$cur = gp_edition($p26)['rows'];
+check('04/9 block-delete על מחירון בתוקף — 409', ($err(fn() => gp_block_delete($uid, ['pid' => $p26, 'row' => $cur[21]['pid']]))[2]['need_confirm'] ?? false) === true
+    && ($err(fn() => gp_block_add($uid, ['pid' => $p26, 'kind' => 'section', 'label' => 'x']))[2]['need_confirm'] ?? false) === true
+    && gp_edition($p26)['rows'] === $cur);
+// 6 — 🗑️ על הר הזיתים
+$x = gp_edition($ci)['rows'];
+$olv = array_search('הר הזיתים (חלקה סגורה)', array_column($x, 'label'), true);
+$r = gp_block_delete($uid, ['pid' => $ci, 'row' => $x[$olv]['pid']]);
+$y = gp_edition($ci)['rows'];
+$d = gp_history($ci)['history'][0];
+check('04/6 הר הזיתים + 2 שורות נמחקו; האגרות וההערות נשארו', $r['deleted'] === 3 && count($y) === count($x) - 3
+    && $y[$olv]['kind'] === 'fee' && count(array_filter($y, fn($r) => in_array($r['kind'], ['fee', 'note'], true))) === 4);
+check('04/6 ביומן block-delete עם שתי השורות והמחירים', $d['action'] === 'block-delete' && $d['details']['label'] === 'הר הזיתים (חלקה סגורה)'
+    && array_column($d['details']['rows'], 'price') === [60000, 80000] && count($d['details']['rows']) === 2, json_encode($d, JSON_UNESCAPED_UNICODE));
+// 7 — 🗑️ על "חלקות חריגה:" (בעותק נוסף, כשהר הזיתים עדיין קיים)
+$c2 = gp_edition_create($uid, ['effective_from' => '2033-02-02', 'base_pid' => $p26])['pid'];
+$x = gp_edition($c2)['rows'];
+gp_block_delete($uid, ['pid' => $c2, 'row' => $x[15]['pid']]);
+$y = gp_edition($c2)['rows'];
+check('04/7 "חלקות חריגה" עד האגרות נמחק; "חלקות פטורות" נשאר', count($y) === 19 && $y[0]['label'] === 'חלקות פטורות:'
+    && $y[14]['kind'] === 'item' && $y[15]['kind'] === 'fee' && !in_array('הר הזיתים (חלקה סגורה)', array_column($y, 'label'), true), (string)count($y));
+// 8 — 🗑️ על אגרה: רק היא (row-delete)
+gp_row_delete($uid, ['pid' => $c2, 'row' => $y[15]['pid']]);
+$z = gp_edition($c2)['rows'];
+check('04/8 אגרה — רק היא נמחקה', count($z) === 18 && $z[15]['kind'] === 'fee' && $z[15]['label'] === $y[16]['label']);
+// heading — רק השורות המוזחות
+$c3 = gp_edition_create($uid, ['effective_from' => '2033-03-03', 'base_pid' => $p26])['pid'];
+$x = gp_edition($c3)['rows'];
+gp_block_delete($uid, ['pid' => $c3, 'row' => $x[8]['pid']]);
+$y = gp_edition($c3)['rows'];
+check('04 heading נמחק עם שתי המוזחות, והשורה הלא מוזחת שאחריו נשארה', count($y) === 25 && $y[8]['label'] === $x[11]['label']);
+// כותרת באזור האגרות — רק היא
+$x = gp_edition($ca)['rows'];
+$tf = array_search('תשלומי אגרות', array_column($x, 'label'), true);
+gp_block_delete($uid, ['pid' => $ca, 'row' => $x[$tf]['pid']]);
+$y = gp_edition($ca)['rows'];
+check('04 "תשלומי אגרות" — נמחקת רק הכותרת, האגרות נשארות', count($y) === count($x) - 1 && $y[$tf]['kind'] === 'fee');
+check('04 ישראל וחו"ל המקוריים לא השתנו', gp_edition($p26)['rows'] === $cur && count(gp_edition($pab)['rows']) === 32);
+
 // ניקוי
 foreach (glob("$tmp/*") ?: [] as $f) @unlink($f);
 @rmdir($tmp);

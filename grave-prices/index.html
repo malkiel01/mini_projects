@@ -35,7 +35,7 @@
       </div>
       <div class="list">
         <button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>דף נפרד לכל קבוצה</b><small>שני עמודים: ישראל, ואחריו חו"ל</small></span></button>
-        <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>ישראל, ומתחתיו חו"ל · חתימות פעם אחת</small></span></button>
+        <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>זה לצד זה: ישראל מימין, חו"ל משמאל · חתימות פעם אחת</small></span></button>
       </div>
     </div>
   </form>
@@ -64,6 +64,33 @@
       </div>
     </div>
     <div class="sheet-foot"><button class="btn primary">שמירה</button></div>
+  </form>
+</dialog>
+
+<dialog id="block-dlg" aria-labelledby="block-title">
+  <form id="block-form" novalidate>
+    <div class="sheet-head"><h2 id="block-title">➕ מקטע חדש</h2><button class="icon-btn" type="button" data-close aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <label class="f"><span>שם</span><input name="label" maxlength="200" autocomplete="off" required></label>
+      <label class="f"><span>סוג</span><select name="kind"><option id="block-top" value="section">כותרת ראשית</option>
+        <option value="subsection">כותרת משנה</option></select></label>
+      <p class="hint">נוספת גם שורה ריקה מתחתיו. מקטע בלי מחירים לא מודפס.</p>
+      <p class="error" id="block-err" hidden></p>
+    </div>
+    <div class="sheet-foot"><button class="btn primary">➕ הוספה</button></div>
+  </form>
+</dialog>
+
+<dialog id="dup-dlg" aria-labelledby="dup-title">
+  <form id="dup-form" novalidate>
+    <div class="sheet-head"><h2 id="dup-title">📄 שכפול</h2><button class="icon-btn" type="button" data-close aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <label class="f"><span>בתוקף החל מ-</span><input type="date" name="date" required></label>
+      <p class="hint" id="dup-note" hidden>המחירון ייכנס לתוקף מיד</p>
+      <p class="hint">השורות, המחירים וכותרת המשנה — עותק מדויק.</p>
+      <p class="error" id="dup-err" hidden></p>
+    </div>
+    <div class="sheet-foot"><button class="btn primary">📄 שכפול</button></div>
   </form>
 </dialog>
 
