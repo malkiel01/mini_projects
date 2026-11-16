@@ -75,6 +75,9 @@ audit       id, at, user_id, action, edition_id NULL, details JSON
 
 ההדפסה היא HTML + `@media print` + `window.print()`. "PDF" = "שמירה כ-PDF" של הדפדפן. בלי ספריית PDF בשרת.
 
+בלי שילוב עם עורך התמלילים או תבניות המסמכים בגרסה הזו (שאלה 14 — ברירת מחדל). הרחבה אפשרית בעתיד: פתיחת
+המחירון בעורך דרך `platform/docs/embed.md`.
+
 ## 4. הארכיטקטורה מול הפלטפורמה
 
 - **תיקייה:** `grave-prices/`, PHP 8.3 + JS בלי בנייה. API יחיד: `api.php?action=…`, JSON.
