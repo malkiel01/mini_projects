@@ -130,34 +130,19 @@ $second = $db->query("SELECT outcome FROM method_journal WHERE method_id = 'elli
 eq(in_array($second, ['zone', 'invalidated', 'neither'], true), true, 'and the second record was decided too, once its range passed');
 
 // ── קריטריון 3: הגרסה נשמרת; גרסה חדשה לא משכתבת ──
-$def = [
-    'id' => 'ma-cross-def', 'name' => 'חציית ממוצעים (מוגדרת)', 'source' => 'בדיקה', 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4'],
-    'params' => [
-        'fast' => ['label' => 'ממוצע קצר', 'default' => 20, 'min' => 2, 'max' => 200, 'int' => true],
-        'slow' => ['label' => 'ממוצע ארוך', 'default' => 50, 'min' => 3, 'max' => 400, 'int' => true],
-        'atr' => ['label' => 'אורך ATR', 'default' => 14, 'min' => 2, 'max' => 100, 'int' => true],
-    ],
-    'indicators' => [
-        ['id' => 'ma_fast', 'type' => 'sma', 'source' => 'close', 'length' => '$fast'],
-        ['id' => 'ma_slow', 'type' => 'sma', 'source' => 'close', 'length' => '$slow'],
-        ['id' => 'atr14', 'type' => 'atr', 'length' => '$atr'],
-    ],
-    'rules' => ['long' => ['all' => ['ma_fast crosses_above ma_slow']], 'short' => ['all' => ['ma_fast crosses_below ma_slow']]],
-    'levels' => ['stop' => 'entry - dir * 2 * atr14', 'target' => 'entry + dir * 3 * atr14'],
-    'horizon_bars' => 50,
-];
-eq(call('owner', 'admin_method_save', ['definition' => $def])[0], 200, 'a defined method, version 1');
-eq(call('owner', 'admin_method_save', ['id' => 'ma-cross-def', 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1'], 'params' => [], 'note' => ''])[0], 200, 'and turns it on');
-$qd = ['methods' => 'ma-cross-def'] + $q;
+// (בונה השיטות נמחק ב-21.1 — גרסה חדשה באה משינוי פרמטר של המנהל הראשי, methods.tune, 18.7)
+$S = 'sample-ma-cross';
+$sset = fn(array $p) => call('owner', 'admin_method_save', ['id' => $S, 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1', 'h4', 'd1'], 'params' => $p, 'note' => '']);
+eq($sset([])[0], 200, 'the admin turns on the sample method');
+$qd = ['methods' => $S] + $q;
 [, $r1] = call('owner', 'chart_refresh', null, $qd);
-eq($r1["methods"]["ma-cross-def"]["method"]["version"] ?? null, 1, "it runs as version 1");
-$v1 = $db->query("SELECT * FROM method_journal WHERE method_id = 'ma-cross-def'")->fetchAll();
+eq($r1['methods'][$S]['method']['version'] ?? null, 1, 'it runs as version 1');
+$v1 = $db->query("SELECT * FROM method_journal WHERE method_id = '$S'")->fetchAll();
 eq([count($v1), (int)$v1[0]['method_version']], [1, 1], 'criterion 3: the record is saved with the method version');
-$def['params']['fast']['default'] = 21;
-eq(call('owner', 'admin_method_save', ['definition' => $def])[0], 200, 'the admin saves a new version');
+eq($sset(['fast' => 21])[0], 200, 'the primary admin changes a parameter → a new version');
 [, $r2] = call('owner', 'chart_refresh', null, $qd);
-eq($r2['methods']['ma-cross-def']['method']['version'] ?? null, 2, 'the method is now version 2');
-$both = $db->query("SELECT * FROM method_journal WHERE method_id = 'ma-cross-def' ORDER BY id")->fetchAll();
+eq($r2['methods'][$S]['method']['version'] ?? null, 2, 'the method is now version 2');
+$both = $db->query("SELECT * FROM method_journal WHERE method_id = '$S' ORDER BY id")->fetchAll();
 eq([count($both), (int)$both[1]['method_version'], (int)$both[1]['as_of']], [2, 2, (int)$v1[0]['as_of']], 'criterion 3: version 2 on the same candle → a record of its own');
 eq($both[0], $v1[0], 'criterion 3: the version-1 record is unchanged, column by column');
 
@@ -192,7 +177,7 @@ $ew = $sum['elliott-w3@1'];
 eq([$ew['total'], $ew['zone'] + $ew['invalidated'] + $ew['neither'] + $ew['pending'] + $ew['none'], $ew['decided'], $ew['pending']], [2, 2, 2, 0],
     'criterion 5: Elliott v1 — 2 scenarios, both decided');
 eq($ew[$want[0]] >= 1, true, 'criterion 5: the decided outcome is counted under its kind');
-eq([isset($sum['ma-cross-def@1']), isset($sum['ma-cross-def@2'])], [true, true], 'criterion 5: a line for each version');
+eq([isset($sum['sample-ma-cross@1']), isset($sum['sample-ma-cross@2'])], [true, true], 'criterion 5: a line for each version');
 eq(array_key_exists('elliott-w3@1', array_column(array_map(fn($x) => $x + ['k' => $x['method']['id'] . '@' . $x['method']['version']], $J('owner', ['outcome' => 'pending'])['summary']), null, 'k')), true, 'the summary covers all records, not only the filtered page');
 $pend = $J('owner', ['outcome' => 'pending'])['rows'];
 eq(array_unique(array_map(fn($x) => $x['outcome'], $pend)) === [null] || $pend === [], true, 'filter: only "not known yet"');
