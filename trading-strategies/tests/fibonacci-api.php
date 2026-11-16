@@ -89,6 +89,20 @@ eq([$c, in_array($bt['status'] ?? null, ['ok', 'insufficient'], true), ($bt['sta
     [200, true, true], 'criterion 11: after a backtest — certainty only from N ≥ 30, otherwise none (status ' . ($bt['status'] ?? '?') . ', N ' . ($bt['n'] ?? '?') . ')');
 $row = $db->query("SELECT method_version, state FROM backtests WHERE method_id = 'fibonacci' AND tf = 'h1'")->fetch(PDO::FETCH_ASSOC);
 eq([$row !== false, (int)($row['method_version'] ?? 0)], [true, 2], 'the backtest is stored under fibonacci v2 (F-2)');
+// למידה (פרק 23, L1): הבדיקה לאחור כותבת ל-method_outcomes — שורה לכל עסקה, עם התגיות ו-features של meta().learn
+$outs = fn() => $db->query("SELECT result, win, r, market, tf, month, weekday, features FROM method_outcomes WHERE source = 'backtest' AND method_id = 'fibonacci'")
+    ->fetchAll(PDO::FETCH_ASSOC);
+$o1 = $outs();
+$closed = array_values(array_filter($o1, fn($x) => $x['result'] !== 'skipped_gap'));
+$feat = array_map(fn($x) => json_decode((string)$x['features'], true), $o1);
+eq([count($closed), array_sum(array_column($closed, 'win'))], [$bt['n'] ?? null, $bt['wins'] ?? null], 'learn (23.4): one row per closed trade — rows = N of the backtest, and the wins agree');
+eq(array_values(array_unique(array_map(fn($x) => is_array($x) ? implode(',', array_keys($x)) : 'none', $feat))), ['score,zone_atr,rr'],
+    'learn (23.3): every row carries the features of meta().learn — zone score, zone width in ATR, rr (meta itself — fibonacci-f2.php)');
+eq(count(array_filter($feat, fn($x) => !is_int($x['score']) && !is_float($x['score']) || $x['score'] < 3 || !($x['zone_atr'] > 0) || $x['rr'] < 2 - 1e-9)), 0,
+    'learn: the features are real values — score ≥ min_score, a positive width, rr ≥ min_rr');
+eq([array_values(array_unique(array_column($o1, 'market'))), array_values(array_unique(array_column($o1, 'tf')))], [['crypto'], ['h1']], 'learn (23.5): tagged with the market and the timeframe');
+[$c] = call('alice', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $F]);
+eq([$c, count($outs())], [200, count($o1)], 'learn (23.3): the same backtest again → no duplicate rows');
 eq(call('alice', 'chart_refresh', null, ['tf' => 'm15'] + $q)[1]['methods'][$F]['status'] ?? null, 'unsupported', 'm15 → unsupported (h1 and up)');
 eq(preg_match('/קנה|מכור|המלצ|כדאי|\bיעד\b/u', json_encode([$res, $card], JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend/target" wording (6.6)');
 
