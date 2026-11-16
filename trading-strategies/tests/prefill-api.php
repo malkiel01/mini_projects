@@ -170,7 +170,10 @@ eq([$nc['twelvedata:AAPL']['price'], $nc['twelvedata:AAPL']['locked']], [null, t
 eq((int)$db->query("SELECT COUNT(*) FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope != 'u:$alice'")->fetchColumn(), 0, 'Twelve Data is saved only with cred_scope = u:<alice>');
 eq(call('bob', 'prefill_set', ['on' => true])[0], 200, 'bob turns it back on');
 
-eq(trim((string)@file_get_contents("$tmp.error.log")) === '' || !str_contains((string)file_get_contents("$tmp.error.log"), 'PHP '), true, 'no PHP error in the server log');
+// אזהרות הפעלה של PHP עצמו (למשל "JIT … disabled. in Unknown on line 0" ב-runner של הפריסה, #1629) — לא של הקוד
+$phpErr = array_values(array_filter(explode("\n", (string)@file_get_contents("$tmp.error.log")),
+    fn($l) => preg_match('/PHP (Fatal error|Parse error|Warning|Notice|Deprecated)/', $l) && !str_contains($l, ' in Unknown on line 0')));
+eq($phpErr, [], 'no PHP error in the server log');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);
