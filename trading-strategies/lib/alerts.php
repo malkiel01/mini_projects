@@ -387,6 +387,13 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
             error_log('trading-strategies prefill: ' . $e->getMessage());
             $sum['prefill'] = ['error' => true];
         }
+        // למידה (23.9, L5b): השוואת שכנים — אחרונה, באותו תקציב לספק ובתקרת זמן משלה. חריגה לא עוצרת את המשך הריצה
+        try {
+            $sum['learn'] = ts_learn_cron($now, $used, $budget, $t0);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning: ' . $e->getMessage());
+            $sum['learn'] = ['error' => true];
+        }
         $sum['calls'] = $used;
         // ניקוי המאגר — פעם ביום, מכאן (✅4)
         $before = (int)ts_setting('cache_cleanup_at', '0');

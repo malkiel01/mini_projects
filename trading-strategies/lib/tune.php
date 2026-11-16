@@ -224,42 +224,7 @@ function ts_tune_apply(int $uid, mixed $id, ?int $now = null): array
 }
 
 /**
- * הערכה של הצעה מהלמידה (23.9, L5) — טהורה מבחינת המסד (רק קריאה), יכולה לזרוק TsBacktestTimeout. כמו S7: רק הנוכחי מול המועמד,
- * בתוך הדגימה ומחוצה לה — אבל **החיתוך בזמן הוא t_cut של הסטטיסטיקה** (ביקורת L5 🟡1): "בתוך" — נרות לפני t_cut, "מחוץ" — מ-t_cut
- * והלאה. כך אין עסקה שגם קבעה את המועמד וגם נמדדה מחוץ לדגימה. מחזיר את השורה לכתיבה (ts_tune_learned_save), או null:
- * המועמד לא תקין / זהה לנוכחי, או שאין עסקאות מחוץ לדגימה.
- */
-function ts_tune_learned_eval(TsMethod $m, string $param, string $segment, float $candidate, array $stats, int $tCut, string $asset, string $tf, array $candles, int $now): ?array
-{
-    $meta = $m->meta();
-    $d = $meta['params'][$param];
-    $set = ts_method_settings($meta['id']);
-    $base = ($segment !== '' ? ($set['seg_params'][$segment] ?? []) : []) + $set['params'];
-    $pCur = $m->params($base);
-    $cand = !empty($d['int']) ? (int)round($candidate) : (float)$candidate;
-    $pCand = $m->params([$param => $cand] + $base);
-    if ((float)$pCand[$param] === (float)$pCur[$param] || $m->validate($pCand)) return null;
-    $fl = ts_bt_floats($candles);
-    $in = array_values(array_filter($fl, fn($c) => $c['t'] < $tCut));
-    $out = array_values(array_filter($fl, fn($c) => $c['t'] >= $tCut));
-    if (!$in || !$out) return null;
-    $dec = ts_tick_decimals($candles);
-    $cost = ts_cost_for(ts_asset_market($asset));
-    $deadline = microtime(true) + 2 * TS_BT_MAX_SECONDS;
-    $res = ['split_t' => $tCut];
-    foreach (['current' => $pCur, 'candidate' => $pCand] as $k => $p) {
-        $pp = ts_params_for_asset($m, $p, $dec);
-        $res[$k] = ['in' => ts_tune_summary(ts_bt_run($m, $pp, $in, $cost, null, $deadline)), 'out' => ts_tune_summary(ts_bt_run($m, $pp, $out, $cost, null, $deadline))];
-    }
-    if ($res['current']['out']['n'] === 0 && $res['candidate']['out']['n'] === 0) return null;
-    $note = sprintf('מהלמידה: %s %s (רווח סמך %s–%s, N = %d), מעסקאות שיצאו לפני %s; "מחוץ לדגימה" — מאז', $stats['stat'] === 'stop' ? 'אחוזון 80 של MAE במנצחות'
-        : ($stats['stat'] === 'target' ? 'חציון MFE' : 'חציון רוחב האזור במנצחות'), round($stats['raw'], 3), $stats['ci'][0], $stats['ci'][1], $stats['n'], gmdate('Y-m-d', $tCut));
-    return ['method_id' => $meta['id'], 'method_version' => $meta['version'], 'param' => $param, 'current' => $pCur[$param], 'candidate' => $pCand[$param],
-        'asset' => $asset, 'tf' => $tf, 'split_t' => $tCut, 'results' => $res, 'note' => $note, 'now' => $now, 'segment' => $segment, 'stats' => $stats];
-}
-
-/**
- * כתיבת הצעה מהלמידה (בתוך הטרנזקציה של ts_learn_values_run). created_by = 0 (המערכת), origin = learning. לכל היותר הצעה פתוחה
+ * כתיבת הצעה מהלמידה (בתוך הטרנזקציה של ts_learn_commit — השוואת השכנים, L5b). created_by = 0 (המערכת), origin = learning. לכל היותר הצעה פתוחה
  * אחת לפרמטר ולפלח — **מהלמידה בלבד**: הצעה פתוחה של עורך לא נדרסת (ביקורת L5 🟡5). "החל" — רק העורך הראשי (ts_tune_apply).
  */
 function ts_tune_learned_save(array $r): int
