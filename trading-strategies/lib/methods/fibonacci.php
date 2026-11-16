@@ -92,7 +92,7 @@ final class TsMethodFibonacci extends TsMethod
 
         $s['a'] = ts_ew_atr_step($s['a'], $c, (int)$p['atr_len']);
         [$s['z'], $pv] = ts_ew_zz_step($s['z'], $c, $s['a']['v'], (float)$p['pivot_atr_mult']);
-        if ($pv) $s['piv'][] = ['type' => $pv['type'], 't' => $pv['t']];
+        if ($pv) $s['piv'][] = ['type' => $pv['type'], 't' => $pv['t'], 'ct' => $pv['ct']];
         $s['w'][] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $s['a']['v']];
         $max = (int)$p['lookback_bars'];
         if (count($s['w']) > $max) $s['w'] = array_slice($s['w'], -$max);

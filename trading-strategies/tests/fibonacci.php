@@ -44,8 +44,16 @@ eq(array_map(fn($r) => r2(array_column($r['levels'], 'price')), $g['support']['r
 $z = $g['support']['zones'];
 eq([count($z), r2($z[0]['lo']), r2($z[0]['hi']), $z[0]['score'], $z[0]['ranges']], [1, 169.1, 169.44, 2, 2], 'criterion 1: one zone [169.10, 169.44], score 2, from two ranges');
 eq(r2(array_column($g['support']['singles'], 'price')), [150.56, 160.0, 175.0, 180.9], 'criterion 1: the other four levels are single (Z9)');
-eq([array_map(fn($r) => r2($r['end']), $g['support']['dropped']), $g['support']['dropped'][0]['kinds']], [[196.0], ['longest']],
-    'the longest candle is always a candidate (S15) — here its range has levels above the close and is dropped (S2)');
+eq([$g['support']['dropped'], in_array(196.0, $ends($g['support']), true)], [[], false],
+    'S17 for every kind (review 🟡2): the longest candle (196) was broken by later bodies (down to 185) → not a range, not even a dropped one');
+// S17 אחיד: נר חזק עם תחתית גוף 124, שנשבר ל-122 לפני H → לא בטווחים
+$strong = $grid(fib_bars([140, 120, [130, 'body' => 6], 122, 175, 150, 200, 185]));
+$kinds = array_merge(...array_column([...$strong['support']['ranges'], ...$strong['support']['dropped']], 'kinds'));
+eq([in_array(124.0, $ends($strong['support']), true), in_array('strong', $kinds, true)], [false, false],
+    'S17 for every kind: a strong candle with body bottom 124, broken to 122 before H → not an end point');
+$strongOk = $grid(fib_bars([140, 120, [130, 'body' => 6], 126, 175, 150, 200, 185]));
+eq(in_array('strong', array_merge(...array_column([...$strongOk['support']['ranges'], ...$strongOk['support']['dropped']], 'kinds')), true), true,
+    'control: the same strong candle, not broken (low 126) → a candidate');
 // Z1: שתי רמות מאותו טווח, או באותו יחס — לא אזור
 $z1 = ts_fib_side([], [], $P, 2.0, 1);
 eq($z1['zones'], [], 'no candles → no zone');
@@ -105,10 +113,12 @@ eq([$down['close'], $ends($down['support']), r2([$down['support']['zones'][0]['l
     [170.0, [150.0, 120.0], [169.1, 169.44], 2], 'lock: price falls to 170 — the zone [169.10, 169.44] stays, though 180.90 and 175 are now above the close');
 eq($down['support']['built_t'] < $down['t'], true, '… the side was built earlier (when H was set), not on this candle');
 // (ב) קוץ כניעה (E2): בזמן הבנייה כל רמות הטווח כבר מעל הסגירה — נפסל, ונשאר פסול
-$build = array_search($down['support']['built_t'], array_column(fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 170]), 't'), true);
-$atBuild = fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 170])[$build]['c'];
-eq([array_map(fn($r) => r2($r['end']), $down['support']['dropped']), $atBuild < 200 - 0.382 * 4], [[196.0], true],
-    'E2: the 200→196 range (levels 198.47 / 198 / 197.53) was above the close at build (' . $atBuild . ') → dropped, and stays dropped');
+// הנר הארוך ביותר (190 → 199, גוף 9) לא נשבר אחר כך (הירידה עוצרת ב-191) — אבל ברגע הבנייה הסגירה מתחת לרמת ה-38.2 שלו
+$E2C = fib_bars([140, 120, 175, 150, 190, [199, 'body' => 9], 200, 191]);
+$e2 = $grid($E2C);
+$atBuild = array_column($E2C, 'c', 't')[$e2['support']['built_t']];
+eq([array_map(fn($r) => r2($r['end']), $e2['support']['dropped']), $atBuild < 200 - 0.382 * 10, $atBuild > 190.0, $ends($e2['support'])], [[190.0], true, true, [150.0, 120.0]],
+    'E2: the 200→190 range (levels 196.18 / 195 / 193.82) was above the close at build (' . $atBuild . '), its end not broken → dropped, and stays dropped');
 // (ג) S17 אחרי הבנייה: גוף מתחת לנקודת הסיום של טווח — הטווח יוצא מהרשת הנעולה
 $broke = $grid(fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 149, 160]));
 eq([r2($broke['support']['start']['price']), $ends($broke['support'])], [200.0, [120.0]], 'lock + S17: a body below 150 after the build removes 200→150; 200→120 stays');
@@ -144,9 +154,16 @@ eq([$ratios, $math], [0, 0], 'criterion 7: only 38.2 / 50 / 61.8 — in ranges, 
 // ── 22.3 (5, 6): נקודות קרובות, ותקרה ──────────────────────
 $close = ts_fib_side(fib_cand([140, 120, 175, 150, 175, 150.4, 196, [199, 'body' => 3], 200, 185], $m->params()), fib_piv([140, 120, 175, 150, 175, 150.4, 196, [199, 'body' => 3], 200, 185], $m->params()), $m->params(), 2.0, 1);
 eq(count(array_filter($ends($close), fn($e) => $e === 150.0 || $e === 150.4)), 1, '22.3(5): two end points 0.4 apart (< 0.5 × ATR) → one range');
-$cap = $grid(fib_bars([140, 100, 175, 110, 175, 120, 175, 130, 175, 140, 175, 150, 175, 160, 196, [199, 'body' => 3], 200, 185]), ['max_ranges' => 2]);
-eq(count($cap['support']['ranges']) + count($cap['support']['dropped']), 2, '22.3(6): at most max_ranges candidates');
-eq(in_array('longest', array_merge(...array_column([...$cap['support']['ranges'], ...$cap['support']['dropped']], 'kinds')), true), true, '22.3(6): the longest candle stays in under the cap (S15)');
+// הנר הארוך ביותר — הראשון מעל 100 (גוף 4), כלומר הטווח העמוק ביותר
+$capPath = [140, 100, [104, 'body' => 4], 175, 110, 175, 120, 175, 130, 175, 140, 175, 150, 175, 160, 200, 185];
+$cap = $grid(fib_bars($capPath), ['max_ranges' => 2, 'lookback_bars' => 600]);
+$all = $grid(fib_bars($capPath), ['max_ranges' => 6, 'lookback_bars' => 600]);
+eq([count($cap['support']['ranges']), in_array('longest', array_merge(...array_column($cap['support']['ranges'], 'kinds')), true), $ends($cap['support'])],
+    [2, true, [$ends($all['support'])[0], 100.0]], '22.3(6): at most max_ranges ranges; the longest candle (100) stays in, in the last place (S15)');
+// 🟡3: התקרה סופרת רק טווחים שלא נפסלו — טווח שנפסל לא "תופס מקום"
+$capE2 = $grid(fib_bars([140, 100, 175, 120, 175, 150, 190, [199, 'body' => 9], 200, 191]), ['max_ranges' => 2]);
+eq([array_map(fn($r) => r2($r['end']), $capE2['support']['dropped']), count($capE2['support']['ranges'])], [[190.0], 2],
+    '22.3(6) after (7) (review 🟡3): a dropped range does not take a place under the cap — two valid ranges remain');
 
 // ── פער (S14) ────────────────────────────────────────────
 $gapC = fib_bars([140, 120, 160]);
@@ -161,6 +178,45 @@ unset($c);
 eq(array_filter($grid($hole)['support']['ranges'], fn($r) => in_array('gap', $r['kinds'], true)), [], 'criterion 6 (S14 [ours]): intraday, a gap over a time hole (session break) does not count');
 $daily = array_map(fn($c) => ['t' => 1_700_000_000 + intdiv($c['t'] - 1_700_000_000, 3600) * 86400] + $c, $hole);
 eq(count(array_filter($grid($daily)['support']['ranges'], fn($r) => in_array('gap', $r['kinds'], true))), 1, 'S14: on a daily frame, a gap over a weekend counts');
+// קריטריון 6 (ביקורת 🟡6): סוף שבוע של 48 שעות במט"ח ב-1h, ומקרה ב-4h — פער בין נרות רצופים נחשב, ומעל חור — לא
+$gaps = fn(array $c) => count(array_filter($grid($c)['support']['ranges'], fn($r) => in_array('gap', $r['kinds'], true)));
+$shift = function (array $c, int $from, int $by) { foreach ($c as $i => &$x) if ($i >= $from) $x['t'] += $by; unset($x); return $c; };
+$fx = $shift($gapC, $k, 48 * 3600);   // שישי 22:00 → ראשון 22:00 (UTC): 48 שעות בלי נרות
+eq([$gaps($gapC), $gaps($fx)], [1, 0], 'criterion 6: forex 1h — the same gap between consecutive candles counts; over a 48h weekend it does not');
+$h4 = fn(array $c) => array_map(fn($x) => ['t' => 1_700_006_400 + intdiv($x['t'] - 1_700_000_000, 3600) * 14400] + $x, $c);
+eq([$gaps($h4($gapC)), $gaps($shift($h4($gapC), $k, 48 * 3600))], [1, 0], 'criterion 6: on 4h — a gap between consecutive candles counts; over a 48h hole it does not');
+
+// ── ביקורת 🔴1: H = קצה הגוף הגבוה ביותר מנר הקיצון ועד נר האישור ─────────────
+// A: פתיל עד 210, גוף 199–199.5. B אחריו: פתיל נמוך יותר, גוף עד 200.2. לפני התיקון B "עבר" את A, ונפלנו לשיא ישן → start null
+$AB = fib_bars([140, 120, 175, 150, 199]);
+$tA = $AB[count($AB) - 1]['t'] + 3600;
+$AB[] = ['t' => $tA, 'o' => 199.0, 'h' => 210.0, 'l' => 198.5, 'c' => 199.5];
+$AB[] = ['t' => $tA + 3600, 'o' => 199.5, 'h' => 200.5, 'l' => 199.0, 'c' => 200.2];
+foreach (fib_bars([200.2, 185], $tA + 7200) as $c) $AB[] = $c;
+$ab = $grid($AB);
+eq([r2($ab['support']['start']['price'] ?? null), $ab['support']['start']['t'] ?? null, $ends($ab['support'])], [200.2, $tA + 3600, [150.0, 120.0]],
+    'review 🔴1: the wick picks candle A (210); H = the highest body from A to the confirming candle — B, 200.2 (not null)');
+// כמה נרות בלי צד (תמיכה / התנגדות) על 5,000 נרות השעה — לפני התיקון (נר הקיצון בלבד: בלי ct) ואחריו
+$empty = function (bool $withCt) use ($F, $P) {
+    $a = ts_ew_atr_init(); $z = ts_ew_zz_init(); $w = []; $piv = []; $g = null; $out = [0, 0, 0];
+    foreach ($F as $c) {
+        $a = ts_ew_atr_step($a, $c, (int)$P['atr_len']);
+        [$z, $pv] = ts_ew_zz_step($z, $c, $a['v'], (float)$P['pivot_atr_mult']);
+        if ($pv) $piv[] = ['type' => $pv['type'], 't' => $pv['t']] + ($withCt ? ['ct' => $pv['ct']] : []);
+        $w[] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $a['v']];
+        if (count($w) > $P['lookback_bars']) array_shift($w);
+        while ($piv && $piv[0]['t'] < $w[0]['t']) array_shift($piv);
+        if (!($g = ts_fib_grid($w, $piv, $P, $g))) continue;
+        $out[0]++;
+        if ($g['support']['start'] === null) $out[1]++;
+        if ($g['resistance']['start'] === null) $out[2]++;
+    }
+    return $out;
+};
+[$nb, $sb, $rb] = $empty(false);
+[$na, $sa, $ra] = $empty(true);
+echo "  ספירה (נרשמת ב-PR): נרות בלי צד תמיכה — לפני $sb, אחרי $sa; בלי צד התנגדות — לפני $rb, אחרי $ra (מתוך $na)\n";
+eq([$sa < $sb, $ra < $rb], [true, true], "review 🔴1: fewer candles with an empty side — support $sb → $sa, resistance $rb → $ra (of $na)");
 
 // ── קריטריון 9 + 22.6: אות ────────────────────────────────
 // התנגדות מעל: 280 ו-250 (לא נעברו) → אזור [199.66, 200]; תמיכה: 150 (נר חזק וארוך, +1) ו-120 → אזור [169.10, 169.44] בציון 3
@@ -181,8 +237,16 @@ eq($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_score' => 4])), []
 $noTarget = fib_bars([120, 175, 150, [155, 'body' => 5], 200, 185]);
 $noTarget[] = ['t' => $noTarget[count($noTarget) - 1]['t'] + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 169.3, 'c' => 175.0];
 eq($m->signals($noTarget, $PS), [], 'no resistance zone above → no target → no signal (before F-2)');
-// שורט — אותם נרות במראה (K − מחיר): אותו אות בכיוון ההפוך
 $K = 400.0;
+// ביקורת 🟡4: "בחזרה" — רק מלמעלה. הנר הקודם נסגר בתוך האזור (169.2), והנר הבא נוגע ונסגר מעליו — פריצה מלמטה, לא אות
+$below = array_slice($SIG, 0, -1);
+$t0 = $below[count($below) - 1]['t'];
+$below[] = ['t' => $t0 + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 169.15, 'c' => 169.2];
+$below[] = ['t' => $t0 + 7200, 'o' => 169.2, 'h' => 175.5, 'l' => 169.0, 'c' => 175.0];
+eq($m->signals($below, $PS), [], 'review 🟡4: the previous candle closed inside the zone → a breakout from below, not a bounce → no signal');
+$belowM = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $below);
+eq($m->signals($belowM, $PS), [], 'review 🟡4 (short, mirror): the same from above → no signal');
+// שורט — אותם נרות במראה (K − מחיר): אותו אות בכיוון ההפוך
 $MIR = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $SIG);
 $sm = $m->signals($MIR, $PS);
 eq([count($sm), $sm[0]['side'] ?? null, r2($sm[0]['entry'] ?? 0), r2($sm[0]['zone'] ?? []), r2($sm[0]['target'] ?? 0), round($sm[0]['stop'] ?? 0, 6), round($sm[0]['rr'] ?? 0, 6)],

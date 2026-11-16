@@ -28,7 +28,8 @@ function ts_fib_top(array $c): float { return max($c['o'], $c['c']); }
 function ts_fib_bot(array $c): float { return min($c['o'], $c['c']); }
 
 /**
- * הרשת על חלון. $win — [{t, o, h, l, c, a}] ממוין (a = ATR בנר, או null בחימום). $pivots — [{type: H|L, t}] שאושרו.
+ * הרשת על חלון. $win — [{t, o, h, l, c, a}] ממוין (a = ATR בנר, או null בחימום). $pivots — [{type: H|L, t, ct}] שאושרו
+ * (t — נר הקיצון, ct — נר האישור).
  * $p — הפרמטרים של השיטה (close_atr, strong_atr, max_ranges, zone_atr, zone_max_atr). $prev — הרשת של הנר הקודם:
  * צד שנקודת ההתחלה שלו לא השתנתה **נשאר נעול** (הכרעת הבקרה על 22.3(7), "ג" — ראו ts_fib_side).
  * מחזיר null כשאין ATR בנר האחרון (חימום). אחרת {atr, close, t, support, resistance}.
@@ -67,11 +68,15 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
         $sufBot[$i] = min($sufBot[$i + 1], ts_fib_bot($w[$i]));
     }
 
-    // 1. נקודת ההתחלה H: השיא המאושר האחרון שאף נר אחריו לא עבר אותו — בגוף (S29, S3, E4)
+    // 1. נקודת ההתחלה H: השיא המאושר האחרון שאף נר אחריו לא עבר אותו — בגוף (S29, S3, E4). ה-zigzag בוחר את נר הקיצון
+    // לפי הפתיל; H הוא קצה הגוף הגבוה ביותר **מנר הקיצון ועד נר האישור, כולל שניהם** (הבקרה, ביקורת #1662 🔴1) — אחרת נר
+    // סמוך עם גוף גבוה יותר ופתיל נמוך יותר "עובר" את H, ונופלים לשיא ישן.
     $iH = null;
     foreach (array_reverse($pivots) as $pv) {
         if ($pv['type'] !== 'H' || !isset($idx[$pv['t']])) continue;
         $i = $idx[$pv['t']];
+        $ic = $idx[$pv['ct'] ?? $pv['t']] ?? $i;
+        for ($j = $i + 1; $j <= $ic; $j++) if (ts_fib_top($w[$j]) > ts_fib_top($w[$i])) $i = $j;
         if ($sufTop[$i + 1] <= ts_fib_top($w[$i])) { $iH = $i; break; }
     }
     if ($iH === null || $iH === 0) return $out;
@@ -92,17 +97,19 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
 
     // 3. נקודות סיום מועמדות בתוך המהלך. מפתח — המחיר (אותו מחיר משני מקורות = נקודה אחת עם שני הסוגים)
     $cand = [];
-    $add = function (float $price, int $i, string $kind) use (&$cand, $H) {
+    // S17 / E3 — אחיד לכל סוג (ביקורת #1662 🟡2): נקודת סיום שגוף של נר אחריה, עד הנר האחרון (גם אחרי H), ירד מתחתיה —
+    // "נמחקה", ולא נכנסת. כך נשארות רק "מדרגות" שלא נשברו. אותו כלל ממשיך גם ברשת הנעולה
+    $add = function (float $price, int $i, string $kind) use (&$cand, $H, $sufBot) {
         if ($price >= $H - TS_FIB_EPS) return;   // טווח באורך 0 — אין
+        if ($sufBot[$i + 1] < $price - TS_FIB_EPS) return;
         $k = sprintf('%.10F', $price);
         $cand[$k] ??= ['price' => $price, 'i' => $i, 'kinds' => []];
         if (!in_array($kind, $cand[$k]['kinds'], true)) $cand[$k]['kinds'][] = $kind;
     };
-    // שפל שנמחק (S17, E3): נר כלשהו אחריו — עד הנר האחרון, גם אחרי H — ירד מתחתיו (בגוף). נשארות רק "מדרגות" שלא נשברו
-    $alive = fn(int $j) => $sufBot[$j + 1] >= ts_fib_bot($w[$j]);
+    // השפל הקיצוני של המהלך ושפלים מאושרים בתוכו (בתמיכה — שפל; בהתנגדות — שיא)
     $lows = [$i0];
     foreach ($pivots as $pv) if ($pv['type'] === 'L' && isset($idx[$pv['t']]) && $idx[$pv['t']] > $i0 && $idx[$pv['t']] < $iH) $lows[] = $idx[$pv['t']];
-    foreach ($lows as $j) if ($alive($j)) $add(ts_fib_bot($w[$j]), $j, 'pivot');   // בתמיכה — שפל; בהתנגדות — שיא
+    foreach ($lows as $j) $add(ts_fib_bot($w[$j]), $j, 'pivot');
     // פער אמיתי (S14): l[k+1] > h[k] — הקצה התחתון של הפער. [שלנו] במסגרת תוך-יומית, פער מעל "חור" בזמן (הפסקת מסחר בין
     // סשנים, סוף שבוע) — לא נחשב (S14, עמ' 105). המסגרת = המרווח הקטן ביותר בין נרות בחלון.
     $step = PHP_INT_MAX;
@@ -121,7 +128,6 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
         if ($w[$i]['a'] !== null && $body > 0 && $body >= $p['strong_atr'] * $w[$i]['a'] - TS_FIB_EPS) $add(ts_fib_bot($w[$i]), $i, 'strong');
     }
     $add(ts_fib_bot($w[$iL]), $iL, 'longest');
-    $longest = sprintf('%.10F', ts_fib_bot($w[$iL]));
 
     // 4. מהגבוהה (הקרובה ל-H) כלפי מטה (S18)
     $cand = array_values($cand);
@@ -130,22 +136,15 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
     $isLong = fn($x) => in_array('longest', $x['kinds'], true);
     $sel = [];
     foreach ($cand as $x) {
-        $prev = $sel ? $sel[count($sel) - 1] : null;
-        if ($prev !== null && $prev['price'] - $x['price'] < $p['close_atr'] * $atr - TS_FIB_EPS) {
-            if ($isLong($x) && !$isLong($prev)) $sel[count($sel) - 1] = $x;
+        $last = $sel ? $sel[count($sel) - 1] : null;
+        if ($last !== null && $last['price'] - $x['price'] < $p['close_atr'] * $atr - TS_FIB_EPS) {
+            if ($isLong($x) && !$isLong($last)) $sel[count($sel) - 1] = $x;
             continue;
         }
         $sel[] = $x;
     }
-    // 6. עד max_ranges [שלנו, פ5]; טווח הנר הארוך ביותר תמיד בפנים (S15) — במקום האחרון אם צריך
-    $max = (int)$p['max_ranges'];
-    if (count($sel) > $max) {
-        $keep = array_slice($sel, 0, $max);
-        if (!array_filter($keep, $isLong) && ($lx = array_values(array_filter($sel, $isLong)))) $keep[$max - 1] = $lx[0];
-        $sel = $keep;
-    }
 
-    // רמות: H − r × (H − E) (R1). 7. פסילה (S2, E2): רמה מעל הסגירה האחרונה — הטווח לא מזהה תמיכה
+    // רמות: H − r × (H − E) (R1). 7. פסילה (S2, E2): רמה מעל הסגירה של רגע הבנייה — הטווח לא מזהה תמיכה
     $close = $w[$n - 1]['c'];
     $back = fn(float $v) => $sign * $v;
     $out['start'] = ['price' => $back($H), 't' => $w[$iH]['t']];
@@ -159,6 +158,14 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?
         if (max(array_column($lv, 'price')) > $close + TS_FIB_EPS) { $out['dropped'][] = $range; continue; }
         $range['levels'] = array_map(fn($l) => ['r' => $l['r'], 'price' => $back($l['price'])], $lv);
         $out['ranges'][] = $range;
+    }
+    // 6. עד max_ranges [שלנו, פ5] — סופרים **רק טווחים שלא נפסלו** (ביקורת #1662 🟡3: התקרה לפני הפסילה חתכה טווחים עמוקים
+    // תקפים). טווח הנר הארוך ביותר תמיד בפנים (S15) — במקום האחרון אם צריך
+    $max = (int)$p['max_ranges'];
+    if (count($out['ranges']) > $max) {
+        $keep = array_slice($out['ranges'], 0, $max);
+        if (!array_filter($keep, $isLong) && ($lx = array_values(array_filter($out['ranges'], $isLong)))) $keep[$max - 1] = $lx[0];
+        $out['ranges'] = $keep;
     }
 
     [$out['zones'], $out['singles']] = ts_fib_zones($out['ranges'], $atr, $p);
@@ -208,7 +215,8 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     $buf = $p['stop_atr'] * $g['atr'];
     $long = null;
     foreach ($g['support']['zones'] as $z) {
-        if ($z['score'] < $p['min_score'] || !($c['l'] <= $z['hi'] && $c['c'] > $z['hi'])) continue;
+        // "בחזרה" — רק מלמעלה (ביקורת #1662 🟡4): גם הנר הקודם נסגר מעל האזור; אחרת זו פריצה מלמטה
+        if ($z['score'] < $p['min_score'] || !($g['close'] > $z['hi'] && $c['l'] <= $z['hi'] && $c['c'] > $z['hi'])) continue;
         if ($long === null || $z['hi'] > $long['hi']) $long = $z;   // [שלנו] כמה אזורים — הגבוה (הקרוב למחיר)
     }
     if ($long !== null) {
@@ -219,7 +227,7 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     }
     $short = null;
     foreach ($g['resistance']['zones'] as $z) {
-        if ($z['score'] < $p['min_score'] || !($c['h'] >= $z['lo'] && $c['c'] < $z['lo'])) continue;
+        if ($z['score'] < $p['min_score'] || !($g['close'] < $z['lo'] && $c['h'] >= $z['lo'] && $c['c'] < $z['lo'])) continue;
         if ($short === null || $z['lo'] < $short['lo']) $short = $z;
     }
     if ($short === null) return null;
@@ -258,7 +266,7 @@ function ts_fib_grid_of(array $candles, array $p): ?array
     foreach ($candles as $k => $c) {
         $a = ts_ew_atr_step($a, $c, (int)$p['atr_len']);
         [$z, $pv] = ts_ew_zz_step($z, $c, $a['v'], (float)$p['pivot_atr_mult']);
-        if ($pv) $piv[] = ['type' => $pv['type'], 't' => $pv['t']];
+        if ($pv) $piv[] = ['type' => $pv['type'], 't' => $pv['t'], 'ct' => $pv['ct']];
         $win[] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $a['v']];
         if (count($win) > $max) $win = array_slice($win, -$max);
         while ($piv && $piv[0]['t'] < $win[0]['t']) array_shift($piv);
