@@ -62,6 +62,12 @@ final class TsMethodFibonacci extends TsMethod
             'version' => 2 + $this->tune,   // + החלות (18.7). 2 — F-2: Z6 משנה ציון, ויעד חלופי משנה אותות
             'incremental' => true,
             'alerts' => true,         // 22.1
+            // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            'learn' => [
+                'score' => 'ציון האזור (כולל Z6)',
+                'zone_atr' => 'רוחב האזור ב-ATR (בנר שלפני האות)',
+                'rr' => 'יחס סיכוי-סיכון באות',
+            ],
         ];
     }
 
@@ -101,10 +107,13 @@ final class TsMethodFibonacci extends TsMethod
         }
         // האות — מהרשת של הנר הקודם (נרות ≤ c − 1), לפני שהנר הזה נכנס
         $sig = $s['g'] !== null ? ts_fib_signal($s['g'], $c, $p) : null;
+        $atr = $s['g']['atr'] ?? null;   // ה-ATR של הרשת שהאות נבדק מולה — ל-features
         $s = ts_fib_advance($s, $c, $p);
 
         if ($sig === null) return [$s, null];
         $s['x'] = $sig + ['ago' => 0, 'alive' => true];
+        // meta().learn — לא נכנס למצב (x נקבע לפני)
+        $sig['features'] = ['score' => $sig['score'], 'zone_atr' => $atr ? ($sig['zone'][1] - $sig['zone'][0]) / $atr : null, 'rr' => $sig['rr']];
         return [$s, $sig];
     }
 

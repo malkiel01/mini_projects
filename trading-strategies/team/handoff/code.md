@@ -398,6 +398,11 @@
   (label). לא נוגעות ברשת. בכרטיס: שדה `info` (`lib/analysis.php` מעביר, `card.js` מציג, `data-info`).
 - אם `conditions()` של שיטה אחרת תרצה מידע שאינו תנאי — אותו `info`.
 
+## פיבונאצ'י — למידה (פרק 23.3, L1)
+
+- `meta().learn` — `score` (ציון האזור, כולל Z6), `zone_atr` (רוחב האזור ב-ATR של הרשת שהאות נבדק מולה), `rr`. האות מצרף
+  `features` אחרי ש-`x` נקבע — לא נכנס למצב. `fibonacci-api.php` בודק: שורה לכל עסקה, features, בלי כפילות בהרצה חוזרת.
+
 ## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
 
 - **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
