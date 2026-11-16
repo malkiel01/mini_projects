@@ -98,7 +98,7 @@ final class TsMethodFibonacci extends TsMethod
         if (count($s['w']) > $max) $s['w'] = array_slice($s['w'], -$max);
         $from = $s['w'][0]['t'];
         while ($s['piv'] && $s['piv'][0]['t'] < $from) array_shift($s['piv']);
-        $s['g'] = ts_fib_grid($s['w'], $s['piv'], $p);
+        $s['g'] = ts_fib_grid($s['w'], $s['piv'], $p, $s['g']);   // צד שנקודת ההתחלה שלו לא זזה — נעול (22.3(7), "ג")
 
         if ($sig === null) return [$s, null];
         $s['x'] = $sig + ['ago' => 0, 'alive' => true];

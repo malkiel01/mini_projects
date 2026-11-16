@@ -27,7 +27,7 @@ register_shutdown_function(function () use ($srv, $tmp) {
 });
 for ($i = 0; $i < 50 && !@fsockopen('127.0.0.1', $port); $i++) usleep(100_000);
 $jar = []; $tokens = [];
-$NOW = 1794094200 - 70 * 3600;   // בנתוני wave יש כאן אזור חפיפה ורמות בודדות בשעה (ב-1794094200 עצמו — אין)
+$NOW = 1794094200 - 100 * 3600;   // בנתוני wave יש כאן אזור חפיפה ורמות בודדות בשעה (ב-1794094200 עצמו — אין)
 function call(string $as, string $action, ?array $body = null, array $query = []): array
 {
     global $port, $jar, $tokens, $NOW;

@@ -29,28 +29,34 @@ function ts_fib_bot(array $c): float { return min($c['o'], $c['c']); }
 
 /**
  * הרשת על חלון. $win — [{t, o, h, l, c, a}] ממוין (a = ATR בנר, או null בחימום). $pivots — [{type: H|L, t}] שאושרו.
- * $p — הפרמטרים של השיטה (close_atr, strong_atr, max_ranges, zone_atr, zone_max_atr).
+ * $p — הפרמטרים של השיטה (close_atr, strong_atr, max_ranges, zone_atr, zone_max_atr). $prev — הרשת של הנר הקודם:
+ * צד שנקודת ההתחלה שלו לא השתנתה **נשאר נעול** (הכרעת הבקרה על 22.3(7), "ג" — ראו ts_fib_side).
  * מחזיר null כשאין ATR בנר האחרון (חימום). אחרת {atr, close, t, support, resistance}.
  */
-function ts_fib_grid(array $win, array $pivots, array $p): ?array
+function ts_fib_grid(array $win, array $pivots, array $p, ?array $prev = null): ?array
 {
     $n = count($win);
     if ($n < 2 || ($atr = $win[$n - 1]['a'] ?? null) === null) return null;
     $mirror = array_map(fn($c) => ['t' => $c['t'], 'o' => -$c['o'], 'h' => -$c['l'], 'l' => -$c['h'], 'c' => -$c['c'], 'a' => $c['a']], $win);
     $flip = array_map(fn($x) => ['type' => $x['type'] === 'H' ? 'L' : 'H'] + $x, $pivots);
     return ['atr' => (float)$atr, 'close' => (float)$win[$n - 1]['c'], 't' => $win[$n - 1]['t'],
-        'support' => ts_fib_side($win, $pivots, $p, (float)$atr, 1),
-        'resistance' => ts_fib_side($mirror, $flip, $p, (float)$atr, -1)];
+        'support' => ts_fib_side($win, $pivots, $p, (float)$atr, 1, $prev['support'] ?? null),
+        'resistance' => ts_fib_side($mirror, $flip, $p, (float)$atr, -1, $prev['resistance'] ?? null)];
 }
 
 /**
  * צד אחד בכיוון "תמיכה" (מהשיא למטה). $sign = 1 — תמיכה; −1 — התנגדות (הנרות כבר במראה, והמחירים בפלט חוזרים × −1).
  * הסעיפים — 22.3 (1–8) ו-22.4.
+ *
+ * **נעילה (הבקרה, הכרעה "ג" על 22.3(7); E2 עמ' 144 — "הסגירה הנוכחית" היא של רגע הבנייה):** הצד נבנה כשנקודת ההתחלה
+ * נקבעת, והפסילה נבדקת רק אז, מול הסגירה של אותו נר (built_t). כל עוד נקודת ההתחלה לא השתנתה ($prev עם אותו start), הצד
+ * נשאר כמו שנבנה, וטווח יוצא ממנו רק לפי S17: גוף של נר **אחרי הבנייה** ירד מתחת לנקודת הסיום שלו. האזורים מחושבים מחדש
+ * מהטווחים שנשארו, עם ה-ATR של הבנייה. בלי זה אזור תמיכה נעלם לפני שהמחיר מגיע אליו (רמת ה-38.2 עוברת מעל הסגירה).
  */
-function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign): array
+function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign, ?array $prev = null): array
 {
     $n = count($w);
-    $out = ['start' => null, 'ranges' => [], 'dropped' => [], 'zones' => [], 'singles' => []];
+    $out = ['start' => null, 'built_t' => null, 'atr' => null, 'ranges' => [], 'dropped' => [], 'zones' => [], 'singles' => []];
     $idx = [];
     foreach ($w as $i => $c) $idx[$c['t']] = $i;
     // הגוף הגבוה ביותר אחרי כל נר, והנמוך ביותר אחריו (לבדיקת "לא עבר" ו"נמחק") — O(n)
@@ -70,6 +76,15 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign): 
     }
     if ($iH === null || $iH === 0) return $out;
     $H = ts_fib_top($w[$iH]);
+
+    // נעול: אותה נקודת התחלה — אותם טווחים, פחות מה שנשבר אחרי הבנייה (S17)
+    if ($prev !== null && $prev['start'] !== null && $prev['start']['t'] === $w[$iH]['t'] && abs($sign * $prev['start']['price'] - $H) <= TS_FIB_EPS
+        && isset($idx[$prev['built_t']])) {
+        $after = $sufBot[$idx[$prev['built_t']] + 1];
+        $kept = array_values(array_filter($prev['ranges'], fn($r) => $after >= $sign * $r['end'] - TS_FIB_EPS));
+        [$zones, $singles] = ts_fib_zones($kept, (float)$prev['atr'], $p);
+        return ['ranges' => $kept, 'zones' => $zones, 'singles' => $singles] + $prev;
+    }
 
     // 2. המהלך: מהשפל הנמוך ביותר (בגוף) בחלון שלפני H, ועד H
     $i0 = 0;
@@ -134,6 +149,8 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign): 
     $close = $w[$n - 1]['c'];
     $back = fn(float $v) => $sign * $v;
     $out['start'] = ['price' => $back($H), 't' => $w[$iH]['t']];
+    $out['built_t'] = $w[$n - 1]['t'];
+    $out['atr'] = $atr;
     $id = 0;
     foreach ($sel as $x) {
         $lv = array_map(fn($r) => ['r' => $r, 'price' => $H - $r * ($H - $x['price'])], TS_FIB_RATIOS);
@@ -144,9 +161,18 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign): 
         $out['ranges'][] = $range;
     }
 
-    // 22.4 אזורי החפיפה — על כל הרמות של הטווחים שנשארו
+    [$out['zones'], $out['singles']] = ts_fib_zones($out['ranges'], $atr, $p);
+    return $out;
+}
+
+/**
+ * 22.4 — אזורי החפיפה מהטווחים (מחירים אמיתיים, אחרי המראה): [zones, singles], בסדר עולה במחיר.
+ */
+function ts_fib_zones(array $ranges, float $atr, array $p): array
+{
+    $zones = []; $singles = [];
     $levels = [];
-    foreach ($out['ranges'] as $rg) foreach ($rg['levels'] as $l) $levels[] = $l + ['range' => $rg['id']];
+    foreach ($ranges as $rg) foreach ($rg['levels'] as $l) $levels[] = $l + ['range' => $rg['id']];
     usort($levels, fn($a, $b) => $a['price'] <=> $b['price'] ?: $a['range'] <=> $b['range']);
     $groups = [];
     // [שלנו] ממוינות; רמה מצטרפת כשהיא עד zone_atr × ATR מהקודמת באזור, וכל עוד רוחב האזור עד zone_max_atr × ATR
@@ -156,25 +182,20 @@ function ts_fib_side(array $w, array $pivots, array $p, float $atr, int $sign): 
             && $l['price'] - $groups[$k][0]['price'] <= $p['zone_max_atr'] * $atr + TS_FIB_EPS;
         if ($joins) $groups[$k][] = $l; else $groups[] = [$l];
     }
-    $byId = array_column($out['ranges'], null, 'id');
+    $byId = array_column($ranges, null, 'id');
     foreach ($groups as $g) {
         // Z1: לפחות שתי רמות משני טווחים שונים בשני יחסים שונים
         $ok = false;
         foreach ($g as $a) foreach ($g as $b) if ($a['range'] !== $b['range'] && $a['r'] !== $b['r']) { $ok = true; break 2; }
-        if (!$ok) { foreach ($g as $l) $out['singles'][] = $l; continue; }
+        if (!$ok) { foreach ($g as $l) $singles[] = $l; continue; }
         $rids = array_values(array_unique(array_column($g, 'range')));
         // Z5 [שלנו — המשקלים]: מספר הרמות, ועוד 1 לכל טווח שמסתיים בפער / בנר חזק / בנר הארוך ביותר
         $bonus = count(array_filter($rids, fn($r) => array_intersect($byId[$r]['kinds'], ['gap', 'strong', 'longest'])));
         $prices = array_column($g, 'price');
-        $out['zones'][] = ['lo' => min($prices), 'hi' => max($prices), 'levels' => $g, 'ranges' => count($rids),
+        $zones[] = ['lo' => min($prices), 'hi' => max($prices), 'levels' => $g, 'ranges' => count($rids),
             'score' => count($g) + $bonus];
     }
-    if ($sign < 0) {
-        // במראה הסדר מתהפך — מחזירים לסדר עולה במחיר
-        $out['zones'] = array_reverse($out['zones']);
-        $out['singles'] = array_reverse($out['singles']);
-    }
-    return $out;
+    return [$zones, $singles];
 }
 
 /**
@@ -220,20 +241,28 @@ function ts_fib_levels(string $side, float $entry, float $stop, ?float $target, 
         'score' => $z['score'], 'rr' => $rr];
 }
 
-/** הרשת על נרות (לבדיקות ולגרף): ATR + zigzag מאותו מנוע, ואז החלון האחרון של lookback_bars */
+/**
+ * הרשת אחרי הנר האחרון (לבדיקות ולסט הקבוע) — אותה זרימה כמו ב-step: חלון נע של lookback_bars, והרשת של כל נר נבנית על
+ * של הקודם (נעילה). רק lookback_bars + 1 הנרות האחרונים מחושבים: נקודת ההתחלה תמיד בחלון, ולכן הרשת הנעולה נבנתה
+ * בתוכם — מוקדם יותר אין לה השפעה. התוצאה זהה לריצה של השיטה מנר 0 (tests/fibonacci.php בודק).
+ */
 function ts_fib_grid_of(array $candles, array $p): ?array
 {
     $a = ts_ew_atr_init();
     $z = ts_ew_zz_init();
     $win = [];
     $piv = [];
-    foreach ($candles as $c) {
+    $g = null;
+    $max = (int)$p['lookback_bars'];
+    $from = count($candles) - $max - 1;
+    foreach ($candles as $k => $c) {
         $a = ts_ew_atr_step($a, $c, (int)$p['atr_len']);
         [$z, $pv] = ts_ew_zz_step($z, $c, $a['v'], (float)$p['pivot_atr_mult']);
         if ($pv) $piv[] = ['type' => $pv['type'], 't' => $pv['t']];
         $win[] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $a['v']];
+        if (count($win) > $max) $win = array_slice($win, -$max);
+        while ($piv && $piv[0]['t'] < $win[0]['t']) array_shift($piv);
+        if ($k >= $from) $g = ts_fib_grid($win, $piv, $p, $g);
     }
-    $win = array_slice($win, -(int)$p['lookback_bars']);
-    $from = $win ? $win[0]['t'] : 0;
-    return ts_fib_grid($win, array_values(array_filter($piv, fn($x) => $x['t'] >= $from)), $p);
+    return $g;
 }

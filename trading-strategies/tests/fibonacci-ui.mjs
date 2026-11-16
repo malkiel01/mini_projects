@@ -2,7 +2,7 @@
 // node trading-strategies/tests/fibonacci-ui.mjs   (Playwright; ספקים מדומים, בלי רשת, שעון קבוע)
 // SHOTS=<תיקייה מחוץ לריפו> — צילומים (deviceScaleFactor 2) ברוחב 390.
 //
-// נתוני TS_KLINES_SHAPE=wave, 70 שעות לפני ה-NOW של שאר הבדיקות — שם יש בשעה אזור חפיפה ורמות בודדות (tests/fibonacci-api.php).
+// נתוני TS_KLINES_SHAPE=wave, 100 שעות לפני ה-NOW של שאר הבדיקות — שם יש בשעה אזור חפיפה ורמות בודדות (tests/fibonacci-api.php).
 // "מה צויר ובאיזה צבע" — מ-box.tsForecast().drawn: faint — רמה בודדת דהויה; extend — נמשך עד קצה הגרף.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
@@ -23,7 +23,7 @@ const BASE = `http://127.0.0.1:${port}/trading-strategies/`;
 for (let i = 0; i < 100; i++) { try { await fetch(BASE + 'api.php?action=me'); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
 const CHART = BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT');
 const SHOTS = process.env.SHOTS;
-const NOW = 1794094200 - 70 * 3600;
+const NOW = 1794094200 - 100 * 3600;
 const F = 'fibonacci';
 let fail = 0, n = 0;
 const eq = (got, want, what) => { n++; if (JSON.stringify(got) !== JSON.stringify(want)) { fail++; console.log(`✗ ${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); } };

@@ -73,6 +73,8 @@ eq([r2($both['support']['start']['price']), r2($both['resistance']['start']['pri
 $F = ts_bt_floats(json_decode(file_get_contents(__DIR__ . '/fixtures/backtest/candles-h1.json'), true));
 $windows = [$both, $g];
 foreach (range(400, count($F), 61) as $end) $windows[] = $grid(array_slice($F, 0, $end));
+// הסגירה ברגע הבנייה של כל צד (built_t) — הפסילה נבדקת מולה (הכרעה "ג")
+$closeAt = array_column([...$F, ...$EX, ...fib_bars([140, 100, 200, 160, 170])], 'c', 't');
 $dir = 0; $same = 0; $ratios = 0; $above = 0; $levelsN = 0; $math = 0; $bothSides = 0;
 foreach ($windows as $w) {
     if (!$w) continue;
@@ -86,7 +88,7 @@ foreach ($windows as $w) {
             $levelsN++;
             if (!in_array($l['r'], [0.382, 0.5, 0.618], true)) $ratios++;             // קריטריון 6
             if (abs($l['price'] - ($r['start'] - $l['r'] * ($r['start'] - $r['end']))) > 1e-9) $math++;
-            if ($d * ($l['price'] - $w['close']) > 1e-9) $above++;                    // קריטריון 5: תמיכה ≤ סגירה; התנגדות ≥ סגירה
+            if ($d * ($l['price'] - $closeAt[$w[$k]['built_t']]) > 1e-9) $above++;   // קריטריון 5: בבנייה — תמיכה ≤ סגירה; התנגדות ≥ סגירה
         }
         foreach ([...$w[$k]['zones'], ...array_map(fn($l) => ['levels' => [$l]], $w[$k]['singles'])] as $zz) foreach ($zz['levels'] as $l) {
             if (!in_array($l['r'], [0.382, 0.5, 0.618], true)) $ratios++;
@@ -94,7 +96,49 @@ foreach ($windows as $w) {
     }
 }
 eq([$dir, $same, $bothSides > 0], [0, 0, true], 'criterion 4: every support range starts at H and goes down, every resistance range starts at L and goes up — all from one point (' . count($windows) . ' windows)');
-eq([$above, $levelsN > 100], [0, true], "criterion 5: no kept support level above the last close, no resistance level below it ($levelsN levels)");
+eq([$above, $levelsN > 100], [0, true], "criterion 5: at build time no kept support level is above the close, no resistance level below it ($levelsN levels)");
+
+// ── 22.3(7) לפי הכרעת הבקרה ("ג"): הפסילה רק בבנייה; הרשת נעולה כל עוד H לא השתנה ──
+// (א) המחיר יורד אל האזור — האזור נשאר (בלי נעילה, ב-175 רמת ה-180.90 הייתה מעל הסגירה, והאזור היה נעלם)
+$down = $grid(fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 170]));
+eq([$down['close'], $ends($down['support']), r2([$down['support']['zones'][0]['lo'] ?? 0, $down['support']['zones'][0]['hi'] ?? 0]), $down['support']['zones'][0]['score'] ?? null],
+    [170.0, [150.0, 120.0], [169.1, 169.44], 2], 'lock: price falls to 170 — the zone [169.10, 169.44] stays, though 180.90 and 175 are now above the close');
+eq($down['support']['built_t'] < $down['t'], true, '… the side was built earlier (when H was set), not on this candle');
+// (ב) קוץ כניעה (E2): בזמן הבנייה כל רמות הטווח כבר מעל הסגירה — נפסל, ונשאר פסול
+$build = array_search($down['support']['built_t'], array_column(fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 170]), 't'), true);
+$atBuild = fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 170])[$build]['c'];
+eq([array_map(fn($r) => r2($r['end']), $down['support']['dropped']), $atBuild < 200 - 0.382 * 4], [[196.0], true],
+    'E2: the 200→196 range (levels 198.47 / 198 / 197.53) was above the close at build (' . $atBuild . ') → dropped, and stays dropped');
+// (ג) S17 אחרי הבנייה: גוף מתחת לנקודת הסיום של טווח — הטווח יוצא מהרשת הנעולה
+$broke = $grid(fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 149, 160]));
+eq([r2($broke['support']['start']['price']), $ends($broke['support'])], [200.0, [120.0]], 'lock + S17: a body below 150 after the build removes 200→150; 200→120 stays');
+// H חדש → בנייה מחדש
+$newH = $grid(fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 185, 210, 195]));
+eq([r2($newH['support']['start']['price']), $newH['support']['built_t'] > $g['support']['built_t']], [210.0, true], 'a new H → the side is rebuilt');
+// grid_of (מ-lookback_bars + 1 הנרות האחרונים) = הרשת של השיטה שרצה מנר 0
+$same = 0;
+foreach ([900, 2600, 4999] as $end) {
+    $st = $m->init($P);
+    foreach (array_slice($F, 0, $end) as $c) [$st] = $m->step($st, $c, $P);
+    if (json_encode($st['g']) === json_encode($grid(array_slice($F, 0, $end)))) $same++;
+}
+eq($same, 3, 'ts_fib_grid_of = the grid of the method run from bar 0 (3 windows)');
+// ספירת האותות על 5,000 נרות השעה — נרשמת ב-PR
+$cnt = fn(array $o) => count($m->signals($F, $m->params($o)));
+$counts = [$cnt([]), $cnt(['min_score' => 2, 'min_rr' => 1]), $cnt(['pivot_atr_mult' => 2, 'min_score' => 2, 'min_rr' => 1])];
+// בברירות המחדל: כמה פעמים נר נגע באזור תמיכה בציון ≥ 3 ונסגר מעליו, ולכמה מהן אין אזור התנגדות מעל (יעד — 22.6, לפני F-2)
+$st = $m->init($P); $touch = 0; $noTarget = 0;
+foreach ($F as $c) {
+    foreach ($st['g']['support']['zones'] ?? [] as $zz) if ($zz['score'] >= $P['min_score'] && $c['l'] <= $zz['hi'] && $c['c'] > $zz['hi']) {
+        $touch++;
+        if (!array_filter($st['g']['resistance']['zones'], fn($r) => $r['lo'] > $c['c'])) $noTarget++;
+    }
+    [$st] = $m->step($st, $c, $P);
+}
+echo "  ספירה (נרשמת ב-PR): נגיעות באזור בציון ≥ 3 בברירות המחדל — $touch, מהן בלי יעד — $noTarget\n";
+eq($touch > 0, true, "defaults: zones survive the approach — $touch touches of a zone with score ≥ 3 ($noTarget of them with no resistance zone above)");
+echo '  ספירה (נרשמת ב-PR): אותות — ' . implode(' / ', $counts) . "\n";
+eq([$counts[1] > 0, $counts[2] > 0], [true, true], 'signals on 5,000 h1 candles after the lock: defaults ' . $counts[0] . ', min_score 2 + min_rr 1 → ' . $counts[1] . ', + sensitivity 2 → ' . $counts[2]);
 eq([$ratios, $math], [0, 0], 'criterion 6: only 38.2 / 50 / 61.8 — in ranges, zones and singles; level = start − r × (start − end)');
 
 // ── 22.3 (5, 6): נקודות קרובות, ותקרה ──────────────────────
