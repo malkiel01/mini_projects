@@ -6,7 +6,14 @@
 
 declare(strict_types=1);
 
-final class ApiError extends RuntimeException {}
+final class ApiError extends RuntimeException
+{
+    /** $extra — שדות נוספים בתשובה, למשל {"need_confirm": true} */
+    public function __construct(string $message, int $code = 400, public readonly array $extra = [])
+    {
+        parent::__construct($message, $code);
+    }
+}
 
 const GP_AUDIENCES = ['il' => 'תושבי ישראל', 'abroad' => 'תושבי חו"ל'];
 const GP_KINDS = ['section', 'subsection', 'heading', 'item', 'fee', 'note'];
@@ -65,6 +72,15 @@ function gp_migrations(): array
         2 => function (PDO $pdo) {
             // נתוני ההתחלה — רק כשאין מחירונים (פריסה חוזרת, או מסד שכבר נערך, לא נוגעת)
             if ((int)$pdo->query('SELECT COUNT(*) FROM editions')->fetchColumn() === 0) gp_seed($pdo);
+        },
+        3 => function (PDO $pdo) {
+            // פרוסה 02: לכל שורה pid משלה (ל-API). מוסיפה עמודה וממלאת — לא מוחקת ולא טוענת מחדש.
+            $cols = array_column($pdo->query('PRAGMA table_info(rows)')->fetchAll(), 'name');
+            if (!in_array('pid', $cols, true)) $pdo->exec('ALTER TABLE rows ADD COLUMN pid TEXT');
+            $up = $pdo->prepare('UPDATE rows SET pid = ? WHERE id = ?');
+            foreach ($pdo->query('SELECT id FROM rows WHERE pid IS NULL')->fetchAll(PDO::FETCH_COLUMN) as $id) $up->execute([gp_pid(), $id]);
+            $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS rows_pid ON rows(pid);
+                        CREATE INDEX IF NOT EXISTS audit_edition ON audit(edition_id)');
         },
     ];
 }
