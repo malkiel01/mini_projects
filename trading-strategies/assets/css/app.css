@@ -333,8 +333,17 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 
 /* T1 — חלונית הסבר על נקודת תחזית (18.1.6): צפה מעל הגרף, ✕ בפינה, וזנב שמצביע על הנקודה — מעליה או מתחתיה (charttip.js).
    המיקום (left/top, --tail-x) — בפיקסלים מהגאומטריה של הגרף, ולכן פיזי ולא לוגי */
-.ctip { position: absolute; z-index: 5; inline-size: 280px; background: var(--surface); color: var(--ink); border: 1px solid var(--line);
-    border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); font-size: .85rem; line-height: 1.35; text-align: start; }
+/* חצי שקופה (בקשת הבעלים): הגרף נראה מתחתיה, והטשטוש שומר על הקריאות — גם במצב כהה */
+.ctip { position: absolute; z-index: 5; inline-size: 280px; color: var(--ink); border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 82%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); font-size: .85rem; line-height: 1.35; text-align: start;
+    touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.ctip[data-dragged] { box-shadow: 0 12px 32px rgba(10, 15, 30, .28); }
+.ctip.scrolls { touch-action: pan-y; cursor: auto; }
+.ctip.scrolls .ctip-head { touch-action: none; cursor: grab; }
+.ctip a, .ctip button { cursor: pointer; }
+/* ידית — רמז שאפשר לגרור */
+.ctip-grip { position: absolute; top: 3px; left: 50%; inline-size: 28px; block-size: 3px; margin-left: -14px; border-radius: 2px; background: var(--line); }
 .ctip-body { display: grid; gap: 3px; padding: 8px 12px 8px; overflow: auto; border-radius: inherit; }
 .ctip-head { display: flex; align-items: flex-start; gap: var(--s2); }
 .ctip-title { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; padding-top: 2px; }
@@ -344,6 +353,8 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .ctip-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .ctip-tag { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; font-size: .75rem; font-weight: 600;
     color: var(--mc, var(--brand)); background: color-mix(in srgb, var(--mc, var(--brand)) 14%, var(--surface)); }
+/* שורת הוודאות של השיטה (כמו בכרטיס): "ודאות 62% · ראשונית" — ליד התווית */
+.ctip-cert { font-size: .8rem; color: var(--ink); }
 .ctip-tag.danger { color: var(--danger); background: var(--danger-soft); }
 .ctip-text { color: var(--ink); }
 .ctip-inv { font-size: .8rem; color: var(--muted); }
@@ -353,8 +364,16 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
     color: var(--brand); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
 .ctip-links a:hover, .ctip-more:hover { text-decoration: underline; }
 .ctip-note { color: var(--muted); font-size: .7rem; }
-.ctip-tail { position: absolute; left: calc(var(--tail-x, 50%) - 6px); inline-size: 12px; block-size: 12px; background: var(--surface);
+.ctip-tail { position: absolute; left: calc(var(--tail-x, 50%) - 6px); inline-size: 12px; block-size: 12px; background: color-mix(in srgb, var(--surface) 82%, transparent);
     border: 1px solid var(--line); transform: rotate(45deg); pointer-events: none; }   /* הזנב לא תופס מגע — הנקודה שמתחתיו נשארת לחיצה */
+.ctip[data-dragged] .ctip-tail { display: none; }
+/* נגררה — קו עם ראש חץ מהחלונית אל הנקודה, וטבעת על הנקודה (charttip.js, placeDragged) */
+.ctip-pin { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.ctip-line { position: absolute; block-size: 2px; margin-top: -1px; transform-origin: 0 50%; background: var(--mc, var(--brand)); }
+.ctip-line::after { content: ''; position: absolute; right: -10px; top: -5px; border: 6px solid transparent; border-right-width: 0;
+    border-left: 11px solid var(--mc, var(--brand)); }
+.ctip-dot { position: absolute; inline-size: 14px; block-size: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    border: 2px solid var(--mc, var(--brand)); background: color-mix(in srgb, var(--surface) 60%, transparent); box-shadow: 0 0 0 2px var(--surface); }
 .ctip[data-side="above"] .ctip-tail { bottom: -7px; border-top-color: transparent; border-left-color: transparent; }
 .ctip[data-side="below"] .ctip-tail { top: -7px; border-bottom-color: transparent; border-right-color: transparent; }
 
@@ -397,6 +416,8 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .fc-leg:focus-visible { outline: 2px solid var(--mc); outline-offset: 1px; }
 .fc-leg.off { color: var(--muted); text-decoration: line-through; }
 .fc-leg.off .fc-dot { background: transparent; box-shadow: inset 0 0 0 2px var(--mc); }
+/* "אין תחזית" — לשיטה הפעילה אין כרגע מה לצייר (ה-title מסביר) */
+.fc-leg-none { color: var(--muted); font-size: 1.2em; line-height: 1; font-weight: 600; margin-inline-start: -2px; }
 .chart-wrap.fs .fc-legend { top: calc(56px + env(safe-area-inset-top)); }
 
 /* ⛶ מסך מלא (18.1.2 סעיף 3): רק הגרף, גם לרוחב. Fullscreen API או שכבה — אותו מראה */
@@ -417,6 +438,12 @@ body.chart-fs { overflow: hidden; }
 .chart-wrap.fs.fs-turn { inset: auto; top: 0; left: 0; width: var(--fs-w); height: var(--fs-h); padding: 0;
     transform-origin: 0 0; transform: translateX(var(--fs-h)) rotate(90deg); }
 .chart-wrap.fs.fs-turn .chart-box { touch-action: none; }
+/* "↺" — ציר המחיר לרגיל (gestures.js), רק אחרי גרירה בשתי אצבעות לגובה או צביטה אנכית */
+.chart-reset { position: absolute; z-index: 3; top: 8px; left: 8px; min-width: 36px; min-height: 36px; padding: 0 10px; font: inherit; font-size: 1.05rem;
+    color: var(--ink); background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); border-radius: 99px;
+    box-shadow: var(--shadow); cursor: pointer; }
+.chart-reset[hidden] { display: none; }
+.chart-reset:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }

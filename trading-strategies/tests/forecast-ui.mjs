@@ -96,6 +96,36 @@ try {
   eq(await o.evaluate(() => document.documentElement.dir), 'rtl', 'RTL');
   await shot(o, 'forecast-on');
 
+  // ── הדמיית המשך (בקשת הבעלים): נרות-רפאים מהנר האחרון, ארוכים מהתרחיש, בעוצמה לפי הוודאות, עם תווית קבועה ──
+  await panel.locator('.an-sec.prob').waitFor();
+  await o.waitForFunction(() => !/מריץ/.test(document.querySelector('.an-sec.prob')?.textContent || ''), null, { timeout: 30000 });
+  const st0 = await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast());
+  const sim = st0.sim.find(x => x.m === 'sample-ma-cross');
+  const sec = 3600;
+  eq([!!sim, sim?.label, sim?.bars >= 8], [true, true, true], `a continuation is drawn (${sim?.bars} ghost candles), with its label`);
+  eq(sim && sim.end >= sim.scenEnd + Math.floor((sim.scenEnd - sim.start + sec) / sec * 0.5) * sec - sec, true,
+    'the continuation is longer than the scenario — another 50% of its length after its end');
+  const labels = await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsLabels().map(r => r.text));
+  eq(labels.includes('הדמיית המשך · לא תחזית'), true, 'the fixed label "הדמיית המשך" / "לא תחזית" (two short lines) is on the chart');
+  // בקשת הבעלים: התוויות שעל הגרף קצרות — כל שורה עד 3 מילים, בלי "לפי כללי השיטה"
+  eq(labels.filter(t => t.split(' · ').some(l => l.trim().split(/\s+/).length > 3) || /לפי כללי השיטה/.test(t)), [], `every chart label line is short (${labels.join(' | ')})`);
+  const al = await o.evaluate(async () => { const m = await import('./assets/js/forecast.js'); return [m.simAlpha(0), m.simAlpha(50), m.simAlpha(90), m.simAlpha(100), m.simAlpha(null)]; });
+  eq(al, [0.15, 0.45, 0.69, 0.75, 0.28], 'strength by certainty: 15% at 0, up to 75% at 100; not backtested — faint (28%)');
+  // הוודאות של הכרטיס (בפס, "ודאות N%") — אותה ודאות קובעת את העוצמה
+  const pc = /ודאות\s*(\d+)%/.exec(await panel.locator('.an-sec.prob').textContent())?.[1];
+  const simNow = (await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast().sim)).find(x => x.m === 'sample-ma-cross');
+  eq([simNow?.certainty ?? null, simNow?.alpha], pc ? [+pc, al[0] + 0.6 * +pc / 100 >= 0 ? +(0.15 + 0.6 * +pc / 100).toFixed(3) : null] : [null, 0.28],
+    `the strength follows the card's certainty (${pc ?? 'none'}%) → ${simNow?.alpha}`);
+  eq(st0.methods[0].items, (await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast().methods[0].items)), 'the continuation does not change the finding or the scenario');
+  await shot(o, 'forecast-sim');
+  // "הסתר תרחיש" — גם ההמשך נעלם; "הצג תרחיש" — חוזר
+  await panel.getByRole('button', { name: 'הסתר תרחיש' }).click();
+  await o.waitForTimeout(200);
+  eq((await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast().sim)).length, 0, '"הסתר תרחיש" hides the continuation too');
+  await panel.getByRole('button', { name: 'הצג תרחיש' }).click();
+  await o.waitForTimeout(200);
+  eq((await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast().sim)).length, 1, '"הצג תרחיש" brings it back');
+
   // ── שינוי טווח: הנרות והתרחיש באותה בקשה (18.3) ──
   reqs.length = 0;
   // שבוע: השעון של הדפדפן והשרת קבועים לאותו NOW (open), כך שהטווח לא תלוי בתאריך שבו הבדיקה רצה

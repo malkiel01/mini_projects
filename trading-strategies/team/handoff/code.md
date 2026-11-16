@@ -657,3 +657,43 @@
 - **מיגרציה הבאה ב-`app.sqlite` — 22.**
 - **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
   `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
+
+## הדמיית המשך (בקשת הבעלים, 2026-11-16)
+- **`forecast.js`:** `simOf(id)` (ב-`paint`, נשמר ב-`sims`) → `drawSim` (ב-`draw`, לפני התוויות). `simAlpha` ו-`SIM_LABEL` מיוצאים.
+- **החוזה:** משתמש רק ב-`forecast.scenarios[].points` — כל שיטה שמחזירה תרחיש עם נקודות מקבלת המשך, בלי קוד נוסף.
+- **התצוגה זזה ימינה** פעם אחת לכל צירוף שיטות + נר אחרון (`lastSimKey`), עד רבע מרוחבה — `scrollToRealTime` לא סופר נקודות ריקות.
+  - **בתוך `requestAnimationFrame` כפול.** `fitContent()` של Lightweight Charts מוחל במסגרת הבאה: `getVisibleLogicalRange()` מיד אחריו
+    מחזיר את הטווח הישן, ו-`setVisibleLogicalRange` דורס את ה-fit (הגרף נשאר על ~60 נרות). מי שמגדיר טווח אחרי `fitContent` — לחכות.
+- **האורך לפי מה שנטען** (`getTimes().length`), לא לפי התצוגה — אותה סיבה: התצוגה ברגע הציור תלויה בתזמון.
+- **`text(..., force)`** — תווית שמצוירת גם כשהיא חופפת. רק ל"הדמיית המשך — לא תחזית".
+## תנועות מגע על הגרף (gestures.js) — מה נבנה
+
+- `mountGestures({ chart, series: candle, box })` ב-`viewChart`. הספרייה: `vertTouchDrag: false`, `pinch: false`; הצביטה שלנו (capture על `box`, שתי אצבעות).
+- **ציר הנרות הוא `candle.priceScale()`**. `chart.priceScale('right')` לא משפיע על הנרות (שני הצירים מוסתרים, ו-`priceScaleId` של הסדרה ריק) — מי שמשנה שוליים/מצב לציר המחיר: דרך הסדרה.
+- `box.tsHeights()` לבדיקות: גובה הנרות הנראים, גובה הנפח, `k`, והאם האינדיקטורים על אותו ציר.
+- **בדיקת מגע:** CDP `Input.dispatchTouchEvent` עם `id` לכל אצבע; גלילת הדף נמדדת כסכום `scrollY` ו-`scrollTop` של האבות. אחרי כל תנועה ~1.5 ש' (קינטי).
+- **עדכון (גלילה בגרף, בקרה 9):** אצבע אחת — הספרייה (`horzTouchDrag`); שתי אצבעות — `gestures.js`: צביטה, או גרירה לגובה
+  שמזיזה את ציר המחיר (לרוחב — כלום). ההזזה — `autoscaleInfoProvider` על הנרות והאינדיקטורים; **סדרה חדשה על ציר המחיר צריכה
+  לקבל אותו `provider`** (`shifted` ב-`mountGestures`), אחרת היא לא תזוז עם הנרות. `.chart-reset` ("↺") בתוך `box`.
+  **הקפאה:** אחרי כיווץ/גרירה לגובה הטווח של כל סדרה מוקפא (`frozen`) עד "↺" או `gest.reset()` (נקרא ב-`load` במצבים open/change/manual).
+
+## תוויות קצרות וודאות בחלונית (בקשות הבעלים, 2026-11-16)
+- **`shortLabel(it)`** (forecast.js, מיוצא) — מה שמופיע על הגרף. שיטה שרוצה ניסוח משלה — שדה `label` בפריט (עד 3 מילים). הטקסט
+  המלא נשאר ב-`text`, ומוצג בחלונית כהסבר כשאין `tip.explain`.
+- **`text(ctx, s, …)`** — `s` מחרוזת או מערך שורות; `r.text` בלוח התוויות — השורות מחוברות ב-" · ". תוויות רמה: [ביטוי, מחיר].
+- **`certLine(card)`** — שורת הוודאות היחידה (כרטיס מקופל, חלונית). לא לשכפל את הכלל.
+- **למה הוודאות לא ב-`tip` בשרת:** תוצאת השיטה (`method_results`) נשמרת במטמון בלי "נבדקה לאחור" במפתח (18.3) — ודאות בתוכה הייתה
+  מתיישנת. הכרטיס (`an.cards`) מגיע באותה תשובה של `chart_refresh`.
+
+## "∅ אין תחזית" במקרא (בקרה 9)
+- `nothingOf(id)` ב-`forecast.js` — לפי מה שהשרת החזיר (לא לפי מה שהמשתמש הסתיר). שיטה חדשה שמציירת משהו שלא דרך `overlay.items` /
+  `forecast.items` — לעדכן את `nothingOf`, אחרת יופיע ∅ ליד ציור קיים.
+- בדיקה: `tests/legend-none-ui.mjs` — `page.route` על `chart_refresh` מרוקן את התשובה של אליוט (ואפשר עם `note`).
+
+## היסטוריה בפעימות (בקרה 9)
+- **`cache.sqlite` — גרסה 6:** `history` + `history_coverage`. **מיגרציה הבאה ל-`cache.sqlite` — 7.**
+- `ts_market_candles` — החלק שמעבר ל-60 יום נקרא מ-`history` ונמשך רק על החסר (קודם נמשך מחדש בכל בקשה). `ts_coverage_merge($key, $table)`.
+- `ts_market_history` / `market_history` — מנה של 999 (אחד פחות מ-`max_per_call`: מנה מלאה בדיוק = עוד עמוד ריק ב-Binance).
+- `market.js`: `older` (הנרות מהפעימות) נשמר ב-`load('auto'|'pick')`; `histReset` ב-open/change/manual. `box.tsHistory()` לבדיקות.
+- הפעימות רק אחרי נגיעה בגרף (`hist.user`), חוץ מטווח ארוך מ-5,000 (`hist.target`). הזמנים ב-`performance.now()` — בבדיקות השעון קבוע.
+- **fixture של Binance:** `TS_KLINES_SINCE` (אין נרות לפני), `TS_KLINES_429_FILE` (קובץ דגל → 429).
