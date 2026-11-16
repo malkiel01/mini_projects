@@ -127,5 +127,12 @@
       "session": "session_018g4NYGqhdYWYDScrU8eZxq",
       "done": "עד 2.24 (#1626), מסירה ב-log/spec.md (3800d7b)"
     }
-  ]
+  ],
+  "code_ui": {
+    "session": "session_018g4NYFBXRXUgrtr3eQuDpT",
+    "slice": "מסך מלא לרוחב (בקשת הבעלים, אפיון 2.30)",
+    "model": "claude-opus-5-5",
+    "opened_by": "בקרה (7)",
+    "branch": "claude/trading-strategies-chart-landscape"
+  }
 }
