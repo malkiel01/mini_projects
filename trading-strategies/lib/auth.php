@@ -11,9 +11,9 @@
  *   - מנותקת / unknown: רק session שנפתח בכניסה של המצב המנותק (via = 'sso' / 'password'). session מהשער לא עובר.
  *     ההרשאה נבדקת שוב (grant_status) כל 5 דקות: false → ה-session נמחק; המעטפת לא עונה → נחסם (TsUnavailable).
  *
- * חשבון (20.1 ה'), בכל כניסה דרך הפלטפורמה: אותו sub → אליו; אחרת מייל מאומת + שורה באותו מייל בלי sub → מקשרים
- * (account_linked); שורה באותו מייל עם sub אחר → אין כניסה (account_conflict, TsConflict); אחרת — חשבון חדש.
- * אין מחיקה ואין שכפול. כל קישור וכל התנגשות נרשמים ב-admin_log.
+ * חשבון (20.1 ה', 2.23), בכל כניסה דרך הפלטפורמה: אותו sub → אליו; שורה באותו מייל עם sub אחר → אין כניסה
+ * (account_conflict ב-admin_log, TsConflict) — בלי קשר ל-email_verified; אחרת — חשבון חדש. אין מחיקה ואין שכפול.
+ * (אין שלב "קישור לשורה בלי sub": platform_sub הוא NOT NULL, ושורה כזו לא קיימת.)
  *
  * כניסה בסיסמה (20.1 ד'): רק כשמנותקת ו-login.password. password_hash; 5 שגיאות → נעילה לרבע שעה, לפי מייל ולפי IP;
  * אותה הודעה ל"אין משתמש" ול"סיסמה שגויה"; grant_status לפני שנפתח session.
@@ -73,7 +73,7 @@ function ts_user_for(array $id): array
     $now = time();
     $st = $db->prepare('SELECT id FROM users WHERE platform_sub = ?');
     $st->execute([$id['sub']]);
-    if (!$st->fetchColumn() && $id['email'] !== null) ts_user_link_by_email($id);
+    if (!$st->fetchColumn() && $id['email'] !== null) ts_user_conflict_check($id);
     $admin = $id['platform_admin'] === null ? null : ($id['platform_admin'] ? 1 : 0);
     $db->prepare('INSERT INTO users (platform_sub, display_name, email, created_at, last_login_at, platform_admin) VALUES (?, ?, ?, ?, ?, ?)
                   ON CONFLICT(platform_sub) DO UPDATE SET display_name = excluded.display_name,
@@ -85,25 +85,10 @@ function ts_user_for(array $id): array
     return $st->fetch();
 }
 
-/**
- * שלבים 2–3 של 20.1 ה' (אין שורה ל-sub הזה, ויש מייל).
- * 2. מייל מאומת, ושורה באותו מייל **בלי** platform_sub → מקשרים אותה. (היום platform_sub הוא NOT NULL — אין שורות כאלה;
- *    השלב מוכן ליום שיהיו.)
- * 3. שורה באותו מייל עם sub אחר → לא מאחדים: TsConflict.
- */
-function ts_user_link_by_email(array $id): void
+/** 20.1 ה' שלב 2: אין שורה ל-sub הזה, ויש שורה באותו מייל עם sub אחר → לא מאחדים: TsConflict. */
+function ts_user_conflict_check(array $id): void
 {
-    $db = ts_db();
-    if ($id['email_verified']) {
-        $st = $db->prepare('SELECT id FROM users WHERE platform_sub IS NULL AND lower(email) = ? ORDER BY id LIMIT 1');
-        $st->execute([$id['email']]);
-        if ($row = $st->fetchColumn()) {
-            $db->prepare('UPDATE users SET platform_sub = ? WHERE id = ? AND platform_sub IS NULL')->execute([$id['sub'], $row]);
-            ts_auth_log((int)$row, 'account_linked', 'sub ' . $id['sub']);
-            return;
-        }
-    }
-    $st = $db->prepare('SELECT id, platform_sub FROM users WHERE platform_sub IS NOT NULL AND platform_sub <> ? AND lower(email) = ? LIMIT 1');
+    $st = ts_db()->prepare('SELECT id, platform_sub FROM users WHERE platform_sub <> ? AND lower(email) = ? LIMIT 1');
     $st->execute([$id['sub'], $id['email']]);
     if ($row = $st->fetch()) {
         ts_auth_log((int)$row['id'], 'account_conflict', 'sub ' . $id['sub'] . ' ≠ ' . $row['platform_sub']);

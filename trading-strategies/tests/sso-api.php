@@ -215,7 +215,7 @@ $g = [];
 [$code] = req($g, 'me', [], null, 'alice', 'connected');
 eq([$code, isset($g['ts_session'])], [200, true], 'gate session');
 [$code] = req($g, 'me', [], null, 'none', 'detached');
-eq($code, 401, 'gate session is not a detached login');
+eq($code, 401, 'ק11: gate session does not continue when detached');
 // מחוברת, ואין זהות → ה-session של הכניסה המאוחדת נמחק (יציאה מהפלטפורמה = יציאה מכאן)
 $x = [];
 login($x, ['sub' => '202', 'email' => 'x@test.local', 'name' => 'איקס']);
@@ -254,7 +254,7 @@ eq([$loc, isset($m['ts_session'])], ['/trading-strategies/#/login/conflict', fal
 eq((int)$pdo->query("SELECT COUNT(*) FROM admin_log WHERE action = 'account_conflict'")->fetchColumn(), 1, 'account_conflict logged');
 eq([(int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn(), $pdo->query("SELECT platform_sub FROM users WHERE lower(email) = 'carol@test.local'")->fetchColumn()],
     [$usersBefore, '103'], 'no new row, carol keeps her sub');
-// email_verified: false + אותו מייל עם sub אחר — עדיין התנגשות (לא איחוד)
+// email_verified: false + אותו מייל עם sub אחר — גם התנגשות (2.23, ק6)
 $m2 = [];
 eq(login($m2, ['sub' => '904', 'email' => 'carol@test.local', 'email_verified' => false]), '/trading-strategies/#/login/conflict', 'unverified email of another account → conflict');
 // מייל לא מאומת, בלי חשבון אחר → חשבון חדש
@@ -268,8 +268,6 @@ login($nm, ['sub' => '905', 'email' => null, 'name' => 'בלי מייל']);
 [$code, $me] = req($nm, 'me');
 eq([$code, $me['user']['display_name'] ?? null], [200, 'בלי מייל'], 'no email → new account');
 eq((int)$pdo->query('SELECT COUNT(*) FROM (SELECT platform_sub FROM users GROUP BY platform_sub HAVING COUNT(*) > 1)')->fetchColumn(), 0, 'platform_sub unique');
-eq((int)$pdo->query("SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'platform_sub' AND \"notnull\" = 1")->fetchColumn(), 1,
-    'platform_sub is NOT NULL — a row without sub cannot exist (20.1 ה\'.2 dormant)');
 // מחוברת: התנגשות מהשער → 403, ולא נפתח חשבון
 $gc = [];
 $pdo->exec("UPDATE users SET email = 'dave@test.local' WHERE platform_sub = '905'");
@@ -395,6 +393,15 @@ $ad = [];
 req($ad, 'me', [], null, 'alice', 'connected');
 [$code] = req($ad, 'admin_password_reset', [], ['user_id' => $bobId], 'alice', 'connected');
 eq($code, 403, 'reset: not by a regular user');
+// ק10: מנהל נוסף (app_roles), לא ראשי → 403
+$ow0 = [];
+req($ow0, 'me', [], null, 'owner', 'connected');
+$aliceId = (int)$pdo->query("SELECT id FROM users WHERE platform_sub = '101'")->fetchColumn();
+req($ow0, 'admin_role_add', [], ['user_id' => $aliceId], 'owner', 'connected');
+[, $mm] = req($ad, 'me', [], null, 'alice', 'connected');
+[$code] = req($ad, 'admin_password_reset', [], ['user_id' => $bobId], 'alice', 'connected');
+eq([$mm['is_admin'] ?? null, $code, $pdo->query("SELECT password_hash IS NOT NULL FROM users WHERE id = $bobId")->fetchColumn()], [true, 403, 1],
+    'reset: another admin (not primary) → 403, password kept');
 $ow = [];
 req($ow, 'me', [], null, 'owner', 'connected');
 [$code, $st] = req($ow, 'admin_state', [], null, 'owner', 'connected');
