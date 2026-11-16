@@ -8,6 +8,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/pdo.php';
+
 function ts_db_path(): string
 {
     return defined('TS_DB_PATH') ? TS_DB_PATH : dirname(__DIR__) . '/data/app.sqlite';
@@ -17,14 +19,8 @@ function ts_db(): PDO
 {
     static $db = null;
     if ($db) return $db;
-    $path = ts_db_path();
-    if (!is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
-    $db = new PDO('sqlite:' . $path, null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_STRINGIFY_FETCHES => false,
-    ]);
-    $db->exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;');
+    $db = ts_sqlite_open(ts_db_path(), [PDO::ATTR_STRINGIFY_FETCHES => false]);   // סוגר סמן אחרי שורה אחת (lib/pdo.php)
+    $db->exec('PRAGMA foreign_keys = ON;');
     ts_migrate($db);
     return $db;
 }
