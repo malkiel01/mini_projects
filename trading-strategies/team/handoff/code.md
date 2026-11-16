@@ -2,7 +2,11 @@
 
 > נכתב ב-2026-11-15 בסוף הצ'אט שבנה את 4א/5ב, S2, תיקון forecast-ui, 4א/5ג ו-S1 (#1585, #1586, #1591, #1592, #1595).
 > **עדכון 2026-11-15 (צ'אט S3):** S3 (#1598) ו-S1.1 בנויים — הסעיפים למטה. הבא בתור: **F1** (18.1.2, גרסה 2.16) — רק אחרי ש-S1.1 ממוזג.
-> הבא בתור: **S3 — רענון אוטומטי (18.3)**. קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
+> **עדכון 2026-11-15 (צ'אט F1):** F1 בנוי וממוזג (#1601) — הסעיף "F1 — מה נבנה" למטה.
+> **עדכון 2026-11-15 (צ'אט S1.2):** F1 (#1601) ו-S1.2 (#1603) ממוזגים — הסעיף בסוף. הבא בתור — לפי `team/board.md` (18.8: S4).
+> **עדכון 2026-11-16 (צ'אט S4):** S4 בנוי וממוזג (#1605) — הסעיף "S4 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S5).
+> **עדכון 2026-11-16 (צ'אט S5):** S5 בנוי וממוזג (#1608) — הסעיף "S5 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8).
+> ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
 
@@ -54,6 +58,113 @@
 - **אסור בתווית:** המילה "מול" והסימול המחובר. `tests/pairs-ui.mjs` בודק את זה בכל מסך (`rules()`), וגם ניגוד האייקון בבהיר ובכהה.
 - `setHead(title, sub, {docTitle})` — מקבל עכשיו אלמנט.
 
-## לקראת F1 — התוויות הירוקות בצילום של הבעלים
+## F1 — מה נבנה (#1601)
+
+- **🔮 = תפריט נפתח** (`.fc-pop` בתוך `.chart-wrap`, `forecast.js`): תיבות סימון, כמה שיטות יחד.
+  - הבחירה: `chosen = [{id, color}]`, ב-`localStorage` `ts-forecast-methods`.
+  - הצבע: הפנוי הראשון מ-`PALETTE` (`--brand`, `--m2`…`--m8` ב-`app.css`, בבהיר ובכהה).
+  - `methods()` מחזיר את כל המזהים. שיטה שחוזרת `unavailable` יוצאת מהבחירה בשקט.
+  - `state()` מחזיר עכשיו `{methods: [{id, color, selected, asOf, items}]}`, ולא `{methodId, …}`.
+- **ל-S5:** המקרא ובחירת הצבע עוד לא נבנו. לכל שיטה יש בלוק `.forecast-panel[data-method]` עם `--mc` (הצבע שלה) ו-`.fc-dot` — שם לבנות.
+- **שיטת קוד מהספר מופעלת בלי שורה** (`ts_method_on_by_default`).
+  - גם שיטות הבדיקה של `TS_TEST_METHODS` (`test-cross-a/b`) נחשבות "מהספר", ולכן מופעלות.
+  - בבדיקה שצריכה שיטה אחת, המנהל מכבה במפורש את השאר (ראו `journal-ui`, `analysis-ui`).
+- **הצירים בתוך הגרף** (`assets/js/chartaxis.js`):
+  - `rightPriceScale` ו-`timeScale` של הספרייה מוסתרים, והרשת שלה כבויה.
+  - `mountAxis` מצייר את המספרים, את הרשת ושבב לסמן.
+  - `fmtNum` — מפריד אלפים, בלי אפסים מיותרים.
+- **`labelBoard()`** — לוח תוויות משותף לשיטות ולשרטוטים.
+  - מי שמצייר ראשון גובר. ה-forecast נבנה ב-`viewChart` לפני ה-drawings, ולכן השיטות גוברות.
+  - מצייר חדש על הגרף: `board.begin(owner)` בתחילת כל ציור, ו-`board.place(rect)` לכל תווית.
+- **⛶ מסך מלא** — `fsEnter`/`fsLeave` ב-`viewChart`.
+  - `history.pushState({tsFs})` באותה כתובת.
+  - ה-Fullscreen API אסינכרוני; יציאה לפני שהבקשה הסתיימה כבר מטופלת.
+- **`logicalX`** (`drawings.js`) — להשתמש בו תמיד במקום `logicalToCoordinate` לאינדקס שבור (LWC 4 מחזיר 0).
+- **בבדיקות ממשק — מה זמין:**
+  - על `.chart-box:not(.osc)`: `box.tsLabels()` (מלבני התוויות) ו-`box.tsAxis()` (`{price, time}`).
+  - נתונים שבהם אליוט מוצאת ספירה: `TS_KLINES_SHAPE=wave` (סביב 82,000).
+  - במסך מלא — לחכות ש-`document.fullscreenElement` יתאפס (`fsGone` ב-`tests/chart-f1-ui.mjs`).
+  - יש שני `.chart-box` (גם `.osc`) — לבחור במפורש.
+- **פתוח:**
+  - קריטריון 9 (הסבר לכל תווית) — חלקי, עד המקרא של S5.
+  - ~~בטלפון הגרף יורד בשורה כשהניתוח נדלק~~ — תוקן ב-S4 (הבורר עבר לפס).
+  - שורת המשנה של כותרת הגרף נחתכת בטלפון ("…ce · ביטקוין ⇄ טתר").
+
+## לקראת F1 — התוויות הירוקות (נענה ב-#1601)
 
 ה"0.618 (75,979.99)" הירוקות והחופפות הן **שרטוטי פיבונאצ'י של המשתמש** (כלי ✏️ ← פיבו, `assets/js/drawings.js:118`): `${lv} (${fmtPrice(price)})`, בצבע שהמשתמש בחר (ירוק מ-`COLORS`), בצד השמאלי של השרטוט (`x1 + 3`). כמה שרטוטים על אותן נקודות → תוויות זו על זו. זה **לא** מאליוט. הבקרה ביקשה לרשום את התשובה ב-PR של F1.
+
+## S1.2 — בחירה מרשימה ולשוניות (18.1.3, 18.1.4, #1603)
+
+- **combobox** — `assets/js/combobox.js`:
+  - `mountCombo(ctx, {onPick, recent, label, name})` ו-`assetField(ctx, {value, labels, recent})` (שדה עם `.value` ואירוע `change`).
+  - הקטלוג (`api pairs`) נטען פעם אחת לדף. `invalidateCatalog()` — אחרי חיבור או ניתוק ספק (כבר מחובר ב-`market.js`).
+  - הספק נשאל רק כשהקטלוג המקומי לא ענה. **רכיב חדש שבוחר נכס — דרכו, לא `<input>` חופשי.**
+  - מסך "🧭 ניתוח" נמחק ב-S4. `assetPicker` נשאר — ההתראות משתמשות בו.
+- **לשוניות** — `lib/tabs.php`, `lib/tab-lists.php`:
+  - הפעולות `market_tabs`, `market_tabs_save`, `market_tab`.
+  - נשמר ב-`users.market_tabs` (מיגרציה 9). `ts_profile()['market_tabs']`.
+  - `ts_tabs_clean()` מכניס את "⭐ מועדפים" ראשונה תמיד.
+- **מחיר בשורה** — `ts_cached_quote($asset, $scope)`: מהמאגר בלבד, בלי ספק. S4/S5 יכולים להשתמש בו.
+- **תוויות** — `ts_pair_label` מחזיר תווית לנכס מהרשימות הקבועות (מניה, מדד, סחורה) גם בלי `asset_meta`.
+- **ציר המחירים** — `axis.priceWidth()`. תווית של קו אופקי נצמדת משמאל לו, ומתקצרת ב-"…" כשאין מקום (`forecast.js`, `text()`).
+- **הכותרת המשנית** — `setHead` עם אלמנט מוסיף ל-`#subtitle` את המחלקה `parts`. מה שצריך להישאר שלם — בתוך `.sub-tail`.
+- **בדיקות:**
+  - `tests/tabs-api.php`, `tests/market-tabs-ui.mjs`.
+  - מסך השוק כבר בלי `<form>`. בדיקה שנכנסת לשוק מחכה ל-`main [role="combobox"]`.
+  - `builder-api` בודק גרסת מסד ≥ 8.
+- **צילומים** — רק עם `SHOTS=<תיקייה מחוץ לריפו>`. `tests/shots/` ב-`.gitignore`.
+- **⚪ מהבקרה (#1603):** בהרצה רצופה של כל הבדיקות, `market-tabs-ui.mjs` נעצר פעם אחת בבדיקה 1 מתוך 38, ואחר כך עבר פעמיים. החתימה לא נשמרה. אם זה חוזר — להריץ לבד, ולבדוק את ההמתנה הראשונה (`combo(a).waitFor()`) מול זמן העלייה של `php -S`: הבדיקה ממתינה לשרת שנייה אחת קבועה.
+- **פתוח:** חלק מסימולי המדדים והסחורות של Twelve Data לא נבדקו מול הספק (פירוט ב-#1603). הרכב המדדים מתעדכן ידנית (ש5).
+
+## S4 — מה נבנה (18.4, #1605)
+
+- **השרת — ממצא ותרחיש בשדות נפרדים:** `ts_overlay_compute` → `overlay` (ממצא) + `forecast` ({as_of, bars, items, scenarios}).
+  - `ts_forecast_split` מחליט מה תרחיש (`ts_forecast_item`): זמן אחרי as_of, polyline מקווקו, או hline של `invalidation`. stop/target — ממצא.
+  - התרחיש נחתך ל-as_of (`ts_forecast_clip`); `projection` לא קיים יותר בממצא — התרחישים ב-`forecast.scenarios`.
+  - `TS_RESULT_FORMAT` (עכשיו 2) נכנס למפתח החישוב. **שינוי בצורת התוצאה = להעלות אותו**, אחרת המטמון מחזיר צורה ישנה.
+- **הכרטיס ב-`chart_refresh`:** `analysis` = {cards, blend, profile, account_size, decimals, last_t, disclaimer}.
+  - `ts_analysis_cards($uid, $asset, $tf, $prepared, $now, $runBt)` — הליבה המשותפת; `ts_analysis` = runBt true.
+  - `ts_backtest_stored` — בלי חישוב; `missing`, או השמורה עם `stale`.
+  - `ts_card_analyze` שומר את הניתוח ב-`method_results` (מפתח `card|…` + `computed_at` של הבדיקה לאחור). לא נספר ב-`method_runs`.
+  - `ts_method_key` עבר ל-`lib/analysis.php`.
+- **הבדיקה לאחור — רק בפעולה של המשתמש:** `market.js` → `runBacktest()` אחרי `load()` שאינו `auto`, כש-`forecast.needsBacktest()`. פעם אחת לכל (מסגרת, שיטות); "↻" מכריח.
+- **הדפדפן:**
+  - `assets/js/card.js` — `cardParts(ctx)`: `finding`, `probability`, `horizon`, `actions`, `blendCard`, `biasWord`.
+  - `forecast.js` — הפס: `.an-panel` → `.an-bar` (כותרת + `tools`: בורר הקצב ו"עודכן לפני"), `.an-tfs`, שקלול, ו-`.forecast-panel.analysis-card[data-method]` לכל שיטה עם `.an-sec.finding/.scenario/.prob`.
+  - `chosen` = `[{id, color, hide, fold}]` — "הסתר תרחיש" והקיפול נשמרים ב-`ts-forecast-methods`.
+  - `mountForecast` מקבל עכשיו `ctx, asset, pair, tools, tfs, setTf`; מחזיר גם `needsBacktest`, `backtesting`, `onAnalysis`.
+  - ~~ל-S5: המקרא ובחירת הצבע~~ — נבנו ב-S5 (#1608): הבחירה בתפריט, המקרא מעל הגרף.
+- **הוסר:** 🧭, `viewAnalysis`, הלשונית "ניתוח" (4 לשוניות), `method_overlay`/`ts_method_overlay`. `#/analysis/X` → `#/chart/X`; קישור ההתראות → `#/chart/`.
+- **בדיקות:**
+  - `tests/analysis-ui.mjs` — נכתב מחדש ל-S4 (נתוני `wave`, שעון קבוע). שם: הגרף לא זז כשהניתוח נדלק, רענון 30 שניות בלי `analysis`, קיפול, שקלול, כהה.
+  - `box.tsForecast()` על `.chart-box:not(.osc)` — `{methods: [{id, finding, scenario, hide, …}]}`.
+  - בדיקה שפותחת גרף עם שיטה: `localStorage ts-forecast-methods` + `sessionStorage ts-chart:<asset>` ({tf}) ואז reload; לחכות ש-`.an-sec.prob` בלי "מריץ בדיקה לאחור" (ראו `journal-ui`).
+  - בנתוני `wave` לשיטת הדוגמה אין אות פעיל — אין לה תרחיש. לתרחיש — אליוט.
+- **פתוח:** ⚪ `alerts-ui.mjs` ("mark all read — no badge") נכשל לפעמים בהרצה מקבילה של כל הבדיקות, גם ב-main לפני S4. לבד — עובר.
+
+## S5 — מה נבנה (18.5, #1608)
+
+- **השרת — צבע לכל שיטה בפרופיל:**
+  - `lib/method-colors.php`: `TS_METHOD_PALETTE` (= `PALETTE` ב-`forecast.js`), `ts_method_colors($uid)` (תמיד אובייקט — `{}` ב-JSON), `ts_method_colors_save`.
+  - `users.method_colors` — מיגרציה 10, ALTER בלבד. `ts_profile()['method_colors']`, ולכן גם ב-`me`.
+  - הפעולה `method_colors_save` {colors}. המפה נשמרת שלמה: צבע לשיטה אחת בלבד (422), רק מהפלטה, עד 8.
+- **הדפדפן (`forecast.js`):**
+  - **הפרופיל הוא האמת.** `reconcile()` בעלייה, `colorFor()` בסימון, `remember()` שולח רק כשהמפה השתנתה. צבע ששמור לשיטה אחרת (לא על הגרף) יורד ממנה.
+  - **בתפריט:** `.fc-row` = `.fc-opt` (התווית עם תיבת הסימון — כמו קודם) + `.fc-colors` (רדיו `name="fc-color-<id>"`, `value="--m5"`). תפוס — `disabled`.
+  - **המקרא:** `.fc-legend` / `.fc-leg[data-method]` — שכבה בראש `.chart-wrap`. רשום בלוח התוויות (`by: 'legend'`) לפני שהשיטות מציירות.
+  - **הסתרה במקרא:** `off` ב-`ts-forecast-methods`. `shown()` — מה שמצויר; `methods()` — עדיין כל המסומנות.
+  - **כל הציור בצבע השיטה** — גם רמות (היו אדום/ירוק לפי role) וגם סימונים על נרות. הכיוון — בצורת החץ.
+  - **כפתור הפס "הסתרה" → "הסרה"** (מבטל סימון).
+- **בדיקות:**
+  - `tests/method-colors-api.php`, `tests/method-colors-ui.mjs`.
+  - `box.tsForecast()` מחזיר עכשיו גם `drawn` ({m, k, c, alt} לכל ציור — כולל `marker` ו-`text`) ו-`colors` (המפה מהפרופיל).
+  - **נתונים שבהם גם לאליוט וגם לשיטת הדוגמה יש ציור:** `wave` עם `NOW = 1794094200 + 5 * 86400`. ב-NOW הרגיל לשיטת הדוגמה אין אות.
+  - **חלופות של אליוט** לא יוצאות בנתוני `wave`. הבדיקה מוסיפה חלופה לתשובה דרך `page.route`.
+- **מוסכמה חדשה — חובה בכל בדיקת UI שקוראת ל-`post()`:** לחכות ל-`main [role="combobox"]` ולא ל-`main`.
+  - אחרת `post()` קורא ל-`me` לפני שה-`me` של הדף חזר, ונפתחו שני sessions. הדף נשאר עם csrf ישן, וכל כתיבה מהדף מקבלת 403.
+  - עכשיו הגרף כותב (שמירת צבע), ולכן זה צץ.
+- **פתוח:**
+  - **⚪ `market-tabs-ui`** נכשלה פעם אחת בהרצה מקבילה (ההמתנה הראשונה ל-combobox), כמו ב-#1603. לבד — עוברת 2/2.
+  - **הפלטה** לא שונתה מ-F1. הניגוד ≥ 3:1 נבדק, אבל `--brand` ו-`--m8` (כחול ואפור-כחול) קרובים זה לזה בעין.
+

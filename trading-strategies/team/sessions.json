@@ -5,29 +5,64 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYGrqqR7BTByrKbVovy",
-    "slice": "4א/5ב כלל E ← S2 מטמון",
+    "session": "session_018g4NYCtoJQjiN4ojLGwKMh",
+    "slice": "S6 יומן של שיטה (18.6)",
     "model": "claude-opus-5-5"
   },
-  "control": "session_018g4NYCfKgd2Qi5hvnpDFRU",
+  "control": "session_018g4NYE6Q5mocKiUUxqKEyR",
   "tasks": null,
-  "clock": "trig_017QYqEf5rV1DHua7TQyyuvw (כל שעה בדקה 28, נוצר בידי מנהל הצוותים; הישן trig_011akd72ySr6xv8Et9sCqVmr כבוי)",
+  "clock": "trig_01BkHqJw3mPZG75puVqoh6rh (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (3); הקודם trig_017QYqEf5rV1DHua7TQyyuvw כבוי)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
       "done": "4א/4 אומת, #1581 שם, #1580 4א/5",
       "model": "claude-haiku-5-5 (טעות פתיחה) — רדום"
+    },
+    {
+      "session": "session_018g4NYGrqqR7BTByrKbVovy",
+      "done": "#1591, #1592, #1595 S1; handoff #1596",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYG7sBtHJh6uW5fLyxh",
+      "done": "#1598 S3, #1599 S1.1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCMUPJKcJaE5QK2TYs",
+      "done": "#1601 F1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCGcBnrLJ86NSM4bh1",
+      "done": "#1603 S1.2; handoff #1604",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYEqqFf5DTC33BEFxAS",
+      "done": "#1605 S4; handoff #1606",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYE8YZGBZvopSjFJYG7",
+      "done": "#1608 S5; handoff #1610",
+      "model": "claude-opus-5-5 — רדום"
     }
   ],
   "control_previous": [
     {
       "session": "session_018g4NYD5bBLt7vBTVv77Nbn",
       "done": "עד #1589, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYCfKgd2Qi5hvnpDFRU",
+      "done": "#1590–#1607, מסירה ב-STATE"
     }
   ],
   "code_delete": {
     "session": "session_018g4NYCQjLZtvssney3gT8G",
     "slice": "מחיקה לפי פרק 19.1",
-    "model": "claude-opus-5-5"
+    "model": "claude-opus-5-5",
+    "done": "#1590 מוזג — רדום"
   }
 }

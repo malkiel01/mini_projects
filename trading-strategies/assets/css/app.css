@@ -15,12 +15,15 @@
     --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
     --r: 10px; --tap: 40px; --head: 48px;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+    /* הצבעים של השיטות על הגרף (18.1.2, 18.5) — הראשונה --brand; בלי אדום וירוק של הנרות. = TS_METHOD_PALETTE */
+    --m2: #b5560f; --m3: #7a3fa0; --m4: #0f7c86; --m5: #a4206a; --m6: #5b6b00; --m7: #8a5a00; --m8: #4a5a7a;
 }
 @media (prefers-color-scheme: dark) {
     :root {
         --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
         --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
         --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+        --m2: #f0a15e; --m3: #c39be0; --m4: #5fc7cf; --m5: #f08cc4; --m6: #c2d468; --m7: #e5c07b; --m8: #aab8d6;
     }
 }
 
@@ -204,7 +207,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ניווט תחתון: ארבע לשוניות (אפיון פרק 2) */
 body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
     background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; text-decoration: none;
     color: var(--muted); font-size: .75rem; }
@@ -314,9 +317,64 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 /* גרף */
 .chart-tools { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .chart-tools .seg { max-width: 100%; }
-.chart-tools .toolbar { margin: 0; }
+.chart-tools .toolbar { margin: 0; flex-wrap: wrap; row-gap: 4px; }
+.chart-tools .toolbar .fs-open { margin-inline-start: auto; min-height: 36px; min-width: 36px; }
 .chart-tools select { width: auto; }
-.chart-wrap { display: grid; gap: 4px; margin-bottom: var(--s2); }
+.chart-wrap { position: relative; display: grid; gap: 4px; margin-bottom: var(--s2); }
+
+/* 🔮 התפריט הנפתח מעל הגרף (18.1.2, F1): תיבות סימון, כמה שיטות יחד. הגרף נשאר גלוי מתחתיו */
+.fc-pop { position: absolute; top: 8px; inset-inline-end: 8px; z-index: 4; inline-size: min(300px, 90%, calc(100% - 16px));
+    max-block-size: calc(100% - 16px); overflow: auto; display: grid; gap: 6px; padding: 10px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); }
+.fc-pop-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.fc-pop-head b { font-size: .9rem; }
+.fc-pop-head small, .fc-opt small { font-size: .75rem; }
+.fc-opts { display: grid; gap: 2px; }
+.fc-opt { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.fc-opt:hover { background: var(--brand-soft); }
+.fc-opt input { flex: none; inline-size: 20px; block-size: 20px; min-height: 0; accent-color: var(--brand); }
+.fc-opt.off { opacity: .55; cursor: default; }
+.fc-opt-tx { display: grid; min-width: 0; line-height: 1.25; }
+.fc-note { margin: 0; font-size: .75rem; color: var(--muted); }
+.fc-none { justify-self: start; color: var(--muted); background: var(--bg); }
+.fc-admin { font-size: .8rem; }
+.fc-dot { flex: none; inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--mc, var(--brand)); }
+
+/* S5 (18.5): הצבע של שיטה מסומנת — 8 עיגולים מתחת לשם. תפוס על ידי שיטה אחרת — עמום ומוצלב, לא ניתן לבחירה */
+.fc-row { display: grid; gap: 2px; }
+.fc-colors { display: flex; flex-wrap: wrap; gap: 0; padding: 0 6px 6px; padding-inline-start: 30px; }
+.fc-sw { position: relative; display: grid; place-items: center; inline-size: 30px; block-size: 30px; border-radius: 50%; cursor: pointer; }
+.fc-sw::before { content: ''; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--sw); }
+.fc-sw input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; min-height: 0; }
+.fc-sw:has(input:checked) { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--sw); }
+.fc-sw:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+.fc-sw.taken { cursor: not-allowed; opacity: .3; }
+.fc-sw.taken::after { content: ''; position: absolute; inline-size: 24px; block-size: 2px; background: var(--ink); transform: rotate(-45deg); }
+
+/* S5 (18.5): המקרא מעל הגרף — שם השיטה ונקודה בצבע שלה. לחיצה מסתירה/מציגה; הגרף לא זז (שכבה, לא שורה) */
+.fc-legend { position: absolute; top: 6px; inset-inline-end: 6px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px;
+    max-inline-size: calc(100% - 12px); pointer-events: none; }
+.fc-leg { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 2px 10px; font: inherit;
+    font-size: .78rem; color: var(--ink); background: color-mix(in srgb, var(--surface) 86%, transparent); border: 1px solid var(--line);
+    border-radius: 99px; cursor: pointer; }
+.fc-leg:focus-visible { outline: 2px solid var(--mc); outline-offset: 1px; }
+.fc-leg.off { color: var(--muted); text-decoration: line-through; }
+.fc-leg.off .fc-dot { background: transparent; box-shadow: inset 0 0 0 2px var(--mc); }
+.chart-wrap.fs .fc-legend { top: calc(56px + env(safe-area-inset-top)); }
+
+/* ⛶ מסך מלא (18.1.2 סעיף 3): רק הגרף, גם לרוחב. Fullscreen API או שכבה — אותו מראה */
+.fs-bar { display: none; }
+.chart-wrap.fs { position: fixed; inset: 0; z-index: 50; margin: 0; gap: 0; display: flex; flex-direction: column; background: var(--surface);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.chart-wrap.fs .chart-box { flex: 1 1 auto; block-size: auto; min-block-size: 0; border: 0; border-radius: 0; }
+.chart-wrap.fs .chart-box.osc { flex: 0 0 120px; border-top: 1px solid var(--line); }
+.chart-wrap.fs .fs-bar { position: absolute; z-index: 3; top: calc(8px + env(safe-area-inset-top)); inset-inline-end: calc(8px + env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 10px; background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--line); border-radius: 99px; box-shadow: var(--shadow); }
+.chart-wrap.fs .fs-bar .icon-btn { min-height: 36px; min-width: 36px; }
+.chart-wrap.fs .fc-pop { top: calc(56px + env(safe-area-inset-top)); }
+.fs-pair { font-size: .9rem; padding-inline: 4px; }
+body.chart-fs { overflow: hidden; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }
@@ -373,11 +431,34 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .use-tx small.wrap, .card .l2.wrap { white-space: normal; overflow: visible; }
 a.use-row { text-decoration: none; color: inherit; }
 
-/* ===== 🔮 תחזית שיטה (spec-stage-a 17.2.2) ===== */
+/* ===== 🔮 שיטות על הגרף והפס שמתחת (spec-stage-a 17.2.2, 18.1.2, 18.4) ===== */
+.forecast-list { display: grid; }
 .forecast-panel { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); background: var(--surface);
-    border: 1px solid var(--line); border-inline-start: 3px solid var(--brand); border-radius: var(--r); }
+    border: 1px solid var(--line); border-inline-start: 3px solid var(--mc, var(--brand)); border-radius: var(--r); }
 .forecast-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .forecast-head h3 { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; }
+/* ── הפס שמתחת לגרף (S4, 18.4): ממצא · תרחיש · הסתברות ── */
+.an-panel { gap: var(--s2); margin-bottom: var(--s2); }
+.an-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); min-width: 0; }
+.an-title { flex: 1 1 auto; margin: 0; font-size: .9rem; font-weight: 600; color: var(--muted); }
+.an-bar select { width: auto; flex: none; }
+.an-tfs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); font-size: .85rem; }
+.an-tfs .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.an-prof { font-size: .8rem; margin-inline-start: auto; }
+.forecast-blocks { display: grid; }
+.an-fold { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 4px 0; min-height: 40px; background: none; border: 0;
+    color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.an-fold h3 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; margin: 0; }
+.an-brief { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-chev { flex: none; color: var(--muted); }
+.an-body { display: grid; gap: var(--s2); min-width: 0; }
+.an-body[hidden] { display: none; }
+.an-sec { display: grid; gap: var(--s2); min-width: 0; padding-block-start: var(--s2); border-top: 1px solid var(--line); }
+.an-sec > h4 { margin: 0; font-size: .8rem; font-weight: 700; letter-spacing: .02em; color: var(--mc, var(--brand)); }
+.an-sec .summary { margin: 0; }
+.an-line { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.bt-none { font-weight: 600; }
+.blend-card { margin-bottom: var(--s2); }
 .forecast-scenarios { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .forecast-scenarios .btn { white-space: normal; text-align: start; }
 .forecast-scenarios .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
@@ -400,6 +481,8 @@ a.use-row { text-decoration: none; color: inherit; }
 .pair { display: inline-flex; flex-direction: column; min-width: 0; gap: 1px; }
 .pair-main { display: inline-flex; align-items: center; gap: .3em; unicode-bidi: isolate; white-space: nowrap; }
 .pair-main b { font-weight: 700; letter-spacing: .02em; }
+.pair-main[dir="ltr"] { direction: ltr; flex-direction: row; }
+.vs-title[dir="ltr"] { direction: ltr; text-align: right; unicode-bidi: isolate; }
 .pair-sub { display: inline-flex; align-items: center; gap: .3em; font-size: .8em; color: var(--muted); font-weight: 400; }
 svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-align: -.125em; }
 .pair-sub svg.vs { width: .9em; height: .9em; }
@@ -410,3 +493,58 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .chips label > .pair span, .chips label > .pair small { min-height: 0; padding: 0; border: 0; border-radius: 0; }
 .chips input:checked + .pair .pair-sub { color: inherit; opacity: .85; }
 .asset-pick label > .pair { align-items: flex-start; }
+
+/* ===== בחירה מרשימה — combobox (18.1.3): הרשימה מתחת לשדה, ברוחב שלו (בטלפון — ברוחב המסך), נגללת ===== */
+.combo { position: relative; margin-bottom: var(--s2); scroll-margin-top: 84px; }   /* מתחת לכותרת הדביקה */
+.combo > input { width: 100%; }
+.combo-pop { position: absolute; inset-inline: 0; top: calc(100% + 4px); z-index: 30; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .14); overflow-y: auto; overscroll-behavior: contain;
+    max-height: min(60vh, calc(var(--vvh, 100vh) - 160px)); }
+.combo-list { list-style: none; margin: 0; padding: 0; }
+.combo-opt { display: flex; align-items: center; gap: var(--s2); min-height: 52px; padding: 6px var(--s3); cursor: pointer; border-top: 1px solid var(--line); }
+.combo-opt:first-child { border-top: 0; }
+.combo-opt[aria-selected="true"], .combo-opt:hover { background: var(--brand-soft); }
+.combo-opt .t { margin-inline-start: auto; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.combo-msg { margin: 0; padding: var(--s3); color: var(--muted); text-align: center; }
+.combo-msg[hidden], .combo-list[hidden] { display: none; }
+
+/* ===== לשוניות במסך השוק (18.1.4): שורה אחת שנגללת לצדדים — לא עוטפת ===== */
+.mtabs-bar { display: flex; align-items: center; gap: var(--s1); margin-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.mtabs { display: flex; flex: 1; min-width: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.mtabs::-webkit-scrollbar { display: none; }
+.mtab { flex: none; min-height: var(--tap); padding: 0 var(--s3); border: 0; border-bottom: 2px solid transparent; background: none;
+    color: var(--muted); white-space: nowrap; font: inherit; font-size: .9rem; cursor: pointer; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; }
+.mtab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.mtab-add { color: var(--brand); }
+.mtab.dragging { background: var(--brand-soft); border-radius: var(--r) var(--r) 0 0; box-shadow: 0 2px 10px rgba(0, 0, 0, .15); cursor: grabbing; }
+.mtabs.dragging { overflow-x: hidden; touch-action: none; }
+.mtab-tools { justify-content: space-between; }
+.needs { background: var(--brand-soft); border-radius: var(--r); padding: var(--s2) var(--s3); margin: 0 0 var(--s2); font-size: .9rem; }
+
+/* שורה ברשימה: התווית, מחיר ושינוי יומי (מהמאגר), ⭐ */
+.mrow { cursor: default; gap: var(--s1); }
+.mrow > .body { display: block; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mrow .mq { flex: none; display: grid; justify-items: end; text-align: end; line-height: 1.2; }
+.mrow .mq .p { font-weight: 600; }
+.mrow .mq small { font-size: .78rem; }
+.mrow.locked .body, .mrow.locked .mq { opacity: .5; }
+.mrow .star { flex: none; }
+.chip-btn { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; font-size: .875rem; cursor: pointer; }
+.chip-btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+/* הכותרת המשנית של הגרף (🟡 F1): השמות בעברית מתקצרים, והספק ("Binance") נשאר שלם */
+#subtitle.parts { display: flex; align-items: center; gap: .3em; min-width: 0; }
+#subtitle.parts > .pair-sub { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#subtitle.parts > .sub-tail { flex: none; white-space: nowrap; }
+.asset-chosen { padding: 2px 0 6px; }
+
+/* ===== יומן השיטה (18.6, S6) ===== */
+.mj-row { align-items: flex-start; }
+.mj-row > .chip { margin-top: 2px; }
+.mj-scen { display: flex; flex-wrap: wrap; column-gap: var(--s2); row-gap: 0; color: var(--muted); font-size: .85rem; }
+.mj-scen > span { white-space: nowrap; }
+.mj-tools select { flex: 1 1 0; min-width: 0; max-width: none; min-height: 40px; font-size: 16px; }
+.mj-sum .mj-m { white-space: nowrap; max-inline-size: 9rem; overflow: hidden; text-overflow: ellipsis; }
+.mj-sum td.zone .pct { display: block; }
+.method-journal > .btn { justify-self: center; }

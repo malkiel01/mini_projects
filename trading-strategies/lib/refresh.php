@@ -7,6 +7,9 @@
  * מזהה וגרסת שיטה, פרמטרים). מפתח שכבר חושב — התוצאה השמורה חוזרת כמו שנשמרה (אותם בייטים), והשיטה לא רצה. נר פתוח
  * שזז לא משנה את המפתח, כי שיטות רצות על נרות סגורים (17.1.9(א)) — רק הנרות בתשובה מתעדכנים.
  *
+ * **הכרטיס (S4, 18.4)** חוזר באותה בקשה (`analysis`): כיוון, תנאים, רמות, שקלול, והבדיקה לאחור **השמורה** — הרענון לא
+ * מריץ בדיקה לאחור (18.3). הבדיקה עצמה רצה רק בפעולה של המשתמש, דרך `analysis` (lib/analysis.php).
+ *
  * "נבדקה לאחור" לא בתוך המפתח: הוא נקרא מחדש בכל בקשה (שאילתה קטנה), כי ניתוח שרץ בינתיים יכול לשנות אותו.
  * המונה (method_runs) מוצג במנהל ← 🗄️ מאגר — שם רואים ששיטה לא רצה בלי נר חדש.
  */
@@ -34,9 +37,10 @@ function ts_chart_refresh(int $uid, mixed $asset, mixed $tf, mixed $from, mixed 
     $out = [];
     $runs = 0;
     $reused = 0;
+    $prepared = [];
     foreach ($ids as $id) {
         try {
-            [$m, $set, $p] = ts_method_for($uid, $id);
+            [$m, $set, $p] = $prepared[$id] = ts_method_for($uid, $id);
         } catch (TsNotFound) {
             // שיטה שכובתה בינתיים — לא מפילה את הרענון של האחרות
             $out[$id] = ['status' => 'unavailable', 'message' => 'השיטה לא זמינה', 'overlay' => null];
@@ -52,17 +56,15 @@ function ts_chart_refresh(int $uid, mixed $asset, mixed $tf, mixed $from, mixed 
         $ran ? $runs++ : $reused++;
         $out[$id] = $res + ['backtested' => ts_overlay_backtested($uid, $m, (string)$asset, $tf)];
     }
-    return $r + ['methods' => (object)$out, 'runs' => $runs, 'reused' => $reused,
+    // הכרטיס (S4, 18.4) — באותה בקשה: הממצא עכשיו, והבדיקה לאחור **השמורה** בלבד. הרענון לא מריץ בדיקה לאחור (18.3)
+    $an = null;
+    if ($prepared) {
+        $an = ts_analysis_cards($uid, (string)$asset, $tf, $prepared, $now, false);
+        $r['provider_calls'] += $an['provider_calls'];
+        $an = array_intersect_key($an, array_flip(['cards', 'blend', 'profile', 'account_size', 'decimals', 'last_t', 'disclaimer']));
+    }
+    return $r + ['methods' => (object)$out, 'analysis' => $an, 'runs' => $runs, 'reused' => $reused,
         'as_of' => $rows ? end($rows)['t'] : null, 'refresh' => TS_REFRESH_EVERY];
-}
-
-/** מפתח החישוב (18.3) — כל מה שהתוצאה תלויה בו, ושום דבר אחר */
-function ts_method_key(TsMethod $m, array $p, string $asset, string $tf, string $scope, array $rows): string
-{
-    $meta = $m->meta();
-    ksort($p);
-    return hash('sha256', json_encode([$asset, $tf, $scope, $rows ? $rows[0]['t'] : null, $rows ? end($rows)['t'] : null, count($rows),
-        $meta['id'], $meta['version'], $p], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 
 /**
@@ -90,7 +92,10 @@ function ts_method_result(TsMethod $m, array $p, string $asset, string $tf, stri
         error_log('trading-strategies method_results: ' . $e->getMessage());
     }
     ts_method_count($id, true, $now);
-    return [json_decode($json, true), true];
+    $out = json_decode($json, true);
+    // יומן השיטה (18.6, S6): רק כאן — השיטה רצה באמת, כלומר נר סגור חדש. ה-UNIQUE בטבלה משאיר רשומה אחת לנר
+    ts_journal_analysis($m, $asset, $tf, $scope, $out, $now);
+    return [$out, true];
 }
 
 function ts_method_count(string $id, bool $ran, int $now): void

@@ -80,11 +80,20 @@ const forecastState = p => p.evaluate(() => ({
   pressed: document.querySelector('.forecast-scenarios button[aria-pressed="true"]')?.textContent || null,
 }));
 
+// 🔮 → התפריט מעל הגרף → סימון שיטה → סגירה ב-Esc (F1, 18.1.2: בלי sheet ובלי מסך אחר)
+async function pickMethod(p, name) {
+  await p.getByRole('button', { name: 'תחזית שיטה' }).first().click();
+  const pop = p.locator('.fc-pop');
+  await pop.locator('.fc-opt').first().waitFor();
+  await pop.locator('.fc-opt', { hasText: name }).locator('input').check();
+  await p.keyboard.press('Escape');
+}
+
 try {
   // ── המנהל מפעיל שיטת בדיקה (לא דוגמה — גם משתמש רגיל רואה אותה) ──
   const { p: o } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   eq(await o.evaluate(async () => {
     const me = await (await fetch('api.php?action=me')).json();
     return (await fetch('api.php?action=admin_method_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': me.csrf },
@@ -111,8 +120,7 @@ try {
 
   // ── בחירת שיטה → בקשה אחת, והרענון מתחיל ──
   reqs.length = 0;
-  await a.getByRole('button', { name: 'תחזית שיטה' }).click();
-  await a.locator('dialog[open]').getByRole('button', { name: /בדיקה א/ }).click();
+  await pickMethod(a, 'בדיקה א');
   const panel = a.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 30000 });
   await advance(a, 0);
@@ -194,7 +202,7 @@ try {
   eq(await a.evaluate(() => window.__noReload), 1, 'criterion 4: no page reload');
 
   // ── הסתרת התחזית → אין שיטה → הרענון נעצר ──
-  await panel.getByRole('button', { name: 'הסתרה' }).click();
+  await panel.getByRole('button', { name: 'הסרה', exact: true }).click();
   reqs.length = 0;
   await advance(a, 3 * MIN, MIN);
   eq([refreshes(reqs).length, await every.isHidden()], [0, true], 'method hidden → no auto refresh, no rate control');
@@ -204,8 +212,7 @@ try {
   eq(refreshes(reqs), [['chart_refresh', '']], 'criterion 6: "↻" still works');
 
   // ── עוזבים את הגרף → אין טיימר שנשאר ──
-  await a.getByRole('button', { name: 'תחזית שיטה' }).click();
-  await a.locator('dialog[open]').getByRole('button', { name: /בדיקה א/ }).click();
+  await pickMethod(a, 'בדיקה א');
   await panel.locator('.chips').waitFor({ timeout: 30000 });
   await shot(a, 'refresh-on');
   eq(await noHScroll(a), true, 'no horizontal scroll on a phone with the rate control and "עודכן לפני"');

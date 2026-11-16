@@ -43,8 +43,9 @@ const noHScroll = p => p.evaluate(() => document.scrollingElement.scrollWidth <=
 const shot = async (p, name) => { if (SHOTS) await p.screenshot({ path: join(SHOTS, name + '.png'), fullPage: true }); };
 const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint[aria-live]')?.textContent || ''), null, { timeout: 30000 });
 
-// 18.1.1: כל תווית זוג במסך — [טקסט הראשית, טקסט המשנית, כמה SVG בין הקודים, כיוון, הבסיס ראשון]
-const pairs = p => p.evaluate(() => [...document.querySelectorAll('.pair-main')].filter(m => m.querySelectorAll('b').length === 2).map(m => {
+// 18.1.1: כל תווית זוג גלויה במסך — [טקסט הראשית, טקסט המשנית, כמה SVG בין הקודים, כיוון, הבסיס ראשון]
+// (גלויה: בלי השורה של המסך המלא, שמוסתרת עד ⛶ — F1)
+const pairs = p => p.evaluate(() => [...document.querySelectorAll('.pair-main')].filter(m => m.querySelectorAll('b').length === 2 && m.getClientRects().length).map(m => {
   const bs = [...m.querySelectorAll('b')];
   const between = [...m.childNodes].slice([...m.childNodes].indexOf(bs[0]) + 1, [...m.childNodes].indexOf(bs[1]));
   const sub = m.parentElement?.querySelector(':scope > .pair-sub') || document.querySelector('#subtitle .pair-sub');
@@ -77,36 +78,35 @@ const iconContrast = p => p.evaluate(() => {
 
 try {
   const { p: a, reqs } = await open('alice');
-  // ── שני הצדדים: הקוד, ומתחתיו השם בעברית ──
+  // ── מסך השוק (S1.2 מחליף את שתי הרשימות): לשונית קריפטו — כל שורה בתווית של S1.1 ──
   await a.goto(BASE + '#/market');
-  await a.locator('input[name="pair-base"]').first().waitFor();
-  eq((await a.locator('input[name="pair-base"]:checked').evaluate(i => i.closest('label').innerText)).replace(/\s+/g, ' ').trim(), 'BTC ביטקוין', 'Bitcoin is the default first side: the code, and its Hebrew name below (18.1, 18.1.1)');
-  const head2 = a.locator('main h2.sec-title').nth(1);
-  eq([(await head2.innerText()).replace(/\s+/g, ' ').trim(), await head2.locator('svg.vs').count()], ['BTC ?', 1], 'the second list: "BTC ⇄ ?" — the icon, not the word');
+  await a.locator('main [role="combobox"]').waitFor();
+  await a.getByRole('tab', { name: '₿ קריפטו' }).click();
+  await a.locator('#mtab-panel .mrow').first().waitFor();
   const ps = await rules(a, 'market');
-  eq(ps.filter(x => !x.main.endsWith('?')).map(x => [x.main, x.sub]), [['BTC USD', 'ביטקוין דולר'], ['BTC USDT', 'ביטקוין טתר']], '"with what" — only pairs with a provider; USDC (Binance) shows as USD');
+  eq(ps.slice(0, 2).map(x => [x.main, x.sub]), [['BTC USDT', 'ביטקוין טתר'], ['ETH USDT', "את'ריום טתר"]], 'market rows: the code, and the Hebrew names below (18.1.1)');
   eq(await noHScroll(a), true, 'market screen: no horizontal scroll at 390px');
   eq(await iconContrast(a) >= 3, true, 'criterion 5: the icon is visible on the light theme (contrast ≥ 3:1)');
   await shot(a, 'pairs-market');
-
-  // בחירת צד ראשון אחר — הרשימה השנייה מתעדכנת
-  await a.locator('label').filter({ has: a.locator('input[value="USD"]') }).click();
-  eq((await head2.innerText()).replace(/\s+/g, ' ').trim(), 'USD ?', 'choosing "dollar" updates the second list');
+  // הרשימה של ה-combobox — אותה תווית
+  const cb = a.locator('main [role="combobox"]');
+  await cb.fill('דולר');
+  await a.locator('main [role="option"]').first().waitFor();
+  await rules(a, 'combobox');
   eq((await pairs(a)).some(x => x.main === 'USD ILS' && x.sub === 'דולר שקל'), true, 'USD ⇄ ILS is offered (ECB)');
 
-  // ── זוג בלי ספק — הודעה, בלי פנייה לספק; הזוג בהודעה — התווית עם האייקון ──
+  // ── זוג בלי ספק — "ביטקוין ין": אין פריט, אין פנייה לספק (✅28 — לא בונים זוג מחושב) ──
   reqs.length = 0;
-  await a.fill('input[name="q"]', 'ביטקוין מול ין');
-  await a.click('form button[type="submit"]');
-  const status = a.locator('main [role="status"]');
-  await status.waitFor();
-  eq([(await status.innerText()).replace(/\s+/g, ' ').trim(), await status.locator('svg.vs').count()], ['BTC JPY : אין ספק לזוג הזה', 1], 'no provider: a message with the pair label (icon), not the words');
-  eq(reqs.filter(x => ['market_search', 'market_candles', 'chart_refresh'].includes(x)), [], 'S1 criterion 3: no request that reaches a provider');
+  await cb.fill('ביטקוין ין');
+  await a.locator('main .combo-msg', { hasText: 'לא נמצא' }).waitFor({ timeout: 5000 });
+  eq(reqs.filter(x => ['market_candles', 'chart_refresh'].includes(x)), [], 'S1 criterion 3: no request for candles');
   eq(await a.locator('main .error').count(), 0, 'S1 criterion 3: not shown as an error');
 
-  // ── חיפוש בעברית — "דולר מול שקל" עדיין מובן, ופותח את הגרף ──
-  await a.fill('input[name="q"]', 'דולר מול שקל');
-  await a.click('form button[type="submit"]');
+  // ── "דולר שקל" מהרשימה פותח את הגרף ──
+  await cb.fill('דולר שקל');
+  await a.locator('main [role="option"]').first().waitFor();
+  await cb.press('ArrowDown');
+  await cb.press('Enter');
   await a.waitForURL(/#\/chart\//);
   await loaded(a);
   const title = await pairs(a);
@@ -116,31 +116,33 @@ try {
 
   // ── גרף BTC ⇄ USDT, ⭐ למעקב, ובחזרה לשוק ──
   await a.goto(BASE + '#/market');
-  await a.locator('label').filter({ has: a.locator('input[value="BTC"]') }).click();
-  await a.locator('main .list').first().locator('a.body').filter({ has: a.locator('b', { hasText: /^USDT$/ }) }).click();
+  await a.getByRole('tab', { name: '₿ קריפטו' }).click();
+  await a.locator('#mtab-panel .mrow').first().locator('button.body').click();
   await loaded(a);
   eq((await a.locator('#title').innerText()).replace(/\s+/g, ' ').trim(), 'BTC USDT', 'chart header from the catalog');
   await a.getByRole('button', { name: 'הוספה למעקב' }).click();
   await a.goto(BASE + '#/market');
-  await a.locator('main .list').last().locator('.card').first().waitFor();
-  eq((await a.locator('main .list').last().locator('.pair-main').first().innerText()).replace(/\s+/g, ' ').trim(), 'BTC USDT', 'the watchlist row: BTC ⇄ USDT');
+  await a.getByRole('tab', { name: '⭐ מועדפים' }).click();
+  await a.locator('#mtab-panel .mrow').first().waitFor();
+  eq((await a.locator('#mtab-panel .pair-main').first().innerText()).replace(/\s+/g, ' ').trim(), 'BTC USDT', 'the favorites row: BTC ⇄ USDT');
   await rules(a, 'market + watchlist');
 
-  // ── ניתוח: בחירת הנכס — כפתורים עם התווית (לא <select>, שאין בו אייקון) ──
-  await a.goto(BASE + '#/analysis');
-  await a.locator('[role="radiogroup"][aria-label="נכס"], main .empty').first().waitFor();
-  if (await a.locator('[role="radiogroup"][aria-label="נכס"]').count()) {
-    eq(await a.locator('select[aria-label="נכס"]').count(), 0, 'analysis: the asset picker is not a <select>');
-    await rules(a, 'analysis');
-  }
-  eq(SYMBOL.test(await visible(a)), false, 'S1 criterion 1: no symbol on the analysis screen');
+  // ── הפס שמתחת לגרף (S4): כרטיס הניתוח — הזוג בתווית, לא בסימול ──
+  await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
+  await loaded(a);
+  await a.evaluate(() => localStorage.setItem('ts-forecast-methods', JSON.stringify([{ id: 'elliott-w3', color: '--brand' }])));
+  await a.reload();
+  await loaded(a);
+  await a.locator('.analysis-card .an-sec.prob').waitFor({ timeout: 60000 });
+  await rules(a, 'analysis panel');
+  eq(SYMBOL.test(await visible(a)), false, 'S1 criterion 1: no symbol in the analysis panel under the chart');
 
   // ── התראה חדשה: אותה בחירה ──
   await a.goto(BASE + '#/alerts');
   await a.evaluate(() => sessionStorage.setItem('ts-alerts-tab', 'mine'));
   await a.reload();
   await a.getByRole('button', { name: '+ התראה' }).click();
-  await a.locator('dialog[open] [role="radiogroup"][aria-label="נכס"]').waitFor();
+  await a.locator('dialog[open] input[role="combobox"]').waitFor();
   await rules(a, 'new alert');
   await a.locator('dialog[open]').getByRole('button', { name: 'סגירה' }).click();
 

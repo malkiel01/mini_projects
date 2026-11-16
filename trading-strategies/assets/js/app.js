@@ -4,6 +4,8 @@ import * as D from './decimal.js';
 import { mountMarket } from './market.js';
 import { mountAnalysis } from './analysis.js';
 import { mountAlerts } from './alerts.js';
+import { mountCombo } from './combobox.js';
+import { mountMethodJournal } from './method-journal.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -143,6 +145,8 @@ const MARKET_SHORT = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מ�
 function setHead(title, sub = '', { back = false, actions = [], docTitle = null } = {}) {
   $('#title').replaceChildren(title instanceof Node ? title : String(title));
   $('#subtitle').replaceChildren(...[sub].flat().filter(x => x != null && x !== false));
+  // תווית זוג + ספק: השמות מתקצרים והספק נשאר שלם (🟡 F1 — "Binance" נחתך)
+  $('#subtitle').classList.toggle('parts', [sub].flat().some(x => x instanceof Node));
   if (title instanceof Node) title = docTitle || title.textContent;
   $('#back').hidden = !back;
   $('#head-actions').replaceChildren(...actions);
@@ -159,17 +163,17 @@ function setTab(tab) {
 const main = $('#main');
 function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); }
 
-// לשוניות: שוק · ניתוח · התראות · יומן · עוד (spec-stage-a 1).
+// לשוניות: שוק · התראות · יומן · עוד (spec-stage-a 1). "ניתוח" — בפס שמתחת לגרף, לא לשונית (S4, 18.4).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more', alerts: 'alerts' };
+  more: 'more', 'method-journal': 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
     h('a', { href: '#/' + k, class: 'seg-tab', 'aria-current': k === active ? 'page' : null }, l)));
 }
 
-let M = null, A = null, N = null;
+let M = null, A = null, N = null, J = null;
 async function route() {
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
@@ -183,10 +187,15 @@ async function route() {
     else if (name === 'stats') await viewStats();
     else if (name === 'more') await viewMore();
     else if (name === 'instruments') await viewInstruments();
+    else if (name === 'method-journal') await J.viewMethodJournal();
     else if (name === 'providers') await M.viewProviders();
     else if (name === 'admin') await M.viewAdmin();
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
-    else if (name === 'analysis') await A.viewAnalysis(id ? decodeURIComponent(id) : null);
+    else if (name === 'analysis') {
+      // מסך "🧭 ניתוח" הוסר (S4, 18.4): הכרטיס בפס שמתחת לגרף. כתובת ישנה (התראה, סימנייה) → הגרף של אותו נכס
+      history.replaceState(null, '', id ? '#/chart/' + id : '#/market');
+      return route();
+    }
     else if (name === 'profile') await A.viewProfile();
     else if (name === 'alerts') await N.viewAlerts();
     else await M.viewMarket();
@@ -702,6 +711,20 @@ async function editTrade(id = null, pre = {}) {
     onMarket(i.market);
   });
 
+  // בחירה מהשוק (combobox, 18.1.3 סעיף "איפה"): נכס מהרשימה ממלא נכס, שוק, מטבע ומכפיל — כמו "פתח עסקה" מכרטיס ניתוח
+  const fromMarket = t ? null : mountCombo({ h, api, pairLabel }, { label: 'נכס מהשוק', placeholder: 'מהשוק: ביטקוין, דולר, אפל…', name: 'trade-asset', onPick: async it => {
+    try {
+      const p = (await api('trade_prefill', null, { asset: it.asset })).prefill;
+      fld.symbol.value = p.symbol;
+      const r = marketSeg.querySelector(`input[value="${p.market}"]`);
+      if (r) r.checked = true;
+      fld.currency.value = p.currency;
+      fld.multiplier.value = p.multiplier ?? '';
+      fld.multiplier.dataset.touched = '1';
+      onMarket(p.market);
+    } catch (e) { toast(e.message, true); }
+  } });
+
   // אסטרטגיה + גרסה → צ'קליסט
   const sid0 = v.strategy_id ?? pre.strategy_id ?? '';
   const stratSel = select('strategy', [['', 'בלי אסטרטגיה'], ...strategies.filter(s => s.status !== 'archived' || s.id === sid0).map(s => [String(s.id), s.name])], sid0, { 'aria-label': 'אסטרטגיה' });
@@ -817,6 +840,7 @@ async function editTrade(id = null, pre = {}) {
   sh.body.append(datalist,
     result, fromAnalysis,
     group('בסיס', '',
+      fromMarket ? h('div', { class: 'f wide' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'בחירה מהשוק'), fromMarket.el) : null,
       h('div', { class: 'fields two' }, field('נכס', fld.symbol), field('מטבע', fld.currency)),
       h('div', { class: 'f' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'שוק'), marketSeg),
       optBox,
@@ -1063,6 +1087,8 @@ async function viewMore() {
         h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, מנהלים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      h('li', {}, h('a', { class: 'use-row', href: '#/method-journal' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📓'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'יומן השיטה'), h('small', {}, 'מה כל שיטה אמרה, ומה קרה אחר כך — לפי גרסה')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'נכסים שלי'), h('small', {}, 'שוק, מטבע ומכפיל לכל נכס — נבנה לבד מהעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=json', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⬇️'),
@@ -1125,10 +1151,11 @@ function editInstrument(i) {
     setMe: v => { ME = v; }, reload: () => route(),
     openTrade: pre => editTrade(null, pre) };
   N = mountAlerts(ctx);
+  J = mountMethodJournal(ctx);
   ctx.newAlert = N.newAlert;
   A = mountAnalysis(ctx);
   N.setBadge(ME.unread);
-  M = mountMarket({ ...ctx, adminMethods: A.adminMethods });
+  M = mountMarket({ ...ctx, adminMethods: A.adminMethods, journalView: J.view });
   M.setRoute(route);
   if (!location.hash) history.replaceState(null, '', '#/market');
   route();

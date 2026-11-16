@@ -24,6 +24,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/analysis.php';
 require_once __DIR__ . '/push.php';
+require_once __DIR__ . '/journal.php';
 
 const TS_ALERTS_PER_USER = 20;        // ✅7
 const TS_ALERTS_SYSTEM = 500;         // ✅7
@@ -240,7 +241,7 @@ function ts_alert_deliver(array $a, string $state, array $d, int $now): array
         $body = "לפי {$d['name']}, תנאי ה$side מתקיימים על $symbol (נר של $tfName). ודאות {$d['certainty']}% מהבדיקה לאחור — של השיטה על הנכס בעבר, לא של העסקה הבאה.";
     }
     $payload = ['title' => $title, 'body' => $body . ' ' . TS_ALERT_DISCLAIMER, 'asset' => $a['asset'], 'tf' => $a['tf'],
-        'kind' => $a['kind'], 'state' => $state, 'link' => '#/analysis/' . rawurlencode($a['asset'])] + array_intersect_key($d, ['certainty' => 1, 'price' => 1, 'level' => 1]);
+        'kind' => $a['kind'], 'state' => $state, 'link' => '#/chart/' . rawurlencode($a['asset'])] + array_intersect_key($d, ['certainty' => 1, 'price' => 1, 'level' => 1]);
     $delivered = ['inbox' => true];
     if (in_array('push', $prof['alert_channels'], true)) {
         $delivered['push'] = ts_in_quiet($prof['quiet_hours'], $tz, $now) ? 'quiet' : ts_push_user($uid, $now);
@@ -342,6 +343,8 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
                 $sum['fired']++;
             }
         }
+        // יומן השיטה (18.6, S6): התוצאה של רשומות שהטווח שלהן עבר — באותו תקציב לספק ובאותה תקרת זמן
+        $sum['journal'] = ts_journal_resolve($now, $used, $budget, $t0);
         $sum['calls'] = $used;
         // ניקוי המאגר — פעם ביום, מכאן (✅4)
         $before = (int)ts_setting('cache_cleanup_at', '0');
