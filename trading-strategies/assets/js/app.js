@@ -5,6 +5,7 @@ import { mountMarket } from './market.js';
 import { mountAnalysis } from './analysis.js';
 import { mountAlerts } from './alerts.js';
 import { mountCombo } from './combobox.js';
+import { mountMethodJournal } from './method-journal.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -165,14 +166,14 @@ function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n !
 // לשוניות: שוק · התראות · יומן · עוד (spec-stage-a 1). "ניתוח" — בפס שמתחת לגרף, לא לשונית (S4, 18.4).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
+  more: 'more', 'method-journal': 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
     h('a', { href: '#/' + k, class: 'seg-tab', 'aria-current': k === active ? 'page' : null }, l)));
 }
 
-let M = null, A = null, N = null;
+let M = null, A = null, N = null, J = null;
 async function route() {
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
@@ -186,6 +187,7 @@ async function route() {
     else if (name === 'stats') await viewStats();
     else if (name === 'more') await viewMore();
     else if (name === 'instruments') await viewInstruments();
+    else if (name === 'method-journal') await J.viewMethodJournal();
     else if (name === 'providers') await M.viewProviders();
     else if (name === 'admin') await M.viewAdmin();
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
@@ -1085,6 +1087,8 @@ async function viewMore() {
         h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, מנהלים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      h('li', {}, h('a', { class: 'use-row', href: '#/method-journal' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📓'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'יומן השיטה'), h('small', {}, 'מה כל שיטה אמרה, ומה קרה אחר כך — לפי גרסה')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'נכסים שלי'), h('small', {}, 'שוק, מטבע ומכפיל לכל נכס — נבנה לבד מהעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=json', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⬇️'),
@@ -1147,10 +1151,11 @@ function editInstrument(i) {
     setMe: v => { ME = v; }, reload: () => route(),
     openTrade: pre => editTrade(null, pre) };
   N = mountAlerts(ctx);
+  J = mountMethodJournal(ctx);
   ctx.newAlert = N.newAlert;
   A = mountAnalysis(ctx);
   N.setBadge(ME.unread);
-  M = mountMarket({ ...ctx, adminMethods: A.adminMethods });
+  M = mountMarket({ ...ctx, adminMethods: A.adminMethods, journalView: J.view });
   M.setRoute(route);
   if (!location.hash) history.replaceState(null, '', '#/market');
   route();

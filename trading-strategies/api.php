@@ -38,6 +38,7 @@
  * POST action=method_colors_save        {colors: {method_id: צבע}} — הצבע של כל שיטה בפרופיל (18.5); צבע לשיטה אחת בלבד
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
+ * GET  ?action=method_journal&method=&version=&outcome=&kind=&before=   יומן השיטה (18.6): רשומות + סיכום לפי גרסה
  *
  * התראות (פרק 8) — הבדיקה עצמה רק ב-cron (bin/alerts-cron.php, CLI); כאן רק ניהול ותיבה:
  * GET  ?action=alerts                    ההתראות שלי והשיטות שמותרות בהן
@@ -74,6 +75,7 @@ require_once __DIR__ . '/lib/forecast.php';
 require_once __DIR__ . '/lib/refresh.php';
 require_once __DIR__ . '/lib/builder.php';
 require_once __DIR__ . '/lib/alerts.php';
+require_once __DIR__ . '/lib/journal.php';
 require_once __DIR__ . '/lib/fx.php';
 
 header('X-Content-Type-Options: nosniff');
@@ -191,6 +193,10 @@ try {
 
         case 'methods':
             out(['ok' => true, 'methods' => ts_methods_visible($uid)]);
+
+        case 'method_journal':
+            // יומן השיטה (18.6, S6): מנהל — הכול; משתמש — רק נכסים שהוא רואה (✅27, ✅2). קריאה בלבד, בלי פנייה לספק
+            out(['ok' => true] + ts_journal_list($uid, array_intersect_key($_GET, array_flip(['method', 'version', 'outcome', 'kind', 'before']))));
 
         // ── התראות ──
         case 'alerts':
