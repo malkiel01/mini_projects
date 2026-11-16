@@ -562,3 +562,12 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .tune-tbl td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tune-tbl thead th { text-align: end; }
 .tune-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
+
+/* כניסה במצב מנותק (A2) — מסך אחד, כפתור אחד */
+.login { max-inline-size: 360px; margin: var(--s4) auto; text-align: center; align-items: stretch; }
+.login-ic { font-size: 2.4rem; }
+.login h2 { margin: 0; }
+.login-go { inline-size: 100%; }
+.login-pw { text-align: start; }
+.login-or { margin: 0; color: var(--muted); }
+button.use-row { inline-size: 100%; background: none; border: 0; font: inherit; color: inherit; text-align: start; cursor: pointer; }

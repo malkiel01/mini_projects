@@ -520,6 +520,30 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 14) {
+        // A2 — מחוברת או מנותקת (spec-stage-a 20.1; lib/auth.php, lib/sso.php). ALTER ו-CREATE בלבד: לא נוגעת בשום
+        // משתמש ובשום נתון. sessions.via — מאיפה נפתח: 'gate' (השער; כל session קיים), 'sso' או 'password' (מנותקת);
+        // grant_checked_at — מתי grant_status אישר. users.password_hash — "סיסמה לאפליקציה" (NULL — אין). sso_states /
+        // sso_jti — state חד-פעמי וזהות שנוצלה. login_locks — 5 שגיאות → רבע שעה, לפי מייל ולפי IP.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE sessions ADD COLUMN via TEXT NOT NULL DEFAULT 'gate';
+            ALTER TABLE sessions ADD COLUMN grant_checked_at INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE users ADD COLUMN password_hash TEXT;
+            ALTER TABLE users ADD COLUMN password_set_at INTEGER;
+            CREATE TABLE sso_states (
+                state_hash TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used_at INTEGER
+            );
+            CREATE TABLE sso_jti (jti TEXT PRIMARY KEY, exp INTEGER NOT NULL);
+            CREATE TABLE login_locks (lock_key TEXT PRIMARY KEY, fails INTEGER NOT NULL, locked_until INTEGER NOT NULL);
+            CREATE INDEX users_email ON users(lower(email));
+            PRAGMA user_version = 14;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
