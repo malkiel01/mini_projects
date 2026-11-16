@@ -60,6 +60,14 @@
  * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
  *      (נספר בתקרת 30) | admin_tune_apply {id} (המנהל הראשי בלבד)
  *
+ * DevLoop (A1, PROTOCOL 7) — lib/devtasks.php, דרך המודול המשותף; רק המנהל הראשי (המפתח):
+ * GET  ?action=dev-items | dev-file&id= | dev-tokens | dev-item-log&code= | dev-log
+ * POST action=dev-task-create | dev-task-set | dev-comment | dev-comment-delete | dev-verify | dev-report | dev-attach&code= (הגוף — הקובץ)
+ *      | dev-token-create | dev-token-revoke | dev-log-links | dev-task-from-log
+ * POST action=devloop-client-error       שגיאת JavaScript ליומן — כל משתמש מחובר
+ * בלי משתמש, באסימון X-Dev-Token (tsd_…): devapi-feed | devapi-comment | devapi-file | devapi-attach ("public" ב-app.json)
+ * כל בקשה נרשמת ביומן המובנה (data/_dev/log.sqlite, 30 יום) — פעולה, מצב, משך, מי; גוף הבקשה לא נרשם.
+ *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
  * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
  */
@@ -80,10 +88,13 @@ require_once __DIR__ . '/lib/alerts.php';
 require_once __DIR__ . '/lib/journal.php';
 require_once __DIR__ . '/lib/fx.php';
 require_once __DIR__ . '/lib/tune.php';
+require_once __DIR__ . '/lib/devtasks.php';
 
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: no-referrer');
 header('Cache-Control: no-store');
+
+devloop_log_begin(null);   // היומן המובנה של DevLoop: מזהה בקשה, שגיאות PHP, ושורה לכל בקשה
 
 function out(array $data, int $code = 200): never
 {
@@ -116,6 +127,21 @@ function input(int $max = 1_000_000, int $tooBig = 413): array
 $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// Claude באסימון (DevLoop): בלי עוגייה ובלי משתמש — לפני ה-session. האסימון נבדק במודול (devloop_api_auth)
+if (in_array($action, TS_DEVAPI_ACTIONS, true)) {
+    try {
+        if ($action !== 'devapi-feed' && $action !== 'devapi-file' && $method !== 'POST') fail('נדרש POST', 405);
+        out(['ok' => true] + ts_devapi_dispatch($action, $_GET, $action === 'devapi-comment' ? input() : []));
+    } catch (TsDevError $e) {
+        devloop_log_error($e);
+        fail($e->getMessage(), $e->getCode() ?: 400);
+    } catch (Throwable $e) {
+        devloop_log_error($e);
+        error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
+        fail('תקלה בשרת', 500);
+    }
+}
+
 try {
     $session = ts_session();
 } catch (Throwable $e) {
@@ -126,6 +152,30 @@ if (!$session) fail('אין לך הרשאת גישה לאפליקציה הזו �
 [$user, $csrf] = $session;
 $uid = (int)$user['id'];
 $tz = $user['timezone'];
+devloop_log_user(['id' => $uid, 'username' => $user['display_name']]);
+
+// DevLoop — למפתח בלבד, כלומר המנהל הראשי (PROTOCOL 7). הדפדפן רק מסתיר את 🐞; כאן האכיפה
+if (in_array($action, TS_DEV_ACTIONS, true)) {
+    try {
+        $write = in_array($action, TS_DEV_WRITE, true);
+        if ($write || $action === 'dev-attach') {
+            if ($method !== 'POST') fail('נדרש POST', 405);
+            if ($write && !str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE'] ?? '')), 'application/json')) fail('נדרש JSON', 415);
+            if (!hash_equals($csrf, (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) fail('פג תוקף הדף — רעננו ונסו שוב', 403);
+        }
+        if ($action !== 'devloop-client-error') ts_require_primary_admin();
+        out(['ok' => true] + ts_dev_dispatch($action, $user, $_GET, $write ? input() : []));
+    } catch (TsForbidden $e) {
+        fail($e->getMessage(), 403);
+    } catch (TsDevError $e) {
+        devloop_log_error($e);
+        fail($e->getMessage(), $e->getCode() ?: 400);
+    } catch (Throwable $e) {
+        devloop_log_error($e);
+        error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
+        fail('תקלה בשרת — הפעולה לא נשמרה', 500);
+    }
+}
 
 const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
@@ -180,7 +230,7 @@ try {
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
             ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
-                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'unread' => ts_inbox_unread($uid)]);
+                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'unread' => ts_inbox_unread($uid), 'version' => ts_app_version()]);
 
         case 'settings':
             ts_settings_save($uid, $in);
@@ -523,14 +573,19 @@ try {
             fail('פעולה לא מוכרת', 404);
     }
 } catch (TsForbidden $e) {
+    devloop_log_error($e);
     fail($e->getMessage(), 403);
 } catch (TsProviderError $e) {
+    devloop_log_error($e);
     fail($e->getMessage(), 502);   // ההודעה כבר בלי המפתח (lib/market.php)
 } catch (TsInvalid $e) {
+    devloop_log_error($e);
     fail($e->getMessage(), 422);
 } catch (TsNotFound $e) {
+    devloop_log_error($e);
     fail($e->getMessage(), 404);
 } catch (Throwable $e) {
+    devloop_log_error($e);   // חריגה שאינה RuntimeException — ביומן עם מקום ועקבות (⚠️ לבירור)
     error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
     fail('תקלה בשרת — הפעולה לא נשמרה', 500);
 }

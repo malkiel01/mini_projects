@@ -4,11 +4,7 @@
     "session": "session_018g4NYGqhdYWYDScrU8eZxq",
     "model": "claude-opus-5-5"
   },
-  "code": {
-    "session": "session_018g4NYCtoJQjiN4ojLGwKMh",
-    "slice": "S6 יומן של שיטה (18.6)",
-    "model": "claude-opus-5-5"
-  },
+  "code": null,
   "control": "session_018g4NYE6Q5mocKiUUxqKEyR",
   "tasks": null,
   "clock": "trig_01BkHqJw3mPZG75puVqoh6rh (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (3); הקודם trig_017QYqEf5rV1DHua7TQyyuvw כבוי)",
@@ -47,6 +43,21 @@
       "session": "session_018g4NYE8YZGBZvopSjFJYG7",
       "done": "#1608 S5; handoff #1610",
       "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCtoJQjiN4ojLGwKMh",
+      "done": "#1611 S6; handoff #1613",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYDT3XMHmjb6sxQf6nU",
+      "done": "#1615 S7 + method_colors 2.20",
+      "model": "claude-opus-5-5 — רדום אחרי handoff"
+    },
+    {
+      "session": "session_018g4NYE8kDskU8RmVtkTf3g",
+      "done": "#1618 A1 DevLoop",
+      "model": "claude-opus-5-5 — רדום אחרי handoff"
     }
   ],
   "control_previous": [
