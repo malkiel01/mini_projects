@@ -11,7 +11,7 @@
 | `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — דקה 48, לתוך בקרה (12) (`trig_01FnY5VNEHj6GeeD2BEF2jxx`, נוצר בידי מנהל הצוותים (3); הישן `trig_017hPpPF1QCmhxWdMc7bLveY` כבוי) | `session_018g4NYE2VgSchStksNm4cLo` (בקרה 12, Opus; קודם בקרה 11 `session_018g4NYEVkGJmGMdwERWecF2`) |
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
-| `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1–21.3 מוזגו; קוד: תיקון רעידה ב-`tests/market-api.php` (`session_018g4NYDnBi3cR5V4TF8WRTm`, ענף `claude/trading-strategies-flaky-key-test`); שעון — ממתין למזהה ממנהל הצוותים (4) | `session_018g4NYEHws3rFjuBNuDFXRb` (בקרה 6; קודם בקרה 5 `session_018g4NYEtPnhDAxdzNLibMdV`) |
+| `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1–21.3 מוזגו; קוד: תיקון רעידה ב-`tests/market-api.php` (`session_018g4NYDnBi3cR5V4TF8WRTm`, ענף `claude/trading-strategies-flaky-key-test`); שעון — דקה 28 (`trig_01KNVAkUc99NpULxQ9nAwWRt`, נוצר בידי מנהל הצוותים (4); הישן `trig_018C9hwAgkgTdUqZ5wdPfnFa` כבוי) | `session_018g4NYEHws3rFjuBNuDFXRb` (בקרה 6; קודם בקרה 5 `session_018g4NYEtPnhDAxdzNLibMdV`) |
 | `org-budget-proposals` הצעות תקציב לארגונים | פעיל — B1 (הדוח מאוזן) מוזג #1635; שעון — דקה 38 (`trig_013qCk9g1qS7xKb8qLpQrDgX`) | `session_018g4NYFsGrFQCUGf3CgaSYk` |
 
 ## ממתין לבעלים

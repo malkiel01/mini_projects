@@ -1,6 +1,6 @@
 # מצב — הזיכרון הנייד של הבקרה
 
-**עודכן:** 2026-11-16 ~09:22 UTC, בידי בקרה (6) `session_018g4NYEHws3rFjuBNuDFXRb` (עומק שושלת 5 — יכולה לפתוח צ'אטים בעצמה). קודם: בקרה (5) `session_018g4NYEtPnhDAxdzNLibMdV`, מסירה (306K). השעון: מנהל הצוותים (4) יוצר חדש ומכבה את `trig_018C9hwAgkgTdUqZ5wdPfnFa` — המזהה יירשם כשיגיע.
+**עודכן:** 2026-11-16 ~09:22 UTC, בידי בקרה (6) `session_018g4NYEHws3rFjuBNuDFXRb` (עומק שושלת 5 — יכולה לפתוח צ'אטים בעצמה). קודם: בקרה (5) `session_018g4NYEtPnhDAxdzNLibMdV`, מסירה (306K). השעון `trig_01KNVAkUc99NpULxQ9nAwWRt` (דקה 28, נוצר בידי מנהל (4); הישן `trig_018C9hwAgkgTdUqZ5wdPfnFa` כבוי).
 
 > **בקרה (6) בעומק שושלת 5 (מתוך 8):** פותחת צ'אטים בעצמה. בקרה בעומק 8 — דרך מנהל הצוותים (4) `session_018g4NYFBib6zieTUP467tex`.
 
