@@ -27,6 +27,8 @@ require_once __DIR__ . '/pairs.php';
 
 const TS_POOL_DAYS = 60;            // ✅4 — המאגר המשותף שומר 60 יום
 const TS_MAX_CANDLES = 5000;        // לבקשה אחת של גרף
+const TS_HISTORY_DAYS = 1826;       // היסטוריה בפעימות: עד 5 שנים אחורה, בכל מסגרת
+const TS_HISTORY_PAGE = 1000;       // הקריאה לספק במנה אחת (Binance: 1000). במנה — אחד פחות (ts_market_history)
 const TS_WATCHLIST_MAX = 100;       // spec-stage-a 2
 const TS_SEARCH_TTL = 86400;        // 24 שעות לתוצאות חיפוש
 const TS_MAX_SEGMENTS = 4;          // לכל היותר כמה פניות לספק בבקשת גרף אחת
@@ -521,16 +523,41 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $calls = 0;
     $fetched = 0;                               // כמה נרות הגיעו מהספק בבקשה הזו (יומן הבקשות, 18.2)
 
-    // היסטוריה ישנה מהמאגר — לבקשה הזו בלבד (3.6)
+    // היסטוריה ישנה מהמאגר (מעבר ל-60 יום) — בטבלה history, מחוץ למאגר (מיגרציה 6, היסטוריה בפעימות).
+    // רק מה שחסר בה נמשך מהספק; מה שנמשך נשמר — כך הרענון האוטומטי לא מושך את אותו חודש ישן בכל דקה
     if ($from < $poolStart) {
         $oldTo = min($to, $poolStart - 1);
-        try {
-            $out = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $from, $oldTo, $s), $used);
+        $hkey = [$provider, $symbol, $tf, $scope];
+        $st = $cache->prepare('SELECT from_t, to_t FROM history_coverage WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ?');
+        $st->execute($hkey);
+        $hcov = array_map(fn($r) => [(int)$r['from_t'], (int)$r['to_t']], $st->fetchAll());
+        $hins = $cache->prepare('INSERT OR REPLACE INTO history (provider, symbol, tf, cred_scope, t, o, h, l, c, v, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $hcalls = 0;
+        foreach (array_slice(ts_range_subtract($from, $oldTo, $hcov), -TS_MAX_SEGMENTS) as [$a, $b]) {
+            try {
+                $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
+            } catch (TsProviderError $e) {
+                // תקרה, וגם כל שגיאה אחרת מהספק (רשת, 451, timeout): החלק הישן לא מפיל את הבקשה — notice, ומוצג מה שבמאגר
+                $notice = $e->getMessage();
+                break;
+            }
             $calls++;
-            $fetched += count($out);
-        } catch (TsCapError $e) {
-            $notice = $e->getMessage();
+            $hcalls++;
+            $fetched += count($rows);
+            $cache->beginTransaction();
+            foreach ($rows as $r) {
+                if ($r['t'] < $a || $r['t'] > $b) continue;
+                $hins->execute([...$hkey, $r['t'], $r['o'], $r['h'], $r['l'], $r['c'], $r['v'], $now]);
+            }
+            // הטווח כולו מכוסה — גם כשהספק לא החזיר בו כלום (לפני שהנכס נסחר): לא שואלים עליו שוב
+            $cache->prepare('INSERT INTO history_coverage (provider, symbol, tf, cred_scope, from_t, to_t) VALUES (?, ?, ?, ?, ?, ?)')
+                ->execute([...$hkey, $a, $b]);
+            $cache->commit();
         }
+        if ($hcalls) ts_coverage_merge($hkey, 'history_coverage');
+        $st = $cache->prepare('SELECT t, o, h, l, c, v FROM history WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ? AND t >= ? AND t <= ? ORDER BY t');
+        $st->execute([...$hkey, $from, $oldTo]);
+        foreach ($st->fetchAll() as $r) $out[] = ['t' => (int)$r['t'], 'o' => $r['o'], 'h' => $r['h'], 'l' => $r['l'], 'c' => $r['c'], 'v' => $r['v']];
     }
 
     $rf = max($from, $poolStart);
@@ -607,6 +634,41 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
 }
 
 /**
+ * היסטוריה בפעימות (בקשת הבעלים: "תוסיף עד 5 שנים, אבל פעימות מידע קטנות, שלא נחסם"): מנה אחת של נרות ישנים, שמסתיימת
+ * לפני $before. לכל היותר 999 נרות (אחד פחות מ-max_per_call של הספק) — פנייה אחת לספק, דרך ts_market_candles: אותן
+ * דרכים, אותן מגבלות (provider_usage, per_day), ואותו מטמון (history). לא חוצה 5 שנים אחורה.
+ * לא נוגע בשיטות ובבדיקה לאחור — הן מחושבות על chart_refresh בלבד.
+ *
+ * מחזיר: candles (מהישן לחדש, כולם < $before); done — אין עוד מה לבקש (הגענו ל-5 שנים, או שאין נרות לפני — לפני
+ * שהנכס נסחר); retry — תקרה או 429: לנסות שוב אחר כך (notice — ההסבר).
+ */
+function ts_market_history(int $uid, mixed $asset, mixed $tf, mixed $before, ?int $now = null): array
+{
+    $now ??= time();
+    if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
+    if (!is_numeric($before)) throw new TsInvalid('חסר before');
+    $sec = TS_TF_SECONDS[$tf];
+    $before = min((int)$before, $now);
+    $limit = $now - TS_HISTORY_DAYS * 86400;
+    [$provider] = ts_asset_split((string)$asset);
+    // אחד פחות מהתקרה לקריאה: מנה מלאה בדיוק גורמת למתאם (Binance) לבקש עוד עמוד "למקרה שיש" — פנייה ריקה נוספת
+    $page = max(1, min(TS_HISTORY_PAGE, (int)(ts_provider($provider)->meta()['max_per_call'] ?? TS_HISTORY_PAGE)) - 1);
+    $base = ['asset' => (string)$asset, 'tf' => $tf, 'limit' => $limit, 'provider_calls' => 0];
+    $to = $before - 1;
+    if ($to < $limit) return $base + ['candles' => [], 'done' => true, 'retry' => false, 'notice' => null];
+    $from = max($limit, $before - $page * $sec);
+    try {
+        $r = ts_market_candles($uid, $asset, $tf, $from, $to, $now);
+    } catch (TsCapError $e) {
+        return $base + ['candles' => [], 'done' => false, 'retry' => true, 'notice' => $e->getMessage()];
+    }
+    $rows = array_values(array_filter($r['candles'], fn($c) => $c['t'] < $before && $c['t'] >= $from));
+    $retry = $r['notice'] !== null;
+    return ['candles' => $rows, 'done' => !$retry && (!$rows || $from <= $limit), 'retry' => $retry, 'notice' => $r['notice'],
+        'provider_calls' => $r['provider_calls']] + $base;
+}
+
+/**
  * שורה ביומן בקשות הנרות (18.2, S2) — כדי למדוד במסך המפתח שהשרת פונה לספק רק על החסר. יומן הוא לא תנאי לתשובה:
  * כשל בכתיבה לא מפיל את הבקשה. שומרים 2000 שורות לכל היותר; הניקוי היומי מוחק ישנות מ-7 ימים.
  */
@@ -653,10 +715,11 @@ function ts_fetch_log_recent(int $limit = 100): array
 }
 
 /** איחוד טווחים חופפים או צמודים של מפתח אחד — כדי שהטבלה לא תתנפח */
-function ts_coverage_merge(array $key): void
+function ts_coverage_merge(array $key, string $table = 'coverage'): void
 {
+    if (!in_array($table, ['coverage', 'history_coverage'], true)) throw new InvalidArgumentException($table);
     $c = ts_cache();
-    $st = $c->prepare('SELECT from_t, to_t FROM coverage WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ? ORDER BY from_t');
+    $st = $c->prepare("SELECT from_t, to_t FROM $table WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ? ORDER BY from_t");
     $st->execute($key);
     $merged = [];
     foreach ($st->fetchAll() as $r) {
@@ -665,8 +728,8 @@ function ts_coverage_merge(array $key): void
         else $merged[] = [$a, $b];
     }
     $c->beginTransaction();
-    $c->prepare('DELETE FROM coverage WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ?')->execute($key);
-    $ins = $c->prepare('INSERT INTO coverage (provider, symbol, tf, cred_scope, from_t, to_t) VALUES (?, ?, ?, ?, ?, ?)');
+    $c->prepare("DELETE FROM $table WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ?")->execute($key);
+    $ins = $c->prepare("INSERT INTO $table (provider, symbol, tf, cred_scope, from_t, to_t) VALUES (?, ?, ?, ?, ?, ?)");
     foreach ($merged as [$a, $b]) $ins->execute([...$key, $a, $b]);
     $c->commit();
 }
@@ -688,6 +751,11 @@ function ts_cache_cleanup(?int $now = null): int
     $c->prepare('DELETE FROM fetch_log WHERE at < ?')->execute([$now - 7 * 86400]);
     $c->prepare('DELETE FROM method_results WHERE at < ?')->execute([$now - 2 * 86400]);   // חישוב שנגזר — נבנה מחדש לבד
     $c->prepare('DELETE FROM bt_partial WHERE at < ?')->execute([$now - 86400]);   // בדיקה לאחור חלקית שלא נמשכה ביום — מתחילה מחדש
+    // ההיסטוריה (מיגרציה 6) — עד 5 שנים אחורה (+ חודש מרווח), כמו מה שהגרף מבקש
+    $hEdge = $now - TS_HISTORY_DAYS * 86400 - 31 * 86400;
+    $c->prepare('DELETE FROM history WHERE t < ?')->execute([$hEdge]);
+    $c->prepare('DELETE FROM history_coverage WHERE to_t < ?')->execute([$hEdge]);
+    $c->prepare('UPDATE history_coverage SET from_t = ? WHERE from_t < ?')->execute([$hEdge, $hEdge]);
     return $n;
 }
 
