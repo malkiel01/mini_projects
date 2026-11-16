@@ -189,3 +189,13 @@ dialog.ask .sheet-foot { border-top: 0; }
 /* מסך המפתח */
 .checks .card { cursor: default; min-height: 44px; }
 .audit .card { cursor: default; }
+
+/* עריכת המבנה (04-structure-edit.md סעיף 2): 🗑️ בכל שורה, ושורות ➕ דקות. בטלפון — 44px לאגודל */
+.bar { flex-wrap: wrap; }
+.prices .del { inline-size: 1%; padding: 2px; vertical-align: middle; text-align: center; }
+.prices .del .icon-btn { min-width: 44px; min-height: 44px; font-size: 1rem; }
+.prices tr.adds td { padding: 2px var(--s1); background: var(--bg); text-decoration: none; }
+.add-strip { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.add-strip .btn { min-height: 44px; flex: 0 1 auto; font-weight: 500; }
+.prices.editing td.amt { padding-inline-end: 0; }
+.prices.editing input.price { inline-size: 5.2em; }
