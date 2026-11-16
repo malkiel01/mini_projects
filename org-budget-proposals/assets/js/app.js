@@ -950,6 +950,13 @@ const intOf = d => d.integrity || [];
 const intLine = (d, id) => intOf(d).filter(x => x.line_ids.includes(id));
 const intFund = (d, fid) => intOf(d).filter(x => x.rule === 'fund_balance' && x.fund_id === fid);
 const intRow = (d, key) => intOf(d).filter(x => x.row_key === key);
+/** התג על קופה — מ-budget_integrity() בלבד (B1.2): אותו מספר כמו הסה"כ בטבלה ובבדיקה. ההפרש — מעמודת השנה כשהיא הבעיה. */
+const fundChip = (d, fid) => {
+    const bad = intFund(d, fid);
+    if (!bad.length) return h('span.chip.ok', 'מאוזנת');
+    const cur = bad.find(x => x.col === 'amount');
+    return cur ? balChip(cur.diff) : h('span.chip.bad', 'לא מאוזנת');
+};
 const intColLabel = (d, c) => ({ prev_budget: `הצעת ${d.budget.year - 1}`, prev_actual: `ניצול ${d.budget.year - 1}`, amount: `הצעת ${d.budget.year}` })[c] || '';
 
 /** מעבר לבעיה: לקופה (ולכיוון של השורה), ללשונית הנספח או הריכוז. */
@@ -1044,7 +1051,7 @@ async function viewBudget(id, fundId = null) {
         h('div.line', h('span.muted', 'הכנסות'), h('b', money(sm.income)), h('span.muted', '· הוצאות'), h('b', money(sm.expense)),
             h('span.pct', { style: `color:var(--${sm.income === sm.expense ? 'ok' : 'danger'})` }, sm.income === sm.expense ? 'מאוזן' : money(sm.income - sm.expense))),
         h('div.chips', h(`span.chip.${sc}`, sl),
-            intOf(d).length ? h('span.chip.bad', `⚠️ ${intOf(d).length} בעיות איזון`) : h('span.chip.ok', 'מאוזנת בכל העמודות'),
+            intOf(d).length ? h('span.chip.bad', `⚠️ ${intOf(d).length} בעיות איזון`) : h('span.chip.ok', 'מאוזנת'),
             open ? h('span.chip.warn', `💬 ${open} הערות פתוחות`) : null),
         !d.edit && canEdit(d.org.role) ? h('p.hint', { style: 'margin:0' }, 'ההצעה נעולה. לעריכה — "⋯" ← החזרה לטיוטה.') : null);
     const leases = d.appendix.reduce((a, g) => a + g.rows.length, 0);
@@ -1074,7 +1081,7 @@ function budFunds(box, d) {
                 h('span.use-ic', { 'aria-hidden': 'true' }, FUND_IC[f.kind]),
                 h('span.use-tx', h('b.one', f.name), h('small', `הכנסות ${money(x.income)} · הוצאות ${money(x.expense)}`),
                     bad.length ? h('small.int-txt', '⚠️ לא מאוזנת ב', bad.map(y => intColLabel(d, y.col)).join(', ')) : null),
-                x.diff || !bad.length ? balChip(x.diff) : h('span.chip.bad', 'לא מאוזנת')));
+                fundChip(d, f.id)));
         })),
         d.disabled.funds.length ? h('section.group', { style: 'margin-top:12px' }, h('h3', '⏸️ קופות מושבתות', h('small', 'בהצעה, מחוץ לחישוב ולמסמך')),
             h('ul.list', ...d.disabled.funds.map(f => h('li.off', { style: 'display:flex;align-items:center;gap:8px' },
@@ -1173,15 +1180,19 @@ async function viewGrid(id) {
         }
         const all = [];
         let inc = 0, exp = 0;
-        // איזון כל קופה — בשלוש העמודות שבמסמך, תוך כדי הקלדה (B1). לא חוסם שמירה; הסה"כ שלא מאוזן — באדום על התא
+        // איזון כל קופה תוך כדי הקלדה — אותו כלל כמו budget_integrity() (B1.2): רק בעמודות ההצעה (לא בניצול),
+        // ובלי שורות "רק בריכוז" — כמו הסה"כ בתחתית הטבלה. לא חוסם שמירה; הסה"כ שלא מאוזן — באדום על התא
         for (const f of d.funds) {
             const mine = rows.filter(r => r.fund.id === f.id);
-            const sum = (dir, k) => mine.filter(r => r.dir === dir).reduce((a, r) => a + (value(r, k) || 0), 0);
-            for (const k of ['prev_budget', 'prev_actual', 'amount']) {
-                const used = mine.some(r => value(r, k) !== null);
-                const diff = used ? sum('income', k) - sum('expense', k) : 0;
+            const sum = (dir, k) => mine.filter(r => r.dir === dir && !r.summaryOnly).reduce((a, r) => a + (value(r, k) || 0), 0);
+            for (const r of mine) (r.dir === 'income' ? (inc += value(r, 'amount') || 0) : (exp += value(r, 'amount') || 0));
+            const diffs = {};
+            for (const k of ['prev_budget', 'amount']) {
+                const used = mine.some(r => !r.summaryOnly && value(r, k) !== null);
+                const diff = diffs[k] = used ? sum('income', k) - sum('expense', k) : 0;
                 for (const t of new Set(mine.map(r => r.table))) t.querySelector(`tfoot [data-k=${k}]`).classList.toggle('int-cell', !!diff);
-                if (k === 'amount') { inc += sum('income', k); exp += sum('expense', k); fundBal[f.id].replaceChildren(balChip(diff)); }
+                // התג — כמו fundChip(): ההפרש של עמודת השנה; בעיה רק בהצעה הקודמת — "לא מאוזנת"
+                if (k === 'amount') fundBal[f.id].replaceChildren(diff ? balChip(diff) : diffs.prev_budget ? h('span.chip.bad', 'לא מאוזנת') : balChip(0));
                 if (diff) all.push({ level: 'bad', where: `${f.name} · ${SHORT[k]}`, text: `${diff > 0 ? 'עודף' : 'גירעון'} ${money(Math.abs(diff))} — הכנסות ${money(sum('income', k))} מול הוצאות ${money(sum('expense', k))}`, el: fundBal[f.id] });
             }
         }
@@ -1205,7 +1216,7 @@ async function viewGrid(id) {
         const errs = all.filter(x => x.level === 'err').length;
         issuesBox.replaceChildren(h('h3', all.length ? `הערות ואזהרות · ${all.length}` : '✓ אין הערות'),
             all.length ? h('ul', ...all.map(x => h('li', h('button', { type: 'button', class: x.level, onclick: () => { x.el.scrollIntoView({ block: 'center' }); x.el.focus?.(); } },
-                h('b', ICON[x.level], ' ', x.where), h('span', x.text))))) : h('p.hint', { style: 'margin:0' }, 'כל הקופות מאוזנות בכל העמודות, ואין שינויים חריגים.'));
+                h('b', ICON[x.level], ' ', x.where), h('span', x.text))))) : h('p.hint', { style: 'margin:0' }, 'כל הקופות מאוזנות, ואין שינויים חריגים.'));
         const n = rows.filter(changed).length + notes.filter(x => x.ta.value !== x.orig).length;
         bar.hidden = !edit || !n;
         save.textContent = errs ? `⛔ ${errs} שגיאות — לתקן לפני שמירה` : `שמירה · ${n} ${n === 1 ? 'שינוי' : 'שינויים'}`;
@@ -1458,7 +1469,7 @@ function viewBudgetFund(d, fundId) {
     put(main, intBar(d),
         mine.length ? h('div.int-box', { role: 'alert' }, ...mine.map(x => h('p', '⚠️ ', x.msg))) : null,
         h('div.summary', h('div.line', h('span.muted', 'הכנסות'), h('b', money(bal.income)), h('span.muted', '· הוצאות'), h('b', money(bal.expense)),
-            h('span.pct', { style: `color:var(--${bal.diff ? 'danger' : 'ok'})` }, bal.diff ? (bal.diff > 0 ? 'עודף ' : 'גירעון ') + money(Math.abs(bal.diff)) : 'מאוזנת'))),
+            fundChip(d, fundId))),
         h('div', { style: 'margin-bottom:8px' }, dseg),
         d.edit ? h('div.toolbar', { style: 'justify-content:flex-end;flex-wrap:wrap' },
             lines.length > 1 ? h('button.btn.ghost', { type: 'button', onclick: () => { sessionStorage.setItem('ob-line-sort', sorting ? '0' : '1'); viewBudget(b.id, fundId); } }, sorting ? '✓ סיום' : '↕️ סידור') : null,
