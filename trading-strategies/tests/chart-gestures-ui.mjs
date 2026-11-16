@@ -4,9 +4,8 @@
 //   - אצבע אחת לאורך הגרף → טווח הזמן זז (כמו קודם).
 //   - צביטה אופקית → פחות נרות על המסך (טווח הזמן קטן).
 //   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חזרה לגובה הרגיל, לא מעבר.
-//   - (בקרה 9, הבעלים: "לא ניתן בכלל לגלול בתוך הגרף") אצבע אחת באלכסון, כשרובה לרוחב → טווח הזמן זז.
-//   - שתי אצבעות שזזות יחד לרוחב → טווח הזמן זז (אותו מספר נרות); לגובה → ציר המחיר זז, בלי לשנות גובה.
-//     "↺" מחזיר את ציר המחיר לרגיל.
+//   - (בקרה 9, הבעלים: "2 אצבעות רק לגובה יגללו למעלה ולמטה") שתי אצבעות שזזות יחד לגובה → ציר המחיר זז, בלי לשנות
+//     גובה וטווח זמן; "↺" מחזיר. שתי אצבעות יחד לרוחב — לא עושות כלום.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
@@ -92,20 +91,10 @@ try {
   eq(rb[0] < ra[0] - 5, true, `one finger along the chart moves the time axis (${ra} → ${rb})`);
   eq(Math.abs(span(rb) - span(ra)) < 1, true, 'and keeps the number of candles');
 
-  // ── אצבע אחת באלכסון, רובה לרוחב (dy/dx ≈ 0.85) → טווח הזמן זז ──
-  const rDiag0 = await range();
-  await gesture([[R.x + R.w * 0.3, midY + 65, R.x + R.w * 0.72, midY - 65]]);
-  const rDiag = await range();
-  eq(rDiag[0] < rDiag0[0] - 5, true, `one finger diagonally, mostly sideways, moves the time axis (${rDiag0} → ${rDiag})`);
-
-  eq(rDiag[1] >= (span(rDiag) * 0.2) - 1.5, true, `the kinetic fling stops at the start of the data, candles stay on screen (${rDiag})`);
-
-  // ── שתי אצבעות יחד לרוחב → טווח הזמן זז, אותו מספר נרות ──
+  // ── שתי אצבעות יחד לרוחב → כלום (רק לגובה) ──
   const rTwo0 = await range();
-  // שמאלה — קדימה בזמן (האלכסון והמשך הקינטי שלו הביאו את הגרף לתחילת הנתונים)
   await gesture([[R.x + R.w * 0.65, midY - 40, R.x + R.w * 0.25, midY - 40], [R.x + R.w * 0.65, midY + 40, R.x + R.w * 0.25, midY + 40]]);
-  const rTwo = await range();
-  eq(rTwo[0] > rTwo0[0] + 5 && Math.abs(span(rTwo) - span(rTwo0)) < 1.5, true, `two fingers together sideways move the time axis, same candles (${rTwo0} → ${rTwo})`);
+  eq([await range(), (await heights()).k, await p.locator('.chart-reset').isHidden()], [rTwo0, 1, true], 'two fingers together sideways do nothing (only up/down)');
 
   // ── שתי אצבעות יחד לגובה → ציר המחיר זז (הנרות יורדים), הגובה לא משתנה; "↺" מחזיר ──
   const priceAt = () => p.evaluate(s => { const b = document.querySelector(s); return b.tsPriceAt(b.offsetHeight / 2); }, sel);
