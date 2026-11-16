@@ -348,3 +348,15 @@
   ב-`fixtures/market/twelvedata.php`: מפתח `good-rate…` מחזיר 429.
 - **⚪ `market-tabs-ui` — עדיין רועדת.** נוספה המתנה ללשוניות לפני הגרירה. אחרי התיקון עברה 7 מתוך 8 הרצות. ההרצה שנכשלה (בדיקה 38) לא נשמרה, ולכן הסיבה לא ידועה.
 - **התראות** ב-cron נספרות ב-100 היומיות של המשתמש שיצר אותן (ביקורת ⚪6) — בכוונה.
+
+## מסך מלא לגובה / לרוחב (2.30) — מה נבנה
+
+- **`market.js` → `viewChart`, אחרי `fsEnter`:** `fsMode` (`portrait`/`landscape`), `canLand()`, `fsLock()`/`fsUnlock()`, `fsSetMode()`.
+  "לגובה" מלכתחילה — בלי נעילה, כמו F1. ההחלפה בשורה הצפה (`.fs-rot`) נועלת `landscape`/`portrait`; כל יציאה — `unlock()`.
+- **`canLand()`** = Fullscreen API + `screen.orientation.lock` + `pointer: coarse` + הנעילה לא נדחתה בטעינה הזו. אחרת ⛶ נכנס ישר לגובה, בלי בחירה.
+- **שכבה מסובבת ב-CSS — נפסלה** (README, "מסך מלא לגובה או לרוחב"). אם הבעלים ירצה לרוחב גם ב-iPhone — צריך לעטוף את אירועי
+  המגע של Lightweight Charts ושל `drawings.js` (`local()`), זו פרוסה בפני עצמה.
+- **`lockVisibleTimeRangeOnResize: true`** ב-`base.timeScale` — כל שינוי רוחב שומר את טווח הזמן (לא את רוחב הנר).
+- **בדיקות ממשק שנכנסות למסך מלא:** ⛶ ואז `menuitem` "לגובה" (בהדמיית טלפון יש `lock`, ולכן הבחירה נפתחת). ראו `fsEnter` ב-`chart-f1-ui.mjs`.
+- **הדמיית סיבוב ב-Playwright** (`chart-landscape-ui.mjs`): `page.setViewportSize` נכשל בתוך Fullscreen (`Browser.setWindowBounds`) —
+  מסובבים ב-CDP `Emulation.setDeviceMetricsOverride`. גם `page.screenshot` מבטל את הסיבוב — מצלמים ב-CDP `Page.captureScreenshot`.

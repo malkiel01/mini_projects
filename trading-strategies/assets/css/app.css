@@ -318,7 +318,16 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .chart-tools { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .chart-tools .seg { max-width: 100%; }
 .chart-tools .toolbar { margin: 0; flex-wrap: wrap; row-gap: 4px; }
-.chart-tools .toolbar .fs-open { margin-inline-start: auto; min-height: 36px; min-width: 36px; }
+.chart-tools .toolbar .fs-pick { position: relative; margin-inline-start: auto; display: inline-flex; }
+.chart-tools .toolbar .fs-open { min-height: 36px; min-width: 36px; }
+/* 2.30: הבחירה שנפתחת מ-⛶ — לגובה / לרוחב */
+.fs-menu { position: absolute; z-index: 20; top: calc(100% + 4px); inset-inline-end: 0; display: flex; flex-direction: column; min-inline-size: 140px;
+    padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.fs-menu[hidden] { display: none; }
+.fs-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; font: inherit; color: var(--ink); background: none;
+    border: 0; border-radius: calc(var(--r) - 2px); cursor: pointer; text-align: start; }
+.fs-item:hover, .fs-item:focus-visible { background: var(--brand-soft); outline: none; }
+.fs-ico { inline-size: 1.4em; text-align: center; }
 .chart-tools select { width: auto; }
 .chart-wrap { position: relative; display: grid; gap: 4px; margin-bottom: var(--s2); }
 

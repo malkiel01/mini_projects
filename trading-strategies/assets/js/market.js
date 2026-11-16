@@ -386,7 +386,14 @@ export function mountMarket(ctx) {
     const fcBtn = () => h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'שיטות על הגרף', 'aria-pressed': 'false', 'aria-expanded': 'false' }, '🔮');
     const forecastBtn = fcBtn();
     // ⛶ מסך מלא (18.1.2 סעיף 3) — בשורת הכפתורים של הגרף (בכותרת אין מקום בטלפון)
-    const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', on: { click: () => fsEnter() } }, '⛶');
+    // 2.30: ⛶ פותח בחירה קטנה — ⛶ לגובה / ⟷ לרוחב. בלי נעילת כיוון (iOS, מחשב) אין בחירה: ⛶ נכנס ישר לגובה
+    const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      on: { click: () => (canLand() ? fsMenuToggle() : fsEnter('portrait')) } }, '⛶');
+    const fsItem = (mode, icon, text) => h('button', { class: 'fs-item', type: 'button', role: 'menuitem', 'data-mode': mode,
+      on: { click: () => { fsMenuClose(); fsEnter(mode); } } }, h('span', { class: 'fs-ico', 'aria-hidden': 'true' }, icon), text);
+    const fsMenu = h('div', { class: 'fs-menu', role: 'menu', 'aria-label': 'מסך מלא', hidden: true },
+      fsItem('portrait', '⛶', 'לגובה'), fsItem('landscape', '⟷', 'לרוחב'));
+    const fsPick = h('span', { class: 'fs-pick' }, fsBtn, fsMenu);
     setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [forecastBtn, drawBtn, refresh, star] });
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
@@ -425,9 +432,11 @@ export function mountMarket(ctx) {
     // במסך מלא: שורה צפה מעל הגרף — תווית הזוג, 🔮 ו-✕ (18.1.2 סעיף 3)
     const forecastBtnFs = fcBtn();
     const fsExit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'יציאה ממסך מלא', title: 'יציאה ממסך מלא', on: { click: () => fsLeave() } }, '✕');
-    const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsExit);
+    // החלפה בין גובה לרוחב בתוך המסך המלא (2.30) — ליד ✕. מוצג רק כשיש נעילת כיוון
+    const fsRot = h('button', { class: 'icon-btn fs-rot', type: 'button', hidden: true, on: { click: () => fsSetMode(fsMode === 'landscape' ? 'portrait' : 'landscape') } });
+    const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsRot, fsExit);
     const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
-    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsBtn)), custom,
+    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsPick)), custom,
       wrap, drawSlot, forecastSlot, inds, info,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
@@ -446,6 +455,8 @@ export function mountMarket(ctx) {
       leftPriceScale: { visible: false },
       // minBarSpacing נמוך — כדי ש"5 שנים" (1,825 נרות) ייכנסו כולם גם ברוחב של טלפון
       timeScale: { visible: false, borderColor: col('--line'), timeVisible: TF_SEC[st.tf] < 86400, secondsVisible: false, minBarSpacing: 0.05, rightOffset: 0,
+        // סיבוב (מסך מלא לרוחב, 2.30) — אותו טווח זמן נמתח על כל הרוחב, ולא חצי גרף ריק
+        lockVisibleTimeRangeOnResize: true,
         // סוג הסימון מהספרייה: 0 שנה · 1 חודש · 2 יום · 3 שעה — כך רואים תאריך במעבר יום, ושעה בתוכו
         tickMarkFormatter: (t, type) => fmtT(t, type === 0 ? { year: 'numeric' } : type === 1 ? { month: 'short' }
           : type === 2 ? { day: 'numeric', month: 'numeric' } : { hour: '2-digit', minute: '2-digit' }) },
@@ -477,6 +488,7 @@ export function mountMarket(ctx) {
     box.tsLabels = () => board.rects();   // לבדיקות: המלבנים של התוויות שצוירו בפעם האחרונה
     box.tsAxis = () => axis.shown();      // לבדיקות: המספרים שעל הצירים
     box.tsAxisW = () => axis.priceWidth(); // לבדיקות: רוחב עמודת המספרים
+    box.tsRange = () => chart.timeScale().getVisibleRange(); // לבדיקות: טווח הזמן הנראה (סיבוב לרוחב, 2.30)
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
     // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
@@ -495,16 +507,71 @@ export function mountMarket(ctx) {
 
     // ── מסך מלא (18.1.2 סעיף 3): רק הגרף. Fullscreen API כשיש, אחרת שכבה שמכסה את המסך (אותו class).
     // יציאה: ✕, Esc, או "חזור" — רשומה בהיסטוריה (אותה כתובת, כך שהניתוב לא מתחלף), ו"חזור" רק מוציא ממסך מלא.
-    let fsOn = false;
-    function fsEnter() {
+    // 2.30 — שני מצבים: "לגובה" (כמו קודם, בלי נעילה) ו"לרוחב" (Fullscreen API ואז screen.orientation.lock('landscape')).
+    // שכבה מסובבת ב-CSS נבדקה ונפסלה: Lightweight Charts ו-drawings.js ממירים מגע לנקודה ב-clientX − rect.left,
+    // ובשכבה מסובבת זה נותן נקודה אחרת מזו שנגעו בה. לכן בלי נעילה — אין "לרוחב" (README, "מסך מלא").
+    let fsOn = false, fsMode = 'portrait', landOk = true, locked = false;
+    const ori = () => window.screen?.orientation;
+    const canLand = () => landOk && !!(wrap.requestFullscreen && document.fullscreenEnabled) && typeof ori()?.lock === 'function'
+      && matchMedia('(pointer: coarse)').matches;
+    function fsMenuToggle() {
+      const open = fsMenu.hidden;
+      fsMenu.hidden = !open;
+      fsBtn.setAttribute('aria-expanded', String(open));
+      if (open) fsMenu.querySelector('.fs-item').focus();
+    }
+    function fsMenuClose(focus = false) {
+      if (fsMenu.hidden) return;
+      fsMenu.hidden = true;
+      fsBtn.setAttribute('aria-expanded', 'false');
+      if (focus) fsBtn.focus();
+    }
+    function fsRotSync() {
+      fsRot.hidden = !canLand();
+      const land = fsMode === 'landscape';
+      fsRot.textContent = land ? '⛶' : '⟷';
+      fsRot.setAttribute('aria-label', land ? 'מסך מלא לגובה' : 'מסך מלא לרוחב');
+      fsRot.title = land ? 'לגובה' : 'לרוחב';
+      wrap.dataset.fsMode = fsMode;
+    }
+    // הנעילה — רק בתוך Fullscreen (הדפדפן דוחה אחרת). נדחתה — נשארים לגובה, ו"לרוחב" נעלם עד לטעינה הבאה
+    function fsLock() {
+      if (!fsOn || document.fullscreenElement !== wrap || typeof ori()?.lock !== 'function') return;
+      const want = fsMode;
+      if (want === 'portrait' && !locked) return;   // "לגובה" מלכתחילה — כמו קודם, בלי לנעול
+      ori().lock(want === 'landscape' ? 'landscape' : 'portrait').then(() => { locked = true; }, () => {
+        if (want !== 'landscape') return;
+        landOk = false;
+        fsMode = 'portrait';
+        fsRotSync();
+        toast('הדפדפן לא מאפשר לסובב את המסך. אפשר לסובב את הטלפון ביד', true);
+      });
+    }
+    function fsUnlock() {
+      if (!locked) return;
+      locked = false;
+      try { ori()?.unlock?.(); } catch { /* ריק */ }
+    }
+    function fsSetMode(mode) {
+      if (!fsOn || mode === fsMode) return;
+      fsMode = mode;
+      fsRotSync();
+      fsLock();
+    }
+    function fsEnter(mode = 'portrait') {
       if (fsOn) return;
       fsOn = true;
+      fsMode = mode === 'landscape' && canLand() ? 'landscape' : 'portrait';
+      fsRotSync();
       wrap.classList.add('fs');
       document.body.classList.add('chart-fs');
       try { history.pushState({ tsFs: true }, ''); } catch { /* ריק */ }
       // הבקשה אסינכרונית: יצאו לפני שהסתיימה (Esc או "חזור" מהר) — יוצאים גם מה-Fullscreen API
       if (wrap.requestFullscreen && document.fullscreenEnabled) {
-        wrap.requestFullscreen({ navigationUI: 'hide' }).then(() => { if (!fsOn && document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {}); }, () => {});
+        wrap.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+          if (!fsOn && document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {});
+          else fsLock();
+        }, () => {});
       }
       fsExit.focus();
     }
@@ -512,7 +579,10 @@ export function mountMarket(ctx) {
     function fsLeave(quiet = false) {
       if (!fsOn) return;
       fsOn = false;
+      fsUnlock();
+      fsMode = 'portrait';
       wrap.classList.remove('fs');
+      delete wrap.dataset.fsMode;
       document.body.classList.remove('chart-fs');
       if (document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {});
       if (!quiet && history.state?.tsFs) history.back();
@@ -520,11 +590,18 @@ export function mountMarket(ctx) {
     }
     const fsPop = () => { if (fsOn && !history.state?.tsFs) fsLeave(true); };
     const fsChange = () => { if (fsOn && document.fullscreenElement !== wrap) fsLeave(); };
-    const fsKey = e => { if (e.key === 'Escape' && fsOn && !forecast.popOpen()) fsLeave(); };
+    const fsKey = e => {
+      if (e.key !== 'Escape') return;
+      if (!fsMenu.hidden) fsMenuClose(true);
+      else if (fsOn && !forecast.popOpen()) fsLeave();
+    };
+    const fsOutside = e => { if (!fsMenu.hidden && !fsPick.contains(e.target)) fsMenuClose(); };
     window.addEventListener('popstate', fsPop);
     document.addEventListener('fullscreenchange', fsChange);
     document.addEventListener('keydown', fsKey);
-    onTeardown(() => { window.removeEventListener('popstate', fsPop); document.removeEventListener('fullscreenchange', fsChange); document.removeEventListener('keydown', fsKey); });
+    document.addEventListener('pointerdown', fsOutside);
+    onTeardown(() => { window.removeEventListener('popstate', fsPop); document.removeEventListener('fullscreenchange', fsChange); document.removeEventListener('keydown', fsKey);
+      document.removeEventListener('pointerdown', fsOutside); });
 
     let data = [];
     let ws = null;

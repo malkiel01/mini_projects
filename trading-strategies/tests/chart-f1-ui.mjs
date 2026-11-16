@@ -69,6 +69,11 @@ async function fsGone(p) {
   await p.waitForFunction(() => !document.querySelector('.chart-wrap.fs') && !document.fullscreenElement);
   await p.waitForTimeout(600);
 }
+// ⛶ פותח בחירה (2.30) — "לגובה" הוא המסך המלא של F1
+async function fsEnter(p) {
+  await p.getByRole('button', { name: 'מסך מלא', exact: true }).click();
+  await p.getByRole('menuitem', { name: 'לגובה' }).click();
+}
 async function openPop(p) {
   // במסך מלא — ה-🔮 שבשורה הצפה (זה שבכותרת מכוסה)
   await (await p.locator('.chart-wrap.fs').count() ? p.locator('.fs-bar').getByRole('button', { name: 'תחזית שיטה' }) : fcBtn(p)).click();
@@ -159,7 +164,7 @@ try {
 
   // ── קריטריון 6: מסך מלא ──
   const vp = a.viewportSize();
-  await a.getByRole('button', { name: 'מסך מלא' }).click();
+  await fsEnter(a);
   await a.locator('.chart-wrap.fs').waitFor();
   await a.waitForTimeout(300);
   const fr = await boxRect(a);
@@ -175,12 +180,12 @@ try {
   await fsGone(a);
   eq([await a.locator('.chart-wrap.fs').count(), a.url() === url0], [0, true], 'criterion 6: ✕ → back to the normal chart');
   eq((await boxRect(a)).slice(2), rect0.slice(2), 'the chart is back to its size');
-  await a.getByRole('button', { name: 'מסך מלא' }).click();
+  await fsEnter(a);
   await a.locator('.chart-wrap.fs').waitFor();
   await a.keyboard.press('Escape');
   await fsGone(a);
   eq(a.url() === url0, true, 'criterion 6: Esc → back to the normal chart');
-  await a.getByRole('button', { name: 'מסך מלא' }).click();
+  await fsEnter(a);
   await a.locator('.chart-wrap.fs').waitFor();
   await a.goBack();
   await fsGone(a);
@@ -241,7 +246,7 @@ try {
   const { p: l } = await open('alice', { width: 844, height: 390 });
   await l.goto(CHART);
   await loaded(l);
-  await l.getByRole('button', { name: 'מסך מלא' }).click();
+  await fsEnter(l);
   await l.locator('.chart-wrap.fs').waitFor();
   await l.waitForTimeout(400);
   const lr = await boxRect(l);
@@ -259,7 +264,7 @@ try {
     await k.keyboard.press('Escape');
     await k.waitForTimeout(300);
     await shot(k, 'f1-elliott-dark', false);
-    await k.getByRole('button', { name: 'מסך מלא' }).click();
+    await fsEnter(k);
     await k.locator('.chart-wrap.fs').waitFor();
     await k.waitForTimeout(300);
     await shot(k, 'f1-fullscreen-dark', false);
