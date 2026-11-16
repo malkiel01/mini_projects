@@ -3,6 +3,10 @@
 // "none" — בלי זהות, כמו מי שאין לו הרשאה. בשרת הקובץ קיים אבל לא בשימוש: אף .user.ini לא מצביע עליו,
 // ו-tests/.htaccess חוסם גישה ישירה.
 define('TS_DEV', true);
+// מחוברת / מנותקת (A2, lib/sso.php): connected (ברירת המחדל) · detached · unavailable · live (שואלים את "המעטפת" —
+// התשובות מ-TS_HTTP_FIXTURES). מהכותרת X-Dev-Platform, או מהסביבה TS_PLATFORM.
+$plat = $_SERVER['HTTP_X_DEV_PLATFORM'] ?? $_COOKIE['dev_platform'] ?? getenv('TS_PLATFORM') ?: 'connected';
+define('TS_DEV_PLATFORM', in_array($plat, ['connected', 'detached', 'unavailable', 'live'], true) ? $plat : 'connected');
 if ($p = getenv('TS_DB_PATH')) {
     define('TS_DB_PATH', $p);
     define('TS_CACHE_PATH', $p . '.cache');

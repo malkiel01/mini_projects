@@ -520,6 +520,25 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 14) {
+        // A2 — מחוברת או מנותקת (app-rules 2, lib/sso.php). sessions.via: מאיפה נפתח ה-session — 'gate' (השער) או 'sso'
+        // (כניסה מאוחדת, במצב מנותק); כל session קיים — 'gate'. sso_states / sso_jti — state חד-פעמי וזהות שנוצלה.
+        // ALTER ו-CREATE בלבד: לא נוגעת בשום משתמש ובשום נתון.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE sessions ADD COLUMN via TEXT NOT NULL DEFAULT 'gate';
+            CREATE TABLE sso_states (
+                state_hash TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used_at INTEGER
+            );
+            CREATE TABLE sso_jti (jti TEXT PRIMARY KEY, exp INTEGER NOT NULL);
+            CREATE INDEX users_email ON users(lower(email));
+            PRAGMA user_version = 14;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

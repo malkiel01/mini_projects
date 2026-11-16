@@ -68,8 +68,15 @@
  * בלי משתמש, באסימון X-Dev-Token (tsd_…): devapi-feed | devapi-comment | devapi-file | devapi-attach ("public" ב-app.json)
  * כל בקשה נרשמת ביומן המובנה (data/_dev/log.sqlite, 30 יום) — פעולה, מצב, משך, מי; גוף הבקשה לא נרשם.
  *
+ * הכניסה (A2 — מחוברת או מנותקת, lib/sso.php), לפני ה-session וב-"public":
+ * GET  ?action=login_config              {mode: connected|detached|unavailable, platform}
+ * GET  ?action=sso_start                 "כניסה עם הכלים הדיגיטליים" (מנותקת) → הפניה למעטפת
+ * GET  ?action=sso_callback&token&state  החזרה מהמעטפת: כל בדיקות sso.md §2 → session → הפניה לאפליקציה
+ * POST action=logout                     יציאה מהאפליקציה (לא מהפלטפורמה)
+ * בלי משתמש: 401 עם login (כמו login_config); המעטפת לא עונה: 503 עם login.mode = unavailable.
+ *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
- * (lib/auth.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
+ * או מזהות חתומה שנבדקה (lib/auth.php, lib/sso.php); המזהה של המשתמש לא מגיע מהדפדפן אף פעם.
  */
 
 declare(strict_types=1);
@@ -142,13 +149,36 @@ if (in_array($action, TS_DEVAPI_ACTIONS, true)) {
     }
 }
 
+// הכניסה (A2, lib/sso.php) — לפני ה-session: מי שמגיע לכאן עוד לא מחובר. ב-"public" של app.json.
+// sso_start / sso_callback — ניווט של הדפדפן (הפניה), לא JSON.
+if (in_array($action, ['login_config', 'sso_start', 'sso_callback'], true)) {
+    try {
+        if ($action === 'login_config') out(['ok' => true] + ts_login_config());
+        $to = $action === 'sso_start' ? ts_sso_start() : ts_sso_callback($_GET, (string)($_COOKIE[TS_SSO_COOKIE] ?? ''));
+        http_response_code(302);
+        header('Location: ' . $to);
+        exit;
+    } catch (Throwable $e) {
+        devloop_log_error($e);
+        error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
+        fail('תקלה זמנית — נסו שוב בעוד רגע', 503);
+    }
+}
+
 try {
     $session = ts_session();
+} catch (TsUnavailable) {
+    out(['ok' => false, 'error' => 'אין חיבור לכלים הדיגיטליים כרגע — נסו שוב בעוד רגע', 'login' => ['mode' => 'unavailable', 'platform' => false]], 503);
 } catch (Throwable $e) {
     error_log('trading-strategies session: ' . $e->getMessage());
     fail('תקלה זמנית במסד — נסו שוב בעוד רגע', 503);
 }
-if (!$session) fail('אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל', 401);
+if (!$session) {
+    // מנותקת — מסך כניסה; מחוברת — אין הרשאה (השער לא נתן זהות)
+    $login = ts_login_config();
+    out(['ok' => false, 'error' => $login['mode'] === 'detached' ? 'צריך להיכנס' : 'אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל',
+        'login' => $login], 401);
+}
 [$user, $csrf] = $session;
 $uid = (int)$user['id'];
 $tz = $user['timezone'];
@@ -177,7 +207,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
     }
 }
 
-const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
+const TS_WRITE = ['logout', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
@@ -230,7 +260,12 @@ try {
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
             ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
-                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'unread' => ts_inbox_unread($uid), 'version' => ts_app_version()]);
+                'disclaimer' => TS_ANALYSIS_DISCLAIMER, 'login_via' => ts_current()['via'] ?? 'gate', 'unread' => ts_inbox_unread($uid), 'version' => ts_app_version()]);
+
+        case 'logout':
+            // יציאה מהאפליקציה בלבד — לא נוגעת בפלטפורמה (auth.md §5). מחוברת: השער יפתח session חדש בבקשה הבאה
+            ts_session_drop();
+            out(['ok' => true, 'mode' => ts_current()['via'] === 'sso' ? 'detached' : 'connected']);
 
         case 'settings':
             ts_settings_save($uid, $in);

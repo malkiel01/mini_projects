@@ -10,6 +10,11 @@
   "gate": true,
   "restricted": true,
   "public": [
-    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"
-  ]
+    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach|login_config|sso_start|sso_callback"
+  ],
+  "sso": {
+    "return": [
+      "https://mbe-plus.com/mini_projects/trading-strategies/api.php?action=sso_callback"
+    ]
+  }
 }

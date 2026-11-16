@@ -111,7 +111,7 @@ async function api(action, body = null, query = {}) {
     // ההקשר של 🐞 (DevLoop): הבקשות האחרונות — פעולה, מצב, משך ומזהה הבקשה ביומן. בלי הגוף
     window.DevLoop?.noteRequest({ action, status: res?.status ?? 0, ms: Math.round(performance.now() - t0), req: res?.headers.get('X-Request-Id') || '' });
   }
-  if (!res.ok || !data.ok) { const e = new Error(data?.error || 'שגיאה'); e.status = res.status; throw e; }
+  if (!res.ok || !data.ok) { const e = new Error(data?.error || 'שגיאה'); e.status = res.status; e.login = data?.login || null; throw e; }
   return data;
 }
 
@@ -1077,6 +1077,29 @@ function breakdownTable(title, rows, label, cur) {
 }
 
 // ── עוד: הגדרות, נכסים, ייצוא, אודות (אפיון 2.7) ────────
+// ── כניסה, כשהאפליקציה מנותקת מהכלים הדיגיטליים (A2, lib/sso.php) ──
+// מחוברת — אין מסך כזה: השער מכניס לבד. כאן רק "כניסה עם הכלים הדיגיטליים" — ניווט רגיל, לא fetch
+const LOGIN_ERRORS = {
+  cancelled: 'הכניסה בוטלה.',
+  invalid: 'הכניסה לא הושלמה — נסו שוב.',
+};
+function viewLogin() {
+  const err = (location.hash.match(/^#\/login\/(\w+)/) || [])[1];
+  if (err) history.replaceState(null, '', location.pathname);
+  setHead('אסטרטגיות למסחר', 'לתכנון וניתוח בלבד');
+  render(h('section', { class: 'login stack' },
+    h('div', { class: 'login-ic', 'aria-hidden': 'true' }, '📈'),
+    h('h2', {}, 'כניסה'),
+    err ? h('p', { class: 'error', role: 'alert' }, LOGIN_ERRORS[err] || LOGIN_ERRORS.invalid) : null,
+    h('a', { class: 'btn primary login-go', href: 'api.php?action=sso_start' }, 'כניסה עם הכלים הדיגיטליים'),
+    h('p', { class: 'hint' }, 'נכנסים עם החשבון שלכם בכלים הדיגיטליים. בפעם הראשונה יוצג שם אישור קצר.')));
+}
+
+async function logout() {
+  try { await api('logout', {}); } catch (e) { toast(e.message); return; }
+  location.replace(location.pathname);
+}
+
 async function viewMore() {
   setHead('עוד', ME.user.display_name || '');
   const p = ME.profile;
@@ -1102,6 +1125,10 @@ async function viewMore() {
         h('span', { class: 'use-tx' }, h('b', {}, 'ייצוא מלא (JSON)'), h('small', {}, 'כל האסטרטגיות, הגרסאות, הנכסים והעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=csv', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📄'),
         h('span', { class: 'use-tx' }, h('b', {}, 'היומן כ-CSV'), h('small', {}, 'שורה לכל עסקה, עם הרווח וה-R — נפתח באקסל')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
+    // יציאה — רק כשנכנסו בכניסה המאוחדת (מנותקת). מחוברת: היציאה היא מהכלים הדיגיטליים, לא מכאן
+    ME.login_via === 'sso' ? h('ul', { class: 'list' }, h('li', {}, h('button', { class: 'use-row', type: 'button', onclick: logout },
+      h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🚪'),
+      h('span', { class: 'use-tx' }, h('b', {}, 'יציאה'), h('small', {}, 'מהאפליקציה הזו בלבד')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))) : null,
     h('h2', { class: 'sec-title' }, 'אודות'),
     h('div', { class: 'block stack' },
       h('p', {}, 'מחברת עבודה של סוחר: בונים ומתעדים אסטרטגיות, רושמים כל עסקה ביומן מול הכללים של הגרסה שהייתה בתוקף, ובודקים בסטטיסטיקה אם זה עובד.'),
@@ -1165,7 +1192,8 @@ function editInstrument(i) {
     ME = await api('me');
   } catch (e) {
     $('.bottom-nav').hidden = true;
-    render(h('p', { class: 'error', role: 'alert' }, e.message));
+    if (e.login?.mode === 'detached') viewLogin();
+    else render(h('p', { class: 'error', role: 'alert' }, e.message));
     return;
   }
   const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub, withVs, assetPicker, me: () => ME,
