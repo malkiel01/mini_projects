@@ -160,5 +160,37 @@ eq(json_encode(ts_ew_overlay($F, $H, ['pivot_atr_mult' => 2.0])), json_encode(ts
 $thrown = false; try { ts_ew_overlay($C4, 0); } catch (InvalidArgumentException) { $thrown = true; }
 eq($thrown, true, 'timeframe 0 → rejected');
 
+// ── T1 (18.1.6, 2.33): לכל פריט — tip להסבר בחלונית שעל הגרף ──
+require_once dirname(__DIR__) . '/lib/overlay.php';
+$items = ts_ew_overlay($C4, $H)['items'];
+$tipOf = fn(string $kind, ?string $role = null) => array_values(array_filter($items, fn($x) => $x['kind'] === $kind && ($role === null || ($x['role'] ?? null) === $role)));
+eq(array_values(array_filter($items, fn($x) => !isset($x['tip']['title']))), [], 'T1: every Elliott item has a tip with a title');
+eq(array_map(fn($x) => $x['tip']['title'], $tipOf('label')), ['גל 1', 'גל 2', 'גל 3', 'גל 4'], 'T1 criterion 1: the turning points — "גל N"');
+eq($tipOf('label')[3]['tip']['explain'], TS_EW_POINT_RULE['4'], 'T1: a point explains the rule it was counted by (wave 4 — rules 4–5)');
+$z = $tipOf('zone')[0]['tip'];
+eq([$z['title'], $z['explain'], $z['invalidation']], ['אזור תרחיש — גל 5', $nx['rule'], ['price' => 120.0, 'side' => 'below', 'rule' => $nx['invalidation_rule']]],
+    'T1 criterion 2: the scenario zone — "אזור תרחיש", the rule, and the invalidation level with its rule (below, in an up count)');
+eq([$tipOf('hline', 'invalidation')[0]['tip']['title'], isset($tipOf('hline', 'invalidation')[0]['tip']['invalidation'])], ['רמת ביטול', false], 'T1: the invalidation line itself — no second invalidation');
+eq(str_starts_with($tipOf('polyline', 'projection')[0]['tip']['title'], 'קו התרחיש — גל 5'), true, 'T1: the dashed line — "קו התרחיש"');
+$cdi = ts_ew_overlay($Cd, $H)['items'];
+eq(array_values(array_filter($cdi, fn($x) => $x['kind'] === 'zone'))[0]['tip']['invalidation']['side'], 'above', 'T1: in a down count the invalidation is above');
+// 6.6: בלי "יעד", "קנה", "מכור" — בכל טקסט של החלונית (T1 קריטריון 12)
+$words = [];
+foreach ([...$items, ...$cdi, ...ts_ew_overlay($C5, $H)['items']] as $x) array_push($words, $x['tip']['title'], $x['tip']['explain'] ?? '', $x['tip']['invalidation']['rule'] ?? '');
+eq(array_values(array_filter($words, fn($w) => preg_match('/יעד|קנה|מכור/u', $w))), [], 'T1 criterion 12: no "יעד", "קנה" or "מכור" in any Elliott tip');
+// החוזה: tip תקין עובר; לא תקין — נדחה. קישור רק בתוך האפליקציה
+$ovc = ts_ew_overlay($C4, $H);
+eq(count(ts_overlay_check($ovc, $H)['items']), count($ovc['items']), 'T1: the overlay with tips passes the contract check');
+$badTip = 0;
+foreach ([['title' => ''], 'x', ['title' => 'a', 'invalidation' => ['price' => 'x', 'side' => 'below']], ['title' => 'a', 'invalidation' => ['price' => 1.0, 'side' => 'up']],
+          ['title' => 'a', 'links' => [['label' => 'x', 'href' => 'javascript:alert(1)']]], ['title' => 'a', 'links' => [['label' => 'x', 'href' => 'https://evil.example/']]],
+          ['title' => str_repeat('א', 201)]] as $t) {
+    $o = $ovc; $o['items'][0]['tip'] = $t;
+    try { ts_overlay_check($o, $H); } catch (TsOverlayInvalid) { $badTip++; }
+}
+eq($badTip, 7, 'T1: a bad tip is rejected — empty/long title, not an object, bad invalidation, a link outside the app (javascript:, https:)');
+$o = $ovc; $o['items'][0]['tip'] = ['title' => 'a', 'links' => [['label' => 'ביומן', 'href' => '#/method-journal']]];
+eq(count(ts_overlay_check($o, $H)['items']), count($ovc['items']), 'T1: a link inside the app (#/…) is accepted');
+
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

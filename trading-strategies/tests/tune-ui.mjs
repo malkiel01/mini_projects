@@ -80,7 +80,7 @@ try {
   eq(await t.locator('input[name="tune-value"]').getAttribute('placeholder'), 'עכשיו 20 · 2–200', 'the candidate field shows the current value and the range');
   const apply = prop.getByRole('button', { name: 'החל' });
   eq(await apply.isDisabled(), true, 'criterion 5: carol — "החל" is disabled');
-  eq((await prop.locator('.tune-only').textContent()).trim(), 'רק המנהל הראשי מחיל', '… with the reason');
+  eq((await prop.locator('.tune-only').textContent()).trim(), 'רק עורך ראשי מחיל', '… with the reason');
   eq(await noHScroll(c), true, 'no horizontal scroll at 390');
   await shot(c, 's7-carol-390');
 
