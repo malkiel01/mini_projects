@@ -5,8 +5,8 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYGrqqR7BTByrKbVovy",
-    "slice": "4א/5ב כלל E ← S2 מטמון",
+    "session": "session_018g4NYEqqFf5DTC33BEFxAS",
+    "slice": "S4 ניתוח מתחת לגרף (18.4)",
     "model": "claude-opus-5-5"
   },
   "control": "session_018g4NYCfKgd2Qi5hvnpDFRU",
@@ -17,6 +17,26 @@
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
       "done": "4א/4 אומת, #1581 שם, #1580 4א/5",
       "model": "claude-haiku-5-5 (טעות פתיחה) — רדום"
+    },
+    {
+      "session": "session_018g4NYGrqqR7BTByrKbVovy",
+      "done": "#1591, #1592, #1595 S1; handoff #1596",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYG7sBtHJh6uW5fLyxh",
+      "done": "#1598 S3, #1599 S1.1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCMUPJKcJaE5QK2TYs",
+      "done": "#1601 F1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCGcBnrLJ86NSM4bh1",
+      "done": "#1603 S1.2; handoff #1604",
+      "model": "claude-opus-5-5 — רדום"
     }
   ],
   "control_previous": [
@@ -28,6 +48,7 @@
   "code_delete": {
     "session": "session_018g4NYCQjLZtvssney3gT8G",
     "slice": "מחיקה לפי פרק 19.1",
-    "model": "claude-opus-5-5"
+    "model": "claude-opus-5-5",
+    "done": "#1590 מוזג — רדום"
   }
 }
