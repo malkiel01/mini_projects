@@ -736,6 +736,8 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
         // met: null — "בדוק בעצמך" (תנאי שהמחשב לא בודק, 17.1.9 ז); לא נהפך ל-false
         $cards[] = $card + ['status' => 'ok', 'bias' => $a['bias'], 'conditions' => array_map(fn($c) => ['id' => $c['id'], 'text' => $c['text'],
             'side' => $c['side'], 'met' => $c['met'] === null ? null : (bool)$c['met']], $a['conditions']), 'signal_ago' => $a['signal_ago'] ?? null,
+            // מידע בלבד (פיבונאצ'י S25): לא תנאי — לא נספר, ולא "בדוק בעצמך"
+            'info' => array_map(fn($x) => ['id' => $x['id'], 'text' => $x['text']], $a['info'] ?? []),
             'basis' => $basis, 'param_notes' => ts_param_notes($m),
             'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,
