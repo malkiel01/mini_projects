@@ -168,3 +168,4 @@
   (`analysis` ו-`chart_refresh`). **בלי מיגרציה** (23 עדיין פנויה). בדיקות חדשות: `learn-card.php` (20), `learn-card-api.php` (21),
   `learn-card-ui.mjs` (22); `roles-api.php` — שורה "L6: switch to live" (161). כל `tests/*.php` ירוקים; ui: tune, forecast, learn, refresh,
   analysis, roles, learn-switch, chart-f1, method-colors, fibonacci, elliott-card — ירוקים.
+- 2026-11-16 — **L6.1** (בקשת בקרה (8) אחרי מיזוג #1713): שורת הסיכום של שיטה בגרף (`forecast.js`, `brief`) — `ודאות X% · ראשונית` / `· בפועל מאז` לפי `certainty_basis`. `learn-card-ui.mjs` 22 → 25 (גם מקופל); forecast-ui, refresh-ui, chart-f1-ui ירוקים.

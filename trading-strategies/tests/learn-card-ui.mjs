@@ -51,6 +51,7 @@ let T = 1_900_000_000;
 const live = count => { const t0 = T; T += count * 3600; return php(`$i = ts_db()->prepare("INSERT INTO method_outcomes (source, method_id, method_version, params_hash, provider, asset, tf, cred_scope, t_signal, t_exit, side, result, win, r,
   market, month, quarter, weekday, hour, holidays, created_at) VALUES ('live', 'sample-ma-cross', 1, 'x', 'binance', 'binance:BTCUSDT', 'h1', '', ?, ?, 'long', 'loss', 0, -1, 'crypto', 1, 1, 1, 0, '[]', 0)");
   for ($k = 0; $k < ${count}; $k++) { $t = ${t0} + $k * 3600; $i->execute([$t, $t + 1800]); }`); };
+const brief = async p => (await p.locator('.forecast-panel .an-brief').textContent()).trim();   // שורת הסיכום — גם כשהשיטה מקופלת
 const prob = p => p.locator('.forecast-panel .an-sec.prob');
 async function chart(p) {
   await p.goto('about:blank');   // טעינה מלאה — לא רק החלפת hash
@@ -88,6 +89,7 @@ try {
   pr = await chart(o);
   eq((await pr.locator('.live-line').innerText()).replace(/\s+/g, ' ').trim(), 'בפועל מאז: 0% (N = 30)', 'criterion 2: 30 live rows → "בפועל מאז: 0% (N = 30)"');
   eq((await pr.locator('.line b.num').first().textContent()).trim(), bt.certainty + '%', 'criterion 3: the main number is still the backtest one');
+  eq(await brief(o), `לונג · ודאות ${bt.certainty}% · ראשונית`, 'the summary line (also when folded): the main number with its source — "ראשונית"');
   eq(await noHScroll(o), true, 'no horizontal scroll at 390');
   await shot(o, 'l6-card-live-390');
   await part(pr, 'l6-prob-live');
@@ -128,6 +130,9 @@ try {
   eq([await pr.locator('.live-line .chip.ok').textContent(), await pr.locator('.basis-line').textContent()],
     ['המספר הראשי', `ראשונית — מבדיקה לאחור: ${bt.certainty}% (N = ${bt.n.toLocaleString('he-IL')})`], '… and the backtest number stays, as a line of its own');
   await shot(o, 'l6-card-switched-390');
+  eq(await brief(o), 'לונג · ודאות 0% · בפועל מאז', '… the summary line follows the card: "בפועל מאז" (not the backtest number)');
+  await o.locator('.forecast-panel .an-fold').first().click();   // מקפלים — השורה נשארת
+  eq([await o.locator('.forecast-panel .an-fold').first().getAttribute('aria-expanded'), await brief(o)], ['false', 'לונג · ודאות 0% · בפועל מאז'], 'folded: the same summary line');
   await part(pr, 'l6-prob-switched');
 
   const narrow = await open('alice', { width: 320, scheme: 'dark' });
