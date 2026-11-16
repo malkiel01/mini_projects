@@ -689,3 +689,11 @@
 - `nothingOf(id)` ב-`forecast.js` — לפי מה שהשרת החזיר (לא לפי מה שהמשתמש הסתיר). שיטה חדשה שמציירת משהו שלא דרך `overlay.items` /
   `forecast.items` — לעדכן את `nothingOf`, אחרת יופיע ∅ ליד ציור קיים.
 - בדיקה: `tests/legend-none-ui.mjs` — `page.route` על `chart_refresh` מרוקן את התשובה של אליוט (ואפשר עם `note`).
+
+## היסטוריה בפעימות (בקרה 9)
+- **`cache.sqlite` — גרסה 6:** `history` + `history_coverage`. **מיגרציה הבאה ל-`cache.sqlite` — 7.**
+- `ts_market_candles` — החלק שמעבר ל-60 יום נקרא מ-`history` ונמשך רק על החסר (קודם נמשך מחדש בכל בקשה). `ts_coverage_merge($key, $table)`.
+- `ts_market_history` / `market_history` — מנה של 999 (אחד פחות מ-`max_per_call`: מנה מלאה בדיוק = עוד עמוד ריק ב-Binance).
+- `market.js`: `older` (הנרות מהפעימות) נשמר ב-`load('auto'|'pick')`; `histReset` ב-open/change/manual. `box.tsHistory()` לבדיקות.
+- הפעימות רק אחרי נגיעה בגרף (`hist.user`), חוץ מטווח ארוך מ-5,000 (`hist.target`). הזמנים ב-`performance.now()` — בבדיקות השעון קבוע.
+- **fixture של Binance:** `TS_KLINES_SINCE` (אין נרות לפני), `TS_KLINES_429_FILE` (קובץ דגל → 429).

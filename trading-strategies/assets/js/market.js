@@ -420,6 +420,7 @@ export function mountMarket(ctx) {
     }));
 
     const info = h('p', { class: 'hint', 'aria-live': 'polite' });
+    const histInfo = h('p', { class: 'hint hist-info', 'aria-live': 'polite', hidden: true });   // היסטוריה בפעימות — התקדמות / "ממשיכים בעוד רגע"
     const live = h('span', { class: 'chip', hidden: true });
     // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X".
     // שניהם בשורת הכותרת של הפס שמתחת לגרף (S4) — לא בשורת הכפתורים, כדי שהגרף לא יירד בשורה כשהניתוח נדלק בטלפון
@@ -446,7 +447,7 @@ export function mountMarket(ctx) {
     const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsRot, fsExit);
     const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsPick)), custom,
-      wrap, drawSlot, forecastSlot, inds, info,
+      wrap, drawSlot, forecastSlot, inds, info, histInfo,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -667,6 +668,94 @@ export function mountMarket(ctx) {
       document.removeEventListener('keydown', fsKey); document.removeEventListener('pointerdown', fsOutside); });
 
     let data = [];
+    const toBar = x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c });
+
+    // ── היסטוריה בפעימות (בקשת הבעלים: "תוסיף עד 5 שנים, אבל פעימות מידע קטנות, שלא נחסם") ──
+    // הגרף נטען כמו קודם (chart_refresh — גם השיטות מחושבות רק עליו). כשמתקרבים לנר הראשון, או כשהטווח שנבחר ארוך מ-5,000
+    // נרות — מנה של עד 999 נרות ישנים (market_history, פנייה אחת לספק), אחת בכל פעם, עם הפסקה ביניהן:
+    // - אף פעם לא במקביל — לא למנה אחרת ולא ל-chart_refresh.
+    // - HIST_GAP בין מנות: 3 ש' → לכל היותר 20 לדקה, ועם הרענון האוטומטי (2 לדקה) — מתחת לתקרה של 30 לדקה למשתמש.
+    // - תקרה / 429 (מהספק, או מהתקרה שלנו) — "ממשיכים בעוד רגע", וניסיון שוב אחרי HIST_RETRY.
+    // - HIST_MAX: עד 50,000 נרות על המסך. 5 שנים בשעה = 43,800 — נכנס; Lightweight Charts מחזיק את זה, והאינדיקטורים
+    //   מחושבים מחדש על הכול (ממוצע של 50,000 — מילישניות). בדקה ובחמש דקות התקרה עוצרת לפני 5 שנים.
+    const HIST_MAX = 50000, HIST_GAP = 3000, HIST_RETRY = 20000, HIST_NEAR = 60;
+    let older = [];          // הנרות שנטענו בפעימות (לפני החלון של chart_refresh)
+    // הזמנים — performance.now(): לא תלוי בשעון של המכשיר (ובבדיקות — בשעון הקבוע)
+    // user — המשתמש נגע/גרר/גלל בגרף: fitContent אחרי טעינה כבר מראה את הנר הראשון, ובלי זה הייתה יוצאת מנה בכל פתיחה
+    const hist = { gen: 0, busy: false, done: false, next: 0, timer: null, target: null, got: 0, note: '', user: false };
+    function histReset(target) {
+      hist.gen++;
+      clearTimeout(hist.timer);
+      Object.assign(hist, { busy: false, done: false, next: 0, timer: null, target, got: 0, note: '', user: false });
+      older = [];
+      histShow();
+    }
+    function histShow() {
+      const t = hist.note || (hist.target && !hist.done && hist.got ? `נטענו עוד ${hist.got.toLocaleString('he-IL')} נרות ישנים…` : '')
+        || (data.length >= HIST_MAX ? `מוצגים ${HIST_MAX.toLocaleString('he-IL')} נרות — התקרה בגרף` : '');
+      histInfo.textContent = t;
+      histInfo.hidden = !t;
+    }
+    /** צריך עוד: קרוב לנר הראשון, או שהטווח שנבחר עוד לא הושלם */
+    function histNeed() {
+      if (!data.length || hist.done || data.length >= HIST_MAX) return false;
+      if (hist.target !== null && data[0].time > hist.target) return true;
+      if (!hist.user) return false;
+      const r = chart.timeScale().getVisibleLogicalRange();
+      return !!r && r.from < HIST_NEAR;
+    }
+    function histMaybe() {
+      if (hist.busy || hist.timer || loading || !histNeed()) return;
+      const wait = hist.next - performance.now();
+      if (wait > 0) { hist.timer = setTimeout(() => { hist.timer = null; histMaybe(); }, wait); return; }
+      histLoad();
+    }
+    async function histLoad() {
+      hist.busy = true;
+      const gen = hist.gen;
+      try {
+        const r = await api('market_history', null, { asset, tf: st.tf, before: data[0].time });
+        if (gen !== hist.gen) return;
+        if (r.retry) {
+          hist.note = 'ממשיכים בעוד רגע';
+          hist.next = performance.now() + HIST_RETRY;
+        } else {
+          const first = data[0]?.time ?? Infinity;
+          const add = r.candles.map(toBar).filter(x => x.time < first).slice(-(HIST_MAX - data.length));
+          if (add.length) {
+            older = [...add, ...older];
+            data = [...add, ...data];
+            hist.got += add.length;
+            // הנרות הישנים נכנסים משמאל; הספרייה שומרת את המרחק מהנר האחרון — מה שעל המסך לא זז
+            const lv = chart.timeScale().getVisibleLogicalRange();
+            candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+            const lv2 = chart.timeScale().getVisibleLogicalRange();
+            // לבדיקות: המיקום (לוגי) לפני ואחרי, ומספר הנרות שנוספו — אותו מקום על המסך = הוזז בדיוק במספר הזה
+            hist.jump = lv && lv2 ? { before: [lv.from, lv.to], after: [lv2.from, lv2.to], added: add.length } : null;
+            drawIndicators();
+            draw.redraw();
+          }
+          if (r.done || !add.length || data.length >= HIST_MAX || (hist.target !== null && data[0].time <= hist.target)) {
+            hist.done = r.done || !add.length || data.length >= HIST_MAX;
+            if (hist.target !== null && data[0].time <= hist.target) hist.target = null;
+          }
+          hist.note = '';
+          hist.next = performance.now() + HIST_GAP;
+        }
+      } catch (e) {
+        if (gen !== hist.gen) return;
+        hist.note = 'ממשיכים בעוד רגע';
+        hist.next = performance.now() + HIST_RETRY;
+      } finally {
+        if (gen === hist.gen) { hist.busy = false; histShow(); histMaybe(); }
+      }
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && r.from < HIST_NEAR) histMaybe(); });
+    const histUser = () => { hist.user = true; };
+    for (const ev of ['pointerdown', 'touchstart', 'wheel']) box.addEventListener(ev, histUser, { capture: true, passive: true });
+    onTeardown(() => { hist.gen++; clearTimeout(hist.timer); });
+    box.tsTimes = () => chart.timeScale().getVisibleRange();   // לבדיקות: טווח הזמן שעל המסך
+    box.tsHistory = () => ({ n: data.length, first: data[0]?.time ?? null, older: older.length, busy: hist.busy, done: hist.done, target: hist.target, note: hist.note, jump: hist.jump ?? null });   // לבדיקות
     let ws = null;
     function drawIndicators() {
       const c = data.map(x => x.close), hh = data.map(x => x.high), ll = data.map(x => x.low);
@@ -748,7 +837,11 @@ export function mountMarket(ctx) {
         let rows = r.candles;
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
-        data = rows.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
+        const base = rows.map(toBar);
+        // רענון אוטומטי ובחירת שיטה — ההיסטוריה שנטענה בפעימות נשארת לפני הנתונים החדשים; נתונים חדשים (פתיחה, מסגרת,
+        // טווח, ↻) — מתחילים מחדש
+        if (mode === 'auto' || mode === 'pick') data = base.length ? [...older.filter(x => x.time < base[0].time), ...base] : base;
+        else { histReset(r.capped ? rangeQuery().from : null); data = base; }
         const pf = priceFormat(rows);
         dec = pf.precision;
         candle.applyOptions({ priceFormat: pf });
@@ -764,7 +857,7 @@ export function mountMarket(ctx) {
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
-          capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
+          capped ? ' · הנרות הישנים נטענים בהדרגה' : '',
           r.stream || analysisOn() ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
           n ? '' : ' · אין נתונים בטווח הזה',
           // 21.3: אין דרך להשלים (תקרה, או אין מפתח זמין) — מוצג מה שבמאגר
@@ -782,7 +875,7 @@ export function mountMarket(ctx) {
       } finally {
         loading = false;
         refresh.disabled = false;
-        if (pending) { const m = pending; pending = null; load(m); } else schedule();
+        if (pending) { const m = pending; pending = null; load(m); } else { schedule(); histMaybe(); }
       }
     }
     // הבדיקה לאחור (6.2) דרך analysis — פעם אחת לכל מסגרת ושילוב שיטות בפתיחה; "↻ רענן" מריץ שוב. התשובה מחליפה את הכרטיסים
