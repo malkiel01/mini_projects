@@ -238,7 +238,7 @@ function doc_model(array $s, int $budgetId): array
     // תכנית העבודה: מהעורך (העותק השמור), ובהצעה שעוד לא עברה לעורך — מהטקסט
     $planView = $b['plan_view'] ?? null;
     $plan = $planView ? plan_html_blocks($planView['html']) : plan_blocks((string)$b['work_plan']);
-    $page = 2;
+    $page = $g['integrity'] ? 3 : 2;   // עמוד האזהרה (B1) לפני השער
     $planPages = $plan ? max(1, (int)ceil((array_sum(array_map(fn($x) => 1 + intdiv(mb_strlen($x['text']), 90), $plan)) + 3) / 32)) : 0;
     $page += $planPages;
     $sumRows = array_sum(array_map(fn($x) => count($x['rows']) + 4, $g['summary']['sections']));
@@ -261,17 +261,6 @@ function doc_model(array $s, int $budgetId): array
         'total' => ['prev' => $sec['total']['prev_budget'], 'actual' => $sec['total']['prev_actual'], 'cur' => $sec['total']['amount']],
     ], $g['summary']['sections']);
 
-    // שיוך שורות לשורות ריכוז — לנוסחאות באקסל
-    $fundById = array_column($g['funds'], null, 'id');
-    $rowsById = array_column($g['rows'], null, 'id');
-    $lineRow = [];
-    foreach ($g['lines'] as $l) {
-        $f = $fundById[$l['fund_id']];
-        $rid = $l['summary_row_id'] ?? $f['row_' . $l['direction']];
-        $lineRow[$l['id']] = $rid !== null && isset($rowsById[$rid]) && $rowsById[$rid]['direction'] === $l['direction']
-            ? "row:$rid" : auto_row($f, $l['direction'])['key'];
-    }
-
     $ds = org_doc_style($org);
     return [
         'budget_id' => $b['id'], 'year' => $y, 'status' => $b['status'], 'expense_first' => $b['expense_first'],
@@ -290,12 +279,24 @@ function doc_model(array $s, int $budgetId): array
         'summary_only' => array_values(array_map(fn($l) => ['id' => $l['id'], 'fund_id' => $l['fund_id'], 'title' => $l['title'],
             'subtitle' => $l['subtitle'], 'prev' => $l['prev_budget'], 'actual' => $l['prev_actual'], 'cur' => $l['amount']],
             array_filter($g['lines'], fn($l) => $l['summary_only']))),
-        'line_row' => $lineRow,
+        'line_row' => $g['summary']['line_row'],   // שיוך שורות לשורות ריכוז — לנוסחאות באקסל (מאותו חישוב של הריכוז)
+        'integrity' => $g['integrity'],
         'appendix' => $g['appendix'] ? ['title' => "דוח הכנסות – נכסים והקדשות לשנת $y", 'groups' => $g['appendix']] : null,
         'cols' => $cols,
         'appendix_cols' => ['property' => '', 'tenant' => 'שם השוכר', 'monthly' => "שכירות לחודש\nלא כולל מע\"מ",
             'annual' => "סה\"כ שכירות לשנה\nלא כולל מע\"מ", 'period' => 'תקופת השכירות'],
     ];
+}
+
+/**
+ * האזהרה בראש המסמך המופק (B1): ההצעה לא עוברת את budget_integrity() — כותרת ושורה לכל בעיה.
+ * לא חוסמת הפקה; מי שמגיש רואה בדיוק מה לא מאוזן ובכמה.
+ */
+function integrity_warning(array $issues): array
+{
+    if (!$issues) return [];
+    return array_merge(['⚠️ ההצעה לא מאוזנת: ' . count($issues) . (count($issues) === 1 ? ' בעיה' : ' בעיות') . ' — לתקן לפני הגשה'],
+        array_map(fn($x) => $x['msg'], $issues));
 }
 
 function budget_doc(array $s, int $id): array
@@ -372,7 +373,8 @@ function bidi_split(string $text): array
 function w_r(string $text, array $o = []): string
 {
     $sz = (int)round(($o['size'] ?? 11) * 2);
-    $fmt = (!empty($o['bold']) ? '<w:b/><w:bCs/>' : '') . (!empty($o['u']) ? '<w:u w:val="single"/>' : '') . "<w:sz w:val=\"$sz\"/><w:szCs w:val=\"$sz\"/>";
+    $fmt = (!empty($o['bold']) ? '<w:b/><w:bCs/>' : '') . (!empty($o['color']) ? '<w:color w:val="' . $o['color'] . '"/>' : '')
+        . (!empty($o['u']) ? '<w:u w:val="single"/>' : '') . "<w:sz w:val=\"$sz\"/><w:szCs w:val=\"$sz\"/>";
     $out = '';
     foreach (bidi_split($text) as [$s, $ltr]) {
         $out .= '<w:r><w:rPr>' . ($ltr ? '' : '<w:rtl/>') . $fmt . '</w:rPr><w:t xml:space="preserve">' . xml($s) . '</w:t></w:r>';
@@ -522,6 +524,13 @@ function docx_build(array $s, int $id, bool $coverOnly = false): array
     $al = $ds['title_align'];
     $first = true;   // החלק הראשון במסמך לא מתחיל בעמוד חדש
     $brk = function () use (&$first) { $b = !$first; $first = false; return $b; };
+
+    // אזהרה: ההצעה לא מאוזנת — בעמוד הראשון, לפני השער
+    if (!$coverOnly && ($warn = integrity_warning($d['integrity']))) {
+        $body .= w_p(array_shift($warn), ['bold' => true, 'color' => 'C00000', 'size' => $X + 2, 'after' => 120]);
+        foreach ($warn as $wl) $body .= w_p('•  ' . $wl, ['color' => 'C00000', 'size' => $X, 'after' => 40]);
+        $body .= '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+    }
 
     // שער
     $logo = null;
@@ -852,7 +861,7 @@ function calc_formula(array $c): string
 // סגנונות התאים באקסל (cellXfs) — המספרים נבנים ב-xlsx_styles() באותו סדר
 const XS_TITLE = 1, XS_HEAD = 2, XS_TEXT = 3, XS_NUM = 4, XS_TOT_T = 5, XS_TOT_N = 6, XS_NOTE = 7, XS_CAP = 8, XS_SEC = 9,
     XS_IDX = 10, XS_LTR = 11, XS_ADDR = 12, XS_C_ORG = 13, XS_C_SUB = 14, XS_C_TITLE = 15, XS_C_SMALL = 16, XS_PARA = 17,
-    XS_P_HEAD = 18, XS_P_CENTER = 19, XS_BULLET = 20, XS_LABEL = 21, XS_REF = 22, XS_TOT_W = 23;
+    XS_P_HEAD = 18, XS_P_CENTER = 19, XS_BULLET = 20, XS_LABEL = 21, XS_REF = 22, XS_TOT_W = 23, XS_WARN_T = 24, XS_WARN = 25;
 
 function xlsx_styles(array $st): string
 {
@@ -863,7 +872,7 @@ function xlsx_styles(array $st): string
     [$X, $T, $H, $TI, $C] = [$st['size_text'], $st['size_table'], $st['size_head'], $st['size_title'], $st['size_cover']];
     $fonts = [$font($T), $font($T, true), $font($TI, true, true), $font(max(6, $T - 2), false, false, 'FF555555'), $font($H, true, true),
         $font($X, true, true), $font($C, true), $font(round($C * .75 * 2) / 2, true), $font($C + 2, true), $font($X + 1, true),
-        $font($X), $font($H + 1, true, true), $font($T, true)];
+        $font($X), $font($H + 1, true, true), $font($T, true), $font($TI, true, false, 'FFC00000'), $font($X, false, false, 'FFC00000')];
     $al = $st['title_align'] === 'right' ? 'right' : 'center';
     $xf = fn(int $font, string $align, int $fill = 0, int $border = 0, int $num = 0, string $extra = '') => '<xf' . ($num ? ' numFmtId="' . $num . '" applyNumberFormat="1"' : '')
         . ' fontId="' . $font . '" fillId="' . $fill . '" borderId="' . $border . '" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment ' . $align . $extra . '/></xf>';
@@ -893,6 +902,8 @@ function xlsx_styles(array $st): string
         $xf(1, 'horizontal="right" vertical="center" wrapText="1"' . $rtl, 0, 1),               // 21 שורת ריכוז
         $xf(0, 'horizontal="center" vertical="center"' . $rtl, 0, 1),                           // 22 "עמ' X עד Y"
         $xf(1, 'horizontal="right" vertical="center" wrapText="1"' . $rtl, 3, 1),               // 23 סה"כ — טקסט ארוך
+        $xf(13, 'horizontal="right" vertical="center" wrapText="1"' . $rtl),                    // 24 אזהרה: כותרת (אדום)
+        $xf(14, 'horizontal="right" vertical="top" wrapText="1"' . $rtl),                       // 25 אזהרה: שורה (אדום)
     ];
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
         . '<numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0;(#,##0);0"/></numFmts>'
@@ -927,6 +938,14 @@ function export_xlsx(array $s, int $id): never
     $sheets = [];
     $cells = [];   // line id → [sheet, row]  (העמודה: C קודם · D ניצול · E מוצע)
     $total = array_sum($W([100]));
+
+    // ── אזהרה: ההצעה לא מאוזנת — הגיליון הראשון (B1) ──
+    if ($warn = integrity_warning($d['integrity'])) {
+        $wsh = new Sheet(sheet_name('⚠️ אזהרות', $used), $W([100]), $pageH);
+        $wsh->line(['v' => array_shift($warn), 's' => XS_WARN_T], $pt($TI) + 6, true);
+        foreach ($warn as $wl) $wsh->line(['v' => '•  ' . $wl, 's' => XS_WARN], $pt($X, $lines($wl, $total - 3, $X)) + 2);
+        $sheets[] = $wsh;
+    }
 
     // ── שער ──
     $cover = null;
@@ -1122,12 +1141,14 @@ function export_xlsx(array $s, int $id): never
             $first = $ap->r + 1;
             $lastProp = null;
             foreach ($g['rows'] as $r) {
-                $m = str_replace(',', '', $r['monthly']);
                 $prop = $r['property'] === $lastProp ? '' : $r['property'];
+                $two = str_contains($r['monthly'], ' / ');
                 $n = max($lines($prop, $aw[0], $T), substr_count($r['monthly'], ' / ') + 1, substr_count($r['period'], ', ') + 1, $lines((string)$r['tenant'], $aw[1], $T));
                 $ap->add([$prop === '' ? ['v' => '', 's' => XS_TEXT] : ['rich' => [[$prop, $runFont($T, true)]], 's' => XS_TEXT], ['v' => $r['tenant'], 's' => XS_TEXT],
-                    is_numeric($m) ? ['v' => (int)$m, 's' => XS_NUM] : ['v' => str_replace(' / ', "\n", $r['monthly']), 's' => XS_LTR],
-                    ['v' => (int)$r['annual'], 's' => XS_NUM], ['v' => str_replace(', ', "\n", $r['period']), 's' => XS_LTR]], $pt($T, $n));
+                    $two ? ['v' => str_replace(' / ', "\n", $r['monthly']), 's' => XS_LTR] : ['v' => (int)$r['monthly_n'], 's' => XS_NUM],
+                    // השנתי — אותו תא של השורה בגיליון הקופה (מקור אחד), כשהיא שם
+                    ['v' => (int)$r['annual'], 's' => XS_NUM] + (isset($cells[$r['line_id']]) ? ['f' => '=' . q($cells[$r['line_id']][0]) . '!E' . $cells[$r['line_id']][1]] : []),
+                    ['v' => str_replace(', ', "\n", $r['period']), 's' => XS_LTR]], $pt($T, $n));
                 $lastProp = $r['property'];
             }
             $last = $ap->r;
