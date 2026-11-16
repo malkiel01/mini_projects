@@ -584,10 +584,17 @@ function ts_trade_out(array $t, string $tz): array
         'to_improve' => $t['to_improve'],
         'rating' => $t['rating'] !== null ? (int)$t['rating'] : null,
         'method_id' => $t['method_id'] ?? null,
-        'method_name' => isset($t['method_id']) && function_exists('ts_method_exists') && ts_method_exists($t['method_id']) ? ts_method($t['method_id'])->meta()['name'] : null,
+        'method_name' => isset($t['method_id']) ? ts_trade_method_name((string)$t['method_id']) : null,
         'analysis_snapshot' => isset($t['analysis_snapshot']) ? ts_unjson($t['analysis_snapshot'], null) : null,
         'calc' => array_merge($t['calc'], ['closed_at' => ts_time_out($t['calc']['closed_at'], $tz)]),
     ];
+}
+
+/** שם השיטה של עסקה. שיטה שהוסרה (למשל מוגדרת מבונה השיטות, 21.1) — המזהה, עם "(שיטה שהוסרה)" */
+function ts_trade_method_name(string $id): ?string
+{
+    if (!function_exists('ts_method_exists')) return null;
+    return ts_method_exists($id) ? ts_method($id)->meta()['name'] : "$id (שיטה שהוסרה)";
 }
 
 function ts_trade_get(int $uid, int $id, string $tz): array

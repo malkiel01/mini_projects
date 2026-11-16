@@ -54,9 +54,6 @@
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
  *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
- * בונה השיטות (17.2, ✅19): POST admin_method_save {definition} (חדשה או גרסה חדשה) | admin_method_validate {definition}
- *      | admin_method_dry_run {definition, asset, tf} ("🧪 נסה", לא נשמר; נספר בתקרת 30) · GET admin_method_list
- *      | admin_method_versions&id=
  * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
  *      (נספר בתקרת 30) | admin_tune_apply {id} (המנהל הראשי בלבד)
  *
@@ -93,7 +90,6 @@ require_once __DIR__ . '/lib/drawings.php';
 require_once __DIR__ . '/lib/analysis.php';
 require_once __DIR__ . '/lib/forecast.php';
 require_once __DIR__ . '/lib/refresh.php';
-require_once __DIR__ . '/lib/builder.php';
 require_once __DIR__ . '/lib/alerts.php';
 require_once __DIR__ . '/lib/journal.php';
 require_once __DIR__ . '/lib/fx.php';
@@ -237,9 +233,9 @@ const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
-    'admin_method_validate', 'admin_method_dry_run', 'admin_tune_propose', 'admin_tune_apply'];
+    'admin_tune_propose', 'admin_tune_apply'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_method_dry_run', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -399,7 +395,7 @@ try {
             $methodNames = array_column(ts_methods_visible($uid), 'name', 'id');
             $mine = ts_db()->prepare('SELECT DISTINCT method_id FROM trades WHERE user_id = ? AND method_id IS NOT NULL');
             $mine->execute([$uid]);
-            foreach ($mine->fetchAll(PDO::FETCH_COLUMN) as $mid) if (ts_method_exists($mid)) $methodNames[$mid] = ts_method($mid)->meta()['name'];
+            foreach ($mine->fetchAll(PDO::FETCH_COLUMN) as $mid) $methodNames[$mid] ??= ts_trade_method_name((string)$mid);
             out(['ok' => true, 'by_currency' => ts_stats(array_values($closed), $tz), 'no_stop' => $noStop,
                 'in_base' => $closed ? ts_stats_in_base($uid, array_values($closed), $user['base_currency'], $tz) : null,
                 'method_names' => $methodNames]);
@@ -522,22 +518,10 @@ try {
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
 
         case 'admin_method_save':
-            // עם definition — בונה השיטות (17.2): שיטה מוגדרת חדשה או גרסה חדשה שלה; בלי — הגדרות של שיטה קיימת (6.7)
-            if (array_key_exists('definition', $in)) out(['ok' => true, 'saved' => ts_builder_save($uid, $in['definition']), 'methods' => ts_admin_methods()]);
+            // הגדרות של שיטה קיימת (6.7). בונה השיטות נמחק (21.1, ✅29) — שמירת הגדרה (definition) לא קיימת יותר
+            if (array_key_exists('definition', $in)) throw new TsInvalid('בונה השיטות הוסר — שיטה חדשה נכתבת כקוד');
             ts_admin_method_save($uid, $in);
             out(['ok' => true, 'methods' => ts_admin_methods()]);
-
-        case 'admin_method_list':
-            out(['ok' => true, 'methods' => ts_admin_methods()]);
-
-        case 'admin_method_validate':
-            out(['ok' => true, 'method' => ts_builder_validate($in['definition'] ?? null)]);
-
-        case 'admin_method_dry_run':
-            out(['ok' => true] + ts_builder_dry_run($uid, $in['definition'] ?? null, $in['asset'] ?? '', $in['tf'] ?? ''));
-
-        case 'admin_method_versions':
-            out(['ok' => true, 'versions' => ts_builder_versions($_GET['id'] ?? null)]);
 
         // שכלול (18.7, S7): הצעה — כל מנהל; "החל" — רק המנהל הראשי (נבדק ב-ts_tune_apply)
         case 'admin_tune_list':

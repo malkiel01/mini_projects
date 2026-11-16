@@ -1,6 +1,5 @@
 // הפרופיל וניהול השיטות — spec-stage-a פרקים 5–6. כרטיס הניתוח עבר לפס שמתחת לגרף (card.js, forecast.js — S4, 18.4);
 // מסך "🧭 ניתוח" הנפרד הוסר (2.15). כל טקסט — textContent.
-import { openBuilder, openVersions } from './builder.js';
 import { TF_LABEL } from './card.js';
 import { assetField } from './combobox.js';
 
@@ -139,9 +138,6 @@ export function mountAnalysis(ctx) {
           h('p', { class: 'hint', style: 'margin:4px 0' }, m.source, sep(), `אופק ${m.horizon_bars} נרות`, sep(), m.alerts ? 'נכנסת להתראות' : 'לא בהתראות',
             sep(), `${m.backtests} בדיקות לאחור שמורות`),
           m.sample ? h('p', { class: 'hint' }, 'שיטת דוגמה: גם כשהיא מופעלת — רק מנהלים רואים אותה, ולא נכנסת להתראות.') : null,
-          m.kind === 'defined' ? h('div', { class: 'row-btns wrap' }, h('span', { class: 'chip' }, '🧩 מוגדרת'),
-            h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => openBuilder(ctx, m.definition, () => ctx.reload()) } }, '✏️ עריכת ההגדרה'),
-            h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => openVersions(ctx, m.id, () => ctx.reload()) } }, '🕘 גרסאות')) : null,
           h('label', { class: 'switch' }, on, h('span', {}, 'מופעלת')),
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
           h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})` + (d.ours === true ? ' · הגדרה שלנו' : d.ours === false ? ' · לפי הספר' : ''), inputs[k]))),
@@ -160,8 +156,7 @@ export function mountAnalysis(ctx) {
       };
       const costIn = Object.fromEntries(Object.entries(S.costs).map(([mk, c]) => [mk, [numInput('fee', c.fee), numInput('slip', c.slip)]]));
       box.replaceChildren(
-        h('p', { class: 'hint' }, 'השיטות שבקוד, והשיטות המוגדרות (🧩). שיטה חדשה מופיעה כבויה עד שמפעילים אותה. שינוי בקוד או בהגדרה מעלה את הגרסה, והבדיקות לאחור שלה מחושבות מחדש.'),
-        h('div', {}, h('button', { class: 'btn ghost', type: 'button', on: { click: () => openBuilder(ctx, null, () => ctx.reload()) } }, '➕ שיטה מוגדרת')),
+        h('p', { class: 'hint' }, 'השיטות שבקוד. שיטה חדשה נכתבת כקוד, ומופיעה כבויה עד שמפעילים אותה. שינוי בקוד מעלה את הגרסה, והבדיקות לאחור שלה מחושבות מחדש.'),
         h('ul', { class: 'list' }, S.methods.map(card)),
         h('h2', { class: 'sec-title' }, 'עמלה והחלקה לבדיקה לאחור (% לכל צד)'),
         h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'שוק'), h('th', {}, 'עמלה'), h('th', {}, 'החלקה'))),
