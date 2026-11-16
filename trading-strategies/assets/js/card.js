@@ -17,24 +17,43 @@ export function cardParts(ctx) {
   const when = t => { try { return new Date(t * 1000).toLocaleString('he-IL', { timeZone: ME().user.timezone, day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
 
   /** הסתברות (✅26): אחוז ההצלחה של השיטה בבדיקה לאחור על הנכס, עם המקור. בלי בדיקה, או N < 30 — "לא נבדק לאחור", בלי אחוז */
+  /** 23.7 (L6): "בפועל מאז" — שורות live של השיטה וגרסתה, לא מעורבבות עם הבדיקה לאחור. 30 לפחות; אחרת אין שורה (השרת מחזיר null) */
+  function liveLine(c) {
+    const lv = c.live;
+    if (!lv) return null;
+    return h('div', { class: 'line live-line', 'data-scope': lv.scope },
+      h('span', { class: 'muted' }, 'בפועל מאז:'), h('b', { class: 'num' }, `${lv.certainty}%`), h('span', { class: 'muted num' }, `(N = ${lv.n.toLocaleString('he-IL')})`),
+      lv.scope === 'general' ? h('span', { class: 'chip' }, 'כללי — לא לשוק הזה') : null,
+      lv.switched ? h('span', { class: 'chip ok' }, 'המספר הראשי') : null);
+  }
+
   function probability(c, r, running = false) {
     const bt = c.backtest || {};
     const sym = [pairMain(r.pair), ' ', TF_LABEL[c.tf]];   // BTC ⇄ USDT שעה (18.1.1)
-    if (bt.status === 'ok') {
+    const onLive = c.certainty_basis === 'live';
+    if (bt.status === 'ok' || onLive) {
+      const btLine = bt.status === 'ok'
+        ? h('div', { class: 'line muted basis-line' }, onLive ? `ראשונית — מבדיקה לאחור: ${bt.certainty}% (N = ${bt.n.toLocaleString('he-IL')})` : `ראשונית — מבדיקה לאחור (N = ${bt.n.toLocaleString('he-IL')})`)
+        : null;
       return h('div', { class: 'summary' },
-        h('div', { class: 'line' }, h('span', { class: 'muted' }, 'ודאות'), h('b', { class: 'num' }, bt.certainty + '%'),
+        h('div', { class: 'line' }, h('span', { class: 'muted' }, 'ודאות'), h('b', { class: 'num' }, c.certainty + '%'),
           c.below_threshold ? h('span', { class: 'chip warn' }, `מתחת לסף שלך (${r.profile.min_certainty}%)`) : null),
+        onLive ? [liveLine(c), btLine] : [btLine, liveLine(c)],
+        bt.status === 'ok' ? [
         h('div', { class: 'line muted' }, `${bt.win_pct}% הצלחה ב-${bt.n.toLocaleString('he-IL')} אותות`, sep(), years(bt.from_t, bt.to_t), sep(), h('span', { class: 'num' }, sym)),
         h('div', { class: 'line muted' }, `תוחלת ${(bt.expectancy_r >= 0 ? '+' : '') + bt.expectancy_r.toFixed(2)}R`, sep(), `ירידה מרבית ${bt.max_dd.toFixed(1)}R`, sep(), 'חושב ' + when(bt.computed_at)),
-        bt.stale ? h('p', { class: 'hint', style: 'margin:0' }, 'הבדיקה לאחור מלפני יותר מיום — תחושב מחדש ב"↻ רענן".') : null,
-        h('p', { class: 'hint', style: 'margin:0' }, 'הוודאות היא של השיטה על הנכס הזה בעבר — לא של העסקה הבאה, ולא של התרחיש. הגבול התחתון של רווח סמך 95% (Wilson).'));
+        bt.stale ? h('p', { class: 'hint', style: 'margin:0' }, 'הבדיקה לאחור מלפני יותר מיום — תחושב מחדש ב"↻ רענן".') : null] : null,
+        h('p', { class: 'hint', style: 'margin:0' }, onLive
+          ? 'הוודאות היא מהאותות של השיטה מאז הבדיקה לאחור (העורך הראשי החליף לבפועל) — לא של העסקה הבאה. הגבול התחתון של רווח סמך 95% (Wilson).'
+          : 'הוודאות היא של השיטה על הנכס הזה בעבר — לא של העסקה הבאה, ולא של התרחיש. הגבול התחתון של רווח סמך 95% (Wilson).'));
     }
     const why = running ? 'מריץ בדיקה לאחור… בפעם הראשונה זה יכול לקחת כמה שניות'
       : bt.status === 'insufficient' ? `${bt.n} אותות בבדיקה לאחור — ודאות מוצגת רק מ-30`
         : bt.status === 'missing' || !bt.status ? 'עוד אין בדיקה לאחור שמורה לנכס ולמסגרת האלה'
           : bt.message || 'הבדיקה לאחור לא זמינה';
     return h('div', { class: 'summary' }, h('div', { class: 'line' }, h('b', { class: 'bt-none' }, 'לא נבדק לאחור')),
-      h('div', { class: 'line muted' }, why, bt.status === 'insufficient' ? [sep(), years(bt.from_t, bt.to_t), sep(), h('span', { class: 'num' }, sym)] : null));
+      h('div', { class: 'line muted' }, why, bt.status === 'insufficient' ? [sep(), years(bt.from_t, bt.to_t), sep(), h('span', { class: 'num' }, sym)] : null),
+      liveLine(c));
   }
 
   /** "פתח עסקה מזה" (פרק 11): הנכס ביומן לפי סימול מנורמל; הרמות — המחרוזות המעוגלות מהשרת; וגודל הפוזיציה מהפרופיל */

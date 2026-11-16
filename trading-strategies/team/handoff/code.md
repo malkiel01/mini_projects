@@ -20,6 +20,7 @@
 > **עדכון 2026-11-16 (צ'אט bt-incomplete):** בדיקה לאחור חלקית נשמרת (`bt_partial`) וממשיכה. **`cache.sqlite` — המיגרציה הבאה 6.** הסעיף "בדיקה לאחור שלא הספיקה" בסוף.
 > **עדכון 2026-11-16 (צ'אט T1):** חלונית ההסבר על הגרף (18.1.6) — הסעיף "T1 — חלונית הסבר" בסוף.
 > **עדכון 2026-11-16 (צ'אט L1):** למידה עצמית — `method_outcomes` ו-backtest. **`app.sqlite` — המיגרציה הבאה 18; `cache.sqlite` — 6.** הסעיף "L1 — למידה עצמית" בסוף.
+> **עדכון 2026-11-16 (צ'אט L6):** L6 בנוי — הסעיף "L6 — בנוי" בתוך "התחל כאן — למידה". **בלי מיגרציה — `app.sqlite` הבאה עדיין 23.** פרק 23 (L1–L6) גמור בקוד.
 > **עדכון 2026-11-16 (צ'אט R1):** עורך ראשי / עורך משני / משתמש (פרק 24) — הסעיף "R1 — תפקידים" בסוף. **מיגרציה 18 = `app_roles` (R1, אחרי 17 של L1). הבאה — 19 (`app.sqlite`); `cache.sqlite` — 6.**
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
@@ -94,12 +95,33 @@
 - **לא לגעת** (צ'אטים אחרים): `lib/fibonacci*`, `lib/methods/fibonacci.php`, `assets/js/forecast.js`; הרשאות (`app_roles`, מיג' 18).
 - **`lib/devloop.php` הוא עותק** — עורכים רק ב-`devloop/src` + `php devloop/tools/sync.php` (שער בפריסה).
 
+### L6 — בנוי (23.7, ענף `claude/trading-strategies-learning-l6`)
+
+- **השורה השנייה:** `ts_learn_live_line($method, $version, $market, $tf)` (`lib/learn.php`) — רק `live`, `cred_scope = ''`, בלי `skipped_gap`.
+  30 בשוק × מסגרת → `scope: segment`; פחות — השיטה וגרסתה **בכל השווקים ובכל המסגרות** (`scope: general`, `segment: ''`); פחות מ-30
+  גם שם → `null`. **כל** שורות ה-live של הגרסה, בלי סינון לפי `backtests.to_t` — הן אחרי `base_t` של הבדיקה שלהן מעצם הכתיבה.
+- **הכרטיס** (`ts_analysis_cards` → `analysis` ו-`chart_refresh`): `certainty_basis` (`backtest` | `live`) ו-`live` (`n`, `wins`, `win_pct`,
+  `certainty`, `ci`, `scope`, `segment`, `switched`). `certainty` הוא המספר הראשי — מ-live **רק** כש-`switched`. `backtest.certainty`
+  נשאר תמיד. בממשק — `liveLine` / `probability` ב-`assets/js/card.js` (`.basis-line`, `.live-line`).
+- **"החלף לבפועל":** `ts_learn_switch_sync($now)` ב-`ts_alerts_run`, אחרי `learn_live` ולפני `learn` (שאילתות בלבד). לכל שיטה בגרסה
+  הנוכחית — כל שוק × מסגרת עם 30 live, והרמה הכללית: Wilson [תחתון, עליון] של live מול backtest **של אותה רמה**, מאגר משותף, **בלי
+  עסקאות שיש להן גם שורת live** (אותו מפתח, מקור אחר — `ts_learn_backtest_apart`). לא חופפים → הצעה ב-`method_proposals` עם
+  `param = '@certainty'` (`TS_CERT_PARAM`), `origin = learning`, `results = {backtest, live}`; חופפים שוב → `stale`; כבר הוחלף → לא שוב.
+- **ההחלה:** `ts_tune_apply` — ענף מיוחד ל-`@certainty`: `status = applied`, `new_version = NULL`, `admin_log` `method_cert_live`. **לא נוגע
+  ב-`methods` ולא מעלה גרסה** (העלאה הייתה מאפסת את ה-live). "הוחלף" = הצעה `applied` לאותה שיטה, גרסה ורמה (`ts_learn_switched`) — לכן
+  **אין מיגרציה**. גרסה חדשה → מתחילה שוב מ"ראשונית". `ts_tune_row`: `@certainty` פתוחה → stale כשהגרסה זזה או כשכבר הוחלף.
+- **במסך השיטות:** `certCard` ב-`assets/js/analysis.js` (`.cert-prop`) — טבלה בדיקה לאחור מול בפועל (N, הצלחה, רווח סמך 95%), "החלף לבפועל".
+- **חוב:** שורת הסיכום של שיטה מקופלת ב-`assets/js/forecast.js` (`brief`, שורה ~475) מציגה `bt.certainty` — אחרי "החלף לבפועל" היא
+  תראה את מספר הבדיקה לאחור. הקובץ של צ'אט פיבונאצ'י — לא נגעתי. התיקון: `c.certainty` במקום `bt.certainty` שם.
+- **אין דרך לבטל** "החלף לבפועל" באותה גרסה (רק גרסה חדשה). אם יידרש — שאלה לאפיון.
+
 ### איך בודקים
 
 - `php trading-strategies/tests/<שם>.php` — כל אחד עצמאי (מסד זמני). הלמידה: `learn.php`, `learn-api.php`, `learn-stats-api.php`,
   `learn-findings.php`, `learn-values.php`, `learn-values-api.php`; בדפדפן `node trading-strategies/tests/learn-ui.mjs` (SHOTS=<תיקייה> — צילומים).
 - שיטות בדיקה: `TS_TEST_METHODS=tests/fixtures/methods/learning.php` (`test-learn`, `test-neighbors`); הסטים הקבועים — `tests/fixtures/learn/sets.php`.
 - `ts_learn_cron(..., $load, $seconds)` — `$load` מזריק נרות בבדיקה, בלי רשת.
+- L6: `learn-card.php`, `learn-card-api.php`, `node trading-strategies/tests/learn-card-ui.mjs`.
 - לפני push: כל `tests/*.php` + `php platform/check-apps.php`.
 
 ## על מה S3 נשען — כבר בנוי

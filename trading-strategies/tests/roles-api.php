@@ -152,6 +152,13 @@ $ROWS = [
         $id = call('owner', 'admin_tune_propose', $prop())[1]['proposal']['id'];
         return call($as, 'admin_tune_apply', ['id' => $id])[0];
     }],
+    // L6 (23.7): "החלף לבפועל" — הצעה מהלמידה (נכתבת ב-cron; כאן ישר למסד), ההחלה דרך admin_tune_apply — עורך ראשי בלבד
+    ['L6: switch to live', ['chief'], function ($as) use ($db, $S) {
+        $db->exec("INSERT INTO method_proposals (method_id, method_version, param, current_value, candidate_value, asset, tf, split_t, results, note, created_by, created_at, segment, origin)
+            VALUES ('$S', " . (int)$db->query("SELECT 1 + tune FROM methods WHERE id = '$S'")->fetchColumn() . ", '@certainty', '\"backtest\"', '\"live\"', '', 'h4', 0,
+            '{\"backtest\":{\"n\":40,\"ci\":[0.5,0.8]},\"live\":{\"n\":30,\"ci\":[0,0.1]}}', '', 0, 0, 'crypto|' || (SELECT COUNT(*) FROM method_proposals), 'learning')");
+        return call($as, 'admin_tune_apply', ['id' => (int)$db->lastInsertId()])[0];
+    }],
     ['providers: settings', ['chief', 'editor'], fn($as) => call($as, 'admin_provider_save', ['provider' => 'binance', 'enabled' => true])[0]],
     ['providers: editor keys', ['chief', 'editor'], fn($as) => call($as, 'admin_cred_save', ['provider' => 'finnhub', 'secret' => 'good-Qx' . $as . 'Wv', 'label' => $as])[0]],
     ['providers: grant and limit', ['chief', 'editor'], function ($as) use ($db, $ALICE) {

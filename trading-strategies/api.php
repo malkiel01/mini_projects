@@ -59,6 +59,7 @@
  *      (user_id — רק לעורך הראשי)
  * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
  *      (נספר בתקרת 30) | admin_tune_apply {id} (עורך ראשי בלבד)
+ *      — גם "החלף לבפועל" (L6, 23.7: param = '@certainty', מהלמידה): לא נוגע בפרמטרים ולא מעלה גרסה
  *
  * DevLoop (A1, PROTOCOL 7) — lib/devtasks.php, דרך המודול המשותף. עורך ראשי — הכול; עורך משני — צפייה, תגובה ופתיחת
  * פריט; משתמש — 🐞 בלבד (dev-report, וצילום לפריט שלו). הטבלה — TS_DEV_EDITOR / TS_DEV_USER (ר2):

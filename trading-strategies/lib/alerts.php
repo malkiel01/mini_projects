@@ -394,6 +394,13 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
             error_log('trading-strategies learning live: ' . $e->getMessage());
             $sum['learn_live'] = ['error' => true];
         }
+        // 23.7 (L6): "החלף לבפועל" — רווחי סמך שלא חופפים → הצעה לעורך הראשי. שאילתות בלבד, בלי ספק
+        try {
+            $sum['learn_switch'] = ts_learn_switch_sync($now);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning switch: ' . $e->getMessage());
+            $sum['learn_switch'] = ['error' => true];
+        }
         // למידה (23.9, L5b): השוואת שכנים — אחרונה, באותו תקציב לספק ובתקרת זמן משלה. חריגה לא עוצרת את המשך הריצה
         try {
             $sum['learn'] = ts_learn_cron($now, $used, $budget, $t0);
