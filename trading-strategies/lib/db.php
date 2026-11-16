@@ -696,6 +696,13 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 21) {
+        // למידה, L5b (spec-stage-a 23.9, 2.37): השוואת שכנים. learning_values.detail — הפירוט של ההשוואה האחרונה (t_cut, N בכל
+        // חלק, ולכל שכן — תוחלת R בתוך הדגימה ומחוצה לה, מספר ההרצות), למסך "למידה" (23.10). ADD בלבד, אידמפוטנטית (כמו 20)
+        $cols = array_column($db->query('PRAGMA table_info(learning_values)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $db->exec("BEGIN;\n" . ($cols && !in_array('detail', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN detail TEXT;\n" : '')
+            . "PRAGMA user_version = 21;\nCOMMIT;");
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

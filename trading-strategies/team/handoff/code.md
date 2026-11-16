@@ -517,13 +517,19 @@
 - **מתי רץ:** אחרי בדיקה לאחור שהוסיפה שורות. L2 (live) — לקרוא ל-sync גם אחרי כתיבת `live`, עם `source = 'live'`.
 - **L5 צריך:** ממצאים עם `scope = method` הם המקום להצעה לפלח. מיגרציה הבאה ב-`app.sqlite` — 20.
 
-## L5 — ערך בתוך הטווח (פרק 23)
+## L5 / L5b — איפה למקם: השוואת שכנים (פרק 23, 2.37)
 
-- **שיטה שרוצה ללמוד פרמטר:** `meta()['learn_params'] = [param => ['stat' => 'stop'|'target'|'zone', 'allowed' => [..]?]]`. רק פרמטר עם `ours: true`.
-- **פיבונאצ'י עוד בלי:** stop_atr → stop, zone_atr → zone. ל-box_target צריך סטטיסטיקה "חלק מהקופסה" — features בלי גודל הקופסה היום.
+- **שיטה שרוצה ללמוד פרמטר:** `meta()['learn_params'] = [param => ['step' => 0.25]]` או `[param => ['values' => [..]]]`. הטווח — min/max של
+  הפרמטר. פרמטר "מהספר" (`ours` לא true) — רק `values`. אליוט: `w3_mult` → `[1.0, 1.618, 2.618]`.
+- **פיבונאצ'י — הממשק מוכן, ההצהרה אצל קוד פיבונאצ'י** (לא נגעתי ב-`lib/methods/fibonacci.php`). מה שצריך שם, לפי 23.9:
+  `'learn_params' => ['stop_atr' => ['step' => 0.25], 'box_target' => ['values' => [0.5, 0.618, 1]], 'zone_atr' => ['step' => 0.1]]`
+  (ולמחוק את ה-`stat` הישנים, אם הוכנסו — הצהרה בלי step/values פשוט מדולגת). גודל הקופסה ב-features — לדיון/CSV בלבד, לא נדרש להשוואה.
+- **רץ רק ב-cron:** `ts_learn_cron` (מ-`ts_alerts_run`, אחרי המילוי). הנרות — `ts_bt_history(0, …)` בשם המערכת, תקציב לדקה משותף
+  (`$used`/`$budget`). זוג ממפתח אישי (`cred_scope` ≠ '') — נספר (`private_pairs`), לא רץ. אין יותר "🔍 חשב הצעות" / `admin_learn_propose`,
+  ואין קריאה מתוך `ts_backtest`.
+- **הסטים הקבועים:** `tests/fixtures/learn/sets.php` (widen / narrow) + שיטת `test-neighbors` (`tests/fixtures/methods/learning.php`) —
+  אות לפי זמן הנר, כך שאותם אותות גם כשההרצה מתחילה ב-`t_cut`.
 - **ערך לפלח:** `methods.seg_params`, נקרא ב-`ts_method_settings`, ומוחל ב-`ts_params_for_segment`. כל מקום חדש שמריץ שיטה על נכס+מסגרת —
   לעבור דרכה (היום: `ts_analysis_cards`, `chart_refresh`).
-- **מיגרציה הבאה ב-`app.sqlite` — 21.**
-- **חוב (⚪7, ביקורת L5):** `ts_learn_values_run` נקרא מתוך `ts_backtest` — כלומר בתוך בקשת `analysis` של המשתמש (רק בריצה מלאה
-  שהושלמה, ובלי משיכה נוספת). היום רק שיטת הדוגמה מצהירה `learn_params`, אז זה זול. כששיטות אמיתיות יצהירו — להעביר ל-cron.
-- **מושהה (2.37):** כל הסטטיסטיקות (`TS_LEARN_PAUSED` — stop, target, zone). L5b — השוואת שכנים (23.9 החדש), ב-cron ובתקציב 6.2(ה); התשתית (`ts_tune_learned_eval` עם t_cut, `_save`, seg_params, ביטול) — מוכנה.
+- **מיגרציה הבאה ב-`app.sqlite` — 22.**
+- **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. אם יגדל — `TS_LEARN_CRON_SECONDS` (90) עוצר, והשאר נדחה לריצה הבאה.

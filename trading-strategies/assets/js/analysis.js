@@ -203,7 +203,7 @@ export function mountAnalysis(ctx) {
       h('div', { class: 'l1' }, h('span', {}, `${d.label}: ${fmtVal(x.current)} → ${fmtVal(x.candidate)}`), h('span', { class: 'chip ' + cls }, st)),
       x.origin === 'learning' || x.segment ? h('p', { class: 'hint tune-origin' }, x.origin === 'learning' ? '📚 מהלמידה' : '',
         x.segment ? [x.origin === 'learning' ? sep() : '', 'לפלח: ' + learnValue('market_tf', x.segment)] : '') : null,
-      h('p', { class: 'hint' }, x.asset.replace(/^[^:]+:/, ''), sep(), TF_LABEL[x.tf] || x.tf, sep(), `גרסה ${x.method_version}`,
+      h('p', { class: 'hint' }, x.asset ? x.asset.replace(/^[^:]+:/, '') : `${(x.stats && x.stats.pairs) || 0} זוגות (נכס × מסגרת)`, x.tf ? [sep(), TF_LABEL[x.tf] || x.tf] : null, sep(), `גרסה ${x.method_version}`,
         x.created_by ? [sep(), x.created_by] : null, x.new_version ? [sep(), `→ גרסה ${x.new_version}`] : null),
       x.note ? h('p', { class: 'hint' }, x.note) : null,
       tuneTable(x.results),
@@ -257,9 +257,11 @@ export function mountAnalysis(ctx) {
     if (dim === 'holidays') return REGION[v] || v;
     return v;
   }
-  // ── המיקומים (23.9, L5): ערך אחד בנוסחה קבועה, בתוך הטווח בלבד. הצעה — ב"הצעת שינוי פרמטר"; "החל" — רק הראשי ──
-  const DECISION = { paused: ['מושהה — 23.9 בבדיקה', ''], propose: ['הצעה', 'ok'], out_of_range: ['מחוץ לטווח — לבעלים', 'warn'], ci_includes_current: ['רווח הסמך כולל את הנוכחי — אין הצעה', ''],
-    same: ['כמו הנוכחי', ''], not_enough: ['אין מספיק נתונים', ''] };
+  // ── המיקומים (23.9, L5b): השוואת שכנים — ב-cron בלבד. הצעה — ב"הצעת שינוי פרמטר"; "החל" — רק הראשי ──
+  const LEARN_STATUS = { not_enough: ['אין מספיק נתונים', ''], waiting: ['ממתין ל-30 עסקאות חדשות', ''], due: ['בהשוואה הבאה (cron)', ''] };
+  const LEARN_RESULT = { propose: ['הצעה', 'ok'], edge: ['קצה הטווח — לבעלים', 'warn'], current_best: ['הנוכחי הכי טוב — אין הצעה', ''],
+    out_worse: ['לא אושר מחוץ לדגימה — אין הצעה', ''], no_out_of_sample: ['אין עסקאות מחוץ לדגימה', ''], no_trades: ['אין עסקאות בתוך הדגימה', ''],
+    no_pairs: ['אין נכס שהמערכת יכולה להריץ', ''] };
   /** 🟡4 (L5): הערכים שהוחלו לפלח — עם "↺ בטל" (רק העורך הראשי; מעלה גרסה) */
   function segValues(m, primary) {
     const rows = Object.entries(m.seg_params || {}).flatMap(([sg, ps]) => Object.entries(ps).map(([k, v]) => [sg, k, v]));
@@ -276,29 +278,44 @@ export function mountAnalysis(ctx) {
   }
   function learnValues(m, L) {
     if (!(L.values || []).length) return null;
-    const asset = assetField(ctx, { value: 'binance:BTCUSDT', labels: { 'binance:BTCUSDT': { label: 'BTC ⇄ USDT' } }, label: 'נכס למדידה' });
-    const tf = select('learn-tf', m.timeframes.map(t => [t, TF_LABEL[t] || t]), m.timeframes.includes('h1') ? 'h1' : m.timeframes[0]);
-    const msg = h('div', { 'aria-live': 'polite' });
-    const go = h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
-      go.disabled = true; msg.replaceChildren(h('p', { class: 'loading' }, 'מודד את הנוכחי מול המועמד, בתוך הדגימה ומחוצה לה…'));
-      try {
-        const r = await api('admin_learn_propose', { method: m.id, asset: asset.value, tf: tf.value });
-        toast(r.proposals ? `${r.proposals} הצעות חדשות` : 'אין הצעה חדשה'); ctx.reload();
-      } catch (e) { msg.replaceChildren(h('p', { class: 'error' }, e.message)); go.disabled = false; }
-    } } }, '🔍 חשב הצעות');
     const segText = s => (s ? learnValue('market_tf', s) : 'כל השווקים');
+    const er = x => (x && x.expectancy_r !== null ? r2(x.expectancy_r) + 'R' : '—');
+    const num = v => h('td', { class: 'num', dir: 'ltr' }, v);
+    // תוחלת R של כל שכן, בתוך הדגימה ומחוצה לה (23.10). מחוץ — רק לנוכחי ולנבחר
+    const cands = d => h('table', { class: 'tbl learn-nb' },
+      h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'ערך'), h('th', { scope: 'col' }, 'בתוך'), h('th', { scope: 'col' }, 'מחוץ'))),
+      h('tbody', {}, d.candidates.map((c, i) => h('tr', { 'data-value': String(c.value), class: i === d.chosen ? 'chosen' : '' },
+        h('th', { scope: 'row', dir: 'ltr' }, String(c.value), c.current ? ' · נוכחי' : '', i === d.chosen ? ' · נבחר' : '', c.edge ? ' · קצה' : ''),
+        num(er(c.in)), num(er(c.out))))));
     return h('div', { class: 'learn-values' },
-      h('h3', { class: 'learn-h' }, 'איפה למקם — ערך בתוך הטווח'),
+      h('h3', { class: 'learn-h' }, 'איפה למקם — השוואת שכנים'),
+      h('p', { class: 'hint' }, 'הנוכחי וצעד אחד לכל כיוון, בהרצה מלאה על 70% הראשונים בזמן; שכן נבחר רק אם הוא טוב ב-0.05R לפחות, והצעה רק אם הוא טוב יותר גם ב-30% האחרונים. רץ ברקע (cron), לא כשפותחים את המסך.'),
       h('ul', { class: 'learn-findings' }, L.values.map(v => {
-        const [lbl, cls] = DECISION[v.decision] || [v.decision, ''];
-        const c = v.candidate;
-        return h('li', { 'data-param': v.param, 'data-segment': v.segment, 'data-decision': v.decision },
+        const last = v.last;
+        const [lbl, cls] = (last && v.status !== 'due' ? LEARN_RESULT[last.result] : null) || LEARN_STATUS[v.status] || [v.status, ''];
+        return h('li', { 'data-param': v.param, 'data-segment': v.segment, 'data-status': v.status, 'data-result': last ? last.result : '' },
           h('div', { class: 'l1' }, h('span', {}, `${v.label} · ${segText(v.segment)}`), h('span', { class: 'chip ' + cls }, lbl)),
-          h('p', { class: 'hint' }, `נוכחי ${v.current}`, c ? ` · מוצע ${c.value} (רווח סמך ${c.ci[0]}–${c.ci[1]}, N = ${c.n})` : '',
-            ` · טווח ${v.range[0]}–${v.range[1]} · ${v.in_sample} מתוך ${v.rows} עסקאות (70% הראשונות)`));
-      })),
-      h('div', { class: 'fields two' }, h('div', { class: 'f wide' }, h('span', {}, 'נכס'), asset), field('מסגרת זמן', tf)),
-      h('div', {}, go), msg);
+          h('p', { class: 'hint' }, `נוכחי ${v.current} · שכנים ${v.neighbors.join(' / ')} · טווח ${v.range[0]}–${v.range[1]}`,
+            ` · ${v.n_in} בתוך הדגימה, ${v.n_out} מחוצה לה (N ≥ ${L.min_n} בכל חלק)`),
+          last && last.detail && last.detail.candidates.length ? cands(last.detail) : null);
+      })));
+  }
+  /** היסטוגרמות MAE / MFE (23.10) — לדיון בלבד, לא מקור להצעה */
+  function learnHist(L) {
+    const H = L.hist;
+    if (!H || !H.n) return null;
+    const bars = (k, title) => {
+      const max = Math.max(1, ...H[k]);
+      return h('figure', { class: 'learn-hist', 'data-kind': k },
+        h('figcaption', {}, title),
+        h('ol', { dir: 'ltr' }, H[k].map((c, i) => h('li', { title: `${i === H[k].length - 1 ? '≥ ' + H.max : (i * H.step) + '–' + ((i + 1) * H.step)} ATR: ${c}` },
+          h('span', { style: `height:${Math.round(100 * c / max)}%` })))),
+        h('p', { class: 'hint', dir: 'ltr' }, `0 … ${H.max}+ ATR`));
+    };
+    return h('div', { class: 'learn-hists' },
+      h('h3', { class: 'learn-h' }, 'MAE / MFE — לדיון'),
+      h('p', { class: 'hint learn-cut' }, `חתוך בסטופ וביעד הנוכחיים — עסקה שנגעה בסטופ נסגרה, ולכן אין כאן מה שהיה קורה מעבר לו. לדיון בלבד, לא מקור להצעה (N = ${H.n}).`),
+      h('div', { class: 'learn-hist-row' }, bars('mae', 'הירידה נגד העסקה (MAE)'), bars('mfe', 'העלייה בעד העסקה (MFE)')));
   }
 
   function learnPanel(m, primary = false) {
@@ -339,8 +356,10 @@ export function mountAnalysis(ctx) {
           h('p', { class: 'hint' }, f.text),
           f.code ? h('a', { class: 'learn-item', href: '#/dev/tasks/' + f.code }, `⚠️ ${f.code} — לדיון`) : null)))
           : h('p', { class: 'hint learn-none' }, 'אין ממצאים — אף פלח לא שונה מהשאר במובהקות, וגם לא 30 העסקאות האחרונות.'),
-        segValues(m, primary),
-        learnValues(m, L),
+        // replaceChildren הופך null לטקסט "null" — חלק שאין לו מה להראות נשאר ריק
+        segValues(m, primary) || '',
+        learnValues(m, L) || '',
+        learnHist(L) || '',
         h('p', { class: 'hint' }, `פלח עם פחות מ-${L.min_n} עסקאות — "אין מספיק נתונים", בלי אחוז ובלי תוחלת.`,
           L.gaps ? ` ${L.gaps} אותות לא נפתחו (פער מעבר לרמה) — לא בסטטיסטיקה.` : ''),
         h('table', { class: 'tbl learn-tbl' },
