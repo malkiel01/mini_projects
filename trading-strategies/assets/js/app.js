@@ -91,7 +91,10 @@ function toast(msg, err = false) {
 
 let ME = null;   // {csrf, user, lists}
 
-async function api(action, body = null, query = {}) {
+// בקשה של מסך שכבר הוחלף בניווט חדש — התשובה (או השגיאה) לא חוזרת אליו: הבטחה שלא מתקיימת, והמסך הישן נעצר במקום
+const staleGuard = (gen, p) => (!gen ? p : p.then(v => (gen === GEN ? v : new Promise(() => {})), e => (gen === GEN ? Promise.reject(e) : new Promise(() => {}))));
+function api(action, body = null, query = {}) { return staleGuard(LOADING, apiNow(action, body, query)); }
+async function apiNow(action, body = null, query = {}) {
   const qs = new URLSearchParams({ action, ...query });
   const opt = { credentials: 'same-origin', headers: {} };
   if (body) {
@@ -178,7 +181,14 @@ function journalTabs(active) {
 }
 
 let M = null, A = null, N = null, J = null;
+// מונה דור לניווט. בלי זה, מעבר מהיר (גרף → שוק לפני שהגרף נטען) הריץ שני מסכים במקביל, והאיטי מביניהם צייר את
+// עצמו מעל המסך הנכון — למשל הגרף מעל השוק (גם הרעידה ב-market-tabs-ui). כל ניווט מעלה את GEN ומתחיל מיד (בלי
+// לחכות לקודם); בקשה ש-api() שלח בזמן שמסך נטען שייכת לדור שלו, ואם בינתיים התחיל ניווט חדש — התשובה לא מגיעה למסך
+// הישן (staleGuard), והוא לא ממשיך לצייר. teardown בתחילת הניווט סוגר את מה שהקודם כבר פתח.
+let GEN = 0, LOADING = 0;   // LOADING — הדור של המסך שעדיין נטען (0 — אין)
 async function route() {
+  const my = ++GEN;
+  LOADING = my;
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
   M?.teardown();
@@ -204,11 +214,14 @@ async function route() {
     else if (name === 'profile') await A.viewProfile();
     else if (name === 'alerts') await N.viewAlerts();
     else await M.viewMarket();
+    if (my !== GEN) return;
     if (['strategies', 'journal', 'stats'].includes(name)) main.prepend(journalTabs(name));
   } catch (e) {
-    render(h('p', { class: 'error', role: 'alert' }, e.message));
+    if (my === GEN) render(h('p', { class: 'error', role: 'alert' }, e.message));
+  } finally {
+    if (LOADING === my) LOADING = 0;
   }
-  main.scrollTop = 0;
+  if (my === GEN) main.scrollTop = 0;
 }
 window.addEventListener('hashchange', route);
 

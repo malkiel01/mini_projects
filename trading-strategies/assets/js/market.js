@@ -132,7 +132,13 @@ export function mountMarket(ctx) {
     });
     dragTabs(strip, async order => {
       const byId = Object.fromEntries(tabs.map(t => [t.id, t]));
-      await saveTabs(order.map(id => byId[id]).filter(Boolean)).catch(e => { toast(e.message, true); drawStrip(); });
+      // עד שהסדר נשמר והשורה נבנתה מחדש — הכפתורים עוד יוחלפו (קורא מסך, וגם הבדיקה מחכה לזה)
+      strip.setAttribute('aria-busy', 'true');
+      try {
+        await saveTabs(order.map(id => byId[id]).filter(Boolean)).catch(e => { toast(e.message, true); drawStrip(); });
+      } finally {
+        strip.removeAttribute('aria-busy');
+      }
     });
 
     // ── הרשימה של לשונית ──
