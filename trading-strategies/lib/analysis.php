@@ -149,7 +149,20 @@ function ts_method_settings(string $id): array
         'timeframes' => $r ? (json_decode($r['timeframes'], true) ?: $m['timeframes']) : $m['timeframes'],
         'params' => $r ? (json_decode($r['params'], true) ?: []) : [],
         'note' => $r ? $r['note'] : '',
+        // ערכים לפלח שוק × מסגרת שהוחלו (23.9, L5) — {"forex|h1": {param: value}}
+        'seg_params' => $r && isset($r['seg_params']) ? (json_decode((string)$r['seg_params'], true) ?: []) : [],
     ];
+}
+
+/**
+ * הפרמטרים של שיטה על נכס ומסגרת (23.9, L5): הכלליים, ועליהם — הערך של הפלח שוק × מסגרת, אם הוחל. רק מפתחות שהשיטה מכירה,
+ * ודרך params() — כך שגם ערך לפלח עובר את הטווח ואת ההמרה (int / float). בלי ערך לפלח — $p כמו שהוא.
+ */
+function ts_params_for_segment(TsMethod $m, array $set, array $p, string $asset, string $tf): array
+{
+    $seg = $set['seg_params'][ts_asset_market($asset) . '|' . $tf] ?? null;
+    if (!is_array($seg) || !$seg) return $p;
+    return $m->params(array_intersect_key($seg, $m->meta()['params']) + ($set['params'] ?? []));
 }
 
 /** שיטה מהספר = שיטת קוד ש-sample שלה לא true (18.1.2) */
@@ -426,6 +439,7 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     }
     // הריצה בחלקים, והזמן נבדק ביניהם. משך משלה (מהרגע שהיא מתחילה): המשיכה כבר יכלה לגמור את התקרה, ונר שנמשך ולא
     // נבדק היה נמשך שוב בפעם הבאה. המשך מהמצב = ריצה אחת, ולכן כשהכול הספיק — אותה תוצאה כמו קודם
+    $full = $state === null;   // ריצה מההתחלה: $rows הם כל הנרות של הטווח — L5 מודד עליהם, בלי למשוך שוב
     $s = $state ?? ts_bt_init($m, $p);
     $runUntil = microtime(true) + $max;
     $trades = [];   // למידה (23.4, L1): כל עסקה שהסתיימה בריצה הזו → method_outcomes
@@ -444,6 +458,14 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
             ts_learn_findings_sync($meta['id'], (int)$meta['version'], 'backtest', $now);
         } catch (Throwable $e) {
             error_log('trading-strategies learning findings: ' . $e->getMessage());
+        }
+        // ערך בתוך הטווח (23.9, L5) — רק כשהבדיקה הושלמה. הצעה, לא שינוי. כשל — רק נרשם
+        if ($complete) {
+            try {
+                ts_learn_values_run($uid, $meta['id'], (int)$meta['version'], 'backtest', $asset, $tf, $now, $full ? $rows : null);
+            } catch (Throwable $e) {
+                error_log('trading-strategies learning values: ' . $e->getMessage());
+            }
         }
     }
     if (!$complete) {
@@ -728,7 +750,7 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
             $cards[] = $card + ['status' => 'unsupported', 'message' => 'השיטה לא מוגדרת לשוק או למסגרת הזמן הזו', 'bias' => 'none', 'certainty' => null];
             continue;
         }
-        $p = ts_params_for_asset($m, $p, $dec);
+        $p = ts_params_for_asset($m, ts_params_for_segment($m, $set, $p, $asset, $tf), $dec);
         // הבדיקה לאחור קודם — הכרטיס של שיטה עם מצב ארוך ממשיך מהמצב שלה (ו1)
         $bt = $runBt ? ts_backtest($uid, $m, $p, $asset, $tf, $market, $now) : ts_backtest_stored($uid, $m, $p, $asset, $tf, $market, $now);
         [$a, $basis] = ts_card_analyze($m, $p, $asset, $tf, (string)$acc['scope'], $rows, $fl, $bt,

@@ -451,7 +451,7 @@ function ts_learn_findings_sync(string $methodId, int $version, string $source, 
         devloop_comment_add($lastCode, 'claude', null, "ועוד $skipped ממצאים בלשונית \"למידה\" של $name — לא נפתחו כפריטים בריצה הזו (עד " . TS_LEARN_MAX_NEW . ' בריצה).');
     }
     // ממצא שהיה, ועכשיו לא מובהק (או שהפלח ירד מתחת ל-30) — תגובה אחת בפריט פתוח, ולא שוב עד שיחזור
-    $st = $db->prepare("SELECT * FROM learning_findings WHERE method_id = ? AND method_version = ? AND source = ? AND sig != 'gone'");
+    $st = $db->prepare("SELECT * FROM learning_findings WHERE method_id = ? AND method_version = ? AND source = ? AND sig != 'gone' AND kind IN ('segment', 'recent')");
     $st->execute([$methodId, $version, $source]);
     foreach ($st->fetchAll() as $row) {
         if (isset($seen[$row['k']])) continue;
@@ -471,4 +471,194 @@ function ts_learn_finding_codes(string $methodId): array
     $st = ts_db()->prepare('SELECT k, code FROM learning_findings WHERE method_id = ?');
     $st->execute([$methodId]);
     return array_column($st->fetchAll(), 'code', 'k');
+}
+
+// ── L5 (23.9): "איפה למקם" — ערך מועמד אחד, בנוסחה קבועה, בתוך הטווח בלבד ─────────────────
+
+/** [שלנו] כמה ערכים לפחות לסטטיסטיקה (מעבר ל-N ≥ 30 של הפלח). פחות — אין מועמד */
+const TS_LEARN_MIN_VALUES = 5;
+/** [שלנו] 23.9: הסטטיסטיקה — רק על 70% הראשונים בזמן; 30% האחרונים — "מחוץ לדגימה" (S7) */
+const TS_LEARN_IN_SHARE = 0.7;
+/** הסטטיסטיקות (23.9): stop — אחוזון 80 של MAE (ב-ATR) במנצחות; target — חציון MFE (ב-ATR) בכולן; zone — חציון רוחב האזור במנצחות */
+const TS_LEARN_STATS = ['stop' => ['q' => 0.8, 'wins' => true], 'target' => ['q' => 0.5, 'wins' => false], 'zone' => ['q' => 0.5, 'wins' => true]];
+
+/** אחוזון q של רשימה ממוינת — אינטרפולציה לינארית בין שני הסמוכים (R type 7). 10 ערכים 0.1…1.0, q = 0.8 → 0.82 */
+function ts_learn_quantile(array $sorted, float $q): ?float
+{
+    $n = count($sorted);
+    if (!$n) return null;
+    $h = ($n - 1) * $q;
+    $lo = (int)floor($h);
+    $hi = min($n - 1, $lo + 1);
+    return $sorted[$lo] + ($h - $lo) * ($sorted[$hi] - $sorted[$lo]);
+}
+
+/**
+ * [שלנו] רווח סמך 95% לאחוזון — סטטיסטי סדר, בלי הנחה על ההתפלגות (23.9): הדרגות n·q ∓ 1.96·√(n·q·(1−q)) (קירוב נורמלי
+ * לבינומי), חסומות לקצוות. [lo, hi].
+ */
+function ts_learn_quantile_ci(array $sorted, float $q): ?array
+{
+    $n = count($sorted);
+    if (!$n) return null;
+    $w = 1.959963984540054 * sqrt($n * $q * (1 - $q));
+    $j = max(1, (int)floor($n * $q - $w));
+    $k = min($n, (int)ceil($n * $q + $w));
+    return [$sorted[$j - 1], $sorted[$k - 1]];
+}
+
+/**
+ * הערכים שהסטטיסטיקה רצה עליהם, משורות method_outcomes (מערכים עם win, mae_r, mfe_r, entry, stop, atr, features).
+ * stop / target — MAE / MFE מ-R ל-ATR: r × |כניסה − סטופ| ÷ ATR. zone — features.zone_atr. שורה בלי הנתונים — מדולגת.
+ */
+function ts_learn_stat_values(string $stat, array $rows): array
+{
+    $cfg = TS_LEARN_STATS[$stat] ?? throw new InvalidArgumentException('סטטיסטיקה לא מוכרת');
+    $out = [];
+    foreach ($rows as $r) {
+        if ($cfg['wins'] && !(int)$r['win']) continue;
+        if ($stat === 'zone') {
+            $f = is_array($r['features'] ?? null) ? $r['features'] : json_decode((string)($r['features'] ?? ''), true);
+            $v = $f['zone_atr'] ?? null;
+        } else {
+            $x = $stat === 'stop' ? $r['mae_r'] : $r['mfe_r'];
+            $risk = abs((float)$r['entry'] - (float)$r['stop']);
+            $v = $x === null || $r['atr'] === null || (float)$r['atr'] <= 0 || $risk <= 0 ? null : (float)$x * $risk / (float)$r['atr'];
+        }
+        if (is_numeric($v) && is_finite((float)$v)) $out[] = (float)$v;
+    }
+    sort($out);
+    return $out;
+}
+
+/**
+ * הערך המועמד לפרמטר (23.9): הסטטיסטיקה על הערכים, רווח הסמך ו-N. $def — הגדרת הפרמטר ב-meta; $allowed — ערכים מותרים בלבד
+ * (מעגלים לקרוב); int — מעגלים לשלם. פחות מ-TS_LEARN_MIN_VALUES — null.
+ */
+function ts_learn_candidate(string $stat, array $values, array $def, ?array $allowed = null): ?array
+{
+    if (count($values) < TS_LEARN_MIN_VALUES) return null;
+    $q = TS_LEARN_STATS[$stat]['q'];
+    $raw = ts_learn_quantile($values, $q);
+    [$lo, $hi] = ts_learn_quantile_ci($values, $q);
+    $v = $raw;
+    if ($allowed) { usort($allowed, fn($a, $b) => abs($a - $raw) <=> abs($b - $raw)); $v = (float)$allowed[0]; }
+    elseif (!empty($def['int'])) $v = (float)round($raw);
+    else $v = round($raw, 2);
+    return ['stat' => $stat, 'q' => $q, 'raw' => $raw, 'value' => $v, 'ci' => [round($lo, 4), round($hi, 4)], 'n' => count($values)];
+}
+
+/**
+ * ההחלטה (23.9): out_of_range — מחוץ לטווח של הפרמטר: ממצא לבעלים, **בלי חיתוך לקצה**; same — המועמד הוא הנוכחי;
+ * ci_includes_current — רווח הסמך כולל את הנוכחי: אין ראיה שהאחר טוב יותר; propose — הצעת S7.
+ */
+function ts_learn_decide(array $def, float $current, array $cand): string
+{
+    if ($cand['value'] < $def['min'] || $cand['value'] > $def['max']) return 'out_of_range';
+    if (abs($cand['value'] - $current) < 1e-9) return 'same';
+    if ($current >= $cand['ci'][0] - 1e-9 && $current <= $cand['ci'][1] + 1e-9) return 'ci_includes_current';
+    return 'propose';
+}
+
+/**
+ * הפרמטרים שהשיטה מצהירה שאפשר ללמוד (meta().learn_params: {param: {stat, allowed?}}). **רק [שלנו]** (עיקרון 3, קריטריון 8):
+ * פרמטר עם ours !== true לא נלמד אף פעם — יחסי פיבונאצ'י וכללי אליוט ("לפי הספר") לא בהצעה. שיטת דוגמה — כולה "שלנו".
+ */
+function ts_learn_params(TsMethod $m): array
+{
+    $meta = $m->meta();
+    $out = [];
+    foreach ($meta['learn_params'] ?? [] as $k => $cfg) {
+        $d = $meta['params'][$k] ?? null;
+        if (!$d || !isset(TS_LEARN_STATS[$cfg['stat'] ?? ''])) continue;
+        if (($d['ours'] ?? null) !== true && empty($meta['sample'])) continue;
+        $out[$k] = ['stat' => $cfg['stat'], 'allowed' => $cfg['allowed'] ?? null, 'def' => $d];
+    }
+    return $out;
+}
+
+/**
+ * המיקומים של שיטה וגרסה (23.9, 23.10) — טהור. לכל פרמטר נלמד × פלח ('' — הכול, ו-market|tf עם N ≥ 30): הנוכחי (של הפלח, אם
+ * הוחל לו ערך), המועמד, רווח הסמך, N, וההחלטה. **הסטטיסטיקה — על 70% הראשונים בזמן** (לפי t_exit).
+ */
+function ts_learn_values(string $methodId, int $version, string $source = 'backtest'): array
+{
+    if (!ts_method_exists($methodId)) return [];
+    $m = ts_method($methodId);
+    $lp = ts_learn_params($m);
+    if (!$lp) return [];
+    $set = ts_method_settings($methodId);
+    $glob = $m->params($set['params']);
+    $st = ts_db()->prepare("SELECT win, r, mae_r, mfe_r, entry, stop, atr, features, market, tf FROM method_outcomes
+        WHERE method_id = ? AND method_version = ? AND source = ? AND r IS NOT NULL AND result != 'skipped_gap' ORDER BY t_exit, id");
+    $st->execute([$methodId, $version, $source]);
+    $rows = $st->fetchAll();
+    $segs = ['' => $rows];
+    foreach ($rows as $r) $segs[$r['market'] . '|' . $r['tf']][] = $r;
+    $out = [];
+    foreach ($segs as $seg => $rs) {
+        if (count($rs) < TS_MIN_SIGNALS) continue;
+        $in = array_slice($rs, 0, (int)floor(count($rs) * TS_LEARN_IN_SHARE));
+        $cur = $seg === '' ? $glob : $m->params(($set['seg_params'][$seg] ?? []) + $set['params']);
+        foreach ($lp as $k => $cfg) {
+            $cand = ts_learn_candidate($cfg['stat'], ts_learn_stat_values($cfg['stat'], $in), $cfg['def'], $cfg['allowed']);
+            $out[] = ['segment' => $seg, 'param' => $k, 'label' => $cfg['def']['label'], 'range' => [$cfg['def']['min'], $cfg['def']['max']],
+                'current' => $cur[$k], 'rows' => count($rs), 'in_sample' => count($in), 'candidate' => $cand,
+                'decision' => $cand ? ts_learn_decide($cfg['def'], (float)$cur[$k], $cand) : 'not_enough'];
+        }
+    }
+    return $out;
+}
+
+/**
+ * הצד של L5 (23.9) — אחרי בדיקה לאחור של $asset / $tf: לכל פרמטר נלמד, בפלח הכללי ובפלח שוק × מסגרת של הנכס, **כל 30 שורות
+ * חדשות** (learning_values): propose → הצעת S7 (ts_tune_learned) על הנרות; out_of_range → ממצא לבעלים בפריט DevLoop (✅37),
+ * בלי הצעה ובלי חיתוך; ci_includes_current / same — רק נרשם. $candles — הנרות של הבדיקה לאחור המלאה (אם יש); בלעדיהם —
+ * נמשכים רק כש-$fetch (הכפתור בלשונית), אחרת ההצעה מחכה. **לא משנה שום פרמטר** — רק מציע. מחזיר [הצעות, ממצאים].
+ */
+function ts_learn_values_run(int $uid, string $methodId, int $version, string $source, string $asset, string $tf, int $now, ?array $candles = null, bool $fetch = false): array
+{
+    require_once __DIR__ . '/tune.php';
+    $db = ts_db();
+    $m = ts_method($methodId);
+    $mySeg = ts_asset_market($asset) . '|' . $tf;
+    $get = $db->prepare('SELECT n_at FROM learning_values WHERE method_id = ? AND method_version = ? AND source = ? AND segment = ? AND param = ?');
+    $put = $db->prepare('INSERT OR REPLACE INTO learning_values (method_id, method_version, source, segment, param, n_at, result, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    $props = 0; $finds = 0;
+    foreach (ts_learn_values($methodId, $version, $source) as $v) {
+        if ($v['segment'] !== '' && $v['segment'] !== $mySeg) continue;   // פלח של נכס אחר — בבדיקה לאחור שלו
+        $get->execute([$methodId, $version, $source, $v['segment'], $v['param']]);
+        $nAt = (int)$get->fetchColumn();
+        if ($v['rows'] - $nAt < TS_LEARN_RECENT || $v['decision'] === 'not_enough') continue;   // כל 30 שורות חדשות (23.9)
+        $result = $v['decision'];
+        if ($v['decision'] === 'propose') {
+            // המדידה צריכה את כל נרות הטווח. בתוך בדיקה לאחור — רק כשהם כבר ביד (ריצה מלאה); אחרת לא מושכים שוב בבקשה של
+            // המשתמש: ההצעה מחכה, והסמן לא מתקדם — עד ריצה מלאה, או "🔍 חשב הצעות" בלשונית (admin_learn_propose, $fetch)
+            if ($candles === null && !$fetch) continue;
+            $candles ??= ts_bt_history($uid, $asset, $tf, $now - TS_BT_RANGE[$tf], $now)[0];
+            $pid = ts_tune_learned($m, $v['param'], $v['segment'], (float)$v['candidate']['value'], $v['candidate'], $asset, $tf, $candles, $now);
+            if ($pid) $props++; else $result = 'no_out_of_sample';
+        } elseif ($v['decision'] === 'out_of_range' && function_exists('devloop_task_create')) {
+            $k = implode('|', [$methodId, $version, $source, 'value', $v['segment'], $v['param']]);
+            $has = $db->prepare('SELECT 1 FROM learning_findings WHERE k = ?');
+            $has->execute([$k]);
+            if (!$has->fetchColumn()) {
+                $name = $m->meta()['name'];
+                $seg = $v['segment'] === '' ? 'כל השווקים' : ts_learn_segment_text('market_tf', $v['segment']);
+                $c = $v['candidate'];
+                $text = sprintf('הנתונים מצביעים על %s = %s, מעבר לטווח %s–%s (רווח סמך %s–%s, N = %d). אין הצעה, ואין חיתוך לקצה.',
+                    $v['param'], $c['value'], $v['range'][0], $v['range'][1], $c['ci'][0], $c['ci'][1], $c['n']);
+                $r = devloop_task_create(['id' => null], ['kind' => 'research', 'area' => 'learning', 'priority' => 'normal',
+                    'title' => "ממצא למידה: $name · $seg · {$v['label']} מחוץ לטווח",
+                    'detail' => "שיטה: $name ($methodId), גרסה $version, מקור $source.\nפלח: $seg.\n$text\nלהכרעת הבעלים: להרחיב את הטווח, או להשאיר.\n"
+                        . "המערכת לא שינתה דבר. מסך: ניהול ← 🧪 שיטות ← $name ← 📚 למידה (#/admin)."]);
+                $db->prepare('INSERT INTO learning_findings (k, method_id, method_version, source, kind, dim, value, code, scope, sig, total, created_at, updated_at)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                    ->execute([$k, $methodId, $version, $source, 'value', $v['param'], $v['segment'], $r['code'], 'owner', (string)$c['value'], $v['rows'], $now, $now]);
+                $finds++;
+            }
+        }
+        $put->execute([$methodId, $version, $source, $v['segment'], $v['param'], $v['rows'], $result, $now]);
+    }
+    return [$props, $finds];
 }

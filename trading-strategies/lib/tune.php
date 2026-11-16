@@ -128,7 +128,10 @@ function ts_tune_row(array $r): array
     $status = $r['status'];
     if ($status === 'open' && ts_method_exists($r['method_id'])) {
         $m = ts_method($r['method_id']);
-        $cur = $m->params(ts_method_settings($r['method_id'])['params'])[$r['param']] ?? null;
+        $set = ts_method_settings($r['method_id']);
+        $seg = (string)($r['segment'] ?? '');
+        // הצעה לפלח (L5) — מול הערך של הפלח, אם הוחל; אחרת הכללי
+        $cur = $m->params(($seg !== '' ? ($set['seg_params'][$seg] ?? []) : []) + $set['params'])[$r['param']] ?? null;
         if ((int)$m->meta()['version'] !== (int)$r['method_version'] || json_encode($cur) !== $r['current_value']) $status = 'stale';
     } elseif ($status === 'open') {
         $status = 'stale';
@@ -138,7 +141,9 @@ function ts_tune_row(array $r): array
         'asset' => $r['asset'], 'tf' => $r['tf'], 'split_t' => (int)$r['split_t'], 'results' => json_decode($r['results'], true),
         'note' => $r['note'], 'status' => $status, 'created_by' => $r['created_name'] ?? null, 'created_at' => (int)$r['created_at'],
         'applied_by' => $r['applied_name'] ?? null, 'applied_at' => $r['applied_at'] !== null ? (int)$r['applied_at'] : null,
-        'new_version' => $r['new_version'] !== null ? (int)$r['new_version'] : null];
+        'new_version' => $r['new_version'] !== null ? (int)$r['new_version'] : null,
+        'segment' => (string)($r['segment'] ?? ''), 'origin' => (string)($r['origin'] ?? 'admin'),
+        'stats' => isset($r['stats']) && $r['stats'] !== null ? json_decode($r['stats'], true) : null];
 }
 
 const TS_TUNE_SELECT = 'SELECT p.*, a.display_name AS created_name, b.display_name AS applied_name FROM method_proposals p
@@ -189,11 +194,16 @@ function ts_tune_apply(int $uid, mixed $id, ?int $now = null): array
         $old = (int)$m->meta()['version'];
         $set = ts_method_settings($mid);
         $params = $set['params'];
-        $params[$r['param']] = json_decode($r['candidate_value']);
+        $segp = $set['seg_params'];
+        $seg = (string)($r['segment'] ?? '');
+        // הצעה לפלח (L5, 23.9): הערך נשמר לפלח — השיטה משתמשת בו בשוק × מסגרת הזה, ובכללי בשאר
+        if ($seg === '') $params[$r['param']] = json_decode($r['candidate_value']);
+        else $segp[$seg][$r['param']] = json_decode($r['candidate_value']);
         // שורה בטבלת methods — אם עוד אין (שיטת קוד בברירות המחדל), עם ההגדרות הנוכחיות שלה
-        $db->prepare('INSERT INTO methods (id, enabled, markets, timeframes, params, note, tune) VALUES (?, ?, ?, ?, ?, ?, 1)
-                      ON CONFLICT(id) DO UPDATE SET params = excluded.params, tune = methods.tune + 1')
-            ->execute([$mid, $set['enabled'] ? 1 : 0, json_encode($set['markets']), json_encode($set['timeframes']), json_encode((object)$params), $set['note']]);
+        $db->prepare('INSERT INTO methods (id, enabled, markets, timeframes, params, note, tune, seg_params) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                      ON CONFLICT(id) DO UPDATE SET params = excluded.params, seg_params = excluded.seg_params, tune = methods.tune + 1')
+            ->execute([$mid, $set['enabled'] ? 1 : 0, json_encode($set['markets']), json_encode($set['timeframes']), json_encode((object)$params), $set['note'],
+                json_encode((object)$segp)]);
         ts_method_forget();
         $new = (int)ts_method($mid)->meta()['version'];
         $db->prepare("UPDATE method_proposals SET status = 'applied', applied_by = ?, applied_at = ?, new_version = ? WHERE id = ?")
@@ -203,7 +213,7 @@ function ts_tune_apply(int $uid, mixed $id, ?int $now = null): array
         $part = fn(array $x) => $x['n'] . ' עסק׳ ' . ($x['win_rate'] === null ? '—' : round(100 * $x['win_rate'], 1) . '%') . ' '
             . ($x['expectancy_r'] === null ? '—' : round($x['expectancy_r'], 3) . 'R');
         $both = fn(array $v) => 'בתוך ' . $part($v['in']) . ', מחוץ ' . $part($v['out']);
-        ts_admin_log($uid, 'method_tune', "$mid #$id {$r['param']}: {$r['current_value']} → {$r['candidate_value']} v$old → v$new · נוכחי: "
+        ts_admin_log($uid, 'method_tune', "$mid #$id {$r['param']}" . ($seg !== '' ? "@$seg" : '') . ": {$r['current_value']} → {$r['candidate_value']} v$old → v$new · נוכחי: "
             . $both($res['current']) . ' · מועמד: ' . $both($res['candidate']));
         $db->commit();
     } catch (Throwable $e) {
@@ -211,4 +221,34 @@ function ts_tune_apply(int $uid, mixed $id, ?int $now = null): array
         throw $e;
     }
     return ts_tune_get($id);
+}
+
+/**
+ * הצעה מהלמידה (23.9, L5) — אותה מדידה כמו הצעה של מנהל (S7): הנוכחי מול המועמד, 70% בתוך הדגימה ו-30% מחוצה לה, על נרות
+ * הנכס והמסגרת. **אין חיפוש** — רק שני הערכים. created_by = 0 (המערכת), origin = learning, stats — הסטטיסטיקה. לכל היותר הצעה
+ * פתוחה אחת לפרמטר ולפלח: הקודמת → stale. בלי עסקאות מחוץ לדגימה — אין הצעה (null). "החל" — רק העורך הראשי (ts_tune_apply).
+ */
+function ts_tune_learned(TsMethod $m, string $param, string $segment, float $candidate, array $stats, string $asset, string $tf, array $candles, int $now): ?int
+{
+    $meta = $m->meta();
+    $id = $meta['id'];
+    $d = $meta['params'][$param];
+    $set = ts_method_settings($id);
+    $pCur = $m->params(($segment !== '' ? ($set['seg_params'][$segment] ?? []) : []) + $set['params']);
+    $cand = !empty($d['int']) ? (int)round($candidate) : (float)$candidate;
+    $pCand = $m->params([$param => $cand] + ($segment !== '' ? ($set['seg_params'][$segment] ?? []) : []) + $set['params']);
+    if ((float)$pCand[$param] === (float)$pCur[$param] || $m->validate($pCand)) return null;
+    $dec = ts_tick_decimals($candles);
+    $res = ts_tune_evaluate($m, ts_params_for_asset($m, $pCur, $dec), ts_params_for_asset($m, $pCand, $dec), ts_bt_floats($candles),
+        ts_cost_for(ts_asset_market($asset)), microtime(true) + 2 * TS_BT_MAX_SECONDS);
+    if ($res['split_t'] === null || ($res['current']['out']['n'] === 0 && $res['candidate']['out']['n'] === 0)) return null;
+    $db = ts_db();
+    $db->prepare("UPDATE method_proposals SET status = 'stale' WHERE method_id = ? AND param = ? AND segment = ? AND status = 'open'")->execute([$id, $param, $segment]);
+    $note = sprintf('מהלמידה: %s %s (רווח סמך %s–%s, N = %d), על 70%% הראשונים של העסקאות', $stats['stat'] === 'stop' ? 'אחוזון 80 של MAE במנצחות'
+        : ($stats['stat'] === 'target' ? 'חציון MFE' : 'חציון רוחב האזור במנצחות'), round($stats['raw'], 3), $stats['ci'][0], $stats['ci'][1], $stats['n']);
+    $db->prepare('INSERT INTO method_proposals (method_id, method_version, param, current_value, candidate_value, asset, tf, split_t, results, note,
+                  created_by, created_at, segment, origin, stats) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)')
+        ->execute([$id, $meta['version'], $param, json_encode($pCur[$param]), json_encode($pCand[$param]), $asset, $tf, $res['split_t'], json_encode($res),
+            $note, $now, $segment, 'learning', json_encode($stats)]);
+    return (int)$db->lastInsertId();
 }

@@ -197,6 +197,8 @@ export function mountAnalysis(ctx) {
       }) } }, 'החל');
     return h('li', { class: 'tune-prop', 'data-id': String(x.id), 'data-status': x.status },
       h('div', { class: 'l1' }, h('span', {}, `${d.label}: ${fmtVal(x.current)} → ${fmtVal(x.candidate)}`), h('span', { class: 'chip ' + cls }, st)),
+      x.origin === 'learning' || x.segment ? h('p', { class: 'hint tune-origin' }, x.origin === 'learning' ? '📚 מהלמידה' : '',
+        x.segment ? [x.origin === 'learning' ? sep() : '', 'לפלח: ' + learnValue('market_tf', x.segment)] : '') : null,
       h('p', { class: 'hint' }, x.asset.replace(/^[^:]+:/, ''), sep(), TF_LABEL[x.tf] || x.tf, sep(), `גרסה ${x.method_version}`,
         x.created_by ? [sep(), x.created_by] : null, x.new_version ? [sep(), `→ גרסה ${x.new_version}`] : null),
       x.note ? h('p', { class: 'hint' }, x.note) : null,
@@ -251,6 +253,36 @@ export function mountAnalysis(ctx) {
     if (dim === 'holidays') return REGION[v] || v;
     return v;
   }
+  // ── המיקומים (23.9, L5): ערך אחד בנוסחה קבועה, בתוך הטווח בלבד. הצעה — ב"הצעת שינוי פרמטר"; "החל" — רק הראשי ──
+  const DECISION = { propose: ['הצעה', 'ok'], out_of_range: ['מחוץ לטווח — לבעלים', 'warn'], ci_includes_current: ['רווח הסמך כולל את הנוכחי — אין הצעה', ''],
+    same: ['כמו הנוכחי', ''], not_enough: ['אין מספיק נתונים', ''] };
+  function learnValues(m, L) {
+    if (!(L.values || []).length) return null;
+    const asset = assetField(ctx, { value: 'binance:BTCUSDT', labels: { 'binance:BTCUSDT': { label: 'BTC ⇄ USDT' } }, label: 'נכס למדידה' });
+    const tf = select('learn-tf', m.timeframes.map(t => [t, TF_LABEL[t] || t]), m.timeframes.includes('h1') ? 'h1' : m.timeframes[0]);
+    const msg = h('div', { 'aria-live': 'polite' });
+    const go = h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+      go.disabled = true; msg.replaceChildren(h('p', { class: 'loading' }, 'מודד את הנוכחי מול המועמד, בתוך הדגימה ומחוצה לה…'));
+      try {
+        const r = await api('admin_learn_propose', { method: m.id, asset: asset.value, tf: tf.value });
+        toast(r.proposals ? `${r.proposals} הצעות חדשות` : 'אין הצעה חדשה'); ctx.reload();
+      } catch (e) { msg.replaceChildren(h('p', { class: 'error' }, e.message)); go.disabled = false; }
+    } } }, '🔍 חשב הצעות');
+    const segText = s => (s ? learnValue('market_tf', s) : 'כל השווקים');
+    return h('div', { class: 'learn-values' },
+      h('h3', { class: 'learn-h' }, 'איפה למקם — ערך בתוך הטווח'),
+      h('ul', { class: 'learn-findings' }, L.values.map(v => {
+        const [lbl, cls] = DECISION[v.decision] || [v.decision, ''];
+        const c = v.candidate;
+        return h('li', { 'data-param': v.param, 'data-segment': v.segment, 'data-decision': v.decision },
+          h('div', { class: 'l1' }, h('span', {}, `${v.label} · ${segText(v.segment)}`), h('span', { class: 'chip ' + cls }, lbl)),
+          h('p', { class: 'hint' }, `נוכחי ${v.current}`, c ? ` · מוצע ${c.value} (רווח סמך ${c.ci[0]}–${c.ci[1]}, N = ${c.n})` : '',
+            ` · טווח ${v.range[0]}–${v.range[1]} · ${v.in_sample} מתוך ${v.rows} עסקאות (70% הראשונות)`));
+      })),
+      h('div', { class: 'fields two' }, h('div', { class: 'f wide' }, h('span', {}, 'נכס'), asset), field('מסגרת זמן', tf)),
+      h('div', {}, go), msg);
+  }
+
   function learnPanel(m) {
     const out = h('div', { 'aria-live': 'polite' });
     const src = select('learn-source', LEARN_SRC, 'backtest');
@@ -289,6 +321,7 @@ export function mountAnalysis(ctx) {
           h('p', { class: 'hint' }, f.text),
           f.code ? h('a', { class: 'learn-item', href: '#/dev/tasks/' + f.code }, `⚠️ ${f.code} — לדיון`) : null)))
           : h('p', { class: 'hint learn-none' }, 'אין ממצאים — אף פלח לא שונה מהשאר במובהקות, וגם לא 30 העסקאות האחרונות.'),
+        learnValues(m, L),
         h('p', { class: 'hint' }, `פלח עם פחות מ-${L.min_n} עסקאות — "אין מספיק נתונים", בלי אחוז ובלי תוחלת.`,
           L.gaps ? ` ${L.gaps} אותות לא נפתחו (פער מעבר לרמה) — לא בסטטיסטיקה.` : ''),
         h('table', { class: 'tbl learn-tbl' },

@@ -268,9 +268,9 @@ const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_app_key', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
-    'admin_tune_propose', 'admin_tune_apply'];
+    'admin_tune_propose', 'admin_tune_apply', 'admin_learn_propose'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_tune_propose', 'admin_learn_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -566,6 +566,8 @@ try {
                 $codes = ts_learn_finding_codes($lm);
                 $lst['findings'] = array_map(fn($f) => $f + ['code' => $codes[$f['key']] ?? null, 'text' => ts_learn_finding_text($f),
                     'segment' => ts_learn_segment_text($f['dim'], $f['value'])], ts_learn_findings($lm, (int)$lst['version'], $lst['source']));
+                // המיקומים (23.9, L5): לכל פרמטר נלמד ופלח — הנוכחי, המועמד, רווח הסמך, N וההחלטה. ההצעות עצמן — ב-admin_tune_list
+                $lst['values'] = $lst['source'] === 'backtest' ? ts_learn_values($lm, (int)$lst['version'], 'backtest') : [];
                 out(['ok' => true] + $lst);
             }
             $src = isset($_GET['source']) && $_GET['source'] !== '' ? (string)$_GET['source'] : null;
@@ -574,6 +576,22 @@ try {
             header('Content-Disposition: attachment; filename="learning-' . preg_replace('/[^a-z0-9-]/', '', $lm) . '-' . gmdate('Y-m-d') . '.csv"');
             echo $csv;
             exit;
+
+        case 'admin_learn_propose':
+            // L5 (23.9): הצעות מהלמידה לנכס ולמסגרת, עכשיו — כמו "חשב והצע" של S7 (נספר בתקרת 30). לכל העורכים; "החל" — רק הראשי
+            $lm = (string)($in['method'] ?? '');
+            if (!ts_method_exists($lm)) throw new TsNotFound('שיטה לא מוכרת');
+            $la = $in['asset'] ?? '';
+            ts_asset_split($la);
+            $ltf = (string)($in['tf'] ?? '');
+            if (!isset(TS_TF_SECONDS[$ltf])) throw new TsInvalid('מסגרת זמן לא תקינה');
+            $lnow = ts_now();
+            try {
+                [$lp, $lf] = ts_learn_values_run($uid, $lm, (int)ts_method($lm)->meta()['version'], 'backtest', (string)$la, $ltf, $lnow, null, true);
+            } catch (TsBudget $e) {
+                throw new TsInvalid($e->getMessage());
+            }
+            out(['ok' => true, 'proposals' => $lp, 'findings' => $lf]);
 
         case 'admin_method_save':
             // הגדרות של שיטה קיימת (6.7). בונה השיטות נמחק (21.1, ✅29) — שמירת הגדרה (definition) לא קיימת יותר

@@ -54,7 +54,7 @@ function ts_chart_refresh(int $uid, mixed $asset, mixed $tf, mixed $from, mixed 
             $out[$id] = $u;
             continue;
         }
-        [$res, $ran] = ts_method_result($m, $p, (string)$asset, $tf, $scope, $rows, $now);
+        [$res, $ran] = ts_method_result($m, ts_params_for_segment($m, $set, $p, (string)$asset, $tf), (string)$asset, $tf, $scope, $rows, $now);
         $ran ? $runs++ : $reused++;
         $out[$id] = $res + ['backtested' => ts_overlay_backtested($uid, $m, (string)$asset, $tf)];
     }
