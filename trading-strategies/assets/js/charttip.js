@@ -21,7 +21,7 @@ const WIDTH = 280;     // 18.1.6 סעיף 3: עד 280px, או 85% מרוחב ה�
 
 const KIND_NAME = { label: 'נקודה של השיטה', marker: 'סימון של השיטה', zone: 'אזור של השיטה', hline: 'רמה של השיטה', polyline: 'קו של השיטה' };   // בלי tip ובלי text
 
-/** התוכן של החלונית: {title, sub: [ערכים], tag, explain, inv: {price, below, rule} | null, links: [{label, href}]} */
+/** התוכן של החלונית: {title, cert — שורת הוודאות של הכרטיס או null, sub: [ערכים], tag, explain, inv: {price, below, rule} | null, links: [{label, href}]} */
 export function tipContent(hit, fmtTime) {
   const { it, price } = hit;
   const tip = it.tip && typeof it.tip === 'object' ? it.tip : {};
@@ -32,11 +32,14 @@ export function tipContent(hit, fmtTime) {
   else if (it.kind === 'hline') sub = [price(it.price)];
   else sub = [hit.p != null ? price(hit.p) : '', hit.t != null ? fmtTime(hit.t) : ''].filter(Boolean);
   const iv = tip.invalidation;
+  // בלי tip: הכותרת — הביטוי הקצר שעל הגרף, וההסבר — הטקסט המלא של הפריט (בקשת הבעלים: "בחלונית יוצג ההסבר")
+  const title = tip.title || ((it.label || it.text) && hit.short) || it.text || KIND_NAME[it.kind] || 'פריט';
   return {
-    title: tip.title || it.text || KIND_NAME[it.kind] || 'פריט',
+    title,
+    cert: hit.cert || null,
     sub,
     tag: `${hit.name} · ${it.scen ? 'תרחיש' : 'ממצא'}`,
-    explain: tip.explain || null,
+    explain: tip.explain || (it.text && it.text !== title ? it.text : null),
     inv: iv && Number.isFinite(+iv.price) ? { price: price(iv.price), below: iv.side !== 'above', rule: iv.rule || '' } : null,
     // רק קישורים בתוך האפליקציה (השרת כבר בודק — ts_overlay_check)
     links: Array.isArray(tip.links) ? tip.links.filter(l => typeof l?.href === 'string' && l.href.startsWith('#/') && l.label) : [],
@@ -83,7 +86,7 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     tip.el.replaceChildren(h('div', { class: 'ctip-body' },
       h('div', { class: 'ctip-head' }, h('b', { class: 'ctip-title', id: tid }, c.title), x),
       c.sub.length ? h('small', { class: 'ctip-sub' }, ...c.sub.flatMap((v, i) => [i ? ' · ' : '', h('bdi', {}, v)])) : null,
-      h('p', { class: 'ctip-row' }, h('span', { class: 'ctip-tag' }, c.tag)),
+      h('p', { class: 'ctip-row' }, h('span', { class: 'ctip-tag' }, c.tag), c.cert ? h('b', { class: 'ctip-cert num' }, c.cert) : null),
       c.explain ? h('p', { class: 'ctip-text' }, c.explain) : null,
       c.inv ? h('p', { class: 'ctip-inv' }, h('span', { class: 'ctip-tag danger' }, 'מתבטל אם'), ' ',
         `מחיר ${c.inv.below ? 'מתחת ל-' : 'מעל ל-'}`, h('bdi', { class: 'num' }, c.inv.price), c.inv.rule ? ` — ${c.inv.rule}` : '') : null,

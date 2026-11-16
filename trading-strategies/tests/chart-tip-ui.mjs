@@ -176,6 +176,14 @@ try {
   eq([t1.title, /\d/.test(t1.sub) && /:/.test(t1.sub), t1.tag, !!t1.explain && /כלל|גל/.test(t1.explain), /לא ייעוץ/.test(t1.note)],
     [`גל ${q.text}`, true, 'אליוט · ממצא', true, true], `criterion 1: "גל ${q.text}", price and time, "אליוט · ממצא", the rule, "not advice"`);
   eq(/^מתבטל אם מחיר (מתחת|מעל) ל-[\d,.]+ — /.test(t1.inv || ''), true, `the invalidation of the count, with its rule ("${t1.inv}")`);
+  // בקשת הבעלים: אחוזי הוודאות של השיטה בחלונית — אותה שורה כמו בכרטיס ("ודאות N% · ראשונית" / "· בפועל מאז")
+  const cert = (await a.locator('.ctip .ctip-cert').count()) ? (await a.locator('.ctip .ctip-cert').textContent()).trim() : null;
+  const brief = (await a.locator('.forecast-panel[data-method="elliott-w3"] .an-brief').textContent()).trim();
+  eq([/^ודאות \d+% · (ראשונית|בפועל מאז)$/.test(cert || ''), !!cert && brief.includes(cert)], [true, true], `the method's certainty in the tip ("${cert}"), the same as in its card ("${brief}")`);
+  // בקשת הבעלים: התוויות על הגרף קצרות — כל שורה עד 3 מילים; ההסבר המלא — בחלונית
+  const elLabels = await a.evaluate(s => document.querySelector(s).tsLabels().filter(r => r.by === 'forecast').map(r => r.text), BOX);
+  eq(elLabels.filter(t => t.split(' · ').some(l => l.trim().split(/\s+/).length > 3)), [], `Elliott: every chart label line is short — up to 3 words (${elLabels.join(' | ')})`);
+  eq(elLabels.some(t => / — /.test(t)), false, 'no long sentence (" — ") in a chart label — it moved to the tip');
   eq([await a.locator('.ctip[role="dialog"]').count(), await a.evaluate(() => document.querySelector('.ctip').getAttribute('aria-labelledby') === document.querySelector('.ctip-title').id),
     await a.evaluate(() => document.activeElement?.classList.contains('ctip-x'))], [1, true, true], 'a11y: role=dialog, labelled by its title, focus on ✕');
   await checkGeom(a, 'Elliott point');
@@ -368,10 +376,12 @@ try {
   eq(await post(a, 'admin_method_save', { id: 'fibonacci', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] }), 200, 'the admin turns Fibonacci on');
   const fibZone = async strip => {
     const { p: f } = await open({ now: NOW - 100 * 3600, as: 'alice' });
-    if (strip) await f.route(u => u.href.includes('action=chart_refresh'), async route => {
+    if (strip) await f.route(u => /action=(chart_refresh|analysis)\b/.test(u.href), async route => {
       const r = await route.fetch();
       const j = await r.json();
+      for (const c of j.cards || []) Object.assign(c, { certainty: null, certainty_basis: null, backtest: { status: 'missing' } });   // analysis — בלי ודאות
       for (const m of Object.values(j.methods || {})) for (const part of [m.overlay, m.forecast]) for (const it of part?.items || []) delete it.tip;
+      for (const c of j.analysis?.cards || []) Object.assign(c, { certainty: null, certainty_basis: null, backtest: { status: 'missing' } });   // בלי ודאות
       await route.fulfill({ response: r, json: j });
     });
     await chartWith(f, 'fibonacci');
@@ -383,7 +393,8 @@ try {
     await tap(f, { x: (Math.max(Math.min(fz.box[0], fz.box[2]), 10) + Math.min(Math.max(fz.box[0], fz.box[2]), FW - 10)) / 2, y: fz.y });
     await f.locator('.ctip').waitFor({ timeout: 5000 });
     for (let i = 0, s0 = await tipState(f); s0.kind !== 'zone' && i < s0.n; i++) { await f.locator('.ctip-more').click(); s0 = await tipState(f); }
-    return { f, fz, tf: await tipText(f), kind: (await tipState(f))?.kind, items: await f.evaluate(s => document.querySelector(s).tsForecast().methods[0].items, BOX) };
+    return { f, fz, tf: await tipText(f), kind: (await tipState(f))?.kind, items: await f.evaluate(s => document.querySelector(s).tsForecast().methods[0].items, BOX),
+      cert: await f.locator('.ctip .ctip-cert').count(), labels: await f.evaluate(s => document.querySelector(s).tsLabels().filter(r => r.by === 'forecast').map(r => r.text), BOX) };
   };
   const z3 = await fibZone(false);
   if (z3.fz) {
@@ -391,12 +402,15 @@ try {
       /יעד|קנה|מכור/.test(z3.tf.all), z3.tf.tag], ['zone', true, true, true, false, 'פיבונאצ\'י · ממצא'],
       `criterion 3: a Fibonacci zone → "${z3.tf.title}", and its ratios in the explanation ("${z3.tf.explain}")`);
     await checkGeom(z3.f, 'Fibonacci zone');
+    eq(z3.labels.filter(t => t.split(' · ').some(l => l.trim().split(/\s+/).length > 3)), [], `Fibonacci: every chart label line is short — up to 3 words (${z3.labels.join(' | ')})`);
     await shot(z3.f, 'tip-fib-zone');
   } else eq(z3.fz, 'a Fibonacci zone in view', 'criterion 3: a Fibonacci zone');
   const z8 = await fibZone(true);
   if (z8.fz) {
-    eq([z8.kind, /^אזור (תמיכה|התנגדות) · \d+ רמות · ציון \d+$/.test(z8.tf.title), z8.tf.explain, z8.tf.tag], ['zone', true, null, 'פיבונאצ\'י · ממצא'],
-      `criterion 8: an item without a tip → the title from its text ("${z8.tf.title}"), no explanation, no error (${z8.items} items)`);
+    // בקשת הבעלים (תוויות קצרות): בלי tip — הכותרת היא הביטוי הקצר שעל הגרף, וההסבר — הטקסט המלא של הפריט
+    eq([z8.kind, /^אזור (תמיכה|התנגדות)$/.test(z8.tf.title), /^אזור (תמיכה|התנגדות) · \d+ רמות · ציון \d+$/.test(z8.tf.explain || ''), z8.tf.tag], ['zone', true, true, 'פיבונאצ\'י · ממצא'],
+      `criterion 8 (with the owner's short labels): an item without a tip → the short label as the title ("${z8.tf.title}"), the full text as the explanation ("${z8.tf.explain}") (${z8.items} items)`);
+    eq(z8.cert, 0, 'no certainty (stripped from the card) → no certainty line in the tip');
     await checkGeom(z8.f, 'Fibonacci zone (no tip)');
     await shot(z8.f, 'tip-fib-notip');
   } else eq(z8.fz, 'a Fibonacci zone in view', 'criterion 8: a Fibonacci zone');

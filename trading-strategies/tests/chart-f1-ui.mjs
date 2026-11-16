@@ -141,7 +141,9 @@ try {
   eq(ls.some(l => l.by === 'forecast' && /^רמת ביטול/.test(l.text)), true, 'the method label wins over an overlapping drawing label (the leading count first)');
   // 🟡 F1 → S1.2: "רמת ביטול…" לא עוברת מעל מספרי הציר — התווית נגמרת משמאל לעמודת המספרים
   const axW = await a.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsAxisW());
-  const hl = ls.filter(l => l.by === 'forecast' && / · /.test(l.text));
+  // תוויות הרמות — אלה שהשורה האחרונה שלהן היא מחיר (התוויות הן עכשיו כמה שורות קצרות, מחוברות ב-" · ": גם אזור — "תרחיש · …"
+  // והדמיית ההמשך — "הדמיית המשך · לא תחזית"; הן לא צמודות לציר)
+  const hl = ls.filter(l => l.by === 'forecast' && / · [\d,.]+$/.test(l.text));
   eq([axW > 20, hl.length > 0, hl.filter(l => l.x + l.w > W - axW + 1).map(l => l.text)], [true, true, []], 'the level labels end left of the price-axis numbers (no "רמת ביטול" over 82,500)');
   const fibTexts = ls.filter(l => l.by === 'drawings').map(l => l.text);
   eq(fibTexts.length === new Set(fibTexts).size, true, 'two identical Fibonacci drawings → each level label once (the first one)');

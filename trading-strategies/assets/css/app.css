@@ -353,6 +353,8 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .ctip-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
 .ctip-tag { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; font-size: .75rem; font-weight: 600;
     color: var(--mc, var(--brand)); background: color-mix(in srgb, var(--mc, var(--brand)) 14%, var(--surface)); }
+/* שורת הוודאות של השיטה (כמו בכרטיס): "ודאות 62% · ראשונית" — ליד התווית */
+.ctip-cert { font-size: .8rem; color: var(--ink); }
 .ctip-tag.danger { color: var(--danger); background: var(--danger-soft); }
 .ctip-text { color: var(--ink); }
 .ctip-inv { font-size: .8rem; color: var(--muted); }
