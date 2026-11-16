@@ -705,6 +705,32 @@ function ts_migrate(PDO $db): void
             . ($cols && !in_array('deferred', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0;\n" : '')
             . "PRAGMA user_version = 21;\nCOMMIT;");
     }
+    if ($v < 22) {
+        // למידה — מקור live (23.4, L2): ההמשך של מנוע הבדיקה לאחור על נרות סגורים חדשים, בשביל אותות שקרו **אחרי** הבדיקה.
+        // שורה לכל בדיקה לאחור שמורה (אותו מפתח כמו backtests). base_t — ה-to_t של הבדיקה כשהתחלנו ממנה: עסקה שהאות שלה
+        // עד base_t שייכת לבדיקה לאחור, ולא נכתבת כ-live. גרסה או פרמטרים אחרים — מתחילים מחדש מהבדיקה העדכנית.
+        // CREATE בלבד — לא נוגע בשום נתון קיים. ב-data/app.sqlite (כבר מוחרג); אין --exclude חדש
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS learn_live (
+                method_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                method_version INTEGER NOT NULL,
+                params_hash TEXT NOT NULL,
+                base_t INTEGER NOT NULL,
+                last_t INTEGER NOT NULL,
+                state TEXT NOT NULL,
+                written INTEGER NOT NULL DEFAULT 0,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, provider, asset, tf, cred_scope)
+            );
+            PRAGMA user_version = 22;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
