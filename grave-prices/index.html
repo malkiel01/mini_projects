@@ -20,12 +20,21 @@
 <dialog id="print-dlg" aria-labelledby="print-title">
   <form method="dialog">
     <div class="sheet-head"><h2 id="print-title">🖨️ הדפסה</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
+    <div class="sheet-body"><div class="list" id="print-list"></div></div>
+  </form>
+</dialog>
+
+<dialog id="share-dlg" aria-labelledby="share-title">
+  <form method="dialog">
+    <div class="sheet-head"><h2 id="share-title">🖨️ הדפסה משותפת</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
     <div class="sheet-body">
+      <div class="fields two">
+        <label class="f"><span>🇮🇱 תושבי ישראל</span><select id="share-il"></select></label>
+        <label class="f"><span>🌍 תושבי חו"ל</span><select id="share-abroad"></select></label>
+      </div>
       <div class="list">
-        <button class="use-row" value="il"><span class="use-ic">🇮🇱</span><span class="use-tx"><b>תושבי ישראל</b><small>עמוד אחד</small></span></button>
-        <button class="use-row" value="abroad"><span class="use-ic">🌍</span><span class="use-tx"><b>תושבי חו"ל</b><small>עמוד אחד</small></span></button>
         <button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>דף נפרד לכל קבוצה</b><small>שני עמודים: ישראל, ואחריו חו"ל</small></span></button>
-        <button class="use-row" value="both"><span class="use-ic">📄</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>עמוד אחד, עמודת מחיר לכל קבוצה</small></span></button>
+        <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>ישראל, ומתחתיו חו"ל · חתימות פעם אחת</small></span></button>
       </div>
     </div>
   </form>
@@ -40,7 +49,7 @@
       <div class="preview" id="row-preview" aria-live="polite"></div>
       <div class="fields two">
         <label class="f"><span>סוג</span><select id="row-kind">
-          <option value="section">כותרת חלקות</option><option value="subsection">כותרת קבורה</option>
+          <option value="section">כותרת חלקות</option><option value="band">פס בית עלמין</option><option value="subsection">כותרת קבורה</option>
           <option value="heading">כותרת משנה</option><option value="item">שורת מחיר</option>
           <option value="fee">תשלום נלווה</option><option value="note">הערה</option></select></label>
         <label class="switch"><input type="checkbox" id="row-indent"><span>מוזחת</span></label>

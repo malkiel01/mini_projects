@@ -129,7 +129,7 @@ dialog.ask .sheet-foot { border-top: 0; }
 .bar .primary { margin-inline-start: auto; }
 .empty-aud { margin: var(--s2) 0; }
 
-/* המחירון במסך — טבלה רציפה; עמודות לפי המתג (בטלפון) */
+/* המחירון במסך — טבלה רציפה, עמודת מחיר אחת */
 .prices { inline-size: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
     overflow: hidden; }
 .prices th, .prices td { padding: 6px var(--s2); border-top: 1px solid var(--line); text-align: start; vertical-align: baseline; overflow-wrap: anywhere; }
@@ -142,11 +142,15 @@ dialog.ask .sheet-foot { border-top: 0; }
 .prices tr.fee td, .prices tr.note td { font-size: .85rem; }
 .prices tr.fee td:first-child { font-weight: 700; }
 .prices .plain { font-weight: 400; font-size: .85em; }
-.view-il .ab, .view-abroad .il { display: none; }
-@media (min-width: 600px) {
-    .aud-switch { display: none; }
-    .view-il .ab, .view-abroad .il { display: table-cell; }
-}
+.prices tr.band td { text-align: center; font-weight: 700; background: #e3e5e8; color: #1f2329; }
+@media (prefers-color-scheme: dark) { .prices tr.band td { background: #3a3f47; color: #f1f3f5; } }
+
+/* מסך הבית — קבוצה לכל רשימה */
+.group { margin-bottom: var(--s4); }
+.group-head { display: flex; align-items: center; gap: var(--s2); }
+.group-head .sec-title { flex: 1; min-width: 0; }
+.group-head .btn { flex: none; }
+#share-dlg .fields { margin-bottom: var(--s3); }
 
 /* עריכה (02-editing.md) */
 .icon-btn.ghost { border-color: var(--line); }

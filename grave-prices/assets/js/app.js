@@ -1,4 +1,4 @@
-// מחירוני קברים — המסכים: רשימת המחירונים, מחירון (צפייה ועריכה), מחירון חדש, ומסך המפתח. ההדפסה — print.html (assets/js/print.js).
+// מחירוני קברים — המסכים: רשימת המחירונים (לכל קבוצה בנפרד), מחירון (צפייה ועריכה), מחירון חדש, ומסך המפתח. ההדפסה — print.html (assets/js/print.js).
 'use strict';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -31,24 +31,56 @@ function head(title, sub = '', back = false) {
     document.title = title === 'מחירוני קברים' ? title : title + ' · מחירוני קברים';
 }
 
-/* ===== רשימת המחירונים ===== */
+/* ===== רשימת המחירונים — שתי קבוצות, לכל אחת המחירונים שלה (03-per-audience.md סעיף 3) ===== */
+const GROUPS = [['il', 'תושבי ישראל', '🇮🇱'], ['abroad', 'תושבי חו"ל', '🌍']];
+
+/** ברירת המחדל להדפסה: זה שבתוקף היום בקבוצה; אין — העתידי הקרוב */
+function pick(editions, aud) {
+    const mine = editions.filter(e => e.audience === aud);
+    return mine.find(e => e.in_effect) || mine.filter(e => e.future).sort((a, b) => a.effective_from < b.effective_from ? -1 : 1)[0] || null;
+}
+
+const printUrl = (il, abroad, mode) => 'print.html?' + new URLSearchParams({ ...(il ? { il } : {}), ...(abroad ? { abroad } : {}), mode });
+
 async function showList() {
     head('מחירוני קברים');
     const { editions } = await api('editions');
-    view.innerHTML = `<div class="bar"><button class="btn primary" id="new-btn">➕ מחירון חדש</button></div>
-      ${editions.length ? `<ul class="list">${editions.map(e => `
-        <li class="card" data-pid="${esc(e.pid)}" role="link" tabindex="0">
-          <div class="body"><div class="l1"><span>בתוקף החל מ- ${esc(dmy(e.effective_from))}</span>
-            ${e.in_effect ? '<span class="chip ok">בתוקף היום</span>' : ''}${e.future ? '<span class="chip warn">עתידי</span>' : ''}</div></div>
-          <span class="use-go" aria-hidden="true">‹</span>
-        </li>`).join('')}</ul>` : '<p class="empty">אין עדיין מחירונים</p>'}`;
-    $('#new-btn').hidden = !editions.length;
-    $('#new-btn').onclick = () => { location.hash = '#/new'; };
+    const both = GROUPS.every(([a]) => editions.some(e => e.audience === a));
+    view.innerHTML = `${both ? '<div class="bar"><button class="btn primary" id="share-btn">🖨️ הדפסה משותפת</button></div>' : ''}
+      ${GROUPS.map(([a, name, ic]) => {
+        const mine = editions.filter(e => e.audience === a);
+        return `<section class="group" aria-labelledby="g-${a}">
+          <div class="group-head"><h2 class="sec-title" id="g-${a}">${ic} ${esc(name)}</h2>
+            ${mine.length ? `<a class="btn sm ghost" href="#/new/${a}" aria-label="מחירון חדש ל${esc(name)}">➕ מחירון חדש</a>` : ''}</div>
+          ${mine.length ? `<ul class="list">${mine.map(e => `
+            <li class="card" data-pid="${esc(e.pid)}" role="link" tabindex="0">
+              <div class="body"><div class="l1"><span>בתוקף החל מ- ${esc(dmy(e.effective_from))}</span>
+                ${e.in_effect ? '<span class="chip ok">בתוקף היום</span>' : ''}${e.future ? '<span class="chip warn">עתידי</span>' : ''}</div></div>
+              <span class="use-go" aria-hidden="true">‹</span>
+            </li>`).join('')}</ul>` : '<p class="empty">אין עדיין מחירונים</p>'}
+        </section>`;
+    }).join('')}`;
     view.querySelectorAll('[data-pid]').forEach(li => {
         const go = () => { location.hash = '#/e/' + li.dataset.pid; };
         li.onclick = go;
         li.onkeydown = e => { if (e.key === 'Enter') go(); };
     });
+    if (both) $('#share-btn').onclick = () => sharePrint(editions);
+}
+
+/** 🖨️ הדפסה משותפת: מחירון ישראל + מחירון חו"ל, ותצורה */
+function sharePrint(editions) {
+    const dlg = $('#share-dlg');
+    GROUPS.forEach(([a]) => {
+        const def = pick(editions, a);
+        $('#share-' + a).innerHTML = editions.filter(e => e.audience === a).map(e => `<option value="${esc(e.pid)}"${e === def ? ' selected' : ''}>
+            ${esc(dmy(e.effective_from))}${e.in_effect ? ' · בתוקף היום' : e.future ? ' · עתידי' : ''}</option>`).join('');
+    });
+    dlg.returnValue = '';
+    dlg.onclose = () => {
+        if (dlg.returnValue) location.href = printUrl($('#share-il').value, $('#share-abroad').value, dlg.returnValue);
+    };
+    dlg.showModal();
 }
 
 /* ===== שאלת אישור ===== */
@@ -89,61 +121,65 @@ async function rerender(pid) {
     scrollTo(0, y);
 }
 
-/* ===== מחירון ===== */
-let audView = 'both';
+/* ===== מחירון — עמודת מחיר אחת, של הקבוצה שלו (03 סעיף 4) ===== */
 async function showEdition(pid) {
     head('מחירון', '', true);
-    const e = await api('edition', { params: { pid } });
+    const [e, { editions }] = await Promise.all([api('edition', { params: { pid } }), api('editions')]);
     if (editPid !== pid) confirmed = '';
     const editing = editPid === pid;
-    head('בתוקף החל מ- ' + dmy(e.effective_from), 'מחירון חברה קדישא לעדת המערבים', true);
-    const names = e.audiences;
-    const missing = Object.keys(names).filter(a => !e.rows.some(r => r.prices && r.prices[a] != null));
-    const cell = (r, a) => {
-        const c = a === 'il' ? 'il' : 'ab';
-        if (editing) return `<td class="amt ${c}"><input class="price" inputmode="numeric" autocomplete="off" enterkeyhint="next"
-            data-row="${esc(r.pid)}" data-aud="${a}" value="${r.prices[a] ?? ''}" aria-label="${esc(plain(r.label))} · ${esc(names[a])}"><small class="st" aria-live="polite"></small></td>`;
-        return `<td class="amt ${c}${r.prices[a] == null ? ' none' : ''}">${money(r.prices[a])}</td>`;
-    };
+    head('בתוקף החל מ- ' + dmy(e.effective_from), e.audience_name + ' · ' + e.subtitle, true);
+    const cell = r => editing
+        ? `<td class="amt"><input class="price" inputmode="numeric" autocomplete="off" enterkeyhint="next"
+            data-row="${esc(r.pid)}" value="${r.price ?? ''}" aria-label="${esc(plain(r.label))}"><small class="st" aria-live="polite"></small></td>`
+        : `<td class="amt${r.price == null ? ' none' : ''}">${money(r.price)}</td>`;
     const lb = r => editing ? ` class="lb" data-row="${esc(r.pid)}" tabindex="0" role="button" aria-label="עריכת השורה: ${esc(plain(r.label))}"` : ' class="lb"';
+    const empty = !e.rows.some(r => r.priced && r.price != null);
     view.innerHTML = `
       <div class="bar">
-        <div class="seg aud-switch" role="radiogroup" aria-label="עמודות">
-          ${[['il', 'ישראל'], ['abroad', 'חו"ל'], ['both', 'שתיהן']].map(([v, t]) =>
-            `<label><input type="radio" name="aud" value="${v}"${v === audView ? ' checked' : ''}><span>${t}</span></label>`).join('')}
-        </div>
+        <span class="chip">${esc(e.audience_name)}</span>
         <button class="icon-btn ghost${editing ? ' on' : ''}" id="edit-btn" aria-pressed="${editing}" aria-label="עריכה" title="עריכה">✏️</button>
         <button class="icon-btn ghost" id="hist-btn" aria-label="שינויים" title="שינויים">📜</button>
         <button class="btn primary" id="print-btn">🖨️ הדפסה</button>
       </div>
       ${editing ? `<div class="edit-note"><span>✏️ מצב עריכה — כל שינוי נשמר לבד. לחיצה על שורה — לעריכתה.</span>
         <button class="btn sm primary" id="done-btn">סיום</button></div>` : ''}
-      ${missing.map(a => `<p class="hint empty-aud">טרם הוזנו מחירים ל${esc(names[a])}</p>`).join('')}
-      <table class="prices view-${audView}${editing ? ' editing' : ''}">
-        <thead><tr><th>שורה</th><th class="amt il">${esc(names.il)}</th><th class="amt ab">${esc(names.abroad)}</th></tr></thead>
+      ${empty ? '<p class="hint empty-aud">טרם הוזנו מחירים במחירון הזה</p>' : ''}
+      <table class="prices${editing ? ' editing' : ''}">
+        <thead><tr><th>שורה</th><th class="amt">${esc(e.audience_name)}</th></tr></thead>
         <tbody>${e.rows.map(r => `<tr class="${r.kind}${r.indent ? ' indent' : ''}">
-          <td${lb(r)}${r.prices ? '' : ' colspan="3"'}>${r.html}</td>${r.prices ? cell(r, 'il') + cell(r, 'abroad') : ''}</tr>`).join('')}</tbody>
+          <td${lb(r)}${r.priced ? '' : ' colspan="2"'}>${r.html}</td>${r.priced ? cell(r) : ''}</tr>`).join('')}</tbody>
       </table>
       ${editing ? editPanel(e) : ''}`;
-    view.querySelectorAll('input[name=aud]').forEach(i => i.onchange = () => {
-        audView = i.value;
-        $('.prices', view).className = 'prices view-' + audView + (editing ? ' editing' : '');
-    });
     const toggle = () => { editPid = editing ? '' : pid; confirmed = ''; rerender(pid); };
     $('#edit-btn').onclick = toggle;
     if (editing) $('#done-btn').onclick = toggle;
     $('#hist-btn').onclick = () => showHistory(pid);
+    // 🖨️ — המחירון הזה, או יחד עם הקבוצה השנייה (זה שבתוקף בה היום; אין בה מחירון — רק "המחירון הזה")
+    const otherAud = e.audience === 'il' ? 'abroad' : 'il';
+    const other = pick(editions, otherAud);
+    const otherName = GROUPS.find(g => g[0] === otherAud)[1];
     const dlg = $('#print-dlg');
-    $('#print-btn').onclick = () => dlg.showModal();
+    $('#print-list').innerHTML = `
+        <button class="use-row" value="one"><span class="use-ic">📄</span><span class="use-tx"><b>המחירון הזה</b><small>${esc(e.audience_name)} · עמוד אחד</small></span></button>
+        ${other ? `<button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>יחד עם ${esc(otherName)} — דף נפרד</b>
+            <small>שני עמודים · ${esc(otherName)} ${esc(dmy(other.effective_from))}</small></span></button>
+          <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>יחד עם ${esc(otherName)} — באותו דף</b>
+            <small>ברצף, עם ${esc(otherName)} ${esc(dmy(other.effective_from))} · חתימות פעם אחת</small></span></button>` : ''}`;
+    $('#print-btn').onclick = () => { dlg.returnValue = ''; dlg.showModal(); };
     dlg.onclose = () => {
-        if (dlg.returnValue) location.href = 'print.html?' + new URLSearchParams({ e: pid, mode: dlg.returnValue });
-        dlg.returnValue = '';
+        const mode = dlg.returnValue;
+        if (!mode) return;
+        const ids = { [e.audience]: pid, ...(mode === 'one' ? {} : { [otherAud]: other.pid }) };
+        location.href = printUrl(ids.il, ids.abroad, mode);
     };
     if (editing) bindEdit(e);
 }
 
 function editPanel(e) {
-    return `<h2 class="sec-title">חתימות</h2>
+    return `<h2 class="sec-title">כותרת המשנה</h2>
+      <label class="f"><span>מתחת ל"מחירון חברה קדישא לעדת המערבים"</span><input id="sub-in" value="${esc(e.subtitle)}" maxlength="120" required></label>
+      <small class="st" id="sub-st" aria-live="polite"></small>
+      <h2 class="sec-title">חתימות</h2>
       <div class="sig-edit">${e.signatures.map((s, i) => `<div class="fields two">
         <label class="f"><span>שם ${i + 1}</span><input data-sig="${i}" data-k="name" value="${esc(s.name)}" maxlength="100"></label>
         <label class="f"><span>תפקיד ${i + 1}</span><input data-sig="${i}" data-k="role" value="${esc(s.role)}" maxlength="100"></label></div>`).join('')}
@@ -166,7 +202,7 @@ function bindEdit(e) {
             if (v === inp.dataset.saved) { inp.value = v; inp.classList.remove('bad'); st.textContent = ''; return; }
             st.className = 'st'; st.textContent = '…';
             try {
-                const r = await edit('price-set', { pid, row: inp.dataset.row, audience: inp.dataset.aud, amount: v === '' ? null : v });
+                const r = await edit('price-set', { pid, row: inp.dataset.row, amount: v === '' ? null : v });
                 inp.value = inp.dataset.saved = r.amount ?? '';
                 inp.classList.remove('bad');
                 st.className = 'st ok'; st.textContent = 'נשמר ✓';
@@ -197,6 +233,19 @@ function bindEdit(e) {
             st.className = 'st err'; st.textContent = err.message;
         }
     });
+    // כותרת המשנה — כמו החתימות
+    $('#sub-in').onchange = async ev => {
+        const st = $('#sub-st');
+        st.className = 'st'; st.textContent = '…';
+        try {
+            await edit('edition-update', { pid, subtitle: ev.target.value });
+            st.className = 'st ok'; st.textContent = 'נשמר ✓';
+            head('בתוקף החל מ- ' + dmy(e.effective_from), e.audience_name + ' · ' + ev.target.value.trim(), true);
+        } catch (err) {
+            if (err.cancelled) { ev.target.value = e.subtitle; st.textContent = ''; return; }
+            st.className = 'st err'; st.textContent = err.message;
+        }
+    };
     if (!e.future) return;
     $('#date-in').onchange = async ev => {
         try {
@@ -226,7 +275,7 @@ function openRow(e, r, after = '') {
     const base = r || e.rows.find(x => x.pid === after);
     $('#row-title').textContent = r ? 'עריכת שורה' : 'שורה חדשה';
     label.value = r ? r.label : '';
-    kind.value = base ? (r ? base.kind : base.kind === 'section' || base.kind === 'subsection' ? 'item' : base.kind) : 'item';
+    kind.value = base ? (r ? base.kind : ['section', 'band', 'subsection'].includes(base.kind) ? 'item' : base.kind) : 'item';
     indent.checked = !!(base && base.indent);
     $('#row-tools').hidden = !r;
     err.hidden = true;
@@ -267,14 +316,18 @@ function openRow(e, r, after = '') {
 function histText(h) {
     const d = h.details;
     switch (h.action) {
-        case 'price': return `${plain(d.label)} · ${AUD[d.audience] || d.audience} · ${num(d.old)} → ${num(d.new)}`;
+        case 'price': return `${plain(d.label)} · ${num(d.old)} → ${num(d.new)}`;
         case 'row-add': return 'נוספה שורה: ' + plain(d.label);
         case 'row-edit': return 'שורה תוקנה: ' + plain(d.old.label) + (d.old.label !== d.new.label ? ' → ' + plain(d.new.label) : '');
-        case 'row-delete': return 'נמחקה שורה: ' + plain(d.label) + (d.prices ? ' (' + Object.entries(d.prices).map(([a, v]) => AUD[a] + ' ' + num(v)).join(', ') + ')' : '');
+        case 'row-delete': return 'נמחקה שורה: ' + plain(d.label) + ('price' in d ? (d.price != null ? ' (' + num(d.price) + ')' : '')
+            : d.prices ? ' (' + Object.entries(d.prices).map(([a, v]) => AUD[a] + ' ' + num(v)).join(', ') + ')' : '');
         case 'row-move': return 'שורה הוזזה ' + (d.dir === 'up' ? 'למעלה' : 'למטה') + ': ' + plain(d.label);
         case 'signatures': return 'החתימות עודכנו';
         case 'edition-create': return 'המחירון נפתח על בסיס ' + dmy(d.base) + (Object.keys(d.raise || {}).length ? ', עם העלאה באחוז' : '');
         case 'edition-update': return 'התאריך שונה: ' + dmy(d.old) + ' → ' + dmy(d.new);
+        case 'subtitle': return 'כותרת המשנה: ' + d.old + ' → ' + d.new;
+        case 'migrate-abroad': return 'נוצר ממחירי חו"ל שהוזנו במחירון ישראל של אותו תאריך (' + d.rows + ' שורות)';
+        case 'seed-il-2026-06-15': case 'seed-abroad-2026-06-15': return 'נטען מהמחירון המקורי';
         default: return h.action;
     }
 }
@@ -297,9 +350,12 @@ async function showHistory(pid) {
 /* ===== ➕ מחירון חדש ===== */
 const todayIso = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 
-async function showNew() {
-    head('מחירון חדש', '', true);
-    const { editions } = await api('editions');
+/** מחירון חדש לקבוצה אחת; הבסיס — רק מאותה קבוצה (03 סעיף 5) */
+async function showNew(aud) {
+    if (!GROUPS.some(g => g[0] === aud)) { location.hash = '#/'; return; }
+    const name = GROUPS.find(g => g[0] === aud)[1];
+    head('מחירון חדש', name, true);
+    const { editions } = await api('editions', { params: { audience: aud } });
     if (!editions.length) { view.innerHTML = '<p class="empty">אין מחירון שאפשר לבנות עליו</p>'; return; }
     view.innerHTML = `<form id="new-form" novalidate>
       <div class="fields two">
@@ -308,38 +364,24 @@ async function showNew() {
             `<option value="${esc(e.pid)}">${esc(dmy(e.effective_from))}</option>`).join('')}</select></label>
       </div>
       <h2 class="sec-title">העלאה באחוז</h2>
-      <label class="switch"><input type="checkbox" name="split"><span>אחוז שונה לתושבי ישראל ולתושבי חו"ל</span></label>
       <div id="raise"><p class="empty">טוען…</p></div>
       <p class="hint">מחיר חדש = המחיר הקודם + האחוז, מעוגל לשקל. מחיר ריק נשאר ריק. 0 — בלי שינוי.</p>
       <p class="error" id="new-err" hidden></p>
       <div class="row-btns"><button class="btn primary">➕ יצירת המחירון</button></div>
     </form>`;
     const form = $('#new-form'), box = $('#raise');
-    let lines = [], vals = {};
-    const read = () => box.querySelectorAll('input').forEach(i => { (vals[i.dataset.key] ??= {})[i.dataset.aud] = i.value; });
-    const draw = () => {
-        const split = form.split.checked;
-        const field = (key, aud, lbl) => `<label class="pct"><span class="sr">${esc(lbl)}</span>${split ? `<small>${aud === 'il' ? 'ישראל' : 'חו"ל'}</small>` : ''}
-            <input inputmode="decimal" autocomplete="off" data-key="${esc(key)}" data-aud="${aud}" value="${esc(vals[key]?.[aud] ?? vals[key]?.il ?? '0')}"><span>%</span></label>`;
-        box.innerHTML = `<ul class="list raise">${lines.map(([key, lbl]) => `<li class="raise-row"><span class="lbl">${esc(lbl)}</span>
-            ${split ? field(key, 'il', lbl) + field(key, 'abroad', lbl) : field(key, 'il', lbl)}</li>`).join('')}</ul>`;
-    };
+    let lines = [];
     const load = async () => {
         const b = await api('edition', { params: { pid: form.base.value } });
-        lines = [...b.rows.filter(r => r.kind === 'section').map(r => [r.pid, plain(r.label).replace(/:$/, '')]), ['fee', 'תשלומים נלווים']];
-        vals = {};
-        draw();
+        lines = [...b.rows.filter(r => r.kind === 'section' || r.kind === 'band').map(r => [r.pid, plain(r.label).replace(/:$/, '')]), ['fee', 'תשלומים נלווים']];
+        box.innerHTML = `<ul class="list raise">${lines.map(([key, lbl]) => `<li class="raise-row"><span class="lbl">${esc(lbl)}</span>
+            <label class="pct"><span class="sr">${esc(lbl)}</span><input inputmode="decimal" autocomplete="off" data-key="${esc(key)}" value="0"><span>%</span></label></li>`).join('')}</ul>`;
     };
     form.base.onchange = () => load().catch(err => { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; });
-    form.split.onchange = () => { read(); draw(); };
     form.onsubmit = async ev => {
         ev.preventDefault();
-        read();
         const pct = v => { const s = String(v ?? '').trim().replace(',', '.'); return s === '' ? 0 : isFinite(s) ? Number(s) : s; };
-        const raise = Object.fromEntries(lines.map(([key]) => {
-            const il = pct(vals[key]?.il);
-            return [key, { il, abroad: form.split.checked ? pct(vals[key]?.abroad) : il }];
-        }));
+        const raise = Object.fromEntries([...box.querySelectorAll('input[data-key]')].map(i => [i.dataset.key, pct(i.value)]));
         const err = $('#new-err');
         err.hidden = true;
         try {
@@ -359,8 +401,9 @@ async function showNew() {
 const DEV_TABS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '🗂️ פעולות'], ['health', '🩺 תקינות']];
 const ACTIONS = { login: 'כניסה', print: 'הדפסה', price: 'שינוי מחיר', 'row-add': 'שורה נוספה', 'row-edit': 'שורה תוקנה',
     'row-delete': 'שורה נמחקה', 'row-move': 'שורה הוזזה', signatures: 'חתימות', 'edition-create': 'מחירון נפתח',
-    'edition-update': 'תאריך שונה', 'edition-delete': 'מחירון נמחק' };
-const MODES = { il: 'תושבי ישראל', abroad: 'תושבי חו"ל', split: 'דף נפרד לכל קבוצה', both: 'שתיהן בדף אחד' };
+    'edition-update': 'תאריך שונה', 'edition-delete': 'מחירון נמחק', subtitle: 'כותרת משנה', 'migrate-abroad': 'חו"ל הועבר ממחירון ישראל',
+    'seed-il-2026-06-15': 'נטען: ישראל 15/06/2026', 'seed-abroad-2026-06-15': 'נטען: חו"ל 15/06/2026' };
+const MODES = { one: 'מחירון אחד', il: 'תושבי ישראל', abroad: 'תושבי חו"ל', split: 'דף נפרד לכל קבוצה', both: 'שתיהן בדף אחד' };
 const when = iso => new Date(iso).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 async function showDev(tab = 'tasks', arg = '') {
@@ -400,7 +443,7 @@ async function route() {
     const [, a = '', b = '', c = ''] = location.hash.split('/');
     try {
         if (a === 'e' && b) await showEdition(b);
-        else if (a === 'new') await showNew();
+        else if (a === 'new') await showNew(b || 'il');
         else if (a === 'dev') await showDev(b || 'tasks', c);
         else await showList();
     } catch (e) {

@@ -16,9 +16,14 @@ final class ApiError extends RuntimeException
 }
 
 const GP_AUDIENCES = ['il' => 'תושבי ישראל', 'abroad' => 'תושבי חו"ל'];
-const GP_KINDS = ['section', 'subsection', 'heading', 'item', 'fee', 'note'];
+/** כותרת המשנה של מחירון — ברירת המחדל לכל קבוצה (נערכת לכל מחירון, 03-per-audience.md סעיף 1) */
+const GP_SUBTITLES = ['il' => 'רכישת אחוזת קבר לתושבי ישראל', 'abroad' => 'רכישת קבר בחיים לתושבי חו"ל'];
+const GP_KINDS = ['section', 'band', 'subsection', 'heading', 'item', 'fee', 'note'];
 const GP_PRICED = ['item', 'fee'];
-const GP_PRINT_MODES = ['il', 'abroad', 'split', 'both'];
+const GP_TOPS = ['section', 'band'];   // כותרת עליונה: נושאת אחוז בהעלאה
+const GP_PRINT_MODES = ['one', 'split', 'both'];
+/** מיגרציות שבונות טבלה מחדש — רצות עם foreign_keys כבוי (הנוהל של SQLite), ונבדקות ב-foreign_key_check לפני commit */
+const GP_REBUILD_MIGRATIONS = [4];
 
 function gp_data_dir(): string
 {
@@ -82,24 +87,161 @@ function gp_migrations(): array
             $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS rows_pid ON rows(pid);
                         CREATE INDEX IF NOT EXISTS audit_edition ON audit(edition_id)');
         },
+        4 => function (PDO $pdo) {
+            // פרוסה 03: מחירון שייך לקבוצה אחת — 03-per-audience.md סעיף 2. לא מוחקת דבר.
+            gp_rebuild_editions($pdo);
+            gp_migrate_abroad($pdo);
+            gp_seed_one($pdo, gp_seed_abroad(), 'seed-abroad-2026-06-15');
+            gp_seed_one($pdo, gp_seed_il_2026(), 'seed-il-2026-06-15');
+        },
     ];
 }
 
 function gp_migrate(PDO $pdo): void
 {
     $v = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
-    foreach (gp_migrations() as $n => $fn) {
+    $all = gp_migrations();
+    if ($v > 0 && $v < max(array_keys($all))) gp_backup($pdo, $v);
+    foreach ($all as $n => $fn) {
         if ($n <= $v) continue;
-        $pdo->beginTransaction();
+        $rebuild = in_array($n, GP_REBUILD_MIGRATIONS, true);
+        if ($rebuild) $pdo->exec('PRAGMA foreign_keys = OFF');   // לא משתנה בתוך טרנזקציה — לכן לפניה
+        // IMMEDIATE: נועלים לכתיבה מההתחלה, ובודקים שוב את הגרסה — שתי בקשות ראשונות אחרי פריסה לא יריצו פעמיים
+        $pdo->exec('BEGIN IMMEDIATE');
         try {
-            $fn($pdo);
-            $pdo->exec('PRAGMA user_version = ' . (int)$n);
-            $pdo->commit();
+            if ((int)$pdo->query('PRAGMA user_version')->fetchColumn() < $n) {
+                $fn($pdo);
+                $bad = $pdo->query('PRAGMA foreign_key_check')->fetchAll();
+                if ($bad) throw new RuntimeException('מיגרציה ' . $n . ': הפניות שבורות — ' . json_encode($bad));
+                $pdo->exec('PRAGMA user_version = ' . (int)$n);
+            }
+            $pdo->exec('COMMIT');
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            $pdo->exec('ROLLBACK');
             throw $e;
+        } finally {
+            if ($rebuild) $pdo->exec('PRAGMA foreign_keys = ON');
         }
     }
+}
+
+/** לפני מיגרציה על מסד קיים: עותק שלם לצידו (data/app.sqlite.v<גרסה>-<זמן>.bak). העתקה בלבד — לא מוחקים. */
+function gp_backup(PDO $pdo, int $v): void
+{
+    $file = '';
+    foreach ($pdo->query('PRAGMA database_list') as $d) if ($d['name'] === 'main') $file = (string)$d['file'];
+    if ($file === '' || !is_file($file)) return;
+    $to = $file . '.v' . $v . '-' . gmdate('Ymd\THis') . '.bak';
+    if (is_file($to)) return;
+    try {
+        $pdo->exec('VACUUM INTO ' . $pdo->quote($to));   // עותק עקבי גם כשמישהו כותב
+    } catch (Throwable) {
+        if (is_file($to)) return;   // בקשה מקבילה כבר גיבתה
+        if (!@copy($file, $to)) throw new RuntimeException('הגיבוי לפני המיגרציה נכשל');
+    }
+}
+
+/** מזהה מחירון שלא היה בשימוש — גם לא של מחירון שנמחק, כדי שהיומן שלו לא יוצמד לחדש */
+function gp_next_edition_id(PDO $pdo): int
+{
+    return 1 + (int)$pdo->query('SELECT MAX(m) FROM (SELECT MAX(id) AS m FROM editions UNION ALL SELECT MAX(edition_id) FROM audit)')->fetchColumn();
+}
+
+/**
+ * editions נבנית מחדש: + audience, + subtitle, ו-UNIQUE(audience, effective_from) במקום UNIQUE(effective_from).
+ * אותם id ו-pid — כך rows.edition_id והיומן נשארים מחוברים. כל מחירון קיים — ישראל.
+ */
+function gp_rebuild_editions(PDO $pdo): void
+{
+    $cols = array_column($pdo->query('PRAGMA table_info(editions)')->fetchAll(), 'name');
+    if (in_array('audience', $cols, true)) return;
+    $before = $pdo->query('SELECT id, pid, effective_from, signatures, created_by, created_at, updated_at FROM editions ORDER BY id')->fetchAll();
+    $pdo->exec("CREATE TABLE editions_new (
+        id INTEGER PRIMARY KEY, pid TEXT NOT NULL UNIQUE, audience TEXT NOT NULL CHECK (audience IN ('il', 'abroad')),
+        effective_from TEXT NOT NULL, subtitle TEXT NOT NULL DEFAULT '', signatures TEXT NOT NULL DEFAULT '[]',
+        created_by INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (audience, effective_from))");
+    $pdo->prepare("INSERT INTO editions_new (id, pid, audience, effective_from, subtitle, signatures, created_by, created_at, updated_at)
+        SELECT id, pid, 'il', effective_from, ?, signatures, created_by, created_at, updated_at FROM editions")->execute([GP_SUBTITLES['il']]);
+    $pdo->exec('DROP TABLE editions');
+    $pdo->exec('ALTER TABLE editions_new RENAME TO editions');
+    $after = $pdo->query('SELECT id, pid, effective_from, signatures, created_by, created_at, updated_at FROM editions ORDER BY id')->fetchAll();
+    if ($after !== $before) throw new RuntimeException('מיגרציה 4: המחירונים לא הועתקו במלואם');
+}
+
+/** מחירי חו"ל שהוקלדו במחירון ישראל → מחירון חו"ל באותו תאריך (המקורי לא משתנה). */
+function gp_migrate_abroad(PDO $pdo): void
+{
+    $priced = "'" . implode("','", GP_PRICED) . "'";
+    $eds = $pdo->query("SELECT e.* FROM editions e WHERE e.audience = 'il' AND EXISTS (SELECT 1 FROM rows r JOIN prices p ON p.row_id = r.id
+        WHERE r.edition_id = e.id AND r.kind IN ($priced) AND p.audience = 'abroad' AND p.amount IS NOT NULL) ORDER BY e.effective_from")->fetchAll();
+    $taken = $pdo->prepare("SELECT 1 FROM editions WHERE audience = 'abroad' AND effective_from = ?");
+    $rows = $pdo->prepare("SELECT r.*, p.amount FROM rows r LEFT JOIN prices p ON p.row_id = r.id AND p.audience = 'abroad'
+        WHERE r.edition_id = ? ORDER BY r.sort, r.id");
+    foreach ($eds as $e) {
+        $taken->execute([$e['effective_from']]);
+        if ($taken->fetchColumn()) continue;
+        $rows->execute([$e['id']]);
+        $list = array_map(fn($r) => ['sort' => (int)$r['sort'], 'kind' => $r['kind'], 'indent' => (int)$r['indent'], 'label' => $r['label'],
+            'price' => $r['amount'] === null ? null : (int)$r['amount']], $rows->fetchAll());
+        $id = gp_insert_edition($pdo, 'abroad', $e['effective_from'], GP_SUBTITLES['abroad'], $e['signatures'], $list);
+        gp_audit_pdo($pdo, 'migrate-abroad', $id, ['from' => $e['pid'], 'rows' => count($list)]);
+    }
+}
+
+/** מחירון חדש עם השורות שלו; לכל שורה מחיר אחד (רשומה בקבוצה של המחירון). מחזיר את ה-id. */
+function gp_insert_edition(PDO $pdo, string $aud, string $date, string $subtitle, string $sigsJson, array $rows): int
+{
+    $id = gp_next_edition_id($pdo);
+    $now = now_iso();
+    $pdo->prepare('INSERT INTO editions (id, pid, audience, effective_from, subtitle, signatures, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        ->execute([$id, gp_pid(), $aud, $date, $subtitle, $sigsJson, $now, $now]);
+    $row = $pdo->prepare('INSERT INTO rows (edition_id, sort, kind, indent, label, pid) VALUES (?, ?, ?, ?, ?, ?)');
+    $price = $pdo->prepare('INSERT INTO prices (row_id, audience, amount) VALUES (?, ?, ?)');
+    foreach (array_values($rows) as $i => $r) {
+        if (!in_array($r['kind'], GP_KINDS, true)) throw new RuntimeException('סוג שורה לא מוכר: ' . $r['kind']);
+        $row->execute([$id, $r['sort'] ?? ($i + 1) * 10, $r['kind'], (int)$r['indent'], (string)$r['label'], gp_pid()]);
+        $rid = (int)$pdo->lastInsertId();
+        if (in_array($r['kind'], GP_PRICED, true) || ($r['price'] ?? null) !== null) {
+            $price->execute([$rid, $aud, ($r['price'] ?? null) === null ? null : (int)$r['price']]);
+        }
+    }
+    return $id;
+}
+
+/** נתוני התחלה של מחירון אחד — רק אם אין עדיין מחירון לאותה קבוצה באותו תאריך (מה שהבעלים יצר — גובר). */
+function gp_seed_one(PDO $pdo, array $e, string $action): void
+{
+    $st = $pdo->prepare('SELECT 1 FROM editions WHERE audience = ? AND effective_from = ?');
+    $st->execute([$e['audience'], $e['effective_from']]);
+    if ($st->fetchColumn()) return;
+    $id = gp_insert_edition($pdo, $e['audience'], $e['effective_from'], $e['subtitle'],
+        json_encode($e['signatures'], JSON_UNESCAPED_UNICODE), $e['rows']);
+    gp_audit_pdo($pdo, $action, $id, ['rows' => count($e['rows'])]);
+}
+
+/** lib/seed/abroad-2026-06-15.json (העתק של docs/spec/seed) */
+function gp_seed_abroad(): array
+{
+    return json_decode((string)file_get_contents(__DIR__ . '/seed/abroad-2026-06-15.json'), true, 512, JSON_THROW_ON_ERROR)['edition'];
+}
+
+/**
+ * ישראל 15/06/2026 — העותק של 15/03/2025 מ-editions.json (לא מהמסד, שאולי נערך), עם שני השינויים בהר הזיתים:
+ * שדה 50,000 → 60,000, מכפלה 75,000 → 80,000 (03-per-audience.md, "תוספת הבקרה").
+ */
+function gp_seed_il_2026(): array
+{
+    $seed = json_decode((string)file_get_contents(__DIR__ . '/seed/editions.json'), true, 512, JSON_THROW_ON_ERROR);
+    $base = array_values(array_filter($seed['editions'], fn($e) => $e['effective_from'] === '2025-03-15'))[0]
+        ?? throw new RuntimeException('אין 2025-03-15 בנתוני ההתחלה');
+    $rows = array_map(fn($r) => ['kind' => $r['kind'], 'indent' => $r['indent'], 'label' => $r['label'], 'price' => $r['prices']['il'] ?? null], $base['rows']);
+    $at = array_search('הר הזיתים (חלקה סגורה)', array_column($rows, 'label'), true);
+    $change = [1 => [50000, 60000], 2 => [75000, 80000]];
+    foreach ($change as $k => [$was, $now]) {
+        if ($at === false || ($rows[$at + $k]['price'] ?? null) !== $was) throw new RuntimeException('הר הזיתים לא נמצא כמצופה בנתוני ההתחלה');
+        $rows[$at + $k]['price'] = $now;
+    }
+    return ['audience' => 'il', 'effective_from' => '2026-06-15', 'subtitle' => GP_SUBTITLES['il'], 'signatures' => $base['signatures'], 'rows' => $rows];
 }
 
 function gp_pid(): string
@@ -115,6 +257,7 @@ function gp_seed(PDO $pdo): void
 {
     $seed = json_decode((string)file_get_contents(__DIR__ . '/seed/editions.json'), true, 512, JSON_THROW_ON_ERROR);
     $now = now_iso();
+    // רץ במיגרציה 2, כש-editions עוד במבנה של 01 (בלי audience) — מיגרציה 4 משלימה
     $ed = $pdo->prepare('INSERT INTO editions (pid, effective_from, signatures, created_at, updated_at) VALUES (?, ?, ?, ?, ?)');
     $row = $pdo->prepare('INSERT INTO rows (edition_id, sort, kind, indent, label) VALUES (?, ?, ?, ?, ?)');
     $price = $pdo->prepare('INSERT INTO prices (row_id, audience, amount) VALUES (?, ?, ?)');
@@ -136,6 +279,11 @@ function gp_seed(PDO $pdo): void
 
 function gp_audit(?int $userId, string $action, ?int $editionId = null, array $details = []): void
 {
-    db()->prepare('INSERT INTO audit (at, user_id, action, edition_id, details) VALUES (?, ?, ?, ?, ?)')
+    gp_audit_pdo(db(), $action, $editionId, $details, $userId);
+}
+
+function gp_audit_pdo(PDO $pdo, string $action, ?int $editionId = null, array $details = [], ?int $userId = null): void
+{
+    $pdo->prepare('INSERT INTO audit (at, user_id, action, edition_id, details) VALUES (?, ?, ?, ?, ?)')
         ->execute([now_iso(), $userId, $action, $editionId, json_encode($details, JSON_UNESCAPED_UNICODE)]);
 }
