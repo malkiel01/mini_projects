@@ -23,7 +23,7 @@ const VERSION_KEEP = 300;     // לכל הצעה
 /** הפעולות ששומרות גרסה לפניהן (api.php), והתיאור שלהן ברשימת הגרסאות. */
 const VERSIONED = [
     'budget_update' => 'עדכון פרטי ההצעה', 'bfund_set' => 'הערות / שורת ריכוז של קופה', 'bfund_toggle' => 'הוספת / הוצאת קופה ריקה',
-    'line_save' => 'עריכת שורה', 'lines_batch' => 'עריכה כטבלה', 'line_delete' => 'מחיקת שורה', 'line_order' => 'סידור שורות',
+    'line_save' => 'עריכת שורה', 'line_lease' => 'שכירות — נספח', 'lines_batch' => 'עריכה כטבלה', 'line_delete' => 'מחיקת שורה', 'line_order' => 'סידור שורות',
     'transfer_create' => 'העברה חדשה', 'srow_save' => 'שורת ריכוז', 'srow_delete' => 'מחיקת שורת ריכוז', 'srow_order' => 'סידור הריכוז',
     'line_disable' => 'השבתת / החזרת שורה', 'bfund_disable' => 'השבתת / החזרת קופה', 'bfund_remove' => 'הוצאת קופה מההצעה',
     'lines_delete' => 'מחיקת שורות', 'version_restore' => 'שחזור גרסה',
