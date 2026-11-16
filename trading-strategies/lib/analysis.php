@@ -154,7 +154,8 @@ function ts_method_settings(string $id): array
 /** שיטה מהספר = שיטת קוד ש-sample שלה לא true (18.1.2) */
 function ts_method_on_by_default(array $meta): bool
 {
-    return ($meta['kind'] ?? 'code') === 'code' && empty($meta['sample']);
+    // default_off — שיטה חדשה שהאפיון קבע שתתחיל כבויה עד שמנהל מפעיל (פיבונאצ'י, 22.1, 6.7)
+    return ($meta['kind'] ?? 'code') === 'code' && empty($meta['sample']) && empty($meta['default_off']);
 }
 
 /** התווית של השיטה (שיטות קוד בלבד — בונה השיטות נמחק, 21.1) */
