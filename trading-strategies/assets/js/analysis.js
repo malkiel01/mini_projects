@@ -281,6 +281,14 @@ export function mountAnalysis(ctx) {
             h('td', { class: 'num', dir: 'ltr' }, String(c.n))))))
           : h('p', { class: 'hint' }, 'עוד אין עסקאות במסד. הן נכתבות כשבדיקה לאחור מחושבת.'),
         h('div', { class: 'fields two' }, field('גרסה', verSel), field('מקור', src)),
+        // שינויי דפוס (23.8, L4): ממצא — רק מוצג, לא משנה דבר. ⚠️ — הפריט ב-DevLoop (23.8א)
+        h('h3', { class: 'learn-h' }, 'שינויי דפוס (p < 0.01)'),
+        (L.findings || []).length ? h('ul', { class: 'learn-findings' }, L.findings.map(f => h('li', { 'data-kind': f.kind, 'data-scope': f.scope },
+          h('div', { class: 'l1' }, h('span', {}, f.kind === 'recent' ? `${f.segment} מול מה שלפניהן` : `${LEARN_DIM[f.dim] || f.dim}: ${f.segment}`),
+            f.scope === 'owner' ? h('span', { class: 'chip warn' }, 'לבעלים') : h('span', { class: 'chip' }, 'בתוך השיטה')),
+          h('p', { class: 'hint' }, f.text),
+          f.code ? h('a', { class: 'learn-item', href: '#/dev/tasks/' + f.code }, `⚠️ ${f.code} — לדיון`) : null)))
+          : h('p', { class: 'hint learn-none' }, 'אין ממצאים — אף פלח לא שונה מהשאר במובהקות, וגם לא 30 העסקאות האחרונות.'),
         h('p', { class: 'hint' }, `פלח עם פחות מ-${L.min_n} עסקאות — "אין מספיק נתונים", בלי אחוז ובלי תוחלת.`,
           L.gaps ? ` ${L.gaps} אותות לא נפתחו (פער מעבר לרמה) — לא בסטטיסטיקה.` : ''),
         h('table', { class: 'tbl learn-tbl' },
