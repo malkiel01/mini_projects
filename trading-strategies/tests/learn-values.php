@@ -87,9 +87,9 @@ $setMethod = function (float $stop, int $tune = 0) use ($db) {
     ts_method_forget();
 };
 $used = [];
-$cron = function ($set, ?array $budget = null, ?callable $load = null) use (&$used, $T0) {
+$cron = function ($set, ?array $budget = null, ?callable $load = null, int $now = 1_800_000_000, float $seconds = TS_LEARN_CRON_SECONDS) use (&$used, $T0) {
     $load ??= fn(string $a, string $tf) => ts_learn_fx_set($set, $T0, 50);
-    return ts_learn_cron(1_800_000_000, $used, $budget, microtime(true), $load);
+    return ts_learn_cron($now, $used, $budget, microtime(true), $load, $seconds);
 };
 $props = fn(string $status = 'open') => $db->query("SELECT segment, param, current_value, candidate_value, created_by, origin FROM method_proposals
     WHERE origin = 'learning' AND status = '$status' ORDER BY segment, id")->fetchAll(PDO::FETCH_NUM);
@@ -219,6 +219,46 @@ $reset();
 $rows(100);
 $s = $cron('narrow', null, function () { throw new TsInvalid('אין חיבור'); });
 eq([$s['evaluated'], $lv()['result']], [2, 'no_pairs'], 'no system access to the provider → the pair is not run ("no_pairs")');
+
+// ── ביקורת L5b 🟡 (א): השוואה שלא נגמרת בזמן — 3 דחיות ברצף → too_big, פריט DevLoop אחד, וחוזרת רק אחרי 30 שורות חדשות ──
+$reset();
+$rows(100);
+$slow = function () { throw new TsBacktestTimeout('לא הושלם בזמן'); };
+$before = $items();
+$s1 = $cron('narrow', null, $slow, 1_800_000_000);
+$V = ts_learn_values('test-neighbors', 1);
+eq([$s1['deferred'], $s1['too_big'], $V[0]['status'], $V[0]['last']['deferred'], (int)$lv()['n_at']], [2, 0, 'due', 1, 0], 'a timeout → deferred, counted (1), the cursor does not move, still due');
+$cron('narrow', null, $slow, 1_800_000_100);
+$s3 = $cron('narrow', null, $slow, 1_800_000_200);
+$V = ts_learn_values('test-neighbors', 1);
+eq([$s3['too_big'], $lv()['result'], (int)$lv()['n_at'], $V[0]['status'], $V[0]['last']['deferred'], json_decode($lv()['detail'], true)['pairs']], [2, 'too_big', 100, 'waiting', 0, 1],
+    'the third timeout in a row → too_big: the cursor moves to now, back to due only after 30 new rows');
+eq([$items() - $before, str_contains((string)$db->query("SELECT title FROM dev_tasks WHERE area = 'learning' ORDER BY id DESC LIMIT 1")->fetchColumn(), 'גדול מדי להשוואה בריצה אחת')],
+    [2, true], '… and one DevLoop item for each (the general and crypto × 1h)');
+eq($cron('narrow', null, $slow, 1_800_000_300)['deferred'], 0, '… the next run does not burn its time on it');
+$rows(30, 1, 'binance:BTCUSDT', 'crypto', '', 100);
+$s = $cron('narrow', null, null, 1_800_000_400);
+eq([$s['evaluated'], $lv()['result'], ts_learn_values('test-neighbors', 1)[0]['last']['deferred']], [2, 'propose', 0], '30 new rows → compared again; a success resets the counter');
+// דחייה בלי זמן אמיתי (הריצה כבר נגמרה) — לא נספרת
+$reset();
+$rows(100);
+$s = $cron('narrow', null, $slow, 1_800_000_000, 0.000001);
+eq([$s['stopped'], $s['deferred'], $lv()], [true, 2, false], 'no time left before it started → not counted, nothing written');
+
+// ── ביקורת L5b 🟡 (ב): סדר הוגן — מכל השיטות יחד, הישנה קודם; דחייה מעבירה לסוף התור ──
+$reset();
+$rows(100);
+$db->exec("INSERT INTO learning_values (method_id, method_version, source, segment, param, n_at, result, at, deferred) VALUES
+    ('test-neighbors', 1, 'backtest', '', 'stop_atr', 0, 'deferred', 500, 1), ('test-neighbors', 1, 'backtest', 'crypto|h1', 'stop_atr', 0, 'deferred', 100, 1)");
+eq(array_map(fn($l) => explode(':', $l)[0], $cron('narrow')['log']), ['test-neighbors stop_atr@crypto|h1', 'test-neighbors stop_atr'],
+    'fair order: the one waiting longest (crypto × 1h, at 100) runs first');
+$reset();
+$rows(100);
+$calls = 0;
+$once = function () use (&$calls, $T0) { if (++$calls === 1) throw new TsBacktestTimeout('לא הושלם'); return ts_learn_fx_set('narrow', $T0, 50); };
+$s = $cron('narrow', null, $once, 1_800_000_000);
+eq([$s['log'], ts_learn_values('test-neighbors', 1)[0]['last']['at']], [['test-neighbors stop_atr: נדחה (זמן)', 'test-neighbors stop_atr@crypto|h1: propose · בתוך 3, מחוץ 2'], 1_800_000_000],
+    'a deferred one does not block the next in the same run, and moves to the end of the queue (at = now)');
 
 // ── ההיסטוגרמות (23.10, קריטריון 7): לדיון בלבד — חתוכות בסטופ, לא מקור להצעה ──
 $h = ts_learn_hist([['entry' => '100', 'stop' => '95', 'atr' => '5', 'mae_r' => 0.3, 'mfe_r' => 2.2], ['entry' => '100', 'stop' => '95', 'atr' => '5', 'mae_r' => 1.0, 'mfe_r' => 9],

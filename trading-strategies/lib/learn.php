@@ -497,7 +497,7 @@ const TS_LEARN_CRON_SECONDS = 90;
 const TS_LEARN_HIST_STEP = 0.25;
 const TS_LEARN_HIST_MAX = 5.0;
 /** תוצאות ההשוואה (learning_values.result) */
-const TS_LEARN_RESULTS = ['propose', 'edge', 'current_best', 'out_worse', 'no_out_of_sample', 'no_trades', 'no_pairs'];
+const TS_LEARN_RESULTS = ['propose', 'edge', 'current_best', 'out_worse', 'no_out_of_sample', 'no_trades', 'no_pairs', 'deferred', 'too_big'];
 
 /** אחוזון q של רשימה ממוינת — אינטרפולציה לינארית בין שני הסמוכים (R type 7). 10 ערכים 0.1…1.0, q = 0.8 → 0.82 */
 function ts_learn_quantile(array $sorted, float $q): ?float
@@ -647,7 +647,7 @@ function ts_learn_values(string $methodId, int $version, string $source = 'backt
     $rows = $st->fetchAll();
     $segs = ['' => $rows];
     foreach ($rows as $r) $segs[$r['market'] . '|' . $r['tf']][] = $r;
-    $get = $db->prepare('SELECT n_at, result, at, detail FROM learning_values WHERE method_id = ? AND method_version = ? AND source = ? AND segment = ? AND param = ?');
+    $get = $db->prepare('SELECT n_at, result, at, detail, deferred FROM learning_values WHERE method_id = ? AND method_version = ? AND source = ? AND segment = ? AND param = ?');
     $out = [];
     foreach ($segs as $seg => $rs) {
         if (count($rs) < TS_MIN_SIGNALS) continue;
@@ -670,7 +670,7 @@ function ts_learn_values(string $methodId, int $version, string $source = 'backt
                 'neighbors' => array_column(ts_learn_neighbors($cfg, (float)$cur[$k]), 'value'),
                 'rows' => count($rs), 'n_in' => $nIn, 'n_out' => count($rs) - $nIn, 't_cut' => $tCut,
                 'pairs' => array_values($pairs), 'private_pairs' => count($private), 'status' => $status,
-                'last' => $l ? ['n_at' => (int)$l['n_at'], 'result' => $l['result'], 'at' => (int)$l['at'],
+                'last' => $l ? ['n_at' => (int)$l['n_at'], 'result' => $l['result'], 'at' => (int)$l['at'], 'deferred' => (int)$l['deferred'],
                     'detail' => $l['detail'] !== null ? json_decode($l['detail'], true) : null] : null];
         }
     }
@@ -801,16 +801,68 @@ function ts_learn_commit(TsMethod $m, array $v, array $ev, int $pairsRun, int $n
     return [$props, $finds];
 }
 
+/** [שלנו] ביקורת L5b 🟡: השוואה שנדחתה 3 פעמים בגלל זמן → "too_big" (גדולה מדי לריצה אחת), עד 30 שורות חדשות */
+const TS_LEARN_MAX_DEFERRALS = 3;
+
 /**
- * הלמידה ב-cron (23.9 "עלות"): לכל שיטה עם learn_params, בגרסה הנוכחית, מקור backtest — כל פרמטר × פלח שמצבו due. הנרות —
+ * דחייה בגלל זמן (ביקורת L5b 🟡): מונה ב-learning_values.deferred, ו-at = עכשיו — כך ההשוואה עוברת לסוף התור (סדר הוגן), והסמן
+ * (n_at) לא זז. בדחייה השלישית: result = too_big, n_at = השורות עכשיו (חוזרת ל-due רק אחרי 30 חדשות), המונה מתאפס, ופריט DevLoop
+ * אחד לבעלים. מחזיר true כשסומנה too_big.
+ */
+function ts_learn_defer(TsMethod $m, array $v, int $pairs, int $now): bool
+{
+    $meta = $m->meta();
+    $db = ts_db();
+    $k = [$meta['id'], $meta['version'], 'backtest', $v['segment'], $v['param']];
+    $n = ($v['last']['deferred'] ?? 0) + 1;
+    if ($n < TS_LEARN_MAX_DEFERRALS) {
+        $db->prepare("INSERT INTO learning_values (method_id, method_version, source, segment, param, n_at, result, at, deferred) VALUES (?, ?, ?, ?, ?, 0, 'deferred', ?, 1)
+                      ON CONFLICT (method_id, method_version, source, segment, param) DO UPDATE SET deferred = deferred + 1, at = excluded.at")
+            ->execute([...$k, $now]);
+        return false;
+    }
+    $fk = implode('|', [$meta['id'], $meta['version'], 'backtest', 'too_big', $v['segment'], $v['param']]);
+    $has = $db->prepare('SELECT 1 FROM learning_findings WHERE k = ?');
+    $has->execute([$fk]);
+    $item = !$has->fetchColumn() && function_exists('devloop_task_create');
+    if ($item && function_exists('devloop_migrate')) devloop_migrate();
+    $seg = $v['segment'] === '' ? 'כל השווקים' : ts_learn_segment_text('market_tf', $v['segment']);
+    $db->beginTransaction();
+    try {
+        $db->prepare("INSERT OR REPLACE INTO learning_values (method_id, method_version, source, segment, param, n_at, result, at, detail, deferred) VALUES (?, ?, ?, ?, ?, ?, 'too_big', ?, ?, 0)")
+            ->execute([...$k, $v['rows'], $now, json_encode(['t_cut' => $v['t_cut'], 'n_in' => $v['n_in'], 'n_out' => $v['n_out'], 'pairs' => $pairs,
+                'private_pairs' => $v['private_pairs'], 'deferred' => $n, 'candidates' => []])]);
+        if ($item) {
+            $r = devloop_task_create(['id' => null], ['kind' => 'research', 'area' => 'learning', 'priority' => 'normal',
+                'title' => "למידה: {$meta['name']} · $seg · {$v['label']} — גדול מדי להשוואה בריצה אחת",
+                'detail' => "שיטה: {$meta['name']} ({$meta['id']}), גרסה {$meta['version']}, מקור backtest.\nפלח: $seg.\n"
+                    . "השוואת השכנים ל-{$v['param']} לא הסתיימה בתוך " . TS_LEARN_CRON_SECONDS . " שניות $n פעמים ברצף ($pairs זוגות נכס × מסגרת). "
+                    . "היא לא תרוץ שוב עד 30 עסקאות חדשות, כדי לא לעכב את שאר הלמידה.\n"
+                    . "להחלטה: לשמור התקדמות בין ריצות, להגדיל את הזמן, או לצמצם את הפלח הכללי.\nמסך: ניהול ← 🧪 שיטות ← {$meta['name']} ← 📚 למידה (#/admin)."]);
+            $db->prepare('INSERT INTO learning_findings (k, method_id, method_version, source, kind, dim, value, code, scope, sig, total, created_at, updated_at)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$fk, $meta['id'], $meta['version'], 'backtest', 'value', $v['param'], $v['segment'], $r['code'], 'owner', (string)$pairs, $v['rows'], $now, $now]);
+        }
+        $db->commit();
+    } catch (Throwable $e) {
+        $db->rollBack();
+        throw $e;
+    }
+    return true;
+}
+
+/**
+ * הלמידה ב-cron (23.9 "עלות"): לכל שיטה עם learn_params, בגרסה הנוכחית, מקור backtest — כל פרמטר × פלח שמצבו due. **סדר הוגן**
+ * (ביקורת L5b 🟡): מכל השיטות יחד, הישנה קודם (learning_values.at; אף פעם — ראשונה), ודחייה מעבירה לסוף התור. הנרות —
  * ts_bt_history בשם המערכת (uid 0: רק מה שפתוח לכולם או מפתח האפליקציה, כמו המילוי, 21.3), **באותו תקציב לדקה** של הריצה ($used,
- * $budget — 6.2(ה)) ובתקרת זמן משלה. חסר תקציב / זמן → נדחה לריצה הבאה, והסמן לא זז. $load — לבדיקות בלבד: (asset, tf) → נרות.
+ * $budget — 6.2(ה)) ובתקרת זמן משלה ($seconds). חסר תקציב → נדחה, והסמן לא זז. חסר זמן (להשוואה שקיבלה לפחות חצי מהזמן) → נספר;
+ * בפעם השלישית — too_big (ts_learn_defer). $load — לבדיקות בלבד: (asset, tf) → נרות.
  * מחזיר סיכום ליומן הריצה: כמה הושוו, כמה הרצות בתוך הדגימה ומחוצה לה, הצעות, קצוות, נדחו.
  */
-function ts_learn_cron(int $now, array &$used, ?array $budget, float $t0, ?callable $load = null): array
+function ts_learn_cron(int $now, array &$used, ?array $budget, float $t0, ?callable $load = null, float $seconds = TS_LEARN_CRON_SECONDS): array
 {
-    $sum = ['evaluated' => 0, 'proposals' => 0, 'edges' => 0, 'runs_in' => 0, 'runs_out' => 0, 'deferred' => 0, 'errors' => 0, 'stopped' => false, 'log' => []];
-    $until = min($t0 + (defined('TS_CRON_MAX_SECONDS') ? TS_CRON_MAX_SECONDS : 240), microtime(true) + TS_LEARN_CRON_SECONDS);
+    $sum = ['evaluated' => 0, 'proposals' => 0, 'edges' => 0, 'runs_in' => 0, 'runs_out' => 0, 'deferred' => 0, 'too_big' => 0, 'errors' => 0, 'stopped' => false, 'log' => []];
+    $until = min($t0 + (defined('TS_CRON_MAX_SECONDS') ? TS_CRON_MAX_SECONDS : 240), microtime(true) + $seconds);
     $load ??= function (string $asset, string $tf) use ($now, &$used, $budget, $until): array {
         $provider = explode(':', $asset, 2)[0];
         $cap = $budget[$provider] ?? ts_provider_limits($provider)['per_min'];
@@ -820,48 +872,63 @@ function ts_learn_cron(int $now, array &$used, ?array $budget, float $t0, ?calla
         if (!$complete) throw new TsBacktestTimeout('המשיכה לא הושלמה בזמן');
         return $rows;
     };
+    $log = function (string $id, array $v, string $what) use (&$sum) {
+        if (count($sum['log']) < 20) $sum['log'][] = sprintf('%s %s%s: %s', $id, $v['param'], $v['segment'] !== '' ? '@' . $v['segment'] : '', $what);
+    };
     ts_fetch_as_system(true);
     try {
+        // התור: כל ה-due מכל השיטות, הישנה קודם (סדר יציב: שיטה, פלח, פרמטר)
+        $queue = [];
         foreach (ts_method_ids() as $id) {
             $m = ts_method($id);
-            $lp = ts_learn_params($m);
-            if (!$lp) continue;
-            $memo = [];   // הנרות של זוג — פעם אחת לשיטה בריצה
+            if (!ts_learn_params($m)) continue;
             foreach (ts_learn_values($id, (int)$m->meta()['version'], 'backtest') as $v) {
-                if ($v['status'] !== 'due') continue;
-                if (microtime(true) > $until) { $sum['stopped'] = true; $sum['deferred']++; continue; }
-                try {
-                    $pairs = [];
-                    foreach ($v['pairs'] as $pr) {
-                        $key = $pr['asset'] . '|' . $pr['tf'];
-                        if (!array_key_exists($key, $memo)) {
-                            try {
-                                $memo[$key] = $load($pr['asset'], $pr['tf']);
-                            } catch (TsInvalid) {
-                                $memo[$key] = [];   // אין למערכת דרך לספק הזה (או למסגרת) — הזוג לא רץ
-                            }
+                if ($v['status'] === 'due') $queue[] = [$id, $v, $v['last']['at'] ?? 0, count($queue)];
+            }
+        }
+        usort($queue, fn($a, $b) => [$a[2], $a[3]] <=> [$b[2], $b[3]]);
+        $memo = [];   // הנרות של זוג — פעם אחת בריצה (לא תלויים בשיטה)
+        foreach ($queue as [$id, $v]) {
+            if (microtime(true) > $until) { $sum['stopped'] = true; $sum['deferred']++; continue; }
+            $m = ts_method($id);
+            $lp = ts_learn_params($m);
+            $start = microtime(true);
+            $pairs = [];
+            try {
+                foreach ($v['pairs'] as $pr) {
+                    $key = $pr['asset'] . '|' . $pr['tf'];
+                    if (!array_key_exists($key, $memo)) {
+                        try {
+                            $memo[$key] = $load($pr['asset'], $pr['tf']);
+                        } catch (TsInvalid) {
+                            $memo[$key] = [];   // אין למערכת דרך לספק הזה (או למסגרת) — הזוג לא רץ
                         }
-                        if ($memo[$key]) $pairs[] = ts_learn_pair($pr['asset'], $pr['tf'], $memo[$key], (int)$v['t_cut']);
                     }
-                    $set = ts_method_settings($id);
-                    $base = ($v['segment'] !== '' ? ($set['seg_params'][$v['segment']] ?? []) : []) + $set['params'];
-                    $ev = $pairs ? ts_learn_eval($m, $base, $v['param'], $lp[$v['param']], $pairs, $until) : ['result' => 'no_pairs'];
-                    [$p, $f] = ts_learn_commit($m, $v, $ev, count($pairs), $now);
-                    $sum['evaluated']++;
-                    $sum['proposals'] += $p;
-                    $sum['edges'] += $ev['result'] === 'edge' ? 1 : 0;
-                    $sum['runs_in'] += $ev['runs_in'] ?? 0;
-                    $sum['runs_out'] += $ev['runs_out'] ?? 0;
-                    if (count($sum['log']) < 20) {
-                        $sum['log'][] = sprintf('%s %s%s: %s · בתוך %d, מחוץ %d', $id, $v['param'], $v['segment'] !== '' ? '@' . $v['segment'] : '', $ev['result'],
-                            $ev['runs_in'] ?? 0, $ev['runs_out'] ?? 0);
-                    }
-                } catch (TsBudget | TsBacktestTimeout | TsProviderError $e) {
-                    $sum['deferred']++;   // לריצה הבאה — הסמן לא זז, ושום דבר לא נכתב
-                } catch (Throwable $e) {
-                    $sum['errors']++;
-                    error_log('trading-strategies learning cron ' . $id . ' ' . $v['param'] . ': ' . $e->getMessage());
+                    if ($memo[$key]) $pairs[] = ts_learn_pair($pr['asset'], $pr['tf'], $memo[$key], (int)$v['t_cut']);
                 }
+                $set = ts_method_settings($id);
+                $base = ($v['segment'] !== '' ? ($set['seg_params'][$v['segment']] ?? []) : []) + $set['params'];
+                $ev = $pairs ? ts_learn_eval($m, $base, $v['param'], $lp[$v['param']], $pairs, $until) : ['result' => 'no_pairs'];
+                [$p] = ts_learn_commit($m, $v, $ev, count($pairs), $now);
+                $sum['evaluated']++;
+                $sum['proposals'] += $p;
+                $sum['edges'] += $ev['result'] === 'edge' ? 1 : 0;
+                $sum['runs_in'] += $ev['runs_in'] ?? 0;
+                $sum['runs_out'] += $ev['runs_out'] ?? 0;
+                $log($id, $v, sprintf('%s · בתוך %d, מחוץ %d', $ev['result'], $ev['runs_in'] ?? 0, $ev['runs_out'] ?? 0));
+            } catch (TsBacktestTimeout $e) {
+                $sum['deferred']++;
+                // נספר רק כשההשוואה קיבלה לפחות חצי מהזמן — מי שהתחילה ברגע האחרון לא "גדולה מדי"
+                if ($until - $start >= $seconds / 2) {
+                    $big = ts_learn_defer($m, $v, count($v['pairs']), $now);
+                    $sum['too_big'] += $big ? 1 : 0;
+                    $log($id, $v, $big ? 'too_big' : 'נדחה (זמן)');
+                }
+            } catch (TsBudget | TsProviderError $e) {
+                $sum['deferred']++;   // לריצה הבאה — הסמן לא זז, ושום דבר לא נכתב
+            } catch (Throwable $e) {
+                $sum['errors']++;
+                error_log('trading-strategies learning cron ' . $id . ' ' . $v['param'] . ': ' . $e->getMessage());
             }
         }
     } finally {

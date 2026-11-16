@@ -261,7 +261,7 @@ export function mountAnalysis(ctx) {
   const LEARN_STATUS = { not_enough: ['אין מספיק נתונים', ''], waiting: ['ממתין ל-30 עסקאות חדשות', ''], due: ['בהשוואה הבאה (cron)', ''] };
   const LEARN_RESULT = { propose: ['הצעה', 'ok'], edge: ['קצה הטווח — לבעלים', 'warn'], current_best: ['הנוכחי הכי טוב — אין הצעה', ''],
     out_worse: ['לא אושר מחוץ לדגימה — אין הצעה', ''], no_out_of_sample: ['אין עסקאות מחוץ לדגימה', ''], no_trades: ['אין עסקאות בתוך הדגימה', ''],
-    no_pairs: ['אין נכס שהמערכת יכולה להריץ', ''] };
+    no_pairs: ['אין נכס שהמערכת יכולה להריץ', ''], deferred: ['נדחה — ממשיך בריצה הבאה', ''], too_big: ['גדול מדי להשוואה בריצה אחת', 'warn'] };
   /** 🟡4 (L5): הערכים שהוחלו לפלח — עם "↺ בטל" (רק העורך הראשי; מעלה גרסה) */
   function segValues(m, primary) {
     const rows = Object.entries(m.seg_params || {}).flatMap(([sg, ps]) => Object.entries(ps).map(([k, v]) => [sg, k, v]));
@@ -292,7 +292,8 @@ export function mountAnalysis(ctx) {
       h('p', { class: 'hint' }, 'הנוכחי וצעד אחד לכל כיוון, בהרצה מלאה על 70% הראשונים בזמן; שכן נבחר רק אם הוא טוב ב-0.05R לפחות, והצעה רק אם הוא טוב יותר גם ב-30% האחרונים. רץ ברקע (cron), לא כשפותחים את המסך.'),
       h('ul', { class: 'learn-findings' }, L.values.map(v => {
         const last = v.last;
-        const [lbl, cls] = (last && v.status !== 'due' ? LEARN_RESULT[last.result] : null) || LEARN_STATUS[v.status] || [v.status, ''];
+        let [lbl, cls] = (last && v.status !== 'due' ? LEARN_RESULT[last.result] : null) || LEARN_STATUS[v.status] || [v.status, ''];
+        if (last && last.result === 'too_big' && v.status !== 'due') lbl += ` — ${(last.detail && last.detail.pairs) || v.pairs.length} זוגות`;
         return h('li', { 'data-param': v.param, 'data-segment': v.segment, 'data-status': v.status, 'data-result': last ? last.result : '' },
           h('div', { class: 'l1' }, h('span', {}, `${v.label} · ${segText(v.segment)}`), h('span', { class: 'chip ' + cls }, lbl)),
           h('p', { class: 'hint' }, `נוכחי ${v.current} · שכנים ${v.neighbors.join(' / ')} · טווח ${v.range[0]}–${v.range[1]}`,

@@ -699,8 +699,10 @@ function ts_migrate(PDO $db): void
     if ($v < 21) {
         // למידה, L5b (spec-stage-a 23.9, 2.37): השוואת שכנים. learning_values.detail — הפירוט של ההשוואה האחרונה (t_cut, N בכל
         // חלק, ולכל שכן — תוחלת R בתוך הדגימה ומחוצה לה, מספר ההרצות), למסך "למידה" (23.10). ADD בלבד, אידמפוטנטית (כמו 20)
+        // learning_values.deferred — כמה פעמים ברצף ההשוואה נדחתה בגלל זמן (3 → too_big, ביקורת L5b 🟡)
         $cols = array_column($db->query('PRAGMA table_info(learning_values)')->fetchAll(PDO::FETCH_ASSOC), 'name');
         $db->exec("BEGIN;\n" . ($cols && !in_array('detail', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN detail TEXT;\n" : '')
+            . ($cols && !in_array('deferred', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0;\n" : '')
             . "PRAGMA user_version = 21;\nCOMMIT;");
     }
 }

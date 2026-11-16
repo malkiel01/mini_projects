@@ -23,6 +23,75 @@
 > **עדכון 2026-11-16 (צ'אט R1):** עורך ראשי / עורך משני / משתמש (פרק 24) — הסעיף "R1 — תפקידים" בסוף. **מיגרציה 18 = `app_roles` (R1, אחרי 17 של L1). הבאה — 19 (`app.sqlite`); `cache.sqlite` — 6.**
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
+
+> **עדכון 2026-11-16 (צ'אט הלמידה — err500, bt-incomplete, L1, L3, L4, L5, L5b; נסגר ב-~780K):** הסעיף הבא, "התחל כאן — למידה", הוא
+> ההעברה המלאה. **`app.sqlite` — המיגרציה הבאה 22; `cache.sqlite` — 6.** הבא בתור: **L2**, ואחריו **L6**.
+
+## התחל כאן — למידה (פרק 23): מה בנוי, מה הבא, מה חייבים
+
+### מה בנוי וממוזג (או ב-PR האחרון)
+
+| פרוסה | PR | הקבצים | הלב |
+| --- | --- | --- | --- |
+| err500 | #1686 | `lib/pdo.php`, `api.php` | `TsStmt` סוגר סמן אחרי `fetch` / `fetchColumn` — **אין `while ($r = $st->fetch())`**, רק `fetchAll` + `foreach`. `ts_server_error` — 500 עם פעולה ושיטה ביומן |
+| bt-incomplete | #1692 | `lib/analysis.php`, `lib/cache.php` (מיג' 5) | בדיקה לאחור שלא הספיקה נשמרת ב-`bt_partial` וממשיכה מאותה נקודה; לריצה יש חלון זמן משלה (`$runUntil`) |
+| L1 | #1699 | `lib/learn.php`, `lib/learn/holidays.json` (+ `holidays-build.php`), מיג' 17 | `method_outcomes` — שורה לכל עסקה שהסתיימה (`INSERT OR IGNORE`); `ts_bt_run(..., $onTrade)` נותן גם `mae_r`, `mfe_r`, `atr`, `features`; התגיות (23.5). `users.learn_off` כבר קיים — **ל-L2** |
+| L3 | #1703 | `lib/learn.php`, `api.php` (`admin_learn`, `admin_learn_csv`), `assets/js/analysis.js` (`learnPanel`) | הלשונית "📚 למידה": N לפי גרסה ומקור, טבלת פלחים עם N ≥ 30, CSV (גרש לפני `= + - @`; `user_id` רק לראשי) |
+| L4 | #1706 | `lib/learn.php`, מיג' 19 (`learning_findings`) | שינוי דפוס: פלח מול השאר ו-30 האחרונות; שני-פרופורציות + Welch, p < 0.01; ממצא חריג → DevLoop בלי כפילות |
+| L5 | #1707 | `lib/tune.php`, `lib/analysis.php`, מיג' 20 | התשתית: `methods.seg_params` + `ts_params_for_segment`, הצעה לפלח (`method_proposals.segment/origin/stats`), `ts_seg_param_clear` (↺ בטל) |
+| L5b | #1709 | `lib/learn.php`, `lib/alerts.php`, מיג' 21 | השוואת שכנים (2.37) — ב-cron בלבד. פירוט למטה ("L5 / L5b") |
+
+### איך הלמידה רצה היום
+
+- **כתיבה:** רק `backtest`, מתוך `ts_backtest` (בקשת `analysis` של המשתמש) — השורות, ואחר כך `ts_learn_findings_sync` (L4). שום דבר
+  יקר לא רץ שם.
+- **cron** (`bin/alerts-cron.php` → `ts_alerts_run`, כל 15 דקות, 240 שניות): התראות → יומן (S6) → מילוי (21.2) → **`ts_learn_cron`**
+  (עד 90 שניות, אותו `$used` / `$budget` לדקה) → ניקוי. הסיכום ב-`settings.alerts_cron` ובלוג `data/alerts-cron.log` (`learn: {evaluated,
+  proposals, edges, runs_in, runs_out, deferred, too_big, errors, log[]}`).
+- **סדר הוגן** בלמידה: תור אחד מכל השיטות, `learning_values.at` הישן קודם; דחייה בגלל זמן → לסוף התור ו-`deferred + 1`; שלוש ברצף →
+  `too_big` + פריט DevLoop אחד, וחוזר ל-due רק אחרי 30 שורות חדשות. דחייה בגלל תקציב — לא נספרת.
+- **מי מצהיר מה:** `sample-ma-cross` (stop/target, צעד 0.5), `elliott-w3` (`w3_mult` — ערכי הספר). **פיבונאצ'י — עוד לא** (ההצהרה אצל
+  קוד פיבונאצ'י; השורה המדויקת בסעיף L5/L5b למטה).
+
+### הבא: L2 — `live` ו-`trade` (23.4, קריטריונים L2 1–4)
+
+- **`live`:** ב-cron — אות של השיטה **אחרי** הבדיקה לאחור, על נרות סגורים, שהגיע ליציאה. אותו מנוע (`ts_bt_run` עם `$onTrade`), אותו R.
+  - המקור הטבעי: מצב המנוע השמור (`backtests.state`, מצטבר) — להמשיך ממנו על הנרות החדשים, ולכתוב רק עסקאות עם `t_signal` אחרי
+    `to_t` של הבדיקה. `ts_outcomes_write` עם `source = 'live'` (המפתח הייחודי מונע כפילות).
+  - לרוץ **באותו תקציב** (`$used`, `$budget`) — כמו `ts_journal_resolve`. לשים לפני `ts_learn_cron` (הלמידה אחרונה).
+  - קריטריון 1: אותו R כמו המנוע — בדיקה שמשווה לריצה מלאה על אותם נרות.
+- **`trade`:** בסגירת עסקה ביומן העסקאות עם `method_id` ו-`planned_stop` → שורה `trade` (R לפי `planned_stop`). בלי `planned_stop` — אין.
+  - `users.learn_off = 1` → אין שורה (ל3 / ✅36). צריך מתג בהגדרות המשתמש (אין עדיין UI).
+  - `user_id` — רק בשורת `trade`, **לא מוצג לאיש מלבד העורך הראשי** (`ts_learn_csv(..., $withUser)` כבר מכבד את זה; כל תשובה חדשה —
+    לבדוק).
+- **הלשונית כבר מציגה כל מקור** (`select[name="learn-source"]`), ו-L4 / L5b רצים היום רק על `backtest`.
+
+### אחריו: L6 — ההסתברות בכרטיס (23.7, קריטריונים L6 1–3)
+
+- רק `backtest` → "ראשונית — מבדיקה לאחור (N = …)". 30 שורות `live` → שורה שנייה "בפועל מאז: X% (N = 30)"; 29 → אין.
+- המספר הראשי לא מתחלף לבד. רווחי סמך שלא חופפים → הצעה "החלף לבפועל" אצל העורך הראשי (בדומה להצעות S7).
+- הכרטיס: `ts_analysis_cards` (`lib/analysis.php`) ו-`chart_refresh` (`lib/refresh.php`); הוודאות — `ts_certainty` (Wilson).
+
+### חובות ודברים פתוחים
+
+- **פיבונאצ'י לא מצהיר `learn_params`** — עד שקוד פיבונאצ'י יוסיף, ההשוואה לא רצה עליו (הצהרה ישנה עם `stat` — מדולגת בשקט).
+- **ההשוואה מתחילה מאפס בכל ריצה** (נרות + הרצות). פלח כללי גדול → `too_big`. אם זה יקרה בשרת: לשמור התקדמות בין ריצות (מועמד
+  שהסתיים → `detail`), או נרות בזיכרון מטמון. היום — רק דיווח (DevLoop).
+- **זוג ממפתח אישי לא רץ אף פעם** בלמידה (`private_pairs` ב-`detail`). פלח שכולו כזה → `no_pairs`. אם יהיו משתמשים כאלה רבים — שאלה
+  לאפיון.
+- **`learning_findings.kind = 'value'`** משמש גם לקצה הטווח (`…|edge|…`) וגם ל-`too_big` (`…|too_big|…`) — המפתח מבחין ביניהם.
+- **בדיקות דפדפן במקביל:** `chart-f1-ui` ו-`method-colors-ui` נכשלות לפעמים כשרצות 4 בבת אחת (עומס), ועוברות לבד. לא של הלמידה.
+- **לא לגעת** (צ'אטים אחרים): `lib/fibonacci*`, `lib/methods/fibonacci.php`, `assets/js/forecast.js`; הרשאות (`app_roles`, מיג' 18).
+- **`lib/devloop.php` הוא עותק** — עורכים רק ב-`devloop/src` + `php devloop/tools/sync.php` (שער בפריסה).
+
+### איך בודקים
+
+- `php trading-strategies/tests/<שם>.php` — כל אחד עצמאי (מסד זמני). הלמידה: `learn.php`, `learn-api.php`, `learn-stats-api.php`,
+  `learn-findings.php`, `learn-values.php`, `learn-values-api.php`; בדפדפן `node trading-strategies/tests/learn-ui.mjs` (SHOTS=<תיקייה> — צילומים).
+- שיטות בדיקה: `TS_TEST_METHODS=tests/fixtures/methods/learning.php` (`test-learn`, `test-neighbors`); הסטים הקבועים — `tests/fixtures/learn/sets.php`.
+- `ts_learn_cron(..., $load, $seconds)` — `$load` מזריק נרות בבדיקה, בלי רשת.
+- לפני push: כל `tests/*.php` + `php platform/check-apps.php`.
+
 ## על מה S3 נשען — כבר בנוי
 
 - **המטמון פונה לספק רק על החסר** (S2, `lib/market.php` → `ts_market_candles`):
@@ -532,4 +601,5 @@
 - **ערך לפלח:** `methods.seg_params`, נקרא ב-`ts_method_settings`, ומוחל ב-`ts_params_for_segment`. כל מקום חדש שמריץ שיטה על נכס+מסגרת —
   לעבור דרכה (היום: `ts_analysis_cards`, `chart_refresh`).
 - **מיגרציה הבאה ב-`app.sqlite` — 22.**
-- **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. אם יגדל — `TS_LEARN_CRON_SECONDS` (90) עוצר, והשאר נדחה לריצה הבאה.
+- **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
+  `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
