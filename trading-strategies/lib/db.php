@@ -632,7 +632,8 @@ function ts_migrate(PDO $db): void
                 granted_at INTEGER NOT NULL
             );
             INSERT INTO app_roles_v18 (user_id, role, granted_by, granted_at)
-                SELECT user_id, CASE role WHEN 'admin' THEN 'editor' ELSE role END, granted_by, granted_at FROM app_roles;
+                SELECT user_id, CASE role WHEN 'admin' THEN 'editor' ELSE role END, granted_by, granted_at FROM app_roles
+                WHERE user_id IN (SELECT id FROM users);
             DROP TABLE app_roles;
             ALTER TABLE app_roles_v18 RENAME TO app_roles;
             PRAGMA user_version = 18;

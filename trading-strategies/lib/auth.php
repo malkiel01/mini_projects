@@ -335,10 +335,12 @@ function ts_password_set(int $uid, mixed $password): void
     ts_db()->prepare("DELETE FROM sessions WHERE user_id = ? AND via = 'password' AND token_hash <> ?")->execute([$uid, ts_current()['token_hash'] ?? '']);
 }
 
-/** איפוס בידי המנהל הראשי (ש9): הסיסמה נמחקת, וה-sessions של הסיסמה נסגרים. */
+/** איפוס בידי עורך ראשי (ש9): הסיסמה נמחקת, וה-sessions של הסיסמה נסגרים. */
 function ts_password_reset(int $by, int $target): void
 {
     ts_require_chief();
+    // העורך מהשער — לא דרך האפליקציה (ביקורת R1 🟡3), כמו ב-ts_role_revoke: עורך ראשי ממונה לא נועל אותו בחוץ
+    if (ts_is_gate_user($target)) throw new TsInvalid('הסיסמה של העורך מהכלים הדיגיטליים לא מתאפסת מכאן');
     $db = ts_db();
     $st = $db->prepare('UPDATE users SET password_hash = NULL, password_set_at = NULL WHERE id = ?');
     $st->execute([$target]);

@@ -462,6 +462,32 @@ eq($code, 200, '🟡2: connected → no grant_status needed');
 $GLOBALS['EXTRA'] = [];
 grant(true);
 
+// ביקורת R1 🟡2 — עורך ראשי ממונה (app_roles 'chief'): האסימון שלו במנותקת — באותו תנאי, grant_status
+$dc = [];
+login($dc, ['sub' => '119', 'email' => 'chief2@test.local', 'name' => 'עורכת']);
+$daveId = (int)$pdo->query("SELECT id FROM users WHERE platform_sub = '119'")->fetchColumn();
+eq($daveId > 0, true, 'R1 🟡2: a second user signs in (detached)');
+$pdo->exec("INSERT OR REPLACE INTO app_roles (user_id, role, granted_by, granted_at) VALUES ($daveId, 'chief', 1, 1)");
+req($dc, 'me');
+[$code, $tk] = req($dc, 'dev-token-create', [], ['label' => 'Claude']);
+eq([$code, isset($tk['token'])], [200, true], 'R1 🟡2: an appointed chief creates a token (detached)');
+$GLOBALS['EXTRA'] = ['X-Dev-Token: ' . ($tk['token'] ?? '')];
+$pdo->exec("DELETE FROM settings WHERE k LIKE 'dev_grant:%'");
+[$code] = req($nb, 'devapi-feed');
+eq($code, 200, 'R1 🟡2: appointed chief, detached, grant true → devapi works');
+grant(false);
+$pdo->exec("DELETE FROM settings WHERE k LIKE 'dev_grant:%'");
+[$code] = req($nb, 'devapi-feed');
+eq($code >= 400 && $code < 500, true, 'R1 🟡2: appointed chief, detached, grant false → token refused');
+[$code] = req($nb, 'devapi-feed', [], null, 'none', 'connected');
+eq($code, 200, 'R1 🟡2: appointed chief, connected → no grant_status needed');
+$pdo->exec("DELETE FROM app_roles WHERE user_id = $daveId");
+[$code] = req($nb, 'devapi-feed', [], null, 'none', 'connected');
+eq($code >= 400 && $code < 500, true, 'R1 🟡2: the role revoked → token refused');
+$GLOBALS['EXTRA'] = [];
+grant(true);
+$pdo->exec("DELETE FROM settings WHERE k LIKE 'dev_grant:%'");
+
 // 🟡3 — מייל כפול: מייל שתפוס בשורה אחרת לא מועתק; שתי שורות עם סיסמה לאותו מייל → 409, נרשם
 $e1 = [];
 login($e1, ['sub' => '906', 'email' => 'carol@test.local', 'name' => 'חדש']);   // 906 קיים (new@test.local)

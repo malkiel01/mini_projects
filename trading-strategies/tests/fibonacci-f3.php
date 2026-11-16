@@ -106,5 +106,48 @@ eq([json_encode($sF['g']) === $gBefore, $a5['bias'], count($a5['conditions'])], 
 $sig = $m->signals($F, $P);
 eq(count($sig), 63, 'criterion 4: the same 63 default signals on the 5,000 h1 candles');
 
+// ── T1 (18.1.6, קריטריון 3): tip לכל פריט שפיבונאצ'י מצייר ─────
+$ovs = fn(array $c, array $o = []) => ts_forecast_split(ts_overlay_check($m->overlay($c, $m->params($o), $H), $H));   // ts_overlay_check — גם tip
+$EX = fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 185]);
+[$fx] = $ovs($EX);
+$zt = array_values(array_filter($fx['items'], fn($it) => $it['kind'] === 'zone'))[0]['tip'] ?? [];
+eq([$zt['title'] ?? null, str_contains($zt['explain'] ?? '', '61.8% של 200→150'), str_contains($zt['explain'] ?? '', '38.2% של 200→120'), str_starts_with($zt['explain'] ?? '', '2 רמות מ-2 טווחים')],
+    ["אזור פיבונאצ'י · ציון 2", true, true, true], 'T1 criterion 3: a zone → "אזור פיבונאצ\'י · ציון 2", and its ratios (61.8% של 200→150, 38.2% של 200→120)');
+$st1 = array_values(array_filter($fx['items'], fn($it) => !empty($it['single'])))[0]['tip'] ?? [];
+eq([str_starts_with($st1['title'] ?? '', 'רמה בודדת · '), str_starts_with($st1['explain'] ?? '', 'רמה בודדת, חלשה (R8): ')], [true, true], 'T1: a single level → "רמה בודדת, חלשה (R8)"');
+$D = fib_bars([140, 200, 150, 170, 160]);
+[, $fcD] = $ovs($D);
+$l100 = array_values(array_filter($fcD['items'], fn($it) => ($it['text'] ?? '') === 'A-B-X 100%'))[0]['tip'] ?? [];
+eq([$l100['title'] ?? null, $l100['invalidation'] ?? null], ['הקרנה A-B-X, 100%', ['price' => 170.0, 'side' => 'above', 'rule' => 'סגירה מעל X של A-B-X']],
+    'T1: an A-B-X line → "הקרנה A-B-X, 100%", invalidated above X (170) — the scenario goes down');
+$NT = fib_bars([120, 175, 150, [155, 'body' => 5], 200, 185]);
+$NT[] = ['t' => $NT[count($NT) - 1]['t'] + $H, 'o' => 185.0, 'h' => 185.5, 'l' => 169.3, 'c' => 175.0];
+[$fN, $fcN] = $ovs($NT, ['lookback_bars' => 500]);
+$byKind = [];
+foreach ($fN['items'] as $it) $byKind[$it['kind'] . ($it['role'] ?? '')] = $it['tip'] ?? null;
+$stopP = array_values(array_filter($fN['items'], fn($it) => ($it['role'] ?? '') === 'stop'))[0]['price'];
+eq([$byKind['marker']['title'] ?? null, $byKind['marker']['invalidation'] ?? null, $byKind['hlinetarget']['title'] ?? null, str_contains($byKind['hlinetarget']['explain'] ?? '', 'קופסת השוויון')],
+    ['אות לונג', ['price' => $stopP, 'side' => 'below', 'rule' => 'הסטופ של האות'], 'רמת היציאה ברווח', true],
+    'T1: the signal — marker, stop and exit level, invalidated at the stop (below, for a long); the exit level from the box');
+$inv = array_values(array_filter($fcN['items'], fn($it) => ($it['role'] ?? '') === 'invalidation'))[0]['tip'] ?? [];
+eq([$inv['title'] ?? null, $inv['invalidation']['price'] ?? null], ['רמת ביטול', $stopP], 'T1: no A-B-X in the signal direction → the scenario is invalidated at the stop');
+// כל פריט — עם tip וכותרת, בכל ההרצות; וניסוח 6.6 (18.1.6 קריטריון 12)
+$all = [];
+foreach ([[$EX, []], [$D, []], [$NT, ['lookback_bars' => 500]], [fib_bars([140, 200, 150, 205, 195]), []]] as [$c, $o]) {
+    [$a1, $a2] = $ovs($c, $o);
+    $all = [...$all, ...$a1['items'], ...$a2['items']];
+}
+foreach (range(1500, count($F), 700) as $end) {
+    [$a1, $a2] = $ovs(array_slice($F, 0, $end));
+    $all = [...$all, ...$a1['items'], ...$a2['items']];
+}
+$noTip = array_filter($all, fn($it) => !is_string($it['tip']['title'] ?? null) || ($it['tip']['title'] ?? '') === '');
+$kinds = array_values(array_unique(array_map(fn($it) => $it['kind'] . (isset($it['box']) ? ':box' : '') . (isset($it['vacuum']) ? ':vacuum' : ''), $all)));
+sort($kinds);
+echo "  סוגים: " . implode(", ", $kinds) . "\n";
+eq([count($all) > 50, count($noTip)], [true, 0], 'T1 criterion 3: every item Fibonacci draws has a tip with a title (' . count($all) . ' items: ' . implode(', ', $kinds) . ')');
+eq(preg_match('/יעד|קנה|מכור|המלצ/u', json_encode(array_column($all, 'tip'), JSON_UNESCAPED_UNICODE)), 0, 'T1 criterion 12 (6.6): no "target/buy/sell/recommend" in any tip');
+eq(max(array_map(fn($it) => mb_strlen($it['tip']['explain'] ?? ''), $all)) <= 200, true, 'T1: every explanation fits the overlay text limit (200)');
+
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

@@ -1,7 +1,6 @@
 // T1 — חלונית הסבר על נקודת תחזית (spec-stage-a 18.1.6, 2.33), בטלפון מדומה, לפי קריטריוני הקבלה:
-// 1 נקודת אליוט · 2 אזור תרחיש · 4 הזנב (±4px) · 5 מיקום ובתוך הגרף · 6 סגירה · 7 החלפה · 8 פריט בלי tip (פיבונאצ'י) · 9 מקרא ·
+// 1 נקודת אליוט · 2 אזור תרחיש · 3 אזור פיבונאצ'י · 4 הזנב (±4px) · 5 מיקום ובתוך הגרף · 6 סגירה · 7 החלפה · 8 פריט בלי tip (פיבונאצ'י, tip נמחק בתשובה) · 9 מקרא ·
 // 10 מסך מלא, לגובה ולרוחב (שכבה מסובבת) · 11 רק תצוגה · 12 ניסוח · 13 קונסול. ובנוסף: גרירה, כלי ציור, "פירוט השיטה ›", כהה.
-// (3 — אזור פיבונאצ'י עם ציון ויחסים — דורש tip בשיטת פיבונאצ'י; לא כאן.)
 // node trading-strategies/tests/chart-tip-ui.mjs   (SHOTS=<dir> — צילומי מסך)
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
@@ -278,26 +277,44 @@ try {
     await a.locator('.forecast-panel[data-method="elliott-w3"] .an-fold').getAttribute('aria-expanded')], [0, 1, 'true'],
     '"פירוט השיטה ›": leaves full screen, opens the methods menu with Elliott checked, and its block below the chart');
 
-  // ── 8: פריט בלי tip (פיבונאצ'י, עדיין בלי tip) → כותרת מ-text, בלי הסבר, בלי שגיאה ──
+  // ── 3: אזור פיבונאצ'י עם tip (ציון ויחסים); 8: פריט בלי tip — אותו גרף, כשה-tip נמחק מתשובת השרת ──
+  // פיבונאצ'י ממלא tip מאז #1701+; כדי שקריטריון 8 עדיין ייבדק באמת, המחיקה נעשית בתשובה (route) — לא בקוד
   // משתמש אחר (alice): ב"עכשיו" של 100 שעות קודם, צבע שהבעלים שמר "עכשיו" נראה לשרת כעתידי (422 — לא קשור לחלונית)
   eq(await post(a, 'admin_method_save', { id: 'fibonacci', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] }), 200, 'the admin turns Fibonacci on');
-  const { p: f } = await open({ now: NOW - 100 * 3600, as: 'alice' });
-  await chartWith(f, 'fibonacci');
-  await f.waitForFunction(s => document.querySelector(s).tsPoints('zone').length > 0, BOX, { timeout: 30000 });
-  const FW = await f.evaluate(s => document.querySelector(s).clientWidth, BOX);
-  const fz = (await pts(f, 'zone')).find(z => z.y > 60 && z.y < 440);
-  if (fz) {
+  const fibZone = async strip => {
+    const { p: f } = await open({ now: NOW - 100 * 3600, as: 'alice' });
+    if (strip) await f.route(u => u.href.includes('action=chart_refresh'), async route => {
+      const r = await route.fetch();
+      const j = await r.json();
+      for (const m of Object.values(j.methods || {})) for (const part of [m.overlay, m.forecast]) for (const it of part?.items || []) delete it.tip;
+      await route.fulfill({ response: r, json: j });
+    });
+    await chartWith(f, 'fibonacci');
+    await f.waitForFunction(s => document.querySelector(s).tsPoints('zone').length > 0, BOX, { timeout: 30000 });
+    const FW = await f.evaluate(s => document.querySelector(s).clientWidth, BOX);
+    const fz = (await pts(f, 'zone')).find(z => z.y > 60 && z.y < 440);
+    if (!fz) return { f, fz: null };
     // באמצע החלק הגלוי של האזור; רמה בודדת שעוברת שם קודמת — אל האזור דרך "עוד … כאן ›"
     await tap(f, { x: (Math.max(Math.min(fz.box[0], fz.box[2]), 10) + Math.min(Math.max(fz.box[0], fz.box[2]), FW - 10)) / 2, y: fz.y });
     await f.locator('.ctip').waitFor({ timeout: 5000 });
     for (let i = 0, s0 = await tipState(f); s0.kind !== 'zone' && i < s0.n; i++) { await f.locator('.ctip-more').click(); s0 = await tipState(f); }
-    const tf = await tipText(f);
-    const items = await f.evaluate(s => document.querySelector(s).tsForecast().methods[0].items, BOX);
-    eq([(await tipState(f))?.kind, /^אזור (תמיכה|התנגדות) · \d+ רמות · ציון \d+$/.test(tf.title), tf.explain, tf.tag], ['zone', true, null, 'פיבונאצ\'י · ממצא'],
-      `criterion 8: an item without a tip → the title from its text ("${tf.title}"), no explanation, no error (${items} items)`);
-    await checkGeom(f, 'Fibonacci zone (no tip)');
-    await shot(f, 'tip-fib-notip');
-  } else eq(fz, 'a Fibonacci zone in view', 'criterion 8: a Fibonacci zone');
+    return { f, fz, tf: await tipText(f), kind: (await tipState(f))?.kind, items: await f.evaluate(s => document.querySelector(s).tsForecast().methods[0].items, BOX) };
+  };
+  const z3 = await fibZone(false);
+  if (z3.fz) {
+    eq([z3.kind, /^אזור פיבונאצ'י · ציון \d+$/.test(z3.tf.title), /^\d+ רמות מ-\d+ טווחים/.test(z3.tf.explain || ''), /\d+(\.\d)?% של [\d,.]+→[\d,.]+/.test(z3.tf.explain || ''),
+      /יעד|קנה|מכור/.test(z3.tf.all), z3.tf.tag], ['zone', true, true, true, false, 'פיבונאצ\'י · ממצא'],
+      `criterion 3: a Fibonacci zone → "${z3.tf.title}", and its ratios in the explanation ("${z3.tf.explain}")`);
+    await checkGeom(z3.f, 'Fibonacci zone');
+    await shot(z3.f, 'tip-fib-zone');
+  } else eq(z3.fz, 'a Fibonacci zone in view', 'criterion 3: a Fibonacci zone');
+  const z8 = await fibZone(true);
+  if (z8.fz) {
+    eq([z8.kind, /^אזור (תמיכה|התנגדות) · \d+ רמות · ציון \d+$/.test(z8.tf.title), z8.tf.explain, z8.tf.tag], ['zone', true, null, 'פיבונאצ\'י · ממצא'],
+      `criterion 8: an item without a tip → the title from its text ("${z8.tf.title}"), no explanation, no error (${z8.items} items)`);
+    await checkGeom(z8.f, 'Fibonacci zone (no tip)');
+    await shot(z8.f, 'tip-fib-notip');
+  } else eq(z8.fz, 'a Fibonacci zone in view', 'criterion 8: a Fibonacci zone');
 
   // ── כהה ──
   const { p: d } = await open({ scheme: 'dark' });
