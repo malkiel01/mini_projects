@@ -184,6 +184,23 @@ try {
   await a.waitForURL(/#\/chart\/ecb/);
   eq(true, true, 'criterion 6: ↓ + Enter picks the item and opens its chart');
 
+  // ── ניווט מהיר: גרף איטי → שוק לפני שהגרף נטען. השוק מופיע מיד (בלי לחכות לגרף), והגרף לא מצויר מעליו כשהוא מסיים ──
+  let slowDone = null;
+  const slowDelay = new Promise(r => { slowDone = r; });
+  await a.route('**/api.php?action=pair_labels*', async r => { await new Promise(x => setTimeout(x, 3000)); await r.continue().catch(() => {}); slowDone(); });
+  await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:ETHUSDT'));
+  await a.locator('main p.loading').waitFor();
+  const tNav = Date.now();
+  await a.goto(BASE + '#/market');
+  await combo(a).waitFor();
+  const navMs = Date.now() - tNav;
+  eq(navMs < 2500, true, `fast navigation: the market screen appears without waiting for the slow chart (${navMs} ms, the chart waits 3000)`);
+  await slowDelay;
+  await a.waitForTimeout(500);
+  eq([await a.locator('main .chart-wrap').count(), await combo(a).count(), /#\/market$/.test(a.url())], [0, 1, true],
+    'fast navigation: after the slow chart answers — it does not draw over the market screen');
+  await a.unroute('**/api.php?action=pair_labels*');
+
   // ── קריטריון 4: גרירה משנה את הסדר ונשמרת; המועדפים לא נגררים ──
   await a.goto(BASE + '#/market');
   await combo(a).waitFor();
