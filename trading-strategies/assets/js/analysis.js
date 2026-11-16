@@ -89,7 +89,7 @@ export function mountAnalysis(ctx) {
     render(form, passwordBlock());
   }
 
-  // "סיסמה לאפליקציה" (spec-stage-a 20.1 ד'): לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים, ושם רק אם המנהל הפעיל
+  // "סיסמה לאפליקציה" (spec-stage-a 20.1 ד'): לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים, ושם רק אם עורך הפעיל
   // כניסה בסיסמה. נקבעת כשמחוברים; לא נמחקת כשהאפליקציה מתחברת שוב.
   function passwordBlock() {
     const has = !!ME().has_password;
@@ -108,12 +108,12 @@ export function mountAnalysis(ctx) {
       h('h2', { class: 'sec-title' }, '🔑 סיסמה לאפליקציה'),
       h('div', { class: 'block stack' },
         h('p', { class: 'hint' }, has ? 'יש לך סיסמה.' : 'אין לך סיסמה.',
-          ' היא משמשת רק כשהאפליקציה מנותקת מהכלים הדיגיטליים והמנהל פתח כניסה בסיסמה. אחרת — נכנסים דרך הכלים הדיגיטליים.'),
+          ' היא משמשת רק כשהאפליקציה מנותקת מהכלים הדיגיטליים ועורך ראשי פתח כניסה בסיסמה. אחרת — נכנסים דרך הכלים הדיגיטליים.'),
         ME().user.email ? h('div', {}, h('button', { class: 'btn ghost', type: 'button', on: { click: open } }, has ? 'החלפת סיסמה' : 'קביעת סיסמה'))
           : h('p', { class: 'hint' }, 'אין מייל בחשבון, ולכן אין כניסה בסיסמה.')));
   }
 
-  // ── ניהול שיטות (6.7) + עמלות — השרת בודק מנהל בכל פעולה ──
+  // ── ניהול שיטות (6.7) + עמלות — השרת בודק עורך בכל פעולה ──
   function adminMethods() {
     const box = h('div', { class: 'stack' }, h('p', { class: 'loading' }, 'טוען…'));
     (async () => {
@@ -129,7 +129,7 @@ export function mountAnalysis(ctx) {
         const mk = chipsOf(m.all_markets, m.markets, 'שווקים');
         const tf = chipsOf(m.all_timeframes, m.timeframes, 'מסגרות זמן');
         const inputs = Object.fromEntries(Object.entries(m.param_defs).map(([k, d]) => [k, numInput(k, m.params[k] ?? '', String(d.default))]));
-        // שכלול (18.7, ✅24): שינוי פרמטר משנה את התוצאה — רק המנהל הראשי; מנהל אחר — דרך הצעה
+        // שכלול (18.7, ✅24): שינוי פרמטר משנה את התוצאה — רק עורך ראשי; עורך משני — דרך הצעה
         if (!primary) for (const el of Object.values(inputs)) el.disabled = true;
         const note = h('textarea', { rows: 2, maxlength: 500 }, m.note);
         return h('li', { class: 'card', style: 'cursor:default;display:block' },
@@ -137,13 +137,13 @@ export function mountAnalysis(ctx) {
           m.label ? h('p', { class: 'chip warn', style: 'margin:4px 0' }, m.label) : null,
           h('p', { class: 'hint', style: 'margin:4px 0' }, m.source, sep(), `אופק ${m.horizon_bars} נרות`, sep(), m.alerts ? 'נכנסת להתראות' : 'לא בהתראות',
             sep(), `${m.backtests} בדיקות לאחור שמורות`),
-          m.sample ? h('p', { class: 'hint' }, 'שיטת דוגמה: גם כשהיא מופעלת — רק מנהלים רואים אותה, ולא נכנסת להתראות.') : null,
+          m.sample ? h('p', { class: 'hint' }, 'שיטת דוגמה: גם כשהיא מופעלת — רק עורכים רואים אותה, ולא נכנסת להתראות.') : null,
           h('label', { class: 'switch' }, on, h('span', {}, 'מופעלת')),
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
           h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})` + (d.ours === true ? ' · הגדרה שלנו' : d.ours === false ? ' · לפי הספר' : ''), inputs[k]))),
           field('הערה', note, true),
           h('p', { class: 'hint' }, primary ? 'שינוי פרמטר מעלה את גרסת השיטה, והבדיקות לאחור שלה מחושבות מחדש בפתיחה הבאה.'
-            : 'שינוי פרמטר — רק המנהל הראשי. אפשר להציע ערך ב"הצעת שינוי פרמטר" למטה.'),
+            : 'שינוי פרמטר — רק עורך ראשי. אפשר להציע ערך ב"הצעת שינוי פרמטר" למטה.'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
             try {
               await api('admin_method_save', { id: m.id, enabled: on.checked, note: note.value,
@@ -201,7 +201,7 @@ export function mountAnalysis(ctx) {
       x.note ? h('p', { class: 'hint' }, x.note) : null,
       tuneTable(x.results),
       x.status === 'open' ? h('div', { class: 'row-btns wrap' }, apply,
-        primary ? null : h('small', { class: 'muted tune-only' }, 'רק המנהל הראשי מחיל')) : null);
+        primary ? null : h('small', { class: 'muted tune-only' }, 'רק עורך ראשי מחיל')) : null);
   }
   function tunePanel(m, props, primary) {
     const keys = Object.keys(m.param_defs);

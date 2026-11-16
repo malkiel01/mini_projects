@@ -1,4 +1,4 @@
-// לשונית "שוק", ספקי נתונים וממשק המנהל — spec-stage-a פרקים 1.1, 2–4.
+// לשונית "שוק", ספקי נתונים וממשק העורכים — spec-stage-a פרקים 2–4, 24.
 // פנייה לשרת מפעולה של המשתמש (פתיחת מסך, חיפוש, "רענן", שמירה) — ובגרף גם **רענון אוטומטי כשהניתוח פעיל** (18.3, ✅23):
 // הלשונית גלויה ונבחרה שיטה → בקשה אחת (chart_refresh) כל 60 שניות, או 30 לבחירת המשתמש — נרות ותוצאת כל השיטות יחד.
 // לשונית מוסתרת — עוצר, וחוזר מיד כשהיא גלויה. 429 — מדלגים עד הפעם הבאה, בלי הודעה קופצת ובלי ניסיון חוזר.
@@ -814,7 +814,7 @@ export function mountMarket(ctx) {
     const fmt = t => (t ? new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
     const row = p => {
       let status, actions = null;
-      if (!p.enabled) status = h('span', { class: 'chip' }, 'כבוי על ידי המנהל');
+      if (!p.enabled) status = h('span', { class: 'chip' }, 'כבוי על ידי העורך');
       else if (!p.needs_key) status = h('span', { class: 'chip ok' }, '✓ פתוח לכולם, בלי מפתח');
       else if (p.own) {
         status = h('span', { class: 'chip ' + (p.own.last_test_ok ? 'ok' : 'bad') }, `${p.own.last_test_ok ? 'מחובר' : 'החיבור נכשל'} · נבדק ${fmt(p.own.last_test_at)} · ••••${p.own.last4}`);
@@ -827,7 +827,7 @@ export function mountMarket(ctx) {
         // 21.3: מפתח האפליקציה — לכולם. מפתח אישי אפשר להוסיף כגיבוי
         status = h('span', { class: 'chip ok' }, '✓ מפתח האפליקציה — פתוח לכולם');
         actions = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'מפתח משלי (גיבוי)');
-      } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהמנהל');
+      } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהעורך');
       else {
         status = h('span', { class: 'chip warn' }, 'לא מחובר');
         actions = h('button', { class: 'btn primary sm', type: 'button', on: { click: () => connect(p) } }, 'חיבור');
@@ -862,14 +862,15 @@ export function mountMarket(ctx) {
       h('p', { class: 'hint' }, 'בשמירה המפתח נבדק מול הספק. הוא נשמר מוצפן, ולא יוצג שוב.'));
   }
 
-  // ── ממשק המנהל (1.1) — השרת בודק בכל פעולה; כאן רק התצוגה ──────
+  // ── ממשק העורכים (פרק 24) — השרת בודק בכל פעולה; כאן רק התצוגה ──────
   async function viewAdmin() {
-    setHead('ניהול', 'ספקים, שיטות, מנהלים ומאגר', { back: true });
+    setHead('ניהול', 'ספקים, שיטות, עורכים ומאגר', { back: true });
     const S = await api('admin_state');
     let tab = sessionStorage.getItem('ts-admin-tab') || 'providers';
-    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['admins', '👤 מנהלים'], ['cache', '🗄️ מאגר'], ['journal', '📓 יומן השיטה'], ['log', '📜 יומן']];
+    if (tab === 'admins') tab = 'editors';   // השם הקודם של הלשונית (עד פרק 24)
+    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['editors', '👤 עורכים'], ['cache', '🗄️ מאגר'], ['journal', '📓 יומן השיטה'], ['log', '📜 יומן']];
     const bar = h('div', { class: 'seg-tabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === tab), on: { click: () => { sessionStorage.setItem('ts-admin-tab', k); route(); } } }, l)));
-    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, admins: adminAdmins, cache: adminCache, journal: () => ctx.journalView(h('div', { class: 'stack method-journal' })), log: adminLog }[tab](S);
+    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, editors: adminEditors, cache: adminCache, journal: () => ctx.journalView(h('div', { class: 'stack method-journal' })), log: adminLog }[tab](S);
     render(bar, body);
   }
   const reload = () => route();
@@ -892,9 +893,9 @@ export function mountMarket(ctx) {
   }
 
   function adminShared(S) {
-    const sw = h('input', { type: 'checkbox', disabled: !S.is_primary_admin }); sw.checked = S.shared_enabled;
+    const sw = h('input', { type: 'checkbox', disabled: !S.is_chief }); sw.checked = S.shared_enabled;
     sw.addEventListener('change', () => confirmSheet(sw.checked ? 'הפעלת ספקים לחלוקה' : 'כיבוי ספקים לחלוקה',
-      sw.checked ? 'להפעיל רק אחרי שנבחרה תוכנית מסחרית שמתירה הצגה לצד שלישי (הכרעה ✅2). הספקים סופרים מי רואה את הנתונים, לא רק מי שמושך.' : 'משתמשים שקיבלו ספק מהמנהל יאבדו אליו גישה מיד.',
+      sw.checked ? 'להפעיל רק אחרי שנבחרה תוכנית מסחרית שמתירה הצגה לצד שלישי (הכרעה ✅2). הספקים סופרים מי רואה את הנתונים, לא רק מי שמושך.' : 'משתמשים שקיבלו ספק מהעורך יאבדו אליו גישה מיד.',
       sw.checked ? 'הפעלה' : 'כיבוי', async () => { await api('admin_shared_switch', { on: sw.checked }); reload(); }));
     const userOpts = S.users.map(u => [u.id, u.display_name || u.email || ('#' + u.id)]);
     const credRow = c => {
@@ -913,11 +914,11 @@ export function mountMarket(ctx) {
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => { try { await api('admin_cred_test', { id: c.id }); toast('החיבור תקין'); } catch (e) { toast(e.message, true); } reload(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('מחיקת מפתח', 'המפתח והשיוכים שלו יימחקו.', 'מחיקה', async () => { await api('admin_cred_delete', { id: c.id }); reload(); }) } }, 'מחיקה')));
     };
-    // מפתח האפליקציה (21.3): מפתח אחד לכל ספק משותף, שהאפליקציה פונה בו בשביל כולם. רק המנהל הראשי מסמן
+    // מפתח האפליקציה (21.3): מפתח אחד לכל ספק משותף, שהאפליקציה פונה בו בשביל כולם. רק עורך ראשי מסמן
     const appKeyRow = c => {
       const ak = (S.app_keys || {})[c.provider];
       if (!ak) return null;
-      const box = h('input', { type: 'checkbox', 'aria-label': 'מפתח האפליקציה', disabled: !S.is_primary_admin }); box.checked = !!c.app_key;
+      const box = h('input', { type: 'checkbox', 'aria-label': 'מפתח האפליקציה', disabled: !S.is_chief }); box.checked = !!c.app_key;
       box.addEventListener('change', async () => {
         try { await api('admin_app_key', { provider: c.provider, cred_id: box.checked ? c.id : null }); toast(box.checked ? 'מפתח האפליקציה סומן' : 'הסימון בוטל'); }
         catch (e) { toast(e.message, true); }
@@ -926,8 +927,8 @@ export function mountMarket(ctx) {
       const lim = numInput('app_user_limit', String(ak.user_limit));
       return h('div', { class: 'stack app-key' },
         h('label', { class: 'switch' }, box, h('span', {}, h('b', {}, '⭐ מפתח האפליקציה'), c.app_key ? ' · פעיל — לכל המשתמשים' : '')),
-        h('p', { class: 'hint' }, 'פונים בו בשביל כולם, ומה שנמשך נשמר במאגר המשותף. לכל ספק — מפתח אחד.', S.is_primary_admin ? '' : ' רק המנהל הראשי מסמן.'),
-        c.app_key && S.is_primary_admin ? h('div', { class: 'toolbar' }, field('פניות ליום למשתמש', lim), h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+        h('p', { class: 'hint' }, 'פונים בו בשביל כולם, ומה שנמשך נשמר במאגר המשותף. לכל ספק — מפתח אחד.', S.is_chief ? '' : ' רק עורך ראשי מסמן.'),
+        c.app_key && S.is_chief ? h('div', { class: 'toolbar' }, field('פניות ליום למשתמש', lim), h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
           try { await api('admin_app_key', { provider: c.provider, cred_id: c.id, user_limit: lim.value.trim() }); toast('נשמר'); reload(); } catch (e) { toast(e.message, true); }
         } } }, 'שמירה')) : null);
     };
@@ -940,26 +941,58 @@ export function mountMarket(ctx) {
     };
     return h('div', { class: 'stack' },
       h('div', { class: 'block stack' },
-        h('label', { class: 'switch' }, sw, h('span', {}, h('b', {}, 'המתג הראשי — ספקים מהמנהל'), S.shared_enabled ? ' · דלוק' : ' · כבוי')),
+        h('label', { class: 'switch' }, sw, h('span', {}, h('b', {}, 'המתג הראשי — ספקים מהעורך'), S.shared_enabled ? ' · דלוק' : ' · כבוי')),
         h('p', { class: 'hint' }, 'כבוי בשלב א\' (הכרעה ✅2) עד שתיבחר תוכנית מסחרית שמתירה הצגה לצד שלישי. כשכבוי — מפתח ושיוכים נשמרים, אבל אף משתמש לא מקבל דרכם נתונים. מפתח האפליקציה (⭐) — לא תלוי במתג.',
-          S.is_primary_admin ? '' : ' רק המנהל הראשי משנה את המתג.')),
+          S.is_chief ? '' : ' רק עורך ראשי משנה את המתג.')),
       h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', type: 'button', on: { click: add } }, '+ מפתח לחלוקה')),
       S.creds.length ? h('ul', { class: 'list' }, S.creds.map(credRow)) : h('p', { class: 'empty' }, 'אין מפתחות לחלוקה.'));
   }
 
-  function adminAdmins(S) {
-    const user = select('user', S.users.filter(u => !S.admins.some(a => a.user_id === u.id)).map(u => [u.id, u.display_name || u.email]), '', { 'aria-label': 'משתמש' });
+  // ── עורכים (פרק 24.5): עורך ראשי ממנה, משנה ומבטל; עורך משני רואה את הרשימה בלבד. השרת אוכף (ts_role_grant / ts_role_revoke)
+  const ROLE_NAME = { chief: 'עורך ראשי', editor: 'עורך משני' };
+  function adminEditors(S) {
+    const chief = !!S.is_chief;
+    const when = t => new Date(t * 1000).toLocaleDateString('he-IL');
+    const act = async (action, body, ok) => { try { await api(action, body); toast(ok); reload(); } catch (e) { toast(e.message, true); } };
+    const row = a => {
+      const self = a.user_id === S.me_id;
+      const other = a.role === 'chief' ? 'editor' : 'chief';
+      const tag = a.gate ? 'עורך ראשי · מהשער' : ROLE_NAME[a.role];
+      const btns = chief && !a.gate && !self ? h('div', { class: 'row-btns' },
+        h('button', { class: 'btn ghost sm', type: 'button', 'data-role-to': other, on: { click: () => act('admin_role_add', { user_id: a.user_id, role: other }, 'התפקיד שונה') } },
+          other === 'chief' ? 'לעורך ראשי' : 'לעורך משני'),
+        h('button', { class: 'btn ghost sm danger', type: 'button', 'data-revoke': '', on: { click: () => confirmSheet('ביטול עורך', `${a.display_name || a.email} יחזור להיות משתמש, מהבקשה הבאה.`, 'ביטול',
+          () => act('admin_role_remove', { user_id: a.user_id }, 'בוטל')) } }, 'בטל')) : null;
+      return h('li', { class: 'card editor-row', style: 'cursor:default', 'data-user': a.user_id },
+        h('div', { class: 'body' },
+          h('div', { class: 'l1' }, h('span', {}, a.display_name || a.email || '—'), h('span', { class: 'chip' + (a.role === 'chief' ? ' ok' : '') }, tag)),
+          h('div', { class: 'l2' }, [a.email || '', self ? 'אתם' : ''].filter(Boolean).join(' · ')),
+          a.granted_by_name ? h('div', { class: 'l2 granted' }, `מינה: ${a.granted_by_name} · ${when(a.granted_at)}`) : null),
+        btns);
+    };
+    const appoint = () => {
+      const free = S.users.filter(u => !S.editors.some(a => a.user_id === u.id));
+      if (!free.length) { toast('כל המשתמשים כבר עורכים'); return; }
+      const user = select('user', free.map(u => [u.id, u.display_name || u.email]), '', { 'aria-label': 'משתמש' });
+      const sh = sheet('מינוי עורך', { saveLabel: 'מינוי', onSave: async () => {
+        if (!user.value) throw new Error('בחרו משתמש');
+        await api('admin_role_add', { user_id: +user.value, role: segVal(sh.body, 'role') });
+        toast('מונה'); reload();
+      } });
+      sh.body.append(field('משתמש', user),
+        h('div', { class: 'f' }, h('span', {}, 'תפקיד'), seg('role', [['editor', 'עורך משני'], ['chief', 'עורך ראשי']], 'editor', { label: 'תפקיד' })),
+        h('p', { class: 'hint' }, 'עורך ראשי — גם פרמטרים, "החל", מפתח האפליקציה, המתג, תפקידים וסיסמאות. עורך משני — כל השאר.'));
+    };
     return h('div', { class: 'stack' },
-      h('p', { class: 'hint' }, 'המנהל הראשי הוא מנהל הפלטפורמה (מהשער). מנהלים נוספים — רק הוא ממנה ומבטל, והביטול חל מיד.'),
-      S.admins.length ? h('ul', { class: 'list' }, S.admins.map(a => h('li', { class: 'card', style: 'cursor:default' },
-        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, a.display_name || a.email)), h('div', { class: 'l2' }, a.email || '')),
-        S.is_primary_admin ? h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: async () => { await api('admin_role_remove', { user_id: a.user_id }); reload(); } } }, 'ביטול') : null)))
-        : h('p', { class: 'empty' }, 'אין מנהלים נוספים.'),
-      S.is_primary_admin ? h('div', { class: 'toolbar' }, user, h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { if (!user.value) return; await api('admin_role_add', { user_id: +user.value }); toast('מונה'); reload(); } } }, 'מינוי')) : null,
-      S.is_primary_admin ? adminPasswords(S) : null);
+      h('p', { class: 'hint' }, chief
+        ? 'מי שמגיע מהכלים הדיגיטליים — תמיד עורך ראשי. עורך ראשי ממנה ומבטל עורכים; הביטול חל מיד. את עצמכם — עורך ראשי אחר מבטל.'
+        : 'רק עורך ראשי ממנה ומבטל עורכים.'),
+      chief ? h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', type: 'button', on: { click: appoint } }, '+ מינוי עורך')) : null,
+      S.editors.length ? h('ul', { class: 'list editors' }, S.editors.map(row)) : h('p', { class: 'empty' }, 'אין עורכים.'),
+      chief ? adminPasswords(S) : null);
   }
 
-  // איפוס "סיסמה לאפליקציה" (spec-stage-a 20.1 ד', ש9) — המנהל הראשי בלבד. הסיסמה נמחקת; המשתמש קובע חדשה כשהוא מחובר
+  // איפוס "סיסמה לאפליקציה" (spec-stage-a 20.1 ד', ש9) — עורך ראשי בלבד. הסיסמה נמחקת; המשתמש קובע חדשה כשהוא מחובר
   function adminPasswords(S) {
     const withPw = S.users.filter(u => +u.has_password);
     return h('div', { class: 'stack' },
@@ -979,7 +1012,7 @@ export function mountMarket(ctx) {
         h('span', { class: 'muted' }, ' · ניקוי אחרון ' + (S.cache.cleanup_at ? new Date(S.cache.cleanup_at * 1000).toLocaleString('he-IL') : '—')))),
       h('p', { class: 'hint' }, 'המאגר שומר 60 יום אחורה ומתנקה פעם ביום. Binance, ECB ו-Twelve Data — מאגר משותף, בכל מפתח. Finnhub במפתח אישי — רק של אותו משתמש.'),
       S.cache.by.length ? h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'ספק'), h('th', {}, 'סוג'), h('th', { class: 'n' }, 'נרות'), h('th', { class: 'n' }, 'הוותיק'))),
-        h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' }[r.kind]),
+        h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהעורך' }[r.kind]),
           h('td', { class: 'n num' }, r.candles.toLocaleString('he-IL')), h('td', { class: 'n num' }, new Date(r.oldest * 1000).toLocaleDateString('he-IL')))))) : h('p', { class: 'empty' }, 'המאגר ריק.'),
       adminFetchLog(S.fetch_log || []),
       adminMethodRuns(S.method_runs || []),
@@ -991,7 +1024,7 @@ export function mountMarket(ctx) {
 
   // יומן בקשות הנרות (18.2, S2): כמה נרות נמשכו מהספק בכל בקשה, מול כמה הוגשו — 0 = הכול מהמאגר
   function adminFetchLog(rows) {
-    const kind = { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' };
+    const kind = { shared: 'משותף', personal: 'אישי', granted: 'מהעורך' };
     const time = t => new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     return h('section', { class: 'block' },
       h('h3', {}, 'יומן בקשות נרות'),
@@ -1037,7 +1070,7 @@ export function mountMarket(ctx) {
     return S.log.length ? h('ul', { class: 'list' }, S.log.map(l => h('li', { class: 'card', style: 'cursor:default' },
       h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, l.action), h('span', { class: 't' }, new Date(l.at * 1000).toLocaleString('he-IL'))),
         h('div', { class: 'l2' }, (l.display_name || '') + (l.target ? ' · ' + l.target : ''))))))
-      : h('p', { class: 'empty' }, 'אין עדיין פעולות מנהל.');
+      : h('p', { class: 'empty' }, 'אין עדיין פעולות של עורכים.');
   }
 
   return {

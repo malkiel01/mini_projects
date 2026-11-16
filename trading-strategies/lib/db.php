@@ -135,7 +135,7 @@ function ts_migrate(PDO $db): void
         // שלב א' (spec-stage-a.md): מנהלים, ספקי נתונים, מעקב, תקרות. הנרות — במסד נפרד (lib/cache.php)
         $db->exec(<<<'SQL'
             BEGIN;
-            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן
+            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן. מיגרציה 17: chief / editor (פרק 24)
             CREATE TABLE app_roles (
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 role TEXT NOT NULL CHECK (role IN ('admin')),
@@ -567,6 +567,26 @@ function ts_migrate(PDO $db): void
             BEGIN;
             DELETE FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope LIKE 'u:%';
             PRAGMA user_version = 16;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 17) {
+        // עורך ראשי ועורך משני (spec-stage-a 24.4, ✅38): ב-SQLite אי אפשר לשנות CHECK — לכן הטבלה נבנית מחדש, כמו
+        // backtests_v7. כל שורה עוברת: admin → editor, ואותו granted_by ו-granted_at. בטרנזקציה אחת — נכשל באמצע,
+        // הכול חוזר. העורך מהשער (platform_admin) לא שורה כאן. תפקיד אחד למשתמש (user_id — המפתח)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE app_roles_v17 (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('chief', 'editor')),
+                granted_by INTEGER NOT NULL,
+                granted_at INTEGER NOT NULL
+            );
+            INSERT INTO app_roles_v17 (user_id, role, granted_by, granted_at)
+                SELECT user_id, CASE role WHEN 'admin' THEN 'editor' ELSE role END, granted_by, granted_at FROM app_roles;
+            DROP TABLE app_roles;
+            ALTER TABLE app_roles_v17 RENAME TO app_roles;
+            PRAGMA user_version = 17;
             COMMIT;
             SQL);
     }
