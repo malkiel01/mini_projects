@@ -75,17 +75,22 @@ for ($i = 0; $i < 120; $i++) {
 [$c, $L] = call('alice', 'admin_learn', null, ['method' => 'test-learn']);
 $v = array_values(array_filter($L['values'] ?? [], fn($x) => $x['param'] === 'zone_atr' && $x['segment'] === 'crypto|h1'))[0] ?? null;
 $sv = array_values(array_filter($L['values'] ?? [], fn($x) => $x['param'] === 'stop_atr' && $x['segment'] === 'crypto|h1'))[0] ?? null;
-eq([$c, $v['decision'] ?? null, $v['current'] ?? null, ($v['candidate']['n'] ?? 0) >= 30, $sv['decision'] ?? null], [200, 'propose', 0.5, true, 'paused'],
-    'the learning tab: zone_atr for crypto × 1h — a proposal (current 0.5); the stop — paused (🟡2)');
+eq([$c, $v['decision'] ?? null, $v['current'] ?? null, ($v['candidate']['n'] ?? 0) >= 30, $sv['decision'] ?? null], [200, 'paused', 0.5, true, 'paused'],
+    'the learning tab: zone_atr and the stop for crypto × 1h — shown, paused (2.37)');
 
 // ── "🔍 חשב הצעות" — עורך (גם משני) ──
 eq(call('alice', 'admin_learn_propose', ['method' => 'test-learn', 'asset' => 'binance:BTCUSDT', 'tf' => 'h4'])[0], 422, '🟡6a: a timeframe the method is not set for → 422');
 eq(call('alice', 'admin_learn_propose', ['method' => 'test-learn', 'asset' => 'twelvedata:EUR/USD', 'tf' => 'h1'])[0], 422, '🟡6a: a market the method is not set for → 422');
 [$c, $r] = call('alice', 'admin_learn_propose', ['method' => 'test-learn', 'asset' => 'binance:BTCUSDT', 'tf' => 'h1']);
-eq([$c, ($r['proposals'] ?? 0) >= 1], [200, true], 'a secondary editor computes proposals');
+eq([$c, $r['proposals'] ?? null, $r['findings'] ?? null], [200, 0, 0], 'a secondary editor computes — 2.37: no proposal and no finding from the paused statistics');
+// הצעה מהלמידה לפלח — כמו ש-L5b ייצור (השוואת שכנים); כאן ישירות, כדי לבדוק את התשתית: החלה וביטול
+$res = ['split_t' => $NOW - 100 * 86400, 'current' => ['in' => ['n' => 40, 'win_rate' => 0.5, 'expectancy_r' => 0.2], 'out' => ['n' => 31, 'win_rate' => 0.5, 'expectancy_r' => 0.1]],
+    'candidate' => ['in' => ['n' => 40, 'win_rate' => 0.55, 'expectancy_r' => 0.3], 'out' => ['n' => 31, 'win_rate' => 0.55, 'expectancy_r' => 0.2]]];
+$db->prepare("INSERT INTO method_proposals (method_id, method_version, param, current_value, candidate_value, asset, tf, split_t, results, note, created_by, created_at, segment, origin, stats)
+    VALUES ('test-learn', 1, 'zone_atr', '0.5', '1', 'binance:BTCUSDT', 'h1', ?, ?, 'מהלמידה', 0, ?, 'crypto|h1', 'learning', '{}')")->execute([$res['split_t'], json_encode($res), $NOW]);
 [, $T] = call('alice', 'admin_tune_list', null, ['method' => 'test-learn']);
 $seg = array_values(array_filter($T['proposals'] ?? [], fn($x) => $x['param'] === 'zone_atr' && $x['segment'] === 'crypto|h1'))[0] ?? null;
-eq([$seg['origin'] ?? null, $seg['status'] ?? null, $seg['current'] ?? null, ($seg['candidate'] ?? 0) > 0.5], ['learning', 'open', 0.5, true], 'criterion 6: a proposal for the crypto × 1h segment, from learning');
+eq([$seg['origin'] ?? null, $seg['status'] ?? null, $seg['current'] ?? null, $seg['candidate'] ?? null], ['learning', 'open', 0.5, 1], 'criterion 6: a proposal for the crypto × 1h segment, from learning');
 eq(call('bob', 'admin_learn_propose', ['method' => 'test-learn', 'asset' => 'binance:BTCUSDT', 'tf' => 'h1'])[0], 403, 'a user — no');
 
 // ── קריטריון 7: "החל" — רק העורך הראשי, ומעלה גרסה ──

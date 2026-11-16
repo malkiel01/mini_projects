@@ -71,9 +71,9 @@ for ($i = 0; $i < 120; $i++) $put(1, $i, 0.95 + ($i % 5) * 0.025);
 $V = ts_learn_values('test-learn', 1);
 $z = array_values(array_filter($V, fn($v) => $v['param'] === 'zone_atr' && $v['segment'] === ''))[0] ?? null;
 $s = array_values(array_filter($V, fn($v) => $v['param'] === 'stop_atr' && $v['segment'] === ''))[0] ?? null;
-eq([$z['rows'] ?? null, $z['in_sample'] ?? null, $z['current'] ?? null, $z['decision'] ?? null, ($z['candidate']['n'] ?? 0) >= 30], [120, 84, 0.5, 'propose', true],
-    'zone_atr: 120 trades, the statistic on the first 84 (before t_cut), current 0.5 → a proposal (N ≥ 30 winners)');
-eq($s['decision'] ?? null, 'paused', '🟡2: the stop — paused until the spec decides (no proposal, no finding)');
+eq([$z['rows'] ?? null, $z['in_sample'] ?? null, $z['current'] ?? null, ($z['candidate']['n'] ?? 0) >= 30], [120, 84, 0.5, true],
+    'zone_atr: 120 trades, the statistic on the first 84 (before t_cut), N ≥ 30 winners — shown');
+eq([$z['decision'] ?? null, $s['decision'] ?? null], ['paused', 'paused'], '🟡2 / 2.37: every statistic is paused — zone width too (only shown)');
 eq(array_values(array_unique(array_column(array_filter(ts_learn_values('sample-ma-cross', 1), fn($v) => true), 'decision'))), [], 'the sample method without rows — nothing');
 
 // ── 🟡1 + קריטריון 5: חיתוך אחד בזמן. המועמד רק מעסקאות שיצאו לפני t_cut; 30% האחרונים לא משנים אותו ──
@@ -83,39 +83,35 @@ $db->exec("UPDATE method_outcomes SET features = '{\"zone_atr\": 1.9}' WHERE met
 $z5 = array_values(array_filter(ts_learn_values('test-learn', 1), fn($v) => $v['param'] === 'zone_atr' && $v['segment'] === ''))[0];
 eq($z5['candidate'], $z['candidate'], 'criterion 5: changing the trades after t_cut does not change the candidate');
 
-// ── הצעה: על נרות קבועים (בלי רשת), לכלל ולפלח. קריטריון 4: רק שני ערכים. 🟡1: "בתוך" — לפני t_cut, "מחוץ" — ממנו ──
+// ── 2.37: אף סטטיסטיקה לא יוצרת הצעה או ממצא — גם כשהנתונים "מצביעים" בתוך הטווח, וגם מחוצה לו ──
 $editor = $db->prepare("INSERT INTO method_proposals (method_id, method_version, param, current_value, candidate_value, asset, tf, split_t, results, note, created_by, created_at, segment, origin)
     VALUES ('test-learn', 1, 'zone_atr', '0.5', '0.7', 'binance:BTCUSDT', 'h1', 0, '{}', 'עורך', 5, 0, 'crypto|h1', 'admin')");
 $editor->execute();
 $edId = (int)$db->lastInsertId();
-[$props] = ts_learn_values_run(0, 'test-learn', 1, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000, $C);
-$P = array_values(array_filter(ts_tune_list('test-learn'), fn($x) => $x['origin'] === 'learning'));
-eq([$props, array_column($P, 'segment'), $P[0]['param'] ?? null, $P[0]['status'] ?? null], [2, ['crypto|h1', ''], 'zone_atr', 'open'],
-    'proposals from learning — for all, and for the crypto × 1h segment; none for the paused stop');
-eq(array_keys($P[0]['results']), ['split_t', 'current', 'candidate'], 'criterion 4: only two values were run — the current and the candidate');
-eq([$P[0]['split_t'], $P[0]['results']['current']['in']['to_t'] < $tCut, $P[0]['results']['current']['out']['from_t'] >= $tCut], [$tCut, true, true],
-    '🟡1: in the sample — candles before t_cut; out of it — from t_cut');
-eq([$P[0]['stats']['stat'], $P[0]['stats']['n'] >= 30, str_contains($P[0]['note'], 'רווח סמך')], ['zone', true, true], 'the statistic, N and the interval are in the proposal');
-eq(ts_tune_get($edId)['status'], 'open', '🟡5: an open proposal of an editor (same parameter and segment) is not made stale by learning');
-eq([ts_learn_values_run(0, 'test-learn', 1, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000, $C), count(ts_tune_list('test-learn'))], [[0, 0], count($P) + 1],
-    'no new rows → no new proposal');
-
-// ── קריטריון 0 (✅37): מחוץ לטווח → פריט DevLoop לבעלים; בלי הצעה ובלי חיתוך. גרסה 9: רוחב אזור ~3 ATR (הטווח 0.1–2) ──
-for ($i = 0; $i < 120; $i++) $put(9, $i, 2.9 + ($i % 4) * 0.05);
-$before = count(ts_tune_list('test-learn'));
-[$p0, $f0] = ts_learn_values_run(0, 'test-learn', 9, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000, $C);
-$item = $db->query("SELECT * FROM dev_tasks WHERE area = 'learning' ORDER BY id DESC")->fetch();
-eq([$p0, $f0, count(ts_tune_list('test-learn')) === $before], [0, 2, true], 'criterion 0: out of the range → 2 DevLoop items (all, and crypto × 1h), no proposal');
-eq([$item['kind'], str_contains($item['title'], 'מחוץ לטווח'), str_contains($item['detail'], 'מעבר לטווח 0.1–2'), str_contains($item['detail'], 'אין חיתוך')],
-    ['research', true, true, true], '… research; "beyond the range 0.1–2", no cutting to the edge');
+for ($i = 0; $i < 120; $i++) $put(9, $i, 2.9 + ($i % 4) * 0.05);   // גרסה 9: רוחב ~3 ATR — מחוץ לטווח 0.1–2
+$items = fn() => (int)$db->query("SELECT COUNT(*) FROM dev_tasks WHERE area = 'learning'")->fetchColumn();
+$props = fn() => (int)$db->query("SELECT COUNT(*) FROM method_proposals WHERE origin = 'learning'")->fetchColumn();
+eq([ts_learn_values_run(0, 'test-learn', 1, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000, $C), ts_learn_values_run(0, 'test-learn', 9, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000, $C, true),
+    $props(), $items()], [[0, 0], [0, 0], 0, 0], '2.37: no proposal and no DevLoop finding from any statistic (in range or out of it, with candles and with fetch)');
 $val = array_values(array_filter(ts_learn_values('test-learn', 9), fn($v) => $v['param'] === 'zone_atr' && $v['segment'] === ''))[0];
-eq([$val['decision'], $val['candidate']['value'] > 2], ['out_of_range', true], '… and the candidate stays above 2 (not cut)');
-eq(ts_learn_values_run(0, 'test-learn', 9, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000, $C), [0, 0], 'again → nothing new');
+eq([$val['decision'], $val['candidate']['value'] > 2], ['paused', true], '… the candidate is still shown (above 2, not cut) — paused');
 
-// בלי הנרות ובלי $fetch (בדיקה לאחור שאינה מלאה) — לא מושכים, וההצעה מחכה: הסמן לא זז
+// ── התשתית (נשארת ל-L5b): ההערכה עם t_cut, השמירה, ו"עורך לא נדרס" — ישירות ──
+$m = ts_method('test-learn');
+$ev = ts_tune_learned_eval($m, 'zone_atr', 'crypto|h1', 1.0, ['stat' => 'zone', 'raw' => 1.0, 'ci' => [0.9, 1.1], 'n' => 56], $tCut, 'binance:BTCUSDT', 'h1', $C, 1_700_000_000);
+eq(array_keys($ev['results'] ?? []), ['split_t', 'current', 'candidate'], 'criterion 4: only two values are run — the current and the candidate');
+eq([$ev['split_t'], $ev['results']['current']['in']['to_t'] < $tCut, $ev['results']['current']['out']['from_t'] >= $tCut, $ev['current'], $ev['candidate']],
+    [$tCut, true, true, 0.5, 1.0], '🟡1: in the sample — candles before t_cut; out of it — from t_cut');
+eq(ts_tune_learned_eval($m, 'zone_atr', '', 0.5, ['stat' => 'zone', 'raw' => 0.5, 'ci' => [0.4, 0.6], 'n' => 56], $tCut, 'binance:BTCUSDT', 'h1', $C, 1), null, 'the candidate = the current → nothing');
+$first = ts_tune_learned_save($ev);
+$second = ts_tune_learned_save($ev);
+eq([ts_tune_get($first)['status'], ts_tune_get($second)['status'], ts_tune_get($second)['origin'], ts_tune_get($second)['segment']], ['stale', 'open', 'learning', 'crypto|h1'],
+    'at most one open proposal from learning per parameter and segment — the previous one → stale');
+eq(ts_tune_get($edId)['status'], 'open', '🟡5: an open proposal of an editor (same parameter and segment) is not made stale');
+
+// בלי הנרות ובלי $fetch — לא מושכים, והסמן לא זז עד שתהיה מדידה (L5b)
 for ($i = 0; $i < 120; $i++) $put(3, $i, 0.95 + ($i % 5) * 0.025);
-eq(ts_learn_values_run(0, 'test-learn', 3, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000), [0, 0], 'without candles and without fetch → no proposal');
-eq((int)$db->query("SELECT COUNT(*) FROM learning_values WHERE method_version = 3 AND param = 'zone_atr'")->fetchColumn(), 0, '… and the cursor did not move (it will be proposed later)');
+eq(ts_learn_values_run(0, 'test-learn', 3, 'backtest', 'binance:BTCUSDT', 'h1', 1_700_000_000), [0, 0], 'without candles and without fetch → nothing');
 
 // ההחלה עצמה (קריטריונים 6–7) ו"↺ בטל" (🟡4) — tests/learn-values-api.php
 
