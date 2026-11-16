@@ -168,7 +168,7 @@ function ts_tune_list(mixed $method = null): array
  */
 function ts_tune_apply(int $uid, mixed $id, ?int $now = null): array
 {
-    ts_require_primary_admin();
+    ts_require_chief();
     $now ??= ts_now();
     if (!is_int($id)) throw new TsInvalid('הצעה לא תקינה');
     $db = ts_db();

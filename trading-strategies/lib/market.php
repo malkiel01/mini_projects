@@ -216,7 +216,7 @@ function ts_usage_take(int $uid, string $provider, array $acc, int $n = 1): void
         if ((int)$get->fetchColumn() + $n > $acc['user_limit']) {
             throw new TsCapError($acc['source'] === 'app'
                 ? 'הגעתם לתקרה היומית (' . $acc['user_limit'] . ' פניות) במפתח האפליקציה. נסו שוב מחר.'
-                : 'הגעתם לתקרה היומית שהמנהל קבע לספק הזה.');
+                : 'הגעתם לתקרה היומית שהעורך קבע לספק הזה.');
         }
     }
     $add = $db->prepare('INSERT INTO provider_usage (key, user_id, day, calls) VALUES (?, ?, ?, ?)

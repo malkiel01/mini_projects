@@ -168,7 +168,7 @@ function ts_method_label(TsMethod $m): ?string
 /** השיטות שהמשתמש רואה: מופעלות, ושיטת דוגמה — רק למנהל */
 function ts_methods_visible(int $uid): array
 {
-    $admin = ts_is_admin($uid);
+    $admin = ts_is_editor($uid);
     $out = [];
     foreach (ts_method_ids() as $id) {
         $m = ts_method($id);
@@ -246,7 +246,7 @@ function ts_admin_method_save(int $uid, array $in): void
     // שהבדיקות לאחור והיומן לא יערבבו את הערך הישן עם החדש. מנהל אחר — דרך הצעה (lib/tune.php). הפעלה, שווקים, מסגרות
     // והערה — כמו קודם, כל מנהל.
     $changed = $m->params($params) !== $m->params(ts_method_settings($id)['params']);
-    if ($changed) ts_require_primary_admin();
+    if ($changed) ts_require_chief();
     ts_db()->prepare('INSERT INTO methods (id, enabled, markets, timeframes, params, note, tune) VALUES (?, ?, ?, ?, ?, ?, ?)
                       ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, markets = excluded.markets, timeframes = excluded.timeframes,
                         params = excluded.params, note = excluded.note, tune = methods.tune + ?')

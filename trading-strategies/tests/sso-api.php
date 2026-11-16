@@ -297,7 +297,7 @@ eq($code, 200, 'grant answer cached for 5 minutes');
 $pdo->exec("UPDATE sessions SET grant_checked_at = grant_checked_at - 301 WHERE via <> 'gate'");
 $keepOs = $os;
 [$code, $j] = req($os, 'me');
-eq([$code, $j['error'] ?? null, isset($os['ts_session'])], [401, 'אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל', false], 'grant false → session dropped');
+eq([$code, $j['error'] ?? null, isset($os['ts_session'])], [401, 'אין לך הרשאת גישה לאפליקציה הזו — פנו לעורך ראשי', false], 'grant false → session dropped');
 [$code] = req($keepOs, 'me');
 eq($code, 401, 'dropped session is gone from the db');
 // המעטפת לא עונה: session נחסם (503), לא נמחק; חוזרת — ממשיך
@@ -473,7 +473,7 @@ $pdo->exec("UPDATE users SET email = 'dup@test.local', password_hash = '$h1' WHE
 $GLOBALS['PW'] = '1';
 $d3 = [];
 [$code, $j] = req($d3, 'login', [], ['email' => 'dup@test.local', 'password' => 'dup password 1']);
-eq([$code, $j['error'] ?? null, isset($d3['ts_session'])], [409, 'יש כמה חשבונות באותו מייל — פנו למנהל', false], '🟡3: two accounts with a password → no login');
+eq([$code, $j['error'] ?? null, isset($d3['ts_session'])], [409, 'יש כמה חשבונות באותו מייל — פנו לעורך ראשי', false], '🟡3: two accounts with a password → no login');
 [$code, $j] = req($d3, 'login', [], ['email' => 'dup@test.local', 'password' => 'wrong password']);
 eq([$code, $j['error'] ?? null], [401, 'מייל או סיסמה שגויים'], '🟡3: wrong password → the usual message');
 $pdo->exec('DELETE FROM login_locks');

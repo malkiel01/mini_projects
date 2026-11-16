@@ -32,7 +32,7 @@ const TS_LOGIN_MAX_FAILS = 5;
 const TS_LOGIN_LOCK = 900;
 const TS_PASSWORD_MIN = 10;
 const TS_LOGIN_FAIL_MSG = 'מייל או סיסמה שגויים';
-const TS_NO_ACCESS_MSG = 'אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל';
+const TS_NO_ACCESS_MSG = 'אין לך הרשאת גישה לאפליקציה הזו — פנו לעורך ראשי';
 
 final class TsConflict extends RuntimeException {}
 /** כניסה שנדחתה — ההודעה למשתמש והקוד. */
@@ -102,7 +102,7 @@ function ts_user_conflict_check(array $id): void
     $st->execute([$id['sub'], $id['email']]);
     if ($row = $st->fetch()) {
         ts_auth_log((int)$row['id'], 'account_conflict', 'sub ' . $id['sub'] . ' ≠ ' . $row['platform_sub']);
-        throw new TsConflict('יש כבר חשבון באפליקציה באותו מייל — פנו למנהל');
+        throw new TsConflict('יש כבר חשבון באפליקציה באותו מייל — פנו לעורך ראשי');
     }
 }
 
@@ -296,7 +296,7 @@ function ts_password_login(mixed $email, mixed $password, string $ip): array
         foreach ($rows as $r) {
             if (password_verify($password, $r['password_hash'])) {
                 ts_auth_log((int)$r['id'], 'account_conflict', 'password login: ' . count($rows) . ' accounts with this email');
-                throw new TsLoginError('יש כמה חשבונות באותו מייל — פנו למנהל', 409);
+                throw new TsLoginError('יש כמה חשבונות באותו מייל — פנו לעורך ראשי', 409);
             }
         }
         $rows = [];
@@ -338,7 +338,7 @@ function ts_password_set(int $uid, mixed $password): void
 /** איפוס בידי המנהל הראשי (ש9): הסיסמה נמחקת, וה-sessions של הסיסמה נסגרים. */
 function ts_password_reset(int $by, int $target): void
 {
-    ts_require_primary_admin();
+    ts_require_chief();
     $db = ts_db();
     $st = $db->prepare('UPDATE users SET password_hash = NULL, password_set_at = NULL WHERE id = ?');
     $st->execute([$target]);
