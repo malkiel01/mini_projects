@@ -12,6 +12,7 @@
 <header class="top">
   <a class="icon-btn back" id="back" href="#/" aria-label="חזרה" hidden>›</a>
   <div class="titles"><h1 id="title">מחירוני קברים</h1><div class="sub" id="sub"></div></div>
+  <a class="icon-btn" id="set-btn" href="#/settings" aria-label="הגדרות" title="הגדרות" hidden>⚙️</a>
   <a class="icon-btn" id="dev-btn" href="#/dev" aria-label="מסך המפתח" title="מסך המפתח" hidden>🛠️</a>
   <span id="me-btn"></span>
 </header>
@@ -20,14 +21,63 @@
 <dialog id="print-dlg" aria-labelledby="print-title">
   <form method="dialog">
     <div class="sheet-head"><h2 id="print-title">🖨️ הדפסה</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
+    <div class="sheet-body"><div class="list" id="print-list"></div></div>
+  </form>
+</dialog>
+
+<dialog id="share-dlg" aria-labelledby="share-title">
+  <form method="dialog">
+    <div class="sheet-head"><h2 id="share-title">🖨️ הדפסה משותפת</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
     <div class="sheet-body">
+      <div class="fields two">
+        <label class="f"><span>🇮🇱 תושבי ישראל</span><select id="share-il"></select></label>
+        <label class="f"><span>🌍 תושבי חו"ל</span><select id="share-abroad"></select></label>
+      </div>
       <div class="list">
-        <button class="use-row" value="il"><span class="use-ic">🇮🇱</span><span class="use-tx"><b>תושבי ישראל</b><small>עמוד אחד</small></span></button>
-        <button class="use-row" value="abroad"><span class="use-ic">🌍</span><span class="use-tx"><b>תושבי חו"ל</b><small>עמוד אחד</small></span></button>
         <button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>דף נפרד לכל קבוצה</b><small>שני עמודים: ישראל, ואחריו חו"ל</small></span></button>
-        <button class="use-row" value="both"><span class="use-ic">📄</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>עמוד אחד, עמודת מחיר לכל קבוצה</small></span></button>
+        <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>שתיהן בדף אחד</b><small>ישראל, ומתחתיו חו"ל · חתימות פעם אחת</small></span></button>
       </div>
     </div>
+  </form>
+</dialog>
+
+<dialog id="row-dlg" aria-labelledby="row-title">
+  <form id="row-form">
+    <div class="sheet-head"><h2 id="row-title">שורה</h2><button class="icon-btn" type="button" data-close aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <label class="f"><span>הטקסט</span><input id="row-label" maxlength="200" autocomplete="off" required></label>
+      <p class="hint">**מודגש** · __קו תחתון__ · ((קטן ורגיל))</p>
+      <div class="preview" id="row-preview" aria-live="polite"></div>
+      <div class="fields two">
+        <label class="f"><span>סוג</span><select id="row-kind">
+          <option value="section">כותרת חלקות</option><option value="band">פס בית עלמין</option><option value="subsection">כותרת קבורה</option>
+          <option value="heading">כותרת משנה</option><option value="item">שורת מחיר</option>
+          <option value="fee">תשלום נלווה</option><option value="note">הערה</option></select></label>
+        <label class="switch"><input type="checkbox" id="row-indent"><span>מוזחת</span></label>
+      </div>
+      <p class="error" id="row-err" hidden></p>
+      <div class="row-btns wrap" id="row-tools">
+        <button class="btn ghost" type="button" data-act="up">↑ למעלה</button>
+        <button class="btn ghost" type="button" data-act="down">↓ למטה</button>
+        <button class="btn ghost" type="button" data-act="add">➕ שורה מתחת</button>
+        <button class="btn ghost danger" type="button" data-act="del">🗑️ מחיקה</button>
+      </div>
+    </div>
+    <div class="sheet-foot"><button class="btn primary">שמירה</button></div>
+  </form>
+</dialog>
+
+<dialog id="hist-dlg" aria-labelledby="hist-title">
+  <form method="dialog">
+    <div class="sheet-head"><h2 id="hist-title">📜 שינויים</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
+    <div class="sheet-body" id="hist-body"></div>
+  </form>
+</dialog>
+
+<dialog id="ask-dlg" class="ask" aria-labelledby="ask-msg">
+  <form method="dialog">
+    <div class="sheet-body"><p id="ask-msg"></p></div>
+    <div class="sheet-foot"><button class="btn ghost" value="">ביטול</button><button class="btn primary" value="ok" id="ask-ok">אישור</button></div>
   </form>
 </dialog>
 
