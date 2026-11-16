@@ -55,7 +55,7 @@ try {
     $out = match ("$method $action") {
         'GET me'         => ['name' => $user['name'], 'is_dev' => (bool)$user['is_dev'], 'csrf' => gp_csrf(),
                              'version' => (string)(json_decode((string)file_get_contents(__DIR__ . '/app.json'), true)['version'] ?? '')],
-        'GET editions'   => gp_editions(),
+        'GET editions'   => gp_editions((string)($_GET['audience'] ?? '')),
         'GET edition'    => gp_edition((string)($_GET['pid'] ?? '')),
         'POST print-log' => gp_print_log($uid, $in),
         'GET history'    => gp_history((string)($_GET['pid'] ?? '')),
@@ -65,7 +65,8 @@ try {
         'POST row-save'        => gp_row_save($uid, $in),
         'POST row-delete'      => gp_row_delete($uid, $in),
         'POST row-move'        => gp_row_move($uid, $in),
-        'POST signatures-set'  => gp_signatures_set($uid, $in),
+        'GET settings'         => ['signatures' => gp_signatures()],
+        'POST signatures-set'  => gp_signatures_set($uid, $in),   // הגדרות — סט אחד לכל ההדפסות
         'POST edition-create'  => gp_edition_create($uid, $in),
         'POST edition-update'  => gp_edition_update($uid, $in),
         'POST edition-delete'  => gp_edition_delete($uid, $in),
@@ -105,12 +106,22 @@ try {
     echo json_encode($e instanceof ApiError ? ['error' => $e->getMessage()] + $e->extra : ['error' => 'תקלה בשרת'], JSON_UNESCAPED_UNICODE);
 }
 
+/** {il, abroad, mode} — לפחות אחד מהשניים; כל אחד חייב להיות מהקבוצה שלו. שורה אחת ביומן. */
 function gp_print_log(int $uid, array $in): array
 {
     $mode = (string)($in['mode'] ?? '');
     if (!in_array($mode, GP_PRINT_MODES, true)) throw new ApiError('תצורת הדפסה לא מוכרת');
-    $e = gp_edition_row((string)($in['pid'] ?? ''));
-    gp_audit($uid, 'print', (int)$e['id'], ['mode' => $mode]);
+    $eds = [];
+    foreach (array_keys(GP_AUDIENCES) as $a) {
+        if (($in[$a] ?? '') === '' || $in[$a] === null) continue;
+        $e = gp_edition_row((string)$in[$a]);
+        if ($e['audience'] !== $a) throw new ApiError('המחירון לא שייך ל' . GP_AUDIENCES[$a]);
+        $eds[$a] = $e;
+    }
+    if (!$eds) throw new ApiError('לא נבחר מחירון');
+    if ($mode !== 'one' && count($eds) < 2) throw new ApiError('להדפסה משותפת צריך מחירון מכל קבוצה');
+    $first = reset($eds);
+    gp_audit($uid, 'print', (int)$first['id'], ['mode' => $mode] + array_map(fn($e) => $e['effective_from'], $eds));
     return ['ok' => true];
 }
 

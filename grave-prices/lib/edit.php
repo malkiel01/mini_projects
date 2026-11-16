@@ -4,6 +4,8 @@
  * כל כתיבה — בטרנזקציה, ונרשמת ביומן (audit) עם הערך הקודם, כך ששום ערך לא אובד.
  * מחירון שכבר בתוקף (תאריכו ≤ היום) — רק עם confirm_in_effect; בלעדיו 409 {"need_confirm": true}.
  * השינוי חל רק על המחירון שנבחר: שורות ומחירים שייכים למחירון אחד.
+ * פרוסה 03: מחירון שייך לקבוצה אחת, ולכל שורה מחיר אחד — הרשומה ב-prices בקבוצה של המחירון. רשומות של הקבוצה
+ * השנייה (מלפני 03) לא נקראות ולא נכתבות.
  */
 
 declare(strict_types=1);
@@ -79,10 +81,11 @@ function gp_date(mixed $v): string
     return $s;
 }
 
-function gp_date_free(string $date, int $exceptId = 0): void
+/** התאריך ייחודי בתוך הקבוצה בלבד: ישראל 01/07 וחו"ל 01/07 — מותר. */
+function gp_date_free(string $date, string $audience, int $exceptId = 0): void
 {
-    $st = db()->prepare('SELECT 1 FROM editions WHERE effective_from = ? AND id <> ?');
-    $st->execute([$date, $exceptId]);
+    $st = db()->prepare('SELECT 1 FROM editions WHERE effective_from = ? AND audience = ? AND id <> ?');
+    $st->execute([$date, $audience, $exceptId]);
     if ($st->fetchColumn()) throw new ApiError('כבר יש מחירון בתאריך הזה', 409);
 }
 
@@ -100,12 +103,13 @@ function gp_row_ids(int $eid): array
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
+/** כל רשומות המחיר של שורה, לפי קבוצה (ליומן במחיקה — כדי ששום ערך לא יאבד) */
 function gp_row_prices(int $rowId): array
 {
-    $out = array_fill_keys(array_keys(GP_AUDIENCES), null);
-    $st = db()->prepare('SELECT audience, amount FROM prices WHERE row_id = ?');
+    $out = [];
+    $st = db()->prepare('SELECT audience, amount FROM prices WHERE row_id = ? ORDER BY audience');
     $st->execute([$rowId]);
-    foreach ($st as $p) if (array_key_exists($p['audience'], $out)) $out[$p['audience']] = $p['amount'] === null ? null : (int)$p['amount'];
+    foreach ($st as $p) $out[$p['audience']] = $p['amount'] === null ? null : (int)$p['amount'];
     return $out;
 }
 
@@ -116,12 +120,12 @@ function gp_price_set(int $uid, array $in): array
     $e = gp_edition_row((string)($in['pid'] ?? ''));
     $r = gp_row((int)$e['id'], (string)($in['row'] ?? ''));
     if (!in_array($r['kind'], GP_PRICED, true)) throw new ApiError('לשורה הזו אין מחיר');
-    $aud = (string)($in['audience'] ?? '');
-    if (!isset(GP_AUDIENCES[$aud])) throw new ApiError('קבוצה לא מוכרת');
+    $aud = $e['audience'];   // לא נדרש; נשלח ושונה מקבוצת המחירון — שגיאה, כדי שמחיר לא ייכנס לרשימה הלא נכונה
+    if (isset($in['audience']) && $in['audience'] !== $aud) throw new ApiError('המחירון הזה ל' . GP_AUDIENCES[$aud] . ' — אי אפשר להזין בו מחיר לקבוצה אחרת');
     $new = gp_amount($in['amount'] ?? null);
     gp_guard($e, $in);
     return gp_tx(function (PDO $pdo) use ($uid, $e, $r, $aud, $new) {
-        $old = gp_row_prices((int)$r['id'])[$aud];
+        $old = gp_row_prices((int)$r['id'])[$aud] ?? null;
         if ($old !== $new) {   // שני חלונות: האחרון גובר, וכל שינוי נרשם עם מה שהיה רגע לפניו
             $pdo->prepare('INSERT INTO prices (row_id, audience, amount) VALUES (?, ?, ?)
                 ON CONFLICT (row_id, audience) DO UPDATE SET amount = excluded.amount')->execute([$r['id'], $aud, $new]);
@@ -182,7 +186,7 @@ function gp_row_delete(int $uid, array $in): array
         $pdo->prepare('DELETE FROM prices WHERE row_id = ?')->execute([$r['id']]);
         $pdo->prepare('DELETE FROM rows WHERE id = ?')->execute([$r['id']]);
         gp_audit($uid, 'row-delete', (int)$e['id'], ['row' => $r['pid'], 'kind' => $r['kind'], 'indent' => (int)$r['indent'],
-            'label' => $r['label'], 'prices' => in_array($r['kind'], GP_PRICED, true) ? $prices : null]);
+            'label' => $r['label'], 'price' => in_array($r['kind'], GP_PRICED, true) ? ($prices[$e['audience']] ?? null) : null, 'prices' => $prices]);
         gp_touch((int)$e['id']);
         return ['ok' => true];
     });
@@ -210,20 +214,19 @@ function gp_row_move(int $uid, array $in): array
 
 /* ===== חתימות ===== */
 
+/** החתימות — סט אחד לכל ההדפסות, במסך ⚙️ הגדרות (הכרעת הבעלים 12:20). ביומן בלי מחירון. */
 function gp_signatures_set(int $uid, array $in): array
 {
-    $e = gp_edition_row((string)($in['pid'] ?? ''));
     $s = $in['signatures'] ?? null;
     if (!is_array($s) || count($s) !== 3 || !array_is_list($s)) throw new ApiError('צריך שלוש חתימות');
     $new = array_map(fn($x) => is_array($x) ? ['name' => gp_text($x['name'] ?? '', 100, 'השם'), 'role' => gp_text($x['role'] ?? '', 100, 'התפקיד')]
         : throw new ApiError('חתימה לא תקינה'), $s);
-    gp_guard($e, $in);
-    return gp_tx(function (PDO $pdo) use ($uid, $e, $new) {
-        $old = json_decode($e['signatures'], true) ?: [];
+    return gp_tx(function (PDO $pdo) use ($uid, $new) {
+        $old = gp_signatures();
         if ($old !== $new) {
-            $pdo->prepare('UPDATE editions SET signatures = ?, updated_at = ? WHERE id = ?')
-                ->execute([json_encode($new, JSON_UNESCAPED_UNICODE), now_iso(), $e['id']]);
-            gp_audit($uid, 'signatures', (int)$e['id'], ['old' => $old, 'new' => $new]);
+            $pdo->prepare("UPDATE settings SET value = ?, updated_by = ?, updated_at = ? WHERE key = 'signatures'")
+                ->execute([json_encode($new, JSON_UNESCAPED_UNICODE), $uid ?: null, now_iso()]);
+            gp_audit($uid, 'signatures-set', null, ['old' => $old, 'new' => $new]);
         }
         return ['ok' => true, 'signatures' => $new];
     });
@@ -232,74 +235,79 @@ function gp_signatures_set(int $uid, array $in): array
 /* ===== מחירון חדש, תאריך, מחיקה ===== */
 
 /**
- * מחירון חדש מהעתק של קיים: השורות, המחירים והחתימות.
- * raise: {"<pid של שורת section>": {"il": %, "abroad": %}, "fee": {...}} — שורות item מקבלות את האחוז של ה-section
- * שמעליהן, שורות fee את האחוז של "fee". מחיר חדש = round(old × (1 + p/100)); ריק נשאר ריק.
+ * מחירון חדש מהעתק של קיים, באותה קבוצה: השורות, המחירים, החתימות וכותרת המשנה.
+ * raise: {"<pid של שורת section/band>": %, "fee": %} — שורת item מקבלת את האחוז של הכותרת העליונה האחרונה שמעליה,
+ * שורת fee את האחוז של "fee". מחיר חדש = round(old × (1 + p/100)); ריק נשאר ריק.
  */
 function gp_edition_create(int $uid, array $in): array
 {
     $date = gp_date($in['effective_from'] ?? null);
     $base = gp_edition_row((string)($in['base_pid'] ?? ''));
-    $st = db()->prepare("SELECT pid FROM rows WHERE edition_id = ? AND kind = 'section'");
+    $aud = $base['audience'];
+    $st = db()->prepare("SELECT pid FROM rows WHERE edition_id = ? AND kind IN ('" . implode("','", GP_TOPS) . "')");
     $st->execute([$base['id']]);
     $keys = array_merge($st->fetchAll(PDO::FETCH_COLUMN), ['fee']);
     $raise = [];
-    foreach ((array)($in['raise'] ?? []) as $k => $p) {
-        if (!in_array((string)$k, $keys, true) || !is_array($p)) throw new ApiError('אחוז לשורה לא מוכרת');
-        foreach (array_keys(GP_AUDIENCES) as $a) {
-            $v = $p[$a] ?? 0;
-            if (is_string($v)) $v = trim($v) === '' ? 0 : trim($v);
-            if (!is_numeric($v) || $v <= -100 || $v > 1000) throw new ApiError('אחוז לא תקין — מספר בין ‎-99 ל-1000');
-            $raise[(string)$k][$a] = (float)$v;
-        }
+    foreach ((array)($in['raise'] ?? []) as $k => $v) {
+        if (!in_array((string)$k, $keys, true)) throw new ApiError('אחוז לשורה לא מוכרת');
+        if (is_string($v)) $v = trim($v) === '' ? 0 : trim($v);
+        if (is_bool($v) || !is_numeric($v) || $v <= -100 || $v > 1000) throw new ApiError('אחוז לא תקין — מספר בין ‎-99 ל-1000');
+        $raise[(string)$k] = (float)$v;
     }
-    gp_date_free($date);
+    gp_date_free($date, $aud);
 
-    return gp_tx(function (PDO $pdo) use ($uid, $date, $base, $raise) {
-        // מזהה שלא היה בשימוש — גם לא של מחירון שנמחק, כדי שהיומן שלו לא יוצמד לחדש
-        $id = 1 + (int)$pdo->query('SELECT MAX(m) FROM (SELECT MAX(id) AS m FROM editions UNION ALL SELECT MAX(edition_id) FROM audit)')->fetchColumn();
-        $pid = gp_pid();
-        $now = now_iso();
-        $pdo->prepare('INSERT INTO editions (id, pid, effective_from, signatures, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$id, $pid, $date, $base['signatures'], $uid ?: null, $now, $now]);
-        $rows = $pdo->prepare('SELECT * FROM rows WHERE edition_id = ? ORDER BY sort, id');
-        $rows->execute([$base['id']]);
-        $ins = $pdo->prepare('INSERT INTO rows (edition_id, sort, kind, indent, label, pid) VALUES (?, ?, ?, ?, ?, ?)');
-        $price = $pdo->prepare('INSERT INTO prices (row_id, audience, amount) VALUES (?, ?, ?)');
-        $section = null;
-        foreach ($rows->fetchAll() as $i => $r) {
-            if ($r['kind'] === 'section') $section = $r['pid'];
-            $ins->execute([$id, ($i + 1) * 10, $r['kind'], $r['indent'], $r['label'], gp_pid()]);
-            $rid = (int)$pdo->lastInsertId();
-            $key = match ($r['kind']) { 'item' => $section, 'fee' => 'fee', default => null };
-            $old = $pdo->prepare('SELECT audience, amount FROM prices WHERE row_id = ?');
-            $old->execute([$r['id']]);
-            foreach ($old->fetchAll() as $p) {
-                $amt = $p['amount'];
-                $pct = $key !== null ? ($raise[$key][$p['audience']] ?? 0.0) : 0.0;
-                if ($amt !== null && $pct != 0) {
-                    $amt = (int)round((int)$amt * (1 + $pct / 100));
-                    if ($amt > GP_MAX_AMOUNT) throw new ApiError('אחרי ההעלאה יש מחיר מעל 10,000,000');
-                }
-                $price->execute([$rid, $p['audience'], $amt === null ? null : (int)$amt]);
+    return gp_tx(function (PDO $pdo) use ($uid, $date, $base, $aud, $raise) {
+        $rows = $pdo->prepare('SELECT r.*, p.amount FROM rows r LEFT JOIN prices p ON p.row_id = r.id AND p.audience = ?
+            WHERE r.edition_id = ? ORDER BY r.sort, r.id');
+        $rows->execute([$aud, $base['id']]);
+        $list = [];
+        $top = null;
+        foreach ($rows->fetchAll() as $r) {
+            if (in_array($r['kind'], GP_TOPS, true)) $top = $r['pid'];
+            $amt = $r['amount'] === null ? null : (int)$r['amount'];
+            $key = match ($r['kind']) { 'item' => $top, 'fee' => 'fee', default => null };
+            $pct = $key !== null ? ($raise[$key] ?? 0.0) : 0.0;
+            if ($amt !== null && $pct != 0) {
+                $amt = (int)round($amt * (1 + $pct / 100));
+                if ($amt > GP_MAX_AMOUNT) throw new ApiError('אחרי ההעלאה יש מחיר מעל 10,000,000');
             }
+            $list[] = ['kind' => $r['kind'], 'indent' => (int)$r['indent'], 'label' => $r['label'], 'price' => $amt];
         }
+        $id = gp_insert_edition($pdo, $aud, $date, $base['subtitle'], $base['signatures'], $list);
+        $pdo->prepare('UPDATE editions SET created_by = ? WHERE id = ?')->execute([$uid ?: null, $id]);
         gp_audit($uid, 'edition-create', $id, ['effective_from' => $date, 'base' => $base['effective_from'], 'base_pid' => $base['pid'],
-            'raise' => array_filter($raise, fn($p) => array_filter($p))]);
-        return ['ok' => true, 'pid' => $pid];
+            'raise' => array_filter($raise)]);
+        return ['ok' => true, 'pid' => (string)$pdo->query("SELECT pid FROM editions WHERE id = $id")->fetchColumn()];
     });
 }
 
+/**
+ * תאריך — רק למחירון עתידי, ייחודי בתוך הקבוצה. כותרת המשנה (subtitle) — לכל מחירון, ובמחירון שבתוקף רק עם אישור (409).
+ */
 function gp_edition_update(int $uid, array $in): array
 {
     $e = gp_edition_row((string)($in['pid'] ?? ''));
-    if (!gp_is_future($e)) throw new ApiError('אפשר לשנות תאריך רק למחירון שעוד לא נכנס לתוקף', 403);
-    $date = gp_date($in['effective_from'] ?? null);
-    gp_date_free($date, (int)$e['id']);
-    return gp_tx(function (PDO $pdo) use ($uid, $e, $date) {
-        if ($date !== $e['effective_from']) {
+    $date = null;
+    if (array_key_exists('effective_from', $in) && $in['effective_from'] !== $e['effective_from']) {
+        if (!gp_is_future($e)) throw new ApiError('אפשר לשנות תאריך רק למחירון שעוד לא נכנס לתוקף', 403);
+        $date = gp_date($in['effective_from']);
+        gp_date_free($date, $e['audience'], (int)$e['id']);
+    }
+    $sub = null;
+    if (array_key_exists('subtitle', $in)) {
+        $sub = gp_text($in['subtitle'], 120, 'כותרת המשנה');
+        if ($sub === '') throw new ApiError('צריך כותרת משנה');
+        if ($sub === $e['subtitle']) $sub = null;
+        else gp_guard($e, $in);
+    }
+    return gp_tx(function (PDO $pdo) use ($uid, $e, $date, $sub) {
+        if ($date !== null) {
             $pdo->prepare('UPDATE editions SET effective_from = ?, updated_at = ? WHERE id = ?')->execute([$date, now_iso(), $e['id']]);
             gp_audit($uid, 'edition-update', (int)$e['id'], ['old' => $e['effective_from'], 'new' => $date]);
+        }
+        if ($sub !== null) {
+            $pdo->prepare('UPDATE editions SET subtitle = ?, updated_at = ? WHERE id = ?')->execute([$sub, now_iso(), $e['id']]);
+            gp_audit($uid, 'subtitle', (int)$e['id'], ['old' => $e['subtitle'], 'new' => $sub]);
         }
         return ['ok' => true];
     });
@@ -311,9 +319,11 @@ function gp_edition_delete(int $uid, array $in): array
     $e = gp_edition_row((string)($in['pid'] ?? ''));
     if (!gp_is_future($e)) throw new ApiError('מחירון שכבר היה בתוקף לא נמחק', 403);
     $copy = gp_edition($e['pid']);
-    foreach ($copy['rows'] as &$r) unset($r['html']);
-    unset($r, $copy['audiences']);
+    foreach ($copy['rows'] as &$r) unset($r['html'], $r['priced']);
+    unset($r, $copy['audience_name']);
     return gp_tx(function (PDO $pdo) use ($uid, $e, $copy) {
+        $copy['other_prices'] = $pdo->query('SELECT r.pid, p.audience, p.amount FROM prices p JOIN rows r ON r.id = p.row_id
+            WHERE r.edition_id = ' . (int)$e['id'] . " AND p.audience <> " . $pdo->quote($e['audience']) . ' AND p.amount IS NOT NULL')->fetchAll();
         $pdo->prepare('DELETE FROM prices WHERE row_id IN (SELECT id FROM rows WHERE edition_id = ?)')->execute([$e['id']]);
         $pdo->prepare('DELETE FROM rows WHERE edition_id = ?')->execute([$e['id']]);
         $pdo->prepare('DELETE FROM editions WHERE id = ?')->execute([$e['id']]);
