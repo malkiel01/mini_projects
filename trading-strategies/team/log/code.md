@@ -160,3 +160,4 @@
   ⚪3 שורה אחת לעסקה — בדיקה לפי (`source = 'trade'`, `trade_id`) לפני הכתיבה.
   ⚪4 CSV: `trade_id` (כמו `user_id`) — רק לעורך הראשי.
   בדיקות: `learn-live.php` 32 → 39, `learn-live-api.php` 17 → 18. כל `tests/*.php` ירוקים; `learn-ui`, `learn-switch-ui` ירוקים.
+- 2026-11-16 — פיבונאצ'י, `learn_params` (23.9, L5b אחרי #1709; בקרה (8)): stop_atr (צעד 0.25), box_target (0.5 / 0.618 / 1), zone_atr (צעד 0.1). משנה ספירה: לא — אותות זהים ל-main, `zones.json` זהה. `fibonacci-f3.php` — 32 (שכנים בתוך 22.10).

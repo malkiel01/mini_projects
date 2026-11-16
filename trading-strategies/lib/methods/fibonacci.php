@@ -63,6 +63,8 @@ final class TsMethodFibonacci extends TsMethod
             'incremental' => true,
             'alerts' => true,         // 22.1
             // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            // השוואת שכנים (23.9, L5b): אילו פרמטרים נבדקים צעד אחד למטה ולמעלה, בתוך הטווח של 22.10. box_target — רק משלושת הערכים
+            'learn_params' => ['stop_atr' => ['step' => 0.25], 'box_target' => ['values' => [0.5, 0.618, 1]], 'zone_atr' => ['step' => 0.1]],
             'learn' => [
                 'score' => 'ציון האזור (כולל Z6)',
                 'zone_atr' => 'רוחב האזור ב-ATR (בנר שלפני האות)',
