@@ -31,6 +31,46 @@
   </form>
 </dialog>
 
+<dialog id="row-dlg" aria-labelledby="row-title">
+  <form id="row-form">
+    <div class="sheet-head"><h2 id="row-title">שורה</h2><button class="icon-btn" type="button" data-close aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <label class="f"><span>הטקסט</span><input id="row-label" maxlength="200" autocomplete="off" required></label>
+      <p class="hint">**מודגש** · __קו תחתון__ · ((קטן ורגיל))</p>
+      <div class="preview" id="row-preview" aria-live="polite"></div>
+      <div class="fields two">
+        <label class="f"><span>סוג</span><select id="row-kind">
+          <option value="section">כותרת חלקות</option><option value="subsection">כותרת קבורה</option>
+          <option value="heading">כותרת משנה</option><option value="item">שורת מחיר</option>
+          <option value="fee">תשלום נלווה</option><option value="note">הערה</option></select></label>
+        <label class="switch"><input type="checkbox" id="row-indent"><span>מוזחת</span></label>
+      </div>
+      <p class="error" id="row-err" hidden></p>
+      <div class="row-btns wrap" id="row-tools">
+        <button class="btn ghost" type="button" data-act="up">↑ למעלה</button>
+        <button class="btn ghost" type="button" data-act="down">↓ למטה</button>
+        <button class="btn ghost" type="button" data-act="add">➕ שורה מתחת</button>
+        <button class="btn ghost danger" type="button" data-act="del">🗑️ מחיקה</button>
+      </div>
+    </div>
+    <div class="sheet-foot"><button class="btn primary">שמירה</button></div>
+  </form>
+</dialog>
+
+<dialog id="hist-dlg" aria-labelledby="hist-title">
+  <form method="dialog">
+    <div class="sheet-head"><h2 id="hist-title">📜 שינויים</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
+    <div class="sheet-body" id="hist-body"></div>
+  </form>
+</dialog>
+
+<dialog id="ask-dlg" class="ask" aria-labelledby="ask-msg">
+  <form method="dialog">
+    <div class="sheet-body"><p id="ask-msg"></p></div>
+    <div class="sheet-foot"><button class="btn ghost" value="">ביטול</button><button class="btn primary" value="ok" id="ask-ok">אישור</button></div>
+  </form>
+</dialog>
+
 <script src="assets/js/devloop.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
