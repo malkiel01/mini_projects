@@ -665,6 +665,72 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 20) {
+        // למידה, L5 (spec-stage-a 23.9): ערך בתוך הטווח ← הצעת S7, גם לפלח שוק × מסגרת. ADD / CREATE בלבד.
+        // methods.seg_params — {"forex|h1": {"stop_atr": 0.6}}: ערך של פלח שהוחל; השיטה משתמשת בו כשהוא קיים, ובכללי בשאר.
+        // method_proposals.segment ('' = כללי), .origin (admin = הוזן ביד, learning = מהסטטיסטיקה), .stats (הסטטיסטיקה, רווח
+        // הסמך ו-N). learning_values — כמה שורות היו כשהסטטיסטיקה חושבה לאחרונה (הצעה כל 30 שורות חדשות לפלח)
+        // אידמפוטנטית: ADD COLUMN רק לעמודה שאין (SQLite בלי IF NOT EXISTS לעמודה; roles-api מריץ שוב מ-17)
+        // טבלה שאין בכלל (מסד בדיקה חלקי) — לא נוגעים בה
+        $has = function (string $t, string $c) use ($db): bool {
+            $cols = array_column($db->query("PRAGMA table_info($t)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+            return !$cols || in_array($c, $cols, true);
+        };
+        $add = ($has('methods', 'seg_params') ? '' : "ALTER TABLE methods ADD COLUMN seg_params TEXT NOT NULL DEFAULT '{}';\n")
+            . ($has('method_proposals', 'segment') ? '' : "ALTER TABLE method_proposals ADD COLUMN segment TEXT NOT NULL DEFAULT '';\n")
+            . ($has('method_proposals', 'origin') ? '' : "ALTER TABLE method_proposals ADD COLUMN origin TEXT NOT NULL DEFAULT 'admin';\n")
+            . ($has('method_proposals', 'stats') ? '' : "ALTER TABLE method_proposals ADD COLUMN stats TEXT;\n");
+        $db->exec("BEGIN;\n" . $add . <<<'SQL'
+            CREATE TABLE IF NOT EXISTS learning_values (
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                segment TEXT NOT NULL,
+                param TEXT NOT NULL,
+                n_at INTEGER NOT NULL,
+                result TEXT NOT NULL,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, method_version, source, segment, param)
+            );
+            PRAGMA user_version = 20;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 21) {
+        // למידה, L5b (spec-stage-a 23.9, 2.37): השוואת שכנים. learning_values.detail — הפירוט של ההשוואה האחרונה (t_cut, N בכל
+        // חלק, ולכל שכן — תוחלת R בתוך הדגימה ומחוצה לה, מספר ההרצות), למסך "למידה" (23.10). ADD בלבד, אידמפוטנטית (כמו 20)
+        // learning_values.deferred — כמה פעמים ברצף ההשוואה נדחתה בגלל זמן (3 → too_big, ביקורת L5b 🟡)
+        $cols = array_column($db->query('PRAGMA table_info(learning_values)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $db->exec("BEGIN;\n" . ($cols && !in_array('detail', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN detail TEXT;\n" : '')
+            . ($cols && !in_array('deferred', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0;\n" : '')
+            . "PRAGMA user_version = 21;\nCOMMIT;");
+    }
+    if ($v < 22) {
+        // למידה — מקור live (23.4, L2): ההמשך של מנוע הבדיקה לאחור על נרות סגורים חדשים, בשביל אותות שקרו **אחרי** הבדיקה.
+        // שורה לכל בדיקה לאחור שמורה (אותו מפתח כמו backtests). base_t — ה-to_t של הבדיקה כשהתחלנו ממנה: עסקה שהאות שלה
+        // עד base_t שייכת לבדיקה לאחור, ולא נכתבת כ-live. גרסה או פרמטרים אחרים — מתחילים מחדש מהבדיקה העדכנית.
+        // CREATE בלבד — לא נוגע בשום נתון קיים. ב-data/app.sqlite (כבר מוחרג); אין --exclude חדש
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS learn_live (
+                method_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                method_version INTEGER NOT NULL,
+                params_hash TEXT NOT NULL,
+                base_t INTEGER NOT NULL,
+                last_t INTEGER NOT NULL,
+                state TEXT NOT NULL,
+                written INTEGER NOT NULL DEFAULT 0,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, provider, asset, tf, cred_scope)
+            );
+            PRAGMA user_version = 22;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */

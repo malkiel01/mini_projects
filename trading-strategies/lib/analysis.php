@@ -149,7 +149,20 @@ function ts_method_settings(string $id): array
         'timeframes' => $r ? (json_decode($r['timeframes'], true) ?: $m['timeframes']) : $m['timeframes'],
         'params' => $r ? (json_decode($r['params'], true) ?: []) : [],
         'note' => $r ? $r['note'] : '',
+        // ערכים לפלח שוק × מסגרת שהוחלו (23.9, L5) — {"forex|h1": {param: value}}
+        'seg_params' => $r && isset($r['seg_params']) ? (json_decode((string)$r['seg_params'], true) ?: []) : [],
     ];
+}
+
+/**
+ * הפרמטרים של שיטה על נכס ומסגרת (23.9, L5): הכלליים, ועליהם — הערך של הפלח שוק × מסגרת, אם הוחל. רק מפתחות שהשיטה מכירה,
+ * ודרך params() (המרה ל-int / float). הטווח של הערך **נשמר ביצירת ההצעה** (ts_learn_neighbors — אין מועמד מחוץ לטווח), לא כאן. בלי ערך לפלח — $p כמו שהוא.
+ */
+function ts_params_for_segment(TsMethod $m, array $set, array $p, string $asset, string $tf): array
+{
+    $seg = $set['seg_params'][ts_asset_market($asset) . '|' . $tf] ?? null;
+    if (!is_array($seg) || !$seg) return $p;
+    return $m->params(array_intersect_key($seg, $m->meta()['params']) + ($set['params'] ?? []));
 }
 
 /** שיטה מהספר = שיטת קוד ש-sample שלה לא true (18.1.2) */
@@ -445,6 +458,7 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
         } catch (Throwable $e) {
             error_log('trading-strategies learning findings: ' . $e->getMessage());
         }
+        // ערך בתוך הטווח (23.9, L5b) — לא כאן: השוואת השכנים רצה ב-cron בלבד (ts_learn_cron), לא בבקשה של המשתמש
     }
     if (!$complete) {
         if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
@@ -728,7 +742,7 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
             $cards[] = $card + ['status' => 'unsupported', 'message' => 'השיטה לא מוגדרת לשוק או למסגרת הזמן הזו', 'bias' => 'none', 'certainty' => null];
             continue;
         }
-        $p = ts_params_for_asset($m, $p, $dec);
+        $p = ts_params_for_asset($m, ts_params_for_segment($m, $set, $p, $asset, $tf), $dec);
         // הבדיקה לאחור קודם — הכרטיס של שיטה עם מצב ארוך ממשיך מהמצב שלה (ו1)
         $bt = $runBt ? ts_backtest($uid, $m, $p, $asset, $tf, $market, $now) : ts_backtest_stored($uid, $m, $p, $asset, $tf, $market, $now);
         [$a, $basis] = ts_card_analyze($m, $p, $asset, $tf, (string)$acc['scope'], $rows, $fl, $bt,
@@ -736,7 +750,11 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
         $lv = $a['levels'];
         $levels = $lv ? ['entry' => ts_level_str($lv['entry'], $dec), 'stop' => ts_level_str($lv['stop'], $dec), 'target' => ts_level_str($lv['target'], $dec)] : null;
         $calls += $bt['provider_calls'] ?? 0;
+        // 23.7 (L6): המספר הראשי — "ראשונית", מהבדיקה לאחור. live — שורה שנייה בלבד; מתחלף רק אחרי "החלף לבפועל" של העורך הראשי
+        $live = ts_learn_live_line($meta['id'], (int)$meta['version'], $market, $tf);
         $cert = $bt['certainty'] ?? null;
+        $certBasis = 'backtest';
+        if ($live && $live['switched'] && $live['certainty'] !== null) { $cert = $live['certainty']; $certBasis = 'live'; }
         $risk = null;
         if ($levels && $levels['stop'] !== null) {
             $dist = dec_abs(dec_sub($levels['entry'], $levels['stop']));
@@ -754,7 +772,7 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
             // מידע בלבד (פיבונאצ'י S25): לא תנאי — לא נספר, ולא "בדוק בעצמך"
             'info' => array_map(fn($x) => ['id' => $x['id'], 'text' => $x['text']], $a['info'] ?? []),
             'basis' => $basis, 'param_notes' => ts_param_notes($m),
-            'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
+            'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert, 'certainty_basis' => $certBasis, 'live' => $live,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,
             'max_horizon' => ts_max_horizon($m, $p, $asset, ts_bt_read_scopes($uid, $provider))];
     }

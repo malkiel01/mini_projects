@@ -20,8 +20,127 @@
 > **עדכון 2026-11-16 (צ'אט bt-incomplete):** בדיקה לאחור חלקית נשמרת (`bt_partial`) וממשיכה. **`cache.sqlite` — המיגרציה הבאה 6.** הסעיף "בדיקה לאחור שלא הספיקה" בסוף.
 > **עדכון 2026-11-16 (צ'אט T1):** חלונית ההסבר על הגרף (18.1.6) — הסעיף "T1 — חלונית הסבר" בסוף.
 > **עדכון 2026-11-16 (צ'אט L1):** למידה עצמית — `method_outcomes` ו-backtest. **`app.sqlite` — המיגרציה הבאה 18; `cache.sqlite` — 6.** הסעיף "L1 — למידה עצמית" בסוף.
+> **עדכון 2026-11-16 (צ'אט L6):** L6 בנוי — הסעיף "L6 — בנוי" בתוך "התחל כאן — למידה". **בלי מיגרציה — `app.sqlite` הבאה עדיין 23.** פרק 23 (L1–L6) גמור בקוד.
 > **עדכון 2026-11-16 (צ'אט R1):** עורך ראשי / עורך משני / משתמש (פרק 24) — הסעיף "R1 — תפקידים" בסוף. **מיגרציה 18 = `app_roles` (R1, אחרי 17 של L1). הבאה — 19 (`app.sqlite`); `cache.sqlite` — 6.**
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
+
+
+> **עדכון 2026-11-16 (צ'אט הלמידה — err500, bt-incomplete, L1, L3, L4, L5, L5b; נסגר ב-~780K):** הסעיף הבא, "התחל כאן — למידה", הוא
+> ההעברה המלאה. ~~המיגרציה הבאה 22~~ — נלקחה ב-L2 (`learn_live`). **`app.sqlite` — הבאה 23; `cache.sqlite` — 6.** ~~הבא בתור: L6~~ — בנוי (צ'אט L6).
+
+## התחל כאן — למידה (פרק 23): מה בנוי, מה הבא, מה חייבים
+
+### מה בנוי וממוזג (או ב-PR האחרון)
+
+| פרוסה | PR | הקבצים | הלב |
+| --- | --- | --- | --- |
+| err500 | #1686 | `lib/pdo.php`, `api.php` | `TsStmt` סוגר סמן אחרי `fetch` / `fetchColumn` — **אין `while ($r = $st->fetch())`**, רק `fetchAll` + `foreach`. `ts_server_error` — 500 עם פעולה ושיטה ביומן |
+| bt-incomplete | #1692 | `lib/analysis.php`, `lib/cache.php` (מיג' 5) | בדיקה לאחור שלא הספיקה נשמרת ב-`bt_partial` וממשיכה מאותה נקודה; לריצה יש חלון זמן משלה (`$runUntil`) |
+| L1 | #1699 | `lib/learn.php`, `lib/learn/holidays.json` (+ `holidays-build.php`), מיג' 17 | `method_outcomes` — שורה לכל עסקה שהסתיימה (`INSERT OR IGNORE`); `ts_bt_run(..., $onTrade)` נותן גם `mae_r`, `mfe_r`, `atr`, `features`; התגיות (23.5). `users.learn_off` כבר קיים — **ל-L2** |
+| L3 | #1703 | `lib/learn.php`, `api.php` (`admin_learn`, `admin_learn_csv`), `assets/js/analysis.js` (`learnPanel`) | הלשונית "📚 למידה": N לפי גרסה ומקור, טבלת פלחים עם N ≥ 30, CSV (גרש לפני `= + - @`; `user_id` רק לראשי) |
+| L4 | #1706 | `lib/learn.php`, מיג' 19 (`learning_findings`) | שינוי דפוס: פלח מול השאר ו-30 האחרונות; שני-פרופורציות + Welch, p < 0.01; ממצא חריג → DevLoop בלי כפילות |
+| L5 | #1707 | `lib/tune.php`, `lib/analysis.php`, מיג' 20 | התשתית: `methods.seg_params` + `ts_params_for_segment`, הצעה לפלח (`method_proposals.segment/origin/stats`), `ts_seg_param_clear` (↺ בטל) |
+| L5b | #1709 | `lib/learn.php`, `lib/alerts.php`, מיג' 21 | השוואת שכנים (2.37) — ב-cron בלבד. פירוט למטה ("L5 / L5b") |
+
+### איך הלמידה רצה היום
+
+- **כתיבה:** רק `backtest`, מתוך `ts_backtest` (בקשת `analysis` של המשתמש) — השורות, ואחר כך `ts_learn_findings_sync` (L4). שום דבר
+  יקר לא רץ שם.
+- **cron** (`bin/alerts-cron.php` → `ts_alerts_run`, כל 15 דקות, 240 שניות): התראות → יומן (S6) → מילוי (21.2) → **`ts_learn_cron`**
+  (עד 90 שניות, אותו `$used` / `$budget` לדקה) → ניקוי. הסיכום ב-`settings.alerts_cron` ובלוג `data/alerts-cron.log` (`learn: {evaluated,
+  proposals, edges, runs_in, runs_out, deferred, too_big, errors, log[]}`).
+- **סדר הוגן** בלמידה: תור אחד מכל השיטות, `learning_values.at` הישן קודם; דחייה בגלל זמן → לסוף התור ו-`deferred + 1`; שלוש ברצף →
+  `too_big` + פריט DevLoop אחד, וחוזר ל-due רק אחרי 30 שורות חדשות. דחייה בגלל תקציב — לא נספרת.
+- **מי מצהיר מה:** `sample-ma-cross` (stop/target, צעד 0.5), `elliott-w3` (`w3_mult` — ערכי הספר). **פיבונאצ'י — עוד לא** (ההצהרה אצל
+  קוד פיבונאצ'י; השורה המדויקת בסעיף L5/L5b למטה).
+
+### L2 — בנוי (`live` ו-`trade`, מיגרציה 22)
+
+- **live:** `ts_learn_live_cron` — ב-cron אחרי המילוי ולפני `ts_learn_cron`. המצב ב-`learn_live` (מפתח כמו `backtests`); `base_t` — עסקה
+  שהאות שלה עד שם שייכת לבדיקה לאחור. גרסה / hash אחרים → מדלג (הכרטיס הבא יחשב בדיקה, ואז מתחיל מחדש). רק `cred_scope = ''`.
+  בסיכום ה-cron: `learn_live: {checked, advanced, written, skipped, private, deferred, errors}`.
+- **trade:** `ts_learn_trade($uid, $tradeId)` מ-`ts_trade_save`. `params_hash = ''`; `t_signal` = `as_of` של התמונה; בלי תמונה — אין שורה.
+- **המתג:** `learn_off_set`, `me.user.learn_off`, `learnBlock()` בפרופיל (`analysis.js`).
+- **ל-L6:** שורות `live` לשיטה וגרסה, ב-`market × tf` — `SELECT … FROM method_outcomes WHERE source = 'live' AND method_id = ? AND method_version = ? AND market = ? AND tf = ?`.
+  L4 / L5b עדיין רצים רק על `backtest`.
+
+### היה: L2 — `live` ו-`trade` (23.4, קריטריונים L2 1–4)
+
+- **`live`:** ב-cron — אות של השיטה **אחרי** הבדיקה לאחור, על נרות סגורים, שהגיע ליציאה. אותו מנוע (`ts_bt_run` עם `$onTrade`), אותו R.
+  - המקור הטבעי: מצב המנוע השמור (`backtests.state`, מצטבר) — להמשיך ממנו על הנרות החדשים, ולכתוב רק עסקאות עם `t_signal` אחרי
+    `to_t` של הבדיקה. `ts_outcomes_write` עם `source = 'live'` (המפתח הייחודי מונע כפילות).
+  - לרוץ **באותו תקציב** (`$used`, `$budget`) — כמו `ts_journal_resolve`. לשים לפני `ts_learn_cron` (הלמידה אחרונה).
+  - קריטריון 1: אותו R כמו המנוע — בדיקה שמשווה לריצה מלאה על אותם נרות.
+- **`trade`:** בסגירת עסקה ביומן העסקאות עם `method_id` ו-`planned_stop` → שורה `trade` (R לפי `planned_stop`). בלי `planned_stop` — אין.
+  - `users.learn_off = 1` → אין שורה (ל3 / ✅36). צריך מתג בהגדרות המשתמש (אין עדיין UI).
+  - `user_id` — רק בשורת `trade`, **לא מוצג לאיש מלבד העורך הראשי** (`ts_learn_csv(..., $withUser)` כבר מכבד את זה; כל תשובה חדשה —
+    לבדוק).
+- **הלשונית כבר מציגה כל מקור** (`select[name="learn-source"]`), ו-L4 / L5b רצים היום רק על `backtest`.
+
+### היה: L6 — ההסתברות בכרטיס (23.7, קריטריונים L6 1–3) — **בנוי, הסעיף "L6 — בנוי" למטה** — **צ'אט קוד חדש** (צ'אט R1+L2 נסגר ב-~520K)
+
+**על מה זה נשען (L2, #1711, ממוזג):**
+- **שורות `live`** — `method_outcomes` עם `source = 'live'`, `params_hash` של הבדיקה לאחור, `cred_scope = ''`, ו-`market`/`tf` של הנכס.
+  נכתבות ב-cron (`ts_learn_live_cron`) — רק אותות אחרי `base_t` (ה-to_t של הבדיקה כשההמשך התחיל). לא נוצרות בבדיקות ממשק — בבדיקה
+  של L6 לכתוב אותן ישר (`ts_outcomes_write([... 'source' => 'live' ...])`), או להריץ את ה-cron עם `$load` (ראו `tests/learn-live.php`).
+- **⚪ מהבקרה — חפיפה backtest / live:** כשהבדיקה לאחור מחושבת מחדש (to_t מתקדם), עסקה שכבר נכתבה כ-`live` נכתבת **גם** כ-`backtest`
+  (מקור אחר — מפתח אחר). לכן: "ראשונית" — רק `backtest`; "בפועל מאז" — רק `live`; **אף פעם לא לחבר את שני המקורות** (23.7 "לא
+  מערבבים"). מי שרוצה "בפועל מאז הבדיקה הנוכחית" — לסנן `live` לפי `t_signal > backtests.to_t`, ולרשום את ההחלטה.
+- **השהיה ב-`learn_live`:** `state = ''` = ה-hash לא תאם (פרמטרים / עמלות שהשתנו) — ממתין לבדיקה לאחור חדשה. אין שורות live חדשות
+  לבדיקה כזו עד אז.
+- **שורות `trade`** (`params_hash = ''`) — לא נכנסות ל-L6 (23.7 מדבר על `live`).
+
+**מה לבנות (23.7):**
+- רמת הפלח — `market × tf` של הגרף; N < 30 שם → השיטה וגרסתה בכל השווקים, עם "כללי — לא לשוק הזה" (ל2).
+- הנוסחה — Wilson כמו היום (`ts_certainty`, N ≥ 30). 29 → אין שורה שנייה.
+- "החלף לבפועל" — הצעה לעורך ראשי בלבד (`ts_require_chief`), כמו הצעות S7 (`method_proposals`, `origin`), כשרווחי הסמך לא חופפים.
+  שורה ב-`$ROWS` של `tests/roles-api.php` (24.2).
+
+- רק `backtest` → "ראשונית — מבדיקה לאחור (N = …)". 30 שורות `live` → שורה שנייה "בפועל מאז: X% (N = 30)"; 29 → אין.
+
+- רק `backtest` → "ראשונית — מבדיקה לאחור (N = …)". 30 שורות `live` → שורה שנייה "בפועל מאז: X% (N = 30)"; 29 → אין.
+- המספר הראשי לא מתחלף לבד. רווחי סמך שלא חופפים → הצעה "החלף לבפועל" אצל העורך הראשי (בדומה להצעות S7).
+- הכרטיס: `ts_analysis_cards` (`lib/analysis.php`) ו-`chart_refresh` (`lib/refresh.php`); הוודאות — `ts_certainty` (Wilson).
+
+### חובות ודברים פתוחים
+
+- **פיבונאצ'י לא מצהיר `learn_params`** — עד שקוד פיבונאצ'י יוסיף, ההשוואה לא רצה עליו (הצהרה ישנה עם `stat` — מדולגת בשקט).
+- **ההשוואה מתחילה מאפס בכל ריצה** (נרות + הרצות). פלח כללי גדול → `too_big`. אם זה יקרה בשרת: לשמור התקדמות בין ריצות (מועמד
+  שהסתיים → `detail`), או נרות בזיכרון מטמון. היום — רק דיווח (DevLoop).
+- **זוג ממפתח אישי לא רץ אף פעם** בלמידה (`private_pairs` ב-`detail`). פלח שכולו כזה → `no_pairs`. אם יהיו משתמשים כאלה רבים — שאלה
+  לאפיון.
+- **`learning_findings.kind = 'value'`** משמש גם לקצה הטווח (`…|edge|…`) וגם ל-`too_big` (`…|too_big|…`) — המפתח מבחין ביניהם.
+- **בדיקות דפדפן במקביל:** `chart-f1-ui` ו-`method-colors-ui` נכשלות לפעמים כשרצות 4 בבת אחת (עומס), ועוברות לבד. לא של הלמידה.
+- **לא לגעת** (צ'אטים אחרים): `lib/fibonacci*`, `lib/methods/fibonacci.php`, `assets/js/forecast.js`; הרשאות (`app_roles`, מיג' 18).
+- **`lib/devloop.php` הוא עותק** — עורכים רק ב-`devloop/src` + `php devloop/tools/sync.php` (שער בפריסה).
+
+### L6 — בנוי (23.7, ענף `claude/trading-strategies-learning-l6`)
+
+- **השורה השנייה:** `ts_learn_live_line($method, $version, $market, $tf)` (`lib/learn.php`) — רק `live`, `cred_scope = ''`, בלי `skipped_gap`.
+  30 בשוק × מסגרת → `scope: segment`; פחות — השיטה וגרסתה **בכל השווקים ובכל המסגרות** (`scope: general`, `segment: ''`); פחות מ-30
+  גם שם → `null`. **כל** שורות ה-live של הגרסה, בלי סינון לפי `backtests.to_t` — הן אחרי `base_t` של הבדיקה שלהן מעצם הכתיבה.
+- **הכרטיס** (`ts_analysis_cards` → `analysis` ו-`chart_refresh`): `certainty_basis` (`backtest` | `live`) ו-`live` (`n`, `wins`, `win_pct`,
+  `certainty`, `ci`, `scope`, `segment`, `switched`). `certainty` הוא המספר הראשי — מ-live **רק** כש-`switched`. `backtest.certainty`
+  נשאר תמיד. בממשק — `liveLine` / `probability` ב-`assets/js/card.js` (`.basis-line`, `.live-line`).
+- **"החלף לבפועל":** `ts_learn_switch_sync($now)` ב-`ts_alerts_run`, אחרי `learn_live` ולפני `learn` (שאילתות בלבד). לכל שיטה בגרסה
+  הנוכחית — כל שוק × מסגרת עם 30 live, והרמה הכללית: Wilson [תחתון, עליון] של live מול backtest **של אותה רמה**, מאגר משותף, **בלי
+  עסקאות שיש להן גם שורת live** (אותו מפתח, מקור אחר — `ts_learn_backtest_apart`). לא חופפים → הצעה ב-`method_proposals` עם
+  `param = '@certainty'` (`TS_CERT_PARAM`), `origin = learning`, `results = {backtest, live}`; חופפים שוב → `stale`; כבר הוחלף → לא שוב.
+- **ההחלה:** `ts_tune_apply` — ענף מיוחד ל-`@certainty`: `status = applied`, `new_version = NULL`, `admin_log` `method_cert_live`. **לא נוגע
+  ב-`methods` ולא מעלה גרסה** (העלאה הייתה מאפסת את ה-live). "הוחלף" = הצעה `applied` לאותה שיטה, גרסה ורמה (`ts_learn_switched`) — לכן
+  **אין מיגרציה**. גרסה חדשה → מתחילה שוב מ"ראשונית". `ts_tune_row`: `@certainty` פתוחה → stale כשהגרסה זזה או כשכבר הוחלף.
+- **במסך השיטות:** `certCard` ב-`assets/js/analysis.js` (`.cert-prop`) — טבלה בדיקה לאחור מול בפועל (N, הצלחה, רווח סמך 95%), "החלף לבפועל".
+- ~~חוב: שורת הסיכום ב-`forecast.js`~~ — תוקן (L6.1): ה-`brief` מציג `certainty` ומקורו, "ראשונית" / "בפועל מאז". `forecast.js` משותף, לא של פיבונאצ'י (בקרה 8).
+- **אין דרך לבטל** "החלף לבפועל" באותה גרסה (רק גרסה חדשה). אם יידרש — שאלה לאפיון.
+
+### איך בודקים
+
+- `php trading-strategies/tests/<שם>.php` — כל אחד עצמאי (מסד זמני). הלמידה: `learn.php`, `learn-api.php`, `learn-stats-api.php`,
+  `learn-findings.php`, `learn-values.php`, `learn-values-api.php`; בדפדפן `node trading-strategies/tests/learn-ui.mjs` (SHOTS=<תיקייה> — צילומים).
+- שיטות בדיקה: `TS_TEST_METHODS=tests/fixtures/methods/learning.php` (`test-learn`, `test-neighbors`); הסטים הקבועים — `tests/fixtures/learn/sets.php`.
+- `ts_learn_cron(..., $load, $seconds)` — `$load` מזריק נרות בבדיקה, בלי רשת.
+- L6: `learn-card.php`, `learn-card-api.php`, `node trading-strategies/tests/learn-card-ui.mjs`.
+- לפני push: כל `tests/*.php` + `php platform/check-apps.php`.
 
 ## על מה S3 נשען — כבר בנוי
 
@@ -39,6 +158,10 @@
 - **`tests/no-polling.mjs`** — נמחק, כי סתר את ✅23. **S3 צריך בדיקה חדשה** שמוכיחה את ההפך: יש רענון כשהניתוח פעיל, ואין כשהלשונית מוסתרת או הניתוח כבוי — לפי 18.3.
 
 ## מוסכמות שגיליתי
+
+- **ציר הזמן — לפי שעון המשתמש** (`assets/js/chartaxis.js`): סימון חדש כש-`tickKey(t, step, kind, offset)` משתנה; `offset = tzOffset(ME().user.timezone)`.
+  **לא לחזור ל-`Math.floor(t / step)` או ל-`getUTC*` בלי offset** — בישראל זה מציג 02:00 / 14:00. התווית של הנר האחרון — `fmtTime(t, 'last')`,
+  נרשמת לפני שאר הסימונים ושומרת לה מקום. `tsAxis().last` — לבדיקות. בדיקות: `chartaxis-js.mjs`, `chart-axis-tz-ui.mjs`.
 
 - **שעון קבוע בבדיקות ממשק:** `X-Dev-Now` לשרת **וגם** `ctx.clock.setFixedTime(NOW * 1000)` לדפדפן (ראו `tests/forecast-ui.mjs`, `open()`).
   - בלי השעון בדפדפן, הבדיקה נכשלת לבד שבוע אחרי NOW.
@@ -516,3 +639,48 @@
 - `ts_learn_findings($m, $v, $source)` — טהור; כל ממצא עם `key`, `scope` (method/owner), המספרים ו-p. `ts_learn_findings_sync` — הצד (DevLoop).
 - **מתי רץ:** אחרי בדיקה לאחור שהוסיפה שורות. L2 (live) — לקרוא ל-sync גם אחרי כתיבת `live`, עם `source = 'live'`.
 - **L5 צריך:** ממצאים עם `scope = method` הם המקום להצעה לפלח. מיגרציה הבאה ב-`app.sqlite` — 20.
+
+## L5 / L5b — איפה למקם: השוואת שכנים (פרק 23, 2.37)
+
+- **שיטה שרוצה ללמוד פרמטר:** `meta()['learn_params'] = [param => ['step' => 0.25]]` או `[param => ['values' => [..]]]`. הטווח — min/max של
+  הפרמטר. פרמטר "מהספר" (`ours` לא true) — רק `values`. אליוט: `w3_mult` → `[1.0, 1.618, 2.618]`.
+- **פיבונאצ'י — הממשק מוכן, ההצהרה אצל קוד פיבונאצ'י** (לא נגעתי ב-`lib/methods/fibonacci.php`). מה שצריך שם, לפי 23.9:
+  `'learn_params' => ['stop_atr' => ['step' => 0.25], 'box_target' => ['values' => [0.5, 0.618, 1]], 'zone_atr' => ['step' => 0.1]]`
+  (ולמחוק את ה-`stat` הישנים, אם הוכנסו — הצהרה בלי step/values פשוט מדולגת). גודל הקופסה ב-features — לדיון/CSV בלבד, לא נדרש להשוואה.
+- **רץ רק ב-cron:** `ts_learn_cron` (מ-`ts_alerts_run`, אחרי המילוי). הנרות — `ts_bt_history(0, …)` בשם המערכת, תקציב לדקה משותף
+  (`$used`/`$budget`). זוג ממפתח אישי (`cred_scope` ≠ '') — נספר (`private_pairs`), לא רץ. אין יותר "🔍 חשב הצעות" / `admin_learn_propose`,
+  ואין קריאה מתוך `ts_backtest`.
+- **הסטים הקבועים:** `tests/fixtures/learn/sets.php` (widen / narrow) + שיטת `test-neighbors` (`tests/fixtures/methods/learning.php`) —
+  אות לפי זמן הנר, כך שאותם אותות גם כשההרצה מתחילה ב-`t_cut`.
+- **ערך לפלח:** `methods.seg_params`, נקרא ב-`ts_method_settings`, ומוחל ב-`ts_params_for_segment`. כל מקום חדש שמריץ שיטה על נכס+מסגרת —
+  לעבור דרכה (היום: `ts_analysis_cards`, `chart_refresh`).
+- **מיגרציה הבאה ב-`app.sqlite` — 22.**
+- **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
+  `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
+
+## הדמיית המשך (בקשת הבעלים, 2026-11-16)
+- **`forecast.js`:** `simOf(id)` (ב-`paint`, נשמר ב-`sims`) → `drawSim` (ב-`draw`, לפני התוויות). `simAlpha` ו-`SIM_LABEL` מיוצאים.
+- **החוזה:** משתמש רק ב-`forecast.scenarios[].points` — כל שיטה שמחזירה תרחיש עם נקודות מקבלת המשך, בלי קוד נוסף.
+- **התצוגה זזה ימינה** פעם אחת לכל צירוף שיטות + נר אחרון (`lastSimKey`), עד רבע מרוחבה — `scrollToRealTime` לא סופר נקודות ריקות.
+  - **בתוך `requestAnimationFrame` כפול.** `fitContent()` של Lightweight Charts מוחל במסגרת הבאה: `getVisibleLogicalRange()` מיד אחריו
+    מחזיר את הטווח הישן, ו-`setVisibleLogicalRange` דורס את ה-fit (הגרף נשאר על ~60 נרות). מי שמגדיר טווח אחרי `fitContent` — לחכות.
+- **האורך לפי מה שנטען** (`getTimes().length`), לא לפי התצוגה — אותה סיבה: התצוגה ברגע הציור תלויה בתזמון.
+- **`text(..., force)`** — תווית שמצוירת גם כשהיא חופפת. רק ל"הדמיית המשך — לא תחזית".
+## תנועות מגע על הגרף (gestures.js) — מה נבנה
+
+- `mountGestures({ chart, series: candle, box })` ב-`viewChart`. הספרייה: `vertTouchDrag: false`, `pinch: false`; הצביטה שלנו (capture על `box`, שתי אצבעות).
+- **ציר הנרות הוא `candle.priceScale()`**. `chart.priceScale('right')` לא משפיע על הנרות (שני הצירים מוסתרים, ו-`priceScaleId` של הסדרה ריק) — מי שמשנה שוליים/מצב לציר המחיר: דרך הסדרה.
+- `box.tsHeights()` לבדיקות: גובה הנרות הנראים, גובה הנפח, `k`, והאם האינדיקטורים על אותו ציר.
+- **בדיקת מגע:** CDP `Input.dispatchTouchEvent` עם `id` לכל אצבע; גלילת הדף נמדדת כסכום `scrollY` ו-`scrollTop` של האבות. אחרי כל תנועה ~1.5 ש' (קינטי).
+- **עדכון (גלילה בגרף, בקרה 9):** אצבע אחת — הספרייה (`horzTouchDrag`); שתי אצבעות — `gestures.js`: צביטה, או גרירה לגובה
+  שמזיזה את ציר המחיר (לרוחב — כלום). ההזזה — `autoscaleInfoProvider` על הנרות והאינדיקטורים; **סדרה חדשה על ציר המחיר צריכה
+  לקבל אותו `provider`** (`shifted` ב-`mountGestures`), אחרת היא לא תזוז עם הנרות. `.chart-reset` ("↺") בתוך `box`.
+  **הקפאה:** אחרי כיווץ/גרירה לגובה הטווח של כל סדרה מוקפא (`frozen`) עד "↺" או `gest.reset()` (נקרא ב-`load` במצבים open/change/manual).
+
+## תוויות קצרות וודאות בחלונית (בקשות הבעלים, 2026-11-16)
+- **`shortLabel(it)`** (forecast.js, מיוצא) — מה שמופיע על הגרף. שיטה שרוצה ניסוח משלה — שדה `label` בפריט (עד 3 מילים). הטקסט
+  המלא נשאר ב-`text`, ומוצג בחלונית כהסבר כשאין `tip.explain`.
+- **`text(ctx, s, …)`** — `s` מחרוזת או מערך שורות; `r.text` בלוח התוויות — השורות מחוברות ב-" · ". תוויות רמה: [ביטוי, מחיר].
+- **`certLine(card)`** — שורת הוודאות היחידה (כרטיס מקופל, חלונית). לא לשכפל את הכלל.
+- **למה הוודאות לא ב-`tip` בשרת:** תוצאת השיטה (`method_results`) נשמרת במטמון בלי "נבדקה לאחור" במפתח (18.3) — ודאות בתוכה הייתה
+  מתיישנת. הכרטיס (`an.cards`) מגיע באותה תשובה של `chart_refresh`.

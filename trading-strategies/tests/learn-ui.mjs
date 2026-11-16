@@ -1,4 +1,4 @@
-// למידה, L3, בדפדפן אמיתי (spec-stage-a 23.10): הלשונית "📚 למידה" בכרטיס השיטה — N לפי מקור וגרסה, טבלת פלחים עם
+// למידה, L3 / L5b, בדפדפן אמיתי (spec-stage-a 23.10): הלשונית "📚 למידה" בכרטיס השיטה — N לפי מקור וגרסה, השכנים וההיסטוגרמות, טבלת פלחים עם
 // מינימום N (פלח קטן — "אין מספיק נתונים (N)", אפור, בלי אחוז), מקור אחר — טבלה אחרת, וקישור ל-CSV. 390 ו-320, בלי גלילה לרוחב.
 // node trading-strategies/tests/learn-ui.mjs   (Playwright; בלי רשת. השורות נכתבות ישירות למסד — סט ידוע)
 // SHOTS=<תיקייה מחוץ לריפו> — צילומים ב-390 וב-320, בבהיר ובכהה.
@@ -53,7 +53,7 @@ try {
   execFileSync('php', ['-r', `
     $db = new PDO('sqlite:' . $argv[1]);
     $ins = $db->prepare("INSERT INTO method_outcomes (source, method_id, method_version, params_hash, provider, asset, tf, t_signal, t_exit, side, result, win, r,
-      market, month, quarter, weekday, hour, holidays, created_at) VALUES (?, 'sample-ma-cross', 1, 'h', 'binance', 'binance:BTCUSDT', 'h1', ?, ?, 'long', ?, ?, ?, 'crypto', 3, 1, ?, 10, '[]', 0)");
+      market, month, quarter, weekday, hour, holidays, created_at, entry, stop, atr, mae_r, mfe_r) VALUES (?, 'sample-ma-cross', 1, 'h', 'binance', 'binance:BTCUSDT', 'h1', ?, ?, 'long', ?, ?, ?, 'crypto', 3, 1, ?, 10, '[]', 0, '100', '98', '1', 0.4, 1.2)");
     $k = 0;
     $add = function ($src, $wd, $win) use ($ins, &$k) { $k++; $ins->execute([$src, 1700000000 + $k * 3600, 1700007200 + $k * 3600, $win ? 'win' : 'loss', $win ? 1 : 0, $win ? 2.0 : -1.0, $wd]); };
     for ($i = 0; $i < 30; $i++) $add('backtest', 5, $i < 15);
@@ -71,12 +71,21 @@ try {
     'a segment of 29 — "not enough data (29)", no percentage');
   eq(await dayRow('רביעי').locator('td').last().evaluate(e => getComputedStyle(e).color) !== await dayRow('שישי').locator('td').last().evaluate(e => getComputedStyle(e).color),
     true, '… and grey');
-  eq([await d.locator('h3.learn-h').textContent(), await d.locator('.learn-none').count()], ['שינויי דפוס (p < 0.01)', 1],
+  eq([await d.locator('h3.learn-h').first().textContent(), await d.locator('.learn-none').count()], ['שינויי דפוס (p < 0.01)', 1],
     'L4: the pattern-changes section — here, without findings (50% vs 34% in 30/29 — not significant)');
+  eq(await d.locator('.learn-values li').evaluateAll(ls => ls.map(l => [l.dataset.param, l.dataset.segment, l.dataset.status])),
+    [['stop_atr', '', 'not_enough'], ['target_atr', '', 'not_enough'], ['stop_atr', 'crypto|h1', 'not_enough'], ['target_atr', 'crypto|h1', 'not_enough']],
+    'L5b: where to place — each learnable parameter × segment; 59 trades → fewer than 30 out of the sample');
+  eq(await d.locator('.learn-values li').first().locator('.hint').textContent(), 'נוכחי 2 · שכנים 1.5 / 2 / 2.5 · טווח 0.5–10 · 41 בתוך הדגימה, 18 מחוצה לה (N ≥ 30 בכל חלק)',
+    '… the current, the neighbors (one step each way), and N in each part');
+  eq(await d.getByRole('button', { name: /חשב הצעות/ }).count(), 0, 'L5b: no "compute" button — the comparison runs only in the cron');
+  eq([await d.locator('.learn-hist').count(), await d.locator('.learn-cut').textContent().then(t => t.startsWith('חתוך בסטופ וביעד הנוכחיים'))], [2, true],
+    'criterion 7: MAE / MFE histograms, "cut at the current stop and target" — for discussion only');
   eq(await d.locator('tbody[data-dim]').evaluateAll(bs => bs.map(x => x.dataset.dim)), ['total', 'market', 'tf', 'market_tf', 'month', 'quarter', 'weekday', 'hour', 'holidays'],
     'the total, then every tag, and market × tf');
   const href = await d.getByRole('link', { name: /CSV/ }).getAttribute('href');
   eq(href.includes('action=admin_learn_csv') && href.includes('method=sample-ma-cross') && href.includes('source=backtest'), true, 'the CSV link — of this method and source');
+  eq(await d.evaluate(e => e.textContent.includes('null')), false, 'no stray "null" text (an empty part)');
   eq(await noHScroll(o), true, '390: no horizontal scroll');
   await shot(o, 'learn-390-light');
 

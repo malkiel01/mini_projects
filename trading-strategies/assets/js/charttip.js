@@ -8,6 +8,8 @@
 // - **לחיצה ולא גרירה:** הורדה והרמה בלי תזוזה. גרירה, צביטה או גלגלת של הגרף — סוגרות. כלי ציור פעיל — אין חלונית.
 //   סגירה גם ב-✕, Esc ולחיצה מחוץ לחלונית. לחיצה על פריט אחר — מחליפה (חלונית אחת).
 // - **רענון:** אחרי כל ציור מחדש (forecast.onPaint) — אותו פריט במקום החדש שלו; נעלם — נסגרת.
+// - **גרירה (בקשת הבעלים, 2026-11-16):** החלונית חצי שקופה, וניתנת לגרירה בלי להיסגר — כדי שלא תסתיר את הגרף. נגררה — חץ
+//   מהחלונית אל הנקודה וטבעת עליה, עד שסוגרים (✕, Esc, לחיצה מחוץ) או לוחצים על נקודה אחרת (שם — שוב במקום הרגיל).
 // - **מקום:** בתוך גבולות הגרף, ולא על המקרא. בתוך `.chart-wrap` — כך גם במסך מלא ובשכבה המסובבת (המיקום מ-offsetLeft/Top —
 //   פריסה, לא מסך; המגע כבר מומר לשכבה ב-rotate.js).
 
@@ -19,7 +21,7 @@ const WIDTH = 280;     // 18.1.6 סעיף 3: עד 280px, או 85% מרוחב ה�
 
 const KIND_NAME = { label: 'נקודה של השיטה', marker: 'סימון של השיטה', zone: 'אזור של השיטה', hline: 'רמה של השיטה', polyline: 'קו של השיטה' };   // בלי tip ובלי text
 
-/** התוכן של החלונית: {title, sub: [ערכים], tag, explain, inv: {price, below, rule} | null, links: [{label, href}]} */
+/** התוכן של החלונית: {title, cert — שורת הוודאות של הכרטיס או null, sub: [ערכים], tag, explain, inv: {price, below, rule} | null, links: [{label, href}]} */
 export function tipContent(hit, fmtTime) {
   const { it, price } = hit;
   const tip = it.tip && typeof it.tip === 'object' ? it.tip : {};
@@ -30,11 +32,14 @@ export function tipContent(hit, fmtTime) {
   else if (it.kind === 'hline') sub = [price(it.price)];
   else sub = [hit.p != null ? price(hit.p) : '', hit.t != null ? fmtTime(hit.t) : ''].filter(Boolean);
   const iv = tip.invalidation;
+  // בלי tip: הכותרת — הביטוי הקצר שעל הגרף, וההסבר — הטקסט המלא של הפריט (בקשת הבעלים: "בחלונית יוצג ההסבר")
+  const title = tip.title || ((it.label || it.text) && hit.short) || it.text || KIND_NAME[it.kind] || 'פריט';
   return {
-    title: tip.title || it.text || KIND_NAME[it.kind] || 'פריט',
+    title,
+    cert: hit.cert || null,
     sub,
     tag: `${hit.name} · ${it.scen ? 'תרחיש' : 'ממצא'}`,
-    explain: tip.explain || null,
+    explain: tip.explain || (it.text && it.text !== title ? it.text : null),
     inv: iv && Number.isFinite(+iv.price) ? { price: price(iv.price), below: iv.side !== 'above', rule: iv.rule || '' } : null,
     // רק קישורים בתוך האפליקציה (השרת כבר בודק — ts_overlay_check)
     links: Array.isArray(tip.links) ? tip.links.filter(l => typeof l?.href === 'string' && l.href.startsWith('#/') && l.label) : [],
@@ -57,6 +62,7 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     if (!tip) return;
     const had = tip.el.contains(document.activeElement);
     tip.el.remove();
+    tip.pin?.remove();
     tip = null;
     if (focus || had) box.focus({ preventScroll: true });
   }
@@ -80,12 +86,13 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     tip.el.replaceChildren(h('div', { class: 'ctip-body' },
       h('div', { class: 'ctip-head' }, h('b', { class: 'ctip-title', id: tid }, c.title), x),
       c.sub.length ? h('small', { class: 'ctip-sub' }, ...c.sub.flatMap((v, i) => [i ? ' · ' : '', h('bdi', {}, v)])) : null,
-      h('p', { class: 'ctip-row' }, h('span', { class: 'ctip-tag' }, c.tag)),
+      h('p', { class: 'ctip-row' }, h('span', { class: 'ctip-tag' }, c.tag), c.cert ? h('b', { class: 'ctip-cert num' }, c.cert) : null),
       c.explain ? h('p', { class: 'ctip-text' }, c.explain) : null,
       c.inv ? h('p', { class: 'ctip-inv' }, h('span', { class: 'ctip-tag danger' }, 'מתבטל אם'), ' ',
         `מחיר ${c.inv.below ? 'מתחת ל-' : 'מעל ל-'}`, h('bdi', { class: 'num' }, c.inv.price), c.inv.rule ? ` — ${c.inv.rule}` : '') : null,
       links.length ? h('p', { class: 'ctip-links' }, ...links) : null,
       h('small', { class: 'ctip-note' }, '⚖️ לפי כללי השיטה — לא ייעוץ השקעות')),
+      h('span', { class: 'ctip-grip', 'aria-hidden': 'true' }),
       h('i', { class: 'ctip-tail', 'aria-hidden': 'true' }));
     if (focused) x.focus({ preventScroll: true });
     place();
@@ -95,13 +102,15 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     if (!tip) {
       const el = h('div', { class: 'ctip', role: 'dialog' });
       wrap.append(el);
-      tip = { el, hits, i: 0 };
-    } else Object.assign(tip, { hits, i: 0 });   // פריט אחר — מחליפה, לא שנייה
+      tip = { el, hits, i: 0, pos: null, pin: null };
+      dragTip(el);
+    } else Object.assign(tip, { hits, i: 0, pos: null });   // פריט אחר — מחליפה, לא שנייה, ובמקום הרגיל (לא איפה שנגררה)
     render();
     tip.el.querySelector('.ctip-x').focus({ preventScroll: true });
   }
 
-  // המיקום: הזנב על הנקודה. מעל — אם יש מקום (ולא על המקרא); אחרת מתחת; אחרת איפה שיותר. בגבולות הגרף, במערכת של wrap
+  // המיקום: הזנב על הנקודה. מעל — אם יש מקום (ולא על המקרא); אחרת מתחת; אחרת איפה שיותר. בגבולות הגרף, במערכת של wrap.
+  // נגררה (tip.pos) — נשארת איפה שהמשתמש שם אותה, וחץ מהחלונית מצביע על הנקודה (pin)
   function place() {
     const { el } = tip, hit = tip.hits[tip.i];
     const bx = box.offsetLeft, by = box.offsetTop, bw = box.clientWidth, bh = box.clientHeight;
@@ -109,6 +118,10 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     const body = el.firstChild;
     el.style.inlineSize = Math.min(WIDTH, Math.round(bw * 0.85)) + 'px';
     body.style.maxBlockSize = '';
+    if (tip.pos) { placeDragged(ax, ay); return; }
+    delete el.dataset.dragged;
+    tip.pin?.remove();
+    tip.pin = null;
     const lg = legend();
     const top0 = lg && !lg.hidden && lg.offsetHeight ? Math.max(by + EDGE, lg.offsetTop + lg.offsetHeight + 4) : by + EDGE;
     const roomUp = ay - GAP - top0, roomDown = by + bh - EDGE - (ay + GAP);
@@ -122,6 +135,73 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     el.style.left = left + 'px';
     el.style.top = (above ? ay - GAP - hh : ay + GAP) + 'px';
     el.style.setProperty('--tail-x', Math.max(14, Math.min(ax - left, w - 14)) + 'px');
+    markScroll();
+  }
+
+  // נגררה: בגבולות הגרף, איפה שהמשתמש שם אותה. הזנב הרגיל מוסתר; במקומו קו מהשפה הקרובה של החלונית אל הנקודה, עם ראש
+  // חץ, וטבעת על הנקודה עצמה — כך הנקודה לא נעלמת גם כשהחלונית רחוקה ממנה
+  function placeDragged(ax, ay) {
+    const { el } = tip;
+    const bx = box.offsetLeft, by = box.offsetTop, bw = box.clientWidth, bh = box.clientHeight;
+    const lg = legend();
+    const top0 = lg && !lg.hidden && lg.offsetHeight ? Math.max(by + EDGE, lg.offsetTop + lg.offsetHeight + 4) : by + EDGE;
+    const room = by + bh - EDGE - top0;
+    if (el.offsetHeight > room) el.firstChild.style.maxBlockSize = Math.max(60, room - 2) + 'px';
+    const w = el.offsetWidth, hh = el.offsetHeight;
+    const left = Math.max(bx + EDGE, Math.min(tip.pos.left, bx + bw - EDGE - w));
+    const top = Math.max(top0, Math.min(tip.pos.top, by + bh - EDGE - hh));
+    tip.pos = { left, top };
+    el.dataset.dragged = '1';
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    // הנקודה הקרובה על שפת החלונית
+    const sx = Math.max(left, Math.min(ax, left + w)), sy = Math.max(top, Math.min(ay, top + hh));
+    const len = Math.hypot(ax - sx, ay - sy);
+    if (!tip.pin) {
+      tip.pin = h('div', { class: 'ctip-pin', 'aria-hidden': 'true' }, h('i', { class: 'ctip-line' }), h('i', { class: 'ctip-dot' }));
+      wrap.insertBefore(tip.pin, el);   // מתחת לחלונית
+    }
+    tip.pin.style.setProperty('--mc', `var(${tip.hits[tip.i].color})`);
+    const [line, dot] = tip.pin.children;
+    dot.style.left = ax + 'px';
+    dot.style.top = ay + 'px';
+    // החלונית מעל הנקודה עצמה — אין קו, רק הטבעת (והחלונית חצי שקופה)
+    // הקו נעצר כך שראש החץ (11px, מעבר לסוף הקו) נוגע בשפת הטבעת (רדיוס 7) — מצביע עליה ולא מכסה אותה
+    line.hidden = len < 24;
+    line.style.left = sx + 'px';
+    line.style.top = sy + 'px';
+    line.style.inlineSize = Math.max(0, len - 18) + 'px';
+    line.style.transform = `rotate(${Math.atan2(ay - sy, ax - sx)}rad)`;
+    tip.pin.dataset.ax = ax; tip.pin.dataset.ay = ay; tip.pin.dataset.sx = sx; tip.pin.dataset.sy = sy;
+    markScroll();
+  }
+
+  // תוכן שלא נכנס ונגלל — הגרירה רק מהכותרת, כדי שאצבע על הגוף תגלול אותו
+  function markScroll() {
+    const body = tip.el.firstChild;
+    tip.el.classList.toggle('scrolls', body.scrollHeight > body.clientHeight + 1);
+  }
+
+  // ── גרירה של החלונית (בקשת הבעלים): לא נסגרת, נשארת איפה ששמו אותה עד שסוגרים או לוחצים על נקודה אחרת ──
+  function dragTip(el) {
+    let g = null;   // {id, x, y, left, top, on}
+    el.addEventListener('pointerdown', e => {
+      if (e.button > 0 || e.target.closest('button, a') || (el.classList.contains('scrolls') && !e.target.closest('.ctip-head, .ctip-grip'))) return;
+      g = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.offsetLeft, top: el.offsetTop, on: false };
+      try { el.setPointerCapture(e.pointerId); } catch { /* ריק */ }
+    });
+    el.addEventListener('pointermove', e => {
+      if (!g || e.pointerId !== g.id || !tip) return;
+      const dx = e.clientX - g.x, dy = e.clientY - g.y;
+      if (!g.on && Math.hypot(dx, dy) < 4) return;
+      g.on = true;
+      e.preventDefault();
+      tip.pos = { left: g.left + dx, top: g.top + dy };
+      place();
+    });
+    const end = e => { if (g && e.pointerId === g.id) g = null; };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
   }
 
   // אחרי ציור מחדש (רענון, מקרא) או תזוזה של הגרף: אותו פריט במקומו החדש; נעלם, או יצא מהגרף — נסגרת
@@ -183,7 +263,7 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
     state: () => {
       if (!tip) return null;
       const x = tip.hits[tip.i];
-      return { id: x.id, kind: x.it.kind, side: tip.el.dataset.side, n: tip.hits.length, i: tip.i, x: box.offsetLeft + x.x, y: box.offsetTop + x.y };
+      return { id: x.id, kind: x.it.kind, side: tip.el.dataset.side, n: tip.hits.length, i: tip.i, x: box.offsetLeft + x.x, y: box.offsetTop + x.y, dragged: !!tip.pos };
     },
     destroy() {
       close();

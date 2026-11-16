@@ -8,8 +8,9 @@ import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
 import { mountChartTip } from './charttip.js';
-import { mountAxis, labelBoard } from './chartaxis.js';
+import { mountAxis, labelBoard, tzOffset } from './chartaxis.js';
 import { setTurned, screenRect } from './rotate.js';
+import { mountGestures } from './gestures.js';
 import { mountCombo, invalidateCatalog } from './combobox.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
@@ -487,9 +488,12 @@ export function mountMarket(ctx) {
     // ציר הזמן: תאריך במעבר יום/חודש/שנה, ושעה בתוך היום; הסמן — תאריך ושעה
     const fmtTick = (t, kind) => fmtT(t, kind === 'year' ? { year: 'numeric' } : kind === 'month' ? { month: 'short', year: '2-digit' }
       : kind === 'day' ? { day: 'numeric', month: 'numeric' } : kind === 'time' ? { hour: '2-digit', minute: '2-digit' }
-        : { day: 'numeric', month: 'numeric', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { year: '2-digit' }) });
+        // הנר האחרון בקצה הימני: שעה במסגרת שבתוך היום, תאריך במסגרת של יום ומעלה
+        : kind === 'last' ? (TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'numeric' })
+          : { day: 'numeric', month: 'numeric', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { year: '2-digit' }) });
     let dec = 2;   // הספרות של הנכס (priceFormat) — לסמן ולציר
-    const axis = mountAxis({ chart, series: candle, col, getDec: () => dec, getTimes: () => data.map(x => x.time), fmtTime: fmtTick });
+    const axis = mountAxis({ chart, series: candle, col, getDec: () => dec, getTimes: () => data.map(x => x.time), fmtTime: fmtTick,
+      offset: tzOffset(tz) });   // גבולות הסימונים לפי שעון המשתמש — כמו הטקסט (fmtT)
     const oscAxis = mountAxis({ chart: osc, series: oscSeries, col, getDec: () => 2, time: false });
     // לוח התוויות — משותף לשיטות ולשרטוטים, כדי שתוויות לא יחפפו (18.1.2 סעיף 5)
     const board = labelBoard();
@@ -502,6 +506,19 @@ export function mountMarket(ctx) {
     let cross = null;
     chart.subscribeCrosshairMove(e => { cross = e.point ? { x: e.point.x, y: e.point.y } : null; });
     box.tsCross = () => cross;                                         // לבדיקות: איפה הסמן (L1 קריטריון 5)
+    // תנועות מגע (gestures.js): אצבע אחת — לרוחב בזמן, לגובה גוללת את הדף; שתי אצבעות — צביטה (זמן / גובה) או גרירה (זמן / מחיר)
+    const gest = mountGestures({ chart, series: candle, shifted: [candle, ...Object.values(lines)], box, blocked: () => draw.isCapturing() });
+    // לבדיקות: הגובה (px) של הנרות הנראים ושל עמודות הנפח, ומקדם הכיווץ
+    box.tsHeights = () => {
+      const r = chart.timeScale().getVisibleLogicalRange();
+      const vis = r ? data.slice(Math.max(0, Math.ceil(r.from)), Math.floor(r.to) + 1) : data;
+      if (!vis.length) return null;
+      const hi = Math.max(...vis.map(x => x.high)), lo = Math.min(...vis.map(x => x.low));
+      const m = chart.priceScale('vol').options().scaleMargins;
+      return { price: Math.round(candle.priceToCoordinate(lo) - candle.priceToCoordinate(hi)), vol: Math.round(box.offsetHeight * (1 - m.top - m.bottom)), k: gest.vScale(),
+        // האינדיקטורים על אותו ציר כמו הנרות — מתכווצים איתם
+        lines: Object.values(lines).filter(l => l.data().length).map(l => Math.abs(l.priceToCoordinate(hi) - candle.priceToCoordinate(hi)) < 0.5) };
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
     // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
@@ -530,7 +547,7 @@ export function mountMarket(ctx) {
       } });
     box.tsTip = () => tip.state();   // לבדיקות: החלונית הפתוחה
     box.tsPoints = kind => forecast.points(kind);   // לבדיקות: הנקודות של השיטות על הגרף
-    onTeardown(() => { fsLeave(true); tip.destroy(); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
+    onTeardown(() => { fsLeave(true); gest.destroy(); tip.destroy(); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
 
     // ── מסך מלא (18.1.2 סעיף 3; L1 — 18.1.5): רק הגרף. Fullscreen API על כל הדף (documentElement) כשיש, והגרף — שכבה שמכסה
     // את המסך (`.chart-wrap.fs`). כל הדף ולא הגרף: על אלמנט ב-Fullscreen הדפדפן כופה `transform: none`, והשכבה המסובבת צריכה transform.
@@ -738,7 +755,8 @@ export function mountMarket(ctx) {
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
         // רענון אוטומטי ובחירת שיטה — לא מזיזים את התצוגה של המשתמש
-        if (mode === 'open' || mode === 'change' || mode === 'manual') chart.timeScale().fitContent();
+        // נתונים חדשים (פתיחה, מסגרת, טווח, ↻): גם ציר המחיר חוזר ל-autoScale — טווח מוקפא של הנתונים הקודמים לא מתאים להם
+        if (mode === 'open' || mode === 'change' || mode === 'manual') { chart.timeScale().fitContent(); gest.reset(); }
         draw.redraw();
         forecast.onResult(r);
         // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום

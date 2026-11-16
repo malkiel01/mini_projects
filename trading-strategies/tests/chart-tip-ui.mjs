@@ -97,6 +97,40 @@ const geom = p => p.evaluate(s => {
     inside: k.left >= bx.left - 0.5 && k.right <= bx.right + 0.5 && k.top >= bx.top - 0.5 && k.bottom <= bx.bottom + 0.5,
     legend: l ? hit(k, l) : false, w: Math.round(k.width), bw: bx.width, flipped: getComputedStyle(tip).transform !== 'none' };
 }, BOX);
+// גרירה של החלונית מהכותרת, במסך (עכבר, או מגע אמיתי — CDP). בשכבה המסובבת — המלבן האמיתי על המסך (screenRect)
+async function dragTip(p, dx, dy, touch = false) {
+  const [x, y] = await p.evaluate(async () => {
+    const { screenRect } = await import('./assets/js/rotate.js');
+    const r = screenRect(document.querySelector('.ctip-title'));
+    return [r.left + Math.min(30, r.width / 2), r.top + r.height / 2];
+  });
+  if (touch) {
+    const c = await p.context().newCDPSession(p);
+    const t = (type, px, py) => c.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: px, y: py }] });
+    await t('touchStart', x, y);
+    for (let i = 1; i <= 10; i++) { await t('touchMove', x + dx * i / 10, y + dy * i / 10); await p.waitForTimeout(16); }
+    await t('touchEnd');
+    await c.detach();
+  } else {
+    await p.mouse.move(x, y); await p.mouse.down();
+    for (let i = 1; i <= 10; i++) await p.mouse.move(x + dx * i / 10, y + dy * i / 10);
+    await p.mouse.up();
+  }
+  await p.waitForTimeout(150);
+}
+// אחרי גרירה: הטבעת על הנקודה, הקו יוצא משפת החלונית, הזנב הרגיל מוסתר — במערכת של wrap
+const pinGeom = p => p.evaluate(s => {
+  const box = document.querySelector(s), wrap = box.closest('.chart-wrap'), tip = wrap.querySelector('.ctip'), pin = wrap.querySelector('.ctip-pin'), st = box.tsTip();
+  if (!pin) return null;
+  const w = wrap.getBoundingClientRect(), d = pin.querySelector('.ctip-dot').getBoundingClientRect(), k = tip.getBoundingClientRect();
+  const sx = +pin.dataset.sx, sy = +pin.dataset.sy, kl = k.left - w.left, kt = k.top - w.top;
+  const onEdge = Math.min(Math.abs(sx - kl), Math.abs(sx - kl - k.width), Math.abs(sy - kt), Math.abs(sy - kt - k.height)) <= 2 || (Math.abs(sx - st.x) < 1 && Math.abs(sy - st.y) < 1);
+  return { dot: [Math.round(Math.abs(d.left + d.width / 2 - w.left - st.x)), Math.round(Math.abs(d.top + d.height / 2 - w.top - st.y))],
+    to: [Math.round(Math.abs(+pin.dataset.ax - st.x)), Math.round(Math.abs(+pin.dataset.ay - st.y))], onEdge,
+    line: !pin.querySelector('.ctip-line').hidden, tail: getComputedStyle(tip.querySelector('.ctip-tail')).display, dragged: tip.dataset.dragged === '1',
+    pos: [Math.round(kl), Math.round(kt)] };
+}, BOX);
+const tipPos = p => p.evaluate(() => { const t = document.querySelector('.ctip'); return [t.offsetLeft, t.offsetTop]; });
 async function tap(p, q) { const [x, y] = await toScreen(p, q); await p.touchscreen.tap(x, y); await p.waitForTimeout(150); }
 // בדיקת המיקום של כל חלונית שנפתחת (4, 5, 9)
 async function checkGeom(p, where) {
@@ -142,6 +176,14 @@ try {
   eq([t1.title, /\d/.test(t1.sub) && /:/.test(t1.sub), t1.tag, !!t1.explain && /כלל|גל/.test(t1.explain), /לא ייעוץ/.test(t1.note)],
     [`גל ${q.text}`, true, 'אליוט · ממצא', true, true], `criterion 1: "גל ${q.text}", price and time, "אליוט · ממצא", the rule, "not advice"`);
   eq(/^מתבטל אם מחיר (מתחת|מעל) ל-[\d,.]+ — /.test(t1.inv || ''), true, `the invalidation of the count, with its rule ("${t1.inv}")`);
+  // בקשת הבעלים: אחוזי הוודאות של השיטה בחלונית — אותה שורה כמו בכרטיס ("ודאות N% · ראשונית" / "· בפועל מאז")
+  const cert = (await a.locator('.ctip .ctip-cert').count()) ? (await a.locator('.ctip .ctip-cert').textContent()).trim() : null;
+  const brief = (await a.locator('.forecast-panel[data-method="elliott-w3"] .an-brief').textContent()).trim();
+  eq([/^ודאות \d+% · (ראשונית|בפועל מאז)$/.test(cert || ''), !!cert && brief.includes(cert)], [true, true], `the method's certainty in the tip ("${cert}"), the same as in its card ("${brief}")`);
+  // בקשת הבעלים: התוויות על הגרף קצרות — כל שורה עד 3 מילים; ההסבר המלא — בחלונית
+  const elLabels = await a.evaluate(s => document.querySelector(s).tsLabels().filter(r => r.by === 'forecast').map(r => r.text), BOX);
+  eq(elLabels.filter(t => t.split(' · ').some(l => l.trim().split(/\s+/).length > 3)), [], `Elliott: every chart label line is short — up to 3 words (${elLabels.join(' | ')})`);
+  eq(elLabels.some(t => / — /.test(t)), false, 'no long sentence (" — ") in a chart label — it moved to the tip');
   eq([await a.locator('.ctip[role="dialog"]').count(), await a.evaluate(() => document.querySelector('.ctip').getAttribute('aria-labelledby') === document.querySelector('.ctip-title').id),
     await a.evaluate(() => document.activeElement?.classList.contains('ctip-x'))], [1, true, true], 'a11y: role=dialog, labelled by its title, focus on ✕');
   await checkGeom(a, 'Elliott point');
@@ -168,8 +210,9 @@ try {
   const other = await a.evaluate(s => {
     const box = document.querySelector(s), k = document.querySelector('.ctip').getBoundingClientRect(), b = box.getBoundingClientRect();
     const free = q => q.x > 8 && q.x < box.clientWidth - 8 && q.y > 8 && q.y < box.clientHeight - 8
-      && !(q.x + b.left > k.left - 30 && q.x + b.left < k.right + 30 && q.y + b.top > k.top - 30 && q.y + b.top < k.bottom + 30);
-    const cand = [...box.tsPoints('label'), ...box.tsPoints('hline').flatMap(l => [{ ...l, x: 12 }, { ...l, x: box.clientWidth - 40 }])];
+      && !(q.x + b.left > k.left - 12 && q.x + b.left < k.right + 12 && q.y + b.top > k.top - 12 && q.y + b.top < k.bottom + 12);
+    const W = box.clientWidth;
+    const cand = [...box.tsPoints('label'), ...box.tsPoints('hline').flatMap(l => [12, W * 0.25, W * 0.5, W * 0.75, W - 40].map(x => ({ ...l, x })))];
     return cand.find(free) || null;
   }, BOX);
   if (other) {
@@ -198,6 +241,49 @@ try {
     const s2 = await tipState(a);
     eq([s2.i, s2.n, (await tipCount(a))], [1, s1.n, 1], `several items here (${s1.n}) → "עוד ${s1.n - 1} … כאן ›" goes to the next`);
   } else eq(await a.locator('.ctip-more').count(), 0, 'one item here → no "עוד … כאן"');
+
+  // ── בקשת הבעלים: חצי שקופה, ונגררת בלי להיסגר — וחץ על הנקודה ──
+  await a.keyboard.press('Escape');
+  await tap(a, q);
+  const look = await a.evaluate(() => { const c = getComputedStyle(document.querySelector('.ctip')); return [c.backgroundColor, c.backdropFilter || c.webkitBackdropFilter || '']; });
+  const alpha = +(/rgba?\([^)]*,\s*([\d.]+)\)/.exec(look[0])?.[1] ?? (/ \/ ([\d.]+)\)/.exec(look[0])?.[1] ?? 1));
+  eq([alpha > 0.6 && alpha < 0.95, /blur/.test(look[1])], [true, true], `the tip is semi-transparent (${look[0]}), with a blur behind it`);
+  const p0 = await tipPos(a);
+  const sq = await tipState(a);
+  await dragTip(a, 0, sq.side === 'below' ? 110 : -110);
+  const p1 = await tipPos(a);
+  const g1 = await pinGeom(a);
+  eq([await tipCount(a), (await tipState(a))?.dragged, Math.abs(p1[1] - p0[1]) >= 60], [1, true, true], `dragging the tip does not close it — it moves (${p0} → ${p1})`);
+  eq([g1?.dragged, g1?.tail, g1?.dot[0] <= 4 && g1?.dot[1] <= 4, g1?.to, g1?.onEdge, g1?.line], [true, 'none', true, [0, 0], true, true],
+    `after the drag: the tail is replaced by an arrow from the tip's edge to the point, and a ring on the point (±4px; ${g1?.dot})`);
+  await shot(a, 'tip-dragged');
+  // הגרף לא זז בגרירה של החלונית
+  const rr = await a.evaluate(s => JSON.stringify(document.querySelector(s).tsRange()), BOX);
+  await dragTip(a, -40, 0);
+  eq([await tipCount(a), await a.evaluate(s => JSON.stringify(document.querySelector(s).tsRange()), BOX) === rr], [1, true], 'dragging the tip again — still open, and the chart did not pan');
+  // הקישורים בחלונית עדיין לחיצים (לא גרירה)
+  eq(await a.locator('.ctip .ctip-x').isVisible(), true, 'the ✕ is still there');
+  // לחיצה על נקודה אחרת → חלונית במקום הרגיל, בלי חץ
+  const q4 = await a.evaluate(([s, q]) => document.querySelector(s).tsPoints('label').find(o => o.text !== q.text) || null, [BOX, q]);
+  if (q4) {
+    const free = await a.evaluate(([q]) => { const k = document.querySelector('.ctip').getBoundingClientRect(), b = document.querySelector('.chart-box:not(.osc)').getBoundingClientRect();
+      return !(q.x + b.left > k.left - 10 && q.x + b.left < k.right + 10 && q.y + b.top > k.top - 10 && q.y + b.top < k.bottom + 10); }, [q4]);
+    if (free) {
+      await tap(a, q4);
+      eq([await tipCount(a), (await tipState(a))?.dragged, await a.locator('.ctip-pin').count()], [1, false, 0], 'tapping another point → a new tip in the usual place, no arrow');
+    }
+  }
+  // נגררה — Esc ולחיצה מחוץ סוגרות, וגם החץ נעלם
+  await a.keyboard.press('Escape');
+  await tap(a, q);
+  await dragTip(a, 0, (await tipState(a)).side === 'below' ? 90 : -90);
+  await a.keyboard.press('Escape');
+  eq([await tipCount(a), await a.locator('.ctip-pin').count()], [0, 0], 'a dragged tip: Esc closes it, and the arrow goes too');
+  await tap(a, q);
+  await dragTip(a, 0, (await tipState(a)).side === 'below' ? 90 : -90);
+  await a.locator('main .quote-head').tap();
+  eq([await tipCount(a), await a.locator('.ctip-pin').count()], [0, 0], 'a dragged tip: a tap outside closes it, and the arrow goes too');
+  await tap(a, q);
 
   // ── 6: ✕ / Esc / לחיצה מחוץ / גרירה ──
   await a.locator('.ctip .ctip-x').click();
@@ -269,6 +355,13 @@ try {
   eq((await tipState(a))?.kind, 'label', 'criterion 10: landscape (rotated layer) — the tip opens on the point');
   await checkGeom(a, 'full screen, landscape (rotated)');
   await shot(a, 'tip-landscape');
+  // גרירה באצבע בשכבה המסובבת — לא נסגרת, והחץ על הנקודה
+  const sl = await tipState(a);
+  await dragTip(a, sl.side === 'below' ? -80 : 80, 0, true);   // בשכבה המסובבת: ציר ה-y של השכבה = ציר ה-x של המסך (הפוך)
+  const gl = await pinGeom(a);
+  eq([await tipCount(a), gl?.dragged, gl?.dot[0] <= 4 && gl?.dot[1] <= 4, gl?.onEdge], [1, true, true, true],
+    `landscape (rotated layer): a finger drag moves the tip without closing it, and the ring is on the point (${gl?.dot})`);
+  await shot(a, 'tip-landscape-dragged');
   // "פירוט השיטה ›" במסך מלא — יוצא מהמסך המלא, פותח את תפריט השיטות ואת הבלוק של השיטה
   await a.locator('.ctip').getByText('פירוט השיטה ›').click();
   await a.waitForFunction(() => !document.querySelector('.chart-wrap.fs'));
@@ -283,10 +376,12 @@ try {
   eq(await post(a, 'admin_method_save', { id: 'fibonacci', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] }), 200, 'the admin turns Fibonacci on');
   const fibZone = async strip => {
     const { p: f } = await open({ now: NOW - 100 * 3600, as: 'alice' });
-    if (strip) await f.route(u => u.href.includes('action=chart_refresh'), async route => {
+    if (strip) await f.route(u => /action=(chart_refresh|analysis)\b/.test(u.href), async route => {
       const r = await route.fetch();
       const j = await r.json();
+      for (const c of j.cards || []) Object.assign(c, { certainty: null, certainty_basis: null, backtest: { status: 'missing' } });   // analysis — בלי ודאות
       for (const m of Object.values(j.methods || {})) for (const part of [m.overlay, m.forecast]) for (const it of part?.items || []) delete it.tip;
+      for (const c of j.analysis?.cards || []) Object.assign(c, { certainty: null, certainty_basis: null, backtest: { status: 'missing' } });   // בלי ודאות
       await route.fulfill({ response: r, json: j });
     });
     await chartWith(f, 'fibonacci');
@@ -298,7 +393,8 @@ try {
     await tap(f, { x: (Math.max(Math.min(fz.box[0], fz.box[2]), 10) + Math.min(Math.max(fz.box[0], fz.box[2]), FW - 10)) / 2, y: fz.y });
     await f.locator('.ctip').waitFor({ timeout: 5000 });
     for (let i = 0, s0 = await tipState(f); s0.kind !== 'zone' && i < s0.n; i++) { await f.locator('.ctip-more').click(); s0 = await tipState(f); }
-    return { f, fz, tf: await tipText(f), kind: (await tipState(f))?.kind, items: await f.evaluate(s => document.querySelector(s).tsForecast().methods[0].items, BOX) };
+    return { f, fz, tf: await tipText(f), kind: (await tipState(f))?.kind, items: await f.evaluate(s => document.querySelector(s).tsForecast().methods[0].items, BOX),
+      cert: await f.locator('.ctip .ctip-cert').count(), labels: await f.evaluate(s => document.querySelector(s).tsLabels().filter(r => r.by === 'forecast').map(r => r.text), BOX) };
   };
   const z3 = await fibZone(false);
   if (z3.fz) {
@@ -306,12 +402,15 @@ try {
       /יעד|קנה|מכור/.test(z3.tf.all), z3.tf.tag], ['zone', true, true, true, false, 'פיבונאצ\'י · ממצא'],
       `criterion 3: a Fibonacci zone → "${z3.tf.title}", and its ratios in the explanation ("${z3.tf.explain}")`);
     await checkGeom(z3.f, 'Fibonacci zone');
+    eq(z3.labels.filter(t => t.split(' · ').some(l => l.trim().split(/\s+/).length > 3)), [], `Fibonacci: every chart label line is short — up to 3 words (${z3.labels.join(' | ')})`);
     await shot(z3.f, 'tip-fib-zone');
   } else eq(z3.fz, 'a Fibonacci zone in view', 'criterion 3: a Fibonacci zone');
   const z8 = await fibZone(true);
   if (z8.fz) {
-    eq([z8.kind, /^אזור (תמיכה|התנגדות) · \d+ רמות · ציון \d+$/.test(z8.tf.title), z8.tf.explain, z8.tf.tag], ['zone', true, null, 'פיבונאצ\'י · ממצא'],
-      `criterion 8: an item without a tip → the title from its text ("${z8.tf.title}"), no explanation, no error (${z8.items} items)`);
+    // בקשת הבעלים (תוויות קצרות): בלי tip — הכותרת היא הביטוי הקצר שעל הגרף, וההסבר — הטקסט המלא של הפריט
+    eq([z8.kind, /^אזור (תמיכה|התנגדות)$/.test(z8.tf.title), /^אזור (תמיכה|התנגדות) · \d+ רמות · ציון \d+$/.test(z8.tf.explain || ''), z8.tf.tag], ['zone', true, true, 'פיבונאצ\'י · ממצא'],
+      `criterion 8 (with the owner's short labels): an item without a tip → the short label as the title ("${z8.tf.title}"), the full text as the explanation ("${z8.tf.explain}") (${z8.items} items)`);
+    eq(z8.cert, 0, 'no certainty (stripped from the card) → no certainty line in the tip');
     await checkGeom(z8.f, 'Fibonacci zone (no tip)');
     await shot(z8.f, 'tip-fib-notip');
   } else eq(z8.fz, 'a Fibonacci zone in view', 'criterion 8: a Fibonacci zone');

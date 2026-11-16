@@ -86,7 +86,28 @@ export function mountAnalysis(ctx) {
       h('div', { class: 'block stack' },
         h('div', { class: 'fields two' }, field('מטבע בסיס להצגה', f.base_currency), field('גודל חשבון', f.account_size), field('אזור זמן', f.timezone, true))),
       err, h('div', {}, h('button', { class: 'btn primary', type: 'submit' }, 'שמירה')));
-    render(form, passwordBlock());
+    render(form, learnBlock(), passwordBlock());
+  }
+
+  // "העסקאות שלי בלמידה" (23.4, ל3 / ✅36): עסקה עם שיטה וסטופ שנסגרת נכנסת ללמידה — בלי שם. כיבוי — מכאן, ומיד
+  function learnBlock() {
+    const sw = h('input', { type: 'checkbox', 'aria-label': 'העסקאות שלי בלמידה' });
+    sw.checked = !ME().user.learn_off;
+    sw.addEventListener('change', async () => {
+      sw.disabled = true;
+      try {
+        const r = await api('learn_off_set', { off: !sw.checked });
+        ME().user.learn_off = r.learn_off;
+        toast(r.learn_off ? 'העסקאות שלך לא ייכנסו ללמידה' : 'העסקאות שלך ייכנסו ללמידה');
+      } catch (e) { sw.checked = !sw.checked; toast(e.message, true); }
+      finally { sw.disabled = false; }
+    });
+    return h('section', { class: 'learn-block' },
+      h('h2', { class: 'sec-title' }, '📚 למידה'),
+      h('div', { class: 'block stack' },
+        h('label', { class: 'switch' }, sw, h('span', {}, 'העסקאות שלי בלמידה')),
+        h('p', { class: 'hint' }, 'עסקה שנפתחה מכרטיס של שיטה, עם סטופ, נכנסת כשהיא נסגרת לסטטיסטיקה של השיטה — בלי שמך. ',
+          'רק עורך ראשי רואה מי. כיבוי חל על עסקאות שייסגרו מעכשיו.')));
   }
 
   // "סיסמה לאפליקציה" (spec-stage-a 20.1 ד'): לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים, ושם רק אם עורך הפעיל
@@ -99,7 +120,7 @@ export function mountAnalysis(ctx) {
         await api('password_set', { password: pw.value });
         ctx.setMe(await api('me'));
         toast('הסיסמה נשמרה');
-        render(document.querySelector('main form'), passwordBlock());
+        render(document.querySelector('main form'), learnBlock(), passwordBlock());
       } });
       s.body.append(field('סיסמה חדשה — לפחות 10 תווים', pw, true),
         h('p', { class: 'hint' }, 'נכנסים בה עם המייל ' + (ME().user.email || '') + '.'));
@@ -142,6 +163,10 @@ export function mountAnalysis(ctx) {
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
           h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})` + (d.ours === true ? ' · הגדרה שלנו' : d.ours === false ? ' · לפי הספר' : ''), inputs[k]))),
           field('הערה', note, true),
+          // 🟡4 (L5): ערך לפלח גובר על הכללי בפלח שלו — אזהרה ליד הפרמטרים
+          Object.keys(m.seg_params || {}).length ? h('p', { class: 'chip warn seg-warn', style: 'margin:4px 0' },
+            '⚠️ יש ערכים לפלח (' + Object.entries(m.seg_params).map(([sg, ps]) => `${learnValue('market_tf', sg)}: ${Object.entries(ps).map(([k, v]) => `${k} = ${v}`).join(', ')}`).join(' · ')
+            + '). שינוי ערך כללי לא חל עליהם — בפלח הזה גובר הערך שלו. ביטול — ב"📚 למידה".') : null,
           h('p', { class: 'hint' }, primary ? 'שינוי פרמטר מעלה את גרסת השיטה, והבדיקות לאחור שלה מחושבות מחדש בפתיחה הבאה.'
             : 'שינוי פרמטר — רק עורך ראשי. אפשר להציע ערך ב"הצעת שינוי פרמטר" למטה.'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
@@ -153,7 +178,7 @@ export function mountAnalysis(ctx) {
             } catch (e) { toast(e.message, true); }
           } } }, 'שמירה'),
           tunePanel(m, T.proposals.filter(x => x.method === m.id), primary),
-          learnPanel(m));
+          learnPanel(m, primary));
       };
       const costIn = Object.fromEntries(Object.entries(S.costs).map(([mk, c]) => [mk, [numInput('fee', c.fee), numInput('slip', c.slip)]]));
       box.replaceChildren(
@@ -188,7 +213,30 @@ export function mountAnalysis(ctx) {
       part('in', 'בתוך הדגימה (70%)'), part('out', 'מחוץ לדגימה (30%)'));
   }
   const STATUS = { open: ['פתוחה', ''], applied: ['הוחלה', 'ok'], stale: ['ישנה', 'warn'] };
+  /** 23.7 (L6): "החלף לבפועל" — רווח הסמך של הבדיקה לאחור מול זה של האותות מאז. ההחלה לא מעלה גרסה */
+  function certCard(m, x, primary) {
+    const [st, cls] = STATUS[x.status] || [x.status, ''];
+    const where = x.segment ? learnValue('market_tf', x.segment) : 'כל השווקים';
+    const ci = v => (v.ci ? `${Math.round(v.ci[0] * 100)}–${Math.round(v.ci[1] * 100)}%` : '—');
+    const num = v => h('td', { class: 'num', dir: 'ltr' }, v);
+    const res = x.results || {};
+    const apply = h('button', { class: 'btn sm primary', type: 'button', disabled: !primary || x.status !== 'open',
+      on: { click: () => ctx.confirmSheet('החלף לבפועל', `${m.name} (גרסה ${x.method_version}), ${where}: המספר הראשי בכרטיס יהיה "בפועל מאז" במקום הבדיקה לאחור. הגרסה לא עולה; גרסה חדשה מתחילה שוב מ"ראשונית".`, 'החלף', async () => {
+        await api('admin_tune_apply', { id: x.id }); toast('הוחלף לבפועל'); ctx.reload();
+      }) } }, 'החלף לבפועל');
+    return h('li', { class: 'tune-prop cert-prop', 'data-id': String(x.id), 'data-status': x.status },
+      h('div', { class: 'l1' }, h('span', {}, 'ודאות: ראשונית → בפועל מאז'), h('span', { class: 'chip ' + cls }, st)),
+      h('p', { class: 'hint tune-origin' }, '📚 מהלמידה', sep(), x.segment ? 'לפלח: ' + where : 'כללי — כל השווקים', sep(), `גרסה ${x.method_version}`),
+      h('table', { class: 'tbl tune-tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', { scope: 'col' }, 'בדיקה לאחור'), h('th', { scope: 'col' }, 'בפועל מאז'))),
+        h('tbody', {}, [['עסקאות', v => String(v.n)], ['הצלחה', v => (v.win_pct === null ? '—' : v.win_pct + '%')], ['רווח סמך 95%', ci]]
+          .map(([l, f]) => h('tr', {}, h('th', { scope: 'row' }, l), num(res.backtest ? f(res.backtest) : '—'), num(res.live ? f(res.live) : '—'))))),
+      h('p', { class: 'hint' }, 'רווחי הסמך לא חופפים. בבדיקה לאחור — בלי עסקאות שנספרו גם כבפועל. שום דבר לא מתחלף לבד.'),
+      x.status === 'open' ? h('div', { class: 'row-btns wrap' }, apply,
+        primary ? null : h('small', { class: 'muted tune-only' }, 'רק עורך ראשי מחליף')) : null);
+  }
   function proposalCard(m, x, primary) {
+    if (x.param === '@certainty') return certCard(m, x, primary);
     const d = m.param_defs[x.param] || { label: x.param };
     const [st, cls] = STATUS[x.status] || [x.status, ''];
     const apply = h('button', { class: 'btn sm primary', type: 'button', disabled: !primary || x.status !== 'open',
@@ -197,7 +245,9 @@ export function mountAnalysis(ctx) {
       }) } }, 'החל');
     return h('li', { class: 'tune-prop', 'data-id': String(x.id), 'data-status': x.status },
       h('div', { class: 'l1' }, h('span', {}, `${d.label}: ${fmtVal(x.current)} → ${fmtVal(x.candidate)}`), h('span', { class: 'chip ' + cls }, st)),
-      h('p', { class: 'hint' }, x.asset.replace(/^[^:]+:/, ''), sep(), TF_LABEL[x.tf] || x.tf, sep(), `גרסה ${x.method_version}`,
+      x.origin === 'learning' || x.segment ? h('p', { class: 'hint tune-origin' }, x.origin === 'learning' ? '📚 מהלמידה' : '',
+        x.segment ? [x.origin === 'learning' ? sep() : '', 'לפלח: ' + learnValue('market_tf', x.segment)] : '') : null,
+      h('p', { class: 'hint' }, x.asset ? x.asset.replace(/^[^:]+:/, '') : `${(x.stats && x.stats.pairs) || 0} זוגות (נכס × מסגרת)`, x.tf ? [sep(), TF_LABEL[x.tf] || x.tf] : null, sep(), `גרסה ${x.method_version}`,
         x.created_by ? [sep(), x.created_by] : null, x.new_version ? [sep(), `→ גרסה ${x.new_version}`] : null),
       x.note ? h('p', { class: 'hint' }, x.note) : null,
       tuneTable(x.results),
@@ -251,7 +301,69 @@ export function mountAnalysis(ctx) {
     if (dim === 'holidays') return REGION[v] || v;
     return v;
   }
-  function learnPanel(m) {
+  // ── המיקומים (23.9, L5b): השוואת שכנים — ב-cron בלבד. הצעה — ב"הצעת שינוי פרמטר"; "החל" — רק הראשי ──
+  const LEARN_STATUS = { not_enough: ['אין מספיק נתונים', ''], waiting: ['ממתין ל-30 עסקאות חדשות', ''], due: ['בהשוואה הבאה (cron)', ''] };
+  const LEARN_RESULT = { propose: ['הצעה', 'ok'], edge: ['קצה הטווח — לבעלים', 'warn'], current_best: ['הנוכחי הכי טוב — אין הצעה', ''],
+    out_worse: ['לא אושר מחוץ לדגימה — אין הצעה', ''], no_out_of_sample: ['אין עסקאות מחוץ לדגימה', ''], no_trades: ['אין עסקאות בתוך הדגימה', ''],
+    no_pairs: ['אין נכס שהמערכת יכולה להריץ', ''], deferred: ['נדחה — ממשיך בריצה הבאה', ''], too_big: ['גדול מדי להשוואה בריצה אחת', 'warn'] };
+  /** 🟡4 (L5): הערכים שהוחלו לפלח — עם "↺ בטל" (רק העורך הראשי; מעלה גרסה) */
+  function segValues(m, primary) {
+    const rows = Object.entries(m.seg_params || {}).flatMap(([sg, ps]) => Object.entries(ps).map(([k, v]) => [sg, k, v]));
+    if (!rows.length) return null;
+    return h('div', { class: 'learn-seg' },
+      h('h3', { class: 'learn-h' }, 'ערכים לפלח (גוברים על הכללי בפלח שלהם)'),
+      h('ul', { class: 'learn-findings' }, rows.map(([sg, k, v]) => h('li', { 'data-segment': sg, 'data-param': k },
+        h('div', { class: 'l1' }, h('span', {}, `${(m.param_defs[k] || {}).label || k} · ${learnValue('market_tf', sg)}`), h('span', { class: 'chip' }, `${v} (כללי: ${m.params[k] ?? (m.param_defs[k] || {}).default})`)),
+        h('button', { class: 'btn ghost sm', type: 'button', disabled: !primary, on: { click: () => ctx.confirmSheet('ביטול ערך לפלח',
+          `${m.name}: "${(m.param_defs[k] || {}).label || k}" ב${learnValue('market_tf', sg)} יחזור לערך הכללי. הגרסה של השיטה עולה, והבדיקות לאחור מחושבות מחדש.`, 'בטל', async () => {
+            await api('admin_seg_param_clear', { method: m.id, segment: sg, param: k }); toast('בוטל — גרסה חדשה'); ctx.reload();
+          }) } }, '↺ בטל'),
+        primary ? null : h('small', { class: 'muted' }, ' רק העורך הראשי מבטל')))));
+  }
+  function learnValues(m, L) {
+    if (!(L.values || []).length) return null;
+    const segText = s => (s ? learnValue('market_tf', s) : 'כל השווקים');
+    const er = x => (x && x.expectancy_r !== null ? r2(x.expectancy_r) + 'R' : '—');
+    const num = v => h('td', { class: 'num', dir: 'ltr' }, v);
+    // תוחלת R של כל שכן, בתוך הדגימה ומחוצה לה (23.10). מחוץ — רק לנוכחי ולנבחר
+    const cands = d => h('table', { class: 'tbl learn-nb' },
+      h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'ערך'), h('th', { scope: 'col' }, 'בתוך'), h('th', { scope: 'col' }, 'מחוץ'))),
+      h('tbody', {}, d.candidates.map((c, i) => h('tr', { 'data-value': String(c.value), class: i === d.chosen ? 'chosen' : '' },
+        h('th', { scope: 'row', dir: 'ltr' }, String(c.value), c.current ? ' · נוכחי' : '', i === d.chosen ? ' · נבחר' : '', c.edge ? ' · קצה' : ''),
+        num(er(c.in)), num(er(c.out))))));
+    return h('div', { class: 'learn-values' },
+      h('h3', { class: 'learn-h' }, 'איפה למקם — השוואת שכנים'),
+      h('p', { class: 'hint' }, 'הנוכחי וצעד אחד לכל כיוון, בהרצה מלאה על 70% הראשונים בזמן; שכן נבחר רק אם הוא טוב ב-0.05R לפחות, והצעה רק אם הוא טוב יותר גם ב-30% האחרונים. רץ ברקע (cron), לא כשפותחים את המסך.'),
+      h('ul', { class: 'learn-findings' }, L.values.map(v => {
+        const last = v.last;
+        let [lbl, cls] = (last && v.status !== 'due' ? LEARN_RESULT[last.result] : null) || LEARN_STATUS[v.status] || [v.status, ''];
+        if (last && last.result === 'too_big' && v.status !== 'due') lbl += ` — ${(last.detail && last.detail.pairs) || v.pairs.length} זוגות`;
+        return h('li', { 'data-param': v.param, 'data-segment': v.segment, 'data-status': v.status, 'data-result': last ? last.result : '' },
+          h('div', { class: 'l1' }, h('span', {}, `${v.label} · ${segText(v.segment)}`), h('span', { class: 'chip ' + cls }, lbl)),
+          h('p', { class: 'hint' }, `נוכחי ${v.current} · שכנים ${v.neighbors.join(' / ')} · טווח ${v.range[0]}–${v.range[1]}`,
+            ` · ${v.n_in} בתוך הדגימה, ${v.n_out} מחוצה לה (N ≥ ${L.min_n} בכל חלק)`),
+          last && last.detail && last.detail.candidates.length ? cands(last.detail) : null);
+      })));
+  }
+  /** היסטוגרמות MAE / MFE (23.10) — לדיון בלבד, לא מקור להצעה */
+  function learnHist(L) {
+    const H = L.hist;
+    if (!H || !H.n) return null;
+    const bars = (k, title) => {
+      const max = Math.max(1, ...H[k]);
+      return h('figure', { class: 'learn-hist', 'data-kind': k },
+        h('figcaption', {}, title),
+        h('ol', { dir: 'ltr' }, H[k].map((c, i) => h('li', { title: `${i === H[k].length - 1 ? '≥ ' + H.max : (i * H.step) + '–' + ((i + 1) * H.step)} ATR: ${c}` },
+          h('span', { style: `height:${Math.round(100 * c / max)}%` })))),
+        h('p', { class: 'hint', dir: 'ltr' }, `0 … ${H.max}+ ATR`));
+    };
+    return h('div', { class: 'learn-hists' },
+      h('h3', { class: 'learn-h' }, 'MAE / MFE — לדיון'),
+      h('p', { class: 'hint learn-cut' }, `חתוך בסטופ וביעד הנוכחיים — עסקה שנגעה בסטופ נסגרה, ולכן אין כאן מה שהיה קורה מעבר לו. לדיון בלבד, לא מקור להצעה (N = ${H.n}).`),
+      h('div', { class: 'learn-hist-row' }, bars('mae', 'הירידה נגד העסקה (MAE)'), bars('mfe', 'העלייה בעד העסקה (MFE)')));
+  }
+
+  function learnPanel(m, primary = false) {
     const out = h('div', { 'aria-live': 'polite' });
     const src = select('learn-source', LEARN_SRC, 'backtest');
     let ver = null;
@@ -289,6 +401,10 @@ export function mountAnalysis(ctx) {
           h('p', { class: 'hint' }, f.text),
           f.code ? h('a', { class: 'learn-item', href: '#/dev/tasks/' + f.code }, `⚠️ ${f.code} — לדיון`) : null)))
           : h('p', { class: 'hint learn-none' }, 'אין ממצאים — אף פלח לא שונה מהשאר במובהקות, וגם לא 30 העסקאות האחרונות.'),
+        // replaceChildren הופך null לטקסט "null" — חלק שאין לו מה להראות נשאר ריק
+        segValues(m, primary) || '',
+        learnValues(m, L) || '',
+        learnHist(L) || '',
         h('p', { class: 'hint' }, `פלח עם פחות מ-${L.min_n} עסקאות — "אין מספיק נתונים", בלי אחוז ובלי תוחלת.`,
           L.gaps ? ` ${L.gaps} אותות לא נפתחו (פער מעבר לרמה) — לא בסטטיסטיקה.` : ''),
         h('table', { class: 'tbl learn-tbl' },

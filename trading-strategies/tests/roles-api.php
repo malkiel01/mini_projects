@@ -52,10 +52,10 @@ ts_migrate($m);
 $roles = fn() => $m->query('SELECT user_id, role, granted_by, granted_at FROM app_roles ORDER BY user_id')->fetchAll();
 $want = [['user_id' => 2, 'role' => 'editor', 'granted_by' => 1, 'granted_at' => 1700000001], ['user_id' => 3, 'role' => 'editor', 'granted_by' => 1, 'granted_at' => 1700000002]];
 eq($roles(), $want, 'criterion 1: two admin → two editor, same granted_by and granted_at');
-eq((int)$m->query('PRAGMA user_version')->fetchColumn(), 19, 'user_version = 19 (18 — the roles; 19 — learning_findings, L4)');
+eq((int)$m->query('PRAGMA user_version')->fetchColumn(), 22, 'user_version = 22 (18 — the roles; 19 — learning_findings, L4; 20 — L5; 21 — L5b; 22 — learn_live, L2)');
 eq(['users' => $m->query('SELECT * FROM users ORDER BY id')->fetchAll(), 'log' => $m->query('SELECT * FROM admin_log ORDER BY id')->fetchAll()], $before, 'no other row touched (users, admin_log)');
 ts_migrate($m);
-eq([$roles(), (int)$m->query('PRAGMA user_version')->fetchColumn()], [$want, 19], 'criterion 1: second run → no change');
+eq([$roles(), (int)$m->query('PRAGMA user_version')->fetchColumn()], [$want, 22], 'criterion 1: second run → no change');
 foreach (['admin', 'owner', ''] as $bad) {
     $failed = false;
     try { $m->exec("INSERT INTO app_roles VALUES (4, '$bad', 1, 1)"); } catch (PDOException) { $failed = true; }
@@ -89,7 +89,7 @@ $m3->exec("CREATE TABLE users (id INTEGER PRIMARY KEY); INSERT INTO users VALUES
            CREATE TABLE app_roles (user_id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('admin')), granted_by INTEGER NOT NULL, granted_at INTEGER NOT NULL);
            INSERT INTO app_roles VALUES (2, 'admin', 1, 5), (9, 'admin', 1, 6); PRAGMA user_version = 17; PRAGMA foreign_keys = ON;");
 ts_migrate($m3);
-eq([(int)$m3->query('PRAGMA user_version')->fetchColumn(), $m3->query('SELECT user_id || role FROM app_roles')->fetchAll(PDO::FETCH_COLUMN)], [19, ['2editor']],
+eq([(int)$m3->query('PRAGMA user_version')->fetchColumn(), $m3->query('SELECT user_id || role FROM app_roles')->fetchAll(PDO::FETCH_COLUMN)], [22, ['2editor']],
     'R1 ⚪1: an orphan row (user 9) is left behind, the migration completes');
 
 // ── השרת ─────────────────────────────────────────────────────────
@@ -151,6 +151,13 @@ $ROWS = [
     ['S7: apply', ['chief'], function ($as) use ($prop) {
         $id = call('owner', 'admin_tune_propose', $prop())[1]['proposal']['id'];
         return call($as, 'admin_tune_apply', ['id' => $id])[0];
+    }],
+    // L6 (23.7): "החלף לבפועל" — הצעה מהלמידה (נכתבת ב-cron; כאן ישר למסד), ההחלה דרך admin_tune_apply — עורך ראשי בלבד
+    ['L6: switch to live', ['chief'], function ($as) use ($db, $S) {
+        $db->exec("INSERT INTO method_proposals (method_id, method_version, param, current_value, candidate_value, asset, tf, split_t, results, note, created_by, created_at, segment, origin)
+            VALUES ('$S', " . (int)$db->query("SELECT 1 + tune FROM methods WHERE id = '$S'")->fetchColumn() . ", '@certainty', '\"backtest\"', '\"live\"', '', 'h4', 0,
+            '{\"backtest\":{\"n\":40,\"ci\":[0.5,0.8]},\"live\":{\"n\":30,\"ci\":[0,0.1]}}', '', 0, 0, 'crypto|' || (SELECT COUNT(*) FROM method_proposals), 'learning')");
+        return call($as, 'admin_tune_apply', ['id' => (int)$db->lastInsertId()])[0];
     }],
     ['providers: settings', ['chief', 'editor'], fn($as) => call($as, 'admin_provider_save', ['provider' => 'binance', 'enabled' => true])[0]],
     ['providers: editor keys', ['chief', 'editor'], fn($as) => call($as, 'admin_cred_save', ['provider' => 'finnhub', 'secret' => 'good-Qx' . $as . 'Wv', 'label' => $as])[0]],
