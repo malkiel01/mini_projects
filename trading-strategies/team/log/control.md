@@ -76,3 +76,4 @@
 - ~09:30 — #1646 (קוד `…DnBi3cR5V4TF8WRTm`) נבדק ואושר (`team/reviews/flaky-key-test.md`), נשלח למיזוג יחד עם ענף הבקרה. השעון החדש `trig_01KNVAkUc99NpULxQ9nAwWRt`.
 - ~09:35 — אומתו 1719 ✅, 1720 ✅, 1722 ✅ (כולל 'trading-strategies tests (PHP)'); 1721 בוטלה בתור.
 - ~11:35 — הספר השני (פיבונאצ'י, Brown) התקבל: owner-brief 2ח, `team/handoff/fibonacci-book-check.md`. אפיון (2) הועיר. קובץ נוסף מהבעלים (project-handoff, קטלוג ספרים) — לא של האפליקציה, לא נגעתי; שאלתי את הבעלים.
+- ~11:50 — 1733 ✅ (כוללת #1657, #1658).
