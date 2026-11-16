@@ -13,7 +13,7 @@
 | האפיון | `docs/spec/` |
 | כללי הצוות | `team/PROTOCOL.md` |
 | ה-API (`api.php?action=…`) | `api.php`; הלוגיקה ב-`lib/` (חסומה בדפדפן) |
-| המסכים | `index.html` + `assets/js/app.js` — רשימה בשתי קבוצות + 🖨️ הדפסה משותפת (`#/`), מחירון (`#/e/<pid>`, ✏️ עריכה, 📜 שינויים), מחירון חדש לקבוצה (`#/new/il\|abroad`), מפתח (`#/dev/…`) |
+| המסכים | `index.html` + `assets/js/app.js` — רשימה בשתי קבוצות + 🖨️ הדפסה משותפת (`#/`), מחירון (`#/e/<pid>`, ✏️ עריכה, 📜 שינויים), מחירון חדש לקבוצה (`#/new/il\|abroad`), ⚙️ הגדרות — החתימות, סט אחד לכל ההדפסות (`#/settings`), מפתח (`#/dev/…`) |
 | העריכה | `lib/edit.php` — כל כתיבה בטרנזקציה וביומן (`audit`) עם הערך הקודם; מחירון בתוקף — 409 `need_confirm` בלי `confirm_in_effect` |
 | ההדפסה | `print.html?il=<pid>&abroad=<pid>&mode=one\|split\|both` + `assets/js/print.js`, `assets/css/print.css` (`&preview=1` — בלי חלון ההדפסה). הקישור הישן `?e=<pid>&mode=…` ממשיך לעבוד |
 | נתוני ההתחלה | `lib/seed/` — העתקים של `docs/spec/seed/`: `editions.json` (ישראל 2024, 2025), `israel-2026-06-15.json` ו-`abroad-2026-06-15.json`. כל מחירון נטען רק אם אין עדיין מחירון לאותה קבוצה באותו תאריך |

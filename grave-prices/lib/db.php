@@ -90,6 +90,7 @@ function gp_migrations(): array
         4 => function (PDO $pdo) {
             // פרוסה 03: מחירון שייך לקבוצה אחת — 03-per-audience.md סעיף 2. לא מוחקת דבר.
             gp_rebuild_editions($pdo);
+            gp_settings_init($pdo);   // לפני נתוני ההתחלה: מהמחירון האחרון כפי שהבעלים השאיר אותו
             gp_migrate_abroad($pdo);
             gp_seed_one($pdo, gp_seed_file('abroad-2026-06-15.json'), 'seed-abroad-2026-06-15');
             gp_seed_one($pdo, gp_seed_file('israel-2026-06-15.json'), 'seed-il-2026-06-15');
@@ -166,6 +167,28 @@ function gp_rebuild_editions(PDO $pdo): void
     $pdo->exec('ALTER TABLE editions_new RENAME TO editions');
     $after = $pdo->query('SELECT id, pid, effective_from, signatures, created_by, created_at, updated_at FROM editions ORDER BY id')->fetchAll();
     if ($after !== $before) throw new RuntimeException('מיגרציה 4: המחירונים לא הועתקו במלואם');
+}
+
+/**
+ * הגדרות האפליקציה (key → JSON). החתימות — סט אחד לכל ההדפסות (הכרעת הבעלים 12:20); ערך התחלתי מהמחירון `il` האחרון
+ * כפי שהוא במסד, כולל עריכות. editions.signatures נשאר ולא נמחק, אבל לא משמש.
+ */
+function gp_settings_init(PDO $pdo): void
+{
+    $pdo->exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_by INTEGER, updated_at TEXT NOT NULL)');
+    $sig = null;   // האחרון שיש בו שלוש חתימות
+    foreach ($pdo->query("SELECT signatures FROM editions WHERE audience = 'il' ORDER BY effective_from DESC, id DESC")->fetchAll(PDO::FETCH_COLUMN) as $j) {
+        $x = json_decode((string)$j, true);
+        if (is_array($x) && count($x) === 3) { $sig = $x; break; }
+    }
+    $sig ??= gp_seed_file('israel-2026-06-15.json')['signatures'];
+    $pdo->prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO NOTHING')
+        ->execute(['signatures', json_encode($sig, JSON_UNESCAPED_UNICODE), now_iso()]);
+}
+
+function gp_signatures(): array
+{
+    return json_decode((string)db()->query("SELECT value FROM settings WHERE key = 'signatures'")->fetchColumn(), true) ?: [];
 }
 
 /** מחירי חו"ל שהוקלדו במחירון ישראל → מחירון חו"ל באותו תאריך (המקורי לא משתנה). */

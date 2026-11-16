@@ -179,11 +179,7 @@ function editPanel(e) {
     return `<h2 class="sec-title">כותרת המשנה</h2>
       <label class="f"><span>מתחת ל"מחירון חברה קדישא לעדת המערבים"</span><input id="sub-in" value="${esc(e.subtitle)}" maxlength="120" required></label>
       <small class="st" id="sub-st" aria-live="polite"></small>
-      <h2 class="sec-title">חתימות</h2>
-      <div class="sig-edit">${e.signatures.map((s, i) => `<div class="fields two">
-        <label class="f"><span>שם ${i + 1}</span><input data-sig="${i}" data-k="name" value="${esc(s.name)}" maxlength="100"></label>
-        <label class="f"><span>תפקיד ${i + 1}</span><input data-sig="${i}" data-k="role" value="${esc(s.role)}" maxlength="100"></label></div>`).join('')}
-        <small class="st" id="sig-st" aria-live="polite"></small></div>
+      <p class="hint">החתימות — אחת לכל ההדפסות, ב<a href="#/settings">⚙️ הגדרות</a>.</p>
       <div class="row-btns wrap tail-btns"><button class="btn ghost" id="add-end">➕ שורה בסוף</button></div>
       ${e.future ? `<h2 class="sec-title">המחירון</h2>
         <div class="fields two"><label class="f"><span>בתוקף החל מ-</span><input type="date" id="date-in" value="${esc(e.effective_from)}" required></label></div>
@@ -220,20 +216,7 @@ function bindEdit(e) {
         td.onkeydown = ev => { if (ev.key === 'Enter') open(); };
     });
     $('#add-end').onclick = () => openRow(e, null, e.rows.at(-1)?.pid || '');
-    // חתימות: כל שינוי שומר את שלושתן
-    view.querySelectorAll('[data-sig]').forEach(inp => inp.onchange = async () => {
-        const sigs = [0, 1, 2].map(i => ({ name: $(`[data-sig="${i}"][data-k=name]`, view).value, role: $(`[data-sig="${i}"][data-k=role]`, view).value }));
-        const st = $('#sig-st');
-        st.className = 'st'; st.textContent = '…';
-        try {
-            await edit('signatures-set', { pid, signatures: sigs });
-            st.className = 'st ok'; st.textContent = 'נשמר ✓';
-        } catch (err) {
-            if (err.cancelled) return rerender(pid);
-            st.className = 'st err'; st.textContent = err.message;
-        }
-    });
-    // כותרת המשנה — כמו החתימות
+    // כותרת המשנה — נשמרת בעזיבת השדה
     $('#sub-in').onchange = async ev => {
         const st = $('#sub-st');
         st.className = 'st'; st.textContent = '…';
@@ -322,7 +305,7 @@ function histText(h) {
         case 'row-delete': return 'נמחקה שורה: ' + plain(d.label) + ('price' in d ? (d.price != null ? ' (' + num(d.price) + ')' : '')
             : d.prices ? ' (' + Object.entries(d.prices).map(([a, v]) => AUD[a] + ' ' + num(v)).join(', ') + ')' : '');
         case 'row-move': return 'שורה הוזזה ' + (d.dir === 'up' ? 'למעלה' : 'למטה') + ': ' + plain(d.label);
-        case 'signatures': return 'החתימות עודכנו';
+        case 'signatures': return 'החתימות עודכנו (לפני שהיו אחת לכל ההדפסות)';
         case 'edition-create': return 'המחירון נפתח על בסיס ' + dmy(d.base) + (Object.keys(d.raise || {}).length ? ', עם העלאה באחוז' : '');
         case 'edition-update': return 'התאריך שונה: ' + dmy(d.old) + ' → ' + dmy(d.new);
         case 'subtitle': return 'כותרת המשנה: ' + d.old + ' → ' + d.new;
@@ -397,10 +380,35 @@ async function showNew(aud) {
     await load();
 }
 
+/* ===== ⚙️ הגדרות — החתימות: סט אחד לכל ההדפסות ולכל המחירונים (הכרעת הבעלים 12:20) ===== */
+async function showSettings() {
+    head('הגדרות', '', true);
+    const { signatures } = await api('settings');
+    view.innerHTML = `<h2 class="sec-title">חתימות</h2>
+      <p class="hint">מופיעות בתחתית כל הדפסה — ישראל וחו"ל, בכל מחירון, גם הישנים. מימין לשמאל.</p>
+      <form class="sig-edit" id="sig-form" novalidate>${signatures.map((s, i) => `<div class="fields two">
+        <label class="f"><span>שם ${i + 1}</span><input data-sig="${i}" data-k="name" value="${esc(s.name)}" maxlength="100" autocomplete="off"></label>
+        <label class="f"><span>תפקיד ${i + 1}</span><input data-sig="${i}" data-k="role" value="${esc(s.role)}" maxlength="100" autocomplete="off"></label></div>`).join('')}
+        <small class="st" id="sig-st" aria-live="polite"></small></form>`;
+    // כל שינוי שומר את שלושתן
+    view.querySelectorAll('[data-sig]').forEach(inp => inp.onchange = async () => {
+        const sigs = [0, 1, 2].map(i => ({ name: $(`[data-sig="${i}"][data-k=name]`, view).value, role: $(`[data-sig="${i}"][data-k=role]`, view).value }));
+        const st = $('#sig-st');
+        st.className = 'st'; st.textContent = '…';
+        try {
+            await api('signatures-set', { body: { signatures: sigs } });
+            st.className = 'st ok'; st.textContent = 'נשמר ✓';
+        } catch (err) {
+            st.className = 'st err'; st.textContent = err.message;
+        }
+    });
+    $('#sig-form').onsubmit = ev => ev.preventDefault();
+}
+
 /* ===== מסך המפתח ===== */
 const DEV_TABS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '🗂️ פעולות'], ['health', '🩺 תקינות']];
 const ACTIONS = { login: 'כניסה', print: 'הדפסה', price: 'שינוי מחיר', 'row-add': 'שורה נוספה', 'row-edit': 'שורה תוקנה',
-    'row-delete': 'שורה נמחקה', 'row-move': 'שורה הוזזה', signatures: 'חתימות', 'edition-create': 'מחירון נפתח',
+    'row-delete': 'שורה נמחקה', 'row-move': 'שורה הוזזה', signatures: 'חתימות (במחירון)', 'signatures-set': 'חתימות (הגדרות)', 'edition-create': 'מחירון נפתח',
     'edition-update': 'תאריך שונה', 'edition-delete': 'מחירון נמחק', subtitle: 'כותרת משנה', 'migrate-abroad': 'חו"ל הועבר ממחירון ישראל',
     'seed-il-2026-06-15': 'נטען: ישראל 15/06/2026', 'seed-abroad-2026-06-15': 'נטען: חו"ל 15/06/2026' };
 const MODES = { one: 'מחירון אחד', il: 'תושבי ישראל', abroad: 'תושבי חו"ל', split: 'דף נפרד לכל קבוצה', both: 'שתיהן בדף אחד' };
@@ -444,6 +452,7 @@ async function route() {
     try {
         if (a === 'e' && b) await showEdition(b);
         else if (a === 'new') await showNew(b || 'il');
+        else if (a === 'settings') await showSettings();
         else if (a === 'dev') await showDev(b || 'tasks', c);
         else await showList();
     } catch (e) {
@@ -461,6 +470,7 @@ async function route() {
         return;
     }
     $('#dev-btn').hidden = !me.is_dev;
+    $('#set-btn').hidden = false;
     DevLoop.setup({ api, toast, isDev: () => me.is_dev, appName: 'מחירוני קברים', tasksHref: '#/dev/tasks', mountBefore: '#me-btn',
         headers: () => ({ 'X-CSRF': me.csrf }), version: () => me.version, logHref: r => '#/dev/log/' + r.req, builtinLog: true });
     DevLoop.mount();

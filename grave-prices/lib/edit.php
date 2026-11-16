@@ -214,20 +214,19 @@ function gp_row_move(int $uid, array $in): array
 
 /* ===== חתימות ===== */
 
+/** החתימות — סט אחד לכל ההדפסות, במסך ⚙️ הגדרות (הכרעת הבעלים 12:20). ביומן בלי מחירון. */
 function gp_signatures_set(int $uid, array $in): array
 {
-    $e = gp_edition_row((string)($in['pid'] ?? ''));
     $s = $in['signatures'] ?? null;
     if (!is_array($s) || count($s) !== 3 || !array_is_list($s)) throw new ApiError('צריך שלוש חתימות');
     $new = array_map(fn($x) => is_array($x) ? ['name' => gp_text($x['name'] ?? '', 100, 'השם'), 'role' => gp_text($x['role'] ?? '', 100, 'התפקיד')]
         : throw new ApiError('חתימה לא תקינה'), $s);
-    gp_guard($e, $in);
-    return gp_tx(function (PDO $pdo) use ($uid, $e, $new) {
-        $old = json_decode($e['signatures'], true) ?: [];
+    return gp_tx(function (PDO $pdo) use ($uid, $new) {
+        $old = gp_signatures();
         if ($old !== $new) {
-            $pdo->prepare('UPDATE editions SET signatures = ?, updated_at = ? WHERE id = ?')
-                ->execute([json_encode($new, JSON_UNESCAPED_UNICODE), now_iso(), $e['id']]);
-            gp_audit($uid, 'signatures', (int)$e['id'], ['old' => $old, 'new' => $new]);
+            $pdo->prepare("UPDATE settings SET value = ?, updated_by = ?, updated_at = ? WHERE key = 'signatures'")
+                ->execute([json_encode($new, JSON_UNESCAPED_UNICODE), $uid ?: null, now_iso()]);
+            gp_audit($uid, 'signatures-set', null, ['old' => $old, 'new' => $new]);
         }
         return ['ok' => true, 'signatures' => $new];
     });

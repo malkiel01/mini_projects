@@ -65,7 +65,8 @@ try {
         'POST row-save'        => gp_row_save($uid, $in),
         'POST row-delete'      => gp_row_delete($uid, $in),
         'POST row-move'        => gp_row_move($uid, $in),
-        'POST signatures-set'  => gp_signatures_set($uid, $in),
+        'GET settings'         => ['signatures' => gp_signatures()],
+        'POST signatures-set'  => gp_signatures_set($uid, $in),   // הגדרות — סט אחד לכל ההדפסות
         'POST edition-create'  => gp_edition_create($uid, $in),
         'POST edition-update'  => gp_edition_update($uid, $in),
         'POST edition-delete'  => gp_edition_delete($uid, $in),

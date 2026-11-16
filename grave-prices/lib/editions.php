@@ -71,7 +71,7 @@ function gp_edition(string $pid): array
         'effective_from' => $e['effective_from'],
         'subtitle' => $e['subtitle'],
         'future' => $e['effective_from'] > gp_today(),   // עתידי: נמחק ומשנה תאריך; עריכתו בלי אישור "כבר בתוקף"
-        'signatures' => json_decode($e['signatures'], true) ?: [],
+        'signatures' => gp_signatures(),   // הסט הגלובלי — לא של המחירון
         'rows' => $rows,
     ];
 }

@@ -55,14 +55,15 @@ function block(e) {
     return `<div class="block"><h2>${esc(e.subtitle)}</h2><p class="valid">המחירון בתוקף החל מ- ${esc(dmy(e.effective_from))}</p>${body}</div>`;
 }
 
+/** החתימות — סט אחד לכל ההדפסות (⚙️ הגדרות); ה-API מחזיר אותו בכל מחירון */
 const sigs = e => `<div class="sigs">${e.signatures.map(s => `<div><b>${esc(s.name)}</b><b>${esc(s.role)}</b></div>`).join('')}</div>`;
 
-/** עמוד: נייר מכתבים, התוכן, החתימות (אם יש), נייר מכתבים תחתון */
-function sheet(inner, signer, title = true) {
+/** עמוד: נייר מכתבים, הכותרת, התוכן, החתימות, נייר מכתבים תחתון */
+function sheet(inner, signer) {
     return `<section class="page">
         <img class="lh top" src="assets/img/letterhead-top.jpg" alt="ארגון קהילות יהודי צפון אפריקה בירושלים">
-        <div class="content">${title ? '<h1>מחירון חברה קדישא לעדת המערבים</h1>' : ''}${inner}</div>
-        ${signer ? sigs(signer) : '<div class="sigs-gap"></div>'}
+        <div class="content"><h1>מחירון חברה קדישא לעדת המערבים</h1>${inner}</div>
+        ${sigs(signer)}
         <img class="lh bottom" src="assets/img/letterhead-bottom.jpg" alt="">
       </section>`;
 }
@@ -79,8 +80,6 @@ function fit(p, min) {
     return c.scrollHeight <= c.clientHeight + 1;
 }
 
-/** החתימות ב"שתיהן בדף אחד": של המחירון שתאריכו מאוחר יותר (שאלה 16); באותו תאריך — של ישראל, הבלוק הראשון */
-const signer = (il, ab) => ab.effective_from > il.effective_from ? ab : il;
 
 /** פרמטרים → {il, abroad, mode}. קישור ישן (e=) — משלימים את הקבוצה השנייה ממה שבתוקף היום. */
 async function resolve(q) {
@@ -120,12 +119,12 @@ async function resolve(q) {
             await wait();
             box.querySelectorAll('.page').forEach(p => fit(p, MIN_ONE));
         } else {
-            // עמוד אחד: כותרת אחת, ישראל, קו, חו"ל, חתימות פעם אחת. לא נכנס ב-70% — חו"ל עובר לעמוד שני.
-            const sg = signer(eIl, eAb);
-            box.innerHTML = sheet(block(eIl) + '<hr class="sep">' + block(eAb), sg);
+            // זה לצד זה (הכרעת הבעלים 12:20): כותרת אחת, ישראל מימין וחו"ל משמאל, חתימות פעם אחת ברוחב מלא.
+            // לא נכנס ב-70% — שני עמודים כמו split.
+            box.innerHTML = sheet(`<div class="cols">${block(eIl)}${block(eAb)}</div>`, eIl);
             await wait();
             if (!fit(box.querySelector('.page'), MIN_BOTH)) {
-                box.innerHTML = sheet(block(eIl), null) + sheet(block(eAb), sg, false);
+                box.innerHTML = sheet(block(eIl), eIl) + sheet(block(eAb), eAb);
                 await wait();
                 box.querySelectorAll('.page').forEach(p => fit(p, MIN_ONE));
             }

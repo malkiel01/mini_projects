@@ -55,7 +55,8 @@ check('ישראל 2026: אותן שורות ואותן חתימות כמו 2025'
     && $e26['signatures'] === $e25['signatures']);
 check('חו"ל: 32 שורות, סכום 1,501,400', count($ab['rows']) === 32 && $sum($ab) === 1501400, count($ab['rows']) . '/' . $sum($ab));
 check('חו"ל: ארבעה פסים', count(array_filter($ab['rows'], fn($r) => $r['kind'] === 'band')) === 4);
-check('חו"ל: "יו"ר המועצה"', $ab['signatures'][2]['role'] === 'יו"ר המועצה');
+check('חתימות — סט אחד: "יו"ר הנהלה" גם בחו"ל', $ab['signatures'] === $e24['signatures'] && $ab['signatures'][2]['role'] === 'יו"ר הנהלה');
+check('editions.signatures של חו"ל נשמר במסד (לא משמש)', str_contains((string)$pdo->query("SELECT signatures FROM editions WHERE audience = 'abroad'")->fetchColumn(), 'המועצה'));
 check('כותרות משנה', $ab['subtitle'] === 'רכישת קבר בחיים לתושבי חו"ל' && $e25['subtitle'] === 'רכישת אחוזת קבר לתושבי ישראל');
 check('השורה הראשונה במחיר', $e25['rows'][2]['price'] === 16947 && $e25['rows'][2]['priced'] === true);
 check('כותרת בלי מחיר', $e25['rows'][0]['kind'] === 'section' && $e25['rows'][0]['price'] === null && !$e25['rows'][0]['priced']);
@@ -168,12 +169,15 @@ check('01→: מיגרציה חוזרת לא משנה', [$dump($old, 2), $eds($o
     $p->exec("INSERT INTO rows (edition_id, sort, kind, indent, label, pid) VALUES (2, 285, 'item', 1, 'שורה חדשה', 'newrow000001')");
     $p->exec("INSERT INTO prices (row_id, audience, amount) VALUES (last_insert_rowid(), 'il', 4321)");
     $p->exec("UPDATE editions SET signatures = '[{\"name\":\"א\",\"role\":\"ב\"},{\"name\":\"ג\",\"role\":\"ד\"},{\"name\":\"ה\",\"role\":\"ו\"}]' WHERE id = 1");
-    $p->exec("INSERT INTO editions (id, pid, effective_from, signatures, created_at, updated_at) VALUES (5, 'future000001', '2027-01-01', '[]', 'x', 'x')");
+    $p->exec("INSERT INTO editions (id, pid, effective_from, signatures, created_at, updated_at) VALUES (5, 'future000001', '2027-01-01',
+        '[{\"name\":\"ז\",\"role\":\"ח\"},{\"name\":\"ט\",\"role\":\"י\"},{\"name\":\"כ\",\"role\":\"ל\"}]', 'x', 'x')");
 });
 $before = [$dump($old, 5), $eds($old, 5), $audit($old)];
 gp_migrate($old);
 check('02→03: הכול נשמר — שורות, מחירים, מחירונים, יומן', [$dump($old, 5), $eds($old, 5), $audit($old)] === $before);
 check('02→03: foreign_key_check ריק', $old->query('PRAGMA foreign_key_check')->fetchAll() === []);
+check('02→03: חתימות — מהמחירון ישראל האחרון כפי שנערך', json_decode((string)$old->query("SELECT value FROM settings WHERE key = 'signatures'")->fetchColumn(), true)
+    === [['name' => 'ז', 'role' => 'ח'], ['name' => 'ט', 'role' => 'י'], ['name' => 'כ', 'role' => 'ל']]);
 $il = $byAud($old, 'il');
 check('02→03: ישראל — 2024, 2025, 2026 שנוסף, 2027', array_column($il, 'effective_from') === ['2024-01-02', '2025-03-15', '2026-06-15', '2027-01-01']);
 check('02→03: subtitle של ישראל', array_unique(array_column($il, 'subtitle')) === [GP_SUBTITLES['il']]);
@@ -225,6 +229,7 @@ check('02→03 (חו"ל ידני): ביומן migrate-abroad', count($m) === 1 &
 check('02→03 (ישראל 2026 של הבעלים): לא נגעו', $priceOf($old, 3, 'il') === [['של הבעלים', 111]]
     && (int)$old->query("SELECT COUNT(*) FROM audit WHERE action = 'seed-il-2026-06-15'")->fetchColumn() === 0
     && count($byAud($old, 'il')) === 3);
+check('02→03 (חו"ל ידני): חתימות — מדלגים על מחירון בלי שלוש', str_contains((string)$old->query("SELECT value FROM settings WHERE key = 'signatures'")->fetchColumn(), 'אבשלום'));
 check('02→03 (חו"ל ידני): foreign_key_check ריק', $old->query('PRAGMA foreign_key_check')->fetchAll() === []);
 $old->exec('PRAGMA user_version = 3');
 gp_migrate($old);
@@ -336,10 +341,16 @@ check('סוג לא מוכר', $err(fn() => gp_row_save($uid, ['pid' => $new['pid
 check('תווית ארוכה', $err(fn() => gp_row_save($uid, ['pid' => $new['pid'], 'kind' => 'item', 'indent' => 0, 'label' => str_repeat('א', 201)]))[0] === 400);
 
 // חתימות
+// חתימות — סט אחד בהגדרות; כל מחירון, גם 2024, מודפס איתו (הכרעת הבעלים, קריטריון ב)
 $sig = [['name' => 'א', 'role' => 'ב'], ['name' => 'ג', 'role' => 'ד'], ['name' => 'ה', 'role' => 'ו']];
-gp_signatures_set($uid, ['pid' => $new['pid'], 'signatures' => $sig]);
-check('חתימות — למחירון הזה בלבד', gp_edition($new['pid'])['signatures'] === $sig && gp_edition($p25)['signatures'] !== $sig);
-check('חתימות — בדיוק שלוש', $err(fn() => gp_signatures_set($uid, ['pid' => $new['pid'], 'signatures' => [$sig[0]]]))[0] === 400);
+$was = gp_signatures();
+gp_signatures_set($uid, ['signatures' => $sig]);
+check('חתימות — בכל מחירון, גם 2024', gp_edition($p24)['signatures'] === $sig && gp_edition($new['pid'])['signatures'] === $sig);
+$a = $pdo->query("SELECT edition_id, details FROM audit WHERE action = 'signatures-set' ORDER BY id DESC LIMIT 1")->fetch();
+check('חתימות — ביומן בלי מחירון, עם הקודם', $a['edition_id'] === null && json_decode($a['details'], true)['old'] === $was);
+check('חתימות — בדיוק שלוש', $err(fn() => gp_signatures_set($uid, ['signatures' => [$sig[0]]]))[0] === 400);
+check('חתימות — טקסט ארוך', $err(fn() => gp_signatures_set($uid, ['signatures' => [['name' => str_repeat('א', 101), 'role' => ''], $sig[1], $sig[2]]]))[0] === 400);
+gp_signatures_set($uid, ['signatures' => $was]);
 
 // תאריך — רק עתידי, בלי התנגשות
 check('תאריך — התנגשות', $err(fn() => gp_edition_update($uid, ['pid' => $new['pid'], 'effective_from' => '2031-01-01']))[0] === 409);
@@ -374,8 +385,7 @@ $e9 = gp_edition($ab9['pid']);
 $fields = array_values(array_filter($e9['rows'], fn($r) => $r['label'] === '**כל החלקות** ((שדה))'));
 check('חו"ל חדש: הר הזיתים שדה = 66,000', $fields[0]['price'] === 66000, (string)$fields[0]['price']);
 check('חו"ל חדש: הר המנוחות מערב בודד = 60,000', $find($e9, '((בודד))')['price'] === 60000);
-check('חו"ל חדש: קבוצה, כותרת משנה וחתימות', gp_edition_row($ab9['pid'])['audience'] === 'abroad' && $e9['subtitle'] === GP_SUBTITLES['abroad']
-    && $e9['signatures'][2]['role'] === 'יו"ר המועצה');
+check('חו"ל חדש: קבוצה וכותרת משנה', gp_edition_row($ab9['pid'])['audience'] === 'abroad' && $e9['subtitle'] === GP_SUBTITLES['abroad']);
 check('חו"ל חדש: ישראל לא השתנה', $sum(gp_edition($p26)) === 599979);
 check('חו"ל חדש: הבסיס לא השתנה', $sum(gp_edition($pab)) === 1501400);
 check('חו"ל חדש: אין רשומות מחיר של ישראל', (int)$pdo->query("SELECT COUNT(*) FROM prices p JOIN rows r ON r.id = p.row_id
