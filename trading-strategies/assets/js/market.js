@@ -8,7 +8,7 @@ import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
 import { mountChartTip } from './charttip.js';
-import { mountAxis, labelBoard } from './chartaxis.js';
+import { mountAxis, labelBoard, tzOffset } from './chartaxis.js';
 import { setTurned, screenRect } from './rotate.js';
 import { mountCombo, invalidateCatalog } from './combobox.js';
 
@@ -487,9 +487,12 @@ export function mountMarket(ctx) {
     // ציר הזמן: תאריך במעבר יום/חודש/שנה, ושעה בתוך היום; הסמן — תאריך ושעה
     const fmtTick = (t, kind) => fmtT(t, kind === 'year' ? { year: 'numeric' } : kind === 'month' ? { month: 'short', year: '2-digit' }
       : kind === 'day' ? { day: 'numeric', month: 'numeric' } : kind === 'time' ? { hour: '2-digit', minute: '2-digit' }
-        : { day: 'numeric', month: 'numeric', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { year: '2-digit' }) });
+        // הנר האחרון בקצה הימני: שעה במסגרת שבתוך היום, תאריך במסגרת של יום ומעלה
+        : kind === 'last' ? (TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'numeric' })
+          : { day: 'numeric', month: 'numeric', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { year: '2-digit' }) });
     let dec = 2;   // הספרות של הנכס (priceFormat) — לסמן ולציר
-    const axis = mountAxis({ chart, series: candle, col, getDec: () => dec, getTimes: () => data.map(x => x.time), fmtTime: fmtTick });
+    const axis = mountAxis({ chart, series: candle, col, getDec: () => dec, getTimes: () => data.map(x => x.time), fmtTime: fmtTick,
+      offset: tzOffset(tz) });   // גבולות הסימונים לפי שעון המשתמש — כמו הטקסט (fmtT)
     const oscAxis = mountAxis({ chart: osc, series: oscSeries, col, getDec: () => 2, time: false });
     // לוח התוויות — משותף לשיטות ולשרטוטים, כדי שתוויות לא יחפפו (18.1.2 סעיף 5)
     const board = labelBoard();

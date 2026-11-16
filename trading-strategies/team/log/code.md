@@ -169,3 +169,4 @@
   `learn-card-ui.mjs` (22); `roles-api.php` — שורה "L6: switch to live" (161). כל `tests/*.php` ירוקים; ui: tune, forecast, learn, refresh,
   analysis, roles, learn-switch, chart-f1, method-colors, fibonacci, elliott-card — ירוקים.
 - 2026-11-16 — **L6.1** (בקשת בקרה (8) אחרי מיזוג #1713): שורת הסיכום של שיטה בגרף (`forecast.js`, `brief`) — `ודאות X% · ראשונית` / `· בפועל מאז` לפי `certainty_basis`. `learn-card-ui.mjs` 22 → 25 (גם מקופל); forecast-ui, refresh-ui, chart-f1-ui ירוקים.
+- 2026-11-16 — **ציר הזמן לפי שעון המשתמש** (תקלה שהבעלים ראה, בקרה (8)): `chartaxis.js` — `tickKey` / `tzOffset` (Intl, שעון קיץ), גבולות לפי השעון המקומי; תווית לנר האחרון בקצה הימני. `market.js` מעביר `offset: tzOffset(tz)` ו-`fmtTime(t, 'last')`. בדיקות: `chartaxis-js.mjs` (14), `chart-axis-tz-ui.mjs` (13; נכשלת על הקוד הישן — 08/14/20). chart-f1, analysis, market-tabs, pairs, refresh, chart-landscape ירוקים.

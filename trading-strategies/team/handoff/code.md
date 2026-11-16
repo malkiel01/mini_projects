@@ -159,6 +159,10 @@
 
 ## מוסכמות שגיליתי
 
+- **ציר הזמן — לפי שעון המשתמש** (`assets/js/chartaxis.js`): סימון חדש כש-`tickKey(t, step, kind, offset)` משתנה; `offset = tzOffset(ME().user.timezone)`.
+  **לא לחזור ל-`Math.floor(t / step)` או ל-`getUTC*` בלי offset** — בישראל זה מציג 02:00 / 14:00. התווית של הנר האחרון — `fmtTime(t, 'last')`,
+  נרשמת לפני שאר הסימונים ושומרת לה מקום. `tsAxis().last` — לבדיקות. בדיקות: `chartaxis-js.mjs`, `chart-axis-tz-ui.mjs`.
+
 - **שעון קבוע בבדיקות ממשק:** `X-Dev-Now` לשרת **וגם** `ctx.clock.setFixedTime(NOW * 1000)` לדפדפן (ראו `tests/forecast-ui.mjs`, `open()`).
   - בלי השעון בדפדפן, הבדיקה נכשלת לבד שבוע אחרי NOW.
   - **ל-S3 זה רגיש:** שעון קבוע (`setFixedTime`) לא מקדם טיימרים. לבדיקת רענון צריך `ctx.clock.install()` ו-`runFor()`, או `fastForward`.
