@@ -9,6 +9,7 @@
 > **עדכון 2026-11-16 (צ'אט S6):** S6 בנוי וממוזג (#1611) — הסעיף "S6 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S7, שנשען על היומן).
 > **עדכון 2026-11-16 (צ'אט S7):** S7 ו-method_colors (2.20) בנויים וממוזגים (#1615) — הסעיף "S7 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md`.
 > **עדכון 2026-11-16 (צ'אט A1):** DevLoop מחובר וממוזג (#1618) — הסעיף "A1 — DevLoop" בסוף. הבא בתור — לפי `team/board.md`.
+> **עדכון 2026-11-16 (צ'אט A2):** A2 — התחברות עם אפשרות ניתוק — בנוי וממוזג (#1623). הסעיף "A2 — התחברות" בסוף. **מיגרציה הבאה — 15.** הבא בתור — לפי `team/board.md`.
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -236,3 +237,42 @@
   "הכול" לפני שמחפשים מטלה.
 - **ביקורת:** `team/reviews/a1.md` — בלי 🔴/🟡. ראיות פריסה ל-`TS-` ב-`deploy.yml` — נכנסו ב-#1620 (A3); השורה ב-
   `devloop/README.md` — בקשה לפלטפורמה; האסימון `tsd_…` כ-`TS_DEVLOOP_TOKEN` — מטלה לבעלים, אצל הבקרה.
+
+## A2 — התחברות עם אפשרות ניתוק (#1623; spec-stage-a 20.1, גרסה 2.23; app-rules 2)
+
+- **הקבצים:**
+  - `lib/sso.php` — המצב מ-`sso.php?action=config`, במטמון לדקה ב-`data/platform-config.json`. אחד מ: `connected`, `detached`, `unknown`.
+    - הזרימה `sso_start` / `sso_callback`, עם כל הבדיקות של sso.md §2 ועוד iss ו-jti.
+    - `platform_key` ו-`ts_grant_status()` — בקשה חתומה. המפתח הפרטי במסד, ב-`settings.platform_sign_key`, מוצפן ב-`lib/secret.php`.
+  - `lib/auth.php` — `ts_session()` לפי המצב, החשבון (20.1 ה'), והסיסמה.
+- **כל הכתובות נגזרות מ-`app.json` (`sso.return`) — לעולם לא מהבקשה.** בפיתוח: `TS_APP_URL`.
+- **`sessions.via`:**
+  - `gate` — לא עובר למצב מנותק (ק11).
+  - `sso` / `password` — רק במנותקת. ההרשאה נבדקת שוב כל 5 דקות (`grant_checked_at`).
+    - `false` → ה-session נמחק (`TsNoAccess`).
+    - אין תשובה → 503 (`TsUnavailable`). לא נמחק.
+- **חשבון:**
+  - אותו sub → אותו חשבון.
+  - אותו מייל עם sub אחר → `TsConflict` (403, או `#/login/conflict`), ו-`account_conflict` ב-`admin_log`.
+  - אחרת → חשבון חדש.
+  - מייל שתפוס בשורה אחרת לא מועתק בעדכון.
+  - **אין "קישור לשורה בלי sub"** (2.23 — `platform_sub` הוא NOT NULL). לא להוסיף.
+- **המנהל הראשי במנותקת:** `users.platform_admin` השמור. רק השער כותב אותו (`ts_user_for`, `platform_admin: null` מ-SSO).
+  - `ts_is_primary_admin()` — לפי `ts_current()['via']`.
+  - ה-token של DevLoop במנותקת — `ts_dev_granted()` ב-`lib/devtasks.php`, `grant_status` שמור 5 דקות.
+- **סיסמה לאפליקציה:**
+  - `password_hash`, עד 72 בתים.
+  - נקבעת בפרופיל (`password_set`). החלפה סוגרת כניסות אחרות בסיסמה.
+  - איפוס — `admin_password_reset`, רק הראשי.
+  - הנעילה: `login_locks`, אטומית (`ON CONFLICT … fails + 1`), לפי `email:` ולפי `ip:`.
+  - יותר משורה אחת עם סיסמה לאותו מייל → 409.
+- **בבדיקות (`tests/dev-prepend.php`):**
+  - `X-Dev-Platform` (או העוגייה `dev_platform`) = `connected` (ברירת מחדל) / `detached` / `unknown` / `live`.
+    - `live` שואל את "המעטפת" דרך `TS_HTTP_FIXTURES`.
+  - `X-Dev-Password: 1` — `login.password`.
+  - grant_status — fixture על `provision.php?action=grant_status` (ראו `grant()` ב-`tests/sso-api.php`).
+- **בדיקות:** `tests/sso-api.php` (107), `tests/login-ui.mjs` (20).
+  - **ב-Playwright אין ניתוב לבקשות בתוך שרשרת הפניה** — לכן `login-ui` מיירט את `sso_start` עצמו (`route.fetch({maxRedirects: 0})`).
+- **ביקורת:** `team/reviews/a2.md`. כל ה-🟡 וה-⚪ תוקנו בסבב 2.
+  - ⚪ לבעלים, לפי האפיון: מנהל ראשי שהודח בזמן ניתוק נשאר מנהל עד הכניסה הבאה דרך השער.
+- **פתוח, לא בפרוסה:** Google (ש8), שכחתי סיסמה במייל (ש9), קישור ידני של `account_conflict` (ש2).

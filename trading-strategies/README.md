@@ -213,6 +213,8 @@ PR 2 ו-2ב (חיבור לענן MBE, "☁️ ענן MBE" ב"עוד", "📚 קו
 
 ## שלב א' — 4ב/1: מנתח ביטויים ושיטה מוגדרת (פרק 17.2, בלי UI)
 
+> **נמחק ב-21.1 (✅29)** — ראו "21.1: בונה השיטות נמחק" למטה. הסעיף נשאר כהיסטוריה.
+
 - **`lib/expr.php`:** שפה סגורה — מספרים, שמות מוכרים, `$param`, `+ - * /`, השוואות, `crosses_above`/`crosses_below`,
   `and`/`or` וסוגריים. הטקסט הופך לעץ (מערכים) ומחושב בפונקציה אחת; **אין `eval`**, אין קוד, קבצים או רשת. נדחים: כל תו
   מחוץ לרשימה (מחרוזות, `;`, `` ` ``, סוגריים מסולסלים/מרובעים, עברית, שורה חדשה), שם לא מוכר, קריאה לפונקציה, השוואה
@@ -300,6 +302,8 @@ PR 2 ו-2ב (חיבור לענן MBE, "☁️ ענן MBE" ב"עוד", "📚 קו
 - **שינוי לכל השיטות:** `label` של שיטה עובר לכרטיס גם כשהיא לא שיטת דוגמה, ו-`met: null` לא נהפך ל-false.
 
 ## שלב א' — 4ב/3: בונה השיטות — מנהל בלבד (פרק 17.2, ✅19)
+
+> **נמחק ב-21.1 (✅29)** — ראו "21.1: בונה השיטות נמחק" למטה. הסעיף נשאר כהיסטוריה.
 
 - **מיגרציה 8** (`data/app.sqlite`, מוחרג מהפריסה): `methods` + `kind` (`code|defined`), `definition`, `definition_version`;
   טבלה `method_versions`. שורות קיימות — `kind = 'code'`, בלי שינוי.
@@ -452,8 +456,6 @@ lib/journal.php     יומן השיטה: כתיבה לנר סגור, התוצא�
 lib/prefill.php     מילוי איטי של המאגר ברקע — שלב ב-cron (21.2)
 lib/tune.php        שכלול: הצעת שינוי פרמטר (בתוך / מחוץ לדגימה) והחלה בידי המנהל הראשי (S7)
 assets/js/method-journal.js  מסך "יומן השיטה" — סיכום לפי גרסה ורשומות (S6)
-lib/builder.php     בונה השיטות — שמירה וגרסאות, בדיקה, "🧪 נסה" (מנהל בלבד)
-assets/js/builder.js  מסך בונה השיטות — עורך JSON, בדיקה, ניסיון, גרסאות
 assets/js/forecast.js  שיטות על הגרף — התפריט (🔮, כמה יחד, צבע), המקרא (S5), ציור על הקנבס, והפס שמתחת לגרף (S4)
 assets/js/card.js     כרטיס הניתוח: ממצא, הסתברות, שקלול, "התראה מזה", "פתח עסקה מזה" (S4)
 lib/analysis.php    פרופיל, ניהול שיטות, היסטוריה, בדיקה לאחור שמורה, ניתוח
@@ -468,7 +470,7 @@ assets/js/analysis.js  לשונית ניתוח, פרופיל, ניהול שיט�
 assets/vendor/      Lightweight Charts 4.2.3 + LICENSE
 tests/              run.php · api.php · market.php · market-api.php · drawings-api.php · decimal-js.mjs · indicators-js.mjs
                     · drawings-ui.mjs · backtest.php · analysis-api.php · analysis-ui.mjs
-                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · elliott.php · elliott-overlay.php · defined.php · forecast-api.php · forecast-ui.mjs · elliott-chart.php · elliott-chart-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-api.php · builder-ui.mjs; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
+                    · alerts-api.php · alerts-ui.mjs · journal-api.php · journal-ui.mjs · elliott.php · elliott-overlay.php · forecast-api.php · forecast-ui.mjs · elliott-chart.php · elliott-chart-ui.mjs · elliott-card-api.php · elliott-card-ui.mjs · builder-removed-api.php; fixtures/methods — שיטות בדיקה להתראות (TS_TEST_METHODS)
                     fixtures/backtest — סט נרות קבוע ותוצאות ידועות
                     dev-prepend.php (שער מדומה), fixtures/market (ספקים מדומים). נפרס, אבל חסום ב-.htaccess ולא בשימוש בשרת
 data/               המסד. לא בגיט, מוחרג מהפריסה; .htaccess חוסם
@@ -518,8 +520,7 @@ php trading-strategies/tests/elliott.php       # אליוט: נקודות מפנ
 php trading-strategies/tests/elliott-patterns.php # אליוט 4א/5: flat, triangle, אלכסוני סוגר — לפי עמודי הבדיקה מול הספר
 php trading-strategies/tests/elliott-overlay.php # אליוט: ציון, ספירות חלופיות, הקרנה, רמת ביטול, החוזה של ה-overlay, בלי הצצה
 php trading-strategies/tests/forecast-api.php  # חוזה ה-overlay; ממצא ותרחיש נפרדים (S4); הכרטיס ב-chart_refresh בלי בדיקה לאחור
-php trading-strategies/tests/builder-api.php   # בונה השיטות: 403, admin_log, גרסאות, "🧪 נסה" לא שומר, נפח נדחה, מיגרציה 8
-node trading-strategies/tests/builder-ui.mjs   # Playwright בטלפון: ➕, בדיקה, נסה, JSON שבור, שמירה, עריכה → גרסה 2
+php trading-strategies/tests/builder-removed-api.php # 21.1: הבונה נמחק — שיטה מוגדרת ישנה במסד לא מופיעה, ההתראה שלה מושהית, הנתונים נשארים
 php trading-strategies/tests/elliott-chart.php  # אליוט בגרף: החוזה על כל חלון, מילים בלי אחוז, פערים, הספירה עם תרחיש ובלעדיו זהה
 node trading-strategies/tests/elliott-chart-ui.mjs # Playwright בטלפון: 🔮 ← גלי אליוט, ספירות במילים, "בדוק בעצמך"
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, בקשה אחת לגרף ולשיטה
@@ -553,6 +554,16 @@ php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/de
 `trading-strategies/data/*` מוחרגת ב-`.github/workflows/deploy.yml` (חוץ מ-`.htaccess`, שחוסם גישה) — הפריסה
 לא דורסת אותם (#1257).
 
+## 21.1: בונה השיטות נמחק (spec-stage-a 21.1, ✅29)
+
+- **שיטה חדשה נכתבת כקוד** (6.1): קובץ ב-`lib/methods/` + שורה ב-`registry.php`. אין יותר בונה, עורך הגדרה או גרסאות של הגדרה.
+- **נמחקו:** `lib/builder.php`, `lib/expr.php`, `lib/methods/defined.php` (`TsDefinedMethod`), `assets/js/builder.js`, הפעולות
+  `admin_method_list`/`validate`/`dry_run`/`versions`, והבדיקות שלהן. `admin_method_save` עם `definition` → 422; בלי — כמו קודם.
+- **הנתונים לא נמחקו:** שורות `methods.kind = 'defined'`, `method_versions`, והעמודות — נשארות. `ts_method_ids()` מחזיר רק
+  את שיטות הקוד, ולכן שיטה מוגדרת לא מופיעה בשום מקום (תפריט 🔮, ניתוח, שקלול, ניהול שיטות, יומן השיטה — גם למנהל).
+- **מה שמפנה אליה:** התראה (שיטה, או שקלול שכולל אותה) → "מושהית — השיטה הוסרה" (`ts_alerts_pause_removed`, מה-cron ומהרשימה),
+  ואי אפשר להפעיל אותה מחדש. רשומות היומן שלה — ה-cron לא מכריע אותן. עסקה ביומן — המזהה, עם "(שיטה שהוסרה)".
+
 ## 21.2: מילוי איטי של המאגר ברקע (spec-stage-a 21.2, ✅30)
 
 - **איפה:** `ts_prefill_run` (`lib/prefill.php`) — שלב ב-cron הקיים, אחרי ההתראות ויומן השיטה, באותה נעילה ובאותה תקרת זמן
@@ -575,6 +586,5 @@ php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/de
 ## מה טרם הוכרע
 
 - **פרק 17 — פתוחים לאפיון v3:** `pivot_mode: percent` (הסף באחוזים לא מוגדר); זיהוי אלכסוני ו-flat (היום — רק דחפים).
-- **מה עוד (בקוד):** 4ב/4 — בונה חזותי של תנאים (spec-method-builder.md 4), בנוסף לעורך ה-JSON של 4ב/3.
 
 שאר שלב א' — הוכרע (פרק 10 באפיון). הקטגוריה "כספים" (`finance`) קיימת בפלטפורמה ובשימוש ב-`app.json`.
