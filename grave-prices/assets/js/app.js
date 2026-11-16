@@ -385,10 +385,11 @@ async function showSettings() {
     head('הגדרות', '', true);
     const { signatures } = await api('settings');
     view.innerHTML = `<h2 class="sec-title">חתימות</h2>
-      <p class="hint">מופיעות בתחתית כל הדפסה — ישראל וחו"ל, בכל מחירון, גם הישנים. מימין לשמאל.</p>
-      <form class="sig-edit" id="sig-form" novalidate>${signatures.map((s, i) => `<div class="fields two">
-        <label class="f"><span>שם ${i + 1}</span><input data-sig="${i}" data-k="name" value="${esc(s.name)}" maxlength="100" autocomplete="off"></label>
-        <label class="f"><span>תפקיד ${i + 1}</span><input data-sig="${i}" data-k="role" value="${esc(s.role)}" maxlength="100" autocomplete="off"></label></div>`).join('')}
+      <p class="hint">מופיעות בתחתית כל הדפסה — ישראל וחו"ל, בכל מחירון, גם הישנים. כאן באותו סדר כמו בדף המודפס.</p>
+      <form class="sig-edit" id="sig-form" novalidate>${[2, 1, 0].map((i, k) => { const s = signatures[i]; const pos = ['מימין', 'באמצע', 'משמאל'][k];
+        return `<div class="fields two">
+        <label class="f"><span>שם · ${pos}</span><input data-sig="${i}" data-k="name" value="${esc(s.name)}" maxlength="100" autocomplete="off"></label>
+        <label class="f"><span>תפקיד · ${pos}</span><input data-sig="${i}" data-k="role" value="${esc(s.role)}" maxlength="100" autocomplete="off"></label></div>`; }).join('')}
         <small class="st" id="sig-st" aria-live="polite"></small></form>`;
     // כל שינוי שומר את שלושתן
     view.querySelectorAll('[data-sig]').forEach(inp => inp.onchange = async () => {

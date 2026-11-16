@@ -63,6 +63,9 @@ h2 { font-size: 1.43em; font-weight: 400; text-align: center; margin-top: 0.675e
 /* החתימות — שם מעל תפקיד, שלוש עמודות שוות */
 .sigs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 10.5pt; margin: 4mm 0 5mm; }
 .sigs div { display: grid; gap: 0.5mm; }
+/* כמו המקור (israel-2025-03-15.pdf): הסט מוצג משמאל לימין — הראשון (גזבר) משמאל, האחרון (יו"ר) מימין */
+.sigs { direction: ltr; }
+.sigs div { direction: rtl; }
 
 
 @media print {
