@@ -5,13 +5,15 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYDfNSRC7LtU7guPJPm",
-    "slice": "21.1 מחיקת הבונה, 21.2 מילוי ברקע (2.24)",
-    "model": "claude-opus-5-5"
+    "session": "session_018g4NYDnBi3cR5V4TF8WRTm",
+    "slice": "תיקון רעידה ב-tests/market-api.php (מפתחות בדיקה בלי חלון hex)",
+    "model": "claude-opus-5-5",
+    "opened_by": "בקרה (6) — עומק 5",
+    "branch": "claude/trading-strategies-flaky-key-test"
   },
-  "control": "session_018g4NYEtPnhDAxdzNLibMdV",
+  "control": "session_018g4NYEHws3rFjuBNuDFXRb",
   "tasks": null,
-  "clock": "trig_018C9hwAgkgTdUqZ5wdPfnFa (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (4) לבקרה (5); הקודם trig_01J4cir8Aoh8ogFyCwPHG4dh כבוי)",
+  "clock": "trig_01KNVAkUc99NpULxQ9nAwWRt (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (4) לבקרה (6); הקודם trig_018C9hwAgkgTdUqZ5wdPfnFa כבוי)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -67,6 +69,16 @@
       "session": "session_018g4NYDGPpCv1Pc3LgfvmVx",
       "done": "#1623 A2; handoff #1624",
       "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYDfNSRC7LtU7guPJPm",
+      "done": "#1627/#1629 21.1, #1630 21.2; handoff #1633",
+      "model": "claude-opus-5-5 — רדום (420K)"
+    },
+    {
+      "session": "session_018g4NYEoXMKKD28MYYmYaoC",
+      "done": "#1642 21.3 (סבב 2); handoff #1644 — יצא (392K)",
+      "model": "claude-opus-5-5 — יצא (392K)"
     }
   ],
   "control_previous": [
@@ -85,6 +97,10 @@
     {
       "session": "session_018g4NYDsD5GNc3L8rqyUQ4B",
       "done": "#1623–#1629, ביקורת 21.2 סבב 1, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYEtPnhDAxdzNLibMdV",
+      "done": "#1630–#1645, 21.2–21.3, מסירה ב-STATE (306K)"
     }
   ],
   "code_delete": {

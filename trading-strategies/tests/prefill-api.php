@@ -1,7 +1,7 @@
 <?php
 // מילוי איטי של המאגר ברקע (spec-stage-a 21.2, ✅30): שלב ב-cron אחרי ההתראות. הסדר (מועדפים, נפתחו לאחרונה, השאר),
-// חצי מהתקרה לדקה של הספק בכל ריצה ו-25% מהיומית לכל מפתח, Twelve Data רק במפתח של המשתמש ולו בלבד (ש10), כיבוי
-// בהגדרות, "לפני N ימים" בשורה, ו-429 → לסוף התור בלי ניסיון חוזר. מיגרציה 15 — עמודה וטבלה בלבד.
+// חצי מהתקרה לדקה של הספק בכל ריצה ו-25% מהיומית לכל מפתח, "לפני N ימים" בשורה, ו-429 → לסוף התור בלי ניסיון חוזר.
+// 21.3 (✅31): Twelve Data — רק במפתח האפליקציה, למאגר המשותף; בלי מפתח אפליקציה — לא ממולא; אין מתג (prefill_set → 404).
 // php trading-strategies/tests/prefill-api.php — php -S עם שער מדומה וספקים מדומים. בלי רשת.
 if (PHP_SAPI !== 'cli') exit;
 
@@ -120,67 +120,86 @@ eq(count($only($s3['prefill']['done'], 'ecb')), count($ecb), '… and the next d
 $users = (int)$db->query("SELECT COUNT(*) FROM prefill_state WHERE cred_scope != ''")->fetchColumn();
 eq($users, 0, 'Binance and ECB are filled once for everyone (cred_scope "")');
 
-// ── Twelve Data: רק במפתח של המשתמש (ש10) ──
+// ── Twelve Data — מאגר משותף, רק במפתח האפליקציה (21.3, ✅31) ──
 // התקרה היומית של הספק — 8 (דריסה של המנהל), כדי לבדוק את 25% (2 ליום) בלי מאות בקשות
 $db->exec("INSERT INTO providers (id, enabled, overrides) VALUES ('twelvedata', 1, '{\"per_day\":8}')
            ON CONFLICT(id) DO UPDATE SET overrides = excluded.overrides");
 eq(call('alice', 'cred_save', ['provider' => 'twelvedata', 'secret' => 'good-Alice1234567'])[0], 200, 'alice connects her own Twelve Data key');
 eq(call('bob', 'cred_save', ['provider' => 'twelvedata', 'secret' => 'good-Bob123456789'])[0], 200, 'bob connects his own Twelve Data key');
 eq(call('alice', 'watchlist_add', ['asset' => 'twelvedata:NVDA'])[0], 200, 'alice: ⭐ NVDA');
-// הלשוניות שלה: מועדפים ונאסד"ק 100 בלבד — כך שהסדר של "השאר" ידוע (עם מפתח, גם מט"ח נפתר אצלה ל-Twelve Data)
-eq(call('alice', 'market_tabs_save', ['tabs' => [['id' => 'favorites', 'kind' => 'favorites'], ['id' => 'nasdaq100', 'kind' => 'builtin']]])[0], 200, 'alice keeps only ⭐ and Nasdaq 100');
+
+// ── קריטריון 8 (21.3): אין מתג מילוי; prefill_set → 404; העמודה נשארת ──
 [, $pv] = call('alice', 'market_providers');
-eq(array_column($pv['providers'], null, 'id')['twelvedata']['own']['prefill'], true, 'settings: "מילוי ברקע במפתח שלי — פעיל" by default');
-eq(array_column($pv['providers'], null, 'id')['binance']['own'], null, 'no switch for a provider without a key');
+eq(array_key_exists('prefill', array_column($pv['providers'], null, 'id')['twelvedata']['own']), false, '21.3 criterion 8: no prefill switch in the settings');
+eq(call('bob', 'prefill_set', ['on' => false])[0], 404, '21.3 criterion 8: prefill_set → 404');
+eq(in_array('prefill_off', array_column($db->query('PRAGMA table_info(users)')->fetchAll(), 'name'), true), true, '21.3 criterion 8: users.prefill_off is still there');
 
-// ── קריטריון 5: כיבוי בהגדרות → לא משתמש במפתח שלו ──
-[$c, $r] = call('bob', 'prefill_set', ['on' => false]);
-eq([$c, array_column($r['providers'], null, 'id')['twelvedata']['own']['prefill']], [200, false], 'criterion 5: bob turns the prefill off');
-eq(call('bob', 'prefill_set', ['on' => 'no'])[0], 422, 'prefill_set: a non-boolean → 422');
-
-// ── קריטריון 3: 25% ליום לכל מפתח — נאכף; התור נעצר וממשיך למחרת ──
+// ── קריטריון 7 (21.3): בלי מפתח אפליקציה — 0 פניות ל-Twelve Data ברקע, גם כשלמשתמשים יש מפתח ──
 $h0 = $httpN();
 [$code, $s] = cron($NOW + 2 * 86400, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
+eq([$code, $only($s['prefill']['done'], 'twelvedata'), array_filter(http($h0), fn($x) => str_contains($x[0], 'twelvedata'))], [0, [], []],
+    '21.3 criterion 7: no app key → no Twelve Data request in the background (alice and bob have keys — not used)');
+
+// ── מפתח האפליקציה: המנהל הראשי מסמן ──
+[, $r] = call('owner', 'admin_cred_save', ['provider' => 'twelvedata', 'secret' => 'good-AppKey123456', 'label' => 'אפליקציה']);
+$appId = end($r['creds'])['id'];
+eq(call('owner', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => $appId])[0], 200, 'the primary admin marks the app key');
+
+// ── קריטריון 3 (21.2) + 7 (21.3): 25% ליום ממפתח האפליקציה — נאכף; התור נעצר וממשיך למחרת ──
+$h0 = $httpN();
+[$code, $s] = cron($NOW + 2 * 86400 + 600, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
 $td = $only($s['prefill']['done'], 'twelvedata');
-eq([$code, $td], [0, ['twelvedata:NVDA', 'twelvedata:AAPL']], 'criterion 3: 25% of 8 → 2 a day for alice — her favorite first, then her tabs');
-eq(in_array('twelvedata|personal', $s['prefill']['day_capped'], true), true, 'criterion 3: the queue stops at the daily share');
-eq($s['prefill']['calls']['twelvedata|personal'], 2, '… and only 2 calls were made with her key');
+eq([$code, count($td), $td[0] ?? null], [0, 2, 'twelvedata:NVDA'], 'criterion 3: 25% of 8 → 2 a day with the app key — a favorite first');
+$first = $td[1] ?? '';
+eq(in_array('twelvedata', $s['prefill']['day_capped'], true), true, 'criterion 3: the queue stops at the daily share');
+eq($s['prefill']['calls']['twelvedata'] ?? null, 2, '… and only 2 calls were made');
+$keysUsed = array_values(array_unique(array_column(array_filter(http($h0), fn($x) => str_contains($x[0], 'twelvedata')), 1)));
+eq($keysUsed, ['good-AppKey123456'], '21.3 criterion 7: the background uses the app key only — never a user\'s key');
+eq($db->query("SELECT DISTINCT cred_scope FROM prefill_state WHERE provider = 'twelvedata'")->fetchAll(PDO::FETCH_COLUMN), [''], '21.3 criterion 7: saved to the shared pool (\'\')');
 [, $s] = cron($NOW + 2 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
 eq($only($s['prefill']['done'], 'twelvedata'), [], 'criterion 3: later the same day — nothing more');
-// ── קריטריון 7: 429 → הנכס לסוף התור, בלי ניסיון חוזר באותה ריצה, וה-cron מסתיים בזמן ──
+
+// ── קריטריון 7 (21.2): 429 → הנכס לסוף התור, בלי ניסיון חוזר באותה ריצה, וה-cron מסתיים בזמן ──
+// MSFT ראשון בתור: מועדף של bob
+eq(call('bob', 'watchlist_add', ['asset' => 'twelvedata:MSFT'])[0], 200, 'bob: ⭐ MSFT');
 $h1 = $httpN();
 [$code, $s, $err, $sec] = cron($NOW + 3 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
 $msft = array_filter(http($h1), fn($x) => str_contains($x[0], 'time_series?symbol=MSFT&'));
 eq([$code, $only($s['prefill']['done'], 'twelvedata'), $s['prefill']['errors'], count($msft)], [0, [], 1, 1],
-    'criterion 7: the next day MSFT answers 429 — one request, no retry, and no more requests with that key in this run');
-eq([$s['prefill']['calls']['twelvedata|personal'], $sec < 240, $s['stopped']], [1, true, false], 'criterion 7: the cron ends in time');
+    'criterion 7: MSFT answers 429 — one request, no retry, and no more requests with that key in this run');
+eq([$s['prefill']['calls']['twelvedata'], $sec < 240, $s['stopped']], [1, true, false], 'criterion 7: the cron ends in time');
 eq((int)$db->query("SELECT failed_at > filled_at FROM prefill_state WHERE symbol = 'MSFT'")->fetchColumn(), 1, 'MSFT is marked as failed');
 [, $s] = cron($NOW + 3 * 86400 + 1200, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
-eq([$s['prefill']['errors'], $only($s['prefill']['done'], 'twelvedata')], [0, ['twelvedata:AMZN']], 'the same day, 5 minutes later (23:50): the next asset — the 429 took 1 of the 2 for today');
+$next = $only($s['prefill']['done'], 'twelvedata');
+eq([$s['prefill']['errors'], count($next)], [0, 1], 'the same day, 5 minutes later (23:50): the next asset — the 429 took 1 of the 2 for today');
 [, $s] = cron($NOW + 4 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
-eq($only($s['prefill']['done'], 'twelvedata'), ['twelvedata:META', 'twelvedata:AVGO'], 'criterion 7 + 3: the next day it goes on — MSFT moved to the end of the queue');
+eq(count($only($s['prefill']['done'], 'twelvedata')), 2, 'criterion 7 + 3: the next day it goes on');
+eq(in_array('twelvedata:MSFT', $only($s['prefill']['done'], 'twelvedata'), true), false, '… MSFT moved to the end of the queue');
 eq(count(array_filter(http($h1), fn($x) => str_contains($x[0], 'time_series?symbol=MSFT&'))), 1, '⚪ a failed asset is not asked again within the hour (still one MSFT request)');
-eq(array_filter(http($h0), fn($x) => $x[1] === 'good-Bob123456789'), [], 'criterion 5: no request with bob\'s key (he turned it off)');
-eq((int)$db->query("SELECT COUNT(*) FROM prefill_state WHERE cred_scope = 'u:$bob'")->fetchColumn(), 0, 'criterion 5: nothing filled in bob\'s scope');
+eq(array_filter(http($h0), fn($x) => in_array($x[1], ['good-Alice1234567', 'good-Bob123456789'], true)), [], '21.3 criterion 7: no background request with a user\'s key');
 
-// ── קריטריון 4: רישוי — מה שמולא במפתח של alice, bob לא רואה ──
-$na = $rowsOf('alice', 'nasdaq100');
-eq($na['twelvedata:AAPL']['price'] !== null, true, 'alice sees the AAPL price her key filled');
+// ── 21.3: מה שמולא — לכולם (המאגר המשותף) ──
 $nb = $rowsOf('bob', 'nasdaq100');
-eq([$nb['twelvedata:AAPL']['price'], $nb['twelvedata:AAPL']['locked']], [null, false], 'criterion 4: bob (his own key, prefill off) does not see it — "—"');
 $nc = $rowsOf('owner', 'nasdaq100');
-eq([$nc['twelvedata:AAPL']['price'], $nc['twelvedata:AAPL']['locked']], [null, true], 'criterion 4: a user without a key — locked, no price');
-eq((int)$db->query("SELECT COUNT(*) FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope != 'u:$alice'")->fetchColumn(), 0, 'Twelve Data is saved only with cred_scope = u:<alice>');
-eq(call('bob', 'prefill_set', ['on' => true])[0], 200, 'bob turns it back on');
-eq(call('bob', 'prefill_set', ['on' => false])[0], 200, '… and off again (so the next sections count only alice\'s key)');
+eq([$nb[$first]['price'] !== null, $nc[$first]['price'] !== null, $nc[$first]['locked']], [true, true, false], '21.3: what the app key filled — bob and the owner both see the price');
+eq($rowsOf('owner', 'nasdaq100')['twelvedata:NVDA']['locked'] ?? null, false, 'with an app key nothing is locked');
+eq(call('owner', 'market_tab', null, ['id' => 'nasdaq100'])[1]['needs'], null, 'with an app key — no ש7 line');
+// בלי מפתח אפליקציה ובלי מפתח — מה שבמאגר מוצג; מה שלא — אפור, ושורת ש7 (21.3 קריטריון 5)
+eq(call('owner', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => null])[0], 200, 'the primary admin unmarks the app key');
+$nc = call('owner', 'market_tab', null, ['id' => 'nasdaq100'])[1];
+$ncr = array_column($nc['rows'], null, 'asset');
+$grey = array_values(array_filter($nc['rows'], fn($x) => $x['price'] === null));
+eq([$ncr[$first]['price'] !== null, $ncr[$first]['locked'], $grey[0]['locked'] ?? null, $nc['needs']['provider'] ?? null], [true, false, true, 'twelvedata'],
+    '21.3 criterion 5: no key at all — an asset with data in the pool is shown; one without — locked, and the ש7 line');
+eq(call('owner', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => $appId])[0], 200, '… and marks it again');
 
-// ── ביקורת 21-2 🟡1: מפתח אישי — חצי לדקה, בניכוי מה שההתראות כבר לקחו מאותו מפתח ──
+// ── ביקורת 21-2 🟡1: חצי לדקה, בניכוי מה שההתראות כבר לקחו מאותו מפתח (עכשיו — מפתח האפליקציה) ──
 $db->exec("UPDATE providers SET overrides = '{\"per_day\":800}' WHERE id = 'twelvedata'");   // בלי תקרת 25% שמסתירה
 $ins = $db->prepare("INSERT INTO alerts (user_id, asset, tf, side, kind, method_id, methods, level, status, expires_at, created_at) VALUES (?, ?, 'h1', 'both', 'price', NULL, '[]', '100', 'active', ?, ?)");
-foreach (['ADBE', 'AMD', 'CSCO', 'PEP', 'INTU', 'QCOM'] as $sym) $ins->execute([$alice, "twelvedata:$sym", $NOW + 30 * 86400, $NOW]);
+foreach (['ADBE', 'AMD', 'CSCO', 'PEP', 'INTU', 'QCOM'] as $sym) $ins->execute([$carol, "twelvedata:$sym", $NOW + 30 * 86400, $NOW]);
 [$code, $s] = cron($NOW + 5 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
-eq([$code, $s['calls']['twelvedata'] ?? null, $s['prefill']['calls']['twelvedata|personal'] ?? 0], [0, 8, 2],
-    '🟡1: 6 alert groups on alice\'s key → the prefill takes only 2 (8 − 6), not 4 — the key stays within 8 a minute');
+eq([$code, $s['calls']['twelvedata'] ?? null, $s['prefill']['calls']['twelvedata'] ?? 0], [0, 8, 2],
+    '🟡1: 6 alert groups through the app key → the prefill takes only 2 (8 − 6), not 4 — the key stays within 8 a minute');
 $db->exec('DELETE FROM alerts');
 
 // ── ביקורת 21-2 🟡2: המילוי לא נרשם ביומן בקשות הנרות ──
@@ -188,12 +207,12 @@ $fl = new PDO("sqlite:$tmp.sqlite.cache", null, null, [PDO::ATTR_DEFAULT_FETCH_M
 eq((int)$fl->query('SELECT COUNT(*) FROM fetch_log WHERE user_id = 0')->fetchColumn(), 0, '🟡2: no fetch_log rows from the prefill (it would flood the 2,000 rows)');
 eq((int)$fl->query("SELECT COUNT(*) FROM fetch_log WHERE user_id = $carol AND symbol = 'DOGEUSDT'")->fetchColumn(), 1, '🟡2: carol\'s chart opening is still there (recently opened)');
 
-// ── ביקורת 21-2 🔴1: מפתח פגום לא עוצר את המשך ה-cron ──
-$db->prepare("INSERT INTO provider_creds (owner, user_id, provider_id, secret, last4, created_at) VALUES ('user', ?, 'twelvedata', 'AAAAnot-a-box', 'xbox', ?)")->execute([$carol, $NOW]);
-$before = $db->query("SELECT v FROM settings WHERE k = 'alerts_cron'")->fetchColumn();
-[$code, $s, $err] = cron($NOW + 6 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
-eq([$code, $s['prefill']['key_errors'] ?? null, count($only($s['prefill']['done'], 'twelvedata'))], [0, 1, 4],
-    '🔴1: carol\'s key cannot be decrypted — only her key is skipped; alice\'s is still filled');
+// ── ביקורת 21-2 🔴1: מפתח פגום לא עוצר את המשך ה-cron (עכשיו — מפתח אפליקציה שלא מתפענח) ──
+$db->prepare("INSERT INTO provider_creds (owner, user_id, provider_id, secret, last4, created_at) VALUES ('admin', NULL, 'twelvedata', 'AAAAnot-a-box', 'xbox', ?)")->execute([$NOW]);
+$db->exec("UPDATE settings SET v = '" . $db->lastInsertId() . "' WHERE k = 'app_key:twelvedata'");
+[$code, $s, $err] = cron($NOW + 6 * 86400 + 900, ['binance' => 2, 'ecb' => 0, 'twelvedata' => 8]);
+eq([$code, $s['prefill']['key_errors'] ?? null, count($only($s['prefill']['done'], 'twelvedata')), count($only($s['prefill']['done'], 'binance'))], [0, 0, 0, 1],
+    '🔴1: the app key cannot be decrypted — it is skipped (as if there were none), and Binance is still filled');
 $last = json_decode((string)$db->query("SELECT v FROM settings WHERE k = 'alerts_cron'")->fetchColumn(), true);
 eq([(int)$last['at'], $s['cleanup']], [$NOW + 6 * 86400 + 900, true], '🔴1: the run still saved its state and ran the daily cleanup (✅4)');
 

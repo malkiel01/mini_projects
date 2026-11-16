@@ -509,7 +509,8 @@ function budget_summary(array $funds, array $lines, array $rows): array
     $balance = [];
     foreach ($funds as $f) {
         $in = $ex = 0;
-        foreach ($lines as $l) if ($l['fund_id'] === $f['id']) $l['direction'] === 'income' ? $in += $l['amount'] : $ex += $l['amount'];
+        // בלי שורות "רק בריכוז" — אותו סה"כ כמו בטבלת הקופה ובבדיקת האיזון (budget_integrity)
+        foreach ($lines as $l) if ($l['fund_id'] === $f['id'] && empty($l['summary_only'])) $l['direction'] === 'income' ? $in += $l['amount'] : $ex += $l['amount'];
         $balance[] = ['fund_id' => $f['id'], 'income' => $in, 'expense' => $ex, 'diff' => $in - $ex];
     }
     return ['sections' => array_values($sections), 'income' => $tot('income'), 'expense' => $tot('expense'),
@@ -598,12 +599,19 @@ function integrity_cols(int $year): array
     return ['prev_budget' => 'הצעת ' . ($year - 1), 'prev_actual' => 'ניצול ' . ($year - 1), 'amount' => "הצעת $year"];
 }
 
+/** עמודות שבהן נדרש איזון (הכנסות = הוצאות): רק ההצעות. ניצול הוא מה שקרה — עודף או גירעון בו הם עובדה (B1.2). */
+function balance_cols(int $year): array
+{
+    return array_intersect_key(integrity_cols($year), ['prev_budget' => 1, 'amount' => 1]);
+}
+
 /**
  * כל הכללים שהדוח חייב לקיים, במקום אחד. מזינה את הפס האדום במסך, את הסימון על התאים, ואת האזהרה בראש
  * המסמך המופק (Word, אקסל, הדפסה). לא חוסמת שום דבר — הבעלים מחליט.
  *
- *   1. כל קופה מאוזנת — בכל עמודה (הצעה קודמת, ניצול, הצעה)
- *   2. הריכוז מאוזן, והריכוז = סכום הקופות — בכל עמודה
+ *   1. כל קופה מאוזנת — בעמודות ההצעה בלבד (הצעה קודמת, הצעה; לא בניצול). בלי שורות "רק בריכוז",
+ *      כמו הסה"כ שבטבלת הקופה — מספר אחד לטבלה, לבדיקה ולתג "מאוזנת"
+ *   2. הריכוז מאוזן — בעמודות ההצעה; והריכוז = סכום הקופות — בכל עמודה
  *   3. הנספח = שורות הריכוז: שורת ריכוז של הכנסות שיש בה שכירות — כל ההכנסות בה בנספח
  *   4. חודשי × חודשים = שנתי (בחישוב, בתקופה שהוקלדה, ובהערה "X ₪ לחודש")
  *   5. העברה — שני הצדדים שווים, בכל עמודה
@@ -613,6 +621,7 @@ function integrity_cols(int $year): array
 function budget_integrity(int $year, array $funds, array $lines, array $summary, array $appendix): array
 {
     $cols = integrity_cols($year);
+    $balCols = balance_cols($year);
     $out = [];
     $issue = function (string $rule, string $msg, array $where = []) use (&$out): void {
         $out[] = ['id' => $rule . ':' . substr(md5(json_encode($where) . $msg), 0, 10), 'rule' => $rule, 'msg' => $msg]
@@ -620,10 +629,11 @@ function budget_integrity(int $year, array $funds, array $lines, array $summary,
     };
     $m = fn($v) => number_format((int)$v);
 
-    // 1. קופה מאוזנת בכל עמודה. עמודה שלא הוקלד בה כלום בקופה — לא נבדקת
+    // 1. קופה מאוזנת בעמודות ההצעה. עמודה שלא הוקלד בה כלום בקופה — לא נבדקת.
+    //    שורה "רק בריכוז" לא בטבלת הקופה — ולכן גם לא באיזון שלה
     foreach ($funds as $f) {
-        $mine = array_values(array_filter($lines, fn($l) => $l['fund_id'] === $f['id']));
-        foreach ($cols as $c => $label) {
+        $mine = array_values(array_filter($lines, fn($l) => $l['fund_id'] === $f['id'] && empty($l['summary_only'])));
+        foreach ($balCols as $c => $label) {
             if (!array_filter($mine, fn($l) => $l[$c] !== null)) continue;
             $in = $ex = 0;
             foreach ($mine as $l) $l['direction'] === 'income' ? $in += (int)$l[$c] : $ex += (int)$l[$c];
@@ -633,7 +643,7 @@ function budget_integrity(int $year, array $funds, array $lines, array $summary,
         }
     }
 
-    // 2. הריכוז: מאוזן, ושווה לסכום השורות של כל הקופות
+    // 2. הריכוז: מאוזן (בעמודות ההצעה), ושווה לסכום השורות של כל הקופות (בכל עמודה)
     foreach ($cols as $c => $label) {
         if (!array_filter($lines, fn($l) => $l[$c] !== null)) continue;
         $byDir = ['income' => 0, 'expense' => 0];
@@ -643,7 +653,7 @@ function budget_integrity(int $year, array $funds, array $lines, array $summary,
             if ($raw !== $byDir[$dir]) $issue('summary_total', "דף הריכוז · $label: סה\"כ " . DIRECTIONS[$dir] . " {$m($byDir[$dir])} ≠ סכום הקופות {$m($raw)}",
                 ['col' => $c, 'diff' => $byDir[$dir] - $raw]);
         }
-        if ($byDir['income'] !== $byDir['expense']) {
+        if (isset($balCols[$c]) && $byDir['income'] !== $byDir['expense']) {
             $issue('summary_balance', "דף הריכוז · $label: הכנסות {$m($byDir['income'])} מול הוצאות {$m($byDir['expense'])} — " . ($byDir['income'] > $byDir['expense'] ? 'עודף ' : 'גירעון ') . $m(abs($byDir['income'] - $byDir['expense'])),
                 ['col' => $c, 'diff' => $byDir['income'] - $byDir['expense']]);
         }

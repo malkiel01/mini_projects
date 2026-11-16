@@ -139,6 +139,11 @@ jobs:
       - name: family-shopping tests
         run: for t in family-shopping/tests/*.php; do echo "--- $t"; php "$t" > /tmp/fs-test.log || { cat /tmp/fs-test.log; exit 1; }; tail -1 /tmp/fs-test.log; done
 
+      # מחירוני קברים — בדיקות ה-PHP (מסד זמני, לא נוגע ב-data/): מיגרציה ונתוני ההתחלה מול ה-PDF, התוויות, הכניסה החתומה.
+      # בדיקה שנכשלת עוצרת את הפריסה.
+      - name: grave-prices tests
+        run: php grave-prices/tests/run.php
+
       # קול מרוקו — הבדיקות של האפליקציה (מסד זמני, בלי Composer, לא נוגע ב-data/): הרשאות לכל פעולה, חתימת הפרסום,
       # מיגרציות, יומן המפתח והספרייה. בדיקה שנכשלת עוצרת את הפריסה. ו-dev/build.json — הקומיט והשעה, למסך המפתח
       # ("גרסה וקומיט"); הקובץ נוצר כאן בלבד, אינו בגיט, ו-dev/.htaccess חוסם אותו מהדפדפן.
@@ -329,6 +334,8 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/grave-prices/team/' \
+            --include='/grave-prices/data/.htaccess' --exclude='/grave-prices/data/*' \
             --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' --exclude='/org-budget-proposals/tests/' \
             --exclude='/trading-strategies/team/' \
             --exclude='/whatsapp-ai-scanner/team/' --exclude='/whatsapp-ai-scanner/docs/' \

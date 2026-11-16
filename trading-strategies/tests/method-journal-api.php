@@ -159,8 +159,12 @@ $qa = ['asset' => 'twelvedata:AAPL', 'tf' => 'h1', 'from' => $NOW - 10 * 86400, 
 [$c, $ra] = call('alice', 'chart_refresh', null, $qa);
 eq([$c, $ra['methods']['test-cross-a']['status'] ?? null], [200, 'ok'], 'alice analyses AAPL with her key');
 $aliceScope = 'u:' . $uidOf('101');
-eq($db->query("SELECT cred_scope FROM method_journal WHERE asset = 'twelvedata:AAPL'")->fetchAll(PDO::FETCH_COLUMN), [$aliceScope], 'the record is saved with her cred_scope');
 $assets = fn(array $j) => array_values(array_unique(array_column($j['rows'], 'asset')));
+// 21.3 (✅31): Twelve Data — מאגר משותף. רשומה חדשה נשמרת ב-'' וכולם רואים אותה
+eq($db->query("SELECT cred_scope FROM method_journal WHERE asset = 'twelvedata:AAPL'")->fetchAll(PDO::FETCH_COLUMN), [''], '21.3: a new record of a Twelve Data asset is shared (cred_scope \'\')');
+eq(in_array('twelvedata:AAPL', $assets($J('bob')), true), true, '21.3: bob sees it');
+// רשומה ישנה ב-u:N (מלפני 21.3) — נשארת רק של בעליה (21.3 (2)): קריטריון 4 של 18.6 נבדק עליה
+$db->exec("UPDATE method_journal SET cred_scope = '$aliceScope' WHERE asset = 'twelvedata:AAPL'");
 $ja = $J('alice'); $jb = $J('bob'); $jo = $J('owner');
 eq(in_array('twelvedata:AAPL', $assets($ja), true), true, 'criterion 4: alice sees it');
 eq([in_array('twelvedata:AAPL', $assets($jb), true), in_array('binance:BTCUSDT', $assets($jb), true)], [false, true], 'criterion 4: bob does not — but he sees the shared ones');

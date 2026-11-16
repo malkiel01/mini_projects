@@ -163,10 +163,12 @@ function ts_market_tab(int $uid, mixed $id, ?int $now = null): array
         $prov = explode(':', $asset, 2)[0];
         $acc = $can($prov);
         $label = ts_pair_label($asset);
-        $q = $acc ? ts_cached_quote($asset, $acc['scope']) : null;
+        // ספק משותף (21.3) — המחיר מהמאגר של כולם, גם בלי מפתח. נכס בלי נתונים ובלי דרך לספק — אפור (ש7)
+        $scope = $acc ? (string)$acc['scope'] : ts_scope_for($uid, $prov);
+        $q = $scope !== null ? ts_cached_quote($asset, $scope) : null;
         // ישן מיום (21.2) — "לפני N ימים" בשורה. הנר היומי נפתח בחצות, ולכן נר של היום → 0
         $age = $q ? intdiv(max(0, $now - (int)$q['at']), 86400) : null;
-        $rows[] = ['asset' => $asset, 'provider' => $prov, 'locked' => $acc === null, 'price' => $q['price'] ?? null,
+        $rows[] = ['asset' => $asset, 'provider' => $prov, 'locked' => $acc === null && $q === null, 'price' => $q['price'] ?? null,
             'change_pct' => $q['change_pct'] ?? null, 'age_days' => $age >= 1 ? $age : null, 'market' => ts_asset_meta($asset)['market'] ?? null] + $label;
     }
     $needs = null;

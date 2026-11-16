@@ -188,6 +188,9 @@ try {
   await a.goto(BASE + '#/market');
   await combo(a).waitFor();
   const drag = async (from, to) => {
+    // פס הלשוניות נבנה אחרי ה-combobox — מחכים ללשוניות עצמן (הרעידה הידועה בבדיקה 38: boundingBox החזיר null)
+    await a.getByRole('tab', { name: from }).waitFor();
+    await a.getByRole('tab', { name: to }).waitFor();
     const f = await a.getByRole('tab', { name: from }).boundingBox(), t = await a.getByRole('tab', { name: to }).boundingBox();
     await a.mouse.move(f.x + f.width / 2, f.y + f.height / 2);
     await a.mouse.down();

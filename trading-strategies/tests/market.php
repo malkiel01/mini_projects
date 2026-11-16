@@ -155,26 +155,44 @@ $rg = ts_market_candles(1, 'binance:ETHUSDT', 'h1', $T + 3600 - 30 * 86400, $T +
 eq([$rg['provider_calls'], $rg['provider_candles'], count($rg['candles'])], [1, 3, 720], 'S2: a gap in the middle is filled in the same request — only the 3 missing candles');
 eq($cnt('ETHUSDT'), [$after, $after], 'S2: after the gap fill — the pool is whole again, no duplicates');
 
-// מפתח אישי → scope של המשתמש; המשתמש השני לא מקבל אותם
+// ── מאגר ורישוי (פרק 15) ── Twelve Data — מאגר משותף (21.3, ✅31): הבדיקה מתהפכת — B כן רואה
 ts_cred_save(1, 'twelvedata', 'good-alice-0001', 'א');
 $a = ts_market_candles(1, 'twelvedata:AAPL', 'h1', $now - 10 * 3600, $now, $now);
 eq([$a['provider_calls'], $a['source']], [1, 'own'], 'A fetches with her key');
-try {
-    ts_market_candles(2, 'twelvedata:AAPL', 'h1', $now - 10 * 3600, $now, $now);
-    eq(true, false, 'B without key must not get A\'s candles');
-} catch (TsInvalid $e) {
-    eq(str_contains($e->getMessage(), 'אין לכם חיבור'), true, 'B without key → no access');
-}
-ts_cred_save(2, 'twelvedata', 'good-bob-0002', 'ב');
 $b = ts_market_candles(2, 'twelvedata:AAPL', 'h1', $now - 10 * 3600, $now, $now);
-eq($b['provider_calls'], 1, 'B with own key → own fetch, not A\'s pool');
-eq(array_map(fn($r) => [$r['user'], $r['kind'], $r['provider_candles'] > 0], ts_fetch_log_recent(2)), [['B', 'personal', true], ['A', 'personal', true]],
-    'S2 criterion 4: personal key — each user fetches for himself, and the log shows it as personal');
+eq([$b['provider_calls'], $b['source'], count($b['candles']), $b['notice']], [0, 'pool', count($a['candles']), null],
+    '21.3 criterion 2: B (no key) sees the candles A fetched with her own key — from the shared pool, no provider call');
+eq(array_map(fn($r) => [$r['user'], $r['kind'], $r['provider_candles'] > 0], ts_fetch_log_recent(2)), [['B', 'shared', false], ['A', 'shared', true]],
+    '21.3: a personal key writes to the shared pool, and the log shows it as shared');
 $st = ts_cache()->query("SELECT DISTINCT cred_scope FROM candles WHERE provider = 'twelvedata' ORDER BY cred_scope");
-eq($st->fetchAll(PDO::FETCH_COLUMN), ['u:1', 'u:2'], 'personal pools are separate (cred_scope)');
+eq($st->fetchAll(PDO::FETCH_COLUMN), [''], 'twelvedata: one pool (cred_scope \'\')');
+$tdN = (int)ts_cache()->query("SELECT COUNT(*) FROM candles WHERE provider = 'twelvedata'")->fetchColumn();
 ts_cred_delete_mine(1, 'twelvedata');
+eq((int)ts_cache()->query("SELECT COUNT(*) FROM candles WHERE provider = 'twelvedata'")->fetchColumn(), $tdN,
+    '21.3: deleting a personal key keeps what was fetched with it in the shared pool');
+
+// Finnhub — בלי שינוי (21.3: ההכרעה על Twelve Data בלבד): מפתח אישי → scope של המשתמש; השני לא מקבל אותם
+$fnow = 1772600000;
+ts_cred_save(1, 'finnhub', 'good-alice-0003', 'א');
+$a = ts_market_candles(1, 'finnhub:OANDA:EUR_USD', 'd1', $fnow - 5 * 86400, $fnow, $fnow);
+eq([$a['provider_calls'], $a['source']], [1, 'own'], 'finnhub: A fetches with her key');
+try {
+    ts_market_candles(2, 'finnhub:OANDA:EUR_USD', 'd1', $fnow - 5 * 86400, $fnow, $fnow);
+    eq(true, false, 'finnhub: B without key must not get A\'s candles');
+} catch (TsInvalid $e) {
+    eq(str_contains($e->getMessage(), 'אין לכם חיבור'), true, 'finnhub: B without key → no access');
+}
+ts_cred_save(2, 'finnhub', 'good-bob-0004', 'ב');
+$b = ts_market_candles(2, 'finnhub:OANDA:EUR_USD', 'd1', $fnow - 5 * 86400, $fnow, $fnow);
+eq($b['provider_calls'], 1, 'finnhub: B with own key → own fetch, not A\'s pool');
+eq(array_map(fn($r) => [$r['user'], $r['kind'], $r['provider_candles'] > 0], ts_fetch_log_recent(2)), [['B', 'personal', true], ['A', 'personal', true]],
+    'S2 criterion 4 (finnhub): personal key — each user fetches for himself, and the log shows it as personal');
+$st = ts_cache()->query("SELECT DISTINCT cred_scope FROM candles WHERE provider = 'finnhub' ORDER BY cred_scope");
+eq($st->fetchAll(PDO::FETCH_COLUMN), ['u:1', 'u:2'], 'finnhub: personal pools are separate (cred_scope)');
+ts_cred_delete_mine(1, 'finnhub');
+ts_cred_delete_mine(2, 'finnhub');
 $st = ts_cache()->query("SELECT COUNT(*) FROM candles WHERE cred_scope = 'u:1'");
-eq((int)$st->fetchColumn(), 0, 'deleting a key deletes what was fetched with it');
+eq((int)$st->fetchColumn(), 0, 'finnhub: deleting a key deletes what was fetched with it');
 
 // ספק (ב): המתג הראשי כבוי → השיוך לא נותן גישה
 $cid = ts_cred_save(0, 'finnhub', 'good-admin-0009', 'משותף', 'admin');

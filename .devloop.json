@@ -52,6 +52,16 @@
       "log_url": "https://mbe-plus.com/mini_projects/trading-strategies/#/dev/log",
       "items_file": "trading-strategies/dev/open-items.json",
       "token_env": "TS_DEVLOOP_TOKEN"
+    },
+    {
+      "name": "מחירוני קברים",
+      "prefix": "GP-",
+      "dir": "grave-prices",
+      "api": "https://mbe-plus.com/mini_projects/grave-prices/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/grave-prices/#/dev/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/grave-prices/#/dev/log",
+      "items_file": "grave-prices/dev/open-items.json",
+      "token_env": "GP_DEVLOOP_TOKEN"
     }
   ],
   "module": {
