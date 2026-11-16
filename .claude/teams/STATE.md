@@ -13,7 +13,7 @@
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1–21.3 מוזגו; קוד: תיקון רעידה ב-`tests/market-api.php` (`session_018g4NYDnBi3cR5V4TF8WRTm`, ענף `claude/trading-strategies-flaky-key-test`); שעון — דקה 28 (`trig_01KNVAkUc99NpULxQ9nAwWRt`, נוצר בידי מנהל הצוותים (4); הישן `trig_018C9hwAgkgTdUqZ5wdPfnFa` כבוי) | `session_018g4NYEHws3rFjuBNuDFXRb` (בקרה 6; קודם בקרה 5 `session_018g4NYEtPnhDAxdzNLibMdV`) |
 | `org-budget-proposals` הצעות תקציב לארגונים | פעיל — B1 מוזג #1635; B1.2 (אזעקות שווא בניצול) #1648; שעון — דקה 38 (`trig_018qY4uvqcdJKapxU9pU8kcu`, נוצר בידי מנהל הצוותים (4); הישן `trig_013qCk9g1qS7xKb8qLpQrDgX` כבוי) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2; קודם בקרה 1 `session_018g4NYFsGrFQCUGf3CgaSYk`) |
-| `grave-prices` מחירוני קברים | בהקמה — נפתח 2026-11-16 ~10:20 UTC; פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) נפתח 12:05 UTC; שעון — דקה 53 (`trig_01WMewPyCEbiaefEFP9VCV4m`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYDXqFicgWtxrjNB2ab` (בקרה 1) |
+| `grave-prices` מחירוני קברים | פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) PR #1666 בביקורת; שעון — דקה 53 (`trig_01Ecqo638xYguboqngvZbKWx`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
 
 ## ממתין לבעלים
 
