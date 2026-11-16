@@ -49,12 +49,50 @@ const T_STEPS = [MIN, 5 * MIN, 15 * MIN, 30 * MIN, HOUR, 2 * HOUR, 4 * HOUR, 6 *
   30 * DAY, 91 * DAY, 182 * DAY, 365 * DAY, 730 * DAY, 1825 * DAY];
 
 /**
+ * המפתח של סימון זמן: נר שהמפתח שלו שונה מזה של הנר שלפניו — מתחיל גבול (שעה עגולה, יום, חודש, שנה). **לפי שעון המשתמש:**
+ * off(t) — ההפרש מ-UTC בשניות בזמן t (כולל שעון קיץ). בלי זה, גבול של 00:00 / 12:00 UTC מוצג בישראל כ-02:00 / 14:00 (הבעלים
+ * חשב שהגרף נתקע ב-14:00). טהורה — לבדיקות.
+ */
+export function tickKey(t, step, kind, off = () => 0) {
+  const lt = t + off(t);
+  const d = new Date(lt * 1000);
+  if (kind === 'year') return Math.floor(d.getUTCFullYear() / Math.max(1, Math.round(step / (365 * DAY))));
+  if (kind === 'month') return Math.floor((d.getUTCFullYear() * 12 + d.getUTCMonth()) / Math.max(1, Math.round(step / (30 * DAY))));
+  // שבוע ומעלה (בתוך "יום") — מיושר ליום מקומי, לא ל-1970 בשעה אחרת
+  return Math.floor(lt / step);
+}
+
+/**
+ * ההפרש של אזור זמן מ-UTC, בשניות, בזמן t (Intl — כולל שעון קיץ). שמור לפי שעה, כי הוא נקרא לכל נר בכל ציור.
+ * אזור לא מוכר → 0 (כמו UTC).
+ */
+export function tzOffset(tz) {
+  let f = null;
+  try {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz || 'UTC', hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+  } catch { return () => 0; }
+  const memo = new Map();
+  return t => {
+    const k = Math.floor(t / HOUR);
+    let v = memo.get(k);
+    if (v === undefined) {
+      const p = {};
+      for (const x of f.formatToParts(new Date(k * HOUR * 1000))) p[x.type] = +x.value;
+      v = (Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second) - k * HOUR * 1000) / 1000;
+      if (memo.size > 50000) memo.clear();
+      memo.set(k, v);
+    }
+    return v;
+  };
+}
+
+/**
  * צירים בתוך הגרף. series — הסדרה שלפיה מחשבים מחירים; time: false — רק ציר מחירים (חלון ה-RSI/ATR).
  * getDec() — הספרות של הנכס (לפי ה-tick); fmtTime(t, kind) — הטקסט של סימון זמן. מחזיר destroy().
  */
-export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmtTime = () => '', time = true }) {
+export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmtTime = () => '', time = true, offset = () => 0 }) {
   let requestUpdate = () => {};
-  let shown = { price: [], time: [] };   // מה צויר בפעם האחרונה — לבדיקות
+  let shown = { price: [], time: [], last: null };   // מה צויר בפעם האחרונה — לבדיקות
   let priceW = 0;   // רוחב עמודת המספרים בצד ימין — תוויות של קווים אופקיים נצמדות משמאל לה (🟡 F1)
   let cross = null;   // {x, y, t} — הסמן, כדי להראות את המחיר והזמן שלו (אין עוד ציר שמראה אותם)
   const onCross = p => { cross = p?.point && p.time !== undefined ? { x: p.point.x, y: p.point.y, t: p.time } : p?.point ? { x: p.point.x, y: p.point.y, t: null } : null; requestUpdate(); };
@@ -103,21 +141,37 @@ export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmt
     const lr = ts.getVisibleLogicalRange();
     const times = getTimes();
     shown.time = [];
+    shown.last = null;
     if (!lr || times.length < 2) return;
     const i0 = Math.max(0, Math.floor(lr.from)), i1 = Math.min(times.length - 1, Math.ceil(lr.to));
     if (i1 <= i0) return;
     const pxPerSec = W / Math.max(1, (lr.to - lr.from) * ((times.at(-1) - times[0]) / (times.length - 1)));
     const step = T_STEPS.find(s => s * pxPerSec >= 72) || T_STEPS.at(-1);
     const kind = step >= 365 * DAY ? 'year' : step >= 30 * DAY ? 'month' : step >= DAY ? 'day' : 'time';
-    const key = t => {
-      const d = new Date(t * 1000);
-      if (kind === 'year') return Math.floor(d.getUTCFullYear() / (step / (365 * DAY)));
-      if (kind === 'month') return Math.floor((d.getUTCFullYear() * 12 + d.getUTCMonth()) / Math.round(step / (30 * DAY)));
-      return Math.floor(t / step);
-    };
+    const key = t => tickKey(t, step, kind, offset);
     ctx.font = '10px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
+    // הנר האחרון שנראה (בקצה הימני) — תמיד עם תווית, כדי שיהיה ברור עד מתי הגרף. נשמר מקום לפני שאר הסימונים, והם לא חופפים לו
+    let lastBox = null;
+    for (let i = i1; i >= i0; i--) {
+      const x = ts.logicalToCoordinate(i);
+      if (x === null || x < 0 || x > W) continue;
+      const s = fmtTime(times[i], 'last');
+      if (!s) break;
+      ctx.font = '600 10px system-ui, sans-serif';
+      const w = ctx.measureText(s).width;
+      const left = Math.max(2, Math.min(x - w / 2, W - 2 - w));
+      lastBox = { left, right: left + w, s };
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = col('--muted');
+      ctx.textAlign = 'left';
+      ctx.fillText(s, left, H - 3);
+      ctx.textAlign = 'center';
+      ctx.font = '10px system-ui, sans-serif';
+      shown.last = s;
+      break;
+    }
     let lastRight = -Infinity;
     for (let i = i0 + 1; i <= i1; i++) {
       if (key(times[i]) === key(times[i - 1])) continue;
@@ -126,6 +180,7 @@ export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmt
       const s = fmtTime(times[i], kind);
       const w = ctx.measureText(s).width;
       if (x - w / 2 < lastRight + 8 || x + w / 2 > W - 2 || x - w / 2 < 2) continue;
+      if (lastBox && x + w / 2 + 8 > lastBox.left && x - w / 2 - 8 < lastBox.right) continue;
       lastRight = x + w / 2;
       shown.time.push(s);
       ctx.globalAlpha = 0.35;
@@ -180,7 +235,7 @@ export function mountAxis({ chart, series, col, getDec, getTimes = () => [], fmt
   series.attachPrimitive(primitive);
   return {
     update: () => requestUpdate(),
-    shown: () => ({ price: [...shown.price], time: [...shown.time] }),
+    shown: () => ({ price: [...shown.price], time: [...shown.time], last: shown.last }),
     /** רוחב עמודת מספרי המחיר (פיקסלים), כולל ריווח */
     priceWidth: () => priceW,
     destroy() {
