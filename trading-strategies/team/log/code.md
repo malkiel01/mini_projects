@@ -73,3 +73,11 @@
 - **תוקן בדרך (בדיקות):** 6 בדיקות UI חיכו ל-`main` ואז קראו ל-`me` בעצמן — לפני שה-`me` של הדף חזר. שני sessions, והדף נשאר עם csrf ישן; זה צץ עכשיו כי הגרף כותב (שמירת צבע). מחכים ל-`main [role="combobox"]`.
 - **בדיקות:** `tests/method-colors-api.php` (26), `tests/method-colors-ui.mjs` (50) — כל 7 הקריטריונים, אליוט + `sample-ma-cross`; `forecast-ui`, `refresh-ui` ("הסרה").
 - ענף `claude/trading-strategies-s5-method-colors`.
+
+## 2026-11-16 — S6 (18.6): יומן של שיטה
+- **בוצע:** `method_journal` ב-`data/app.sqlite` (מיגרציה 11 — טבלה חדשה בלבד; אין נתיב נתונים חדש, `data/` כבר מוחרג). רשומה נכתבת רק כשהשיטה רצה באמת (`ts_method_result`, נר סגור חדש), ו-UNIQUE + `INSERT OR IGNORE` משאירים אחת לכל (שיטה, גרסה, נכס, מסגרת, היקף, נר, סוג) — לא משוכתבת. רשומת `backtest` בחישוב חדש של בדיקה לאחור. בלי `user_id` (✅27).
+- **התוצאה ב-cron:** `ts_journal_resolve` בתוך `ts_alerts_run` (אותה נעילה, תקציב ותקרת זמן). רק אחרי שהנר האחרון בטווח נסגר; הראשון שנגע — אזור / רמת ביטול; אחרת `neither`. שניהם באותו נר — `invalidated` + `same_candle`.
+- **מי רואה:** מנהל — הכול; משתמש — משותף, `u:<הוא>`, `c:<מפתח שקיבל>`, ורק שיטות שהוא רואה. `cred_scope` לא יוצא מהשרת.
+- **המסך:** "עוד ← 📓 יומן השיטה" + לשונית בניהול. סיכום לפי (שיטה, גרסה), רשומות, סינון לפי שיטה ותוצאה.
+- **בדיקות:** `tests/method-journal-api.php` (53), `tests/method-journal-ui.mjs` (24) — כל 5 הקריטריונים, 390 ו-320 כהה.
+- ענף `claude/trading-strategies-s6-method-journal`.

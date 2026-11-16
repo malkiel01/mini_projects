@@ -441,6 +441,41 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 11) {
+        // יומן השיטה (spec-stage-a 18.6, S6, ✅27): טבלה חדשה בלבד — לא נוגעת בשום נתון קיים. במסד של האפליקציה ולא
+        // במאגר הנרות, כי המאגר מתרוקן ומתנקה ("ריקון הכול", ניקוי יומי) — והיומן הוא היסטוריה שלא נמחקת.
+        // רשומה אחת לכל (שיטה, גרסה, נכס, מסגרת, היקף מפתח, נר סגור, סוג) — UNIQUE, ונכתבת ב-INSERT OR IGNORE: לא משוכתבת.
+        // בלי user_id — ברמת המערכת, בלי לציין מי ביקש (✅27). cred_scope — מי רשאי לראות (✅2).
+        // outcome: NULL = עוד לא ידוע; zone / invalidated / neither — נקבע ב-cron מנרות סגורים; none — אין תרחיש לבדוק.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE method_journal (
+                id INTEGER PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                as_of INTEGER NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('analysis','backtest')),
+                said TEXT NOT NULL,
+                zone_lo TEXT,
+                zone_hi TEXT,
+                invalidation TEXT,
+                until_t INTEGER,
+                outcome TEXT CHECK (outcome IN ('zone','invalidated','neither','none')),
+                outcome_t INTEGER,
+                outcome_note TEXT,
+                resolved_at INTEGER,
+                created_at INTEGER NOT NULL,
+                UNIQUE (method_id, method_version, asset, tf, cred_scope, as_of, kind)
+            );
+            CREATE INDEX method_journal_pending ON method_journal(until_t) WHERE outcome IS NULL;
+            CREATE INDEX method_journal_method ON method_journal(method_id, method_version);
+            PRAGMA user_version = 11;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
