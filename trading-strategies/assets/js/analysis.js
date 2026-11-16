@@ -2,6 +2,7 @@
 // מסך "🧭 ניתוח" הנפרד הוסר (2.15). כל טקסט — textContent.
 import { openBuilder, openVersions } from './builder.js';
 import { TF_LABEL } from './card.js';
+import { assetField } from './combobox.js';
 
 const HORIZON = [['short', 'קצר (דקות–שעות)'], ['medium', 'בינוני (ימים–שבועות)'], ['long', 'ארוך (חודשים+)']];
 const RISK_LEVELS = [['low', 'נמוכה'], ['medium', 'בינונית'], ['high', 'גבוהה']];
@@ -93,8 +94,9 @@ export function mountAnalysis(ctx) {
   function adminMethods() {
     const box = h('div', { class: 'stack' }, h('p', { class: 'loading' }, 'טוען…'));
     (async () => {
-      let S;
-      try { S = await api('admin_methods'); } catch (e) { box.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      let S, T;
+      try { [S, T] = await Promise.all([api('admin_methods'), api('admin_tune_list')]); } catch (e) { box.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      const primary = T.can_apply === true;
       const card = m => {
         const on = h('input', { type: 'checkbox' }); on.checked = m.enabled;
         const chipsOf = (all, chosen, lbl) => h('div', { class: 'chips', role: 'group', 'aria-label': lbl }, all.map(v => {
@@ -104,6 +106,8 @@ export function mountAnalysis(ctx) {
         const mk = chipsOf(m.all_markets, m.markets, 'שווקים');
         const tf = chipsOf(m.all_timeframes, m.timeframes, 'מסגרות זמן');
         const inputs = Object.fromEntries(Object.entries(m.param_defs).map(([k, d]) => [k, numInput(k, m.params[k] ?? '', String(d.default))]));
+        // שכלול (18.7, ✅24): שינוי פרמטר משנה את התוצאה — רק המנהל הראשי; מנהל אחר — דרך הצעה
+        if (!primary) for (const el of Object.values(inputs)) el.disabled = true;
         const note = h('textarea', { rows: 2, maxlength: 500 }, m.note);
         return h('li', { class: 'card', style: 'cursor:default;display:block' },
           h('div', { class: 'l1' }, h('span', {}, m.name), h('span', { class: 't' }, 'גרסה ' + m.version)),
@@ -118,7 +122,8 @@ export function mountAnalysis(ctx) {
           h('div', { class: 'f' }, h('span', {}, 'שווקים'), mk), h('div', { class: 'f' }, h('span', {}, 'מסגרות זמן'), tf),
           h('div', { class: 'fields two' }, Object.entries(m.param_defs).map(([k, d]) => field(`${d.label} (${d.min}–${d.max})` + (d.ours === true ? ' · הגדרה שלנו' : d.ours === false ? ' · לפי הספר' : ''), inputs[k]))),
           field('הערה', note, true),
-          h('p', { class: 'hint' }, 'שינוי פרמטרים — הבדיקות לאחור של השיטה מחושבות מחדש בפתיחה הבאה.'),
+          h('p', { class: 'hint' }, primary ? 'שינוי פרמטר מעלה את גרסת השיטה, והבדיקות לאחור שלה מחושבות מחדש בפתיחה הבאה.'
+            : 'שינוי פרמטר — רק המנהל הראשי. אפשר להציע ערך ב"הצעת שינוי פרמטר" למטה.'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
             try {
               await api('admin_method_save', { id: m.id, enabled: on.checked, note: note.value,
@@ -126,7 +131,8 @@ export function mountAnalysis(ctx) {
                 params: Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value.trim()])) });
               toast('נשמר'); ctx.reload();
             } catch (e) { toast(e.message, true); }
-          } } }, 'שמירה'));
+          } } }, 'שמירה'),
+          tunePanel(m, T.proposals.filter(x => x.method === m.id), primary));
       };
       const costIn = Object.fromEntries(Object.entries(S.costs).map(([mk, c]) => [mk, [numInput('fee', c.fee), numInput('slip', c.slip)]]));
       box.replaceChildren(
@@ -144,6 +150,68 @@ export function mountAnalysis(ctx) {
         } } }, 'שמירת העמלות')));
     })();
     return box;
+  }
+
+  // ── שכלול (18.7, S7): הצעת שינוי פרמטר — ערך מועמד אחד, ביצועים בתוך הדגימה ומחוצה לה. בלי חיפוש אוטומטי ──
+  const pct = v => (v === null || v === undefined ? '—' : Math.round(v * 1000) / 10 + '%');
+  const r2 = v => (v === null || v === undefined ? '—' : (Math.round(v * 100) / 100).toString());
+  const fmtVal = v => (typeof v === 'number' ? String(v) : '—');
+  /** טבלה: לכל חלק (בתוך / מחוץ לדגימה) — כותרת ושורה לכל מדד; עמודה לכל ערך (נוכחי / מועמד). שורות קצרות — נוח בטלפון */
+  function tuneTable(res) {
+    const num = v => h('td', { class: 'num', dir: 'ltr' }, v);
+    const part = (k, lbl) => h('tbody', { 'data-part': k },
+      h('tr', { class: 'tune-part' }, h('th', { colspan: 3, scope: 'colgroup' }, lbl)),
+      [['עסקאות', x => String(x.n)], ['הצלחה', x => pct(x.win_rate)], ['תוחלת', x => r2(x.expectancy_r) + 'R'], ['ירידה מרבית', x => r2(x.max_dd) + 'R']]
+        .map(([l, f]) => h('tr', {}, h('th', { scope: 'row' }, l), num(f(res.current[k])), num(f(res.candidate[k])))));
+    return h('table', { class: 'tbl tune-tbl' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', { scope: 'col' }, 'נוכחי'), h('th', { scope: 'col' }, 'מועמד'))),
+      part('in', 'בתוך הדגימה (70%)'), part('out', 'מחוץ לדגימה (30%)'));
+  }
+  const STATUS = { open: ['פתוחה', ''], applied: ['הוחלה', 'ok'], stale: ['ישנה', 'warn'] };
+  function proposalCard(m, x, primary) {
+    const d = m.param_defs[x.param] || { label: x.param };
+    const [st, cls] = STATUS[x.status] || [x.status, ''];
+    const apply = h('button', { class: 'btn sm primary', type: 'button', disabled: !primary || x.status !== 'open',
+      on: { click: () => ctx.confirmSheet('החלת הצעה', `${m.name}: "${d.label}" ${fmtVal(x.current)} → ${fmtVal(x.candidate)}. הגרסה של השיטה עולה מ-${m.version} ל-${m.version + 1}, והבדיקות לאחור מחושבות מחדש.`, 'החל', async () => {
+        await api('admin_tune_apply', { id: x.id }); toast('הוחל — גרסה חדשה'); ctx.reload();
+      }) } }, 'החל');
+    return h('li', { class: 'tune-prop', 'data-id': String(x.id), 'data-status': x.status },
+      h('div', { class: 'l1' }, h('span', {}, `${d.label}: ${fmtVal(x.current)} → ${fmtVal(x.candidate)}`), h('span', { class: 'chip ' + cls }, st)),
+      h('p', { class: 'hint' }, x.asset.replace(/^[^:]+:/, ''), sep(), TF_LABEL[x.tf] || x.tf, sep(), `גרסה ${x.method_version}`,
+        x.created_by ? [sep(), x.created_by] : null, x.new_version ? [sep(), `→ גרסה ${x.new_version}`] : null),
+      x.note ? h('p', { class: 'hint' }, x.note) : null,
+      tuneTable(x.results),
+      x.status === 'open' ? h('div', { class: 'row-btns wrap' }, apply,
+        primary ? null : h('small', { class: 'muted tune-only' }, 'רק המנהל הראשי מחיל')) : null);
+  }
+  function tunePanel(m, props, primary) {
+    const keys = Object.keys(m.param_defs);
+    if (!keys.length) return null;
+    const param = select('tune-param', keys.map(k => [k, m.param_defs[k].label]), keys[0]);
+    const value = numInput('tune-value', '', '');
+    value.dir = 'rtl';   // ה-placeholder בעברית ("עכשיו 20 · 2–200"); מספר נקרא נכון גם כך
+    const cur = k => m.params[k] ?? m.param_defs[k].default;
+    const hintCur = () => { const d = m.param_defs[param.value]; value.placeholder = `עכשיו ${cur(param.value)} · ${d.min}–${d.max}`; };
+    param.addEventListener('change', hintCur);
+    hintCur();
+    const asset = assetField(ctx, { value: 'binance:BTCUSDT', labels: { 'binance:BTCUSDT': { label: 'BTC ⇄ USDT' } }, label: 'נכס לבדיקה' });
+    const tf = select('tune-tf', m.timeframes.map(t => [t, TF_LABEL[t] || t]), m.timeframes.includes('h4') ? 'h4' : m.timeframes[0]);
+    const note = h('textarea', { rows: 2, maxlength: 500, 'aria-label': 'נימוק' });
+    const out = h('div', { 'aria-live': 'polite' });
+    const go = h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+      go.disabled = true; out.replaceChildren(h('p', { class: 'loading' }, 'מחשב בתוך הדגימה ומחוצה לה…'));
+      try {
+        await api('admin_tune_propose', { method: m.id, param: param.value, value: value.value.trim(), asset: asset.value, tf: tf.value, note: note.value });
+        toast('ההצעה נשמרה'); ctx.reload();
+      } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); go.disabled = false; }
+    } } }, 'חשב והצע');
+    const det = h('details', { class: 'tune' + (props.length ? ' has' : '') },
+      h('summary', {}, '🧪 הצעת שינוי פרמטר', props.length ? h('span', { class: 'chip' }, String(props.length)) : null),
+      h('p', { class: 'hint' }, 'מזינים ערך אחד. המערכת מריצה את השיטה על אותם נרות בערך הנוכחי ובמועמד — 70% הראשונים "בתוך הדגימה", 30% האחרונים "מחוץ לדגימה", בלי חפיפה. בלי עסקאות מחוץ לדגימה — אין הצעה. אין חיפוש אוטומטי של ערכים.'),
+      h('div', { class: 'fields two' }, field('פרמטר', param), field('ערך מועמד', value), h('div', { class: 'f wide' }, h('span', {}, 'נכס'), asset), field('מסגרת זמן', tf), field('נימוק', note, true)),
+      h('div', {}, go), out,
+      props.length ? h('ul', { class: 'list tune-list' }, props.map(x => proposalCard(m, x, primary))) : null);
+    return det;
   }
 
   return { viewProfile, adminMethods };

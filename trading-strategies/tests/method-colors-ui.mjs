@@ -56,7 +56,9 @@ const post = (p, action, body) => p.evaluate(async ([a, bd]) => {
   const me = await (await fetch('api.php?action=me')).json();
   return (await fetch('api.php?action=' + a, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': me.csrf }, body: JSON.stringify(bd) })).status;
 }, [action, body]);
-const profileColors = p => p.evaluate(async () => (await (await fetch('api.php?action=profile')).json()).profile.method_colors);
+// הצבעים בלבד ({id: צבע}) מתוך {id: {color, at}} (2.20) — at הוא זמן הסימון, והבדיקות כאן על הצבע
+const onlyColors = m => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [k, v?.color ?? v]));
+const profileColors = p => p.evaluate(async () => (await (await fetch('api.php?action=profile')).json()).profile.method_colors).then(onlyColors);
 const shot = async (p, name, full = false) => { if (SHOTS) await p.screenshot({ path: join(SHOTS, name + '.png'), fullPage: full }); };
 const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint[aria-live]')?.textContent || ''), null, { timeout: 30000 });
 const ready = (p, id) => p.locator(`.forecast-panel[data-method="${id}"] .chips`).waitFor({ timeout: 60000 });
@@ -138,7 +140,7 @@ try {
   // ── בחירת צבע ביד: אליוט → ורוד (--m5) ──
   reqs.length = 0;
   await swatch(o, E, '--m5').check();
-  await o.waitForFunction(() => document.querySelector('.chart-box:not(.osc)').tsForecast().colors['elliott-w3'] === '--m5');
+  await o.waitForFunction(() => document.querySelector('.chart-box:not(.osc)').tsForecast().colors['elliott-w3']?.color === '--m5');
   eq(refreshes(reqs), [], 'changing a color does not ask the server for candles again');
   eq(reqs.filter(([a]) => a === 'method_colors_save').length, 1, 'the color is saved — one request');
   eq(await profileColors(o), { [E]: '--m5', [S]: '--m2' }, 'criterion 3: the chosen color is in the profile');
