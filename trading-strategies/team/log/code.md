@@ -162,3 +162,10 @@
   בדיקות: `learn-live.php` 32 → 39, `learn-live-api.php` 17 → 18. כל `tests/*.php` ירוקים; `learn-ui`, `learn-switch-ui` ירוקים.
 - 2026-11-16 — פיבונאצ'י, `learn_params` (23.9, L5b אחרי #1709; בקרה (8)): stop_atr (צעד 0.25), box_target (0.5 / 0.618 / 1), zone_atr (צעד 0.1). משנה ספירה: לא — אותות זהים ל-main, `zones.json` זהה. `fibonacci-f3.php` — 32 (שכנים בתוך 22.10).
 - 2026-11-16 — L2 מוזג (#1711). L6 — **לא התחלתי**: הצ'אט ב-~517K טוקנים, ופרוסה שלמה (שרת, כרטיס, הצעה, בדיקות, סבבי ביקורת) הייתה עוברת את 600K. כתבתי את ההעברה ל-L6 ב-`team/handoff/code.md` ("הבא: L6"), כולל ההערה של הבקרה על החפיפה backtest / live. יוצא.
+- 2026-11-16 — **L6** (23.7, ענף `claude/trading-strategies-learning-l6`, בקרה (8)): ההסתברות בכרטיס. `ts_learn_live_line` — "בפועל מאז" רק מ-`live`
+  של השיטה וגרסתה, בשוק × מסגרת, ונפילה לכל השווקים (ל2); `ts_learn_switch_sync` ב-cron (אחרי live) — רווחי סמך שלא חופפים → הצעה
+  `@certainty` ב-`method_proposals` (origin learning); "החל" (`ts_tune_apply`, עורך ראשי) — בלי גרסה. הכרטיס: `certainty_basis`, `live`
+  (`analysis` ו-`chart_refresh`). **בלי מיגרציה** (23 עדיין פנויה). בדיקות חדשות: `learn-card.php` (20), `learn-card-api.php` (21),
+  `learn-card-ui.mjs` (22); `roles-api.php` — שורה "L6: switch to live" (161). כל `tests/*.php` ירוקים; ui: tune, forecast, learn, refresh,
+  analysis, roles, learn-switch, chart-f1, method-colors, fibonacci, elliott-card — ירוקים.
+- 2026-11-16 — **L6.1** (בקשת בקרה (8) אחרי מיזוג #1713): שורת הסיכום של שיטה בגרף (`forecast.js`, `brief`) — `ודאות X% · ראשונית` / `· בפועל מאז` לפי `certainty_basis`. `learn-card-ui.mjs` 22 → 25 (גם מקופל); forecast-ui, refresh-ui, chart-f1-ui ירוקים.

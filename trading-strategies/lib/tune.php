@@ -126,7 +126,11 @@ function ts_tune_propose(int $uid, array $in, ?int $now = null): array
 function ts_tune_row(array $r): array
 {
     $status = $r['status'];
-    if ($status === 'open' && ts_method_exists($r['method_id'])) {
+    if ($status === 'open' && $r['param'] === TS_CERT_PARAM) {
+        // "החלף לבפועל" (L6): ישנה כשהגרסה זזה, או כשכבר הוחלף לאותה רמה
+        if (!ts_method_exists($r['method_id']) || (int)ts_method($r['method_id'])->meta()['version'] !== (int)$r['method_version']
+            || ts_learn_switched($r['method_id'], (int)$r['method_version'], (string)$r['segment'])) $status = 'stale';
+    } elseif ($status === 'open' && ts_method_exists($r['method_id'])) {
         $m = ts_method($r['method_id']);
         $set = ts_method_settings($r['method_id']);
         $seg = (string)($r['segment'] ?? '');
@@ -190,6 +194,16 @@ function ts_tune_apply(int $uid, mixed $id, ?int $now = null): array
             throw new TsInvalid('ההצעה ישנה — הגרסה של השיטה או הערך הנוכחי השתנו מאז. צריך הצעה חדשה');
         }
         $mid = $r['method_id'];
+        // "החלף לבפועל" (23.7, L6): לא פרמטר — לא נוגע ב-methods ולא מעלה גרסה. מהיום הכרטיס בגרסה וברמה האלה מציג את "בפועל מאז" כמספר הראשי
+        if ($r['param'] === TS_CERT_PARAM) {
+            $db->prepare("UPDATE method_proposals SET status = 'applied', applied_by = ?, applied_at = ?, new_version = NULL WHERE id = ?")->execute([$uid, $now, $id]);
+            $res = json_decode($r['results'], true);
+            $one = fn(array $x) => 'N = ' . $x['n'] . ', ' . ($x['ci'] ? round(100 * $x['ci'][0]) . '–' . round(100 * $x['ci'][1]) . '%' : '—');
+            ts_admin_log($uid, 'method_cert_live', "$mid #$id v{$r['method_version']}" . ($r['segment'] !== '' ? "@{$r['segment']}" : '') . ': ראשונית → בפועל מאז · בדיקה לאחור '
+                . $one($res['backtest']) . ' · בפועל ' . $one($res['live']));
+            $db->commit();
+            return ts_tune_get($id);
+        }
         $m = ts_method($mid);
         $old = (int)$m->meta()['version'];
         $set = ts_method_settings($mid);

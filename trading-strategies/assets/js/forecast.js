@@ -472,7 +472,10 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     const bodyId = 'an-' + id;
     // שורת הסיכום — גם כשהשיטה מקופלת: הכיוון והוודאות, כל אחד עם השם שלו (קריטריון 2)
     const bt = c?.backtest;
-    const brief = [C.biasWord(c), bt?.status === 'ok' ? `ודאות ${bt.certainty}%` : c?.status === 'ok' ? 'לא נבדק לאחור' : ''].filter(Boolean).join(' · ');
+    // 23.7 (L6): המספר הראשי של הכרטיס (certainty) ומקורו — "ראשונית" (בדיקה לאחור) או "בפועל מאז" אחרי "החלף לבפועל"
+    const live = c?.certainty_basis === 'live' && c.certainty !== null;
+    const brief = [C.biasWord(c), live ? `ודאות ${c.certainty}% · בפועל מאז` : bt?.status === 'ok' ? `ודאות ${c.certainty ?? bt.certainty}% · ראשונית`
+      : c?.status === 'ok' ? 'לא נבדק לאחור' : ''].filter(Boolean).join(' · ');
     const tog = h('button', { class: 'an-fold', type: 'button', 'aria-expanded': String(!fold), 'aria-controls': bodyId,
       on: { click: () => { set(id, 'fold', !fold); renderPanel(); } } },
       h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), h('h3', {}, name), pick(id)?.off ? h('small', { class: 'chip' }, 'מוסתרת בגרף') : null, brief ? h('small', { class: 'muted an-brief' }, brief) : null,
