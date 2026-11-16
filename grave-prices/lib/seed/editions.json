@@ -1,0 +1,481 @@
+{
+ "_note": "נתוני ההתחלה, מועתקים מהמחירונים שב-team/source. מחירי חו\"ל — null עד שיגיע המחירון (שאלה 6). סימון בתווית: **מודגש**, __קו תחתון__, ((קטן ורגיל)).",
+ "audiences": [
+  {
+   "code": "il",
+   "name": "תושבי ישראל",
+   "currency": "₪"
+  },
+  {
+   "code": "abroad",
+   "name": "תושבי חו\"ל",
+   "currency": "₪"
+  }
+ ],
+ "editions": [
+  {
+   "effective_from": "2024-01-02",
+   "source": "israel-2024-01-02.pdf",
+   "signatures": [
+    {
+     "name": "אבשלום מלכה",
+     "role": "גזבר"
+    },
+    {
+     "name": "הרב דיין שלמה",
+     "role": "יו\"ר וועדת חב\"ק"
+    },
+    {
+     "name": "אלי מויאל",
+     "role": "יו\"ר הנהלה"
+    }
+   ],
+   "rows": [
+    {
+     "kind": "section",
+     "indent": 0,
+     "label": "חלקות פטורות:"
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "קבורת שדה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**__לתושב ירושלים__**",
+     "prices": {
+      "il": 16008,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**צמוד לבן/בת זוג __קבור__**",
+     "prices": {
+      "il": 12807,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**לתושב ישראל __מחוץ לירושלים__**",
+     "prices": {
+      "il": 20811,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**צמוד לבן זוג __קבור__ __מחוץ לירושלים__**",
+     "prices": {
+      "il": 20811,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "קבורת מכפלה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**__לתושבי ירושלים__** ((2 בודדים מחיים))",
+     "prices": {
+      "il": 25614,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "heading",
+     "indent": 0,
+     "label": "**מכפלה- מעל בן זוג __קבור__**"
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "הנפטר בחינם ובן הזוג מעליו (רכישה בחיים)",
+     "prices": {
+      "il": 10245,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "מחיר לבן משפחה במכפלה (אח,אמא,אבא)",
+     "prices": {
+      "il": 12807,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**__לתושבי ישראל מחוץ לירושלים__** ((2 בודדים מחיים))",
+     "prices": {
+      "il": 33298,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "heading",
+     "indent": 0,
+     "label": "**מכפלה- מעל בן זוג __קבור__**"
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "הנפטר בחינם ובן הזוג מעליו (רכישה בחיים)",
+     "prices": {
+      "il": 16649,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "מחיר לבן משפחה במכפלה (אח,אמא,אבא)",
+     "prices": {
+      "il": 16649,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "section",
+     "indent": 0,
+     "label": "חלקות חריגה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בגוש 26** (חלקות א-ב)",
+     "prices": {
+      "il": 70000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**ביתר החלקות**",
+     "prices": {
+      "il": 60000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "קבורת מכפלה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בגוש 26** (חלקות א-ב)",
+     "prices": {
+      "il": 80000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בגוש 42** (חלקות א, ב, ג)",
+     "prices": {
+      "il": 50000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "הר הזיתים (חלקה סגורה)"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בכל החלקות** (שדה)",
+     "prices": {
+      "il": 50000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בכל החלקות** (מכפלה)",
+     "prices": {
+      "il": 75000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "fee",
+     "indent": 0,
+     "label": "** תשלום עבור העברת בעלות לאחוזת קבר",
+     "prices": {
+      "il": 3000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "fee",
+     "indent": 0,
+     "label": "** תשלום עבור אגרת שמור מחיים",
+     "prices": {
+      "il": 400,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "note",
+     "indent": 0,
+     "label": "** המחירון תואם את קביעת המשרד לשירותי דת"
+    },
+    {
+     "kind": "note",
+     "indent": 0,
+     "label": "** המחירון מתייחס לרכישת אחוזת הקבר __בלבד__"
+    }
+   ]
+  },
+  {
+   "effective_from": "2025-03-15",
+   "source": "israel-2025-03-15.pdf",
+   "signatures": [
+    {
+     "name": "אבשלום מלכה",
+     "role": "גזבר"
+    },
+    {
+     "name": "הרב דיין שלמה",
+     "role": "יו\"ר וועדת חב\"ק"
+    },
+    {
+     "name": "אלי מויאל",
+     "role": "יו\"ר הנהלה"
+    }
+   ],
+   "rows": [
+    {
+     "kind": "section",
+     "indent": 0,
+     "label": "חלקות פטורות:"
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "קבורת שדה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**__לתושב ירושלים__**",
+     "prices": {
+      "il": 16947,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**צמוד לבן/בת זוג __קבור__**",
+     "prices": {
+      "il": 13557,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**לתושב ישראל __מחוץ לירושלים__**",
+     "prices": {
+      "il": 22031,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**צמוד לבן זוג __קבור__ __מחוץ לירושלים__**",
+     "prices": {
+      "il": 22031,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "קבורת מכפלה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**__לתושבי ירושלים__** ((2 בודדים מחיים))",
+     "prices": {
+      "il": 27114,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "heading",
+     "indent": 0,
+     "label": "**מכפלה- מעל בן זוג __קבור__**"
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "הנפטר בחינם ובן הזוג מעליו (רכישה בחיים)",
+     "prices": {
+      "il": 10846,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "מחיר לבן משפחה במכפלה (אח,אמא,אבא)",
+     "prices": {
+      "il": 13557,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**__לתושבי ישראל מחוץ לירושלים__** ((2 בודדים מחיים))",
+     "prices": {
+      "il": 35248,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "heading",
+     "indent": 0,
+     "label": "**מכפלה- מעל בן זוג __קבור__**"
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "הנפטר בחינם ובן הזוג מעליו (רכישה בחיים)",
+     "prices": {
+      "il": 17624,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 1,
+     "label": "מחיר לבן משפחה במכפלה (אח,אמא,אבא)",
+     "prices": {
+      "il": 17624,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "section",
+     "indent": 0,
+     "label": "חלקות חריגה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בגוש 26** (חלקות א-ב)",
+     "prices": {
+      "il": 70000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**ביתר החלקות**",
+     "prices": {
+      "il": 60000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "קבורת מכפלה:"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בגוש 26** (חלקות א-ב)",
+     "prices": {
+      "il": 80000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בגוש 42** (חלקות א, ב, ג)",
+     "prices": {
+      "il": 50000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "subsection",
+     "indent": 0,
+     "label": "הר הזיתים (חלקה סגורה)"
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בכל החלקות** (שדה)",
+     "prices": {
+      "il": 50000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "item",
+     "indent": 0,
+     "label": "**בכל החלקות** (מכפלה)",
+     "prices": {
+      "il": 75000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "fee",
+     "indent": 0,
+     "label": "** תשלום עבור העברת בעלות לאחוזת קבר",
+     "prices": {
+      "il": 3000,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "fee",
+     "indent": 0,
+     "label": "** תשלום עבור אגרת שמור מחיים",
+     "prices": {
+      "il": 400,
+      "abroad": null
+     }
+    },
+    {
+     "kind": "note",
+     "indent": 0,
+     "label": "** המחירון תואם את קביעת המשרד לשירותי דת"
+    },
+    {
+     "kind": "note",
+     "indent": 0,
+     "label": "** המחירון מתייחס לרכישת אחוזת הקבר __בלבד__"
+    }
+   ]
+  }
+ ]
+}
