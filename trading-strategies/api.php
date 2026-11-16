@@ -132,8 +132,36 @@ function input(int $max = 1_000_000, int $tooBig = 413): array
     return $in;
 }
 
+/**
+ * חריגה שלא טופלה → 500. ההודעה לפי סוג הבקשה: בקריאה (GET — analysis, chart_refresh…) לא נשמר כלום, ולכן "הפעולה לא
+ * נשמרה" מטעה; רק בכתיבה (POST) היא נכונה. ביומן המובנה (DevLoop): המקום והעקבות (devloop_log_error), ובנוסף שורה עם
+ * סוג החריגה, הפעולה והפרמטרים של הבקשה (ts_log_params — בלי סודות ובלי הגוף), כדי ש-500 בשרת יהיה אפשר לשחזר.
+ */
+function ts_server_error(Throwable $e, string $action, string $method): never
+{
+    devloop_log_error($e);
+    devloop_log_write('error', 'api', 'exception.context', ['message' => get_class($e) . ': ' . mb_substr($e->getMessage(), 0, 500),
+        'data' => ['class' => get_class($e), 'file' => basename($e->getFile()), 'line' => $e->getLine(), 'params' => ts_log_params($_GET)]]);
+    error_log('trading-strategies ' . $action . ': ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+    fail($method === 'POST' ? 'תקלה בשרת — הפעולה לא נשמרה' : 'תקלה בשרת — נסו שוב בעוד רגע', 500);
+}
+
+/** פרמטרי ה-URL ליומן: בלי מפתחות שנראים כמו סוד, כל ערך מקוצר. גוף הבקשה לא נרשם אף פעם */
+function ts_log_params(array $q): array
+{
+    $out = [];
+    foreach (array_slice($q, 0, 20, true) as $k => $v) {
+        $k = (string)$k;
+        $out[$k] = preg_match('/token|secret|key|pass|csrf|cred|auth|sig|state/i', $k) ? '***'
+            : (is_scalar($v) ? mb_substr((string)$v, 0, 200) : '[' . gettype($v) . ']');
+    }
+    return $out;
+}
+
 $action = (string)($_GET['action'] ?? '');
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+// חריגה מחוץ לכל try (למשל במונה התקרה, ts_rate_hit) — אותה תשובת JSON ואותו רישום, ולא דף שגיאה של PHP
+set_exception_handler(fn(Throwable $e) => ts_server_error($e, $action, $method));
 
 // Claude באסימון (DevLoop): בלי עוגייה ובלי משתמש — לפני ה-session. האסימון נבדק במודול (devloop_api_auth)
 if (in_array($action, TS_DEVAPI_ACTIONS, true)) {
@@ -222,9 +250,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
         devloop_log_error($e);
         fail($e->getMessage(), $e->getCode() ?: 400);
     } catch (Throwable $e) {
-        devloop_log_error($e);
-        error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
-        fail('תקלה בשרת — הפעולה לא נשמרה', 500);
+        ts_server_error($e, $action, $method);
     }
 }
 
@@ -646,7 +672,5 @@ try {
     devloop_log_error($e);
     fail($e->getMessage(), 404);
 } catch (Throwable $e) {
-    devloop_log_error($e);   // חריגה שאינה RuntimeException — ביומן עם מקום ועקבות (⚠️ לבירור)
-    error_log('trading-strategies ' . $action . ': ' . $e->getMessage());
-    fail('תקלה בשרת — הפעולה לא נשמרה', 500);
+    ts_server_error($e, $action, $method);
 }
