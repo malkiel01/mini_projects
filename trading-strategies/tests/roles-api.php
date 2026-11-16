@@ -16,9 +16,9 @@ function eq($got, $want, string $what): void
     echo "✗ $what: got " . var_export($got, true) . ', want ' . var_export($want, true) . "\n";
 }
 
-// ── קריטריון 1: מיגרציה 17 על עותק עם נתונים ────────────────────────
-// מסד בגרסה 16 בדיוק: בונים מסד מלא, מחזירים את app_roles לסכמה של 16 (CHECK 'admin') עם נתונים, ו-user_version = 16.
-// בין 16 ל-17 משתנה רק app_roles — לכן זה המסד שבשרת לפני הפריסה.
+// ── קריטריון 1: מיגרציה 18 על עותק עם נתונים ────────────────────────
+// מסד בגרסה 17 בדיוק: בונים מסד מלא, מחזירים את app_roles לסכמה של 17 (CHECK 'admin') עם נתונים, ו-user_version = 17.
+// בין 17 ל-18 משתנה רק app_roles — לכן זה המסד שבשרת לפני הפריסה.
 define('TS_DB_PATH', "$tmp.mig.sqlite");
 require_once dirname(__DIR__) . '/lib/db.php';
 require_once dirname(__DIR__) . '/lib/auth.php';
@@ -26,7 +26,7 @@ require_once dirname(__DIR__) . '/lib/roles.php';
 $m = new PDO('sqlite:' . TS_DB_PATH, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 $m->exec('PRAGMA foreign_keys = ON');
 ts_migrate($m);
-eq((int)$m->query('PRAGMA user_version')->fetchColumn() >= 17, true, 'fresh database reaches 17');
+eq((int)$m->query('PRAGMA user_version')->fetchColumn() >= 18, true, 'fresh database reaches 18');
 $m->exec(<<<'SQL'
     PRAGMA foreign_keys = OFF;
     DROP TABLE app_roles;
@@ -37,7 +37,7 @@ $m->exec(<<<'SQL'
         granted_at INTEGER NOT NULL
     );
     PRAGMA foreign_keys = ON;
-    PRAGMA user_version = 16;
+    PRAGMA user_version = 17;
     SQL);
 foreach ([[1, '100', 'בעלים'], [2, '101', 'א'], [3, '102', 'ב'], [4, '103', 'ג']] as [$id, $sub, $name])
     $m->prepare('INSERT INTO users (id, platform_sub, display_name, created_at, last_login_at) VALUES (?, ?, ?, 1, 1)')->execute([$id, $sub, $name]);
@@ -46,16 +46,16 @@ $m->exec("INSERT INTO admin_log (user_id, action, target, at) VALUES (1, 'admin_
 $before = ['users' => $m->query('SELECT * FROM users ORDER BY id')->fetchAll(), 'log' => $m->query('SELECT * FROM admin_log ORDER BY id')->fetchAll()];
 $failed = false;
 try { $m->exec("INSERT INTO app_roles VALUES (4, 'editor', 1, 1)"); } catch (PDOException) { $failed = true; }
-eq($failed, true, 'the v16 copy really has the old CHECK (editor refused)');
+eq($failed, true, 'the v17 copy really has the old CHECK (editor refused)');
 
 ts_migrate($m);
 $roles = fn() => $m->query('SELECT user_id, role, granted_by, granted_at FROM app_roles ORDER BY user_id')->fetchAll();
 $want = [['user_id' => 2, 'role' => 'editor', 'granted_by' => 1, 'granted_at' => 1700000001], ['user_id' => 3, 'role' => 'editor', 'granted_by' => 1, 'granted_at' => 1700000002]];
 eq($roles(), $want, 'criterion 1: two admin → two editor, same granted_by and granted_at');
-eq((int)$m->query('PRAGMA user_version')->fetchColumn(), 17, 'user_version = 17');
+eq((int)$m->query('PRAGMA user_version')->fetchColumn(), 18, 'user_version = 18');
 eq(['users' => $m->query('SELECT * FROM users ORDER BY id')->fetchAll(), 'log' => $m->query('SELECT * FROM admin_log ORDER BY id')->fetchAll()], $before, 'no other row touched (users, admin_log)');
 ts_migrate($m);
-eq([$roles(), (int)$m->query('PRAGMA user_version')->fetchColumn()], [$want, 17], 'criterion 1: second run → no change');
+eq([$roles(), (int)$m->query('PRAGMA user_version')->fetchColumn()], [$want, 18], 'criterion 1: second run → no change');
 foreach (['admin', 'owner', ''] as $bad) {
     $failed = false;
     try { $m->exec("INSERT INTO app_roles VALUES (4, '$bad', 1, 1)"); } catch (PDOException) { $failed = true; }
@@ -69,19 +69,19 @@ eq((int)$m->query('SELECT COUNT(*) FROM app_roles WHERE user_id = 4')->fetchColu
 $fk = $m->query('PRAGMA foreign_key_check')->fetchAll();
 eq($fk, [], 'foreign keys consistent');
 
-// טרנזקציה: מיגרציה שנכשלת באמצע לא משאירה חצי. מסד בגרסה 16 עם שורה שה-CHECK החדש דוחה ('other') → הכול חוזר
+// טרנזקציה: מיגרציה שנכשלת באמצע לא משאירה חצי. מסד בגרסה 17 עם שורה שה-CHECK החדש דוחה ('other') → הכול חוזר
 $m2 = new PDO("sqlite:$tmp.mig2.sqlite", null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $m2->exec("CREATE TABLE users (id INTEGER PRIMARY KEY); INSERT INTO users VALUES (1), (2);
            CREATE TABLE app_roles (user_id INTEGER PRIMARY KEY, role TEXT NOT NULL, granted_by INTEGER NOT NULL, granted_at INTEGER NOT NULL);
-           INSERT INTO app_roles VALUES (2, 'other', 1, 5); PRAGMA user_version = 16;");
+           INSERT INTO app_roles VALUES (2, 'other', 1, 5); PRAGMA user_version = 17;");
 $threw = false;
 try { ts_migrate($m2); } catch (PDOException) { $threw = true; }
 // כמו בבקשה בשרת: החיבור נסגר עם הטרנזקציה הפתוחה — SQLite מחזיר הכול. בודקים בחיבור חדש
 $m2 = null;
 $m2 = new PDO("sqlite:$tmp.mig2.sqlite", null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 eq([$threw, (int)$m2->query('PRAGMA user_version')->fetchColumn(), $m2->query('SELECT role FROM app_roles')->fetchAll(PDO::FETCH_COLUMN),
-    (int)$m2->query("SELECT COUNT(*) FROM sqlite_master WHERE name = 'app_roles_v17'")->fetchColumn()], [true, 16, ['other'], 0],
-    'a failing migration rolls back: version 16, the row and the table as they were');
+    (int)$m2->query("SELECT COUNT(*) FROM sqlite_master WHERE name = 'app_roles_v18'")->fetchColumn()], [true, 17, ['other'], 0],
+    'a failing migration rolls back: version 17, the row and the table as they were');
 
 // ── השרת ─────────────────────────────────────────────────────────
 $probe = stream_socket_server('tcp://127.0.0.1:0');

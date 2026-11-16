@@ -9,7 +9,8 @@
  *
  * **F-2 (22.5):** A-B-X, קופסת השוויון לכל אזור, Z6 (יעד 100% בתוך אזור → ציון + 1), יעד חלופי לאות (T של קופסת אזור האות,
  * כשאין אזור התנגדות מעל), והתרחיש בגרף וביומן — הפירוט ב-lib/fibonacci.php.
- * **לא כאן:** מתרחב/מתכווץ וואקום (F-3), הרשימה של עמ' 102, ומתנד (O1, פ7 — לכן אין פרמטר rsi_filter: פרמטר שלא עושה כלום
+ * **F-3 (מידע בלבד, S26):** מתרחב / מתכווץ / סימטרי בכרטיס (info), ותווית "ואקום" בין אזורים (Z10) — ts_fib_market, ts_fib_vacuums.
+ * **לא כאן:** הרשימה של עמ' 102, ומתנד (O1, פ7 — לכן אין פרמטר rsi_filter: פרמטר שלא עושה כלום
  * היה מטעה את מי שמשכלל).
  *
  * המצב (JSON, נשמר בסוף הבדיקה לאחור): ATR ו-zigzag (lib/elliott.php — אותה פונקציה), חלון של lookback_bars נרות,
@@ -61,6 +62,12 @@ final class TsMethodFibonacci extends TsMethod
             'version' => 2 + $this->tune,   // + החלות (18.7). 2 — F-2: Z6 משנה ציון, ויעד חלופי משנה אותות
             'incremental' => true,
             'alerts' => true,         // 22.1
+            // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            'learn' => [
+                'score' => 'ציון האזור (כולל Z6)',
+                'zone_atr' => 'רוחב האזור ב-ATR (בנר שלפני האות)',
+                'rr' => 'יחס סיכוי-סיכון באות',
+            ],
         ];
     }
 
@@ -100,10 +107,13 @@ final class TsMethodFibonacci extends TsMethod
         }
         // האות — מהרשת של הנר הקודם (נרות ≤ c − 1), לפני שהנר הזה נכנס
         $sig = $s['g'] !== null ? ts_fib_signal($s['g'], $c, $p) : null;
+        $atr = $s['g']['atr'] ?? null;   // ה-ATR של הרשת שהאות נבדק מולה — ל-features
         $s = ts_fib_advance($s, $c, $p);
 
         if ($sig === null) return [$s, null];
         $s['x'] = $sig + ['ago' => 0, 'alive' => true];
+        // meta().learn — לא נכנס למצב (x נקבע לפני)
+        $sig['features'] = ['score' => $sig['score'], 'zone_atr' => $atr ? ($sig['zone'][1] - $sig['zone'][0]) / $atr : null, 'rr' => $sig['rr']];
         return [$s, $sig];
     }
 
@@ -145,7 +155,10 @@ final class TsMethodFibonacci extends TsMethod
 
         $bias = $alive ? $x['side'] : 'none';
         $levels = $alive ? ['entry' => $x['entry'], 'stop' => $x['stop'], 'target' => $x['target']] : null;
-        return ['bias' => $bias, 'conditions' => $out, 'levels' => $levels, 'signal_ago' => $alive ? $x['ago'] : null];
+        // S25 (F-3) — מידע בלבד (S26), לא תנאי: לא נספר ולא משנה כיוון
+        $mk = ts_fib_market($s['w'], $s['piv'], $g, $p);
+        $info = [['id' => 'market', 'text' => 'השוק: ' . TS_FIB_S25_WORDS[$mk['state']], 'value' => $mk['state']]];
+        return ['bias' => $bias, 'conditions' => $out, 'levels' => $levels, 'signal_ago' => $alive ? $x['ago'] : null, 'info' => $info];
     }
 
     private static function num(float $v): string
@@ -180,6 +193,11 @@ final class TsMethodFibonacci extends TsMethod
                 $items[] = ['kind' => 'polyline', 'style' => 'solid', 'single' => true, 'extend' => true, 'fib' => $key, 'r' => $l['r'],
                     'points' => [['t' => $t1, 'price' => $l['price']], ['t' => $last, 'price' => $l['price']]]];
             }
+        }
+        // ואקום (Z10, F-3) — תווית בממצא, באמצע הפער, בנר האחרון. מידע בלבד
+        foreach (ts_fib_vacuums($g, $p) as $v) {
+            $items[] = ['kind' => 'label', 't' => $last, 'price' => ($v['lo'] + $v['hi']) / 2, 'text' => 'ואקום', 'vacuum' => $v['side'],
+                'lo' => $v['lo'], 'hi' => $v['hi']];
         }
         $x = $s['x'];
         $alive = $x !== null && $x['alive'] && $x['ago'] < $this->horizon($p) && $x['ago'] < count($candles);
