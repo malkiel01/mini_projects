@@ -303,9 +303,12 @@ function ts_asset_market(string $asset): string
 /**
  * נרות סגורים (מחרוזות) של נכס, מ-$from עד עכשיו. החלק שבתוך 60 היום — דרך המאגר (ts_market_candles, ופנייה לספק
  * רק על החסר); החלק הישן — ישר מהספק, לריצה הזו בלבד, ולא נשמר. התקציב נבדק לפני שמתחילים (ה): לא מספיק —
- * TsBudget. מחזיר [rows, provider_calls].
+ * TsBudget. מחזיר [rows, provider_calls, complete].
+ *
+ * $deadline (microtime) — הספק איטי: לפני כל פנייה נבדק הזמן, ואם עבר (ויש כבר משהו) — עוצרים. מה שחוזר הוא תמיד
+ * **רצף מ-$from** (החלונות נמשכים מהישן לחדש), ו-complete = false; ts_backtest שומר את המצב עד שם וממשיך ממנו בפעם הבאה.
  */
-function ts_bt_history(int $uid, string $asset, string $tf, int $from, int $now): array
+function ts_bt_history(int $uid, string $asset, string $tf, int $from, int $now, ?float $deadline = null): array
 {
     [$provider, $symbol] = ts_asset_split($asset);
     $acc = ts_access($uid, $provider) ?? throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
@@ -320,11 +323,14 @@ function ts_bt_history(int $uid, string $asset, string $tf, int $from, int $now)
     $poolCalls = max(0, (int)ceil(($now - max($from, $poolStart) + 1) / $win));
     if (ts_usage_left($uid, $provider, $acc) < $oldCalls + $poolCalls) throw new TsBudget('הבדיקה לאחור תושלם מאוחר יותר — לא נשאר היום מספיק תקציב פניות לספק');
 
-    $rows = []; $calls = 0;
+    $rows = []; $calls = 0; $complete = true;
     try {
         // הישן — בחלונות של קריאה אחת לספק (max_per_call נרות), כל אחד נספר בתקציב
         $step = max(1, (int)($meta['max_per_call'] ?? 1000)) * $sec;
+        // עוצרים רק אחרי פנייה אחת לפחות — כך כל קריאה מתקדמת ($calls ברפרנס: הוא גדל בלולאות)
+        $late = function () use (&$calls, $deadline): bool { return $deadline !== null && $calls > 0 && microtime(true) > $deadline; };
         for ($a = $from; $oldCalls && $a < $poolStart; $a += $step) {
+            if ($late()) { $complete = false; break; }
             $b = min($a + $step - 1, $poolStart - 1);
             // זוג מחושב ("1/USDILS", 18.1): הספק נותן את הכיוון המקורי, והופכים
             $inv = str_starts_with($symbol, '1/');
@@ -333,7 +339,8 @@ function ts_bt_history(int $uid, string $asset, string $tf, int $from, int $now)
             $calls++;
             foreach ($old as $r) $rows[$r['t']] = $r;
         }
-        for ($a = max($from, $poolStart); $a <= $now; $a += $win) {
+        for ($a = max($from, $poolStart); $complete && $a <= $now; $a += $win) {
+            if ($late()) { $complete = false; break; }
             $r = ts_market_candles($uid, $asset, $tf, $a, min($a + $win - 1, $now), $now);
             $calls += $r['provider_calls'];
             foreach ($r['candles'] as $c) if ($c['t'] >= $from) $rows[$c['t']] = $c;
@@ -344,7 +351,7 @@ function ts_bt_history(int $uid, string $asset, string $tf, int $from, int $now)
     }
     ksort($rows);
     $closed = array_values(array_filter($rows, fn($c) => $c['t'] + $sec <= $now));   // הנר הפתוח — לא נכנס (6.2 א)
-    return [array_slice($closed, -TS_BT_MAX_CANDLES), $calls];
+    return [array_slice($closed, -TS_BT_MAX_CANDLES), $calls, $complete];
 }
 
 // ── בדיקה לאחור (6.2) ────────────────────────────────────
@@ -403,17 +410,33 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     $incremental = $same && !empty($meta['incremental']);
     $state = $incremental ? json_decode($row['state'], true) : null;
     $from = $incremental ? (int)$row['to_t'] + 1 : $now - TS_BT_RANGE[$tf];
-    $deadline = microtime(true) + TS_BT_MAX_SECONDS;
+    // בדיקה שלא הושלמה בפעם הקודמת (ספק איטי) — ממשיכים מהמצב שלה, ולא מושכים שוב את מה שכבר נמשך. רק לשיטה מצטברת:
+    // אצלה המשך מהמצב = ריצה אחת על כל הנרות (tests/backtest.php)
+    $pk = ts_bt_partial_key($meta, $provider, $asset, $tf, (string)$scope, $hash, $incremental ? (int)$row['to_t'] : null);
+    if (!empty($meta['incremental']) && ($part = ts_bt_partial_get($pk, $now))) [$state, $from] = [$part['state'], $part['to_t'] + 1];
+    $max = ts_bt_max_seconds();
+    $deadline = microtime(true) + $max;
     try {
-        [$rows, $calls] = ts_bt_history($uid, $asset, $tf, $from, $now);
-        $s = ts_bt_run($m, $p, ts_bt_floats($rows), $cost, $state, $deadline);
+        [$rows, $calls, $complete] = ts_bt_history($uid, $asset, $tf, $from, $now, $deadline);
     } catch (TsBudget $e) {
         return ['status' => 'later', 'message' => $e->getMessage()];
-    } catch (TsBacktestTimeout) {
-        return ['status' => 'incomplete', 'message' => 'הבדיקה לאחור לא הושלמה בתוך ' . TS_BT_MAX_SECONDS . ' שניות'];
     } catch (TsProviderError $e) {
         return ['status' => 'error', 'message' => $e->getMessage()];
     }
+    // הריצה בחלקים, והזמן נבדק ביניהם. משך משלה (מהרגע שהיא מתחילה): המשיכה כבר יכלה לגמור את התקרה, ונר שנמשך ולא
+    // נבדק היה נמשך שוב בפעם הבאה. המשך מהמצב = ריצה אחת, ולכן כשהכול הספיק — אותה תוצאה כמו קודם
+    $s = $state ?? ts_bt_init($m, $p);
+    $runUntil = microtime(true) + $max;
+    foreach (array_chunk(ts_bt_floats($rows), 2000) as $i => $chunk) {
+        if ($i > 0 && microtime(true) > $runUntil) { $complete = false; break; }
+        $s = ts_bt_run($m, $p, $chunk, $cost, $s);
+    }
+    if (!$complete) {
+        if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
+        return ['status' => 'incomplete', 'provider_calls' => $calls,
+            'message' => "הבדיקה לאחור לא הושלמה בתוך $max שניות — היא תמשיך מאותה נקודה בפעם הבאה"];
+    }
+    ts_bt_partial_drop($pk);
     $res = ts_bt_result($s);
     $db->prepare('INSERT OR REPLACE INTO backtests (method_id, method_version, provider, asset, tf, params_hash, cred_scope, n, wins, expectancy_r, max_dd, from_t, to_t, state, computed_at)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -421,6 +444,57 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
             $res['max_dd'], $res['from_t'], $res['to_t'], json_encode($s), $now]);
     ts_journal_backtest($meta, $asset, $tf, (string)$scope, $res, $now);   // יומן השיטה (18.6) — רק בחישוב חדש
     return ts_bt_out($s, $now, $incremental ? 'incremental' : 'full', $calls);
+}
+
+/** תקרת הזמן לבדיקה לאחור (✅5). בפיתוח ובבדיקות — אפשר קצרה יותר (TS_BT_MAX_SECONDS בסביבה), כדי לדמות ספק איטי */
+function ts_bt_max_seconds(): float
+{
+    $v = defined('TS_DEV') ? getenv('TS_BT_MAX_SECONDS') : false;
+    return is_string($v) && is_numeric($v) && (float)$v > 0 ? (float)$v : (float)TS_BT_MAX_SECONDS;
+}
+
+/**
+ * המפתח של בדיקה לאחור חלקית (bt_partial ב-data/cache.sqlite): כל מה שהתוצאה תלויה בו — שיטה וגרסה, ספק, נכס, מסגרת,
+ * היקף, פרמטרים ועמלות — ו-$base: ה-to_t של התוצאה השמורה שממנה ממשיכים (null — ריצה מלאה מההתחלה).
+ */
+function ts_bt_partial_key(array $meta, string $provider, string $asset, string $tf, string $scope, string $hash, ?int $base): string
+{
+    return hash('sha256', json_encode([$meta['id'], (int)$meta['version'], $provider, $asset, $tf, $scope, $hash, $base]));
+}
+
+/** המצב החלקי, אם יש ולא עבר יום — {state, from_t, to_t}. מטמון: כל כשל = אין, ומתחילים מחדש */
+function ts_bt_partial_get(string $k, int $now): ?array
+{
+    try {
+        $st = ts_cache()->prepare('SELECT state, from_t, to_t FROM bt_partial WHERE k = ? AND at > ?');
+        $st->execute([$k, $now - TS_BT_STALE]);
+        $r = $st->fetch();
+        $state = $r ? json_decode($r['state'], true) : null;
+        return is_array($state) ? ['state' => $state, 'from_t' => (int)$r['from_t'], 'to_t' => (int)$r['to_t']] : null;
+    } catch (Throwable $e) {
+        error_log('trading-strategies bt_partial: ' . $e->getMessage());
+        return null;
+    }
+}
+
+function ts_bt_partial_put(string $k, array $s, int $from, int $to, int $now): void
+{
+    $json = json_encode($s);
+    if ($json === false) return;   // NaN/INF — לא נשמר; הפעם הבאה מתחילה מחדש
+    try {
+        ts_cache()->prepare('INSERT OR REPLACE INTO bt_partial (k, state, from_t, to_t, at) VALUES (?, ?, ?, ?, ?)')->execute([$k, $json, $from, $to, $now]);
+    } catch (Throwable $e) {
+        error_log('trading-strategies bt_partial: ' . $e->getMessage());
+    }
+}
+
+function ts_bt_partial_drop(string $k): void
+{
+    try {
+        ts_cache()->prepare('DELETE FROM bt_partial WHERE k = ?')->execute([$k]);
+    } catch (Throwable $e) {
+        error_log('trading-strategies bt_partial: ' . $e->getMessage());
+    }
 }
 
 /** צורת התוצאה השמורה. 2 — S4: ממצא ותרחיש בשדות נפרדים. תוצאות בצורה הישנה פשוט לא נמצאות (ונמחקות אחרי יומיים) */

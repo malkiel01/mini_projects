@@ -20,6 +20,8 @@ function ts_fixture_klines_wave(string $url): array
 }
 
 return function (string $url, array $headers): array {
+    // ספק איטי (tests/backtest-partial-api.php): השהיה לכל פנייה, במילישניות
+    if ($ms = (int)getenv('TS_KLINES_DELAY_MS')) usleep($ms * 1000);
     if (getenv('TS_KLINES_SHAPE') === 'wave') return ts_fixture_klines_wave($url);
     parse_str((string)parse_url($url, PHP_URL_QUERY), $q);
     $sec = ['1m' => 60, '5m' => 300, '15m' => 900, '30m' => 1800, '1h' => 3600, '4h' => 14400, '1d' => 86400, '1w' => 604800][$q['interval']] ?? 3600;
