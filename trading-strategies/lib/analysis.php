@@ -156,7 +156,7 @@ function ts_method_settings(string $id): array
 
 /**
  * הפרמטרים של שיטה על נכס ומסגרת (23.9, L5): הכלליים, ועליהם — הערך של הפלח שוק × מסגרת, אם הוחל. רק מפתחות שהשיטה מכירה,
- * ודרך params() (המרה ל-int / float). הטווח של הערך **נבדק ביצירת ההצעה** (ts_learn_decide), לא כאן. בלי ערך לפלח — $p כמו שהוא.
+ * ודרך params() (המרה ל-int / float). הטווח של הערך **נשמר ביצירת ההצעה** (ts_learn_neighbors — אין מועמד מחוץ לטווח), לא כאן. בלי ערך לפלח — $p כמו שהוא.
  */
 function ts_params_for_segment(TsMethod $m, array $set, array $p, string $asset, string $tf): array
 {
@@ -439,7 +439,6 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     }
     // הריצה בחלקים, והזמן נבדק ביניהם. משך משלה (מהרגע שהיא מתחילה): המשיכה כבר יכלה לגמור את התקרה, ונר שנמשך ולא
     // נבדק היה נמשך שוב בפעם הבאה. המשך מהמצב = ריצה אחת, ולכן כשהכול הספיק — אותה תוצאה כמו קודם
-    $full = $state === null;   // ריצה מההתחלה: $rows הם כל הנרות של הטווח — L5 מודד עליהם, בלי למשוך שוב
     $s = $state ?? ts_bt_init($m, $p);
     $runUntil = microtime(true) + $max;
     $trades = [];   // למידה (23.4, L1): כל עסקה שהסתיימה בריצה הזו → method_outcomes
@@ -459,14 +458,7 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
         } catch (Throwable $e) {
             error_log('trading-strategies learning findings: ' . $e->getMessage());
         }
-        // ערך בתוך הטווח (23.9, L5) — רק כשהבדיקה הושלמה. הצעה, לא שינוי. כשל — רק נרשם
-        if ($complete) {
-            try {
-                ts_learn_values_run($uid, $meta['id'], (int)$meta['version'], 'backtest', $asset, $tf, $now, $full ? $rows : null);
-            } catch (Throwable $e) {
-                error_log('trading-strategies learning values: ' . $e->getMessage());
-            }
-        }
+        // ערך בתוך הטווח (23.9, L5b) — לא כאן: השוואת השכנים רצה ב-cron בלבד (ts_learn_cron), לא בבקשה של המשתמש
     }
     if (!$complete) {
         if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
