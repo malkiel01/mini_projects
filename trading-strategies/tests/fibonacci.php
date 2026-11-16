@@ -196,6 +196,16 @@ foreach (fib_bars([200.2, 185], $tA + 7200) as $c) $AB[] = $c;
 $ab = $grid($AB);
 eq([r2($ab['support']['start']['price'] ?? null), $ab['support']['start']['t'] ?? null, $ends($ab['support'])], [200.2, $tA + 3600, [150.0, 120.0]],
     'review 🔴1: the wick picks candle A (210); H = the highest body from A to the confirming candle — B, 200.2 (not null)');
+// קריטריון 14 (2.29): הפתיל בנר המפנה, והגוף הגבוה ביותר — בנר האישור עצמו → H = הגוף של נר האישור
+$CF = fib_bars([140, 120, 175, 150, 199]);
+$tP = $CF[count($CF) - 1]['t'] + 3600;
+$CF[] = ['t' => $tP, 'o' => 199.0, 'h' => 210.0, 'l' => 198.5, 'c' => 199.5];             // נר המפנה: פתיל 210
+$CF[] = ['t' => $tP + 3600, 'o' => 200.2, 'h' => 200.5, 'l' => 195.5, 'c' => 196.0];      // נר האישור: גוף עד 200.2, ירד מספיק
+foreach (fib_bars([196, 185], $tP + 7200) as $c) $CF[] = $c;
+$pivCF = array_values(array_filter(ts_ew_pivots($CF, (float)$P['pivot_atr_mult'], (int)$P['atr_len']), fn($x) => $x['t'] === $tP));
+$cf = $grid($CF);
+eq([($pivCF[0]['ct'] ?? null), r2($cf['support']['start']['price'] ?? null), $cf['support']['start']['t'] ?? null], [$tP + 3600, 200.2, $tP + 3600],
+    'criterion 14: wick on the pivot candle, highest body on the confirming candle → H = the confirming candle\'s body (200.2)');
 // כמה נרות בלי צד (תמיכה / התנגדות) על 5,000 נרות השעה — לפני התיקון (נר הקיצון בלבד: בלי ct) ואחריו
 $empty = function (bool $withCt) use ($F, $P) {
     $a = ts_ew_atr_init(); $z = ts_ew_zz_init(); $w = []; $piv = []; $g = null; $out = [0, 0, 0];
@@ -246,6 +256,12 @@ $below[] = ['t' => $t0 + 7200, 'o' => 169.2, 'h' => 175.5, 'l' => 169.0, 'c' => 
 eq($m->signals($below, $PS), [], 'review 🟡4: the previous candle closed inside the zone → a breakout from below, not a bounce → no signal');
 $belowM = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $below);
 eq($m->signals($belowM, $PS), [], 'review 🟡4 (short, mirror): the same from above → no signal');
+// קריטריון 13 (2.29), בדיוק כמו בניסוח: הנר הקודם נסגר **מתחת** לאזור, והנר עולה דרכו ונסגר מעליו → אין אות
+$under = array_slice($SIG, 0, -1);
+$t0 = $under[count($under) - 1]['t'];
+$under[] = ['t' => $t0 + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 168.4, 'c' => 168.5];
+$under[] = ['t' => $t0 + 7200, 'o' => 168.5, 'h' => 175.5, 'l' => 168.4, 'c' => 175.0];
+eq($m->signals($under, $PS), [], 'criterion 13: the previous candle closed below the zone, this one rises through it and closes above → no signal');
 // שורט — אותם נרות במראה (K − מחיר): אותו אות בכיוון ההפוך
 $MIR = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $SIG);
 $sm = $m->signals($MIR, $PS);
