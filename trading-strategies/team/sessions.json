@@ -5,9 +5,10 @@
     "model": "claude-opus-5-5"
   },
   "code": {
-    "session": "session_018g4NYDfNSRC7LtU7guPJPm",
-    "slice": "21.1 מחיקת הבונה, 21.2 מילוי ברקע (2.24)",
-    "model": "claude-opus-5-5"
+    "session": "session_018g4NYEoXMKKD28MYYmYaoC",
+    "slice": "21.3 Twelve Data משותף (2.25, ✅31)",
+    "model": "claude-opus-5-5",
+    "opened_by": "מנהל הצוותים (4) — בקרה (5) בעומק 8"
   },
   "control": "session_018g4NYEtPnhDAxdzNLibMdV",
   "tasks": null,
@@ -67,6 +68,11 @@
       "session": "session_018g4NYDGPpCv1Pc3LgfvmVx",
       "done": "#1623 A2; handoff #1624",
       "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYDfNSRC7LtU7guPJPm",
+      "done": "#1627/#1629 21.1, #1630 21.2; handoff #1633",
+      "model": "claude-opus-5-5 — רדום (420K)"
     }
   ],
   "control_previous": [
