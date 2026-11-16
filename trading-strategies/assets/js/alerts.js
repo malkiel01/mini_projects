@@ -47,14 +47,16 @@ export function mountAlerts(ctx) {
         h('span', { class: 'muted' }, `${alerts.filter(a => a.status !== 'expired').length} מתוך ${per_user}`)),
       pushBlock(push_devices),
       alerts.length ? h('ul', { class: 'list' }, alerts.map(a => {
-        const [cls, label] = STATUS[a.status];
+        const [cls, st] = STATUS[a.status];
+        // שיטה שהוסרה (21.1) — מושהית, ואי אפשר להפעיל מחדש
+        const label = a.method_removed && a.status === 'paused' ? st + ' — השיטה הוסרה' : st;
         return h('li', { class: 'card', style: 'cursor:default;flex-wrap:wrap' },
           h('div', { class: 'body' }, h('div', { class: 'l1' }, pairLabel(a), h('span', { class: 't' }, TF_LABEL[a.tf])),
             h('div', { class: 'l2 wrap' }, describe(a, methods)),
             h('div', { style: 'margin-top:4px' }, h('span', { class: 'chip ' + cls }, label), ' ',
               h('small', { class: 'muted' }, a.status === 'expired' ? '' : 'עד ' + when(a.expires_at), a.last_fired_at ? [sep(), 'נשלחה ' + when(a.last_fired_at)] : null))),
           h('div', { class: 'row-btns' },
-            a.status === 'expired' ? null : h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+            a.status === 'expired' || a.method_removed ? null : h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
               try { await api('alert_status', { id: a.id, status: a.status === 'active' ? 'paused' : 'active' }); ctx.reload(); } catch (e) { toast(e.message, true); }
             } } }, a.status === 'active' ? '⏸ השהיה' : '▶ הפעלה'),
             h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('מחיקת התראה', describe(a, methods), 'מחיקה', async () => { await api('alert_delete', { id: a.id }); ctx.reload(); }) } }, 'מחיקה')));

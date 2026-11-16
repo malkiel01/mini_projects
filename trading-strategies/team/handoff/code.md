@@ -9,6 +9,8 @@
 > **עדכון 2026-11-16 (צ'אט S6):** S6 בנוי וממוזג (#1611) — הסעיף "S6 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S7, שנשען על היומן).
 > **עדכון 2026-11-16 (צ'אט S7):** S7 ו-method_colors (2.20) בנויים וממוזגים (#1615) — הסעיף "S7 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md`.
 > **עדכון 2026-11-16 (צ'אט A1):** DevLoop מחובר וממוזג (#1618) — הסעיף "A1 — DevLoop" בסוף. הבא בתור — לפי `team/board.md`.
+> **עדכון 2026-11-16 (צ'אט A2):** A2 — התחברות עם אפשרות ניתוק — בנוי וממוזג (#1623). הסעיף "A2 — התחברות" בסוף. ~~מיגרציה הבאה — 15~~ (נלקחה ב-21.2). הבא בתור — לפי `team/board.md`.
+> **עדכון 2026-11-16 (צ'אט 21):** 21.1 (#1627, תיקון הבדיקה #1629) ו-21.2 (#1630) בנויים וממוזגים — הסעיפים "21.1" ו-"21.2" בסוף. **מיגרציה הבאה — 16.** הבא בתור — לפי `team/board.md`.
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -236,3 +238,79 @@
   "הכול" לפני שמחפשים מטלה.
 - **ביקורת:** `team/reviews/a1.md` — בלי 🔴/🟡. ראיות פריסה ל-`TS-` ב-`deploy.yml` — נכנסו ב-#1620 (A3); השורה ב-
   `devloop/README.md` — בקשה לפלטפורמה; האסימון `tsd_…` כ-`TS_DEVLOOP_TOKEN` — מטלה לבעלים, אצל הבקרה.
+
+## A2 — התחברות עם אפשרות ניתוק (#1623; spec-stage-a 20.1, גרסה 2.23; app-rules 2)
+
+- **הקבצים:**
+  - `lib/sso.php` — המצב מ-`sso.php?action=config`, במטמון לדקה ב-`data/platform-config.json`. אחד מ: `connected`, `detached`, `unknown`.
+    - הזרימה `sso_start` / `sso_callback`, עם כל הבדיקות של sso.md §2 ועוד iss ו-jti.
+    - `platform_key` ו-`ts_grant_status()` — בקשה חתומה. המפתח הפרטי במסד, ב-`settings.platform_sign_key`, מוצפן ב-`lib/secret.php`.
+  - `lib/auth.php` — `ts_session()` לפי המצב, החשבון (20.1 ה'), והסיסמה.
+- **כל הכתובות נגזרות מ-`app.json` (`sso.return`) — לעולם לא מהבקשה.** בפיתוח: `TS_APP_URL`.
+- **`sessions.via`:**
+  - `gate` — לא עובר למצב מנותק (ק11).
+  - `sso` / `password` — רק במנותקת. ההרשאה נבדקת שוב כל 5 דקות (`grant_checked_at`).
+    - `false` → ה-session נמחק (`TsNoAccess`).
+    - אין תשובה → 503 (`TsUnavailable`). לא נמחק.
+- **חשבון:**
+  - אותו sub → אותו חשבון.
+  - אותו מייל עם sub אחר → `TsConflict` (403, או `#/login/conflict`), ו-`account_conflict` ב-`admin_log`.
+  - אחרת → חשבון חדש.
+  - מייל שתפוס בשורה אחרת לא מועתק בעדכון.
+  - **אין "קישור לשורה בלי sub"** (2.23 — `platform_sub` הוא NOT NULL). לא להוסיף.
+- **המנהל הראשי במנותקת:** `users.platform_admin` השמור. רק השער כותב אותו (`ts_user_for`, `platform_admin: null` מ-SSO).
+  - `ts_is_primary_admin()` — לפי `ts_current()['via']`.
+  - ה-token של DevLoop במנותקת — `ts_dev_granted()` ב-`lib/devtasks.php`, `grant_status` שמור 5 דקות.
+- **סיסמה לאפליקציה:**
+  - `password_hash`, עד 72 בתים.
+  - נקבעת בפרופיל (`password_set`). החלפה סוגרת כניסות אחרות בסיסמה.
+  - איפוס — `admin_password_reset`, רק הראשי.
+  - הנעילה: `login_locks`, אטומית (`ON CONFLICT … fails + 1`), לפי `email:` ולפי `ip:`.
+  - יותר משורה אחת עם סיסמה לאותו מייל → 409.
+- **בבדיקות (`tests/dev-prepend.php`):**
+  - `X-Dev-Platform` (או העוגייה `dev_platform`) = `connected` (ברירת מחדל) / `detached` / `unknown` / `live`.
+    - `live` שואל את "המעטפת" דרך `TS_HTTP_FIXTURES`.
+  - `X-Dev-Password: 1` — `login.password`.
+  - grant_status — fixture על `provision.php?action=grant_status` (ראו `grant()` ב-`tests/sso-api.php`).
+- **בדיקות:** `tests/sso-api.php` (107), `tests/login-ui.mjs` (20).
+  - **ב-Playwright אין ניתוב לבקשות בתוך שרשרת הפניה** — לכן `login-ui` מיירט את `sso_start` עצמו (`route.fetch({maxRedirects: 0})`).
+- **ביקורת:** `team/reviews/a2.md`. כל ה-🟡 וה-⚪ תוקנו בסבב 2.
+  - ⚪ לבעלים, לפי האפיון: מנהל ראשי שהודח בזמן ניתוק נשאר מנהל עד הכניסה הבאה דרך השער.
+- **פתוח, לא בפרוסה:** Google (ש8), שכחתי סיסמה במייל (ש9), קישור ידני של `account_conflict` (ש2).
+
+## 21.1 — בונה השיטות נמחק (#1627, #1629; spec-stage-a 21.1, גרסה 2.24, ✅29)
+
+- **אין יותר שיטה מוגדרת.** שיטה חדשה = קובץ ב-`lib/methods/` ושורה ב-`registry.php`. `ts_method_ids()` / `ts_method_exists()`
+  — שיטות הקוד בלבד (ו-`TS_TEST_METHODS` בבדיקות).
+- **הנתונים לא נמחקו:** `methods.kind = 'defined'`, `definition`, `definition_version`, `method_versions` — נשארו במסד, לא נטענים.
+  **לא לבנות עליהם ולא למחוק אותם** בלי הכרעה.
+- **"שיטה שהוסרה"** — כל `method_id` שאינו בקוד:
+  - התראה (גם שקלול שכולל אותה) → `paused` ב-`ts_alerts_pause_removed` (מה-cron ומ-`alerts`), `method_removed: true`, 422 בהפעלה.
+  - יומן השיטה — לא מוצג (גם למנהל, `ts_journal_scope_sql`), וה-cron לא מכריע.
+  - עסקה — `ts_trade_method_name()`: "`<id>` (שיטה שהוסרה)".
+- `admin_method_save` עם `definition` → 422. `admin_method_list/validate/dry_run/versions` — לא קיימות (404).
+- **מלכודת שגיליתי (#1629):** בדיקה שבודקת **יומן שגיאות ריק לגמרי** נופלת בפריסה — ה-runner כותב בעלייה
+  `JIT … disabled. in Unknown on line 0`. לסנן את `in Unknown on line 0` ולחפש רק `PHP (Fatal error|Parse error|Warning|Notice|Deprecated)`
+  (ראו הסוף של `tests/builder-removed-api.php`).
+- `dev/open-items.json`: TS-009 (4ב) — `cancelled`.
+
+## 21.2 — מילוי איטי ברקע (#1630; spec-stage-a 21.2, גרסה 2.24, ✅30, ש10 — ברירת המחדל)
+
+- **`lib/prefill.php`** → `ts_prefill_run($now, &$used, $budget, $t0, $usedKey)` מתוך `ts_alerts_run`, אחרי היומן, בתוך try/catch.
+  - `ts_prefill_keys` — מפתח לכל ספק משותף (`uid 0`, `scope ''`), ולכל משתמש עם מפתח **אישי** (`source own`) ו-`prefill_off = 0`.
+  - `ts_prefill_key` — מפתח אחד; חריגה בו → `key_errors`, ממשיכים לבא.
+  - `TS_PREFILL_EVERY` — Binance 0, ECB יום, Twelve Data 3 ימים. ספק שאינו שם — לא ממולא (Finnhub לא).
+  - תקרות: `intdiv(perMin, 2)` בניכוי מה שההתראות לקחו (משותף — `$used[ספק]`, אישי — `$usedKey["ספק|היקף"]`); 25% ליום ב-
+    `provider_usage` עם `key = prefill:<usage>`, לפי `gmdate('Y-m-d', $now)`.
+- **מצב:** `prefill_state` (מיגרציה 15): `filled_at`, `failed_at` (שעה המתנה), `empty` (הספק ענה בלי נרות). נכס שהמאגר שלו
+  נוקה — נחשב לא מולא (`ts_prefill_cached`).
+- **`fetch_log`:** המילוי **לא נרשם** (`ts_fetch_as_system`) — בלי זה הוא הציף את 2,000 השורות. "נפתחו לאחרונה" = `user_id > 0`.
+- **בממשק:** `age_days` בשורה של `market_tab` (שלם, ≥ 1; `ts_market_tab($uid, $id, $now)`), `.mq-age` ב-`market.js`.
+  `own.prefill` ב-`ts_providers_for` + `prefill_set {on}`; המתג `input[aria-label="מילוי ברקע במפתח שלי"]`.
+- **בדיקות:** `tests/prefill-api.php` (52), `tests/prefill-ui.mjs` (18). `tests/fixtures/prefill` — הספקים המדומים, ו-MSFT
+  ב-Twelve Data → 429.
+  - **מלכודת:** `NOW` = 23:30 UTC. `NOW + n·86400 + 1800` הוא **חצות של היום הבא** — יום חדש לתקרה היומית.
+  - עם מפתח Twelve Data, גם מט"ח נפתר אצל המשתמש ל-Twelve Data (`ts_pair_asset`). בבדיקה שתלויה בסדר — לקבוע לו לשוניות.
+- **פתוח, לא בפרוסה:** "לפני N ימים" לפי פתיחת הנר (⚪ בביקורת — לפי סגירה היה סותר את קריטריון 6); 25% לא מתחשבים בשימוש
+  של המשתמש עצמו (⚪, רשות). ⚪ `market-tabs-ui` רועדת גם ב-main (בדיקה 38 / ההמתנה הראשונה).
+  ⚪ (ביקורת סבב 2, לעתיד) הפניות של `ts_journal_resolve` לא נספרות ב-`$usedKey` — מפתח אישי יכול לקבל מהיומן ועוד חצי מהמילוי.

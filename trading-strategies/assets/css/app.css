@@ -471,10 +471,6 @@ a.use-row { text-decoration: none; color: inherit; }
 .param-notes summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .param-notes ul { padding-inline-start: var(--s4); font-size: .85rem; color: var(--muted); }
 
-/* ===== 🧩 בונה השיטות (spec-stage-a 17.2) ===== */
-.code-edit { inline-size: 100%; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: left; tab-size: 2; }
-.builder-out { display: grid; gap: var(--s2); margin-top: var(--s2); min-width: 0; overflow-x: auto; }
-.builder-out .ok { color: var(--ok); }
 .toolbar.wrap { flex-wrap: wrap; }
 .toolbar input[dir="ltr"] { min-width: 0; flex: 1 1 140px; }
 
@@ -529,6 +525,7 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .mrow .mq { flex: none; display: grid; justify-items: end; text-align: end; line-height: 1.2; }
 .mrow .mq .p { font-weight: 600; }
 .mrow .mq small { font-size: .78rem; }
+.mrow .mq .mq-age { font-size: .72rem; }   /* המילוי ברקע (21.2): "לפני N ימים" */
 .mrow.locked .body, .mrow.locked .mq { opacity: .5; }
 .mrow .star { flex: none; }
 .chip-btn { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; font-size: .875rem; cursor: pointer; }

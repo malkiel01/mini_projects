@@ -182,7 +182,7 @@ function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0): 
     $upd = $db->prepare('UPDATE method_journal SET outcome = ?, outcome_t = ?, outcome_note = ?, resolved_at = ? WHERE id = ? AND outcome IS NULL');
     foreach ($st->fetchAll() as $row) {
         $sec = TS_TF_SECONDS[$row['tf']] ?? null;
-        if (!$sec) { $sum['skipped']++; continue; }
+        if (!$sec || !ts_method_exists($row['method_id'])) { $sum['skipped']++; continue; }   // שיטה שהוסרה (21.1) — נשארת כמו שהיא
         $until = (int)$row['until_t'];
         if ($until + $sec > $now) continue;            // הנר האחרון בטווח עוד לא נסגר — "עוד לא ידוע"
         $sum['checked']++;
@@ -214,9 +214,10 @@ function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0): 
 /** תנאי ה-SQL של מה שהמשתמש רואה (✅27, ✅2) + הפרמטרים שלו. מנהל — הכול */
 function ts_journal_scope_sql(int $uid): array
 {
-    if (ts_is_admin($uid)) return ['1 = 1', []];
-    $ids = array_column(ts_methods_visible($uid), 'id');
+    // שיטה שהוסרה (21.1) — הרשומות שלה נשארות במסד, ולא מוצגות גם למנהל
+    $ids = ts_is_admin($uid) ? ts_method_ids() : array_column(ts_methods_visible($uid), 'id');
     $in = $ids ? implode(',', array_fill(0, count($ids), '?')) : "''";
+    if (ts_is_admin($uid)) return ["method_id IN ($in)", $ids];
     $grants = ts_shared_enabled() ? "OR cred_scope IN (SELECT 'c:' || cred_id FROM provider_grants WHERE user_id = ?)" : '';
     return ["method_id IN ($in) AND (cred_scope = '' OR cred_scope = ? $grants)", [...$ids, "u:$uid", ...($grants ? [$uid] : [])]];
 }

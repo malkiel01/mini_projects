@@ -157,14 +157,10 @@ function ts_method_on_by_default(array $meta): bool
     return ($meta['kind'] ?? 'code') === 'code' && empty($meta['sample']);
 }
 
-/** "מוגדרת ידנית" עד שיש לשיטה המוגדרת (בגרסה הנוכחית) בדיקה לאחור עם N ≥ 30 (17.2.1). לשיטת קוד — התווית שלה */
+/** התווית של השיטה (שיטות קוד בלבד — בונה השיטות נמחק, 21.1) */
 function ts_method_label(TsMethod $m): ?string
 {
-    $meta = $m->meta();
-    if (($meta['kind'] ?? 'code') !== 'defined') return $meta['label'] ?? null;
-    $st = ts_db()->prepare("SELECT 1 FROM backtests WHERE method_id = ? AND method_version = ? AND n >= ? AND source = 'provider' LIMIT 1");
-    $st->execute([$meta['id'], $meta['version'], TS_MIN_SIGNALS]);
-    return $st->fetchColumn() ? null : 'מוגדרת ידנית';
+    return $m->meta()['label'] ?? null;
 }
 
 /** השיטות שהמשתמש רואה: מופעלות, ושיטת דוגמה — רק למנהל */
@@ -203,12 +199,11 @@ function ts_admin_methods(): array
     foreach (ts_method_ids() as $id) {
         $m = ts_method($id);
         $meta = $m->meta();
-        $kind = $meta['kind'] ?? 'code';
         $st = ts_db()->prepare("SELECT COUNT(*) AS n, MAX(computed_at) AS at FROM backtests WHERE method_id = ? AND source = 'provider'");
         $st->execute([$id]);
         $bt = $st->fetch();
         $out[] = ['id' => $id, 'name' => $meta['name'], 'source' => $meta['source'], 'sample' => !empty($meta['sample']),
-            'label' => ts_method_label($m), 'kind' => $kind, 'definition' => $kind === 'defined' ? (ts_defined_rows()[$id][0] ?? null) : null,
+            'label' => ts_method_label($m), 'kind' => $meta['kind'] ?? 'code',
             'version' => $meta['version'], 'all_markets' => $meta['markets'],
             'all_timeframes' => $meta['timeframes'], 'param_defs' => $meta['params'], 'horizon_bars' => $meta['horizon_bars'],
             'alerts' => !empty($meta['alerts']) && empty($meta['sample']), 'incremental' => !empty($meta['incremental']),
