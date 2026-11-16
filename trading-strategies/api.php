@@ -35,6 +35,7 @@
  * פרופיל, שיטות וניתוח (פרקים 5–6):
  * GET  ?action=profile                   הפרופיל שלי
  * POST action=profile_save
+ * POST action=method_colors_save        {colors: {method_id: צבע}} — הצבע של כל שיטה בפרופיל (18.5); צבע לשיטה אחת בלבד
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
  *
@@ -125,7 +126,7 @@ const TS_WRITE = ['settings', 'strategy_save', 'strategy_duplicate', 'strategy_s
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
-    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
+    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_method_validate', 'admin_method_dry_run'];
@@ -329,6 +330,10 @@ try {
 
         case 'market_tabs_save':
             out(['ok' => true] + ts_market_tabs_save($uid, $in['tabs'] ?? null));
+
+        // צבע לכל שיטה (18.5, S5) — בפרופיל, לא במכשיר: חוזר אחרי יציאה וכניסה ובכל זוג
+        case 'method_colors_save':
+            out(['ok' => true, 'method_colors' => ts_method_colors_save($uid, $in['colors'] ?? null)]);
 
         case 'market_tab':
             out(['ok' => true] + ts_market_tab($uid, $_GET['id'] ?? ''));

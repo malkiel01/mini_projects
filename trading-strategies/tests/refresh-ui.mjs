@@ -93,7 +93,7 @@ try {
   // ── המנהל מפעיל שיטת בדיקה (לא דוגמה — גם משתמש רגיל רואה אותה) ──
   const { p: o } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   eq(await o.evaluate(async () => {
     const me = await (await fetch('api.php?action=me')).json();
     return (await fetch('api.php?action=admin_method_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': me.csrf },
@@ -202,7 +202,7 @@ try {
   eq(await a.evaluate(() => window.__noReload), 1, 'criterion 4: no page reload');
 
   // ── הסתרת התחזית → אין שיטה → הרענון נעצר ──
-  await panel.getByRole('button', { name: 'הסתרה' }).click();
+  await panel.getByRole('button', { name: 'הסרה', exact: true }).click();
   reqs.length = 0;
   await advance(a, 3 * MIN, MIN);
   eq([refreshes(reqs).length, await every.isHidden()], [0, true], 'method hidden → no auto refresh, no rate control');
