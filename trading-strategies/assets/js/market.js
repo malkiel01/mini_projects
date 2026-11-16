@@ -182,7 +182,9 @@ export function mountMarket(ctx) {
       const quote = h('span', { class: 'mq', dir: 'ltr' },
         h('span', { class: 'num p' }, x.price != null ? fmtQuote(x.price) : '—'),
         x.change_pct != null ? h('small', { class: 'num ' + (x.change_pct.startsWith('-') ? 'neg' : x.change_pct === '0.00' ? '' : 'pos') },
-          (x.change_pct.startsWith('-') || x.change_pct === '0.00' ? '' : '+') + x.change_pct + '%') : null);
+          (x.change_pct.startsWith('-') || x.change_pct === '0.00' ? '' : '+') + x.change_pct + '%') : null,
+        // המילוי ברקע (21.2): נתון ישן מיום — בקטן
+        x.price != null && x.age_days ? h('small', { class: 'muted mq-age', dir: 'rtl' }, x.age_days === 1 ? 'לפני יום' : `לפני ${x.age_days} ימים`) : null);
       const body = [h('div', { class: 'l1' }, pairLabel(x), x.computed ? h('span', { class: 'chip' }, 'מחושב') : null)];
       const go = () => (x.locked ? lockedSheet(x, needs) : (location.hash = assetUrl(x.asset)));
       let btns = null;
@@ -707,6 +709,16 @@ export function mountMarket(ctx) {
         actions = h('div', { class: 'row-btns wrap' },
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async e => { e.target.disabled = true; try { await api('cred_test', { provider: p.id }); toast('החיבור תקין'); } catch (ex) { toast(ex.message, true); } PROVIDERS = null; invalidateCatalog(); route(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'החלפת מפתח'),
+          // מילוי ברקע במפתח שלי (21.2): לפי התקרות של הספק, רק לנכסים שלי, ונשמר רק לי
+          p.own.prefill != null ? h('label', { class: 'switch' }, (() => {
+            const c = h('input', { type: 'checkbox', 'aria-label': 'מילוי ברקע במפתח שלי', on: { change: async () => {
+              try { await api('prefill_set', { on: c.checked }); PROVIDERS = null; toast(c.checked ? 'המילוי ברקע הופעל' : 'המילוי ברקע כובה'); }
+              catch (ex) { c.checked = !c.checked; toast(ex.message, true); }
+              c.parentNode.querySelector('.prefill-label').textContent = c.checked ? 'מילוי ברקע במפתח שלי — פעיל' : 'מילוי ברקע במפתח שלי — כבוי';
+            } } });
+            c.checked = p.own.prefill;
+            return c;
+          })(), h('span', { class: 'prefill-label' }, p.own.prefill ? 'מילוי ברקע במפתח שלי — פעיל' : 'מילוי ברקע במפתח שלי — כבוי')) : null,
           h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק', `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; invalidateCatalog(); toast('נותק'); route(); }) } }, 'ניתוק'));
       } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהמנהל');
       else {

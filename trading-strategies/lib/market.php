@@ -170,7 +170,9 @@ function ts_providers_for(int $uid): array
             'available' => $acc !== null, 'source' => $acc['source'] ?? null,
             'stream' => $acc && $acc['source'] === 'public' ? $p->stream() : null,
             'own' => $own ? ['last4' => $own['last4'], 'label' => $own['label'], 'last_test_at' => $own['last_test_at'] !== null ? (int)$own['last_test_at'] : null,
-                'last_test_ok' => $own['last_test_ok'] !== null ? (bool)$own['last_test_ok'] : null] : null,
+                'last_test_ok' => $own['last_test_ok'] !== null ? (bool)$own['last_test_ok'] : null,
+                // מילוי ברקע במפתח שלי (21.2) — רק בספק עם מפתח שהמילוי תומך בו
+                'prefill' => function_exists('ts_prefill_on') && isset(TS_PREFILL_EVERY[$id]) ? ts_prefill_on($uid) : null] : null,
         ];
     }
     return $out;
@@ -455,8 +457,17 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
  * שורה ביומן בקשות הנרות (18.2, S2) — כדי למדוד במסך המפתח שהשרת פונה לספק רק על החסר. יומן הוא לא תנאי לתשובה:
  * כשל בכתיבה לא מפיל את הבקשה. שומרים 2000 שורות לכל היותר; הניקוי היומי מוחק ישנות מ-7 ימים.
  */
+/** בזמן המילוי ברקע (21.2) — היומן רושם את ה-cron (user_id 0), כדי שהמילוי לא ייחשב "נפתח בגרף" */
+function ts_fetch_as_system(?bool $on = null): bool
+{
+    static $sys = false;
+    if ($on !== null) $sys = $on;
+    return $sys;
+}
+
 function ts_fetch_log(int $uid, string $provider, string $symbol, string $tf, string $scope, int $from, int $to, int $calls, int $fetched, int $served, int $now): void
 {
+    if (ts_fetch_as_system()) $uid = 0;
     try {
         $c = ts_cache();
         $c->prepare('INSERT INTO fetch_log (at, user_id, provider, symbol, tf, kind, from_t, to_t, provider_calls, provider_candles, served)

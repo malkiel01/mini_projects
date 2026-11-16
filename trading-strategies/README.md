@@ -449,6 +449,7 @@ lib/overlay.php     חוזה ה-overlay (17.2.3) ובדיקתו
 lib/forecast.php    ממצא ותרחיש: הריצה של שיטה על הגרף, וההפרדה ביניהם (S4)
 lib/method-colors.php  צבע לכל שיטה בפרופיל — {color, at}, צבע אחד לכל שיטה זמינה (S5, 2.20)
 lib/journal.php     יומן השיטה: כתיבה לנר סגור, התוצאה ב-cron, מי רואה מה (S6)
+lib/prefill.php     מילוי איטי של המאגר ברקע — שלב ב-cron (21.2)
 lib/tune.php        שכלול: הצעת שינוי פרמטר (בתוך / מחוץ לדגימה) והחלה בידי המנהל הראשי (S7)
 assets/js/method-journal.js  מסך "יומן השיטה" — סיכום לפי גרסה ורשומות (S6)
 lib/builder.php     בונה השיטות — שמירה וגרסאות, בדיקה, "🧪 נסה" (מנהל בלבד)
@@ -522,6 +523,8 @@ node trading-strategies/tests/builder-ui.mjs   # Playwright בטלפון: ➕, �
 php trading-strategies/tests/elliott-chart.php  # אליוט בגרף: החוזה על כל חלון, מילים בלי אחוז, פערים, הספירה עם תרחיש ובלעדיו זהה
 node trading-strategies/tests/elliott-chart-ui.mjs # Playwright בטלפון: 🔮 ← גלי אליוט, ספירות במילים, "בדוק בעצמך"
 node trading-strategies/tests/forecast-ui.mjs  # Playwright בטלפון: 🔮, הפאנל והניסוח, ציור על הקנבס, בקשה אחת לגרף ולשיטה
+php trading-strategies/tests/prefill-api.php   # 21.2: מילוי ברקע — הסדר, חצי לדקה ו-25% ליום, רישוי Twelve Data, כיבוי, "לפני N ימים", 429
+node trading-strategies/tests/prefill-ui.mjs   # Playwright בטלפון: "לפני 4 ימים" ו-"—" בשורה, מתג המילוי בספקי הנתונים
 php trading-strategies/tests/refresh-api.php   # chart_refresh (18.3): בקשה אחת לכל השיטות, בלי ריצה בלי נר חדש, בייט-לבייט, המונה, 429
 php trading-strategies/tests/method-colors-api.php # S5/2.20: method_colors {color, at} — שמירה, צבע תפוס אסור בין זמינות, מבנה ישן בסלחנות, CSRF, בידוד
 node trading-strategies/tests/method-colors-ui.mjs # Playwright בטלפון (S5): אליוט + שיטת הבדיקה — צבע לכל ציור, צבע תפוס, פרופיל בזוג ובמכשיר אחר, מקרא, בקשה אחת לדקה
@@ -549,6 +552,25 @@ php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/de
 
 `trading-strategies/data/*` מוחרגת ב-`.github/workflows/deploy.yml` (חוץ מ-`.htaccess`, שחוסם גישה) — הפריסה
 לא דורסת אותם (#1257).
+
+## 21.2: מילוי איטי של המאגר ברקע (spec-stage-a 21.2, ✅30)
+
+- **איפה:** `ts_prefill_run` (`lib/prefill.php`) — שלב ב-cron הקיים, אחרי ההתראות ויומן השיטה, באותה נעילה ובאותה תקרת זמן
+  (4 דקות). `$sum['prefill']` בפלט ה-cron: `filled`, `errors`, `deferred`, `day_capped`, `calls`, `done` (עד 60 נכסים, לפי הסדר).
+- **מה:** הנר היומי (`d1`) — בקשה אחת לנכס — של המועדפים של כל המשתמשים ושל הלשוניות המובנות. ממנו המחיר והשינוי היומי בשורה.
+- **הסדר:** מועדפים (לפי מספר המשתמשים) ← נפתחו ב-7 הימים האחרונים (`fetch_log`, בלי שורות של ה-cron) ← השאר לפי הקטלוג.
+  נכס שנכשל בפעם האחרונה — לסוף התור.
+- **התקרות, לכל מפתח:** עד **חצי** מהתקרה לדקה של הספק בריצה (`--budget` דורס, כמו בהתראות), ובמשותף — גם בניכוי מה
+  שההתראות כבר לקחו; עד **25%** מהתקרה היומית (`provider_usage`, `key = prefill:<usage>`). התקרה של 30 לדקה למשתמש לא נוגעת.
+- **כל כמה:** Binance — כל ריצה; ECB — פעם ביום; Twelve Data — כל 3 ימים (`TS_PREFILL_EVERY`). ספק אחר — לא ממולא.
+- **רישוי (ש10):** Binance ו-ECB — משותף (`cred_scope ''`, בלי משתמש). Twelve Data — רק במפתח **אישי** של משתמש שלא כיבה
+  (`users.prefill_off`), לנכסים שלו (המועדפים, הפתיחות והלשוניות שלו — כולל לשונית משלו), ונשמר ב-`u:<id>`. לא מפתח מהמנהל.
+- **429 / שגיאה:** הנכס מסומן `failed_at`, והמפתח לא מקבל עוד פנייה בריצה הזו. אין ניסיון חוזר.
+- **מצב:** `prefill_state` (מיגרציה 15). נכס שהמאגר שלו נוקה — נחשב לא מולא. הספק ענה בלי נרות (`empty`) — לא פונים שוב
+  לפני הזמן. ביומן בקשות הנרות — המילוי נרשם כ-cron (`user_id 0`, `ts_fetch_as_system`).
+- **בממשק:** בשורה — "לפני N ימים" בקטן כשהנתון ישן מיום (`age_days` ב-`market_tab`), ו-"—" עד שהמילוי מגיע. בספקי
+  הנתונים, על ספק עם מפתח אישי — "מילוי ברקע במפתח שלי — פעיל" עם מתג (`prefill_set {on}`).
+- **בדיקות:** `tests/prefill-api.php`, `tests/prefill-ui.mjs`; `tests/fixtures/prefill` — הספקים המדומים, ו-MSFT ב-Twelve Data עונה 429.
 
 ## מה טרם הוכרע
 

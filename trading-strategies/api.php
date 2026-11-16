@@ -27,6 +27,7 @@
  * GET  ?action=watchlist                 "המעקב שלי"
  * POST action=watchlist_add | watchlist_remove | watchlist_order | symbol_pref
  * POST action=cred_save | cred_test | cred_delete                  ספק משלי (א); המפתח לא חוזר לעולם
+ * POST action=prefill_set {on}                                     מילוי ברקע במפתח שלי (21.2) — הפעלה וכיבוי
  *
  * ציור על הגרף (פרק 7):
  * GET  ?action=drawings&asset=           השרטוטים שלי על הנכס (כל המסגרות; הדפדפן מסנן לפי tf)
@@ -95,6 +96,7 @@ require_once __DIR__ . '/lib/forecast.php';
 require_once __DIR__ . '/lib/refresh.php';
 require_once __DIR__ . '/lib/builder.php';
 require_once __DIR__ . '/lib/alerts.php';
+require_once __DIR__ . '/lib/prefill.php';
 require_once __DIR__ . '/lib/journal.php';
 require_once __DIR__ . '/lib/fx.php';
 require_once __DIR__ . '/lib/tune.php';
@@ -234,7 +236,7 @@ const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
-    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
+    'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete', 'prefill_set',
     'admin_provider_save', 'admin_shared_switch', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_method_validate', 'admin_method_dry_run', 'admin_tune_propose', 'admin_tune_apply'];
@@ -458,7 +460,7 @@ try {
             out(['ok' => true, 'method_colors' => ts_method_colors_save($uid, $in['colors'] ?? null)]);
 
         case 'market_tab':
-            out(['ok' => true] + ts_market_tab($uid, $_GET['id'] ?? ''));
+            out(['ok' => true] + ts_market_tab($uid, $_GET['id'] ?? '', ts_now()));
 
         case 'watchlist':
             out(['ok' => true, 'watchlist' => ts_watchlist($uid)]);
@@ -485,6 +487,11 @@ try {
 
         case 'cred_test':
             ts_cred_test_mine($uid, $in['provider'] ?? '');
+            out(['ok' => true, 'providers' => ts_providers_for($uid)]);
+
+        case 'prefill_set':
+            // מילוי ברקע במפתח שלי (21.2) — הפעלה וכיבוי
+            ts_prefill_set($uid, $in['on'] ?? null);
             out(['ok' => true, 'providers' => ts_providers_for($uid)]);
 
         case 'cred_delete':

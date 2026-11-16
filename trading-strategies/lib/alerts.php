@@ -25,6 +25,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/analysis.php';
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/journal.php';
+require_once __DIR__ . '/prefill.php';
 
 const TS_ALERTS_PER_USER = 20;        // ✅7
 const TS_ALERTS_SYSTEM = 500;         // ✅7
@@ -294,7 +295,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
     $lock = fopen(ts_cron_lock_path(), 'c');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return ['locked' => true];
     $sum = ['locked' => false, 'expired' => 0, 'groups' => 0, 'deferred' => 0, 'checked' => 0, 'fired' => 0, 'capped' => 0,
-        'errors' => 0, 'calls' => [], 'stopped' => false, 'cleanup' => false];
+        'errors' => 0, 'calls' => [], 'stopped' => false, 'cleanup' => false, 'prefill' => null];
     try {
         $sum['expired'] = ts_alerts_expire($now);
         $rows = ts_db()->query("SELECT * FROM alerts WHERE status = 'active' ORDER BY COALESCE(last_checked_at, 0), id")->fetchAll();
@@ -345,6 +346,8 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
         }
         // יומן השיטה (18.6, S6): התוצאה של רשומות שהטווח שלהן עבר — באותו תקציב לספק ובאותה תקרת זמן
         $sum['journal'] = ts_journal_resolve($now, $used, $budget, $t0);
+        // מילוי איטי של המאגר (21.2) — אחרי ההתראות והיומן, כך שהם לא נדחים בגללו
+        $sum['prefill'] = ts_prefill_run($now, $used, $budget, $t0);
         $sum['calls'] = $used;
         // ניקוי המאגר — פעם ביום, מכאן (✅4)
         $before = (int)ts_setting('cache_cleanup_at', '0');
