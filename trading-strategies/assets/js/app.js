@@ -101,11 +101,15 @@ async function api(action, body = null, query = {}) {
     opt.body = JSON.stringify(body);
   }
   let res, data;
+  const t0 = performance.now();
   try {
     res = await fetch('api.php?' + qs, opt);
     data = await res.json();
   } catch {
     throw new Error(res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
+  } finally {
+    // ההקשר של 🐞 (DevLoop): הבקשות האחרונות — פעולה, מצב, משך ומזהה הבקשה ביומן. בלי הגוף
+    window.DevLoop?.noteRequest({ action, status: res?.status ?? 0, ms: Math.round(performance.now() - t0), req: res?.headers.get('X-Request-Id') || '' });
   }
   if (!res.ok || !data.ok) { const e = new Error(data?.error || 'שגיאה'); e.status = res.status; throw e; }
   return data;
@@ -166,7 +170,7 @@ function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n !
 // לשוניות: שוק · התראות · יומן · עוד (spec-stage-a 1). "ניתוח" — בפס שמתחת לגרף, לא לשונית (S4, 18.4).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', 'method-journal': 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
+  more: 'more', dev: 'more', 'method-journal': 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
@@ -190,6 +194,7 @@ async function route() {
     else if (name === 'method-journal') await J.viewMethodJournal();
     else if (name === 'providers') await M.viewProviders();
     else if (name === 'admin') await M.viewAdmin();
+    else if (name === 'dev') await viewDev(rest[0], rest.slice(1).join('/'));
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
     else if (name === 'analysis') {
       // מסך "🧭 ניתוח" הוסר (S4, 18.4): הכרטיס בפס שמתחת לגרף. כתובת ישנה (התראה, סימנייה) → הגרף של אותו נכס
@@ -1087,6 +1092,8 @@ async function viewMore() {
         h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, מנהלים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      ME.is_primary_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/dev/tasks' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🐞'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'פיתוח'), h('small', {}, 'מטלות TS-, אימות, ויומן בקשות ושגיאות — למפתח בלבד')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
       h('li', {}, h('a', { class: 'use-row', href: '#/method-journal' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📓'),
         h('span', { class: 'use-tx' }, h('b', {}, 'יומן השיטה'), h('small', {}, 'מה כל שיטה אמרה, ומה קרה אחר כך — לפי גרסה')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
@@ -1101,6 +1108,20 @@ async function viewMore() {
       h('p', {}, '🔒 אין כאן מסחר ואין כסף אמיתי: האפליקציה לא מתחברת לשום ברוקר, בורסה או ארנק, ולא שולחת פקודות. כל המחירים מוזנים ידנית.'),
       h('p', {}, '👤 הנתונים שלך — רק שלך. אף משתמש אחר לא רואה אותם, ואפשר לייצא הכול בכל רגע.'),
       h('p', { class: 'disclaimer' }, '⚖️ ' + DISCLAIMER)));
+}
+
+// ── פיתוח: DevLoop (A1, PROTOCOL 7) — המודול המשותף; רק למפתח, כלומר המנהל הראשי ──
+// המטלות והיומן — assets/js/devloop.js (עותק מסונכרן, לא עורכים כאן). השרת אוכף בעצמו (api.php); כאן רק מה שמוצג.
+const DEV_TABS = [['tasks', '📋 מטלות'], ['log', '📜 יומן']];
+async function viewDev(tab, arg = '') {
+  if (!ME.is_primary_admin) { location.hash = '#/more'; return; }
+  if (!DEV_TABS.some(([k]) => k === tab)) tab = 'tasks';
+  setHead('פיתוח', 'מטלות TS- ויומן — למפתח', { back: true });
+  const body = h('div', { class: 'dev-body' });
+  render(h('nav', { class: 'seg-tabs', 'aria-label': 'פיתוח' }, DEV_TABS.map(([k, l]) =>
+    h('a', { href: '#/dev/' + k, class: 'seg-tab', 'aria-current': k === tab ? 'page' : null }, l))), body);
+  if (tab === 'log') await DevLoop.showLog(body, decodeURIComponent(arg));
+  else await DevLoop.show(body, decodeURIComponent(arg));
 }
 
 async function viewInstruments() {
@@ -1150,6 +1171,14 @@ function editInstrument(i) {
   const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub, withVs, assetPicker, me: () => ME,
     setMe: v => { ME = v; }, reload: () => route(),
     openTrade: pre => editTrade(null, pre) };
+  // DevLoop: ההגדרה לכולם (שגיאות JavaScript ליומן המובנה), 🐞 בכותרת — רק למפתח
+  DevLoop.setup({
+    api: (action, { body = null, params = {} } = {}) => api(action, body, params), toast,
+    isDev: () => !!ME?.is_primary_admin, appName: 'אסטרטגיות למסחר', tasksHref: '#/dev/tasks', mountBefore: '#head-actions',
+    headers: () => ({ 'X-CSRF': ME?.csrf || '' }), version: () => ME?.version || '', builtinLog: true,
+    logHref: r => '#/dev/log/' + encodeURIComponent(r.req),
+  });
+  if (ME.is_primary_admin) DevLoop.mount();
   N = mountAlerts(ctx);
   J = mountMethodJournal(ctx);
   ctx.newAlert = N.newAlert;
