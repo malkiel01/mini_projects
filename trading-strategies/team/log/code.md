@@ -190,3 +190,5 @@
 - 2026-11-17 — **H1c** (18.1.8 סעיף 6, קריטריון 12), ענף `claude/trading-strategies-history-h1c` (על גבי H1b): `method_history` — אותות וספירות עבר
   של מנה ישנה, רק t < before, מהמטמון; `forecast.addOlder` ממזג בלי להזיז את מה שעל המסך. בדיקות: `past-batch.php` (13), `past-signals-api.php` 19 → 27,
   `past-batch-ui.mjs` (9, חדשה). בלי מיגרציה.
+- 2026-11-17 — H1c, תוספת הבקרה (10): תקרת חישוב ל-`method_history` — 12 מנות שחושבו בדקה למשתמש, 429 מעליה; מהמטמון — לא נספר.
+  מיגרציה 7 ב-cache.sqlite (`history_runs`). `past-signals-api.php` 27 → 30, `shared-pool.php` — גרסה 7.

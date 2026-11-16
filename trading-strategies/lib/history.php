@@ -96,6 +96,23 @@ function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows, ?
 
 /** [שלנו, H1c] — כמה נרות אחרי before נכנסים לחישוב של מנה ישנה, מעבר לאופק: אישור נקודות המפנה שבגבול (ספירות אליוט) */
 const TS_HISTORY_TAIL = 300;
+/** [שלנו, H1c] — תקרת חישוב (CPU): כמה מנות ישנות משתמש מחשב בדקה. מנה מהמטמון לא נספרת. הפעימות — עד 20 לדקה, ורובן חוזרות */
+const TS_HISTORY_RUNS_PER_MIN = 12;
+
+/** חישוב של מנה ישנה, בתקרה. מעל התקרה → TsRateLimited (429), ושום שיטה לא רצה */
+function ts_history_run_hit(int $uid, int $now): void
+{
+    $c = ts_cache();
+    $minute = intdiv($now, 60);
+    $st = $c->prepare('SELECT runs FROM history_runs WHERE user_id = ? AND minute = ?');
+    $st->execute([$uid, $minute]);
+    if ((int)$st->fetchColumn() >= TS_HISTORY_RUNS_PER_MIN) {
+        throw new TsRateLimited('יותר מ-' . TS_HISTORY_RUNS_PER_MIN . ' חישובי היסטוריה בדקה. ממשיכים בעוד רגע.');
+    }
+    $c->prepare('INSERT INTO history_runs (user_id, minute, runs) VALUES (?, ?, 1)
+        ON CONFLICT(user_id, minute) DO UPDATE SET runs = runs + 1')->execute([$uid, $minute]);
+    if (random_int(1, 50) === 1) $c->prepare('DELETE FROM history_runs WHERE minute < ?')->execute([$minute - 5]);
+}
 
 /**
  * H1c (18.1.8 סעיף 6, קריטריון 12): אותות וספירות עבר של מנה ישנה שנטענה בגלילה (market_history). $from — הנר הראשון של המנה,
@@ -145,12 +162,18 @@ function ts_method_history(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     $rows = ts_closed_rows(array_values(array_filter($r['candles'], fn($c) => $c['t'] >= $from)), $tf, $now);
     $scope = (string)(ts_scope_for($uid, $provider) ?? '');
     $c = ts_cache();
+    // המטמון קודם: מה שכבר חושב (אותה שיטה, פרמטרים, נכס, מסגרת, נרות ו-before) — לא נספר בתקרה
+    $todo = [];
     foreach ($prepared as $id => [$m, $p]) {
         $k = ts_method_key($m, $p, (string)$asset, $tf, "$scope|h1c|$before", $rows);
         $st = $c->prepare('SELECT result FROM method_results WHERE k = ?');
         $st->execute([$k]);
         $hit = $st->fetchColumn();
-        if (is_string($hit) && is_array($h = json_decode($hit, true))) { $out[$id] = ['status' => 'ok', 'history' => $h, 'ran' => false]; continue; }
+        if (is_string($hit) && is_array($h = json_decode($hit, true))) $out[$id] = ['status' => 'ok', 'history' => $h, 'ran' => false];
+        else $todo[$id] = [$m, $p, $k];
+    }
+    if ($todo) ts_history_run_hit($uid, $now);   // בקשה אחת = חישוב אחד בתקרה, גם עם כמה שיטות (עד TS_REFRESH_MAX_METHODS)
+    foreach ($todo as $id => [$m, $p, $k]) {
         try {
             $h = ts_history_signals($m, $p, (string)$asset, $rows, $sec, $before);
         } catch (Throwable $e) {

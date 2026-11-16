@@ -493,9 +493,14 @@ try {
 
         // היסטוריה בפעימות: מנה אחת של נרות ישנים לפני before (עד 5 שנים). בתקרה של TS_DATA — כל מנה נספרת
         // H1c (18.1.8 סעיף 6): אותות וספירות עבר של מנה ישנה — רק לפני before. קורא מהמטמון (history + המאגר), ולכן בתקרה של
-        // TS_DATA רק כשהיה צריך לפנות לספק (כמו market_tab: מהמאגר בלבד — לא בתקרה)
+        // TS_DATA רק כשהיה צריך לפנות לספק. לחישוב — תקרה משלו (TS_HISTORY_RUNS_PER_MIN, 429); מנה מהמטמון לא נספרת בה
         case 'method_history':
-            $mh = ts_method_history($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['before'] ?? null, $_GET['methods'] ?? '');
+            try {
+                $mh = ts_method_history($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['before'] ?? null, $_GET['methods'] ?? '');
+            } catch (TsRateLimited $e) {   // תקרת החישוב (TS_HISTORY_RUNS_PER_MIN) — לא תקרת הספק
+                header('Retry-After: 60');
+                fail($e->getMessage(), 429);
+            }
             if ($mh['provider_calls'] > 0) { try { ts_rate_hit($uid); } catch (TsRateLimited) { /* הפנייה כבר נעשתה — נספרת, לא נכשלת */ } }
             out(['ok' => true] + $mh);
 

@@ -118,6 +118,17 @@ eq([array_unique(array_column(array_values($mh2['methods']), 'ran')), array_colu
 $r1 = $refresh('carol', $ids);
 eq(array_map(fn($x) => $x['history'], $r1['methods']), array_map(fn($x) => $x['history'], $r0['methods']), 'criterion 12: what was on the chart (chart_refresh) — unchanged');
 eq(call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first, 'before' => $first, 'methods' => $ids])[0], 422, 'from ≥ before → 422');
+// תקרת חישוב (CPU) — 12 מנות שחושבו בדקה למשתמש; מנה מהמטמון לא נספרת, ומשתמש אחר — תקרה משלו
+$cache->exec('DELETE FROM history_runs');
+$runs = [];
+for ($i = 1; $i <= 13; $i++) {   // 13 מנות שונות (before אחר → מפתח אחר): 12 רצות, ה-13 → 429
+    $bf = $first - $i * 50 * 3600;
+    $runs[] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $bf - 200 * 3600, 'before' => $bf, 'methods' => 'fibonacci'])[0];
+}
+eq($runs, [...array_fill(0, 12, 200), 429], 'a compute cap: 12 batches computed per minute per user, the 13th → 429 (Retry-After)');
+[$c, $again] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $b1['candles'][0]['t'], 'before' => $first, 'methods' => $ids]);
+eq([$c, array_unique(array_column(array_values($again['methods'] ?? []), 'ran'))], [200, [false]], '… a batch already computed comes from the cache, even over the cap');
+eq(call('dave', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first - 300 * 3600, 'before' => $first - 77 * 3600, 'methods' => 'fibonacci'])[0], 200, '… another user — a cap of their own');
 eq(call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first - 3600, 'before' => $first, 'methods' => ''])[0], 422, 'no methods → 422');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
