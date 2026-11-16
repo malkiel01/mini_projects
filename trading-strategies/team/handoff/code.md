@@ -6,6 +6,7 @@
 > **עדכון 2026-11-15 (צ'אט S1.2):** F1 (#1601) ו-S1.2 (#1603) ממוזגים — הסעיף בסוף. הבא בתור — לפי `team/board.md` (18.8: S4).
 > **עדכון 2026-11-16 (צ'אט S4):** S4 בנוי וממוזג (#1605) — הסעיף "S4 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S5).
 > **עדכון 2026-11-16 (צ'אט S5):** S5 בנוי וממוזג (#1608) — הסעיף "S5 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8).
+> **עדכון 2026-11-16 (צ'אט S6):** S6 בנוי וממוזג (#1611) — הסעיף "S6 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S7, שנשען על היומן).
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -168,3 +169,24 @@
   - **⚪ `market-tabs-ui`** נכשלה פעם אחת בהרצה מקבילה (ההמתנה הראשונה ל-combobox), כמו ב-#1603. לבד — עוברת 2/2.
   - **הפלטה** לא שונתה מ-F1. הניגוד ≥ 3:1 נבדק, אבל `--brand` ו-`--m8` (כחול ואפור-כחול) קרובים זה לזה בעין.
 
+## S6 — מה נבנה (18.6, #1611)
+
+- **הטבלה:** `method_journal` ב-`data/app.sqlite` (מיגרציה 11). **לא** במאגר הנרות — הוא מתרוקן ומתנקה.
+  - `UNIQUE (method_id, method_version, asset, tf, cred_scope, as_of, kind)` + `INSERT OR IGNORE` — רשומה לא משוכתבת לעולם.
+  - `outcome`: `NULL` = עוד לא ידוע; `zone` / `invalidated` / `neither`; `none` = אין תרחיש (וכל רשומת `backtest`).
+  - המחירים (`zone_lo`, `zone_hi`, `invalidation`) — מחרוזות עשרוניות לפי `tick_decimals`.
+  - **בלי `user_id`** (✅27). מי רואה — לפי `cred_scope`.
+- **הכתיבה (`lib/journal.php`):**
+  - `ts_journal_analysis` — נקרא רק מ-`ts_method_result` כש-`ran` (נר סגור חדש). נרשם התרחיש המוביל (`primary`).
+  - `ts_journal_backtest` — מ-`ts_backtest`, רק בחישוב חדש.
+  - שתיהן בולעות שגיאות (`error_log`) — לא מפילות רענון.
+  - **שינוי בצורת `forecast` (S4) ישבור את `ts_journal_said`** — לעדכן אותה יחד.
+- **התוצאה:** `ts_journal_resolve` נקרא מ-`ts_alerts_run` (אחרי ההתראות, לפני הניקוי), עם אותו `$used` ותקרת זמן; `$sum['journal']` בפלט ה-cron.
+  - רק כש-`until_t + נר <= now`. הנרות — `ts_market_candles` במשתמש של ההיקף (`ts_journal_uid_for`: `''`→0, `u:N`→N, `c:N`→משויך ראשון).
+  - הכלל — `ts_journal_outcome` (טהורה): הראשון שנגע; שניהם באותו נר → `invalidated` + `same_candle`.
+- **הקריאה:** `method_journal` (GET) → `ts_journal_list`: עמוד של 50 (`before`), `summary` על כל מה שהמשתמש רואה, סינון `method`/`version`/`outcome`/`kind`. `scope_kind` — רק למנהל.
+- **המסך:** `assets/js/method-journal.js` — `view(host)` ו-`viewMethodJournal()`. `#/method-journal` ("עוד") ולשונית `journal` בניהול (`ctx.journalView`).
+- **בדיקות:** `tests/method-journal-api.php` (כולל בדיקה עצמאית של התוצאה מנוסחת `wave`), `tests/method-journal-ui.mjs`.
+  - ה-cron בבדיקה: `bin/alerts-cron.php --now=<until_t + 3660>` עם אותו `TS_DB_PATH`.
+- **ל-S7:** היומן הוא מקור הראיות. הסיכום לפי גרסה כבר שם (`summary[].zone_pct` מתוך מה שהוכרע).
+- **פתוח:** ההכרעות שלי (README, "הכרעות של כותב הקוד (S6)") לא אושרו מול האפיון — במיוחד שהמסך פתוח גם למשתמש רגיל.
