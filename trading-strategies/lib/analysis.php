@@ -73,6 +73,8 @@ function ts_profile(int $uid): array
         'market_tabs' => function_exists('ts_market_tabs') ? ts_market_tabs($uid) : null,
         // הצבע של כל שיטה (18.5) — {method_id: צבע מהפלטה}; אותה שיטה, אותו צבע בכל הזוגות (lib/method-colors.php)
         'method_colors' => ts_method_colors($uid),
+        // H1 (18.1.8 סעיף 4): אותות העבר של השיטות על הגרף — דולק כברירת מחדל
+        'history' => (int)(ts_db()->query('SELECT history_off FROM users WHERE id = ' . $uid)->fetchColumn() ?: 0) === 0,
     ];
 }
 

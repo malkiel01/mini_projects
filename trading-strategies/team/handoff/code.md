@@ -157,6 +157,19 @@
 - **העותק בענן MBE** — `lib/copy.php`, `analysis_copy*`, `cloud.js`, קריאת העותק ב-`load()` (#1590).
 - **`tests/no-polling.mjs`** — נמחק, כי סתר את ✅23. **S3 צריך בדיקה חדשה** שמוכיחה את ההפך: יש רענון כשהניתוח פעיל, ואין כשהלשונית מוסתרת או הניתוח כבוי — לפי 18.3.
 
+## H1a — אותות עבר (18.1.8) — מה בנוי, ומה נשאר
+
+- **שרת:** `lib/history.php` → `ts_history_signals($m, $p, $asset, $rows)` — `ts_bt_run` עם `$onTrade` (עסקאות שנסגרו, בלי skipped_gap) ו-`$onSignal`
+  (פרמטר 8 חדש: מצב השיטה בנר האות → `conditions` של הצד, לחלונית). פתוח: `pos` (נכנס) או `pend` (אות בנר האחרון, בלי כניסה). 50 האחרונים, `n` — הכול.
+  נקרא מ-`ts_method_result` (`lib/refresh.php`) ונשמר ב-`method_results` עם התוצאה — **תוצאות שנשמרו לפני הפריסה — בלי `history` עד הנר הבא**.
+- **דפדפן:** `forecast.js` — `pastOf`, `drawPast` (מתחת להווה, alpha 0.5), `pastAnchor`; פריט `kind: 'past'` ב-`hitsAt` / `relocate` / `keyOf`;
+  `charttip.js` → `pastContent` ("אות לונג · היה"). המתג — `histRow()` בתפריט, `me.profile.history`, `history_set`. ליד ∅ — `.fc-leg-past`.
+  לבדיקות: `tsForecast().past` ({m, t, side, result, alpha, label, x, y}), `.pastN`, `.history`.
+- **מיגרציה 23** (`users.history_off`). **הבאה ב-app.sqlite — 24; cache.sqlite — 7.**
+- **נשאר:** H1b — ספירות אליוט שהושלמו (סעיף 2, קריטריון 5) ואזורי פיבונאצ'י (סעיף 3, קריטריון 6). H1c — מנות ישנות (סעיף 6, קריטריון 12; קריטריון 11
+  על 20,000) — **ממתין להכרעת הבקרה** על ההצעה: `method_history&before=` לכל מנה, עם חימום, ורק אותות לפני תחילת הטווח הקודם.
+- **סט הבדיקה:** `TS_KLINES_SHAPE=wave` ו-`X-Dev-Now: 1794342600` — אליוט בלי ספירה נוכחית (∅) ועם 12 אותות עבר בשעה, 3 חודשים.
+
 ## מוסכמות שגיליתי
 
 - **ציר הזמן — לפי שעון המשתמש** (`assets/js/chartaxis.js`): סימון חדש כש-`tickKey(t, step, kind, offset)` משתנה; `offset = tzOffset(ME().user.timezone)`.
