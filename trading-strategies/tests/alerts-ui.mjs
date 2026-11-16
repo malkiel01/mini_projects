@@ -116,7 +116,9 @@ try {
   eq(await noHScroll(a), true, 'inbox: no horizontal scroll');
   await shot(a, 'alerts-inbox');
   await a.getByRole('button', { name: '✓ סימון הכול כנקרא' }).click();
-  await a.waitForFunction(() => !document.querySelector('main .use-row.unread'));
+  // הסימון טוען את המסך מחדש: קודם "טוען…" (השורה הלא-נקראת נעלמת כבר שם), ורק בתשובת inbox — התג מתעדכן והמסך נבנה.
+  // מחכים למסך החדש עצמו, לא להיעלמות השורה (הרעידה: התג נבדק בזמן "טוען…")
+  await a.waitForFunction(() => !document.querySelector('main .loading') && document.querySelector('main .use-row') && !document.querySelector('main .use-row.unread'));
   eq(await a.locator('nav.bottom-nav a[data-tab="alerts"] .badge').isHidden(), true, 'after "mark all read" — no badge');
 } catch (e) {
   fail++; console.log('✗', e.message);
