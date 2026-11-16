@@ -615,9 +615,9 @@ php -S 127.0.0.1:8123 -t . -d auto_prepend_file=$PWD/trading-strategies/tests/de
 - **כבויה עד שמנהל מפעיל** (22.1, 6.7): `meta.default_off` → `ts_method_on_by_default` מחזיר false. אליוט — בלי שינוי.
 - **בגרף — הממצא בלבד:** אזורים (`zone` עם `extend` — נמשך עד קצה הגרף, R3), רמות בודדות (`polyline` עם `single` — דהויות,
   Z9), ואות בתוקף (סימון, סטופ, יעד). "הסתר רמות בודדות" בכרטיס — `solo` ב-`ts-forecast-methods`. אין תרחיש (F-2).
-- **בדיקות:** `tests/fibonacci.php` (קריטריונים 1–8 ו-22.7), `tests/fibonacci-zones.php` (11 — סט קבוע מול
-  `tests/fixtures/fibonacci/zones.json`; עדכון: `UPDATE_ZONES=1`), `tests/fibonacci-api.php` (10, ו-9 בשרת),
-  `tests/fibonacci-ui.mjs` (9 ו-10 בדפדפן). הנרות — `tests/fixtures/fibonacci/bars.php` (גוף 1, פתיל 0.5 → ATR = 2 בדיוק).
+- **בדיקות:** `tests/fibonacci.php` (קריטריונים 1–9 ו-22.7, מספור 2.28), `tests/fibonacci-zones.php` (12 — סט קבוע מול
+  `tests/fixtures/fibonacci/zones.json`; עדכון: `UPDATE_ZONES=1`), `tests/fibonacci-api.php` (11, ו-10 בשרת),
+  `tests/fibonacci-ui.mjs` (10 ו-11 בדפדפן). הנרות — `tests/fixtures/fibonacci/bars.php` (גוף 1, פתיל 0.5 → ATR = 2 בדיוק).
 
 ### הכרעות של כותב הקוד (F-1) — כולן [שלנו]
 

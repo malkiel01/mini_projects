@@ -1,5 +1,5 @@
 <?php
-// בדיקות F-1 — שיטת פיבונאצ'י, הממצא והאותות (spec-stage-a 22.2–22.4, 22.6, 22.7; קריטריוני F-1 1–8 ו-11 בחלק הטהור).
+// בדיקות F-1 — שיטת פיבונאצ'י, הממצא והאותות (spec-stage-a 22.2–22.4, 22.6, 22.7; קריטריוני F-1 1–9 ו-12 בחלק הטהור, מספור 2.28).
 // php trading-strategies/tests/fibonacci.php — טהור: בלי מסד, בלי רשת, בלי שעון ובלי אקראיות. הנרות — tests/fixtures/fibonacci.
 if (PHP_SAPI !== 'cli') exit;
 define('TS_DB_PATH', sys_get_temp_dir() . '/ts-fib-unused-' . getmypid() . '.sqlite');   // לא נפתח (tune = 0)
@@ -86,7 +86,7 @@ foreach ($windows as $w) {
         }
         foreach ($w[$k]['ranges'] as $r) foreach ($r['levels'] as $l) {
             $levelsN++;
-            if (!in_array($l['r'], [0.382, 0.5, 0.618], true)) $ratios++;             // קריטריון 6
+            if (!in_array($l['r'], [0.382, 0.5, 0.618], true)) $ratios++;             // קריטריון 7
             if (abs($l['price'] - ($r['start'] - $l['r'] * ($r['start'] - $r['end']))) > 1e-9) $math++;
             if ($d * ($l['price'] - $closeAt[$w[$k]['built_t']]) > 1e-9) $above++;   // קריטריון 5: בבנייה — תמיכה ≤ סגירה; התנגדות ≥ סגירה
         }
@@ -139,7 +139,7 @@ echo "  ספירה (נרשמת ב-PR): נגיעות באזור בציון ≥ 3 
 eq($touch > 0, true, "defaults: zones survive the approach — $touch touches of a zone with score ≥ 3 ($noTarget of them with no resistance zone above)");
 echo '  ספירה (נרשמת ב-PR): אותות — ' . implode(' / ', $counts) . "\n";
 eq([$counts[1] > 0, $counts[2] > 0], [true, true], 'signals on 5,000 h1 candles after the lock: defaults ' . $counts[0] . ', min_score 2 + min_rr 1 → ' . $counts[1] . ', + sensitivity 2 → ' . $counts[2]);
-eq([$ratios, $math], [0, 0], 'criterion 6: only 38.2 / 50 / 61.8 — in ranges, zones and singles; level = start − r × (start − end)');
+eq([$ratios, $math], [0, 0], 'criterion 7: only 38.2 / 50 / 61.8 — in ranges, zones and singles; level = start − r × (start − end)');
 
 // ── 22.3 (5, 6): נקודות קרובות, ותקרה ──────────────────────
 $close = ts_fib_side(fib_cand([140, 120, 175, 150, 175, 150.4, 196, [199, 'body' => 3], 200, 185], $m->params()), fib_piv([140, 120, 175, 150, 175, 150.4, 196, [199, 'body' => 3], 200, 185], $m->params()), $m->params(), 2.0, 1);
@@ -158,11 +158,11 @@ eq([count($gapR), r2($gapR[0]['end'] ?? null)], [1, 160.5], 'S14: a real gap (l[
 $hole = $gapC;
 foreach ($hole as $i => &$c) if ($i >= $k) $c['t'] += 3 * 3600;   // אותו פער, מעל חור של 3 שעות (הפסקת מסחר)
 unset($c);
-eq(array_filter($grid($hole)['support']['ranges'], fn($r) => in_array('gap', $r['kinds'], true)), [], 'S14 [ours]: intraday, a gap over a time hole (session break) does not count');
+eq(array_filter($grid($hole)['support']['ranges'], fn($r) => in_array('gap', $r['kinds'], true)), [], 'criterion 6 (S14 [ours]): intraday, a gap over a time hole (session break) does not count');
 $daily = array_map(fn($c) => ['t' => 1_700_000_000 + intdiv($c['t'] - 1_700_000_000, 3600) * 86400] + $c, $hole);
 eq(count(array_filter($grid($daily)['support']['ranges'], fn($r) => in_array('gap', $r['kinds'], true))), 1, 'S14: on a daily frame, a gap over a weekend counts');
 
-// ── קריטריון 8 + 22.6: אות ────────────────────────────────
+// ── קריטריון 9 + 22.6: אות ────────────────────────────────
 // התנגדות מעל: 280 ו-250 (לא נעברו) → אזור [199.66, 200]; תמיכה: 150 (נר חזק וארוך, +1) ו-120 → אזור [169.10, 169.44] בציון 3
 $SIG = fib_bars([280, 230, 250, 120, 175, 150, [155, 'body' => 5], 200, 185]);
 $lastT = $SIG[count($SIG) - 1]['t'];
@@ -175,8 +175,8 @@ eq([$s0['t'], $s0['side'], $s0['entry'], r2($s0['zone']), $s0['score'], r2($s0['
     '22.6: long at the touch candle — zone score 3, entry = close, target = the bottom of the next resistance zone (M2)');
 $atr = ts_fib_grid_of(array_slice($SIG, 0, -1), $PS)['atr'];
 eq([round($s0['stop'], 9), $s0['stop'] < $s0['zone'][0], round($s0['rr'], 6)], [round(169.1 - 0.25 * $atr, 9), true, round((199.66 - 175) / (175 - (169.1 - 0.25 * $atr)), 6)],
-    'criterion 8 (M1): stop = zone bottom − stop_atr × ATR, below the zone, not inside it');
-eq($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_rr' => 4])), [], 'criterion 8: rr 3.85 < min_rr 4 → no signal');
+    'criterion 9 (M1): stop = zone bottom − stop_atr × ATR, below the zone, not inside it');
+eq($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_rr' => 4])), [], 'criterion 9: rr 3.85 < min_rr 4 → no signal');
 eq($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_score' => 4])), [], 'min_score 4 > zone score 3 → no signal');
 $noTarget = fib_bars([120, 175, 150, [155, 'body' => 5], 200, 185]);
 $noTarget[] = ['t' => $noTarget[count($noTarget) - 1]['t'] + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 169.3, 'c' => 175.0];
@@ -187,16 +187,16 @@ $MIR = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c[
 $sm = $m->signals($MIR, $PS);
 eq([count($sm), $sm[0]['side'] ?? null, r2($sm[0]['entry'] ?? 0), r2($sm[0]['zone'] ?? []), r2($sm[0]['target'] ?? 0), round($sm[0]['stop'] ?? 0, 6), round($sm[0]['rr'] ?? 0, 6)],
     [1, 'short', r2($K - 175), [r2($K - 169.44), r2($K - 169.1)], r2($K - 199.66), round($K - $s0['stop'], 6), round($s0['rr'], 6)], 'short = the mirror of long (S1)');
-eq($sm[0]['stop'] > $sm[0]['zone'][1], true, 'criterion 8 (short): stop above the zone');
+eq($sm[0]['stop'] > $sm[0]['zone'][1], true, 'criterion 9 (short): stop above the zone');
 // על הנרות האמיתיים, עם פרמטרים שנותנים אותות — כל אות עומד בכללים
 $PR = $m->params(['pivot_atr_mult' => 2, 'min_score' => 2, 'min_rr' => 1]);
 $F18 = array_slice($F, 0, 1800);
 $real = $m->signals($F18, $PR);
 $bad = array_filter($real, fn($s) => $s['side'] === 'long' ? !($s['stop'] < $s['zone'][0] && $s['target'] > $s['entry']) : !($s['stop'] > $s['zone'][1] && $s['target'] < $s['entry']));
 $lowRr = array_filter($real, fn($s) => $s['rr'] < 1 - 1e-9 || abs($s['rr'] - abs($s['target'] - $s['entry']) / abs($s['entry'] - $s['stop'])) > 1e-9);
-eq([count($real) >= 5, count($bad), count($lowRr)], [true, 0, 0], 'criterion 8 on real candles: every long stop < zone bottom (short: above the top), no rr < min_rr (' . count($real) . ' signals)');
+eq([count($real) >= 5, count($bad), count($lowRr)], [true, 0, 0], 'criterion 9 on real candles: every long stop < zone bottom (short: above the top), no rr < min_rr (' . count($real) . ' signals)');
 
-// ── קריטריון 7: בלי הצצה לעתיד ─────────────────────────────
+// ── קריטריון 8: בלי הצצה לעתיד ─────────────────────────────
 $idx = array_flip(array_column($F18, 't'));
 $byT = array_column($real, null, 't');
 $peek = 0; $runs = 0;
@@ -206,9 +206,9 @@ foreach (array_unique(array_merge(array_map(fn($s) => $idx[$s['t']], $real), ran
     if (($byT[$F18[$i]['t']] ?? null) != $lastPart) $peek++;
     $runs++;
 }
-eq([$peek, $runs > 8], [0, true], "criterion 7: the signal at i is the same on [0..i] and on the whole set ($runs points)");
+eq([$peek, $runs > 8], [0, true], "criterion 8: the signal at i is the same on [0..i] and on the whole set ($runs points)");
 $full = $m->signals($SIG, $PS);
-eq($m->signals(array_slice($SIG, 0, -1), $PS), [], 'criterion 7: without the touch candle there is no signal (the zone alone is not a signal)');
+eq($m->signals(array_slice($SIG, 0, -1), $PS), [], 'criterion 8: without the touch candle there is no signal (the zone alone is not a signal)');
 eq(end($full)['t'], $SIG[count($SIG) - 1]['t'], '… and with it, the signal is on that candle');
 // מצטבר = מלא (המצב דרך JSON — כמו במסד)
 $cost = ['fee' => 0.001, 'slip' => 0.0005];
@@ -231,14 +231,14 @@ $c0 = array_column($a0['conditions'], null, 'id');
 eq([$a0['bias'], $c0['l-zone']['text'], $c0['l-zone']['met'], $c0['l-touch']['met']], ['none', 'אזור תמיכה: 2 רמות מ-2 טווחים (ציון 2)', false, false],
     '22.7: no signal — the best zone in words; score 2 < min_score 3 → not met');
 
-// ── בגרף (קריטריון 9, צד השרת) ────────────────────────────
+// ── בגרף (קריטריון 10, צד השרת) ────────────────────────────
 require_once dirname(__DIR__) . '/lib/forecast.php';
 $ov = ts_overlay_check($m->overlay($EX, $P, 3600), 3600);
 [$finding, $forecast] = ts_forecast_split($ov);
 $zones = array_values(array_filter($finding['items'], fn($it) => $it['kind'] === 'zone'));
 $singles = array_values(array_filter($finding['items'], fn($it) => !empty($it['single'])));
 eq([count($zones), r2([$zones[0]['p1'], $zones[0]['p2']]), $zones[0]['extend'], $zones[0]['t2'], count($singles), $forecast['items']],
-    [1, [169.1, 169.44], true, $EX[count($EX) - 1]['t'], 4, []], 'criterion 9 (server): the zone extends right, four single levels marked single, nothing in the scenario layer (F-1)');
+    [1, [169.1, 169.44], true, $EX[count($EX) - 1]['t'], 4, []], 'criterion 10 (server): the zone extends right, four single levels marked single, nothing in the scenario layer (F-1)');
 eq([$zones[0]['t1'], $singles[0]['points'][0]['t'], $singles[0]['style']], [$g['support']['start']['t'], $g['support']['start']['t'], 'solid'], 'R3: lines start at the start point and run right — not backwards');
 $ovS = ts_overlay_check($m->overlay($SIG, $PS, 3600), 3600);
 eq(array_values(array_map(fn($it) => $it['kind'] . ($it['role'] ?? ''), array_filter($ovS['items'], fn($it) => in_array($it['kind'], ['marker', 'hline'], true)))),

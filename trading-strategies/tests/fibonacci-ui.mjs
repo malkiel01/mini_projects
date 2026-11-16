@@ -1,4 +1,4 @@
-// F-1 — פיבונאצ'י בגרף, בדפדפן אמיתי (spec-stage-a 22.9, קריטריונים 9 ו-10).
+// F-1 — פיבונאצ'י בגרף, בדפדפן אמיתי (spec-stage-a 22.9, קריטריונים 10 ו-11).
 // node trading-strategies/tests/fibonacci-ui.mjs   (Playwright; ספקים מדומים, בלי רשת, שעון קבוע)
 // SHOTS=<תיקייה מחוץ לריפו> — צילומים (deviceScaleFactor 2) ברוחב 390.
 //
@@ -63,7 +63,7 @@ const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelect
 const mine = st => st.drawn.filter(d => d.m === F);
 
 try {
-  // ── קריטריון 10: כבויה — לא בתפריט; המנהל מפעיל — בתפריט ──
+  // ── קריטריון 11: כבויה — לא בתפריט; המנהל מפעיל — בתפריט ──
   const { p: o } = await open('owner');
   await o.goto(BASE + '#/market');
   await o.waitForSelector('main [role="combobox"]');
@@ -71,7 +71,7 @@ try {
   await a.goto(CHART);
   await loaded(a);
   await openPop(a);
-  eq(await pop(a).locator('.fc-opt', { hasText: "פיבונאצ'י" }).count(), 0, 'criterion 10: off → not in the 🔮 menu');
+  eq(await pop(a).locator('.fc-opt', { hasText: "פיבונאצ'י" }).count(), 0, 'criterion 11: off → not in the 🔮 menu');
   eq(await post(o, 'admin_method_save', { id: F, enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] }), 200, 'the admin turns Fibonacci on');
   await actx.close();
 
@@ -80,20 +80,20 @@ try {
   await u.goto(CHART);
   await loaded(u);
   await openPop(u);
-  eq(await pop(u).locator('.fc-opt', { hasText: "פיבונאצ'י" }).count(), 1, 'criterion 10: on → in the 🔮 menu');
+  eq(await pop(u).locator('.fc-opt', { hasText: "פיבונאצ'י" }).count(), 1, 'criterion 11: on → in the 🔮 menu');
   await u.keyboard.press('Escape');
   const panel = u.locator(`.forecast-panel[data-method="${F}"]`);
   await panel.locator('.an-sec.prob').waitFor({ timeout: 60000 });
   await u.waitForFunction(id => (document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.k === 'zone'), F, { timeout: 60000 });
-  eq(/לא נבדק לאחור|ודאות מוצגת רק מ-30|מריץ בדיקה לאחור/.test(await panel.locator('.an-sec.prob').textContent()), true, 'criterion 10: the card — "not backtested" (no certainty under N = 30)');
+  eq(/לא נבדק לאחור|ודאות מוצגת רק מ-30|מריץ בדיקה לאחור/.test(await panel.locator('.an-sec.prob').textContent()), true, 'criterion 11: the card — "not backtested" (no certainty under N = 30)');
 
-  // ── קריטריון 9 ──
+  // ── קריטריון 10 ──
   const purple = await u.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--m3').trim());
   let st = await state(u);
   const zones = mine(st).filter(d => d.k === 'zone');
   const singles = mine(st).filter(d => d.faint);
-  eq([zones.length > 0, [...new Set(zones.map(d => d.c))], zones.every(d => d.extend)], [true, [purple], true], 'criterion 9: zones in the method color (S5), drawn to the chart edge (R3)');
-  eq([singles.length > 0, [...new Set(singles.map(d => d.c))], singles.every(d => d.k === 'polyline' && d.extend)], [true, [purple], true], 'criterion 9: single levels — faded lines in the method color, to the edge');
+  eq([zones.length > 0, [...new Set(zones.map(d => d.c))], zones.every(d => d.extend)], [true, [purple], true], 'criterion 10: zones in the method color (S5), drawn to the chart edge (R3)');
+  eq([singles.length > 0, [...new Set(singles.map(d => d.c))], singles.every(d => d.k === 'polyline' && d.extend)], [true, [purple], true], 'criterion 10: single levels — faded lines in the method color, to the edge');
   eq(mine(st).filter(d => d.k === 'polyline' && !d.faint).length, 0, 'no other lines: F-1 has no scenario');
   await shot(u, 'fib-chart');
 
@@ -103,7 +103,7 @@ try {
   await u.waitForFunction(id => !(document.querySelector('.chart-box:not(.osc)').tsForecast().drawn || []).some(d => d.m === id && d.faint), F);
   st = await state(u);
   eq([mine(st).filter(d => d.faint).length, mine(st).filter(d => d.k === 'zone').length, st.methods.find(m => m.id === F).solo], [0, zones.length, true],
-    'criterion 9: "hide single levels" hides them — the zones stay');
+    'criterion 10: "hide single levels" hides them — the zones stay');
   eq(await panel.locator('.fc-solo').getAttribute('aria-pressed'), 'true', 'the button is pressed');
   await shot(u, 'fib-chart-no-singles');
   await u.reload();

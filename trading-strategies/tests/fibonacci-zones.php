@@ -1,5 +1,5 @@
 <?php
-// פיבונאצ'י על סט קבוע (spec-stage-a 22.1, S7; קריטריון 11 של F-1). טהור — בלי מסד, בלי רשת.
+// פיבונאצ'י על סט קבוע (spec-stage-a 22.1, S7; קריטריון 12 של F-1). טהור — בלי מסד, בלי רשת.
 // php trading-strategies/tests/fibonacci-zones.php
 //
 // הסט (tests/fixtures/fibonacci/sets.php) קבוע; הצפוי — tests/fixtures/fibonacci/zones.json: נקודות ההתחלה, הטווחים,
