@@ -378,7 +378,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
             }
         }
         // יומן השיטה (18.6, S6): התוצאה של רשומות שהטווח שלהן עבר — באותו תקציב לספק ובאותה תקרת זמן
-        $sum['journal'] = ts_journal_resolve($now, $used, $budget, $t0);
+        $sum['journal'] = ts_journal_resolve($now, $used, $budget, $t0, $usedKey);
         // מילוי איטי של המאגר (21.2) — אחרי ההתראות והיומן, כך שהם לא נדחים בגללו
         // חריגה במילוי לא עוצרת את המשך הריצה — הניקוי היומי (✅4) ושמירת מצב ה-cron (ביקורת 21-2 🔴1)
         try {
