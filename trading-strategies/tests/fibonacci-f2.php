@@ -117,6 +117,20 @@ eq([count($nt), $nt[0]['side'] ?? null, r2($nt[0]['zone'] ?? []), $gNT['resistan
     [1, 'long', [169.1, 169.44], 'none', 218.54, 'box'], 'criterion 7: long on a zone with no resistance zone above → target = T of the box of that zone');
 eq(round($nt[0]['rr'], 6), round((218.54 - 175) / (175 - $nt[0]['stop']), 6), 'criterion 7: rr from T');
 eq($m->signals($NT, $m->params(['lookback_bars' => 500, 'min_rr' => 5 + floor($nt[0]['rr'] - 4)])), [], 'criterion 7: rr < min_rr → no signal');
+// פ10 (הכרעת הבעלים, אפיון 2.34): הסטופ מתחת לאזור **ומתחת לפתיל של נר האות** — min(גבול תחתון, l_c) − stop_atr × ATR
+$WK = array_slice($NT, 0, -1);
+$tk = $WK[count($WK) - 1]['t'];
+$WK[] = ['t' => $tk + $H, 'o' => 185.0, 'h' => 185.5, 'l' => 167.0, 'c' => 175.0];   // הפתיל יורד אל 167 — מתחת לאזור [169.10, 169.44]
+$wk = $m->signals($WK, $PS);
+$atrK = $grid(array_slice($WK, 0, -1), ['lookback_bars' => 500])['atr'];
+eq([count($wk), round($wk[0]['stop'] ?? 0, 9), ($wk[0]['stop'] ?? 999) < 167.0, r2($wk[0]['zone'] ?? [])], [1, round(167.0 - 0.25 * $atrK, 9), true, [169.1, 169.44]],
+    'פ10: the signal candle wick (167) is below the zone → the stop is below the wick: 167 − stop_atr × ATR');
+eq(round($nt[0]['stop'], 9), round(169.1 - 0.25 * $atrK, 9), 'פ10: the wick inside the zone (169.3) → the stop stays below the zone bottom');
+$K = 400.0;
+$WKm = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $WK);
+$wm = $m->signals($WKm, $PS);
+eq([count($wm), $wm[0]['side'] ?? null, round($wm[0]['stop'] ?? 0, 6)], [1, 'short', round($K - $wk[0]['stop'], 6)], 'פ10 (short, mirror): the stop is above the signal candle wick');
+
 // box_target (22.5ח, 2.32): 0.618 → יעד הביניים 199.72; ברירת המחדל 1 → T. ערך אחר — נדחה
 $n618 = $m->signals($NT, $m->params(['lookback_bars' => 500, 'box_target' => 0.618]));
 eq([$P['box_target'], r2($n618[0]['target'] ?? 0), r2($m->signals($NT, $m->params(['lookback_bars' => 500, 'box_target' => 0.5]))[0]['target'] ?? 0)], [1.0, 199.72, 193.91],

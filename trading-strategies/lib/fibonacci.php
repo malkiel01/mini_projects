@@ -250,7 +250,7 @@ function ts_fib_zones(array $ranges, float $atr, array $p): array
 
 /**
  * האות בנר $c לפי הרשת שחושבה מנרות ≤ c − 1 (22.6). לונג: אזור תמיכה בציון ≥ min_score שהנר נגע בו (l ≤ גבול עליון)
- * ונסגר מעליו. סטופ מתחת לאזור (M1), יעד — הגבול התחתון של אזור ההתנגדות הבא מעל (M2); אין כזה — T של קופסת השוויון של
+ * ונסגר מעליו. סטופ מתחת לאזור ומתחת לפתיל של נר האות (M1; הכרעת הבעלים, פ10), יעד — הגבול התחתון של אזור ההתנגדות הבא מעל (M2); אין כזה — T של קופסת השוויון של
  * אזור האות (F-2, 22.5ב). יחס ≥ min_rr. שורט — במראה. הציון — כולל Z6 (ts_fib_project).
  * מחזיר אות {side, entry, stop, target, zone: [lo, hi], score, rr} או null.
  */
@@ -266,8 +266,9 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     if ($long !== null) {
         $tgt = null;
         foreach ($g['resistance']['zones'] as $z) if ($z['lo'] > $c['c'] && ($tgt === null || $z['lo'] < $tgt)) $tgt = $z['lo'];
+        // הסטופ (הכרעת הבעלים, פ10 — אפיון 2.34): מתחת לאזור **ומתחת לפתיל של נר האות**, ועוד stop_atr × ATR (M1)
         // יעד חלופי (F-2, 22.6): אין אזור התנגדות מעל → T של קופסת השוויון של **אזור האות** (22.5ב)
-        $sig = ts_fib_levels('long', $c['c'], $long['lo'] - $buf, $tgt ?? ts_fib_box_target($long, $p), $long, $p, $tgt === null ? 'box' : 'zone');
+        $sig = ts_fib_levels('long', $c['c'], min($long['lo'], $c['l']) - $buf, $tgt ?? ts_fib_box_target($long, $p), $long, $p, $tgt === null ? 'box' : 'zone');
         if ($sig) return $sig;
     }
     $short = null;
@@ -278,7 +279,7 @@ function ts_fib_signal(array $g, array $c, array $p): ?array
     if ($short === null) return null;
     $tgt = null;
     foreach ($g['support']['zones'] as $z) if ($z['hi'] < $c['c'] && ($tgt === null || $z['hi'] > $tgt)) $tgt = $z['hi'];
-    return ts_fib_levels('short', $c['c'], $short['hi'] + $buf, $tgt ?? ts_fib_box_target($short, $p), $short, $p, $tgt === null ? 'box' : 'zone');
+    return ts_fib_levels('short', $c['c'], max($short['hi'], $c['h']) + $buf, $tgt ?? ts_fib_box_target($short, $p), $short, $p, $tgt === null ? 'box' : 'zone');
 }
 
 /** היעד החלופי של אזור (22.5ב, 22.5ח): אמצע + box_target × (T − אמצע); בלי קופסה — null */
