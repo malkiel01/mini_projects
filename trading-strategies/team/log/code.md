@@ -82,3 +82,4 @@
 - **בדיקות:** `tests/method-journal-api.php` (53), `tests/method-journal-ui.mjs` (24) — כל 5 הקריטריונים, 390 ו-320 כהה.
 - ענף `claude/trading-strategies-s6-method-journal`.
 - 2026-11-16 — S7 (18.7) + method_colors (18.5, 2.20), ענף `claude/trading-strategies-s7-refinement`: ספירות על סט קבוע (`tests/elliott-counts.php`), הצעת שינוי פרמטר בתוך/מחוץ לדגימה (`lib/tune.php`, מיגרציה 12 — עמודה וטבלה בלבד), "החל" רק לראשי, גרסה = קוד + tune; צבעים `{color, at}` עם קריאה סלחנית. בלי נתיב נתונים חדש (במסד הקיים). משנה ספירה: לא.
+- **2026-11-16:** S6 מוזג (#1611). עודכן `team/handoff/code.md`. יוצא.
