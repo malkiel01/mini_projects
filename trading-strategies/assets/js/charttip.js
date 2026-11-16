@@ -65,7 +65,7 @@ function pastContent(hit, fmtTime) {
       rule ? `הכלל: ${rule}` : null,
       `כניסה ${v(it.entry)} · סטופ ${v(it.stop)} · ${it.result === 'open' ? 'יעד' : 'יציאה'} ${v(it.result === 'open' ? it.target : it.exit)}`,
       it.result === 'open' ? '… פתוח — עדיין בתוך האופק, בלי תוצאה סופית' : `${PAST_RESULT[it.result] || ''}${r} · ${fmtTime(it.t_exit)}`,
-      'על הנרות שבגרף בלבד — הבדיקה לאחור המלאה בכרטיס',
+      `על הנרות שבגרף בלבד${Number.isInteger(hit.r?.history?.bars) ? ` (${hit.r.history.bars.toLocaleString('he-IL')} הנרות האחרונים)` : ''} — הבדיקה לאחור המלאה בכרטיס`,
     ].filter(Boolean),
     inv: null,
     links: [],

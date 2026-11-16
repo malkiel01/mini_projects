@@ -106,7 +106,8 @@ foreach (['sample-ma-cross', 'elliott-w3'] as $id) {
         eq($dt <= $lim, true, sprintf('criterion 11: %s on %s candles — %.0fms (≤ %dms)', $id, number_format($cnt5), 1000 * $dt, 1000 * $lim));
     }
 }
-eq(ts_history_signals($m, $p, $A, []), ['n' => 0, 'from' => null, 'to' => null, 'items' => []], 'no candles → nothing');
+eq(ts_history_signals($m, $p, $A, []), ['n' => 0, 'bars' => 0, 'from' => null, 'to' => null, 'items' => []], 'no candles → nothing');
+eq($Hb['bars'], 5000, 'bars — how many closed candles it ran on ("N אותות ב-M הנרות האחרונים")');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

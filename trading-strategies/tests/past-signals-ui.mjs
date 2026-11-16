@@ -111,7 +111,17 @@ try {
   await a.getByRole('button', { name: 'תחזית שיטה' }).click();
   await a.locator('.fc-pop input[name="fc-history"]').check();
   await a.waitForTimeout(400);
+  eq((await a.locator('.fc-pop .fc-hist-n[data-method="elliott-w3"]').textContent()).trim(), `אליוט: ${N.toLocaleString('he-IL')} אותות ב-2,160 הנרות האחרונים`,
+    'the menu: "אליוט: N אותות ב-2,160 הנרות האחרונים" (3 months of 1h)');
   eq((await st(a)).past.length >= 1, true, 'on again → the past signals are back');
+  await a.locator('.quote-head').click();
+  // אין אותות בטווח קצר — "0 אותות ב-24 הנרות האחרונים", כדי שיהיה ברור למה הגרף ריק
+  await a.locator('select[name="range"]').selectOption('d');
+  await loaded(a);
+  await a.waitForFunction(() => (document.querySelector('.chart-box:not(.osc)').tsForecast().pastN || {})['elliott-w3'] === 0, null, { timeout: 30000 });
+  await a.getByRole('button', { name: 'תחזית שיטה' }).click();
+  eq((await a.locator('.fc-pop .fc-hist-n[data-method="elliott-w3"]').textContent()).trim().replace(/\d+ הנרות/, 'M הנרות'), 'אליוט: 0 אותות ב-M הנרות האחרונים',
+    'no past signals in a short range → "0 אותות ב-M הנרות האחרונים" (not an empty chart with no explanation)');
   await a.locator('.quote-head').click();
 
   // ── קריטריון 8: תקרה — שיטת הדוגמה על שנה (5,000 נרות בחלון של הגרף): "מוצגים 50 האחרונים מתוך N" ──
@@ -132,6 +142,8 @@ try {
   await o.getByRole('button', { name: 'תחזית שיטה' }).click();
   const total = (await st(o)).pastN['sample-ma-cross'];
   eq(total > 50, true, `the sample method over a year — ${total} past signals in the chart's window`);
+  eq(/^חציית ממוצעים 20\/50: [\d,]+ אותות ב-[\d,]+ הנרות האחרונים$/.test((await o.locator('.fc-pop .fc-hist-n[data-method="sample-ma-cross"]').textContent()).trim()), true,
+    'under the switch: "<method>: N אותות ב-M הנרות האחרונים"');
   eq((await o.locator('.fc-pop .fc-hist-cap[data-method="sample-ma-cross"]').textContent()).trim(), `חציית ממוצעים 20/50: מוצגים 50 האחרונים מתוך ${total.toLocaleString('he-IL')}`,
     'criterion 8: "מוצגים 50 האחרונים מתוך N" under the switch');
   eq(await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsForecast().past.filter(x => x.m === 'sample-ma-cross').length <= 50), true, '… and no more than 50 drawn');

@@ -39,13 +39,13 @@ function ts_history_rule(TsMethod $m, array $ms, array $p, string $side): array
 
 /**
  * אותות העבר של שיטה על הנרות הסגורים של הגרף ($rows — מחרוזות, ממוינים). מחזיר:
- * {n, from, to, items: [{t, side, entry, stop, target, t_entry, t_exit, exit, result win|loss|horizon|open, r, rule[]}]}
+ * {n, bars (כמה נרות סגורים — "N אותות ב-M הנרות האחרונים"), from, to, items: [{t, side, entry, stop, target, t_entry, t_exit, exit, result win|loss|horizon|open, r, rule[]}]}
  * מחירים — float (תצוגה בלבד; הדפדפן מעגל לפי ה-tick). t_exit / exit / r — null כשהאות פתוח.
  */
 function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows): array
 {
     $fl = ts_bt_floats($rows);
-    $base = ['n' => 0, 'from' => $fl[0]['t'] ?? null, 'to' => $fl ? end($fl)['t'] : null, 'items' => []];
+    $base = ['n' => 0, 'bars' => count($fl), 'from' => $fl[0]['t'] ?? null, 'to' => $fl ? end($fl)['t'] : null, 'items' => []];
     if (!$fl) return $base;
     $p = ts_params_for_asset($m, $p, ts_tick_decimals($rows));
     $rules = [];   // t של נר האות → מצב השיטה (רק ל-TS_HISTORY_SHOW האחרונים — נחתך בסוף)

@@ -534,10 +534,13 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       if (openNow()) renderPop();
       try { await api('history_set', { on }); } catch (e) { if (me?.profile) me.profile.history = !on; paint(); if (openNow()) renderPop(); toast(e.message, true); }
     });
-    const caps = histOn() ? shown().map(c => [c.id, historyOf(c.id)]).filter(([, x]) => x && x.n > x.items.length) : [];
+    // לכל שיטה — כמה אותות היו, ועל כמה נרות (גם 0: כדי שיהיה ברור למה הגרף ריק); ומעל 50 — התקרה
+    const rows = histOn() ? shown().map(c => [c.id, historyOf(c.id)]).filter(([, x]) => x && Number.isInteger(x.bars)) : [];
+    const he = v => v.toLocaleString('he-IL');
     return h('div', { class: 'fc-hist' },
       h('label', { class: 'switch' }, inp, h('span', {}, 'היסטוריה'), h('small', { class: 'muted' }, ' — מה השיטות היו אומרות בנרות שבגרף, עמום')),
-      ...caps.map(([id, x]) => h('small', { class: 'muted fc-hist-cap', 'data-method': id }, `${nameOf(id)}: מוצגים ${x.items.length} האחרונים מתוך ${x.n.toLocaleString('he-IL')}`)));
+      ...rows.map(([id, x]) => h('small', { class: 'muted fc-hist-n', 'data-method': id }, `${nameOf(id)}: ${x.n === 1 ? 'אות אחד' : `${he(x.n)} אותות`} ב-${he(x.bars)} הנרות האחרונים`)),
+      ...rows.filter(([, x]) => x.n > x.items.length).map(([id, x]) => h('small', { class: 'muted fc-hist-cap', 'data-method': id }, `${nameOf(id)}: מוצגים ${x.items.length} האחרונים מתוך ${he(x.n)}`)));
   }
   /** בחירת הצבע של שיטה מסומנת: 8 עיגולים; צבע של שיטה אחרת שעל הגרף — לא ניתן לבחירה (18.5 קריטריון 2) */
   function swatches(m, mine) {
