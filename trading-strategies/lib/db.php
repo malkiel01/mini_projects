@@ -509,6 +509,17 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 13) {
+        // DevLoop (A1, PROTOCOL 7): מי המפתח — המנהל הראשי (platform_admin מהשער). השער אומר את זה רק בבקשה עצמה, ואסימון
+        // של Claude (devapi-…) מגיע בלי משתמש — לכן נשמר כאן, ומתעדכן בכל כניסה (ts_user_for). ALTER בלבד, לא נוגעת בשום נתון.
+        // טבלאות המטלות עצמן (dev_tasks, dev_comments…) — של המודול המשותף, CREATE IF NOT EXISTS (devloop_migrate).
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN platform_admin INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 13;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
