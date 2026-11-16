@@ -50,10 +50,9 @@ function gp_edition_row(string $pid): array
     return $st->fetch() ?: throw new ApiError('המחירון לא נמצא', 404);
 }
 
-/** מחירון עם השורות שלו. לכל שורה מחיר אחד — של הקבוצה של המחירון (רשומות של הקבוצה השנייה לא נקראות). */
-function gp_edition(string $pid): array
+/** השורות והמבנה של מחירון, בלי סימון "כללית" — ל-gp_edition ול-gp_fees */
+function gp_edition_load(array $e): array
 {
-    $e = gp_edition_row($pid);
     $st = db()->prepare('SELECT r.id, r.pid, r.kind, r.indent, r.label, p.amount FROM rows r
         LEFT JOIN prices p ON p.row_id = r.id AND p.audience = ? WHERE r.edition_id = ? ORDER BY r.sort, r.id');
     $st->execute([$e['audience'], $e['id']]);
@@ -67,10 +66,39 @@ function gp_edition(string $pid): array
     $layout = gp_layout($rows);
     foreach ($layout['ends'] as $i => $end) $rows[$i]['block'] = $end - $i - 1;   // כותרת: כמה שורות במקטע שלה
     unset($layout['ends']);
+    return [$rows, $layout];
+}
+
+/** המחירון שבתוקף היום של קבוצה — או null */
+function gp_current_row(string $audience): ?array
+{
+    $st = db()->prepare('SELECT * FROM editions WHERE audience = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1');
+    $st->execute([$audience, gp_today()]);
+    return $st->fetch() ?: null;
+}
+
+/**
+ * מחירון עם השורות שלו. לכל שורה מחיר אחד — של הקבוצה של המחירון (רשומות של הקבוצה השנייה לא נקראות).
+ * לכל שורת אגרה/הערה באזור האגרות — shared: האם תודפס ככללית בדף המשותף מול המחירון של הקבוצה השנייה שבתוקף
+ * היום (05 סעיף 4; אותה פונקציה כמו ההדפסה — gp_fees_merge).
+ */
+function gp_edition(string $pid): array
+{
+    $e = gp_edition_row($pid);
+    [$rows, $layout] = gp_edition_load($e);
+    $otherAud = $e['audience'] === 'il' ? 'abroad' : 'il';
+    $other = gp_current_row($otherAud);
+    $otherRows = $other ? gp_edition_load($other)[0] : [];
+    $m = $e['audience'] === 'il' ? gp_fees_merge($rows, $otherRows) : gp_fees_merge($otherRows, $rows);
+    $mine = $m['shared'][$e['audience']];
+    foreach ($rows as $i => $r) {
+        if ($i >= $layout['fee_start'] && ($r['kind'] === 'fee' || $r['kind'] === 'note')) $rows[$i]['shared'] = $mine[$r['pid']] ?? false;
+    }
     return [
         'pid' => $e['pid'],
         'audience' => $e['audience'],
         'audience_name' => GP_AUDIENCES[$e['audience']],
+        'other_name' => GP_AUDIENCES[$otherAud],   // לתג "כללית" במצב עריכה
         'effective_from' => $e['effective_from'],
         'subtitle' => $e['subtitle'],
         'future' => $e['effective_from'] > gp_today(),   // עתידי: נמחק ומשנה תאריך; עריכתו בלי אישור "כבר בתוקף"
@@ -78,6 +106,83 @@ function gp_edition(string $pid): array
         'rows' => $rows,
         'layout' => $layout,   // איפה כפתורי ➕ במצב עריכה (04 סעיף 2)
     ];
+}
+
+/**
+ * מפתח של אגרה/הערה (05 סעיף 2): בלי סימון (** __ (( ))), בלי כוכביות ורווחים בהתחלה, בלי נקודה בסוף,
+ * ורווחים כפולים → רווח אחד. שתי תוויות עם אותו מפתח — "אותו טקסט".
+ */
+function gp_fee_key(string $label): string
+{
+    $k = str_replace(['**', '__', '((', '))'], '', $label);
+    $k = preg_replace('/\s+/u', ' ', $k);
+    $k = preg_replace('/^[\s*]+/u', '', $k);
+    $k = preg_replace('/[\s.]+$/u', '', $k);
+    return $k;
+}
+
+/**
+ * אזור האגרות המשותף (05 סעיף 2) — מקור האמת היחיד: גם ההדפסה (GET fees) וגם התג במצב עריכה (shared ב-edition).
+ * $il, $ab — שורות של מחירון (gp_edition_load); נלקחות רק השורות שמ-fee_start ואילך: שורת מחיר (fee, וגם item שהגיע
+ * לשם) עם מחיר → "אגרה"; note → "הערה"; כותרות — לא (מוחלפות בכותרת המשותפת); שורת מחיר בלי מחיר — לא מודפסת.
+ * כללית: אותו מפתח ואותו מחיר (הערה — אותו מפתח), התאמה אחת-לאחת. הסדר: כל האגרות ואחריהן כל ההערות (קריטריון 5:
+ * "אחריהן ההערות לפי אותו כלל"), ובכל אחת — כלליות (בסדר של ישראל) → ישראל בלבד → חו"ל בלבד.
+ * מחזיר rows (להדפסה: label/html עם הציון, price, scope) ו-shared[audience][pid] => bool.
+ */
+function gp_fees_merge(array $il, array $ab): array
+{
+    $pick = function (array $rows): array {
+        $out = [];
+        if (!$rows) return $out;
+        $from = gp_layout($rows)['fee_start'];
+        foreach (array_slice($rows, $from) as $r) {
+            if ($r['kind'] === 'note') $out[] = $r + ['type' => 'note', 'key' => gp_fee_key($r['label'])];
+            elseif ($r['priced'] && $r['price'] !== null) $out[] = $r + ['type' => 'fee', 'key' => gp_fee_key($r['label'])];
+        }
+        return $out;
+    };
+    $a = $pick($il);
+    $b = $pick($ab);
+    $shared = ['il' => [], 'abroad' => []];
+    foreach ($a as $r) $shared['il'][$r['pid']] = false;
+    foreach ($b as $r) $shared['abroad'][$r['pid']] = false;
+    $used = [];
+    $general = $ilOnly = [];
+    foreach ($a as $r) {
+        $match = null;
+        foreach ($b as $j => $o) {
+            if (isset($used[$j]) || $o['type'] !== $r['type'] || $o['key'] !== $r['key']) continue;
+            if ($r['type'] === 'fee' && $o['price'] !== $r['price']) continue;
+            $match = $j;
+            break;
+        }
+        if ($match === null) { $ilOnly[] = $r; continue; }
+        $used[$match] = true;
+        $shared['il'][$r['pid']] = $shared['abroad'][$b[$match]['pid']] = true;
+        $general[] = $r;
+    }
+    $abOnly = array_values(array_filter($b, fn($o, $j) => !isset($used[$j]), ARRAY_FILTER_USE_BOTH));
+    $out = [];
+    foreach (['fee', 'note'] as $type) {
+        foreach ([['all', $general], ['il', $ilOnly], ['abroad', $abOnly]] as [$scope, $list]) {
+            foreach ($list as $r) {
+                if ($r['type'] !== $type) continue;
+                $label = $scope === 'all' ? $r['label'] : $r['label'] . ' ((ל' . GP_AUDIENCES[$scope] . '))';
+                $out[] = ['kind' => $type, 'scope' => $scope, 'label' => $label, 'html' => gp_label_html($label),
+                    'price' => $type === 'fee' ? $r['price'] : null];
+            }
+        }
+    }
+    return ['rows' => $out, 'shared' => $shared];
+}
+
+/** GET fees?il=&abroad= — אזור האגרות המרוכז של הדף המשותף (05 סעיף 2) */
+function gp_fees(string $il, string $abroad): array
+{
+    $ei = gp_edition_row($il);
+    $ea = gp_edition_row($abroad);
+    if ($ei['audience'] !== 'il' || $ea['audience'] !== 'abroad') throw new ApiError('צריך מחירון ישראל ומחירון חו"ל');
+    return ['title' => 'תשלומי אגרות', 'rows' => gp_fees_merge(gp_edition_load($ei)[0], gp_edition_load($ea)[0])['rows']];
 }
 
 /** רמה לכל כותרת (04 סעיף 1): מספר קטן = גבוהה יותר */
