@@ -128,6 +128,21 @@ for ($i = 1; $i <= 13; $i++) {   // 13 מנות שונות (before אחר → מ
 eq($runs, [...array_fill(0, 12, 200), 429], 'a compute cap: 12 batches computed per minute per user, the 13th → 429 (Retry-After)');
 [$c, $again] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $b1['candles'][0]['t'], 'before' => $first, 'methods' => $ids]);
 eq([$c, array_unique(array_column(array_values($again['methods'] ?? []), 'ran'))], [200, [false]], '… a batch already computed comes from the cache, even over the cap');
+// תקרת הפניות לספק (TS_DATA, 30 לדקה) — נבדקת **לפני** הפנייה: טווח שאין ב-history, כשהתקרה מלאה → 429, ואף פנייה לספק.
+// מנה שכל הנרות שלה כבר ב-history — בלי ספק, ולכן עוברת גם כשהתקרה מלאה
+$cache->exec('DELETE FROM history_runs');
+// התקרה מלאה לכל המשתמשים (בדקה הזו ובבאה — שלא תתחלף באמצע)
+$m0 = intdiv(time(), 60);
+foreach ($db->query('SELECT id FROM users')->fetchAll(PDO::FETCH_COLUMN) as $u) foreach ([$m0, $m0 + 1] as $x) $db->exec("INSERT OR REPLACE INTO rate_hits (user_id, minute, hits) VALUES ($u, $x, 30)");
+$k0 = $klines();
+$far = $first - 400 * 86400;
+$codes = [];
+for ($i = 0; $i < 3; $i++) $codes[] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $far - ($i + 1) * 500 * 3600, 'before' => $far - $i * 500 * 3600, 'methods' => 'fibonacci'])[0];
+eq([$codes, $klines() - $k0], [[429, 429, 429], 0], 'the provider cap is checked BEFORE the call: candles missing + cap full → 429, and 0 provider calls (3 different befores)');
+$hb = $b1['candles'][200]['t'];   // בתוך המנה שכבר ב-history — before חדש, מפתח חדש
+[$c, $inHist] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $b1['candles'][0]['t'], 'before' => $hb, 'methods' => 'fibonacci']);
+eq([$c, $inHist['provider_calls'] ?? null, $klines() - $k0], [200, 0, 0], '… a batch whose candles are all in history — computed with the provider cap full (no provider call)');
+$db->exec('DELETE FROM rate_hits');
 eq(call('dave', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first - 300 * 3600, 'before' => $first - 77 * 3600, 'methods' => 'fibonacci'])[0], 200, '… another user — a cap of their own');
 eq(call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first - 3600, 'before' => $first, 'methods' => ''])[0], 422, 'no methods → 422');
 

@@ -99,16 +99,21 @@ const TS_HISTORY_TAIL = 300;
 /** [שלנו, H1c] — תקרת חישוב (CPU): כמה מנות ישנות משתמש מחשב בדקה. מנה מהמטמון לא נספרת. הפעימות — עד 20 לדקה, ורובן חוזרות */
 const TS_HISTORY_RUNS_PER_MIN = 12;
 
-/** חישוב של מנה ישנה, בתקרה. מעל התקרה → TsRateLimited (429), ושום שיטה לא רצה */
+/** תקרת החישוב — בדיקה בלבד, בלי להגדיל: מעל התקרה → TsRateLimited (429), לפני שנמשך נר אחד */
+function ts_history_run_check(int $uid, int $now): void
+{
+    $st = ts_cache()->prepare('SELECT runs FROM history_runs WHERE user_id = ? AND minute = ?');
+    $st->execute([$uid, intdiv($now, 60)]);
+    if ((int)$st->fetchColumn() >= TS_HISTORY_RUNS_PER_MIN) {
+        throw new TsRateLimited('יותר מ-' . TS_HISTORY_RUNS_PER_MIN . ' חישובי היסטוריה בדקה. ממשיכים בעוד רגע.');
+    }
+}
+
+/** חישוב של מנה ישנה — נספר (אחרי ts_history_run_check) */
 function ts_history_run_hit(int $uid, int $now): void
 {
     $c = ts_cache();
     $minute = intdiv($now, 60);
-    $st = $c->prepare('SELECT runs FROM history_runs WHERE user_id = ? AND minute = ?');
-    $st->execute([$uid, $minute]);
-    if ((int)$st->fetchColumn() >= TS_HISTORY_RUNS_PER_MIN) {
-        throw new TsRateLimited('יותר מ-' . TS_HISTORY_RUNS_PER_MIN . ' חישובי היסטוריה בדקה. ממשיכים בעוד רגע.');
-    }
     $c->prepare('INSERT INTO history_runs (user_id, minute, runs) VALUES (?, ?, 1)
         ON CONFLICT(user_id, minute) DO UPDATE SET runs = runs + 1')->execute([$uid, $minute]);
     if (random_int(1, 50) === 1) $c->prepare('DELETE FROM history_runs WHERE minute < ?')->execute([$minute - 5]);
@@ -122,7 +127,8 @@ function ts_history_run_hit(int $uid, int $now): void
  * - **הנרות והחימום** — ts_market_candles: הטבלה history (שם market_history שמר את המנה) והמאגר; פנייה לספק רק על חסר.
  * - **הטווח:** [from, before + (אופק + TS_HISTORY_TAIL) נרות] — לא כל הגרף. המנוע לא מציץ קדימה, ועסקה שנפתחה לפני before
  *   נסגרת בתוך האופק — ולכן כל אות עם t < before זהה לחישוב על כל הנרות שבגרף, בכמה אלפי נרות לבקשה גם בגרף של 50,000.
- * - **מטמון:** method_results, במפתח של הנרות + before. מנה ישנה לא משתנה — אותה מנה שוב לא מריצה את השיטה.
+ * - **מטמון:** method_results, במפתח של הטווח (from, before, to) — נבדק לפני הנרות. אותה מנה שוב: בלי חישוב, בלי פנייה לספק.
+ * - **תקרות:** חישוב — TS_HISTORY_RUNS_PER_MIN, נבדקת לפני הנרות; פנייה לספק (רק על חסר) — TS_DATA, לפני הפנייה עצמה.
  * - **רק תצוגה** — כמו H1a: בלי יומן, בלי התראות, בלי שקלול.
  */
 function ts_method_history(int $uid, mixed $asset, mixed $tf, mixed $from, mixed $before, mixed $methods, ?int $now = null): array
@@ -152,27 +158,34 @@ function ts_method_history(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         $prepared[$id] = [$m, $p];
         $tail = max($tail, $m->horizon($p) + TS_HISTORY_TAIL);
     }
-    $r = ['provider_calls' => 0, 'candles' => []];
-    if ($prepared) {
-        // המנה + הזנב — לא יותר מבקשה אחת של גרף (ts_market_candles חותך מההתחלה; כאן חותכים את הזנב)
-        $from = max($from, $before - (TS_MAX_CANDLES - 2 * TS_HISTORY_TAIL) * $sec);
-        $to = min($now, $before + $tail * $sec, $from + (TS_MAX_CANDLES - 1) * $sec);
-        $r = ts_market_candles($uid, $asset, $tf, $from, $to, $now);
-    }
-    $rows = ts_closed_rows(array_values(array_filter($r['candles'], fn($c) => $c['t'] >= $from)), $tf, $now);
+    // הטווח: המנה + הזנב — לא יותר מבקשה אחת של גרף (ts_market_candles חותך מההתחלה; כאן חותכים את הזנב). הסוף — נר שלם
+    $from = max($from, $before - (TS_MAX_CANDLES - 2 * TS_HISTORY_TAIL) * $sec);
+    $to = min($now, $before + $tail * $sec, $from + (TS_MAX_CANDLES - 1) * $sec);
+    $to -= $to % $sec;
     $scope = (string)(ts_scope_for($uid, $provider) ?? '');
     $c = ts_cache();
-    // המטמון קודם: מה שכבר חושב (אותה שיטה, פרמטרים, נכס, מסגרת, נרות ו-before) — לא נספר בתקרה
+    // 1. המטמון — לפני הנרות: מפתח לפי הטווח (from, before, to), לא לפי הנרות. מנה שכבר חושבה — בלי ספירה ובלי פנייה לספק
     $todo = [];
     foreach ($prepared as $id => [$m, $p]) {
-        $k = ts_method_key($m, $p, (string)$asset, $tf, "$scope|h1c|$before", $rows);
+        $meta = $m->meta();
+        ksort($p);
+        $k = hash('sha256', json_encode([TS_RESULT_FORMAT, 'h1c', (string)$asset, $tf, $scope, $from, $before, $to, $meta['id'], $meta['version'], $p],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $st = $c->prepare('SELECT result FROM method_results WHERE k = ?');
         $st->execute([$k]);
         $hit = $st->fetchColumn();
         if (is_string($hit) && is_array($h = json_decode($hit, true))) $out[$id] = ['status' => 'ok', 'history' => $h, 'ran' => false];
         else $todo[$id] = [$m, $p, $k];
     }
-    if ($todo) ts_history_run_hit($uid, $now);   // בקשה אחת = חישוב אחד בתקרה, גם עם כמה שיטות (עד TS_REFRESH_MAX_METHODS)
+    $r = ['provider_calls' => 0, 'candles' => []];
+    if ($todo) {
+        // 2. תקרת החישוב — נבדקת לפני הנרות (בלי להגדיל): מעליה 429 מיד, בלי משיכה ובלי פנייה לספק
+        ts_history_run_check($uid, $now);
+        // 3. הנרות: history + המאגר. פנייה לספק רק על חסר — ואז, **לפני** הפנייה, בתקרה של TS_DATA (30 לדקה), כמו market_history
+        $r = ts_market_candles($uid, $asset, $tf, $from, $to, $now, fn() => ts_rate_hit($uid));
+        ts_history_run_hit($uid, $now);   // בקשה אחת = חישוב אחד בתקרה, גם עם כמה שיטות
+    }
+    $rows = ts_closed_rows(array_values(array_filter($r['candles'], fn($x) => $x['t'] >= $from)), $tf, $now);
     foreach ($todo as $id => [$m, $p, $k]) {
         try {
             $h = ts_history_signals($m, $p, (string)$asset, $rows, $sec, $before);
@@ -182,7 +195,8 @@ function ts_method_history(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
             continue;
         }
         $json = json_encode($h, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
-        try {
+        // נרות חלקיים (הספק בתקרה — notice) — לא נשמר: המפתח לפי הטווח, והמנה הבאה תשלים
+        if (($r['notice'] ?? null) === null) try {
             $c->prepare('INSERT OR REPLACE INTO method_results (k, method_id, result, at) VALUES (?, ?, ?, ?)')->execute([$k, $m->meta()['id'], $json, $now]);
         } catch (Throwable $e) {
             error_log('trading-strategies method_results: ' . $e->getMessage());
