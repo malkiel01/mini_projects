@@ -39,7 +39,8 @@ function ts_journal_said(array $res, string $tf): array
     $fc = is_array($res['forecast'] ?? null) ? $res['forecast'] : ['items' => [], 'scenarios' => [], 'bars' => 0, 'as_of' => null];
     $items = $fc['items'] ?? [];
     $prim = array_values(array_filter($items, fn($it) => ($it['primary'] ?? null) === true));
-    $pool = $prim ?: $items;
+    // בלי סימון — כל הפריטים, חוץ מרמה בודדת / קופסה דהויה (single — פיבונאצ'י בלי כיוון, 22.5ו: "אין תרחיש")
+    $pool = $prim ?: array_values(array_filter($items, fn($it) => empty($it['single'])));
     $zone = null; $inv = null;
     foreach ($pool as $it) {
         if (!$zone && $it['kind'] === 'zone') $zone = $it;
