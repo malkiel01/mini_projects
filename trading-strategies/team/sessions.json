@@ -10,7 +10,7 @@
     "slice": "L6",
     "branch": "claude/trading-strategies-learning-l6"
   },
-  "control": "session_018g4NYEzwT38A6cJcANFTqV",
+  "control": "session_018g4NYFkoRSgSNeEbLjxxZ2",
   "tasks": null,
   "clock": "trig_016u7nXaCHNq1GdcHMws2BED (דקה 28, נוצר בידי מנהל הצוותים (5); של בקרה 8 trig_01AhicpPsrrfEGR4f97H9K4K כבוי)",
   "code_previous": [
@@ -149,7 +149,12 @@
       "session": "session_018g4NYDrFHGumG4hGvNK11M",
       "done": "#1701–#1718: T1 חלונית, R1, למידה L2–L6 (פרק 23), מגע, הדמיית המשך; מסירה ב-STATE (~350K)"
     },
-    "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)"
+    "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)",
+    {
+      "session": "session_018g4NYEzwT38A6cJcANFTqV",
+      "name": "בקרה (9)",
+      "done": "#1719–#1726; מסירה ב-379K"
+    }
   ],
   "code_delete": {
     "session": "session_018g4NYCQjLZtvssney3gT8G",
