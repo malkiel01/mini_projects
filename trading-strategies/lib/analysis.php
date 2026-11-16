@@ -750,7 +750,11 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
         $lv = $a['levels'];
         $levels = $lv ? ['entry' => ts_level_str($lv['entry'], $dec), 'stop' => ts_level_str($lv['stop'], $dec), 'target' => ts_level_str($lv['target'], $dec)] : null;
         $calls += $bt['provider_calls'] ?? 0;
+        // 23.7 (L6): המספר הראשי — "ראשונית", מהבדיקה לאחור. live — שורה שנייה בלבד; מתחלף רק אחרי "החלף לבפועל" של העורך הראשי
+        $live = ts_learn_live_line($meta['id'], (int)$meta['version'], $market, $tf);
         $cert = $bt['certainty'] ?? null;
+        $certBasis = 'backtest';
+        if ($live && $live['switched'] && $live['certainty'] !== null) { $cert = $live['certainty']; $certBasis = 'live'; }
         $risk = null;
         if ($levels && $levels['stop'] !== null) {
             $dist = dec_abs(dec_sub($levels['entry'], $levels['stop']));
@@ -768,7 +772,7 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
             // מידע בלבד (פיבונאצ'י S25): לא תנאי — לא נספר, ולא "בדוק בעצמך"
             'info' => array_map(fn($x) => ['id' => $x['id'], 'text' => $x['text']], $a['info'] ?? []),
             'basis' => $basis, 'param_notes' => ts_param_notes($m),
-            'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
+            'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert, 'certainty_basis' => $certBasis, 'live' => $live,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,
             'max_horizon' => ts_max_horizon($m, $p, $asset, ts_bt_read_scopes($uid, $provider))];
     }

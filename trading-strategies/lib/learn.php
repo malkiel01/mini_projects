@@ -1100,3 +1100,135 @@ function ts_learn_trade(int $uid, int $tradeId, ?int $now = null): int
         'exit' => $f($c['avg_exit']), 'result' => $win ? 'win' : 'loss', 'win' => $win, 'r' => (float)$c['r_full'],
         'mae_r' => null, 'mfe_r' => null, 'atr' => null, 'features' => null]]);
 }
+
+// ── L6 (23.7): ההסתברות בכרטיס — "ראשונית" ו"בפועל מאז" ─────────────────
+
+/** ה"פרמטר" של הצעת "החלף לבפועל" ב-method_proposals — לא פרמטר של השיטה: ההחלה לא כותבת ל-methods ולא מעלה גרסה */
+const TS_CERT_PARAM = '@certainty';
+
+/** N, הצלחות, אחוז, ודאות (Wilson, N ≥ 30) ורווח הסמך 95% [תחתון, עליון] — null מתחת ל-30 (23.6) */
+function ts_learn_rate(int $wins, int $n): array
+{
+    $ok = $n >= TS_MIN_SIGNALS;
+    return ['n' => $n, 'wins' => $wins, 'win_pct' => $ok ? (int)round(100 * $wins / $n) : null, 'certainty' => ts_certainty($wins, $n),
+        'ci' => $ok ? [round(ts_wilson_lower($wins, $n), 4), round(1 - ts_wilson_lower($n - $wins, $n), 4)] : null];
+}
+
+/** רווחי סמך שלא חופפים (23.7) — רק כששניהם קיימים */
+function ts_learn_ci_apart(?array $a, ?array $b): bool
+{
+    return $a !== null && $b !== null && ($a[1] < $b[0] || $b[1] < $a[0]);
+}
+
+/** האם העורך הראשי החליף לבפועל — לשיטה, לגרסה ולרמה ('' = כללי, אחרת "שוק|מסגרת") */
+function ts_learn_switched(string $methodId, int $version, string $segment): bool
+{
+    $st = ts_db()->prepare("SELECT 1 FROM method_proposals WHERE method_id = ? AND method_version = ? AND param = ? AND segment = ? AND status = 'applied' LIMIT 1");
+    $st->execute([$methodId, $version, TS_CERT_PARAM, $segment]);
+    return (bool)$st->fetchColumn();
+}
+
+/** N והצלחות של מקור אחד לשיטה ולגרסה — בפלח שוק × מסגרת, או בכל השווקים ($market = null). skipped_gap — בלי R, לא נספרת */
+function ts_learn_count(string $source, string $methodId, int $version, ?string $market = null, ?string $tf = null): array
+{
+    $sql = "SELECT COUNT(*) AS n, COALESCE(SUM(win), 0) AS w FROM method_outcomes WHERE source = ? AND method_id = ? AND method_version = ?
+        AND result != 'skipped_gap' AND r IS NOT NULL" . ($source === 'live' ? " AND cred_scope = ''" : '');
+    $args = [$source, $methodId, $version];
+    if ($market !== null) { $sql .= ' AND market = ? AND tf = ?'; $args[] = $market; $args[] = $tf; }
+    $st = ts_db()->prepare($sql);
+    $st->execute($args);
+    $r = $st->fetch();
+    return [(int)$r['w'], (int)$r['n']];
+}
+
+/**
+ * השורה השנייה בכרטיס (23.7, L6): "בפועל מאז" — רק שורות live של השיטה **וגרסתה**, ב-שוק × מסגרת של הגרף. פחות מ-30 שם — השיטה
+ * וגרסתה בכל השווקים, scope: general ("כללי — לא לשוק הזה", ל2). פחות מ-30 גם שם — null (אין שורה שנייה; 29 → אין).
+ * **לא מערבבים** עם backtest: אותה עסקה יכולה להיות גם live וגם backtest (מקור במפתח) — כאן רק live.
+ * switched — העורך הראשי החליף לבפועל ברמה הזו (הצעה שהוחלה); אז הכרטיס מציג את המספר הזה כמספר הראשי.
+ */
+function ts_learn_live_line(string $methodId, int $version, string $market, string $tf): ?array
+{
+    [$w, $n] = ts_learn_count('live', $methodId, $version, $market, $tf);
+    $scope = 'segment';
+    $seg = "$market|$tf";
+    if ($n < TS_MIN_SIGNALS) {
+        [$w, $n] = ts_learn_count('live', $methodId, $version);
+        if ($n < TS_MIN_SIGNALS) return null;
+        $scope = 'general';
+        $seg = '';
+    }
+    return ts_learn_rate($w, $n) + ['scope' => $scope, 'segment' => $seg, 'switched' => ts_learn_switched($methodId, $version, $seg)];
+}
+
+/**
+ * הצד של הבדיקה לאחור בהשוואה (לא בכרטיס): שורות backtest של השיטה וגרסתה ברמה ('' = כל השווקים), מאגר משותף בלבד (כמו live),
+ * **בלי עסקה שמופיעה גם כ-live** (אותו מפתח בלי המקור) — לא משווים סט לעצמו (הערת הביקורת על 23.7).
+ */
+function ts_learn_backtest_apart(string $methodId, int $version, string $segment): array
+{
+    $sql = "SELECT COUNT(*) AS n, COALESCE(SUM(b.win), 0) AS w FROM method_outcomes b WHERE b.source = 'backtest' AND b.method_id = ? AND b.method_version = ?
+        AND b.cred_scope = '' AND b.result != 'skipped_gap' AND b.r IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM method_outcomes l WHERE l.source = 'live' AND l.method_id = b.method_id AND l.method_version = b.method_version
+            AND l.params_hash = b.params_hash AND l.provider = b.provider AND l.asset = b.asset AND l.tf = b.tf AND l.cred_scope = '' AND l.t_signal = b.t_signal)";
+    $args = [$methodId, $version];
+    if ($segment !== '') { [$mk, $tf] = explode('|', $segment, 2); $sql .= ' AND b.market = ? AND b.tf = ?'; $args[] = $mk; $args[] = $tf; }
+    $st = ts_db()->prepare($sql);
+    $st->execute($args);
+    $r = $st->fetch();
+    return ts_learn_rate((int)$r['w'], (int)$r['n']);
+}
+
+/**
+ * "החלף לבפועל" (23.7, ✅24) — ב-cron, אחרי live. לכל שיטה וגרסתה הנוכחית, לכל שוק × מסגרת עם 30 שורות live לפחות, ולרמה הכללית:
+ * רווח הסמך של live מול זה של backtest (בלי חפיפה של עסקאות). לא חופפים → הצעה אחת פתוחה (origin = learning), לעורך הראשי בלבד.
+ * חופפים שוב → ההצעה הפתוחה מסומנת stale. כבר הוחלף → לא מציעים שוב. **שום דבר לא מתחלף לבד** — רק "החל".
+ */
+function ts_learn_switch_sync(int $now): array
+{
+    require_once __DIR__ . '/tune.php';
+    $sum = ['checked' => 0, 'proposed' => 0, 'stale' => 0, 'no_backtest' => 0];
+    $db = ts_db();
+    $sets = $db->query("SELECT method_id, method_version, market, tf, COUNT(*) AS n FROM method_outcomes WHERE source = 'live' AND cred_scope = ''
+        AND result != 'skipped_gap' AND r IS NOT NULL GROUP BY method_id, method_version, market, tf")->fetchAll();
+    $levels = [];
+    foreach ($sets as $s) {
+        if (!ts_method_exists($s['method_id']) || (int)ts_method($s['method_id'])->meta()['version'] !== (int)$s['method_version']) continue;
+        $k = $s['method_id'] . '|' . $s['method_version'];
+        $levels[$k] ??= ['id' => $s['method_id'], 'v' => (int)$s['method_version'], 'n' => 0, 'segs' => []];
+        $levels[$k]['n'] += (int)$s['n'];
+        if ((int)$s['n'] >= TS_MIN_SIGNALS) $levels[$k]['segs'][] = $s['market'] . '|' . $s['tf'];
+    }
+    $open = $db->prepare("SELECT id FROM method_proposals WHERE method_id = ? AND method_version = ? AND param = ? AND segment = ? AND status = 'open'");
+    foreach ($levels as $L) {
+        $segs = $L['segs'];
+        if ($L['n'] >= TS_MIN_SIGNALS) $segs[] = '';
+        foreach ($segs as $seg) {
+            $sum['checked']++;
+            if (ts_learn_switched($L['id'], $L['v'], $seg)) continue;
+            $live = $seg === '' ? ts_learn_rate(...ts_learn_count('live', $L['id'], $L['v']))
+                : ts_learn_rate(...ts_learn_count('live', $L['id'], $L['v'], ...explode('|', $seg, 2)));
+            $bt = ts_learn_backtest_apart($L['id'], $L['v'], $seg);
+            if ($bt['ci'] === null) $sum['no_backtest']++;
+            $open->execute([$L['id'], $L['v'], TS_CERT_PARAM, $seg]);
+            $ids = array_map('intval', $open->fetchAll(PDO::FETCH_COLUMN));
+            if (!ts_learn_ci_apart($live['ci'], $bt['ci'])) {
+                if ($ids) {
+                    $db->prepare("UPDATE method_proposals SET status = 'stale' WHERE id IN (" . implode(',', $ids) . ')')->execute();
+                    $sum['stale'] += count($ids);
+                }
+                continue;
+            }
+            if ($ids) continue;   // כבר פתוחה — לא מכפילים
+            $where = $seg === '' ? 'כל השווקים' : ts_learn_segment_text('market_tf', $seg);
+            ts_tune_learned_save(['method_id' => $L['id'], 'method_version' => $L['v'], 'param' => TS_CERT_PARAM, 'current' => 'backtest', 'candidate' => 'live',
+                'asset' => '', 'tf' => $seg === '' ? '' : explode('|', $seg, 2)[1], 'split_t' => 0,
+                'results' => ['backtest' => $bt, 'live' => $live],
+                'note' => "רווחי הסמך לא חופפים ($where): בדיקה לאחור " . round(100 * $bt['ci'][0]) . '–' . round(100 * $bt['ci'][1]) . '% (N = ' . $bt['n']
+                    . '), בפועל מאז ' . round(100 * $live['ci'][0]) . '–' . round(100 * $live['ci'][1]) . '% (N = ' . $live['n'] . ')',
+                'now' => $now, 'segment' => $seg, 'stats' => ['kind' => 'certainty', 'backtest' => $bt, 'live' => $live]]);
+            $sum['proposed']++;
+        }
+    }
+    return $sum;
+}

@@ -213,7 +213,30 @@ export function mountAnalysis(ctx) {
       part('in', 'בתוך הדגימה (70%)'), part('out', 'מחוץ לדגימה (30%)'));
   }
   const STATUS = { open: ['פתוחה', ''], applied: ['הוחלה', 'ok'], stale: ['ישנה', 'warn'] };
+  /** 23.7 (L6): "החלף לבפועל" — רווח הסמך של הבדיקה לאחור מול זה של האותות מאז. ההחלה לא מעלה גרסה */
+  function certCard(m, x, primary) {
+    const [st, cls] = STATUS[x.status] || [x.status, ''];
+    const where = x.segment ? learnValue('market_tf', x.segment) : 'כל השווקים';
+    const ci = v => (v.ci ? `${Math.round(v.ci[0] * 100)}–${Math.round(v.ci[1] * 100)}%` : '—');
+    const num = v => h('td', { class: 'num', dir: 'ltr' }, v);
+    const res = x.results || {};
+    const apply = h('button', { class: 'btn sm primary', type: 'button', disabled: !primary || x.status !== 'open',
+      on: { click: () => ctx.confirmSheet('החלף לבפועל', `${m.name} (גרסה ${x.method_version}), ${where}: המספר הראשי בכרטיס יהיה "בפועל מאז" במקום הבדיקה לאחור. הגרסה לא עולה; גרסה חדשה מתחילה שוב מ"ראשונית".`, 'החלף', async () => {
+        await api('admin_tune_apply', { id: x.id }); toast('הוחלף לבפועל'); ctx.reload();
+      }) } }, 'החלף לבפועל');
+    return h('li', { class: 'tune-prop cert-prop', 'data-id': String(x.id), 'data-status': x.status },
+      h('div', { class: 'l1' }, h('span', {}, 'ודאות: ראשונית → בפועל מאז'), h('span', { class: 'chip ' + cls }, st)),
+      h('p', { class: 'hint tune-origin' }, '📚 מהלמידה', sep(), x.segment ? 'לפלח: ' + where : 'כללי — כל השווקים', sep(), `גרסה ${x.method_version}`),
+      h('table', { class: 'tbl tune-tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', { scope: 'col' }, 'בדיקה לאחור'), h('th', { scope: 'col' }, 'בפועל מאז'))),
+        h('tbody', {}, [['עסקאות', v => String(v.n)], ['הצלחה', v => (v.win_pct === null ? '—' : v.win_pct + '%')], ['רווח סמך 95%', ci]]
+          .map(([l, f]) => h('tr', {}, h('th', { scope: 'row' }, l), num(res.backtest ? f(res.backtest) : '—'), num(res.live ? f(res.live) : '—'))))),
+      h('p', { class: 'hint' }, 'רווחי הסמך לא חופפים. בבדיקה לאחור — בלי עסקאות שנספרו גם כבפועל. שום דבר לא מתחלף לבד.'),
+      x.status === 'open' ? h('div', { class: 'row-btns wrap' }, apply,
+        primary ? null : h('small', { class: 'muted tune-only' }, 'רק עורך ראשי מחליף')) : null);
+  }
   function proposalCard(m, x, primary) {
+    if (x.param === '@certainty') return certCard(m, x, primary);
     const d = m.param_defs[x.param] || { label: x.param };
     const [st, cls] = STATUS[x.status] || [x.status, ''];
     const apply = h('button', { class: 'btn sm primary', type: 'button', disabled: !primary || x.status !== 'open',
