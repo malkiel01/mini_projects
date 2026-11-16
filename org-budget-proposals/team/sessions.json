@@ -1,8 +1,9 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
   "spec": null,
-  "code": "session_018g4NYEMmYVgVfiABw5u54r (B1, claude/org-budget-proposals-b1)",
-  "control": "session_018g4NYFsGrFQCUGf3CgaSYk",
+  "code": null,
+  "control": "session_018g4NYDcPb9DQZTqp51x7ys",
   "tasks": null,
-  "clock": "trig_013qCk9g1qS7xKb8qLpQrDgX (כל שעה בדקה 38, לתוך הבקרה; נוצר בידי מנהל הצוותים)"
+  "clock": "trig_013qCk9g1qS7xKb8qLpQrDgX (כל שעה בדקה 38, לתוך הבקרה; נוצר בידי מנהל הצוותים)",
+  "code_last": "session_018g4NYEMmYVgVfiABw5u54r (B1 — סיים, מסר handoff/code.md)"
 }
