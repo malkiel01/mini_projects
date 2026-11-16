@@ -142,6 +142,10 @@ async function showEdition(pid) {
             L.add_fee === p && `<button class="btn sm ghost" data-add-fee="${p}">➕ אגרה</button>`].filter(Boolean);
         return editing && b.length ? `<tr class="adds"><td colspan="3"><div class="add-strip">${b.join('')}</div></td></tr>` : '';
     };
+    // תג "כללית" ליד אגרה/הערה (05 סעיף 4): shared מהשרת — מול המחירון של הקבוצה השנייה שבתוקף היום
+    const tag = r => !editing || r.shared == null ? '' : r.shared
+        ? ' <span class="chip ok gp-shared">כללית ✓</span>'
+        : ` <span class="chip gp-shared" title="${esc('כדי שתודפס כאגרה כללית בדף המשותף — אותו טקסט ואותו מחיר במחירון של ' + e.other_name)}">רק ל${esc(e.audience_name)}</span>`;
     const del = r => editing ? `<td class="del"><button class="icon-btn ghost" data-del="${esc(r.pid)}" aria-label="מחיקה: ${esc(plain(r.label))}" title="מחיקה">🗑️</button></td>` : '';
     view.innerHTML = `
       <div class="bar">
@@ -157,7 +161,7 @@ async function showEdition(pid) {
       <table class="prices${editing ? ' editing' : ''}">
         <thead><tr><th>שורה</th><th class="amt">${esc(e.audience_name)}</th>${editing ? '<th class="del"><span class="sr">מחיקה</span></th>' : ''}</tr></thead>
         <tbody>${e.rows.map((r, i) => `${strip(i)}<tr class="${r.kind}${r.indent ? ' indent' : ''}">
-          <td${lb(r)}${r.priced ? '' : ' colspan="2"'}>${r.html}</td>${r.priced ? cell(r) : ''}${del(r)}</tr>`).join('')}${strip(n)}</tbody>
+          <td${lb(r)}${r.priced ? '' : ' colspan="2"'}>${r.html}${tag(r)}</td>${r.priced ? cell(r) : ''}${del(r)}</tr>`).join('')}${strip(n)}</tbody>
       </table>
       ${editing ? editPanel(e) : ''}`;
     const toggle = () => { editPid = editing ? '' : pid; confirmed = ''; rerender(pid); };

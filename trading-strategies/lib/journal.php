@@ -39,7 +39,8 @@ function ts_journal_said(array $res, string $tf): array
     $fc = is_array($res['forecast'] ?? null) ? $res['forecast'] : ['items' => [], 'scenarios' => [], 'bars' => 0, 'as_of' => null];
     $items = $fc['items'] ?? [];
     $prim = array_values(array_filter($items, fn($it) => ($it['primary'] ?? null) === true));
-    $pool = $prim ?: $items;
+    // בלי סימון — כל הפריטים, חוץ מרמה בודדת / קופסה דהויה (single — פיבונאצ'י בלי כיוון, 22.5ו: "אין תרחיש")
+    $pool = $prim ?: array_values(array_filter($items, fn($it) => empty($it['single'])));
     $zone = null; $inv = null;
     foreach ($pool as $it) {
         if (!$zone && $it['kind'] === 'zone') $zone = $it;
@@ -173,7 +174,7 @@ function ts_journal_uid_for(string $scope): ?int
  * ממלא את התוצאה של רשומות שהטווח שלהן עבר. נקרא מ-ts_alerts_run, בתוך הנעילה ובאותו תקציב לספק ($used, $cap) ובאותה
  * תקרת זמן. רשומה שאין לה עכשיו גישה לנרות (המפתח נמחק), או שהספק נכשל — נשארת "עוד לא ידוע" לריצה הבאה.
  */
-function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0): array
+function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0, array &$usedKey = []): array
 {
     $sum = ['checked' => 0, 'resolved' => 0, 'deferred' => 0, 'skipped' => 0, 'errors' => 0];
     $db = ts_db();
@@ -200,6 +201,9 @@ function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0): 
         try {
             $r = ts_market_candles($uid, $row['asset'], $row['tf'], (int)$row['as_of'] + $sec, $until + $sec, $now);
             $used[$provider] = ($used[$provider] ?? 0) + $r['provider_calls'];
+            // גם לפי מפתח ("ספק|היקף") — כדי שהמילוי ברקע ינכה גם את מה שהיומן לקח ממפתח אישי (כמו ההתראות, 21.2)
+            $kScope = (string)($acc['scope'] ?? '');
+            $usedKey["$provider|$kScope"] = ($usedKey["$provider|$kScope"] ?? 0) + $r['provider_calls'];
             // חסר במאגר ואין במה להשלים (תקרה / אין מפתח) — לא מכריעים על נתונים חלקיים; ננסה בריצה הבאה
             if ($r['notice'] !== null) { $sum['skipped']++; continue; }
         } catch (Throwable $e) {

@@ -7,6 +7,7 @@
 // באזורים או באותות **מכשיל** את הבדיקה, עד שהקובץ הצפוי מתעדכן:
 //   UPDATE_ZONES=1 php trading-strategies/tests/fibonacci-zones.php
 // וכך השינוי נראה ב-diff של ה-PR — שינוי מהותי (S7, ✅24), כמו "משנה ספירה" באליוט.
+// F-2 (22.5ג): גם A-B-X, T של כל קופסה, Z6 בציון, ואותות עם יעד חלופי (קופסה) — "משנה ספירה: כן — מתוכנן ב-22.5ג".
 if (PHP_SAPI !== 'cli') exit;
 define('TS_DB_PATH', sys_get_temp_dir() . '/ts-fib-zones-unused-' . getmypid() . '.sqlite');   // לא נפתח
 require_once dirname(__DIR__) . '/lib/analysis.php';
@@ -30,11 +31,17 @@ foreach ($sets as $name => [$candles, $tf, $over]) {
         'start' => $s['start'] ? r6($s['start']['price']) . '@' . $s['start']['t'] : null,
         'ranges' => array_map(fn($r) => r6($r['end']) . '@' . $r['end_t'] . ' ' . implode('+', $r['kinds']), $s['ranges']),
         'dropped' => array_map(fn($r) => r6($r['end']) . '@' . $r['end_t'], $s['dropped']),
-        'zones' => array_map(fn($z) => r6($z['lo']) . '–' . r6($z['hi']) . ' ציון ' . $z['score'] . ' (' . count($z['levels']) . '/' . $z['ranges'] . ')', $s['zones']),
+        // F-2: הציון כולל Z6 (מסומן), ו-T של קופסת השוויון (22.5ב)
+        'zones' => array_map(fn($z) => r6($z['lo']) . '–' . r6($z['hi']) . ' ציון ' . $z['score'] . ($z['z6'] ? ' (Z6)' : '') . ' (' . count($z['levels']) . '/' . $z['ranges'] . ')'
+            . ($z['box'] ? ' T ' . r6($z['box']['T']) : ''), $s['zones']),
         'singles' => array_map(fn($l) => r6($l['price']), $s['singles']),
     ];
-    $sig = fn(array $pp) => array_map(fn($s) => $s['t'] . ' ' . $s['side'] . ' ' . r6($s['entry']) . ' ' . r6($s['stop']) . ' ' . r6($s['target']) . ' ציון ' . $s['score'], $m->signals($candles, $pp));
+    $sig = fn(array $pp) => array_map(fn($s) => $s['t'] . ' ' . $s['side'] . ' ' . r6($s['entry']) . ' ' . r6($s['stop']) . ' ' . r6($s['target']) . ' ציון ' . $s['score']
+        . ($s['via'] === 'box' ? ' יעד: קופסה' : ''), $m->signals($candles, $pp));
+    $abx = $g['abx'] ?? null;
     $got[$name] = ['bars' => count($candles), 'support' => $g ? $side($g['support']) : null, 'resistance' => $g ? $side($g['resistance']) : null,
+        'abx' => $abx ? $abx['dir'] . ' ' . implode(' / ', array_map(fn($x) => r6($x['p']), [$abx['a'], $abx['b'], $abx['x']])) . ' → '
+            . implode(' / ', array_map(fn($t) => r6($t['price']), $abx['targets'])) : null,
         'signals' => $sig($p), 'signals_sensitive' => $sig($m->params($over + ['pivot_atr_mult' => 2, 'min_score' => 2, 'min_rr' => 1]))];
 }
 $json = json_encode($got, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
@@ -51,7 +58,7 @@ $fail = 0;
 foreach (array_unique([...array_keys($want), ...array_keys($got)]) as $name) {
     if (!isset($got[$name])) { $fail++; echo "✗ $name: הסט נעלם מ-sets.php\n"; continue; }
     if (!isset($want[$name])) { $fail++; echo "✗ $name: סט חדש בלי צפוי\n"; continue; }
-    foreach (['bars', 'support', 'resistance', 'signals', 'signals_sensitive'] as $k) {
+    foreach (['bars', 'support', 'resistance', 'abx', 'signals', 'signals_sensitive'] as $k) {
         if ($got[$name][$k] === $want[$name][$k]) continue;
         $fail++;
         echo "✗ $name — $k השתנה:\n   היה: " . json_encode($want[$name][$k], JSON_UNESCAPED_UNICODE) . "\n   עכשיו: " . json_encode($got[$name][$k], JSON_UNESCAPED_UNICODE) . "\n";
