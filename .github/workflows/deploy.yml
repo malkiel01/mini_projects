@@ -160,6 +160,16 @@ jobs:
             echo "$t — $(tail -1 /tmp/ts-test.log)"
           done
 
+      # הצעות תקציב לארגונים — בדיקות ה-PHP של האפליקציה (מסד זמני, בלי רשת ובלי data/): הרשאות, הצעות ושורות,
+      # העברות, ייבוא, ייצוא, ובדיקת השלמות של הדוח (B1 — tests/integrity.php, ובה הצעת 2027). בדיקה שנכשלת עוצרת את הפריסה.
+      - name: org-budget-proposals tests (PHP)
+        run: |
+          set -uo pipefail
+          for t in org-budget-proposals/tests/*.php; do
+            php "$t" > /tmp/ob-test.log 2>&1 || { echo "::error::נכשל: $t"; cat /tmp/ob-test.log; exit 1; }
+            echo "$t — $(tail -1 /tmp/ob-test.log)"
+          done
+
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
       - name: Build the platform gate
@@ -319,7 +329,7 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
-            --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' \
+            --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' --exclude='/org-budget-proposals/tests/' \
             --exclude='/trading-strategies/team/' \
             --exclude='/whatsapp-ai-scanner/team/' --exclude='/whatsapp-ai-scanner/docs/' \
             --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
