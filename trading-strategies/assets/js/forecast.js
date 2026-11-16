@@ -37,7 +37,7 @@ function loadChosen() {
     const v = JSON.parse(localStorage.getItem(KEY) || '[]');
     if (!Array.isArray(v)) return [];
     const out = [];
-    for (const x of v) if (x && typeof x.id === 'string' && PALETTE.includes(x.color) && !out.some(o => o.id === x.id)) out.push({ id: x.id, color: x.color, hide: x.hide === true, fold: x.fold === true, off: x.off === true });
+    for (const x of v) if (x && typeof x.id === 'string' && PALETTE.includes(x.color) && !out.some(o => o.id === x.id)) out.push({ id: x.id, color: x.color, hide: x.hide === true, fold: x.fold === true, off: x.off === true, solo: x.solo === true });
     return out.slice(0, MAX);
   } catch { return []; }
 }
@@ -45,7 +45,7 @@ function loadChosen() {
 export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmin = () => false, api, toast, getTf, getSec, getTimes, col, buttons, board, onChange,
   axisWidth = () => 0, tools = [], tfs = () => [], setTf = () => {} }) {
   const C = cardParts(ctx);
-  let chosen = loadChosen();     // [{id, color, hide, fold, off}] — לפי סדר הבחירה; הראשונה מובילה. off — מוסתרת במקרא
+  let chosen = loadChosen();     // [{id, color, hide, fold, off, solo}] — לפי סדר הבחירה; הראשונה מובילה. off — מוסתרת במקרא; solo — "הסתר רמות בודדות" (פיבונאצ'י, Z9)
   const res = new Map();         // id → התשובה האחרונה מ-chart_refresh
   let an = null;                 // הכרטיסים והשקלול (chart_refresh.analysis, או analysis אחרי בדיקה לאחור)
   let running = false;           // בדיקה לאחור רצה עכשיו (analysis)
@@ -141,7 +141,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   const yOf = p => series.priceToCoordinate(p);
   const pick = id => chosen.find(c => c.id === id);
   // הממצא תמיד; התרחיש — אלא אם המשתמש הסתיר אותו (18.4 קריטריון 6). הסימון: scen — לציור מקווקו ולתווית "תרחיש"
-  const findingOf = id => res.get(id)?.overlay?.items || [];
+  // רמה בודדת (single — פיבונאצ'י, Z9) נשארת בממצא; "הסתר רמות בודדות" רק לא מצייר אותה
+  const findingOf = id => (res.get(id)?.overlay?.items || []).filter(it => !(it.single && pick(id)?.solo));
+  const singlesOf = id => (res.get(id)?.overlay?.items || []).filter(it => it.single).length;
   const scenarioOf = id => (pick(id)?.hide ? [] : (res.get(id)?.forecast?.items || []).map(it => ({ ...it, scen: true })));
   const itemsOf = id => [...findingOf(id), ...scenarioOf(id)];
   const isOn = (id, it) => !it.scenario || it.scenario === selected.get(id);
@@ -183,7 +185,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       const x1 = xOf(it.t1), x2 = xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
       if (!it.text || [x1, x2, y1, y2].includes(null)) return null;
       // בפינה הימנית העליונה של האזור (ההווה), לא בנקודת ההתחלה
-      return { s: (it.scen ? 'תרחיש: ' : '') + it.text, x: Math.min(Math.max(x1, x2) - 4, W - 6), y: Math.min(y1, y2) + 16, c: colorOf(id), align: 'right' };
+      const xr = it.extend ? W - 6 - axisWidth() : Math.min(Math.max(x1, x2) - 4, W - 6);   // נמשך עד הקצה — התווית משמאל לציר
+      return { s: (it.scen ? 'תרחיש: ' : '') + it.text, x: xr, y: Math.min(y1, y2) + 16, c: colorOf(id), align: 'right' };
     }
     if (it.kind === 'hline') {
       const y = yOf(it.price);
@@ -203,9 +206,10 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     ctx.globalAlpha = on ? 1 : 0.3;   // החלופות עמומות (17.1.7)
     ctx.setLineDash([]);
     ctx.lineWidth = 2;
-    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on });
+    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on, ...(it.single ? { faint: true } : {}), ...(it.extend ? { extend: true } : {}) });
     if (it.kind === 'zone') {
-      const x1 = xOf(it.t1), x2 = xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
+      // extend — האזור נמשך ימינה עד קצה הגרף (פיבונאצ'י, R3), לא רק עד הנר האחרון
+      const x1 = xOf(it.t1), x2 = it.extend ? W : xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
       if ([x1, x2, y1, y2].includes(null)) return;
       mark();
       ctx.fillStyle = c; ctx.globalAlpha *= 0.14;
@@ -228,7 +232,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (it.kind === 'polyline') {
       const pts = it.points.map(p => [xOf(p.t), yOf(p.price)]);
       if (pts.some(([x, y]) => x === null || y === null)) return;
+      if (it.extend) pts[pts.length - 1][0] = W;   // עד קצה הגרף (R3)
       mark();
+      if (it.single) { ctx.globalAlpha *= 0.35; ctx.lineWidth = 1; }   // רמה בודדת — דהויה (Z9)
       ctx.strokeStyle = c;
       ctx.setLineDash(it.style === 'dashed' || it.scen ? [7, 5] : []);   // ממצא — קו מלא; תרחיש — מקווקו (18.4 קריטריון 3)
       ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
@@ -475,6 +481,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     body.append(
       h('div', { class: 'chips' }, r.method.label ? h('span', { class: 'chip' }, r.method.label) : null, h('span', { class: 'chip' }, TF_LABEL[getTf()] || getTf())),
       sub('finding', 'ממצא', c ? C.finding(c, anR()) : h('p', { class: 'hint' }, 'טוען…'),
+        // פיבונאצ'י: רמות בודדות (Z9) — דהויות; אפשר להסתיר כשהמסך עמוס. נשמר במכשיר, כמו "הסתר תרחיש"
+        singlesOf(id) ? h('div', {}, h('button', { class: 'btn ghost sm fc-solo', type: 'button', 'aria-pressed': String(!!pick(id)?.solo),
+          on: { click: () => { set(id, 'solo', !pick(id)?.solo); paint(); } } }, pick(id)?.solo ? `הצג רמות בודדות (${singlesOf(id)})` : 'הסתר רמות בודדות')) : null,
         // אליוט: ההנחיות שהמחשב לא מודד (17.1.3) — "בדוק בעצמך"
         r.overlay.check?.length && !c?.conditions?.some(x => x.met === null) ? h('details', { class: 'param-notes' }, h('summary', {}, '🔎 בדוק בעצמך — מה שהמחשב כאן לא מודד'),
           h('ul', {}, r.overlay.check.map(x => h('li', {}, x)))) : null),
