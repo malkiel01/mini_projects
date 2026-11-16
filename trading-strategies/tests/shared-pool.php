@@ -241,8 +241,8 @@ $s1 = $snap();
 $c->beginTransaction(); ts_cache_pool_merge($c, 'twelvedata'); $c->commit();
 eq($snap(), $s1, 'criterion 6: a second run changes nothing (idempotent)');
 
-// המיגרציה רצה פעם אחת כשהמאגר נפתח (user_version 4)
-eq((int)$c->query('PRAGMA user_version')->fetchColumn(), 4, 'cache.sqlite at version 4');
+// המיגרציה רצה פעם אחת כשהמאגר נפתח (user_version 4; ואחריה 5 — bt_partial, CREATE בלבד)
+eq((int)$c->query('PRAGMA user_version')->fetchColumn(), 5, 'cache.sqlite at version 5 (4 ran on the way)');
 eq((int)$db->query('PRAGMA user_version')->fetchColumn() >= 16, true, 'app.sqlite at version 16 (prefill_state of twelvedata u:% removed)');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
