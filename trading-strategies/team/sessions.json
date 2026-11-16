@@ -1,7 +1,7 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה",
   "spec": {
-    "session": "session_018g4NYGqhdYWYDScrU8eZxq",
+    "session": "session_018g4NYCncy2ZT4VJy4H1EFh",
     "model": "claude-opus-5-5"
   },
   "code": {
@@ -88,5 +88,11 @@
     "slice": "מחיקה לפי פרק 19.1",
     "model": "claude-opus-5-5",
     "done": "#1590 מוזג — רדום"
-  }
+  },
+  "spec_previous": [
+    {
+      "session": "session_018g4NYGqhdYWYDScrU8eZxq",
+      "done": "עד 2.24 (#1626), מסירה ב-log/spec.md (3800d7b)"
+    }
+  ]
 }
