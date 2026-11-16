@@ -156,7 +156,7 @@ function ts_method_settings(string $id): array
 
 /**
  * הפרמטרים של שיטה על נכס ומסגרת (23.9, L5): הכלליים, ועליהם — הערך של הפלח שוק × מסגרת, אם הוחל. רק מפתחות שהשיטה מכירה,
- * ודרך params() — כך שגם ערך לפלח עובר את הטווח ואת ההמרה (int / float). בלי ערך לפלח — $p כמו שהוא.
+ * ודרך params() (המרה ל-int / float). הטווח של הערך **נבדק ביצירת ההצעה** (ts_learn_decide), לא כאן. בלי ערך לפלח — $p כמו שהוא.
  */
 function ts_params_for_segment(TsMethod $m, array $set, array $p, string $asset, string $tf): array
 {

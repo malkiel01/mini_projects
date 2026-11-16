@@ -268,7 +268,7 @@ const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_app_key', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
-    'admin_tune_propose', 'admin_tune_apply', 'admin_learn_propose'];
+    'admin_tune_propose', 'admin_tune_apply', 'admin_learn_propose', 'admin_seg_param_clear'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
 const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_tune_propose', 'admin_learn_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
@@ -585,13 +585,27 @@ try {
             ts_asset_split($la);
             $ltf = (string)($in['tf'] ?? '');
             if (!isset(TS_TF_SECONDS[$ltf])) throw new TsInvalid('מסגרת זמן לא תקינה');
+            // 🟡6א: כמו ts_tune_propose — רק שוק ומסגרת שהשיטה תומכת בהם (ומופעלים אצלה)
+            $lset = ts_method_settings($lm);
+            if (!in_array($ltf, $lset['timeframes'], true) || !in_array(ts_asset_market((string)$la), $lset['markets'], true)) {
+                throw new TsInvalid('השיטה לא מוגדרת לשוק או למסגרת הזמן הזו');
+            }
             $lnow = ts_now();
             try {
                 [$lp, $lf] = ts_learn_values_run($uid, $lm, (int)ts_method($lm)->meta()['version'], 'backtest', (string)$la, $ltf, $lnow, null, true);
             } catch (TsBudget $e) {
                 throw new TsInvalid($e->getMessage());
+            } catch (TsBacktestTimeout) {
+                // 🟡6ב: הכתיבות בטרנזקציה אחת אחרי החישובים — שום דבר לא נכתב
+                throw new TsInvalid('המדידה לא הושלמה בזמן — לא נשמר כלום. נסו מסגרת זמן גדולה יותר');
+            } catch (TsProviderError $e) {
+                throw new TsInvalid('הנתונים לא התקבלו מהספק — ' . $e->getMessage());
             }
             out(['ok' => true, 'proposals' => $lp, 'findings' => $lf]);
+
+        case 'admin_seg_param_clear':
+            // 🟡4: ביטול ערך לפלח — רק העורך הראשי, ומעלה גרסה
+            out(['ok' => true, 'seg_params' => (object)ts_seg_param_clear($uid, $in['method'] ?? null, $in['segment'] ?? null, $in['param'] ?? null)]);
 
         case 'admin_method_save':
             // הגדרות של שיטה קיימת (6.7). בונה השיטות נמחק (21.1, ✅29) — שמירת הגדרה (definition) לא קיימת יותר
