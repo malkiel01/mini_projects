@@ -89,7 +89,7 @@ $park = array_column(array_column($g['appendix'], null, 'title')['נכסים']['
 check($park['monthly'] === '5,000' && $park['months'] === 6, 'בלי חישוב: חודשי = 30,000 ÷ 6 חודשים (לפי התקופה)');
 check($g['integrity'] === [], 'הצעה מאוזנת — אין אף בעיה');
 
-echo "3, 7. איזון בכל עמודה\n";
+echo "3, 7. איזון בעמודות ההצעה\n";
 line_save($s, ['budget_id' => $b, 'fund_id' => $sas, 'direction' => 'income', 'title' => 'שוכר ה', 'amount' => 32400, 'prev_budget' => 0, 'prev_actual' => 31200]);
 line_save($s, ['budget_id' => $b, 'fund_id' => $sas, 'direction' => 'expense', 'title' => 'אחזקה', 'amount' => 32400, 'prev_budget' => 31200, 'prev_actual' => 31200]);
 $g = budget_get($s, $b);
@@ -174,6 +174,43 @@ check(array_column($g['appendix'], null, 'title')['הקדשות דתיים']['an
 check(rules($g) === ['fund_balance:prev_budget', 'fund_balance:prev_budget', 'summary_balance:prev_budget'], 'נשארו רק שתי הקופות של 2026 (והריכוז שלהן)');
 $xml = zip_part(export('export_docx', $s, $rb, 'docx'), 'word/document.xml');
 check(str_contains($xml, 'הקדש ועד העדה · הצעת 2026: הכנסות 0 מול הוצאות 780,760') && str_contains($xml, 'הקדש ששפורטס · הצעת 2026'), 'בראש ה-Word: ועד העדה וששפורטס');
+
+echo "12. B1.2 — אזעקות שווא: ניצול לא נבדק לאיזון; סה\"כ קופה ממקור אחד\n";
+// המצב של 12:36: הבעלים תיקן את הצעת 2026 (ועד העדה, ששפורטס), והניצול — מה שקרה בפועל — לא מאוזן
+$upd = db()->prepare('UPDATE budget_lines SET prev_budget = ? WHERE id = ?');
+$upd->execute([780760, line($g, 'שוכר א (בדוי)')['id']]);
+$upd->execute([31200, line($g, 'שוכר ה (בדוי)')['id']]);
+$ua = db()->prepare('UPDATE budget_lines SET prev_actual = ? WHERE id = ?');
+$ua->execute([205000, line($g, 'הכנסות כלליות')['id']]);      // ארגון שוטף: עודף 15,000 בניצול
+$ua->execute([350000, line($g, 'מלגות לסטודנטים')['id']]);    // ועד העדה: עודף 50,000 בניצול
+$g = budget_get($s, $rb);
+$act = fn($fund) => array_sum(array_map(fn($l) => ($l['direction'] === 'income' ? 1 : -1) * (int)$l['prev_actual'],
+    array_filter($g['lines'], fn($l) => $l['fund_id'] === $fund)));
+$byName = array_flip($names);
+check($act($byName['ארגון שוטף']) === 15000 && $act($byName['הקדש ועד העדה']) === 50000, 'הניצול לא מאוזן בשתי קופות (עודף 15,000 ו-50,000)');
+check($g['integrity'] === [], 'הצעת 2027 — 0 בעיות (ניצול לא מאוזן אינו בעיה): ' . implode(', ', rules($g)));
+check(!array_filter(array_column($g['integrity'], 'col'), fn($c) => $c === 'prev_actual'), 'אין אף התראה בעמודת הניצול');
+$xml = zip_part(export('export_docx', $s, $rb, 'docx'), 'word/document.xml');
+check(!str_contains($xml, 'ההצעה לא מאוזנת'), 'Word — בלי עמוד אזהרה');
+check(doc_model($s, $rb)['integrity'] === [], 'מודל המסמך (הדפסה) — בלי אזהרה');
+// הריכוז = סכום הקופות עדיין נבדק בכל העמודות (גם בניצול) — רק האיזון לא
+check(in_array('prev_actual', array_keys(integrity_cols(2027)), true) && array_keys(balance_cols(2027)) === ['prev_budget', 'amount'], 'איזון: רק הצעת 2026 והצעת 2027');
+
+// קופה שכל הכנסתה "רק בריכוז": הטבלה מראה 0 — גם האיזון סופר 0, וגם התג
+$rent = line($g, 'שוכר ו (בדוי)')['id'];
+db()->prepare('UPDATE budget_lines SET summary_only = 1 WHERE id = ?')->execute([$rent]);
+$g = budget_get($s, $rb);
+$sec = $byName['הקדש עמיאל חילוני'];
+$fb = array_values(array_filter($g['integrity'], fn($x) => $x['rule'] === 'fund_balance' && $x['fund_id'] === $sec));
+check(array_column($fb, 'col') === ['prev_budget', 'amount'] && $fb[1]['diff'] === -2400, 'הכנסה "רק בריכוז" — הקופה לא מאוזנת (0 מול 2,400), בשתי עמודות ההצעה');
+$bal = array_column($g['summary']['balance'], null, 'fund_id')[$sec];
+check($bal['income'] === 0 && $bal['diff'] === -2400, 'הסה"כ של הקופה (התג והכותרת) — 0 הכנסות, כמו בטבלה');
+$d = doc_model($s, $rb);
+$df = array_column($d['funds'], null, 'id')[$sec];
+check(array_column($df['tables'], 'dir') === ['expense'], 'במסמך — לקופה רק טבלת הוצאות (ההכנסה "רק בריכוז" לא בטבלה)');
+check(!array_filter($g['integrity'], fn($x) => $x['rule'] === 'summary_total'), 'בריכוז השורה נספרת (הריכוז = סכום השורות)');
+db()->prepare('UPDATE budget_lines SET summary_only = 0 WHERE id = ?')->execute([$rent]);
+check(budget_get($s, $rb)['integrity'] === [], 'בלי "רק בריכוז" — שוב 0 בעיות');
 
 array_map('unlink', array_filter(glob("$tmp/{,.}*", GLOB_BRACE) ?: [], 'is_file'));
 @rmdir($tmp);
