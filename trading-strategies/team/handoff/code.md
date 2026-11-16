@@ -677,3 +677,6 @@
 - **`.ctip-pin`** — אח של החלונית ב-wrap (לא בתוכה: לגוף יש overflow), `pointer-events: none`. `dataset` (ax/ay/sx/sy) — לבדיקות.
 - **הגרירה** — `pointerdown` על החלונית (לא על כפתור/קישור) + `setPointerCapture`; ההזזה מ-`clientX/Y`, שבשכבה המסובבת כבר
   מומרים ב-rotate.js. `.ctip` עם `touch-action: none`; כשהגוף נגלל (`.scrolls`) — רק מהכותרת.
+- **עדכון (גלילה בגרף, בקרה 9):** הספרייה כבר לא מטפלת בשום גרירת מגע בגרף הראשי — הכול ב-`gestures.js` (אצבע אחת לפי כיוון;
+  שתי אצבעות — צביטה/גרירה). הזזת ציר המחיר — `autoscaleInfoProvider` על הנרות והאינדיקטורים; **סדרה חדשה על ציר המחיר צריכה
+  לקבל אותו `provider`** (`shifted` ב-`mountGestures`), אחרת היא לא תזוז עם הנרות. `.chart-reset` ("↺") בתוך `box`.

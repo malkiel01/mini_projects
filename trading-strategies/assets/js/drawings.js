@@ -440,6 +440,7 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
     load: reload,
     toggle: () => setActive(!active),
     isActive: () => active,
+    isCapturing: () => capturing,   // השרטוט תפס את המגע — gestures.js לא מזיז את הגרף
     redraw: () => { requestUpdate(); syncBar(); },
     count: () => all.length,
     destroy() {

@@ -434,6 +434,12 @@ body.chart-fs { overflow: hidden; }
 .chart-wrap.fs.fs-turn { inset: auto; top: 0; left: 0; width: var(--fs-w); height: var(--fs-h); padding: 0;
     transform-origin: 0 0; transform: translateX(var(--fs-h)) rotate(90deg); }
 .chart-wrap.fs.fs-turn .chart-box { touch-action: none; }
+/* "↺" — ציר המחיר לרגיל (gestures.js), רק אחרי גרירה בשתי אצבעות לגובה או צביטה אנכית */
+.chart-reset { position: absolute; z-index: 3; top: 8px; left: 8px; min-width: 36px; min-height: 36px; padding: 0 10px; font: inherit; font-size: 1.05rem;
+    color: var(--ink); background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); border-radius: 99px;
+    box-shadow: var(--shadow); cursor: pointer; }
+.chart-reset[hidden] { display: none; }
+.chart-reset:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }

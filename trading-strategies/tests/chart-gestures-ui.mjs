@@ -4,6 +4,9 @@
 //   - אצבע אחת לאורך הגרף → טווח הזמן זז (כמו קודם).
 //   - צביטה אופקית → פחות נרות על המסך (טווח הזמן קטן).
 //   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חזרה לגובה הרגיל, לא מעבר.
+//   - (בקרה 9, הבעלים: "לא ניתן בכלל לגלול בתוך הגרף") אצבע אחת באלכסון, כשרובה לרוחב → טווח הזמן זז.
+//   - שתי אצבעות שזזות יחד לרוחב → טווח הזמן זז (אותו מספר נרות); לגובה → ציר המחיר זז, בלי לשנות גובה.
+//     "↺" מחזיר את ציר המחיר לרגיל.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
@@ -88,6 +91,33 @@ try {
   const rb = await range();
   eq(rb[0] < ra[0] - 5, true, `one finger along the chart moves the time axis (${ra} → ${rb})`);
   eq(Math.abs(span(rb) - span(ra)) < 1, true, 'and keeps the number of candles');
+
+  // ── אצבע אחת באלכסון, רובה לרוחב (dy/dx ≈ 0.85) → טווח הזמן זז ──
+  const rDiag0 = await range();
+  await gesture([[R.x + R.w * 0.3, midY + 65, R.x + R.w * 0.72, midY - 65]]);
+  const rDiag = await range();
+  eq(rDiag[0] < rDiag0[0] - 5, true, `one finger diagonally, mostly sideways, moves the time axis (${rDiag0} → ${rDiag})`);
+
+  eq(rDiag[1] >= (span(rDiag) * 0.2) - 1.5, true, `the kinetic fling stops at the start of the data, candles stay on screen (${rDiag})`);
+
+  // ── שתי אצבעות יחד לרוחב → טווח הזמן זז, אותו מספר נרות ──
+  const rTwo0 = await range();
+  // שמאלה — קדימה בזמן (האלכסון והמשך הקינטי שלו הביאו את הגרף לתחילת הנתונים)
+  await gesture([[R.x + R.w * 0.65, midY - 40, R.x + R.w * 0.25, midY - 40], [R.x + R.w * 0.65, midY + 40, R.x + R.w * 0.25, midY + 40]]);
+  const rTwo = await range();
+  eq(rTwo[0] > rTwo0[0] + 5 && Math.abs(span(rTwo) - span(rTwo0)) < 1.5, true, `two fingers together sideways move the time axis, same candles (${rTwo0} → ${rTwo})`);
+
+  // ── שתי אצבעות יחד לגובה → ציר המחיר זז (הנרות יורדים), הגובה לא משתנה; "↺" מחזיר ──
+  const priceAt = () => p.evaluate(s => { const b = document.querySelector(s); return b.tsPriceAt(b.offsetHeight / 2); }, sel);
+  const hv0 = await heights(), pv0 = await priceAt(), rv0 = await range();
+  eq(await p.locator('.chart-reset').isHidden(), true, 'no "↺" while the price axis is normal');
+  await gesture([[cx - 40, midY - 80, cx - 40, midY + 40], [cx + 40, midY - 80, cx + 40, midY + 40]]);
+  const hv1 = await heights(), pv1 = await priceAt();
+  eq(pv1 > pv0, true, `two fingers down together → the candles move down (the price in the middle rises: ${pv0} → ${pv1})`);
+  eq([hv1.k, Math.abs(hv1.price - hv0.price) <= 2, await range()], [1, true, rv0], 'a two-finger vertical drag keeps the height and the time range');
+  await p.locator('.chart-reset').click();
+  await settle(300);
+  eq([Math.abs((await priceAt()) - pv0) / pv0 < 1e-4, await p.locator('.chart-reset').isHidden()], [true, true], '"↺" brings the price axis back and hides');
 
   // ── צביטה אופקית: מתרחקות → פחות נרות; מתקרבות → יותר ──
   const h0 = await heights();
