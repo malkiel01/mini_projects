@@ -65,7 +65,7 @@
 
 1. **פרק 21 גמור — 21.1, 21.2, 21.3** (ביקורות `team/reviews/21-2.md`, `21-3.md`). מיגרציה הבאה: 17 (`app.sqlite`), cache v5. קוד 21.3 `session_018g4NYEoXMKKD28MYYmYaoC` (392K) — יצא, **לא להעיר**.
 2. **מטלה לבעלים (פתוחה, נאמרה לו בצ'אט):** כמנהל ראשי — לחבר מפתח Twelve Data בספקי הנתונים ולסמן **"מפתח האפליקציה"**. בלעדיו מניות/מדדים/סחורות למי שאין לו מפתח — רק מה שבמאגר, ו-Twelve Data לא ממולא ברקע.
-3. **🟡 רעידה בשער הפריסה:** `tests/market-api.php` — "key «admin» (or 5+ chars of it) not in responses: got '5c0f9'" (ריצה 1711, 08:37). כל 5 תווים של מפתח אקראי שמופיעים במקרה בתשובה (hex) מפילים את כל הפריסה. הסיבה: `$KEYS` קבועים אבל רובם hex (`good-Rk55c0f9e42`). **נפתח קוד `session_018g4NYDnBi3cR5V4TF8WRTm`** (ענף `claude/trading-strategies-flaky-key-test`) — מפתחות שכל חלון 5 בהם מכיל תו לא-hex. ממתינים ל-PR.
+3. **🟡 רעידה בשער הפריסה:** `tests/market-api.php` — "key «admin» (or 5+ chars of it) not in responses: got '5c0f9'" (ריצה 1711, 08:37). כל 5 תווים של מפתח אקראי שמופיעים במקרה בתשובה (hex) מפילים את כל הפריסה. הסיבה: `$KEYS` קבועים אבל רובם hex (`good-Rk55c0f9e42`). **נפתח קוד `session_018g4NYDnBi3cR5V4TF8WRTm`** (ענף `claude/trading-strategies-flaky-key-test`) — מפתחות שכל חלון 5 בהם מכיל תו לא-hex. PR #1646 אושר ומוזג (ביקורת `team/reviews/flaky-key-test.md`) — לאמת את הריצה.
 4. **אסימון אחד בענן MBE** — `.claude/teams/requests/single-mbe-token.md` (הכרעת הבעלים, לכל הפלטפורמה). **לעולם לא לבקש מהבעלים אסימון לאפליקציה.** עד שייבנה — שלב ראיות DevLoop מדלג.
 5. **אין פרוסה בלוח** עד הספר השני (zip + צילומי עמודים + שם לשיטה). אפיון (2) `session_018g4NYCncy2ZT4VJy4H1EFh` — רדום.
 6. ניקוי השרת (קבצים שנמחקו מהריפו) — מטלה לבעלים, דרך צ'אט מטלות (המנהל פותח).
