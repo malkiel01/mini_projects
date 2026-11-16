@@ -538,3 +538,13 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 #subtitle.parts > .pair-sub { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #subtitle.parts > .sub-tail { flex: none; white-space: nowrap; }
 .asset-chosen { padding: 2px 0 6px; }
+
+/* ===== יומן השיטה (18.6, S6) ===== */
+.mj-row { align-items: flex-start; }
+.mj-row > .chip { margin-top: 2px; }
+.mj-scen { display: flex; flex-wrap: wrap; column-gap: var(--s2); row-gap: 0; color: var(--muted); font-size: .85rem; }
+.mj-scen > span { white-space: nowrap; }
+.mj-tools select { flex: 1 1 0; min-width: 0; max-width: none; min-height: 40px; font-size: 16px; }
+.mj-sum .mj-m { white-space: nowrap; max-inline-size: 9rem; overflow: hidden; text-overflow: ellipsis; }
+.mj-sum td.zone .pct { display: block; }
+.method-journal > .btn { justify-self: center; }

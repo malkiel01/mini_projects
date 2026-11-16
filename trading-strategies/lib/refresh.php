@@ -92,7 +92,10 @@ function ts_method_result(TsMethod $m, array $p, string $asset, string $tf, stri
         error_log('trading-strategies method_results: ' . $e->getMessage());
     }
     ts_method_count($id, true, $now);
-    return [json_decode($json, true), true];
+    $out = json_decode($json, true);
+    // יומן השיטה (18.6, S6): רק כאן — השיטה רצה באמת, כלומר נר סגור חדש. ה-UNIQUE בטבלה משאיר רשומה אחת לנר
+    ts_journal_analysis($m, $asset, $tf, $scope, $out, $now);
+    return [$out, true];
 }
 
 function ts_method_count(string $id, bool $ran, int $now): void

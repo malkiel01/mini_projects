@@ -745,9 +745,9 @@ export function mountMarket(ctx) {
     setHead('ניהול', 'ספקים, שיטות, מנהלים ומאגר', { back: true });
     const S = await api('admin_state');
     let tab = sessionStorage.getItem('ts-admin-tab') || 'providers';
-    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['admins', '👤 מנהלים'], ['cache', '🗄️ מאגר'], ['log', '📜 יומן']];
+    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['admins', '👤 מנהלים'], ['cache', '🗄️ מאגר'], ['journal', '📓 יומן השיטה'], ['log', '📜 יומן']];
     const bar = h('div', { class: 'seg-tabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === tab), on: { click: () => { sessionStorage.setItem('ts-admin-tab', k); route(); } } }, l)));
-    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, admins: adminAdmins, cache: adminCache, log: adminLog }[tab](S);
+    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, admins: adminAdmins, cache: adminCache, journal: () => ctx.journalView(h('div', { class: 'stack method-journal' })), log: adminLog }[tab](S);
     render(bar, body);
   }
   const reload = () => route();

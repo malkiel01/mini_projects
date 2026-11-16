@@ -21,6 +21,7 @@ require_once __DIR__ . '/roles.php';
 require_once __DIR__ . '/market.php';
 require_once __DIR__ . '/backtest.php';
 require_once __DIR__ . '/method-colors.php';
+require_once __DIR__ . '/journal.php';
 
 final class TsBudget extends RuntimeException {}
 
@@ -390,6 +391,7 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         ->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, $hash, $scope, $res['n'], $res['wins'], $res['expectancy_r'],
             $res['max_dd'], $res['from_t'], $res['to_t'], json_encode($s), $now]);
+    ts_journal_backtest($meta, $asset, $tf, (string)$scope, $res, $now);   // יומן השיטה (18.6) — רק בחישוב חדש
     return ts_bt_out($s, $now, $incremental ? 'incremental' : 'full', $calls);
 }
 
