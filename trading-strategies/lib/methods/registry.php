@@ -11,10 +11,12 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/sample-ma-cross.php';
 require_once __DIR__ . '/elliott-w3.php';
+require_once __DIR__ . '/fibonacci.php';
 
 const TS_METHODS = [
     'sample-ma-cross' => TsMethodSampleMaCross::class,
     'elliott-w3' => TsMethodElliottW3::class,   // spec-stage-a 17.1.9 — כבויה עד שמנהל מפעיל
+    'fibonacci' => TsMethodFibonacci::class,    // spec-stage-a 22 (F-1) — default_off: כבויה עד שמנהל מפעיל (22.1, 6.7)
 ];
 
 /** id → מחלקה */
