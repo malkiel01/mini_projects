@@ -13,7 +13,7 @@
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1–21.3 מוזגו; פיבונאצ'י F-1..F-3 + learn מוזגו (#1700); למידה L1 מוזגה; בדרך: R1 הרשאות (מיגרציה 18), חלונית הסבר T1, למידה L3; עד 5 מטלות במקביל; שעון — דקה 28 (`trig_01AhicpPsrrfEGR4f97H9K4K`, נוצר בידי מנהל הצוותים (5); של בקרה 7 `trig_01FLjvXemEmKVuyfZbh9oGqH` כבוי) | `session_018g4NYDrFHGumG4hGvNK11M` (בקרה 8, עומק 7/8; קודם בקרה 7 `session_018g4NYFqH3tqWT9nYnCRNjr`; בקרה 6 `session_018g4NYEHws3rFjuBNuDFXRb` — רדומה, מחזיקה את ספר פיבונאצ'י) |
 | `org-budget-proposals` הצעות תקציב לארגונים | פעיל — B1 מוזג #1635; B1.2 (אזעקות שווא בניצול) #1648; שעון — דקה 38 (`trig_018qY4uvqcdJKapxU9pU8kcu`, נוצר בידי מנהל הצוותים (4); הישן `trig_013qCk9g1qS7xKb8qLpQrDgX` כבוי) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2; קודם בקרה 1 `session_018g4NYFsGrFQCUGf3CgaSYk`) |
-| `grave-prices` מחירוני קברים | פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) PR #1666 בביקורת; שעון — דקה 53 (`trig_01Ecqo638xYguboqngvZbKWx`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
+| `grave-prices` מחירוני קברים | ⏸️ מושהה בידי הבעלים מ-2026-11-16 17:35 UTC, עד שיעדכן — 01–05 באתר (v0.5); GP-02..05 אצל הבעלים; שעון `trig_01Ecqo638xYguboqngvZbKWx` כבוי | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
 
 ## ממתין לבעלים
 
