@@ -268,7 +268,7 @@ const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 
     'watchlist_add', 'watchlist_remove', 'watchlist_order', 'market_tabs_save', 'method_colors_save', 'symbol_pref', 'cred_save', 'cred_test', 'cred_delete',
     'admin_provider_save', 'admin_shared_switch', 'admin_app_key', 'admin_cred_save', 'admin_cred_test', 'admin_cred_delete',
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
-    'admin_tune_propose', 'admin_tune_apply'];
+    'admin_tune_propose', 'admin_tune_apply', 'admin_seg_param_clear'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
 const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
@@ -561,7 +561,16 @@ try {
             if (!ts_method_exists($lm)) throw new TsNotFound('שיטה לא מוכרת');
             $lv = isset($_GET['version']) && $_GET['version'] !== '' ? (int)$_GET['version'] : null;
             if ($action === 'admin_learn') {
-                out(['ok' => true] + ts_learn_stats($lm, $lv ?? (int)ts_method($lm)->meta()['version'], (string)($_GET['source'] ?? 'backtest')));
+                $lst = ts_learn_stats($lm, $lv ?? (int)ts_method($lm)->meta()['version'], (string)($_GET['source'] ?? 'backtest'));
+                // שינויי דפוס (23.8, L4) — מחושבים בכל פתיחה (קריאה בלבד); code — הפריט ב-DevLoop, אם נפתח (⚠️)
+                $codes = ts_learn_finding_codes($lm);
+                $lst['findings'] = array_map(fn($f) => $f + ['code' => $codes[$f['key']] ?? null, 'text' => ts_learn_finding_text($f),
+                    'segment' => ts_learn_segment_text($f['dim'], $f['value'])], ts_learn_findings($lm, (int)$lst['version'], $lst['source']));
+                // המיקומים (23.9, L5b): לכל פרמטר נלמד ופלח — הנוכחי, השכנים, t_cut, N בכל חלק, וההשוואה האחרונה של ה-cron. קריאה
+                // בלבד: ההשוואה עצמה לא רצה בבקשה (רק ב-cron). ההצעות — ב-admin_tune_list. ההיסטוגרמות — לדיון בלבד
+                $lst['values'] = $lst['source'] === 'backtest' ? ts_learn_values($lm, (int)$lst['version'], 'backtest') : [];
+                $lst['hist'] = ts_learn_hist_for($lm, (int)$lst['version'], $lst['source']);
+                out(['ok' => true] + $lst);
             }
             $src = isset($_GET['source']) && $_GET['source'] !== '' ? (string)$_GET['source'] : null;
             $csv = ts_learn_csv($lm, $lv, $src, ts_is_primary_admin());
@@ -569,6 +578,10 @@ try {
             header('Content-Disposition: attachment; filename="learning-' . preg_replace('/[^a-z0-9-]/', '', $lm) . '-' . gmdate('Y-m-d') . '.csv"');
             echo $csv;
             exit;
+
+        case 'admin_seg_param_clear':
+            // 🟡4: ביטול ערך לפלח — רק העורך הראשי, ומעלה גרסה
+            out(['ok' => true, 'seg_params' => (object)ts_seg_param_clear($uid, $in['method'] ?? null, $in['segment'] ?? null, $in['param'] ?? null)]);
 
         case 'admin_method_save':
             // הגדרות של שיטה קיימת (6.7). בונה השיטות נמחק (21.1, ✅29) — שמירת הגדרה (definition) לא קיימת יותר

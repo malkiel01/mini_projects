@@ -149,7 +149,20 @@ function ts_method_settings(string $id): array
         'timeframes' => $r ? (json_decode($r['timeframes'], true) ?: $m['timeframes']) : $m['timeframes'],
         'params' => $r ? (json_decode($r['params'], true) ?: []) : [],
         'note' => $r ? $r['note'] : '',
+        // ערכים לפלח שוק × מסגרת שהוחלו (23.9, L5) — {"forex|h1": {param: value}}
+        'seg_params' => $r && isset($r['seg_params']) ? (json_decode((string)$r['seg_params'], true) ?: []) : [],
     ];
+}
+
+/**
+ * הפרמטרים של שיטה על נכס ומסגרת (23.9, L5): הכלליים, ועליהם — הערך של הפלח שוק × מסגרת, אם הוחל. רק מפתחות שהשיטה מכירה,
+ * ודרך params() (המרה ל-int / float). הטווח של הערך **נשמר ביצירת ההצעה** (ts_learn_neighbors — אין מועמד מחוץ לטווח), לא כאן. בלי ערך לפלח — $p כמו שהוא.
+ */
+function ts_params_for_segment(TsMethod $m, array $set, array $p, string $asset, string $tf): array
+{
+    $seg = $set['seg_params'][ts_asset_market($asset) . '|' . $tf] ?? null;
+    if (!is_array($seg) || !$seg) return $p;
+    return $m->params(array_intersect_key($seg, $m->meta()['params']) + ($set['params'] ?? []));
 }
 
 /** שיטה מהספר = שיטת קוד ש-sample שלה לא true (18.1.2) */
@@ -435,9 +448,18 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
         $s = ts_bt_run($m, $p, $chunk, $cost, $s, null, $onTrade);
     }
     // קודם השורות, ואחר כך המצב: כשל בכתיבה → שום דבר לא נשמר, והריצה הבאה מחשבת שוב את אותן עסקאות (בלי כפילות — 23.3)
-    ts_outcomes_write(['source' => 'backtest', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $hash,
+    $added = ts_outcomes_write(['source' => 'backtest', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $hash,
         'provider' => $provider, 'asset' => $asset, 'tf' => $tf, 'cred_scope' => (string)$scope, 'market' => $market,
         'decimals' => ts_tick_decimals($rows), 'now' => $now], $trades);
+    // שינוי דפוס (23.8, L4): רק כשנוספו עסקאות. ממצא חריג → DevLoop. כשל כאן לא מפיל את הבדיקה לאחור — רק נרשם
+    if ($added > 0) {
+        try {
+            ts_learn_findings_sync($meta['id'], (int)$meta['version'], 'backtest', $now);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning findings: ' . $e->getMessage());
+        }
+        // ערך בתוך הטווח (23.9, L5b) — לא כאן: השוואת השכנים רצה ב-cron בלבד (ts_learn_cron), לא בבקשה של המשתמש
+    }
     if (!$complete) {
         if (!empty($meta['incremental']) && $s['last_t'] !== null) ts_bt_partial_put($pk, $s, $from, (int)$s['last_t'], $now);
         return ['status' => 'incomplete', 'provider_calls' => $calls,
@@ -720,7 +742,7 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
             $cards[] = $card + ['status' => 'unsupported', 'message' => 'השיטה לא מוגדרת לשוק או למסגרת הזמן הזו', 'bias' => 'none', 'certainty' => null];
             continue;
         }
-        $p = ts_params_for_asset($m, $p, $dec);
+        $p = ts_params_for_asset($m, ts_params_for_segment($m, $set, $p, $asset, $tf), $dec);
         // הבדיקה לאחור קודם — הכרטיס של שיטה עם מצב ארוך ממשיך מהמצב שלה (ו1)
         $bt = $runBt ? ts_backtest($uid, $m, $p, $asset, $tf, $market, $now) : ts_backtest_stored($uid, $m, $p, $asset, $tf, $market, $now);
         [$a, $basis] = ts_card_analyze($m, $p, $asset, $tf, (string)$acc['scope'], $rows, $fl, $bt,

@@ -38,6 +38,8 @@ final class TsMethodSampleMaCross extends TsMethod
             'version' => 1 + $this->tune,   // + החלות (18.7)
             'incremental' => true,
             'alerts' => false,
+            // למידה (23.9, L5b): השוואת שכנים — הנוכחי וצעד אחד לכל כיוון. שיטת דוגמה — כל הפרמטרים "שלנו"
+            'learn_params' => ['stop_atr' => ['step' => 0.5], 'target_atr' => ['step' => 0.5]],
         ];
     }
 
