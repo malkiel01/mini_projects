@@ -175,7 +175,7 @@ async function showEdition(pid) {
         ${other ? `<button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>יחד עם ${esc(otherName)} — דף נפרד</b>
             <small>שני עמודים · ${esc(otherName)} ${esc(dmy(other.effective_from))}</small></span></button>
           <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>יחד עם ${esc(otherName)} — באותו דף</b>
-            <small>ברצף, עם ${esc(otherName)} ${esc(dmy(other.effective_from))} · חתימות פעם אחת</small></span></button>` : ''}`;
+            <small>זה לצד זה: ישראל מימין, חו"ל משמאל · ${esc(otherName)} ${esc(dmy(other.effective_from))} · חתימות פעם אחת</small></span></button>` : ''}`;
     $('#print-btn').onclick = () => { dlg.returnValue = ''; dlg.showModal(); };
     dlg.onclose = () => {
         const mode = dlg.returnValue;
