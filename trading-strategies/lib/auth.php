@@ -37,10 +37,12 @@ function ts_user_for(array $id): array
 {
     $db = ts_db();
     $now = time();
-    $db->prepare('INSERT INTO users (platform_sub, display_name, email, created_at, last_login_at) VALUES (?, ?, ?, ?, ?)
+    // platform_admin — מה שהשער אומר עכשיו; ממנו "מי המפתח" של DevLoop גם בבקשה בלי משתמש (אסימון של Claude, lib/devtasks.php)
+    $db->prepare('INSERT INTO users (platform_sub, display_name, email, created_at, last_login_at, platform_admin) VALUES (?, ?, ?, ?, ?, ?)
                   ON CONFLICT(platform_sub) DO UPDATE SET display_name = excluded.display_name,
-                      email = COALESCE(excluded.email, users.email), last_login_at = excluded.last_login_at')
-        ->execute([$id['sub'], $id['name'], $id['email'], $now, $now]);
+                      email = COALESCE(excluded.email, users.email), last_login_at = excluded.last_login_at,
+                      platform_admin = excluded.platform_admin')
+        ->execute([$id['sub'], $id['name'], $id['email'], $now, $now, $id['platform_admin'] ? 1 : 0]);
     $st = $db->prepare('SELECT * FROM users WHERE platform_sub = ?');
     $st->execute([$id['sub']]);
     return $st->fetch();

@@ -8,5 +8,8 @@
   "entry": "index.html",
   "version": "1.7",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "api.php?action=devapi-feed|devapi-comment|devapi-file|devapi-attach"
+  ]
 }
