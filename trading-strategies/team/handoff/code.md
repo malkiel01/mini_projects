@@ -367,3 +367,21 @@
 - **מקובל ב-F-1 (הבקרה):** בברירות המחדל, על 5,000 נרות שעה: 33 נגיעות באזור בציון ≥ 3, לכולן אין אזור התנגדות מעל → 0 אותות (יעד של 22.6 לפני F-2). min_score 2 + min_rr 1 → 5; ועוד רגישות 2 → 23. ב-F-2 תתווסף דרישה ל-> 0 בברירות המחדל.
 - **ביצועים (מטלת המשך):** 0.64 שניות ל-5,000 נרות; lookback 1000 → 2.26 שניות.
 - **לא בפרוסה:** F-2 (22.5 — A-B-X, קופסת מראה, Z6, יעד חלופי), F-3 (מתרחב/מתכווץ, ואקום), עמ' 102.
+
+## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
+
+- **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
+  - **ה-Fullscreen API על `document.documentElement`**, לא על הגרף: על האלמנט שב-Fullscreen הדפדפן כופה `transform: none !important`.
+    לכן בבדיקות: `document.fullscreenElement` הוא ה-`<html>`.
+  - התפריט ו-⟳ — רק כשהמסך לאורך (`innerHeight > innerWidth`) בכניסה.
+  - "לרוחב": `lock('landscape')` בתוך Fullscreen; נדחה/אין — `.fs-turn`. "לגובה" מ-⟳ אחרי נעילה — `lock('portrait')`. כל יציאה — `unlock()` אם ניסינו.
+- **`assets/js/rotate.js`** — `setTurned(el)`: כל עוד שכבה מסובבת, `getBoundingClientRect` ו-`clientX/Y`/`pageX/Y`/`x/y` של אירועים
+  ושל Touch בתוכה — במערכת השכבה. **מחליף getters על `Element.prototype`, `MouseEvent.prototype`, `Touch.prototype`** (פעם אחת,
+  ופעיל רק כשיש שכבה). מי שמוסיף קוד שמחשב מיקום על המסך בתוך הגרף (למשל `elementFromPoint` עם clientX) — לזכור את זה.
+- **`lockVisibleTimeRangeOnResize: true`** ב-`base.timeScale` — כל שינוי רוחב שומר את הטווח (לא את רוחב הנר).
+- **בדיקות ממשק שנכנסות למסך מלא בטלפון לאורך:** ⛶ ואז `menuitem` "לגובה" (ראו `fsEnter` ב-`chart-f1-ui.mjs`).
+- **הדמיה ב-Playwright** (`chart-landscape-ui.mjs`):
+  - סיבוב — CDP `Emulation.setDeviceMetricsOverride` (`setViewportSize` נכשל בתוך Fullscreen: `Browser.setWindowBounds`).
+  - צילום אחרי סיבוב — CDP `Page.captureScreenshot` (`page.screenshot` מבטל את הסיבוב); בלי סיבוב — `page.screenshot` (CDP בתוך Fullscreen יוצא 800×600).
+  - גרירת אצבע — CDP `Input.dispatchTouchEvent`; אחרי גרירה לחכות לגלילה הקינטית (~1.5 ש').
+- **לא בפרוסה:** זום אנכי של המחיר (L1 סעיף 5).

@@ -18,38 +18,58 @@ body { background: #e9ebef; color: #000; font-family: Arial, 'Arial Hebrew', 'Li
     display: flex; flex-direction: column; padding: 9mm 14mm 7mm; }
 .lh { display: block; width: 172mm; max-width: 100%; margin: 0 auto; flex: none; }
 .lh.top { margin-bottom: 1mm; }
-.content { flex: 1 1 auto; min-height: 0; overflow: hidden; font-size: 100%; }
+/* כל המידות בתוכן ב-em מגודל הבסיס (10.5pt) — כך print.js מקטין את הכול יחד כשהתוכן לא נכנס בעמוד */
+.content { flex: 1 1 auto; min-height: 0; overflow: hidden; font-size: 10.5pt; }
 
 /* הכותרות */
-h1 { font-size: 17pt; font-weight: 700; text-align: center; }
-h2 { font-size: 15pt; font-weight: 400; text-align: center; margin-top: 2.5mm; }
-.valid { font-size: 11pt; text-align: center; margin: 1mm 0 5mm; }
-.none { font-size: 13pt; text-align: center; margin-top: 30mm; }
+h1 { font-size: 1.62em; font-weight: 700; text-align: center; }
+h2 { font-size: 1.43em; font-weight: 400; text-align: center; margin-top: 0.675em; }
+.valid { font-size: 1.05em; text-align: center; margin: 0.27em 0 1.35em; }
+.content > .block:first-child h2 { margin-top: 0; }
+/* שתיהן בדף אחד — זה לצד זה: ישראל מימין (הראשון ב-RTL), חו"ל משמאל */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; align-items: start; margin-top: 2.5mm; }
+.cols h2 { font-size: 1.15em; margin-top: 0; }
+.cols .valid { margin-bottom: 0.8em; }
+.cols .pl .c-amt { width: 16mm; }
+.cols .pl .c-cur { width: 5mm; }
+.cols .pl .cur { padding-left: 0; }
+.cols .pl tr.section td, .cols .pl tr.subsection td { font-size: 1.1em; }
+.none { font-size: 1.24em; text-align: center; margin-top: 8.1em; }
 
 /* השורות */
-.pl { width: 100%; border-collapse: collapse; font-size: 10.5pt; line-height: 1.25; }
+.pl { width: 100%; border-collapse: collapse; font-size: 1em; line-height: 1.25; }
 .pl .c-amt { width: 27mm; }
 .pl .c-cur { width: 31mm; }
-.pl.two .c-amt { width: 22mm; }
-.pl.two .c-cur { width: 9mm; }
-.pl td, .pl th { padding: 0 1mm; vertical-align: baseline; text-align: right; }
-.pl thead th { font-size: 10pt; font-weight: 700; text-decoration: underline; padding-bottom: 2mm; text-align: center; }
+.pl td, .pl th { padding: 0 0.27em; vertical-align: baseline; text-align: right; }
 .pl .amt { font-weight: 700; text-align: right; direction: ltr; white-space: nowrap; }   /* direction ltr: הספרות מיושרות לימין העמודה */
 .pl .cur { font-weight: 700; text-align: right; padding-right: 0; }
-.pl.two .cur { text-align: center; padding-left: 0; padding-right: 0; }
 .pl .plain { font-weight: 400; font-size: .85em; text-decoration: none; }
-.pl tr.section td { text-align: center; font-weight: 700; font-size: 13pt; text-decoration: underline; padding-top: 5mm; padding-bottom: 2mm; }
-.pl tr.subsection td { font-weight: 700; font-size: 13pt; padding-top: 4mm; padding-bottom: 1.5mm; }
-.pl tr.section + tr.subsection td { padding-top: 1mm; }
+.pl tr.section td { text-align: center; font-weight: 700; font-size: 1.24em; text-decoration: underline; padding-top: 1.09em; padding-bottom: 0.435em; }
+.pl tr.subsection td { font-weight: 700; font-size: 1.24em; padding-top: 0.87em; padding-bottom: 0.327em; }
+.pl tr.section + tr.subsection td { padding-top: 0.218em; }
 .pl tr.indent td.lb { padding-right: 0; }
 .pl tr.heading td { padding-top: 0; }
-.pl tr.fee td { font-size: 9pt; font-weight: 700; }
-.pl tr.note td { font-size: 8.5pt; }
-.pl tr.gap td { padding-top: 4mm; }
+.pl tr.fee td { font-size: 0.857em; font-weight: 700; }
+.pl tr.note td { font-size: 0.81em; }
+.pl tr.gap td { padding-top: 1.08em; }
+/* פס בית עלמין (חו"ל): רקע אפור על כל הרוחב, ממורכז ומודגש */
+.pl tr.band td { background: #d9d9d9; text-align: center; font-weight: 700; font-size: 1em; padding: 0.189em 0.27em; }
+.pl tr.band + tr td { padding-top: 0.216em; }
+.pl tr:not(.band) + tr.band td { border-top: 0.675em solid #fff; }
+/* חו"ל: התשלומים בכתב רגיל, כמו במקור; המחיר מודגש */
+.pl.abroad tr.fee td.lb { font-weight: 400; font-size: 0.905em; }
+.pl.abroad tr.subsection td { font-size: 1.1em; text-decoration: underline; padding-top: 1.35em; }
 
-/* החתימות — שם מעל תפקיד, שלוש עמודות שוות */
-.sigs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: 10.5pt; margin: 4mm 0 5mm; }
+/* החתימות — שם מעל תפקיד, שלוש עמודות שוות (04 סעיף 4): 18mm ריקים מעל השם לחתימה ביד, בלי קו; שם 9pt מודגש,
+   תפקיד 8.5pt רגיל, 4mm עד נייר המכתבים. במידות קבועות (mm/pt) — fit() מקטין רק את .content, לא את החתימות */
+.sigs { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; margin: 18mm 0 4mm; line-height: 1.2; }
 .sigs div { display: grid; gap: 0.5mm; }
+.sigs b { font-size: 9pt; font-weight: 700; }
+.sigs span { font-size: 8.5pt; font-weight: 400; }
+/* כמו המקור (israel-2025-03-15.pdf): הסט מוצג משמאל לימין — הראשון (גזבר) משמאל, האחרון (יו"ר) מימין */
+.sigs { direction: ltr; }
+.sigs div { direction: rtl; }
+
 
 @media print {
     body { background: none; }
