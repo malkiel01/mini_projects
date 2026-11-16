@@ -192,13 +192,18 @@ function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0): 
         if (($used[$provider] ?? 0) >= $cap) { $sum['deferred']++; continue; }
         $uid = ts_journal_uid_for($row['cred_scope']);
         $acc = $uid === null ? null : ts_access($uid, $provider);
-        // ספק משותף (21.3): רשומה ישנה ב-u:N מוכרעת מהמאגר המשותף, במפתח של בעליה — והיא נשארת רק שלו
-        $pooled = $acc && ts_provider($provider)->meta()['share'];
-        if (!$acc || ((string)$acc['scope'] !== $row['cred_scope'] && !$pooled)) { $sum['skipped']++; continue; }
+        // ספק משותף (21.3): רשומה ישנה ב-u:N מוכרעת מהמאגר המשותף, במפתח של בעליה — והיא נשארת רק שלו.
+        // בלי שום דרך לספק (אין מפתח אפליקציה, 🟡4) — מהמאגר בלבד (ts_pool_only), ורק כשהוא שלם (למטה)
+        $share = isset(TS_PROVIDERS[$provider]) && ts_provider($provider)->meta()['share'];
+        $poolOnly = !$acc && $uid !== null && $share && ts_pool_only($uid, $provider);
+        if ((!$acc && !$poolOnly) || ($acc && (string)$acc['scope'] !== $row['cred_scope'] && !$share)) { $sum['skipped']++; continue; }
         try {
             $r = ts_market_candles($uid, $row['asset'], $row['tf'], (int)$row['as_of'] + $sec, $until + $sec, $now);
             $used[$provider] = ($used[$provider] ?? 0) + $r['provider_calls'];
+            // חסר במאגר ואין במה להשלים (תקרה / אין מפתח) — לא מכריעים על נתונים חלקיים; ננסה בריצה הבאה
+            if ($r['notice'] !== null) { $sum['skipped']++; continue; }
         } catch (Throwable $e) {
+            if ($poolOnly) { $sum['skipped']++; continue; }   // אין במאגר ואין מפתח — לא תקלה, מחכים
             $sum['errors']++;
             error_log('trading-strategies journal ' . $row['id'] . ': ' . $e->getMessage());
             continue;

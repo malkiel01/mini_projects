@@ -269,6 +269,18 @@ function ts_pair_tf_asset(int $uid, string $asset, string $tf): ?string
     return null;
 }
 
+/** לזוג של הנכס יש נכס אצל ספק בלי מפתח (ECB, Binance) — 21.3 קריטריון 10: מפתח האפליקציה לא ממלא אותו ברקע */
+function ts_pair_has_free(string $asset): bool
+{
+    $key = ts_pair_of_asset($asset);
+    if ($key === null) return false;
+    foreach (ts_pairs_catalog()[$key]['assets'] as $a) {
+        $p = explode(':', $a, 2)[0];
+        if ($a !== $asset && isset(TS_PROVIDERS[$p]) && !ts_provider($p)->meta()['needs_key']) return true;
+    }
+    return false;
+}
+
 /** מסגרות הזמן של נכס למשתמש: של הספק שלו, ועוד מה שזוג מאותו קטלוג נותן דרך ספק אחר (ts_pair_tf_asset) */
 function ts_pair_tfs(int $uid, string $asset): array
 {

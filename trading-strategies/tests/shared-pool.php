@@ -15,6 +15,10 @@ register_shutdown_function(fn() => array_map('unlink', glob("$tmp*") ?: []));
 
 require __DIR__ . '/../lib/store.php';
 require __DIR__ . '/../lib/market.php';
+require __DIR__ . '/../lib/journal.php';
+require __DIR__ . '/../lib/forecast.php';
+require __DIR__ . '/../lib/prefill.php';
+require __DIR__ . '/../lib/alerts.php';
 
 $fail = 0; $n = 0;
 function eq($got, $want, string $what): void
@@ -139,7 +143,6 @@ eq([$d['provider'], $usage($app2)], ['ecb', $u0], 'criterion 10: EUR/USD daily �
 $h = ts_market_candles($A, 'ecb:EURUSD', 'h1', $now - 86400, $now, $now);
 eq([$h['asset'], $h['source'], $usage($app2) > $u0], ['twelvedata:EUR/USD', 'app', true], 'criterion 10: the same pair hourly → the app key (ECB is daily only)');
 eq(ts_pair_tfs($A, 'ecb:EURUSD'), array_keys(TS_TF_SECONDS), 'criterion 10: the chart offers the intraday frames for EUR/USD');
-require_once __DIR__ . '/../lib/prefill.php';
 $pool = ts_prefill_pool(0, false);
 $fxTd = array_values(array_filter($pool, fn($x) => str_starts_with($x, 'twelvedata:') && ts_pair_of_asset($x) !== null && count(ts_pairs_catalog()[ts_pair_of_asset($x)]['assets']) > 1));
 eq([in_array('ecb:EURUSD', $pool, true), $fxTd], [true, []], 'criterion 10: the background queue takes these pairs from the free provider — none through the app key');
@@ -150,6 +153,63 @@ ts_app_key_set('twelvedata', $app2);
 eq(ts_pair_asset($A, 'BTC/USD'), ts_pairs_catalog()['BTC/USD']['assets'][1], 'criterion 10: BTC/USD → Binance');
 ts_symbol_pref_set($A, 'twelvedata:EUR/USD');
 eq(ts_pair_asset($A, 'EUR/USD'), 'twelvedata:EUR/USD', 'pairs: an explicit choice of the user wins');
+
+// ── ביקורת 🔴1: המילוי ברקע במפתח האפליקציה לא לוקח זוג שיש לו ספק חינמי, גם כשהוא במועדפים ──
+$db->prepare("INSERT INTO watchlist (user_id, asset, sort) VALUES (?, 'twelvedata:EUR/USD', 1), (?, 'twelvedata:NVDA', 2)")->execute([$C, $C]);
+$tdKey = array_values(array_filter(ts_prefill_keys($now), fn($k) => $k['provider'] === 'twelvedata'))[0] ?? null;
+eq([$tdKey['acc']['source'] ?? null, isset($tdKey['queue']['twelvedata:EUR/USD']), isset($tdKey['queue']['twelvedata:NVDA'])], ['app', false, true],
+    '🔴1: a favorite EUR/USD (Twelve Data) is not in the app-key queue — NVDA is');
+
+// ── ביקורת 🟡3: 429 מהספק → הדרך הבאה; בסוף — מה שבמאגר, עם ההודעה ──
+$db->exec("DELETE FROM provider_creds WHERE owner = 'user' AND user_id = $C");
+$rate = ts_cred_save(0, 'twelvedata', 'good-key-rateable', '', 'admin');
+$db->prepare("UPDATE provider_creds SET secret = ? WHERE id = ?")->execute([ts_encrypt('good-rate-limited1'), $rate]);
+ts_app_key_set('twelvedata', $rate);
+ts_cred_save($C, 'twelvedata', 'good-carol-0002', 'שלי');
+$h0 = $httpN();
+$r = ts_market_candles($C, 'twelvedata:AMD', 'h1', $now - 86400, $now, $now);
+eq([$r['source'], $r['provider_calls'], $r['notice'], array_column(http($h0), 1)], ['own', 1, null, ['good-rate-limited1', 'good-carol-0002']],
+    '🟡3: the app key answers 429 → the same request goes on with C\'s own key');
+$a2 = ts_market_candles($A, 'twelvedata:AMD', 'h1', $now - 86400, $now + 7200, $now + 7200);
+eq([$a2['source'], count($a2['candles']) > 0, str_contains((string)$a2['notice'], 'מוצג מה שבמאגר')], ['app', true, true],
+    '🟡3: A (no own key) — 429 at the end of the chain → what is in the pool, with the message (no failure)');
+try {
+    ts_market_candles($A, 'twelvedata:INTC', 'h1', $now - 86400, $now, $now);
+    eq(true, false, '🟡3: nothing in the pool and 429 must throw');
+} catch (TsCapError $e) {
+    eq(str_contains($e->getMessage(), 'Twelve Data'), true, '🟡3: nothing in the pool — the provider\'s message');
+}
+
+// ── ביקורת 🟡4: רשומת יומן ב-'' מוכרעת מהמאגר גם בלי מפתח אפליקציה ──
+ts_app_key_set('twelvedata', null);
+$asOf = $now - 3 * 3600 - 1800 - 3600;   // שעה עגולה
+$asOf -= $asOf % 3600;
+$db->prepare("INSERT INTO method_journal (method_id, method_version, asset, tf, cred_scope, as_of, kind, said, zone_lo, zone_hi, until_t, created_at)
+              VALUES ('sample-ma-cross', 1, 'twelvedata:AMD', 'h1', '', ?, 'analysis', '{}', '200.5', '201.5', ?, ?)")->execute([$asOf, $asOf + 2 * 3600, $asOf]);
+$jid = (int)$db->lastInsertId();
+$used = [];
+$js = ts_journal_resolve($now, $used, null, microtime(true));
+$out = $db->query("SELECT outcome FROM method_journal WHERE id = $jid")->fetchColumn();
+eq([$out !== null, $used['twelvedata'] ?? 0], [true, 0], '🟡4: no app key — the shared record is decided from the pool, no provider call');
+$db->prepare("INSERT INTO method_journal (method_id, method_version, asset, tf, cred_scope, as_of, kind, said, zone_lo, zone_hi, until_t, created_at)
+              VALUES ('sample-ma-cross', 1, 'twelvedata:QCOM', 'h1', '', ?, 'analysis', '{}', '1', '2', ?, ?)")->execute([$asOf, $asOf + 2 * 3600, $asOf]);
+$qid = (int)$db->lastInsertId();
+$js = ts_journal_resolve($now, $used, null, microtime(true));
+eq([$db->query("SELECT outcome FROM method_journal WHERE id = $qid")->fetchColumn(), $js['errors']], [null, 0], '🟡4: nothing in the pool — waits (not decided, not an error)');
+
+// ── ביקורת 🟡5: בדיקה לאחור ישנה ב-u:<id> נקראת כשאין ב-'' — ורק לבעליה ──
+$m = ts_method('sample-ma-cross');
+$ver = (int)$m->meta()['version'];
+$bt = $db->prepare("INSERT INTO backtests (method_id, method_version, provider, asset, tf, params_hash, cred_scope, n, wins, state, computed_at) VALUES ('sample-ma-cross', ?, 'twelvedata', 'twelvedata:ORCL', 'h1', 'x', ?, 40, 20, '{}', ?)");
+$bt->execute([$ver, "u:$C", $now]);
+eq([ts_bt_read_scopes($C, 'twelvedata'), ts_overlay_backtested($C, $m, 'twelvedata:ORCL', 'h1'), ts_overlay_backtested($B, $m, 'twelvedata:ORCL', 'h1')], [['', "u:$C"], true, false],
+    '🟡5: C\'s old personal backtest (u:C) is found for C — not for B');
+eq(ts_max_horizon($m, ['horizon' => 10], 'twelvedata:ORCL', ts_bt_read_scopes($C, 'twelvedata'))['tf'] ?? null, 'h1', '🟡5: and it backs the horizon for C');
+$bt->execute([$ver, '', $now]);
+[$in, $order, $sc] = ts_bt_scope_sql(ts_bt_read_scopes($C, 'twelvedata'));
+$st = $db->prepare("SELECT cred_scope FROM backtests WHERE asset = 'twelvedata:ORCL'$in$order LIMIT 1");
+$st->execute($sc);
+eq($st->fetchColumn(), '', '🟡5: when both exist — the shared one (\'\') first');
 
 // ── קריטריון 6: המיגרציה ──
 $c = ts_cache();

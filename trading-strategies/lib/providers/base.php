@@ -21,6 +21,9 @@ class TsProviderError extends RuntimeException {}
  */
 final class TsCapError extends TsProviderError {}
 
+/** הספק הגביל את הקצב (429) — כמו תקרה: אפשר לעבור לדרך הבאה בסדר (21.3, ביקורת 🟡3), ובסוף — מה שבמאגר */
+final class TsRateError extends TsProviderError {}
+
 const TS_TF_SECONDS = ['m1' => 60, 'm5' => 300, 'm15' => 900, 'm30' => 1800, 'h1' => 3600, 'h4' => 14400,
     'd1' => 86400, 'w1' => 604800, 'mn1' => 2678400];   // חודש — 31 יום, לחישובי טווח בלבד
 
@@ -63,7 +66,7 @@ abstract class TsProvider
             throw new TsProviderError($this->meta()['name'] . ': הספק הפנה לכתובת אחרת — הבקשה לא נשלחה הלאה, כדי שהמפתח לא יגיע למקום אחר.');
         }
         if ($status === 401 || $status === 403) throw new TsProviderError($this->clean($this->meta()['name'] . ': המפתח נדחה' . $this->detail($json), $secret));
-        if ($status === 429) throw new TsProviderError($this->meta()['name'] . ': הספק הגביל את קצב הבקשות. נסו שוב בעוד דקה.');
+        if ($status === 429) throw new TsRateError($this->meta()['name'] . ': הספק הגביל את קצב הבקשות. נסו שוב בעוד דקה.');
         if ($status === 451) throw new TsProviderError($this->meta()['name'] . ': הספק חוסם בקשות מהאזור של השרת.');
         if ($status >= 400 || $json === null) {
             throw new TsProviderError($this->clean($this->meta()['name'] . ": שגיאה מהספק ($status)" . $this->detail($json), $secret));

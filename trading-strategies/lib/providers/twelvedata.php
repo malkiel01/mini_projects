@@ -50,7 +50,8 @@ final class TsProvTwelveData extends TsProvider
         if (($j['status'] ?? '') === 'error') {
             $code = (int)($j['code'] ?? 0);
             $msg = $code === 401 || $code === 403 ? 'המפתח נדחה' : ($code === 429 ? 'הגעתם לתקרת הבקשות של הספק' : 'שגיאה מהספק');
-            throw new TsProviderError($this->clean("Twelve Data: $msg — " . mb_substr((string)($j['message'] ?? ''), 0, 200), $secret));
+            $text = $this->clean("Twelve Data: $msg — " . mb_substr((string)($j['message'] ?? ''), 0, 200), $secret);
+            throw $code === 429 ? new TsRateError($text) : new TsProviderError($text);
         }
         return $j;
     }

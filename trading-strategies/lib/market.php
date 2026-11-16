@@ -109,7 +109,8 @@ function ts_app_keys_state(): array
     $out = [];
     foreach (array_keys(TS_PROVIDERS) as $id) {
         if (!ts_app_key_allowed($id)) continue;
-        $out[$id] = ['cred_id' => isset(ts_app_cred($id)['id']) ? (int)ts_app_cred($id)['id'] : null, 'user_limit' => ts_app_user_limit($id)];
+        $c = ts_app_cred($id);
+        $out[$id] = ['cred_id' => $c ? (int)$c['id'] : null, 'user_limit' => ts_app_user_limit($id)];
     }
     return $out;
 }
@@ -225,8 +226,8 @@ function ts_usage_take(int $uid, string $provider, array $acc, int $n = 1): void
 }
 
 /**
- * פנייה לספק בדרך הראשונה שלא בתקרה (21.3 (1)): מפתח האפליקציה בתקרה — המפתח האישי, ואחריו השיוך. $chain מתקצר:
- * דרך שהגיעה לתקרה לא נשאלת שוב באותה בקשה. $acc — הדרך שענתה. כולן בתקרה (או אין) — TsCapError.
+ * פנייה לספק בדרך הראשונה שלא בתקרה (21.3 (1)): מפתח האפליקציה בתקרה, או 429 מהספק — המפתח האישי, ואחריו השיוך.
+ * $chain מתקצר: דרך שנחסמה לא נשאלת שוב באותה בקשה. $acc — הדרך שענתה. כולן חסומות (או אין) — TsCapError.
  */
 function ts_provider_call_chain(int $uid, string $provider, array &$chain, callable $fn, ?array &$acc = null, int $n = 1): mixed
 {
@@ -236,12 +237,13 @@ function ts_provider_call_chain(int $uid, string $provider, array &$chain, calla
             $r = ts_provider_call($uid, $provider, $chain[0], $fn, $n);
             $acc = $chain[0];
             return $r;
-        } catch (TsCapError $e) {
+        } catch (TsCapError | TsRateError $e) {
+            // תקרה שלנו, או 429 מהספק (🟡3) — הדרך הבאה; הדרך הזו לא נשאלת שוב בבקשה הזו
             $last = $e;
             array_shift($chain);
         }
     }
-    throw $last ?? new TsCapError('אין מפתח זמין להשלמה');
+    throw $last instanceof TsCapError ? $last : new TsCapError($last ? $last->getMessage() : 'אין מפתח זמין להשלמה');
 }
 
 /** מריץ פנייה לספק; כל שגיאה יוצאת נקייה מהמפתח */
@@ -251,7 +253,8 @@ function ts_provider_call(int $uid, string $provider, array $acc, callable $fn, 
     try {
         return $fn(ts_provider($provider), $acc['secret']);
     } catch (TsProviderError $e) {
-        throw new TsProviderError($acc['secret'] !== null ? ts_scrub($e->getMessage(), [$acc['secret']]) : $e->getMessage());
+        $cls = $e::class;   // TsRateError נשאר TsRateError — השרשרת עוברת בו לדרך הבאה
+        throw new $cls($acc['secret'] !== null ? ts_scrub($e->getMessage(), [$acc['secret']]) : $e->getMessage());
     } catch (Throwable $e) {
         error_log('trading-strategies provider ' . $provider . ': ' . ($acc['secret'] !== null ? ts_scrub($e->getMessage(), [$acc['secret']]) : $e->getMessage()));
         throw new TsProviderError(ts_provider($provider)->meta()['name'] . ': תקלה בפנייה לספק');

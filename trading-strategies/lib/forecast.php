@@ -110,9 +110,9 @@ function ts_overlay_backtested(int $uid, TsMethod $m, string $asset, string $tf)
 {
     $meta = $m->meta();
     [$provider] = ts_asset_split($asset);
-    $scope = ts_scope_for($uid, $provider);
+    [$in, , $sc] = ts_bt_scope_sql(ts_bt_read_scopes($uid, $provider));   // '' ואז u:<id> הישן (21.3, 🟡5)
     $st = ts_db()->prepare("SELECT 1 FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
-        AND cred_scope = ? AND source = 'provider' LIMIT 1");
-    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, (string)$scope]);
+        AND source = 'provider'$in LIMIT 1");
+    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, ...$sc]);
     return (bool)$st->fetchColumn();
 }

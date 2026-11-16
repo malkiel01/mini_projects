@@ -114,7 +114,10 @@ function ts_prefill_keys(int $now, int &$bad = 0): array
             if (!$acc || $acc['scope'] !== '') continue;
             if ($meta['needs_key'] && $acc['source'] !== 'app') continue;   // לעולם לא במפתח של משתמש
             $shared ??= ts_prefill_pool(0, false);
-            $keys[] = ['provider' => $provider, 'uid' => 0, 'scope' => '', 'acc' => $acc, 'queue' => ts_prefill_order($provider, $fav, $recent, $shared)];
+            $queue = ts_prefill_order($provider, $fav, $recent, $shared);
+            // מפתח האפליקציה (21.3 קריטריון 10, ביקורת 🔴1): זוג שיש לו ספק חינמי — רק מהחינמי, גם כשהוא במועדפים או נפתח
+            if ($meta['needs_key']) $queue = array_filter($queue, fn($a) => !ts_pair_has_free($a), ARRAY_FILTER_USE_KEY);
+            $keys[] = ['provider' => $provider, 'uid' => 0, 'scope' => '', 'acc' => $acc, 'queue' => $queue];
         } catch (Throwable $e) {
             $bad++;
             error_log("trading-strategies prefill key $provider: " . $e->getMessage());

@@ -357,6 +357,24 @@ function ts_bt_hash(array $p, array $cost): string
  * התוצאה של (שיטה, גרסה, ספק, נכס, מסגרת, פרמטרים, היקף מפתח) — שמורה אם עדכנית (פחות מיום), מצטברת אם רק חלף
  * זמן, או מלאה. מחזיר {status ok|insufficient|later|incomplete|error, ...תוצאה, computed_at, mode, provider_calls}.
  */
+/**
+ * ההיקפים שמהם קוראים בדיקה לאחור שמורה, לפי סדר (21.3 (2), ביקורת 🟡5): בספק משותף — קודם '' (המאגר של כולם), ואם אין —
+ * ה-u:<id> הישן של המשתמש עצמו (מלפני 21.3, רק שלו). אחרת — ההיקף של הדרך שלו. ריק — אין מאיפה.
+ */
+function ts_bt_read_scopes(int $uid, string $provider): array
+{
+    $scope = ts_scope_for($uid, $provider);
+    if ($scope === null) return [];
+    return $scope === '' && ts_provider($provider)->meta()['share'] ? ['', "u:$uid"] : [$scope];
+}
+
+/** התנאי ב-SQL וסדר ההעדפה של ts_bt_read_scopes: [" AND cred_scope IN (…)", " ORDER BY …", params] */
+function ts_bt_scope_sql(array $scopes): array
+{
+    if (!$scopes) return [' AND 0', '', []];
+    return [' AND cred_scope IN (' . implode(',', array_fill(0, count($scopes), '?')) . ')', " ORDER BY cred_scope = '' DESC", $scopes];
+}
+
 function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market, int $now): array
 {
     [$provider] = ts_asset_split($asset);
@@ -371,6 +389,11 @@ function ts_backtest(int $uid, TsMethod $m, array $p, string $asset, string $tf,
     $st = $db->prepare("SELECT * FROM backtests WHERE method_id = ? AND provider = ? AND asset = ? AND tf = ? AND cred_scope = ? AND source = 'provider'");
     $st->execute([$meta['id'], $provider, $asset, $tf, $scope]);
     $row = $st->fetch() ?: null;
+    // ספק משותף (🟡5): אין ב-'' — תוצאה ישנה של המשתמש עצמו ב-u:<id>. מה שיחושב מכאן — נשמר ב-''
+    if (!$row && $scope === '' && ts_provider($provider)->meta()['share']) {
+        $st->execute([$meta['id'], $provider, $asset, $tf, "u:$uid"]);
+        $row = $st->fetch() ?: null;
+    }
     $same = $row && (int)$row['method_version'] === (int)$meta['version'] && $row['params_hash'] === $hash;
 
     if ($same && (int)$row['computed_at'] > $now - TS_BT_STALE) {
@@ -418,11 +441,11 @@ function ts_method_key(TsMethod $m, array $p, string $asset, string $tf, string 
 function ts_backtest_stored(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market, int $now): array
 {
     [$provider] = ts_asset_split($asset);
-    $scope = (string)(ts_scope_for($uid, $provider) ?? '');
+    [$in, $order, $sc] = ts_bt_scope_sql(ts_bt_read_scopes($uid, $provider));
     $meta = $m->meta();
     $st = ts_db()->prepare("SELECT state, computed_at FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
-        AND cred_scope = ? AND params_hash = ? AND source = 'provider'");
-    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, $scope, ts_bt_hash($p, ts_cost_for($market))]);
+        AND params_hash = ? AND source = 'provider'$in$order LIMIT 1");
+    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, ts_bt_hash($p, ts_cost_for($market)), ...$sc]);
     $row = $st->fetch();
     if (!$row) return ['status' => 'missing', 'message' => 'לא נבדק לאחור', 'provider_calls' => 0];
     return ts_bt_out(json_decode($row['state'], true), (int)$row['computed_at'], 'stored', 0)
@@ -523,11 +546,11 @@ function ts_param_notes(TsMethod $m): ?array
 function ts_bt_state(int $uid, TsMethod $m, array $p, string $asset, string $tf, string $market): ?array
 {
     [$provider] = ts_asset_split($asset);
-    $scope = ts_scope_for($uid, $provider);
+    [$in, $order, $sc] = ts_bt_scope_sql(ts_bt_read_scopes($uid, $provider));
     $meta = $m->meta();
     $st = ts_db()->prepare("SELECT state FROM backtests WHERE method_id = ? AND method_version = ? AND provider = ? AND asset = ? AND tf = ?
-        AND cred_scope = ? AND params_hash = ? AND source = 'provider'");
-    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, (string)$scope, ts_bt_hash($p, ts_cost_for($market))]);
+        AND params_hash = ? AND source = 'provider'$in$order LIMIT 1");
+    $st->execute([$meta['id'], $meta['version'], $provider, $asset, $tf, ts_bt_hash($p, ts_cost_for($market)), ...$sc]);
     $raw = $st->fetchColumn();
     return $raw ? json_decode($raw, true) : null;
 }
@@ -550,10 +573,11 @@ function ts_horizon_text(int $bars, string $tf): string
 }
 
 /** האופק הארוך ביותר שהנתונים מגבים (6.4): המסגרת הארוכה ביותר עם N ≥ 30 בבדיקות לאחור השמורות */
-function ts_max_horizon(TsMethod $m, array $p, string $asset, string $scope): ?array
+function ts_max_horizon(TsMethod $m, array $p, string $asset, array $scopes): ?array
 {
-    $st = ts_db()->prepare("SELECT tf, n FROM backtests WHERE method_id = ? AND asset = ? AND cred_scope = ? AND method_version = ? AND n >= ? AND source = 'provider'");
-    $st->execute([$m->meta()['id'], $asset, $scope, $m->meta()['version'], TS_MIN_SIGNALS]);
+    [$in, , $sc] = ts_bt_scope_sql($scopes);
+    $st = ts_db()->prepare("SELECT tf, n FROM backtests WHERE method_id = ? AND asset = ? AND method_version = ? AND n >= ? AND source = 'provider'$in");
+    $st->execute([$m->meta()['id'], $asset, $m->meta()['version'], TS_MIN_SIGNALS, ...$sc]);
     $best = null;
     foreach ($st->fetchAll() as $r) if (isset(TS_TF_SECONDS[$r['tf']]) && ($best === null || TS_TF_SECONDS[$r['tf']] > TS_TF_SECONDS[$best])) $best = $r['tf'];
     return $best ? ['tf' => $best, 'text' => ts_horizon_text($m->horizon($p), $best)] : null;
@@ -640,7 +664,7 @@ function ts_analysis_cards(int $uid, string $asset, string $tf, array $prepared,
             'basis' => $basis, 'param_notes' => ts_param_notes($m),
             'levels' => $levels, 'as_of' => $a['as_of'], 'backtest' => $bt, 'certainty' => $cert,
             'below_threshold' => $cert !== null && $cert < $profile['min_certainty'], 'risk' => $risk,
-            'max_horizon' => ts_max_horizon($m, $p, $asset, $acc['scope'])];
+            'max_horizon' => ts_max_horizon($m, $p, $asset, ts_bt_read_scopes($uid, $provider))];
     }
     $blend = ts_blend(array_map(fn($c) => ['id' => $c['method']['id'], 'bias' => $c['bias'],
         'certainty' => $c['certainty']], $cards), $profile['preferred_methods']);
