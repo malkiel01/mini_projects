@@ -15,7 +15,7 @@
  * - **רק תצוגה** (קריטריון 10): לא נכתב כלום — לא התראות, לא שקלול, לא method_journal ולא method_outcomes.
  *
  * נקרא מ-ts_method_result (lib/refresh.php): נשמר יחד עם תוצאת השיטה במטמון (method_results), עד הנר הסגור הבא.
- * **מנות ישנות** (#1724, טעינה בפעימות) — לא כאן: השיטות רצות על החלון של chart_refresh בלבד (עד 5,000 נרות).
+ * **מנות ישנות** (#1724, טעינה בפעימות) — ts_method_history (H1c, סעיף 6): לכל מנה, רק מה שלפני תחילת הטווח הקודם.
  */
 
 declare(strict_types=1);
@@ -44,9 +44,10 @@ function ts_history_rule(TsMethod $m, array $ms, array $p, string $side): array
  * אותות העבר של שיטה על הנרות הסגורים של הגרף ($rows — מחרוזות, ממוינים). מחזיר:
  * {n, bars (כמה נרות סגורים — "N אותות ב-M הנרות האחרונים"), from, to, items: [{t, side, entry, stop, target, t_entry, t_exit, exit, result win|loss|horizon|open, r, rule[], zone}],
  *  counts: [ספירות עבר — ts_ew_past_counts]}. $tf — אורך הנר בשניות (null — לפי שני הנרות הראשונים).
+ * $before (H1c, מנה ישנה): רק אותות וספירות עם t < before — n, items (50 האחרונים מביניהם) ו-counts; bars — הנרות שלפני before.
  * מחירים — float (תצוגה בלבד; הדפדפן מעגל לפי ה-tick). t_exit / exit / r — null כשהאות פתוח.
  */
-function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows, ?int $tf = null): array
+function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows, ?int $tf = null, ?int $before = null): array
 {
     $fl = ts_bt_floats($rows);
     $base = ['n' => 0, 'bars' => count($fl), 'from' => $fl[0]['t'] ?? null, 'to' => $fl ? end($fl)['t'] : null, 'items' => [], 'counts' => []];
@@ -76,6 +77,11 @@ function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows, ?
         $items[] = ['t' => (int)$q['sig_t'], 'side' => $q['side'], 'entry' => null, 'stop' => isset($q['stop']) ? $f($q['stop']) : null,
             'target' => isset($q['stop']) ? $f($q['target']) : null, 't_entry' => null, 't_exit' => null, 'exit' => null, 'result' => 'open', 'r' => null];
     }
+    if ($before !== null) {
+        $items = array_values(array_filter($items, fn($x) => $x['t'] < $before));
+        $base['bars'] = count(array_filter($fl, fn($c) => $c['t'] < $before));
+        $base['to'] = $base['bars'] ? $fl[$base['bars'] - 1]['t'] : null;
+    }
     $n = count($items);
     $items = array_slice($items, -TS_HISTORY_SHOW);
     foreach ($items as &$it) {
@@ -85,5 +91,81 @@ function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows, ?
         $it['zone'] = is_array($z) && count($z) === 2 && ($ms['x']['ago'] ?? null) === 0 ? [(float)min($z), (float)max($z)] : null;
     }
     unset($it);
-    return ['n' => $n, 'items' => $items, 'counts' => $m->pastCounts($fl, $p, $tf)] + $base;
+    return ['n' => $n, 'items' => $items, 'counts' => $m->pastCounts($fl, $p, $tf, $before)] + $base;
+}
+
+/** [שלנו, H1c] — כמה נרות אחרי before נכנסים לחישוב של מנה ישנה, מעבר לאופק: אישור נקודות המפנה שבגבול (ספירות אליוט) */
+const TS_HISTORY_TAIL = 300;
+
+/**
+ * H1c (18.1.8 סעיף 6, קריטריון 12): אותות וספירות עבר של מנה ישנה שנטענה בגלילה (market_history). $from — הנר הראשון של המנה,
+ * $before — תחילת הטווח שהיה טעון קודם. מחזיר {methods: {id: {status, history}}}, ובכל history רק פריטים עם t < before —
+ * מה שכבר על המסך לא זז.
+ *
+ * - **הנרות והחימום** — ts_market_candles: הטבלה history (שם market_history שמר את המנה) והמאגר; פנייה לספק רק על חסר.
+ * - **הטווח:** [from, before + (אופק + TS_HISTORY_TAIL) נרות] — לא כל הגרף. המנוע לא מציץ קדימה, ועסקה שנפתחה לפני before
+ *   נסגרת בתוך האופק — ולכן כל אות עם t < before זהה לחישוב על כל הנרות שבגרף, בכמה אלפי נרות לבקשה גם בגרף של 50,000.
+ * - **מטמון:** method_results, במפתח של הנרות + before. מנה ישנה לא משתנה — אותה מנה שוב לא מריצה את השיטה.
+ * - **רק תצוגה** — כמו H1a: בלי יומן, בלי התראות, בלי שקלול.
+ */
+function ts_method_history(int $uid, mixed $asset, mixed $tf, mixed $from, mixed $before, mixed $methods, ?int $now = null): array
+{
+    if (!is_string($tf) || !isset(TS_TF_SECONDS[$tf])) throw new TsInvalid('מסגרת זמן לא תקינה');
+    if (!is_numeric($from) || !is_numeric($before) || (int)$from >= (int)$before) throw new TsInvalid('טווח לא תקין');
+    [$provider] = ts_asset_split($asset);
+    if (($alt = ts_pair_tf_asset($uid, (string)$asset, $tf)) !== null) [$asset, $provider] = [$alt, explode(':', $alt, 2)[0]];
+    $ids = is_string($methods) && $methods !== '' ? array_values(array_unique(explode(',', $methods))) : [];
+    if (!$ids) throw new TsInvalid('לא נבחרה שיטה');
+    if (count($ids) > TS_REFRESH_MAX_METHODS) throw new TsInvalid('יותר מדי שיטות בבקשה אחת (עד ' . TS_REFRESH_MAX_METHODS . ')');
+    $now ??= ts_now();
+    $sec = TS_TF_SECONDS[$tf];
+    $from = (int)$from; $before = (int)$before;
+    $prepared = [];
+    $tail = 0;
+    $out = [];
+    foreach ($ids as $id) {
+        try {
+            [$m, $set, $p] = ts_method_for($uid, $id);
+        } catch (TsNotFound) {
+            $out[$id] = ['status' => 'unavailable', 'history' => null];
+            continue;
+        }
+        if (!ts_overlay_supported($set, (string)$asset, $tf)) { $out[$id] = ['status' => 'unavailable', 'history' => null]; continue; }
+        $p = ts_params_for_segment($m, $set, $p, (string)$asset, $tf);
+        $prepared[$id] = [$m, $p];
+        $tail = max($tail, $m->horizon($p) + TS_HISTORY_TAIL);
+    }
+    $r = ['provider_calls' => 0, 'candles' => []];
+    if ($prepared) {
+        // המנה + הזנב — לא יותר מבקשה אחת של גרף (ts_market_candles חותך מההתחלה; כאן חותכים את הזנב)
+        $from = max($from, $before - (TS_MAX_CANDLES - 2 * TS_HISTORY_TAIL) * $sec);
+        $to = min($now, $before + $tail * $sec, $from + (TS_MAX_CANDLES - 1) * $sec);
+        $r = ts_market_candles($uid, $asset, $tf, $from, $to, $now);
+    }
+    $rows = ts_closed_rows(array_values(array_filter($r['candles'], fn($c) => $c['t'] >= $from)), $tf, $now);
+    $scope = (string)(ts_scope_for($uid, $provider) ?? '');
+    $c = ts_cache();
+    foreach ($prepared as $id => [$m, $p]) {
+        $k = ts_method_key($m, $p, (string)$asset, $tf, "$scope|h1c|$before", $rows);
+        $st = $c->prepare('SELECT result FROM method_results WHERE k = ?');
+        $st->execute([$k]);
+        $hit = $st->fetchColumn();
+        if (is_string($hit) && is_array($h = json_decode($hit, true))) { $out[$id] = ['status' => 'ok', 'history' => $h, 'ran' => false]; continue; }
+        try {
+            $h = ts_history_signals($m, $p, (string)$asset, $rows, $sec, $before);
+        } catch (Throwable $e) {
+            error_log('trading-strategies method_history ' . $id . ': ' . $e->getMessage());
+            $out[$id] = ['status' => 'error', 'history' => null];
+            continue;
+        }
+        $json = json_encode($h, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        try {
+            $c->prepare('INSERT OR REPLACE INTO method_results (k, method_id, result, at) VALUES (?, ?, ?, ?)')->execute([$k, $m->meta()['id'], $json, $now]);
+        } catch (Throwable $e) {
+            error_log('trading-strategies method_results: ' . $e->getMessage());
+        }
+        $out[$id] = ['status' => 'ok', 'history' => json_decode($json, true), 'ran' => true];
+    }
+    return ['asset' => (string)$asset, 'tf' => $tf, 'before' => $before, 'from' => $rows[0]['t'] ?? null, 'provider_calls' => $r['provider_calls'],
+        'methods' => (object)$out];
 }

@@ -98,5 +98,27 @@ eq((int)$db->query('SELECT COUNT(*) FROM method_outcomes')->fetchColumn(), 0, 'c
 $S = $refresh('owner', 'sample-ma-cross')['methods']['sample-ma-cross']['history'];
 eq([$S['n'] >= count($S['items']), count($S['items']) <= 50], [true, true], "the sample method: {$S['n']} past signals, up to 50 shown");
 
+// ── H1c, קריטריון 12: מנה ישנה (market_history) → method_history: רק לפני תחילת הטווח הקודם, מהמטמון, בלי לשנות את מה שעל המסך ──
+$klines = fn() => is_file("$tmp.http.log") ? substr_count((string)file_get_contents("$tmp.http.log"), '/klines') : 0;
+$ids = 'elliott-w3,fibonacci';
+$r0 = $refresh('carol', $ids);
+$first = $r0['candles'][0]['t'];
+[$c, $b1] = call('carol', 'market_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'before' => $first]);
+eq([$c, count($b1['candles']) > 900], [200, true], 'one older batch (market_history)');
+$k0 = $klines();
+[$c, $mh] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $b1['candles'][0]['t'], 'before' => $first, 'methods' => $ids]);
+eq([$c, $mh['provider_calls'], $klines() - $k0], [200, 0, 0], 'method_history: the candles and the warm-up from cache.sqlite (history + the pool) — 0 provider calls');
+$items = array_merge(...array_map(fn($x) => [...($x['history']['items'] ?? []), ...($x['history']['counts'] ?? [])], array_values($mh['methods'])));
+eq([array_column(array_values($mh['methods']), 'status'), count($items) > 0, array_unique(array_map(fn($x) => $x['t'] < $first, $items))], [['ok', 'ok'], true, [true]],
+    'criterion 12: every method — past items only before the start of the previous range (' . count($items) . ')');
+eq(array_unique(array_column(array_values($mh['methods']), 'ran')), [true], '… computed once');
+[, $mh2] = call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $b1['candles'][0]['t'], 'before' => $first, 'methods' => $ids]);
+eq([array_unique(array_column(array_values($mh2['methods']), 'ran')), array_column(array_values($mh2['methods']), 'history')], [[false], array_column(array_values($mh['methods']), 'history')],
+    'the same batch again → from the cache (the methods did not run), the same items');
+$r1 = $refresh('carol', $ids);
+eq(array_map(fn($x) => $x['history'], $r1['methods']), array_map(fn($x) => $x['history'], $r0['methods']), 'criterion 12: what was on the chart (chart_refresh) — unchanged');
+eq(call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first, 'before' => $first, 'methods' => $ids])[0], 422, 'from ≥ before → 422');
+eq(call('carol', 'method_history', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'from' => $first - 3600, 'before' => $first, 'methods' => ''])[0], 422, 'no methods → 422');
+
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";
 exit($fail ? 1 : 0);

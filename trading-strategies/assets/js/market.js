@@ -688,6 +688,7 @@ export function mountMarket(ctx) {
       clearTimeout(hist.timer);
       Object.assign(hist, { busy: false, done: false, next: 0, timer: null, target, got: 0, note: '', user: false });
       older = [];
+      forecast.resetOlder();
       histShow();
     }
     function histShow() {
@@ -734,6 +735,15 @@ export function mountMarket(ctx) {
             hist.jump = lv && lv2 ? { before: [lv.from, lv.to], after: [lv2.from, lv2.to], added: add.length } : null;
             drawIndicators();
             draw.redraw();
+            // H1c (18.1.8 סעיף 6): אותות וספירות העבר של המנה — רק לפני הנר הראשון הקודם, כך שמה שעל המסך לא זז. באותו תור של
+            // הפעימות (לא במקביל); השרת קורא מהמטמון. כשל — המנה נשארת בלי אותות עבר
+            const ids = forecast.methods();
+            if (ids.length && first !== Infinity) {
+              try {
+                const mh = await api('method_history', null, { asset, tf: st.tf, from: add[0].time, before: first, methods: ids.join(',') });
+                if (gen === hist.gen) forecast.addOlder(mh);
+              } catch { /* בלי אותות עבר למנה הזו */ }
+            }
           }
           if (r.done || !add.length || data.length >= HIST_MAX || (hist.target !== null && data[0].time <= hist.target)) {
             hist.done = r.done || !add.length || data.length >= HIST_MAX;

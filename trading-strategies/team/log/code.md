@@ -187,3 +187,6 @@
 - 2026-11-17 — **H1b** (18.1.8 סעיפים 2–3, בקרה (9)), ענף `claude/trading-strategies-history-h1b`: ספירות אליוט שהושלמו בעבר (`ts_ew_past_counts`,
   `TsMethod::pastCounts`) ואזור פיבונאצ'י לכל אות עבר (`zone`), באותו `history` ובאותו מתג. `TS_RESULT_FORMAT` → 3. בדיקות: `past-counts.php` (21, חדשה),
   `past-signals-api.php` 14 → 19, `past-signals-ui.mjs` 23 → 34, `past-signals.php` (counts ריק). בלי מיגרציה.
+- 2026-11-17 — **H1c** (18.1.8 סעיף 6, קריטריון 12), ענף `claude/trading-strategies-history-h1c` (על גבי H1b): `method_history` — אותות וספירות עבר
+  של מנה ישנה, רק t < before, מהמטמון; `forecast.addOlder` ממזג בלי להזיז את מה שעל המסך. בדיקות: `past-batch.php` (13), `past-signals-api.php` 19 → 27,
+  `past-batch-ui.mjs` (9, חדשה). בלי מיגרציה.
