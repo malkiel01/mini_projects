@@ -52,7 +52,7 @@ const canvasPrint = p => p.evaluate(() => [...document.querySelectorAll('.chart-
 try {
   const { p: o } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   // ניהול: הפרמטרים מסומנים
   await o.goto(BASE + '#/admin');
   await o.getByRole('tab', { name: '🧪 שיטות' }).click();
@@ -64,7 +64,7 @@ try {
 
   const { p: a } = await open('alice');
   await a.goto(BASE + '#/market');
-  await a.waitForSelector('main');
+  await a.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
   // S4 (18.4): הכרטיס בפס שמתחת לגרף — שיטה אחת מסומנת, מסגרת h1
   await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));

@@ -53,7 +53,7 @@ try {
   // ── המנהל מפעיל את שיטת הדוגמה ──
   const { p: o, reqs } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   eq(await post(o, 'admin_method_save', { id: 'sample-ma-cross', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4', 'd1'] }), 200, 'the admin turns on the sample method');
   await o.goto(CHART);
   await loaded(o);
@@ -110,7 +110,7 @@ try {
   eq(reqs.filter(a => a === 'chart_refresh').length, 1, '"↻" refreshes the candles and the forecast (one request)');
 
   // ── הסתרה ──
-  await panel.getByRole('button', { name: 'הסתרה' }).click();
+  await panel.getByRole('button', { name: 'הסרה', exact: true }).click();
   eq([await panel.isHidden(), await btn.getAttribute('aria-pressed')], [true, 'false'], 'hide → panel gone, button off');
   await o.waitForTimeout(300);
   eq(await canvasPrint(o) !== after, true, 'hide → the drawing is removed from the canvas');

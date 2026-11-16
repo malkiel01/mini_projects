@@ -4,7 +4,12 @@
 // הציור). הזמנים העתידיים (t + k·tf) נכנסים לציר כנקודות ריקות (whitespace) בסדרה נפרדת, כך שציר הזמן מתרחב ימינה בלי לגעת בנרות.
 //
 // **הבחירה (F1):** 🔮 פותח תפריט נפתח מעל הגרף — רשימת שיטות עם תיבות סימון. בלי sheet ובלי מסך אחר; הגרף גלוי.
-// **אפשר כמה שיטות יחד**, כל אחת בצבע הפנוי הבא מהפלטה, והכול בבקשת chart_refresh אחת. הבחירה נשמרת במכשיר (localStorage).
+// **אפשר כמה שיטות יחד**, והכול בבקשת chart_refresh אחת. הבחירה נשמרת במכשיר (localStorage).
+//
+// **הצבעים (S5, 18.5):** לכל שיטה צבע מפלטה של 8. ברירת המחדל — הפנוי הבא; בתפריט, מתחת לשיטה מסומנת, בוחרים צבע אחר —
+// צבע של שיטה אחרת שעל הגרף לא ניתן לבחירה. הצבע נשמר **בפרופיל** (method_colors, lib/method-colors.php) — אותה שיטה, אותו
+// צבע בכל זוג ובכל מכשיר. כל מה ששיטה מציירת — קו, אזור, רמה, תווית וסימון על נר — בצבע שלה; ספירה חלופית — אותו צבע, עמום.
+// **המקרא** מעל הגרף: שיטה ונקודה בצבע; לחיצה מסתירה את השיטה מהגרף ומחזירה, בלי לבטל את הסימון שלה בתפריט.
 //
 // **הפס שמתחת לגרף (S4, 18.4)** — מחליף את מסך "🧭 ניתוח": לכל שיטה, בצבע שלה, שלוש כותרות — **ממצא** (כיוון, תנאים, רמות),
 // **תרחיש** (התרחישים, האזור ורמת הביטול, האופק; "הסתר תרחיש"), **הסתברות** (הוודאות של הבדיקה לאחור, 6.3 — או "לא נבדק
@@ -21,9 +26,9 @@ import { timeToLogical, logicalX } from './drawings.js';
 import { fmtNum } from './chartaxis.js';
 import { cardParts, TF_LABEL } from './card.js';
 
-const ROLE = { stop: '--danger', target: '--ok', invalidation: '--danger' };
-// הפלטה של השיטות — שיטה חדשה מקבלת את הצבע הפנוי הראשון (S5 יוסיף בחירה ומקרא)
+// הפלטה של השיטות (S5) — = TS_METHOD_PALETTE בשרת. שיטה חדשה מקבלת את הצבע הפנוי הראשון
 export const PALETTE = ['--brand', '--m2', '--m3', '--m4', '--m5', '--m6', '--m7', '--m8'];
+const COLOR_NAME = { '--brand': 'כחול', '--m2': 'כתום', '--m3': 'סגול', '--m4': 'טורקיז', '--m5': 'ורוד', '--m6': 'ירוק', '--m7': 'חרדל', '--m8': 'אפור' };
 const KEY = 'ts-forecast-methods';
 const MAX = PALETTE.length;   // = TS_REFRESH_MAX_METHODS בשרת
 
@@ -32,7 +37,7 @@ function loadChosen() {
     const v = JSON.parse(localStorage.getItem(KEY) || '[]');
     if (!Array.isArray(v)) return [];
     const out = [];
-    for (const x of v) if (x && typeof x.id === 'string' && PALETTE.includes(x.color) && !out.some(o => o.id === x.id)) out.push({ id: x.id, color: x.color, hide: x.hide === true, fold: x.fold === true });
+    for (const x of v) if (x && typeof x.id === 'string' && PALETTE.includes(x.color) && !out.some(o => o.id === x.id)) out.push({ id: x.id, color: x.color, hide: x.hide === true, fold: x.fold === true, off: x.off === true });
     return out.slice(0, MAX);
   } catch { return []; }
 }
@@ -40,7 +45,7 @@ function loadChosen() {
 export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmin = () => false, api, toast, getTf, getSec, getTimes, col, buttons, board, onChange,
   axisWidth = () => 0, tools = [], tfs = () => [], setTf = () => {} }) {
   const C = cardParts(ctx);
-  let chosen = loadChosen();     // [{id, color}] — לפי סדר הבחירה; הראשונה מובילה
+  let chosen = loadChosen();     // [{id, color, hide, fold, off}] — לפי סדר הבחירה; הראשונה מובילה. off — מוסתרת במקרא
   const res = new Map();         // id → התשובה האחרונה מ-chart_refresh
   let an = null;                 // הכרטיסים והשקלול (chart_refresh.analysis, או analysis אחרי בדיקה לאחור)
   let running = false;           // בדיקה לאחור רצה עכשיו (analysis)
@@ -49,6 +54,48 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   let requestUpdate = () => {};
 
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(chosen)); } catch { /* ריק */ } };
+
+  // ── הצבעים (S5): הפרופיל הוא האמת; הבחירה במכשיר רק זוכרת ──
+  const saved = () => { const v = ctx.me()?.profile?.method_colors; return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; };
+  const setSaved = v => { const me = ctx.me(); if (me?.profile) me.profile.method_colors = v && !Array.isArray(v) ? v : {}; };
+  /** הצבע של שיטה: מהפרופיל, אם לא תפוס על הגרף; אחרת הנוכחי; אחרת הפנוי הראשון שאינו שמור לשיטה אחרת */
+  function colorFor(id, used, cur) {
+    const mine = saved()[id];
+    if (PALETTE.includes(mine) && !used.has(mine)) return mine;
+    const reserved = new Set(Object.entries(saved()).filter(([k]) => k !== id).map(([, v]) => v));
+    if (PALETTE.includes(cur) && !used.has(cur) && !reserved.has(cur)) return cur;
+    return PALETTE.find(p => !used.has(p) && !reserved.has(p)) || PALETTE.find(p => !used.has(p));
+  }
+  function reconcile() {
+    const used = new Set();
+    for (const c of chosen) { c.color = colorFor(c.id, used, c.color); used.add(c.color); }
+  }
+  /** הצבעים שעל הגרף → לפרופיל. צבע ששמור לשיטה אחרת (לא על הגרף) — יורד ממנה: אותו צבע לשתי שיטות אסור */
+  function remember() {
+    const was = saved();
+    const next = { ...was };
+    for (const c of chosen) {
+      for (const k of Object.keys(next)) if (k !== c.id && next[k] === c.color) delete next[k];
+      next[c.id] = c.color;
+    }
+    const same = Object.keys(next).length === Object.keys(was).length && Object.keys(next).every(k => was[k] === next[k]);
+    if (same) return;
+    setSaved(next);
+    api('method_colors_save', { colors: next }).then(r => setSaved(r.method_colors)).catch(e => toast(e.message, true));
+  }
+  function setColor(id, color) {
+    const c = pick(id);
+    if (!c || !PALETTE.includes(color) || chosen.some(o => o.id !== id && o.color === color)) return;   // תפוס — לא אפשרי
+    c.color = color;
+    save();
+    remember();
+    if (openNow()) renderPop();
+    paint();
+  }
+  const nameOf = id => res.get(id)?.method?.name || list?.find(m => m.id === id)?.name || an?.cards?.find(c => c.method.id === id)?.method?.name || 'שיטה';
+  const shown = () => chosen.filter(c => !c.off);   // מה שמצויר על הגרף (המקרא מסתיר בלי לבטל סימון)
+  let markers = [];  // לבדיקות: הסימונים על הנרות, באותה צורה
+  let drawn = [];   // לבדיקות: מה צויר בפעם האחרונה ובאיזה צבע — {m, k, c, alt}
   const colorOf = id => col(chosen.find(c => c.id === id)?.color || '--brand');
   const whitespace = chart.addLineSeries({ visible: false, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
   const xOf = t => { const l = timeToLogical(getTimes(), getSec(), t); return l === null ? null : logicalX(chart.timeScale(), l); };
@@ -90,7 +137,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     ctx.fillText(s, left + 3, y - 2);
     return r;
   }
-  /** התווית של פריט — איפה ובאיזה צבע; null — אין (גם לחלופות: בלי טקסט, 17.1.7) */
+  /** התווית של פריט — איפה ובאיזה צבע (תמיד של השיטה, S5); null — אין (גם לחלופות: בלי טקסט, 17.1.7) */
   function labelOf(id, it, W) {
     if (!isOn(id, it)) return null;
     if (it.kind === 'zone') {
@@ -102,7 +149,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (it.kind === 'hline') {
       const y = yOf(it.price);
       // משמאל לעמודת המספרים של הציר — לא מעליהם (🟡 F1: "רמת ביטול" כיסתה את 82,500)
-      return y === null ? null : { s: `${it.text} · ${price(id, it.price)}`, x: W - 6 - axisWidth(), y, c: col(ROLE[it.role] || '--muted'), align: 'right' };
+      return y === null ? null : { s: `${it.text} · ${price(id, it.price)}`, x: W - 6 - axisWidth(), y, c: colorOf(id), align: 'right' };
     }
     if (it.kind === 'label') {
       const x = xOf(it.t), y = yOf(it.price);
@@ -117,9 +164,11 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     ctx.globalAlpha = on ? 1 : 0.3;   // החלופות עמומות (17.1.7)
     ctx.setLineDash([]);
     ctx.lineWidth = 2;
+    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on });
     if (it.kind === 'zone') {
       const x1 = xOf(it.t1), x2 = xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
       if ([x1, x2, y1, y2].includes(null)) return;
+      mark();
       ctx.fillStyle = c; ctx.globalAlpha *= 0.14;
       ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
       ctx.globalAlpha /= 0.14; ctx.strokeStyle = c; ctx.lineWidth = 1;
@@ -130,8 +179,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (it.kind === 'hline') {
       const y = yOf(it.price);
       if (y === null) return;
-      const rc = col(ROLE[it.role] || '--muted');
-      ctx.strokeStyle = rc;
+      mark();
+      ctx.strokeStyle = c;   // בצבע השיטה; סוג הרמה — בקו (ביטול: מקווקו ארוך) ובתווית שלה
       ctx.setLineDash(it.role === 'invalidation' ? [6, 4] : [2, 3]);
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
       ctx.setLineDash([]);
@@ -140,6 +189,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (it.kind === 'polyline') {
       const pts = it.points.map(p => [xOf(p.t), yOf(p.price)]);
       if (pts.some(([x, y]) => x === null || y === null)) return;
+      mark();
       ctx.strokeStyle = c;
       ctx.setLineDash(it.style === 'dashed' || it.scen ? [7, 5] : []);   // ממצא — קו מלא; תרחיש — מקווקו (18.4 קריטריון 3)
       ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
@@ -148,6 +198,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (it.kind === 'label') {
       const x = xOf(it.t), y = yOf(it.price);
       if (x === null || y === null) return;
+      mark();
       ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
     }
   }
@@ -161,20 +212,24 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
         renderer: () => ({
           draw(target) {
             board.begin('forecast');
+            drawn = [];
+            // המקרא יושב מעל הגרף — תווית לא מצוירת מתחתיו
+            const lr = legendRect();
+            if (lr) board.place(lr);
             target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
               const W = mediaSize.width;
               ctx.save();
               // הקווים: השיטה האחרונה קודם, המובילה מעליה; בכל שיטה — החלופות קודם
-              for (const { id } of [...chosen].reverse()) {
+              for (const { id } of [...shown()].reverse()) {
                 for (const it of itemsOf(id)) if (!isOn(id, it)) drawShape(ctx, id, it, W);
                 for (const it of itemsOf(id)) if (isOn(id, it)) drawShape(ctx, id, it, W);
               }
               // התוויות: השיטה המובילה ראשונה — היא שגוברת בחפיפה
               ctx.setLineDash([]);
-              for (const { id } of chosen) {
+              for (const { id } of shown()) {
                 for (const it of itemsOf(id)) {
                   const l = labelOf(id, it, W);
-                  if (l) text(ctx, l.s, l.x, l.y, l.c, l.align, W);
+                  if (l && text(ctx, l.s, l.x, l.y, l.c, l.align, W)) drawn.push({ m: id, k: 'text', c: l.c, alt: false });
                 }
               }
               ctx.restore();
@@ -209,16 +264,30 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     }
     pop.replaceChildren(head, h('div', { class: 'fc-opts' }, list.map(m => {
       const ok = m.timeframes.includes(tf);
-      const on = chosen.some(c => c.id === m.id);
+      const mine = pick(m.id);
       const inp = h('input', { type: 'checkbox', value: m.id });
-      inp.checked = on;
-      inp.disabled = !ok || (!on && chosen.length >= MAX);
+      inp.checked = !!mine;
+      inp.disabled = !ok || (!mine && chosen.length >= MAX);
       inp.addEventListener('change', () => toggle(m.id, inp.checked));
-      return h('label', { class: 'fc-opt' + (ok ? '' : ' off') }, inp,
+      const opt = h('label', { class: 'fc-opt' + (ok ? '' : ' off'), style: mine ? `--mc: var(${mine.color})` : null }, inp,
+        mine ? h('i', { class: 'fc-dot', 'aria-hidden': 'true' }) : null,
         h('span', { class: 'fc-opt-tx' }, h('span', {}, m.name),
           m.label ? h('small', { class: 'muted' }, m.label) : null,
           ok ? null : h('small', { class: 'muted' }, 'לא במסגרת הזו')));
+      return h('div', { class: 'fc-row' }, opt, mine ? swatches(m, mine) : null);
     })), h('p', { class: 'fc-note' }, 'תרחיש לפי כללי השיטה על הנרות שבגרף — לא ייעוץ, בלי אחוז ודאות.'));
+  }
+  /** בחירת הצבע של שיטה מסומנת: 8 עיגולים; צבע של שיטה אחרת שעל הגרף — לא ניתן לבחירה (18.5 קריטריון 2) */
+  function swatches(m, mine) {
+    return h('div', { class: 'fc-colors', role: 'radiogroup', 'aria-label': `הצבע של ${m.name}` }, PALETTE.map(p => {
+      const owner = chosen.find(c => c.color === p && c.id !== m.id);
+      const tip = owner ? `${COLOR_NAME[p]} — תפוס (${nameOf(owner.id)})` : COLOR_NAME[p];
+      const r = h('input', { type: 'radio', name: 'fc-color-' + m.id, value: p, 'aria-label': tip });
+      r.checked = mine.color === p;
+      r.disabled = !!owner;
+      r.addEventListener('change', () => { if (r.checked) setColor(m.id, p); });
+      return h('label', { class: 'fc-sw' + (owner ? ' taken' : ''), title: tip, style: `--sw: var(${p})` }, r);
+    }));
   }
   async function openPop() {
     pop.hidden = false;
@@ -240,8 +309,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   function toggle(id, on) {
     if (on) {
       if (chosen.some(c => c.id === id) || chosen.length >= MAX) return;
-      const used = new Set(chosen.map(c => c.color));
-      chosen.push({ id, color: PALETTE.find(p => !used.has(p)) });
+      chosen.push({ id, color: colorFor(id, new Set(chosen.map(c => c.color))) });
+      remember();
     } else {
       chosen = chosen.filter(c => c.id !== id);
       res.delete(id); selected.delete(id);
@@ -250,6 +319,25 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (openNow()) renderPop();
     paint();
     onChange();
+  }
+
+  // ── המקרא מעל הגרף (S5, 18.5): כל שיטה מסומנת, עם הנקודה בצבע שלה. לחיצה — מסתירה/מציגה, הסימון בתפריט נשאר ──
+  const legend = h('div', { class: 'fc-legend', role: 'group', 'aria-label': 'מקרא השיטות', hidden: true });
+  host.append(legend);
+  function renderLegend() {
+    legend.hidden = !chosen.length;
+    legend.replaceChildren(...chosen.map(c => h('button', { type: 'button', class: 'fc-leg' + (c.off ? ' off' : ''), 'data-method': c.id,
+      style: `--mc: var(${c.color})`, 'aria-pressed': String(!c.off), title: c.off ? 'הצגה על הגרף' : 'הסתרה מהגרף',
+      on: { click: () => { c.off = !c.off; save(); paint(); } } }, h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), nameOf(c.id))));
+  }
+  /** המלבן של המקרא בקואורדינטות של הגרף — ללוח התוויות */
+  function legendRect() {
+    if (legend.hidden || !chosen.length) return null;
+    const el = chart.chartElement?.();
+    if (!el) return null;
+    const a = legend.getBoundingClientRect(), b = el.getBoundingClientRect();
+    if (!a.width) return null;
+    return { x: a.left - b.left, y: a.top - b.top, w: a.width, h: a.height, by: 'legend', text: legend.textContent };
   }
 
   // ── הפס מתחת לגרף (S4, 18.4): ממצא · תרחיש · הסתברות, בלוק לכל שיטה בצבע שלה ──
@@ -264,16 +352,18 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
 
   function paint(scroll = false) {
     // סימונים על נרות — של הספרייה (גם הם על הקנבס)
+    // בצבע השיטה (S5); הכיוון — בצורה (חץ למעלה/למטה)
     const marks = [];
-    for (const { id } of chosen) for (const x of itemsOf(id)) if (x.kind === 'marker' && isOn(id, x)) marks.push({ time: x.t,
+    for (const { id } of shown()) for (const x of itemsOf(id)) if (x.kind === 'marker' && isOn(id, x)) marks.push({ time: x.t,
       position: x.side === 'long' ? 'belowBar' : 'aboveBar', shape: x.side === 'long' ? 'arrowUp' : 'arrowDown',
-      color: col(x.side === 'long' ? '--ok' : '--danger'), text: x.text });
+      color: colorOf(id), text: x.text, m: id });
     marks.sort((a, b) => a.time - b.time);
-    series.setMarkers(marks);
+    markers = marks.map(x => ({ m: x.m, k: 'marker', c: x.color, alt: false }));
+    series.setMarkers(marks.map(({ m, ...x }) => x));
     // ציר הזמן ימינה: נקודות ריקות עד הזמן העתידי הרחוק ביותר של תרחיש מוצג
     const sec = getSec();
     let far = null, asOf = null;
-    for (const { id } of chosen) {
+    for (const { id } of shown()) {
       const ov = res.get(id)?.overlay;
       if (!ov) continue;
       asOf = Math.max(asOf ?? ov.as_of, ov.as_of);
@@ -284,6 +374,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     whitespace.setData(ws);
     // תרחיש חדש — הגרף זז ימינה כך שההקרנה בתצוגה (בלי לשנות את הזום)
     if (scroll && ws.length) chart.timeScale().scrollToRealTime();
+    renderLegend();
     requestUpdate();
     renderPanel();
   }
@@ -320,18 +411,18 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   function block(id, color) {
     const r = res.get(id);
     const c = card(id);
-    const name = r?.method?.name || list?.find(m => m.id === id)?.name || c?.method?.name || 'שיטה';
+    const name = nameOf(id);
     const fold = !!pick(id)?.fold;
     const sec = h('section', { class: 'forecast-panel analysis-card', 'data-method': id, 'aria-label': name, style: `--mc: var(${color})` });
     sec.dataset.asOf = r?.overlay?.as_of ?? '';   // הנר הסגור האחרון של התוצאה — לבדיקות ולמסך המפתח
-    const close = h('button', { class: 'btn ghost sm', type: 'button', title: 'הסרת השיטה מהגרף', on: { click: () => toggle(id, false) } }, 'הסתרה');
+    const close = h('button', { class: 'btn ghost sm', type: 'button', title: 'הסרת השיטה מהגרף (ביטול הסימון)', on: { click: () => toggle(id, false) } }, 'הסרה');
     const bodyId = 'an-' + id;
     // שורת הסיכום — גם כשהשיטה מקופלת: הכיוון והוודאות, כל אחד עם השם שלו (קריטריון 2)
     const bt = c?.backtest;
     const brief = [C.biasWord(c), bt?.status === 'ok' ? `ודאות ${bt.certainty}%` : c?.status === 'ok' ? 'לא נבדק לאחור' : ''].filter(Boolean).join(' · ');
     const tog = h('button', { class: 'an-fold', type: 'button', 'aria-expanded': String(!fold), 'aria-controls': bodyId,
       on: { click: () => { set(id, 'fold', !fold); renderPanel(); } } },
-      h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), h('h3', {}, name), brief ? h('small', { class: 'muted an-brief' }, brief) : null,
+      h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), h('h3', {}, name), pick(id)?.off ? h('small', { class: 'chip' }, 'מוסתרת בגרף') : null, brief ? h('small', { class: 'muted an-brief' }, brief) : null,
       h('span', { class: 'an-chev', 'aria-hidden': 'true' }, fold ? '▾' : '▴'));
     const head = h('div', { class: 'forecast-head' }, tog, close);
     const body = h('div', { class: 'an-body', id: bodyId, hidden: fold });
@@ -403,7 +494,11 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   }
 
   // רשימת השיטות — לשמות, למסגרות ול"התראה מזה" (alerts). פעם אחת; התפריט טוען שוב כשנפתח
-  api('methods').then(x => { list ??= x.methods; renderPanel(); }).catch(() => {});
+  api('methods').then(x => { list ??= x.methods; renderLegend(); renderPanel(); }).catch(() => {});
+  reconcile();
+  save();
+  remember();   // צבע שהיה רק במכשיר (לפני S5) — נכנס לפרופיל
+  renderLegend();
   renderPanel();
 
   return {
@@ -430,7 +525,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       document.removeEventListener('keydown', esc, true);
       try { series.detachPrimitive(primitive); } catch { /* ריק */ }
     },
-    state: () => ({ methods: chosen.map(c => ({ ...c, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
-      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })) }),
+    state: () => ({ methods: chosen.map(c => ({ ...c, off: !!c.off, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
+      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() } }),
   };
 }

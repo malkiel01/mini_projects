@@ -432,6 +432,15 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 10) {
+        // צבע לכל שיטה (spec-stage-a 18.5, S5): עמודה חדשה, ריקה — null = עוד לא נבחר צבע. ALTER בלבד, לא נוגעת בשום נתון קיים
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN method_colors TEXT;
+            PRAGMA user_version = 10;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
