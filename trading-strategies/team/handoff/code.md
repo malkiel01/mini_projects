@@ -349,14 +349,20 @@
 - **⚪ `market-tabs-ui` — עדיין רועדת.** נוספה המתנה ללשוניות לפני הגרירה. אחרי התיקון עברה 7 מתוך 8 הרצות. ההרצה שנכשלה (בדיקה 38) לא נשמרה, ולכן הסיבה לא ידועה.
 - **התראות** ב-cron נספרות ב-100 היומיות של המשתמש שיצר אותן (ביקורת ⚪6) — בכוונה.
 
-## מסך מלא לגובה / לרוחב (2.30) — מה נבנה
+## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
 
-- **`market.js` → `viewChart`, אחרי `fsEnter`:** `fsMode` (`portrait`/`landscape`), `canLand()`, `fsLock()`/`fsUnlock()`, `fsSetMode()`.
-  "לגובה" מלכתחילה — בלי נעילה, כמו F1. ההחלפה בשורה הצפה (`.fs-rot`) נועלת `landscape`/`portrait`; כל יציאה — `unlock()`.
-- **`canLand()`** = Fullscreen API + `screen.orientation.lock` + `pointer: coarse` + הנעילה לא נדחתה בטעינה הזו. אחרת ⛶ נכנס ישר לגובה, בלי בחירה.
-- **שכבה מסובבת ב-CSS — נפסלה** (README, "מסך מלא לגובה או לרוחב"). אם הבעלים ירצה לרוחב גם ב-iPhone — צריך לעטוף את אירועי
-  המגע של Lightweight Charts ושל `drawings.js` (`local()`), זו פרוסה בפני עצמה.
-- **`lockVisibleTimeRangeOnResize: true`** ב-`base.timeScale` — כל שינוי רוחב שומר את טווח הזמן (לא את רוחב הנר).
-- **בדיקות ממשק שנכנסות למסך מלא:** ⛶ ואז `menuitem` "לגובה" (בהדמיית טלפון יש `lock`, ולכן הבחירה נפתחת). ראו `fsEnter` ב-`chart-f1-ui.mjs`.
-- **הדמיית סיבוב ב-Playwright** (`chart-landscape-ui.mjs`): `page.setViewportSize` נכשל בתוך Fullscreen (`Browser.setWindowBounds`) —
-  מסובבים ב-CDP `Emulation.setDeviceMetricsOverride`. גם `page.screenshot` מבטל את הסיבוב — מצלמים ב-CDP `Page.captureScreenshot`.
+- **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
+  - **ה-Fullscreen API על `document.documentElement`**, לא על הגרף: על האלמנט שב-Fullscreen הדפדפן כופה `transform: none !important`.
+    לכן בבדיקות: `document.fullscreenElement` הוא ה-`<html>`.
+  - התפריט ו-⟳ — רק כשהמסך לאורך (`innerHeight > innerWidth`) בכניסה.
+  - "לרוחב": `lock('landscape')` בתוך Fullscreen; נדחה/אין — `.fs-turn`. "לגובה" מ-⟳ אחרי נעילה — `lock('portrait')`. כל יציאה — `unlock()` אם ניסינו.
+- **`assets/js/rotate.js`** — `setTurned(el)`: כל עוד שכבה מסובבת, `getBoundingClientRect` ו-`clientX/Y`/`pageX/Y`/`x/y` של אירועים
+  ושל Touch בתוכה — במערכת השכבה. **מחליף getters על `Element.prototype`, `MouseEvent.prototype`, `Touch.prototype`** (פעם אחת,
+  ופעיל רק כשיש שכבה). מי שמוסיף קוד שמחשב מיקום על המסך בתוך הגרף (למשל `elementFromPoint` עם clientX) — לזכור את זה.
+- **`lockVisibleTimeRangeOnResize: true`** ב-`base.timeScale` — כל שינוי רוחב שומר את הטווח (לא את רוחב הנר).
+- **בדיקות ממשק שנכנסות למסך מלא בטלפון לאורך:** ⛶ ואז `menuitem` "לגובה" (ראו `fsEnter` ב-`chart-f1-ui.mjs`).
+- **הדמיה ב-Playwright** (`chart-landscape-ui.mjs`):
+  - סיבוב — CDP `Emulation.setDeviceMetricsOverride` (`setViewportSize` נכשל בתוך Fullscreen: `Browser.setWindowBounds`).
+  - צילום אחרי סיבוב — CDP `Page.captureScreenshot` (`page.screenshot` מבטל את הסיבוב); בלי סיבוב — `page.screenshot` (CDP בתוך Fullscreen יוצא 800×600).
+  - גרירת אצבע — CDP `Input.dispatchTouchEvent`; אחרי גרירה לחכות לגלילה הקינטית (~1.5 ש').
+- **לא בפרוסה:** זום אנכי של המחיר (L1 סעיף 5).

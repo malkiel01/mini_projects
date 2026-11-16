@@ -8,6 +8,7 @@ import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
 import { mountAxis, labelBoard } from './chartaxis.js';
+import { setTurned, screenRect } from './rotate.js';
 import { mountCombo, invalidateCatalog } from './combobox.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
@@ -386,9 +387,9 @@ export function mountMarket(ctx) {
     const fcBtn = () => h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'שיטות על הגרף', 'aria-pressed': 'false', 'aria-expanded': 'false' }, '🔮');
     const forecastBtn = fcBtn();
     // ⛶ מסך מלא (18.1.2 סעיף 3) — בשורת הכפתורים של הגרף (בכותרת אין מקום בטלפון)
-    // 2.30: ⛶ פותח בחירה קטנה — ⛶ לגובה / ⟷ לרוחב. בלי נעילת כיוון (iOS, מחשב) אין בחירה: ⛶ נכנס ישר לגובה
+    // L1 (18.1.5): ⛶ פותח תפריט קטן — ⛶ לגובה / ⟷ לרוחב — רק כשהמסך לאורך. מסך רחב (מחשב, טלפון שכבר לרוחב) — ישר פנימה
     const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-      on: { click: () => (canLand() ? fsMenuToggle() : fsEnter('portrait')) } }, '⛶');
+      on: { click: () => (tall() ? fsMenuToggle() : fsEnter('portrait')) } }, '⛶');
     const fsItem = (mode, icon, text) => h('button', { class: 'fs-item', type: 'button', role: 'menuitem', 'data-mode': mode,
       on: { click: () => { fsMenuClose(); fsEnter(mode); } } }, h('span', { class: 'fs-ico', 'aria-hidden': 'true' }, icon), text);
     const fsMenu = h('div', { class: 'fs-menu', role: 'menu', 'aria-label': 'מסך מלא', hidden: true },
@@ -432,8 +433,8 @@ export function mountMarket(ctx) {
     // במסך מלא: שורה צפה מעל הגרף — תווית הזוג, 🔮 ו-✕ (18.1.2 סעיף 3)
     const forecastBtnFs = fcBtn();
     const fsExit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'יציאה ממסך מלא', title: 'יציאה ממסך מלא', on: { click: () => fsLeave() } }, '✕');
-    // החלפה בין גובה לרוחב בתוך המסך המלא (2.30) — ליד ✕. מוצג רק כשיש נעילת כיוון
-    const fsRot = h('button', { class: 'icon-btn fs-rot', type: 'button', hidden: true, on: { click: () => fsSetMode(fsMode === 'landscape' ? 'portrait' : 'landscape') } });
+    // ⟳ החלפה בין לגובה ללרוחב בלי לצאת (L1 סעיף 3) — ליד ✕. רק כשנכנסו מטלפון לאורך (כמו התפריט)
+    const fsRot = h('button', { class: 'icon-btn fs-rot', type: 'button', hidden: true, on: { click: () => fsSetMode(fsMode === 'landscape' ? 'portrait' : 'landscape') } }, '⟳');
     const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsRot, fsExit);
     const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsPick)), custom,
@@ -488,7 +489,12 @@ export function mountMarket(ctx) {
     box.tsLabels = () => board.rects();   // לבדיקות: המלבנים של התוויות שצוירו בפעם האחרונה
     box.tsAxis = () => axis.shown();      // לבדיקות: המספרים שעל הצירים
     box.tsAxisW = () => axis.priceWidth(); // לבדיקות: רוחב עמודת המספרים
-    box.tsRange = () => chart.timeScale().getVisibleRange(); // לבדיקות: טווח הזמן הנראה (סיבוב לרוחב, 2.30)
+    box.tsRange = () => chart.timeScale().getVisibleLogicalRange(); // לבדיקות: הטווח הנראה (L1)
+    box.tsPriceAt = y => candle.coordinateToPrice(y);                 // לבדיקות: המחיר בגובה y בגרף (L1, ציור בשכבה המסובבת)
+    box.tsScreen = () => { const r = screenRect(box); return [r.left, r.top, r.right, r.bottom]; }; // לבדיקות: המלבן האמיתי על המסך
+    let cross = null;
+    chart.subscribeCrosshairMove(e => { cross = e.point ? { x: e.point.x, y: e.point.y } : null; });
+    box.tsCross = () => cross;                                         // לבדיקות: איפה הסמן (L1 קריטריון 5)
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
     // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
@@ -505,15 +511,17 @@ export function mountMarket(ctx) {
     drawSlot.append(draw.bar);
     onTeardown(() => { fsLeave(true); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
 
-    // ── מסך מלא (18.1.2 סעיף 3): רק הגרף. Fullscreen API כשיש, אחרת שכבה שמכסה את המסך (אותו class).
+    // ── מסך מלא (18.1.2 סעיף 3; L1 — 18.1.5): רק הגרף. Fullscreen API על כל הדף (documentElement) כשיש, והגרף — שכבה שמכסה
+    // את המסך (`.chart-wrap.fs`). כל הדף ולא הגרף: על אלמנט ב-Fullscreen הדפדפן כופה `transform: none`, והשכבה המסובבת צריכה transform.
     // יציאה: ✕, Esc, או "חזור" — רשומה בהיסטוריה (אותה כתובת, כך שהניתוב לא מתחלף), ו"חזור" רק מוציא ממסך מלא.
-    // 2.30 — שני מצבים: "לגובה" (כמו קודם, בלי נעילה) ו"לרוחב" (Fullscreen API ואז screen.orientation.lock('landscape')).
-    // שכבה מסובבת ב-CSS נבדקה ונפסלה: Lightweight Charts ו-drawings.js ממירים מגע לנקודה ב-clientX − rect.left,
-    // ובשכבה מסובבת זה נותן נקודה אחרת מזו שנגעו בה. לכן בלי נעילה — אין "לרוחב" (README, "מסך מלא").
-    let fsOn = false, fsMode = 'portrait', landOk = true, locked = false;
+    //
+    // "לרוחב" (L1 סעיף 2): קודם `screen.orientation.lock('landscape')` (רק בתוך Fullscreen). אין נעילה, או שנדחתה —
+    // שכבה מסובבת ב-CSS (`.fs-turn`), והמגע מומר ב-rotate.js. הטלפון הסתובב לבד לרוחב — אין צורך בסיבוב, והוא יורד.
+    const root = document.documentElement;
+    const fsApi = () => !!(root.requestFullscreen && document.fullscreenEnabled);
     const ori = () => window.screen?.orientation;
-    const canLand = () => landOk && !!(wrap.requestFullscreen && document.fullscreenEnabled) && typeof ori()?.lock === 'function'
-      && matchMedia('(pointer: coarse)').matches;
+    const tall = () => window.innerHeight > window.innerWidth;
+    let fsOn = false, fsMode = 'portrait', fromTall = false, locked = false, lockTried = false, lockPending = false;
     function fsMenuToggle() {
       const open = fsMenu.hidden;
       fsMenu.hidden = !open;
@@ -526,82 +534,99 @@ export function mountMarket(ctx) {
       fsBtn.setAttribute('aria-expanded', 'false');
       if (focus) fsBtn.focus();
     }
-    function fsRotSync() {
-      fsRot.hidden = !canLand();
+    // המצב על המסך: הכפתור ⟳, והאם השכבה מסובבת
+    function fsApply() {
+      if (!fsOn) return;
       const land = fsMode === 'landscape';
-      fsRot.textContent = land ? '⛶' : '⟷';
+      fsRot.hidden = !fromTall;
       fsRot.setAttribute('aria-label', land ? 'מסך מלא לגובה' : 'מסך מלא לרוחב');
       fsRot.title = land ? 'לגובה' : 'לרוחב';
       wrap.dataset.fsMode = fsMode;
+      const turn = land && !locked && !lockPending && tall();
+      if (turn) {
+        wrap.style.setProperty('--fs-w', window.innerHeight + 'px');
+        wrap.style.setProperty('--fs-h', window.innerWidth + 'px');
+      }
+      if (turn !== wrap.classList.contains('fs-turn')) {
+        wrap.classList.toggle('fs-turn', turn);
+        setTurned(turn ? wrap : null);
+      }
     }
-    // הנעילה — רק בתוך Fullscreen (הדפדפן דוחה אחרת). נדחתה — נשארים לגובה, ו"לרוחב" נעלם עד לטעינה הבאה
+    // נעילה: לרוחב — רק בתוך Fullscreen; לגובה — רק כשכבר נעלנו לרוחב (מ-⟳). נדחתה — השכבה המסובבת
     function fsLock() {
-      if (!fsOn || document.fullscreenElement !== wrap || typeof ori()?.lock !== 'function') return;
       const want = fsMode;
-      if (want === 'portrait' && !locked) return;   // "לגובה" מלכתחילה — כמו קודם, בלי לנעול
-      ori().lock(want === 'landscape' ? 'landscape' : 'portrait').then(() => { locked = true; }, () => {
-        if (want !== 'landscape') return;
-        landOk = false;
-        fsMode = 'portrait';
-        fsRotSync();
-        toast('הדפדפן לא מאפשר לסובב את המסך. אפשר לסובב את הטלפון ביד', true);
-      });
-    }
-    function fsUnlock() {
-      if (!locked) return;
-      locked = false;
-      try { ori()?.unlock?.(); } catch { /* ריק */ }
+      const can = document.fullscreenElement === root && typeof ori()?.lock === 'function';
+      if (!fsOn || !can || (want === 'portrait' && !locked)) { fsApply(); return; }
+      lockTried = true;
+      lockPending = true;
+      fsApply();
+      ori().lock(want).then(() => { locked = true; }, () => { if (want === 'portrait') locked = false; })
+        .finally(() => { if (fsMode === want) lockPending = false; fsApply(); });
     }
     function fsSetMode(mode) {
       if (!fsOn || mode === fsMode) return;
       fsMode = mode;
-      fsRotSync();
       fsLock();
     }
     function fsEnter(mode = 'portrait') {
       if (fsOn) return;
       fsOn = true;
-      fsMode = mode === 'landscape' && canLand() ? 'landscape' : 'portrait';
-      fsRotSync();
+      fromTall = tall();
+      fsMode = mode;
+      locked = lockTried = lockPending = false;
       wrap.classList.add('fs');
       document.body.classList.add('chart-fs');
       try { history.pushState({ tsFs: true }, ''); } catch { /* ריק */ }
-      // הבקשה אסינכרונית: יצאו לפני שהסתיימה (Esc או "חזור" מהר) — יוצאים גם מה-Fullscreen API
-      if (wrap.requestFullscreen && document.fullscreenEnabled) {
-        wrap.requestFullscreen({ navigationUI: 'hide' }).then(() => {
-          if (!fsOn && document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {});
-          else fsLock();
-        }, () => {});
+      if (fsApi()) {
+        lockPending = mode === 'landscape';   // עד שה-Fullscreen והנעילה הסתיימו — בלי סיבוב, כדי שלא יהבהב
+        root.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+          // הבקשה אסינכרונית: יצאו לפני שהסתיימה (Esc או "חזור" מהר) — יוצאים גם מה-Fullscreen API
+          if (!fsOn) { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); return; }
+          lockPending = false;
+          fsLock();
+        }, () => { lockPending = false; fsApply(); });
       }
+      fsApply();
       fsExit.focus();
     }
     /** quiet — בלי לגעת בהיסטוריה (חזור כבר קרה, או שעוזבים את המסך) */
     function fsLeave(quiet = false) {
       if (!fsOn) return;
       fsOn = false;
-      fsUnlock();
+      if (lockTried) { try { ori()?.unlock?.(); } catch { /* ריק */ } }
+      locked = lockTried = lockPending = false;
       fsMode = 'portrait';
-      wrap.classList.remove('fs');
+      setTurned(null);
+      wrap.classList.remove('fs', 'fs-turn');
+      wrap.style.removeProperty('--fs-w');
+      wrap.style.removeProperty('--fs-h');
       delete wrap.dataset.fsMode;
       document.body.classList.remove('chart-fs');
-      if (document.fullscreenElement === wrap) document.exitFullscreen().catch(() => {});
+      if (document.fullscreenElement === root) document.exitFullscreen().catch(() => {});
       if (!quiet && history.state?.tsFs) history.back();
       if (!quiet) fsBtn.focus();
     }
+    let fsWas = false;   // היה Fullscreen — כדי שיציאה ממנו מבחוץ (מחווה של המערכת) תוציא גם מהשכבה
     const fsPop = () => { if (fsOn && !history.state?.tsFs) fsLeave(true); };
-    const fsChange = () => { if (fsOn && document.fullscreenElement !== wrap) fsLeave(); };
+    const fsChange = () => {
+      if (document.fullscreenElement) { fsWas = true; return; }
+      if (fsWas && fsOn) fsLeave();
+      fsWas = false;
+    };
     const fsKey = e => {
       if (e.key !== 'Escape') return;
       if (!fsMenu.hidden) fsMenuClose(true);
       else if (fsOn && !forecast.popOpen()) fsLeave();
     };
     const fsOutside = e => { if (!fsMenu.hidden && !fsPick.contains(e.target)) fsMenuClose(); };
+    const fsResize = () => fsApply();
     window.addEventListener('popstate', fsPop);
+    window.addEventListener('resize', fsResize);
     document.addEventListener('fullscreenchange', fsChange);
     document.addEventListener('keydown', fsKey);
     document.addEventListener('pointerdown', fsOutside);
-    onTeardown(() => { window.removeEventListener('popstate', fsPop); document.removeEventListener('fullscreenchange', fsChange); document.removeEventListener('keydown', fsKey);
-      document.removeEventListener('pointerdown', fsOutside); });
+    onTeardown(() => { window.removeEventListener('popstate', fsPop); window.removeEventListener('resize', fsResize); document.removeEventListener('fullscreenchange', fsChange);
+      document.removeEventListener('keydown', fsKey); document.removeEventListener('pointerdown', fsOutside); });
 
     let data = [];
     let ws = null;
