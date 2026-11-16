@@ -7,11 +7,8 @@
 > **עדכון 2026-11-16 (צ'אט S4):** S4 בנוי וממוזג (#1605) — הסעיף "S4 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S5).
 > **עדכון 2026-11-16 (צ'אט S5):** S5 בנוי וממוזג (#1608) — הסעיף "S5 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8).
 > **עדכון 2026-11-16 (צ'אט S6):** S6 בנוי וממוזג (#1611) — הסעיף "S6 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S7, שנשען על היומן).
-<<<<<<< HEAD
-> **עדכון 2026-11-16 (צ'אט A1):** DevLoop מחובר וממוזג (#1618) — הסעיף "A1 — DevLoop" בסוף. הבא בתור — לפי `team/board.md`.
-=======
 > **עדכון 2026-11-16 (צ'אט S7):** S7 ו-method_colors (2.20) בנויים וממוזגים (#1615) — הסעיף "S7 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md`.
->>>>>>> origin/main
+> **עדכון 2026-11-16 (צ'אט A1):** DevLoop מחובר וממוזג (#1618) — הסעיף "A1 — DevLoop" בסוף. הבא בתור — לפי `team/board.md`.
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -196,24 +193,6 @@
 - **ל-S7:** היומן הוא מקור הראיות. הסיכום לפי גרסה כבר שם (`summary[].zone_pct` מתוך מה שהוכרע).
 - **פתוח:** ההכרעות שלי (README, "הכרעות של כותב הקוד (S6)") לא אושרו מול האפיון — במיוחד שהמסך פתוח גם למשתמש רגיל.
 
-<<<<<<< HEAD
-## A1 — DevLoop (#1618, PROTOCOL 7, app-rules 4)
-
-- **המודול המשותף:** `lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css` — **עותקים, לא עורכים**. שינוי —
-  ב-`devloop/src`, ואז `php devloop/tools/sync.php` (השער בפריסה עוצר עותק ששונה). החיבור — `lib/devtasks.php`.
-- **המפתח = המנהל הראשי בלבד.** `users.platform_admin` (מיגרציה 13) מתעדכן ב-`ts_user_for` בכל בקשה — בשביל אסימון
-  של Claude, שמגיע בלי משתמש. **מיגרציה הבאה — 14.**
-- **ב-`api.php`:** `devapi-*` מטופלות **לפני** `ts_session()` (באסימון, ב-`"public"`); `dev-*` ו-`devloop-client-error` —
-  מיד אחרי ה-session, לפני `TS_WRITE`. `devloop_log_begin(null)` בראש, ו-`devloop_log_error($e)` בכל `catch` — **פעולה
-  חדשה שזורקת חריגה משלה: להוסיף `devloop_log_error` גם ב-catch שלה**, אחרת היא לא תגיע ל"⚠️ לבירור".
-- **`api()` ב-`app.js`** מדווח כל בקשה ל-`DevLoop.noteRequest` (ההקשר של 🐞). 🐞 יושב לפני `#head-actions` — `setHead` לא
-  מוחק אותו.
-- **נתונים:** `data/_dev` (צילומים, `log.sqlite`) + טבלאות `dev_*` במסד. בבדיקות — `TS_DB_PATH.dev`.
-- **בדיקות:** `tests/devloop-api.php`, `tests/devloop-ui.mjs`. במסך המטלות ברירת המחדל היא "ממתינות לך" — בבדיקה לוחצים
-  "הכול" לפני שמחפשים מטלה.
-- **ביקורת:** `team/reviews/a1.md` — בלי 🔴/🟡. ראיות פריסה ל-`TS-` ב-`deploy.yml` — נכנסו ב-#1620 (A3); השורה ב-
-  `devloop/README.md` — בקשה לפלטפורמה; האסימון `tsd_…` כ-`TS_DEVLOOP_TOKEN` — מטלה לבעלים, אצל הבקרה.
-=======
 ## S7 — מה נבנה (18.7 + 18.5/2.20, #1615)
 
 - **ספירות על סט קבוע:** `tests/elliott-counts.php` ← `tests/fixtures/elliott/sets.php` מול `tests/fixtures/elliott/counts.json`.
@@ -240,4 +219,20 @@
   - `tests/fixtures/methods/many.php` — 9 שיטות בדיקה (t1…t9), דרך `TS_TEST_METHODS`.
   - **מלכודת שגיליתי:** אחרי `post()` ששומר משהו בפרופיל, `me` של הדף ישן. מעבר hash לא טוען אותו מחדש — צריך `reload()`.
 - **פתוח:** הכרעה שלי לבדוק מול האפיון — שינוי פרמטר ישיר רק לראשי (README, "הכרעות של כותב הקוד (S7)").
->>>>>>> origin/main
+
+## A1 — DevLoop (#1618, PROTOCOL 7, app-rules 4)
+
+- **המודול המשותף:** `lib/devloop.php`, `assets/js/devloop.js`, `assets/css/devloop.css` — **עותקים, לא עורכים**. שינוי —
+  ב-`devloop/src`, ואז `php devloop/tools/sync.php` (השער בפריסה עוצר עותק ששונה). החיבור — `lib/devtasks.php`.
+- **המפתח = המנהל הראשי בלבד.** `users.platform_admin` (מיגרציה 13) מתעדכן ב-`ts_user_for` בכל בקשה — בשביל אסימון
+  של Claude, שמגיע בלי משתמש. **מיגרציה הבאה — 14.**
+- **ב-`api.php`:** `devapi-*` מטופלות **לפני** `ts_session()` (באסימון, ב-`"public"`); `dev-*` ו-`devloop-client-error` —
+  מיד אחרי ה-session, לפני `TS_WRITE`. `devloop_log_begin(null)` בראש, ו-`devloop_log_error($e)` בכל `catch` — **פעולה
+  חדשה שזורקת חריגה משלה: להוסיף `devloop_log_error` גם ב-catch שלה**, אחרת היא לא תגיע ל"⚠️ לבירור".
+- **`api()` ב-`app.js`** מדווח כל בקשה ל-`DevLoop.noteRequest` (ההקשר של 🐞). 🐞 יושב לפני `#head-actions` — `setHead` לא
+  מוחק אותו.
+- **נתונים:** `data/_dev` (צילומים, `log.sqlite`) + טבלאות `dev_*` במסד. בבדיקות — `TS_DB_PATH.dev`.
+- **בדיקות:** `tests/devloop-api.php`, `tests/devloop-ui.mjs`. במסך המטלות ברירת המחדל היא "ממתינות לך" — בבדיקה לוחצים
+  "הכול" לפני שמחפשים מטלה.
+- **ביקורת:** `team/reviews/a1.md` — בלי 🔴/🟡. ראיות פריסה ל-`TS-` ב-`deploy.yml` — נכנסו ב-#1620 (A3); השורה ב-
+  `devloop/README.md` — בקשה לפלטפורמה; האסימון `tsd_…` כ-`TS_DEVLOOP_TOKEN` — מטלה לבעלים, אצל הבקרה.
