@@ -11,13 +11,8 @@
 | `kol-maroko` קול מרוקו | פעיל — הבעלים אישר ב-2026-11-11 22:05 UTC: "עד הסוף"; שעון — דקה 48, לתוך בקרה (12) (`trig_01FnY5VNEHj6GeeD2BEF2jxx`, נוצר בידי מנהל הצוותים (3); הישן `trig_017hPpPF1QCmhxWdMc7bLveY` כבוי) | `session_018g4NYE2VgSchStksNm4cLo` (בקרה 12, Opus; קודם בקרה 11 `session_018g4NYEVkGJmGMdwERWecF2`) |
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | בהקמה — נפתח 2026-11-14; הבקרה נכנסת לעומק האפיון עם הבעלים, ורק אחר כך שאר הצ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
-<<<<<<< HEAD
-| `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1, A3 מוזגו; קוד: A2 התחברות עם ניתוק (`session_018g4NYDGPpCv1Pc3LgfvmVx`); שעון — דקה 28 (`trig_01J4cir8Aoh8ogFyCwPHG4dh`) | `session_018g4NYDsD5GNc3L8rqyUQ4B` (בקרה 4) |
-| `org-budget-proposals` הצעות תקציב לארגונים | בהקמה — נפתח 2026-11-16 (אפליקציה קיימת, הכול מוזג; הצ'אטים הישנים בארכיון); ממתין לדרישה של הבעלים; שעון — דקה 38 (`trig_013qCk9g1qS7xKb8qLpQrDgX`) | `session_018g4NYFsGrFQCUGf3CgaSYk` |
-=======
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1 מוזגו; קוד: 21.2 מילוי ברקע, PR #1630 (`session_018g4NYDfNSRC7LtU7guPJPm`); שעון — דקה 28 (`trig_018C9hwAgkgTdUqZ5wdPfnFa`, נוצר בידי מנהל הצוותים (4); הישן `trig_01J4cir8Aoh8ogFyCwPHG4dh` כבוי) | `session_018g4NYEtPnhDAxdzNLibMdV` (בקרה 5; קודם בקרה 4 `session_018g4NYDsD5GNc3L8rqyUQ4B`) |
-| `org-budget-proposals` הצעות תקציב לארגונים | בהקמה — נפתח 2026-11-16 (אפליקציה קיימת, הכול מוזג; הצ'אטים הישנים בארכיון); ממתין לדרישה של הבעלים | `session_018g4NYFsGrFQCUGf3CgaSYk` |
->>>>>>> origin/main
+| `org-budget-proposals` הצעות תקציב לארגונים | פעיל — B1 (הדוח מאוזן) מוזג #1635; שעון — דקה 38 (`trig_013qCk9g1qS7xKb8qLpQrDgX`) | `session_018g4NYFsGrFQCUGf3CgaSYk` |
 
 ## ממתין לבעלים
 
