@@ -658,6 +658,12 @@
 - **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
   `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
 
+## תנועות מגע על הגרף (gestures.js) — מה נבנה
+
+- `mountGestures({ chart, series: candle, box })` ב-`viewChart`. הספרייה: `vertTouchDrag: false`, `pinch: false`; הצביטה שלנו (capture על `box`, שתי אצבעות).
+- **ציר הנרות הוא `candle.priceScale()`**. `chart.priceScale('right')` לא משפיע על הנרות (שני הצירים מוסתרים, ו-`priceScaleId` של הסדרה ריק) — מי שמשנה שוליים/מצב לציר המחיר: דרך הסדרה.
+- `box.tsHeights()` לבדיקות: גובה הנרות הנראים, גובה הנפח, `k`, והאם האינדיקטורים על אותו ציר.
+- **בדיקת מגע:** CDP `Input.dispatchTouchEvent` עם `id` לכל אצבע; גלילת הדף נמדדת כסכום `scrollY` ו-`scrollTop` של האבות. אחרי כל תנועה ~1.5 ש' (קינטי).
 ### T1 — גרירה ושקיפות (בקשת הבעלים)
 - **`tip.pos`** — המקום שהמשתמש גרר אליו (במערכת של wrap). `place()` → `placeDragged()` כשיש. `open()` של פריט אחר מאפס.
 - **`.ctip-pin`** — אח של החלונית ב-wrap (לא בתוכה: לגוף יש overflow), `pointer-events: none`. `dataset` (ax/ay/sx/sy) — לבדיקות.

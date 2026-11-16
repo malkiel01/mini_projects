@@ -10,6 +10,7 @@ import { mountForecast } from './forecast.js';
 import { mountChartTip } from './charttip.js';
 import { mountAxis, labelBoard, tzOffset } from './chartaxis.js';
 import { setTurned, screenRect } from './rotate.js';
+import { mountGestures } from './gestures.js';
 import { mountCombo, invalidateCatalog } from './combobox.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
@@ -505,6 +506,19 @@ export function mountMarket(ctx) {
     let cross = null;
     chart.subscribeCrosshairMove(e => { cross = e.point ? { x: e.point.x, y: e.point.y } : null; });
     box.tsCross = () => cross;                                         // לבדיקות: איפה הסמן (L1 קריטריון 5)
+    // תנועות מגע (gestures.js): אצבע אחת במאונך גוללת את הדף; צביטה אופקית — טווח הזמן; צביטה אנכית — מכווצת את הגובה
+    const gest = mountGestures({ chart, series: candle, box });
+    // לבדיקות: הגובה (px) של הנרות הנראים ושל עמודות הנפח, ומקדם הכיווץ
+    box.tsHeights = () => {
+      const r = chart.timeScale().getVisibleLogicalRange();
+      const vis = r ? data.slice(Math.max(0, Math.ceil(r.from)), Math.floor(r.to) + 1) : data;
+      if (!vis.length) return null;
+      const hi = Math.max(...vis.map(x => x.high)), lo = Math.min(...vis.map(x => x.low));
+      const m = chart.priceScale('vol').options().scaleMargins;
+      return { price: Math.round(candle.priceToCoordinate(lo) - candle.priceToCoordinate(hi)), vol: Math.round(box.offsetHeight * (1 - m.top - m.bottom)), k: gest.vScale(),
+        // האינדיקטורים על אותו ציר כמו הנרות — מתכווצים איתם
+        lines: Object.values(lines).filter(l => l.data().length).map(l => Math.abs(l.priceToCoordinate(hi) - candle.priceToCoordinate(hi)) < 0.5) };
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
     // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
@@ -533,7 +547,7 @@ export function mountMarket(ctx) {
       } });
     box.tsTip = () => tip.state();   // לבדיקות: החלונית הפתוחה
     box.tsPoints = kind => forecast.points(kind);   // לבדיקות: הנקודות של השיטות על הגרף
-    onTeardown(() => { fsLeave(true); tip.destroy(); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
+    onTeardown(() => { fsLeave(true); gest.destroy(); tip.destroy(); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
 
     // ── מסך מלא (18.1.2 סעיף 3; L1 — 18.1.5): רק הגרף. Fullscreen API על כל הדף (documentElement) כשיש, והגרף — שכבה שמכסה
     // את המסך (`.chart-wrap.fs`). כל הדף ולא הגרף: על אלמנט ב-Fullscreen הדפדפן כופה `transform: none`, והשכבה המסובבת צריכה transform.
