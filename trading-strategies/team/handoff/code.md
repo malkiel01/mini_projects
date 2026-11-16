@@ -657,3 +657,9 @@
 - **מיגרציה הבאה ב-`app.sqlite` — 22.**
 - **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
   `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
+
+### T1 — גרירה ושקיפות (בקשת הבעלים)
+- **`tip.pos`** — המקום שהמשתמש גרר אליו (במערכת של wrap). `place()` → `placeDragged()` כשיש. `open()` של פריט אחר מאפס.
+- **`.ctip-pin`** — אח של החלונית ב-wrap (לא בתוכה: לגוף יש overflow), `pointer-events: none`. `dataset` (ax/ay/sx/sy) — לבדיקות.
+- **הגרירה** — `pointerdown` על החלונית (לא על כפתור/קישור) + `setPointerCapture`; ההזזה מ-`clientX/Y`, שבשכבה המסובבת כבר
+  מומרים ב-rotate.js. `.ctip` עם `touch-action: none`; כשהגוף נגלל (`.scrolls`) — רק מהכותרת.
