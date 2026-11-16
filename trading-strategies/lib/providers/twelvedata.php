@@ -6,7 +6,8 @@
  * שגיאה לפעמים חוזרת ב-HTTP 200 עם status: "error" — נבדק כאן.
  * זמנים: מבקשים timezone=UTC. תוך-יומי — datetime הוא זמן הפתיחה ב-UTC. יום/שבוע/חודש — datetime הוא תאריך
  * המסחר; t = חצות של התאריך באזור הזמן של הבורסה (meta.exchange_timezone), ב-UTC.
- * תנאי השימוש: החינמי — לשימוש אישי; הצגה לאחרים דורשת תוכנית מסחרית. לכן share=false (כל משתמש במפתח שלו).
+ * מאגר משותף (spec-stage-a 21.3, ✅31): הבעלים הכריע "משותף" — share=true, וכל מה שנמשך, בכל מפתח, נשמר ב-''.
+ * הסייג של ✅2 (מפתח אישי — רק לבעליו) בוטל ל-Twelve Data בלבד.
  */
 
 declare(strict_types=1);
@@ -30,8 +31,8 @@ final class TsProvTwelveData extends TsProvider
                 'note' => 'נרשמים בחינם ב-twelvedata.com, ומעתיקים את ה-API key מהחשבון.'],
             'limits' => ['per_min' => 8, 'per_day' => 800],   // התוכנית החינמית; המנהל יכול לדרוס
             'delay' => 'realtime',
-            'share' => false,
-            'terms' => 'בתוכנית החינמית — שימוש אישי. נתונים במפתח של משתמש מוגשים רק לו (cred_scope).',
+            'share' => true,   // 21.3 (✅31): מאגר אחד, '' — בכל מפתח
+            'terms' => 'מאגר משותף (הכרעה ✅31): מה שנמשך — במפתח האפליקציה או במפתח אישי — נשמר לכולם. פונים לספק רק על החסר.',
             'bounds' => 'יום/שבוע/חודש — לפי מושב המסחר, חצות באזור הזמן של הבורסה',
             'max_per_call' => 5000,
         ];
@@ -49,7 +50,8 @@ final class TsProvTwelveData extends TsProvider
         if (($j['status'] ?? '') === 'error') {
             $code = (int)($j['code'] ?? 0);
             $msg = $code === 401 || $code === 403 ? 'המפתח נדחה' : ($code === 429 ? 'הגעתם לתקרת הבקשות של הספק' : 'שגיאה מהספק');
-            throw new TsProviderError($this->clean("Twelve Data: $msg — " . mb_substr((string)($j['message'] ?? ''), 0, 200), $secret));
+            $text = $this->clean("Twelve Data: $msg — " . mb_substr((string)($j['message'] ?? ''), 0, 200), $secret);
+            throw $code === 429 ? new TsRateError($text) : new TsProviderError($text);
         }
         return $j;
     }
