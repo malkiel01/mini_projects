@@ -134,26 +134,37 @@ async function showEdition(pid) {
         : `<td class="amt${r.price == null ? ' none' : ''}">${money(r.price)}</td>`;
     const lb = r => editing ? ` class="lb" data-row="${esc(r.pid)}" tabindex="0" role="button" aria-label="עריכת השורה: ${esc(plain(r.label))}"` : ' class="lb"';
     const empty = !e.rows.some(r => r.priced && r.price != null);
+    // 🗑️ בכל שורה, ושורות ➕ דקות במקומות ש-layout מסמן (04 סעיף 2) — רק במצב עריכה
+    const L = e.layout, n = e.rows.length;
+    const strip = p => {
+        const b = [L.add_row.includes(p) && `<button class="btn sm ghost" data-add-row="${p}">➕ שורה</button>`,
+            L.add_block.includes(p) && `<button class="btn sm ghost" data-add-block="${p}">➕ מקטע</button>`,
+            L.add_fee === p && `<button class="btn sm ghost" data-add-fee="${p}">➕ אגרה</button>`].filter(Boolean);
+        return editing && b.length ? `<tr class="adds"><td colspan="3"><div class="add-strip">${b.join('')}</div></td></tr>` : '';
+    };
+    const del = r => editing ? `<td class="del"><button class="icon-btn ghost" data-del="${esc(r.pid)}" aria-label="מחיקה: ${esc(plain(r.label))}" title="מחיקה">🗑️</button></td>` : '';
     view.innerHTML = `
       <div class="bar">
         <span class="chip">${esc(e.audience_name)}</span>
         <button class="icon-btn ghost${editing ? ' on' : ''}" id="edit-btn" aria-pressed="${editing}" aria-label="עריכה" title="עריכה">✏️</button>
         <button class="icon-btn ghost" id="hist-btn" aria-label="שינויים" title="שינויים">📜</button>
+        <button class="btn ghost" id="dup-btn" aria-label="שכפול המחירון">📄 שכפול</button>
         <button class="btn primary" id="print-btn">🖨️ הדפסה</button>
       </div>
       ${editing ? `<div class="edit-note"><span>✏️ מצב עריכה — כל שינוי נשמר לבד. לחיצה על שורה — לעריכתה.</span>
         <button class="btn sm primary" id="done-btn">סיום</button></div>` : ''}
       ${empty ? '<p class="hint empty-aud">טרם הוזנו מחירים במחירון הזה</p>' : ''}
       <table class="prices${editing ? ' editing' : ''}">
-        <thead><tr><th>שורה</th><th class="amt">${esc(e.audience_name)}</th></tr></thead>
-        <tbody>${e.rows.map(r => `<tr class="${r.kind}${r.indent ? ' indent' : ''}">
-          <td${lb(r)}${r.priced ? '' : ' colspan="2"'}>${r.html}</td>${r.priced ? cell(r) : ''}</tr>`).join('')}</tbody>
+        <thead><tr><th>שורה</th><th class="amt">${esc(e.audience_name)}</th>${editing ? '<th class="del"><span class="sr">מחיקה</span></th>' : ''}</tr></thead>
+        <tbody>${e.rows.map((r, i) => `${strip(i)}<tr class="${r.kind}${r.indent ? ' indent' : ''}">
+          <td${lb(r)}${r.priced ? '' : ' colspan="2"'}>${r.html}</td>${r.priced ? cell(r) : ''}${del(r)}</tr>`).join('')}${strip(n)}</tbody>
       </table>
       ${editing ? editPanel(e) : ''}`;
     const toggle = () => { editPid = editing ? '' : pid; confirmed = ''; rerender(pid); };
     $('#edit-btn').onclick = toggle;
     if (editing) $('#done-btn').onclick = toggle;
     $('#hist-btn').onclick = () => showHistory(pid);
+    $('#dup-btn').onclick = () => duplicate(e);
     // 🖨️ — המחירון הזה, או יחד עם הקבוצה השנייה (זה שבתוקף בה היום; אין בה מחירון — רק "המחירון הזה")
     const otherAud = e.audience === 'il' ? 'abroad' : 'il';
     const other = pick(editions, otherAud);
@@ -164,7 +175,7 @@ async function showEdition(pid) {
         ${other ? `<button class="use-row" value="split"><span class="use-ic">📑</span><span class="use-tx"><b>יחד עם ${esc(otherName)} — דף נפרד</b>
             <small>שני עמודים · ${esc(otherName)} ${esc(dmy(other.effective_from))}</small></span></button>
           <button class="use-row" value="both"><span class="use-ic">🗞️</span><span class="use-tx"><b>יחד עם ${esc(otherName)} — באותו דף</b>
-            <small>ברצף, עם ${esc(otherName)} ${esc(dmy(other.effective_from))} · חתימות פעם אחת</small></span></button>` : ''}`;
+            <small>זה לצד זה: ישראל מימין, חו"ל משמאל · ${esc(otherName)} ${esc(dmy(other.effective_from))} · חתימות פעם אחת</small></span></button>` : ''}`;
     $('#print-btn').onclick = () => { dlg.returnValue = ''; dlg.showModal(); };
     dlg.onclose = () => {
         const mode = dlg.returnValue;
@@ -180,7 +191,6 @@ function editPanel(e) {
       <label class="f"><span>מתחת ל"מחירון חברה קדישא לעדת המערבים"</span><input id="sub-in" value="${esc(e.subtitle)}" maxlength="120" required></label>
       <small class="st" id="sub-st" aria-live="polite"></small>
       <p class="hint">החתימות — אחת לכל ההדפסות, ב<a href="#/settings">⚙️ הגדרות</a>.</p>
-      <div class="row-btns wrap tail-btns"><button class="btn ghost" id="add-end">➕ שורה בסוף</button></div>
       ${e.future ? `<h2 class="sec-title">המחירון</h2>
         <div class="fields two"><label class="f"><span>בתוקף החל מ-</span><input type="date" id="date-in" value="${esc(e.effective_from)}" required></label></div>
         <div class="row-btns wrap tail-btns"><button class="btn ghost danger" id="del-btn">🗑️ מחיקת המחירון</button></div>` : ''}`;
@@ -215,7 +225,32 @@ function bindEdit(e) {
         td.onclick = open;
         td.onkeydown = ev => { if (ev.key === 'Enter') open(); };
     });
-    $('#add-end').onclick = () => openRow(e, null, e.rows.at(-1)?.pid || '');
+    // ➕ שורה: item בסוף המקטע שנגמר כאן; הזחה — כמו השורה שמעל אם היא item
+    view.querySelectorAll('[data-add-row]').forEach(b => b.onclick = () => {
+        const prev = e.rows[+b.dataset.addRow - 1];
+        openRow(e, null, prev.pid, { kind: 'item', indent: prev.kind === 'item' ? prev.indent : 0, label: '' });
+    });
+    // ➕ אגרה: fee, עם הקידומת של האגרה האחרונה במחירון ("** " / "* ")
+    view.querySelectorAll('[data-add-fee]').forEach(b => b.onclick = () => {
+        const last = e.rows.filter(r => r.kind === 'fee').at(-1);
+        const prefix = (last && /^\*+ /.exec(last.label)?.[0]) || '* ';
+        openRow(e, null, e.rows[+b.dataset.addFee - 1]?.pid || '', { kind: 'fee', indent: 0, label: prefix });
+    });
+    view.querySelectorAll('[data-add-block]').forEach(b => b.onclick = () => addBlock(e, e.rows[+b.dataset.addBlock - 1]?.pid || ''));
+    // 🗑️: שורה — row-delete; כותרת — כל המקטע (block-delete)
+    view.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+        const r = e.rows.find(x => x.pid === b.dataset.del);
+        const head = r.block != null;
+        const n = r.block || 0;
+        const msg = !head || !n ? `למחוק את ${head ? 'המקטע' : 'השורה'} "${plain(r.label)}"?`
+            : `למחוק את המקטע "${plain(r.label)}" ו${n === 1 ? 'השורה' : '-' + n + ' השורות'} שבו?`;
+        if (!await ask(msg, '🗑️ מחיקה')) return;
+        try {
+            await edit(head ? 'block-delete' : 'row-delete', { pid, row: r.pid });
+            toast(head ? 'המקטע נמחק' : 'השורה נמחקה');
+            await rerender(pid);
+        } catch (err) { if (!err.cancelled) toast(err.message, true); }
+    });
     // כותרת המשנה — נשמרת בעזיבת השדה
     $('#sub-in').onchange = async ev => {
         const st = $('#sub-st');
@@ -252,14 +287,14 @@ function bindEdit(e) {
 }
 
 /** עריכת שורה (r) או שורה חדשה מתחת ל-after. */
-function openRow(e, r, after = '') {
+function openRow(e, r, after = '', preset = null) {
     const dlg = $('#row-dlg'), form = $('#row-form');
     const label = $('#row-label'), kind = $('#row-kind'), indent = $('#row-indent'), err = $('#row-err');
     const base = r || e.rows.find(x => x.pid === after);
     $('#row-title').textContent = r ? 'עריכת שורה' : 'שורה חדשה';
-    label.value = r ? r.label : '';
-    kind.value = base ? (r ? base.kind : ['section', 'band', 'subsection'].includes(base.kind) ? 'item' : base.kind) : 'item';
-    indent.checked = !!(base && base.indent);
+    label.value = r ? r.label : preset?.label ?? '';
+    kind.value = preset?.kind || (base ? (r ? base.kind : ['section', 'band', 'subsection'].includes(base.kind) ? 'item' : base.kind) : 'item');
+    indent.checked = preset ? !!preset.indent : !!(base && base.indent);
     $('#row-tools').hidden = !r;
     err.hidden = true;
     const preview = () => { $('#row-preview').innerHTML = labelHtml(label.value) || '&nbsp;'; };
@@ -293,6 +328,62 @@ function openRow(e, r, after = '') {
     $('[data-close]', dlg).onclick = () => dlg.close();
     if (!dlg.open) dlg.showModal();
     label.focus();
+    label.setSelectionRange(label.value.length, label.value.length);   // ➕ אגרה: הסמן אחרי הקידומת
+}
+
+/** ➕ מקטע: שם וסוג → block-add (כותרת + שורה ריקה מתחתיה) מיד אחרי after */
+function addBlock(e, after) {
+    const dlg = $('#block-dlg'), form = $('#block-form'), err = $('#block-err');
+    form.reset();
+    $('#block-top').value = e.audience === 'abroad' ? 'band' : 'section';
+    $('#block-top').textContent = e.audience === 'abroad' ? 'כותרת ראשית (פס בית עלמין)' : 'כותרת ראשית';
+    err.hidden = true;
+    form.onsubmit = async ev => {
+        ev.preventDefault();
+        err.hidden = true;
+        try {
+            const r = await edit('block-add', { pid: e.pid, after, kind: form.kind.value, label: form.label.value });
+            dlg.close();
+            toast('המקטע נוסף');
+            await rerender(e.pid);
+            $(`input.price[data-row="${r.item}"]`)?.closest('tr').scrollIntoView({ block: 'center' });
+        } catch (x) {
+            if (x.cancelled) return;
+            err.textContent = x.message;
+            err.hidden = false;
+        }
+    };
+    $('[data-close]', dlg).onclick = () => dlg.close();
+    dlg.showModal();
+    form.label.focus();
+}
+
+/** 📄 שכפול: עותק מדויק לתאריך שמזינים (edition-create בלי אחוזים), ונפתח במצב עריכה */
+function duplicate(e) {
+    const dlg = $('#dup-dlg'), form = $('#dup-form'), err = $('#dup-err'), note = $('#dup-note');
+    $('#dup-title').textContent = `שכפול המחירון של ${dmy(e.effective_from)} (${e.audience_name})`;
+    form.reset();
+    err.hidden = note.hidden = true;
+    form.date.oninput = () => { note.hidden = !(form.date.value && form.date.value <= todayIso()); };
+    form.onsubmit = async ev => {
+        ev.preventDefault();
+        err.hidden = true;
+        if (!form.date.value) { err.textContent = 'צריך תאריך'; err.hidden = false; return; }
+        try {
+            const r = await api('edition-create', { body: { effective_from: form.date.value, base_pid: e.pid, raise: {} } });
+            dlg.close();
+            editPid = r.pid;
+            confirmed = '';
+            toast('המחירון שוכפל');
+            location.hash = '#/e/' + r.pid;
+        } catch (x) {
+            err.textContent = x.message;
+            err.hidden = false;
+        }
+    };
+    $('[data-close]', dlg).onclick = () => dlg.close();
+    dlg.showModal();
+    form.date.focus();
 }
 
 /* ===== 📜 שינויים ===== */
@@ -304,6 +395,8 @@ function histText(h) {
         case 'row-edit': return 'שורה תוקנה: ' + plain(d.old.label) + (d.old.label !== d.new.label ? ' → ' + plain(d.new.label) : '');
         case 'row-delete': return 'נמחקה שורה: ' + plain(d.label) + ('price' in d ? (d.price != null ? ' (' + num(d.price) + ')' : '')
             : d.prices ? ' (' + Object.entries(d.prices).map(([a, v]) => AUD[a] + ' ' + num(v)).join(', ') + ')' : '');
+        case 'block-add': return 'נוסף מקטע: ' + plain(d.label);
+        case 'block-delete': return 'נמחק מקטע: ' + plain(d.label) + (d.rows?.length ? ' (' + d.rows.map(x => plain(x.label) + (x.price != null ? ' ' + num(x.price) : '')).join(', ') + ')' : '');
         case 'row-move': return 'שורה הוזזה ' + (d.dir === 'up' ? 'למעלה' : 'למטה') + ': ' + plain(d.label);
         case 'signatures': return 'החתימות עודכנו (לפני שהיו אחת לכל ההדפסות)';
         case 'edition-create': return 'המחירון נפתח על בסיס ' + dmy(d.base) + (Object.keys(d.raise || {}).length ? ', עם העלאה באחוז' : '');
@@ -409,7 +502,7 @@ async function showSettings() {
 /* ===== מסך המפתח ===== */
 const DEV_TABS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '🗂️ פעולות'], ['health', '🩺 תקינות']];
 const ACTIONS = { login: 'כניסה', print: 'הדפסה', price: 'שינוי מחיר', 'row-add': 'שורה נוספה', 'row-edit': 'שורה תוקנה',
-    'row-delete': 'שורה נמחקה', 'row-move': 'שורה הוזזה', signatures: 'חתימות (במחירון)', 'signatures-set': 'חתימות (הגדרות)', 'edition-create': 'מחירון נפתח',
+    'row-delete': 'שורה נמחקה', 'row-move': 'שורה הוזזה', 'block-add': 'מקטע נוסף', 'block-delete': 'מקטע נמחק', signatures: 'חתימות (במחירון)', 'signatures-set': 'חתימות (הגדרות)', 'edition-create': 'מחירון נפתח',
     'edition-update': 'תאריך שונה', 'edition-delete': 'מחירון נמחק', subtitle: 'כותרת משנה', 'migrate-abroad': 'חו"ל הועבר ממחירון ישראל',
     'seed-il-2026-06-15': 'נטען: ישראל 15/06/2026', 'seed-abroad-2026-06-15': 'נטען: חו"ל 15/06/2026' };
 const MODES = { one: 'מחירון אחד', il: 'תושבי ישראל', abroad: 'תושבי חו"ל', split: 'דף נפרד לכל קבוצה', both: 'שתיהן בדף אחד' };

@@ -212,6 +212,88 @@ function gp_row_move(int $uid, array $in): array
     });
 }
 
+/* ===== מקטעים (04-structure-edit.md סעיף 5) ===== */
+
+/** השורות של מחירון לפי הסדר — מה ש-gp_layout צריך, ועוד id/pid/label */
+function gp_rows_ordered(int $eid): array
+{
+    $st = db()->prepare('SELECT id, pid, kind, indent, label FROM rows WHERE edition_id = ? ORDER BY sort, id');
+    $st->execute([$eid]);
+    return array_map(fn($r) => ['id' => (int)$r['id'], 'indent' => (int)$r['indent']] + $r, $st->fetchAll());
+}
+
+/** הסוגים של "מקטע חדש" לכל קבוצה: כותרת ראשית (section בישראל, band בחו"ל) או כותרת משנה */
+const GP_BLOCK_KINDS = ['il' => ['section', 'subsection'], 'abroad' => ['band', 'subsection']];
+
+/**
+ * מקטע חדש: כותרת ושורת item ריקה ("שורה חדשה", בלי מחיר) מיד אחרי after. after ריק — בסוף אזור המחירים, לפני האגרות.
+ */
+function gp_block_add(int $uid, array $in): array
+{
+    $e = gp_edition_row((string)($in['pid'] ?? ''));
+    $eid = (int)$e['id'];
+    $kind = (string)($in['kind'] ?? '');
+    if (!in_array($kind, GP_BLOCK_KINDS[$e['audience']], true)) {
+        throw new ApiError($kind === 'band' ? 'פס בית עלמין — רק במחירון לתושבי חו"ל'
+            : ($kind === 'section' ? 'כותרת חלקות — רק במחירון לתושבי ישראל' : 'סוג מקטע לא מוכר'));
+    }
+    $label = gp_text($in['label'] ?? null, 200, 'השם');
+    if ($label === '') throw new ApiError('צריך שם למקטע');
+    $after = ($in['after'] ?? '') !== '' ? gp_row($eid, (string)$in['after']) : null;
+    gp_guard($e, $in);
+
+    return gp_tx(function (PDO $pdo) use ($uid, $eid, $kind, $label, $after) {
+        $rows = gp_rows_ordered($eid);
+        $ids = array_column($rows, 'id');
+        $at = $after ? array_search((int)$after['id'], $ids, true) + 1 : gp_layout($rows)['fee_start'];
+        $ins = $pdo->prepare('INSERT INTO rows (edition_id, sort, kind, indent, label, pid) VALUES (?, 0, ?, 0, ?, ?)');
+        $hp = gp_pid();
+        $ins->execute([$eid, $kind, $label, $hp]);
+        $hid = (int)$pdo->lastInsertId();
+        $ip = gp_pid();
+        $ins->execute([$eid, 'item', 'שורה חדשה', $ip]);
+        array_splice($ids, $at, 0, [$hid, (int)$pdo->lastInsertId()]);
+        gp_renumber($ids);
+        gp_audit($uid, 'block-add', $eid, ['row' => $hp, 'item' => $ip, 'after' => $after['pid'] ?? null, 'kind' => $kind, 'label' => $label]);
+        gp_touch($eid);
+        return ['ok' => true, 'row' => $hp, 'item' => $ip];
+    });
+}
+
+/**
+ * מחיקת מקטע: כותרת וכל השורות שבמקטע שלה (gp_layout), בטרנזקציה אחת.
+ * ביומן — הכותרת, השורה שלפניה, וכל שורה עם הטקסט והמחיר (וכל רשומות המחיר), כדי שאפשר לשחזר ביד.
+ */
+function gp_block_delete(int $uid, array $in): array
+{
+    $e = gp_edition_row((string)($in['pid'] ?? ''));
+    $eid = (int)$e['id'];
+    $r = gp_row($eid, (string)($in['row'] ?? ''));
+    if (!isset(GP_LEVELS[$r['kind']])) throw new ApiError('אפשר למחוק כך רק כותרת של מקטע — שורה רגילה נמחקת לבד');
+    gp_guard($e, $in);
+
+    return gp_tx(function (PDO $pdo) use ($uid, $e, $eid, $r) {
+        $rows = gp_rows_ordered($eid);
+        $i = array_search((int)$r['id'], array_column($rows, 'id'), true);
+        $end = gp_layout($rows)['ends'][$i];
+        $gone = [];
+        $delP = $pdo->prepare('DELETE FROM prices WHERE row_id = ?');
+        $delR = $pdo->prepare('DELETE FROM rows WHERE id = ?');
+        for ($j = $i; $j < $end; $j++) {
+            $x = $rows[$j];
+            $prices = gp_row_prices($x['id']);
+            if ($j > $i) $gone[] = ['pid' => $x['pid'], 'kind' => $x['kind'], 'indent' => $x['indent'], 'label' => $x['label'],
+                'price' => in_array($x['kind'], GP_PRICED, true) ? ($prices[$e['audience']] ?? null) : null, 'prices' => $prices];
+            $delP->execute([$x['id']]);
+            $delR->execute([$x['id']]);
+        }
+        gp_audit($uid, 'block-delete', $eid, ['row' => $r['pid'], 'kind' => $r['kind'], 'label' => $r['label'],
+            'after' => $i > 0 ? $rows[$i - 1]['pid'] : null, 'rows' => $gone]);
+        gp_touch($eid);
+        return ['ok' => true, 'deleted' => $end - $i];
+    });
+}
+
 /* ===== חתימות ===== */
 
 /** החתימות — סט אחד לכל ההדפסות, במסך ⚙️ הגדרות (הכרעת הבעלים 12:20). ביומן בלי מחירון. */

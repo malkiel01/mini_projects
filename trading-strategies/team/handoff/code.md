@@ -348,3 +348,21 @@
   ב-`fixtures/market/twelvedata.php`: מפתח `good-rate…` מחזיר 429.
 - **⚪ `market-tabs-ui` — עדיין רועדת.** נוספה המתנה ללשוניות לפני הגרירה. אחרי התיקון עברה 7 מתוך 8 הרצות. ההרצה שנכשלה (בדיקה 38) לא נשמרה, ולכן הסיבה לא ידועה.
 - **התראות** ב-cron נספרות ב-100 היומיות של המשתמש שיצר אותן (ביקורת ⚪6) — בכוונה.
+
+## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
+
+- **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
+  - **ה-Fullscreen API על `document.documentElement`**, לא על הגרף: על האלמנט שב-Fullscreen הדפדפן כופה `transform: none !important`.
+    לכן בבדיקות: `document.fullscreenElement` הוא ה-`<html>`.
+  - התפריט ו-⟳ — רק כשהמסך לאורך (`innerHeight > innerWidth`) בכניסה.
+  - "לרוחב": `lock('landscape')` בתוך Fullscreen; נדחה/אין — `.fs-turn`. "לגובה" מ-⟳ אחרי נעילה — `lock('portrait')`. כל יציאה — `unlock()` אם ניסינו.
+- **`assets/js/rotate.js`** — `setTurned(el)`: כל עוד שכבה מסובבת, `getBoundingClientRect` ו-`clientX/Y`/`pageX/Y`/`x/y` של אירועים
+  ושל Touch בתוכה — במערכת השכבה. **מחליף getters על `Element.prototype`, `MouseEvent.prototype`, `Touch.prototype`** (פעם אחת,
+  ופעיל רק כשיש שכבה). מי שמוסיף קוד שמחשב מיקום על המסך בתוך הגרף (למשל `elementFromPoint` עם clientX) — לזכור את זה.
+- **`lockVisibleTimeRangeOnResize: true`** ב-`base.timeScale` — כל שינוי רוחב שומר את הטווח (לא את רוחב הנר).
+- **בדיקות ממשק שנכנסות למסך מלא בטלפון לאורך:** ⛶ ואז `menuitem` "לגובה" (ראו `fsEnter` ב-`chart-f1-ui.mjs`).
+- **הדמיה ב-Playwright** (`chart-landscape-ui.mjs`):
+  - סיבוב — CDP `Emulation.setDeviceMetricsOverride` (`setViewportSize` נכשל בתוך Fullscreen: `Browser.setWindowBounds`).
+  - צילום אחרי סיבוב — CDP `Page.captureScreenshot` (`page.screenshot` מבטל את הסיבוב); בלי סיבוב — `page.screenshot` (CDP בתוך Fullscreen יוצא 800×600).
+  - גרירת אצבע — CDP `Input.dispatchTouchEvent`; אחרי גרירה לחכות לגלילה הקינטית (~1.5 ש').
+- **לא בפרוסה:** זום אנכי של המחיר (L1 סעיף 5).
