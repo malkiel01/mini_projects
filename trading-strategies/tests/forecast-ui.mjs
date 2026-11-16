@@ -106,7 +106,9 @@ try {
   eq(sim && sim.end >= sim.scenEnd + Math.floor((sim.scenEnd - sim.start + sec) / sec * 0.5) * sec - sec, true,
     'the continuation is longer than the scenario — another 50% of its length after its end');
   const labels = await o.evaluate(() => document.querySelector('.chart-box:not(.osc)').tsLabels().map(r => r.text));
-  eq(labels.includes('הדמיית המשך — לא תחזית'), true, 'the fixed label "הדמיית המשך — לא תחזית" is on the chart');
+  eq(labels.includes('הדמיית המשך · לא תחזית'), true, 'the fixed label "הדמיית המשך" / "לא תחזית" (two short lines) is on the chart');
+  // בקשת הבעלים: התוויות שעל הגרף קצרות — כל שורה עד 3 מילים, בלי "לפי כללי השיטה"
+  eq(labels.filter(t => t.split(' · ').some(l => l.trim().split(/\s+/).length > 3) || /לפי כללי השיטה/.test(t)), [], `every chart label line is short (${labels.join(' | ')})`);
   const al = await o.evaluate(async () => { const m = await import('./assets/js/forecast.js'); return [m.simAlpha(0), m.simAlpha(50), m.simAlpha(90), m.simAlpha(100), m.simAlpha(null)]; });
   eq(al, [0.15, 0.45, 0.69, 0.75, 0.28], 'strength by certainty: 15% at 0, up to 75% at 100; not backtested — faint (28%)');
   // הוודאות של הכרטיס (בפס, "ודאות N%") — אותה ודאות קובעת את העוצמה

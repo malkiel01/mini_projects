@@ -32,6 +32,34 @@ const COLOR_NAME = { '--brand': 'כחול', '--m2': 'כתום', '--m3': 'סגו�
 const KEY = 'ts-forecast-methods';
 const MAX = PALETTE.length;   // = TS_REFRESH_MAX_METHODS בשרת
 
+// ── תוויות קצרות על הגרף (בקשת הבעלים, 2026-11-16) ─────────
+// "הטקסט שעל הגרף גדול מדי ולא נקרא בטלפון": על הגרף — ביטוי קצר (עד 3 מילים), בשורות קצרות; ההסבר המלא — בחלונית
+// שנפתחת בלחיצה (charttip.js). שיטה יכולה לתת `label` קצר משלה; בלעדיו — נגזר מ-text בלי לחתוך באמצע משפט.
+const ROLE_SHORT = { invalidation: 'רמת ביטול', stop: 'סטופ', target: 'יציאה ברווח' };
+const KIND_SHORT = { zone: 'אזור', hline: 'רמה', polyline: 'קו', marker: 'סימון', label: 'נקודה' };
+const SHORT_WORDS = 3;
+/** הביטוי הקצר של פריט: label של השיטה; קו לפי תפקידו; אחרת החלק שלפני " — " / " · " / "," — אם הוא עד 3 מילים; אחרת סוג הפריט */
+export function shortLabel(it) {
+  if (typeof it?.label === 'string' && it.label.trim()) return it.label.trim();
+  if (it?.kind === 'hline' && ROLE_SHORT[it.role]) return ROLE_SHORT[it.role];
+  const text = String(it?.text || '').replace(/\s*לפי כללי השיטה\s*/g, ' ').trim();
+  const head = text.split(' — ')[0].split(' · ')[0].split(',')[0].trim();
+  if (head && head.split(/\s+/).length <= SHORT_WORDS) return head;
+  return KIND_SHORT[it?.kind] || '';
+}
+/** השורות של תווית אזור: "תרחיש" (אם זה תרחיש), הביטוי הקצר, והציון אם יש (פיבונאצ'י: "ציון 3") */
+function zoneLines(it) {
+  const score = String(it.text || '').split(' · ').map(x => x.trim()).find(x => /^ציון \d/.test(x));
+  return [it.scen ? 'תרחיש' : null, shortLabel(it), score || null].filter(Boolean);
+}
+/** שורת הוודאות של הכרטיס (23.7, L6): "ודאות 62% · בפועל מאז" / "ודאות 62% · ראשונית"; null — אין ודאות */
+export function certLine(c) {
+  if (!c) return null;
+  if (c.certainty_basis === 'live' && c.certainty != null) return `ודאות ${c.certainty}% · בפועל מאז`;
+  if (c.backtest?.status === 'ok') return `ודאות ${c.certainty ?? c.backtest.certainty}% · ראשונית`;
+  return null;
+}
+
 // ── הדמיית המשך (בקשת הבעלים, 2026-11-16) ──────────────────
 // "הגרף רק מראה נקודה לתחזית — זה לא ממחיש את המשך הגרף." מהנר האחרון — נרות "רפאים" (חלולים, בצבע השיטה) לאורך התרחיש
 // הנבחר עד סופו, ועוד חצי מאורכו (SIM_EXTRA) סביב היעד — "קצת יותר המשך ארוך". העוצמה — לפי הוודאות של הכרטיס (simAlpha),
@@ -172,30 +200,31 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
 
   // ── ציור על הקנבס ───────────────────────────────────────
   // תווית: נרשמת בלוח; חופפת — לא מצוירת. מחזירה את המלבן (לבדיקות) או null
+  // תווית — שורה אחת או כמה (מערך, מלמעלה למטה), y — הבסיס של השורה האחרונה. נרשמת בלוח; חופפת — לא מצוירת (force — כן).
+  // מחזירה את המלבן (לבדיקות; text — השורות מחוברות ב-" · ") או null
   function text(ctx, s, x, y, color, align, W, force = false) {
     ctx.font = '12px system-ui, sans-serif';
-    ctx.direction = 'rtl';   // טקסט עברי עם מספר: "רמת ביטול … · 82,912.72", ולא המספר בהתחלה (הקנבס של הגרף LTR)
+    ctx.direction = 'rtl';   // טקסט עברי עם מספר: "רמת ביטול · 82,912.72", ולא המספר בהתחלה (הקנבס של הגרף LTR)
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
-    // נצמדת לימין ואין לה מקום (טלפון): מקצרים את התיאור ב-"…", והמחיר שבסוף נשאר (🟡 F1 — לא גולשים אל מספרי הציר)
-    if (align === 'right' && ctx.measureText(s).width + 6 > x) {
-      const i = s.lastIndexOf(' · ');
-      const tail = i > 0 ? s.slice(i) : '';
-      let head = i > 0 ? s.slice(0, i) : s;
-      while (head.length > 1 && ctx.measureText(head + '…' + tail).width + 6 > x) head = head.slice(0, -1);
-      s = head.trimEnd() + '…' + tail;
-    }
-    const w = ctx.measureText(s).width + 6;
+    let lines = (Array.isArray(s) ? s : [s]).filter(Boolean);
+    // נצמדת לימין ואין לה מקום (טלפון): שורה ארוכה מתקצרת ב-"…" (🟡 F1 — לא גולשים אל מספרי הציר)
+    if (align === 'right') lines = lines.map(l => {
+      while (l.length > 1 && ctx.measureText(l).width + 6 > x) l = l.slice(0, -2) + '…';
+      return l;
+    });
+    const LH = 15;
+    const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + 6, hh = LH * lines.length;
     let left = align === 'right' ? x - w : x - 3;
     left = Math.max(0, Math.min(left, W - w));
-    const r = { x: left, y: y - 15, w, h: 15, by: 'forecast', text: s };
+    const r = { x: left, y: y - hh, w, h: hh, by: 'forecast', text: lines.join(' · ') };
     if (!board.place(r) && !force) return null;   // force — תווית שחייבת להופיע (הדמיית ההמשך), גם על חשבון חפיפה
     ctx.fillStyle = col('--surface');
     ctx.globalAlpha = 0.85;
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.globalAlpha = 1;
     ctx.fillStyle = color;
-    ctx.fillText(s, left + 3, y - 2);
+    lines.forEach((l, i) => ctx.fillText(l, left + 3, r.y + LH * (i + 1) - 2));
     return r;
   }
   /** התווית של פריט — איפה ובאיזה צבע (תמיד של השיטה, S5); null — אין (גם לחלופות: בלי טקסט, 17.1.7) */
@@ -206,16 +235,18 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       if (!it.text || [x1, x2, y1, y2].includes(null)) return null;
       // בפינה הימנית העליונה של האזור (ההווה), לא בנקודת ההתחלה
       const xr = it.extend ? W - 6 - axisWidth() : Math.min(Math.max(x1, x2) - 4, W - 6);   // נמשך עד הקצה — התווית משמאל לציר
-      return { s: (it.scen ? 'תרחיש: ' : '') + it.text, x: xr, y: Math.min(y1, y2) + 16, c: colorOf(id), align: 'right' };
+      const lines = zoneLines(it);
+      // בתוך האזור מתחת לקצה העליון; תפוס (נקודות של הספירה ליד) — מעליו
+      return { s: lines, x: xr, y: Math.min(y1, y2) + 1 + 15 * lines.length, alt: [Math.min(y1, y2) - 2], c: colorOf(id), align: 'right' };
     }
     if (it.kind === 'hline') {
       const y = yOf(it.price);
       // משמאל לעמודת המספרים של הציר — לא מעליהם (🟡 F1: "רמת ביטול" כיסתה את 82,500)
-      return y === null ? null : { s: `${it.text} · ${price(id, it.price)}`, x: W - 6 - axisWidth(), y, c: colorOf(id), align: 'right' };
+      return y === null ? null : { s: [shortLabel(it), price(id, it.price)], x: W - 6 - axisWidth(), y, c: colorOf(id), align: 'right' };
     }
     if (it.kind === 'label') {
       const x = xOf(it.t), y = yOf(it.price);
-      return x === null || y === null ? null : { s: it.text, x: x + 5, y: y - 3, c: colorOf(id), align: 'left' };
+      return x === null || y === null ? null : { s: shortLabel(it), x: x + 5, y: y - 3, c: colorOf(id), align: 'left' };
     }
     return null;
   }
@@ -345,13 +376,15 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       if (i < 6) { top = Math.min(top, yh); firstX ??= x; }
     });
     ctx.globalAlpha = 1;
-    // התווית — תמיד: מעל תחילת ההמשך; תפוס — מתחת, ואז עוד למעלה
-    let label = false;
-    if (firstX !== null) {
-      for (const dy of [-6, 34, -26, 54, -46]) { if (text(ctx, SIM_LABEL, firstX, Math.max(16, top + dy), c, 'left', W)) { label = true; break; } }
-      if (!label) label = !!text(ctx, SIM_LABEL, firstX, Math.max(16, top - 6), c, 'left', W, true);   // אין מקום פנוי — בכל זאת
-    }
-    simDrawn.push({ m: id, bars: n, alpha: sim.alpha, certainty: sim.certainty, label, end: sim.bars.at(-1).t, scenEnd: sim.scenEnd, start: sim.bars[0].t });
+    simDrawn.push({ m: id, bars: n, alpha: sim.alpha, certainty: sim.certainty, label: false, end: sim.bars.at(-1).t, scenEnd: sim.scenEnd, start: sim.bars[0].t,
+      at: firstX === null ? null : [firstX, top], c });
+  }
+  /** התווית של ההמשך — אחרי תוויות השיטות (הן קודמות במקום), ותמיד: מעל תחילת ההמשך; תפוס — מתחת, למעלה; אין — בכל זאת */
+  function simLabel(ctx, d, W) {
+    if (!d.at) return;
+    const [x, top] = d.at, lines = SIM_LABEL.split(' — ');   // שתי שורות קצרות: "הדמיית המשך" / "לא תחזית"
+    for (const dy of [-6, 44, -36, 74, -66]) if (text(ctx, lines, x, Math.max(31, top + dy), d.c, 'left', W)) { d.label = true; return; }
+    d.label = !!text(ctx, lines, x, Math.max(31, top - 6), d.c, 'left', W, true);
   }
 
   const primitive = {
@@ -376,7 +409,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
                 for (const it of itemsOf(id)) if (!isOn(id, it)) drawShape(ctx, id, it, W);
                 for (const it of itemsOf(id)) if (isOn(id, it)) drawShape(ctx, id, it, W);
               }
-              // הדמיית ההמשך — מעל הקווים, והתווית שלה ("לא תחזית") לפני תוויות השיטות, כדי שתמיד תצויר
+              // הדמיית ההמשך — מעל הקווים; התווית שלה ("לא תחזית") אחרי תוויות השיטות (למטה), ותמיד מצוירת
               simDrawn = [];
               for (const { id } of shown()) { const sim = sims.get(id); if (sim) drawSim(ctx, id, sim, W); }
               // התוויות: השיטה המובילה ראשונה — היא שגוברת בחפיפה
@@ -384,9 +417,10 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
               for (const { id } of shown()) {
                 for (const it of itemsOf(id)) {
                   const l = labelOf(id, it, W);
-                  if (l && text(ctx, l.s, l.x, l.y, l.c, l.align, W)) drawn.push({ m: id, k: 'text', c: l.c, alt: false });
+                  if (l && [l.y, ...(l.alt || [])].some(y => text(ctx, l.s, l.x, y, l.c, l.align, W))) drawn.push({ m: id, k: 'text', c: l.c, alt: false });
                 }
               }
+              for (const d of simDrawn) simLabel(ctx, d, W);
               ctx.restore();
             });
           },
@@ -514,7 +548,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     const marks = [];
     for (const { id } of shown()) for (const x of itemsOf(id)) if (x.kind === 'marker' && isOn(id, x)) marks.push({ time: x.t,
       position: x.side === 'long' ? 'belowBar' : 'aboveBar', shape: x.side === 'long' ? 'arrowUp' : 'arrowDown',
-      color: colorOf(id), text: x.text, m: id });
+      color: colorOf(id), text: shortLabel(x), m: id });
     marks.sort((a, b) => a.time - b.time);
     markers = marks.map(x => ({ m: x.m, k: 'marker', c: x.color, alt: false }));
     series.setMarkers(marks.map(({ m, ...x }) => x));
@@ -609,9 +643,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     // שורת הסיכום — גם כשהשיטה מקופלת: הכיוון והוודאות, כל אחד עם השם שלו (קריטריון 2)
     const bt = c?.backtest;
     // 23.7 (L6): המספר הראשי של הכרטיס (certainty) ומקורו — "ראשונית" (בדיקה לאחור) או "בפועל מאז" אחרי "החלף לבפועל"
-    const live = c?.certainty_basis === 'live' && c.certainty !== null;
-    const brief = [C.biasWord(c), live ? `ודאות ${c.certainty}% · בפועל מאז` : bt?.status === 'ok' ? `ודאות ${c.certainty ?? bt.certainty}% · ראשונית`
-      : c?.status === 'ok' ? 'לא נבדק לאחור' : ''].filter(Boolean).join(' · ');
+    const brief = [C.biasWord(c), certLine(c) ?? (c?.status === 'ok' ? 'לא נבדק לאחור' : '')].filter(Boolean).join(' · ');
     const tog = h('button', { class: 'an-fold', type: 'button', 'aria-expanded': String(!fold), 'aria-controls': bodyId,
       on: { click: () => { set(id, 'fold', !fold); renderPanel(); } } },
       h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), h('h3', {}, name), pick(id)?.off ? h('small', { class: 'chip' }, 'מוסתרת בגרף') : null, brief ? h('small', { class: 'muted an-brief' }, brief) : null,
@@ -728,7 +760,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   const keyOf = (id, it) => [id, it.kind, it.role || '', it.scenario ?? '', it.fib || '', it.r ?? '', it.kind === 'label' || it.kind === 'marker' ? it.t : '', it.kind === 'label' ? it.text : ''].join('|');
   const hitOf = (id, it, a, px, py) => ({ id, it, key: keyOf(id, it), x: a.x, y: a.y, px, py,
     t: it.kind === 'label' || it.kind === 'marker' ? it.t : chart.timeScale().coordinateToTime(a.x), p: it.kind === 'label' ? it.price : series.coordinateToPrice(a.y),
-    name: nameOf(id), color: pick(id)?.color || '--brand', r: res.get(id), price: v => price(id, v) });
+    name: nameOf(id), color: pick(id)?.color || '--brand', r: res.get(id), price: v => price(id, v),
+    short: shortLabel(it), cert: certLine(card(id)) });
   /** כל מה שבטווח R מהלחיצה (אצבע: 24px), הקטן והקרוב ראשון. [] — כלום */
   function hitsAt(px, py, W, R = 24) {
     const out = [];
@@ -773,7 +806,15 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     onAnalysis(a) {
       running = false;
       if (a?.cards) an = { ...(an || {}), ...a };
-      paint();   // לא רק הפס: עוצמת הדמיית ההמשך תלויה בוודאות שהגיעה עכשיו
+      // עוצמת הדמיית ההמשך תלויה בוודאות שהגיעה עכשיו — רק היא מתעדכנת, וציור מחדש של הקנבס (לא paint מלא: בלי סימונים,
+      // ציר זמן והזזת תצוגה)
+      for (const [id, sim] of sims) {
+        const c = card(id);
+        sim.certainty = c?.status === 'ok' ? c.certainty ?? null : null;
+        sim.alpha = simAlpha(sim.certainty);
+      }
+      requestUpdate();
+      renderPanel();
     },
     /** מסגרת הזמן השתנתה — התפריט פתוח מסמן מחדש מה זמין; הכרטיס של המסגרת הקודמת לא תקף */
     retf: () => { an = null; if (openNow()) renderPop(); renderPanel(); },
@@ -798,6 +839,6 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       try { series.detachPrimitive(primitive); } catch { /* ריק */ }
     },
     state: () => ({ methods: chosen.map(c => ({ ...c, off: !!c.off, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
-      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() }, sim: simDrawn.map(x => ({ ...x })) }),
+      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() }, sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
   };
 }
