@@ -106,6 +106,20 @@ eq([json_encode($sF['g']) === $gBefore, $a5['bias'], count($a5['conditions'])], 
 $sig = $m->signals($F, $P);
 eq(count($sig), 63, 'criterion 4: the same 63 default signals on the 5,000 h1 candles');
 
+// ── השוואת שכנים (23.9, L5b): learn_params — שלושה פרמטרים, והשכנים בתוך הטווח ──
+require_once dirname(__DIR__) . '/lib/learn.php';
+$lp = ts_learn_params($m);
+eq([array_keys($lp), $lp['stop_atr']['step'], $lp['zone_atr']['step'], $lp['box_target']['values']], [['stop_atr', 'box_target', 'zone_atr'], 0.25, 0.1, [0.5, 0.618, 1.0]],
+    'L5b: learn_params — stop_atr (step 0.25), box_target (0.5 / 0.618 / 1), zone_atr (step 0.1)');
+$nb = fn(string $k, float $v) => array_map(fn($x) => round($x['value'], 6), ts_learn_neighbors($lp[$k], $v));
+eq([$nb('stop_atr', 0.25), $nb('stop_atr', 0.0), $nb('stop_atr', 1.0), $nb('zone_atr', 0.5), $nb('zone_atr', 0.1), $nb('zone_atr', 2.0), $nb('box_target', 1.0), $nb('box_target', 0.618), $nb('box_target', 0.5)],
+    [[0.0, 0.25, 0.5], [0.0, 0.25], [0.75, 1.0], [0.4, 0.5, 0.6], [0.1, 0.2], [1.9, 2.0], [0.618, 1.0], [0.5, 0.618, 1.0], [0.5, 0.618]],
+    'L5b: the neighbours stay in range — stop_atr 0–1, zone_atr 0.1–2; box_target only from its three values');
+$allIn = true;
+foreach ([0.0, 0.25, 0.5, 0.75, 1.0] as $v) foreach (ts_learn_neighbors($lp['stop_atr'], $v) as $x) if ($x['value'] < -1e-9 || $x['value'] > 1 + 1e-9) $allIn = false;
+foreach (range(1, 20) as $i) foreach (ts_learn_neighbors($lp['zone_atr'], $i / 10) as $x) if ($x['value'] < 0.1 - 1e-9 || $x['value'] > 2 + 1e-9) $allIn = false;
+eq($allIn, true, 'L5b: no neighbour outside 22.10 for any current value');
+
 // ── T1 (18.1.6, קריטריון 3): tip לכל פריט שפיבונאצ'י מצייר ─────
 $ovs = fn(array $c, array $o = []) => ts_forecast_split(ts_overlay_check($m->overlay($c, $m->params($o), $H), $H));   // ts_overlay_check — גם tip
 $EX = fib_bars([140, 120, 175, 150, 196, [199, 'body' => 3], 200, 185]);
