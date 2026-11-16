@@ -105,6 +105,26 @@ foreach (array_merge(array_keys($refSig), range(55, $N - 1, 97)) as $i) {
 }
 eq($peek, 0, 'no look-ahead: the signal at i is the same on [0..i] and on the full set');
 
+// אותה בדיקה לשיטות הקוד מהספר (אליוט, פיבונאצ'י — ביקורת #1662 🟡7): אות ב-i ו-analyze.as_of, על 2,000 הנרות הראשונים.
+// פרמטרים "רגישים" — כדי שיהיו אותות לבדוק (בברירות המחדל לפיבונאצ'י אין אותות לפני F-2)
+$C2 = array_slice($C, 0, 2000);
+foreach (['elliott-w3' => ['pivot_atr_mult' => 2.0], 'fibonacci' => ['pivot_atr_mult' => 2, 'min_score' => 2, 'min_rr' => 1]] as $id => $over) {
+    $mm = ts_method($id);
+    $pp = $mm->params($over);
+    $all = $mm->signals($C2, $pp);
+    $byT = array_column($all, null, 't');
+    $ix = array_flip(array_column($C2, 't'));
+    $peek = 0; $runs = 0;
+    foreach (array_unique(array_merge(array_map(fn($x) => $ix[$x['t']], array_slice($all, 0, 8)), [400, 1100, 1999])) as $i) {
+        $part = $mm->signals(array_slice($C2, 0, $i + 1), $pp);
+        $lp = $part && end($part)['t'] === $C2[$i]['t'] ? end($part) : null;
+        if (($byT[$C2[$i]['t']] ?? null) != $lp) $peek++;
+        if ($mm->analyze(array_slice($C2, 0, $i + 1), $pp)['as_of'] !== $C2[$i]['t']) $peek++;
+        $runs++;
+    }
+    eq([$peek, count($all) > 0], [0, true], "$id: no look-ahead — the signal at i and analyze.as_of are the same on [0..i] and on the whole set ($runs points, " . count($all) . ' signals)');
+}
+
 // ── מצטבר = מלא, על אותו סט (המצב עובר דרך JSON, כמו במסד) ──
 $cost = ['fee' => 0.001, 'slip' => 0.0005];
 $full = ts_bt_run($m, $P, $C, $cost);
