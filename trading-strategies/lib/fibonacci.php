@@ -394,6 +394,55 @@ function ts_fib_project(array $g, ?array $abx): array
     return $g;
 }
 
+/** מחיר לטקסט של החלונית (18.1.6): עד שש ספרות משמעותיות, בלי אפסים מיותרים. התצוגה עצמה מעגלת לפי ה-tick של הנכס */
+function ts_fib_px(float $v): string
+{
+    $a = abs($v);
+    $d = $a >= 1 ? max(0, min(8, 5 - (int)floor(log10($a)))) : 8;
+    $s = number_format($v, $d, '.', ',');
+    return str_contains($s, '.') ? rtrim(rtrim($s, '0'), '.') : $s;
+}
+
+/** טקסט עד TS_OVERLAY_TEXT_MAX (200) תווים: חלקים מחוברים ב-" · "; מה שלא נכנס — "…" */
+function ts_fib_fit(array $parts, int $max = 200): string
+{
+    $out = '';
+    foreach ($parts as $i => $p) {
+        $next = $out === '' ? $p : "$out · $p";
+        if (mb_strlen($next) > $max - 2) return $out === '' ? mb_substr($p, 0, $max - 1) . '…' : "$out …";
+        $out = $next;
+    }
+    return $out;
+}
+
+/** "61.8% של 200→150" — רמה ביחס לטווח שלה ($ranges — לפי id) */
+function ts_fib_level_words(array $l, array $ranges): string
+{
+    $rg = $ranges[$l['range']] ?? null;
+    $pct = rtrim(rtrim(number_format(100 * $l['r'], 1, '.', ''), '0'), '.') . '%';
+    return $rg ? "$pct של " . ts_fib_px((float)$rg['start']) . '→' . ts_fib_px((float)$rg['end']) : $pct;
+}
+
+/**
+ * החלוניות של הממצא (18.1.6, קריטריון 3): אזור — "אזור פיבונאצ'י · ציון N" והיחסים שלו; רמה בודדת — "רמה בודדת, חלשה (R8)".
+ * ניסוח 6.6 — בלי "יעד", "קנה", "מכור".
+ */
+function ts_fib_zone_tip(array $z, array $side, string $word): array
+{
+    $ranges = array_column($side['ranges'], null, 'id');
+    $parts = [count($z['levels']) . ' רמות מ-' . $z['ranges'] . " טווחים, באזור $word"];
+    foreach ($z['levels'] as $l) $parts[] = ts_fib_level_words($l, $ranges);
+    if (!empty($z['z6'])) $parts[] = 'ועוד 1 — הקרנה של 100% בתוך האזור (Z6)';
+    return ['title' => "אזור פיבונאצ'י · ציון " . $z['score'], 'explain' => ts_fib_fit($parts)];
+}
+
+function ts_fib_single_tip(array $l, array $side): array
+{
+    $pct = rtrim(rtrim(number_format(100 * $l['r'], 1, '.', ''), '0'), '.') . '%';
+    return ['title' => "רמה בודדת · $pct",
+        'explain' => 'רמה בודדת, חלשה (R8): ' . ts_fib_level_words($l, array_column($side['ranges'], null, 'id')) . '. לא נכנסה לאף אזור חפיפה.'];
+}
+
 /**
  * התרחיש בגרף וביומן (22.5ד, 22.5ו, F-2) — פריטים של overlay שכולם **אחרי הנר האחרון** (מקווקו / שקוף), ו-projection.scenarios.
  * $x — אות בתוקף או null; $last — הנר האחרון; $tf — אורך נר בשניות; $bars — האופק (horizon_bars).
@@ -417,9 +466,15 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
     $zones = [...$g['support']['zones'], ...$g['resistance']['zones']];
     $inZone = fn(float $v) => (bool)array_filter($zones, fn($z) => $v >= $z['lo'] - TS_FIB_EPS && $v <= $z['hi'] + TS_FIB_EPS);
     $pct = fn(float $r) => rtrim(rtrim(number_format(100 * $r, 1, '.', ''), '0'), '.') . '%';
-    $line = fn(float $v, string $text, bool $faint) => ['kind' => 'polyline', 'style' => 'dashed', 'text' => $text,
+    // רמת הביטול לחלונית (18.1.6): X של A-B-X בכיוון; אחרת — הסטופ של האות; בלי כיוון — אין
+    $upDir = $dir === 'up';
+    $tinv = $abx ? ['price' => (float)$abx['x']['p'], 'side' => $upDir ? 'below' : 'above', 'rule' => 'סגירה ' . ($upDir ? 'מתחת ל-X' : 'מעל X') . ' של A-B-X']
+        : ($x ? ['price' => (float)$x['stop'], 'side' => $x['side'] === 'long' ? 'below' : 'above', 'rule' => 'הסטופ של האות'] : null);
+    $tip = fn(string $title, string $explain) => ['tip' => ['title' => $title, 'explain' => $explain] + ($tinv ? ['invalidation' => $tinv] : [])];
+    $line = fn(float $v, string $text, bool $faint, string $explain, ?string $title = null) => ['kind' => 'polyline', 'style' => 'dashed', 'text' => $text,
         'points' => [['t' => $t0, 'price' => $v], ['t' => $end, 'price' => $v]]]
-        + ($faint || !$inZone($v) ? ['single' => true] : ['bold' => true]);
+        + ($faint || !$inZone($v) ? ['single' => true] : ['bold' => true])
+        + $tip($title ?? $text, $explain . ($faint || !$inZone($v) ? ' לבד — רמה חלשה (R8).' : ' בתוך אזור חפיפה — מודגשת.'));
     // האזור המוביל בצד — אותה בחירה כמו ב-Z6 (ts_fib_best_zone)
     $best = function (string $key) use ($g, $close) {
         $i = ts_fib_best_zone($g[$key]['zones'], $close);
@@ -437,16 +492,18 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
     $items = []; $targets = [];
     if ($abx) {
         foreach ($abx['targets'] as $t) {
-            $items[] = $line($t['price'], 'A-B-X ' . $pct($t['r']), false);
+            $items[] = $line($t['price'], 'A-B-X ' . $pct($t['r']), false, 'מ-X (' . ts_fib_px((float)$abx['x']['p']) . ') באורך ' . $pct($t['r'])
+                . ' של A→B (' . ts_fib_px((float)$abx['a']['p']) . '→' . ts_fib_px((float)$abx['b']['p']) . ').', 'הקרנה A-B-X, ' . $pct($t['r']));
             $targets[] = $t['price'];
         }
     }
     foreach ($boxes as $b) {
         $box = ts_fib_box($b, 2 * (($b['lo'] + $b['hi']) / 2) - $b['T']);
+        $boxWhy = 'הגובה מתחילת המהלך (' . ts_fib_px($box['m0']) . ') עד אמצע האזור (' . ts_fib_px($box['mid']) . '), מועתק מעבר לאזור באותו כיוון (22.5ב).';
         $items[] = ['kind' => 'zone', 't1' => $t0, 't2' => $end, 'p1' => $box['mid'], 'p2' => $box['T'], 'box' => $b['side'],
-            'text' => 'קופסת שוויון — מאמצע האזור עד ההקרנה'] + ($faint ? ['single' => true] : []);
-        $items[] = $line($box['T'], 'קופסת שוויון 100%', $faint);
-        foreach ($box['levels'] as $l) $items[] = $line($l['price'], 'קופסת שוויון ' . $pct($l['r']), true);
+            'text' => 'קופסת שוויון — מאמצע האזור עד ההקרנה'] + ($faint ? ['single' => true] : []) + $tip('קופסת שוויון', $boxWhy);
+        $items[] = $line($box['T'], 'קופסת שוויון 100%', $faint, 'סוף הקופסה: ' . $boxWhy);
+        foreach ($box['levels'] as $l) $items[] = $line($l['price'], 'קופסת שוויון ' . $pct($l['r']), true, 'הקרנת ביניים בתוך הקופסה (P5).');
         $targets = [...$targets, $box['T'], ...array_column($box['levels'], 'price')];
     }
     if ($dir === null) return [$items, []];
@@ -461,17 +518,20 @@ function ts_fib_scenario(array $g, ?array $x, array $last, int $tf, int $bars): 
     }
     $main = $abx ? $abx['targets'][1]['price'] : ($boxes[0]['T'] ?? null);
     $head = [];
-    if ($jz) $band = [$jz['lo'], $jz['hi'], 'אזור חפיפה שבתוכו הקרנה'];
-    elseif ($abx) $band = [$abx['targets'][0]['price'], $main, 'בין הקרנה 61.8% להקרנה 100% של A-B-X'];
-    elseif ($boxes) $band = [ts_fib_box($boxes[0], 2 * (($boxes[0]['lo'] + $boxes[0]['hi']) / 2) - $boxes[0]['T'])['levels'][2]['price'], $boxes[0]['T'], 'בין 61.8% ל-100% של קופסת השוויון'];
+    if ($jz) $band = [$jz['lo'], $jz['hi'], 'אזור חפיפה שבתוכו הקרנה', 'אזור החפיפה הקרוב ' . ($up ? 'מעל' : 'מתחת ל') . 'מחיר שיש בתוכו הקרנה — ציון ' . $jz['score'] . '.'];
+    elseif ($abx) $band = [$abx['targets'][0]['price'], $main, 'בין הקרנה 61.8% להקרנה 100% של A-B-X', 'אין אזור חפיפה עם הקרנה בכיוון — הפס בין שתי ההקרנות של A-B-X.'];
+    elseif ($boxes) $band = [ts_fib_box($boxes[0], 2 * (($boxes[0]['lo'] + $boxes[0]['hi']) / 2) - $boxes[0]['T'])['levels'][2]['price'], $boxes[0]['T'], 'בין 61.8% ל-100% של קופסת השוויון',
+        'אין A-B-X ואין אזור חפיפה עם הקרנה בכיוון — הפס בסוף קופסת השוויון של אזור האות.'];
     else $band = null;
     if ($band) $head[] = ['kind' => 'zone', 't1' => $t0, 't2' => $end, 'p1' => (float)min($band[0], $band[1]), 'p2' => (float)max($band[0], $band[1]),
-        'primary' => true, 'text' => $band[2]];
+        'primary' => true, 'text' => $band[2]] + $tip('אזור תרחיש — ' . $band[2], $band[3] . ' עד סוף האופק (' . $k . ' נרות).');
     $inv = $abx ? $abx['x']['p'] : ($x['stop'] ?? null);
     if ($inv !== null) $head[] = ['kind' => 'hline', 'price' => (float)$inv, 'role' => 'invalidation', 'primary' => true,
-        'text' => $abx ? 'רמת הביטול — סגירה ' . ($up ? 'מתחת ל-X' : 'מעל X') . ' של A-B-X' : 'רמת הביטול — הסטופ של האות'];
+        'text' => $abx ? 'רמת הביטול — סגירה ' . ($up ? 'מתחת ל-X' : 'מעל X') . ' של A-B-X' : 'רמת הביטול — הסטופ של האות']
+        + $tip('רמת ביטול', $abx ? 'סגירה ' . ($up ? 'מתחת' : 'מעל') . ' לנקודה X של A-B-X מבטלת את התרחיש (22.5ו).' : 'אין A-B-X בכיוון האות — התרחיש מתבטל בסטופ של האות.');
     $path = $main !== null ? [['t' => $t0, 'price' => $close], ['t' => $end, 'price' => (float)$main]] : [];
-    if ($path) $head[] = ['kind' => 'polyline', 'style' => 'dashed', 'points' => $path];
+    if ($path) $head[] = ['kind' => 'polyline', 'style' => 'dashed', 'points' => $path]
+        + $tip('קו התרחיש — ' . ($up ? 'מעלה' : 'מטה'), 'המסלול האפשרי לפי כללי השיטה, מהסגירה האחרונה אל ההקרנה של 100%' . ($abx ? ' של A-B-X.' : ' של קופסת השוויון.'));
     $label = 'לפי כללי השיטה — ' . ($up ? 'מעלה' : 'מטה') . ($abx ? ' (A-B-X)' : '') . ", עד $k נרות";
     return [[...$head, ...$items], $path ? [['id' => 's1', 'primary' => true, 'score' => null, 'points' => $path, 'label' => $label]] : []];
 }

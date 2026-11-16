@@ -68,6 +68,10 @@ eq(call('owner', 'admin_method_save', ['id' => $F, 'enabled' => true, 'markets' 
 $res = $r['methods'][$F] ?? [];
 eq([$c, $res['status'] ?? null, $res['title'] ?? null], [200, 'ok', "תרחיש לפי שיטת פיבונאצ'י — לא ייעוץ"], 'chart_refresh: ok, with the 6.6 title');
 $items = $res['overlay']['items'] ?? [];
+// T1 (18.1.6, קריטריון 3): דרך השרת (ts_overlay_check בודק את tip) — כל פריט, בממצא ובתרחיש, עם tip וכותרת
+$allIt = [...$items, ...($res['forecast']['items'] ?? [])];
+eq([count($allIt) > 0, count(array_filter($allIt, fn($x) => !is_string($x['tip']['title'] ?? null)))], [true, 0],
+    'T1: chart_refresh — every Fibonacci item, finding and scenario, carries a tip with a title (' . count($allIt) . ' items)');
 $zones = array_values(array_filter($items, fn($x) => $x['kind'] === 'zone'));
 $singles = array_values(array_filter($items, fn($x) => !empty($x['single'])));
 $asOf = $res['forecast']['as_of'] ?? null;

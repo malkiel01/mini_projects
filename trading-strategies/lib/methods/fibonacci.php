@@ -187,25 +187,38 @@ final class TsMethodFibonacci extends TsMethod
             $t1 = max($first, $g[$key]['start']['t']);
             foreach ($g[$key]['zones'] as $z) {
                 $items[] = ['kind' => 'zone', 't1' => $t1, 't2' => $last, 'p1' => $z['lo'], 'p2' => $z['hi'], 'extend' => true, 'fib' => $key,
-                    'score' => $z['score'], 'text' => "$word · " . count($z['levels']) . ' רמות · ציון ' . $z['score']];
+                    'score' => $z['score'], 'text' => "$word · " . count($z['levels']) . ' רמות · ציון ' . $z['score'],
+                    'tip' => ts_fib_zone_tip($z, $g[$key], $key === 'support' ? 'תמיכה' : 'התנגדות')];
             }
             foreach ($g[$key]['singles'] as $l) {
                 $items[] = ['kind' => 'polyline', 'style' => 'solid', 'single' => true, 'extend' => true, 'fib' => $key, 'r' => $l['r'],
-                    'points' => [['t' => $t1, 'price' => $l['price']], ['t' => $last, 'price' => $l['price']]]];
+                    'points' => [['t' => $t1, 'price' => $l['price']], ['t' => $last, 'price' => $l['price']]], 'tip' => ts_fib_single_tip($l, $g[$key])];
             }
         }
         // ואקום (Z10, F-3) — תווית בממצא, באמצע הפער, בנר האחרון. מידע בלבד
         foreach (ts_fib_vacuums($g, $p) as $v) {
             $items[] = ['kind' => 'label', 't' => $last, 'price' => ($v['lo'] + $v['hi']) / 2, 'text' => 'ואקום', 'vacuum' => $v['side'],
-                'lo' => $v['lo'], 'hi' => $v['hi']];
+                'lo' => $v['lo'], 'hi' => $v['hi'], 'tip' => ['title' => 'ואקום', 'explain' => 'אין אף רמה בין שני אזורי ה' . ($v['side'] === 'support' ? 'תמיכה' : 'התנגדות')
+                    . ' (' . ts_fib_px($v['lo']) . '–' . ts_fib_px($v['hi']) . '), והפער לפחות ' . $p['zone_max_atr'] . ' ATR. מידע בלבד (Z10).']];
         }
         $x = $s['x'];
         $alive = $x !== null && $x['alive'] && $x['ago'] < $this->horizon($p) && $x['ago'] < count($candles);
         if ($alive) {
             $sigT = $candles[count($candles) - 1 - $x['ago']]['t'];
-            $items[] = ['kind' => 'marker', 't' => $sigT, 'side' => $x['side'], 'text' => ($x['side'] === 'long' ? 'אות לונג' : 'אות שורט') . ' לפי כללי השיטה'];
-            $items[] = ['kind' => 'hline', 'price' => (float)$x['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה'];
-            $items[] = ['kind' => 'hline', 'price' => (float)$x['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה'];
+            $lg = $x['side'] === 'long';
+            $sinv = ['price' => (float)$x['stop'], 'side' => $lg ? 'below' : 'above', 'rule' => 'הסטופ של האות'];
+            $zw = ts_fib_px((float)$x['zone'][0]) . '–' . ts_fib_px((float)$x['zone'][1]);
+            $items[] = ['kind' => 'marker', 't' => $sigT, 'side' => $x['side'], 'text' => ($lg ? 'אות לונג' : 'אות שורט') . ' לפי כללי השיטה',
+                'tip' => ['title' => $lg ? 'אות לונג' : 'אות שורט', 'invalidation' => $sinv,
+                    'explain' => ($lg ? 'הנר הקודם נסגר מעל אזור התמיכה, המחיר ירד אליו ונסגר בחזרה מעליו' : 'הנר הקודם נסגר מתחת לאזור ההתנגדות, המחיר עלה אליו ונסגר בחזרה מתחתיו')
+                        . " (אזור $zw, ציון {$x['score']}, 22.6)."]];
+            $items[] = ['kind' => 'hline', 'price' => (float)$x['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה',
+                'tip' => ['title' => 'סטופ', 'invalidation' => $sinv, 'explain' => ($lg ? 'מתחת לאזור ומתחת לפתיל' : 'מעל לאזור ומעל לפתיל')
+                    . ' של נר האות, ועוד ' . $p['stop_atr'] . ' ATR (M1, פ10).']];
+            $items[] = ['kind' => 'hline', 'price' => (float)$x['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה',
+                'tip' => ['title' => 'רמת היציאה ברווח', 'invalidation' => $sinv, 'explain' => ($x['via'] ?? 'zone') === 'box'
+                    ? 'אין אזור ' . ($lg ? 'התנגדות מעל' : 'תמיכה מתחת') . ' — סוף קופסת השוויון של אזור האות (22.5ב), יחס ' . round($x['rr'], 2) . '.'
+                    : 'הגבול הקרוב של אזור ה' . ($lg ? 'התנגדות הבא מעל' : 'תמיכה הבא מתחת') . ' (M2), יחס ' . round($x['rr'], 2) . '.']];
         }
         [$scen, $proj] = $g && $this->scenario ? ts_fib_scenario($g, $alive ? $x : null, $candles[count($candles) - 1], $tf, $bars) : [[], []];
         $items = [...$items, ...$scen];
