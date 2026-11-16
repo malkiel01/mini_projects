@@ -4,6 +4,7 @@
 > **עדכון 2026-11-15 (צ'אט S3):** S3 (#1598) ו-S1.1 בנויים — הסעיפים למטה. הבא בתור: **F1** (18.1.2, גרסה 2.16) — רק אחרי ש-S1.1 ממוזג.
 > **עדכון 2026-11-15 (צ'אט F1):** F1 בנוי וממוזג (#1601) — הסעיף "F1 — מה נבנה" למטה.
 > **עדכון 2026-11-15 (צ'אט S1.2):** F1 (#1601) ו-S1.2 (#1603) ממוזגים — הסעיף בסוף. הבא בתור — לפי `team/board.md` (18.8: S4).
+> **עדכון 2026-11-16 (צ'אט S4):** S4 בנוי וממוזג (#1605) — הסעיף "S4 — מה נבנה" בסוף. הבא בתור — לפי `team/board.md` (18.8: S5).
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -85,7 +86,7 @@
   - יש שני `.chart-box` (גם `.osc`) — לבחור במפורש.
 - **פתוח:**
   - קריטריון 9 (הסבר לכל תווית) — חלקי, עד המקרא של S5.
-  - בטלפון הגרף יורד בשורה כשהניתוח נדלק (בורר הקצב של S3).
+  - ~~בטלפון הגרף יורד בשורה כשהניתוח נדלק~~ — תוקן ב-S4 (הבורר עבר לפס).
   - שורת המשנה של כותרת הגרף נחתכת בטלפון ("…ce · ביטקוין ⇄ טתר").
 
 ## לקראת F1 — התוויות הירוקות (נענה ב-#1601)
@@ -98,7 +99,7 @@
   - `mountCombo(ctx, {onPick, recent, label, name})` ו-`assetField(ctx, {value, labels, recent})` (שדה עם `.value` ואירוע `change`).
   - הקטלוג (`api pairs`) נטען פעם אחת לדף. `invalidateCatalog()` — אחרי חיבור או ניתוק ספק (כבר מחובר ב-`market.js`).
   - הספק נשאל רק כשהקטלוג המקומי לא ענה. **רכיב חדש שבוחר נכס — דרכו, לא `<input>` חופשי.**
-  - מסך "🧭 ניתוח" עוד עם `assetPicker`, כי ב-S4 הוא נמחק.
+  - מסך "🧭 ניתוח" נמחק ב-S4. `assetPicker` נשאר — ההתראות משתמשות בו.
 - **לשוניות** — `lib/tabs.php`, `lib/tab-lists.php`:
   - הפעולות `market_tabs`, `market_tabs_save`, `market_tab`.
   - נשמר ב-`users.market_tabs` (מיגרציה 9). `ts_profile()['market_tabs']`.
@@ -114,3 +115,29 @@
 - **צילומים** — רק עם `SHOTS=<תיקייה מחוץ לריפו>`. `tests/shots/` ב-`.gitignore`.
 - **⚪ מהבקרה (#1603):** בהרצה רצופה של כל הבדיקות, `market-tabs-ui.mjs` נעצר פעם אחת בבדיקה 1 מתוך 38, ואחר כך עבר פעמיים. החתימה לא נשמרה. אם זה חוזר — להריץ לבד, ולבדוק את ההמתנה הראשונה (`combo(a).waitFor()`) מול זמן העלייה של `php -S`: הבדיקה ממתינה לשרת שנייה אחת קבועה.
 - **פתוח:** חלק מסימולי המדדים והסחורות של Twelve Data לא נבדקו מול הספק (פירוט ב-#1603). הרכב המדדים מתעדכן ידנית (ש5).
+
+## S4 — מה נבנה (18.4, #1605)
+
+- **השרת — ממצא ותרחיש בשדות נפרדים:** `ts_overlay_compute` → `overlay` (ממצא) + `forecast` ({as_of, bars, items, scenarios}).
+  - `ts_forecast_split` מחליט מה תרחיש (`ts_forecast_item`): זמן אחרי as_of, polyline מקווקו, או hline של `invalidation`. stop/target — ממצא.
+  - התרחיש נחתך ל-as_of (`ts_forecast_clip`); `projection` לא קיים יותר בממצא — התרחישים ב-`forecast.scenarios`.
+  - `TS_RESULT_FORMAT` (עכשיו 2) נכנס למפתח החישוב. **שינוי בצורת התוצאה = להעלות אותו**, אחרת המטמון מחזיר צורה ישנה.
+- **הכרטיס ב-`chart_refresh`:** `analysis` = {cards, blend, profile, account_size, decimals, last_t, disclaimer}.
+  - `ts_analysis_cards($uid, $asset, $tf, $prepared, $now, $runBt)` — הליבה המשותפת; `ts_analysis` = runBt true.
+  - `ts_backtest_stored` — בלי חישוב; `missing`, או השמורה עם `stale`.
+  - `ts_card_analyze` שומר את הניתוח ב-`method_results` (מפתח `card|…` + `computed_at` של הבדיקה לאחור). לא נספר ב-`method_runs`.
+  - `ts_method_key` עבר ל-`lib/analysis.php`.
+- **הבדיקה לאחור — רק בפעולה של המשתמש:** `market.js` → `runBacktest()` אחרי `load()` שאינו `auto`, כש-`forecast.needsBacktest()`. פעם אחת לכל (מסגרת, שיטות); "↻" מכריח.
+- **הדפדפן:**
+  - `assets/js/card.js` — `cardParts(ctx)`: `finding`, `probability`, `horizon`, `actions`, `blendCard`, `biasWord`.
+  - `forecast.js` — הפס: `.an-panel` → `.an-bar` (כותרת + `tools`: בורר הקצב ו"עודכן לפני"), `.an-tfs`, שקלול, ו-`.forecast-panel.analysis-card[data-method]` לכל שיטה עם `.an-sec.finding/.scenario/.prob`.
+  - `chosen` = `[{id, color, hide, fold}]` — "הסתר תרחיש" והקיפול נשמרים ב-`ts-forecast-methods`.
+  - `mountForecast` מקבל עכשיו `ctx, asset, pair, tools, tfs, setTf`; מחזיר גם `needsBacktest`, `backtesting`, `onAnalysis`.
+  - **ל-S5:** המקרא ובחירת הצבע — ב-`.an-bar` או ליד `.fc-dot` שב-`.an-fold`. הצבע עובר דרך `--mc`.
+- **הוסר:** 🧭, `viewAnalysis`, הלשונית "ניתוח" (4 לשוניות), `method_overlay`/`ts_method_overlay`. `#/analysis/X` → `#/chart/X`; קישור ההתראות → `#/chart/`.
+- **בדיקות:**
+  - `tests/analysis-ui.mjs` — נכתב מחדש ל-S4 (נתוני `wave`, שעון קבוע). שם: הגרף לא זז כשהניתוח נדלק, רענון 30 שניות בלי `analysis`, קיפול, שקלול, כהה.
+  - `box.tsForecast()` על `.chart-box:not(.osc)` — `{methods: [{id, finding, scenario, hide, …}]}`.
+  - בדיקה שפותחת גרף עם שיטה: `localStorage ts-forecast-methods` + `sessionStorage ts-chart:<asset>` ({tf}) ואז reload; לחכות ש-`.an-sec.prob` בלי "מריץ בדיקה לאחור" (ראו `journal-ui`).
+  - בנתוני `wave` לשיטת הדוגמה אין אות פעיל — אין לה תרחיש. לתרחיש — אליוט.
+- **פתוח:** ⚪ `alerts-ui.mjs` ("mark all read — no badge") נכשל לפעמים בהרצה מקבילה של כל הבדיקות, גם ב-main לפני S4. לבד — עובר.
