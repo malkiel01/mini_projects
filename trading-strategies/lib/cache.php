@@ -112,6 +112,18 @@ function ts_cache(): PDO
             throw $e;
         }
     }
+    // גרסה 5: בדיקה לאחור שלא הושלמה בזמן — המצב שלה, כדי שהקריאה הבאה תמשיך ממנו ולא תמשוך שוב את מה שכבר נמשך
+    // (lib/analysis.php, ts_backtest). מטמון: נמחק אחרי יום, ובלעדיו פשוט מתחילים מחדש. CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 5) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS bt_partial (
+                k TEXT PRIMARY KEY, state TEXT NOT NULL, from_t INTEGER NOT NULL, to_t INTEGER NOT NULL, at INTEGER NOT NULL
+            ) WITHOUT ROWID;
+            PRAGMA user_version = 5;
+            COMMIT;
+            SQL);
+    }
     return $db;
 }
 
