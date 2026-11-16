@@ -390,11 +390,17 @@ function ts_learn_finding_text(array $f): string
         $p($f['p_win']), $p($f['p_r']));
 }
 
+/** [שלנו] תקרה לפריטי DevLoop חדשים בריצה אחת, לכל שיטה + גרסה + מקור (ביקורת L4 🟡2): לפי p הקטן; השאר — רק בלשונית */
+const TS_LEARN_MAX_NEW = 3;
+
 /**
- * ממצאים חריגים → DevLoop (23.8א, ✅37). בלי כפילות: learning_findings (מפתח הממצא → קוד הפריט).
- * - חדש → פריט (kind research, area learning). - קיים והמספרים השתנו → תגובה אחת עם המספרים החדשים. אותם מספרים — כלום.
- * - הפריט נסגר → רק אחרי 30 עסקאות חדשות מאז הדיווח האחרון: תגובה, והפריט נפתח מחדש. **לא משנה שום דבר בשיטה.**
- * מחזיר [פריטים חדשים, תגובות]. בלי המודול (CLI בלי devtasks.php) — כלום.
+ * ממצאים חריגים → DevLoop (23.8א, ✅37). בלי כפילות ובלי רעש — הבעלים קורא את הפריטים (ביקורת L4 🟡1–🟡2):
+ * - ממצא חדש → פריט (kind research, area learning). לכל היותר TS_LEARN_MAX_NEW בריצה, לפי p הקטן. עברנו את התקרה — שורה
+ *   אחת בפריט האחרון שנפתח: "ועוד N ממצאים בלשונית"; הם ייפתחו בריצה הבאה שבה יש מקום.
+ * - ממצא קיים → תגובה **רק** כשנוספו מאז הדיווח האחרון לפחות TS_LEARN_RECENT (30) עסקאות. עסקה בודדת — שקט. פריט שנסגר —
+ *   באותו תנאי, ונפתח מחדש.
+ * - ממצא שהפסיק להיות מובהק — תגובה אחת "כבר לא מובהק" (בפריט פתוח), ו-sig = 'gone'. חוזר — תגובה, בלי לחכות ל-30.
+ * - **לא משנה שום דבר בשיטה.** מחזיר [פריטים חדשים, תגובות]. בלי המודול (CLI בלי devtasks.php) — כלום.
  */
 function ts_learn_findings_sync(string $methodId, int $version, string $source, int $now): array
 {
@@ -402,14 +408,21 @@ function ts_learn_findings_sync(string $methodId, int $version, string $source, 
     $db = ts_db();
     $name = ts_method_exists($methodId) ? ts_method($methodId)->meta()['name'] : $methodId;
     $get = $db->prepare('SELECT * FROM learning_findings WHERE k = ?');
-    $created = 0; $comments = 0;
-    foreach (ts_learn_findings($methodId, $version, $source) as $f) {
+    $save = $db->prepare('UPDATE learning_findings SET sig = ?, total = ?, updated_at = ? WHERE k = ?');
+    $item = function (string $code): ?array {
+        try { return devloop_task_get($code); } catch (Throwable) { return null; }   // הפריט נמחק — לא פותחים שוב לבד
+    };
+    $created = 0; $comments = 0; $skipped = 0; $lastCode = null; $seen = [];
+    $findings = ts_learn_findings($methodId, $version, $source);   // ממוינים לפי p
+    foreach ($findings as $f) {
+        $seen[$f['key']] = true;
         $seg = ts_learn_segment_text($f['dim'], $f['value']);
         $text = ts_learn_finding_text($f);
         $sig = json_encode([$f['n'], $f['rest_n'], $f['win_pct'], $f['rest_win_pct'], round($f['p'], 6)]);
         $get->execute([$f['key']]);
         $row = $get->fetch();
         if (!$row) {
+            if ($created >= TS_LEARN_MAX_NEW) { $skipped++; continue; }
             $what = $f['kind'] === 'recent' ? 'שינוי לאחרונה' : 'פלח שונה מהשאר';
             $r = devloop_task_create(['id' => null], ['kind' => 'research', 'area' => 'learning', 'priority' => 'normal',
                 'title' => "ממצא למידה: $name · $seg · $what",
@@ -420,20 +433,34 @@ function ts_learn_findings_sync(string $methodId, int $version, string $source, 
                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
                 ->execute([$f['key'], $methodId, $version, $source, $f['kind'], $f['dim'], $f['value'], $r['code'], $f['scope'], $sig, $f['total'], $now, $now]);
             $created++;
+            $lastCode = $r['code'];
             continue;
         }
-        if ($row['sig'] === $sig) continue;
-        try {
-            $item = devloop_task_get($row['code']);
-        } catch (Throwable) {
-            continue;   // הפריט נמחק — לא פותחים שוב לבד
-        }
-        $closed = ($item['status'] ?? '') === 'closed';
-        if ($closed && $f['total'] - (int)$row['total'] < TS_LEARN_RECENT) continue;   // נסגר — רק אחרי 30 עסקאות חדשות
-        devloop_comment_add($row['code'], 'claude', null, ($closed ? 'הממצא חזר אחרי ' . ($f['total'] - (int)$row['total']) . " עסקאות חדשות. " : 'עדכון: ') . "$text.");
+        $back = $row['sig'] === 'gone';   // היה "כבר לא מובהק", וחזר
+        $more = $f['total'] - (int)$row['total'];
+        if (!$back && $more < TS_LEARN_RECENT) continue;   // פחות מ-30 עסקאות חדשות — שקט (גם בפריט סגור)
+        $it = $item($row['code']);
+        if (!$it) continue;
+        $closed = ($it['status'] ?? '') === 'closed';
+        devloop_comment_add($row['code'], 'claude', null, ($back ? 'הממצא חזר להיות מובהק. ' : "עדכון אחרי $more עסקאות חדשות: ") . "$text.");
         if ($closed) devloop_task_status($row['code'], 'open', 'claude');
-        $db->prepare('UPDATE learning_findings SET sig = ?, total = ?, updated_at = ? WHERE k = ?')->execute([$sig, $f['total'], $now, $f['key']]);
+        $save->execute([$sig, $f['total'], $now, $f['key']]);
         $comments++;
+    }
+    if ($skipped && $lastCode) {
+        devloop_comment_add($lastCode, 'claude', null, "ועוד $skipped ממצאים בלשונית \"למידה\" של $name — לא נפתחו כפריטים בריצה הזו (עד " . TS_LEARN_MAX_NEW . ' בריצה).');
+    }
+    // ממצא שהיה, ועכשיו לא מובהק (או שהפלח ירד מתחת ל-30) — תגובה אחת בפריט פתוח, ולא שוב עד שיחזור
+    $st = $db->prepare("SELECT * FROM learning_findings WHERE method_id = ? AND method_version = ? AND source = ? AND sig != 'gone'");
+    $st->execute([$methodId, $version, $source]);
+    foreach ($st->fetchAll() as $row) {
+        if (isset($seen[$row['k']])) continue;
+        $it = $item($row['code']);
+        if ($it && ($it['status'] ?? '') !== 'closed') {
+            devloop_comment_add($row['code'], 'claude', null, 'הממצא כבר לא מובהק (p ≥ ' . TS_LEARN_P . ' בשני המבחנים, או שהפלח ירד מתחת ל-' . TS_MIN_SIGNALS . ' עסקאות). אין מה לעשות — הוא נשמר כאן לתיעוד.');
+            $comments++;
+        }
+        $save->execute(['gone', (int)$row['total'], $now, $row['k']]);
     }
     return [$created, $comments];
 }

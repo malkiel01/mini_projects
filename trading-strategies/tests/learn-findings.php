@@ -97,10 +97,14 @@ eq([str_contains($it['detail'], 'גרסה 1'), str_contains($it['detail'], 'N = 
     'criterion 5: the details — version, N, the win rate, p, a link to the tab, and "for the owner"');
 eq((int)$db->query("SELECT COUNT(*) FROM learning_findings WHERE code = " . $db->quote($code))->fetchColumn(), 1, 'the code of the item is saved (learning_findings)');
 
-// ── קריטריון 6: בלי כפילות ──
+// ── קריטריון 6: בלי כפילות, ובלי רעש (ביקורת L4 🟡1) ──
 eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $items(), $comments($code)], [[0, 0], 1, 0], 'criterion 6: the same finding, the same numbers → nothing new');
-$late('m-fri', 5, 1);   // עסקה חדשה בשישי — המספרים השתנו
-eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $items(), $comments($code)], [[0, 1], 1, 1], 'criterion 6: a second run with new numbers → 0 new items, one comment in the existing one');
+$quiet = [];
+for ($i = 0; $i < 5; $i++) { $late('m-fri', 5, 1); $quiet[] = ts_learn_findings_sync('m-fri', 1, 'backtest', $t); }
+eq([$quiet, $items(), $comments($code)], [array_fill(0, 5, [0, 0]), 1, 0], '🟡1: 5 runs with one new trade each → 0 comments (the numbers change, but fewer than 30 trades)');
+$late('m-fri', 5, 25);   // 30 מאז הדיווח האחרון
+eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $items(), $comments($code)], [[0, 1], 1, 1], 'criterion 6: after 30 new trades → 0 new items, one comment in the existing one');
+eq(str_contains((string)$db->query("SELECT body FROM dev_comments WHERE code = " . $db->quote($code) . " ORDER BY id DESC")->fetchColumn(), 'אחרי 30 עסקאות חדשות'), true, '… which says after how many trades');
 devloop_task_status($code, 'closed', 'user:1');
 $late('m-fri', 5, 10);
 eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $comments($code), devloop_task_get($code)['status']], [[0, 0], 1, 'closed'],
@@ -108,6 +112,25 @@ eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $comments($code), devloo
 $late('m-fri', 5, 20);
 eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $comments($code), devloop_task_get($code)['status']], [[0, 1], 2, 'open'],
     '… after 30 new trades → a comment, and the item is reopened');
+
+// ממצא שהפסיק להיות מובהק — תגובה אחת, ולא שוב
+$lateWin = function (string $m, int $weekday, int $count) use (&$early, $put) { for ($i = 0; $i < $count; $i++) { $early += 3600; $put([$m, $weekday, true], $early); } };
+$lateWin('m-fri', 5, 120);
+eq([ts_learn_findings('m-fri', 1), ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $comments($code)], [[], [0, 1], 3], 'no longer significant → one comment "כבר לא מובהק"');
+eq([ts_learn_findings_sync('m-fri', 1, 'backtest', $t), $comments($code), $items()], [[0, 0], 3, 1], '… and not again');
+
+// ── 🟡2: תקרה — לכל היותר 3 פריטים חדשים בריצה, לפי p הקטן; והשאר — שורה אחת בפריט האחרון ──
+foreach ([1 => 0, 2 => 40, 3 => 0, 4 => 40, 6 => 2] as $d => $w) $add('m-many', $d, 40, $w);
+$add('m-many', 7, 200, 100); $flush();
+$MF = ts_learn_findings('m-many', 1);
+$itemsBefore = $items();
+eq([count($MF) > 3, ts_learn_findings_sync('m-many', 1, 'backtest', $t)[0], $items() - $itemsBefore], [true, 3, 3], '🟡2: more than 3 findings → exactly 3 new items');
+$codes = ts_learn_finding_codes('m-many');
+eq(array_keys($codes), array_slice(array_column($MF, 'key'), 0, 3), '… the 3 with the smallest p');
+$lastNew = $db->query("SELECT code FROM dev_tasks WHERE area = 'learning' ORDER BY id DESC")->fetchColumn();
+eq(str_contains((string)$db->query("SELECT body FROM dev_comments WHERE code = " . $db->quote($lastNew))->fetchColumn(), 'ועוד ' . (count($MF) - 3) . ' ממצאים בלשונית'), true,
+    '… and one line in the last of them: "ועוד N ממצאים בלשונית"');
+eq(count(ts_learn_findings('m-many', 1)), count($MF), 'the tab still shows all of them');
 
 // ── קריטריון 7: לא משנה לבד ──
 eq([ts_method_settings('sample-ma-cross'), (int)$db->query("SELECT COUNT(*) FROM method_proposals")->fetchColumn()], [$before[0], 0],
