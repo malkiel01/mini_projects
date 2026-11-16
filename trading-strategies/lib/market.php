@@ -536,7 +536,8 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         foreach (array_slice(ts_range_subtract($from, $oldTo, $hcov), -TS_MAX_SEGMENTS) as [$a, $b]) {
             try {
                 $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
-            } catch (TsCapError $e) {
+            } catch (TsProviderError $e) {
+                // תקרה, וגם כל שגיאה אחרת מהספק (רשת, 451, timeout): החלק הישן לא מפיל את הבקשה — notice, ומוצג מה שבמאגר
                 $notice = $e->getMessage();
                 break;
             }

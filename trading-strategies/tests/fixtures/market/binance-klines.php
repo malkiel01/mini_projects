@@ -22,8 +22,11 @@ function ts_fixture_klines_wave(string $url): array
 return function (string $url, array $headers): array {
     // ספק איטי (tests/backtest-partial-api.php): השהיה לכל פנייה, במילישניות
     if ($ms = (int)getenv('TS_KLINES_DELAY_MS')) usleep($ms * 1000);
-    // היסטוריה בפעימות (tests/history-api.php): קובץ דגל — כל עוד קיים, Binance מחזיר 429
-    if (($f = getenv('TS_KLINES_429_FILE')) && is_file($f)) return [429, json_encode(['code' => -1003, 'msg' => 'Too many requests'])];
+    // היסטוריה בפעימות (tests/history-api.php): קובץ דגל — כל עוד קיים, Binance מחזיר שגיאה. התוכן — הסטטוס (ריק — 429)
+    if (($f = getenv('TS_KLINES_429_FILE')) && is_file($f)) {
+        $st = (int)trim((string)file_get_contents($f)) ?: 429;
+        return [$st, json_encode(['code' => -1003, 'msg' => $st === 429 ? 'Too many requests' : 'Service unavailable from a restricted location'])];
+    }
     // TS_KLINES_SINCE — הנכס "נסחר" רק מאז (unix): לפני כן אין נרות
     if ($since = (int)getenv('TS_KLINES_SINCE')) {
         parse_str((string)parse_url($url, PHP_URL_QUERY), $q0);

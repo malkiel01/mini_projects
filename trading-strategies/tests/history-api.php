@@ -109,6 +109,26 @@ $k0 = $klines();
 [$c, $pe] = call('alice', 'market_history', null, ['asset' => $A, 'tf' => 'h1', 'before' => min($all)]);
 eq([$c, $pe['candles'], $pe['done'], $klines() - $k0], [200, [], true, 0], 'asking again before the start: done, and the empty range is remembered — 0 provider calls');
 
+// ── שגיאה אחרת מהספק (451, 500) בחלק הישן — לא מפילה את הבקשה: notice, ומה שבמאגר (תוספת של הבקרה) ──
+foreach ([451, 500] as $code) {
+    $sym = $code === 451 ? 'binance:SOLUSDT' : 'binance:XRPUSDT';
+    [$c, $rp] = call('alice', 'market_candles', null, ['asset' => $sym, 'tf' => 'h1', 'from' => $NOW - 59 * 86400, 'to' => $NOW]);
+    eq([$c, count($rp['candles']) > 1000], [200, true], "($code) the last 60 days are in the pool first");
+    file_put_contents($FLAG, (string)$code);
+    [$c, $ro] = call('alice', 'market_candles', null, ['asset' => $sym, 'tf' => 'h1', 'from' => $NOW - 90 * 86400, 'to' => $NOW]);
+    unlink($FLAG);
+    $oldest = $ro['candles'][0]['t'] ?? 0;
+    eq([$c, is_string($ro['notice'] ?? null) && $ro['notice'] !== '', $oldest >= $NOW - 61 * 86400, count($ro['candles'] ?? []) >= count($rp['candles'])], [200, true, true, true],
+        "$code from the provider on the part older than 60 days → 200, a notice, and what is in the pool (not an error)");
+    [$c, $rh] = call('alice', 'market_history', null, ['asset' => $sym, 'tf' => 'h1', 'before' => $NOW - 100 * 86400]);
+    eq($c, 200, "($code) market_history right after: works (the error was not remembered as coverage)");
+    eq(count($rh['candles'] ?? []), 999, "($code) … and returns a full batch");
+}
+file_put_contents($FLAG, '451');
+[$c, $rh] = call('alice', 'market_history', null, ['asset' => 'binance:ADAUSDT', 'tf' => 'h1', 'before' => $NOW - 100 * 86400]);
+unlink($FLAG);
+eq([$c, $rh['candles'], $rh['retry'], $rh['done']], [200, [], true, false], '451 on a history batch → retry (not an error, not done)');
+
 // ── 5 שנים: לא חוצים ──
 $limit5 = $NOW - 1826 * 86400;
 [$c, $p5] = call('alice', 'market_history', null, ['asset' => 'binance:ETHUSDT', 'tf' => 'd1', 'before' => $limit5 + 3 * 86400]);
