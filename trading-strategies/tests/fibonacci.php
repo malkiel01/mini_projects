@@ -234,7 +234,11 @@ $SIG = fib_bars([280, 230, 250, 120, 175, 150, [155, 'body' => 5], 200, 185]);
 $lastT = $SIG[count($SIG) - 1]['t'];
 $SIG[] = ['t' => $lastT + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 169.3, 'c' => 175.0];   // צולל לאזור ונסגר מעליו
 $PS = $m->params(['lookback_bars' => 500]);
-$sig = $m->signals($SIG, $PS);
+// F-2: הרגל הראשונה של הסט (280 → 230 → 250 → 120) נותנת עכשיו אותות שורט משלה (יעד חלופי — קופסת השוויון, 22.6).
+// הבדיקות כאן — על האזור [169.10, 169.44], ולכן רק אותות מהשפל 120 והלאה
+$tCut = $SIG[array_search(120.0, array_column($SIG, 'c'), true)]['t'];
+$late = fn(array $sigs) => array_values(array_filter($sigs, fn($s) => $s['t'] > $tCut));
+$sig = $late($m->signals($SIG, $PS));
 eq(count($sig), 1, '22.6: exactly one signal');
 $s0 = $sig[0];
 eq([$s0['t'], $s0['side'], $s0['entry'], r2($s0['zone']), $s0['score'], r2($s0['target'])], [$lastT + 3600, 'long', 175.0, [169.1, 169.44], 3, 199.66],
@@ -242,29 +246,31 @@ eq([$s0['t'], $s0['side'], $s0['entry'], r2($s0['zone']), $s0['score'], r2($s0['
 $atr = ts_fib_grid_of(array_slice($SIG, 0, -1), $PS)['atr'];
 eq([round($s0['stop'], 9), $s0['stop'] < $s0['zone'][0], round($s0['rr'], 6)], [round(169.1 - 0.25 * $atr, 9), true, round((199.66 - 175) / (175 - (169.1 - 0.25 * $atr)), 6)],
     'criterion 9 (M1): stop = zone bottom − stop_atr × ATR, below the zone, not inside it');
-eq($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_rr' => 4])), [], 'criterion 9: rr 3.85 < min_rr 4 → no signal');
-eq($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_score' => 4])), [], 'min_score 4 > zone score 3 → no signal');
+eq($late($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_rr' => 4]))), [], 'criterion 9: rr 3.85 < min_rr 4 → no signal');
+eq($late($m->signals($SIG, $m->params(['lookback_bars' => 500, 'min_score' => 4]))), [], 'min_score 4 > zone score 3 → no signal');
 $noTarget = fib_bars([120, 175, 150, [155, 'body' => 5], 200, 185]);
 $noTarget[] = ['t' => $noTarget[count($noTarget) - 1]['t'] + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 169.3, 'c' => 175.0];
-eq($m->signals($noTarget, $PS), [], 'no resistance zone above → no target → no signal (before F-2)');
+$nt = $m->signals($noTarget, $PS);
+eq([count($nt), r2($nt[0]['target'] ?? 0), $nt[0]['via'] ?? null], [1, 218.54, 'box'],
+    'no resistance zone above → F-2: the target is T of the signal zone box (218.54 — F-2 criterion 7), not "no signal" as in F-1');
 $K = 400.0;
 // ביקורת 🟡4: "בחזרה" — רק מלמעלה. הנר הקודם נסגר בתוך האזור (169.2), והנר הבא נוגע ונסגר מעליו — פריצה מלמטה, לא אות
 $below = array_slice($SIG, 0, -1);
 $t0 = $below[count($below) - 1]['t'];
 $below[] = ['t' => $t0 + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 169.15, 'c' => 169.2];
 $below[] = ['t' => $t0 + 7200, 'o' => 169.2, 'h' => 175.5, 'l' => 169.0, 'c' => 175.0];
-eq($m->signals($below, $PS), [], 'review 🟡4: the previous candle closed inside the zone → a breakout from below, not a bounce → no signal');
+eq($late($m->signals($below, $PS)), [], 'review 🟡4: the previous candle closed inside the zone → a breakout from below, not a bounce → no signal');
 $belowM = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $below);
-eq($m->signals($belowM, $PS), [], 'review 🟡4 (short, mirror): the same from above → no signal');
+eq($late($m->signals($belowM, $PS)), [], 'review 🟡4 (short, mirror): the same from above → no signal');
 // קריטריון 13 (2.29), בדיוק כמו בניסוח: הנר הקודם נסגר **מתחת** לאזור, והנר עולה דרכו ונסגר מעליו → אין אות
 $under = array_slice($SIG, 0, -1);
 $t0 = $under[count($under) - 1]['t'];
 $under[] = ['t' => $t0 + 3600, 'o' => 185.0, 'h' => 185.5, 'l' => 168.4, 'c' => 168.5];
 $under[] = ['t' => $t0 + 7200, 'o' => 168.5, 'h' => 175.5, 'l' => 168.4, 'c' => 175.0];
-eq($m->signals($under, $PS), [], 'criterion 13: the previous candle closed below the zone, this one rises through it and closes above → no signal');
+eq($late($m->signals($under, $PS)), [], 'criterion 13: the previous candle closed below the zone, this one rises through it and closes above → no signal');
 // שורט — אותם נרות במראה (K − מחיר): אותו אות בכיוון ההפוך
 $MIR = array_map(fn($c) => ['t' => $c['t'], 'o' => $K - $c['o'], 'h' => $K - $c['l'], 'l' => $K - $c['h'], 'c' => $K - $c['c']], $SIG);
-$sm = $m->signals($MIR, $PS);
+$sm = $late($m->signals($MIR, $PS));
 eq([count($sm), $sm[0]['side'] ?? null, r2($sm[0]['entry'] ?? 0), r2($sm[0]['zone'] ?? []), r2($sm[0]['target'] ?? 0), round($sm[0]['stop'] ?? 0, 6), round($sm[0]['rr'] ?? 0, 6)],
     [1, 'short', r2($K - 175), [r2($K - 169.44), r2($K - 169.1)], r2($K - 199.66), round($K - $s0['stop'], 6), round($s0['rr'], 6)], 'short = the mirror of long (S1)');
 eq($sm[0]['stop'] > $sm[0]['zone'][1], true, 'criterion 9 (short): stop above the zone');
@@ -288,7 +294,7 @@ foreach (array_unique(array_merge(array_map(fn($s) => $idx[$s['t']], $real), ran
 }
 eq([$peek, $runs > 8], [0, true], "criterion 8: the signal at i is the same on [0..i] and on the whole set ($runs points)");
 $full = $m->signals($SIG, $PS);
-eq($m->signals(array_slice($SIG, 0, -1), $PS), [], 'criterion 8: without the touch candle there is no signal (the zone alone is not a signal)');
+eq($late($m->signals(array_slice($SIG, 0, -1), $PS)), [], 'criterion 8: without the touch candle there is no signal (the zone alone is not a signal)');
 eq(end($full)['t'], $SIG[count($SIG) - 1]['t'], '… and with it, the signal is on that candle');
 // מצטבר = מלא (המצב דרך JSON — כמו במסד)
 $cost = ['fee' => 0.001, 'slip' => 0.0005];
@@ -317,12 +323,13 @@ $ov = ts_overlay_check($m->overlay($EX, $P, 3600), 3600);
 [$finding, $forecast] = ts_forecast_split($ov);
 $zones = array_values(array_filter($finding['items'], fn($it) => $it['kind'] === 'zone'));
 $singles = array_values(array_filter($finding['items'], fn($it) => !empty($it['single'])));
-eq([count($zones), r2([$zones[0]['p1'], $zones[0]['p2']]), $zones[0]['extend'], $zones[0]['t2'], count($singles), $forecast['items']],
-    [1, [169.1, 169.44], true, $EX[count($EX) - 1]['t'], 4, []], 'criterion 10 (server): the zone extends right, four single levels marked single, nothing in the scenario layer (F-1)');
+eq([count($zones), r2([$zones[0]['p1'], $zones[0]['p2']]), $zones[0]['extend'], $zones[0]['t2'], count($singles)],
+    [1, [169.1, 169.44], true, $EX[count($EX) - 1]['t'], 4], 'criterion 10 (server): the zone extends right, four single levels marked single');
+eq(array_filter($forecast['items'], fn($it) => !ts_forecast_item($it, $forecast['as_of'])), [], 'the scenario layer (F-2) holds only items after the last closed candle');
 eq([$zones[0]['t1'], $singles[0]['points'][0]['t'], $singles[0]['style']], [$g['support']['start']['t'], $g['support']['start']['t'], 'solid'], 'R3: lines start at the start point and run right — not backwards');
-$ovS = ts_overlay_check($m->overlay($SIG, $PS, 3600), 3600);
+[$ovS] = ts_forecast_split(ts_overlay_check($m->overlay($SIG, $PS, 3600), 3600));
 eq(array_values(array_map(fn($it) => $it['kind'] . ($it['role'] ?? ''), array_filter($ovS['items'], fn($it) => in_array($it['kind'], ['marker', 'hline'], true)))),
-    ['marker', 'hlinestop', 'hlinetarget'], 'a live signal → marker, stop and target on the chart');
+    ['marker', 'hlinestop', 'hlinetarget'], 'a live signal → marker, stop and target in the finding layer');
 eq(isset($m->overlay([], $P, 3600)['note']), true, 'no candles → empty overlay with a note');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";

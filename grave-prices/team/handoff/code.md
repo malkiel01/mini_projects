@@ -60,9 +60,19 @@
 - `block-add` / `block-delete` ב-`lib/edit.php`; היומן של `block-delete` שומר את כל השורות עם המחירים ואת `after`.
 - חתימות בהדפסה במידות קבועות (mm/pt) מחוץ ל-`.content`, כך ש-`fit()` מקטין רק את השורות.
 
+## פרוסה 05 (#1689)
+
+- **הדפסה — סולם אחד** ב-`print.css`, בלי כלל לפי קבוצה. מרווח של רכיב שגודלו שונה מהבסיס — `calc(<em> / <גודל>)`;
+  רווחים (תחילת האגרות, חזרה מהזחה) — שורת `tr.sp` של 1em. עמודות מחיר 22mm + ₪ 6mm בכל מקום.
+- **`both`** — `block(e, true)`: "תושבי …" + תאריך, רק `rows.slice(0, layout.fee_start)`; האגרות — `feesBlock` מ-`GET fees`.
+- **אגרות כלליות — מקור אחד:** `gp_fees_merge` ב-`lib/editions.php` (`gp_fee_key` למפתח). גם `GET fees` (הדפסה) וגם
+  `shared` ב-`edition` (התג "כללית ✓" / "רק ל…", מול הקבוצה השנייה שבתוקף היום). הסדר: כל האגרות ואז כל ההערות; בכל
+  אחת כלליות → ישראל → חו"ל. `gp_edition_load($e)` — שורות + layout בלי `shared` (בלי רקורסיה).
+- Playwright: `one` ישראל/חו"ל באותן מידות, `split` 2 עמודים, `both` עמוד אחד ב-87.5%.
+
 ## בדיקות
 
-`php grave-prices/tests/run.php` — 194 בדיקות. `$legacy(name, version, edit)` בונה מסד ישן (01/02) עם עריכות, ואז
+`php grave-prices/tests/run.php` — 212 בדיקות. `$legacy(name, version, edit)` בונה מסד ישן (01/02) עם עריכות, ואז
 `gp_migrate`: כל השורות, רשומות המחיר, המחירונים והיומן — זהים; `migrate-abroad`; ישראל 2026 של הבעלים לא נדרס; גיבוי;
 פריסה שנייה בלי כפילויות; כשל באמצע → הכול חוזר ו-`foreign_keys` חוזר לפעול. בדיקת דפדפן (Playwright, 390px): שרת
 `php -S` עם router שמציב `PLATFORM_USER` ו-`GP_DATA_DIR` זמני; ההדפסות ב-`page.pdf` מול `team/source/`.
