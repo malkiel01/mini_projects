@@ -570,6 +570,55 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 17) {
+        // למידה עצמית, שלב א' (spec-stage-a 23.3, L1): שורה לכל עסקה שהסתיימה — לא נמחקת ולא משתנה. CREATE / ADD בלבד.
+        // המפתח הייחודי (23.3) — חישוב חוזר לא מכפיל; trade_id = 0 כשאינה עסקה של משתמש (NULL היה נחשב שונה בכל שורה).
+        // users.learn_off — הכיבוי של עסקאות המשתמש (✅36, ל3); נקרא ב-L2, כשנכתבות שורות trade
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE method_outcomes (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL CHECK (source IN ('backtest','live','trade')),
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                params_hash TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                t_signal INTEGER NOT NULL,
+                t_entry INTEGER,
+                t_exit INTEGER NOT NULL,
+                side TEXT NOT NULL CHECK (side IN ('long','short')),
+                entry TEXT,
+                stop TEXT,
+                exit_level TEXT,
+                exit TEXT,
+                result TEXT NOT NULL CHECK (result IN ('win','loss','horizon','skipped_gap')),
+                win INTEGER NOT NULL DEFAULT 0,
+                r REAL,
+                mae_r REAL,
+                mfe_r REAL,
+                atr TEXT,
+                market TEXT NOT NULL,
+                month INTEGER NOT NULL,
+                quarter INTEGER NOT NULL,
+                weekday INTEGER NOT NULL,
+                hour INTEGER,
+                holidays TEXT NOT NULL DEFAULT '[]',
+                features TEXT,
+                user_id INTEGER,
+                trade_id INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX method_outcomes_key ON method_outcomes
+                (source, method_id, method_version, params_hash, provider, asset, tf, t_signal, trade_id);
+            CREATE INDEX method_outcomes_method ON method_outcomes (method_id, method_version, source);
+            ALTER TABLE users ADD COLUMN learn_off INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 17;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
