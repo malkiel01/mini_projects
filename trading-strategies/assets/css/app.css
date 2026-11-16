@@ -416,6 +416,8 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .fc-leg:focus-visible { outline: 2px solid var(--mc); outline-offset: 1px; }
 .fc-leg.off { color: var(--muted); text-decoration: line-through; }
 .fc-leg.off .fc-dot { background: transparent; box-shadow: inset 0 0 0 2px var(--mc); }
+/* "אין תחזית" — לשיטה הפעילה אין כרגע מה לצייר (ה-title מסביר) */
+.fc-leg-none { color: var(--muted); font-size: 1.2em; line-height: 1; font-weight: 600; margin-inline-start: -2px; }
 .chart-wrap.fs .fc-legend { top: calc(56px + env(safe-area-inset-top)); }
 
 /* ⛶ מסך מלא (18.1.2 סעיף 3): רק הגרף, גם לרוחב. Fullscreen API או שכבה — אותו מראה */
