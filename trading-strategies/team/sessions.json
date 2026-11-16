@@ -7,10 +7,8 @@
   },
   "code": {
     "session": "session_018g4NYE77z3nwXHs1csCsNw",
-    "slice": "F-2 פיבונאצ'י — A-B-X, קופסת שוויון, יעד חלופי; ביצועים",
-    "model": "claude-opus-5-5",
-    "opened_by": "בקרה (7)",
-    "branch": "claude/trading-strategies-fib-f2"
+    "slice": "F-3",
+    "branch": "claude/trading-strategies-fib-f3"
   },
   "control": "session_018g4NYFqH3tqWT9nYnCRNjr",
   "tasks": null,
@@ -146,18 +144,24 @@
   },
   "code_parallel": [
     {
-      "session": "session_018g4NYD31tzjkYLHiBm7wB9",
-      "slice": "תקלת שרת 500 בגרף (16.11 15:00) + הודעה נכונה לפעולת קריאה",
-      "branch": "claude/trading-strategies-err500",
-      "opened_by": "בקרה (7)",
-      "model": "claude-opus-5-5"
+      "session": "session_018g4NYE77z3nwXHs1csCsNw",
+      "slice": "F-3 פיבונאצ'י (אחרי F-2 #1685)",
+      "branch": "claude/trading-strategies-fib-f3"
     },
     {
       "session": "session_018g4NYCUP7cVpomeNea75ED",
-      "slice": "חובות: journal_resolve/$usedKey, market_candles/ts_now, בדיקות רועדות, drives_key",
-      "branch": "claude/trading-strategies-debt",
-      "opened_by": "בקרה (7)",
-      "model": "claude-opus-5-5"
+      "slice": "חלונית הסבר T1 (18.1.6) — אחרי חובות #1681",
+      "branch": "claude/trading-strategies-chart-tip"
+    },
+    {
+      "session": "session_018g4NYD31tzjkYLHiBm7wB9",
+      "slice": "למידה L1 (פרק 23) — אחרי #1686, #1692",
+      "branch": "claude/trading-strategies-learning-l1"
+    },
+    {
+      "session": "session_018g4NYDmuLFFgimdfuLJDXu",
+      "slice": "הרשאות R1 (פרק 24)",
+      "branch": "claude/trading-strategies-roles-r1"
     }
   ]
 }
