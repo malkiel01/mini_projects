@@ -69,10 +69,10 @@ async function fsGone(p) {
   await p.waitForFunction(() => !document.querySelector('.chart-wrap.fs') && !document.fullscreenElement);
   await p.waitForTimeout(600);
 }
-// ⛶ פותח בחירה (2.30) — "לגובה" הוא המסך המלא של F1
+// L1 (18.1.5): כשהמסך לאורך ⛶ פותח תפריט, ו"לגובה" הוא המסך המלא של F1. מסך רחב — ישר פנימה
 async function fsEnter(p) {
   await p.getByRole('button', { name: 'מסך מלא', exact: true }).click();
-  await p.getByRole('menuitem', { name: 'לגובה' }).click();
+  if (await p.evaluate(() => innerHeight > innerWidth)) await p.getByRole('menuitem', { name: 'לגובה' }).click();
 }
 async function openPop(p) {
   // במסך מלא — ה-🔮 שבשורה הצפה (זה שבכותרת מכוסה)
