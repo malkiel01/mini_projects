@@ -516,3 +516,14 @@
 - `ts_learn_findings($m, $v, $source)` — טהור; כל ממצא עם `key`, `scope` (method/owner), המספרים ו-p. `ts_learn_findings_sync` — הצד (DevLoop).
 - **מתי רץ:** אחרי בדיקה לאחור שהוסיפה שורות. L2 (live) — לקרוא ל-sync גם אחרי כתיבת `live`, עם `source = 'live'`.
 - **L5 צריך:** ממצאים עם `scope = method` הם המקום להצעה לפלח. מיגרציה הבאה ב-`app.sqlite` — 20.
+
+## L5 — ערך בתוך הטווח (פרק 23)
+
+- **שיטה שרוצה ללמוד פרמטר:** `meta()['learn_params'] = [param => ['stat' => 'stop'|'target'|'zone', 'allowed' => [..]?]]`. רק פרמטר עם `ours: true`.
+- **פיבונאצ'י עוד בלי:** stop_atr → stop, zone_atr → zone. ל-box_target צריך סטטיסטיקה "חלק מהקופסה" — features בלי גודל הקופסה היום.
+- **ערך לפלח:** `methods.seg_params`, נקרא ב-`ts_method_settings`, ומוחל ב-`ts_params_for_segment`. כל מקום חדש שמריץ שיטה על נכס+מסגרת —
+  לעבור דרכה (היום: `ts_analysis_cards`, `chart_refresh`).
+- **מיגרציה הבאה ב-`app.sqlite` — 21.**
+- **חוב (⚪7, ביקורת L5):** `ts_learn_values_run` נקרא מתוך `ts_backtest` — כלומר בתוך בקשת `analysis` של המשתמש (רק בריצה מלאה
+  שהושלמה, ובלי משיכה נוספת). היום רק שיטת הדוגמה מצהירה `learn_params`, אז זה זול. כששיטות אמיתיות יצהירו — להעביר ל-cron.
+- **מושהה (2.37):** כל הסטטיסטיקות (`TS_LEARN_PAUSED` — stop, target, zone). L5b — השוואת שכנים (23.9 החדש), ב-cron ובתקציב 6.2(ה); התשתית (`ts_tune_learned_eval` עם t_cut, `_save`, seg_params, ביטול) — מוכנה.

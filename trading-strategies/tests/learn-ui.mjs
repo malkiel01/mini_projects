@@ -71,8 +71,13 @@ try {
     'a segment of 29 — "not enough data (29)", no percentage');
   eq(await dayRow('רביעי').locator('td').last().evaluate(e => getComputedStyle(e).color) !== await dayRow('שישי').locator('td').last().evaluate(e => getComputedStyle(e).color),
     true, '… and grey');
-  eq([await d.locator('h3.learn-h').textContent(), await d.locator('.learn-none').count()], ['שינויי דפוס (p < 0.01)', 1],
+  eq([await d.locator('h3.learn-h').first().textContent(), await d.locator('.learn-none').count()], ['שינויי דפוס (p < 0.01)', 1],
     'L4: the pattern-changes section — here, without findings (50% vs 34% in 30/29 — not significant)');
+  eq(await d.locator('.learn-values li').evaluateAll(ls => ls.map(l => [l.dataset.param, l.dataset.segment, l.dataset.decision])),
+    [['stop_atr', '', 'paused'], ['target_atr', '', 'paused'], ['stop_atr', 'crypto|h1', 'paused'], ['target_atr', 'crypto|h1', 'paused']],
+    'L5: where to place — each learnable parameter × segment; the stop and the exit — paused until the spec decides (🟡2)');
+  eq(await d.locator('.learn-values li[data-decision="paused"] .chip').first().textContent(), 'מושהה — 23.9 בבדיקה', '… with the label');
+  eq(await d.getByRole('button', { name: '🔍 חשב הצעות' }).count(), 1, 'L5: the "compute proposals" button');
   eq(await d.locator('tbody[data-dim]').evaluateAll(bs => bs.map(x => x.dataset.dim)), ['total', 'market', 'tf', 'market_tf', 'month', 'quarter', 'weekday', 'hour', 'holidays'],
     'the total, then every tag, and market × tf');
   const href = await d.getByRole('link', { name: /CSV/ }).getAttribute('href');
