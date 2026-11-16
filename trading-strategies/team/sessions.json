@@ -9,9 +9,9 @@
     "slice": "21.1 מחיקת הבונה, 21.2 מילוי ברקע (2.24)",
     "model": "claude-opus-5-5"
   },
-  "control": "session_018g4NYDsD5GNc3L8rqyUQ4B",
+  "control": "session_018g4NYEtPnhDAxdzNLibMdV",
   "tasks": null,
-  "clock": "trig_01J4cir8Aoh8ogFyCwPHG4dh (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (3) לבקרה (4); הקודם trig_01BkHqJw3mPZG75puVqoh6rh כבוי)",
+  "clock": "trig_01J4cir8Aoh8ogFyCwPHG4dh (כל שעה בדקה 28) — מנהל הצוותים (4) מעביר מבקרה (4) לבקרה (5)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -81,6 +81,10 @@
     {
       "session": "session_018g4NYE6Q5mocKiUUxqKEyR",
       "done": "#1608–#1622, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYDsD5GNc3L8rqyUQ4B",
+      "done": "#1623–#1629, ביקורת 21.2 סבב 1, מסירה ב-STATE"
     }
   ],
   "code_delete": {
