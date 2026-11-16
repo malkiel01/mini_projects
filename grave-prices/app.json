@@ -1,0 +1,11 @@
+{
+  "id": "grave-prices",
+  "name": "מחירוני קברים",
+  "icon": "🪦",
+  "description": "מחירונים של קברים — בפיתוח.",
+  "category": "daily",
+  "entry": "index.html",
+  "version": "0.0",
+  "gate": true,
+  "restricted": true
+}
