@@ -49,16 +49,19 @@
  * ענן MBE — נמחק (spec-stage-a 19.1): אין כאן drives_*. lib/drives ו-assets/js/drives נשארים כעותק מסונכרן בלבד
  *      (שער הפריסה של mbe-cloud/drives), ואף קוד לא טוען אותם.
  *
- * מנהל (1.1) — ts_require_admin() בשרת לפני כל אחת:
+ * עורכים (פרק 24, ✅38) — ts_require_editor() בשרת לפני כל אחת; "(ראשי)" — גם ts_require_chief():
  * GET  ?action=admin_state | admin_methods
  * POST action=admin_provider_save | admin_shared_switch (ראשי) | admin_app_key {provider, cred_id|null, user_limit?} (ראשי, 21.3)
  *      | admin_cred_save | admin_cred_test | admin_cred_delete
- *      | admin_grant_save | admin_grant_delete | admin_role_add (ראשי) | admin_role_remove (ראשי)
+ *      | admin_grant_save | admin_grant_delete | admin_role_add {user_id, role: editor|chief} (ראשי) | admin_role_remove (ראשי)
  *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
+ * למידה (23.10, L3): GET admin_learn&method=&version=&source= (פלחים, N, אחוז, תוחלת — רק N ≥ 30) · admin_learn_csv&method=[&version&source]
+ *      (user_id — רק לעורך הראשי)
  * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
- *      (נספר בתקרת 30) | admin_tune_apply {id} (המנהל הראשי בלבד)
+ *      (נספר בתקרת 30) | admin_tune_apply {id} (עורך ראשי בלבד)
  *
- * DevLoop (A1, PROTOCOL 7) — lib/devtasks.php, דרך המודול המשותף; רק המנהל הראשי (המפתח):
+ * DevLoop (A1, PROTOCOL 7) — lib/devtasks.php, דרך המודול המשותף. עורך ראשי — הכול; עורך משני — צפייה, תגובה ופתיחת
+ * פריט; משתמש — 🐞 בלבד (dev-report, וצילום לפריט שלו). הטבלה — TS_DEV_EDITOR / TS_DEV_USER (ר2):
  * GET  ?action=dev-items | dev-file&id= | dev-tokens | dev-item-log&code= | dev-log
  * POST action=dev-task-create | dev-task-set | dev-comment | dev-comment-delete | dev-verify | dev-report | dev-attach&code= (הגוף — הקובץ)
  *      | dev-token-create | dev-token-revoke | dev-log-links | dev-task-from-log
@@ -73,7 +76,7 @@
  * GET  ?action=sso_callback&token&state  החזרה מהמעטפת: כל בדיקות sso.md §2 → session → הפניה לאפליקציה — "public"
  * POST action=login {email, password}    מנותקת + login.password בלבד; 5 שגיאות → רבע שעה; grant_status לפני session
  * POST action=logout                     יציאה מהאפליקציה (לא מהפלטפורמה)
- * POST action=password_set {password}    "סיסמה לאפליקציה" · admin_password_reset {user_id} (המנהל הראשי)
+ * POST action=password_set {password}    "סיסמה לאפליקציה" · admin_password_reset {user_id} (עורך ראשי)
  * בלי משתמש: 401 עם login (כמו login_config); המעטפת לא עונה: 503 עם login.mode = unknown.
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me (אפיון פרק 6). הזהות — רק מהשער
@@ -233,7 +236,8 @@ $uid = (int)$user['id'];
 $tz = $user['timezone'];
 devloop_log_user(['id' => $uid, 'username' => $user['display_name']]);
 
-// DevLoop — למפתח בלבד, כלומר המנהל הראשי (PROTOCOL 7). הדפדפן רק מסתיר את 🐞; כאן האכיפה
+// DevLoop (PROTOCOL 7, 24.2, ר2) — עורך ראשי: הכול. עורך משני: צפייה, תגובה ופתיחת פריט. משתמש: 🐞 בלבד.
+// הדפדפן רק מסתיר; כאן האכיפה (ts_dev_allow, lib/devtasks.php)
 if (in_array($action, TS_DEV_ACTIONS, true)) {
     try {
         $write = in_array($action, TS_DEV_WRITE, true);
@@ -242,7 +246,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
             if ($write && !str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE'] ?? '')), 'application/json')) fail('נדרש JSON', 415);
             if (!hash_equals($csrf, (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) fail('פג תוקף הדף — רעננו ונסו שוב', 403);
         }
-        if ($action !== 'devloop-client-error') ts_require_primary_admin();
+        ts_dev_allow($action, $uid, $_GET);
         out(['ok' => true] + ts_dev_dispatch($action, $user, $_GET, $write ? input() : []));
     } catch (TsForbidden $e) {
         fail($e->getMessage(), 403);
@@ -275,7 +279,7 @@ $in = !in_array($action, TS_WRITE, true) ? [] : input();
 $id = (int)($in['id'] ?? $_GET['id'] ?? 0);
 if (str_starts_with($action, 'admin_')) {
     try {
-        ts_require_admin($uid);
+        ts_require_editor($uid);
     } catch (TsForbidden $e) {
         fail($e->getMessage(), 403);
     }
@@ -303,7 +307,9 @@ try {
     switch ($action) {
         case 'me':
             out(['ok' => true, 'csrf' => $csrf, 'user' => ts_settings_out($user),
-                'is_admin' => ts_is_admin($uid), 'is_primary_admin' => ts_is_primary_admin(), 'lists' => [
+                // role: chief / editor / user (פרק 24). is_admin / is_primary_admin — אותו דבר בשמות הישנים, לקוד שעוד קורא אותם
+                'role' => ts_role($uid), 'is_editor' => ts_is_editor($uid), 'is_chief' => ts_is_chief(),
+                'is_admin' => ts_is_editor($uid), 'is_primary_admin' => ts_is_chief(), 'lists' => [
                 'markets' => TS_MARKETS, 'timeframes' => TS_TIMEFRAMES, 'styles' => TS_STYLES, 'statuses' => TS_STATUSES,
                 'moods' => TS_MOODS, 'plan' => TS_PLAN,
             ], 'profile' => ts_profile($uid), 'horizon_tfs' => TS_HORIZON_TFS, 'risk_defaults' => TS_RISK_DEFAULTS,
@@ -526,7 +532,7 @@ try {
             ts_drawing_delete($uid, $in['id'] ?? null);
             out(['ok' => true]);
 
-        // ── מנהל (ts_require_admin כבר נבדק למעלה, לכל admin_*) ──
+        // ── עורכים (ts_require_editor כבר נבדק למעלה, לכל admin_*) ──
         case 'admin_state':
             $providers = [];
             foreach (array_keys(TS_PROVIDERS) as $pid) {
@@ -537,13 +543,29 @@ try {
             }
             $log = ts_db()->query('SELECT l.action, l.target, l.at, u.display_name FROM admin_log l LEFT JOIN users u ON u.id = l.user_id
                                    ORDER BY l.id DESC LIMIT 100')->fetchAll();
-            out(['ok' => true, 'is_primary_admin' => ts_is_primary_admin(), 'providers' => $providers,
-                'shared_enabled' => ts_shared_enabled(), 'app_keys' => ts_app_keys_state(), 'creds' => ts_admin_creds(), 'admins' => ts_admins_list(),
+            out(['ok' => true, 'is_chief' => ts_is_chief(), 'is_primary_admin' => ts_is_chief(), 'me_id' => $uid, 'providers' => $providers,
+                'shared_enabled' => ts_shared_enabled(), 'app_keys' => ts_app_keys_state(), 'creds' => ts_admin_creds(), 'editors' => ts_editors_list(),
                 'users' => ts_db()->query('SELECT id, display_name, email, password_hash IS NOT NULL AS has_password FROM users ORDER BY display_name')->fetchAll(),
                 'cache' => ts_cache_stats(), 'fetch_log' => ts_fetch_log_recent(), 'method_runs' => ts_method_runs(), 'pairs' => ts_pairs_admin(), 'log' => $log, 'alerts' => ts_alerts_admin_stats()]);
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
+
+        case 'admin_learn':
+        case 'admin_learn_csv':
+            // למידה (23.10, L3): לכל העורכים (24.2 — ts_require_admin למעלה, לכל admin_*). user_id בייצוא — רק לעורך הראשי (ל3)
+            $lm = (string)($_GET['method'] ?? '');
+            if (!ts_method_exists($lm)) throw new TsNotFound('שיטה לא מוכרת');
+            $lv = isset($_GET['version']) && $_GET['version'] !== '' ? (int)$_GET['version'] : null;
+            if ($action === 'admin_learn') {
+                out(['ok' => true] + ts_learn_stats($lm, $lv ?? (int)ts_method($lm)->meta()['version'], (string)($_GET['source'] ?? 'backtest')));
+            }
+            $src = isset($_GET['source']) && $_GET['source'] !== '' ? (string)$_GET['source'] : null;
+            $csv = ts_learn_csv($lm, $lv, $src, ts_is_primary_admin());
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="learning-' . preg_replace('/[^a-z0-9-]/', '', $lm) . '-' . gmdate('Y-m-d') . '.csv"');
+            echo $csv;
+            exit;
 
         case 'admin_method_save':
             // הגדרות של שיטה קיימת (6.7). בונה השיטות נמחק (21.1, ✅29) — שמירת הגדרה (definition) לא קיימת יותר
@@ -551,9 +573,9 @@ try {
             ts_admin_method_save($uid, $in);
             out(['ok' => true, 'methods' => ts_admin_methods()]);
 
-        // שכלול (18.7, S7): הצעה — כל מנהל; "החל" — רק המנהל הראשי (נבדק ב-ts_tune_apply)
+        // שכלול (18.7, S7): הצעה — כל עורך; "החל" — רק עורך ראשי (נבדק ב-ts_tune_apply)
         case 'admin_tune_list':
-            out(['ok' => true, 'proposals' => ts_tune_list($_GET['method'] ?? null), 'can_apply' => ts_is_primary_admin()]);
+            out(['ok' => true, 'proposals' => ts_tune_list($_GET['method'] ?? null), 'can_apply' => ts_is_chief()]);
 
         case 'admin_tune_propose':
             out(['ok' => true, 'proposal' => ts_tune_propose($uid, $in)]);
@@ -582,15 +604,15 @@ try {
             out(['ok' => true]);
 
         case 'admin_shared_switch':
-            ts_require_primary_admin();
+            ts_require_chief();
             $on = ($in['on'] ?? false) === true;
             ts_setting_set('shared_providers', $on ? '1' : '0');
             ts_admin_log($uid, 'shared_switch', $on ? 'on' : 'off');
             out(['ok' => true, 'shared_enabled' => $on]);
 
-        // מפתח האפליקציה (21.3, ✅31): מפתח של המנהל שהאפליקציה פונה בו בשביל כולם — רק המנהל הראשי מסמן
+        // מפתח האפליקציה (21.3, ✅31): מפתח של עורך שהאפליקציה פונה בו בשביל כולם — רק עורך ראשי מסמן
         case 'admin_app_key':
-            ts_require_primary_admin();
+            ts_require_chief();
             ts_app_key_set($in['provider'] ?? null, $in['cred_id'] ?? null, $in['user_limit'] ?? null);
             ts_admin_log($uid, 'app_key', (string)($in['provider'] ?? '') . ' cred:' . (string)($in['cred_id'] ?? '-')
                 . (isset($in['user_limit']) ? ' limit:' . (string)$in['user_limit'] : ''));
@@ -620,17 +642,18 @@ try {
             ts_admin_log($uid, 'grant_delete', 'cred:' . (int)($in['cred_id'] ?? 0) . ' user:' . (int)($in['user_id'] ?? 0));
             out(['ok' => true, 'creds' => ts_admin_creds()]);
 
+        // עורכים (24.3, ר1): מינוי ושינוי תפקיד — role: editor (ברירת המחדל) / chief. רק עורך ראשי (נבדק ב-ts_role_grant)
         case 'admin_role_add':
-            ts_admin_grant($uid, (int)($in['user_id'] ?? 0));
-            out(['ok' => true, 'admins' => ts_admins_list()]);
+            ts_role_grant($uid, (int)($in['user_id'] ?? 0), $in['role'] ?? 'editor');
+            out(['ok' => true, 'editors' => ts_editors_list()]);
 
         case 'admin_password_reset':
             ts_password_reset($uid, (int)($in['user_id'] ?? 0));
             out(['ok' => true]);
 
         case 'admin_role_remove':
-            ts_admin_revoke($uid, (int)($in['user_id'] ?? 0));
-            out(['ok' => true, 'admins' => ts_admins_list()]);
+            ts_role_revoke($uid, (int)($in['user_id'] ?? 0));
+            out(['ok' => true, 'editors' => ts_editors_list()]);
 
         case 'admin_cache_clear':
             $pv = isset($in['provider']) && is_string($in['provider']) && isset(TS_PROVIDERS[$in['provider']]) ? $in['provider'] : null;

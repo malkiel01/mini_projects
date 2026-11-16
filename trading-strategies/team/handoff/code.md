@@ -20,6 +20,7 @@
 > **עדכון 2026-11-16 (צ'אט bt-incomplete):** בדיקה לאחור חלקית נשמרת (`bt_partial`) וממשיכה. **`cache.sqlite` — המיגרציה הבאה 6.** הסעיף "בדיקה לאחור שלא הספיקה" בסוף.
 > **עדכון 2026-11-16 (צ'אט T1):** חלונית ההסבר על הגרף (18.1.6) — הסעיף "T1 — חלונית הסבר" בסוף.
 > **עדכון 2026-11-16 (צ'אט L1):** למידה עצמית — `method_outcomes` ו-backtest. **`app.sqlite` — המיגרציה הבאה 18; `cache.sqlite` — 6.** הסעיף "L1 — למידה עצמית" בסוף.
+> **עדכון 2026-11-16 (צ'אט R1):** עורך ראשי / עורך משני / משתמש (פרק 24) — הסעיף "R1 — תפקידים" בסוף. **מיגרציה 18 = `app_roles` (R1, אחרי 17 של L1). הבאה — 19 (`app.sqlite`); `cache.sqlite` — 6.**
 > ~~הבא בתור: S3~~ (בנוי). קריאת חובה: `docs/spec-stage-a.md` 18.3, 3.5 ו-✅23 ב-`docs/owner-brief.md` 2ה.
 
 ## על מה S3 נשען — כבר בנוי
@@ -487,3 +488,22 @@
 - **L2 צריך:** cron ל-`live` (אותו `$onTrade` על נרות סגורים אחרי `to_t`), `trade` בסגירת עסקה עם `method_id` + `planned_stop`, ודילוג על
   `users.learn_off = 1`. ההגדרה בממשק — עוד לא.
 - **החגים:** לבנות מחדש — `php lib/learn/holidays-build.php` (מחליף את `holidays.json`).
+
+## L3 — לשונית "למידה" (פרק 23)
+
+- `admin_learn&method=&version=&source=` → `counts`, `total`, `segments [{dim, value, n, enough, win_pct, expectancy_r, certainty}]`, `gaps`, `rows`, `size`.
+  ‏N < 30 — שאר השדות `null`. L4/L5 צריכים לקרוא את אותן שורות — כדאי לבנות על `ts_learn_stats` / אותה שאילתה.
+- המסך — `learnPanel(m)` ב-`analysis.js`. L4 (ממצאים) ו-L5 (מיקומים, הצעות) נכנסים לאותו `<details class="learn">`.
+## R1 — תפקידים (פרק 24, ענף `claude/trading-strategies-roles-r1`)
+
+- **הרשאה חדשה = שורה אחת:** `ts_require_editor($uid)` (כל העורכים) או `ts_require_chief()` (עורך ראשי). הכלל מ-24.2: משנה
+  ספירה, הסתברות או גישה של אחרים — ראשי; השאר — כל העורכים. כל `admin_*` כבר עובר `ts_require_editor` ב-`api.php`.
+  **הלמידה (L1)** — `"החל"` והחלטה על ממצא חריג: `ts_require_chief()`; הלשונית וההצעות: `ts_require_editor`. ולהוסיף שורה ל-`$ROWS` ב-`tests/roles-api.php`.
+- **בממשק — `ME.is_chief` / `ME.is_editor`** (וב-`admin_state`: `is_chief`, `me_id`, `editors`). `is_admin` / `is_primary_admin` עדיין
+  חוזרים — רק בשביל קוד שעוד לא עבר (`forecast.js` → `isAdmin` ב-`market.js`). קוד חדש — בשמות החדשים.
+- **אין "מנהל" באף מחרוזת שמוצגת** — `tests/roles-api.php` (קריטריון 7) סורק את `assets/js/*.js` בלי הערות, ונכשל על "מנהל".
+- **עורך ראשי ממונה** — מ-`app_roles` בלי תלות בשער (גם במנותקת). **העורך מהשער** — `users.platform_admin`; לא שורה ב-`app_roles`,
+  ולא ניתן לביטול או לשינוי (422).
+- **DevLoop:** `ts_dev_allow` (`lib/devtasks.php`) — לפני `ts_dev_dispatch`. פעולת dev חדשה במודול → להחליט לאיזו רשימה היא
+  נכנסת (`TS_DEV_EDITOR`, `TS_DEV_USER`), אחרת היא לעורך ראשי בלבד.
+- **משתמש עם 🐞:** אחרי דיווח המודול קורא `dev-items` → 403 שקט (בלי מסך). לא נוגע במשתמש; לשנות רק במקור (`devloop/src`).
