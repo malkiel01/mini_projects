@@ -1,6 +1,6 @@
 # מצב — הזיכרון הנייד של הבקרה
 
-**עודכן:** 2026-11-16 ~01:00 UTC, בידי בקרה (3) `session_018g4NYE6Q5mocKiUUxqKEyR`. השעון: `trig_01BkHqJw3mPZG75puVqoh6rh` (דקה 28).
+**עודכן:** 2026-11-16 ~01:20 UTC, בידי בקרה (3) `session_018g4NYE6Q5mocKiUUxqKEyR`. השעון: `trig_01BkHqJw3mPZG75puVqoh6rh` (דקה 28).
 
 ## איפה עומדים
 
@@ -19,6 +19,8 @@
 | #1607 | מסמכי הבקרה (2) | 1682 |
 | #1608 | S5 צבע לכל שיטה, מקרא (`users.method_colors`, מיגרציה 10) | 1683 |
 | #1606, #1609 | מסירת S4, מסמכי בקרה (3) | 1685 (1684 בוטלה בתור — 1685 כוללת אותה) |
+| #1611 | S6 יומן שיטה (`method_journal`, מיגרציה 11) | **לאמת** |
+| #1610 | מסירת S5 | **לאמת** |
 - ביקורות: `team/reviews/*.md`. #1602, #1604 (מסירות) נסגרו — אוחדו ב-#1605.
 
 ## הצוות (`team/sessions.json`)
@@ -26,8 +28,8 @@
 | תפקיד | session | מצב |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.19 |
-| קוד (S6) | `session_018g4NYCtoJQjiN4ojLGwKMh` (Opus) | נפתח 01:00 — יומן שיטה (18.6) |
-| קוד קודמים | `…E8YZGBZvopSjFJYG7` S5 (handoff #1610 — עם S6) · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
+| קוד (S6) | `session_018g4NYCtoJQjiN4ojLGwKMh` (Opus) | #1611 מוזג — מעדכן handoff ויוצא |
+| קוד קודמים | `…E8YZGBZvopSjFJYG7` S5 · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
 | מטלות | — | עוד לא נפתח |
 
 ## ממתין לבעלים
@@ -41,9 +43,8 @@
 
 ## הצעד הבא
 
-1. **S6** (18.6) בבנייה — ביקורת ומיזוג יחד עם #1610.
+1. לאמת פריסה של #1611/#1610/ענף הבקרה. אחר כך **S7** (18.7, שכלול) — צ'אט קוד חדש, `model` מפורש, עם send_message. ⚪ הכרעות הקוד ב-S6 (README) — להעביר לאפיון לרישום.
 2. ⚪ מ-S5: המפה `method_colors` מוגבלת ל-8 שיטות (`team/reviews/s5.md`).
-3. אחר כך S7 (שכלול).
 4. פרוסות app-rules מהסקר (`dev/audit.md`): A1 DevLoop, A2 התחברות עם ניתוק, A3 בדיקות בשער הפריסה.
 5. צ'אט מטלות — לפתוח עם המטלה הראשונה (ניקוי בשרת).
 6. פתוחים קטנים: `market_candles` בלי `ts_now()` (פיתוח בלבד); spec שורות ~406/515 על `drives_key`; בדיקות שנכשלו פעם אחת בהרצה מקבילה (`market-tabs-ui`, `alerts-ui`).
