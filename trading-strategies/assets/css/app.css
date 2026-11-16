@@ -568,4 +568,6 @@ svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-alig
 .login-ic { font-size: 2.4rem; }
 .login h2 { margin: 0; }
 .login-go { inline-size: 100%; }
+.login-pw { text-align: start; }
+.login-or { margin: 0; color: var(--muted); }
 button.use-row { inline-size: 100%; background: none; border: 0; font: inherit; color: inherit; text-align: start; cursor: pointer; }

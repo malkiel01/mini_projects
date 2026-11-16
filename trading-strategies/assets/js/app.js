@@ -1082,17 +1082,39 @@ function breakdownTable(title, rows, label, cur) {
 const LOGIN_ERRORS = {
   cancelled: 'הכניסה בוטלה.',
   invalid: 'הכניסה לא הושלמה — נסו שוב.',
+  conflict: 'יש כבר חשבון באפליקציה באותו מייל — פנו למנהל.',
 };
-function viewLogin() {
+function viewLogin(login, msg = '') {
   const err = (location.hash.match(/^#\/login\/(\w+)/) || [])[1];
   if (err) history.replaceState(null, '', location.pathname);
+  const text = msg || (err ? LOGIN_ERRORS[err] || LOGIN_ERRORS.invalid : '');
   setHead('אסטרטגיות למסחר', 'לתכנון וניתוח בלבד');
+  const box = h('p', { class: 'error', role: 'alert', hidden: !text }, text);
+  // מייל וסיסמה — רק כשהמנהל השאיר כניסה בסיסמה (login.password). Google — לא בפרוסה הזו (ש8)
+  let pwForm = null;
+  if (login.password) {
+    const email = h('input', { type: 'email', name: 'email', autocomplete: 'username', dir: 'ltr', required: true, maxlength: 200 });
+    const pw = h('input', { type: 'password', name: 'password', autocomplete: 'current-password', dir: 'ltr', required: true, maxlength: 200 });
+    const btn = h('button', { class: 'btn ghost login-go', type: 'submit' }, 'כניסה בסיסמה');
+    pwForm = h('form', { class: 'stack login-pw', on: { submit: async ev => {
+      ev.preventDefault();
+      btn.disabled = true;
+      try {
+        await api('login', { email: email.value.trim(), password: pw.value });
+        location.replace(location.pathname);
+      } catch (e) { box.textContent = e.message; box.hidden = false; pw.value = ''; btn.disabled = false; }
+    } } }, field('מייל', email, true), field('סיסמה לאפליקציה', pw, true), btn);
+  }
   render(h('section', { class: 'login stack' },
     h('div', { class: 'login-ic', 'aria-hidden': 'true' }, '📈'),
     h('h2', {}, 'כניסה'),
-    err ? h('p', { class: 'error', role: 'alert' }, LOGIN_ERRORS[err] || LOGIN_ERRORS.invalid) : null,
+    box,
     h('a', { class: 'btn primary login-go', href: 'api.php?action=sso_start' }, 'כניסה עם הכלים הדיגיטליים'),
-    h('p', { class: 'hint' }, 'נכנסים עם החשבון שלכם בכלים הדיגיטליים. בפעם הראשונה יוצג שם אישור קצר.')));
+    pwForm ? h('p', { class: 'login-or' }, 'או') : null,
+    pwForm,
+    h('p', { class: 'hint' }, login.password
+      ? 'שכחתם את הסיסמה? היכנסו דרך הכלים הדיגיטליים וקבעו חדשה בפרופיל.'
+      : 'נכנסים עם החשבון שלכם בכלים הדיגיטליים. בפעם הראשונה יוצג שם אישור קצר.')));
 }
 
 async function logout() {
@@ -1125,8 +1147,8 @@ async function viewMore() {
         h('span', { class: 'use-tx' }, h('b', {}, 'ייצוא מלא (JSON)'), h('small', {}, 'כל האסטרטגיות, הגרסאות, הנכסים והעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=csv', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📄'),
         h('span', { class: 'use-tx' }, h('b', {}, 'היומן כ-CSV'), h('small', {}, 'שורה לכל עסקה, עם הרווח וה-R — נפתח באקסל')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
-    // יציאה — רק כשנכנסו בכניסה המאוחדת (מנותקת). מחוברת: היציאה היא מהכלים הדיגיטליים, לא מכאן
-    ME.login_via === 'sso' ? h('ul', { class: 'list' }, h('li', {}, h('button', { class: 'use-row', type: 'button', onclick: logout },
+    // יציאה — רק כשנכנסו במצב מנותק (sso / סיסמה). מחוברת: היציאה היא מהכלים הדיגיטליים, לא מכאן
+    ME.login_via !== 'gate' ? h('ul', { class: 'list' }, h('li', {}, h('button', { class: 'use-row', type: 'button', onclick: logout },
       h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🚪'),
       h('span', { class: 'use-tx' }, h('b', {}, 'יציאה'), h('small', {}, 'מהאפליקציה הזו בלבד')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))) : null,
     h('h2', { class: 'sec-title' }, 'אודות'),
@@ -1192,7 +1214,7 @@ function editInstrument(i) {
     ME = await api('me');
   } catch (e) {
     $('.bottom-nav').hidden = true;
-    if (e.login?.mode === 'detached') viewLogin();
+    if (e.login?.mode === 'detached') viewLogin(e.login, e.login.denied ? e.message : '');
     else render(h('p', { class: 'error', role: 'alert' }, e.message));
     return;
   }

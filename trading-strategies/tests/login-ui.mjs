@@ -23,7 +23,9 @@ const BASE = `${ORIGIN}/trading-strategies/`;
 const RET = BASE + 'api.php?action=sso_callback';
 const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 writeFileSync(join(tmp, 'fx', 'key.json'), JSON.stringify({ alg: 'Ed25519', key: publicKey.export({ format: 'jwk' }).x, issuer: ORIGIN + '/' }));
-writeFileSync(join(tmp, 'fx', 'index.json'), JSON.stringify([{ match: '~/platform/sso\\.php\\?action=key$~', file: 'key.json' }]));
+writeFileSync(join(tmp, 'fx', 'grant.json'), JSON.stringify({ allowed: true }));
+writeFileSync(join(tmp, 'fx', 'index.json'), JSON.stringify([{ match: '~/platform/sso\\.php\\?action=key$~', file: 'key.json' },
+  { match: '~/platform/provision\\.php\\?action=grant_status$~', file: 'grant.json' }]));
 const srv = spawn('php', ['-S', `127.0.0.1:${port}`, '-t', root, '-d', `auto_prepend_file=${join(here, 'dev-prepend.php')}`],
   { env: { ...process.env, TS_DB_PATH: join(tmp, 'app.sqlite'), TS_APP_URL: BASE, TS_HTTP_FIXTURES: join(tmp, 'fx') }, stdio: 'ignore' });
 for (let i = 0; i < 50; i++) { try { await fetch(BASE + 'api.php?action=login_config'); break; } catch { await new Promise(r => setTimeout(r, 100)); } }
@@ -42,9 +44,10 @@ function token(state, o = {}) {
 
 const b = await chromium.launch();
 /** $platform: מה "המעטפת" עונה ב-sso.php — 'ok' (זהות), 'cancel' (ביטול) */
-async function open(plat, as = 'none', { platform = 'ok', scheme = 'light' } = {}) {
+async function open(plat, as = 'none', { platform = 'ok', scheme = 'light', password = false } = {}) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true, colorScheme: scheme });
-  await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }, { name: 'dev_platform', value: plat, url: BASE }]);
+  await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }, { name: 'dev_platform', value: plat, url: BASE },
+    { name: 'dev_password', value: password ? '1' : '0', url: BASE }]);
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
   const seen = [];
   // Playwright לא מנתב הפניות בתוך שרשרת — לכן sso_start עצמו: התשובה האמיתית של השרת (עם עוגיית ה-state), וההפניה
@@ -94,6 +97,39 @@ try {
   eq(await d.p.locator('main a.login-go').count(), 1, 'logout → login screen');
   eq(d.errors, [], 'no JS errors (detached)');
   await d.ctx.close();
+
+  // ── מנותקת + login.password: סיסמה שנקבעה בפרופיל → יציאה → כניסה בסיסמה ──
+  const w = await open('detached', 'none', { password: true });
+  await w.p.goto(BASE);
+  await settle(w.p);
+  eq([await w.p.locator('main a.login-go').count(), await w.p.locator('main form.login-pw').count()], [1, 1], 'login.password: both options');
+  eq(await w.p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal scroll (password form)');
+  await shot(w.p, 'login-password-390');
+  await w.p.locator('main a.login-go').click();
+  await w.p.locator('main [role="combobox"]').first().waitFor({ timeout: 20000 });
+  await w.p.goto(BASE + '#/profile');
+  await settle(w.p);
+  await w.p.locator('main .pw-block button').click();
+  await w.p.locator('dialog[open] input[type="password"]').fill('a long password 1');
+  await w.p.locator('dialog[open] button[type="submit"]').click();
+  await w.p.locator('main .pw-block button', { hasText: 'החלפת סיסמה' }).waitFor({ timeout: 20000 });
+  eq(await w.p.locator('main .pw-block .hint').first().textContent().then(t => t.startsWith('יש לך סיסמה')), true, 'profile: password set');
+  await shot(w.p, 'profile-password-390');
+  await w.p.goto(BASE + '#/more');
+  await settle(w.p);
+  await w.p.locator('main button.use-row', { hasText: 'יציאה' }).click();
+  await w.p.locator('main form.login-pw').waitFor({ timeout: 20000 });
+  await w.p.locator('main form.login-pw input[type="email"]').fill('ruth@test.local');
+  await w.p.locator('main form.login-pw input[type="password"]').fill('wrong password!!');
+  await w.p.locator('main form.login-pw button[type="submit"]').click();
+  await w.p.locator('main .error:not([hidden])').waitFor({ timeout: 20000 });
+  eq(await w.p.locator('main .error').textContent(), 'מייל או סיסמה שגויים', 'wrong password → message');
+  await w.p.locator('main form.login-pw input[type="password"]').fill('a long password 1');
+  await w.p.locator('main form.login-pw button[type="submit"]').click();
+  await w.p.locator('main [role="combobox"]').first().waitFor({ timeout: 20000 });
+  eq(await w.p.locator('.bottom-nav').isVisible(), true, 'password login → app');
+  eq(w.errors, [], 'no JS errors (password)');
+  await w.ctx.close();
 
   // ── ביטול במעטפת ──
   const c = await open('detached', 'none', { platform: 'cancel', scheme: 'dark' });

@@ -7,8 +7,11 @@
  * (Ed25519), שנבדקת כאן כולה (sso.md §2, "מה האפליקציה חייבת לבדוק"): חתימה, aud, iss, state חד-פעמי וקשור לדפדפן,
  * return, exp, ו-jti שלא נוצל. אחרי זה — אותו טיפול כמו זהות מהשער (ts_user_for), ו-session של האפליקציה.
  *
- * המצב — sso.php?action=config של המעטפת, במטמון 60 שניות (כישלון — 15). המעטפת לא עונה → "unavailable": נכשלים
- * סגור (503), לא פותחים.
+ * המצב — sso.php?action=config של המעטפת, במטמון לדקה ב-data/platform-config.json (כישלון — 15 שניות). המעטפת לא
+ * עונה → "unknown": נכשלים סגור — אין כניסה חדשה (spec-stage-a 20.1 ב').
+ *
+ * הרשאה במנותקת (20.1 ד'): grant_status — בקשה חתומה שרת-לשרת (platform/docs/embed.md §2, sso.md §6) במפתח של
+ * האפליקציה. הפרטי — במסד (data/), מוצפן במפתח של lib/secret.php; הציבורי — api.php?action=platform_key.
  *
  * הכתובת של האפליקציה — מ-app.json (sso.return), **לעולם לא מהבקשה**: Host מגיע מהלקוח, וכתובת שנגזרת ממנו הייתה
  * מפנה את בקשת המפתח ואת ה-iss לשרת של תוקף.
@@ -21,11 +24,13 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/http.php';
+require_once __DIR__ . '/secret.php';
 
 const TS_CLIENT_ID = 'trading-strategies';
 const TS_SSO_COOKIE = 'ts_sso';          // ה-state של הכניסה, קשור לדפדפן שהתחיל אותה
 const TS_SSO_STATE_TTL = 600;
 const TS_SSO_SKEW = 60;                  // סטיית שעון מותרת בבדיקת exp
+const TS_GRANT_TTL = 300;                // תשובת grant_status נשמרת ב-session עד 5 דקות (sso.md §6)
 
 final class TsUnavailable extends RuntimeException {}
 
@@ -82,29 +87,45 @@ function ts_platform_get(string $url): ?array
     return is_array($out) ? $out : null;
 }
 
-/** ההגדרות של האפליקציה במעטפת: {connected, login}. null — המעטפת לא עונה. */
+function ts_platform_cfg_path(): string
+{
+    return defined('TS_DB_PATH') ? TS_DB_PATH . '.platform-config.json' : dirname(__DIR__) . '/data/platform-config.json';
+}
+
+/** ההגדרות של האפליקציה במעטפת: {connected, login: {password, google}}. null — המעטפת לא עונה. */
 function ts_platform_config(): ?array
 {
+    static $memo = false;
+    if ($memo !== false) return $memo;
     $now = time();
-    $cached = json_decode((string)ts_setting('platform_config_cache', ''), true);
-    if (is_array($cached) && (int)($cached['until'] ?? 0) > $now) return $cached['config'] ?? null;
+    $path = ts_platform_cfg_path();
+    $cached = is_file($path) ? json_decode((string)@file_get_contents($path), true) : null;
+    if (is_array($cached) && (int)($cached['until'] ?? 0) > $now) return $memo = $cached['config'] ?? null;
     $out = ts_platform_get(ts_platform_sso_url(http_build_query(['action' => 'config', 'client' => TS_CLIENT_ID])));
     $cfg = is_array($out) && is_bool($out['connected'] ?? null)
         ? ['connected' => $out['connected'], 'login' => [
             'password' => ($out['login']['password'] ?? null) === true,
             'google' => ($out['login']['google'] ?? null) === true,
         ]] : null;
-    ts_setting_set('platform_config_cache', json_encode(['until' => $now + ($cfg ? 60 : 15), 'config' => $cfg]));
-    return $cfg;
+    if (!is_dir(dirname($path))) @mkdir(dirname($path), 0700, true);
+    @file_put_contents($path, json_encode(['until' => $now + ($cfg ? 60 : 15), 'config' => $cfg]), LOCK_EX);
+    return $memo = $cfg;
 }
 
-/** connected · detached · unavailable — כשאין זהות מהשער בבקשה. */
+/** connected · detached · unknown — כשאין זהות מהשער בבקשה. */
 function ts_platform_mode(): string
 {
     if (defined('TS_DEV') && defined('TS_DEV_PLATFORM') && TS_DEV_PLATFORM !== 'live') return TS_DEV_PLATFORM;
     $cfg = ts_platform_config();
-    if ($cfg === null) return 'unavailable';
+    if ($cfg === null) return 'unknown';
     return $cfg['connected'] ? 'connected' : 'detached';
+}
+
+/** login.password של המעטפת (רק במנותקת). בפיתוח — TS_DEV_PASSWORD. */
+function ts_platform_password_on(): bool
+{
+    if (defined('TS_DEV') && defined('TS_DEV_PLATFORM') && TS_DEV_PLATFORM !== 'live') return defined('TS_DEV_PASSWORD') && TS_DEV_PASSWORD;
+    return (ts_platform_config()['login']['password'] ?? false) === true;
 }
 
 /** המפתח הציבורי של המעטפת (sso.php?action=key) — בינארי, או null. מטמון 24 שעות; $fresh — אחרי חתימה שנכשלה. */
@@ -124,11 +145,14 @@ function ts_platform_sso_key(bool $fresh = false): ?string
     return $key;
 }
 
-/** מה מסך הכניסה מציג. mode: connected / detached / unavailable. platform — "כניסה עם הכלים הדיגיטליים". */
+/**
+ * מה מסך הכניסה מציג (20.1 ד'). mode: connected / detached / unknown. platform — "כניסה עם הכלים הדיגיטליים" (תמיד
+ * כשמנותקת); password — מייל וסיסמה (רק כשמנותקת ו-login.password). Google — לא בפרוסה הזו (ש8), גם כשהמעטפת מתירה.
+ */
 function ts_login_config(): array
 {
     $mode = ts_identity() ? 'connected' : ts_platform_mode();
-    return ['mode' => $mode, 'platform' => $mode === 'detached'];
+    return ['mode' => $mode, 'platform' => $mode === 'detached', 'password' => $mode === 'detached' && ts_platform_password_on()];
 }
 
 /** לאן חוזרים אחרי הכניסה (או כשנדחתה): הדף של האפליקציה, ואולי #/login/<סיבה>. */
@@ -234,8 +258,60 @@ function ts_sso_callback(array $get, string $cookieState): string
     $ident = ts_identity_clean(['sub' => $id['sub'] ?? null, 'name' => $id['name'] ?? '', 'email' => $id['email'] ?? null,
         'email_verified' => $id['email_verified'] ?? false]);
     if (!$ident) return ts_sso_reject('bad_sub');
-    $ident['platform_admin'] = null;   // הזהות החתומה לא נושאת אותו — לא נוגעים בדגל השמור (ts_user_for)
-    $user = ts_user_for($ident);
+    $ident['platform_admin'] = null;   // הזהות החתומה לא נושאת אותו — לא נוגעים בדגל השמור (ts_user_for, 20.1 ו')
+    try {
+        $user = ts_user_for($ident);
+    } catch (TsConflict) {
+        return ts_sso_reject('account_conflict', 'conflict');   // 20.1 ה'.3 — נרשם ב-admin_log
+    }
+    // זהות חתומה ניתנת רק למי שמורשה — זו בדיקת ההרשאה של הכניסה הזו (grant_checked_at = עכשיו)
     ts_session_open($user, 'sso');
     return ts_login_redirect();
+}
+
+// ── המפתח של האפליקציה מול המעטפת (grant_status) ──────────────
+
+/** ['kid', 'public' (base64), 'secret' (בינארי)]. נוצר בפעם הראשונה; הפרטי — במסד, מוצפן (lib/secret.php). */
+function ts_app_key(): array
+{
+    $row = json_decode((string)ts_setting('platform_sign_key', ''), true);
+    if (!is_array($row)) {
+        $pair = sodium_crypto_sign_keypair();
+        $new = ['kid' => gmdate('Y-m') . '-' . bin2hex(random_bytes(3)), 'public' => base64_encode(sodium_crypto_sign_publickey($pair)),
+            'secret' => base64_encode(ts_encrypt(sodium_crypto_sign_secretkey($pair)))];
+        // INSERT OR IGNORE — שתי בקשות במקביל: מי שהפסיד קורא את מה שנכתב
+        ts_db()->prepare('INSERT OR IGNORE INTO settings (k, v) VALUES (?, ?)')->execute(['platform_sign_key', json_encode($new)]);
+        $row = json_decode((string)ts_setting('platform_sign_key', ''), true);
+    }
+    return ['kid' => (string)$row['kid'], 'public' => (string)$row['public'], 'secret' => ts_decrypt(base64_decode((string)$row['secret']))];
+}
+
+/** הפעולה הציבורית platform_key: המפתח הציבורי בלבד. */
+function ts_app_key_public(): array
+{
+    $k = ts_app_key();
+    return ['client' => TS_CLIENT_ID, 'keys' => [['kid' => $k['kid'], 'alg' => 'Ed25519', 'key' => $k['public']]]];
+}
+
+/**
+ * האם למשתמש יש הרשאה לאפליקציה במעטפת (sso.md §6). true / false, או null — המעטפת לא ענתה (הקורא נכשל סגור).
+ * בקשה חתומה: "<action>\n<time>\n<nonce>\n<sha256 של הגוף>" (embed.md §2).
+ */
+function ts_grant_status(string $sub): ?bool
+{
+    if (!preg_match('/^[0-9]{1,12}$/', $sub)) return false;
+    try {
+        $key = ts_app_key();
+        $body = json_encode(['sub' => $sub]);
+        $time = (string)time();
+        $nonce = bin2hex(random_bytes(16));
+        $sig = sodium_crypto_sign_detached("grant_status\n$time\n$nonce\n" . hash('sha256', $body), $key['secret']);
+        [$status, $res] = ts_http_post(ts_platform_base() . '/platform/provision.php?action=grant_status',
+            ['Content-Type: application/json', 'X-Embed-Client: ' . TS_CLIENT_ID, "X-Embed-Time: $time", "X-Embed-Nonce: $nonce",
+                'X-Embed-Signature: ' . $key['kid'] . '.' . base64_encode($sig)], $body, 5);
+    } catch (Throwable) {
+        return null;
+    }
+    $out = $status === 200 ? json_decode($res, true) : null;
+    return is_bool($out['allowed'] ?? null) ? $out['allowed'] : null;
 }

@@ -17,10 +17,11 @@ function ts_is_primary_admin(): bool
 {
     $id = ts_identity();
     if ($id !== null) return $id['platform_admin'];
-    // מנותקת (A2): הזהות החתומה לא נושאת platform_admin. המנהל הראשי — מי שהשער אמר עליו כך בפעם האחרונה שהיה
-    // מחובר (users.platform_admin, מתעדכן רק מהשער — ts_user_for). אין דרך לקבל אותו מתוך האפליקציה.
+    // מנותקת (20.1 ו'): הזהות החתומה לא נושאת platform_admin. המנהל הראשי — מי שהשער אמר עליו כך בפעם האחרונה
+    // (users.platform_admin, מתעדכן רק מהשער — ts_user_for), ובתנאי ש-grant_status מאשר: session מנותק קיים רק כל עוד
+    // ההרשאה אושרה ב-5 הדקות האחרונות (ts_session_grant_check). אין דרך לקבל אותו מתוך האפליקציה.
     $cur = function_exists('ts_current') ? ts_current() : null;
-    return $cur !== null && $cur['via'] === 'sso' && (int)($cur['user']['platform_admin'] ?? 0) === 1;
+    return $cur !== null && $cur['via'] !== 'gate' && (int)($cur['user']['platform_admin'] ?? 0) === 1;
 }
 
 function ts_is_admin(int $uid): bool

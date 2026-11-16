@@ -26,7 +26,18 @@ file_put_contents("$tmp/fx/config.json", json_encode(['app' => 'trading-strategi
 file_put_contents("$tmp/fx/index.json", json_encode([
     ['match' => '~/platform/sso\.php\?action=key$~', 'file' => 'key.json'],
     ['match' => '~/platform/sso\.php\?action=config&client=trading-strategies$~', 'file' => 'config.json'],
+    ['match' => '~/platform/provision\.php\?action=grant_status$~', 'file' => 'grant.json'],
 ]));
+/** מה grant_status עונה: true / false / null (המעטפת לא עונה — 500) */
+function grant(?bool $allowed): void
+{
+    global $tmp;
+    $idx = json_decode(file_get_contents("$tmp/fx/index.json"), true);
+    $idx[2]['status'] = $allowed === null ? 500 : 200;
+    file_put_contents("$tmp/fx/index.json", json_encode($idx));
+    file_put_contents("$tmp/fx/grant.json", json_encode(['allowed' => (bool)$allowed]));
+}
+grant(true);
 
 $srv = proc_open(['php', '-S', "127.0.0.1:$port", '-t', $root, '-d', 'auto_prepend_file=' . __DIR__ . '/dev-prepend.php'],
     [1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes, $root,
@@ -56,7 +67,7 @@ function eq($got, $want, string $what): void
 function req(array &$c, string $action, array $query = [], ?array $body = null, string $as = 'none', string $plat = 'detached'): array
 {
     global $port;
-    $h = ["X-Dev-As: $as", "X-Dev-Platform: $plat"];
+    $h = ["X-Dev-As: $as", "X-Dev-Platform: $plat", 'X-Dev-Password: ' . ($GLOBALS['PW'] ?? '0')];
     if ($c) $h[] = 'Cookie: ' . implode('; ', array_map(fn($k, $v) => "$k=$v", array_keys($c), $c));
     if ($body !== null) { $h[] = 'Content-Type: application/json'; $h[] = 'X-CSRF: ' . ($c['@csrf'] ?? ''); }
     $ctx = stream_context_create(['http' => ['method' => $body !== null ? 'POST' : 'GET', 'header' => implode("\r\n", $h),
@@ -115,11 +126,11 @@ eq($j['mode'] ?? null, 'connected', 'login_config with gate identity → connect
 [$code, , $loc] = req($b, 'sso_start', [], null, 'none', 'connected');
 eq([$code, $loc, isset($b['ts_sso'])], [302, '/trading-strategies/', false], 'connected: sso_start does not start (back to app path)');
 
-// ── 2. לא עונה → 503, נכשלים סגור ──
-[$code, $j] = req($b, 'me', [], null, 'none', 'unavailable');
-eq([$code, $j['login']['mode'] ?? null], [503, 'unavailable'], 'platform unavailable → 503');
-[$code, $j] = req($b, 'strategies', [], null, 'none', 'unavailable');
-eq($code, 503, 'unavailable → no data');
+// ── 2. unknown (המעטפת לא עונה): אין session → אין כניסה ──
+[$code, $j] = req($b, 'login_config', [], null, 'none', 'unknown');
+eq([$j['mode'] ?? null, $j['platform'] ?? null, $j['password'] ?? null], ['unknown', false, false], 'unknown: no login options');
+[$code, $j] = req($b, 'strategies', [], null, 'none', 'unknown');
+eq($code, 401, 'unknown, no session → no data');
 
 // ── 3. מנותקת: מסך כניסה, והזרימה ──
 [$code, $j] = req($b, 'me');
@@ -224,7 +235,7 @@ $z = [];
 login($z, ['sub' => '204', 'email' => 'z@test.local', 'name' => 'זד']);
 req($z, 'me');
 [$code, $j] = req($z, 'logout', [], []);
-eq([$code, $j['mode'] ?? null, isset($z['ts_session'])], [200, 'detached', false], 'logout');
+eq([$code, isset($z['ts_session'])], [200, false], 'logout');
 [$code] = req($z, 'me');
 eq($code, 401, 'after logout → login screen');
 $z2 = [];
@@ -232,42 +243,173 @@ login($z2, ['sub' => '204', 'email' => 'z@test.local', 'name' => 'זד']);
 [$code] = req($z2, 'logout', [], [], 'none', 'detached');
 eq($code, 403, 'logout needs CSRF');
 
-// ── 7. איחוד לפי מייל: משתמש קיים, אותו מייל, sub אחר → אותו חשבון ──
-$k = [];
-[, $carol] = req($k, 'me', [], null, 'carol', 'connected');
-$k2 = $k;
-req($k2, 'strategy_save', [], ['name' => 'השיטה של קרול'], 'carol', 'connected');
-$m = [];
-login($m, ['sub' => '903', 'email' => 'Carol@Test.Local', 'name' => 'קרול']);
-[$code, $me] = req($m, 'me');
-[, $list] = req($m, 'strategies');
-eq([$code, $me['user']['display_name'] ?? null, array_column($list['strategies'] ?? [], 'name')], [200, 'קרול', ['השיטה של קרול']],
-    'same email → same account and data');
+// ── 7. איחוד (20.1 ה'): אותו מייל עם sub אחר → אין כניסה, account_conflict; בלי מחיקה ובלי כפילות ──
 $pdo = new PDO('sqlite:' . $db);
-eq((int)$pdo->query("SELECT COUNT(*) FROM users WHERE lower(email) = 'carol@test.local'")->fetchColumn(), 1, 'no duplicate account');
-eq($pdo->query("SELECT platform_sub FROM users WHERE lower(email) = 'carol@test.local'")->fetchColumn(), '903', 'account linked to the new sub');
-eq((int)$pdo->query("SELECT COUNT(*) FROM admin_log WHERE action = 'user_merge_email'")->fetchColumn(), 1, 'merge is logged');
-// בלי מייל → חשבון חדש, לא איחוד
+$k = [];
+req($k, 'me', [], null, 'carol', 'connected');
+$usersBefore = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+$m = [];
+$loc = login($m, ['sub' => '903', 'email' => 'Carol@Test.Local', 'name' => 'קרול']);
+eq([$loc, isset($m['ts_session'])], ['/trading-strategies/#/login/conflict', false], 'same email, other sub → no login (SSO)');
+eq((int)$pdo->query("SELECT COUNT(*) FROM admin_log WHERE action = 'account_conflict'")->fetchColumn(), 1, 'account_conflict logged');
+eq([(int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn(), $pdo->query("SELECT platform_sub FROM users WHERE lower(email) = 'carol@test.local'")->fetchColumn()],
+    [$usersBefore, '103'], 'no new row, carol keeps her sub');
+// email_verified: false + אותו מייל עם sub אחר — עדיין התנגשות (לא איחוד)
+$m2 = [];
+eq(login($m2, ['sub' => '904', 'email' => 'carol@test.local', 'email_verified' => false]), '/trading-strategies/#/login/conflict', 'unverified email of another account → conflict');
+// מייל לא מאומת, בלי חשבון אחר → חשבון חדש
+$nv = [];
+login($nv, ['sub' => '906', 'email' => 'new@test.local', 'email_verified' => false, 'name' => 'חדש']);
+[$code, $me] = req($nv, 'me');
+eq([$code, $me['user']['display_name'] ?? null], [200, 'חדש'], 'unverified, no match → new account');
+// בלי מייל → חשבון חדש
 $nm = [];
 login($nm, ['sub' => '905', 'email' => null, 'name' => 'בלי מייל']);
 [$code, $me] = req($nm, 'me');
 eq([$code, $me['user']['display_name'] ?? null], [200, 'בלי מייל'], 'no email → new account');
+eq((int)$pdo->query('SELECT COUNT(*) FROM (SELECT platform_sub FROM users GROUP BY platform_sub HAVING COUNT(*) > 1)')->fetchColumn(), 0, 'platform_sub unique');
+eq((int)$pdo->query("SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'platform_sub' AND \"notnull\" = 1")->fetchColumn(), 1,
+    'platform_sub is NOT NULL — a row without sub cannot exist (20.1 ה\'.2 dormant)');
+// מחוברת: התנגשות מהשער → 403, ולא נפתח חשבון
+$gc = [];
+$pdo->exec("UPDATE users SET email = 'dave@test.local' WHERE platform_sub = '905'");
+[$code, $j] = req($gc, 'me', [], null, 'dave', 'connected');
+eq([$code, (int)$pdo->query("SELECT COUNT(*) FROM users WHERE platform_sub = '104'")->fetchColumn()], [403, 0], 'connected: conflict → 403, no account');
 
-// ── 8. המנהל הראשי במצב מנותק: מי שהשער אמר עליו כך ──
+// ── 8. המנהל הראשי במצב מנותק (20.1 ו'): השמור מהשער, ובתנאי ש-grant_status מאשר ──
 $o = [];
 req($o, 'me', [], null, 'owner', 'connected');            // השער: platform_admin = true → נשמר
 $os = [];
 login($os, ['sub' => '100', 'email' => 'owner@test.local', 'name' => 'בעל המערכת']);
 [$code, $me] = req($os, 'me');
-eq([$code, $me['is_primary_admin'] ?? null, $me['is_admin'] ?? null], [200, true, true], 'detached: owner is primary admin (stored flag)');
+eq([$code, $me['is_primary_admin'] ?? null, $me['is_admin'] ?? null], [200, true, true], 'detached: owner is primary admin (stored flag + grant)');
 [$code] = req($os, 'dev-items');
 eq($code, 200, 'detached: owner reaches DevLoop');
 $as = [];
 login($as, ['sub' => '101', 'email' => 'alice@test.local', 'name' => 'אליס']);
 [$code, $me] = req($as, 'me');
 [$code2] = req($as, 'dev-items');
-eq([$me['is_primary_admin'] ?? null, $code2], [false, 403], 'detached: others are not');
+[$code3] = req($as, 'admin_role_add', [], ['user_id' => 1]);
+eq([$me['is_primary_admin'] ?? null, $code2, $code3], [false, 403, 403], 'detached: others are not, and cannot become');
 eq((int)$pdo->query("SELECT platform_admin FROM users WHERE platform_sub = '100'")->fetchColumn(), 1, 'SSO login does not reset the stored flag');
+// ההרשאה בוטלה: בבדיקה הבאה (אחרי 5 דקות) ה-session נמחק — גם של המנהל
+grant(false);
+[$code] = req($os, 'me');
+eq($code, 200, 'grant answer cached for 5 minutes');
+$pdo->exec("UPDATE sessions SET grant_checked_at = grant_checked_at - 301 WHERE via <> 'gate'");
+$keepOs = $os;
+[$code, $j] = req($os, 'me');
+eq([$code, $j['error'] ?? null, isset($os['ts_session'])], [401, 'אין לך הרשאת גישה לאפליקציה הזו — פנו למנהל', false], 'grant false → session dropped');
+[$code] = req($keepOs, 'me');
+eq($code, 401, 'dropped session is gone from the db');
+// המעטפת לא עונה: session נחסם (503), לא נמחק; חוזרת — ממשיך
+grant(true);
+$bl = [];
+login($bl, ['sub' => '101', 'email' => 'alice@test.local', 'name' => 'אליס']);
+grant(null);
+$pdo->exec("UPDATE sessions SET grant_checked_at = grant_checked_at - 301 WHERE via <> 'gate'");
+[$code] = req($bl, 'me');
+eq($code, 503, 'grant_status no answer → session blocked (fail closed)');
+grant(true);
+[$code] = req($bl, 'me');
+eq($code, 200, 'platform answers again → session works');
+// SSO כשההרשאה בוטלה — המעטפת לא נותנת זהות; ו-unknown עם session טרי ממשיך עד הבדיקה הבאה
+[$code] = req($bl, 'me', [], null, 'none', 'unknown');
+eq($code, 200, 'unknown: existing session continues until the next grant check');
+
+// ── 8א. grant_status עצמו: בקשה חתומה במפתח שב-platform_key ──
+[$code, $pk] = req($b, 'platform_key', [], null, 'none', 'connected');
+eq([$code, $pk['client'] ?? null, $pk['keys'][0]['alg'] ?? null, count($pk['keys'] ?? [])], [200, 'trading-strategies', 'Ed25519', 1], 'platform_key: public key only');
+eq(preg_match('/secret|private/i', json_encode($pk)), 0, 'platform_key has no private part');
+$calls = array_values(array_filter(array_map(fn($x) => json_decode($x, true), explode("\n", (string)file_get_contents("$tmp/http.log"))),
+    fn($x) => is_array($x) && str_contains($x['url'], 'grant_status')));
+$h = [];
+foreach (end($calls)['headers'] as $line) { [$hk, $hv] = array_map('trim', explode(':', $line, 2)); $h[$hk] = $hv; }
+[$kid, $sigB] = explode('.', $h['X-Embed-Signature'], 2);
+$msg = "grant_status\n{$h['X-Embed-Time']}\n{$h['X-Embed-Nonce']}\n" . hash('sha256', '{"sub":"101"}');
+eq([end($calls)['method'], end($calls)['url'], $h['X-Embed-Client'], $kid],
+    ['POST', "$base/platform/provision.php?action=grant_status", 'trading-strategies', $pk['keys'][0]['kid']], 'grant_status request');
+eq(sodium_crypto_sign_verify_detached(base64_decode($sigB), $msg, base64_decode($pk['keys'][0]['key'])), true, 'grant_status signature verifies with platform_key');
+
+// ── 8ב. סיסמה (20.1 ד') ──
+$GLOBALS['PW'] = '1';
+$ps = [];
+login($ps, ['sub' => '102', 'email' => 'bob@test.local', 'name' => 'בוב']);
+req($ps, 'me');
+[$code, $j] = req($ps, 'password_set', [], ['password' => 'short']);
+eq($code, 422, 'password too short');
+[$code] = req($ps, 'password_set', [], ['password' => 'correct horse 1']);
+eq($code, 200, 'set own password');
+eq(str_starts_with((string)$pdo->query("SELECT password_hash FROM users WHERE platform_sub = '102'")->fetchColumn(), '$'), true, 'stored as password_hash');
+$pl = [];
+[$code, $j] = req($pl, 'login_config');
+eq([$j['platform'] ?? null, $j['password'] ?? null], [true, true], 'detached + login.password → both options');
+[$code] = req($pl, 'login', [], ['email' => 'BOB@test.local', 'password' => 'correct horse 1']);
+[$code2, $me] = req($pl, 'me');
+eq([$code, $code2, $me['login_via'] ?? null], [200, 200, 'password'], 'email + password → logged in');
+[, $j1] = req($pl, 'login', [], ['email' => 'nobody@test.local', 'password' => 'whatever123']);
+[, $j2] = req($pl, 'login', [], ['email' => 'bob@test.local', 'password' => 'wrong password']);
+eq([$j1['error'] ?? null, $j1['error'] ?? 1], [$j2['error'] ?? null, 'מייל או סיסמה שגויים'], 'same message: no user / wrong password');
+// grant false → סיסמה נכונה, אין כניסה
+grant(false);
+$pg = [];
+[$code, $j] = req($pg, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1']);
+eq([$code, isset($pg['ts_session'])], [403, false], 'password ok but grant false → no login');
+grant(null);
+[$code] = req($pg, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1']);
+eq([$code, isset($pg['ts_session'])], [503, false], 'grant no answer → no new login');
+grant(true);
+// נעילה: 5 שגיאות, והשישית נכונה — עדיין נעול
+$pdo->exec('DELETE FROM login_locks');
+$lk = [];
+for ($i = 0; $i < 5; $i++) req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'bad' . $i . 'xxxxxxx']);
+[$code, $j] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1']);
+eq([$code, isset($lk['ts_session'])], [429, false], '5 failures → locked, even with the right password');
+$pdo->exec("UPDATE login_locks SET locked_until = " . (time() - 1));
+[$code] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1']);
+eq($code, 200, 'after 15 minutes → login works');
+// לפי IP: מיילים שונים מאותו IP
+$pdo->exec('DELETE FROM login_locks');
+for ($i = 0; $i < 5; $i++) req($lk, 'login', [], ['email' => "x$i@test.local", 'password' => 'whatever123']);
+[$code] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1']);
+eq($code, 429, 'lock by IP too');
+$pdo->exec('DELETE FROM login_locks');
+// login.password כבוי / unknown / מחוברת
+$GLOBALS['PW'] = '0';
+[$code] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1']);
+eq($code, 403, 'login.password off → 403');
+$GLOBALS['PW'] = '1';
+[$code] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1'], 'none', 'unknown');
+eq($code, 503, 'unknown → password login blocked');
+[$code, $j] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1'], 'none', 'connected');
+eq([$code, $j['error'] ?? null], [403, 'הכניסה היא דרך הכלים הדיגיטליים'], 'connected → 403');
+[$code, $j] = req($lk, 'login', [], ['email' => 'bob@test.local', 'password' => 'correct horse 1'], 'bob', 'connected');
+eq($code, 403, 'connected with gate identity → 403');
+// חזרה למחוברת: הסיסמה נשארת במסד, והשער הוא מקור הזהות
+[$code, $me] = req($pl, 'me', [], null, 'none', 'connected');
+eq([$code, isset($pl['ts_session'])], [401, false], 'back to connected: password session gone');
+eq($pdo->query("SELECT password_hash IS NOT NULL FROM users WHERE platform_sub = '102'")->fetchColumn(), 1, 'password still stored');
+// איפוס בידי המנהל הראשי
+$bobId = (int)$pdo->query("SELECT id FROM users WHERE platform_sub = '102'")->fetchColumn();
+$ad = [];
+req($ad, 'me', [], null, 'alice', 'connected');
+[$code] = req($ad, 'admin_password_reset', [], ['user_id' => $bobId], 'alice', 'connected');
+eq($code, 403, 'reset: not by a regular user');
+$ow = [];
+req($ow, 'me', [], null, 'owner', 'connected');
+[$code, $st] = req($ow, 'admin_state', [], null, 'owner', 'connected');
+$row = array_values(array_filter($st['users'] ?? [], fn($u) => (int)$u['id'] === $bobId))[0] ?? [];
+eq([(int)($row['has_password'] ?? -1), array_key_exists('password_hash', $row)], [1, false], 'admin list: has_password, never the hash');
+[$code] = req($ow, 'admin_password_reset', [], ['user_id' => $bobId], 'owner', 'connected');
+eq([$code, $pdo->query("SELECT password_hash FROM users WHERE id = $bobId")->fetchColumn()], [200, null], 'primary admin resets the password');
+$GLOBALS['PW'] = '0';
+
+// ── 8ג. devapi-* לא תלויות במצב (קריטריון 9) ──
+foreach (['connected', 'detached', 'unknown'] as $pm) {
+    $dv = [];
+    [$code] = req($dv, 'devapi-feed', [], null, 'none', $pm);
+    eq($code, 401, "devapi-feed without token → 401 (not a login screen) — $pm");
+}
 
 // ── 9. המצב מהמעטפת עצמה (live): config + מטמון ──
 $l = [];
@@ -279,7 +421,8 @@ eq($j['mode'] ?? null, 'detached', 'live: config cached (60s)');
 $log = array_map(fn($x) => json_decode($x, true)['url'], array_filter(explode("\n", (string)@file_get_contents("$tmp/http.log"))));
 eq(count(array_filter($log, fn($u) => str_contains($u, 'action=config'))), 1, 'config asked once');
 eq(count(array_filter($log, fn($u) => str_contains($u, 'action=key'))) >= 1, true, 'public key fetched from the platform');
-eq(count(array_filter($log, fn($u) => !str_starts_with($u, "$base/platform/sso.php?"))), 0, 'only the platform is asked — no URL from the request');
+eq(count(array_filter($log, fn($u) => !str_starts_with($u, "$base/platform/sso.php?") && $u !== "$base/platform/provision.php?action=grant_status")), 0,
+    'only the platform is asked — no URL from the request');
 
 // ── 10. granted:false מהשער אינו זהות (כתובת signed_in) ──
 putenv('TS_DB_PATH');

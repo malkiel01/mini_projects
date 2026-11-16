@@ -814,7 +814,21 @@ export function mountMarket(ctx) {
         h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, a.display_name || a.email)), h('div', { class: 'l2' }, a.email || '')),
         S.is_primary_admin ? h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: async () => { await api('admin_role_remove', { user_id: a.user_id }); reload(); } } }, 'ביטול') : null)))
         : h('p', { class: 'empty' }, 'אין מנהלים נוספים.'),
-      S.is_primary_admin ? h('div', { class: 'toolbar' }, user, h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { if (!user.value) return; await api('admin_role_add', { user_id: +user.value }); toast('מונה'); reload(); } } }, 'מינוי')) : null);
+      S.is_primary_admin ? h('div', { class: 'toolbar' }, user, h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { if (!user.value) return; await api('admin_role_add', { user_id: +user.value }); toast('מונה'); reload(); } } }, 'מינוי')) : null,
+      S.is_primary_admin ? adminPasswords(S) : null);
+  }
+
+  // איפוס "סיסמה לאפליקציה" (spec-stage-a 20.1 ד', ש9) — המנהל הראשי בלבד. הסיסמה נמחקת; המשתמש קובע חדשה כשהוא מחובר
+  function adminPasswords(S) {
+    const withPw = S.users.filter(u => +u.has_password);
+    return h('div', { class: 'stack' },
+      h('h3', { class: 'sec-title' }, '🔑 סיסמאות לאפליקציה'),
+      h('p', { class: 'hint' }, 'לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים. משתמש ששכח — מאפסים כאן, והוא קובע חדשה בפרופיל אחרי שנכנס דרך הכלים הדיגיטליים.'),
+      withPw.length ? h('ul', { class: 'list' }, withPw.map(u => h('li', { class: 'card', style: 'cursor:default' },
+        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, u.display_name || u.email)), h('div', { class: 'l2' }, u.email || '')),
+        h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('איפוס סיסמה', `הסיסמה של ${u.display_name || u.email} תימחק, וכניסות בסיסמה שלו ייסגרו.`, 'איפוס',
+          async () => { await api('admin_password_reset', { user_id: u.id }); toast('הסיסמה אופסה'); reload(); }) } }, 'איפוס'))))
+        : h('p', { class: 'empty' }, 'לאף משתמש אין סיסמה.'));
   }
 
   function adminCache(S) {
