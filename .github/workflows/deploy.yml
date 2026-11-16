@@ -319,6 +319,7 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' \
             --exclude='/trading-strategies/team/' \
             --exclude='/whatsapp-ai-scanner/team/' --exclude='/whatsapp-ai-scanner/docs/' \
             --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
