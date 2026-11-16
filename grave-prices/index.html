@@ -67,6 +67,33 @@
   </form>
 </dialog>
 
+<dialog id="block-dlg" aria-labelledby="block-title">
+  <form id="block-form" novalidate>
+    <div class="sheet-head"><h2 id="block-title">➕ מקטע חדש</h2><button class="icon-btn" type="button" data-close aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <label class="f"><span>שם</span><input name="label" maxlength="200" autocomplete="off" required></label>
+      <label class="f"><span>סוג</span><select name="kind"><option id="block-top" value="section">כותרת ראשית</option>
+        <option value="subsection">כותרת משנה</option></select></label>
+      <p class="hint">נוספת גם שורה ריקה מתחתיו. מקטע בלי מחירים לא מודפס.</p>
+      <p class="error" id="block-err" hidden></p>
+    </div>
+    <div class="sheet-foot"><button class="btn primary">➕ הוספה</button></div>
+  </form>
+</dialog>
+
+<dialog id="dup-dlg" aria-labelledby="dup-title">
+  <form id="dup-form" novalidate>
+    <div class="sheet-head"><h2 id="dup-title">📄 שכפול</h2><button class="icon-btn" type="button" data-close aria-label="סגירה">✕</button></div>
+    <div class="sheet-body">
+      <label class="f"><span>בתוקף החל מ-</span><input type="date" name="date" required></label>
+      <p class="hint" id="dup-note" hidden>המחירון ייכנס לתוקף מיד</p>
+      <p class="hint">השורות, המחירים וכותרת המשנה — עותק מדויק.</p>
+      <p class="error" id="dup-err" hidden></p>
+    </div>
+    <div class="sheet-foot"><button class="btn primary">📄 שכפול</button></div>
+  </form>
+</dialog>
+
 <dialog id="hist-dlg" aria-labelledby="hist-title">
   <form method="dialog">
     <div class="sheet-head"><h2 id="hist-title">📜 שינויים</h2><button class="icon-btn" value="" aria-label="סגירה">✕</button></div>
