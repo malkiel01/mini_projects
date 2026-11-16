@@ -88,7 +88,7 @@ try {
   eq(title, `אות ${target.side === 'long' ? 'לונג' : 'שורט'} · היה`, `criterion 9: the tip — "${title}"`);
   eq((await a.locator('.ctip .ctip-row .ctip-tag').textContent()).trim().endsWith('· היה'), true, '… tagged "היה" (not "ממצא")');
   const txt = await a.locator('.ctip').innerText();
-  eq([/כניסה .* · סטופ /.test(txt), /על הנרות שבגרף בלבד — הבדיקה לאחור המלאה בכרטיס/.test(txt), /הכלל: /.test(txt)], [true, true, true],
+  eq([/כניסה .* · סטופ /.test(txt), /על הנרות שבגרף בלבד \([\d,]+ הנרות האחרונים\) — הבדיקה לאחור המלאה בכרטיס/.test(txt), /הכלל: /.test(txt)], [true, true, true],
     'the tip: entry and stop, the rule of the method, and "על הנרות שבגרף בלבד"');
   eq(target.result === 'open' ? /פתוח/.test(txt) : /R\u2069? · /.test(txt), true, '… and the result in R with the exit time (or "פתוח")');
   await shot(a, 'h1a-tip-390');
@@ -111,8 +111,8 @@ try {
   await a.getByRole('button', { name: 'תחזית שיטה' }).click();
   await a.locator('.fc-pop input[name="fc-history"]').check();
   await a.waitForTimeout(400);
-  eq((await a.locator('.fc-pop .fc-hist-n[data-method="elliott-w3"]').textContent()).trim(), `אליוט: ${N.toLocaleString('he-IL')} אותות ב-2,160 הנרות האחרונים`,
-    'the menu: "אליוט: N אותות ב-2,160 הנרות האחרונים" (3 months of 1h)');
+  eq((await a.locator('.fc-pop .fc-hist-n[data-method="elliott-w3"]').textContent()).trim(), `אליוט: ${N.toLocaleString('he-IL')} אותות ב-2,159 הנרות האחרונים`,
+    'the menu: "אליוט: N אותות ב-2,160 הנרות האחרונים" (3 months of 1h — the closed candles)');
   eq((await st(a)).past.length >= 1, true, 'on again → the past signals are back');
   await a.locator('.quote-head').click();
   // אין אותות בטווח קצר — "0 אותות ב-24 הנרות האחרונים", כדי שיהיה ברור למה הגרף ריק
