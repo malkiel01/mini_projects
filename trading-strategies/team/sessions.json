@@ -11,9 +11,9 @@
     "opened_by": "בקרה (6)",
     "branch": "claude/trading-strategies-fib-f1"
   },
-  "control": "session_018g4NYEHws3rFjuBNuDFXRb",
+  "control": "session_018g4NYFqH3tqWT9nYnCRNjr",
   "tasks": null,
-  "clock": "trig_01KNVAkUc99NpULxQ9nAwWRt (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (4) לבקרה (6); הקודם trig_018C9hwAgkgTdUqZ5wdPfnFa כבוי)",
+  "clock": "ממתין להעברה ממנהל הצוותים (4) לבקרה (7); הנוכחי trig_01KNVAkUc99NpULxQ9nAwWRt",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -109,6 +109,10 @@
     {
       "session": "session_018g4NYEtPnhDAxdzNLibMdV",
       "done": "#1630–#1645, 21.2–21.3, מסירה ב-STATE (306K)"
+    },
+    {
+      "session": "session_018g4NYEHws3rFjuBNuDFXRb",
+      "done": "#1646–#1658, הספר השני (פיבונאצ'י), F-1 נפתח; רדומה — מחזיקה את קובץ הספר"
     }
   ],
   "code_delete": {
