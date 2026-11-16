@@ -68,10 +68,16 @@ eq(call('owner', 'admin_method_save', ['id' => $F, 'enabled' => true, 'markets' 
 $res = $r['methods'][$F] ?? [];
 eq([$c, $res['status'] ?? null, $res['title'] ?? null], [200, 'ok', "תרחיש לפי שיטת פיבונאצ'י — לא ייעוץ"], 'chart_refresh: ok, with the 6.6 title');
 $items = $res['overlay']['items'] ?? [];
+// T1 (18.1.6, קריטריון 3): דרך השרת (ts_overlay_check בודק את tip) — כל פריט, בממצא ובתרחיש, עם tip וכותרת
+$allIt = [...$items, ...($res['forecast']['items'] ?? [])];
+eq([count($allIt) > 0, count(array_filter($allIt, fn($x) => !is_string($x['tip']['title'] ?? null)))], [true, 0],
+    'T1: chart_refresh — every Fibonacci item, finding and scenario, carries a tip with a title (' . count($allIt) . ' items)');
 $zones = array_values(array_filter($items, fn($x) => $x['kind'] === 'zone'));
 $singles = array_values(array_filter($items, fn($x) => !empty($x['single'])));
-eq([count($zones) > 0, count($singles) > 0, array_unique(array_column($zones, 'extend')), $res['forecast']['items'] ?? null, $res['forecast']['scenarios'] ?? null],
-    [true, true, [true], [], []], 'criterion 10 (server): zones (extend right) and single levels in the finding; no scenario layer in F-1 (' . count($zones) . ' zones, ' . count($singles) . ' singles)');
+$asOf = $res['forecast']['as_of'] ?? null;
+$late = array_filter($res['forecast']['items'] ?? [], fn($x) => ($x['t1'] ?? $x['points'][0]['t'] ?? $asOf) >= $asOf || ($x['role'] ?? '') === 'invalidation');
+eq([count($zones) > 0, count($singles) > 0, array_unique(array_column($zones, 'extend')), count($late) === count($res['forecast']['items'] ?? [])],
+    [true, true, [true], true], 'criterion 10 (server): zones (extend right) and single levels in the finding; the scenario (F-2) only after the last candle (' . count($zones) . ' zones, ' . count($singles) . ' singles)');
 eq(array_filter($zones, fn($z) => $z['t2'] !== $res['overlay']['as_of']), [], 'every zone reaches the last closed candle (and the chart draws it on to the edge — R3)');
 
 // הכרטיס: "הסתברות: לא נבדק לאחור" — בלי בדיקה לאחור, וגם עם פחות מ-30 אותות
@@ -86,7 +92,21 @@ $bt = $r2['cards'][0]['backtest'] ?? [];
 eq([$c, in_array($bt['status'] ?? null, ['ok', 'insufficient'], true), ($bt['status'] ?? null) === 'ok' ? ($bt['n'] ?? 0) >= 30 : ($bt['certainty'] ?? null) === null],
     [200, true, true], 'criterion 11: after a backtest — certainty only from N ≥ 30, otherwise none (status ' . ($bt['status'] ?? '?') . ', N ' . ($bt['n'] ?? '?') . ')');
 $row = $db->query("SELECT method_version, state FROM backtests WHERE method_id = 'fibonacci' AND tf = 'h1'")->fetch(PDO::FETCH_ASSOC);
-eq([$row !== false, (int)($row['method_version'] ?? 0)], [true, 1], 'the backtest is stored under fibonacci v1');
+eq([$row !== false, (int)($row['method_version'] ?? 0)], [true, 2], 'the backtest is stored under fibonacci v2 (F-2)');
+// למידה (פרק 23, L1): הבדיקה לאחור כותבת ל-method_outcomes — שורה לכל עסקה, עם התגיות ו-features של meta().learn
+$outs = fn() => $db->query("SELECT result, win, r, market, tf, month, weekday, features FROM method_outcomes WHERE source = 'backtest' AND method_id = 'fibonacci'")
+    ->fetchAll(PDO::FETCH_ASSOC);
+$o1 = $outs();
+$closed = array_values(array_filter($o1, fn($x) => $x['result'] !== 'skipped_gap'));
+$feat = array_map(fn($x) => json_decode((string)$x['features'], true), $o1);
+eq([count($closed), array_sum(array_column($closed, 'win'))], [$bt['n'] ?? null, $bt['wins'] ?? null], 'learn (23.4): one row per closed trade — rows = N of the backtest, and the wins agree');
+eq(array_values(array_unique(array_map(fn($x) => is_array($x) ? implode(',', array_keys($x)) : 'none', $feat))), ['score,zone_atr,rr'],
+    'learn (23.3): every row carries the features of meta().learn — zone score, zone width in ATR, rr (meta itself — fibonacci-f2.php)');
+eq(count(array_filter($feat, fn($x) => !is_int($x['score']) && !is_float($x['score']) || $x['score'] < 3 || !($x['zone_atr'] > 0) || $x['rr'] < 2 - 1e-9)), 0,
+    'learn: the features are real values — score ≥ min_score, a positive width, rr ≥ min_rr');
+eq([array_values(array_unique(array_column($o1, 'market'))), array_values(array_unique(array_column($o1, 'tf')))], [['crypto'], ['h1']], 'learn (23.5): tagged with the market and the timeframe');
+[$c] = call('alice', 'analysis', null, ['asset' => 'binance:BTCUSDT', 'tf' => 'h1', 'methods' => $F]);
+eq([$c, count($outs())], [200, count($o1)], 'learn (23.3): the same backtest again → no duplicate rows');
 eq(call('alice', 'chart_refresh', null, ['tf' => 'm15'] + $q)[1]['methods'][$F]['status'] ?? null, 'unsupported', 'm15 → unsupported (h1 and up)');
 eq(preg_match('/קנה|מכור|המלצ|כדאי|\bיעד\b/u', json_encode([$res, $card], JSON_UNESCAPED_UNICODE)), 0, 'no "buy/sell/recommend/target" wording (6.6)');
 

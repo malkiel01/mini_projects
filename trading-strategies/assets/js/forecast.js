@@ -206,12 +206,13 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     ctx.globalAlpha = on ? 1 : 0.3;   // החלופות עמומות (17.1.7)
     ctx.setLineDash([]);
     ctx.lineWidth = 2;
-    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on, ...(it.single ? { faint: true } : {}), ...(it.extend ? { extend: true } : {}) });
+    const mark = () => drawn.push({ m: id, k: it.kind, c, alt: !on, ...(it.single ? { faint: true } : {}), ...(it.bold ? { bold: true } : {}), ...(it.extend ? { extend: true } : {}), ...(it.scen ? { scen: true } : {}) });
     if (it.kind === 'zone') {
       // extend — האזור נמשך ימינה עד קצה הגרף (פיבונאצ'י, R3), לא רק עד הנר האחרון
       const x1 = xOf(it.t1), x2 = it.extend ? W : xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
       if ([x1, x2, y1, y2].includes(null)) return;
       mark();
+      if (it.single) ctx.globalAlpha *= 0.35;   // קופסה דהויה (פיבונאצ'י בלי כיוון, 22.5ד)
       ctx.fillStyle = c; ctx.globalAlpha *= 0.14;
       ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
       ctx.globalAlpha /= 0.14; ctx.strokeStyle = c; ctx.lineWidth = 1;
@@ -235,6 +236,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       if (it.extend) pts[pts.length - 1][0] = W;   // עד קצה הגרף (R3)
       mark();
       if (it.single) { ctx.globalAlpha *= 0.35; ctx.lineWidth = 1; }   // רמה בודדת — דהויה (Z9)
+      if (it.bold) ctx.lineWidth = 3;   // יעד בתוך אזור חפיפה — מודגש (פיבונאצ'י, 22.5ד)
       ctx.strokeStyle = c;
       ctx.setLineDash(it.style === 'dashed' || it.scen ? [7, 5] : []);   // ממצא — קו מלא; תרחיש — מקווקו (18.4 קריטריון 3)
       ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
@@ -425,6 +427,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     renderLegend();
     requestUpdate();
     renderPanel();
+    for (const f of paintHooks) f();   // החלונית על הגרף — עוקבת אחרי הפריט, או נסגרת כשהוא נעלם (T1)
   }
 
   const sub = (cls, title, ...body) => h('div', { class: 'an-sec ' + cls }, h('h4', {}, title), ...body.flat().filter(Boolean));
@@ -437,7 +440,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     const hide = h('button', { class: 'btn ghost sm', type: 'button', 'aria-pressed': String(hidden),
       on: { click: () => { set(id, 'hide', !hidden); paint(); } } }, hidden ? 'הצג תרחיש' : 'הסתר תרחיש');
     const titleLine = h('p', { class: 'an-line' }, h('b', {}, r.title), ' ', h('span', { class: 'chip warn' }, r.basis));
-    if (!sc.length) return sub('scenario', 'תרחיש', titleLine, h('p', { class: 'hint' }, r.overlay?.note || 'אין כרגע תרחיש לפי כללי השיטה'), c ? C.horizon(c) : null);
+    // בלי תרחיש, אבל עם פריטים אחרי הנר האחרון (פיבונאצ'י בלי כיוון — קופסאות דהויות, 22.5ד): גם הם ניתנים להסתרה
+    if (!sc.length) return sub('scenario', 'תרחיש', titleLine, h('p', { class: 'hint' }, r.overlay?.note || 'אין כרגע תרחיש לפי כללי השיטה'), c ? C.horizon(c) : null,
+      (fc?.items || []).length ? h('div', {}, hide) : null);
     const on = selected.get(id);
     const mine = (fc.items || []).filter(it => !it.scenario || it.scenario === on);
     const zone = mine.find(it => it.kind === 'zone');
@@ -544,6 +549,70 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (any) paint();
   }
 
+  // ── החלונית על הגרף (T1, 18.1.6) — מה מצויר בנקודה, מאותה גאומטריה של הציור (xOf/yOf) ──
+  // רק מה שמוצג: שיטה גלויה, התרחיש הנבחר (לא חלופה עמומה). הקטן קודם: נקודה, קו, אזור (18.1.6 סעיף 1)
+  const RANK = { label: 0, marker: 0, hline: 1, polyline: 1, zone: 2 };
+  /** הנקודה על פריט שהכי קרובה ל-(px, py) — שם הזנב מצביע: נקודה — היא; קו — בגובה הלחיצה; אזור — הלחיצה בתוכו */
+  function anchorOf(it, px, py, W) {
+    if (it.kind === 'label' || it.kind === 'marker') {
+      const x = xOf(it.t);
+      let y = it.kind === 'label' ? yOf(it.price) : null;
+      if (it.kind === 'marker') {
+        // הסימון של הספרייה — מתחת לנר (לונג) או מעליו (שורט)
+        const l = timeToLogical(getTimes(), getSec(), it.t), bar = l === null ? null : series.dataByIndex?.(Math.round(l));
+        if (bar) y = it.side === 'long' ? yOf(bar.low) + 12 : yOf(bar.high) - 12;
+      }
+      return x === null || y === null ? null : { x, y };
+    }
+    if (it.kind === 'hline') { const y = yOf(it.price); return y === null ? null : { x: px, y }; }
+    if (it.kind === 'polyline') {
+      const pts = it.points.map(q => [xOf(q.t), yOf(q.price)]);
+      if (pts.some(([x, y]) => x === null || y === null)) return null;
+      if (it.extend) pts[pts.length - 1][0] = W;
+      let best = null;
+      for (let i = 1; i < pts.length; i++) {
+        const [x1, y1] = pts[i - 1], [x2, y2] = pts[i], dx = x2 - x1, dy = y2 - y1, l2 = dx * dx + dy * dy;
+        const k = l2 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / l2)) : 0;
+        const c = { x: x1 + k * dx, y: y1 + k * dy };
+        if (!best || Math.hypot(px - c.x, py - c.y) < Math.hypot(px - best.x, py - best.y)) best = c;
+      }
+      return best;
+    }
+    if (it.kind === 'zone') {
+      const x1 = xOf(it.t1), x2 = it.extend ? W : xOf(it.t2), y1 = yOf(it.p1), y2 = yOf(it.p2);
+      if ([x1, x2, y1, y2].includes(null)) return null;
+      return { x: Math.max(Math.min(x1, x2), Math.min(px, Math.max(x1, x2))), y: Math.max(Math.min(y1, y2), Math.min(py, Math.max(y1, y2))) };
+    }
+    return null;
+  }
+  // זהות של פריט בין ציור לציור (רענון — הנר הבא נסגר): בלי מחירים וזמנים שזזים, חוץ מהזמן של נקודה
+  const keyOf = (id, it) => [id, it.kind, it.role || '', it.scenario ?? '', it.fib || '', it.r ?? '', it.kind === 'label' || it.kind === 'marker' ? it.t : '', it.kind === 'label' ? it.text : ''].join('|');
+  const hitOf = (id, it, a, px, py) => ({ id, it, key: keyOf(id, it), x: a.x, y: a.y, px, py,
+    t: it.kind === 'label' || it.kind === 'marker' ? it.t : chart.timeScale().coordinateToTime(a.x), p: it.kind === 'label' ? it.price : series.coordinateToPrice(a.y),
+    name: nameOf(id), color: pick(id)?.color || '--brand', r: res.get(id), price: v => price(id, v) });
+  /** כל מה שבטווח R מהלחיצה (אצבע: 24px), הקטן והקרוב ראשון. [] — כלום */
+  function hitsAt(px, py, W, R = 24) {
+    const out = [];
+    for (const { id } of shown()) for (const it of itemsOf(id)) {
+      if (!isOn(id, it) || !(it.kind in RANK)) continue;
+      const a = anchorOf(it, px, py, W);
+      if (!a) continue;
+      const d = Math.hypot(px - a.x, py - a.y);
+      if (d <= R) out.push({ ...hitOf(id, it, a, px, py), d, rank: RANK[it.kind] });
+    }
+    return out.sort((a, b) => a.rank - b.rank || a.d - b.d);
+  }
+  /** אחרי ציור מחדש: אותו פריט, במקום החדש שלו — או null אם הוא כבר לא מוצג */
+  function relocate(hit, W) {
+    for (const { id } of shown()) for (const it of itemsOf(id)) {
+      if (!isOn(id, it) || keyOf(id, it) !== hit.key) continue;
+      const a = anchorOf(it, hit.px, hit.py, W);
+      return a ? hitOf(id, it, a, hit.px, hit.py) : null;
+    }
+    return null;
+  }
+  const paintHooks = new Set();
+
   // רשימת השיטות — לשמות, למסגרות ול"התראה מזה" (alerts). פעם אחת; התפריט טוען שוב כשנפתח
   api('methods').then(x => { list ??= x.methods; remember(); renderLegend(); renderPanel(); }).catch(() => {});
   reconcile();
@@ -571,6 +640,19 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     retf: () => { an = null; if (openNow()) renderPop(); renderPanel(); },
     popOpen: openNow,
     closePop,
+    hitsAt,
+    relocate,
+    /** fn — נקרא אחרי כל ציור מחדש של השיטות (תוצאה חדשה, מקרא, תרחיש). מחזיר ביטול */
+    onPaint: fn => { paintHooks.add(fn); return () => paintHooks.delete(fn); },
+    /** לבדיקות: מה שמוצג עכשיו מסוג kind (label / hline / zone), ונקודה עליו בקואורדינטות של הגרף */
+    points: (kind = 'label') => {
+      const W = chart.chartElement?.()?.clientWidth || 0;   // timeScale().width() — 0, כי ציר הזמן מוסתר (הצירים בתוך הגרף)
+      return shown().flatMap(({ id }) => itemsOf(id).filter(it => it.kind === kind && isOn(id, it)).map(it => {
+        if (kind === 'hline') return { id, role: it.role, x: W / 2, y: yOf(it.price) };
+        if (kind === 'zone') { const x1 = xOf(it.t1), x2 = it.extend ? W : xOf(it.t2); const y1 = yOf(it.p1), y2 = yOf(it.p2); return { id, scen: !!it.scen, x: x1 === null || x2 === null ? null : (x1 + x2) / 2, y: (y1 + y2) / 2, box: [x1, y1, x2, y2] }; }
+        return { id, text: it.text, x: xOf(it.t), y: yOf(it.price) };
+      })).filter(q => q.x !== null && q.y !== null && Number.isFinite(q.y));
+    },
     destroy() {
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('keydown', esc, true);

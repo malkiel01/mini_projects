@@ -38,6 +38,8 @@ final class TsMethodSampleMaCross extends TsMethod
             'version' => 1 + $this->tune,   // + החלות (18.7)
             'incremental' => true,
             'alerts' => false,
+            // למידה (23.9, L5): הסטופ — אחוזון 80 של MAE במנצחות (ב-ATR); היציאה — חציון MFE (ב-ATR). שיטת דוגמה — כל הפרמטרים "שלנו"
+            'learn_params' => ['stop_atr' => ['stat' => 'stop'], 'target_atr' => ['stat' => 'target']],
         ];
     }
 

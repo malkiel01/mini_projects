@@ -1,14 +1,17 @@
 <?php
 /**
- * פיבונאצ'י — אזורי חפיפה של נסיגות (spec-stage-a פרק 22, F-1). שיטה שלנו על בסיס כללי הספר של Constance Brown,
+ * פיבונאצ'י — אזורי חפיפה של נסיגות (spec-stage-a פרק 22, F-1 ו-F-2). שיטה שלנו על בסיס כללי הספר של Constance Brown,
  * *Fibonacci Analysis* — הכללים בניסוח שלנו, עם עמודים: team/handoff/fibonacci-book-check.md. המנוע — lib/fibonacci.php.
  *
  * הממצא (22.3–22.4): נקודת התחלה אחת לכל צד, הטווחים, הרמות 38.2 / 50 / 61.8, אזורי החפיפה (ציון) והרמות הבודדות.
  * האות (22.6 — הספר לא נותן כלל כניסה מכני, הרגע [שלנו, פ10]): לונג בנר c, אחרי שנסגר, כשאזור תמיכה בציון ≥ min_score
  * שחושב מנרות ≤ c − 1 נגע (l_c ≤ הגבול העליון) והנר נסגר מעליו. סטופ מתחת לאזור (M1), יעד — האזור הבא (M2), יחס ≥ min_rr.
  *
- * **לא בפרוסה הזו (F-1):** התרחיש ויעדי ההקרנה (22.5, F-2), מתרחב/מתכווץ וואקום (F-3), הרשימה של עמ' 102, ומתנד (O1, פ7 —
- * לכן אין פרמטר rsi_filter: פרמטר שלא עושה כלום היה מטעה את מי שמשכלל).
+ * **F-2 (22.5):** A-B-X, קופסת השוויון לכל אזור, Z6 (יעד 100% בתוך אזור → ציון + 1), יעד חלופי לאות (T של קופסת אזור האות,
+ * כשאין אזור התנגדות מעל), והתרחיש בגרף וביומן — הפירוט ב-lib/fibonacci.php.
+ * **F-3 (מידע בלבד, S26):** מתרחב / מתכווץ / סימטרי בכרטיס (info), ותווית "ואקום" בין אזורים (Z10) — ts_fib_market, ts_fib_vacuums.
+ * **לא כאן:** הרשימה של עמ' 102, ומתנד (O1, פ7 — לכן אין פרמטר rsi_filter: פרמטר שלא עושה כלום
+ * היה מטעה את מי שמשכלל).
  *
  * המצב (JSON, נשמר בסוף הבדיקה לאחור): ATR ו-zigzag (lib/elliott.php — אותה פונקציה), חלון של lookback_bars נרות,
  * נקודות המפנה שבחלון, והרשת האחרונה (g) — שחושבה מנרות ≤ הנר האחרון. האות בנר c נבדק **לפני** שהנר נכנס לרשת —
@@ -22,6 +25,9 @@ require_once dirname(__DIR__) . '/fibonacci.php';
 
 final class TsMethodFibonacci extends TsMethod
 {
+    /** false — overlay בלי התרחיש (22.5ה, F-2 קריטריון 9: הממצא זהה עם תרחיש ובלעדיו — tests/fibonacci-f2.php) */
+    public bool $scenario = true;
+
     public function meta(): array
     {
         return [
@@ -46,14 +52,22 @@ final class TsMethodFibonacci extends TsMethod
                 'stop_atr' => ['label' => 'סטופ מתחת לאזור (× ATR)', 'default' => 0.25, 'min' => 0, 'max' => 1, 'int' => false, 'ours' => true],
                 'min_rr' => ['label' => 'יחס סיכוי-סיכון מינימלי', 'default' => 2, 'min' => 1, 'max' => 5, 'int' => false, 'ours' => true],
                 'horizon_bars' => ['label' => 'אופק (נרות)', 'default' => 60, 'min' => 10, 'max' => 300, 'int' => true, 'ours' => true],
+                // 22.5ח (2.32): איזה חלק של קופסת השוויון הוא היעד החלופי — 1 (T), 0.618 או 0.5 (יעדי הביניים, P5). רק שלושת אלה (validate)
+                'box_target' => ['label' => 'רמת היציאה ברווח — חלק מהקופסה', 'default' => 1, 'min' => 0.5, 'max' => 1, 'int' => false, 'ours' => true],
             ],
             'horizon_bars' => 60,
             'warmup' => 300,
             'levels' => 'absolute',   // 6.2(ח): הסטופ והיעד הם מחירים — גבולות אזורים
             'default_off' => true,    // 22.1, 6.7: שיטה חדשה כבויה עד שמנהל מפעיל
-            'version' => 1 + $this->tune,   // + החלות (18.7)
+            'version' => 2 + $this->tune,   // + החלות (18.7). 2 — F-2: Z6 משנה ציון, ויעד חלופי משנה אותות
             'incremental' => true,
             'alerts' => true,         // 22.1
+            // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            'learn' => [
+                'score' => 'ציון האזור (כולל Z6)',
+                'zone_atr' => 'רוחב האזור ב-ATR (בנר שלפני האות)',
+                'rr' => 'יחס סיכוי-סיכון באות',
+            ],
         ];
     }
 
@@ -64,13 +78,17 @@ final class TsMethodFibonacci extends TsMethod
 
     public function validate(array $p): ?string
     {
-        return (float)$p['zone_max_atr'] < (float)$p['zone_atr'] ? 'רוחב האזור המרבי חייב להיות לפחות מרחק הרמות באזור' : null;
+        if ((float)$p['zone_max_atr'] < (float)$p['zone_atr']) return 'רוחב האזור המרבי חייב להיות לפחות מרחק הרמות באזור';
+        $bt = (float)($p['box_target'] ?? 1);
+        if (!array_filter(TS_FIB_BOX_TARGETS, fn($v) => abs($v - $bt) < 1e-9)) return 'רמת היציאה ברווח — חלק מהקופסה: 0.5, 0.618 או 1';
+        return null;
     }
 
     public function init(array $p): array
     {
         // w — חלון הנרות; piv — נקודות המפנה שבחלון; g — הרשת מנרות ≤ הנר האחרון; x — האות האחרון ומעקב אחרי תוקפו
-        return ['a' => ts_ew_atr_init(), 'z' => ts_ew_zz_init(), 'w' => [], 'piv' => [], 'g' => null, 'x' => null];
+        // k — שלוש נקודות המפנה האחרונות בגוף (A-B-X, F-2)
+        return ts_fib_init() + ['x' => null];
     }
 
     public function step(array $s, array $c, array $p): array
@@ -89,19 +107,13 @@ final class TsMethodFibonacci extends TsMethod
         }
         // האות — מהרשת של הנר הקודם (נרות ≤ c − 1), לפני שהנר הזה נכנס
         $sig = $s['g'] !== null ? ts_fib_signal($s['g'], $c, $p) : null;
-
-        $s['a'] = ts_ew_atr_step($s['a'], $c, (int)$p['atr_len']);
-        [$s['z'], $pv] = ts_ew_zz_step($s['z'], $c, $s['a']['v'], (float)$p['pivot_atr_mult']);
-        if ($pv) $s['piv'][] = ['type' => $pv['type'], 't' => $pv['t'], 'ct' => $pv['ct']];
-        $s['w'][] = ['t' => $c['t'], 'o' => $c['o'], 'h' => $c['h'], 'l' => $c['l'], 'c' => $c['c'], 'a' => $s['a']['v']];
-        $max = (int)$p['lookback_bars'];
-        if (count($s['w']) > $max) $s['w'] = array_slice($s['w'], -$max);
-        $from = $s['w'][0]['t'];
-        while ($s['piv'] && $s['piv'][0]['t'] < $from) array_shift($s['piv']);
-        $s['g'] = ts_fib_grid($s['w'], $s['piv'], $p, $s['g']);   // צד שנקודת ההתחלה שלו לא זזה — נעול (22.3(7), "ג")
+        $atr = $s['g']['atr'] ?? null;   // ה-ATR של הרשת שהאות נבדק מולה — ל-features
+        $s = ts_fib_advance($s, $c, $p);
 
         if ($sig === null) return [$s, null];
         $s['x'] = $sig + ['ago' => 0, 'alive' => true];
+        // meta().learn — לא נכנס למצב (x נקבע לפני)
+        $sig['features'] = ['score' => $sig['score'], 'zone_atr' => $atr ? ($sig['zone'][1] - $sig['zone'][0]) / $atr : null, 'rr' => $sig['rr']];
         return [$s, $sig];
     }
 
@@ -143,7 +155,10 @@ final class TsMethodFibonacci extends TsMethod
 
         $bias = $alive ? $x['side'] : 'none';
         $levels = $alive ? ['entry' => $x['entry'], 'stop' => $x['stop'], 'target' => $x['target']] : null;
-        return ['bias' => $bias, 'conditions' => $out, 'levels' => $levels, 'signal_ago' => $alive ? $x['ago'] : null];
+        // S25 (F-3) — מידע בלבד (S26), לא תנאי: לא נספר ולא משנה כיוון
+        $mk = ts_fib_market($s['w'], $s['piv'], $g, $p);
+        $info = [['id' => 'market', 'text' => 'השוק: ' . TS_FIB_S25_WORDS[$mk['state']], 'value' => $mk['state']]];
+        return ['bias' => $bias, 'conditions' => $out, 'levels' => $levels, 'signal_ago' => $alive ? $x['ago'] : null, 'info' => $info];
     }
 
     private static function num(float $v): string
@@ -152,14 +167,14 @@ final class TsMethodFibonacci extends TsMethod
     }
 
     /**
-     * בגרף — הממצא בלבד (F-1): אזורי החפיפה (zone, מנקודת ההתחלה ונמשכים ימינה עד קצה הגרף — R3, extend), הרמות
-     * הבודדות (polyline מלא, single: true — דהויות, ו"הסתר רמות בודדות" מסתיר; Z9), ואות בתוקף — סימון, סטופ ויעד.
-     * אין כאן תרחיש (22.5 — F-2): אין פריט אחרי הנר האחרון, ואין קו מקווקו.
+     * בגרף. **הממצא** (F-1): אזורי החפיפה (zone, מנקודת ההתחלה ונמשכים ימינה עד קצה הגרף — R3, extend; הציון כולל Z6),
+     * הרמות הבודדות (polyline מלא, single: true — דהויות, ו"הסתר רמות בודדות" מסתיר; Z9), ואות בתוקף — סימון, סטופ ויעד.
+     * **התרחיש** (F-2, 22.5ד) — רק אחרי הנר האחרון, מקווקו ושקוף: ts_fib_scenario. הממצא לא תלוי בו (22.5ה).
      */
     public function overlay(array $candles, array $p, int $tf): array
     {
         require_once dirname(__DIR__) . '/overlay.php';
-        $bars = 0;
+        $bars = $this->horizon($p);
         if (!$candles) return ts_overlay_empty($candles, $bars, 'אין נרות בטווח');
         $s = $this->init($p);
         foreach ($candles as $c) [$s] = $this->step($s, $c, $p);
@@ -167,27 +182,47 @@ final class TsMethodFibonacci extends TsMethod
         $last = $candles[count($candles) - 1]['t'];
         $first = $candles[0]['t'];
         $items = [];
-        $pct = fn(float $r) => rtrim(rtrim(number_format(100 * $r, 1, '.', ''), '0'), '.') . '%';
         foreach (['support' => 'אזור תמיכה', 'resistance' => 'אזור התנגדות'] as $key => $word) {
             if (!$g || !$g[$key]['start']) continue;
             $t1 = max($first, $g[$key]['start']['t']);
             foreach ($g[$key]['zones'] as $z) {
                 $items[] = ['kind' => 'zone', 't1' => $t1, 't2' => $last, 'p1' => $z['lo'], 'p2' => $z['hi'], 'extend' => true, 'fib' => $key,
-                    'score' => $z['score'], 'text' => "$word · " . count($z['levels']) . ' רמות · ציון ' . $z['score']];
+                    'score' => $z['score'], 'text' => "$word · " . count($z['levels']) . ' רמות · ציון ' . $z['score'],
+                    'tip' => ts_fib_zone_tip($z, $g[$key], $key === 'support' ? 'תמיכה' : 'התנגדות')];
             }
             foreach ($g[$key]['singles'] as $l) {
                 $items[] = ['kind' => 'polyline', 'style' => 'solid', 'single' => true, 'extend' => true, 'fib' => $key, 'r' => $l['r'],
-                    'points' => [['t' => $t1, 'price' => $l['price']], ['t' => $last, 'price' => $l['price']]]];
+                    'points' => [['t' => $t1, 'price' => $l['price']], ['t' => $last, 'price' => $l['price']]], 'tip' => ts_fib_single_tip($l, $g[$key])];
             }
         }
-        $x = $s['x'];
-        if ($x !== null && $x['alive'] && $x['ago'] < $this->horizon($p) && $x['ago'] < count($candles)) {
-            $sigT = $candles[count($candles) - 1 - $x['ago']]['t'];
-            $items[] = ['kind' => 'marker', 't' => $sigT, 'side' => $x['side'], 'text' => ($x['side'] === 'long' ? 'אות לונג' : 'אות שורט') . ' לפי כללי השיטה'];
-            $items[] = ['kind' => 'hline', 'price' => (float)$x['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה'];
-            $items[] = ['kind' => 'hline', 'price' => (float)$x['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה'];
+        // ואקום (Z10, F-3) — תווית בממצא, באמצע הפער, בנר האחרון. מידע בלבד
+        foreach (ts_fib_vacuums($g, $p) as $v) {
+            $items[] = ['kind' => 'label', 't' => $last, 'price' => ($v['lo'] + $v['hi']) / 2, 'text' => 'ואקום', 'vacuum' => $v['side'],
+                'lo' => $v['lo'], 'hi' => $v['hi'], 'tip' => ['title' => 'ואקום', 'explain' => 'אין אף רמה בין שני אזורי ה' . ($v['side'] === 'support' ? 'תמיכה' : 'התנגדות')
+                    . ' (' . ts_fib_px($v['lo']) . '–' . ts_fib_px($v['hi']) . '), והפער לפחות ' . $p['zone_max_atr'] . ' ATR. מידע בלבד (Z10).']];
         }
-        $ov = ['as_of' => $last, 'range' => ['from' => $first, 'to' => $last], 'items' => $items, 'projection' => ['bars' => $bars, 'scenarios' => []]];
+        $x = $s['x'];
+        $alive = $x !== null && $x['alive'] && $x['ago'] < $this->horizon($p) && $x['ago'] < count($candles);
+        if ($alive) {
+            $sigT = $candles[count($candles) - 1 - $x['ago']]['t'];
+            $lg = $x['side'] === 'long';
+            $sinv = ['price' => (float)$x['stop'], 'side' => $lg ? 'below' : 'above', 'rule' => 'הסטופ של האות'];
+            $zw = ts_fib_px((float)$x['zone'][0]) . '–' . ts_fib_px((float)$x['zone'][1]);
+            $items[] = ['kind' => 'marker', 't' => $sigT, 'side' => $x['side'], 'text' => ($lg ? 'אות לונג' : 'אות שורט') . ' לפי כללי השיטה',
+                'tip' => ['title' => $lg ? 'אות לונג' : 'אות שורט', 'invalidation' => $sinv,
+                    'explain' => ($lg ? 'הנר הקודם נסגר מעל אזור התמיכה, המחיר ירד אליו ונסגר בחזרה מעליו' : 'הנר הקודם נסגר מתחת לאזור ההתנגדות, המחיר עלה אליו ונסגר בחזרה מתחתיו')
+                        . " (אזור $zw, ציון {$x['score']}, 22.6)."]];
+            $items[] = ['kind' => 'hline', 'price' => (float)$x['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה',
+                'tip' => ['title' => 'סטופ', 'invalidation' => $sinv, 'explain' => ($lg ? 'מתחת לאזור ומתחת לפתיל' : 'מעל לאזור ומעל לפתיל')
+                    . ' של נר האות, ועוד ' . $p['stop_atr'] . ' ATR (M1, פ10).']];
+            $items[] = ['kind' => 'hline', 'price' => (float)$x['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה',
+                'tip' => ['title' => 'רמת היציאה ברווח', 'invalidation' => $sinv, 'explain' => ($x['via'] ?? 'zone') === 'box'
+                    ? 'אין אזור ' . ($lg ? 'התנגדות מעל' : 'תמיכה מתחת') . ' — סוף קופסת השוויון של אזור האות (22.5ב), יחס ' . round($x['rr'], 2) . '.'
+                    : 'הגבול הקרוב של אזור ה' . ($lg ? 'התנגדות הבא מעל' : 'תמיכה הבא מתחת') . ' (M2), יחס ' . round($x['rr'], 2) . '.']];
+        }
+        [$scen, $proj] = $g && $this->scenario ? ts_fib_scenario($g, $alive ? $x : null, $candles[count($candles) - 1], $tf, $bars) : [[], []];
+        $items = [...$items, ...$scen];
+        $ov = ['as_of' => $last, 'range' => ['from' => $first, 'to' => $last], 'items' => $items, 'projection' => ['bars' => $bars, 'scenarios' => $proj]];
         if (!$items) $ov['note'] = $g ? 'אין כרגע אזור חפיפה ולא רמות' : 'אין מספיק נרות לחישוב';
         return $ov;
     }

@@ -6,16 +6,13 @@
     "pr": "#1670 (2.28)"
   },
   "code": {
-    "session": "session_018g4NYE8aJBheQh1TYiJZ3U",
-    "slice": "F-1 פיבונאצ'י — ממצא ואותות (פרק 22, 2.27)",
-    "model": "claude-opus-5-5",
-    "opened_by": "בקרה (6)",
-    "branch": "claude/trading-strategies-fib-f1",
-    "done": "#1662 F-1 מוזג — רדום (405K)"
+    "session": "session_018g4NYE77z3nwXHs1csCsNw",
+    "slice": "F-3",
+    "branch": "claude/trading-strategies-fib-f3"
   },
-  "control": "session_018g4NYFqH3tqWT9nYnCRNjr",
+  "control": "session_018g4NYDrFHGumG4hGvNK11M",
   "tasks": null,
-  "clock": "trig_01FLjvXemEmKVuyfZbh9oGqH (דקה 28, נוצר בידי מנהל הצוותים (4); הישן trig_01KNVAkUc99NpULxQ9nAwWRt כבוי)",
+  "clock": "trig_01AhicpPsrrfEGR4f97H9K4K (דקה 28, נוצר בידי מנהל הצוותים (5); של בקרה 7 trig_01FLjvXemEmKVuyfZbh9oGqH כבוי)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -89,6 +86,14 @@
       "opened_by": "בקרה (6) — עומק 5",
       "branch": "claude/trading-strategies-flaky-key-test",
       "done": "#1646 — רדום"
+    },
+    {
+      "session": "session_018g4NYE8aJBheQh1TYiJZ3U",
+      "slice": "F-1 פיבונאצ'י — ממצא ואותות (פרק 22, 2.27)",
+      "model": "claude-opus-5-5",
+      "opened_by": "בקרה (6)",
+      "branch": "claude/trading-strategies-fib-f1",
+      "done": "#1662 F-1 מוזג — רדום (405K)"
     }
   ],
   "control_previous": [
@@ -115,7 +120,12 @@
     {
       "session": "session_018g4NYEHws3rFjuBNuDFXRb",
       "done": "#1646–#1658, הספר השני (פיבונאצ'י), F-1 נפתח; רדומה — מחזיקה את קובץ הספר"
-    }
+    },
+    {
+      "session": "session_018g4NYFqH3tqWT9nYnCRNjr",
+      "done": "#1662–#1700: פיבונאצ'י F-1..F-3, L1 מסך מלא, 500, חובות, למידה L1, אפיון 2.28–2.36; מסירה ב-STATE (476K)"
+    },
+    "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)"
   ],
   "code_delete": {
     "session": "session_018g4NYCQjLZtvssney3gT8G",
@@ -139,18 +149,29 @@
   },
   "code_parallel": [
     {
-      "session": "session_018g4NYD31tzjkYLHiBm7wB9",
-      "slice": "תקלת שרת 500 בגרף (16.11 15:00) + הודעה נכונה לפעולת קריאה",
-      "branch": "claude/trading-strategies-err500",
-      "opened_by": "בקרה (7)",
-      "model": "claude-opus-5-5"
+      "session": "session_018g4NYE77z3nwXHs1csCsNw",
+      "slice": "F-3 פיבונאצ'י (אחרי F-2 #1685)",
+      "branch": "claude/trading-strategies-fib-f3"
     },
     {
       "session": "session_018g4NYCUP7cVpomeNea75ED",
-      "slice": "חובות: journal_resolve/$usedKey, market_candles/ts_now, בדיקות רועדות, drives_key",
-      "branch": "claude/trading-strategies-debt",
-      "opened_by": "בקרה (7)",
-      "model": "claude-opus-5-5"
+      "slice": "חלונית הסבר T1 (18.1.6) — אחרי חובות #1681",
+      "branch": "claude/trading-strategies-chart-tip"
+    },
+    {
+      "session": "session_018g4NYD31tzjkYLHiBm7wB9",
+      "slice": "למידה L1 (פרק 23) — אחרי #1686, #1692",
+      "branch": "claude/trading-strategies-learning-l1"
+    },
+    {
+      "session": "session_018g4NYDmuLFFgimdfuLJDXu",
+      "slice": "הרשאות R1 (פרק 24)",
+      "branch": "claude/trading-strategies-roles-r1"
     }
-  ]
+  ],
+  "code_active": {
+    "R1": "session_018g4NYDmuLFFgimdfuLJDXu (claude/trading-strategies-roles-r1, מיגרציה 18)",
+    "T1": "session_018g4NYCUP7cVpomeNea75ED (claude/trading-strategies-chart-tip)",
+    "L3": "session_018g4NYD31tzjkYLHiBm7wB9 (claude/trading-strategies-learning-l3)"
+  }
 }

@@ -1095,7 +1095,7 @@ function breakdownTable(title, rows, label, cur) {
 const LOGIN_ERRORS = {
   cancelled: 'הכניסה בוטלה.',
   invalid: 'הכניסה לא הושלמה — נסו שוב.',
-  conflict: 'יש כבר חשבון באפליקציה באותו מייל — פנו למנהל.',
+  conflict: 'יש כבר חשבון באפליקציה באותו מייל — פנו לעורך ראשי.',
 };
 function viewLogin(login, msg = '') {
   const err = (location.hash.match(/^#\/login\/(\w+)/) || [])[1];
@@ -1103,7 +1103,7 @@ function viewLogin(login, msg = '') {
   const text = msg || (err ? (Object.hasOwn(LOGIN_ERRORS, err) ? LOGIN_ERRORS[err] : LOGIN_ERRORS.invalid) : '');
   setHead('אסטרטגיות למסחר', 'לתכנון וניתוח בלבד');
   const box = h('p', { class: 'error', role: 'alert', hidden: !text }, text);
-  // מייל וסיסמה — רק כשהמנהל השאיר כניסה בסיסמה (login.password). Google — לא בפרוסה הזו (ש8)
+  // מייל וסיסמה — רק כשעורך השאיר כניסה בסיסמה (login.password). Google — לא בפרוסה הזו (ש8)
   let pwForm = null;
   if (login.password) {
     const email = h('input', { type: 'email', name: 'email', autocomplete: 'username', dir: 'ltr', required: true, maxlength: 200 });
@@ -1148,10 +1148,10 @@ async function viewMore() {
     h('ul', { class: 'list' },
       h('li', {}, h('a', { class: 'use-row', href: '#/providers' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🔌'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
-      ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
-        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, מנהלים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
-      ME.is_primary_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/dev/tasks' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🐞'),
-        h('span', { class: 'use-tx' }, h('b', {}, 'פיתוח'), h('small', {}, 'מטלות TS-, אימות, ויומן בקשות ושגיאות — למפתח בלבד')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      ME.is_editor ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, עורכים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      ME.is_editor ? h('li', {}, h('a', { class: 'use-row', href: '#/dev/tasks' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🐞'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'פיתוח'), h('small', {}, ME.is_chief ? 'מטלות TS-, אימות, ויומן בקשות ושגיאות' : 'מטלות TS-: צפייה, תגובה והמלצה — האימות של עורך ראשי')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
       h('li', {}, h('a', { class: 'use-row', href: '#/method-journal' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📓'),
         h('span', { class: 'use-tx' }, h('b', {}, 'יומן השיטה'), h('small', {}, 'מה כל שיטה אמרה, ומה קרה אחר כך — לפי גרסה')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
@@ -1172,18 +1172,25 @@ async function viewMore() {
       h('p', { class: 'disclaimer' }, '⚖️ ' + DISCLAIMER)));
 }
 
-// ── פיתוח: DevLoop (A1, PROTOCOL 7) — המודול המשותף; רק למפתח, כלומר המנהל הראשי ──
+// ── פיתוח: DevLoop (A1, PROTOCOL 7) — המודול המשותף; עורך ראשי — הכול, עורך משני — עוקב, משתמש — 🐞 בלבד (ר2) ──
 // המטלות והיומן — assets/js/devloop.js (עותק מסונכרן, לא עורכים כאן). השרת אוכף בעצמו (api.php); כאן רק מה שמוצג.
 const DEV_TABS = [['tasks', '📋 מטלות'], ['log', '📜 יומן']];
 async function viewDev(tab, arg = '') {
-  if (!ME.is_primary_admin) { location.hash = '#/more'; return; }
+  if (!ME.is_editor) { location.hash = '#/more'; return; }
   if (!DEV_TABS.some(([k]) => k === tab)) tab = 'tasks';
-  setHead('פיתוח', 'מטלות TS- ויומן — למפתח', { back: true });
+  setHead('פיתוח', ME.is_chief ? 'מטלות TS- ויומן' : 'מטלות TS- ויומן — צפייה ותגובה', { back: true });
   const body = h('div', { class: 'dev-body' });
   render(h('nav', { class: 'seg-tabs', 'aria-label': 'פיתוח' }, DEV_TABS.map(([k, l]) =>
     h('a', { href: '#/dev/' + k, class: 'seg-tab', 'aria-current': k === tab ? 'page' : null }, l))), body);
   if (tab === 'log') await DevLoop.showLog(body, decodeURIComponent(arg));
   else await DevLoop.show(body, decodeURIComponent(arg));
+}
+
+/** 🐞 למשתמש (ר2): דיווח מכל מסך — בלי מונה ובלי רשימה (אלה לעורכים). DevLoop.report מהמודול המשותף. */
+function bugButton() {
+  if ($('#dev-bug')) return;
+  const b = h('button', { type: 'button', id: 'dev-bug', class: 'icon-btn dev-bug', 'aria-label': '🐞 דיווח על תקלה', on: { click: () => DevLoop.report() } }, '🐞');
+  $('#head-actions')?.before(b);
 }
 
 async function viewInstruments() {
@@ -1234,14 +1241,17 @@ function editInstrument(i) {
   const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub, withVs, assetPicker, me: () => ME,
     setMe: v => { ME = v; }, reload: () => route(),
     openTrade: pre => editTrade(null, pre) };
-  // DevLoop: ההגדרה לכולם (שגיאות JavaScript ליומן המובנה), 🐞 בכותרת — רק למפתח
+  // DevLoop (24.2, ר2): ההגדרה לכולם (שגיאות JavaScript ליומן המובנה). עורך ראשי — המפתח; עורך משני — עוקב (רואה, מגיב,
+  // פותח; בלי ✅ ובלי אסימונים); משתמש — 🐞 בלבד, בלי רשימת המטלות. השרת אוכף בעצמו (ts_dev_allow)
   DevLoop.setup({
     api: (action, { body = null, params = {} } = {}) => api(action, body, params), toast,
-    isDev: () => !!ME?.is_primary_admin, appName: 'אסטרטגיות למסחר', tasksHref: '#/dev/tasks', mountBefore: '#head-actions',
+    role: ME.is_chief ? 'dev' : 'follower',
+    isDev: () => !!ME?.is_editor, appName: 'אסטרטגיות למסחר', tasksHref: '#/dev/tasks', mountBefore: '#head-actions',
     headers: () => ({ 'X-CSRF': ME?.csrf || '' }), version: () => ME?.version || '', builtinLog: true,
     logHref: r => '#/dev/log/' + encodeURIComponent(r.req),
   });
-  if (ME.is_primary_admin) DevLoop.mount();
+  if (ME.is_editor) DevLoop.mount();
+  else bugButton();
   N = mountAlerts(ctx);
   J = mountMethodJournal(ctx);
   ctx.newAlert = N.newAlert;

@@ -39,7 +39,8 @@ function ts_journal_said(array $res, string $tf): array
     $fc = is_array($res['forecast'] ?? null) ? $res['forecast'] : ['items' => [], 'scenarios' => [], 'bars' => 0, 'as_of' => null];
     $items = $fc['items'] ?? [];
     $prim = array_values(array_filter($items, fn($it) => ($it['primary'] ?? null) === true));
-    $pool = $prim ?: $items;
+    // בלי סימון — כל הפריטים, חוץ מרמה בודדת / קופסה דהויה (single — פיבונאצ'י בלי כיוון, 22.5ו: "אין תרחיש")
+    $pool = $prim ?: array_values(array_filter($items, fn($it) => empty($it['single'])));
     $zone = null; $inv = null;
     foreach ($pool as $it) {
         if (!$zone && $it['kind'] === 'zone') $zone = $it;
@@ -225,9 +226,9 @@ function ts_journal_resolve(int $now, array &$used, ?array $budget, float $t0, a
 function ts_journal_scope_sql(int $uid): array
 {
     // שיטה שהוסרה (21.1) — הרשומות שלה נשארות במסד, ולא מוצגות גם למנהל
-    $ids = ts_is_admin($uid) ? ts_method_ids() : array_column(ts_methods_visible($uid), 'id');
+    $ids = ts_is_editor($uid) ? ts_method_ids() : array_column(ts_methods_visible($uid), 'id');
     $in = $ids ? implode(',', array_fill(0, count($ids), '?')) : "''";
-    if (ts_is_admin($uid)) return ["method_id IN ($in)", $ids];
+    if (ts_is_editor($uid)) return ["method_id IN ($in)", $ids];
     $grants = ts_shared_enabled() ? "OR cred_scope IN (SELECT 'c:' || cred_id FROM provider_grants WHERE user_id = ?)" : '';
     return ["method_id IN ($in) AND (cred_scope = '' OR cred_scope = ? $grants)", [...$ids, "u:$uid", ...($grants ? [$uid] : [])]];
 }
@@ -265,7 +266,7 @@ function ts_journal_out(array $r, bool $admin): array
  */
 function ts_journal_list(int $uid, array $q): array
 {
-    $admin = ts_is_admin($uid);
+    $admin = ts_is_editor($uid);
     [$where, $args] = ts_journal_scope_sql($uid);
     $sumRows = ts_db()->prepare("SELECT method_id, method_version, COUNT(*) AS n, SUM(outcome IS NULL) AS pending,
             SUM(outcome = 'zone') AS zone, SUM(outcome = 'invalidated') AS invalidated, SUM(outcome = 'neither') AS neither,
