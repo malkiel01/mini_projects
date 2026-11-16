@@ -58,6 +58,20 @@ main { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(-
 .ghost { border-color: var(--line); background: var(--surface); color: var(--ink); }
 .btn.danger { color: var(--danger); }
 button:disabled { opacity: .55; cursor: default; }
+/* ===== שדות (tokens.css) ===== */
+input, select, textarea { width: 100%; min-width: 0; min-height: var(--tap); padding: 0 var(--s2); font-size: 16px;   /* 16px — אחרת iOS מגדיל */
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+input:focus, select:focus, textarea:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.row-btns { display: flex; gap: var(--s2); }
+.row-btns .btn { flex: 1; }
+.row-btns.wrap { flex-wrap: wrap; }
+.switch { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); cursor: pointer; }
+.switch input { width: 20px; min-height: 20px; flex: none; accent-color: var(--brand); }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: var(--s2); }
+.fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.f { display: grid; gap: 2px; min-width: 0; }
+.f > span { font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* ===== בורר מקטעים — שורה אחת, כל אפשרות ממלאת את המקום ===== */
 .seg { display: flex; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); scrollbar-width: none; }
 .seg label { flex: 1 0 auto; position: relative; display: flex; }
@@ -96,7 +110,10 @@ dialog::backdrop { background: rgba(10, 15, 30, .45); }
 dialog > form { display: flex; flex-direction: column; max-height: inherit; height: 100%; min-height: 0; }
 .sheet-head { display: flex; align-items: center; gap: var(--s2); flex: none; padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line); }
 .sheet-head h2 { flex: 1; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sheet-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding: var(--s3); display: grid; grid-auto-rows: max-content; align-content: start; }
+.sheet-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding: var(--s3); display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--s2); }
+.sheet-foot { display: flex; justify-content: flex-end; gap: var(--s2); flex: none; padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+dialog.ask { width: min(420px, 100vw - 32px); }
+dialog.ask .sheet-foot { border-top: 0; }
 
 /* ===== טוסט ===== */
 .toast { position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + env(safe-area-inset-bottom)); margin: auto; width: fit-content;
@@ -112,7 +129,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .bar .primary { margin-inline-start: auto; }
 .empty-aud { margin: var(--s2) 0; }
 
-/* המחירון במסך — טבלה רציפה; עמודות לפי המתג (בטלפון) */
+/* המחירון במסך — טבלה רציפה, עמודת מחיר אחת */
 .prices { inline-size: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
     overflow: hidden; }
 .prices th, .prices td { padding: 6px var(--s2); border-top: 1px solid var(--line); text-align: start; vertical-align: baseline; overflow-wrap: anywhere; }
@@ -125,11 +142,49 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 .prices tr.fee td, .prices tr.note td { font-size: .85rem; }
 .prices tr.fee td:first-child { font-weight: 700; }
 .prices .plain { font-weight: 400; font-size: .85em; }
-.view-il .ab, .view-abroad .il { display: none; }
-@media (min-width: 600px) {
-    .aud-switch { display: none; }
-    .view-il .ab, .view-abroad .il { display: table-cell; }
-}
+.prices tr.band td { text-align: center; font-weight: 700; background: #e3e5e8; color: #1f2329; }
+@media (prefers-color-scheme: dark) { .prices tr.band td { background: #3a3f47; color: #f1f3f5; } }
+
+/* מסך הבית — קבוצה לכל רשימה */
+.group { margin-bottom: var(--s4); }
+.group-head { display: flex; align-items: center; gap: var(--s2); }
+.group-head .sec-title { flex: 1; min-width: 0; }
+.group-head .btn { flex: none; }
+#share-dlg .fields { margin-bottom: var(--s3); }
+
+/* עריכה (02-editing.md) */
+.icon-btn.ghost { border-color: var(--line); }
+.icon-btn.on { background: var(--brand-soft); border-color: var(--brand); }
+.edit-note { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r);
+    background: var(--brand-soft); font-size: .85rem; }
+.edit-note span { flex: 1; min-width: 0; }
+.prices.editing td.lb { cursor: pointer; }
+.prices.editing td.lb:hover { background: var(--bg); }
+.prices.editing td.lb::after { content: ' ✎'; color: var(--muted); font-weight: 400; text-decoration: none; display: inline-block; }
+.prices.editing td.amt { padding: 4px; vertical-align: middle; }
+.prices input.price { inline-size: 5.6em; text-align: end; direction: ltr; font-variant-numeric: tabular-nums; font-weight: 600; padding: 0 6px; }
+.prices input.price.bad { border-color: var(--danger); background: var(--danger-soft); }
+.st { display: block; font-size: .72rem; font-weight: 400; color: var(--muted); white-space: normal; max-inline-size: 7em; }
+.st:empty { display: none; }
+.st.ok { color: var(--ok); }
+.st.err { color: var(--danger); }
+#sig-st { max-inline-size: none; margin-top: var(--s1); }
+.sig-edit { display: grid; gap: var(--s2); }
+.tail-btns { margin: var(--s3) 0; }
+.tail-btns .btn { flex: 0 1 auto; }
+.preview { min-height: var(--tap); padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); background: var(--bg); }
+.preview .plain { font-weight: 400; font-size: .85em; }
+.card .l1.wrap { white-space: normal; }
+.card .l1.wrap > :first-child { overflow: visible; }
+
+/* מחירון חדש */
+#new-form { display: grid; gap: var(--s2); }
+.raise-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s3); min-height: 52px; border-top: 1px solid var(--line); }
+.raise-row:first-child { border-top: 0; }
+.raise-row .lbl { flex: 1; min-width: 0; font-weight: 600; }
+.pct { display: flex; align-items: center; gap: 4px; flex: none; }
+.pct small { color: var(--muted); font-size: .75rem; }
+.pct input { inline-size: 4.6em; text-align: end; direction: ltr; }
 
 /* מסך המפתח */
 .checks .card { cursor: default; min-height: 44px; }
