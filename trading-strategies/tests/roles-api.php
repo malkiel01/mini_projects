@@ -83,6 +83,15 @@ eq([$threw, (int)$m2->query('PRAGMA user_version')->fetchColumn(), $m2->query('S
     (int)$m2->query("SELECT COUNT(*) FROM sqlite_master WHERE name = 'app_roles_v18'")->fetchColumn()], [true, 17, ['other'], 0],
     'a failing migration rolls back: version 17, the row and the table as they were');
 
+// ביקורת R1 ⚪1: שורה יתומה ב-app_roles (משתמש שנמחק כשהמפתחות הזרים היו כבויים) לא מפילה את המיגרציה — היא לא עוברת
+$m3 = new PDO("sqlite:$tmp.mig3.sqlite", null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$m3->exec("CREATE TABLE users (id INTEGER PRIMARY KEY); INSERT INTO users VALUES (1), (2);
+           CREATE TABLE app_roles (user_id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK (role IN ('admin')), granted_by INTEGER NOT NULL, granted_at INTEGER NOT NULL);
+           INSERT INTO app_roles VALUES (2, 'admin', 1, 5), (9, 'admin', 1, 6); PRAGMA user_version = 17; PRAGMA foreign_keys = ON;");
+ts_migrate($m3);
+eq([(int)$m3->query('PRAGMA user_version')->fetchColumn(), $m3->query('SELECT user_id || role FROM app_roles')->fetchAll(PDO::FETCH_COLUMN)], [18, ['2editor']],
+    'R1 ⚪1: an orphan row (user 9) is left behind, the migration completes');
+
 // ── השרת ─────────────────────────────────────────────────────────
 $probe = stream_socket_server('tcp://127.0.0.1:0');
 $port = (int)substr(strrchr(stream_socket_get_name($probe, false), ':'), 1);
@@ -275,6 +284,31 @@ $r9 = json_decode((string)shell_exec(implode(' ', array_map('escapeshellarg', ['
     "$DAVE:password", "$DAVE:sso", "$OWNER:password", "$CAROL:password", "$ALICE:sso"]))), true);
 eq($r9, [[true, true], [true, true], [true, true], [false, true], [false, false]],
     'criterion 9: detached — dave (appointed chief) is chief by app_roles; owner by the saved platform_admin; carol editor; alice nothing');
+
+// ── ביקורת R1, סבב 2 ─────────────────────────────────────────────
+// 🟡3: עורך ראשי ממונה לא מאפס את הסיסמה של העורך מהשער (כמו בביטול)
+$db->exec("INSERT OR REPLACE INTO app_roles (user_id, role, granted_by, granted_at) VALUES ($DAVE, 'chief', $OWNER, 1)");
+eq(call('dave', 'admin_password_reset', ['user_id' => $OWNER])[0], 422, 'R1 🟡3: an appointed chief cannot reset the gate chief\'s password (422)');
+eq(call('dave', 'admin_password_reset', ['user_id' => $BOB])[0], 200, '… but can reset another user\'s');
+// ⚪2: דיווח של משתמש — רק כותרת, פירוט והקשר. סוג, עדיפות, תחום וקבלה — ברירת המחדל
+$code = call('bob', 'dev-report', ['title' => 'בוב', 'kind' => 'feature', 'priority' => 'high', 'area' => 'X', 'acceptance' => 'Y', 'context' => ['url' => '#/x']])[1]['code'];
+eq($db->query("SELECT kind || '|' || priority || '|' || area || '|' || acceptance || '|' || (context LIKE '%#/x%') FROM dev_tasks WHERE code = '$code'")->fetchColumn(),
+    'bug|normal|||1', 'R1 ⚪2: a user\'s report keeps title/detail/context only');
+$code = call('carol', 'dev-report', ['title' => 'קרול', 'priority' => 'high'])[1]['code'];
+eq($db->query("SELECT priority FROM dev_tasks WHERE code = '$code'")->fetchColumn(), 'high', '… an editor\'s report keeps its fields');
+// 🟡1: תקרה לשעה למשתמש — 10 דיווחים, 30 צילומים; מעבר — 429. לעורך אין תקרה כזו
+$codes = [];
+for ($i = 1; $i < 10; $i++) $codes[] = [call('bob', 'dev-report', ['title' => "בוב $i"])][0];
+eq(array_unique(array_map(fn($r) => $r[0], $codes)), [200], 'R1 🟡1: a user — 10 reports in an hour are fine');
+eq(call('bob', 'dev-report', ['title' => 'בוב 11'])[0], 429, 'R1 🟡1: the 11th report in an hour → 429');
+$bobCode = $codes[0][1]['code'];
+$ok = 0;
+for ($i = 0; $i < 30; $i++) $ok += attach('bob', $bobCode, $png) === 200 ? 1 : 0;
+eq([$ok, attach('bob', $bobCode, $png)], [30, 429], 'R1 🟡1: 30 screenshots in an hour, the 31st → 429');
+$db->exec("UPDATE dev_tasks SET created_at = '2000-01-01T00:00:00Z' WHERE created_by = $BOB");
+eq(call('bob', 'dev-report', ['title' => 'שעה אחרי'])[0], 200, 'R1 🟡1: an hour later — allowed again');
+for ($i = 0; $i < 12; $i++) $last = call('carol', 'dev-report', ['title' => "קרול $i"])[0];
+eq($last, 200, 'R1 🟡1: no such limit for an editor');
 
 // ── קריטריון 7: הממשק — אין "מנהל" באף מחרוזת שמוצגת; יש "עורך ראשי" ו"עורך משני" ──
 $js = '';

@@ -247,9 +247,12 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
             if (!hash_equals($csrf, (string)($_SERVER['HTTP_X_CSRF'] ?? ''))) fail('פג תוקף הדף — רעננו ונסו שוב', 403);
         }
         ts_dev_allow($action, $uid, $_GET);
-        out(['ok' => true] + ts_dev_dispatch($action, $user, $_GET, $write ? input() : []));
+        out(['ok' => true] + ts_dev_dispatch($action, $user, $_GET, $write ? ts_dev_input($action, $uid, input()) : []));
     } catch (TsForbidden $e) {
         fail($e->getMessage(), 403);
+    } catch (TsRateLimited $e) {
+        header('Retry-After: 3600');
+        fail($e->getMessage(), 429);
     } catch (TsDevError $e) {
         devloop_log_error($e);
         fail($e->getMessage(), $e->getCode() ?: 400);

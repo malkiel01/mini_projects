@@ -42,9 +42,10 @@ devloop_setup([
         strtr($msg, array_combine(array_map(fn($k) => '{' . $k . '}', array_keys($vars)), array_map('strval', $vars)) ?: []), $status),
     'user_names'   => fn() => array_column(ts_db()->query('SELECT id, display_name FROM users')->fetchAll(), 'display_name', 'id'),
     'is_developer' => function (int $id): bool {
-        // עורך ראשי ממונה — מ-app_roles, בלי תלות בשער (24.3, גם במנותקת). ביטול — מהבקשה הבאה
-        if (ts_role_of($id) === 'chief') return true;
-        $st = ts_db()->prepare('SELECT platform_sub FROM users WHERE id = ? AND platform_admin = 1');
+        // עורך ראשי — מהשער (users.platform_admin) או ממונה (app_roles 'chief', 24.3). ביטול — מהבקשה הבאה. ובשני המקרים
+        // אותו תנאי גישה (ביקורת R1 🟡2): מי שהשער כבר לא נותן לו את האפליקציה — לא מפתח, גם אם הוא ממונה
+        $st = ts_db()->prepare("SELECT u.platform_sub FROM users u LEFT JOIN app_roles r ON r.user_id = u.id
+                                WHERE u.id = ? AND (u.platform_admin = 1 OR r.role = 'chief')");
         $st->execute([$id]);
         $sub = $st->fetchColumn();
         if ($sub === false) return false;
@@ -81,6 +82,11 @@ const TS_DEV_EDITOR = ['dev-items', 'dev-file', 'dev-item-log', 'dev-log', 'dev-
     'dev-task-create', 'dev-report', 'dev-attach', 'devloop-client-error'];
 /** משתמש: 🐞 בלבד — הדיווח, וצילום לפריט שלו. ושגיאות JavaScript ליומן. */
 const TS_DEV_USER = ['dev-report', 'dev-attach', 'devloop-client-error'];
+/** תקרה לשעה למשתמש שאינו עורך (ביקורת R1 🟡1): דיווחי 🐞 וצילומים. מעבר לה — 429 */
+const TS_DEV_USER_REPORTS_HOUR = 10;
+const TS_DEV_USER_FILES_HOUR = 30;
+/** מה משתמש שאינו עורך שולח בדיווח (ביקורת R1 ⚪2): כותרת, פירוט וההקשר. השאר (סוג, עדיפות, תחום, קבלה) — ברירת המחדל */
+const TS_DEV_USER_REPORT_KEYS = ['title', 'detail', 'context'];
 
 /**
  * ההרשאה לפעולת DevLoop (24.2, ר2) — לפני ts_dev_dispatch. עורך ראשי — הכול. אחרת: TsForbidden (403).
@@ -94,12 +100,28 @@ function ts_dev_allow(string $action, int $uid, array $get): void
         throw new TsForbidden('פעולה של עורך ראשי בלבד');
     }
     if (!in_array($action, TS_DEV_USER, true)) throw new TsForbidden('פעולה של עורך בלבד');
-    if ($action === 'dev-attach') {
-        devloop_migrate();
-        $st = ts_db()->prepare('SELECT 1 FROM dev_tasks WHERE code = ? AND created_by = ?');
-        $st->execute([(string)($get['code'] ?? ''), $uid]);
-        if (!$st->fetchColumn()) throw new TsForbidden('צילום — רק לדיווח שלכם');
+    if ($action === 'devloop-client-error') return;
+    devloop_migrate();
+    $since = gmdate('Y-m-d\\TH:i:s\\Z', time() - 3600);   // אותה צורה כמו devloop_now — משווים כמחרוזת
+    if ($action === 'dev-report') {
+        $st = ts_db()->prepare('SELECT COUNT(*) FROM dev_tasks WHERE created_by = ? AND created_at >= ?');
+        $st->execute([$uid, $since]);
+        if ((int)$st->fetchColumn() >= TS_DEV_USER_REPORTS_HOUR) throw new TsRateLimited('יותר מדי דיווחים בשעה — נסו שוב מאוחר יותר');
+        return;
     }
+    $st = ts_db()->prepare('SELECT 1 FROM dev_tasks WHERE code = ? AND created_by = ?');
+    $st->execute([(string)($get['code'] ?? ''), $uid]);
+    if (!$st->fetchColumn()) throw new TsForbidden('צילום — רק לדיווח שלכם');
+    $st = ts_db()->prepare('SELECT COUNT(*) FROM dev_files WHERE by = ? AND at >= ?');
+    $st->execute(['user:' . $uid, $since]);
+    if ((int)$st->fetchColumn() >= TS_DEV_USER_FILES_HOUR) throw new TsRateLimited('יותר מדי צילומים בשעה — נסו שוב מאוחר יותר');
+}
+
+/** הגוף שמגיע ל-ts_dev_dispatch: למשתמש שאינו עורך — רק השדות של 🐞 (TS_DEV_USER_REPORT_KEYS). לעורך — כמו שהוא. */
+function ts_dev_input(string $action, int $uid, array $in): array
+{
+    if ($action !== 'dev-report' || ts_is_editor($uid)) return $in;
+    return array_intersect_key($in, array_flip(TS_DEV_USER_REPORT_KEYS));
 }
 
 /** באסימון (X-Dev-Token), בלי עוגייה ובלי משתמש — ב-"public" שב-app.json. */
