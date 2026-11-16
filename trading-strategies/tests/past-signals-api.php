@@ -64,6 +64,16 @@ $it = $E['history']['items'][0] ?? [];
 eq([in_array($it['side'] ?? null, ['long', 'short'], true), in_array($it['result'] ?? null, ['win', 'loss', 'horizon', 'open'], true), is_array($it['rule'] ?? null)], [true, true, true],
     'a past signal: side, result, the rule at its candle');
 eq([$E['history']['from'], $E['history']['to']], [$r['candles'][0]['t'], $r['as_of']], 'computed on the closed candles of the chart (from the first to as_of)');
+// H1b: ספירות עבר שהושלמו (קריטריון 5) — עד 5, בלי נקודה משותפת; ופיבונאצ'י — אזור לכל אות (קריטריון 6)
+$cn = $E['history']['counts'] ?? null;
+$pts = is_array($cn) ? array_merge([], ...array_map(fn($x) => array_column($x['points'], 't'), $cn)) : [];
+eq([is_array($cn), count($cn ?? []) >= 1 && count($cn) <= 5, count($pts) === count(array_unique($pts))], [true, true, true], 'Elliott: history.counts — 1 to 5 completed counts in the chart set, no shared pivot');
+eq(array_diff_key($cn[0] ?? [], array_flip(['dir', 'score', 'words', 't', 'ct', 'points'])), [], '… a past count carries no target zone, projection or invalidation');
+eq(call('owner', 'admin_method_save', ['id' => 'fibonacci', 'enabled' => true, 'markets' => ['crypto'], 'timeframes' => ['h1'], 'params' => [], 'note' => ''])[0], 200, 'fibonacci on');
+$Fh = $refresh('alice', 'fibonacci')['methods']['fibonacci']['history'] ?? [];
+$Fz = array_filter($Fh['items'] ?? [], fn($x) => $x['entry'] !== null);
+eq(count(array_filter($Fz, fn($x) => is_array($x['zone']))), count($Fz), 'criterion 6: every fibonacci past signal carries its zone (' . count($Fz) . ')');
+eq(count($Fz) > 0, true, '… and there are fibonacci past signals in the chart set');
 // אותו מפתח (אותו נר סגור) — מהמטמון, אותם בייטים
 $r2 = $refresh('alice', 'elliott-w3');
 eq([$r2['runs'], $r2['methods']['elliott-w3']['history']], [0, $E['history']], 'the same closed candle → from the cache (the method did not run), the same history');

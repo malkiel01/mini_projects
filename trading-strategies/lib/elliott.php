@@ -378,6 +378,33 @@ function ts_ew_counts(array $pivots, int $tf, array $prm): array
     return $all;
 }
 
+/** [שלנו, 18.1.8 סעיף 2] — ספירות עבר: עד 5, ובחיפוש רק 40 נקודות המפנה האחרונות */
+const TS_EW_PAST_MAX = 5;
+const TS_EW_PAST_PIVOTS = 40;
+
+/**
+ * ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2): דחפים שלמים (k = 5) שנגמרו **לפני** נקודת המפנה האחרונה — זו של ההווה (ts_ew_overlay).
+ * בלי לוגיקה חדשה: ts_ew_counts על **קידומת** של נקודות המפנה, עד נקודה m — הפונקציה בודקת רק את הנקודות שנגמרות ב-m. נשמרת רק
+ * ספירה של 5 גלים, מעל min_score. מהסוף להתחלה: ספירה שנבחרה תופסת את 6 הנקודות שלה, והבאה (מוקדמת יותר) לא חולקת איתה אף נקודה.
+ * בלי הצצה לעתיד: נקודות המפנה מאושרות לפי הסדר, ולכן ספירה שנגמרת ב-m רואה רק נקודות שאושרו עד הנר שאישר את m (ct).
+ * מחזיר מהישנה לחדשה: [{dir, score, words, t (סוף גל 5), ct (נר האישור), points: [{t, price, label}] ×6}].
+ */
+function ts_ew_past_counts(array $pivots, int $tf, array $prm): array
+{
+    $n = count($pivots);
+    $lo = max(5, $n - TS_EW_PAST_PIVOTS + 5);   // m − 5 ≥ n − 40: כל 6 הנקודות בתוך 40 האחרונות
+    $out = [];
+    for ($m = $n - 2; $m >= $lo && count($out) < TS_EW_PAST_MAX; $m--) {
+        $five = array_values(array_filter(ts_ew_counts(array_slice($pivots, 0, $m + 1), $tf, ['max_counts' => 5] + $prm), fn($c) => $c['k'] === 5));
+        if (!$five) continue;
+        $c = $five[0];
+        $out[] = ['dir' => $c['dir'], 'score' => round($c['score'], 4), 'words' => $c['words'], 't' => (int)$pivots[$m]['t'], 'ct' => (int)$pivots[$m]['ct'],
+            'points' => array_map(fn($x, $l) => ['t' => (int)$x['t'], 'price' => (float)$x['v'], 'label' => $l], $c['pivots'], $c['labels'])];
+        $m -= 5;   // הלולאה מורידה עוד אחת: הבאה נגמרת ב-m − 6 — בלי נקודה משותפת
+    }
+    return array_reverse($out);
+}
+
 /** ההנחיות שהמחשב כאן לא מודד — מוצגות כ"בדוק בעצמך" (17.1.3) */
 const TS_EW_CHECK = [
     'חילופיות בין גל 2 לגל 4 (חד מול צדדי)',

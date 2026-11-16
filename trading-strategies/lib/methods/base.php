@@ -120,6 +120,15 @@ abstract class TsMethod
                 'label' => 'לפי כללי השיטה — ' . ($side === 'long' ? 'צד לונג' : 'צד שורט') . ", עד $k נרות"]]]];
     }
 
+    /**
+     * ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2) — רק לשיטה שיש לה ספירה (אליוט). ברירת המחדל — אין. $tf — אורך הנר בשניות.
+     * כל ספירה: {dir, score, words, t, ct, points: [{t, price, label}]}. רק תצוגה.
+     */
+    public function pastCounts(array $candles, array $p, int $tf): array
+    {
+        return [];
+    }
+
     /** בדיקה של צירוף פרמטרים (מעבר לטווח של כל אחד). מחזירה הודעה, או null כשתקין */
     public function validate(array $p): ?string
     {

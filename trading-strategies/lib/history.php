@@ -9,6 +9,9 @@
  * - **פתוח:** עסקה שעוד בתוך האופק בנר האחרון (pos), או אות בנר האחרון שייכנס בפתיחה הבאה (pend) — result: open, בלי R.
  * - **תקרה** (סעיף 4): 50 האחרונים לשיטה; n — כמה היו בסך הכול ("מוצגים 50 האחרונים מתוך N").
  * - **הכלל:** התנאים של השיטה בנר האות (conditions, רק של הצד של האות) — לחלונית ("אות לונג · היה").
+ * - **אזור** (H1b, סעיף 3): אות שהשיטה שלו נשענת על אזור (פיבונאצ'י — x.zone במצב בנר האות) — zone: [נמוך, גבוה], למלבן
+ *   עמום מנר האות עד היציאה. בלי אזור — null.
+ * - **ספירות עבר** (H1b, סעיף 2): counts — דחפים שלמים שנגמרו בעבר (TsMethod::pastCounts; רק אליוט). עד 5, בלי חפיפה.
  * - **רק תצוגה** (קריטריון 10): לא נכתב כלום — לא התראות, לא שקלול, לא method_journal ולא method_outcomes.
  *
  * נקרא מ-ts_method_result (lib/refresh.php): נשמר יחד עם תוצאת השיטה במטמון (method_results), עד הנר הסגור הבא.
@@ -39,14 +42,16 @@ function ts_history_rule(TsMethod $m, array $ms, array $p, string $side): array
 
 /**
  * אותות העבר של שיטה על הנרות הסגורים של הגרף ($rows — מחרוזות, ממוינים). מחזיר:
- * {n, bars (כמה נרות סגורים — "N אותות ב-M הנרות האחרונים"), from, to, items: [{t, side, entry, stop, target, t_entry, t_exit, exit, result win|loss|horizon|open, r, rule[]}]}
+ * {n, bars (כמה נרות סגורים — "N אותות ב-M הנרות האחרונים"), from, to, items: [{t, side, entry, stop, target, t_entry, t_exit, exit, result win|loss|horizon|open, r, rule[], zone}],
+ *  counts: [ספירות עבר — ts_ew_past_counts]}. $tf — אורך הנר בשניות (null — לפי שני הנרות הראשונים).
  * מחירים — float (תצוגה בלבד; הדפדפן מעגל לפי ה-tick). t_exit / exit / r — null כשהאות פתוח.
  */
-function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows): array
+function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows, ?int $tf = null): array
 {
     $fl = ts_bt_floats($rows);
-    $base = ['n' => 0, 'bars' => count($fl), 'from' => $fl[0]['t'] ?? null, 'to' => $fl ? end($fl)['t'] : null, 'items' => []];
+    $base = ['n' => 0, 'bars' => count($fl), 'from' => $fl[0]['t'] ?? null, 'to' => $fl ? end($fl)['t'] : null, 'items' => [], 'counts' => []];
     if (!$fl) return $base;
+    $tf ??= count($fl) > 1 ? max(1, $fl[1]['t'] - $fl[0]['t']) : 3600;
     $p = ts_params_for_asset($m, $p, ts_tick_decimals($rows));
     $rules = [];   // t של נר האות → מצב השיטה (רק ל-TS_HISTORY_SHOW האחרונים — נחתך בסוף)
     $trades = [];
@@ -73,7 +78,12 @@ function ts_history_signals(TsMethod $m, array $p, string $asset, array $rows): 
     }
     $n = count($items);
     $items = array_slice($items, -TS_HISTORY_SHOW);
-    foreach ($items as &$it) $it['rule'] = isset($rules[$it['t']]) ? ts_history_rule($m, $rules[$it['t']], $p, $it['side']) : [];
+    foreach ($items as &$it) {
+        $ms = $rules[$it['t']] ?? null;
+        $it['rule'] = $ms !== null ? ts_history_rule($m, $ms, $p, $it['side']) : [];
+        $z = $ms['x']['zone'] ?? null;   // האות של הנר הזה (x נקבע באותו step) — האזור שהוא נגע בו
+        $it['zone'] = is_array($z) && count($z) === 2 && ($ms['x']['ago'] ?? null) === 0 ? [(float)min($z), (float)max($z)] : null;
+    }
     unset($it);
-    return ['n' => $n, 'items' => $items] + $base;
+    return ['n' => $n, 'items' => $items, 'counts' => $m->pastCounts($fl, $p, $tf)] + $base;
 }

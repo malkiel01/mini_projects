@@ -25,6 +25,7 @@ const KIND_NAME = { label: 'נקודה של השיטה', marker: 'סימון ש�
 export function tipContent(hit, fmtTime) {
   const { it, price } = hit;
   if (it.kind === 'past') return pastContent(hit, fmtTime);
+  if (it.kind === 'pastcount') return pastCountContent(hit, fmtTime);
   const tip = it.tip && typeof it.tip === 'object' ? it.tip : {};
   // שורת המשנה — מחיר וזמן (לאזור — הטווח). כל ערך מבודד ב-<bdi>, כדי שהעברית סביבו לא תהפוך אותו
   let sub;
@@ -66,6 +67,25 @@ function pastContent(hit, fmtTime) {
       `כניסה ${v(it.entry)} · סטופ ${v(it.stop)} · ${it.result === 'open' ? 'יעד' : 'יציאה'} ${v(it.result === 'open' ? it.target : it.exit)}`,
       it.result === 'open' ? '… פתוח — עדיין בתוך האופק, בלי תוצאה סופית' : `${PAST_RESULT[it.result] || ''}${r} · ${fmtTime(it.t_exit)}`,
       `על הנרות שבגרף בלבד${Number.isInteger(hit.r?.history?.bars) ? ` (${hit.r.history.bars.toLocaleString('he-IL')} הנרות האחרונים)` : ''} — הבדיקה לאחור המלאה בכרטיס`,
+    ].filter(Boolean),
+    inv: null,
+    links: [],
+  };
+}
+
+/** ספירת עבר (H1b): "ספירה · היה" — הכיוון, הציון במילים, מתי נגמר גל 5. בלי יעד ובלי ביטול — זה כבר קרה */
+function pastCountContent(hit, fmtTime) {
+  const { it, price } = hit;
+  const p = it.points || [];
+  return {
+    title: 'ספירה · היה',
+    cert: null,
+    sub: [p.length ? `${fmtTime(p[0].t)} – ${fmtTime(p.at(-1).t)}` : null].filter(Boolean),
+    tag: `${hit.name} · היה`,
+    explain: [
+      `${it.dir === 'up' ? 'דחף עולה' : 'דחף יורד'} שלם, 5 גלים${it.words ? ` — ${it.words}` : ''}`,
+      p.length ? `מ-${price(p[0].price)} עד ${price(p.at(-1).price)}` : null,
+      'ספירה שהושלמה בעבר, על הנרות שבגרף — לא תרחיש להמשך',
     ].filter(Boolean),
     inv: null,
     links: [],
