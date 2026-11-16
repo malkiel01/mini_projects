@@ -544,6 +544,25 @@ function ts_migrate(PDO $db): void
             COMMIT;
             SQL);
     }
+    if ($v < 15) {
+        // מילוי איטי ברקע (spec-stage-a 21.2, ✅30): מתי מולא כל נכס בכל היקף, ומתי נכשל (לסוף התור). והמשתמש יכול
+        // לכבות את המילוי במפתח שלו. עמודה וטבלה חדשות בלבד — לא נוגע בשום נתון קיים
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN prefill_off INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE prefill_state (
+                provider TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                filled_at INTEGER NOT NULL DEFAULT 0,
+                failed_at INTEGER NOT NULL DEFAULT 0,
+                empty INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (provider, symbol, cred_scope)
+            );
+            PRAGMA user_version = 15;
+            COMMIT;
+            SQL);
+    }
 }
 
 /** הגדרה כללית של האפליקציה (טבלת settings) */
