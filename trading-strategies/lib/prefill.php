@@ -11,7 +11,8 @@
  *   לנכסים שלו, ונשמר ב-u:<id>: לעולם לא במפתח של המנהל ולא לאחרים. המשתמש יכול לכבות (users.prefill_off).
  * - **הסדר:** מועדפים (לפי מספר המשתמשים שסימנו), אחר כך נפתחו ב-7 הימים האחרונים (fetch_log), אחר כך השאר לפי סדר
  *   הקטלוג. נכס שנכשל בפעם האחרונה — לסוף התור.
- * - **בלי ניסיון חוזר:** 429 או שגיאה — הנכס לסוף התור, והמפתח הזה לא מקבל עוד פנייה בריצה הזו.
+ * - **בלי ניסיון חוזר:** 429 או שגיאה — הנכס לסוף התור (ולא לפני שעה), והמפתח הזה לא מקבל עוד פנייה בריצה הזו.
+ * - **חוסן:** מפתח פגום — מדלגים רק עליו. המילוי לא נרשם ב-fetch_log (היה מציף אותו).
  *
  * המצב — prefill_state ב-data/app.sqlite (מיגרציה 15). נכס שהמאגר שלו נמחק (ניקוי, "נקה מאגר") — נחשב לא מולא.
  */
@@ -31,6 +32,8 @@ const TS_PREFILL_TF = 'd1';
 const TS_PREFILL_RUN_SHARE = 2;    // [שלנו] חצי מהתקרה לדקה בכל ריצה
 const TS_PREFILL_DAY_SHARE = 4;    // [שלנו] רבע מהתקרה היומית
 const TS_PREFILL_LOG_MAX = 60;     // כמה נכסים נרשמים בסיכום הריצה
+const TS_PREFILL_FAIL_WAIT = 3600; // [שלנו] נכס שנכשל — לא לפני שעה (ולא בכל ריצה של 15 דקות)
+const TS_PREFILL_RANGE = 7 * 86400; // הנרות שמבקשים: שבוע — כדי שגם אחרי סופ"ש ארוך יחזור נר
 
 // ── ההגדרה של המשתמש ─────────────────────────────────────
 
@@ -67,7 +70,7 @@ function ts_prefill_favorites(): array
     return $out;
 }
 
-/** נכסים שנפתחו בגרף ב-7 הימים האחרונים (fetch_log; user_id 0 = ה-cron עצמו, לא נספר). $uid — רק שלו */
+/** נכסים שנפתחו בגרף ב-7 הימים האחרונים (fetch_log — המילוי עצמו לא נרשם שם). $uid — רק שלו */
 function ts_prefill_recent(int $now, ?int $uid = null): array
 {
     try {
@@ -110,8 +113,8 @@ function ts_prefill_pool(int $uid, bool $ownTabs): array
     return array_keys($out);
 }
 
-/** המפתחות שממלאים בהם: [{provider, uid, scope, acc, queue}] */
-function ts_prefill_keys(int $now): array
+/** המפתחות שממלאים בהם: [{provider, uid, scope, acc, queue}]. $bad — כמה מפתחות דולגו בגלל חריגה */
+function ts_prefill_keys(int $now, int &$bad = 0): array
 {
     $fav = ts_prefill_favorites();
     $recent = array_map('ts_prefill_base', ts_prefill_recent($now));
@@ -127,18 +130,29 @@ function ts_prefill_keys(int $now): array
             $st->execute([$provider]);
             foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $uid) {
                 $uid = (int)$uid;
-                $acc = ts_access($uid, $provider);
-                if (!$acc || $acc['source'] !== 'own') continue;
-                $mine = array_fill_keys(array_map(fn($w) => ts_prefill_base($w['asset']), ts_watchlist($uid)), true);
-                $keys[] = ['provider' => $provider, 'uid' => $uid, 'scope' => $acc['scope'], 'acc' => $acc,
-                    'queue' => ts_prefill_order($provider, $fav, array_map('ts_prefill_base', ts_prefill_recent($now, $uid)), ts_prefill_pool($uid, true), $mine)];
+                // מפתח פגום (לא מתפענח) או לשוניות פגומות — מדלגים רק על המשתמש הזה (ביקורת 21-2 🔴1)
+                try {
+                    $acc = ts_access($uid, $provider);
+                    if (!$acc || $acc['source'] !== 'own') continue;
+                    $mine = array_fill_keys(array_map(fn($w) => ts_prefill_base($w['asset']), ts_watchlist($uid)), true);
+                    $keys[] = ['provider' => $provider, 'uid' => $uid, 'scope' => $acc['scope'], 'acc' => $acc,
+                        'queue' => ts_prefill_order($provider, $fav, array_map('ts_prefill_base', ts_prefill_recent($now, $uid)), ts_prefill_pool($uid, true), $mine)];
+                } catch (Throwable $e) {
+                    $bad++;
+                    error_log("trading-strategies prefill key $provider u:$uid: " . $e->getMessage());
+                }
             }
             continue;
         }
-        $acc = ts_access(0, $provider);   // בלי משתמש — רק מה שפתוח לכולם
-        if (!$acc || $acc['scope'] !== '') continue;
-        $shared ??= ts_prefill_pool(0, false);
-        $keys[] = ['provider' => $provider, 'uid' => 0, 'scope' => '', 'acc' => $acc, 'queue' => ts_prefill_order($provider, $fav, $recent, $shared)];
+        try {
+            $acc = ts_access(0, $provider);   // בלי משתמש — רק מה שפתוח לכולם
+            if (!$acc || $acc['scope'] !== '') continue;
+            $shared ??= ts_prefill_pool(0, false);
+            $keys[] = ['provider' => $provider, 'uid' => 0, 'scope' => '', 'acc' => $acc, 'queue' => ts_prefill_order($provider, $fav, $recent, $shared)];
+        } catch (Throwable $e) {
+            $bad++;
+            error_log("trading-strategies prefill key $provider: " . $e->getMessage());
+        }
     }
     return $keys;
 }
@@ -164,7 +178,12 @@ function ts_prefill_due(array $key, int $now): array
     foreach ($key['queue'] as $asset => $prio) {
         [$filled, $fail, $empty] = $state[$asset] ?? [0, 0, false];
         if ($filled > 0 && $filled + $every > $now && ($empty || ts_prefill_cached($asset, $key['scope']))) continue;
-        if ($fail > $filled) $failed[] = $asset; else $ok[] = $asset;
+        if ($fail > $filled) {
+            if ($fail + TS_PREFILL_FAIL_WAIT > $now) continue;   // נכשל לאחרונה — לא שואלים בכל ריצה
+            $failed[] = $asset;
+        } else {
+            $ok[] = $asset;
+        }
     }
     return [...$ok, ...$failed];
 }
@@ -188,58 +207,24 @@ function ts_prefill_day_add(array $acc, int $now, int $n): void
 
 /**
  * ריצה אחת של המילוי. נקרא מ-ts_alerts_run, בתוך הנעילה. $used — פניות לספק שכבר נעשו בריצה (התראות, יומן), ומתעדכן;
- * $budget — דריסה של התקרה לדקה (--budget, לבדיקות); $t0 — תחילת הריצה (תקרת הזמן המשותפת, 4 דקות).
+ * $usedKey — אותו דבר לפי מפתח ("ספק|היקף"), מההתראות; $budget — דריסה של התקרה לדקה (--budget, לבדיקות); $t0 —
+ * תחילת הריצה (תקרת הזמן המשותפת, 4 דקות). חריגה במפתח אחד — מדלגים רק עליו (key_errors).
  */
-function ts_prefill_run(int $now, array &$used, ?array $budget, float $t0): array
+function ts_prefill_run(int $now, array &$used, ?array $budget, float $t0, array $usedKey = []): array
 {
-    $sum = ['filled' => 0, 'errors' => 0, 'deferred' => 0, 'stopped' => false, 'day_capped' => [], 'calls' => [], 'done' => []];
-    $db = ts_db();
-    // empty — הספק ענה בלי נרות (סימול שאין לו נתונים): לא פונים שוב לפני הזמן, גם כשאין מה להראות במאגר
-    $mark = $db->prepare('INSERT INTO prefill_state (provider, symbol, cred_scope, filled_at, failed_at, empty) VALUES (?, ?, ?, ?, 0, ?)
-                          ON CONFLICT(provider, symbol, cred_scope) DO UPDATE SET filled_at = excluded.filled_at, empty = excluded.empty');
-    $fail = $db->prepare('INSERT INTO prefill_state (provider, symbol, cred_scope, filled_at, failed_at) VALUES (?, ?, ?, 0, ?)
-                          ON CONFLICT(provider, symbol, cred_scope) DO UPDATE SET failed_at = excluded.failed_at');
-    ts_fetch_as_system(true);   // ביומן בקשות הנרות — ה-cron, לא המשתמש (וגם לא "נפתח לאחרונה")
+    $sum = ['filled' => 0, 'errors' => 0, 'key_errors' => 0, 'deferred' => 0, 'stopped' => false, 'day_capped' => [], 'calls' => [], 'done' => []];
+    // ביומן בקשות הנרות לא נרשם כלום: המילוי היה מציף את 2,000 השורות ומוחק את "נפתחו לאחרונה" (ביקורת 21-2 🟡2)
+    ts_fetch_as_system(true);
     try {
-        foreach (ts_prefill_keys($now) as $key) {
-            $provider = $key['provider'];
-            $lim = ts_provider_limits($provider);
-            $perMin = $budget[$provider] ?? $lim['per_min'];
-            $run = intdiv($perMin, TS_PREFILL_RUN_SHARE);
-            // משותף — גם מה שההתראות כבר לקחו מהספק בריצה הזו
-            if ($key['scope'] === '') $run = min($run, $perMin - ($used[$provider] ?? 0));
-            $day = intdiv($lim['per_day'], TS_PREFILL_DAY_SHARE) - ts_prefill_day_used($key['acc'], $now);
-            $due = ts_prefill_due($key, $now);
-            $took = 0;
-            foreach ($due as $i => $asset) {
-                $label = $key['scope'] === '' ? $provider : "$provider|" . ts_scope_kind($key['scope']);
-                if (microtime(true) - $t0 > TS_CRON_MAX_SECONDS) { $sum['stopped'] = true; $sum['deferred'] += count($due) - $i; break; }
-                if ($took >= $day) { $sum['day_capped'][] = $label; $sum['deferred'] += count($due) - $i; break; }
-                if ($took >= $run) { $sum['deferred'] += count($due) - $i; break; }
-                [, $sym] = explode(':', $asset, 2);
-                try {
-                    $r = ts_market_candles($key['uid'], $asset, TS_PREFILL_TF, $now - 3 * 86400, $now, $now);
-                    $n = (int)$r['provider_calls'];
-                    $mark->execute([$provider, $sym, $key['scope'], $now, $r['candles'] ? 0 : 1]);
-                    $sum['filled']++;
-                    if (count($sum['done']) < TS_PREFILL_LOG_MAX) $sum['done'][] = $asset;
-                } catch (Throwable $e) {
-                    // 429 או שגיאה: לסוף התור, ובלי עוד פנייה במפתח הזה בריצה הזו (בלי ניסיון חוזר בלולאה)
-                    $n = 1;
-                    $fail->execute([$provider, $sym, $key['scope'], $now]);
-                    $sum['errors']++;
-                    $sum['deferred'] += count($due) - $i - 1;
-                    error_log('trading-strategies prefill ' . $asset . ': ' . $e->getMessage());
-                    $took += $n;
-                    ts_prefill_day_add($key['acc'], $now, $n);
-                    $used[$provider] = ($used[$provider] ?? 0) + $n;
-                    $sum['calls'][$label] = ($sum['calls'][$label] ?? 0) + $n;
-                    break;
-                }
-                $took += $n;
-                ts_prefill_day_add($key['acc'], $now, $n);
-                $used[$provider] = ($used[$provider] ?? 0) + $n;
-                if ($n) $sum['calls'][$label] = ($sum['calls'][$label] ?? 0) + $n;
+        $bad = 0;
+        $keys = ts_prefill_keys($now, $bad);
+        $sum['key_errors'] += $bad;
+        foreach ($keys as $key) {
+            try {
+                ts_prefill_key($key, $now, $used, $budget, $t0, $usedKey, $sum);
+            } catch (Throwable $e) {
+                $sum['key_errors']++;
+                error_log('trading-strategies prefill key ' . $key['provider'] . ' ' . ts_scope_kind($key['scope']) . ': ' . $e->getMessage());
             }
         }
     } finally {
@@ -247,4 +232,52 @@ function ts_prefill_run(int $now, array &$used, ?array $budget, float $t0): arra
     }
     $sum['day_capped'] = array_values(array_unique($sum['day_capped']));
     return $sum;
+}
+
+/** מפתח אחד: מה שעוד צריך, עד חצי לדקה (בניכוי מה שההתראות לקחו מאותו מפתח) ועד 25% ליום */
+function ts_prefill_key(array $key, int $now, array &$used, ?array $budget, float $t0, array $usedKey, array &$sum): void
+{
+    $db = ts_db();
+    // empty — הספק ענה בלי נרות (סימול שאין לו נתונים): לא פונים שוב לפני הזמן, גם כשאין מה להראות במאגר
+    $mark = $db->prepare('INSERT INTO prefill_state (provider, symbol, cred_scope, filled_at, failed_at, empty) VALUES (?, ?, ?, ?, 0, ?)
+                          ON CONFLICT(provider, symbol, cred_scope) DO UPDATE SET filled_at = excluded.filled_at, empty = excluded.empty');
+    $fail = $db->prepare('INSERT INTO prefill_state (provider, symbol, cred_scope, filled_at, failed_at) VALUES (?, ?, ?, 0, ?)
+                          ON CONFLICT(provider, symbol, cred_scope) DO UPDATE SET failed_at = excluded.failed_at');
+    $provider = $key['provider'];
+    $label = $key['scope'] === '' ? $provider : "$provider|" . ts_scope_kind($key['scope']);
+    $lim = ts_provider_limits($provider);
+    $perMin = $budget[$provider] ?? $lim['per_min'];
+    // חצי מהתקרה לדקה — ובניכוי מה שההתראות כבר לקחו בריצה הזו: מהספק כולו (משותף) או מהמפתח הזה (אישי, 🟡1)
+    $already = $key['scope'] === '' ? ($used[$provider] ?? 0) : ($usedKey["$provider|{$key['scope']}"] ?? 0);
+    $run = min(intdiv($perMin, TS_PREFILL_RUN_SHARE), $perMin - $already);
+    $day = intdiv($lim['per_day'], TS_PREFILL_DAY_SHARE) - ts_prefill_day_used($key['acc'], $now);
+    $due = ts_prefill_due($key, $now);
+    $took = 0;
+    foreach ($due as $i => $asset) {
+        if (microtime(true) - $t0 > TS_CRON_MAX_SECONDS) { $sum['stopped'] = true; $sum['deferred'] += count($due) - $i; return; }
+        if ($took >= $day) { $sum['day_capped'][] = $label; $sum['deferred'] += count($due) - $i; return; }
+        if ($took >= $run) { $sum['deferred'] += count($due) - $i; return; }
+        [, $sym] = explode(':', $asset, 2);
+        $ok = true;
+        try {
+            $r = ts_market_candles($key['uid'], $asset, TS_PREFILL_TF, $now - TS_PREFILL_RANGE, $now, $now);
+            $n = (int)$r['provider_calls'];
+            $mark->execute([$provider, $sym, $key['scope'], $now, $r['candles'] ? 0 : 1]);
+            $sum['filled']++;
+            if (count($sum['done']) < TS_PREFILL_LOG_MAX) $sum['done'][] = $asset;
+        } catch (TsProviderError | TsInvalid $e) {
+            // 429 או שגיאה מהספק: לסוף התור, ובלי עוד פנייה במפתח הזה בריצה הזו (בלי ניסיון חוזר בלולאה)
+            $n = 1;
+            $ok = false;
+            $fail->execute([$provider, $sym, $key['scope'], $now]);
+            $sum['errors']++;
+            $sum['deferred'] += count($due) - $i - 1;
+            error_log('trading-strategies prefill ' . $asset . ': ' . $e->getMessage());
+        }
+        $took += $n;
+        ts_prefill_day_add($key['acc'], $now, $n);
+        $used[$provider] = ($used[$provider] ?? 0) + $n;
+        if ($n) $sum['calls'][$label] = ($sum['calls'][$label] ?? 0) + $n;
+        if (!$ok) return;
+    }
 }

@@ -457,7 +457,10 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
  * שורה ביומן בקשות הנרות (18.2, S2) — כדי למדוד במסך המפתח שהשרת פונה לספק רק על החסר. יומן הוא לא תנאי לתשובה:
  * כשל בכתיבה לא מפיל את הבקשה. שומרים 2000 שורות לכל היותר; הניקוי היומי מוחק ישנות מ-7 ימים.
  */
-/** בזמן המילוי ברקע (21.2) — היומן רושם את ה-cron (user_id 0), כדי שהמילוי לא ייחשב "נפתח בגרף" */
+/**
+ * בזמן המילוי ברקע (21.2) — היומן לא רושם: המילוי היה מציף את 2,000 השורות (ובהן "נפתחו לאחרונה" ומדידת S2). הסיכום
+ * של המילוי — בשורת ה-cron (alerts_cron)
+ */
 function ts_fetch_as_system(?bool $on = null): bool
 {
     static $sys = false;
@@ -467,7 +470,7 @@ function ts_fetch_as_system(?bool $on = null): bool
 
 function ts_fetch_log(int $uid, string $provider, string $symbol, string $tf, string $scope, int $from, int $to, int $calls, int $fetched, int $served, int $now): void
 {
-    if (ts_fetch_as_system()) $uid = 0;
+    if (ts_fetch_as_system()) return;
     try {
         $c = ts_cache();
         $c->prepare('INSERT INTO fetch_log (at, user_id, provider, symbol, tf, kind, from_t, to_t, provider_calls, provider_candles, served)

@@ -155,8 +155,11 @@ eq([$code, $only($s['prefill']['done'], 'twelvedata'), $s['prefill']['errors'], 
     'criterion 7: the next day MSFT answers 429 — one request, no retry, and no more requests with that key in this run');
 eq([$s['prefill']['calls']['twelvedata|personal'], $sec < 240, $s['stopped']], [1, true, false], 'criterion 7: the cron ends in time');
 eq((int)$db->query("SELECT failed_at > filled_at FROM prefill_state WHERE symbol = 'MSFT'")->fetchColumn(), 1, 'MSFT is marked as failed');
+[, $s] = cron($NOW + 3 * 86400 + 1200, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
+eq([$s['prefill']['errors'], $only($s['prefill']['done'], 'twelvedata')], [0, ['twelvedata:AMZN']], 'the same day, 5 minutes later (23:50): the next asset — the 429 took 1 of the 2 for today');
 [, $s] = cron($NOW + 4 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
-eq($only($s['prefill']['done'], 'twelvedata'), ['twelvedata:AMZN', 'twelvedata:META'], 'criterion 7 + 3: the next run goes on — MSFT moved to the end of the queue');
+eq($only($s['prefill']['done'], 'twelvedata'), ['twelvedata:META', 'twelvedata:AVGO'], 'criterion 7 + 3: the next day it goes on — MSFT moved to the end of the queue');
+eq(count(array_filter(http($h1), fn($x) => str_contains($x[0], 'time_series?symbol=MSFT&'))), 1, '⚪ a failed asset is not asked again within the hour (still one MSFT request)');
 eq(array_filter(http($h0), fn($x) => $x[1] === 'good-Bob123456789'), [], 'criterion 5: no request with bob\'s key (he turned it off)');
 eq((int)$db->query("SELECT COUNT(*) FROM prefill_state WHERE cred_scope = 'u:$bob'")->fetchColumn(), 0, 'criterion 5: nothing filled in bob\'s scope');
 
@@ -169,6 +172,30 @@ $nc = $rowsOf('owner', 'nasdaq100');
 eq([$nc['twelvedata:AAPL']['price'], $nc['twelvedata:AAPL']['locked']], [null, true], 'criterion 4: a user without a key — locked, no price');
 eq((int)$db->query("SELECT COUNT(*) FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope != 'u:$alice'")->fetchColumn(), 0, 'Twelve Data is saved only with cred_scope = u:<alice>');
 eq(call('bob', 'prefill_set', ['on' => true])[0], 200, 'bob turns it back on');
+eq(call('bob', 'prefill_set', ['on' => false])[0], 200, '… and off again (so the next sections count only alice\'s key)');
+
+// ── ביקורת 21-2 🟡1: מפתח אישי — חצי לדקה, בניכוי מה שההתראות כבר לקחו מאותו מפתח ──
+$db->exec("UPDATE providers SET overrides = '{\"per_day\":800}' WHERE id = 'twelvedata'");   // בלי תקרת 25% שמסתירה
+$ins = $db->prepare("INSERT INTO alerts (user_id, asset, tf, side, kind, method_id, methods, level, status, expires_at, created_at) VALUES (?, ?, 'h1', 'both', 'price', NULL, '[]', '100', 'active', ?, ?)");
+foreach (['ADBE', 'AMD', 'CSCO', 'PEP', 'INTU', 'QCOM'] as $sym) $ins->execute([$alice, "twelvedata:$sym", $NOW + 30 * 86400, $NOW]);
+[$code, $s] = cron($NOW + 5 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
+eq([$code, $s['calls']['twelvedata'] ?? null, $s['prefill']['calls']['twelvedata|personal'] ?? 0], [0, 8, 2],
+    '🟡1: 6 alert groups on alice\'s key → the prefill takes only 2 (8 − 6), not 4 — the key stays within 8 a minute');
+$db->exec('DELETE FROM alerts');
+
+// ── ביקורת 21-2 🟡2: המילוי לא נרשם ביומן בקשות הנרות ──
+$fl = new PDO("sqlite:$tmp.sqlite.cache", null, null, [PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+eq((int)$fl->query('SELECT COUNT(*) FROM fetch_log WHERE user_id = 0')->fetchColumn(), 0, '🟡2: no fetch_log rows from the prefill (it would flood the 2,000 rows)');
+eq((int)$fl->query("SELECT COUNT(*) FROM fetch_log WHERE user_id = $carol AND symbol = 'DOGEUSDT'")->fetchColumn(), 1, '🟡2: carol\'s chart opening is still there (recently opened)');
+
+// ── ביקורת 21-2 🔴1: מפתח פגום לא עוצר את המשך ה-cron ──
+$db->prepare("INSERT INTO provider_creds (owner, user_id, provider_id, secret, last4, created_at) VALUES ('user', ?, 'twelvedata', 'AAAAnot-a-box', 'xbox', ?)")->execute([$carol, $NOW]);
+$before = $db->query("SELECT v FROM settings WHERE k = 'alerts_cron'")->fetchColumn();
+[$code, $s, $err] = cron($NOW + 6 * 86400 + 900, ['binance' => 0, 'ecb' => 0, 'twelvedata' => 8]);
+eq([$code, $s['prefill']['key_errors'] ?? null, count($only($s['prefill']['done'], 'twelvedata'))], [0, 1, 4],
+    '🔴1: carol\'s key cannot be decrypted — only her key is skipped; alice\'s is still filled');
+$last = json_decode((string)$db->query("SELECT v FROM settings WHERE k = 'alerts_cron'")->fetchColumn(), true);
+eq([(int)$last['at'], $s['cleanup']], [$NOW + 6 * 86400 + 900, true], '🔴1: the run still saved its state and ran the daily cleanup (✅4)');
 
 // אזהרות הפעלה של PHP עצמו (למשל "JIT … disabled. in Unknown on line 0" ב-runner של הפריסה, #1629) — לא של הקוד
 $phpErr = array_values(array_filter(explode("\n", (string)@file_get_contents("$tmp.error.log")),

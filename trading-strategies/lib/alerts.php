@@ -338,8 +338,9 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
             $groups["$a[asset]|$a[tf]|$acc[scope]"][] = $a;
         }
         $used = [];
+        $usedKey = [];   // לפי מפתח ("ספק|היקף") — כדי שהמילוי ברקע יידע כמה כבר נלקח מכל מפתח אישי (21.2)
         foreach ($groups as $key => $list) {
-            [$asset, $tf] = explode('|', $key);
+            [$asset, $tf, $gScope] = explode('|', $key);
             $provider = explode(':', $asset, 2)[0];
             $cap = $budget[$provider] ?? ts_provider_limits($provider)['per_min'];
             if (microtime(true) - $t0 > TS_CRON_MAX_SECONDS) { $sum['stopped'] = true; $sum['deferred'] += count($list); continue; }
@@ -350,6 +351,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
                 // הפנייה האחת לספק לקבוצה — מרעננת את המאגר; כל ההתראות אחריה נבדקות ממנו
                 $r = ts_market_candles($first, $asset, $tf, $now - 3 * TS_TF_SECONDS[$tf], $now, $now);
                 $used[$provider] = ($used[$provider] ?? 0) + $r['provider_calls'];
+                $usedKey["$provider|$gScope"] = ($usedKey["$provider|$gScope"] ?? 0) + $r['provider_calls'];
             } catch (Throwable $e) {
                 $sum['errors']++;
                 error_log('trading-strategies alerts group ' . $key . ': ' . $e->getMessage());
@@ -359,6 +361,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
                 try {
                     [$state, $d] = ts_alert_eval($a, (int)$a['user_id'], $now);
                     $used[$provider] = ($used[$provider] ?? 0) + ($d['calls'] ?? 0);
+                    $usedKey["$provider|$gScope"] = ($usedKey["$provider|$gScope"] ?? 0) + ($d['calls'] ?? 0);
                 } catch (Throwable $e) {
                     $sum['errors']++;
                     error_log('trading-strategies alert ' . $a['id'] . ': ' . $e->getMessage());
@@ -377,7 +380,13 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
         // יומן השיטה (18.6, S6): התוצאה של רשומות שהטווח שלהן עבר — באותו תקציב לספק ובאותה תקרת זמן
         $sum['journal'] = ts_journal_resolve($now, $used, $budget, $t0);
         // מילוי איטי של המאגר (21.2) — אחרי ההתראות והיומן, כך שהם לא נדחים בגללו
-        $sum['prefill'] = ts_prefill_run($now, $used, $budget, $t0);
+        // חריגה במילוי לא עוצרת את המשך הריצה — הניקוי היומי (✅4) ושמירת מצב ה-cron (ביקורת 21-2 🔴1)
+        try {
+            $sum['prefill'] = ts_prefill_run($now, $used, $budget, $t0, $usedKey);
+        } catch (Throwable $e) {
+            error_log('trading-strategies prefill: ' . $e->getMessage());
+            $sum['prefill'] = ['error' => true];
+        }
         $sum['calls'] = $used;
         // ניקוי המאגר — פעם ביום, מכאן (✅4)
         $before = (int)ts_setting('cache_cleanup_at', '0');
