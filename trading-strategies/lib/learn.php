@@ -5,7 +5,7 @@
  * - **`method_outcomes`** (data/app.sqlite, מיגרציה 17): שורה לכל עסקה שהסתיימה, של כל שיטה, מכל מקור. לא נמחקת ולא
  *   משתנה: INSERT OR IGNORE על המפתח הייחודי (23.3) — חישוב חוזר לא מכפיל, ומוסיף רק עסקאות חדשות. גרסה חדשה — שורות
  *   חדשות, והישנות נשארות.
- * - **מקור `backtest`** — כאן (ts_backtest ← ts_bt_run($onTrade)). `live` ו-`trade` — L2.
+ * - **מקור `backtest`** — כאן (ts_backtest ← ts_bt_run($onTrade)). `live` ו-`trade` — L2, בסוף הקובץ (ts_learn_live_cron, ts_learn_trade).
  * - **התגיות** (23.5) — מזמן נר האות, ב-UTC, כשהשורה נכתבת: שוק, מסגרת, חודש, רבעון, יום (ISO), שעה (רק בתוך היום),
  *   וחגים — מ-lib/learn/holidays.json (lib/learn/holidays-build.php).
  * - **כל שיטה לחוד** (23.1): כל קריאה מסוננת לפי method_id; אין שאילתה "של כולן".
@@ -935,4 +935,145 @@ function ts_learn_cron(int $now, array &$used, ?array $budget, float $t0, ?calla
         ts_fetch_as_system(false);
     }
     return $sum;
+}
+
+// ── L2 (23.4): המקורות live ו-trade ───────────────────────────
+
+/** תקרת הזמן של live בתוך ריצת ה-cron (לפני L5b, שאחריו) */
+const TS_LEARN_LIVE_SECONDS = 45.0;
+/** כמה נרות לפני הנר הבא נמשכים יחד איתו — ל-tick של הנכס (ts_tick_decimals), כמו בבדיקה לאחור. המנוע מדלג עליהם (last_t) */
+const TS_LEARN_LIVE_CONTEXT = 50;
+
+/** הפרמטרים של שיטה על נכס ומסגרת — בדיוק כמו בכרטיס (ts_method_for → פלח → tick), כדי שה-hash ישווה לבדיקה לאחור */
+function ts_learn_params_for(TsMethod $m, string $asset, string $tf, int $decimals): array
+{
+    $set = ts_method_settings($m->meta()['id']);
+    return ts_params_for_asset($m, ts_params_for_segment($m, $set, $m->params($set['params']), $asset, $tf), $decimals);
+}
+
+/**
+ * live (23.4, L2): ב-cron — **ההמשך** של מנוע הבדיקה לאחור על נרות סגורים חדשים, מהמצב השמור. אותו מנוע, אותם כללים
+ * (6.2 א–ח), ולכן אותו R (קריטריון 1). רק עסקאות שהאות שלהן **אחרי** הבדיקה (t_signal > base_t) נכתבות — עסקה שנפתחה
+ * בבדיקה ונסגרה עכשיו שייכת לבדיקה לאחור. המצב נשמר ב-learn_live, כך שכל ריצה ממשיכה מהנר הבא.
+ *
+ * - לכל בדיקה לאחור שמורה (backtests, source = provider), ב**גרסה הנוכחית** ובאותם פרמטרים ועמלות (אותו hash). אחרת —
+ *   מדלגים: הכרטיס הבא יחשב בדיקה חדשה, ו-live יתחיל ממנה מחדש.
+ * - **רק שיטה מצטברת** (meta.incremental) — אצלה המשך מהמצב = ריצה אחת על כל הנרות.
+ * - **רק המאגר המשותף** (cred_scope ''): הנרות בשם המערכת (uid 0, כמו L5b) — מפתח אישי לא נפתח מכאן (private).
+ * - **באותו תקציב לספק** ($used, $budget) ובתקרת זמן משלה. חסר → נדחה לריצה הבאה, ושום דבר לא נכתב. התור — הישן קודם (at).
+ * $load — לבדיקות: (asset, tf, from) → נרות סגורים (מחרוזות), כמו ts_bt_history.
+ */
+function ts_learn_live_cron(int $now, array &$used, ?array $budget, float $t0, ?callable $load = null, float $seconds = TS_LEARN_LIVE_SECONDS): array
+{
+    $sum = ['checked' => 0, 'advanced' => 0, 'written' => 0, 'skipped' => 0, 'private' => 0, 'deferred' => 0, 'errors' => 0, 'stopped' => false];
+    $until = min($t0 + (defined('TS_CRON_MAX_SECONDS') ? TS_CRON_MAX_SECONDS : 240), microtime(true) + $seconds);
+    $load ??= function (string $asset, string $tf, int $from) use ($now, &$used, $budget, $until): array {
+        $provider = explode(':', $asset, 2)[0];
+        $cap = $budget[$provider] ?? ts_provider_limits($provider)['per_min'];
+        if (($used[$provider] ?? 0) >= $cap) throw new TsBudget('תקציב הפניות לספק בריצה הזו נגמר');
+        [$rows, $calls, $complete] = ts_bt_history(0, $asset, $tf, $from, $now, $until);
+        $used[$provider] = ($used[$provider] ?? 0) + $calls;
+        if (!$complete) throw new TsBacktestTimeout('המשיכה לא הושלמה בזמן');
+        return $rows;
+    };
+    $db = ts_db();
+    $live = [];
+    foreach ($db->query('SELECT * FROM learn_live')->fetchAll() as $l) $live["$l[method_id]|$l[provider]|$l[asset]|$l[tf]|$l[cred_scope]"] = $l;
+    $bts = $db->query("SELECT method_id, method_version, provider, asset, tf, params_hash, cred_scope, to_t, state FROM backtests
+                       WHERE source = 'provider' ORDER BY method_id, asset, tf")->fetchAll();
+    $key = fn($b) => "$b[method_id]|$b[provider]|$b[asset]|$b[tf]|$b[cred_scope]";
+    usort($bts, fn($a, $b) => (int)($live[$key($a)]['at'] ?? 0) <=> (int)($live[$key($b)]['at'] ?? 0));   // הישן קודם (יציב)
+    $save = $db->prepare('INSERT OR REPLACE INTO learn_live (method_id, provider, asset, tf, cred_scope, method_version, params_hash, base_t, last_t, state, written, at)
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    ts_fetch_as_system(true);
+    try {
+        foreach ($bts as $b) {
+            $sec = TS_TF_SECONDS[$b['tf']] ?? null;
+            if (!$sec || !ts_method_exists($b['method_id'])) { $sum['skipped']++; continue; }
+            $m = ts_method($b['method_id']);
+            $meta = $m->meta();
+            if (empty($meta['incremental']) || (int)$meta['version'] !== (int)$b['method_version']) { $sum['skipped']++; continue; }
+            if ((string)$b['cred_scope'] !== '') { $sum['private']++; continue; }
+            $l = $live[$key($b)] ?? null;
+            if ($l && ((int)$l['method_version'] !== (int)$b['method_version'] || $l['params_hash'] !== $b['params_hash'])) $l = null;   // גרסה / פרמטרים אחרים — מחדש
+            $state = json_decode((string)($l['state'] ?? $b['state']), true);
+            $base = $l ? (int)$l['base_t'] : (int)$b['to_t'];
+            if (!is_array($state) || !isset($state['last_t'])) { $sum['skipped']++; continue; }
+            if ((int)$state['last_t'] + 2 * $sec > $now) continue;   // אין עדיין נר סגור חדש
+            $sum['checked']++;
+            if (microtime(true) > $until) { $sum['stopped'] = true; $sum['deferred']++; continue; }
+            try {
+                $rows = $load($b['asset'], $b['tf'], (int)$state['last_t'] + 1 - TS_LEARN_LIVE_CONTEXT * $sec);
+                $market = ts_asset_market($b['asset']);
+                $cost = ts_cost_for($market);
+                $p = ts_learn_params_for($m, $b['asset'], $b['tf'], ts_tick_decimals($rows));
+                // הפרמטרים או העמלות השתנו מאז הבדיקה — לא ממשיכים מהמצב הישן; הכרטיס הבא יחשב בדיקה חדשה
+                if (ts_bt_hash($p, $cost) !== $b['params_hash']) { $sum['skipped']++; continue; }
+                $trades = [];
+                $s = ts_bt_run($m, $p, ts_bt_floats($rows), $cost, $state, $until, function (array $t) use (&$trades, $base): void {
+                    if ((int)$t['t_signal'] > $base) $trades[] = $t;
+                });
+                if ((int)$s['last_t'] === (int)$state['last_t']) continue;   // לא נוסף נר
+                $json = json_encode($s);
+                if ($json === false) { $sum['errors']++; continue; }   // NaN/INF — לא נשמר; הריצה הבאה מנסה שוב מאותה נקודה
+                // קודם השורות (בלי כפילות — המפתח הייחודי), ואחר כך המצב: כשל בין השניים → אותן עסקאות נכתבות שוב, ומדולגות
+                $n = ts_outcomes_write(['source' => 'live', 'method_id' => $meta['id'], 'method_version' => $meta['version'], 'params_hash' => $b['params_hash'],
+                    'provider' => $b['provider'], 'asset' => $b['asset'], 'tf' => $b['tf'], 'cred_scope' => '', 'market' => $market,
+                    'decimals' => ts_tick_decimals($rows), 'now' => $now], $trades);
+                $save->execute([$meta['id'], $b['provider'], $b['asset'], $b['tf'], '', $meta['version'], $b['params_hash'], $base,
+                    (int)$s['last_t'], $json, (int)($l['written'] ?? 0) + $n, $now]);
+                $sum['advanced']++;
+                $sum['written'] += $n;
+            } catch (TsBacktestTimeout | TsBudget | TsProviderError) {
+                $sum['deferred']++;   // לריצה הבאה — המצב לא זז, ושום דבר לא נכתב
+            } catch (TsInvalid) {
+                $sum['skipped']++;    // אין למערכת דרך לספק הזה
+            } catch (Throwable $e) {
+                $sum['errors']++;
+                error_log('trading-strategies learning live ' . $key($b) . ': ' . $e->getMessage());
+            }
+        }
+    } finally {
+        ts_fetch_as_system(false);
+    }
+    return $sum;
+}
+
+/**
+ * trade (23.4, L2): עסקה ביומן העסקאות שנסגרה, עם method_id ו-planned_stop → שורה אחת. R לפי planned_stop (ts_trade_calc,
+ * אחרי עמלות). בלי planned_stop — אין R ואין שורה. בלי תמונת ניתוח (נכס ומסגרת) — אין שורה: אין לאיזה פלח לשייך.
+ * משתמש שכיבה (users.learn_off, ל3 / ✅36) — אין שורה. user_id נשמר, ולא מוצג לאיש מלבד עורך ראשי (ts_learn_csv).
+ * השורה לא משתנה אחרי שנכתבה (INSERT OR IGNORE; trade_id במפתח) — עריכה מאוחרת של העסקה לא נוגעת בה. מחזיר 1 / 0.
+ */
+function ts_learn_trade(int $uid, int $tradeId, ?int $now = null): int
+{
+    $db = ts_db();
+    $off = $db->prepare('SELECT learn_off FROM users WHERE id = ?');
+    $off->execute([$uid]);
+    if ((int)$off->fetchColumn() === 1) return 0;
+    $st = $db->prepare('SELECT t.*, i.symbol, i.market FROM trades t JOIN instruments i ON i.id = t.instrument_id WHERE t.id = ? AND t.user_id = ?');
+    $st->execute([$tradeId, $uid]);
+    $t = $st->fetch();
+    if (!$t || $t['method_id'] === null || $t['planned_stop'] === null || $t['planned_stop'] === '' || !ts_method_exists((string)$t['method_id'])) return 0;
+    $snap = json_decode((string)($t['analysis_snapshot'] ?? ''), true);
+    $asset = is_array($snap) && is_string($snap['asset'] ?? null) ? $snap['asset'] : null;
+    $tf = is_array($snap) && is_string($snap['tf'] ?? null) && isset(TS_TF_SECONDS[$snap['tf']]) ? $snap['tf'] : null;
+    if ($asset === null || $tf === null || !str_contains($asset, ':')) return 0;
+    $ex = $db->prepare('SELECT exited_at, price, quantity, fees FROM trade_exits WHERE trade_id = ? ORDER BY exited_at, id');
+    $ex->execute([$tradeId]);
+    $c = ts_trade_calc($t + ['exits' => $ex->fetchAll()]);
+    if ($c['status'] !== 'closed' || $c['r_full'] === null || $c['closed_at'] === null) return 0;
+    $m = ts_method((string)$t['method_id']);
+    $version = is_int($snap['method_version'] ?? null) ? $snap['method_version'] : (int)$m->meta()['version'];
+    $opened = (int)strtotime((string)$t['opened_at']);
+    $win = dec_sign($c['net']) > 0;
+    $f = fn(?string $v) => $v === null || $v === '' ? null : (float)$v;
+    [$provider] = explode(':', $asset, 2);
+    return ts_outcomes_write(['source' => 'trade', 'method_id' => (string)$t['method_id'], 'method_version' => $version, 'params_hash' => '',
+        'provider' => $provider, 'asset' => $asset, 'tf' => $tf, 'cred_scope' => '', 'market' => ts_asset_market($asset), 'decimals' => 10,
+        'now' => $now ?? time(), 'user_id' => $uid, 'trade_id' => $tradeId], [[
+        't_signal' => is_int($snap['as_of'] ?? null) ? $snap['as_of'] : $opened, 't_entry' => $opened, 't_exit' => (int)strtotime((string)$c['closed_at']),
+        'side' => $t['direction'], 'entry' => $f($t['entry_price']), 'stop' => $f($t['planned_stop']), 'target' => $f($t['planned_target'] ?? null),
+        'exit' => $f($c['avg_exit']), 'result' => $win ? 'win' : 'loss', 'win' => $win, 'r' => (float)$c['r_full'],
+        'mae_r' => null, 'mfe_r' => null, 'atr' => null, 'features' => null]]);
 }

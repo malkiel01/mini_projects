@@ -86,7 +86,28 @@ export function mountAnalysis(ctx) {
       h('div', { class: 'block stack' },
         h('div', { class: 'fields two' }, field('מטבע בסיס להצגה', f.base_currency), field('גודל חשבון', f.account_size), field('אזור זמן', f.timezone, true))),
       err, h('div', {}, h('button', { class: 'btn primary', type: 'submit' }, 'שמירה')));
-    render(form, passwordBlock());
+    render(form, learnBlock(), passwordBlock());
+  }
+
+  // "העסקאות שלי בלמידה" (23.4, ל3 / ✅36): עסקה עם שיטה וסטופ שנסגרת נכנסת ללמידה — בלי שם. כיבוי — מכאן, ומיד
+  function learnBlock() {
+    const sw = h('input', { type: 'checkbox', 'aria-label': 'העסקאות שלי בלמידה' });
+    sw.checked = !ME().user.learn_off;
+    sw.addEventListener('change', async () => {
+      sw.disabled = true;
+      try {
+        const r = await api('learn_off_set', { off: !sw.checked });
+        ME().user.learn_off = r.learn_off;
+        toast(r.learn_off ? 'העסקאות שלך לא ייכנסו ללמידה' : 'העסקאות שלך ייכנסו ללמידה');
+      } catch (e) { sw.checked = !sw.checked; toast(e.message, true); }
+      finally { sw.disabled = false; }
+    });
+    return h('section', { class: 'learn-block' },
+      h('h2', { class: 'sec-title' }, '📚 למידה'),
+      h('div', { class: 'block stack' },
+        h('label', { class: 'switch' }, sw, h('span', {}, 'העסקאות שלי בלמידה')),
+        h('p', { class: 'hint' }, 'עסקה שנפתחה מכרטיס של שיטה, עם סטופ, נכנסת כשהיא נסגרת לסטטיסטיקה של השיטה — בלי שמך. ',
+          'רק עורך ראשי רואה מי. כיבוי חל על עסקאות שייסגרו מעכשיו.')));
   }
 
   // "סיסמה לאפליקציה" (spec-stage-a 20.1 ד'): לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים, ושם רק אם עורך הפעיל
@@ -99,7 +120,7 @@ export function mountAnalysis(ctx) {
         await api('password_set', { password: pw.value });
         ctx.setMe(await api('me'));
         toast('הסיסמה נשמרה');
-        render(document.querySelector('main form'), passwordBlock());
+        render(document.querySelector('main form'), learnBlock(), passwordBlock());
       } });
       s.body.append(field('סיסמה חדשה — לפחות 10 תווים', pw, true),
         h('p', { class: 'hint' }, 'נכנסים בה עם המייל ' + (ME().user.email || '') + '.'));

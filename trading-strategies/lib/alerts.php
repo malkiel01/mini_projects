@@ -387,6 +387,13 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
             error_log('trading-strategies prefill: ' . $e->getMessage());
             $sum['prefill'] = ['error' => true];
         }
+        // למידה — live (23.4, L2): אותות של השיטה אחרי הבדיקה לאחור שהגיעו ליציאה. באותו תקציב, לפני השוואת השכנים
+        try {
+            $sum['learn_live'] = ts_learn_live_cron($now, $used, $budget, $t0);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning live: ' . $e->getMessage());
+            $sum['learn_live'] = ['error' => true];
+        }
         // למידה (23.9, L5b): השוואת שכנים — אחרונה, באותו תקציב לספק ובתקרת זמן משלה. חריגה לא עוצרת את המשך הריצה
         try {
             $sum['learn'] = ts_learn_cron($now, $used, $budget, $t0);

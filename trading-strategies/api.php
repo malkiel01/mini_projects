@@ -261,7 +261,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
     }
 }
 
-const TS_WRITE = ['logout', 'password_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
+const TS_WRITE = ['logout', 'password_set', 'learn_off_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
@@ -327,6 +327,10 @@ try {
         case 'password_set':
             ts_password_set($uid, $in['password'] ?? null);
             out(['ok' => true]);
+
+        // ל3 / ✅36 (L2): העסקאות שלי בלמידה — המשתמש עצמו בלבד
+        case 'learn_off_set':
+            out(['ok' => true, 'learn_off' => ts_learn_off_set($uid, $in['off'] ?? null)]);
 
         case 'settings':
             ts_settings_save($uid, $in);

@@ -25,7 +25,7 @@
 
 
 > **עדכון 2026-11-16 (צ'אט הלמידה — err500, bt-incomplete, L1, L3, L4, L5, L5b; נסגר ב-~780K):** הסעיף הבא, "התחל כאן — למידה", הוא
-> ההעברה המלאה. **`app.sqlite` — המיגרציה הבאה 22; `cache.sqlite` — 6.** הבא בתור: **L2**, ואחריו **L6**.
+> ההעברה המלאה. ~~המיגרציה הבאה 22~~ — נלקחה ב-L2 (`learn_live`). **`app.sqlite` — הבאה 23; `cache.sqlite` — 6.** הבא בתור: **L6**.
 
 ## התחל כאן — למידה (פרק 23): מה בנוי, מה הבא, מה חייבים
 
@@ -53,7 +53,17 @@
 - **מי מצהיר מה:** `sample-ma-cross` (stop/target, צעד 0.5), `elliott-w3` (`w3_mult` — ערכי הספר). **פיבונאצ'י — עוד לא** (ההצהרה אצל
   קוד פיבונאצ'י; השורה המדויקת בסעיף L5/L5b למטה).
 
-### הבא: L2 — `live` ו-`trade` (23.4, קריטריונים L2 1–4)
+### L2 — בנוי (`live` ו-`trade`, מיגרציה 22)
+
+- **live:** `ts_learn_live_cron` — ב-cron אחרי המילוי ולפני `ts_learn_cron`. המצב ב-`learn_live` (מפתח כמו `backtests`); `base_t` — עסקה
+  שהאות שלה עד שם שייכת לבדיקה לאחור. גרסה / hash אחרים → מדלג (הכרטיס הבא יחשב בדיקה, ואז מתחיל מחדש). רק `cred_scope = ''`.
+  בסיכום ה-cron: `learn_live: {checked, advanced, written, skipped, private, deferred, errors}`.
+- **trade:** `ts_learn_trade($uid, $tradeId)` מ-`ts_trade_save`. `params_hash = ''`; `t_signal` = `as_of` של התמונה; בלי תמונה — אין שורה.
+- **המתג:** `learn_off_set`, `me.user.learn_off`, `learnBlock()` בפרופיל (`analysis.js`).
+- **ל-L6:** שורות `live` לשיטה וגרסה, ב-`market × tf` — `SELECT … FROM method_outcomes WHERE source = 'live' AND method_id = ? AND method_version = ? AND market = ? AND tf = ?`.
+  L4 / L5b עדיין רצים רק על `backtest`.
+
+### היה: L2 — `live` ו-`trade` (23.4, קריטריונים L2 1–4)
 
 - **`live`:** ב-cron — אות של השיטה **אחרי** הבדיקה לאחור, על נרות סגורים, שהגיע ליציאה. אותו מנוע (`ts_bt_run` עם `$onTrade`), אותו R.
   - המקור הטבעי: מצב המנוע השמור (`backtests.state`, מצטבר) — להמשיך ממנו על הנרות החדשים, ולכתוב רק עסקאות עם `t_signal` אחרי
