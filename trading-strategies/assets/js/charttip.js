@@ -24,6 +24,7 @@ const KIND_NAME = { label: 'נקודה של השיטה', marker: 'סימון ש�
 /** התוכן של החלונית: {title, cert — שורת הוודאות של הכרטיס או null, sub: [ערכים], tag, explain, inv: {price, below, rule} | null, links: [{label, href}]} */
 export function tipContent(hit, fmtTime) {
   const { it, price } = hit;
+  if (it.kind === 'past') return pastContent(hit, fmtTime);
   const tip = it.tip && typeof it.tip === 'object' ? it.tip : {};
   // שורת המשנה — מחיר וזמן (לאזור — הטווח). כל ערך מבודד ב-<bdi>, כדי שהעברית סביבו לא תהפוך אותו
   let sub;
@@ -43,6 +44,31 @@ export function tipContent(hit, fmtTime) {
     inv: iv && Number.isFinite(+iv.price) ? { price: price(iv.price), below: iv.side !== 'above', rule: iv.rule || '' } : null,
     // רק קישורים בתוך האפליקציה (השרת כבר בודק — ts_overlay_check)
     links: Array.isArray(tip.links) ? tip.links.filter(l => typeof l?.href === 'string' && l.href.startsWith('#/') && l.label) : [],
+  };
+}
+
+const PAST_RESULT = { win: '✓ הגיע לרמת היציאה', loss: '✗ הגיע לסטופ', horizon: '⏱ תום האופק' };
+/** אות עבר (H1, 18.1.8 סעיף 1): "אות לונג · היה", הכלל של השיטה בנר האות, כניסה, סטופ, רמת יציאה, התוצאה ב-R וזמן היציאה */
+function pastContent(hit, fmtTime) {
+  const { it, price } = hit;
+  const v = x => (x === null || x === undefined ? '—' : price(x));
+  // ⁦…⁩ — בידוד כיוון: "+0.57R" בתוך משפט עברי, בלי שהסימן יקפוץ לסוף
+  const r = it.r === null || it.r === undefined ? '' : ` \u2066${it.r >= 0 ? '+' : '−'}${Math.abs(Math.round(it.r * 100) / 100)}R\u2069`;
+  // רק מה שהמחשב בדק (met true/false) — "בדוק בעצמך" (met: null) שייך להווה, לא לאות שכבר היה
+  const rule = (it.rule || []).filter(c => c.met !== null).map(c => `${c.met ? '✓' : '✗'} ${c.text}`).join(' · ');
+  return {
+    title: `אות ${it.side === 'long' ? 'לונג' : 'שורט'} · היה`,
+    cert: null,
+    sub: [fmtTime(it.t)],
+    tag: `${hit.name} · היה`,
+    explain: [
+      rule ? `הכלל: ${rule}` : null,
+      `כניסה ${v(it.entry)} · סטופ ${v(it.stop)} · ${it.result === 'open' ? 'יעד' : 'יציאה'} ${v(it.result === 'open' ? it.target : it.exit)}`,
+      it.result === 'open' ? '… פתוח — עדיין בתוך האופק, בלי תוצאה סופית' : `${PAST_RESULT[it.result] || ''}${r} · ${fmtTime(it.t_exit)}`,
+      `על הנרות שבגרף בלבד${Number.isInteger(hit.r?.history?.bars) ? ` (${hit.r.history.bars.toLocaleString('he-IL')} הנרות האחרונים)` : ''} — הבדיקה לאחור המלאה בכרטיס`,
+    ].filter(Boolean),
+    inv: null,
+    links: [],
   };
 }
 
@@ -87,7 +113,7 @@ export function mountChartTip({ h, box, wrap, chart, forecast, fmtTime, legend =
       h('div', { class: 'ctip-head' }, h('b', { class: 'ctip-title', id: tid }, c.title), x),
       c.sub.length ? h('small', { class: 'ctip-sub' }, ...c.sub.flatMap((v, i) => [i ? ' · ' : '', h('bdi', {}, v)])) : null,
       h('p', { class: 'ctip-row' }, h('span', { class: 'ctip-tag' }, c.tag), c.cert ? h('b', { class: 'ctip-cert num' }, c.cert) : null),
-      c.explain ? h('p', { class: 'ctip-text' }, c.explain) : null,
+      ...(Array.isArray(c.explain) ? c.explain : c.explain ? [c.explain] : []).map(t => h('p', { class: 'ctip-text' }, t)),
       c.inv ? h('p', { class: 'ctip-inv' }, h('span', { class: 'ctip-tag danger' }, 'מתבטל אם'), ' ',
         `מחיר ${c.inv.below ? 'מתחת ל-' : 'מעל ל-'}`, h('bdi', { class: 'num' }, c.inv.price), c.inv.rule ? ` — ${c.inv.rule}` : '') : null,
       links.length ? h('p', { class: 'ctip-links' }, ...links) : null,

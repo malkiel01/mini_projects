@@ -195,6 +195,11 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   const scenarioOf = id => (pick(id)?.hide ? [] : (res.get(id)?.forecast?.items || []).map(it => ({ ...it, scen: true })));
   const itemsOf = id => [...findingOf(id), ...scenarioOf(id)];
   const isOn = (id, it) => !it.scenario || it.scenario === selected.get(id);
+  // ── עבר (H1, 18.1.8): אותות שהשיטה הייתה נותנת בנרות שבגרף, ומה קרה — עמומים, "היה". רק תצוגה ──
+  const histOn = () => ctx.me()?.profile?.history !== false;   // ברירת מחדל דולק (סעיף 4)
+  const historyOf = id => res.get(id)?.history || null;
+  const pastOf = id => (histOn() ? (historyOf(id)?.items || []).map(x => ({ ...x, kind: 'past' })) : []);
+  const PAST_ALPHA = 0.5;
   // מחיר לתצוגה לפי ה-tick של הנכס (מהשרת) — מפריד אלפים, בלי אפסים מיותרים (18.1.2 סעיף 4)
   const price = (id, v) => fmtNum(v, Number.isInteger(res.get(id)?.tick_decimals) ? res.get(id).tick_decimals : 8);
 
@@ -300,6 +305,53 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
     }
   }
+  // ── עבר (H1): ▲/▼ בנר האות בצבע השיטה, תוצאה קצרה, וקווי הסטופ והיציאה — מנר האות עד היציאה בלבד ──
+  let pastDrawn = [];   // לבדיקות: {m, t, side, result, alpha, label}
+  /** "✓ +1.8R" / "✗ −1R" / "⏱ +0.4R" / "… פתוח" */
+  const pastText = it => (it.result === 'open' ? '… פתוח'
+    : `${{ win: '✓', loss: '✗', horizon: '⏱' }[it.result] || ''} ${it.r >= 0 ? '+' : '−'}${Math.abs(Math.round(it.r * 10) / 10)}R`);
+  /** הנקודה של החץ: מתחת לנר (לונג) או מעליו (שורט) */
+  function pastAnchor(it) {
+    const x = xOf(it.t);
+    const l = timeToLogical(getTimes(), getSec(), it.t), bar = l === null ? null : series.dataByIndex?.(Math.round(l));
+    if (x === null || !bar) return null;
+    const y = it.side === 'long' ? yOf(bar.low) : yOf(bar.high);
+    return y === null ? null : { x, y: it.side === 'long' ? y + 9 : y - 9 };
+  }
+  function drawPast(ctx, id, it, W) {
+    const a = pastAnchor(it);
+    if (!a || a.x < -10 || a.x > W + 10) return;
+    const c = colorOf(id), up = it.side === 'long';
+    ctx.save();
+    ctx.globalAlpha = PAST_ALPHA;
+    ctx.setLineDash([]);
+    // קווים קצרים: מנר האות עד היציאה (או עד הנר האחרון — פתוח). לעולם לא קדימה מעבר לנרות
+    const x2 = it.t_exit !== null ? xOf(it.t_exit) : xOf(getTimes().at(-1));
+    for (const [v, dash] of [[it.stop, [3, 3]], [it.result === 'open' ? it.target : it.exit, []]]) {
+      const y = v === null || v === undefined ? null : yOf(v);
+      if (y === null || x2 === null) continue;
+      ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.setLineDash(dash);
+      ctx.beginPath(); ctx.moveTo(a.x, y); ctx.lineTo(Math.max(a.x + 4, x2), y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    if (up) { ctx.moveTo(a.x, a.y - 5); ctx.lineTo(a.x - 5, a.y + 4); ctx.lineTo(a.x + 5, a.y + 4); }
+    else { ctx.moveTo(a.x, a.y + 5); ctx.lineTo(a.x - 5, a.y - 4); ctx.lineTo(a.x + 5, a.y - 4); }
+    ctx.closePath(); ctx.fill();
+    // התוצאה — מתחת לחץ (לונג) או מעליו (שורט); תווית שחופפת לתווית עבר אחרת — לא מצוירת (נשארת בחלונית)
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.direction = 'ltr';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = up ? 'top' : 'bottom';
+    const s = pastText(it), w = ctx.measureText(s).width + 4, ty = up ? a.y + 6 : a.y - 6;
+    const r = { x: a.x - w / 2, y: up ? ty : ty - 12, w, h: 12 };
+    const free = !pastDrawn.some(o => o.r && r.x < o.r.x + o.r.w && o.r.x < r.x + r.w && r.y < o.r.y + o.r.h && o.r.y < r.y + r.h);
+    if (free) ctx.fillText(s, a.x, ty);
+    ctx.restore();
+    pastDrawn.push({ m: id, t: it.t, side: it.side, result: it.result, alpha: PAST_ALPHA, label: free ? s : null, x: a.x, y: a.y, r: free ? r : null });
+  }
+
   // ── הדמיית המשך ──
   const sims = new Map();   // id → {bars: [{t, o, h, l, c}], alpha} — מחושב ב-paint, מצויר ב-draw
   let lastSimKey = '';      // השיטות עם המשך והנר האחרון, כשהתצוגה הוזזה בפעם האחרונה — הזזה אחת בלבד לכל צירוף
@@ -404,6 +456,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
             target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
               const W = mediaSize.width;
               ctx.save();
+              // העבר (H1) — מתחת לכל מה שבהווה: עמום, ובלי שום דבר קדימה
+              pastDrawn = [];
+              for (const { id } of [...shown()].reverse()) for (const it of pastOf(id)) drawPast(ctx, id, it, W);
               // הקווים: השיטה האחרונה קודם, המובילה מעליה; בכל שיטה — החלופות קודם
               for (const { id } of [...shown()].reverse()) {
                 for (const it of itemsOf(id)) if (!isOn(id, it)) drawShape(ctx, id, it, W);
@@ -464,8 +519,28 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
           m.label ? h('small', { class: 'muted' }, m.label) : null,
           ok ? null : h('small', { class: 'muted' }, 'לא במסגרת הזו')));
       return h('div', { class: 'fc-row' }, opt, mine ? swatches(m, mine) : null);
-    })), chosen.length >= MAX ? h('p', { class: 'fc-max', role: 'status' }, `עד ${MAX} שיטות יחד`) : null,
+    })), ...(chosen.length >= MAX ? [h('p', { class: 'fc-max', role: 'status' }, `עד ${MAX} שיטות יחד`)] : []),   // replaceChildren — null היה מודפס "null"
+    histRow(),
     h('p', { class: 'fc-note' }, 'תרחיש לפי כללי השיטה על הנרות שבגרף — לא ייעוץ, בלי אחוז ודאות.'));
+  }
+  /** המתג "היסטוריה" (H1, 18.1.8 סעיף 4) — לכל השיטות יחד, בפרופיל. ומתחתיו — התקרה: "מוצגים 50 האחרונים מתוך N" */
+  function histRow() {
+    const inp = h('input', { type: 'checkbox', name: 'fc-history' });
+    inp.checked = histOn();
+    inp.addEventListener('change', async () => {
+      const on = inp.checked, me = ctx.me();
+      if (me?.profile) me.profile.history = on;
+      paint();
+      if (openNow()) renderPop();
+      try { await api('history_set', { on }); } catch (e) { if (me?.profile) me.profile.history = !on; paint(); if (openNow()) renderPop(); toast(e.message, true); }
+    });
+    // לכל שיטה — כמה אותות היו, ועל כמה נרות (גם 0: כדי שיהיה ברור למה הגרף ריק); ומעל 50 — התקרה
+    const rows = histOn() ? shown().map(c => [c.id, historyOf(c.id)]).filter(([, x]) => x && Number.isInteger(x.bars)) : [];
+    const he = v => v.toLocaleString('he-IL');
+    return h('div', { class: 'fc-hist' },
+      h('label', { class: 'switch' }, inp, h('span', {}, 'היסטוריה'), h('small', { class: 'muted' }, ' — מה השיטות היו אומרות בנרות שבגרף, עמום')),
+      ...rows.map(([id, x]) => h('small', { class: 'muted fc-hist-n', 'data-method': id }, `${nameOf(id)}: ${x.n === 1 ? 'אות אחד' : `${he(x.n)} אותות`} ב-${he(x.bars)} הנרות האחרונים`)),
+      ...rows.filter(([, x]) => x.n > x.items.length).map(([id, x]) => h('small', { class: 'muted fc-hist-cap', 'data-method': id }, `${nameOf(id)}: מוצגים ${x.items.length} האחרונים מתוך ${he(x.n)}`)));
   }
   /** בחירת הצבע של שיטה מסומנת: 8 עיגולים; צבע של שיטה אחרת שעל הגרף — לא ניתן לבחירה (18.5 קריטריון 2) */
   function swatches(m, mine) {
@@ -522,6 +597,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     const r = res.get(id);
     return !!r && !r.overlay?.items?.length && !r.forecast?.items?.length && !r.forecast?.scenarios?.length;
   };
+  const pastN = id => (histOn() ? historyOf(id)?.n || 0 : 0);
   function renderLegend() {
     legend.hidden = !chosen.length;
     legend.replaceChildren(...chosen.map(c => {
@@ -531,7 +607,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
         style: `--mc: var(${c.color})`, 'aria-pressed': String(!c.off), title: why || (c.off ? 'הצגה על הגרף' : 'הסתרה מהגרף'),
         ...(none ? { 'aria-label': `${nameOf(c.id)} — אין תחזית כרגע` } : {}),
         on: { click: () => { c.off = !c.off; save(); paint(); } } }, h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), nameOf(c.id),
-        none ? h('span', { class: 'fc-leg-none', 'aria-hidden': 'true' }, '∅') : null);
+        none ? h('span', { class: 'fc-leg-none', 'aria-hidden': 'true' }, '∅') : null,
+        // H1: ההווה ריק, אבל בנרות שבגרף היו אותות — "N אותות בעבר בגרף" (רק כשהמתג דולק)
+        none && pastN(c.id) ? h('small', { class: 'fc-leg-past' }, `${pastN(c.id).toLocaleString('he-IL')} אותות בעבר בגרף`) : null);
     }));
   }
   /** המלבן של המקרא בקואורדינטות של הגרף — ללוח התוויות */
@@ -734,9 +812,10 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
 
   // ── החלונית על הגרף (T1, 18.1.6) — מה מצויר בנקודה, מאותה גאומטריה של הציור (xOf/yOf) ──
   // רק מה שמוצג: שיטה גלויה, התרחיש הנבחר (לא חלופה עמומה). הקטן קודם: נקודה, קו, אזור (18.1.6 סעיף 1)
-  const RANK = { label: 0, marker: 0, hline: 1, polyline: 1, zone: 2 };
+  const RANK = { label: 0, marker: 0, past: 0, hline: 1, polyline: 1, zone: 2 };
   /** הנקודה על פריט שהכי קרובה ל-(px, py) — שם הזנב מצביע: נקודה — היא; קו — בגובה הלחיצה; אזור — הלחיצה בתוכו */
   function anchorOf(it, px, py, W) {
+    if (it.kind === 'past') return pastAnchor(it);
     if (it.kind === 'label' || it.kind === 'marker') {
       const x = xOf(it.t);
       let y = it.kind === 'label' ? yOf(it.price) : null;
@@ -769,15 +848,15 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     return null;
   }
   // זהות של פריט בין ציור לציור (רענון — הנר הבא נסגר): בלי מחירים וזמנים שזזים, חוץ מהזמן של נקודה
-  const keyOf = (id, it) => [id, it.kind, it.role || '', it.scenario ?? '', it.fib || '', it.r ?? '', it.kind === 'label' || it.kind === 'marker' ? it.t : '', it.kind === 'label' ? it.text : ''].join('|');
+  const keyOf = (id, it) => it.kind === 'past' ? [id, 'past', it.t].join('|') : [id, it.kind, it.role || '', it.scenario ?? '', it.fib || '', it.r ?? '', it.kind === 'label' || it.kind === 'marker' ? it.t : '', it.kind === 'label' ? it.text : ''].join('|');
   const hitOf = (id, it, a, px, py) => ({ id, it, key: keyOf(id, it), x: a.x, y: a.y, px, py,
-    t: it.kind === 'label' || it.kind === 'marker' ? it.t : chart.timeScale().coordinateToTime(a.x), p: it.kind === 'label' ? it.price : series.coordinateToPrice(a.y),
+    t: it.kind === 'label' || it.kind === 'marker' || it.kind === 'past' ? it.t : chart.timeScale().coordinateToTime(a.x), p: it.kind === 'label' ? it.price : it.kind === 'past' ? it.entry : series.coordinateToPrice(a.y),
     name: nameOf(id), color: pick(id)?.color || '--brand', r: res.get(id), price: v => price(id, v),
     short: shortLabel(it), cert: certLine(card(id)) });
   /** כל מה שבטווח R מהלחיצה (אצבע: 24px), הקטן והקרוב ראשון. [] — כלום */
   function hitsAt(px, py, W, R = 24) {
     const out = [];
-    for (const { id } of shown()) for (const it of itemsOf(id)) {
+    for (const { id } of shown()) for (const it of [...itemsOf(id), ...pastOf(id)]) {
       if (!isOn(id, it) || !(it.kind in RANK)) continue;
       const a = anchorOf(it, px, py, W);
       if (!a) continue;
@@ -788,7 +867,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   }
   /** אחרי ציור מחדש: אותו פריט, במקום החדש שלו — או null אם הוא כבר לא מוצג */
   function relocate(hit, W) {
-    for (const { id } of shown()) for (const it of itemsOf(id)) {
+    for (const { id } of shown()) for (const it of [...itemsOf(id), ...pastOf(id)]) {
       if (!isOn(id, it) || keyOf(id, it) !== hit.key) continue;
       const a = anchorOf(it, hit.px, hit.py, W);
       return a ? hitOf(id, it, a, hit.px, hit.py) : null;
@@ -851,6 +930,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       try { series.detachPrimitive(primitive); } catch { /* ריק */ }
     },
     state: () => ({ methods: chosen.map(c => ({ ...c, off: !!c.off, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
-      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() }, sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
+      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() },
+      past: pastDrawn.map(({ r, ...x }) => x), history: histOn(), pastN: Object.fromEntries(chosen.map(c => [c.id, historyOf(c.id)?.n ?? null])), sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
   };
 }
