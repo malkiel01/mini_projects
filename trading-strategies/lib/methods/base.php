@@ -23,6 +23,12 @@ require_once dirname(__DIR__) . '/indicators.php';
 abstract class TsMethod
 {
     /**
+     * כמה פעמים "החל" (18.7, S7) שינה פרמטר של השיטה — methods.tune, נטען ב-ts_method(). כל שיטה מוסיפה אותו לגרסה
+     * שב-meta(): גרסה = גרסת הקוד + tune. שני המספרים רק עולים, ולכן הגרסה לעולם לא חוזרת על עצמה.
+     */
+    public int $tune = 0;
+
+    /**
      * id, name, source (מקור: ספר ופרק, או "שיטת דוגמה"), sample (bool), markets[], timeframes[],
      * params{key: {label, default, min, max, int}}, horizon_bars, warmup (נרות עד שהשיטה "מתחממת"), version (int),
      * incremental (bool — המצב ממשיך על נרות חדשים), alerts (bool — מותרת בהתראות, פרק 8)

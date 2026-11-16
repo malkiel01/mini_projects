@@ -1,6 +1,7 @@
 <?php
 // צבע לכל שיטה (spec-stage-a 18.5, S5): method_colors בפרופיל — ריק כברירת מחדל, שמירה, צבע אחד לשיטה אחת, רק מהפלטה,
-// בידוד בין משתמשים, ושום נתון קיים לא נמחק (מיגרציה 10 — ALTER בלבד).
+// בידוד בין משתמשים, ושום נתון קיים לא נמחק (מיגרציה 10 — ALTER בלבד). 2.20: {id: {color, at}}, שיטה לא זמינה נשארת
+// במפה והצבע שלה פנוי, והמבנה הישן נקרא בסלחנות.
 // php trading-strategies/tests/method-colors-api.php — php -S עם שער מדומה. בלי רשת. הדפדפן — tests/method-colors-ui.mjs.
 if (PHP_SAPI !== 'cli') exit;
 
@@ -61,42 +62,63 @@ eq([$c, $r['profile']['method_colors']], [200, []], 'default: no colors saved');
 eq(str_contains($raw, '"method_colors":{}'), true, 'empty map is a JSON object {} (not [])');
 eq(call('alice', 'me')[1]['profile']['method_colors'], [], 'the colors come with "me" (the chart reads them from there)');
 
-// ── שמירה: נשמר בפרופיל, חוזר בכל קריאה ──
-[$c, $r] = call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => '--m5', 'sample-ma-cross' => '--brand']]);
-eq([$c, $r['method_colors']], [200, ['elliott-w3' => '--m5', 'sample-ma-cross' => '--brand']], 'save two colors');
-eq(call('alice', 'profile')[1]['profile']['method_colors'], ['elliott-w3' => '--m5', 'sample-ma-cross' => '--brand'], 'criterion 3: the color is in the profile');
+$E = fn(string $c, int $at = 0) => ['color' => $c, 'at' => $at];
+
+// ── שמירה: נשמר בפרופיל, חוזר בכל קריאה — {id: {color, at}} (2.20) ──
+[$c, $r] = call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => $E('--m5', 100), 'test-cross-a' => $E('--brand', 200)]]);
+eq([$c, $r['method_colors']], [200, ['elliott-w3' => $E('--m5', 100), 'test-cross-a' => $E('--brand', 200)]], 'save two colors with their times');
+eq(call('alice', 'profile')[1]['profile']['method_colors'], ['elliott-w3' => $E('--m5', 100), 'test-cross-a' => $E('--brand', 200)], 'criterion 3: the color is in the profile');
 eq(call('bob', 'profile')[1]['profile']['method_colors'], [], 'isolation: bob has his own colors');
 
-// ── אותו צבע לשתי שיטות — אסור (קריטריון 2) ──
-[$c, $r] = call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => '--m5', 'sample-ma-cross' => '--m5']]);
-eq([$c, $r['error'] ?? null], [422, 'הצבע תפוס על ידי שיטה אחרת'], 'criterion 2: a taken color is refused');
-eq(call('alice', 'profile')[1]['profile']['method_colors']['elliott-w3'], '--m5', '… and nothing changed');
+// ── אותו צבע לשתי שיטות זמינות — אסור (קריטריון 2) ──
+[$c, $r] = call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => $E('--m5'), 'test-cross-a' => $E('--m5')]]);
+eq([$c, $r['error'] ?? null], [422, 'הצבע תפוס על ידי שיטה אחרת'], 'criterion 2: a taken color is refused (two available methods)');
+eq(call('alice', 'profile')[1]['profile']['method_colors']['elliott-w3'], $E('--m5', 100), '… and nothing changed');
 
-// ── רק מהפלטה; מפה בלבד; מזהה תקין; לא יותר שיטות מצבעים ──
+// ── 2.20: שיטה לא זמינה (שיטת הדוגמה — כבויה, ולמשתמש רגיל לא נראית; או שיטה שהוסרה) נשארת במפה, והצבע שלה פנוי ──
+$keepOff = ['elliott-w3' => $E('--m5', 300), 'sample-ma-cross' => $E('--m5', 50), 'gone-method' => $E('--m5', 10)];
+[$c, $r] = call('alice', 'method_colors_save', ['colors' => $keepOff]);
+eq([$c, $r['method_colors']], [200, $keepOff], '2.20: an unavailable method keeps its entry, and its color is free for an available one');
+
+// ── המבנה הישן ({id: צבע}, S5): נשמר מדפדפן ישן → at: 0; וקריאה סלחנית של מה שכבר שמור במסד ──
+eq(call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => '--m3']])[1]['method_colors'], ['elliott-w3' => $E('--m3')], 'old shape on save → {color, at: 0}');
+$db = new PDO('sqlite:' . "$tmp.sqlite");
+$bobId = (int)$db->query("SELECT id FROM users WHERE email = 'bob@test.local'")->fetchColumn();
+$db->exec("UPDATE users SET method_colors = '{\"elliott-w3\":\"--m6\",\"test-cross-a\":{\"color\":\"--m2\",\"at\":5},\"bad\":\"#fff\"}' WHERE id = $bobId");
+$db = null;
+eq(call('bob', 'profile')[1]['profile']['method_colors'], ['elliott-w3' => $E('--m6'), 'test-cross-a' => $E('--m2', 5)],
+    'lenient read: an old-shape color is kept (at 0), a new one as is; only the broken entry is skipped — no saved color is lost');
+eq(call('bob', 'me')[1]['profile']['method_colors']['elliott-w3'], $E('--m6'), '… also in "me"');
+
+// ── רק מהפלטה; מפה בלבד; מזהה תקין; זמן תקין; תקרה לגודל ──
 foreach ([
-    'not in the palette' => ['elliott-w3' => '#ff0000'],
-    'css injection' => ['elliott-w3' => 'red; background: url(x)'],
-    'a list, not a map' => ['--m2'],
-    'a bad method id' => ['../x' => '--m2'],
+    'not in the palette' => ['elliott-w3' => $E('#ff0000')],
+    'css injection' => ['elliott-w3' => $E('red; background: url(x)')],
+    'a list, not a map' => [$E('--m2')],
+    'a bad method id' => ['../x' => $E('--m2')],
     'a non-string color' => ['elliott-w3' => 3],
+    'a negative time' => ['elliott-w3' => $E('--m2', -1)],
+    'a time in the future' => ['elliott-w3' => $E('--m2', $NOW + 3 * 86400)],
+    'a string time' => ['elliott-w3' => ['color' => '--m2', 'at' => '5']],
 ] as $what => $bad) eq(call('alice', 'method_colors_save', ['colors' => $bad])[0], 422, "refused: $what");
-$nine = [];
-foreach (['--brand', '--m2', '--m3', '--m4', '--m5', '--m6', '--m7', '--m8', '--m2'] as $i => $col) $nine["m$i"] = $col;
-eq(call('alice', 'method_colors_save', ['colors' => $nine])[0], 422, 'refused: more methods than colors');
-$eight = array_slice($nine, 0, 8, true);
+$many = [];
+for ($i = 0; $i < 65; $i++) $many["m$i"] = $E('--m2');
+eq(call('alice', 'method_colors_save', ['colors' => $many])[0], 422, 'refused: more than 64 entries');
+$eight = [];
+foreach (['--brand', '--m2', '--m3', '--m4', '--m5', '--m6', '--m7', '--m8'] as $i => $col) $eight["m$i"] = $E($col, $i);
 eq(call('alice', 'method_colors_save', ['colors' => $eight])[1]['method_colors'], $eight, 'all 8 colors, one per method');
 eq(call('alice', 'method_colors_save', ['colors' => []])[1]['method_colors'], [], 'an empty map clears the colors');
-eq(call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => '--m4']])[1]['method_colors'], ['elliott-w3' => '--m4'], 'save again after clearing');
+eq(call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => $E('--m4', 7)]])[1]['method_colors'], ['elliott-w3' => $E('--m4', 7)], 'save again after clearing');
 
 // ── הרשאות: בלי CSRF — לא נשמר ──
 $keep = $tokens['alice']; $tokens['alice'] = 'bad';
-eq(call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => '--m2']])[0] >= 400, true, 'no CSRF → refused');
+eq(call('alice', 'method_colors_save', ['colors' => ['elliott-w3' => $E('--m2')]])[0] >= 400, true, 'no CSRF → refused');
 $tokens['alice'] = $keep;
-eq(call('alice', 'profile')[1]['profile']['method_colors'], ['elliott-w3' => '--m4'], '… and nothing changed');
+eq(call('alice', 'profile')[1]['profile']['method_colors'], ['elliott-w3' => $E('--m4', 7)], '… and nothing changed');
 
 // ── שמירת הפרופיל (profile_save) לא נוגעת בצבעים, והצבעים לא נוגעים בפרופיל ──
 $prof = ['horizon' => 'short', 'risk_level' => 'medium', 'risk_pct' => '1', 'min_rr' => '1.5', 'min_certainty' => 55];
-eq(call('alice', 'profile_save', $prof)[1]['profile']['method_colors'], ['elliott-w3' => '--m4'], 'profile_save keeps the colors');
+eq(call('alice', 'profile_save', $prof)[1]['profile']['method_colors'], ['elliott-w3' => $E('--m4', 7)], 'profile_save keeps the colors');
 eq(call('alice', 'profile')[1]['profile']['horizon'], 'short', 'saving colors did not touch the rest of the profile');
 
 // ── מיגרציה 10: עמודה, גרסה 10; שמור פגום לא מפיל ──

@@ -35,7 +35,7 @@ final class TsMethodSampleMaCross extends TsMethod
             ],
             'horizon_bars' => 50,
             'warmup' => 60,
-            'version' => 1,
+            'version' => 1 + $this->tune,   // + החלות (18.7)
             'incremental' => true,
             'alerts' => false,
         ];

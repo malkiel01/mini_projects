@@ -8,7 +8,7 @@
 //
 // **הצבעים (S5, 18.5):** לכל שיטה צבע מפלטה של 8. ברירת המחדל — הפנוי הבא; בתפריט, מתחת לשיטה מסומנת, בוחרים צבע אחר —
 // צבע של שיטה אחרת שעל הגרף לא ניתן לבחירה. הצבע נשמר **בפרופיל** (method_colors, lib/method-colors.php) — אותה שיטה, אותו
-// צבע בכל זוג ובכל מכשיר. כל מה ששיטה מציירת — קו, אזור, רמה, תווית וסימון על נר — בצבע שלה; ספירה חלופית — אותו צבע, עמום.
+// צבע בכל זוג ובכל מכשיר. עד 8 שיטות יחד; בלי צבע פנוי — הצבע של השיטה הזמינה שלא סומנה הכי הרבה זמן (2.20). כל מה ששיטה מציירת — קו, אזור, רמה, תווית וסימון על נר — בצבע שלה; ספירה חלופית — אותו צבע, עמום.
 // **המקרא** מעל הגרף: שיטה ונקודה בצבע; לחיצה מסתירה את השיטה מהגרף ומחזירה, בלי לבטל את הסימון שלה בתפריט.
 //
 // **הפס שמתחת לגרף (S4, 18.4)** — מחליף את מסך "🧭 ניתוח": לכל שיטה, בצבע שלה, שלוש כותרות — **ממצא** (כיוון, תנאים, רמות),
@@ -55,30 +55,69 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
 
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(chosen)); } catch { /* ריק */ } };
 
-  // ── הצבעים (S5): הפרופיל הוא האמת; הבחירה במכשיר רק זוכרת ──
-  const saved = () => { const v = ctx.me()?.profile?.method_colors; return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; };
+  // ── הצבעים (S5, 2.20): הפרופיל הוא האמת; הבחירה במכשיר רק זוכרת ──
+  // המפה: {id: {color, at}} — at = מתי השיטה סומנה (או הייתה על הגרף) בפעם האחרונה, בשניות. המבנה הישן ({id: צבע}) נקרא
+  // בסלחנות (at: 0). צבע שמור לשיטה רק כל עוד היא זמינה: שיטה שכובתה או שהוסרה נשארת במפה, אבל הצבע שלה פנוי.
+  const nowSec = () => Math.floor(Date.now() / 1000);
+  const entry = v => (typeof v === 'string' ? (PALETTE.includes(v) ? { color: v, at: 0 } : null)
+    : v && PALETTE.includes(v.color) ? { color: v.color, at: Number.isInteger(v.at) && v.at > 0 ? v.at : 0 } : null);
+  const saved = () => {
+    const v = ctx.me()?.profile?.method_colors;
+    const out = {};
+    if (v && typeof v === 'object' && !Array.isArray(v)) for (const [k, x] of Object.entries(v)) { const e = entry(x); if (e) out[k] = e; }
+    return out;
+  };
   const setSaved = v => { const me = ctx.me(); if (me?.profile) me.profile.method_colors = v && !Array.isArray(v) ? v : {}; };
-  /** הצבע של שיטה: מהפרופיל, אם לא תפוס על הגרף; אחרת הנוכחי; אחרת הפנוי הראשון שאינו שמור לשיטה אחרת */
+  /** זמינה = ברשימת השיטות של המשתמש. לפני שהרשימה נטענה — כל שיטה נחשבת זמינה (שמרני: לא נוגעים בצבע שלה) */
+  const available = id => !list || list.some(m => m.id === id);
+  /**
+   * הצבע של שיטה: מהפרופיל, אם לא תפוס על הגרף; אחרת הנוכחי; אחרת הפנוי הראשון שאינו שמור לשיטה זמינה אחרת; ובלי
+   * פנוי — הצבע של השיטה הזמינה שלא סומנה הכי הרבה זמן (at הקטן), והיא יורדת מהמפה ב-remember (2.20).
+   */
   function colorFor(id, used, cur) {
-    const mine = saved()[id];
-    if (PALETTE.includes(mine) && !used.has(mine)) return mine;
-    const reserved = new Set(Object.entries(saved()).filter(([k]) => k !== id).map(([, v]) => v));
+    const map = saved();
+    const mine = map[id]?.color;
+    if (mine && !used.has(mine)) return mine;
+    const others = Object.entries(map).filter(([k]) => k !== id && available(k) && !chosen.some(c => c.id === k));
+    const reserved = new Set(others.map(([, e]) => e.color));
     if (PALETTE.includes(cur) && !used.has(cur) && !reserved.has(cur)) return cur;
-    return PALETTE.find(p => !used.has(p) && !reserved.has(p)) || PALETTE.find(p => !used.has(p));
+    const free = PALETTE.find(p => !used.has(p) && !reserved.has(p));
+    if (free) return free;
+    const lru = others.filter(([, e]) => !used.has(e.color)).sort((a, b) => a[1].at - b[1].at)[0];
+    return lru ? lru[1].color : PALETTE.find(p => !used.has(p));
   }
   function reconcile() {
     const used = new Set();
     for (const c of chosen) { c.color = colorFor(c.id, used, c.color); used.add(c.color); }
   }
-  /** הצבעים שעל הגרף → לפרופיל. צבע ששמור לשיטה אחרת (לא על הגרף) — יורד ממנה: אותו צבע לשתי שיטות אסור */
-  function remember() {
+  /**
+   * הצבעים שעל הגרף → לפרופיל. $marked — שיטות שסומנו או בוטלו עכשיו: at שלהן = עכשיו. שיטה שעל הגרף מקבלת at חדש
+   * לכל היותר פעם בשעה (כדי לא לכתוב בכל פתיחת גרף). צבע ששמור לשיטה זמינה אחרת (לא על הגרף) — יורד ממנה: אותו צבע
+   * לשתי שיטות זמינות אסור. שיטה לא זמינה נשארת במפה כמו שהיא.
+   */
+  function remember(marked = []) {
     const was = saved();
     const next = { ...was };
+    const now = nowSec();
+    for (const id of marked) if (next[id] && !chosen.some(c => c.id === id)) next[id] = { ...next[id], at: now };
     for (const c of chosen) {
-      for (const k of Object.keys(next)) if (k !== c.id && next[k] === c.color) delete next[k];
-      next[c.id] = c.color;
+      for (const k of Object.keys(next)) if (k !== c.id && next[k].color === c.color && available(k)) delete next[k];
+      const at = marked.includes(c.id) || !next[c.id] || now - next[c.id].at >= 3600 ? now : next[c.id].at;
+      next[c.id] = { color: c.color, at };
     }
-    const same = Object.keys(next).length === Object.keys(was).length && Object.keys(next).every(k => was[k] === next[k]);
+    // שתי שיטות זמינות באותו צבע (אחת חזרה אחרי שכובתה) — נשארת זו שסומנה אחרונה; לשנייה ייבחר צבע כשתסומן
+    const byColor = new Map();
+    for (const [k, e] of Object.entries(next)) {
+      if (!available(k)) continue;
+      const o = byColor.get(e.color);
+      if (o === undefined) { byColor.set(e.color, k); continue; }
+      const onChart = x => chosen.some(c => c.id === x);
+      const lose = onChart(o) ? k : onChart(k) ? o : next[o].at >= e.at ? k : o;
+      delete next[lose];
+      byColor.set(e.color, lose === k ? o : k);
+    }
+    const same = Object.keys(next).length === Object.keys(was).length
+      && Object.keys(next).every(k => was[k] && was[k].color === next[k].color && was[k].at === next[k].at);
     if (same) return;
     setSaved(next);
     api('method_colors_save', { colors: next }).then(r => setSaved(r.method_colors)).catch(e => toast(e.message, true));
@@ -275,7 +314,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
           m.label ? h('small', { class: 'muted' }, m.label) : null,
           ok ? null : h('small', { class: 'muted' }, 'לא במסגרת הזו')));
       return h('div', { class: 'fc-row' }, opt, mine ? swatches(m, mine) : null);
-    })), h('p', { class: 'fc-note' }, 'תרחיש לפי כללי השיטה על הנרות שבגרף — לא ייעוץ, בלי אחוז ודאות.'));
+    })), chosen.length >= MAX ? h('p', { class: 'fc-max', role: 'status' }, `עד ${MAX} שיטות יחד`) : null,
+    h('p', { class: 'fc-note' }, 'תרחיש לפי כללי השיטה על הנרות שבגרף — לא ייעוץ, בלי אחוז ודאות.'));
   }
   /** בחירת הצבע של שיטה מסומנת: 8 עיגולים; צבע של שיטה אחרת שעל הגרף — לא ניתן לבחירה (18.5 קריטריון 2) */
   function swatches(m, mine) {
@@ -296,6 +336,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     try {
       list = (await api('methods')).methods;
     } catch (e) { toast(e.message, true); if (!list) { closePop(); return; } }
+    remember();   // עכשיו ידוע מה זמין — צבע כפול בין שתי שיטות זמינות נפתר
     if (openNow()) renderPop();
   }
   function closePop() { pop.hidden = true; setButtons(); }
@@ -310,10 +351,11 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     if (on) {
       if (chosen.some(c => c.id === id) || chosen.length >= MAX) return;
       chosen.push({ id, color: colorFor(id, new Set(chosen.map(c => c.color))) });
-      remember();
+      remember([id]);
     } else {
       chosen = chosen.filter(c => c.id !== id);
       res.delete(id); selected.delete(id);
+      remember([id]);   // הפעם האחרונה שהייתה מסומנת — לכלל "לא סומנה הכי הרבה זמן" (2.20)
     }
     save();
     if (openNow()) renderPop();
@@ -494,7 +536,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   }
 
   // רשימת השיטות — לשמות, למסגרות ול"התראה מזה" (alerts). פעם אחת; התפריט טוען שוב כשנפתח
-  api('methods').then(x => { list ??= x.methods; renderLegend(); renderPanel(); }).catch(() => {});
+  api('methods').then(x => { list ??= x.methods; remember(); renderLegend(); renderPanel(); }).catch(() => {});
   reconcile();
   save();
   remember();   // צבע שהיה רק במכשיר (לפני S5) — נכנס לפרופיל
