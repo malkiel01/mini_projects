@@ -658,6 +658,14 @@
 - **עלות:** בפלח הכללי ההרצה עוברת על כל הזוגות שבשורות. `TS_LEARN_CRON_SECONDS` (90) עוצר; דחייה בגלל זמן → לסוף התור, ושלוש ברצף →
   `too_big` (`TS_LEARN_MAX_DEFERRALS`, `ts_learn_defer`) + פריט DevLoop, עד 30 שורות חדשות. `learning_values.deferred` (מיג' 21).
 
+## הדמיית המשך (בקשת הבעלים, 2026-11-16)
+- **`forecast.js`:** `simOf(id)` (ב-`paint`, נשמר ב-`sims`) → `drawSim` (ב-`draw`, לפני התוויות). `simAlpha` ו-`SIM_LABEL` מיוצאים.
+- **החוזה:** משתמש רק ב-`forecast.scenarios[].points` — כל שיטה שמחזירה תרחיש עם נקודות מקבלת המשך, בלי קוד נוסף.
+- **התצוגה זזה ימינה** פעם אחת לכל צירוף שיטות + נר אחרון (`lastSimKey`), עד רבע מרוחבה — `scrollToRealTime` לא סופר נקודות ריקות.
+  - **בתוך `requestAnimationFrame` כפול.** `fitContent()` של Lightweight Charts מוחל במסגרת הבאה: `getVisibleLogicalRange()` מיד אחריו
+    מחזיר את הטווח הישן, ו-`setVisibleLogicalRange` דורס את ה-fit (הגרף נשאר על ~60 נרות). מי שמגדיר טווח אחרי `fitContent` — לחכות.
+- **האורך לפי מה שנטען** (`getTimes().length`), לא לפי התצוגה — אותה סיבה: התצוגה ברגע הציור תלויה בתזמון.
+- **`text(..., force)`** — תווית שמצוירת גם כשהיא חופפת. רק ל"הדמיית המשך — לא תחזית".
 ## תנועות מגע על הגרף (gestures.js) — מה נבנה
 
 - `mountGestures({ chart, series: candle, box })` ב-`viewChart`. הספרייה: `vertTouchDrag: false`, `pinch: false`; הצביטה שלנו (capture על `box`, שתי אצבעות).

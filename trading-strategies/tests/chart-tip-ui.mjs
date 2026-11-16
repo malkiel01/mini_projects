@@ -202,8 +202,9 @@ try {
   const other = await a.evaluate(s => {
     const box = document.querySelector(s), k = document.querySelector('.ctip').getBoundingClientRect(), b = box.getBoundingClientRect();
     const free = q => q.x > 8 && q.x < box.clientWidth - 8 && q.y > 8 && q.y < box.clientHeight - 8
-      && !(q.x + b.left > k.left - 30 && q.x + b.left < k.right + 30 && q.y + b.top > k.top - 30 && q.y + b.top < k.bottom + 30);
-    const cand = [...box.tsPoints('label'), ...box.tsPoints('hline').flatMap(l => [{ ...l, x: 12 }, { ...l, x: box.clientWidth - 40 }])];
+      && !(q.x + b.left > k.left - 12 && q.x + b.left < k.right + 12 && q.y + b.top > k.top - 12 && q.y + b.top < k.bottom + 12);
+    const W = box.clientWidth;
+    const cand = [...box.tsPoints('label'), ...box.tsPoints('hline').flatMap(l => [12, W * 0.25, W * 0.5, W * 0.75, W - 40].map(x => ({ ...l, x })))];
     return cand.find(free) || null;
   }, BOX);
   if (other) {

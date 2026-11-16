@@ -32,6 +32,26 @@ const COLOR_NAME = { '--brand': 'כחול', '--m2': 'כתום', '--m3': 'סגו�
 const KEY = 'ts-forecast-methods';
 const MAX = PALETTE.length;   // = TS_REFRESH_MAX_METHODS בשרת
 
+// ── הדמיית המשך (בקשת הבעלים, 2026-11-16) ──────────────────
+// "הגרף רק מראה נקודה לתחזית — זה לא ממחיש את המשך הגרף." מהנר האחרון — נרות "רפאים" (חלולים, בצבע השיטה) לאורך התרחיש
+// הנבחר עד סופו, ועוד חצי מאורכו (SIM_EXTRA) סביב היעד — "קצת יותר המשך ארוך". העוצמה — לפי הוודאות של הכרטיס (simAlpha),
+// והולכת ונחלשת לאורך ההמשך. תווית קבועה: "הדמיית המשך — לא תחזית". רק ציור: לא משנה ממצא, תרחיש, אותות או התראות.
+export const SIM_LABEL = 'הדמיית המשך — לא תחזית';
+const SIM_EXTRA = 0.5;   // אחרי סוף התרחיש — עוד 50% מאורכו
+const SIM_MIN = 20, SIM_MAX = 240;   // נרות — גם תרחיש של נר אחד מקבל המשך שאפשר לראות
+const SIM_VIEW = 0.08;   // לפחות 8% מהנרות שנטענו
+/** עוצמת ההמשך לפי הוודאות (0–100): 15% עד 75%. בלי ודאות (לא נבדק לאחור) — חלש, 28% */
+export function simAlpha(certainty) {
+  const c = certainty == null ? NaN : +certainty;
+  return Number.isFinite(c) ? +(0.15 + 0.6 * Math.max(0, Math.min(100, c)) / 100).toFixed(3) : 0.28;
+}
+/** מספר אקראי קבוע לפי זרע (mulberry32) — אותה הדמיה בכל ציור של אותו נר, כדי שלא "תרקוד" ברענון */
+function seeded(str) {
+  let a = 0;
+  for (const ch of str) a = (Math.imul(a ^ ch.charCodeAt(0), 2654435761) >>> 0);
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
 function loadChosen() {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -152,7 +172,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
 
   // ── ציור על הקנבס ───────────────────────────────────────
   // תווית: נרשמת בלוח; חופפת — לא מצוירת. מחזירה את המלבן (לבדיקות) או null
-  function text(ctx, s, x, y, color, align, W) {
+  function text(ctx, s, x, y, color, align, W, force = false) {
     ctx.font = '12px system-ui, sans-serif';
     ctx.direction = 'rtl';   // טקסט עברי עם מספר: "רמת ביטול … · 82,912.72", ולא המספר בהתחלה (הקנבס של הגרף LTR)
     ctx.textAlign = 'left';
@@ -169,7 +189,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     let left = align === 'right' ? x - w : x - 3;
     left = Math.max(0, Math.min(left, W - w));
     const r = { x: left, y: y - 15, w, h: 15, by: 'forecast', text: s };
-    if (!board.place(r)) return null;
+    if (!board.place(r) && !force) return null;   // force — תווית שחייבת להופיע (הדמיית ההמשך), גם על חשבון חפיפה
     ctx.fillStyle = col('--surface');
     ctx.globalAlpha = 0.85;
     ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -249,6 +269,91 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
     }
   }
+  // ── הדמיית המשך ──
+  const sims = new Map();   // id → {bars: [{t, o, h, l, c}], alpha} — מחושב ב-paint, מצויר ב-draw
+  let lastSimKey = '';      // השיטות עם המשך והנר האחרון, כשהתצוגה הוזזה בפעם האחרונה — הזזה אחת בלבד לכל צירוף
+  let simDrawn = [];        // לבדיקות: מה צויר בפעם האחרונה — {m, bars, alpha, label}
+  /** ההמשך של שיטה: מהנר האחרון בגרף, לאורך נקודות התרחיש הנבחר שאחריו, ועוד SIM_EXTRA סביב הסוף. null — אין תרחיש */
+  function simOf(id) {
+    if (pick(id)?.hide || pick(id)?.off) return null;
+    const r = res.get(id);
+    const all = r?.forecast?.scenarios || [];
+    const sc = all.find(x => x.id === selected.get(id)) || all[0];
+    const times = getTimes(), sec = getSec();
+    const n0 = times.length - 1;
+    const last = n0 >= 0 ? series.dataByIndex?.(n0) : null;
+    if (!sc?.points?.length || !last || !sec) return null;
+    const pts = sc.points.filter(q => Number.isFinite(+q.price));
+    if (!pts.length) return null;
+    const ahead = pts.filter(q => q.t > last.time).map(q => ({ t: q.t, price: +q.price }));
+    // תרחיש קצר שנגמר עד הנר האחרון (אליוט — גל בנר אחד): היעד הוא המחיר שבסופו, נר אחד קדימה, וההמשך עדיין נמשך SIM_MIN
+    if (!ahead.length) ahead.push({ t: last.time + sec, price: +pts.at(-1).price });
+    const path = [{ t: last.time, price: last.close }, ...ahead];
+    const at = t => {   // המחיר על המסלול בזמן t (קווי בין הנקודות)
+      for (let i = 1; i < path.length; i++) if (t <= path[i].t) { const a = path[i - 1], b = path[i]; return a.price + (b.price - a.price) * (t - a.t) / (b.t - a.t || 1); }
+      return path.at(-1).price;
+    };
+    // גודל הנר — הטווח הממוצע של 14 הנרות האחרונים
+    let sum = 0, k = 0;
+    for (let i = n0; i >= 0 && k < 14; i--, k++) { const b = series.dataByIndex(i); sum += b.high - b.low; }
+    const atr = sum / Math.max(1, k) || Math.abs(last.close) * 0.002;
+    let nPath = Math.max(1, Math.round((path.at(-1).t - last.time) / sec));
+    // תרחיש קצר (יעד כבר בנר הבא): המעבר אל היעד נפרש על 12 נרות לפחות — לא נר-רפאים אחד ענק
+    const SPREAD = 12;
+    if (nPath < SPREAD) { for (const q of path) q.t = last.time + (q.t - last.time) * SPREAD / nPath; nPath = SPREAD; }
+    // האורך — הגדול מבין: התרחיש ועוד 50%, האופק של השיטה (forecast.bars) ועוד 50%, ו-8% מהנרות שנטענו (הטווח שנבחר —
+    // כדי שההמשך ייראה גם ב"3 חודשים"); בין SIM_MIN ל-SIM_MAX. לפי מה שנטען ולא לפי התצוגה: התצוגה ברגע הציור תלויה
+    // בתזמון (fitContent מוחל במסגרת הבאה), וההמשך צריך להיות זהה בכל ציור
+    const vis = times.length;
+    const horizon = Number.isFinite(+r?.forecast?.bars) ? +r.forecast.bars : 0;
+    const total = Math.max(SIM_MIN, Math.min(SIM_MAX, Math.round(Math.max(nPath * (1 + SIM_EXTRA), horizon * (1 + SIM_EXTRA), vis * SIM_VIEW))));
+    const rnd = seeded(id + ':' + last.time + ':' + (sc.id ?? ''));
+    const bars = [];
+    let prev = last.close;
+    for (let i = 1; i <= total; i++) {
+      const t = last.time + i * sec;
+      // גל קטן ורעש סביב המסלול — שייראה כמו המשך של גרף, לא כמו קו ישר
+      const c = at(t) + Math.sin(i / 2.2 + rnd() * 0.5) * atr * 0.35 + (rnd() - 0.5) * atr * 0.5;
+      const o = prev;
+      bars.push({ t, o, c, h: Math.max(o, c) + rnd() * atr * 0.3, l: Math.min(o, c) - rnd() * atr * 0.3 });
+      prev = c;
+    }
+    const certainty = card(id)?.status === 'ok' ? card(id).certainty ?? null : null;
+    return { bars, alpha: simAlpha(certainty), certainty, scenEnd: path.at(-1).t };
+  }
+  function drawSim(ctx, id, sim, W) {
+    const c = colorOf(id), n = sim.bars.length;
+    const x0 = xOf(sim.bars[0].t), x1 = xOf(sim.bars[0].t + getSec());
+    if (x0 === null || x1 === null) return;
+    const bw = Math.max(1, Math.min(12, (x1 - x0) * 0.6));
+    let top = Infinity, firstX = null;
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    sim.bars.forEach((b, i) => {
+      const x = xOf(b.t), yo = yOf(b.o), yc = yOf(b.c), yh = yOf(b.h), yl = yOf(b.l);
+      if ([x, yo, yc, yh, yl].includes(null) || x > W + bw) return;
+      // הולך ונחלש: מלוא העוצמה בהתחלה, שליש ממנה בסוף
+      ctx.globalAlpha = sim.alpha * (1 - 0.65 * i / n);
+      ctx.strokeStyle = c;
+      ctx.beginPath(); ctx.moveTo(x, yh); ctx.lineTo(x, Math.min(yo, yc)); ctx.moveTo(x, Math.max(yo, yc)); ctx.lineTo(x, yl); ctx.stroke();
+      const y = Math.min(yo, yc), hh = Math.max(1, Math.abs(yc - yo));
+      ctx.fillStyle = c;
+      ctx.globalAlpha *= 0.3;
+      ctx.fillRect(x - bw / 2, y, bw, hh);
+      ctx.globalAlpha /= 0.3;
+      ctx.strokeRect(x - bw / 2 + 0.5, y + 0.5, Math.max(0, bw - 1), Math.max(0, hh - 1));
+      if (i < 6) { top = Math.min(top, yh); firstX ??= x; }
+    });
+    ctx.globalAlpha = 1;
+    // התווית — תמיד: מעל תחילת ההמשך; תפוס — מתחת, ואז עוד למעלה
+    let label = false;
+    if (firstX !== null) {
+      for (const dy of [-6, 34, -26, 54, -46]) { if (text(ctx, SIM_LABEL, firstX, Math.max(16, top + dy), c, 'left', W)) { label = true; break; } }
+      if (!label) label = !!text(ctx, SIM_LABEL, firstX, Math.max(16, top - 6), c, 'left', W, true);   // אין מקום פנוי — בכל זאת
+    }
+    simDrawn.push({ m: id, bars: n, alpha: sim.alpha, certainty: sim.certainty, label, end: sim.bars.at(-1).t, scenEnd: sim.scenEnd, start: sim.bars[0].t });
+  }
+
   const primitive = {
     attached(p) { requestUpdate = p.requestUpdate; },
     detached() { requestUpdate = () => {}; },
@@ -271,6 +376,9 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
                 for (const it of itemsOf(id)) if (!isOn(id, it)) drawShape(ctx, id, it, W);
                 for (const it of itemsOf(id)) if (isOn(id, it)) drawShape(ctx, id, it, W);
               }
+              // הדמיית ההמשך — מעל הקווים, והתווית שלה ("לא תחזית") לפני תוויות השיטות, כדי שתמיד תצויר
+              simDrawn = [];
+              for (const { id } of shown()) { const sim = sims.get(id); if (sim) drawSim(ctx, id, sim, W); }
               // התוויות: השיטה המובילה ראשונה — היא שגוברת בחפיפה
               ctx.setLineDash([]);
               for (const { id } of shown()) {
@@ -419,11 +527,39 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       asOf = Math.max(asOf ?? ov.as_of, ov.as_of);
       for (const it of itemsOf(id)) for (const t of [it.t, it.t1, it.t2, ...(it.points || []).map(p => p.t)]) if (t > ov.as_of) far = Math.max(far ?? t, t);
     }
+    // הדמיית ההמשך — גם היא בציר הזמן (ארוכה מהתרחיש)
+    sims.clear();
+    for (const { id } of shown()) {
+      const sim = simOf(id);
+      if (!sim) continue;
+      sims.set(id, sim);
+      far = Math.max(far ?? 0, sim.bars.at(-1).t);
+      asOf ??= res.get(id)?.overlay?.as_of ?? sim.bars[0].t - sec;
+    }
     const ws = [];
-    if (far !== null) for (let t = asOf + sec; t <= far; t += sec) ws.push({ time: t });
+    if (far !== null && asOf !== null) for (let t = asOf + sec; t <= far; t += sec) ws.push({ time: t });
     whitespace.setData(ws);
     // תרחיש חדש — הגרף זז ימינה כך שההקרנה בתצוגה (בלי לשנות את הזום)
     if (scroll && ws.length) chart.timeScale().scrollToRealTime();
+    // הדמיית ההמשך מחוץ לתצוגה (scrollToRealTime לא סופר נקודות ריקות): כשהיא מופיעה, או בנר חדש — הזזה ימינה לעברה,
+    // באותו זום. ברענון בלי נר חדש — לא נוגעים (המשתמש אולי גלל הצידה)
+    // פעם אחת לכל צירוף של שיטות ונר אחרון — ציור בלי המשך באמצע (לפני שהנרות נטענו) לא מאפס, כדי שלא תצטבר הזזה
+    const simKey = [...sims.keys()].join(',') + '@' + (getTimes().at(-1) ?? '');
+    if (sims.size && simKey !== lastSimKey) {
+      lastSimKey = simKey;
+      const first = timeToLogical(getTimes(), sec, Math.min(...[...sims.values()].map(x => x.bars[0].t)));
+      const n = Math.max(...[...sims.values()].map(x => x.bars.length));
+      // שתי מסגרות אחר כך: fitContent של הספרייה (בפתיחה ובשינוי טווח) מוחל רק במסגרת הבאה. קריאה של הטווח עכשיו מחזירה את
+      // הישן, והגדרה שלו הייתה דורסת את ה-fitContent (הגרף נשאר על ~60 נרות)
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const ts = chart.timeScale(), lr = ts.getVisibleLogicalRange();
+        // צריך לראות מההמשך: את כולו אם הוא קצר, ועד רבע מרוחב התצוגה — כך הגרף האמיתי לא נדחק החוצה (שרטוטים, ספירה);
+        // השאר — בגלילה. הספרייה כבר מזיזה לבד כשנוספות נקודות בקצה; מזיזים רק את מה שחסר
+        if (!lr || first === null) return;
+        const need = first + Math.min(n, (lr.to - lr.from) * 0.25);
+        if (lr.to < need) ts.setVisibleLogicalRange({ from: lr.from + need - lr.to, to: need });
+      }));
+    }
     renderLegend();
     requestUpdate();
     renderPanel();
@@ -637,7 +773,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     onAnalysis(a) {
       running = false;
       if (a?.cards) an = { ...(an || {}), ...a };
-      renderPanel();
+      paint();   // לא רק הפס: עוצמת הדמיית ההמשך תלויה בוודאות שהגיעה עכשיו
     },
     /** מסגרת הזמן השתנתה — התפריט פתוח מסמן מחדש מה זמין; הכרטיס של המסגרת הקודמת לא תקף */
     retf: () => { an = null; if (openNow()) renderPop(); renderPanel(); },
@@ -662,6 +798,6 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
       try { series.detachPrimitive(primitive); } catch { /* ריק */ }
     },
     state: () => ({ methods: chosen.map(c => ({ ...c, off: !!c.off, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
-      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() } }),
+      finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() }, sim: simDrawn.map(x => ({ ...x })) }),
   };
 }
