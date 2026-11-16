@@ -2,7 +2,8 @@
   "note": "מתעדכן בידי צ'אט הבקרה",
   "spec": {
     "session": "session_018g4NYCncy2ZT4VJy4H1EFh",
-    "model": "claude-opus-5-5"
+    "model": "claude-opus-5-5",
+    "pr": "#1670 (2.28)"
   },
   "code": {
     "session": "session_018g4NYE8aJBheQh1TYiJZ3U",
@@ -13,7 +14,7 @@
   },
   "control": "session_018g4NYFqH3tqWT9nYnCRNjr",
   "tasks": null,
-  "clock": "ממתין להעברה ממנהל הצוותים (4) לבקרה (7); הנוכחי trig_01KNVAkUc99NpULxQ9nAwWRt",
+  "clock": "trig_01FLjvXemEmKVuyfZbh9oGqH (דקה 28, נוצר בידי מנהל הצוותים (4); הישן trig_01KNVAkUc99NpULxQ9nAwWRt כבוי)",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
