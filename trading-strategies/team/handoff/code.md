@@ -405,6 +405,13 @@
 - `meta().learn` — `score` (ציון האזור, כולל Z6), `zone_atr` (רוחב האזור ב-ATR של הרשת שהאות נבדק מולה), `rr`. האות מצרף
   `features` אחרי ש-`x` נקבע — לא נכנס למצב. `fibonacci-api.php` בודק: שורה לכל עסקה, features, בלי כפילות בהרצה חוזרת.
 
+## פיבונאצ'י — tip לכל פריט (18.1.6, T1 קריטריון 3)
+
+- בממצא: `ts_fib_zone_tip` (כותרת "אזור פיבונאצ'י · ציון N", הסבר — היחסים "61.8% של 200→150"), `ts_fib_single_tip` (R8), ואקום, ואות
+  (סימון / סטופ / רמת היציאה ברווח — ביטול בסטופ). בתרחיש — בתוך `ts_fib_scenario` (ביטול: X של A-B-X בכיוון, אחרת הסטופ).
+- `ts_fib_px` (מחיר לטקסט), `ts_fib_fit` (עד 200 תווים — `TS_OVERLAY_TEXT_MAX`). ניסוח 6.6 — נבדק ב-`fibonacci-f3.php`.
+- `chart-tip-ui.mjs` קריטריון 8 — הפריט "בלי tip" הוא אזור פיבונאצ'י שה-tip נמחק ממנו בתשובה (`route`), וקריטריון 3 — עם ה-tip האמיתי.
+
 ## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
 
 - **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
@@ -481,6 +488,12 @@
 - **L2 צריך:** cron ל-`live` (אותו `$onTrade` על נרות סגורים אחרי `to_t`), `trade` בסגירת עסקה עם `method_id` + `planned_stop`, ודילוג על
   `users.learn_off = 1`. ההגדרה בממשק — עוד לא.
 - **החגים:** לבנות מחדש — `php lib/learn/holidays-build.php` (מחליף את `holidays.json`).
+
+## L3 — לשונית "למידה" (פרק 23)
+
+- `admin_learn&method=&version=&source=` → `counts`, `total`, `segments [{dim, value, n, enough, win_pct, expectancy_r, certainty}]`, `gaps`, `rows`, `size`.
+  ‏N < 30 — שאר השדות `null`. L4/L5 צריכים לקרוא את אותן שורות — כדאי לבנות על `ts_learn_stats` / אותה שאילתה.
+- המסך — `learnPanel(m)` ב-`analysis.js`. L4 (ממצאים) ו-L5 (מיקומים, הצעות) נכנסים לאותו `<details class="learn">`.
 ## R1 — תפקידים (פרק 24, ענף `claude/trading-strategies-roles-r1`)
 
 - **הרשאה חדשה = שורה אחת:** `ts_require_editor($uid)` (כל העורכים) או `ts_require_chief()` (עורך ראשי). הכלל מ-24.2: משנה

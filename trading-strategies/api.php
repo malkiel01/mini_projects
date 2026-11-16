@@ -55,6 +55,8 @@
  *      | admin_cred_save | admin_cred_test | admin_cred_delete
  *      | admin_grant_save | admin_grant_delete | admin_role_add {user_id, role: editor|chief} (ראשי) | admin_role_remove (ראשי)
  *      | admin_cache_clear | admin_cache_cleanup | admin_method_save | admin_costs_save
+ * למידה (23.10, L3): GET admin_learn&method=&version=&source= (פלחים, N, אחוז, תוחלת — רק N ≥ 30) · admin_learn_csv&method=[&version&source]
+ *      (user_id — רק לעורך הראשי)
  * שכלול (18.7, S7): GET admin_tune_list[&method=] · POST admin_tune_propose {method, param, value, asset, tf, note?}
  *      (נספר בתקרת 30) | admin_tune_apply {id} (עורך ראשי בלבד)
  *
@@ -551,6 +553,22 @@ try {
 
         case 'admin_methods':
             out(['ok' => true, 'methods' => ts_admin_methods(), 'costs' => ts_costs(), 'cost_defaults' => TS_COST_DEFAULTS]);
+
+        case 'admin_learn':
+        case 'admin_learn_csv':
+            // למידה (23.10, L3): לכל העורכים (24.2 — ts_require_admin למעלה, לכל admin_*). user_id בייצוא — רק לעורך הראשי (ל3)
+            $lm = (string)($_GET['method'] ?? '');
+            if (!ts_method_exists($lm)) throw new TsNotFound('שיטה לא מוכרת');
+            $lv = isset($_GET['version']) && $_GET['version'] !== '' ? (int)$_GET['version'] : null;
+            if ($action === 'admin_learn') {
+                out(['ok' => true] + ts_learn_stats($lm, $lv ?? (int)ts_method($lm)->meta()['version'], (string)($_GET['source'] ?? 'backtest')));
+            }
+            $src = isset($_GET['source']) && $_GET['source'] !== '' ? (string)$_GET['source'] : null;
+            $csv = ts_learn_csv($lm, $lv, $src, ts_is_primary_admin());
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="learning-' . preg_replace('/[^a-z0-9-]/', '', $lm) . '-' . gmdate('Y-m-d') . '.csv"');
+            echo $csv;
+            exit;
 
         case 'admin_method_save':
             // הגדרות של שיטה קיימת (6.7). בונה השיטות נמחק (21.1, ✅29) — שמירת הגדרה (definition) לא קיימת יותר
