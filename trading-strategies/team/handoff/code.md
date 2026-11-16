@@ -392,6 +392,12 @@
   דווח לאפיון. לא שינינו ברירת מחדל (S7).
 - **לא בפרוסה:** F-3 (S25, ואקום), עמ' 102.
 
+## F-3 — פיבונאצ'י, מידע (S25, ואקום)
+
+- `ts_fib_market` / `ts_fib_s25_classify` / `ts_fib_vacuums` ב-`lib/fibonacci.php` — טהורות, נקראות רק מ-`conditions()` (info) ומ-`overlay()`
+  (label). לא נוגעות ברשת. בכרטיס: שדה `info` (`lib/analysis.php` מעביר, `card.js` מציג, `data-info`).
+- אם `conditions()` של שיטה אחרת תרצה מידע שאינו תנאי — אותו `info`.
+
 ## L1 — מסך מלא לגובה / לרוחב (18.1.5, 2.30) — מה נבנה
 
 - **`market.js` → `viewChart`, "מסך מלא":** `fsEnter(mode)`, `fsSetMode` (⟳), `fsLock`, `fsApply` (⟳ והסיבוב), `fsLeave`.
