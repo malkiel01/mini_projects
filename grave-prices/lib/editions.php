@@ -1,6 +1,6 @@
 <?php
 /**
- * המחירונים — קריאה (פרוסה 01), והסימון בתוויות.
+ * המחירונים — קריאה (פרוסה 01), והסימון בתוויות. העריכה — lib/edit.php.
  */
 
 declare(strict_types=1);
@@ -31,6 +31,7 @@ function gp_editions(): array
     foreach ($list as $e) if ($e['effective_from'] <= $today) { $current = $e['id']; break; }
     return ['editions' => array_map(fn($e) => [
         'pid' => $e['pid'], 'effective_from' => $e['effective_from'], 'in_effect' => $e['id'] === $current,
+        'future' => $e['effective_from'] > $today,
     ], $list)];
 }
 
@@ -44,12 +45,12 @@ function gp_edition_row(string $pid): array
 function gp_edition(string $pid): array
 {
     $e = gp_edition_row($pid);
-    $st = db()->prepare('SELECT r.id, r.kind, r.indent, r.label, p.audience, p.amount FROM rows r
+    $st = db()->prepare('SELECT r.id, r.pid, r.kind, r.indent, r.label, p.audience, p.amount FROM rows r
         LEFT JOIN prices p ON p.row_id = r.id WHERE r.edition_id = ? ORDER BY r.sort, r.id');
     $st->execute([$e['id']]);
     $rows = [];
     foreach ($st as $r) {
-        $rows[$r['id']] ??= ['kind' => $r['kind'], 'indent' => (int)$r['indent'], 'label' => $r['label'],
+        $rows[$r['id']] ??= ['pid' => $r['pid'], 'kind' => $r['kind'], 'indent' => (int)$r['indent'], 'label' => $r['label'],
             'html' => gp_label_html($r['label']),
             'prices' => in_array($r['kind'], GP_PRICED, true) ? array_fill_keys(array_keys(GP_AUDIENCES), null) : null];
         if ($r['audience'] !== null && $rows[$r['id']]['prices'] !== null && isset(GP_AUDIENCES[$r['audience']])) {
@@ -59,6 +60,7 @@ function gp_edition(string $pid): array
     return [
         'pid' => $e['pid'],
         'effective_from' => $e['effective_from'],
+        'future' => $e['effective_from'] > gp_today(),   // עתידי: נמחק ומשנה תאריך; עריכתו בלי אישור "כבר בתוקף"
         'signatures' => json_decode($e['signatures'], true) ?: [],
         'audiences' => GP_AUDIENCES,
         'rows' => array_values($rows),
