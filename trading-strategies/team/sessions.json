@@ -4,7 +4,11 @@
     "session": "session_018g4NYGqhdYWYDScrU8eZxq",
     "model": "claude-opus-5-5"
   },
-  "code": null,
+  "code": {
+    "session": "session_018g4NYDGPpCv1Pc3LgfvmVx",
+    "slice": "A2 התחברות עם ניתוק (app-rules 2)",
+    "model": "claude-opus-5-5"
+  },
   "control": "session_018g4NYE6Q5mocKiUUxqKEyR",
   "tasks": null,
   "clock": "trig_01BkHqJw3mPZG75puVqoh6rh (כל שעה בדקה 28, נוצר בידי מנהל הצוותים (3); הקודם trig_017QYqEf5rV1DHua7TQyyuvw כבוי)",

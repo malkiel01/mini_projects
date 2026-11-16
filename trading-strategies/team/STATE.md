@@ -36,8 +36,9 @@
 | תפקיד | session | מצב |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.19 |
-| קוד | — | A1 (`…E8kDskU8RmVtkTf3g`) מוזג, מעדכן handoff ויוצא. הבא: A2 |
-| קוד קודמים | `…DT3XMHmjb6sxQf6nU` S7 · `…CtoJQjiN4ojLGwKMh` S6 · `…E8YZGBZvopSjFJYG7` S5 · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
+| קוד (A2) | `session_018g4NYDGPpCv1Pc3LgfvmVx` (Opus) | נפתח 02:00 — מחכה לפרק האפיון לפני PR |
+| אפיון | (אותו) | כותב פרק A2 (קריטריונים) לבקשת הבקרה |
+| קוד קודמים | `…E8kDskU8RmVtkTf3g` A1 (handoff #1619 — עם A2) · `…DT3XMHmjb6sxQf6nU` S7 · `…CtoJQjiN4ojLGwKMh` S6 · `…E8YZGBZvopSjFJYG7` S5 · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
 | מטלות | — | עוד לא נפתח |
 
 ## ממתין לבעלים
@@ -51,7 +52,7 @@
 
 ## הצעד הבא
 
-1. **A2** (התחברות עם ניתוק, `platform/docs/sso.md`) — צ'אט קוד חדש.
+1. **A2** בבנייה — אפיון כותב פרק; ביקורת עם סוקר עומק (זהות, כתובת ציבורית). ימוזג עם #1619 ופרק האפיון.
 2. מטלה לבעלים: אסימון `tsd_…` (עוד ← 🐞 פיתוח ← 🔑 גישה ל-Claude) → `TS_DEVLOOP_TOKEN` בשני מקומות: Secrets של הריפו (ראיות פריסה) ומשתני הסביבה של Claude Code. + ניקוי השרת. → צ'אט מטלות.
 3. בקשה לפלטפורמה: שורה ב"מי משתמש" ב-`devloop/README.md` (מחוץ להרשאה).
 4. פרוסות app-rules מהסקר (`dev/audit.md`): A1 DevLoop, A2 התחברות עם ניתוק, A3 בדיקות בשער הפריסה.
