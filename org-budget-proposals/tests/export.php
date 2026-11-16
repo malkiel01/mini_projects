@@ -98,8 +98,9 @@ $f = export('export_xlsx', $s, $bid, 'xlsx');
 check($z->open($f) === true, 'קובץ xlsx נפתח');
 $wb = $z->getFromName('xl/workbook.xml');
 preg_match_all('/<sheet name="([^"]+)"/', $wb, $m);
-check(array_slice($m[1], 0, 3) === ['שער', 'תכנית עבודה', 'ריכוז'] && end($m[1]) === 'נספח שכירויות' && count($m[1]) === 7,
-    'גיליונות כמו ב-Word: שער, תכנית עבודה, ריכוז, גיליון לכל קופה, נספח');
+// הנתונים כאן לא מאוזנים בעמודות של השנה הקודמת (1 בכל שורה) — ולכן הגיליון הראשון הוא האזהרה (B1)
+check($m[1][0] === '⚠️ אזהרות' && array_slice($m[1], 1, 3) === ['שער', 'תכנית עבודה', 'ריכוז'] && end($m[1]) === 'נספח שכירויות' && count($m[1]) === 8,
+    'גיליונות כמו ב-Word: אזהרות (ההצעה לא מאוזנת), שער, תכנית עבודה, ריכוז, גיליון לכל קופה, נספח');
 $sumIdx = array_search('ריכוז', $m[1], true) + 1;
 $all = '';
 for ($i = 1; $i <= count($m[1]); $i++) {
@@ -118,7 +119,7 @@ check(preg_match("~עמ' \\d+~u", $sumX) === 1, 'פירוט: מספרי העמו
 preg_match_all('/firstPageNumber="(\d+)"/', $all, $fp);
 check($fp[1][0] === '1' && $fp[1][1] === '2' && count(array_unique($fp[1])) === count($fp[1]) && $fp[1] === array_map('strval', array_values(array_unique(array_map('intval', $fp[1])))),
     'מספרי העמודים ממשיכים מגיליון לגיליון: ' . implode(', ', $fp[1]));
-check(!str_contains($z->getFromName('xl/worksheets/sheet1.xml'), 'oddFooter') && substr_count($all, '<oddFooter>') === count($m[1]) - 1, 'בשער — בלי מספר עמוד');
+check(!str_contains($z->getFromName('xl/worksheets/sheet2.xml'), 'oddFooter') && substr_count($all, '<oddFooter>') === count($m[1]) - 1, 'בשער — בלי מספר עמוד');
 check(substr_count($all, 'customHeight="1"') > 30 && str_contains($all, 'showGridLines="0"'), 'גובה לכל שורה, ובלי קווי רשת — כמו המסמך');
 check(str_contains($wb, 'fullCalcOnLoad="1"'), 'אקסל מחשב הכול בפתיחה');
 check(substr_count($z->getFromName('xl/styles.xml'), 'readingOrder="2"') >= 8, 'כיווניות: תאי טקסט באקסל — סדר קריאה מימין לשמאל');

@@ -136,8 +136,9 @@ function ts_tab_builtin_assets(int $uid, string $id): array
  * השורות של לשונית — בלי שום פנייה לספק (קריטריון 3). לכל שורה: התווית, מחיר ושינוי יומי מהמאגר, locked כשאין גישה.
  * needs — הספק שחסר לכל הלשונית (ש7), או null.
  */
-function ts_market_tab(int $uid, mixed $id): array
+function ts_market_tab(int $uid, mixed $id, ?int $now = null): array
 {
+    $now ??= time();
     $id = is_string($id) ? $id : '';
     $tabs = ts_market_tabs($uid);
     $tab = null;
@@ -163,8 +164,10 @@ function ts_market_tab(int $uid, mixed $id): array
         $acc = $can($prov);
         $label = ts_pair_label($asset);
         $q = $acc ? ts_cached_quote($asset, $acc['scope']) : null;
+        // ישן מיום (21.2) — "לפני N ימים" בשורה. הנר היומי נפתח בחצות, ולכן נר של היום → 0
+        $age = $q ? intdiv(max(0, $now - (int)$q['at']), 86400) : null;
         $rows[] = ['asset' => $asset, 'provider' => $prov, 'locked' => $acc === null, 'price' => $q['price'] ?? null,
-            'change_pct' => $q['change_pct'] ?? null, 'market' => ts_asset_meta($asset)['market'] ?? null] + $label;
+            'change_pct' => $q['change_pct'] ?? null, 'age_days' => $age >= 1 ? $age : null, 'market' => ts_asset_meta($asset)['market'] ?? null] + $label;
     }
     $needs = null;
     if ($tab['kind'] === 'builtin') {
