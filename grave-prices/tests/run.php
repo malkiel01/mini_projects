@@ -516,6 +516,56 @@ $y = gp_edition($ca)['rows'];
 check('04 "תשלומי אגרות" — נמחקת רק הכותרת, האגרות נשארות', count($y) === count($x) - 1 && $y[$tf]['kind'] === 'fee');
 check('04 ישראל וחו"ל המקוריים לא השתנו', gp_edition($p26)['rows'] === $cur && count(gp_edition($pab)['rows']) === 32);
 
+// --- פרוסה 05: מפתח האגרה, כללית / קבוצה, הסדר (05 סעיף 2)
+check('05 מפתח — כוכביות וסימון', gp_fee_key('** תשלום עבור **אגרת** __שמור__ ((מחיים))') === 'תשלום עבור אגרת שמור מחיים');
+check('05 מפתח — נקודה בסוף ורווחים', gp_fee_key("  *  המחירים   מתייחסים\tלרכישה.  ") === 'המחירים מתייחסים לרכישה');
+check('05 מפתח — "****…**" כמו בחו"ל', gp_fee_key('**** המחירים מתייחסים לרכישת אחוזת קבר בלבד.**') === 'המחירים מתייחסים לרכישת אחוזת קבר בלבד');
+check('05 מפתח — "* " ו-"** " שווים', gp_fee_key('* תשלום עבור אגרת שמור מחיים') === gp_fee_key('** תשלום עבור אגרת שמור מחיים'));
+$R = fn(string $pid, string $kind, string $label, ?int $price = null) => ['pid' => $pid, 'kind' => $kind, 'indent' => 0, 'label' => $label,
+    'priced' => in_array($kind, GP_PRICED, true), 'price' => $price];
+$mi = [$R('i0', 'item', 'שורה', 100), $R('i1', 'fee', '** א', 10), $R('i2', 'fee', '** ב', 20), $R('i3', 'note', '** הערה.'),
+    $R('i4', 'fee', '** ג', 30), $R('i5', 'note', 'רק בישראל'), $R('i6', 'fee', '** בלי מחיר')];
+$ma = [$R('a0', 'band', 'פס'), $R('a1', 'item', 'שורה', 100), $R('a2', 'subsection', 'תשלומי אגרות'), $R('a3', 'note', '**** הערה**'),
+    $R('a4', 'fee', '* ג', 30), $R('a5', 'fee', '* ב', 25), $R('a6', 'fee', '* ד', 40), $R('a7', 'fee', '* א.', 10)];
+$m = gp_fees_merge($mi, $ma);
+check('05 כללית — אותו מפתח ואותו מחיר (גם בסדר אחר)', $m['shared']['il'] === ['i1' => true, 'i2' => false, 'i3' => true, 'i4' => true, 'i5' => false]
+    && $m['shared']['abroad'] === ['a3' => true, 'a4' => true, 'a5' => false, 'a6' => false, 'a7' => true], json_encode($m['shared']));
+check('05 הסדר: האגרות ואחריהן ההערות; בכל אחת כלליות (סדר ישראל) → ישראל → חו"ל', array_map(fn($r) => $r['scope'] . ':' . $r['label'], $m['rows']) === [
+    'all:** א', 'all:** ג', 'il:** ב ((לתושבי ישראל))', 'abroad:* ב ((לתושבי חו"ל))', 'abroad:* ד ((לתושבי חו"ל))',
+    'all:** הערה.', 'il:רק בישראל ((לתושבי ישראל))'], json_encode(array_column($m['rows'], 'label'), JSON_UNESCAPED_UNICODE));
+check('05 שורות לפני אזור האגרות, כותרות ושורה בלי מחיר — לא באגרות', !array_intersect(['שורה', 'פס', 'תשלומי אגרות', '** בלי מחיר'], array_column($m['rows'], 'label')));
+check('05 הציון — ((…)) בסוגריים, בכתב רגיל', $m['rows'][2]['html'] === '** ב <span class="plain">(לתושבי ישראל)</span>' && $m['rows'][1]['price'] === 30 && $m['rows'][5]['price'] === null);
+$m = gp_fees_merge($mi, []);
+check('05 בלי מחירון שני — הכול "רק ל…"', !in_array(true, $m['shared']['il'], true) && count($m['rows']) === 5);
+check('05 אגרה כפולה — התאמה אחת-לאחת', gp_fees_merge([$R('x', 'fee', 'א', 1), $R('y', 'fee', 'א', 1)], [$R('z', 'fee', 'א', 1)])['shared']['il'] === ['x' => true, 'y' => false]);
+
+// הנתונים כמו שהם — קריטריון 5
+$f = gp_fees($p26, $pab);
+check('05/5 "תשלומי אגרות" — שמור מחיים כללית, העברת בעלות פעמיים', $f['title'] === 'תשלומי אגרות' && array_map(fn($r) => $r['scope'] . ':' . gp_fee_key($r['label']) . ':' . $r['price'], array_slice($f['rows'], 0, 7)) === [
+    'all:תשלום עבור אגרת שמור מחיים:400', 'il:תשלום עבור העברת בעלות לאחוזת קבר לתושבי ישראל:3000',
+    'abroad:עבור שירותי הלוויה תשלום בסך לתושבי חו"ל:10000', 'abroad:עבור שירותי קבורה תשלום בסך לתושבי חו"ל:20000',
+    'abroad:לרוכשים שרכשו אחוזת קבר עד 2015 תוספת של לתושבי חו"ל:3000', 'abroad:העברת בעלות שטר קבר לתושבי חו"ל:3000',
+    'il:המחירון תואם את קביעת המשרד לשירותי דת לתושבי ישראל:'], json_encode(array_column($f['rows'], 'label'), JSON_UNESCAPED_UNICODE));
+check('05 fees — מחירון ישראל ומחירון חו"ל בלבד', ($err(fn() => gp_fees($pab, $p26)))[0] === 400);
+
+// 6–7 — עריכת הטקסט בחו"ל (מחירון עתידי) מאחדת; מחיר שונה — שוב שתי שורות
+$c5 = gp_edition_create($uid, ['effective_from' => '2034-01-01', 'base_pid' => $pab])['pid'];
+$tr = $find(gp_edition($c5), 'העברת בעלות שטר קבר');
+gp_row_save($uid, ['pid' => $c5, 'row' => $tr['pid'], 'kind' => 'fee', 'indent' => 0, 'label' => '* תשלום עבור העברת בעלות לאחוזת קבר']);
+$f = gp_fees($p26, $c5);
+$byKey = fn($f, $k) => array_values(array_filter($f['rows'], fn($r) => gp_fee_key($r['label']) === $k || str_starts_with(gp_fee_key($r['label']), "$k ל")));
+check('05/6 טקסט זהה ומחיר זהה — שורה אחת כללית', array_column($byKey($f, 'תשלום עבור העברת בעלות לאחוזת קבר'), 'scope') === ['all']);
+$ilNow = gp_current_row('il');
+$sameIl = gp_fees_merge(gp_edition_load($ilNow)[0], gp_edition_load(gp_edition_row($c5))[0])['shared']['abroad'][$tr['pid']];
+check('05/6 התג במצב עריכה — shared מאותה פונקציה', gp_edition($c5)['rows'][array_search($tr['pid'], array_column(gp_edition($c5)['rows'], 'pid'), true)]['shared'] === $sameIl
+    && $sameIl === true && gp_edition($c5)['other_name'] === 'תושבי ישראל');
+check('05 shared רק באגרות ובהערות', !array_filter(gp_edition($c5)['rows'], fn($r) => isset($r['shared']) !== in_array($r['kind'], ['fee', 'note'], true)));
+gp_price_set($uid, ['pid' => $c5, 'row' => $tr['pid'], 'amount' => 3500]);
+check('05/7 מחיר שונה — שתי שורות, כל אחת עם הקבוצה שלה', array_column($byKey(gp_fees($p26, $c5), 'תשלום עבור העברת בעלות לאחוזת קבר'), 'scope') === ['il', 'abroad']);
+$sh = array_column(array_filter(gp_edition($c5)['rows'], fn($r) => $r['pid'] === $tr['pid']), 'shared');
+check('05/7 התג — "רק ל…"', $sh === [false]);
+check('05 נתוני הבעלים לא השתנו', count(gp_edition($pab)['rows']) === 32 && $find(gp_edition($pab), 'העברת בעלות שטר קבר') !== null);
+
 // ניקוי
 foreach (glob("$tmp/*") ?: [] as $f) @unlink($f);
 @rmdir($tmp);
