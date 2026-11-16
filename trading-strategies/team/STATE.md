@@ -17,8 +17,8 @@
   | #1603 | S1.2 לשוניות + בחירה מרשימה | 1680 |
   | #1605 | S4 ניתוח מתחת לגרף, 🧭 הוסר | 1681 |
 | #1607 | מסמכי הבקרה (2) | 1682 |
-| #1608 | S5 צבע לכל שיטה, מקרא (`users.method_colors`, מיגרציה 10) | **לאמת** |
-| #1606 | מסירת קוד אחרי S4 | **לאמת** |
+| #1608 | S5 צבע לכל שיטה, מקרא (`users.method_colors`, מיגרציה 10) | 1683 |
+| #1606, #1609 | מסירת S4, מסמכי בקרה (3) | 1685 (1684 בוטלה בתור — 1685 כוללת אותה) |
 - ביקורות: `team/reviews/*.md`. #1602, #1604 (מסירות) נסגרו — אוחדו ב-#1605.
 
 ## הצוות (`team/sessions.json`)
@@ -26,8 +26,8 @@
 | תפקיד | session | מצב |
 | --- | --- | --- |
 | אפיון | `session_018g4NYGqhdYWYDScrU8eZxq` (Opus) | רדום אחרי 2.19 |
-| קוד (S5) | `session_018g4NYE8YZGBZvopSjFJYG7` (Opus) | #1608 מוזג — מעדכן handoff ויוצא |
-| קוד קודמים | `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
+| קוד (S6) | `session_018g4NYCtoJQjiN4ojLGwKMh` (Opus) | נפתח 01:00 — יומן שיטה (18.6) |
+| קוד קודמים | `…E8YZGBZvopSjFJYG7` S5 (handoff #1610 — עם S6) · `…EqqFf5DTC33BEFxAS` S4 · `…GcBnrLJ86NSM4bh1` S1.2 · `…CMUPJKcJaE5QK2TYs` F1 · `…G7sBtHJh6uW5fLyxh` S3/S1.1 · `…GrqqR7BTByrKbVovy` S1 · `…CQjLZtvssney3gT8G` מחיקה · `…DzGyUVdfFLtGcVpLr` (Haiku) | רדומים. לא מעירים |
 | מטלות | — | עוד לא נפתח |
 
 ## ממתין לבעלים
@@ -41,8 +41,8 @@
 
 ## הצעד הבא
 
-1. לאמת `conclusion: success` של #1608, #1606 ושל ענף הבקרה.
-2. **S6** (18.6, יומן שיטה): צ'אט קוד חדש, `model` מפורש, `extra_allowed_tools: ["mcp__claude-code-remote__send_message"]`. ⚪ מ-S5: המפה `method_colors` מוגבלת ל-8 שיטות (`team/reviews/s5.md`).
+1. **S6** (18.6) בבנייה — ביקורת ומיזוג יחד עם #1610.
+2. ⚪ מ-S5: המפה `method_colors` מוגבלת ל-8 שיטות (`team/reviews/s5.md`).
 3. אחר כך S7 (שכלול).
 4. פרוסות app-rules מהסקר (`dev/audit.md`): A1 DevLoop, A2 התחברות עם ניתוק, A3 בדיקות בשער הפריסה.
 5. צ'אט מטלות — לפתוח עם המטלה הראשונה (ניקוי בשרת).
