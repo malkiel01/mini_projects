@@ -17,6 +17,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/pdo.php';
+
 /** סוג המאגר לפי cred_scope (3.6, ✅2): משותף / אישי / מהמנהל */
 function ts_scope_kind(string $scope): string
 {
@@ -32,13 +34,7 @@ function ts_cache(): PDO
 {
     static $db = null;
     if ($db) return $db;
-    $path = ts_cache_path();
-    if (!is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
-    $db = new PDO('sqlite:' . $path, null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-    $db->exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;');
+    $db = ts_sqlite_open(ts_cache_path());   // סוגר סמן אחרי שורה אחת (lib/pdo.php)
     if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 1) {
         $db->exec(<<<'SQL'
             BEGIN;
