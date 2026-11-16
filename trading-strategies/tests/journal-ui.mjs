@@ -55,10 +55,15 @@ try {
   await a.goto(BASE + '#/market');
   await a.waitForSelector('main [role="combobox"]');
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
-  await a.goto(BASE + '#/analysis/' + encodeURIComponent('binance:BTCUSDT'));
-  await a.locator('fieldset[aria-label="מסגרת זמן"] label', { hasText: '4 ש׳' }).click();
-  await a.getByRole('button', { name: '🧭 נתח' }).click();
-  await a.waitForSelector('.analysis-card', { timeout: 60000 });
+  // S4 (18.4): הכרטיס בפס שמתחת לגרף — שיטה אחת מסומנת, מסגרת h4
+  await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
+  await a.waitForSelector('main .chart-box');
+  await a.evaluate(([m, t]) => { localStorage.setItem('ts-forecast-methods', JSON.stringify([{ id: m, color: '--brand' }]));
+    sessionStorage.setItem('ts-chart:binance:BTCUSDT', JSON.stringify({ tf: t })); }, ['test-cross-b', 'h4']);
+  await a.reload();
+  // הבדיקה לאחור רצה מעצמה (פעולה של המשתמש — פתיחת הגרף), והכרטיס מתחלף בתוצאה שלה
+  await a.waitForFunction(() => { const s = document.querySelector('.analysis-card .an-sec.prob');
+    return s && !/מריץ בדיקה לאחור/.test(s.textContent) && /ודאות|לא נבדק לאחור/.test(s.textContent) && document.querySelector('.analysis-card .verdict'); }, null, { timeout: 90000 });
   const btn = a.getByRole('button', { name: '📓 פתח עסקה מזה' });
   eq(await btn.count(), 1, '"📓 פתח עסקה מזה" on a card with levels');
   const entry = (await a.locator('.analysis-card .cells dd').first().textContent()).replace(/[,\s⁦⁩]/g, '');

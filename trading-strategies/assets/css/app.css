@@ -207,7 +207,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ניווט תחתון: ארבע לשוניות (אפיון פרק 2) */
 body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
     background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; text-decoration: none;
     color: var(--muted); font-size: .75rem; }
@@ -409,12 +409,34 @@ body.chart-fs { overflow: hidden; }
 .use-tx small.wrap, .card .l2.wrap { white-space: normal; overflow: visible; }
 a.use-row { text-decoration: none; color: inherit; }
 
-/* ===== 🔮 תחזית שיטה (spec-stage-a 17.2.2) ===== */
+/* ===== 🔮 שיטות על הגרף והפס שמתחת (spec-stage-a 17.2.2, 18.1.2, 18.4) ===== */
 .forecast-list { display: grid; }
 .forecast-panel { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); background: var(--surface);
     border: 1px solid var(--line); border-inline-start: 3px solid var(--mc, var(--brand)); border-radius: var(--r); }
 .forecast-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .forecast-head h3 { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; }
+/* ── הפס שמתחת לגרף (S4, 18.4): ממצא · תרחיש · הסתברות ── */
+.an-panel { gap: var(--s2); margin-bottom: var(--s2); }
+.an-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); min-width: 0; }
+.an-title { flex: 1 1 auto; margin: 0; font-size: .9rem; font-weight: 600; color: var(--muted); }
+.an-bar select { width: auto; flex: none; }
+.an-tfs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); font-size: .85rem; }
+.an-tfs .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.an-prof { font-size: .8rem; margin-inline-start: auto; }
+.forecast-blocks { display: grid; }
+.an-fold { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 4px 0; min-height: 40px; background: none; border: 0;
+    color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.an-fold h3 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; margin: 0; }
+.an-brief { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-chev { flex: none; color: var(--muted); }
+.an-body { display: grid; gap: var(--s2); min-width: 0; }
+.an-body[hidden] { display: none; }
+.an-sec { display: grid; gap: var(--s2); min-width: 0; padding-block-start: var(--s2); border-top: 1px solid var(--line); }
+.an-sec > h4 { margin: 0; font-size: .8rem; font-weight: 700; letter-spacing: .02em; color: var(--mc, var(--brand)); }
+.an-sec .summary { margin: 0; }
+.an-line { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.bt-none { font-weight: 600; }
+.blend-card { margin-bottom: var(--s2); }
 .forecast-scenarios { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .forecast-scenarios .btn { white-space: normal; text-align: start; }
 .forecast-scenarios .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
