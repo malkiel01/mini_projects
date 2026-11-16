@@ -516,11 +516,23 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   // ── המקרא מעל הגרף (S5, 18.5): כל שיטה מסומנת, עם הנקודה בצבע שלה. לחיצה — מסתירה/מציגה, הסימון בתפריט נשאר ──
   const legend = h('div', { class: 'fc-legend', role: 'group', 'aria-label': 'מקרא השיטות', hidden: true });
   host.append(legend);
+  // "אין תחזית" (בקשת הבעלים: "למה אני לא רואה את אליוט"): לשיטה יש תשובה, ואין בה שום דבר לצייר — לא ממצא (ספירה, אזורים,
+  // רמות), לא פריטי תרחיש ולא תרחישים. לפי מה שהשרת החזיר, לא לפי מה שהמשתמש הסתיר
+  const nothingOf = id => {
+    const r = res.get(id);
+    return !!r && !r.overlay?.items?.length && !r.forecast?.items?.length && !r.forecast?.scenarios?.length;
+  };
   function renderLegend() {
     legend.hidden = !chosen.length;
-    legend.replaceChildren(...chosen.map(c => h('button', { type: 'button', class: 'fc-leg' + (c.off ? ' off' : ''), 'data-method': c.id,
-      style: `--mc: var(${c.color})`, 'aria-pressed': String(!c.off), title: c.off ? 'הצגה על הגרף' : 'הסתרה מהגרף',
-      on: { click: () => { c.off = !c.off; save(); paint(); } } }, h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), nameOf(c.id))));
+    legend.replaceChildren(...chosen.map(c => {
+      const none = !c.off && nothingOf(c.id);   // מוסתרת — המצב הקיים, בלי אייקון
+      const why = none ? (res.get(c.id)?.overlay?.note || `${nameOf(c.id)} — אין תחזית כרגע`) : null;
+      return h('button', { type: 'button', class: 'fc-leg' + (c.off ? ' off' : '') + (none ? ' none' : ''), 'data-method': c.id,
+        style: `--mc: var(${c.color})`, 'aria-pressed': String(!c.off), title: why || (c.off ? 'הצגה על הגרף' : 'הסתרה מהגרף'),
+        ...(none ? { 'aria-label': `${nameOf(c.id)} — אין תחזית כרגע` } : {}),
+        on: { click: () => { c.off = !c.off; save(); paint(); } } }, h('i', { class: 'fc-dot', 'aria-hidden': 'true' }), nameOf(c.id),
+        none ? h('span', { class: 'fc-leg-none', 'aria-hidden': 'true' }, '∅') : null);
+    }));
   }
   /** המלבן של המקרא בקואורדינטות של הגרף — ללוח התוויות */
   function legendRect() {
