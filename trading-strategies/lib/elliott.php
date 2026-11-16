@@ -388,6 +388,18 @@ const TS_EW_CHECK = [
 ];
 
 /**
+ * ההסבר לנקודת מפנה בחלונית שעל הגרף (T1, 18.1.6): הכלל שבזכותו הנקודה נספרה (17.1.1–17.1.2, הכללים ב-17.2.4).
+ * בעברית פשוטה, בלי "יעד", "קנה" או "מכור" (6.6)
+ */
+const TS_EW_POINT_RULE = [
+    '1' => 'הגל הראשון של הדחף. ממנו נמדדים היחסים של הגלים הבאים.',
+    '2' => 'גל 2 מתקן את גל 1, ולא חוזר מעבר לתחילתו (כלל 1).',
+    '3' => 'גל 3 עובר את סוף גל 1, ואינו הקצר מבין גלים 1, 3 ו-5 (כללים 2–3).',
+    '4' => 'גל 4 מתקן פחות מכל גל 3, ולא חופף לגל 1 (כללים 4–5).',
+    '5' => 'גל 5 משלים דחף של חמישה גלים. לא כל שלושת גלי הדחף מורחבים (כלל 6).',
+];
+
+/**
  * השכבה החזותית של אליוט (17.1.7, החוזה ב-17.2.3): {as_of, range, items[], projection{bars, scenarios[]}, counts, check}.
  * $candles — נרות סגורים (float), $tf — אורך הנר בשניות. הזמנים העתידיים — t + k·tf (17.2.2). float לתצוגה בלבד.
  * כל פריט מסומן ב-scenario (מזהה הספירה): הספירה המובילה — primary: true; החלופות — false (עמומות, 17.1.7).
@@ -403,25 +415,34 @@ function ts_ew_overlay(array $candles, int $tf, array $in = []): array
     foreach ($counts as $i => $c) {
         $sid = $c['id']; $primary = $i === 0;
         $tag = ['scenario' => $sid, 'primary' => $primary];
-        $pts = array_map(fn($x) => ['t' => $x['t'], 'price' => (float)$x['v']], $c['pivots']);
-        $items[] = ['kind' => 'polyline', 'points' => $pts, 'style' => 'solid', 'role' => 'count'] + $tag;
-        foreach ($c['pivots'] as $j => $x) {
-            if ($j === 0) continue;
-            $items[] = ['kind' => 'label', 't' => $x['t'], 'price' => (float)$x['v'], 'text' => $c['labels'][$j]] + $tag;
-        }
         $nx = $c['next'];
         $end = end($c['pivots']);
+        // החלונית על הגרף (T1, 18.1.6): רמת הביטול של הספירה — בכל פריט שלה, חוץ מקו הביטול עצמו
+        $inv = ['price' => (float)$nx['invalidation'], 'side' => $nx['invalidation'] < $end['v'] ? 'below' : 'above', 'rule' => $nx['invalidation_rule']];
+        $nextName = $nx['wave'] === 'A-B-C' ? 'תיקון A-B-C' : 'גל ' . $nx['wave'];
+        $pts = array_map(fn($x) => ['t' => $x['t'], 'price' => (float)$x['v']], $c['pivots']);
+        $items[] = ['kind' => 'polyline', 'points' => $pts, 'style' => 'solid', 'role' => 'count',
+            'tip' => ['title' => 'ספירת גלים — ' . $c['words'], 'explain' => 'הקו מחבר את נקודות המפנה שנספרו, על הנרות שכבר נסגרו.', 'invalidation' => $inv]] + $tag;
+        foreach ($c['pivots'] as $j => $x) {
+            if ($j === 0) continue;
+            $l = $c['labels'][$j];
+            $items[] = ['kind' => 'label', 't' => $x['t'], 'price' => (float)$x['v'], 'text' => $l,
+                'tip' => ['title' => 'גל ' . $l, 'explain' => TS_EW_POINT_RULE[$l] ?? null, 'invalidation' => $inv]] + $tag;
+        }
         // הזמן העתידי — מהנר האחרון (as_of), ולא מנקודת המפנה: כך הוא תמיד t + k·tf (17.2.2), גם כשיש פערים בנתונים
         // (סופי שבוע). אורך הגל הבא בנרות, פחות הנרות שכבר עברו מאז סוף הגל; לפחות 1, ולא יותר מ-forecast_bars
         $since = 0;
         for ($j = count($candles) - 1; $j >= 0 && $candles[$j]['t'] > $end['t']; $j--) $since++;
         $t2 = $last + max(1, min($prm['forecast_bars'], $nx['bars_full'] - $since)) * $tf;
         $items[] = ['kind' => 'zone', 't1' => $end['t'], 't2' => $t2, 'p1' => $nx['zone'][0], 'p2' => $nx['zone'][1],
-            'text' => 'אזור לגל ' . $nx['wave'] . ' — ' . $nx['rule']] + $tag;
+            'text' => 'אזור לגל ' . $nx['wave'] . ' — ' . $nx['rule'],
+            'tip' => ['title' => 'אזור תרחיש — ' . $nextName, 'explain' => $nx['rule'], 'invalidation' => $inv]] + $tag;
         $items[] = ['kind' => 'hline', 'price' => (float)$nx['invalidation'], 'role' => 'invalidation',
-            'text' => 'רמת ביטול — ' . $nx['invalidation_rule']] + $tag;
+            'text' => 'רמת ביטול — ' . $nx['invalidation_rule'],
+            'tip' => ['title' => 'רמת ביטול', 'explain' => 'מחיר ' . ($inv['side'] === 'below' ? 'מתחת' : 'מעל') . ' לרמה הזו מבטל את הספירה: ' . $nx['invalidation_rule'] . '.']] + $tag;
         $proj = [['t' => $end['t'], 'price' => (float)$end['v']], ['t' => $t2, 'price' => $nx['center']]];
-        $items[] = ['kind' => 'polyline', 'points' => $proj, 'style' => 'dashed', 'role' => 'projection'] + $tag;
+        $items[] = ['kind' => 'polyline', 'points' => $proj, 'style' => 'dashed', 'role' => 'projection',
+            'tip' => ['title' => 'קו התרחיש — ' . $nextName, 'explain' => 'המסלול האפשרי לפי כללי השיטה, מסוף הספירה אל מרכז האזור.', 'invalidation' => $inv]] + $tag;
         $scen[] = ['id' => $sid, 'score' => $c['score'], 'words' => $c['words'], 'primary' => $primary,
             'label' => $c['words'] . ' · ' . ($c['dir'] === 'up' ? 'דחף עולה' : 'דחף יורד') . ', ' . $c['k'] . ' גלים — הבא: ' . $nx['wave'],
             'points' => $proj];

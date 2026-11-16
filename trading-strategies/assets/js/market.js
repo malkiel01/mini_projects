@@ -7,6 +7,7 @@
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
+import { mountChartTip } from './charttip.js';
 import { mountAxis, labelBoard } from './chartaxis.js';
 import { setTurned, screenRect } from './rotate.js';
 import { mountCombo, invalidateCatalog } from './combobox.js';
@@ -515,7 +516,21 @@ export function mountMarket(ctx) {
     const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet, board,
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
     drawSlot.append(draw.bar);
-    onTeardown(() => { fsLeave(true); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
+    // חלונית הסבר על נקודת תחזית (T1, 18.1.6): לא כשכלי ציור פעיל, ולא בלחיצה שסוגרת את התפריט 🔮
+    const tip = mountChartTip({ h, box, wrap, chart, forecast, legend: () => wrap.querySelector('.fc-legend'),
+      fmtTime: t => fmtT(t, { day: 'numeric', month: 'numeric', year: '2-digit', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : {}) }),
+      canTip: () => !draw.isActive() && !forecast.popOpen(),
+      // "פירוט השיטה ›" (סעיף 2): תפריט השיטות עם השיטה מסומנת, והתנאים שלה פתוחים בפס שמתחת לגרף. במסך מלא — יוצאים קודם
+      onDetails: id => {
+        if (fsOn) fsLeave();
+        const sec = forecastSlot.querySelector(`.forecast-panel[data-method="${CSS.escape(id)}"]`);
+        sec?.querySelector('.an-fold[aria-expanded="false"]')?.click();
+        wrap.scrollIntoView({ block: 'start' });
+        if (!forecast.popOpen()) forecastBtn.click();
+      } });
+    box.tsTip = () => tip.state();   // לבדיקות: החלונית הפתוחה
+    box.tsPoints = kind => forecast.points(kind);   // לבדיקות: הנקודות של השיטות על הגרף
+    onTeardown(() => { fsLeave(true); tip.destroy(); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
 
     // ── מסך מלא (18.1.2 סעיף 3; L1 — 18.1.5): רק הגרף. Fullscreen API על כל הדף (documentElement) כשיש, והגרף — שכבה שמכסה
     // את המסך (`.chart-wrap.fs`). כל הדף ולא הגרף: על אלמנט ב-Fullscreen הדפדפן כופה `transform: none`, והשכבה המסובבת צריכה transform.

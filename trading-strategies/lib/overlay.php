@@ -74,6 +74,27 @@ function ts_overlay_check(array $ov, int $tf): array
             case 'hline': if (!$num($it['price'] ?? null) || !in_array($it['role'] ?? null, TS_OVERLAY_ROLES, true)) $bad('hline'); $text($it['text'] ?? null); break;
             case 'marker': $time($it['t'] ?? null); if (!in_array($it['side'] ?? null, ['long', 'short'], true)) $bad('marker.side'); $text($it['text'] ?? null); break;
         }
+        // T1 (18.1.6, 2.33): שדה רשות — ההסבר בחלונית שעל הגרף. {title, sub?, explain?, invalidation?{price, side, rule?}, links?[{label, href}]}
+        // קישור — רק בתוך האפליקציה (#/…), כך שהשיטה לא יכולה להכניס לחלונית כתובת חיצונית או javascript:
+        if (array_key_exists('tip', $it)) {
+            $tp = $it['tip'];
+            if (!is_array($tp)) $bad('tip');
+            $text($tp['title'] ?? null);
+            $text($tp['sub'] ?? null, false);
+            $text($tp['explain'] ?? null, false);
+            if (isset($tp['invalidation'])) {
+                $iv = $tp['invalidation'];
+                if (!is_array($iv) || !$num($iv['price'] ?? null) || !in_array($iv['side'] ?? null, ['above', 'below'], true)) $bad('tip.invalidation');
+                $text($iv['rule'] ?? null, false);
+            }
+            if (isset($tp['links'])) {
+                if (!is_array($tp['links']) || !array_is_list($tp['links']) || count($tp['links']) > 3) $bad('tip.links');
+                foreach ($tp['links'] as $l) {
+                    $text($l['label'] ?? null);
+                    if (!is_string($l['href'] ?? null) || !preg_match('~^#/[\w\-/%?=&.]*$~u', $l['href'])) $bad('tip.links.href');
+                }
+            }
+        }
     }
     $sc = $ov['projection']['scenarios'] ?? null;
     if (!is_array($sc) || !array_is_list($sc)) $bad('scenarios');
