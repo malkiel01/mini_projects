@@ -136,6 +136,14 @@ function ts_learn_off_set(int $uid, mixed $off): bool
     return $off;
 }
 
+/** H1 (18.1.8 סעיף 4): המתג "היסטוריה" — אותות העבר על הגרף, לכל השיטות יחד. ברירת מחדל דולק. רק תצוגה */
+function ts_history_set(int $uid, mixed $on): bool
+{
+    if (!is_bool($on)) throw new TsInvalid('ערך לא תקין');
+    ts_db()->prepare('UPDATE users SET history_off = ? WHERE id = ?')->execute([$on ? 0 : 1, $uid]);
+    return $on;
+}
+
 function ts_settings_save(int $uid, array $in): void
 {
     $pct = ts_num($in['default_risk_pct'] ?? '', 'סיכון לעסקה', false, false, 4);

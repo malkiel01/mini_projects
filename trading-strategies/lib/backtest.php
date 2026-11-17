@@ -48,13 +48,14 @@ function ts_bt_init(TsMethod $m, array $p): array
  * מריץ (או ממשיך) בדיקה לאחור על נרות סגורים, ממוינים. $cost = ['fee' => שבר לכל צד, 'slip' => שבר].
  * $deadline — microtime שאחריו TsBacktestTimeout (null — בלי תקרה; בבדיקות).
  *
+ * $onSignal (H1, 18.1.8) — (t של נר האות, מצב השיטה אחרי הנר) לכל אות שנכנס לעסקה (לא (ז) — בזמן עסקה פתוחה). רק תצוגה.
  * $onTrade (למידה, 23.3–23.4, L1) — נקרא לכל עסקה **שהסתיימה**, ברגע היציאה (בלי הצצה לעתיד — עסקה פתוחה לא יוצאת):
  * {t_signal, t_entry, t_exit, side, entry, stop, target, exit, result win|loss|horizon|skipped_gap, win, r, mae_r, mfe_r,
  * atr, features}. mae_r / mfe_r — הירידה המרבית נגד העסקה והעלייה המרבית בעדה, ב-R, מהכניסה ועד נר היציאה (כולל);
  * atr — ATR(14) של Wilder בנר האות; features — מה שהשיטה צירפה לאות (meta().learn). פער (ח) — שורה skipped_gap בלי R.
  * **רק כש-$onTrade נמסר** המצב מחזיק גם את ה-ATR ואת השפל/השיא של העסקה הפתוחה; בלעדיו — המצב בדיוק כמו קודם.
  */
-function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $state = null, ?float $deadline = null, ?callable $onTrade = null): array
+function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $state = null, ?float $deadline = null, ?callable $onTrade = null, ?callable $onSignal = null): array
 {
     $s = $state ?? ts_bt_init($m, $p);
     $learn = $onTrade !== null;
@@ -166,6 +167,8 @@ function ts_bt_run(TsMethod $m, array $p, array $candles, array $cost, ?array $s
                 $s['pend'] = ['side' => $sig['side'], 'stop_d' => $risk,
                     'target_d' => $sig['target'] === null ? null : abs($sig['target'] - $sig['entry']), 'sig_t' => $c['t']];
             }
+            // H1 (18.1.8): אות שנכנס לעסקה — מצב השיטה בנר האות, בשביל "הכלל של השיטה" בחלונית (רק תצוגה; לא נשמר במצב)
+            if ($onSignal !== null && $s['pend'] !== null && $s['pend']['sig_t'] === $c['t']) $onSignal($c['t'], $s['m']);
             if ($learn && $s['pend'] !== null && $s['pend']['sig_t'] === $c['t']) {
                 $s['pend']['atr'] = $s['atr']['v'];
                 if (!empty($sig['features']) && is_array($sig['features'])) $s['pend']['features'] = $sig['features'];

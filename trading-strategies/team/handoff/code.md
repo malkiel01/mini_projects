@@ -157,6 +157,34 @@
 - **העותק בענן MBE** — `lib/copy.php`, `analysis_copy*`, `cloud.js`, קריאת העותק ב-`load()` (#1590).
 - **`tests/no-polling.mjs`** — נמחק, כי סתר את ✅23. **S3 צריך בדיקה חדשה** שמוכיחה את ההפך: יש רענון כשהניתוח פעיל, ואין כשהלשונית מוסתרת או הניתוח כבוי — לפי 18.3.
 
+## H1a — אותות עבר (18.1.8) — מה בנוי, ומה נשאר
+
+- **שרת:** `lib/history.php` → `ts_history_signals($m, $p, $asset, $rows)` — `ts_bt_run` עם `$onTrade` (עסקאות שנסגרו, בלי skipped_gap) ו-`$onSignal`
+  (פרמטר 8 חדש: מצב השיטה בנר האות → `conditions` של הצד, לחלונית). פתוח: `pos` (נכנס) או `pend` (אות בנר האחרון, בלי כניסה). 50 האחרונים, `n` — הכול.
+  נקרא מ-`ts_method_result` (`lib/refresh.php`) ונשמר ב-`method_results` עם התוצאה — **תוצאות שנשמרו לפני הפריסה — בלי `history` עד הנר הבא**.
+- **דפדפן:** `forecast.js` — `pastOf`, `drawPast` (מתחת להווה, alpha 0.5), `pastAnchor`; פריט `kind: 'past'` ב-`hitsAt` / `relocate` / `keyOf`;
+  `charttip.js` → `pastContent` ("אות לונג · היה"). המתג — `histRow()` בתפריט, `me.profile.history`, `history_set`. ליד ∅ — `.fc-leg-past`.
+  לבדיקות: `tsForecast().past` ({m, t, side, result, alpha, label, x, y}), `.pastN`, `.history`.
+- **מיגרציה 23** (`users.history_off`). **הבאה ב-app.sqlite — 24; cache.sqlite — 7.**
+- **H1b (בנוי):** `history.counts` — `TsMethod::pastCounts()` (ברירת מחדל `[]`; אליוט → `ts_ew_past_counts` ב-`lib/elliott.php`: `ts_ew_counts` על קידומת,
+  k=5, מ-`n−2` אחורה, בלי נקודה משותפת, עד 5, ב-40 נקודות המפנה האחרונות; הנקודה האחרונה — של ההווה, לא עבר). `items[].zone` — `[lo, hi]` מ-`x.zone`
+  במצב השיטה בנר האות (פיבונאצ'י), אחרת null. `TS_RESULT_FORMAT` 2 → 3 (תוצאות H1a במטמון לא נמצאות — מחושבות מחדש). בדפדפן: `pastOf` מחזיר גם
+  `kind: 'pastcount'` → `drawPastCount` (קו + 1–5 + "היה", 50%), מלבן האזור ב-`drawPast`; חלונית "ספירה · היה" (`pastCountContent`). לבדיקות:
+  `tsForecast().pastCounts` ({m, t, alpha, labels, was, dashed, mid}), `past[].zone`. בדיקות: `past-counts.php` (21), `past-signals-api.php` (19), `past-signals-ui.mjs` (34).
+- **H1c (בנוי):** `ts_method_history` (`lib/history.php`, פעולה `method_history&from=&before=&methods=`). הנרות מגיעים מ-`ts_market_candles`
+  (`history` + המאגר), בטווח [from, before + (אופק + `TS_HISTORY_TAIL`=300) נרות]. המנוע לא מציץ קדימה, ולכן אותות עם t<before זהים לחישוב על
+  כל הגרף (`past-batch.php` בודק את זה). `ts_history_signals(..., $before)` ו-`pastCounts(..., $before)` מחזירים רק t<before. המטמון —
+  `method_results`, מפתח `scope|h1c|before`. נספר בתקרת TS_DATA רק כשהייתה פנייה לספק. בדפדפן: `market.js` → `histLoad` קורא אחרי כל מנה
+  (באותו תור); `forecast.addOlder` / `resetOlder` (ב-`histReset`); `historyOf` ממזג: פריטים לפני `from` של החלון, 50 האחרונים על כל הטווח,
+  ספירות בלי חפיפה עם המוצגות, n ו-bars מצטברים. לבדיקות: `tsForecast().pastItems` (כל פריטי העבר, גם מחוץ לתצוגה).
+  - **תקרת חישוב** (בקשת בקרה (10)): `TS_HISTORY_RUNS_PER_MIN` = 12 מנות שחושבו בדקה למשתמש (`history_runs`, **מיגרציה 7 ב-cache.sqlite**),
+    מעליה 429. מנה מהמטמון לא נספרת. **הבאה: app.sqlite — 24, cache.sqlite — 8.**
+  - **הסדר בבקשה** (ביקורת בקרה (10)): (1) המטמון — מפתח לפי הטווח (from, before, to), **לפני** הנרות; (2) תקרת החישוב — בדיקה בלי להגדיל;
+    (3) `ts_market_candles(..., $gate)` — `$gate` (= `ts_rate_hit`) נקרא **לפני** הפנייה הראשונה לספק, רק כשחסר; (4) ספירת החישוב.
+    נרות חלקיים (notice) — התוצאה לא נשמרת.
+  - **לא נבנה:** שיטה שנבחרת **אחרי** שמנות ישנות כבר נטענו — אין לה אותות על המנות האלה, עד שנטענת מנה חדשה או הגרף נטען מחדש.
+- **סט הבדיקה:** `TS_KLINES_SHAPE=wave` ו-`X-Dev-Now: 1794342600` — אליוט בלי ספירה נוכחית (∅) ועם 12 אותות עבר בשעה, 3 חודשים.
+
 ## מוסכמות שגיליתי
 
 - **ציר הזמן — לפי שעון המשתמש** (`assets/js/chartaxis.js`): סימון חדש כש-`tickKey(t, step, kind, offset)` משתנה; `offset = tzOffset(ME().user.timezone)`.
@@ -689,3 +717,11 @@
 - `nothingOf(id)` ב-`forecast.js` — לפי מה שהשרת החזיר (לא לפי מה שהמשתמש הסתיר). שיטה חדשה שמציירת משהו שלא דרך `overlay.items` /
   `forecast.items` — לעדכן את `nothingOf`, אחרת יופיע ∅ ליד ציור קיים.
 - בדיקה: `tests/legend-none-ui.mjs` — `page.route` על `chart_refresh` מרוקן את התשובה של אליוט (ואפשר עם `note`).
+
+## היסטוריה בפעימות (בקרה 9)
+- **`cache.sqlite` — גרסה 6:** `history` + `history_coverage`. **מיגרציה הבאה ל-`cache.sqlite` — 7.**
+- `ts_market_candles` — החלק שמעבר ל-60 יום נקרא מ-`history` ונמשך רק על החסר (קודם נמשך מחדש בכל בקשה). `ts_coverage_merge($key, $table)`.
+- `ts_market_history` / `market_history` — מנה של 999 (אחד פחות מ-`max_per_call`: מנה מלאה בדיוק = עוד עמוד ריק ב-Binance).
+- `market.js`: `older` (הנרות מהפעימות) נשמר ב-`load('auto'|'pick')`; `histReset` ב-open/change/manual. `box.tsHistory()` לבדיקות.
+- הפעימות רק אחרי נגיעה בגרף (`hist.user`), חוץ מטווח ארוך מ-5,000 (`hist.target`). הזמנים ב-`performance.now()` — בבדיקות השעון קבוע.
+- **fixture של Binance:** `TS_KLINES_SINCE` (אין נרות לפני), `TS_KLINES_429_FILE` (קובץ דגל → 429).

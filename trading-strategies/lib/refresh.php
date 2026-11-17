@@ -17,6 +17,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/forecast.php';
+require_once __DIR__ . '/history.php';
 
 /** כמה שיטות בבקשה אחת — כמו הבחירה בגרף (18.5) */
 const TS_REFRESH_MAX_METHODS = 8;
@@ -86,6 +87,13 @@ function ts_method_result(TsMethod $m, array $p, string $asset, string $tf, stri
         return [$res, false];
     }
     $res = ts_overlay_compute($m, $p, $tf, $rows);
+    // H1 (18.1.8): אותות העבר — אותו מנוע, אותם נרות; נשמרים יחד עם התוצאה עד הנר הבא. כשל — בלי היסטוריה, לא בלי השיטה
+    try {
+        $res['history'] = ts_history_signals($m, $p, $asset, $rows, TS_TF_SECONDS[$tf]);
+    } catch (Throwable $e) {
+        error_log('trading-strategies history ' . $m->meta()['id'] . ': ' . $e->getMessage());
+        $res['history'] = null;
+    }
     // נשמר מקודד ומוחזר מפוענח מאותה מחרוזת — כך גם הריצה הראשונה וגם הבאות יוצאות באותם בייטים
     $json = json_encode($res, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
     try {

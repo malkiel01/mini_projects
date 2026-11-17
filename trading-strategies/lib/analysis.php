@@ -73,6 +73,8 @@ function ts_profile(int $uid): array
         'market_tabs' => function_exists('ts_market_tabs') ? ts_market_tabs($uid) : null,
         // הצבע של כל שיטה (18.5) — {method_id: צבע מהפלטה}; אותה שיטה, אותו צבע בכל הזוגות (lib/method-colors.php)
         'method_colors' => ts_method_colors($uid),
+        // H1 (18.1.8 סעיף 4): אותות העבר של השיטות על הגרף — דולק כברירת מחדל
+        'history' => (int)(ts_db()->query('SELECT history_off FROM users WHERE id = ' . $uid)->fetchColumn() ?: 0) === 0,
     ];
 }
 
@@ -526,8 +528,11 @@ function ts_bt_partial_drop(string $k): void
     }
 }
 
-/** צורת התוצאה השמורה. 2 — S4: ממצא ותרחיש בשדות נפרדים. תוצאות בצורה הישנה פשוט לא נמצאות (ונמחקות אחרי יומיים) */
-const TS_RESULT_FORMAT = 2;
+/**
+ * צורת התוצאה השמורה. 2 — S4: ממצא ותרחיש בשדות נפרדים; 3 — H1b: history עם ספירות עבר (counts) ואזור לכל אות (zone).
+ * תוצאות בצורה הישנה פשוט לא נמצאות (ונמחקות אחרי יומיים)
+ */
+const TS_RESULT_FORMAT = 3;
 
 /** מפתח החישוב (18.3) — כל מה שהתוצאה תלויה בו, ושום דבר אחר */
 function ts_method_key(TsMethod $m, array $p, string $asset, string $tf, string $scope, array $rows): string

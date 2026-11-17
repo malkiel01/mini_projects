@@ -21,6 +21,9 @@
  * GET  ?action=pair_parse&q=             "ביטקוין מול ין" → זוג; בלי ספק — "אין ספק לזוג הזה" (בלי פנייה לספק)
  * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס: base/quote (קוד ושם) — "BTC ⇄ USD", לא הסימול המחובר (18.1.1)
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
+ * GET  ?action=market_history&asset=&tf=&before=     היסטוריה בפעימות: מנה של עד 999 נרות ישנים לפני before, עד 5 שנים
+ * GET  ?action=method_history&asset=&tf=&from=&before=&methods=a,b   H1c: אותות וספירות עבר של מנה ישנה — רק t < before
+ *                                        אחורה; done / retry (תקרה, 429) ← נספר בתקרת 30 לדקה
  * GET  ?action=chart_refresh&asset=&tf=&from=&to=&methods=a,b   הגרף (18.3, S3): נרות + תוצאת כל שיטה שנבחרה בבקשה אחת;
  *                                        שיטה בלי נר סגור חדש לא רצה שוב (lib/refresh.php); וכרטיס הניתוח (S4) עם
  *                                        הבדיקה לאחור השמורה בלבד ← נספר בתקרת 30 לדקה
@@ -35,6 +38,7 @@
  * פרופיל, שיטות וניתוח (פרקים 5–6):
  * GET  ?action=profile                   הפרופיל שלי
  * POST action=profile_save
+ * POST action=history_set {on: bool}   H1 (18.1.8): אותות העבר של השיטות על הגרף — בפרופיל (profile.history)
  * POST action=method_colors_save        {colors: {method_id: צבע}} — הצבע של כל שיטה בפרופיל (18.5); צבע לשיטה אחת בלבד
  * GET  ?action=methods                   השיטות שאני רואה (מופעלות; שיטת דוגמה — רק למנהל)
  * GET  ?action=analysis&asset=&tf=&methods=a,b   כרטיס לכל שיטה + שקלול. בדיקה לאחור לפי דרישה ← נספר בתקרת 30 לדקה
@@ -262,7 +266,7 @@ if (in_array($action, TS_DEV_ACTIONS, true)) {
     }
 }
 
-const TS_WRITE = ['logout', 'password_set', 'learn_off_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
+const TS_WRITE = ['logout', 'password_set', 'learn_off_set', 'history_set', 'admin_password_reset', 'settings', 'strategy_save', 'strategy_duplicate', 'strategy_status', 'strategy_delete',
     'trade_save', 'trade_delete', 'instrument_save', 'instrument_delete',
     'drawing_save', 'drawing_delete', 'profile_save', 'admin_method_save', 'admin_costs_save',
     'alert_save', 'alert_status', 'alert_delete', 'inbox_read', 'push_subscribe', 'push_unsubscribe',
@@ -271,7 +275,7 @@ const TS_WRITE = ['logout', 'password_set', 'learn_off_set', 'admin_password_res
     'admin_grant_save', 'admin_grant_delete', 'admin_role_add', 'admin_role_remove', 'admin_cache_clear', 'admin_cache_cleanup',
     'admin_tune_propose', 'admin_tune_apply', 'admin_seg_param_clear'];
 // בקשות שפונות (או עלולות לפנות) לספק — בתקרה של 30 לדקה למשתמש (3.5, ✅3)
-const TS_DATA = ['market_search', 'market_candles', 'chart_refresh', 'analysis', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
+const TS_DATA = ['market_search', 'market_candles', 'market_history', 'chart_refresh', 'analysis', 'admin_tune_propose', 'cred_save', 'cred_test', 'admin_cred_save', 'admin_cred_test'];
 
 if (in_array($action, TS_WRITE, true)) {
     if ($method !== 'POST') fail('נדרש POST', 405);
@@ -330,6 +334,9 @@ try {
             out(['ok' => true]);
 
         // ל3 / ✅36 (L2): העסקאות שלי בלמידה — המשתמש עצמו בלבד
+        case 'history_set':   // H1 (18.1.8): המתג "היסטוריה" בתפריט השיטות
+            out(['ok' => true, 'history' => ts_history_set($uid, $in['on'] ?? null)]);
+
         case 'learn_off_set':
             out(['ok' => true, 'learn_off' => ts_learn_off_set($uid, $in['off'] ?? null)]);
 
@@ -483,6 +490,21 @@ try {
 
         case 'market_candles':
             out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null, ts_now()));
+
+        // היסטוריה בפעימות: מנה אחת של נרות ישנים לפני before (עד 5 שנים). בתקרה של TS_DATA — כל מנה נספרת
+        // H1c (18.1.8 סעיף 6): אותות וספירות עבר של מנה ישנה — רק לפני before. קורא מהמטמון (history + המאגר), ולכן בתקרה של
+        // TS_DATA רק לפני פנייה לספק (על חסר). לחישוב — תקרה משלו (TS_HISTORY_RUNS_PER_MIN, 429); מנה מהמטמון לא נספרת באף אחת
+        case 'method_history':
+            try {
+                $mh = ts_method_history($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['before'] ?? null, $_GET['methods'] ?? '');
+            } catch (TsRateLimited $e) {   // תקרת החישוב (TS_HISTORY_RUNS_PER_MIN), או תקרת TS_DATA לפני פנייה לספק
+                header('Retry-After: 60');
+                fail($e->getMessage(), 429);
+            }
+            out(['ok' => true] + $mh);
+
+        case 'market_history':
+            out(['ok' => true] + ts_market_history($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['before'] ?? null, ts_now()));
 
         // לשוניות במסך השוק (18.1.4). market_tab — מהמאגר בלבד, בלי ספק, ולכן לא בתקרה של TS_DATA
         case 'market_tabs':

@@ -256,8 +256,8 @@ eq([$fCalls > 0, $used['finnhub'], $usedKey["finnhub|u:$A"] ?? 0, $usedKey['finn
     'journal: a provider call through A\'s own key is counted in $usedKey["finnhub|u:A"] too (not only $used) — another key untouched');
 eq($db->query("SELECT outcome FROM method_journal WHERE id = $fid")->fetchColumn() !== null, true, 'journal: … and the record is decided');
 
-// המיגרציה רצה פעם אחת כשהמאגר נפתח (user_version 4; ואחריה 5 — bt_partial, CREATE בלבד)
-eq((int)$c->query('PRAGMA user_version')->fetchColumn(), 5, 'cache.sqlite at version 5 (4 ran on the way)');
+// המיגרציה רצה פעם אחת כשהמאגר נפתח (user_version 4; ואחריה 5 — bt_partial, ו-6 — history להיסטוריה בפעימות; CREATE בלבד)
+eq((int)$c->query('PRAGMA user_version')->fetchColumn(), 7, 'cache.sqlite at version 7 (4 ran on the way)');
 eq((int)$db->query('PRAGMA user_version')->fetchColumn() >= 16, true, 'app.sqlite at version 16 (prefill_state of twelvedata u:% removed)');
 
 echo $fail ? "$fail מתוך $n נכשלו\n" : "כל $n הבדיקות עברו\n";

@@ -64,6 +64,10 @@ async function open({ lock = 'ok', scheme = 'light', width = W, height = H, mobi
     };
   }, lock);
   const p = await ctx.newPage();
+  // הבדיקה הזו — על התנועות. גרירה עד הנר הראשון טוענת היסטוריה בפעימות (market_history), והמספור הלוגי של הנרות
+  // זז במספר שנוסף — מה שהבדיקות כאן משוות. ההיסטוריה נבדקת לבד ב-tests/history-ui.mjs, כאן "אין יותר"
+  await p.route(/api\.php\?action=market_history/, r => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ ok: true, candles: [], done: true, retry: false, notice: null }) }));
   p.on('pageerror', e => errors.push(e.message));
   p.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   p.on('response', r => { if (r.status() >= 400) errors.push(r.status() + ' ' + r.url().replace(/^.*api.php/, '')); });

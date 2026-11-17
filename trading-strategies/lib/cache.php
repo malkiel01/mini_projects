@@ -124,6 +124,37 @@ function ts_cache(): PDO
             COMMIT;
             SQL);
     }
+    // גרסה 6 (היסטוריה בפעימות): נרות ישנים מ-60 יום — בטבלה נפרדת מהמאגר, כדי שהניקוי של 60 הימים (✅4) לא ימחק אותם
+    // ושהרענון האוטומטי לא ימשוך אותם מהספק בכל דקה. נשמרים עד 5 שנים אחורה (ts_cache_cleanup). CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 6) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS history (
+                provider TEXT NOT NULL, symbol TEXT NOT NULL, tf TEXT NOT NULL, cred_scope TEXT NOT NULL DEFAULT '', t INTEGER NOT NULL,
+                o TEXT NOT NULL, h TEXT NOT NULL, l TEXT NOT NULL, c TEXT NOT NULL, v TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+                PRIMARY KEY (provider, symbol, tf, cred_scope, t)
+            ) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS history_coverage (
+                provider TEXT NOT NULL, symbol TEXT NOT NULL, tf TEXT NOT NULL, cred_scope TEXT NOT NULL DEFAULT '',
+                from_t INTEGER NOT NULL, to_t INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS history_coverage_key ON history_coverage (provider, symbol, tf, cred_scope);
+            PRAGMA user_version = 6;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 7 (H1c): תקרת חישוב ל-method_history — כמה מנות ישנות חושבו (לא מהמטמון) לכל משתמש בכל דקה. CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 7) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS history_runs (
+                user_id INTEGER NOT NULL, minute INTEGER NOT NULL, runs INTEGER NOT NULL,
+                PRIMARY KEY (user_id, minute)
+            ) WITHOUT ROWID;
+            PRAGMA user_version = 7;
+            COMMIT;
+            SQL);
+    }
     return $db;
 }
 
