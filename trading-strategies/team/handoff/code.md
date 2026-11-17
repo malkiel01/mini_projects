@@ -187,6 +187,10 @@
 
 ## מוסכמות שגיליתי
 
+- **Twelve Data — טווח בלי נרות = 400 "No data is available"**, לא רשימה ריקה. `call()` מחזיר `values: []`. כל ספק חדש — לבדוק איך הוא עונה על טווח ריק.
+- **`ts_market_candles`:** שגיאת ספק שאינה תקרה לא מפילה את הבקשה כשיש משהו במאגר (`notice`); בלי שום נר — השגיאה המקורית יוצאת. רק תקרה (`$capHit`)
+  עוצרת את שאר הפניות. גרף בלי נרות — `.chart-empty` בתוך הגרף (`market.js`, `showEmpty`), לעולם לא ריק בלי הסבר.
+
 - **ציר הזמן — לפי שעון המשתמש** (`assets/js/chartaxis.js`): סימון חדש כש-`tickKey(t, step, kind, offset)` משתנה; `offset = tzOffset(ME().user.timezone)`.
   **לא לחזור ל-`Math.floor(t / step)` או ל-`getUTC*` בלי offset** — בישראל זה מציג 02:00 / 14:00. התווית של הנר האחרון — `fmtTime(t, 'last')`,
   נרשמת לפני שאר הסימונים ושומרת לה מקום. `tsAxis().last` — לבדיקות. בדיקות: `chartaxis-js.mjs`, `chart-axis-tz-ui.mjs`.

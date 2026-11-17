@@ -503,7 +503,9 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     if (!$chain && !$poolOnly) throw new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".');
     $acc = $chain[0] ?? ['source' => 'pool', 'scope' => '', 'secret' => null, 'usage' => '', 'user_limit' => null, 'cred_id' => null];
     $used = null;                               // הדרך שענתה בפועל (21.3: נמדד ב-provider_usage)
-    $notice = null;                             // אין דרך להשלים (תקרה / אין מפתח) — מוצג מה שבמאגר
+    $notice = null;                             // אין דרך להשלים (תקרה / אין מפתח / שגיאת ספק) — מוצג מה שבמאגר
+    $err = null;                                // השגיאה עצמה — אם אין שום נר, היא שיוצאת (ההודעה האמיתית מהספק)
+    $capHit = false;                            // תקרה (כל הדרכים חסומות) — אין טעם לפנות שוב באותה בקשה
     $p = ts_provider($provider);
     $meta = $p->meta();
     if (!isset($meta['tfs'][$tf])) throw new TsInvalid($meta['name'] . ' לא נותן את מסגרת הזמן הזו');
@@ -539,8 +541,11 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
             try {
                 $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
             } catch (TsProviderError $e) {
-                // תקרה, וגם כל שגיאה אחרת מהספק (רשת, 451, timeout): החלק הישן לא מפיל את הבקשה — notice, ומוצג מה שבמאגר
+                // תקרה, וגם כל שגיאה אחרת מהספק (רשת, 451, timeout): החלק הישן לא מפיל את הבקשה — notice, ומוצג מה שבמאגר.
+                // רק תקרה עוצרת גם את החלק החדש; שגיאה אחרת בחלק הישן לא מונעת את 60 הימים האחרונים (שם הגרף)
                 $notice = $e->getMessage();
+                $err = $e;
+                $capHit = $e instanceof TsCapError;
                 break;
             }
             $calls++;
@@ -579,13 +584,17 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
 
         $ins = $cache->prepare('INSERT OR REPLACE INTO candles (provider, symbol, tf, t, o, h, l, c, v, fetched_at, cred_scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach (array_slice($missing, -TS_MAX_SEGMENTS) as [$a, $b]) {
-            if ($notice !== null) break;
+            if ($capHit) break;
             if ($gate !== null) { $g = $gate; $gate = null; $g(); }
             try {
                 $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
-            } catch (TsCapError $e) {
-                // כל הדרכים בתקרה (או אין): לא נכשלים — מגישים מה שבמאגר, עם ההודעה (21.3, קריטריונים 4–5)
+            } catch (TsProviderError $e) {
+                // כל הדרכים בתקרה (או אין): לא נכשלים — מגישים מה שבמאגר, עם ההודעה (21.3, קריטריונים 4–5).
+                // גם שגיאה אחרת מהספק (סימבול לא בתוכנית, רשת, 5xx) — כך, ולא 502 לכל הגרף: מה שבמאגר מוצג, וההודעה איתו.
+                // אין שום נר — השגיאה עצמה יוצאת (למטה), עם ההודעה האמיתית
                 $notice = $e->getMessage();
+                $err = $e;
+                $capHit = $e instanceof TsCapError;
                 break;
             }
             $calls++;
@@ -617,7 +626,7 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     ksort($by);
     if ($notice !== null) {
         // אין נרות בכלל — כמו קודם: שגיאה (נכס בלי נתונים ובלי מפתח — ש7, אפור)
-        if (!$by) throw $poolOnly ? new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".') : new TsCapError($notice);
+        if (!$by) throw $poolOnly ? new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".') : ($err ?? new TsCapError($notice));
         $notice = $poolOnly ? 'מוצג מה שבמאגר — אין מפתח זמין להשלמה' : "$notice מוצג מה שבמאגר.";
     }
     $acc = $used ?? $acc;
@@ -662,7 +671,8 @@ function ts_market_history(int $uid, mixed $asset, mixed $tf, mixed $before, ?in
     $from = max($limit, $before - $page * $sec);
     try {
         $r = ts_market_candles($uid, $asset, $tf, $from, $to, $now);
-    } catch (TsCapError $e) {
+    } catch (TsProviderError $e) {
+        // תקרה, או כל שגיאה אחרת מהספק (451, 5xx, רשת) — המנה תנסה שוב, לא שגיאה ולא done
         return $base + ['candles' => [], 'done' => false, 'retry' => true, 'notice' => $e->getMessage()];
     }
     $rows = array_values(array_filter($r['candles'], fn($c) => $c['t'] < $before && $c['t'] >= $from));

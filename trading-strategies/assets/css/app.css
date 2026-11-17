@@ -452,6 +452,12 @@ body.chart-fs { overflow: hidden; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }
+/* גרף בלי נרות — ההסבר בתוך הגרף, במרכז (מעל הקנבס הריק), עם ↻ ומסגרת יומית */
+.chart-empty { position: absolute; z-index: 4; inset-block-start: 50%; inset-inline: var(--s3); transform: translateY(-50%); max-inline-size: 420px;
+  margin-inline: auto; display: grid; gap: var(--s2); justify-items: center; text-align: center; padding: var(--s3);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
+.chart-empty[hidden] { display: none; }
+.chart-empty-why { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .quote-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s2); }
 .quote-head .price { font-size: 1.5rem; }
 .chart-tools .chip, .toolbar .chip { min-height: 28px; }

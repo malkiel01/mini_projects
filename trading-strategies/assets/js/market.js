@@ -435,6 +435,20 @@ export function mountMarket(ctx) {
     });
     const upd = h('span', { class: 'chip refresh-age', hidden: true });
     const box = h('div', { class: 'chart-box' });
+    // גרף בלי נרות — לעולם לא ריק בלי הסבר (הבעלים, 2026-11-17: "זה שוב פעם ריק"): בתוך הגרף, הסיבה מהשרת ופעולה
+    const emptyMsg = h('p', { class: 'chart-empty-why' });
+    const emptyTf = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => { const r = tfSeg.querySelector('input[value="d1"]'); if (r) { r.checked = true; r.dispatchEvent(new Event('change')); } } } }, 'מסגרת יומית');
+    const empty = h('div', { class: 'chart-empty', role: 'status', dir: 'rtl', hidden: true },
+      h('strong', {}, 'אין נרות להצגה'), emptyMsg,
+      h('div', { class: 'row-btns' }, h('button', { class: 'btn sm', type: 'button', on: { click: () => load('manual') } }, '↻ נסו שוב'), emptyTf));
+    /** why — הסיבה (הודעת השרת), או null: יש נרות, ההודעה יורדת */
+    function showEmpty(why) {
+      empty.hidden = why === null;
+      if (why === null) return;
+      emptyMsg.textContent = why;
+      emptyTf.hidden = st.tf === 'd1' || !tfs.includes('d1');
+    }
+    box.tsEmpty = () => (empty.hidden ? null : emptyMsg.textContent);   // לבדיקות
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
@@ -445,7 +459,7 @@ export function mountMarket(ctx) {
     // ⟳ החלפה בין לגובה ללרוחב בלי לצאת (L1 סעיף 3) — ליד ✕. רק כשנכנסו מטלפון לאורך (כמו התפריט)
     const fsRot = h('button', { class: 'icon-btn fs-rot', type: 'button', hidden: true, on: { click: () => fsSetMode(fsMode === 'landscape' ? 'portrait' : 'landscape') } }, '⟳');
     const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsRot, fsExit);
-    const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
+    const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox, empty);
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsPick)), custom,
       wrap, drawSlot, forecastSlot, inds, info, histInfo,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
@@ -872,6 +886,7 @@ export function mountMarket(ctx) {
           n ? '' : ' · אין נתונים בטווח הזה',
           // 21.3: אין דרך להשלים (תקרה, או אין מפתח זמין) — מוצג מה שבמאגר
           r.notice ? h('span', { class: 'chart-notice', role: 'status' }, ' · ' + r.notice) : '');
+        showEmpty(n ? null : r.notice || 'אין נתונים בטווח הזה — ייתכן שהשוק היה סגור. נסו טווח ארוך יותר או מסגרת אחרת.');
         if (mode === 'manual') toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
         if (r.stream && n && !ws) openLive(r.stream, r.stream_interval);
       } catch (e) {
@@ -882,6 +897,8 @@ export function mountMarket(ctx) {
           info.append(h('span', { class: 'error' }, e.message));
           forecast.onError(e);
         }
+        // אין שום נר על המסך — הסיבה בתוך הגרף (גם ברענון אוטומטי: גרף ריק אף פעם לא בלי הסבר)
+        if (!data.length) showEmpty(e.status === 429 ? 'יותר מדי בקשות בדקה — נסו שוב בעוד רגע.' : e.message);
       } finally {
         loading = false;
         refresh.disabled = false;
