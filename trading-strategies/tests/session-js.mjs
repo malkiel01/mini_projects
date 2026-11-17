@@ -1,6 +1,6 @@
 // שעות מסחר (assets/js/session.js): סגור / פתוח, שעון קיץ (ארה"ב וישראל לא עוברים באותו יום), סוף שבוע, מט"ח, וקריפטו בלי תווית.
 // node trading-strategies/tests/session-js.mjs
-import { sessionKind, isOpen, sessionState, countdown, whenLabel, nyClock } from '../assets/js/session.js';
+import { sessionKind, isOpen, sessionState, countdown, whenLabel, nyClock, exchangeZone, zoneTime } from '../assets/js/session.js';
 let fail = 0, n = 0;
 const eq = (got, want, what) => { n++; if (JSON.stringify(got) !== JSON.stringify(want)) { fail++; console.log(`✗ ${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); } };
 const U = (y, mo, d, h, mi = 0, s = 0) => Date.UTC(y, mo - 1, d, h, mi, s);
@@ -42,6 +42,16 @@ eq(sessionState('fx', U(2026, 7, 11, 12, 0)).opensAt, U(2026, 7, 12, 21, 0), '�
 eq([sessionState(null, sat), sessionState(null, t0)], [{ open: true, opensAt: null }, { open: true, opensAt: null }], 'crypto (no session) → always open, no label');
 eq(nyClock(U(2026, 11, 17, 14, 30)), { dow: 2, min: 570 }, 'nyClock: Tuesday 09:30 in New York');
 eq(whenLabel(U(2026, 11, 18, 14, 30), U(2026, 11, 17, 20, 0), IL), 'מחר 16:30', '"מחר" — the next day in the user\'s clock');
+
+// ── השעה אצל הבורסה ──
+eq([exchangeZone({ provider: 'twelvedata', market: 'stocks', exchange: 'NASDAQ' }), exchangeZone({ provider: 'twelvedata', market: 'forex' })],
+  [{ tz: 'America/New_York', name: 'ניו יורק' }, { tz: 'America/New_York', name: 'ניו יורק' }], 'US stocks and forex → New York');
+eq([exchangeZone({ provider: 'twelvedata', market: 'stocks', exchange: 'LSE', tz: 'Europe/London' }), exchangeZone({ provider: 'twelvedata', market: 'stocks', exchange: 'TASE', tz: 'Asia/Jerusalem' })],
+  [{ tz: 'Europe/London', name: 'לונדון' }, { tz: 'Asia/Jerusalem', name: 'תל אביב' }], 'a stock on another exchange with a known time zone → that exchange (London, Tel Aviv)');
+eq([exchangeZone({ provider: 'binance', market: 'crypto' }), exchangeZone({ provider: 'ecb', market: 'forex' }), exchangeZone({ provider: 'twelvedata', market: 'stocks', exchange: 'XYZ' })],
+  [null, null, null], 'crypto, ECB and an unknown exchange → no clock');
+eq([zoneTime('America/New_York', U(2026, 11, 17, 6, 56)), zoneTime('America/New_York', U(2026, 7, 17, 6, 56)), zoneTime('Europe/London', U(2026, 3, 30, 6, 56)), zoneTime('Europe/London', U(2026, 3, 27, 6, 56))],
+  ['01:56', '02:56', '07:56', '06:56'], 'the time there, with daylight saving: New York winter 01:56 / summer 02:56; London after / before the switch (29.3.2026)');
 
 console.log(fail ? `${fail} מתוך ${n} נכשלו` : `כל ${n} הבדיקות עברו`);
 process.exit(fail ? 1 : 0);

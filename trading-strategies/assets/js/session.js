@@ -62,3 +62,23 @@ export function whenLabel(at, now, tz) {
   const wd = new Intl.DateTimeFormat('he-IL', { ...opt, weekday: 'short' }).format(new Date(at));
   return `ב${wd} ${hm}`;
 }
+
+// ── השעה אצל הבורסה (בקשת הבעלים, אותו יום): "🕐 ניו יורק 01:56" — בשוק פתוח וסגור ──
+// מניות ארה"ב, מט"ח וסחורות — ניו יורק (בסיס המושב). מניה מבורסה אחרת שאזור הזמן שלה ידוע (asset_meta.tz) — לפי הבורסה.
+// קריפטו ו-ECB — בלי שעון: קריפטו נסחר מסביב לשעון ואין לו "בית"; ECB — שער יומי. [ההכרעה — שלנו]
+const CITY = {
+  'America/New_York': 'ניו יורק', 'America/Chicago': 'שיקגו', 'America/Toronto': 'טורונטו', 'Europe/London': 'לונדון', 'Europe/Paris': 'פריז',
+  'Europe/Berlin': 'פרנקפורט', 'Europe/Zurich': 'ציריך', 'Europe/Amsterdam': 'אמסטרדם', 'Asia/Jerusalem': 'תל אביב', 'Asia/Tokyo': 'טוקיו',
+  'Asia/Hong_Kong': 'הונג קונג', 'Asia/Shanghai': 'שנגחאי', 'Asia/Singapore': 'סינגפור', 'Asia/Kolkata': 'מומבאי', 'Australia/Sydney': 'סידני',
+};
+/** {tz, name} של הבורסה, או null (בלי שעון) */
+export function exchangeZone({ provider = '', market = '', exchange = '', tz = '' } = {}) {
+  if (provider === 'binance' || provider === 'ecb' || market === 'crypto') return null;
+  if (sessionKind({ provider, market, exchange, tz })) return { tz: NY, name: CITY[NY] };
+  if ((market === 'stocks' || market === 'indices') && tz && CITY[tz]) return { tz, name: CITY[tz] };
+  return null;
+}
+/** "01:56" — השעה באזור הזמן */
+export function zoneTime(tz, ms) {
+  return new Intl.DateTimeFormat('he-IL', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+}

@@ -9,7 +9,7 @@ import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
 import { mountChartTip } from './charttip.js';
 import { mountAxis, labelBoard, tzOffset } from './chartaxis.js';
-import { sessionKind, sessionState, countdown, whenLabel } from './session.js';
+import { sessionKind, sessionState, countdown, whenLabel, exchangeZone, zoneTime } from './session.js';
 import { setTurned, screenRect } from './rotate.js';
 import { mountGestures } from './gestures.js';
 import { mountCombo, invalidateCatalog } from './combobox.js';
@@ -842,30 +842,36 @@ export function mountMarket(ctx) {
     }
     // ── השוק סגור (בקשת הבעלים, 2026-11-17): "🔒 השוק סגור · נפתח בעוד 7:33:12 (היום 16:30)" — מתעדכן כל שנייה; כשמגיע הזמן,
     // התווית יורדת והגרף נטען מיד. סוג המושב — מהשוק והבורסה שבתשובה (session.js); קריפטו / ECB — אין תווית
-    let sessKind = null, sessTimer = null;
+    // ולידה — השעה אצל הבורסה ("🕐 ניו יורק 01:56"), בשוק פתוח וסגור; קריפטו ו-ECB — בלי (session.js, exchangeZone)
+    let sessKind = null, sessZone = null, sessTimer = null;
     const closedTag = h('span', { class: 'chip closed-tag', role: 'status', hidden: true });
+    const clockTag = h('span', { class: 'muted zone-clock', hidden: true });
     function sessionTick() {
       const now = Date.now(), s = sessionState(sessKind, now);
+      clockTag.hidden = !sessZone;
+      if (sessZone) clockTag.textContent = `🕐 ${sessZone.name} ${zoneTime(sessZone.tz, now)}`;
       if (s.open || !s.opensAt) {
         const was = !closedTag.hidden;
         closedTag.hidden = true;
-        clearInterval(sessTimer); sessTimer = null;
         if (was) load('pick');   // נפתח עכשיו — טעינה מיידית, בלי להזיז את התצוגה
-        return;
+      } else {
+        closedTag.hidden = false;
+        closedTag.textContent = `🔒 השוק סגור · נפתח בעוד ${countdown(s.opensAt - now)} (${whenLabel(s.opensAt, now, ME().user.timezone)})`;
       }
-      closedTag.hidden = false;
-      closedTag.textContent = `🔒 השוק סגור · נפתח בעוד ${countdown(s.opensAt - now)} (${whenLabel(s.opensAt, now, ME().user.timezone)})`;
-      if (!sessTimer) sessTimer = setInterval(sessionTick, 1000);
+      // שנייה — כשיש ספירה לאחור; אחרת רק השעון (מתעדכן בדקה, בודקים כל 15 ש')
+      const every = !closedTag.hidden ? 1000 : sessZone ? 15000 : 0;
+      if (sessTimer?.every !== every) { clearInterval(sessTimer?.id); sessTimer = every ? { every, id: setInterval(sessionTick, every) } : null; }
     }
-    onTeardown(() => clearInterval(sessTimer));
-    box.tsSession = () => ({ kind: sessKind, closed: !closedTag.hidden, text: closedTag.hidden ? null : closedTag.textContent });   // לבדיקות
+    onTeardown(() => clearInterval(sessTimer?.id));
+    box.tsSession = () => ({ kind: sessKind, closed: !closedTag.hidden, text: closedTag.hidden ? null : closedTag.textContent,
+      clock: clockTag.hidden ? null : clockTag.textContent });   // לבדיקות
     function setHeadQuote() {
       const last = data.at(-1), prev = data.at(-2);
-      if (!last) { head.replaceChildren(closedTag); return; }
+      if (!last) { head.replaceChildren(clockTag, closedTag); return; }
       const ch = prev ? (last.close - prev.close) / prev.close * 100 : null;   // תצוגה בלבד
       head.replaceChildren(h('b', { class: 'num price' }, D.fmt(last.closeStr, 8)),
         ch !== null ? h('span', { class: 'num ' + (ch >= 0 ? 'pos' : 'neg') }, (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%') : null,
-        h('span', { class: 'muted' }, fmtT(last.time, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })), closedTag);
+        h('span', { class: 'muted' }, fmtT(last.time, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })), clockTag, closedTag);
     }
     // ── הטעינה: בקשה אחת לנרות ולכל השיטות (18.3) ──
     // mode: open — פתיחת הגרף · change — טווח או מסגרת · manual — "↻" · pick — בחירת שיטה · auto — הרענון האוטומטי
@@ -928,7 +934,9 @@ export function mountMarket(ctx) {
         // נתונים חדשים (פתיחה, מסגרת, טווח, ↻): גם ציר המחיר חוזר ל-autoScale — טווח מוקפא של הנתונים הקודמים לא מתאים להם
         if (mode === 'open' || mode === 'change' || mode === 'manual') { chart.timeScale().fitContent(); gest.reset(); }
         draw.redraw();
-        sessKind = sessionKind({ provider: r.provider || provider, market: r.market || r.meta?.market || '', exchange: r.meta?.exchange || '', tz: r.meta?.tz || '' });
+        const sm = { provider: r.provider || provider, market: r.market || r.meta?.market || '', exchange: r.meta?.exchange || '', tz: r.meta?.tz || '' };
+        sessKind = sessionKind(sm);
+        sessZone = exchangeZone(sm);
         sessionTick();
         forecast.onResult(r);
         // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום

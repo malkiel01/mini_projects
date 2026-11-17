@@ -53,6 +53,7 @@ try {
   await p.clock.runFor(10);
   let s = await sess();
   eq([s.kind, s.closed, s.text], ['us', true, '🔒 השוק סגור · נפתח בעוד 7:33:00 (היום 16:30)'], 'AAPL at 08:57 Israel time → "🔒 השוק סגור · נפתח בעוד 7:33:00 (היום 16:30)" at the top of the chart');
+  eq(s.clock, '🕐 ניו יורק 01:57', '… and the time in New York next to it: "🕐 ניו יורק 01:57"');
   const tag = p.locator('.quote-head .closed-tag');
   eq([await tag.isVisible(), await tag.getAttribute('role')], [true, 'status'], '… visible in the price line, as a status');
   await shot();
@@ -70,12 +71,15 @@ try {
   await p.waitForFunction(s => !document.querySelector(s).tsSession().closed, sel, { timeout: 10000 });
   for (let i = 0; i < 50 && reqs.length === before; i++) await p.clock.runFor(200);
   eq([(await sess()).closed, await tag.isHidden(), reqs.length > before], [false, true, true], 'at 16:30 Israel time (09:30 New York) → the label goes away and the chart loads at once');
+  eq((await sess()).clock, '🕐 ניו יורק 09:30', '… the New York clock stays while open: 09:30');
+  await p.clock.runFor(60 * 1000);
+  eq((await sess()).clock, '🕐 ניו יורק 09:31', '… and moves with the minute');
 
   // ── 4. קריפטו — תמיד פתוח, בלי תווית ──
   await p.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
   await loaded();
   s = await sess();
-  eq([s.kind, s.closed, await p.locator('.quote-head .closed-tag').isHidden()], [null, false, true], 'Bitcoin (Binance) → no session, no label');
+  eq([s.kind, s.closed, await p.locator('.quote-head .closed-tag').isHidden(), s.clock], [null, false, true, null], 'Bitcoin (Binance) → no session, no label, no exchange clock');
   eq(errors, [], 'no errors');
 } catch (e) {
   fail++; console.log('✗ exception:', e.message);
