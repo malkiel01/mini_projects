@@ -953,7 +953,10 @@ export function mountMarket(ctx) {
         return;
       }
       if (streamSpec && !ws) openLive(...streamSpec);
-      if (analysisOn()) load('auto');
+      // הגרף ריק (הטעינה נכשלה בזמן שהלשונית הייתה ברקע — הטלפון חוסם רשת) — טוענים שוב, גם בלי שיטה פעילה. אחרת הגרף נשאר
+      // ריק עד ↻ ידני ("נרדם", הבעלים 2026-11-17)
+      if (!data.length) load('open');
+      else if (analysisOn()) load('auto');
     };
     document.addEventListener('visibilitychange', vis);
     onTeardown(() => { document.removeEventListener('visibilitychange', vis); clearTimeout(timer); clearInterval(ageTick); pending = null; streamSpec = null; closeLive(); });

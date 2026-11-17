@@ -22,10 +22,11 @@ let fail = 0, n = 0;
 const eq = (got, want, what) => { n++; if (JSON.stringify(got) !== JSON.stringify(want)) { fail++; console.log(`✗ ${what}: got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`); } };
 const errors = [];
 const b = await chromium.launch();
-async function open(scheme = 'light', width = 390) {
+async function open(scheme = 'light', width = 390, init = null) {
   const ctx = await b.newContext({ viewport: { width, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true, colorScheme: scheme });
   await ctx.addCookies([{ name: 'dev_as', value: 'alice', url: BASE }]);
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
+  if (init) await ctx.addInitScript(init);
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message));
   return p;
@@ -39,6 +40,8 @@ let fake = null;
 async function route(p) {
   await p.route(/api\.php\?action=chart_refresh/, async r => {
     if (!fake) return r.continue();
+    if (fake.hang) return new Promise(() => {});          // השרת לא עונה — הבקשה תלויה לנצח
+    if (fake.abort) { fake = null; return r.abort('failed'); }   // הרשת נחסמה (הטלפון ברקע) — פעם אחת
     if (fake.empty) {   // תשובה אמיתית, בלי נרות
       const res = await r.fetch(); const j = await res.json();
       return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...j, candles: [], notice: fake.notice ?? null }) });
@@ -94,6 +97,39 @@ try {
   await p.getByRole('button', { name: 'רענן' }).click();
   await p.waitForTimeout(1500);
   eq(await why(p), null, 'a failed refresh while candles are on the chart → no box (the candles stay, the error is in the line under the chart)');
+
+  // ── 7. (בקרה) בקשה שלא חוזרת — לא "טוען…" לנצח: אחרי ה-timeout, הסיבה בתוך הגרף ו-↻ עובד. לפני: נתקע ──
+  const tq = await open('light', 390, () => { window.TS_API_TIMEOUT_MS = 1500; });
+  await route(tq);
+  await tq.goto(BASE + '#/market');
+  await tq.waitForSelector('main [role="combobox"]');
+  fake = { hang: true };
+  await tq.goto(CHART);
+  await tq.waitForFunction(s => (document.querySelector(s)?.tsEmpty?.() ?? null) !== null, sel, { timeout: 15000 });
+  eq([await why(tq), /טוען/.test(await tq.locator('main p.hint[aria-live]').first().textContent())], ['השרת לא ענה בזמן — נסו שוב (↻)', false],
+    'a request that never returns → after the timeout: "השרת לא ענה בזמן — נסו שוב (↻)" inside the chart, not "טוען…" forever');
+  fake = null;
+  await tq.locator('.chart-empty').getByRole('button', { name: '↻ נסו שוב' }).click();
+  await tq.waitForFunction(s => document.querySelector(s).tsEmpty() === null, sel, { timeout: 20000 });
+  eq((await tq.evaluate(s => document.querySelector(s).tsHistory().n, sel)) > 0, true, '… and "↻ נסו שוב" loads the candles (the page did not fall asleep)');
+
+  // ── 8. (בקרה) הטעינה הראשונה נכשלה בזמן שהלשונית ברקע ("מושהה"), בלי שיטה פעילה — כשחוזרים, הגרף נטען לבד. לפני: נשאר ריק ──
+  const vq = await open('light', 390, () => {
+    window.__vis = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__vis !== 'visible' });
+  });
+  await route(vq);
+  await vq.goto(BASE + '#/market');
+  await vq.waitForSelector('main [role="combobox"]');
+  fake = { abort: true };
+  await vq.goto(CHART);
+  await vq.evaluate(() => { window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); });
+  await vq.waitForFunction(s => (document.querySelector(s)?.tsEmpty?.() ?? null) !== null, sel, { timeout: 15000 });
+  eq(await why(vq), 'אין חיבור לשרת', 'the first load failed while in the background ("מושהה") → "אין חיבור לשרת" inside the chart');
+  await vq.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+  await vq.waitForFunction(s => document.querySelector(s).tsEmpty() === null, sel, { timeout: 20000 });
+  eq((await vq.evaluate(s => document.querySelector(s).tsHistory().n, sel)) > 0, true, '… back to the tab → it loads by itself, with no method selected (not left empty until ↻)');
 
   // ── 6. כהה, 320 ──
   const d = await open('dark', 320);

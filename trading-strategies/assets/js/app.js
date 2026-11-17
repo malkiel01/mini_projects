@@ -93,6 +93,7 @@ let ME = null;   // {csrf, user, lists}
 
 // בקשה של מסך שכבר הוחלף בניווט חדש — התשובה (או השגיאה) לא חוזרת אליו: הבטחה שלא מתקיימת, והמסך הישן נעצר במקום
 const staleGuard = (gen, p) => (!gen ? p : p.then(v => (gen === GEN ? v : new Promise(() => {})), e => (gen === GEN ? Promise.reject(e) : new Promise(() => {}))));
+const API_TIMEOUT_MS = 90000;
 function api(action, body = null, query = {}) { return staleGuard(LOADING, apiNow(action, body, query)); }
 async function apiNow(action, body = null, query = {}) {
   const qs = new URLSearchParams({ action, ...query });
@@ -105,12 +106,22 @@ async function apiNow(action, body = null, query = {}) {
   }
   let res, data;
   const t0 = performance.now();
+  // בקשה שלא חוזרת (רשת שנתקעה, הטלפון ברקע) — לא מחכים לנצח: בלי זה "טוען…" נשאר, והגרף "נרדם" — כל טעינה הבאה מחכה לה
+  // (הבעלים, 2026-11-17). השרת חסום ממילא: 15 ש' לפנייה לספק, 20 ש' לבדיקה לאחור — 90 ש' הם הרבה מעבר
+  const ctl = new AbortController();
+  const ms = +window.TS_API_TIMEOUT_MS || API_TIMEOUT_MS;   // לבדיקות — קצר
+  const timer = setTimeout(() => ctl.abort(), ms);
+  opt.signal = ctl.signal;
   try {
     res = await fetch('api.php?' + qs, opt);
     data = await res.json();
   } catch {
-    throw new Error(res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
+    const e = new Error(ctl.signal.aborted ? 'השרת לא ענה בזמן — נסו שוב (↻)' : res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
+    e.status = 0;
+    e.timeout = ctl.signal.aborted;
+    throw e;
   } finally {
+    clearTimeout(timer);
     // ההקשר של 🐞 (DevLoop): הבקשות האחרונות — פעולה, מצב, משך ומזהה הבקשה ביומן. בלי הגוף
     window.DevLoop?.noteRequest({ action, status: res?.status ?? 0, ms: Math.round(performance.now() - t0), req: res?.headers.get('X-Request-Id') || '' });
   }
