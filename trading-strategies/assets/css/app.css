@@ -465,6 +465,9 @@ body.chart-fs { overflow: hidden; }
 .chart-empty-why { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .quote-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s2); }
 .quote-head .price { font-size: 1.5rem; }
+/* השוק סגור — שעון עד הפתיחה (session.js). מספרים ברוחב קבוע, כדי שהשורה לא תקפוץ כל שנייה */
+.quote-head .closed-tag { font-variant-numeric: tabular-nums; background: var(--brand-soft); color: var(--ink); white-space: normal; }
+.quote-head .closed-tag[hidden] { display: none; }
 .chart-tools .chip, .toolbar .chip { min-height: 28px; }
 
 /* ===== ציור על הגרף (spec-stage-a 7; בטלפון — סרגל צף מעל הניווט) ===== */
