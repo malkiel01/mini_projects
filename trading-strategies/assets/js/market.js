@@ -17,8 +17,16 @@ import { mountCombo, invalidateCatalog } from './combobox.js';
 
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const TF_SEC = { m1: 60, m5: 300, m15: 900, m30: 1800, h1: 3600, h4: 14400, d1: 86400, w1: 604800, mn1: 2678400 };
-const RANGES = [['d', 'יום', 86400], ['w', 'שבוע', 7 * 86400], ['m', 'חודש', 30 * 86400], ['q', '3 חודשים', 90 * 86400],
+// טווחים קצרים מיום (בחירת הבעלים, 2026-11-17): 15 דקות, שעה, 4 שעות — המסגרת מותאמת לבד (fitTf)
+const RANGES = [['r15', '15 דקות', 900], ['r1h', 'שעה', 3600], ['r4h', '4 שעות', 4 * 3600], ['d', 'יום', 86400], ['w', 'שבוע', 7 * 86400], ['m', 'חודש', 30 * 86400], ['q', '3 חודשים', 90 * 86400],
   ['y', 'שנה', 365 * 86400], ['y5', '5 שנים', 5 * 365 * 86400], ['all', 'הכול', null], ['custom', 'מותאם…', null]];
+const MIN_BARS = 10;   // טווח שנותן פחות נרות מזה במסגרת — המסגרת יורדת לגדולה ביותר שנותנת לפחות 10
+/** המסגרת לטווח: הנוכחית אם נותנת ≥ MIN_BARS נרות; אחרת הגדולה ביותר מבין tfs שנותנת; null — אין (הטווח לא זמין בספק) */
+function fitTf(tfs, tf, span) {
+  if (!span || span / TF_SEC[tf] >= MIN_BARS) return tf;
+  const ok = tfs.filter(t => span / TF_SEC[t] >= MIN_BARS).sort((a, b) => TF_SEC[b] - TF_SEC[a]);
+  return ok[0] ?? null;
+}
 const DEFAULT_RANGE = { m1: 'd', m5: 'w', m15: 'w', m30: 'm', h1: 'q', h4: 'y', d1: 'y5', w1: 'all', mn1: 'all' };
 const MARKET_LABEL = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות', indices: 'מדדים', commodities: 'סחורות' };
 const DELAY_LABEL = { realtime: 'זמן אמת', '15min': 'בעיכוב 15 דק׳', eod: 'סוף יום' };
@@ -376,6 +384,9 @@ export function mountMarket(ctx) {
     const tfs = L.tfs?.length ? L.tfs : p.tfs;
     st.tf = tfs.includes(st.tf) ? st.tf : (tfs.includes('h1') ? 'h1' : tfs.includes('d1') ? 'd1' : tfs[0]);
     st.range ??= DEFAULT_RANGE[st.tf];
+    const spanOf = r => RANGES.find(x => x[0] === r)?.[2] ?? null;
+    // טווח קצר שנשמר (sessionStorage) עם מסגרת שלא מתאימה לו — המסגרת מותאמת; אין מסגרת כזו אצל הספק — הטווח של המסגרת
+    { const t = fitTf(tfs, st.tf, spanOf(st.range)); if (t === null) st.range = DEFAULT_RANGE[st.tf]; else st.tf = t; }
     st.ind ??= ['sma20', 'vol'];
     const save = () => { try { sessionStorage.setItem(key, JSON.stringify(st)); } catch { /* ריק */ } };
 
@@ -407,10 +418,26 @@ export function mountMarket(ctx) {
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
+    // טווח שאין לו מסגרת עם לפחות 10 נרות אצל הספק (למשל 15 דקות בספק יומי) — מושבת, וההסבר בשם
+    for (const o of rangeSel.options) if (fitTf(tfs, st.tf, spanOf(o.value)) === null) { o.disabled = true; o.textContent += ' — לא זמין בספק הזה'; }
     const from = h('input', { type: 'date', 'aria-label': 'מתאריך', value: st.from || '' });
     const to = h('input', { type: 'date', 'aria-label': 'עד תאריך', value: st.to || '' });
     const custom = h('div', { class: 'fields two', hidden: st.range !== 'custom' }, field('מתאריך', from), field('עד תאריך', to));
-    rangeSel.addEventListener('change', () => { st.range = rangeSel.value; custom.hidden = st.range !== 'custom'; save(); if (st.range !== 'custom') load('change'); });
+    rangeSel.addEventListener('change', () => {
+      st.range = rangeSel.value;
+      custom.hidden = st.range !== 'custom';
+      // טווח קצר מהמסגרת (שעה במסגרת שעה = נר אחד) — המסגרת יורדת לגדולה ביותר שנותנת לפחות 10 נרות, והודעה שקטה
+      const t = fitTf(tfs, st.tf, spanOf(st.range));
+      if (t && t !== st.tf) {
+        st.tf = t;
+        const r = tfSeg.querySelector(`input[value="${t}"]`);
+        if (r) r.checked = true;
+        forecast.retf();
+        toast(`המסגרת עברה ל-${TF_LABEL[t]} — כדי שיהיו לפחות ${MIN_BARS} נרות בטווח`);
+      }
+      save();
+      if (st.range !== 'custom') load('change');
+    });
     [from, to].forEach(el => el.addEventListener('change', () => { st.from = from.value; st.to = to.value; save(); if (from.value) load('change'); }));
     const inds = h('div', { class: 'chips', role: 'group', 'aria-label': 'אינדיקטורים' }, IND.map(([k, l]) => {
       const c = h('input', { type: 'checkbox', value: k });
