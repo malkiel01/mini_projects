@@ -3,9 +3,12 @@
 //   - אצבע אחת במאונך על הגרף → הדף נגלל, טווח הזמן לא זז.
 //   - אצבע אחת לאורך הגרף → טווח הזמן זז (כמו קודם).
 //   - צביטה אופקית → פחות נרות על המסך (טווח הזמן קטן).
-//   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חזרה לגובה הרגיל, לא מעבר.
-//   - (בקרה 9, הבעלים: "2 אצבעות רק לגובה יגללו למעלה ולמטה") שתי אצבעות שזזות יחד לגובה → ציר המחיר זז, בלי לשנות
-//     גובה וטווח זמן; "↺" מחזיר. שתי אצבעות יחד לרוחב — לא עושות כלום.
+//   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חופשית, גם מעבר לגובה הרגיל (עד פי 8).
+//   - (בקרה 11, הבעלים: "למה לא נותן להגביה בצורה חופשית") הכיוון לפי התנועה, לא לפי הזווית שבה הונחו האצבעות; מעבר בין
+//     גרירה לצביטה בלי להרים אצבעות.
+//   - שתי אצבעות שזזות יחד לגובה → ציר המחיר זז, בלי לשנות גובה וטווח זמן; "↺" מחזיר. שתי אצבעות יחד לרוחב → הזמן זז
+//     (בקרה 11, 2026-11-17 — מחליף את "2 אצבעות רק לגובה" של 11-16), בלי להקפיא את ציר המחיר.
+//   - crosshair דולק (לחיצה ארוכה) → שתי אצבעות עובדות, וה-crosshair נשאר על אותו נר ואותו מחיר בצביטה ובגרירה; הקשה מכבה.
 import { createRequire } from 'module';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
@@ -51,6 +54,15 @@ const heights = () => p.evaluate(s => document.querySelector(s).tsHeights(), sel
 const scrolled = () => p.evaluate(s => { let t = window.scrollY, el = document.querySelector(s).parentElement; while (el) { t += el.scrollTop; el = el.parentElement; } return Math.round(t); }, sel);
 const rect = () => p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, sel);
 const settle = (ms = 1500) => p.waitForTimeout(ms);   // גם הגלילה הקינטית
+/** paths: לכל אצבע — רשימת נקודות [[x,y], …]; כל קטע ב-steps צעדים, כל האצבעות יחד. מגע אחד, בלי להרים */
+async function path(paths, steps = 12) {
+  const seg = paths[0].length - 1;
+  const at = (s, i) => paths.map((pt, id) => ({ x: pt[s][0] + (pt[s + 1][0] - pt[s][0]) * i / steps, y: pt[s][1] + (pt[s + 1][1] - pt[s][1]) * i / steps, id }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: paths.map((pt, id) => ({ x: pt[0][0], y: pt[0][1], id })) });
+  for (let sg = 0; sg < seg; sg++) for (let i = 1; i <= steps; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(sg, i) }); await p.waitForTimeout(16); }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await settle();
+}
 /** fingers: [[x0,y0,x1,y1], ...] — כל אצבע מנקודה לנקודה, יחד */
 async function gesture(fingers, steps = 14) {
   const at = i => fingers.map(([x0, y0, x1, y1], id) => ({ x: x0 + (x1 - x0) * i / steps, y: y0 + (y1 - y0) * i / steps, id }));
@@ -95,10 +107,15 @@ try {
   eq(rb[0] < ra[0] - 5, true, `one finger along the chart moves the time axis (${ra} → ${rb})`);
   eq(Math.abs(span(rb) - span(ra)) < 1, true, 'and keeps the number of candles');
 
-  // ── שתי אצבעות יחד לרוחב → כלום (רק לגובה) ──
+  // ── שתי אצבעות יחד לרוחב → הזמן זז (בקרה 11), בלי לשנות גובה ובלי להקפיא את ציר המחיר. לפני: כלום ──
   const rTwo0 = await range();
   await gesture([[R.x + R.w * 0.65, midY - 40, R.x + R.w * 0.25, midY - 40], [R.x + R.w * 0.65, midY + 40, R.x + R.w * 0.25, midY + 40]]);
-  eq([await range(), (await heights()).k, await p.locator('.chart-reset').isHidden()], [rTwo0, 1, true], 'two fingers together sideways do nothing (only up/down)');
+  const rTwo1 = await range();
+  eq([rTwo1[0] > rTwo0[0] + 5, Math.abs(span(rTwo1) - span(rTwo0)) < 1, (await heights()).k, await p.locator('.chart-reset').isHidden()], [true, true, 1, true],
+    `two fingers together sideways → the time axis moves with them (${rTwo0} → ${rTwo1}), same number of candles, no height change, price axis not frozen`);
+  await gesture([[R.x + R.w * 0.25, midY - 40, R.x + R.w * 0.65, midY - 40], [R.x + R.w * 0.25, midY + 40, R.x + R.w * 0.65, midY + 40]]);
+  const rb2 = await range();   // חזרה — כדי שהבדיקות הבאות יתחילו מאותו מקום
+  eq(Math.abs(rb2[0] - rTwo0[0]) < 3, true, `… and back (${rb2})`);
 
   // ── שתי אצבעות יחד לגובה → ציר המחיר זז (הנרות יורדים), הגובה לא משתנה; "↺" מחזיר ──
   const priceAt = () => p.evaluate(s => { const b = document.querySelector(s); return b.tsPriceAt(b.offsetHeight / 2); }, sel);
@@ -132,10 +149,14 @@ try {
   eq(hc.lines.length > 0 && hc.lines.every(Boolean), true, 'vertical pinch in → the indicator lines are on the same squeezed scale as the candles');
   eq(await range(), re, 'a vertical pinch does not change the time range');
   eq(await p.evaluate(s => document.querySelector(s).tsForecast().methods.map(m => m.id), sel), ['elliott-w3'], 'Elliott still on the chart');
-  // מתיחה — חזרה, ולא מעבר לגובה הרגיל
+  // מתיחה — חופשית: חזרה לגובה הרגיל, וגם מעבר לו (הבעלים: "למה לא נותן להגביה בצורה חופשית"). לפני: נעצר ב-1
   await gesture([[cx, midY - 30, cx, midY - 160], [cx, midY + 30, cx, midY + 160]]);
   const hd = await heights();
-  eq([hd.k, Math.abs(hd.price - h0.price) <= 2, Math.abs(hd.vol - h0.vol) <= 2], [1, true, true], `vertical pinch out → back to the normal height, not beyond (${JSON.stringify(hd)})`);
+  eq([hd.k > 1.2, hd.price > h0.price * 1.2, await range()], [true, true, re], `vertical pinch out → taller than the normal height, freely (k ${hd.k}, candles ${h0.price}px → ${hd.price}px); the time range stays`);
+  for (let i = 0; i < 4; i++) await gesture([[cx, midY - 20, cx, midY - 200], [cx, midY + 20, cx, midY + 200]]);
+  eq((await heights()).k, 8, 'stretching again and again stops at a sane cap (×8)');
+  await p.locator('.chart-reset').click();
+  await settle(300);
 
   // ── אחרי כיווץ: גרירה בזמן (לתוך התחזית / לאחור) לא משנה את טווח המחיר (הבעלים: "ככל שאני נכנס לעומק התחזית הגרף גדל") ──
   const edges = () => p.evaluate(s => { const b = document.querySelector(s); return [b.tsPriceAt(10), b.tsPriceAt(b.offsetHeight - 10)]; }, sel);
@@ -157,6 +178,91 @@ try {
   await settle(300);
   const e3 = await edges();
   eq([(await heights()).k, same(e3, e0), await p.locator('.chart-reset').isHidden()], [1, false, true], `"↺" after a squeeze → normal height and automatic price range again (${e3.map(Math.round)})`);
+
+  // ── הכיוון לפי התנועה, לא לפי הזווית שבה הונחו האצבעות (בקרה 11) ──
+  // אצבעות מונחות באלכסון (~35°, יותר רוחב מגובה) ונפתחות **בגובה** → מתיחה; טווח הזמן לא זז. לפני: "zoom" לפי הזווית
+  const rq0 = await range(), hq0 = await heights();
+  await path([[[cx - 60, midY - 42], [cx - 60, midY - 130]], [[cx + 60, midY + 42], [cx + 60, midY + 130]]]);
+  const hq1 = await heights();
+  eq([hq1.k > hq0.k * 1.5, await range()], [true, rq0], `fingers placed at ~35° that open up/down → the height grows (k ${hq0.k} → ${hq1.k}), not the time zoom`);
+  // אותן אצבעות באלכסון שנפתחות **ברוחב** → טווח הזמן
+  await path([[[cx - 50, midY - 35], [cx - 150, midY - 35]], [[cx + 50, midY + 35], [cx + 150, midY + 35]]]);
+  eq([span(await range()) < span(rq0) * 0.6, (await heights()).k], [true, hq1.k], 'fingers at ~35° that open sideways → fewer candles (time zoom), the height stays');
+  await p.locator('.chart-reset').click();
+  await settle(300);
+
+  // ── מעבר בין גרירה לצביטה בלי להרים אצבעות (בקרה 11). לפני: התנועה ננעלה על הראשונה ──
+  const pz0 = await priceAt(), hz0 = await heights(), rz0 = await range();
+  await path([
+    [[cx, midY - 60], [cx, midY + 20], [cx, midY - 60]],     // יחד למטה (גרירה), ואז נפתחות בגובה (צביטה)
+    [[cx, midY + 60], [cx, midY + 140], [cx, midY + 220]],
+  ]);
+  const pz1 = await priceAt(), hz1 = await heights();
+  eq([pz1 > pz0, hz1.k > hz0.k * 1.5, await range()], [true, true, rz0], `one touch: drag down (the price axis moves: ${Math.round(pz0)} → ${Math.round(pz1)}), then open up/down (taller: k ${hz0.k} → ${hz1.k}) — without lifting the fingers`);
+  // ולהפך: צביטה ואז גרירה
+  const pz2 = await priceAt();
+  await path([
+    [[cx, midY - 40], [cx, midY - 80], [cx, midY - 160]],
+    [[cx, midY + 40], [cx, midY + 80], [cx, midY]],
+  ]);
+  const hz3 = await heights(), pz3 = await priceAt();
+  eq([hz3.k > hz1.k, pz3 !== pz2], [true, true], `and the other way: open (k ${hz1.k} → ${hz3.k}), then drag up together (the price axis moves) — one touch`);
+  eq(await p.locator('.chart-reset').isVisible(), true, '"↺" is on screen after any manual change');
+  const rb0 = await p.locator('.chart-reset').boundingBox();
+  eq(rb0.width >= 36 && rb0.height >= 36, true, `"↺" is big enough for a finger (${Math.round(rb0.width)}×${Math.round(rb0.height)})`);
+  await p.locator('.chart-reset').click();
+  await settle(300);
+  eq([(await heights()).k, await p.locator('.chart-reset').isHidden()], [1, true], '"↺" → back to normal');
+
+  // ── crosshair דולק (בקרה 11, הבעלים: "כשיש לי את הפסים המקווקווים… אני לא יכול לגרור את הגרף") ──
+  // שתי אצבעות גוברות; ה-crosshair מעוגן לנר ולמחיר — בצביטה נשאר עליהם, בגרירה זז עם הגרף. לפני: נעלם
+  // הבדיקות הקודמות השאירו את התצוגה לפני הנר הראשון — טווח אחר טוען מחדש ומציג את כל הנרות
+  await p.locator('select[name="range"]').selectOption('m');
+  await p.waitForFunction(() => /נרות/.test(document.querySelector('main p.hint[aria-live]')?.textContent || ''), null, { timeout: 30000 });
+  await settle(500);
+  const crossAt = () => p.evaluate(s => document.querySelector(s).tsCrossAt(), sel);
+  const close = (a, b) => !!a && !!b && a.time === b.time && Math.abs(a.price - b.price) / Math.abs(b.price) < 1e-4;
+  async function longPress(x, y) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 0 }] });
+    await p.waitForTimeout(900);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await settle(300);
+  }
+  // על נר (לא בשטח הריק מימין לנר האחרון, שאין בו זמן)
+  const lx = await p.evaluate(s => { const b = document.querySelector(s); const r = b.getBoundingClientRect(); for (let x = 60; x < r.width - 60; x += 10) if (b.tsTimeAt(x) && b.tsTimeAt(x + 40)) return r.left + x + 20; return r.left + 80; }, sel);
+  await longPress(lx, midY - 40);
+  const x0 = await crossAt();
+  eq(!!x0?.time && Number.isFinite(x0?.price), true, `a long press turns the crosshair on (${JSON.stringify(x0)})`);
+  // צביטה בגובה
+  const kx0 = (await heights()).k;
+  await gesture([[cx, midY - 40, cx, midY - 120], [cx, midY + 40, cx, midY + 120]]);
+  const x1 = await crossAt();
+  eq([(await heights()).k > kx0 * 1.5, close(x1, x0)], [true, true], `crosshair on → a vertical pinch still stretches (k ${kx0} → ${(await heights()).k}), and the crosshair stays on the same candle and price (${JSON.stringify(x1)})`);
+  // צביטה בזמן — סביב ה-crosshair (מתקרבים אליו; כך הוא נשאר על המסך)
+  const rx0 = await range();
+  const sx0 = await p.evaluate(s => { const b = document.querySelector(s); return b.getBoundingClientRect().left + b.tsCross().x; }, sel);
+  await gesture([[sx0 - 20, midY, sx0 - 70, midY], [sx0 + 20, midY, sx0 + 70, midY]]);
+  const x2 = await crossAt();
+  eq([span(await range()) < span(rx0) * 0.8, close(x2, x0)], [true, true], `… a time pinch zooms, and the crosshair stays on the same candle and price (${JSON.stringify(x2)})`);
+  // גרירה בשתי אצבעות (באלכסון) — הגרף זז, והנקודה איתו
+  const rx1 = await range(), sc0 = await p.evaluate(s => document.querySelector(s).tsCross(), sel);
+  await gesture([[cx - 40, midY - 40, cx - 10, midY - 10], [cx + 40, midY + 40, cx + 70, midY + 70]]);
+  const x3 = await crossAt(), sc1 = await p.evaluate(s => document.querySelector(s).tsCross(), sel);
+  eq([JSON.stringify(await range()) !== JSON.stringify(rx1), close(x3, x0), !!sc1 && Math.abs(sc1.x - sc0.x) > 15 && Math.abs(sc1.y - sc0.y) > 15], [true, true, true],
+    `… a two-finger drag moves the chart, and the crosshair moves with it — same candle and price, new place on screen (${JSON.stringify(sc0)} → ${JSON.stringify(sc1)})`);
+  // כיבוי — הקשה, כמו היום
+  const tb = await rect();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tb.x + tb.w * 0.3, y: tb.y + tb.h * 0.7, id: 0 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await settle(500);
+  eq(await crossAt(), null, 'a tap turns the crosshair off, as before');
+  await longPress(lx, midY - 40);
+  eq(!!(await crossAt())?.time, true, '… and a long press turns it on again');
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: tb.x + tb.w * 0.3, y: tb.y + tb.h * 0.7, id: 0 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await settle(500);
+  await p.locator('.chart-reset').click().catch(() => {});
+  await settle(300);
 
 } catch (e) {
   fail++;
