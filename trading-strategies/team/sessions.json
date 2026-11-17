@@ -10,7 +10,7 @@
     "slice": "L6",
     "branch": "claude/trading-strategies-learning-l6"
   },
-  "control": "session_018g4NYFkoRSgSNeEbLjxxZ2",
+  "control": "session_018g4NYF5q8516Ujytkda2JF",
   "tasks": null,
   "clock": "trig_01Qfe8vGQMoxE3CTn5Jo9VRJ (דקה 28, נוצר בידי מנהל הצוותים (5))",
   "code_previous": [
@@ -154,6 +154,11 @@
       "session": "session_018g4NYEzwT38A6cJcANFTqV",
       "name": "בקרה (9)",
       "done": "#1719–#1726; מסירה ב-379K"
+    },
+    {
+      "session": "session_018g4NYFkoRSgSNeEbLjxxZ2",
+      "name": "בקרה (10)",
+      "done": "#1727–#1734; מסירה ב-379K"
     }
   ],
   "code_delete": {
@@ -205,6 +210,7 @@
     "session": "session_018g4NYCwp7KEZBFCdoiVfBD",
     "branch": "claude/trading-strategies-history-h1b",
     "opened_by": "מנהל הצוותים (5) לבקשת בקרה (9)",
-    "task": "H1b ספירות עבר + H1c אותות על מנות ישנות (18.1.8)"
+    "task": "H1b ספירות עבר + H1c אותות על מנות ישנות (18.1.8)",
+    "done": "H1b #1727, H1c #1728, גרף ריק #1731, טווחים #1732, שוק סגור #1734 — עצר"
   }
 }
