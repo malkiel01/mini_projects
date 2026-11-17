@@ -534,6 +534,12 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         $st = $cache->prepare('SELECT from_t, to_t FROM history_coverage WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ?');
         $st->execute($hkey);
         $hcov = array_map(fn($r) => [(int)$r['from_t'], (int)$r['to_t']], $st->fetchAll());
+        // הגבול "ישן מ-60 יום" זז עם השעון: בקשה שנייה מוצאת ב-history_coverage חור ברוחב הזמן שעבר (שנייה, שעה) — אבל
+        // החלק הזה כבר במאגר (candles), כי עד לפני רגע הוא היה בתוך 60 הימים. לכן גם הכיסוי של המאגר נחשב כאן, והנרות שלו
+        // נקראים למטה (גם לפני $poolStart). לפני: כל רענון אוטומטי פנה לספק על רסיס של שנייה (בקרה 11, ריצה 1800)
+        $pc = $cache->prepare('SELECT from_t, to_t FROM coverage WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ?');
+        $pc->execute($hkey);
+        $hcov = array_merge($hcov, array_map(fn($r) => [(int)$r['from_t'], (int)$r['to_t']], $pc->fetchAll()));
         $hins = $cache->prepare('INSERT OR REPLACE INTO history (provider, symbol, tf, cred_scope, t, o, h, l, c, v, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         $hcalls = 0;
         foreach (array_slice(ts_range_subtract($from, $oldTo, $hcov), -TS_MAX_SEGMENTS) as [$a, $b]) {
@@ -563,6 +569,10 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         }
         if ($hcalls) ts_coverage_merge($hkey, 'history_coverage');
         $st = $cache->prepare('SELECT t, o, h, l, c, v FROM history WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ? AND t >= ? AND t <= ? ORDER BY t');
+        $st->execute([...$hkey, $from, $oldTo]);
+        foreach ($st->fetchAll() as $r) $out[] = ['t' => (int)$r['t'], 'o' => $r['o'], 'h' => $r['h'], 'l' => $r['l'], 'c' => $r['c'], 'v' => $r['v']];
+        // והחלק הישן שעדיין במאגר (הגבול זז — ראו למעלה). נר שנמצא בשניהם — אחד ($by לפי t)
+        $st = $cache->prepare('SELECT t, o, h, l, c, v FROM candles WHERE provider = ? AND symbol = ? AND tf = ? AND cred_scope = ? AND t >= ? AND t <= ? ORDER BY t');
         $st->execute([...$hkey, $from, $oldTo]);
         foreach ($st->fetchAll() as $r) $out[] = ['t' => (int)$r['t'], 'o' => $r['o'], 'h' => $r['h'], 'l' => $r['l'], 'c' => $r['c'], 'v' => $r['v']];
     }
