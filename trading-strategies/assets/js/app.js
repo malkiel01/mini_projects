@@ -94,8 +94,9 @@ let ME = null;   // {csrf, user, lists}
 // בקשה של מסך שכבר הוחלף בניווט חדש — התשובה (או השגיאה) לא חוזרת אליו: הבטחה שלא מתקיימת, והמסך הישן נעצר במקום
 const staleGuard = (gen, p) => (!gen ? p : p.then(v => (gen === GEN ? v : new Promise(() => {})), e => (gen === GEN ? Promise.reject(e) : new Promise(() => {}))));
 const API_TIMEOUT_MS = 90000;
-function api(action, body = null, query = {}) { return staleGuard(LOADING, apiNow(action, body, query)); }
-async function apiNow(action, body = null, query = {}) {
+/** opts.signal — ביטול מבחוץ (הגרף: חזרה ללשונית אחרי בקשה שנתקעה ברקע) */
+function api(action, body = null, query = {}, opts = {}) { return staleGuard(LOADING, apiNow(action, body, query, opts)); }
+async function apiNow(action, body = null, query = {}, { signal = null } = {}) {
   const qs = new URLSearchParams({ action, ...query });
   const opt = { credentials: 'same-origin', headers: {} };
   if (body) {
@@ -111,17 +112,22 @@ async function apiNow(action, body = null, query = {}) {
   const ctl = new AbortController();
   const ms = +window.TS_API_TIMEOUT_MS || API_TIMEOUT_MS;   // לבדיקות — קצר
   const timer = setTimeout(() => ctl.abort(), ms);
+  const cut = () => ctl.abort();
+  signal?.addEventListener('abort', cut, { once: true });
   opt.signal = ctl.signal;
   try {
     res = await fetch('api.php?' + qs, opt);
     data = await res.json();
   } catch {
-    const e = new Error(ctl.signal.aborted ? 'השרת לא ענה בזמן — נסו שוב (↻)' : res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
+    const own = signal?.aborted;   // בוטל מבחוץ — לא "השרת לא ענה"
+    const e = new Error(own ? 'הטעינה בוטלה' : ctl.signal.aborted ? 'השרת לא ענה בזמן — נסו שוב (↻)' : res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
     e.status = 0;
-    e.timeout = ctl.signal.aborted;
+    e.timeout = ctl.signal.aborted && !own;
+    e.aborted = !!own;
     throw e;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', cut);
     // ההקשר של 🐞 (DevLoop): הבקשות האחרונות — פעולה, מצב, משך ומזהה הבקשה ביומן. בלי הגוף
     window.DevLoop?.noteRequest({ action, status: res?.status ?? 0, ms: Math.round(performance.now() - t0), req: res?.headers.get('X-Request-Id') || '' });
   }

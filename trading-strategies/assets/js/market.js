@@ -824,6 +824,9 @@ export function mountMarket(ctx) {
     // mode: open — פתיחת הגרף · change — טווח או מסגרת · manual — "↻" · pick — בחירת שיטה · auto — הרענון האוטומטי
     let loading = false;
     let pending = null;      // פעולה של המשתמש בזמן שבקשה אחרת רצה — נטענת מיד אחריה
+    // הטעינה הנוכחית: לביטול כשחוזרים ללשונית והיא תקועה (הטלפון ברקע); lastFailed — הטעינה האחרונה נכשלה
+    let loadCtl = null, loadAt = 0, lastFailed = false;
+    const STUCK_MS = 4000;   // טעינה שרצה יותר מזה כשחוזרים ללשונית — נחשבת תקועה
     let timer = null;
     let lastOk = 0;          // מתי הגיעה התשובה האחרונה (שעון הדפדפן)
     const analysisOn = () => forecast.methods().length > 0;
@@ -856,8 +859,11 @@ export function mountMarket(ctx) {
       if (!auto && mode !== 'pick') { closeLive(); info.textContent = 'טוען…'; }
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
-        const r = await api('chart_refresh', null, { asset, tf: st.tf, ...rangeQuery(), methods: forecast.methods().join(',') });
+        loadCtl = new AbortController();
+        loadAt = performance.now();
+        const r = await api('chart_refresh', null, { asset, tf: st.tf, ...rangeQuery(), methods: forecast.methods().join(',') }, { signal: loadCtl.signal });
         lastOk = Date.now();
+        lastFailed = false;
         let rows = r.candles;
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
@@ -890,6 +896,9 @@ export function mountMarket(ctx) {
         if (mode === 'manual') toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
         if (r.stream && n && !ws) openLive(r.stream, r.stream_interval);
       } catch (e) {
+        lastFailed = true;
+        // בוטלה בחזרה ללשונית — טעינה חדשה כבר בתור (pending), בלי הודעה
+        if (e.aborted) return;
         // רענון אוטומטי שנכשל (גם 429) — בשקט: הנתונים הקודמים נשארים, ו"עודכן לפני X" מראה כמה הם ישנים.
         // אין ניסיון חוזר מיידי — הפעם הבאה בקצב הרגיל (18.3 קריטריון 5)
         if (!auto) {
@@ -901,6 +910,7 @@ export function mountMarket(ctx) {
         if (!data.length) showEmpty(e.status === 429 ? 'יותר מדי בקשות בדקה — נסו שוב בעוד רגע.' : e.message);
       } finally {
         loading = false;
+        loadCtl = null;
         refresh.disabled = false;
         if (pending) { const m = pending; pending = null; load(m); } else { schedule(); histMaybe(); }
       }
@@ -952,10 +962,15 @@ export function mountMarket(ctx) {
         closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה';
         return;
       }
+      // "מושהה" יורד מיד; זרם חי (אם יש) מתחבר מחדש ומציג את המצב שלו
+      live.hidden = true;
       if (streamSpec && !ws) openLive(...streamSpec);
-      // הגרף ריק (הטעינה נכשלה בזמן שהלשונית הייתה ברקע — הטלפון חוסם רשת) — טוענים שוב, גם בלי שיטה פעילה. אחרת הגרף נשאר
-      // ריק עד ↻ ידני ("נרדם", הבעלים 2026-11-17)
-      if (!data.length) load('open');
+      // הבעלים (2026-11-17): "כניסה לגרף חייבת לבצע טעינה מיידית". חזרה ללשונית — בלי קשר לשיטה פעילה:
+      // - טעינה שעוד רצה מלפני הרקע (הטלפון עצר את הרשת, ה-fetch תלוי) — מבטלים וטוענים מחדש; לא מחכים ל-timeout
+      // - אין נרות, או שהטעינה האחרונה נכשלה — טוענים מחדש
+      const fresh = data.length ? 'pick' : 'open';   // pick — בלי להזיז את התצוגה ובלי לנתק את הזרם
+      if (loading && loadCtl && performance.now() - loadAt > STUCK_MS) { pending = fresh; loadCtl.abort(); }
+      else if (!loading && (!data.length || lastFailed)) load(fresh);
       else if (analysisOn()) load('auto');
     };
     document.addEventListener('visibilitychange', vis);

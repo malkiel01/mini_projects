@@ -41,6 +41,7 @@ async function route(p) {
   await p.route(/api\.php\?action=chart_refresh/, async r => {
     if (!fake) return r.continue();
     if (fake.hang) return new Promise(() => {});          // השרת לא עונה — הבקשה תלויה לנצח
+    if (fake.hangOnce) { fake = null; return new Promise(() => {}); }   // רק הבקשה הראשונה נתקעת (הטלפון עבר לרקע באמצע)
     if (fake.abort) { fake = null; return r.abort('failed'); }   // הרשת נחסמה (הטלפון ברקע) — פעם אחת
     if (fake.empty) {   // תשובה אמיתית, בלי נרות
       const res = await r.fetch(); const j = await res.json();
@@ -142,6 +143,34 @@ try {
   const c = await d.evaluate(() => { const e = document.querySelector('.chart-empty'); const s = getComputedStyle(e); return [s.backgroundColor, getComputedStyle(e.querySelector('strong')).color]; });
   eq([c[0] !== c[1], await noHScroll(d)], [true, true], `320, dark: the box is readable (${c.join(' / ')}), no horizontal scroll`);
   await shot(d, 'empty-error-320-dark');
+  // ── 8ב. (בקרה) "כניסה לגרף חייבת לבצע טעינה מיידית": הטעינה הראשונה נתקעת באמצע (הדף עבר לרקע — "מושהה"); חזרה ללשונית —
+  // הטעינה התקועה מבוטלת ונשלחת חדשה מיד, בלי לחכות ל-timeout (90 ש'), ו"מושהה" יורד. לפני: הגרף ריק, "מושהה" נשאר ──
+  const sq = await open('light', 390, () => {
+    window.__vis = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => window.__vis });
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => window.__vis !== 'visible' });
+  });
+  await route(sq);
+  await sq.goto(BASE + '#/market');
+  await sq.waitForSelector('main [role="combobox"]');
+  let calls = 0;
+  sq.on('request', r => { if (r.url().includes('action=chart_refresh')) calls++; });
+  fake = { hangOnce: true };
+  await sq.goto(CHART);
+  await sq.waitForFunction(() => document.querySelector('.chart-box:not(.osc)')?.tsEmpty, null, { timeout: 15000 });
+  await sq.waitForTimeout(300);
+  await sq.evaluate(() => { window.__vis = 'hidden'; document.dispatchEvent(new Event('visibilitychange')); });
+  eq([calls, (await sq.locator('.chip', { hasText: 'מושהה' }).count()) > 0], [1, true], 'the first load is in flight, the page goes to the background → "מושהה"');
+  await sq.waitForTimeout(4500);
+  const t0 = Date.now();
+  await sq.evaluate(() => { window.__vis = 'visible'; document.dispatchEvent(new Event('visibilitychange')); });
+  await sq.waitForFunction(s => document.querySelector(s).tsHistory().n > 0, sel, { timeout: 15000 });
+  const dt = Date.now() - t0;
+  eq([calls, dt < 8000, await why(sq), await sq.locator('.chip', { hasText: 'מושהה' }).isVisible().catch(() => false)], [2, true, null, false],
+    `back to the tab → the stuck load is cancelled and a new one goes out at once (${dt} ms, not the 90 s timeout); candles, no box, no "מושהה"`);
+  await sq.waitForTimeout(500);
+  eq(/בוטלה|לא ענה/.test(await sq.locator('main p.hint[aria-live]').first().textContent()), false, '… and no "cancelled" / "no answer" message under the chart');
+
   // ── 9. (בקרה) 🗄️ מאגר ← "יומן בקשות נרות": עמודת "למה" — בקשה שנכשלה, עם הסיבה, בלי המפתח ──
   const o = await open('light', 390);
   await o.context().addCookies([{ name: 'dev_as', value: 'owner', url: BASE }]);
