@@ -66,6 +66,8 @@ function ts_chart_refresh(int $uid, mixed $asset, mixed $tf, mixed $from, mixed 
         $r['provider_calls'] += $an['provider_calls'];
         $an = array_intersect_key($an, array_flip(['cards', 'blend', 'profile', 'account_size', 'decimals', 'last_t', 'disclaimer']));
     }
+    // השוק של הנכס — לשעות המסחר בדפדפן (assets/js/session.js: "🔒 השוק סגור · נפתח בעוד …"). זוג מהקטלוג בלי פרטים — לפי הצד שלו
+    $r['market'] = ts_asset_market((string)$asset);
     return $r + ['methods' => (object)$out, 'analysis' => $an, 'runs' => $runs, 'reused' => $reused,
         'as_of' => $rows ? end($rows)['t'] : null, 'refresh' => TS_REFRESH_EVERY];
 }
