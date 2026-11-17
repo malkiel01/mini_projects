@@ -171,8 +171,18 @@
   במצב השיטה בנר האות (פיבונאצ'י), אחרת null. `TS_RESULT_FORMAT` 2 → 3 (תוצאות H1a במטמון לא נמצאות — מחושבות מחדש). בדפדפן: `pastOf` מחזיר גם
   `kind: 'pastcount'` → `drawPastCount` (קו + 1–5 + "היה", 50%), מלבן האזור ב-`drawPast`; חלונית "ספירה · היה" (`pastCountContent`). לבדיקות:
   `tsForecast().pastCounts` ({m, t, alpha, labels, was, dashed, mid}), `past[].zone`. בדיקות: `past-counts.php` (21), `past-signals-api.php` (19), `past-signals-ui.mjs` (34).
-- **נשאר:** H1c — מנות ישנות (סעיף 6, קריטריון 12; קריטריון 11 על 20,000): `method_history&before=`, נרות וחימום מ-cache.sqlite (`history` + המאגר),
-  רק אותות עם t < תחילת הטווח הקודם, תקרת 50 על כל הטווח.
+- **H1c (בנוי):** `ts_method_history` (`lib/history.php`, פעולה `method_history&from=&before=&methods=`). הנרות מגיעים מ-`ts_market_candles`
+  (`history` + המאגר), בטווח [from, before + (אופק + `TS_HISTORY_TAIL`=300) נרות]. המנוע לא מציץ קדימה, ולכן אותות עם t<before זהים לחישוב על
+  כל הגרף (`past-batch.php` בודק את זה). `ts_history_signals(..., $before)` ו-`pastCounts(..., $before)` מחזירים רק t<before. המטמון —
+  `method_results`, מפתח `scope|h1c|before`. נספר בתקרת TS_DATA רק כשהייתה פנייה לספק. בדפדפן: `market.js` → `histLoad` קורא אחרי כל מנה
+  (באותו תור); `forecast.addOlder` / `resetOlder` (ב-`histReset`); `historyOf` ממזג: פריטים לפני `from` של החלון, 50 האחרונים על כל הטווח,
+  ספירות בלי חפיפה עם המוצגות, n ו-bars מצטברים. לבדיקות: `tsForecast().pastItems` (כל פריטי העבר, גם מחוץ לתצוגה).
+  - **תקרת חישוב** (בקשת בקרה (10)): `TS_HISTORY_RUNS_PER_MIN` = 12 מנות שחושבו בדקה למשתמש (`history_runs`, **מיגרציה 7 ב-cache.sqlite**),
+    מעליה 429. מנה מהמטמון לא נספרת. **הבאה: app.sqlite — 24, cache.sqlite — 8.**
+  - **הסדר בבקשה** (ביקורת בקרה (10)): (1) המטמון — מפתח לפי הטווח (from, before, to), **לפני** הנרות; (2) תקרת החישוב — בדיקה בלי להגדיל;
+    (3) `ts_market_candles(..., $gate)` — `$gate` (= `ts_rate_hit`) נקרא **לפני** הפנייה הראשונה לספק, רק כשחסר; (4) ספירת החישוב.
+    נרות חלקיים (notice) — התוצאה לא נשמרת.
+  - **לא נבנה:** שיטה שנבחרת **אחרי** שמנות ישנות כבר נטענו — אין לה אותות על המנות האלה, עד שנטענת מנה חדשה או הגרף נטען מחדש.
 - **סט הבדיקה:** `TS_KLINES_SHAPE=wave` ו-`X-Dev-Now: 1794342600` — אליוט בלי ספירה נוכחית (∅) ועם 12 אותות עבר בשעה, 3 חודשים.
 
 ## מוסכמות שגיליתי

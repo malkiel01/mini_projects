@@ -143,6 +143,18 @@ function ts_cache(): PDO
             COMMIT;
             SQL);
     }
+    // גרסה 7 (H1c): תקרת חישוב ל-method_history — כמה מנות ישנות חושבו (לא מהמטמון) לכל משתמש בכל דקה. CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 7) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS history_runs (
+                user_id INTEGER NOT NULL, minute INTEGER NOT NULL, runs INTEGER NOT NULL,
+                PRIMARY KEY (user_id, minute)
+            ) WITHOUT ROWID;
+            PRAGMA user_version = 7;
+            COMMIT;
+            SQL);
+    }
     return $db;
 }
 

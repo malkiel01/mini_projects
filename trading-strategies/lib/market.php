@@ -483,14 +483,15 @@ function ts_tail_ttl(string $tf): int
 
 /**
  * הנרות של נכס במסגרת ובטווח (3.5–3.6). עונה מהמאגר ופונה לספק רק על החסר. טווח ישן מ-60 יום נמשך לבקשה
- * הזו בלבד ולא נשמר. $now — לבדיקות.
+ * הזו בלבד ולא נשמר. $now — לבדיקות. $gate — נקרא פעם אחת, לפני הפנייה הראשונה לספק (H1c: התקרה של method_history רק
+ * כשבאמת פונים לספק); חריגה ממנו עוצרת את הבקשה לפני הפנייה.
  */
-function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed $to, ?int $now = null): array
+function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed $to, ?int $now = null, ?callable $gate = null): array
 {
     [$provider, $symbol] = ts_asset_split($asset);
     // מסגרת שהספק לא נותן, בזוג מהקטלוג (21.3, 2.26): מט"ח תוך-יומי ב-ECB → אותו זוג בספק שנותן אותה (Twelve Data)
     if (is_string($tf) && isset(TS_TF_SECONDS[$tf]) && ($alt = ts_pair_tf_asset($uid, (string)$asset, $tf)) !== null) {
-        return ts_market_candles($uid, $alt, $tf, $from, $to, $now);
+        return ts_market_candles($uid, $alt, $tf, $from, $to, $now, $gate);
     }
     // זוג מחושב (18.1): "1/USDILS" — נמשך ונשמר במאגר כמו USDILS, ומוחזר הפוך (1/x)
     $inverse = str_starts_with($symbol, '1/');
@@ -534,6 +535,7 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         $hins = $cache->prepare('INSERT OR REPLACE INTO history (provider, symbol, tf, cred_scope, t, o, h, l, c, v, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         $hcalls = 0;
         foreach (array_slice(ts_range_subtract($from, $oldTo, $hcov), -TS_MAX_SEGMENTS) as [$a, $b]) {
+            if ($gate !== null) { $g = $gate; $gate = null; $g(); }
             try {
                 $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
             } catch (TsProviderError $e) {
@@ -578,6 +580,7 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
         $ins = $cache->prepare('INSERT OR REPLACE INTO candles (provider, symbol, tf, t, o, h, l, c, v, fetched_at, cred_scope) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         foreach (array_slice($missing, -TS_MAX_SEGMENTS) as [$a, $b]) {
             if ($notice !== null) break;
+            if ($gate !== null) { $g = $gate; $gate = null; $g(); }
             try {
                 $rows = ts_provider_call_chain($uid, $provider, $chain, fn($pp, $s) => $pp->candles($symbol, $tf, $a, $b, $s), $used);
             } catch (TsCapError $e) {

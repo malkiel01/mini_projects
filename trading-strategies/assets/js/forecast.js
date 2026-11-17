@@ -197,7 +197,24 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   const isOn = (id, it) => !it.scenario || it.scenario === selected.get(id);
   // ── עבר (H1, 18.1.8): אותות שהשיטה הייתה נותנת בנרות שבגרף, ומה קרה — עמומים, "היה". רק תצוגה ──
   const histOn = () => ctx.me()?.profile?.history !== false;   // ברירת מחדל דולק (סעיף 4)
-  const historyOf = id => res.get(id)?.history || null;
+  // H1c (סעיף 6): מנות ישנות שנטענו בגלילה — לכל שיטה, מה שהשרת החזיר לפני תחילת הטווח הקודם (method_history). נשמר בנפרד
+  // מהחלון של chart_refresh (הרענון מחליף אותו), ומתמזג איתו: מה שכבר על המסך לא זז — רק פריטים לפני from של החלון נוספים
+  const older = new Map();   // id → [{n, bars, from, items, counts}], מהחדשה לישנה
+  function historyOf(id) {
+    const h = res.get(id)?.history || null;
+    const old = older.get(id);
+    if (!h || !old?.length) return h;
+    let items = h.items, counts = h.counts || [], n = h.n, bars = h.bars, from = h.from;
+    for (const o of old) {
+      if (from !== null && o.from !== null && o.from >= from) continue;
+      // התקרה (סעיף 4) — על כל הטווח הטעון: 50 האחרונים
+      items = [...o.items.filter(x => from === null || x.t < from), ...items].slice(-50);
+      const start = counts.length ? Math.min(...counts.map(c => c.points[0].t)) : Infinity;   // בלי נקודה משותפת עם ספירה שכבר מוצגת
+      counts = [...(o.counts || []).filter(c => c.t < start && (from === null || c.t < from)), ...counts];
+      n += o.n; bars += o.bars; from = o.from;
+    }
+    return { ...h, items, counts, n, bars, from };
+  }
   // אותות (past) וספירות אליוט שהושלמו (pastcount, H1b) — שניהם "היה", ושניהם כבויים יחד עם המתג
   const pastOf = id => (histOn() ? [...(historyOf(id)?.items || []).map(x => ({ ...x, kind: 'past' })),
     ...(historyOf(id)?.counts || []).map(x => ({ ...x, kind: 'pastcount' }))] : []);
@@ -946,6 +963,20 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     methods: () => chosen.map(c => c.id),
     onResult,
     onError,
+    /** H1c: מנה ישנה (method_history) — {methods: {id: {status, history}}}. רק פריטים לפני הטווח שכבר על המסך */
+    addOlder(r) {
+      let any = false;
+      for (const [id, x] of Object.entries(r?.methods || {})) {
+        if (x?.status !== 'ok' || !x.history || !chosen.some(c => c.id === id)) continue;
+        const list = older.get(id) || [];
+        if (list.some(o => o.from === x.history.from)) continue;
+        older.set(id, [...list, x.history]);
+        any = true;
+      }
+      if (any) { paint(); if (openNow()) renderPop(); }
+    },
+    /** הגרף נטען מחדש (נכס, מסגרת, טווח) — המנות הישנות כבר לא על המסך */
+    resetOlder() { if (older.size) { older.clear(); paint(); } },
     /** חסרה בדיקה לאחור (אין שמורה, או שעבר יום) לשיטה שמוצגת — הגרף יבקש analysis, רק בפעולה של המשתמש (18.3) */
     needsBacktest: () => !!an?.cards?.some(c => c.status === 'ok' && chosen.some(x => x.id === c.method.id) && (c.backtest?.status === 'missing' || c.backtest?.stale)),
     /** הבדיקה לאחור רצה (analysis) — מציגים "מריץ…" בהסתברות; התשובה מחליפה את הכרטיסים */
@@ -987,6 +1018,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     },
     state: () => ({ methods: chosen.map(c => ({ ...c, off: !!c.off, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
       finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() },
-      past: pastDrawn.map(({ r, ...x }) => x), pastCounts: countsDrawn.map(x => ({ ...x })), history: histOn(), pastN: Object.fromEntries(chosen.map(c => [c.id, historyOf(c.id)?.n ?? null])), sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
+      past: pastDrawn.map(({ r, ...x }) => x), pastCounts: countsDrawn.map(x => ({ ...x })),
+      // כל פריטי העבר של השיטות (לא רק מה שבתצוגה) — H1c: השוואה לפני ואחרי מנה ישנה
+      pastItems: chosen.flatMap(c => pastOf(c.id).map(({ rule, ...x }) => ({ m: c.id, ...x }))), history: histOn(), pastN: Object.fromEntries(chosen.map(c => [c.id, historyOf(c.id)?.n ?? null])), sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
   };
 }

@@ -22,6 +22,7 @@
  * GET  ?action=pair_labels&assets=a,b    התווית של כל נכס: base/quote (קוד ושם) — "BTC ⇄ USD", לא הסימול המחובר (18.1.1)
  * GET  ?action=market_candles&asset=&tf=&from=&to=   נרות, מהמאגר ומהספק על החסר ← נספר בתקרת 30 לדקה
  * GET  ?action=market_history&asset=&tf=&before=     היסטוריה בפעימות: מנה של עד 999 נרות ישנים לפני before, עד 5 שנים
+ * GET  ?action=method_history&asset=&tf=&from=&before=&methods=a,b   H1c: אותות וספירות עבר של מנה ישנה — רק t < before
  *                                        אחורה; done / retry (תקרה, 429) ← נספר בתקרת 30 לדקה
  * GET  ?action=chart_refresh&asset=&tf=&from=&to=&methods=a,b   הגרף (18.3, S3): נרות + תוצאת כל שיטה שנבחרה בבקשה אחת;
  *                                        שיטה בלי נר סגור חדש לא רצה שוב (lib/refresh.php); וכרטיס הניתוח (S4) עם
@@ -491,6 +492,17 @@ try {
             out(['ok' => true] + ts_market_candles($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['to'] ?? null, ts_now()));
 
         // היסטוריה בפעימות: מנה אחת של נרות ישנים לפני before (עד 5 שנים). בתקרה של TS_DATA — כל מנה נספרת
+        // H1c (18.1.8 סעיף 6): אותות וספירות עבר של מנה ישנה — רק לפני before. קורא מהמטמון (history + המאגר), ולכן בתקרה של
+        // TS_DATA רק לפני פנייה לספק (על חסר). לחישוב — תקרה משלו (TS_HISTORY_RUNS_PER_MIN, 429); מנה מהמטמון לא נספרת באף אחת
+        case 'method_history':
+            try {
+                $mh = ts_method_history($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['from'] ?? null, $_GET['before'] ?? null, $_GET['methods'] ?? '');
+            } catch (TsRateLimited $e) {   // תקרת החישוב (TS_HISTORY_RUNS_PER_MIN), או תקרת TS_DATA לפני פנייה לספק
+                header('Retry-After: 60');
+                fail($e->getMessage(), 429);
+            }
+            out(['ok' => true] + $mh);
+
         case 'market_history':
             out(['ok' => true] + ts_market_history($uid, $_GET['asset'] ?? '', $_GET['tf'] ?? '', $_GET['before'] ?? null, ts_now()));
 

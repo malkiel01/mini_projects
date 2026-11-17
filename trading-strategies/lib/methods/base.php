@@ -124,7 +124,7 @@ abstract class TsMethod
      * ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2) — רק לשיטה שיש לה ספירה (אליוט). ברירת המחדל — אין. $tf — אורך הנר בשניות.
      * כל ספירה: {dir, score, words, t, ct, points: [{t, price, label}]}. רק תצוגה.
      */
-    public function pastCounts(array $candles, array $p, int $tf): array
+    public function pastCounts(array $candles, array $p, int $tf, ?int $before = null): array
     {
         return [];
     }
