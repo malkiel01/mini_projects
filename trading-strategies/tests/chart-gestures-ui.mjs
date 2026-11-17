@@ -3,7 +3,9 @@
 //   - אצבע אחת במאונך על הגרף → הדף נגלל, טווח הזמן לא זז.
 //   - אצבע אחת לאורך הגרף → טווח הזמן זז (כמו קודם).
 //   - צביטה אופקית → פחות נרות על המסך (טווח הזמן קטן).
-//   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חזרה לגובה הרגיל, לא מעבר.
+//   - צביטה אנכית → הנרות, השכבות (אליוט) והנפח נמוכים יותר; טווח הזמן לא זז. מתיחה — חופשית, גם מעבר לגובה הרגיל (עד פי 8).
+//   - (בקרה 11, הבעלים: "למה לא נותן להגביה בצורה חופשית") הכיוון לפי התנועה, לא לפי הזווית שבה הונחו האצבעות; מעבר בין
+//     גרירה לצביטה בלי להרים אצבעות.
 //   - (בקרה 9, הבעלים: "2 אצבעות רק לגובה יגללו למעלה ולמטה") שתי אצבעות שזזות יחד לגובה → ציר המחיר זז, בלי לשנות
 //     גובה וטווח זמן; "↺" מחזיר. שתי אצבעות יחד לרוחב — לא עושות כלום.
 import { createRequire } from 'module';
@@ -51,6 +53,15 @@ const heights = () => p.evaluate(s => document.querySelector(s).tsHeights(), sel
 const scrolled = () => p.evaluate(s => { let t = window.scrollY, el = document.querySelector(s).parentElement; while (el) { t += el.scrollTop; el = el.parentElement; } return Math.round(t); }, sel);
 const rect = () => p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }, sel);
 const settle = (ms = 1500) => p.waitForTimeout(ms);   // גם הגלילה הקינטית
+/** paths: לכל אצבע — רשימת נקודות [[x,y], …]; כל קטע ב-steps צעדים, כל האצבעות יחד. מגע אחד, בלי להרים */
+async function path(paths, steps = 12) {
+  const seg = paths[0].length - 1;
+  const at = (s, i) => paths.map((pt, id) => ({ x: pt[s][0] + (pt[s + 1][0] - pt[s][0]) * i / steps, y: pt[s][1] + (pt[s + 1][1] - pt[s][1]) * i / steps, id }));
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: paths.map((pt, id) => ({ x: pt[0][0], y: pt[0][1], id })) });
+  for (let sg = 0; sg < seg; sg++) for (let i = 1; i <= steps; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(sg, i) }); await p.waitForTimeout(16); }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await settle();
+}
 /** fingers: [[x0,y0,x1,y1], ...] — כל אצבע מנקודה לנקודה, יחד */
 async function gesture(fingers, steps = 14) {
   const at = i => fingers.map(([x0, y0, x1, y1], id) => ({ x: x0 + (x1 - x0) * i / steps, y: y0 + (y1 - y0) * i / steps, id }));
@@ -132,10 +143,14 @@ try {
   eq(hc.lines.length > 0 && hc.lines.every(Boolean), true, 'vertical pinch in → the indicator lines are on the same squeezed scale as the candles');
   eq(await range(), re, 'a vertical pinch does not change the time range');
   eq(await p.evaluate(s => document.querySelector(s).tsForecast().methods.map(m => m.id), sel), ['elliott-w3'], 'Elliott still on the chart');
-  // מתיחה — חזרה, ולא מעבר לגובה הרגיל
+  // מתיחה — חופשית: חזרה לגובה הרגיל, וגם מעבר לו (הבעלים: "למה לא נותן להגביה בצורה חופשית"). לפני: נעצר ב-1
   await gesture([[cx, midY - 30, cx, midY - 160], [cx, midY + 30, cx, midY + 160]]);
   const hd = await heights();
-  eq([hd.k, Math.abs(hd.price - h0.price) <= 2, Math.abs(hd.vol - h0.vol) <= 2], [1, true, true], `vertical pinch out → back to the normal height, not beyond (${JSON.stringify(hd)})`);
+  eq([hd.k > 1.2, hd.price > h0.price * 1.2, await range()], [true, true, re], `vertical pinch out → taller than the normal height, freely (k ${hd.k}, candles ${h0.price}px → ${hd.price}px); the time range stays`);
+  for (let i = 0; i < 4; i++) await gesture([[cx, midY - 20, cx, midY - 200], [cx, midY + 20, cx, midY + 200]]);
+  eq((await heights()).k, 8, 'stretching again and again stops at a sane cap (×8)');
+  await p.locator('.chart-reset').click();
+  await settle(300);
 
   // ── אחרי כיווץ: גרירה בזמן (לתוך התחזית / לאחור) לא משנה את טווח המחיר (הבעלים: "ככל שאני נכנס לעומק התחזית הגרף גדל") ──
   const edges = () => p.evaluate(s => { const b = document.querySelector(s); return [b.tsPriceAt(10), b.tsPriceAt(b.offsetHeight - 10)]; }, sel);
@@ -157,6 +172,41 @@ try {
   await settle(300);
   const e3 = await edges();
   eq([(await heights()).k, same(e3, e0), await p.locator('.chart-reset').isHidden()], [1, false, true], `"↺" after a squeeze → normal height and automatic price range again (${e3.map(Math.round)})`);
+
+  // ── הכיוון לפי התנועה, לא לפי הזווית שבה הונחו האצבעות (בקרה 11) ──
+  // אצבעות מונחות באלכסון (~35°, יותר רוחב מגובה) ונפתחות **בגובה** → מתיחה; טווח הזמן לא זז. לפני: "zoom" לפי הזווית
+  const rq0 = await range(), hq0 = await heights();
+  await path([[[cx - 60, midY - 42], [cx - 60, midY - 130]], [[cx + 60, midY + 42], [cx + 60, midY + 130]]]);
+  const hq1 = await heights();
+  eq([hq1.k > hq0.k * 1.5, await range()], [true, rq0], `fingers placed at ~35° that open up/down → the height grows (k ${hq0.k} → ${hq1.k}), not the time zoom`);
+  // אותן אצבעות באלכסון שנפתחות **ברוחב** → טווח הזמן
+  await path([[[cx - 50, midY - 35], [cx - 150, midY - 35]], [[cx + 50, midY + 35], [cx + 150, midY + 35]]]);
+  eq([span(await range()) < span(rq0) * 0.6, (await heights()).k], [true, hq1.k], 'fingers at ~35° that open sideways → fewer candles (time zoom), the height stays');
+  await p.locator('.chart-reset').click();
+  await settle(300);
+
+  // ── מעבר בין גרירה לצביטה בלי להרים אצבעות (בקרה 11). לפני: התנועה ננעלה על הראשונה ──
+  const pz0 = await priceAt(), hz0 = await heights(), rz0 = await range();
+  await path([
+    [[cx, midY - 60], [cx, midY + 20], [cx, midY - 60]],     // יחד למטה (גרירה), ואז נפתחות בגובה (צביטה)
+    [[cx, midY + 60], [cx, midY + 140], [cx, midY + 220]],
+  ]);
+  const pz1 = await priceAt(), hz1 = await heights();
+  eq([pz1 > pz0, hz1.k > hz0.k * 1.5, await range()], [true, true, rz0], `one touch: drag down (the price axis moves: ${Math.round(pz0)} → ${Math.round(pz1)}), then open up/down (taller: k ${hz0.k} → ${hz1.k}) — without lifting the fingers`);
+  // ולהפך: צביטה ואז גרירה
+  const pz2 = await priceAt();
+  await path([
+    [[cx, midY - 40], [cx, midY - 80], [cx, midY - 160]],
+    [[cx, midY + 40], [cx, midY + 80], [cx, midY]],
+  ]);
+  const hz3 = await heights(), pz3 = await priceAt();
+  eq([hz3.k > hz1.k, pz3 !== pz2], [true, true], `and the other way: open (k ${hz1.k} → ${hz3.k}), then drag up together (the price axis moves) — one touch`);
+  eq(await p.locator('.chart-reset').isVisible(), true, '"↺" is on screen after any manual change');
+  const rb0 = await p.locator('.chart-reset').boundingBox();
+  eq(rb0.width >= 36 && rb0.height >= 36, true, `"↺" is big enough for a finger (${Math.round(rb0.width)}×${Math.round(rb0.height)})`);
+  await p.locator('.chart-reset').click();
+  await settle(300);
+  eq([(await heights()).k, await p.locator('.chart-reset').isHidden()], [1, true], '"↺" → back to normal');
 
 } catch (e) {
   fail++;
