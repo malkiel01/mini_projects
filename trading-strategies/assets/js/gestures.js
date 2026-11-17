@@ -11,7 +11,8 @@
 //     השכבות (אליוט, אינדיקטורים — אותו ציר) והנפח. **חופשי:** מכיווץ לרבע (MIN_K) ועד מתיחה פי MAX_K — מעל הגובה הרגיל.
 //   - **גרירה לגובה** (המרכז זז יותר, ובעיקר במאונך) — מזיזה את ציר המחיר: הנרות זזים עם האצבעות. ההזזה היא היסט קבוע על
 //     הטווח של autoScale (`autoscaleInfoProvider`), כך שהיא לא קופצת חזרה.
-//   - **גרירה לרוחב בשתי אצבעות — אין** (הבעלים: "2 אצבעות רק לגובה"). התנועה ננעלת ולא עושה כלום.
+//   - **גרירה לרוחב בשתי אצבעות** — הזמן (בקרה 11, 2026-11-17: "לגרור לאזור אחר"; מחליף את "2 אצבעות רק לגובה").
+// - **crosshair דולק** (לחיצה ארוכה) — שתי אצבעות גוברות, והוא מעוגן לנקודת נתונים (נר + מחיר): בצביטה נשאר עליה, בגרירה זז איתה.
 // - **"↺"** (בפינת הגרף, מרגע שהציר הותאם ביד) — מחזיר את ציר המחיר לרגיל, כולל autoScale.
 // - **הקפאת הטווח:** אחרי התאמה ידנית, גרירה בזמן לא משנה את טווח המחיר (ראו למטה).
 // - בזמן שהשרטוט תופס את המגע (`blocked()`) — לא נוגעים.
@@ -24,9 +25,10 @@ const VOL = { top: 0.82, bottom: 0.05 };
 const MIN_K = 0.25;     // הכי מכווץ: רבע מהגובה
 const MAX_K = 8;        // הכי מתוח: פי 8 מהגובה הרגיל [שלנו — "תקרה סבירה"]
 const MIN_BARS = 8;     // הכי מקורב: 8 נרות על המסך
+const TAP_MS = 350;     // הקשה — מגע קצר מזה, בלי תזוזה
 const STEP = 6;         // שתי אצבעות: כמה פיקסלים של תנועה עד שמחליטים מה הצעד הזה (צביטה / גרירה, רוחב / גובה)
 
-export function mountGestures({ chart, series, shifted = [series], box, blocked = () => false }) {
+export function mountGestures({ chart, series, shifted = [series], box, blocked = () => false, crosshair = () => null }) {
   chart.applyOptions({ handleScroll: { vertTouchDrag: false }, handleScale: { pinch: false } });
   let k = 1;            // הגובה היחסי (1 = רגיל; < 1 — מכווץ, > 1 — מתוח)
   let off = 0;          // היסט ציר המחיר (במחיר; 0 = רגיל)
@@ -88,8 +90,17 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
   // ── התחלה: נקודת הייחוס של הצעד הראשון ──
   function begin(e) {
     const [a, b] = pts(e);
-    g = { sx: Math.abs(a.x - b.x), sy: Math.abs(a.y - b.y), c: mid(a, b), last: null };
+    g = { sx: Math.abs(a.x - b.x), sy: Math.abs(a.y - b.y), c: mid(a, b), last: null, pin: null };
+    // ה-crosshair דולק (לחיצה ארוכה) — מעוגן לנקודת נתונים: זמן הנר + מחיר, לא למקום במסך (בקרה 11, הבעלים 2026-11-17).
+    // צביטה — נשאר על אותו נר ואותו מחיר; גרירה — הנקודה זזה עם הגרף. כך הוא לא נעלם ולא קופץ.
+    // [לא נבנה] crosshair בשטח הריק מימין לנר האחרון (אין שם זמן) — לא מעוגן
+    const x = crosshair();
+    if (x) {
+      const time = ts().coordinateToTime(x.x), price = series.coordinateToPrice(x.y);
+      if (time != null && price != null) g.pin = { time, price };
+    }
   }
+  const repin = () => { if (g?.pin) { try { chart.setCrosshairPosition(g.pin.price, g.pin.time, series); } catch { /* ריק */ } } };
 
   // ── תנועה: בכל צעד — מה האצבעות עשו מאז הצעד הקודם ──
   function move(e) {
@@ -115,31 +126,70 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
         ts().setVisibleLogicalRange({ from: anchor - span * ratio, to: anchor + span * (1 - ratio) });
       }
       g.last = 'zoom';
-    } else if (Math.abs(dcy) > Math.abs(dcx)) {
-      // גרירה לגובה — ציר המחיר זז עם האצבעות (יורדות → הטווח עולה → הנרות יורדים)
-      freeze();
-      off += dcy * ppp();
-      applyPrice();
-      g.last = 'price';
-    } else g.last = 'none';   // גרירה לרוחב בשתי אצבעות — כלום
+    } else {
+      // גרירה — הגרף זז עם האצבעות. **לגובה:** ציר המחיר (יורדות → הטווח עולה → הנרות יורדים). **לרוחב:** הזמן (בקרה 11, הבעלים
+      // 2026-11-17 — "לגרור לאזור אחר"; גובר על "2 אצבעות רק לגובה" מ-11-16). באלכסון — שניהם. רכיב קטן מחצי השני — לא נחשב
+      // (כך גרירה לרוחב לא מקפיאה את ציר המחיר בגלל רעד)
+      g.last = '';
+      if (Math.abs(dcy) > Math.abs(dcx) / 2) {
+        freeze();
+        off += dcy * ppp();
+        applyPrice();
+        g.last = 'price';
+      }
+      const r = ts().getVisibleLogicalRange();
+      const l0 = ts().coordinateToLogical(local(g.c).x), l1 = ts().coordinateToLogical(local(c).x);
+      if (Math.abs(dcx) > Math.abs(dcy) / 2 && r && l0 != null && l1 != null) {
+        const sh = l0 - l1;   // האצבעות ימינה → אחורה בזמן
+        ts().setVisibleLogicalRange({ from: r.from + sh, to: r.to + sh });
+        g.last += 'time';
+      }
+    }
     g.sx = sx; g.sy = sy; g.c = c;
+    repin();
   }
 
   // שתי אצבעות — שלנו: נעצרות ב-capture על הקופסה, לפני הספרייה (אחרת גם היא גוררת) ולפני הגלילה של הדפדפן
+  // crosshair שהוחזר בקוד (setCrosshairPosition) — הספרייה לא מכבה אותו בהקשה; הקשה (אצבע אחת בלי תזוזה) מכבה, כמו קודם
+  let pinned = false, tap = null, hiddenMode = null;   // hiddenMode — מצב ה-crosshair לפני שהסתרנו אותו (null — לא מוסתר)
   const onStart = e => {
+    if (hiddenMode !== null) { chart.applyOptions({ crosshair: { mode: hiddenMode } }); hiddenMode = null; }
+    // הקשה על כפתור שעל הגרף ("↺", מקרא, חלונית) — לא הקשה שמכבה את ה-crosshair
+    if (e.touches.length === 1 && pinned && !e.target?.closest?.('button, a, input, .ctip, .fc-legend')) { const t = e.touches[0]; tap = { x: t.clientX, y: t.clientY, at: performance.now() }; }
+    else tap = null;
     if (e.touches.length !== 2 || blocked()) { g = null; return; }
     e.stopPropagation();
     if (e.cancelable) e.preventDefault();
     begin(e);
   };
   const onMove = e => {
+    if (tap && e.touches.length === 1 && Math.hypot(e.touches[0].clientX - tap.x, e.touches[0].clientY - tap.y) > 8) tap = null;
     if (!g || e.touches.length !== 2) return;
     if (blocked()) { g = null; return; }   // השרטוט תפס את המגע באמצע (לחיצה ארוכה)
     e.stopPropagation();
     if (e.cancelable) e.preventDefault();
     move(e);
   };
-  const onEnd = e => { if (g && e.touches.length < 2) g = null; };
+  const onEnd = e => {
+    if (tap && !e.touches.length && performance.now() - tap.at > TAP_MS) tap = null;   // לחיצה ארוכה — לא הקשה
+    if (tap && !e.touches.length) {
+      // אחרי שהספרייה סיימה עם ההקשה (היא מטפלת אחרינו, ומציבה את ה-crosshair בנקודת ההקשה).
+      tap = null; pinned = false;
+      // גם אחרי אירועי העכבר שהדפדפן מייצר מההקשה — הספרייה מציבה את ה-crosshair גם מהם
+      // הספרייה עדיין "במעקב" (ראתה את האצבע הראשונה של כל מגע בשתי אצבעות) ומציבה את ה-crosshair שלה בנקודת ההקשה —
+      // clearCrosshairPosition לא מכבה אותו. לכן: מצב crosshair מוסתר (2), והמצב המקורי חוזר במגע הבא — לחיצה ארוכה עובדת כרגיל
+      setTimeout(() => {
+        try { chart.clearCrosshairPosition(); } catch { /* ריק */ }
+        if (hiddenMode === null) { hiddenMode = chart.options().crosshair.mode; chart.applyOptions({ crosshair: { mode: 2 } }); }
+      }, 120);
+      return;
+    }
+    if (!g || e.touches.length >= 2) return;
+    const pin = g.pin;
+    g = null;
+    // אחרי שהאצבעות עזבו — ה-crosshair על אותה נקודה (הספרייה מסתירה אותו כשהמגע נגמר)
+    if (pin) { pinned = true; requestAnimationFrame(() => { try { chart.setCrosshairPosition(pin.price, pin.time, series); } catch { /* ריק */ } }); }
+  };
   box.addEventListener('touchstart', onStart, { capture: true, passive: false });
   box.addEventListener('touchmove', onMove, { capture: true, passive: false });
   box.addEventListener('touchend', onEnd, true);
@@ -149,6 +199,8 @@ export function mountGestures({ chart, series, shifted = [series], box, blocked 
     vScale: () => k,
     /** לבדיקות: מה הצעד האחרון היה (squeeze / zoom / price / none) */
     lastStep: () => g?.last ?? null,
+    /** לבדיקות: ה-crosshair הוסתר אחרי הקשה (עד המגע הבא) */
+    crossHidden: () => hiddenMode !== null,
     offset: () => off,
     /** חזרה לרגיל — "↺", וגם כשהנתונים מתחלפים (מסגרת, טווח, רענון ידני) */
     reset: unfreeze,

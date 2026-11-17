@@ -549,8 +549,11 @@ export function mountMarket(ctx) {
     let cross = null;
     chart.subscribeCrosshairMove(e => { cross = e.point ? { x: e.point.x, y: e.point.y } : null; });
     box.tsCross = () => cross;                                         // לבדיקות: איפה הסמן (L1 קריטריון 5)
+    // לבדיקות: הנקודה שה-crosshair עליה — זמן הנר והמחיר (העוגן של gestures.js)
+    box.tsTimeAt = x => chart.timeScale().coordinateToTime(x);   // לבדיקות: הנר במיקום x (null — שטח ריק)
+    box.tsCrossAt = () => (cross && !gest.crossHidden() ? { time: chart.timeScale().coordinateToTime(cross.x), price: candle.coordinateToPrice(cross.y) } : null);
     // תנועות מגע (gestures.js): אצבע אחת — לרוחב בזמן, לגובה גוללת את הדף; שתי אצבעות — צביטה (זמן / גובה) או גרירה (זמן / מחיר)
-    const gest = mountGestures({ chart, series: candle, shifted: [candle, ...Object.values(lines)], box, blocked: () => draw.isCapturing() });
+    const gest = mountGestures({ chart, series: candle, shifted: [candle, ...Object.values(lines)], box, blocked: () => draw.isCapturing(), crosshair: () => (gest?.crossHidden() ? null : cross) });
     // לבדיקות: הגובה (px) של הנרות הנראים ושל עמודות הנפח, ומקדם הכיווץ
     box.tsHeights = () => {
       const r = chart.timeScale().getVisibleLogicalRange();
