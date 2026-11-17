@@ -17,8 +17,16 @@ import { mountCombo, invalidateCatalog } from './combobox.js';
 
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const TF_SEC = { m1: 60, m5: 300, m15: 900, m30: 1800, h1: 3600, h4: 14400, d1: 86400, w1: 604800, mn1: 2678400 };
-const RANGES = [['d', 'יום', 86400], ['w', 'שבוע', 7 * 86400], ['m', 'חודש', 30 * 86400], ['q', '3 חודשים', 90 * 86400],
+// טווחים קצרים מיום (בחירת הבעלים, 2026-11-17): 15 דקות, שעה, 4 שעות — המסגרת מותאמת לבד (fitTf)
+const RANGES = [['r15', '15 דקות', 900], ['r1h', 'שעה', 3600], ['r4h', '4 שעות', 4 * 3600], ['d', 'יום', 86400], ['w', 'שבוע', 7 * 86400], ['m', 'חודש', 30 * 86400], ['q', '3 חודשים', 90 * 86400],
   ['y', 'שנה', 365 * 86400], ['y5', '5 שנים', 5 * 365 * 86400], ['all', 'הכול', null], ['custom', 'מותאם…', null]];
+const MIN_BARS = 10;   // טווח שנותן פחות נרות מזה במסגרת — המסגרת יורדת לגדולה ביותר שנותנת לפחות 10
+/** המסגרת לטווח: הנוכחית אם נותנת ≥ MIN_BARS נרות; אחרת הגדולה ביותר מבין tfs שנותנת; null — אין (הטווח לא זמין בספק) */
+function fitTf(tfs, tf, span) {
+  if (!span || span / TF_SEC[tf] >= MIN_BARS) return tf;
+  const ok = tfs.filter(t => span / TF_SEC[t] >= MIN_BARS).sort((a, b) => TF_SEC[b] - TF_SEC[a]);
+  return ok[0] ?? null;
+}
 const DEFAULT_RANGE = { m1: 'd', m5: 'w', m15: 'w', m30: 'm', h1: 'q', h4: 'y', d1: 'y5', w1: 'all', mn1: 'all' };
 const MARKET_LABEL = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות', indices: 'מדדים', commodities: 'סחורות' };
 const DELAY_LABEL = { realtime: 'זמן אמת', '15min': 'בעיכוב 15 דק׳', eod: 'סוף יום' };
@@ -376,6 +384,9 @@ export function mountMarket(ctx) {
     const tfs = L.tfs?.length ? L.tfs : p.tfs;
     st.tf = tfs.includes(st.tf) ? st.tf : (tfs.includes('h1') ? 'h1' : tfs.includes('d1') ? 'd1' : tfs[0]);
     st.range ??= DEFAULT_RANGE[st.tf];
+    const spanOf = r => RANGES.find(x => x[0] === r)?.[2] ?? null;
+    // טווח קצר שנשמר (sessionStorage) עם מסגרת שלא מתאימה לו — המסגרת מותאמת; אין מסגרת כזו אצל הספק — הטווח של המסגרת
+    { const t = fitTf(tfs, st.tf, spanOf(st.range)); if (t === null) st.range = DEFAULT_RANGE[st.tf]; else st.tf = t; }
     st.ind ??= ['sma20', 'vol'];
     const save = () => { try { sessionStorage.setItem(key, JSON.stringify(st)); } catch { /* ריק */ } };
 
@@ -407,10 +418,26 @@ export function mountMarket(ctx) {
 
     const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
+    // טווח שאין לו מסגרת עם לפחות 10 נרות אצל הספק (למשל 15 דקות בספק יומי) — מושבת, וההסבר בשם
+    for (const o of rangeSel.options) if (fitTf(tfs, st.tf, spanOf(o.value)) === null) { o.disabled = true; o.textContent += ' — לא זמין בספק הזה'; }
     const from = h('input', { type: 'date', 'aria-label': 'מתאריך', value: st.from || '' });
     const to = h('input', { type: 'date', 'aria-label': 'עד תאריך', value: st.to || '' });
     const custom = h('div', { class: 'fields two', hidden: st.range !== 'custom' }, field('מתאריך', from), field('עד תאריך', to));
-    rangeSel.addEventListener('change', () => { st.range = rangeSel.value; custom.hidden = st.range !== 'custom'; save(); if (st.range !== 'custom') load('change'); });
+    rangeSel.addEventListener('change', () => {
+      st.range = rangeSel.value;
+      custom.hidden = st.range !== 'custom';
+      // טווח קצר מהמסגרת (שעה במסגרת שעה = נר אחד) — המסגרת יורדת לגדולה ביותר שנותנת לפחות 10 נרות, והודעה שקטה
+      const t = fitTf(tfs, st.tf, spanOf(st.range));
+      if (t && t !== st.tf) {
+        st.tf = t;
+        const r = tfSeg.querySelector(`input[value="${t}"]`);
+        if (r) r.checked = true;
+        forecast.retf();
+        toast(`המסגרת עברה ל-${TF_LABEL[t]} — כדי שיהיו לפחות ${MIN_BARS} נרות בטווח`);
+      }
+      save();
+      if (st.range !== 'custom') load('change');
+    });
     [from, to].forEach(el => el.addEventListener('change', () => { st.from = from.value; st.to = to.value; save(); if (from.value) load('change'); }));
     const inds = h('div', { class: 'chips', role: 'group', 'aria-label': 'אינדיקטורים' }, IND.map(([k, l]) => {
       const c = h('input', { type: 'checkbox', value: k });
@@ -435,6 +462,20 @@ export function mountMarket(ctx) {
     });
     const upd = h('span', { class: 'chip refresh-age', hidden: true });
     const box = h('div', { class: 'chart-box' });
+    // גרף בלי נרות — לעולם לא ריק בלי הסבר (הבעלים, 2026-11-17: "זה שוב פעם ריק"): בתוך הגרף, הסיבה מהשרת ופעולה
+    const emptyMsg = h('p', { class: 'chart-empty-why' });
+    const emptyTf = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => { const r = tfSeg.querySelector('input[value="d1"]'); if (r) { r.checked = true; r.dispatchEvent(new Event('change')); } } } }, 'מסגרת יומית');
+    const empty = h('div', { class: 'chart-empty', role: 'status', dir: 'rtl', hidden: true },
+      h('strong', {}, 'אין נרות להצגה'), emptyMsg,
+      h('div', { class: 'row-btns' }, h('button', { class: 'btn sm', type: 'button', on: { click: () => load('manual') } }, '↻ נסו שוב'), emptyTf));
+    /** why — הסיבה (הודעת השרת), או null: יש נרות, ההודעה יורדת */
+    function showEmpty(why) {
+      empty.hidden = why === null;
+      if (why === null) return;
+      emptyMsg.textContent = why;
+      emptyTf.hidden = st.tf === 'd1' || !tfs.includes('d1');
+    }
+    box.tsEmpty = () => (empty.hidden ? null : emptyMsg.textContent);   // לבדיקות
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
@@ -445,7 +486,7 @@ export function mountMarket(ctx) {
     // ⟳ החלפה בין לגובה ללרוחב בלי לצאת (L1 סעיף 3) — ליד ✕. רק כשנכנסו מטלפון לאורך (כמו התפריט)
     const fsRot = h('button', { class: 'icon-btn fs-rot', type: 'button', hidden: true, on: { click: () => fsSetMode(fsMode === 'landscape' ? 'portrait' : 'landscape') } }, '⟳');
     const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsRot, fsExit);
-    const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox);
+    const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox, empty);
     render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsPick)), custom,
       wrap, drawSlot, forecastSlot, inds, info, histInfo,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
@@ -688,6 +729,7 @@ export function mountMarket(ctx) {
       clearTimeout(hist.timer);
       Object.assign(hist, { busy: false, done: false, next: 0, timer: null, target, got: 0, note: '', user: false });
       older = [];
+      forecast.resetOlder();
       histShow();
     }
     function histShow() {
@@ -734,6 +776,15 @@ export function mountMarket(ctx) {
             hist.jump = lv && lv2 ? { before: [lv.from, lv.to], after: [lv2.from, lv2.to], added: add.length } : null;
             drawIndicators();
             draw.redraw();
+            // H1c (18.1.8 סעיף 6): אותות וספירות העבר של המנה — רק לפני הנר הראשון הקודם, כך שמה שעל המסך לא זז. באותו תור של
+            // הפעימות (לא במקביל); השרת קורא מהמטמון. כשל — המנה נשארת בלי אותות עבר
+            const ids = forecast.methods();
+            if (ids.length && first !== Infinity) {
+              try {
+                const mh = await api('method_history', null, { asset, tf: st.tf, from: add[0].time, before: first, methods: ids.join(',') });
+                if (gen === hist.gen) forecast.addOlder(mh);
+              } catch { /* בלי אותות עבר למנה הזו */ }
+            }
           }
           if (r.done || !add.length || data.length >= HIST_MAX || (hist.target !== null && data[0].time <= hist.target)) {
             hist.done = r.done || !add.length || data.length >= HIST_MAX;
@@ -800,6 +851,9 @@ export function mountMarket(ctx) {
     // mode: open — פתיחת הגרף · change — טווח או מסגרת · manual — "↻" · pick — בחירת שיטה · auto — הרענון האוטומטי
     let loading = false;
     let pending = null;      // פעולה של המשתמש בזמן שבקשה אחרת רצה — נטענת מיד אחריה
+    // הטעינה הנוכחית: לביטול כשחוזרים ללשונית והיא תקועה (הטלפון ברקע); lastFailed — הטעינה האחרונה נכשלה
+    let loadCtl = null, loadAt = 0, lastFailed = false;
+    const STUCK_MS = 4000;   // טעינה שרצה יותר מזה כשחוזרים ללשונית — נחשבת תקועה
     let timer = null;
     let lastOk = 0;          // מתי הגיעה התשובה האחרונה (שעון הדפדפן)
     const analysisOn = () => forecast.methods().length > 0;
@@ -832,8 +886,11 @@ export function mountMarket(ctx) {
       if (!auto && mode !== 'pick') { closeLive(); info.textContent = 'טוען…'; }
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
-        const r = await api('chart_refresh', null, { asset, tf: st.tf, ...rangeQuery(), methods: forecast.methods().join(',') });
+        loadCtl = new AbortController();
+        loadAt = performance.now();
+        const r = await api('chart_refresh', null, { asset, tf: st.tf, ...rangeQuery(), methods: forecast.methods().join(',') }, { signal: loadCtl.signal });
         lastOk = Date.now();
+        lastFailed = false;
         let rows = r.candles;
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
@@ -862,9 +919,13 @@ export function mountMarket(ctx) {
           n ? '' : ' · אין נתונים בטווח הזה',
           // 21.3: אין דרך להשלים (תקרה, או אין מפתח זמין) — מוצג מה שבמאגר
           r.notice ? h('span', { class: 'chart-notice', role: 'status' }, ' · ' + r.notice) : '');
+        showEmpty(n ? null : r.notice || 'אין נתונים בטווח הזה — ייתכן שהשוק היה סגור. נסו טווח ארוך יותר או מסגרת אחרת.');
         if (mode === 'manual') toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
         if (r.stream && n && !ws) openLive(r.stream, r.stream_interval);
       } catch (e) {
+        lastFailed = true;
+        // בוטלה בחזרה ללשונית — טעינה חדשה כבר בתור (pending), בלי הודעה
+        if (e.aborted) return;
         // רענון אוטומטי שנכשל (גם 429) — בשקט: הנתונים הקודמים נשארים, ו"עודכן לפני X" מראה כמה הם ישנים.
         // אין ניסיון חוזר מיידי — הפעם הבאה בקצב הרגיל (18.3 קריטריון 5)
         if (!auto) {
@@ -872,8 +933,11 @@ export function mountMarket(ctx) {
           info.append(h('span', { class: 'error' }, e.message));
           forecast.onError(e);
         }
+        // אין שום נר על המסך — הסיבה בתוך הגרף (גם ברענון אוטומטי: גרף ריק אף פעם לא בלי הסבר)
+        if (!data.length) showEmpty(e.status === 429 ? 'יותר מדי בקשות בדקה — נסו שוב בעוד רגע.' : e.message);
       } finally {
         loading = false;
+        loadCtl = null;
         refresh.disabled = false;
         if (pending) { const m = pending; pending = null; load(m); } else { schedule(); histMaybe(); }
       }
@@ -925,8 +989,16 @@ export function mountMarket(ctx) {
         closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה';
         return;
       }
+      // "מושהה" יורד מיד; זרם חי (אם יש) מתחבר מחדש ומציג את המצב שלו
+      live.hidden = true;
       if (streamSpec && !ws) openLive(...streamSpec);
-      if (analysisOn()) load('auto');
+      // הבעלים (2026-11-17): "כניסה לגרף חייבת לבצע טעינה מיידית". חזרה ללשונית — בלי קשר לשיטה פעילה:
+      // - טעינה שעוד רצה מלפני הרקע (הטלפון עצר את הרשת, ה-fetch תלוי) — מבטלים וטוענים מחדש; לא מחכים ל-timeout
+      // - אין נרות, או שהטעינה האחרונה נכשלה — טוענים מחדש
+      const fresh = data.length ? 'pick' : 'open';   // pick — בלי להזיז את התצוגה ובלי לנתק את הזרם
+      if (loading && loadCtl && performance.now() - loadAt > STUCK_MS) { pending = fresh; loadCtl.abort(); }
+      else if (!loading && (!data.length || lastFailed)) load(fresh);
+      else if (analysisOn()) load('auto');
     };
     document.addEventListener('visibilitychange', vis);
     onTeardown(() => { document.removeEventListener('visibilitychange', vis); clearTimeout(timer); clearInterval(ageTick); pending = null; streamSpec = null; closeLive(); });
@@ -1154,14 +1226,16 @@ export function mountMarket(ctx) {
     const time = t => new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     return h('section', { class: 'block' },
       h('h3', {}, 'יומן בקשות נרות'),
-      h('p', { class: 'hint' }, '"מהספק" — כמה נרות נמשכו מהספק בבקשה. 0 — הכול הוגש מהמאגר. מאגר משותף נמשך פעם אחת לכולם; אישי — כל משתמש לעצמו.'),
+      h('p', { class: 'hint' }, '"מהספק" — כמה נרות נמשכו מהספק בבקשה. 0 — הכול הוגש מהמאגר. מאגר משותף נמשך פעם אחת לכולם; אישי — כל משתמש לעצמו. "למה" — כשהבקשה החזירה 0 נרות, נכשלה, או הוגש רק מה שבמאגר.'),
       rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
         h('thead', {}, h('tr', {}, h('th', {}, 'מתי'), h('th', {}, 'מי'), h('th', {}, 'נכס'), h('th', {}, 'מאגר'), h('th', { class: 'n' }, 'מהספק'), h('th', { class: 'n' }, 'הוגשו'))),
-        h('tbody', {}, rows.map(r => h('tr', {},
+        // הסיבה — שורה ברוחב מלא מתחת לבקשה (בטלפון עמודה נוספת נדחקת לקצה הטבלה הנגללת)
+        h('tbody', {}, rows.flatMap(r => [h('tr', { class: r.reason ? 'fl-why' : null },
           h('td', { class: 'num' }, time(r.at)), h('td', {}, r.user || '—'),
           h('td', {}, h('span', { dir: 'ltr' }, r.asset + ' · ' + r.tf)), h('td', {}, kind[r.kind] || r.kind),
           h('td', { class: 'n num' }, r.provider_candles.toLocaleString('he-IL') + (r.provider_calls ? ` (${r.provider_calls})` : '')),
-          h('td', { class: 'n num' }, r.served.toLocaleString('he-IL')))))))
+          h('td', { class: 'n num' }, r.served.toLocaleString('he-IL'))),
+          r.reason ? h('tr', { class: 'fl-why fl-reason-row' }, h('td', { class: 'fl-reason', colspan: 6 }, h('div', {}, h('b', {}, 'למה: '), r.reason))) : null].filter(Boolean)))))
         : h('p', { class: 'empty' }, 'אין עדיין בקשות.'));
   }
 

@@ -143,9 +143,12 @@ eq(call('alice', 'market_history', null, ['asset' => $A, 'tf' => 'h1'])[0], 422,
 eq(call('alice', 'market_history', null, ['asset' => $A, 'tf' => 'x9', 'before' => $NOW])[0], 422, 'a bad timeframe → 422');
 
 // ── תקרת 30 לדקה למשתמש: כל מנה נספרת ──
+// התקרה לפי דקה בשעון (intdiv(time(), 60)): 32 קריאות שחוצות את גבול הדקה מתחלקות בין שתיים, ו-429 לא מגיע (נכשלה כך פעם
+// אחת בסבב המלא). בשתי דקות סמוכות עוברות לכל היותר 60 — ולכן עד 61 קריאות, ועוצרים ב-429 הראשון
 $codes = [];
-for ($i = 0; $i < 32; $i++) $codes[] = call('dave', 'market_history', null, ['asset' => $A, 'tf' => 'h1', 'before' => $first])[0];
-eq(in_array(429, $codes, true), true, 'market_history counts in the 30-per-minute cap per user (429 before 32 calls in a minute)');
+for ($i = 0; $i < 61 && !in_array(429, $codes, true); $i++) $codes[] = call('dave', 'market_history', null, ['asset' => $A, 'tf' => 'h1', 'before' => $first])[0];
+eq([in_array(429, $codes, true), count(array_filter($codes, fn($c) => $c === 200)) <= 60], [true, true],
+    'market_history counts in the 30-per-minute cap per user (429 after ' . (count($codes) - 1) . ' calls)');
 
 // אזהרות הפעלה של PHP עצמו (למשל "JIT … disabled. in Unknown on line 0" ב-runner של הפריסה, ריצה 1789) — לא של הקוד;
 // כל השאר נספר (כמו ב-builder-removed-api.php ו-prefill-api.php)

@@ -6,7 +6,7 @@
  *   coverage   אילו טווחים כבר נמשכו לכל מפתח — כדי לפנות לספק רק על החסר. מכסה רק נרות סגורים.
  *   tails      מתי נמשך לאחרונה הקצה (הנר הפתוח) — התוקף שלו לפי מסגרת הזמן.
  *   search     תוצאות חיפוש ואינדקס סימולים — 24 שעות.
- *   fetch_log  יומן בקשות הנרות (18.2, S2): לכל בקשה — כמה נרות נמשכו מהספק וכמה הוגשו. 7 ימים, עד 2000 שורות.
+ *   fetch_log  יומן בקשות הנרות (18.2, S2): לכל בקשה — כמה נרות נמשכו מהספק וכמה הוגשו, ולמה 0 / נכשלה (reason, גרסה 8). 7 ימים, עד 2000 שורות.
  *   method_results  תוצאה שמורה של שיטה לכל מפתח חישוב (18.3, S3): נכס, מסגרת, הנרות הסגורים, שיטה וגרסה, פרמטרים.
  *                   חישוב שנגזר מהנרות — נמחק בניקוי היומי אחרי יומיים, ונבנה מחדש לבד.
  *   method_runs     המונה למסך המפתח: כמה פעמים שיטה רצה באמת, וכמה פעמים הוחזרה התוצאה השמורה.
@@ -140,6 +140,28 @@ function ts_cache(): PDO
             );
             CREATE INDEX IF NOT EXISTS history_coverage_key ON history_coverage (provider, symbol, tf, cred_scope);
             PRAGMA user_version = 6;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 7 (H1c): תקרת חישוב ל-method_history — כמה מנות ישנות חושבו (לא מהמטמון) לכל משתמש בכל דקה. CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 7) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS history_runs (
+                user_id INTEGER NOT NULL, minute INTEGER NOT NULL, runs INTEGER NOT NULL,
+                PRIMARY KEY (user_id, minute)
+            ) WITHOUT ROWID;
+            PRAGMA user_version = 7;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 8 (גרף ריק, 2026-11-17): fetch_log.reason — למה הבקשה החזירה 0 נרות או נכשלה (שגיאת ספק, תקרה, notice, אין נתונים).
+    // הבעלים רואה במסך המאגר מה קרה, בלי גישה לשרת. ALTER בלבד — השורות הקיימות: NULL
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 8) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE fetch_log ADD COLUMN reason TEXT;
+            PRAGMA user_version = 8;
             COMMIT;
             SQL);
     }

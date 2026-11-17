@@ -159,6 +159,23 @@ final class TsMethodElliottW3 extends TsMethod
         return $ov;
     }
 
+    /**
+     * ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2) — אותה רגישות ואותו ATR כמו בהווה (overlay). $before (H1c, מנה ישנה): רק ספירות
+     * שנגמרות לפניו — נקודות המפנה עד הראשונה שב-before ואחריו (היא "האחרונה", ולא נספרת), ולכן החיפוש הוא ב-40 שלפני before
+     */
+    public function pastCounts(array $candles, array $p, int $tf, ?int $before = null): array
+    {
+        $prm = ts_ew_params(['pivot_atr_mult' => (float)$p['pivot_atr_mult'], 'atr_len' => (int)$p['atr_len']]);
+        $piv = ts_ew_pivots($candles, $prm['pivot_atr_mult'], $prm['atr_len']);
+        if ($before !== null) {
+            $k = 0;
+            while ($k < count($piv) && $piv[$k]['t'] < $before) $k++;
+            $piv = array_slice($piv, 0, $k + 1);
+        }
+        $out = ts_ew_past_counts($piv, $tf, $prm);
+        return $before === null ? $out : array_values(array_filter($out, fn($c) => $c['t'] < $before));
+    }
+
     public function conditions(array $s, array $p): array
     {
         $piv = $s['piv'];

@@ -197,8 +197,27 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
   const isOn = (id, it) => !it.scenario || it.scenario === selected.get(id);
   // ── עבר (H1, 18.1.8): אותות שהשיטה הייתה נותנת בנרות שבגרף, ומה קרה — עמומים, "היה". רק תצוגה ──
   const histOn = () => ctx.me()?.profile?.history !== false;   // ברירת מחדל דולק (סעיף 4)
-  const historyOf = id => res.get(id)?.history || null;
-  const pastOf = id => (histOn() ? (historyOf(id)?.items || []).map(x => ({ ...x, kind: 'past' })) : []);
+  // H1c (סעיף 6): מנות ישנות שנטענו בגלילה — לכל שיטה, מה שהשרת החזיר לפני תחילת הטווח הקודם (method_history). נשמר בנפרד
+  // מהחלון של chart_refresh (הרענון מחליף אותו), ומתמזג איתו: מה שכבר על המסך לא זז — רק פריטים לפני from של החלון נוספים
+  const older = new Map();   // id → [{n, bars, from, items, counts}], מהחדשה לישנה
+  function historyOf(id) {
+    const h = res.get(id)?.history || null;
+    const old = older.get(id);
+    if (!h || !old?.length) return h;
+    let items = h.items, counts = h.counts || [], n = h.n, bars = h.bars, from = h.from;
+    for (const o of old) {
+      if (from !== null && o.from !== null && o.from >= from) continue;
+      // התקרה (סעיף 4) — על כל הטווח הטעון: 50 האחרונים
+      items = [...o.items.filter(x => from === null || x.t < from), ...items].slice(-50);
+      const start = counts.length ? Math.min(...counts.map(c => c.points[0].t)) : Infinity;   // בלי נקודה משותפת עם ספירה שכבר מוצגת
+      counts = [...(o.counts || []).filter(c => c.t < start && (from === null || c.t < from)), ...counts];
+      n += o.n; bars += o.bars; from = o.from;
+    }
+    return { ...h, items, counts, n, bars, from };
+  }
+  // אותות (past) וספירות אליוט שהושלמו (pastcount, H1b) — שניהם "היה", ושניהם כבויים יחד עם המתג
+  const pastOf = id => (histOn() ? [...(historyOf(id)?.items || []).map(x => ({ ...x, kind: 'past' })),
+    ...(historyOf(id)?.counts || []).map(x => ({ ...x, kind: 'pastcount' }))] : []);
   const PAST_ALPHA = 0.5;
   // מחיר לתצוגה לפי ה-tick של הנכס (מהשרת) — מפריד אלפים, בלי אפסים מיותרים (18.1.2 סעיף 4)
   const price = (id, v) => fmtNum(v, Number.isInteger(res.get(id)?.tick_decimals) ? res.get(id).tick_decimals : 8);
@@ -319,6 +338,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     return y === null ? null : { x, y: it.side === 'long' ? y + 9 : y - 9 };
   }
   function drawPast(ctx, id, it, W) {
+    if (it.kind === 'pastcount') return drawPastCount(ctx, id, it, W);
     const a = pastAnchor(it);
     if (!a || a.x < -10 || a.x > W + 10) return;
     const c = colorOf(id), up = it.side === 'long';
@@ -327,6 +347,17 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     ctx.setLineDash([]);
     // קווים קצרים: מנר האות עד היציאה (או עד הנר האחרון — פתוח). לעולם לא קדימה מעבר לנרות
     const x2 = it.t_exit !== null ? xOf(it.t_exit) : xOf(getTimes().at(-1));
+    // פיבונאצ'י (H1b, סעיף 3): האזור שהאות נגע בו — מלבן עמום מנר האות עד היציאה
+    let zone = null;
+    if (it.zone && x2 !== null) {
+      const y1 = yOf(it.zone[0]), y2 = yOf(it.zone[1]);
+      if (y1 !== null && y2 !== null) {
+        zone = { x: a.x, y: Math.min(y1, y2), w: Math.max(4, x2 - a.x), h: Math.max(1, Math.abs(y2 - y1)) };
+        ctx.fillStyle = c; ctx.globalAlpha = PAST_ALPHA * 0.3;
+        ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+        ctx.globalAlpha = PAST_ALPHA;
+      }
+    }
     for (const [v, dash] of [[it.stop, [3, 3]], [it.result === 'open' ? it.target : it.exit, []]]) {
       const y = v === null || v === undefined ? null : yOf(v);
       if (y === null || x2 === null) continue;
@@ -349,7 +380,48 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     const free = !pastDrawn.some(o => o.r && r.x < o.r.x + o.r.w && o.r.x < r.x + r.w && r.y < o.r.y + o.r.h && o.r.y < r.y + r.h);
     if (free) ctx.fillText(s, a.x, ty);
     ctx.restore();
-    pastDrawn.push({ m: id, t: it.t, side: it.side, result: it.result, alpha: PAST_ALPHA, label: free ? s : null, x: a.x, y: a.y, r: free ? r : null });
+    pastDrawn.push({ m: id, t: it.t, side: it.side, result: it.result, alpha: PAST_ALPHA, label: free ? s : null, x: a.x, y: a.y, r: free ? r : null, zone });
+  }
+  /** ספירת עבר (H1b, סעיף 2): הקו ותוויות 1–5 עמומים, בצבע השיטה, ו"היה" ליד גל 5. בלי אזור יעד, בלי הקרנה ובלי קו ביטול */
+  let countsDrawn = [];   // לבדיקות: {m, t, alpha, labels, was, dashed}
+  const countPts = it => it.points.map(q => ({ x: xOf(q.t), y: yOf(q.price), label: q.label }));
+  function drawPastCount(ctx, id, it, W) {
+    const pts = countPts(it);
+    if (pts.some(q => q.x === null || q.y === null) || pts.at(-1).x < -10 || pts[0].x > W + 10) return;
+    const c = colorOf(id), up = it.dir === 'up';
+    ctx.save();
+    ctx.globalAlpha = PAST_ALPHA;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = c; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.stroke();
+    ctx.fillStyle = c;
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.direction = 'ltr';
+    ctx.textAlign = 'center';
+    const labels = [];
+    pts.forEach((q, i) => {
+      if (!i) return;
+      // שיא — התווית מעליו; שפל — מתחתיו (בדחף עולה גלים 1, 3, 5 הם שיאים)
+      const top = (i % 2 === 1) === up;
+      ctx.textBaseline = top ? 'bottom' : 'top';
+      ctx.fillText(q.label, q.x, top ? q.y - 3 : q.y + 3);
+      labels.push(q.label);
+    });
+    // "היה" — ליד גל 5, בצד של התווית
+    const e = pts.at(-1);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = up ? 'bottom' : 'top';
+    ctx.fillText('היה', e.x + 6, up ? e.y - 3 : e.y + 3);
+    ctx.restore();
+    // mid — אמצע הקטע הארוך (גל 3 בדרך כלל): נקודה על הקו, רחוקה מהחצים — לבדיקות החלונית
+    let mid = null;
+    for (let i = 1; i < pts.length; i++) {
+      const l = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      if (!mid || l > mid.l) mid = { l, x: (pts[i].x + pts[i - 1].x) / 2, y: (pts[i].y + pts[i - 1].y) / 2 };
+    }
+    countsDrawn.push({ m: id, t: it.t, alpha: PAST_ALPHA, labels, was: 'היה', dashed: false, x: e.x, y: e.y, mid: { x: mid.x, y: mid.y } });
   }
 
   // ── הדמיית המשך ──
@@ -457,7 +529,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
               const W = mediaSize.width;
               ctx.save();
               // העבר (H1) — מתחת לכל מה שבהווה: עמום, ובלי שום דבר קדימה
-              pastDrawn = [];
+              pastDrawn = []; countsDrawn = [];
               for (const { id } of [...shown()].reverse()) for (const it of pastOf(id)) drawPast(ctx, id, it, W);
               // הקווים: השיטה האחרונה קודם, המובילה מעליה; בכל שיטה — החלופות קודם
               for (const { id } of [...shown()].reverse()) {
@@ -812,10 +884,11 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
 
   // ── החלונית על הגרף (T1, 18.1.6) — מה מצויר בנקודה, מאותה גאומטריה של הציור (xOf/yOf) ──
   // רק מה שמוצג: שיטה גלויה, התרחיש הנבחר (לא חלופה עמומה). הקטן קודם: נקודה, קו, אזור (18.1.6 סעיף 1)
-  const RANK = { label: 0, marker: 0, past: 0, hline: 1, polyline: 1, zone: 2 };
+  const RANK = { label: 0, marker: 0, past: 0, hline: 1, polyline: 1, pastcount: 1, zone: 2 };
   /** הנקודה על פריט שהכי קרובה ל-(px, py) — שם הזנב מצביע: נקודה — היא; קו — בגובה הלחיצה; אזור — הלחיצה בתוכו */
   function anchorOf(it, px, py, W) {
     if (it.kind === 'past') return pastAnchor(it);
+    if (it.kind === 'pastcount') return anchorOf({ kind: 'polyline', points: it.points }, px, py, W);
     if (it.kind === 'label' || it.kind === 'marker') {
       const x = xOf(it.t);
       let y = it.kind === 'label' ? yOf(it.price) : null;
@@ -848,7 +921,7 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     return null;
   }
   // זהות של פריט בין ציור לציור (רענון — הנר הבא נסגר): בלי מחירים וזמנים שזזים, חוץ מהזמן של נקודה
-  const keyOf = (id, it) => it.kind === 'past' ? [id, 'past', it.t].join('|') : [id, it.kind, it.role || '', it.scenario ?? '', it.fib || '', it.r ?? '', it.kind === 'label' || it.kind === 'marker' ? it.t : '', it.kind === 'label' ? it.text : ''].join('|');
+  const keyOf = (id, it) => it.kind === 'past' || it.kind === 'pastcount' ? [id, it.kind, it.t].join('|') : [id, it.kind, it.role || '', it.scenario ?? '', it.fib || '', it.r ?? '', it.kind === 'label' || it.kind === 'marker' ? it.t : '', it.kind === 'label' ? it.text : ''].join('|');
   const hitOf = (id, it, a, px, py) => ({ id, it, key: keyOf(id, it), x: a.x, y: a.y, px, py,
     t: it.kind === 'label' || it.kind === 'marker' || it.kind === 'past' ? it.t : chart.timeScale().coordinateToTime(a.x), p: it.kind === 'label' ? it.price : it.kind === 'past' ? it.entry : series.coordinateToPrice(a.y),
     name: nameOf(id), color: pick(id)?.color || '--brand', r: res.get(id), price: v => price(id, v),
@@ -890,6 +963,20 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     methods: () => chosen.map(c => c.id),
     onResult,
     onError,
+    /** H1c: מנה ישנה (method_history) — {methods: {id: {status, history}}}. רק פריטים לפני הטווח שכבר על המסך */
+    addOlder(r) {
+      let any = false;
+      for (const [id, x] of Object.entries(r?.methods || {})) {
+        if (x?.status !== 'ok' || !x.history || !chosen.some(c => c.id === id)) continue;
+        const list = older.get(id) || [];
+        if (list.some(o => o.from === x.history.from)) continue;
+        older.set(id, [...list, x.history]);
+        any = true;
+      }
+      if (any) { paint(); if (openNow()) renderPop(); }
+    },
+    /** הגרף נטען מחדש (נכס, מסגרת, טווח) — המנות הישנות כבר לא על המסך */
+    resetOlder() { if (older.size) { older.clear(); paint(); } },
     /** חסרה בדיקה לאחור (אין שמורה, או שעבר יום) לשיטה שמוצגת — הגרף יבקש analysis, רק בפעולה של המשתמש (18.3) */
     needsBacktest: () => !!an?.cards?.some(c => c.status === 'ok' && chosen.some(x => x.id === c.method.id) && (c.backtest?.status === 'missing' || c.backtest?.stale)),
     /** הבדיקה לאחור רצה (analysis) — מציגים "מריץ…" בהסתברות; התשובה מחליפה את הכרטיסים */
@@ -931,6 +1018,8 @@ export function mountForecast({ ctx, asset, pair, chart, series, h, host, isAdmi
     },
     state: () => ({ methods: chosen.map(c => ({ ...c, off: !!c.off, selected: selected.get(c.id) ?? null, asOf: res.get(c.id)?.overlay?.as_of ?? null, items: itemsOf(c.id).length,
       finding: findingOf(c.id).length, scenario: scenarioOf(c.id).length })), drawn: [...drawn, ...markers], colors: { ...saved() },
-      past: pastDrawn.map(({ r, ...x }) => x), history: histOn(), pastN: Object.fromEntries(chosen.map(c => [c.id, historyOf(c.id)?.n ?? null])), sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
+      past: pastDrawn.map(({ r, ...x }) => x), pastCounts: countsDrawn.map(x => ({ ...x })),
+      // כל פריטי העבר של השיטות (לא רק מה שבתצוגה) — H1c: השוואה לפני ואחרי מנה ישנה
+      pastItems: chosen.flatMap(c => pastOf(c.id).map(({ rule, ...x }) => ({ m: c.id, ...x }))), history: histOn(), pastN: Object.fromEntries(chosen.map(c => [c.id, historyOf(c.id)?.n ?? null])), sim: simDrawn.map(({ at, c, ...x }) => ({ ...x })) }),
   };
 }

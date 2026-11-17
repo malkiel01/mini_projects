@@ -166,11 +166,30 @@
   `charttip.js` → `pastContent` ("אות לונג · היה"). המתג — `histRow()` בתפריט, `me.profile.history`, `history_set`. ליד ∅ — `.fc-leg-past`.
   לבדיקות: `tsForecast().past` ({m, t, side, result, alpha, label, x, y}), `.pastN`, `.history`.
 - **מיגרציה 23** (`users.history_off`). **הבאה ב-app.sqlite — 24; cache.sqlite — 7.**
-- **נשאר:** H1b — ספירות אליוט שהושלמו (סעיף 2, קריטריון 5) ואזורי פיבונאצ'י (סעיף 3, קריטריון 6). H1c — מנות ישנות (סעיף 6, קריטריון 12; קריטריון 11
-  על 20,000) — **ממתין להכרעת הבקרה** על ההצעה: `method_history&before=` לכל מנה, עם חימום, ורק אותות לפני תחילת הטווח הקודם.
+- **H1b (בנוי):** `history.counts` — `TsMethod::pastCounts()` (ברירת מחדל `[]`; אליוט → `ts_ew_past_counts` ב-`lib/elliott.php`: `ts_ew_counts` על קידומת,
+  k=5, מ-`n−2` אחורה, בלי נקודה משותפת, עד 5, ב-40 נקודות המפנה האחרונות; הנקודה האחרונה — של ההווה, לא עבר). `items[].zone` — `[lo, hi]` מ-`x.zone`
+  במצב השיטה בנר האות (פיבונאצ'י), אחרת null. `TS_RESULT_FORMAT` 2 → 3 (תוצאות H1a במטמון לא נמצאות — מחושבות מחדש). בדפדפן: `pastOf` מחזיר גם
+  `kind: 'pastcount'` → `drawPastCount` (קו + 1–5 + "היה", 50%), מלבן האזור ב-`drawPast`; חלונית "ספירה · היה" (`pastCountContent`). לבדיקות:
+  `tsForecast().pastCounts` ({m, t, alpha, labels, was, dashed, mid}), `past[].zone`. בדיקות: `past-counts.php` (21), `past-signals-api.php` (19), `past-signals-ui.mjs` (34).
+- **H1c (בנוי):** `ts_method_history` (`lib/history.php`, פעולה `method_history&from=&before=&methods=`). הנרות מגיעים מ-`ts_market_candles`
+  (`history` + המאגר), בטווח [from, before + (אופק + `TS_HISTORY_TAIL`=300) נרות]. המנוע לא מציץ קדימה, ולכן אותות עם t<before זהים לחישוב על
+  כל הגרף (`past-batch.php` בודק את זה). `ts_history_signals(..., $before)` ו-`pastCounts(..., $before)` מחזירים רק t<before. המטמון —
+  `method_results`, מפתח `scope|h1c|before`. נספר בתקרת TS_DATA רק כשהייתה פנייה לספק. בדפדפן: `market.js` → `histLoad` קורא אחרי כל מנה
+  (באותו תור); `forecast.addOlder` / `resetOlder` (ב-`histReset`); `historyOf` ממזג: פריטים לפני `from` של החלון, 50 האחרונים על כל הטווח,
+  ספירות בלי חפיפה עם המוצגות, n ו-bars מצטברים. לבדיקות: `tsForecast().pastItems` (כל פריטי העבר, גם מחוץ לתצוגה).
+  - **תקרת חישוב** (בקשת בקרה (10)): `TS_HISTORY_RUNS_PER_MIN` = 12 מנות שחושבו בדקה למשתמש (`history_runs`, **מיגרציה 7 ב-cache.sqlite**),
+    מעליה 429. מנה מהמטמון לא נספרת. **הבאה: app.sqlite — 24, cache.sqlite — 9** (8 — `fetch_log.reason`).
+  - **הסדר בבקשה** (ביקורת בקרה (10)): (1) המטמון — מפתח לפי הטווח (from, before, to), **לפני** הנרות; (2) תקרת החישוב — בדיקה בלי להגדיל;
+    (3) `ts_market_candles(..., $gate)` — `$gate` (= `ts_rate_hit`) נקרא **לפני** הפנייה הראשונה לספק, רק כשחסר; (4) ספירת החישוב.
+    נרות חלקיים (notice) — התוצאה לא נשמרת.
+  - **לא נבנה:** שיטה שנבחרת **אחרי** שמנות ישנות כבר נטענו — אין לה אותות על המנות האלה, עד שנטענת מנה חדשה או הגרף נטען מחדש.
 - **סט הבדיקה:** `TS_KLINES_SHAPE=wave` ו-`X-Dev-Now: 1794342600` — אליוט בלי ספירה נוכחית (∅) ועם 12 אותות עבר בשעה, 3 חודשים.
 
 ## מוסכמות שגיליתי
+
+- **Twelve Data — טווח בלי נרות = 400 "No data is available"**, לא רשימה ריקה. `call()` מחזיר `values: []`. כל ספק חדש — לבדוק איך הוא עונה על טווח ריק.
+- **`ts_market_candles`:** שגיאת ספק שאינה תקרה לא מפילה את הבקשה כשיש משהו במאגר (`notice`); בלי שום נר — השגיאה המקורית יוצאת. רק תקרה (`$capHit`)
+  עוצרת את שאר הפניות. גרף בלי נרות — `.chart-empty` בתוך הגרף (`market.js`, `showEmpty`), לעולם לא ריק בלי הסבר.
 
 - **ציר הזמן — לפי שעון המשתמש** (`assets/js/chartaxis.js`): סימון חדש כש-`tickKey(t, step, kind, offset)` משתנה; `offset = tzOffset(ME().user.timezone)`.
   **לא לחזור ל-`Math.floor(t / step)` או ל-`getUTC*` בלי offset** — בישראל זה מציג 02:00 / 14:00. התווית של הנר האחרון — `fmtTime(t, 'last')`,
