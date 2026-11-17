@@ -49,7 +49,14 @@ final class TsProvTwelveData extends TsProvider
         if (!is_array($j)) throw new TsProviderError('Twelve Data: תשובה לא צפויה');
         if (($j['status'] ?? '') === 'error') {
             $code = (int)($j['code'] ?? 0);
-            $msg = $code === 401 || $code === 403 ? 'המפתח נדחה' : ($code === 429 ? 'הגעתם לתקרת הבקשות של הספק' : 'שגיאה מהספק');
+            $raw = (string)($j['message'] ?? '');
+            // טווח בלי נרות (סוף שבוע, שוק סגור, פרוסה קצרה בין שתי פתיחות) — Twelve Data מחזיר 400 ולא רשימה ריקה.
+            // זו לא תקלה: אין נתונים (הבעלים, 2026-11-17: "זה שוב פעם ריק" — חלון כזה הפיל את כל בקשת הגרף, 502)
+            if ($code === 400 && stripos($raw, 'no data is available') !== false) return ['values' => [], 'status' => 'ok', 'no_data' => true];
+            // 403 / 404 על סימבול — לא "המפתח נדחה": המפתח תקין, הסימבול לא בתוכנית או לא קיים
+            $plan = $code === 403 && preg_match('/plan|upgrade|available (exclusively|starting)/i', $raw);
+            $msg = $plan ? 'הסימבול לא זמין בתוכנית של המפתח' : ($code === 401 || $code === 403 ? 'המפתח נדחה'
+                : ($code === 404 ? 'הסימבול לא נמצא אצל הספק' : ($code === 429 ? 'הגעתם לתקרת הבקשות של הספק' : 'שגיאה מהספק')));
             $text = $this->clean("Twelve Data: $msg — " . mb_substr((string)($j['message'] ?? ''), 0, 200), $secret);
             throw $code === 429 ? new TsRateError($text) : new TsProviderError($text);
         }
