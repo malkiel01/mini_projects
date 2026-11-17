@@ -1184,14 +1184,16 @@ export function mountMarket(ctx) {
     const time = t => new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     return h('section', { class: 'block' },
       h('h3', {}, 'יומן בקשות נרות'),
-      h('p', { class: 'hint' }, '"מהספק" — כמה נרות נמשכו מהספק בבקשה. 0 — הכול הוגש מהמאגר. מאגר משותף נמשך פעם אחת לכולם; אישי — כל משתמש לעצמו.'),
+      h('p', { class: 'hint' }, '"מהספק" — כמה נרות נמשכו מהספק בבקשה. 0 — הכול הוגש מהמאגר. מאגר משותף נמשך פעם אחת לכולם; אישי — כל משתמש לעצמו. "למה" — כשהבקשה החזירה 0 נרות, נכשלה, או הוגש רק מה שבמאגר.'),
       rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
         h('thead', {}, h('tr', {}, h('th', {}, 'מתי'), h('th', {}, 'מי'), h('th', {}, 'נכס'), h('th', {}, 'מאגר'), h('th', { class: 'n' }, 'מהספק'), h('th', { class: 'n' }, 'הוגשו'))),
-        h('tbody', {}, rows.map(r => h('tr', {},
+        // הסיבה — שורה ברוחב מלא מתחת לבקשה (בטלפון עמודה נוספת נדחקת לקצה הטבלה הנגללת)
+        h('tbody', {}, rows.flatMap(r => [h('tr', { class: r.reason ? 'fl-why' : null },
           h('td', { class: 'num' }, time(r.at)), h('td', {}, r.user || '—'),
           h('td', {}, h('span', { dir: 'ltr' }, r.asset + ' · ' + r.tf)), h('td', {}, kind[r.kind] || r.kind),
           h('td', { class: 'n num' }, r.provider_candles.toLocaleString('he-IL') + (r.provider_calls ? ` (${r.provider_calls})` : '')),
-          h('td', { class: 'n num' }, r.served.toLocaleString('he-IL')))))))
+          h('td', { class: 'n num' }, r.served.toLocaleString('he-IL'))),
+          r.reason ? h('tr', { class: 'fl-why fl-reason-row' }, h('td', { class: 'fl-reason', colspan: 6 }, h('div', {}, h('b', {}, 'למה: '), r.reason))) : null].filter(Boolean)))))
         : h('p', { class: 'empty' }, 'אין עדיין בקשות.'));
   }
 

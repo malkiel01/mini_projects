@@ -142,6 +142,27 @@ try {
   const c = await d.evaluate(() => { const e = document.querySelector('.chart-empty'); const s = getComputedStyle(e); return [s.backgroundColor, getComputedStyle(e.querySelector('strong')).color]; });
   eq([c[0] !== c[1], await noHScroll(d)], [true, true], `320, dark: the box is readable (${c.join(' / ')}), no horizontal scroll`);
   await shot(d, 'empty-error-320-dark');
+  // ── 9. (בקרה) 🗄️ מאגר ← "יומן בקשות נרות": עמודת "למה" — בקשה שנכשלה, עם הסיבה, בלי המפתח ──
+  const o = await open('light', 390);
+  await o.context().addCookies([{ name: 'dev_as', value: 'owner', url: BASE }]);
+  await o.goto(BASE + '#/market');
+  await o.waitForSelector('main [role="combobox"]');
+  eq(await o.evaluate(async () => { const me = await (await fetch('api.php?action=me')).json();
+    await fetch('api.php?action=cred_save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF': me.csrf }, body: JSON.stringify({ provider: 'twelvedata', secret: 'good-Owner99887766' }) });
+    return (await fetch('api.php?action=market_candles&asset=' + encodeURIComponent('twelvedata:PLANX/USD') + '&tf=h1')).status; }), 502, 'the owner asks for a symbol outside the plan → 502');
+  await o.evaluate(() => sessionStorage.setItem('ts-admin-tab', 'cache'));
+  await o.goto(BASE + '#/admin');
+  const tbl = o.locator('section.block', { hasText: 'יומן בקשות נרות' });
+  await tbl.locator('table').waitFor({ timeout: 15000 });
+  const row = tbl.locator('tbody tr', { hasText: 'PLANX/USD' }).first();
+  const next = row.locator('xpath=following-sibling::tr[1]');
+  const reason = (await next.locator('td.fl-reason').textContent()).trim();
+  const fits = await next.locator('td.fl-reason > div').evaluate(td => { const r = td.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth + 1; });
+  eq([reason.startsWith('למה: שגיאת ספק: Twelve Data: הסימבול לא זמין בתוכנית'), reason.includes('good-Owner'), await row.evaluate(r => r.classList.contains('fl-why')), fits],
+    [true, false, true, true], `the failed request is marked, and right under it — "למה: …" across the row, on screen at 390 ("${reason.slice(0, 60)}…")`);
+  eq(await tbl.locator('tbody tr', { hasText: 'BTCUSDT' }).first().evaluate(r => r.classList.contains('fl-why')), false, '… a normal request — no reason row');
+  await shot(o, 'fetch-log-reason-390');
+
   eq(errors, [], 'no errors in the page');
 } catch (e) {
   fail++; console.log('✗ exception:', e.message);

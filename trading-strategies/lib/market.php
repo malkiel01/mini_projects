@@ -626,11 +626,18 @@ function ts_market_candles(int $uid, mixed $asset, mixed $tf, mixed $from, mixed
     ksort($by);
     if ($notice !== null) {
         // אין נרות בכלל — כמו קודם: שגיאה (נכס בלי נתונים ובלי מפתח — ש7, אפור)
-        if (!$by) throw $poolOnly ? new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".') : ($err ?? new TsCapError($notice));
+        if (!$by) {
+            $x = $poolOnly ? new TsInvalid('אין לכם חיבור לספק הזה. מחברים ב"עוד ← ספקי נתונים".') : ($err ?? new TsCapError($notice));
+            // גם בקשה שנכשלה נרשמת ביומן — עם הסיבה (לפני כן: לא נרשמה בכלל, ו"גרף ריק" לא השאיר עקבות)
+            ts_fetch_log($uid, $provider, $symbol, $tf, $scope, $from, $to, $calls, $fetched, 0, $now, ts_fetch_reason($x));
+            throw $x;
+        }
         $notice = $poolOnly ? 'מוצג מה שבמאגר — אין מפתח זמין להשלמה' : "$notice מוצג מה שבמאגר.";
     }
     $acc = $used ?? $acc;
-    ts_fetch_log($uid, $provider, $symbol, $tf, $scope, $from, $to, $calls, $fetched, count($by), $now);
+    // הסיבה — רק כשיש מה להסביר: notice (תקרה / שגיאת ספק — מוצג מה שבמאגר), או 0 נרות בלי שגיאה (שוק סגור / טווח ריק)
+    $reason = $notice !== null ? ($err !== null ? ts_fetch_reason($err) : $notice) : (!$by ? 'אין נתונים בטווח (שוק סגור או לפני שהנכס נסחר)' : null);
+    ts_fetch_log($uid, $provider, $symbol, $tf, $scope, $from, $to, $calls, $fetched, count($by), $now, $reason);
     $candles = array_values($by);
     if ($inverse) $candles = ts_pair_invert_candles($candles);
     $asset = ($inverse ? "$provider:1/" : "$provider:") . $symbol;
@@ -696,14 +703,27 @@ function ts_fetch_as_system(?bool $on = null): bool
     return $sys;
 }
 
-function ts_fetch_log(int $uid, string $provider, string $symbol, string $tf, string $scope, int $from, int $to, int $calls, int $fetched, int $served, int $now): void
+/** הסיבה ביומן, מהחריגה: סוג (תקרה / שגיאת ספק / קצב) והודעת הספק — בלי המפתח (ההודעות כבר נקיות, ts_provider_call) */
+function ts_fetch_reason(Throwable $e): string
+{
+    $kind = match (true) {
+        $e instanceof TsCapError => 'תקרה',
+        $e instanceof TsRateError => 'קצב הספק',
+        $e instanceof TsProviderError => 'שגיאת ספק',
+        $e instanceof TsInvalid => 'אין גישה',
+        default => 'שגיאה',
+    };
+    return mb_substr("$kind: " . $e->getMessage(), 0, 300);
+}
+
+function ts_fetch_log(int $uid, string $provider, string $symbol, string $tf, string $scope, int $from, int $to, int $calls, int $fetched, int $served, int $now, ?string $reason = null): void
 {
     if (ts_fetch_as_system()) return;
     try {
         $c = ts_cache();
-        $c->prepare('INSERT INTO fetch_log (at, user_id, provider, symbol, tf, kind, from_t, to_t, provider_calls, provider_candles, served)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$now, $uid, $provider, $symbol, $tf, ts_scope_kind($scope), $from, $to, $calls, $fetched, $served]);
+        $c->prepare('INSERT INTO fetch_log (at, user_id, provider, symbol, tf, kind, from_t, to_t, provider_calls, provider_candles, served, reason)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$now, $uid, $provider, $symbol, $tf, ts_scope_kind($scope), $from, $to, $calls, $fetched, $served, $reason]);
         $id = (int)$c->lastInsertId();
         if ($id % 100 === 0) $c->prepare('DELETE FROM fetch_log WHERE id <= ?')->execute([$id - TS_FETCH_LOG_MAX]);
     } catch (Throwable $e) {
@@ -724,6 +744,7 @@ function ts_fetch_log_recent(int $limit = 100): array
         'at' => (int)$r['at'], 'user' => $names[(int)$r['user_id']] ?? '', 'asset' => $r['provider'] . ':' . $r['symbol'],
         'provider' => $r['provider'], 'tf' => $r['tf'], 'kind' => $r['kind'], 'from' => (int)$r['from_t'], 'to' => (int)$r['to_t'],
         'provider_calls' => (int)$r['provider_calls'], 'provider_candles' => (int)$r['provider_candles'], 'served' => (int)$r['served'],
+        'reason' => $r['reason'] ?? null,
     ], $rows);
 }
 

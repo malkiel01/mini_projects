@@ -90,6 +90,23 @@ unlink("$tmp.fail");
 [$c, $r8] = call('alice', 'chart_refresh', null, $q($N3) + ['methods' => ''], $N3 + 400);
 eq([$c, $r8['notice'] ?? null, end($r8['candles'])['t'] ?? null], [200, null, gmmktime(9, 0, 0, 11, 16, 2026)], 'the provider is back → the tail fills in (up to the open 09:00 candle), no notice');
 
+// ── 6. יומן בקשות הנרות — הסיבה (בקרה): בקשה שנכשלה נרשמת, עם הסיבה; 0 נרות בלי שגיאה — "אין נתונים"; בקשה תקינה — בלי סיבה ──
+$cache = new PDO('sqlite:' . "$tmp.sqlite.cache");
+$why = fn(string $sym) => $cache->query("SELECT reason, served FROM fetch_log WHERE symbol = " . $cache->quote($sym) . ' ORDER BY id')->fetchAll(PDO::FETCH_NUM);
+$plan = $why('PLANX/USD');
+eq([count($plan), (int)($plan[0][1] ?? -1), str_starts_with((string)($plan[0][0] ?? ''), 'שגיאת ספק: Twelve Data: הסימבול לא זמין בתוכנית')], [1, 0, true],
+    'fetch_log: a failed request is logged, with the reason ("שגיאת ספק: … הסימבול לא זמין בתוכנית") — before, it left no row at all');
+eq(str_contains((string)($plan[0][0] ?? ''), 'good-Alice'), false, '… without the key');
+$eur = $why('EUR/USD');
+eq(str_starts_with((string)(end($eur)[0] ?? ''), 'שגיאת ספק: Twelve Data: שגיאה מהספק — Internal error'), true, '… a provider error with nothing in the pool — its message');
+$xag = $why('XAG/USD');
+$reasons = array_column($xag, 0);
+eq([in_array('אין נתונים בטווח (שוק סגור או לפני שהנכס נסחר)', $reasons, true), isset($xag[0]) && $xag[0][0] === null], [true, true],
+    '… 0 candles without an error → "אין נתונים בטווח"; a normal request → no reason');
+eq(count(array_filter($reasons, fn($r) => is_string($r) && str_contains($r, 'Internal error'))) >= 1, true, '… served from the pool after a provider error → the error is the reason');
+$admin = call('alice', 'admin_state');
+eq($admin[0], 403, 'the log screen is for editors only (403 for a user)');
+
 $err = array_values(array_filter(explode("\n", is_file("$tmp.error.log") ? (string)file_get_contents("$tmp.error.log") : ''),
     fn($l) => trim($l) !== '' && !str_contains($l, ' in Unknown on line 0')));
 eq($err, [], 'no PHP errors on the server');
