@@ -1,0 +1,64 @@
+/* דף אחיזה עד שהאפיון מאושר. העיצוב המלא ייכנס בשלב 1, לפי phone-first-design. */
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --text: #1c2330;
+  --muted: #5e6878;
+  --accent: #1f6f5f;
+  --border: #e3e6ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161c;
+    --card: #1b2129;
+    --text: #e8ebef;
+    --muted: #9aa4b1;
+    --accent: #5fc3a8;
+    --border: #2a323d;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  line-height: 1.5;
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.hold {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 20px;
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+}
+.hold__icon { width: 72px; height: 72px; }
+.hold h1 { font-size: 1.5rem; margin: 12px 0 4px; }
+.hold__lead { margin: 0 0 12px; color: var(--muted); }
+.hold__state {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.hold__disclaimer {
+  font-size: 0.85rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin: 0 0 16px;
+}
+.hold__back {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
