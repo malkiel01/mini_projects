@@ -115,19 +115,66 @@ const Inbox = (() => {
     return h('li', {}, det);
   }
 
-  // ── הגדרות התיבה: נמענים למייל, "מחק פניות ישנות" ──────
+  // ── הגדרות התיבה: האבחון, המייל על משוב חדש (בעל העמוד ומעלה), "מחק פניות ישנות" ──────
+  // הטקסט מהשרת: תאריכים (ISO) ← when(); כתובות מייל — מבודדות (FSI/PDI), כדי שלא יתערבבו בעברית
+  const nice = t => String(t).replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g, m => when(m)).replace(/[^\s()]+@[^\s(),]+/g, m => '\u2068' + m + '\u2069');
+  const checkRow = (ok, name, text) => h('li', { class: ok === true ? 'ok' : ok === false ? 'bad' : 'wait' },
+    h('span', { class: 'dev-light' }, ok === true ? '✅' : ok === false ? '❌' : '⏳'), h('div', {}, h('b', {}, name), h('p', { dir: 'auto' }, nice(text))));
+
   function settings(d, host) {
     const can = d.can_delete;
-    const boxes = d.settings.candidates.map(c => h('label', { class: 'ib-check' },
-      h('input', { type: 'checkbox', value: c.email, checked: d.settings.to.includes(c.email), disabled: !can }), ' ', `${c.name} · `, h('span', { dir: 'ltr' }, c.email)));
+    const S = d.settings;
+    const diag = h('ul', { class: 'dev-checks', id: 'ib-diag', 'aria-live': 'polite' });
+    const paintDiag = rows => {
+      diag.replaceChildren(...rows.map(r => checkRow(r.ok, r.title, r.text)));
+      probeRows(S.endpoint).then(p => diag.prepend(...p));
+    };
     const date = h('input', { type: 'date', 'aria-label': 'מחק פניות מלפני', value: new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10) });
+    let mail = null;
+    if (S.can_mail) {
+      const to = h('textarea', { id: 'ib-mail-to', rows: 3, dir: 'ltr', 'aria-label': 'נמענים', placeholder: 'name@example.com' }, S.to.join('\n'));
+      const chips = S.candidates.filter(c => !S.to.includes(c.email)).map(c => h('button', { type: 'button', class: 'btn ghost sm', onclick: () => {
+        const cur = to.value.split(/[\s,;]+/).filter(Boolean);
+        if (!cur.includes(c.email)) to.value = [...cur, c.email].join('\n');
+      } }, `＋ ${c.name}`));
+      const from = h('input', { id: 'ib-mail-from', type: 'email', dir: 'ltr', value: S.from, placeholder: S.from_default, 'aria-label': 'כתובת השולח' });
+      const on = h('input', { id: 'ib-mail-on', type: 'checkbox', checked: S.mail_on });
+      const testTo = h('input', { id: 'ib-mail-test-to', type: 'email', dir: 'ltr', value: S.to[0] || state.user.email || '', 'aria-label': 'לאן לשלוח את מייל הבדיקה' });
+      const out = h('p', { class: 'hint', id: 'ib-mail-out', 'aria-live': 'polite' });
+      const body = () => ({ to: to.value, from: from.value.trim() });
+      on.addEventListener('change', async () => {
+        try { const r = await api('forms_settings', { ...body(), mail_on: on.checked }); toast(on.checked ? 'המייל הודלק' : 'המייל כובה'); paintDiag(r.settings.diag); }
+        catch (e) { on.checked = !on.checked; toast(e.message, true); }
+      });
+      mail = [
+        h('h3', { class: 'sec-title' }, 'מייל על משוב חדש'),
+        h('p', { class: 'hint' }, `על כל פנייה נשלח מייל עם התוכן שלה — המילה, השם, המייל להשבה וההערה. "השב" במייל עונה לגולש (אם השאיר מייל). לכל היותר ${S.hour_cap} מיילים בשעה; מעבר לזה הפניות מצטברות למייל אחד.`),
+        h('label', { class: 'switch' }, on, h('span', {}, 'שלח לי מייל על משוב חדש')),
+        h('label', { class: 'ib-field' }, h('span', {}, `נמענים — כתובת בכל שורה, עד ${S.max_to}`), to),
+        chips.length ? h('div', { class: 'row-btns wrap' }, chips) : null,
+        h('label', { class: 'ib-field' }, h('span', {}, 'כתובת השולח'), from),
+        h('p', { class: 'hint' }, `ריק = ${S.from_default}. כתובת שאינה במתחם ${S.host} (למשל gmail) — שרתי הדואר זורקים בדרך כלל, גם כשהשרת "קיבל" את המייל.`),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+            try { const r = await api('forms_settings', body()); toast('נשמר'); paintDiag(r.settings.diag); } catch (e) { toast(e.message, true); }
+          } }, '💾 שמירה')),
+        h('label', { class: 'ib-field' }, h('span', {}, 'מייל בדיקה אל'), testTo),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn', onclick: async () => {
+            out.textContent = 'שולח…';
+            try {
+              const r = await api('mail_test', { to: testTo.value.trim(), from: from.value.trim() });
+              const t = r.test;
+              out.textContent = t.ok ? `✅ השרת קיבל את המייל (מ-${t.from} אל ${t.to}). אם לא הגיע תוך כמה דקות — לבדוק בספאם.` : `❌ השליחה נכשלה: ${t.error || ''}`;
+              paintDiag(r.settings.diag);
+            } catch (e) { out.textContent = ''; toast(e.message, true); }
+          } }, '✉️ שלח מייל בדיקה')),
+        out];
+    }
     sheet('⚙️ הגדרות התיבה',
-      h('h3', { class: 'sec-title' }, 'מייל על פניות חדשות'),
-      h('p', { class: 'hint' }, d.settings.mail_on ? 'המייל דולק. נשלח תקציר בלבד ("3 פניות חדשות בטופס …") — בלי תוכן הפנייה, לכל היותר פעם ב-15 דקות.' : 'המייל כבוי (מדליקים במסך המפתח, אחרי מייל בדיקה שהגיע). המונה בלשונית עובד תמיד.'),
-      boxes.length ? h('div', { class: 'ib-checks' }, boxes) : h('p', { class: 'hint' }, 'אין חברים עם מייל.'),
-      can ? h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-        try { await api('forms_settings', { to: boxes.map(b => b.querySelector('input')).filter(i => i.checked).map(i => i.value) }); toast('נשמר'); $('#sheet').close(); view(host); } catch (e) { toast(e.message, true); }
-      } }, 'שמירת הנמענים') : h('p', { class: 'hint' }, 'שינוי הנמענים — מפרסם ומעלה.'),
+      h('h3', { class: 'sec-title' }, 'מצב — מהכפתור בעמוד ועד המייל'),
+      diag,
+      mail || h('p', { class: 'hint' }, `המייל על משוב חדש: ${S.mail_on ? 'דולק · ' + S.to.length + ' נמענים' : 'כבוי'}. שינוי — בעל העמוד ומעלה.`),
       can ? [h('h3', { class: 'sec-title' }, 'מחק פניות ישנות'),
         h('p', { class: 'hint' }, 'כל הפניות מלפני התאריך עוברות לסל כאצווה אחת — ואפשר לשחזר את כולן יחד מ-↩️ שחזור.'),
         h('div', { class: 'toolbar' }, date, h('button', { type: 'button', class: 'btn ghost danger', onclick: async () => {
@@ -139,6 +186,7 @@ const Inbox = (() => {
             toast(`${r.deleted} פניות הועברו לסל`); $('#sheet').close(); view(host);
           } catch (e) { toast(e.message, true); }
         } }, '🗑️ מחק ישנות'))] : null);
+    paintDiag(S.diag);
   }
 
   // ── מסך המפתח: 📬 טפסים ─────────────────────────────────
@@ -147,7 +195,7 @@ const Inbox = (() => {
     let d;
     try { d = await api('dev-forms'); } catch (e) { el.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
     const m = d.mail;
-    const from = h('input', { type: 'email', dir: 'ltr', value: m.from, placeholder: 'kol@example.com', 'aria-label': 'כתובת השולח' });
+    const from = h('input', { type: 'email', dir: 'ltr', value: m.from, placeholder: m.from_effective || '', 'aria-label': 'כתובת השולח' });
     const to = h('input', { type: 'email', dir: 'ltr', value: state.user.email || '', placeholder: 'לאן לשלוח את הבדיקה', 'aria-label': 'נמען הבדיקה' });
     const testOut = h('p', { class: 'hint', id: 'ib-mail-test' }, m.last_test ? `בדיקה אחרונה: ${m.last_test.ok ? '✅ true' : '❌ false'} · ${m.last_test.to} · ${when(m.last_test.at)}${m.last_test.error ? ' · ' + m.last_test.error : ''}` : 'עוד לא נשלח מייל בדיקה.');
     const lim = d.limits.map(l => h('label', { class: 'ib-limit' }, h('span', {}, l.label), h('input', { type: 'number', min: l.min, max: l.max, value: l.value, 'data-k': l.id, 'aria-label': l.label }),
@@ -167,7 +215,7 @@ const Inbox = (() => {
       h('h3', { class: 'sec-title' }, 'בדיקת תקינות'),
       health,
       h('h3', { class: 'sec-title' }, 'מייל'),
-      h('p', { class: 'hint' }, 'קודם "שלח מייל בדיקה" (mail() של השרת). רק אחרי שהמייל הגיע — מדליקים. 3 כישלונות ברצף — כבוי אוטומטית.'),
+      h('p', { class: 'hint' }, 'המייל על משוב חדש — בעל העמוד מגדיר אותו ב-📬 פניות ← ⚙️ הגדרות התיבה (נמענים, מפסק, מייל בדיקה). כאן — אותו מפסק. 3 כישלונות ברצף — כבוי אוטומטית.'),
       h('div', { class: 'toolbar' }, from), h('div', { class: 'toolbar' }, to),
       h('div', { class: 'row-btns wrap' },
         h('button', { type: 'button', class: 'btn', onclick: async () => {
@@ -188,21 +236,25 @@ const Inbox = (() => {
     probe(health, d.endpoint);
   }
 
-  /** OPTIONS מחזיר את כותרות ה-CORS; POST בלי טופס רשום ← invalid. מהדפדפן, בלי עוגייה. */
-  async function probe(ul, url) {
-    const row = (ok, name, text) => h('li', { class: ok ? 'ok' : 'bad' }, h('span', { class: 'dev-light' }, ok ? '✅' : '❌'), h('div', {}, h('b', {}, name), h('p', { dir: 'auto' }, text)));
+  /** הבדיקה מהדפדפן, בלי עוגייה — כמו שהעמוד באתר פונה: OPTIONS מחזיר את כותרות ה-CORS; POST בלי טופס רשום ← invalid. */
+  async function probeRows(url) {
     const rows = [];
-    try {
-      const o = await fetch(url, { method: 'OPTIONS', credentials: 'omit' });
-      const acao = o.headers.get('access-control-allow-origin');
-      rows.push(row(o.status === 204 && acao === '*', 'OPTIONS form.php', `${o.status} · Access-Control-Allow-Origin: ${acao ?? '—'}`));
-    } catch (e) { rows.push(row(false, 'OPTIONS form.php', e.message + ' — אם זה דף כניסה: form.php אינו ב-"public" של app.json')); }
     try {
       const fd = new FormData(); fd.set('_form', '__health__'); fd.set('_t', '9999');
       const p = await fetch(url, { method: 'POST', body: fd, credentials: 'omit' });
       const j = await p.json();
-      rows.push(row(j.ok === false && j.reason === 'invalid', 'POST בלי טופס רשום', `${p.status} · ${JSON.stringify(j)}`));
-    } catch (e) { rows.push(row(false, 'POST בלי טופס רשום', e.message)); }
+      rows.push(checkRow(j.ok === false && j.reason === 'invalid', 'form.php עונה לעמוד (מהדפדפן, בלי עוגייה)', `${p.status} · ${JSON.stringify(j)} · Access-Control-Allow-Origin: ${p.headers.get('access-control-allow-origin') ?? '—'}`));
+    } catch (e) { rows.push(checkRow(false, 'form.php עונה לעמוד (מהדפדפן, בלי עוגייה)', e.message + ' — אם זה דף כניסה: form.php אינו ב-"public" של app.json')); }
+    return rows;
+  }
+  async function probe(ul, url) {
+    const rows = [];
+    try {
+      const o = await fetch(url, { method: 'OPTIONS', credentials: 'omit' });
+      const acao = o.headers.get('access-control-allow-origin');
+      rows.push(checkRow(o.status === 204 && acao === '*', 'OPTIONS form.php', `${o.status} · Access-Control-Allow-Origin: ${acao ?? '—'}`));
+    } catch (e) { rows.push(checkRow(false, 'OPTIONS form.php', e.message + ' — אם זה דף כניסה: form.php אינו ב-"public" של app.json')); }
+    rows.push(...await probeRows(url));
     ul.replaceChildren(...rows);
   }
 
