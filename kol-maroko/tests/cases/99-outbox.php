@@ -73,7 +73,7 @@ test('M7 שורת החיבור: kol-maroko:2:<kid>:<מפתח>:<כתובת>:<אס
     eq(hash('sha256', $tok2), setting('pull_token_hash'));
     $all = json_encode(db()->query('SELECT * FROM settings')->fetchAll()) . json_encode(db()->query('SELECT * FROM audit')->fetchAll());
     ok(!str_contains($all, $tok2), 'האסימון עצמו אינו במסד');
-    $s = m1_get('publish_settings', '', U_SITE)['json'];
+    $s = m1_get('site_settings', '', U_SITE)['json'];
     ok(!str_contains(json_encode($s), $tok2), 'ולא בהגדרות');
     eq(['pull', true], [$s['channel'], $s['token_at'] !== null]);
     m7_done();
@@ -88,7 +88,7 @@ test('M7 H24: pull.php בלי אסימון / שגוי / ישן אחרי "החל�
     $new = substr(strrchr(m1_post('pull_line', [], U_SITE)['json']['line'], ':'), 1);
     eq(401, m7_pull('after=0', $old)['status'], 'הישן אחרי החלפה');
     eq($bad0 + 4, (int)json_decode((string)setting('pull_bad'), true)['count'], 'נספר');
-    eq($bad0 + 4, (int)m1_get('publish_settings', '', U_SITE)['json']['bad']['count'], 'במסך');
+    eq($bad0 + 4, (int)m1_get('site_settings', '', U_SITE)['json']['bad']['count'], 'במסך');
     $r = m7_pull('after=0', $new);
     eq(200, $r['status'], $r['body']);
     eq(200, m7_pull('after=0', $new, 'GET', null, [], 'x')['status'], 'X-Kol-Pull-Token (כשהשרת מסיר Authorization)');
@@ -167,20 +167,22 @@ test('M7 H25: blob של sha256 שאינו במניפסט שבתור — 404; ש�
     m7_done();
 });
 
-test('M7 H26: "דולק ← כבוי ← דולק" בזמן שהאתר לא משך — רק האחרונה מוגשת; שתי הקודמות superseded', function () {
+// M6b: switch (1.x) הוסר מהתור; אותו כלל ההחלפה נבדק על פקודה שנשארה — אופן ההצבה
+test('M7 H26: "framed ← full ← framed" בזמן שהאתר לא משך — רק האחרונה מוגשת; שתי הקודמות superseded', function () {
     $tok = m7_ready();
     $seqs = [];
-    foreach ([true, false, true] as $on) {
-        $r = m1_post('site_switch', ['enabled' => $on], U_PUBLISHER);
+    foreach (['framed', 'full', 'framed'] as $m) {
+        $r = m1_post('mount_set', ['mount' => $m], U_SITE);
         eq(200, $r['status'], $r['body']);
-        $seqs[] = $r['json']['site']['seq'];
+        $seqs[] = $r['json']['seq'];
     }
     eq(['superseded', 'superseded', 'queued'], array_map(fn($s) => m7_row($s)['state'], $seqs));
-    eq(86400, (int)m7_row($seqs[2])['expires'] - strtotime(m7_row($seqs[2])['created_at']), 'switch — 24 שעות');
-    $items = array_values(array_filter(m7_pull('after=0', $tok)['json']['items'], fn($i) => $i['action'] === 'switch'));
+    eq(86400, (int)m7_row($seqs[2])['expires'] - strtotime(m7_row($seqs[2])['created_at']), 'mount — 24 שעות');
+    $items = array_values(array_filter(m7_pull('after=0', $tok)['json']['items'], fn($i) => $i['action'] === 'mount'));
     eq([$seqs[2]], array_column($items, 'seq'));
-    eq(true, json_decode(base64_decode($items[0]['body']), true)['enabled']);
-    ok(str_contains((string)db()->query("SELECT detail FROM audit WHERE action = 'site_switch' ORDER BY id DESC")->fetchColumn(), 'בתור'), 'ביומן: בתור');
+    eq('framed', json_decode(base64_decode($items[0]['body']), true)['mount']);
+    ok(str_contains((string)db()->query("SELECT detail FROM audit WHERE action = 'mount_set' ORDER BY id DESC")->fetchColumn(), 'בתור'), 'ביומן: בתור');
+    eq(404, m1_post('site_switch', ['enabled' => true], U_PUBLISHER)['status'], 'M6b: site_switch — אין');
     m7_done();
 });
 
@@ -264,14 +266,14 @@ test('M7 הדופק: לא משך מעולם — אדום; לפני 3 דקות �
 
 test('M7 גיבוי ששוחזר: האתר כבר החיל seq גבוה משלנו — המונה קופץ מעליו, ומה שממתין נחתם מחדש במספר חדש', function () {
     $tok = m7_ready();
-    $r = m1_post('site_switch', ['enabled' => false], U_PUBLISHER);
-    $seq = $r['json']['site']['seq'];
+    $r = m1_post('mount_set', ['mount' => 'full'], U_SITE);                // M6b: לשעבר site_switch (הוסר)
+    $seq = $r['json']['seq'];
     $after = $seq + 1000;
     $items = m7_pull("after=$after", $tok)['json']['items'];
     eq(1, count($items), json_encode($items));
     ok($items[0]['seq'] > $after, 'מספר חדש מעל מה שהאתר החיל');
     eq('superseded', m7_row($seq)['state']);
-    eq(false, json_decode(base64_decode($items[0]['body']), true)['enabled'], 'אותה פקודה');
+    eq('full', json_decode(base64_decode($items[0]['body']), true)['mount'], 'אותה פקודה');
     m7_done();
 });
 

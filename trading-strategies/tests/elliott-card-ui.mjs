@@ -29,6 +29,7 @@ async function open(as) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true });
   await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }]);
   await ctx.setExtraHTTPHeaders({ 'X-Dev-Now': String(NOW) });   // "עכשיו" קבוע לשרת — אותם נרות בכל ריצה
+  await ctx.clock.setFixedTime(NOW * 1000);   // ואותו "עכשיו" בדפדפן — הגרף מבקש chart_refresh, שהשרת עונה בו לפי X-Dev-Now (18.3)
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message));
@@ -51,11 +52,11 @@ const canvasPrint = p => p.evaluate(() => [...document.querySelectorAll('.chart-
 try {
   const { p: o } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   // ניהול: הפרמטרים מסומנים
   await o.goto(BASE + '#/admin');
   await o.getByRole('tab', { name: '🧪 שיטות' }).click();
-  await o.waitForSelector('text=גלי אליוט — כניסה לגל 3');
+  await o.waitForSelector('text=אליוט');
   const adminText = await o.locator('main').textContent();
   eq([/יעד גל 3 \(× גל 1\) \(1–2\.618\) · לפי הספר/.test(adminText), /עומק גל 2 — מינימום \(0\.236–0\.618\) · הגדרה שלנו/.test(adminText)], [true, true], 'admin: each parameter marked "by the book" / "our definition" (ז0)');
   eq(await post(o, 'admin_method_save', { id: 'elliott-w3', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] }), 200, 'the admin turns elliott-w3 on');
@@ -63,14 +64,18 @@ try {
 
   const { p: a } = await open('alice');
   await a.goto(BASE + '#/market');
-  await a.waitForSelector('main');
+  await a.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
-  await a.goto(BASE + '#/analysis/' + encodeURIComponent('binance:BTCUSDT'));
-  await a.getByRole('button', { name: '🧭 נתח' }).waitFor();
-  await a.locator('fieldset[aria-label="מסגרת זמן"] label', { hasText: 'שעה' }).first().click();
-  await a.getByRole('button', { name: '🧭 נתח' }).click();
+  // S4 (18.4): הכרטיס בפס שמתחת לגרף — שיטה אחת מסומנת, מסגרת h1
+  await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
+  await a.waitForSelector('main .chart-box');
+  await a.evaluate(([m, t]) => { localStorage.setItem('ts-forecast-methods', JSON.stringify([{ id: m, color: '--brand' }]));
+    sessionStorage.setItem('ts-chart:binance:BTCUSDT', JSON.stringify({ tf: t })); }, ['elliott-w3', 'h1']);
+  await a.reload();
+  // הבדיקה לאחור רצה מעצמה (פעולה של המשתמש — פתיחת הגרף), והכרטיס מתחלף בתוצאה שלה
+  await a.waitForFunction(() => { const s = document.querySelector('.analysis-card .an-sec.prob');
+    return s && !/מריץ בדיקה לאחור/.test(s.textContent) && /ודאות|לא נבדק לאחור/.test(s.textContent) && document.querySelector('.analysis-card .verdict'); }, null, { timeout: 120000 });
   const card = a.locator('.analysis-card').first();
-  await card.waitFor({ timeout: 90000 });
   const text = await card.textContent();
   eq(/שיטה שלנו על בסיס כללי הספר \(Frost & Prechter\)/.test(text), true, 'card: "our method based on the book" (ז0)');
   eq([await card.locator('.manual-conds li').count(), /🔎 בדוק בעצמך/.test(text), /לא נבדק במחשב/.test(text)], [4, true, true], 'card: four "check yourself" items, apart from the computed conditions (ז)');

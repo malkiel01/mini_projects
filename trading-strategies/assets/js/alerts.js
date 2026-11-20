@@ -1,16 +1,16 @@
 // לשונית "התראות" — spec-stage-a פרק 8. התיבה, ההתראות שלי, ופוש.
 // הבדיקה עצמה רצה רק ב-cron בשרת. כאן — בלי polling ובלי טיימרים: פנייה לשרת רק מפעולה של המשתמש (פתיחת המסך,
 // שמירה, השהיה, מחיקה). פוש — Service Worker (sw.js) שמושך את ההודעה מהתיבה רק כשמגיע פוש.
+import { assetField } from './combobox.js';
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const SIDES = [['long', 'לונג'], ['short', 'שורט'], ['both', 'שניהם']];
 const KINDS = [['price', 'מחיר חצה רמה'], ['method', 'שיטה'], ['blend', 'שקלול']];
 const STATUS = { active: ['ok', 'פעילה'], paused: ['warn', 'מושהית'], expired: ['', 'פגה'] };
 
 export function mountAlerts(ctx) {
-  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, sep } = ctx;
+  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, sep, pairLabel, withVs, assetPicker } = ctx;
   const ME = () => ctx.me();
   const when = t => { try { return new Date(t * 1000).toLocaleString('he-IL', { timeZone: ME().user.timezone, day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
-  const sym = a => a.slice(a.indexOf(':') + 1);
   const setBadge = n => {
     const el = document.querySelector('.bottom-nav a[data-tab="alerts"] .badge');
     if (el) { el.textContent = n ? String(n) : ''; el.hidden = !n; }
@@ -37,7 +37,7 @@ export function mountAlerts(ctx) {
       inbox.events.length ? h('ul', { class: 'list' }, inbox.events.map(e => h('li', {},
         h('a', { class: 'use-row' + (e.read ? '' : ' unread'), href: e.payload.link || '#/alerts', on: { click: () => { if (!e.read) api('inbox_read', { ids: [e.id] }).catch(() => {}); } } },
           h('span', { class: 'use-ic', 'aria-hidden': 'true' }, e.payload.kind === 'price' ? '📏' : '🧭'),
-          h('span', { class: 'use-tx' }, h('b', {}, e.payload.title), h('small', { class: 'wrap' }, e.payload.body),
+          h('span', { class: 'use-tx' }, h('b', {}, withVs(e.payload.title)), h('small', { class: 'wrap' }, withVs(e.payload.body)),
             h('small', {}, when(e.fired_at), e.delivered.push === 'quiet' ? ' · בשעות השקטות — בלי פוש' : '')),
           h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))))
         : h('p', { class: 'empty' }, 'אין עדיין הודעות. כשתנאי של התראה מתקיים — ההודעה תופיע כאן.'));
@@ -47,14 +47,16 @@ export function mountAlerts(ctx) {
         h('span', { class: 'muted' }, `${alerts.filter(a => a.status !== 'expired').length} מתוך ${per_user}`)),
       pushBlock(push_devices),
       alerts.length ? h('ul', { class: 'list' }, alerts.map(a => {
-        const [cls, label] = STATUS[a.status];
+        const [cls, st] = STATUS[a.status];
+        // שיטה שהוסרה (21.1) — מושהית, ואי אפשר להפעיל מחדש
+        const label = a.method_removed && a.status === 'paused' ? st + ' — השיטה הוסרה' : st;
         return h('li', { class: 'card', style: 'cursor:default;flex-wrap:wrap' },
-          h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', { class: 'num' }, sym(a.asset)), h('span', { class: 't' }, TF_LABEL[a.tf])),
+          h('div', { class: 'body' }, h('div', { class: 'l1' }, pairLabel(a), h('span', { class: 't' }, TF_LABEL[a.tf])),
             h('div', { class: 'l2 wrap' }, describe(a, methods)),
             h('div', { style: 'margin-top:4px' }, h('span', { class: 'chip ' + cls }, label), ' ',
               h('small', { class: 'muted' }, a.status === 'expired' ? '' : 'עד ' + when(a.expires_at), a.last_fired_at ? [sep(), 'נשלחה ' + when(a.last_fired_at)] : null))),
           h('div', { class: 'row-btns' },
-            a.status === 'expired' ? null : h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+            a.status === 'expired' || a.method_removed ? null : h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
               try { await api('alert_status', { id: a.id, status: a.status === 'active' ? 'paused' : 'active' }); ctx.reload(); } catch (e) { toast(e.message, true); }
             } } }, a.status === 'active' ? '⏸ השהיה' : '▶ הפעלה'),
             h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('מחיקת התראה', describe(a, methods), 'מחיקה', async () => { await api('alert_delete', { id: a.id }); ctx.reload(); }) } }, 'מחיקה')));
@@ -105,9 +107,10 @@ export function mountAlerts(ctx) {
   // ── התראה חדשה — גם מכרטיס ניתוח (pre) ──
   async function newAlert(pre = {}) {
     const [{ methods }, { watchlist }, { providers }] = await Promise.all([api('alerts'), api('watchlist'), api('market_providers')]);
-    const assets = [...new Set([...(pre.asset ? [pre.asset] : []), ...watchlist.map(w => w.asset)])];
-    if (!assets.length) { toast('בחרו קודם נכס ב"שוק" או הוסיפו נכס למעקב', true); return; }
-    const assetSel = select('asset', assets.map(a => [a, '⁦' + sym(a) + '⁩ · ' + (providers.find(p => p.id === a.split(':')[0])?.name || '')]), pre.asset || assets[0], { 'aria-label': 'נכס' });
+    // הנכס — מרשימה (combobox, 18.1.3), לא טקסט חופשי. ההתחלה: מהכרטיס, או הראשון במועדפים
+    const first = pre.asset || watchlist[0]?.asset || null;
+    const { labels } = first ? await api('pair_labels', null, { assets: first }) : { labels: {} };
+    const assetSel = assetField(ctx, { value: first, labels, recent: () => watchlist });
     const tfBox = h('div');
     const level = numInput('level', pre.level || '', 'למשל 65000');
     const days = h('input', { type: 'number', min: 1, max: 90, value: 30, inputmode: 'numeric', dir: 'ltr' });
@@ -118,13 +121,14 @@ export function mountAlerts(ctx) {
     }));
     let kind = methods.length ? (pre.kind || 'price') : 'price';
     const kindBox = h('div');
-    const tfs = () => (providers.find(p => p.id === assetSel.value.split(':')[0])?.tfs || []);
+    const tfs = () => (providers.find(p => p.id === (assetSel.value || '').split(':')[0])?.tfs || []);
     const drawTf = () => { tfBox.replaceChildren(select('tf', tfs().map(t => [t, TF_LABEL[t]]), tfs().includes(pre.tf) ? pre.tf : (tfs().includes('h1') ? 'h1' : tfs()[0]), { 'aria-label': 'מסגרת זמן' })); };
     const drawKind = () => kindBox.replaceChildren(
       kind === 'price' ? field('רמת מחיר', level, true) : kind === 'method' ? field('שיטה', methodSel, true) : h('div', { class: 'f wide' }, h('span', {}, 'שיטות (2 לפחות)'), blendBox));
     assetSel.addEventListener('change', drawTf);
     drawTf(); drawKind();
     const sh = sheet('התראה חדשה', { saveLabel: 'שמירה', onSave: async () => {
+      if (!assetSel.value) throw new Error('בחרו נכס מהרשימה');
       const body = { asset: assetSel.value, tf: tfBox.querySelector('select').value, side: segVal(sh.body, 'side'), kind, days: +days.value };
       if (kind === 'price') body.level = level.value.trim();
       if (kind === 'method') body.method_id = methodSel.value;
@@ -135,7 +139,7 @@ export function mountAlerts(ctx) {
       if (location.hash.startsWith('#/alerts')) ctx.reload(); else location.hash = '#/alerts';
     } });
     sh.body.append(
-      h('div', { class: 'fields two' }, field('נכס', assetSel, true), h('label', { class: 'f' }, h('span', {}, 'מסגרת זמן'), tfBox), field('תוקף (ימים)', days)),
+      h('div', { class: 'fields two' }, h('div', { class: 'f wide' }, h('span', {}, 'נכס'), assetSel), h('label', { class: 'f' }, h('span', {}, 'מסגרת זמן'), tfBox), field('תוקף (ימים)', days)),
       h('div', { class: 'f' }, h('span', {}, 'כיוון'), seg('side', SIDES, pre.side || 'both', { grid: 3, label: 'כיוון' })),
       methods.length ? h('div', { class: 'f' }, h('span', {}, 'תנאי'), seg('kind', KINDS, kind, { grid: 3, label: 'תנאי', onChange: v => { kind = v; drawKind(); } }))
         : h('p', { class: 'hint' }, 'אין עדיין שיטות שמותרות בהתראות — רק התראת מחיר.'),

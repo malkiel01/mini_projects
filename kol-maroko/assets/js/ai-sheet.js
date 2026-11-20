@@ -16,7 +16,7 @@ const AiSheet = (() => {
       ctx.range ? h('span', { class: 'chip' }, `שורות ${ctx.range.from}–${ctx.range.to}`) : null,
       ctx.element ? h('span', { class: 'chip', dir: 'ltr' }, ctx.element.element) : null);
     sheet(ctx.title || '✨ עוזר הבינה', chips, prompt,
-      h('div', { class: 'row-btns' }, go, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'סגירה')), out);
+      h('div', { class: 'row-btns' }, go, chatBtn(), h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'סגירה')), out);
     setTimeout(() => prompt.focus(), 50);
     prompt.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) go.click(); });
     go.onclick = async () => {
@@ -29,6 +29,16 @@ const AiSheet = (() => {
       } catch (e) { out.replaceChildren(h('p', { class: 'error', role: 'alert', 'data-ai-error': true }, e.message)); }
       go.disabled = false;
     };
+  }
+
+  /** M6: "🤖 עבודה מצ'אט" — עבר לכאן מהסטודיו הישן (aiSheet). agent.js נטען רק בלחיצה. */
+  function chatBtn() {
+    return h('button', { type: 'button', class: 'btn ghost', 'data-ai-chat': true, onclick: async () => {
+      try {
+        if (typeof Agent === 'undefined') await new Promise((ok, fail) => document.head.append(h('script', { src: 'assets/js/agent.js', onload: ok, onerror: () => fail(new Error('agent.js לא נטען')) })));
+        Agent.sheet();
+      } catch (e) { toast(e.message, true); }
+    } }, '🤖 עבודה מצ\'אט');
   }
 
   /** ההצעה: סיכום, מה לא הוחל ולמה, ולכל קובץ — סימון לכל עריכה ו-diff. */

@@ -19,7 +19,7 @@ define('KOL_DATA_DIR', $TMP . '/data');
 define('KOL_ROOT', dirname(__DIR__));
 if (realpath(KOL_DATA_DIR) === realpath(KOL_ROOT . '/data')) exit("הבדיקות לא רצות על data/\n");
 
-foreach (['members', 'import', 'ai', 'agent', 'dev'] as $lib) require_once KOL_ROOT . "/lib/$lib.php";
+foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev'] as $lib) require_once KOL_ROOT . "/lib/$lib.php";
 
 final class TestFail extends Exception {}
 $TESTS = [];

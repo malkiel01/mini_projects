@@ -8,6 +8,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/pdo.php';
+
 function ts_db_path(): string
 {
     return defined('TS_DB_PATH') ? TS_DB_PATH : dirname(__DIR__) . '/data/app.sqlite';
@@ -17,14 +19,8 @@ function ts_db(): PDO
 {
     static $db = null;
     if ($db) return $db;
-    $path = ts_db_path();
-    if (!is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
-    $db = new PDO('sqlite:' . $path, null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        PDO::ATTR_STRINGIFY_FETCHES => false,
-    ]);
-    $db->exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;');
+    $db = ts_sqlite_open(ts_db_path(), [PDO::ATTR_STRINGIFY_FETCHES => false]);   // סוגר סמן אחרי שורה אחת (lib/pdo.php)
+    $db->exec('PRAGMA foreign_keys = ON;');
     ts_migrate($db);
     return $db;
 }
@@ -139,7 +135,7 @@ function ts_migrate(PDO $db): void
         // שלב א' (spec-stage-a.md): מנהלים, ספקי נתונים, מעקב, תקרות. הנרות — במסד נפרד (lib/cache.php)
         $db->exec(<<<'SQL'
             BEGIN;
-            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן
+            -- מנהלים נוספים (1.1). המנהל הראשי — platform_admin מהשער, לא כאן. מיגרציה 18: chief / editor (פרק 24)
             CREATE TABLE app_roles (
                 user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 role TEXT NOT NULL CHECK (role IN ('admin')),
@@ -422,6 +418,325 @@ function ts_migrate(PDO $db): void
             PRAGMA user_version = 8;
             COMMIT;
             SQL);
+    }
+    if ($v < 9) {
+        // לשוניות במסך השוק (spec-stage-a 18.1.4, S1.2): עמודה חדשה, ריקה — null = ברירת המחדל. לא נוגעת בשום נתון קיים
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN market_tabs TEXT;
+            PRAGMA user_version = 9;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 10) {
+        // צבע לכל שיטה (spec-stage-a 18.5, S5): עמודה חדשה, ריקה — null = עוד לא נבחר צבע. ALTER בלבד, לא נוגעת בשום נתון קיים
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN method_colors TEXT;
+            PRAGMA user_version = 10;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 11) {
+        // יומן השיטה (spec-stage-a 18.6, S6, ✅27): טבלה חדשה בלבד — לא נוגעת בשום נתון קיים. במסד של האפליקציה ולא
+        // במאגר הנרות, כי המאגר מתרוקן ומתנקה ("ריקון הכול", ניקוי יומי) — והיומן הוא היסטוריה שלא נמחקת.
+        // רשומה אחת לכל (שיטה, גרסה, נכס, מסגרת, היקף מפתח, נר סגור, סוג) — UNIQUE, ונכתבת ב-INSERT OR IGNORE: לא משוכתבת.
+        // בלי user_id — ברמת המערכת, בלי לציין מי ביקש (✅27). cred_scope — מי רשאי לראות (✅2).
+        // outcome: NULL = עוד לא ידוע; zone / invalidated / neither — נקבע ב-cron מנרות סגורים; none — אין תרחיש לבדוק.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE method_journal (
+                id INTEGER PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                as_of INTEGER NOT NULL,
+                kind TEXT NOT NULL CHECK (kind IN ('analysis','backtest')),
+                said TEXT NOT NULL,
+                zone_lo TEXT,
+                zone_hi TEXT,
+                invalidation TEXT,
+                until_t INTEGER,
+                outcome TEXT CHECK (outcome IN ('zone','invalidated','neither','none')),
+                outcome_t INTEGER,
+                outcome_note TEXT,
+                resolved_at INTEGER,
+                created_at INTEGER NOT NULL,
+                UNIQUE (method_id, method_version, asset, tf, cred_scope, as_of, kind)
+            );
+            CREATE INDEX method_journal_pending ON method_journal(until_t) WHERE outcome IS NULL;
+            CREATE INDEX method_journal_method ON method_journal(method_id, method_version);
+            PRAGMA user_version = 11;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 12) {
+        // שכלול שיטה (spec-stage-a 18.7, S7): עמודה וטבלה חדשות בלבד — לא נוגעת בשום נתון קיים.
+        // methods.tune — כמה פעמים "החל" שינה פרמטר של השיטה. הגרסה של השיטה = גרסת הקוד (או ההגדרה) + tune, ולכן כל
+        // החלה מעלה את meta().version (6.7), והבדיקות לאחור והיומן (18.6) עוברים לגרסה החדשה.
+        // method_proposals — הצעת שינוי פרמטר: הערך הנוכחי, הערך המועמד, והביצועים של שניהם בתוך הדגימה ומחוצה לה
+        // (results, JSON). status: open → applied, או stale כשהגרסה או הערך זזו לפני ההחלה. לא נמחקת לעולם.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE methods ADD COLUMN tune INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE method_proposals (
+                id INTEGER PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                param TEXT NOT NULL,
+                current_value TEXT NOT NULL,
+                candidate_value TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                split_t INTEGER NOT NULL,
+                results TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','applied','stale')),
+                created_by INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                applied_by INTEGER,
+                applied_at INTEGER,
+                new_version INTEGER
+            );
+            CREATE INDEX method_proposals_method ON method_proposals(method_id, id);
+            PRAGMA user_version = 12;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 13) {
+        // DevLoop (A1, PROTOCOL 7): מי המפתח — המנהל הראשי (platform_admin מהשער). השער אומר את זה רק בבקשה עצמה, ואסימון
+        // של Claude (devapi-…) מגיע בלי משתמש — לכן נשמר כאן, ומתעדכן בכל כניסה (ts_user_for). ALTER בלבד, לא נוגעת בשום נתון.
+        // טבלאות המטלות עצמן (dev_tasks, dev_comments…) — של המודול המשותף, CREATE IF NOT EXISTS (devloop_migrate).
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN platform_admin INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 13;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 14) {
+        // A2 — מחוברת או מנותקת (spec-stage-a 20.1; lib/auth.php, lib/sso.php). ALTER ו-CREATE בלבד: לא נוגעת בשום
+        // משתמש ובשום נתון. sessions.via — מאיפה נפתח: 'gate' (השער; כל session קיים), 'sso' או 'password' (מנותקת);
+        // grant_checked_at — מתי grant_status אישר. users.password_hash — "סיסמה לאפליקציה" (NULL — אין). sso_states /
+        // sso_jti — state חד-פעמי וזהות שנוצלה. login_locks — 5 שגיאות → רבע שעה, לפי מייל ולפי IP.
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE sessions ADD COLUMN via TEXT NOT NULL DEFAULT 'gate';
+            ALTER TABLE sessions ADD COLUMN grant_checked_at INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE users ADD COLUMN password_hash TEXT;
+            ALTER TABLE users ADD COLUMN password_set_at INTEGER;
+            CREATE TABLE sso_states (
+                state_hash TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                used_at INTEGER
+            );
+            CREATE TABLE sso_jti (jti TEXT PRIMARY KEY, exp INTEGER NOT NULL);
+            CREATE TABLE login_locks (lock_key TEXT PRIMARY KEY, fails INTEGER NOT NULL, locked_until INTEGER NOT NULL);
+            CREATE INDEX users_email ON users(lower(email));
+            PRAGMA user_version = 14;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 15) {
+        // מילוי איטי ברקע (spec-stage-a 21.2, ✅30): מתי מולא כל נכס בכל היקף, ומתי נכשל (לסוף התור). והמשתמש יכול
+        // לכבות את המילוי במפתח שלו. עמודה וטבלה חדשות בלבד — לא נוגע בשום נתון קיים
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE users ADD COLUMN prefill_off INTEGER NOT NULL DEFAULT 0;
+            CREATE TABLE prefill_state (
+                provider TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                filled_at INTEGER NOT NULL DEFAULT 0,
+                failed_at INTEGER NOT NULL DEFAULT 0,
+                empty INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (provider, symbol, cred_scope)
+            );
+            PRAGMA user_version = 15;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 16) {
+        // Twelve Data — מאגר משותף (spec-stage-a 21.3 (2), ✅31): התור של המילוי במפתחות אישיים לא בשימוש יותר. רק
+        // שורות prefill_state של Twelve Data ב-u:% נמחקות; בדיקות לאחור ויומן השיטה ב-u:% — נשארים כמו שהם.
+        // users.prefill_off נשארת (לא מוחקים עמודה של מיגרציה שרצה)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            DELETE FROM prefill_state WHERE provider = 'twelvedata' AND cred_scope LIKE 'u:%';
+            PRAGMA user_version = 16;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 17) {
+        // למידה עצמית, שלב א' (spec-stage-a 23.3, L1): שורה לכל עסקה שהסתיימה — לא נמחקת ולא משתנה. CREATE / ADD בלבד.
+        // המפתח הייחודי (23.3) — חישוב חוזר לא מכפיל; trade_id = 0 כשאינה עסקה של משתמש (NULL היה נחשב שונה בכל שורה).
+        // users.learn_off — הכיבוי של עסקאות המשתמש (✅36, ל3); נקרא ב-L2, כשנכתבות שורות trade
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE method_outcomes (
+                id INTEGER PRIMARY KEY,
+                source TEXT NOT NULL CHECK (source IN ('backtest','live','trade')),
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                params_hash TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                t_signal INTEGER NOT NULL,
+                t_entry INTEGER,
+                t_exit INTEGER NOT NULL,
+                side TEXT NOT NULL CHECK (side IN ('long','short')),
+                entry TEXT,
+                stop TEXT,
+                exit_level TEXT,
+                exit TEXT,
+                result TEXT NOT NULL CHECK (result IN ('win','loss','horizon','skipped_gap')),
+                win INTEGER NOT NULL DEFAULT 0,
+                r REAL,
+                mae_r REAL,
+                mfe_r REAL,
+                atr TEXT,
+                market TEXT NOT NULL,
+                month INTEGER NOT NULL,
+                quarter INTEGER NOT NULL,
+                weekday INTEGER NOT NULL,
+                hour INTEGER,
+                holidays TEXT NOT NULL DEFAULT '[]',
+                features TEXT,
+                user_id INTEGER,
+                trade_id INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX method_outcomes_key ON method_outcomes
+                (source, method_id, method_version, params_hash, provider, asset, tf, t_signal, trade_id);
+            CREATE INDEX method_outcomes_method ON method_outcomes (method_id, method_version, source);
+            ALTER TABLE users ADD COLUMN learn_off INTEGER NOT NULL DEFAULT 0;
+            PRAGMA user_version = 17;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 18) {
+        // עורך ראשי ועורך משני (spec-stage-a 24.4, ✅38): ב-SQLite אי אפשר לשנות CHECK — לכן הטבלה נבנית מחדש, כמו
+        // backtests_v7. כל שורה עוברת: admin → editor, ואותו granted_by ו-granted_at. בטרנזקציה אחת — נכשל באמצע,
+        // הכול חוזר. העורך מהשער (platform_admin) לא שורה כאן. תפקיד אחד למשתמש (user_id — המפתח)
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE app_roles_v18 (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('chief', 'editor')),
+                granted_by INTEGER NOT NULL,
+                granted_at INTEGER NOT NULL
+            );
+            INSERT INTO app_roles_v18 (user_id, role, granted_by, granted_at)
+                SELECT user_id, CASE role WHEN 'admin' THEN 'editor' ELSE role END, granted_by, granted_at FROM app_roles
+                WHERE user_id IN (SELECT id FROM users);
+            DROP TABLE app_roles;
+            ALTER TABLE app_roles_v18 RENAME TO app_roles;
+            PRAGMA user_version = 18;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 19) {
+        // למידה, L4 (spec-stage-a 23.8א, ✅37): ממצא חריג → פריט DevLoop אחד. המפתח (שיטה, גרסה, מקור, סוג, פלח, פרמטר) → הקוד,
+        // כדי שאותו ממצא שוב יגיב בפריט הקיים ולא יפתח חדש. sig — המספרים בדיווח האחרון; total — כמה עסקאות היו אז. CREATE בלבד
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS learning_findings (
+                k TEXT PRIMARY KEY,
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                dim TEXT NOT NULL,
+                value TEXT NOT NULL,
+                code TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                sig TEXT NOT NULL,
+                total INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS learning_findings_method ON learning_findings (method_id, method_version);
+            PRAGMA user_version = 19;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 20) {
+        // למידה, L5 (spec-stage-a 23.9): ערך בתוך הטווח ← הצעת S7, גם לפלח שוק × מסגרת. ADD / CREATE בלבד.
+        // methods.seg_params — {"forex|h1": {"stop_atr": 0.6}}: ערך של פלח שהוחל; השיטה משתמשת בו כשהוא קיים, ובכללי בשאר.
+        // method_proposals.segment ('' = כללי), .origin (admin = הוזן ביד, learning = מהסטטיסטיקה), .stats (הסטטיסטיקה, רווח
+        // הסמך ו-N). learning_values — כמה שורות היו כשהסטטיסטיקה חושבה לאחרונה (הצעה כל 30 שורות חדשות לפלח)
+        // אידמפוטנטית: ADD COLUMN רק לעמודה שאין (SQLite בלי IF NOT EXISTS לעמודה; roles-api מריץ שוב מ-17)
+        // טבלה שאין בכלל (מסד בדיקה חלקי) — לא נוגעים בה
+        $has = function (string $t, string $c) use ($db): bool {
+            $cols = array_column($db->query("PRAGMA table_info($t)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+            return !$cols || in_array($c, $cols, true);
+        };
+        $add = ($has('methods', 'seg_params') ? '' : "ALTER TABLE methods ADD COLUMN seg_params TEXT NOT NULL DEFAULT '{}';\n")
+            . ($has('method_proposals', 'segment') ? '' : "ALTER TABLE method_proposals ADD COLUMN segment TEXT NOT NULL DEFAULT '';\n")
+            . ($has('method_proposals', 'origin') ? '' : "ALTER TABLE method_proposals ADD COLUMN origin TEXT NOT NULL DEFAULT 'admin';\n")
+            . ($has('method_proposals', 'stats') ? '' : "ALTER TABLE method_proposals ADD COLUMN stats TEXT;\n");
+        $db->exec("BEGIN;\n" . $add . <<<'SQL'
+            CREATE TABLE IF NOT EXISTS learning_values (
+                method_id TEXT NOT NULL,
+                method_version INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                segment TEXT NOT NULL,
+                param TEXT NOT NULL,
+                n_at INTEGER NOT NULL,
+                result TEXT NOT NULL,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, method_version, source, segment, param)
+            );
+            PRAGMA user_version = 20;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 21) {
+        // למידה, L5b (spec-stage-a 23.9, 2.37): השוואת שכנים. learning_values.detail — הפירוט של ההשוואה האחרונה (t_cut, N בכל
+        // חלק, ולכל שכן — תוחלת R בתוך הדגימה ומחוצה לה, מספר ההרצות), למסך "למידה" (23.10). ADD בלבד, אידמפוטנטית (כמו 20)
+        // learning_values.deferred — כמה פעמים ברצף ההשוואה נדחתה בגלל זמן (3 → too_big, ביקורת L5b 🟡)
+        $cols = array_column($db->query('PRAGMA table_info(learning_values)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $db->exec("BEGIN;\n" . ($cols && !in_array('detail', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN detail TEXT;\n" : '')
+            . ($cols && !in_array('deferred', $cols, true) ? "ALTER TABLE learning_values ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0;\n" : '')
+            . "PRAGMA user_version = 21;\nCOMMIT;");
+    }
+    if ($v < 22) {
+        // למידה — מקור live (23.4, L2): ההמשך של מנוע הבדיקה לאחור על נרות סגורים חדשים, בשביל אותות שקרו **אחרי** הבדיקה.
+        // שורה לכל בדיקה לאחור שמורה (אותו מפתח כמו backtests). base_t — ה-to_t של הבדיקה כשהתחלנו ממנה: עסקה שהאות שלה
+        // עד base_t שייכת לבדיקה לאחור, ולא נכתבת כ-live. גרסה או פרמטרים אחרים — מתחילים מחדש מהבדיקה העדכנית.
+        // CREATE בלבד — לא נוגע בשום נתון קיים. ב-data/app.sqlite (כבר מוחרג); אין --exclude חדש
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS learn_live (
+                method_id TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                asset TEXT NOT NULL,
+                tf TEXT NOT NULL,
+                cred_scope TEXT NOT NULL DEFAULT '',
+                method_version INTEGER NOT NULL,
+                params_hash TEXT NOT NULL,
+                base_t INTEGER NOT NULL,
+                last_t INTEGER NOT NULL,
+                state TEXT NOT NULL,
+                written INTEGER NOT NULL DEFAULT 0,
+                at INTEGER NOT NULL,
+                PRIMARY KEY (method_id, provider, asset, tf, cred_scope)
+            );
+            PRAGMA user_version = 22;
+            COMMIT;
+            SQL);
+    }
+    if ($v < 23) {
+        // H1 (18.1.8 סעיף 4): המתג "היסטוריה" — אותות העבר של השיטות על הגרף. ברירת מחדל דולק (0 = דולק). ALTER בלבד,
+        // אידמפוטנטית (כמו 20); ב-data/app.sqlite (כבר מוחרג) — אין --exclude חדש
+        $cols = array_column($db->query('PRAGMA table_info(users)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $db->exec("BEGIN;\n" . ($cols && !in_array('history_off', $cols, true) ? "ALTER TABLE users ADD COLUMN history_off INTEGER NOT NULL DEFAULT 0;\n" : '')
+            . "PRAGMA user_version = 23;\nCOMMIT;");
     }
 }
 

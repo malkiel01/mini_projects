@@ -2,7 +2,7 @@
 /**
  * M7 — משיכה במקום דחיפה (docs/spec-v2/slices/M7-pull-not-push.md).
  *
- * כל פעולה שהיום נדחפת לאתר (manifest, switch, activate, mount) נכתבת לתור יוצא חתום (site_outbox), והתוסף **יוצא** אל
+ * כל פעולה שהיום נדחפת לאתר (manifest, activate, mount; switch של 1.x — הוסר ב-M6b) נכתבת לתור יוצא חתום (site_outbox), והתוסף **יוצא** אל
  * הכלי (pull.php), מושך, מאמת בדיוק כמו בדחיפה, מחיל ומדווח. אין שום בקשה נכנסת לאתר — ולכן Cloudflare של האתר אינו בדרך.
  *
  * המעטפה — כמו site_post: {action, site, page, time, nonce, …} ועוד שני שדות **בתוך החתימה**: seq (המספר בתור) ו-expires.
@@ -14,7 +14,7 @@
 
 declare(strict_types=1);
 
-const OUTBOX_ACTIONS = ['manifest', 'switch', 'activate', 'mount'];
+const OUTBOX_ACTIONS = ['manifest', 'activate', 'mount'];         // M6b: switch (1.x) — הוסר; שורות ישנות בתור נשארות לקריאה
 const OUTBOX_TTL = ['manifest' => 7 * 86400, 'switch' => 86400, 'activate' => 86400, 'mount' => 86400];
 const OUTBOX_LIVE = ['queued', 'delivered'];
 const OUTBOX_LABELS = ['manifest' => 'פרסום גרסה', 'switch' => 'המפסק (העמוד המקורי / מהסטודיו)', 'activate' => 'חזרה לגרסה', 'mount' => 'אופן ההצבה'];
@@ -47,7 +47,7 @@ function pub_channel_set(array $owner, array $b): array
     if (!in_array($c, ['push', 'pull'], true)) throw new ApiError('ערוץ לא מוכר', 422);
     setting_set('pub_channel', $c);
     audit_as($owner, 'pub_channel', $c === 'pull' ? 'ערוץ: משיכה (האתר מושך מהכלי)' : 'ערוץ: דחיפה (הכלי שולח לאתר)');
-    return publish_settings();
+    return site_settings();
 }
 
 // ── התור ──────────────────────────────────────────────────
@@ -240,7 +240,7 @@ function pull_line(array $owner): array
     $k = pub_key();
     $line = 'kol-maroko:2:' . $k['kid'] . ':' . $k['public'] . ':' . pull_url() . ':' . $token;
     audit_as($owner, 'pull_token', 'אסימון משיכה חדש — הקודם בוטל');
-    return ['line' => $line] + publish_settings();
+    return ['line' => $line] + site_settings();
 }
 
 function pull_settings(): array
@@ -442,7 +442,7 @@ function outbox_resend(array $user, array $b): array
     match ($row['action']) {
         'manifest' => build_send($user, ['id' => (int)$row['ref']]),
         'mount' => mount_set(require_role($user, 'site_owner'), ['mount' => (string)($env['mount'] ?? '')]),
-        'switch' => site_switch($user, ['enabled' => !empty($env['enabled'])]),
+        'switch' => throw new ApiError('המפסק של 1.x הוסר (M6b) — המפסק "העמוד החדש" בוורדפרס', 410),
         default => outbox_add((string)$row['action'], array_diff_key($env, array_flip(['action', 'site', 'page', 'time', 'nonce', 'seq', 'expires'])), $user, ['label' => $row['label']]),
     };
     return outbox_list($user);

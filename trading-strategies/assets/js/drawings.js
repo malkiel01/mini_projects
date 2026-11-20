@@ -31,6 +31,17 @@ export function timeToLogical(times, sec, t) {
   while (hi - lo > 1) { const m = (lo + hi) >> 1; if (times[m] <= t) lo = m; else hi = m; }
   return lo + (t - times[lo]) / (times[hi] - times[lo]);
 }
+/**
+ * אינדקס לוגי → x. Lightweight Charts 4 מחזיר 0 לאינדקס שבור (בין שני נרות), ושרטוט שעוגן בין נרות (למשל בחצי שעה בגרף
+ * של שעה) קרס לקצה השמאלי. כאן — אינטרפולציה בין שני הנרות הסמוכים.
+ */
+export function logicalX(ts, l) {
+  const i = Math.floor(l);
+  const a = ts.logicalToCoordinate(i);
+  if (l === i || a === null) return a;
+  const b = ts.logicalToCoordinate(i + 1);
+  return b === null ? a : a + (b - a) * (l - i);
+}
 export function logicalToTime(times, sec, l) {
   const n = times.length;
   if (!n) return null;
@@ -47,7 +58,7 @@ function distSeg(px, py, ax, ay, bx, by) {
   return Math.hypot(px - (ax + u * dx), py - (ay + u * dy));
 }
 
-export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet, getTf, getSec, getTimes, fmtPrice }) {
+export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet, getTf, getSec, getTimes, fmtPrice, board = null }) {
   let all = [];               // כל השרטוטים של הנכס (כל המסגרות)
   let selected = null;        // id
   let tool = null;            // null = בחירה
@@ -60,7 +71,7 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
   let requestUpdate = () => {};
 
   const visible = () => all.filter(d => d.tf === null || d.tf === getTf());
-  const xOf = t => { const l = timeToLogical(getTimes(), getSec(), t); return l === null ? null : chart.timeScale().logicalToCoordinate(l); };
+  const xOf = t => { const l = timeToLogical(getTimes(), getSec(), t); return l === null ? null : logicalX(chart.timeScale(), l); };
   const yOf = p => series.priceToCoordinate(p);
   const toAnchor = (x, y) => {
     const l = chart.timeScale().coordinateToLogical(x);
@@ -70,6 +81,17 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
   };
 
   // ── ציור על הקנבס ───────────────────────────────────────
+  // תווית של קו (פיבונאצ'י, קו אופקי) — בצד ימין של הקו, ותווית שחופפת לתווית שכבר צוירה — לא מצוירת
+  // (18.1.2 סעיף 5: אלה היו התוויות הירוקות שנערמו בצד שמאל אצל הבעלים — כמה שרטוטי פיבו על אותן נקודות)
+  function lineLabel(ctx, s, xr, y, w, preview) {
+    const tw = ctx.measureText(s).width;
+    const x = Math.min(xr, w - 4);
+    const r = { x: x - tw - 2, y: y - 14, w: tw + 4, h: 13, by: 'drawings', text: s };
+    if (!preview && board && !board.place(r)) return;
+    ctx.textAlign = 'right';
+    ctx.fillText(s, x, y - 3);
+    ctx.textAlign = 'left';
+  }
   function drawOne(ctx, d, w, hgt, preview = false) {
     const pts = d.points.map(a => [xOf(a.t), yOf(a.p)]);
     if (pts.some(([x, y]) => x === null || y === null)) return;
@@ -98,7 +120,7 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
       case 'hline': {
         line([0, a[1]], [w, a[1]]);
         ctx.font = '11px system-ui, sans-serif';
-        ctx.fillText(fmtPrice(d.points[0].p), 4, a[1] - 4);
+        lineLabel(ctx, fmtPrice(d.points[0].p), w - 4, a[1] - 1, w, preview);
         break;
       }
       case 'rect': {
@@ -115,7 +137,7 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
           if (y === null) continue;
           ctx.globalAlpha = lv === 0 || lv === 1 ? 1 : 0.7;
           line([x1, y], [x2, y]);
-          ctx.fillText(`${lv} (${fmtPrice(price)})`, x1 + 3, y - 3);
+          lineLabel(ctx, `${lv} (${fmtPrice(price)})`, x2 - 3, y, w, preview);
         }
         ctx.globalAlpha = 1;
         line(a, b);
@@ -144,6 +166,7 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
         zOrder: () => 'top',
         renderer: () => ({
           draw(target) {
+            board?.begin('drawings');
             target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
               ctx.save();
               for (const d of visible()) drawOne(ctx, d, mediaSize.width, mediaSize.height);
@@ -417,6 +440,7 @@ export function mountDrawings({ chart, series, box, asset, api, toast, h, sheet,
     load: reload,
     toggle: () => setActive(!active),
     isActive: () => active,
+    isCapturing: () => capturing,   // השרטוט תפס את המגע — gestures.js לא מזיז את הגרף
     redraw: () => { requestUpdate(); syncBar(); },
     count: () => all.length,
     destroy() {

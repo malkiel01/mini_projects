@@ -119,7 +119,8 @@ function snapshots_list(array $q): array
     return ['snapshots' => array_map(function ($r) {
         $parts = json_decode($r['parts'], true) ?: [];
         unset($r['parts']);
-        return ['id' => (int)$r['id'], 'meta' => json_decode($r['meta'], true), 'project' => isset($parts['project'])] + $r;
+        // M6: legacy — הנקודה כוללת גם את הטיוטה של הסטודיו הישן (נכתבת חזרה בשחזור, ואין לה מסך)
+        return ['id' => (int)$r['id'], 'meta' => json_decode($r['meta'], true), 'project' => isset($parts['project']), 'legacy' => isset($parts['draft'])] + $r;
     }, $rows), 'total' => (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'offset' => $off];
 }
 
@@ -173,20 +174,6 @@ function snapshot_row(int $id): array
     return $st->fetch() ?: throw new ApiError('הנקודה לא נמצאה', 404);
 }
 
-/** תצוגה של נקודה: העמוד שלה, עם המילים וקבצי הקוד שלה. */
-function snapshot_preview(array $q): array
-{
-    $s = snapshot_row((int)($q['id'] ?? 0));
-    $p = json_decode($s['parts'], true);
-    $words = array_map(fn($w) => ['id' => (int)$w['id'], 'wp_id' => $w['wp_id'] === null ? null : (int)$w['wp_id'], 'word' => $w['word'], 'meaning' => $w['meaning'],
-        'topics' => json_decode($w['topics'], true) ?: [], 'audio' => $w['audio'], 'external_id' => $w['external_id']], json_decode(blob_get($p['words']), true));
-    $code = json_decode(blob_get($p['code']), true);
-    $GLOBALS['kol_words'] = lex_sort($words, 'word');
-    $GLOBALS['kol_code'] = $code ? array_column($code, 'content', 'path') : null;
-    try { return page_render(page_normalize(json_decode(blob_get($p['draft']), true)), true); }
-    finally { unset($GLOBALS['kol_words'], $GLOBALS['kol_code']); }
-}
-
 /** החזרת המצב של נקודה. קודם — נקודה של המצב הנוכחי (כך שגם השחזור ניתן לביטול). */
 function snapshot_restore(array $user, array $b): array
 {
@@ -217,7 +204,9 @@ function snapshot_apply(array $user, array $parts, string $note): array
         $d = draft_row();
         $json = blob_get($parts['draft']);
         if ($json !== $d['json']) {
-            revision_add($user, $d['json'], (int)$d['rev'], 'לפני ' . $note);
+            // M6: הטיוטה הישנה — אין לה מסך; נכתבת חזרה כמו תמיד, והקודמת נשמרת בהיסטוריה שלה (הוספה בלבד, בלי ניקוי)
+            $pdo->prepare('INSERT INTO revisions (at, ts, sub, name, rev, json, note) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([now_iso(), time(), $user['sub'], $user['name'], (int)$d['rev'], $d['json'], 'לפני ' . $note]);
             $pdo->prepare('UPDATE draft SET json = ?, rev = rev + 1, updated_by = ?, updated_at = ? WHERE id = 1')->execute([$json, $user['sub'], now_iso()]);
         }
         $put('words', $rows('words'));

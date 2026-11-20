@@ -54,18 +54,14 @@ const zipText = (file, name) => execFileSync('python3', ['-I', '-c', 'import sys
       await page.goto(base + '/#/files');
       await page.waitForSelector('.lib-list .lib-row');
     };
-    /** הרצף האמיתי: הסטודיו (/) ומיד הקבצים — היציאה מהסטודיו באמצע הטעינה (studio.js: mount ממתין ל-lock) לא זורקת ולא נתקעת. */
+    /** M6: הסטודיו הישן (studio.js, והמרוץ של mount מול ה-lock) הוסר. הרצף שנשאר: מסך הפתיחה (/) ומיד הקבצים — בלי שגיאה. */
     const fromStudio = async (page, errs) => {
-      // תשובת ה-lock מתעכבת — כך העזיבה בוודאות קורית בזמן ש-mount ממתין לה (בלי העיכוב המרוץ נדיר ותלוי עומס)
-      const slow = async route => { await sleep(1500); await route.continue().catch(() => {}); };
-      await page.route(/action=lock\b/, slow);
       await page.goto(base + '/');
-      await page.waitForSelector('#main .studio');
+      await page.waitForSelector('#tabs a');
       await openLib(page);
-      await sleep(2000);                                   // ה-lock חוזר עכשיו — אחרי שהסטודיו כבר לא על המסך
-      await page.unroute(/action=lock\b/, slow);
-      ok(/#\/files$/.test(page.url()) && await page.locator('#main .lib-list').count() === 1 && await page.locator('#main .studio').count() === 0 && !errs.some(e => /beat/.test(e)),
-        'מהסטודיו מיד לקבצים — המסך הוא הקבצים, בלי שגיאה', errs);
+      await sleep(500);
+      ok(/#\/files$/.test(page.url()) && await page.locator('#main .lib-list').count() === 1 && !errs.length,
+        'ממסך הפתיחה מיד לקבצים — המסך הוא הקבצים, בלי שגיאה', errs);
     };
     const row = (page, id) => page.locator(`.lib-row[data-id="${id}"]`);
     const rowText = (page, id) => row(page, id).innerText().catch(() => '');

@@ -4,7 +4,8 @@ import * as D from './decimal.js';
 import { mountMarket } from './market.js';
 import { mountAnalysis } from './analysis.js';
 import { mountAlerts } from './alerts.js';
-import { mountCloud } from './cloud.js';
+import { mountCombo } from './combobox.js';
+import { mountMethodJournal } from './method-journal.js';
 
 // ── עזרים ──────────────────────────────────────────────
 const $ = (s, el = document) => el.querySelector(s);
@@ -25,6 +26,50 @@ function h(tag, props = {}, ...kids) {
   return el;
 }
 const sep = () => h('i', { class: 'sep', 'aria-hidden': 'true' }, '·');
+
+// ── זוג (18.1.1, S1.1): שני הקודים מופרדים באייקון "מול", ומתחת השמות בעברית — לעולם לא המילה "מול" ──
+const SVG_NS = 'http://www.w3.org/2000/svg';
+/** האייקון — assets/icon-vs.svg, בצבע הטקסט. labelled: "מול" לקורא מסך בלבד; אחרת מוסתר (כפילות בשורה המשנית) */
+function vsIcon(labelled = true) {
+  const s = document.createElementNS(SVG_NS, 'svg');
+  s.setAttribute('class', 'vs');
+  s.setAttribute('viewBox', '0 0 24 24');
+  s.setAttribute('focusable', 'false');
+  if (labelled) { s.setAttribute('role', 'img'); s.setAttribute('aria-label', 'מול'); } else s.setAttribute('aria-hidden', 'true');
+  const u = document.createElementNS(SVG_NS, 'use');
+  u.setAttribute('href', 'assets/icon-vs.svg#vs');
+  s.append(u);
+  return s;
+}
+/** טקסט מהשרת ("BTC ⇄ USDT חצה את 65000") — התו ⇄ הופך לאייקון */
+const withVs = text => String(text ?? '').split('⇄').flatMap((t, i) => (i ? [vsIcon(), t] : [t]));
+/** השורה הראשית: BTC ⇄ USDT — משמאל לימין, הבסיס ראשון, גם בממשק עברי (18.1.1 קריטריון 4) */
+function pairMain(p) {
+  if (!p?.base || !p?.quote) return h('span', { class: 'pair-main' }, withVs(p?.label || 'נכס'));
+  return h('span', { class: 'pair-main', dir: 'ltr' }, h('b', {}, p.base.code), ' ', vsIcon(), ' ', h('b', {}, p.quote.code));
+}
+/** השורה המשנית: ביטקוין ⇄ טתר — קטנה, בצבע משני */
+function pairSub(p) {
+  if (!p?.base || !p?.quote || (!p.base.name && !p.quote.name)) return null;
+  return h('small', { class: 'pair-sub' }, p.base.name, ' ', vsIcon(false), ' ', p.quote.name);
+}
+/** התווית המלאה של זוג. sub: false — במקום צר, השורה הראשית בלבד */
+const pairLabel = (p, { sub = true } = {}) => h('span', { class: 'pair' }, pairMain(p), sub ? pairSub(p) : null);
+/**
+ * בחירת נכס (ניתוח, התראה): כפתורי בחירה עם תווית הזוג — לא <select>, שאין בו מקום לאייקון (18.1.1).
+ * .value — הנכס שנבחר; אירוע change עולה מהכפתור לקבוצה, כמו ב-select.
+ */
+function assetPicker(assets, labels, value, provName = () => '') {
+  const box = h('div', { class: 'chips asset-pick', role: 'radiogroup', 'aria-label': 'נכס' }, assets.map(a => {
+    const inp = h('input', { type: 'radio', name: 'asset', value: a });
+    inp.checked = a === value;
+    const sub = pairSub(labels[a]), pn = provName(a);
+    return h('label', {}, inp, h('span', { class: 'pair' }, pairMain(labels[a]),
+      h('small', { class: 'pair-sub' }, sub ? [...sub.childNodes] : [], sub && pn ? ' · ' : '', pn)));
+  }));
+  Object.defineProperty(box, 'value', { get: () => box.querySelector('input:checked')?.value ?? value });
+  return box;
+}
 const num = (v, cls = '') => h('span', { class: 'num ' + cls }, v);
 
 function toast(msg, err = false) {
@@ -46,7 +91,12 @@ function toast(msg, err = false) {
 
 let ME = null;   // {csrf, user, lists}
 
-async function api(action, body = null, query = {}) {
+// בקשה של מסך שכבר הוחלף בניווט חדש — התשובה (או השגיאה) לא חוזרת אליו: הבטחה שלא מתקיימת, והמסך הישן נעצר במקום
+const staleGuard = (gen, p) => (!gen ? p : p.then(v => (gen === GEN ? v : new Promise(() => {})), e => (gen === GEN ? Promise.reject(e) : new Promise(() => {}))));
+const API_TIMEOUT_MS = 90000;
+/** opts.signal — ביטול מבחוץ (הגרף: חזרה ללשונית אחרי בקשה שנתקעה ברקע) */
+function api(action, body = null, query = {}, opts = {}) { return staleGuard(LOADING, apiNow(action, body, query, opts)); }
+async function apiNow(action, body = null, query = {}, { signal = null } = {}) {
   const qs = new URLSearchParams({ action, ...query });
   const opt = { credentials: 'same-origin', headers: {} };
   if (body) {
@@ -56,13 +106,32 @@ async function api(action, body = null, query = {}) {
     opt.body = JSON.stringify(body);
   }
   let res, data;
+  const t0 = performance.now();
+  // בקשה שלא חוזרת (רשת שנתקעה, הטלפון ברקע) — לא מחכים לנצח: בלי זה "טוען…" נשאר, והגרף "נרדם" — כל טעינה הבאה מחכה לה
+  // (הבעלים, 2026-11-17). השרת חסום ממילא: 15 ש' לפנייה לספק, 20 ש' לבדיקה לאחור — 90 ש' הם הרבה מעבר
+  const ctl = new AbortController();
+  const ms = +window.TS_API_TIMEOUT_MS || API_TIMEOUT_MS;   // לבדיקות — קצר
+  const timer = setTimeout(() => ctl.abort(), ms);
+  const cut = () => ctl.abort();
+  signal?.addEventListener('abort', cut, { once: true });
+  opt.signal = ctl.signal;
   try {
     res = await fetch('api.php?' + qs, opt);
     data = await res.json();
   } catch {
-    throw new Error(res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
+    const own = signal?.aborted;   // בוטל מבחוץ — לא "השרת לא ענה"
+    const e = new Error(own ? 'הטעינה בוטלה' : ctl.signal.aborted ? 'השרת לא ענה בזמן — נסו שוב (↻)' : res ? 'תשובה לא צפויה מהשרת' : 'אין חיבור לשרת');
+    e.status = 0;
+    e.timeout = ctl.signal.aborted && !own;
+    e.aborted = !!own;
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cut);
+    // ההקשר של 🐞 (DevLoop): הבקשות האחרונות — פעולה, מצב, משך ומזהה הבקשה ביומן. בלי הגוף
+    window.DevLoop?.noteRequest({ action, status: res?.status ?? 0, ms: Math.round(performance.now() - t0), req: res?.headers.get('X-Request-Id') || '' });
   }
-  if (!res.ok || !data.ok) throw new Error(data?.error || 'שגיאה');
+  if (!res.ok || !data.ok) { const e = new Error(data?.error || 'שגיאה'); e.status = res.status; e.login = data?.login || null; throw e; }
   return data;
 }
 
@@ -96,9 +165,13 @@ const marketName = m => ME.lists.markets[m]?.name || m;
 const MARKET_SHORT = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות' };
 
 // ── שלד: ניווט, כותרת ───────────────────────────────────
-function setHead(title, sub = '', { back = false, actions = [] } = {}) {
-  $('#title').textContent = title;
-  $('#subtitle').textContent = sub;
+/** title/sub — טקסט, או אלמנט (תווית זוג); docTitle — הכותרת של הלשונית, כשה-title אלמנט */
+function setHead(title, sub = '', { back = false, actions = [], docTitle = null } = {}) {
+  $('#title').replaceChildren(title instanceof Node ? title : String(title));
+  $('#subtitle').replaceChildren(...[sub].flat().filter(x => x != null && x !== false));
+  // תווית זוג + ספק: השמות מתקצרים והספק נשאר שלם (🟡 F1 — "Binance" נחתך)
+  $('#subtitle').classList.toggle('parts', [sub].flat().some(x => x instanceof Node));
+  if (title instanceof Node) title = docTitle || title.textContent;
   $('#back').hidden = !back;
   $('#head-actions').replaceChildren(...actions);
   document.title = title === 'אסטרטגיות למסחר' ? title : `${title} · אסטרטגיות למסחר`;
@@ -114,18 +187,25 @@ function setTab(tab) {
 const main = $('#main');
 function render(...nodes) { main.replaceChildren(...nodes.flat().filter(n => n != null && n !== false)); }
 
-// לשוניות: שוק · ניתוח · התראות · יומן · עוד (spec-stage-a 1).
+// לשוניות: שוק · התראות · יומן · עוד (spec-stage-a 1). "ניתוח" — בפס שמתחת לגרף, לא לשונית (S4, 18.4).
 // היומן של שלב 1 — שלוש תת-לשוניות בתוך "יומן" (פרק 12, סעיף 7).
 const TAB_OF = { market: 'market', chart: 'market', strategies: 'journal', strategy: 'journal', journal: 'journal', stats: 'journal',
-  more: 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'analysis', profile: 'more', alerts: 'alerts', 'method-files': 'more' };
+  more: 'more', dev: 'more', 'method-journal': 'more', instruments: 'more', providers: 'more', admin: 'more', analysis: 'market', profile: 'more', alerts: 'alerts' };
 const JOURNAL_TABS = [['strategies', '🧭 אסטרטגיות'], ['journal', '📒 עסקאות'], ['stats', '📊 סטטיסטיקה']];
 function journalTabs(active) {
   return h('nav', { class: 'seg-tabs', 'aria-label': 'יומן' }, JOURNAL_TABS.map(([k, l]) =>
     h('a', { href: '#/' + k, class: 'seg-tab', 'aria-current': k === active ? 'page' : null }, l)));
 }
 
-let M = null, A = null, N = null, C = null;
+let M = null, A = null, N = null, J = null;
+// מונה דור לניווט. בלי זה, מעבר מהיר (גרף → שוק לפני שהגרף נטען) הריץ שני מסכים במקביל, והאיטי מביניהם צייר את
+// עצמו מעל המסך הנכון — למשל הגרף מעל השוק (גם הרעידה ב-market-tabs-ui). כל ניווט מעלה את GEN ומתחיל מיד (בלי
+// לחכות לקודם); בקשה ש-api() שלח בזמן שמסך נטען שייכת לדור שלו, ואם בינתיים התחיל ניווט חדש — התשובה לא מגיעה למסך
+// הישן (staleGuard), והוא לא ממשיך לצייר. teardown בתחילת הניווט סוגר את מה שהקודם כבר פתח.
+let GEN = 0, LOADING = 0;   // LOADING — הדור של המסך שעדיין נטען (0 — אין)
 async function route() {
+  const my = ++GEN;
+  LOADING = my;
   const [name = 'market', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
   const id = rest.join('/');
   M?.teardown();
@@ -138,19 +218,27 @@ async function route() {
     else if (name === 'stats') await viewStats();
     else if (name === 'more') await viewMore();
     else if (name === 'instruments') await viewInstruments();
+    else if (name === 'method-journal') await J.viewMethodJournal();
     else if (name === 'providers') await M.viewProviders();
     else if (name === 'admin') await M.viewAdmin();
+    else if (name === 'dev') await viewDev(rest[0], rest.slice(1).join('/'));
     else if (name === 'chart' && id) await M.viewChart(decodeURIComponent(id));
-    else if (name === 'analysis') await A.viewAnalysis(id ? decodeURIComponent(id) : null);
+    else if (name === 'analysis') {
+      // מסך "🧭 ניתוח" הוסר (S4, 18.4): הכרטיס בפס שמתחת לגרף. כתובת ישנה (התראה, סימנייה) → הגרף של אותו נכס
+      history.replaceState(null, '', id ? '#/chart/' + id : '#/market');
+      return route();
+    }
     else if (name === 'profile') await A.viewProfile();
     else if (name === 'alerts') await N.viewAlerts();
-    else if (name === 'method-files') await C.viewMethodFiles();
     else await M.viewMarket();
+    if (my !== GEN) return;
     if (['strategies', 'journal', 'stats'].includes(name)) main.prepend(journalTabs(name));
   } catch (e) {
-    render(h('p', { class: 'error', role: 'alert' }, e.message));
+    if (my === GEN) render(h('p', { class: 'error', role: 'alert' }, e.message));
+  } finally {
+    if (LOADING === my) LOADING = 0;
   }
-  main.scrollTop = 0;
+  if (my === GEN) main.scrollTop = 0;
 }
 window.addEventListener('hashchange', route);
 
@@ -658,6 +746,20 @@ async function editTrade(id = null, pre = {}) {
     onMarket(i.market);
   });
 
+  // בחירה מהשוק (combobox, 18.1.3 סעיף "איפה"): נכס מהרשימה ממלא נכס, שוק, מטבע ומכפיל — כמו "פתח עסקה" מכרטיס ניתוח
+  const fromMarket = t ? null : mountCombo({ h, api, pairLabel }, { label: 'נכס מהשוק', placeholder: 'מהשוק: ביטקוין, דולר, אפל…', name: 'trade-asset', onPick: async it => {
+    try {
+      const p = (await api('trade_prefill', null, { asset: it.asset })).prefill;
+      fld.symbol.value = p.symbol;
+      const r = marketSeg.querySelector(`input[value="${p.market}"]`);
+      if (r) r.checked = true;
+      fld.currency.value = p.currency;
+      fld.multiplier.value = p.multiplier ?? '';
+      fld.multiplier.dataset.touched = '1';
+      onMarket(p.market);
+    } catch (e) { toast(e.message, true); }
+  } });
+
   // אסטרטגיה + גרסה → צ'קליסט
   const sid0 = v.strategy_id ?? pre.strategy_id ?? '';
   const stratSel = select('strategy', [['', 'בלי אסטרטגיה'], ...strategies.filter(s => s.status !== 'archived' || s.id === sid0).map(s => [String(s.id), s.name])], sid0, { 'aria-label': 'אסטרטגיה' });
@@ -773,6 +875,7 @@ async function editTrade(id = null, pre = {}) {
   sh.body.append(datalist,
     result, fromAnalysis,
     group('בסיס', '',
+      fromMarket ? h('div', { class: 'f wide' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'בחירה מהשוק'), fromMarket.el) : null,
       h('div', { class: 'fields two' }, field('נכס', fld.symbol), field('מטבע', fld.currency)),
       h('div', { class: 'f' }, h('span', { class: 'muted', style: 'font-size:.8rem' }, 'שוק'), marketSeg),
       optBox,
@@ -1004,6 +1107,51 @@ function breakdownTable(title, rows, label, cur) {
 }
 
 // ── עוד: הגדרות, נכסים, ייצוא, אודות (אפיון 2.7) ────────
+// ── כניסה, כשהאפליקציה מנותקת מהכלים הדיגיטליים (A2, lib/sso.php) ──
+// מחוברת — אין מסך כזה: השער מכניס לבד. כאן רק "כניסה עם הכלים הדיגיטליים" — ניווט רגיל, לא fetch
+const LOGIN_ERRORS = {
+  cancelled: 'הכניסה בוטלה.',
+  invalid: 'הכניסה לא הושלמה — נסו שוב.',
+  conflict: 'יש כבר חשבון באפליקציה באותו מייל — פנו לעורך ראשי.',
+};
+function viewLogin(login, msg = '') {
+  const err = (location.hash.match(/^#\/login\/(\w+)/) || [])[1];
+  if (err) history.replaceState(null, '', location.pathname);
+  const text = msg || (err ? (Object.hasOwn(LOGIN_ERRORS, err) ? LOGIN_ERRORS[err] : LOGIN_ERRORS.invalid) : '');
+  setHead('אסטרטגיות למסחר', 'לתכנון וניתוח בלבד');
+  const box = h('p', { class: 'error', role: 'alert', hidden: !text }, text);
+  // מייל וסיסמה — רק כשעורך השאיר כניסה בסיסמה (login.password). Google — לא בפרוסה הזו (ש8)
+  let pwForm = null;
+  if (login.password) {
+    const email = h('input', { type: 'email', name: 'email', autocomplete: 'username', dir: 'ltr', required: true, maxlength: 200 });
+    const pw = h('input', { type: 'password', name: 'password', autocomplete: 'current-password', dir: 'ltr', required: true, maxlength: 200 });
+    const btn = h('button', { class: 'btn ghost login-go', type: 'submit' }, 'כניסה בסיסמה');
+    pwForm = h('form', { class: 'stack login-pw', on: { submit: async ev => {
+      ev.preventDefault();
+      btn.disabled = true;
+      try {
+        await api('login', { email: email.value.trim(), password: pw.value });
+        location.replace(location.pathname);
+      } catch (e) { box.textContent = e.message; box.hidden = false; pw.value = ''; btn.disabled = false; }
+    } } }, field('מייל', email, true), field('סיסמה לאפליקציה', pw, true), btn);
+  }
+  render(h('section', { class: 'login stack' },
+    h('div', { class: 'login-ic', 'aria-hidden': 'true' }, '📈'),
+    h('h2', {}, 'כניסה'),
+    box,
+    h('a', { class: 'btn primary login-go', href: 'api.php?action=sso_start' }, 'כניסה עם הכלים הדיגיטליים'),
+    pwForm ? h('p', { class: 'login-or' }, 'או') : null,
+    pwForm,
+    h('p', { class: 'hint' }, login.password
+      ? 'שכחתם את הסיסמה? היכנסו דרך הכלים הדיגיטליים וקבעו חדשה בפרופיל.'
+      : 'נכנסים עם החשבון שלכם בכלים הדיגיטליים. בפעם הראשונה יוצג שם אישור קצר.')));
+}
+
+async function logout() {
+  try { await api('logout', {}); } catch (e) { toast(e.message); return; }
+  location.replace(location.pathname);
+}
+
 async function viewMore() {
   setHead('עוד', ME.user.display_name || '');
   const p = ME.profile;
@@ -1013,28 +1161,53 @@ async function viewMore() {
         h('span', { class: 'use-tx' }, h('b', {}, 'פרופיל והגדרות'),
           h('small', {}, `טווח ${{ short: 'קצר', medium: 'בינוני', long: 'ארוך' }[p.horizon]} · סיכון ${D.fmt(p.risk_pct, 4)}% · ודאות מינימלית ${p.min_certainty}% · ${ME.user.base_currency}`)),
         h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
-    h('h2', { class: 'sec-title' }, 'ענן'),
-    C.section(),
     h('h2', { class: 'sec-title' }, 'נתונים'),
     h('ul', { class: 'list' },
       h('li', {}, h('a', { class: 'use-row', href: '#/providers' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🔌'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ספקי נתונים'), h('small', {}, 'Binance ו-ECB פתוחים; Twelve Data ו-Finnhub — במפתח שלכם')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
-      ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
-        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, מנהלים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
-      ME.is_admin ? h('li', {}, h('a', { class: 'use-row', href: '#/method-files' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
-        h('span', { class: 'use-tx' }, h('b', {}, 'קובצי שיטות'), h('small', {}, 'הספרים בענן MBE שלכם — צפייה ברשימה והעלאה')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      ME.is_editor ? h('li', {}, h('a', { class: 'use-row', href: '#/admin' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⚙️'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'ניהול'), h('small', {}, 'ספקים, שיטות ועמלות, ספקים לחלוקה, עורכים, מאגר')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      ME.is_editor ? h('li', {}, h('a', { class: 'use-row', href: '#/dev/tasks' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🐞'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'פיתוח'), h('small', {}, ME.is_chief ? 'מטלות TS-, אימות, ויומן בקשות ושגיאות' : 'מטלות TS-: צפייה, תגובה והמלצה — האימות של עורך ראשי')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))) : null,
+      h('li', {}, h('a', { class: 'use-row', href: '#/method-journal' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📓'),
+        h('span', { class: 'use-tx' }, h('b', {}, 'יומן השיטה'), h('small', {}, 'מה כל שיטה אמרה, ומה קרה אחר כך — לפי גרסה')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: '#/instruments' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🏷️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'נכסים שלי'), h('small', {}, 'שוק, מטבע ומכפיל לכל נכס — נבנה לבד מהעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=json', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '⬇️'),
         h('span', { class: 'use-tx' }, h('b', {}, 'ייצוא מלא (JSON)'), h('small', {}, 'כל האסטרטגיות, הגרסאות, הנכסים והעסקאות')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
       h('li', {}, h('a', { class: 'use-row', href: 'api.php?action=export&format=csv', download: '' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📄'),
         h('span', { class: 'use-tx' }, h('b', {}, 'היומן כ-CSV'), h('small', {}, 'שורה לכל עסקה, עם הרווח וה-R — נפתח באקסל')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
+    // יציאה — רק כשנכנסו במצב מנותק (sso / סיסמה). מחוברת: היציאה היא מהכלים הדיגיטליים, לא מכאן
+    ME.login_via !== 'gate' ? h('ul', { class: 'list' }, h('li', {}, h('button', { class: 'use-row', type: 'button', onclick: logout },
+      h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🚪'),
+      h('span', { class: 'use-tx' }, h('b', {}, 'יציאה'), h('small', {}, 'מהאפליקציה הזו בלבד')), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))) : null,
     h('h2', { class: 'sec-title' }, 'אודות'),
     h('div', { class: 'block stack' },
       h('p', {}, 'מחברת עבודה של סוחר: בונים ומתעדים אסטרטגיות, רושמים כל עסקה ביומן מול הכללים של הגרסה שהייתה בתוקף, ובודקים בסטטיסטיקה אם זה עובד.'),
       h('p', {}, '🔒 אין כאן מסחר ואין כסף אמיתי: האפליקציה לא מתחברת לשום ברוקר, בורסה או ארנק, ולא שולחת פקודות. כל המחירים מוזנים ידנית.'),
       h('p', {}, '👤 הנתונים שלך — רק שלך. אף משתמש אחר לא רואה אותם, ואפשר לייצא הכול בכל רגע.'),
       h('p', { class: 'disclaimer' }, '⚖️ ' + DISCLAIMER)));
+}
+
+// ── פיתוח: DevLoop (A1, PROTOCOL 7) — המודול המשותף; עורך ראשי — הכול, עורך משני — עוקב, משתמש — 🐞 בלבד (ר2) ──
+// המטלות והיומן — assets/js/devloop.js (עותק מסונכרן, לא עורכים כאן). השרת אוכף בעצמו (api.php); כאן רק מה שמוצג.
+const DEV_TABS = [['tasks', '📋 מטלות'], ['log', '📜 יומן']];
+async function viewDev(tab, arg = '') {
+  if (!ME.is_editor) { location.hash = '#/more'; return; }
+  if (!DEV_TABS.some(([k]) => k === tab)) tab = 'tasks';
+  setHead('פיתוח', ME.is_chief ? 'מטלות TS- ויומן' : 'מטלות TS- ויומן — צפייה ותגובה', { back: true });
+  const body = h('div', { class: 'dev-body' });
+  render(h('nav', { class: 'seg-tabs', 'aria-label': 'פיתוח' }, DEV_TABS.map(([k, l]) =>
+    h('a', { href: '#/dev/' + k, class: 'seg-tab', 'aria-current': k === tab ? 'page' : null }, l))), body);
+  if (tab === 'log') await DevLoop.showLog(body, decodeURIComponent(arg));
+  else await DevLoop.show(body, decodeURIComponent(arg));
+}
+
+/** 🐞 למשתמש (ר2): דיווח מכל מסך — בלי מונה ובלי רשימה (אלה לעורכים). DevLoop.report מהמודול המשותף. */
+function bugButton() {
+  if ($('#dev-bug')) return;
+  const b = h('button', { type: 'button', id: 'dev-bug', class: 'icon-btn dev-bug', 'aria-label': '🐞 דיווח על תקלה', on: { click: () => DevLoop.report() } }, '🐞');
+  $('#head-actions')?.before(b);
 }
 
 async function viewInstruments() {
@@ -1078,20 +1251,30 @@ function editInstrument(i) {
     ME = await api('me');
   } catch (e) {
     $('.bottom-nav').hidden = true;
-    render(h('p', { class: 'error', role: 'alert' }, e.message));
+    if (e.login?.mode === 'detached') viewLogin(e.login, e.login.denied ? e.message : '');
+    else render(h('p', { class: 'error', role: 'alert' }, e.message));
     return;
   }
-  const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, me: () => ME,
+  const ctx = { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub, withVs, assetPicker, me: () => ME,
     setMe: v => { ME = v; }, reload: () => route(),
     openTrade: pre => editTrade(null, pre) };
-  C = mountCloud(ctx);
-  ctx.cloud = C;
-  C.handleReturn();
+  // DevLoop (24.2, ר2): ההגדרה לכולם (שגיאות JavaScript ליומן המובנה). עורך ראשי — המפתח; עורך משני — עוקב (רואה, מגיב,
+  // פותח; בלי ✅ ובלי אסימונים); משתמש — 🐞 בלבד, בלי רשימת המטלות. השרת אוכף בעצמו (ts_dev_allow)
+  DevLoop.setup({
+    api: (action, { body = null, params = {} } = {}) => api(action, body, params), toast,
+    role: ME.is_chief ? 'dev' : 'follower',
+    isDev: () => !!ME?.is_editor, appName: 'אסטרטגיות למסחר', tasksHref: '#/dev/tasks', mountBefore: '#head-actions',
+    headers: () => ({ 'X-CSRF': ME?.csrf || '' }), version: () => ME?.version || '', builtinLog: true,
+    logHref: r => '#/dev/log/' + encodeURIComponent(r.req),
+  });
+  if (ME.is_editor) DevLoop.mount();
+  else bugButton();
   N = mountAlerts(ctx);
+  J = mountMethodJournal(ctx);
   ctx.newAlert = N.newAlert;
   A = mountAnalysis(ctx);
   N.setBadge(ME.unread);
-  M = mountMarket({ ...ctx, adminMethods: A.adminMethods });
+  M = mountMarket({ ...ctx, adminMethods: A.adminMethods, journalView: J.view });
   M.setRoute(route);
   if (!location.hash) history.replaceState(null, '', '#/market');
   route();

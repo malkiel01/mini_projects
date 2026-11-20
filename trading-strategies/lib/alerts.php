@@ -24,6 +24,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/analysis.php';
 require_once __DIR__ . '/push.php';
+require_once __DIR__ . '/journal.php';
+require_once __DIR__ . '/prefill.php';
 
 const TS_ALERTS_PER_USER = 20;        // ✅7
 const TS_ALERTS_SYSTEM = 500;         // ✅7
@@ -34,9 +36,36 @@ const TS_ALERT_SIDES = ['long' => 'לונג', 'short' => 'שורט', 'both' => '
 
 // ── ניהול ההתראות של המשתמש ─────────────────────────────
 
+/** השיטות שההתראה נשענת עליהן ואינן קיימות יותר (שיטה מוגדרת מבונה השיטות שנמחק — 21.1). התראת מחיר — אף אחת */
+function ts_alert_removed_methods(array $r): array
+{
+    if ($r['kind'] === 'price') return [];
+    $ids = $r['kind'] === 'method' ? [$r['method_id']] : (json_decode((string)$r['methods'], true) ?: []);
+    return array_values(array_filter($ids, fn($id) => !ts_method_exists($id)));
+}
+
+/**
+ * התראה על שיטה שהוסרה → "מושהית" (21.1 קריטריון 4). ה-cron לא מריץ אותה, ובמסך — "מושהית — השיטה הוסרה".
+ * השורה עצמה נשארת. נקרא מה-cron ומרשימת ההתראות. מחזיר כמה הושהו.
+ */
+function ts_alerts_pause_removed(?int $uid = null): int
+{
+    $sql = "SELECT * FROM alerts WHERE status = 'active' AND kind != 'price'" . ($uid !== null ? ' AND user_id = ?' : '');
+    $st = ts_db()->prepare($sql);
+    $st->execute($uid !== null ? [$uid] : []);
+    $upd = ts_db()->prepare("UPDATE alerts SET status = 'paused' WHERE id = ? AND status = 'active'");
+    $n = 0;
+    foreach ($st->fetchAll() as $r) {
+        if (!ts_alert_removed_methods($r)) continue;
+        $upd->execute([$r['id']]);
+        $n += $upd->rowCount();
+    }
+    return $n;
+}
+
 function ts_alert_out(array $r): array
 {
-    return ['id' => (int)$r['id'], 'asset' => $r['asset'], 'tf' => $r['tf'], 'side' => $r['side'], 'kind' => $r['kind'],
+    return ['method_removed' => (bool)ts_alert_removed_methods($r), 'id' => (int)$r['id'], 'asset' => $r['asset'], 'tf' => $r['tf'], 'side' => $r['side'], 'kind' => $r['kind'],
         'method_id' => $r['method_id'], 'methods' => json_decode($r['methods'], true) ?: [], 'level' => $r['level'],
         'status' => $r['status'], 'last_state' => $r['last_state'],
         'last_checked_at' => $r['last_checked_at'] !== null ? (int)$r['last_checked_at'] : null,
@@ -47,9 +76,11 @@ function ts_alert_out(array $r): array
 function ts_alerts_list(int $uid): array
 {
     ts_alerts_expire(time());
+    ts_alerts_pause_removed($uid);
     $st = ts_db()->prepare("SELECT * FROM alerts WHERE user_id = ? ORDER BY status = 'expired', id DESC");
     $st->execute([$uid]);
-    return array_map('ts_alert_out', $st->fetchAll());
+    // התווית של הזוג (18.1) — הסימול לא מוצג למשתמש
+    return array_map(fn($r) => ts_alert_out($r) + ts_pair_pick(ts_pair_label((string)$r['asset'])), $st->fetchAll());
 }
 
 /** השיטות שמותרות בהתראות למשתמש (מופעלות, alerts: true, לא דוגמה) */
@@ -112,6 +143,7 @@ function ts_alert_status(int $uid, mixed $id, mixed $status): array
     $cur = ts_alert_get($uid, $id);
     $status = ts_enum($status, ['active' => 1, 'paused' => 1], 'מצב');
     if ($cur['status'] === 'expired') throw new TsInvalid('ההתראה פגה. צרו חדשה.');
+    if ($status === 'active' && $cur['method_removed']) throw new TsInvalid('השיטה הוסרה — אי אפשר להפעיל את ההתראה מחדש.');
     ts_db()->prepare('UPDATE alerts SET status = ?, last_state = CASE WHEN ? = \'active\' THEN NULL ELSE last_state END WHERE id = ? AND user_id = ?')
         ->execute([$status, $status, $id, $uid]);
     return ts_alert_get($uid, $id);
@@ -228,7 +260,7 @@ function ts_alert_deliver(array $a, string $state, array $d, int $now): array
     $cnt->execute([$uid, $dayStart]);
     if ((int)$cnt->fetchColumn() >= $prof['max_alerts_per_day']) return ['capped' => true];
 
-    $symbol = explode(':', $a['asset'], 2)[1];
+    $symbol = ts_pair_label((string)$a['asset'])['label'];   // "BTC ⇄ USDT" — לא הסימול המחובר (18.1.1)
     $tfName = TS_TIMEFRAMES[$a['tf']];
     if ($a['kind'] === 'price') {
         $title = "$symbol חצה את {$a['level']}";
@@ -239,7 +271,7 @@ function ts_alert_deliver(array $a, string $state, array $d, int $now): array
         $body = "לפי {$d['name']}, תנאי ה$side מתקיימים על $symbol (נר של $tfName). ודאות {$d['certainty']}% מהבדיקה לאחור — של השיטה על הנכס בעבר, לא של העסקה הבאה.";
     }
     $payload = ['title' => $title, 'body' => $body . ' ' . TS_ALERT_DISCLAIMER, 'asset' => $a['asset'], 'tf' => $a['tf'],
-        'kind' => $a['kind'], 'state' => $state, 'link' => '#/analysis/' . rawurlencode($a['asset'])] + array_intersect_key($d, ['certainty' => 1, 'price' => 1, 'level' => 1]);
+        'kind' => $a['kind'], 'state' => $state, 'link' => '#/chart/' . rawurlencode($a['asset'])] + array_intersect_key($d, ['certainty' => 1, 'price' => 1, 'level' => 1]);
     $delivered = ['inbox' => true];
     if (in_array('push', $prof['alert_channels'], true)) {
         $delivered['push'] = ts_in_quiet($prof['quiet_hours'], $tz, $now) ? 'quiet' : ts_push_user($uid, $now);
@@ -292,9 +324,10 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
     $lock = fopen(ts_cron_lock_path(), 'c');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return ['locked' => true];
     $sum = ['locked' => false, 'expired' => 0, 'groups' => 0, 'deferred' => 0, 'checked' => 0, 'fired' => 0, 'capped' => 0,
-        'errors' => 0, 'calls' => [], 'stopped' => false, 'cleanup' => false];
+        'errors' => 0, 'calls' => [], 'stopped' => false, 'cleanup' => false, 'prefill' => null];
     try {
         $sum['expired'] = ts_alerts_expire($now);
+        $sum['paused_removed'] = ts_alerts_pause_removed();   // שיטה שהוסרה (21.1) — לא מריצים
         $rows = ts_db()->query("SELECT * FROM alerts WHERE status = 'active' ORDER BY COALESCE(last_checked_at, 0), id")->fetchAll();
         // קיבוץ לפי (נכס, מסגרת, היקף מפתח): ספק משלי — היקף של המשתמש, ציבורי — משותף
         $groups = [];
@@ -305,8 +338,9 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
             $groups["$a[asset]|$a[tf]|$acc[scope]"][] = $a;
         }
         $used = [];
+        $usedKey = [];   // לפי מפתח ("ספק|היקף") — כדי שהמילוי ברקע יידע כמה כבר נלקח מכל מפתח אישי (21.2)
         foreach ($groups as $key => $list) {
-            [$asset, $tf] = explode('|', $key);
+            [$asset, $tf, $gScope] = explode('|', $key);
             $provider = explode(':', $asset, 2)[0];
             $cap = $budget[$provider] ?? ts_provider_limits($provider)['per_min'];
             if (microtime(true) - $t0 > TS_CRON_MAX_SECONDS) { $sum['stopped'] = true; $sum['deferred'] += count($list); continue; }
@@ -317,6 +351,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
                 // הפנייה האחת לספק לקבוצה — מרעננת את המאגר; כל ההתראות אחריה נבדקות ממנו
                 $r = ts_market_candles($first, $asset, $tf, $now - 3 * TS_TF_SECONDS[$tf], $now, $now);
                 $used[$provider] = ($used[$provider] ?? 0) + $r['provider_calls'];
+                $usedKey["$provider|$gScope"] = ($usedKey["$provider|$gScope"] ?? 0) + $r['provider_calls'];
             } catch (Throwable $e) {
                 $sum['errors']++;
                 error_log('trading-strategies alerts group ' . $key . ': ' . $e->getMessage());
@@ -326,6 +361,7 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
                 try {
                     [$state, $d] = ts_alert_eval($a, (int)$a['user_id'], $now);
                     $used[$provider] = ($used[$provider] ?? 0) + ($d['calls'] ?? 0);
+                    $usedKey["$provider|$gScope"] = ($usedKey["$provider|$gScope"] ?? 0) + ($d['calls'] ?? 0);
                 } catch (Throwable $e) {
                     $sum['errors']++;
                     error_log('trading-strategies alert ' . $a['id'] . ': ' . $e->getMessage());
@@ -340,6 +376,37 @@ function ts_alerts_run(?int $now = null, ?array $budget = null): array
                 ts_db()->prepare('UPDATE alerts SET last_fired_at = ? WHERE id = ?')->execute([$now, $a['id']]);
                 $sum['fired']++;
             }
+        }
+        // יומן השיטה (18.6, S6): התוצאה של רשומות שהטווח שלהן עבר — באותו תקציב לספק ובאותה תקרת זמן
+        $sum['journal'] = ts_journal_resolve($now, $used, $budget, $t0, $usedKey);
+        // מילוי איטי של המאגר (21.2) — אחרי ההתראות והיומן, כך שהם לא נדחים בגללו
+        // חריגה במילוי לא עוצרת את המשך הריצה — הניקוי היומי (✅4) ושמירת מצב ה-cron (ביקורת 21-2 🔴1)
+        try {
+            $sum['prefill'] = ts_prefill_run($now, $used, $budget, $t0, $usedKey);
+        } catch (Throwable $e) {
+            error_log('trading-strategies prefill: ' . $e->getMessage());
+            $sum['prefill'] = ['error' => true];
+        }
+        // למידה — live (23.4, L2): אותות של השיטה אחרי הבדיקה לאחור שהגיעו ליציאה. באותו תקציב, לפני השוואת השכנים
+        try {
+            $sum['learn_live'] = ts_learn_live_cron($now, $used, $budget, $t0);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning live: ' . $e->getMessage());
+            $sum['learn_live'] = ['error' => true];
+        }
+        // 23.7 (L6): "החלף לבפועל" — רווחי סמך שלא חופפים → הצעה לעורך הראשי. שאילתות בלבד, בלי ספק
+        try {
+            $sum['learn_switch'] = ts_learn_switch_sync($now);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning switch: ' . $e->getMessage());
+            $sum['learn_switch'] = ['error' => true];
+        }
+        // למידה (23.9, L5b): השוואת שכנים — אחרונה, באותו תקציב לספק ובתקרת זמן משלה. חריגה לא עוצרת את המשך הריצה
+        try {
+            $sum['learn'] = ts_learn_cron($now, $used, $budget, $t0);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning: ' . $e->getMessage());
+            $sum['learn'] = ['error' => true];
         }
         $sum['calls'] = $used;
         // ניקוי המאגר — פעם ביום, מכאן (✅4)

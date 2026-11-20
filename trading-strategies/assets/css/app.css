@@ -15,12 +15,15 @@
     --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
     --r: 10px; --tap: 40px; --head: 48px;
     --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+    /* הצבעים של השיטות על הגרף (18.1.2, 18.5) — הראשונה --brand; בלי אדום וירוק של הנרות. = TS_METHOD_PALETTE */
+    --m2: #b5560f; --m3: #7a3fa0; --m4: #0f7c86; --m5: #a4206a; --m6: #5b6b00; --m7: #8a5a00; --m8: #4a5a7a;
 }
 @media (prefers-color-scheme: dark) {
     :root {
         --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
         --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
         --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+        --m2: #f0a15e; --m3: #c39be0; --m4: #5fc7cf; --m5: #f08cc4; --m6: #c2d468; --m7: #e5c07b; --m8: #aab8d6;
     }
 }
 
@@ -204,7 +207,7 @@ dialog > form { display: flex; flex-direction: column; max-height: inherit; heig
 
 /* ניווט תחתון: ארבע לשוניות (אפיון פרק 2) */
 body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
-.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+.bottom-nav { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
     background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 .bottom-nav a { display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 56px; text-decoration: none;
     color: var(--muted); font-size: .75rem; }
@@ -314,14 +317,158 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 /* גרף */
 .chart-tools { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
 .chart-tools .seg { max-width: 100%; }
-.chart-tools .toolbar { margin: 0; }
+.chart-tools .toolbar { margin: 0; flex-wrap: wrap; row-gap: 4px; }
+.chart-tools .toolbar .fs-pick { position: relative; margin-inline-start: auto; display: inline-flex; }
+.chart-tools .toolbar .fs-open { min-height: 36px; min-width: 36px; }
+/* L1 (18.1.5): התפריט שנפתח מ-⛶ — לגובה / לרוחב (רק כשהמסך לאורך) */
+.fs-menu { position: absolute; z-index: 20; top: calc(100% + 4px); inset-inline-end: 0; display: flex; flex-direction: column; min-inline-size: 140px;
+    padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.fs-menu[hidden] { display: none; }
+.fs-item { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; font: inherit; color: var(--ink); background: none;
+    border: 0; border-radius: calc(var(--r) - 2px); cursor: pointer; text-align: start; }
+.fs-item:hover, .fs-item:focus-visible { background: var(--brand-soft); outline: none; }
+.fs-ico { inline-size: 1.4em; text-align: center; }
 .chart-tools select { width: auto; }
-.chart-wrap { display: grid; gap: 4px; margin-bottom: var(--s2); }
+.chart-wrap { position: relative; display: grid; gap: 4px; margin-bottom: var(--s2); }
+
+/* T1 — חלונית הסבר על נקודת תחזית (18.1.6): צפה מעל הגרף, ✕ בפינה, וזנב שמצביע על הנקודה — מעליה או מתחתיה (charttip.js).
+   המיקום (left/top, --tail-x) — בפיקסלים מהגאומטריה של הגרף, ולכן פיזי ולא לוגי */
+/* חצי שקופה (בקשת הבעלים): הגרף נראה מתחתיה, והטשטוש שומר על הקריאות — גם במצב כהה */
+.ctip { position: absolute; z-index: 5; inline-size: 280px; color: var(--ink); border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 82%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); font-size: .85rem; line-height: 1.35; text-align: start;
+    touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.ctip[data-dragged] { box-shadow: 0 12px 32px rgba(10, 15, 30, .28); }
+.ctip.scrolls { touch-action: pan-y; cursor: auto; }
+.ctip.scrolls .ctip-head { touch-action: none; cursor: grab; }
+.ctip a, .ctip button { cursor: pointer; }
+/* ידית — רמז שאפשר לגרור */
+.ctip-grip { position: absolute; top: 3px; left: 50%; inline-size: 28px; block-size: 3px; margin-left: -14px; border-radius: 2px; background: var(--line); }
+.ctip-body { display: grid; gap: 3px; padding: 8px 12px 8px; overflow: auto; border-radius: inherit; }
+.ctip-head { display: flex; align-items: flex-start; gap: var(--s2); }
+.ctip-title { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; padding-top: 2px; }
+/* ✕ ויעדי הלחיצה: 40px לנגיעה, בלי להגדיל את החלונית (שוליים שליליים) */
+.ctip .ctip-x { flex: none; min-height: var(--tap); min-width: var(--tap); margin-block: -10px -12px; margin-inline-end: -10px; font-size: .9rem; color: var(--muted); }
+.ctip-sub { color: var(--muted); font-size: .8rem; }
+.ctip-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.ctip-tag { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; font-size: .75rem; font-weight: 600;
+    color: var(--mc, var(--brand)); background: color-mix(in srgb, var(--mc, var(--brand)) 14%, var(--surface)); }
+/* שורת הוודאות של השיטה (כמו בכרטיס): "ודאות 62% · ראשונית" — ליד התווית */
+.ctip-cert { font-size: .8rem; color: var(--ink); }
+.ctip-tag.danger { color: var(--danger); background: var(--danger-soft); }
+.ctip-text { color: var(--ink); }
+.ctip-inv { font-size: .8rem; color: var(--muted); }
+.ctip-inv bdi { color: var(--ink); font-weight: 600; }
+.ctip-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 14px; }
+.ctip-links a, .ctip-more { min-height: var(--tap); margin-block: -8px; display: inline-flex; align-items: center; padding: 0; border: 0; background: none;
+    color: var(--brand); font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+.ctip-links a:hover, .ctip-more:hover { text-decoration: underline; }
+.ctip-note { color: var(--muted); font-size: .7rem; }
+.ctip-tail { position: absolute; left: calc(var(--tail-x, 50%) - 6px); inline-size: 12px; block-size: 12px; background: color-mix(in srgb, var(--surface) 82%, transparent);
+    border: 1px solid var(--line); transform: rotate(45deg); pointer-events: none; }   /* הזנב לא תופס מגע — הנקודה שמתחתיו נשארת לחיצה */
+.ctip[data-dragged] .ctip-tail { display: none; }
+/* נגררה — קו עם ראש חץ מהחלונית אל הנקודה, וטבעת על הנקודה (charttip.js, placeDragged) */
+.ctip-pin { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.ctip-line { position: absolute; block-size: 2px; margin-top: -1px; transform-origin: 0 50%; background: var(--mc, var(--brand)); }
+.ctip-line::after { content: ''; position: absolute; right: -10px; top: -5px; border: 6px solid transparent; border-right-width: 0;
+    border-left: 11px solid var(--mc, var(--brand)); }
+.ctip-dot { position: absolute; inline-size: 14px; block-size: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    border: 2px solid var(--mc, var(--brand)); background: color-mix(in srgb, var(--surface) 60%, transparent); box-shadow: 0 0 0 2px var(--surface); }
+.ctip[data-side="above"] .ctip-tail { bottom: -7px; border-top-color: transparent; border-left-color: transparent; }
+.ctip[data-side="below"] .ctip-tail { top: -7px; border-bottom-color: transparent; border-right-color: transparent; }
+
+/* 🔮 התפריט הנפתח מעל הגרף (18.1.2, F1): תיבות סימון, כמה שיטות יחד. הגרף נשאר גלוי מתחתיו */
+.fc-pop { position: absolute; top: 8px; inset-inline-end: 8px; z-index: 4; inline-size: min(300px, 90%, calc(100% - 16px));
+    max-block-size: calc(100% - 16px); overflow: auto; display: grid; gap: 6px; padding: 10px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(10, 15, 30, .22); }
+.fc-pop-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.fc-pop-head b { font-size: .9rem; }
+.fc-pop-head small, .fc-opt small { font-size: .75rem; }
+.fc-opts { display: grid; gap: 2px; }
+.fc-opt { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.fc-opt:hover { background: var(--brand-soft); }
+.fc-opt input { flex: none; inline-size: 20px; block-size: 20px; min-height: 0; accent-color: var(--brand); }
+.fc-opt.off { opacity: .55; cursor: default; }
+.fc-opt-tx { display: grid; min-width: 0; line-height: 1.25; }
+.fc-max { margin: 0; font-size: .8rem; font-weight: 600; color: var(--ink); background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-radius: var(--r); padding: var(--s1) var(--s2); }
+.fc-note { margin: 0; font-size: .75rem; color: var(--muted); }
+.fc-none { justify-self: start; color: var(--muted); background: var(--bg); }
+.fc-admin { font-size: .8rem; }
+.fc-dot { flex: none; inline-size: 10px; block-size: 10px; border-radius: 50%; background: var(--mc, var(--brand)); }
+
+/* S5 (18.5): הצבע של שיטה מסומנת — 8 עיגולים מתחת לשם. תפוס על ידי שיטה אחרת — עמום ומוצלב, לא ניתן לבחירה */
+.fc-row { display: grid; gap: 2px; }
+.fc-colors { display: flex; flex-wrap: wrap; gap: 0; padding: 0 6px 6px; padding-inline-start: 30px; }
+.fc-sw { position: relative; display: grid; place-items: center; inline-size: 30px; block-size: 30px; border-radius: 50%; cursor: pointer; }
+.fc-sw::before { content: ''; inline-size: 20px; block-size: 20px; border-radius: 50%; background: var(--sw); }
+.fc-sw input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: inherit; min-height: 0; }
+.fc-sw:has(input:checked) { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--sw); }
+.fc-sw:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+.fc-sw.taken { cursor: not-allowed; opacity: .3; }
+.fc-sw.taken::after { content: ''; position: absolute; inline-size: 24px; block-size: 2px; background: var(--ink); transform: rotate(-45deg); }
+
+/* S5 (18.5): המקרא מעל הגרף — שם השיטה ונקודה בצבע שלה. לחיצה מסתירה/מציגה; הגרף לא זז (שכבה, לא שורה) */
+.fc-legend { position: absolute; top: 6px; inset-inline-end: 6px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px;
+    max-inline-size: calc(100% - 12px); pointer-events: none; }
+.fc-leg { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 2px 10px; font: inherit;
+    font-size: .78rem; color: var(--ink); background: color-mix(in srgb, var(--surface) 86%, transparent); border: 1px solid var(--line);
+    border-radius: 99px; cursor: pointer; }
+.fc-leg:focus-visible { outline: 2px solid var(--mc); outline-offset: 1px; }
+.fc-leg.off { color: var(--muted); text-decoration: line-through; }
+.fc-leg.off .fc-dot { background: transparent; box-shadow: inset 0 0 0 2px var(--mc); }
+/* "אין תחזית" — לשיטה הפעילה אין כרגע מה לצייר (ה-title מסביר) */
+.fc-leg-none { color: var(--muted); font-size: 1.2em; line-height: 1; font-weight: 600; margin-inline-start: -2px; }
+/* H1 (18.1.8): ליד ∅ — "N אותות בעבר בגרף"; ובתפריט — המתג "היסטוריה" והתקרה */
+.fc-leg-past { color: var(--muted); font-size: .7rem; font-weight: 500; white-space: nowrap; }
+.fc-hist { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--line); }
+.fc-hist .switch { font-size: .85rem; }
+.fc-hist-cap { font-size: .72rem; }
+.chart-wrap.fs .fc-legend { top: calc(56px + env(safe-area-inset-top)); }
+
+/* ⛶ מסך מלא (18.1.2 סעיף 3): רק הגרף, גם לרוחב. Fullscreen API או שכבה — אותו מראה */
+.fs-bar { display: none; }
+.chart-wrap.fs { position: fixed; inset: 0; z-index: 50; margin: 0; gap: 0; display: flex; flex-direction: column; background: var(--surface);
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.chart-wrap.fs .chart-box { flex: 1 1 auto; block-size: auto; min-block-size: 0; border: 0; border-radius: 0; }
+.chart-wrap.fs .chart-box.osc { flex: 0 0 120px; border-top: 1px solid var(--line); }
+.chart-wrap.fs .fs-bar { position: absolute; z-index: 3; top: calc(8px + env(safe-area-inset-top)); inset-inline-end: calc(8px + env(safe-area-inset-left));
+    display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 10px; background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--line); border-radius: 99px; box-shadow: var(--shadow); }
+.chart-wrap.fs .fs-bar .icon-btn { min-height: 36px; min-width: 36px; }
+.chart-wrap.fs .fc-pop { top: calc(56px + env(safe-area-inset-top)); }
+.fs-pair { font-size: .9rem; padding-inline: 4px; }
+body.chart-fs { overflow: hidden; }
+/* L1 (18.1.5 סעיף 2.2): "לרוחב" בלי נעילת כיוון — השכבה מסובבת 90° עם כיוון השעון (קוראים כשהחלק העליון של הטלפון שמאלה).
+   רוחב = גובה המסך, גובה = רוחב המסך (--fs-w/--fs-h מ-market.js). המגע מומר ב-rotate.js */
+.chart-wrap.fs.fs-turn { inset: auto; top: 0; left: 0; width: var(--fs-w); height: var(--fs-h); padding: 0;
+    transform-origin: 0 0; transform: translateX(var(--fs-h)) rotate(90deg); }
+.chart-wrap.fs.fs-turn .chart-box { touch-action: none; }
+/* "↺" — ציר המחיר לרגיל (gestures.js), רק אחרי גרירה בשתי אצבעות לגובה או צביטה אנכית */
+.chart-reset { position: absolute; z-index: 3; top: 8px; left: 8px; min-width: 36px; min-height: 36px; padding: 0 10px; font: inherit; font-size: 1.05rem;
+    color: var(--ink); background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); border-radius: 99px;
+    box-shadow: var(--shadow); cursor: pointer; }
+.chart-reset[hidden] { display: none; }
+.chart-reset:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 .chart-box { position: relative; direction: ltr; block-size: min(58dvh, 560px); min-block-size: 280px; border: 1px solid var(--line);
     border-radius: var(--r); overflow: hidden; background: var(--surface); touch-action: pan-y; }
 .chart-box.osc { block-size: 140px; min-block-size: 0; }
+/* גרף בלי נרות — ההסבר בתוך הגרף, במרכז (מעל הקנבס הריק), עם ↻ ומסגרת יומית */
+.chart-empty { position: absolute; z-index: 4; inset-block-start: 50%; inset-inline: var(--s3); transform: translateY(-50%); max-inline-size: 420px;
+  margin-inline: auto; display: grid; gap: var(--s2); justify-items: center; text-align: center; padding: var(--s3);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); }
+.chart-empty[hidden] { display: none; }
+/* יומן בקשות הנרות — שורה עם סיבה (0 נרות / נכשלה / רק מהמאגר) */
+.tbl tr.fl-why td { background: var(--danger-soft); }
+.tbl tr.fl-why:not(.fl-reason-row) td { border-bottom: 0; }
+.tbl td.fl-reason { white-space: normal; overflow-wrap: anywhere; font-size: .85em; padding-block-start: 0; }
+.tbl td.fl-reason > div { position: sticky; inset-inline-start: var(--s3); max-inline-size: calc(100vw - 72px); }
+.chart-empty-why { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .quote-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 var(--s2); }
 .quote-head .price { font-size: 1.5rem; }
+/* השוק סגור — שעון עד הפתיחה (session.js). מספרים ברוחב קבוע, כדי שהשורה לא תקפוץ כל שנייה */
+.quote-head .closed-tag { font-variant-numeric: tabular-nums; background: var(--brand-soft); color: var(--ink); white-space: normal; }
+.quote-head .closed-tag[hidden], .quote-head .zone-clock[hidden] { display: none; }
+.quote-head .zone-clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chart-tools .chip, .toolbar .chip { min-height: 28px; }
 
 /* ===== ציור על הגרף (spec-stage-a 7; בטלפון — סרגל צף מעל הניווט) ===== */
@@ -373,11 +520,34 @@ body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
 .use-tx small.wrap, .card .l2.wrap { white-space: normal; overflow: visible; }
 a.use-row { text-decoration: none; color: inherit; }
 
-/* ===== 🔮 תחזית שיטה (spec-stage-a 17.2.2) ===== */
+/* ===== 🔮 שיטות על הגרף והפס שמתחת (spec-stage-a 17.2.2, 18.1.2, 18.4) ===== */
+.forecast-list { display: grid; }
 .forecast-panel { display: grid; gap: var(--s2); padding: var(--s3); margin-bottom: var(--s2); background: var(--surface);
-    border: 1px solid var(--line); border-inline-start: 3px solid var(--brand); border-radius: var(--r); }
+    border: 1px solid var(--line); border-inline-start: 3px solid var(--mc, var(--brand)); border-radius: var(--r); }
 .forecast-head { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .forecast-head h3 { flex: 1; min-width: 0; font-size: .95rem; line-height: 1.3; }
+/* ── הפס שמתחת לגרף (S4, 18.4): ממצא · תרחיש · הסתברות ── */
+.an-panel { gap: var(--s2); margin-bottom: var(--s2); }
+.an-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); min-width: 0; }
+.an-title { flex: 1 1 auto; margin: 0; font-size: .9rem; font-weight: 600; color: var(--muted); }
+.an-bar select { width: auto; flex: none; }
+.an-tfs { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1); font-size: .85rem; }
+.an-tfs .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+.an-prof { font-size: .8rem; margin-inline-start: auto; }
+.forecast-blocks { display: grid; }
+.an-fold { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding: 4px 0; min-height: 40px; background: none; border: 0;
+    color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.an-fold h3 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; margin: 0; }
+.an-brief { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-chev { flex: none; color: var(--muted); }
+.an-body { display: grid; gap: var(--s2); min-width: 0; }
+.an-body[hidden] { display: none; }
+.an-sec { display: grid; gap: var(--s2); min-width: 0; padding-block-start: var(--s2); border-top: 1px solid var(--line); }
+.an-sec > h4 { margin: 0; font-size: .8rem; font-weight: 700; letter-spacing: .02em; color: var(--mc, var(--brand)); }
+.an-sec .summary { margin: 0; }
+.an-line { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.bt-none { font-weight: 600; }
+.blend-card { margin-bottom: var(--s2); }
 .forecast-scenarios { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .forecast-scenarios .btn { white-space: normal; text-align: start; }
 .forecast-scenarios .btn[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); font-weight: 600; }
@@ -389,9 +559,132 @@ a.use-row { text-decoration: none; color: inherit; }
 .param-notes summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .param-notes ul { padding-inline-start: var(--s4); font-size: .85rem; color: var(--muted); }
 
-/* ===== 🧩 בונה השיטות (spec-stage-a 17.2) ===== */
-.code-edit { inline-size: 100%; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: left; tab-size: 2; }
-.builder-out { display: grid; gap: var(--s2); margin-top: var(--s2); min-width: 0; overflow-x: auto; }
-.builder-out .ok { color: var(--ok); }
 .toolbar.wrap { flex-wrap: wrap; }
 .toolbar input[dir="ltr"] { min-width: 0; flex: 1 1 140px; }
+
+/* ── זוג (18.1.1, S1.1): BTC ⇄ USDT, ומתחת השמות בעברית ── */
+.pair { display: inline-flex; flex-direction: column; min-width: 0; gap: 1px; }
+.pair-main { display: inline-flex; align-items: center; gap: .3em; unicode-bidi: isolate; white-space: nowrap; }
+.pair-main b { font-weight: 700; letter-spacing: .02em; }
+.pair-main[dir="ltr"] { direction: ltr; flex-direction: row; }
+.vs-title[dir="ltr"] { direction: ltr; text-align: right; unicode-bidi: isolate; }
+.pair-sub { display: inline-flex; align-items: center; gap: .3em; font-size: .8em; color: var(--muted); font-weight: 400; }
+svg.vs { width: 1em; height: 1em; flex: none; color: currentColor; vertical-align: -.125em; }
+.pair-sub svg.vs { width: .9em; height: .9em; }
+#subtitle .pair-sub { font-size: 1em; }
+/* צד או נכס בתוך chip: ה-chip הוא ה-.pair עצמו (שתי שורות); מה שבתוכו — לא עוד chip */
+.chips label > .pair { flex-direction: column; align-items: center; justify-content: center; gap: 0; border-radius: 14px;
+  padding: 4px var(--s3); line-height: 1.2; }
+.chips label > .pair span, .chips label > .pair small { min-height: 0; padding: 0; border: 0; border-radius: 0; }
+.chips input:checked + .pair .pair-sub { color: inherit; opacity: .85; }
+.asset-pick label > .pair { align-items: flex-start; }
+
+/* ===== בחירה מרשימה — combobox (18.1.3): הרשימה מתחת לשדה, ברוחב שלו (בטלפון — ברוחב המסך), נגללת ===== */
+.combo { position: relative; margin-bottom: var(--s2); scroll-margin-top: 84px; }   /* מתחת לכותרת הדביקה */
+.combo > input { width: 100%; }
+.combo-pop { position: absolute; inset-inline: 0; top: calc(100% + 4px); z-index: 30; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .14); overflow-y: auto; overscroll-behavior: contain;
+    max-height: min(60vh, calc(var(--vvh, 100vh) - 160px)); }
+.combo-list { list-style: none; margin: 0; padding: 0; }
+.combo-opt { display: flex; align-items: center; gap: var(--s2); min-height: 52px; padding: 6px var(--s3); cursor: pointer; border-top: 1px solid var(--line); }
+.combo-opt:first-child { border-top: 0; }
+.combo-opt[aria-selected="true"], .combo-opt:hover { background: var(--brand-soft); }
+.combo-opt .t { margin-inline-start: auto; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.combo-msg { margin: 0; padding: var(--s3); color: var(--muted); text-align: center; }
+.combo-msg[hidden], .combo-list[hidden] { display: none; }
+
+/* ===== לשוניות במסך השוק (18.1.4): שורה אחת שנגללת לצדדים — לא עוטפת ===== */
+.mtabs-bar { display: flex; align-items: center; gap: var(--s1); margin-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.mtabs { display: flex; flex: 1; min-width: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.mtabs::-webkit-scrollbar { display: none; }
+.mtab { flex: none; min-height: var(--tap); padding: 0 var(--s3); border: 0; border-bottom: 2px solid transparent; background: none;
+    color: var(--muted); white-space: nowrap; font: inherit; font-size: .9rem; cursor: pointer; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; }
+.mtab[aria-selected="true"] { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.mtab-add { color: var(--brand); }
+.mtab.dragging { background: var(--brand-soft); border-radius: var(--r) var(--r) 0 0; box-shadow: 0 2px 10px rgba(0, 0, 0, .15); cursor: grabbing; }
+.mtabs.dragging { overflow-x: hidden; touch-action: none; }
+.mtab-tools { justify-content: space-between; }
+.needs { background: var(--brand-soft); border-radius: var(--r); padding: var(--s2) var(--s3); margin: 0 0 var(--s2); font-size: .9rem; }
+.chart-notice { color: var(--ink); font-weight: 600; }   /* 21.3: מוצג מה שבמאגר — אין מפתח זמין להשלמה */
+.app-key { border-top: 1px solid var(--line); padding-top: var(--s2); margin-top: var(--s2); }
+
+/* שורה ברשימה: התווית, מחיר ושינוי יומי (מהמאגר), ⭐ */
+.mrow { cursor: default; gap: var(--s1); }
+.mrow > .body { display: block; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mrow .mq { flex: none; display: grid; justify-items: end; text-align: end; line-height: 1.2; }
+.mrow .mq .p { font-weight: 600; }
+.mrow .mq small { font-size: .78rem; }
+.mrow .mq .mq-age { font-size: .72rem; }   /* המילוי ברקע (21.2): "לפני N ימים" */
+.mrow.locked .body, .mrow.locked .mq { opacity: .5; }
+.mrow .star { flex: none; }
+.chip-btn { min-height: 36px; padding: 0 var(--s3); border: 1px solid var(--line); border-radius: 99px; background: var(--surface); color: var(--ink); font: inherit; font-size: .875rem; cursor: pointer; }
+.chip-btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+
+/* הכותרת המשנית של הגרף (🟡 F1): השמות בעברית מתקצרים, והספק ("Binance") נשאר שלם */
+#subtitle.parts { display: flex; align-items: center; gap: .3em; min-width: 0; }
+#subtitle.parts > .pair-sub { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#subtitle.parts > .sub-tail { flex: none; white-space: nowrap; }
+.asset-chosen { padding: 2px 0 6px; }
+
+/* ===== יומן השיטה (18.6, S6) ===== */
+.mj-row { align-items: flex-start; }
+.mj-row > .chip { margin-top: 2px; }
+.mj-scen { display: flex; flex-wrap: wrap; column-gap: var(--s2); row-gap: 0; color: var(--muted); font-size: .85rem; }
+.mj-scen > span { white-space: nowrap; }
+.mj-tools select { flex: 1 1 0; min-width: 0; max-width: none; min-height: 40px; font-size: 16px; }
+.mj-sum .mj-m { white-space: nowrap; max-inline-size: 9rem; overflow: hidden; text-overflow: ellipsis; }
+.mj-sum td.zone .pct { display: block; }
+.method-journal > .btn { justify-self: center; }
+
+/* שכלול (18.7, S7): הצעת שינוי פרמטר במסך ניהול השיטות */
+.tune { margin-top: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.tune > summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; gap: var(--s2); }
+.tune > * + * { margin-top: var(--s2); }
+.tune-list { margin-top: var(--s2); }
+.tune-prop { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); background: var(--surface); list-style: none; }
+.tune-prop + .tune-prop { margin-top: var(--s2); }
+.tune-tbl { width: 100%; margin: var(--s2) 0; }
+.tune-tbl th[scope="row"] { text-align: start; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.tune-tbl td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tune-tbl thead th { text-align: end; }
+.tune-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
+
+/* למידה (פרק 23, L3): לשונית בכרטיס השיטה — אותו מבנה כמו השכלול */
+.learn { margin-top: var(--s3); border-top: 1px solid var(--line); padding-top: var(--s2); }
+.learn > summary { cursor: pointer; font-weight: 600; min-height: var(--tap); display: flex; align-items: center; gap: var(--s2); }
+.learn > div > * + * { margin-top: var(--s2); }
+.learn-tbl, .learn-counts { width: 100%; }
+.learn-tbl th[scope="row"] { text-align: start; font-weight: 400; white-space: nowrap; }
+.learn-tbl td.num, .learn-counts td.num { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.learn-tbl thead th:not(:first-child) { text-align: end; }
+.learn-tbl .tune-part th { text-align: start; font-weight: 600; padding-top: var(--s2); }
+.learn-tbl tr.learn-few th, .learn-tbl tr.learn-few td { color: var(--muted); }
+.learn-h { font-size: 1rem; margin: var(--s3) 0 0; }
+.learn-findings { list-style: none; padding: 0; margin: 0; }
+.learn-findings > li { border: 1px solid var(--line); border-radius: var(--r); padding: var(--s2); background: var(--surface); }
+.learn-findings > li + li { margin-top: var(--s2); }
+.learn-findings .l1 { display: flex; justify-content: space-between; gap: var(--s2); flex-wrap: wrap; font-weight: 600; }
+.learn-item { display: inline-flex; align-items: center; min-height: var(--tap); }
+/* L5b: השכנים — תוחלת R בתוך הדגימה ומחוצה לה; הנבחר מודגש */
+.learn-nb { width: 100%; margin-top: var(--s2); }
+.learn-nb th[scope="row"] { text-align: start; font-weight: 400; white-space: nowrap; }
+.learn-nb thead th:not(:first-child), .learn-nb td.num { text-align: end; font-variant-numeric: tabular-nums; }
+.learn-nb tr.chosen th, .learn-nb tr.chosen td { font-weight: 600; }
+/* היסטוגרמות MAE / MFE — לדיון בלבד */
+.learn-hist-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--s2); }
+.learn-hist { margin: 0; min-width: 0; }
+.learn-hist figcaption { font-size: .875rem; }
+.learn-hist ol { list-style: none; margin: var(--s1) 0 0; padding: 0; display: flex; align-items: flex-end; gap: 1px; height: 64px; border-bottom: 1px solid var(--line); }
+.learn-hist li { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.learn-hist li span { display: block; width: 100%; background: var(--muted); border-radius: 2px 2px 0 0; }
+
+
+/* כניסה במצב מנותק (A2) — מסך אחד, כפתור אחד */
+.login { max-inline-size: 360px; margin: var(--s4) auto; text-align: center; align-items: stretch; }
+.login-ic { font-size: 2.4rem; }
+.login h2 { margin: 0; }
+.login-go { inline-size: 100%; }
+.login-pw { text-align: start; }
+.login-or { margin: 0; color: var(--muted); }
+button.use-row { inline-size: 100%; background: none; border: 0; font: inherit; color: inherit; text-align: start; cursor: pointer; }

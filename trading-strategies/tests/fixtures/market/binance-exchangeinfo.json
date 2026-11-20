@@ -1,5 +1,178 @@
-{"symbols": [
-  {"symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "quoteAsset": "USDT"},
-  {"symbol": "ETHUSDT", "status": "TRADING", "baseAsset": "ETH", "quoteAsset": "USDT"},
-  {"symbol": "ETHBTC", "status": "TRADING", "baseAsset": "ETH", "quoteAsset": "BTC"}
-]}
+{
+ "symbols": [
+  {
+   "symbol": "BTCUSDT",
+   "status": "TRADING",
+   "baseAsset": "BTC",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "ETHUSDT",
+   "status": "TRADING",
+   "baseAsset": "ETH",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "ETHBTC",
+   "status": "TRADING",
+   "baseAsset": "ETH",
+   "quoteAsset": "BTC"
+  },
+  {
+   "symbol": "BTCUSDC",
+   "status": "TRADING",
+   "baseAsset": "BTC",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "ETHUSDC",
+   "status": "TRADING",
+   "baseAsset": "ETH",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "SOLUSDT",
+   "status": "TRADING",
+   "baseAsset": "SOL",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "SOLUSDC",
+   "status": "TRADING",
+   "baseAsset": "SOL",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "XRPUSDT",
+   "status": "TRADING",
+   "baseAsset": "XRP",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "XRPUSDC",
+   "status": "TRADING",
+   "baseAsset": "XRP",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "BNBUSDT",
+   "status": "TRADING",
+   "baseAsset": "BNB",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "BNBUSDC",
+   "status": "TRADING",
+   "baseAsset": "BNB",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "ADAUSDT",
+   "status": "TRADING",
+   "baseAsset": "ADA",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "ADAUSDC",
+   "status": "TRADING",
+   "baseAsset": "ADA",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "DOGEUSDT",
+   "status": "TRADING",
+   "baseAsset": "DOGE",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "DOGEUSDC",
+   "status": "TRADING",
+   "baseAsset": "DOGE",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "LTCUSDT",
+   "status": "TRADING",
+   "baseAsset": "LTC",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "LTCUSDC",
+   "status": "TRADING",
+   "baseAsset": "LTC",
+   "quoteAsset": "USDC"
+  },
+  {
+   "symbol": "TRXUSDT",
+   "status": "TRADING",
+   "baseAsset": "TRX",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "AVAXUSDT",
+   "status": "TRADING",
+   "baseAsset": "AVAX",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "LINKUSDT",
+   "status": "TRADING",
+   "baseAsset": "LINK",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "DOTUSDT",
+   "status": "TRADING",
+   "baseAsset": "DOT",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "TONUSDT",
+   "status": "TRADING",
+   "baseAsset": "TON",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "SHIBUSDT",
+   "status": "TRADING",
+   "baseAsset": "SHIB",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "BCHUSDT",
+   "status": "TRADING",
+   "baseAsset": "BCH",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "NEARUSDT",
+   "status": "TRADING",
+   "baseAsset": "NEAR",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "UNIUSDT",
+   "status": "TRADING",
+   "baseAsset": "UNI",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "XLMUSDT",
+   "status": "TRADING",
+   "baseAsset": "XLM",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "ATOMUSDT",
+   "status": "TRADING",
+   "baseAsset": "ATOM",
+   "quoteAsset": "USDT"
+  },
+  {
+   "symbol": "ETCUSDT",
+   "status": "TRADING",
+   "baseAsset": "ETC",
+   "quoteAsset": "USDT"
+  }
+ ]
+}

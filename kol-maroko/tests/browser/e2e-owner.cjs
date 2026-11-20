@@ -4,7 +4,7 @@
  * בעל העמוד עובר על כל מה שביקש ב-docs/owner-brief.md — **בלחיצות ובגרירה בלבד**, כמו שהוא היה עושה. הקוד של הבדיקה
  * קורא את המצב (קבצים, טבלה, בנייה) כדי לאמת, אבל לא משנה דבר בעצמו: כל שינוי עובר דרך כפתור, שדה, ידית או גרירה במסך.
  *
- *  0. ייבוא העמוד של היום (📁 פרויקט ← "🔄 ייבוא עכשיו").
+ *  0. העמוד של היום בפרויקט (M6: בלי כפתור ייבוא — זריעה מ-tests/support/).
  *  1. 🎨 עורך ← index.html נפתח; לחיצה על הכותרת בוחרת אותה.
  *  2. טקסט: לחיצה כפולה על הכותרת ← הקלדה ← נשמר ב-index.html.
  *  3. מרווחים בין הכותרות שעל התמונה: 📏 ← גרירת ידית הרווח בין הכותרת לשורת המשנה, ובין שתי שורות המשנה.
@@ -72,7 +72,7 @@ const png = (w, h, rgb) => {
   const wav = (n, f) => { const pcm = Buffer.alloc(n * 2); for (let i = 0; i < n; i++) pcm.writeInt16LE(Math.round(f ? 8000 * Math.sin(i / f) : 0), i * 2); const hd = Buffer.alloc(44); hd.write('RIFF', 0); hd.writeUInt32LE(36 + pcm.length, 4); hd.write('WAVEfmt ', 8); hd.writeUInt32LE(16, 16); hd.writeUInt16LE(1, 20); hd.writeUInt16LE(1, 22); hd.writeUInt32LE(16000, 24); hd.writeUInt32LE(32000, 28); hd.writeUInt16LE(2, 32); hd.writeUInt16LE(16, 34); hd.write('data', 36); hd.writeUInt32LE(pcm.length, 40); return Buffer.concat([hd, pcm]); };
   const TONE = path.join(data, 'my-recording.wav'), TONE2 = path.join(data, 'new-word.wav');
   fs.writeFileSync(TONE, wav(8000, 5)); fs.writeFileSync(TONE2, wav(6000, 9)); fs.writeFileSync(path.join(data, 'rec.wav'), wav(3200, 0));
-  execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+  execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     foreach ([1, 2] as $w) { $t = KOL_DATA_DIR . "/rec$w.wav"; copy(KOL_DATA_DIR . '/rec.wav', $t);
       $id = file_store($t, "rec$w.wav", ['sub' => 'u-owner', 'name' => 'Owner Test'], 'audio/wav');
       db()->prepare('UPDATE words SET audio = ? WHERE id = ?')->execute([$id, $w]); }`, data, ROOT]);
@@ -80,7 +80,7 @@ const png = (w, h, rgb) => {
   const base = `http://127.0.0.1:${port}`, wp = `http://127.0.0.1:${wpPort}`;
   // בעל האתר מחבר את האתר (ערוץ משיכה, M7) — לא חלק מהתרחיש של בעל העמוד. רק לפני הפרסום: site_url משנה את מקור הייבוא
   // (התמונה של ה-hero נלקחת מהאתר), ולכן בייבוא — האתר של ברירת המחדל, כמו אצל הבעלים.
-  const connectSite = () => execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'import', 'ai', 'agent', 'dev', 'preview', 'migrate', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
+  const connectSite = () => execFileSync('php', ['-r', `define('KOL_DATA_DIR', $argv[1]); foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev', 'preview', 'build'] as $l) require_once $argv[2] . "/lib/$l.php";
     setting_set('site_url', $argv[3]); setting_set('pub_channel', 'pull'); setting_set('pull_url', $argv[4]);
     file_put_contents($argv[5] . '/options.json', json_encode(['kol_maroko_keys' => pub_key_line(pub_key())]));`, data, ROOT, wp, base + '/pull.php', wpDir]);
   const env = { ...process.env, PHP_CLI_SERVER_WORKERS: '6' };
@@ -167,10 +167,11 @@ const png = (w, h, rgb) => {
     await step('0. ייבוא', async () => {
       await page.goto(base + '/#/project');
       await page.waitForSelector('.pj-tree .pj-row');
-      await page.click('button:has-text("🔄 ייבוא עכשיו")');
-      await page.waitForSelector('#sheet[open]', { timeout: 30000 });
-      ok(/הפרויקט יובא מחדש/.test(await page.textContent('#sheet[open]')), '📁 פרויקט ← "🔄 ייבוא עכשיו": העמוד של היום יובא, עם "מה נלקח מאיפה"');
-      await page.click('#sheet[open] [data-close]'); await sleep(500);
+      // M6: הייבוא הוסר מהכלי (הפרויקט הוא המקור) — הזריעה של "העמוד של היום" מכלי הבדיקות (tests/support/)
+      ok(!(await page.$('button:has-text("🔄 ייבוא עכשיו")')) && !(await page.$('[data-migrate]')), '📁 פרויקט: אין "🔄 ייבוא עכשיו" / "ייבוא מחדש" (M6)');
+      const r = await call(page, 'pf_migrate', {});
+      ok(r && r.files && r.files.includes('index.html'), 'הזריעה: העמוד של היום בפרויקט');
+      await page.reload(); await page.waitForSelector('.pj-tree .pj-row'); await sleep(500);
     });
 
     // ═══ 1. פתיחת העורך ═══

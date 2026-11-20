@@ -105,7 +105,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     //      V14 מוסיף: איפוס בכישלון — תג שנכשל ב-error מוסר והניסיון הבא טוען מחדש; ב-timeout התג נשאר והניסיון הבא מחכה לו ═══
     {
       const LD = '**/monaco/vs/loader.js';
-      const fresh = async () => { const c0 = await mk(390, 844), pg = await c0.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(base + '/index.php#/words', { waitUntil: 'domcontentloaded' }); await pg.waitForFunction(() => typeof Project !== 'undefined' && !!Project.loadMonaco && typeof Code !== 'undefined' && !!Code.loadMonaco, null, { timeout: 20000 }); return { c0, pg, errs }; };
+      const fresh = async () => { const c0 = await mk(390, 844), pg = await c0.newPage(), errs = []; pg.on('pageerror', e => errs.push(e.message)); await pg.goto(base + '/index.php#/words', { waitUntil: 'domcontentloaded' }); await pg.waitForFunction(() => typeof Project !== 'undefined' && !!Project.loadMonaco, null, { timeout: 20000 }); return { c0, pg, errs }; };
       const loaders = pg => pg.evaluate(() => document.querySelectorAll('script[data-monaco-loader]').length);
       // (א) loader.js חסום ← כישלון ← שחרור ← ניסיון חוזר מצליח, עם תג אחד ובלי שגיאת דף
       { const { c0, pg, errs } = await fresh();
@@ -117,18 +117,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         await sleep(300);
         ok(/^fail/.test(r1) && after1 === 0 && r2 === true && await loaders(pg) === 1 && !errs.length, 'Monaco: loader.js חסום ← כישלון (התג הוסר) ← ניסיון חוזר מצליח — תג אחד, בלי שגיאת דף', { r1, after1, r2, n: await loaders(pg), errs });
         await c0.close(); }
-      // (ב) Code.loadMonaco ו-Project.loadMonaco חופפים — loader אחד, אותו אובייקט
+      // (ב) M6: code.js נמחק — כמה קריאות חופפות ל-Project.loadMonaco — loader אחד, אותו אובייקט
       { const { c0, pg, errs } = await fresh();
-        const r = await pg.evaluate(async () => { const [a, b, c] = await Promise.all([Code.loadMonaco(), Project.loadMonaco(), Code.loadMonaco()]); return { same: a === b && b === c && !!a }; });
+        const r = await pg.evaluate(async () => { const [a, b, c] = await Promise.all([Project.loadMonaco(), Project.loadMonaco(), Project.loadMonaco()]); return { same: a === b && b === c && !!a }; });
         await sleep(300);
-        ok(r.same && await loaders(pg) === 1 && !errs.length, 'Monaco: Code.loadMonaco + Project.loadMonaco חופפים — loader.js אחד, אותו אובייקט, בלי שגיאת דף', { r, n: await loaders(pg), errs });
+        ok(r.same && await loaders(pg) === 1 && !errs.length, 'Monaco: קריאות חופפות ל-loadMonaco — loader.js אחד, אותו אובייקט, בלי שגיאת דף', { r, n: await loaders(pg), errs });
         await c0.close(); }
-      // (ג) רשת איטית: Code מוותר ב-timeout (15s) בזמן ש-Project עוד מחכה (20s) — התג אינו מוסר, Project מצליח, ניסיון חוזר של Code מצליח
+      // (ג) רשת איטית (16.5s — מתחת ל-timeout של Project, 20s). M6: הצד של Code (timeout 15s) נמחק עם code.js; נשאר: תג אחד, כולן מצליחות
       { const { c0, pg, errs } = await fresh();
         await pg.route(LD, async r => { await sleep(16500); try { await r.continue(); } catch { /* */ } });
-        const r = await pg.evaluate(async () => { const pc = Code.loadMonaco().then(() => 'ok', e => 'fail'), pp = Project.loadMonaco().then(() => 'ok', e => 'fail'); const [c, p] = await Promise.all([pc, pp]); const c2 = await Code.loadMonaco().then(() => 'ok', () => 'fail'); return { c, p, c2 }; });
+        const r = await pg.evaluate(async () => { const pc = Project.loadMonaco().then(() => 'ok', e => 'fail'), pp = Project.loadMonaco().then(() => 'ok', e => 'fail'); const [c, p] = await Promise.all([pc, pp]); const c2 = await Project.loadMonaco().then(() => 'ok', () => 'fail'); return { c, p, c2 }; });
         await sleep(300);
-        ok(r.c === 'fail' && r.p === 'ok' && r.c2 === 'ok' && await loaders(pg) === 1 && !errs.length, 'Monaco: רשת איטית — Code ב-timeout לא מסיר את התג; Project מצליח, וניסיון חוזר של Code מצליח, בלי שגיאת דף', { r, n: await loaders(pg), errs });
+        ok(r.c === 'ok' && r.p === 'ok' && r.c2 === 'ok' && await loaders(pg) === 1 && !errs.length, 'Monaco: רשת איטית — קריאות חופפות מחכות לאותו תג ומצליחות, וקריאה נוספת — בלי שגיאת דף', { r, n: await loaders(pg), errs });
         await c0.close(); }
     }
 

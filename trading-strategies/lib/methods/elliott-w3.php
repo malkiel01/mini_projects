@@ -33,7 +33,7 @@ final class TsMethodElliottW3 extends TsMethod
     {
         return [
             'id' => 'elliott-w3',
-            'name' => 'גלי אליוט — כניסה לגל 3',
+            'name' => 'אליוט',
             'source' => 'Frost & Prechter, פרק 1 (כלל 1), פרק 4 (יחסים)',
             'label' => 'שיטה שלנו על בסיס כללי הספר (Frost & Prechter)',
             'sample' => false,
@@ -55,9 +55,17 @@ final class TsMethodElliottW3 extends TsMethod
             'levels' => 'absolute',   // 6.2(ח)
             'tick' => true,           // צריכה את ה-tick של הנכס ($p['tick']) — "יעד ≤ tick → אין אות"
             'analyze_from_state' => true,   // ו1: הכרטיס ממשיך ממצב המנוע של הבדיקה לאחור
-            'version' => 1,
+            'version' => 1 + $this->tune,   // + החלות (18.7)
             'incremental' => true,
             'alerts' => false,        // לא נקבע באפיון — כבוי עד שיוכרע
+            // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            'learn' => [
+                'w2_depth' => 'עומק גל 2 (חלק מגל 1)',
+                'w1_atr' => 'אורך גל 1 ב-ATR (בנר האישור)',
+            ],
+            // למידה (23.9, L5b): w3_mult "לפי הספר" — נלמד **רק בין ערכי הספר** (17.1.4: גל 3 = 1.0 / 1.618 / 2.618 × גל 1).
+            // השכן — הערך הבא ברשימה; אין ערך אחר בהצעה (קריטריון 10)
+            'learn_params' => ['w3_mult' => ['values' => [1.0, 1.618, 2.618]]],
         ];
     }
 
@@ -105,6 +113,9 @@ final class TsMethodElliottW3 extends TsMethod
         if (!$e['ok']) return [$s, null];
         $sig = ['side' => $e['side'], 'entry' => $c['c'], 'stop' => $e['stop'], 'target' => $e['target']];
         $s['x'] = $sig + ['ago' => 0, 'alive' => true];
+        $catr = $s['piv'][2]['catr'] ?? null;
+        $w1 = abs($s['piv'][1]['v'] - $s['piv'][0]['v']);
+        $sig['features'] = ['w2_depth' => $e['r'], 'w1_atr' => $catr ? $w1 / $catr : null];   // meta().learn — לא נכנס למצב
         return [$s, $sig];
     }
 
@@ -146,6 +157,23 @@ final class TsMethodElliottW3 extends TsMethod
         unset($ov['counts']);   // הפירוט הפנימי לא נשלח לגרף — רק החוזה (17.2.3) וההנחיות
         if (!$ov['items']) $ov['note'] = 'אין כרגע ספירה שעומדת בכללים הקשיחים ובציון המינימלי';
         return $ov;
+    }
+
+    /**
+     * ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2) — אותה רגישות ואותו ATR כמו בהווה (overlay). $before (H1c, מנה ישנה): רק ספירות
+     * שנגמרות לפניו — נקודות המפנה עד הראשונה שב-before ואחריו (היא "האחרונה", ולא נספרת), ולכן החיפוש הוא ב-40 שלפני before
+     */
+    public function pastCounts(array $candles, array $p, int $tf, ?int $before = null): array
+    {
+        $prm = ts_ew_params(['pivot_atr_mult' => (float)$p['pivot_atr_mult'], 'atr_len' => (int)$p['atr_len']]);
+        $piv = ts_ew_pivots($candles, $prm['pivot_atr_mult'], $prm['atr_len']);
+        if ($before !== null) {
+            $k = 0;
+            while ($k < count($piv) && $piv[$k]['t'] < $before) $k++;
+            $piv = array_slice($piv, 0, $k + 1);
+        }
+        $out = ts_ew_past_counts($piv, $tf, $prm);
+        return $before === null ? $out : array_values(array_filter($out, fn($c) => $c['t'] < $before));
     }
 
     public function conditions(array $s, array $p): array

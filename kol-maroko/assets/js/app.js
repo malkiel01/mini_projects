@@ -1,4 +1,4 @@
-// קול מרוקו — המעטפת: מי אני, לשוניות, חברים ויומן. הסטודיו — studio.js.
+// קול מרוקו — המעטפת: מי אני, לשוניות, חברים ויומן. M6: הסטודיו הישן (studio.js, code.js) הוסר — 🎨 עורך ו-📁 פרויקט במקומו.
 'use strict';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -80,10 +80,8 @@ function sheet(title, ...body) {
 
 // ── ניתוב ────────────────────────────────────────────────
 const TABS = [
-  { id: 'studio', label: '🎨 סטודיו', min: 'content_editor' },
   { id: 'words', label: '📚 נתונים', min: 'content_editor' },          // N3: המילים — הרשימה הראשונה
-  { id: 'code', label: '</> קוד', min: 'content_editor' },
-  { id: 'editor', label: '🎨 עורך', min: 'content_editor' },
+  { id: 'editor', label: '🎨 עורך', min: 'content_editor' },          // M6: "🎨 סטודיו" ו-"</> קוד" הישנים הוסרו (#/studio, #/code ← MOVED)
   { id: 'project', label: '📁 פרויקט', min: 'content_editor' },
   { id: 'files', label: '🗂️ קבצים', min: 'content_editor' },
   { id: 'restore', label: '↩️ שחזור', min: 'content_editor' },
@@ -94,6 +92,8 @@ const TABS = [
   { id: 'settings', label: '⚙️ בעל האתר', min: 'page_owner' },     // P1: לבעל העמוד — לקריאה, במילים
   { id: 'dev', label: '🛠️ מפתח', min: 'content_editor', dev: true },  // מי מפתח — מהשרת (user.developer)
 ];
+// M6: הכתובות של הסטודיו הישן — מי שמגיע אליהן (סימנייה, קישור ישן) מועבר: #studio ← 🎨 עורך, #code ← 📁 פרויקט
+const MOVED = { studio: 'editor', code: 'project' };
 const RANK = new Proxy({}, { get: (_, r) => (state.rank || {})[r] || 0 });
 // מסכים ישנים (פרסום, שחזור) מכירים editor / publisher / owner — בעל העמוד ובעל האתר הם "owner" שם
 const legacyRole = r => (RANK[r] >= RANK.page_owner ? 'owner' : RANK[r] >= RANK.publisher ? 'publisher' : 'editor');
@@ -105,7 +105,9 @@ const tabHref = id => (HARD ? (HARD_TABS.includes(id) ? '#/' + id : 'index.php#/
 
 function route() {
   const tabs = TABS.filter(t => RANK[state.user.role] >= RANK[t.min] && (!t.dev || state.user.developer));
-  const [, hashTab, sub, arg] = location.hash.split('/');           // #/dev/log/<מזהה בקשה>
+  const [, rawTab, sub, arg] = location.hash.split('/');            // #/dev/log/<מזהה בקשה>
+  if (MOVED[rawTab]) { location.replace('#/' + MOVED[rawTab]); return; }      // M6: #studio / #code — hashchange בתוך המסמך
+  const hashTab = rawTab;
   let cur = tabs.find(t => hashTab === t.id) || (HARD ? tabs.find(t => t.id === 'editor') : null) || tabs[0];
   if (HARD && !HARD_TABS.includes(cur.id)) { location.replace('index.php' + (location.hash || '#/' + cur.id)); return; }   // מסך אחר — במסמך הרגיל
   if (!HARD && cur.id === 'editor') { location.replace('editor.php' + (location.hash || '#/editor')); return; }               // העורך — תמיד תחת המדיניות המלאה
@@ -113,10 +115,8 @@ function route() {
   nav.hidden = tabs.length < 2;
   nav.replaceChildren(...tabs.map(t => h('a', { href: tabHref(t.id), 'aria-current': t === cur ? 'page' : null }, t.label)));
   People.readOnly(cur.id);                                            // P1: עורך תוכן — "לקריאה בלבד"
-  if (cur.id !== 'studio') Studio.unmount();
-  if (cur.id !== 'code') Code.unmount();
   if (cur.id === 'inbox') return Inbox.view(main);                    // M5
-  ({ studio: viewStudio, words: () => Words.view(main), code: () => Code.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role), state.user.role === 'site_owner'), files: () => Library.view(main, state.user.role === 'site_owner', RANK[state.user.role] >= RANK.page_owner),
+  ({ words: () => Words.view(main), project: () => Project.view(main), editor: () => Editor.view(main, sub && decodeURIComponent(sub)), restore: () => Restore.view(main, legacyRole(state.user.role), state.user.role === 'site_owner'), files: () => Library.view(main, state.user.role === 'site_owner', RANK[state.user.role] >= RANK.page_owner),
     publish: () => Publish.view(main, legacyRole(state.user.role)), settings: () => People.owner(main), members: () => People.view(main), log: viewLog, dev: () => Dev.view(main, sub, arg && decodeURIComponent(arg)) })[cur.id]();
 }
 window.addEventListener('hashchange', () => state.user?.role && route());
@@ -126,10 +126,6 @@ function viewGate(icon, title, text) {
   $('#tabs').hidden = true;
   main.replaceChildren(h('section', { class: 'gate-msg' },
     h('span', { class: 'big', 'aria-hidden': 'true' }, icon), h('h2', {}, title), h('p', { class: 'muted' }, text)));
-}
-
-function viewStudio() {
-  Studio.mount(main);
 }
 
 const logFilter = { person: '', source: '' };

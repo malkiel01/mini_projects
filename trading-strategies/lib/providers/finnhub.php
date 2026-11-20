@@ -31,7 +31,6 @@ final class TsProvFinnhub extends TsProvider
             'limits' => ['per_min' => 60, 'per_day' => 50000],
             'delay' => 'realtime',
             'share' => false,
-            'personal_copy' => true,
             'terms' => 'שימוש אישי בתוכנית החינמית. נתונים במפתח של משתמש מוגשים רק לו (cred_scope).',
             'bounds' => 'כמו שהספק נותן (t של פתיחת הנר ב-UTC)',
             'max_per_call' => 5000,

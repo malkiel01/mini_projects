@@ -39,6 +39,8 @@ if ($path === '/live.php') { chdir($root); require $root . '/live.php'; exit; }
 if ($path === '/form.php') { chdir($root); require $root . '/form.php'; exit; }
 if ($path === '/pull.php') { chdir($root); require $root . '/pull.php'; exit; }       // M7 — נקודת המשיכה (ציבורית, באסימון)     // M5 — הנקודה הציבורית של הטפסים
 if ($path === '/editor.php') { chdir($root); require $root . '/editor.php'; exit; }
+// M6: ההסבה הוסרה מ-api.php; בדיקות הדפדפן עדיין זורעות את "העמוד המוסב" דרכה — מכלי הבדיקות (tests/support/)
+if ($path === '/api.php' && in_array($_GET['action'] ?? '', ['pf_migrate', 'pf_migrate_last', 'pf_blank'], true)) { chdir($root); require $root . '/tests/support/migrate-route.php'; exit; }
 if ($path === '/api.php' || $path === '/agent.php') {
     if (isset($_SERVER['HTTP_X_TEST_WARN'])) {          // אזהרת PHP אמיתית בתוך בקשה — לבדיקת הלכידה
         require_once $root . '/lib/devlog.php';

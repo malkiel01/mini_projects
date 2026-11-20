@@ -139,6 +139,11 @@ jobs:
       - name: family-shopping tests
         run: for t in family-shopping/tests/*.php; do echo "--- $t"; php "$t" > /tmp/fs-test.log || { cat /tmp/fs-test.log; exit 1; }; tail -1 /tmp/fs-test.log; done
 
+      # מחירוני קברים — בדיקות ה-PHP (מסד זמני, לא נוגע ב-data/): מיגרציה ונתוני ההתחלה מול ה-PDF, התוויות, הכניסה החתומה.
+      # בדיקה שנכשלת עוצרת את הפריסה.
+      - name: grave-prices tests
+        run: php grave-prices/tests/run.php
+
       # קול מרוקו — הבדיקות של האפליקציה (מסד זמני, בלי Composer, לא נוגע ב-data/): הרשאות לכל פעולה, חתימת הפרסום,
       # מיגרציות, יומן המפתח והספרייה. בדיקה שנכשלת עוצרת את הפריסה. ו-dev/build.json — הקומיט והשעה, למסך המפתח
       # ("גרסה וקומיט"); הקובץ נוצר כאן בלבד, אינו בגיט, ו-dev/.htaccess חוסם אותו מהדפדפן.
@@ -147,6 +152,28 @@ jobs:
           set -euo pipefail
           php kol-maroko/tests/run.php
           printf '{"commit":"%s","at":"%s"}\n' "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > kol-maroko/dev/build.json
+
+      # אסטרטגיות למסחר — בדיקות ה-PHP של האפליקציה (מסד זמני, ספקים מדומים, php -S מקומי, בלי רשת ובלי data/):
+      # חשבון עסקה, אליוט והספירות הצפויות (18.7), הרשאות, יומן השיטה, DevLoop. בדיקה שנכשלת עוצרת את הפריסה.
+      # בדיקות הדפדפן (*.mjs) לא כאן — רצות בצ'אט הקוד לפני כל PR.
+      - name: trading-strategies tests (PHP)
+        run: |
+          set -uo pipefail
+          for t in trading-strategies/tests/*.php; do
+            [ "$(basename "$t")" = dev-prepend.php ] && continue
+            php "$t" > /tmp/ts-test.log 2>&1 || { echo "::error::נכשל: $t"; cat /tmp/ts-test.log; exit 1; }
+            echo "$t — $(tail -1 /tmp/ts-test.log)"
+          done
+
+      # הצעות תקציב לארגונים — בדיקות ה-PHP של האפליקציה (מסד זמני, בלי רשת ובלי data/): הרשאות, הצעות ושורות,
+      # העברות, ייבוא, ייצוא, ובדיקת השלמות של הדוח (B1 — tests/integrity.php, ובה הצעת 2027). בדיקה שנכשלת עוצרת את הפריסה.
+      - name: org-budget-proposals tests (PHP)
+        run: |
+          set -uo pipefail
+          for t in org-budget-proposals/tests/*.php; do
+            php "$t" > /tmp/ob-test.log 2>&1 || { echo "::error::נכשל: $t"; cat /tmp/ob-test.log; exit 1; }
+            echo "$t — $(tail -1 /tmp/ob-test.log)"
+          done
 
       # השער: לכל אפליקציה שב-app.json שלה "gate": true — .user.ini ובלוק בראש
       # ה-.htaccess, בעותק שבמכונה הזו בלבד (לא בגיט). ראו platform/build-gate.php.
@@ -279,7 +306,7 @@ jobs:
           )
           for w in 0 30 90 180; do
             sleep $w
-            $SSH "$DEST" "$REMOTE"; code=$?
+            code=0; $SSH "$DEST" "$REMOTE" || code=$?   # בלי "|| code" ה-bash -e של השלב יוצא בכשל הראשון, ולולאת הנסיונות לא רצה
             if [ $code -eq 3 ]; then echo "::error::mbe-cloud/data קיים בשרת בלי cloud.sqlite — צריך בדיקה ידנית לפני פריסה"; exit 3; fi
             if [ $code -eq 0 ]; then exit 0; fi
             echo "::warning::העברת הנתונים — נסיון נכשל (קוד $code), מנסה שוב"
@@ -307,6 +334,10 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/grave-prices/team/' \
+            --include='/grave-prices/data/.htaccess' --exclude='/grave-prices/data/*' \
+            --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' --exclude='/org-budget-proposals/tests/' \
+            --exclude='/trading-strategies/team/' \
             --exclude='/whatsapp-ai-scanner/team/' --exclude='/whatsapp-ai-scanner/docs/' \
             --exclude='/creative-suite/mbe-core/tools/' --exclude='/creative-suite/mbe-core/tests/' \
             --exclude='/creative-suite/pdf-core/tools/' \
@@ -608,4 +639,33 @@ jobs:
               -H "X-Dev-Token: $DT_DEVLOOP_TOKEN" -H 'Content-Type: application/json' --data "$BODY" || echo 000)
             if [ "$CODE_HTTP" = 200 ]; then echo "$CODE ← ראיות פריסה ($(cat /tmp/devloop-dt.json))"
             else echo "::warning::DevLoop: $CODE נכשל ($CODE_HTTP): $(head -c 300 /tmp/devloop-dt.json 2>/dev/null)"; fi
+          done
+
+      # DevLoop (אסטרטגיות למסחר): אותו דבר לקודים TS-… — ראיות פריסה ומעבר ל"ממתין לאימות שלך".
+      # סוד: TS_DEVLOOP_TOKEN — אסימון מ"עוד ← 🐞 פיתוח ← 🔑 גישה ל-Claude" באסטרטגיות למסחר (tsd_…). בלעדיו — מדלג.
+      - name: DevLoop — ראיות פריסה למטלות (אסטרטגיות למסחר)
+        if: success()
+        continue-on-error: true
+        env:
+          TS_DEVLOOP_TOKEN: ${{ secrets.TS_DEVLOOP_TOKEN }}
+          TS_DEVLOOP_API: https://mbe-plus.com/mini_projects/trading-strategies/api.php
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_NO: ${{ github.run_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$TS_DEVLOOP_TOKEN" ]; then echo "::notice::אין TS_DEVLOOP_TOKEN — מדלג על ראיות DevLoop של אסטרטגיות למסחר"; exit 0; fi
+          MSG="$(git log -1 --format=%B)"
+          CODES=$(printf '%s' "$MSG" | grep -oE '\bTS-[0-9]{3}\b' | sort -u || true)
+          if [ -z "$CODES" ]; then echo "אין קודי TS- בהודעת ה-commit"; exit 0; fi
+          PR=$(printf '%s' "$MSG" | head -1 | grep -oE '\(#[0-9]+\)' | tr -dc 0-9 || true)
+          SHA=$(git rev-parse --short HEAD)
+          for CODE in $CODES; do
+            BODY=$(jq -nc --arg code "$CODE" --arg run "run $RUN_NO" --arg url "$RUN_URL" --arg pr "$PR" --arg repo "$REPO" --arg sha "$SHA" '{
+              code: $code, status: "verify", by: "github",
+              evidence: ([{kind: "deploy", ref: $run, url: $url, note: ""}, {kind: "commit", ref: $sha, url: ("https://github.com/" + $repo + "/commit/" + $sha), note: ""}]
+                + (if $pr == "" then [] else [{kind: "pr", ref: ("#" + $pr), url: ("https://github.com/" + $repo + "/pull/" + $pr), note: ""}] end))}')
+            CODE_HTTP=$(curl -sS -o /tmp/devloop-ts.json -w '%{http_code}' --max-time 30 -X POST "$TS_DEVLOOP_API?action=devapi-comment" \
+              -H "X-Dev-Token: $TS_DEVLOOP_TOKEN" -H 'Content-Type: application/json' --data "$BODY" || echo 000)
+            if [ "$CODE_HTTP" = 200 ]; then echo "$CODE ← ראיות פריסה ($(cat /tmp/devloop-ts.json))"
+            else echo "::warning::DevLoop: $CODE נכשל ($CODE_HTTP): $(head -c 300 /tmp/devloop-ts.json 2>/dev/null)"; fi
           done

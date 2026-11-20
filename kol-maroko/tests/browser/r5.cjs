@@ -25,7 +25,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   execFileSync('php', [path.join(__dirname, 'f3-seed.php'), data, path.join(data, 'old-render.html')]);
   execFileSync('php', ['-r', `
     define('KOL_DATA_DIR', $argv[1]);
-    foreach (['members', 'import', 'ai', 'agent', 'dev'] as $l) require_once $argv[2] . "/lib/$l.php";
+    foreach (['members', 'site', 'restore', 'ai', 'agent', 'dev'] as $l) require_once $argv[2] . "/lib/$l.php";
     db()->prepare("INSERT OR IGNORE INTO users (sub, email, name, role, status, created_at) VALUES ('502', 'page@example.test', 'בעלת העמוד', 'page_owner', 'active', ?)")->execute([now_iso()]);
   `, data, ROOT]);
   /** נקודה "ישנה" — בלי project, כמו נקודה מלפני F2a */

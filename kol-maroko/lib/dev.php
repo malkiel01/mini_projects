@@ -14,7 +14,7 @@ require_once __DIR__ . '/devloop.php';
 require_once __DIR__ . '/forms.php';
 
 /** גרסת התוסף לוורדפרס שהריפו מצפה לה באתר. התוסף אינו נפרס לשרת הזה, ולכן המספר כתוב כאן; בדיקה אוטומטית משווה אותו לקובץ התוסף. */
-const KOL_PLUGIN_EXPECTED = '2.2.1';
+const KOL_PLUGIN_EXPECTED = '2.3.0';
 const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צילום רק למטלה שהוא עצמו פתח ב-15 הדקות האחרונות
 
 /**
@@ -338,7 +338,7 @@ function dev_health_checks(): array
             return [true, 'הקובץ קיים וחוסם', ''];
         }, 'data/.htaccess'],
         'site' => ['החיבור לאתר, וגרסת התוסף שמותקנת בו', function (): array {
-            require_once __DIR__ . '/publish.php';
+            require_once __DIR__ . '/site.php';
             if (pub_channel() === 'pull') {
                 // M7: הכלי אינו שואל — "הדופק": מתי האתר משך לאחרונה. מעל 24 שעות (או מעולם לא) — נכשל; מעל 30 דקות — עובר, עם אזהרה
                 $p = pull_pulse();
@@ -352,10 +352,10 @@ function dev_health_checks(): array
             try {
                 $r = site_call('ping', []);
             } catch (ApiError $e) {
-                return [false, 'ה-ping החתום נכשל: ' . $e->getMessage(), 'ב-🚀 פרסום ← "בדיקת חיבור" מופיע ההסבר המלא; לוודא שהתוסף מותקן ופעיל באתר ושהמפתח הציבורי הודבק בו (docs/install.md)'];
+                return [false, 'ה-ping החתום נכשל: ' . $e->getMessage(), 'ב-⚙️ בעל האתר ← 🔗 חיבור לאתר ← "בדיקת חיבור" מופיע ההסבר המלא; לוודא שהתוסף מותקן ופעיל באתר ושהמפתח הציבורי הודבק בו (docs/install.md)'];
             }
             $p = (string)($r['plugin'] ?? '');
-            $state = (!empty($r['enabled']) ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר מציג את העמוד המקורי') . ' · גרסה חיה ' . (int)($r['live'] ?? 0);
+            $state = (!empty($r['v2_on']) ? 'המפסק "העמוד החדש" דולק' : 'המפסק "העמוד החדש" כבוי — העמוד המקורי') . ' · גרסה חיה ' . (int)($r['v2_live'] ?? 0);
             if ($p === '') return [false, "ה-ping החתום עבר, אבל התוסף לא דיווח גרסה · $state", 'התוסף באתר ישן מאוד — להתקין את ' . KOL_PLUGIN_EXPECTED . ' (מטלה לבעלים)'];
             if (version_compare($p, KOL_PLUGIN_EXPECTED, '<')) return [false, "ה-ping החתום עבר · באתר מותקן תוסף $p, ובריפו " . KOL_PLUGIN_EXPECTED . " · $state",
                 'להתקין באתר את התוסף המעודכן מ-wordpress-plugin/ (מטלה לבעלים; docs/install.md)'];
@@ -458,7 +458,6 @@ function dev_stats(): array
     $n = fn(string $sql) => (int)$pdo->query($sql)->fetchColumn();
     $size = 0;
     foreach (['', '-wal', '-shm'] as $suf) $size += (int)@filesize(KOL_DATA_DIR . '/kol.sqlite' . $suf);
-    $imp = json_decode((string)setting('imported_from', 'null'), true);
     return [
         ['id' => 'words', 'label' => 'מילים', 'value' => $n('SELECT COUNT(*) FROM words')],
         ['id' => 'words_audio', 'label' => 'מילים עם הקלטה', 'value' => $n("SELECT COUNT(*) FROM words WHERE audio <> ''")],
@@ -468,15 +467,13 @@ function dev_stats(): array
         ['id' => 'files', 'label' => 'קבצים', 'value' => $n('SELECT COUNT(*) FROM files WHERE deleted_at IS NULL')],
         ['id' => 'files_trash', 'label' => 'קבצים בסל', 'value' => $n('SELECT COUNT(*) FROM files WHERE deleted_at IS NOT NULL')],
         ['id' => 'files_size', 'label' => 'גודל הקבצים', 'value' => dev_bytes($n('SELECT COALESCE(SUM(size), 0) FROM files'))],
-        ['id' => 'code_files', 'label' => 'קבצי קוד שנוצרו', 'value' => $n('SELECT COUNT(*) FROM code_files')],
-        ['id' => 'versions', 'label' => 'גרסאות שפורסמו', 'value' => $n('SELECT COUNT(*) FROM versions')],
-        ['id' => 'revisions', 'label' => 'שמירות טיוטה בהיסטוריה', 'value' => $n('SELECT COUNT(*) FROM revisions')],
+        ['id' => 'versions', 'label' => 'גרסאות בפורמט הישן (🗄️ ארכיון)', 'value' => $n('SELECT COUNT(*) FROM versions')],
+        dev_m6_row(),
         ['id' => 'snapshots', 'label' => 'נקודות שחזור', 'value' => $n('SELECT COUNT(*) FROM snapshots')],
         dev_people_row(),
         ['id' => 'log', 'label' => 'שורות ביומן', 'value' => $n('SELECT COUNT(*) FROM dev_log')],
         ['id' => 'db_size', 'label' => 'גודל המסד', 'value' => dev_bytes($size)],
         dev_x1_row(),
-        ['id' => 'imported', 'label' => 'ייבוא העמוד מהאתר', 'value' => is_array($imp) ? (string)($imp['at'] ?? 'בוצע') : 'לא בוצע'],
     ];
 }
 
@@ -521,4 +518,15 @@ function dev_x1_row(): array
         (int)$u['calls'], number_format((int)$u['tokens']), (int)($s['applied'] ?? 0), (int)($s['rejected'] ?? 0),
         $agents ? implode(', ', $agents) : 'אין בקשות', (int)($s['lt_sync'] ?? 0), (int)($s['lt_conflict'] ?? 0));
     return ['id' => 'x1', 'label' => 'בינה, צ\'אט וטקסט ארוך — החודש', 'value' => $value];
+}
+
+/** M6 §2.5: הסטודיו הישן הוסר — מתי, באיזו גרסה, ומה נשאר ממנו במסד (בכוונה: אין DROP ואין DELETE). */
+const M6_REMOVED_AT = '2026-11-15';
+function dev_m6_row(): array
+{
+    $parts = [];
+    foreach (['draft', 'revisions', 'edit_lock', 'versions', 'code_files', 'code_history', 'longtexts'] as $t) {
+        try { $parts[] = "$t " . (int)db()->query("SELECT COUNT(*) FROM $t")->fetchColumn(); } catch (Throwable) { $parts[] = "$t ?"; }
+    }
+    return ['id' => 'm6', 'label' => '🗄️ הסטודיו הישן', 'value' => 'הוסר ב-' . M6_REMOVED_AT . ', גרסה ' . dev_app_version() . '; הנתונים שלו במסד (לקריאה, ב-🚀 פרסום ← 🗄️ ארכיון): ' . implode(' · ', $parts) . ' שורות'];
 }

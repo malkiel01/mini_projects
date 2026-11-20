@@ -41,12 +41,11 @@ const ACTION_ROLES = [
     'devapi-feed' => 'public', 'devapi-comment' => 'public', 'devapi-file' => 'public', 'devapi-attach' => 'public',
     'me' => 'any', 'dev-client-error' => 'any',
     // ── עורך תוכן: קריאה של כל העמוד; כתיבה — מילים, הקלטות, פריטי רשימות, פניות, הודעות
-    'draft' => 'content_editor', 'render' => 'content_editor', 'revisions' => 'content_editor', 'files' => 'content_editor', 'file' => 'content_editor',
-    'versions' => 'content_editor', 'version_preview' => 'content_editor', 'words' => 'content_editor', 'library' => 'content_editor',
+    'files' => 'content_editor', 'file' => 'content_editor', 'words' => 'content_editor', 'library' => 'content_editor',
+    'archive' => 'content_editor', 'archive_view' => 'content_editor', 'archive_html' => 'content_editor',     // M6: 🗄️ ארכיון — לקריאה בלבד
     'words_csv' => 'content_editor', 'fields' => 'content_editor', 'topics' => 'content_editor', 'field_key_preview' => 'content_editor',
     'lists' => 'content_editor', 'list_key_preview' => 'content_editor', 'list_items' => 'content_editor', 'list_csv' => 'content_editor',
-    'snapshots' => 'content_editor', 'snapshot_preview' => 'content_editor', 'trash' => 'content_editor',
-    'code' => 'content_editor', 'code_history' => 'content_editor', 'code_history_get' => 'content_editor',
+    'snapshots' => 'content_editor', 'trash' => 'content_editor',
     'font_google_list' => 'content_editor', 'pf_tree' => 'content_editor', 'pf_read' => 'content_editor', 'pf_versions' => 'content_editor', 'pf_raw' => 'content_editor', 'pf_trash' => 'content_editor',
     'pages_list' => 'content_editor',                                                    // V15
     'site_images' => 'content_editor',                                                   // R2: התמונות "באתר" לבורר
@@ -62,13 +61,12 @@ const ACTION_ROLES = [
     'inbox' => 'content_editor', 'inbox_mark' => 'content_editor', 'inbox_csv' => 'content_editor',
     'notices' => 'content_editor', 'notice_read' => 'content_editor', 'notices_read' => 'content_editor', 'owner_settings' => 'content_editor',
     'dev-report' => 'content_editor', 'dev-attach' => 'content_editor', 'dev-my-reports' => 'content_editor', 'dev-items' => 'content_editor',
-    // ── עורך: כל מה שכותב לקבצי העמוד (pf_*, code_*, הטיוטה), המבנה, הבנייה
-    'draft_save' => 'editor', 'lock' => 'editor', 'revision_restore' => 'editor', 'file_delete' => 'editor', 'editor_session' => 'editor',
+    // ── עורך: כל מה שכותב לקבצי העמוד (pf_*), המבנה, הבנייה
+    'file_delete' => 'editor',
     'longtext_sync' => 'editor', 'longtext_link' => 'editor', 'longtext_open' => 'editor',
     'field_save' => 'editor', 'field_delete' => 'editor', 'topic_save' => 'editor', 'topic_merge' => 'editor', 'field_key_apply' => 'editor',
     'list_create' => 'editor', 'list_save' => 'editor', 'list_delete' => 'editor', 'list_key_apply' => 'editor', 'list_place' => 'editor', 'list_place_undo' => 'editor',
     'snapshot_create' => 'editor', 'snapshot_restore' => 'editor', 'trash_restore' => 'editor',
-    'code_create' => 'editor', 'code_save' => 'editor', 'code_reset' => 'editor',
     'agent_tokens' => 'editor', 'agent_token_create' => 'editor', 'agent_token_revoke' => 'editor',
     'font_upload' => 'editor', 'font_google_add' => 'editor', 'font_fetch' => 'editor',      // V9 — כמו pf_create (אושר בידי הבקרה)
     'kit_copy' => 'editor', 'kit_undo' => 'editor', 'kit_update' => 'editor', 'kit_revert' => 'editor',   // V16 — כמו pf_create
@@ -76,23 +74,22 @@ const ACTION_ROLES = [
     'pf_create' => 'editor', 'pf_write' => 'editor', 'pf_mkdir' => 'editor', 'pf_link' => 'editor', 'site_image_take' => 'editor', 'pf_rename' => 'editor', 'pf_delete' => 'editor',
     'pf_restore' => 'editor', 'pf_copy' => 'editor', 'pf_version_restore' => 'editor', 'pf_replace' => 'editor', 'pf_zip_import' => 'editor',
     'build_start' => 'editor', 'build_page' => 'editor', 'build_fail' => 'editor', 'build_finish' => 'editor',
-    'ai_suggest' => 'editor', 'ai_suggest_files' => 'editor', 'ai_apply_files' => 'editor', 'forms_settings' => 'editor',
+    'ai_suggest_files' => 'editor', 'ai_apply_files' => 'editor', 'forms_settings' => 'editor',
     // ── מפרסם
-    'publish_preview' => 'publisher', 'publish' => 'publisher', 'republish' => 'publisher', 'version_send' => 'publisher',
-    'site_ping' => 'publisher', 'site_switch' => 'publisher', 'build_send' => 'publisher', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher',
+    'site_ping' => 'publisher', 'build_send' => 'publisher', 'inbox_delete' => 'publisher', 'inbox_purge' => 'publisher',
     'cutover' => 'publisher',
     'page_create' => 'publisher', 'page_move' => 'publisher', 'page_set_entry' => 'publisher', 'page_set_404' => 'publisher', 'pages_order' => 'publisher',   // V15: עמודים — מפרסם ומעלה
     'outbox' => 'publisher', 'outbox_resend' => 'publisher', 'site_wake' => 'publisher',          // M7 — התור והדופק
-    // ── בעל העמוד: האנשים, היומן, מחיקה סופית, ההסבה והגיבוי
+    // ── בעל העמוד: האנשים, היומן, מחיקה סופית והגיבוי
     'people' => 'page_owner', 'person_invite' => 'page_owner', 'person_role' => 'page_owner', 'person_remove' => 'page_owner', 'person_retry' => 'page_owner',
     'request_dismiss' => 'page_owner', 'audit' => 'page_owner', 'backup' => 'page_owner',
     'trash_purge' => 'page_owner', 'rec_purge' => 'page_owner', 'rec_versions_clean' => 'page_owner', 'pf_purge' => 'page_owner',
-    'pf_migrate' => 'page_owner', 'pf_migrate_last' => 'page_owner', 'pf_blank' => 'page_owner', 'kd_seed' => 'page_owner', 'kd_update' => 'page_owner',
+    'kd_seed' => 'page_owner', 'kd_update' => 'page_owner',
     // ── בעל האתר: החיבור, המפסק, המכסות, המפתחות, הסודות, מסך המפתח, DevLoop (08 §4)
     'owner_set' => 'site_owner', 'publish_decide' => 'site_owner',
-    'disk_cap' => 'site_owner', 'publish_settings' => 'site_owner', 'key_rotate' => 'site_owner', 'key_activate' => 'site_owner', 'site_set' => 'site_owner',
+    'disk_cap' => 'site_owner', 'site_settings' => 'site_owner', 'key_rotate' => 'site_owner', 'key_activate' => 'site_owner', 'site_set' => 'site_owner',
     'pull_line' => 'site_owner', 'pub_channel_set' => 'site_owner',                                   // M7 — שורת החיבור, הערוץ
-    'import_run' => 'site_owner', 'import_info' => 'site_owner', 'audio_import' => 'site_owner', 'mount' => 'site_owner', 'mount_set' => 'site_owner', 'plugin_zip' => 'site_owner',
+    'audio_import' => 'site_owner', 'mount' => 'site_owner', 'mount_set' => 'site_owner', 'plugin_zip' => 'site_owner',
     'rec_status' => 'site_owner', 'rec_fetch_plan' => 'site_owner', 'rec_scan_start' => 'site_owner', 'rec_scan_step' => 'site_owner',
     'rec_fetch_start' => 'site_owner', 'rec_fetch_step' => 'site_owner', 'rec_job_op' => 'site_owner', 'rec_settings_set' => 'site_owner',
     'cutover_evidence' => 'site_owner', 'cutover_evidence_revoke' => 'site_owner', 'cutover_snapshot' => 'site_owner', 'cutover_ready' => 'site_owner',

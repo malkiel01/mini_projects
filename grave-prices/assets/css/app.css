@@ -1,0 +1,203 @@
+/* מחירוני קברים — שפת העיצוב "הטלפון קודם" (הסקיל phone-first-design, references/tokens.css), ומה שייחודי לכאן בסוף. */
+/* ===== משתנים ===== */
+:root {
+    --bg: #f4f5f7; --surface: #fff; --ink: #16192b; --muted: #5d6475; --line: #e3e6eb;
+    --brand: #2d4a8a; --brand-ink: #fff; --brand-soft: #e9eef8;
+    --danger: #b3261e; --danger-soft: #fdecea; --star: #e19a00; --ok: #1e7b3a;
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
+    --r: 10px; --tap: 40px; --head: 48px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #111318; --surface: #1b1e26; --ink: #e8eaf0; --muted: #9aa1b2; --line: #2c303b;
+        --brand: #7f9fe0; --brand-ink: #0d1324; --brand-soft: #232c42; --danger: #f2a49d; --danger-soft: #3a1f1d;
+        --star: #f5b83d; --ok: #6fcf97; --shadow: none;
+    }
+}
+
+/* ===== בסיס ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { font: 15px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: var(--bg); color: var(--ink); min-height: 100dvh; }
+button, input, select, textarea { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.skip { position: absolute; inset-inline-start: var(--s2); top: -100px; background: var(--surface); padding: var(--s2); z-index: 20; }
+.skip:focus { top: var(--s2); }
+.one { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }   /* שורה אחת, … */
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: .85rem; margin: 0 0 var(--s2); }
+.empty { text-align: center; color: var(--muted); padding: var(--s4) var(--s2); }
+.error { color: var(--danger); background: var(--danger-soft); border-radius: var(--r); padding: var(--s2) var(--s3); }
+.sep { font-style: normal; margin: 0 6px; }                                               /* <i class="sep" aria-hidden="true">·</i> */
+main { max-width: 860px; margin: 0 auto; padding: var(--s2) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom)); outline: 0; }
+.sec-title { font-size: .9rem; font-weight: 600; margin: var(--s3) 0 var(--s2); }
+/* ===== כותרת דביקה ולשוניות ===== */
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--s2);
+    height: calc(var(--head) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) var(--s2) 0;
+    background: var(--brand); color: var(--brand-ink); }
+.top .titles { flex: 1; min-width: 0; line-height: 1.2; }
+.top h1 { font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .sub { font-size: .78rem; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .icon-btn { color: inherit; }
+.seg-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 4px; margin-bottom: var(--s3); }
+.seg-tabs button { min-height: 40px; padding: 4px 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
+    font-size: .82rem; line-height: 1.15; cursor: pointer; }
+.seg-tabs button small { display: inline-block; min-width: 1.4em; padding: 0 4px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .72rem; }
+.seg-tabs button small:empty { display: none; }
+.seg-tabs button[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.seg-tabs button[aria-selected="true"] small { background: rgba(255, 255, 255, .25); color: inherit; }
+.btn, .icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s1); min-height: var(--tap);
+    border-radius: var(--r); cursor: pointer; white-space: nowrap; text-decoration: none; border: 1px solid transparent; background: none; }
+.btn { padding: 0 var(--s3); }
+.btn.sm { min-height: 34px; padding: 0 var(--s2); font-size: .85rem; }
+.icon-btn { min-width: var(--tap); font-size: 1.1rem; }
+.primary { background: var(--brand); color: var(--brand-ink); }
+.ghost { border-color: var(--line); background: var(--surface); color: var(--ink); }
+.btn.danger { color: var(--danger); }
+button:disabled { opacity: .55; cursor: default; }
+/* ===== שדות (tokens.css) ===== */
+input, select, textarea { width: 100%; min-width: 0; min-height: var(--tap); padding: 0 var(--s2); font-size: 16px;   /* 16px — אחרת iOS מגדיל */
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+input:focus, select:focus, textarea:focus { border-color: var(--brand); outline: 0; box-shadow: 0 0 0 2px var(--brand-soft); }
+.row-btns { display: flex; gap: var(--s2); }
+.row-btns .btn { flex: 1; }
+.row-btns.wrap { flex-wrap: wrap; }
+.switch { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); cursor: pointer; }
+.switch input { width: 20px; min-height: 20px; flex: none; accent-color: var(--brand); }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: var(--s2); }
+.fields.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.f { display: grid; gap: 2px; min-width: 0; }
+.f > span { font-size: .8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* ===== בורר מקטעים — שורה אחת, כל אפשרות ממלאת את המקום ===== */
+.seg { display: flex; min-width: 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); scrollbar-width: none; }
+.seg label { flex: 1 0 auto; position: relative; display: flex; }
+.seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+.seg span { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 38px; padding: 0 var(--s3); white-space: nowrap; font-size: .9rem; }
+.seg label + label span { border-inline-start: 1px solid var(--line); }
+.seg input:checked + span { background: var(--brand); color: var(--brand-ink); }
+.seg input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: -2px; }
+/* תגית מידע / סטטוס (לא כתפריט!) */
+.chip { flex: none; display: inline-flex; align-items: center; min-height: 22px; padding: 0 var(--s2); border-radius: 99px;
+    font-size: .75rem; font-weight: 500; white-space: nowrap; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.chip.ok, .chip.warn, .chip.bad { color: var(--c); border-color: color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
+.chip.ok { --c: var(--ok); } .chip.warn { --c: var(--star); } .chip.bad { --c: var(--danger); }
+/* ===== רשימה: שורות בתוך מסגרת אחת ===== */
+.list { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.list:has(.empty) { background: none; border: 0; }
+.card { display: flex; align-items: center; gap: var(--s2); min-height: 56px; padding: var(--s2) var(--s3); cursor: pointer; border-top: 1px solid var(--line); }
+.card:first-child { border-top: 0; }
+.card:hover { background: var(--bg); }
+.card .body { flex: 1; min-width: 0; }
+.card .l1 { font-weight: 600; display: flex; align-items: baseline; gap: var(--s2); min-width: 0; white-space: nowrap; overflow: hidden; }
+.card .l1 > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.card .l1 .t { margin-inline-start: auto; flex: none; font-weight: 400; font-size: .75rem; color: var(--muted); }
+.card .l2 { color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* שורת רשומה לחיצה: אייקון בריבוע, כותרת, משנה, חץ */
+.use-row { display: flex; align-items: center; gap: var(--s2); inline-size: 100%; padding: 10px var(--s3); background: none; border: 0;
+    text-align: start; cursor: pointer; min-block-size: 52px; }
+.use-row:hover, .use-row:focus-visible { background: var(--bg); }
+.use-ic { flex: none; inline-size: 36px; block-size: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--brand-soft); font-size: 1.1rem; }
+.use-tx { flex: 1; min-inline-size: 0; display: grid; }
+.use-tx small { color: var(--muted); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.use-go { color: var(--muted); font-size: 1.2rem; }
+dialog { margin: auto; padding: 0; border: 0; border-radius: var(--r); color: var(--ink); background: var(--surface);
+    width: min(600px, 100vw - 32px); max-height: min(90dvh, 900px); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
+dialog::backdrop { background: rgba(10, 15, 30, .45); }
+dialog > form { display: flex; flex-direction: column; max-height: inherit; height: 100%; min-height: 0; }
+.sheet-head { display: flex; align-items: center; gap: var(--s2); flex: none; padding: var(--s1) var(--s2); border-bottom: 1px solid var(--line); }
+.sheet-head h2 { flex: 1; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding: var(--s3); display: grid; grid-auto-rows: max-content; align-content: start; gap: var(--s2); }
+.sheet-foot { display: flex; justify-content: flex-end; gap: var(--s2); flex: none; padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+dialog.ask { width: min(420px, 100vw - 32px); }
+dialog.ask .sheet-foot { border-top: 0; }
+
+/* ===== טוסט ===== */
+.toast { position: fixed; inset-inline: var(--s3); bottom: calc(var(--s4) + env(safe-area-inset-bottom)); margin: auto; width: fit-content;
+    max-width: calc(100vw - 24px); z-index: 30; background: var(--ink); color: var(--bg); padding: var(--s2) var(--s4); border-radius: 99px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast.err { background: var(--danger); color: #fff; }
+
+/* ===== מחירוני קברים ===== */
+.top .back { color: inherit; text-decoration: none; }
+.card .l1 .chip { font-weight: 500; }
+.bar { display: flex; align-items: center; gap: var(--s2); margin: var(--s2) 0; }
+.bar .seg { flex: 1; }
+.bar .primary { margin-inline-start: auto; }
+.empty-aud { margin: var(--s2) 0; }
+
+/* המחירון במסך — טבלה רציפה, עמודת מחיר אחת */
+.prices { inline-size: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+    overflow: hidden; }
+.prices th, .prices td { padding: 6px var(--s2); border-top: 1px solid var(--line); text-align: start; vertical-align: baseline; overflow-wrap: anywhere; }
+.prices thead th { border-top: 0; font-size: .8rem; color: var(--muted); font-weight: 600; background: var(--bg); }
+.prices .amt { inline-size: 1%; text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.prices .amt.none { color: var(--muted); font-weight: 400; }
+.prices tr.section td { text-align: center; font-weight: 700; text-decoration: underline; background: var(--brand-soft); }
+.prices tr.subsection td { font-weight: 700; font-size: 1.05rem; padding-top: var(--s3); }
+.prices tr.indent td:first-child { padding-inline-start: calc(var(--s2) + 1.25rem); }
+.prices tr.fee td, .prices tr.note td { font-size: .85rem; }
+.prices tr.fee td:first-child { font-weight: 700; }
+.prices .plain { font-weight: 400; font-size: .85em; }
+.prices tr.band td { text-align: center; font-weight: 700; background: #e3e5e8; color: #1f2329; }
+@media (prefers-color-scheme: dark) { .prices tr.band td { background: #3a3f47; color: #f1f3f5; } }
+
+/* מסך הבית — קבוצה לכל רשימה */
+.group { margin-bottom: var(--s4); }
+.group-head { display: flex; align-items: center; gap: var(--s2); }
+.group-head .sec-title { flex: 1; min-width: 0; }
+.group-head .btn { flex: none; }
+#share-dlg .fields { margin-bottom: var(--s3); }
+
+/* עריכה (02-editing.md) */
+.icon-btn.ghost { border-color: var(--line); }
+.icon-btn.on { background: var(--brand-soft); border-color: var(--brand); }
+.edit-note { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r);
+    background: var(--brand-soft); font-size: .85rem; }
+.edit-note span { flex: 1; min-width: 0; }
+.prices.editing td.lb { cursor: pointer; }
+.prices.editing td.lb:hover { background: var(--bg); }
+.prices.editing td.lb::after { content: ' ✎'; color: var(--muted); font-weight: 400; text-decoration: none; display: inline-block; }
+.prices.editing td.amt { padding: 4px; vertical-align: middle; }
+.prices input.price { inline-size: 5.6em; text-align: end; direction: ltr; font-variant-numeric: tabular-nums; font-weight: 600; padding: 0 6px; }
+.prices input.price.bad { border-color: var(--danger); background: var(--danger-soft); }
+.st { display: block; font-size: .72rem; font-weight: 400; color: var(--muted); white-space: normal; max-inline-size: 7em; }
+.st:empty { display: none; }
+.st.ok { color: var(--ok); }
+.st.err { color: var(--danger); }
+#sig-st { max-inline-size: none; margin-top: var(--s1); }
+.sig-edit { display: grid; gap: var(--s2); }
+.tail-btns { margin: var(--s3) 0; }
+.tail-btns .btn { flex: 0 1 auto; }
+.preview { min-height: var(--tap); padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); background: var(--bg); }
+.preview .plain { font-weight: 400; font-size: .85em; }
+.card .l1.wrap { white-space: normal; }
+.card .l1.wrap > :first-child { overflow: visible; }
+
+/* מחירון חדש */
+#new-form { display: grid; gap: var(--s2); }
+.raise-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s3); min-height: 52px; border-top: 1px solid var(--line); }
+.raise-row:first-child { border-top: 0; }
+.raise-row .lbl { flex: 1; min-width: 0; font-weight: 600; }
+.pct { display: flex; align-items: center; gap: 4px; flex: none; }
+.pct small { color: var(--muted); font-size: .75rem; }
+.pct input { inline-size: 4.6em; text-align: end; direction: ltr; }
+
+/* מסך המפתח */
+.checks .card { cursor: default; min-height: 44px; }
+.audit .card { cursor: default; }
+
+/* עריכת המבנה (04-structure-edit.md סעיף 2): 🗑️ בכל שורה, ושורות ➕ דקות. בטלפון — 44px לאגודל */
+.bar { flex-wrap: wrap; }
+.prices .del { inline-size: 1%; padding: 2px; vertical-align: middle; text-align: center; }
+.prices .del .icon-btn { min-width: 44px; min-height: 44px; font-size: 1rem; }
+.prices tr.adds td { padding: 2px var(--s1); background: var(--bg); text-decoration: none; }
+.add-strip { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.add-strip .btn { min-height: 44px; flex: 0 1 auto; font-weight: 500; }
+.prices.editing td.amt { padding-inline-end: 0; }
+.prices.editing input.price { inline-size: 5.2em; }
+/* תג "כללית ✓" / "רק ל…" ליד אגרה במצב עריכה (05 סעיף 4) */
+.prices .gp-shared { min-height: 18px; margin-inline-start: 4px; vertical-align: middle; font-size: .7rem; }
