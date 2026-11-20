@@ -163,6 +163,40 @@
     return text.replace(MARKS, '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
+  // (S2 · kol-data.js 1.6.0) האות הראשונה — כמו firstLetter של kol-data.js.
+  var FINALS = { '\u05DA': '\u05DB', '\u05DD': '\u05DE', '\u05DF': '\u05E0', '\u05E3': '\u05E4', '\u05E5': '\u05E6' };
+  var LETTER;
+  try { LETTER = new RegExp('\\p{L}', 'u'); }
+  catch (e) { LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u05D0-\u05EA\u0620-\u064A\u0671-\u06D3]/; }
+
+  function firstLetter(value) {
+    var text = String(value == null ? '' : value);
+    if (text.indexOf('<') !== -1) text = text.replace(/<[^>]*>/g, ' ');
+    if (text.normalize) text = text.normalize('NFKD');
+    text = text.replace(MARKS, '').replace(/[\u0300-\u036F]/g, '');
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      if (/[\uD800-\uDBFF]/.test(ch)) { ch = text.substr(i, 2); i++; }
+      if (!LETTER.test(ch)) continue;
+      var up = ch.toUpperCase();
+      return FINALS[ch] || (up.length === ch.length ? up : ch);
+    }
+    return '';
+  }
+
+  /** הערכים של פריט לפי מפתח סינון: "topics" ← הערכים; "word@letter" ← [האות הראשונה]. */
+  function filterValues(item, key) {
+    var at = key.indexOf('@');
+    if (at !== -1 && key.slice(at + 1) === 'letter') { var l = firstLetter(item[key.slice(0, at)]); return l ? [l] : []; }
+    return [].concat(item[key] == null ? [] : item[key]);
+  }
+  function passes(item, key, wanted) {
+    if (!key || wanted == null || wanted === '') return true;
+    if (key.indexOf('@') !== -1) return filterValues(item, key).indexOf(wanted) !== -1;
+    var value = item[key];
+    return Array.isArray(value) ? value.indexOf(wanted) !== -1 : String(value) === String(wanted);
+  }
+
   function haystack(state, item, fields, decode) {
     return fields.split(/\s+/).filter(Boolean).map(function (field) {
       var value = item[field];
@@ -198,30 +232,30 @@
     return copy;
   }
 
-  /** מי מתאים: { query, fields, filterField, filterValue } — כמו refresh של kol-data.js. */
+  /** מי מתאים: { query, fields, filters: {מפתח: ערך}, filterField, filterValue } — כמו refresh של kol-data.js (סינונים מצטברים). */
   function matched(state, opt, decode) {
-    var query = plain(opt.query || '', decode), fields = opt.fields || 'word';
+    var query = plain(opt.query || '', decode), fields = opt.fields || 'word', active = {};
+    for (var key in (opt.filters || {})) if (Object.prototype.hasOwnProperty.call(opt.filters, key)) active[key] = opt.filters[key];
+    if (opt.filterField) active[opt.filterField] = opt.filterValue;
+    var keys = Object.keys(active);
     return state.items.filter(function (item) {
-      if (opt.filterField && opt.filterValue != null && opt.filterValue !== '') {
-        var value = item[opt.filterField];
-        var inFilter = Array.isArray(value) ? value.indexOf(opt.filterValue) !== -1 : String(value) === String(opt.filterValue);
-        if (!inFilter) return false;
-      }
+      for (var k = 0; k < keys.length; k++) if (!passes(item, keys[k], active[keys[k]])) return false;
       return query === '' || haystack(state, item, fields, decode).indexOf(query) !== -1;
     });
   }
 
-  /** שכבות כפתורי הסינון: ערך לכל ערך שיש לו פריטים, בסדר טבלת התוויות (כמו buildFilter). */
-  function filterLayers(state, field) {
+  /** שכבות כפתורי הסינון: ערך לכל ערך שיש לו פריטים, בסדר טבלת התוויות; אותיות — לפי ה-Collator של lang (כמו buildFilter). */
+  function filterLayers(state, field, lang) {
     var counts = {}, order = [];
     state.items.forEach(function (item) {
-      [].concat(item[field] == null ? [] : item[field]).forEach(function (value) {
+      filterValues(item, field).forEach(function (value) {
         if (counts[value] === undefined) { counts[value] = 0; order.push(value); }
         counts[value]++;
       });
     });
     var known = state.labels[field];
     if (known) order = Object.keys(known).filter(function (id) { return counts[id]; });
+    else if (field.indexOf('@') !== -1) { var col = collator(lang); order.sort(function (a, b) { return col.compare(a, b); }); }
     return order.map(function (value) {
       return { id: value, value: value, label: known && known[value] ? known[value].label : value, count: counts[value] };
     });
@@ -258,7 +292,7 @@
 
   g.KolBind = {
     isEmpty: isEmpty, lookup: lookup, fill: fill, holds: holds, classPairs: classPairs, bind: bind, eachLayer: eachLayer, build: build, templateOf: templateOf,
-    labelsOf: labelsOf, itemsOf: itemsOf, plain: plain, haystack: haystack, sorted: sorted, matched: matched, filterLayers: filterLayers, markActive: markActive,
+    labelsOf: labelsOf, itemsOf: itemsOf, plain: plain, firstLetter: firstLetter, filterValues: filterValues, haystack: haystack, sorted: sorted, matched: matched, filterLayers: filterLayers, markActive: markActive,
     ATTRS: ATTRS, boundOf: boundOf, fieldsIn: fieldsIn
   };
 })(typeof window !== 'undefined' ? window : globalThis);
