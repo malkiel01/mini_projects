@@ -10,9 +10,9 @@
     "slice": "L6",
     "branch": "claude/trading-strategies-learning-l6"
   },
-  "control": "session_018g4NYDrFHGumG4hGvNK11M",
+  "control": "session_018g4NYF5q8516Ujytkda2JF",
   "tasks": null,
-  "clock": "trig_01AhicpPsrrfEGR4f97H9K4K (דקה 28, נוצר בידי מנהל הצוותים (5); של בקרה 7 trig_01FLjvXemEmKVuyfZbh9oGqH כבוי)",
+  "clock": "trig_01Qfe8vGQMoxE3CTn5Jo9VRJ (דקה 28, נוצר בידי מנהל הצוותים (5))",
   "code_previous": [
     {
       "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
@@ -145,7 +145,21 @@
       "session": "session_018g4NYFqH3tqWT9nYnCRNjr",
       "done": "#1662–#1700: פיבונאצ'י F-1..F-3, L1 מסך מלא, 500, חובות, למידה L1, אפיון 2.28–2.36; מסירה ב-STATE (476K)"
     },
-    "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)"
+    {
+      "session": "session_018g4NYDrFHGumG4hGvNK11M",
+      "done": "#1701–#1718: T1 חלונית, R1, למידה L2–L6 (פרק 23), מגע, הדמיית המשך; מסירה ב-STATE (~350K)"
+    },
+    "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)",
+    {
+      "session": "session_018g4NYEzwT38A6cJcANFTqV",
+      "name": "בקרה (9)",
+      "done": "#1719–#1726; מסירה ב-379K"
+    },
+    {
+      "session": "session_018g4NYFkoRSgSNeEbLjxxZ2",
+      "name": "בקרה (10)",
+      "done": "#1727–#1734; מסירה ב-379K"
+    }
   ],
   "code_delete": {
     "session": "session_018g4NYCQjLZtvssney3gT8G",
@@ -191,5 +205,12 @@
   ],
   "code_active": {
     "L6": "session_018g4NYFDbCXUe2YE98dU6aG (claude/trading-strategies-learning-l6)"
+  },
+  "code_h1b": {
+    "session": "session_018g4NYCwp7KEZBFCdoiVfBD",
+    "branch": "claude/trading-strategies-history-h1b",
+    "opened_by": "מנהל הצוותים (5) לבקשת בקרה (9)",
+    "task": "H1b ספירות עבר + H1c אותות על מנות ישנות (18.1.8)",
+    "done": "H1b #1727, H1c #1728, גרף ריק #1731, טווחים #1732, שוק סגור #1734 — עצר"
   }
 }
