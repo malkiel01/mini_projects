@@ -1,5 +1,5 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.5.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.6.0)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
@@ -19,6 +19,12 @@
  *   data-kol-search-scope="words"    תיבת סימון: כשהיא מסומנת, החיפוש עובר לשדות שב-data-kol-search-fields שלה.
  *   data-kol-filter="words:topics"   מכל של כפתורי סינון לפי שדה. הילד <template> — תבנית הכפתור ({label}, {id}, {count}).
  *                                    כפתור קבוע (למשל "הכל"): data-kol-filter-value="" בתוך המכל.
+ *   data-kol-filter="words:word@letter"  (1.6.0) סינון לפי האות הראשונה של השדה (כאן word): כפתור לכל אות שיש לה מילים,
+ *                                    בסדר ה-א"ב של הרשימה (data-kol-sort-lang של המכל, או של הרשימה). ניקוד ותנועות לא נספרים,
+ *                                    אותיות סופיות מקופלות (ך←כ, ם←מ, ן←נ, ף←פ, ץ←צ), ותו שאינו אות (גרש, מקף, ספרה) — מדולג.
+ *                                    בתבנית: {label} / {id} — האות, {count} — כמה מילים מתחילות בה.
+ *                                    כמה מכלי סינון לאותה רשימה (נושא + אות) — מצטברים: מוצג רק מה שעונה על כולם ועל החיפוש.
+ *                                    "הכול" (data-kol-filter-value="") מאפס רק את המכל שלו. {count} — מכל הרשימה, לא לפי הסינון האחר.
  *   data-kol-count="words"           מונה. הנוסח ב-data-kol-count-text, למשל "{shown} מתוך {total}".
  *   data-kol-more="words"            כפתור "טען עוד".
  *   data-kol-empty="words"           מוצג רק כשאין תוצאות.
@@ -67,7 +73,33 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(selector));
   }
 
-  /** טקסט לחיפוש: בלי תגיות HTML, באותיות קטנות, רווח אחד בין מילים. */
+  // ניקוד וטעמים (U+0591–U+05C7), תנועות ערביות (U+064B–U+065F, U+0670), ותווי כיוון ורוחב-אפס — לא נספרים בהשוואה.
+  // כך "שָׁלוֹם" נמצא ב"שלום" ולהפך. רק לחיפוש: התצוגה והמיון לא עוברים כאן.
+  var MARKS = /[\u0591-\u05C7\u064B-\u065F\u0670\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+
+  // (1.6.0) אות ראשונה: אותיות סופיות ← רגילות; "אות" — כל אות בכל כתב (בדפדפן ישן — עברית, ערבית, לטינית, יוונית, קירילית).
+  var FINALS = { '\u05DA': '\u05DB', '\u05DD': '\u05DE', '\u05DF': '\u05E0', '\u05E3': '\u05E4', '\u05E5': '\u05E6' };
+  var LETTER;
+  try { LETTER = new RegExp('\\p{L}', 'u'); }
+  catch (e) { LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u05D0-\u05EA\u0620-\u064A\u0671-\u06D3]/; }
+
+  /** האות הראשונה של ערך: בלי תגיות, ניקוד ותווי כיוון; סופית ← רגילה; לטינית — גדולה ובלי סימן (É ← E); צורות תצוגה (ﬠ) ← האות (NFKD). אין אות — ''. */
+  function firstLetter(value) {
+    var text = String(value == null ? '' : value);
+    if (text.indexOf('<') !== -1) text = text.replace(/<[^>]*>/g, ' ');
+    if (text.normalize) text = text.normalize('NFKD');
+    text = text.replace(MARKS, '').replace(/[\u0300-\u036F]/g, '');
+    for (var i = 0; i < text.length; i++) {
+      var ch = text.charAt(i);
+      if (/[\uD800-\uDBFF]/.test(ch)) { ch = text.substr(i, 2); i++; }
+      if (!LETTER.test(ch)) continue;
+      var up = ch.toUpperCase();
+      return FINALS[ch] || (up.length === ch.length ? up : ch);
+    }
+    return '';
+  }
+
+  /** טקסט לחיפוש: בלי תגיות HTML, באותיות קטנות, בלי ניקוד, רווח אחד בין מילים. */
   function plain(value) {
     var text = String(value == null ? '' : value);
     if (text.indexOf('<') !== -1) text = text.replace(/<[^>]*>/g, ' ');
@@ -76,7 +108,7 @@
       box.innerHTML = text;
       text = box.value;
     }
-    return text.toLowerCase().replace(/\s+/g, ' ').trim();
+    return text.replace(MARKS, '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
   function isEmpty(value) {
@@ -212,9 +244,40 @@
   function newState(name) {
     return {
       name: name, items: [], labels: {}, loaded: false,
-      query: '', filterField: '', filterValue: '', limit: 0, matched: []
+      query: '', filters: {}, filterField: '', filterValue: '', limit: 0, matched: []
     };
   }
+
+  // ── סינון (1.6.0): מפתח לכל מכל — "topics", או "word@letter" (האות הראשונה של word) ──
+
+  /** הערכים של פריט לפי מפתח סינון: שדה-רשימה ← הערכים; שדה רגיל ← [הערך]; "שדה@letter" ← [האות הראשונה]. */
+  function filterValues(item, key) {
+    var at = key.indexOf('@');
+    if (at !== -1 && key.slice(at + 1) === 'letter') {
+      var field = key.slice(0, at), cache = item.__kolLetter || (item.__kolLetter = {});
+      if (cache[field] === undefined) cache[field] = firstLetter(item[field]);
+      return cache[field] ? [cache[field]] : [];
+    }
+    return [].concat(item[key] == null ? [] : item[key]);
+  }
+
+  /** האם פריט עונה על סינון אחד (ערך ריק — הכול). */
+  function passes(item, key, wanted) {
+    if (!key || wanted == null || wanted === '') return true;
+    if (key.indexOf('@') !== -1) return filterValues(item, key).indexOf(wanted) !== -1;
+    var value = item[key];
+    return Array.isArray(value) ? value.indexOf(wanted) !== -1 : String(value) === String(wanted);
+  }
+
+  /** כל הסינונים הפעילים של רשימה: state.filters, ו-filterField/filterValue (הצורה של 1.5 — האחרון שנלחץ). */
+  function activeFilters(state) {
+    var out = {};
+    for (var key in state.filters) if (Object.prototype.hasOwnProperty.call(state.filters, key)) out[key] = state.filters[key];
+    if (state.filterField) out[state.filterField] = state.filterValue;
+    return out;
+  }
+
+  function filterKey(container) { return (container.getAttribute('data-kol-filter') || '').split(':').slice(1).join(':'); }
 
   /** הטקסט שבו מחפשים אצל פריט, לפי רשימת שדות. נשמר על הפריט, כדי לא לחשב שוב בכל הקשה. */
   function haystack(state, item, fields) {
@@ -271,12 +334,9 @@
   function refresh(state, keepLimit) {
     if (!state.loaded) return;
     var query = plain(state.query), fields = searchFields(state);
+    var active = activeFilters(state), keys = Object.keys(active);
     state.matched = state.items.filter(function (item) {
-      if (state.filterField && state.filterValue !== '') {
-        var value = item[state.filterField];
-        var inFilter = Array.isArray(value) ? value.indexOf(state.filterValue) !== -1 : String(value) === state.filterValue;
-        if (!inFilter) return false;
-      }
+      for (var k = 0; k < keys.length; k++) if (!passes(item, keys[k], active[keys[k]])) return false;
       return query === '' || haystack(state, item, fields).indexOf(query) !== -1;
     });
     if (!keepLimit) state.limit = 0;
@@ -341,10 +401,12 @@
     all('[data-kol-more="' + state.name + '"]').forEach(function (button) {
       button.hidden = !state.limit || state.limit >= shown;
     });
+    var filters = activeFilters(state);
     all('[data-kol-filter^="' + state.name + ':"]').forEach(function (container) {
-      var active = container.getAttribute('data-kol-active-class');
+      var active = container.getAttribute('data-kol-active-class'), current = filters[filterKey(container)];
+      current = current == null ? '' : String(current);
       all('[data-kol-filter-value]', container).forEach(function (button) {
-        var on = button.getAttribute('data-kol-filter-value') === state.filterValue;
+        var on = button.getAttribute('data-kol-filter-value') === current;
         button.setAttribute('aria-pressed', on ? 'true' : 'false');
         if (active) button.classList.toggle(active, on);
       });
@@ -353,18 +415,23 @@
 
   /** בונה את כפתורי הסינון מהתבנית שבמכל: כפתור לכל ערך שיש לו פריטים. */
   function buildFilter(state, container) {
-    var field = container.getAttribute('data-kol-filter').split(':')[1] || '';
+    var field = filterKey(container);
     var template = templateOf(container);
     if (!field || !template) return;
     var counts = {}, order = [];
     state.items.forEach(function (item) {
-      [].concat(item[field] == null ? [] : item[field]).forEach(function (value) {
+      filterValues(item, field).forEach(function (value) {
         if (counts[value] === undefined) { counts[value] = 0; order.push(value); }
         counts[value]++;
       });
     });
     var known = state.labels[field];
     if (known) order = Object.keys(known).filter(function (id) { return counts[id]; });   // הסדר של טבלת הנושאים
+    else if (field.indexOf('@') !== -1) {                                                  // אותיות — לפי ה-א"ב של הרשימה
+      var list = document.querySelector('[data-kol-list="' + state.name + '"][data-kol-sort-lang]');
+      var col = collator(container.getAttribute('data-kol-sort-lang') || (list && list.getAttribute('data-kol-sort-lang')));
+      order.sort(function (a, b) { return col.compare(a, b); });
+    }
     (container.__kolNodes || []).forEach(function (node) { if (node.parentNode) node.parentNode.removeChild(node); });
     container.__kolNodes = [];
     order.forEach(function (value) {
@@ -398,10 +465,7 @@
         });
       }
       state.loaded = true;
-      all('[data-kol-filter^="' + name + ':"]').forEach(function (container) {
-        state.filterField = state.filterField || container.getAttribute('data-kol-filter').split(':')[1] || '';
-        buildFilter(state, container);
-      });
+      all('[data-kol-filter^="' + name + ':"]').forEach(function (container) { buildFilter(state, container); });
       var input = document.querySelector('[data-kol-search="' + name + '"]');
       if (input) state.query = input.value || '';
       refresh(state);
@@ -490,11 +554,11 @@
     if ((button = closest(event.target, '[data-kol-filter-value]'))) {
       var container = closest(button, '[data-kol-filter]');
       if (!container) return;
-      var parts = container.getAttribute('data-kol-filter').split(':');
-      var state = lists[parts[0]];
+      var state = lists[container.getAttribute('data-kol-filter').split(':')[0]];
       if (!state) return;
-      state.filterField = parts[1] || '';
-      state.filterValue = button.getAttribute('data-kol-filter-value');
+      var key = filterKey(container);
+      state.filterField = key;                                    // הצורה של 1.5 — האחרון שנלחץ
+      state.filterValue = state.filters[key] = button.getAttribute('data-kol-filter-value');
       refresh(state);
       return;
     }
@@ -721,10 +785,11 @@
 
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.5.0',
+    version: '1.6.0',
     prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },
+    firstLetter: firstLetter,   // (1.6.0) האות שלפיה מסונן ערך — לבדיקה ולקוד משלכם
     reload: start
   };
 

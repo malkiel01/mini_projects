@@ -32,7 +32,7 @@ const PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-
 (async () => {
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'kol-m5-'));
   const port = await freePort(), base = `http://127.0.0.1:${port}`;
-  const php = spawn('php', ['-S', `127.0.0.1:${port}`, path.join(ROOT, 'tests', 'router.php')], { cwd: ROOT, env: { ...process.env, KOL_TEST_DATA: data, PHP_CLI_SERVER_WORKERS: '4' }, stdio: 'ignore' });
+  const php = spawn('php', ['-S', `127.0.0.1:${port}`, path.join(ROOT, 'tests', 'router.php')], { cwd: ROOT, env: { ...process.env, KOL_TEST_DATA: data, KOL_TEST_MAIL: path.join(data, 'mail.log'), PHP_CLI_SERVER_WORKERS: '4' }, stdio: 'ignore' });
   let browser;
   try {
     for (let i = 0; i < 100; i++) { try { await fetch(base + '/api.php?action=embed_key'); break; } catch { await sleep(50); } }
@@ -50,7 +50,7 @@ const PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-
     const w1 = (await call('word_save', { word: 'אַבָּא', meaning: '<p>אב</p>', topics: [] })).id;
     await call('word_save', { word: 'בסלאמה', meaning: '<p>לשלום</p>', topics: [] });
     const seed = (await call('kd_seed')).content;
-    ok(/version: '1\.[3-9]\.0'/.test(seed), 'kol-data.js בזרע — 1.3.0 ומעלה');
+    ok(/version: '1\.([3-9]|\d{2,})\.\d+'/.test(seed), 'kol-data.js בזרע — 1.3.0 ומעלה');
     const tree = await call('pf_tree');
     const kd = tree.files.find(f => f.path === 'js/kol-data.js');
     if (kd) await call('pf_write', { id: kd.id, rev: kd.rev, content: seed }); else await call('pf_create', { path: 'js/kol-data.js', content: seed });
@@ -154,12 +154,36 @@ const PAGE = `<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-
     await page.waitForFunction(() => /בדיקה: (✅|❌)/.test(document.querySelector('#ib-mail-test').textContent));
     ok(true, '"שלח מייל בדיקה" — התוצאה מוצגת: ' + await page.textContent('#ib-mail-test'));
 
+    // ── S3: 📬 פניות ← ⚙️ הגדרות התיבה — אבחון, נמענים, מייל בדיקה, מפסק ──────────
+    await page.goto(base + '/#/inbox');
+    await page.waitForSelector('.ib-entry');
+    await page.click('button:has-text("הגדרות התיבה")');
+    await page.waitForFunction(() => document.querySelectorAll('#ib-diag li').length === 7);
+    const dg = await page.$$eval('#ib-diag li', a => a.map(x => x.className + ' ' + x.textContent));
+    ok(dg[0].startsWith('ok') && dg.some(x => x.startsWith('bad') && x.includes('המייל על משוב חדש דולק')), 'האבחון: form.php עונה, והמייל כבוי — בשורה', dg);
+    await page.fill('#ib-mail-to', 'someone@gmail.test');
+    await page.fill('#ib-mail-from', '');                       // ריק = noreply@<השרת>
+    await page.click('#sheet button:has-text("💾 שמירה")');
+    await page.fill('#ib-mail-test-to', 'someone@gmail.test');
+    await page.click('#sheet button:has-text("שלח מייל בדיקה")');
+    await page.waitForFunction(() => /השרת קיבל/.test(document.querySelector('#ib-mail-out').textContent));
+    await page.check('#ib-mail-on');
+    await page.waitForFunction(() => [...document.querySelectorAll('#ib-diag li.ok')].some(x => x.textContent.includes('נשלח אל') && x.textContent.includes('someone@gmail.test')));
+    const log = fs.readFileSync(path.join(data, 'mail.log'), 'utf8').trim().split('\n').map(JSON.parse);
+    ok(log.at(-1).to[0] === 'someone@gmail.test' && /^From: noreply@/.test(log.at(-1).headers), 'מייל הבדיקה — לכתובת שאינה חבר, מ-noreply@השרת', log.at(-1));
+    await page.screenshot({ path: path.join(os.tmpdir(), 'kol-s3-settings.png'), fullPage: true });
+    await page.keyboard.press('Escape');
+
     // ── 390px ─────────────────────────────────────────────
     const ph = await browser.newContext({ viewport: { width: 390, height: 800 }, extraHTTPHeaders: { 'X-Test-User': JSON.stringify(OWNER) } });
     const pp = await ph.newPage();
     await pp.goto(base + '/#/inbox');
     await pp.waitForSelector('.ib-entry');
     ok(await pp.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '390px: התיבה בלי גלילה לרוחב');
+    await pp.click('button:has-text("הגדרות התיבה")');
+    await pp.waitForSelector('#ib-diag li');
+    ok(await pp.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 && document.querySelector('#sheet').scrollWidth <= document.querySelector('#sheet').clientWidth + 1), '390px: ההגדרות בלי גלילה לרוחב');
+    await pp.screenshot({ path: path.join(os.tmpdir(), 'kol-s3-settings-390.png'), fullPage: true });
     ok(!errors.length, 'אין שגיאות JS בסטודיו', errors);
   } catch (e) {
     failed++;

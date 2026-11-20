@@ -90,7 +90,10 @@
         if (d.status !== 'ok') continue;
         const M = this.mode(L.name), st = d.state, attr = n => (x => (K.attrOf(n, x) || {}).value);
         const searchN = this.find(n => attr(n)('data-kol-search') === L.name), fields = (searchN && attr(searchN)('data-kol-search-fields')) || 'word';
-        const filterN = this.find(n => (attr(n)('data-kol-filter') || '').split(':')[0] === L.name), filterField = filterN ? (attr(filterN)('data-kol-filter').split(':')[1] || '') : '';
+        // S2: כמה מכלי סינון (נושא + אות) — מצטברים. מצב "מסונן" בסרגל — על המכל הראשון שאינו אותיות (או הראשון).
+        const filterNs = []; K.walk(c.m.root, n => { if ((attr(n)('data-kol-filter') || '').split(':')[0] === L.name) filterNs.push(n); });
+        const keyOf = n => attr(n)('data-kol-filter').split(':').slice(1).join(':');
+        const filterN = filterNs.find(n => !keyOf(n).includes('@')) || filterNs[0] || null, filterField = filterN ? keyOf(filterN) : '';
         const query = M.state === 'search' ? M.value : '', fv = M.state === 'filter' ? M.value : '';
         let list = M.state === 'empty' ? [] : B.matched(st, { query, fields, filterField, filterValue: fv }, decode);
         list = B.sorted(list, attr(L.n)('data-kol-sort'), attr(L.n)('data-kol-sort-lang'));
@@ -124,17 +127,17 @@
         // הנגן: מצב "מתנגן" — הכרטיס הראשון (המחלקה של data-kol-active-class, ו-aria-pressed — כמו markPlaying)
         if (M.state === 'playing' && L.cards[0]) for (const r of L.cards[0]) for (const b of [r, ...r.querySelectorAll('[data-kol-play]')]) if (b.hasAttribute('data-kol-play')) { b.setAttribute('aria-pressed', 'true'); const ac = b.getAttribute('data-kol-active-class'); if (ac) b.classList.add(ac); }
         // כפתורי הסינון מתבנית הכפתור
-        if (filterN) {
-          const fEl = c.m2d.get(filterN), fTpl = fEl && B.templateOf(fEl);
-          if (fTpl && filterField) {
-            const ff = doc.createDocumentFragment(), made = [];
-            for (const layer of B.filterLayers(st, filterField)) for (const node of B.build(fTpl, [layer], st, { copy: (x, o) => this.pair(x, o) })) {
+        for (const fN of filterNs) {
+          const fEl = c.m2d.get(fN), fTpl = fEl && B.templateOf(fEl), fKey = keyOf(fN), fOn = fN === filterN ? fv : '';
+          if (fTpl && fKey) {
+            const ff = doc.createDocumentFragment(), made = [], lang = attr(fN)('data-kol-sort-lang') || attr(L.n)('data-kol-sort-lang');
+            for (const layer of B.filterLayers(st, fKey, lang)) for (const node of B.build(fTpl, [layer], st, { copy: (x, o) => this.pair(x, o) })) {
               if (!node.hasAttribute('data-kol-filter-value')) node.setAttribute('data-kol-filter-value', layer.value);
               node.setAttribute(OWNED, CARD); node.__lv = { L, i: -1, filter: true }; ff.append(node); L.owned.push(node); made.push(node);
             }
             fEl.append(ff);
-            B.markActive(fEl, made, fv);
-            if (fv) css += this.sel(filterN) + ' > [data-kol-filter-value=""]:not([' + OWNED + ']){outline:1px dashed rgba(0,0,0,.25)}\n';
+            B.markActive(fEl, made, fOn);
+            if (fOn) css += this.sel(fN) + ' > [data-kol-filter-value=""]:not([' + OWNED + ']){outline:1px dashed rgba(0,0,0,.25)}\n';
           }
         }
         // המונה, "אין תוצאות", "טען עוד": לפי המצב — בכלל CSS של העורך (התכונות של העמוד אינן משתנות)
