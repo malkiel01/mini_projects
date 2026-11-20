@@ -31,7 +31,7 @@ async function runKd(body) {
   return { doc, KD: win.KolData };
 }
 
-ok(/^1\.5\.1$/.test((await runKd('<div></div>')).KD.version), 'הגרסה עלתה ל-1.5.1 (כך מופיע "🔄 עדכן את kol-data.js" אצל הבעלים)');
+ok(/^1\.(5\.[1-9]|[6-9]\.\d+)$/.test((await runKd('<div></div>')).KD.version), 'הגרסה 1.5.1 ומעלה (S1; S2 — 1.6.0)');
 
 const body = '<div data-kol-list="words"><template><h3 data-kol-text="word"></h3></template></div><input data-kol-search="words" data-kol-search-fields="word meaning">';
 const a = await runKd(body), st = a.KD.lists.words;
