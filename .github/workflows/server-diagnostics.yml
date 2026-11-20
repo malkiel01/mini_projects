@@ -1,0 +1,150 @@
+name: Server diagnostics (read-only)
+
+# אבחון קריאה-בלבד של שרת ה-cPanel: מה מותקן, מה המגבלות, והאם אפשר לפנות
+# מהשרת אל api.anthropic.com. לא כותב, לא מוחק ולא משנה דבר בשרת, ולא מדפיס סודות.
+#
+# מטרה: להחליט אם אפשר לפתח צ'אט/כלי שמדבר עם Claude Platform על השרת השיתופי,
+# ובאיזו צורה (PHP מול ה-API, או Node/Agent SDK).
+#
+# לא פורס שום קוד ואינו קשור ל-deploy.yml. רץ כשמשנים את הקובץ הזה בכל ענף,
+# ובהפעלה ידנית. אפשר למחוק אותו אחרי שהתוצאות נשמרו.
+#
+# Secrets: DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_USER, DEPLOY_PATH
+#          (DEPLOY_SSH_PASSPHRASE — רק אם המפתח נעול)
+
+on:
+  push:
+    paths:
+      - '.github/workflows/server-diagnostics.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Unlock the deploy key if it has a passphrase
+        env:
+          DEPLOY_PASS: ${{ secrets.DEPLOY_SSH_PASSPHRASE }}
+        run: |
+          if [ -z "$DEPLOY_PASS" ]; then
+            echo "לא הוגדרה סיסמה — המפתח אמור להיות פתוח"
+            exit 0
+          fi
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          cat > "$RUNNER_TEMP/askpass" <<'SH'
+          #!/bin/sh
+          printf '%s\n' "$DEPLOY_PASS"
+          SH
+          chmod +x "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force \
+            ssh-add ~/.ssh/deploy_key
+          rm -f "$RUNNER_TEMP/askpass"
+
+      - name: Write the read-only probe script
+        run: |
+          cat > "$RUNNER_TEMP/probe.sh" <<'PROBE'
+          #!/bin/bash
+          # קריאה בלבד. אין כאן כתיבה, מחיקה, או הדפסת משתני סביבה.
+          sec() { printf '\n===== %s =====\n' "$1"; }
+
+          sec "זהות ומערכת"
+          echo "user: $(whoami)"; echo "home: $HOME"; echo "shell: $SHELL"
+          uname -srm
+          echo "hostname: $(hostname 2>/dev/null)"
+
+          sec "שפות וכלים (גרסה, או 'אין')"
+          for c in php node npm npx python3 python pip3 git curl wget unzip composer; do
+            if command -v "$c" >/dev/null 2>&1; then
+              printf '%-9s %s\n' "$c" "$("$c" --version 2>&1 | head -1)"
+            else
+              printf '%-9s אין\n' "$c"
+            fi
+          done
+
+          sec "Node.js של cPanel (Setup Node.js App / nodevenv)"
+          ls -d "$HOME"/nodevenv "$HOME"/nodevenv/* 2>/dev/null || echo "אין תיקיית nodevenv"
+          command -v selectorctl >/dev/null 2>&1 && echo "selectorctl: קיים" || echo "selectorctl: אין"
+          ls /opt/alt 2>/dev/null | head -20 || true
+          ls -d /opt/cpanel/ea-nodejs* 2>/dev/null || echo "אין ea-nodejs"
+
+          sec "PHP: הגדרות שקובעות אם אפשר לפנות ל-API"
+          php -v 2>&1 | head -1
+          php -r '
+            echo "curl ext:        ", (extension_loaded("curl") ? "כן" : "לא"), "\n";
+            echo "openssl ext:     ", (extension_loaded("openssl") ? "כן" : "לא"), "\n";
+            echo "allow_url_fopen: ", ini_get("allow_url_fopen"), "\n";
+            echo "memory_limit:    ", ini_get("memory_limit"), "\n";
+            echo "max_execution:   ", ini_get("max_execution_time"), "\n";
+            echo "disable_functions: ", (ini_get("disable_functions") ?: "(ריק)"), "\n";
+          ' 2>&1
+
+          sec "מגבלות משאבים (ulimit)"
+          ulimit -a 2>&1 | grep -E "processes|open files|virtual|max memory|cpu time" || true
+          echo "תהליכים של המשתמש כרגע: $(ps -u "$(whoami)" 2>/dev/null | wc -l)"
+
+          sec "דיסק"
+          df -h "$HOME" 2>&1 | tail -2
+          echo "cron: $(crontab -l >/dev/null 2>&1 && echo 'crontab קיים' || echo 'אין crontab (או חסום)')"
+
+          sec "יציאה מהשרת: האם api.anthropic.com נגיש?"
+          # בלי מפתח מצפים ל-401 או 405. כל תשובת HTTP = הרשת פתוחה. 000 = חסום.
+          if command -v curl >/dev/null 2>&1; then
+            code=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' https://api.anthropic.com/v1/messages 2>&1)
+            echo "api.anthropic.com HTTP: $code"
+            code2=$(curl -sS -m 15 -o /dev/null -w '%{http_code}' https://api.anthropic.com/ 2>&1)
+            echo "api.anthropic.com/ HTTP: $code2"
+          else
+            echo "אין curl בשורת הפקודה"
+          fi
+          php -r '
+            $c = curl_init("https://api.anthropic.com/v1/messages");
+            curl_setopt_array($c, [CURLOPT_RETURNTRANSFER=>1, CURLOPT_TIMEOUT=>15]);
+            curl_exec($c);
+            echo "PHP curl -> api.anthropic.com HTTP: ", curl_getinfo($c, CURLINFO_HTTP_CODE), " (שגיאה: ", curl_error($c) ?: "אין", ")\n";
+          ' 2>&1
+
+          sec "יעד הפריסה"
+          if [ -n "$DEPLOY_PATH" ] && [ -d "$DEPLOY_PATH" ]; then
+            echo "קיים: $DEPLOY_PATH"
+            echo "הרשאת כתיבה לתיקייה: $([ -w "$DEPLOY_PATH" ] && echo כן || echo לא)"
+          else
+            echo "הנתיב לא קיים או לא הועבר"
+          fi
+          sec "סוף"
+          PROBE
+          chmod 644 "$RUNNER_TEMP/probe.sh"
+
+      - name: "Run the probe over SSH (retries 30s, 90s, 180s)"
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -u
+          DEST="${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
+          SSHOPTS="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30"
+          for wait in 0 30 90 180; do
+            [ "$wait" -gt 0 ] && { echo "::warning::נסיון נכשל — ממתין ${wait}ש"; sleep "$wait"; }
+            # הנתיב מועבר כמשתנה בתחילת הסקריפט; הסקריפט עצמו קריאה-בלבד.
+            if { printf 'export DEPLOY_PATH=%q\n' "$DEPLOY_PATH"; cat "$RUNNER_TEMP/probe.sh"; } \
+                 | ssh $SSHOPTS "$DEST" 'bash -s'; then
+              echo "האבחון הסתיים"
+              exit 0
+            fi
+          done
+          echo "::error::הנסיונות נכשלו. חפש בלוג Connection closed (השרת סגר) או Permission denied (מפתח). ראה .claude/skills/deploy-to-cpanel/references/troubleshooting.md"
+          exit 1
