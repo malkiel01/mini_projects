@@ -616,7 +616,7 @@ eq([apr_schema_version($v9), $had, $rows9 > 100, $dump($v9) === $d9, $shape($v9)
     $v9->query("SELECT name || '|' || license FROM sources WHERE key = 'xplan'")->fetchColumn(), $v9->query('SELECT key, pid FROM sources ORDER BY key')->fetchAll() === $pids,
     (int)$v9->query('SELECT (SELECT COUNT(*) FROM source_checks) + (SELECT COUNT(*) FROM planning_items)')->fetchColumn(), count($v9->query('PRAGMA foreign_key_check')->fetchAll()),
     trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/00[1-9]_*.sql 2>/dev/null'))],
-    [10, [false, true, true], true, true, true, 13, true, 'שם שהמנהל שינה|{"store":"no"}', true, 0, 0, ''],
+    [apr_schema_expected(), [false, true, true], true, true, true, 13, true, 'שם שהמנהל שינה|{"store":"no"}', true, 0, 0, ''],
     'מיגרציה 010 על מסד v9 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא, המבנה זהה למסד חדש, הקטלוג נזרע (13) — וזריעה חוזרת אינה מכפילה ואינה דורסת שינוי של המנהל; 001–009 לא נגעו');
 $v9 = null;
 $rm = function (string $d) use (&$rm) { foreach (array_diff(scandir($d) ?: [], ['.', '..']) as $f) is_dir("$d/$f") ? $rm("$d/$f") : @unlink("$d/$f"); @rmdir($d); };
