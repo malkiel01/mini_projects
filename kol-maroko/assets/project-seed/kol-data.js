@@ -1,5 +1,5 @@
 /*
- * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.5.0)
+ * kol-data.js — קשירת נתונים לעמוד (קובץ מערכת של "קול מרוקו", גרסה 1.5.1)
  *
  * הקובץ הזה שלך: אפשר לקרוא אותו, לשנות אותו ואפילו למחוק אותו. הוא מחבר בין הנתונים (data/words.json)
  * לבין ה-HTML של העמוד, לפי תכונות data-kol-* שכתובות על האלמנטים עצמם:
@@ -67,7 +67,11 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(selector));
   }
 
-  /** טקסט לחיפוש: בלי תגיות HTML, באותיות קטנות, רווח אחד בין מילים. */
+  // ניקוד וטעמים (U+0591–U+05C7), תנועות ערביות (U+064B–U+065F, U+0670), ותווי כיוון ורוחב-אפס — לא נספרים בהשוואה.
+  // כך "שָׁלוֹם" נמצא ב"שלום" ולהפך. רק לחיפוש: התצוגה והמיון לא עוברים כאן.
+  var MARKS = /[\u0591-\u05C7\u064B-\u065F\u0670\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+
+  /** טקסט לחיפוש: בלי תגיות HTML, באותיות קטנות, בלי ניקוד, רווח אחד בין מילים. */
   function plain(value) {
     var text = String(value == null ? '' : value);
     if (text.indexOf('<') !== -1) text = text.replace(/<[^>]*>/g, ' ');
@@ -76,7 +80,7 @@
       box.innerHTML = text;
       text = box.value;
     }
-    return text.toLowerCase().replace(/\s+/g, ' ').trim();
+    return text.replace(MARKS, '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
   function isEmpty(value) {
@@ -721,7 +725,7 @@
 
   // לבדיקות, ולמי שרוצה להפעיל מהקוד שלו: KolData.lists.words, KolData.refresh('words')
   window.KolData = {
-    version: '1.5.0',
+    version: '1.5.1',
     prerender: true,       // יודע להמשיך ממכל עם data-kol-prerendered (הבנייה לפרסום בודקת את זה)
     lists: lists,
     refresh: function (name) { if (lists[name]) refresh(lists[name]); },

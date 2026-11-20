@@ -151,12 +151,16 @@
   }
   function itemsOf(data) { return Array.isArray(data) ? data : ((data && data.items) || []); }
 
-  /** טקסט לחיפוש: בלי תגיות, אותיות קטנות, רווח אחד. decode — פענוח ישויות (בדפדפן: textarea, כמו kol-data.js). */
+  // ניקוד וטעמים (U+0591–U+05C7), תנועות ערביות (U+064B–U+065F, U+0670), ותווי כיוון ורוחב-אפס — לא נספרים בהשוואה.
+  // כך "שָׁלוֹם" נמצא ב"שלום" ולהפך. רק לחיפוש: התצוגה והמיון לא עוברים כאן.
+  var MARKS = /[\u0591-\u05C7\u064B-\u065F\u0670\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+
+  /** טקסט לחיפוש: בלי תגיות, אותיות קטנות, בלי ניקוד, רווח אחד. decode — פענוח ישויות (בדפדפן: textarea, כמו kol-data.js). */
   function plain(value, decode) {
     var text = String(value == null ? '' : value);
     if (text.indexOf('<') !== -1) text = text.replace(/<[^>]*>/g, ' ');
     if (text.indexOf('&') !== -1 && decode) text = decode(text);
-    return text.toLowerCase().replace(/\s+/g, ' ').trim();
+    return text.replace(MARKS, '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
   function haystack(state, item, fields, decode) {
