@@ -8,7 +8,7 @@
 | אפליקציה | מצב | בקרה |
 | --- | --- | --- |
 | `appraisers` שמאות מקרקעין | מושהה עד הודעה של הבעלים | `session_018g4NYFwUcVefmCvwGAazWA` |
-| `kol-maroko` קול מרוקו | 🗣️ ישיבת עבודה עם הבעלים (20.11, דרך מנהל הצוותים (5)) — תקלות לעבור עליהן; לא פיתוח רציף. השעון `trig_01FnY5VNEHj6GeeD2BEF2jxx` כבוי (לא נמחק). M3 + M6 + M6b הושלמו (15.11) | `session_018g4NYCfRt1nZLMGYy1CrHx` (בקרה 13, Opus; קודם בקרה 12 `session_018g4NYE2VgSchStksNm4cLo`) |
+| `kol-maroko` קול מרוקו | ⏸️ מושהה עד הודעה של הבעלים (20.11). השעון `trig_01FnY5VNEHj6GeeD2BEF2jxx` כבוי (לא נמחק). פתוח: בנייה 6 עדיין לא לתור — הבעלים צריך 🚀 לתור — האתר מושך, ואז לבדוק את החיפוש ב-/lexicon/ | `session_018g4NYCfRt1nZLMGYy1CrHx` (בקרה 13, Opus; קודם בקרה 12 `session_018g4NYE2VgSchStksNm4cLo`) |
 | `platform` הפלטפורמה (המעטפת שמנהלת את האפליקציות) | מושהה — נפתח 2026-11-14, **לא התחיל לפעול** עד שהבעלים אומר "תתחיל". איך מתחילים — `platform/team/STATE.md` | — (עוד אין צ'אטים) |
 | `whatsapp-ai-scanner` סורק וואטסאפ חכם | **מושהה עד הודעה של הבעלים (2026-11-16)** — היה בהקמה (נפתח 2026-11-14), אין צ'אטים | (ב-`whatsapp-ai-scanner/team/sessions.json`) |
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1–21.3 מוזגו; פיבונאצ'י F-1..F-3 + learn מוזגו (#1700); למידה L1 מוזגה; בדרך: R1 הרשאות (מיגרציה 18), חלונית הסבר T1, למידה L3; עד 5 מטלות במקביל; שעון — דקה 28 (`trig_01AhicpPsrrfEGR4f97H9K4K`, נוצר בידי מנהל הצוותים (5); של בקרה 7 `trig_01FLjvXemEmKVuyfZbh9oGqH` כבוי) | `session_018g4NYDrFHGumG4hGvNK11M` (בקרה 8, עומק 7/8; קודם בקרה 7 `session_018g4NYFqH3tqWT9nYnCRNjr`; בקרה 6 `session_018g4NYEHws3rFjuBNuDFXRb` — רדומה, מחזיקה את ספר פיבונאצ'י) |
