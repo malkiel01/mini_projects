@@ -1,6 +1,6 @@
 <?php
 /**
- * עמדה בעסק (האפיון: S1, S2; שלב 4).
+ * עמדה בעסק (האפיון: S1, S2; גרסה 1).
  *
  * הצמדה: המנהל יוצר עמדה בהגדרות ומקבל קוד בן 6 ספרות (10 דקות). בטאבלט פותחים את s/ ומקלידים
  * אותו, והמכשיר מקבל עוגייה `tc_station` לשנה. ביטול עמדה — מיד.
@@ -19,6 +19,10 @@ const STATION_COOKIE = 'tc_station';
 const PAIR_MINUTES = 10;
 const PIN_FAILS = 5;
 const PIN_LOCK_SECONDS = 60;
+// בנוסף: ניחוש איטרי של קוד בן 4 ספרות (5 ניסיונות בדקה = כל הצירופים תוך יום-יומיים) נעצר במכסה יומית — 15 שגויים ב-24 שעות נועלים לשעה
+const PIN_DAY_FAILS = 15;
+const PIN_DAY_WINDOW_SECONDS = 86400;
+const PIN_DAY_LOCK_SECONDS = 3600;
 const PAIR_FAILS = 10;            // קודי הצמדה שגויים מאותה כתובת בתוך רבע שעה
 const PAIR_WINDOW_SECONDS = 900;
 
@@ -64,8 +68,8 @@ function stationOut(array $s): array {
 
 function stationList(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
-    $me = requireMember($person, $companyId, ['owner', 'manager', 'branch_manager']);
-    $site = $me['role'] === 'branch_manager' ? (int) $me['site_id'] : null;
+    $me = requireMember($person, $companyId, EDIT_ROLES);
+    $site = branchSite($me);
     $st = db()->prepare('SELECT * FROM stations WHERE company_id = ? AND revoked_at IS NULL' . ($site !== null ? ' AND site_id = ?' : '') . ' ORDER BY name');
     $st->execute($site !== null ? [$companyId, $site] : [$companyId]);
     return ['stations' => array_map('stationOut', $st->fetchAll()), 'site_only' => $site];
@@ -74,7 +78,7 @@ function stationList(array $person, array $in): array {
 /** קוד הצמדה חדש — לעמדה חדשה, או מחדש לעמדה קיימת (טאבלט שהוחלף). מבטל את המכשיר הקודם. */
 function stationCreate(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
-    $me = requireMember($person, $companyId, ['owner', 'manager', 'branch_manager']);
+    $me = requireMember($person, $companyId, EDIT_ROLES);
     $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     $exp = gmdate('Y-m-d\TH:i:s\Z', time() + PAIR_MINUTES * 60);
     $id = intIn($in, 'id');
@@ -86,7 +90,7 @@ function stationCreate(array $person, array $in): array {
     } else {
         $name = str($in, 'name', 60);
         if ($name === '') throw new AppError('חסר שם לעמדה');
-        $siteId = $me['role'] === 'branch_manager' ? (int) $me['site_id'] : (intIn($in, 'site_id') ?: null);
+        $siteId = branchSite($me) ?? (intIn($in, 'site_id') ?: null);
         if ($siteId !== null) siteOf($companyId, $siteId);
         db()->prepare('INSERT INTO stations (company_id, site_id, name, pair_hash, pair_expires, created_by, created_at) VALUES (?,?,?,?,?,?,?)')
             ->execute([$companyId, $siteId, $name, tokenHash($code), $exp, $person['id'], nowIso()]);
@@ -100,13 +104,13 @@ function stationRow(int $companyId, int $id, array $me): array {
     $st = db()->prepare('SELECT * FROM stations WHERE id = ? AND company_id = ? AND revoked_at IS NULL');
     $st->execute([$id, $companyId]);
     $s = $st->fetch();
-    if (!$s || ($me['role'] === 'branch_manager' && (int) $s['site_id'] !== (int) $me['site_id'])) throw new AppError('העמדה לא נמצאה', 404);
+    if (!$s || (branchSite($me) !== null && (int) $s['site_id'] !== branchSite($me))) throw new AppError('העמדה לא נמצאה', 404);
     return $s;
 }
 
 function stationRevoke(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
-    $me = requireMember($person, $companyId, ['owner', 'manager', 'branch_manager']);
+    $me = requireMember($person, $companyId, EDIT_ROLES);
     $s = stationRow($companyId, intIn($in, 'id'), $me);
     db()->prepare('UPDATE stations SET revoked_at = ?, token_hash = NULL, pair_hash = NULL WHERE id = ?')->execute([nowIso(), $s['id']]);
     audit($companyId, (int) $person['id'], 'station.revoke', 'stations:' . $s['id'], ['name' => $s['name']], null);
@@ -189,19 +193,22 @@ function stationVerify(array $s, array $in): array {
     if (!$emp) throw new AppError('העובד לא נמצא בעמדה הזו', 404);
     $key = 'pin:' . $id;
     throttleCheck($key, 'יותר מדי ניסיונות. נסו שוב בעוד דקה.');
+    throttleCheck('pinday:' . $id, 'יותר מדי ניסיונות היום. נסו שוב בעוד שעה, או פנו למנהל.');
     $st = db()->prepare('SELECT pin_hash FROM members WHERE id = ?');
     $st->execute([$id]);
     $hash = $st->fetchColumn();
     if (!$hash) throw new AppError('עוד אין לך קוד. פתחו קודם את הקישור מהמנהל.');
     if (!password_verify(str($in, 'pin', 4), (string) $hash)) {
         $locked = throttleFail($key, PIN_FAILS, 300, PIN_LOCK_SECONDS);
-        throw new AppError($locked ? 'יותר מדי ניסיונות. נסו שוב בעוד דקה.' : 'הקוד שגוי', $locked ? 429 : 400);
+        $lockedDay = throttleFail('pinday:' . $id, PIN_DAY_FAILS, PIN_DAY_WINDOW_SECONDS, PIN_DAY_LOCK_SECONDS);
+        throw new AppError($lockedDay ? 'יותר מדי ניסיונות היום. נסו שוב בעוד שעה, או פנו למנהל.' : ($locked ? 'יותר מדי ניסיונות. נסו שוב בעוד דקה.' : 'הקוד שגוי'),
+                           $locked || $lockedDay ? 429 : 400);
     }
-    throttleClear($key);
+    throttleClear($key);   // המונה היומי לא מתאפס בהצלחה — אחרת מי שמנחש היה מתאפס בכל פעם שהעובד עצמו נכנס
     return $emp;
 }
 
-/** שלב 1: מי אני ומה הצפוי. */
+/** מצב העמדה: מי אני ומה הצפוי. */
 function stationCheck(array $in): array {
     $s = currentStation();
     $emp = stationVerify($s, $in);
@@ -209,7 +216,7 @@ function stationCheck(array $in): array {
     return ['name' => $emp['name'], 'next' => $now['next'], 'open_since' => $now['open_since']];
 }
 
-/** שלב 2: הדיווח (הקוד נבדק שוב — אין "אישור" שנשמר בין הבקשות). */
+/** הדיווח (הקוד נבדק שוב — אין "אישור" שנשמר בין הבקשות). */
 function stationPunch(array $in): array {
     $s = currentStation();
     $emp = stationVerify($s, $in);

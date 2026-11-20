@@ -125,7 +125,7 @@ function migrate(PDO $pdo): void {
             revoked_at TEXT
         );
 
-        -- דיווח נוכחות. לא משתנה ולא נמחק אף פעם: תיקון (שלב 5) הוא רשומה נפרדת.
+        -- דיווח נוכחות. לא משתנה ולא נמחק אף פעם: תיקון (גרסה 1, תיקונים) הוא רשומה נפרדת.
         CREATE TABLE IF NOT EXISTS punches (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             member_id  INTEGER NOT NULL REFERENCES members(id),
@@ -169,7 +169,7 @@ function migrate(PDO $pdo): void {
             UNIQUE (company_id, effective_from)
         );
 
-        -- ימי חג של החברה (גרסה 2): לכל הדתות או לחלקן. החגים היהודיים — מובנים (lib/holidays/jewish.json).
+        -- ימי חג של החברה (גרסה 2): לכל הדתות או לחלקן. הלוחות המובנים לכל דת — lib/holidays/<דת>.json (lib/holidays.php).
         CREATE TABLE IF NOT EXISTS company_holidays (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             company_id INTEGER NOT NULL REFERENCES companies(id),
@@ -327,6 +327,8 @@ function migrate(PDO $pdo): void {
     // עמודות שנוספו אחרי שהטבלה כבר קיימת בשרת — ALTER, פעם אחת.
     addColumn($pdo, 'members', 'religion', "TEXT CHECK (religion IN ('jewish','muslim','christian','druze','other'))");
     addColumn($pdo, 'members', 'rest_day', 'INTEGER CHECK (rest_day BETWEEN 0 AND 6)');
+    // ימי העבודה בפועל (גרסה 3ב): "0,1,2,3,4" (0 = ראשון). ריק — ברירת המחדל לפי days_per_week (5 = א׳–ה׳, 6 = א׳–ו׳).
+    addColumn($pdo, 'work_terms', 'work_days', 'TEXT');
 }
 
 function addColumn(PDO $pdo, string $table, string $column, string $type): void {

@@ -1,22 +1,48 @@
 <?php
 /**
- * חגים לפי דת העובד (גרסה 2; האפיון: docs/v2-overtime-holidays.md פרק 5).
+ * חגים לפי דת העובד (גרסה 2; האפיון: docs/v2-overtime-holidays.md פרק 5, docs/v3b-cleanup.md חלק ב).
  *
- * - יהודי: לוח מובנה, מחושב מהלוח העברי (tools/gen-holidays.php ← lib/holidays/jewish.json) — ימי המנוחה
- *   של סעיף 18א לפקודת סדרי השלטון והמשפט ויום העצמאות.
- * - מוסלמי, נוצרי, דרוזי, אחר: החגים נקבעים בהחלטת ממשלה, ולא מצאנו רשימה רשמית של תאריכים (החגים
- *   המוסלמיים גם תלויים בראיית הירח). לכן החברה מזינה אותם: "+ יום" עם הדתות שהוא חל עליהן.
+ * לכל דת לוח מובנה בקובץ lib/holidays/<דת>.json: {"religion", "source", "verified_at", "days": {תאריך: שם}}.
+ * - יהודי: מחושב מהלוח העברי (tools/gen-holidays.php) — ימי המנוחה של סעיף 18א לפקודת סדרי השלטון והמשפט ויום העצמאות.
+ * - מוסלמי, נוצרי, דרוזי: הקבצים מתמלאים מפרסום רשמי (tools/import-holidays.php), עם מקור ותאריך אימות.
+ *   חגים אלה נקבעים בהחלטת ממשלה, והמוסלמיים והדרוזיים גם בראיית הירח — לכן מתעדכנים ידנית, מדי שנה.
+ * - אחר: אין לוח מובנה.
  * - ימים של החברה חלים בנוסף ללוח המובנה.
+ * שורש הקבצים אפשר להחליף בבדיקות עם HOLIDAYS_DIR.
  */
 
 declare(strict_types=1);
 
 require_once __DIR__ . '/overtime.php';
 
-function jewishHolidays(): array {
-    static $days = null;
-    if ($days === null) $days = json_decode((string) file_get_contents(__DIR__ . '/holidays/jewish.json'), true)['days'] ?? [];
-    return $days;
+function holidaysDir(): string {
+    return defined('HOLIDAYS_DIR') ? HOLIDAYS_DIR : __DIR__ . '/holidays';
+}
+
+/** הלוח המובנה של דת: ['source', 'verified_at', 'days'], או לוח ריק אם אין קובץ. נטען פעם אחת לדת. */
+function builtinCalendar(string $religion): array {
+    static $cache = [];
+    if (!isset($cache[$religion])) {
+        $file = holidaysDir() . '/' . $religion . '.json';
+        $d = isset(RELIGIONS[$religion]) && is_file($file) ? json_decode((string) file_get_contents($file), true) : null;
+        $d = is_array($d) ? $d : [];
+        $cache[$religion] = ['source' => $d['source'] ?? null, 'verified_at' => $d['verified_at'] ?? null,
+                             'days' => is_array($d['days'] ?? null) ? $d['days'] : []];
+    }
+    return $cache[$religion];
+}
+
+/** מצב כל הלוחות המובנים: כמה ימים, טווח, מקור ואימות — להצגה ולאזהרות. */
+function calendarsInfo(): array {
+    $out = [];
+    foreach (RELIGIONS as $rel => $label) {
+        $c = builtinCalendar($rel);
+        $dates = array_keys($c['days']);
+        sort($dates);
+        $out[$rel] = ['label' => $label, 'count' => count($dates), 'first' => $dates[0] ?? null, 'last' => $dates ? end($dates) : null,
+                      'source' => $c['source'], 'verified_at' => $c['verified_at'], 'has_file' => $rel !== 'other'];
+    }
+    return $out;
 }
 
 /** ימי החברה בטווח: [date => [[name, religions[]], …]]. */
@@ -33,21 +59,25 @@ function holidayOn(int $companyId, string $religion, string $date): ?string {
         $rel = $h['religions'] === 'all' ? null : explode(',', $h['religions']);
         if ($rel === null || in_array($religion, $rel, true)) return $h['name'];
     }
-    return $religion === 'jewish' ? (jewishHolidays()[$date] ?? null) : null;
+    return builtinCalendar($religion)['days'][$date] ?? null;
 }
 
-/** הלוח של שנה: המובנה (יהודי) וימי החברה. */
+/** הלוח של שנה: הלוחות המובנים לכל דת, מצבם, וימי החברה. */
 function holidaysGet(array $person, array $in): array {
     $companyId = intIn($in, 'company_id');
     $me = requireMember($person, $companyId, MANAGE_ROLES);
-    $year = intIn($in, 'year') ?: (int) substr(todayIn(companyRow($companyId)['tz']), 0, 4);
+    $year = intIn($in, 'year') ?: (int) substr(companyToday($companyId), 0, 4);
     if ($year < 2000 || $year > 2100) throw new AppError('שנה לא תקינה');
-    $built = array_filter(jewishHolidays(), fn($d) => str_starts_with($d, (string) $year), ARRAY_FILTER_USE_KEY);
-    return ['year' => $year, 'jewish' => array_map(fn($d, $n) => ['date' => $d, 'name' => $n], array_keys($built), $built),
+    $builtin = [];
+    foreach (RELIGIONS as $rel => $_) {
+        $days = array_filter(builtinCalendar($rel)['days'], fn($d) => str_starts_with($d, (string) $year), ARRAY_FILTER_USE_KEY);
+        ksort($days);
+        $builtin[$rel] = array_map(fn($d, $n) => ['date' => $d, 'name' => $n], array_keys($days), $days);
+    }
+    return ['year' => $year, 'builtin' => $builtin, 'calendars' => calendarsInfo(),
             'company' => array_map(fn($h) => ['id' => (int) $h['id'], 'date' => $h['date'], 'name' => $h['name'],
                 'religions' => $h['religions'] === 'all' ? 'all' : explode(',', $h['religions'])], companyHolidays($companyId, "$year-01-01", "$year-12-31")),
-            'religions' => RELIGIONS, 'can_edit' => in_array($me['role'], ['owner', 'manager'], true),
-            'built_in_until' => max(array_keys(jewishHolidays()))];
+            'religions' => RELIGIONS, 'can_edit' => in_array($me['role'], ['owner', 'manager'], true)];
 }
 
 function holidayAdd(array $person, array $in): array {

@@ -5,14 +5,9 @@
  * החיצים ‹ › נכתבים לפי המשמעות (הקודם / הבא) — בעברית הדפדפן הופך אותם לבד.
  */
 function monthHtml(r) {
-  const TZ = 'Asia/Jerusalem';
-  const hm = m => (m < 0 ? '−' : '') + Math.floor(Math.abs(m) / 60) + ':' + String(Math.abs(m) % 60).padStart(2, '0');
-  const t = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
-  const [y, mo] = r.month.split('-').map(Number);
-  const title = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const title = monthTitle(r.month);
   const s = r.summary;
   const rows = r.days.filter(d => d.date <= r.today && (d.pairs.length || d.open || d.missing_out || d.missing_in || d.standard)).reverse();
-  const dayName = d => new Date(d + 'T12:00:00Z').toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'UTC' });
   return `
     <div class="toolbar month-nav">
       <button class="icon-btn" id="prev" type="button" aria-label="החודש הקודם">‹</button>
@@ -30,15 +25,15 @@ function monthHtml(r) {
     ${s.missing ? `<p class="hint">⚠️ ${s.missing} דיווחים חסרים. לוחצים על היום כדי לתקן.</p>` : ''}
     <p class="hint">ההפרש הוא מול שעות התקן שלך; השעות הנוספות מסווגות בנפרד.</p>
     <ul class="list">${rows.length ? rows.map(d => {
-      const spans = d.pairs.map(p => t(p.in) + '–' + t(p.out));
-      if (d.open) spans.push(t(d.open) + '–…');
+      const spans = d.pairs.map(p => clockTime(p.in) + '–' + clockTime(p.out));
+      if (d.open) spans.push(clockTime(d.open) + '–…');
       const chips = [d.missing_out ? '<span class="chip bad">חסר יציאה</span>' : '', d.missing_in ? '<span class="chip bad">חסר כניסה</span>' : '',
         d.open ? '<span class="chip ok">בעבודה</span>' : '',
         !spans.length && !d.missing_out && !d.missing_in && d.standard && !d.absence?.credit && d.absence?.status !== 'pending' ? '<span class="chip">לא דווח</span>' : '',
-        d.absence ? `<span class="chip ${d.absence.status === 'approved' ? 'ok' : 'warn'}">${d.absence.icon} ${escM(d.absence.name)}${ABS_PART[d.absence.part]}${d.absence.status === 'pending' ? ' · ממתין' : ''}</span>` : '',
+        d.absence ? `<span class="chip ${d.absence.status === 'approved' ? 'ok' : 'warn'}">${d.absence.icon} ${esc(d.absence.name)}${ABS_PART[d.absence.part]}${d.absence.status === 'pending' ? ' · ממתין' : ''}</span>` : '',
         d.pending ? '<span class="chip warn">ממתין לאישור</span>' : d.corrected ? '<span class="chip">תוקן</span>' : '',
-        d.ot?.holiday ? `<span class="chip ok">${escM(d.ot.holiday)}</span>` : d.ot?.rest && d.pairs.length ? '<span class="chip ok">מנוחה</span>' : ''].join('');
-      return `<li class="card" tabindex="0" role="button" data-date="${d.date}"><div class="body"><div class="l1"><span>${dayName(d.date)}</span><span class="t">${d.minutes ? hm(d.minutes) : ''}</span></div>
+        d.ot?.holiday ? `<span class="chip ok">${esc(d.ot.holiday)}</span>` : d.ot?.rest && d.pairs.length ? '<span class="chip ok">מנוחה</span>' : ''].join('');
+      return `<li class="card" tabindex="0" role="button" data-date="${d.date}"><div class="body"><div class="l1"><span>${dayLabel(d.date)}</span><span class="t">${d.minutes ? hm(d.minutes) : ''}</span></div>
         <div class="l2" dir="ltr" style="text-align:end">${spans.join(' · ') || '—'}</div>${otLine(d, r)}</div>${chips}</li>`;
     }).join('') : '<li class="empty">אין ימים להצגה בחודש הזה.</li>'}</ul>`;
 }
@@ -46,16 +41,14 @@ function monthHtml(r) {
 /* ===== יום ותיקונים — משותף לעובד ולמנהל ===== */
 
 const KIND = { in: 'כניסה', out: 'יציאה' };
-const escM = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const tHe = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' });
-const dHe = iso => new Date(iso).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem', weekday: 'short', day: 'numeric', month: 'numeric' });
-const localDay = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+const dHe = iso => new Date(iso).toLocaleDateString('he-IL', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'numeric' });
+const localDay = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ });
 
 /** "הוספת יציאה 16:00" · "שינוי כניסה 08:00 ← 07:30" · "ביטול יציאה 12:00" */
 function corrText(c) {
-  if (c.op === 'add') return `הוספת ${KIND[c.kind]} ${tHe(c.new_at)}`;
-  if (c.op === 'move') return `שינוי ${KIND[c.kind]} ${tHe(c.old_at)} ← ${tHe(c.new_at)}`;
-  return `ביטול ${KIND[c.kind]} ${tHe(c.old_at)}`;
+  if (c.op === 'add') return `הוספת ${KIND[c.kind]} ${clockTime(c.new_at)}`;
+  if (c.op === 'move') return `שינוי ${KIND[c.kind]} ${clockTime(c.old_at)} ← ${clockTime(c.new_at)}`;
+  return `ביטול ${KIND[c.kind]} ${clockTime(c.old_at)}`;
 }
 const corrDay = c => localDay(c.new_at || c.old_at);
 const CSTATUS = { pending: ['warn', 'ממתין'], approved: ['ok', 'אושר'], rejected: ['bad', 'נדחה'], cancelled: ['', 'בוטל'] };
@@ -68,7 +61,7 @@ function dayHtml(d, corrections = []) {
     <ul class="list">${d.punches.length ? d.punches.map(p => `
       <li class="card">
         <span class="avatar" style="--h:${p.kind === 'in' ? 140 : 10}" aria-hidden="true">${p.kind === 'in' ? '⇠' : '⇢'}</span>
-        <div class="body"><div class="l1"><span>${KIND[p.kind]} ${tHe(p.at)}</span></div>
+        <div class="body"><div class="l1"><span>${KIND[p.kind]} ${clockTime(p.at)}</span></div>
           <div class="l2">${SRC[p.source] ?? ''}${p.corrected && p.source !== 'correction' ? ' · תוקן' : ''}</div></div>
         ${p.id ? `<button class="icon-btn" type="button" data-move="${p.id}" aria-label="שינוי שעה">✏️</button>
                   <button class="icon-btn" type="button" data-void="${p.id}" aria-label="ביטול הדיווח">🗑️</button>` : ''}
@@ -76,7 +69,7 @@ function dayHtml(d, corrections = []) {
     <div class="row-btns" style="margin-top:12px"><button class="btn" type="button" data-add>+ הוספת דיווח</button></div>
     ${mine.length ? `<h3 class="sec-title">תיקונים ביום הזה</h3><ul class="list">${mine.map(c => `
       <li class="card"><div class="body"><div class="l1"><span>${corrText(c)}</span></div>
-        <div class="l2">${c.reason ? 'סיבה: ' + escM(c.reason) : ''}${c.note ? ' · ' + escM(c.note) : ''}</div></div>
+        <div class="l2">${c.reason ? 'סיבה: ' + esc(c.reason) : ''}${c.note ? ' · ' + esc(c.note) : ''}</div></div>
         <span class="chip ${CSTATUS[c.status][0]}">${CSTATUS[c.status][1]}</span>
         ${c.status === 'pending' && c.by === 'employee' ? `<button class="icon-btn" type="button" data-cancel="${c.id}" aria-label="ביטול הבקשה">✕</button>` : ''}
       </li>`).join('')}</ul>` : ''}`;
@@ -84,8 +77,8 @@ function dayHtml(d, corrections = []) {
 
 /** טופס התיקון: op = add | move | void. מחזיר את ה-HTML; הקריאה ל-API — אצל מי שקרא. */
 function correctionForm(op, d, punch) {
-  const hhmm = punch ? new Date(punch.at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour: '2-digit', minute: '2-digit' }) : '';
-  const what = op === 'add' ? 'הוספת דיווח' : op === 'move' ? `שינוי השעה של ה${KIND[punch.kind]} (${tHe(punch.at)})` : `ביטול ה${KIND[punch.kind]} (${tHe(punch.at)})`;
+  const hhmm = punch ? new Date(punch.at).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }) : '';
+  const what = op === 'add' ? 'הוספת דיווח' : op === 'move' ? `שינוי השעה של ה${KIND[punch.kind]} (${clockTime(punch.at)})` : `ביטול ה${KIND[punch.kind]} (${clockTime(punch.at)})`;
   return `
     <p><b>${what}</b> · ${dHe(d.date + 'T12:00:00Z')}</p>
     ${op === 'add' ? `<div class="f" style="margin-top:12px"><span id="ck">מה</span><fieldset class="seg" aria-labelledby="ck">
@@ -143,14 +136,12 @@ function otLine(d, r) {
 
 const ABS_PART = { full: '', half: ' ½', hours: ' (שעות)' };
 const ASTATUS = { pending: ['warn', 'ממתין'], approved: ['ok', 'אושר'], rejected: ['bad', 'נדחה'], cancelled: ['', 'בוטל'] };
-const dShort = d => new Date(d + 'T12:00:00Z').toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'UTC' });
-const hmA = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 
 /** "7.2–10.2 · 5 ימי עבודה" · "ב׳ 14.2 · חצי יום" · "ג׳ 15.2 · 2:00 שעות" */
 function absText(a) {
   const dm = d => +d.slice(8) + '.' + +d.slice(5, 7);
-  const range = a.from === a.to ? dShort(a.from) : `${dm(a.from)}–${dm(a.to)}`;
-  const part = a.part === 'half' ? 'חצי יום' : a.part === 'hours' ? `${hmA(a.minutes)} שעות ביום` : '';
+  const range = a.from === a.to ? dayLabel(a.from) : `${dm(a.from)}–${dm(a.to)}`;
+  const part = a.part === 'half' ? 'חצי יום' : a.part === 'hours' ? `${hm(a.minutes)} שעות ביום` : '';
   const days = a.from !== a.to || a.part === 'full' ? `${a.workdays} ${a.workdays === 1 ? 'יום עבודה' : 'ימי עבודה'}` : '';
   return [range, part, days].filter(Boolean).join(' · ');
 }
@@ -169,10 +160,10 @@ function balancesHtml(bs) {
 function absItem(a, actions = '', who = false) {
   return `<li class="card" data-abs="${a.id}">
     <span class="avatar" style="--h:${a.type === 'sick' ? 10 : a.type === 'vacation' ? 140 : 220}" aria-hidden="true">${a.icon}</span>
-    <div class="body"><div class="l1"><span>${who ? escM(a.name) + ' · ' : ''}${escM(a.type_name)}</span></div>
+    <div class="body"><div class="l1"><span>${who ? esc(a.name) + ' · ' : ''}${esc(a.type_name)}</span></div>
       <div class="l2">${absText(a)}</div>
       ${a.balance ? `<div class="l2">יתרת ${a.balance.name}: ${fmtD(a.balance.now)} ← <b${a.balance.after < 0 ? ' style="color:var(--danger)"' : ''}>${fmtD(a.balance.after)}</b></div>` : ''}
-      ${a.note || a.decision_note ? `<div class="l2">${a.note ? escM(a.note) : ''}${a.note && a.decision_note ? ' · ' : ''}${a.decision_note ? '↩ ' + escM(a.decision_note) : ''}</div>` : ''}</div>
+      ${a.note || a.decision_note ? `<div class="l2">${a.note ? esc(a.note) : ''}${a.note && a.decision_note ? ' · ' : ''}${a.decision_note ? '↩ ' + esc(a.decision_note) : ''}</div>` : ''}</div>
     ${a.certs ? `<span class="chip ok" title="אישור">📎 ${a.certs}</span>` : a.cert_shown ? '<span class="chip">📎 הוצג</span>' : ''}
     ${who ? '' : `<span class="chip ${ASTATUS[a.status][0]}">${ASTATUS[a.status][1]}</span>`}${actions}</li>`;
 }
@@ -182,7 +173,7 @@ function absenceForm(types, unit, today) {
   const parts = unit === 'half' ? [['full', 'יום מלא'], ['half', 'חצי יום']] : unit === 'hours' ? [['full', 'יום מלא'], ['hours', 'שעות']] : [];
   return `
     <div class="f"><span id="at">סוג</span><fieldset class="seg grid" style="--cols:${Math.min(types.length, 3)}" aria-labelledby="at">${types.map((t, i) => `
-      <label><input type="radio" name="type" value="${t.key}"${i ? '' : ' checked'}><span>${t.icon} ${escM(t.name)}</span></label>`).join('')}</fieldset></div>
+      <label><input type="radio" name="type" value="${t.key}"${i ? '' : ' checked'}><span>${t.icon} ${esc(t.name)}</span></label>`).join('')}</fieldset></div>
     <div class="fields two" style="margin-top:12px">
       <label class="f"><span>מתאריך</span><input name="from" type="date" value="${today}" required></label>
       <label class="f"><span>עד תאריך</span><input name="to" type="date" value="${today}" required></label></div>
@@ -276,7 +267,7 @@ async function certSheet(o) {
     <ul class="list" id="cert-list">${r.certs.length ? r.certs.map((c, i) => `
       <li class="card"><span class="avatar" style="--h:220" aria-hidden="true">${c.mime === 'application/pdf' ? '📄' : '🖼️'}</span>
         <div class="body"><div class="l1"><span>אישור ${i + 1}</span><span class="t">${dHe(c.created_at)}</span></div>
-          <div class="l2">${c.deleted_at ? GONE[c.delete_reason] ?? 'נמחק' : kb(c.size) + (c.by === 'employee' ? ' · הועלה מהעובד' : c.by ? ' · ' + escM(c.by) : '')}</div></div>
+          <div class="l2">${c.deleted_at ? GONE[c.delete_reason] ?? 'נמחק' : kb(c.size) + (c.by === 'employee' ? ' · הועלה מהעובד' : c.by ? ' · ' + esc(c.by) : '')}</div></div>
         ${c.deleted_at ? '' : `<button class="icon-btn" type="button" data-view="${c.id}" aria-label="צפייה">👁️</button>
           ${r.can_delete && (o.prefix === 'abs_cert' || c.by === 'employee') ? `<button class="icon-btn" type="button" data-del="${c.id}" aria-label="מחיקה">🗑️</button>` : ''}`}
       </li>`).join('') : '<li class="empty">עוד אין אישור.</li>'}</ul>

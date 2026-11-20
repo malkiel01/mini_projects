@@ -1,6 +1,5 @@
 # שעון נוכחות — גרסה 1: מסכים ונתונים
-עודכן: 2026-10-22. ממשיך את ההחלטות ב-`../SPEC.md` (גרסה 1 = ליבה). **הצעה לאישור** — שום דבר כאן עוד לא מומש.
-השאלות שנשארו פתוחות לגרסה 1 — בסוף, בפרק "לאישור לפני פיתוח".
+עודכן: 2026-10-22. ממשיך את ההחלטות ב-`../SPEC.md` (גרסה 1 = ליבה). **גרסה 1 הושלמה (2026-10-23).** המסמך נשאר כאפיון המקורי; הנתונים המדויקים — `lib/db.php`, ומה שנוסף אחרי כך — `v2-overtime-holidays.md` ו-`v3-absences.md`.
 
 ## 1. מה בגרסה 1, ומה לא
 | בגרסה 1 | לא בגרסה 1 |
@@ -24,9 +23,9 @@
 - אדם אחד יכול להיות עובד בחברה אחת ומנהל בחברה אחרת. מנהל שהוא גם עובד מדווח מ-`e/` כמו כל עובד, ואפשר לקשר את שני התפקידים לאותו אדם.
 - עוגייה בשם משלה: `tc_session`, ובעמדה `tc_station`. בלי `require` מחוץ לתיקייה.
 
-**ב-`app.json`** (בשלב שבו הכתובות האלה ייבנו):
+**ב-`app.json`** (הרשימה המלאה והמעודכנת שם; כאן הרשימה של גרסה 1 בלבד):
 ```json
-"public": ["e/**", "s/**", "assets/**", "api.php?action=emp_activate|emp_login|emp_state|emp_punch|emp_month|emp_correct|emp_approve|station_pair|station_state|station_punch"]
+"public": ["e/**", "s/**", "assets/**", "api.php?action=emp_invite_info|emp_activate|emp_state|emp_punch|emp_month|emp_correct|emp_correct_cancel|emp_corrections|emp_approve|station_pair|station_state|station_check|station_punch"]
 ```
 
 ## 3. המסכים — עובד (`e/`)
@@ -111,24 +110,34 @@
 - **חודש נעול** לא מקבל תיקונים. פתיחה מחדש (בעלים בלבד, עם סיבה) מבטלת את האישורים של אותו חודש ונרשמת ביומן.
 
 ## 7. הנתונים
-מסד SQLite אחד: `time-clock/data/time-clock.sqlite`. בפריסה צריך להחריג: `time-clock/data/*.sqlite*` ו-`time-clock/data/secret.key`. ההחרגה נוספת ל-`deploy.yml` **באותו PR שכותב לראשונה**.
+מסד SQLite אחד: `time-clock/data/time-clock.sqlite`. בפריסה מוחרגים ב-`deploy.yml`: `time-clock/data/*.sqlite*` ו-`time-clock/data/certs/` (אישורי מחלה, גרסה 3). אין `secret.key` באפליקציה הזו. כל קובץ חדש ב-`data/` צריך החרגה משלו **באותו PR שכותב אותו לראשונה**.
 
-| טבלה | שדות עיקריים | הערה |
+המקור לעמודות המדויקות הוא `lib/db.php` (המיגרציות הן `CREATE TABLE IF NOT EXISTS` ו-`ALTER` חד-פעמי). כל 23 הטבלאות:
+
+| טבלה | תפקיד | גרסה |
 | --- | --- | --- |
-| `people` | id, name, phone, email, platform_sub? | אדם אחד בכל החברות |
-| `companies` | id, name, tax_id?, tz, created_by, created_at | |
-| `members` | id, company_id, person_id, role, site_id?, employee_no, start_date, end_date, status, pin_hash | חברוּת = אדם בחברה. הקוד מגובב (`password_hash`) |
-| `work_terms` | id, member_id, effective_from, days_per_week (5/6), daily_minutes, pay_type (חודשי/שעתי, לתיעוד בלבד) | גרסאות. לא דורסים |
-| `sites` | id, company_id, name | סניפים — כן בגרסה 1 |
-| `stations` | id, company_id, site_id?, name, token_hash, paired_by, last_seen, revoked_at | |
-| `invites` | id, member_id, token_hash, expires_at, used_at | |
-| `devices` | id, person_id, token_hash, created_at, last_seen, revoked_at | העוגייה של העובד |
-| `punches` | id, member_id, kind (in/out), at_utc, source (phone/station/manager), station_id?, device_id?, created_at | **לא משתנה אף פעם** |
-| `corrections` | id, member_id, op (add/move/void), punch_id?, new_at?, new_kind?, reason, requested_by, status, decided_by, decided_at, note | |
-| `approval_steps` | id, company_id, ord, role, label | ההגדרה של החברה |
-| `periods` | id, company_id, month (YYYY-MM), status (open/review/locked), locked_by, locked_at | |
-| `period_signoffs` | id, period_id, member_id, step_ord, by_member, at, note | אישור של עובד בחודש בשלב |
-| `audit` | id, company_id, actor, action, entity, before, after, at | כל שינוי |
+| `people` | אדם אחד בכל החברות; מנהל מקושר ל-`platform_sub` | 1 |
+| `companies` | חברה: שם, ח.פ., אזור זמן, תקן ברירת מחדל | 1 |
+| `sites` | סניפים | 1 |
+| `members` | חברוּת = אדם בחברה, עם תפקיד, סניף וקוד אישי מגובב. בגרסה 2 נוספו `religion` ו-`rest_day` | 1, 2 |
+| `work_terms` | תנאי העסקה בגרסאות (`effective_from`); לא דורסים. בגרסה 3ב נוספה `work_days` (ימי העבודה שנבחרו; ריק = ברירת המחדל לפי `days_per_week`) | 1, 3ב |
+| `invites` | קישור הזמנה חד-פעמי, 7 ימים; נשמר hash | 1 |
+| `devices` | מכשיר של עובד, אסימון לכל חברוּת (`member_id`); נשמר hash | 1 |
+| `punches` | דיווח נוכחות; **לא משתנה ולא נמחק** | 1 |
+| `corrections` | תיקון: `add` / `move` / `void`, בבקשה או ישיר | 1 |
+| `approval_steps` | מסלול האישור החודשי של החברה | 1 |
+| `periods` | חודש של חברה: `review` ← `locked` (חודש רגיל הוא היעדר שורה), עם השלבים שנקבעו בפתיחה | 1 |
+| `period_signoffs` | אישור בחודש בשלב; `revoked_at` לביטול, `on_behalf` לאישור במקום העובד | 1 |
+| `stations` | עמדה בעסק; נשמרים hash של האסימון ושל קוד ההצמדה | 1 |
+| `throttle` | ניסיונות שגויים: קוד אישי ולפי IP | 1 |
+| `audit` | כל שינוי: מי, מה, לפני ואחרי | 1 |
+| `ot_rules` | כללי שעות נוספות של החברה בגרסאות | 2 |
+| `company_holidays` | ימי חג שהחברה הזינה, לפי דתות | 2 |
+| `absence_settings` | הגדרות היעדרויות של החברה (JSON) | 3 |
+| `absence_types` | סוגי היעדרות של החברה | 3 |
+| `absences` | היעדרות: טווח, יום מלא / חצי / שעות, סטטוס | 3 |
+| `absence_balances` | יתרת פתיחה לחופשה ולמחלה | 3 |
+| `absence_certs` | אישורי מחלה; הקובץ ב-`data/certs/`, הרשומה נשארת אחרי מחיקה | 3 |
 
 **הפרדה בין חברות:** כל שאילתה עוברת דרך `company_id` של החברוּת המחוברת. אין API שמקבל `company_id` מהדפדפן בלי לבדוק חברוּת.
 

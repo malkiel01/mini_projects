@@ -104,7 +104,7 @@ function memberBalances(array $member, string $at): array {
 /** היתרות של עובד היום — לעובד, לכרטיס העובד ולאישורים. */
 function balancesToday(int $memberId): array {
     $m = memberRow($memberId);
-    return memberBalances($m, todayIn(companyRow((int) $m['company_id'])['tz']));
+    return memberBalances($m, companyToday((int) $m['company_id']));
 }
 
 /** יתרת פתיחה: היתרה בתחילת התאריך. נשמרת כגרסה חדשה; הקודמת נשארת ביומן ובטבלה. */

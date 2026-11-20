@@ -62,6 +62,8 @@ $action = $_GET['action'] ?? (is_string($in['action'] ?? null) ? $in['action'] :
 
 try {
     if ($action !== 'me' && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') fail('נדרש POST', 405);
+    // בקשה שהדפדפן מסמן כבאה מאתר אחר — נחסמת. SameSite=Lax על העוגיות כבר חוסם אותה, וזו שכבה שנייה.
+    if (($_SERVER['HTTP_SEC_FETCH_SITE'] ?? '') === 'cross-site' && $action !== 'me') fail('בקשה מאתר אחר נחסמה', 403);
     if ($tooBig) fail('הקובץ גדול מדי בשביל השרת. נסו קובץ קטן יותר או צילום.', 413);
 
     // עובד — לפני הבדיקה של צוות הניהול: אין לו PLATFORM_USER.

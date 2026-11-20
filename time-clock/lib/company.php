@@ -11,18 +11,6 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/auth.php';
 
-const TEAM_ROLES = ['manager', 'branch_manager', 'payroll'];
-
-function str(array $in, string $key, int $max = 120): string {
-    $v = $in[$key] ?? '';
-    return is_string($v) ? mb_substr(trim($v), 0, $max) : '';
-}
-
-function intIn(array $in, string $key): int {
-    $v = $in[$key] ?? 0;
-    return is_numeric($v) ? (int) $v : 0;
-}
-
 /** החברות שבהן האדם בצוות הניהול, עם התפקיד (הגבוה, אם יש כמה). */
 function myCompanies(array $person): array {
     $st = db()->prepare("SELECT c.id, c.name, m.role, m.site_id, s.name AS site_name FROM members m
@@ -40,7 +28,7 @@ function myCompanies(array $person): array {
 }
 
 function rank(string $role): int {
-    return array_search($role, ['owner', 'manager', 'branch_manager', 'payroll', 'employee'], true);
+    return array_search($role, ROLES, true);
 }
 
 /** שעות תקן: מספר ימים (5/6) ודקות ליום (1–12 שעות). */
@@ -78,6 +66,11 @@ function companyRow(int $id): array {
     if (!$c) throw new AppError('החברה לא נמצאה', 404);
     foreach (['id', 'days_per_week', 'daily_minutes'] as $k) $c[$k] = (int) $c[$k];
     return $c;
+}
+
+/** היום בשעון החברה. */
+function companyToday(int $companyId): string {
+    return todayIn(companyRow($companyId)['tz']);
 }
 
 /** פרטי החברה, הסניפים והצוות. כל מי שבצוות הניהול רואה; רק הבעלים משנה. */

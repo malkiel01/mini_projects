@@ -89,7 +89,7 @@ function memberRestDay(array $m): int {
     return REST_BY_RELIGION[$m['religion'] ?? 'jewish'] ?? 6;
 }
 
-/** חג באותו יום לעובד (שם), או null. הלוחות — שלב 2 (lib/holidays.php). */
+/** חג באותו יום לעובד (שם), או null. הלוחות — lib/holidays.php (גרסה 2). */
 function holidayName(int $companyId, ?string $religion, string $date): ?string {
     return function_exists('holidayOn') ? holidayOn($companyId, $religion ?? 'jewish', $date) : null;
 }
@@ -201,9 +201,7 @@ function classifyMonth(int $memberId, string $month, string $tz): array {
     $a = new DateTimeImmutable($first); $b = new DateTimeImmutable($last);
     $from = $a->modify('-' . $a->format('w') . ' days')->format('Y-m-d');
     $to = $b->modify('+' . (6 - (int) $b->format('w')) . ' days')->format('Y-m-d');
-    $st = db()->prepare('SELECT * FROM members WHERE id = ?');
-    $st->execute([$memberId]);
-    $m = $st->fetch();
+    $m = memberRow($memberId);
     $cls = classifyDays((int) $m['company_id'], $m, daysReport($memberId, $from, $to, $tz), $tz);
     $days = array_filter($cls, fn($d) => $d >= $first && $d <= $last, ARRAY_FILTER_USE_KEY);
     $sum = array_fill_keys(OT_BUCKETS, 0);

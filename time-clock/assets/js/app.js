@@ -6,7 +6,6 @@
  */
 
 const ROLE = { owner: 'בעלים', manager: 'מנהל', branch_manager: 'מנהל סניף', payroll: 'מנהלת שכר', employee: 'עובד' };
-const $ = (s, el = document) => el.querySelector(s);
 const main = $('#main');
 const state = { me: null, companies: [], companyId: null, data: null, backTo: '#/' };
 const PAY = { monthly: 'חודשי', hourly: 'שעתי' };
@@ -17,32 +16,10 @@ const INVITE = { pending: ['warn', 'ממתין להפעלה'], expired: ['bad', 
   const set = () => document.documentElement.style.setProperty('--vvh', Math.round(vv.height) + 'px');
   vv.addEventListener('resize', set); set(); })();
 
-function toast(msg, err = false) {
-  const el = $('.toast'); el.textContent = msg; el.classList.toggle('err', err); el.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { el.hidden = true; }, 2600);
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-async function api(action, body = {}) {
-  const res = await fetch('api.php?action=' + encodeURIComponent(action), {
-    method: action === 'me' ? 'GET' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: action === 'me' ? undefined : JSON.stringify(body),
-    credentials: 'same-origin',
-  });
-  let data = null;
-  try { data = await res.json(); } catch { /* תשובה שאינה JSON — למשל דף שגיאה */ }
-  if (!data || !data.success) {
-    const e = new Error(data?.error || 'שגיאת תקשורת'); e.status = res.status; throw e;
-  }
-  return data;
-}
+const api = (action, body = {}) => apiCall('api.php?action=' + encodeURIComponent(action),
+  action === 'me' ? { method: 'GET' } : { body });
 
 /** "8:24" ⇄ 504 דקות */
-const hm = m => Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0');
 function parseHm(s) {
   const m = String(s).trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
   if (!m || +(m[2] || 0) > 59) return NaN;
@@ -196,8 +173,6 @@ function openCompanyPicker() {
 
 /* ===== M2 · היום ===== */
 
-const TZ = 'Asia/Jerusalem';
-const clock = iso => new Date(iso).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
 
 async function renderHome() {
   const d = state.data;
@@ -206,8 +181,8 @@ async function renderHome() {
   try { b = await api('today_board', { company_id: state.companyId }); }
   catch (e) { main.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
   const STATE = {
-    in: e => [`נכנס ${clock(e.since)} · ${hm(e.minutes)}`, '<span class="chip ok">בעבודה</span>'],
-    done: e => [`${clock(e.first)} · סה״כ ${hm(e.minutes)}`, '<span class="chip">סיים</span>'],
+    in: e => [`נכנס ${clockTime(e.since)} · ${hm(e.minutes)}`, '<span class="chip ok">בעבודה</span>'],
+    done: e => [`${clockTime(e.first)} · סה״כ ${hm(e.minutes)}`, '<span class="chip">סיים</span>'],
     none: e => [`תקן ${hm(e.standard)}`, '<span class="chip bad">לא דיווח</span>'],
     off: () => ['לא יום עבודה', ''],
   };
@@ -445,7 +420,7 @@ async function paneAbsences(pane, d) {
         <label><input type="radio" name="kind" value="vacation" checked><span>🌴 חופשה</span></label>
         <label><input type="radio" name="kind" value="sick"><span>🤒 מחלה</span></label></fieldset></div>
       <div class="fields two" style="margin-top:12px">
-        <label class="f"><span>לתאריך</span><input name="as_of" type="date" value="${isoToday().slice(0, 8)}01"></label>
+        <label class="f"><span>לתאריך</span><input name="as_of" type="date" value="${todayIL().slice(0, 8)}01"></label>
         <label class="f"><span>ימים</span><input name="days" dir="ltr" inputmode="decimal" required placeholder="7.5"></label></div>
       <label class="f" style="margin-top:12px"><span>הערה</span><input name="note" maxlength="200" placeholder="למשל: לפי תלוש ספטמבר"></label>
       <p class="error" role="alert" hidden></p>`,
@@ -456,7 +431,7 @@ async function paneAbsences(pane, d) {
       return () => { toast('נשמר'); paneAbsences(pane, d); };
     }));
   $('#abs-add')?.addEventListener('click', () => {
-    openSheet('היעדרות · ' + d.employee.name, absenceForm(r.types, r.unit, isoToday()),
+    openSheet('היעדרות · ' + d.employee.name, absenceForm(r.types, r.unit, todayIL()),
       async f => { await api('abs_direct', { company_id: state.companyId, member_id: id, ...absenceBody(f) }); return () => { toast('נרשם'); paneAbsences(pane, d); }; });
     absenceWire($('#sheet form'));
   });
@@ -564,7 +539,7 @@ async function paneOt(pane) {
       <div class="fields" style="grid-template-columns:repeat(3,minmax(0,1fr))">${p('rate_rest', 'מנוחה / חג')}${p('rate_rest_ot1', 'נוספות במנוחה')}${p('rate_rest_ot2', 'ואחריהן')}</div>
       <label class="switch"><input type="checkbox" name="holiday_rest_cumulative"${c.holiday_rest_cumulative ? ' checked' : ''}${ro}><span>חג שחל ביום המנוחה — מצטבר (סיווג נפרד)</span></label>
       <div class="fields two" id="hr-rate"${c.holiday_rest_cumulative ? '' : ' hidden'}>${p('rate_holiday_rest', 'חג במנוחה')}</div>
-      ${r.can_edit ? `<div class="fields two"><label class="f"><span>בתוקף מתאריך</span><input name="effective_from" type="date" value="${new Date().toLocaleDateString('en-CA', { timeZone: TZ })}"></label></div>
+      ${r.can_edit ? `<div class="fields two"><label class="f"><span>בתוקף מתאריך</span><input name="effective_from" type="date" value="${todayIL()}"></label></div>
         <p class="error" role="alert" hidden></p>
         <div class="actions"><button class="btn" type="button" id="ot-defaults">ברירות המחדל</button><span style="flex:1"></span><button class="btn primary" type="submit">שמירה</button></div>`
         : '<p class="hint">רק הבעלים משנה את הכללים.</p>'}
@@ -599,11 +574,29 @@ async function paneOt(pane) {
 
 /* ===== M7 · חגים (גרסה 2) ===== */
 
+/** הלוחות המובנים לכל דת, עם מקור, תאריך אימות ואזהרות (ריק / לא אומת / מסתיים בקרוב). */
+function calendarSections(r) {
+  const today = todayIL();
+  return Object.entries(r.calendars).filter(([, c]) => c.has_file).map(([rel, c]) => {
+    const warn = [];
+    if (!c.count) warn.push('הלוח ריק — החגים של הדת הזו עדיין לא הוזנו. עד אז מוסיפים אותם ידנית כ"יום של החברה".');
+    else {
+      if (!c.verified_at) warn.push('לא אומת מול מקור רשמי.');
+      if (+c.last.slice(0, 4) <= +today.slice(0, 4)) warn.push(`הלוח מכסה עד ${c.last.slice(0, 4)} בלבד — צריך להזין את השנה הבאה.`);
+    }
+    const days = r.builtin[rel];
+    return `<h3 class="sec-title">חגי ${esc(c.label)} — מובנה</h3>
+    ${warn.map(w => `<p class="hint"><span class="chip warn">שימו לב</span> ${esc(w)}</p>`).join('')}
+    <ul class="list">${days.length ? days.map(h => `<li class="card"><div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dayLabel(h.date)}</span></div></div></li>`).join('')
+      : `<li class="empty">${c.count ? 'אין ימים בשנה הזו.' : 'אין ימים בלוח.'}</li>`}</ul>
+    <p class="hint" style="margin-top:8px">${c.source ? `מקור: ${esc(c.source)}` : 'אין מקור רשום.'}${c.verified_at ? ` · אומת ב-${c.verified_at}` : ''}${c.count ? ` · ${c.count} ימים, ${c.first.slice(0, 4)}–${c.last.slice(0, 4)}` : ''}</p>`;
+  }).join('');
+}
+
 async function paneHolidays(pane, year = null) {
   let r;
   try { r = await api('holidays_get', { company_id: state.companyId, year }); }
   catch (e) { pane.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
-  const dd = d => new Date(d + 'T12:00:00Z').toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric', timeZone: 'UTC' });
   const relText = h => h.religions === 'all' ? 'כולם' : h.religions.map(x => r.religions[x]).join(', ');
   pane.innerHTML = `<div>
     <div class="toolbar month-nav">
@@ -616,14 +609,11 @@ async function paneHolidays(pane, year = null) {
     ${r.can_edit ? '<div class="toolbar"><span></span><button class="btn primary" id="add-hol" type="button"><span aria-hidden="true">+</span> יום</button></div>' : ''}
     <ul class="list">${r.company.length ? r.company.map(h => `
       <li class="card"><span class="avatar" style="--h:${hue(h.name)}" aria-hidden="true">📅</span>
-        <div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div><div class="l2">${relText(h)}</div></div>
+        <div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dayLabel(h.date)}</span></div><div class="l2">${relText(h)}</div></div>
         ${r.can_edit ? `<button class="icon-btn" type="button" data-del="${h.id}" aria-label="מחיקת ${esc(h.name)}">🗑️</button>` : ''}</li>`).join('')
       : '<li class="empty">אין ימים של החברה בשנה הזו.</li>'}</ul>
-    <p class="hint" style="margin-top:8px">חגי המוסלמים, הנוצרים והדרוזים נקבעים בהחלטת ממשלה, ומוסיפים אותם כאן עם הדתות שהם חלים עליהן (החגים המוסלמיים תלויים גם בראיית הירח).</p>
-    <h3 class="sec-title">חגי ישראל — מובנה (לעובדים יהודים)</h3>
-    <ul class="list">${r.jewish.length ? r.jewish.map(h => `<li class="card"><div class="body"><div class="l1"><span>${esc(h.name)}</span><span class="t">${dd(h.date)}</span></div></div></li>`).join('')
-      : `<li class="empty">הלוח המובנה עד ${r.built_in_until.slice(0, 4)}.</li>`}</ul>
-    <p class="hint" style="margin-top:8px">מחושב מהלוח העברי: ימי המנוחה של סעיף 18א לפקודת סדרי השלטון והמשפט, ויום העצמאות (כולל הקדמה ודחייה).</p>
+    <p class="hint" style="margin-top:8px">יום שהחברה מוסיפה חל בנוסף ללוחות המובנים למטה, למשל יום סגירה של החברה או תיקון של יום חג.</p>
+    ${calendarSections(r)}
   </div>`;
   const view = pane.firstElementChild;
   view.querySelector('#hy-prev').addEventListener('click', () => paneHolidays(pane, r.year - 1));
@@ -696,13 +686,12 @@ let monthShown = null;
 
 async function renderMonth(delta = 0) {
   setHeader('חודש', { settings: true, tab: '/month' });
-  if (!monthShown) monthShown = new Date().toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 7);
+  if (!monthShown) monthShown = todayIL().slice(0, 7);
   if (delta) { const [y, m] = monthShown.split('-').map(Number); monthShown = new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7); }
   let v;
   try { v = await api('period_view', { company_id: state.companyId, month: monthShown }); }
   catch (e) { main.innerHTML = `<p class="error" role="alert">${esc(e.message)}</p>`; return; }
-  const [y, mo] = v.month.split('-').map(Number);
-  const title = new Date(Date.UTC(y, mo - 1, 15)).toLocaleDateString('he-IL', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const title = monthTitle(v.month);
   const hmS = m => (m < 0 ? '−' : '') + hm(Math.abs(m));
   const stepChips = e => v.steps.map((k, i) => {
     const s = e.signoffs.find(x => x.step === i);
@@ -851,7 +840,7 @@ async function paneStations(pane) {
 /** קוד ההצמדה — מוצג פעם אחת, 10 דקות. */
 function codeSheet(x, name) {
   const url = new URL('s/', location.href).href;
-  const until = new Date(x.expires).toLocaleTimeString('he-IL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  const until = clockTime(x.expires);
   openSheet('הצמדת ' + name, `
     <ol style="padding-inline-start:20px;display:grid;gap:8px">
       <li>בטאבלט שבעסק פותחים את הכתובת:<br><b dir="ltr" class="one" style="display:block">${esc(url)}</b></li>
@@ -866,8 +855,10 @@ function codeSheet(x, name) {
 /* ===== M3 · עובדים ===== */
 
 const siteName = id => state.data.sites.find(s => s.id === id)?.name ?? '';
-const termsLine = t => t ? `${t.days_per_week} ימים · ${hm(t.daily_minutes)} ליום · ${PAY[t.pay_type]}` : 'בלי תנאים';
-const isoToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+const WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
+const DEFAULT_WORK_DAYS = { 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5] };
+const isDefaultDays = t => (t.work_days ?? []).join() === DEFAULT_WORK_DAYS[t.days_per_week].join();
+const termsLine = t => t ? `${t.days_per_week} ימים${t.work_days && !isDefaultDays(t) ? ` (${t.work_days.map(d => WEEKDAYS[d]).join(' ')})` : ''} · ${hm(t.daily_minutes)} ליום · ${PAY[t.pay_type]}` : 'בלי תנאים';
 const dateHe = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' }) : '';
 
 function inviteChip(e) {
@@ -926,6 +917,11 @@ function termsFields(t) {
         </fieldset></div>
       <label class="f"><span>שעות תקן ליום</span><input name="daily" dir="ltr" inputmode="numeric" value="${hm(t.daily_minutes)}"></label>
     </div>
+    <div class="f" style="margin-top:8px"><span id="t-wd">ימי העבודה</span>
+      <div class="chips" role="group" aria-labelledby="t-wd">
+        ${WEEKDAYS.map((l, d) => `<label><input type="checkbox" name="wd" value="${d}"${(t.work_days ?? DEFAULT_WORK_DAYS[t.days_per_week] ?? DEFAULT_WORK_DAYS[5]).includes(d) ? ' checked' : ''}><span>${l}</span></label>`).join('')}
+      </div>
+      <p class="hint">שעות ביום המנוחה של העובד נחשבות מנוחה גם אם בחרתם אותו כיום עבודה.</p></div>
     <div class="f" style="margin-top:8px"><span id="t-pay">שכר</span>
       <fieldset class="seg" aria-labelledby="t-pay">
         ${Object.entries(PAY).map(([k, v]) => `<label><input type="radio" name="pay_type" value="${k}"${t.pay_type === k ? ' checked' : ''}><span>${v}</span></label>`).join('')}
@@ -935,8 +931,18 @@ function termsFields(t) {
 function readTerms(form) {
   const minutes = parseHm(form.daily.value);
   if (!(minutes >= 60 && minutes <= 720)) throw new Error('שעות תקן ליום — למשל 8:24 (בין 1 ל-12 שעות)');
-  return { days_per_week: +form.days_per_week.value, daily_minutes: minutes, pay_type: form.pay_type.value };
+  const n = +form.days_per_week.value;
+  const work_days = [...form.querySelectorAll('[name=wd]:checked')].map(x => +x.value);
+  if (work_days.length !== n) throw new Error(`בחרו בדיוק ${n} ימי עבודה (בחרתם ${work_days.length})`);
+  return { days_per_week: n, work_days, daily_minutes: minutes, pay_type: form.pay_type.value };
 }
+
+// החלפה בין 5 ל-6 ימים מחזירה את ימי העבודה לברירת המחדל של המספר החדש
+document.addEventListener('change', e => {
+  if (e.target.name !== 'days_per_week') return;
+  const boxes = e.target.form?.querySelectorAll('[name=wd]');
+  if (boxes?.length) boxes.forEach(b => { b.checked = DEFAULT_WORK_DAYS[+e.target.value].includes(+b.value); });
+});
 
 function addEmployeeSheet() {
   const c = state.data.company, siteOnly = state.emp?.site_only ?? null;
@@ -946,7 +952,7 @@ function addEmployeeSheet() {
       <label class="f"><span>טלפון (לוואטסאפ)</span><input name="phone" type="tel" dir="ltr" inputmode="tel" autocomplete="off"></label>
       <label class="f"><span>מס׳ עובד</span><input name="employee_no" dir="ltr" inputmode="numeric" maxlength="20"></label>
       ${siteOnly ? '' : siteSelect(null)}
-      <label class="f"><span>תאריך התחלה</span><input name="start_date" type="date" value="${isoToday()}"></label>
+      <label class="f"><span>תאריך התחלה</span><input name="start_date" type="date" value="${todayIL()}"></label>
     </div>
     <h3 class="sec-title">תנאים</h3>
     ${termsFields({ days_per_week: c.days_per_week, daily_minutes: c.daily_minutes, pay_type: 'monthly' })}
@@ -1083,7 +1089,7 @@ function paneEmpDetails(pane, d, canEdit) {
   });
   $('#end-emp').addEventListener('click', () => openSheet('סיום העסקה', `
       <p>${esc(e.name)} לא יוכל לדווח יותר, והטלפון שלו יתנתק. הנתונים נשמרים.</p>
-      <div class="fields" style="margin-top:12px"><label class="f"><span>תאריך סיום</span><input name="end_date" type="date" value="${isoToday()}"></label></div>
+      <div class="fields" style="margin-top:12px"><label class="f"><span>תאריך סיום</span><input name="end_date" type="date" value="${todayIL()}"></label></div>
       <p class="error" role="alert" hidden></p>`,
     async f => { await api('emp_end', { company_id: state.companyId, id: e.id, end_date: f.end_date.value }); return 'ההעסקה הסתיימה'; }));
 }
@@ -1097,10 +1103,10 @@ function paneTerms(pane, d, canEdit) {
       <li class="card">
         <span class="avatar" style="--h:${t.id === current ? 140 : 220}" aria-hidden="true">📄</span>
         <div class="body"><div class="l1"><span>מ-${dateHe(t.effective_from)}</span></div><div class="l2">${termsLine(t)}</div></div>
-        ${t.id === current ? '<span class="chip ok">בתוקף</span>' : t.effective_from > isoToday() ? '<span class="chip warn">עתידי</span>' : ''}
+        ${t.id === current ? '<span class="chip ok">בתוקף</span>' : t.effective_from > todayIL() ? '<span class="chip warn">עתידי</span>' : ''}
       </li>`).join('')}</ul>`;
   $('#add-terms')?.addEventListener('click', () => openSheet('שינוי תנאים', `
-      <div class="fields"><label class="f"><span>בתוקף מתאריך</span><input name="effective_from" type="date" value="${isoToday()}"></label></div>
+      <div class="fields"><label class="f"><span>בתוקף מתאריך</span><input name="effective_from" type="date" value="${todayIL()}"></label></div>
       <div style="margin-top:12px">${termsFields(e.terms ?? { days_per_week: 5, daily_minutes: 504, pay_type: 'monthly' })}</div>
       <p class="hint" style="margin-top:8px">באותו תאריך כבר יש גרסה? היא מתעדכנת, והקודמת נשמרת ביומן.</p>
       <p class="error" role="alert" hidden></p>`,

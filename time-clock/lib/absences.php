@@ -2,7 +2,7 @@
 /**
  * היעדרויות (גרסה 3, שלב 1; האפיון: docs/v3-absences.md).
  *
- * - סוגים: חופשה, מחלה, מילואים, ועוד סוגים של החברה. לכל סוג — מאיזו יתרה הוא מוריד (היתרות — שלב 2).
+ * - סוגים: חופשה, מחלה, מילואים, ועוד סוגים של החברה. לכל סוג — מאיזו יתרה הוא מוריד (היתרות — lib/balances.php).
  * - עובד מבקש מהטלפון; מנהל (בעלים, מנהל, מנהל סניף לסניף שלו) מאשר או דוחה, או רושם ישירות — מאושר מיד.
  * - היחידה — החלטת הבעלים: יום מלא בלבד, יום או חצי יום, או שעות ליום.
  * - בחישוב: יום היעדרות מאושר זוקף את התקן שלו (כולו, חציו, או השעות), ורק בימי עבודה — ימים עם תקן שאינם
@@ -108,12 +108,6 @@ function absTypeSave(array $person, array $in): array {
 }
 
 /* ===== ימי עבודה וזיכוי ===== */
-
-function memberRow(int $memberId): array {
-    $st = db()->prepare('SELECT * FROM members WHERE id = ?');
-    $st->execute([$memberId]);
-    return $st->fetch() ?: throw new AppError('העובד לא נמצא', 404);
-}
 
 /** כמה דקות היעדרות זוקפת ביום: 0 ביום בלי תקן או בחג. */
 function absCredit(array $a, array $member, string $date): int {
@@ -282,7 +276,7 @@ function absList(array $person, array $in): array {
     foreach ($list as &$a) {
         $kind = $types[$a['type']]['deducts'] ?? null;
         if (!$kind) continue;
-        $b = memberBalance(memberRow($a['member_id']), $kind, todayIn(companyRow($companyId)['tz']));
+        $b = memberBalance(memberRow($a['member_id']), $kind, companyToday($companyId));
         $a['balance'] = ['kind' => $kind, 'name' => BAL_KINDS[$kind], 'now' => $b['balance'], 'after' => round($b['balance'] - $b['planned'] - absDays($a), 2)];
     }
     unset($a);

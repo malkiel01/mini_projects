@@ -28,7 +28,7 @@ function certDir(): string {
 /** מחיקה בתום משך השמירה, לחברה. נקרא בכל גישה לאישורים ובהגדרות — אין משימה מתוזמנת בשרת. */
 function certPurge(int $companyId): int {
     $years = (int) absSettings($companyId)['cert_years'];
-    $cutoff = (new DateTimeImmutable(todayIn(companyRow($companyId)['tz'])))->modify("-$years years")->format('Y-m-d');
+    $cutoff = (new DateTimeImmutable(companyToday($companyId)))->modify("-$years years")->format('Y-m-d');
     $st = db()->prepare("SELECT c.* FROM absence_certs c JOIN absences a ON a.id = c.absence_id JOIN members m ON m.id = a.member_id
         WHERE m.company_id = ? AND c.deleted_at IS NULL AND a.to_date < ?");
     $st->execute([$companyId, $cutoff]);

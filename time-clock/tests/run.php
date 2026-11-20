@@ -11,6 +11,8 @@
  * גרסה 3 — אישורי מחלה: סוג לפי התוכן, הרשאות צפייה, מחיקה ידנית ובתום משך השמירה, יומן.
  * גרסה 3 — יתרות: טבלת הוותק, יתרת פתיחה, צבירה, הורדה, תקרת מחלה, רצף מחלה, ייצוא.
  * גרסה 3 — היעדרויות: בקשה, אישור ודחייה, רישום ישיר וביטול, יחידה, סוגי החברה, זיכוי התקן, חג, ייצוא, חודש נעול.
+ * גרסה 3ב — לוחות חגים לכל דת (מצב, ריק, מוזן) וכלי ההזנה; תפקידים ו-branchSite; ימי עבודה גמישים; הקשחה
+ *   (מכסה יומית לקוד אישי, cross-site ב-api.php); מקרי קצה: שעון קיץ וחורף, גבול חודש, שבוע שחוצה חודש, גבול שנה.
  * הרצה: php time-clock/tests/run.php — על מסד זמני, בלי לגעת ב-data/.
  */
 
@@ -21,6 +23,13 @@ define('DB_FILE', sys_get_temp_dir() . '/time-clock-test-' . getmypid() . '.sqli
 $clean = function () { foreach (['', '-wal', '-shm'] as $x) @unlink(DB_FILE . $x); };
 $clean();
 register_shutdown_function($clean);
+// לוחות החגים — עותק זמני, כדי לבדוק לוחות מוזנים בלי לגעת בקבצים האמיתיים
+define('HOLIDAYS_DIR', sys_get_temp_dir() . '/time-clock-holidays-' . getmypid());
+@mkdir(HOLIDAYS_DIR);
+foreach (glob(__DIR__ . '/../lib/holidays/*.json') as $f) copy($f, HOLIDAYS_DIR . '/' . basename($f));
+file_put_contents(HOLIDAYS_DIR . '/muslim.json', json_encode(['religion' => 'muslim', 'source' => 'בדיקה', 'verified_at' => '2026-11-04',
+    'days' => ['2027-03-10' => 'עיד אל-פיטר', '2027-03-11' => 'עיד אל-פיטר (ב׳)']], JSON_UNESCAPED_UNICODE));
+register_shutdown_function(function () { foreach (glob(HOLIDAYS_DIR . '/*') ?: [] as $f) @unlink($f); @rmdir(HOLIDAYS_DIR); });
 require_once __DIR__ . '/../lib/attendance.php';
 require_once __DIR__ . '/../lib/station.php';
 require_once __DIR__ . '/../lib/corrections.php';
@@ -432,13 +441,43 @@ check('לוח יהודי: פסח, יום העצמאות, ראש השנה, יום
       && holidayOn($cid, 'jewish', '2027-05-12') === 'יום העצמאות' && holidayOn($cid, 'jewish', '2027-10-02') === 'ראש השנה' && holidayOn($cid, 'jewish', '2027-10-11') === 'יום כיפור');
 check('יום העצמאות שחל בשני נדחה לשלישי (2028)', holidayOn($cid, 'jewish', '2028-05-02') === 'יום העצמאות' && holidayOn($cid, 'jewish', '2028-05-01') === null);
 check('לעובד מוסלמי אין את הלוח היהודי', holidayOn($cid, 'muslim', '2027-10-11') === null);
+check('לוח מוסלמי מובנה (מוזן): חל על מוסלמי בלבד', holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'jewish', '2027-03-10') === null
+      && holidayOn($cid, 'druze', '2027-03-10') === null && holidayOn($cid, 'other', '2027-03-10') === null);
+check('לוח ריק (נוצרי) — אין חגים, ולא נופל', holidayOn($cid, 'christian', '2027-12-25') === null);
 throws('מנהלת שכר לא מוסיפה חג', fn() => holidayAdd($sara, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'עיד אל-פיטר', 'religions' => ['muslim']]), 403);
 throws('חג בלי דתות', fn() => holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'x', 'religions' => []]));
-$hg = holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-10', 'name' => 'עיד אל-פיטר', 'religions' => ['muslim', 'druze']]);
-check('יום של החברה למוסלמים ודרוזים', holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'druze', '2027-03-10') === 'עיד אל-פיטר' && holidayOn($cid, 'jewish', '2027-03-10') === null);
+$hg = holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-03-20', 'name' => 'יום חג של החברה', 'religions' => ['muslim', 'druze']]);
+check('יום של החברה למוסלמים ודרוזים', holidayOn($cid, 'muslim', '2027-03-20') === 'יום חג של החברה' && holidayOn($cid, 'druze', '2027-03-20') === 'יום חג של החברה' && holidayOn($cid, 'jewish', '2027-03-20') === null);
 holidayAdd($owner, ['company_id' => $cid, 'date' => '2027-06-01', 'name' => 'יום החברה', 'religions' => 'all']);
 check('יום של החברה לכולם', holidayOn($cid, 'christian', '2027-06-01') === 'יום החברה' && holidayOn($cid, 'jewish', '2027-06-01') === 'יום החברה');
-check('הלוח של השנה: מובנה + של החברה', count(holidaysGet($owner, ['company_id' => $cid, 'year' => 2027])['company']) === 2 && count(holidaysGet($owner, ['company_id' => $cid, 'year' => 2027])['jewish']) === 9);
+$h27 = holidaysGet($owner, ['company_id' => $cid, 'year' => 2027]);
+check('הלוח של השנה: מובנה + של החברה', count($h27['company']) === 2 && count($h27['builtin']['jewish']) === 9 && count($h27['builtin']['muslim']) === 2 && $h27['builtin']['christian'] === []);
+$ci = $h27['calendars'];
+check('מצב הלוחות: טווח, מקור ואימות', $ci['muslim']['count'] === 2 && $ci['muslim']['first'] === '2027-03-10' && $ci['muslim']['last'] === '2027-03-11'
+      && $ci['muslim']['source'] === 'בדיקה' && $ci['muslim']['verified_at'] === '2026-11-04' && $ci['christian']['count'] === 0 && $ci['christian']['verified_at'] === null
+      && $ci['jewish']['count'] > 100 && $ci['other']['has_file'] === false);
+
+// כלי ההזנה (tools/import-holidays.php) — על עותק זמני
+$run = function (string $csv, string $args) {
+    $dir = HOLIDAYS_DIR . '-imp'; @mkdir($dir);
+    foreach (glob(HOLIDAYS_DIR . '/*.json') as $f) @copy($f, $dir . '/' . basename($f));
+    $f = tempnam(sys_get_temp_dir(), 'hol'); file_put_contents($f, $csv);
+    $cmd = 'TC_HOLIDAYS_DIR=' . escapeshellarg($dir) . ' php ' . escapeshellarg(__DIR__ . '/../tools/import-holidays.php') . ' ' . str_replace('{csv}', escapeshellarg($f), $args) . ' 2>&1';
+    exec($cmd, $out, $rc); @unlink($f);
+    $json = is_file($dir . '/christian.json') ? json_decode((string) file_get_contents($dir . '/christian.json'), true) : null;
+    foreach (glob($dir . '/*') as $x) @unlink($x); @rmdir($dir);
+    return [$rc, implode("\n", $out), $json];
+};
+[$rc, , $j] = $run("date,name\n2027-12-25,חג המולד\n2027-01-07,חג המולד האורתודוקסי\n", 'christian {csv} --source="חוזר נש״מ 2027" --verified=2026-11-04');
+check('כלי הזנה: נכתב לוח עם מקור, אימות וסדר תאריכים', $rc === 0 && array_keys($j['days']) === ['2027-01-07', '2027-12-25'] && $j['source'] === 'חוזר נש״מ 2027' && $j['verified_at'] === '2026-11-04');
+[$rc, , $j] = $run("2027-12-25,חג המולד\n2027-02-30,לא קיים\n", 'christian {csv} --source=x --verified=2026-11-04');
+check('כלי הזנה: תאריך לא תקין — לא נכתב כלום', $rc === 1 && ($j['days'] ?? []) === []);
+[$rc, , ] = $run("2027-12-25,חג המולד\n", 'christian {csv} --verified=2026-11-04');
+check('כלי הזנה: בלי מקור — נדחה', $rc === 2);
+[$rc, , ] = $run("2027-12-25,חג המולד\n", 'jewish {csv} --source=x --verified=2026-11-04');
+check('כלי הזנה: הלוח היהודי לא מוזן', $rc === 2);
+[$rc, , $j] = $run("2027-12-25,א\n2027-12-25,ב\n", 'christian {csv} --source=x --verified=2026-11-04');
+check('כלי הזנה: תאריך כפול בקובץ — נדחה', $rc === 1 && ($j['days'] ?? []) === []);
 
 // סיווג ביום חג: עובד יהודי עובד בפסח (חמישי 22.4.2027) — מנוחה/חג
 $P('2027-04-22 08:00', '2027-04-22 18:00');
@@ -453,7 +492,7 @@ otRulesSave($owner, ['company_id' => $cid, 'effective_from' => '2027-06-01', 'ru
 $c = classifyMonth($w, '2027-06', $tz)['days'];
 check('המעסיק בחר "מצטבר": סל נפרד', $B('2027-06-05', 'holiday_rest') === 240 && $B('2027-06-05', 'rest') === 0);
 holidayDelete($owner, ['company_id' => $cid, 'id' => $hg['company'][0]['id']]);
-check('מחיקת יום של החברה', holidayOn($cid, 'muslim', '2027-03-10') === null);
+check('מחיקת יום של החברה — הלוח המובנה נשאר', holidayOn($cid, 'muslim', '2027-03-20') === null && holidayOn($cid, 'muslim', '2027-03-10') === 'עיד אל-פיטר');
 unset($GLOBALS['TC_NOW']);
 
 // ===== גרסה 2: תצוגה וייצוא =====
@@ -652,6 +691,111 @@ throws('משך שמירה לא תקין', fn() => absSettingsSave($owner, ['comp
 check('היומן לא שומר את שם הקובץ', !str_contains((string) db()->query("SELECT GROUP_CONCAT(after) FROM audit WHERE action LIKE 'cert.%'")->fetchColumn(), basename($file['path'])));
 foreach (glob(dirname(DB_FILE) . '/certs/*') as $f) @unlink($f);
 @rmdir(dirname(DB_FILE) . '/certs');
+unset($GLOBALS['TC_NOW']);
+
+// ===== גרסה 3ב: תפקידים ועוזרים משותפים =====
+$checkSql = (string) db()->query("SELECT sql FROM sqlite_master WHERE name = 'members'")->fetchColumn();
+preg_match("/role\\s+TEXT NOT NULL CHECK \\(role IN \\(([^)]*)\\)\\)/", $checkSql, $mm);
+$dbRoles = array_map(fn($x) => trim($x, " '"), explode(',', $mm[1] ?? ''));
+check('ROLES זהה ל-CHECK של members.role במסד', $dbRoles === ROLES);
+check('קבוצות התפקידים הן תתי-קבוצות של ROLES',
+      array_diff(array_merge(MANAGE_ROLES, EDIT_ROLES, TEAM_ROLES), ROLES) === [] && array_diff(EDIT_ROLES, MANAGE_ROLES) === []
+      && array_diff(TEAM_ROLES, MANAGE_ROLES) === [] && !in_array('employee', MANAGE_ROLES, true));
+check('branchSite: מנהל סניף — הסניף שלו; אחרים — כל החברה',
+      branchSite(['role' => 'branch_manager', 'site_id' => '7']) === 7 && branchSite(['role' => 'manager', 'site_id' => null]) === null
+      && branchSite(['role' => 'owner', 'site_id' => 3]) === null);
+check('todayIn: ברירת המחדל היא שעון ישראל', todayIn() === todayIn(DEFAULT_TZ) && DEFAULT_TZ === 'Asia/Jerusalem');
+throws('validDate: תאריך שלא קיים', fn() => validDate('2026-02-30', 'בדיקה'));
+// ===== גרסה 3ב: הקשחה =====
+// מכסה יומית לקוד אישי: 15 שגויים ב-24 שעות נועלים לשעה, גם אחרי שנעילת הדקה פגה
+db()->exec("DELETE FROM throttle");
+$hs = stationCreate(as_(['sub' => 'u-owner']), ['company_id' => $cid, 'name' => 'הקשחה', 'site_id' => $s1]);
+writeStationCookie(stationPair(['code' => $hs['code']]));
+$lockedDay = false;
+for ($k = 0; $k < 20 && !$lockedDay; $k++) {
+    db()->exec("UPDATE throttle SET locked_until = NULL WHERE k = 'pin:$dana'");   // כמו שעברה דקה
+    try { stationCheck(['member_id' => $dana, 'pin' => '0004']); } catch (AppError $e) { $lockedDay = str_contains($e->getMessage(), 'היום'); }
+}
+check('מכסה יומית: נעילה אחרי 15 שגויים', $lockedDay && $k === 15);
+db()->exec("UPDATE throttle SET locked_until = NULL WHERE k = 'pin:$dana'");
+throws('נעול לשעה גם עם הקוד הנכון', fn() => stationCheck(['member_id' => $dana, 'pin' => '5839']), 429);
+db()->exec("UPDATE throttle SET locked_until = '2000-01-01T00:00:00Z' WHERE k = 'pinday:$dana'");
+check('אחרי שעה — הקוד הנכון עובד, והמונה היומי לא התאפס בהצלחה', stationCheck(['member_id' => $dana, 'pin' => '5839'])['name'] === 'דנה לוי'
+      && (int) db()->query("SELECT fails FROM throttle WHERE k = 'pinday:$dana'")->fetchColumn() >= 1);
+db()->exec("DELETE FROM throttle");
+// api.php: בקשה מאתר אחר נחסמת, וזהה-אתר ממשיכה כרגיל (401 — אין כניסה)
+$api = function (string $site) {
+    $w = tempnam(sys_get_temp_dir(), 'api');
+    file_put_contents($w, "<?php define('DB_FILE', " . var_export(DB_FILE, true) . "); \$_SERVER['REQUEST_METHOD'] = 'POST'; \$_SERVER['HTTP_SEC_FETCH_SITE'] = " . var_export($site, true) . "; \$_GET['action'] = 'emp_state'; require " . var_export(realpath(__DIR__ . '/../api.php'), true) . ';');
+    $out = (string) shell_exec('php ' . escapeshellarg($w) . ' 2>&1'); @unlink($w);
+    return json_decode($out, true) ?: ['raw' => $out];
+};
+check('api.php: בקשה cross-site נחסמת', ($api('cross-site')['error'] ?? '') === 'בקשה מאתר אחר נחסמה');
+check('api.php: same-origin ממשיכה (אין כניסה, לא חסימה)', str_contains($api('same-origin')['error'] ?? '', 'לא מחובר'));
+// ===== גרסה 3ב: ימי עבודה גמישים =====
+$GLOBALS['TC_NOW'] = $z('2027-03-01 10:00');
+$o3 = as_(['sub' => 'u-owner']);
+$fx = empAdd($o3, ['company_id' => $cid, 'name' => 'שני עד שישי', 'start_date' => '2027-01-01', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3, 4, 5]]);
+$fxId = $fx['employee']['id'];
+check('ימי עבודה שנבחרו נשמרים ומוצגים', $fx['employee']['terms']['work_days'] === [1, 2, 3, 4, 5] && $fx['employee']['terms']['days_per_week'] === 5);
+check('תקן: שישי כן, ראשון לא (2027-01-03 ראשון, 2027-01-08 שישי)', standardMinutes($fxId, '2027-01-03') === 0 && standardMinutes($fxId, '2027-01-08') === 504 && standardMinutes($fxId, '2027-01-04') === 504);
+check('זיכוי היעדרות לפי ימי העבודה: שישי כן, ראשון לא', absCredit(['part' => 'full'], memberRow($fxId), '2027-01-08') === 504 && absCredit(['part' => 'full'], memberRow($fxId), '2027-01-03') === 0);
+$def = empAdd($o3, ['company_id' => $cid, 'name' => 'ברירת מחדל', 'start_date' => '2027-01-01', 'days_per_week' => 5, 'daily_minutes' => 504])['employee'];
+check('בלי בחירה — כמו קודם (א׳–ה׳)', $def['terms']['work_days'] === [0, 1, 2, 3, 4] && standardMinutes($def['id'], '2027-01-08') === 0 && standardMinutes($def['id'], '2027-01-03') === 504);
+$same = empAdd($o3, ['company_id' => $cid, 'name' => 'שווה לברירת המחדל', 'start_date' => '2027-01-01', 'days_per_week' => 6, 'daily_minutes' => 480, 'work_days' => [0, 1, 2, 3, 4, 5]])['employee'];
+check('בחירה השווה לברירת המחדל לא נשמרת בנפרד', db()->query("SELECT work_days FROM work_terms WHERE member_id = {$same['id']}")->fetchColumn() === null && $same['terms']['work_days'] === [0, 1, 2, 3, 4, 5]);
+throws('מספר ימים שלא תואם', fn() => empAdd($o3, ['company_id' => $cid, 'name' => 'x', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3]]));
+throws('יום לא תקין', fn() => empAdd($o3, ['company_id' => $cid, 'name' => 'x', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3, 4, 9]]));
+$r = empTermsAdd($o3, ['company_id' => $cid, 'id' => $def['id'], 'effective_from' => '2027-02-01', 'days_per_week' => 5, 'daily_minutes' => 504, 'work_days' => [1, 2, 3, 4, 6]]);
+check('גרסת תנאים חדשה מתאריך: ימים אחרים מאותו תאריך, והישנים נשארים', $r['employee']['terms']['work_days'] === [1, 2, 3, 4, 6]
+      && standardMinutes($def['id'], '2027-01-31') === 504 && standardMinutes($def['id'], '2027-02-07') === 0 && standardMinutes($def['id'], '2027-02-06') === 504);
+check('ימי העבודה ביומן', str_contains((string) db()->query("SELECT after FROM audit WHERE action = 'terms.save' ORDER BY id DESC LIMIT 1")->fetchColumn(), 'work_days'));
+// ===== גרסה 3ב: מקרי קצה — שעון קיץ, גבול חודש וגבול שנה =====
+$GLOBALS['TC_NOW'] = $z('2028-02-01 10:00');
+// חברה נפרדת, עם ברירות המחדל של הכללים — בחברה הראשית נקבעו כללים משלה במבחנים הקודמים
+$edgeCid = companyCreate(as_(['sub' => 'u-owner']), ['name' => 'מקרי קצה', 'days_per_week' => 5, 'daily_minutes' => 504])['company']['id'];
+$edgeEmp = function (string $name) use ($edgeCid) {
+    $o = as_(['sub' => 'u-owner']);
+    return empAdd($o, ['company_id' => $edgeCid, 'name' => $name, 'start_date' => '2027-01-01', 'days_per_week' => 5, 'daily_minutes' => 504])['employee']['id'];
+};
+$shift = function (int $m, string $a, string $b) use ($z) { recordPunch($m, 'in', 'phone', null, null, $z($a)); recordPunch($m, 'out', 'phone', null, null, $z($b)); };
+$sumB = fn(array $d) => array_sum($d['b']);
+
+// מעבר לשעון קיץ (שישי 26.3.2027, 02:00 ← 03:00): משמרת לילה שחוצה אותו היא 7 שעות בפועל, לא 8
+$e1 = $edgeEmp('קיץ');
+$shift($e1, '2027-03-25 22:00', '2027-03-26 06:00');
+$dr = daysReport($e1, '2027-03-25', '2027-03-26', $tz);
+$cl = classifyMonth($e1, '2027-03', $tz)['days'];
+check('שעון קיץ: משמרת 22:00–06:00 היא 7 שעות בפועל', $dr[0]['minutes'] === 420 && $sumB($cl['2027-03-25']) === 420);
+check('שעון קיץ: סיווג לילה — 7 שעות רגילות, בלי נוספות', $cl['2027-03-25']['night'] && $cl['2027-03-25']['b']['reg'] === 420 && $cl['2027-03-25']['b']['ot1'] === 0);
+
+// חזרה לשעון חורף (ראשון 31.10.2027, 02:00 ← 01:00): משמרת ממוצאי שבת היא 9 שעות בפועל
+$e2 = $edgeEmp('חורף');
+$shift($e2, '2027-10-30 22:00', '2027-10-31 06:00');
+$dr = daysReport($e2, '2027-10-30', '2027-10-31', $tz);
+$cl = classifyMonth($e2, '2027-10', $tz)['days'];
+check('שעון חורף: משמרת 22:00–06:00 היא 9 שעות בפועל', $dr[0]['minutes'] === 540 && $sumB($cl['2027-10-30']) === 540);
+check('שעון חורף: שעתיים בשבת הן מנוחה, והסלים מסתכמים בדיוק בדקות', $cl['2027-10-30']['b']['rest'] === 120);
+
+// גבול חודש: משמרת ראשון 31.1.2027 22:00 עד 1.2 06:00 שייכת לינואר, ולא נספרת בפברואר
+$e3 = $edgeEmp('גבול חודש');
+$shift($e3, '2027-01-31 22:00', '2027-02-01 06:00');
+$jan = classifyMonth($e3, '2027-01', $tz); $feb = classifyMonth($e3, '2027-02', $tz);
+check('גבול חודש: כל 8 השעות בינואר', array_sum($jan['summary']) === 480 && array_sum($feb['summary']) === 0);
+check('גבול חודש: monthReport — ינואר 480 דקות, פברואר 0', monthReport($e3, '2027-01', $tz)['summary']['minutes'] === 480 && monthReport($e3, '2027-02', $tz)['summary']['minutes'] === 0);
+
+// שבוע שחוצה חודש (ראשון 31.1 עד שבת 6.2): 5 × 8:36 = 43 שעות — השעה העודפת ביום האחרון, בפברואר
+$e4 = $edgeEmp('שבוע חוצה חודש');
+foreach (['2027-01-31', '2027-02-01', '2027-02-02', '2027-02-03', '2027-02-04'] as $d) $shift($e4, "$d 08:00", "$d 16:36");
+$jan = classifyMonth($e4, '2027-01', $tz); $feb = classifyMonth($e4, '2027-02', $tz);
+check('שבוע חוצה חודש: החריגה השבועית בפברואר, לא בינואר', $jan['summary']['ot1'] === 0 && $feb['summary']['ot1'] === 60 && $feb['days']['2027-02-04']['b']['ot1'] === 60);
+check('שבוע חוצה חודש: סך הדקות נשמר בין החודשים', array_sum($jan['summary']) + array_sum($feb['summary']) === 5 * 516);
+
+// גבול שנה: שישי 31.12.2027 22:00 עד שבת 1.1.2028 04:00 — עד חצות רגיל, אחריו מנוחה
+$e5 = $edgeEmp('גבול שנה');
+$shift($e5, '2027-12-31 22:00', '2028-01-01 04:00');
+$cl = classifyMonth($e5, '2027-12', $tz)['days'];
+check('גבול שנה: שעתיים רגילות וארבע שעות מנוחה', $cl['2027-12-31']['b']['reg'] === 120 && $cl['2027-12-31']['b']['rest'] === 240 && classifyMonth($e5, '2028-01', $tz)['summary']['rest'] === 0);
 unset($GLOBALS['TC_NOW']);
 
 echo "\n" . ($n - $fails) . "/$n עברו\n";
