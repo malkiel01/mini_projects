@@ -19,3 +19,9 @@
 .ib-limits { display: grid; gap: var(--s2); grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); margin-bottom: var(--s2); }
 .ib-limit { display: grid; gap: 2px; }
 .ib-limit small { color: var(--muted); font-size: .75rem; }
+/* S3: הגדרות המייל והאבחון */
+.ib-field { display: grid; gap: 4px; margin-block: var(--s2); }
+.ib-field > span { font-size: .875rem; color: var(--muted); }
+.ib-field textarea, .ib-field input { width: 100%; min-width: 0; }
+#ib-diag { margin-bottom: var(--s3); }
+.dev-checks li.wait b { color: var(--muted); }

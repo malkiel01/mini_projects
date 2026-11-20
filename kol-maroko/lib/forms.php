@@ -33,7 +33,10 @@ const FORMS_IP_WINDOW = 600;
 const FORMS_IP_DAYS = 30;
 const FORMS_TEST_DAYS = 7;
 const FORMS_REG_BUILDS = 10;                    // האיחוד של 10 הגרסאות האחרונות שנשלחו (חזרה לגרסה נעשית בתוסף)
-const FORMS_MAIL_EVERY = 900;                   // לכל היותר מייל אחד ל-15 דקות
+const FORMS_MAIL_HOUR = 12;                     // לכל היותר 12 מיילים בשעה; מעבר לזה — מצטבר למייל אחד (S3)
+const FORMS_MAIL_RETRY = 300;                   // אחרי כישלון — ניסיון חוזר אחרי 5 דקות
+const FORMS_MAIL_MAX = 20;                      // פניות במייל אחד לכל היותר; השאר — "ועוד N בתיבה"
+const FORMS_MAIL_TO = 5;                        // נמענים לכל היותר
 const FORMS_MAIL_FAILS = 3;                     // אחרי 3 כישלונות ברצף — כבוי אוטומטית
 const FORMS_RESERVED = ['_form', '_t', '_page', '_trap'];
 const FORMS_NAME_RE = '/^[\p{L}\p{N}_.:\[\]-]{1,64}$/u';
@@ -235,6 +238,8 @@ function forms_clean(): void
  */
 function forms_receive(array $post, array $files, int $len, string $ip, bool $test): array
 {
+    // בדיקת התקינות מהסטודיו (📬 ← ⚙️ / מסך המפתח): עונה כמו לטופס לא רשום, בלי לגעת במסד — אינה נספרת בקצב ובדחיות
+    if (($post['_form'] ?? null) === '__health__' && count($post) <= 3 && !$files) return [400, ['ok' => false, 'reason' => 'invalid']];
     $pdo = db();
     forms_clean();
     $L = forms_limits();
@@ -309,11 +314,18 @@ function forms_receive(array $post, array $files, int $len, string $ip, bool $te
 }
 
 // ── (ג) המייל ─────────────────────────────────────────────
+// S3 (2026-11-20): מייל לכל פנייה, עם התוכן — כמו שהמשוב בוורדפרס שלח לפני המעבר. נמענים — כל כתובת (עד 5), בידי בעל
+// העמוד ומעלה ב-📬 פניות ← ⚙️ הגדרות התיבה. השולח — ברירת מחדל noreply@<השרת>, כדי שהמייל לא ייזרק (SPF/DMARC).
+// קצב: לכל היותר FORMS_MAIL_HOUR מיילים בשעה; מעבר לזה הפניות מצטברות למייל אחד בתור הבא. הכותרות — קבועות; מהקלט נכנס
+// לכותרת רק Reply-To שעבר forms_email_ok, והנושא — מקודד (base64) ובלי תווי בקרה. הגוף — טקסט בלבד, base64.
 
 function forms_mail_state(): array
 {
     $s = json_decode((string)setting('forms_mail', '{}'), true) ?: [];
-    return $s + ['on' => false, 'from' => '', 'to' => [], 'fails' => 0, 'last_sent' => null, 'last_sent_id' => 0, 'last_test' => null, 'last_error' => null, 'auto_off' => null];
+    $s += ['on' => false, 'from' => '', 'to' => [], 'fails' => 0, 'last_sent' => null, 'last_sent_id' => 0, 'last_test' => null, 'last_error' => null, 'auto_off' => null, 'sent' => [], 'last_count' => 0];
+    $s['to'] = array_values(array_filter(is_array($s['to']) ? $s['to'] : [], fn($e) => is_string($e) && forms_email_ok($e)));
+    $s['sent'] = array_values(array_filter(is_array($s['sent']) ? $s['sent'] : [], 'is_int'));
+    return $s;
 }
 
 function forms_mail_save(array $s): void
@@ -327,23 +339,63 @@ function forms_email_ok(string $e): bool
     return strlen($e) <= 254 && !preg_match('/[\r\n\0,;<>"]/', $e) && filter_var($e, FILTER_VALIDATE_EMAIL) !== false;
 }
 
-/** שליחה אחת. בבדיקות — לקובץ (KOL_TEST_MAIL), לא mail(). מחזיר [ok, שגיאה]. */
-function forms_mail_send(array $to, string $subject, string $body, string $from): array
+/** המתחם של השרת (mbe-plus.com) — ממנו כתובת השולח שאינה נזרקת. */
+function forms_mail_host(): string
+{
+    $h = strtolower((string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+    $h = (string)preg_replace(['/:\d+$/', '/^www\./'], '', $h);
+    return preg_match('/^[a-z0-9-]+(\.[a-z0-9-]+)+$/', $h) && !preg_match('/^[0-9.]+$/', $h) ? $h : 'mbe-plus.com';
+}
+
+function forms_mail_from_default(): string
+{
+    return 'noreply@' . forms_mail_host();
+}
+
+/** השולח בפועל: מה שהוגדר, ואם לא — noreply@<השרת>. */
+function forms_mail_from(array $s): string
+{
+    return $s['from'] !== '' && forms_email_ok($s['from']) ? $s['from'] : forms_mail_from_default();
+}
+
+/** האם השולח במתחם של השרת. אם לא — שרתי הדואר של הנמען נוטים לזרוק את המייל (SPF/DMARC), גם כש-mail() החזיר true. */
+function forms_mail_from_local(string $from): bool
+{
+    $d = strtolower(substr(strrchr($from, '@') ?: '', 1));
+    $h = forms_mail_host();
+    return $d === $h || str_ends_with($d, ".$h");
+}
+
+/** שורה אחת לכותרת: בלי תווי בקרה, עד 150 תווים. */
+function forms_mail_line(string $s): string
+{
+    return mb_substr(trim((string)preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $s)), 0, 150);
+}
+
+/**
+ * שליחה אחת. בבדיקות — לקובץ (KOL_TEST_MAIL), לא mail(). מחזיר [ok, שגיאה]. $reply — Reply-To (רק אם עבר forms_email_ok).
+ * השולח במתחם של השרת — גם כשולח המעטפה (-f), כדי שה-SPF יתאים.
+ */
+function forms_mail_send(array $to, string $subject, string $body, string $from, ?string $reply = null): array
 {
     $to = array_values(array_filter($to, 'forms_email_ok'));
     if (!$to) return [false, 'אין נמענים'];
     if (!forms_email_ok($from)) return [false, 'כתובת השולח אינה תקינה'];
-    $subj = mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n");
-    $headers = "From: $from\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64";
-    $data = chunk_split(base64_encode($body));
+    $subj = mb_encode_mimeheader(forms_mail_line($subject), 'UTF-8', 'B', "\r\n");
+    $headers = "From: $from\r\n" . ($reply !== null && forms_email_ok($reply) ? "Reply-To: $reply\r\n" : '')
+        . "Auto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64";
+    $data = chunk_split(base64_encode(str_replace("\r\n", "\n", $body)));
+    $envelope = forms_mail_from_local($from) ? '-f' . $from : '';
     if ($fake = getenv('KOL_TEST_MAIL')) {
-        $ok = getenv('KOL_TEST_MAIL_FAIL') ? false : (bool)file_put_contents($fake, json_encode(['to' => $to, 'subject' => $subject, 'body' => $body, 'headers' => $headers]) . "\n", FILE_APPEND | LOCK_EX);
+        $ok = getenv('KOL_TEST_MAIL_FAIL') ? false : (bool)file_put_contents($fake, json_encode(['to' => $to, 'subject' => $subject, 'body' => $body, 'headers' => $headers, 'envelope' => $envelope], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
         return [$ok, $ok ? null : 'mail() החזיר false (בדיקה)'];
     }
+    if (!function_exists('mail')) return [false, 'הפונקציה mail() כבויה בשרת'];
     $err = null;
     set_error_handler(function (int $no, string $msg) use (&$err): bool { $err = $msg; return true; });
-    try { $ok = @mail(implode(', ', $to), $subj, $data, $headers); } finally { restore_error_handler(); }
-    return [$ok, $ok ? null : ($err ?: (error_get_last()['message'] ?? 'mail() החזיר false'))];
+    try { $ok = $envelope !== '' ? @mail(implode(', ', $to), $subj, $data, $headers, $envelope) : @mail(implode(', ', $to), $subj, $data, $headers); }
+    finally { restore_error_handler(); }
+    return [$ok, $ok ? null : ($err ?: (error_get_last()['message'] ?? 'mail() החזיר false — השרת לא קיבל את המייל'))];
 }
 
 /** הקישור לתיבה בסטודיו. */
@@ -352,43 +404,99 @@ function forms_inbox_url(): string
     return (string)preg_replace('~/form\.php(\?.*)?$~', '/index.php#/inbox', forms_endpoint());
 }
 
+const FORMS_MAIL_LABELS = ['name' => 'שם', 'email' => 'מייל', 'message' => 'ההערה', 'phone' => 'טלפון', 'subject' => 'נושא'];
+
+/** פנייה אחת כטקסט: המילה, השדות (השם/המייל/ההערה קודם), העמוד והזמן. */
+function forms_mail_entry_text(array $e): string
+{
+    $f = json_decode((string)$e['fields'], true) ?: [];
+    $clean = fn($v) => mb_substr(trim((string)preg_replace('/[\x00-\x08\x0b-\x1f\x7f]/u', '', str_replace("\r\n", "\n", (string)$v))), 0, 3000);
+    $out = [];
+    if ($e['word'] ?? null) $out[] = 'המילה: ' . forms_mail_line((string)$e['word']) . " (#{$e['word_id']})";
+    elseif (($e['word_id'] ?? null) !== null) $out[] = "המילה: #{$e['word_id']}";
+    $order = array_unique([...array_keys(FORMS_MAIL_LABELS), ...array_keys($f)]);
+    foreach ($order as $k) {
+        if (!array_key_exists($k, $f) || (($e['word_id'] ?? null) !== null && in_array($k, ['word_id', 'wp_id'], true))) continue;
+        $v = $clean($f[$k]);
+        if ($v === '') continue;
+        $label = FORMS_MAIL_LABELS[$k] ?? forms_mail_line((string)$k);
+        $out[] = str_contains($v, "\n") || $k === 'message' ? "$label:\n$v" : "$label: $v";
+    }
+    $out[] = '';
+    $out[] = 'טופס: ' . forms_mail_line((string)$e['form']) . ' · עמוד: ' . (forms_mail_line((string)$e['page']) ?: '—') . ' · ' . $e['at'] . ' · פנייה #' . $e['id'];
+    return implode("\n", $out);
+}
+
+/** [נושא, גוף, Reply-To] למייל על הפניות $rows (שורות form_entries + word). */
+function forms_mail_compose(array $rows, int $more = 0): array
+{
+    $n = count($rows) + $more;
+    if ($n === 1) {
+        $e = $rows[0];
+        $subject = ($e['word'] ?? null) ? 'קול מרוקו · משוב על המילה "' . forms_mail_line((string)$e['word']) . '"' : 'קול מרוקו · פנייה חדשה בטופס "' . forms_mail_line((string)$e['form']) . '"';
+        $f = json_decode((string)$e['fields'], true) ?: [];
+        $mail = strtolower(trim((string)($f['email'] ?? '')));
+        $reply = forms_email_ok($mail) ? $mail : null;
+        $body = "משוב חדש מעמוד קול מרוקו.\n\n" . forms_mail_entry_text($e) . ($reply ? "\n\nאפשר להשיב למייל הזה — התשובה תגיע אל $reply." : '');
+    } else {
+        $subject = "קול מרוקו · $n פניות חדשות";
+        $reply = null;
+        $body = "$n פניות חדשות מעמוד קול מרוקו.\n\n" . implode("\n\n──────────\n\n", array_map('forms_mail_entry_text', $rows))
+            . ($more ? "\n\n──────────\n\nועוד $more — בתיבה." : '');
+    }
+    $body .= "\n\nלתיבה: " . forms_inbox_url() . "\n\n(מייל אוטומטי. כיבוי: 📬 פניות ← ⚙️ הגדרות התיבה.)\n";
+    return [$subject, $body, $reply];
+}
+
 /**
- * צבירה: לכל היותר מייל אחד ל-15 דקות, ורק תקציר ("3 פניות חדשות בטופס feedback") — בלי תוכן הפנייה, בלי פניות 🧪.
- * נקרא אחרי כל פנייה ובכל פתיחה של התיבה (כדי שפנייה אחרונה לא תחכה לפנייה הבאה).
+ * מייל על פניות חדשות (בלי 🧪): כל מה שהתקבל מאז המייל הקודם — במייל אחד. בדרך כלל זו פנייה אחת, מיד כשהגיעה.
+ * קצב: לכל היותר FORMS_MAIL_HOUR בשעה; אחרי כישלון — המתנה FORMS_MAIL_RETRY. נקרא אחרי כל פנייה ובכל פתיחה של התיבה.
  */
 function forms_mail_tick(): void
 {
     try {
         $s = forms_mail_state();
         if (!$s['on'] || !$s['to']) return;
-        if ($s['last_sent'] && strtotime($s['last_sent']) > time() - FORMS_MAIL_EVERY) return;
-        $st = db()->prepare('SELECT form, COUNT(*) n, MAX(id) mx FROM form_entries WHERE test = 0 AND id > ? GROUP BY form ORDER BY form');
+        $now = time();
+        $s['sent'] = array_values(array_filter($s['sent'], fn($t) => $t > $now - 3600));
+        if (count($s['sent']) >= FORMS_MAIL_HOUR) return;
+        if ($s['last_error'] && (int)$s['fails'] > 0 && strtotime((string)$s['last_error']['at']) > $now - FORMS_MAIL_RETRY) return;
+        $st = db()->prepare('SELECT e.*, w.word FROM form_entries e LEFT JOIN words w ON w.id = e.word_id WHERE e.test = 0 AND e.id > ? ORDER BY e.id LIMIT ' . (FORMS_MAIL_MAX + 1));
         $st->execute([(int)$s['last_sent_id']]);
         $rows = $st->fetchAll();
         if (!$rows) return;
-        $total = array_sum(array_column($rows, 'n'));
-        $lines = array_map(fn($r) => "{$r['n']} פניות חדשות בטופס \"{$r['form']}\"", $rows);
-        $body = "קול מרוקו · 📬 פניות\n\n" . implode("\n", $lines) . "\n\nלתיבה: " . forms_inbox_url() . "\n\n(תוכן הפניות — רק בתיבה.)\n";
-        [$ok, $err] = forms_mail_send($s['to'], "קול מרוקו: $total פניות חדשות", $body, $s['from']);
-        $s = forms_mail_state();
+        $max = (int)end($rows)['id'];
+        $more = 0;
+        if (count($rows) > FORMS_MAIL_MAX) {
+            $c = db()->prepare('SELECT COUNT(*), MAX(id) FROM form_entries WHERE test = 0 AND id > ?');
+            $c->execute([(int)$s['last_sent_id']]);
+            [$all, $max] = array_map('intval', $c->fetch(PDO::FETCH_NUM));
+            $rows = array_slice($rows, 0, FORMS_MAIL_MAX);
+            $more = $all - FORMS_MAIL_MAX;
+        }
+        [$subject, $body, $reply] = forms_mail_compose($rows, $more);
+        [$ok, $err] = forms_mail_send($s['to'], $subject, $body, forms_mail_from($s), $reply);
+        $s2 = forms_mail_state();
+        $s2['sent'] = $s['sent'];
         if ($ok) {
-            $s['fails'] = 0;
-            $s['last_sent'] = now_iso();
-            $s['last_sent_id'] = (int)max(array_column($rows, 'mx'));
-            $s['last_error'] = null;
+            $s2['fails'] = 0;
+            $s2['last_sent'] = now_iso();
+            $s2['last_sent_id'] = $max;
+            $s2['last_count'] = count($rows) + $more;
+            $s2['sent'][] = $now;
+            $s2['last_error'] = null;
         } else {
-            $s['fails'] = (int)$s['fails'] + 1;
-            $s['last_error'] = ['at' => now_iso(), 'error' => mb_substr((string)$err, 0, 300)];
-            $s['last_sent'] = now_iso();             // גם כישלון ממתין 15 דקות — לא מנסים בכל פנייה
-            devlog_write('error', 'forms', 'form.mail_failed', ['message' => mb_substr((string)$err, 0, 300) . " · כישלון {$s['fails']} ברצף"]);
-            if ($s['fails'] >= FORMS_MAIL_FAILS) {
-                $s['on'] = false;
-                $s['auto_off'] = now_iso();
+            $s2['fails'] = (int)$s2['fails'] + 1;
+            $s2['last_error'] = ['at' => now_iso(), 'error' => mb_substr((string)$err, 0, 300)];
+            devlog_write('error', 'forms', 'form.mail_failed', ['message' => mb_substr((string)$err, 0, 300) . " · כישלון {$s2['fails']} ברצף"]);
+            if ($s2['fails'] >= FORMS_MAIL_FAILS) {
+                $s2['on'] = false;
+                $s2['auto_off'] = now_iso();
                 db()->prepare('INSERT INTO notices (role_to, kind, text, by_name, at) VALUES (?, ?, ?, ?, ?)')
-                    ->execute(['owner', 'mail', 'המייל על פניות חדשות כובה אוטומטית אחרי ' . FORMS_MAIL_FAILS . ' כישלונות ברצף. המונה ב-📬 פניות ממשיך. מסך המפתח ← 📬 טפסים', '', now_iso()]);
+                    ->execute(['owner', 'mail', 'המייל על משוב חדש כובה אוטומטית אחרי ' . FORMS_MAIL_FAILS . ' כישלונות ברצף: ' . mb_substr((string)$err, 0, 200) . '. הפניות נשמרות בתיבה. 📬 פניות ← ⚙️ הגדרות התיבה', '', now_iso()]);
             }
         }
-        forms_mail_save($s);
+        forms_mail_save($s2);
     } catch (Throwable $e) {
         devlog_write('error', 'forms', 'form.mail_failed', ['message' => $e->getMessage()]);
     }
@@ -440,13 +548,12 @@ function inbox_list(array $user, array $q): array
     $forms = db()->query('SELECT form, COUNT(*) n, SUM(read_at IS NULL) unread FROM form_entries WHERE test = 0 GROUP BY form ORDER BY form')->fetchAll();
     $live = forms_live();
     $ext = array_keys(array_filter($live, fn($f) => $f['external']));
-    $mail = forms_mail_state();
     return ['entries' => $rows, 'total' => (int)$cnt->fetchColumn(), 'unread' => forms_unread(),
         'forms' => array_map(fn($f) => ['form' => $f['form'], 'n' => (int)$f['n'], 'unread' => (int)$f['unread']], $forms),
         'registered' => array_keys(array_filter($live, fn($f) => !$f['external'])), 'external' => $ext,
         'tests' => (int)db()->query('SELECT COUNT(*) FROM form_entries WHERE test = 1')->fetchColumn(),
         'can_delete' => ROLE_RANK[$user['role']] >= ROLE_RANK['publisher'],
-        'settings' => ['to' => $mail['to'], 'mail_on' => (bool)$mail['on'], 'candidates' => forms_mail_candidates($user)]];
+        'settings' => forms_mail_public($user)];
 }
 
 function forms_ids(array $b): array
@@ -554,7 +661,7 @@ function inbox_csv(array $user, array $q): never
     exit;
 }
 
-/** מי אפשר לבחור כנמען: חברי האפליקציה עם מייל, ומי ששומר (המייל שלו מהשער). */
+/** מי אפשר להוסיף בלחיצה כנמען: חברי האפליקציה עם מייל, ומי ששומר. (S3: אפשר גם כל כתובת אחרת.) */
 function forms_mail_candidates(array $user): array
 {
     $out = [];
@@ -566,28 +673,105 @@ function forms_mail_candidates(array $user): array
     return array_values($out);
 }
 
+function forms_can_mail(array $user): bool
+{
+    return isset(ROLE_RANK[$user['role'] ?? '']) && ROLE_RANK[$user['role']] >= ROLE_RANK['page_owner'];
+}
+
 /**
- * הגדרות: נמענים (publisher, בהגדרות התיבה — רק מתוך המועמדים); המגבלות, כתובת השולח והדלקת המייל — המפתח בלבד.
+ * האבחון — השרשרת מהכפתור בעמוד ועד המייל, שורה לכל חוליה: ok true (✅) / false (❌) / null (⏳ עוד לא קרה).
+ * כך "לא קרה כלום" הופך לשורה שאומרת איפה זה נעצר. (הבדיקה מהדפדפן — CORS אל form.php — נוספת בממשק.)
+ */
+function forms_diag(array $s): array
+{
+    $pdo = db();
+    $live = array_keys(array_filter(forms_live(), fn($f) => !$f['external']));
+    $sentAt = $pdo->query('SELECT MAX(sent_at) FROM pkg_builds WHERE sent_at IS NOT NULL')->fetchColumn() ?: null;
+    $last = $pdo->query('SELECT MAX(at) FROM form_entries WHERE test = 0')->fetchColumn() ?: null;
+    $wk = $pdo->prepare('SELECT COUNT(*) FROM form_entries WHERE test = 0 AND at >= ?');
+    $wk->execute([gmdate('Y-m-d\TH:i:s\Z', time() - 7 * 86400)]);
+    $week = (int)$wk->fetchColumn();
+    $rj = $pdo->prepare('SELECT reason, SUM(n) n FROM form_rejects WHERE day >= ? GROUP BY reason ORDER BY n DESC');
+    $rj->execute([gmdate('Y-m-d', time() - 6 * 86400)]);
+    $names = ['rate' => 'קצב', 'size' => 'גודל', 'invalid' => 'לא תקין / טופס לא רשום', 'closed' => 'תקרה יומית', 'spam' => 'ספאם', 'unknown' => 'שדה לא מוכר'];
+    $rej = array_map(fn($r) => ($names[$r['reason']] ?? $r['reason']) . ' ' . (int)$r['n'], array_filter($rj->fetchAll(), fn($r) => $r['reason'] !== 'unknown'));
+    $from = forms_mail_from($s);
+    $t = $s['last_test'];
+    $rows = [];
+    $rows[] = ['id' => 'page', 'ok' => (bool)$live, 'title' => 'הטופס רשום בגרסה שבאתר',
+        'text' => $live ? 'טפסים: ' . implode(', ', $live) . ($sentAt ? " · נשלחה לאתר: $sentAt" : '')
+            : 'הגרסה שבאתר אינה רושמת טופס (data-kol-form) — form.php דוחה כל פנייה. לבנות ולשלוח גרסה מהפרויקט.'];
+    $rows[] = ['id' => 'inbox', 'ok' => $last ? true : null, 'title' => 'פניות מגיעות לתיבה',
+        'text' => ($last ? "האחרונה: $last · 7 ימים: $week" : 'עוד לא הגיעה פנייה מהאתר.') . ($rej ? ' · נדחו ב-7 ימים: ' . implode(', ', $rej) : '')];
+    $rows[] = ['id' => 'mail_on', 'ok' => $s['on'] && $s['to'] ? true : false, 'title' => 'המייל על משוב חדש דולק',
+        'text' => $s['on'] && $s['to'] ? 'נשלח אל: ' . implode(', ', $s['to'])
+            : ($s['auto_off'] ? "כובה אוטומטית ב-{$s['auto_off']} אחרי " . FORMS_MAIL_FAILS . ' כישלונות ברצף' : ($s['to'] ? 'כבוי' : 'כבוי — אין נמען')) . ' — מדליקים כאן, ב"שלח לי מייל על משוב חדש".'];
+    $rows[] = ['id' => 'from', 'ok' => forms_mail_from_local($from), 'title' => 'כתובת השולח במתחם של השרת',
+        'text' => forms_mail_from_local($from) ? "$from" : "$from אינה במתחם " . forms_mail_host() . ' — שרתי הדואר נוטים לזרוק מייל כזה גם כשהשרת קיבל אותו. מומלץ להשאיר ריק (' . forms_mail_from_default() . ').'];
+    $rows[] = ['id' => 'test', 'ok' => $t ? (bool)$t['ok'] : null, 'title' => 'מייל בדיקה',
+        'text' => $t ? ($t['ok'] ? "השרת קיבל את המייל ($t[at] · אל $t[to]). אם לא הגיע תוך כמה דקות — לבדוק בספאם." : "נכשל ($t[at]): " . ($t['error'] ?? '')) : 'עוד לא נשלח. "✉️ שלח מייל בדיקה".'];
+    $rows[] = ['id' => 'sent', 'ok' => $s['last_error'] && $s['fails'] ? false : ($s['last_sent'] ? true : null), 'title' => 'מייל אחרון על פנייה',
+        'text' => ($s['last_sent'] ? "נשלח: {$s['last_sent']}" . ($s['last_count'] > 1 ? " ({$s['last_count']} פניות)" : '') : 'עוד לא נשלח מייל על פנייה.')
+            . ($s['last_error'] ? " · שגיאה אחרונה ({$s['last_error']['at']}): {$s['last_error']['error']}" : '')];
+    return $rows;
+}
+
+/** מה שהממשק מקבל על המייל (התיבה ← ⚙️ הגדרות, ושורת הטופס בעורך). */
+function forms_mail_public(array $user): array
+{
+    $s = forms_mail_state();
+    return ['to' => $s['to'], 'mail_on' => (bool)$s['on'], 'from' => $s['from'], 'from_effective' => forms_mail_from($s), 'from_default' => forms_mail_from_default(),
+        'host' => forms_mail_host(), 'max_to' => FORMS_MAIL_TO, 'hour_cap' => FORMS_MAIL_HOUR, 'can_mail' => forms_can_mail($user),
+        'last_test' => $s['last_test'], 'last_sent' => $s['last_sent'], 'last_error' => $s['last_error'], 'auto_off' => $s['auto_off'],
+        'candidates' => forms_can_mail($user) ? forms_mail_candidates($user) : [], 'diag' => forms_diag($s), 'endpoint' => forms_endpoint()];
+}
+
+/** נמענים מהקלט: מערך או מחרוזת (פסיק / רווח / שורה). כל כתובת תקינה, עד FORMS_MAIL_TO. */
+function forms_mail_parse_to(mixed $v): array
+{
+    $list = is_array($v) ? $v : preg_split('/[\s,;]+/u', (string)$v);
+    $to = [];
+    foreach (array_slice($list, 0, 50) as $e) {
+        $e = strtolower(trim((string)$e));
+        if ($e === '') continue;
+        if (!forms_email_ok($e)) throw new ApiError('כתובת מייל לא תקינה: ' . forms_mail_line(mb_substr($e, 0, 80)));
+        $to[] = $e;
+    }
+    $to = array_values(array_unique($to));
+    if (count($to) > FORMS_MAIL_TO) throw new ApiError('עד ' . FORMS_MAIL_TO . ' נמענים');
+    return $to;
+}
+
+/**
+ * הגדרות: הנמענים, כתובת השולח והמפסק — בעל העמוד ומעלה (S3; היה: המפתח בלבד, ורק חברי האפליקציה). המגבלות — המפתח בלבד.
  * GET (בלי גוף) — המצב.
  */
 function forms_settings(array $user, array $b, bool $developer): array
 {
     $s = forms_mail_state();
-    if (array_key_exists('to', $b)) {
-        if (ROLE_RANK[$user['role']] < ROLE_RANK['publisher']) throw new ApiError('אין לך הרשאה לפעולה הזו', 403);
-        $ok = array_column(forms_mail_candidates($user), 'email');
-        $to = [];
-        foreach (array_slice(is_array($b['to']) ? $b['to'] : [], 0, 20) as $e) {
-            $e = strtolower(trim((string)$e));
-            if (!in_array($e, $ok, true)) throw new ApiError('נמען שאינו חבר באפליקציה');
-            $to[] = $e;
+    if (array_key_exists('to', $b) || array_key_exists('from', $b) || array_key_exists('mail_on', $b)) {
+        if (!forms_can_mail($user)) throw new ApiError('הגדרות המייל — בעל העמוד ומעלה', 403);
+        $what = [];
+        if (array_key_exists('to', $b)) { $s['to'] = forms_mail_parse_to($b['to']); $what[] = 'נמענים: ' . count($s['to']); }
+        if (array_key_exists('from', $b)) {
+            $from = strtolower(trim((string)$b['from']));
+            if ($from !== '' && !forms_email_ok($from)) throw new ApiError('כתובת השולח אינה תקינה');
+            $s['from'] = $from;
+            $what[] = 'שולח: ' . ($from ?: 'ברירת מחדל');
         }
-        $s['to'] = array_values(array_unique($to));
-        audit_as($user, 'forms_settings', 'נמענים: ' . count($s['to']));
+        if (array_key_exists('mail_on', $b)) {
+            $on = (bool)$b['mail_on'];
+            if ($on && !$s['to']) throw new ApiError('קודם להוסיף נמען אחד לפחות');
+            if ($on && !$s['on']) { $s['fails'] = 0; $s['auto_off'] = null; $s['last_error'] = null; $s['last_sent_id'] = (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM form_entries')->fetchColumn(); }
+            $s['on'] = $on;
+            $what[] = $on ? 'המייל הודלק' : 'המייל כובה';
+        }
+        forms_mail_save($s);
+        audit_as($user, 'forms_mail', implode(' · ', $what));
     }
-    if (array_key_exists('limits', $b) || array_key_exists('from', $b) || array_key_exists('mail_on', $b)) {
+    if (array_key_exists('limits', $b)) {
         if (!$developer) throw new ApiError('המסך הזה פתוח למפתח בלבד', 403);
-        if (is_array($b['limits'] ?? null)) {
+        if (is_array($b['limits'])) {
             $cur = forms_limits();
             foreach ($b['limits'] as $k => $v) {
                 if (!isset(FORMS_LIMITS[$k])) throw new ApiError('מגבלה לא מוכרת');
@@ -599,38 +783,33 @@ function forms_settings(array $user, array $b, bool $developer): array
             setting_set('forms_limits', json_encode($cur));
             audit_as($user, 'forms_limits', json_encode($cur));
         }
-        if (array_key_exists('from', $b)) {
-            $from = trim((string)$b['from']);
-            if ($from !== '' && !forms_email_ok($from)) throw new ApiError('כתובת השולח אינה תקינה');
-            $s['from'] = $from;
-        }
-        if (array_key_exists('mail_on', $b)) {
-            if ($b['mail_on'] && (!$s['from'] || !($s['last_test']['ok'] ?? false))) throw new ApiError('קודם "שלח מייל בדיקה" שהצליח, עם כתובת שולח');
-            $s['on'] = (bool)$b['mail_on'];
-            if ($s['on']) { $s['fails'] = 0; $s['auto_off'] = null; $s['last_sent_id'] = (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM form_entries')->fetchColumn(); }
-            audit_as($user, 'forms_mail', $s['on'] ? 'המייל הודלק' : 'המייל כובה');
-        }
     }
-    forms_mail_save($s);
-    return ['settings' => ['to' => $s['to'], 'mail_on' => (bool)$s['on'], 'candidates' => forms_mail_candidates($user)]];
+    return ['settings' => forms_mail_public($user)];
 }
 
-/** "שלח מייל בדיקה" — המפתח בלבד. התוצאה נרשמת ומוצגת. */
-function forms_mail_test(array $dev, array $b): array
+/** "✉️ שלח מייל בדיקה" — בעל העמוד ומעלה. לכתובת שהוזנה (או לנמען הראשון / אליי). התוצאה נרשמת ומוצגת באבחון. */
+function forms_mail_test(array $user, array $b): array
 {
     $s = forms_mail_state();
-    $from = trim((string)($b['from'] ?? $s['from']));
-    $to = strtolower(trim((string)($b['to'] ?? ($dev['email'] ?? ''))));
-    if (!forms_email_ok($from)) throw new ApiError('כתובת השולח אינה תקינה');
+    if (array_key_exists('from', $b)) {
+        $f = strtolower(trim((string)$b['from']));
+        if ($f !== '' && !forms_email_ok($f)) throw new ApiError('כתובת השולח אינה תקינה');
+        $s['from'] = $f;
+    }
+    $from = forms_mail_from($s);
+    $to = strtolower(trim((string)($b['to'] ?? '')));
+    if ($to === '') $to = $s['to'][0] ?? strtolower((string)($user['email'] ?? ''));
     if (!forms_email_ok($to)) throw new ApiError('כתובת הנמען אינה תקינה');
-    [$ok, $err] = forms_mail_send([$to], 'קול מרוקו: מייל בדיקה', "זה מייל בדיקה מ-📬 פניות של קול מרוקו.\nאם הוא הגיע — אפשר להדליק את המייל על פניות חדשות במסך המפתח.\n", $from);
-    $s = forms_mail_state();
-    $s['from'] = $from;
-    $s['last_test'] = ['at' => now_iso(), 'ok' => $ok, 'to' => $to, 'error' => $err === null ? null : mb_substr($err, 0, 300)];
-    forms_mail_save($s);
-    devlog_write($ok ? 'info' : 'error', 'forms', 'form.mail_test', ['message' => $ok ? 'mail() החזיר true' : 'mail() נכשל: ' . $err]);
-    audit_as($dev, 'forms_mail_test', ($ok ? 'true' : 'false') . " · $to");
-    return ['test' => $s['last_test']];
+    $body = "זה מייל בדיקה מ-📬 פניות של קול מרוקו.\n\nנשלח מ: $from\nאל: $to\n\nאם הוא הגיע — המייל על משוב חדש יגיע באותה דרך.\n"
+        . "אם הוא בספאם — לסמן \"לא ספאם\".\n\nלתיבה: " . forms_inbox_url() . "\n";
+    [$ok, $err] = forms_mail_send([$to], 'קול מרוקו · מייל בדיקה', $body, $from);
+    $s2 = forms_mail_state();
+    $s2['from'] = $s['from'];
+    $s2['last_test'] = ['at' => now_iso(), 'ok' => $ok, 'to' => $to, 'from' => $from, 'error' => $err === null ? null : mb_substr($err, 0, 300)];
+    forms_mail_save($s2);
+    devlog_write($ok ? 'info' : 'error', 'forms', 'form.mail_test', ['message' => ($ok ? 'mail() החזיר true' : 'mail() נכשל: ' . $err) . " · מ-$from אל $to"]);
+    audit_as($user, 'forms_mail_test', ($ok ? 'true' : 'false') . " · $to");
+    return ['test' => $s2['last_test'], 'settings' => forms_mail_public($user)];
 }
 
 /** שורת M5 במסך המפתח (08 §5): פניות היום / 7 ימים, דחיות לפי סיבה, מצב המייל, המגבלות. */
@@ -651,7 +830,7 @@ function forms_dev_state(): array
     $limits = [];
     foreach (forms_limits() as $k => $v) $limits[] = ['id' => $k, 'value' => $v, 'label' => FORMS_LIMITS[$k][3], 'min' => FORMS_LIMITS[$k][1], 'max' => FORMS_LIMITS[$k][2], 'default' => FORMS_LIMITS[$k][0]];
     return ['today' => $n($today . 'T00:00:00Z'), 'week' => $n(gmdate('Y-m-d', time() - 6 * 86400) . 'T00:00:00Z'), 'rejects' => $rej,
-        'mail' => ['on' => (bool)$m['on'], 'from' => $m['from'], 'to' => count($m['to']), 'last_sent' => $m['last_sent'], 'fails' => (int)$m['fails'],
+        'mail' => ['on' => (bool)$m['on'], 'from' => $m['from'], 'from_effective' => forms_mail_from($m), 'to' => count($m['to']), 'last_sent' => $m['last_sent'], 'fails' => (int)$m['fails'],
             'last_test' => $m['last_test'], 'last_error' => $m['last_error'], 'auto_off' => $m['auto_off']],
         'limits' => $limits, 'endpoint' => forms_endpoint(), 'registered' => array_keys(forms_live()), 'webhooks' => forms_hook_state([]) + ['forms' => array_map(fn($u) => (string)parse_url($u, PHP_URL_HOST), forms_hooks())]];   // V16c
 }
@@ -662,7 +841,7 @@ function forms_dev_service(): array
     $m = forms_mail_state();
     $res = $m['on'] ? 'דולק · ' . count($m['to']) . ' נמענים' : ($m['auto_off'] ? 'כובה אוטומטית אחרי ' . FORMS_MAIL_FAILS . ' כישלונות' : 'כבוי');
     if ($m['last_error']) $res .= ' · שגיאה אחרונה: ' . $m['last_error']['error'];
-    return ['id' => 'forms_mail', 'name' => '📬 מייל על פניות חדשות', 'how' => 'אחרי פנייה (או כשפותחים את התיבה), לכל היותר פעם ב-15 דקות — תקציר בלי תוכן הפניות',
+    return ['id' => 'forms_mail', 'name' => '📬 מייל על פניות חדשות', 'how' => 'מייל לכל פנייה, עם התוכן — מיד אחרי שהגיעה (או כשפותחים את התיבה); לכל היותר ' . FORMS_MAIL_HOUR . ' בשעה, ומעבר לזה מצטבר',
         'last' => $m['last_sent'], 'ok' => $m['on'] ? ((int)$m['fails'] === 0) : ($m['auto_off'] ? false : null), 'result' => $res, 'next' => null,
         'next_text' => $m['on'] ? 'בפנייה הבאה' : 'אין — המייל כבוי'];
 }
