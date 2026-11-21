@@ -90,6 +90,12 @@ const APR_ACCESS = [
     'case-planning' => 'member', 'planning-item' => 'member', 'planning-add' => 'member', 'planning-update' => 'member',
     'planning-applicability' => 'member', 'planning-delete' => 'member', 'planning-task' => 'member',
 
+    // ביקור (13): view לצפייה; edit לתיאום; visit + המבקר או האחראי למילוי, לצילום ולסיום (lib/visits.php). תמונה — לפי הרשאת השימוש שלה
+    'case-visits' => 'member', 'visit' => 'member', 'my-visits' => 'member', 'visit-plan' => 'member', 'visit-update' => 'member', 'visit-start' => 'member',
+    'visit-cancel' => 'member', 'visit-answer' => 'member', 'visit-row-add' => 'member', 'visit-row-remove' => 'member', 'visit-copy' => 'member',
+    'visit-finish' => 'member', 'visit-reopen' => 'member', 'visit-photo' => 'member', 'visit-photo-upload' => 'member', 'visit-photo-update' => 'member',
+    'visit-photo-order' => 'member', 'visit-photo-delete' => 'member', 'office-visit-geo' => 'admin',
+
     'office'              => 'member',
     'office-leave'        => 'member',
     'office-rename'       => 'admin',
@@ -127,7 +133,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];

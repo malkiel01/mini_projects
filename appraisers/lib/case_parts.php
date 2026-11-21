@@ -69,7 +69,7 @@ function apr_case_identifier_add(array $ctx, array $in): array
     $row = apr_ident_fields($in, $kind) + ['kind' => $kind, 'source_kind' => apr_clean_choice($in['source_kind'] ?? 'user', APR_IDENT_SOURCES) ?? 'user',
         'source_ref' => null, 'source_note' => apr_clean_text($in['source_note'] ?? '', 120), 'note' => apr_clean_text($in['note'] ?? '', 300)];
     // 04-C3: מקור מסוג מסמך הוא קובץ אמיתי של התיק הזה — לא הצהרה
-    if ($row['source_kind'] === 'document') $row['source_ref'] = apr_source_file($c, $in['source_ref'] ?? null);
+    if ($row['source_kind'] === 'document') $row['source_ref'] = apr_source_file($ctx, $c, $in['source_ref'] ?? null);
     $row['match_key'] = apr_ident_match_key($row);
     return apr_tx(function () use ($ctx, $c, $row) {
         if ((int)apr_val('SELECT COUNT(*) FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL', [$c['id']]) >= 50) apr_fail('content_too_large');
@@ -109,12 +109,12 @@ function apr_ident_row(array $c, mixed $pid): array
 function apr_case_identifier_update(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
-    return apr_tx(function () use ($c, $in) {
+    return apr_tx(function () use ($ctx, $c, $in) {
         $i = apr_ident_row($c, $in['identifier'] ?? null);
         $state = array_key_exists('state', $in) ? (apr_clean_choice($in['state'], APR_IDENT_STATES) ?? apr_fail('status_invalid')) : $i['state'];
         $source = array_key_exists('source_kind', $in) ? (apr_clean_choice($in['source_kind'], APR_IDENT_SOURCES) ?? apr_fail('content_invalid')) : $i['source_kind'];
         if ($state === 'verified' && $i['kind'] === 'address' && $source !== 'document') apr_fail('address_not_verifiable');
-        $ref = $source === 'document' ? apr_source_file($c, array_key_exists('source_ref', $in) ? $in['source_ref'] : $i['source_ref']) : null;
+        $ref = $source === 'document' ? apr_source_file($ctx, $c, array_key_exists('source_ref', $in) ? $in['source_ref'] : $i['source_ref']) : null;
         apr_exec('UPDATE case_identifiers SET state = ?, source_kind = ?, source_ref = ?, source_note = ?, note = ? WHERE id = ?', [$state, $source, $ref,
             array_key_exists('source_note', $in) ? apr_clean_text($in['source_note'], 120) : $i['source_note'],
             array_key_exists('note', $in) ? apr_clean_text($in['note'], 300) : $i['note'], $i['id']]);
@@ -474,6 +474,7 @@ function apr_case_view(array $ctx, array $q): array
         'todo' => apr_case_todo($c), 'missing' => apr_case_missing($c),
         'open_conflicts' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]),
         'sources' => apr_case_sources_summary($ctx, $c),
+        'visits' => apr_case_visits_summary($c),
         'profile' => ['pid' => apr_profile_level($ctx, apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']])) !== null ? $p['pid'] : null, 'name' => $p['name'],
             'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null, 'pending' => $pending,
             'flags' => $content['flags'], 'groups' => $content['requirements']['groups']],
@@ -541,8 +542,10 @@ function apr_case_activity(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
     // שורה של בדיקת מקור במצב "לא אותר" / "לא זמין" נושאת את נוסח ההסתייגות גם כאן (09-A2: כל תשובה)
+    $hidden = apr_visit_hidden_pids($ctx, $c);     // תמונת ביקור שאינני רשאי לראות אינה מופיעה כאן — גם לא המזהה שלה (13-C1)
     return ['rows' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'entity_type' => $r['entity_type'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason'],
         'actor' => $r['name'], 'actor_kind' => $r['actor_kind'], 'entity' => in_array($r['entity_type'], ['requirement', 'file'], true) ? $r['entity_pid'] : null]
         + ($r['entity_type'] === 'source_check' ? ['disclaimer' => APR_SRC_DISCLAIMERS[(json_decode($r['meta'], true) ?: [])['status'] ?? ''] ?? null] : []),
-        apr_rows('SELECT a.*, u.name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.case_id = ? ORDER BY a.id DESC LIMIT 300', [$c['id']]))];
+        array_values(array_filter(apr_rows('SELECT a.*, u.name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.case_id = ? ORDER BY a.id DESC LIMIT 300', [$c['id']]),
+            fn($r) => !isset($hidden[$r['entity_pid']]))))];
 }

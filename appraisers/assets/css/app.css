@@ -292,3 +292,44 @@ main.wide { max-width: 1240px; }
 .card .t b, .card .t .muted { font-weight: 600; }
 q { quotes: '"' '"'; color: var(--muted); }
 #file-facts { display: grid; gap: var(--s2); }
+
+/* ── פרוסה 13: מסך הביקור — לתנאי שטח: שדה בשורה, יעדי מגע גדולים, סרגל מצלמה קבוע בתחתית ── */
+.v-group { display: grid; gap: var(--s3); margin-bottom: var(--s3); scroll-margin-top: calc(var(--head) + var(--s2)); }
+.v-field { display: grid; gap: var(--s1); }
+.v-field input, .v-field select, .v-field textarea, .v-yn button { min-height: 48px; }
+.v-field textarea { padding-block: var(--s2); }
+.v-label { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); font-weight: 600; font-size: .95rem; }
+.v-req { color: var(--danger); }
+.v-save { flex: none; font-size: .8rem; font-weight: 400; color: var(--muted); }
+.v-save.saved { color: var(--ok, #1a7f37); }
+.v-save.failed, .v-save.conflict, .v-save.need { color: var(--danger); font-weight: 600; }
+.v-num { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--s2); }
+.v-num select[data-part="area_kind"] { grid-column: 1 / -1; }
+.v-yn { display: grid; grid-template-columns: 1fr 1fr; overflow: hidden; }
+.v-yn button { border: 0; background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.v-yn button + button { border-inline-start: 1px solid var(--line); }
+.v-yn button[aria-pressed="true"] { background: var(--brand); color: var(--brand-ink); font-weight: 600; }
+.v-multi { display: grid; gap: 2px; }
+.v-more summary { font-size: .8rem; color: var(--muted); cursor: pointer; min-height: 32px; display: flex; align-items: center; }
+.v-more[open] { display: grid; gap: var(--s2); padding: var(--s2); border: 1px dashed var(--line); border-radius: var(--r); }
+.v-rowhead { display: flex; align-items: center; justify-content: space-between; padding-top: var(--s2); border-top: 1px solid var(--line); }
+.v-progress { position: sticky; top: var(--head); z-index: 2; padding-block: var(--s2); background: var(--bg); flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.v-progress .chip { flex: none; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.v-strip { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; }
+.v-ph { padding: 0; border: 0; background: none; cursor: pointer; border-radius: 10px; overflow: hidden; inline-size: 64px; block-size: 64px; flex: none; }
+.v-ph img { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; background: var(--brand-soft); }
+.v-ph.big { inline-size: 72px; block-size: 72px; }
+.v-full { max-width: 100%; max-height: 50vh; display: block; margin: 0 auto var(--s3); border-radius: var(--r); }
+.v-ord { display: flex; flex: none; align-items: center; }
+.v-ord .icon-btn { min-width: 36px; }
+.v-bar { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 0 calc(var(--s2) + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); }
+.v-bar .btn { min-height: 52px; flex: 1; }
+.v-bar #v-net { flex: 1 1 100%; font-size: .8rem; }
+.v-bar { flex-wrap: wrap; }
+.v-bar #v-net:empty { display: none; }
+.v-phone { max-width: 390px; margin-inline: auto; padding: var(--s2); border: 2px solid var(--line); border-radius: 18px; }
+.v-prep { margin-block: var(--s2); }
+@media (min-width: 900px) { .v-grid { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); } .v-grid #v-gallery { position: sticky; top: calc(var(--head) + 56px); } }
+
+fieldset.f { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: var(--s1); }
+fieldset.f legend { font-weight: 600; font-size: .9rem; padding: 0; margin-bottom: var(--s1); }
