@@ -54,6 +54,14 @@
  *                  area_kind?, method, rounding, subject_area_fact?, recheck?} · comp-set-conclude {set, rev, value, reason} · comp-set-delete {set, rev}
  *                  · comp-import-upload (גוף גולמי, XLSX; בכתובת: case, name, key) · comp-import-preview {case, file | text, has_header?,
  *                  mapping?, date_order?, defaults?} · comp-import {…אותו תוכן…, search, rights: true}
+ * בינה (11):       sys-ai · sys-ai-provider-save {provider, status?, privacy_note?, privacy_url?, privacy_checked_at?, material?} · sys-ai-model-save
+ *                  {provider, model_id, label, capabilities{}, price_in?, price_out?, price_checked_at?, context_tokens, max_output_tokens, status?}
+ *                  · sys-ai-fx-set {rate} · sys-ai-connection-save {connection?, provider, label, key?, default_model?} · sys-ai-connection-test
+ *                  {connection} · sys-ai-connection-revoke {connection} · sys-ai-assign-save {connection, scope, target, models[], default_model?}
+ *                  · sys-ai-assign-delete {scope, target} · sys-ai-quota-save {quota? | track, scope, target, office?, period; limit_money?,
+ *                  limit_tokens?, hard} · sys-ai-quota-delete {quota} · office-ai · office-ai-policy {enabled?, text_version, providers{},
+ *                  prefer_managed?} · office-ai-connection-… (אותם שדות) · office-ai-quota-save / -delete · my-ai · ai-quota-request {quota}
+ *                  · case-ai {case} · case-ai-set {case, no_ai}. **אין פעולת API שמפעילה מודל** — רק ai_run() בקוד (lib/ai.php).
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -96,6 +104,8 @@ require_once __DIR__ . '/visits.php';
 require_once __DIR__ . '/visit_photos.php';
 require_once __DIR__ . '/comps.php';
 require_once __DIR__ . '/comp_import.php';
+require_once __DIR__ . '/ai.php';
+require_once __DIR__ . '/ai_admin.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -326,6 +336,29 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'comp-import-upload' => apr_comp_import_upload($ctx, $p, $env),
         'comp-import-preview' => apr_comp_import_preview($ctx, $p),
         'comp-import' => apr_comp_import($ctx, $p),
+        // בינה (11) — ניהול ותצוגה בלבד; שום פעולה כאן אינה מפעילה מודל
+        'sys-ai' => apr_sys_ai(),
+        'sys-ai-provider-save' => apr_sys_ai_provider_save($p),
+        'sys-ai-model-save' => apr_sys_ai_model_save($p),
+        'sys-ai-fx-set' => apr_sys_ai_fx_set($ctx, $p),
+        'sys-ai-connection-save' => apr_ai_conn_save(null, (int)$user['id'], $p),
+        'sys-ai-connection-test' => apr_ai_conn_test_action(null, $p),
+        'sys-ai-connection-revoke' => apr_ai_conn_revoke(null, $p),
+        'sys-ai-assign-save' => apr_sys_ai_assign_save($ctx, $p),
+        'sys-ai-assign-delete' => apr_sys_ai_assign_delete($p),
+        'sys-ai-quota-save' => apr_ai_quota_save(null, (int)$user['id'], $p),
+        'sys-ai-quota-delete' => apr_ai_quota_delete(null, $p),
+        'office-ai' => apr_office_ai($ctx),
+        'office-ai-policy' => apr_office_ai_policy($ctx, $p),
+        'office-ai-connection-save' => apr_ai_conn_save(apr_office_id($ctx), (int)$user['id'], $p),
+        'office-ai-connection-test' => apr_ai_conn_test_action(apr_office_id($ctx), $p),
+        'office-ai-connection-revoke' => apr_ai_conn_revoke(apr_office_id($ctx), $p),
+        'office-ai-quota-save' => apr_ai_quota_save(apr_office_id($ctx), (int)$user['id'], $p),
+        'office-ai-quota-delete' => apr_ai_quota_delete(apr_office_id($ctx), $p),
+        'my-ai' => apr_my_ai($ctx),
+        'ai-quota-request' => apr_ai_quota_request($ctx, $p),
+        'case-ai' => apr_case_ai($ctx, $p),
+        'case-ai-set' => apr_case_ai_set($ctx, $p),
         'file-assign' => apr_file_assign($ctx, $p),
         'file-update' => apr_file_update($ctx, $p),
         'file-delete' => apr_file_delete($ctx, $p),
