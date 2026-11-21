@@ -102,6 +102,15 @@ const APR_ACCESS = [
     'comp-adj-delete' => 'member', 'comp-adj-order' => 'member', 'comp-set-save' => 'member', 'comp-set-conclude' => 'member', 'comp-set-delete' => 'member',
     'comp-import-upload' => 'member', 'comp-import-preview' => 'member', 'comp-import' => 'member',
 
+    // בינה (11): הקטלוג, חיבורי המערכת, ההקצאות ומכסות המערכת — מנהל המערכת; המדיניות, החיבור האישי ומכסות הרשות — מנהל המשרד;
+    // "הבינה שלי" — כל חבר; "בלי בינה" בתיק — השמאי האחראי (lib/ai_admin.php). אין פעולה ציבורית, ואין פעולה שמפעילה מודל.
+    'sys-ai' => 'sysadmin', 'sys-ai-provider-save' => 'sysadmin', 'sys-ai-model-save' => 'sysadmin', 'sys-ai-fx-set' => 'sysadmin',
+    'sys-ai-connection-save' => 'sysadmin', 'sys-ai-connection-test' => 'sysadmin', 'sys-ai-connection-revoke' => 'sysadmin',
+    'sys-ai-assign-save' => 'sysadmin', 'sys-ai-assign-delete' => 'sysadmin', 'sys-ai-quota-save' => 'sysadmin', 'sys-ai-quota-delete' => 'sysadmin',
+    'office-ai' => 'admin', 'office-ai-policy' => 'admin', 'office-ai-connection-save' => 'admin', 'office-ai-connection-test' => 'admin',
+    'office-ai-connection-revoke' => 'admin', 'office-ai-quota-save' => 'admin', 'office-ai-quota-delete' => 'admin',
+    'my-ai' => 'member', 'ai-quota-request' => 'member', 'case-ai' => 'member', 'case-ai-set' => 'member',
+
     'office'              => 'member',
     'office-leave'        => 'member',
     'office-rename'       => 'admin',
@@ -139,7 +148,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];
