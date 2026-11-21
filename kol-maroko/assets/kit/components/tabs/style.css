@@ -1,0 +1,52 @@
+/* רכיב מוכן: לשוניות (kit 1.0.0). בלי JS: הלשונית הראשונה פתוחה, וקישור לכל לוח (#) פותח אותו (:target).
+   בטלפון — אקורדיון: הכותרת ומתחתיה הלוח שלה. */
+.kol-tabs {
+  --kol-tabs-accent: var(--color-accent, #a3322a);
+  --kol-tabs-gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--kol-tabs-gap);
+  align-items: end;
+}
+.kol-tabs__item { display: contents; }
+.kol-tabs__tab {
+  order: 0;
+  padding: 10px 16px;
+  border-radius: 8px 8px 0 0;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+  border-block-end: 3px solid transparent;
+}
+.kol-tabs__tab:hover { background: color-mix(in srgb, var(--kol-tabs-accent) 8%, transparent); }
+.kol-tabs__tab:focus-visible { outline: 2px solid var(--kol-tabs-accent); outline-offset: 2px; }
+.kol-tabs__panel {
+  order: 1;
+  flex: 1 0 100%;
+  display: none;
+  padding: 16px;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+.kol-tabs__panel > :first-child { margin-top: 0; }
+.kol-tabs__panel > :last-child { margin-bottom: 0; }
+/* בלי JS: הראשון — אלא אם קישור פתח לוח אחר */
+.kol-tabs:not(.is-ready):not(:has(.kol-tabs__panel:target)) > .kol-tabs__item:first-child > .kol-tabs__panel,
+.kol-tabs:not(.is-ready) .kol-tabs__panel:target { display: block; }
+.kol-tabs:not(.is-ready):not(:has(.kol-tabs__panel:target)) > .kol-tabs__item:first-child > .kol-tabs__tab,
+.kol-tabs:not(.is-ready) .kol-tabs__item:has(.kol-tabs__panel:target) > .kol-tabs__tab,
+.kol-tabs.is-ready > .kol-tabs__item.is-active > .kol-tabs__tab { border-block-end-color: var(--kol-tabs-accent); color: var(--kol-tabs-accent); }
+/* עם JS (וכך גם "מצב בקנבס"): המחלקה is-active על הפריט הפתוח */
+.kol-tabs.is-ready > .kol-tabs__item.is-active > .kol-tabs__panel { display: block; }
+/* אנכיות */
+.kol-tabs--v { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; align-items: start; row-gap: 0; }
+.kol-tabs--v .kol-tabs__tab { grid-column: 1; border-radius: 8px 0 0 8px; border-block-end: 0; border-inline-end: 3px solid transparent; }
+.kol-tabs--v .kol-tabs__panel { grid-column: 2; grid-row: 1 / span 40; border-top: 0; border-inline-start: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.kol-tabs--v:not(.is-ready):not(:has(.kol-tabs__panel:target)) > .kol-tabs__item:first-child > .kol-tabs__tab,
+.kol-tabs--v.is-ready > .kol-tabs__item.is-active > .kol-tabs__tab { border-inline-end-color: var(--kol-tabs-accent); }
+/* בטלפון: אקורדיון */
+@media (max-width: 767px) {
+  .kol-tabs, .kol-tabs--v { display: block; }
+  .kol-tabs__item { display: block; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px; margin-block-end: 8px; }
+  .kol-tabs__tab { display: block; border: 0; border-radius: 10px; }
+  .kol-tabs__panel { border: 0; padding-top: 0; }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "form",
+  "label": "טופס",
+  "icon": "📝",
+  "category": "טפסים",
+  "builder": "form",
+  "fields": [
+    {"id": "fields", "label": "שדות", "control": "repeater", "target": {"children": ".kol-form__field"}},
+    {"id": "name", "label": "שם הטופס (כך הוא מופיע ב-📬 פניות)", "control": "text", "target": {"attr": "data-kol-form"}},
+    {"id": "redirect", "label": "אחרי שליחה — לעבור לעמוד / כתובת (ריק — הודעה)", "control": "link", "target": {"attr": "data-kol-redirect"}},
+    {"id": "accent", "label": "צבע", "control": "color", "target": {"var": "--kol-form-accent"}},
+    {"id": "gap", "label": "רווח בין שדות", "control": "size", "target": {"var": "--kol-form-gap"}}
+  ],
+  "states": [
+    {"id": "sent", "label": "אחרי שליחה", "options": [{"label": "נשלח", "on": ".kol-form__done", "attr": "hidden", "set": false}, {"label": "שגיאה", "on": ".kol-form__error", "attr": "hidden", "set": false}]},
+    {"id": "step", "label": "שלב", "item": "שלב", "each": ".kol-form__step", "class": "is-current", "root": "kol-steps-on", "optional": true}
+  ]
+}

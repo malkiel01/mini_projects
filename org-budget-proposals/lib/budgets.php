@@ -133,6 +133,8 @@ function add_columns(PDO $pdo, string $table, array $defs): void
 
 /** עמודות השורה שמועתקות / נשמרות כמו שהן (חוץ מהמזהים והסכומים של השנה). */
 const LINE_EXTRA = ['summary_only', 'lease', 'lease_property', 'lease_tenant', 'lease_monthly', 'lease_annual', 'lease_period'];
+/** מה שעריכת שורה משנה. lease_monthly / lease_annual — לא: ערכים ישנים, נשמרים ולא משמשים (B1). */
+const LINE_EDIT = ['summary_only', 'lease', 'lease_property', 'lease_tenant', 'lease_period'];
 
 // ── עזרים ────────────────────────────────────────────────────
 
@@ -409,8 +411,10 @@ function budget_get(array $s, int $id): array
         'prev_actual' => $l['prev_actual'] === null ? null : (int)$l['prev_actual'], 'actual' => $l['actual'] === null ? null : (int)$l['actual'],
         'summary_row_id' => $l['summary_row_id'] === null ? null : (int)$l['summary_row_id'],
         'summary_only' => (bool)$l['summary_only'],
-        'lease' => $l['lease'] ? ['property' => $l['lease_property'], 'tenant' => $l['lease_tenant'], 'monthly' => $l['lease_monthly'],
-            'annual' => $l['lease_annual'] === null ? null : (int)$l['lease_annual'], 'period' => $l['lease_period']] : null,
+        'lease' => $l['lease'] ? ['property' => $l['lease_property'], 'tenant' => $l['lease_tenant'], 'period' => $l['lease_period'],
+            // ערכים ישנים שהוקלדו ביד — רק לתצוגה ("לא בשימוש"); הנספח נגזר מהשורה
+            'legacy' => $l['lease_monthly'] !== null || $l['lease_annual'] !== null ? ['monthly' => $l['lease_monthly'], 'annual' => $l['lease_annual'] === null ? null : (int)$l['lease_annual']] : null] : null,
+        'transfer_id' => $l['transfer_id'],
         'transfer_role' => $l['transfer_id'] ? $l['direction'] : null,
         'transfer' => $l['transfer_id'] ? array_values(array_map(fn($p) => [
             'line_id' => (int)$p['id'], 'budget_id' => (int)$p['budget_id'], 'fund' => $p['fund'], 'org' => $p['org'],
@@ -418,13 +422,16 @@ function budget_get(array $s, int $id): array
         ], array_filter($partners[$l['transfer_id']] ?? [], fn($p) => $p['direction'] !== $l['direction']))) : null,   // הצד השני בלבד: למעבירה — המקבלת; למקבלת — המעבירות
     ], $lines);
 
+    $summary = budget_summary($fundsOut, $linesOut, $rows);
+    $appendix = lease_appendix((int)$b['year'], $fundsOut, $linesOut);
     return ['ok' => true, 'budget' => $out,
         'org' => ['id' => (int)$org['id'], 'name' => $org['name'], 'subtitle' => $org['subtitle'], 'role' => $org['role'],
             'parent' => $org['parent_id'] ? (int)$org['parent_id'] : null],
         'funds' => $fundsOut, 'lines' => $linesOut,
         'rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'direction' => $r['direction'], 'section' => $r['section'], 'label' => $r['label'], 'sort' => (int)$r['sort']], $rows),
-        'summary' => budget_summary($fundsOut, $linesOut, $rows),
-        'appendix' => lease_appendix((int)$b['year'], $fundsOut, $linesOut),
+        'summary' => $summary,
+        'appendix' => $appendix,
+        'integrity' => budget_integrity((int)$b['year'], $fundsOut, $linesOut, $summary, $appendix),
         'comments' => array_map(fn($c) => [
             'id' => (int)$c['id'], 'line_id' => $c['line_id'] === null ? null : (int)$c['line_id'], 'by' => $c['display_name'],
             'mine' => (int)$c['user_id'] === (int)$s['id'], 'body' => $c['body'], 'at' => $c['at'], 'resolved' => $c['resolved_at'] !== null,
@@ -469,18 +476,18 @@ function budget_summary(array $funds, array $lines, array $rows): array
         return $key;
     };
     foreach ($defined as $id => $r) $add("row:$id", $r['section'], $r['label'], $r['direction'], (float)$r['sort']);
+    $lineRow = [];   // שורה → שורת הריכוז שלה (גם לנוסחאות באקסל ולבדיקת הנספח)
     $fundOrder = array_flip(array_column($funds, 'id'));
     foreach ($lines as $l) {
         $f = $fundById[$l['fund_id']] ?? null;
         if (!$f) continue;
         $dir = $l['direction'];
-        $rid = $l['summary_row_id'] ?? ($f["row_$dir"] ?? null);
-        if ($rid !== null && isset($defined[$rid]) && $defined[$rid]['direction'] === $dir) {
-            $key = "row:$rid";
-        } else {
+        $key = line_row_key($l, $f, $defined);
+        if (!str_starts_with($key, 'row:')) {
             $a = auto_row($f, $dir);
-            $key = $add($a['key'], $a['section'], $a['label'], $dir, 10000 + $fundOrder[$f['id']]);
+            $add($key, $a['section'], $a['label'], $dir, 10000 + $fundOrder[$f['id']]);
         }
+        $lineRow[$l['id']] = $key;
         foreach (['prev_budget', 'prev_actual', 'amount', 'actual'] as $c) $buckets[$key][$c] += (int)($l[$c] ?? 0);
         $buckets[$key]['lines']++;
         if (!in_array($f['id'], $buckets[$key]['funds'], true)) $buckets[$key]['funds'][] = $f['id'];
@@ -502,11 +509,21 @@ function budget_summary(array $funds, array $lines, array $rows): array
     $balance = [];
     foreach ($funds as $f) {
         $in = $ex = 0;
-        foreach ($lines as $l) if ($l['fund_id'] === $f['id']) $l['direction'] === 'income' ? $in += $l['amount'] : $ex += $l['amount'];
+        // בלי שורות "רק בריכוז" — אותו סה"כ כמו בטבלת הקופה ובבדיקת האיזון (budget_integrity)
+        foreach ($lines as $l) if ($l['fund_id'] === $f['id'] && empty($l['summary_only'])) $l['direction'] === 'income' ? $in += $l['amount'] : $ex += $l['amount'];
         $balance[] = ['fund_id' => $f['id'], 'income' => $in, 'expense' => $ex, 'diff' => $in - $ex];
     }
     return ['sections' => array_values($sections), 'income' => $tot('income'), 'expense' => $tot('expense'),
-        'balance' => $balance, 'unbalanced' => count(array_filter($balance, fn($x) => $x['diff'] !== 0))];
+        'balance' => $balance, 'unbalanced' => count(array_filter($balance, fn($x) => $x['diff'] !== 0)), 'line_row' => $lineRow];
+}
+
+/** שורת הריכוז של שורה: "row:<id>" — שנבחרה לה או ברירת המחדל של הקופה; אחרת המפתח האוטומטי לפי סוג הקופה. */
+function line_row_key(array $l, array $fund, array $defined): string
+{
+    $dir = $l['direction'];
+    $rid = $l['summary_row_id'] ?? ($fund["row_$dir"] ?? null);
+    if ($rid !== null && isset($defined[(int)$rid]) && $defined[(int)$rid]['direction'] === $dir) return 'row:' . (int)$rid;
+    return auto_row($fund, $dir)['key'];
 }
 
 // ── נספח השכירויות ───────────────────────────────────────────
@@ -514,9 +531,10 @@ function budget_summary(array $funds, array $lines, array $rows): array
 const LEASE_GROUPS = ['operating' => 'נכסים', 'fund' => 'נכסים', 'hekdesh' => 'הקדשות דתיים', 'secular' => 'הקדשות חילוני'];
 
 /**
- * "דוח הכנסות — נכסים והקדשות": כל שורת הכנסה שסומנה כשכירות. מה שלא הוקלד בשכירות — נגזר מהשורה:
- * נכס (בהקדש — שם הקופה וכתובתה; בארגון — שם השורה), שוכר (הגורם / השורה השנייה), חודשי ותקופה
- * (מהחישוב החודשי), ושנתי (הסכום).
+ * "דוח הכנסות — נכסים והקדשות": כל שורת הכנסה שסומנה כשכירות. שורת הנספח היא השורה עצמה — אין לה סכום משלה:
+ * השנתי = סכום השורה, תמיד; החודשי = מהחישוב החודשי, ובלי חישוב — הסכום ÷ מספר החודשים (לפי התקופה, או 12).
+ * נכס, שוכר ותקופה — מותר להקליד; ריק = נגזר (בהקדש — שם הקופה וכתובתה; בארגון — שם השורה, והגורם / השורה השנייה).
+ * ערכי lease_monthly / lease_annual ישנים שהוקלדו (B1) נשארים במסד, ולא משמשים לשום סכום.
  */
 function lease_appendix(int $year, array $funds, array $lines): array
 {
@@ -530,32 +548,184 @@ function lease_appendix(int $year, array $funds, array $lines): array
         $f = $fundById[$l['fund_id']];
         $c = $l['calc'];
         $hek = in_array($f['kind'], ['hekdesh', 'secular'], true);
-        $monthly = $l['lease']['monthly'];
-        $period = $l['lease']['period'];
+        $period = $l['lease']['period'] ?? null;
+        $annual = (int)$l['amount'];
         if ($c) {
             $two = !empty($c['change_month']);
-            $after = $two ? (int)round($c['monthly'] * (1 + $c['change_pct'] / 100)) : null;
-            $monthly ??= number_format($c['monthly']) . ($two ? ' / ' . number_format($after) : '');
+            $rate = (int)$c['monthly'];
+            $after = $two ? (int)round($rate * (1 + $c['change_pct'] / 100)) : null;
+            $monthly = number_format($rate) . ($two ? ' / ' . number_format($after) : '');
+            $months = (int)$c['to'] - (int)$c['from'] + 1;
             $period ??= $two
                 ? sprintf('%02d-%02d/%d, %02d-%02d/%d', $c['from'], $c['change_month'] - 1, $year, $c['change_month'], $c['to'], $year)
                 : sprintf('%02d-%02d/%d', $c['from'], $c['to'], $year);
+        } else {
+            $months = period_months($period) ?? 12;
+            $rate = (int)round($annual / $months);
+            $monthly = number_format($rate);
+            $period ??= "01-12/$year";
         }
-        $monthly ??= number_format((int)round($l['amount'] / 12));
-        $period ??= "01-12/$year";
-        $annual = $l['lease']['annual'] ?? $l['amount'];
         $g = LEASE_GROUPS[$f['kind']];
         $groups[$g]['rows'][] = [
             'line_id' => $l['id'], 'fund_id' => $f['id'],
-            'property' => $l['lease']['property'] ?? ($hek ? trim($f['name'] . ($f['address'] ? "
-" . $f['address'] : '')) : $l['title']),
+            'property' => $l['lease']['property'] ?? ($hek ? trim($f['name'] . ($f['address'] ? "\n" . $f['address'] : '')) : $l['title']),
             'tenant' => $l['lease']['tenant'] ?? ($hek ? $l['title'] : ($l['contact'] ?? $l['subtitle'] ?? '')),
-            'monthly' => $monthly, 'annual' => $annual, 'period' => $period,
+            'monthly' => $monthly, 'monthly_n' => $rate, 'months' => $months, 'annual' => $annual, 'period' => $period,
         ];
-        preg_match_all('/[\d,]+/', $monthly, $m);
-        $groups[$g]['monthly'] += array_sum(array_map(fn($x) => (int)str_replace(',', '', $x), $m[0]));
+        // סה"כ לחודש — התעריף הראשון של כל שורה (בשורה עם שינוי באמצע השנה — לא שני התעריפים יחד)
+        $groups[$g]['monthly'] += $rate;
         $groups[$g]['annual'] += $annual;
     }
     return array_values(array_filter($groups, fn($g) => $g['rows']));
+}
+
+/** "01-06/2027" → 6 חודשים. תקופה בשני חלקים ("01-04/2027, 05-12/2027") — סכום החלקים. לא מזוהה — null. */
+function period_months(?string $p): ?int
+{
+    if ($p === null || !preg_match_all('#(\d{1,2})\s*-\s*(\d{1,2})\s*/\s*\d{2,4}#', $p, $m, PREG_SET_ORDER)) return null;
+    $n = 0;
+    foreach ($m as [, $a, $z]) {
+        if ((int)$a < 1 || (int)$z > 12 || (int)$z < (int)$a) return null;
+        $n += (int)$z - (int)$a + 1;
+    }
+    return $n ?: null;
+}
+
+// ── בדיקת השלמות של ההצעה (B1) ───────────────────────────────
+
+/** העמודות שבמסמך: הצעה קודמת · ניצול קודם · ההצעה. */
+function integrity_cols(int $year): array
+{
+    return ['prev_budget' => 'הצעת ' . ($year - 1), 'prev_actual' => 'ניצול ' . ($year - 1), 'amount' => "הצעת $year"];
+}
+
+/** עמודות שבהן נדרש איזון (הכנסות = הוצאות): רק ההצעות. ניצול הוא מה שקרה — עודף או גירעון בו הם עובדה (B1.2). */
+function balance_cols(int $year): array
+{
+    return array_intersect_key(integrity_cols($year), ['prev_budget' => 1, 'amount' => 1]);
+}
+
+/**
+ * כל הכללים שהדוח חייב לקיים, במקום אחד. מזינה את הפס האדום במסך, את הסימון על התאים, ואת האזהרה בראש
+ * המסמך המופק (Word, אקסל, הדפסה). לא חוסמת שום דבר — הבעלים מחליט.
+ *
+ *   1. כל קופה מאוזנת — בעמודות ההצעה בלבד (הצעה קודמת, הצעה; לא בניצול). בלי שורות "רק בריכוז",
+ *      כמו הסה"כ שבטבלת הקופה — מספר אחד לטבלה, לבדיקה ולתג "מאוזנת"
+ *   2. הריכוז מאוזן — בעמודות ההצעה; והריכוז = סכום הקופות — בכל עמודה
+ *   3. הנספח = שורות הריכוז: שורת ריכוז של הכנסות שיש בה שכירות — כל ההכנסות בה בנספח
+ *   4. חודשי × חודשים = שנתי (בחישוב, בתקופה שהוקלדה, ובהערה "X ₪ לחודש")
+ *   5. העברה — שני הצדדים שווים, בכל עמודה
+ *
+ * כל בעיה: rule, msg, והיכן — fund_id, col, line_ids, row_key — כדי לסמן את התא עצמו.
+ */
+function budget_integrity(int $year, array $funds, array $lines, array $summary, array $appendix): array
+{
+    $cols = integrity_cols($year);
+    $balCols = balance_cols($year);
+    $out = [];
+    $issue = function (string $rule, string $msg, array $where = []) use (&$out): void {
+        $out[] = ['id' => $rule . ':' . substr(md5(json_encode($where) . $msg), 0, 10), 'rule' => $rule, 'msg' => $msg]
+            + $where + ['fund_id' => null, 'col' => null, 'line_ids' => [], 'row_key' => null, 'diff' => null];
+    };
+    $m = fn($v) => number_format((int)$v);
+
+    // 1. קופה מאוזנת בעמודות ההצעה. עמודה שלא הוקלד בה כלום בקופה — לא נבדקת.
+    //    שורה "רק בריכוז" לא בטבלת הקופה — ולכן גם לא באיזון שלה
+    foreach ($funds as $f) {
+        $mine = array_values(array_filter($lines, fn($l) => $l['fund_id'] === $f['id'] && empty($l['summary_only'])));
+        foreach ($balCols as $c => $label) {
+            if (!array_filter($mine, fn($l) => $l[$c] !== null)) continue;
+            $in = $ex = 0;
+            foreach ($mine as $l) $l['direction'] === 'income' ? $in += (int)$l[$c] : $ex += (int)$l[$c];
+            if ($in === $ex) continue;
+            $issue('fund_balance', "{$f['name']} · $label: הכנסות {$m($in)} מול הוצאות {$m($ex)} — " . ($in > $ex ? 'עודף ' : 'גירעון ') . $m(abs($in - $ex)),
+                ['fund_id' => $f['id'], 'col' => $c, 'diff' => $in - $ex]);
+        }
+    }
+
+    // 2. הריכוז: מאוזן (בעמודות ההצעה), ושווה לסכום השורות של כל הקופות (בכל עמודה)
+    foreach ($cols as $c => $label) {
+        if (!array_filter($lines, fn($l) => $l[$c] !== null)) continue;
+        $byDir = ['income' => 0, 'expense' => 0];
+        foreach ($summary['sections'] as $sec) $byDir[$sec['direction']] += (int)$sec['total'][$c];
+        foreach (['income', 'expense'] as $dir) {
+            $raw = array_sum(array_map(fn($l) => $l['direction'] === $dir ? (int)$l[$c] : 0, $lines));
+            if ($raw !== $byDir[$dir]) $issue('summary_total', "דף הריכוז · $label: סה\"כ " . DIRECTIONS[$dir] . " {$m($byDir[$dir])} ≠ סכום הקופות {$m($raw)}",
+                ['col' => $c, 'diff' => $byDir[$dir] - $raw]);
+        }
+        if (isset($balCols[$c]) && $byDir['income'] !== $byDir['expense']) {
+            $issue('summary_balance', "דף הריכוז · $label: הכנסות {$m($byDir['income'])} מול הוצאות {$m($byDir['expense'])} — " . ($byDir['income'] > $byDir['expense'] ? 'עודף ' : 'גירעון ') . $m(abs($byDir['income'] - $byDir['expense'])),
+                ['col' => $c, 'diff' => $byDir['income'] - $byDir['expense']]);
+        }
+    }
+
+    // 3. הנספח מול שורות הריכוז: שורת ריכוז של הקדשות שיש בה שכירות — כל ההכנסות בה צריכות להיות בנספח.
+    //    שורה שיש בה הכנסה של קופת ארגון (תרומות, העברות, ושכירות של נכס לצידן) — לא נבדקת: שם נספח ≠ ריכוז מטבעו
+    $rowOf = $summary['line_row'] ?? [];
+    $kindOf = array_column($funds, 'kind', 'id');
+    $rowLabel = [];
+    foreach ($summary['sections'] as $sec) foreach ($sec['rows'] as $r) $rowLabel[$r['key']] = $r;
+    $fundName = array_column($funds, 'name', 'id');
+    $byRow = [];
+    foreach ($lines as $l) if ($l['direction'] === 'income' && isset($rowOf[$l['id']])) $byRow[$rowOf[$l['id']]][] = $l;
+    foreach ($byRow as $key => $ls) {
+        if (array_filter($ls, fn($l) => !in_array($kindOf[$l['fund_id']] ?? '', ['hekdesh', 'secular'], true))) continue;
+        $lease = array_filter($ls, fn($l) => $l['lease']);
+        $missing = array_values(array_filter($ls, fn($l) => !$l['lease'] && (int)$l['amount'] !== 0));
+        if (!$lease || !$missing) continue;
+        $inApp = array_sum(array_map(fn($l) => (int)$l['amount'], $lease));
+        $total = (int)($rowLabel[$key]['amount'] ?? 0);
+        $issue('appendix_row', "נספח השכירויות ≠ שורת הריכוז \"" . ($rowLabel[$key]['label'] ?? $key) . "\": בריכוז {$m($total)}, בנספח {$m($inApp)} — חסר "
+            . implode(', ', array_map(fn($l) => ($fundName[$l['fund_id']] ?? '') . ' · ' . $l['title'] . ' ' . $m($l['amount']), $missing)) . ' (לא מסומנות 🏠 שכירות)',
+            ['row_key' => $key, 'col' => 'amount', 'line_ids' => array_column($missing, 'id'), 'diff' => $total - $inApp]);
+    }
+
+    // 4. חודשי × חודשים = שנתי
+    $appRow = [];
+    foreach ($appendix as $g) foreach ($g['rows'] as $r) $appRow[$r['line_id']] = $r;
+    foreach ($lines as $l) {
+        $where = fn() => ($fundName[$l['fund_id']] ?? '') . ' · ' . $l['title'];
+        if ($l['calc']) {
+            [$calc] = calc_amount($l['calc']);
+            if ($calc !== (int)$l['amount']) {
+                $issue('monthly', "{$where()}: הסכום {$m($l['amount'])} ≠ החישוב החודשי {$m($calc)}", ['fund_id' => $l['fund_id'], 'col' => 'amount', 'line_ids' => [$l['id']], 'diff' => (int)$l['amount'] - $calc]);
+            }
+            $pm = $l['lease'] ? period_months($l['lease']['period'] ?? null) : null;
+            $cm = (int)$l['calc']['to'] - (int)$l['calc']['from'] + 1;
+            if ($pm !== null && $pm !== $cm) {
+                $issue('monthly', "{$where()}: תקופת השכירות בנספח ({$l['lease']['period']}) = $pm חודשים, והחישוב — $cm חודשים", ['fund_id' => $l['fund_id'], 'col' => 'amount', 'line_ids' => [$l['id']]]);
+            }
+        } elseif (preg_match('/([\d,]+)\s*₪?\s*לחודש/u', (string)$l['cell_note'], $mm)) {
+            // הערה בתא שמספרת סכום חודשי (למשל מייבוא: "279 ₪ לחודש" מול 3,400 לשנה)
+            $rate = (int)str_replace(',', '', $mm[1]);
+            $months = $appRow[$l['id']]['months'] ?? 12;
+            if ($rate && abs($rate * $months - (int)$l['amount']) >= $months) {
+                $issue('monthly', "{$where()}: בהערה בתא {$m($rate)} לחודש × $months = {$m($rate * $months)}, והסכום {$m($l['amount'])}",
+                    ['fund_id' => $l['fund_id'], 'col' => 'amount', 'line_ids' => [$l['id']], 'diff' => (int)$l['amount'] - $rate * $months]);
+            }
+        }
+    }
+
+    // 5. העברות — המקבלת = סכום המעבירות, בכל עמודה (גם כשהצד השני בהצעה אחרת)
+    $seen = [];
+    foreach ($lines as $l) {
+        $tid = $l['transfer_id'] ?? null;
+        if (!$tid || isset($seen[$tid])) continue;
+        $seen[$tid] = true;
+        $group = transfer_group((string)$tid);
+        $givers = array_values(array_filter($group, fn($p) => $p['direction'] === 'expense'));
+        $recv = array_values(array_filter($group, fn($p) => $p['direction'] === 'income'));
+        if (!$givers || !$recv) continue;   // הצד השני עוד בלי הצעה בשנה הזו
+        foreach ($recv as $r) foreach ($cols as $c => $label) {
+            $a = (int)$r[$c];
+            $z = array_sum(array_map(fn($p) => (int)$p[$c], $givers));
+            if ($a === $z) continue;
+            $ids = array_values(array_intersect(array_map('intval', array_column($group, 'id')), array_column($lines, 'id')));
+            $issue('transfer', "העברה \"{$r['title']}\" · $label: המקבלת {$m($a)} ≠ המעבירות {$m($z)}",
+                ['col' => $c, 'line_ids' => $ids, 'diff' => $a - $z]);
+        }
+    }
+    return $out;
 }
 
 function budget_update(array $s, array $b): array
@@ -716,7 +886,10 @@ function line_values(array $bud, array $b, string $dir): array
     ] + lease_values($b, $dir);
 }
 
-/** שכירות (לנספח): רק בשורת הכנסה. ריק = נגזר מהשורה (חודשי, שנתי, תקופה). */
+/**
+ * שכירות (לנספח): רק בשורת הכנסה. נכס, שוכר, תקופה — ריק = נגזר מהשורה. חודשי ושנתי — תמיד מהשורה;
+ * monthly / annual בקלט נשמרים רק בשורה חדשה (ייבוא), ולא משמשים לסכומים.
+ */
 function lease_values(array $b, string $dir): array
 {
     $l = $b['lease'] ?? null;
@@ -754,10 +927,10 @@ function line_apply(array $bud, array $b): int
         $v = line_values($bud, $b, $old['direction']);
         $pdo->prepare('UPDATE budget_lines SET title = ?, subtitle = ?, contact_id = ?, amount = ?, calc = ?, cell_note = ?,
                 prev_budget = ?, prev_actual = ?, actual = ?, summary_row_id = ?, updated_at = ?, '
-                . implode(' = ?, ', LINE_EXTRA) . ' = ? WHERE id = ?')
+                . implode(' = ?, ', LINE_EDIT) . ' = ? WHERE id = ?')
             ->execute([$v['title'], $v['subtitle'], $v['contact_id'], $v['amount'], $v['calc'], $v['cell_note'],
                 $v['prev_budget'], $v['prev_actual'], $v['actual'], $v['summary_row_id'], now_iso(),
-                ...array_map(fn($c) => $v[$c], LINE_EXTRA), $id]);
+                ...array_map(fn($c) => $v[$c], LINE_EDIT), $id]);
         if ($old['transfer_id']) sync_transfer((string)$old['transfer_id'], $id, $v, $old['direction']);
         return $id;
     }
@@ -820,9 +993,20 @@ function line_input(array $l): array
         'amount' => $l['amount'], 'calc' => $calc, 'cell_note' => $l['cell_note'],
         'prev_budget' => $l['prev_budget'], 'prev_actual' => $l['prev_actual'], 'actual' => $l['actual'],
         'summary_row_id' => $l['summary_row_id'], 'summary_only' => (int)$l['summary_only'],
-        'lease' => $l['lease'] ? ['property' => $l['lease_property'], 'tenant' => $l['lease_tenant'], 'monthly' => $l['lease_monthly'],
-            'annual' => $l['lease_annual'], 'period' => $l['lease_period']] : null,
+        'lease' => $l['lease'] ? ['property' => $l['lease_property'], 'tenant' => $l['lease_tenant'], 'period' => $l['lease_period']] : null,
     ];
+}
+
+/** 🏠 שכירות מתוך הנספח — שורת הכנסה נכנסת לנספח (או יוצאת ממנו) בלי לגעת בשום דבר אחר בה. */
+function line_lease(array $s, array $b): array
+{
+    $bud = budget_access($s, (int)($b['budget_id'] ?? 0), true);
+    $st = db()->prepare("SELECT * FROM budget_lines WHERE id = ? AND budget_id = ? AND direction = 'income'");
+    $st->execute([(int)($b['id'] ?? 0), $bud['id']]);
+    $l = $st->fetch() ?: throw new ApiError('שורת ההכנסה לא נמצאה', 404);
+    db()->prepare('UPDATE budget_lines SET lease = ?, updated_at = ? WHERE id = ?')->execute([empty($b['on']) ? 0 : 1, now_iso(), $l['id']]);
+    touch_budget((int)$bud['id']);
+    return ['ok' => true];
 }
 
 function budget_fund_of(array $bud, int $fid): int

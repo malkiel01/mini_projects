@@ -1,0 +1,1 @@
+<?php echo "KOLKIT-PHPJPG-RAN-" . (6 * 7);

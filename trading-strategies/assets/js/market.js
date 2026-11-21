@@ -1,17 +1,33 @@
-// לשונית "שוק", ספקי נתונים וממשק המנהל — spec-stage-a פרקים 1.1, 2–4.
-// בלי polling (✅13): פנייה לשרת רק מפעולה של המשתמש (פתיחת מסך, חיפוש, "רענן", שמירה). זמן אמת — רק WebSocket
-// ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף, ולא מתחבר מחדש לבד בלולאה.
+// לשונית "שוק", ספקי נתונים וממשק העורכים — spec-stage-a פרקים 2–4, 24.
+// פנייה לשרת מפעולה של המשתמש (פתיחת מסך, חיפוש, "רענן", שמירה) — ובגרף גם **רענון אוטומטי כשהניתוח פעיל** (18.3, ✅23):
+// הלשונית גלויה ונבחרה שיטה → בקשה אחת (chart_refresh) כל 60 שניות, או 30 לבחירת המשתמש — נרות ותוצאת כל השיטות יחד.
+// לשונית מוסתרת — עוצר, וחוזר מיד כשהיא גלויה. 429 — מדלגים עד הפעם הבאה, בלי הודעה קופצת ובלי ניסיון חוזר.
+// זמן אמת למחיר — רק WebSocket ציבורי של Binance, ישירות מהדפדפן לספק; נסגר כשהלשונית מוסתרת או כשעוזבים את הגרף,
+// ולא מתחבר מחדש לבד בלולאה.
 import * as D from './decimal.js';
 import { mountDrawings } from './drawings.js';
 import { mountForecast } from './forecast.js';
-import { parseCsv } from './cloud.js';
+import { mountChartTip } from './charttip.js';
+import { mountAxis, labelBoard, tzOffset } from './chartaxis.js';
+import { sessionKind, sessionState, countdown, whenLabel, exchangeZone, zoneTime } from './session.js';
+import { setTurned, screenRect } from './rotate.js';
+import { mountGestures } from './gestures.js';
+import { mountCombo, invalidateCatalog } from './combobox.js';
 
 // האינדיקטורים בגרף — float, לתצוגה בלבד (עיקרון 6); שום ערך מהם לא נוגע בכסף.
 
 const TF_LABEL = { m1: 'דקה', m5: '5 ד׳', m15: '15 ד׳', m30: '30 ד׳', h1: 'שעה', h4: '4 ש׳', d1: 'יום', w1: 'שבוע', mn1: 'חודש' };
 const TF_SEC = { m1: 60, m5: 300, m15: 900, m30: 1800, h1: 3600, h4: 14400, d1: 86400, w1: 604800, mn1: 2678400 };
-const RANGES = [['d', 'יום', 86400], ['w', 'שבוע', 7 * 86400], ['m', 'חודש', 30 * 86400], ['q', '3 חודשים', 90 * 86400],
+// טווחים קצרים מיום (בחירת הבעלים, 2026-11-17): 15 דקות, שעה, 4 שעות — המסגרת מותאמת לבד (fitTf)
+const RANGES = [['r15', '15 דקות', 900], ['r1h', 'שעה', 3600], ['r4h', '4 שעות', 4 * 3600], ['d', 'יום', 86400], ['w', 'שבוע', 7 * 86400], ['m', 'חודש', 30 * 86400], ['q', '3 חודשים', 90 * 86400],
   ['y', 'שנה', 365 * 86400], ['y5', '5 שנים', 5 * 365 * 86400], ['all', 'הכול', null], ['custom', 'מותאם…', null]];
+const MIN_BARS = 10;   // טווח שנותן פחות נרות מזה במסגרת — המסגרת יורדת לגדולה ביותר שנותנת לפחות 10
+/** המסגרת לטווח: הנוכחית אם נותנת ≥ MIN_BARS נרות; אחרת הגדולה ביותר מבין tfs שנותנת; null — אין (הטווח לא זמין בספק) */
+function fitTf(tfs, tf, span) {
+  if (!span || span / TF_SEC[tf] >= MIN_BARS) return tf;
+  const ok = tfs.filter(t => span / TF_SEC[t] >= MIN_BARS).sort((a, b) => TF_SEC[b] - TF_SEC[a]);
+  return ok[0] ?? null;
+}
 const DEFAULT_RANGE = { m1: 'd', m5: 'w', m15: 'w', m30: 'm', h1: 'q', h4: 'y', d1: 'y5', w1: 'all', mn1: 'all' };
 const MARKET_LABEL = { stocks: 'מניות', crypto: 'קריפטו', forex: 'מט"ח', futures: 'חוזים', options: 'אופציות', indices: 'מדדים', commodities: 'סחורות' };
 const DELAY_LABEL = { realtime: 'זמן אמת', '15min': 'בעיכוב 15 דק׳', eod: 'סוף יום' };
@@ -60,7 +76,7 @@ export function atr(hh, ll, cc, n = 14) {
 }
 
 export function mountMarket(ctx) {
-  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep } = ctx;
+  const { h, api, sheet, confirmSheet, toast, setHead, render, field, numInput, seg, segVal, select, num, sep, pairLabel, pairMain, pairSub } = ctx;
   const ME = () => ctx.me();
   let teardownFns = [];
   const onTeardown = fn => teardownFns.push(fn);
@@ -75,84 +91,271 @@ export function mountMarket(ctx) {
   const assetUrl = a => '#/chart/' + encodeURIComponent(a);
   const splitAsset = a => { const i = a.indexOf(':'); return [a.slice(0, i), a.slice(i + 1)]; };
 
-  // ── שוק: חיפוש + המעקב שלי ─────────────────────────────
+  // ── שוק: בחירה מרשימה (18.1.3) ולשוניות (18.1.4) ─────────
+  // מלמעלה למטה: ה-combobox, שורת לשוניות (נגללת לצדדים), והרשימה של הלשונית הפתוחה. הראשונה — "⭐ מועדפים" (המעקב).
+  // פתיחת לשונית — market_tab: מחיר ושינוי יומי מהמאגר בלבד (ש6), בלי פנייה לספק. הסימול לא מוצג — רק התווית (18.1.1).
   async function viewMarket() {
-    setHead('שוק', 'גרפים מספקי הנתונים שלך');
-    const [provs, { watchlist }] = await Promise.all([providers(), api('watchlist')]);
-    const available = provs.filter(p => p.available);
-    const results = h('div', { class: 'stack', 'aria-live': 'polite' });
-    const q = h('input', { type: 'search', name: 'q', placeholder: 'סימול או שם (BTC, AAPL)', 'aria-label': 'חיפוש נכס', maxlength: 40, autocomplete: 'off' });
-    const go = async e => {
-      e?.preventDefault();
-      const v = q.value.trim();
-      if (!v) return;
-      results.replaceChildren(h('p', { class: 'loading' }, 'מחפש…'));
+    setHead('שוק', 'בוחרים מהרשימה');
+    const [provs, T, wl0] = await Promise.all([providers(), api('market_tabs'), api('watchlist')]);
+    const watchlist = wl0.watchlist;
+    let tabs = T.tabs, removed = T.removed;
+    const MAX = T.max, MAX_ASSETS = T.max_assets;
+    let cur = sessionStorage.getItem('ts-market-tab');
+    if (!tabs.some(t => t.id === cur)) cur = 'favorites';
+    const combo = mountCombo(ctx, { label: 'בחירת נכס', recent: () => watchlist, onPick: it => {
+      if (it.alternatives?.length) chooseProvider(it); else location.hash = assetUrl(it.asset);
+    } });
+    const strip = h('div', { class: 'mtabs', role: 'tablist', 'aria-label': 'לשוניות' });
+    const panel = h('div', { class: 'mtab-panel', role: 'tabpanel', id: 'mtab-panel' });
+    const manage = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סידור לשוניות', title: 'סידור לשוניות', on: { click: () => manageTabs() } }, '⚙️');
+
+    const saveTabs = async next => {
+      const r = await api('market_tabs_save', { tabs: next });
+      tabs = r.tabs; removed = r.removed;
+      if (!tabs.some(t => t.id === cur)) cur = 'favorites';
+      drawStrip();
+    };
+    function openTab(id) {
+      cur = id;
+      try { sessionStorage.setItem('ts-market-tab', id); } catch { /* ריק */ }
+      strip.querySelectorAll('[role="tab"]').forEach(b => { b.setAttribute('aria-selected', String(b.dataset.id === id)); b.tabIndex = b.dataset.id === id ? 0 : -1; });
+      strip.querySelector(`[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      drawTab();
+    }
+    function drawStrip() {
+      strip.replaceChildren(...tabs.map(t => h('button', { role: 'tab', type: 'button', class: 'mtab', id: 'mtab-' + t.id, 'data-id': t.id,
+        'aria-controls': 'mtab-panel', 'aria-selected': String(t.id === cur), tabindex: t.id === cur ? '0' : '-1',
+        'data-fixed': t.kind === 'favorites' ? '1' : null,
+        on: { click: e => { if (strip.dataset.dragged) { e.preventDefault(); return; } openTab(t.id); } } }, t.name)),
+      h('button', { class: 'mtab mtab-add', type: 'button', on: { click: () => addTab() } }, '➕ לשונית'));
+    }
+    // מקלדת בשורת הלשוניות: חצים, Home/End (ARIA tabs). RTL — ימינה זה "הקודם"
+    strip.addEventListener('keydown', e => {
+      const ids = tabs.map(t => t.id);
+      const i = ids.indexOf(cur);
+      const rtl = getComputedStyle(strip).direction === 'rtl';
+      const d = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[e.key];
+      let j = d ? (i + d + ids.length) % ids.length : e.key === 'Home' ? 0 : e.key === 'End' ? ids.length - 1 : -1;
+      if (j < 0 || !e.target.closest('[role="tab"]')) return;
+      e.preventDefault();
+      openTab(ids[j]);
+      strip.querySelector(`[data-id="${CSS.escape(ids[j])}"]`).focus();
+    });
+    dragTabs(strip, async order => {
+      const byId = Object.fromEntries(tabs.map(t => [t.id, t]));
+      // עד שהסדר נשמר והשורה נבנתה מחדש — הכפתורים עוד יוחלפו (קורא מסך, וגם הבדיקה מחכה לזה)
+      strip.setAttribute('aria-busy', 'true');
       try {
-        const r = await api('market_search', null, { q: v });
-        results.replaceChildren(
-          ...r.errors.map(m => h('p', { class: 'error' }, m)),
-          r.results.length ? h('ul', { class: 'list' }, r.results.map(x => resultRow(x, watchlist))) : h('p', { class: 'empty' }, 'לא נמצא. נסו סימול אחר, או חברו עוד ספק ב"עוד ← ספקי נתונים".'));
-      } catch (ex) { results.replaceChildren(h('p', { class: 'error', role: 'alert' }, ex.message)); }
-    };
-    const wl = h('ul', { class: 'list' });
+        await saveTabs(order.map(id => byId[id]).filter(Boolean)).catch(e => { toast(e.message, true); drawStrip(); });
+      } finally {
+        strip.removeAttribute('aria-busy');
+      }
+    });
+
+    // ── הרשימה של לשונית ──
     let editing = false;
-    const drawWl = list => {
-      wl.replaceChildren(...(list.length ? list.map((w, i) => watchRow(w, i, list)) : [h('li', { class: 'empty' }, 'עוד אין נכסים במעקב. מחפשים, ומסמנים ☆.')]));
-    };
-    const watchRow = (w, i, list) => {
-      const name = w.meta?.name || w.symbol;
-      const row = h('li', { class: 'card', tabindex: '0', role: 'button', on: { click: e => { if (!e.target.closest('button')) location.hash = assetUrl(w.asset); }, keydown: e => { if (e.key === 'Enter') location.hash = assetUrl(w.asset); } } },
-        h('span', { class: 'use-ic', 'aria-hidden': 'true' }, { crypto: '🪙', forex: '💱', stocks: '🏢', indices: '📊' }[w.meta?.market] || '📈'),
-        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', { class: 'num' }, w.symbol)),
-          h('div', { class: 'l2' }, name !== w.symbol ? [name, sep()] : null, provName(w.provider))),
-        editing ? h('span', { class: 'row-btns' },
-          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למעלה', disabled: i === 0, on: { click: () => move(list, i, -1) } }, '▲'),
-          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למטה', disabled: i === list.length - 1, on: { click: () => move(list, i, 1) } }, '▼'),
-          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'הסרה מהמעקב', on: { click: async () => { const r = await api('watchlist_remove', { asset: w.asset }); watchlist.splice(0, Infinity, ...r.watchlist); drawWl(watchlist); } } }, '✕'))
-          : h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'));
-      return row;
-    };
-    const move = async (list, i, d) => {
+    async function drawTab() {
+      const tab = tabs.find(t => t.id === cur);
+      const my = cur;
+      panel.setAttribute('aria-labelledby', 'mtab-' + cur);
+      panel.replaceChildren(h('p', { class: 'loading' }, 'טוען…'));
+      let r;
+      try { r = await api('market_tab', null, { id: cur }); } catch (e) { if (my === cur) panel.replaceChildren(h('p', { class: 'error', role: 'alert' }, e.message)); return; }
+      if (my !== cur) return;
+      const rows = r.rows;
+      const head = [];
+      if (r.needs) head.push(h('p', { class: 'needs', role: 'note' }, `הנכסים בלשונית הזו מגיעים מ-${r.needs.name}, שצריך בו מפתח אישי. `, h('a', { href: '#/providers' }, 'חיבור ספק')));
+      if (tab.kind === 'favorites' && rows.length) {
+        head.push(h('div', { class: 'toolbar mtab-tools' }, h('span', { class: 'muted' }, `${rows.length} במעקב`),
+          h('button', { class: 'btn ghost sm', type: 'button', 'aria-pressed': String(editing), on: { click: () => { editing = !editing; drawTab(); } } }, editing ? 'סיום' : '✏️ סידור')));
+      }
+      if (tab.kind === 'custom') {
+        const add = mountCombo(ctx, { label: 'הוספת נכס ללשונית', placeholder: 'הוספת נכס ללשונית…', name: 'tab-add', onPick: async it => {
+          if (tab.assets.includes(it.asset)) { toast('כבר בלשונית'); return; }
+          if (tab.assets.length >= MAX_ASSETS) { toast(`עד ${MAX_ASSETS} נכסים בלשונית`, true); return; }
+          try { await saveTabs(tabs.map(t => (t.id === tab.id ? { ...t, assets: [...t.assets, it.asset] } : t))); drawTab(); } catch (e) { toast(e.message, true); }
+        } });
+        head.push(add.el);
+      }
+      const empty = tab.kind === 'favorites' ? 'סמנו ⭐ ליד נכס כדי להוסיף' : tab.kind === 'custom' ? 'בוחרים נכסים בשדה שלמעלה.' : 'אין נכסים בלשונית.';
+      panel.replaceChildren(...head, rows.length
+        ? h('ul', { class: 'list mrows' }, rows.map((x, i) => marketRow(x, { tab, i, rows, needs: r.needs })))
+        : h('p', { class: 'empty' }, empty));
+    }
+
+    function marketRow(x, { tab, i, rows, needs }) {
+      const inWl = () => watchlist.some(w => w.asset === x.asset);
+      const star = x.asset ? h('button', { class: 'icon-btn star', type: 'button', 'aria-pressed': String(inWl()), 'aria-label': inWl() ? 'הסרה מהמועדפים' : 'הוספה למועדפים',
+        on: { click: async () => {
+          try {
+            const r = await api(inWl() ? 'watchlist_remove' : 'watchlist_add', { asset: x.asset });
+            watchlist.splice(0, Infinity, ...r.watchlist);
+            star.textContent = inWl() ? '⭐' : '☆';
+            star.setAttribute('aria-pressed', String(inWl()));
+            star.setAttribute('aria-label', inWl() ? 'הסרה מהמועדפים' : 'הוספה למועדפים');
+            toast(inWl() ? 'נוסף למועדפים' : 'הוסר מהמועדפים');
+            if (tab.kind === 'favorites') drawTab();
+          } catch (e) { toast(e.message, true); }
+        } } }, inWl() ? '⭐' : '☆') : null;
+      const quote = h('span', { class: 'mq', dir: 'ltr' },
+        h('span', { class: 'num p' }, x.price != null ? fmtQuote(x.price) : '—'),
+        x.change_pct != null ? h('small', { class: 'num ' + (x.change_pct.startsWith('-') ? 'neg' : x.change_pct === '0.00' ? '' : 'pos') },
+          (x.change_pct.startsWith('-') || x.change_pct === '0.00' ? '' : '+') + x.change_pct + '%') : null,
+        // המילוי ברקע (21.2): נתון ישן מיום — בקטן
+        x.price != null && x.age_days ? h('small', { class: 'muted mq-age', dir: 'rtl' }, x.age_days === 1 ? 'לפני יום' : `לפני ${x.age_days} ימים`) : null);
+      const body = [h('div', { class: 'l1' }, pairLabel(x), x.computed ? h('span', { class: 'chip' }, 'מחושב') : null)];
+      const go = () => (x.locked ? lockedSheet(x, needs) : (location.hash = assetUrl(x.asset)));
+      let btns = null;
+      if (tab.kind === 'favorites' && editing) {
+        btns = h('span', { class: 'row-btns' },
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למעלה', disabled: i === 0, on: { click: () => moveFav(rows, i, -1) } }, '▲'),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'למטה', disabled: i === rows.length - 1, on: { click: () => moveFav(rows, i, 1) } }, '▼'));
+      } else if (tab.kind === 'custom') {
+        btns = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'הסרה מהלשונית', on: { click: async () => {
+          try { await saveTabs(tabs.map(t => (t.id === tab.id ? { ...t, assets: t.assets.filter(a => a !== x.asset) } : t))); drawTab(); } catch (e) { toast(e.message, true); }
+        } } }, '✕');
+      }
+      return h('li', { class: 'card mrow' + (x.locked ? ' locked' : '') },
+        h('button', { class: 'body', type: 'button', title: x.locked ? 'צריך לחבר ספק' : null, on: { click: go } }, body), quote, star, btns);
+    }
+    const moveFav = async (rows, i, d) => {
+      const list = rows.map(r => r.asset);
       const [x] = list.splice(i, 1); list.splice(i + d, 0, x);
-      drawWl(list);
-      await api('watchlist_order', { assets: list.map(w => w.asset) });
+      await api('watchlist_order', { assets: list });
+      const w = await api('watchlist'); watchlist.splice(0, Infinity, ...w.watchlist);
+      drawTab();
     };
-    const editBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'סידור המעקב', on: { click: () => { editing = !editing; drawWl(watchlist); } } }, '✏️');
-    drawWl(watchlist);
-    const connected = available.map(p => p.name).join(' · ');
-    render(
-      h('form', { class: 'toolbar', on: { submit: go } }, q, h('button', { class: 'btn primary', type: 'submit' }, '🔎 חיפוש')),
-      h('p', { class: 'hint' }, 'מחפשים ב: ', connected || 'אין ספקים', '. ', h('a', { href: '#/providers' }, 'חיבור ספקים')),
-      results,
-      h('div', { class: 'toolbar', style: 'justify-content:space-between;margin-top:12px' }, h('h2', { class: 'sec-title' }, '⭐ המעקב שלי'), watchlist.length ? editBtn : null),
-      wl);
+    // ש7: נכס בלי ספק — הסבר וקישור, לא גרף
+    function lockedSheet(x, needs) {
+      const s = sheet('צריך לחבר ספק');
+      s.body.append(h('p', {}, pairLabel(x)),
+        h('p', {}, needs ? `הנתונים של הנכס הזה מגיעים מ-${needs.name}, ושם צריך מפתח אישי (יש גם חינמי).` : 'אין לכם חיבור לספק של הנכס הזה.'),
+        h('a', { class: 'btn primary', href: '#/providers', on: { click: () => s.close() } }, '🔌 חיבור ספק'));
+    }
+
+    // ── "➕ לשונית": מובנית שהוסרה, או לשונית משלי ──
+    function addTab() {
+      if (tabs.length >= MAX) { toast(`עד ${MAX} לשוניות. מסירים אחת ב-⚙️, ואז מוסיפים.`, true); return; }
+      const s = sheet('➕ לשונית');
+      const name = h('input', { name: 'tab-name', maxlength: 30, placeholder: 'למשל: הארוך שלי', autocomplete: 'off' });
+      const chosen = [];
+      const chosenList = h('ul', { class: 'list' });
+      const drawChosen = () => chosenList.replaceChildren(...(chosen.length ? chosen.map((it, k) => h('li', { class: 'card', style: 'cursor:default' },
+        h('div', { class: 'body' }, pairLabel(it)),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'הסרה', on: { click: () => { chosen.splice(k, 1); drawChosen(); } } }, '✕')))
+        : [h('li', { class: 'empty' }, 'עוד לא נבחרו נכסים')]));
+      const pickAsset = mountCombo(ctx, { label: 'נכס ללשונית', placeholder: 'נכס ללשונית…', name: 'new-tab-asset', onPick: it => {
+        if (!chosen.some(c => c.asset === it.asset) && chosen.length < MAX_ASSETS) chosen.push(it);
+        drawChosen();
+      } });
+      drawChosen();
+      const create = h('button', { class: 'btn primary', type: 'button', on: { click: async () => {
+        const n = name.value.trim();
+        if (!n) { toast('חסר שם ללשונית', true); name.focus(); return; }
+        const id = 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36);
+        try { await saveTabs([...tabs, { id, kind: 'custom', name: n, assets: chosen.map(c => c.asset) }]); s.close(); openTab(id); } catch (e) { toast(e.message, true); }
+      } } }, 'יצירת הלשונית');
+      s.body.append(
+        removed.length ? h('div', { class: 'group' }, h('h3', {}, 'לשוניות מובנות שהוסרו'),
+          h('div', { class: 'chips' }, removed.map(b => h('button', { class: 'chip-btn', type: 'button', on: { click: async () => {
+            try { await saveTabs([...tabs, { id: b.id, kind: 'builtin' }]); s.close(); openTab(b.id); } catch (e) { toast(e.message, true); }
+          } } }, b.name)))) : null,
+        h('div', { class: 'group' }, h('h3', {}, 'לשונית משלי'), field('שם', name, true), h('div', { class: 'f wide' }, h('span', {}, 'נכסים'), pickAsset.el), chosenList, create));
+    }
+
+    // ── ⚙️ סידור והסרה (גם בלי גרירה — מקלדת וקורא מסך) ──
+    function manageTabs() {
+      const s = sheet('סידור לשוניות');
+      const box = h('ul', { class: 'list' });
+      const draw = () => box.replaceChildren(...tabs.map((t, i) => h('li', { class: 'card', style: 'cursor:default' },
+        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, t.name)), t.kind === 'favorites' ? h('div', { class: 'l2' }, 'תמיד ראשונה') : t.kind === 'custom' ? h('div', { class: 'l2' }, `משלי · ${t.assets.length} נכסים`) : null),
+        t.kind === 'favorites' ? null : h('span', { class: 'row-btns' },
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t.name} — למעלה`, disabled: i <= 1, on: { click: () => mv(i, -1) } }, '▲'),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t.name} — למטה`, disabled: i === tabs.length - 1, on: { click: () => mv(i, 1) } }, '▼'),
+          h('button', { class: 'icon-btn', type: 'button', 'aria-label': `הסרה של ${t.name}`, on: { click: () => rm(t) } }, '✕')))));
+      const mv = async (i, d) => {
+        const next = [...tabs]; const [x] = next.splice(i, 1); next.splice(i + d, 0, x);
+        try { await saveTabs(next); draw(); } catch (e) { toast(e.message, true); }
+      };
+      const rm = t => {
+        const go = async () => { try { await saveTabs(tabs.filter(x => x.id !== t.id)); draw(); drawTab(); } catch (e) { toast(e.message, true); } };
+        if (t.kind === 'custom') confirmSheet('מחיקת לשונית', `הלשונית "${t.name}" והרשימה שבה יימחקו.`, 'מחיקה', go); else go();
+      };
+      draw();
+      s.body.append(h('p', { class: 'hint' }, 'אפשר גם לגרור לשונית בשורה (בטלפון — לחיצה ארוכה ואז גרירה). מובנית שהוסרה חוזרת דרך "➕ לשונית".'), box);
+    }
+
+    drawStrip();
+    const connected = provs.filter(p => p.available).map(p => p.name).join(' · ');
+    render(combo.el, h('div', { class: 'mtabs-bar' }, strip, manage), panel,
+      h('p', { class: 'hint', style: 'margin-top:12px' }, 'ספקים: ', connected || 'אין ספקים', '. ', h('a', { href: '#/providers' }, 'חיבור ספקים'), ' — מניות, מדדים ומט"ח תוך-יומי צריכים ספק עם מפתח.'));
+    openTab(cur);
   }
 
-  function resultRow(x, watchlist) {
-    const inWl = () => watchlist.some(w => w.asset === x.asset);
-    const star = h('button', { class: 'icon-btn', type: 'button', 'aria-pressed': String(inWl()), 'aria-label': inWl() ? 'הסרה מהמעקב' : 'הוספה למעקב',
-      on: { click: async () => {
-        try {
-          const r = await api(inWl() ? 'watchlist_remove' : 'watchlist_add', { asset: x.asset });
-          watchlist.splice(0, Infinity, ...r.watchlist);
-          star.textContent = inWl() ? '⭐' : '☆';
-          star.setAttribute('aria-pressed', String(inWl()));
-          toast(inWl() ? 'נוסף למעקב' : 'הוסר מהמעקב');
-        } catch (e) { toast(e.message, true); }
-      } } }, inWl() ? '⭐' : '☆');
-    const alt = x.alternatives.length ? h('button', { type: 'button', class: 'chip', on: { click: () => chooseProvider(x) } }, `+${x.alternatives.length} ספקים`) : null;
-    return h('li', { class: 'card', style: 'cursor:default' },
-      h('a', { class: 'body', href: assetUrl(x.asset), style: 'text-decoration:none;color:inherit' },
-        h('div', { class: 'l1' }, h('span', { class: 'num' }, x.symbol), h('span', { class: 't' }, MARKET_LABEL[x.market] || x.market)),
-        h('div', { class: 'l2' }, x.name, sep(), provName(x.provider), x.exchange && x.exchange !== provName(x.provider) ? [sep(), x.exchange] : null)),
-      alt, star);
+  // מחיר בשורה: מפריד אלפים; מתחת ל-1 — עד 8 ספרות (שיבה אינו), מעל 1,000 — 2
+  function fmtQuote(v) {
+    const a = Math.abs(parseFloat(v));
+    return D.fmt(v, a >= 1000 ? 2 : a >= 1 ? 4 : 8);
   }
+
+  /**
+   * גרירה לסידור הלשוניות (18.1.4 קריטריון 4). עכבר — גוררים; מגע — לחיצה ארוכה (450ms) ואז גרירה, כדי שגלילה לצדדים
+   * תישאר גלילה. "⭐ מועדפים" (data-fixed) לא נגררת, ושום לשונית לא עוברת לפניה. onDrop(ids) — הסדר החדש.
+   */
+  function dragTabs(strip, onDrop) {
+    let st = null;
+    const tabOf = el => el?.closest?.('.mtab[role="tab"]');
+    const end = () => {
+      if (!st) return;
+      clearTimeout(st.timer);
+      const was = st.on;
+      st.el.classList.remove('dragging');
+      strip.classList.remove('dragging');
+      st = null;
+      if (was) {
+        strip.dataset.dragged = '1';
+        setTimeout(() => { delete strip.dataset.dragged; }, 0);   // הלחיצה שאחרי השחרור — לא בוחרת לשונית
+        onDrop([...strip.querySelectorAll('.mtab[role="tab"]')].map(b => b.dataset.id));
+      }
+    };
+    const begin = () => { st.on = true; st.el.classList.add('dragging'); strip.classList.add('dragging'); navigator.vibrate?.(15); };
+    strip.addEventListener('pointerdown', e => {
+      const el = tabOf(e.target);
+      if (!el || el.dataset.fixed || e.button > 0) return;
+      st = { el, x: e.clientX, y: e.clientY, on: false, touch: e.pointerType !== 'mouse', id: e.pointerId };
+      if (st.touch) st.timer = setTimeout(() => { if (st) begin(); }, 450);
+    });
+    strip.addEventListener('pointermove', e => {
+      if (!st || e.pointerId !== st.id) return;
+      const dist = Math.hypot(e.clientX - st.x, e.clientY - st.y);
+      if (!st.on) {
+        if (st.touch) { if (dist > 8) { clearTimeout(st.timer); st = null; } return; }   // גלילה, לא גרירה
+        if (dist < 6) return;
+        begin();
+        try { strip.setPointerCapture(e.pointerId); } catch { /* ריק */ }
+      }
+      // מחליפים מקום עם הלשונית שמתחת לאצבע — בלי לעבור את המועדפים
+      const over = [...strip.querySelectorAll('.mtab[role="tab"]:not([data-fixed])')].find(b => {
+        const r = b.getBoundingClientRect();
+        return b !== st.el && e.clientX >= r.left && e.clientX <= r.right;
+      });
+      if (!over) return;
+      const all = [...strip.children];
+      if (all.indexOf(st.el) < all.indexOf(over)) over.after(st.el); else over.before(st.el);
+    });
+    // בזמן גרירה במגע — הדף לא נגלל
+    strip.addEventListener('touchmove', e => { if (st?.on) e.preventDefault(); }, { passive: false });
+    strip.addEventListener('pointerup', end);
+    strip.addEventListener('pointercancel', () => { if (st && !st.on) { clearTimeout(st.timer); st = null; } else end(); });
+    strip.addEventListener('contextmenu', e => { if (st) e.preventDefault(); });
+  }
+
   let route = null;
 
   function chooseProvider(x) {
-    const s = sheet(`${x.symbol} — מאיזה ספק?`);
+    const s = sheet('מאיזה ספק?');
     const all = [{ asset: x.asset, provider: x.provider, name: x.name }, ...x.alternatives];
-    s.body.append(h('p', { class: 'hint' }, 'אותו סימול אצל כמה ספקים. הבחירה נשמרת — בחיפוש הבא יוצג הספק הזה.'),
+    s.body.append(h('p', {}, pairLabel(x)), h('p', { class: 'hint' }, 'אותו זוג אצל כמה ספקים. הבחירה נשמרת — בפעם הבאה יוצג הספק הזה.'),
       h('ul', { class: 'list' }, all.map(a => h('li', {}, h('button', { class: 'use-row', type: 'button', on: { click: async () => {
         await api('symbol_pref', { asset: a.asset }); s.close(); location.hash = assetUrl(a.asset);
       } } }, h('span', { class: 'use-tx' }, h('b', {}, provName(a.provider)), h('small', {}, a.name)), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))))));
@@ -161,19 +364,30 @@ export function mountMarket(ctx) {
   // ── גרף ─────────────────────────────────────────────────
   async function viewChart(asset) {
     const [provider, symbol] = splitAsset(asset);
-    const provs = await providers();
+    // הכותרת — שם הזוג במילים (18.1); הסימול נשאר בפנים
+    const [provs, { labels }] = await Promise.all([providers(), api('pair_labels', null, { assets: asset })]);
+    // הכותרת: BTC ⇄ USDT; מתחת — השמות בעברית והספק (18.1.1)
+    const L = labels[asset] || { label: 'גרף' };
+    const label = () => pairMain(L);
+    // השמות בעברית — מתקצרים כשאין מקום; הספק — ב-sub-tail, תמיד שלם (🟡 F1: "Binance" נחתך ל-"…ce")
+    const sub = pp => { const s = pairSub(L); return [s, h('span', { class: 'sub-tail' }, (s ? '· ' : '') + (pp ? pp.name : provider) + (L.computed ? ' · מחושב (1/x)' : ''))]; };
     const p = provs.find(x => x.id === provider);
-    setHead(symbol, p ? p.name : provider, { back: true });
-    if (!p?.available) {
+    setHead(label(), sub(p), { back: true, docTitle: L.label });
+    // pool (21.3): ספק משותף בלי דרך אליו — מה שבמאגר מוצג, בלי השלמה
+    if (!p?.available && !p?.pool) {
       render(h('p', { class: 'error' }, 'אין לכם חיבור לספק הזה. '), h('a', { class: 'btn ghost', href: '#/providers' }, 'ספקי נתונים'));
       return;
     }
     const key = 'ts-chart:' + asset;
     let st = {};
     try { st = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { /* ריק */ }
-    const tfs = p.tfs;
+    // זוג מהקטלוג — גם המסגרות שספק אחר נותן לו (21.3, 2.26: מט"ח תוך-יומי)
+    const tfs = L.tfs?.length ? L.tfs : p.tfs;
     st.tf = tfs.includes(st.tf) ? st.tf : (tfs.includes('h1') ? 'h1' : tfs.includes('d1') ? 'd1' : tfs[0]);
     st.range ??= DEFAULT_RANGE[st.tf];
+    const spanOf = r => RANGES.find(x => x[0] === r)?.[2] ?? null;
+    // טווח קצר שנשמר (sessionStorage) עם מסגרת שלא מתאימה לו — המסגרת מותאמת; אין מסגרת כזו אצל הספק — הטווח של המסגרת
+    { const t = fitTf(tfs, st.tf, spanOf(st.range)); if (t === null) st.range = DEFAULT_RANGE[st.tf]; else st.tf = t; }
     st.ind ??= ['sma20', 'vol'];
     const save = () => { try { sessionStorage.setItem(key, JSON.stringify(st)); } catch { /* ריק */ } };
 
@@ -186,21 +400,46 @@ export function mountMarket(ctx) {
         toast(inWl ? 'נוסף למעקב' : 'הוסר מהמעקב');
       } catch (e) { toast(e.message, true); }
     } } }, inWl ? '⭐' : '☆');
-    const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load(true) } }, '↻');
+    const refresh = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'רענן', title: 'רענן', on: { click: () => load('manual') } }, '↻');
     const drawBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ציור על הגרף', title: 'ציור על הגרף', 'aria-pressed': 'false',
       on: { click: () => { draw.toggle(); drawBtn.setAttribute('aria-pressed', String(draw.isActive())); } } }, '✏️');
-    const analyze = h('a', { class: 'icon-btn', href: '#/analysis/' + encodeURIComponent(asset), 'aria-label': 'ניתוח לפי שיטות', title: 'ניתוח לפי שיטות' }, '🧭');
-    // "🔮 תחזית שיטה" (17.2.2) — הכפתור כאן, וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
-    const forecastBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'תחזית שיטה', 'aria-pressed': 'false' }, '🔮');
-    setHead(symbol, p.name, { back: true, actions: [analyze, forecastBtn, drawBtn, refresh, star] });
+    // "🔮 שיטות על הגרף" (17.2.2, 18.1.2) — הכפתור כאן, התפריט וההתנהגות ב-forecast.js (נבנה אחרי הגרף)
+    const fcBtn = () => h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'תחזית שיטה', title: 'שיטות על הגרף', 'aria-pressed': 'false', 'aria-expanded': 'false' }, '🔮');
+    const forecastBtn = fcBtn();
+    // ⛶ מסך מלא (18.1.2 סעיף 3) — בשורת הכפתורים של הגרף (בכותרת אין מקום בטלפון)
+    // L1 (18.1.5): ⛶ פותח תפריט קטן — ⛶ לגובה / ⟷ לרוחב — רק כשהמסך לאורך. מסך רחב (מחשב, טלפון שכבר לרוחב) — ישר פנימה
+    const fsBtn = h('button', { class: 'icon-btn fs-open', type: 'button', 'aria-label': 'מסך מלא', title: 'מסך מלא', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      on: { click: () => (tall() ? fsMenuToggle() : fsEnter('portrait')) } }, '⛶');
+    const fsItem = (mode, icon, text) => h('button', { class: 'fs-item', type: 'button', role: 'menuitem', 'data-mode': mode,
+      on: { click: () => { fsMenuClose(); fsEnter(mode); } } }, h('span', { class: 'fs-ico', 'aria-hidden': 'true' }, icon), text);
+    const fsMenu = h('div', { class: 'fs-menu', role: 'menu', 'aria-label': 'מסך מלא', hidden: true },
+      fsItem('portrait', '⛶', 'לגובה'), fsItem('landscape', '⟷', 'לרוחב'));
+    const fsPick = h('span', { class: 'fs-pick' }, fsBtn, fsMenu);
+    setHead(label(), sub(p), { back: true, docTitle: L.label, actions: [forecastBtn, drawBtn, refresh, star] });
 
-    const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); load(); } });
+    const tfSeg = seg('tf', tfs.map(t => [t, TF_LABEL[t]]), st.tf, { label: 'מסגרת זמן', onChange: v => { st.tf = v; st.range = DEFAULT_RANGE[v]; rangeSel.value = st.range; save(); forecast.retf(); load('change'); } });
     const rangeSel = select('range', RANGES.map(([k, l]) => [k, l]), st.range, { 'aria-label': 'טווח' });
+    // טווח שאין לו מסגרת עם לפחות 10 נרות אצל הספק (למשל 15 דקות בספק יומי) — מושבת, וההסבר בשם
+    for (const o of rangeSel.options) if (fitTf(tfs, st.tf, spanOf(o.value)) === null) { o.disabled = true; o.textContent += ' — לא זמין בספק הזה'; }
     const from = h('input', { type: 'date', 'aria-label': 'מתאריך', value: st.from || '' });
     const to = h('input', { type: 'date', 'aria-label': 'עד תאריך', value: st.to || '' });
     const custom = h('div', { class: 'fields two', hidden: st.range !== 'custom' }, field('מתאריך', from), field('עד תאריך', to));
-    rangeSel.addEventListener('change', () => { st.range = rangeSel.value; custom.hidden = st.range !== 'custom'; save(); if (st.range !== 'custom') load(); });
-    [from, to].forEach(el => el.addEventListener('change', () => { st.from = from.value; st.to = to.value; save(); if (from.value) load(); }));
+    rangeSel.addEventListener('change', () => {
+      st.range = rangeSel.value;
+      custom.hidden = st.range !== 'custom';
+      // טווח קצר מהמסגרת (שעה במסגרת שעה = נר אחד) — המסגרת יורדת לגדולה ביותר שנותנת לפחות 10 נרות, והודעה שקטה
+      const t = fitTf(tfs, st.tf, spanOf(st.range));
+      if (t && t !== st.tf) {
+        st.tf = t;
+        const r = tfSeg.querySelector(`input[value="${t}"]`);
+        if (r) r.checked = true;
+        forecast.retf();
+        toast(`המסגרת עברה ל-${TF_LABEL[t]} — כדי שיהיו לפחות ${MIN_BARS} נרות בטווח`);
+      }
+      save();
+      if (st.range !== 'custom') load('change');
+    });
+    [from, to].forEach(el => el.addEventListener('change', () => { st.from = from.value; st.to = to.value; save(); if (from.value) load('change'); }));
     const inds = h('div', { class: 'chips', role: 'group', 'aria-label': 'אינדיקטורים' }, IND.map(([k, l]) => {
       const c = h('input', { type: 'checkbox', value: k });
       c.checked = st.ind.includes(k);
@@ -209,17 +448,48 @@ export function mountMarket(ctx) {
     }));
 
     const info = h('p', { class: 'hint', 'aria-live': 'polite' });
+    const histInfo = h('p', { class: 'hint hist-info', 'aria-live': 'polite', hidden: true });   // היסטוריה בפעימות — התקדמות / "ממשיכים בעוד רגע"
     const live = h('span', { class: 'chip', hidden: true });
+    // רענון אוטומטי (18.3): הקצב לבחירת המשתמש — 60 (ברירת מחדל) או 30 שניות; "עודכן לפני X".
+    // שניהם בשורת הכותרת של הפס שמתחת לגרף (S4) — לא בשורת הכפתורים, כדי שהגרף לא יירד בשורה כשהניתוח נדלק בטלפון
+    const EVERY = [60, 30];
+    let every = 60;
+    try { const v = +localStorage.getItem('ts-refresh-every'); if (EVERY.includes(v)) every = v; } catch { /* ריק */ }
+    const everySel = select('every', [['60', '⟳ כל דקה'], ['30', '⟳ כל 30 ש׳']], String(every), { 'aria-label': 'קצב הרענון האוטומטי', hidden: true });
+    everySel.addEventListener('change', () => {
+      every = +everySel.value;
+      try { localStorage.setItem('ts-refresh-every', String(every)); } catch { /* ריק */ }
+      schedule();
+    });
+    const upd = h('span', { class: 'chip refresh-age', hidden: true });
     const box = h('div', { class: 'chart-box' });
+    // גרף בלי נרות — לעולם לא ריק בלי הסבר (הבעלים, 2026-11-17: "זה שוב פעם ריק"): בתוך הגרף, הסיבה מהשרת ופעולה
+    const emptyMsg = h('p', { class: 'chart-empty-why' });
+    const emptyTf = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => { const r = tfSeg.querySelector('input[value="d1"]'); if (r) { r.checked = true; r.dispatchEvent(new Event('change')); } } } }, 'מסגרת יומית');
+    const empty = h('div', { class: 'chart-empty', role: 'status', dir: 'rtl', hidden: true },
+      h('strong', {}, 'אין נרות להצגה'), emptyMsg,
+      h('div', { class: 'row-btns' }, h('button', { class: 'btn sm', type: 'button', on: { click: () => load('manual') } }, '↻ נסו שוב'), emptyTf));
+    /** why — הסיבה (הודעת השרת), או null: יש נרות, ההודעה יורדת */
+    function showEmpty(why) {
+      empty.hidden = why === null;
+      if (why === null) return;
+      emptyMsg.textContent = why;
+      emptyTf.hidden = st.tf === 'd1' || !tfs.includes('d1');
+    }
+    box.tsEmpty = () => (empty.hidden ? null : emptyMsg.textContent);   // לבדיקות
     const oscBox = h('div', { class: 'chart-box osc', hidden: true });
     const head = h('div', { class: 'quote-head' });
     const drawSlot = h('div', { class: 'draw-slot' });
     const forecastSlot = h('div', {});
-    // 💾 שמור לענן שלי (3.7) — רק כשתנאי הספק מתירים עותק אישי
-    const saveBtn = p.personal_copy === false ? null : h('button', { class: 'btn ghost sm', type: 'button',
-      on: { click: async e => { e.target.disabled = true; try { await ctx.cloud.saveCandles({ provider, symbol, tf: st.tf, sec: TF_SEC[st.tf], rows: raw }); } finally { e.target.disabled = false; } } } }, '💾 שמור לענן שלי');
-    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live)), custom,
-      h('div', { class: 'chart-wrap' }, box, oscBox), drawSlot, forecastSlot, inds, info, saveBtn ? h('div', {}, saveBtn) : null,
+    // במסך מלא: שורה צפה מעל הגרף — תווית הזוג, 🔮 ו-✕ (18.1.2 סעיף 3)
+    const forecastBtnFs = fcBtn();
+    const fsExit = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'יציאה ממסך מלא', title: 'יציאה ממסך מלא', on: { click: () => fsLeave() } }, '✕');
+    // ⟳ החלפה בין לגובה ללרוחב בלי לצאת (L1 סעיף 3) — ליד ✕. רק כשנכנסו מטלפון לאורך (כמו התפריט)
+    const fsRot = h('button', { class: 'icon-btn fs-rot', type: 'button', hidden: true, on: { click: () => fsSetMode(fsMode === 'landscape' ? 'portrait' : 'landscape') } }, '⟳');
+    const fsBar = h('div', { class: 'fs-bar' }, h('span', { class: 'fs-pair' }, pairMain(L)), forecastBtnFs, fsRot, fsExit);
+    const wrap = h('div', { class: 'chart-wrap' }, fsBar, box, oscBox, empty);
+    render(head, h('div', { class: 'chart-tools' }, tfSeg, h('div', { class: 'toolbar' }, rangeSel, live, fsPick)), custom,
+      wrap, drawSlot, forecastSlot, inds, info, histInfo,
       h('p', { class: 'disclaimer' }, '⚖️ נתוני שוק להצגה בלבד. אינו ייעוץ השקעות. ', h('span', {}, p.terms)));
 
     const css = getComputedStyle(document.documentElement);
@@ -230,40 +500,317 @@ export function mountMarket(ctx) {
     const base = {
       autoSize: true,
       layout: { background: { color: col('--surface') }, textColor: col('--muted'), fontFamily: 'system-ui, sans-serif', attributionLogo: true },
-      grid: { vertLines: { color: col('--line') }, horzLines: { color: col('--line') } },
-      rightPriceScale: { borderColor: col('--line') },
+      // הצירים — בתוך שטח הגרף (chartaxis.js), בלי עמודת מחירים ובלי פס זמן: הנרות מגיעים עד הקצה (18.1.2 סעיף 4).
+      // גם קווי הרשת — שם, לפי אותם סימונים
+      grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+      rightPriceScale: { visible: false },
+      leftPriceScale: { visible: false },
       // minBarSpacing נמוך — כדי ש"5 שנים" (1,825 נרות) ייכנסו כולם גם ברוחב של טלפון
-      timeScale: { borderColor: col('--line'), timeVisible: TF_SEC[st.tf] < 86400, secondsVisible: false, minBarSpacing: 0.05,
+      timeScale: { visible: false, borderColor: col('--line'), timeVisible: TF_SEC[st.tf] < 86400, secondsVisible: false, minBarSpacing: 0.05, rightOffset: 0,
+        // סיבוב (מסך מלא לרוחב, 2.30) — אותו טווח זמן נמתח על כל הרוחב, ולא חצי גרף ריק
+        lockVisibleTimeRangeOnResize: true,
         // סוג הסימון מהספרייה: 0 שנה · 1 חודש · 2 יום · 3 שעה — כך רואים תאריך במעבר יום, ושעה בתוכו
         tickMarkFormatter: (t, type) => fmtT(t, type === 0 ? { year: 'numeric' } : type === 1 ? { month: 'short' }
           : type === 2 ? { day: 'numeric', month: 'numeric' } : { hour: '2-digit', minute: '2-digit' }) },
       localization: { timeFormatter: t => fmtT(t, { day: 'numeric', month: 'numeric', year: '2-digit', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : {}) }) },
-      crosshair: { mode: 0 },
+      crosshair: { mode: 0, vertLine: { labelVisible: false }, horzLine: { labelVisible: false } },
     };
     const chart = LW.createChart(box, base);
     const up = col('--ok'), down = col('--danger');
     const candle = chart.addCandlestickSeries({ upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false });
     const volume = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    // הנפח — מעל פס דק בתחתית, שבו מספרי ציר הזמן (בתוך הגרף, 18.1.2 סעיף 4)
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0.05 } });
     const lines = {
       sma20: chart.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false, lastValueVisible: false }),
       sma50: chart.addLineSeries({ color: col('--star'), lineWidth: 2, priceLineVisible: false, lastValueVisible: false }),
       ema20: chart.addLineSeries({ color: col('--muted'), lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }),
     };
     const osc = LW.createChart(oscBox, { ...base, timeScale: { ...base.timeScale, visible: false } });
-    const oscSeries = osc.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false });
+    const oscSeries = osc.addLineSeries({ color: col('--brand'), lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    // ציר הזמן: תאריך במעבר יום/חודש/שנה, ושעה בתוך היום; הסמן — תאריך ושעה
+    const fmtTick = (t, kind) => fmtT(t, kind === 'year' ? { year: 'numeric' } : kind === 'month' ? { month: 'short', year: '2-digit' }
+      : kind === 'day' ? { day: 'numeric', month: 'numeric' } : kind === 'time' ? { hour: '2-digit', minute: '2-digit' }
+        // הנר האחרון בקצה הימני: שעה במסגרת שבתוך היום, תאריך במסגרת של יום ומעלה
+        : kind === 'last' ? (TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'numeric' })
+          : { day: 'numeric', month: 'numeric', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : { year: '2-digit' }) });
+    let dec = 2;   // הספרות של הנכס (priceFormat) — לסמן ולציר
+    const axis = mountAxis({ chart, series: candle, col, getDec: () => dec, getTimes: () => data.map(x => x.time), fmtTime: fmtTick,
+      offset: tzOffset(tz) });   // גבולות הסימונים לפי שעון המשתמש — כמו הטקסט (fmtT)
+    const oscAxis = mountAxis({ chart: osc, series: oscSeries, col, getDec: () => 2, time: false });
+    // לוח התוויות — משותף לשיטות ולשרטוטים, כדי שתוויות לא יחפפו (18.1.2 סעיף 5)
+    const board = labelBoard();
+    box.tsLabels = () => board.rects();   // לבדיקות: המלבנים של התוויות שצוירו בפעם האחרונה
+    box.tsAxis = () => axis.shown();      // לבדיקות: המספרים שעל הצירים
+    box.tsAxisW = () => axis.priceWidth(); // לבדיקות: רוחב עמודת המספרים
+    box.tsRange = () => chart.timeScale().getVisibleLogicalRange(); // לבדיקות: הטווח הנראה (L1)
+    box.tsPriceAt = y => candle.coordinateToPrice(y);                 // לבדיקות: המחיר בגובה y בגרף (L1, ציור בשכבה המסובבת)
+    box.tsScreen = () => { const r = screenRect(box); return [r.left, r.top, r.right, r.bottom]; }; // לבדיקות: המלבן האמיתי על המסך
+    let cross = null;
+    chart.subscribeCrosshairMove(e => { cross = e.point ? { x: e.point.x, y: e.point.y } : null; });
+    box.tsCross = () => cross;                                         // לבדיקות: איפה הסמן (L1 קריטריון 5)
+    // לבדיקות: הנקודה שה-crosshair עליה — זמן הנר והמחיר (העוגן של gestures.js)
+    box.tsTimeAt = x => chart.timeScale().coordinateToTime(x);   // לבדיקות: הנר במיקום x (null — שטח ריק)
+    box.tsCrossAt = () => (cross && !gest.crossHidden() ? { time: chart.timeScale().coordinateToTime(cross.x), price: candle.coordinateToPrice(cross.y) } : null);
+    // תנועות מגע (gestures.js): אצבע אחת — לרוחב בזמן, לגובה גוללת את הדף; שתי אצבעות — צביטה (זמן / גובה) או גרירה (זמן / מחיר)
+    const gest = mountGestures({ chart, series: candle, shifted: [candle, ...Object.values(lines)], box, blocked: () => draw.isCapturing(), crosshair: () => (gest?.crossHidden() ? null : cross) });
+    // לבדיקות: הגובה (px) של הנרות הנראים ושל עמודות הנפח, ומקדם הכיווץ
+    box.tsHeights = () => {
+      const r = chart.timeScale().getVisibleLogicalRange();
+      const vis = r ? data.slice(Math.max(0, Math.ceil(r.from)), Math.floor(r.to) + 1) : data;
+      if (!vis.length) return null;
+      const hi = Math.max(...vis.map(x => x.high)), lo = Math.min(...vis.map(x => x.low));
+      const m = chart.priceScale('vol').options().scaleMargins;
+      return { price: Math.round(candle.priceToCoordinate(lo) - candle.priceToCoordinate(hi)), vol: Math.round(box.offsetHeight * (1 - m.top - m.bottom)), k: gest.vScale(),
+        // האינדיקטורים על אותו ציר כמו הנרות — מתכווצים איתם
+        lines: Object.values(lines).filter(l => l.data().length).map(l => Math.abs(l.priceToCoordinate(hi) - candle.priceToCoordinate(hi)) < 0.5) };
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && !oscBox.hidden) osc.timeScale().setVisibleLogicalRange(r); });
     // ציור על הגרף (פרק 7) — השרטוטים נטענים פעם אחת לכל פתיחת גרף; נשמרים רק בסוף שינוי
-    const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet,
+    // השיטות, והפס שמתחת לגרף — ממצא · תרחיש · הסתברות (S4, 18.4)
+    const forecast = mountForecast({ ctx, asset, pair: L, chart, series: candle, h, host: wrap, isAdmin: () => !!ME().is_admin, api, toast, col, board, axisWidth: () => axis.priceWidth(),
+      buttons: [forecastBtn, forecastBtnFs], tools: [everySel, upd], tfs: () => tfs,
+      setTf: v => { const i = tfSeg.querySelector(`input[value="${v}"]`); if (i && !i.checked) { i.checked = true; i.dispatchEvent(new Event('change')); } },
+      onChange: () => (forecast.methods().length ? load('pick') : schedule()),
+      getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time) });
+    forecastSlot.append(forecast.panel);
+    box.tsForecast = () => forecast.state();   // לבדיקות: השיטות, והפריטים של הממצא ושל התרחיש
+    // השרטוטים — אחרי השיטות: הם מצוירים מעליהן, אבל בחפיפת תוויות התווית של השיטה המובילה גוברת (18.1.2 סעיף 5)
+    const draw = mountDrawings({ chart, series: candle, box, asset, api, toast, h, sheet, board,
       getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
     drawSlot.append(draw.bar);
-    const forecast = mountForecast({ chart, series: candle, asset, api, h, sheet, toast, col, button: forecastBtn,
-      getTf: () => st.tf, getSec: () => TF_SEC[st.tf], getTimes: () => data.map(x => x.time), fmtPrice: v => D.fmt(String(+(+v).toPrecision(7)), 8) });
-    forecastSlot.append(forecast.panel);
-    onTeardown(() => { forecast.destroy(); draw.destroy(); chart.remove(); osc.remove(); });
+    // חלונית הסבר על נקודת תחזית (T1, 18.1.6): לא כשכלי ציור פעיל, ולא בלחיצה שסוגרת את התפריט 🔮
+    const tip = mountChartTip({ h, box, wrap, chart, forecast, legend: () => wrap.querySelector('.fc-legend'),
+      fmtTime: t => fmtT(t, { day: 'numeric', month: 'numeric', year: '2-digit', ...(TF_SEC[st.tf] < 86400 ? { hour: '2-digit', minute: '2-digit' } : {}) }),
+      canTip: () => !draw.isActive() && !forecast.popOpen(),
+      // "פירוט השיטה ›" (סעיף 2): תפריט השיטות עם השיטה מסומנת, והתנאים שלה פתוחים בפס שמתחת לגרף. במסך מלא — יוצאים קודם
+      onDetails: id => {
+        if (fsOn) fsLeave();
+        const sec = forecastSlot.querySelector(`.forecast-panel[data-method="${CSS.escape(id)}"]`);
+        sec?.querySelector('.an-fold[aria-expanded="false"]')?.click();
+        wrap.scrollIntoView({ block: 'start' });
+        if (!forecast.popOpen()) forecastBtn.click();
+      } });
+    box.tsTip = () => tip.state();   // לבדיקות: החלונית הפתוחה
+    box.tsPoints = kind => forecast.points(kind);   // לבדיקות: הנקודות של השיטות על הגרף
+    onTeardown(() => { fsLeave(true); gest.destroy(); tip.destroy(); forecast.destroy(); draw.destroy(); axis.destroy(); oscAxis.destroy(); chart.remove(); osc.remove(); });
+
+    // ── מסך מלא (18.1.2 סעיף 3; L1 — 18.1.5): רק הגרף. Fullscreen API על כל הדף (documentElement) כשיש, והגרף — שכבה שמכסה
+    // את המסך (`.chart-wrap.fs`). כל הדף ולא הגרף: על אלמנט ב-Fullscreen הדפדפן כופה `transform: none`, והשכבה המסובבת צריכה transform.
+    // יציאה: ✕, Esc, או "חזור" — רשומה בהיסטוריה (אותה כתובת, כך שהניתוב לא מתחלף), ו"חזור" רק מוציא ממסך מלא.
+    //
+    // "לרוחב" (L1 סעיף 2): קודם `screen.orientation.lock('landscape')` (רק בתוך Fullscreen). אין נעילה, או שנדחתה —
+    // שכבה מסובבת ב-CSS (`.fs-turn`), והמגע מומר ב-rotate.js. הטלפון הסתובב לבד לרוחב — אין צורך בסיבוב, והוא יורד.
+    const root = document.documentElement;
+    const fsApi = () => !!(root.requestFullscreen && document.fullscreenEnabled);
+    const ori = () => window.screen?.orientation;
+    const tall = () => window.innerHeight > window.innerWidth;
+    let fsOn = false, fsMode = 'portrait', fromTall = false, locked = false, lockTried = false, lockPending = false;
+    function fsMenuToggle() {
+      const open = fsMenu.hidden;
+      fsMenu.hidden = !open;
+      fsBtn.setAttribute('aria-expanded', String(open));
+      if (open) fsMenu.querySelector('.fs-item').focus();
+    }
+    function fsMenuClose(focus = false) {
+      if (fsMenu.hidden) return;
+      fsMenu.hidden = true;
+      fsBtn.setAttribute('aria-expanded', 'false');
+      if (focus) fsBtn.focus();
+    }
+    // המצב על המסך: הכפתור ⟳, והאם השכבה מסובבת
+    function fsApply() {
+      if (!fsOn) return;
+      const land = fsMode === 'landscape';
+      fsRot.hidden = !fromTall;
+      fsRot.setAttribute('aria-label', land ? 'מסך מלא לגובה' : 'מסך מלא לרוחב');
+      fsRot.title = land ? 'לגובה' : 'לרוחב';
+      wrap.dataset.fsMode = fsMode;
+      const turn = land && !locked && !lockPending && tall();
+      if (turn) {
+        wrap.style.setProperty('--fs-w', window.innerHeight + 'px');
+        wrap.style.setProperty('--fs-h', window.innerWidth + 'px');
+      }
+      if (turn !== wrap.classList.contains('fs-turn')) {
+        wrap.classList.toggle('fs-turn', turn);
+        setTurned(turn ? wrap : null);
+      }
+    }
+    // נעילה: לרוחב — רק בתוך Fullscreen; לגובה — רק כשכבר נעלנו לרוחב (מ-⟳). נדחתה — השכבה המסובבת
+    function fsLock() {
+      const want = fsMode;
+      const can = document.fullscreenElement === root && typeof ori()?.lock === 'function';
+      if (!fsOn || !can || (want === 'portrait' && !locked)) { fsApply(); return; }
+      lockTried = true;
+      lockPending = true;
+      fsApply();
+      ori().lock(want).then(() => { locked = true; }, () => { if (want === 'portrait') locked = false; })
+        .finally(() => { if (fsMode === want) lockPending = false; fsApply(); });
+    }
+    function fsSetMode(mode) {
+      if (!fsOn || mode === fsMode) return;
+      fsMode = mode;
+      fsLock();
+    }
+    function fsEnter(mode = 'portrait') {
+      if (fsOn) return;
+      fsOn = true;
+      fromTall = tall();
+      fsMode = mode;
+      locked = lockTried = lockPending = false;
+      wrap.classList.add('fs');
+      document.body.classList.add('chart-fs');
+      try { history.pushState({ tsFs: true }, ''); } catch { /* ריק */ }
+      if (fsApi()) {
+        lockPending = mode === 'landscape';   // עד שה-Fullscreen והנעילה הסתיימו — בלי סיבוב, כדי שלא יהבהב
+        root.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+          // הבקשה אסינכרונית: יצאו לפני שהסתיימה (Esc או "חזור" מהר) — יוצאים גם מה-Fullscreen API
+          if (!fsOn) { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); return; }
+          lockPending = false;
+          fsLock();
+        }, () => { lockPending = false; fsApply(); });
+      }
+      fsApply();
+      fsExit.focus();
+    }
+    /** quiet — בלי לגעת בהיסטוריה (חזור כבר קרה, או שעוזבים את המסך) */
+    function fsLeave(quiet = false) {
+      if (!fsOn) return;
+      fsOn = false;
+      if (lockTried) { try { ori()?.unlock?.(); } catch { /* ריק */ } }
+      locked = lockTried = lockPending = false;
+      fsMode = 'portrait';
+      setTurned(null);
+      wrap.classList.remove('fs', 'fs-turn');
+      wrap.style.removeProperty('--fs-w');
+      wrap.style.removeProperty('--fs-h');
+      delete wrap.dataset.fsMode;
+      document.body.classList.remove('chart-fs');
+      if (document.fullscreenElement === root) document.exitFullscreen().catch(() => {});
+      if (!quiet && history.state?.tsFs) history.back();
+      if (!quiet) fsBtn.focus();
+    }
+    let fsWas = false;   // היה Fullscreen — כדי שיציאה ממנו מבחוץ (מחווה של המערכת) תוציא גם מהשכבה
+    const fsPop = () => { if (fsOn && !history.state?.tsFs) fsLeave(true); };
+    const fsChange = () => {
+      if (document.fullscreenElement) { fsWas = true; return; }
+      if (fsWas && fsOn) fsLeave();
+      fsWas = false;
+    };
+    const fsKey = e => {
+      if (e.key !== 'Escape') return;
+      if (!fsMenu.hidden) fsMenuClose(true);
+      else if (fsOn && !forecast.popOpen()) fsLeave();
+    };
+    const fsOutside = e => { if (!fsMenu.hidden && !fsPick.contains(e.target)) fsMenuClose(); };
+    const fsResize = () => fsApply();
+    window.addEventListener('popstate', fsPop);
+    window.addEventListener('resize', fsResize);
+    document.addEventListener('fullscreenchange', fsChange);
+    document.addEventListener('keydown', fsKey);
+    document.addEventListener('pointerdown', fsOutside);
+    onTeardown(() => { window.removeEventListener('popstate', fsPop); window.removeEventListener('resize', fsResize); document.removeEventListener('fullscreenchange', fsChange);
+      document.removeEventListener('keydown', fsKey); document.removeEventListener('pointerdown', fsOutside); });
 
     let data = [];
-    let raw = [];   // הנרות כמו מהשרת (מחרוזות) — לעותק בענן, בלי float
+    const toBar = x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c });
+
+    // ── היסטוריה בפעימות (בקשת הבעלים: "תוסיף עד 5 שנים, אבל פעימות מידע קטנות, שלא נחסם") ──
+    // הגרף נטען כמו קודם (chart_refresh — גם השיטות מחושבות רק עליו). כשמתקרבים לנר הראשון, או כשהטווח שנבחר ארוך מ-5,000
+    // נרות — מנה של עד 999 נרות ישנים (market_history, פנייה אחת לספק), אחת בכל פעם, עם הפסקה ביניהן:
+    // - אף פעם לא במקביל — לא למנה אחרת ולא ל-chart_refresh.
+    // - HIST_GAP בין מנות: 3 ש' → לכל היותר 20 לדקה, ועם הרענון האוטומטי (2 לדקה) — מתחת לתקרה של 30 לדקה למשתמש.
+    // - תקרה / 429 (מהספק, או מהתקרה שלנו) — "ממשיכים בעוד רגע", וניסיון שוב אחרי HIST_RETRY.
+    // - HIST_MAX: עד 50,000 נרות על המסך. 5 שנים בשעה = 43,800 — נכנס; Lightweight Charts מחזיק את זה, והאינדיקטורים
+    //   מחושבים מחדש על הכול (ממוצע של 50,000 — מילישניות). בדקה ובחמש דקות התקרה עוצרת לפני 5 שנים.
+    const HIST_MAX = 50000, HIST_GAP = 3000, HIST_RETRY = 20000, HIST_NEAR = 60;
+    let older = [];          // הנרות שנטענו בפעימות (לפני החלון של chart_refresh)
+    // הזמנים — performance.now(): לא תלוי בשעון של המכשיר (ובבדיקות — בשעון הקבוע)
+    // user — המשתמש נגע/גרר/גלל בגרף: fitContent אחרי טעינה כבר מראה את הנר הראשון, ובלי זה הייתה יוצאת מנה בכל פתיחה
+    const hist = { gen: 0, busy: false, done: false, next: 0, timer: null, target: null, got: 0, note: '', user: false };
+    function histReset(target) {
+      hist.gen++;
+      clearTimeout(hist.timer);
+      Object.assign(hist, { busy: false, done: false, next: 0, timer: null, target, got: 0, note: '', user: false });
+      older = [];
+      forecast.resetOlder();
+      histShow();
+    }
+    function histShow() {
+      const t = hist.note || (hist.target && !hist.done && hist.got ? `נטענו עוד ${hist.got.toLocaleString('he-IL')} נרות ישנים…` : '')
+        || (data.length >= HIST_MAX ? `מוצגים ${HIST_MAX.toLocaleString('he-IL')} נרות — התקרה בגרף` : '');
+      histInfo.textContent = t;
+      histInfo.hidden = !t;
+    }
+    /** צריך עוד: קרוב לנר הראשון, או שהטווח שנבחר עוד לא הושלם */
+    function histNeed() {
+      if (!data.length || hist.done || data.length >= HIST_MAX) return false;
+      if (hist.target !== null && data[0].time > hist.target) return true;
+      if (!hist.user) return false;
+      const r = chart.timeScale().getVisibleLogicalRange();
+      return !!r && r.from < HIST_NEAR;
+    }
+    function histMaybe() {
+      if (hist.busy || hist.timer || loading || !histNeed()) return;
+      const wait = hist.next - performance.now();
+      if (wait > 0) { hist.timer = setTimeout(() => { hist.timer = null; histMaybe(); }, wait); return; }
+      histLoad();
+    }
+    async function histLoad() {
+      hist.busy = true;
+      const gen = hist.gen;
+      try {
+        const r = await api('market_history', null, { asset, tf: st.tf, before: data[0].time });
+        if (gen !== hist.gen) return;
+        if (r.retry) {
+          hist.note = 'ממשיכים בעוד רגע';
+          hist.next = performance.now() + HIST_RETRY;
+        } else {
+          const first = data[0]?.time ?? Infinity;
+          const add = r.candles.map(toBar).filter(x => x.time < first).slice(-(HIST_MAX - data.length));
+          if (add.length) {
+            older = [...add, ...older];
+            data = [...add, ...data];
+            hist.got += add.length;
+            // הנרות הישנים נכנסים משמאל; הספרייה שומרת את המרחק מהנר האחרון — מה שעל המסך לא זז
+            const lv = chart.timeScale().getVisibleLogicalRange();
+            candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+            const lv2 = chart.timeScale().getVisibleLogicalRange();
+            // לבדיקות: המיקום (לוגי) לפני ואחרי, ומספר הנרות שנוספו — אותו מקום על המסך = הוזז בדיוק במספר הזה
+            hist.jump = lv && lv2 ? { before: [lv.from, lv.to], after: [lv2.from, lv2.to], added: add.length } : null;
+            drawIndicators();
+            draw.redraw();
+            // H1c (18.1.8 סעיף 6): אותות וספירות העבר של המנה — רק לפני הנר הראשון הקודם, כך שמה שעל המסך לא זז. באותו תור של
+            // הפעימות (לא במקביל); השרת קורא מהמטמון. כשל — המנה נשארת בלי אותות עבר
+            const ids = forecast.methods();
+            if (ids.length && first !== Infinity) {
+              try {
+                const mh = await api('method_history', null, { asset, tf: st.tf, from: add[0].time, before: first, methods: ids.join(',') });
+                if (gen === hist.gen) forecast.addOlder(mh);
+              } catch { /* בלי אותות עבר למנה הזו */ }
+            }
+          }
+          if (r.done || !add.length || data.length >= HIST_MAX || (hist.target !== null && data[0].time <= hist.target)) {
+            hist.done = r.done || !add.length || data.length >= HIST_MAX;
+            if (hist.target !== null && data[0].time <= hist.target) hist.target = null;
+          }
+          hist.note = '';
+          hist.next = performance.now() + HIST_GAP;
+        }
+      } catch (e) {
+        if (gen !== hist.gen) return;
+        hist.note = 'ממשיכים בעוד רגע';
+        hist.next = performance.now() + HIST_RETRY;
+      } finally {
+        if (gen === hist.gen) { hist.busy = false; histShow(); histMaybe(); }
+      }
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && r.from < HIST_NEAR) histMaybe(); });
+    const histUser = () => { hist.user = true; };
+    for (const ev of ['pointerdown', 'touchstart', 'wheel']) box.addEventListener(ev, histUser, { capture: true, passive: true });
+    onTeardown(() => { hist.gen++; clearTimeout(hist.timer); });
+    box.tsTimes = () => chart.timeScale().getVisibleRange();   // לבדיקות: טווח הזמן שעל המסך
+    box.tsHistory = () => ({ n: data.length, first: data[0]?.time ?? null, older: older.length, busy: hist.busy, done: hist.done, target: hist.target, note: hist.note, jump: hist.jump ?? null });   // לבדיקות
     let ws = null;
     function drawIndicators() {
       const c = data.map(x => x.close), hh = data.map(x => x.high), ll = data.map(x => x.low);
@@ -296,69 +843,153 @@ export function mountMarket(ctx) {
       const span = RANGES.find(r => r[0] === st.range)?.[2] || 30 * 86400;
       return { from: now - span, to: now };
     }
+    // ── השוק סגור (בקשת הבעלים, 2026-11-17): "🔒 השוק סגור · נפתח בעוד 7:33:12 (היום 16:30)" — מתעדכן כל שנייה; כשמגיע הזמן,
+    // התווית יורדת והגרף נטען מיד. סוג המושב — מהשוק והבורסה שבתשובה (session.js); קריפטו / ECB — אין תווית
+    // ולידה — השעה אצל הבורסה ("🕐 ניו יורק 01:56"), בשוק פתוח וסגור; קריפטו ו-ECB — בלי (session.js, exchangeZone)
+    let sessKind = null, sessZone = null, sessTimer = null;
+    const closedTag = h('span', { class: 'chip closed-tag', role: 'status', hidden: true });
+    const clockTag = h('span', { class: 'muted zone-clock', hidden: true });
+    function sessionTick() {
+      const now = Date.now(), s = sessionState(sessKind, now);
+      clockTag.hidden = !sessZone;
+      if (sessZone) clockTag.textContent = `🕐 ${sessZone.name} ${zoneTime(sessZone.tz, now)}`;
+      if (s.open || !s.opensAt) {
+        const was = !closedTag.hidden;
+        closedTag.hidden = true;
+        if (was) load('pick');   // נפתח עכשיו — טעינה מיידית, בלי להזיז את התצוגה
+      } else {
+        closedTag.hidden = false;
+        closedTag.textContent = `🔒 השוק סגור · נפתח בעוד ${countdown(s.opensAt - now)} (${whenLabel(s.opensAt, now, ME().user.timezone)})`;
+      }
+      // שנייה — כשיש ספירה לאחור; אחרת רק השעון (מתעדכן בדקה, בודקים כל 15 ש')
+      const every = !closedTag.hidden ? 1000 : sessZone ? 15000 : 0;
+      if (sessTimer?.every !== every) { clearInterval(sessTimer?.id); sessTimer = every ? { every, id: setInterval(sessionTick, every) } : null; }
+    }
+    onTeardown(() => clearInterval(sessTimer?.id));
+    box.tsSession = () => ({ kind: sessKind, closed: !closedTag.hidden, text: closedTag.hidden ? null : closedTag.textContent,
+      clock: clockTag.hidden ? null : clockTag.textContent });   // לבדיקות
     function setHeadQuote() {
       const last = data.at(-1), prev = data.at(-2);
-      if (!last) { head.replaceChildren(); return; }
+      if (!last) { head.replaceChildren(clockTag, closedTag); return; }
       const ch = prev ? (last.close - prev.close) / prev.close * 100 : null;   // תצוגה בלבד
       head.replaceChildren(h('b', { class: 'num price' }, D.fmt(last.closeStr, 8)),
         ch !== null ? h('span', { class: 'num ' + (ch >= 0 ? 'pos' : 'neg') }, (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%') : null,
-        h('span', { class: 'muted' }, fmtT(last.time, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })));
+        h('span', { class: 'muted' }, fmtT(last.time, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })), clockTag, closedTag);
     }
+    // ── הטעינה: בקשה אחת לנרות ולכל השיטות (18.3) ──
+    // mode: open — פתיחת הגרף · change — טווח או מסגרת · manual — "↻" · pick — בחירת שיטה · auto — הרענון האוטומטי
     let loading = false;
-    async function load(isRefresh = false) {
-      if (loading) return;
+    let pending = null;      // פעולה של המשתמש בזמן שבקשה אחרת רצה — נטענת מיד אחריה
+    // הטעינה הנוכחית: לביטול כשחוזרים ללשונית והיא תקועה (הטלפון ברקע); lastFailed — הטעינה האחרונה נכשלה
+    let loadCtl = null, loadAt = 0, lastFailed = false;
+    const STUCK_MS = 4000;   // טעינה שרצה יותר מזה כשחוזרים ללשונית — נחשבת תקועה
+    let timer = null;
+    let lastOk = 0;          // מתי הגיעה התשובה האחרונה (שעון הדפדפן)
+    const analysisOn = () => forecast.methods().length > 0;
+    const active = () => document.visibilityState === 'visible' && analysisOn();
+    function ago(ms) {
+      const s = Math.max(0, Math.round(ms / 1000));
+      return s < 60 ? `${s} ש׳` : `${Math.round(s / 60)} דק׳`;
+    }
+    function showAge() {
+      everySel.hidden = !analysisOn();
+      upd.hidden = !analysisOn() || !lastOk;
+      if (!upd.hidden) upd.textContent = 'עודכן לפני ' + ago(Date.now() - lastOk);
+    }
+    const ageTick = setInterval(showAge, 5000);
+    /** הטיימר הבא — רק כשהניתוח פעיל. אחרת אין טיימר בכלל (אין שיטה, או לשונית מוסתרת) */
+    function schedule() {
+      clearTimeout(timer);
+      timer = null;
+      if (active()) timer = setTimeout(() => load('auto'), every * 1000);
+      showAge();
+    }
+    async function load(mode = 'change') {
+      if (loading) { if (mode !== 'auto') pending = mode; return; }
+      const auto = mode === 'auto';
+      if (auto && !active()) { schedule(); return; }
       loading = true;
+      clearTimeout(timer);
+      timer = null;
       refresh.disabled = true;
-      closeLive();
-      info.textContent = 'טוען…';
+      if (!auto && mode !== 'pick') { closeLive(); info.textContent = 'טוען…'; }
       try {
         chart.applyOptions({ timeScale: { timeVisible: TF_SEC[st.tf] < 86400 } });
-        // העותק האישי בענן (3.7) — תצוגה בלבד: טווח ישן מ-60 יום נקרא מהעותק בדפדפן, לפני פנייה לספק. הנרות שלו לא נשלחים
-        // לשרת ולא נכנסים למאגר; מהשרת מבקשים רק את מה שהעותק לא מכסה, והשרת גובר בחפיפה
-        const rq = rangeQuery();
-        const sec = TF_SEC[st.tf];
-        const edge = Math.floor(Date.now() / 1000) - 60 * 86400;
-        let copy = [];
-        if (rq.from < edge && ctx.cloud) {
-          const node = await ctx.cloud.findCopy({ provider, symbol, tf: st.tf });
-          if (node) {
-            const { meta, rows } = parseCsv(await ctx.cloud.readCopy(node));
-            if (meta.provider === provider && meta.symbol === symbol && meta.tf === st.tf) copy = rows.filter(x => x.t >= rq.from && x.t < edge && x.t <= rq.to);
-          }
-        }
-        const q = { ...rq };
-        if (copy.length && copy[0].t <= rq.from + sec) q.from = Math.min(copy.at(-1).t + sec, edge);
-        const r = await api('market_candles', null, { asset, tf: st.tf, ...q });
-        raw = r.candles;
-        const byT = new Map(copy.map(x => [x.t, x]));
-        for (const x of r.candles) byT.set(x.t, x);
-        let rows = [...byT.values()].sort((a, b) => a.t - b.t);
+        loadCtl = new AbortController();
+        loadAt = performance.now();
+        const r = await api('chart_refresh', null, { asset, tf: st.tf, ...rangeQuery(), methods: forecast.methods().join(',') }, { signal: loadCtl.signal });
+        lastOk = Date.now();
+        lastFailed = false;
+        let rows = r.candles;
         const capped = r.capped || rows.length > 5000;
         if (rows.length > 5000) rows = rows.slice(-5000);
-        const fromServer = new Set(r.candles.map(x => x.t));
-        const nCopy = rows.filter(x => !fromServer.has(x.t)).length;
-        data = rows.map(x => ({ time: x.t, open: +x.o, high: +x.h, low: +x.l, close: +x.c, volume: +x.v, closeStr: x.c }));
-        candle.applyOptions({ priceFormat: priceFormat(rows) });
+        const base = rows.map(toBar);
+        // רענון אוטומטי ובחירת שיטה — ההיסטוריה שנטענה בפעימות נשארת לפני הנתונים החדשים; נתונים חדשים (פתיחה, מסגרת,
+        // טווח, ↻) — מתחילים מחדש
+        if (mode === 'auto' || mode === 'pick') data = base.length ? [...older.filter(x => x.time < base[0].time), ...base] : base;
+        else { histReset(r.capped ? rangeQuery().from : null); data = base; }
+        const pf = priceFormat(rows);
+        dec = pf.precision;
+        candle.applyOptions({ priceFormat: pf });
         candle.setData(data.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
         drawIndicators();
-        chart.timeScale().fitContent();
+        // רענון אוטומטי ובחירת שיטה — לא מזיזים את התצוגה של המשתמש
+        // נתונים חדשים (פתיחה, מסגרת, טווח, ↻): גם ציר המחיר חוזר ל-autoScale — טווח מוקפא של הנתונים הקודמים לא מתאים להם
+        if (mode === 'open' || mode === 'change' || mode === 'manual') { chart.timeScale().fitContent(); gest.reset(); }
         draw.redraw();
-        forecast.onLoad(isRefresh);
+        const sm = { provider: r.provider || provider, market: r.market || r.meta?.market || '', exchange: r.meta?.exchange || '', tz: r.meta?.tz || '' };
+        sessKind = sessionKind(sm);
+        sessZone = exchangeZone(sm);
+        sessionTick();
+        forecast.onResult(r);
+        // הבדיקה לאחור — רק בפעולה של המשתמש, לא ברענון האוטומטי (18.3): אין שמורה, או שעבר יום
+        if (!auto && forecast.needsBacktest()) runBacktest(mode === 'manual');
         setHeadQuote();
         const n = data.length;
         info.replaceChildren(`${n.toLocaleString('he-IL')} נרות · ${TF_LABEL[st.tf]} · ${DELAY_LABEL[r.delay] || r.delay}`,
-          nCopy ? ` · 🧪 ${nCopy.toLocaleString('he-IL')} מהעותק שלך בענן (תצוגה בלבד)` : '',
-          capped ? ' · מוצגים 5,000 הנרות האחרונים — לטווח ארוך בחרו מסגרת גדולה יותר' : '',
-          r.stream ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
-          n ? '' : ' · אין נתונים בטווח הזה');
-        if (isRefresh) toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
-        if (r.stream && n) openLive(r.stream, r.stream_interval);
+          capped ? ' · הנרות הישנים נטענים בהדרגה' : '',
+          r.stream || analysisOn() ? '' : ` · "↻" מושך עדכון (תוקף ${r.tail_ttl < 120 ? 'דקה' : Math.round(r.tail_ttl / 60) + ' דק׳'})`,
+          n ? '' : ' · אין נתונים בטווח הזה',
+          // 21.3: אין דרך להשלים (תקרה, או אין מפתח זמין) — מוצג מה שבמאגר
+          r.notice ? h('span', { class: 'chart-notice', role: 'status' }, ' · ' + r.notice) : '');
+        showEmpty(n ? null : r.notice || 'אין נתונים בטווח הזה — ייתכן שהשוק היה סגור. נסו טווח ארוך יותר או מסגרת אחרת.');
+        if (mode === 'manual') toast(r.provider_calls ? 'עודכן מהספק' : 'עודכן מהמאגר');
+        if (r.stream && n && !ws) openLive(r.stream, r.stream_interval);
       } catch (e) {
-        info.textContent = '';
-        info.append(h('span', { class: 'error' }, e.message));
+        lastFailed = true;
+        // בוטלה בחזרה ללשונית — טעינה חדשה כבר בתור (pending), בלי הודעה
+        if (e.aborted) return;
+        // רענון אוטומטי שנכשל (גם 429) — בשקט: הנתונים הקודמים נשארים, ו"עודכן לפני X" מראה כמה הם ישנים.
+        // אין ניסיון חוזר מיידי — הפעם הבאה בקצב הרגיל (18.3 קריטריון 5)
+        if (!auto) {
+          info.textContent = '';
+          info.append(h('span', { class: 'error' }, e.message));
+          forecast.onError(e);
+        }
+        // אין שום נר על המסך — הסיבה בתוך הגרף (גם ברענון אוטומטי: גרף ריק אף פעם לא בלי הסבר)
+        if (!data.length) showEmpty(e.status === 429 ? 'יותר מדי בקשות בדקה — נסו שוב בעוד רגע.' : e.message);
       } finally {
         loading = false;
+        loadCtl = null;
         refresh.disabled = false;
+        if (pending) { const m = pending; pending = null; load(m); } else { schedule(); histMaybe(); }
+      }
+    }
+    // הבדיקה לאחור (6.2) דרך analysis — פעם אחת לכל מסגרת ושילוב שיטות בפתיחה; "↻ רענן" מריץ שוב. התשובה מחליפה את הכרטיסים
+    const btTried = new Set();
+    async function runBacktest(force) {
+      const ids = forecast.methods();
+      const key = st.tf + '|' + ids.join(',');
+      if (!ids.length || (!force && btTried.has(key))) return;
+      btTried.add(key);
+      const tf = st.tf;
+      forecast.backtesting(true);
+      try {
+        const a = await api('analysis', null, { asset, tf, methods: ids.join(',') });
+        if (tf === st.tf && forecast.methods().join(',') === ids.join(',')) forecast.onAnalysis(a); else forecast.backtesting(false);
+      } catch (e) {
+        forecast.backtesting(false);
+        if (e.status !== 429) toast(e.message, true);
       }
     }
     // WebSocket ציבורי של Binance — ישירות לספק. אין התחברות חוזרת אוטומטית בלולאה: נותק → הודעה, ו"↻" מחבר.
@@ -384,10 +1015,27 @@ export function mountMarket(ctx) {
       ws.onclose = () => { if (ws) { ws = null; live.className = 'chip bad'; live.textContent = 'נותק — ↻'; } };
     }
     function closeLive() { if (ws) { const w = ws; ws = null; w.close(); } live.hidden = true; }
-    const vis = () => { if (document.hidden) { closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה'; } else if (streamSpec && !ws) openLive(...streamSpec); };
+    // לשונית מוסתרת — הרענון עוצר (אין טיימר); גלויה שוב — בקשה אחת מיד, ואז בקצב הרגיל (18.3 קריטריון 2)
+    const vis = () => {
+      if (document.visibilityState !== 'visible') {
+        clearTimeout(timer); timer = null;
+        closeLive(); live.hidden = false; live.className = 'chip'; live.textContent = 'מושהה';
+        return;
+      }
+      // "מושהה" יורד מיד; זרם חי (אם יש) מתחבר מחדש ומציג את המצב שלו
+      live.hidden = true;
+      if (streamSpec && !ws) openLive(...streamSpec);
+      // הבעלים (2026-11-17): "כניסה לגרף חייבת לבצע טעינה מיידית". חזרה ללשונית — בלי קשר לשיטה פעילה:
+      // - טעינה שעוד רצה מלפני הרקע (הטלפון עצר את הרשת, ה-fetch תלוי) — מבטלים וטוענים מחדש; לא מחכים ל-timeout
+      // - אין נרות, או שהטעינה האחרונה נכשלה — טוענים מחדש
+      const fresh = data.length ? 'pick' : 'open';   // pick — בלי להזיז את התצוגה ובלי לנתק את הזרם
+      if (loading && loadCtl && performance.now() - loadAt > STUCK_MS) { pending = fresh; loadCtl.abort(); }
+      else if (!loading && (!data.length || lastFailed)) load(fresh);
+      else if (analysisOn()) load('auto');
+    };
     document.addEventListener('visibilitychange', vis);
-    onTeardown(() => { document.removeEventListener('visibilitychange', vis); streamSpec = null; closeLive(); });
-    await Promise.all([load(), draw.load()]);
+    onTeardown(() => { document.removeEventListener('visibilitychange', vis); clearTimeout(timer); clearInterval(ageTick); pending = null; streamSpec = null; closeLive(); });
+    await Promise.all([load('open'), draw.load()]);
   }
 
   // ── ספקי נתונים (המשתמש) ───────────────────────────────
@@ -397,15 +1045,20 @@ export function mountMarket(ctx) {
     const fmt = t => (t ? new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
     const row = p => {
       let status, actions = null;
-      if (!p.enabled) status = h('span', { class: 'chip' }, 'כבוי על ידי המנהל');
+      if (!p.enabled) status = h('span', { class: 'chip' }, 'כבוי על ידי העורך');
       else if (!p.needs_key) status = h('span', { class: 'chip ok' }, '✓ פתוח לכולם, בלי מפתח');
       else if (p.own) {
         status = h('span', { class: 'chip ' + (p.own.last_test_ok ? 'ok' : 'bad') }, `${p.own.last_test_ok ? 'מחובר' : 'החיבור נכשל'} · נבדק ${fmt(p.own.last_test_at)} · ••••${p.own.last4}`);
         actions = h('div', { class: 'row-btns wrap' },
-          h('button', { class: 'btn ghost sm', type: 'button', on: { click: async e => { e.target.disabled = true; try { await api('cred_test', { provider: p.id }); toast('החיבור תקין'); } catch (ex) { toast(ex.message, true); } PROVIDERS = null; route(); } } }, 'בדוק חיבור'),
+          h('button', { class: 'btn ghost sm', type: 'button', on: { click: async e => { e.target.disabled = true; try { await api('cred_test', { provider: p.id }); toast('החיבור תקין'); } catch (ex) { toast(ex.message, true); } PROVIDERS = null; invalidateCatalog(); route(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'החלפת מפתח'),
-          h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק', `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; toast('נותק'); route(); }) } }, 'ניתוק'));
-      } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהמנהל');
+          h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('ניתוק ספק',
+            p.share ? `המפתח של ${p.name} יימחק. מה שנמשך בו נשאר במאגר המשותף.` : `המפתח של ${p.name} יימחק, וגם הנתונים שנמשכו בו.`, 'ניתוק', async () => { await api('cred_delete', { provider: p.id }); PROVIDERS = null; invalidateCatalog(); toast('נותק'); route(); }) } }, 'ניתוק'));
+      } else if (p.source === 'app') {
+        // 21.3: מפתח האפליקציה — לכולם. מפתח אישי אפשר להוסיף כגיבוי
+        status = h('span', { class: 'chip ok' }, '✓ מפתח האפליקציה — פתוח לכולם');
+        actions = h('button', { class: 'btn ghost sm', type: 'button', on: { click: () => connect(p) } }, 'מפתח משלי (גיבוי)');
+      } else if (p.source === 'shared') status = h('span', { class: 'chip ok' }, '✓ מהעורך');
       else {
         status = h('span', { class: 'chip warn' }, 'לא מחובר');
         actions = h('button', { class: 'btn primary sm', type: 'button', on: { click: () => connect(p) } }, 'חיבור');
@@ -413,10 +1066,12 @@ export function mountMarket(ctx) {
       return h('li', { class: 'card', style: 'cursor:default;flex-wrap:wrap' },
         h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, p.name), h('span', { class: 't' }, DELAY_LABEL[p.delay] || '')),
           h('div', { class: 'l2' }, p.markets.map(m => MARKET_LABEL[m] || m).join(', '), sep(), p.tfs.map(t => TF_LABEL[t]).join(' · ')),
-          h('div', { style: 'margin-top:6px' }, status)),
+          h('div', { style: 'margin-top:6px' }, status),
+          // 21.3 (2): המפתח האישי בספק משותף — גיבוי, ומה שנמשך בו לכולם
+          p.needs_key && p.share && p.own ? h('p', { class: 'hint pool-note' }, 'משמש כשאין מפתח אפליקציה זמין. מה שנמשך בו נשמר במאגר המשותף.') : null),
         actions);
     };
-    render(h('p', { class: 'hint' }, 'Binance ו-ECB פתוחים לכולם. לספק עם מפתח — מחברים מפתח משלכם: הוא נשמר מוצפן בשרת, משמש רק לבקשות שלכם, ולא מוצג שוב (רק ארבעת התווים האחרונים).'),
+    render(h('p', { class: 'hint' }, 'Binance ו-ECB פתוחים לכולם. לספק עם מפתח — מחברים מפתח משלכם: הוא נשמר מוצפן בשרת, ולא מוצג שוב (רק ארבעת התווים האחרונים).'),
       h('ul', { class: 'list' }, provs.map(row)));
   }
 
@@ -426,7 +1081,7 @@ export function mountMarket(ctx) {
     const s = sheet(`חיבור ${p.name}`, { saveLabel: 'בדיקה ושמירה', onSave: async () => {
       await api('cred_save', { provider: p.id, secret: secret.value, label: label.value });
       secret.value = '';
-      PROVIDERS = null;
+      PROVIDERS = null; invalidateCatalog();
       toast(`${p.name} מחובר`);
       route();
     } });
@@ -434,17 +1089,19 @@ export function mountMarket(ctx) {
       p.key_help?.note ? h('p', { class: 'hint' }, p.key_help.note) : null,
       p.key_help?.url ? h('p', {}, h('a', { href: p.key_help.url, target: '_blank', rel: 'noopener noreferrer' }, 'לקבלת מפתח ↗')) : null,
       h('div', { class: 'fields' }, field(p.key_help?.label || 'מפתח', secret, true), field('תווית', label, true)),
+      p.share ? h('p', { class: 'hint pool-note' }, 'משמש כשאין מפתח אפליקציה זמין. מה שנמשך בו נשמר במאגר המשותף.') : null,
       h('p', { class: 'hint' }, 'בשמירה המפתח נבדק מול הספק. הוא נשמר מוצפן, ולא יוצג שוב.'));
   }
 
-  // ── ממשק המנהל (1.1) — השרת בודק בכל פעולה; כאן רק התצוגה ──────
+  // ── ממשק העורכים (פרק 24) — השרת בודק בכל פעולה; כאן רק התצוגה ──────
   async function viewAdmin() {
-    setHead('ניהול', 'ספקים, שיטות, מנהלים ומאגר', { back: true });
+    setHead('ניהול', 'ספקים, שיטות, עורכים ומאגר', { back: true });
     const S = await api('admin_state');
     let tab = sessionStorage.getItem('ts-admin-tab') || 'providers';
-    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['admins', '👤 מנהלים'], ['cache', '🗄️ מאגר'], ['log', '📜 יומן']];
+    if (tab === 'admins') tab = 'editors';   // השם הקודם של הלשונית (עד פרק 24)
+    const tabs = [['providers', '🔌 ספקים'], ['methods', '🧪 שיטות'], ['shared', '🤝 לחלוקה'], ['editors', '👤 עורכים'], ['cache', '🗄️ מאגר'], ['journal', '📓 יומן השיטה'], ['log', '📜 יומן']];
     const bar = h('div', { class: 'seg-tabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === tab), on: { click: () => { sessionStorage.setItem('ts-admin-tab', k); route(); } } }, l)));
-    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, admins: adminAdmins, cache: adminCache, log: adminLog }[tab](S);
+    const body = { providers: adminProviders, methods: () => ctx.adminMethods(), shared: adminShared, editors: adminEditors, cache: adminCache, journal: () => ctx.journalView(h('div', { class: 'stack method-journal' })), log: adminLog }[tab](S);
     render(bar, body);
   }
   const reload = () => route();
@@ -467,9 +1124,9 @@ export function mountMarket(ctx) {
   }
 
   function adminShared(S) {
-    const sw = h('input', { type: 'checkbox', disabled: !S.is_primary_admin }); sw.checked = S.shared_enabled;
+    const sw = h('input', { type: 'checkbox', disabled: !S.is_chief }); sw.checked = S.shared_enabled;
     sw.addEventListener('change', () => confirmSheet(sw.checked ? 'הפעלת ספקים לחלוקה' : 'כיבוי ספקים לחלוקה',
-      sw.checked ? 'להפעיל רק אחרי שנבחרה תוכנית מסחרית שמתירה הצגה לצד שלישי (הכרעה ✅2). הספקים סופרים מי רואה את הנתונים, לא רק מי שמושך.' : 'משתמשים שקיבלו ספק מהמנהל יאבדו אליו גישה מיד.',
+      sw.checked ? 'להפעיל רק אחרי שנבחרה תוכנית מסחרית שמתירה הצגה לצד שלישי (הכרעה ✅2). הספקים סופרים מי רואה את הנתונים, לא רק מי שמושך.' : 'משתמשים שקיבלו ספק מהעורך יאבדו אליו גישה מיד.',
       sw.checked ? 'הפעלה' : 'כיבוי', async () => { await api('admin_shared_switch', { on: sw.checked }); reload(); }));
     const userOpts = S.users.map(u => [u.id, u.display_name || u.email || ('#' + u.id)]);
     const credRow = c => {
@@ -477,6 +1134,7 @@ export function mountMarket(ctx) {
       const lim = numInput('daily_limit', '100');
       return h('li', { class: 'card', style: 'cursor:default;display:block' },
         h('div', { class: 'l1' }, h('span', {}, provName(c.provider) + (c.label ? ' · ' + c.label : '')), h('span', { class: 't num' }, '••••' + c.last4)),
+        appKeyRow(c),
         h('ul', { class: 'stack', style: 'list-style:none;margin:8px 0' }, c.grants.length ? c.grants.map(g => h('li', { class: 'toolbar' },
           h('span', { style: 'flex:1' }, g.name || g.email, ' · ', num(String(g.daily_limit)), ' ביום'),
           h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'ביטול שיוך', on: { click: async () => { await api('admin_grant_delete', { cred_id: c.id, user_id: g.user_id }); reload(); } } }, '✕'))) : h('li', { class: 'muted' }, 'לא שויך לאף משתמש')),
@@ -487,6 +1145,24 @@ export function mountMarket(ctx) {
           h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => { try { await api('admin_cred_test', { id: c.id }); toast('החיבור תקין'); } catch (e) { toast(e.message, true); } reload(); } } }, 'בדוק חיבור'),
           h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('מחיקת מפתח', 'המפתח והשיוכים שלו יימחקו.', 'מחיקה', async () => { await api('admin_cred_delete', { id: c.id }); reload(); }) } }, 'מחיקה')));
     };
+    // מפתח האפליקציה (21.3): מפתח אחד לכל ספק משותף, שהאפליקציה פונה בו בשביל כולם. רק עורך ראשי מסמן
+    const appKeyRow = c => {
+      const ak = (S.app_keys || {})[c.provider];
+      if (!ak) return null;
+      const box = h('input', { type: 'checkbox', 'aria-label': 'מפתח האפליקציה', disabled: !S.is_chief }); box.checked = !!c.app_key;
+      box.addEventListener('change', async () => {
+        try { await api('admin_app_key', { provider: c.provider, cred_id: box.checked ? c.id : null }); toast(box.checked ? 'מפתח האפליקציה סומן' : 'הסימון בוטל'); }
+        catch (e) { toast(e.message, true); }
+        reload();
+      });
+      const lim = numInput('app_user_limit', String(ak.user_limit));
+      return h('div', { class: 'stack app-key' },
+        h('label', { class: 'switch' }, box, h('span', {}, h('b', {}, '⭐ מפתח האפליקציה'), c.app_key ? ' · פעיל — לכל המשתמשים' : '')),
+        h('p', { class: 'hint' }, 'פונים בו בשביל כולם, ומה שנמשך נשמר במאגר המשותף. לכל ספק — מפתח אחד.', S.is_chief ? '' : ' רק עורך ראשי מסמן.'),
+        c.app_key && S.is_chief ? h('div', { class: 'toolbar' }, field('פניות ליום למשתמש', lim), h('button', { class: 'btn ghost sm', type: 'button', on: { click: async () => {
+          try { await api('admin_app_key', { provider: c.provider, cred_id: c.id, user_limit: lim.value.trim() }); toast('נשמר'); reload(); } catch (e) { toast(e.message, true); }
+        } } }, 'שמירה')) : null);
+    };
     const add = () => {
       const prov = select('provider', S.providers.filter(p => p.needs_key).map(p => [p.id, p.name]), '');
       const secret = h('input', { type: 'password', autocomplete: 'off', dir: 'ltr', maxlength: 200 });
@@ -496,22 +1172,68 @@ export function mountMarket(ctx) {
     };
     return h('div', { class: 'stack' },
       h('div', { class: 'block stack' },
-        h('label', { class: 'switch' }, sw, h('span', {}, h('b', {}, 'המתג הראשי — ספקים מהמנהל'), S.shared_enabled ? ' · דלוק' : ' · כבוי')),
-        h('p', { class: 'hint' }, 'כבוי בשלב א\' (הכרעה ✅2) עד שתיבחר תוכנית מסחרית שמתירה הצגה לצד שלישי. כשכבוי — מפתח ושיוכים נשמרים, אבל אף משתמש לא מקבל דרכם נתונים.',
-          S.is_primary_admin ? '' : ' רק המנהל הראשי משנה את המתג.')),
+        h('label', { class: 'switch' }, sw, h('span', {}, h('b', {}, 'המתג הראשי — ספקים מהעורך'), S.shared_enabled ? ' · דלוק' : ' · כבוי')),
+        h('p', { class: 'hint' }, 'כבוי בשלב א\' (הכרעה ✅2) עד שתיבחר תוכנית מסחרית שמתירה הצגה לצד שלישי. כשכבוי — מפתח ושיוכים נשמרים, אבל אף משתמש לא מקבל דרכם נתונים. מפתח האפליקציה (⭐) — לא תלוי במתג.',
+          S.is_chief ? '' : ' רק עורך ראשי משנה את המתג.')),
       h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', type: 'button', on: { click: add } }, '+ מפתח לחלוקה')),
       S.creds.length ? h('ul', { class: 'list' }, S.creds.map(credRow)) : h('p', { class: 'empty' }, 'אין מפתחות לחלוקה.'));
   }
 
-  function adminAdmins(S) {
-    const user = select('user', S.users.filter(u => !S.admins.some(a => a.user_id === u.id)).map(u => [u.id, u.display_name || u.email]), '', { 'aria-label': 'משתמש' });
+  // ── עורכים (פרק 24.5): עורך ראשי ממנה, משנה ומבטל; עורך משני רואה את הרשימה בלבד. השרת אוכף (ts_role_grant / ts_role_revoke)
+  const ROLE_NAME = { chief: 'עורך ראשי', editor: 'עורך משני' };
+  function adminEditors(S) {
+    const chief = !!S.is_chief;
+    const when = t => new Date(t * 1000).toLocaleDateString('he-IL');
+    const act = async (action, body, ok) => { try { await api(action, body); toast(ok); reload(); } catch (e) { toast(e.message, true); } };
+    const row = a => {
+      const self = a.user_id === S.me_id;
+      const other = a.role === 'chief' ? 'editor' : 'chief';
+      const tag = a.gate ? 'עורך ראשי · מהשער' : ROLE_NAME[a.role];
+      const btns = chief && !a.gate && !self ? h('div', { class: 'row-btns' },
+        h('button', { class: 'btn ghost sm', type: 'button', 'data-role-to': other, on: { click: () => act('admin_role_add', { user_id: a.user_id, role: other }, 'התפקיד שונה') } },
+          other === 'chief' ? 'לעורך ראשי' : 'לעורך משני'),
+        h('button', { class: 'btn ghost sm danger', type: 'button', 'data-revoke': '', on: { click: () => confirmSheet('ביטול עורך', `${a.display_name || a.email} יחזור להיות משתמש, מהבקשה הבאה.`, 'ביטול',
+          () => act('admin_role_remove', { user_id: a.user_id }, 'בוטל')) } }, 'בטל')) : null;
+      return h('li', { class: 'card editor-row', style: 'cursor:default', 'data-user': a.user_id },
+        h('div', { class: 'body' },
+          h('div', { class: 'l1' }, h('span', {}, a.display_name || a.email || '—'), h('span', { class: 'chip' + (a.role === 'chief' ? ' ok' : '') }, tag)),
+          h('div', { class: 'l2' }, [a.email || '', self ? 'אתם' : ''].filter(Boolean).join(' · ')),
+          a.granted_by_name ? h('div', { class: 'l2 granted' }, `מינה: ${a.granted_by_name} · ${when(a.granted_at)}`) : null),
+        btns);
+    };
+    const appoint = () => {
+      const free = S.users.filter(u => !S.editors.some(a => a.user_id === u.id));
+      if (!free.length) { toast('כל המשתמשים כבר עורכים'); return; }
+      const user = select('user', free.map(u => [u.id, u.display_name || u.email]), '', { 'aria-label': 'משתמש' });
+      const sh = sheet('מינוי עורך', { saveLabel: 'מינוי', onSave: async () => {
+        if (!user.value) throw new Error('בחרו משתמש');
+        await api('admin_role_add', { user_id: +user.value, role: segVal(sh.body, 'role') });
+        toast('מונה'); reload();
+      } });
+      sh.body.append(field('משתמש', user),
+        h('div', { class: 'f' }, h('span', {}, 'תפקיד'), seg('role', [['editor', 'עורך משני'], ['chief', 'עורך ראשי']], 'editor', { label: 'תפקיד' })),
+        h('p', { class: 'hint' }, 'עורך ראשי — גם פרמטרים, "החל", מפתח האפליקציה, המתג, תפקידים וסיסמאות. עורך משני — כל השאר.'));
+    };
     return h('div', { class: 'stack' },
-      h('p', { class: 'hint' }, 'המנהל הראשי הוא מנהל הפלטפורמה (מהשער). מנהלים נוספים — רק הוא ממנה ומבטל, והביטול חל מיד.'),
-      S.admins.length ? h('ul', { class: 'list' }, S.admins.map(a => h('li', { class: 'card', style: 'cursor:default' },
-        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, a.display_name || a.email)), h('div', { class: 'l2' }, a.email || '')),
-        S.is_primary_admin ? h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: async () => { await api('admin_role_remove', { user_id: a.user_id }); reload(); } } }, 'ביטול') : null)))
-        : h('p', { class: 'empty' }, 'אין מנהלים נוספים.'),
-      S.is_primary_admin ? h('div', { class: 'toolbar' }, user, h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { if (!user.value) return; await api('admin_role_add', { user_id: +user.value }); toast('מונה'); reload(); } } }, 'מינוי')) : null);
+      h('p', { class: 'hint' }, chief
+        ? 'מי שמגיע מהכלים הדיגיטליים — תמיד עורך ראשי. עורך ראשי ממנה ומבטל עורכים; הביטול חל מיד. את עצמכם — עורך ראשי אחר מבטל.'
+        : 'רק עורך ראשי ממנה ומבטל עורכים.'),
+      chief ? h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', type: 'button', on: { click: appoint } }, '+ מינוי עורך')) : null,
+      S.editors.length ? h('ul', { class: 'list editors' }, S.editors.map(row)) : h('p', { class: 'empty' }, 'אין עורכים.'),
+      chief ? adminPasswords(S) : null);
+  }
+
+  // איפוס "סיסמה לאפליקציה" (spec-stage-a 20.1 ד', ש9) — עורך ראשי בלבד. הסיסמה נמחקת; המשתמש קובע חדשה כשהוא מחובר
+  function adminPasswords(S) {
+    const withPw = S.users.filter(u => +u.has_password);
+    return h('div', { class: 'stack' },
+      h('h3', { class: 'sec-title' }, '🔑 סיסמאות לאפליקציה'),
+      h('p', { class: 'hint' }, 'לכניסה כשהאפליקציה מנותקת מהכלים הדיגיטליים. משתמש ששכח — מאפסים כאן, והוא קובע חדשה בפרופיל אחרי שנכנס דרך הכלים הדיגיטליים.'),
+      withPw.length ? h('ul', { class: 'list' }, withPw.map(u => h('li', { class: 'card', style: 'cursor:default' },
+        h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, u.display_name || u.email)), h('div', { class: 'l2' }, u.email || '')),
+        h('button', { class: 'btn ghost sm danger', type: 'button', on: { click: () => confirmSheet('איפוס סיסמה', `הסיסמה של ${u.display_name || u.email} תימחק, וכניסות בסיסמה שלו ייסגרו.`, 'איפוס',
+          async () => { await api('admin_password_reset', { user_id: u.id }); toast('הסיסמה אופסה'); reload(); }) } }, 'איפוס'))))
+        : h('p', { class: 'empty' }, 'לאף משתמש אין סיסמה.'));
   }
 
   function adminCache(S) {
@@ -519,20 +1241,69 @@ export function mountMarket(ctx) {
     return h('div', { class: 'stack' },
       h('div', { class: 'summary' }, h('div', { class: 'line' }, h('span', { class: 'muted' }, 'גודל המאגר'), h('b', { class: 'num' }, kb.toLocaleString('he-IL') + ' KB'),
         h('span', { class: 'muted' }, ' · ניקוי אחרון ' + (S.cache.cleanup_at ? new Date(S.cache.cleanup_at * 1000).toLocaleString('he-IL') : '—')))),
-      h('p', { class: 'hint' }, 'המאגר שומר 60 יום אחורה ומתנקה פעם ביום. נתונים שנמשכו במפתח אישי — רק של אותו משתמש.'),
+      h('p', { class: 'hint' }, 'המאגר שומר 60 יום אחורה ומתנקה פעם ביום. Binance, ECB ו-Twelve Data — מאגר משותף, בכל מפתח. Finnhub במפתח אישי — רק של אותו משתמש.'),
       S.cache.by.length ? h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, h('th', {}, 'ספק'), h('th', {}, 'סוג'), h('th', { class: 'n' }, 'נרות'), h('th', { class: 'n' }, 'הוותיק'))),
-        h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהמנהל' }[r.kind]),
+        h('tbody', {}, S.cache.by.map(r => h('tr', {}, h('td', {}, provName(r.provider)), h('td', {}, { shared: 'משותף', personal: 'אישי', granted: 'מהעורך' }[r.kind]),
           h('td', { class: 'n num' }, r.candles.toLocaleString('he-IL')), h('td', { class: 'n num' }, new Date(r.oldest * 1000).toLocaleDateString('he-IL')))))) : h('p', { class: 'empty' }, 'המאגר ריק.'),
+      adminFetchLog(S.fetch_log || []),
+      adminMethodRuns(S.method_runs || []),
+      adminPairs(S.pairs || []),
       h('div', { class: 'row-btns wrap' },
         h('button', { class: 'btn ghost', type: 'button', on: { click: async () => { const r = await api('admin_cache_cleanup', {}); toast(`נמחקו ${r.deleted} נרות ישנים`); reload(); } } }, '🧹 ניקוי ישנים מ-60 יום'),
         h('button', { class: 'btn ghost danger', type: 'button', on: { click: () => confirmSheet('ריקון המאגר', 'כל הנרות יימחקו. הגרפים יימשכו שוב מהספקים.', 'ריקון', async () => { await api('admin_cache_clear', {}); reload(); }) } }, 'ריקון הכול')));
+  }
+
+  // יומן בקשות הנרות (18.2, S2): כמה נרות נמשכו מהספק בכל בקשה, מול כמה הוגשו — 0 = הכול מהמאגר
+  function adminFetchLog(rows) {
+    const kind = { shared: 'משותף', personal: 'אישי', granted: 'מהעורך' };
+    const time = t => new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return h('section', { class: 'block' },
+      h('h3', {}, 'יומן בקשות נרות'),
+      h('p', { class: 'hint' }, '"מהספק" — כמה נרות נמשכו מהספק בבקשה. 0 — הכול הוגש מהמאגר. מאגר משותף נמשך פעם אחת לכולם; אישי — כל משתמש לעצמו. "למה" — כשהבקשה החזירה 0 נרות, נכשלה, או הוגש רק מה שבמאגר.'),
+      rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'מתי'), h('th', {}, 'מי'), h('th', {}, 'נכס'), h('th', {}, 'מאגר'), h('th', { class: 'n' }, 'מהספק'), h('th', { class: 'n' }, 'הוגשו'))),
+        // הסיבה — שורה ברוחב מלא מתחת לבקשה (בטלפון עמודה נוספת נדחקת לקצה הטבלה הנגללת)
+        h('tbody', {}, rows.flatMap(r => [h('tr', { class: r.reason ? 'fl-why' : null },
+          h('td', { class: 'num' }, time(r.at)), h('td', {}, r.user || '—'),
+          h('td', {}, h('span', { dir: 'ltr' }, r.asset + ' · ' + r.tf)), h('td', {}, kind[r.kind] || r.kind),
+          h('td', { class: 'n num' }, r.provider_candles.toLocaleString('he-IL') + (r.provider_calls ? ` (${r.provider_calls})` : '')),
+          h('td', { class: 'n num' }, r.served.toLocaleString('he-IL'))),
+          r.reason ? h('tr', { class: 'fl-why fl-reason-row' }, h('td', { class: 'fl-reason', colspan: 6 }, h('div', {}, h('b', {}, 'למה: '), r.reason))) : null].filter(Boolean)))))
+        : h('p', { class: 'empty' }, 'אין עדיין בקשות.'));
+  }
+
+  // מונה ריצות השיטות (18.3, S3): "רצה" — חישוב אמיתי; "מהשמור" — אותו נר סגור, התוצאה הקודמת חזרה בלי להריץ
+  function adminMethodRuns(rows) {
+    const time = t => (t ? new Date(t * 1000).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+    return h('section', { class: 'block method-runs' },
+      h('h3', {}, 'ריצות שיטה ברענון'),
+      h('p', { class: 'hint' }, '"רצה" עולה רק כשנסגר נר חדש (או השתנו הפרמטרים). רענון בלי נר חדש — "מהשמור", והשיטה לא רצה.'),
+      rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'שיטה'), h('th', { class: 'n' }, 'רצה'), h('th', { class: 'n' }, 'מהשמור'), h('th', {}, 'ריצה אחרונה'))),
+        h('tbody', {}, rows.map(r => h('tr', { 'data-method': r.method_id },
+          h('td', {}, h('span', { dir: 'ltr' }, r.method_id)),
+          h('td', { class: 'n num runs' }, r.runs.toLocaleString('he-IL')),
+          h('td', { class: 'n num reused' }, r.reused.toLocaleString('he-IL')),
+          h('td', { class: 'num' }, time(r.last_run_at)))))))
+        : h('p', { class: 'empty' }, 'אף שיטה עוד לא רצה ברענון.'));
+  }
+
+  // קטלוג הזוגות (18.1 קריטריון 4): כאן — ורק כאן — הסימולים גלויים, לבדיקה
+  function adminPairs(rows) {
+    return h('details', { class: 'block' },
+      h('summary', {}, `🔤 קטלוג הזוגות (${rows.length}) — שם ← סימול`),
+      h('p', { class: 'hint' }, 'למשתמש מוצג רק השם. הנכס הראשון שיש לו ספק — הוא שנפתח. "1/" — זוג מחושב (ההופכי).'),
+      h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'זוג'), h('th', {}, 'נכסים (לפי סדר)'))),
+        h('tbody', {}, rows.map(r => h('tr', {}, h('td', {}, pairLabel(r), r.computed ? ' · מחושב' : ''),
+          h('td', {}, h('span', { dir: 'ltr' }, r.assets.join(' · ')))))))));
   }
 
   function adminLog(S) {
     return S.log.length ? h('ul', { class: 'list' }, S.log.map(l => h('li', { class: 'card', style: 'cursor:default' },
       h('div', { class: 'body' }, h('div', { class: 'l1' }, h('span', {}, l.action), h('span', { class: 't' }, new Date(l.at * 1000).toLocaleString('he-IL'))),
         h('div', { class: 'l2' }, (l.display_name || '') + (l.target ? ' · ' + l.target : ''))))))
-      : h('p', { class: 'empty' }, 'אין עדיין פעולות מנהל.');
+      : h('p', { class: 'empty' }, 'אין עדיין פעולות של עורכים.');
   }
 
   return {

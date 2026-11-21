@@ -1,0 +1,24 @@
+# כותרות האבטחה (פרוסה C1, lib/csp.php) נשלחות מ-PHP: השער של הפלטפורמה מגיש קבצים סטטיים בהפניה פנימית
+# ל-platform/gate.php, ו-Header set מכאן לא היה חל עליהם. לכן הסטודיו מוגש מ-index.php, והמעטפת (studio.html) — רק דרכו.
+DirectoryIndex index.php
+
+# index.html — הכתובת הישנה של הסטודיו (קישורים, קיצור דרך בטלפון, PWA מותקן): 302 ל-index.php, עם השאילתה (והגיבוב
+# נשמר בדפדפן). הקובץ אינו קיים, ולכן הכללים של השער (build-gate.php, בראש הקובץ הזה) — שדורשים קובץ קיים — אינם תופסים
+# אותו, והכלל הזה הוא שחל. הנתיב נבנה מ-REQUEST_URI — בלי תלות ב-RewriteBase או בתיקייה בשרת.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} ^(.*/)index\.html$
+    RewriteRule ^index\.html$ %1index.php [R=302,L,QSA]
+</IfModule>
+
+# studio.html — גוף הדף של index.php ושל editor.php (readfile). כתובת ישירה אליו הייתה מגישה את הסטודיו בלי ה-CSP.
+# (חל גם בתת-תיקיות; ב-preview/ אין קבצים על הדיסק — הכול מוגש מ-preview/index.php, וגם שם הבלוק מתיר במפורש.)
+<Files "studio.html">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</Files>

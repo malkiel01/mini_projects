@@ -1,0 +1,7 @@
+{
+  "label": "כותרת + רשימת מילים",
+  "kind": "section",
+  "description": "כותרת, חיפוש ורשימת המילים מטבלת המילים (קשירת נתונים — js/kol-data.js).",
+  "components": [],
+  "requires": ["js/kol-data.js"]
+}

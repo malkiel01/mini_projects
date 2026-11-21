@@ -46,7 +46,7 @@ test('פרסום: חתימה שגויה, גוף ששונה אחרי החתימה
     $other = ['kid' => pub_key()['kid'], 'secret' => base64_encode(sodium_crypto_sign_secretkey($kp))];
     eq('bad_signature', wp_send('ping', wp_signed('ping', [], null, $other))['json']['code'], 'מפתח אחר באותו מזהה');
     eq('bad_signature', wp_send('ping', wp_signed('ping', [], null, ['kid' => 'unknown-kid'] + pub_key()))['json']['code'], 'מזהה מפתח לא מוכר');
-    $r = wp_send('publish', wp_signed('ping', []));
+    $r = wp_send('manifest', wp_signed('ping', []));                 // M6b: publish (1.x) הוסר — פעולה אחרת שנשארה
     eq(400, $r['status'], 'חתימה של פעולה אחת לא עוברת לפעולה אחרת');
 });
 
@@ -58,19 +58,6 @@ test('פרסום: nonce חוזר נדחה; זמן רחוק נדחה', function (
     eq([401, 'replay'], [$again['status'], $again['json']['code']], 'אותה בקשה פעם שנייה');
     $old = wp_signed('ping', ['time' => time() - 3600]);
     eq('stale', wp_send('ping', $old)['json']['code'], 'בקשה מלפני שעה');
-});
-
-test('פרסום: מספר גרסה יורד או חוזר נדחה; עולה מתקבל', function () {
-    wp_site_ready();
-    $pub = fn(int $n) => wp_send('publish', wp_signed('publish', ['version' => $n, 'html' => "<p>גרסה $n</p>", 'css' => '', 'assets' => [], 'published_by' => 'בדיקה']));
-    $a = $pub(5);
-    eq([200, 5], [$a['status'], $a['json']['version'] ?? null], $a['body']);
-    $same = $pub(5);
-    eq([409, 'old_version'], [$same['status'], $same['json']['code']], 'אותו מספר');
-    $down = $pub(4);
-    eq([409, 'old_version', 5], [$down['status'], $down['json']['code'], $down['json']['version']], 'מספר יורד');
-    eq(200, $pub(6)['status'], 'מספר עולה');
-    eq(6, site_call('ping', [])['version'], 'האתר מדווח על הגרסה האחרונה');
 });
 
 test('פרסום: בלי מפתח ציבורי באתר — נדחה, והכלי מחזיר שגיאה מובנת', function () {

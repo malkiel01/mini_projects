@@ -18,6 +18,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/project.php';
 require_once __DIR__ . '/secrets.php';
 require_once __DIR__ . '/lexicon.php';
+require_once __DIR__ . '/forms.php';
 
 const PV_TTL = 1800;                // תוקף האסימון, בשניות
 const PV_SANDBOX = 'sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-presentation';
@@ -105,10 +106,24 @@ function pv_fail(int $code, string $text): never
     exit($text);
 }
 
-/** שליחה עם Range (שמע ווידאו דורשים). $bytes — תוכן בזיכרון; אחרת $file — קובץ בדיסק. */
-function pv_send(?string $bytes, ?string $file, string $name, int $code = 200): never
+/**
+ * הסוג של קובץ מדיה: מה שנשמר בספרייה (files.type), אם הוא סוג מוכר; אחרת — לפי הסיומת. הנתיב היציב של הקלטה
+ * (media/audio/<מזהה>.<סיומת>) שומר את הסיומת המקורית גם כשהוחלפה בקובץ מסוג אחר (A3: mp3 ← m4a) — B1.
+ */
+function pv_media_type(array $f, string $name): string
 {
-    $type = PV_TYPES[strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? null;
+    $t = strtolower(trim(explode(';', (string)($f['type'] ?? ''))[0]));
+    $t = ['audio/x-m4a' => 'audio/mp4', 'audio/m4a' => 'audio/mp4', 'audio/mp3' => 'audio/mpeg', 'audio/x-wav' => 'audio/wav', 'audio/wave' => 'audio/wav',
+        'audio/vnd.wave' => 'audio/wav', 'audio/x-aac' => 'audio/aac', 'image/jpg' => 'image/jpeg'][$t] ?? $t;
+    $known = array_map(fn($x) => trim(explode(';', $x)[0]), PV_TYPES);
+    if ($t !== '' && in_array($t, $known, true)) return $t;
+    return trim(explode(';', PV_TYPES[strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? 'application/octet-stream')[0]);
+}
+
+/** שליחה עם Range (שמע ווידאו דורשים). $bytes — תוכן בזיכרון; אחרת $file — קובץ בדיסק. $type — כשהסיומת אינה הסוג (מדיה). */
+function pv_send(?string $bytes, ?string $file, string $name, int $code = 200, ?string $type = null): never
+{
+    $type ??= PV_TYPES[strtolower(pathinfo($name, PATHINFO_EXTENSION))] ?? null;
     $size = $bytes !== null ? strlen($bytes) : (int)filesize((string)$file);
     header('Content-Type: ' . ($type ?? 'application/octet-stream'));
     if (!$type) header("Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode(basename($name)));
@@ -158,22 +173,17 @@ function pv_inject(string $html, string $src): string
     return $tag . $html;
 }
 
-/** data/words.json — נבנה מטבלת המילים ברגע הבקשה (עד N1: המילים כמו שהן). $app — כתובת האפליקציה, להקלטות שהועלו. */
+/** N3: נתיב בעץ ← מפתח רשימה רשומה (לא המילים, ולא נתיב שתפוס בקובץ רגיל). */
+function pv_list_at(string $path): ?string
+{
+    $k = pf_list_paths()[$path] ?? null;
+    return $k === null || $k === 'words' || pf_by_path($path) ? null : $k;
+}
+
+/** data/words.json — נבנה מטבלת המילים ברגע הבקשה. N1: הפונקציה האחת words_json (lib/lexicon.php). $app — כתובת האפליקציה, להקלטות שהועלו. */
 function pv_words(string $app): string
 {
-    $rows = words_rows();
-    $map = topic_slugs();
-    $topics = array_map(fn($t) => ['id' => $t['slug'], 'label' => $t['name']], topics_used($rows, $map));
-    $items = [];
-    foreach ($rows as $w) {
-        $a = (string)$w['audio'];
-        $items[] = [
-            'id' => $w['id'], 'word' => $w['word'], 'meaning' => $w['meaning'],
-            'topics' => array_map(fn($t) => topic_slug((string)$t, $map), $w['topics']),
-            'audio' => $a === '' ? '' : (file_id($a) ? $app . media_url($a) : $a),
-        ];
-    }
-    return json_encode(['topics' => $topics, 'items' => $items], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    return words_json($app);
 }
 
 /** קובץ של הפרויקט לפי נתיב, או null. I5: רק מה שבפרויקט; pf_path דוחה כל טיפוס (.., \, נתיב מוחלט). */
@@ -200,14 +210,23 @@ function pv_serve(): never
         if ($at === false) pv_fail(404, 'Not found');
         $app = substr($uri, 0, $at + 1);                              // /mini_projects/kol-maroko/
         [$token, $rest] = array_pad(explode('/', substr($uri, $at + 9), 2), 2, '');
+        // M1 — מצב בנייה: אסימון של גרסה בנויה (b…). מגיש מהחבילה, לא מהמאגר (lib/build.php, build_serve)
+        if (str_starts_with($token, 'b')) {
+            require_once __DIR__ . '/build.php';
+            $bt = build_token_parse($token) ?? pv_fail(403, "403 - the build link is missing, invalid or expired.\nהקישור לגרסה הבנויה שגוי או שפג תוקפו.");
+            build_serve($bt[0], $bt[1], $app . 'preview/' . $token . '/', rawurldecode($rest));
+        }
         if (!pv_token_ok($token)) pv_fail(403, "403 - the preview link is missing, invalid or expired.\nהקישור לתצוגה חסר, שגוי או שפג תוקפו. פותחים אותו מחדש מהסטודיו.");
         $root = $app . 'preview/' . $token . '/';
         $path = rawurldecode($rest);
 
         if ($path === PV_BRIDGE) pv_send((string)file_get_contents(dirname(__DIR__) . '/assets/js/preview-bridge.js'), null, 'bridge.js');
         if ($path === PV_WORDS) pv_send(pv_words($app), null, 'words.json');
+        // N3: data/<key>.json של כל רשימה רשומה (kol.json ← data, source "list:<key>") — מהטבלה, רק "מתפרסם"
+        if (($lk = pv_list_at($path)) !== null) pv_send(list_json($lk, $app), null, basename($path));
 
         $html = fn(string $bytes) => pv_inject($bytes, $root . PV_BRIDGE);
+        $pvHtml = $html; $html = fn(string $bytes) => forms_meta_inject($pvHtml($bytes), forms_endpoint(true));    // M5: <meta> של form.php?test=1 (lib/forms.php)
         $r = null;
         if ($path === '' || str_ends_with($path, '/')) {
             $entry = $path === '' ? (string)(pf_kol()['config']['entry'] ?? 'index.html') : $path . 'index.html';
@@ -221,9 +240,10 @@ function pv_serve(): never
             pv_fail(404, "404 - no such file in the project.\nאין קובץ כזה בפרויקט: " . $path);
         }
         if ($r['kind'] === 'media') {
-            $file = file_path(file_row((string)$r['file_id']));
+            $fr = file_row((string)$r['file_id']);
+            $file = file_path($fr);
             if (!is_file($file)) pv_fail(404, '404 - the media file is missing on the server.');
-            pv_send(null, $file, $r['path']);
+            pv_send(null, $file, $r['path'], 200, pv_media_type($fr, $r['path']));
         }
         $ext = strtolower(pathinfo($r['path'], PATHINFO_EXTENSION));
         if ($ext === 'html' || $ext === 'htm') pv_send($html(pf_blob_get($r['sha'])), null, $r['path']);

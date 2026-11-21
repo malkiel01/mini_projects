@@ -1,0 +1,9 @@
+{
+  "label": "עמוד \"צור קשר\"",
+  "kind": "page",
+  "file": "contact.html",
+  "title": "צור קשר",
+  "description": "עמוד שלם: כותרת, טופס, מפה ואייקוני רשתות.",
+  "components": ["form", "map", "social-icons"],
+  "requires": ["js/kol-data.js"]
+}

@@ -1,0 +1,38 @@
+/* קול מרוקו — "🔁 מעבר" (פרוסה M3). נטען מ-assets/js/cutover.js. */
+
+.co { display: grid; gap: var(--s2); margin-bottom: var(--s4); padding-bottom: var(--s4); border-bottom: 1px solid var(--line); }
+.co .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.co-count { margin: 0; }
+.co-fell { display: grid; gap: var(--s1); }
+.co-fell ul { margin: 0; padding-inline-start: 1.2em; }
+
+.co-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.co-row { display: grid; grid-template-columns: auto 1fr; gap: var(--s2); align-items: start; padding: var(--s2) var(--s3);
+    border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.co-row.co-bad { border-inline-start: 3px solid var(--danger); }
+.co-row.co-ok { border-inline-start: 3px solid var(--ok); }
+.co-row.co-wait { border-inline-start: 3px solid var(--star); }
+.co-row .chip { min-width: 28px; justify-content: center; font-weight: 700; }
+.co-body { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.co-src { font-size: .78rem; }
+.co-detail, .co-todo { margin: 0; font-size: .9rem; }
+.co-todo { color: var(--ink); }
+.co-more summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; }
+.co-more ul, .co-ev { margin: 0 0 var(--s1); padding-inline-start: 1.2em; font-size: .88rem; display: grid; gap: 2px; }
+.co-body > .btn { justify-self: start; margin-top: var(--s1); }
+.co-revoke { margin-inline-start: var(--s2); font-size: .85rem; }
+
+.co-live { display: grid; gap: var(--s1); padding: var(--s2) var(--s3); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+    border-radius: var(--r); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+.co-live p { margin: 0; }
+.co-ready { display: grid; gap: var(--s2); padding: var(--s3); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+    border-radius: var(--r); background: color-mix(in srgb, var(--ok) 8%, var(--surface)); }
+.co-ready p { margin: 0; }
+.co-ready .btn { justify-self: start; }
+.co-path { font-weight: 700; }
+.co-kill { margin: 0; }
+
+.co-form { display: grid; gap: var(--s2); }
+.co-form label { display: grid; gap: 4px; font-size: .9rem; }
+.co-form textarea, .co-form input[type="url"] { width: 100%; }
+.co-form .co-confirm { display: flex; align-items: center; gap: var(--s2); min-height: var(--tap); }

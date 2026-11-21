@@ -1,0 +1,1056 @@
+<?php
+/**
+ * טפסים ותיבת פניות (פרוסה M5; docs/spec-v2/06-data.md §3, slices/M5-forms-inbox.md).
+ *
+ * שלושה חלקים:
+ *   (א) הרישום — סריקת HTML: כל data-kol-form בלי action משלו, שמות השדות שבו ומה required. נשמר בגרסה הבנויה
+ *       (pkg_builds.forms) ונבנה מהטיוטה לתצוגה החיה. form.php מקבל **רק** טופס ושדות שברישום.
+ *   (ב) הקבלה — forms_receive(), הנקודה הציבורית (form.php). אנונימית: בלי session, בלי עוגייה, בלי מודול הכניסה.
+ *       כל מגבלה נאכפת כאן, בשרת. התשובה — רק ok ו-reason. ה-IP — HMAC בלבד, בטבלת הקצב בלבד, 30 יום.
+ *   (ג) התיבה — "📬 פניות" בסטודיו (api.php), המייל, ושורת המפתח.
+ *
+ * איפה הנתונים: form_entries / form_hits / form_rejects / forms_trash ב-data/kol.sqlite (מיגרציה 19); מפתח ה-HMAC —
+ * data/secrets.json (forms_ip_key); ההגדרות — בטבלת settings. אין קובץ חדש ב-data/. snap_state אינו כולל פניות.
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/devlog.php';
+require_once __DIR__ . '/net.php';         // V16c: בדיקת מארח / IP משותפת לבקשות החוצה
+
+/** המגבלות (08 §4.2): ברירת מחדל, מינימום, מקסימום, והנוסח לבעל העמוד. */
+const FORMS_LIMITS = [
+    'bytes'  => [10240, 1024, 65536, 'גודל פנייה (בייטים)'],
+    'fields' => [20, 1, 50, 'שדות בפנייה'],
+    'chars'  => [5000, 50, 20000, 'תווים לשדה'],
+    'ip_n'   => [5, 1, 100, 'פניות מאותה כתובת ב-10 דקות'],
+    'hour_n' => [200, 1, 5000, 'פניות בשעה, בסך הכול'],
+    'day_n'  => [1000, 1, 20000, 'פניות ביום (תקרה — מעליה הטופס סגור עד חצות UTC)'],
+    'min_t'  => [3, 0, 60, 'שניות מינימום מטעינת העמוד ועד השליחה'],
+];
+const FORMS_IP_WINDOW = 600;
+const FORMS_IP_DAYS = 30;
+const FORMS_TEST_DAYS = 7;
+const FORMS_REG_BUILDS = 10;                    // האיחוד של 10 הגרסאות האחרונות שנשלחו (חזרה לגרסה נעשית בתוסף)
+const FORMS_MAIL_HOUR = 12;                     // לכל היותר 12 מיילים בשעה; מעבר לזה — מצטבר למייל אחד (S3)
+const FORMS_MAIL_RETRY = 300;                   // אחרי כישלון — ניסיון חוזר אחרי 5 דקות
+const FORMS_MAIL_MAX = 20;                      // פניות במייל אחד לכל היותר; השאר — "ועוד N בתיבה"
+const FORMS_MAIL_TO = 5;                        // נמענים לכל היותר
+const FORMS_MAIL_FAILS = 3;                     // אחרי 3 כישלונות ברצף — כבוי אוטומטית
+const FORMS_RESERVED = ['_form', '_t', '_page', '_trap'];
+const FORMS_NAME_RE = '/^[\p{L}\p{N}_.:\[\]-]{1,64}$/u';
+const FORMS_REJECT_REASONS = ['rate', 'size', 'invalid', 'closed', 'spam', 'unknown'];
+const FORMS_PAGE = 50;
+
+// ── (א) הרישום ────────────────────────────────────────────
+
+/** ערך של תכונה מתוך מחרוזת התכונות של תגית, או null. */
+function forms_attr(string $attrs, string $name): ?string
+{
+    if (!preg_match('/(?:^|\s)' . preg_quote($name, '/') . '(?:\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s"\'>]+)))?(?=[\s\/>]|$)/i', $attrs, $m)) return null;
+    return html_entity_decode(($m[1] ?? '') . ($m[2] ?? '') . ($m[3] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+}
+
+/**
+ * הטפסים שבמסמך: שם ← {fields, required, external, trap, files}. סורק תגיות בלבד: הערות ותוכן של script/style/textarea
+ * וכו' — מדולגים. טופס עם action — external (הדפדפן שולח לשם, לא לכאן; [ש-12]) ואינו נרשם לקבלה.
+ */
+function forms_scan(string $html): array
+{
+    $out = [];
+    $cur = null;
+    $i = 0;
+    $raw = ['script', 'style', 'textarea', 'title', 'xmp', 'iframe', 'noembed', 'noframes'];
+    $re = '~<(?:(!--)|(/?)([A-Za-z][A-Za-z0-9:-]*)((?:[^>"\']|"[^"]*"|\'[^\']*\')*)>)~A';
+    while (($at = strpos($html, '<', $i)) !== false) {
+        if (!preg_match($re, $html, $m, 0, $at)) { $i = $at + 1; continue; }
+        $i = $at + strlen($m[0]);
+        if (($m[1] ?? '') === '!--') { $c = strpos($html, '-->', $at + 4); if ($c === false) break; $i = $c + 3; continue; }
+        $name = strtolower($m[3]);
+        $close = $m[2] === '/';
+        $attrs = $m[4] ?? '';
+        if ($name === 'form') {
+            if ($close) { $cur = null; continue; }
+            $fname = forms_attr($attrs, 'data-kol-form');
+            $cur = null;
+            if ($fname !== null && preg_match(FORMS_NAME_RE, $fname)) {
+                $action = forms_attr($attrs, 'action');
+                $out[$fname] ??= ['fields' => [], 'required' => [], 'external' => false, 'trap' => false, 'files' => false];
+                if ($action !== null && trim($action) !== '') $out[$fname]['external'] = true;
+                $cur = $fname;
+            }
+        } elseif (!$close && $cur !== null && in_array($name, ['input', 'textarea', 'select', 'button'], true)) {
+            $type = strtolower((string)forms_attr($attrs, 'type'));
+            $field = forms_attr($attrs, 'name');
+            if ($name === 'button' || in_array($type, ['submit', 'button', 'reset', 'image'], true)) { /* לא שדה */ }
+            elseif ($type === 'file') $out[$cur]['files'] = true;
+            elseif (forms_attr($attrs, 'data-kol-trap') !== null) $out[$cur]['trap'] = true;
+            elseif ($field !== null && preg_match(FORMS_NAME_RE, $field) && !in_array($field, FORMS_RESERVED, true)) {
+                if (!in_array($field, $out[$cur]['fields'], true)) $out[$cur]['fields'][] = $field;
+                if (forms_attr($attrs, 'required') !== null && !in_array($field, $out[$cur]['required'], true) && !in_array($type, ['checkbox', 'radio'], true)) {
+                    $out[$cur]['required'][] = $field;
+                }
+            }
+        }
+        if (!$close && in_array($name, $raw, true)) {
+            if (!preg_match('~</' . $name . '[\s/>]~i', $html, $c, PREG_OFFSET_CAPTURE, $i)) break;
+            $i = $c[0][1];
+        }
+    }
+    return $out;
+}
+
+/** איחוד של רישומים: שדות — איחוד; required — רק מה שחובה בכולם (גולש מגרסה ישנה לא נדחה על שדה שנוסף אחר כך). */
+function forms_merge(array $a, array $b): array
+{
+    foreach ($b as $name => $f) {
+        if (!isset($a[$name])) { $a[$name] = $f; continue; }
+        $a[$name]['fields'] = array_values(array_unique([...$a[$name]['fields'], ...$f['fields']]));
+        $a[$name]['required'] = array_values(array_intersect($a[$name]['required'], $f['required']));
+        foreach (['external', 'trap', 'files'] as $k) $a[$name][$k] = !empty($a[$name][$k]) || !empty($f[$k]);
+    }
+    return $a;
+}
+
+/** הכתובת של form.php — מוחלטת (העמוד באתר נמצא בדומיין אחר). */
+function forms_endpoint(bool $test = false): string
+{
+    $host = (string)preg_replace('/[^A-Za-z0-9.:\[\]-]/', '', (string)($_SERVER['HTTP_HOST'] ?? 'mbe-plus.com'));
+    $dir = rtrim(str_replace('\\', '/', dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/mini_projects/kol-maroko/api.php'))), '/');
+    $dir = (string)preg_replace('~/preview(/.*)?$~', '', $dir);
+    $scheme = preg_match('/^(127\.0\.0\.1|localhost)(:\d+)?$/', $host) ? 'http' : 'https';
+    return "$scheme://$host$dir/form.php" . ($test ? '?test=1' : '');
+}
+
+/** <meta name="kol-form-endpoint"> אחרי <head> — באותה שורה (מספרי השורות נשמרים). מי שכתב meta משלו — נשאר שלו. */
+function forms_meta_inject(string $html, string $url): string
+{
+    if (!str_contains($html, 'data-kol-form') || preg_match('/<meta\b[^>]*\bname\s*=\s*["\']?kol-form-endpoint\b/i', $html)) return $html;
+    $tag = '<meta name="kol-form-endpoint" content="' . htmlspecialchars($url, ENT_QUOTES) . '">';
+    foreach (['/<head(?:\s[^>]*)?>/i', '/<html(?:\s[^>]*)?>/i', '/<!doctype[^>]*>/i'] as $re) {
+        if (preg_match($re, $html, $m, PREG_OFFSET_CAPTURE)) {
+            $at = $m[0][1] + strlen($m[0][0]);
+            // מיד אחרי תגיות ה-script שהתצוגה החיה הוסיפה באותה שורה
+            if (preg_match('~\G(?:<script src="[^"]*"></script>)+~', $html, $s, 0, $at)) $at += strlen($s[0]);
+            return substr($html, 0, $at) . $tag . substr($html, $at);
+        }
+    }
+    return $tag . $html;
+}
+
+/** הבנייה (M1, build_finish): רישום הטפסים מהחבילה, ו-meta הכתובת בכל עמוד שיש בו טופס. מחזיר [files, forms, notes]. */
+function forms_build(array $files): array
+{
+    $forms = [];
+    $notes = [];
+    $url = forms_endpoint();
+    foreach ($files as $p => $f) {
+        if ($f['src'] === 'media' || !preg_match('/\.html?$/i', $p)) continue;
+        $html = pf_blob_get($f['sha']);
+        if (!str_contains($html, 'data-kol-form')) continue;
+        $forms = forms_merge($forms, forms_scan($html));
+        $new = forms_meta_inject($html, $url);
+        if ($new === $html) continue;
+        $files[$p] = ['sha' => pf_blob_put($new), 'size' => strlen($new), 'type' => $f['type'], 'src' => 'prerender',
+            'orig' => $f['src'] === 'prerender' ? $f['orig'] : $f['sha'], 'lists' => $f['lists'] ?? 0, 'form_meta' => true];
+    }
+    foreach ($forms as $name => $f) {
+        if ($f['external']) { $notes[] = ['kind' => 'info', 'msg' => "הטופס \"$name\" שולח לכתובת חיצונית (action) — פניות ממנו אינן מגיעות ל-📬 פניות"]; continue; }
+        $notes[] = ['kind' => 'info', 'msg' => "טפסים: $name (" . implode(', ', $f['fields']) . ')'];
+        if ($f['files']) $notes[] = ['kind' => 'warn', 'msg' => "בטופס \"$name\" יש שדה קובץ — קבצים מצורפים אינם מתקבלים, והשליחה תידחה"];
+    }
+    return [$files, $forms, $notes];
+}
+
+/** הרישום מהטיוטה (תצוגה חיה, ?test=1) — סריקה של קובצי ה-HTML שבמאגר, במטמון לפי הנתיבים וה-sha שלהם. */
+function forms_draft(): array
+{
+    require_once __DIR__ . '/project.php';
+    $rows = db()->query("SELECT path, sha FROM pf_files WHERE deleted_at IS NULL AND kind = 'file' ORDER BY path")->fetchAll();
+    $rows = array_values(array_filter($rows, fn($r) => preg_match('/\.html?$/i', $r['path'])));
+    $key = hash('sha256', json_encode($rows));
+    $c = json_decode((string)setting('forms_draft_cache', ''), true);
+    if (is_array($c) && ($c['key'] ?? '') === $key) return $c['forms'];
+    $forms = [];
+    foreach ($rows as $r) {
+        try { $html = pf_blob_get($r['sha']); } catch (Throwable) { continue; }
+        if (str_contains($html, 'data-kol-form')) $forms = forms_merge($forms, forms_scan($html));
+    }
+    setting_set('forms_draft_cache', json_encode(['key' => $key, 'forms' => $forms], JSON_UNESCAPED_UNICODE));
+    return $forms;
+}
+
+/** הרישום של מה שבאתר: איחוד forms של 10 הגרסאות האחרונות שנשלחו. */
+function forms_live(): array
+{
+    $forms = [];
+    foreach (db()->query('SELECT forms FROM pkg_builds WHERE sent_at IS NOT NULL AND forms IS NOT NULL ORDER BY sent_at DESC, id DESC LIMIT ' . FORMS_REG_BUILDS)->fetchAll() as $r) {
+        $forms = forms_merge($forms, json_decode((string)$r['forms'], true) ?: []);
+    }
+    return $forms;
+}
+
+// ── (ב) הקבלה ─────────────────────────────────────────────
+
+function forms_limits(): array
+{
+    $saved = json_decode((string)setting('forms_limits', '{}'), true) ?: [];
+    $out = [];
+    foreach (FORMS_LIMITS as $k => [$def, $min, $max]) $out[$k] = isset($saved[$k]) ? max($min, min($max, (int)$saved[$k])) : $def;
+    return $out;
+}
+
+/** מפתח ה-HMAC ל-IP — ב-data/secrets.json. נוצר אם אין. */
+function forms_ip_key(): string
+{
+    require_once __DIR__ . '/secrets.php';
+    $s = secrets_load();
+    if (!is_string($s['forms_ip_key'] ?? null) || strlen($s['forms_ip_key']) < 32) {
+        $s['forms_ip_key'] = bin2hex(random_bytes(32));
+        secrets_save($s);
+    }
+    return $s['forms_ip_key'];
+}
+
+function forms_ip_hash(string $ip): string
+{
+    return hash_hmac('sha256', $ip, forms_ip_key());
+}
+
+function forms_reject_count(string $reason, int $n = 1): void
+{
+    db()->prepare('INSERT INTO form_rejects (day, reason, n) VALUES (?, ?, ?) ON CONFLICT(day, reason) DO UPDATE SET n = n + excluded.n')
+        ->execute([gmdate('Y-m-d'), $reason, $n]);
+}
+
+/** ניקוי זול בכל בקשה: הקצב — 30 יום; פניות בדיקה — 7 ימים. */
+function forms_clean(): void
+{
+    $pdo = db();
+    $pdo->prepare('DELETE FROM form_hits WHERE at < ?')->execute([time() - FORMS_IP_DAYS * 86400]);
+    $pdo->prepare('DELETE FROM form_entries WHERE test = 1 AND at < ?')->execute([gmdate('Y-m-d\TH:i:s\Z', time() - FORMS_TEST_DAYS * 86400)]);
+}
+
+/**
+ * פנייה אחת. $post — $_POST; $files — $_FILES; $len — Content-Length; $ip — REMOTE_ADDR. מחזיר [קוד HTTP, תשובה].
+ * התשובה — רק {"ok":true} או {"ok":false,"reason":…}. ספאם ← ok בלי לשמור.
+ */
+function forms_receive(array $post, array $files, int $len, string $ip, bool $test): array
+{
+    // בדיקת התקינות מהסטודיו (📬 ← ⚙️ / מסך המפתח): עונה כמו לטופס לא רשום, בלי לגעת במסד — אינה נספרת בקצב ובדחיות
+    if (($post['_form'] ?? null) === '__health__' && count($post) <= 3 && !$files) return [400, ['ok' => false, 'reason' => 'invalid']];
+    $pdo = db();
+    forms_clean();
+    $L = forms_limits();
+    $no = function (string $reason, int $code, string $why) use ($test): array {
+        forms_reject_count($reason);
+        devlog_write('warn', 'forms', 'form.reject', ['message' => "$reason: $why" . ($test ? ' (בדיקה)' : ''), 'action' => 'form', 'status' => $code]);
+        return [$code, $reason === 'spam' ? ['ok' => true] : ['ok' => false, 'reason' => $reason]];
+    };
+
+    // הקצב: קודם הכתובת (מי שנחסם אינו נספר בסך הכול — כתובת אחת אינה סוגרת את הטופס לכולם), אחר כך השעה והיום
+    $h = forms_ip_hash($ip);
+    $now = time();
+    $q = $pdo->prepare('SELECT COUNT(*) FROM form_hits WHERE ip_hash = ? AND at >= ?');
+    $q->execute([$h, $now - FORMS_IP_WINDOW]);
+    if ((int)$q->fetchColumn() >= $L['ip_n']) return $no('rate', 429, 'יותר מ-' . $L['ip_n'] . ' פניות מאותה כתובת ב-10 דקות');
+    $c = $pdo->prepare('SELECT COUNT(*) FROM form_hits WHERE at >= ?');
+    $c->execute([strtotime(gmdate('Y-m-d') . ' 00:00:00 UTC')]);
+    if ((int)$c->fetchColumn() >= $L['day_n']) return $no('closed', 503, 'התקרה היומית (' . $L['day_n'] . ') הושגה');
+    $c->execute([$now - 3600]);
+    if ((int)$c->fetchColumn() >= $L['hour_n']) return $no('rate', 429, 'יותר מ-' . $L['hour_n'] . ' פניות בשעה האחרונה');
+    $pdo->prepare('INSERT INTO form_hits (ip_hash, at) VALUES (?, ?)')->execute([$h, $now]);
+
+    // גודל ומבנה
+    if ($files) return $no('invalid', 400, 'קובץ מצורף');
+    $bytes = 0;
+    foreach ($post as $k => $v) {
+        if (!is_string($v)) return $no('invalid', 400, 'שדה שאינו טקסט');
+        $bytes += strlen((string)$k) + strlen($v);
+    }
+    if ($len > $L['bytes'] || $bytes > $L['bytes']) return $no('size', 413, 'פנייה גדולה מ-' . $L['bytes'] . ' בייטים');
+    $user = array_diff_key($post, array_flip(FORMS_RESERVED));
+    if (count($user) > $L['fields']) return $no('size', 413, 'יותר מ-' . $L['fields'] . ' שדות');
+    foreach ($post as $k => $v) {
+        if (!mb_check_encoding((string)$k, 'UTF-8') || !mb_check_encoding($v, 'UTF-8')) return $no('invalid', 400, 'קידוד שאינו UTF-8');
+        if (mb_strlen($v) > $L['chars']) return $no('size', 413, 'שדה ארוך מ-' . $L['chars'] . ' תווים');
+    }
+
+    // הטופס — רק מה שברישום
+    $form = (string)($post['_form'] ?? '');
+    if (!preg_match(FORMS_NAME_RE, $form)) return $no('invalid', 400, 'בלי שם טופס');
+    $reg = ($test ? forms_draft() : forms_live())[$form] ?? null;
+    if (!$reg || $reg['external']) return $no('invalid', 400, "הטופס \"$form\" אינו " . ($test ? 'בטיוטה' : 'בגרסה שנשלחה לאתר'));
+
+    // ספאם — עונים ok, לא שומרים
+    if (trim((string)($post['_trap'] ?? '')) !== '') return $no('spam', 200, 'שדה המלכודת מלא');
+    $t = $post['_t'] ?? '';
+    if (!preg_match('/^\d{1,12}$/', $t) || (int)$t < $L['min_t'] * 1000) return $no('spam', 200, 'נשלח מהר מדי אחרי טעינת העמוד');
+
+    $keep = [];
+    $unknown = 0;
+    foreach ($user as $k => $v) {
+        if (!in_array($k, $reg['fields'], true)) { $unknown++; continue; }
+        $keep[$k] = str_replace("\0", '', $v);
+    }
+    foreach ($reg['required'] as $k) if (trim($keep[$k] ?? '') === '') return $no('invalid', 400, "חסר שדה חובה \"$k\"");
+    if ($unknown) forms_reject_count('unknown', $unknown);
+
+    $word = null;
+    $find = $pdo->prepare('SELECT id FROM words WHERE id = ?');
+    if (preg_match('/^\d{1,12}$/', trim($keep['word_id'] ?? ''))) { $find->execute([(int)$keep['word_id']]); $word = $find->fetchColumn() ?: null; }
+    if (!$word && preg_match('/^\d{1,12}$/', trim($keep['wp_id'] ?? ''))) {
+        $w = $pdo->prepare('SELECT id FROM words WHERE wp_id = ? LIMIT 1');
+        $w->execute([(int)$keep['wp_id']]);
+        $word = $w->fetchColumn() ?: null;
+    }
+    $page = mb_substr((string)preg_replace('/[\x00-\x1f\x7f]/', '', (string)($post['_page'] ?? '')), 0, 255);
+    $pdo->prepare('INSERT INTO form_entries (form, fields, word_id, page, test, at) VALUES (?, ?, ?, ?, ?, ?)')
+        ->execute([$form, json_encode($keep, JSON_UNESCAPED_UNICODE), $word === null ? null : (int)$word, $page, $test ? 1 : 0, now_iso()]);
+    if (!$test) forms_mail_tick();
+    if (!$test) { forms_hook_enqueue((int)$pdo->lastInsertId(), $form); forms_hook_tick(1); }   // V16c: webhook — אחרי השמירה בתיבה
+    return [200, ['ok' => true]];
+}
+
+// ── (ג) המייל ─────────────────────────────────────────────
+// S3 (2026-11-20): מייל לכל פנייה, עם התוכן — כמו שהמשוב בוורדפרס שלח לפני המעבר. נמענים — כל כתובת (עד 5), בידי בעל
+// העמוד ומעלה ב-📬 פניות ← ⚙️ הגדרות התיבה. השולח — ברירת מחדל noreply@<השרת>, כדי שהמייל לא ייזרק (SPF/DMARC).
+// קצב: לכל היותר FORMS_MAIL_HOUR מיילים בשעה; מעבר לזה הפניות מצטברות למייל אחד בתור הבא. הכותרות — קבועות; מהקלט נכנס
+// לכותרת רק Reply-To שעבר forms_email_ok, והנושא — מקודד (base64) ובלי תווי בקרה. הגוף — טקסט בלבד, base64.
+
+function forms_mail_state(): array
+{
+    $s = json_decode((string)setting('forms_mail', '{}'), true) ?: [];
+    $s += ['on' => false, 'from' => '', 'to' => [], 'fails' => 0, 'last_sent' => null, 'last_sent_id' => 0, 'last_test' => null, 'last_error' => null, 'auto_off' => null, 'sent' => [], 'last_count' => 0];
+    $s['to'] = array_values(array_filter(is_array($s['to']) ? $s['to'] : [], fn($e) => is_string($e) && forms_email_ok($e)));
+    $s['sent'] = array_values(array_filter(is_array($s['sent']) ? $s['sent'] : [], 'is_int'));
+    return $s;
+}
+
+function forms_mail_save(array $s): void
+{
+    setting_set('forms_mail', json_encode($s, JSON_UNESCAPED_UNICODE));
+}
+
+/** כתובת מייל תקינה ובלי שבירת שורה — אין כותרת מהקלט. */
+function forms_email_ok(string $e): bool
+{
+    return strlen($e) <= 254 && !preg_match('/[\r\n\0,;<>"]/', $e) && filter_var($e, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+/** המתחם של השרת (mbe-plus.com) — ממנו כתובת השולח שאינה נזרקת. */
+function forms_mail_host(): string
+{
+    $h = strtolower((string)($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+    $h = (string)preg_replace(['/:\d+$/', '/^www\./'], '', $h);
+    return preg_match('/^[a-z0-9-]+(\.[a-z0-9-]+)+$/', $h) && !preg_match('/^[0-9.]+$/', $h) ? $h : 'mbe-plus.com';
+}
+
+function forms_mail_from_default(): string
+{
+    return 'noreply@' . forms_mail_host();
+}
+
+/** השולח בפועל: מה שהוגדר, ואם לא — noreply@<השרת>. */
+function forms_mail_from(array $s): string
+{
+    return $s['from'] !== '' && forms_email_ok($s['from']) ? $s['from'] : forms_mail_from_default();
+}
+
+/** האם השולח במתחם של השרת. אם לא — שרתי הדואר של הנמען נוטים לזרוק את המייל (SPF/DMARC), גם כש-mail() החזיר true. */
+function forms_mail_from_local(string $from): bool
+{
+    $d = strtolower(substr(strrchr($from, '@') ?: '', 1));
+    $h = forms_mail_host();
+    return $d === $h || str_ends_with($d, ".$h");
+}
+
+/** שורה אחת לכותרת: בלי תווי בקרה, עד 150 תווים. */
+function forms_mail_line(string $s): string
+{
+    return mb_substr(trim((string)preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $s)), 0, 150);
+}
+
+/**
+ * שליחה אחת. בבדיקות — לקובץ (KOL_TEST_MAIL), לא mail(). מחזיר [ok, שגיאה]. $reply — Reply-To (רק אם עבר forms_email_ok).
+ * השולח במתחם של השרת — גם כשולח המעטפה (-f), כדי שה-SPF יתאים.
+ */
+function forms_mail_send(array $to, string $subject, string $body, string $from, ?string $reply = null): array
+{
+    $to = array_values(array_filter($to, 'forms_email_ok'));
+    if (!$to) return [false, 'אין נמענים'];
+    if (!forms_email_ok($from)) return [false, 'כתובת השולח אינה תקינה'];
+    $subj = mb_encode_mimeheader(forms_mail_line($subject), 'UTF-8', 'B', "\r\n");
+    $headers = "From: $from\r\n" . ($reply !== null && forms_email_ok($reply) ? "Reply-To: $reply\r\n" : '')
+        . "Auto-Submitted: auto-generated\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64";
+    $data = chunk_split(base64_encode(str_replace("\r\n", "\n", $body)));
+    $envelope = forms_mail_from_local($from) ? '-f' . $from : '';
+    if ($fake = getenv('KOL_TEST_MAIL')) {
+        $ok = getenv('KOL_TEST_MAIL_FAIL') ? false : (bool)file_put_contents($fake, json_encode(['to' => $to, 'subject' => $subject, 'body' => $body, 'headers' => $headers, 'envelope' => $envelope], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+        return [$ok, $ok ? null : 'mail() החזיר false (בדיקה)'];
+    }
+    if (!function_exists('mail')) return [false, 'הפונקציה mail() כבויה בשרת'];
+    $err = null;
+    set_error_handler(function (int $no, string $msg) use (&$err): bool { $err = $msg; return true; });
+    try { $ok = $envelope !== '' ? @mail(implode(', ', $to), $subj, $data, $headers, $envelope) : @mail(implode(', ', $to), $subj, $data, $headers); }
+    finally { restore_error_handler(); }
+    return [$ok, $ok ? null : ($err ?: (error_get_last()['message'] ?? 'mail() החזיר false — השרת לא קיבל את המייל'))];
+}
+
+/** הקישור לתיבה בסטודיו. */
+function forms_inbox_url(): string
+{
+    return (string)preg_replace('~/form\.php(\?.*)?$~', '/index.php#/inbox', forms_endpoint());
+}
+
+const FORMS_MAIL_LABELS = ['name' => 'שם', 'email' => 'מייל', 'message' => 'ההערה', 'phone' => 'טלפון', 'subject' => 'נושא'];
+
+/** פנייה אחת כטקסט: המילה, השדות (השם/המייל/ההערה קודם), העמוד והזמן. */
+function forms_mail_entry_text(array $e): string
+{
+    $f = json_decode((string)$e['fields'], true) ?: [];
+    $clean = fn($v) => mb_substr(trim((string)preg_replace('/[\x00-\x08\x0b-\x1f\x7f]/u', '', str_replace("\r\n", "\n", (string)$v))), 0, 3000);
+    $out = [];
+    if ($e['word'] ?? null) $out[] = 'המילה: ' . forms_mail_line((string)$e['word']) . " (#{$e['word_id']})";
+    elseif (($e['word_id'] ?? null) !== null) $out[] = "המילה: #{$e['word_id']}";
+    $order = array_unique([...array_keys(FORMS_MAIL_LABELS), ...array_keys($f)]);
+    foreach ($order as $k) {
+        if (!array_key_exists($k, $f) || (($e['word_id'] ?? null) !== null && in_array($k, ['word_id', 'wp_id'], true))) continue;
+        $v = $clean($f[$k]);
+        if ($v === '') continue;
+        $label = FORMS_MAIL_LABELS[$k] ?? forms_mail_line((string)$k);
+        $out[] = str_contains($v, "\n") || $k === 'message' ? "$label:\n$v" : "$label: $v";
+    }
+    $out[] = '';
+    $out[] = 'טופס: ' . forms_mail_line((string)$e['form']) . ' · עמוד: ' . (forms_mail_line((string)$e['page']) ?: '—') . ' · ' . $e['at'] . ' · פנייה #' . $e['id'];
+    return implode("\n", $out);
+}
+
+/** [נושא, גוף, Reply-To] למייל על הפניות $rows (שורות form_entries + word). */
+function forms_mail_compose(array $rows, int $more = 0): array
+{
+    $n = count($rows) + $more;
+    if ($n === 1) {
+        $e = $rows[0];
+        $subject = ($e['word'] ?? null) ? 'קול מרוקו · משוב על המילה "' . forms_mail_line((string)$e['word']) . '"' : 'קול מרוקו · פנייה חדשה בטופס "' . forms_mail_line((string)$e['form']) . '"';
+        $f = json_decode((string)$e['fields'], true) ?: [];
+        $mail = strtolower(trim((string)($f['email'] ?? '')));
+        $reply = forms_email_ok($mail) ? $mail : null;
+        $body = "משוב חדש מעמוד קול מרוקו.\n\n" . forms_mail_entry_text($e) . ($reply ? "\n\nאפשר להשיב למייל הזה — התשובה תגיע אל $reply." : '');
+    } else {
+        $subject = "קול מרוקו · $n פניות חדשות";
+        $reply = null;
+        $body = "$n פניות חדשות מעמוד קול מרוקו.\n\n" . implode("\n\n──────────\n\n", array_map('forms_mail_entry_text', $rows))
+            . ($more ? "\n\n──────────\n\nועוד $more — בתיבה." : '');
+    }
+    $body .= "\n\nלתיבה: " . forms_inbox_url() . "\n\n(מייל אוטומטי. כיבוי: 📬 פניות ← ⚙️ הגדרות התיבה.)\n";
+    return [$subject, $body, $reply];
+}
+
+/**
+ * מייל על פניות חדשות (בלי 🧪): כל מה שהתקבל מאז המייל הקודם — במייל אחד. בדרך כלל זו פנייה אחת, מיד כשהגיעה.
+ * קצב: לכל היותר FORMS_MAIL_HOUR בשעה; אחרי כישלון — המתנה FORMS_MAIL_RETRY. נקרא אחרי כל פנייה ובכל פתיחה של התיבה.
+ */
+function forms_mail_tick(): void
+{
+    try {
+        $s = forms_mail_state();
+        if (!$s['on'] || !$s['to']) return;
+        $now = time();
+        $s['sent'] = array_values(array_filter($s['sent'], fn($t) => $t > $now - 3600));
+        if (count($s['sent']) >= FORMS_MAIL_HOUR) return;
+        if ($s['last_error'] && (int)$s['fails'] > 0 && strtotime((string)$s['last_error']['at']) > $now - FORMS_MAIL_RETRY) return;
+        $st = db()->prepare('SELECT e.*, w.word FROM form_entries e LEFT JOIN words w ON w.id = e.word_id WHERE e.test = 0 AND e.id > ? ORDER BY e.id LIMIT ' . (FORMS_MAIL_MAX + 1));
+        $st->execute([(int)$s['last_sent_id']]);
+        $rows = $st->fetchAll();
+        if (!$rows) return;
+        $max = (int)end($rows)['id'];
+        $more = 0;
+        if (count($rows) > FORMS_MAIL_MAX) {
+            $c = db()->prepare('SELECT COUNT(*), MAX(id) FROM form_entries WHERE test = 0 AND id > ?');
+            $c->execute([(int)$s['last_sent_id']]);
+            [$all, $max] = array_map('intval', $c->fetch(PDO::FETCH_NUM));
+            $rows = array_slice($rows, 0, FORMS_MAIL_MAX);
+            $more = $all - FORMS_MAIL_MAX;
+        }
+        [$subject, $body, $reply] = forms_mail_compose($rows, $more);
+        [$ok, $err] = forms_mail_send($s['to'], $subject, $body, forms_mail_from($s), $reply);
+        $s2 = forms_mail_state();
+        $s2['sent'] = $s['sent'];
+        if ($ok) {
+            $s2['fails'] = 0;
+            $s2['last_sent'] = now_iso();
+            $s2['last_sent_id'] = $max;
+            $s2['last_count'] = count($rows) + $more;
+            $s2['sent'][] = $now;
+            $s2['last_error'] = null;
+        } else {
+            $s2['fails'] = (int)$s2['fails'] + 1;
+            $s2['last_error'] = ['at' => now_iso(), 'error' => mb_substr((string)$err, 0, 300)];
+            devlog_write('error', 'forms', 'form.mail_failed', ['message' => mb_substr((string)$err, 0, 300) . " · כישלון {$s2['fails']} ברצף"]);
+            if ($s2['fails'] >= FORMS_MAIL_FAILS) {
+                $s2['on'] = false;
+                $s2['auto_off'] = now_iso();
+                db()->prepare('INSERT INTO notices (role_to, kind, text, by_name, at) VALUES (?, ?, ?, ?, ?)')
+                    ->execute(['owner', 'mail', 'המייל על משוב חדש כובה אוטומטית אחרי ' . FORMS_MAIL_FAILS . ' כישלונות ברצף: ' . mb_substr((string)$err, 0, 200) . '. הפניות נשמרות בתיבה. 📬 פניות ← ⚙️ הגדרות התיבה', '', now_iso()]);
+            }
+        }
+        forms_mail_save($s2);
+    } catch (Throwable $e) {
+        devlog_write('error', 'forms', 'form.mail_failed', ['message' => $e->getMessage()]);
+    }
+}
+
+// ── (ג) התיבה ─────────────────────────────────────────────
+
+/** WHERE לפי הסינון — אותו סינון לרשימה ולייצוא. */
+function forms_where(array $q): array
+{
+    $w = [];
+    $a = [];
+    $f = (string)($q['filter'] ?? '');
+    $w[] = $f === 'test' ? 'e.test = 1' : 'e.test = 0';
+    if ($f === 'unread') $w[] = 'e.read_at IS NULL';
+    if ($f === 'unhandled') $w[] = 'e.handled_at IS NULL';
+    if (($q['form'] ?? '') !== '') { $w[] = 'e.form = ?'; $a[] = (string)$q['form']; }
+    $s = trim((string)($q['q'] ?? ''));
+    if ($s !== '') { $w[] = "(e.fields LIKE ? ESCAPE '\\' OR w.word LIKE ? ESCAPE '\\')"; $like = '%' . addcslashes(mb_substr($s, 0, 100), '%_\\') . '%'; $a[] = $like; $a[] = $like; }
+    return [implode(' AND ', $w), $a];
+}
+
+function forms_entry_public(array $r): array
+{
+    return ['id' => (int)$r['id'], 'form' => $r['form'], 'fields' => json_decode($r['fields'], true) ?: [], 'page' => $r['page'], 'test' => (bool)$r['test'], 'at' => $r['at'],
+        'read_at' => $r['read_at'], 'read_by' => $r['read_by'], 'handled_at' => $r['handled_at'], 'handled_by' => $r['handled_by'],
+        'word' => $r['word_id'] === null ? null : ['id' => (int)$r['word_id'], 'word' => $r['word'] ?? null]];
+}
+
+function forms_unread(): int
+{
+    return (int)db()->query('SELECT COUNT(*) FROM form_entries WHERE test = 0 AND read_at IS NULL')->fetchColumn();
+}
+
+/** "📬 פניות": הרשימה לפי הסינון, הטפסים והמונים. editor ומעלה. ?count=1 — רק המונה (ללשונית). */
+function inbox_list(array $user, array $q): array
+{
+    forms_clean();
+    forms_mail_tick();
+    forms_hook_tick();                                                        // V16c: ניסיון חוזר של webhook
+    if (!empty($q['count'])) return ['unread' => forms_unread()];
+    [$where, $args] = forms_where($q);
+    $off = max(0, (int)($q['offset'] ?? 0));
+    $st = db()->prepare("SELECT e.*, w.word FROM form_entries e LEFT JOIN words w ON w.id = e.word_id WHERE $where ORDER BY e.id DESC LIMIT " . FORMS_PAGE . " OFFSET $off");
+    $st->execute($args);
+    $rows = array_map('forms_entry_public', $st->fetchAll());
+    $cnt = db()->prepare("SELECT COUNT(*) FROM form_entries e LEFT JOIN words w ON w.id = e.word_id WHERE $where");
+    $cnt->execute($args);
+    $forms = db()->query('SELECT form, COUNT(*) n, SUM(read_at IS NULL) unread FROM form_entries WHERE test = 0 GROUP BY form ORDER BY form')->fetchAll();
+    $live = forms_live();
+    $ext = array_keys(array_filter($live, fn($f) => $f['external']));
+    return ['entries' => $rows, 'total' => (int)$cnt->fetchColumn(), 'unread' => forms_unread(),
+        'forms' => array_map(fn($f) => ['form' => $f['form'], 'n' => (int)$f['n'], 'unread' => (int)$f['unread']], $forms),
+        'registered' => array_keys(array_filter($live, fn($f) => !$f['external'])), 'external' => $ext,
+        'tests' => (int)db()->query('SELECT COUNT(*) FROM form_entries WHERE test = 1')->fetchColumn(),
+        'can_delete' => ROLE_RANK[$user['role']] >= ROLE_RANK['publisher'],
+        'settings' => forms_mail_public($user)];
+}
+
+function forms_ids(array $b): array
+{
+    $ids = is_array($b['ids'] ?? null) ? $b['ids'] : [$b['id'] ?? 0];
+    return array_values(array_unique(array_filter(array_map('intval', array_slice($ids, 0, 500)))));
+}
+
+/** נקרא / לא נקרא, טופל / לא טופל — עם מי ומתי. editor ומעלה. */
+function inbox_mark(array $user, array $b): array
+{
+    $ids = forms_ids($b) ?: throw new ApiError('לא נבחרה פנייה');
+    $set = [];
+    $args = [];
+    if (array_key_exists('read', $b)) { $set[] = 'read_at = ?, read_by = ?'; array_push($args, $b['read'] ? now_iso() : null, $b['read'] ? ($user['name'] ?? '') : null); }
+    if (array_key_exists('handled', $b)) { $set[] = 'handled_at = ?, handled_by = ?'; array_push($args, $b['handled'] ? now_iso() : null, $b['handled'] ? ($user['name'] ?? '') : null); }
+    if (!$set) throw new ApiError('בקשה לא תקינה');
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    // "נקרא" אינו דורס את מי שקרא ראשון
+    $sql = 'UPDATE form_entries SET ' . implode(', ', $set) . " WHERE id IN ($in)" . (!empty($b['read']) && !array_key_exists('handled', $b) ? ' AND read_at IS NULL' : '');
+    db()->prepare($sql)->execute([...$args, ...$ids]);
+    if (array_key_exists('handled', $b)) audit_as($user, 'inbox_handled', ($b['handled'] ? 'טופל' : 'לא טופל') . ' · ' . count($ids) . ' פניות');
+    return ['unread' => forms_unread()];
+}
+
+/** לסל (forms_trash), כאצווה אחת שאפשר לשחזר יחד. */
+function forms_to_trash(array $user, array $ids, string $batch): int
+{
+    if (!$ids) return 0;
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $get = $pdo->prepare('SELECT * FROM form_entries WHERE id = ?');
+        $put = $pdo->prepare('INSERT INTO forms_trash (entry_id, row, batch, at, by_name) VALUES (?, ?, ?, ?, ?)');
+        $del = $pdo->prepare('DELETE FROM form_entries WHERE id = ?');
+        $n = 0;
+        foreach ($ids as $id) {
+            $get->execute([$id]);
+            if (!($r = $get->fetch())) continue;
+            $put->execute([$id, json_encode($r, JSON_UNESCAPED_UNICODE), $batch, now_iso(), $user['name'] ?? '']);
+            $del->execute([$id]);
+            $n++;
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    return $n;
+}
+
+/** מחיקה לסל — publisher ומעלה. */
+function inbox_delete(array $user, array $b): array
+{
+    $ids = forms_ids($b) ?: throw new ApiError('לא נבחרה פנייה');
+    $n = forms_to_trash($user, $ids, 'del-' . bin2hex(random_bytes(6)));
+    audit_as($user, 'inbox_delete', "$n פניות לסל");
+    return ['deleted' => $n, 'unread' => forms_unread()];
+}
+
+/** "מחק פניות ישנות מ-…" — לסל, כאצווה אחת עם המספר. publisher ומעלה. preview — רק כמה. */
+function inbox_purge(array $user, array $b): array
+{
+    $before = (string)($b['before'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $before) || !strtotime($before . ' UTC')) throw new ApiError('תאריך לא תקין');
+    $st = db()->prepare('SELECT id FROM form_entries WHERE test = 0 AND at < ? ORDER BY id');
+    $st->execute([$before . 'T00:00:00Z']);
+    $ids = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    if (!empty($b['preview'])) return ['count' => count($ids)];
+    if (($b['confirm'] ?? null) !== count($ids)) throw new ApiError('המספר השתנה מאז האישור — נסו שוב', 409, ['count' => count($ids)]);
+    $batch = 'old-' . $before . '-' . bin2hex(random_bytes(4));
+    $n = forms_to_trash($user, $ids, $batch);
+    audit_as($user, 'inbox_purge', "$n פניות מלפני $before לסל (אצווה $batch)");
+    return ['deleted' => $n, 'batch' => $batch, 'unread' => forms_unread()];
+}
+
+/** תא CSV שאינו נוסחה: =, +, -, @, טאב ו-CR בתחילתו (גם אחרי רווחים) — מקבל גרש לפניו. */
+function forms_csv_cell(mixed $v): string
+{
+    $v = (string)$v;
+    return preg_match('/^[\s]*[=+\-@\t\r]/u', $v) || preg_match('/^[\t\r]/', $v) ? "'" . $v : $v;
+}
+
+/** ייצוא CSV של הסינון הנוכחי (UTF-8 עם BOM). editor ומעלה. */
+function inbox_csv(array $user, array $q): never
+{
+    [$where, $args] = forms_where($q);
+    $st = db()->prepare("SELECT e.*, w.word FROM form_entries e LEFT JOIN words w ON w.id = e.word_id WHERE $where ORDER BY e.id DESC LIMIT 50000");
+    $st->execute($args);
+    $rows = array_map('forms_entry_public', $st->fetchAll());
+    $keys = [];
+    foreach ($rows as $r) foreach (array_keys($r['fields']) as $k) $keys[$k] = true;
+    $keys = array_keys($keys);
+    audit_as($user, 'inbox_csv', count($rows) . ' פניות');
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="kol-maroko-inbox-' . gmdate('Y-m-d') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fwrite($out, "\xEF\xBB\xBF");
+    fputcsv($out, ['id', 'form', 'at', 'word', 'page', 'read_by', 'handled_by', 'handled_at', ...$keys], ',', '"', '');
+    foreach ($rows as $r) {
+        fputcsv($out, array_map('forms_csv_cell', [$r['id'], $r['form'], $r['at'], $r['word']['word'] ?? '', $r['page'], $r['read_by'] ?? '', $r['handled_by'] ?? '', $r['handled_at'] ?? '',
+            ...array_map(fn($k) => $r['fields'][$k] ?? '', $keys)]), ',', '"', '');
+    }
+    fclose($out);
+    exit;
+}
+
+/** מי אפשר להוסיף בלחיצה כנמען: חברי האפליקציה עם מייל, ומי ששומר. (S3: אפשר גם כל כתובת אחרת.) */
+function forms_mail_candidates(array $user): array
+{
+    $out = [];
+    foreach (db()->query("SELECT name, email FROM users WHERE status = 'active' AND role IS NOT NULL AND agent IS NULL AND email IS NOT NULL AND email <> '' ORDER BY name")->fetchAll() as $m) {
+        if (forms_email_ok((string)$m['email'])) $out[strtolower($m['email'])] = ['email' => strtolower($m['email']), 'name' => $m['name']];
+    }
+    $mine = strtolower((string)($user['email'] ?? ''));
+    if ($mine !== '' && forms_email_ok($mine)) $out[$mine] ??= ['email' => $mine, 'name' => ($user['name'] ?? '') . ' (אני)'];
+    return array_values($out);
+}
+
+function forms_can_mail(array $user): bool
+{
+    return isset(ROLE_RANK[$user['role'] ?? '']) && ROLE_RANK[$user['role']] >= ROLE_RANK['page_owner'];
+}
+
+/**
+ * האבחון — השרשרת מהכפתור בעמוד ועד המייל, שורה לכל חוליה: ok true (✅) / false (❌) / null (⏳ עוד לא קרה).
+ * כך "לא קרה כלום" הופך לשורה שאומרת איפה זה נעצר. (הבדיקה מהדפדפן — CORS אל form.php — נוספת בממשק.)
+ */
+function forms_diag(array $s): array
+{
+    $pdo = db();
+    $live = array_keys(array_filter(forms_live(), fn($f) => !$f['external']));
+    $sentAt = $pdo->query('SELECT MAX(sent_at) FROM pkg_builds WHERE sent_at IS NOT NULL')->fetchColumn() ?: null;
+    $last = $pdo->query('SELECT MAX(at) FROM form_entries WHERE test = 0')->fetchColumn() ?: null;
+    $wk = $pdo->prepare('SELECT COUNT(*) FROM form_entries WHERE test = 0 AND at >= ?');
+    $wk->execute([gmdate('Y-m-d\TH:i:s\Z', time() - 7 * 86400)]);
+    $week = (int)$wk->fetchColumn();
+    $rj = $pdo->prepare('SELECT reason, SUM(n) n FROM form_rejects WHERE day >= ? GROUP BY reason ORDER BY n DESC');
+    $rj->execute([gmdate('Y-m-d', time() - 6 * 86400)]);
+    $names = ['rate' => 'קצב', 'size' => 'גודל', 'invalid' => 'לא תקין / טופס לא רשום', 'closed' => 'תקרה יומית', 'spam' => 'ספאם', 'unknown' => 'שדה לא מוכר'];
+    $rej = array_map(fn($r) => ($names[$r['reason']] ?? $r['reason']) . ' ' . (int)$r['n'], array_filter($rj->fetchAll(), fn($r) => $r['reason'] !== 'unknown'));
+    $from = forms_mail_from($s);
+    $t = $s['last_test'];
+    $rows = [];
+    $rows[] = ['id' => 'page', 'ok' => (bool)$live, 'title' => 'הטופס רשום בגרסה שבאתר',
+        'text' => $live ? 'טפסים: ' . implode(', ', $live) . ($sentAt ? " · נשלחה לאתר: $sentAt" : '')
+            : 'הגרסה שבאתר אינה רושמת טופס (data-kol-form) — form.php דוחה כל פנייה. לבנות ולשלוח גרסה מהפרויקט.'];
+    $rows[] = ['id' => 'inbox', 'ok' => $last ? true : null, 'title' => 'פניות מגיעות לתיבה',
+        'text' => ($last ? "האחרונה: $last · 7 ימים: $week" : 'עוד לא הגיעה פנייה מהאתר.') . ($rej ? ' · נדחו ב-7 ימים: ' . implode(', ', $rej) : '')];
+    $rows[] = ['id' => 'mail_on', 'ok' => $s['on'] && $s['to'] ? true : false, 'title' => 'המייל על משוב חדש דולק',
+        'text' => $s['on'] && $s['to'] ? 'נשלח אל: ' . implode(', ', $s['to'])
+            : ($s['auto_off'] ? "כובה אוטומטית ב-{$s['auto_off']} אחרי " . FORMS_MAIL_FAILS . ' כישלונות ברצף' : ($s['to'] ? 'כבוי' : 'כבוי — אין נמען')) . ' — מדליקים כאן, ב"שלח לי מייל על משוב חדש".'];
+    $rows[] = ['id' => 'from', 'ok' => forms_mail_from_local($from), 'title' => 'כתובת השולח במתחם של השרת',
+        'text' => forms_mail_from_local($from) ? "$from" : "$from אינה במתחם " . forms_mail_host() . ' — שרתי הדואר נוטים לזרוק מייל כזה גם כשהשרת קיבל אותו. מומלץ להשאיר ריק (' . forms_mail_from_default() . ').'];
+    $rows[] = ['id' => 'test', 'ok' => $t ? (bool)$t['ok'] : null, 'title' => 'מייל בדיקה',
+        'text' => $t ? ($t['ok'] ? "השרת קיבל את המייל ($t[at] · אל $t[to]). אם לא הגיע תוך כמה דקות — לבדוק בספאם." : "נכשל ($t[at]): " . ($t['error'] ?? '')) : 'עוד לא נשלח. "✉️ שלח מייל בדיקה".'];
+    $rows[] = ['id' => 'sent', 'ok' => $s['last_error'] && $s['fails'] ? false : ($s['last_sent'] ? true : null), 'title' => 'מייל אחרון על פנייה',
+        'text' => ($s['last_sent'] ? "נשלח: {$s['last_sent']}" . ($s['last_count'] > 1 ? " ({$s['last_count']} פניות)" : '') : 'עוד לא נשלח מייל על פנייה.')
+            . ($s['last_error'] ? " · שגיאה אחרונה ({$s['last_error']['at']}): {$s['last_error']['error']}" : '')];
+    return $rows;
+}
+
+/** מה שהממשק מקבל על המייל (התיבה ← ⚙️ הגדרות, ושורת הטופס בעורך). */
+function forms_mail_public(array $user): array
+{
+    $s = forms_mail_state();
+    return ['to' => $s['to'], 'mail_on' => (bool)$s['on'], 'from' => $s['from'], 'from_effective' => forms_mail_from($s), 'from_default' => forms_mail_from_default(),
+        'host' => forms_mail_host(), 'max_to' => FORMS_MAIL_TO, 'hour_cap' => FORMS_MAIL_HOUR, 'can_mail' => forms_can_mail($user),
+        'last_test' => $s['last_test'], 'last_sent' => $s['last_sent'], 'last_error' => $s['last_error'], 'auto_off' => $s['auto_off'],
+        'candidates' => forms_can_mail($user) ? forms_mail_candidates($user) : [], 'diag' => forms_diag($s), 'endpoint' => forms_endpoint()];
+}
+
+/** נמענים מהקלט: מערך או מחרוזת (פסיק / רווח / שורה). כל כתובת תקינה, עד FORMS_MAIL_TO. */
+function forms_mail_parse_to(mixed $v): array
+{
+    $list = is_array($v) ? $v : preg_split('/[\s,;]+/u', (string)$v);
+    $to = [];
+    foreach (array_slice($list, 0, 50) as $e) {
+        $e = strtolower(trim((string)$e));
+        if ($e === '') continue;
+        if (!forms_email_ok($e)) throw new ApiError('כתובת מייל לא תקינה: ' . forms_mail_line(mb_substr($e, 0, 80)));
+        $to[] = $e;
+    }
+    $to = array_values(array_unique($to));
+    if (count($to) > FORMS_MAIL_TO) throw new ApiError('עד ' . FORMS_MAIL_TO . ' נמענים');
+    return $to;
+}
+
+/**
+ * הגדרות: הנמענים, כתובת השולח והמפסק — בעל העמוד ומעלה (S3; היה: המפתח בלבד, ורק חברי האפליקציה). המגבלות — המפתח בלבד.
+ * GET (בלי גוף) — המצב.
+ */
+function forms_settings(array $user, array $b, bool $developer): array
+{
+    $s = forms_mail_state();
+    if (array_key_exists('to', $b) || array_key_exists('from', $b) || array_key_exists('mail_on', $b)) {
+        if (!forms_can_mail($user)) throw new ApiError('הגדרות המייל — בעל העמוד ומעלה', 403);
+        $what = [];
+        if (array_key_exists('to', $b)) { $s['to'] = forms_mail_parse_to($b['to']); $what[] = 'נמענים: ' . count($s['to']); }
+        if (array_key_exists('from', $b)) {
+            $from = strtolower(trim((string)$b['from']));
+            if ($from !== '' && !forms_email_ok($from)) throw new ApiError('כתובת השולח אינה תקינה');
+            $s['from'] = $from;
+            $what[] = 'שולח: ' . ($from ?: 'ברירת מחדל');
+        }
+        if (array_key_exists('mail_on', $b)) {
+            $on = (bool)$b['mail_on'];
+            if ($on && !$s['to']) throw new ApiError('קודם להוסיף נמען אחד לפחות');
+            if ($on && !$s['on']) { $s['fails'] = 0; $s['auto_off'] = null; $s['last_error'] = null; $s['last_sent_id'] = (int)db()->query('SELECT COALESCE(MAX(id), 0) FROM form_entries')->fetchColumn(); }
+            $s['on'] = $on;
+            $what[] = $on ? 'המייל הודלק' : 'המייל כובה';
+        }
+        forms_mail_save($s);
+        audit_as($user, 'forms_mail', implode(' · ', $what));
+    }
+    if (array_key_exists('limits', $b)) {
+        if (!$developer) throw new ApiError('המסך הזה פתוח למפתח בלבד', 403);
+        if (is_array($b['limits'])) {
+            $cur = forms_limits();
+            foreach ($b['limits'] as $k => $v) {
+                if (!isset(FORMS_LIMITS[$k])) throw new ApiError('מגבלה לא מוכרת');
+                [, $min, $max, $label] = FORMS_LIMITS[$k];
+                if (!is_int($v) && !(is_string($v) && preg_match('/^\d{1,6}$/', $v))) throw new ApiError("$label: מספר שלם");
+                if ((int)$v < $min || (int)$v > $max) throw new ApiError("$label: בין $min ל-$max");
+                $cur[$k] = (int)$v;
+            }
+            setting_set('forms_limits', json_encode($cur));
+            audit_as($user, 'forms_limits', json_encode($cur));
+        }
+    }
+    return ['settings' => forms_mail_public($user)];
+}
+
+/** "✉️ שלח מייל בדיקה" — בעל העמוד ומעלה. לכתובת שהוזנה (או לנמען הראשון / אליי). התוצאה נרשמת ומוצגת באבחון. */
+function forms_mail_test(array $user, array $b): array
+{
+    $s = forms_mail_state();
+    if (array_key_exists('from', $b)) {
+        $f = strtolower(trim((string)$b['from']));
+        if ($f !== '' && !forms_email_ok($f)) throw new ApiError('כתובת השולח אינה תקינה');
+        $s['from'] = $f;
+    }
+    $from = forms_mail_from($s);
+    $to = strtolower(trim((string)($b['to'] ?? '')));
+    if ($to === '') $to = $s['to'][0] ?? strtolower((string)($user['email'] ?? ''));
+    if (!forms_email_ok($to)) throw new ApiError('כתובת הנמען אינה תקינה');
+    $body = "זה מייל בדיקה מ-📬 פניות של קול מרוקו.\n\nנשלח מ: $from\nאל: $to\n\nאם הוא הגיע — המייל על משוב חדש יגיע באותה דרך.\n"
+        . "אם הוא בספאם — לסמן \"לא ספאם\".\n\nלתיבה: " . forms_inbox_url() . "\n";
+    [$ok, $err] = forms_mail_send([$to], 'קול מרוקו · מייל בדיקה', $body, $from);
+    $s2 = forms_mail_state();
+    $s2['from'] = $s['from'];
+    $s2['last_test'] = ['at' => now_iso(), 'ok' => $ok, 'to' => $to, 'from' => $from, 'error' => $err === null ? null : mb_substr($err, 0, 300)];
+    forms_mail_save($s2);
+    devlog_write($ok ? 'info' : 'error', 'forms', 'form.mail_test', ['message' => ($ok ? 'mail() החזיר true' : 'mail() נכשל: ' . $err) . " · מ-$from אל $to"]);
+    audit_as($user, 'forms_mail_test', ($ok ? 'true' : 'false') . " · $to");
+    return ['test' => $s2['last_test'], 'settings' => forms_mail_public($user)];
+}
+
+/** שורת M5 במסך המפתח (08 §5): פניות היום / 7 ימים, דחיות לפי סיבה, מצב המייל, המגבלות. */
+function forms_dev_state(): array
+{
+    $pdo = db();
+    $today = gmdate('Y-m-d');
+    $n = function (string $since) use ($pdo): int {
+        $st = $pdo->prepare('SELECT COUNT(*) FROM form_entries WHERE test = 0 AND at >= ?');
+        $st->execute([$since]);
+        return (int)$st->fetchColumn();
+    };
+    $rej = array_fill_keys(FORMS_REJECT_REASONS, ['today' => 0, 'week' => 0]);
+    $st = $pdo->prepare('SELECT reason, SUM(CASE WHEN day = ? THEN n ELSE 0 END) t, SUM(n) w FROM form_rejects WHERE day >= ? GROUP BY reason');
+    $st->execute([$today, gmdate('Y-m-d', time() - 6 * 86400)]);
+    foreach ($st->fetchAll() as $r) $rej[$r['reason']] = ['today' => (int)$r['t'], 'week' => (int)$r['w']];
+    $m = forms_mail_state();
+    $limits = [];
+    foreach (forms_limits() as $k => $v) $limits[] = ['id' => $k, 'value' => $v, 'label' => FORMS_LIMITS[$k][3], 'min' => FORMS_LIMITS[$k][1], 'max' => FORMS_LIMITS[$k][2], 'default' => FORMS_LIMITS[$k][0]];
+    return ['today' => $n($today . 'T00:00:00Z'), 'week' => $n(gmdate('Y-m-d', time() - 6 * 86400) . 'T00:00:00Z'), 'rejects' => $rej,
+        'mail' => ['on' => (bool)$m['on'], 'from' => $m['from'], 'from_effective' => forms_mail_from($m), 'to' => count($m['to']), 'last_sent' => $m['last_sent'], 'fails' => (int)$m['fails'],
+            'last_test' => $m['last_test'], 'last_error' => $m['last_error'], 'auto_off' => $m['auto_off']],
+        'limits' => $limits, 'endpoint' => forms_endpoint(), 'registered' => array_keys(forms_live()), 'webhooks' => forms_hook_state([]) + ['forms' => array_map(fn($u) => (string)parse_url($u, PHP_URL_HOST), forms_hooks())]];   // V16c
+}
+
+/** שורה ב"שירותי רקע" (dev_services). */
+function forms_dev_service(): array
+{
+    $m = forms_mail_state();
+    $res = $m['on'] ? 'דולק · ' . count($m['to']) . ' נמענים' : ($m['auto_off'] ? 'כובה אוטומטית אחרי ' . FORMS_MAIL_FAILS . ' כישלונות' : 'כבוי');
+    if ($m['last_error']) $res .= ' · שגיאה אחרונה: ' . $m['last_error']['error'];
+    return ['id' => 'forms_mail', 'name' => '📬 מייל על פניות חדשות', 'how' => 'מייל לכל פנייה, עם התוכן — מיד אחרי שהגיעה (או כשפותחים את התיבה); לכל היותר ' . FORMS_MAIL_HOUR . ' בשעה, ומעבר לזה מצטבר',
+        'last' => $m['last_sent'], 'ok' => $m['on'] ? ((int)$m['fails'] === 0) : ($m['auto_off'] ? false : null), 'result' => $res, 'next' => null,
+        'next_text' => $m['on'] ? 'בפנייה הבאה' : 'אין — המייל כבוי'];
+}
+
+// ── הסל (lib/restore.php) ─────────────────────────────────
+
+function forms_trash_list(): array
+{
+    $rows = db()->query('SELECT batch, MIN(id) id, COUNT(*) n, MAX(at) at, MAX(by_name) by_name, MIN(row) row FROM forms_trash GROUP BY batch ORDER BY MAX(id) DESC LIMIT 500')->fetchAll();
+    return array_map(function ($r) {
+        $e = json_decode($r['row'], true) ?: [];
+        return ['id' => (int)$r['id'], 'batch' => $r['batch'], 'n' => (int)$r['n'], 'at' => $r['at'], 'by' => $r['by_name'], 'form' => (string)($e['form'] ?? '?'),
+            'old' => str_starts_with($r['batch'], 'old-')];
+    }, $rows);
+}
+
+/** שחזור אצווה (פנייה אחת, או "מחק ישנות" כולה) — publisher ומעלה. */
+function forms_trash_restore(array $user, int $id): void
+{
+    if (ROLE_RANK[$user['role']] < ROLE_RANK['publisher']) throw new ApiError('אין לך הרשאה לפעולה הזו', 403);
+    $pdo = db();
+    $st = $pdo->prepare('SELECT batch FROM forms_trash WHERE id = ?');
+    $st->execute([$id]);
+    $batch = $st->fetchColumn();
+    if ($batch === false) throw new ApiError('לא נמצא בסל', 404);
+    $rows = $pdo->prepare('SELECT * FROM forms_trash WHERE batch = ?');
+    $rows->execute([$batch]);
+    $cols = ['id', 'form', 'fields', 'word_id', 'page', 'test', 'at', 'read_at', 'read_by', 'handled_at', 'handled_by'];
+    $ins = $pdo->prepare('INSERT INTO form_entries (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')');
+    $insNew = $pdo->prepare('INSERT INTO form_entries (' . implode(',', array_slice($cols, 1)) . ') VALUES (' . implode(',', array_fill(0, count($cols) - 1, '?')) . ')');
+    $exists = $pdo->prepare('SELECT 1 FROM form_entries WHERE id = ?');
+    $n = 0;
+    $pdo->beginTransaction();
+    try {
+        foreach ($rows->fetchAll() as $t) {
+            $r = json_decode($t['row'], true);
+            $vals = array_map(fn($c) => $r[$c] ?? null, $cols);
+            $exists->execute([(int)$r['id']]);
+            if ($exists->fetchColumn()) $insNew->execute(array_slice($vals, 1)); else $ins->execute($vals);
+            $n++;
+        }
+        $pdo->prepare('DELETE FROM forms_trash WHERE batch = ?')->execute([$batch]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    audit_as($user, 'trash_restore', "פניות · $n");
+}
+
+function forms_trash_purge(array $owner, int $id): void
+{
+    $pdo = db();
+    $st = $pdo->prepare('SELECT batch FROM forms_trash WHERE id = ?');
+    $st->execute([$id]);
+    $batch = $st->fetchColumn();
+    if ($batch === false) throw new ApiError('לא נמצא בסל', 404);
+    $pdo->prepare('DELETE FROM forms_trash WHERE batch = ?')->execute([$batch]);
+    audit_as($owner, 'trash_purge', 'פניות');
+}
+
+// ── V16c: webhook — הפנייה נשלחת (JSON) לכתובת https שבעל העמוד הגדיר לטופס, אחרי השמירה בתיבה ─────────────
+// ההגדרה: settings.forms_webhooks = { "<טופס>": "https://…" } (מפרסם ומעלה — זה שולח נתונים החוצה).
+// התור: settings.forms_hook_queue — [{id, entry, form, url, tries, next, last}]. אין טבלה ואין מיגרציה: התור קטן וחסום
+// (FORMS_HOOK_MAX), והפנייה עצמה כבר שמורה ב-form_entries — כישלון אינו מאבד דבר. כל כישלון — ביומן (devlog) ובמסך המפתח.
+// הבקשה: רק https, פורט 443, בלי כתובת IP / localhost / שם פנימי, כל כתובת שה-DNS מחזיר — ציבורית, והחיבור מוצמד אליה
+// (CURLOPT_RESOLVE), בלי הפניות — אותו מבנה של rec_url_check / font_http.
+
+const FORMS_HOOK_WAIT = [60, 300, 1800, 7200, 21600];   // לפני ניסיון 2…6
+const FORMS_HOOK_MAX = 300;
+const FORMS_HOOK_TIMEOUT = 5;
+
+function forms_hooks(): array
+{
+    $j = json_decode((string)setting('forms_webhooks', '{}'), true);
+    return is_array($j) ? array_filter($j, fn($v, $k) => is_string($k) && is_string($v), ARRAY_FILTER_USE_BOTH) : [];
+}
+
+/** '' — מותר; אחרת — למה לא. (A2 rec_url_check: אותה בדיקה, בלי הדומיין של האתר ובלי תיקיית ההעלאות.) */
+function forms_hook_url_check(string $url): string
+{
+    if ($url === '' || strlen($url) > 2000 || preg_match('/[\x00-\x20\x7f\\\\]/', $url)) return 'כתובת לא תקינה';
+    $p = parse_url($url);
+    if (!$p || !isset($p['scheme'], $p['host'])) return 'כתובת לא תקינה';
+    if (strtolower($p['scheme']) !== 'https') return 'רק https';
+    if (isset($p['user']) || isset($p['pass'])) return 'כתובת עם שם משתמש';
+    if (isset($p['port']) && (int)$p['port'] !== 443) return 'פורט שאינו 443';
+    $host = strtolower($p['host']);
+    if (str_ends_with($host, '.')) return 'שם מתחם עם נקודה בסוף';      // ההצמדה ב-curl לא חלה עליו (ראו net.php)
+    if (filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) || preg_match('/^[0-9.]+$|^0x|^\[/i', $host)) return 'כתובת IP — רק שם מתחם';
+    if ($host === 'localhost' || preg_match('/\.(localhost|local|internal|lan|home|corp|intranet)$/', $host) || !str_contains($host, '.')) return 'שם פנימי';
+    if (net_host($host) === '') return 'שם מתחם לא תקין';
+    return '';
+}
+
+function forms_hook_ip_ok(string $ip): bool
+{
+    return net_ip_public($ip);
+}
+
+/** הגדרת webhook לטופס (מפרסם ומעלה). url ריק — הסרה. הכתובת נבדקת כאן, ושוב בכל שליחה (ה-DNS יכול להשתנות). */
+function forms_hook_set(array $user, array $b): array
+{
+    if (ROLE_RANK[$user['role']] < ROLE_RANK['publisher']) throw new ApiError('webhook שולח את הפניות החוצה — רק מפרסם ומעלה', 403);
+    $form = (string)($b['form'] ?? '');
+    if (!preg_match(FORMS_NAME_RE, $form)) throw new ApiError('שם טופס לא תקין');
+    $url = trim((string)($b['url'] ?? ''));
+    $hooks = forms_hooks();
+    if ($url === '') unset($hooks[$form]);
+    else {
+        if (($why = forms_hook_url_check($url)) !== '') throw new ApiError("הכתובת נדחתה: $why");
+        $hooks[$form] = $url;
+    }
+    setting_set('forms_webhooks', json_encode($hooks, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    audit_as($user, 'forms_webhook', $form . ' ← ' . ($url === '' ? 'הוסר' : (string)parse_url($url, PHP_URL_HOST)));
+    return forms_hook_state(['form' => $form]);
+}
+
+/** מצב ה-webhook של טופס (לפאנל ולמסך המפתח): הכתובת, ומה ממתין / נכשל. */
+function forms_hook_state(array $q): array
+{
+    $form = (string)($q['form'] ?? '');
+    $queue = array_values(array_filter(forms_hook_queue(), fn($x) => $form === '' || $x['form'] === $form));
+    return ['url' => $form !== '' ? (forms_hooks()[$form] ?? '') : null, 'pending' => count(array_filter($queue, fn($x) => $x['state'] === 'pending')),
+        'failed' => array_slice(array_values(array_filter($queue, fn($x) => $x['state'] === 'failed')), -10), 'last' => setting('forms_hook_last') ? json_decode((string)setting('forms_hook_last'), true) : null];
+}
+
+function forms_hook_queue(): array
+{
+    $j = json_decode((string)setting('forms_hook_queue', '[]'), true);
+    return is_array($j) ? array_values(array_filter($j, 'is_array')) : [];
+}
+
+function forms_hook_save(array $q): void
+{
+    $q = array_values($q);
+    if (count($q) > FORMS_HOOK_MAX) {                                          // החסם: קודם נשלחו / נכשלו ישנים, ורק אז ממתינים
+        usort($q, fn($a, $b) => ($a['state'] === 'pending') <=> ($b['state'] === 'pending') ?: $a['id'] <=> $b['id']);
+        $q = array_slice($q, count($q) - FORMS_HOOK_MAX);
+        usort($q, fn($a, $b) => $a['id'] <=> $b['id']);
+    }
+    setting_set('forms_hook_queue', json_encode($q, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+}
+
+/** אחרי השמירה בתיבה (forms_receive): אם לטופס יש webhook — לתור. */
+function forms_hook_enqueue(int $entry, string $form): void
+{
+    $url = forms_hooks()[$form] ?? null;
+    if (!$url) return;
+    $q = forms_hook_queue();
+    $q[] = ['id' => (int)(end($q)['id'] ?? 0) + 1, 'entry' => $entry, 'form' => $form, 'url' => $url, 'tries' => 0, 'next' => 0, 'state' => 'pending', 'last' => ''];
+    forms_hook_save($q);
+}
+
+/** POST אחד. [status, שגיאה] — status 0 כשלא הגענו. בבדיקות: $GLOBALS['kol_hook_fake'] / ['kol_hook_resolve']. */
+function forms_hook_post(string $url, string $json): array
+{
+    if (($why = forms_hook_url_check($url)) !== '') return [0, "הכתובת נדחתה: $why"];
+    $host = net_host((string)parse_url($url, PHP_URL_HOST));                 // זהה למארח שב-URL ש-curl מקבל — אחרת RESOLVE לא חל
+    if ($host === '') return [0, 'הכתובת נדחתה: שם מתחם לא תקין'];
+    $resolve = $GLOBALS['kol_hook_resolve'] ?? null;
+    $ips = $resolve !== null ? (array)($resolve[$host] ?? []) : (gethostbynamel($host) ?: []);
+    if (!$ips) return [0, "לא הצלחתי לפנות אל $host (DNS)"];
+    foreach ($ips as $ip) if (!forms_hook_ip_ok($ip)) return [0, "$host נפתר לכתובת פנימית ($ip) — נחסם"];
+    $ip = $ips[0];
+    if (isset($GLOBALS['kol_hook_fake'])) return ($GLOBALS['kol_hook_fake'])($url, $ip, $json);
+    if (!function_exists('curl_init')) return [0, 'אין curl בשרת'];
+    $got = 0;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => $json,
+        CURLOPT_RESOLVE => ["$host:443:$ip"], CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXREDIRS => 0,
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+        CURLOPT_TIMEOUT => FORMS_HOOK_TIMEOUT, CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_USERAGENT => 'KolMaroko-Webhook/1',
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json; charset=utf-8', 'Accept: */*'],
+        CURLOPT_WRITEFUNCTION => function ($c, $chunk) use (&$got) { $got += strlen($chunk); return $got > 65536 ? 0 : strlen($chunk); },
+    ]);
+    curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($status === 0) return [0, "לא הצלחתי לפנות אל $host: " . ($err ?: 'שגיאה')];
+    return [$status, $status >= 200 && $status < 300 ? '' : "$host ענה $status" . ($status >= 300 && $status < 400 ? ' (הפניות אינן נעקבות)' : '')];
+}
+
+/** שליחה של מה שהגיע זמנו (לכל היותר $max). נקרא אחרי כל פנייה, בפתיחת התיבה ובמסך המפתח. ניסיון חוזר: FORMS_HOOK_WAIT. */
+function forms_hook_tick(int $max = 2): void
+{
+    $q = forms_hook_queue();
+    $due = array_keys(array_filter($q, fn($x) => $x['state'] === 'pending' && (int)$x['next'] <= time()));
+    if (!$due) return;
+    $st = db()->prepare('SELECT * FROM form_entries WHERE id = ?');
+    foreach (array_slice($due, 0, $max) as $k) {
+        $x = &$q[$k];
+        $st->execute([(int)$x['entry']]);
+        $e = $st->fetch();
+        if (!$e) { $x['state'] = 'failed'; $x['last'] = 'הפנייה נמחקה מהתיבה'; unset($x); continue; }
+        $json = json_encode(['form' => $e['form'], 'entry' => (int)$e['id'], 'at' => $e['at'], 'page' => $e['page'], 'fields' => json_decode($e['fields'], true) ?: (object)[]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        [$status, $err] = forms_hook_post((string)$x['url'], (string)$json);
+        $x['tries']++;
+        if ($err === '') { $x['state'] = 'sent'; $x['last'] = (string)$status; }
+        else {
+            $x['last'] = $err;
+            if ($x['tries'] > count(FORMS_HOOK_WAIT)) $x['state'] = 'failed';
+            else $x['next'] = time() + FORMS_HOOK_WAIT[$x['tries'] - 1];
+            devlog_write($x['state'] === 'failed' ? 'error' : 'warn', 'forms', 'form.webhook', ['message' => "webhook של \"{$x['form']}\" (פנייה #{$x['entry']}) — ניסיון {$x['tries']}: $err" . ($x['state'] === 'failed' ? ' — נכשל סופית; הפנייה שמורה בתיבה' : ''), 'action' => 'form']);
+        }
+        setting_set('forms_hook_last', json_encode(['at' => now_iso(), 'form' => $x['form'], 'entry' => (int)$x['entry'], 'ok' => $err === '', 'msg' => $err === '' ? "נשלח ($status)" : $err], JSON_UNESCAPED_UNICODE));
+        unset($x);
+    }
+    forms_hook_save($q);
+}

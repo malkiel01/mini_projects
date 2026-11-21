@@ -1,0 +1,17 @@
+{
+  "name": "popup",
+  "label": "חלון קופץ",
+  "icon": "🪟",
+  "category": "חלונות",
+  "fields": [
+    {"id": "trigger", "label": "מתי נפתח (click · delay · scroll · exit)", "control": "select", "options": ["click", "delay", "scroll", "exit"], "target": {"attr": "data-kol-trigger", "on": ".kol-popup__dlg"}},
+    {"id": "delay", "label": "אחרי כמה שניות (delay)", "control": "number", "target": {"attr": "data-kol-delay", "on": ".kol-popup__dlg"}},
+    {"id": "scroll", "label": "בגלילה לכמה אחוזים (scroll)", "control": "number", "target": {"attr": "data-kol-scroll", "on": ".kol-popup__dlg"}},
+    {"id": "once", "label": "כמה פעמים (visitor — פעם לגולש · session — פעם בביקור · always)", "control": "select", "options": ["visitor", "session", "always"], "target": {"attr": "data-kol-once", "on": ".kol-popup__dlg"}},
+    {"id": "name", "label": "שם החלון (data-kol-open=\"השם\" בכל כפתור פותח אותו)", "control": "text", "target": {"attr": "data-kol-dialog", "on": ".kol-popup__dlg"}},
+    {"id": "width", "label": "רוחב", "control": "size", "target": {"var": "--kol-popup-w"}}
+  ],
+  "states": [
+    {"id": "open", "label": "החלון", "options": [{"label": "החלון פתוח", "on": ".kol-popup__dlg", "attr": "open"}]}
+  ]
+}

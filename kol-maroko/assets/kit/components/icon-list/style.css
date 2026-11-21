@@ -1,0 +1,6 @@
+/* רכיב מוכן: רשימת אייקונים (kit 1.0.0) */
+.kol-iconlist { --kol-iconlist-color: var(--color-accent, #a3322a); --kol-iconlist-gap: 8px; list-style: none; margin: 0; padding: 0; display: flex; gap: var(--kol-iconlist-gap) calc(var(--kol-iconlist-gap) * 3); }
+.kol-iconlist--stack { flex-direction: column; }
+.kol-iconlist--inline { flex-direction: row; flex-wrap: wrap; }
+.kol-iconlist__item { display: flex; align-items: baseline; gap: 8px; }
+.kol-iconlist__icon { color: var(--kol-iconlist-color); flex: none; font-weight: 700; }

@@ -1,0 +1,26 @@
+<form class="kol-form" data-kol-form="contact">
+  <div class="kol-form__progress" data-kol-step-bar hidden><span class="kol-form__bar"></span></div>
+  <div class="kol-form__fields">
+    <div class="kol-form__field kol-form__field--half" data-kol-field>
+      <label class="kol-form__label" for="kf-name">שם</label>
+      <input class="kol-form__input" id="kf-name" name="name" type="text" required autocomplete="name">
+    </div>
+    <div class="kol-form__field kol-form__field--half" data-kol-field>
+      <label class="kol-form__label" for="kf-email">אימייל</label>
+      <input class="kol-form__input" id="kf-email" name="email" type="email" required autocomplete="email">
+      <small class="kol-form__help">לא נפרסם ולא נעביר הלאה.</small>
+    </div>
+    <div class="kol-form__field kol-form__field--full" data-kol-field>
+      <label class="kol-form__label" for="kf-message">הודעה</label>
+      <textarea class="kol-form__input" id="kf-message" name="message" rows="4" required></textarea>
+    </div>
+  </div>
+  <div class="kol-form__trap" aria-hidden="true"><input class="kol-form__trapin" name="website" tabindex="-1" autocomplete="off" data-kol-trap></div>
+  <div class="kol-form__actions">
+    <button class="kol-form__prev" type="button" data-kol-step-prev hidden>הקודם</button>
+    <button class="kol-form__next" type="button" data-kol-step-next hidden>הבא</button>
+    <button class="kol-form__submit" type="submit">שליחה</button>
+  </div>
+  <p class="kol-form__done" data-kol-form-done hidden>תודה! הפנייה התקבלה.</p>
+  <p class="kol-form__error" data-kol-form-error hidden>משהו השתבש בשליחה — נסו שוב בעוד רגע.</p>
+</form>

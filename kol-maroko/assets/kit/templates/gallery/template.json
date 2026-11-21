@@ -1,0 +1,6 @@
+{
+  "label": "גלריה",
+  "kind": "section",
+  "description": "כותרת וגלריית תמונות (הרכיב \"גלריה עם lightbox\" מועתק לפרויקט).",
+  "components": ["lightbox"]
+}

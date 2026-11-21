@@ -1,4 +1,5 @@
-// קול מרוקו — 📁 פרויקט (פרוסה F2a; lib/project.php): עץ הקבצים של העמוד ועורך קוד רב-לשוניות.
+// קול מרוקו — 📁 פרויקט (פרוסות F2a + F2b; lib/project.php, lib/project_ops.php): עץ הקבצים של העמוד ועורך קוד רב-לשוניות.
+// F2b: העברה (גרירה / "העבר אל…") ושכפול; ZIP הלוך-חזור; חיפוש והחלפה בכל הקבצים; הפניות בשינוי שם ובמחיקה; גרסאות עם השוואה ושחזור.
 // S4 / S6: התוכן מגיע כנתונים (JSON) ונכנס רק לעורך. שם קובץ ותוכן קובץ מוצגים כטקסט בלבד — דרך h() / textContent,
 // ואין בקובץ הזה innerHTML. העורך (Monaco) נטען מ-assets/vendor/monaco, לא מ-CDN.
 'use strict';
@@ -7,6 +8,7 @@ const Project = (() => {
   const VS = new URL('assets/vendor/monaco/vs', location.href).href;
   const LS = 'kol-project';
   const AUTOSAVE_MS = 1500;
+  const RETRY_MS = [3000, 8000, 20000, 45000, 90000];      // R4: ניסיון חוזר אחרי כשל רגעי בשמירה
   const LANGS = { html: 'html', htm: 'html', css: 'css', js: 'javascript', mjs: 'javascript', cjs: 'javascript', json: 'json', webmanifest: 'json', map: 'json',
     svg: 'xml', xml: 'xml', md: 'markdown', markdown: 'markdown', ts: 'typescript', scss: 'scss', less: 'less', yml: 'yaml', yaml: 'yaml', php: 'php',
     sql: 'sql', ini: 'ini', sh: 'shell' };
@@ -39,10 +41,12 @@ const Project = (() => {
   const dark = () => matchMedia('(prefers-color-scheme: dark)').matches;
 
   // ── Monaco, מהאפליקציה עצמה ───────────────────────────────
+  let monacoP = null;   // V14: טעינה שבדרך — אחת; כישלון מאפס אותה. תג שנכשל ב-error אמיתי (data-failed) מוסר; ב-timeout התג נשאר (אולי עוד יורד) והניסיון הבא מחכה לו
   function loadMonaco() {
     if (monaco) return Promise.resolve(monaco);
     if (window.monaco) return Promise.resolve(monaco = window.monaco);
-    return new Promise((ok, fail) => {
+    if (monacoP) return monacoP;
+    return (monacoP = new Promise((ok, fail) => {
       const t = setTimeout(() => fail(new Error('העורך לא נטען')), 20000);
       window.MonacoEnvironment = { getWorkerUrl: () => VS + '/base/worker/workerMain.js' };
       const done = () => {
@@ -50,23 +54,28 @@ const Project = (() => {
         window.require(['vs/editor/editor.main'], m => { clearTimeout(t); ok(monaco = m); }, e => { clearTimeout(t); fail(e); });
       };
       if (window.require?.config) return done();
+      const was = document.querySelector('script[data-monaco-loader]');   /* V16: loader.js פעם אחת לדף (גם code.js טוען אותו) */
+      if (was && was.dataset.failed) was.remove();   // V14: נכשל קודם — טוענים תג חדש
+      else if (was) { was.addEventListener('load', done); was.addEventListener('error', () => { clearTimeout(t); fail(new Error('העורך לא נטען')); }); return; }
       const s = document.createElement('script');
-      s.src = VS + '/loader.js';
+      s.src = VS + '/loader.js'; s.dataset.monacoLoader = '1'; s.addEventListener('load', () => { s.dataset.loaded = '1'; }); s.addEventListener('error', () => { s.dataset.failed = '1'; });
       s.onerror = () => { clearTimeout(t); fail(new Error('העורך לא נטען')); };
       s.onload = done;
       document.head.append(s);
-    });
+    }).catch(e => { monacoP = null; document.querySelector('script[data-monaco-loader][data-failed]')?.remove(); throw e; }));
   }
 
   // ── נתונים ────────────────────────────────────────────────
   async function refresh() {
     const d = await api('pf_tree');
-    S.files = d.files; S.trash = d.trash; S.limits = d.limits; S.kol = d.kol; S.canPurge = d.can_purge; S.loaded = true;
+    S.files = d.files; S.trash = d.trash; S.limits = d.limits; S.kol = d.kol; S.canPurge = d.can_purge; S.seedOnly = !!d.seed_only; S.loaded = true;
     S.byId = new Map(d.files.map(f => [f.id, f]));
     // לשונית של קובץ שנמחק או שונה שמו — מתעדכנת
     S.tabs = S.tabs.filter(id => S.byId.has(id) || S.docs.get(id)?.dirty);
     if (!S.tabs.includes(S.cur)) S.cur = S.tabs[S.tabs.length - 1] ?? null;
+    drawSeed(el.seed);
     drawAll();
+    if ([...S.docs.values()].some(stale)) syncOpen();            // השרת שינה קובץ פתוח (הפניות, החלפה, שחזור, ZIP)
   }
 
   /** העץ: תיקיות (גם כאלה שקיימות רק כי יש בהן קבצים) וקבצים, ממוינים — תיקיות קודם. */
@@ -95,12 +104,15 @@ const Project = (() => {
     const f = S.byId.get(id);
     if (!f || f.kind === 'dir') return;
     if (!S.tabs.includes(id)) S.tabs.push(id);
-    if (activate) S.cur = id;
+    if (activate) { S.cur = id; if (phone()) side(false); }    // בטלפון העץ מכסה את העורך — קובץ שנפתח סוגר אותו
     persist();
     if (!S.docs.has(id)) {
       const doc = { id, rev: f.rev, dirty: false, model: null, saved: '', binary: false, saving: false, timer: 0, conflict: false };
       S.docs.set(id, doc);
       if (f.kind === 'file' && !(IMG.test(ext(f.path)) && ext(f.path) !== 'svg') && !AUD.test(ext(f.path)) && !VID.test(ext(f.path))) {
+        /* R1: המסמך רשום כבר עכשיו, אבל הטקסט שלו עוד בדרך (pf_read). כל מי שפותח אותו בינתיים (ספירת הרכיבים, העורך החזותי,
+           לשונית שחוזרת) — ממתין ל-ready, ולא מקבל text() === '' (קנבס ריק: html / head / body "לא במקור"). */
+        let done; doc.ready = new Promise(r => { done = r; });
         try {
           const d = await api('pf_read', undefined, `&id=${id}`);
           doc.rev = d.file.rev;
@@ -109,34 +121,99 @@ const Project = (() => {
             doc.saved = d.content;
             if (monaco) {
               doc.model = monaco.editor.createModel(d.content, LANGS[ext(f.path)] || 'plaintext');
-              doc.model.onDidChangeContent(() => changed(doc));
+              doc.model.onDidChangeContent(e => changed(doc, e));   // V13: ביטול / החזרה בעורך הקוד — להיסטוריה המשותפת
             } else doc.text = d.content;                       // העורך לא נטען — תיבת טקסט פשוטה
           }
         } catch (e) { S.docs.delete(id); S.tabs = S.tabs.filter(x => x !== id); if (S.cur === id) S.cur = S.tabs[0] ?? null; persist(); toast(e.message, true); }
+        finally { doc.ready = null; done(); }
       } else doc.binary = true;
-    }
+    } else if (S.docs.get(id).ready) await S.docs.get(id).ready;            // R1: נטען כרגע בידי מישהו אחר — מחכים לו
     drawAll();
   }
 
-  function changed(doc) {
+  function changed(doc, e) {
+    if (!doc.model && doc.views) for (const ta of doc.views) { if (!ta.isConnected) doc.views.delete(ta); else if (ta.value !== doc.text) fbSet(ta, doc.text); }   // V14d: שינוי מבחוץ (העורך החזותי, ↶) — גם בתיבות הטקסט הפתוחות
+    emit(doc, 'text', e ? { undo: !!e.isUndoing, redo: !!e.isRedoing } : null);
     const now = doc.model ? doc.model.getValue() : doc.text;
     const was = doc.dirty;
     doc.dirty = now !== doc.saved;
     if (was !== doc.dirty) { drawTabs(); drawTree(); }
     drawStatus();
     clearTimeout(doc.timer);
-    if (doc.dirty && !doc.conflict) doc.timer = setTimeout(() => save(doc.id, true), AUTOSAVE_MS);
+    if (doc.dirty && !doc.conflict && !S.byId.get(doc.id)?.linked) doc.timer = setTimeout(() => save(doc.id, true), AUTOSAVE_MS);   // N1: הקובץ של הטבלה — רק בשמירה מפורשת
   }
+
+  // ── שירות המסמכים (04 §1) ─────────────────────────────────
+  // מקור אמת אחד לכל קובץ פתוח: הטקסט, ההיסטוריה (ביטול / חזרה) וה-rev. עורך הקוד והעורך החזותי (assets/js/editor)
+  // עובדים על אותו מסמך — תיקון מכאן או משם נכנס לאותה היסטוריה, ונשמר באותה שמירה (pf_write, אותו rev, אותן גרסאות).
+  const subs = new Map();
+  function emit(doc, kind, info) { for (const cb of subs.get(doc.id) || []) { try { cb(kind, info); } catch (e) { console.error(e); } } }
+  function handle(doc) {
+    const text = () => (doc.model && !doc.model.isDisposed() ? doc.model.getValue() : doc.text ?? doc.saved ?? '');   // מסמך שנסגר (ייבוא מחדש) — הטקסט האחרון, לא חריגה
+    return {
+      id: doc.id, text,
+      get path() { return S.byId.get(doc.id)?.path || ''; },
+      get rev() { return doc.rev; }, get dirty() { return doc.dirty; }, get saving() { return doc.saving; }, get conflict() { return doc.conflict; },
+      get binary() { return doc.binary; }, get error() { return doc.error || ''; }, get errorStatus() { return doc.errorStatus || 0; },
+      get lastTx() { return doc.tx?.[doc.tx.length - 1] || null; },
+      /** עסקה עם שם: תיקוני טקסט {from, to, text} (מיקומים בטקסט הנוכחי) כצעד אחד בהיסטוריה. */
+      edit(patches, label) {
+        if (doc.binary) throw new Error('הקובץ פתוח לקריאה בלבד');
+        if (doc.model) {
+          const m = doc.model, pos = at => m.getPositionAt(at);
+          m.pushStackElement();
+          m.pushEditOperations(null, patches.map(p => { const a = pos(p.from), b = pos(p.to); return { range: new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column), text: p.text, forceMoveMarkers: true }; }), () => null);
+          m.pushStackElement();
+        } else {
+          const ps = patches.slice().sort((a, b) => a.from - b.from), before = doc.text; let out = '', at = 0;
+          for (const p of ps) { out += before.slice(at, p.from) + p.text; at = p.to; }
+          (doc.undo = doc.undo || []).push(before); doc.redo = [];
+          doc.text = out + before.slice(at); changed(doc);
+        }
+        (doc.tx = doc.tx || []).push({ label, at: Date.now() }); if (doc.tx.length > 100) doc.tx.shift();
+        if (label) (doc.txPending = doc.txPending || []).push(label);   // שם העסקה — נשמר כהערת הגרסה בשמירה הבאה
+      },
+      undo() { if (doc.model) doc.model.undo(); else if (doc.undo?.length) { (doc.redo = doc.redo || []).push(doc.text); doc.text = doc.undo.pop(); changed(doc); } },
+      redo() { if (doc.model) doc.model.redo(); else if (doc.redo?.length) { doc.undo.push(doc.text); doc.text = doc.redo.pop(); changed(doc); } },
+      canUndo() { return doc.model ? doc.model.canUndo() : !!doc.undo?.length; },
+      canRedo() { return doc.model ? doc.model.canRedo() : !!doc.redo?.length; },
+      on(cb) { if (!subs.has(doc.id)) subs.set(doc.id, new Set()); subs.get(doc.id).add(cb); return () => subs.get(doc.id)?.delete(cb); },
+      save: () => save(doc.id),
+    };
+  }
+  const Docs = {
+    /** כל קובצי הפרויקט (אחרי טעינת העץ). */
+    async files() { if (!S.loaded) await refresh(); return S.files; },
+    /** טוען מחדש את רשימת הקבצים (אחרי העלאה או קישור של מדיה מהעורך החזותי). */
+    async reload() { await refresh(); return S.files; },
+    byPath: path => S.files.find(f => f.path === path && f.kind !== 'dir') || null,
+    /** פותח קובץ כמסמך משותף (וכלשונית בעורך הקוד). מחזיר null כשאי אפשר לפתוח. */
+    async open(id) {
+      if (!S.loaded) await refresh();
+      try { await loadMonaco(); } catch { /* בלי Monaco — מסמך טקסט פשוט, עם היסטוריה משלו */ }
+      if (!S.docs.has(id)) { const cur = S.cur; await openFile(id, false); S.cur = cur ?? id; persist(); }
+      else if (S.docs.get(id).ready) await S.docs.get(id).ready;             // R1: מסמך שעוד נטען — לא מחזירים אותו ריק
+      const doc = S.docs.get(id);                                             // נכשל בטעינה ← נמחק ← null
+      return doc ? handle(doc) : null;
+    },
+    /** מצב הפרויקט ברגע זה: מי מחזיק בנעילת העריכה, ו-kol.json (נקודות השבירה). */
+    async info() { const d = await api('pf_tree'); S.kol = d.kol; S.seedOnly = !!d.seed_only; S.canPurge = d.can_purge; return { lock: d.lock, kol: d.kol, seedOnly: S.seedOnly }; },
+    /** הבייטים של קובץ שאינו UTF-8 — לתצוגה בלבד. */
+    async bytes(id) { const d = await api('pf_read', undefined, `&id=${id}`); return d.binary ? Uint8Array.from(atob(d.b64), c => c.charCodeAt(0)) : new TextEncoder().encode(d.content); },
+  };
 
   /** שמירה. הקוד נשמר כמו שהוא — גם שבור; אין כאן שום בדיקת תקינות שמונעת שמירה. */
   async function save(id, auto = false) {
     const doc = S.docs.get(id);
     if (!doc || !doc.dirty || doc.saving || (auto && doc.conflict)) return;
     const content = doc.model ? doc.model.getValue() : doc.text;
+    if (S.byId.get(id)?.linked) return auto ? undefined : wordsSave(doc, content);   // N1: "מה ישתנה" לפני שהטבלה משתנה
     doc.saving = true; drawStatus();
     try {
-      const d = await api('pf_write', { id, rev: doc.rev, content, auto });
+      const tx = (doc.txPending || []).slice();
+      const d = await api('pf_write', tx.length ? { id, rev: doc.rev, content, auto, tx } : { id, rev: doc.rev, content, auto });
       doc.rev = d.file.rev; doc.saved = content; doc.conflict = false;
+      if (doc.txPending) doc.txPending.splice(0, tx.length);
       const f = S.byId.get(id);
       if (f) Object.assign(f, d.file);
       if (d.kol) { S.kol = d.kol; drawBars(); }
@@ -144,15 +221,120 @@ const Project = (() => {
     } catch (e) {
       if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
       else if (!auto) toast(e.message, true);
-      doc.error = e.message;
+      doc.error = e.message; doc.errorStatus = e.status || 0;
     } finally {
       doc.saving = false;
       const now = doc.model ? doc.model.getValue() : doc.text;
       doc.dirty = now !== doc.saved;
-      if (!doc.dirty) doc.error = '';
-      drawTabs(); drawTree(); drawStatus();
+      if (!doc.dirty) { doc.error = ''; doc.errorStatus = 0; }
+      drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
       if (doc.dirty && !doc.conflict && !doc.error) { clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), AUTOSAVE_MS); }
+      // R4: כשל רגעי (אין חיבור, 408/429, 5xx של השרת) — ננסה שוב לבד, בהמתנה שגדלה. בלי זה השינוי נשאר רק בדפדפן,
+      // והעורך החזותי (שמראה את מצב העמוד, לא של קובץ ה-CSS) אמר "נשמר" — כך נעלמה תמונת רקע שנבחרה (הבעלים, 15.11).
+      else if (doc.dirty && !doc.conflict && transient(doc.errorStatus)) {
+        doc.retries = (doc.retries || 0) + 1;
+        clearTimeout(doc.timer); doc.timer = setTimeout(() => save(id, true), RETRY_MS[Math.min(doc.retries, RETRY_MS.length) - 1]);
+      }
+      if (!doc.dirty || !doc.error) doc.retries = 0;
     }
+  }
+  /** R4: כשל שעשוי לעבור לבד — ננסה שוב. 4xx אחר (הרשאה, נעילה, קובץ גדול) — לא: הוא מוצג ונשאר עד פעולה. */
+  const transient = status => status === 0 || status === 408 || status === 429 || status >= 500;
+  /** R4: שמירה מיידית של כל מה שלא נשמר — כשהלשונית מוסתרת / נסגרת (בטלפון: מעבר לאפליקציה אחרת; אין beforeunload). */
+  function flushAll() {
+    for (const d of S.docs.values()) if (d.dirty && !d.binary && !d.saving && !d.conflict && !S.byId.get(d.id)?.linked) { clearTimeout(d.timer); save(d.id, true); }
+  }
+
+  // ── N1: data/words.json — הקובץ של טבלת המילים ─────────────
+  // שמירה = בדיקה בשרת ← "מה ישתנה" (לפי id) ← "החל". שגיאה — עם שורה ועמודה, מסומנת בעורך; הטבלה אינה משתנה עד "החל".
+  function wordsMarks(doc, errors, warnings = []) {
+    if (!doc.model || !monaco) return;
+    const m = (x, sev) => ({ startLineNumber: x.line, startColumn: x.col, endLineNumber: x.line, endColumn: x.col + 1, message: x.msg, severity: sev });
+    monaco.editor.setModelMarkers(doc.model, 'kol-words', [...errors.map(x => m(x, monaco.MarkerSeverity.Error)), ...warnings.map(x => m(x, monaco.MarkerSeverity.Warning))]);
+  }
+  const wordsAt = (doc, line) => { if (S.editor && doc.model) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); } };
+  // N2c: more — אישורי צור שדה / הוסף אפשרות: { fields: [key], options: [key:value] }
+  async function wordsSave(doc, content, create = [], more = { fields: [], options: [] }) {
+    doc.saving = true; drawStatus();
+    try {
+      const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, create_topics: create, create_fields: more.fields, create_options: more.options });
+      doc.error = ''; wordsMarks(doc, [], d.plan.warnings);
+      wordsPlanSheet(doc, content, d.plan, create, more);
+    } catch (e) {
+      doc.error = e.message; doc.errorStatus = e.status || 0;
+      if (e.status === 409 && e.data?.conflict) { doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
+      else if (e.status === 422 && e.data?.errors) { wordsMarks(doc, e.data.errors, e.data.warnings || []); wordsErrors(doc, content, e.data, create, more); }
+      else toast(e.message, true);
+    } finally {
+      doc.saving = false;
+      drawTabs(); drawTree(); drawStatus(); emit(doc, 'state');
+    }
+  }
+  function wordsErrors(doc, content, data, create, more = { fields: [], options: [] }) {
+    const props = (data.proposals || []).filter(p => !create.includes(p.slug));
+    const fprops = (data.field_proposals || []).filter(p => !more.fields.includes(p.key));
+    const oprops = (data.option_proposals || []).filter(p => !more.options.includes(`${p.key}:${p.value}`));
+    const list = data.errors.filter(x => !x.propose);       // שדה / אפשרות שאינם קיימים — נשארים ברשימה (עם השורה), והכפתור מתחת
+    const dlg = sheet('הקובץ לא נשמר — הטבלה לא השתנתה',
+      list.length ? h('ul', { class: 'pj-fails', 'data-words-errors': true }, list.slice(0, 50).map(x => h('li', {},
+        h('button', { type: 'button', class: 'pj-ref-at', onclick: () => { dlg.close(); wordsAt(doc, x.line); } }, h('span', { dir: 'ltr' }, `שורה ${x.line}, עמודה ${x.col}`)), ' ', h('span', { dir: 'auto' }, x.msg)))) : null,
+      props.length ? h('div', { class: 'warnbox' }, h('p', {}, 'נושאים שאינם קיימים:'),
+        h('div', { class: 'row-btns wrap' }, props.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-topic': p.slug,
+          onclick: () => { dlg.close(); wordsSave(doc, content, [...create, p.slug], more); } }, `צור נושא "${p.slug}" (${p.name})`)))) : null,
+      // N2c: שדה שאינו קיים / ערך שאינו ברשימת האפשרויות — אותה דלת כמו "צור נושא"
+      fprops.length || oprops.length ? h('div', { class: 'warnbox' }, h('p', {}, 'שדות ואפשרויות שאינם קיימים:'),
+        h('div', { class: 'row-btns wrap' },
+          fprops.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-field': p.key,
+            onclick: () => { dlg.close(); wordsSave(doc, content, create, { ...more, fields: [...more.fields, p.key] }); } }, `צור שדה "${p.key}" (${p.type})`)),
+          oprops.map(p => h('button', { type: 'button', class: 'btn sm', 'data-create-option': `${p.key}:${p.value}`,
+            onclick: () => { dlg.close(); wordsSave(doc, content, create, { ...more, options: [...more.options, `${p.key}:${p.value}`] }); } }, `הוסף אפשרות "${p.value}" לשדה ${p.key}`)))) : null,
+      h('div', { class: 'row-btns' }, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'חזרה לעורך')));
+  }
+  function wordsPlanSheet(doc, content, plan, create, more = { fields: [], options: [] }) {
+    const c = plan.counts;
+    const field = { word: 'מילה', meaning: 'פירוש', topics: 'נושאים', audio: 'הקלטה', external_id: 'מספר מהאקסל' };
+    const fold = (title, n, items) => n ? h('details', { class: 'pj-plan' }, h('summary', {}, `${title} (${n})`), h('ul', {}, items)) : null;
+    const apply = h('button', { type: 'button', class: 'btn primary', 'data-words-apply': true }, 'החל');
+    const dlg = sheet('מה ישתנה בטבלת המילים',
+      h('p', { 'data-words-summary': true }, h('b', {}, plan.summary)),
+      !c.changed && !c.added && !c.trashed && !c.moved && !c.topics ? h('p', { class: 'hint' }, 'אין שינויים — הקובץ זהה לטבלה.') : null,
+      plan.warnings?.length ? h('div', { class: 'warnbox' }, h('ul', {}, plan.warnings.slice(0, 20).map(x => h('li', { dir: 'auto' }, `שורה ${x.line}: ${x.msg}`)))) : null,
+      fold('ישתנו', c.changed, plan.changed.map(w => h('li', {}, h('b', { dir: 'auto' }, w.word), h('small', { class: 'muted' }, ` #${w.id}`),
+        h('ul', {}, Object.entries(w.fields).map(([k, [a, b]]) => h('li', {}, `${field[k] || k}: `, h('span', { class: 'pj-ref-old', dir: 'auto' }, a || '—'), ' ← ', h('span', { class: 'pj-ref-new', dir: 'auto' }, b || '—'))))))),
+      fold('יתווספו', c.added, plan.added.map(w => h('li', { dir: 'auto' }, w.word, w.id ? h('small', { class: 'muted' }, ` #${w.id}`) : h('small', { class: 'muted' }, ' — מזהה חדש')))),
+      fold('יעברו לסל', c.trashed, plan.trashed.map(w => h('li', { dir: 'auto' }, w.word, h('small', { class: 'muted' }, ` #${w.id}${w.audio ? ' · עם ההקלטה (נשארת בספרייה)' : ''}`)))),
+      plan.new_topics?.length ? h('p', {}, 'נושאים חדשים: ' + plan.new_topics.map(t => `${t.name} (${t.slug})`).join(', ')) : null,
+      plan.new_fields?.length ? h('p', {}, 'שדות חדשים: ' + plan.new_fields.map(f => `${f.key} (${f.type})`).join(', ')) : null,
+      plan.new_options?.length ? h('p', {}, 'אפשרויות חדשות: ' + plan.new_options.map(o => `${o.key}: ${o.value}`).join(', ')) : null,
+      plan.snapshot ? h('p', { class: 'hint' }, '↩️ לפני ההחלה תיווצר נקודת שחזור.') : null,
+      plan.needs === 'publisher' ? h('p', { class: 'hint' }, 'מחיקה של יותר מ-20 מילים — רק למפרסם.') : null,
+      h('div', { class: 'row-btns' }, apply, h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
+    apply.onclick = async () => {
+      apply.disabled = true;
+      try {
+        const d = await api('pf_write', { id: doc.id, rev: doc.rev, content, apply: true, token: plan.token, create_topics: create, create_fields: more.fields, create_options: more.options });
+        dlg.close();
+        setDocText(doc, d.content, d.file.rev);
+        doc.error = ''; doc.errorStatus = 0; wordsMarks(doc, []);
+        const f = S.byId.get(doc.id);
+        if (f) { Object.assign(f, d.file); bc?.postMessage({ t: 'saved', path: f.path }); }
+        toast('הטבלה עודכנה · ' + plan.summary);
+        drawAll();
+      } catch (e) {
+        apply.disabled = false;
+        if (e.status === 409 && e.data?.conflict) { dlg.close(); doc.conflict = true; conflictSheet(doc, content, e.data.conflict); }
+        else toast(e.message, true);
+      }
+    };
+  }
+  /** "מחיקה" של הקובץ של הטבלה: אינה מוחקת מילים. ההסבר, והאפשרות להסיר את data.words מ-kol.json. */
+  function wordsRemove(f) {
+    const dlg = sheet('הקובץ של טבלת המילים',
+      h('p', {}, 'זה הקובץ של טבלת המילים. מחיקה כאן אינה מוחקת מילים.'),
+      h('p', { class: 'hint' }, 'להסיר אותו מהעמוד = להסיר את data.words מ-kol.json. הטבלה נשארת כמו שהיא, ואפשר להחזיר מההיסטוריה של kol.json.'),
+      h('div', { class: 'row-btns wrap' },
+        h('button', { type: 'button', class: 'btn danger', 'data-words-unlink': true, onclick: () => { dlg.close(); run(() => api('pf_delete', { id: f.id, unlink: true }), 'data.words הוסר מ-kol.json — המילים נשארו'); } }, 'הסר את data.words מ-kol.json'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
   }
 
   /** "הקובץ השתנה בינתיים" — שתי הגרסאות זו מול זו, והבחירה בידי העורך. שום דבר לא נדרס בשקט. */
@@ -200,6 +382,7 @@ const Project = (() => {
   function drawAll() { if (!S.host) return; drawBars(); drawTree(); drawTabs(); drawEditor(); drawStatus(); }
 
   function drawBars() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const k = S.kol;
     el.kol.hidden = !k || k.valid;
     if (k && !k.valid) {
@@ -219,13 +402,16 @@ const Project = (() => {
     return 0;
   }
 
+  /** קובצי התבנית של הגרסה הקודמת (from-current/, עם {{…}}) — נשארים לעיון, ואינם העמוד. */
+  const OLD_TPL = path => /^from-current\/[^/]+\.html?$/i.test(path);
   function drawTree() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const entry = S.kol?.config?.entry;
     const rows = [];
     const walk = (n, depth) => {
       for (const d of [...n.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'))) {
         const shut = prefs.closed.includes(d.path);
-        rows.push(h('li', { class: 'pj-row pj-dir', style: `--d:${depth}`, 'data-dir': d.path },
+        rows.push(h('li', { class: 'pj-row pj-dir', style: `--d:${depth}`, 'data-dir': d.path, draggable: 'true', ondragstart: e => dragStart(e, { path: d.path }) },
           h('button', { type: 'button', class: 'pj-name', 'aria-expanded': String(!shut), onclick: () => { prefs.closed = shut ? prefs.closed.filter(x => x !== d.path) : [...prefs.closed, d.path]; persist(); drawTree(); } },
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, shut ? '▸' : '▾'), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, '📁'), h('span', { class: 'one', dir: 'auto' }, d.name)),
           h('button', { type: 'button', class: 'icon-btn pj-more', 'aria-label': `פעולות על התיקייה ${d.name}`, onclick: () => dirMenu(d) }, '⋯')));
@@ -233,12 +419,14 @@ const Project = (() => {
       }
       for (const f of n.files.sort((a, b) => base(a.path).localeCompare(base(b.path), 'he'))) {
         const miss = f.kind === 'media' && f.media_info?.missing;
-        rows.push(h('li', { class: 'pj-row' + (f.id === S.cur ? ' on' : ''), style: `--d:${depth}`, 'data-dir': parent(f.path) },
+        rows.push(h('li', { class: 'pj-row' + (f.id === S.cur ? ' on' : ''), style: `--d:${depth}`, 'data-dir': parent(f.path), draggable: f.linked ? 'false' : 'true', ondragstart: e => { if (!f.linked) dragStart(e, { id: f.id }, f.path); } },
           h('button', { type: 'button', class: 'pj-name', title: f.path, onclick: () => { openFile(f.id); if (phone()) side(false); } },
             h('span', { class: 'pj-ico', 'aria-hidden': 'true' }), h('span', { class: 'pj-ico', 'aria-hidden': 'true' }, ICONS[ext(f.path)] || '📄'),
             h('span', { class: 'one', dir: 'auto' }, base(f.path)),
             f.path === entry && h('span', { class: 'chip', title: 'קובץ הכניסה (kol.json)' }, 'כניסה'),
+            OLD_TPL(f.path) && h('span', { class: 'chip', 'data-old-tpl': true, title: 'קובץ תבנית מהגרסה הקודמת (עם {{…}}) — לעיון בלבד; העמוד עצמו הוא index.html' }, 'תבנית ישנה'),
             f.kind === 'media' && h('span', { class: 'chip' + (miss ? ' bad' : '') }, miss ? 'חסר בספרייה' : 'מדיה'),
+            f.linked && h('span', { class: 'chip', 'data-linked': f.linked, title: f.note }, '🔗 טבלה'),
             dirty(f.id) && h('span', { class: 'pj-dot', title: 'לא נשמר', 'aria-label': 'לא נשמר' }, '●')),
           h('button', { type: 'button', class: 'icon-btn pj-more', 'aria-label': `פעולות על ${base(f.path)}`, onclick: () => fileMenu(f) }, '⋯')));
       }
@@ -250,6 +438,7 @@ const Project = (() => {
   }
 
   function drawTabs() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     el.tabs.replaceChildren(...S.tabs.map(id => {
       const f = S.byId.get(id);
       const name = f ? base(f.path) : '(נמחק)';
@@ -261,12 +450,99 @@ const Project = (() => {
     el.tabs.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
+  // ── V14d: שורת מקשים לקוד בטלפון ─────────────────────────
+  // בסוף העמודה של העורך — ו-.pj בגובה --vvh (בלי המקלדת), ולכן היא צמודה מעל המקלדת. אותה שורה ל-Monaco ולתיבת הטקסט
+  // (כש-Monaco לא נטען). הכפתורים אינם לוקחים את המיקוד מהעורך — המקלדת נשארת פתוחה.
+  const touchy = () => phone() || matchMedia('(pointer: coarse)').matches;
+  const KEYS = ['<', '>', '/', '=', '"', "'", '{', '}', '(', ')', ';', ':', '#', '.'];
+  function fbSnap(doc) { (doc.undo = doc.undo || []).push(doc.text); if (doc.undo.length > 300) doc.undo.shift(); doc.redo = []; }
+  function fbStep(doc, redo) {
+    const from = redo ? doc.redo : doc.undo; if (!from?.length) return false;
+    (redo ? (doc.undo = doc.undo || []) : (doc.redo = doc.redo || [])).push(doc.text);
+    doc.text = from.pop(); doc.fbAt = 0; changed(doc); return true;
+  }
+  /** העורך הפעיל: { doc, ed } (Monaco) או { doc, ta } (תיבת הטקסט); null — אין קובץ טקסט פתוח. */
+  /** תיבת טקסט למסמך (כש-Monaco לא נטען): אותו מסמך, אותה שמירה ואותו rev; היסטוריה משותפת (doc.undo / doc.redo) עם העורך החזותי.
+   *  הקלדה רצופה = צעד אחד; Ctrl+Z / ↶ — ההיסטוריה שלנו, לא של הדפדפן. */
+  function fbArea(doc, label) {
+    const ta = h('textarea', { class: 'code-area pj-fallback', dir: 'ltr', spellcheck: 'false', wrap: 'off', 'aria-label': label, oninput: () => { doc.text = ta.value; changed(doc); } });
+    ta.value = doc.text;
+    ta.addEventListener('beforeinput', e => {
+      if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') { e.preventDefault(); fbStep(doc, e.inputType === 'historyRedo'); return; }
+      const now = performance.now(), kind = e.inputType.startsWith('delete') ? 'del' : 'ins';
+      if (now - (doc.fbAt || 0) > 1000 || doc.fbKind !== kind || /\s/.test(e.data || '')) fbSnap(doc);
+      doc.fbAt = now; doc.fbKind = kind;
+    });
+    ta.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.stopPropagation(); save(doc.id); } });   // Ctrl+S — גם בלשונית "קוד" של העורך
+    (doc.views = doc.views || new Set()).add(ta);
+    return ta;
+  }
+  /** טקסט חדש לתיבה — הסמן בסוף הקטע שהשתנה (לא בסוף הקובץ), והגלילה נשמרת. */
+  function fbSet(ta, text) {
+    const old = ta.value, top = ta.scrollTop; let a = 0, z = 0;
+    while (a < old.length && a < text.length && old[a] === text[a]) a++;
+    while (z < old.length - a && z < text.length - a && old[old.length - 1 - z] === text[text.length - 1 - z]) z++;
+    ta.value = text; const p = text.length - z; ta.setSelectionRange(p, p); ta.scrollTop = top;
+  }
+  /** מסמן טווח בתיבת הטקסט וגולל אליו (focus — רק כשמבקשים). */
+  function fbMark(ta, from, to, focus) {
+    const n = ta.value.length; from = Math.max(0, Math.min(from, n)); to = Math.max(from, Math.min(to, n));
+    if (focus) ta.focus({ preventScroll: true });
+    ta.setSelectionRange(from, to);
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 18, row = ta.value.slice(0, from).split('\n').length - 1;
+    ta.scrollTop = Math.max(0, row * lh - ta.clientHeight / 2);
+  }
+  /** העורך הפעיל במסך 📁: { doc, ed } (Monaco) או { doc, ta } (תיבת הטקסט); null — אין קובץ טקסט פתוח. */
+  function activeEd() {
+    const doc = S.docs.get(S.cur); if (!doc || doc.binary) return null;
+    if (doc.model && S.editor && S.editor.getModel() === doc.model) return { doc, ed: S.editor };
+    if (el.fb && el.fbDoc === doc && el.fb.isConnected) return { doc, ta: el.fb };
+    return null;
+  }
+  /** העורך שבלשונית "קוד" של העורך החזותי. */
+  function splitEd() {
+    const doc = S.docs.get(S.splitId); if (!doc || doc.binary) return null;
+    if (doc.model && S.split && S.split.getModel() === doc.model) return { doc, ed: S.split };
+    if (S.splitTa && S.splitTa.isConnected) return { doc, ta: S.splitTa };
+    return null;
+  }
+  function keyDo(k, a) {
+    if (!a) return;
+    if (a.ed) {
+      const ed = a.ed;
+      if ((k === 'undo' || k === 'redo') && ed.getOption(monaco.editor.EditorOption.readOnly)) return;   // לקריאה בלבד (423)
+      if (k === 'undo' || k === 'redo') { const m = ed.getModel(); if (m) m[k](); }
+      else if (k === 'find') { ed.focus(); ed.getAction('actions.find')?.run(); return; }
+      else if (k === 'Tab') ed.trigger('kol-keys', 'tab', null);
+      else ed.trigger('kol-keys', 'type', { text: k });                         // כמו הקלדה: סגירה אוטומטית של סוגריים ותגיות
+      ed.focus(); return;
+    }
+    const { doc, ta } = a;
+    if (ta.readOnly) return;
+    if (k === 'find') { searchSheet(); return; }
+    if (k === 'undo' || k === 'redo') { fbStep(doc, k === 'redo'); ta.focus(); return; }
+    const text = k === 'Tab' ? '  ' : k, s0 = ta.selectionStart, e0 = ta.selectionEnd;
+    fbSnap(doc); doc.fbAt = 0;
+    ta.setRangeText(text, s0, e0, 'end'); doc.text = ta.value; changed(doc); ta.focus();
+  }
+  function keyBar(target) {
+    const b = (label, k, aria) => h('button', { type: 'button', class: 'pj-key', tabindex: '-1', 'data-key': k, 'aria-label': aria || label, title: aria || label, onclick: () => keyDo(k, target()) }, label);
+    const row = h('div', { class: 'pj-keys', role: 'toolbar', 'aria-label': 'מקשים לקוד', 'data-keys': true, dir: 'ltr', hidden: true },
+      b('⇥', 'Tab', 'Tab — הזחה'), ...KEYS.map(k => b(k, k)), b('↶', 'undo', 'ביטול'), b('↷', 'redo', 'חזרה'), b('🔎', 'find', 'חיפוש'));
+    row.addEventListener('pointerdown', e => { if (e.target.closest('.pj-key')) e.preventDefault(); });   // בלי mousedown — המיקוד נשאר בעורך
+    row.addEventListener('mousedown', e => e.preventDefault());
+    return row;
+  }
+
   function drawEditor() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
     el.ed.hidden = el.view.hidden = true;
+    el.fb = el.fbDoc = null; if (el.keys) el.keys.hidden = true;
     if (!f || !doc) {
       el.view.hidden = false;
-      el.view.replaceChildren(h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'));
+      el.view.replaceChildren(...[h('p', { class: 'empty' }, S.cur && !f ? 'הקובץ הזה נמחק או הועבר.' : phone() ? 'אין קובץ פתוח.' : 'בחרו קובץ מהעץ כדי לפתוח אותו.'),
+        phone() && h('p', { class: 'empty' }, h('button', { type: 'button', class: 'btn primary', onclick: () => side(true) }, '📂 קבצי הקוד — בחירת קובץ'))].filter(x => x != null && x !== false));
       return;
     }
     if (doc.model && S.editor) {
@@ -277,14 +553,18 @@ const Project = (() => {
         if (prefs.views[f.id]) S.editor.restoreViewState(prefs.views[f.id]);
       }
       S.editor.layout();
-      if (!phone()) S.editor.focus();
+      if (el.keys) el.keys.hidden = !touchy();
+      /* T2: ציור חוזר (שחזור הלשוניות, עץ) אינו מושך את המיקוד כשהוא כבר בתוך העורך — אחרת תפריט ההקשר של Monaco
+         (שמחזיק את המיקוד בתוך .monaco-editor) נסגר מיד אחרי שנפתח (v1b) */
+      if (!phone() && !el.ed.contains(document.activeElement)) S.editor.focus();
       return;
     }
     el.view.hidden = false;
     if (doc.text != null && !doc.binary) {                       // העורך לא נטען: תיבת טקסט, כדי שתמיד אפשר לערוך ולשמור
-      const ta = h('textarea', { class: 'code-area pj-fallback', dir: 'ltr', spellcheck: 'false', 'aria-label': f.path, oninput: () => { doc.text = ta.value; changed(doc); } });
-      ta.value = doc.text;
+      const ta = fbArea(doc, f.path);
+      el.fb = ta; el.fbDoc = doc;
       el.view.replaceChildren(ta);
+      if (el.keys) el.keys.hidden = !touchy();
       return;
     }
     const x = ext(f.path), type = f.media_info?.type || '';
@@ -304,11 +584,12 @@ const Project = (() => {
   }
 
   function drawStatus() {
+    if (!S.host) return;                                         // המסך אינו מוצג (המסמך פתוח בעורך החזותי) — אין מה לצייר
     const doc = S.docs.get(S.cur), f = S.byId.get(S.cur);
     const editable = !!doc && !doc.binary;
     el.save.disabled = !editable || !doc.dirty || doc.saving;
     el.status.className = 'pj-status' + (doc?.conflict || doc?.error ? ' bad' : '');
-    el.status.textContent = !doc || !f ? '' : doc.binary ? size(f.size) : doc.conflict ? '⚠️ השתנה בינתיים — לא נשמר' : doc.saving ? 'שומר…' : doc.dirty ? (doc.error ? '⚠️ לא נשמר: ' + doc.error : '● לא נשמר') : '✓ נשמר';
+    el.status.textContent = !doc || !f ? '' : doc.binary ? size(f.size) : doc.conflict ? '⚠️ השתנה בינתיים — לא נשמר' : doc.saving ? 'שומר…' : doc.dirty ? (doc.error ? '⚠️ לא נשמר: ' + doc.error : f.linked ? '● לא נשמר — Ctrl+S: "מה ישתנה" בטבלה' : '● לא נשמר') : f.linked ? '🔗 ' + f.note : '✓ נשמר';
     for (const b of el.bar.querySelectorAll('[data-ed]')) b.disabled = !editable || !S.editor;
   }
 
@@ -334,22 +615,65 @@ const Project = (() => {
     'כל שם וכל סיומת. "/" יוצר תיקייה בדרך.');
   const newDir = dir => nameSheet('תיקייה חדשה', 'נתיב התיקייה', join(dir, 'תיקייה'), 'יצירה', path => run(() => api('pf_mkdir', { path })));
   const rename = (target, path) => nameSheet('שינוי שם', 'הנתיב החדש', path, 'שינוי',
-    to => run(() => api('pf_rename', { ...target, to })), 'הקבצים האחרים אינם מתעדכנים לבד — הפניות לנתיב הישן יישארו כמו שהן.');
+    to => moveTo(target, path, to), 'שינוי של התיקייה בנתיב — הוא העברה. אם קבצים אחרים מפנים לנתיב הישן, תוצג רשימה, ואתם מחליטים אם לעדכן.');
 
-  function remove(target, label, n) {
+  async function remove(target, label, n) {
     const open = S.tabs.filter(id => dirty(id) && (target.id === id || (target.path && (S.byId.get(id)?.path || '').startsWith(target.path + '/'))));
+    const doIt = () => {
+      for (const id of open) { const d = S.docs.get(id); clearTimeout(d.timer); d.dirty = false; }
+      return run(() => api('pf_delete', target), 'עבר לסל');
+    };
+    let refs = [];
+    try { refs = (await api('pf_refs', undefined, tq(target))).refs; } catch { /* בלי רשימה — עדיין אפשר למחוק */ }
+    if (refs.length) {                                           // לא חוסם: הרשימה, והבחירה בידי בעל העמוד
+      const dlg = sheet(`${refs.length} הפניות ל${label}`,
+        h('p', { class: 'hint' }, `קבצים אחרים מפנים אל ${label}. אחרי המחיקה ההפניות האלה לא יגיעו לשום דבר. אפשר לפתוח כל אחת ולתקן — או למחוק בכל זאת (אפשר לשחזר מהסל).`),
+        refList(refs, false),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn danger', 'data-refs-delete': true, onclick: () => { dlg.close(); doIt(); } }, `העברה לסל בכל זאת${n > 1 ? ` (${n} פריטים)` : ''}`),
+          h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
+      return;
+    }
     if (!confirm(`להעביר את ${label} לסל?${n > 1 ? ` (${n} פריטים)` : ''}${open.length ? '\nיש בו שינויים שלא נשמרו.' : ''}\nאפשר לשחזר מהסל.`)) return;
-    for (const id of open) { const d = S.docs.get(id); clearTimeout(d.timer); d.dirty = false; }
-    run(() => api('pf_delete', target), 'עבר לסל');
+    doIt();
   }
 
   function menu(title, items) {
-    const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(([label, fn, cls]) =>
-      h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))));
+    const dlg = sheet(title, h('div', { class: 'pj-menu' }, items.filter(Boolean).map(it => it instanceof Node ? it : (([label, fn, cls]) =>
+      h('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: () => { dlg.close(); fn(); } }, label))(it))));
   }
-  const fileMenu = f => menu(base(f.path), [
+  /** "גרסאות" של קובץ: כל שמירה — מתי, מי, ומה נעשה בה (שם העסקה מהעורך החזותי, "שמירה", "שמירה אוטומטית"). */
+  async function versions(f) {
+    const body = h('div', { class: 'pj-versions' }, h('p', { class: 'hint' }, 'טוען…'));
+    sheet('גרסאות · ' + base(f.path), body);
+    try {
+      const d = await api('pf_versions', undefined, `&id=${f.id}`);
+      if (d.linked) {                                              // N1: השמירות של הטבלה (יומן הפעולות) — אין גוש שמור לשחזר
+        body.replaceChildren(h('p', { class: 'hint' }, 'הקובץ נבנה מטבלת המילים, ולכן אין לו גרסאות שמורות. אלה השמירות האחרונות בטבלה; חזרה אחורה — ב-↩️ שחזור (נקודת שחזור נוצרת לפני כל מחיקה ולפני שינוי של יותר מ-20 מילים).'),
+          h('ol', { class: 'pj-ver-list' }, d.versions.map(v => h('li', {}, h('div', {}, h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at)))))));
+        return;
+      }
+      body.replaceChildren(h('p', { class: 'hint' }, d.versions.length + ' גרסאות שמורות. הגרסה הנוכחית: ' + d.file.rev + '. "השוואה" — מה השתנה מאז; "שחזור" — התוכן שלה נשמר כגרסה חדשה (שום גרסה אינה נמחקת).'),
+        h('ol', { class: 'pj-ver-list' }, d.versions.map((v, i) => h('li', { 'data-rev': v.rev },
+          h('div', {}, h('b', {}, 'גרסה ' + v.rev), ' · ', h('span', { class: 'pj-ver-note', dir: 'auto' }, v.note), h('span', { class: 'hint' }, ' — ' + (v.by || '') + ' · ' + when(v.at) + ' · ' + size(v.size))),
+          f.kind === 'file' && v.hid && h('div', { class: 'pj-ver-btns' },
+            h('button', { type: 'button', class: 'btn sm', 'data-ver-diff': v.hid, onclick: () => diffSheet(d.file, v) }, '↔️ השוואה'),
+            i > 0 && h('button', { type: 'button', class: 'btn sm', 'data-ver-restore': v.hid, onclick: () => restoreVersion(d.file, v) }, '↩️ שחזור'))))));
+    } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+  const fileMenu = f => f.linked ? menu(base(f.path), [
+    h('p', { class: 'hint' }, '🔗 ' + f.note + '. השם והמיקום — ב-kol.json (data.words.file).'),
+    ['🕘 שמירות', () => versions(f)],
+    ['📂 פתיחה', () => openFile(f.id)],
+    ['📋 שכפול (עותק סטטי — לא מקושר לטבלה)', () => duplicate({ id: f.id }, f.path)],
+    ['⬇️ הורדה', () => download(f)],
+    ['🗑️ הסרה מהעמוד…', () => wordsRemove(f), 'danger'],
+  ]) : menu(base(f.path), [
+    f.kind === 'file' ? ['🕘 גרסאות', () => versions(f)] : null,
     ['📂 פתיחה', () => openFile(f.id)],
     ['✏️ שינוי שם', () => rename({ id: f.id }, f.path)],
+    ['↪️ העבר אל…', () => moveSheet({ id: f.id }, f.path)],
+    ['📋 שכפול', () => duplicate({ id: f.id }, f.path)],
     ['⬇️ הורדה', () => download(f)],
     ['🗑️ מחיקה לסל', () => remove({ id: f.id }, `"${base(f.path)}"`, 1), 'danger'],
   ]);
@@ -358,6 +682,8 @@ const Project = (() => {
     ['📁 תיקייה חדשה כאן', () => newDir(d.path)],
     ['⬆️ העלאה לכאן', () => pick(d.path)],
     ['✏️ שינוי שם', () => rename({ path: d.path }, d.path)],
+    ['↪️ העבר אל…', () => moveSheet({ path: d.path }, d.path)],
+    ['📋 שכפול', () => duplicate({ path: d.path }, d.path)],
     ['🗑️ מחיקה לסל', () => remove({ path: d.path }, `התיקייה "${d.name}"`, S.files.filter(f => f.path === d.path || f.path.startsWith(d.path + '/')).length), 'danger'],
   ]);
 
@@ -387,6 +713,16 @@ const Project = (() => {
     for (const file of files) {
       const path = join(dir, file.name);
       toast(`מעלה ${++done} מתוך ${files.length}…`);
+      const lf = S.files.find(f => f.linked && f.path === path);
+      if (lf) {                                                  // N1: העלאה באותו נתיב = שמירה של הקובץ של הטבלה — "מה ישתנה" ואז "החל"
+        try {
+          await openFile(lf.id);
+          const doc = S.docs.get(lf.id), text = await file.text();
+          if (doc.model) doc.model.setValue(text); else { doc.text = text; changed(doc); }
+          await save(lf.id);
+        } catch (e) { fails.push(`${file.name}: ${e.message}`); }
+        continue;
+      }
       try {
         let linked = false;
         if (MEDIA_UP.test(file.type)) {
@@ -408,6 +744,14 @@ const Project = (() => {
   }
 
   // ── הסל ───────────────────────────────────────────────────
+  /** הפס "שלד הזריעה" — כל עוד index.html הוא השלד שהכלי יצר. M6: אין עוד ייבוא מהעמוד הישן (ההסבה הוסרה) — רק אומרים את זה. */
+  function drawSeed(box) {
+    if (!box) return;
+    box.hidden = !S.seedOnly;
+    if (!S.seedOnly) return;
+    box.replaceChildren(h('span', {}, '⚠️ index.html הוא עדיין השלד הריק', h('span', { class: 'seed-more' }, ' — מה שרואים כאן אינו העמוד שבאתר. משנים אותו כאן, או מעלים ZIP של הפרויקט.')));
+  }
+
   async function trashSheet() {
     let d;
     try { d = await api('pf_trash'); } catch (e) { return toast(e.message, true); }
@@ -435,6 +779,432 @@ const Project = (() => {
     return p || 'שורש הפרויקט';
   }
 
+  // ── F2b: קבצים פתוחים שהשרת שינה ──────────────────────────
+  const stale = d => !d.dirty && !d.binary && !d.saving && S.byId.has(d.id) && S.byId.get(d.id).rev !== d.rev;
+  /** מחליף את הטקסט של מסמך פתוח (לא מלוכלך) בגרסה מהשרת — כצעד אחד שאפשר לבטל. */
+  function setDocText(doc, text, rev) {
+    doc.rev = rev; doc.saved = text; doc.conflict = false;
+    if (doc.model) {
+      if (doc.model.getValue() !== text) {
+        doc.model.pushStackElement();
+        doc.model.pushEditOperations(null, [{ range: doc.model.getFullModelRange(), text }], () => null);
+        doc.model.pushStackElement();
+      }
+    } else doc.text = text;
+    doc.dirty = false;
+    emit(doc, 'text'); emit(doc, 'state');
+  }
+  let syncing = false;
+  async function syncOpen() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      for (const doc of [...S.docs.values()].filter(stale)) {
+        try { const d = await api('pf_read', undefined, `&id=${doc.id}`); if (!d.binary && stale(doc)) setDocText(doc, d.content, d.file.rev); } catch { /* בפעם הבאה */ }
+      }
+    } finally { syncing = false; }
+    drawAll();
+  }
+  /** לפני פעולה שהשרת כותב בה לקבצים אחרים (הפניות, החלפה, ZIP) — כל מה שבעורך נשמר קודם. */
+  async function saveAll() {
+    for (const d of [...S.docs.values()]) if (d.dirty && !d.binary) await save(d.id);
+    if ([...S.docs.values()].some(d => d.dirty)) throw new Error('יש קבצים שלא נשמרו — שמרו אותם קודם');
+  }
+
+  // ── F2b: העברה, שכפול, הפניות ─────────────────────────────
+  const tq = t => (t.id ? `&id=${t.id}` : `&path=${encodeURIComponent(t.path)}`);
+  /** רשימת הפניות: קובץ:שורה (פותח את הקובץ בשורה), הערך הישן, ובשינוי שם — החדש. הכול כטקסט. */
+  function refList(refs, withNew) {
+    return h('ul', { class: 'pj-refs' }, refs.map(r => h('li', { 'data-ref': r.path + ':' + r.line },
+      h('button', { type: 'button', class: 'pj-ref-at', title: 'פתיחה בשורה', onclick: () => { $('#sheet')?.close(); openAt(r.path, r.line); } }, h('span', { dir: 'ltr' }, `${r.path}:${r.line}`)),
+      h('code', { dir: 'ltr', class: 'pj-ref-old' }, r.old),
+      withNew && r.new != null ? [h('span', { 'aria-hidden': 'true' }, ' ← '), h('code', { dir: 'ltr', class: 'pj-ref-new' }, r.new)] : null)));
+  }
+  /**
+   * שינוי שם / העברה. קודם — מי מפנה לנתיב הישן (pf_refs). אין הפניות → מבצעים. יש → הרשימה, ובעל העמוד בוחר: לעדכן
+   * אותן, או להעביר בלי לעדכן. לא חוסם. מחזיר null כשבוטל.
+   */
+  async function moveTo(target, from, to) {
+    if (!to || to === from) return null;
+    try { await saveAll(); } catch (e) { toast(e.message, true); return null; }
+    let refs;
+    try { refs = (await api('pf_refs', undefined, tq(target) + '&to=' + encodeURIComponent(to))).refs; } catch (e) { toast(e.message, true); return null; }
+    const go = upd => run(() => api('pf_rename', { ...target, to, update_refs: upd }), upd ? `הועבר · ${refs.length} הפניות עודכנו` : 'הועבר');
+    if (!refs.length) return go(false);
+    return new Promise(res => {
+      const dlg = sheet(`${refs.length} הפניות ל-${base(from)}`,
+        h('p', { class: 'hint' }, `קבצים אחרים מפנים אל "${from}". אחרי ההעברה ל-"${to}" ההפניות האלה לא יגיעו אליו — אלא אם מעדכנים אותן. כך ייראו אחרי העדכון:`),
+        refList(refs, true),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn primary', 'data-refs-update': true, onclick: () => { res(go(true)); dlg.close(); } }, `העברה ועדכון ${refs.length} הפניות`),
+          h('button', { type: 'button', class: 'btn', 'data-refs-skip': true, onclick: () => { res(go(false)); dlg.close(); } }, 'העברה בלי לעדכן'),
+          h('button', { type: 'button', class: 'btn ghost', 'data-close': true, onclick: () => res(null) }, 'ביטול')));
+    });
+  }
+  /** "העבר אל…" — בכל מכשיר: רשימת התיקיות; הבחירה מעבירה, עם בדיקת ההפניות. */
+  function moveSheet(target, from) {
+    const dirs = [''];
+    const walk = n => { for (const d of [...n.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, 'he'))) { dirs.push(d.path); walk(d); } };
+    walk(tree());
+    const isDir = !target.id;
+    const can = dirs.filter(d => d !== parent(from) && !(isDir && (d === from || d.startsWith(from + '/'))));
+    const dlg = sheet('העברה אל… · ' + base(from),
+      h('p', { class: 'hint' }, 'בחרו תיקייה. במחשב אפשר גם לגרור שורה בעץ אל תיקייה.'),
+      can.length ? h('div', { class: 'pj-menu pj-move' }, can.map(d => h('button', { type: 'button', class: 'btn', 'data-move-to': d, onclick: () => { dlg.close(); moveTo(target, from, join(d, base(from))); } },
+        h('span', { 'aria-hidden': 'true' }, d ? '📁 ' : '🏠 '), h('span', { dir: 'auto' }, d || 'שורש הפרויקט')))) : h('p', { class: 'empty' }, 'אין תיקייה אחרת. צרו תיקייה ואז העבירו.'));
+  }
+  const DRAG = 'application/x-kol-move';
+  function dragStart(e, target, path) {
+    e.dataTransfer.setData(DRAG, JSON.stringify({ ...target, from: path || target.path }));
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function dropMove(raw, dir) {
+    let t;
+    try { t = JSON.parse(raw); } catch { return; }
+    const from = t.from;
+    if (typeof from !== 'string' || parent(from) === dir || (!t.id && (dir === from || dir.startsWith(from + '/')))) return;
+    moveTo(t.id ? { id: t.id } : { path: from }, from, join(dir, base(from)));
+  }
+  /** שם פנוי לעותק: "x (עותק).html", "x (עותק 2).html"… */
+  function dupName(p) {
+    const b = base(p), i = b.lastIndexOf('.'), stem = i > 0 ? b.slice(0, i) : b, x = i > 0 ? b.slice(i) : '';
+    const taken = n => S.files.some(f => f.path.toLowerCase() === n.toLowerCase() || f.path.toLowerCase().startsWith(n.toLowerCase() + '/'));
+    let n = join(parent(p), `${stem} (עותק)${x}`), k = 2;
+    while (taken(n)) n = join(parent(p), `${stem} (עותק ${k++})${x}`);
+    return n;
+  }
+  const duplicate = (target, path) => nameSheet('שכפול', 'הנתיב של העותק', dupName(path), 'שכפול',
+    to => run(async () => { const d = await api('pf_copy', { ...target, to }); if (d.file && d.file.kind === 'file' && target.id) { await refresh(); openFile(d.file.id); } return d; }, 'שוכפל').then(d => { if (d?.warning) toast(d.warning); return d; }),     // N2c: אזהרת השכפול של data/words.json
+    'העותק מתחיל היסטוריה משלו. ההפניות בתוכו — כמו במקור.');
+
+  // ── F2b: גרסה מול הנוכחית, ושחזור ─────────────────────────
+  /** השוואת שורות (LCS, אחרי קיצוץ ההתחלה והסוף המשותפים). [סימן, טקסט, שורה ישנה, שורה חדשה]. */
+  function lineDiff(a, b) {
+    const A = a.split('\n'), B = b.split('\n'), ops = [];
+    let s = 0; while (s < A.length && s < B.length && A[s] === B[s]) s++;
+    let e = 0; while (e < A.length - s && e < B.length - s && A[A.length - 1 - e] === B[B.length - 1 - e]) e++;
+    const a2 = A.slice(s, A.length - e), b2 = B.slice(s, B.length - e), n = a2.length, m = b2.length;
+    for (let i = 0; i < s; i++) ops.push([' ', A[i], i + 1, i + 1]);
+    if (n * m > 4e6) {                                           // ענק — בלי יישור: הכול הוסר / נוסף
+      a2.forEach((l, i) => ops.push(['-', l, s + i + 1, 0])); b2.forEach((l, j) => ops.push(['+', l, 0, s + j + 1]));
+    } else {
+      const W = m + 1, L = new Uint32Array((n + 1) * W);
+      for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i * W + j] = a2[i] === b2[j] ? L[(i + 1) * W + j + 1] + 1 : Math.max(L[(i + 1) * W + j], L[i * W + j + 1]);
+      let i = 0, j = 0;
+      while (i < n || j < m) {
+        if (i < n && j < m && a2[i] === b2[j]) { ops.push([' ', a2[i], s + i + 1, s + j + 1]); i++; j++; }
+        else if (i < n && (j === m || L[(i + 1) * W + j] >= L[i * W + j + 1])) { ops.push(['-', a2[i], s + i + 1, 0]); i++; }   // הוסר — לפני נוסף
+        else { ops.push(['+', b2[j], 0, s + j + 1]); j++; }
+      }
+    }
+    for (let k = 0; k < e; k++) ops.push([' ', A[A.length - e + k], A.length - e + k + 1, B.length - e + k + 1]);
+    return ops;
+  }
+  /** התצוגה: שורות שהוסרו / נוספו, עם 3 שורות הקשר; רצף ארוך של שורות זהות — מקופל. טקסט בלבד. */
+  function diffView(a, b) {
+    const ops = lineDiff(a, b), keep = new Uint8Array(ops.length), C = 3;
+    ops.forEach((o, i) => { if (o[0] !== ' ') for (let k = Math.max(0, i - C); k <= Math.min(ops.length - 1, i + C); k++) keep[k] = 1; });
+    const add = ops.filter(o => o[0] === '+').length, del = ops.filter(o => o[0] === '-').length;
+    if (!add && !del) return h('p', { class: 'empty', 'data-diff-none': true }, 'אין הבדל — התוכן זהה.');
+    const rows = [];
+    for (let i = 0; i < ops.length; i++) {
+      if (!keep[i]) { let j = i; while (j < ops.length && !keep[j]) j++; rows.push(h('div', { class: 'pj-dl gap' }, `⋯ ${j - i} שורות זהות`)); i = j - 1; continue; }
+      const [sg, t, o, nn] = ops[i];
+      rows.push(h('div', { class: 'pj-dl' + (sg === '+' ? ' add' : sg === '-' ? ' del' : '') },
+        h('span', { class: 'pj-ln' }, o || ''), h('span', { class: 'pj-ln' }, nn || ''), h('span', { class: 'pj-dt' }, (sg === ' ' ? '  ' : sg + ' ') + t)));
+    }
+    return h('div', {}, h('p', { class: 'hint', 'data-diff-sum': `${del}-${add}` }, `${del} שורות הוסרו · ${add} נוספו`), h('div', { class: 'pj-diffv', dir: 'ltr' }, rows));
+  }
+  async function diffSheet(f, v) {
+    const body = h('div', { class: 'pj-diff-wrap' }, h('p', { class: 'hint' }, 'טוען…'));
+    sheet(`גרסה ${v.rev} מול הנוכחית · ${base(f.path)}`, body);
+    try {
+      const doc = S.docs.get(f.id);
+      const old = await api('pf_version', undefined, `&id=${f.id}&hid=${v.hid}`);
+      const live = doc && !doc.binary ? { text: doc.model ? doc.model.getValue() : doc.text, label: doc.dirty ? 'מה שבעורך עכשיו (לא נשמר)' : 'הגרסה הנוכחית' } : null;
+      const cur = live || await api('pf_read', undefined, `&id=${f.id}`).then(d => (d.binary ? null : { text: d.content, label: 'הגרסה הנוכחית' }));
+      if (old.binary || !cur) { body.replaceChildren(h('p', { class: 'empty' }, 'קובץ בינארי — אין השוואה בטקסט.')); return; }
+      body.replaceChildren(h('p', { class: 'hint' }, `מימין לשמאל: גרסה ${v.rev} (${v.by || ''} · ${when(v.at)}) מול ${cur.label}. − הוסר מאז · + נוסף מאז.`),
+        diffView(old.content, cur.text),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn', onclick: () => versions(f) }, '→ חזרה לגרסאות'),
+          h('button', { type: 'button', class: 'btn primary', 'data-ver-restore': v.hid, onclick: () => restoreVersion(f, v) }, `↩️ שחזור גרסה ${v.rev}`)));
+    } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+  async function restoreVersion(f, v) {
+    const doc = S.docs.get(f.id), cur = S.byId.get(f.id) || f;
+    if (doc?.dirty && !confirm('בקובץ יש שינויים שלא נשמרו. השחזור יחליף אותם. להמשיך?')) return;
+    if (!confirm(`לשחזר את גרסה ${v.rev} של "${base(cur.path)}"?\nהתוכן שלה יישמר כגרסה חדשה — שום גרסה אינה נמחקת.`)) return;
+    try {
+      if (doc) clearTimeout(doc.timer);
+      const d = await api('pf_version_restore', { id: f.id, hid: v.hid, rev: doc?.rev ?? cur.rev });
+      if (doc && !d.binary) setDocText(doc, d.content, d.file.rev);
+      Object.assign(cur, d.file);
+      if (d.kol) { S.kol = d.kol; drawBars(); }
+      bc?.postMessage({ t: 'saved', path: cur.path });
+      toast(`שוחזר — גרסה ${v.rev} נשמרה כגרסה ${d.file.rev}`);
+      await refresh();
+      versions(cur);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // ── F2b: חיפוש והחלפה בכל הקבצים ─────────────────────────
+  const last = { q: '', regex: false, case: false, with: '' };
+  function searchSheet() {
+    const qIn = h('input', { type: 'search', dir: 'auto', value: last.q, 'aria-label': 'מה לחפש', placeholder: 'מה לחפש', autocomplete: 'off', spellcheck: 'false', 'data-s-q': true });
+    const rx = h('input', { type: 'checkbox', 'data-s-rx': true }), cs = h('input', { type: 'checkbox', 'data-s-case': true });
+    rx.checked = last.regex; cs.checked = last.case;
+    const rep = h('input', { type: 'text', dir: 'auto', value: last.with, 'aria-label': 'להחליף ב-', placeholder: 'להחליף ב- (לא חובה)', autocomplete: 'off', spellcheck: 'false', 'data-s-with': true });
+    const out = h('div', { class: 'pj-sres', 'aria-live': 'polite' });
+    const opts = () => { Object.assign(last, { q: qIn.value, regex: rx.checked, case: cs.checked, with: rep.value }); return { q: last.q, regex: last.regex, case: last.case }; };
+    const qs = o => `&q=${encodeURIComponent(o.q)}${o.regex ? '&regex=1' : ''}${o.case ? '&case=1' : ''}`;
+    async function find() {
+      const o = opts();
+      if (!o.q) return;
+      out.replaceChildren(h('p', { class: 'hint' }, 'מחפש…'));
+      try { await saveAll(); } catch { /* מחפשים במה שנשמר */ }
+      try {
+        const d = await api('pf_search', undefined, qs(o));
+        out.replaceChildren(h('p', { class: 'hint', 'data-s-total': d.total }, d.total ? `${d.total} התאמות ב-${d.files.length} קבצים${d.cut ? ' — הרשימה קוצרה; צמצמו את החיפוש' : ''}` : 'לא נמצא.'),
+          ...d.files.map(f => h('details', { open: true, class: 'pj-sfile' },
+            h('summary', {}, h('span', { dir: 'auto' }, f.path), h('small', {}, ' · ' + f.count)),
+            h('ul', {}, f.hits.map(x => h('li', {}, h('button', { type: 'button', class: 'pj-hit', 'data-hit': `${f.path}:${x.line}`, onclick: () => { $('#sheet')?.close(); openAt(f.path, x.line, null, { col: x.col, len: x.len }); } },
+              h('span', { class: 'pj-ln' }, x.line), h('span', { class: 'pj-hit-t', dir: 'ltr' }, x.text))))))));
+      } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); }
+    }
+    async function preview() {
+      const o = opts();
+      if (!o.q) return;
+      try { await saveAll(); } catch (e) { toast(e.message, true); return; }
+      out.replaceChildren(h('p', { class: 'hint' }, 'מכין תצוגה מקדימה…'));
+      let d;
+      try { d = await api('pf_replace', { ...o, with: last.with }); } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); return; }
+      if (!d.files.length) { out.replaceChildren(h('p', { class: 'hint' }, 'אין מה להחליף.')); return; }
+      const picks = new Map();
+      const go = h('button', { type: 'button', class: 'btn primary', 'data-s-apply': true, onclick: async () => {
+        const chosen = d.files.filter(f => picks.get(f.id).checked);
+        if (!chosen.length) return;
+        go.disabled = true;
+        try {
+          const r = await api('pf_replace', { ...o, with: last.with, apply: true, ids: chosen.map(f => f.id), revs: Object.fromEntries(chosen.map(f => [f.id, f.rev])) });
+          toast(`${r.replaced} החלפות ב-${r.files.length} קבצים · נקודת שחזור נשמרה לפני`);
+          await refresh();
+          for (const f of r.files) bc?.postMessage({ t: 'saved', path: f.path });
+          find();
+        } catch (e) { go.disabled = false; out.prepend(h('p', { class: 'error' }, e.message)); }
+      } }, `החלפה ב-${d.files.length} קבצים`);
+      const count = () => { const n = d.files.filter(f => picks.get(f.id).checked); go.textContent = `החלפה ב-${n.length} קבצים`; go.disabled = !n.length; };
+      out.replaceChildren(h('p', { class: 'hint' }, `תצוגה מקדימה: ${d.total} החלפות ב-${d.files.length} קבצים. עדיין לא נכתב דבר. הורידו סימון מקובץ שלא רוצים לשנות. לפני ההחלפה נשמרת נקודת שחזור, ולכל קובץ — גרסה חדשה.`),
+        ...d.files.map(f => {
+          const cb = h('input', { type: 'checkbox', checked: true, 'data-s-file': f.path, onchange: count });
+          picks.set(f.id, cb);
+          return h('div', { class: 'pj-sfile' },
+            h('label', { class: 'pj-check' }, cb, h('span', { dir: 'auto' }, f.path), h('small', {}, ' · ' + f.count)),
+            h('ul', { class: 'pj-samples' }, f.samples.map(x => h('li', {},
+              h('div', { class: 'pj-dl del', dir: 'ltr' }, h('span', { class: 'pj-ln' }, x.line), h('span', { class: 'pj-dt' }, '- ' + x.before)),
+              h('div', { class: 'pj-dl add', dir: 'ltr' }, h('span', { class: 'pj-ln' }, x.line), h('span', { class: 'pj-dt' }, '+ ' + x.after))))));
+        }),
+        h('div', { class: 'row-btns' }, go));
+    }
+    qIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); find(); } });
+    sheet('🔎 חיפוש והחלפה בכל הקבצים',
+      h('label', { class: 'f' }, h('span', {}, 'חיפוש'), qIn),
+      h('div', { class: 'row-btns wrap' }, h('label', { class: 'pj-check' }, rx, ' ביטוי רגולרי'), h('label', { class: 'pj-check' }, cs, ' רישיות (Aa)')),
+      h('label', { class: 'f' }, h('span', {}, 'החלפה'), rep),
+      h('div', { class: 'row-btns wrap' },
+        h('button', { type: 'button', class: 'btn primary', 'data-s-find': true, onclick: find }, '🔎 חיפוש'),
+        h('button', { type: 'button', class: 'btn', 'data-s-preview': true, onclick: preview }, '🔁 החלפה — תצוגה מקדימה')),
+      out);
+    setTimeout(() => qIn.focus(), 50);
+    if (last.q) find();
+  }
+
+  // ── F2b: ZIP הלוך-חזור ────────────────────────────────────
+  const zipMenu = () => menu('🗜️ ZIP', [
+    ['⬇️ הורדת הפרויקט כולו כ-ZIP', () => zipDownload()],
+    ['📦 העלאת ZIP — קודם תצוגה של מה ישתנה', () => zipPick()],
+  ]);
+  async function zipDownload() {
+    try {
+      const res = await fetch('api.php?action=pf_zip');
+      if (!res.ok) { let m = 'ההורדה נכשלה'; try { m = (await res.json()).error || m; } catch { /* לא JSON */ } throw new Error(m); }
+      const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: 'application/zip' }));
+      const a = h('a', { href: url, download: `kol-project-${new Date().toISOString().slice(0, 10)}.zip` });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (e) { toast(e.message, true); }
+  }
+  function zipPick() {
+    const input = h('input', { type: 'file', accept: '.zip,application/zip', hidden: true, 'data-zip-input': true, onchange: () => { if (input.files[0]) zipPlan(input.files[0]); input.remove(); } });
+    document.body.append(input); input.click();
+  }
+  /** ה-ZIP עצמו כגוף הבקשה (לא JSON). אותן הגנות: X-Kol + CSRF. */
+  async function zipSend(file, query) {
+    let res, data;
+    try {
+      res = await fetch('api.php?action=pf_zip_import' + query, { method: 'POST', headers: { 'Content-Type': 'application/zip', 'X-Kol': '1', 'X-CSRF': state.csrf }, body: file });
+      data = await res.json();
+    } catch { throw new Error(res ? 'תשובה לא תקינה מהשרת' : 'אין חיבור לשרת'); }
+    if (!data.ok) throw Object.assign(new Error(data.error || 'שגיאה'), { status: res.status, data });
+    return data;
+  }
+  async function zipPlan(file) {
+    try { await saveAll(); } catch (e) { toast(e.message, true); return; }
+    sheet('📦 ייבוא ZIP', h('p', { class: 'hint' }, `בודק את "${file.name}"…`));
+    let plan;
+    try { plan = (await zipSend(file, '')).plan; } catch (e) { sheet('ה-ZIP לא ייובא', h('p', { class: 'error', 'data-zip-error': true }, e.message)); return; }
+    const c = plan.counts, list = (key, title, items, open) => items.length ? h('details', { class: 'pj-zlist', open: open || null, 'data-zip-list': key },
+      h('summary', {}, `${title} · ${c[key] ?? items.length}`), h('ul', {}, items.map(p => h('li', { dir: 'auto' }, typeof p === 'string' ? p : `${p.path} — ${size(p.size)}`)))) : null;
+    const can = !plan.errors.length && (c.add + c.replace + c.dirs) > 0;
+    const dlg = sheet(`📦 ייבוא ZIP · ${file.name}`,
+      h('p', { class: 'hint' }, 'עדיין לא נכתב דבר. כך ישתנה הפרויקט:'),
+      plan.errors.length ? h('div', { class: 'pj-warn', role: 'alert' }, h('strong', {}, 'אי אפשר לייבא:'), h('ul', {}, plan.errors.map(t => h('li', { dir: 'auto' }, t)))) : null,
+      list('add', '➕ יתווספו', plan.add, true),
+      list('replace', '♻️ יוחלפו (נקודת שחזור נשמרת לפני; לכל קובץ — גרסה חדשה)', plan.replace, true),
+      list('dirs', '📁 תיקיות חדשות', plan.dirs),
+      list('same', '＝ זהים — לא ישתנו', plan.same),
+      list('keep', '· בפרויקט ואינם ב-ZIP — לא ישתנו ולא יימחקו', plan.keep),
+      list('skipped', 'דולגו (קובצי מערכת של macOS)', plan.skipped),
+      plan.big.length ? h('div', {}, list('big', `לא ייובאו — גדולים ממגבלת הגודל (${size(plan.limit.text)})`, plan.big, true), h('p', { class: 'hint' }, plan.limit.who)) : null,
+      h('div', { class: 'row-btns wrap' },
+        can && h('button', { type: 'button', class: 'btn primary', 'data-zip-apply': true, onclick: async e => {
+          e.target.disabled = true;
+          try {
+            const r = await zipSend(file, '&apply=1&token=' + encodeURIComponent(plan.token));
+            dlg.close();
+            toast(`יובא: ${r.done.add} נוספו · ${r.done.replace} הוחלפו${r.snapshot ? ' · נקודת שחזור נשמרה' : ''}`);
+            await refresh();
+            bc?.postMessage({ t: 'saved' });
+          } catch (err) { e.target.disabled = false; toast(err.message, true); }
+        } }, `ייבוא · ${c.add} חדשים, ${c.replace} מוחלפים`),
+        !can && !plan.errors.length && h('p', { class: 'hint' }, 'אין מה לייבא — הכול כבר בפרויקט.'),
+        h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול')));
+  }
+
+  // ── X1: ✨ עוזר הבינה, 📝 טקסט ארוך, 🔗 חיבור למסמך ─────────────
+  const scripts = {};
+  const loadScript = src => scripts[src] ??= new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = () => { delete scripts[src]; fail(new Error('הרכיב לא נטען: ' + src)); };
+    document.head.append(s);
+  });
+  const curText = doc => (doc.model ? doc.model.getValue() : doc.text);
+  /** ✨ — ai-sheet.js נטען רק כשצריך. ctx כמו ב-AiSheet.open; אחרי "החל" — העץ והקבצים הפתוחים מתעדכנים (Ctrl+Z מבטל בעורך). */
+  async function ai(ctx) {
+    try {
+      await saveAll().catch(() => {});                           // ההצעה נבנית מול מה ששמור בשרת
+      if (typeof AiSheet === 'undefined') await loadScript('assets/js/ai-sheet.js');
+    } catch (e) { toast(e.message, true); return; }
+    AiSheet.open({ ...ctx, onApplied: async a => { if (S.loaded) await refresh(); await ctx.onApplied?.(a); } });
+  }
+  /** ✨ על הקובץ הפתוח — ועם בחירה בעורך: טווח השורות שסומן. */
+  function aiHere() {
+    const f = S.byId.get(S.cur);
+    if (!f || f.kind !== 'file') { ai({ paths: [] }); return; }
+    const sel = S.editor?.getSelection();
+    const range = sel && !sel.isEmpty() ? { path: f.path, from: sel.startLineNumber, to: sel.endLineNumber } : null;
+    ai({ paths: [f.path], range });
+  }
+  /** האזורים data-kol-longtext בקובץ: [{doc, start, end}] (היסטים בתווים), לפי ספירה של <div> מקוננים — כמו בשרת. */
+  function ltRegions(text) {
+    const out = [], rx = /<div\b[^>]*?\sdata-kol-longtext\s*=\s*(["'])([A-Za-z0-9:_-]{1,40})\1[^>]*>/gi;
+    let m;
+    while ((m = rx.exec(text))) {
+      const t = /<div\b[^>]*>|<\/div\s*>/gi;
+      t.lastIndex = m.index + m[0].length;
+      let depth = 1, x;
+      while (depth > 0 && (x = t.exec(text))) { depth += x[0][1] === '/' ? -1 : 1; if (!depth) out.push({ doc: m[2], start: m.index, end: t.lastIndex }); }
+    }
+    return out;
+  }
+  /** 📝 — האזור שבו הסמן; אין — אזור חדש בסוף <main>. */
+  async function longtextHere() {
+    const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
+    if (!f || !doc || doc.binary || !/\.html?$/i.test(f.path)) { toast('פתחו קובץ HTML', true); return; }
+    const text = curText(doc), off = doc.model && S.editor ? doc.model.getOffsetAt(S.editor.getPosition()) : 0;
+    const regs = ltRegions(text), at = regs.find(r => off >= r.start && off <= r.end) || (regs.length === 1 ? regs[0] : null);
+    if (!at && !confirm(`ליצור ב-${base(f.path)} אזור חדש של עורך התמלילים, בסוף <main>?`)) return;
+    try { await saveAll(); } catch (e) { toast(e.message, true); return; }
+    longtextEditor(f.path, at?.doc || '');
+  }
+  /** עורך התמלילים במסך מלא (host.js, כמו בסטודיו). בסיום — סנכרון לקובץ; עריכה ביד מאז — שלוש אפשרויות, לעולם לא דריסה שקטה. */
+  async function longtextEditor(path, docId) {
+    let first;
+    try {
+      first = await api('longtext_open', { path, doc: docId });
+      if (first.created) await refresh();
+      if (typeof WordProcessor === 'undefined') await loadScript(first.host_js);
+    } catch (e) { toast(e.message, true); return; }
+    let doc = first.doc;
+    const box = h('div', { class: 'wp-box' });
+    const badge = h('span', { class: 'chip' }, 'עריכה');
+    const dlg = h('dialog', { class: 'wp-dlg', 'aria-label': 'עורך התמלילים', 'data-lt-dlg': doc },
+      h('div', { class: 'wp-head' },
+        h('button', { type: 'button', class: 'btn primary', 'data-lt-done': true, onclick: () => close() }, '✓ סיום'),
+        h('b', { class: 'one', dir: 'auto' }, '📝 ' + base(path)), badge),
+      box);
+    document.body.append(dlg);
+    dlg.addEventListener('cancel', e => { e.preventDefault(); close(); });
+    dlg.showModal();
+    const ed = WordProcessor.mount(box, {
+      session: async () => { if (first) { const f = first; first = null; return f; } return api('longtext_open', { path, doc }); },
+      onDoc: d => { doc = d; },
+      onChange: dirty => { badge.textContent = dirty ? 'שומר…' : 'נשמר ✓'; },
+      onSaved: () => { badge.textContent = 'נשמר ✓'; },
+      onClose: () => close(),
+      onLock: l => toast('פתוח לעריכה אצל ' + l.by),
+      onError: e => toast(e.message || 'שגיאה בעורך', true),
+    });
+    // sandbox מינימלי — לפני הניווט הראשון (host.js קובע src רק אחרי session()). allow-scripts: העורך הוא אפליקציית JS;
+    // allow-same-origin: הכניסה והשמירה שלו, ו-postMessage עם המקור האמיתי (host.js בודק e.origin); allow-downloads: ייצוא מסמך
+    box.querySelector('iframe')?.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-downloads');
+    let closing = false;
+    async function close() {
+      if (closing) return;
+      closing = true;
+      if (!(await ed.save()) && !confirm('השינויים האחרונים בעורך לא נשמרו. לסגור בכל זאת?')) { closing = false; return; }
+      ed.destroy(); dlg.close(); dlg.remove();
+      await longtextSync(path, doc);
+    }
+  }
+  async function longtextSync(path, doc, mode) {
+    try {
+      const r = await api('longtext_sync', { path, doc, mode });
+      if (r.reopen) { toast('השינויים שלך יובאו לעורך התמלילים'); await refresh(); longtextEditor(path, doc); return; }
+      toast('📝 נכתב ב-' + base(path));
+      await refresh();
+    } catch (e) {
+      const c = e.data?.conflict;
+      if (e.status !== 409 || !c) { toast(e.message, true); return; }
+      const dlg = sheet('האזור נערך ביד מאז הסנכרון האחרון',
+        h('p', { class: 'hint' }, `ב-${c.path} מישהו שינה את התוכן של האזור ישירות בקובץ. − מה שבקובץ · + גרסת עורך התמלילים. שום דבר לא נכתב עדיין.`),
+        diffView(c.file, c.editor),
+        h('div', { class: 'row-btns wrap' },
+          h('button', { type: 'button', class: 'btn danger', 'data-lt-overwrite': true, onclick: () => { dlg.close(); longtextSync(path, doc, 'overwrite'); } }, 'דרוס בגרסת עורך התמלילים'),
+          h('button', { type: 'button', class: 'btn', 'data-lt-import': true, onclick: () => { dlg.close(); longtextSync(path, doc, 'import'); } }, 'ייבא את השינויים שלי לעורך התמלילים'),
+          h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'בטל')));
+    }
+  }
+  /** 🔗 — האלמנט שסומן בעורך נעטף ב-data-kol-longtext של מסמך קיים (מההסבה). */
+  async function longtextLink() {
+    const f = S.byId.get(S.cur), doc = S.docs.get(S.cur);
+    const sel = S.editor?.getSelection();
+    if (!f || !doc?.model || !sel || sel.isEmpty()) { toast('סמנו בעורך את האלמנט (מהתגית הפותחת עד הסוגרת)', true); return; }
+    const old = doc.model.getValueInRange(sel);
+    let list;
+    try { await saveAll(); list = (await api('longtexts')).docs; } catch (e) { toast(e.message, true); return; }
+    const dlg = sheet('🔗 חבר למסמך קיים',
+      h('p', { class: 'hint' }, 'האלמנט שסימנתם ייעטף באזור של המסמך. מעכשיו עורכים אותו ב-📝 עורך התמלילים.'),
+      list.length ? h('ul', { class: 'pj-lt-docs' }, list.map(d => h('li', {},
+        h('button', { type: 'button', class: 'btn', 'data-lt-doc': d.doc, onclick: async () => {
+          dlg.close();
+          try { await api('longtext_link', { path: f.path, rev: S.docs.get(S.cur)?.rev ?? f.rev, old, doc: d.doc }); toast('🔗 חובר'); await refresh(); }
+          catch (e) { toast(e.message, true); }
+        } }, h('b', {}, d.name), ' · ', h('span', { class: 'muted' }, when(d.at)), d.path ? h('span', { class: 'chip' }, 'מחובר: ' + d.path) : null),
+        h('p', { class: 'hint' }, d.preview)))) : h('p', { class: 'empty' }, 'אין מסמכים של עורך התמלילים.'),
+      h('button', { type: 'button', class: 'btn ghost', 'data-close': true }, 'ביטול'));
+  }
+
   // ── כלי העורך ─────────────────────────────────────────────
   const edRun = id => { S.editor?.focus(); S.editor?.getAction(id)?.run(); };
   function applyPrefs() {
@@ -442,8 +1212,14 @@ const Project = (() => {
     persist();
   }
   const toolsMenu = () => menu('כלי העורך', [
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🎯 בחר בעורך החזותי (Ctrl+Alt+E)', () => pickInEditor(S.editor, S.cur)] : null,
+    ['✨ עוזר הבינה — על הקובץ (או על השורות שסומנו)', () => aiHere()],
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['📝 ערוך בעורך התמלילים', () => longtextHere()] : null,
+    /\.html?$/i.test(S.byId.get(S.cur)?.path || '') ? ['🔗 חבר למסמך קיים (על האלמנט שסומן)', () => longtextLink()] : null,
     ['🔍 חיפוש בקובץ', () => edRun('actions.find')],
     ['🔁 חיפוש והחלפה', () => edRun('editor.action.startFindReplaceAction')],
+    ['🔎 בכל הקבצים — חיפוש, והחלפה עם תצוגה מקדימה', () => searchSheet()],
+    ['🗜️ ZIP — הורדה והעלאה של הפרויקט', () => zipMenu()],
     ['↗️ מעבר לשורה', () => edRun('editor.action.gotoLine')],
     ['↩️ בטל', () => { S.editor?.focus(); S.editor?.trigger('menu', 'undo', null); }],
     ['↪️ חזור', () => { S.editor?.focus(); S.editor?.trigger('menu', 'redo', null); }],
@@ -460,6 +1236,7 @@ const Project = (() => {
   async function view(host) {
     S.host = host;
     el.kol = h('p', { class: 'pj-warn', role: 'alert', hidden: true });
+    el.seed = h('p', { class: 'pj-warn pj-seed', role: 'alert', 'data-seed': true, hidden: true });
     el.tree = h('ul', { class: 'pj-tree', 'aria-label': 'קבצי הפרויקט' });
     el.trash = h('button', { type: 'button', class: 'btn sm', onclick: trashSheet }, '🗑️ סל');
     el.count = h('span', { class: 'hint' });
@@ -470,8 +1247,9 @@ const Project = (() => {
     el.status = h('span', { class: 'pj-status', role: 'status' });
     el.save = h('button', { type: 'button', class: 'btn primary sm', disabled: true, onclick: () => save(S.cur) }, '💾 שמירה');
     el.bar = h('div', { class: 'pj-bar' },
-      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📁 קבצים'),
+      h('button', { type: 'button', class: 'btn sm pj-files-btn', onclick: () => side(true) }, '📂 קבצי הקוד'),
       el.tabs, el.status, el.save,
+      h('button', { type: 'button', class: 'btn sm pj-ai-btn', 'data-ai': true, title: '✨ עוזר הבינה — על הקובץ הפתוח, או על השורות שסומנו', onclick: () => aiHere() }, '✨'),
       h('button', { type: 'button', class: 'btn sm pj-live-btn', title: 'תצוגה חיה — העמוד רץ כפי שירוץ אצל הגולש', onclick: () => live() }, '▶️', h('span', { class: 'pj-live-word' }, ' תצוגה חיה')),
       h('button', { type: 'button', class: 'icon-btn', 'data-ed': true, 'aria-label': 'כלי העורך', onclick: toolsMenu }, '⋯'));
     const aside = h('aside', { class: 'pj-side', 'aria-label': 'מנהל הקבצים' },
@@ -483,37 +1261,48 @@ const Project = (() => {
         h('button', { type: 'button', class: 'btn sm', onclick: () => newDir('') }, '+ תיקייה'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => pick('') }, '⬆️ העלאה'),
         h('button', { type: 'button', class: 'btn sm', 'data-live': true, onclick: () => live() }, '▶️ תצוגה חיה'),
+        h('button', { type: 'button', class: 'btn sm', 'data-search': true, onclick: () => searchSheet() }, '🔎 חיפוש'),
+        h('button', { type: 'button', class: 'btn sm', 'data-zip': true, onclick: () => zipMenu() }, '🗜️ ZIP'),
         el.trash),
       el.tree, el.count);
     // גרירה מהמחשב אל תיקייה (או אל העץ — לשורש)
-    aside.addEventListener('dragover', e => { if (e.dataTransfer?.types.includes('Files')) { e.preventDefault(); aside.classList.add('drop'); } });
+    aside.addEventListener('dragover', e => { const t = e.dataTransfer?.types || []; if (t.includes('Files') || t.includes(DRAG)) { e.preventDefault(); aside.classList.add('drop'); } });
     aside.addEventListener('dragleave', () => aside.classList.remove('drop'));
     aside.addEventListener('drop', e => {
+      const moving = e.dataTransfer?.getData(DRAG);              // גרירה בתוך העץ = העברה לתיקייה (במחשב; בכל מכשיר — "העבר אל…")
+      if (moving) { e.preventDefault(); aside.classList.remove('drop'); dropMove(moving, e.target.closest('[data-dir]')?.dataset.dir || ''); return; }
       if (!e.dataTransfer?.files.length) return;
       e.preventDefault(); aside.classList.remove('drop');
       upload(e.target.closest('[data-dir]')?.dataset.dir || '', [...e.dataTransfer.files]);
     });
     host.replaceChildren(h('div', { class: 'pj' },
-      h('p', { class: 'pj-note', role: 'note' }, 'הקבצים כאן עדיין אינם מתפרסמים. הפרסום מהקבצים ייפתח בשלב הבא.'),
-      el.kol,
-      h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view))));
+      h('p', { class: 'pj-note', role: 'note' }, 'השינויים בקבצים נשמרים כאן, ומגיעים לאתר כשמפרסמים מ-🚀 פרסום.'),   /* T2 (E2E 🟡10): הפרסום מהקבצים עובד — הנוסח הישן אמר שלא */
+      el.kol, el.seed,
+      h('div', { class: 'pj-wrap' }, aside, h('section', { class: 'pj-main' }, el.bar, el.ed, el.view, el.keys = keyBar(activeEd)))));
 
     try { await loadMonaco(); } catch { toast('העורך המלא לא נטען — עורכים בתיבת טקסט', true); }
     if (S.host !== host) return;
     if (monaco && !S.editor) {
       S.editor = monaco.editor.create(el.ed, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: prefs.wrap ? 'on' : 'off',
-        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false } });
+        minimap: { enabled: !phone() }, tabSize: 2, scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false },
+        // "הכותרת הדביקה" של Monaco מתעדכנת באיחור (async), ואחרי שינוי שמקצר את הקובץ (מחיקה בעורך החזותי, ביטול) היא
+        // שואלת על שורה שכבר אינה קיימת — "Illegal value for lineNumber" (V1a 🟡-1). כבויה.
+        stickyScroll: { enabled: false } });
       S.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.cur));
+      addPick(S.editor, () => S.cur);
     }
     try {
       const first = !S.loaded;
       await refresh();
       if (first) {                                               // הלשוניות והמיקום מהביקור הקודם
         const want = prefs.tabs.filter(id => S.byId.has(id)), cur = S.byId.has(prefs.cur) ? prefs.cur : want[0] ?? null;
+        const was = S.cur;                                         /* T2: קובץ שנפתח בינתיים (openAt) — לא נדרס בקובץ מהביקור הקודם */
         for (const id of want) await openFile(id, false);
-        S.cur = cur; persist();
+        if (S.cur === was) S.cur = cur;
+        persist();
       }
       drawAll();
+      if (phone() && !S.cur) side(true);                         // בטלפון, בלי קובץ פתוח: העץ עצמו, לא מסך ריק עם כפתור
     } catch (e) { el.view.hidden = false; el.view.replaceChildren(h('p', { class: 'error' }, e.message)); }
   }
 
@@ -531,13 +1320,79 @@ const Project = (() => {
     liveEl = h('div', { class: 'pj-live' }, h('iframe', { src: 'live.php?embed=1' + (path ? '&path=' + encodeURIComponent(path) : ''), title: 'תצוגה חיה' }));
     document.body.append(liveEl);
   }
-  async function openAt(path, line) {
+  // ── "בחר בעורך" (04 §3): מהסמן בקוד אל האלמנט בעורך החזותי — תפריט ההקשר של עורך הקוד, וקיצור ──
+  function pickInEditor(ed, id) {
+    const f = S.byId.get(id), m = ed?.getModel();
+    if (!f || !m || !/\.html?$/i.test(f.path)) { toast('"בחר בעורך" פועל בקובץ HTML', true); return; }
+    Editor.selectAt(f.path, m.getOffsetAt(ed.getPosition()));
+  }
+  function addPick(ed, idOf) {
+    ed.addAction({ id: 'kol.pickInEditor', label: 'בחר בעורך החזותי', keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyE],
+      precondition: "editorLangId == 'html'", contextMenuGroupId: 'navigation', contextMenuOrder: 0, run: () => pickInEditor(ed, idOf()) });
+  }
+  /**
+   * עורך קוד שני, למבט המפוצל של העורך החזותי: אותו מסמך (אותו מודל של Monaco — אותו טקסט, אותה היסטוריה, אותה שמירה).
+   * נוצר פעם אחת לכל חיי הדף (Monaco שנסגר משבית פעולות בעורך שנפתח אחריו), ומחובר מחדש למכל שמבקש אותו.
+   */
+  function splitEditor(host, id) {
+    const doc = S.docs.get(id);
+    if (doc && !doc.model && !doc.binary && doc.text != null) {   // (גם קובץ שנפתח לפני ש-Monaco נטען — כמו drawEditor)   // V14d: Monaco לא נטען (למשל בטלפון) — תיבת טקסט עם אותו מסמך ואותה שמירה, לא שגיאה
+      const ta = fbArea(doc, S.byId.get(id)?.path || ''); ta.classList.add('pj-split');
+      S.splitId = id; S.splitTa = ta;
+      el.splitKeys = el.splitKeys || keyBar(splitEd); el.splitKeys.hidden = !touchy();
+      host.replaceChildren(h('div', { class: 'pj-splitbox' }, ta, el.splitKeys));
+      const ed = { updateOptions(o) { if (o && 'readOnly' in o) ta.readOnly = !!o.readOnly; }, layout() {}, focus() { ta.focus(); } };
+      return { ed, fallback: true, offset: () => ta.selectionStart,
+        mark(from, to) { fbMark(ta, from, to, false); },
+        selection: () => ({ from: ta.selectionStart, to: ta.selectionEnd }),
+        onCursor(cb) { const f = () => cb(); ta.addEventListener('click', f); ta.addEventListener('keyup', f); return { dispose() { ta.removeEventListener('click', f); ta.removeEventListener('keyup', f); } }; } };
+    }
+    if (!monaco || !doc?.model) return null;
+    if (!S.split) {
+      el.split = h('div', { class: 'pj-split', dir: 'ltr' });
+      S.split = monaco.editor.create(el.split, { model: null, automaticLayout: true, theme: dark() ? 'vs-dark' : 'vs', fontSize: prefs.font, wordWrap: 'on', minimap: { enabled: false }, tabSize: 2,
+        scrollBeyondLastLine: false, fixedOverflowWidgets: true, unicodeHighlight: { nonBasicASCII: false, ambiguousCharacters: false }, stickyScroll: { enabled: false }, lineNumbersMinChars: 3 });
+      S.split.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => save(S.splitId));
+      addPick(S.split, () => S.splitId);
+    }
+    S.splitId = id; S.splitTa = null;
+    el.splitKeys = el.splitKeys || keyBar(splitEd); el.splitKeys.hidden = !touchy();
+    el.splitBox = el.splitBox || h('div', { class: 'pj-splitbox' }, el.split, el.splitKeys);   // V14d: שורת המקשים מתחת לעורך (בטלפון / במגע)
+    host.replaceChildren(el.splitBox);
+    S.split.setModel(doc.model); S.split.layout();
+    const ed = S.split, m = doc.model;
+    return { ed, offset: () => m.getOffsetAt(ed.getPosition()),
+      /** מסמן טווח (בתווים) בלי להעביר אליו את המיקוד. */
+      mark(from, to) { const a = m.getPositionAt(from), b = m.getPositionAt(to), r = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column); ed.setSelection(r); ed.revealRangeInCenterIfOutsideViewport(r); },
+      selection() { const r = ed.getSelection(); return r ? { from: m.getOffsetAt(r.getStartPosition()), to: m.getOffsetAt(r.getEndPosition()) } : null; },
+      onCursor(cb) { return ed.onDidChangeCursorPosition(e => { if (e.source === 'mouse' || e.source === 'keyboard') cb(); }); } };
+  }
+  /** פותח קובץ בעורך הקוד. line — שורה; range — {from, to} בתווים: הטווח מסומן (למשל האלמנט שנבחר בעורך החזותי). */
+  async function openAt(path, line, range, cols) {
     liveClose();
     if (location.hash.split('/')[1] !== 'project') { location.hash = '#/project'; await new Promise(r => setTimeout(r, 400)); }
     const f = S.files.find(x => x.path === path);
     if (!f) { toast('הקובץ אינו בפרויקט: ' + path, true); return; }
     await openFile(f.id);
-    if (S.editor && line > 0) { S.editor.revealLineInCenter(line); S.editor.setPosition({ lineNumber: line, column: 1 }); S.editor.focus(); }
+    const m = S.docs.get(f.id)?.model;
+    if (S.editor && m) for (let i = 0; i < 60 && S.editor.getModel() !== m; i++) await new Promise(r => setTimeout(r, 50));
+    if (S.editor && m && line > 0 && S.editor.getModel() === m) {   // שורה שמעבר לסוף הקובץ (המסוף מדווח על גרסה ישנה) — נתחמת
+      const ln = Math.min(line, m.getLineCount());
+      S.editor.revealLineInCenter(ln); S.editor.setPosition({ lineNumber: ln, column: 1 }); S.editor.focus();
+      if (cols?.col) S.editor.setSelection(new monaco.Range(ln, cols.col, ln, cols.col + (cols.len || 0)));   // ההתאמה מהחיפוש בכל הקבצים
+    }
+    const d = S.docs.get(f.id);
+    if (!m && d && d.text != null && (line > 0 || range) && el.fb && el.fbDoc === d) {   // V14d: בלי Monaco — קופצים לשורה (או לטווח) בתיבת הטקסט
+      const ls = d.text.split('\n'), ln = Math.max(1, Math.min(line || 1, ls.length));
+      const from = range ? range.from : ls.slice(0, ln - 1).reduce((a, l) => a + l.length + 1, 0) + (cols?.col ? cols.col - 1 : 0);
+      fbMark(el.fb, from, range ? range.to : from + (cols?.len || 0), true);
+      return;
+    }
+    if (S.editor && m && range) {
+      if (S.editor.getModel() !== m) return;                     // העורך עוד לא על הקובץ הזה — לא מסמנים טווח בקובץ אחר
+      const a = m.getPositionAt(range.from), b = m.getPositionAt(range.to), sel = new monaco.Range(a.lineNumber, a.column, b.lineNumber, b.column);
+      S.editor.setSelection(sel); S.editor.revealRangeInCenterIfOutsideViewport(sel); S.editor.focus();
+    }
   }
   bc?.addEventListener('message', e => {
     const d = e.data;
@@ -556,6 +1411,9 @@ const Project = (() => {
   document.addEventListener('keydown', e => {
     if (S.host && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(S.cur); }
   });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });   // R4
+  window.addEventListener('pagehide', flushAll);
+  window.addEventListener('online', flushAll);
   window.addEventListener('beforeunload', e => { keepView(); if ([...S.docs.values()].some(d => d.dirty)) { e.preventDefault(); e.returnValue = ''; } });
   window.addEventListener('hashchange', () => { if (S.host && location.hash.split('/')[1] !== 'project') unmount(); });
 
@@ -579,8 +1437,9 @@ const Project = (() => {
 
   document.addEventListener('DOMContentLoaded', () => {
     if (typeof ACTIONS === 'object') Object.assign(ACTIONS, { pf_create: '📁 יצר קובץ בפרויקט', pf_mkdir: '📁 יצר תיקייה בפרויקט', pf_rename: '📁 שינה שם בפרויקט',
-      pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט' });
+      pf_migrate: '🔄 ייבא מחדש את הפרויקט מהעמוד של היום (לפני M6)', pf_blank: '📄 התחיל פרויקט ריק (לפני M6)', pf_delete: '📁 העביר לסל הפרויקט', pf_restore: '📁 שחזר מסל הפרויקט', pf_purge: '📁 מחק סופית מהפרויקט', pf_upload: '📁 העלה מדיה לפרויקט', pf_limit: '📏 שינה מגבלה של הפרויקט',
+      pf_copy: '📋 שכפל בפרויקט', pf_version_restore: '↩️ שחזר גרסה של קובץ', pf_replace: '🔁 החליף בכל קובצי הפרויקט', pf_zip: '🗜️ הוריד את הפרויקט כ-ZIP', pf_zip_import: '📦 ייבא ZIP לפרויקט' });
   });
 
-  return { view, unmount, limits, loadMonaco, live, _state: S, _open: openFile, _save: save };
+  return { ai, diffView, oldTemplate: OLD_TPL, seed: { get only() { return !!S.seedOnly; }, draw: drawSeed }, view, unmount, limits, loadMonaco, live, docs: Docs, openAt, splitEditor, versions, _state: S, _open: openFile, _save: save };
 })();

@@ -42,16 +42,16 @@ const post = (p, action, body) => p.evaluate(async ([a, bd]) => {
 try {
   const o = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main form');
+  await o.waitForSelector('main [role="combobox"]');
   for (const id of ['test-cross-a', 'test-cross-b']) await post(o, 'admin_method_save', { id, enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'] });
 
   const a = await open('alice');
   await a.goto(BASE + '#/market');
-  await a.waitForSelector('main form');
+  await a.waitForSelector('main [role="combobox"]');
   await post(a, 'watchlist_add', { asset: 'binance:BTCUSDT' });
   await a.goto(BASE + '#/alerts');
   await a.waitForSelector('main .empty');
-  eq(await a.locator('nav.bottom-nav a').count(), 5, 'five tabs: שוק · ניתוח · התראות · יומן · עוד');
+  eq(await a.locator('nav.bottom-nav a').count(), 4, 'four tabs: שוק · התראות · יומן · עוד — "ניתוח" is under the chart (S4)');
   eq(await a.locator('nav.bottom-nav a[aria-current="page"]').getAttribute('data-tab'), 'alerts', 'the "התראות" tab is current');
   eq((await a.locator('main .disclaimer').textContent()).includes('אינו ייעוץ השקעות'), true, 'disclaimer on the alerts screen');
 
@@ -62,7 +62,9 @@ try {
   await a.locator('dialog fieldset[aria-label="כיוון"] label', { hasText: 'לונג' }).click();
   await a.locator('dialog').getByRole('button', { name: 'שמירה' }).click();
   await a.waitForSelector('main .card');
-  eq((await a.locator('main .card').first().textContent()).includes('BTCUSDT'), true, 'the new price alert is listed');
+  const card = a.locator('main .card').first();
+  eq([(await card.locator('.pair-main').innerText()).replace(/\s+/g, ' ').trim(), await card.locator('.pair-main svg.vs').count(), /BTCUSDT|מול/.test(await card.innerText())],
+    ['BTC USDT', 1, false], 'the new price alert is listed — BTC ⇄ USDT with the icon, not the joined symbol or "מול" (18.1.1)');
   eq((await a.locator('main .card .chip').first().textContent()), 'פעילה', 'active');
   eq(await noHScroll(a), true, 'alerts: no horizontal scroll on a phone');
   eq(await a.evaluate(() => getComputedStyle(document.querySelector('main .card')).direction), 'rtl', 'RTL');
@@ -71,11 +73,17 @@ try {
   await a.waitForSelector('text=מושהית');
 
   // מכרטיס ניתוח — "התראה מזה"
-  await a.goto(BASE + '#/analysis/' + encodeURIComponent('binance:BTCUSDT'));
-  await a.locator('fieldset[aria-label="מסגרת זמן"] label', { hasText: '4 ש׳' }).click();
-  await a.getByRole('button', { name: '🧭 נתח' }).click();
-  await a.waitForSelector('.analysis-card', { timeout: 60000 });
-  eq(await a.getByRole('button', { name: '🔔 התראה מזה' }).count() >= 1, true, '"🔔 התראה מזה" on cards of methods allowed in alerts');
+  // S4 (18.4): הכרטיס בפס שמתחת לגרף — שיטה אחת מסומנת, מסגרת h4
+  await a.goto(BASE + '#/chart/' + encodeURIComponent('binance:BTCUSDT'));
+  await a.waitForSelector('main .chart-box');
+  await a.evaluate(([m, t]) => { localStorage.setItem('ts-forecast-methods', JSON.stringify([{ id: m, color: '--brand' }]));
+    sessionStorage.setItem('ts-chart:binance:BTCUSDT', JSON.stringify({ tf: t })); }, ['test-cross-b', 'h4']);
+  await a.reload();
+  // הבדיקה לאחור רצה מעצמה (פעולה של המשתמש — פתיחת הגרף), והכרטיס מתחלף בתוצאה שלה
+  await a.waitForFunction(() => { const s = document.querySelector('.analysis-card .an-sec.prob');
+    return s && !/מריץ בדיקה לאחור/.test(s.textContent) && /ודאות|לא נבדק לאחור/.test(s.textContent) && document.querySelector('.analysis-card .verdict'); }, null, { timeout: 90000 });
+  await a.getByRole('button', { name: '🔔 התראה מזה' }).first().waitFor({ timeout: 30000 });
+  eq(await a.getByRole('button', { name: '🔔 התראה מזה' }).count() >= 1, true, '"🔔 התראה מזה" in the panel under the chart, for a method allowed in alerts');
   await a.getByRole('button', { name: '🔔 התראה מזה' }).last().click();
   await a.waitForSelector('dialog select[name="method"]');
   eq(await a.locator('dialog fieldset[aria-label="תנאי"] input:checked').getAttribute('value'), 'method', 'the sheet opens on "method", prefilled');
@@ -96,11 +104,11 @@ try {
   // התיבה — הודעה שה-cron כתב (כאן ישר למסד), התג בלשונית, וסימון כנקרא
   spawnSync('php', ['-r', `$db = new PDO('sqlite:${DB}'); $u = $db->query("SELECT id FROM users WHERE platform_sub = '101'")->fetchColumn();
     $db->prepare('INSERT INTO alert_events (alert_id, user_id, fired_at, payload, delivered) VALUES (NULL, ?, ?, ?, ?)')->execute([$u, time(),
-    json_encode(['title' => 'BTCUSDT חצה את 115', 'body' => 'המחיר חצה מעלה את הרמה 115. ניתוח אוטומטי לפי כללי שיטות — אינו ייעוץ השקעות.', 'kind' => 'price', 'link' => '#/analysis/binance%3ABTCUSDT'], JSON_UNESCAPED_UNICODE), '{"inbox":true}']);`]);
+    json_encode(['title' => 'BTCUSDT חצה את 115', 'body' => 'המחיר חצה מעלה את הרמה 115. ניתוח אוטומטי לפי כללי שיטות — אינו ייעוץ השקעות.', 'kind' => 'price', 'link' => '#/chart/binance%3ABTCUSDT'], JSON_UNESCAPED_UNICODE), '{"inbox":true}']);`]);
   await a.evaluate(() => sessionStorage.setItem('ts-alerts-tab', 'inbox'));
   await a.goto(BASE + '#/market');
   await a.reload();
-  await a.waitForSelector('main form');
+  await a.waitForSelector('main [role="combobox"]');
   eq(await a.locator('nav.bottom-nav a[data-tab="alerts"] .badge').textContent(), '1', 'unread badge on the tab (from me — no polling)');
   await a.goto(BASE + '#/alerts');
   await a.waitForSelector('main .use-row.unread');
@@ -108,7 +116,9 @@ try {
   eq(await noHScroll(a), true, 'inbox: no horizontal scroll');
   await shot(a, 'alerts-inbox');
   await a.getByRole('button', { name: '✓ סימון הכול כנקרא' }).click();
-  await a.waitForFunction(() => !document.querySelector('main .use-row.unread'));
+  // הסימון טוען את המסך מחדש: קודם "טוען…" (השורה הלא-נקראת נעלמת כבר שם), ורק בתשובת inbox — התג מתעדכן והמסך נבנה.
+  // מחכים למסך החדש עצמו, לא להיעלמות השורה (הרעידה: התג נבדק בזמן "טוען…")
+  await a.waitForFunction(() => !document.querySelector('main .loading') && document.querySelector('main .use-row') && !document.querySelector('main .use-row.unread'));
   eq(await a.locator('nav.bottom-nav a[data-tab="alerts"] .badge').isHidden(), true, 'after "mark all read" — no badge');
 } catch (e) {
   fail++; console.log('✗', e.message);

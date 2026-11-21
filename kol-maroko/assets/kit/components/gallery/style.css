@@ -1,0 +1,10 @@
+/* רכיב מוכן: גלריה (kit 1.0.0) — רשת (grid) או מוזאיקה (עמודות CSS). בטלפון — שתי עמודות. */
+.kol-gallery { --kol-gallery-cols: 3; --kol-gallery-gap: 10px; }
+.kol-gallery--grid { display: grid; grid-template-columns: repeat(var(--kol-gallery-cols), minmax(0, 1fr)); gap: var(--kol-gallery-gap); }
+.kol-gallery--masonry { columns: var(--kol-gallery-cols); column-gap: var(--kol-gallery-gap); }
+.kol-gallery--masonry .kol-gallery__item { break-inside: avoid; margin-block-end: var(--kol-gallery-gap); }
+.kol-gallery__item { margin: 0; position: relative; overflow: hidden; border-radius: 10px; }
+.kol-gallery__img { display: block; inline-size: 100%; block-size: auto; }
+.kol-gallery--grid .kol-gallery__img { aspect-ratio: 4 / 3; object-fit: cover; }
+.kol-gallery__cap { position: absolute; inset: auto 0 0; padding: 6px 10px; color: #fff; background: linear-gradient(transparent, rgba(0, 0, 0, .6)); font-size: .85rem; }
+@media (max-width: 767px) { .kol-gallery { --kol-gallery-cols: 2; } }

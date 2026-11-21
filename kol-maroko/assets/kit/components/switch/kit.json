@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "category": "תוכן",
+  "description": "מתג בין שני תכנים (למשל חודשי / שנתי). עובד בלי JS בכלל — תיבת סימון ו-CSS.",
+  "preview": "preview.svg"
+}

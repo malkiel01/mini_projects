@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "category": "רשתות",
+  "description": "הטמעה של פוסט / סרטון מרשת חברתית — תמונה וקישור עד לחיצה, ורק אז iframe בארגז חול. בלי JS — קישור לפוסט.",
+  "preview": "preview.svg",
+  "external": ["www.instagram.com", "www.facebook.com", "platform.twitter.com", "www.youtube-nocookie.com", "www.tiktok.com"]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "lightbox",
+  "label": "גלריה עם lightbox",
+  "icon": "🔍",
+  "category": "מדיה",
+  "fields": [
+    {"id": "items", "label": "תמונות", "control": "repeater", "target": {"children": ".kol-lightbox__item"}},
+    {"id": "cols", "label": "עמודות", "control": "number", "target": {"var": "--kol-lightbox-cols"}},
+    {"id": "gap", "label": "רווח", "control": "size", "target": {"var": "--kol-lightbox-gap"}}
+  ],
+  "states": [
+    {"id": "open", "label": "החלון", "options": [{"label": "החלון פתוח", "on": ".kol-lightbox__dlg", "attr": "open"}]}
+  ]
+}

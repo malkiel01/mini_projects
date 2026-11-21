@@ -6,12 +6,24 @@
  *   coverage   אילו טווחים כבר נמשכו לכל מפתח — כדי לפנות לספק רק על החסר. מכסה רק נרות סגורים.
  *   tails      מתי נמשך לאחרונה הקצה (הנר הפתוח) — התוקף שלו לפי מסגרת הזמן.
  *   search     תוצאות חיפוש ואינדקס סימולים — 24 שעות.
+ *   fetch_log  יומן בקשות הנרות (18.2, S2): לכל בקשה — כמה נרות נמשכו מהספק וכמה הוגשו, ולמה 0 / נכשלה (reason, גרסה 8). 7 ימים, עד 2000 שורות.
+ *   method_results  תוצאה שמורה של שיטה לכל מפתח חישוב (18.3, S3): נכס, מסגרת, הנרות הסגורים, שיטה וגרסה, פרמטרים.
+ *                   חישוב שנגזר מהנרות — נמחק בניקוי היומי אחרי יומיים, ונבנה מחדש לבד.
+ *   method_runs     המונה למסך המפתח: כמה פעמים שיטה רצה באמת, וכמה פעמים הוחזרה התוצאה השמורה.
  *
- * cred_scope: '' — מאגר משותף (ספק בלי מפתח שתנאיו מתירים); 'u:<user_id>' — נמשך במפתח אישי, רק של אותו משתמש;
- * 'c:<cred_id>' — ספק מהמנהל (ב), משותף למי שקיבל אותו.
+ * cred_scope: '' — מאגר משותף (ספק שתנאיו מתירים, או שהבעלים הכריע — Twelve Data, 21.3); 'u:<user_id>' — נמשך במפתח
+ * אישי, רק של אותו משתמש (Finnhub); 'c:<cred_id>' — ספק מהמנהל (ב), משותף למי שקיבל אותו.
  */
 
 declare(strict_types=1);
+
+require_once __DIR__ . '/pdo.php';
+
+/** סוג המאגר לפי cred_scope (3.6, ✅2): משותף / אישי / מהמנהל */
+function ts_scope_kind(string $scope): string
+{
+    return $scope === '' ? 'shared' : (str_starts_with($scope, 'u:') ? 'personal' : 'granted');
+}
 
 function ts_cache_path(): string
 {
@@ -22,13 +34,7 @@ function ts_cache(): PDO
 {
     static $db = null;
     if ($db) return $db;
-    $path = ts_cache_path();
-    if (!is_dir(dirname($path))) mkdir(dirname($path), 0700, true);
-    $db = new PDO('sqlite:' . $path, null, null, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
-    $db->exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;');
+    $db = ts_sqlite_open(ts_cache_path());   // סוגר סמן אחרי שורה אחת (lib/pdo.php)
     if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 1) {
         $db->exec(<<<'SQL'
             BEGIN;
@@ -63,5 +69,128 @@ function ts_cache(): PDO
             COMMIT;
             SQL);
     }
+    // גרסה 2 (S2): רק מוסיפה טבלה — לא נוגעת בנרות שכבר במאגר
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 2) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS fetch_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL,
+                provider TEXT NOT NULL, symbol TEXT NOT NULL, tf TEXT NOT NULL, kind TEXT NOT NULL,
+                from_t INTEGER NOT NULL, to_t INTEGER NOT NULL,
+                provider_calls INTEGER NOT NULL, provider_candles INTEGER NOT NULL, served INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS fetch_log_at ON fetch_log(at);
+            PRAGMA user_version = 2;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 3 (S3): רק מוסיפה טבלאות — לא נוגעת בנרות ובשום נתון קיים
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 3) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS method_results (
+                k TEXT PRIMARY KEY, method_id TEXT NOT NULL, result TEXT NOT NULL, at INTEGER NOT NULL
+            ) WITHOUT ROWID;
+            CREATE INDEX IF NOT EXISTS method_results_at ON method_results(at);
+            CREATE TABLE IF NOT EXISTS method_runs (
+                method_id TEXT PRIMARY KEY, runs INTEGER NOT NULL DEFAULT 0, reused INTEGER NOT NULL DEFAULT 0,
+                last_run_at INTEGER NOT NULL DEFAULT 0, last_reused_at INTEGER NOT NULL DEFAULT 0
+            );
+            PRAGMA user_version = 3;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 4 (21.3, ✅31): Twelve Data — מאגר אחד. הנרות של u:% ו-c:% עוברים ל-''
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 4) {
+        $db->beginTransaction();
+        try {
+            ts_cache_pool_merge($db, 'twelvedata');
+            $db->exec('PRAGMA user_version = 4');
+            $db->commit();
+        } catch (Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+    }
+    // גרסה 5: בדיקה לאחור שלא הושלמה בזמן — המצב שלה, כדי שהקריאה הבאה תמשיך ממנו ולא תמשוך שוב את מה שכבר נמשך
+    // (lib/analysis.php, ts_backtest). מטמון: נמחק אחרי יום, ובלעדיו פשוט מתחילים מחדש. CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 5) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS bt_partial (
+                k TEXT PRIMARY KEY, state TEXT NOT NULL, from_t INTEGER NOT NULL, to_t INTEGER NOT NULL, at INTEGER NOT NULL
+            ) WITHOUT ROWID;
+            PRAGMA user_version = 5;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 6 (היסטוריה בפעימות): נרות ישנים מ-60 יום — בטבלה נפרדת מהמאגר, כדי שהניקוי של 60 הימים (✅4) לא ימחק אותם
+    // ושהרענון האוטומטי לא ימשוך אותם מהספק בכל דקה. נשמרים עד 5 שנים אחורה (ts_cache_cleanup). CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 6) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS history (
+                provider TEXT NOT NULL, symbol TEXT NOT NULL, tf TEXT NOT NULL, cred_scope TEXT NOT NULL DEFAULT '', t INTEGER NOT NULL,
+                o TEXT NOT NULL, h TEXT NOT NULL, l TEXT NOT NULL, c TEXT NOT NULL, v TEXT NOT NULL, fetched_at INTEGER NOT NULL,
+                PRIMARY KEY (provider, symbol, tf, cred_scope, t)
+            ) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS history_coverage (
+                provider TEXT NOT NULL, symbol TEXT NOT NULL, tf TEXT NOT NULL, cred_scope TEXT NOT NULL DEFAULT '',
+                from_t INTEGER NOT NULL, to_t INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS history_coverage_key ON history_coverage (provider, symbol, tf, cred_scope);
+            PRAGMA user_version = 6;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 7 (H1c): תקרת חישוב ל-method_history — כמה מנות ישנות חושבו (לא מהמטמון) לכל משתמש בכל דקה. CREATE בלבד
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 7) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            CREATE TABLE IF NOT EXISTS history_runs (
+                user_id INTEGER NOT NULL, minute INTEGER NOT NULL, runs INTEGER NOT NULL,
+                PRIMARY KEY (user_id, minute)
+            ) WITHOUT ROWID;
+            PRAGMA user_version = 7;
+            COMMIT;
+            SQL);
+    }
+    // גרסה 8 (גרף ריק, 2026-11-17): fetch_log.reason — למה הבקשה החזירה 0 נרות או נכשלה (שגיאת ספק, תקרה, notice, אין נתונים).
+    // הבעלים רואה במסך המאגר מה קרה, בלי גישה לשרת. ALTER בלבד — השורות הקיימות: NULL
+    if ((int)$db->query('PRAGMA user_version')->fetchColumn() < 8) {
+        $db->exec(<<<'SQL'
+            BEGIN;
+            ALTER TABLE fetch_log ADD COLUMN reason TEXT;
+            PRAGMA user_version = 8;
+            COMMIT;
+            SQL);
+    }
     return $db;
+}
+
+/**
+ * מעביר את הנרות של ספק מהיקפים אישיים (u:%) ומשיוכים (c:%) למאגר המשותף '' (21.3 (2)). נר שכבר יש ב-'' באותו t —
+ * נשאר זה עם fetched_at המאוחר (נר סגור זהה ממילא). אחר כך נמחקות השורות המקוריות, ואיתן הטווחים, הקצוות והחיפושים
+ * של אותם היקפים (נבנים מחדש לפי הצורך). אידמפוטנטי: בריצה שנייה אין מה להעביר. ספק אחר — לא נוגעים.
+ * בתוך טרנזקציה של מי שקורא. מחזיר כמה שורות נמחקו מההיקפים.
+ */
+function ts_cache_pool_merge(PDO $db, string $provider): int
+{
+    $scoped = "(cred_scope LIKE 'u:%' OR cred_scope LIKE 'c:%')";
+    $db->prepare(<<<SQL
+        INSERT INTO candles (provider, symbol, tf, t, o, h, l, c, v, fetched_at, cred_scope)
+            SELECT provider, symbol, tf, t, o, h, l, c, v, fetched_at, '' FROM candles
+            WHERE provider = ? AND $scoped
+            ORDER BY fetched_at
+        ON CONFLICT (provider, symbol, tf, cred_scope, t) DO UPDATE SET
+            o = excluded.o, h = excluded.h, l = excluded.l, c = excluded.c, v = excluded.v, fetched_at = excluded.fetched_at
+            WHERE excluded.fetched_at > candles.fetched_at
+        SQL)->execute([$provider]);
+    $n = 0;
+    foreach (['candles', 'coverage', 'tails', 'search'] as $t) {
+        $st = $db->prepare("DELETE FROM $t WHERE provider = ? AND $scoped");
+        $st->execute([$provider]);
+        if ($t === 'candles') $n = $st->rowCount();
+    }
+    return $n;
 }

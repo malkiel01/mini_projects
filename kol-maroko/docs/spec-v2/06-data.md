@@ -91,11 +91,11 @@
   <input name="name"> <textarea name="message" required></textarea>
   <input type="hidden" name="word_id" data-kol-attr-value="id">
   <button>שלח</button>
-  <p data-kol-form-ok hidden>תודה!</p>  <p data-kol-form-error hidden>לא נשלח. נסו שוב.</p>
+  <p data-kol-form-done hidden>תודה!</p>  <p data-kol-form-error hidden>לא נשלח. נסו שוב.</p>
 </form>
 ```
 
-`js/kol-data.js` שולח את השדות לכתובת הפניות של הכלי, ומציג את הודעת ההצלחה או השגיאה — שהן אלמנטים בקובץ, נערכים.
+(השמות — לפי `02` §8.2: `data-kol-form-done` / `-error` הם **אלמנטים**.) `js/kol-data.js` שולח את השדות לכתובת הפניות של הכלי, ומציג את הודעת ההצלחה או השגיאה — שהן אלמנטים בקובץ, נערכים.
 בעל העמוד יכול גם לוותר על הקשירה ולשלוח לכל שירות חיצוני בקוד משלו **[ש-12]**.
 
 ### 3.3 הנקודה הציבורית

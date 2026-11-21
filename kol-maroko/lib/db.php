@@ -8,7 +8,7 @@ declare(strict_types=1);
 if (!defined('KOL_DATA_DIR')) define('KOL_DATA_DIR', dirname(__DIR__) . '/data');
 
 /** גרסת הסכמה שהקוד הזה מצפה לה — השלב האחרון ב-migrate(). בדיקת התקינות משווה אותה ל-user_version. */
-const KOL_SCHEMA_VERSION = 13;
+const KOL_SCHEMA_VERSION = 24;
 
 final class ApiError extends RuntimeException
 {
@@ -357,14 +357,321 @@ function migrate(PDO $pdo): void
             CREATE INDEX idx_pf_history_file ON pf_history(file_id, id);
             CREATE INDEX idx_pf_history_sha ON pf_history(sha);
             SQL,
+        16 => <<<'SQL'
+            -- פרוסה M1: בנייה ופרסום של פרויקט הקבצים (lib/build.php). קובצי החבילה — לפי sha256 במאגר הקיים
+            -- (data/files/_project/); כאן רק הרשומות. files: JSON של נתיב ← {sha, size, type, src, file_id?}.
+            -- status: building · built · failed · sending · live · superseded. version — רק בשליחה (מונה משותף עם versions).
+            CREATE TABLE pkg_builds (
+                id        INTEGER PRIMARY KEY,
+                status    TEXT NOT NULL,
+                rev       INTEGER NOT NULL DEFAULT 0,
+                print     TEXT NOT NULL DEFAULT '',
+                opts      TEXT NOT NULL DEFAULT '{}',
+                files     TEXT NOT NULL DEFAULT '{}',
+                pages     TEXT NOT NULL DEFAULT '[]',
+                notes     TEXT NOT NULL DEFAULT '[]',
+                report    TEXT NOT NULL DEFAULT '{}',
+                error     TEXT,
+                version   INTEGER,
+                manifest  TEXT,
+                by_sub    TEXT NOT NULL,
+                by_name   TEXT NOT NULL DEFAULT '',
+                at        TEXT NOT NULL,
+                built_at  TEXT,
+                sent_at   TEXT,
+                sent_by   TEXT
+            );
+            CREATE INDEX idx_pkg_builds_status ON pkg_builds(status, id);
+            -- גושים שהאתר כבר אישר (asset_has / asset_put) — לא נשלחים שוב
+            CREATE TABLE pkg_site_blobs (
+                sha  TEXT NOT NULL,
+                site TEXT NOT NULL,
+                at   TEXT NOT NULL,
+                PRIMARY KEY (sha, site)
+            );
+            -- הודעות בכלי (הודעת פרסום לבעל האתר, [ש-7])
+            CREATE TABLE notices (
+                id       INTEGER PRIMARY KEY,
+                role_to  TEXT NOT NULL,
+                kind     TEXT NOT NULL,
+                text     TEXT NOT NULL,
+                build_id INTEGER,
+                by_name  TEXT NOT NULL DEFAULT '',
+                at       TEXT NOT NULL,
+                read_at  TEXT,
+                read_by  TEXT
+            );
+            SQL,
+        // N1: הסדר הידני של המילים. הוספה בלבד; המילוי הראשון — ב-PHP (words_order_fill), כי הוא משחזר את lex_sort (Collator)
+        17 => <<<'SQL'
+            ALTER TABLE words ADD COLUMN sort_order INTEGER;
+            CREATE INDEX idx_words_sort ON words(sort_order, id);
+            SQL,
+        // N2: שדות מותאמים למילה (word_fields + words.extra), סל לשדה שנמחק, ונושאים מורחבים (סדר, צבע, תמונה, מוסתר).
+        // הוספה בלבד. המילוי (שדות מובנים, סדר נושאים) — ב-PHP, ורק בפעולה שמשנה מבנה (lib/lexicon.php, fields_fill / topics_fill)
+        18 => <<<'SQL'
+            CREATE TABLE word_fields (
+                key        TEXT PRIMARY KEY,
+                label      TEXT NOT NULL,
+                type       TEXT NOT NULL,
+                col        TEXT,
+                required   INTEGER NOT NULL DEFAULT 0,
+                def        TEXT,
+                help       TEXT NOT NULL DEFAULT '',
+                options    TEXT NOT NULL DEFAULT '[]',
+                published  INTEGER NOT NULL DEFAULT 1,
+                dir        TEXT NOT NULL DEFAULT 'auto',
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE field_trash (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT '',
+                field   TEXT NOT NULL,
+                vals    TEXT NOT NULL
+            );
+            ALTER TABLE words ADD COLUMN extra TEXT NOT NULL DEFAULT '{}';
+            ALTER TABLE topics ADD COLUMN sort_order INTEGER;
+            ALTER TABLE topics ADD COLUMN color TEXT NOT NULL DEFAULT '';
+            ALTER TABLE topics ADD COLUMN image TEXT NOT NULL DEFAULT '';
+            ALTER TABLE topics ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE topic_trash ADD COLUMN row TEXT;
+            SQL,
+        // M5: טפסים ותיבת פניות (lib/forms.php). הוספה בלבד. הפנייה אינה שומרת IP / User-Agent / Referer; ה-IP — רק מגובב, בטבלת הקצב
+        19 => <<<'SQL'
+            CREATE TABLE form_entries (
+                id         INTEGER PRIMARY KEY,
+                form       TEXT NOT NULL,
+                fields     TEXT NOT NULL DEFAULT '{}',
+                word_id    INTEGER,
+                page       TEXT NOT NULL DEFAULT '',
+                test       INTEGER NOT NULL DEFAULT 0,
+                at         TEXT NOT NULL,
+                read_at    TEXT,
+                read_by    TEXT,
+                handled_at TEXT,
+                handled_by TEXT
+            );
+            CREATE INDEX idx_form_entries_at ON form_entries(test, at);
+            CREATE TABLE form_hits (
+                ip_hash TEXT NOT NULL,
+                at      INTEGER NOT NULL
+            );
+            CREATE INDEX idx_form_hits ON form_hits(ip_hash, at);
+            CREATE INDEX idx_form_hits_at ON form_hits(at);
+            CREATE TABLE form_rejects (
+                day    TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                n      INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (day, reason)
+            );
+            CREATE TABLE forms_trash (
+                id       INTEGER PRIMARY KEY,
+                entry_id INTEGER NOT NULL,
+                row      TEXT NOT NULL,
+                batch    TEXT NOT NULL DEFAULT '',
+                at       TEXT NOT NULL,
+                by_name  TEXT NOT NULL DEFAULT ''
+            );
+            ALTER TABLE pkg_builds ADD COLUMN forms TEXT;
+            SQL,
+        // N2b: הקלטה לכל "מקום" (רשימה, פריט, שדה) — בונה את recordings מחדש (SQLite אינו מסיר UNIQUE ב-ALTER). ב-PHP:
+        // ספירה ו-checksum לפני ואחרי, ואם לא תואם — חריגה, והעסקה כולה מתבטלת (migrate_recordings_slots)
+        20 => 'migrate_recordings_slots',
+        21 => <<<'SQL'
+            -- פרוסה M3: המעבר (lib/cutover.php). ראיות מהבעלים לתנאים שרק הוא יודע — קובץ (במאגר הקיים, data/files/),
+            -- קישור או הערה, עם שם ותאריך. ביטול — מסמן, לא מוחק. cutover_marks — המצב האחרון של כל תנאי, כדי לרשום
+            -- ביומן כל שינוי ולזהות ✓ שנפל (fell_at).
+            CREATE TABLE IF NOT EXISTS cutover_evidence (
+                id         INTEGER PRIMARY KEY,
+                cond       TEXT NOT NULL,
+                note       TEXT NOT NULL DEFAULT '',
+                url        TEXT NOT NULL DEFAULT '',
+                file_id    TEXT,
+                by_sub     TEXT NOT NULL,
+                by_name    TEXT NOT NULL DEFAULT '',
+                at         TEXT NOT NULL,
+                revoked_at TEXT,
+                revoked_by TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_cutover_evidence_cond ON cutover_evidence(cond, id);
+            CREATE TABLE IF NOT EXISTS cutover_marks (
+                cond    TEXT PRIMARY KEY,
+                status  TEXT NOT NULL,
+                since   TEXT NOT NULL,
+                fell_at TEXT,
+                detail  TEXT NOT NULL DEFAULT ''
+            );
+            SQL,
+        // N3: רשימות נוספות ("פתגמים") — רשימה, השדות שלה, הפריטים (id לכל רשימה, לא חוזר: next_id), והסל. הוספה בלבד;
+        // המילים נשארות בטבלאות שלהן. fid — מזהה מספרי קבוע לקובץ הווירטואלי בעץ (lib/lists.php, LIST_FILE_BASE)
+        22 => <<<'SQL'
+            CREATE TABLE IF NOT EXISTS lists (
+                key        TEXT PRIMARY KEY,
+                fid        INTEGER NOT NULL UNIQUE,
+                label      TEXT NOT NULL,
+                item_label TEXT NOT NULL DEFAULT '',
+                next_id    INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS list_fields (
+                list       TEXT NOT NULL,
+                key        TEXT NOT NULL,
+                label      TEXT NOT NULL,
+                type       TEXT NOT NULL,
+                required   INTEGER NOT NULL DEFAULT 0,
+                def        TEXT,
+                help       TEXT NOT NULL DEFAULT '',
+                options    TEXT NOT NULL DEFAULT '[]',
+                published  INTEGER NOT NULL DEFAULT 1,
+                dir        TEXT NOT NULL DEFAULT 'auto',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (list, key)
+            );
+            CREATE TABLE IF NOT EXISTS list_items (
+                list       TEXT NOT NULL,
+                id         INTEGER NOT NULL,
+                data       TEXT NOT NULL DEFAULT '{}',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (list, id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_list_items_sort ON list_items(list, sort_order, id);
+            CREATE TABLE IF NOT EXISTS list_trash (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                list    TEXT NOT NULL,
+                kind    TEXT NOT NULL,
+                item_id INTEGER,
+                row     TEXT NOT NULL,
+                at      TEXT NOT NULL,
+                by_name TEXT NOT NULL DEFAULT ''
+            );
+            SQL,
+        // P1: משתמשי האפליקציה, ה-session שלה, audit.user_id/source, notices.user_id. הוספה בלבד — members ו-access_requests נשארים
+        23 => 'migrate_people',
+        // M7: התור היוצא לאתר (lib/outbox.php). seq — AUTOINCREMENT: עולה בלבד ולעולם אינו חוזר, גם אחרי מחיקה.
+        // body — הבייטים בדיוק כפי שנחתמו (seq ו-expires בתוכם). ב-data/kol.sqlite (מוחרג) — אין קובץ ואין --exclude חדש
+        24 => <<<'SQL'
+            CREATE TABLE IF NOT EXISTS site_outbox (
+                seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+                action       TEXT NOT NULL,
+                body         TEXT NOT NULL DEFAULT '',
+                sig          TEXT NOT NULL DEFAULT '',
+                kid          TEXT NOT NULL DEFAULT '',
+                created_at   TEXT NOT NULL,
+                created_by   TEXT NOT NULL DEFAULT '',
+                expires      INTEGER NOT NULL DEFAULT 0,
+                state        TEXT NOT NULL DEFAULT 'queued'
+                             CHECK (state IN ('queued','delivered','applied','failed','superseded','expired')),
+                result       TEXT,
+                delivered_at TEXT,
+                applied_at   TEXT,
+                ref          TEXT,
+                label        TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_site_outbox_state ON site_outbox(state, seq);
+            SQL,
     ];
     foreach ($steps as $n => $sql) {
         if ($v >= $n) continue;
         $pdo->beginTransaction();
-        $pdo->exec($sql);
-        $pdo->exec("PRAGMA user_version = $n");
-        $pdo->commit();
+        try {
+            // בקשה מקבילה הקדימה (קראנו את הגרסה לפני העסקה) — לא מריצים את השלב פעמיים
+            if ((int)$pdo->query('PRAGMA user_version')->fetchColumn() >= $n) { $pdo->commit(); continue; }
+            str_starts_with($sql, 'migrate_') ? $sql($pdo) : $pdo->exec($sql);
+            $pdo->exec("PRAGMA user_version = $n");
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
     }
+}
+
+/** הסכמה של recordings מ-N2b. word_id — מזהה הפריט בתוך list (השם נשאר, כדי שכל שאילתה של A2/A3 תישאר). */
+const REC_SCHEMA = <<<'SQL'
+    CREATE TABLE %s (
+        id            INTEGER PRIMARY KEY,
+        list          TEXT NOT NULL DEFAULT 'words',  -- הרשימה ('words' — המילים)
+        word_id       INTEGER,                        -- הפריט. הקלטה לא מחוברת — NULL
+        field         TEXT NOT NULL DEFAULT 'audio',  -- המפתח של שדה השמע (הראשי — השדה שה-col שלו audio)
+        state         TEXT NOT NULL DEFAULT 'site' CHECK (state IN ('site','tool','failed')),
+        source        TEXT NOT NULL DEFAULT '',       -- הכתובת באתר. נשמרת תמיד, לעולם אינה מפתח
+        file_id       TEXT,                           -- ספריית המדיה (files.id)
+        name          TEXT NOT NULL DEFAULT '',
+        duration      REAL,                           -- שניות; נמדד בדפדפן, שייך ל-file_id
+        how           TEXT NOT NULL DEFAULT '',       -- linked · fetched · imported · replaced · uploaded · restored · deduped · moved
+        at            TEXT NOT NULL,
+        by_name       TEXT NOT NULL DEFAULT '',
+        scan          TEXT NOT NULL DEFAULT '',       -- '' (לא נסרקה) · ok · missing · blocked · error · skipped
+        scan_size     INTEGER,
+        scan_type     TEXT NOT NULL DEFAULT '',
+        scan_note     TEXT NOT NULL DEFAULT '',
+        scan_at       TEXT,
+        f_code        TEXT NOT NULL DEFAULT '',       -- למה ההבאה נכשלה (REC_REASONS)
+        f_note        TEXT NOT NULL DEFAULT '',
+        f_at          TEXT,
+        deleted_at    TEXT,                           -- A3: סל — המקום שממנו נמחקה נזכר לשחזור
+        deleted_by    TEXT NOT NULL DEFAULT '',
+        deleted_list  TEXT,
+        deleted_word  INTEGER,
+        deleted_field TEXT,
+        deleted_audio TEXT NOT NULL DEFAULT '',
+        UNIQUE (list, word_id, field)
+    )
+    SQL;
+
+/** ספירה ו-sha256 של עמודות הטבלה, לפי id. */
+function migrate_sum(PDO $pdo, string $table, array $cols): array
+{
+    $h = hash_init('sha256');
+    $n = 0;
+    $st = $pdo->query('SELECT ' . implode(', ', array_map(fn($c) => "\"$c\"", $cols)) . " FROM $table ORDER BY id");
+    while ($r = $st->fetch(PDO::FETCH_NUM)) { hash_update($h, json_encode($r, JSON_UNESCAPED_UNICODE) . "\n"); $n++; }
+    return [$n, hash_final($h)];
+}
+
+/**
+ * שלב 20 (N2b): recordings נבנית מחדש בתוך העסקה של migrate — CREATE חדשה → INSERT … SELECT → DROP הישנה → RENAME.
+ * המזהים (id) נשמרים, ולכן rec_versions.rec_id ממשיך להצביע נכון. הרשומות הקיימות — של השדה הראשי (המפתח של השדה
+ * שה-col שלו audio; בלי שורה ב-word_fields — 'audio'). לפני ואחרי: מספר השורות ו-checksum של כל העמודות המשותפות, ושל
+ * rec_versions; לא תואם — חריגה, והעסקה מתבטלת: המסד נשאר כמו שהיה.
+ */
+function migrate_recordings_slots(PDO $pdo): void
+{
+    $has = fn(string $t) => (bool)$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn();
+    $primary = 'audio';
+    if ($has('word_fields')) $primary = (string)($pdo->query("SELECT key FROM word_fields WHERE col = 'audio'")->fetchColumn() ?: 'audio');
+    $pdo->exec('DROP TABLE IF EXISTS recordings_n2b');
+    $pdo->exec(sprintf(REC_SCHEMA, 'recordings_n2b'));
+    if ($has('recordings')) {
+        $old = array_column($pdo->query('PRAGMA table_info(recordings)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $new = array_column($pdo->query('PRAGMA table_info(recordings_n2b)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        $common = array_values(array_intersect($new, $old));
+        $vSum = fn() => $has('rec_versions') ? migrate_sum($pdo, 'rec_versions', array_column($pdo->query('PRAGMA table_info(rec_versions)')->fetchAll(PDO::FETCH_ASSOC), 'name')) : [0, ''];
+        $before = migrate_sum($pdo, 'recordings', $common);
+        $vBefore = $vSum();
+        $cl = implode(', ', array_map(fn($c) => "\"$c\"", $common));
+        $pdo->exec("INSERT INTO recordings_n2b ($cl) SELECT $cl FROM recordings");
+        if (!in_array('field', $old, true)) {
+            $pdo->prepare('UPDATE recordings_n2b SET field = ?')->execute([$primary]);
+            $pdo->prepare('UPDATE recordings_n2b SET deleted_list = \'words\', deleted_field = ? WHERE deleted_word IS NOT NULL')->execute([$primary]);
+        }
+        $pdo->exec('DROP TABLE recordings');
+        $pdo->exec('ALTER TABLE recordings_n2b RENAME TO recordings');
+        $after = migrate_sum($pdo, 'recordings', $common);
+        $vAfter = $vSum();
+        if ($before !== $after || $vBefore !== $vAfter) {
+            throw new RuntimeException("מיגרציה 20 בוטלה: ההקלטות לפני ואחרי אינן זהות (recordings {$before[0]} → {$after[0]}, rec_versions {$vBefore[0]} → {$vAfter[0]}). המסד לא השתנה");
+        }
+        $GLOBALS['kol_migrate_20'] = ['recordings' => $before[0], 'sha' => $before[1], 'versions' => $vBefore[0], 'versions_sha' => $vBefore[1]];
+    } else {
+        $pdo->exec('ALTER TABLE recordings_n2b RENAME TO recordings');
+    }
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_recordings_file ON recordings(file_id)');
 }
 
 function setting(string $k, ?string $default = null): ?string
@@ -378,4 +685,68 @@ function setting(string $k, ?string $default = null): ?string
 function setting_set(string $k, string $v): void
 {
     db()->prepare('INSERT INTO settings (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v')->execute([$k, $v]);
+}
+
+/**
+ * שלב 23 (P1): users + sessions, עמודות חדשות ב-audit וב-notices, והמילוי — מ-members (התפקיד כמו שהוא), ומכל sub שמופיע
+ * ב-audit בלי חבר (בלי תפקיד, removed). אידמפוטנטי: INSERT OR IGNORE לפי sub, ולפי מייל לחבר שהוזמן ועוד לא נכנס.
+ * בעל האתר (platform_admin) נקבע בכניסה הראשונה שלו (lib/login.php). שום עמודה ושום שורה אינן נמחקות.
+ */
+function migrate_people(PDO $pdo): void
+{
+    $pdo->exec(<<<'SQL'
+        CREATE TABLE IF NOT EXISTS users (
+            id         INTEGER PRIMARY KEY,
+            sub        TEXT UNIQUE,                    -- של הפלטפורמה. ריק — הוזמן ועוד לא נכנס
+            name       TEXT NOT NULL DEFAULT '',
+            email      TEXT,
+            role       TEXT CHECK (role IS NULL OR role IN ('content_editor','editor','publisher','page_owner','site_owner')),
+            status     TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','removed')),
+            created_at TEXT NOT NULL,
+            last_seen  TEXT,
+            invited_by INTEGER,
+            ai_quota   INTEGER,                        -- מ-members.ai_quota
+            agent      TEXT,                           -- כניסה מצ'אט (agent_tokens.id) — המשתמש שלה
+            invite     TEXT NOT NULL DEFAULT '',       -- '' · invited · granted · blocked · pending (provision נכשל) · revoked
+            invite_note TEXT NOT NULL DEFAULT '',
+            invite_at  TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_open ON users(email) WHERE sub IS NULL AND agent IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_agent ON users(agent) WHERE agent IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS sessions (
+            id         TEXT PRIMARY KEY,               -- sha256 של המזהה שבעוגייה
+            user_id    INTEGER NOT NULL,
+            csrf       TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            seen_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        SQL);
+    $cols = fn(string $t) => array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(PDO::FETCH_ASSOC), 'name');
+    if (!in_array('user_id', $cols('audit'), true)) $pdo->exec('ALTER TABLE audit ADD COLUMN user_id INTEGER');
+    if (!in_array('source', $cols('audit'), true)) $pdo->exec("ALTER TABLE audit ADD COLUMN source TEXT NOT NULL DEFAULT 'studio'");
+    if (!in_array('user_id', $cols('notices'), true)) $pdo->exec('ALTER TABLE notices ADD COLUMN user_id INTEGER');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_audit_user ON audit(user_id)');
+    $mc = $cols('members');
+    $q = in_array('ai_quota', $mc, true) ? 'ai_quota' : 'NULL';
+    foreach ($pdo->query("SELECT id, sub, email, name, role, added_at, last_seen, $q AS ai_quota FROM members ORDER BY id")->fetchAll(PDO::FETCH_ASSOC) as $m) {
+        if ($m['sub'] !== null) {
+            $pdo->prepare('INSERT OR IGNORE INTO users (sub, name, email, role, created_at, last_seen, ai_quota) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$m['sub'], $m['name'], $m['email'], $m['role'], $m['added_at'], $m['last_seen'], $m['ai_quota']]);
+        } elseif ($m['email'] !== null) {
+            $st = $pdo->prepare('SELECT 1 FROM users WHERE sub IS NULL AND agent IS NULL AND email = ?');
+            $st->execute([$m['email']]);
+            if (!$st->fetchColumn()) {
+                $pdo->prepare('INSERT INTO users (name, email, role, created_at, ai_quota) VALUES (?, ?, ?, ?, ?)')
+                    ->execute([$m['name'], $m['email'], $m['role'], $m['added_at'], $m['ai_quota']]);
+            }
+        }
+    }
+    // כל מי שעשה משהו בכלי ואינו חבר — שורה בלי תפקיד, removed (כדי שליומן יהיה אדם)
+    foreach ($pdo->query("SELECT sub, MAX(name) AS name, MIN(at) AS first, MAX(at) AS last FROM audit WHERE sub <> '' GROUP BY sub")->fetchAll(PDO::FETCH_ASSOC) as $a) {
+        $pdo->prepare("INSERT OR IGNORE INTO users (sub, name, role, status, created_at, last_seen) VALUES (?, ?, NULL, 'removed', ?, ?)")
+            ->execute([$a['sub'], (string)$a['name'], $a['first'], $a['last']]);
+    }
+    $pdo->exec('UPDATE audit SET user_id = (SELECT id FROM users WHERE users.sub = audit.sub) WHERE user_id IS NULL');
+    $pdo->exec("UPDATE audit SET source = 'agent' WHERE source = 'studio' AND detail LIKE 'source: agent%'");
 }

@@ -23,6 +23,12 @@ require_once dirname(__DIR__) . '/indicators.php';
 abstract class TsMethod
 {
     /**
+     * כמה פעמים "החל" (18.7, S7) שינה פרמטר של השיטה — methods.tune, נטען ב-ts_method(). כל שיטה מוסיפה אותו לגרסה
+     * שב-meta(): גרסה = גרסת הקוד + tune. שני המספרים רק עולים, ולכן הגרסה לעולם לא חוזרת על עצמה.
+     */
+    public int $tune = 0;
+
+    /**
      * id, name, source (מקור: ספר ופרק, או "שיטת דוגמה"), sample (bool), markets[], timeframes[],
      * params{key: {label, default, min, max, int}}, horizon_bars, warmup (נרות עד שהשיטה "מתחממת"), version (int),
      * incremental (bool — המצב ממשיך על נרות חדשים), alerts (bool — מותרת בהתראות, פרק 8)
@@ -112,6 +118,15 @@ abstract class TsMethod
         return ['as_of' => $last['t'], 'range' => ['from' => $candles[0]['t'], 'to' => $last['t']], 'items' => $items,
             'projection' => ['bars' => $bars, 'scenarios' => [['id' => 's1', 'score' => null, 'points' => $points,
                 'label' => 'לפי כללי השיטה — ' . ($side === 'long' ? 'צד לונג' : 'צד שורט') . ", עד $k נרות"]]]];
+    }
+
+    /**
+     * ספירות עבר שהושלמו (H1b, 18.1.8 סעיף 2) — רק לשיטה שיש לה ספירה (אליוט). ברירת המחדל — אין. $tf — אורך הנר בשניות.
+     * כל ספירה: {dir, score, words, t, ct, points: [{t, price, label}]}. רק תצוגה.
+     */
+    public function pastCounts(array $candles, array $p, int $tf, ?int $before = null): array
+    {
+        return [];
     }
 
     /** בדיקה של צירוף פרמטרים (מעבר לטווח של כל אחד). מחזירה הודעה, או null כשתקין */

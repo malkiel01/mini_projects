@@ -29,12 +29,12 @@ test('פרויקט: נוצר עם שלד ברירת המחדל ועם from-curre
     eq(200, $t['status']);
     $paths = array_column($t['json']['files'], 'id', 'path');
     foreach (['index.html', 'css/tokens.css', 'css/base.css', 'css/page.css', 'js/page.js', 'kol.json'] as $p) ok(isset($paths[$p]), "חסר $p");
-    foreach (['lexicon.html', 'lexicon.css', 'lexicon.js', 'lexicon-template.html', 'theme-style.css', 'imported.css', 'preview.css', 'page-base.css'] as $p) {
+    foreach (['lexicon.html', 'lexicon.css', 'lexicon.js', 'lexicon-template.html', 'theme-style.css', 'imported.css', 'preview.css'] as $p) {      // M6: page-base.css — נבנה מהטיוטה, כבר לא נוצר
         ok(isset($paths["from-current/$p"]), "חסר from-current/$p");
         ok(str_contains(strtok(pf_get($paths["from-current/$p"]), "\n"), 'from-current · '), "שורת המקור של $p");
     }
     ok(str_contains(pf_get($paths['from-current/lexicon-template.html']), LEX_TPL), 'התבנית המובנית הועתקה כמו שהיא');
-    ok(str_contains(pf_get($paths['from-current/page-base.css']), '.kol-page'), 'ה-CSS הבסיסי של העמוד');
+    ok(!isset($paths['from-current/page-base.css']), 'M6: page-base.css אינו נבנה מהטיוטה');
     eq(true, $t['json']['kol']['valid'], 'kol.json תקין');
     eq('index.html', $t['json']['kol']['config']['entry']);
     eq(count($paths), count(pf_paths()), 'קריאה שנייה אינה זורעת שוב');
@@ -112,7 +112,7 @@ test('פרויקט: רישיות, קובץ במקום תיקייה ותיקיי�
 test('פרויקט: המגבלות הן הגדרות של המפתח; חריגה נדחית בהודעה שאומרת מה המגבלה, מה הערך ומי משנה', function () {
     eq(403, http('POST', '/api.php?action=pf_limits_set', ['user' => U_EDITOR, 'json' => ['key' => 'text', 'value' => 2000]])['status'], 'עורך אינו משנה מגבלה');
     $l = http('GET', '/api.php?action=pf_limits', ['user' => U_OWNER])['json']['limits'];
-    eq([200, 2097152, 2000, 200], array_column($l, 'value'), 'ברירות המחדל של 02 §3');
+    eq([200, 2097152, 2000, 200], array_slice(array_column($l, 'value'), 0, 4), 'ברירות המחדל של 02 §3');
     $src = (string)file_get_contents(KOL_ROOT . '/lib/project.php');
     eq(0, preg_match('/(2097152|2 \* 1024 \* 1024|2000|200)\b/', preg_replace('/const PF_LIMITS = \[.*?\];/s', '', $src)), 'אין מספר מגבלה בקוד מחוץ לטבלת ברירות המחדל');
 
@@ -231,8 +231,8 @@ test('פרויקט: הרשאות, נעילת העריכה ויומן הפעול�
     eq(403, http('POST', '/api.php?action=pf_create', ['user' => U_EDITOR, 'csrf' => false, 'json' => ['path' => 'perm/x.html']])['status'], 'בלי CSRF');
     foreach ([U_EDITOR, U_PUBLISHER, U_OWNER] as $i => $u) eq(200, pf_new("perm/$i.html", 'x', $u)['status'], 'כל תפקיד כותב');
 
-    // נעילה אצל המפרסם — העורך אינו כותב; אחרי שחרור — כותב
-    http('POST', '/api.php?action=lock', ['user' => U_PUBLISHER, 'json' => ['op' => 'take']]);
+    // נעילה אצל המפרסם — העורך אינו כותב; אחרי שחרור — כותב. M6: lock_op נמחק — נעילה שנשארה מהסטודיו הישן (שורה ב-edit_lock) עדיין חלה עד שפגה
+    db()->prepare('INSERT OR REPLACE INTO edit_lock (id, sub, name, since, beat) VALUES (1, ?, ?, ?, ?)')->execute([U_PUBLISHER['sub'], 'מפרסם', time(), time()]);
     $f = pf_paths()['perm/0.html'];
     foreach ([['pf_create', ['path' => 'perm/locked.html']], ['pf_write', ['id' => $f, 'rev' => 1, 'content' => 'y']], ['pf_mkdir', ['path' => 'perm/d']],
               ['pf_rename', ['id' => $f, 'to' => 'perm/z.html']], ['pf_delete', ['id' => $f]], ['pf_restore', ['ids' => [$f]]]] as [$a, $body]) {
@@ -240,7 +240,7 @@ test('פרויקט: הרשאות, נעילת העריכה ויומן הפעול�
     }
     eq(200, http('GET', "/api.php?action=pf_read&id=$f", ['user' => U_EDITOR])['status'], 'קריאה מותרת גם כשנעול');
     eq(200, http('POST', '/api.php?action=pf_write', ['user' => U_PUBLISHER, 'json' => ['id' => $f, 'rev' => 1, 'content' => 'של המחזיק בנעילה']])['status']);
-    http('POST', '/api.php?action=lock', ['user' => U_PUBLISHER, 'json' => ['op' => 'release']]);
+    db()->exec('UPDATE edit_lock SET beat = 0 WHERE id = 1');                // פגה (LOCK_TTL) — כמו נעילה ישנה שאיש אינו מחדש
 
     $before = (int)db()->query('SELECT MAX(id) FROM audit')->fetchColumn();
     $id = pf_new('audit/a.html', 'x')['json']['file']['id'];
@@ -397,4 +397,17 @@ test('בידוד (S6): Monaco מאוחסן באפליקציה — אין CDN ב�
     }
     $js = (string)preg_replace('#^\s*//.*$#m', '', (string)file_get_contents(KOL_ROOT . '/assets/js/project.js'));
     foreach (['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'srcdoc', 'eval('] as $bad) ok(!str_contains($js, $bad), "$bad ב-project.js");
+});
+
+test('"העמוד של היום עוד לא יובא": seed_only כל עוד index.html הוא שלד הזריעה; עריכה אחת — כבר לא', function () {
+    $t = http('GET', '/api.php?action=pf_tree', ['user' => U_EDITOR]);
+    $f = null; foreach ($t['json']['files'] as $x) if ($x['path'] === 'index.html') $f = $x;
+    ok($f !== null, 'יש index.html');
+    $r = http('GET', '/api.php?action=pf_read&id=' . $f['id'], ['user' => U_EDITOR]);
+    eq($r['json']['content'] === pf_seed_files()['index.html'], $t['json']['seed_only'], 'seed_only תואם לתוכן הנוכחי');
+    $w = http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $f['id'], 'rev' => $r['json']['file']['rev'], 'content' => pf_seed_files()['index.html']]]);
+    eq(true, http('GET', '/api.php?action=pf_tree', ['user' => U_EDITOR])['json']['seed_only'], 'שלד הזריעה ← seed_only');
+    $w2 = http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $f['id'], 'rev' => $w['json']['file']['rev'], 'content' => pf_seed_files()['index.html'] . ' ']]);
+    eq(false, http('GET', '/api.php?action=pf_tree', ['user' => U_EDITOR])['json']['seed_only'], 'נערך ← לא');
+    http('POST', '/api.php?action=pf_write', ['user' => U_EDITOR, 'json' => ['id' => $f['id'], 'rev' => $w2['json']['file']['rev'], 'content' => $r['json']['content']]]);
 });

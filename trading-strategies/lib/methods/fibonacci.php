@@ -1,0 +1,231 @@
+<?php
+/**
+ * פיבונאצ'י — אזורי חפיפה של נסיגות (spec-stage-a פרק 22, F-1 ו-F-2). שיטה שלנו על בסיס כללי הספר של Constance Brown,
+ * *Fibonacci Analysis* — הכללים בניסוח שלנו, עם עמודים: team/handoff/fibonacci-book-check.md. המנוע — lib/fibonacci.php.
+ *
+ * הממצא (22.3–22.4): נקודת התחלה אחת לכל צד, הטווחים, הרמות 38.2 / 50 / 61.8, אזורי החפיפה (ציון) והרמות הבודדות.
+ * האות (22.6 — הספר לא נותן כלל כניסה מכני, הרגע [שלנו, פ10]): לונג בנר c, אחרי שנסגר, כשאזור תמיכה בציון ≥ min_score
+ * שחושב מנרות ≤ c − 1 נגע (l_c ≤ הגבול העליון) והנר נסגר מעליו. סטופ מתחת לאזור (M1), יעד — האזור הבא (M2), יחס ≥ min_rr.
+ *
+ * **F-2 (22.5):** A-B-X, קופסת השוויון לכל אזור, Z6 (יעד 100% בתוך אזור → ציון + 1), יעד חלופי לאות (T של קופסת אזור האות,
+ * כשאין אזור התנגדות מעל), והתרחיש בגרף וביומן — הפירוט ב-lib/fibonacci.php.
+ * **F-3 (מידע בלבד, S26):** מתרחב / מתכווץ / סימטרי בכרטיס (info), ותווית "ואקום" בין אזורים (Z10) — ts_fib_market, ts_fib_vacuums.
+ * **לא כאן:** הרשימה של עמ' 102, ומתנד (O1, פ7 — לכן אין פרמטר rsi_filter: פרמטר שלא עושה כלום
+ * היה מטעה את מי שמשכלל).
+ *
+ * המצב (JSON, נשמר בסוף הבדיקה לאחור): ATR ו-zigzag (lib/elliott.php — אותה פונקציה), חלון של lookback_bars נרות,
+ * נקודות המפנה שבחלון, והרשת האחרונה (g) — שחושבה מנרות ≤ הנר האחרון. האות בנר c נבדק **לפני** שהנר נכנס לרשת —
+ * כך הוא רואה רק נרות ≤ c − 1 (6.2 א).
+ */
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/base.php';
+require_once dirname(__DIR__) . '/fibonacci.php';
+
+final class TsMethodFibonacci extends TsMethod
+{
+    /** false — overlay בלי התרחיש (22.5ה, F-2 קריטריון 9: הממצא זהה עם תרחיש ובלעדיו — tests/fibonacci-f2.php) */
+    public bool $scenario = true;
+
+    public function meta(): array
+    {
+        return [
+            'id' => 'fibonacci',
+            'name' => "פיבונאצ'י",
+            'source' => 'Constance Brown, Fibonacci Analysis (Bloomberg Market Essentials)',
+            'label' => 'שיטה שלנו על בסיס כללי הספר (Constance Brown)',
+            'sample' => false,
+            'markets' => ['crypto', 'stocks', 'forex', 'indices', 'commodities', 'futures'],
+            'timeframes' => ['h1', 'h4', 'd1', 'w1'],   // כמו אליוט (✅18)
+            // ours: true — "הגדרה שלנו" (22.10). אף פרמטר כאן אינו מספר מהספר: היחסים עצמם קבועים (R1) ואינם פרמטר
+            'params' => [
+                'pivot_atr_mult' => ['label' => 'רגישות נקודות המפנה (× ATR)', 'default' => 3, 'min' => 1, 'max' => 10, 'int' => false, 'ours' => true],
+                'atr_len' => ['label' => 'אורך ATR', 'default' => 14, 'min' => 5, 'max' => 50, 'int' => true, 'ours' => true],
+                'lookback_bars' => ['label' => 'חלון החיפוש (נרות)', 'default' => 250, 'min' => 100, 'max' => 1000, 'int' => true, 'ours' => true],
+                'max_ranges' => ['label' => 'מספר טווחים מרבי', 'default' => 5, 'min' => 2, 'max' => 6, 'int' => true, 'ours' => true],
+                'strong_atr' => ['label' => 'נר חזק — גוף (× ATR)', 'default' => 2, 'min' => 1, 'max' => 4, 'int' => false, 'ours' => true],
+                'close_atr' => ['label' => 'נקודות סיום קרובות (× ATR)', 'default' => 0.5, 'min' => 0.1, 'max' => 2, 'int' => false, 'ours' => true],
+                'zone_atr' => ['label' => 'מרחק רמות באזור (× ATR)', 'default' => 0.5, 'min' => 0.1, 'max' => 2, 'int' => false, 'ours' => true],
+                'zone_max_atr' => ['label' => 'רוחב אזור מרבי (× ATR)', 'default' => 1, 'min' => 0.5, 'max' => 3, 'int' => false, 'ours' => true],
+                'min_score' => ['label' => 'ציון אזור מינימלי לאות', 'default' => 3, 'min' => 2, 'max' => 8, 'int' => true, 'ours' => true],
+                'stop_atr' => ['label' => 'סטופ מתחת לאזור (× ATR)', 'default' => 0.25, 'min' => 0, 'max' => 1, 'int' => false, 'ours' => true],
+                'min_rr' => ['label' => 'יחס סיכוי-סיכון מינימלי', 'default' => 2, 'min' => 1, 'max' => 5, 'int' => false, 'ours' => true],
+                'horizon_bars' => ['label' => 'אופק (נרות)', 'default' => 60, 'min' => 10, 'max' => 300, 'int' => true, 'ours' => true],
+                // 22.5ח (2.32): איזה חלק של קופסת השוויון הוא היעד החלופי — 1 (T), 0.618 או 0.5 (יעדי הביניים, P5). רק שלושת אלה (validate)
+                'box_target' => ['label' => 'רמת היציאה ברווח — חלק מהקופסה', 'default' => 1, 'min' => 0.5, 'max' => 1, 'int' => false, 'ours' => true],
+            ],
+            'horizon_bars' => 60,
+            'warmup' => 300,
+            'levels' => 'absolute',   // 6.2(ח): הסטופ והיעד הם מחירים — גבולות אזורים
+            'default_off' => true,    // 22.1, 6.7: שיטה חדשה כבויה עד שמנהל מפעיל
+            'version' => 2 + $this->tune,   // + החלות (18.7). 2 — F-2: Z6 משנה ציון, ויעד חלופי משנה אותות
+            'incremental' => true,
+            'alerts' => true,         // 22.1
+            // למידה (23.3, L1): מה שהאות מצרף לכל עסקה ב-method_outcomes.features — נתונים לפלח, לא פרמטרים לשנות
+            // השוואת שכנים (23.9, L5b): אילו פרמטרים נבדקים צעד אחד למטה ולמעלה, בתוך הטווח של 22.10. box_target — רק משלושת הערכים
+            'learn_params' => ['stop_atr' => ['step' => 0.25], 'box_target' => ['values' => [0.5, 0.618, 1]], 'zone_atr' => ['step' => 0.1]],
+            'learn' => [
+                'score' => 'ציון האזור (כולל Z6)',
+                'zone_atr' => 'רוחב האזור ב-ATR (בנר שלפני האות)',
+                'rr' => 'יחס סיכוי-סיכון באות',
+            ],
+        ];
+    }
+
+    public function horizon(array $p): int
+    {
+        return (int)$p['horizon_bars'];
+    }
+
+    public function validate(array $p): ?string
+    {
+        if ((float)$p['zone_max_atr'] < (float)$p['zone_atr']) return 'רוחב האזור המרבי חייב להיות לפחות מרחק הרמות באזור';
+        $bt = (float)($p['box_target'] ?? 1);
+        if (!array_filter(TS_FIB_BOX_TARGETS, fn($v) => abs($v - $bt) < 1e-9)) return 'רמת היציאה ברווח — חלק מהקופסה: 0.5, 0.618 או 1';
+        return null;
+    }
+
+    public function init(array $p): array
+    {
+        // w — חלון הנרות; piv — נקודות המפנה שבחלון; g — הרשת מנרות ≤ הנר האחרון; x — האות האחרון ומעקב אחרי תוקפו
+        // k — שלוש נקודות המפנה האחרונות בגוף (A-B-X, F-2)
+        return ts_fib_init() + ['x' => null];
+    }
+
+    public function step(array $s, array $c, array $p): array
+    {
+        if ($msg = $this->validate($p)) throw new InvalidArgumentException($msg);
+        // תוקף האות האחרון: נגיעה בסטופ או ביעד מהנר שאחרי האות, או תום האופק
+        if ($s['x'] !== null) {
+            $x = &$s['x'];
+            $x['ago']++;
+            if ($x['alive']) {
+                $long = $x['side'] === 'long';
+                $hit = $long ? ($c['l'] <= $x['stop'] || $c['h'] >= $x['target']) : ($c['h'] >= $x['stop'] || $c['l'] <= $x['target']);
+                if ($hit || $x['ago'] >= $this->horizon($p)) $x['alive'] = false;
+            }
+            unset($x);
+        }
+        // האות — מהרשת של הנר הקודם (נרות ≤ c − 1), לפני שהנר הזה נכנס
+        $sig = $s['g'] !== null ? ts_fib_signal($s['g'], $c, $p) : null;
+        $atr = $s['g']['atr'] ?? null;   // ה-ATR של הרשת שהאות נבדק מולה — ל-features
+        $s = ts_fib_advance($s, $c, $p);
+
+        if ($sig === null) return [$s, null];
+        $s['x'] = $sig + ['ago' => 0, 'alive' => true];
+        // meta().learn — לא נכנס למצב (x נקבע לפני)
+        $sig['features'] = ['score' => $sig['score'], 'zone_atr' => $atr ? ($sig['zone'][1] - $sig['zone'][0]) / $atr : null, 'rr' => $sig['rr']];
+        return [$s, $sig];
+    }
+
+    /**
+     * הכרטיס (22.7): אזור, נגיעה, יחס — לכל צד; ושלוש הנחיות "בדוק בעצמך" (met: null). כשיש אות בתוקף — התנאים מתארים
+     * את האזור של האות (האזור יכול להיעלם מהרשת אחרי שהמחיר יצא ממנו — S2); אחרת — האזור הטוב ביותר עכשיו.
+     */
+    public function conditions(array $s, array $p): array
+    {
+        $g = $s['g'];
+        $x = $s['x'];
+        $alive = $x !== null && $x['alive'] && $x['ago'] < $this->horizon($p);
+        $min = (int)$p['min_score'];
+        $rr = rtrim(rtrim(number_format((float)$p['min_rr'], 2, '.', ''), '0'), '.');
+        $out = [];
+        foreach (['long' => ['l', 'support', 'תמיכה', 'מעליו'], 'short' => ['s', 'resistance', 'התנגדות', 'מתחתיו']] as $side => [$k, $key, $word, $back]) {
+            $mine = $alive && $x['side'] === $side;
+            $best = null;
+            foreach ($g[$key]['zones'] ?? [] as $z) if ($best === null || $z['score'] > $best['score']) $best = $z;
+            if ($mine) {
+                $zt = "אזור $word בציון {$x['score']} (" . self::num($x['zone'][0]) . '–' . self::num($x['zone'][1]) . ')';
+                $zm = true;
+            } elseif ($best !== null) {
+                $zt = "אזור $word: " . count($best['levels']) . " רמות מ-{$best['ranges']} טווחים (ציון {$best['score']})";
+                $zm = $best['score'] >= $min;
+            } else {
+                $zt = "אזור $word בציון $min לפחות";
+                $zm = false;
+            }
+            $out[] = ['id' => "$k-zone", 'side' => $side, 'text' => $zt, 'met' => $zm, 'value' => $mine ? $x['score'] : $best['score'] ?? null];
+            $out[] = ['id' => "$k-touch", 'side' => $side, 'text' => "המחיר נגע באזור ונסגר $back", 'met' => $mine, 'value' => null];
+            $out[] = ['id' => "$k-rr", 'side' => $side, 'text' => "יחס סיכוי-סיכון ≥ $rr", 'met' => $mine, 'value' => $mine ? round($x['rr'], 2) : null];
+        }
+        foreach ([
+            'manual-trunc' => 'בדוק בעצמך: האם נקודת ההתחלה היא קוץ שצריך לקטם, או פסגה כפולה שלא מקטמים',
+            'manual-pattern' => 'בדוק בעצמך: אין רשת בתוך משולש או טריז סיום',
+            'manual-tf' => 'בדוק בעצמך: אותו אזור באופק זמן נוסף (פי 4)',
+        ] as $id => $text) $out[] = ['id' => $id, 'side' => 'both', 'text' => $text, 'met' => null, 'value' => null];
+
+        $bias = $alive ? $x['side'] : 'none';
+        $levels = $alive ? ['entry' => $x['entry'], 'stop' => $x['stop'], 'target' => $x['target']] : null;
+        // S25 (F-3) — מידע בלבד (S26), לא תנאי: לא נספר ולא משנה כיוון
+        $mk = ts_fib_market($s['w'], $s['piv'], $g, $p);
+        $info = [['id' => 'market', 'text' => 'השוק: ' . TS_FIB_S25_WORDS[$mk['state']], 'value' => $mk['state']]];
+        return ['bias' => $bias, 'conditions' => $out, 'levels' => $levels, 'signal_ago' => $alive ? $x['ago'] : null, 'info' => $info];
+    }
+
+    private static function num(float $v): string
+    {
+        return rtrim(rtrim(number_format($v, 8, '.', ''), '0'), '.');
+    }
+
+    /**
+     * בגרף. **הממצא** (F-1): אזורי החפיפה (zone, מנקודת ההתחלה ונמשכים ימינה עד קצה הגרף — R3, extend; הציון כולל Z6),
+     * הרמות הבודדות (polyline מלא, single: true — דהויות, ו"הסתר רמות בודדות" מסתיר; Z9), ואות בתוקף — סימון, סטופ ויעד.
+     * **התרחיש** (F-2, 22.5ד) — רק אחרי הנר האחרון, מקווקו ושקוף: ts_fib_scenario. הממצא לא תלוי בו (22.5ה).
+     */
+    public function overlay(array $candles, array $p, int $tf): array
+    {
+        require_once dirname(__DIR__) . '/overlay.php';
+        $bars = $this->horizon($p);
+        if (!$candles) return ts_overlay_empty($candles, $bars, 'אין נרות בטווח');
+        $s = $this->init($p);
+        foreach ($candles as $c) [$s] = $this->step($s, $c, $p);
+        $g = $s['g'];
+        $last = $candles[count($candles) - 1]['t'];
+        $first = $candles[0]['t'];
+        $items = [];
+        foreach (['support' => 'אזור תמיכה', 'resistance' => 'אזור התנגדות'] as $key => $word) {
+            if (!$g || !$g[$key]['start']) continue;
+            $t1 = max($first, $g[$key]['start']['t']);
+            foreach ($g[$key]['zones'] as $z) {
+                $items[] = ['kind' => 'zone', 't1' => $t1, 't2' => $last, 'p1' => $z['lo'], 'p2' => $z['hi'], 'extend' => true, 'fib' => $key,
+                    'score' => $z['score'], 'text' => "$word · " . count($z['levels']) . ' רמות · ציון ' . $z['score'],
+                    'tip' => ts_fib_zone_tip($z, $g[$key], $key === 'support' ? 'תמיכה' : 'התנגדות')];
+            }
+            foreach ($g[$key]['singles'] as $l) {
+                $items[] = ['kind' => 'polyline', 'style' => 'solid', 'single' => true, 'extend' => true, 'fib' => $key, 'r' => $l['r'],
+                    'points' => [['t' => $t1, 'price' => $l['price']], ['t' => $last, 'price' => $l['price']]], 'tip' => ts_fib_single_tip($l, $g[$key])];
+            }
+        }
+        // ואקום (Z10, F-3) — תווית בממצא, באמצע הפער, בנר האחרון. מידע בלבד
+        foreach (ts_fib_vacuums($g, $p) as $v) {
+            $items[] = ['kind' => 'label', 't' => $last, 'price' => ($v['lo'] + $v['hi']) / 2, 'text' => 'ואקום', 'vacuum' => $v['side'],
+                'lo' => $v['lo'], 'hi' => $v['hi'], 'tip' => ['title' => 'ואקום', 'explain' => 'אין אף רמה בין שני אזורי ה' . ($v['side'] === 'support' ? 'תמיכה' : 'התנגדות')
+                    . ' (' . ts_fib_px($v['lo']) . '–' . ts_fib_px($v['hi']) . '), והפער לפחות ' . $p['zone_max_atr'] . ' ATR. מידע בלבד (Z10).']];
+        }
+        $x = $s['x'];
+        $alive = $x !== null && $x['alive'] && $x['ago'] < $this->horizon($p) && $x['ago'] < count($candles);
+        if ($alive) {
+            $sigT = $candles[count($candles) - 1 - $x['ago']]['t'];
+            $lg = $x['side'] === 'long';
+            $sinv = ['price' => (float)$x['stop'], 'side' => $lg ? 'below' : 'above', 'rule' => 'הסטופ של האות'];
+            $zw = ts_fib_px((float)$x['zone'][0]) . '–' . ts_fib_px((float)$x['zone'][1]);
+            $items[] = ['kind' => 'marker', 't' => $sigT, 'side' => $x['side'], 'text' => ($lg ? 'אות לונג' : 'אות שורט') . ' לפי כללי השיטה',
+                'tip' => ['title' => $lg ? 'אות לונג' : 'אות שורט', 'invalidation' => $sinv,
+                    'explain' => ($lg ? 'הנר הקודם נסגר מעל אזור התמיכה, המחיר ירד אליו ונסגר בחזרה מעליו' : 'הנר הקודם נסגר מתחת לאזור ההתנגדות, המחיר עלה אליו ונסגר בחזרה מתחתיו')
+                        . " (אזור $zw, ציון {$x['score']}, 22.6)."]];
+            $items[] = ['kind' => 'hline', 'price' => (float)$x['stop'], 'role' => 'stop', 'text' => 'סטופ לפי כללי השיטה',
+                'tip' => ['title' => 'סטופ', 'invalidation' => $sinv, 'explain' => ($lg ? 'מתחת לאזור ומתחת לפתיל' : 'מעל לאזור ומעל לפתיל')
+                    . ' של נר האות, ועוד ' . $p['stop_atr'] . ' ATR (M1, פ10).']];
+            $items[] = ['kind' => 'hline', 'price' => (float)$x['target'], 'role' => 'target', 'text' => 'רמת היציאה ברווח לפי כללי השיטה',
+                'tip' => ['title' => 'רמת היציאה ברווח', 'invalidation' => $sinv, 'explain' => ($x['via'] ?? 'zone') === 'box'
+                    ? 'אין אזור ' . ($lg ? 'התנגדות מעל' : 'תמיכה מתחת') . ' — סוף קופסת השוויון של אזור האות (22.5ב), יחס ' . round($x['rr'], 2) . '.'
+                    : 'הגבול הקרוב של אזור ה' . ($lg ? 'התנגדות הבא מעל' : 'תמיכה הבא מתחת') . ' (M2), יחס ' . round($x['rr'], 2) . '.']];
+        }
+        [$scen, $proj] = $g && $this->scenario ? ts_fib_scenario($g, $alive ? $x : null, $candles[count($candles) - 1], $tf, $bars) : [[], []];
+        $items = [...$items, ...$scen];
+        $ov = ['as_of' => $last, 'range' => ['from' => $first, 'to' => $last], 'items' => $items, 'projection' => ['bars' => $bars, 'scenarios' => $proj]];
+        if (!$items) $ov['note'] = $g ? 'אין כרגע אזור חפיפה ולא רמות' : 'אין מספיק נרות לחישוב';
+        return $ov;
+    }
+}

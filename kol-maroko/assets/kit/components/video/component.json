@@ -1,0 +1,14 @@
+{
+  "name": "video",
+  "label": "וידאו מקובץ",
+  "icon": "🎬",
+  "category": "מדיה",
+  "fields": [
+    {"id": "src", "label": "קובץ הווידאו", "control": "media", "target": {"src": ".kol-video__el"}},
+    {"id": "poster", "label": "תמונת פתיחה", "control": "media", "target": {"src": ".kol-video__el", "attr": "poster"}},
+    {"id": "controls", "label": "כפתורי שליטה", "control": "toggle", "target": {"attr": "controls", "on": ".kol-video__el"}},
+    {"id": "loop", "label": "בלולאה", "control": "toggle", "target": {"attr": "loop", "on": ".kol-video__el"}},
+    {"id": "muted", "label": "מושתק (חובה להפעלה אוטומטית)", "control": "toggle", "target": {"attr": "muted", "on": ".kol-video__el"}},
+    {"id": "autoplay", "label": "הפעלה אוטומטית", "control": "toggle", "target": {"attr": "autoplay", "on": ".kol-video__el"}}
+  ]
+}

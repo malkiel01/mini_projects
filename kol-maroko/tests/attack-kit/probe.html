@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>H11 · קובץ מהחבילה בלשונית משלו</title>
+<p>H11 — הקובץ הזה נפתח ישירות בכתובת שלו. גם כאן: מקור אטום.</p>
+<script>
+var r = { origin: self.origin };
+try { void document.cookie; r.cookie = 'read'; } catch (e) { r.cookie = 'throw'; }
+try { localStorage.getItem('x'); r.storage = 'read'; } catch (e) { r.storage = 'throw'; }
+console.log('KOLKIT-PROBE ' + JSON.stringify(r));
+document.title = 'probe ' + r.origin;
+</script>

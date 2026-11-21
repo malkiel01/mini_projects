@@ -1,0 +1,13 @@
+{
+  "name": "read-more",
+  "label": "קרא עוד",
+  "icon": "📖",
+  "category": "תוכן",
+  "fields": [
+    {"id": "height", "label": "גובה מקופל", "control": "size", "target": {"var": "--kol-more-h"}},
+    {"id": "accent", "label": "צבע הכפתור", "control": "color", "target": {"var": "--kol-more-accent"}}
+  ],
+  "states": [
+    {"id": "more", "label": "קרא עוד", "options": [{"label": "מקופל", "root": "is-ready"}, {"label": "פתוח", "root": "is-ready is-open"}]}
+  ]
+}

@@ -3,15 +3,19 @@
   "name": "קול מרוקו",
   "icon": "🎙️",
   "icon_svg": "assets/icon.svg",
-  "description": "סטודיו עריכה חזותי לעמוד קול מרוקו באתר מגרב: טקסטים, תמונות, הקלטות ועוזר בינה — טיוטה, ופרסום חתום לאתר.",
+  "description": "עורך חזותי וקוד לעמוד קול מרוקו באתר מגרב: פרויקט קבצים, מילים, הקלטות ועוזר בינה — בנייה ופרסום חתום לאתר.",
   "category": "web",
-  "entry": "index.html",
+  "entry": "index.php",
   "gate": true,
   "restricted": true,
-  "version": "0.15",
+  "version": "0.16",
+  "provision": { "key_url": "https://mbe-plus.com/mini_projects/kol-maroko/api.php?action=platform_key" },
+  "grant_status": { "key_url": "https://mbe-plus.com/mini_projects/kol-maroko/api.php?action=platform_key" },
   "public": [
-    "api.php?action=embed_key|media|devapi-feed|devapi-comment|devapi-file|devapi-attach",
+    "api.php?action=embed_key|media|platform_key|devapi-feed|devapi-comment|devapi-file|devapi-attach",
     "agent.php",
-    "preview/index.php"
+    "preview/index.php",
+    "form.php",
+    "pull.php"
   ]
 }

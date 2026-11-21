@@ -1,0 +1,195 @@
+{
+  "note": "מתעדכן בידי צ'אט הבקרה",
+  "spec": {
+    "session": "session_018g4NYCncy2ZT4VJy4H1EFh",
+    "model": "claude-opus-5-5",
+    "pr": "#1670 (2.28)"
+  },
+  "code": {
+    "session": "session_018g4NYFDbCXUe2YE98dU6aG",
+    "slice": "L6",
+    "branch": "claude/trading-strategies-learning-l6"
+  },
+  "control": "session_018g4NYDrFHGumG4hGvNK11M",
+  "tasks": null,
+  "clock": "trig_01AhicpPsrrfEGR4f97H9K4K (דקה 28, נוצר בידי מנהל הצוותים (5); של בקרה 7 trig_01FLjvXemEmKVuyfZbh9oGqH כבוי)",
+  "code_previous": [
+    {
+      "session": "session_018g4NYDzGyUVdfFLtGcVpLr",
+      "done": "4א/4 אומת, #1581 שם, #1580 4א/5",
+      "model": "claude-haiku-5-5 (טעות פתיחה) — רדום"
+    },
+    {
+      "session": "session_018g4NYGrqqR7BTByrKbVovy",
+      "done": "#1591, #1592, #1595 S1; handoff #1596",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYG7sBtHJh6uW5fLyxh",
+      "done": "#1598 S3, #1599 S1.1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCMUPJKcJaE5QK2TYs",
+      "done": "#1601 F1",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCGcBnrLJ86NSM4bh1",
+      "done": "#1603 S1.2; handoff #1604",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYEqqFf5DTC33BEFxAS",
+      "done": "#1605 S4; handoff #1606",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYE8YZGBZvopSjFJYG7",
+      "done": "#1608 S5; handoff #1610",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYCtoJQjiN4ojLGwKMh",
+      "done": "#1611 S6; handoff #1613",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYDT3XMHmjb6sxQf6nU",
+      "done": "#1615 S7 + method_colors 2.20",
+      "model": "claude-opus-5-5 — רדום אחרי handoff"
+    },
+    {
+      "session": "session_018g4NYE8kDskU8RmVtkTf3g",
+      "done": "#1618 A1 DevLoop",
+      "model": "claude-opus-5-5 — רדום אחרי handoff"
+    },
+    {
+      "session": "session_018g4NYDGPpCv1Pc3LgfvmVx",
+      "done": "#1623 A2; handoff #1624",
+      "model": "claude-opus-5-5 — רדום"
+    },
+    {
+      "session": "session_018g4NYDfNSRC7LtU7guPJPm",
+      "done": "#1627/#1629 21.1, #1630 21.2; handoff #1633",
+      "model": "claude-opus-5-5 — רדום (420K)"
+    },
+    {
+      "session": "session_018g4NYEoXMKKD28MYYmYaoC",
+      "done": "#1642 21.3 (סבב 2); handoff #1644 — יצא (392K)",
+      "model": "claude-opus-5-5 — יצא (392K)"
+    },
+    {
+      "session": "session_018g4NYDnBi3cR5V4TF8WRTm",
+      "slice": "תיקון רעידה ב-tests/market-api.php (מפתחות בדיקה בלי חלון hex)",
+      "model": "claude-opus-5-5",
+      "opened_by": "בקרה (6) — עומק 5",
+      "branch": "claude/trading-strategies-flaky-key-test",
+      "done": "#1646 — רדום"
+    },
+    {
+      "session": "session_018g4NYE8aJBheQh1TYiJZ3U",
+      "slice": "F-1 פיבונאצ'י — ממצא ואותות (פרק 22, 2.27)",
+      "model": "claude-opus-5-5",
+      "opened_by": "בקרה (6)",
+      "branch": "claude/trading-strategies-fib-f1",
+      "done": "#1662 F-1 מוזג — רדום (405K)"
+    },
+    {
+      "session": "session_018g4NYDmuLFFgimdfuLJDXu",
+      "done": "R1 #1702 #1705, L2 #1711; handoff #1712",
+      "model": "claude-opus-5-5 — עצר 517K"
+    },
+    {
+      "session": "session_018g4NYD31tzjkYLHiBm7wB9",
+      "done": "L3 #1703, L4 #1706, L5 #1707, L5b #1709",
+      "model": "claude-opus-5-5 — עצר 780K"
+    },
+    {
+      "session": "session_018g4NYCUP7cVpomeNea75ED",
+      "done": "T1 #1701",
+      "model": "claude-opus-5-5 — רדום 476K"
+    },
+    {
+      "session": "session_018g4NYE77z3nwXHs1csCsNw",
+      "done": "F-1..F-3, learn #1700, tip #1704, learn_params #1710",
+      "model": "claude-opus-5-5 — סיים 533K"
+    }
+  ],
+  "control_previous": [
+    {
+      "session": "session_018g4NYD5bBLt7vBTVv77Nbn",
+      "done": "עד #1589, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYCfKgd2Qi5hvnpDFRU",
+      "done": "#1590–#1607, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYE6Q5mocKiUUxqKEyR",
+      "done": "#1608–#1622, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYDsD5GNc3L8rqyUQ4B",
+      "done": "#1623–#1629, ביקורת 21.2 סבב 1, מסירה ב-STATE"
+    },
+    {
+      "session": "session_018g4NYEtPnhDAxdzNLibMdV",
+      "done": "#1630–#1645, 21.2–21.3, מסירה ב-STATE (306K)"
+    },
+    {
+      "session": "session_018g4NYEHws3rFjuBNuDFXRb",
+      "done": "#1646–#1658, הספר השני (פיבונאצ'י), F-1 נפתח; רדומה — מחזיקה את קובץ הספר"
+    },
+    {
+      "session": "session_018g4NYFqH3tqWT9nYnCRNjr",
+      "done": "#1662–#1700: פיבונאצ'י F-1..F-3, L1 מסך מלא, 500, חובות, למידה L1, אפיון 2.28–2.36; מסירה ב-STATE (476K)"
+    },
+    "session_018g4NYFqH3tqWT9nYnCRNjr (בקרה 7, 476K)"
+  ],
+  "code_delete": {
+    "session": "session_018g4NYCQjLZtvssney3gT8G",
+    "slice": "מחיקה לפי פרק 19.1",
+    "model": "claude-opus-5-5",
+    "done": "#1590 מוזג — רדום"
+  },
+  "spec_previous": [
+    {
+      "session": "session_018g4NYGqhdYWYDScrU8eZxq",
+      "done": "עד 2.24 (#1626), מסירה ב-log/spec.md (3800d7b)"
+    }
+  ],
+  "code_ui": {
+    "session": "session_018g4NYFBXRXUgrtr3eQuDpT",
+    "slice": "מסך מלא לרוחב (בקשת הבעלים, אפיון 2.30)",
+    "model": "claude-opus-5-5",
+    "opened_by": "בקרה (7)",
+    "branch": "claude/trading-strategies-chart-landscape",
+    "done": "#1674 מוזג, אומת success — רדום"
+  },
+  "code_parallel": [
+    {
+      "session": "session_018g4NYE77z3nwXHs1csCsNw",
+      "slice": "F-3 פיבונאצ'י (אחרי F-2 #1685)",
+      "branch": "claude/trading-strategies-fib-f3"
+    },
+    {
+      "session": "session_018g4NYCUP7cVpomeNea75ED",
+      "slice": "חלונית הסבר T1 (18.1.6) — אחרי חובות #1681",
+      "branch": "claude/trading-strategies-chart-tip"
+    },
+    {
+      "session": "session_018g4NYD31tzjkYLHiBm7wB9",
+      "slice": "למידה L1 (פרק 23) — אחרי #1686, #1692",
+      "branch": "claude/trading-strategies-learning-l1"
+    },
+    {
+      "session": "session_018g4NYDmuLFFgimdfuLJDXu",
+      "slice": "הרשאות R1 (פרק 24)",
+      "branch": "claude/trading-strategies-roles-r1"
+    }
+  ],
+  "code_active": {
+    "L6": "session_018g4NYFDbCXUe2YE98dU6aG (claude/trading-strategies-learning-l6)"
+  }
+}

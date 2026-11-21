@@ -4,7 +4,8 @@
  *
  * נקודות שחזור — צילום מלא של מה שבכלי: הטיוטה, המילים, הנושאים, קבצי הקוד, ה-CSS/JS שיובאו ומצב הקבצים
  * (פעיל / בסל). נוצרות אוטומטית לפני פעולות של צ'אט, לפני כל ייבוא ופעולה גורפת, ופעם ביום; וידנית. כל רכיב נשמר
- * פעם אחת לפי התוכן שלו (blobs, דחוס) — 1,500 מילים שלא השתנו לא נשמרות שוב. נקודות לא נמחקות לעולם (אין API).
+ * פעם אחת לפי התוכן שלו (blobs, דחוס) — 1,500 מילים שלא השתנו לא נשמרות שוב. נקודות לא נמחקות — חוץ מ"איפוס"
+ * (R5): רק בעל האתר, באישור מפורש, יוצר נקודת "מקור" (kind = origin) של המצב הנוכחי ומוחק את כל השאר.
  * שחזור יוצר קודם נקודה של המצב הנוכחי — ולכן גם שחזור ניתן לביטול, בדיוק (בייט בבייט).
  *
  * סל המחזור — קבצים, מילים ופעולות על נושאים. מחיקה = לסל; מחיקה סופית רק משם, רק לבעלים ובאישור מפורש. קובץ
@@ -51,6 +52,9 @@ function snap_state(): array
         'draft' => (string)draft_row()['json'],
         'words' => $j($pdo->query('SELECT * FROM words ORDER BY id')->fetchAll()),
         'topics' => $j($pdo->query('SELECT * FROM topics ORDER BY slug')->fetchAll()),
+        'fields' => $j($pdo->query('SELECT * FROM word_fields ORDER BY key')->fetchAll()),         // N2: מבנה המילה
+        'lists' => $j(['lists' => $pdo->query('SELECT * FROM lists ORDER BY key')->fetchAll(), 'fields' => $pdo->query('SELECT * FROM list_fields ORDER BY list, key')->fetchAll(),
+            'items' => $pdo->query('SELECT * FROM list_items ORDER BY list, id')->fetchAll()]),                              // N3: הרשימות
         'code' => $j($pdo->query('SELECT * FROM code_files ORDER BY path')->fetchAll()),
         'settings' => $j($settings),
         'files' => $j($pdo->query('SELECT id, deleted_at, deleted_by FROM files ORDER BY id')->fetchAll()),
@@ -70,18 +74,21 @@ function snap_fingerprint(): string
 
 // ── נקודות ────────────────────────────────────────────────
 
-/** נקודה חדשה. מצב זהה לנקודה האחרונה — לא נוצרת שנייה (חוזרת האחרונה). */
-function snapshot_create(array $user, string $reason, string $kind = 'auto'): int
+const SNAP_ORIGIN = 'origin';            // R5: נקודת "מקור" — אחת לכל היותר; לא נמחקת בשום ניקוי, רק מוחלפת באיפוס הבא
+
+/** נקודה חדשה. מצב זהה לנקודה האחרונה — לא נוצרת שנייה (חוזרת האחרונה), אלא אם $force. */
+function snapshot_create(array $user, string $reason, string $kind = 'auto', bool $force = false): int
 {
     $parts = snap_parts();
     $pdo = db();
     $last = $pdo->query('SELECT id, parts FROM snapshots ORDER BY id DESC LIMIT 1')->fetch();
-    if ($last && json_decode($last['parts'], true) == $parts) return (int)$last['id'];
+    if (!$force && $last && json_decode($last['parts'], true) == $parts) return (int)$last['id'];
     $meta = [
         'words' => (int)$pdo->query('SELECT COUNT(*) FROM words')->fetchColumn(),
         'code' => (int)$pdo->query('SELECT COUNT(*) FROM code_files')->fetchColumn(),
         'files' => (int)$pdo->query('SELECT COUNT(*) FROM files WHERE deleted_at IS NULL')->fetchColumn(),
         'rev' => (int)draft_row()['rev'],
+        'project' => isset($parts['project']),                              // R5: האם הנקודה כוללת את קובצי העמוד
     ];
     $pdo->prepare('INSERT INTO snapshots (at, sub, name, reason, kind, parts, meta) VALUES (?, ?, ?, ?, ?, ?, ?)')
         ->execute([now_iso(), $user['sub'], $user['name'], mb_substr($reason, 0, 200), $kind, json_encode($parts), json_encode($meta)]);
@@ -104,12 +111,60 @@ function snapshot_daily(): void
     snapshot_create(['sub' => 'system', 'name' => 'אוטומטי'], 'נקודה יומית', 'daily');
 }
 
+/** הרשימה: נקודת "מקור" ראשונה, ואחריה מהחדשה לישנה. project — האם יש בה את קובצי העמוד (נקודה מלפני F2a — אין). */
 function snapshots_list(array $q): array
 {
     $off = max(0, (int)($q['offset'] ?? 0));
-    $rows = db()->query('SELECT id, at, name, reason, kind, meta FROM snapshots ORDER BY id DESC LIMIT 50 OFFSET ' . $off)->fetchAll();
-    return ['snapshots' => array_map(fn($r) => ['id' => (int)$r['id'], 'meta' => json_decode($r['meta'], true)] + $r, $rows),
-        'total' => (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'offset' => $off];
+    $rows = db()->query("SELECT id, at, name, reason, kind, meta, parts FROM snapshots ORDER BY (kind = 'origin') DESC, id DESC LIMIT 50 OFFSET " . $off)->fetchAll();
+    return ['snapshots' => array_map(function ($r) {
+        $parts = json_decode($r['parts'], true) ?: [];
+        unset($r['parts']);
+        // M6: legacy — הנקודה כוללת גם את הטיוטה של הסטודיו הישן (נכתבת חזרה בשחזור, ואין לה מסך)
+        return ['id' => (int)$r['id'], 'meta' => json_decode($r['meta'], true), 'project' => isset($parts['project']), 'legacy' => isset($parts['draft'])] + $r;
+    }, $rows), 'total' => (int)db()->query('SELECT COUNT(*) FROM snapshots')->fetchColumn(), 'offset' => $off];
+}
+
+/**
+ * R6: עסקה שקוראת ואחר כך כותבת. ב-DEFERRED (beginTransaction) הכתיבה הראשונה אחרי קריאה נכשלת מיד ב-"database is locked"
+ * (SQLITE_BUSY_SNAPSHOT, בלי busy_timeout) אם בקשה אחרת כתבה בינתיים — כך נפל האיפוס כשהיומן (KolUi) נכתב במקביל.
+ * כתיבה ריקה לפני כל קריאה לוקחת את נעילת הכתיבה וממתינה לפי busy_timeout. לא BEGIN IMMEDIATE ב-exec: אז inTransaction()
+ * מחזיר false, ו-pf_tx שבתוך השחזור היה פותח עסקה שנייה.
+ */
+function snap_tx_begin(PDO $pdo): void
+{
+    $pdo->beginTransaction();
+    $pdo->exec('UPDATE draft SET rev = rev WHERE id = 1');
+}
+
+/**
+ * R5 — איפוס (הבעלים, 15.11: "נאפס את נקודות השחזור, וניצור נקודת שחזור למקור, ומכאן נתחיל דף חדש").
+ * רק בעל האתר, רק עם confirm: true. בעסקה אחת: נקודת "מקור" של המצב הנוכחי, מחיקת כל שאר הנקודות (גם "מקור" קודם),
+ * ומחיקת התוכן (blobs) שאף נקודה שנשארה לא מפנה אליו. קובצי הפרויקט עצמם (pf, על הדיסק) — לא נוגעים בהם.
+ */
+function snapshots_reset(array $user, array $b): array
+{
+    if (!role_at_least($user, 'site_owner')) throw new ApiError('איפוס נקודות השחזור — רק בעל האתר', 403);
+    if (($b['confirm'] ?? null) !== true) throw new ApiError('איפוס נקודות השחזור דורש אישור מפורש');
+    $l = lock_state();
+    if ($l && $l['sub'] !== $user['sub']) throw new ApiError("הטיוטה בעריכה אצל {$l['name']}. אחרי שיסיים — שוב", 423);
+    $pdo = db();
+    snap_tx_begin($pdo);
+    try {
+        $before = (int)$pdo->query('SELECT COUNT(*) FROM snapshots')->fetchColumn();
+        $id = snapshot_create($user, 'מקור', SNAP_ORIGIN, true);
+        $pdo->prepare('DELETE FROM snapshots WHERE id <> ?')->execute([$id]);
+        // R6: משתנה אחד (json_each) — בלי "?" לכל גוש, כך שאין תקרה של מספר משתנים ב-SQLite (999 / 32766)
+        $keep = array_values(array_filter(json_decode((string)snapshot_row($id)['parts'], true) ?: [], 'is_string'));
+        $del = $pdo->prepare('DELETE FROM blobs WHERE sha NOT IN (SELECT value FROM json_each(?))');
+        $del->execute([json_encode($keep)]);
+        $blobs = $del->rowCount();
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        throw $e;
+    }
+    audit_as($user, 'snapshots_reset', "נמחקו $before נקודות · נוצרה נקודת מקור #$id");
+    return ['origin' => $id, 'deleted' => $before, 'blobs' => $blobs] + snapshots_list([]);
 }
 
 function snapshot_row(int $id): array
@@ -117,20 +172,6 @@ function snapshot_row(int $id): array
     $st = db()->prepare('SELECT * FROM snapshots WHERE id = ?');
     $st->execute([$id]);
     return $st->fetch() ?: throw new ApiError('הנקודה לא נמצאה', 404);
-}
-
-/** תצוגה של נקודה: העמוד שלה, עם המילים וקבצי הקוד שלה. */
-function snapshot_preview(array $q): array
-{
-    $s = snapshot_row((int)($q['id'] ?? 0));
-    $p = json_decode($s['parts'], true);
-    $words = array_map(fn($w) => ['id' => (int)$w['id'], 'wp_id' => $w['wp_id'] === null ? null : (int)$w['wp_id'], 'word' => $w['word'], 'meaning' => $w['meaning'],
-        'topics' => json_decode($w['topics'], true) ?: [], 'audio' => $w['audio'], 'external_id' => $w['external_id']], json_decode(blob_get($p['words']), true));
-    $code = json_decode(blob_get($p['code']), true);
-    $GLOBALS['kol_words'] = lex_sort($words, 'word');
-    $GLOBALS['kol_code'] = $code ? array_column($code, 'content', 'path') : null;
-    try { return page_render(page_normalize(json_decode(blob_get($p['draft']), true)), true); }
-    finally { unset($GLOBALS['kol_words'], $GLOBALS['kol_code']); }
 }
 
 /** החזרת המצב של נקודה. קודם — נקודה של המצב הנוכחי (כך שגם השחזור ניתן לביטול). */
@@ -158,16 +199,25 @@ function snapshot_apply(array $user, array $parts, string $note): array
         }
     };
     $missing = [];
-    $pdo->beginTransaction();
+    snap_tx_begin($pdo);
     try {
         $d = draft_row();
         $json = blob_get($parts['draft']);
         if ($json !== $d['json']) {
-            revision_add($user, $d['json'], (int)$d['rev'], 'לפני ' . $note);
+            // M6: הטיוטה הישנה — אין לה מסך; נכתבת חזרה כמו תמיד, והקודמת נשמרת בהיסטוריה שלה (הוספה בלבד, בלי ניקוי)
+            $pdo->prepare('INSERT INTO revisions (at, ts, sub, name, rev, json, note) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([now_iso(), time(), $user['sub'], $user['name'], (int)$d['rev'], $d['json'], 'לפני ' . $note]);
             $pdo->prepare('UPDATE draft SET json = ?, rev = rev + 1, updated_by = ?, updated_at = ? WHERE id = 1')->execute([$json, $user['sub'], now_iso()]);
         }
         $put('words', $rows('words'));
         $put('topics', $rows('topics'));
+        if (isset($parts['fields'])) $put('word_fields', $rows('fields'));        // נקודה מלפני N2 — המבנה נשאר כמו שהוא
+        if (isset($parts['lists'])) {                                            // נקודה מלפני N3 — הרשימות נשארות כמו שהן
+            $ls = $rows('lists');
+            $put('lists', $ls['lists'] ?? []);
+            $put('list_fields', $ls['fields'] ?? []);
+            $put('list_items', $ls['items'] ?? []);
+        }
         $put('code_files', $rows('code'));
         foreach (json_decode(blob_get($parts['settings']), true) ?: [] as $k => $v) {
             if (!in_array($k, SNAP_SETTINGS, true)) continue;
@@ -211,7 +261,11 @@ function trash_list(): array
         $pdo->query('SELECT id, at, by_name, row FROM words_trash ORDER BY id DESC LIMIT 500')->fetchAll());
     $topics = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'op' => $r['op'], 'name' => $r['name'], 'to' => $r['to_name'],
         'words' => count(json_decode($r['before'], true) ?: [])], $pdo->query('SELECT * FROM topic_trash ORDER BY id DESC LIMIT 500')->fetchAll());
-    return ['files' => $files, 'words' => $words, 'topics' => $topics];
+    // N2: שדה שנמחק — עם מספר הערכים שנשמרו איתו
+    $fields = array_map(fn($r) => ['id' => (int)$r['id'], 'at' => $r['at'], 'by' => $r['by_name'], 'key' => json_decode($r['field'], true)['key'] ?? '?',
+        'label' => json_decode($r['field'], true)['label'] ?? '?', 'values' => count(json_decode($r['vals'], true) ?: [])], $pdo->query('SELECT * FROM field_trash ORDER BY id DESC LIMIT 500')->fetchAll());
+    require_once __DIR__ . '/forms.php';
+    return ['files' => $files, 'words' => $words, 'topics' => $topics, 'fields' => $fields, 'forms' => forms_trash_list(), 'lists' => list_trash_list()];     // M5: פניות — אצוות; N3: רשימות
 }
 
 function trash_restore(array $user, array $b): array
@@ -243,10 +297,29 @@ function trash_restore(array $user, array $b): array
         $t = $st->fetch() ?: throw new ApiError('לא נמצא בסל', 404);
         $upd = $pdo->prepare('UPDATE words SET topics = ?, updated_at = ?, updated_by = ? WHERE id = ?');
         foreach (json_decode($t['before'], true) ?: [] as $wid => $topics) $upd->execute([json_encode($topics, JSON_UNESCAPED_UNICODE), now_iso(), $user['name'], (int)$wid]);
-        $map = topic_slugs();
-        $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($t['name'], $map), $t['name']]);
+        $row = isset($t['row']) && $t['row'] !== null ? json_decode($t['row'], true) : null;
+        $free = $pdo->prepare('SELECT 1 FROM topics WHERE slug = ? OR name = ?');
+        if (is_array($row) && isset($row['slug'], $row['name'])) {          // N2: ה-slug והמאפיינים כמו שהיו (הסרה / מיזוג)
+            $free->execute([$row['slug'], $row['name']]);
+            if (!$free->fetchColumn()) {
+                $cols = array_keys($row);
+                $pdo->prepare('INSERT INTO topics (' . implode(',', $cols) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')')->execute(array_values($row));
+            }
+        } else {
+            $map = topic_slugs();
+            $pdo->prepare('INSERT OR IGNORE INTO topics (slug, name) VALUES (?, ?)')->execute([topic_slug($t['name'], $map), $t['name']]);
+        }
         $pdo->prepare('DELETE FROM topic_trash WHERE id = ?')->execute([(int)$id]);
         audit_as($user, 'trash_restore', 'נושא · ' . $t['name']);
+    } elseif ($kind === 'field') {
+        $detail = pf_tx(fn() => field_trash_restore($user, (int)$id));
+        audit_as($user, 'trash_restore', $detail);
+    } elseif ($kind === 'list') {                                          // N3: רשימה / שדה ברשימה / פריט
+        $detail = pf_tx(fn() => list_trash_restore($user, (int)$id));
+        audit_as($user, 'trash_restore', $detail);
+    } elseif ($kind === 'form') {                                          // M5: פניות (lib/forms.php) — אצווה שלמה, מפרסם ומעלה
+        require_once __DIR__ . '/forms.php';
+        forms_trash_restore($user, (int)$id);
     } else {
         throw new ApiError('בקשה לא תקינה');
     }
@@ -261,14 +334,18 @@ function trash_purge(array $owner, array $b): array
     if (($b['confirm'] ?? null) !== true) throw new ApiError('מחיקה סופית דורשת אישור מפורש');
     if ($kind === 'file') {
         $f = file_row((string)($b['id'] ?? ''));
+        file_guard_source($owner, $f);                                     // R2: קובץ מקור — רק בעל האתר
         if (!$f['deleted_at']) throw new ApiError('אפשר למחוק סופית רק מהסל');
         if (file_in_versions($f['id'])) throw new ApiError('גרסה שמורה מפנה לקובץ הזה — הוא לא נמחק סופית', 409);
         $pdo->prepare('DELETE FROM files WHERE id = ?')->execute([$f['id']]);
         @unlink(file_path($f));
         audit_as($owner, 'trash_purge', 'קובץ · ' . $f['name']);
-    } elseif ($kind === 'word' || $kind === 'topic') {
-        $pdo->prepare('DELETE FROM ' . ($kind === 'word' ? 'words_trash' : 'topic_trash') . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
-        audit_as($owner, 'trash_purge', $kind === 'word' ? 'מילה' : 'נושא');
+    } elseif ($kind === 'word' || $kind === 'topic' || $kind === 'field' || $kind === 'list') {
+        $pdo->prepare('DELETE FROM ' . ['word' => 'words_trash', 'topic' => 'topic_trash', 'field' => 'field_trash', 'list' => 'list_trash'][$kind] . ' WHERE id = ?')->execute([(int)($b['id'] ?? 0)]);
+        audit_as($owner, 'trash_purge', ['word' => 'מילה', 'topic' => 'נושא', 'field' => 'שדה', 'list' => 'רשימה / פריט ברשימה'][$kind]);
+    } elseif ($kind === 'form') {                                          // M5
+        require_once __DIR__ . '/forms.php';
+        forms_trash_purge($owner, (int)($b['id'] ?? 0));
     } else {
         throw new ApiError('בקשה לא תקינה');
     }

@@ -44,16 +44,20 @@ function call(string $as, string $action, ?array $body = null, array $query = []
 }
 foreach (['alice', 'bob', 'carol', 'owner', 'dave'] as $u) $tokens[$u] = call($u, 'me')[1]['csrf'];
 
-// תווים אקראיים — בלי מילים שמופיעות בתשובות ממילא (שם, פעולה), אחרת החיפוש של 5 תווים מוצא "דליפה" שאינה
-$KEYS = ['alice' => 'good-Qz7f3a9c21e5', 'bob' => 'good-Wx0b44d1e9aa', 'admin' => 'good-Rk55c0f9e42',
+// תווים אקראיים — בלי מילים שמופיעות בתשובות ממילא (שם, פעולה), אחרת החיפוש של 5 תווים מוצא "דליפה" שאינה.
+// ובכל חלון של 5 תווים יש תו שאינו hex: התשובות מלאות מזהים וגיבובים אקראיים ב-hex, ורצף hex של המפתח
+// נמצא בהם במקרה (ריצה 1711: '5c0f9' מתוך המפתח של admin) — והבדיקה נפלה בלי דליפה.
+$KEYS = ['alice' => 'good-Qz7Wf3Ka9Rc21Pe5', 'bob' => 'good-Wx0Nb4Td1Me9Ja', 'admin' => 'good-Rk5Sc0Vf9Ue4Z2',
     'bad' => 'bad-Jv8TqLmZ3pXy'];
+foreach ($KEYS as $who => $k) for ($i = 0; $i + 5 <= strlen($k); $i++)
+    if (ctype_xdigit(substr($k, $i, 5))) { echo "FAIL: key «{$who}» has an all-hex 5-char run — a random id could match it\n"; exit(1); }
 $now = time();
 
 // ── מפתחות ובידוד ───────────────────────────────────────
 [$c, $r] = call('alice', 'cred_save', ['provider' => 'twelvedata', 'secret' => $KEYS['alice'], 'label' => 'שלי']);
 eq($c, 200, 'alice saves a Twelve Data key (tested first)');
 $td = array_values(array_filter($r['providers'], fn($p) => $p['id'] === 'twelvedata'))[0];
-eq([$td['available'], $td['source'], $td['own']['last4'], $td['own']['last_test_ok']], [true, 'own', '21e5', true], 'shown as connected, last 4 only');
+eq([$td['available'], $td['source'], $td['own']['last4'], $td['own']['last_test_ok']], [true, 'own', '1Pe5', true], 'shown as connected, last 4 only');
 [$c, $r] = call('alice', 'cred_save', ['provider' => 'finnhub', 'secret' => $KEYS['bad']]);
 eq($c, 422, 'bad key refused, not saved');
 eq(is_string($r['error'] ?? null) && $r['error'] !== '', true, 'with a message');
@@ -63,7 +67,7 @@ eq([$bp['twelvedata']['available'], $bp['twelvedata']['own']], [false, null], 'b
 eq(call('bob', 'market_candles', null, ['asset' => 'twelvedata:AAPL', 'tf' => 'h1'])[0], 422, 'bob cannot fetch via alice\'s key');
 eq(call('bob', 'cred_delete', ['provider' => 'twelvedata'])[0], 404, 'bob cannot delete alice\'s key');
 eq(call('bob', 'cred_test', ['provider' => 'twelvedata'])[0], 404, 'bob cannot test alice\'s key');
-eq(call('alice', 'market_providers')[1]['providers'][1]['own']['last4'] ?? null, '21e5', 'alice\'s key untouched');
+eq(call('alice', 'market_providers')[1]['providers'][1]['own']['last4'] ?? null, '1Pe5', 'alice\'s key untouched');
 
 call('alice', 'watchlist_add', ['asset' => 'binance:BTCUSDT']);
 eq(call('bob', 'watchlist')[1]['watchlist'], [], 'bob does not see alice\'s watchlist');
@@ -76,7 +80,8 @@ $q = ['tf' => 'h1', 'from' => $now - 24 * 3600, 'to' => $now];
 eq(call('alice', 'market_candles', null, $q + ['asset' => 'twelvedata:AAPL'])[1]['provider_calls'], 1, 'alice fetches with her key');
 call('bob', 'cred_save', ['provider' => 'twelvedata', 'secret' => $KEYS['bob']]);
 [$c, $r] = call('bob', 'market_candles', null, $q + ['asset' => 'twelvedata:AAPL']);
-eq([$c, $r['provider_calls'], $r['source']], [200, 1, 'own'], 'bob\'s request goes to the provider with his key — alice\'s personal data is not served to him');
+// 21.3 (✅31): Twelve Data — מאגר משותף. מה שאליס משכה במפתח שלה מוגש לבוב מהמאגר, בלי פנייה לספק
+eq([$c, $r['provider_calls'], count($r['candles']) > 0], [200, 0, true], '21.3 criterion 2: alice fetched with her own key → bob is served from the shared pool, no provider call');
 eq(call('alice', 'market_candles', null, $q + ['asset' => 'binance:BTCUSDT'])[1]['provider_calls'], 1, 'keyless asset: first fetch');
 eq(call('bob', 'market_candles', null, $q + ['asset' => 'binance:BTCUSDT'])[1]['provider_calls'], 0, 'keyless asset: shared pool for bob');
 
@@ -95,6 +100,23 @@ eq(call('owner', 'admin_role_add', ['user_id' => $carolId])[0], 200, 'primary ap
 eq(call('carol', 'admin_state')[0], 200, 'carol is admin');
 eq(call('carol', 'admin_role_add', ['user_id' => 2])[0], 403, 'non-primary admin cannot appoint');
 eq(call('carol', 'admin_shared_switch', ['on' => true])[0], 403, 'non-primary admin cannot flip the master switch');
+// מפתח האפליקציה (21.3 קריטריון 9): רק המנהל הראשי מסמן
+[, $r] = call('owner', 'admin_cred_save', ['provider' => 'twelvedata', 'secret' => 'good-AppK3y77zz', 'label' => 'אפליקציה']);
+$appId = end($r['creds'])['id'];
+eq(call('carol', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => $appId])[0], 403, '21.3 criterion 9: a non-primary admin cannot mark the app key');
+eq(call('alice', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => $appId])[0], 403, 'a regular user cannot either');
+eq(call('owner', 'admin_state')[1]['app_keys']['twelvedata']['cred_id'], null, 'nothing marked by the 403 attempts');
+eq(call('owner', 'admin_app_key', ['provider' => 'finnhub', 'cred_id' => $appId])[0], 422, 'no app key for a personal-only provider (finnhub)');
+[$c, $r] = call('owner', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => $appId]);
+eq([$c, $r['app_keys']['twelvedata']], [200, ['cred_id' => $appId, 'user_limit' => 100]], 'primary admin marks the app key (100 a day per user by default)');
+$dp = array_column(call('dave', 'market_providers')[1]['providers'], null, 'id')['twelvedata'];
+eq([$dp['available'], $dp['source'], $dp['app_key']], [true, 'app', true], 'dave (no key) now reaches Twelve Data through the app key');
+eq(call('owner', 'admin_app_key', ['provider' => 'twelvedata', 'cred_id' => $appId, 'user_limit' => 250])[1]['app_keys']['twelvedata']['user_limit'], 250, 'primary admin changes the per-user limit');
+call('owner', 'admin_cred_delete', ['id' => $appId]);
+$dp = array_column(call('dave', 'market_providers')[1]['providers'], null, 'id')['twelvedata'];
+eq([call('owner', 'admin_state')[1]['app_keys']['twelvedata']['cred_id'], $dp['available'], $dp['pool']], [null, false, true],
+    '21.3 criterion 9: deleting the key → no app key (dave is back to the shared pool only)');
+eq(call('alice', 'prefill_set', ['on' => false])[0], 404, '21.3 criterion 8: prefill_set is gone (404)');
 eq(call('owner', 'admin_role_remove', ['user_id' => $carolId])[0], 200, 'primary revokes carol');
 eq(call('carol', 'admin_state')[0], 403, 'revoked admin → 403 immediately');
 eq(call('carol', 'admin_cache_clear', [])[0], 403, 'revoked admin → 403 on writes too');
