@@ -523,7 +523,8 @@ async function viewCase(pid, tab) {
             <h2 class="sec-title">📑 ${C.profileTitle}</h2>
             <div class="summary"><div class="line"><span>${d.profile.pid ? `<a href="#/profiles/${d.profile.pid}">${esc(d.profile.name)}</a>` : esc(d.profile.name)}</span><span class="chip">${esc(P.versionN(d.profile.version))}</span></div>
               <div class="line muted">${C.keyDate}: ${c.key_date ? esc(fmtDate(c.key_date)) : C.unknown} · ${C.propertyType}: ${c.property_type ? esc(P.propertyTypes[c.property_type]) : C.unknown}</div></div>
-            ${d.plan.skipped.length ? `<h2 class="sec-title">${C.skippedTitle}</h2><ul class="list">${d.plan.skipped.map(s => `<li class="card static"><div class="body"><div class="l1"><span>${esc(s.title)}</span></div><div class="l2 wrap">${esc(s.reason)}</div></div></li>`).join('')}</ul>` : ''}`;
+            ${d.plan.skipped.length ? `<h2 class="sec-title">${C.skippedTitle}</h2><ul class="list">${d.plan.skipped.map(s => `<li class="card static"><div class="body"><div class="l1"><span>${esc(s.title)}</span></div><div class="l2 wrap">${esc(s.reason)}</div></div></li>`).join('')}</ul>` : ''}
+            <div id="case-ai"></div>`;
     } else if (cur === 'facts') {
         docs = await factsTab(pid);
         body = docs.html;
@@ -547,6 +548,7 @@ async function viewCase(pid, tab) {
         body = log.rows.length ? auditHtml(log.rows, r => esc((T.audit[r.action] || (() => r.action))(r)), r => esc(r.actor || C.system)) : `<p class="empty">${C.activityEmpty}</p>`;
     }
     App.main.innerHTML = head + body;
+    if (cur === 'overview') aiCaseSection(pid);   // בינה בתיק (11): "בלי בינה" ושימוש — נטען בנפרד, ואינו מעכב את המסך
     docs?.bind();
 
     $('#cstatus')?.addEventListener('click', () => {

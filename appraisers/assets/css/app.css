@@ -361,3 +361,12 @@ fieldset.f legend { font-weight: 600; font-size: .9rem; padding: 0; margin-botto
 .kconclusion { border-color: var(--brand); border-width: 2px; }
 .kconclusion .big { font-size: 1.25rem; }
 .summary .line.wrap { flex-wrap: wrap; white-space: normal; }
+
+/* בינה (11): מד מכסה — צהוב מ-80%, אדום בחריגה */
+.ai-meter { block-size: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-block: 6px 2px; }
+.ai-meter i { display: block; block-size: 100%; background: var(--ok); }
+.ai-meter.warn i { background: var(--star); }
+.ai-meter.over i { background: var(--danger); }
+.sec-title .btn.sm { margin-inline-start: var(--s2); font-weight: 400; }
+#aipolicy ul { margin: var(--s2) 0; padding-inline-start: 1.2em; display: grid; gap: 6px; font-size: .9rem; }
+#aipolicy p { font-size: .9rem; margin: 0 0 var(--s2); }
