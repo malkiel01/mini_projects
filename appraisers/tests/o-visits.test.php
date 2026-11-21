@@ -665,6 +665,65 @@ call('POST', 'visit-reopen', ['visit' => $V9, 'rev' => $rev($V9), 'reason' => '�
 eq([$vrow($V9)['status'], code($finish($avi, $V9, 'no_access', ['note' => 'x'])), code($finish($avi, $V9, 'postponed', ['note' => 'x'])), $vrow($V9)['status']], ['in_progress', 'visit_state', 'visit_state', 'in_progress'],
     '13-A6 ביקור שהושלם ונפתח מחדש אינו מסומן "לא הייתה גישה" או "נדחה" — המצב נגזר מכל ההיסטוריה שלו, לא מהמצב הנוכחי בלבד');
 
+// ── סבב 2 (ביקורת 13): תמונה פרטית והחלפת מבקר; JFIF / Adobe / PNG; קובץ זמני; איש קשר לגישה ──
+$K = make_case($avi, $P);
+call('POST', 'case-member-add', ['case' => $K, 'user' => $danaPid], $avi);
+call('POST', 'case-member-add', ['case' => $K, 'user' => $noaPid], $avi);
+$VK = $plan($avi, $K, $noaPid)[1]['visit']['pid'];
+$VK2 = $plan($avi, $K, $noaPid)[1]['visit']['pid'];
+$start($noa, $VK);
+$pk = photo_up($noa, $VK, jpeg_gps('k'))[1]['photo'];
+$pkFile = $pk['file'];
+$seesK = fn(string $as) => [call('GET', 'visit-photo', [], $as, ['photo' => $pk['pid']])[0], call('GET', 'file', [], $as, ['file' => $pkFile])[0]];
+$setVisitor = fn(string $as, string $visit, string $who) => call('POST', 'visit-update', ['visit' => $visit, 'rev' => $rev($visit), 'visitor' => $who], $as);
+eq([$seesK($dana), code(call('POST', 'case-identifier-add', ['case' => $K, 'kind' => 'other', 'value_text' => 'מזהה', 'source_kind' => 'document', 'source_ref' => $pkFile], $dana)),
+    code($setVisitor($dana, $VK, $danaPid)), $vrow($VK)['visitor_user_id'] === $vrow($VK2)['visitor_user_id'], $seesK($dana), $setVisitor($dana, $VK2, $danaPid)[0], code($setVisitor($dana, $VK, $noaPid))],
+    [[404, 404], 'source_file_required', 'forbidden', true, [404, 404], 200, null],
+    '🟡1 מי שיש לו edit + visit אינו ממנה את עצמו למבקר של ביקור שכבר התחיל (ואינו מגיע כך לתמונות הפרטיות); בביקור שעוד לא התחיל — מותר; תמונה פרטית אינה מקור למזהה נכס בידי מי שאינו רואה אותה');
+$r = $setVisitor($avi, $VK, $danaPid);
+$pupK = fn(string $as, array $set) => call('POST', 'visit-photo-update', $set + ['photo' => $pk['pid'], 'rev' => (int)apr_val('SELECT rev FROM visit_photos WHERE pid = ?', [$pk['pid']])], $as);
+$canK = fn(string $as) => array_column($view($as, $VK)[1]['photos'], 'can_manage', 'pid')[$pk['pid']] ?? null;
+eq([$r[0], $r[1]['visit']['visitor']['pid'], $seesK($noa), $seesK($dana), $seesK($avi), code($pupK($dana, ['caption' => 'x'])), code(call('POST', 'visit-photo-delete', ['photo' => $pk['pid'], 'rev' => 1], $dana)),
+    [$canK($noa), $canK($dana), $canK($avi)], $pupK($noa, ['caption' => 'של נועה'])[1]['photo']['caption'] ?? null, $pupK($avi, ['place' => 'חזית'])[0]],
+    [200, $danaPid, [200, 200], [200, 200], [200, 200], 'forbidden', 'forbidden', [true, false, true], 'של נועה', 200],
+    '🟡1 האחראי מחליף מבקר באמצע ביקור: מי שצילם ממשיך לראות את התמונה הפרטית שלו; המבקר החדש רואה אותה ואינו משנה ואינו מוחק אותה — רק מי שצילם או האחראי');
+$pupK($noa, ['usage' => 'case']);
+eq([$pupK($dana, ['caption' => 'מהמבקרת'])[0], code($pupK($noa, ['caption' => 'x']))], [200, 'forbidden'], '🟡1 תמונה שאינה פרטית: המבקר הנוכחי (או האחראי) משנה אותה; מבקר שהוחלף — לא');
+// 🟡2: JFIF עם תמונה ממוזערת מוטמעת, Adobe עם תוספת, PNG עם מקטע לא מוכר
+$im = imagecreatetruecolor(24, 16);
+ob_start(); imagejpeg($im, null, 85); $jj = (string)ob_get_clean();
+$jfif = "\xFF\xE0" . pack('n', 16 + 12) . "JFIF\0\x01\x02\x01\0\x48\0\x48\x02\x02" . 'THUMBSECRET!';
+$adobe = "\xFF\xEE" . pack('n', 14 + 10) . "Adobe\0\x64\0\0\0\0\x01" . 'ADOBEEXTRA';
+$up2 = photo_up($dana, $VK, "\xFF\xD8" . $jfif . $adobe . substr($jj, 20));
+$b2 = (string)file_get_contents(apr_file_path(apr_val('SELECT f.storage_key FROM files f JOIN visit_photos p ON p.file_id = f.id WHERE p.pid = ?', [$up2[1]['photo']['pid'] ?? ''])));
+$pchunk = fn(string $t, string $d) => pack('N', strlen($d)) . $t . $d . pack('N', crc32($t . $d));
+$pim = imagecreatetruecolor(8, 8);
+ob_start(); imagepng($pim); $pp = (string)ob_get_clean();
+$up3 = photo_up($dana, $VK, substr($pp, 0, 33) . $pchunk('prVt', 'PRIVATE-CHUNK') . $pchunk('tEXt', "Author\0SECRET-AUTHOR") . substr($pp, 33), ['name' => 'b.png']);
+$b3 = (string)file_get_contents(apr_file_path(apr_val('SELECT f.storage_key FROM files f JOIN visit_photos p ON p.file_id = f.id WHERE p.pid = ?', [$up3[1]['photo']['pid'] ?? ''])));
+eq([$up2[0], str_contains($b2, 'THUMBSECRET'), str_contains($b2, 'ADOBEEXTRA'), substr($b2, 2, 18) === "\xFF\xE0\x00\x10JFIF\0\x01\x02\x01\0\x48\0\x48\0\0", str_contains($b2, "\xFF\xEE\x00\x0EAdobe\0\x64\0\0\0\0\x01"), (bool)@imagecreatefromstring($b2),
+    $up3[0], str_contains($b3, 'PRIVATE-CHUNK'), str_contains($b3, 'SECRET-AUTHOR'), str_contains($b3, 'prVt'), (bool)@imagecreatefromstring($b3)],
+    [200, false, false, true, true, true, 200, false, false, false, true],
+    '🟡2 JFIF נכתב מחדש בלי התמונה הממוזערת (0×0); Adobe — רק 12 הבתים התקניים; PNG — רשימה לבנה: מקטע לא מוכר ומקטע טקסט נזרקים; התמונות תקינות');
+// 🟡3: ההסרה נכשלה ← הקובץ שהועלה אינו נשאר ב-data/tmp
+$tmpCount = fn() => count(array_diff(scandir(apr_upload_tmp_dir()) ?: [], ['.', '..']));
+$viaReader = function (string $bytes) use ($dana, $VK) {
+    return call('POST', 'visit-photo-upload', ['visit' => $VK, 'name' => 'x.jpg', 'key' => 'k-' . bin2hex(random_bytes(6))], $dana, [],
+        ['env' => ['upload_reader' => function () use ($bytes) { $t = tempnam(apr_upload_tmp_dir(), 'up'); file_put_contents($t, $bytes); return ['upload' => $t]; }]]);
+};
+$t0 = $tmpCount();
+$bad1 = $viaReader("\xFF\xD8\xFF\xE1\x00\x40Exif\0\0GPS-IN-BROKEN-FILE");
+$bad2 = $viaReader('GIF89a' . str_repeat("\0", 60));
+$bad3 = $viaReader("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n");
+$good = $viaReader(jpeg_gps('reader'));
+eq([[$bad1[0], code($bad1)], [$bad2[0], code($bad2)], [$bad3[0], code($bad3)], $good[0], $tmpCount() - $t0], [[422, 'photo_broken'], [415, 'photo_type'], [415, 'photo_type'], 200, 0],
+    '🟡3 קובץ שההסרה נכשלה בו (422 / 415) אינו נשאר ב-data/tmp — המקור, עם כל מה שבו, נמחק מיד');
+// ⚪10: איש קשר לגישה — רק מגורמי התיק; ⚪6: מה שנכתב ב"לא הייתה גישה" נשאר אחרי פתיחה מחדש
+$stranger = call('POST', 'contact-save', ['name' => 'איש קשר שאינו בתיק', 'phone' => '050-0000000'], $avi)[1]['contact'] ?? '';
+$partyContact = apr_val('SELECT ct.pid FROM case_parties cp JOIN contacts ct ON ct.id = cp.contact_id WHERE cp.case_id = ?', [$caseId($K)]);
+eq([apr_is_pid($stranger), code($plan($avi, $K, $noaPid, ['access_contact' => $stranger])), $plan($avi, $K, $noaPid, ['access_contact' => $partyContact])[1]['visit']['access_contact']['pid'] ?? null, $vrow($V6)['status'], $vrow($V6)['status_note']],
+    [true, 'not_found', $partyContact, 'in_progress', 'נעול'], '⚪10 איש קשר לגישה חייב להיות גורם בתיק; ⚪6 התיאור של "לא הייתה גישה" נשאר אחרי פתיחה מחדש');
+
 // ── מיגרציה 011 על מסד v10 מאוכלס ──
 $m10 = sys_get_temp_dir() . '/apr-m10-' . bin2hex(random_bytes(5));
 mkdir($m10, 0700, true);

@@ -636,9 +636,10 @@ function apr_docs_pending(array $ctx): array
 }
 
 /** קובץ של התיק שיכול לשמש מקור למזהה נכס (04-C3): קיים, של התיק הזה, ולא נמחק. מחזיר את ה-pid, או נכשל. */
-function apr_source_file(array $c, mixed $pid): string
+function apr_source_file(array $ctx, array $c, mixed $pid): string
 {
-    if (!apr_is_pid($pid) || !apr_val('SELECT 1 FROM files WHERE pid = ? AND case_id = ? AND deleted_at IS NULL', [$pid, $c['id']])) apr_fail('source_file_required');
+    $f = apr_is_pid($pid) ? apr_row('SELECT * FROM files WHERE pid = ? AND case_id = ? AND deleted_at IS NULL', [$pid, $c['id']]) : null;
+    if (!$f || !apr_file_visible($ctx, $c, $f)) apr_fail('source_file_required');       // גם קובץ שאינני רשאי לראות (תמונת ביקור פרטית) אינו מקור
     return $pid;
 }
 

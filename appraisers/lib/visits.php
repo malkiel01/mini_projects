@@ -86,7 +86,8 @@ function apr_visit_visitor(array $c, mixed $userPid): int
 function apr_visit_contact(array $c, mixed $pid): ?int
 {
     if ($pid === null || $pid === '') return null;
-    $id = apr_is_pid($pid) ? apr_val('SELECT id FROM contacts WHERE pid = ? AND office_id = ? AND deleted_at IS NULL', [$pid, $c['office_id']]) : false;
+    // רק איש קשר שהוא גורם בתיק הזה — לא כל ספר הכתובות של המשרד
+    $id = apr_is_pid($pid) ? apr_val('SELECT ct.id FROM contacts ct JOIN case_parties cp ON cp.contact_id = ct.id AND cp.case_id = ? AND cp.removed_at IS NULL WHERE ct.pid = ? AND ct.office_id = ? AND ct.deleted_at IS NULL', [$c['id'], $pid, $c['office_id']]) : false;
     return $id ? (int)$id : apr_fail('not_found');
 }
 
@@ -352,7 +353,12 @@ function apr_visit_update(array $ctx, array $in): array
     $plan = !empty($c['perms']['edit']);
     $set = [];
     if (array_intersect(['visitor', 'scheduled_at', 'access_contact'], array_keys($in)) && !$plan) apr_fail('forbidden');
-    if (array_key_exists('visitor', $in)) $set['visitor_user_id'] = apr_visit_visitor($c, $in['visitor']);
+    if (array_key_exists('visitor', $in)) {
+        $set['visitor_user_id'] = apr_visit_visitor($c, $in['visitor']);
+        // אחרי "התחלת ביקור" המבקר מוחלף רק בידי האחראי על התיק או מנהל המשרד: מי שיש לו edit אינו ממנה את עצמו לביקור של אחר (ביקורת 13, 🟡1)
+        if ($set['visitor_user_id'] !== (int)$v['visitor_user_id'] && $v['started_at'] !== null
+            && (int)$ctx['user']['id'] !== (int)$c['responsible_user_id'] && empty($ctx['office']['is_admin'])) apr_fail('forbidden');
+    }
     if (array_key_exists('scheduled_at', $in)) $set['scheduled_at'] = apr_visit_when($in['scheduled_at']);
     if (array_key_exists('access_contact', $in)) $set['access_contact_id'] = apr_visit_contact($c, $in['access_contact']);
     if (array_key_exists('access_note', $in)) $set['access_note'] = apr_clean_text($in['access_note'], 500);
@@ -662,7 +668,7 @@ function apr_visit_reopen(array $ctx, array $in): array
     $reason = apr_reason($in['reason'] ?? null);
     return apr_tx(function () use ($c, $v, $rev, $reason) {
         apr_case_still_open($c);
-        $set = ['status' => 'in_progress', 'status_note' => null];
+        $set = ['status' => 'in_progress'] + ($v['status'] === 'no_access' ? [] : ['status_note' => null]);     // מה שנכתב ב"לא הייתה גישה" נשאר
         if ($v['form_snapshot'] === null) $set += ['form_snapshot' => json_encode(apr_visit_form($c, $v), JSON_UNESCAPED_UNICODE), 'form_version_id' => (int)$c['profile_version_id'], 'started_at' => apr_now()];
         $now = apr_visit_set($c, $v, $rev, $set, ['completed', 'no_access']);
         apr_facts_stale(array_map('intval', array_column(apr_rows('SELECT fact_id FROM visit_facts WHERE visit_id = ?', [$v['id']]), 'fact_id')));
@@ -733,8 +739,12 @@ function apr_visit_to_facts(array $ctx, array $c, array $v, array $form, array $
             $n++;
             continue;
         }
-        if (apr_fact_correct_tx($ctx, $c, $old, ['rev' => (int)$old['rev'], 'estimated' => (bool)$est, 'note' => $note, 'correction_note' => 'עודכן מביקור ' . $v['seq']]
-            + ($valueSame ? [] : ['value' => $in['value'], 'unit' => $unit, 'area_kind' => $kind, 'zero_ok' => true]))) $n++;
+        try {
+            if (apr_fact_correct_tx($ctx, $c, $old, ['rev' => (int)$old['rev'], 'estimated' => (bool)$est, 'note' => $note, 'correction_note' => 'עודכן מביקור ' . $v['seq']]
+                + ($valueSame ? [] : ['value' => $in['value'], 'unit' => $unit, 'area_kind' => $kind, 'zero_ok' => true]))) $n++;
+        } catch (AprError) {
+            $skipped[] = ['field' => $f['key'], 'why' => 'value'];       // שגיאת אימות בעדכון אינה מפילה את "הושלם" — apr_fact_correct_tx בודק לפני שהוא כותב
+        }
     }
     return ['facts' => $n, 'skipped' => $skipped];
 }

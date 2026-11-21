@@ -69,7 +69,7 @@ function apr_case_identifier_add(array $ctx, array $in): array
     $row = apr_ident_fields($in, $kind) + ['kind' => $kind, 'source_kind' => apr_clean_choice($in['source_kind'] ?? 'user', APR_IDENT_SOURCES) ?? 'user',
         'source_ref' => null, 'source_note' => apr_clean_text($in['source_note'] ?? '', 120), 'note' => apr_clean_text($in['note'] ?? '', 300)];
     // 04-C3: מקור מסוג מסמך הוא קובץ אמיתי של התיק הזה — לא הצהרה
-    if ($row['source_kind'] === 'document') $row['source_ref'] = apr_source_file($c, $in['source_ref'] ?? null);
+    if ($row['source_kind'] === 'document') $row['source_ref'] = apr_source_file($ctx, $c, $in['source_ref'] ?? null);
     $row['match_key'] = apr_ident_match_key($row);
     return apr_tx(function () use ($ctx, $c, $row) {
         if ((int)apr_val('SELECT COUNT(*) FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL', [$c['id']]) >= 50) apr_fail('content_too_large');
@@ -114,7 +114,7 @@ function apr_case_identifier_update(array $ctx, array $in): array
         $state = array_key_exists('state', $in) ? (apr_clean_choice($in['state'], APR_IDENT_STATES) ?? apr_fail('status_invalid')) : $i['state'];
         $source = array_key_exists('source_kind', $in) ? (apr_clean_choice($in['source_kind'], APR_IDENT_SOURCES) ?? apr_fail('content_invalid')) : $i['source_kind'];
         if ($state === 'verified' && $i['kind'] === 'address' && $source !== 'document') apr_fail('address_not_verifiable');
-        $ref = $source === 'document' ? apr_source_file($c, array_key_exists('source_ref', $in) ? $in['source_ref'] : $i['source_ref']) : null;
+        $ref = $source === 'document' ? apr_source_file($ctx, $c, array_key_exists('source_ref', $in) ? $in['source_ref'] : $i['source_ref']) : null;
         apr_exec('UPDATE case_identifiers SET state = ?, source_kind = ?, source_ref = ?, source_note = ?, note = ? WHERE id = ?', [$state, $source, $ref,
             array_key_exists('source_note', $in) ? apr_clean_text($in['source_note'], 120) : $i['source_note'],
             array_key_exists('note', $in) ? apr_clean_text($in['note'], 300) : $i['note'], $i['id']]);

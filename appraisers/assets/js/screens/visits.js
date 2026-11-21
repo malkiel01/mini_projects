@@ -388,7 +388,7 @@ function vBindGallery(pid, fill, reload) {
 function vPhotoSheet(photoPid, reload) {
     const x = VS.x, p = x.photos.find(q => q.pid === photoPid);
     if (!p) return;
-    const manage = x.perms.fill && ['in_progress', 'completed'].includes(x.visit.status);
+    const manage = x.perms.fill && p.can_manage && ['in_progress', 'completed'].includes(x.visit.status);
     const dlg = sheet(p.caption || V.photo, `<img class="v-full" src="${vPhotoUrl(p, false)}" alt="${esc(p.caption || '')}">
         ${manage ? `<label class="f"><span>${V.caption}</span><input name="caption" maxlength="300" value="${esc(p.caption)}"></label>
         <label class="f"><span>${V.place}</span><input name="place" maxlength="80" list="v-places" value="${esc(p.place)}"><datalist id="v-places">${x.places.map(s => `<option value="${esc(s)}">`).join('')}</datalist></label>
@@ -513,7 +513,9 @@ function peVisitField(k, f, groupKey, done) {
     const L = PL || {}, types = L.visit_field_types || Object.keys(V.b.types);
     const ordered = [...k.groups].sort((a, b) => a.sort - b.sort).flatMap(g => k.fields.filter(x => x.group === g.key).sort((a, b) => a.sort - b.sort));
     const before = (f ? ordered.slice(0, ordered.indexOf(f)) : ordered).filter(x => x.type !== 'photo');
-    const leaf = f?.when && f.when.field ? f.when : null, complex = f?.when && !leaf;
+    // תנאי "פשוט" — רק עלה אחד על תשובה של שדה קודם, עם is / is_not. כל דבר אחר (property_type, purpose, in / not_in, all / any) אינו נערך כאן ונשמר כמו שהוא
+    const simple = w => !!w && typeof w.field === 'string' && w.field.startsWith('answer.') && ['is', 'is_not'].includes(w.op) && !Array.isArray(w.value) && before.some(x => x.key === w.field.slice(7));
+    const leaf = simple(f?.when) ? f.when : null, complex = !!f?.when && !leaf;
     const dlg = sheet(f ? V.b.editField : V.b.addField, `
         <label class="f"><span>${V.b.label} *</span><input name="label" maxlength="160" required value="${esc(f?.label || '')}"></label>
         <label class="f"><span>${V.b.type}</span><select name="type">${types.map(t => cOpt(t, V.b.types[t] || t, f?.type || 'text')).join('')}</select></label>

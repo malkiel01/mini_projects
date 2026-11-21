@@ -62,8 +62,15 @@ function apr_photo_strip_jpeg(string $d): string
         if ($m === 0xE1) {
             if (str_starts_with($body, "Exif\0\0") && !$orient) $orient = apr_exif_orientation(substr($body, 6));
             $keep = false;
-        } elseif ($m === 0xE0) $keep = str_starts_with($body, "JFIF\0");
-        elseif ($m >= 0xE2 && $m <= 0xEF) $keep = ($m === 0xE2 && str_starts_with($body, "ICC_PROFILE\0")) || ($m === 0xEE && str_starts_with($body, 'Adobe'));
+        } elseif ($m === 0xE0) {
+            // JFIF נכתב מחדש: גרסה, יחידות וצפיפות בלבד — בלי התמונה הממוזערת שהמקטע יכול לשאת (0×0). JFXX (ממוזערת) — נזרק.
+            if (str_starts_with($body, "JFIF\0") && strlen($body) >= 12) $out .= "\xFF\xE0\x00\x10" . substr($body, 0, 12) . "\0\0";
+            $keep = false;
+        } elseif ($m === 0xEE) {
+            // Adobe: רק 12 הבתים התקניים (נחוצים לפענוח הצבע) — בלי מה שנוסף אחריהם
+            if (str_starts_with($body, 'Adobe') && strlen($body) >= 12) $out .= "\xFF\xEE\x00\x0E" . substr($body, 0, 12);
+            $keep = false;
+        } elseif ($m >= 0xE2 && $m <= 0xEF) $keep = $m === 0xE2 && str_starts_with($body, "ICC_PROFILE\0");
         elseif ($m === 0xFE) $keep = false;
         if ($keep) $out .= substr($d, $i, 2 + $len);
         $i += 2 + $len;
@@ -91,7 +98,7 @@ function apr_photo_strip_jpeg(string $d): string
     return "\xFF\xD8" . $exif . $out;
 }
 
-/** PNG: בלי מקטעי טקסט, EXIF וזמן; נעצר ב-IEND. */
+/** PNG: רשימה לבנה — רק המקטעים שנחוצים לציור התמונה; כל השאר (טקסט, EXIF, זמן, מקטעים פרטיים) נזרק. נעצר ב-IEND. */
 function apr_photo_strip_png(string $d): string
 {
     $n = strlen($d);
@@ -100,7 +107,7 @@ function apr_photo_strip_png(string $d): string
         $len = unpack('N', substr($d, $i, 4))[1];
         $type = substr($d, $i + 4, 4);
         if ($len > $n || $i + 12 + $len > $n) apr_fail('photo_broken');
-        if (!in_array($type, ['eXIf', 'tEXt', 'zTXt', 'iTXt', 'tIME'], true)) $out .= substr($d, $i, 12 + $len);
+        if (in_array($type, ['IHDR', 'PLTE', 'tRNS', 'IDAT', 'IEND', 'gAMA', 'cHRM', 'sRGB', 'iCCP', 'pHYs'], true)) $out .= substr($d, $i, 12 + $len);
         $i += 12 + $len;
         if ($type === 'IEND') return $out;
     }
@@ -140,19 +147,31 @@ function apr_photo_strip(string $path): void
 
 // ── מי רואה ───────────────────────────────────────────────────
 
-/** $p: usage, deleted_at, visitor_user_id. private — המבקר והשמאי האחראי בלבד (13-C1). תמונה שנמחקה — אף אחד. */
+/**
+ * $p: usage, deleted_at, visitor_user_id, created_by. private — מי שצילם, המבקר הנוכחי והשמאי האחראי בלבד (13-C1). תמונה שנמחקה — אף אחד.
+ * מי שצילם רואה את התמונה שלו גם אחרי שהמבקר הוחלף (ביקורת 13, 🟡1).
+ */
 function apr_visit_photo_visible(array $ctx, array $c, array $p): bool
 {
     if ($p['deleted_at'] !== null || empty($c['perms']['view'])) return false;
     if ($p['usage'] !== 'private') return true;
     $me = (int)$ctx['user']['id'];
-    return $me === (int)$p['visitor_user_id'] || $me === (int)$c['responsible_user_id'];
+    return $me === (int)$p['visitor_user_id'] || $me === (int)$c['responsible_user_id'] || $me === (int)($p['created_by'] ?? 0);
+}
+
+/** מי משנה או מוחק תמונה: המבקר או האחראי (עם visit); **תמונה private — רק מי שצילם או האחראי**, כך שמבקר שהוחלף אינו מאבד שליטה ומבקר חדש אינו מקבל אותה. */
+function apr_visit_photo_can_manage(array $ctx, array $c, array $p): bool
+{
+    if (empty($c['perms']['visit'])) return false;
+    $me = (int)$ctx['user']['id'];
+    if ($p['usage'] === 'private') return $me === (int)$p['created_by'] || $me === (int)$c['responsible_user_id'];
+    return apr_visit_is_filler($ctx, $c, $p);
 }
 
 /** לקובץ שהוא תמונת ביקור: האם מותר לי לראות אותו. null — הקובץ אינו תמונת ביקור. נשאל מתוך apr_file_visible(). */
 function apr_visit_file_rule(array $ctx, array $c, array $f): ?bool
 {
-    $p = apr_row('SELECT p.usage, p.deleted_at, v.visitor_user_id FROM visit_photos p JOIN visits v ON v.id = p.visit_id WHERE p.file_id = ?', [$f['id'] ?? 0]);
+    $p = apr_row('SELECT p.usage, p.deleted_at, p.created_by, v.visitor_user_id FROM visit_photos p JOIN visits v ON v.id = p.visit_id WHERE p.file_id = ?', [$f['id'] ?? 0]);
     return $p ? apr_visit_photo_visible($ctx, $c, $p) : null;
 }
 
@@ -166,7 +185,7 @@ function apr_visit_not_photo(array $f): void
 function apr_visit_hidden_pids(array $ctx, array $c): array
 {
     $out = [];
-    foreach (apr_rows('SELECT p.pid, p.usage, p.deleted_at, f.pid AS file_pid, v.visitor_user_id FROM visit_photos p JOIN files f ON f.id = p.file_id JOIN visits v ON v.id = p.visit_id WHERE v.case_id = ?', [$c['id']]) as $p) {
+    foreach (apr_rows('SELECT p.pid, p.usage, p.deleted_at, p.created_by, f.pid AS file_pid, v.visitor_user_id FROM visit_photos p JOIN files f ON f.id = p.file_id JOIN visits v ON v.id = p.visit_id WHERE v.case_id = ?', [$c['id']]) as $p) {
         if (!apr_visit_photo_visible($ctx, $c, ['deleted_at' => null] + $p)) $out[$p['pid']] = $out[$p['file_pid']] = true;
     }
     return $out;
@@ -176,7 +195,7 @@ function apr_visit_photo_out(array $p): array
 {
     return ['pid' => $p['pid'], 'file' => $p['file_pid'], 'field' => $p['field_key'], 'row' => (int)$p['row_no'], 'caption' => $p['caption'], 'place' => $p['place'], 'sort' => (int)$p['sort'],
         'for_report' => (bool)$p['for_report'], 'usage' => $p['usage'], 'taken_at' => $p['taken_at'], 'geo' => $p['geo_lat'] === null ? null : ['lat' => (float)$p['geo_lat'], 'lng' => (float)$p['geo_lng']],
-        'rev' => (int)$p['rev'], 'by' => $p['created_name'], 'created_at' => $p['created_at'], 'size' => (int)$p['size']];
+        'rev' => (int)$p['rev'], 'can_manage' => $p['can_manage'] ?? null, 'by' => $p['created_name'], 'created_at' => $p['created_at'], 'size' => (int)$p['size']];
 }
 
 /** התמונות של ביקור שמותר לי לראות, לפי הסדר. */
@@ -184,7 +203,7 @@ function apr_visit_photos_out(array $ctx, array $c, array $v): array
 {
     $out = [];
     foreach (apr_rows(APR_PHOTO_SELECT . ' WHERE p.visit_id = ? AND p.deleted_at IS NULL ORDER BY p.sort, p.id', [$v['id']]) as $p) {
-        if (apr_visit_photo_visible($ctx, $c, $p)) $out[] = apr_visit_photo_out($p);
+        if (apr_visit_photo_visible($ctx, $c, $p)) $out[] = apr_visit_photo_out(['can_manage' => $c['status'] !== 'closed' && apr_visit_photo_can_manage($ctx, $c, $p)] + $p);
     }
     return $out;
 }
@@ -200,7 +219,7 @@ function apr_visit_photo_get(array $ctx, mixed $pid, string $need = 'view'): arr
     $p = apr_row(APR_PHOTO_SELECT . ' WHERE p.pid = ? AND v.case_id = ?', [$pid, $c['id']]);
     if (!$p || !apr_visit_photo_visible($ctx, $c, $p)) apr_fail('not_found');
     if ($need === 'view') return [$c, $p];
-    if (!apr_visit_is_filler($ctx, $c, $p)) apr_fail('forbidden');
+    if (!apr_visit_photo_can_manage($ctx, $c, $p)) apr_fail('forbidden');
     apr_case_writable($c);
     return [$c, $p];
 }
@@ -223,7 +242,8 @@ function apr_visit_photo_upload(array $ctx, array $q, array $env): array
         $r = $reader ? $reader() : ['upload' => $direct];
         if (($r['upload_error'] ?? '') === '' && is_string($r['upload'] ?? null) && is_file($r['upload'])) {
             if (filesize($r['upload']) > apr_file_max()) return ['upload_error' => 'file_too_large'] + $r;
-            apr_photo_strip($r['upload']);
+            // ההסרה נכשלה (לא תמונה, קובץ פגום): המקור — עם כל מה שבו — נמחק כאן; הצינור עוד אינו מכיר את הנתיב (ביקורת 13, 🟡3)
+            try { apr_photo_strip($r['upload']); } catch (Throwable $e) { @unlink($r['upload']); throw $e; }
         }
         return $r;
     };
