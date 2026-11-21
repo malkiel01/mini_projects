@@ -144,6 +144,7 @@ function apr_comp_dec(mixed $v, int $scale, int $digits, string $err = 'comp_val
 function apr_comp_dec_out(mixed $n, int $scale): ?string
 {
     if ($n === null) return null;
+    if ($scale === 0) return (string)(int)$n;
     $u = str_pad((string)abs((int)$n), $scale + 1, '0', STR_PAD_LEFT);
     $frac = rtrim(substr($u, -$scale), '0');
     return ((int)$n < 0 ? '-' : '') . substr($u, 0, strlen($u) - $scale) . ($frac === '' ? '' : '.' . $frac);
