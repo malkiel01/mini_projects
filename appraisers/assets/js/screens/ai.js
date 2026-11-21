@@ -10,6 +10,13 @@
 
 const AI = T.ai;
 const aiMoney = a => '₪' + (Number(a || 0) / 100).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** שדה של מספר שלם: ריק ← null; כל דבר שאינו ספרות בלבד — שגיאה שמוצגת בגיליון (ולא null שקט שמשמיט את התקרה). */
+function aiInt(v) {
+    const t = String(v ?? '').trim().replace(/,/g, '');
+    if (t === '') return null;
+    if (!/^\d{1,15}$/.test(t)) throw new Error(AI.badNumber);
+    return Number(t);
+}
 const aiConnChip = c => `<span class="chip ${({ active: 'ok', invalid: 'bad', revoked: '' })[c.status] || ''}">${esc(AI.connStatus[c.status] || c.status)}</span>`;
 const aiOpts = (rows, val, label, cur) => rows.map(r => `<option value="${esc(val(r))}"${val(r) === cur ? ' selected' : ''}>${esc(label(r))}</option>`).join('');
 const aiAct = (sel, root, fn) => $$(sel, root).forEach(b => b.addEventListener('click', async () => { try { await fn(b); } catch (x) { if (x.code !== 'confirm_cancelled') toastError(x); } }));
@@ -49,7 +56,7 @@ function aiQuotaSheet(q, pre, reload) {
         <label class="switch"><input type="checkbox" name="hard"${q.hard ? ' checked' : ''}><span>${AI.hard}</span></label>
         <p class="hint">${AI.estNote}</p>
         <div class="row-btns"><button type="button" class="btn ghost danger" id="aiqdel">${AI.deleteQuota}</button></div>`, async f => {
-        await api(pre + 'quota-save', { body: { quota: q.pid, limit_money: f.limit_money.trim() || null, limit_tokens: f.limit_tokens.trim() ? Number(f.limit_tokens) : null, hard: !!f.hard } });
+        await api(pre + 'quota-save', { body: { quota: q.pid, limit_money: f.limit_money.trim() || null, limit_tokens: aiInt(f.limit_tokens), hard: !!f.hard } });
         toast(T.saved); reload();
     });
     aiAct('#aiqdel', dlg, async () => { if (!confirm(AI.deleteQuotaAsk)) return; await api(pre + 'quota-delete', { body: { quota: q.pid } }); dlg.close(); toast(T.saved); reload(); });
@@ -143,7 +150,7 @@ async function viewSysAi(tabs) {
         <label class="switch"><input type="checkbox" name="json_output"${!m || m.capabilities.json_output ? ' checked' : ''}><span>${AI.capJson}</span></label>
         <label class="switch"><input type="checkbox" name="active"${!m || m.status === 'active' ? ' checked' : ''}><span>${AI.statusActive}</span></label>`, async f => {
         await api('sys-ai-model-save', { body: { provider: m ? m.provider : f.provider, model_id: m ? m.model_id : f.model_id.trim(), label: f.label, price_in: f.price_in.trim() || null, price_out: f.price_out.trim() || null,
-            price_checked_at: f.price_checked_at || null, context_tokens: Number(f.context_tokens), max_output_tokens: Number(f.max_output_tokens),
+            price_checked_at: f.price_checked_at || null, context_tokens: aiInt(f.context_tokens), max_output_tokens: aiInt(f.max_output_tokens),
             capabilities: { vision: !!f.vision, pdf: !!f.pdf, json_output: !!f.json_output }, status: f.active ? 'active' : 'hidden' } });
         toast(T.saved); reload();
     });
@@ -189,7 +196,7 @@ async function viewSysAi(tabs) {
             <label class="f"><span>${AI.limitTokens}</span><input name="limit_tokens" inputmode="numeric" dir="ltr"></label>
             <label class="switch"><input type="checkbox" name="hard" checked><span>${AI.hard}</span></label><p class="hint">${AI.estNote}</p>`, async f => {
             await api('sys-ai-quota-save', { body: { track: f.track, scope: f.scope, target: f.scope === 'user' ? f.user_target : f.office_target, office: f.scope === 'user' ? f.office || null : null, period: f.period,
-                limit_money: f.limit_money.trim() || null, limit_tokens: f.limit_tokens.trim() ? Number(f.limit_tokens) : null, hard: !!f.hard } });
+                limit_money: f.limit_money.trim() || null, limit_tokens: aiInt(f.limit_tokens), hard: !!f.hard } });
             toast(T.saved); reload();
         });
         $$('[name=scope]', dlg).forEach(r => r.addEventListener('change', () => $$('[data-for]', dlg).forEach(l => { l.hidden = l.dataset.for !== r.value; })));
@@ -245,7 +252,7 @@ async function viewOfficeAi(tabs) {
             <label class="f"><span>${AI.limitTokens}</span><input name="limit_tokens" inputmode="numeric" dir="ltr"></label>
             <label class="switch"><input type="checkbox" name="hard" checked><span>${AI.hard}</span></label><p class="hint">${AI.personalNote}</p>`, async f => {
             await api('office-ai-quota-save', { body: { scope: f.scope, target: f.scope === 'user' ? f.target : null, period: f.period, limit_money: f.limit_money.trim() || null,
-                limit_tokens: f.limit_tokens.trim() ? Number(f.limit_tokens) : null, hard: !!f.hard } });
+                limit_tokens: aiInt(f.limit_tokens), hard: !!f.hard } });
             toast(T.saved); reload();
         });
         $$('[name=scope]', dlg).forEach(r => r.addEventListener('change', () => $$('[data-for]', dlg).forEach(l => { l.hidden = l.dataset.for !== r.value; })));

@@ -83,6 +83,13 @@ set_error_handler(function (int $no, string $msg, string $file, int $line) use (
 $GLOBALS['apr_time'] = 1794400000;      // שעון קפוא: 2026-11-11
 
 $seen = [];                              // כל תשובת API שהתקבלה לאורך הבדיקות — נסרקת בסוף אחר המפתחות (11-C1)
+/** call() שתשובתו נשמרת לסריקת הדליפה (11-C1) — כל קריאה בקובץ עוברת כאן. */
+function api0(string $method, string $action, array $in = [], ?string $as = null, array $get = [], array $opt = []): array
+{
+    $r = call($method, $action, $in, $as, $get, $opt);
+    $GLOBALS['seen'][] = json_encode($r, JSON_UNESCAPED_UNICODE);
+    return $r;
+}
 function api(string $method, string $action, array $in = [], ?string $as = null, array $get = []): array
 {
     $r = call($method, $action, $in + ($method === 'POST' ? ['confirm' => 'אישור'] : []), $as, $get);
@@ -91,30 +98,31 @@ function api(string $method, string $action, array $in = [], ?string $as = null,
 }
 $db = fn(string $sql, array $a = []) => apr_val($sql, $a);
 $calls = fn() => count($fake->calls);
+$raises = function (string $sql): bool { try { apr_exec($sql); return false; } catch (PDOException) { return true; } };
 $keysUsed = fn() => array_values(array_unique(array_column($fake->calls, 'key')));
 
 $owner = ident('1', 'הבעלים', 'owner@example.com', ['platform_admin' => true]);
 $avi = ident('2', 'אבי', 'avi@example.com');       // מנהל משרד א, שמאי — האחראי על התיק
 $dana = ident('3', 'דנה', 'dana@example.com');     // שמאית במשרד א, לא מנהלת
 $boaz = ident('4', 'בועז', 'boaz@example.com');    // מנהל משרד ב
-call('GET', 'me', [], $owner);
+api0('GET', 'me', [], $owner);
 $A = office_for($avi, 'משרד א');
 $B = office_for($boaz, 'משרד ב');
 $danaPid = join_office($avi, $dana, 'dana@example.com', 'appraiser');
-$aviPid = call('GET', 'me', [], $avi)[1]['user']['pid'];
-$boazPid = call('GET', 'me', [], $boaz)[1]['user']['pid'];
+$aviPid = api0('GET', 'me', [], $avi)[1]['user']['pid'];
+$boazPid = api0('GET', 'me', [], $boaz)[1]['user']['pid'];
 
 function make_case(string $as): string
 {
-    $p = call('POST', 'profile-create', ['scope' => 'office', 'name' => 'פרופיל'], $as)[1]['profile'];
-    [, $d] = call('POST', 'profile-draft-open', ['profile' => $p], $as);
-    $s = call('POST', 'profile-draft-save', ['profile' => $p, 'content' => ['flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => []], 'revision' => $d['draft']['revision']], $as);
-    call('POST', 'profile-publish', ['profile' => $p, 'note' => '', 'revision' => $s[1]['revision']], $as);
-    $c = call('POST', 'case-create', ['profile' => $p], $as)[1]['case'];
-    call('POST', 'case-update', ['case' => $c, 'title' => 'דירה', 'purpose' => 'purchase'], $as);
-    call('POST', 'case-identifier-add', ['case' => $c, 'kind' => 'parcel', 'gush' => '1', 'helka' => '2'], $as);
-    call('POST', 'case-party-add', ['case' => $c, 'name' => 'לקוח', 'kind' => 'client', 'is_orderer' => true], $as);
-    $r = call('POST', 'case-start', ['case' => $c], $as);
+    $p = api0('POST', 'profile-create', ['scope' => 'office', 'name' => 'פרופיל'], $as)[1]['profile'];
+    [, $d] = api0('POST', 'profile-draft-open', ['profile' => $p], $as);
+    $s = api0('POST', 'profile-draft-save', ['profile' => $p, 'content' => ['flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => []], 'revision' => $d['draft']['revision']], $as);
+    api0('POST', 'profile-publish', ['profile' => $p, 'note' => '', 'revision' => $s[1]['revision']], $as);
+    $c = api0('POST', 'case-create', ['profile' => $p], $as)[1]['case'];
+    api0('POST', 'case-update', ['case' => $c, 'title' => 'דירה', 'purpose' => 'purchase'], $as);
+    api0('POST', 'case-identifier-add', ['case' => $c, 'kind' => 'parcel', 'gush' => '1', 'helka' => '2'], $as);
+    api0('POST', 'case-party-add', ['case' => $c, 'name' => 'לקוח', 'kind' => 'client', 'is_orderer' => true], $as);
+    $r = api0('POST', 'case-start', ['case' => $c], $as);
     if ($r[0] !== 200) throw new RuntimeException('case-start: ' . json_encode($r[1], JSON_UNESCAPED_UNICODE));
     return $c;
 }
@@ -128,10 +136,10 @@ eq(array_values(array_unique(array_merge([code(api('GET', 'sys-ai', [], $avi))],
     'מי שאינו מנהל המערכת: כל פעולת sys-ai-… עונה 404 — כמו פעולה שלא קיימת');
 eq(array_values(array_unique(array_merge([code(api('GET', 'office-ai', [], $dana))], array_map(fn($a) => code(api('POST', $a, [], $dana)), $officePosts)))), ['forbidden'],
     'חבר משרד שאינו מנהל: כל פעולת office-ai-… נדחית (403)');
-eq([code(call('POST', 'sys-ai-fx-set', ['rate' => '3.7'], $owner, [], ['csrf' => 'x'])), code(call('POST', 'office-ai-policy', ['enabled' => false], $avi, [], ['csrf' => ''])), code(call('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $avi, [], ['csrf' => 'zz']))],
+eq([code(api0('POST', 'sys-ai-fx-set', ['rate' => '3.7'], $owner, [], ['csrf' => 'x'])), code(api0('POST', 'office-ai-policy', ['enabled' => false], $avi, [], ['csrf' => ''])), code(api0('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $avi, [], ['csrf' => 'zz']))],
     ['csrf', 'csrf', 'csrf'], 'בלי X-CSRF נכון — 403, גם למנהל המערכת');
-eq([code(call('POST', 'sys-ai-connection-save', ['provider' => 'anthropic', 'label' => 'x', 'key' => K_MANAGED], $owner)), code(call('POST', 'office-ai-connection-save', ['provider' => 'anthropic', 'label' => 'x', 'key' => K_PERSONAL], $boaz)),
-    code(call('POST', 'office-ai-policy', ['enabled' => true, 'text_version' => 1, 'providers' => ['anthropic' => 1]], $avi)), (int)$db('SELECT COUNT(*) FROM ai_connections'), (int)$db('SELECT COUNT(*) FROM ai_policies')],
+eq([code(api0('POST', 'sys-ai-connection-save', ['provider' => 'anthropic', 'label' => 'x', 'key' => K_MANAGED], $owner)), code(api0('POST', 'office-ai-connection-save', ['provider' => 'anthropic', 'label' => 'x', 'key' => K_PERSONAL], $boaz)),
+    code(api0('POST', 'office-ai-policy', ['enabled' => true, 'text_version' => 1, 'providers' => ['anthropic' => 1]], $avi)), (int)$db('SELECT COUNT(*) FROM ai_connections'), (int)$db('SELECT COUNT(*) FROM ai_policies')],
     ['confirm_required', 'confirm_required', 'confirm_required', 0, 0], '§7, §8 שמירת מפתח והדלקת הבינה הן פעולות רגישות: בלי אישור חוזר — 403, ושום דבר לא נשמר');
 eq([in_array('sys-ai', APR_READS, true), array_values(array_filter(array_keys(APR_ACCESS), fn($a) => str_contains($a, 'ai') && in_array(APR_ACCESS[$a], ['public', 'token'], true) && preg_match('/(^|-)ai(-|$)/', $a)))], [true, []],
     'אין פעולת בינה ציבורית');
@@ -334,7 +342,7 @@ eq([$my['ai']['track'], $my['ai']['provider'], $my['ai']['model']['model_id'], c
     '11-F3 (חלק השרת) "הבינה שלי": המסלול, הספק והמודל, המכסה והיתרה, השימוש (מדווח ומשוער בנפרד), ומה נחסם לאחרונה');
 
 // ═══ תיק: "בלי בינה" והרשאות על התוכן ═══════════════════════════
-call('POST', 'case-member-add', ['case' => $C, 'user' => $danaPid, 'role' => 'partner'], $avi);
+api0('POST', 'case-member-add', ['case' => $C, 'user' => $danaPid, 'role' => 'partner'], $avi);
 eq([code(api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $dana)), code(api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $boaz)), code(api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => 'yes'], $avi)),
     api('GET', 'case-ai', [], $dana, ['case' => $C])[1]['can_set'], api('GET', 'case-ai', [], $dana, ['case' => $C])[1]['usage'], code(api('GET', 'case-ai', [], $boaz, ['case' => $C])), api('GET', 'case-ai', [], $avi, ['case' => $C])[1]['can_set']],
     ['forbidden', 'not_found', 'ai_request', false, null, 'not_found', true], '§11 "בלי בינה" — השמאי האחראי בלבד: שותף בתיק מקבל 403 ואינו רואה את השימוש; משרד אחר — 404');
@@ -347,10 +355,10 @@ api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => false], $avi);
 // 11-D3: קובץ שאין למשתמש view עליו, ותיק שאינו שלו ← 404, ואין שורה ב-ai_runs
 $tmp = tempnam(apr_upload_tmp_dir(), 'up');
 file_put_contents($tmp, "%PDF-1.4\n%x\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n");
-$F = call('POST', 'file-upload', ['case' => $C, 'name' => 'נסח.pdf'], $avi, [], ['env' => ['upload' => $tmp]])[1]['file'] ?? null;
+$F = api0('POST', 'file-upload', ['case' => $C, 'name' => 'נסח.pdf'], $avi, [], ['env' => ['upload' => $tmp]])[1]['file'] ?? null;
 $tmp = tempnam(apr_upload_tmp_dir(), 'up');
 file_put_contents($tmp, "%PDF-1.4\n%y\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n");
-$FB = call('POST', 'file-upload', ['case' => $CB, 'name' => 'ב.pdf'], $boaz, [], ['env' => ['upload' => $tmp]])[1]['file'] ?? null;
+$FB = api0('POST', 'file-upload', ['case' => $CB, 'name' => 'ב.pdf'], $boaz, [], ['env' => ['upload' => $tmp]])[1]['file'] ?? null;
 check('קובצי הבדיקה הועלו', apr_is_pid($F) && apr_is_pid($FB), [$F, $FB]);
 $try = function (string $as, array $over) { try { return run($as, $over)['status']; } catch (AprError $e) { return $e->errorCode; } };
 $rows0 = (int)$db('SELECT COUNT(*) FROM ai_runs');
@@ -363,6 +371,35 @@ eq([$denied, (int)$db('SELECT COUNT(*) FROM ai_runs') - $rows0, $calls() - $n0],
 $r = run($avi, ['case' => $C, 'content' => [['type' => 'text', 'text' => 'סכם'], ['type' => 'file', 'file' => $F]]]);
 $sent = $fake->calls[count($fake->calls) - 1]['request']['parts'];
 eq([$r['status'], $r['usage']['pages'], array_column($sent, 'type'), str_starts_with($sent[1]['data'], '%PDF'), $sent[1]['mime']], ['done', 1, ['text', 'pdf'], true, 'application/pdf'], '§9 קובץ PDF מהתיק נשלח כקלט, רק אחרי בדיקת ההרשאה; העמודים נספרים');
+// 🟡2: תקרה כוללת לקבצים של בקשה אחת — נבדקת לפי הגודל הרשום, לפני שקובץ נקרא
+$fid = (int)$db('SELECT id FROM files WHERE pid = ?', [$F]);
+$rows0 = (int)$db('SELECT COUNT(*) FROM ai_runs');
+$n0 = $calls();
+apr_exec('UPDATE files SET size = ? WHERE id = ?', [APR_AI_MAX_FILES + 1, $fid]);
+$tooBig = $try($avi, ['case' => $C, 'content' => [['type' => 'file', 'file' => $F]]]);
+apr_exec("UPDATE files SET size = ?, mime = 'image/png' WHERE id = ?", [8000000, $fid]);   // תמונה: האומדן קבוע, כך שרק התקרה הכוללת נבדקת
+$two = $try($avi, ['case' => $C, 'content' => [['type' => 'file', 'file' => $F], ['type' => 'file', 'file' => $F]]]);
+$three = $try($avi, ['case' => $C, 'content' => [['type' => 'file', 'file' => $F], ['type' => 'file', 'file' => $F], ['type' => 'file', 'file' => $F]]]);
+apr_exec("UPDATE files SET size = 205, mime = 'application/pdf', scan_state = 'rejected' WHERE id = ?", [$fid]);
+$rejected = $try($avi, ['case' => $C, 'content' => [['type' => 'file', 'file' => $F]]]);
+apr_exec("UPDATE files SET scan_state = 'not_scanned', is_encrypted = 1 WHERE id = ?", [$fid]);
+$locked = $try($avi, ['case' => $C, 'content' => [['type' => 'file', 'file' => $F]]]);
+apr_exec('UPDATE files SET is_encrypted = 0 WHERE id = ?', [$fid]);
+eq([$tooBig, $two, $three, $rejected, $locked, $calls() - $n0 <= 1, (int)$db("SELECT COUNT(*) FROM ai_runs WHERE status IN ('reserved', 'running')")], ['ai_too_large', 'done', 'ai_too_large', 'ai_content', 'ai_content', true, 0],
+    '🟡2 + ⚪ קבצים: יותר מ-22MB לכל קובצי הבקשה יחד נדחה לפני קריאה ולפני שריון (שני קבצים של 8MB עוברים, שלושה לא); קובץ שהסורק דחה ו-PDF מוגן אינם נשלחים');
+// ⚪ שירות הרקע סגר את הבקשה כ-unknown בזמן שהספק ענה — הטקסט אינו חוזר
+$fake->next = function () { $GLOBALS['apr_time'] += APR_AI_STALE + 10; apr_ai_sweep(); return ['text' => SECRET_REPLY, 'in_tokens' => 5, 'out_tokens' => 5, 'stop_reason' => 'end_turn']; };
+$late = run($avi);
+$fake->next = null;
+$GLOBALS['apr_time'] = 1794400000;
+eq([$late['status'], $late['text'], $late['error_code']], ['unknown', null, 'stale'], '⚪ טקסט חוזר רק מבקשה שנסגרה כ-done: בקשה שכבר יושבה כ-unknown אינה מחזירה טקסט');
+// ⚪ תיק בלי אחראי: מנהל המשרד מפעיל "בלי בינה"; שותף שאינו מנהל — לא
+$cid = (int)$db('SELECT id FROM cases WHERE pid = ?', [$C]);
+$resp = (int)$db('SELECT responsible_user_id FROM cases WHERE id = ?', [$cid]);
+apr_exec('UPDATE cases SET responsible_user_id = NULL WHERE id = ?', [$cid]);
+eq([code(api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $dana)), api('GET', 'case-ai', [], $avi, ['case' => $C])[1]['can_set'], api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $avi)[0], api('POST', 'case-ai-set', ['case' => $C, 'no_ai' => false], $avi)[0]],
+    ['forbidden', true, 200, 200], '⚪ תיק שנשאר בלי אחראי: מנהל המשרד (שמשתתף בתיק) משנה "בלי בינה"; משתתף שאינו מנהל — 403');
+apr_exec('UPDATE cases SET responsible_user_id = ? WHERE id = ?', [$resp, $cid]);
 unset($GLOBALS['apr_file_visible']);
 eq([$try($avi, ['content' => []]), $try($avi, ['content' => [['type' => 'url', 'url' => 'x']]]), $try($avi, ['purpose' => 'Bad Purpose']), $try($avi, ['op' => 'x']), $try($avi, ['max_output' => 0]), $try($avi, ['max_output' => 128001]),
     $try($avi, ['content' => [['type' => 'text', 'text' => str_repeat('א', 1000001)]]])], ['ai_content', 'ai_content', 'ai_request', 'ai_request', 'ai_request', 'ai_too_large', 'ai_too_large'],
@@ -371,6 +408,31 @@ eq([$try($avi, ['content' => []]), $try($avi, ['content' => [['type' => 'url', '
 api('POST', 'sys-ai-model-save', $model(['capabilities' => ['vision' => true, 'pdf' => false]]), $owner);
 eq(run($avi, ['case' => $C, 'model' => 'claude-opus-5-5', 'content' => [['type' => 'file', 'file' => $F]]])['block_reason'], 'policy', '§5.7 המודל אינו מקבל PDF ← blocked: policy');
 api('POST', 'sys-ai-model-save', $model(), $owner);
+
+// ═══ ביקורת סבב 1 ═════════════════════════════════════════════
+// 🟡1: דיווח טוקנים חריג מהספק אינו נכנס למונים — לא גולש, לא נועל, ולא פותח את התקרה
+$before = $cnt($QA);
+$fake->next = fn() => ['text' => 'x', 'in_tokens' => PHP_INT_MAX, 'out_tokens' => 5, 'stop_reason' => 'end_turn'];
+$rMax = run($avi);
+$fake->next = fn() => ['text' => 'x', 'in_tokens' => 100000000000, 'out_tokens' => 5, 'stop_reason' => 'end_turn'];
+$rBig = run($avi);
+$fake->next = fn() => ['text' => 'x', 'in_tokens' => 5, 'out_tokens' => 1000001, 'stop_reason' => 'end_turn'];
+$rOut = run($avi);
+$fake->next = fn() => ['text' => 'x', 'in_tokens' => 5.5, 'out_tokens' => '7', 'stop_reason' => 'end_turn'];
+$rFloat = run($avi);
+$fake->next = null;
+$afterBig = $cnt($QA);
+eq([[$rMax['status'], $rMax['cost']['basis'], $rMax['usage']['in_tokens'], $rMax['error_code']], [$rBig['cost']['basis'], $rBig['cost']['reported'], $rBig['error_code']], [$rOut['cost']['basis'], $rOut['error_code']], [$rFloat['cost']['basis'], $rFloat['usage']['in_tokens']],
+    [$afterBig[0] - $before[0], $afterBig[1] - $before[1], $afterBig[2], $afterBig[3]], (string)$db("SELECT group_concat(DISTINCT typeof(used_tokens) || typeof(used_money)) FROM ai_usage_counters"), run($avi)['status']],
+    [['done', 'estimated', null, 'usage_implausible'], ['estimated', null, 'usage_implausible'], ['estimated', 'usage_implausible'], ['estimated', null], [4 * $estCost, 4 * $est, 0, 0], 'integerinteger', 'done'],
+    '🟡1 דיווח טוקנים לא סביר מהספק (PHP_INT_MAX, 10^11, פלט של מיליון, מספר שאינו שלם) נחשב "לא דווח": האומדן הופך לשימוש, המונים נשארים שלמים, ושום סכום דמיוני לא נרשם');
+eq([$raises('UPDATE ai_usage_counters SET used_tokens = used_tokens + 9223372036854775807 WHERE used_tokens > 0'), $raises('UPDATE ai_usage_counters SET used_money = 1.5'), $raises("UPDATE ai_runs SET in_tokens = 5000001 WHERE status = 'running'") || !$db("SELECT 1 FROM ai_runs WHERE status = 'running'")], [true, true, true],
+    '🟡1 המסד: מונה שגולש מעבר לשלם (REAL) או שאינו שלם — נדחה ב-CHECK');
+// 🟡3: האומדן לקבצים שמרני — עמוד לכל 5KB גם כשהקובץ "מצהיר" על עמוד אחד; תמונה 5,000
+eq([apr_ai_estimate([['type' => 'pdf', 'bytes' => 1000000, 'pages' => 1]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 4000, 'pages' => 30]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 12000, 'pages' => null]], null),
+    apr_ai_estimate([['type' => 'image', 'bytes' => 10]], null), apr_ai_estimate([['type' => 'text', 'text' => str_repeat('a', 300)]], 'abc')],
+    [[(int)ceil((50 + 200 * 3000) * 1.2), 0, 200], [(int)ceil((50 + 30 * 3000) * 1.2), 0, 30], [(int)ceil((50 + 3 * 3000) * 1.2), 0, 3], [(int)ceil((50 + 5000) * 1.2), 1, 0], [(int)ceil((1 + 50 + 100) * 1.2), 0, 0]],
+    '🟡3 אומדן שמרני: PDF של 1MB שרשום לו עמוד אחד נאמד כ-200 עמודים; מספר עמודים גדול מהגודל — לפי העמודים; תמונה — 5,000 טוקנים; והכול × 1.2');
 
 // ═══ המסלול האישי, ואין נפילה למנוהל (§4) ═══════════════════════
 api('POST', 'office-ai-policy', ['enabled' => true, 'text_version' => 1, 'providers' => ['anthropic' => 1]], $boaz);
@@ -384,6 +446,18 @@ eq([$st, $pc['connection']['track'], $pc['connection']['key_hint'], code(api('PO
 $n0 = $calls();
 $r = run($boaz);
 eq([$r['status'], $r['track'], $fake->calls[count($fake->calls) - 1]['key'], (int)$db("SELECT COUNT(*) FROM ai_quotas WHERE track = 'personal'")], ['done', 'personal', K_PERSONAL, 0], '11-A3 מסלול אישי בלי מכסה ← עובר, במפתח של המשרד');
+// 🟡1 במסלול האישי: מכסה קשיחה נשארת קשיחה אחרי דיווח של PHP_INT_MAX
+[, $pqx] = api('POST', 'office-ai-quota-save', ['scope' => 'office', 'period' => 'day', 'limit_tokens' => 3 * $est], $boaz);
+$fake->next = fn() => ['text' => 'x', 'in_tokens' => PHP_INT_MAX, 'out_tokens' => PHP_INT_MAX, 'stop_reason' => 'end_turn'];
+$p1 = run($boaz);
+$p2 = run($boaz);
+$p3 = run($boaz);
+$p4 = run($boaz);
+$fake->next = null;
+$myB = api('GET', 'my-ai', [], $boaz)[1]['quotas'][0]['tokens'];
+eq([$p1['status'], $p3['status'], $p4['block_reason'], $cnt($pqx['quota']['pid']), $myB['used'], $myB['left'], $myB['used'] >= 0], ['done', 'done', 'quota', [3 * $estCost, 3 * $est, 0, 0], 3 * $est, 0, true],
+    '🟡1 מסלול אישי: שלוש בקשות עם דיווח של PHP_INT_MAX ממלאות את המכסה לפי האומדן; הרביעית נחסמת; "הבינה שלי" אינו מציג ניצול שלילי');
+api('POST', 'office-ai-quota-delete', ['quota' => $pqx['quota']['pid']], $boaz);
 // גם כשלמשרד ב ולמשתמש יש הקצאה מנוהלת ומכסה מנוהלת — המסלול נשאר אישי
 api('POST', 'sys-ai-assign-save', ['connection' => $MC, 'scope' => 'office', 'target' => $B, 'models' => []], $owner);
 api('POST', 'sys-ai-assign-save', ['connection' => $MC, 'scope' => 'user', 'target' => $boazPid, 'models' => []], $owner);
@@ -505,7 +579,6 @@ $closed = apr_row('SELECT status, cost_basis, error_code, in_tokens FROM ai_runs
 eq([$died, $open['status'] ?? null, $during, [$early, $stillEarly, $swept], $closed, $cnt($QE), apr_ai_sweep(), isset(apr_job_kinds()['ai.reservations']), apr_job_kinds()['ai.reservations']['every'] ?? 0],
     ['died', 'running', [0, 0, $estCost, $est], [0, 0, 1], ['status' => 'unknown', 'cost_basis' => 'estimated', 'error_code' => 'stale', 'in_tokens' => null], [$estCost, $est, 0, 0], 0, true, 300],
     '11-A5 תהליך שמת באמצע הקריאה: השריון נשאר; לפני 15 דקות שירות הרקע אינו נוגע בו; אחריהן — מיושב כשימוש משוער (unknown), פעם אחת; השירות רשום ורץ כל 5 דקות');
-$raises = function (string $sql): bool { try { apr_exec($sql); return false; } catch (PDOException) { return true; } };
 eq([$raises('DELETE FROM ai_runs WHERE id = ' . (int)$open['id']), $raises("UPDATE ai_runs SET status = 'done' WHERE id = " . (int)$open['id']), $raises("UPDATE ai_runs SET in_tokens = 0 WHERE status = 'blocked'"), $raises('DELETE FROM ai_connections')], [true, true, true, true],
     'המסד: רישום שימוש אינו נמחק, בקשה שהסתיימה אינה משתנה, וחיבור אינו נמחק (טריגרים)');
 
@@ -576,12 +649,12 @@ eq([preg_match('/[\'"]tools?[\'"]|tool_choice|mcp_servers|temperature/', $adapte
     str_contains($adapterCode, 'CURLOPT_SSL_VERIFYPEER => true') && str_contains($adapterCode, 'CURLOPT_SSL_VERIFYHOST => 2') && str_contains($adapterCode, 'CURLOPT_FOLLOWLOCATION => false') && str_contains($adapterCode, 'CURLOPT_PROTOCOLS => CURLPROTO_HTTPS'),
     preg_match('/VERIFYPEER\s*=>\s*(false|0)|VERIFYHOST\s*=>\s*(false|0)/', $adapterCode)],
     [0, 1, true, 1, ['https://api.anthropic.com'], true, 0], '11-D5 + רשת: המתאם אינו מזכיר tools; קריאת cURL אחת, לכתובת קבועה בקוד (לא מהמסד ולא מהמשתמש); TLS מאומת, בלי הפניות, HTTPS בלבד');
-$kind = function (string|bool $raw, int $errno, int $status) { try { AprAnthropicAdapter::interpret($raw, $errno, $status); return 'ok'; } catch (AprAiError $e) { return $e->kind . ':' . $e->tech; } };
+$kind = function (string|bool $raw, int $errno, int $status, bool $sent = true) { try { AprAnthropicAdapter::interpret($raw, $errno, $status, $sent); return 'ok'; } catch (AprAiError $e) { return $e->kind . ':' . $e->tech; } };
 $leak = '{"type":"error","error":{"type":"invalid_request_error","message":"' . K_MANAGED . ' ' . SECRET_TEXT . '"}}';
 $msg = function () use ($leak) { try { AprAnthropicAdapter::interpret($leak, 0, 400); } catch (AprAiError $e) { return $e->getMessage(); } };
 eq([$kind('{"type":"message"}', 0, 200), $kind('<html>', 0, 200), $kind($leak, 0, 401), $kind($leak, 0, 403), $kind($leak, 0, 400), $kind($leak, 0, 429), $kind($leak, 0, 529), $kind('Bad Gateway', 0, 502), $kind(false, CURLE_OPERATION_TIMEDOUT, 0),
-    $kind(false, CURLE_COULDNT_CONNECT, 0), $kind(false, CURLE_COULDNT_RESOLVE_HOST, 0), $kind(false, 60, 0), $kind(false, CURLE_RECV_ERROR, 0), $msg()],
-    ['ok', 'unknown:bad_body', 'auth:http_401', 'auth:http_403', 'rejected:http_400', 'rejected:http_429', 'rejected:http_529', 'unknown:http_502', 'unknown:timeout', 'unreachable:curl_7', 'unreachable:curl_6', 'unreachable:curl_60', 'unknown:curl_56', 'ai: rejected (http_400)'],
+    $kind(false, CURLE_COULDNT_CONNECT, 0), $kind(false, CURLE_COULDNT_RESOLVE_HOST, 0), $kind(false, 60, 0), $kind(false, CURLE_RECV_ERROR, 0), $kind(false, CURLE_OPERATION_TIMEDOUT, 0, false), $kind(false, CURLE_RECV_ERROR, 0, false), $msg()],
+    ['ok', 'unknown:bad_body', 'auth:http_401', 'rejected:http_403', 'rejected:http_400', 'rejected:http_429', 'rejected:http_529', 'unknown:http_502', 'unknown:timeout', 'unreachable:curl_7', 'unreachable:curl_6', 'unreachable:curl_60', 'unknown:curl_56', 'unreachable:connect_timeout', 'unreachable:curl_56', 'ai: rejected (http_400)'],
     '§5 שגיאת ספק אינה דולפת גולמית: כל כשל הופך לקוד טכני (אימות / דחייה / לא נשלחה / לא ידוע); גוף התשובה — עם מפתח ותוכן בתוכו — אינו נכנס לחריגה');
 check('המתאם האמיתי רשום, ואינו נטען בבדיקות', APR_AI_ADAPTERS === ['anthropic' => 'AprAnthropicAdapter'] && apr_ai_adapter('anthropic') === $fake);
 
@@ -603,7 +676,7 @@ foreach (array_merge(glob(__DIR__ . '/../assets/js/*.js'), glob(__DIR__ . '/../a
 check('הדפדפן אינו פונה לספק ואינו מחזיק מפתח', !preg_match('/anthropic\.com|x-api-key|sk-ant/i', $front));
 
 // ═══ בריאות ומסך המפתח ═════════════════════════════════════════
-[, $h] = call('GET', 'dev-health', [], $owner);
+[, $h] = api0('GET', 'dev-health', [], $owner);
 $ai = array_values(array_filter($h['checks'] ?? [], fn($c) => ($c['id'] ?? '') === 'ai'))[0] ?? null;
 check('בדיקת התקינות "בינה" רשומה במסך המפתח', $ai !== null && in_array($ai['state'] ?? '', ['ok', 'warn'], true), $ai);
 

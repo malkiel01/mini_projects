@@ -520,11 +520,18 @@ function apr_my_ai(array $ctx): array
 
 // ── התיק ──────────────────────────────────────────────────────
 
+/** מי משנה "בלי בינה": השמאי האחראי. תיק שנשאר בלי אחראי (האחראי עזב) — מנהל המשרד, אם הוא משתתף בתיק. */
+function apr_case_ai_can_set(array $ctx, array $c): bool
+{
+    if ($c['responsible_user_id'] === null) return (bool)(int)$ctx['office']['is_admin'];
+    return (int)$c['responsible_user_id'] === (int)$ctx['user']['id'];
+}
+
 /** "בלי בינה" בתיק, ומי רשאי לשנות. השימוש של הבינה בתיק ומכסת התיק — לאחראי בלבד (§10). */
 function apr_case_ai(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
-    $mine = $c['responsible_user_id'] !== null && (int)$c['responsible_user_id'] === (int)$ctx['user']['id'];
+    $mine = apr_case_ai_can_set($ctx, $c);
     $out = ['no_ai' => (int)apr_val('SELECT no_ai FROM case_ai WHERE case_id = ?', [$c['id']]) === 1, 'can_set' => $mine && $c['status'] !== 'closed', 'usage' => null, 'quotas' => []];
     if ($mine) {
         $sum = apr_row('SELECT ' . APR_AI_USAGE_SUMS . ' FROM ai_runs r WHERE r.case_id = ?', [$c['id']]);
@@ -540,7 +547,7 @@ function apr_case_ai_set(array $ctx, array $in): array
     $on = is_bool($in['no_ai'] ?? null) ? $in['no_ai'] : apr_fail('ai_request');
     return apr_tx(function () use ($ctx, $in, $on) {
         $c = apr_case_get($ctx, $in['case'] ?? null);
-        if ($c['responsible_user_id'] === null || (int)$c['responsible_user_id'] !== (int)$ctx['user']['id']) apr_fail('forbidden');
+        if (!apr_case_ai_can_set($ctx, $c)) apr_fail('forbidden');
         apr_case_writable($c);
         $was = (int)apr_val('SELECT no_ai FROM case_ai WHERE case_id = ?', [$c['id']]) === 1;
         if ($was !== $on) {

@@ -31,10 +31,13 @@ const APR_AI_STALE = 900;                    // שריון שלא יושב 15 ד
 const APR_AI_AUTH_STRIKES = 3;               // כשלי אימות רצופים עד "לא תקין" (§7)
 const APR_AI_MAX_PARTS = 20;
 const APR_AI_MAX_TEXT = 2_000_000;           // בתים של טקסט בבקשה אחת
-const APR_AI_MAX_FILE = 30_000_000;          // בתים לקובץ שנשלח
+const APR_AI_MAX_FILES = 22_000_000;         // בתים לכל הקבצים של בקשה אחת יחד (הספק מגביל בקשה ל-32MB, ו-base64 מנפח בשליש) — נבדק לפני שקובץ נקרא
 const APR_AI_MAX_EST = 4_000_000;            // טוקני קלט משוערים — מעבר לזה הבקשה נדחית לפני כל דבר
-const APR_AI_TOKENS_IMAGE = 2000;            // אומדן לתמונה
+const APR_AI_TOKENS_IMAGE = 5000;            // אומדן לתמונה — בכוונה גבוה
 const APR_AI_TOKENS_PAGE = 3000;             // אומדן לעמוד PDF
+const APR_AI_PAGE_BYTES = 5000;              // PDF: לפחות עמוד לכל 5KB — מספר העמודים שבקובץ נגזר מתוכן שהמשתמש העלה, ואינו נאמן לבדו
+const APR_AI_MAX_REPORT_IN = 5_000_000;      // דיווח טוקנים מהספק מעל זה אינו סביר — נחשב "לא דווח" (וגם שומר על שלם של 64 סיביות בחישוב העלות)
+const APR_AI_MAX_REPORT_OUT = 1_000_000;
 const APR_AI_BLOCKS = ['quota', 'policy', 'no_connection', 'no_assignment', 'case_no_ai', 'model_not_allowed'];
 const APR_AI_TRACKS = ['managed', 'personal'];
 
@@ -85,6 +88,12 @@ function apr_ai_fx(): ?int
 function apr_ai_vault_key(): string
 {
     return hash_hkdf('sha256', apr_secret(), SODIUM_CRYPTO_SECRETBOX_KEYBYTES, 'apr:ai-key');
+}
+
+/** מפתח נפרד לגיבוב הבקשה (request_hash) — לא מפתח הכספת. */
+function apr_ai_hash_key(): string
+{
+    return hash_hkdf('sha256', apr_secret(), 32, 'apr:ai-request');
 }
 
 /** מפתח תקין: 20–300 תווי ASCII מודפסים, בלי רווח. */
@@ -151,8 +160,8 @@ function apr_ai_estimate(array $parts, ?string $system): array
         if ($p['type'] === 'text') $tokens += apr_ai_text_tokens(strlen($p['text']));
         elseif ($p['type'] === 'image') { $tokens += APR_AI_TOKENS_IMAGE; $images++; }
         else {
-            // PDF בלי מספר עמודים ידוע: לפי הגודל (50KB לעמוד), ולפחות עמוד אחד
-            $n = max(1, (int)($p['pages'] ?? 0) ?: apr_ai_ceil_div((int)$p['bytes'], 50_000));
+            // PDF: הגדול מבין מספר העמודים שנרשם לבין עמוד לכל 5KB — שמרני, ואינו נשען על מספר שנגזר מהקובץ עצמו
+            $n = max(1, (int)($p['pages'] ?? 0), apr_ai_ceil_div((int)$p['bytes'], APR_AI_PAGE_BYTES));
             $tokens += $n * APR_AI_TOKENS_PAGE;
             $pages += $n;
         }
@@ -324,6 +333,11 @@ function apr_ai_settle(int $runId, string $status, array $r = []): void
         if (!$run || !in_array($run['status'], ['reserved', 'running'], true)) return;
         $in = is_int($r['in_tokens'] ?? null) && $r['in_tokens'] >= 0 ? $r['in_tokens'] : null;
         $out = is_int($r['out_tokens'] ?? null) && $r['out_tokens'] >= 0 ? $r['out_tokens'] : null;
+        // דיווח שאינו סביר (מספר עצום) אינו נכנס למונים: נחשב "לא דווח" — האומדן הופך לשימוש, והחריגה נרשמת בקוד טכני
+        if (($in !== null && $in > APR_AI_MAX_REPORT_IN) || ($out !== null && $out > APR_AI_MAX_REPORT_OUT)) {
+            $in = $out = null;
+            $r['error_code'] = 'usage_implausible';
+        }
         $reported = $status === 'done' && $in !== null && $out !== null;
         $basis = $status === 'failed' ? null : ($reported ? 'reported' : 'estimated');
         $price = fn(?string $k) => $run[$k] === null ? null : (int)$run[$k];
@@ -403,7 +417,7 @@ function apr_ai_parts(?array $ctx, ?array $case, mixed $content): array
 {
     if (!is_array($content) || !$content || count($content) > APR_AI_MAX_PARTS) apr_fail('ai_content');
     $parts = $sig = [];
-    $bytes = 0;
+    $bytes = $fileBytes = 0;
     foreach ($content as $p) {
         if (!is_array($p)) apr_fail('ai_content');
         if (($p['type'] ?? null) === 'text' && is_string($p['text'] ?? null) && $p['text'] !== '') {
@@ -415,7 +429,10 @@ function apr_ai_parts(?array $ctx, ?array $case, mixed $content): array
             $f = apr_file_row($case, $p['file'] ?? null);
             if ($ctx !== null && !apr_file_visible($ctx, $case, $f)) apr_fail('not_found');
             $kind = $f['mime'] === 'application/pdf' ? 'pdf' : (in_array($f['mime'], ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true) ? 'image' : apr_fail('ai_content'));
-            if ((int)$f['size'] > APR_AI_MAX_FILE) apr_fail('ai_too_large');
+            // קובץ שהסורק דחה, או PDF מוגן בסיסמה — אינו נשלח
+            if ($f['scan_state'] === 'rejected' || (int)$f['is_encrypted'] === 1) apr_fail('ai_content');
+            $fileBytes += (int)$f['size'];
+            if ($fileBytes > APR_AI_MAX_FILES) apr_fail('ai_too_large');
             $parts[] = ['type' => $kind, 'mime' => $f['mime'], 'bytes' => (int)$f['size'], 'pages' => $f['pages'] === null ? null : (int)$f['pages'], 'storage_key' => $f['storage_key']];
             $sig[] = ['f', $f['pid']];
         } else {
@@ -465,7 +482,7 @@ function ai_run(#[\SensitiveParameter] array $req): array
     }
     [$parts, $sig] = apr_ai_parts($ctx, $case, $req['content'] ?? null);
     $quotaUser = $user ?? ($case !== null && $case['responsible_user_id'] !== null ? (int)$case['responsible_user_id'] : (is_int($req['on_behalf'] ?? null) ? $req['on_behalf'] : null));
-    $hash = hash_hmac('sha256', (string)json_encode([$purpose, $requested, $system === null ? null : hash('sha256', $system), $sig, $maxOut, $case['pid'] ?? null]), apr_ai_vault_key());
+    $hash = hash_hmac('sha256', (string)json_encode([$purpose, $requested, $system === null ? null : hash('sha256', $system), $sig, $maxOut, $case['pid'] ?? null]), apr_ai_hash_key());
     [$estIn, $images, $pages] = apr_ai_estimate($parts, $system);
     if ($estIn > APR_AI_MAX_EST) apr_fail('ai_too_large');
 
@@ -557,7 +574,9 @@ function ai_run(#[\SensitiveParameter] array $req): array
         apr_ai_settle($runId, 'unknown', ['error_code' => 'exception']);
         if (function_exists('devloop_log_write')) devloop_log_write('error', 'ai', 'ai.adapter', ['message' => get_class($e), 'data' => ['line' => $e->getLine()]]);
     }
-    return apr_ai_run_out(apr_row('SELECT * FROM ai_runs WHERE id = ?', [$runId])) + ['text' => $text, 'replayed' => false, 'quota' => null];
+    $final = apr_row('SELECT * FROM ai_runs WHERE id = ?', [$runId]);
+    // טקסט חוזר רק מבקשה שנסגרה כ-done (למשל: שירות הרקע כבר סגר אותה כ-unknown בזמן שהספק ענה — אין טקסט)
+    return apr_ai_run_out($final) + ['text' => $final['status'] === 'done' ? $text : null, 'replayed' => false, 'quota' => null];
 }
 
 // ── בדיקת חיבור ──────────────────────────────────────────────

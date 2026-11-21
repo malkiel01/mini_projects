@@ -111,10 +111,11 @@ CREATE INDEX ai_quotas_scope ON ai_quotas (scope, scope_id) WHERE deleted_at IS 
 CREATE TABLE ai_usage_counters (
     quota_id        INTEGER NOT NULL REFERENCES ai_quotas (id),
     period_key      TEXT NOT NULL,                                -- '2026-11' / '2026-11-21' / 'total' — שעון ישראל
-    used_money      INTEGER NOT NULL DEFAULT 0 CHECK (used_money >= 0),
-    used_tokens     INTEGER NOT NULL DEFAULT 0 CHECK (used_tokens >= 0),
-    reserved_money  INTEGER NOT NULL DEFAULT 0 CHECK (reserved_money >= 0),
-    reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (reserved_tokens >= 0),
+    -- typeof: מונה שגלש מעבר לשלם של 64 סיביות היה נשמר כ-REAL — נדחה כאן
+    used_money      INTEGER NOT NULL DEFAULT 0 CHECK (typeof(used_money) = 'integer' AND used_money >= 0),
+    used_tokens     INTEGER NOT NULL DEFAULT 0 CHECK (typeof(used_tokens) = 'integer' AND used_tokens >= 0),
+    reserved_money  INTEGER NOT NULL DEFAULT 0 CHECK (typeof(reserved_money) = 'integer' AND reserved_money >= 0),
+    reserved_tokens INTEGER NOT NULL DEFAULT 0 CHECK (typeof(reserved_tokens) = 'integer' AND reserved_tokens >= 0),
     UNIQUE (quota_id, period_key)
 );
 
@@ -132,12 +133,12 @@ CREATE TABLE ai_runs (
     purpose         TEXT NOT NULL,
     status          TEXT NOT NULL CHECK (status IN ('reserved', 'running', 'done', 'failed', 'blocked', 'unknown')),
     block_reason    TEXT CHECK (block_reason IS NULL OR block_reason IN ('quota', 'policy', 'no_connection', 'no_assignment', 'case_no_ai', 'model_not_allowed')),
-    in_tokens       INTEGER,                                      -- כפי שהספק דיווח; NULL אם לא דיווח
-    out_tokens      INTEGER,
+    in_tokens       INTEGER CHECK (in_tokens IS NULL OR (typeof(in_tokens) = 'integer' AND in_tokens BETWEEN 0 AND 5000000)),     -- כפי שהספק דיווח; NULL אם לא דיווח
+    out_tokens      INTEGER CHECK (out_tokens IS NULL OR (typeof(out_tokens) = 'integer' AND out_tokens BETWEEN 0 AND 1000000)),
     est_in_tokens   INTEGER,
     est_out_tokens  INTEGER,
     est_cost        INTEGER,                                      -- אגורות; NULL כשאין מחיר או שער
-    reported_cost   INTEGER,                                      -- לפי הטוקנים שדווחו והמחירון שהיה בזמן השריון
+    reported_cost   INTEGER CHECK (reported_cost IS NULL OR typeof(reported_cost) = 'integer'),                                      -- לפי הטוקנים שדווחו והמחירון שהיה בזמן השריון
     cost_basis      TEXT CHECK (cost_basis IS NULL OR cost_basis IN ('reported', 'estimated')),
     price_in        INTEGER,                                      -- המחירון והשער ששימשו — בקשה ישנה שומרת את העלות שחושבה אז
     price_out       INTEGER,
@@ -155,6 +156,7 @@ CREATE TABLE ai_runs (
 );
 CREATE INDEX ai_runs_office ON ai_runs (office_id, created_at);
 CREATE INDEX ai_runs_user ON ai_runs (user_id, created_at);
+CREATE INDEX ai_runs_case ON ai_runs (case_id) WHERE case_id IS NOT NULL;
 CREATE INDEX ai_runs_open ON ai_runs (status, created_at) WHERE status IN ('reserved', 'running');
 
 CREATE TRIGGER ai_runs_no_delete BEFORE DELETE ON ai_runs

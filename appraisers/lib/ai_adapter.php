@@ -19,7 +19,7 @@ const APR_AI_MAX_RESPONSE = 8_000_000;       // בתים — תשובה ארוכ
 
 /**
  * מה קרה לבקשה אצל הספק:
- *   auth      — האימות נדחה (401 / 403). לא עובדה.
+ *   auth      — האימות נדחה (401). לא עובדה.
  *   rejected  — הספק דחה בבירור (4xx, 5xx עם גוף שגיאה). לא עובדה, לא חויבה.
  *   unreachable — לא נוצר חיבור. לא נשלחה.
  *   unknown   — פסק זמן, תשובה קטועה או לא מובנת: ייתכן שעובדה וחויבה.
@@ -139,24 +139,28 @@ final class AprAnthropicAdapter implements AprAiAdapter
         $raw = curl_exec($ch);
         $errno = curl_errno($ch);
         $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        // עוד לא התחילה העברה (אין חיבור, או פסק זמן בשלב החיבור) — שום דבר לא נשלח לספק
+        $sent = (float)curl_getinfo($ch, CURLINFO_PRETRANSFER_TIME) > 0.0;
         curl_close($ch);
-        return self::interpret($raw, $errno, $status);
+        return self::interpret($raw, $errno, $status, $sent);
     }
 
     /** תשובת cURL ← JSON של הצלחה, או AprAiError עם קוד טכני. גוף התשובה של שגיאה אינו נשמר ואינו מועבר הלאה. */
-    public static function interpret(string|bool $raw, int $errno, int $status): array
+    public static function interpret(string|bool $raw, int $errno, int $status, bool $sent = true): array
     {
         if ($raw === false || $errno !== 0) {
             // לא נוצר חיבור — הבקשה לא נשלחה. כל כשל אחר (פסק זמן, ניתוק באמצע) — לא ידוע אם עובדה
             $notSent = in_array($errno, [5, 6, 7, 35, 60], true);   // proxy / host לא נמצא, אין חיבור, לחיצת TLS נכשלה, תעודה לא אומתה
-            throw new AprAiError($notSent ? 'unreachable' : 'unknown', $errno === CURLE_OPERATION_TIMEDOUT ? 'timeout' : 'curl_' . $errno);
+            if (!$sent) $notSent = true;
+            throw new AprAiError($notSent ? 'unreachable' : 'unknown', $errno === CURLE_OPERATION_TIMEDOUT ? ($notSent ? 'connect_timeout' : 'timeout') : 'curl_' . $errno);
         }
         if (strlen($raw) > APR_AI_MAX_RESPONSE) throw new AprAiError('unknown', 'too_long');
         $j = json_decode($raw, true);
         if ($status >= 200 && $status < 300) {
             return is_array($j) ? $j : throw new AprAiError('unknown', 'bad_body');
         }
-        if ($status === 401 || $status === 403) throw new AprAiError('auth', 'http_' . $status);
+        // רק 401 הוא כשל אימות. 403 (אין הרשאה למודל, לאזור, לתכונה) הוא דחייה — אחרת שלוש דחיות כאלה היו מסמנות חיבור משותף "לא תקין"
+        if ($status === 401) throw new AprAiError('auth', 'http_401');
         // שגיאה מובנית מהספק — דחייה ברורה. 5xx בלי גוף שגיאה מובן — לא ידוע
         $clear = is_array($j) && ($j['type'] ?? null) === 'error';
         if ($status >= 400 && $status < 500) throw new AprAiError('rejected', 'http_' . $status);
