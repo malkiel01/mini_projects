@@ -46,6 +46,14 @@
  *                  · visit-reopen {visit, rev, reason} · visit-photo {photo, thumb?} · visit-photo-upload (גוף גולמי; בכתובת: visit, field?, row?,
  *                  name, key, caption?, place?, taken_at?, consent?, lat?, lng?) · visit-photo-update {photo, rev, caption?, place?, usage?,
  *                  for_report?, confirm_rights?} · visit-photo-order {visit, order[]} · visit-photo-delete {photo, rev} · office-visit-geo {on}
+ * עסקאות (15):     case-comps {case} · comp {comp} · comp-set {set} · comp-search-add {case, source? | source_text?, criteria{}, result_count?,
+ *                  limitations?} · comp-search-update {search, …} · comp-add {case, search?, values{}, note?} · comp-correct {comp, rev,
+ *                  changes{}, reason} · comp-status {comp, rev, status, reason?} · comp-weight {comp, rev, weight} · comp-note {comp, rev, note}
+ *                  · comp-delete {comp, rev, reason} · comp-adj-save {comp, rev, adj?, label, kind, value, sign, basis?, applies_to?, reason}
+ *                  · comp-adj-delete {comp, rev, adj} · comp-adj-order {comp, rev, order[]} · comp-set-save {case | set, rev?, name?, unit_basis,
+ *                  area_kind?, method, rounding, subject_area_fact?} · comp-set-conclude {set, rev, value, reason} · comp-set-delete {set, rev}
+ *                  · comp-import-upload (גוף גולמי, XLSX; בכתובת: case, name, key) · comp-import-preview {case, file | text, has_header?,
+ *                  mapping?, date_order?, defaults?} · comp-import {…אותו תוכן…, search, rights: true}
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -86,6 +94,8 @@ require_once __DIR__ . '/facts.php';
 require_once __DIR__ . '/sources.php';
 require_once __DIR__ . '/visits.php';
 require_once __DIR__ . '/visit_photos.php';
+require_once __DIR__ . '/comps.php';
+require_once __DIR__ . '/comp_import.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -295,6 +305,27 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'visit-photo-order' => apr_visit_photo_order($ctx, $p),
         'visit-photo-delete' => apr_visit_photo_delete($ctx, $p),
         'office-visit-geo' => apr_office_visit_geo($ctx, $p),
+        // עסקאות השוואה ומנוע החישוב (15)
+        'case-comps' => apr_case_comps($ctx, $p),
+        'comp' => apr_comp_view($ctx, $p),
+        'comp-set' => apr_comp_set_view($ctx, $p),
+        'comp-search-add' => apr_comp_search_add($ctx, $p),
+        'comp-search-update' => apr_comp_search_update($ctx, $p),
+        'comp-add' => apr_comp_add($ctx, $p),
+        'comp-correct' => apr_comp_correct($ctx, $p),
+        'comp-status' => apr_comp_status($ctx, $p),
+        'comp-weight' => apr_comp_weight($ctx, $p),
+        'comp-note' => apr_comp_note($ctx, $p),
+        'comp-delete' => apr_comp_delete($ctx, $p),
+        'comp-adj-save' => apr_comp_adj_save($ctx, $p),
+        'comp-adj-delete' => apr_comp_adj_delete($ctx, $p),
+        'comp-adj-order' => apr_comp_adj_order($ctx, $p),
+        'comp-set-save' => apr_comp_set_save($ctx, $p),
+        'comp-set-conclude' => apr_comp_set_conclude($ctx, $p),
+        'comp-set-delete' => apr_comp_set_delete($ctx, $p),
+        'comp-import-upload' => apr_comp_import_upload($ctx, $p, $env),
+        'comp-import-preview' => apr_comp_import_preview($ctx, $p),
+        'comp-import' => apr_comp_import($ctx, $p),
         'file-assign' => apr_file_assign($ctx, $p),
         'file-update' => apr_file_update($ctx, $p),
         'file-delete' => apr_file_delete($ctx, $p),
