@@ -428,11 +428,13 @@ eq([[$rMax['status'], $rMax['cost']['basis'], $rMax['usage']['in_tokens'], $rMax
     '🟡1 דיווח טוקנים לא סביר מהספק (PHP_INT_MAX, 10^11, פלט של מיליון, מספר שאינו שלם) נחשב "לא דווח": האומדן הופך לשימוש, המונים נשארים שלמים, ושום סכום דמיוני לא נרשם');
 eq([$raises('UPDATE ai_usage_counters SET used_tokens = used_tokens + 9223372036854775807 WHERE used_tokens > 0'), $raises('UPDATE ai_usage_counters SET used_money = 1.5'), $raises("UPDATE ai_runs SET in_tokens = 5000001 WHERE status = 'running'") || !$db("SELECT 1 FROM ai_runs WHERE status = 'running'")], [true, true, true],
     '🟡1 המסד: מונה שגולש מעבר לשלם (REAL) או שאינו שלם — נדחה ב-CHECK');
-// 🟡3: האומדן לקבצים שמרני — עמוד לכל 5KB גם כשהקובץ "מצהיר" על עמוד אחד; תמונה 5,000
-eq([apr_ai_estimate([['type' => 'pdf', 'bytes' => 1000000, 'pages' => 1]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 4000, 'pages' => 30]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 12000, 'pages' => null]], null),
+// 🟡3: האומדן לקבצים — לפי עמודים, עם רצפה לפי גודל; תמונה 5,000
+$e = fn(int $pages) => (int)ceil((50 + $pages * 3000) * 1.2);
+eq([apr_ai_estimate([['type' => 'pdf', 'bytes' => 2000000, 'pages' => 4]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 2000000, 'pages' => 1]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 4000, 'pages' => 30]], null),
+    apr_ai_estimate([['type' => 'pdf', 'bytes' => 2000000, 'pages' => null]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 100, 'pages' => 0]], null), apr_ai_estimate([['type' => 'pdf', 'bytes' => 100001, 'pages' => 1]], null),
     apr_ai_estimate([['type' => 'image', 'bytes' => 10]], null), apr_ai_estimate([['type' => 'text', 'text' => str_repeat('a', 300)]], 'abc')],
-    [[(int)ceil((50 + 200 * 3000) * 1.2), 0, 200], [(int)ceil((50 + 30 * 3000) * 1.2), 0, 30], [(int)ceil((50 + 3 * 3000) * 1.2), 0, 3], [(int)ceil((50 + 5000) * 1.2), 1, 0], [(int)ceil((1 + 50 + 100) * 1.2), 0, 0]],
-    '🟡3 אומדן שמרני: PDF של 1MB שרשום לו עמוד אחד נאמד כ-200 עמודים; מספר עמודים גדול מהגודל — לפי העמודים; תמונה — 5,000 טוקנים; והכול × 1.2');
+    [[$e(20), 0, 20], [$e(20), 0, 20], [$e(30), 0, 30], [$e(100), 0, 100], [$e(1), 0, 1], [$e(2), 0, 2], [(int)ceil((50 + 5000) * 1.2), 1, 0], [(int)ceil((1 + 50 + 100) * 1.2), 0, 0]],
+    '🟡3 אומדן: נסח סרוק של 2MB עם 4 עמודים נאמד כ-20 עמודים (רצפה של עמוד ל-100KB) — גם אם הקובץ "מצהיר" על עמוד אחד; ספירה גדולה מהרצפה — לפי הספירה; בלי ספירה — עמוד ל-20KB; תמונה 5,000; והכול × 1.2');
 
 // ═══ המסלול האישי, ואין נפילה למנוהל (§4) ═══════════════════════
 api('POST', 'office-ai-policy', ['enabled' => true, 'text_version' => 1, 'providers' => ['anthropic' => 1]], $boaz);

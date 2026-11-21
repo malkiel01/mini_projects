@@ -35,7 +35,8 @@ const APR_AI_MAX_FILES = 22_000_000;         // בתים לכל הקבצים ש�
 const APR_AI_MAX_EST = 4_000_000;            // טוקני קלט משוערים — מעבר לזה הבקשה נדחית לפני כל דבר
 const APR_AI_TOKENS_IMAGE = 5000;            // אומדן לתמונה — בכוונה גבוה
 const APR_AI_TOKENS_PAGE = 3000;             // אומדן לעמוד PDF
-const APR_AI_PAGE_BYTES = 5000;              // PDF: לפחות עמוד לכל 5KB — מספר העמודים שבקובץ נגזר מתוכן שהמשתמש העלה, ואינו נאמן לבדו
+const APR_AI_PAGE_BYTES = 100_000;           // PDF שמספר עמודיו ידוע: לפחות עמוד לכל 100KB — רצפה, כדי שספירה שקרית לא תקטין את השריון בסדרי גודל
+const APR_AI_PAGE_BYTES_BLIND = 20_000;      // PDF בלי מספר עמודים (מוצפן / הספירה נכשלה): עמוד לכל 20KB
 const APR_AI_MAX_REPORT_IN = 5_000_000;      // דיווח טוקנים מהספק מעל זה אינו סביר — נחשב "לא דווח" (וגם שומר על שלם של 64 סיביות בחישוב העלות)
 const APR_AI_MAX_REPORT_OUT = 1_000_000;
 const APR_AI_BLOCKS = ['quota', 'policy', 'no_connection', 'no_assignment', 'case_no_ai', 'model_not_allowed'];
@@ -160,8 +161,9 @@ function apr_ai_estimate(array $parts, ?string $system): array
         if ($p['type'] === 'text') $tokens += apr_ai_text_tokens(strlen($p['text']));
         elseif ($p['type'] === 'image') { $tokens += APR_AI_TOKENS_IMAGE; $images++; }
         else {
-            // PDF: הגדול מבין מספר העמודים שנרשם לבין עמוד לכל 5KB — שמרני, ואינו נשען על מספר שנגזר מהקובץ עצמו
-            $n = max(1, (int)($p['pages'] ?? 0), apr_ai_ceil_div((int)$p['bytes'], APR_AI_PAGE_BYTES));
+            // הספק מחייב לפי עמוד, לא לפי בתים. עמודים ידועים: הגדול מבין הספירה לבין עמוד לכל 100KB; לא ידועים: עמוד לכל 20KB
+            $known = (int)($p['pages'] ?? 0);
+            $n = $known > 0 ? max($known, apr_ai_ceil_div((int)$p['bytes'], APR_AI_PAGE_BYTES)) : max(1, apr_ai_ceil_div((int)$p['bytes'], APR_AI_PAGE_BYTES_BLIND));
             $tokens += $n * APR_AI_TOKENS_PAGE;
             $pages += $n;
         }
