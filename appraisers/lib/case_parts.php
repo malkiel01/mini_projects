@@ -109,7 +109,7 @@ function apr_ident_row(array $c, mixed $pid): array
 function apr_case_identifier_update(array $ctx, array $in): array
 {
     $c = apr_case_get($ctx, $in['case'] ?? null, 'edit');
-    return apr_tx(function () use ($c, $in) {
+    return apr_tx(function () use ($ctx, $c, $in) {
         $i = apr_ident_row($c, $in['identifier'] ?? null);
         $state = array_key_exists('state', $in) ? (apr_clean_choice($in['state'], APR_IDENT_STATES) ?? apr_fail('status_invalid')) : $i['state'];
         $source = array_key_exists('source_kind', $in) ? (apr_clean_choice($in['source_kind'], APR_IDENT_SOURCES) ?? apr_fail('content_invalid')) : $i['source_kind'];
