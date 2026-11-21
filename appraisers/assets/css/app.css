@@ -330,3 +330,6 @@ q { quotes: '"' '"'; color: var(--muted); }
 .v-phone { max-width: 390px; margin-inline: auto; padding: var(--s2); border: 2px solid var(--line); border-radius: 18px; }
 .v-prep { margin-block: var(--s2); }
 @media (min-width: 900px) { .v-grid { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); } .v-grid #v-gallery { position: sticky; top: calc(var(--head) + 56px); } }
+
+fieldset.f { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: var(--s1); }
+fieldset.f legend { font-weight: 600; font-size: .9rem; padding: 0; margin-bottom: var(--s1); }

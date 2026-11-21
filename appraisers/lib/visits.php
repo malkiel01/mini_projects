@@ -256,7 +256,17 @@ function apr_visit_view(array $ctx, array $q): array
         'geo' => (bool)apr_val('SELECT photo_geo FROM office_visit_settings WHERE office_id = ?', [$c['office_id']]),
         'limits' => ['max_size' => apr_file_max(), 'max_side' => 2560],
         'others' => array_map(fn($o) => ['pid' => $o['pid'], 'seq' => (int)$o['seq'], 'status' => $o['status']], apr_rows('SELECT pid, seq, status FROM visits WHERE case_id = ? AND id <> ? AND form_snapshot IS NOT NULL ORDER BY seq', [$c['id'], $v['id']])),
-        'prepared' => ['identifiers' => array_map('apr_ident_out', apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']])), 'facts' => $facts]];
+        'prepared' => ['files' => apr_visit_prepared_files($ctx, $c), 'identifiers' => array_map('apr_ident_out', apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']])), 'facts' => $facts]];
+}
+
+/** "מסמכים מותרים" (§6.1): קובצי התיק שמותר לי לראות — לקריאה במסך הביקור. בלי תמונות ביקור. */
+function apr_visit_prepared_files(array $ctx, array $c): array
+{
+    $out = [];
+    foreach (apr_rows('SELECT * FROM files WHERE case_id = ? AND deleted_at IS NULL AND id NOT IN (SELECT file_id FROM visit_photos) ORDER BY id DESC LIMIT 40', [$c['id']]) as $f) {
+        if (apr_file_visible($ctx, $c, $f)) $out[] = ['pid' => $f['pid'], 'name' => $f['original_name']];
+    }
+    return $out;
 }
 
 /** ללוח הראשי: הביקורים הקרובים שלי — אני המבקר, התיק פתוח ואני עדיין משתתף בו. */

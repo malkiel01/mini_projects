@@ -620,7 +620,10 @@ $pubBad = publish($avi, $P, ['groups' => $g, 'fields' => [vfield('a', 'g', 'text
 eq([$pubBad[0], in_array('duplicate_key', array_column($pubBad[1]['error']['checks']['errors'] ?? [], 'code'), true)], [422, true], '§4 פרסום עם שני שדות באותו מפתח ← נחסם');
 call('POST', 'profile-draft-discard', ['profile' => $P], $avi);
 $old = apr_profile_content_read('{"schema":1,"flags":[],"requirements":{"groups":[],"items":[]},"tasks":{"items":[]},"rules":[]}');
-eq([count($old['visit']['groups']), $old['visit']['example']], [7, true], '§4 פרופיל שנוצר לפני הפרוסה מקבל את טופס ברירת המחדל (שש הקבוצות + חדרים), מסומן "דוגמה"');
+$df = array_column(apr_visit_default_form()['fields'], null, 'key');
+eq([count($old['visit']['groups']), $old['visit']['example'], $df['elevator_count']['when']['field'] ?? null, $df['front_photo']['required'], $df['visit_date']['required'], $df['possible_mismatch']['creates_task'], $df['area_measured']['maps_to'],
+    apr_visit_eval($df['elevator_count']['when'], ['answers' => ['has_elevator' => null]]), apr_visit_eval($df['elevator_count']['when'], ['answers' => ['has_elevator' => true]])],
+    [7, true, 'answer.has_elevator', true, true, true, 'area', false, true], '§4 פרופיל שנוצר לפני הפרוסה מקבל את טופס ברירת המחדל (שש הקבוצות + חדרים), מסומן "דוגמה"');
 
 // ── min_rows בקבוצה חוזרת (מקרה קצה 12) ──
 $fm = visit_form();
@@ -645,6 +648,22 @@ eq([$r[1]['visit']['visitor']['pid'], $t8['upid'], $t8['due_at'], code(call('POS
     [$noaPid, $noaPid, '2026-12-01T00:00:00Z', 'forbidden', 'בעל הדירה', 'visit_changed', 'nothing_to_change'], '§10 שינוי מבקר ומועד — edit בתיק (המשימה עוברת למבקר החדש); נוכחים — גם המבקר; rev ישן ← 409');
 $r = call('POST', 'visit-cancel', ['visit' => $V8, 'rev' => $rev($V8), 'reason' => 'הלקוח ביטל'], $avi);
 eq([$r[1]['visit']['status'], $r[1]['visit']['done'], apr_val('SELECT status FROM tasks WHERE origin_key = ?', ['visit:' . $V8]), code($start($noa, $V8))], ['cancelled', false, 'cancelled', 'visit_state'], '§5 ביטול ביקור שלא התקיים: המשימה מתבטלת, והביקור אינו נפתח');
+
+// ── ביקור שנדחה אחרי שנפתח ממשיך עם הטופס שצולם; ביקור שהושלם ונפתח מחדש אינו הופך ל"לא הייתה גישה" ──
+$G = make_case($avi, $P);
+$V9 = $plan($avi, $G, $aviPid)[1]['visit']['pid'];
+$start($avi, $V9);
+$snap9 = $vrow($V9)['form_snapshot'];
+$finish($avi, $V9, 'postponed', ['note' => 'הדייר ביקש לדחות']);
+publish($avi, $P, $form2);
+$r = $start($avi, $V9);
+eq([$r[0], $vrow($V9)['form_snapshot'] === $snap9, in_array('addr', $formKeys($avi, $V9), true)], [200, true, true], '13-A1 ביקור שנדחה ונפתח שוב — אחרי פרסום גרסה חדשה — ממשיך עם הטופס שצולם בפתיחה הראשונה');
+publish($avi, $P, visit_form());
+$fill($avi, $V9);
+$finish($avi, $V9, 'completed');
+call('POST', 'visit-reopen', ['visit' => $V9, 'rev' => $rev($V9), 'reason' => 'תיקון'], $avi);
+eq([$vrow($V9)['status'], code($finish($avi, $V9, 'no_access', ['note' => 'x'])), code($finish($avi, $V9, 'postponed', ['note' => 'x'])), $vrow($V9)['status']], ['in_progress', 'visit_state', 'visit_state', 'in_progress'],
+    '13-A6 ביקור שהושלם ונפתח מחדש אינו מסומן "לא הייתה גישה" או "נדחה" — המצב נגזר מכל ההיסטוריה שלו, לא מהמצב הנוכחי בלבד');
 
 // ── מיגרציה 011 על מסד v10 מאוכלס ──
 $m10 = sys_get_temp_dir() . '/apr-m10-' . bin2hex(random_bytes(5));

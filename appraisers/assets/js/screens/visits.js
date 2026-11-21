@@ -163,6 +163,7 @@ async function viewVisit(pid, vpid) {
         <details class="v-prep"><summary class="hint">📋 ${V.prepared}</summary>
           ${prepared.identifiers.length ? `<ul class="list">${prepared.identifiers.map(i => `<li class="card static"><div class="body"><div class="l1"><span>${esc(identText(i))}</span></div><div class="l2">${esc(C.identKinds[i.kind] || i.kind)}</div></div></li>`).join('')}</ul>` : ''}
           ${prepared.facts.length ? `<ul class="list">${prepared.facts.map(f => `<li class="card static"><div class="body"><div class="l1"><span>${esc(f.label)}</span><span class="t">${esc(f.num ?? f.text ?? f.date ?? (f.bool === null ? '' : f.bool ? V.yes : V.no))}${f.unit ? ' ' + esc(V.units[f.unit] || f.unit) : ''}</span></div></div></li>`).join('')}</ul>` : `<p class="empty">${V.noPrepared}</p>`}
+          ${prepared.files.length ? `<ul class="list">${prepared.files.map(f => `<li class="card static"><div class="body"><div class="l1"><a href="#/cases/${pid}/file/${f.pid}">📄 ${esc(f.name)}</a></div></div></li>`).join('')}</ul>` : ''}
           <p class="hint"><a href="#/cases/${pid}/reqs">${C.tabs.reqs}</a> · <a href="#/cases/${pid}/facts">${T.f.tab}</a></p></details>
         <div class="doc-grid v-grid"><div id="v-form">${vFormHtml(x, answers, !fill)}</div>
           <div id="v-gallery">${vGalleryHtml(x, fill)}</div></div>

@@ -196,7 +196,7 @@ function apr_visit_eval(?array $c, array $in): bool
 
 function apr_visit_seed_field(string $key, string $group, string $label, string $type, int $sort, array $more = []): array
 {
-    return ['key' => $key, 'group' => $group, 'label' => $label, 'type' => $type, 'required' => false, 'when' => null, 'sort' => $sort] + $more;
+    return $more + ['key' => $key, 'group' => $group, 'label' => $label, 'type' => $type, 'required' => false, 'when' => null, 'sort' => $sort];
 }
 
 /** טופס ברירת המחדל — שש הקבוצות שבאפיון 26.2. דוגמה בלבד: הבעלים ימסור טופס אמיתי (אפיון 13 §13). */
