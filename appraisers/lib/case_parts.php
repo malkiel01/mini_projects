@@ -475,6 +475,7 @@ function apr_case_view(array $ctx, array $q): array
         'open_conflicts' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]),
         'sources' => apr_case_sources_summary($ctx, $c),
         'visits' => apr_case_visits_summary($c),
+        'comps' => apr_comp_visible($c) ? apr_case_comps_summary($c) : null,
         'profile' => ['pid' => apr_profile_level($ctx, apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']])) !== null ? $p['pid'] : null, 'name' => $p['name'],
             'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null, 'pending' => $pending,
             'flags' => $content['flags'], 'groups' => $content['requirements']['groups']],

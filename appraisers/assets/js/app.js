@@ -10,6 +10,7 @@
  *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
  *   #/cases/<pid>/sources[/<מקור>] · #/cases/<pid>/check/<בדיקה> · #/cases/<pid>/planning/<פריט> · #/sources[/<מקור>]   מקורות ותכנון (09)
  *   #/cases/<pid>/visits · #/cases/<pid>/visits/<ביקור>   ביקור בנכס (13)
+ *   #/cases/<pid>/comps[/<עסקה>] · #/cases/<pid>/compset/<קבוצה> · #/cases/<pid>/compimport/<חיפוש>   עסקאות השוואה וחישובים (15)
  *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
@@ -157,7 +158,7 @@ async function boot() {
     $('#back').addEventListener('click', () => {
         const parts = location.hash.split('/').filter(Boolean);
         // מהאשף חוזרים לרשימה: כרטיס של טיוטה מפנה חזרה לאשף, וכך "חזרה" הייתה נתקעת
-        location.hash = parts[1] === 'cases' && parts[3] === 'setup' ? '#/cases' : parts.length > 2 ? '#/' + parts.slice(1, -1).join('/') : '#/';
+        location.hash = parts[1] === 'cases' && parts[3] === 'setup' ? '#/cases' : parts[1] === 'cases' && ['compset', 'compimport'].includes(parts[3]) ? `#/cases/${parts[2]}/comps` : parts.length > 2 ? '#/' + parts.slice(1, -1).join('/') : '#/';
     });
     $('#me-btn').addEventListener('click', openMe);
     $('#sub').addEventListener('click', () => bindOfficePick(sheet(T.officePick, officesListHtml(), null)));

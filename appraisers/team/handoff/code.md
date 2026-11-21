@@ -39,6 +39,21 @@
 - **לא נבנה ב-13:** בלי קליטה ומסך ההכרעה (14); `stale` של פרק בדוח (17); החלת מקטע "ביקור" על תיק קיים; עורך בממשק לתנאי לפי
   `property_type` / `purpose` ולתנאי מורכב (השרת תומך); גרירה (יש ▲▼). **לא נבדק:** צעדי 👁 של AP-013, טלפון אמיתי, HEIC, Safari.
 
+## ל-14 (בלי קליטה וסנכרון) ול-17 (דוח)
+
+- **14 נשענת על מה שכבר קיים ב-13:** לכל תשובה `rev` ו-`client_op_id`; `visit-answer` מקבל `op`, ושליחה חוזרת של אותה פעולה מצליחה בלי לכתוב
+  שוב (כך תור הסנכרון יכול לשלוח שוב בבטחה). 409 `visit_changed` מחזיר `error.current` — הבסיס למסך ההכרעה המלא. לתמונה: `key` ב-
+  `visit-photo-upload` הוא מזהה הפעולה (אותה תמונה, לא שתיים). המסך (`screens/visits.js`): `VS.pending` הוא התור שבזיכרון, `vFlush()` שולח אותו —
+  14 מחליפה אותו בתור קבוע במכשיר. `form_snapshot` מוחזר במלואו ב-`visit`, כך שאפשר למלא בלי לפנות שוב לשרת.
+- **17:** `apr_visits_completed()` לטריגר הטיוטה; תמונות לדוח — `visit_photos.for_report = 1`, לפי `sort`; פרק שנשען על נתון רושם `apr_fact_use`.
+  **חסר ומחכה ל-17:** סימון `stale` של פרק כשתמונה שבדוח נמחקת (היומן רושם `was_for_report`) וכשביקור נפתח מחדש (אפיון 13 §5.6, מקרה קצה 10).
+
+## איך מריצים
+
+`php appraisers/tests/run.php` (17 קבצים, כל אחד בתהליך משלו; קובץ בודד: `php appraisers/tests/o-visits.test.php`) · `php -l` · `node --check` ·
+`php platform/check-apps.php` · `php devloop/tools/sync.php --check`. דפדפן: `APR_DATA_DIR=<תיקייה> php -S 127.0.0.1:8765 -d
+auto_prepend_file=$PWD/tests/dev-prepend.php -t $PWD` מתוך `appraisers/` — נכנסים כ"הבעלים"; Playwright ו-Chromium מותקנים במכולה.
+
 ## ל-05 (שיתוף ברמת פריט) — הערת הביקורת של 10
 
 `apr_file_visible($ctx, $c, $file)` (`lib/documents.php`) הוא המקום היחיד שמכריע אם קובץ נראה; היום = כל מי שרואה את התיק, ו-
