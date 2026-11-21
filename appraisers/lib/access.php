@@ -110,6 +110,8 @@ const APR_ACCESS = [
     'office-ai' => 'admin', 'office-ai-policy' => 'admin', 'office-ai-connection-save' => 'admin', 'office-ai-connection-test' => 'admin',
     'office-ai-connection-revoke' => 'admin', 'office-ai-quota-save' => 'admin', 'office-ai-quota-delete' => 'admin',
     'my-ai' => 'member', 'ai-quota-request' => 'member', 'case-ai' => 'member', 'case-ai-set' => 'member',
+    // חילוץ וסיווג בבינה (12): ההרשאה בתיק נבדקת בכל פעולה (lib/extract.php)
+    'file-ai' => 'member', 'file-ai-run' => 'member', 'file-ai-suggestion' => 'member', 'file-ai-summary-reviewed' => 'member', 'file-ai-reject-all' => 'member', 'case-ai-auto-set' => 'member',
 
     'office'              => 'member',
     'office-leave'        => 'member',
@@ -148,7 +150,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['file-ai', 'sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];

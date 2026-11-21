@@ -557,10 +557,12 @@ apr_migrate($v8, $m8);
 $v8->exec('PRAGMA foreign_keys = OFF');
 $v8->exec('ATTACH ' . $v8->quote("$dir/app.sqlite") . ' AS live');
 $tables = array_column($v8->query("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'")->fetchAll(), 'name');
-foreach ($tables as $t) { $v8->exec("DELETE FROM main.\"$t\""); $v8->exec("INSERT INTO main.\"$t\" SELECT * FROM live.\"$t\""); }
+foreach ($tables as $t) { $v8->exec("DELETE FROM main.\"$t\""); $v8->exec("INSERT INTO main.\"$t\" (" . t_cols($v8, $t) . ") SELECT " . t_cols($v8, $t) . " FROM live.\"$t\""); }
 $v8->exec('DETACH live');
 $v8->exec('PRAGMA foreign_keys = ON');
-$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT * FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
+// העמודות כפי שהן לפני המיגרציה: מיגרציה מאוחרת שמוסיפה עמודה (014 ל-facts) אינה משנה את מה שהיה בשורה
+$colsBefore = array_combine($tables, array_map(fn($t) => t_cols($v8, $t), $tables));
+$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT {$colsBefore[$t]} FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
 $d8 = $dump($v8);
 $rows8 = array_sum(array_map(fn($t) => (int)$v8->query("SELECT COUNT(*) FROM \"$t\"")->fetchColumn(), $tables));
 apr_migrate($v8);

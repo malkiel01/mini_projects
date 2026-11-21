@@ -285,7 +285,9 @@ function apr_fact_out(array $ctx, array $c, array $f, array $attr): array
             'original' => $f['corrected_at'] === null ? null : apr_fact_value_out($int($f['original_num']), $f['original_text'], $f['original_date'], $f['original_unit'], $f['original_area_kind'], $attr),
             'corrected_by' => $f['corrected_name'], 'corrected_at' => $f['corrected_at'], 'correction_note' => $f['correction_note'],
             'entered_by' => $f['entered_name'], 'entered_at' => $f['entered_at'], 'verified_by' => $f['verified_name'], 'verified_at' => $f['verified_at'],
-            'rejected_reason' => $f['rejected_reason'], 'note' => $f['note'], 'rev' => (int)$f['rev'], 'updated_by' => $f['updated_name'], 'updated_at' => $f['updated_at']];
+            'rejected_reason' => $f['rejected_reason'], 'note' => $f['note'], 'rev' => (int)$f['rev'], 'updated_by' => $f['updated_name'], 'updated_at' => $f['updated_at'],
+            // הצעת בינה (12): רמת הביטחון של המודל, והאם הציטוט אותר בטקסט העמוד (null — לא נבדק). הציטוט עצמו — ב-source.locator, רק למי שרואה את הקובץ
+            'ai' => $f['source_kind'] === 'ai' ? ['confidence' => $f['ai_confidence'] ?? null, 'quote_found' => ($f['ai_quote_found'] ?? null) === null ? null : (bool)$f['ai_quote_found']] : null];
 }
 
 // ── גישה ──────────────────────────────────────────────────────
@@ -668,6 +670,29 @@ function apr_facts_on_file_delete(array $c, array $file): void
             [apr_actor(), apr_now(), $f['id']]);
         apr_case_audit($c, 'fact.source_deleted', 'fact', $f['pid'], ['attribute' => $f['attribute_key'], 'from' => 'verified']);
     }
+}
+
+/**
+ * חילוץ חוזר של קובץ (12, מקרה קצה 4): הצעות בינה מאותו קובץ **שאיש לא נגע בהן** מוחלפות — מחיקה רכה, עם סיבה. נתון שאומת,
+ * תוקן, נדחה או סומן "דורש בירור" אינו נבחר כאן, ולכן אינו משתנה. בתוך טרנזקציה. מחזיר כמה הוחלפו.
+ */
+function apr_facts_ai_replace(array $c, int $fileId): int
+{
+    $attrs = [];
+    $n = 0;
+    foreach (apr_rows("SELECT id, pid, attribute_key FROM facts WHERE case_id = ? AND source_file_id = ? AND source_kind = 'ai' AND state = 'proposed' AND corrected_at IS NULL AND deleted_at IS NULL ORDER BY id",
+        [$c['id'], $fileId]) as $f) {
+        if (apr_exec("UPDATE facts SET deleted_at = ?, delete_reason = 'הוחלף בחילוץ חוזר', rev = rev + 1, updated_at = ? WHERE id = ? AND state = 'proposed' AND corrected_at IS NULL AND deleted_at IS NULL",
+            [apr_now(), apr_now(), $f['id']]) !== 1) continue;
+        $attr = apr_attr($f['attribute_key']);
+        apr_case_audit($c, 'fact.ai_replaced', 'fact', $f['pid'], ['attribute' => $attr['key']]);
+        apr_facts_stale([(int)$f['id']]);
+        apr_fact_resolutions_void($c, $attr, (int)$f['id'], 'fact_deleted');
+        $attrs[$attr['key']] = $attr;
+        $n++;
+    }
+    foreach ($attrs as $attr) apr_conflicts_sync($c, $attr);
+    return $n;
 }
 
 // ── הכרעה (§6.3) ──────────────────────────────────────────────
