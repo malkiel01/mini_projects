@@ -31,7 +31,8 @@ function apr_profile_empty_content(): array
     return ['schema' => APR_PROFILE_SCHEMA, 'flags' => [], 'requirements' => ['groups' => [], 'items' => []], 'tasks' => ['items' => []], 'rules' => [],
         'contact' => apr_contact_defaults(),
         'sources' => ['items' => [], 'spend_needs_approval' => true],
-        'visit' => apr_visit_default_form()];                               // "ביקור" (אפיון 13 §4) — lib/visit_form.php; ברירת המחדל: שש הקבוצות לדוגמה     // "מקורות" (אפיון 09 §8) — lib/sources.php     // "קשר ותזכורות" (אפיון 08 §4) — lib/contact_content.php
+        'visit' => apr_visit_default_form(),                                // "ביקור" (אפיון 13 §4) — lib/visit_form.php; ברירת המחדל: שש הקבוצות לדוגמה
+        'comps' => apr_pc_comps_default()];                                 // "עסקאות" (אפיון 15 §7) — lib/comps.php: ברירות מחדל למסך, לא כללים
 }
 
 // ── אימות המבנה בשמירה ───────────────────────────────────────
@@ -176,6 +177,7 @@ function apr_profile_content_clean(mixed $c): array
     $out['contact'] = apr_contact_clean($c['contact'] ?? null);
     $out['sources'] = apr_pc_sources($c['sources'] ?? null);
     $out['visit'] = apr_pc_visit($c['visit'] ?? null);
+    $out['comps'] = apr_pc_comps($c['comps'] ?? null);
     return $out;
 }
 
@@ -342,7 +344,9 @@ function apr_profile_diff(array $a, array $b): array
         // "מקורות" (09): המפתח הוא המקור, כדי ששינוי של mode ייראה בהשוואה
         'sources' => fn($c) => array_map(fn($i) => ['key' => $i['source'], 'title' => $i['source']] + $i, $c['sources']['items'] ?? []),
         // "ביקור" (13): קבוצות ושדות ברשימה אחת — מפתח של קבוצה נושא קידומת, כדי שלא יתנגש במפתח של שדה
-        'visit' => fn($c) => array_merge(array_map(fn($g) => ['key' => 'group:' . $g['key']] + $g, $c['visit']['groups'] ?? []), array_map(fn($f) => ['title' => $f['label']] + $f, $c['visit']['fields'] ?? []))];
+        'visit' => fn($c) => array_merge(array_map(fn($g) => ['key' => 'group:' . $g['key']] + $g, $c['visit']['groups'] ?? []), array_map(fn($f) => ['title' => $f['label']] + $f, $c['visit']['fields'] ?? [])),
+        // "עסקאות" (15): כל הגדרה היא שורה, כדי ששינוי של ברירת מחדל ייראה בהשוואה
+        'comps' => fn($c) => array_map(fn($k, $v) => ['key' => $k, 'title' => $k, 'value' => $v], array_keys($c['comps'] ?? []), array_values($c['comps'] ?? []))];
     $out = [];
     foreach ($sections as $name => $get) {
         $old = array_column($get($a), null, 'key');
