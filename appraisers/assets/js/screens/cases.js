@@ -78,6 +78,9 @@ async function viewCases(pid, sub, arg) {
     if (pid && sub === 'conflicts') return arg ? viewConflict(pid, arg) : viewConflicts(pid);
     if (pid && sub === 'sources' && arg) return viewCaseSource(pid, arg);
     if (pid && sub === 'visits' && arg) return viewVisit(pid, arg);
+    if (pid && sub === 'comps' && arg) return viewComp(pid, arg);
+    if (pid && sub === 'compset' && arg) return viewCompSet(pid, arg);
+    if (pid && sub === 'compimport' && arg) return viewCompImport(pid, arg);
     if (pid && sub === 'check' && arg) return viewCheck(pid, arg);
     if (pid && sub === 'planning' && arg) return viewPlanningItem(pid, arg);
     if (pid && sub === 'file') return arg ? viewFile(pid, arg) : viewCase(pid, 'reqs');
@@ -488,7 +491,7 @@ async function viewCase(pid, tab) {
     // תיק סגור — קריאה בלבד עד פתיחה מחדש (השרת אוכף; כאן רק לא מציגים כפתורים שיידחו)
     if (c.status === 'closed') d.me.perms = { ...d.me.perms, edit: false, tasks: false, documents: false, members: false };
     const perms = d.me.perms;
-    const tabs = ['overview', 'facts', 'sources', 'visits', 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
+    const tabs = ['overview', 'facts', 'sources', 'visits', ...(d.comps ? ['comps'] : []), 'parties', 'reqs', 'activity'];   // לשונית של פרוסה שעוד לא נבנתה אינה מוצגת
     const cur = tabs.includes(tab) ? tab : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
     const reload = () => viewCase(pid, cur);
@@ -496,7 +499,7 @@ async function viewCase(pid, tab) {
     const head = `<div class="summary"><div class="line"><b class="one">${esc(c.title || C.noTitle)}</b><span class="chip" dir="ltr">${esc(c.number)}</span></div>
         <div class="line muted">${cPurpose(c)} · ${c.responsible ? esc(c.responsible.name) : `<span class="chip bad">${C.noResponsible}</span>`}</div>
         <div class="chips">${canStatus ? `<button type="button" class="chip info" id="cstatus">${esc(C.statuses[c.status])} ▾</button>` : cStatusChip(c.status)}${c.due_date ? `<span class="chip">${esc(C.due(fmtDate(c.due_date)))}</span>` : ''}</div></div>
-        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : t === 'sources' && d.sources.attention.length ? d.sources.attention.length : t === 'visits' && d.visits.open ? d.visits.open : undefined]), href(cur))}`;
+        ${tabsHtml(tabs.map(t => [href(t), C.tabs[t], t === 'reqs' ? d.requirements.filter(r => !r.split).length : t === 'facts' && d.open_conflicts ? '⚠️' : t === 'sources' && d.sources.attention.length ? d.sources.attention.length : t === 'visits' && d.visits.open ? d.visits.open : t === 'comps' && d.comps.total ? d.comps.total : undefined]), href(cur))}`;
     let body = '', docs = null, rqs = null;
     if (cur === 'overview') {
         const openM = d.requirements.filter(r => r.mandatory && dOpen(r));
@@ -529,6 +532,9 @@ async function viewCase(pid, tab) {
         body = docs.html;
     } else if (cur === 'visits') {
         docs = await visitsTab(pid, reload);
+        body = docs.html;
+    } else if (cur === 'comps') {
+        docs = await compsTab(pid, reload);
         body = docs.html;
     } else if (cur === 'parties') {
         rqs = await api('case-requests', { params: { case: pid } });
