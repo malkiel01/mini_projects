@@ -212,6 +212,9 @@ eq([run($avi)['block_reason'], api('POST', 'sys-ai-quota-delete', ['quota' => $s
 api('POST', 'sys-ai-fx-set', ['rate' => '3.7'], $owner);
 [, $q] = api('POST', 'sys-ai-quota-save', ['track' => 'managed', 'scope' => 'office', 'target' => $A, 'period' => 'month', 'limit_tokens' => 100000, 'limit_money' => '50'], $owner);
 $QA = $q['quota']['pid'];
+// שמירה חוזרת של אותה מכסה (בלי pid) מעדכנת את הקיימת — לא שורה שנייה, ולא שגיאה
+[$st2, $q2] = api('POST', 'sys-ai-quota-save', ['track' => 'managed', 'scope' => 'office', 'target' => $A, 'period' => 'month', 'limit_tokens' => 100000, 'limit_money' => '50'], $owner);
+eq([$st2, $q2['quota']['pid'] ?? null, (int)$db("SELECT COUNT(*) FROM ai_quotas WHERE deleted_at IS NULL AND period = 'month'")], [200, $QA, 1], 'מכסה: שמירה חוזרת של אותו יעד ואותה תקופה מעדכנת את המכסה הקיימת');
 $qid = fn(string $pid) => (int)$db('SELECT id FROM ai_quotas WHERE pid = ?', [$pid]);
 $cnt = function (string $pid, ?string $key = null) use ($qid) {
     $r = apr_row('SELECT used_money, used_tokens, reserved_money, reserved_tokens FROM ai_usage_counters WHERE quota_id = ?' . ($key ? ' AND period_key = ?' : ' ORDER BY period_key DESC LIMIT 1'), $key ? [$qid($pid), $key] : [$qid($pid)]);

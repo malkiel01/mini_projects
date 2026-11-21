@@ -32,8 +32,9 @@ async function viewOffice(tab) {
     const o = myOffice();
     setHead(T.officeTitle, o.name);
     const d = await api('office', { params: { office: o.pid } });
-    const tabs = d.can_manage ? tabsHtml([['#/office', T.tabTeam, d.members.length], ['#/office/channels', T.ch.officeTab], ['#/office/log', T.tabLog]], tab === 'log' ? '#/office/log' : tab === 'channels' ? '#/office/channels' : '#/office') : '';
+    const tabs = d.can_manage ? tabsHtml([['#/office', T.tabTeam, d.members.length], ['#/office/channels', T.ch.officeTab], ['#/office/ai', T.ai.officeTab], ['#/office/log', T.tabLog]], tab === 'log' ? '#/office/log' : tab === 'ai' ? '#/office/ai' : tab === 'channels' ? '#/office/channels' : '#/office') : '';
     if (tab === 'channels' && d.can_manage) return viewOfficeChannels(tabs);
+    if (tab === 'ai' && d.can_manage) return viewOfficeAi(tabs);
     if (tab === 'log' && d.can_manage) {
         const log = await api('office-audit', { params: { office: o.pid } });
         App.main.innerHTML = tabs + auditHtml(log.rows, r => esc((T.audit[r.action] || (() => r.action))(r)),

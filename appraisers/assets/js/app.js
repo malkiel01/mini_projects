@@ -11,6 +11,7 @@
  *   #/cases/<pid>/sources[/<מקור>] · #/cases/<pid>/check/<בדיקה> · #/cases/<pid>/planning/<פריט> · #/sources[/<מקור>]   מקורות ותכנון (09)
  *   #/cases/<pid>/visits · #/cases/<pid>/visits/<ביקור>   ביקור בנכס (13)
  *   #/cases/<pid>/comps[/<עסקה>] · #/cases/<pid>/compset/<קבוצה> · #/cases/<pid>/compimport/<חיפוש>   עסקאות השוואה וחישובים (15)
+ *   #/system/ai · #/office/ai · #/my/ai   בינה: ספקים ומכסות (מנהל המערכת) · מדיניות וחיבור (מנהל משרד) · הבינה שלי (11)
  *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
@@ -51,6 +52,7 @@ function openMe() {
     const links = [];
     if (o && o.status === 'active') links.push(['#/office', '👥', T.myOffice]);
     if ((o && o.status === 'active') || u.is_sysadmin) links.push(['#/profiles', '📑', T.tileProfiles]);
+    if (o && o.status === 'active') links.push(['#/my/ai', '🤖', T.ai.mine]);
     links.push(['#/welcome', '➕', T.newOffice]);
     if (u.is_sysadmin) links.push(['#/system', '🏛️', T.systemAdmin]);
     if (u.is_developer) links.push(['#/dev', '🛠️', T.devScreen]);
@@ -96,6 +98,7 @@ async function route() {
         else if (a === 'office' && ok) await viewOffice(b);
         else if (a === 'cases' && ok) await viewCases(b, c, d);
         else if (a === 'tasks' && ok) await viewMyTasks();
+        else if (a === 'my' && b === 'ai' && ok) await viewMyAi();
         else if (a === 'contacts' && ok) await viewContacts();
         else if (a === 'sources') await viewSourcesCatalog(b);
         else if (a === 'profiles' && (ok || me.user.is_sysadmin)) await viewProfiles(b, c, d);

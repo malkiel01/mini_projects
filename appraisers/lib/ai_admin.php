@@ -206,7 +206,7 @@ function apr_ai_quota_save(?int $office, int $uid, array $in): array
                     $qOffice = $o;
                 }
             }
-            $q = apr_row('SELECT * FROM ai_quotas WHERE deleted_at IS NULL AND track = ? AND owner = ? AND scope = ? AND scope_id = ? AND period = ? AND COALESCE(office_id, 0) = ?',
+            $q = apr_row('SELECT * FROM ai_quotas WHERE deleted_at IS NULL AND track = ? AND owner = ? AND scope = ? AND scope_id = ? AND period = ? AND COALESCE(office_id, 0) = CAST(? AS INTEGER)',   // CAST: לביטוי אין זיקת טיפוס, ו-PDO קושר מחרוזת
                 [$track, $owner, $scope, $scopeId, $period, $qOffice ?? 0]);
             if (!$q) {
                 $pid = apr_pid();
