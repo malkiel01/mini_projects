@@ -751,7 +751,7 @@ apr_migrate($freshDb);
 $shape = fn(PDO $d) => json_encode($d->query("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations' ORDER BY name")->fetchAll());
 eq([apr_schema_version($v10), apr_schema_expected(), $had, $rows10 > 150, $dump($v10) === $d10, $shape($v10) === $shape($freshDb), (int)$v10->query('SELECT COUNT(*) FROM visits')->fetchColumn(), count($v10->query('PRAGMA foreign_key_check')->fetchAll()),
     trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/00[1-9]_*.sql lib/migrations/010_*.sql 2>/dev/null'))],
-    [11, 11, [10, false, true, true], true, true, true, 0, 0, ''], 'מיגרציה 011 על מסד v10 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא, המבנה זהה למסד חדש, אין ביקורים; 001–010 לא נגעו');
+    [apr_schema_expected(), apr_schema_expected(), [10, false, true, true], true, true, true, 0, 0, ''], 'מיגרציה 011 על מסד v10 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא, המבנה זהה למסד חדש, אין ביקורים; 001–010 לא נגעו');
 $v10 = null;
 $rm = function (string $d) use (&$rm) { foreach (array_diff(scandir($d) ?: [], ['.', '..']) as $f) is_dir("$d/$f") ? $rm("$d/$f") : @unlink("$d/$f"); @rmdir($d); };
 $rm($m10);

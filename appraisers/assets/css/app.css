@@ -333,3 +333,40 @@ q { quotes: '"' '"'; color: var(--muted); }
 
 fieldset.f { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: var(--s1); }
 fieldset.f legend { font-weight: 600; font-size: .9rem; padding: 0; margin-bottom: var(--s1); }
+
+/* ── פרוסה 15: עסקאות השוואה וחישובים ── */
+.ktable-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); margin-bottom: var(--s3); }
+.ktable { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.ktable th, .ktable td { padding: var(--s2) var(--s3); text-align: start; vertical-align: top; border-top: 1px solid var(--line); }
+.ktable thead th { border-top: 0; font-size: .8rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.ktable tbody tr[data-go] { cursor: pointer; }
+.ktable tbody tr[data-go]:hover, .ktable tbody tr[data-go]:focus-visible { background: var(--brand-soft); outline: 0; }
+.ktable td.bad { color: var(--danger); }
+.ktable tr.muted td { color: var(--muted); }
+.ktable .chip { margin-block-start: 2px; margin-inline-end: 4px; }
+/* בטלפון: כל עסקה ככרטיס — הטבלה המלאה במחשב (האפיון 15 §8). טבלת התצוגה המקדימה של הייבוא (.plain) נגללת לרוחב */
+@media (max-width: 640px) {
+  .ktable:not(.plain) thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .ktable:not(.plain), .ktable:not(.plain) tbody, .ktable:not(.plain) tr, .ktable:not(.plain) td { display: block; }
+  .ktable:not(.plain) tr { padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+  .ktable:not(.plain) tr:first-child { border-top: 0; }
+  .ktable:not(.plain) td { border: 0; padding: 2px 0; display: flex; gap: var(--s2); justify-content: space-between; align-items: baseline; }
+  .ktable:not(.plain) td::before { content: attr(data-l); flex: none; font-size: .8rem; color: var(--muted); }
+  .ktable:not(.plain) td:first-child { display: block; padding-bottom: var(--s1); }
+  .ktable:not(.plain) td:first-child::before { content: none; }
+}
+.ktable.plain td, .ktable.plain th { white-space: nowrap; }
+.ksteps { margin: 0; padding-inline-start: 1.4em; display: grid; gap: 2px; font-size: .92rem; }
+.kformula .hint { margin: var(--s1) 0 0; overflow-wrap: anywhere; }
+.kconclusion { border-color: var(--brand); border-width: 2px; }
+.kconclusion .big { font-size: 1.25rem; }
+.summary .line.wrap { flex-wrap: wrap; white-space: normal; }
+
+/* בינה (11): מד מכסה — צהוב מ-80%, אדום בחריגה */
+.ai-meter { block-size: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-block: 6px 2px; }
+.ai-meter i { display: block; block-size: 100%; background: var(--ok); }
+.ai-meter.warn i { background: var(--star); }
+.ai-meter.over i { background: var(--danger); }
+.sec-title .btn.sm { margin-inline-start: var(--s2); font-weight: 400; }
+#aipolicy ul { margin: var(--s2) 0; padding-inline-start: 1.2em; display: grid; gap: 6px; font-size: .9rem; }
+#aipolicy p { font-size: .9rem; margin: 0 0 var(--s2); }

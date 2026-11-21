@@ -235,7 +235,7 @@ function apr_file_ingest(callable $case, array $who, array $q, array $env): arra
             apr_tx(fn() => apr_case_audit($c, 'file.rejected', 'file', $c['pid'], ['sha256' => $sha, 'size' => $size, 'why' => $e->why] + ($recipient ? ['channel' => 'portal'] : []), null, $actor[0], $actor[1]));
             throw $e;
         }
-        if (isset($who['mimes']) && !in_array($info['mime'], $who['mimes'], true)) apr_fail('photo_type');      // תמונות ביקור: תמונה בלבד
+        if (isset($who['mimes']) && !in_array($info['mime'], $who['mimes'], true)) apr_fail($who['mimes_error'] ?? 'photo_type');      // תמונות ביקור: תמונה בלבד; ייבוא עסקאות (15): XLSX בלבד
         [$ext] = APR_FILE_TYPES[$info['mime']];
         $stored = null;
         try {
