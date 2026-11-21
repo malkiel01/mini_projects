@@ -255,7 +255,7 @@ function apr_comp_missing(array $k): array
 
 /**
  * עסקה לתשובה. values — הערכים שבשימוש (אחרי תיקונים); raw — רק ב-$full. מיקום מקורב אינו מוחזר ככתובת: address הוא null,
- * והטקסט שהוזן מוחזר ב-approx_location (15-D3). מרחק — רק במיקום מדויק או ברמת רחוב.
+ * והטקסט שהוזן מוחזר ב-approx_location (15-D3). מרחק קיים רק במיקום מדויק או ברמת רחוב — ה-CHECK במיגרציה אוכף זאת.
  */
 function apr_comp_out(array $k, bool $full = false, array $names = []): array
 {
@@ -264,7 +264,6 @@ function apr_comp_out(array $k, bool $full = false, array $names = []): array
     foreach (APR_COMP_FIELDS as $f) $vals[$f] = apr_comp_field_out($f, $k[$f]);
     $vals['address'] = $precise ? $vals['address_text'] : null;
     $vals['approx_location'] = $precise ? null : $vals['address_text'];
-    $vals['distance_m'] = $precise ? $vals['distance_m'] : null;
     unset($vals['address_text']);
     $corr = json_decode((string)$k['corrected'], true) ?: [];
     foreach ($corr as &$x) $x['by'] = $names[(int)($x['by'] ?? 0)] ?? null;

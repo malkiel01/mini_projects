@@ -574,7 +574,7 @@ Object.assign(T.audit, {
 
 // ── פרוסה 15: עסקאות השוואה ומנוע החישוב ──
 T.k = {
-    tab: 'עסקאות', title: 'עסקאות וחישובים', unknown: 'לא ידוע', notRecorded: 'לא נרשם',
+    tab: 'עסקאות', title: 'עסקאות וחישובים', details: 'פרטי העסקה', unknown: 'לא ידוע', notRecorded: 'לא נרשם',
     newSearch: 'חיפוש חדש', addComp: 'עסקה ידנית', newSet: 'קבוצה חדשה', importBtn: 'ייבוא', openSource: 'פתיחת המקור',
     searches: 'חיפושים שנרשמו', noSearches: 'עוד לא נרשם חיפוש. רישום החיפוש — מה חיפשו, איפה וכמה נמצא — מאפשר לדוח לומר מה נבדק.',
     comps: 'עסקאות', noComps: 'עוד לא הוזנו עסקאות', noCompsFilter: 'אין עסקאות במצב הזה', sets: 'קבוצות השוואה',

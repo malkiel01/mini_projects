@@ -514,8 +514,9 @@ $big = "מחיר\n" . str_repeat("1000\n", 2001);
 $S4 = call('POST', 'comp-search-add', ['case' => $C, 'source_text' => 'קובץ גדול'], $avi)[1]['search'];
 $ok2000 = call('POST', 'comp-import-preview', ['case' => $C, 'text' => "מחיר\n" . str_repeat("1000\n", 2000), 'mapping' => ['0' => 'price']], $avi);
 eq([$pp[1]['imported'] ?? null, array_keys(json_decode(apr_val("SELECT raw FROM comps WHERE address_text = 'רחוב ב 2'"), true)['row']), code(call('POST', 'comp-import', ['case' => $C, 'search' => $S4, 'rights' => true, 'text' => $big, 'mapping' => ['0' => 'price']], $avi)),
-    code(call('POST', 'comp-import-preview', ['case' => $C, 'text' => $big], $avi)), $ok2000[1]['total'] ?? null, apr_val('SELECT import_sha256 FROM comp_searches WHERE pid = ?', [$S4])],
-    [2, ['עמודה 1', 'עמודה 2', 'עמודה 3'], 'comp_import_too_many', 'comp_import_too_many', 2000, null], 'הדבקה מלוח (טאבים, בלי כותרת) — אותו מסלול; §10.10 יותר מ-2,000 שורות נדחה כולו (2,000 בדיוק — מותר)');
+    code(call('POST', 'comp-import-preview', ['case' => $C, 'text' => $big], $avi)) . '/' . code(call('POST', 'comp-import-preview', ['case' => $C, 'text' => str_repeat("1000\n", 2001), 'has_header' => false], $avi))
+        . '/' . (call('POST', 'comp-import-preview', ['case' => $C, 'text' => str_repeat("1000\n", 2000), 'has_header' => false], $avi)[1]['total'] ?? '?'), $ok2000[1]['total'] ?? null, apr_val('SELECT import_sha256 FROM comp_searches WHERE pid = ?', [$S4])],
+    [2, ['עמודה 1', 'עמודה 2', 'עמודה 3'], 'comp_import_too_many', 'comp_import_too_many/comp_import_too_many/2000', 2000, null], 'הדבקה מלוח (טאבים, בלי כותרת) — אותו מסלול; §10.10 יותר מ-2,000 שורות נדחה כולו (2,000 בדיוק — מותר)');
 
 // XLSX: דרך צינור הקליטה של 06, ונשמר כקובץ של התיק
 function xlsx_bytes(array $rows): string
@@ -564,6 +565,10 @@ eq([$xu[0], apr_val('SELECT mime FROM files WHERE pid = ?', [$xu[1]['file'] ?? '
     code(call('POST', 'comp-import-preview', ['case' => $C, 'file' => apr_val("SELECT pid FROM files WHERE mime <> ? LIMIT 1", [APR_MIME_XLSX]) ?: apr_pid()], $tal))],
     [200, APR_MIME_XLSX, ['תאריך עסקה', 'תמורה', 'שטח', 'כתובת'], ['2025-02-12', '1750000', '71.5'], ['2025-05-06', null], 2, $xu[1]['file'] ?? null, 'deals.xlsx', 'comp_import_type', 'not_found', 'not_found'],
     'XLSX עובר את צינור הקליטה של 06 ונשמר כקובץ של התיק (file_id); תאריך כמספר סידורי מפוענח; תא ריק ← null; קובץ שאינו XLSX נדחה; העלאה לתיק של משרד אחר ← 404');
+$GLOBALS['apr_file_visible'] = fn() => false;
+$hidden = [code(call('POST', 'comp-import-preview', ['case' => $C, 'file' => $xu[1]['file']], $tal)), array_column($list($avi, $C)[1]['searches'], null, 'pid')[$S5]['import']['file']];
+unset($GLOBALS['apr_file_visible']);
+eq($hidden, ['not_found', null], 'קובץ ייבוא שאינני רשאי לראות (שיתוף ברמת פריט, פרוסה 05): אינו נקרא לייבוא, והמזהה שלו אינו מוחזר בחיפוש');
 $xxe = str_replace('<sst ', '<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><sst ', xlsx_bytes([['a'], ['b']]));
 // הקובץ עם ה-DOCTYPE נבנה מחדש כדי שה-CRC והאורכים יתאימו
 $xxeFile = (function () { $t = tempnam(sys_get_temp_dir(), 'x'); file_put_contents($t, '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><sst><si><t>&e;</t></si></sst>'); return $t; })();
@@ -597,6 +602,10 @@ $noEdit = code($status($dana, $T1, 'selected'));
 call('POST', 'case-member-update', ['case' => $C, 'user' => $danaPid, 'perms' => ['view' => true, 'edit' => true], 'role' => 'staff'], $avi);
 $asStaff = [apr_val('SELECT role FROM case_members WHERE case_id = (SELECT id FROM cases WHERE pid = ?) AND user_id = (SELECT id FROM users WHERE pid = ?) AND revoked_at IS NULL', [$C, $danaPid]), code($status($dana, $T1, 'selected'))];
 call('POST', 'case-member-update', ['case' => $C, 'user' => $danaPid, 'perms' => ['view' => true, 'edit' => true], 'role' => 'partner'], $avi);
+call('POST', 'case-member-update', ['case' => $C, 'user' => $noaPid, 'perms' => ['view' => true, 'edit' => true], 'role' => 'partner'], $avi);
+$traineePartner = [apr_val('SELECT role FROM case_members WHERE case_id = (SELECT id FROM cases WHERE pid = ?) AND user_id = (SELECT id FROM users WHERE pid = ?) AND revoked_at IS NULL', [$C, $noaPid]), code($status($noa, $T1, 'selected')),
+    apr_comp_can_judge(['office' => ['role' => 'trainee']], ['perms' => ['edit' => true], 'my_role' => 'partner']), apr_comp_can_judge(['office' => ['role' => 'appraiser']], ['perms' => ['edit' => true], 'my_role' => 'partner'])];
+eq([$traineePartner[1], $traineePartner[2], $traineePartner[3]], ['forbidden', false, true], '15-C4 מי שאינו שמאי במשרד אינו בוחר — גם אם תפקידו בתיק "שותף" ויש לו edit');
 eq([$noEdit, $asStaff[0] === 'staff' ? $asStaff[1] : 'forbidden', $status($dana, $T1, 'selected')[0]], ['forbidden', 'forbidden', 200], '§9 "שמאי בתיק" = edit + שמאי במשרד + אחראי או שותף: בלי edit, או בתפקיד אחר בתיק — אינו בוחר');
 
 // 15-C2: בידוד — מזהים של משרד א מול משתמש של משרד ב, ולהפך
@@ -654,6 +663,15 @@ eq([$xo['comp']['values']['address'], $xo['comp']['note'], $xo['adjustments'][0]
 // כל ערך שמגיע מהשרת ונכנס לתבנית במסך עובר דרך esc(): אין ${…} שמתחיל בשדה של עסקה בלי esc / מספר / מפתח מהרשימה
 preg_match_all('/\$\{\s*((?:k|c|v|a|s|g|r|x\.comp|x\.set)\.(?:values\.)?(?:note|status_reason|label|reason|address|approx_location|locality|property_type|condition|attachments|source_ref|gush|helka|tat_helka|name|source_text|limitations|by|created_by|updated_by))\s*\}/', $js, $rawUse);
 eq($rawUse[1], [], 'במסך אין שדה טקסט של משתמש שנכנס לתבנית בלי esc()');
+
+// שמות גלובליים: כל קובצי המסכים נטענים לאותו מרחב. const / let / class שמוגדר גם בקובץ אחר הוא שגיאת תחביר שמפילה את הקובץ השני כולו
+// (נתפס בדפדפן: kStatusChip). שתי הצהרות function באותו שם אינן שגיאה — האחרונה מנצחת — ולכן אינן נבדקות כאן.
+$globals = [];
+foreach (array_merge(glob(__DIR__ . '/../assets/js/*.js'), glob(__DIR__ . '/../assets/js/screens/*.js')) as $jsf) {
+    preg_match_all('/^(const|let|var|function|async function|class)\s+([A-Za-z_$][\w$]*)/m', (string)file_get_contents($jsf), $mm, PREG_SET_ORDER);
+    foreach ($mm as $m) $globals[$m[2]][] = [basename($jsf), in_array($m[1], ['const', 'let', 'class'], true)];
+}
+eq(array_keys(array_filter($globals, fn($d) => count(array_unique(array_column($d, 0))) > 1 && in_array(true, array_column($d, 1), true))), [], 'אין const / let / class גלובלי שמוגדר גם בקובץ JavaScript אחר');
 
 // ── מיגרציה 012 על מסד v11 מאוכלס ──
 $m11 = sys_get_temp_dir() . '/apr-m11-' . bin2hex(random_bytes(5));

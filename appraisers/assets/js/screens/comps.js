@@ -23,7 +23,7 @@ const kUnit = basis => basis === 'per_sqm' ? K.perSqm : K.nis;
 const kNis = m => m ? fNum(String(m.nis)).replace('-', '−') : null;
 const kMoney = (m, basis) => m ? `${kNis(m)} ${kUnit(basis)}` : K.unknown;
 const kAgMoney = (ag, basis) => ag === null || ag === undefined ? K.unknown : `${kAg(ag)} ${kUnit(basis)}`;
-const kStatusChip = st => `<span class="chip ${K.statusCls[st] || ''}">${esc(K.statuses[st] || st)}</span>`;
+const kStChip = st => `<span class="chip ${K.statusCls[st] || ''}">${esc(K.statuses[st] || st)}</span>`;
 const kAreaKind = k => T.f.areaKinds[k] || k;
 /**
  * איך קוראים לעסקה ברשימה — **טקסט, לא HTML**: מי שמציג אותו עוטף ב-esc(). מיקום מקורב מסומן ככזה, ואינו מוצג ככתובת.
@@ -63,7 +63,7 @@ async function compsTab(pid, reload) {
         const v = k.values, bits = [v.deal_date ? fmtDate(v.deal_date) : null, kArea(v), v.rooms !== null ? K.room(fNum(v.rooms)) : null, v.floor !== null ? K.floorN(v.floor) : null].filter(Boolean);
         return `<li class="card" tabindex="0" role="button" data-go="#/cases/${pid}/comps/${k.pid}"><div class="body"><div class="l1"><span dir="auto">${esc(kLabel(v))}</span><span class="t"><b>${esc(kPrice(v))}</b></span></div>
             <div class="l2 wrap">${esc(bits.join(' · ') || K.unknown)}${k.status_reason ? ` · <q dir="auto">${esc(k.status_reason)}</q>` : ''}</div>
-            <div class="chips">${kStatusChip(k.status)}${k.dup_of ? `<span class="chip warn">⚠️ ${esc(K.dup)}</span>` : ''}${k.corrected_fields.length ? `<span class="chip">${esc(K.corrected)}</span>` : ''}${
+            <div class="chips">${kStChip(k.status)}${k.dup_of ? `<span class="chip warn">⚠️ ${esc(K.dup)}</span>` : ''}${k.corrected_fields.length ? `<span class="chip">${esc(K.corrected)}</span>` : ''}${
                 k.missing.length ? `<span class="chip">${esc(K.missingN(k.missing.length))}</span>` : ''}${k.adjustments ? `<span class="chip">${esc(K.adjN(k.adjustments))}</span>` : ''}${
                 k.weight !== null ? `<span class="chip">${esc(K.weight)} ${esc(k.weight)}</span>` : ''}</div></div></li>`;
     };
@@ -185,7 +185,7 @@ async function viewComp(pid, compPid) {
     const rawRows = k.raw.row || k.raw.entered || {};
     App.main.innerHTML = `<div class="summary"><div class="line"><b class="one" dir="auto">${esc(kLabel(v))}</b></div>
           <div class="line"><b>${esc(kPrice(v))}</b><span class="muted">${v.deal_date ? esc(fmtDate(v.deal_date)) : esc(K.fields.deal_date + ': ' + K.unknown)}</span></div>
-          <div class="chips">${x.perms.judge ? `<button type="button" class="chip info" id="k-status">${esc(K.statuses[k.status])} ▾</button>` : kStatusChip(k.status)}${k.weight !== null ? `<span class="chip">${esc(K.weight)} ${esc(k.weight)}</span>` : ''}</div>
+          <div class="chips">${x.perms.judge ? `<button type="button" class="chip info" id="k-status">${esc(K.statuses[k.status])} ▾</button>` : kStChip(k.status)}${k.weight !== null ? `<span class="chip">${esc(K.weight)} ${esc(k.weight)}</span>` : ''}</div>
           ${k.status_reason ? `<div class="line muted wrap"><q dir="auto">${esc(k.status_reason)}</q></div>` : ''}</div>
         ${k.dup_of ? `<p class="banner" role="note">⚠️ ${esc(K.dupOf)} <a class="btn ghost sm" href="#/cases/${pid}/comps/${k.dup_of}">${K.dupSee}</a><br><small>${esc(K.dupNote)}</small></p>` : ''}
         ${k.status !== 'selected' && x.calcs.length ? `<p class="hint">${esc(K.notInSetYet)}</p>` : ''}
@@ -196,7 +196,7 @@ async function viewComp(pid, compPid) {
         <h2 class="sec-title">${K.similar}</h2>
         ${x.similar.rows.length ? `<ul class="list">${x.similar.rows.map(simRow).join('')}</ul>` : `<p class="empty">${K.similarNone}</p>`}
         ${x.similar.unknown.length ? `<p class="hint">${x.similar.unknown.map(u => `${esc(K.fields[u.field] || u.field)}: <b>${esc(K.unknownSide[u.side])}</b>`).join(' · ')}</p>` : ''}
-        <h2 class="sec-title">${K.comps}</h2>
+        <h2 class="sec-title">${K.details}</h2>
         <ul class="list">${shownFields.map(fieldRow).join('')}</ul>
         <p class="hint">${precise ? (v.distance_m === null ? esc(K.distanceNone) : `${esc(K.distance)}: ${esc(K.meters(v.distance_m))}`) : esc(K.distanceUnknown)}</p>
         <p class="hint">${k.missing.length ? `${esc(K.missingList)}: ${k.missing.map(f => esc(K.fields[f] || f)).join(', ')}` : esc(K.nothingMissing)}</p>
