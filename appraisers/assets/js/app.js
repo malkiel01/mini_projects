@@ -9,6 +9,7 @@
  *   #/cases/<pid>/facts[/<מאפיין>] · #/cases/<pid>/conflicts[/<סתירה>]   נתוני הנכס וסתירות (10)
  *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
  *   #/cases/<pid>/sources[/<מקור>] · #/cases/<pid>/check/<בדיקה> · #/cases/<pid>/planning/<פריט> · #/sources[/<מקור>]   מקורות ותכנון (09)
+ *   #/cases/<pid>/visits · #/cases/<pid>/visits/<ביקור>   ביקור בנכס (13)
  *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
