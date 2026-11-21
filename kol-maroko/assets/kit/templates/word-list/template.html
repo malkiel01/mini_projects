@@ -1,0 +1,16 @@
+<section class="tk-words" id="words">
+  <h2 class="tk-words__title">המילון</h2>
+  <input type="search" class="tk-words__search" data-kol-search="words" data-kol-search-fields="word meaning" placeholder="חיפוש מילה" aria-label="חיפוש מילה">
+  <p class="tk-words__count" data-kol-count="words" data-kol-count-text="{shown} מתוך {total}"></p>
+  <div class="tk-words__items" data-kol-list="words" data-kol-sort="manual" data-kol-page="24">
+    <template>
+      <article class="tk-words__item">
+        <h3 class="tk-words__word" data-kol-text="word"></h3>
+        <div class="tk-words__meaning" data-kol-html="meaning"></div>
+        <button type="button" class="tk-words__play" data-kol-if="audio" data-kol-play="audio" data-kol-active-class="is-playing">▶ השמעה</button>
+      </article>
+    </template>
+  </div>
+  <p class="tk-words__empty" data-kol-empty="words">אין תוצאות</p>
+  <button type="button" class="tk-words__more" data-kol-more="words">טען עוד</button>
+</section>

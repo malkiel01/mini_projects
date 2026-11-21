@@ -26,6 +26,8 @@ const FILE_TYPES = [
     'image/jpeg' => ['image', 'jpg'], 'image/png' => ['image', 'png'], 'image/webp' => ['image', 'webp'], 'image/gif' => ['image', 'gif'],
     'audio/mpeg' => ['audio', 'mp3'], 'audio/mp4' => ['audio', 'm4a'], 'audio/x-m4a' => ['audio', 'm4a'], 'audio/aac' => ['audio', 'aac'],
     'audio/ogg' => ['audio', 'ogg'], 'audio/webm' => ['audio', 'webm'], 'audio/wav' => ['audio', 'wav'], 'audio/x-wav' => ['audio', 'wav'],
+    // A3: flac, ו-aac גולמי (ADTS); opus — בתוך ogg (audio/ogg)
+    'audio/flac' => ['audio', 'flac'], 'audio/x-flac' => ['audio', 'flac'], 'audio/x-hx-aac-adts' => ['audio', 'aac'], 'audio/vnd.wave' => ['audio', 'wav'],
     'video/mp4' => ['video', 'mp4'], 'video/webm' => ['video', 'webm'], 'video/quicktime' => ['video', 'mov'],
     'application/pdf' => ['doc', 'pdf'],
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => ['doc', 'docx'],
@@ -76,7 +78,21 @@ function file_public(array $f): array
         'id' => $f['id'], 'name' => $f['name'], 'type' => $f['type'], 'kind' => $f['kind'], 'size' => (int)$f['size'],
         'w' => $f['w'] ? (int)$f['w'] : null, 'h' => $f['h'] ? (int)$f['h'] : null, 'by' => $f['by_name'], 'at' => $f['at'],
         'url' => media_url($f['id']),
-    ];
+    ] + (file_is_source($f) ? ['source' => true, 'origin' => (string)$f['origin']] : []);
+}
+
+/**
+ * R2 (הבעלים): "קובץ מקור" — העותק בכלי של תמונה מהאתר המקורי (lib/site_images.php: files.origin + תמונה). תמיד אפשר להחזיר
+ * אותו, ואין מחיקה שלו — לא לסל ולא סופית — חוץ מבעל האתר (site_owner, התפקיד העליון = platform_admin). נאכף כאן, בשרת.
+ */
+function file_is_source(array $f): bool
+{
+    return (string)($f['origin'] ?? '') !== '' && ($f['kind'] ?? '') === 'image';
+}
+
+function file_guard_source(array $user, array $f): void
+{
+    if (file_is_source($f) && ($user['role'] ?? '') !== 'site_owner') throw new ApiError('זה קובץ מקור מהאתר המקורי — תמיד אפשר להחזיר אותו, ורק בעל האתר יכול למחוק אותו', 403);
 }
 
 function file_path(array $f): string
@@ -97,10 +113,11 @@ function upload_init(array $user, array $b): array
     $name = str_replace(['/', '\\', "\0"], '_', mb_substr(trim((string)($b['name'] ?? '')), 0, 150)) ?: 'קובץ';
     // ייבוא מהאתר (ZIP עם כל הקבצים של העמוד) — לבעלים בלבד, עד 3GB
     $purpose = ($b['purpose'] ?? '') === 'import' ? 'import' : 'file';
-    if ($purpose === 'import') require_role($user, 'owner');
+    if ($purpose === 'import') require_role($user, 'site_owner');
     if ($size <= 0) throw new ApiError('הקובץ ריק');
-    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB');
-    if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה. מחקו קבצים שלא בשימוש', 507);
+    if ($size > ($purpose === 'import' ? IMPORT_MAX : FILE_MAX)) throw new ApiError($purpose === 'import' ? 'קובץ הייבוא גדול מ-3GB' : 'הקובץ גדול מ-50MB — התקרה לקובץ בכלי');
+    // A3: ההודעה אומרת מה המגבלה ומי משנה אותה
+    if (disk_used() + $size > disk_cap()) throw new ApiError('התקרה של הכלי מלאה (' . round(disk_cap() / 1073741824, 1) . 'GB). בעל האתר מגדיל אותה ב-⚙️ בעל האתר ← המכסות; או מחקו קבצים שלא בשימוש', 507);
 
     // העלאות שנתקעו יותר מיממה — נמחקות
     $old = db()->query("SELECT id FROM uploads WHERE started < " . (time() - 86400))->fetchAll(PDO::FETCH_COLUMN);
@@ -250,6 +267,16 @@ function files_in_use(): array
     $json .= (string)setting('imported_css', '');
     // הקלטות של מילים: במילים עכשיו, ובעותקים שבגרסאות האחרונות
     $json .= implode('', db()->query("SELECT '\"' || audio || '\"' FROM words WHERE length(audio) = 32")->fetchAll(PDO::FETCH_COLUMN));
+    // N3b: קבצים בפריטי רשימות (שמע, תמונה) — הערך הוא מזהה קובץ בתוך data (JSON)
+    if (db()->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'list_items'")->fetchColumn()) {
+        $json .= implode('', db()->query('SELECT data FROM list_items')->fetchAll(PDO::FETCH_COLUMN));
+    }
+    // A3: הקלטות בספרייה (גם לא מחוברות, גם בסל של ההקלטות) וגרסאות קודמות שלהן — הקובץ שלהן אינו "לא בשימוש"
+    foreach (['recordings', 'rec_versions'] as $t) {
+        if (db()->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '$t'")->fetchColumn()) {
+            $json .= implode('', db()->query("SELECT '\"' || file_id || '\"' FROM $t WHERE file_id IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN));
+        }
+    }
     // גרסאות לא נבדקות כאן: מחיקה היא לסל, והקובץ נשאר. מחיקה סופית — רק כשאף גרסה לא מפנה אליו (file_in_versions)
     preg_match_all('/(?:"|kol-file:)([0-9a-f]{32})/', $json, $m);
     return array_flip($m[1]);
@@ -258,6 +285,7 @@ function files_in_use(): array
 function file_delete(array $user, array $b): array
 {
     $f = file_row((string)($b['id'] ?? ''));
+    file_guard_source($user, $f);                                          // R2
     if (isset(files_in_use()[$f['id']])) throw new ApiError('הקובץ בשימוש בעמוד. הסירו אותו מהעמוד קודם');
     // לסל המחזור (lib/restore.php) — הקובץ נשאר בשרת; מחיקה סופית רק משם, רק לבעלים
     db()->prepare('UPDATE files SET deleted_at = ?, deleted_by = ? WHERE id = ?')->execute([now_iso(), $user['name'], $f['id']]);

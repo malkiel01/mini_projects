@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#a3322a">
+  <title>קול מרוקו</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css?v=r6">
+  <link rel="stylesheet" href="assets/css/devloop.css">
+  <link rel="stylesheet" href="assets/css/project.css">
+  <link rel="stylesheet" href="assets/css/editor.css">
+  <link rel="stylesheet" href="assets/css/inbox.css">
+</head>
+<body>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <img class="logo" src="assets/icon.svg" alt="">
+    <div class="titles"><h1>קול מרוקו</h1><div class="sub" id="who"></div></div>
+    <span id="top-end" hidden></span>
+  </header>
+  <nav class="tabs" id="tabs" aria-label="לשוניות" hidden></nav>
+  <p class="ro-note" id="ro-note" role="note" hidden></p>
+  <main id="main" tabindex="-1"><p class="empty">טוען…</p></main>
+  <div class="toast" role="status" hidden></div>
+
+  <dialog id="sheet" aria-labelledby="sheet-title">
+    <form method="dialog" novalidate>
+      <header class="sheet-head">
+        <button type="button" class="icon-btn" data-close aria-label="סגירה">✕</button>
+        <h2 id="sheet-title"></h2>
+      </header>
+      <div class="sheet-body" id="sheet-body"></div>
+    </form>
+  </dialog>
+  <script src="assets/js/dev.js" defer></script>
+  <script src="assets/js/devloop.js" defer></script>
+  <script src="assets/js/media.js" defer></script>
+  <script src="assets/js/words.js" defer></script>
+  <script src="assets/js/library-fetch.js" defer></script>
+  <script src="assets/js/library-actions.js" defer></script>
+  <script src="assets/js/library.js" defer></script>
+  <script src="assets/js/project.js" defer></script>
+  <script src="assets/js/editor/screen.js" defer></script>
+  <script src="assets/js/attack-kit.js" defer></script>
+  <script src="assets/js/restore.js?v=m6" defer></script>
+  <script src="assets/js/publish.js" defer></script>
+  <script src="assets/js/inbox.js" defer></script>
+  <script src="assets/js/people.js" defer></script>
+  <script src="assets/js/app.js" defer></script>
+</body>
+</html>

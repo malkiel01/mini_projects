@@ -1,0 +1,15 @@
+{
+  "name": "tabs",
+  "label": "לשוניות",
+  "icon": "🗂",
+  "category": "תוכן",
+  "fields": [
+    {"id": "items", "label": "לשוניות", "control": "repeater", "target": {"children": ".kol-tabs__item"}},
+    {"id": "dir", "label": "כיוון (h — אופקיות · v — אנכיות)", "control": "select", "options": ["h", "v"], "target": {"class": "kol-tabs--{value}"}},
+    {"id": "accent", "label": "צבע הלשונית הפתוחה", "control": "color", "target": {"var": "--kol-tabs-accent"}},
+    {"id": "gap", "label": "רווח בין לשוניות", "control": "size", "target": {"var": "--kol-tabs-gap"}}
+  ],
+  "states": [
+    {"id": "tab", "label": "לשונית פתוחה", "item": "לשונית", "each": ".kol-tabs__item", "class": "is-active", "root": "is-ready"}
+  ]
+}

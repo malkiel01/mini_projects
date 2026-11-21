@@ -1,0 +1,16 @@
+{
+  "name": "accordion",
+  "label": "אקורדיון",
+  "icon": "▤",
+  "category": "תוכן",
+  "fields": [
+    {"id": "items", "label": "פריטים", "control": "repeater", "target": {"children": ".kol-acc__item"}},
+    {"id": "mode", "label": "כמה פתוחים (one — אחד · many — רבים)", "control": "select", "options": ["one", "many"], "target": {"class": "kol-acc--{value}"}},
+    {"id": "first", "label": "הראשון פתוח בהתחלה", "control": "toggle", "target": {"attr": "open", "on": ".kol-acc__item"}},
+    {"id": "gap", "label": "רווח בין פריטים", "control": "size", "target": {"var": "--kol-acc-gap"}},
+    {"id": "accent", "label": "צבע הסימן", "control": "color", "target": {"var": "--kol-acc-accent"}}
+  ],
+  "states": [
+    {"id": "open", "label": "פריט פתוח", "item": "פריט", "each": ".kol-acc__item", "attr": "open", "all": true}
+  ]
+}

@@ -29,6 +29,7 @@ async function open(as) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 860 }, deviceScaleFactor: SHOTS ? 2 : 1, hasTouch: true, isMobile: true });
   await ctx.addCookies([{ name: 'dev_as', value: as, url: BASE }]);
   await ctx.setExtraHTTPHeaders({ 'X-Dev-Now': String(NOW) });   // "עכשיו" קבוע לשרת — אותם נרות בכל ריצה
+  await ctx.clock.setFixedTime(NOW * 1000);   // ואותו "עכשיו" בדפדפן — הגרף מבקש chart_refresh, שהשרת עונה בו לפי X-Dev-Now (18.3)
   await ctx.addInitScript(() => { window.WebSocket = class { constructor() {} close() {} }; });
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push(e.message));
@@ -48,36 +49,47 @@ const loaded = p => p.waitForFunction(() => /נרות/.test(document.querySelect
 // "טביעת אצבע" של מה שמצויר בקנבסים של הגרף הראשי
 const canvasPrint = p => p.evaluate(() => [...document.querySelectorAll('.chart-box:not(.osc) canvas')].map(c => c.toDataURL().length).join(','));
 
+// 🔮 → התפריט מעל הגרף → סימון שיטה → סגירה ב-Esc (F1, 18.1.2: בלי sheet ובלי מסך אחר)
+async function pickMethod(p, name) {
+  await p.getByRole('button', { name: 'תחזית שיטה' }).first().click();
+  const pop = p.locator('.fc-pop');
+  await pop.locator('.fc-opt').first().waitFor();
+  await pop.locator('.fc-opt', { hasText: name }).locator('input').check();
+  await p.keyboard.press('Escape');
+}
+
 try {
   const { p: o, reqs } = await open('owner');
   await o.goto(BASE + '#/market');
-  await o.waitForSelector('main');
+  await o.waitForSelector('main [role="combobox"]');   // המסך נטען — ה-me של הדף חזר (אחרת post() פותח session שני והדף נשאר עם csrf ישן)
   eq(await post(o, 'admin_method_save', { id: 'elliott-w3', enabled: true, markets: ['crypto'], timeframes: ['h1', 'h4'], params: { pivot_atr_mult: 2 } }), 200, 'the admin turns elliott-w3 on (sensitivity 2)');
   await o.goto(CHART);
   await loaded(o);
   const before = await canvasPrint(o);
-  await o.getByRole('button', { name: 'תחזית שיטה' }).click();
-  const dlg = o.locator('dialog[open]');
-  await dlg.waitFor();
   reqs.length = 0;
-  await dlg.getByRole('button', { name: /גלי אליוט — כניסה לגל 3/ }).click();
+  await pickMethod(o, 'אליוט');
   const panel = o.locator('.forecast-panel');
   await panel.locator('.chips').waitFor({ timeout: 60000 });
-  eq((await panel.locator('h3').textContent()).trim(), '🔮 תרחיש לפי שיטת גלי אליוט — כניסה לגל 3 — לא ייעוץ', 'the Elliott forecast title (✅15)');
+  eq((await panel.locator('h3').textContent()).trim(), 'אליוט', 'the block title is the method name (S4)');
+  eq(/תרחיש לפי שיטת אליוט — לא ייעוץ/.test(await panel.locator('.an-sec.scenario').textContent()), true, 'the scenario says "תרחיש לפי שיטת אליוט — לא ייעוץ" (6.6)');
   const chips = await panel.locator('.chip').allTextContents();
-  eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('שיטה שלנו על בסיס כללי הספר (Frost & Prechter)')], [true, true], 'marked "not backtested", with "our method based on the book"');
-  await panel.locator('details summary', { hasText: '🔎 בדוק בעצמך' }).click();
-  eq(await panel.locator('details li').count() >= 4, true, '"check yourself": the guidelines the computer does not measure');
+  eq([chips.includes('לפי כללי השיטה, לא נבדק לאחור'), chips.includes('שיטה שלנו על בסיס כללי הספר (Frost & Prechter)')], [true, true], 'the scenario marked "not backtested", with "our method based on the book"');
+  // "בדוק בעצמך" — פעם אחת: ברשימה של הממצא (תנאים שהמחשב לא בודק), או בפרטים של השכבה כשאין כרטיס
+  await panel.locator('.an-sec.finding .manual-conds li, .an-sec.finding details.param-notes').first().waitFor({ timeout: 60000 });
+  eq(await panel.locator('.an-sec.finding .manual-conds li').count() >= 4, true, '"check yourself": the guidelines the computer does not measure, in the finding');
+  eq(await panel.getByText('🔎 בדוק בעצמך').count(), 1, '"check yourself" appears once, not twice');
   const sc = panel.locator('.forecast-scenarios button');
   const nsc = await sc.count();
   const labels = await sc.allTextContents();
   eq(labels.every(t => /^התאמה (גבוהה|בינונית) · דחף/.test(t)), true, `counts in words only (✅16): ${labels.join(' | ') || 'none'}`);
-  eq(/\d\s*%/.test(await panel.textContent()), false, 'no percentage in the panel');
+  eq(/\d\s*%/.test(await panel.locator('.an-sec.scenario').textContent()), false, 'no percentage in the scenario (✅26)');
   if (nsc) {
     await o.waitForTimeout(400);
     const drawn = await canvasPrint(o);
     eq(drawn !== before, true, 'the counts, zone, invalidation and projection are drawn on the canvas');
-    eq(/רמת ביטול|אזור לגל/.test(await o.evaluate(() => document.body.innerText)), false, 'the Elliott texts are canvas, not HTML');
+    // הטקסטים על הגרף — קנבס; ההסבר שלהם — בתרחיש שבפס (18.1.2 קריטריון 9)
+    const sct = await panel.locator('.an-sec.scenario').textContent();
+    eq([/רמת ביטול: /.test(sct), /אזור: /.test(sct), /אזור לגל/.test(sct)], [true, true, true], 'the scenario explains the chart labels: zone and invalidation level of the chosen count');
     if (nsc > 1) {
       await sc.nth(1).click();
       eq([await sc.nth(1).getAttribute('aria-pressed'), await sc.nth(0).getAttribute('aria-pressed')], ['true', 'false'], 'tapping an alternate count makes it the highlighted one');
@@ -87,7 +99,7 @@ try {
   } else {
     eq((await panel.textContent()).includes('אין כרגע ספירה'), true, 'no count → the panel says why');
   }
-  eq(reqs.filter(a => a === 'method_overlay').length, 1, 'one request — only after the user chose');
+  eq([reqs.filter(a => a === 'chart_refresh').length, reqs.includes('method_overlay')], [1, false], 'one request (candles + the method) after the user chose');
   eq(await noHScroll(o), true, 'no horizontal scroll on a phone');
   await shot(o, 'elliott-chart');
 } catch (e) {

@@ -124,7 +124,24 @@ function ts_settings_out(array $u): array
         'timezone' => $u['timezone'],
         'account_size' => $u['account_size'],
         'default_risk_pct' => $u['default_risk_pct'],
+        'learn_off' => (int)($u['learn_off'] ?? 0) === 1,   // ל3 / ✅36: העסקאות שלי לא נכנסות ללמידה
     ];
+}
+
+/** ל3 / ✅36 (L2): "העסקאות שלי בלמידה" — כן (ברירת המחדל) / לא. משפיע על עסקאות שייסגרו מכאן; שורות שכבר נכתבו נשארות (23.3) */
+function ts_learn_off_set(int $uid, mixed $off): bool
+{
+    if (!is_bool($off)) throw new TsInvalid('ערך לא תקין');
+    ts_db()->prepare('UPDATE users SET learn_off = ? WHERE id = ?')->execute([$off ? 1 : 0, $uid]);
+    return $off;
+}
+
+/** H1 (18.1.8 סעיף 4): המתג "היסטוריה" — אותות העבר על הגרף, לכל השיטות יחד. ברירת מחדל דולק. רק תצוגה */
+function ts_history_set(int $uid, mixed $on): bool
+{
+    if (!is_bool($on)) throw new TsInvalid('ערך לא תקין');
+    ts_db()->prepare('UPDATE users SET history_off = ? WHERE id = ?')->execute([$on ? 0 : 1, $uid]);
+    return $on;
 }
 
 function ts_settings_save(int $uid, array $in): void
@@ -584,10 +601,17 @@ function ts_trade_out(array $t, string $tz): array
         'to_improve' => $t['to_improve'],
         'rating' => $t['rating'] !== null ? (int)$t['rating'] : null,
         'method_id' => $t['method_id'] ?? null,
-        'method_name' => isset($t['method_id']) && function_exists('ts_method_exists') && ts_method_exists($t['method_id']) ? ts_method($t['method_id'])->meta()['name'] : null,
+        'method_name' => isset($t['method_id']) ? ts_trade_method_name((string)$t['method_id']) : null,
         'analysis_snapshot' => isset($t['analysis_snapshot']) ? ts_unjson($t['analysis_snapshot'], null) : null,
         'calc' => array_merge($t['calc'], ['closed_at' => ts_time_out($t['calc']['closed_at'], $tz)]),
     ];
+}
+
+/** שם השיטה של עסקה. שיטה שהוסרה (למשל מוגדרת מבונה השיטות, 21.1) — המזהה, עם "(שיטה שהוסרה)" */
+function ts_trade_method_name(string $id): ?string
+{
+    if (!function_exists('ts_method_exists')) return null;
+    return ts_method_exists($id) ? ts_method($id)->meta()['name'] : "$id (שיטה שהוסרה)";
 }
 
 function ts_trade_get(int $uid, int $id, string $tz): array
@@ -743,6 +767,14 @@ function ts_trade_save(int $uid, array $in, string $tz): int
     } catch (Throwable $e) {
         $db->rollBack();
         throw $e;
+    }
+    // למידה (23.4, L2): עסקה שנסגרה עם שיטה וסטופ → שורת trade (אלא אם המשתמש כיבה). כשל כאן לא מפיל את השמירה
+    if ($status === 'closed' && $methodId !== null && function_exists('ts_learn_trade')) {
+        try {
+            ts_learn_trade($uid, $id);
+        } catch (Throwable $e) {
+            error_log('trading-strategies learning trade ' . $id . ': ' . $e->getMessage());
+        }
     }
     return $id;
 }

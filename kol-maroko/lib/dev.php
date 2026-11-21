@@ -11,9 +11,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/devlog.php';
 require_once __DIR__ . '/devloop.php';
+require_once __DIR__ . '/forms.php';
 
 /** גרסת התוסף לוורדפרס שהריפו מצפה לה באתר. התוסף אינו נפרס לשרת הזה, ולכן המספר כתוב כאן; בדיקה אוטומטית משווה אותו לקובץ התוסף. */
-const KOL_PLUGIN_EXPECTED = '1.6.0';
+const KOL_PLUGIN_EXPECTED = '2.3.0';
 const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צילום רק למטלה שהוא עצמו פתח ב-15 הדקות האחרונות
 
 /**
@@ -21,7 +22,7 @@ const DEV_ATTACH_WINDOW = 900;      // חבר שאינו מפתח מצרף צי�
  */
 function is_developer(?array $user): bool
 {
-    return ($user['role'] ?? null) === 'owner';
+    return ($user['role'] ?? null) === 'site_owner';
 }
 
 function require_developer(?array $user): array
@@ -96,8 +97,8 @@ function dev_setup(): void
 function audit_login(array $user): void
 {
     try {
-        $st = db()->prepare("SELECT 1 FROM audit WHERE sub = ? AND action = 'login' AND at > ? LIMIT 1");
-        $st->execute([$user['sub'], gmdate('Y-m-d\TH:i:s\Z', time() - 1800)]);
+        $st = db()->prepare("SELECT 1 FROM audit WHERE user_id = ? AND action = 'login' AND at > ? LIMIT 1");
+        $st->execute([$user['id'] ?? 0, gmdate('Y-m-d\TH:i:s\Z', time() - 1800)]);
         if (!$st->fetchColumn()) audit_as($user, 'login', mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 120));
     } catch (Throwable $e) {
         devlog_write('warn', 'data', 'audit.login', ['message' => $e->getMessage()]);
@@ -116,6 +117,15 @@ function dev_attach_own(array $du, string $code): void
     }
 }
 
+/** הדיווחים של המשתמש עצמו (🐞, ו"לא הצלחתי לשנות" מהעורך) — קוד, כותרת, תווית, מצב. קריאה בלבד מטבלת המטלות של DevLoop. */
+function dev_my_reports(array $du): array
+{
+    devloop_migrate();
+    $st = db()->prepare('SELECT code, title, area, status, created_at FROM dev_tasks WHERE created_by = ? ORDER BY id DESC LIMIT 50');
+    $st->execute([$du['id']]);
+    return ['items' => $st->fetchAll()];
+}
+
 /**
  * הפעולות של המפתח ושל DevLoop. מחזיר null כשהפעולה אינה שלו. שמות הפעולות — כמו בכל אפליקציה עם DevLoop
  * (dev-…, devapi-…), כדי ש-Claude והסקיל devloop יעבדו בלי התאמה.
@@ -125,7 +135,7 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
     if (!str_starts_with($action, 'dev')) return null;
     dev_setup();
     $member = function () use ($user): array {                    // כל חבר עם תפקיד — רואה 🐞 ומדווח
-        return dev_user(require_role($user, 'editor'));
+        return dev_user(require_role($user, 'content_editor'));
     };
     $dev = function () use ($user): array {
         return dev_user(require_developer($user));
@@ -145,6 +155,8 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
             if (!is_developer($user)) dev_attach_own($du, (string)($_GET['code'] ?? ''));
             return devloop_attach('user:' . $du['id'], $_GET);
         })(),
+        // כל חבר: הדיווחים שהוא עצמו פתח, ומצבם (מי שאינו המפתח אינו רואה את שאר המטלות)
+        'GET dev-my-reports' => dev_my_reports($member()),
         'GET dev-items' => ($member() && is_developer($user) ? devloop_task_list() : ['updated' => null, 'note' => null, 'items' => []]),
         // המפתח בלבד
         'POST dev-task-create' => devloop_task_create($dev(), $in),
@@ -165,15 +177,16 @@ function dev_route(string $action, string $method, ?array $user, array $in): ?ar
         'GET dev-health' => ($dev() ? dev_health() : []),
         'POST dev-attack-save' => pv_attack_save($dev(), $in),       // ערכת ההתקפה מול הסטודיו (F4, lib/preview.php)
         'GET dev-state' => ($dev() ? ['services' => dev_services(), 'stats' => dev_stats()] : []),
+        'GET dev-forms' => ($dev() ? forms_dev_state() : []),             // M5: שורת 📬 טפסים (lib/forms.php)
         // ספייק מנוע העורך (V0): קבצי הבדיקה מוגשים כנתונים — dev/ חסומה מהדפדפן
         'GET dev-spike-fixture' => ($dev() ? dev_spike_fixture((string)($_GET['name'] ?? '')) : []),
         default => throw new ApiError('פעולה לא מוכרת', in_array($action, DEV_ACTIONS, true) ? 405 : 404),
     };
 }
 
-const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-items',
+const DEV_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach', 'dev-client-error', 'dev-report', 'dev-attach', 'dev-my-reports', 'dev-items',
     'dev-task-create', 'dev-task-set', 'dev-comment', 'dev-comment-delete', 'dev-verify', 'dev-file', 'dev-tokens', 'dev-token-create',
-    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save'];
+    'dev-token-revoke', 'dev-item-log', 'dev-log-links', 'dev-task-from-log', 'dev-log', 'dev-audit', 'dev-health', 'dev-state', 'dev-spike-fixture', 'dev-attack-save', 'dev-forms'];
 /** פעולות שנכנסים אליהן באסימון, בלי משתמש מהשער. חייבות להופיע גם ב-"public" של app.json. */
 const DEV_TOKEN_ACTIONS = ['devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'];
 /** פעולות שהגוף שלהן הוא קובץ, לא JSON. */
@@ -325,14 +338,24 @@ function dev_health_checks(): array
             return [true, 'הקובץ קיים וחוסם', ''];
         }, 'data/.htaccess'],
         'site' => ['החיבור לאתר, וגרסת התוסף שמותקנת בו', function (): array {
-            require_once __DIR__ . '/publish.php';
+            require_once __DIR__ . '/site.php';
+            if (pub_channel() === 'pull') {
+                // M7: הכלי אינו שואל — "הדופק": מתי האתר משך לאחרונה. מעל 24 שעות (או מעולם לא) — נכשל; מעל 30 דקות — עובר, עם אזהרה
+                $p = pull_pulse();
+                $fix = 'וורדפרס ← קול מרוקו ← 🔄 עדכן עכשיו / בדוק חיבור; ואם אין ביקורים באתר — cron אמיתי ב-Bluehost (docs/install.md)';
+                if ($p['never']) return [false, 'ערוץ משיכה: האתר עוד לא משך מהכלי אף פעם', 'להדביק בתוסף את "שורת החיבור" (⚙️ הגדרות ← 🔗 חיבור לאתר) וללחוץ "בדוק חיבור"'];
+                $plug = (string)($p['state']['plugin'] ?? '');
+                if ($p['level'] === 'bad') return [false, 'ערוץ משיכה · ' . $p['text'] . ' — יותר מ-24 שעות', $fix];
+                if ($plug !== '' && version_compare($plug, KOL_PLUGIN_EXPECTED, '<')) return [false, 'ערוץ משיכה · ' . $p['text'] . ' · בריפו ' . KOL_PLUGIN_EXPECTED, 'להתקין באתר את התוסף המעודכן (מטלה לבעלים)'];
+                return [true, 'ערוץ משיכה · ' . $p['text'] . ($p['level'] === 'warn' ? ' — ⚠️ יותר מ-30 דקות (ייתכן שאין ביקורים, ו-wp-cron לא רץ)' : ''), $p['level'] === 'warn' ? $fix : ''];
+            }
             try {
                 $r = site_call('ping', []);
             } catch (ApiError $e) {
-                return [false, 'ה-ping החתום נכשל: ' . $e->getMessage(), 'ב-🚀 פרסום ← "בדיקת חיבור" מופיע ההסבר המלא; לוודא שהתוסף מותקן ופעיל באתר ושהמפתח הציבורי הודבק בו (docs/install.md)'];
+                return [false, 'ה-ping החתום נכשל: ' . $e->getMessage(), 'ב-⚙️ בעל האתר ← 🔗 חיבור לאתר ← "בדיקת חיבור" מופיע ההסבר המלא; לוודא שהתוסף מותקן ופעיל באתר ושהמפתח הציבורי הודבק בו (docs/install.md)'];
             }
             $p = (string)($r['plugin'] ?? '');
-            $state = (!empty($r['enabled']) ? 'האתר מציג את הגרסה מהסטודיו' : 'האתר מציג את העמוד המקורי') . ' · גרסה חיה ' . (int)($r['live'] ?? 0);
+            $state = (!empty($r['v2_on']) ? 'המפסק "העמוד החדש" דולק' : 'המפסק "העמוד החדש" כבוי — העמוד המקורי') . ' · גרסה חיה ' . (int)($r['v2_live'] ?? 0);
             if ($p === '') return [false, "ה-ping החתום עבר, אבל התוסף לא דיווח גרסה · $state", 'התוסף באתר ישן מאוד — להתקין את ' . KOL_PLUGIN_EXPECTED . ' (מטלה לבעלים)'];
             if (version_compare($p, KOL_PLUGIN_EXPECTED, '<')) return [false, "ה-ping החתום עבר · באתר מותקן תוסף $p, ובריפו " . KOL_PLUGIN_EXPECTED . " · $state",
                 'להתקין באתר את התוסף המעודכן מ-wordpress-plugin/ (מטלה לבעלים; docs/install.md)'];
@@ -355,6 +378,10 @@ function dev_health_checks(): array
             if ($res === false) return [false, 'העורך לא ענה: ' . $err, 'לבדוק שהעורך (word-processor) באוויר; טקסט ארוך לא ייפתח עד אז'];
             if ($status >= 500) return [false, "העורך ענה $status", 'תקלה בצד העורך — לדווח בצ\'אט שלו דרך הבעלים'];
             return [true, "העורך ענה ($status)", ''];
+        }],
+        'lists' => ['הרשימות (📚 נתונים): מספר, פריטים בכל אחת, נפח', function (): array {     // N3 (08 §5)
+            if (!function_exists('lists_dev_line')) require_once __DIR__ . '/lexicon.php';
+            return [true, lists_dev_line()['text'], ''];
         }],
     ];
 }
@@ -418,6 +445,7 @@ function dev_services(): array
             'next' => $cleanAt ? gmdate('Y-m-d\TH:i:s\Z', $cleanAt + DEVLOG_CLEAN_EVERY) : null, 'next_text' => $cleanAt ? 'בבקשה הראשונה אחרי' : 'בבקשה הבאה שנרשמת'],
         ['id' => 'health', 'name' => '🩺 בדיקות התקינות', 'how' => 'כשפותחים את המסך או לוחצים "הרצת כל הבדיקות"',
             'last' => $health['at'] ?? null, 'ok' => $health['ok'] ?? null, 'result' => $health['note'] ?? 'עוד לא רצו', 'next' => null, 'next_text' => 'בלחיצה'],
+        forms_dev_service(),                                                // M5: המייל על פניות חדשות
     ];
 }
 
@@ -430,7 +458,6 @@ function dev_stats(): array
     $n = fn(string $sql) => (int)$pdo->query($sql)->fetchColumn();
     $size = 0;
     foreach (['', '-wal', '-shm'] as $suf) $size += (int)@filesize(KOL_DATA_DIR . '/kol.sqlite' . $suf);
-    $imp = json_decode((string)setting('imported_from', 'null'), true);
     return [
         ['id' => 'words', 'label' => 'מילים', 'value' => $n('SELECT COUNT(*) FROM words')],
         ['id' => 'words_audio', 'label' => 'מילים עם הקלטה', 'value' => $n("SELECT COUNT(*) FROM words WHERE audio <> ''")],
@@ -440,14 +467,66 @@ function dev_stats(): array
         ['id' => 'files', 'label' => 'קבצים', 'value' => $n('SELECT COUNT(*) FROM files WHERE deleted_at IS NULL')],
         ['id' => 'files_trash', 'label' => 'קבצים בסל', 'value' => $n('SELECT COUNT(*) FROM files WHERE deleted_at IS NOT NULL')],
         ['id' => 'files_size', 'label' => 'גודל הקבצים', 'value' => dev_bytes($n('SELECT COALESCE(SUM(size), 0) FROM files'))],
-        ['id' => 'code_files', 'label' => 'קבצי קוד שנוצרו', 'value' => $n('SELECT COUNT(*) FROM code_files')],
-        ['id' => 'versions', 'label' => 'גרסאות שפורסמו', 'value' => $n('SELECT COUNT(*) FROM versions')],
-        ['id' => 'revisions', 'label' => 'שמירות טיוטה בהיסטוריה', 'value' => $n('SELECT COUNT(*) FROM revisions')],
+        ['id' => 'versions', 'label' => 'גרסאות בפורמט הישן (🗄️ ארכיון)', 'value' => $n('SELECT COUNT(*) FROM versions')],
+        dev_m6_row(),
         ['id' => 'snapshots', 'label' => 'נקודות שחזור', 'value' => $n('SELECT COUNT(*) FROM snapshots')],
-        ['id' => 'members', 'label' => 'חברים', 'value' => $n('SELECT COUNT(*) FROM members')],
-        ['id' => 'requests', 'label' => 'ביקשו גישה', 'value' => $n('SELECT COUNT(*) FROM access_requests')],
+        dev_people_row(),
         ['id' => 'log', 'label' => 'שורות ביומן', 'value' => $n('SELECT COUNT(*) FROM dev_log')],
         ['id' => 'db_size', 'label' => 'גודל המסד', 'value' => dev_bytes($size)],
-        ['id' => 'imported', 'label' => 'ייבוא העמוד מהאתר', 'value' => is_array($imp) ? (string)($imp['at'] ?? 'בוצע') : 'לא בוצע'],
+        dev_x1_row(),
     ];
+}
+
+/**
+ * P1 (08 §5): משתמשים לפי תפקיד, sessions פעילים, הזמנות ממתינות, תוצאת provision האחרונה, ותוצאת מטריצת ההרשאות
+ * — בשרת עצמו: כל פעולה ב-api.php וב-dev_route מסווגת ב-ACTION_ROLES (המטריצה המלאה רצה ב-tests/cases/21-roles.php).
+ */
+function dev_roles_check(): array
+{
+    preg_match_all("/^        '([a-z_]+)' => /m", (string)@file_get_contents(dirname(__DIR__) . '/api.php'), $m);
+    $all = array_unique(array_merge($m[1], DEV_ACTIONS));
+    $miss = array_values(array_diff($all, array_keys(ACTION_ROLES)));
+    return ['ok' => !$miss && count($m[1]) > 50, 'checks' => count($all) . ' פעולות' . ($miss ? ' · בלי סיווג: ' . implode(', ', $miss) : ''), 'at' => now_iso()];
+}
+
+function dev_people_row(): array
+{
+    $pdo = db();
+    $by = [];
+    foreach ($pdo->query("SELECT COALESCE(role, '') AS r, COUNT(*) AS n FROM users WHERE status = 'active' AND agent IS NULL GROUP BY r")->fetchAll() as $r) {
+        $by[] = ($r['r'] === '' ? 'בלי תפקיד' : (ROLES[$r['r']] ?? $r['r'])) . ' ' . $r['n'];
+    }
+    $sess = (int)$pdo->query("SELECT COUNT(*) FROM sessions WHERE seen_at > '" . gmdate('Y-m-d\TH:i:s\Z', time() - 86400) . "'")->fetchColumn();
+    $pend = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE status = 'active' AND invite IN ('pending','invited') AND sub IS NULL")->fetchColumn();
+    $prov = json_decode((string)setting('provision_last', 'null'), true);
+    $mx = dev_roles_check();
+    return ['id' => 'people', 'label' => '👥 אנשים (P1)', 'value' => implode(' · ', $by ?: ['אין']) . " · sessions ביממה: $sess · הזמנות ממתינות: $pend"
+        . ' · provision: ' . (is_array($prov) ? ($prov['at'] . ' ' . ($prov['error'] ?? $prov['status'] ?? $prov['http'])) : 'עוד לא נקרא')
+        . ' · מטריצת הרשאות: ' . ($mx['ok'] ? '✓ ' : '✗ ') . $mx['checks']];
+}
+
+/** X1: ✨ / 🤖 / 📝 החודש — שימוש בבינה (קיים), עריכות שהוחלו / נדחו, בקשות מהצ'אט לפי כניסה, סנכרונים של טקסט ארוך והתנגשויות. */
+function dev_x1_row(): array
+{
+    $st = db()->prepare("SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens FROM ai_usage WHERE at >= ? AND status <> 'error'");
+    $st->execute([gmdate('Y-m-01\\T00:00:00\\Z')]);
+    $u = $st->fetch() ?: ['calls' => 0, 'tokens' => 0];
+    $s = function_exists('x1_stats') ? x1_stats() : [];
+    $agents = [];
+    foreach ($s as $k => $v) if (str_starts_with((string)$k, 'agent:')) $agents[] = substr((string)$k, 6) . ': ' . $v;
+    $value = sprintf('✨ %d בקשות · %s טוקנים · הוחלו %d · נדחו %d  |  🤖 %s  |  📝 סנכרונים %d · התנגשויות %d',
+        (int)$u['calls'], number_format((int)$u['tokens']), (int)($s['applied'] ?? 0), (int)($s['rejected'] ?? 0),
+        $agents ? implode(', ', $agents) : 'אין בקשות', (int)($s['lt_sync'] ?? 0), (int)($s['lt_conflict'] ?? 0));
+    return ['id' => 'x1', 'label' => 'בינה, צ\'אט וטקסט ארוך — החודש', 'value' => $value];
+}
+
+/** M6 §2.5: הסטודיו הישן הוסר — מתי, באיזו גרסה, ומה נשאר ממנו במסד (בכוונה: אין DROP ואין DELETE). */
+const M6_REMOVED_AT = '2026-11-15';
+function dev_m6_row(): array
+{
+    $parts = [];
+    foreach (['draft', 'revisions', 'edit_lock', 'versions', 'code_files', 'code_history', 'longtexts'] as $t) {
+        try { $parts[] = "$t " . (int)db()->query("SELECT COUNT(*) FROM $t")->fetchColumn(); } catch (Throwable) { $parts[] = "$t ?"; }
+    }
+    return ['id' => 'm6', 'label' => '🗄️ הסטודיו הישן', 'value' => 'הוסר ב-' . M6_REMOVED_AT . ', גרסה ' . dev_app_version() . '; הנתונים שלו במסד (לקריאה, ב-🚀 פרסום ← 🗄️ ארכיון): ' . implode(' · ', $parts) . ' שורות'];
 }

@@ -1,0 +1,7 @@
+{
+  "label": "צור קשר",
+  "kind": "section",
+  "description": "כותרת, טקסט, טופס (נשלח ל-📬 פניות) ואייקוני רשתות.",
+  "components": ["form", "social-icons"],
+  "requires": ["js/kol-data.js"]
+}

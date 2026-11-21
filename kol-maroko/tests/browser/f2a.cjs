@@ -41,7 +41,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     page.on('dialog', d => d.accept());
     await page.goto(base + '/#/project');
     await page.waitForSelector('.pj-tree .pj-row');
-    ok((await page.textContent('.pj-note')).includes('הקבצים כאן עדיין אינם מתפרסמים'), 'הסרגל הקבוע: הקבצים עדיין אינם מתפרסמים');
+    ok((await page.textContent('.pj-note')).includes('מ-🚀 פרסום') && !(await page.textContent('.pj-note')).includes('אינם מתפרסמים'), 'הסרגל הקבוע: השינויים מגיעים לאתר מ-🚀 פרסום (T2 — לא עוד "אינם מתפרסמים")');
     const names = await page.$$eval('.pj-tree .pj-name .one', els => els.map(e => e.textContent));
     ok(['css', 'from-current', 'js', 'index.html', 'kol.json'].every(n => names.includes(n)), 'העץ מציג את השלד ואת from-current/');
     await page.click('.pj-tree .pj-name:has-text("index.html")');
@@ -174,9 +174,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     mp.on('dialog', d => d.accept());
     await mp.goto(base + '/#/project');
     await mp.waitForSelector('.pj-files-btn');
-    ok(!(await mp.isVisible('.pj-side')), '390px: העץ סגור עד שפותחים אותו');
+    // ממצא הבעלים (טלפון): בלי קובץ פתוח רואים את העץ עצמו, לא מסך ריק שמפנה לכפתור
+    await mp.waitForSelector('.pj-side', { state: 'visible' });
+    ok(await mp.isVisible('.pj-tree .pj-row'), '390px: בלי קובץ פתוח — העץ מוצג מיד בכניסה למסך');
+    ok((await mp.textContent('.pj-files-btn')).includes('קבצי הקוד'), '390px: הכפתור נקרא "📂 קבצי הקוד" (לא כשם הלשונית "🗂️ קבצים")');
     ok(await mp.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '390px: אין גלילה אופקית');
-    await mp.click('.pj-files-btn');
+    await mp.click('.pj-side-x');
+    ok(!(await mp.isVisible('.pj-side')) && await mp.isVisible('.pj-view .btn.primary'), '390px: אחרי סגירת העץ — כפתור ברור "📂 קבצי הקוד — בחירת קובץ" במקום ההודעה');
+    await mp.click('.pj-view .btn.primary');
     await mp.waitForSelector('.pj-side', { state: 'visible' });
     if (SHOTS) await mp.screenshot({ path: path.join(SHOTS, 'f2a-390-tree.png') });
     await mp.click('.pj-side-btns .btn:has-text("+ קובץ")');
@@ -271,19 +276,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(await mp.evaluate(() => Project._state.editor.getModel().getValue()) === 'XXהגרסה שלי', '390px: חזור');
     await mp.waitForFunction(() => document.querySelector('.pj-status').textContent.includes('✓'), null, { timeout: 8000 });
 
-    // 📏 מגבלות במסך המפתח, והלשונית הישנה </> קוד עם Monaco מקומי
+    // 📏 מגבלות במסך המפתח, והכתובת הישנה של </> קוד
     await mp.goto(base + '/#/dev/limits');
     await mp.waitForSelector('.pj-limit');
-    ok(await mp.$$eval('.pj-limit input', i => i.map(x => +x.value).join()) === '200,2097152,2000,200', '390px: 📏 מגבלות במסך המפתח — ארבע הגדרות');
-    await call(mp, 'code_create', {});
+    ok(await mp.$$eval('.pj-limit input', i => i.slice(0, 4).map(x => +x.value).join()) === '200,2097152,2000,200', '390px: 📏 מגבלות במסך המפתח — ארבע ההגדרות של 02 §3 (ואחריהן שתי מגבלות ה-ZIP של F2b)');
+    // M6: </> קוד הוסר — #/code מועבר ל-📁 פרויקט
     await mp.goto(base + '/#/code');
-    await mp.waitForSelector('.code-ed .monaco-editor .view-line', { timeout: 20000 });
-    ok(true, 'הלשונית הישנה </> קוד נטענת עם Monaco מהאפליקציה');
+    await mp.waitForFunction(() => location.hash === '#/project', null, { timeout: 20000 });
+    ok(true, 'הכתובת הישנה #/code מובילה ל-📁 פרויקט (M6)');
     await mp.goto(base + '/#/project');
     await mp.waitForSelector('.pj-ed .monaco-editor .view-line', { timeout: 20000 });
     await tool('חיפוש בקובץ');
     await mp.waitForSelector('.monaco-editor .find-widget.visible', { timeout: 5000 });
-    ok(true, 'חזרה למסך הפרויקט אחרי הלשונית הישנה — העורך וכליו עובדים');
+    ok(true, 'מסך הפרויקט — העורך וכליו עובדים');
     if (SHOTS) await mp.screenshot({ path: path.join(SHOTS, 'f2a-390-editor.png') });
     ok(merr.length === 0, '390px: אין שגיאות JavaScript' + (merr.length ? ' · ' + merr.join(' | ') : ''));
     await m.close();

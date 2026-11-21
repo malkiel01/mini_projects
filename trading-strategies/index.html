@@ -9,6 +9,8 @@
 <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="assets/css/app.css">
+<!-- DevLoop — עותק מסונכרן מ-devloop/src (לא עורכים כאן; php devloop/tools/sync.php) -->
+<link rel="stylesheet" href="assets/css/devloop.css">
 </head>
 <body>
 <a class="skip" href="#main">דילוג לתוכן</a>
@@ -22,7 +24,6 @@
 
 <nav class="bottom-nav" aria-label="לשוניות">
   <a href="#/market" data-tab="market"><span class="ic" aria-hidden="true">📈</span>שוק</a>
-  <a href="#/analysis" data-tab="analysis"><span class="ic" aria-hidden="true">🧭</span>ניתוח</a>
   <a href="#/alerts" data-tab="alerts"><span class="ic" aria-hidden="true">🔔</span>התראות<span class="badge" hidden></span></a>
   <a href="#/journal" data-tab="journal"><span class="ic" aria-hidden="true">📓</span>יומן</a>
   <a href="#/more" data-tab="more"><span class="ic" aria-hidden="true">⋯</span>עוד</a>
@@ -31,6 +32,7 @@
 <div class="toast" role="status" aria-live="polite" hidden></div>
 <!-- TradingView Lightweight Charts 4.2.3 (Apache-2.0) — עותק מקומי, לא CDN (spec-stage-a 4) -->
 <script src="assets/vendor/lightweight-charts/lightweight-charts.standalone.production.js"></script>
+<script src="assets/js/devloop.js"></script>
 <script type="module" src="assets/js/app.js"></script>
 </body>
 </html>

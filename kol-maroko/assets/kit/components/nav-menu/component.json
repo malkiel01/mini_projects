@@ -1,0 +1,18 @@
+{
+  "name": "nav-menu",
+  "label": "תפריט",
+  "icon": "☰",
+  "category": "ניווט",
+  "fields": [
+    {"id": "items", "label": "קישורים", "control": "repeater", "target": {"children": ".kol-nav__item"}},
+    {"id": "align", "label": "יישור (start · center · end)", "control": "select", "options": ["start", "center", "end"], "target": {"class": "kol-nav--{value}"}},
+    {"id": "side", "label": "החלונית בטלפון נפתחת מ- (start · end)", "control": "select", "options": ["start", "end"], "target": {"class": "kol-nav--from-{value}"}},
+    {"id": "accent", "label": "צבע", "control": "color", "target": {"var": "--kol-nav-accent"}}
+  ],
+  "states": [
+    {"id": "phone", "label": "בטלפון", "options": [{"label": "המבורגר (אחרי JS)", "root": "is-ready"}, {"label": "החלונית פתוחה", "root": "is-ready is-open"}]}
+  ],
+  "actions": [
+    {"id": "pages", "label": "↻ הקישורים — מהעמודים של הפרויקט", "pages": ".kol-nav__item", "link": ".kol-nav__link"}
+  ]
+}

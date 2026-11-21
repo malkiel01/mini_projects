@@ -1,0 +1,248 @@
+{
+ "format": "org-budget-proposals/1",
+ "org": {
+  "name": "ארגון קהילות (בדיקה)",
+  "subtitle": "מבנה ומספרים מהצעת 2027 — שמות השוכרים בדויים",
+  "funds": [
+   {
+    "key": "ops",
+    "kind": "operating",
+    "name": "ארגון שוטף"
+   },
+   {
+    "key": "vaad",
+    "kind": "hekdesh",
+    "name": "הקדש ועד העדה",
+    "address": "רח' מסילת ישרים 1"
+   },
+   {
+    "key": "amiel",
+    "kind": "hekdesh",
+    "name": "הקדש עמיאל מימון"
+   },
+   {
+    "key": "senior",
+    "kind": "hekdesh",
+    "name": "הקדש סניור"
+   },
+   {
+    "key": "elm",
+    "kind": "hekdesh",
+    "name": "הקדש יוסף אלמליח"
+   },
+   {
+    "key": "sas",
+    "kind": "hekdesh",
+    "name": "הקדש ששפורטס"
+   },
+   {
+    "key": "sec",
+    "kind": "secular",
+    "name": "הקדש עמיאל חילוני"
+   }
+  ],
+  "budgets": [
+   {
+    "year": 2027,
+    "prev_actual_as_of": "2026-09-30",
+    "summary": [
+     {
+      "key": "ops_in",
+      "direction": "income",
+      "section": "הכנסות",
+      "label": "הכנסות מארגון"
+     },
+     {
+      "key": "rent_in",
+      "direction": "income",
+      "section": "הכנסות",
+      "label": "הכנסות משכירות נכסים"
+     },
+     {
+      "key": "hek_in",
+      "direction": "income",
+      "section": "הכנסות",
+      "label": "הכנסות מהקדשות דתיים",
+      "funds": [
+       "vaad",
+       "amiel",
+       "senior",
+       "elm",
+       "sas"
+      ]
+     },
+     {
+      "key": "ops_ex",
+      "direction": "expense",
+      "section": "הוצאות",
+      "label": "הוצאות הארגון"
+     },
+     {
+      "key": "hek_ex",
+      "direction": "expense",
+      "section": "הוצאות",
+      "label": "הוצ' הקדשות דתיים",
+      "funds": [
+       "vaad",
+       "amiel",
+       "senior",
+       "elm",
+       "sas"
+      ]
+     }
+    ],
+    "lines": [
+     {
+      "fund": "ops",
+      "direction": "income",
+      "title": "הכנסות כלליות",
+      "prev_budget": 200000,
+      "prev_actual": 190000,
+      "amount": 200000,
+      "summary": "ops_in"
+     },
+     {
+      "fund": "ops",
+      "direction": "income",
+      "title": "חניה הלל 24",
+      "prev_budget": 30000,
+      "prev_actual": 30000,
+      "amount": 30000,
+      "summary": "rent_in",
+      "subtitle": "שוכר חניה (בדוי)",
+      "lease": {
+       "property": "חניה הלל 24",
+       "tenant": "שוכר חניה (בדוי)",
+       "monthly": "2,000"
+      }
+     },
+     {
+      "fund": "ops",
+      "direction": "expense",
+      "title": "הוצאות שוטפות",
+      "prev_budget": 230000,
+      "prev_actual": 220000,
+      "amount": 230000,
+      "summary": "ops_ex"
+     },
+     {
+      "fund": "vaad",
+      "direction": "income",
+      "title": "שוכר א (בדוי)",
+      "prev_budget": 0,
+      "prev_actual": 780760,
+      "amount": null,
+      "monthly": 72300,
+      "lease": {
+       "monthly": "65,063",
+       "annual": 780756
+      }
+     },
+     {
+      "fund": "vaad",
+      "direction": "expense",
+      "title": "מלגות לסטודנטים",
+      "prev_budget": 400000,
+      "prev_actual": 400000,
+      "amount": 450000
+     },
+     {
+      "fund": "vaad",
+      "direction": "expense",
+      "title": "סיוע לנזקקים",
+      "prev_budget": 380760,
+      "prev_actual": 380760,
+      "amount": 417600
+     },
+     {
+      "fund": "amiel",
+      "direction": "income",
+      "title": "שוכר ב (בדוי)",
+      "prev_budget": 121200,
+      "prev_actual": 121200,
+      "amount": 121200,
+      "monthly": 10100,
+      "lease": true
+     },
+     {
+      "fund": "amiel",
+      "direction": "expense",
+      "title": "מלגות",
+      "prev_budget": 121200,
+      "prev_actual": 121200,
+      "amount": 121200
+     },
+     {
+      "fund": "senior",
+      "direction": "income",
+      "title": "שוכר ג (בדוי)",
+      "prev_budget": 85560,
+      "prev_actual": 85560,
+      "amount": 85560,
+      "monthly": 7130,
+      "lease": true
+     },
+     {
+      "fund": "senior",
+      "direction": "expense",
+      "title": "השתתפות בהילולות",
+      "prev_budget": 85560,
+      "prev_actual": 85560,
+      "amount": 85560
+     },
+     {
+      "fund": "elm",
+      "direction": "income",
+      "title": "שוכר ד (בדוי)",
+      "prev_budget": 1662600,
+      "prev_actual": 2081185,
+      "amount": 1992600,
+      "monthly": 166050,
+      "lease": true
+     },
+     {
+      "fund": "elm",
+      "direction": "expense",
+      "title": "החזר הלוואה לארגון",
+      "prev_budget": 1662600,
+      "prev_actual": 2081185,
+      "amount": 1992600
+     },
+     {
+      "fund": "sas",
+      "direction": "income",
+      "title": "שוכר ה (בדוי)",
+      "prev_budget": 0,
+      "prev_actual": 31200,
+      "amount": 32400
+     },
+     {
+      "fund": "sas",
+      "direction": "expense",
+      "title": "אחזקה",
+      "prev_budget": 31200,
+      "prev_actual": 31200,
+      "amount": 32400
+     },
+     {
+      "fund": "sec",
+      "direction": "income",
+      "title": "שוכר ו (בדוי)",
+      "prev_budget": 2400,
+      "prev_actual": 2400,
+      "amount": 2400,
+      "lease": true
+     },
+     {
+      "fund": "sec",
+      "direction": "expense",
+      "title": "פעילות",
+      "prev_budget": 2400,
+      "prev_actual": 2400,
+      "amount": 2400
+     }
+    ]
+   }
+  ]
+ }
+}

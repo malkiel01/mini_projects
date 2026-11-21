@@ -1,0 +1,28 @@
+/* סגנון לפי מחלקה — היעד הרגיל של העורך החזותי.
+   הכללים כאן הם ערכי הפאנל של היום (כותרות, גדלים, משקל, תמונה, רוחב המבוא), ככללים רגילים — בלי הכפייה שהכלי הוסיף להם קודם. */
+.kadisha-lexicon-page .kadisha-hero.kadisha-hero--has-image {
+    background-image: url('https://maghreb.co.il/wp-content/uploads/hero.jpg');
+    --ka-hero-overlay: 45;
+}
+.kadisha-lexicon-page .kadisha-lexicon-intro {
+    max-width: 780px;
+}
+.kadisha-lexicon-page .kadisha-hero { min-height:420px;display:flex;align-items:center;justify-content:center; }
+.kadisha-lexicon-page .kadisha-hero-title,
+.kadisha-lexicon-page .kadisha-hero h1 { font-size: 60px; font-weight: 700; line-height: 1.15; margin-bottom: 0; }
+.kadisha-lexicon-page .kadisha-hero-subtitle { font-size: 22px; font-weight: 700; }
+.kadisha-lexicon-page .kadisha-hero-credit { font-size: 17px; margin-top: 0; line-height: 1.25; opacity: .92; }
+.kadisha-lexicon-page .kadisha-hero-subtitle:has(+ .kadisha-hero-credit) { margin-bottom: 0; line-height: 1.25; }
+@supports not selector(:has(*)) { .kadisha-lexicon-page .kadisha-hero-subtitle { margin-bottom: 0; } }
+.kadisha-lexicon-page .kadisha-hero-subtitle-main {
+    font-family: 'Frank Ruhl Libre', 'David Libre', serif; font-size: 36px; font-weight: 700;
+    line-height: 1.1; color: var(--ka-cream, #f5ebd6); text-shadow: 0 2px 8px rgba(0,0,0,.3); margin: -.1em 0 1.1rem; padding: 0; letter-spacing: .01em;
+}
+.kadisha-lexicon-page .kadisha-hero-eyebrow--under { font-size: 24px; margin-top: 0; margin-bottom: .6rem; padding: .15rem 1.5rem; }
+@media (max-width: 600px) {
+    .kadisha-lexicon-page .kadisha-hero-title, .kadisha-lexicon-page .kadisha-hero h1 { font-size: 42px; }
+    .kadisha-lexicon-page .kadisha-hero-subtitle-main { font-size: 29px; }
+    .kadisha-lexicon-page .kadisha-hero-subtitle { font-size: 19px; }
+    .kadisha-lexicon-page .kadisha-hero-eyebrow--under { font-size: 19px; }
+    .kadisha-lexicon-page .kadisha-hero-credit { font-size: 14px; }
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><text x="4" y="24">H6 svg</text><script>
+/* H6 — SVG עם סקריפט: כשהוא נפתח ישירות, הוא רץ — במקור אטום (ארגז חול), בלי גישה לעוגיות או לאתר */
+var r = { origin: self.origin };
+try { void document.cookie; r.cookie = 'read'; } catch (e) { r.cookie = 'throw'; }
+console.log('KOLKIT-SVG ' + JSON.stringify(r));
+</script></svg>

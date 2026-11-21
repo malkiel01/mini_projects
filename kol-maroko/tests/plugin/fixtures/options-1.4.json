@@ -1,0 +1,12 @@
+{
+  "_note": "קלט שדרוג — האפשרויות שהקוד של 1.x שומר וקורא (אותם מפתחות ב-1.4.0 וב-1.6.0): המפתחות, העמוד, המפסק, הגרסאות, nonces. {{KEY}} — המפתח של הבדיקה.",
+  "kol_maroko_keys": "k-old:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n{{KEY}}",
+  "kol_maroko_page_id": 42,
+  "kol_maroko_enabled": true,
+  "kol_maroko_last": 9,
+  "kol_maroko_live": 8,
+  "kol_maroko_versions": {"9": {"at": 1760000000, "by": "מלכיאל"}, "8": {"at": 1759000000, "by": "מלכיאל"}},
+  "kol_maroko_v_9": {"n": 9, "html": "<p>v9</p>", "css": "p{}", "at": 1760000000, "by": "מלכיאל"},
+  "kol_maroko_v_8": {"n": 8, "html": "<p data-kol-css=\"kadisha-lexicon\">v8</p>", "css": "p{color:red}", "at": 1759000000, "by": "מלכיאל"},
+  "kol_maroko_nonces": {"0123456789abcdef0123456789abcdef": 1760000000}
+}

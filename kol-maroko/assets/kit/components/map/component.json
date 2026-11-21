@@ -1,0 +1,13 @@
+{
+  "name": "map",
+  "label": "מפה",
+  "icon": "🗺",
+  "category": "רשתות",
+  "fields": [
+    {"id": "q", "label": "הכתובת / המקום", "control": "text", "target": {"attr": "data-kol-q"}},
+    {"id": "link", "label": "הקישור \"פתח במפות\"", "control": "link", "target": {"attr": "href", "on": ".kol-map__open"}},
+    {"id": "zoom", "label": "קרבה (1–20)", "control": "number", "target": {"attr": "data-kol-zoom"}},
+    {"id": "height", "label": "גובה", "control": "size", "target": {"var": "--kol-map-h"}},
+    {"id": "img", "label": "התמונה עד לחיצה", "control": "media", "target": {"src": ".kol-map__img"}}
+  ]
+}

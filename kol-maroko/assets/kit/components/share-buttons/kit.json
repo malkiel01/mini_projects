@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "category": "רשתות",
+  "description": "כפתורי שיתוף — וואטסאפ, פייסבוק, X, טלגרם, מייל, העתקת קישור. קישורי share רגילים: בלי סקריפט של רשת, בלי מעקב.",
+  "preview": "preview.svg",
+  "links": ["wa.me", "www.facebook.com", "twitter.com", "t.me"]
+}

@@ -28,6 +28,9 @@ test('DevLoop: חבר שאינו מפתח מדווח 🐞 — נפתחת מטל�
     $other = http('POST', '/api.php?action=dev-task-create', ['user' => U_OWNER, 'json' => ['title' => 'מטלה של המפתח']])['json']['code'];
     eq(403, http('POST', "/api.php?action=dev-attach&code=$other&name=x.png", ['user' => U_EDITOR, 'raw' => png_bytes()])['status']);
     $GLOBALS['KM_OTHER'] = $other;
+    // V1b: המדווח רואה את הדיווחים שלו ומצבם — ורק אותם
+    $mine = http('GET', '/api.php?action=dev-my-reports', ['user' => U_EDITOR])['json']['items'];
+    eq([[$code, 'open', 'דיווח']], array_map(fn($i) => [$i['code'], $i['status'], $i['area']], $mine), 'dev-my-reports: רק מה שהמשתמש עצמו פתח');
 
     $items = http('GET', '/api.php?action=dev-items', ['user' => U_OWNER])['json']['items'];
     $x = array_values(array_filter($items, fn($i) => $i['code'] === $code))[0] ?? null;
@@ -124,17 +127,14 @@ test('מסך המפתח: היומן מסונן לפי סוג, משתמש, פעו
 
 test('מסך המפתח: יומן הפעולות — כניסה, שמירה, מחיקה, שינוי חברים ושינוי הגדרות, עם סינון', function () {
     http('POST', '/api.php?action=word_save', ['user' => U_EDITOR, 'json' => ['word' => 'לפעולות', 'meaning' => 'x']]);
-    http('POST', '/api.php?action=lock', ['user' => U_EDITOR, 'json' => ['op' => 'take']]);
-    $d = http('GET', '/api.php?action=draft', ['user' => U_EDITOR])['json'];
-    $d['page']['settings']['title'] = 'כותרת מהבדיקה ' . time();
-    $s = http('POST', '/api.php?action=draft_save', ['user' => U_EDITOR, 'json' => ['page' => $d['page'], 'rev' => $d['rev']]]);
+    // M6: "שמירה" — לשעבר draft_save בטיוטה הישנה (נמחקה); עכשיו כתיבה לקובץ בפרויקט
+    $s = http('POST', '/api.php?action=pf_create', ['user' => U_EDITOR, 'json' => ['path' => 'audit/t' . time() . '.css', 'content' => '/* מהבדיקה */']]);
     eq(200, $s['status'], $s['body']);
-    http('POST', '/api.php?action=lock', ['user' => U_EDITOR, 'json' => ['op' => 'release']]);
-    http('POST', '/api.php?action=member_add', ['user' => U_OWNER, 'json' => ['email' => 'new@example.test', 'role' => 'editor']]);
+    http('POST', '/api.php?action=person_invite', ['user' => U_OWNER, 'json' => ['email' => 'new@example.test', 'role' => 'editor']]);
     http('POST', '/api.php?action=disk_cap', ['user' => U_OWNER, 'json' => ['gb' => 6]]);
     $a = http('GET', '/api.php?action=dev-audit', ['user' => U_OWNER])['json'];
     $acts = array_column($a['rows'], 'action');
-    foreach (['login', 'draft_save', 'word_add', 'word_delete', 'snapshot_restore', 'member_add', 'disk_cap', 'dev_token_create'] as $x) ok(in_array($x, $acts, true), "חסרה פעולה: $x");
+    foreach (['login', 'pf_create', 'word_add', 'word_delete', 'snapshot_restore', 'person_invite', 'disk_cap', 'dev_token_create'] as $x) ok(in_array($x, $acts, true), "חסרה פעולה: $x");
     $only = http('GET', '/api.php?action=dev-audit&user=u-editor&act=word_add', ['user' => U_OWNER])['json']['rows'];
     ok($only && !array_filter($only, fn($x) => $x['sub'] !== 'u-editor' || $x['action'] !== 'word_add'), 'סינון לפי מי ומה');
 });
@@ -144,7 +144,7 @@ test('מסך המפתח: בדיקות התקינות — כל בדיקה ירו�
     $h = http('GET', '/api.php?action=dev-health', ['user' => U_OWNER]);
     eq(200, $h['status'], $h['body']);
     $c = array_column($h['json']['checks'], null, 'id');
-    eq(['db', 'writable', 'disk', 'php', 'version', 'htaccess', 'site', 'preview', 'editor'], array_keys($c));
+    eq(['db', 'writable', 'disk', 'php', 'version', 'htaccess', 'site', 'preview', 'editor', 'lists'], array_keys($c));      // N3: הרשימות
     foreach ($c as $id => $x) ok(is_bool($x['ok']) && $x['text'] !== '' && ($x['ok'] || $x['fix'] !== ''), "$id: ירוק, או אדום עם מה לעשות");
     foreach (['db', 'writable', 'disk', 'php'] as $id) ok($c[$id]['ok'], "$id ירוקה: " . $c[$id]['text']);
     ok(str_contains($c['db']['text'], (string)KOL_SCHEMA_VERSION), 'גרסת הסכמה בטקסט');
@@ -156,7 +156,7 @@ test('מסך המפתח: בדיקות התקינות — כל בדיקה ירו�
     try { $h2 = http('GET', '/api.php?action=dev-health', ['user' => U_OWNER]); } finally { db()->exec('ALTER TABLE files_hidden RENAME TO files'); }
     eq(200, $h2['status']);
     $c2 = array_column($h2['json']['checks'], null, 'id');
-    eq([false, true, 9], [$c2['disk']['ok'], $c2['db']['ok'], count($c2)]);
+    eq([false, true, 10], [$c2['disk']['ok'], $c2['db']['ok'], count($c2)]);      // N3: עשר, עם "lists"
     $run = dev_last_run('health');
     ok($run && !$run['ok'] && str_contains($run['note'], 'disk'), 'הריצה נרשמה');
 });
@@ -173,14 +173,14 @@ test('מסך המפתח: גרסת התוסף באתר מול הריפו, ו-ping
 test('מסך המפתח: שירותי רקע ומצב הנתונים', function () {
     $s = http('GET', '/api.php?action=dev-state', ['user' => U_OWNER])['json'];
     $svc = array_column($s['services'], null, 'id');
-    eq(['snapshot', 'trash', 'log_clean', 'health'], array_keys($svc));
+    eq(['snapshot', 'trash', 'log_clean', 'health', 'forms_mail'], array_keys($svc));
     foreach ($svc as $id => $x) ok($x['result'] !== '' && $x['next_text'] !== '' && array_key_exists('last', $x), "$id: מתי, תוצאה, הבא");
     ok($svc['snapshot']['last'] && $svc['snapshot']['ok'] === true, 'הנקודה היומית נוצרה בבקשה הראשונה');
     ok($svc['log_clean']['last'] && $svc['log_clean']['next'], 'ניקוי היומן: אחרון והבא');
     $st = array_column($s['stats'], 'value', 'id');
-    foreach (['words', 'words_audio', 'audio_site', 'audio_tool', 'files', 'versions', 'snapshots', 'members', 'db_size'] as $k) ok(array_key_exists($k, $st), "חסר $k");
+    foreach (['words', 'words_audio', 'audio_site', 'audio_tool', 'files', 'versions', 'snapshots', 'people', 'db_size'] as $k) ok(array_key_exists($k, $st), "חסר $k");
     eq((int)db()->query('SELECT COUNT(*) FROM words')->fetchColumn(), $st['words']);
-    eq(3, $st['members']);
+    ok(str_contains((string)$st['people'], 'עורך') && str_contains((string)$st['people'], 'מטריצת הרשאות: ✓'), 'שורת P1: ' . $st['people']);
     eq($st['words_audio'], $st['audio_site'] + $st['audio_tool']);
 });
 

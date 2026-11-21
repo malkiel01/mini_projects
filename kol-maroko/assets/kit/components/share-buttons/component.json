@@ -1,0 +1,14 @@
+{
+  "name": "share-buttons",
+  "label": "כפתורי שיתוף",
+  "icon": "🔗",
+  "category": "רשתות",
+  "fields": [
+    {"id": "items", "label": "כפתורים", "control": "repeater", "target": {"children": ".kol-share__btn"}},
+    {"id": "url", "label": "הכתובת לשיתוף (ריק — העמוד הנוכחי)", "control": "link", "target": {"attr": "data-kol-url"}},
+    {"id": "style", "label": "סגנון (full — עם שם · icons — רק סמל)", "control": "select", "options": ["full", "icons"], "target": {"class": "kol-share--{value}"}}
+  ],
+  "states": [
+    {"id": "copied", "label": "העתקת קישור", "options": [{"label": "\"הועתק\"", "root": "is-copied"}]}
+  ]
+}

@@ -1,0 +1,8 @@
+# T1: קוד לאתר וורדפרס, לא לפלטפורמה. בשרת הוא נקרא רק כקבצים (api.php?action=plugin_zip, בעל האתר) — לעולם לא מוגש ולא רץ.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

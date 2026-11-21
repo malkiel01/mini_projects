@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "category": "תנועה",
+  "description": "כותרת שבה מילה מתחלפת (2–4 מילים) או מסומנת בקו — CSS בלבד, בלי JS; prefers-reduced-motion — המילה הראשונה, בלי תנועה.",
+  "preview": "preview.svg"
+}

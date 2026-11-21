@@ -1,0 +1,12 @@
+{
+  "name": "icon-list",
+  "label": "רשימת אייקונים",
+  "icon": "☑",
+  "category": "קופסאות",
+  "fields": [
+    {"id": "items", "label": "שורות", "control": "repeater", "target": {"children": ".kol-iconlist__item"}},
+    {"id": "layout", "label": "פריסה (stack — מתחת · inline — בשורה)", "control": "select", "options": ["stack", "inline"], "target": {"class": "kol-iconlist--{value}"}},
+    {"id": "color", "label": "צבע האייקונים", "control": "color", "target": {"var": "--kol-iconlist-color"}},
+    {"id": "gap", "label": "רווח בין שורות", "control": "size", "target": {"var": "--kol-iconlist-gap"}}
+  ]
+}

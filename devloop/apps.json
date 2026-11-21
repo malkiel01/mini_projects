@@ -28,5 +28,15 @@
     "php": "lib/devloop.php",
     "js": "assets/js/devloop.js",
     "css": "assets/css/devloop.css"
+  },
+  "trading-strategies": {
+    "php": "lib/devloop.php",
+    "js": "assets/js/devloop.js",
+    "css": "assets/css/devloop.css"
+  },
+  "grave-prices": {
+    "php": "lib/devloop.php",
+    "js": "assets/js/devloop.js",
+    "css": "assets/css/devloop.css"
   }
 }

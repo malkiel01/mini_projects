@@ -84,7 +84,11 @@ $t = transfer_create($editor, ['budget_id' => $b, 'from_fund_id' => $mesila, 'to
     'title_from' => 'החזר הלוואה מהקדש לארגון (השקעות בנכס)', 'title_to' => 'הכנסות מהחזר הלוואה מהקדשות']);
 $g = budget_get($editor, $b);
 $bal = array_column($g['summary']['balance'], null, 'fund_id');
-check($bal[$mesila]['diff'] === 0, 'הקדש ועד העדה מאוזן: 780,756 מול 780,756 (כמו במסמך)');
+check($bal[$mesila]['diff'] === 0, 'הקדש ועד העדה בהצעת 2026 מאוזן: 65,063 × 12 = 780,756 מול 780,756 (כמו במסמך של 2026)');
+line_save($editor, ['budget_id' => $b, 'id' => line($g, 'הקדש ועד העדה')['id'], 'title' => 'הקדש ועד העדה', 'subtitle' => "רח' מסילת ישרים 1",
+    'calc' => ['monthly' => 65063], 'prev_budget' => '743,600', 'prev_actual' => '620,000', 'lease' => ['annual' => 1]]);
+$ap = budget_get($editor, $b)['appendix'][0]['rows'][0];
+check($ap['annual'] === 780756 && $ap['monthly'] === '65,063', 'בנספח — אותה שורה: 65,063 / 780,756, נגזר מהשורה ולא מוקלד (B1)');
 line_save($editor, ['budget_id' => $b, 'id' => $t['to_line'], 'title' => 'הכנסות מהחזר הלוואה מהקדשות', 'amount' => 260000]);
 $g = budget_get($editor, $b);
 check(line($g, 'החזר הלוואה מהקדש לארגון (השקעות בנכס)')['amount'] === 260000, 'שינוי צד אחד של העברה משנה את השני');

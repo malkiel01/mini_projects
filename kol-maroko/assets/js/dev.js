@@ -43,6 +43,8 @@ const Dev = (() => {
   });
   addEventListener('unhandledrejection', e => {
     const r = e.reason, msg = String((r && r.message) || r);
+    // Monaco מבטל משימות ממתינות כשמחליפים קובץ (CancellationError, "Canceled") — ביטול מתוכנן, לא תקלה: לא נרשם ולא מדווח
+    if (r && r.name === 'Canceled' && /\/vendor\/monaco\//.test(String(r.stack || ''))) { e.preventDefault(); return; }
     push(trace.errors, { kind: 'promise', message: msg.slice(0, 300), at: new Date().toISOString() });
     report({ kind: 'promise', message: msg, stack: r && r.stack });
   });
@@ -51,7 +53,7 @@ const Dev = (() => {
   function report(x) {
     const sig = [x.kind, String(x.message).replace(/\d+/g, '#'), x.source || '', x.line || ''].join('|');
     const prev = sent.get(sig), now = Date.now();
-    if (prev && now - prev.at < 60000) { prev.pending++; return; }      // נספרת — תישלח עם הבאה
+    if (x.kind !== 'ui' && prev && now - prev.at < 60000) { prev.pending++; return; }      // נספרת — תישלח עם הבאה (ui — כל לחיצה נרשמת)
     const times = prev ? prev.pending + 1 : 1;
     sent.set(sig, { at: now, pending: 0 });
     const body = { ...x, message: String(x.message).slice(0, 1000), stack: x.stack ? String(x.stack).slice(0, 3000) : '',
@@ -69,6 +71,9 @@ const Dev = (() => {
     const { type, at, ...rest } = rec || {};
     report({ kind: 'audio', message: `${type || 'log'}: ${JSON.stringify(rest).slice(0, 600)}`, action: 'library' });
   };
+
+  // R6: פעולה במסך (לחיצה ותוצאתה) — ליומן המפתח, כדי לראות בדיעבד מה קרה אצל המשתמש. status: קוד שגיאה (0 — אין חיבור)
+  window.KolUi = (action, message, status) => report({ kind: 'ui', action: String(action).slice(0, 60), message, ...(status === undefined ? {} : { status }) });
 
   // ── החיבור ────────────────────────────────────────────────
   const devApi = (action, { body, params } = {}) => api(action, body, params ? '&' + new URLSearchParams(params) : '');
@@ -88,12 +93,14 @@ const Dev = (() => {
   }
 
   // ── מסך המפתח ─────────────────────────────────────────────
-  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות'], ['spike', '🧪 ספייק העורך']];
+  const SUBS = [['tasks', '📋 מטלות'], ['log', '📜 יומן'], ['audit', '👣 פעולות'], ['health', '🩺 תקינות'], ['state', '📊 נתונים'], ['limits', '📏 מגבלות'], ['forms', '📬 טפסים'], ['spike', '🧪 ספייק העורך']];
   const LV = { error: '🔴', warn: '🟠', info: '⚪' };
   const LV_NAME = { error: 'שגיאה', warn: 'אזהרה', info: 'רגיל' };
   const CAT = { api: 'בקשה', agent: 'צ\'אט', php: 'שרת', client: 'דפדפן', auth: 'כניסה', data: 'נתונים', health: 'תקינות' };
   const MORE_ACTIONS = { login: '🔑 נכנס לכלי', draft_save: '💾 שמר טיוטה', dev_token_create: '🔑 יצר אסימון ל-Claude', dev_token_revoke: '🔑 ביטל אסימון ל-Claude',
-    secret_set: '🔐 עדכן סוד', secret_remove: '🔐 הסיר סוד', ai: '✨ ביקש מעוזר הבינה', ai_quota: '✨ שינה מכסת בינה' };
+    secret_set: '🔐 עדכן סוד', secret_remove: '🔐 הסיר סוד', ai: '✨ ביקש מעוזר הבינה', ai_quota: '✨ שינה מכסת בינה',
+    ai_apply: '✨ החיל הצעה של העוזר', agent_write: '🤖 כתב קובץ', agent_edit: '🤖 ערך קובץ', agent_create: '🤖 יצר קובץ', agent_words: '🤖 שמר מילים',
+    longtext_sync: '📝 סנכרן טקסט ארוך', longtext_conflict: '📝 התנגשות בטקסט ארוך', longtext_import: '📝 ייבא לעורך התמלילים', longtext_link: '🔗 חיבר למסמך', longtext_new: '📝 אזור חדש' };
 
   function view(el, sub, arg) {
     if (!SUBS.some(s => s[0] === sub)) sub = 'tasks';
@@ -102,8 +109,26 @@ const Dev = (() => {
       h('nav', { class: 'dev-subs', 'aria-label': 'מסך המפתח' }, SUBS.map(([id, label]) => h('a', { href: '#/dev/' + id, 'aria-current': id === sub ? 'page' : null }, label))),
       body);
     try {
-      ({ tasks: () => DevLoop.show(body, arg || undefined), log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), spike: () => viewSpike(body) })[sub]();
+      ({ tasks: () => { const stuck = h('div', { class: 'dev-stuck' }), list = h('div'); body.replaceChildren(stuck, list); viewStuck(stuck); DevLoop.show(list, arg || undefined); }, log: () => viewLog(body, arg), audit: () => viewAudit(body), health: () => viewHealth(body), state: () => viewState(body), limits: () => Project.limits(body), forms: () => Inbox.devView(body), spike: () => viewSpike(body) })[sub]();
     } catch (e) { body.replaceChildren(h('p', { class: 'error' }, e.message)); }
+  }
+
+  /** מונה "לא הצלחתי לשנות" (08 §5): המטלות הפתוחות שנפתחו מהעורך החזותי, מקובצות לפי אלמנט. */
+  async function viewStuck(el) {
+    try {
+      const items = ((await api('dev-items')).items || []).filter(x => x.area === 'לא הצלחתי לשנות' && x.status !== 'closed');
+      if (!items.length) { el.replaceChildren(h('p', { class: 'hint', 'data-stuck': '0' }, '🐞 "לא הצלחתי לשנות": אין מטלות פתוחות.')); return; }
+      const groups = new Map();
+      for (const x of items) {
+        const d = String(x.detail || ''), elName = (/^אלמנט: (.*)$/m.exec(d) || [])[1] || x.title, file = ((/^קובץ: (\S+)/m.exec(d) || [])[1] || '');
+        const key = elName + ' · ' + file;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(x.code);
+      }
+      el.replaceChildren(h('details', { class: 'dev-stuck-box', open: true, 'data-stuck': String(items.length) },
+        h('summary', {}, '🐞 "לא הצלחתי לשנות": ', h('b', {}, String(items.length)), ' מטלות פתוחות, על ' + groups.size + ' אלמנטים'),
+        h('ul', {}, [...groups].sort((a, b) => b[1].length - a[1].length).map(([key, codes]) => h('li', {}, h('code', { dir: 'ltr' }, key), ' — ' + codes.length + ' · ', codes.map((c, i) => [i ? ', ' : '', h('a', { href: '#/dev/tasks/' + c }, c)])))) ));
+    } catch (e) { el.replaceChildren(h('p', { class: 'hint' }, e.message)); }
   }
 
   const select = (label, opts, value = '') => h('select', { 'aria-label': label }, h('option', { value: '' }, label), opts.map(([v, t]) => h('option', { value: v, selected: v === value }, t)));
@@ -311,7 +336,7 @@ const Dev = (() => {
   }
 
   // ── ספייק מנוע העורך (V0): הקוד נטען רק כשנכנסים למסך ─────
-  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/spike/model.js', 'assets/js/spike/canvas.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
+  const SPIKE_JS = ['assets/vendor/spike-parsers.js', 'assets/js/editor/model.js', 'assets/js/editor/canvas.js', 'assets/js/editor/equiv.js', 'assets/js/spike/harness.js', 'assets/js/spike/screen.js'];
   let spikeLoad = null;
   async function viewSpike(el) {
     el.replaceChildren(h('p', { class: 'hint' }, 'טוען…'));

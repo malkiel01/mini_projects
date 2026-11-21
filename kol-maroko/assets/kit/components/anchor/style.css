@@ -1,0 +1,2 @@
+/* רכיב מוכן: עוגן (kit 1.0.0) — אלמנט בלי גובה; קישור "#section" קופץ אליו, עם מרווח לכותרת קבועה. */
+.kol-anchor { --kol-anchor-offset: 80px; display: block; block-size: 0; scroll-margin-block-start: var(--kol-anchor-offset); }

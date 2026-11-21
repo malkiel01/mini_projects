@@ -1,0 +1,13 @@
+{
+  "name": "switch",
+  "label": "מתג",
+  "icon": "🔀",
+  "category": "תוכן",
+  "fields": [
+    {"id": "b", "label": "מתחיל במצב ב'", "control": "toggle", "target": {"attr": "checked", "on": ".kol-switch__input"}},
+    {"id": "accent", "label": "צבע המתג", "control": "color", "target": {"var": "--kol-switch-accent"}}
+  ],
+  "states": [
+    {"id": "side", "label": "הצד המוצג", "options": [{"label": "מצב א'", "on": ".kol-switch__input", "attr": "checked", "set": false}, {"label": "מצב ב'", "on": ".kol-switch__input", "attr": "checked"}]}
+  ]
+}

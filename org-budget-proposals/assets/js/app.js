@@ -943,6 +943,49 @@ function moneyField(label, name, value, opts = {}) {
     return h(`label.f${opts.wide ? '.wide' : ''}`, h('span', label), input);
 }
 const balChip = diff => diff === 0 ? h('span.chip.ok', 'מאוזנת') : diff > 0 ? h('span.chip.warn', `עודף ${money(diff)}`) : h('span.chip.bad', `גירעון ${money(-diff)}`);
+
+// ── בדיקת השלמות (B1): budget_integrity() מהשרת — פס אדום, סימון על התא עצמו, ומעבר לכל בעיה.
+//    לא חוסם כלום: אותה רשימה מופיעה גם בראש המסמך המופק (Word, אקסל, הדפסה). ──
+const intOf = d => d.integrity || [];
+const intLine = (d, id) => intOf(d).filter(x => x.line_ids.includes(id));
+const intFund = (d, fid) => intOf(d).filter(x => x.rule === 'fund_balance' && x.fund_id === fid);
+const intRow = (d, key) => intOf(d).filter(x => x.row_key === key);
+/** התג על קופה — מ-budget_integrity() בלבד (B1.2): אותו מספר כמו הסה"כ בטבלה ובבדיקה. ההפרש — מעמודת השנה כשהיא הבעיה. */
+const fundChip = (d, fid) => {
+    const bad = intFund(d, fid);
+    if (!bad.length) return h('span.chip.ok', 'מאוזנת');
+    const cur = bad.find(x => x.col === 'amount');
+    return cur ? balChip(cur.diff) : h('span.chip.bad', 'לא מאוזנת');
+};
+const intColLabel = (d, c) => ({ prev_budget: `הצעת ${d.budget.year - 1}`, prev_actual: `ניצול ${d.budget.year - 1}`, amount: `הצעת ${d.budget.year}` })[c] || '';
+
+/** מעבר לבעיה: לקופה (ולכיוון של השורה), ללשונית הנספח או הריכוז. */
+function intGo(d, x) {
+    const id = d.budget.id;
+    const l = x.line_ids.length ? d.lines.find(y => y.id === x.line_ids[0]) : null;
+    const go = hash => location.hash === hash ? render() : (location.hash = hash);
+    if (x.rule === 'appendix_row') { sessionStorage.setItem('ob-bud-tab', 'appendix'); return go(`#/budget/${id}`); }
+    if (x.rule === 'summary_total' || x.rule === 'summary_balance') { sessionStorage.setItem('ob-bud-tab', 'summary'); return go(`#/budget/${id}`); }
+    const fid = x.fund_id || l?.fund_id;
+    if (!fid) return go(`#/budget/${id}`);
+    if (l) sessionStorage.setItem('ob-fund-dir', l.direction);
+    go(`#/budget/${id}/fund/${fid}`);
+}
+
+function intSheet(d) {
+    const list = intOf(d);
+    openSheet(`ההצעה לא מאוזנת · ${list.length}`, [
+        h('p.hint', 'כל בעיה — לחיצה עוברת אליה. לא חוסם הפקה: הרשימה הזו מופיעה גם בראש המסמך (Word, אקסל, הדפסה).'),
+        h('ul.int-list', ...list.map(x => h('li', h('button', { type: 'button', onclick: () => { sheet.close(); intGo(d, x); } }, x.msg))))]);
+}
+
+/** הפס העליון: "ההצעה לא מאוזנת: N בעיות" — רק כשיש. */
+function intBar(d) {
+    const n = intOf(d).length;
+    if (!n) return null;
+    return h('button.int-bar', { type: 'button', onclick: () => intSheet(d) },
+        h('b', `⚠️ ההצעה לא מאוזנת: ${n} ${n === 1 ? 'בעיה' : 'בעיות'}`), h('span', 'לרשימה ›'));
+}
 const fmtDay = d => d ? d.split('-').reverse().join('.') : '';
 
 // ── רשימת ההצעות בארגון ──
@@ -1008,7 +1051,7 @@ async function viewBudget(id, fundId = null) {
         h('div.line', h('span.muted', 'הכנסות'), h('b', money(sm.income)), h('span.muted', '· הוצאות'), h('b', money(sm.expense)),
             h('span.pct', { style: `color:var(--${sm.income === sm.expense ? 'ok' : 'danger'})` }, sm.income === sm.expense ? 'מאוזן' : money(sm.income - sm.expense))),
         h('div.chips', h(`span.chip.${sc}`, sl),
-            sm.unbalanced ? h('span.chip.bad', `${sm.unbalanced} קופות לא מאוזנות`) : h('span.chip.ok', 'כל הקופות מאוזנות'),
+            intOf(d).length ? h('span.chip.bad', `⚠️ ${intOf(d).length} בעיות איזון`) : h('span.chip.ok', 'מאוזנת'),
             open ? h('span.chip.warn', `💬 ${open} הערות פתוחות`) : null),
         !d.edit && canEdit(d.org.role) ? h('p.hint', { style: 'margin:0' }, 'ההצעה נעולה. לעריכה — "⋯" ← החזרה לטיוטה.') : null);
     const leases = d.appendix.reduce((a, g) => a + g.rows.length, 0);
@@ -1016,7 +1059,7 @@ async function viewBudget(id, fundId = null) {
     let cur = sessionStorage.getItem('ob-bud-tab') || 'funds';
     if (!tabs.some(t => t[0] === cur)) cur = 'funds';
     const box = h('div');
-    put(main, card,
+    put(main, card, intBar(d),
         h('div.seg-tabs', { role: 'tablist', style: 'grid-template-columns:repeat(5,minmax(0,1fr))' }, ...tabs.map(([k, l, n]) =>
             h('button', { role: 'tab', type: 'button', 'aria-selected': String(k === cur),
                 onclick: () => { sessionStorage.setItem('ob-bud-tab', k); viewBudget(id); } }, l, h('small', n || '')))),
@@ -1033,10 +1076,12 @@ function budFunds(box, d) {
             h('a.btn.ghost', { href: `#/budget/${d.budget.id}/grid` }, '▦ ', d.edit ? 'עריכה כטבלה' : 'כטבלה')),
         h('ul.list', ...d.funds.map(f => {
             const x = bal[f.id];
+            const bad = intFund(d, f.id).filter(y => y.col !== 'amount');
             return h('li', h('button.use-row', { type: 'button', onclick: () => (location.hash = `#/budget/${d.budget.id}/fund/${f.id}`) },
                 h('span.use-ic', { 'aria-hidden': 'true' }, FUND_IC[f.kind]),
-                h('span.use-tx', h('b.one', f.name), h('small', `הכנסות ${money(x.income)} · הוצאות ${money(x.expense)}`)),
-                balChip(x.diff)));
+                h('span.use-tx', h('b.one', f.name), h('small', `הכנסות ${money(x.income)} · הוצאות ${money(x.expense)}`),
+                    bad.length ? h('small.int-txt', '⚠️ לא מאוזנת ב', bad.map(y => intColLabel(d, y.col)).join(', ')) : null),
+                fundChip(d, f.id)));
         })),
         d.disabled.funds.length ? h('section.group', { style: 'margin-top:12px' }, h('h3', '⏸️ קופות מושבתות', h('small', 'בהצעה, מחוץ לחישוב ולמסמך')),
             h('ul.list', ...d.disabled.funds.map(f => h('li.off', { style: 'display:flex;align-items:center;gap:8px' },
@@ -1123,7 +1168,7 @@ async function viewGrid(id) {
         if (r.line && openCmt[r.line.id]) out.push(['note', ...openCmt[r.line.id].map(c => `💬 ${c.by}: ${c.body}`)].slice(0, 2));
         return out;
     };
-    const ICON = { err: '⛔', warn: '⚠️', info: 'ℹ️', note: '' };
+    const ICON = { err: '⛔', bad: '🔴', warn: '⚠️', info: 'ℹ️', note: '' };
 
     const recalc = () => {
         for (const t of main.querySelectorAll('table.grid')) {
@@ -1135,23 +1180,38 @@ async function viewGrid(id) {
         }
         const all = [];
         let inc = 0, exp = 0;
+        // איזון כל קופה תוך כדי הקלדה — אותו כלל כמו budget_integrity() (B1.2): רק בעמודות ההצעה (לא בניצול),
+        // ובלי שורות "רק בריכוז" — כמו הסה"כ בתחתית הטבלה. לא חוסם שמירה; הסה"כ שלא מאוזן — באדום על התא
         for (const f of d.funds) {
-            const amt = dir => rows.filter(r => r.fund.id === f.id && r.dir === dir).reduce((a, r) => a + (value(r, 'amount') || 0), 0);
-            const diff = amt('income') - amt('expense');
-            inc += amt('income'); exp += amt('expense');
-            fundBal[f.id].replaceChildren(balChip(diff));
-            if (diff) all.push({ level: 'warn', where: f.name, text: diff > 0 ? `עודף ${money(diff)} — הכנסות מול הוצאות` : `גירעון ${money(-diff)} — הכנסות מול הוצאות`, el: fundBal[f.id] });
+            const mine = rows.filter(r => r.fund.id === f.id);
+            const sum = (dir, k) => mine.filter(r => r.dir === dir && !r.summaryOnly).reduce((a, r) => a + (value(r, k) || 0), 0);
+            for (const r of mine) (r.dir === 'income' ? (inc += value(r, 'amount') || 0) : (exp += value(r, 'amount') || 0));
+            const diffs = {};
+            for (const k of ['prev_budget', 'amount']) {
+                const used = mine.some(r => !r.summaryOnly && value(r, k) !== null);
+                const diff = diffs[k] = used ? sum('income', k) - sum('expense', k) : 0;
+                for (const t of new Set(mine.map(r => r.table))) t.querySelector(`tfoot [data-k=${k}]`).classList.toggle('int-cell', !!diff);
+                // התג — כמו fundChip(): ההפרש של עמודת השנה; בעיה רק בהצעה הקודמת — "לא מאוזנת"
+                if (k === 'amount') fundBal[f.id].replaceChildren(diff ? balChip(diff) : diffs.prev_budget ? h('span.chip.bad', 'לא מאוזנת') : balChip(0));
+                if (diff) all.push({ level: 'bad', where: `${f.name} · ${SHORT[k]}`, text: `${diff > 0 ? 'עודף' : 'גירעון'} ${money(Math.abs(diff))} — הכנסות ${money(sum('income', k))} מול הוצאות ${money(sum('expense', k))}`, el: fundBal[f.id] });
+            }
+        }
+        // שאר בדיקות השלמות (נספח, חודשי × חודשים, העברות) — מהשמירה האחרונה, בשרת
+        for (const x of intOf(d).filter(y => y.rule !== 'fund_balance' && y.rule !== 'summary_balance')) {
+            const r = rows.find(o => o.line && x.line_ids.includes(o.line.id));
+            all.push({ level: 'bad', where: r ? `${r.fund.name} · ${r.line.title}` : 'ההצעה', text: x.msg + ' (לפי השמירה האחרונה)', el: r ? r.inputs.title : sumCard });
         }
         for (const r of rows) {
             const list = issues(r);
             r.tr.classList.toggle('dirty', changed(r));
             r.tr.classList.toggle('has-err', list.some(x => x[0] === 'err'));
+            r.tr.classList.toggle('int-bad', !!r.line && intLine(d, r.line.id).length > 0);
             r.msg.replaceChildren(...list.map(([lvl, ...txt]) => h(`div.m.${lvl}`, ICON[lvl] ? ICON[lvl] + ' ' : '', txt.join(' · '))));
             for (const [lvl, ...txt] of list) if (lvl !== 'note') all.push({ level: lvl, where: `${r.fund.name} · ${value(r, 'title') || 'שורה חדשה'}`, text: txt.join(' · '), el: r.inputs.title });
         }
         sumCard.replaceChildren(h('div.line', h('span.muted', 'הכנסות'), h('b', money(inc)), h('span.muted', '· הוצאות'), h('b', money(exp)),
             h('span.pct', { style: `color:var(--${inc === exp ? 'ok' : 'danger'})` }, inc === exp ? 'מאוזן' : money(inc - exp))));
-        const order = { err: 0, warn: 1, info: 2 };
+        const order = { err: 0, bad: 1, warn: 2, info: 3 };
         all.sort((x, y) => order[x.level] - order[y.level]);
         const errs = all.filter(x => x.level === 'err').length;
         issuesBox.replaceChildren(h('h3', all.length ? `הערות ואזהרות · ${all.length}` : '✓ אין הערות'),
@@ -1383,13 +1443,14 @@ function viewBudgetFund(d, fundId) {
     const dseg = seg('dir', b.expense_first ? dirs.reverse() : dirs, dir, 'הכנסות או הוצאות');
     dseg.addEventListener('change', e => { sessionStorage.setItem('ob-fund-dir', e.target.value); viewBudget(b.id, fundId); });
 
-    const rows = lines.map((l, i) => h('li.card', { tabindex: 0, role: 'button', onclick: () => sorting || lineSheet(d, f, dir, l), onkeydown: e => e.key === 'Enter' && lineSheet(d, f, dir, l) },
+    const rows = lines.map((l, i) => h(intLine(d, l.id).length ? 'li.card.int-bad' : 'li.card', { tabindex: 0, role: 'button', onclick: () => sorting || lineSheet(d, f, dir, l), onkeydown: e => e.key === 'Enter' && lineSheet(d, f, dir, l) },
         h('span.avatar', { style: '--h:220;width:28px;height:28px;font-size:.75rem', 'aria-hidden': 'true' }, i + 1),
         h('div.body',
             h('div.l1', h('span', l.transfer ? '🔁 ' : '', l.lease ? '🏠 ' : '', l.title, l.summary_only ? h('span.chip', { style: 'margin-inline-start:6px' }, 'רק בריכוז') : null), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(l.amount))),
             l.subtitle ? h('div.l2', l.subtitle) : null,
             h('div.l2', `קודם ${money(l.prev_budget)} · ניצול ${money(l.prev_actual)}`, l.calc_note || l.cell_note ? ` · ${[l.calc_note, l.cell_note].filter(Boolean).join(' · ')}` : '',
-                cmt[l.id] ? ` · 💬 ${cmt[l.id].length}` : '')),
+                cmt[l.id] ? ` · 💬 ${cmt[l.id].length}` : ''),
+            ...intLine(d, l.id).map(x => h('div.l2.int-txt', '⚠️ ', x.msg))),
         sorting ? h('span.row-btns', { style: 'gap:0' },
             h('button.icon-btn', { type: 'button', 'aria-label': 'למעלה', disabled: i === 0, onclick: e => { e.stopPropagation(); move(i, -1); } }, '▲'),
             h('button.icon-btn', { type: 'button', 'aria-label': 'למטה', disabled: i === lines.length - 1, onclick: e => { e.stopPropagation(); move(i, 1); } }, '▼')) : null));
@@ -1404,9 +1465,11 @@ function viewBudgetFund(d, fundId) {
         } catch (e) { toast(e.message, true); }
     });
 
-    put(main, 
+    const mine = intOf(d).filter(x => x.fund_id === fundId || x.line_ids.some(i => d.lines.find(l => l.id === i)?.fund_id === fundId));
+    put(main, intBar(d),
+        mine.length ? h('div.int-box', { role: 'alert' }, ...mine.map(x => h('p', '⚠️ ', x.msg))) : null,
         h('div.summary', h('div.line', h('span.muted', 'הכנסות'), h('b', money(bal.income)), h('span.muted', '· הוצאות'), h('b', money(bal.expense)),
-            h('span.pct', { style: `color:var(--${bal.diff ? 'danger' : 'ok'})` }, bal.diff ? (bal.diff > 0 ? 'עודף ' : 'גירעון ') + money(Math.abs(bal.diff)) : 'מאוזנת'))),
+            fundChip(d, fundId))),
         h('div', { style: 'margin-bottom:8px' }, dseg),
         d.edit ? h('div.toolbar', { style: 'justify-content:flex-end;flex-wrap:wrap' },
             lines.length > 1 ? h('button.btn.ghost', { type: 'button', onclick: () => { sessionStorage.setItem('ob-line-sort', sorting ? '0' : '1'); viewBudget(b.id, fundId); } }, sorting ? '✓ סיום' : '↕️ סידור') : null,
@@ -1414,8 +1477,9 @@ function viewBudgetFund(d, fundId) {
             h('button.btn.primary', { type: 'button', onclick: () => lineSheet(d, f, dir) }, h('span', { 'aria-hidden': 'true' }, '+'), ' שורה')) : null,
         lines.length ? h('ul.list', ...rows,
             h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body',
-                h('div.l1', h('span', 'סה"כ'), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(total('amount')))),
-                h('div.l2', `קודם ${money(total('prev_budget'))} · ניצול ${money(total('prev_actual'))}`))))
+                h('div.l1', h('span', 'סה"כ'), h(intFund(d, fundId).some(x => x.col === 'amount') ? 'span.t.int-cell' : 'span.t', { style: 'font-weight:700;font-size:.95rem' }, money(total('amount')))),
+                h('div.l2', h('span', { class: intFund(d, fundId).some(x => x.col === 'prev_budget') ? 'int-cell' : null }, `קודם ${money(total('prev_budget'))}`), ' · ',
+                    h('span', { class: intFund(d, fundId).some(x => x.col === 'prev_actual') ? 'int-cell' : null }, `ניצול ${money(total('prev_actual'))}`)))))
             : h('p.empty', d.edit ? `אין עדיין ${DIR_LABEL[dir]}. "+ שורה" כדי להוסיף.` : `אין ${DIR_LABEL[dir]}`),
         offLines.length ? h('section.group', h('h3', '⏸️ מושבתות', h('small', 'מחוץ לסה"כ, לריכוז ולמסמך')),
             h('ul.list', ...offLines.map(l => h('li.card.off', { style: 'cursor:default' }, h('div.body',
@@ -1514,7 +1578,7 @@ function lineSheet(d, f, dir, l = null) {
         const body = { budget_id: b.id, id: l?.id || null, fund_id: f.id, direction: dir, title: x.title, subtitle: x.subtitle,
             contact_id: x.contact_id || null, prev_budget: x.prev_budget, prev_actual: x.prev_actual, actual: x.actual,
             cell_note: x.cell_note, summary_row_id: x.summary_row_id || null, summary_only: x.summary_only ? 1 : 0,
-            lease: x.lease ? { property: x.lease_property, tenant: x.lease_tenant, monthly: x.lease_monthly, annual: x.lease_annual, period: x.lease_period } : null };
+            lease: x.lease ? { property: x.lease_property, tenant: x.lease_tenant, period: x.lease_period } : null };
         if (x.mode === 'calc') body.calc = { monthly: x.monthly, from: x.from, to: x.to, change_month: x.change_month || 0, change_pct: x.change_pct || 0 };
         else body.amount = x.amount;
         await api('line_save', body);
@@ -1571,9 +1635,9 @@ function leaseBox(d, f, l) {
     const box = h('div.fields', { hidden: !on },
         field('נכס', 'lease_property', x.property, { max: 160, attrs: { placeholder: hek ? `${f.name}${f.address ? ' · ' + f.address : ''}` : (l?.title || 'שם השורה') } }),
         field('שוכר', 'lease_tenant', x.tenant, { max: 160, attrs: { placeholder: hek ? (l?.title || 'שם השורה') : (l?.subtitle || '') } }),
-        field('שכירות לחודש (לא כולל מע"מ)', 'lease_monthly', x.monthly, { max: 60, attrs: { dir: 'ltr', placeholder: 'מהחישוב החודשי' } }),
-        moneyField('סה"כ לשנה (לא כולל מע"מ)', 'lease_annual', x.annual, { attrs: { placeholder: 'כמו הסכום' } }),
-        field('תקופת השכירות', 'lease_period', x.period, { max: 60, attrs: { dir: 'ltr', placeholder: `01-12/${d.budget.year}` } }));
+        field('תקופת השכירות', 'lease_period', x.period, { max: 60, attrs: { dir: 'ltr', placeholder: `01-12/${d.budget.year}` } }),
+        h('p.hint', { style: 'grid-column:1/-1;margin:0' }, '🔗 בנספח: לשנה = הסכום של השורה, לחודש = מהחישוב החודשי (או הסכום ÷ החודשים). משנים כאן — משתנה בשני המקומות.'),
+        x.legacy ? h('p.hint.int-txt', { style: 'grid-column:1/-1;margin:0' }, `ערך ישן שהוקלד ביד: ${[x.legacy.monthly ? x.legacy.monthly + ' לחודש' : '', x.legacy.annual !== null ? money(x.legacy.annual) + ' לשנה' : ''].filter(Boolean).join(' · ')} — לא בשימוש יותר.`) : null);
     const sw = h('input', { type: 'checkbox', name: 'lease', value: '1', checked: on, onchange: e => { box.hidden = !e.target.checked; } });
     return h('section.group', h('label.switch', sw, h('span', '🏠 שכירות — בנספח השכירויות')), box);
 }
@@ -1582,15 +1646,22 @@ function leaseBox(d, f, l) {
 
 function budAppendix(box, d) {
     const b = d.budget;
-    const row = r => h('li.card', { tabindex: 0, role: 'button', onclick: () => {
-            const l = d.lines.find(x => x.id === r.line_id);
-            lineSheet(d, d.funds.find(x => x.id === r.fund_id), 'income', l);
-        } },
+    const open = r => lineSheet(d, d.funds.find(x => x.id === r.fund_id), 'income', d.lines.find(x => x.id === r.line_id));
+    const row = r => h(intLine(d, r.line_id).length ? 'li.card.int-bad' : 'li.card', { tabindex: 0, role: 'button', onclick: () => open(r), onkeydown: e => e.key === 'Enter' && open(r) },
         h('div.body',
             h('div.l1', h('span', r.property.split('\n')[0]), h('span.t', { style: 'font-weight:700;color:var(--ink);font-size:.95rem' }, money(r.annual))),
-            h('div.l2', [r.tenant, `${r.monthly} לחודש`, r.period].filter(Boolean).join(' · '))));
+            h('div.l2', [r.tenant, `${r.monthly} לחודש`, r.period].filter(Boolean).join(' · ')),
+            ...intLine(d, r.line_id).map(x => h('div.l2.int-txt', '⚠️ ', x.msg))));
+    // הכנסות שבשורת ריכוז עם שכירות, ולא בנספח (ששפורטס) — מסומנות, ואפשר להכניס אותן בלחיצה
+    const missing = intOf(d).filter(x => x.rule === 'appendix_row');
+    const addLease = async id => {
+        try { await api('line_lease', { budget_id: b.id, id, on: 1 }); toast('נוספה לנספח'); viewBudget(b.id); } catch (e) { toast(e.message, true); }
+    };
     put(box,
-        h('p.hint', `דוח הכנסות — נכסים והקדשות לשנת ${b.year}. כל שורת הכנסה שמסומנת 🏠 שכירות. הסכומים לא כוללים מע"מ.`),
+        h('p.hint', `דוח הכנסות — נכסים והקדשות לשנת ${b.year}. כל שורת הכנסה שמסומנת 🏠 שכירות — השורה עצמה: לשנה = הסכום שלה, לחודש = מהחישוב. הסכומים לא כוללים מע"מ.`),
+        missing.length ? h('section.int-box', { role: 'alert' }, ...missing.map(x => [h('p', '⚠️ ', x.msg),
+            d.edit ? h('div.row-btns', ...x.line_ids.map(id => { const l = d.lines.find(y => y.id === id);
+                return l ? h('button.btn.sm.ghost', { type: 'button', onclick: () => addLease(id) }, `🏠 להוסיף לנספח: ${l.title}`) : null; })) : null])) : null,
         d.appendix.length ? d.appendix.map(g => [
             h('p.sec-title', g.title),
             h('ul.list', ...g.rows.map(row),
@@ -1626,14 +1697,19 @@ function budSummary(box, d) {
     const b = d.budget;
     const head = h('div.l2', { style: 'display:flex;gap:8px;justify-content:flex-end;padding:4px 12px' },
         h('span', `${b.year - 1}`), h('span', `ניצול${b.prev_actual_as_of ? ' עד ' + fmtDay(b.prev_actual_as_of) : ''}`), h('b', `${b.year}`));
-    const cells = (r, bold) => h('div.l2', { style: 'display:flex;gap:10px;justify-content:flex-end' },
-        h('span', money(r.prev_budget)), h('span', money(r.prev_actual)), h(bold ? 'b' : 'span', { style: 'color:var(--ink)' }, money(r.amount)));
+    // bad — העמודות שיש בהן בעיה בשורה הזו (מאוזן / נספח), באדום על התא
+    const cells = (r, bold, bad = []) => h('div.l2', { style: 'display:flex;gap:10px;justify-content:flex-end' },
+        h('span', { class: bad.includes('prev_budget') ? 'int-cell' : null }, money(r.prev_budget)), h('span', { class: bad.includes('prev_actual') ? 'int-cell' : null }, money(r.prev_actual)),
+        h(bold ? 'b' : 'span', { class: bad.includes('amount') ? 'int-cell' : null }, money(r.amount)));
+    const balCols = intOf(d).filter(x => x.rule === 'summary_balance' || x.rule === 'summary_total').map(x => x.col);
     const sec = s => [h('p.sec-title', s.title),
         h('ul.list', ...s.rows.map(r => {
             const defined = r.key.startsWith('row:');
-            return h('li.card', { tabindex: d.edit ? 0 : -1, role: d.edit ? 'button' : null, onclick: () => d.edit && srowSheet(d, r) },
-                h('div.body', h('div.l1', h('span', r.label), defined ? null : h('span.t', 'אוטומטית')), cells(r, false)));
-        }), h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body', h('div.l1', h('span', 'סה"כ')), cells(s.total, true))))];
+            const bad = intRow(d, r.key);
+            return h(bad.length ? 'li.card.int-bad' : 'li.card', { tabindex: d.edit ? 0 : -1, role: d.edit ? 'button' : null, onclick: () => d.edit && srowSheet(d, r) },
+                h('div.body', h('div.l1', h('span', r.label), defined ? null : h('span.t', 'אוטומטית')), cells(r, false, bad.map(x => x.col)),
+                    ...bad.map(x => h('div.l2.int-txt', '⚠️ ', x.msg))));
+        }), h('li.card', { style: 'cursor:default;background:var(--bg)' }, h('div.body', h('div.l1', h('span', 'סה"כ')), cells(s.total, true, balCols))))];
     const note = h('textarea', { rows: 2, maxLength: 500, disabled: !d.edit }, b.summary_note || '');
     note.addEventListener('change', () => saveBudgetFields(d, { summary_note: note.value }));
     // סידור: השורות המוגדרות, לפי הסדר במסמך (מקטע הכנסות ומקטע הוצאות יכולים להתחלף, כמו בארגון הקהילות)
@@ -1650,7 +1726,8 @@ function budSummary(box, d) {
             h('span.row-btns', { style: 'gap:0' },
                 h('button.icon-btn', { type: 'button', 'aria-label': 'למעלה', disabled: i === 0, onclick: () => move(i, -1) }, '▲'),
                 h('button.icon-btn', { type: 'button', 'aria-label': 'למטה', disabled: i === d.rows.length - 1, onclick: () => move(i, 1) }, '▼')))))];
-    put(box, 
+    put(box,
+        ...intOf(d).filter(x => x.rule === 'summary_balance' || x.rule === 'summary_total').map(x => h('p.int-box', { role: 'alert' }, '⚠️ ', x.msg)),
         h('p.hint', 'דף הריכוז: כל שורה כאן = סכום של שורות מהקופות. שורה "אוטומטית" נבנית לפי סוג הקופה; לחיצה עליה הופכת אותה לשורה שאפשר לשנות לה שם ומקטע.'),
         d.edit ? h('div.toolbar', { style: 'justify-content:flex-end' },
             d.rows.length > 1 ? h('button.btn.ghost', { type: 'button', 'aria-pressed': String(sorting),
@@ -2060,6 +2137,16 @@ async function viewPrint(id) {
         b.type === 'center' ? h('h3.d-center', b.text) : b.type === 'heading' ? h('h3.d-head', b.text)
             : b.type === 'bullet' ? h('p.d-bullet', '• ', b.text) : h('p.d-para', b.text))) : null;
 
+    // B1: ההצעה לא מאוזנת — בראש המסמך (גם בהדפסה), והתאים עצמם באדום (במסך בלבד)
+    const issues = d.integrity || [];
+    const IC = { prev_budget: 'prev', prev_actual: 'actual', amount: 'cur' };
+    const badFund = (fid, c) => issues.some(x => x.rule === 'fund_balance' && x.fund_id === fid && IC[x.col] === c);
+    const badLine = id => issues.some(x => x.line_ids.includes(id));
+    const badRow = key => issues.some(x => x.row_key === key);
+    const badSum = c => issues.some(x => (x.rule === 'summary_balance' || x.rule === 'summary_total') && IC[x.col] === c);
+    const mark = (el, on) => { if (on) el.classList.add('int-cell'); return el; };
+    const warn = issues.length ? h('section.pg.doc-warn', { role: 'alert' }, h('h2', `⚠️ ההצעה לא מאוזנת: ${issues.length} ${issues.length === 1 ? 'בעיה' : 'בעיות'} — לתקן לפני הגשה`),
+        h('ul', ...issues.map(x => h('li', x.msg)))) : null;
     const refs = [];
     const summary = !st.show_summary ? null : pg(h('h2.d-title', d.summary.title), ...d.summary.sections.map(sec => [
         h('h3.d-cap', sec.title),
@@ -2067,9 +2154,9 @@ async function viewPrint(id) {
             ...sec.rows.map(r => {
                 const ref = h('span');
                 if (r.funds.length) refs.push([ref, r.funds]);
-                return h('tr', td(h('b', br(r.label))), td(num(r.prev), 'n'), td(num(r.actual), 'n'), td(num(r.cur), 'n'), td(ref, 'n'));
+                return mark(h('tr', td(h('b', br(r.label))), td(num(r.prev), 'n'), td(num(r.actual), 'n'), td(num(r.cur), 'n'), td(ref, 'n')), badRow(r.key));
             }),
-            h('tr.tot', td('סה"כ'), td(num(sec.total.prev), 'n'), td(num(sec.total.actual), 'n'), td(num(sec.total.cur), 'n'), td('')),
+            h('tr.tot', td('סה"כ'), ...['prev', 'actual', 'cur'].map(c => mark(td(num(sec.total[c]), 'n'), badSum(c))), td('')),
         ], [34, 17, 17, 17, 15])]),
         d.summary.note ? h('p.d-note', d.summary.note) : null);
 
@@ -2077,9 +2164,9 @@ async function viewPrint(id) {
     const funds = d.funds.map(f => {
         const s = (st.fund_new_page ? pg : (...k) => h('div.fund-flow', ...k))(h('h2.d-title', f.title), f.address ? h('h3.d-center', f.address) : null,
             ...f.tables.map(t => [h('h3.d-cap', t.caption), table(['', DIR_LABEL[t.dir], cols.prev, cols.actual, cols.cur], [
-                ...t.rows.map(r => h('tr', td(r.n + '.', 'n'), td([h('b', r.title), r.subtitle ? [h('br'), h('small', r.subtitle)] : null]),
-                    td(num(r.prev), 'n'), td(num(r.actual), 'n'), td([num(r.cur), r.note ? [h('br'), h('small', r.note)] : null], 'n'))),
-                h('tr.tot', td(''), td('סה"כ'), td(num(t.total.prev), 'n'), td(num(t.total.actual), 'n'), td(num(t.total.cur), 'n')),
+                ...t.rows.map(r => mark(h('tr', td(r.n + '.', 'n'), td([h('b', r.title), r.subtitle ? [h('br'), h('small', r.subtitle)] : null]),
+                    td(num(r.prev), 'n'), td(num(r.actual), 'n'), td([num(r.cur), r.note ? [h('br'), h('small', r.note)] : null], 'n')), badLine(r.id))),
+                h('tr.tot', td(''), td('סה"כ'), ...['prev', 'actual', 'cur'].map(c => mark(td(num(t.total[c]), 'n'), badFund(f.id, c)))),
             ], [7, 39, 18, 18, 18]), ...t.notes.map(n => h('p.d-note', n))]),
             ...f.notes.map(n => h('p.d-note', n)));
         s.dataset.fund = f.id;
@@ -2091,12 +2178,12 @@ async function viewPrint(id) {
         let last = null;
         return [h('h2.d-title', d.appendix.title), h('h3.d-cap', g.title), table([ac.property, ac.tenant, ac.monthly, ac.annual, ac.period], [
             ...g.rows.map(r => { const p = r.property === last ? '' : r.property; last = r.property;
-                return h('tr', td(h('b', br(p))), td(r.tenant), td(br(r.monthly.replace(' / ', '\n')), 'n'), td(num(r.annual), 'n'), td(br(r.period.replace(', ', '\n')), 'n')); }),
+                return mark(h('tr', td(h('b', br(p))), td(r.tenant), td(br(r.monthly.replace(' / ', '\n')), 'n'), td(num(r.annual), 'n'), td(br(r.period.replace(', ', '\n')), 'n')), badLine(r.line_id)); }),
             h('tr.tot', td(`סה"כ ${g.title}`), td('סה"כ'), td(num(g.monthly), 'n'), td(num(g.annual), 'n'), td('')),
         ], [22, 24, 18, 18, 18])];
     })) : null;
 
-    const doc = h('div.doc', cover, plan, summary, ...(st.fund_new_page ? funds : funds.length ? [pg(...funds)] : []), appendix);
+    const doc = h('div.doc', warn, cover, plan, summary, ...(st.fund_new_page ? funds : funds.length ? [pg(...funds)] : []), appendix);
     doc.querySelector('.pg')?.classList.add('first');
     applyDocStyle(doc, st);
     const bar = h('div.doc-bar', h('button.btn.primary', { type: 'button', onclick: () => window.print() }, '🖨️ הדפסה / שמירה כ-PDF'),
