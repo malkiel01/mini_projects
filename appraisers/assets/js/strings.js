@@ -655,5 +655,5 @@ Object.assign(T.audit, {
     'comp.status': r => `עסקה: ${T.k.statuses[r.meta.from] || ''} ← ${T.k.statuses[r.meta.to] || ''}`, 'comp.weight': r => `משקל עסקה: ${r.meta.from ?? '—'} ← ${r.meta.to ?? '—'}`, 'comp.note': () => 'הערה לעסקה עודכנה',
     'comp.delete': () => 'עסקה נמחקה', 'comp.adj_add': r => `נוספה התאמה: ${r.meta.to?.label || ''}`, 'comp.adj_update': r => `התאמה עודכנה: ${r.meta.to?.label || ''} (${r.meta.from?.value ?? ''} ← ${r.meta.to?.value ?? ''})`,
     'comp.adj_delete': r => `התאמה נמחקה: ${r.meta.from?.label || ''}`, 'comp.adj_order': () => 'סדר ההתאמות שונה', 'comp.set_add': () => 'נוצרה קבוצת השוואה', 'comp.set_update': r => `קבוצת השוואה עודכנה: ${Object.keys(r.meta.to || {}).length} שינויים`,
-    'comp.set_conclude': r => `מסקנה: ${r.meta.from ?? '—'} ← ${r.meta.to ?? '—'}`, 'comp.set_delete': () => 'קבוצת השוואה נמחקה',
+    'comp.set_conclude': r => `מסקנה: ${r.meta.from ?? '—'} ← ${r.meta.to ?? '—'}`, 'comp.set_delete': () => 'קבוצת השוואה נמחקה', 'comp.set_recheck': r => `השטח הנישום של קבוצת ההשוואה נבדק מחדש (${r.meta.area ?? ''} מ"ר)`,
 });

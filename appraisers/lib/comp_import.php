@@ -53,9 +53,10 @@ function apr_comp_table_text(string $text): array
     rewind($h);
     $rows = [];
     while (($r = fgetcsv($h, null, $delim, '"', '')) !== false) {
-        if ($r === [null]) continue;
+        // שורה ריקה (גם ",,,") אינה נספרת ואינה נשמרת; התקרה נבדקת על השורות שנשארו, ולעולם לא נחתכת בשקט (ביקורת 15, 🟡2)
+        if ($r === [null] || !array_filter($r, fn($x) => trim((string)$x) !== '')) continue;
         $rows[] = $r;
-        if (count($rows) > APR_COMP_IMPORT_MAX + 200) break;      // שורות ריקות אינן נספרות; התקרה עצמה — ב-apr_comp_table_clean
+        if (count($rows) > APR_COMP_IMPORT_MAX + 1) { fclose($h); apr_fail('comp_import_too_many'); }
     }
     fclose($h);
     return apr_comp_table_clean($rows);
@@ -64,7 +65,10 @@ function apr_comp_table_text(string $text): array
 /** XML של Office, בלי DTD ובלי ישויות — או comp_xlsx. */
 function apr_comp_xml(?string $xml): SimpleXMLElement
 {
-    if ($xml === null || !function_exists('simplexml_load_string') || stripos($xml, '<!DOCTYPE') !== false || stripos($xml, '<!ENTITY') !== false) apr_fail('comp_xlsx');
+    // רק UTF-8: בקידוד אחר (UTF-16) החיפוש של DOCTYPE למטה אינו רואה דבר. הכרזת קידוד אחרת, או בתים שאינם UTF-8 — נדחים
+    if ($xml === null || !function_exists('simplexml_load_string') || !mb_check_encoding($xml, 'UTF-8') || str_contains($xml, "\0")
+        || (preg_match('/^(?:\xEF\xBB\xBF)?\s*<\?xml[^>]*\bencoding\s*=\s*["\']([^"\']*)/i', $xml, $enc) === 1 && strcasecmp($enc[1], 'UTF-8') !== 0)
+        || stripos($xml, '<!DOCTYPE') !== false || stripos($xml, '<!ENTITY') !== false) apr_fail('comp_xlsx');
     $prev = libxml_use_internal_errors(true);
     $x = simplexml_load_string($xml, 'SimpleXMLElement', LIBXML_NONET | LIBXML_COMPACT);
     libxml_clear_errors();
@@ -108,11 +112,11 @@ function apr_comp_table_xlsx(string $path): array
             };
             $next = $col + 1;
         }
-        if (!$cells) continue;
+        if (!array_filter($cells, fn($x) => trim($x) !== '')) continue;
         $line = array_fill(0, max(array_keys($cells)) + 1, '');
         foreach ($cells as $i => $v) $line[$i] = $v;
         $rows[] = $line;
-        if (count($rows) > APR_COMP_IMPORT_MAX + 200) break;
+        if (count($rows) > APR_COMP_IMPORT_MAX + 1) apr_fail('comp_import_too_many');
     }
     return apr_comp_table_clean($rows);
 }

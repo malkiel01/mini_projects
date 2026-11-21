@@ -47,11 +47,11 @@
  *                  name, key, caption?, place?, taken_at?, consent?, lat?, lng?) · visit-photo-update {photo, rev, caption?, place?, usage?,
  *                  for_report?, confirm_rights?} · visit-photo-order {visit, order[]} · visit-photo-delete {photo, rev} · office-visit-geo {on}
  * עסקאות (15):     case-comps {case} · comp {comp} · comp-set {set} · comp-search-add {case, source? | source_text?, criteria{}, result_count?,
- *                  limitations?} · comp-search-update {search, …} · comp-add {case, search?, values{}, note?} · comp-correct {comp, rev,
+ *                  limitations?} · comp-search-update {search, rev, …} · comp-add {case, search?, values{}, note?} · comp-correct {comp, rev,
  *                  changes{}, reason} · comp-status {comp, rev, status, reason?} · comp-weight {comp, rev, weight} · comp-note {comp, rev, note}
  *                  · comp-delete {comp, rev, reason} · comp-adj-save {comp, rev, adj?, label, kind, value, sign, basis?, applies_to?, reason}
  *                  · comp-adj-delete {comp, rev, adj} · comp-adj-order {comp, rev, order[]} · comp-set-save {case | set, rev?, name?, unit_basis,
- *                  area_kind?, method, rounding, subject_area_fact?} · comp-set-conclude {set, rev, value, reason} · comp-set-delete {set, rev}
+ *                  area_kind?, method, rounding, subject_area_fact?, recheck?} · comp-set-conclude {set, rev, value, reason} · comp-set-delete {set, rev}
  *                  · comp-import-upload (גוף גולמי, XLSX; בכתובת: case, name, key) · comp-import-preview {case, file | text, has_header?,
  *                  mapping?, date_order?, defaults?} · comp-import {…אותו תוכן…, search, rights: true}
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php

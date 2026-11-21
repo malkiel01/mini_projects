@@ -117,7 +117,7 @@ function kSearchSheet(pid, x, s, reload) {
         const criteria = {};
         Object.keys(K.crit).forEach(key => { if (f['c_' + key]) criteria[key] = f['c_' + key].trim(); });
         const body = { source: f.source || null, source_text: f.source_text, criteria, result_count: f.result_count === '' ? null : f.result_count.trim(), limitations: f.limitations };
-        await api(s ? 'comp-search-update' : 'comp-search-add', { body: s ? { search: s.pid, ...body } : { case: pid, ...body } });
+        await api(s ? 'comp-search-update' : 'comp-search-add', { body: s ? { search: s.pid, rev: s.rev, ...body } : { case: pid, ...body } });
         reload();
     });
 }
@@ -173,8 +173,10 @@ async function viewComp(pid, compPid) {
     const formula = c => {
         const basis = c.set.unit_basis, calc = c.calc;
         if (!calc.ok) return `<h3 class="sec-title">${esc(K.formulaFor(c.set.name))}</h3><p class="banner" role="note">${basis === 'per_sqm' ? esc(K.notComparable) : esc(K.notInCalc)}: ${esc(kWhyNot(calc, v.area_kind, c.set.area_kind))}</p>`;
-        const stepLine = s => `<li><span dir="ltr">${s.sign === 'minus' ? '−' : '+'} ${esc(kNis({ nis: String(s.delta.nis).replace('-', '') }))}</span> <span dir="auto">(${esc(s.label)}${s.kind === 'percent' ? ` · ${esc(fNum(s.value))}% ${esc(s.basis === 'running' ? K.ofRunning : K.ofBase)}` : ''})</span> <small class="muted" dir="ltr">= ${esc(kNis(s.running))}</small></li>`;
-        const oneLine = kNis(calc.base) + calc.steps.map(s => ' ' + (s.sign === 'minus' ? '−' : '+') + ' ' + kNis({ nis: String(s.delta.nis).replace('-', '') }) + ' (' + s.label + ')').join('') + ' = ' + kMoney(calc.adjusted, basis);      // טקסט — מוצג דרך esc()
+        // הסימן נגזר מהשינוי עצמו, לא מהסימן שהוזן: הפחתה באחוז מסכום שוטף שלילי היא תוספת (ביקורת 15, 🟡5)
+        const sg = s => (String(s.delta.agorot).startsWith('-') ? '−' : '+');
+        const stepLine = s => `<li><span dir="ltr">${sg(s)} ${esc(kNis({ nis: String(s.delta.nis).replace('-', '') }))}</span> <span dir="auto">(${esc(s.label)}${s.kind === 'percent' ? ` · ${esc(fNum(s.value))}% ${esc(s.basis === 'running' ? K.ofRunning : K.ofBase)}` : ''})</span> <small class="muted" dir="ltr">= ${esc(kNis(s.running))}</small></li>`;
+        const oneLine = kNis(calc.base) + calc.steps.map(s => ' ' + sg(s) + ' ' + kNis({ nis: String(s.delta.nis).replace('-', '') }) + ' (' + s.label + ')').join('') + ' = ' + kMoney(calc.adjusted, basis);      // טקסט — מוצג דרך esc()
         return `<h3 class="sec-title">${esc(K.formulaFor(c.set.name))} <small class="muted">${esc(K.unitBases[basis])}${c.set.area_kind ? ` · ${esc(kAreaKind(c.set.area_kind))}` : ''}</small></h3>
             <div class="summary kformula"><div class="line"><span>${esc(K.base)}</span><b dir="ltr">${esc(kMoney(calc.base, basis))}</b></div>
               ${calc.steps.length ? `<ol class="ksteps">${calc.steps.map(stepLine).join('')}</ol>` : `<div class="line muted">${esc(K.noAdj)}</div>`}
@@ -335,7 +337,7 @@ async function viewCompSet(pid, setPid) {
     cOn('tr[data-go]', el => { location.hash = el.dataset.go; });
     $('#kg-edit')?.addEventListener('click', () => kSetSheet(pid, x, g, reload));
     $('#kg-recheck')?.addEventListener('click', async () => {
-        try { await api('comp-set-save', { body: { set: g.pid, rev: g.rev, name: g.name, unit_basis: g.unit_basis, area_kind: g.area_kind, method: g.method, rounding: g.rounding, subject_area_fact: sub.fact?.pid || null } }); reload(); } catch (e) { kToastError(e, reload); }
+        try { await api('comp-set-save', { body: { set: g.pid, rev: g.rev, name: g.name, unit_basis: g.unit_basis, area_kind: g.area_kind, method: g.method, rounding: g.rounding, subject_area_fact: sub.fact?.pid || null, recheck: true } }); reload(); } catch (e) { kToastError(e, reload); }
     });
     $('#kg-conclude')?.addEventListener('click', () => {
         const plain = ag => { const d = String(ag).padStart(3, '0'), f = d.slice(-2).replace(/0+$/, ''); return d.slice(0, -2) + (f ? '.' + f : ''); };

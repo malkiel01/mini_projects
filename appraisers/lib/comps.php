@@ -377,7 +377,7 @@ function apr_comp_search_out(array $ctx, array $c, array $s, array $counts = [])
 {
     $src = $s['source_id'] !== null ? apr_row('SELECT key, name, url FROM sources WHERE id = ?', [$s['source_id']]) : null;
     $file = $s['file_id'] !== null ? apr_row('SELECT * FROM files WHERE id = ?', [$s['file_id']]) : null;
-    return ['pid' => $s['pid'], 'source' => $src ? ['key' => $src['key'], 'name' => $src['name'], 'url' => $src['url']] : null, 'source_text' => $s['source_text'],
+    return ['pid' => $s['pid'], 'rev' => (int)$s['rev'], 'source' => $src ? ['key' => $src['key'], 'name' => $src['name'], 'url' => $src['url']] : null, 'source_text' => $s['source_text'],
         'criteria' => json_decode($s['criteria'], true) ?: (object)[], 'by' => apr_val('SELECT name FROM users WHERE id = ?', [$s['performed_by']]) ?: null, 'at' => $s['performed_at'],
         'result_count' => $s['result_count'] === null ? null : (int)$s['result_count'], 'limitations' => $s['limitations'],
         'import' => $s['file_id'] !== null || $s['import_sha256'] !== null ? ['name' => $file ? $file['original_name'] : $s['import_name'], 'rows' => $s['import_rows'] === null ? null : (int)$s['import_rows'],
@@ -417,19 +417,20 @@ function apr_comp_search_add(array $ctx, array $in): array
     });
 }
 
-/** comp-search-update {search, …אותם שדות, רק מה שנשלח} — מי ומתי חיפשו אינם משתנים. */
+/** comp-search-update {search, rev, …אותם שדות, רק מה שנשלח} — מי ומתי חיפשו אינם משתנים. */
 function apr_comp_search_update(array $ctx, array $in): array
 {
     $c = apr_comp_case($ctx, apr_doc_case_pid('comp_searches', $in['search'] ?? null), 'write');
-    return apr_tx(function () use ($c, $in) {
+    $rev = apr_comp_rev($in['rev'] ?? null);
+    return apr_tx(function () use ($c, $in, $rev) {
         $s = apr_comp_search_row($c, $in['search'] ?? null);
         $set = apr_comp_search_fields($in, $s);
         $changed = array_filter($set, fn($v, $f) => $v !== ($f === 'source_id' || $f === 'result_count' ? ($s[$f] === null ? null : (int)$s[$f]) : $s[$f]), ARRAY_FILTER_USE_BOTH);
         if (!$changed) apr_fail('nothing_to_change');
-        apr_exec('UPDATE comp_searches SET ' . implode(', ', array_map(fn($f) => "$f = ?", array_keys($changed))) . ', updated_at = ? WHERE id = ?', [...array_values($changed), apr_now(), $s['id']]);
+        if (apr_exec('UPDATE comp_searches SET ' . implode(', ', array_map(fn($f) => "$f = ?", array_keys($changed))) . ', updated_at = ?, rev = rev + 1 WHERE id = ? AND rev = ?', [...array_values($changed), apr_now(), $s['id'], $rev]) !== 1) apr_fail('comp_changed');
         apr_case_audit($c, 'comp.search_update', 'comp_search', $s['pid'], ['fields' => array_keys($changed)]
             + (array_key_exists('result_count', $changed) ? ['from' => $s['result_count'] === null ? null : (int)$s['result_count'], 'to' => $changed['result_count']] : []));
-        return ['search' => $s['pid']];
+        return ['search' => $s['pid'], 'rev' => $rev + 1];
     });
 }
 
@@ -523,6 +524,7 @@ function apr_comp_weight(array $ctx, array $in): array
         if ($old === $w) apr_fail('nothing_to_change');
         apr_comp_update($ctx, $c, $k, $rev, ['weight' => $w]);
         apr_case_audit($c, 'comp.weight', 'comp', $k['pid'], ['from' => apr_comp_dec_out($old, 6), 'to' => apr_comp_dec_out($w, 6)]);
+        apr_case_touch($c);
         return ['comp' => $k['pid'], 'rev' => $rev + 1];
     });
 }
@@ -543,7 +545,8 @@ function apr_comp_note(array $ctx, array $in): array
 }
 
 /**
- * comp-delete {comp, rev, reason} — מחיקה רכה של עסקה שהוזנה בטעות. עסקה שנבחרה נכנסת לחישוב, ולכן מוחק אותה רק מי שרשאי לבחור.
+ * comp-delete {comp, rev, reason} — מחיקה רכה של עסקה שהוזנה בטעות. מי שיש לו edit מוחק רק עסקה מועמדת בלי התאמות ובלי משקל; עסקה
+ * שנבחרה, הוחרגה או ממתינה (יש בה נימוק של שמאי), או שיש לה התאמות או משקל — רק מי שרשאי לבחור.
  * (עסקה שאינה רלוונטית אינה נמחקת — היא מוחרגת, עם נימוק, ונשארת.)
  */
 function apr_comp_delete(array $ctx, array $in): array
@@ -553,7 +556,9 @@ function apr_comp_delete(array $ctx, array $in): array
     $reason = apr_reason($in['reason'] ?? null);
     return apr_tx(function () use ($ctx, $c, $in, $rev, $reason) {
         $k = apr_comp_row($c, $in['comp'] ?? null);
-        if ($k['status'] === 'selected' && !apr_comp_can_judge($ctx, $c)) apr_fail('forbidden');
+        // מי שרק מזין מוחק רק את מה שעוד אין בו הכרעה של שמאי: מועמדת, בלי התאמות ובלי משקל. כל השאר — מי שרשאי לבחור (ביקורת 15, 🟡3)
+        $untouched = $k['status'] === 'candidate' && $k['weight'] === null && !apr_comp_adjs((int)$k['id']);
+        if (!$untouched && !apr_comp_can_judge($ctx, $c)) apr_fail('forbidden');
         apr_comp_update($ctx, $c, $k, $rev, ['deleted_at' => apr_now(), 'deleted_by' => (int)$ctx['user']['id'], 'delete_reason' => $reason]);
         // מי שסומנה ככפילות של העסקה שנמחקה — החשד יורד
         foreach (apr_rows('SELECT id FROM comps WHERE dup_of = ? AND deleted_at IS NULL', [$k['id']]) as $o) apr_exec('UPDATE comps SET dup_of = NULL, rev = rev + 1 WHERE id = ?', [$o['id']]);
@@ -682,7 +687,7 @@ function apr_comp_set_out(array $g): array
 /**
  * comp-set-save {case, set?, rev?, name?, unit_basis, area_kind?, method, rounding, subject_area_fact?} — קבוצה חדשה או עדכון.
  * קבוצה שמשווה למ"ר חייבת לדעת איזה סוג שטח משווים. המסקנה אינה נוגעת כאן — ושום שדה כאן אינו ממלא אותה (15-B6).
- * שמירה חוזרת עם אותו נתון שטח = "נבדק מחדש": הסימון stale יורד (פרוסה 10).
+ * recheck: true (עם אותו נתון שטח) = "נבדק מחדש": הסימון stale יורד (פרוסה 10), ונרשם ביומן. שמירה רגילה אינה מורידה אותו.
  */
 function apr_comp_set_save(array $ctx, array $in): array
 {
@@ -690,11 +695,12 @@ function apr_comp_set_save(array $ctx, array $in): array
     $c = apr_comp_case($ctx, $isNew ? ($in['case'] ?? null) : apr_doc_case_pid('comp_sets', $in['set']), 'judge');
     $rev = $isNew ? 0 : apr_comp_rev($in['rev'] ?? null);
     $basis = is_string($in['unit_basis'] ?? null) && in_array($in['unit_basis'], APR_COMP_BASES, true) ? $in['unit_basis'] : apr_fail('comp_set_field');
-    $row = ['name' => apr_clean_text($in['name'] ?? '', 80) ?? 'קבוצת השוואה', 'unit_basis' => $basis,
+    $name = apr_clean_text($in['name'] ?? '', 80);
+    $row = ['name' => $name ?? 'קבוצת השוואה', 'unit_basis' => $basis,
         'area_kind' => $basis === 'per_sqm' ? (is_string($in['area_kind'] ?? null) && in_array($in['area_kind'], APR_COMP_SET_AREA_KINDS, true) ? $in['area_kind'] : apr_fail('comp_set_area_kind')) : null,
         'method' => is_string($in['method'] ?? null) && in_array($in['method'], APR_COMP_METHODS, true) ? $in['method'] : apr_fail('comp_set_field'),
         'rounding' => in_array((string)($in['rounding'] ?? ''), APR_COMP_ROUNDINGS, true) ? (string)$in['rounding'] : apr_fail('comp_set_field')];
-    return apr_tx(function () use ($ctx, $c, $in, $isNew, $rev, $row) {
+    return apr_tx(function () use ($ctx, $c, $in, $isNew, $rev, $row, $name) {
         $factPid = $row['unit_basis'] === 'per_sqm' && ($in['subject_area_fact'] ?? null) !== null && $in['subject_area_fact'] !== '' ? $in['subject_area_fact'] : null;
         $fact = $factPid !== null ? apr_comp_subject_fact($c, $factPid, $row['area_kind']) : null;
         $row['subject_area_fact_id'] = $fact ? (int)$fact['id'] : null;
@@ -707,6 +713,7 @@ function apr_comp_set_save(array $ctx, array $in): array
         } else {
             $g = apr_comp_set_row($c, $in['set']);
             $pid = $g['pid'];
+            if ($name === null) $row['name'] = $g['name'];          // עדכון בלי שם אינו דורס את השם
             $from = [];
             $to = [];
             foreach ($row as $f => $v) {
@@ -715,11 +722,21 @@ function apr_comp_set_save(array $ctx, array $in): array
             }
             // שינוי בסיס או סוג שטח משנה את היחידה של המסקנה (₪ מול ₪ למ"ר) — מסקנה ישנה אינה נשארת ביחידה אחרת
             if ($g['conclusion_value'] !== null && (isset($to['unit_basis']) || isset($to['area_kind']))) apr_fail('comp_set_concluded');
+            $recheck = ($in['recheck'] ?? false) === true && $fact !== null && !isset($to['subject_area_fact_id']);
+            if (!$from && !$recheck) apr_fail('nothing_to_change');
             apr_comp_set_update($ctx, $c, $g, $rev, $row);
             if ($from) apr_case_audit($c, 'comp.set_update', 'comp_set', $pid, ['from' => $from, 'to' => $to]);
+            // "נבדק מחדש" — פעולה מפורשת של השמאי, עם רשומה ביומן. שמירה רגילה של ההגדרות אינה מורידה את הסימון (ביקורת 15, 🟡4)
+            if ($recheck) apr_case_audit($c, 'comp.set_recheck', 'comp_set', $pid, ['subject_area_fact' => $fact['pid'], 'area' => apr_fact_num_out(apr_fact_norm($fact, apr_attr('area'))[1])]);
         }
-        apr_fact_unuse($c, 'calc', $pid);
-        if ($fact) apr_fact_use($c, $fact['pid'], 'calc', $pid);
+        // הרישום ב-fact_uses משתנה רק כשהנתון הוחלף, או ב"נבדק מחדש": אחרת stale היה יורד בכל שמירה
+        $oldFact = $isNew || $g['subject_area_fact_id'] === null ? null : (int)$g['subject_area_fact_id'];
+        if ($isNew || $oldFact !== $row['subject_area_fact_id']) {
+            apr_fact_unuse($c, 'calc', $pid);
+            if ($fact) apr_fact_use($c, $fact['pid'], 'calc', $pid);
+        } elseif (!empty($recheck)) {
+            apr_fact_use($c, $fact['pid'], 'calc', $pid);
+        }
         apr_case_touch($c);
         return ['set' => $pid, 'rev' => $rev + 1];
     });

@@ -21,6 +21,7 @@ CREATE TABLE comp_searches (
     import_rows   INTEGER,
     rights_by     INTEGER REFERENCES users (id),                    -- מי אישר "יש לי זכות להשתמש בנתונים האלה" (§4.2)
     rights_at     TEXT,
+    rev           INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
     CHECK (source_id IS NOT NULL OR source_text IS NOT NULL),
@@ -34,7 +35,7 @@ CREATE TRIGGER comp_searches_no_delete BEFORE DELETE ON comp_searches
 BEGIN SELECT RAISE(ABORT, 'comp_searches: no delete'); END;
 
 CREATE TRIGGER comp_searches_identity BEFORE UPDATE ON comp_searches
-WHEN NEW.pid <> OLD.pid OR NEW.office_id <> OLD.office_id OR NEW.case_id <> OLD.case_id OR NEW.performed_at <> OLD.performed_at
+WHEN NEW.rev NOT IN (OLD.rev, OLD.rev + 1) OR NEW.pid <> OLD.pid OR NEW.office_id <> OLD.office_id OR NEW.case_id <> OLD.case_id OR NEW.performed_at <> OLD.performed_at
     OR NEW.performed_by IS NOT OLD.performed_by OR NEW.created_at <> OLD.created_at
 BEGIN SELECT RAISE(ABORT, 'comp_searches: identity'); END;
 
@@ -99,6 +100,7 @@ BEGIN SELECT RAISE(ABORT, 'comps: no delete'); END;
 CREATE TRIGGER comps_rev BEFORE UPDATE ON comps
 WHEN NEW.rev <> OLD.rev + 1 OR NEW.pid <> OLD.pid OR NEW.office_id <> OLD.office_id OR NEW.case_id <> OLD.case_id
     OR NEW.origin <> OLD.origin OR NEW.created_at <> OLD.created_at
+    OR NEW.search_id IS NOT OLD.search_id OR NEW.extra IS NOT OLD.extra OR NEW.created_by IS NOT OLD.created_by
 BEGIN SELECT RAISE(ABORT, 'comps: rev / identity'); END;
 
 -- ערכי המקור אינם נערכים לעולם (15-B1)

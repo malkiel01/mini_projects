@@ -216,11 +216,58 @@ function apr_q_norm(string $n, string $d): array
     return [($n[0] === '-' ? '-' : '') . apr_nu_divmod($un, $g)[0], apr_nu_divmod($d, $g)[0]];
 }
 
+/**
+ * מכנה כמכפלה 2^a · 5^b · שארית: [a, b, שארית]. המכנים במנוע נבנים מחלוקה בחזקות של 10 (אחוזים) ומשטח אחד, ולכן השארית קצרה —
+ * וכך אפשר למצוא מחלק משותף של שני מכנים ארוכים בלי אלגוריתם אוקלידס על מספרים של מאות ספרות. התוצאה נשמרת (אותם מכנים חוזרים).
+ */
+function apr_nu_split25(string $d): array
+{
+    static $cache = [];
+    if (isset($cache[$d])) return $cache[$d];
+    $key = $d;
+    $z = strlen($d) - strlen(rtrim($d, '0'));
+    [$a, $b] = [$z, $z];
+    if ($z > 0) $d = substr($d, 0, strlen($d) - $z);
+    // חלוקה חוזרת במחלק קטן: כל חלוקה ליניארית באורך המספר
+    foreach ([[1024, 10, 2], [2, 1, 2], [9765625, 10, 5], [5, 1, 5]] as [$div, $pow, $prime]) {
+        for (;;) {
+            [$q, $rem] = apr_nu_divmod($d, (string)$div);
+            if ($rem !== '0') break;
+            $d = $q;
+            if ($prime === 2) $a += $pow; else $b += $pow;
+        }
+    }
+    if (count($cache) > 5000) $cache = [];
+    return $cache[$key] = [$a, $b, $d];
+}
+
+/** 2^a · 5^b כמחרוזת. */
+function apr_nu_pow25(int $a, int $b): string
+{
+    $tens = min($a, $b);
+    $out = '1';
+    $p2 = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
+    $p5 = [1, 5, 25, 125, 625, 3125, 15625, 78125, 390625, 1953125, 9765625];
+    for ($i = $a - $tens; $i > 0; $i -= 10) $out = apr_nu_mul($out, (string)$p2[min(10, $i)]);
+    for ($i = $b - $tens; $i > 0; $i -= 10) $out = apr_nu_mul($out, (string)$p5[min(10, $i)]);
+    return $out . str_repeat('0', $tens);
+}
+
+/** מחלק משותף של שני מכנים: מדויק כשאחד מהם קצר; אחרת — החלק של 2 ו-5, ועוד השארית כשהיא קצרה או זהה. תמיד מחלק את שניהם. */
+function apr_nu_den_gcd(string $d1, string $d2): string
+{
+    if (strlen($d1) <= 17 || strlen($d2) <= 17) return apr_nu_gcd($d1, $d2);
+    [$a1, $b1, $r1] = apr_nu_split25($d1);
+    [$a2, $b2, $r2] = apr_nu_split25($d2);
+    $rest = $r1 === $r2 ? $r1 : (strlen($r1) <= 17 || strlen($r2) <= 17 ? apr_nu_gcd($r1, $r2) : '1');
+    return apr_nu_mul(apr_nu_pow25(min($a1, $a2), min($b1, $b2)), $rest);
+}
+
 function apr_q_add(array $x, array $y): array
 {
     if ($x[1] === $y[1]) return apr_q_norm(apr_n_add($x[0], $y[0]), $x[1]);
-    // מכנה משותף קטן ככל האפשר, כשהחישוב זול: כך סכום של מאות עסקאות אינו מנפח את המכנה
-    $g = strlen($x[1]) <= 17 || strlen($y[1]) <= 17 ? apr_nu_gcd($x[1], $y[1]) : '1';
+    // מכנה משותף קטן ככל האפשר: בלי זה סכום של שני שברים ארוכים מכפיל את אורך המכנה בכל צעד (ביקורת 15, 🟡1)
+    $g = apr_nu_den_gcd($x[1], $y[1]);
     $dx = $g === '1' ? $x[1] : apr_nu_divmod($x[1], $g)[0];
     $dy = $g === '1' ? $y[1] : apr_nu_divmod($y[1], $g)[0];
     return apr_q_norm(apr_n_add(apr_n_mul($x[0], $dy), apr_n_mul($y[0], $dx)), apr_nu_mul($dx, $y[1]));
@@ -325,12 +372,20 @@ function apr_calc_comp(array $comp, array $adjs, array $set): array
         if ($a['applies_to'] !== 'both' && $a['applies_to'] !== $set['unit_basis']) continue;
         if ($a['kind'] === 'amount') {
             $delta = apr_q((int)$a['value']);
+            if ($a['sign'] === 'minus') $delta = apr_q_neg($delta);
+            $running = apr_q_add($running, $delta);
         } else {
             // אחוז במיליוניות: ערך ÷ 10^6 אחוזים, ועוד ÷ 100 — יחד ÷ 10^8
-            $delta = apr_q_mul($a['basis'] === 'running' ? $running : $base, apr_q((int)$a['value'], 100000000));
+            $rate = apr_q(($a['sign'] === 'minus' ? -1 : 1) * (int)$a['value'], 100000000);
+            if ($a['basis'] === 'running') {
+                // שוטף · (1 + שיעור): כפל אחד במקום כפל ועוד חיבור של שני שברים ארוכים — אותה תוצאה בדיוק, והמכנה גדל ב-8 ספרות לכל היותר
+                $delta = apr_q_mul($running, $rate);
+                $running = apr_q_mul($running, apr_q_add(apr_q(1), $rate));
+            } else {
+                $delta = apr_q_mul($base, $rate);
+                $running = apr_q_add($running, $delta);
+            }
         }
-        if ($a['sign'] === 'minus') $delta = apr_q_neg($delta);
-        $running = apr_q_add($running, $delta);
         $steps[] = ['pid' => $a['pid'] ?? null, 'label' => $a['label'], 'kind' => $a['kind'], 'sign' => $a['sign'], 'basis' => $a['basis'], 'value' => (int)$a['value'],
             'delta' => $delta, 'running' => $running];
     }

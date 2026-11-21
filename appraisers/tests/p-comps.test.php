@@ -160,6 +160,37 @@ eq([[$wz['weights_block'], $wz['weighted'], $wz['result'], $wz['rounded'], $wz['
     [['weights_zero', null, null, null, 'weights_zero'], ['weight_missing', null, 'weight_missing'], [null, '165000050'], ['weight_missing', null], '143333367'],
     '§10.13 משקל אפס לכולן ← נחסם בלי חלוקה באפס; עסקה בלי משקל כשלאחרות יש ← נחסם; משקל 0 לעסקה אחת מותר; הממוצע הרגיל מוצג גם כשהמשוקלל חסום');
 
+// 🟡1: 15 עסקאות × 30 התאמות אחוז עם 6 ספרות אחרי הנקודה, למ"ר — המכנה אינו מתנפח, והתוצאה שווה לחישוב ייחוס שמצמצם כל שלב
+$t0 = hrtime(true);
+$heavy = [];
+$denLen = 0;
+for ($ci = 0; $ci < 15; $ci++) {
+    $hAdj = [];
+    for ($i = 0; $i < 30; $i++) $hAdj[] = $adj("a$i", 'percent', 1234567 + $i * 7 + $ci, $i % 3 ? 'plus' : 'minus', $i % 4 ? 'running' : 'base');
+    $hc = apr_calc_comp($comp(123456789 + $ci, 7831 + $ci * 13, 'registered'), $hAdj, $sqm);
+    foreach ($hc['steps'] as $st) { apr_q_round($st['delta'], 1); apr_q_round($st['running'], 100); }
+    $denLen = max($denLen, strlen($hc['adjusted'][1]));
+    $heavy[] = $item("c$ci", $hc, 1000000 + $ci);
+}
+$hs = apr_calc_summary($heavy, ['method' => 'weighted', 'rounding' => '100'] + $sqm);
+$ms = intdiv(hrtime(true) - $t0, 1000000);
+// ייחוס: אותו חישוב בצעד חיבור "תמים" (שוטף + שוטף·שיעור) — חייב לתת בדיוק אותו שבר
+$naive = apr_q(12345678900, 7831);
+$nb = $naive;
+for ($i = 0; $i < 30; $i++) {
+    $rate = apr_q(($i % 3 ? 1 : -1) * (1234567 + $i * 7), 100000000);
+    $naive = apr_q_add($naive, apr_q_mul($i % 4 ? $naive : $nb, $rate));
+}
+eq([$ms < 3000, $denLen < 260, $hs['rounded'], apr_q_cmp($naive, $heavy[0]['calc']['adjusted']), strlen($hs['mean'][1]) < 400], [true, true, '1760000', 0, true],
+    "🟡1 15 עסקאות × 30 התאמות אחוז (6 ספרות, למ\"ר) מחושבות בפחות מ-3 שניות ({$ms}ms), המכנה נשאר קצר, והתוצאה זהה לחישוב בצעדי חיבור");
+// המחלק המשותף של מכנים ארוכים: תמיד מחלק את שניהם, ומוצא את החלק של 2 ו-5
+$dA = apr_nu_mul('7831', '1' . str_repeat('0', 40));
+$dB = apr_nu_mul(apr_nu_mul('7831', '1024'), '1' . str_repeat('0', 30));
+$gAB = apr_nu_den_gcd($dA, $dB);
+$sumAB = apr_q_add(['1', $dA], ['1', $dB]);
+eq([apr_nu_divmod($dA, $gAB)[1], apr_nu_divmod($dB, $gAB)[1], $gAB === $dB, apr_nu_split25('7831000'), apr_nu_pow25(13, 2), apr_nu_divmod($dA, $sumAB[1])[1], strlen($sumAB[1]) <= strlen($dA), apr_q_cmp($sumAB, apr_q(9765626, $dA))],
+    ['0', '0', true, [3, 3, '7831'], '204800', '0', true, 0], 'מחלק משותף של שני מכנים ארוכים נמצא דרך החזקות של 2 ו-5, והסכום יושב על המכנה המשותף הקטן');
+
 // מקרי קצה של הסיכום: אפס עסקאות, עסקה אחת, מדגם קטן
 $z = apr_calc_summary([], $total);
 $one = apr_calc_summary([$item('a', $a, null, '2025-03-01')], $total);
@@ -260,9 +291,11 @@ eq([$S1[0], $sOut[$S1[1]['search']]['result_count'], $sOut[$S1[1]['search']]['cr
     '§4.1 חיפוש נרשם עם המקור, הקריטריונים, מי, וכמה נמצא: 0 תוצאות הוא 0; "לא נרשם" הוא null — לא אפס; בלי מקור נדחה');
 $S1 = $S1[1]['search'];
 $S2 = $S2[1]['search'];
-$su = call('POST', 'comp-search-update', ['search' => $S2, 'result_count' => 14], $tal);
+$su = call('POST', 'comp-search-update', ['search' => $S2, 'rev' => 1, 'result_count' => 14], $tal);
 eq([$su[0], (int)apr_val('SELECT result_count FROM comp_searches WHERE pid = ?', [$S2]), array_key_exists('from', $audit('comp.search_update', $S2)[0]['meta']) ? $audit('comp.search_update', $S2)[0]['meta']['from'] : 'x', $audit('comp.search_update', $S2)[0]['meta']['to'] ?? null,
-    code(call('POST', 'comp-search-update', ['search' => $S2, 'result_count' => 14], $tal))], [200, 14, null, 14, 'nothing_to_change'], 'עדכון של מספר התוצאות נרשם ביומן עם הערך הקודם והחדש');
+    code(call('POST', 'comp-search-update', ['search' => $S2, 'rev' => 2, 'result_count' => 14], $tal)), code(call('POST', 'comp-search-update', ['search' => $S2, 'rev' => 1, 'result_count' => 15], $tal)),
+    code(call('POST', 'comp-search-update', ['search' => $S2, 'result_count' => 15], $tal)), (int)apr_val('SELECT result_count FROM comp_searches WHERE pid = ?', [$S2])],
+    [200, 14, null, 14, 'nothing_to_change', 'comp_changed', 'rev_required', 14], 'עדכון של מספר התוצאות נרשם ביומן עם הערך הקודם והחדש; ⚪ עדכון חיפוש דורש rev — rev ישן נדחה, ושום דבר לא נכתב');
 
 // הזנה ידנית (§4.2): שדה שלא הוזן נשאר null — 15-B2
 $K1 = $add($tal, $C, ['deal_date' => '2025-03-01', 'price' => '2000000', 'address_text' => 'הרצל 10', 'locality' => 'תל אביב', 'location_precision' => 'exact', 'distance_m' => 120, 'area' => '80', 'area_kind' => 'registered', 'floor' => 2], ['search' => $S1]);
@@ -438,8 +471,16 @@ eq([$sub['area'], $sub['area_kind'], $sub['total'], $sub['stale'], $sub['fact'][
     '§6.5 מסקנה למ"ר × שטח נישום = 24,800 × 85.5 = 2,120,400 — חישוב עזר, עם השטח, סוגו ומקורו; הקבוצה רשומה כמי שנשענת על הנתון');
 call('POST', 'fact-correct', ['fact' => $F, 'rev' => (int)apr_val('SELECT rev FROM facts WHERE pid = ?', [$F]), 'value' => '86', 'unit' => 'sqm', 'area_kind' => 'registered', 'note' => 'תיקון'], $avi);
 $sub2 = $setView($avi, $GS)[1]['subject'];
-call('POST', 'comp-set-save', ['set' => $GS, 'rev' => $grev($GS), 'name' => 'למ"ר', 'unit_basis' => 'per_sqm', 'area_kind' => 'registered', 'method' => 'mean', 'rounding' => '100', 'subject_area_fact' => $F], $avi);
-eq([$sub2['stale'], $sub2['area'], $sub2['total']['nis'], $setView($avi, $GS)[1]['subject']['stale']], [true, '86', '2132800', false], '§6.6 השטח הנישום השתנה ← הקבוצה מסומנת stale (המנגנון של פרוסה 10); שמירה חוזרת = "נבדק מחדש"');
+$gsBody = ['set' => $GS, 'name' => 'למ"ר', 'unit_basis' => 'per_sqm', 'area_kind' => 'registered', 'method' => 'mean', 'rounding' => '100', 'subject_area_fact' => $F];
+$same = code(call('POST', 'comp-set-save', ['rev' => $grev($GS)] + $gsBody, $avi));
+$plain = call('POST', 'comp-set-save', ['rev' => $grev($GS), 'rounding' => '1000'] + $gsBody, $avi);
+$stillStale = $setView($avi, $GS)[1]['subject']['stale'];
+$noName = call('POST', 'comp-set-save', ['rev' => $grev($GS)] + array_diff_key($gsBody, ['name' => 1]), $avi);
+$nameKept = apr_val('SELECT name FROM comp_sets WHERE pid = ?', [$GS]);
+$re = call('POST', 'comp-set-save', ['rev' => $grev($GS), 'recheck' => true] + $gsBody, $avi);
+eq([$sub2['stale'], $sub2['area'], $sub2['total']['nis'], $same, $plain[0], $stillStale, $noName[0], $nameKept, $re[0], $setView($avi, $GS)[1]['subject']['stale'], $audit('comp.set_recheck', $GS)[0]['meta'] ?? null, count($audit('comp.set_recheck', $GS))],
+    [true, '86', '2132800', 'nothing_to_change', 200, true, 200, 'למ"ר', 200, false, ['subject_area_fact' => $F, 'area' => '86'], 1],
+    '§6.6 השטח הנישום השתנה ← הקבוצה מסומנת stale; 🟡4 שמירה רגילה של ההגדרות אינה מורידה את הסימון — רק "נבדק מחדש" מפורש, שנרשם ביומן; ⚪ עדכון בלי שם אינו דורס את השם');
 
 // "דומה / שונה" (§4.3, 15-B2): רק שדות ששני הצדדים ידועים בהם
 $sim = $view($avi, $K1)[1]['similar'];
@@ -466,6 +507,20 @@ $dd = call('POST', 'comp-delete', ['comp' => $D4[1]['comp'], 'rev' => $rev($D4[1
 eq([code($dl), code(call('POST', 'comp-delete', ['comp' => $D3[1]['comp'], 'rev' => $rev($D3[1]['comp'])], $tal)), $dd[0], code($view($avi, $D4[1]['comp'])), $krow($D4[1]['comp'])['delete_reason'],
     $raises('UPDATE comps SET note = ?, rev = rev + 1 WHERE pid = ?', ['x', $D4[1]['comp']])], ['forbidden', 'reason_required', 200, 'not_found', 'הוזנה בטעות', 'comps: frozen'],
     'מחיקה: רכה, עם נימוק; עסקה שנבחרה — רק מי שרשאי לבחור; עסקה שנמחקה אינה מוחזרת ואינה משתנה עוד');
+
+// 🟡3: מי שרק מזין מוחק רק עסקה מועמדת בלי התאמות ובלי משקל
+$E = [];
+foreach (['excluded', 'pending', 'weight', 'adj', 'plain'] as $i => $what) {
+    $E[$what] = $add($tal, $C, ['price' => (string)(700000 + $i), 'deal_date' => '2023-01-0' . ($i + 1)])[1]['comp'];
+    if ($what === 'excluded' || $what === 'pending') $status($avi, $E[$what], $what, 'נימוק של השמאי');
+    if ($what === 'weight') call('POST', 'comp-weight', ['comp' => $E[$what], 'rev' => $rev($E[$what]), 'weight' => '2'], $avi);
+    if ($what === 'adj') $adjSave($avi, $E[$what], $okAdj);
+}
+$delAs = fn(string $as, string $k) => call('POST', 'comp-delete', ['comp' => $k, 'rev' => $rev($k), 'reason' => 'ניקוי'], $as);
+eq([code($delAs($tal, $E['excluded'])), code($delAs($tal, $E['pending'])), code($delAs($tal, $E['weight'])), code($delAs($tal, $E['adj'])), $delAs($tal, $E['plain'])[0], $krow($E['excluded'])['deleted_at'], $krow($E['excluded'])['status_reason'],
+    $delAs($dana, $E['excluded'])[0], $delAs($dana, $E['pending'])[0], $delAs($avi, $E['weight'])[0], $delAs($avi, $E['adj'])[0]],
+    ['forbidden', 'forbidden', 'forbidden', 'forbidden', 200, null, 'נימוק של השמאי', 200, 200, 200, 200],
+    '🟡3 מי שיש לו רק edit אינו מוחק עסקה שהוחרגה או ממתינה (הנימוק של השמאי נשאר), ולא מועמדת עם משקל או עם התאמה; שמאי בתיק — כן');
 
 // ── ייבוא (§4.2, §10.9, §10.10) ──
 $csv = "\xEF\xBB\xBFתאריך;מחיר;גוש;חלקה;כתובת;שטח;קומה;הערת המקור;עמודה שלא מופתה\n"
@@ -517,6 +572,13 @@ eq([$pp[1]['imported'] ?? null, array_keys(json_decode(apr_val("SELECT raw FROM 
     code(call('POST', 'comp-import-preview', ['case' => $C, 'text' => $big], $avi)) . '/' . code(call('POST', 'comp-import-preview', ['case' => $C, 'text' => str_repeat("1000\n", 2001), 'has_header' => false], $avi))
         . '/' . (call('POST', 'comp-import-preview', ['case' => $C, 'text' => str_repeat("1000\n", 2000), 'has_header' => false], $avi)[1]['total'] ?? '?'), $ok2000[1]['total'] ?? null, apr_val('SELECT import_sha256 FROM comp_searches WHERE pid = ?', [$S4])],
     [2, ['עמודה 1', 'עמודה 2', 'עמודה 3'], 'comp_import_too_many', 'comp_import_too_many/comp_import_too_many/2000', 2000, null], 'הדבקה מלוח (טאבים, בלי כותרת) — אותו מסלול; §10.10 יותר מ-2,000 שורות נדחה כולו (2,000 בדיוק — מותר)');
+
+// 🟡2: שורות ריקות (גם ",") באמצע הקובץ אינן נספרות ואינן חותכות את הקובץ בשקט
+$gap = "מחיר,כתובת\n" . str_repeat("1000,א\n", 1000) . str_repeat(",\n", 1300) . str_repeat("2000,ב\n", 500);
+$gapBig = "מחיר,כתובת\n" . str_repeat("1000,א\n", 1000) . str_repeat(",\n", 1300) . str_repeat("2000,ב\n", 1001);
+eq([call('POST', 'comp-import-preview', ['case' => $C, 'text' => $gap], $avi)[1]['total'] ?? null, code(call('POST', 'comp-import-preview', ['case' => $C, 'text' => $gapBig], $avi)),
+    count(apr_comp_table_text("a,b\n" . str_repeat(" , \n\n", 3000) . "1,2\n"))], [1500, 'comp_import_too_many', 2],
+    '🟡2 1,000 שורות + 1,300 שורות ריקות + 500 שורות ← כל 1,500 נקראות (לא 1,001); מעל 2,000 שורות אמיתיות — נדחה, לא נחתך');
 
 // XLSX: דרך צינור הקליטה של 06, ונשמר כקובץ של התיק
 function xlsx_bytes(array $rows): string
@@ -573,7 +635,10 @@ $xxe = str_replace('<sst ', '<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd"
 // הקובץ עם ה-DOCTYPE נבנה מחדש כדי שה-CRC והאורכים יתאימו
 $xxeFile = (function () { $t = tempnam(sys_get_temp_dir(), 'x'); file_put_contents($t, '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><sst><si><t>&e;</t></si></sst>'); return $t; })();
 $xxeErr = (function () use ($xxeFile) { try { apr_comp_xml((string)file_get_contents($xxeFile)); return 'parsed'; } catch (AprError $e) { return $e->errorCode; } finally { @unlink($xxeFile); } })();
-eq($xxeErr, 'comp_xlsx', 'XML עם DOCTYPE או ישות חיצונית אינו מפוענח כלל');
+$xmlTry = function (string $xml): string { try { apr_comp_xml($xml); return 'parsed'; } catch (AprError $e) { return $e->errorCode; } };
+$u16 = "\xFF\xFE" . mb_convert_encoding('<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><sst><si><t>&e;</t></si></sst>', 'UTF-16LE', 'UTF-8');
+eq([$xxeErr, $xmlTry($u16), $xmlTry('<?xml version="1.0" encoding="ISO-8859-1"?><sst/>'), $xmlTry('<?xml version="1.0" encoding="utf-8"?><sst/>'), $xmlTry('<sst><si><t>שלום</t></si></sst>')],
+    ['comp_xlsx', 'comp_xlsx', 'comp_xlsx', 'parsed', 'parsed'], 'XML עם DOCTYPE או ישות חיצונית אינו מפוענח כלל; ⚪ XML שאינו UTF-8 (UTF-16, או הכרזת קידוד אחרת) נדחה — הסינון אינו נעקף');
 
 // ── הרשאות (§9) ──
 // 15-C4: עובדת משרד עם edit (טל) ומתמחה עם edit (נועה) מזינות ומתקנות — ואינן בוחרות, מחריגות, מתאימות, משקללות או מסיקות
@@ -663,6 +728,10 @@ eq([$xo['comp']['values']['address'], $xo['comp']['note'], $xo['adjustments'][0]
 // כל ערך שמגיע מהשרת ונכנס לתבנית במסך עובר דרך esc(): אין ${…} שמתחיל בשדה של עסקה בלי esc / מספר / מפתח מהרשימה
 preg_match_all('/\$\{\s*((?:k|c|v|a|s|g|r|x\.comp|x\.set)\.(?:values\.)?(?:note|status_reason|label|reason|address|approx_location|locality|property_type|condition|attachments|source_ref|gush|helka|tat_helka|name|source_text|limitations|by|created_by|updated_by))\s*\}/', $js, $rawUse);
 eq($rawUse[1], [], 'במסך אין שדה טקסט של משתמש שנכנס לתבנית בלי esc()');
+// 🟡5: בנוסחה הסימן של כל שלב נגזר מהשינוי שהשרת חישב (delta), לא מהסימן שהוזן — s.sign אינו משמש בתצוגת הנוסחה
+$neg = apr_calc_comp($comp($nis(1000000)), [$adj('א', 'percent', $pct('150'), 'minus', 'base'), $adj('ב', 'percent', $pct('10'), 'plus', 'running')], $total);
+eq([preg_match_all("/\\bs\\.sign\\b/", $js), preg_match_all('/String\(s\.delta\.agorot\)\.startsWith\(\'-\'\)/', $js), apr_comp_calc_out($neg)['steps'][1]['delta']['agorot'], apr_comp_calc_out($neg)['steps'][1]['sign'], apr_comp_calc_out($neg)['adjusted']['nis']],
+    [0, 1, '-5000000', 'plus', '-550000'], '🟡5 1,000,000 −150% מהבסיס, +10% מהשוטף: השינוי השני הוא −50,000 (אף שהוזן "תוספת") — והמסך גוזר את הסימן מה-delta');
 
 // שמות גלובליים: כל קובצי המסכים נטענים לאותו מרחב. const / let / class שמוגדר גם בקובץ אחר הוא שגיאת תחביר שמפילה את הקובץ השני כולו
 // (נתפס בדפדפן: kStatusChip). שתי הצהרות function באותו שם אינן שגיאה — האחרונה מנצחת — ולכן אינן נבדקות כאן.
