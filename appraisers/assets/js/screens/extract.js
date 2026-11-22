@@ -88,7 +88,7 @@ async function xFilePanel(pid, fpid, reload) {
                 if (r.run.state === 'done') toast(X.doneToast(r.ai.proposed));
                 else if (r.run.state !== 'running') toast(X.notDone(X.states[r.run.state] || r.run.state, xReason(r.run.reason)), true);
                 if (r.run.state === 'running') wait(w); else again();
-            }).catch(e => { if (e.code) { toastError(e); again(); } else wait(w); });
+            }).catch(e => { if (e.code && e.code !== 'network') { toastError(e); again(); } else wait(w); });
             setTimeout(again, 800);
         }, X.run);
     }, box);

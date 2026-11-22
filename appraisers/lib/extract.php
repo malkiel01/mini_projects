@@ -204,8 +204,29 @@ function apr_extract_text(mixed $v, bool $lines = false): ?string
 /** לצורך השוואת ציטוט לטקסט העמוד: בלי סימני כיווניות ומקפים רכים, רווחים מצומצמים, אותיות קטנות. */
 function apr_extract_norm(string $s): string
 {
-    $s = (string)preg_replace('/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{00AD}\x{FEFF}]/u', '', $s);
+    // סימני הטמעה כיוונית מופיעים בגבול בין רצפים (מספר ← מילה) — הופכים לרווח, אחרת "2,150,000" נדבק למילה שאחריו
+    $s = (string)preg_replace(['/[\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', '/[\x{200B}-\x{200F}\x{00AD}\x{FEFF}]/u'], [' ', ''], $s);
     return mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', $s)));
+}
+
+/** המילים של טקסט, להשוואה שאינה תלויה בסדר: רצפי אותיות וספרות באורך 2 ומעלה; מפריד אלפים נמחק ("2,150,000" ← "2150000"). */
+function apr_extract_tokens(string $norm): array
+{
+    $s = (string)preg_replace('/(?<=\d),(?=\d)/', '', $norm);
+    return array_values(array_filter(preg_split('/[^\p{L}\p{N}]+/u', $s) ?: [], fn($t) => mb_strlen($t) >= 2));
+}
+
+/**
+ * האם הציטוט מופיע בטקסט העמוד (שניהם אחרי apr_extract_norm). קודם כרצף; ואם לא — כל מילות הציטוט נמצאות בעמוד.
+ * ההשוואה השנייה נחוצה בעברית: כלי החילוץ מחזיר לעתים מספרים, סימני מטבע ופיסוק בסדר אחר מזה שבמסמך, וציטוט נכון היה
+ * מסומן "לא אותר". ציטוט שמילה אחת שלו אינה בעמוד — עדיין "לא אותר".
+ */
+function apr_extract_quote_in(string $quote, string $page): bool
+{
+    if ($quote === '' || $page === '') return false;
+    if (mb_strpos($page, $quote) !== false) return true;
+    $need = apr_extract_tokens($quote);
+    return $need && !array_diff($need, apr_extract_tokens($page));
 }
 
 function apr_extract_conf(mixed $v): string
@@ -307,7 +328,7 @@ function apr_extract_parse(string $text, string $what, array $file, array $catal
         if ($norm !== null && $quote !== null) {
             $q = apr_extract_norm($quote);
             $where = $page !== null ? [$norm[$page] ?? ''] : $norm;
-            $found = (int)(bool)array_filter($where, fn($t) => $q !== '' && mb_strpos($t, $q) !== false);
+            $found = (int)(bool)array_filter($where, fn($t) => apr_extract_quote_in($q, $t));
         }
         $key = json_encode([$attr['key'], $num, $txt, $date, $unit, $kind, $page]);
         if (isset($seen[$key])) continue;

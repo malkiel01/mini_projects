@@ -311,6 +311,12 @@ eq([array_map(fn($k) => [$by[$k]['ai_confidence'], $by[$k]['ai_quote_found'] ===
     '12-A4 ציטוט שאינו מופיע בטקסט של אותו עמוד ← הנתון נשמר עם ביטחון low ודגל "הציטוט לא אותר"; ציטוט שאותר — נשאר; עמוד בלי טקסט אינו נשמר');
 [, $ff] = api('GET', 'file-facts', [], $dana, ['file' => $F4]);
 eq(array_column($ff['facts'], 'ai', 'attribute')['rooms'], ['confidence' => 'low', 'quote_found' => false], '12-A4 הדגל מגיע למסך');
+$n = fn(string $t) => apr_extract_norm($t);
+eq([apr_extract_quote_in($n('התמורה בסך 2,150,000 ₪'), $n("\u{202B}התמורה בסך \u{202A} ₪ 2,150,000\u{202C}תשולם במועד\u{202C}")), apr_extract_quote_in($n('ארבעה חדרים, בקומה שלישית'), $n('הדירה בת ארבעה חדרים ,בקומה שלישית.')),
+    apr_extract_quote_in($n('התמורה בסך 2,150,000 ₪'), $n('התמורה בסך 2,510,000 ₪')), apr_extract_quote_in($n('חמישה חדרים'), $n('הדירה בת ארבעה חדרים')), apr_extract_quote_in($n('₪ ״'), $n('100 שקלים')), apr_extract_quote_in('', $n('x'))],
+    [true, true, false, false, false, false], '12-A4 ההשוואה עומדת בסדר שונה של מספר, מטבע ופיסוק (כך מחזיר כלי החילוץ טקסט בעברית) — אבל מספר אחר או מילה שאינה בעמוד ← "לא אותר"');
+
+$GLOBALS['apr_pdf_text'] = null;         // מכאן שוב בלי טקסט מקומי — כדי שרמת הביטחון בבדיקות הבאות תיקבע רק ממה שהן בודקות
 
 // ═══ 12-B1 — הזרקה: מפתחות "פעולה" בתשובה אינם עושים דבר ══════
 $snap = function (): array {
