@@ -5,6 +5,9 @@
  *   public — בלי משתמש (וגם אז הפעולה עצמה מגינה: health מחזיר רק ok ו-version, devapi-* באסימון sfd_)
  *   reader — הקריאה הציבורית (read-*): בלי זיהוי מנהל, ומחזירה רק תוכן ציבורי שפורסם (lib/content.php). **לא** ב-"public"
  *            של app.json: בזמן הפיתוח השער מגביל אותה לצוות, ובהשקה (11) היא נפתחת לכולם
+ *   guest  — עולם הקוראים (05), בלי חשבון: הרשמה, כניסה, אימות ואיפוס. עוגיית sf_reader בלבד — לא נוגעים בזהות המנהל
+ *   account — קורא מחובר (עוגיית sf_reader + כותרת X-Reader-CSRF בכל POST): החשבון, המכשירים והסנכרון. מחזירה רק את
+ *            המידע של הקורא עצמו. guest ו-account — כמו reader, **לא** ב-"public" של app.json עד ההשקה (11)
  *   staff  — כל מנהל פעיל (§3: הרשאות מלאות)
  *   dev    — is_developer (= platform_admin שבזהות)
  *
@@ -32,6 +35,23 @@ const SF_ACTIONS = [
     'read-search'          => ['m' => 'GET',  'who' => 'reader'],
     'read-file'            => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
     'read-pages'           => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
+
+    // חשבונות הקוראים והסנכרון (05) — עולם נפרד מהמנהלים (lib/readers.php, lib/sync.php)
+    'account-me'           => ['m' => 'GET',  'who' => 'guest'],
+    'account-register'     => ['m' => 'POST', 'who' => 'guest'],
+    'account-login'        => ['m' => 'POST', 'who' => 'guest'],
+    'account-google'       => ['m' => 'POST', 'who' => 'guest'],
+    'account-verify'       => ['m' => 'POST', 'who' => 'guest'],
+    'account-reset-request' => ['m' => 'POST', 'who' => 'guest'],
+    'account-reset'        => ['m' => 'POST', 'who' => 'guest'],
+    'account-verify-resend' => ['m' => 'POST', 'who' => 'account'],
+    'account-logout'       => ['m' => 'POST', 'who' => 'account'],
+    'account-devices'      => ['m' => 'GET',  'who' => 'account'],
+    'account-device-revoke' => ['m' => 'POST', 'who' => 'account'],
+    'account-export'       => ['m' => 'GET',  'who' => 'account'],
+    'account-delete'       => ['m' => 'POST', 'who' => 'account'],
+    'sync-push'            => ['m' => 'POST', 'who' => 'account', 'max' => 4_000_000],
+    'sync-pull'            => ['m' => 'GET',  'who' => 'account'],
 
     'me'                   => ['m' => 'GET',  'who' => 'staff'],
     'logout'               => ['m' => 'POST', 'who' => 'staff'],
@@ -86,6 +106,7 @@ const SF_ACTIONS = [
     'dev-job-retry'        => ['m' => 'POST', 'who' => 'dev'],
     'dev-job-cancel'       => ['m' => 'POST', 'who' => 'dev'],
     'dev-cron-rotate'      => ['m' => 'POST', 'who' => 'dev'],
+    'dev-google-set'       => ['m' => 'POST', 'who' => 'dev'],
     // DevLoop — אותם שמות כמו בכל אפליקציה (.claude/skills/devloop/references/install.md)
     'dev-items'            => ['m' => 'GET',  'who' => 'dev', 'raw' => true],
     'dev-task-create'      => ['m' => 'POST', 'who' => 'dev', 'raw' => true],
@@ -113,10 +134,13 @@ function sf_action_spec(string $method, string $action): array
     return $spec;
 }
 
-/** ההכרעה: מותר למנהל הזה? (אחרי sf_authenticate — המנהל פעיל.) */
+/** הרמות שלא עוברות דרך זיהוי המנהל. */
+const SF_NOT_STAFF = ['public', 'reader', 'guest', 'account'];
+
+/** ההכרעה: מותר למנהל הזה? (אחרי sf_authenticate — המנהל פעיל.) guest / account — נבדקו בנתב מול עוגיית הקורא. */
 function sf_access(array $spec, ?array $staff): void
 {
-    if ($spec['who'] === 'public' || $spec['who'] === 'reader') return;
+    if (in_array($spec['who'], SF_NOT_STAFF, true)) return;
     if ($staff === null || $staff['status'] !== 'active') sf_fail('login_required');
     if ($spec['who'] === 'dev' && !(int)$staff['is_developer']) sf_fail('forbidden');
 }

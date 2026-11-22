@@ -425,3 +425,20 @@ span.sf-cond-body { display: inline; border: 0; }
 .ck-doc { padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 @media (min-width: 900px) { .ck-grid { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
 fieldset.group { border: 0; padding: 0; margin: 0 0 var(--s3); }
+
+/* ===== החשבון והסנכרון (05) ===== */
+.sync-chip { display: inline-grid; place-items: center; text-decoration: none; font-size: 1rem; }
+.account-intro h2 { font-family: var(--font-text); font-size: 1.2rem; margin-bottom: var(--s1); }
+.account-intro p { margin: 0 0 var(--s3); }
+.account-form { margin-bottom: var(--s2); }
+.account-form input { direction: inherit; }
+.account-form input[dir="ltr"] { text-align: start; }
+.account-q { display: grid; gap: var(--s3); }
+.account-q p { margin: 0; }
+.row-btns.stack { flex-direction: column; }
+.row-btns.stack .btn { inline-size: 100%; }
+.or { display: flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: .85rem; margin: var(--s3) 0 var(--s2); }
+.or::before, .or::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
+.google-box { display: flex; justify-content: center; min-block-size: 44px; }
+.wide-btn { inline-size: 100%; margin-top: var(--s4); }
+.btn.wide { justify-self: stretch; }

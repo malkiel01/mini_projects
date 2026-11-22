@@ -1,10 +1,10 @@
 # מה צ'אט הקוד הבא צריך לדעת
 
-עודכן: 2026-11-22, אחרי מיזוג פרוסה 03 (PR #1775). לפניה — 02 (PR #1769), 01 (PR #1766).
+עודכן: 2026-11-22, עם פרוסה 05 (קוראים וסנכרון). לפניה — 04 (#1778), 03 (#1775), 02 (#1769), 01 (#1766).
 
 ## מה בנוי
 
-פרוסות 01 (תשתית), 02 (מנוע התוכן) ו-03 (ייבוא), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
+פרוסות 01 (תשתית), 02 (מנוע התוכן), 03 (ייבוא), 04 (הקורא, הסידור והתהילים) ו-05 (חשבונות קוראים וסנכרון), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
 
 | קובץ | תפקיד |
 | --- | --- |
@@ -25,6 +25,12 @@
 | `assets/js/render.js` | `SFRender.render(html, settings)` + `bind` + `normalize` — **המנוע של הקורא (04)**. משתמש רק ב-API DOM מצומצם (ראו ראש הקובץ) |
 | `assets/js/screens/content.js` | ניהול התוכן והעורך |
 | `assets/js/router.js` | `SF.route`, `SF.onLeave(fn)` (ניקוי לפני המסך הבא), `SF.leaveGuard` (שאלה לפני יציאה) |
+| `lib/reader.php`, `screens/reader.js`, `siddur.js`, `reader-core.js` | הקורא (04): `read-*`, הקורא, הסידור, התהילים, החיפוש |
+| `assets/js/store.js` | המידע האישי במכשיר (IndexedDB `kv`). `set/del` → גם `SF.sync.note`; `setRaw/delRaw` — בלי סנכרון; `keys()` |
+| `lib/readers.php` | **חשבונות הקוראים (05)**: עוגייה `sf_reader`, `sf_reader_auth`, נעילה (`login_attempts`), מיילים, Google (JWKS → PEM), `sf_seal/unseal` (`data/secret.key`) |
+| `lib/sync.php` | `sync-push` / `sync-pull`: `rev` לקורא, tombstone, `same` / `kept` / `gone` / `bad`; note + prayer_name מוצפנים |
+| `assets/js/sync-core.js` | הלוגיקה של הסנכרון במכשיר (בלי DOM, נבדקת ב-node): רשומה ↔ פריטים, התור, מיזוג אורח |
+| `assets/js/sync.js`, `screens/account.js` | התור והתזמון, החיווי בכותרת (`#sync-chip`); האזור האישי `#/account` |
 | `tests/` | `run.php` מריץ כל `*.test.php` בתהליך משלו; `lib.php` (`call`, `ident`, `eq`); `render.mjs` — render.js ב-node עם DOM זעיר; `fixtures/` — snapshots |
 
 ## מלכודות
@@ -44,6 +50,17 @@
   להציג PDF כטקסט זורם; `kind = pdf_scan / image` — עמודים בלבד.
 - **`import-upload` בבדיקות:** `call(..., ['upload' => $path])` → `$env['upload']`. api.php לא מעביר את זה.
 - **libxml:** איך הוא פותר `‹b›‹p›` משתנה בין גרסאות — לא לבדוק מחרוזת מדויקת של פלט כזה (ראו `f-import`, `d-content`).
+- **שני עולמות:** פעולה חדשה של קורא — רמה `guest` / `account` (לא `staff`), והיא מקבלת את הקורא מ-`$env['_reader']`.
+  **כל שאילתה על מידע אישי — עם `reader_id = ?`** (טסט ב-i-sync סורק את sync.php). פריט / מכשיר של אחר — `not_found`.
+- **בבדיקות של קורא:** `rcall($m, $action, $in, '<מכשיר>', $get, $opt)` — צנצנת `sf_reader` לכל "מכשיר"; ה-CSRF מ-account-me.
+  מיילים — `$GLOBALS['sf_mail_out'] = []` לפני; הקישור בגוף. **`$x['k'] ?? 'x'` על ערך null נותן 'x'** — `array_key_exists`.
+- **סוג חדש של מידע אישי (08 תזכורות):** `reminder` כבר ב-`SF_SYNC_KINDS`; במכשיר — להוסיף ל-`syncable/itemsFor/keyOf/build`
+  ב-`sync-core.js` ובדיקה ב-`sync-core.mjs`. מוצפן? — `SF_SYNC_SEALED`.
+- **CSRF בעולם הקוראים** — `sf_same_site` (Sec-Fetch-Site / Origin) וסוג מדיה מדויק. בדיקה עם `rcall` שולחת `same-origin` כברירת מחדל.
+- **sync-push:** תקרה 5MB לקורא (`full` → `held` במכשיר) ו-120 שליחות בדקה. מיילים — בלי טקסט חופשי של משתמש.
+- **`data/secret.key`** — בלעדיו ההערות והשמות לא מתפענחים. לא למחוק, לכלול בגיבוי (10).
+- **מחיקה מלאה (10):** `readers.status = 'deleted'` + `deleted_at` — אחרי 30 יום למחוק `personal_items`, `devices`,
+  `reader_tokens`, ולהחליף את המייל (UNIQUE) — אחרת אי אפשר להירשם שוב באותו מייל.
 - `dev/open-items.json`: SF-001…SF-011. לסגור — רק המפתח (✅ ב-DevLoop). ל-SF-002 ו-SF-003 נוספו צעדי בדיקה.
 
 ## מה נשאר
@@ -52,4 +69,7 @@
 - מ-02: קריטריון 👁 11 אצל הבעלים (SF-002).
 - מ-03: קריטריונים 👁 5–6 אצל הבעלים (SF-003); 📦 קובצי ייבוא אמיתיים (§24); 11 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום
   ב-`team/decisions.md` (הבקרה).
-- הבאה לפי הלוח: 04 (הקורא על `render.js` ו-`read-*`; הגשת תמונות `files/…` לקוראים; עמודים של PDF סרוק / תמונה).
+- מ-04: 👁 1, 4, 8, 11 אצל הבעלים (SF-004).
+- מ-05: 📦 מזהה לקוח של Google (מטלה לבעלים) → 🔑 Google במסך המפתח; בדיקת מייל אמיתי (SF-005); 15 ההכרעות ⚙️ ב-
+  `team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה). המחיקה המלאה אחרי 30 יום — 10.
+- הבאה לפי הלוח: 06 (הורדות וגרסאות — מיקום קריאה בין גרסאות: `position` כבר כולל `rev` של הגרסה).

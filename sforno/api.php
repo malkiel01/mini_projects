@@ -43,6 +43,12 @@ try {
         'csrf' => (string)($_SERVER['HTTP_X_CSRF'] ?? ''),
         'ua' => (string)($_SERVER['HTTP_USER_AGENT'] ?? ''),
         'content_type' => (string)($_SERVER['CONTENT_TYPE'] ?? ''),
+        // הקוראים (05): עוגייה ו-CSRF משלהם; ה-IP — רק להגבלת ניסיונות (נשמר כ-HMAC)
+        'reader_cookie' => is_string($_COOKIE[SF_READER_COOKIE] ?? null) ? $_COOKIE[SF_READER_COOKIE] : '',
+        'reader_csrf' => (string)($_SERVER['HTTP_X_READER_CSRF'] ?? ''),
+        'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+        'sec_fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
+        'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),
     ]);
     sf_out($out, 200);
 } catch (Throwable $e) {
