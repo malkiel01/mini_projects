@@ -21,6 +21,7 @@ require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/devtasks.php';
 require_once __DIR__ . '/content.php';
 require_once __DIR__ . '/import.php';
+require_once __DIR__ . '/reader.php';
 
 /**
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type.
@@ -58,6 +59,12 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
 
         'read-titles'          => sf_read_titles(),
         'read-edition'         => sf_read_edition($get),
+        'read-catalog'         => sf_read_catalog(),
+        'read-toc'             => sf_read_toc($get),
+        'read-revision'        => sf_read_revision($get),
+        'read-search'          => sf_read_search($get),
+        'read-file'            => sf_send_file(sf_read_file_path($get)),
+        'read-pages'           => sf_send_file(sf_read_pages_path($get)),
 
         'me'                   => ['staff' => sf_staff_public($staff, $me), 'csrf' => $session['csrf'], 'version' => sf_version()],
         'logout'               => sf_session_drop((string)($env['cookie'] ?? '')) ?? [],
@@ -91,6 +98,16 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'import-apply'         => sf_import_apply($in, $me),
         'import-text-checked'  => sf_import_checked($in),
         'import-source'        => sf_send_file(sf_import_source_path($get)),
+        'customs-list'         => sf_customs_list(),
+        'custom-save'          => sf_custom_save($in),
+        'siddur-items'         => sf_siddur_items($get),
+        'siddur-item-save'     => sf_siddur_item_save($in),
+        'siddur-item-move'     => sf_siddur_item_move($in),
+        'siddur-item-available' => sf_siddur_item_available($in),
+        'customs-checks'       => sf_customs_checks($get),
+        'customs-check-approve' => sf_customs_check_approve($in, $me),
+        'content-pages-set'    => sf_content_pages_set($in),
+        'content-sample'       => sf_content_sample($me),
 
         'dev-health'           => sf_health(),
         'dev-mail-test'        => sf_mail_test($staff),

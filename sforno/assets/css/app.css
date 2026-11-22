@@ -327,3 +327,101 @@ div.sf-st-center, span.sf-st-center { display: block; text-align: center; }
 .imp-page figcaption { padding: 4px var(--s2); font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); }
 .imp-flow { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); }
 .imp-flow img { max-width: 100%; height: auto; }
+
+/* ===== הקורא (04) ===== */
+/* הסבר חד-פעמי, הודעה */
+.notice { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: var(--s2) var(--s3); margin-bottom: var(--s3);
+    background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent); border-radius: var(--r); font-size: .88rem; }
+.notice p { flex: 1 1 220px; margin: 0; }
+.notice.warn { background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-color: color-mix(in srgb, var(--star) 40%, transparent); }
+.use-row.off, .card.off { opacity: .6; }
+a.use-row { color: inherit; text-decoration: none; }
+.home-search { display: flex; justify-content: center; margin-top: var(--s3); }
+
+/* ערכות התצוגה. --rd-ink-x / --rd-bg-x — צבע שהקורא בחר (גובר) */
+body.reading { --rd-bg: var(--surface); --rd-ink: var(--ink); --rd-soft: var(--muted); background: var(--rd-bg-x, var(--rd-bg)); }
+body.reading[data-rd-theme="light"] { --rd-bg: #fff; --rd-ink: #16192b; --rd-soft: #5d6475; }
+body.reading[data-rd-theme="sepia"] { --rd-bg: #f6efdf; --rd-ink: #3b2f1e; --rd-soft: #6f5f45; }
+body.reading[data-rd-theme="dark"] { --rd-bg: #121212; --rd-ink: #e9e6df; --rd-soft: #a9a59b; }
+body.reading[data-rd-theme="contrast"] { --rd-bg: #fff; --rd-ink: #000; --rd-soft: #000; }
+body.reading[data-rd-theme="contrast"] *, body.reading[data-rd-theme="contrast"] *::before { transition: none !important; animation: none !important; box-shadow: none !important; scroll-behavior: auto !important; }
+body.reading[data-rd-theme="contrast"] .rd-text .sf-st-gray, body.reading[data-rd-theme="contrast"] .rd-text .sf-note-body { color: #000; }
+body.reading[data-rd-theme="contrast"] .sf-link { text-decoration-thickness: 2px; }
+body.rd-wide main { max-width: 1240px; }
+
+.rd-bar { position: sticky; top: calc(var(--head) + env(safe-area-inset-top)); z-index: 4; display: flex; align-items: center; gap: 2px;
+    margin: calc(-1 * var(--s2)) calc(-1 * var(--s3)) var(--s2); padding: 2px var(--s2); background: var(--surface); border-bottom: 1px solid var(--line); }
+.rd-bar .icon-btn { font-weight: 600; text-decoration: none; }
+.rd-where { flex: 1; min-width: 0; text-align: center; font-size: .8rem; color: var(--muted); }
+.rd-body { display: block; }
+.rd-main { min-width: 0; }
+.rd-text { max-width: var(--rd-width, 40em); margin: 0 auto; padding-bottom: calc(100dvh - 140px); color: var(--rd-ink-x, var(--rd-ink)); }
+.rd-text .sf-doc { font-family: var(--rd-font); font-size: var(--rd-size, 22px); font-weight: var(--rd-weight, 400); line-height: var(--rd-lh, 1.8); color: inherit; }
+.rd-text .sf-note-body, .rd-text .sf-st-gray { color: var(--rd-soft); }
+.rd-text [data-sid] { scroll-margin-top: 110px; }
+.rd-text p[data-sid], .rd-text li[data-sid] { border-radius: 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.rd-text .rd-here { outline: 2px solid var(--brand); outline-offset: 3px; }
+.rd-text [data-hl="yellow"] { background: color-mix(in srgb, #f5d000 35%, transparent); }
+.rd-text [data-hl="green"] { background: color-mix(in srgb, #2fb36b 28%, transparent); }
+.rd-text [data-hl="blue"] { background: color-mix(in srgb, #3b82f6 25%, transparent); }
+.rd-text [data-hl="pink"] { background: color-mix(in srgb, #ec4899 22%, transparent); }
+.rd-text [data-bm] { box-shadow: inset -3px 0 0 var(--star); padding-inline-start: 6px; }
+.rd-text [data-note]::after { content: ' 📝'; font-size: .7em; }
+.sf-match { background: color-mix(in srgb, var(--star) 45%, transparent); color: inherit; border-radius: 2px; }
+.sf-cond-off { display: block; margin: 2px 0; }
+span.sf-cond-off { display: inline; }
+.sf-cond-btn { border: 0; background: none; padding: 2px 4px; color: var(--rd-soft, var(--muted)); font: inherit; font-family: var(--font, system-ui); font-size: .62em; cursor: pointer; }
+.sf-cond-body { display: block; padding-inline-start: .6em; border-inline-start: 2px dotted var(--line); }
+span.sf-cond-body { display: inline; border: 0; }
+.rd-temp { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; position: sticky; top: calc(var(--head) + 46px); z-index: 3;
+    padding: 6px var(--s3); margin-bottom: var(--s2); background: color-mix(in srgb, var(--star) 18%, var(--surface)); border-radius: var(--r); font-size: .88rem; }
+.rd-temp span { flex: 1; }
+.rd-names { text-align: center; color: var(--rd-soft); font-size: .9rem; margin-bottom: var(--s2); }
+
+/* סרגל הכלים: בטלפון — נפתח ונסגר, בתוך הזרימה (לא מכסה טקסט). במחשב — סרגל צד */
+.rd-tools { display: none; padding: var(--s2) var(--s3); margin-bottom: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.rd-tools.open { display: block; }
+.rd-tools .switch { margin: 4px 0; }
+.rd-tools .list { margin-top: var(--s1); }
+@media (min-width: 1000px) {
+    .rd-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: var(--s4); align-items: start; }
+    .rd-tools { display: block; position: sticky; top: calc(var(--head) + 56px); max-height: calc(100dvh - var(--head) - 72px); overflow: auto; order: 2; }
+    .rd-tools-btn { display: none; }
+}
+
+/* מקטע יחיד, ופעולות על המקום */
+.rd-nav, .rd-act { position: fixed; inset-inline: 0; bottom: 0; z-index: 6; display: flex; align-items: center; gap: var(--s1);
+    padding: 6px var(--s2) calc(6px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); }
+.rd-nav span { flex: 1; text-align: center; font-size: .85rem; }
+.rd-act { justify-content: safe center; overflow-x: auto; scrollbar-width: none; }
+.rd-act .icon-btn { flex: none; min-width: 36px; }
+.rd-act [aria-pressed="true"] { background: var(--brand-soft); border-radius: var(--r); }
+.rd-colors { display: inline-flex; gap: 4px; padding: 0 4px; }
+.rd-color { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; }
+.rd-color[data-c="yellow"] { background: #f5d000; } .rd-color[data-c="green"] { background: #2fb36b; }
+.rd-color[data-c="blue"] { background: #3b82f6; } .rd-color[data-c="pink"] { background: #ec4899; }
+.rd-color[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface) inset; }
+.rd-range { display: flex; align-items: center; gap: var(--s2); }
+.rd-range input { flex: 1; }
+.rd-pick { display: flex; align-items: center; gap: 4px; }
+.rd-pick input[type="color"] { width: 48px; height: 36px; padding: 2px; }
+.rd-toc .use-row { padding-inline-start: calc(var(--s2) + var(--d, 0) * 16px); width: 100%; text-align: start; }
+.rd-pages { max-width: 900px; margin: 0 auto; }
+.rd-pg-bar { display: flex; align-items: center; justify-content: center; gap: var(--s1); margin-bottom: var(--s2); }
+.rd-pg { overflow: auto; touch-action: pan-x pan-y; text-align: center; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.rd-pg canvas { display: inline-block; max-width: none; }
+
+/* תהילים */
+.th-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; margin: var(--s2) 0 var(--s3); }
+.th-ch { display: flex; align-items: center; justify-content: center; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); color: var(--ink); text-decoration: none; font-family: var(--font-text, serif); font-size: 1.05rem; }
+.th-ch.done { background: color-mix(in srgb, var(--ok) 16%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
+.th-ch.done::after { content: ' ✓'; font-size: .7em; color: var(--ok); }
+.th-ch.off { color: var(--muted); opacity: .5; }
+
+/* בדיקת מנהגים */
+.ck-grid { display: grid; gap: var(--s3); }
+.ck-preview { min-width: 0; }
+.ck-doc { padding: var(--s3); background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+@media (min-width: 900px) { .ck-grid { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
+fieldset.group { border: 0; padding: 0; margin: 0 0 var(--s3); }

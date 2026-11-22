@@ -55,6 +55,9 @@ window.SF = window.SF || {};
         return el;
     };
 
+    /** replaceChildren בלי null / false (רכיב שלא מוצג). */
+    SF.put = (el, ...kids) => { el.replaceChildren(...kids.flat(Infinity).filter(k => k !== null && k !== undefined && k !== false && k !== '')); return el; };
+
     let toastTimer = 0;
     SF.toast = function toast(msg, isErr = false) {
         const t = document.getElementById('toast');
