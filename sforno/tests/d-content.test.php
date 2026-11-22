@@ -15,6 +15,19 @@ $ok = function (array $r, string $name): array {
     return $r[1];
 };
 $msgs = fn(array $list) => implode(' | ', array_column($list, 'msg'));
+/** הרכיבים של HTML מנוקה, כפי שמפרש אותם DOMDocument: [[tag, [attr => value]], …] — בלי תלות בסריאליזציה של libxml. */
+$els = function (?string $html): array {
+    if ($html === null) return [];
+    $root = sf_mk_parse($html);
+    $out = [];
+    foreach ((new DOMXPath($root->ownerDocument))->query('.//*', $root) as $e) {
+        $a = [];
+        foreach ($e->attributes as $x) $a[$x->nodeName] = $x->value;
+        $out[] = [$e->localName, $a];
+    }
+    return $out;
+};
+
 
 // ── כותר ומהדורה ─────────────────────────────────────────────
 $t = $ok(call('POST', 'content-title-save', ['name' => 'סידור עדות המזרח', 'kind' => 'siddur', 'author' => 'דוגמה'], $A), 'יצירת כותר')['title'];
@@ -87,7 +100,7 @@ check('C3 תנאים סותרים (אותה קבוצה) → חוסם פרסום'
 $cond = sf_mk_clean('<sf-cond rule="eretz"><sf-cond rule="minyan"><p>x</p></sf-cond></sf-cond>', sf_mk_ctx(1));
 eq($cond['warnings'], [], 'C3 שני תנאים מקבוצות שונות — תקין');
 $sty = sf_mk_clean('<sf-style v="pink">x</sf-style><sf-style v="bold">y</sf-style>');
-check('C3 סגנון לא מהרשימה: הוסר, ⚠️ לא חוסמת', $sty['html'] === 'x<sf-style v="bold">y</sf-style>' && count($sty['warnings']) === 1 && !$sty['warnings'][0]['blocks'], $sty);
+check('C3 סגנון לא מהרשימה: הוסר, ⚠️ לא חוסמת', $els($sty['html']) === [['sf-style', ['v' => 'bold']]] && str_starts_with((string)$sty['html'], 'x<') && count($sty['warnings']) === 1 && !$sty['warnings'][0]['blocks'], $sty);
 
 // מתקנים ומפרסמים: קישור לפסקה שקיימת, תנאי קיים
 $fixed = str_replace(['zzzz9999', 'no-such'], [$sids2[1], 'eretz'], $r[1] ? $view()['draft']['html'] : '');
@@ -227,11 +240,16 @@ foreach ($evil as $i => $in) {
     }
 }
 $c = sf_mk_clean('<sf-section title="&quot;&gt;&lt;script&gt;">x</sf-section>');
-check('תכונה עם מרכאות נשמרת כטקסט, מקודדת', str_contains((string)$c['html'], "title='\"&gt;&lt;script&gt;'"), $c['html']);
+$e = $els($c['html']);
+// לא בודקים איך libxml מקודד (גרסאות שונות — מרכאות שונות / ישויות שונות), אלא את התכונה הבטיחותית:
+check('תכונה עם מרכאות: רכיב אחד, והערך חוזר בדיוק בפענוח', count($e) === 1 && $e[0][0] === 'sf-section' && ($e[0][1]['title'] ?? null) === '"><script>', $c['html']);
+check('תכונה עם מרכאות: בפלט אין ‹script› לא מקודד', stripos((string)$c['html'], '<script') === false, $c['html']);
+check('תכונה עם מרכאות: ניקוי שני — אותם רכיבים ואותו ערך', $els(sf_mk_clean((string)$c['html'])['html']) === $e);
 $c = sf_mk_clean('<p dir="rtl" lang="he">ok</p>');
-check('dir ו-lang תקינים נשמרים', str_contains((string)$c['html'], 'dir="rtl" lang="he"'), $c['html']);
+$e = $els($c['html']);
+check('dir ו-lang תקינים נשמרים', ($e[0][1]['dir'] ?? null) === 'rtl' && ($e[0][1]['lang'] ?? null) === 'he', $c['html']);
 $c = sf_mk_clean('<img src="files/pic.png" alt="תמונה">');
-check('תמונה מקובצי הספר נשמרת', str_contains((string)$c['html'], '<img src="files/pic.png" alt="תמונה">'), $c['html']);
+check('תמונה מקובצי הספר נשמרת', $els($c['html']) === [['img', ['src' => 'files/pic.png', 'alt' => 'תמונה']]], $c['html']);
 
 // ── מילון החיפוש ─────────────────────────────────────────────
 $r = $ok(call('POST', 'content-alias-add', ['term' => 'מִצְוָה', 'alias' => 'מצווה'], $A), 'מילון: הוספה');
