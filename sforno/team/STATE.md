@@ -2,7 +2,7 @@
 
 - **איפה עומדים (22.11 ~17:00 UTC, בקרה 2):** אפיון מלא ומוכרע (00–11, ש1–ש6 — `team/decisions.md`). קוד ברצף עד סיום
   (הבעלים 22.11). **באתר:** 01 (#1766), 02 (#1770 + #1773). **03 ייבוא** — מוזגה (#1776, 6fff007), פריסה `conclusion: success` (ריצה 45045998999, 16:55) — 03 באתר.
-  הכרעות ⚙️ של 03 — רשומות ב-decisions. **קוד 04 פתוח:** `session_018g4NYEHjhpu7iYHPu1BWPq`, ענף `claude/sforno-04-reader` (ממזג את #1777).
+  הכרעות ⚙️ של 03 — רשומות ב-decisions. **04 מוזגה** (#1780 דרך #1778, 43dc10d). **קוד 05 פתוח:** `session_018g4NYCmM4wdPP1WjWedXzg`, ענף `claude/sforno-05-readers-sync`. SF-004 נשלחה למטלות.
   SF-003 נשלחה למטלות.
 - **הצעד הבא, לפי הסדר:**
   1. (נעשה) 03 באתר.
@@ -16,4 +16,4 @@
 - **רקע:** הריפו הישן `malkiel01/sforno` — קוד ישן כרקע בלבד, לא נמחק. `sforno.mbe-plus.com` קיים.
 - **מכסה:** אזהרה שבועית עד ~27.11. Opus בלבד, מעט סוכני משנה, מעט מיזוגים.
 - **צוות:** בקרה (2) `session_018g4NYE5chJ7yafGbETDiNn` (מ-16:53; בקרה 1 `session_018g4NYGA2fhgWP6PkcJ8ZCx` — לארכב); אפיון `session_018g4NYF1YtreoYJt48ZHQ52` (רדום);
-  מטלות `session_018g4NYFB9byAhqYVJfEq9nW`; קוד 01/02/03 — סיימו; קוד 04 `session_018g4NYEHjhpu7iYHPu1BWPq`. שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51, לבקרה 2); הישן `trig_01VBKifEEXot2izcpMcFX6Ct` כבוי.
+  מטלות `session_018g4NYFB9byAhqYVJfEq9nW`; קוד 01/02/03 — סיימו; קוד 04 — סיים; קוד 05 `session_018g4NYCmM4wdPP1WjWedXzg`. שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51, לבקרה 2); הישן `trig_01VBKifEEXot2izcpMcFX6Ct` כבוי.
