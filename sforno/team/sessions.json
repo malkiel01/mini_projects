@@ -1,7 +1,8 @@
 {
-  "note": "מתעדכן בידי צ'אט הבקרה",
-  "spec": null,
+  "note": "מתעדכן בידי צ'אט הבקרה. code=null — צ'אט קוד לא נפתח עד אישור הבעלים",
+  "spec": "session_018g4NYF1YtreoYJt48ZHQ52",
   "code": null,
   "control": "session_018g4NYGA2fhgWP6PkcJ8ZCx",
-  "tasks": null
+  "tasks": "session_018g4NYFB9byAhqYVJfEq9nW",
+  "control_trigger": "trig_01VBKifEEXot2izcpMcFX6Ct"
 }
