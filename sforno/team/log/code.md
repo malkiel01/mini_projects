@@ -518,3 +518,61 @@ run.php 10/10. בדפדפן: `tests/browser/offline.cjs` 26 (מצב טיסה, נ
     ‎2001::/32, תיעוד ‎2001:db8::/32, ULA, link-local, site-local ‎fec0::/10, multicast ‎ff00::/8; IPv4 — גם ‎198.18/15 ו-‎224/4 ומעלה.
 
 **לא נבנה:** העלאת `.sfbk` דרך מסך המפתח (השחזור מקובץ שהורד — דרך Terminal; מנהל הקבצים — רק לגיבויים שעוד בשרת).
+
+## 2026-11-22 — 11 השקה, החלק שלא משנה דבר באתר החי (ענף `claude/sforno-11-launch`)
+
+לפי הבקרה: רק מה שלא נוגע בסאב-דומיין עד "עוברים" (owner-brief §2.3). נבנו §1.2–1.3 של `docs/spec/11-launch.md` (המצב המנותק),
+`dev/launch-check.md`, וקריטריונים 🤖 2, 3 — `tests/o-launch.test.php` (82). run.php 15/15.
+
+**⚙️ הכרעות:**
+1. **מתג אחד — `data/launch.json`.** בלי הקובץ: `sso-start` / `sso-finish` / `platform-key` מחזירות `unknown_action` (404), זיהוי
+   המנהל כמו ב-01, לא נוצר מפתח ולא יוצאת בקשה (נבדק בטסט). `"detached": false` — רק `platform-key` (לרישום בפלטפורמה לפני
+   המעבר). `"detached": true` + `platform` (https, מסתיים ב-/), `sso_key` (base64url, 32 בתים), `return` (https) — הכניסה המנותקת.
+   מנותקת וחסר שדה — 503 `login_unavailable` לכל מנהל (נכשל סגור). הקובץ נכנס לגיבוי (`SF_BACKUP_FILES`).
+2. **רמת גישה חדשה `launch`** (ב-`SF_NOT_STAFF`), לא `public` — app.json לא משתנה (לא בתחום), והטסט שמשווה את `public` לנתב נשאר.
+   בתוך הכלים הדיגיטליים השער מגביל אותן לצוות, והן מחזירות 404 בכל מקרה.
+3. **state** — 48 hex אקראיים: בעוגיית `sf_sso` (HttpOnly, Secure, Lax, 10 דקות) ו-sha256 שלו ב-`meta` (`sso_state:<hash>` → תפוגה).
+   ב-`sso-finish`: נמחק תמיד (גם בכישלון) — חד-פעמי; חייב להיות שווה לעוגייה, לבקשה ולטוקן. כך גם טוקן שנגנב לא נכנס פעמיים
+   ולא בדפדפן אחר. בלי מיגרציה — `meta` מספיק.
+4. **החזרה מהפלטפורמה — לדף עצמו** (`return` = כתובת הכניסה של ספורנו, `?token=&state=`): `app.js` מנקה את הכתובת מיד
+   (`history.replaceState`) ושולח `sso-finish`. api.php נשאר JSON בלבד, בלי redirect.
+5. **בדיקות הטוקן — כל אחת של sso.md §2, ועוד `iss`** = `platform` של launch.json, ו-`sub` ספרות. אחרי כן — אותו ניקוי של
+   `sf_platform_identity`. הסיבה ביומן (`staff.sso_fail` `{why}`), לעולם לא הטוקן.
+6. **"מפתח" לא משתנה בכניסה המנותקת** (`keep_developer`): בטוקן אין `platform_admin`. מנהל חדש מ-sso — לא מפתח. המפתחים
+   מגיעים עם `data/` שמועתקת (המבחן של 00 §3.3).
+7. **grant_status** — POST חתום כמו embed.md §2 (`grant_status\n<time>\n<nonce>\n<sha256(body)>`, `kid.base64`), גוף `{"sub"}`.
+   בכניסה — תמיד טרי; בכל בקשה אחרי כן — מטמון 5 דקות (`meta.sso_grant:<sub>`). `false` → ה-session נמחק, 403 `no_grant` (הנוסח
+   של auth.md §3). לא עונה / לא 200 / לא boolean → 503, וה-session **נשאר** (תקלה זמנית אינה ביטול).
+8. **המפתח של ספורנו** — Ed25519, נוצר בבקשה הראשונה של `platform-key` / grant_status, מוצפן ב-`meta.sso_sign_key` (`sf_seal`).
+   יש ערך ולא נפתח — `storage`, לא מחליפים בשקט. `platform-key` מחזיר רק את הציבורי, במבנה של `key_url`.
+9. **sso-start / sso-finish** — POST בלי אסימון, כמו guest ב-05: `application/json` מדויק + `sf_same_site`; 30 ל-10 דקות ל-IP.
+   ההתחברות מוחקת session קודם בדפדפן ופותחת חדש (`sf_session_for`).
+10. **זהות מהשער גוברת** — גם כשמנותקת, `PLATFORM_USER` תקין הולך בדרך של 01.
+11. מסך: `SF.fail` מציג "כניסה עם הכלים הדיגיטליים" ל-`sso_required` / `sso`; שגיאות חדשות: `sso_required` 401, `sso` 401,
+    `no_grant` 403. `sw.js` — BUILD עודכן (router.js, app.js).
+
+**לא נבנה:**
+- **שינוי `app.json`** (`gate`, `restricted`, `public`, `sso.return`, `grant_status.key_url`) — לא בתחום; ב-`team/handoff/code.md`.
+- **הכניסות של הקוראים לפי `sso.php?action=config` → `login`** (11 §1.2, משפט אחרון) — לא בתחום שהבקרה נתנה; הקוראים נכנסים
+  כמו ב-05. ב-handoff.
+- **מסך ההגדרה של launch.json** — הקובץ נכתב ידנית (מנהל הקבצים) ביום המעבר; אין עורך בממשק.
+- **"ניתוק חשבון" / יציאה מהפלטפורמה במנותקת** — יציאה מספורנו לא נוגעת בפלטפורמה (auth.md §5), כמו שהוא.
+- **קריטריונים 👁 1, 4, 5** — אחרי "עוברים" / אצל הבעלים; `dev/launch-check.md` מלא במה שידוע, אף שורה עוד לא ✅ מלא.
+
+## 2026-11-22 — 11 תוספת (ענף `claude/sforno-11-fix`, לבקשת הבקרה (3))
+
+המתזמן **כל דקה** (ההכרעה מ-08) — במקום `*/5`:
+12. `sf_cron_info.every` = `* * * * *`; ההנחיה במסך ⚙️ רקע (`dev.js`) ובבדיקת התקינות — "כל דקה". בדיקת התקינות "המתזמן" מתריעה
+    (⚠️) אחרי **5 דקות** בלי ריצה מוצלחת (היה 15). b-jobs +5.
+
+**לא שונה:** לוח הבקרה (`ops.php`, ❌ אחרי 15 דקות) ו-`reminders-status` לקוראים (15 דקות) — סף "תקלה", לא "איחור"; וההנחיה
+ב-`docs/spec/01-foundation.md:247` ("כל 5 דקות") — של האפיון.
+
+## 2026-11-22 — 11 תיקון (ביקורת סבב 1, `team/reviews/11-launch.md`, אותו ענף `claude/sforno-11-fix`)
+
+13. **🟡1** `app.js`: חזרה עם `?state=` ו-`token` / `error` — הכתובת נשמרת; `sso-finish` שמחזיר `unknown_action` (אין launch.json) ←
+    הכתובת חוזרת כמו שהייתה וטעינה רגילה, בלי מסך שגיאה. `browser/ops.cjs` +2.
+14. **🟡2** נוהל הסרת "מפתח" במנותקת — `dev/launch-check.md` (ביטול הרשאה / CLI) + handoff.
+15. **⚪3** state — `DELETE … WHERE k = ? AND v >= now` + `rowCount() === 1`: אטומי, שתי בקשות במקביל ← אחת. o-launch +3.
+16. **⚪4** זוג המפתחות — `INSERT` (k מפתח ראשי); התנגשות ← קוראים את מה שנוצר. **⚪5** handoff: `platform` = `issuer` מ-`sso.php?action=key`.
+    **⚪6** הטוקן ב-query — חריג מתועד ב-`launch-check.md`. **⚪7** `sessionStorage` ב-`router.js` — בתוך try.

@@ -58,11 +58,27 @@
 
     /** הודעה אחידה לשגיאת רשת / 401 / 403 / 503, עם "נסו שוב". */
     SF.fail = function fail(el, e) {
-        const icon = { network: '📡', login_required: '🔑', suspended: '⛔', forbidden: '⛔', login_unavailable: '⏳', storage: '⏳', upgrading: '⏳' }[e && e.code] || '⚠️';
+        const icon = { network: '📡', login_required: '🔑', sso_required: '🔑', sso: '🔑', suspended: '⛔', forbidden: '⛔', no_grant: '⛔', login_unavailable: '⏳', storage: '⏳', upgrading: '⏳' }[e && e.code] || '⚠️';
+        // 11: המצב המנותק — אין שער, המנהל נכנס בכפתור (lib/sso.php)
+        const sso = e && (e.code === 'sso_required' || e.code === 'sso');
         el.replaceChildren(SF.h('div', { class: 'fail', role: 'alert' },
             SF.h('div', { class: 'ic', 'aria-hidden': 'true' }, icon),
             SF.h('p', null, (e && e.message) || 'משהו השתבש'),
-            SF.h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, 'נסו שוב')));
+            sso ? SF.h('button', { class: 'btn primary', type: 'button', onclick: SF.ssoStart }, 'כניסה עם הכלים הדיגיטליים')
+                : SF.h('button', { class: 'btn primary', type: 'button', onclick: () => location.reload() }, 'נסו שוב')));
+    };
+
+    /** 11: "כניסה עם הכלים הדיגיטליים" — השרת נותן את הכתובת (עם state חד-פעמי בעוגייה), והדפדפן עובר אליה. */
+    SF.ssoStart = async function ssoStart(ev) {
+        if (ev && ev.currentTarget) ev.currentTarget.disabled = true;
+        try {
+            const r = await SF.api('sso-start', { body: {} });
+            try { sessionStorage.setItem('sf_sso_hash', location.hash || '#/admin'); } catch (e2) { /* גלישה פרטית — חוזרים ל-#/admin */ }
+            location.assign(r.url);
+        } catch (e) {
+            SF.toast(e.message, true);
+            if (ev && ev.currentTarget) ev.currentTarget.disabled = false;
+        }
     };
 
     window.addEventListener('hashchange', () => SF.render());

@@ -17,6 +17,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/platform.php';
+require_once __DIR__ . '/sso.php';
 
 const SF_SESSION_TTL = 30 * 86400;
 
@@ -61,7 +62,8 @@ function sf_staff_resolve(array $id): array
     }
     $verified = ($set['email'] ?? $s['email']) === $id['email'] && $id['email_verified'] ? 1 : 0;
     if ($verified !== (int)$s['email_verified']) $set['email_verified'] = $verified;
-    if ((int)$s['is_developer'] !== (int)$id['platform_admin']) {
+    // 11: בכניסה המנותקת (sso) אין platform_admin בזהות — "מפתח" נשאר כמו שהוא
+    if (empty($id['keep_developer']) && (int)$s['is_developer'] !== (int)$id['platform_admin']) {
         $set['is_developer'] = (int)$id['platform_admin'];
         sf_audit($id['platform_admin'] ? 'staff.developer_on' : 'staff.developer_off', 'staff', $s['pid'], [], actor: null);
     }
@@ -121,6 +123,8 @@ function sf_authenticate(array $env): array
     $cookie = (string)($env['cookie'] ?? '');
     $id = sf_platform_identity($raw);
     if ($id === null) {
+        // 11: מנותקת (data/launch.json) — אין שער; ה-session מהכניסה עם הכלים הדיגיטליים + grant_status (lib/sso.php)
+        if (sf_detached()) return sf_authenticate_detached($env);
         // בלי זהות מהשער: יציאה מהפלטפורמה = יציאה מכאן
         sf_session_drop($cookie);
         if (sf_platform_mode($raw) !== 'connected') sf_fail('login_unavailable');

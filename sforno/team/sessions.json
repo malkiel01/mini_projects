@@ -1,11 +1,11 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה. צ'אט קוד חדש לכל פרוסה",
   "spec": "session_018g4NYF1YtreoYJt48ZHQ52",
-  "code": "session_018g4NYDbzXpfJJokyWCbTxY",
+  "code": "session_018g4NYGwdZorv6oW8J6WDtx",
   "control": "session_018g4NYFaERcGPs7d3j8QKsZ",
   "tasks": "session_018g4NYFB9byAhqYVJfEq9nW",
   "control_trigger": "trig_0129DApgnnEgTr2g3BDUXG6M",
-  "code_slice": "10-operations",
+  "code_slice": "11-launch",
   "code_history": [
     {
       "slice": "01-foundation",
@@ -51,6 +51,11 @@
       "slice": "09-store",
       "session": "session_018g4NYE2kJZPUNra69Ndaac",
       "pr": 1798
+    },
+    {
+      "slice": "10-operations",
+      "session": "session_018g4NYDbzXpfJJokyWCbTxY",
+      "pr": 1801
     }
   ],
   "control_history": [

@@ -72,6 +72,16 @@ eq($view['counts']->failed ?? ($view['counts']['failed'] ?? null), 1, 'מסך ה
 [$st, $hl] = call('GET', 'dev-health', [], $dev);
 eq(array_column($hl['checks'], 'state', 'id')['queue'], 'bad', 'בדיקת תור הרקע: יש failed → ❌');
 eq(array_column($hl['checks'], 'state', 'id')['cron'], 'ok', 'בדיקת המתזמן: רץ עכשיו → ✅');
+// 08 / 11-fix: המתזמן כל דקה — ההנחיה במסך, ו-5 דקות בלי ריצה מוצלחת = ⚠️
+eq($r[1]['cron']['every'] ?? null, '* * * * *', 'המתזמן: כל דקה');
+sf_meta_set('cron_last_ok_at', sf_iso(time()));
+$GLOBALS['sf_time'] = time() + 240;
+eq(array_column(call('GET', 'dev-health', [], $dev)[1]['checks'], 'state', 'id')['cron'], 'ok', 'בדיקת המתזמן: 4 דקות → עדיין ✅');
+$GLOBALS['sf_time'] = time() + 360;
+$cronChk = array_column(call('GET', 'dev-health', [], $dev)[1]['checks'], null, 'id')['cron'];
+eq($cronChk['state'], 'warn', 'בדיקת המתזמן: 6 דקות בלי ריצה → ⚠️');
+check('בדיקת המתזמן: ההנחיה — כל דקה', str_contains((string)json_encode($cronChk, JSON_UNESCAPED_UNICODE), 'כל דקה'), $cronChk);
+unset($GLOBALS['sf_time']);
 eq(call('POST', 'dev-job-retry', ['job' => $pid], $dev)[0], 200, 'ניסיון חוזר');
 eq([$job()['status'], (int)$job()['attempts']], ['pending', 0], 'ניסיון חוזר → pending מאפס');
 eq(call('POST', 'dev-job-cancel', ['job' => $pid], $dev)[0], 200, 'ביטול');

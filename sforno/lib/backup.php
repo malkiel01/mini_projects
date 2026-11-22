@@ -25,7 +25,7 @@ require_once __DIR__ . '/health.php';
 
 const SF_BACKUP_KEEP = 30 * 86400;
 const SF_BACKUP_VERIFY_EVERY = 30 * 86400;
-const SF_BACKUP_FILES = ['secret.key', 'vapid.json', 'woo.json', 'cron.token', 'db.json'];
+const SF_BACKUP_FILES = ['secret.key', 'vapid.json', 'woo.json', 'cron.token', 'db.json', 'launch.json'];
 const SF_BACKUP_DIRS = ['sources', '_dev'];
 const SF_BACKUP_NAME = '/^sforno-\d{8}-\d{6}-[a-z0-9]{6}\.zip\z/';
 const SF_BACKUP_ENTRY = '~^(sforno\.sqlite|manifest\.json|[A-Za-z0-9._-]+\.(key|json|token)|(sources|_dev)(/[A-Za-z0-9._-]+)+)\z~';
