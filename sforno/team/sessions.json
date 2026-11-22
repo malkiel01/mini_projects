@@ -1,11 +1,11 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה. צ'אט קוד חדש לכל פרוסה",
   "spec": "session_018g4NYF1YtreoYJt48ZHQ52",
-  "code": "session_018g4NYGA5ddhLd4pEz9FEaP",
+  "code": "session_018g4NYEei2TM8xj19pgRpTF",
   "control": "session_018g4NYE5chJ7yafGbETDiNn",
   "tasks": "session_018g4NYFB9byAhqYVJfEq9nW",
   "control_trigger": "trig_01K2CyS2tym5Vs811ugPEx73",
-  "code_slice": "06-downloads",
+  "code_slice": "07-calendar",
   "code_history": [
     {
       "slice": "01-foundation",
@@ -31,6 +31,11 @@
       "slice": "05-readers-sync",
       "session": "session_018g4NYCmM4wdPP1WjWedXzg",
       "pr": 1784
+    },
+    {
+      "slice": "06-downloads",
+      "session": "session_018g4NYGA5ddhLd4pEz9FEaP",
+      "pr": 1788
     }
   ],
   "control_history": [
