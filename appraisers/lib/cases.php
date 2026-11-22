@@ -245,6 +245,8 @@ function apr_case_update(array $ctx, array $in): array
         if (!$changed) return [];
         apr_exec('UPDATE cases SET ' . implode(', ', array_map(fn($k) => "$k = ?", array_keys($set))) . ', updated_at = ? WHERE id = ?', [...array_values($set), apr_now(), $c['id']]);
         apr_case_audit($c, 'case.update', 'case', null, ['fields' => $changed]);   // שמות השדות בלבד — לא התוכן
+        // הדגל "מתוכנן שיפוץ" השתנה אחרי שהתיק נפתח ← סקירה מחדש של חלופת "אחרי שיפוץ" (16 §7)
+        if (in_array('flags', $changed, true)) apr_alts_on_flags($c, json_decode((string)$c['flags'], true) ?: [], json_decode($set['flags'], true) ?: [], apr_actor());
         return [];
     });
 }
@@ -402,6 +404,8 @@ function apr_case_start_tx(array $ctx, array $c, array $adj): array
         foreach ($plan['alerts'] as $a) $snap['rules'][$a['rule']['key']] = $a['rule']['title'];
         // מקטע "מקורות" של הפרופיל (09 §8): auto / ask יוצרים משימה ושורת בדיקה — שום דבר אינו רץ מול אתר חיצוני
         apr_sources_on_start($c, $content, apr_case_plan_input($c));
+        // חלופות השווי של התיק (16 §4): "מצב קיים", ועם הדגל "מתוכנן שיפוץ" — גם "בהנחת השלמת השיפוץ"
+        apr_alts_seed($c, apr_case_plan_input($c)['flags'], (int)$ctx['user']['id']);
         apr_exec("UPDATE cases SET status = 'collecting', profile_version_id = ?, plan_snapshot = ?, updated_at = ? WHERE id = ?", [$version, json_encode($snap, JSON_UNESCAPED_UNICODE), apr_now(), $c['id']]);
         apr_case_audit($c, 'case.start', 'case', null, ['version' => $snap['version'], 'requirements' => count($snap['requirements']), 'tasks' => count($snap['tasks']), 'skipped' => count($snap['skipped'])]);
         return ['status' => 'collecting', 'requirements' => count($snap['requirements']), 'tasks' => count($snap['tasks'])];

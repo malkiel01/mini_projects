@@ -83,6 +83,9 @@ async function viewCases(pid, sub, arg) {
     if (pid && sub === 'comps' && arg) return viewComp(pid, arg);
     if (pid && sub === 'compset' && arg) return viewCompSet(pid, arg);
     if (pid && sub === 'compimport' && arg) return viewCompImport(pid, arg);
+    if (pid && sub === 'alt' && arg) return viewAlt(pid, arg);
+    if (pid && sub === 'calcsheet' && arg) return viewCalcSheet(pid, arg);
+    if (pid && sub === 'renovation') return viewRenovation(pid);
     if (pid && sub === 'check' && arg) return viewCheck(pid, arg);
     if (pid && sub === 'planning' && arg) return viewPlanningItem(pid, arg);
     if (pid && sub === 'file') return arg ? viewFile(pid, arg) : viewCase(pid, 'reqs');

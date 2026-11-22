@@ -305,7 +305,7 @@ $K3 = $add($avi, $C, ['price' => 1500000]);
 $o1 = $view($avi, $K1)[1]['comp'];
 $o2 = $view($avi, $K2)[1]['comp'];
 $o3 = $view($avi, $K3)[1]['comp'];
-eq([$o1['values']['price'], $o1['values']['area'], $o1['values']['floor'], $o1['values']['rooms'], $o1['values']['build_year'], $o1['values']['condition'], $o1['status'], $o1['weight'], $o1['search'],
+eq([$o1['values']['price'], $o1['values']['area'], $o1['values']['floor'], $o1['values']['rooms'], $o1['values']['build_year'], $o1['values']['condition'], $o1['status'], array_key_exists('weight', $o1) ? 'per-comp weight' : null, $o1['search'],
     $o2['values']['price'], $o3['values']['deal_date'], $o3['values']['area'], $o3['values']['area_kind'], $o3['values']['currency'], $o1['missing'], $o3['missing'], $krow($K3)['area'], $krow($K3)['floor']],
     ['2000000', '80', 2, null, null, null, 'candidate', null, $S1, '2200000.5', null, null, 'unknown', 'ILS', ['property_type', 'rooms', 'floors_total', 'build_year', 'condition'],
         ['deal_date', 'address_text', 'locality', 'property_type', 'area', 'rooms', 'floor', 'floors_total', 'build_year', 'condition'], null, null],
@@ -404,7 +404,7 @@ eq([$del[0], $audit('comp.adj_delete', $K1)[0]['meta']['from']['label'], $setVie
     [200, 'זמן', '212000000', 'not_found', 2, true], 'התאמה שנמחקה יוצאת מהחישוב, והערך שהיה נרשם ביומן; ההיסטוריה של העסקה מוחזרת במלואה');
 
 // משקולות — 15-A8 דרך ה-API, ו-§10.13
-$wSet = fn(string $as, string $k, mixed $w) => call('POST', 'comp-weight', ['comp' => $k, 'rev' => $rev($k), 'weight' => $w], $as);
+$wSet = fn(string $as, string $k, mixed $w) => call('POST', 'comp-weight', ['set' => $G, 'comp' => $k, 'rev' => $grev($G), 'weight' => $w], $as);      // 16: המשקל הוא של העסקה בקבוצה
 call('POST', 'comp-set-save', ['set' => $G, 'rev' => $grev($G), 'name' => 'כללי', 'unit_basis' => 'total', 'method' => 'weighted', 'rounding' => 'none'], $avi);
 $blocked0 = $setView($avi, $G)[1]['summary'];
 $wSet($avi, $K1, '1');
@@ -416,7 +416,7 @@ $wSet($avi, $K2, '75');
 $w2575 = $setView($avi, $G)[1];
 eq([[$blocked0['weights_block'], $blocked0['result'], $blocked0['mean']['nis']], [$blocked1['weights_block'], $blocked1['rounded']], $w13['summary']['rounded'], $w2575['summary']['rounded'], $rowOf($w13, $K2)['share'], $rowOf($w2575, $K1)['share'],
     code($wSet($avi, $K1, '-1')), code($wSet($avi, $K1, 'abc')), $wSet($avi, $K1, '0')[0], $setView($avi, $G)[1]['summary']['rounded'], $wSet($avi, $K2, 0)[0], $setView($avi, $G)[1]['summary']['weights_block'], $audit('comp.weight', $K1)[0]['meta']],
-    [['weight_missing', null, '2120000'], ['weight_missing', null], '214500000', '214500000', '75.00', '25.00', 'comp_weight', 'comp_weight', 200, '217000000', 200, 'weights_zero', ['from' => null, 'to' => '1']],
+    [['weight_missing', null, '2120000'], ['weight_missing', null], '214500000', '214500000', '75.00', '25.00', 'comp_weight', 'comp_weight', 200, '217000000', 200, 'weights_zero', ['set' => $G, 'from' => null, 'to' => '1']],
     '15-A8 משקולות 1, 3 נותנות אותה תוצאה כמו 25, 75; בלי משקל לאחת ← נחסם, והממוצע הרגיל עדיין מוצג; §10.13 משקל שלילי נדחה, ואפס לכולן נחסם');
 $wSet($avi, $K1, null);
 $wSet($avi, $K2, null);
@@ -513,7 +513,7 @@ $E = [];
 foreach (['excluded', 'pending', 'weight', 'adj', 'plain'] as $i => $what) {
     $E[$what] = $add($tal, $C, ['price' => (string)(700000 + $i), 'deal_date' => '2023-01-0' . ($i + 1)])[1]['comp'];
     if ($what === 'excluded' || $what === 'pending') $status($avi, $E[$what], $what, 'נימוק של השמאי');
-    if ($what === 'weight') call('POST', 'comp-weight', ['comp' => $E[$what], 'rev' => $rev($E[$what]), 'weight' => '2'], $avi);
+    if ($what === 'weight') { $status($avi, $E[$what], 'selected'); $wSet($avi, $E[$what], '2'); $status($avi, $E[$what], 'candidate'); }      // משקל נקבע לעסקה שנבחרה, בקבוצה; אחר כך חזרה למועמדת
     if ($what === 'adj') $adjSave($avi, $E[$what], $okAdj);
 }
 $delAs = fn(string $as, string $k) => call('POST', 'comp-delete', ['comp' => $k, 'rev' => $rev($k), 'reason' => 'ניקוי'], $as);
@@ -646,7 +646,7 @@ $T1 = $add($tal, $C, ['price' => '1000000', 'deal_date' => '2024-05-05'])[1]['co
 $deny = [];
 foreach ([$tal, $noa] as $who) {
     $deny[] = [code($status($who, $T1, 'selected')), code($status($who, $T1, 'excluded', 'נימוק')), code($adjSave($who, $T1, $okAdj)), code(call('POST', 'comp-adj-delete', ['comp' => $K1, 'rev' => $rev($K1), 'adj' => $A1], $who)),
-        code(call('POST', 'comp-adj-order', ['comp' => $K1, 'rev' => $rev($K1), 'order' => [$A2, $A1]], $who)), code(call('POST', 'comp-weight', ['comp' => $T1, 'rev' => $rev($T1), 'weight' => '1'], $who)),
+        code(call('POST', 'comp-adj-order', ['comp' => $K1, 'rev' => $rev($K1), 'order' => [$A2, $A1]], $who)), code(call('POST', 'comp-weight', ['set' => $G, 'comp' => $T1, 'rev' => $grev($G), 'weight' => '1'], $who)),
         code(call('POST', 'comp-set-save', ['case' => $C, 'unit_basis' => 'total', 'method' => 'mean', 'rounding' => 'none'], $who)), code(call('POST', 'comp-set-save', ['set' => $G, 'rev' => $grev($G), 'unit_basis' => 'total', 'method' => 'median', 'rounding' => 'none'], $who)),
         code(call('POST', 'comp-set-conclude', ['set' => $G, 'rev' => $grev($G), 'value' => '1', 'reason' => 'x'], $who)), code(call('POST', 'comp-set-delete', ['set' => $G, 'rev' => $grev($G)], $who)),
         call('POST', 'comp-note', ['comp' => $T1, 'rev' => $rev($T1), 'note' => 'הערה ' . bin2hex(random_bytes(2))], $who)[0], $list($who, $C)[1]['perms']];
@@ -708,7 +708,7 @@ eq([code(call('POST', 'comp-add', ['case' => $C, 'values' => ['price' => 1]], $a
 $n0 = $snap();
 call('POST', 'case-status', ['case' => $C, 'status' => 'closed', 'reason' => 'סיום'], $avi);
 $closed = [code($add($avi, $C, ['price' => 1])), code(call('POST', 'comp-search-add', ['case' => $C, 'source_text' => 'x'], $avi)), code(call('POST', 'comp-search-update', ['search' => $S1, 'result_count' => 3], $avi)),
-    code(call('POST', 'comp-correct', ['comp' => $K1, 'rev' => $rev($K1), 'changes' => ['price' => '1'], 'reason' => 'x'], $avi)), code($status($avi, $K3, 'selected')), code(call('POST', 'comp-weight', ['comp' => $K1, 'rev' => $rev($K1), 'weight' => '1'], $avi)),
+    code(call('POST', 'comp-correct', ['comp' => $K1, 'rev' => $rev($K1), 'changes' => ['price' => '1'], 'reason' => 'x'], $avi)), code($status($avi, $K3, 'selected')), code(call('POST', 'comp-weight', ['set' => $G, 'comp' => $K1, 'rev' => $grev($G), 'weight' => '1'], $avi)),
     code(call('POST', 'comp-note', ['comp' => $K1, 'rev' => $rev($K1), 'note' => 'x'], $avi)), code(call('POST', 'comp-delete', ['comp' => $K3, 'rev' => $rev($K3), 'reason' => 'x'], $avi)), code($adjSave($avi, $K1, $okAdj)),
     code(call('POST', 'comp-adj-delete', ['comp' => $K1, 'rev' => $rev($K1), 'adj' => $A1], $avi)), code(call('POST', 'comp-adj-order', ['comp' => $K1, 'rev' => $rev($K1), 'order' => [$A2, $A1]], $avi)),
     code(call('POST', 'comp-set-save', ['case' => $C, 'unit_basis' => 'total', 'method' => 'mean', 'rounding' => 'none'], $avi)), code(call('POST', 'comp-set-conclude', ['set' => $G, 'rev' => $grev($G), 'value' => '1', 'reason' => 'x'], $avi)),
@@ -771,7 +771,7 @@ $shape = fn(PDO $d) => json_encode($d->query("SELECT type, name, sql FROM sqlite
 $newTables = array_column($v11->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'comp%' ORDER BY name")->fetchAll(), 'name');
 eq([apr_schema_version($v11) >= 12, $had, $rows11 > 100, $dump($v11) === $d11, $shape($v11) === $shape($freshDb), $newTables, (int)$v11->query('SELECT COUNT(*) FROM comps')->fetchColumn(), count($v11->query('PRAGMA foreign_key_check')->fetchAll()),
     trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/00[1-9]_*.sql lib/migrations/01[01]_*.sql 2>/dev/null'))],
-    [true, [11, false, true, true], true, true, true, ['comp_adjustments', 'comp_import_maps', 'comp_searches', 'comp_sets', 'comps'], 0, 0, ''],
+    [true, [11, false, true, true], true, true, true, ['comp_adjustments', 'comp_import_maps', 'comp_searches', 'comp_set_members', 'comp_sets', 'comps'], 0, 0, ''],
     'מיגרציה 012 על מסד v11 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא, המבנה זהה למסד חדש, אין עסקאות; 001–011 לא נגעו');
 
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');

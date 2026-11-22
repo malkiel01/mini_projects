@@ -54,6 +54,16 @@
  *                  area_kind?, method, rounding, subject_area_fact?, recheck?} · comp-set-conclude {set, rev, value, reason} · comp-set-delete {set, rev}
  *                  · comp-import-upload (גוף גולמי, XLSX; בכתובת: case, name, key) · comp-import-preview {case, file | text, has_header?,
  *                  mapping?, date_order?, defaults?} · comp-import {…אותו תוכן…, search, rights: true}
+ *                  · comp-weight {set, comp, rev, weight} · comp-set-member {set, comp, rev, member, reason?} (16: שיוך ומשקל לכל קבוצה)
+ * חלופות (16):     case-valuation {case} · sheet {sheet} · sheet-templates · alt-save {case | alt, rev?, name, key_date?, state_kind, state_note?}
+ *                  · alt-primary {alt, rev} · alt-delete {alt, rev, reason} · alt-conclude {alt, rev, value, reason} · alt-recheck {alt, rev}
+ *                  · assumption-save {case | alt | assumption, rev?, text, kind, basis?, fact?, file?, approval?} · assumption-delete {assumption, rev}
+ *                  · approach-save {alt | approach, rev?, kind, title?, reasoning, comp_set?, sheet?, weight?} · approach-result {approach, rev,
+ *                  source, value?, reason?} · approach-delete {approach, rev} · sheet-save {case | sheet, rev?, title, rounding}
+ *                  · sheet-row-save {sheet, rev, key?, kind, label, value?, unit?, time_unit?, origin?, source_note?, fact?, file?, formula?, reasoning?}
+ *                  · sheet-row-delete {sheet, rev, key} · sheet-row-order {sheet, rev, order[]} · sheet-delete {sheet, rev} · sheet-recheck {sheet, rev}
+ *                  · sheet-template-save {sheet, name, scope} · sheet-template-use {case, template, title?} · sheet-template-delete {template}
+ *                  · renovation-add {case, kind, amount?, item_date?, provider?, scope_note?, file?, fact?, supersedes?} · renovation-delete {item, reason}
  * בינה (11):       sys-ai · sys-ai-provider-save {provider, status?, privacy_note?, privacy_url?, privacy_checked_at?, material?} · sys-ai-model-save
  *                  {provider, model_id, label, capabilities{}, price_in?, price_out?, price_checked_at?, context_tokens, max_output_tokens, status?}
  *                  · sys-ai-fx-set {rate} · sys-ai-connection-save {connection?, provider, label, key?, default_model?} · sys-ai-connection-test
@@ -110,6 +120,7 @@ require_once __DIR__ . '/visits.php';
 require_once __DIR__ . '/visit_photos.php';
 require_once __DIR__ . '/comps.php';
 require_once __DIR__ . '/comp_import.php';
+require_once __DIR__ . '/valuation.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/ai_admin.php';
 require_once __DIR__ . '/extract.php';
@@ -360,6 +371,31 @@ function apr_route(string $action, array $ctx, array $p, array $get, array $in, 
         'comp-import-upload' => apr_comp_import_upload($ctx, $p, $env),
         'comp-import-preview' => apr_comp_import_preview($ctx, $p),
         'comp-import' => apr_comp_import($ctx, $p),
+        'comp-set-member' => apr_comp_set_member($ctx, $p),
+        'case-valuation' => apr_case_valuation($ctx, $p),
+        'sheet' => apr_sheet_view($ctx, $p),
+        'sheet-templates' => apr_sheet_templates($ctx),
+        'alt-save' => apr_alt_save($ctx, $p),
+        'alt-primary' => apr_alt_primary($ctx, $p),
+        'alt-delete' => apr_alt_delete($ctx, $p),
+        'alt-conclude' => apr_alt_conclude($ctx, $p),
+        'alt-recheck' => apr_alt_recheck($ctx, $p),
+        'assumption-save' => apr_assumption_save($ctx, $p),
+        'assumption-delete' => apr_assumption_delete($ctx, $p),
+        'approach-save' => apr_approach_save($ctx, $p),
+        'approach-result' => apr_approach_result($ctx, $p),
+        'approach-delete' => apr_approach_delete($ctx, $p),
+        'sheet-save' => apr_sheet_save($ctx, $p),
+        'sheet-row-save' => apr_sheet_row_save($ctx, $p),
+        'sheet-row-delete' => apr_sheet_row_delete($ctx, $p),
+        'sheet-row-order' => apr_sheet_row_order($ctx, $p),
+        'sheet-delete' => apr_sheet_delete($ctx, $p),
+        'sheet-recheck' => apr_sheet_recheck($ctx, $p),
+        'sheet-template-save' => apr_sheet_template_save($ctx, $p),
+        'sheet-template-use' => apr_sheet_template_use($ctx, $p),
+        'sheet-template-delete' => apr_sheet_template_delete($ctx, $p),
+        'renovation-add' => apr_renovation_add($ctx, $p),
+        'renovation-delete' => apr_renovation_delete($ctx, $p),
         // בינה (11) — ניהול ותצוגה בלבד; שום פעולה כאן אינה מפעילה מודל
         'sys-ai' => apr_sys_ai(),
         'sys-ai-provider-save' => apr_sys_ai_provider_save($p),
