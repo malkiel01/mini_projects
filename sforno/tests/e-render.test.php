@@ -25,6 +25,9 @@ $cases = [
         'reader-eretz' => ['conds' => ['eretz' => true, 'chul' => false]],
         'reader-default' => (object)[],
         'notes-open' => ['conds' => ['chul' => true], 'notes' => ['commentary' => true, 'instruction' => false], 'filesBase' => 'media/'],
+        // הקורא (04): תנאי שלא נבחר — סימון שנפתח לצפייה; הסתרת ניקוד בתצוגה
+        'reader-collapsed' => ['conds' => ['eretz' => true, 'chul' => false], 'condCollapsed' => true, 'condNames' => ['chul' => 'חוץ לארץ']],
+        'reader-strip' => ['conds' => ['eretz' => true], 'strip' => ['niqqud' => true, 'taamim' => true]],
     ],
     'norm' => ['בָּרוּךְ אַתָּה', "בְּרֵאשִׁ֖ית  בָּרָ֣א", 'על־פי', 'מלכ ואמנ', "א\u{00A0}\u{200F}ב", 'ABC שָׁלוֹם', 'סוֹף־פָּסוּק׃ ס'],
 ];
@@ -65,6 +68,14 @@ check('תמונה: נתיב מקובצי הספר עם הקידומת', str_cont
 check('ניקוד נשמר בתצוגה', str_contains($p, 'בָּרוּךְ אַתָּה'));
 
 eq($res['norm'], array_map('sf_norm', $cases['norm']), 'נרמול: render.js = השרת (sf_norm)');
+
+// הקורא (04)
+$cl = $res['cases']['reader-collapsed'];
+check('R3 תנאי שלא נבחר — סימון "▸ למי שאומר — <שם>", והתוכן מוסתר (hidden)', str_contains($cl, '<div class="sf-cond sf-cond-off"><button type="button" class="sf-cond-btn" aria-expanded="false">▸ למי שאומר — חוץ לארץ</button><div class="sf-cond-body" hidden=""><p data-sid="par00004">רק בחוץ לארץ</p>'));
+check('R3 התנאי שנבחר — מוצג כרגיל', str_contains($cl, '<div class="sf-cond"><p data-sid="par00003">רק בארץ ישראל</p>'));
+$sp = $res['cases']['reader-strip'];
+check('R6 הסתרת ניקוד — בתצוגה', str_contains($sp, 'ברוך אתה') && !preg_match('/[\x{05B0}-\x{05BC}]/u', $sp));
+check('R6 בלי הסתרה — הניקוד נשאר (המקור לא השתנה)', str_contains($e, 'בָּרוּךְ אַתָּה'));
 
 // המנוע אחד, ובלי innerHTML
 $r = (string)file_get_contents("$root/assets/js/render.js");

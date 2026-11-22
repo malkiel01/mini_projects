@@ -985,6 +985,7 @@ function sf_import_out(array $im): array
         'has_text' => $html !== null, 'tree' => $im['status'] === 'ready' ? sf_import_tree($html) : [],
         'applied_n' => $im['revision_id'] !== null ? (int)sf_val('SELECT n FROM revisions WHERE id = ?', [$im['revision_id']]) : null,
         'edition' => sf_val('SELECT pid FROM editions WHERE id = ?', [$im['edition_id']]),
+        'reader_pages' => (int)sf_val('SELECT COUNT(*) FROM editions WHERE id = ? AND pages_import_id = ?', [$im['edition_id'], $im['id']]) > 0,   // 04
         'page_src' => $im['kind'] === 'image' ? (($g = glob(sf_imp_dir($im['pid']) . '/files/page-1.*')) ? "files/{$im['pid']}/" . basename($g[0]) : null) : null,
         'created_at' => $im['created_at'], 'created_by' => sf_staff_name($im['created_by'])];
 }

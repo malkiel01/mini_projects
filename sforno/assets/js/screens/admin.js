@@ -9,12 +9,17 @@
 
     SF.route('#/admin', main => {
         main.replaceChildren(
-            h('p', { class: 'hint' }, 'כאן יופיעו גם הייבוא וההלכה היומית.'),
+            h('p', { class: 'hint' }, 'כאן תופיע גם ההלכה היומית.'),
             h('ul', { class: 'list' },
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/content' },
                     h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
                     h('span', { class: 'use-tx' }, h('b', null, 'תוכן'), h('small', null, 'כותרים, מהדורות, עורך, פרסום ושחזור')),
                     h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
+                [['#/admin/customs', '🔀', 'מנהגים', 'הרשימה שהתוכן מצביע עליה: קבוצות, ברירות מחדל, זמין / לא'],
+                    ['#/admin/siddur', '📖', 'רשימת הסידור', 'התפילות והקיצורים שהקורא רואה בפתיחה'],
+                    ['#/admin/checks', '✅', 'בדיקת מנהגים', 'כל שילוב מנהגים מול הטקסט — "אושר" עם גרסה ותאריך']].map(([href, ic, b, sm]) =>
+                    h('li', null, h('a', { class: 'use-row', href }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, ic),
+                        h('span', { class: 'use-tx' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/staff' },
                     h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '👥'),
                     h('span', { class: 'use-tx' }, h('b', null, 'מנהלים'), h('small', null, 'מי מנהל את ספורנו, השעיה וביטול השעיה')),

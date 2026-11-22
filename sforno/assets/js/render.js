@@ -13,6 +13,9 @@
  *   notes  — {instruction: true|false, commentary: true|false} — פתוחה מראש? (ברירת מחדל: הוראה פתוחה, פירוש סגור)
  *   marks  — true: סימוני עורך גלויים (נקודות ציון, תנאים) — לתצוגה המקדימה
  *   filesBase — קידומת לנתיב התמונות (files/…)
+ *   condCollapsed — (הקורא, 04) תנאי שלא נבחר מוצג כסימון קטן "▸ למי שאומר — <שם>", שנפתח לצפייה בלחיצה (בלי לשנות העדפה).
+ *                   condNames — {rule: שם} לסימון
+ *   strip  — {niqqud: true, taamim: true}: הסתרה **בתצוגה בלבד** (04 §1). המקור לא משתנה; ההעתקה בקורא מעתיקה את המקור
  * env: {document, parse(html) → צומת שילדיו הם התוכן}. ברירת מחדל: הדפדפן (DOMParser — מסמך שאינו מריץ דבר).
  *
  * המנוע משתמש רק ב: createElement, createTextNode, setAttribute, getAttribute, appendChild, childNodes, nodeType,
@@ -34,6 +37,25 @@
     const LANG = /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8}){0,3}$/;
     const IMG = /^files\/[A-Za-z0-9_-][A-Za-z0-9._/-]{0,200}\.(png|jpe?g|gif|webp)$/i;
     const NOTE_LABEL = { instruction: 'הוראה', commentary: 'פירוש' };
+    // ניקוד: שוא–קמץ, רפה, שין/שׂין, נקודות עליונה/תחתונה, קמץ קטן. טעמים: 0591–05AF, ומתג (05BD). מקף, פסק וסוף פסוק — נשארים
+    const NIQQUD = /[\u05B0-\u05BC\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/;
+    const TAAMIM = /[\u0591-\u05AF\u05BD]/;
+
+    /** הסתרת ניקוד / טעמים. stripMap — גם המיקום במקור של כל תו שנשאר (להעתקה מהמקור). */
+    function stripMap(str, o) {
+        const src = String(str || '');
+        let text = '';
+        const map = [];
+        for (let i = 0; i < src.length; i++) {
+            const c = src[i];
+            if ((o && o.niqqud && NIQQUD.test(c)) || (o && o.taamim && TAAMIM.test(c))) continue;
+            text += c;
+            map.push(i);
+        }
+        map.push(src.length);
+        return { text, map };
+    }
+    const strip = (str, o) => (o && (o.niqqud || o.taamim) ? stripMap(str, o).text : String(str || ''));
 
     function defaultEnv() {
         return {
@@ -74,7 +96,7 @@
 
         function walk(from, to, depth) {
             for (const n of kids(from)) {
-                if (n.nodeType === 3) { to.appendChild(doc.createTextNode(n.nodeValue)); continue; }
+                if (n.nodeType === 3) { to.appendChild(doc.createTextNode(strip(n.nodeValue, s.strip))); continue; }
                 if (n.nodeType !== 1) continue;
                 const tag = n.localName;
                 let x = null;
@@ -104,8 +126,19 @@
                     }
                     case 'sf-cond': {
                         const rule = attr(n, 'rule');
-                        if (!condShown(rule, s)) continue;
-                        x = el(hasBlock(n) ? 'div' : 'span', { class: 'sf-cond', 'data-rule': s.marks && rule && RULE.test(rule) ? rule : null });
+                        const block = hasBlock(n);
+                        if (!condShown(rule, s)) {
+                            if (!s.condCollapsed) continue;
+                            x = el(block ? 'div' : 'span', { class: 'sf-cond sf-cond-off' });
+                            const btn = el('button', { type: 'button', class: 'sf-cond-btn', 'aria-expanded': 'false' });
+                            const name = (s.condNames && rule && Object.prototype.hasOwnProperty.call(s.condNames, rule)) ? s.condNames[rule] : '';
+                            btn.appendChild(doc.createTextNode('▸ למי שאומר' + (name ? ' — ' + name : '')));
+                            x.appendChild(btn);
+                            into = el(block ? 'div' : 'span', { class: 'sf-cond-body', hidden: true });
+                            x.appendChild(into);
+                            break;
+                        }
+                        x = el(block ? 'div' : 'span', { class: 'sf-cond', 'data-rule': s.marks && rule && RULE.test(rule) ? rule : null });
                         break;
                     }
                     case 'sf-note': {
@@ -169,11 +202,21 @@
                 if (body) body.hidden = !open;
                 return;
             }
+            const cb = ev.target.closest('.sf-cond-btn');
+            if (cb && rootEl.contains(cb)) {   // תנאי שלא נבחר: פתיחה לצפייה בלבד — ההעדפה לא משתנה
+                const body = cb.nextElementSibling;
+                const open = cb.getAttribute('aria-expanded') !== 'true';
+                cb.setAttribute('aria-expanded', String(open));
+                cb.textContent = (open ? '▾' : '▸') + cb.textContent.slice(1);
+                if (body) body.hidden = !open;
+                return;
+            }
             const link = ev.target.closest('.sf-link');
             if (link && rootEl.contains(link)) {
                 const to = link.getAttribute('data-to') || '';
                 if (!TO.test(to)) return;
                 if (to.indexOf(':') >= 0) { if (o.onLink) o.onLink(to); return; }
+                if (o.onJump) { o.onJump(to); return; }
                 const target = rootEl.querySelector('[data-sid="' + to + '"]');
                 if (target) {
                     target.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -199,5 +242,5 @@
             .toLowerCase();
     }
 
-    return { render, bind, normalize, STYLES };
+    return { render, bind, normalize, strip, stripMap, STYLES };
 });
