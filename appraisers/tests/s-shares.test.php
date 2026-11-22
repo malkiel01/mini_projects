@@ -742,7 +742,7 @@ eq([$old, [$kept['download'] ?? null, $kept['see_internal'] ?? null, $kept['see_
 $lib = fn(string $f) => (string)file_get_contents(__DIR__ . '/../lib/' . $f);
 $caseRules = array_keys(array_filter(APR_ACCESS, fn($r) => $r === 'case'));
 sort($caseRules);
-$expected = ['case', 'case-comps', 'case-docs', 'case-facts', 'case-sources', 'case-source', 'case-visits', 'cases', 'comp', 'comp-set', 'docs-search', 'fact', 'file', 'file-facts', 'file-thumb', 'source-check', 'visit', 'visit-photo'];
+$expected = ['case-valuation', 'sheet', 'case', 'case-comps', 'case-docs', 'case-facts', 'case-sources', 'case-source', 'case-visits', 'cases', 'comp', 'comp-set', 'docs-search', 'fact', 'file', 'file-facts', 'file-thumb', 'source-check', 'visit', 'visit-photo'];
 sort($expected);
 $sharesSql = [];
 foreach (glob(__DIR__ . '/../lib/*.php') as $f) if (preg_match('/\b(FROM|JOIN|INTO|UPDATE)\s+case_shares\b/', (string)file_get_contents($f))) $sharesSql[] = basename($f);
@@ -750,7 +750,7 @@ sort($sharesSql);
 eq([$caseRules, array_values(array_diff($caseRules, APR_READS)), preg_match_all('/apr_share_for\(/', implode('', array_map($lib, array_map('basename', glob(__DIR__ . '/../lib/*.php'))))), $sharesSql,
     preg_match_all('/\bcase_members\b/', $lib('shares.php')) <= 3, apr_share_for(['user' => ['id' => $uid('boaz@example.com'), 'is_sysadmin' => 1]], ['id' => $caseId($C)])],
     [$expected, [], 3, ['access.php', 'documents.php', 'shares.php'], true, null],
-    'המבנה: רק 18 פעולות קריאה פתוחות לשיתוף (הכלל case), כולן GET; apr_share_for נקרא ממקום אחד (apr_case_get); case_shares נקראת רק ב-shares.php, בכלל הגישה ובחיפוש; ובלי פעולה של הנתב — אין שיתוף');
+    'המבנה: רק 20 פעולות קריאה פתוחות לשיתוף (הכלל case), כולן GET; apr_share_for נקרא ממקום אחד (apr_case_get); case_shares נקראת רק ב-shares.php, בכלל הגישה ובחיפוש; ובלי פעולה של הנתב — אין שיתוף');
 // שותף פעיל, וקריאה ל-apr_case_get מפעולה שאינה פתוחה לשיתוף / בלי נתב / עם perm אחר — 404
 $S8 = $share($avi, $C, $toBoaz())[1]['share'];
 $accept($boaz, $S8);
@@ -798,7 +798,7 @@ $shape = fn(PDO $d) => json_encode($d->query("SELECT type, name, sql FROM sqlite
 $s15 = $shape($v14);
 $v14->exec((string)file_get_contents(__DIR__ . '/../lib/migrations/015_sharing.sql'));      // הרצה שנייה של אותו קובץ
 $v14->exec((string)file_get_contents(__DIR__ . '/../lib/migrations/015_sharing.sql'));
-eq([apr_schema_version($v14), $had, $dump($v14) === $d14, $s15 === $shape($fresh), $shape($v14) === $s15, array_column($v14->query("SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE '%share%') ORDER BY name")->fetchAll(), 'name'),
+eq([apr_schema_version($v14) === apr_schema_expected() ? 15 : apr_schema_version($v14), $had, $dump($v14) === $d14, $s15 === $shape($fresh), $shape($v14) === $s15, array_column($v14->query("SELECT name FROM sqlite_master WHERE type = 'table' AND (name LIKE '%share%') ORDER BY name")->fetchAll(), 'name'),
     (int)$v14->query('SELECT COUNT(*) FROM case_shares')->fetchColumn(), count($v14->query('PRAGMA foreign_key_check')->fetchAll()),
     trim((string)shell_exec('git -C ' . escapeshellarg(dirname(__DIR__)) . ' diff --stat origin/main -- lib/migrations/00[1-9]_*.sql lib/migrations/01[0-4]_*.sql 2>/dev/null'))],
     [15, [14, false, true, true], true, true, true, ['case_share_items', 'case_shares', 'profile_shares', 'share_previews'], 0, 0, ''],
