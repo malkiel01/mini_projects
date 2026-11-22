@@ -516,7 +516,10 @@ $ghost = $probe($avi, 'aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'
 eq(array_values(array_unique(array_map(fn($x) => $x[0], $ghost))), [404], 'מזהים שלא קיימים ← 404 בכל הפעולות');
 foreach (['משרד אחר' => $boaz, 'חבר משרד שאינו משתתף' => $gil, 'מנהל המערכת' => $owner] as $who => $as) {
     $got = $probe($as, $D, $linkD['file'], $linkD['link'], $RD['contract']);
-    check("06-C1 $who: הורדה, תצוגה מקדימה, תמונה ממוזערת וכל פעולה אחרת ← " . ($who === 'מנהל המערכת' ? 'אין גישה' : '404'), $who === 'מנהל המערכת' ? array_values(array_unique(array_map(fn($x) => $x[1], $got))) === ['no_office'] : $got === $ghost, $got);
+    check("06-C1 $who: הורדה, תצוגה מקדימה, תמונה ממוזערת וכל פעולה אחרת ← " . ($who === 'מנהל המערכת' ? 'אין גישה' : '404'), $who === 'מנהל המערכת'
+        // פרוסה 05 (05-B1): בפעולות הקריאה שפתוחות לשיתוף מנהל המערכת בלי שיתוף מקבל בדיוק את ה-404 של זר; בכל השאר — אינו חבר משרד
+        ? array_diff(array_unique(array_map(fn($x) => $x[1], $got)), ['no_office', 'not_found']) === [] && array_intersect_key($got, array_flip(['case-docs', 'file', 'file-inline', 'file-thumb'])) === array_intersect_key($ghost, array_flip(['case-docs', 'file', 'file-inline', 'file-thumb']))
+        : $got === $ghost, $got);
 }
 // דנה משתתפת ב-C ולא ב-D: מזהי בן של D דרך C
 $got = $probe($dana, $D, $linkD['file'], $linkD['link'], $RD['contract']);

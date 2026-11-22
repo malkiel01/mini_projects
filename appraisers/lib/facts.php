@@ -285,7 +285,11 @@ function apr_fact_out(array $ctx, array $c, array $f, array $attr): array
             'original' => $f['corrected_at'] === null ? null : apr_fact_value_out($int($f['original_num']), $f['original_text'], $f['original_date'], $f['original_unit'], $f['original_area_kind'], $attr),
             'corrected_by' => $f['corrected_name'], 'corrected_at' => $f['corrected_at'], 'correction_note' => $f['correction_note'],
             'entered_by' => $f['entered_name'], 'entered_at' => $f['entered_at'], 'verified_by' => $f['verified_name'], 'verified_at' => $f['verified_at'],
-            'rejected_reason' => $f['rejected_reason'], 'note' => $f['note'], 'rev' => (int)$f['rev'], 'updated_by' => $f['updated_name'], 'updated_at' => $f['updated_at']];
+            'rejected_reason' => $f['rejected_reason'], 'note' => $f['note'], 'rev' => (int)$f['rev'], 'updated_by' => $f['updated_name'], 'updated_at' => $f['updated_at'],
+            // הצעת בינה (12): רמת הביטחון של המודל, והאם הציטוט אותר בטקסט העמוד (null — לא נבדק). הציטוט עצמו — ב-source.locator, רק למי שרואה את הקובץ
+            // אחרי שהערך תוקן — רמת הביטחון וה"אותר" היו על הערך של המודל, לא על הערך שמוצג; לכן אינם מוחזרים
+            'ai' => $f['source_kind'] !== 'ai' ? null : ($f['corrected_at'] !== null ? ['confidence' => null, 'quote_found' => null, 'corrected' => true]
+                : ['confidence' => $f['ai_confidence'] ?? null, 'quote_found' => ($f['ai_quote_found'] ?? null) === null ? null : (bool)$f['ai_quote_found'], 'corrected' => false])];
 }
 
 // ── גישה ──────────────────────────────────────────────────────
@@ -309,6 +313,7 @@ function apr_fact_can_judge(array $ctx, array $c): bool
 function apr_fact_case(array $ctx, mixed $casePid, string $need = 'view'): array
 {
     $c = apr_case_get($ctx, $casePid);
+    apr_can_or_404($c, 'facts');                   // לשותף: רק בשיתוף של כל התיק ועם see_internal (05)
     if ($need === 'view') return $c;
     if ($need === 'write' ? !apr_fact_can_write($c) : !apr_fact_can_judge($ctx, $c)) apr_fail('forbidden');
     apr_case_writable($c);
@@ -529,6 +534,12 @@ function apr_fact_correct_tx(array $ctx, array $c, array $f, array $in): bool
     $attr = apr_attr($f['attribute_key']);
     $rev = apr_fact_rev($in['rev'] ?? null);
     if ($f['state'] === 'rejected') apr_fail('fact_state');
+    if ($f['source_kind'] === 'ai') {
+        // הצעת בינה (12 §9): תיקון הוא הכרעה — רק מי שרשאי לאמת. המקור (קובץ, עמוד, ציטוט) הוא מה שהמודל הצביע עליו, ואינו נערך:
+        // אחרת אפשר היה להדביק ציטוט בדוי להצעה שממשיכה להיראות "הציטוט אותר", או לנתק אותה מהמסמך
+        if (!apr_fact_can_judge($ctx, $c)) apr_fail('forbidden');
+        if (array_key_exists('source', $in)) apr_fail('fact_source');
+    }
     $set = [];
     $touchesValue = array_key_exists('value', $in) || array_key_exists('unit', $in) || array_key_exists('area_kind', $in);
     if ($touchesValue) {
@@ -670,6 +681,29 @@ function apr_facts_on_file_delete(array $c, array $file): void
     }
 }
 
+/**
+ * חילוץ חוזר של קובץ (12, מקרה קצה 4): הצעות בינה מאותו קובץ **שאיש לא נגע בהן** (rev = 1 — שום עדכון מאז שנוצרו) מוחלפות —
+ * מחיקה רכה, עם סיבה. נתון שאומת, תוקן, נדחה, סומן "דורש בירור", או שרק ההערה או האומדן שלו עודכנו — אינו נבחר כאן. בתוך טרנזקציה.
+ */
+function apr_facts_ai_replace(array $c, int $fileId): int
+{
+    $attrs = [];
+    $n = 0;
+    foreach (apr_rows("SELECT id, pid, attribute_key FROM facts WHERE case_id = ? AND source_file_id = ? AND source_kind = 'ai' AND state = 'proposed' AND rev = 1 AND deleted_at IS NULL ORDER BY id",
+        [$c['id'], $fileId]) as $f) {
+        if (apr_exec("UPDATE facts SET deleted_at = ?, delete_reason = 'הוחלף בחילוץ חוזר', rev = rev + 1, updated_at = ? WHERE id = ? AND state = 'proposed' AND rev = 1 AND deleted_at IS NULL",
+            [apr_now(), apr_now(), $f['id']]) !== 1) continue;
+        $attr = apr_attr($f['attribute_key']);
+        apr_case_audit($c, 'fact.ai_replaced', 'fact', $f['pid'], ['attribute' => $attr['key']]);
+        apr_facts_stale([(int)$f['id']]);
+        apr_fact_resolutions_void($c, $attr, (int)$f['id'], 'fact_deleted');
+        $attrs[$attr['key']] = $attr;
+        $n++;
+    }
+    foreach ($attrs as $attr) apr_conflicts_sync($c, $attr);
+    return $n;
+}
+
 // ── הכרעה (§6.3) ──────────────────────────────────────────────
 
 function apr_conflict_row(array $c, mixed $pid): array
@@ -772,6 +806,7 @@ function apr_fact_perms(array $ctx, array $c): array
 function apr_case_facts(array $ctx, array $q): array
 {
     $c = apr_fact_case($ctx, $q['case'] ?? null);
+    $seeConf = $c['share'] === null;        // סתירות (ושיקול הדעת שבהן) אינן נחשפות לשותף — גם לא כספירה או כמזהה (05)
     $byAttr = [];
     foreach (apr_rows(APR_FACT_SELECT . ' WHERE f.case_id = ? AND f.deleted_at IS NULL ORDER BY f.id', [$c['id']]) as $f) $byAttr[$f['attribute_key']][] = $f;
     $conf = [];
@@ -791,11 +826,11 @@ function apr_case_facts(array $ctx, array $q): array
                     + ['verified' => $best['state'] === 'verified', 'fact' => $best['pid']];
             }
         }
-        $attrs[] = apr_attr_out($a) + ['known' => (bool)$active, 'value' => $agreed, 'facts' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $a), $rows), 'conflicts' => $conf[$a['key']] ?? []];
+        $attrs[] = apr_attr_out($a) + ['known' => (bool)$active, 'value' => $agreed, 'facts' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $a), $rows), 'conflicts' => $seeConf ? ($conf[$a['key']] ?? []) : []];
     }
     return ['case' => ['pid' => $c['pid'], 'number' => $c['number'], 'status' => $c['status'], 'title' => $c['title']], 'perms' => apr_fact_perms($ctx, $c),
         'groups' => APR_ATTR_GROUPS, 'area_kinds' => APR_AREA_KINDS, 'units' => array_map('array_keys', APR_UNITS), 'sources' => APR_FACT_SOURCES, 'attributes' => $attrs,
-        'conflicts_open' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']])];
+        'conflicts_open' => $seeConf ? (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]) : 0];
 }
 
 /** נתון אחד: הערך, ההיסטוריה המלאה שלו מיומן הפעולות, מי נשען עליו, והסתירות שהוא חלק מהן. */
@@ -806,11 +841,12 @@ function apr_fact_view(array $ctx, array $q): array
     $attr = apr_attr($f['attribute_key']);
     return ['case' => ['pid' => $c['pid'], 'number' => $c['number'], 'status' => $c['status']], 'perms' => apr_fact_perms($ctx, $c), 'attribute' => apr_attr_out($attr),
         'fact' => apr_fact_out($ctx, $c, $f, $attr),
-        'history' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'by' => $r['name'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason']],
+        // ההיסטוריה היא יומן הפעילות של הנתון (ערכים קודמים, נימוקים, מי) — כמו יומן התיק, למשתתפים פנימיים בלבד (05)
+        'history' => $c['share'] !== null ? [] : array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'by' => $r['name'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason']],
             apr_rows("SELECT a.at, a.action, a.meta, a.reason, u.name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.entity_type = 'fact' AND a.entity_pid = ? AND a.case_id = ? ORDER BY a.id", [$f['pid'], $c['id']])),
         'uses' => array_map(fn($u) => ['type' => $u['used_in_type'], 'pid' => $u['used_in_pid'], 'stale' => (bool)$u['stale'], 'stale_at' => $u['stale_at']],
             apr_rows('SELECT * FROM fact_uses WHERE fact_id = ? ORDER BY id', [$f['id']])),
-        'conflicts' => array_map(fn($r) => ['pid' => $r['pid'], 'status' => $r['status'], 'kind' => $r['kind']],
+        'conflicts' => $c['share'] !== null ? [] : array_map(fn($r) => ['pid' => $r['pid'], 'status' => $r['status'], 'kind' => $r['kind']],
             apr_rows('SELECT c.pid, c.status, c.kind FROM conflicts c JOIN conflict_facts cf ON cf.conflict_id = c.id WHERE cf.fact_id = ? ORDER BY c.id', [$f['id']]))];
 }
 

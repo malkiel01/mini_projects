@@ -14,10 +14,12 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/profiles.php';
+require_once __DIR__ . '/shares.php';
 
 const APR_CASE_STATUSES = ['draft', 'collecting', 'awaiting_reply', 'checking', 'visit', 'analysis', 'review', 'approved', 'delivered', 'closed'];
 const APR_CASE_STATUS_BY_REPORT = ['approved', 'delivered'];   // נקבעים רק בידי הדוח (פרוסות 17, 18)
-const APR_CASE_PERMS = ['view', 'edit', 'tasks', 'documents', 'review_docs', 'sources', 'visit', 'contact', 'members', 'approve_report', 'export'];
+const APR_CASE_PERMS = ['view', 'edit', 'tasks', 'documents', 'review_docs', 'sources', 'visit', 'contact', 'members', 'approve_report', 'export', 'download', 'see_internal', 'see_draft'];
+const APR_CASE_PERMS_05 = ['download', 'see_internal', 'see_draft'];   // הורדת קבצים · הערות פנימיות ותחשיבים · טיוטת הדוח (05 §2) — דלוקות לכל משתתף פנימי
 const APR_CASE_ROLES = ['responsible', 'partner', 'visitor', 'staff'];
 const APR_CASE_TZ = 'Asia/Jerusalem';
 
@@ -31,7 +33,7 @@ function apr_case_default_perms(string $role, string $officeRole = ''): array
         default => ['view', 'visit'],
     };
     $perms = array_fill_keys(APR_CASE_PERMS, false);
-    foreach ($on as $p) $perms[$p] = true;
+    foreach ([...$on, ...APR_CASE_PERMS_05] as $p) $perms[$p] = true;
     if ($role === 'visitor') {
         $perms['tasks'] = 'own';
         if ($officeRole === 'trainee') $perms['documents'] = true;   // מתמחה: עמודת "מבקר" + דרישות וקבצים
@@ -56,21 +58,43 @@ function apr_case_audit(array $case, string $action, string $entityType = 'case'
     }
 }
 
+/** ההרשאות של משתתף פנימי, מלאות: שלוש ההרשאות של פרוסה 05 דלוקות כברירת מחדל למי שנשמר לפניה (05 §2); כל השאר — כבוי. */
+function apr_case_perms_full(array $stored): array
+{
+    return $stored + array_fill_keys(APR_CASE_PERMS_05, true) + array_fill_keys(APR_CASE_PERMS, false);
+}
+
 /**
- * התיק לפי pid, אם אני משתתף בו ויש לי את $perm. מחזיר את השורה + 'perms' (שלי) + 'my_role'.
- * משרד אחר / אינני משתתף / לא קיים → 404, בלי הבדל. אין הרשאה → 403. פעולה משנה ($perm אינו view) על תיק סגור → 409,
+ * התיק לפי pid, אם מותר לי לראות אותו ויש לי את $perm — **ההכרעה היחידה** (05 §6). מחזיר את השורה + 'perms' (שלי) + 'my_role'
+ * + 'share' (null למשתתף פנימי; לשותף ממשרד אחר ולתמיכה — היקף השיתוף, ו-my_role = 'external').
+ *  · משתתף פנימי: שורה פעילה ב-case_members, והתיק במשרד הפעיל שלי.
+ *  · שיתוף (lib/shares.php): שורה פעילה ב-case_shares שאושרה ולא פגה — נבדק **בכל בקשה**, ורק בפעולות שהנתב סימן כפתוחות
+ *    לשיתוף (הכלל 'case' ב-APR_ACCESS). כל פעולה אחרת, וכל $perm שאינו view — 404: שיתוף הוא קריאה בלבד.
+ * משרד אחר / אינני משתתף / לא קיים / שיתוף שבוטל או פג → 404, בלי הבדל. אין הרשאה → 403. פעולה משנה על תיק סגור → 409,
  * אלא אם $closedOk (שינוי המצב עצמו).
  */
 function apr_case_get(array $ctx, mixed $pid, string $perm = 'view', bool $closedOk = false): array
 {
-    $office = apr_office_id($ctx);
-    $c = apr_is_pid($pid) ? apr_row('SELECT * FROM cases WHERE pid = ? AND office_id = ? AND deleted_at IS NULL', [$pid, $office]) : null;
-    $m = $c ? apr_row('SELECT * FROM case_members WHERE case_id = ? AND user_id = ? AND revoked_at IS NULL', [$c['id'], $ctx['user']['id']]) : null;
-    if (!$m) apr_fail('not_found');
-    $perms = (json_decode($m['perms'], true) ?: []) + array_fill_keys(APR_CASE_PERMS, false);
+    $c = apr_is_pid($pid) ? apr_row('SELECT * FROM cases WHERE pid = ? AND deleted_at IS NULL', [$pid]) : null;
+    $active = $ctx['office'] ?? null;
+    $mine = $c && $active && (int)$c['office_id'] === (int)$active['office_id'];
+    $m = $mine ? apr_row('SELECT * FROM case_members WHERE case_id = ? AND user_id = ? AND revoked_at IS NULL', [$c['id'], $ctx['user']['id']]) : null;
+    if ($m) apr_office($ctx);                                  // משרד מושעה או חברות מושעית — כמו תמיד
+    $share = !$m && $c ? apr_share_for($ctx, $c) : null;
+    if (!$m && !$share) {
+        if ($active) apr_office($ctx);                         // חבר משרד: קודם מצב המשרד שלו, ורק אז "לא נמצא"
+        apr_fail('not_found');
+    }
+    if ($share) {
+        if ($perm !== 'view') apr_fail('not_found');
+        $c += ['perms' => $share['perms'], 'my_role' => 'external', 'share' => $share];
+        apr_share_used($c);
+        return $c;
+    }
+    $perms = apr_case_perms_full(json_decode($m['perms'], true) ?: []);
     if (empty($perms['view'])) apr_fail('not_found');
     if (empty($perms[$perm])) apr_fail('forbidden');
-    $c += ['perms' => $perms, 'my_role' => $m['role']];
+    $c += ['perms' => $perms, 'my_role' => $m['role'], 'share' => null];
     if ($perm !== 'view' && !$closedOk) apr_case_writable($c);
     return $c;
 }
@@ -490,7 +514,7 @@ function apr_case_member_update(array $ctx, array $in): array
         }
         if ($m['role'] === 'responsible') apr_fail('responsible_fixed');   // לאחראי כל ההרשאות; מחליפים אחראי, לא מצמצמים אותו
         $role = $m['role'];
-        $perms = json_decode($m['perms'], true) ?: [];
+        $perms = apr_case_perms_full(json_decode($m['perms'], true) ?: []);
         if (array_key_exists('role', $in)) {
             $role = in_array($in['role'], ['partner', 'visitor', 'staff'], true) ? $in['role'] : apr_fail('role_invalid');
             $officeRole = (string)apr_val('SELECT role FROM memberships WHERE office_id = ? AND user_id = ?', [$c['office_id'], $m['user_id']]);

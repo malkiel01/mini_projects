@@ -43,7 +43,8 @@ function fSource(f, pid) {
     return `${esc(F.sourceKinds[s.kind] || s.kind)}${s.note ? ' · ' + esc(s.note) : ''}${date}`;
 }
 
-const fChips = f => `${fStateChip(f)}${f.estimated ? `<span class="chip">${esc(F.estimated)}</span>` : ''}`;
+// הצעת בינה (12): "הצעת בינה", רמת הביטחון והאם הציטוט אותר — xChips (screens/extract.js)
+const fChips = f => `${fStateChip(f)}${f.estimated ? `<span class="chip">${esc(F.estimated)}</span>` : ''}${typeof xChips === 'function' ? xChips(f) : ''}`;
 
 /** שגיאת 409 של נתון: מציגים את הערך שבשרת מול מה שהמשתמש ניסה לשמור — אין דריסה שקטה (§5). */
 function fChangedToast(x, a, mine) {
@@ -142,7 +143,8 @@ function factHistorySheet(f, a) {
 
 /** כרטיס של נתון אחד, עם הפעולות שמותרות לי. */
 function factCard(f, a, pid, perms) {
-    const live = f.state !== 'rejected', mayEdit = perms.write && (f.state !== 'verified' || perms.judge);   // נתון מאומת משנה רק מי שרשאי לאמת
+    // נתון מאומת, והצעת בינה (12 §9), מתקן רק מי שרשאי לאמת
+    const live = f.state !== 'rejected', mayEdit = perms.write && ((f.state !== 'verified' && !f.ai) || perms.judge), mayClarify = perms.write && (f.state !== 'verified' || perms.judge);
     const btn = (act, label, cls = '') => `<button type="button" class="btn ghost sm${cls}" data-fact="${f.pid}" data-act="${act}">${label}</button>`;
     return `<li class="card static"><div class="body"><div class="l1"><span>${fVal(f, a)}</span></div>
         <div class="l2 wrap">${fSource(f, pid)}</div><div class="chips">${fChips(f)}</div>
@@ -151,7 +153,7 @@ function factCard(f, a, pid, perms) {
         ${f.note ? `<p class="hint"><b>${F.note}:</b> ${esc(f.note)}</p>` : ''}
         ${f.rejected_reason ? `<p class="hint"><b>${F.rejectedWhy}:</b> ${esc(f.rejected_reason)}</p>` : ''}
         <p class="hint">${esc(f.state === 'verified' && f.verified_by ? F.verifiedBy(f.verified_by, fmtDate(f.verified_at)) : F.enteredBy(f.entered_by || C.system, fmtDate(f.entered_at)))}</p>
-        <div class="row-btns wrap">${mayEdit && live ? btn('correct', F.correct) + (f.state === 'needs_clarification' ? (f.has_value ? btn('manual', F.backToManual) : '') : btn('clarify', F.clarify)) : ''}${
+        <div class="row-btns wrap">${mayEdit && live ? btn('correct', F.correct) : ''}${mayClarify && live ? (f.state === 'needs_clarification' ? (f.has_value ? btn('manual', F.backToManual) : '') : btn('clarify', F.clarify)) : ''}${
             perms.judge && live ? (f.state !== 'verified' && f.has_value ? btn('verify', F.verify) : '') + btn('reject', F.reject, ' danger') : ''}${
             perms.write || perms.judge ? btn('delete', F.del, ' danger') : ''}${btn('history', F.history)}</div></div></li>`;
 }
@@ -174,7 +176,12 @@ function factsBind(find, x, reload) {
             <label class="f"><span>${F.correctionNote}</span><input name="correction_note" maxlength="500" dir="auto"></label>
             <label class="f"><span>${F.note}</span><textarea name="note" maxlength="1000" rows="2">${esc(f.note || '')}</textarea></label>`, v => {
             const body = fValueBody(a, v);
-            return run(async () => { await fSend('fact-correct', { fact: f.pid, rev: f.rev, ...body, estimated: !!v.estimated, note: v.note, correction_note: v.correction_note }); toast(F.corrected); },
+            return run(async () => {
+                const r = await fSend('fact-correct', { fact: f.pid, rev: f.rev, ...body, estimated: !!v.estimated, note: v.note, correction_note: v.correction_note });
+                // 12 §8: תיקון של הצעת בינה בידי מי שרשאי לאמת הוא גם האישור שלה — הערך המקורי של המודל נשמר
+                if (f.ai && f.state === 'proposed' && x.perms.judge && r.fact && r.fact.has_value) await api('fact-state', { body: { fact: f.pid, rev: r.fact.rev, do: 'verify' } });
+                toast(F.corrected);
+            },
                 body.value === null ? F.unknown : String(v.value));
         }, F.correct);
     });
@@ -269,6 +276,15 @@ async function viewConflict(pid, kpid) {
     factsBind(fp => [k.facts.find(f => f.pid === fp), a], x, reload);
 }
 
+/** כפתורי הסקירה של נתון במסך הקובץ (12 §8) — אותן פעולות ואותן הרשאות כמו בכרטיס הנתון. אין "אישור הכול". */
+function fileFactBtns(f, perms) {
+    const live = f.state !== 'rejected', mayEdit = perms.write && ((f.state !== 'verified' && !f.ai) || perms.judge), mayClarify = perms.write && (f.state !== 'verified' || perms.judge);
+    const btn = (act, label, cls = '') => `<button type="button" class="btn ghost sm${cls}" data-fact="${f.pid}" data-act="${act}">${label}</button>`;
+    const html = `${perms.judge && live && f.state !== 'verified' && f.has_value ? btn('verify', F.verify) : ''}${mayEdit && live ? btn('correct', F.correct) : ''}${mayClarify && live && f.state !== 'needs_clarification' ? btn('clarify', F.clarify) : ''}${
+        perms.judge && live ? btn('reject', F.reject, ' danger') : ''}`;
+    return html ? `<div class="row-btns wrap">${html}</div>` : '';
+}
+
 // ── מסך הקובץ ← "נתונים מהמסמך" (10-D1): לחיצה על נתון מדפדפת לעמוד שבו הוא מופיע ──
 async function fileFactsPanel(pid, fpid, goPage, reload) {
     const box = $('#file-facts');
@@ -281,10 +297,13 @@ async function fileFactsPanel(pid, fpid, goPage, reload) {
             <div class="body"><div class="l1"><span>${esc(f.label)}</span><span class="t">${f.source.page ? esc(F.page(f.source.page)) : ''}</span></div>
             <div class="l2 wrap">${fVal(f, cat.attributes.find(a => a.key === f.attribute))}${
                 f.source.locator ? ` · <q dir="auto">${esc(f.source.locator)}</q>` : ''}</div>
-            <div class="chips">${fChips(f)}</div></div></li>`).join('')}</ul>` : `<p class="empty">${F.noFileFacts}</p>`}
+            <div class="chips">${fChips(f)}</div>${fileFactBtns(f, x.perms)}</div></li>`).join('')}</ul>` : `<p class="empty">${F.noFileFacts}</p>`}
         ${can ? `<div class="f"><label class="f"><span>${F.addFromPage}</span><select id="ff-attr"><option value="">${F.addFact}…</option>${cat.attributes.filter(a => a.status === 'active').map(a => cOpt(a.key, `${F.groups[a.group]} · ${a.label}`, '')).join('')}</select></label>
             <label class="f"><span>${F.pageLabel}</span><input id="ff-page" inputmode="numeric" dir="ltr" maxlength="6" value="1"></label></div>` : ''}`;
     cOn('[data-page]', el => { if (el.dataset.page) { goPage(Number(el.dataset.page)); const p = $('#ff-page'); if (p) p.value = el.dataset.page; } }, box);
+    // 12 §8: הסקירה במסך הקובץ — אישור, תיקון, דחייה ו"לבירור" לכל נתון, אחד-אחד; רענון של הלוח הזה ושל לוח הבינה
+    const again = () => { fileFactsPanel(pid, fpid, goPage, reload).catch(() => {}); if (typeof xFilePanel === 'function') xFilePanel(pid, fpid, reload).catch(() => {}); };
+    factsBind(fp => { const f = x.facts.find(t => t.pid === fp); return [f, cat.attributes.find(a => a.key === f.attribute)]; }, { ...cat, perms: x.perms }, again);
     $('#ff-attr')?.addEventListener('change', e => {
         const a = cat.attributes.find(t => t.key === e.target.value);
         e.target.value = '';

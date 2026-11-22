@@ -143,6 +143,12 @@ function join_office(string $admin, string $member, string $email, string $role 
     return call('GET', 'me', [], $member)[1]['user']['pid'];
 }
 
+/** רשימת העמודות של טבלה במסד נתון — להעתקה ולהשוואה בבדיקות מיגרציה, כשהמסד החי כבר מכיר עמודות חדשות יותר. */
+function t_cols(PDO $d, string $table): string
+{
+    return implode(', ', array_map(fn($c) => '"' . $c['name'] . '"', $d->query('PRAGMA main.table_info("' . $table . '")')->fetchAll()));
+}
+
 function done(): never
 {
     echo $GLOBALS['t_fail'] ? "  {$GLOBALS['t_fail']} מתוך {$GLOBALS['t_n']} נכשלו\n" : "  ✓ {$GLOBALS['t_n']} בדיקות\n";

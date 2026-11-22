@@ -196,6 +196,7 @@ function apr_src_can_judge(array $ctx, array $c): bool
 function apr_src_case(array $ctx, mixed $casePid, string $need = 'view'): array
 {
     $c = apr_case_get($ctx, $casePid);
+    apr_can_or_404($c, 'source_check');            // שיתוף פריטים בלי אף בדיקה — אין לשונית (05)
     if ($need === 'view') return $c;
     if ($need === 'write' ? empty($c['perms']['sources']) : !apr_src_can_judge($ctx, $c)) apr_fail('forbidden');
     apr_case_writable($c);
@@ -650,7 +651,8 @@ function apr_case_sources(array $ctx, array $q): array
     $labels = apr_src_labels($idents);
     $locs = apr_src_localities($idents);
     $by = [];
-    foreach (apr_rows(APR_SRC_CHECK_SELECT . ' WHERE k.case_id = ? ORDER BY k.id', [$c['id']]) as $k) $by[(int)$k['source_id']][] = $k;
+    $ext = $c['share'] !== null;
+    foreach (apr_rows(APR_SRC_CHECK_SELECT . ' WHERE k.case_id = ? ORDER BY k.id', [$c['id']]) as $k) if (apr_can($c, 'source_check', $k['pid'])) $by[(int)$k['source_id']][] = $k;
     $content = apr_src_case_content($c);
     $modes = array_column($content['items'], 'mode', 'source');
     $all = apr_sources_all();
@@ -658,7 +660,7 @@ function apr_case_sources(array $ctx, array $q): array
     $out = [];
     foreach ($all as $s) {
         $rows = $by[(int)$s['id']] ?? [];
-        if (!$rows && !in_array($s['id'], $relevant)) continue;
+        if (!$rows && ($ext || !in_array($s['id'], $relevant))) continue;       // לשותף: רק מקור שיש בו בדיקה שבהיקף שלו
         $last = $rows ? $rows[count($rows) - 1] : null;
         $ver = null;
         foreach ($rows as $k) if ($k['status'] === 'verified') $ver = $k;
@@ -667,9 +669,9 @@ function apr_case_sources(array $ctx, array $q): array
             'verified' => $ver && $ver !== $last ? apr_src_check_out($ctx, $c, $ver, $labels) : null, 'checks' => count($rows)];
     }
     return ['case' => apr_src_case_head($c), 'perms' => apr_src_perms($ctx, $c), 'identified' => apr_src_identified($idents),
-        'locality_hint' => $locs ? null : 'הוסיפו יישוב כדי לראות את מקורות הרשות המקומית',
-        'identifiers' => array_map(fn($i) => ['pid' => $i['pid'], 'kind' => $i['kind'], 'label' => $labels[$i['pid']]], $idents),
-        'spend_needs_approval' => $content['spend_needs_approval'], 'results' => APR_SRC_RESULTS, 'sources' => $out, 'planning' => apr_planning_summary((int)$c['id'])];
+        'locality_hint' => $locs || $ext ? null : 'הוסיפו יישוב כדי לראות את מקורות הרשות המקומית',
+        'identifiers' => apr_can($c, 'details') ? array_map(fn($i) => ['pid' => $i['pid'], 'kind' => $i['kind'], 'label' => $labels[$i['pid']]], $idents) : [],
+        'spend_needs_approval' => $content['spend_needs_approval'], 'results' => APR_SRC_RESULTS, 'sources' => $out, 'planning' => apr_can($c, 'planning') ? apr_planning_summary((int)$c['id']) : null];
 }
 
 /** מקור אחד בתיק: הכרטיס המלא, וכל הבדיקות שנעשו בתיק — מהחדשה לישנה. */
@@ -679,12 +681,12 @@ function apr_case_source(array $ctx, array $q): array
     $s = apr_src_get($q['source'] ?? null);
     $idents = apr_src_idents((int)$c['id']);
     $labels = apr_src_labels($idents);
-    $rows = apr_rows(APR_SRC_CHECK_SELECT . ' WHERE k.case_id = ? AND k.source_id = ? ORDER BY k.id DESC', [$c['id'], $s['id']]);
-    // מקור מוסתר נראה בתיק רק אם כבר נבדק בו
-    if ($s['status'] !== 'active' && !$rows) apr_fail('not_found');
+    $rows = array_values(array_filter(apr_rows(APR_SRC_CHECK_SELECT . ' WHERE k.case_id = ? AND k.source_id = ? ORDER BY k.id DESC', [$c['id'], $s['id']]), fn($k) => apr_can($c, 'source_check', $k['pid'])));
+    // מקור מוסתר נראה בתיק רק אם כבר נבדק בו; ולשותף — רק מקור שיש בו בדיקה שבהיקף שלו
+    if (($s['status'] !== 'active' || $c['share'] !== null) && !$rows) apr_fail('not_found');
     $content = apr_src_case_content($c);
     return ['case' => apr_src_case_head($c), 'perms' => apr_src_perms($ctx, $c), 'identified' => apr_src_identified($idents),
-        'identifiers' => array_map(fn($i) => ['pid' => $i['pid'], 'kind' => $i['kind'], 'label' => $labels[$i['pid']]], $idents),
+        'identifiers' => apr_can($c, 'details') ? array_map(fn($i) => ['pid' => $i['pid'], 'kind' => $i['kind'], 'label' => $labels[$i['pid']]], $idents) : [],
         'spend_needs_approval' => $content['spend_needs_approval'], 'results' => APR_SRC_RESULTS,
         'source' => apr_source_out($s) + ['mode' => array_column($content['items'], 'mode', 'source')[$s['key']] ?? 'manual', 'check_status' => $rows[0]['status'] ?? 'not_checked'],
         'checks' => array_map(fn($k) => apr_src_check_out($ctx, $c, $k, $labels), $rows)];
@@ -695,13 +697,15 @@ function apr_source_check_view(array $ctx, array $q): array
 {
     $c = apr_src_case($ctx, apr_doc_case_pid('source_checks', $q['check'] ?? null));
     $k = apr_src_check_row($c, $q['check'] ?? null);
+    apr_can_or_404($c, 'source_check', $k['pid']);
+    apr_share_seen($c, 'source_check', $k['pid']);
     $s = apr_row('SELECT * FROM sources WHERE id = ?', [$k['source_id']]);
     return ['case' => apr_src_case_head($c), 'perms' => apr_src_perms($ctx, $c), 'source' => apr_source_out($s),
         'check' => apr_src_check_out($ctx, $c, $k, apr_src_labels(apr_src_idents((int)$c['id']))),
-        'facts' => apr_rows("SELECT f.pid, a.label FROM facts f JOIN attributes a ON a.key = f.attribute_key WHERE f.case_id = ? AND f.source_ref_pid = ? AND f.deleted_at IS NULL ORDER BY f.id", [$c['id'], $k['pid']]),
-        'items' => array_map(fn($p) => ['pid' => $p['pid'], 'kind' => $p['kind'], 'title' => $p['title']],
+        'facts' => !apr_can($c, 'facts') ? [] : apr_rows("SELECT f.pid, a.label FROM facts f JOIN attributes a ON a.key = f.attribute_key WHERE f.case_id = ? AND f.source_ref_pid = ? AND f.deleted_at IS NULL ORDER BY f.id", [$c['id'], $k['pid']]),
+        'items' => !apr_can($c, 'planning') ? [] : array_map(fn($p) => ['pid' => $p['pid'], 'kind' => $p['kind'], 'title' => $p['title']],
             apr_rows('SELECT pid, kind, title FROM planning_items WHERE case_id = ? AND check_id = ? AND deleted_at IS NULL ORDER BY id', [$c['id'], $k['id']])),
-        'tasks' => array_map('apr_task_out', apr_rows(APR_TASK_SELECT . " WHERE t.case_id = ? AND t.link_type = 'source_check' AND t.origin_key LIKE ? AND t.status IN ('open', 'in_progress') ORDER BY t.id",
+        'tasks' => !apr_can($c, 'tasks') ? [] : array_map('apr_task_out', apr_rows(APR_TASK_SELECT . " WHERE t.case_id = ? AND t.link_type = 'source_check' AND t.origin_key LIKE ? AND t.status IN ('open', 'in_progress') ORDER BY t.id",
             [$c['id'], 'source-%:' . $s['key']]))];
 }
 

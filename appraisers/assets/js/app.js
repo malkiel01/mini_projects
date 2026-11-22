@@ -10,6 +10,9 @@
  *   #/tasks   המשימות שלי          #/contacts   ספר הכתובות          #/office/cases   שורות ניהול (מנהל משרד)
  *   #/cases/<pid>/sources[/<מקור>] · #/cases/<pid>/check/<בדיקה> · #/cases/<pid>/planning/<פריט> · #/sources[/<מקור>]   מקורות ותכנון (09)
  *   #/cases/<pid>/visits · #/cases/<pid>/visits/<ביקור>   ביקור בנכס (13)
+ *   #/cases/<pid>/comps[/<עסקה>] · #/cases/<pid>/compset/<קבוצה> · #/cases/<pid>/compimport/<חיפוש>   עסקאות השוואה וחישובים (15)
+ *   #/cases/shared   תיקים ששותפו איתי (05)          #/system/support   גישות התמיכה הפעילות (מנהל המערכת)
+ *   #/system/ai · #/office/ai · #/my/ai   בינה: ספקים ומכסות (מנהל המערכת) · מדיניות וחיבור (מנהל משרד) · הבינה שלי (11)
  *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
 'use strict';
@@ -50,6 +53,7 @@ function openMe() {
     const links = [];
     if (o && o.status === 'active') links.push(['#/office', '👥', T.myOffice]);
     if ((o && o.status === 'active') || u.is_sysadmin) links.push(['#/profiles', '📑', T.tileProfiles]);
+    if (o && o.status === 'active') links.push(['#/my/ai', '🤖', T.ai.mine]);
     links.push(['#/welcome', '➕', T.newOffice]);
     if (u.is_sysadmin) links.push(['#/system', '🏛️', T.systemAdmin]);
     if (u.is_developer) links.push(['#/dev', '🛠️', T.devScreen]);
@@ -93,8 +97,9 @@ async function route() {
         else if (a === 'office' && b === 'cases' && ok && o.is_admin) await viewOfficeCases();
         else if (a === 'inbox' && ok) await viewInbox();
         else if (a === 'office' && ok) await viewOffice(b);
-        else if (a === 'cases' && ok) await viewCases(b, c, d);
+        else if (a === 'cases' && (ok || b)) await viewCases(b, c, d);   // תיק ששותף איתי נפתח גם בלי משרד פעיל (05) — השרת מכריע
         else if (a === 'tasks' && ok) await viewMyTasks();
+        else if (a === 'my' && b === 'ai' && ok) await viewMyAi();
         else if (a === 'contacts' && ok) await viewContacts();
         else if (a === 'sources') await viewSourcesCatalog(b);
         else if (a === 'profiles' && (ok || me.user.is_sysadmin)) await viewProfiles(b, c, d);
@@ -157,7 +162,7 @@ async function boot() {
     $('#back').addEventListener('click', () => {
         const parts = location.hash.split('/').filter(Boolean);
         // מהאשף חוזרים לרשימה: כרטיס של טיוטה מפנה חזרה לאשף, וכך "חזרה" הייתה נתקעת
-        location.hash = parts[1] === 'cases' && parts[3] === 'setup' ? '#/cases' : parts.length > 2 ? '#/' + parts.slice(1, -1).join('/') : '#/';
+        location.hash = parts[1] === 'cases' && parts[3] === 'setup' ? '#/cases' : parts[1] === 'cases' && ['compset', 'compimport'].includes(parts[3]) ? `#/cases/${parts[2]}/comps` : parts.length > 2 ? '#/' + parts.slice(1, -1).join('/') : '#/';
     });
     $('#me-btn').addEventListener('click', openMe);
     $('#sub').addEventListener('click', () => bindOfficePick(sheet(T.officePick, officesListHtml(), null)));

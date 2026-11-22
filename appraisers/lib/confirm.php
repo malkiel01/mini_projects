@@ -27,6 +27,10 @@ const APR_SENSITIVE = [
     'dev-token-create'  => null,                        // יצירת אסימון DevLoop
     'office-channel-save' => null,                      // חיבור ערוץ של המשרד — נושא סוד (אפיון 08 §9)
     'sys-channel-save'  => null,                        // חיבור ערוץ של המערכת
+    'sys-ai-connection-save' => null,                   // מפתח של ספק בינה — שמירה והחלפה (אפיון 11 §7)
+    'office-ai-connection-save' => null,                // החיבור האישי של המשרד
+    'share-create'      => ['kind', 'support'],         // שיתוף תיק עם התמיכה (אפיון 05 §4)
+    'office-ai-policy'  => ['enabled', true],           // הדלקת הבינה למשרד = אישור המדיניות (אפיון 11 §8)
 ];
 
 function apr_is_sensitive(string $action, array $in): bool

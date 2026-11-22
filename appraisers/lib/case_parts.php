@@ -456,6 +456,7 @@ function apr_case_head(array $c): array
 function apr_case_view(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
+    if ($c['share'] !== null) return apr_case_view_shared($ctx, $c);      // שותף ממשרד אחר ותמיכה: כרטיס מצומצם (05) — שום דבר מכאן והלאה
     $p = apr_row('SELECT p.pid, p.name, p.status, p.deleted_at, cv.number AS latest FROM profiles p LEFT JOIN profile_versions cv ON cv.id = p.current_version_id WHERE p.id = ?', [$c['profile_id']]);
     $vnum = (int)apr_val('SELECT number FROM profile_versions WHERE id = ?', [$c['profile_version_id']]);
     $content = apr_case_version_content((int)$c['profile_version_id']);
@@ -475,6 +476,7 @@ function apr_case_view(array $ctx, array $q): array
         'open_conflicts' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]),
         'sources' => apr_case_sources_summary($ctx, $c),
         'visits' => apr_case_visits_summary($c),
+        'comps' => apr_comp_visible($c) ? apr_case_comps_summary($c) : null,
         'profile' => ['pid' => apr_profile_level($ctx, apr_row('SELECT * FROM profiles WHERE id = ?', [$c['profile_id']])) !== null ? $p['pid'] : null, 'name' => $p['name'],
             'version' => $vnum, 'newer' => $c['status'] !== 'draft' && $p['deleted_at'] === null && (int)$p['latest'] > $vnum ? (int)$p['latest'] : null, 'pending' => $pending,
             'flags' => $content['flags'], 'groups' => $content['requirements']['groups']],
@@ -486,7 +488,7 @@ function apr_case_view(array $ctx, array $q): array
         'members' => array_map(fn($r) => ['pid' => $r['pid'], 'name' => $r['name'], 'role' => $r['role'], 'office_role' => $r['office_role'], 'perms' => json_decode($r['perms'], true) ?: (object)[], 'me' => (int)$r['user_id'] === (int)$ctx['user']['id']],
             apr_rows("SELECT cm.user_id, cm.role, cm.perms, u.pid, u.name, m.role AS office_role FROM case_members cm JOIN users u ON u.id = cm.user_id
                 LEFT JOIN memberships m ON m.user_id = cm.user_id AND m.office_id = ? WHERE cm.case_id = ? AND cm.revoked_at IS NULL ORDER BY (cm.role = 'responsible') DESC, u.name", [$c['office_id'], $c['id']])),
-        'requirements' => array_map(fn($r) => apr_requirement_out($r + ['in_profile' => $r['origin'] === 'manual' || isset($planKeys[$r['origin_key']])]),
+        'requirements' => array_map(fn($r) => apr_requirement_out((apr_can($c, 'internal') ? [] : ['explain_internal' => '']) + $r + ['in_profile' => $r['origin'] === 'manual' || isset($planKeys[$r['origin_key']])]),
             apr_rows('SELECT r.*, cp.pid AS party_pid FROM requirements r LEFT JOIN case_parties cp ON cp.id = r.party_id WHERE r.case_id = ? ORDER BY r.sort, r.id', [$c['id']])),
         'tasks' => array_map('apr_task_out', apr_rows(APR_TASK_SELECT . " WHERE t.case_id = ? ORDER BY (t.status IN ('done', 'cancelled')), (t.due_at IS NULL), t.due_at, t.id", [$c['id']])),
     ];
@@ -498,6 +500,8 @@ function apr_case_view(array $ctx, array $q): array
  */
 function apr_cases_list(array $ctx, array $q): array
 {
+    // "תיקים ששותפו איתי" (05 §3): לשונית נפרדת, בכל משרד פעיל שלי — ואינה מתערבבת בתיקי המשרד
+    if (($q['tab'] ?? '') === 'shared') return ['cases' => [], 'shared' => apr_my_shares($ctx)['shared']];
     $office = apr_office_id($ctx);
     $uid = (int)$ctx['user']['id'];
     $where = ['c.office_id = ?', 'c.deleted_at IS NULL'];
@@ -541,11 +545,13 @@ function apr_cases_list(array $ctx, array $q): array
 function apr_case_activity(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
+    apr_can_or_404($c, 'activity');                // יומן הפעילות — למשתתפים פנימיים בלבד (05)
+    $seeComps = apr_can($c, 'comps');              // עסקאות וחישובים הם תחשיב פנימי: מי שאינו רואה אותם אינו רואה גם את השורות שלהם ביומן
     // שורה של בדיקת מקור במצב "לא אותר" / "לא זמין" נושאת את נוסח ההסתייגות גם כאן (09-A2: כל תשובה)
     $hidden = apr_visit_hidden_pids($ctx, $c);     // תמונת ביקור שאינני רשאי לראות אינה מופיעה כאן — גם לא המזהה שלה (13-C1)
     return ['rows' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'entity_type' => $r['entity_type'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason'],
         'actor' => $r['name'], 'actor_kind' => $r['actor_kind'], 'entity' => in_array($r['entity_type'], ['requirement', 'file'], true) ? $r['entity_pid'] : null]
         + ($r['entity_type'] === 'source_check' ? ['disclaimer' => APR_SRC_DISCLAIMERS[(json_decode($r['meta'], true) ?: [])['status'] ?? ''] ?? null] : []),
         array_values(array_filter(apr_rows('SELECT a.*, u.name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.case_id = ? ORDER BY a.id DESC LIMIT 300', [$c['id']]),
-            fn($r) => !isset($hidden[$r['entity_pid']]))))];
+            fn($r) => !isset($hidden[$r['entity_pid']]) && ($seeComps || !str_starts_with($r['action'], 'comp.')))))];
 }

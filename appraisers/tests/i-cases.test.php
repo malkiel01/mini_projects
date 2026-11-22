@@ -279,8 +279,8 @@ call('POST', 'case-member-add', ['case' => $D, 'user' => $talPid], $dana);
 call('POST', 'case-member-add', ['case' => $D, 'user' => $noamPid], $dana);
 $mv = array_column($view($dana, $D)[1]['members'], null, 'pid');
 eq([$mv[$talPid]['role'], array_keys(array_filter($mv[$talPid]['perms'])), $mv[$noamPid]['role'], $mv[$noamPid]['perms']['tasks'], $mv[$noamPid]['perms']['documents'], $mv[$noamPid]['perms']['edit']],
-    ['staff', ['view', 'tasks', 'documents', 'sources', 'contact'], 'visitor', 'own', true, false], '§6 ברירות המחדל: עובד משרד; מתמחה = מבקר + דרישות');
-eq(array_keys(array_filter(apr_case_default_perms('partner'))), ['view', 'edit', 'tasks', 'documents', 'review_docs', 'sources', 'visit', 'contact'], '§6 שותף: בלי members, approve_report ו-export');
+    ['staff', ['view', 'tasks', 'documents', 'sources', 'contact', 'download', 'see_internal', 'see_draft'], 'visitor', 'own', true, false], '§6 ברירות המחדל: עובד משרד; מתמחה = מבקר + דרישות (ושלוש ההרשאות של 05 דלוקות לכל משתתף פנימי)');
+eq(array_keys(array_filter(apr_case_default_perms('partner'))), ['view', 'edit', 'tasks', 'documents', 'review_docs', 'sources', 'visit', 'contact', 'download', 'see_internal', 'see_draft'], '§6 שותף: בלי members, approve_report ו-export');
 eq([apr_case_default_perms('responsible')['approve_report'], apr_case_default_perms('partner')['approve_report']], [true, false], '§6 approve_report אינו נגזר מהיות המשתמש שמאי');
 $dReq = $reqs($D)[0]['pid'];
 $dTask = $tasks($D)[0]['pid'];
@@ -303,7 +303,7 @@ foreach ($guarded as $perm => $actions) {
         if ($action === 'case-member-remove') call('POST', 'case-member-add', ['case' => $D, 'user' => $noamPid], $dana);
     }
 }
-eq(array_values(array_diff(APR_CASE_PERMS, array_keys($guarded), ['view', 'review_docs', 'sources', 'visit', 'contact', 'approve_report', 'export'])), [], '04-B5 כל הרשאה שיש לה פעולה בפרוסה הזו נבדקה (השאר — בפרוסות שלהן)');
+eq(array_values(array_diff(APR_CASE_PERMS, array_keys($guarded), ['view', 'review_docs', 'sources', 'visit', 'contact', 'approve_report', 'export', ...APR_CASE_PERMS_05])), [], '04-B5 כל הרשאה שיש לה פעולה בפרוסה הזו נבדקה (השאר — בפרוסות שלהן)');
 eq([$view($tal, $D)[0], call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'perms' => ['view' => false]], $dana)[0], $view($tal, $D)[0]], [200, 200, 200], 'view אינו ניתן לכיבוי — מי שלא רואה מוסר מהתיק');
 // 🔴1: הרשאת members מוסיפה ומסירה משתתפים — ואינה משנה הרשאות, אינה מעניקה מה שאין לה, ואינה נוגעת באחראי
 call('POST', 'case-member-update', ['case' => $D, 'user' => $talPid, 'perms' => ['members' => true, 'edit' => false, 'approve_report' => false, 'export' => false]], $dana);
