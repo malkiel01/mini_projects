@@ -1,12 +1,12 @@
 # מה צ'אט הקוד הבא צריך לדעת
 
-עודכן: 2026-11-22, עם פרוסה 07 (לוח עברי, זמני היום והלכה יומית). לפניה — 06 (#1786), 05 (#1784/#1785), 04 (#1778), 03 (#1775),
-02 (#1769), 01 (#1766).
+עודכן: 2026-11-22, עם פרוסה 08 (תזכורות, ערוצים, ושבת וחג). לפניה — 07 (#1789), 06 (#1786), 05 (#1784/#1785), 04 (#1778),
+03 (#1775), 02 (#1769), 01 (#1766).
 
 ## מה בנוי
 
 פרוסות 01 (תשתית), 02 (מנוע התוכן), 03 (ייבוא), 04 (הקורא, הסידור והתהילים), 05 (חשבונות קוראים וסנכרון), 06 (הורדות, גרסאות ו-PWA)
-ו-07 (לוח עברי, זמני היום והלכה יומית), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
+07 (לוח עברי, זמני היום והלכה יומית) ו-08 (תזכורות), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
 
 | קובץ | תפקיד |
 | --- | --- |
@@ -43,6 +43,8 @@
 | `assets/js/daily-core.js` | בלי DOM (node): בחירת שיטה, מיקום, חבילת החודש (`zdl`), `homeHalacha`, `tehillimDay` |
 | `assets/js/daily.js` | `SF.daily`: `state()` (ערים, מיקום, שיטה, היום), `setLoc/setMethod`, `halacha`, `download`, `onChange` (ל-08), `todayLine` |
 | `screens/zmanim.js`, `halacha.js`, `daily-admin.js` | `#/zmanim` (+ `SF.daily.locSheet` / `methodSheet`), `#/halacha`, `#/halacha/archive`, `#/admin/halacha`, `#/admin/zmanim` |
+| `lib/reminders.php` ↔ `assets/js/reminders-core.js` | **התזכורות (08) — אותו תכנון בשניהם** (l-reminders משווה במילישנייה): `clean`, `prefs`, השתקה (`muteWindows`), `plan`. בשרת גם: מופעים (`sf_rem_schedule`), שליחה (`sf_rem_send_due`), Web Push (VAPID + aes128gcm), `push-*`, `reminders-*` |
+| `assets/js/reminders.js`, `screens/reminders.js` | `SF.rem` (store, Push בדפדפן, אורח ← `reminders-guest-sync`, באנר בתוך האפליקציה, `.ics`); `#/reminders` |
 | `assets/data/cities.json` | 160 ערים (GeoNames, CC BY 4.0), במעטפת. עיר חדשה — `id` של GeoNames, אזור זמן IANA (טסט) |
 | `tests/` | `run.php` מריץ כל `*.test.php` בתהליך משלו; `lib.php` (`call`, `ident`, `eq`); `render.mjs` — render.js ב-node עם DOM זעיר; `fixtures/` — snapshots |
 
@@ -67,8 +69,8 @@
   **כל שאילתה על מידע אישי — עם `reader_id = ?`** (טסט ב-i-sync סורק את sync.php). פריט / מכשיר של אחר — `not_found`.
 - **בבדיקות של קורא:** `rcall($m, $action, $in, '<מכשיר>', $get, $opt)` — צנצנת `sf_reader` לכל "מכשיר"; ה-CSRF מ-account-me.
   מיילים — `$GLOBALS['sf_mail_out'] = []` לפני; הקישור בגוף. **`$x['k'] ?? 'x'` על ערך null נותן 'x'** — `array_key_exists`.
-- **סוג חדש של מידע אישי (08 תזכורות):** `reminder` כבר ב-`SF_SYNC_KINDS`; במכשיר — להוסיף ל-`syncable/itemsFor/keyOf/build`
-  ב-`sync-core.js` ובדיקה ב-`sync-core.mjs`. מוצפן? — `SF_SYNC_SEALED`.
+- **סוג חדש של מידע אישי:** להוסיף ל-`SF_SYNC_KINDS` (שרת) ול-`syncable/itemsFor/keyOf/build` ב-`sync-core.js` + בדיקה ב-`sync-core.mjs`
+  (כמו `reminders` / `remprefs` של 08). מוצפן? — `SF_SYNC_SEALED`.
 - **CSRF בעולם הקוראים** — `sf_same_site` (Sec-Fetch-Site / Origin) וסוג מדיה מדויק. בדיקה עם `rcall` שולחת `same-origin` כברירת מחדל.
 - **sync-push:** תקרה 5MB לקורא (`full` → `held` במכשיר) ו-120 שליחות בדקה. מיילים — בלי טקסט חופשי של משתמש.
 - **`data/secret.key`** — בלעדיו ההערות והשמות לא מתפענחים. לא למחוק, לכלול בגיבוי (10).
@@ -84,13 +86,22 @@
 - **זמני היום — מילישניות (UTC).** תצוגה — `SFCal.hhmm(place.tz, ms)`, תמיד באזור הזמן של **המקום**. null = לא ניתן לחישוב —
   לעולם לא להחליף בשעה. "היום" של משתמש — `SF.daily.state()` (לא `new Date()` ולא Intl של המכשיר).
 - **מזהי חודש 1–13** (12 אדר א', 13 אדר ב'; פשוטה — 13). תאריך שלא חל השנה — `fixedFromHeb` מחזיר null.
-- **המיקום של הקורא לא נשלח לשרת** — רק `pref:loc` בסנכרון. תזכורות (08) בשרת יצטרכו אותו — מהסנכרון (`personal_items`), לא
-  פעולה חדשה שמקבלת קואורדינטות ביומן. טסט סורק `SF.api(` עם loc/lat.
+- **המיקום של הקורא לא נשלח לשרת** — רק `pref:loc` בסנכרון (והחריג של 08: אורח עם Push, `reminders-guest-sync`, מוצפן).
+  התזכורות של קורא לוקחות אותו מ-`personal_items`. טסט סורק `SF.api(` עם loc/lat, וסופר את החריג (`loc: where`).
 - **`SF.daily.download(`** — רק במסך הזמנים ובמסך ההורדות (טסט סופר). **`getCurrentPosition(`** — מקום אחד (`daily.js`), נקרא רק מכפתור.
 - **שיטה מאושרת ששונתה חוזרת לטיוטה** (ויוצאת מברירת המחדל). שיטת הבדיקה (`test = 1`) — לא לאשר ולא לחשוף לקוראים.
 - **ICU 74 ב-PHP טועה בשנת ה'תתו** — לא לסמוך על intl של השרת כ"אמת"; k-calendar מסמן את זה.
 - **דף שעלה בלי רשת — קורא, גם למנהל**, עד טעינה מחדש (06). בבדיקות דפדפן: אחרי `setOffline(false)` — `reload()`.
 - `dev/open-items.json`: SF-001…SF-011. לסגור — רק המפתח (✅ ב-DevLoop). ל-SF-002 ו-SF-003 נוספו צעדי בדיקה.
+
+- **תזכורות (08):** שינוי בתכנון / בהשתקה — ב-`reminders.php` **וגם** ב-`reminders-core.js` (הטסט ייכשל אחרת). שום שם / תוכן
+  לא נכנס ל-`reminder_occurrences` ול-`reminder_send_log` (טסט L10 סורק). פעולה שמשנה משהו שהתזכורות תלויות בו — לקרוא ל-
+  `sf_rem_schedule(owner)` אחריה (owner = `r:<reader id>` / `g:<push device id>`).
+- **`sf_job_register(kind, label, fn, every: N)`** — משימה מחזורית (08). שליחה מתוזמנת — **רק** דרך cron, לא מבקשות של דף (§18).
+- **Web Push בבדיקות:** `$GLOBALS['sf_push_http'] = fn($url, $headers, $body) => status`; `rcall` שומר גם עוגיית `sf_push`.
+  פעולת `guest` עם `'rcsrf' => true` — קורא מחובר חייב X-Reader-CSRF (rcall שולח לבד).
+- **`data/vapid.json`** — המפתחות של Push. מחיקה = כל המנויים צריכים להירשם מחדש. לכלול בגיבוי (10), כמו `secret.key`.
+- **שיטת ההשתקה** — קבוע (`MUTE` / `SF_REM_MUTE`, `test: true`) עד 📦; כשתגיע — טבלה + אישור כמו שיטות הזמנים, ואותו שינוי בשני הקבצים.
 
 ## מה נשאר
 
@@ -105,5 +116,6 @@
   הורדת הזמנים — נבנתה ב-07 (חבילה נפרדת `zdl`, לא דרך `read-package`).
 - מ-07: 👁 8, 9 בטלפון אמיתי (SF-007); 📦 שיטות, פרמטרים וברירת מחדל מהבעלים (§24) — עד אז קוראים לא רואים שעות; גובה המקום
   בחישוב — אם השיטות ידרשו; 17 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
-- הבאה לפי הלוח: 08 (תזכורות). מוכן לה: `sf_cal_zmanim` / `sf_cal_today` ב-PHP (אותו חישוב כמו בדפדפן), `pref:loc` /
-  `pref:zmethod` בסנכרון, `SF.daily.onChange` (שינוי מיקום / שיטה ← חישוב מחדש).
+- מ-08: 👁 1, 2, 9 במכשירים אמיתיים — `dev/push-report.md` (SF-008, הצעדים שם); **cron כל דקה** (מטלה לבעלים; בלעדיו Push
+  מתוזמן ומייל לא נשלחים); 📦 שיטת השתקה לשבת וחג; 15 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
+- הבאה לפי הלוח: 09 (חנות / WooCommerce).

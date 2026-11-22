@@ -225,10 +225,15 @@ function sf_reader_revoke(int $readerId, ?int $deviceId = null): void
     if ($deviceId === null) {
         sf_exec('DELETE FROM reader_sessions WHERE reader_id = ?', [$readerId]);
         sf_exec('UPDATE devices SET revoked_at = ? WHERE reader_id = ? AND revoked_at IS NULL', [$now, $readerId]);
+        sf_exec('UPDATE push_devices SET revoked_at = ? WHERE reader_id = ? AND revoked_at IS NULL', [$now, $readerId]);
     } else {
         sf_exec('DELETE FROM reader_sessions WHERE reader_id = ? AND device_id = ?', [$readerId, $deviceId]);
         sf_exec('UPDATE devices SET revoked_at = ? WHERE reader_id = ? AND id = ? AND revoked_at IS NULL', [$now, $readerId, $deviceId]);
+        sf_exec('UPDATE push_devices SET revoked_at = ? WHERE reader_id = ? AND device_id = ? AND revoked_at IS NULL', [$now, $readerId, $deviceId]);
     }
+    // 08: מכשיר שבוטל לא מקבל Push — גם המופעים שכבר תוכננו אליו מתבטלים
+    sf_exec("UPDATE reminder_occurrences SET status = 'cancelled', updated_at = ? WHERE owner = ? AND status = 'pending' AND channel = 'push'
+        AND push_device_id IN (SELECT id FROM push_devices WHERE reader_id = ? AND revoked_at IS NOT NULL)", [$now, 'r:' . $readerId, $readerId]);
 }
 
 function sf_reader_public(array $r): array

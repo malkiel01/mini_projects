@@ -71,6 +71,11 @@ const kvAll = {
     favorites: [{ id: 'f1', edition: ED, sid: 's1', name: 'עלינו', created_at: '2026-11-22T09:00:00Z' }],
     tehillim: { done: { s1: '2026-11-22T08:00:00Z' }, group: ['s1'], names: [{ id: 'n1', name: 'פלוני בן פלונית', note: 'לרפואת', created_at: '2026-11-22T07:00:00Z' }] },
     'seen:local': true, 'tehillim:tab': 'group',
+    // 08: תזכורות (כל אחת פריט) והעדפות התזכורות; push:dev — מכשיר ה-Push של הדפדפן הזה, לא מסתנכרן
+    reminders: [{ id: 'r1', name: 'שחרית', type: 'fixed', time: '06:30', days: [0, 1, 2, 3, 4], active: true, created_at: '2026-11-22T06:00:00Z' },
+        { id: 'r2', name: '', type: 'relative', base: 'sunset', offset: -20, days: [5], active: true, created_at: '2026-11-22T06:01:00Z' }],
+    remprefs: { channels: { push: true, inapp: true, email: false }, extend: { before: 0, after: 30 }, tz: 'Asia/Jerusalem' },
+    'push:dev': 'abcdefghijklmnop',
 };
 for (const [k, v] of Object.entries(kvAll)) {
     const its = C.itemsFor(k, v);
@@ -81,7 +86,8 @@ const kinds = Object.fromEntries(Object.entries(kvAll).flatMap(([k, v]) => C.ite
 ok('סוגים: הערה = note, הדגשה = highlight, סימניה = bookmark', kinds['m:b22'] === 'note' && kinds['m:c333'] === 'highlight' && kinds['m:a1'] === 'bookmark');
 ok('שם לתפילה = prayer_name (מוצפן בשרת)', kinds['pn:n1'] === 'prayer_name');
 ok('מיקום קריאה = position, עם ref המהדורה', C.itemsFor('pos:' + ED, kvAll['pos:' + ED])[0].ref === ED && kinds['position:' + ED] === 'position');
-ok('pid של פריט שלא מוכר במכשיר (08) — מתעלמים', C.keyOf('reminder:x') === null);
+ok('pid של פריט שלא מוכר במכשיר — מתעלמים', C.keyOf('reminder:x') === null);
+ok('08: תזכורת = פריט reminder, pid rem:<id>', kinds['rem:r1'] === 'reminder' && kinds['rem:r2'] === 'reminder' && kinds['pref:remprefs'] === 'pref');
 
 // ── K6: אותו שינוי פעמיים ← פריט אחד ─────────────────────────
 {

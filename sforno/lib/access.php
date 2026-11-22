@@ -58,6 +58,13 @@ const SF_ACTIONS = [
     'account-delete'       => ['m' => 'POST', 'who' => 'account'],
     'sync-push'            => ['m' => 'POST', 'who' => 'account', 'max' => 4_000_000],
     'sync-pull'            => ['m' => 'GET',  'who' => 'account'],
+    // תזכורות (08) — קורא מחובר או אורח (מכשיר Push אנונימי, עוגיית sf_push). rcsrf — קורא מחובר שולח גם X-Reader-CSRF
+    'push-key'             => ['m' => 'GET',  'who' => 'guest'],
+    'push-subscribe'       => ['m' => 'POST', 'who' => 'guest', 'rcsrf' => true, 'max' => 8_000],
+    'push-unsubscribe'     => ['m' => 'POST', 'who' => 'guest', 'rcsrf' => true, 'max' => 2_000],
+    'push-test'            => ['m' => 'POST', 'who' => 'guest', 'rcsrf' => true, 'max' => 2_000],
+    'reminders-guest-sync' => ['m' => 'POST', 'who' => 'guest', 'max' => 80_000],
+    'reminders-status'     => ['m' => 'GET',  'who' => 'guest'],
 
     'me'                   => ['m' => 'GET',  'who' => 'staff'],
     'logout'               => ['m' => 'POST', 'who' => 'staff'],
@@ -123,6 +130,7 @@ const SF_ACTIONS = [
     'dev-job-cancel'       => ['m' => 'POST', 'who' => 'dev'],
     'dev-cron-rotate'      => ['m' => 'POST', 'who' => 'dev'],
     'dev-google-set'       => ['m' => 'POST', 'who' => 'dev'],
+    'dev-reminders'        => ['m' => 'GET',  'who' => 'dev'],
     // DevLoop — אותם שמות כמו בכל אפליקציה (.claude/skills/devloop/references/install.md)
     'dev-items'            => ['m' => 'GET',  'who' => 'dev', 'raw' => true],
     'dev-task-create'      => ['m' => 'POST', 'who' => 'dev', 'raw' => true],

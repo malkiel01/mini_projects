@@ -232,7 +232,7 @@ foreach (['db', 'schema', 'write', 'protect', 'php', 'ext', 'limits', 'outbound'
 }
 foreach (['db', 'schema', 'write', 'protect', 'outbound', 'platform', 'devloop', 'standalone', 'version'] as $c) eq($ids[$c] ?? null, 'ok', "dev-health: $c תקין");
 eq($ids['cron'] ?? null, 'warn', 'dev-health: מתזמן שלא רץ → ⚠️');
-check('dev-health: §24 מסומן', count(array_filter($hl['checks'], fn($x) => $x['s24'])) === 7);
+check('dev-health: §24 מסומן', count(array_filter($hl['checks'], fn($x) => $x['s24'])) === 8);   // 08: push
 $mails = [];
 $GLOBALS['sf_mail'] = function (string $to) use (&$mails) { $mails[] = $to; return true; };
 $r = call('POST', 'dev-mail-test', [], $dev);

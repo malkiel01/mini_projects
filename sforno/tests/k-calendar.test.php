@@ -286,5 +286,7 @@ check('K9 מיקום המכשיר — מקום אחד בקוד, ונקרא רק 
 preg_match('/if \(!r\.ok\) \{(.*?)return;/su', $zmjs, $deny);
 check('K9 סירוב למיקום ← הודעה רגילה ורשימת הערים (לא toast של שגיאה)', str_contains($deny[1] ?? '', 'לא אושרה גישה למיקום. בחרו עיר מהרשימה.') && !str_contains($deny[1] ?? '', 'SF.toast') && str_contains($deny[1] ?? '', 'q.focus()'));
 check('המיקום לא נשלח לשרת (רק דרך הסנכרון של 05)', !preg_match("/SF\\.api\\([^)]*(loc|lat)/", $js));
+// 08 ⚙️: החריג היחיד — אורח שהפעיל Push שולח את ההגדרות שלו (כולל המיקום) ל-reminders-guest-sync, מוצפן בשרת (l-reminders)
+check('08: המיקום יוצא רק ב-reminders-guest-sync של אורח', substr_count($js, 'loc: where') === 1 && str_contains((string)file_get_contents("$root/assets/js/reminders.js"), 'loc: where'));
 
 done();

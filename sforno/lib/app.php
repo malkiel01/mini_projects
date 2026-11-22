@@ -26,9 +26,11 @@ require_once __DIR__ . '/reader.php';
 require_once __DIR__ . '/readers.php';
 require_once __DIR__ . '/sync.php';
 require_once __DIR__ . '/daily.php';
+require_once __DIR__ . '/reminders.php';
 
 /**
- * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type; לקוראים — reader_cookie, reader_csrf, ip.
+ * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type; לקוראים — reader_cookie, reader_csrf, ip;
+ * לתזכורות של אורח (08) — push_cookie (sf_push).
  * מחזיר את גוף התשובה (200). שגיאה — חריגה; התרגום לתשובה ב-sf_error_response.
  */
 function sf_dispatch(string $method, string $action, array $get, array $in, array $env): array
@@ -44,7 +46,7 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
             // ובנוסף הדפדפן מצהיר מאיפה הבקשה (Sec-Fetch-Site), ובלעדיו — Origin
             if (empty($spec['body']) && sf_media_type($env['content_type'] ?? '') !== 'application/json') sf_fail('content_type');
             if (!sf_same_site($env)) sf_fail('csrf');
-            if ($spec['who'] === 'account' && !hash_equals((string)$ra['session']['csrf'], (string)($env['reader_csrf'] ?? ''))) sf_fail('csrf');
+            if (($spec['who'] === 'account' || ($ra && !empty($spec['rcsrf']))) && !hash_equals((string)$ra['session']['csrf'], (string)($env['reader_csrf'] ?? ''))) sf_fail('csrf');
         }
         $env['_reader'] = $ra;
     } elseif (!in_array($spec['who'], SF_NOT_STAFF, true)) {
@@ -116,6 +118,12 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'account-delete'       => sf_account_delete($env['_reader'], $in),
         'sync-push'            => sf_sync_push($env['_reader'], $in),
         'sync-pull'            => sf_sync_pull($env['_reader'], $get),
+        'push-key'             => sf_push_key($env),
+        'push-subscribe'       => sf_push_subscribe($in, $env),
+        'push-unsubscribe'     => sf_push_unsubscribe($in, $env),
+        'push-test'            => sf_push_test($in, $env),
+        'reminders-guest-sync' => sf_rem_guest_sync($in, $env),
+        'reminders-status'     => sf_rem_status($env),
 
         'me'                   => ['staff' => sf_staff_public($staff, $me), 'csrf' => $session['csrf'], 'version' => sf_version()],
         'logout'               => sf_session_drop((string)($env['cookie'] ?? '')) ?? [],
@@ -177,6 +185,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'dev-job-cancel'       => sf_job_cancel($in['job'] ?? null),
         'dev-cron-rotate'      => sf_cron_rotate(),
         'dev-google-set'       => sf_dev_google_set($in),
+        'dev-reminders'        => sf_rem_dev(),
 
         'dev-items'            => devloop_task_list(),
         'dev-task-create'      => devloop_task_create($dev, $in),
