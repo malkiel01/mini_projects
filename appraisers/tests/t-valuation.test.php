@@ -893,5 +893,99 @@ eq([apr_schema_version($v15) === apr_schema_expected() && apr_schema_expected() 
     [true, [15, false, true, true], true, true, true, true, true, true, true, true, true, true, true, [0, 0, 0, 0, 0, 0], true, 0, 0, ''],
     'מיגרציה 016 על מסד v15 מאוכלס: כל שורה בכל טבלה קיימת נשמרת כפי שהיא; המבנה זהה למסד חדש; לכל תיק שנפתח — חלופה ראשית "מצב קיים" עם המועד הקובע שלו, ועם הדגל — גם after_works; טיוטה — בלי; כל עסקה שנבחרה משויכת לכל קבוצה של התיק שלה עם המשקל שהיה לה; הרצה חוזרת אינה משנה דבר; 001–015 לא נגעו');
 
+// ═══ ביקורת 16, סבב 2 ═════════════════════════════════════════
+// 🟡2: חלופה שנוספה כשהתיק היה טיוטה אינה מונעת את הזריעה ב-case-start
+$CDR = make_case($avi, $P, true, '2026-05-05', false);
+$dAlt = $post('alt-save', ['case' => $CDR, 'name' => 'חלופה מהטיוטה', 'state_kind' => 'hypothetical', 'state_note' => 'בהנחת שינוי ייעוד']);
+$dStart = call('POST', 'case-start', ['case' => $CDR], $avi)[0];
+$CDR2 = make_case($avi, $P, true, '2026-05-05', false);
+$dAlt2 = $post('alt-save', ['case' => $CDR2, 'name' => 'מצב   קיים', 'state_kind' => 'other', 'state_note' => 'x']);
+$dStart2 = call('POST', 'case-start', ['case' => $CDR2], $avi)[0];
+$CDR3 = make_case($avi, $P, true, null, false);
+$dAlt3 = $post('alt-save', ['case' => $CDR3, 'name' => 'אחרי השיפוץ שלי', 'state_kind' => 'after_works', 'state_note' => 'x']);
+$dStart3 = call('POST', 'case-start', ['case' => $CDR3], $avi)[0];
+$shape = fn(string $case) => array_map(fn($a) => [$a['name'], $a['state_kind'], $a['is_primary'], $a['key_date']], $val($avi, $case)[1]['alternatives']);
+eq([[$dAlt[0], $dStart, $dAlt2[0], $dStart2, $dAlt3[0], $dStart3], $shape($CDR), $shape($CDR2), $shape($CDR3)],
+    [[200, 200, 200, 200, 200, 200],
+        [['חלופה מהטיוטה', 'hypothetical', true, null], ['מצב קיים', 'existing', false, '2026-05-05'], ['בהנחת השלמת השיפוץ', 'after_works', false, '2026-05-05']],
+        [['מצב קיים', 'other', true, null], ['בהנחת השלמת השיפוץ', 'after_works', false, '2026-05-05']],
+        [['אחרי השיפוץ שלי', 'after_works', true, null], ['מצב קיים', 'existing', false, null]]],
+    '🟡2 תיק שנוספה לו חלופה בטיוטה נפתח עם "מצב קיים" ועם after_works (16-A2); הראשית שנבחרה בטיוטה נשארת; שם או מצב שכבר קיימים — בלי כפילות');
+
+// 🟡3: התקרות — שורות לגיליון, גיליונות לתיק, תבניות
+$CL = make_case($avi, $P, false);
+$SL = $post('sheet-save', ['case' => $CL, 'title' => 'גיליון מלא', 'rounding' => 'none'])[1]['sheet'];
+$slId = (int)apr_val('SELECT id FROM sheets WHERE pid = ?', [$SL]);
+$first = $rowSave($SL, ['kind' => 'input', 'label' => 'שורה 1', 'value' => '1', 'origin' => 'provided']);
+$now = apr_now();
+for ($i = 2; $i <= APR_SHEET_MAX_ROWS - 1; $i++) apr_insert('sheet_rows', ['sheet_id' => $slId, 'sort' => $i, 'key' => "r$i", 'kind' => 'note', 'label' => "הערה $i", 'time_unit' => 'none', 'updated_at' => $now]);
+apr_exec('UPDATE sheets SET next_key = ?, rev = rev + 1 WHERE id = ?', [APR_SHEET_MAX_ROWS, $slId]);
+$rowLast = $rowSave($SL, ['kind' => 'input', 'label' => 'השורה המאה', 'value' => '2', 'origin' => 'provided']);
+$rowOver = $rowSave($SL, ['kind' => 'input', 'label' => 'שורה 101', 'value' => '3', 'origin' => 'provided']);
+$rowEdit = $rowSave($SL, ['key' => 'r1', 'kind' => 'input', 'label' => 'שורה 1', 'value' => '5', 'origin' => 'provided']);
+$sheetCodes = [];
+for ($i = 2; $i <= APR_SHEET_MAX + 1; $i++) $sheetCodes[] = $post('sheet-save', ['case' => $CL, 'title' => "גיליון $i", 'rounding' => 'none']);
+$tplCodes = [];
+for ($i = 1; $i <= APR_SHEET_TEMPLATE_MAX + 1; $i++) $tplCodes[] = code($post('sheet-template-save', ['sheet' => $SL, 'name' => "תבנית גבול $i", 'scope' => 'personal'])) ?? 'ok';
+eq([$first[0], $rowLast[0], $rowLast[1]['key'] ?? null, code($rowOver), (int)apr_val('SELECT COUNT(*) FROM sheet_rows WHERE sheet_id = ?', [$slId]), $rowEdit[0],
+    array_count_values(array_map(fn($r) => code($r) ?? 'ok', $sheetCodes)), code(end($sheetCodes)), (int)apr_val('SELECT COUNT(*) FROM sheets WHERE case_id = (SELECT id FROM cases WHERE pid = ?) AND deleted_at IS NULL', [$CL]),
+    array_count_values(array_slice($tplCodes, 0, -1)), end($tplCodes)],
+    [200, 200, 'r' . APR_SHEET_MAX_ROWS, 'sheet_limit', APR_SHEET_MAX_ROWS, 200, ['ok' => APR_SHEET_MAX - 1, 'sheet_limit' => 1], 'sheet_limit', APR_SHEET_MAX,
+        ['ok' => APR_SHEET_TEMPLATE_MAX - (int)apr_val("SELECT COUNT(*) FROM sheet_templates WHERE deleted_at IS NULL AND name NOT LIKE 'תבנית גבול%' AND owner_user_id = (SELECT created_by FROM sheets WHERE pid = ?)", [$SL])]
+            + (apr_val("SELECT COUNT(*) FROM sheet_templates WHERE deleted_at IS NULL AND name NOT LIKE 'תבנית גבול%' AND owner_user_id = (SELECT created_by FROM sheets WHERE pid = ?)", [$SL]) ? ['sheet_limit' => (int)apr_val("SELECT COUNT(*) FROM sheet_templates WHERE deleted_at IS NULL AND name NOT LIKE 'תבנית גבול%' AND owner_user_id = (SELECT created_by FROM sheets WHERE pid = ?)", [$SL])] : []),
+        'sheet_limit'],
+    '🟡3 תקרות: השורה ה-100 נשמרת וה-101 ← sheet_limit (עריכה של שורה קיימת עדיין מותרת); הגיליון ה-30 נוצר וה-31 נדחה; התבנית האישית ה-50 נשמרת וה-51 נדחית');
+
+// 🟡3: הפניה לשורת הערה נדחית בשמירה; B1 דרך ה-API: נוסחה ארוכה נדחית לפני שנשמרת, ונוסחה ארוכה ביומן — מקוצרת
+$SN = $sheetCodes[0][1]['sheet'];
+$rowSave($SN, ['kind' => 'input', 'label' => 'קלט', 'value' => '10', 'origin' => 'provided']);
+$rowSave($SN, ['kind' => 'note', 'label' => 'הערה באמצע']);
+$noteRef = [code($rowSave($SN, ['kind' => 'calc', 'label' => 'מפנה להערה', 'formula' => ['op' => 'add', 'args' => ['r1', 'r2']]])), code($rowSave($SN, ['kind' => 'calc', 'label' => 'טווח עד הערה', 'formula' => ['op' => 'sum', 'args' => ['r1', 'r2']]]))];
+$leaf = ['op' => 'mul', 'args' => array_fill(0, 20, 'r1')];
+$huge = ['op' => 'add', 'args' => array_fill(0, 20, ['op' => 'add', 'args' => array_fill(0, 20, $leaf)])];
+$t0 = hrtime(true);
+$hugeCode = code($rowSave($SN, ['kind' => 'calc', 'label' => 'ענקית', 'formula' => $huge]));
+$hugeMs = intdiv(hrtime(true) - $t0, 1000000);
+$longOk = $rowSave($SN, ['kind' => 'calc', 'label' => 'ארוכה וחוקית', 'formula' => ['op' => 'add', 'args' => array_merge(array_fill(0, 19, '123456789012.123456'), [['op' => 'mul', 'args' => array_fill(0, 19, '-987654321098.654321')]])]]);
+$longAudit = $audit('sheet.row_add', $SN);
+$longMeta = end($longAudit)['meta']['formula'];
+$stored = (string)apr_val("SELECT formula FROM sheet_rows WHERE sheet_id = (SELECT id FROM sheets WHERE pid = ?) AND kind = 'calc'", [$SN]);
+eq([$noteRef, $hugeCode, $hugeMs < 500, $longOk[0], strlen($stored) > 600, strlen($stored) < 1200, strlen($longMeta) <= 603, str_starts_with($stored, substr($longMeta, 0, 600)), (int)apr_val("SELECT COUNT(*) FROM sheet_rows WHERE sheet_id = (SELECT id FROM sheets WHERE pid = ?)", [$SN])],
+    [['sheet_ref', 'sheet_ref'], 'sheet_formula_long', true, 200, true, true, true, true, 3],
+    '🟡3 נוסחה שמפנה לשורת הערה (ישירות או כקצה של טווח) נדחית בשמירה; B1 / 🟡1 נוסחה של אלפי צמתים ← sheet_formula_long מיד, בלי לשמור; נוסחה חוקית מרבית שמורה בפחות מ-1.2KB, וביומן — 600 הבתים הראשונים בלבד');
+
+// 🟡4: מספר JSON כנקודה צפה מעל 15 ספרות משמעותיות נדחה; "-" אינו ריק
+$fl = fn(mixed $v) => $rowSave($SN, ['kind' => 'input', 'label' => 'קלט נוסף', 'value' => $v, 'origin' => 'provided']);
+$flBad = [code($fl(123456789012.123456)), code($fl(-123456789012.123456)), code($fl(0.1 + 0.2)), code($fl('-')), code($fl(' - ')), code($fl('- 5')), code($fl('--5'))];
+$flOk = [$fl(1234567890.12345), $fl(-0.5), $fl('123456789012.123456'), $fl('-123456789012.123456'), $fl(123456789012)];
+$flVals = array_map(fn($r) => apr_val("SELECT value FROM sheet_rows WHERE sheet_id = (SELECT id FROM sheets WHERE pid = ?) AND key = ?", [$SN, $r[1]['key'] ?? '']), $flOk);
+eq([$flBad, array_column($flOk, 0), $flVals, code($rowSave($SN, ['kind' => 'calc', 'label' => 'קבוע צף', 'formula' => ['op' => 'mul', 'args' => ['r1', 123456789012.123456]]])),
+    $rowSave($SN, ['kind' => 'calc', 'label' => 'קבוע צף קצר', 'formula' => ['op' => 'mul', 'args' => ['r1', 0.5]]])[0]],
+    [array_fill(0, 7, 'sheet_value'), [200, 200, 200, 200, 200], [1234567890123450, -500000, 123456789012123456, -123456789012123456, 123456789012000000], 'sheet_formula', 200],
+    '🟡4 נקודה צפה מעל 15 ספרות משמעותיות נדחית (לא נשמרת מעוגלת בשקט) — בערך ובקבוע של נוסחה; מספר ארוך כמחרוזת נשמר מדויק; "-" ודומיו ← sheet_value, לא "ריק"');
+
+// 🟡3: 16-A4 ברמת הפלט — הממוצע המשוקלל מוצג, והמסקנה נשארת ריקה עד שהשמאי מקליד אותה
+$CA = make_case($avi, $P, false);
+$AA = array_key_first($alts($CA));
+$pa = $ap($AA, ['kind' => 'cost', 'reasoning' => 'עלות'])[1]['approach'];
+$pb = $ap($AA, ['kind' => 'other', 'reasoning' => 'אחרת'])[1]['approach'];
+$res($pa, ['source' => 'entered', 'value' => '1000000', 'reason' => 'תחשיב חיצוני']);
+$res($pb, ['source' => 'entered', 'value' => '2000000', 'reason' => 'תחשיב חיצוני']);
+$wAp($pa, '50');
+$wAp($pb, '50');
+$a4 = $alts($CA)[$AA];
+$val($avi, $CA);
+eq([$a4['weighted']['value']['nis'] ?? null, $a4['weighted']['block'], $a4['conclusion'], apr_val('SELECT conclusion_value FROM alternatives WHERE pid = ?', [$AA]), apr_val('SELECT conclusion_by FROM alternatives WHERE pid = ?', [$AA]),
+    (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE entity_pid = ? AND action LIKE 'alt.conclu%'", [$AA])],
+    ['1500000', null, null, null, null, 0], '🟡3 16-A4 ברמת הפלט: לשתי גישות עם משקל יש ממוצע משוקלל (1,500,000) — ו-conclusion נשאר null בתשובה ובמסד, גם אחרי קריאות חוזרות');
+
+// 🟡3: רשימות הבחירה (pick) — רק קבצים שגלויים למבקש
+$FP = up($avi, $CA, 'pick-me.pdf');
+$pickAll = array_column($val($avi, $CA)[1]['pick']['files'], 'pid');
+$GLOBALS['apr_file_visible'] = fn($ctx, $c, $f) => $f['pid'] !== $FP;
+$pickHidden = [array_column($val($avi, $CA)[1]['pick']['files'], 'pid'), array_column($sheetView($post('sheet-save', ['case' => $CA, 'title' => 'לבחירה', 'rounding' => 'none'])[1]['sheet'])[1]['pick']['files'], 'pid')];
+unset($GLOBALS['apr_file_visible']);
+eq([in_array($FP, $pickAll, true), in_array($FP, $pickHidden[0], true), in_array($FP, $pickHidden[1], true)], [true, false, false], '🟡3 רשימות הבחירה (בחלופות ובגיליון) מציגות רק קבצים שגלויים למבקש — ההכרעה ב-apr_file_visible');
+
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();

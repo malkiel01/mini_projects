@@ -50,13 +50,26 @@ function apr_val_update(array $ctx, string $table, array $row, int $rev, array $
     throw new AprVisitError('val_changed', ['by' => $by ?: null], is_string($by) && $by !== '' ? 'עודכן בידי ' . $by . ' — רעננו ונסו שוב' : APR_ERRORS['val_changed'][1]);
 }
 
-/** מספר עשרוני בסימן ← מיליוניות, דרך apr_comp_dec (בלי נקודה צפה). null / '' ← null. */
+/**
+ * מספר JSON שהגיע כנקודה צפה ← המחרוזת העשרונית שלו. מעל 15 ספרות משמעותיות נקודה צפה כבר אינה מייצגת את מה שנכתב (המספר
+ * היה נשמר מעוגל בשקט) — ולכן הוא נדחה: מספר ארוך נשלח כמחרוזת (ביקורת 16, 🟡4).
+ */
+function apr_val_float_str(float $v, string $err): string
+{
+    $s = is_finite($v) ? (string)json_encode($v) : apr_fail($err);
+    if (strlen(ltrim(str_replace(['-', '.'], '', $s), '0')) > 15) apr_fail($err);
+    return $s;
+}
+
+/** מספר עשרוני בסימן ← מיליוניות, דרך apr_comp_dec (בלי נקודה צפה). null / '' ← null; סימן בלי מספר ("-") אינו ריק — הוא שגיאה. */
 function apr_val_dec6(mixed $v, string $err = 'sheet_value'): ?int
 {
     if ($v === null || $v === '') return null;
+    if (is_float($v)) $v = apr_val_float_str($v, $err);
     if (is_string($v)) $v = trim($v);
-    $neg = (is_string($v) && str_starts_with($v, '-')) || ((is_int($v) || is_float($v)) && $v < 0);
-    if ($neg) $v = is_string($v) ? substr($v, 1) : (is_int($v) ? -$v : (string)json_encode(-$v));
+    $neg = (is_string($v) && str_starts_with($v, '-')) || (is_int($v) && $v < 0);
+    if ($neg) $v = is_string($v) ? substr($v, 1) : -$v;
+    if ($neg && is_string($v) && preg_match('/^\d/', $v) !== 1) apr_fail($err);
     $n = apr_comp_dec($v, 6, 12, $err);
     return $n === null ? null : ($neg ? -$n : $n);
 }
@@ -165,14 +178,19 @@ function apr_alt_insert(array $c, string $name, ?string $keyDate, string $state,
 
 /**
  * החלופות שנוצרות כשהתיק נפתח (case-start): "מצב קיים" עם המועד הקובע של התיק; ועם הדגל "מתוכנן שיפוץ" — גם "בהנחת השלמת
- * השיפוץ" (16-A2). בתוך הטרנזקציה של הפתיחה. תיק שכבר יש לו חלופות — לא נוגעים.
+ * השיפוץ" (16-A2). בתוך הטרנזקציה של הפתיחה. **כל אחת נזרעת לעצמה**, לפי המצב ולפי השם: חלופה שנוספה כשהתיק היה טיוטה אינה
+ * מונעת את הזריעה (ביקורת 16, 🟡2); חלופה שכבר קיימת במצב הזה או בשם הזה — נשארת כמות שהיא, ואין כפילות. החלופה הראשית שנבחרה
+ * בטיוטה נשארת ראשית.
  */
 function apr_alts_seed(array $c, array $flags, ?int $uid): void
 {
-    if (apr_val('SELECT 1 FROM alternatives WHERE case_id = ? AND deleted_at IS NULL', [$c['id']])) return;
+    $has = fn(string $state, string $name) => (bool)apr_val('SELECT 1 FROM alternatives WHERE case_id = ? AND deleted_at IS NULL AND (state_kind = ? OR name_key = ?)', [$c['id'], $state, apr_alt_name_key($name)]);
     $keyDate = apr_val('SELECT key_date FROM cases WHERE id = ?', [$c['id']]) ?: null;
-    apr_alt_insert($c, APR_ALT_NAME_EXISTING, $keyDate, 'existing', null, true, $uid);
-    if (($flags['renovation_planned'] ?? false) === true) apr_alt_insert($c, APR_ALT_NAME_AFTER, $keyDate, 'after_works', null, false, $uid);
+    if (!$has('existing', APR_ALT_NAME_EXISTING)) {
+        $primary = !apr_val('SELECT 1 FROM alternatives WHERE case_id = ? AND deleted_at IS NULL AND is_primary = 1', [$c['id']]);
+        apr_alt_insert($c, APR_ALT_NAME_EXISTING, $keyDate, 'existing', null, $primary, $uid);
+    }
+    if (($flags['renovation_planned'] ?? false) === true && !$has('after_works', APR_ALT_NAME_AFTER)) apr_alt_insert($c, APR_ALT_NAME_AFTER, $keyDate, 'after_works', null, false, $uid);
 }
 
 /**
@@ -443,7 +461,7 @@ function apr_sheet_formula_in(mixed $f, int $depth = 0, int &$seen = 0): mixed
     if ($depth > 8) apr_fail('sheet_formula');
     // נוסחה ענקית נעצרת כאן, לפני שמישהו עובר על כולה (כל צומת קנוני הוא לכל היותר שלושה איברים בקלט: האובייקט, op ו-args)
     if (++$seen > 4 * APR_SHEET_MAX_NODES) apr_fail('sheet_formula_long');
-    if (is_float($f)) return is_finite($f) ? (string)json_encode($f) : apr_fail('sheet_formula');
+    if (is_float($f)) return apr_val_float_str($f, 'sheet_formula');
     if (is_array($f)) foreach ($f as $k => $v) $f[$k] = apr_sheet_formula_in($v, $depth + 1, $seen);
     return $f;
 }
