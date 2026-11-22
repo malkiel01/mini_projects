@@ -99,7 +99,8 @@ function call(string $method, string $action, array $in = [], ?string $as = null
 
 /**
  * קריאה כקורא (05) — "מכשיר" = צנצנת עוגיות sf_reader משלו. בלי זהות מהשער ובלי sf_staff, אלא אם $opt נותן:
- * platform_user, cookie (sf_staff), ip, ua, csrf (X-Reader-CSRF מפורש; אחרת — מ-account-me של המכשיר).
+ * platform_user, cookie (sf_staff), ip, ua, csrf (X-Reader-CSRF מפורש; אחרת — מ-account-me של המכשיר), sec_fetch_site
+ * (ברירת מחדל: same-origin, כמו דפדפן באותו אתר), origin.
  */
 function rcall(string $method, string $action, array $in = [], string $device = 'A', array $get = [], array $opt = []): array
 {
@@ -111,7 +112,7 @@ function rcall(string $method, string $action, array $in = [], string $device = 
             $body = sf_dispatch($method, $action, $get + ['action' => $action], $in, ['platform_user' => $opt['platform_user'] ?? null,
                 'cookie' => $opt['cookie'] ?? '', 'csrf' => $opt['staff_csrf'] ?? '', 'ua' => $opt['ua'] ?? 'Mozilla/5.0 (Linux; Android 14) Chrome/130.0',
                 'content_type' => $opt['content_type'] ?? 'application/json', 'reader_cookie' => $rjar[$device] ?? '', 'reader_csrf' => $csrf,
-                'ip' => $opt['ip'] ?? '203.0.113.7']);
+                'ip' => $opt['ip'] ?? '203.0.113.7', 'sec_fetch_site' => $opt['sec_fetch_site'] ?? 'same-origin', 'origin' => $opt['origin'] ?? '']);
             $status = 200;
         } catch (Throwable $e) {
             sf_log_exception($e);

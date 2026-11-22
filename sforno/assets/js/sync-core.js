@@ -139,7 +139,7 @@
 
     /** מה שנשלח לשרת מהתור (עד max). */
     function batch(outbox, max = 200) {
-        return Object.values(outbox).sort((a, b) => a.seq - b.seq).slice(0, max).map(o => {
+        return Object.values(outbox).filter(o => !o.held).sort((a, b) => a.seq - b.seq).slice(0, max).map(o => {
             const it = { pid: o.pid, kind: o.kind, ref: o.ref || null, base: o.base || 0 };
             if (o.deleted) it.deleted = true; else it.data = o.data;
             if (o.create_only) it.create_only = true;
@@ -153,17 +153,20 @@
 
     /**
      * תשובת sync-push → state; מה שנשלח יוצא מהתור — אלא אם השתנה שוב בינתיים (seq אחר). "bad" — יוצא (לא חוזרים עליו לנצח).
+     * "full" — נשאר בתור מסומן held: מוצג במכשיר, לא נשלח שוב עד שהקורא ישנה אותו.
      * מחזיר {keys: רשומות שהשתנו, counts: {new, saved, same, kept, gone, bad}}.
      */
     function applyPush(state, outbox, sent, res) {
         const keys = new Set();
-        const counts = { new: 0, saved: 0, same: 0, kept: 0, gone: 0, bad: 0 };
+        const counts = { new: 0, saved: 0, same: 0, kept: 0, gone: 0, bad: 0, full: 0 };
         const seqOf = Object.fromEntries(sent.map(s => [s.item.pid, s.seq]));
         for (const r of (res && res.results) || []) {
             if (!r || typeof r.pid !== 'string') continue;
             counts[r.status] = (counts[r.status] || 0) + 1;
             if (r.item) remember(state, r.item);
-            if (outbox[r.pid] && outbox[r.pid].seq === seqOf[r.pid]) delete outbox[r.pid];
+            // "full" — החשבון מלא: נשאר במכשיר (מוצג), ולא נשלח שוב עד שישתנה
+            if (r.status === 'full' && outbox[r.pid] && outbox[r.pid].seq === seqOf[r.pid]) outbox[r.pid].held = true;
+            else if (outbox[r.pid] && outbox[r.pid].seq === seqOf[r.pid]) delete outbox[r.pid];
             const k = keyOf(r.pid);
             if (k) keys.add(k);
         }

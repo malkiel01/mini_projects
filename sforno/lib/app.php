@@ -39,7 +39,10 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
         $ra = sf_reader_auth($env);
         if ($spec['who'] === 'account' && $ra === null) sf_fail('reader_login');
         if ($method === 'POST') {
-            if (empty($spec['body']) && !str_contains(strtolower((string)($env['content_type'] ?? '')), 'application/json')) sf_fail('content_type');
+            // CSRF בלי אסימון (כניסה, הרשמה): סוג מדיה מדויק — בקשה "פשוטה" מאתר אחר לא יכולה לשלוח application/json —
+            // ובנוסף הדפדפן מצהיר מאיפה הבקשה (Sec-Fetch-Site), ובלעדיו — Origin
+            if (empty($spec['body']) && sf_media_type($env['content_type'] ?? '') !== 'application/json') sf_fail('content_type');
+            if (!sf_same_site($env)) sf_fail('csrf');
             if ($spec['who'] === 'account' && !hash_equals((string)$ra['session']['csrf'], (string)($env['reader_csrf'] ?? ''))) sf_fail('csrf');
         }
         $env['_reader'] = $ra;
@@ -54,6 +57,22 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
     sf_access($spec, $staff);
     $out = sf_run($action, $get, $in, $staff, $session, $env);
     return !empty($spec['raw']) ? (is_array($out) ? $out : ['ok' => true]) : ['ok' => true] + (array)$out;
+}
+
+/** סוג המדיה בלי פרמטרים, באותיות קטנות ("Application/JSON; charset=utf-8" → "application/json"). */
+function sf_media_type(mixed $ct): string
+{
+    return strtolower(trim(explode(';', (string)$ct, 2)[0]));
+}
+
+/** הבקשה מהאתר שלנו? Sec-Fetch-Site (same-origin / none), ואם אין — Origin עם המארח שלנו. בלי שניהם (לא דפדפן) — כן. */
+function sf_same_site(array $env): bool
+{
+    $site = strtolower(trim((string)($env['sec_fetch_site'] ?? '')));
+    if ($site !== '') return in_array($site, ['same-origin', 'none'], true);
+    $origin = trim((string)($env['origin'] ?? ''));
+    if ($origin === '') return true;
+    return strtolower((string)parse_url($origin, PHP_URL_HOST)) === strtolower((string)parse_url(sf_origin(), PHP_URL_HOST));
 }
 
 function sf_run(string $action, array $get, array $in, ?array $staff, ?array $session, array $env): mixed

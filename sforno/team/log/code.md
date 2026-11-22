@@ -201,3 +201,21 @@ customs) · 2 שפת הסימון — `lib/markup.php` (`SF_MK_TAGS`, `SF_MK_STY
 15. `app.json` גרסה 0.5.
 
 **2026-11-22 — PR טיוטה ל-`main` נפתח; הודעה לבקרה.**
+
+## 2026-11-22 — 05 תיקון אחרי ביקורת סבב 1 (ענף `claude/sforno-05-fix`, מעל #1784)
+
+לפי `team/reviews/05-readers-sync.md` — שלושת ה-🟡 ושתי הערות ⚪:
+1. **🟡1 CSRF ב-POST של `guest` / `account`:** סוג מדיה מדויק `application/json` (לפני `;`, בלי תלות באותיות) — `text/plain;
+   x=application/json` נדחה; **וגם** `Sec-Fetch-Site` שקיים ואינו `same-origin` / `none` ← 403, ובלעדיו `Origin` שהמארח שלו
+   אינו שלנו ← 403 (`sf_media_type`, `sf_same_site` ב-`lib/app.php`; api.php מעביר את שתי הכותרות). פעולות המנהלים — בלי שינוי.
+2. **🟡2 תקרה וקצב ל-sync-push:** עד **5MB** לקורא (סכום `LENGTH(data)` כפי שנשמר, אחרי הצפנה) — פריט שהיה עובר אותה ← `full`
+   (לא נשמר; מחיקה ועריכה שמקטינה — תמיד עוברות). **120 שליחות בדקה לקורא** ← 429 `rate`. במכשיר: `full` נשאר בתור מסומן
+   `held` — מוצג, לא נשלח שוב עד שישתנה, והודעה "אין עוד מקום בחשבון".
+3. **🟡3 מיילים בלי השם** שהמשתמש בחר ("שלום," בלבד) — אין טקסט חופשי של משתמש במייל שיוצא מספורנו.
+4. **⚪ JWKS:** `kid` לא מוכר ← רענון כפוי לכל היותר פעם בדקה (`meta.google_jwks_forced_at`).
+5. **⚪ מפתח ה-HMAC נגזר** מ-`secret.key` ב-`sodium_crypto_kdf_derive_from_key` (הקשר `sfhmac01`) — לא אותו מפתח של ההצפנה.
+   אין נתונים חיים להעברה (05 עוד לא מוזגה).
+
+**⚙️ לרישום:** תקרה 5MB ו-120/דקה; `full` + `held`; Sec-Fetch-Site / Origin בעולם הקוראים; HMAC מ-KDF.
+**בדיקות:** h-accounts 134 (+18: CSRF, מיילים, JWKS), i-sync 56 (+9: תקרה, קצב), sync-core 50 (+5: held). run.php 9/9; Playwright —
+הזרימה המלאה עוברת עם הבדיקה החדשה (Chrome שולח `Sec-Fetch-Site: same-origin`).

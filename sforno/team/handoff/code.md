@@ -56,6 +56,8 @@
   מיילים — `$GLOBALS['sf_mail_out'] = []` לפני; הקישור בגוף. **`$x['k'] ?? 'x'` על ערך null נותן 'x'** — `array_key_exists`.
 - **סוג חדש של מידע אישי (08 תזכורות):** `reminder` כבר ב-`SF_SYNC_KINDS`; במכשיר — להוסיף ל-`syncable/itemsFor/keyOf/build`
   ב-`sync-core.js` ובדיקה ב-`sync-core.mjs`. מוצפן? — `SF_SYNC_SEALED`.
+- **CSRF בעולם הקוראים** — `sf_same_site` (Sec-Fetch-Site / Origin) וסוג מדיה מדויק. בדיקה עם `rcall` שולחת `same-origin` כברירת מחדל.
+- **sync-push:** תקרה 5MB לקורא (`full` → `held` במכשיר) ו-120 שליחות בדקה. מיילים — בלי טקסט חופשי של משתמש.
 - **`data/secret.key`** — בלעדיו ההערות והשמות לא מתפענחים. לא למחוק, לכלול בגיבוי (10).
 - **מחיקה מלאה (10):** `readers.status = 'deleted'` + `deleted_at` — אחרי 30 יום למחוק `personal_items`, `devices`,
   `reader_tokens`, ולהחליף את המייל (UNIQUE) — אחרת אי אפשר להירשם שוב באותו מייל.

@@ -66,6 +66,28 @@ eq(code(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password
 eq(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'A')[0], 200, 'K1 החדשה — כן');
 unset($GLOBALS['sf_time']);
 
+// ── ביקורת 05 🟡1: CSRF בכניסה ובהרשמה (בלי אסימון) ───────────
+foreach (['text/plain; x=application/json', 'text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=application/json'] as $ct) {
+    eq(code(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'CS', [], ['content_type' => $ct])), 'content_type', "CSRF סוג מדיה \"$ct\" — נדחה");
+}
+eq(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'CS', [], ['content_type' => 'Application/JSON; charset=utf-8'])[0], 200, 'CSRF application/json עם charset — עובר');
+foreach (['cross-site', 'same-site'] as $site) {
+    eq(code(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'CS2', [], ['sec_fetch_site' => $site])), 'csrf', "CSRF Sec-Fetch-Site: $site — נדחה");
+    eq(code(rcall('POST', 'account-register', ['email' => 'csrf@example.com', 'password' => 'aaaaaaaa1'], 'CS2', [], ['sec_fetch_site' => $site])), 'csrf', "CSRF הרשמה, Sec-Fetch-Site: $site — נדחה");
+}
+eq(code(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'CS2', [], ['sec_fetch_site' => '', 'origin' => 'https://evil.example'])), 'csrf', 'CSRF בלי Sec-Fetch-Site, Origin של אתר אחר — נדחה');
+eq(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'CS2', [], ['sec_fetch_site' => '', 'origin' => 'https://example.test'])[0], 200, 'CSRF Origin שלנו — עובר');
+eq(rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'CS3', [], ['sec_fetch_site' => 'none'])[0], 200, 'CSRF Sec-Fetch-Site: none (הקלדה / סימניה) — עובר');
+eq(code(rcall('POST', 'account-logout', [], 'CS3', [], ['sec_fetch_site' => 'cross-site'])), 'csrf', 'CSRF גם פעולת account מאתר אחר — נדחית');
+check('CSRF לא נוצר חשבון מהבקשות שנדחו', !sf_val("SELECT 1 FROM readers WHERE email = 'csrf@example.com'"));
+
+// ── ביקורת 05 🟡3: בלי השם שהמשתמש בחר במיילים ─────────────────
+$GLOBALS['sf_mail_out'] = [];
+rcall('POST', 'account-register', ['email' => 'phish@example.com', 'password' => 'phish-phish-1', 'name' => 'זכיתם! היכנסו ל-evil.example'], 'PH');
+rcall('POST', 'account-reset-request', ['email' => 'phish@example.com'], 'PH');
+eq(count($GLOBALS['sf_mail_out']), 2, 'מיילים: אימות ואיפוס נשלחו');
+check('מיילים: השם שהמשתמש בחר לא מופיע (לא בגוף ולא בנושא)', !array_filter($GLOBALS['sf_mail_out'], fn($m) => str_contains($m['body'] . $m['subject'], 'evil.example') || str_contains($m['body'], 'זכיתם')));
+
 // ── K2: 5 שגויות → נעילה 15 דקות; ההודעה זהה למייל קיים ולא קיים ──
 rcall('POST', 'account-register', ['email' => 'lock@example.com', 'password' => 'נכונה-נכונה-1'], 'L');
 $msgs = [];
@@ -142,6 +164,14 @@ $r = rcall('POST', 'account-google', ['credential' => $jwt(['sub' => '88', 'emai
 eq([$r[1]['reader']['google'] ?? null, $r[1]['reader']['password'] ?? null], [true, false], 'K3 חשבון לא מאומת באותו מייל ← Google, בלי הסיסמה הקודמת');
 eq(code(rcall('GET', 'account-devices', [], 'SQ')), 'reader_login', 'K3 …וה-session הקודם בוטל');
 check('K3 המפתחות של Google נטענו פעם אחת (מטמון)', count(array_filter($GLOBALS['t_http_log'], fn($u) => $u === SF_GOOGLE_CERTS)) <= 3);
+$GLOBALS['t_http_log'] = [];
+$GLOBALS['sf_time'] = time() + 120;
+for ($i = 0; $i < 5; $i++) rcall('POST', 'account-google', ['credential' => $jwt([], null, 'made-up-' . $i)], 'G5');
+eq(count(array_filter($GLOBALS['t_http_log'], fn($u) => $u === SF_GOOGLE_CERTS)), 1, 'K3 kid מומצא — רענון כפוי של המפתחות לכל היותר פעם בדקה');
+$GLOBALS['sf_time'] = time() + 200;
+rcall('POST', 'account-google', ['credential' => $jwt([], null, 'made-up-x')], 'G5');
+eq(count(array_filter($GLOBALS['t_http_log'], fn($u) => $u === SF_GOOGLE_CERTS)), 2, 'K3 …ואחרי דקה — שוב מותר');
+unset($GLOBALS['sf_time']);
 
 // ── K9 (מכשירים) + K11: הפרדה בין עולמות ───────────────────
 rcall('POST', 'account-login', ['email' => 'dana@example.com', 'password' => 'חדשה-חדשה-2'], 'D1', [], ['ua' => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Version/17.0 Mobile Safari/604.1']);

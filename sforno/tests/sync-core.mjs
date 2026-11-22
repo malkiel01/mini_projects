@@ -196,6 +196,21 @@ ok('pid של פריט שלא מוכר במכשיר (08) — מתעלמים', C.k
     ok('K8 מיזוג חוזר — בלי כפילויות בשרת', Object.keys(srv.items).length === before);
 }
 
+// ── "full": נשאר במכשיר, לא נשלח שוב עד שמשתנה ──────────────
+{
+    const st = C.emptyState(), ob = {};
+    st.owner = 'R';
+    C.local(st, ob, 'marks', [mark('a1')]);
+    const sent = C.batch(ob);
+    const r = C.applyPush(st, ob, sent, { results: [{ pid: 'm:a1', status: 'full' }] });
+    ok('full — נספר', r.counts.full === 1);
+    ok('full — נשאר בתור, מסומן held', ob['m:a1'] && ob['m:a1'].held === true);
+    ok('full — מוצג במכשיר', C.view(st, ob, 'marks').length === 1);
+    ok('full — לא נשלח שוב', C.batch(ob).length === 0);
+    C.local(st, ob, 'marks', [mark('a1', { color: 'x' })]);
+    ok('full — אחרי שינוי נשלח שוב', C.batch(ob).length === 1);
+}
+
 // ── התור לא נכנס כשאין בעלים (אורח), ואחרי כניסה רק מה שהשתנה ──
 {
     const st = C.emptyState(), ob = {};

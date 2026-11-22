@@ -98,6 +98,29 @@ eq(code($push('A', array_fill(0, SF_SYNC_BATCH + 1, $fav))), 'too_large', 'יו�
 eq(code(rcall('POST', 'sync-push', ['items' => 'x'], 'A')), 'bad_input', 'items שאינו רשימה — 400');
 eq(code(rcall('POST', 'sync-push', ['items' => []], 'A', [], ['csrf' => ''])), 'csrf', 'בלי X-Reader-CSRF — 403');
 
+// ── ביקורת 05 🟡2: תקרת בתים לקורא, והגבלת קצב ─────────────────
+rcall('POST', 'account-register', ['email' => 'big@example.com', 'password' => 'big-big-big-1'], 'BIG');
+$blob = str_repeat('א', 7000);   // ~14KB לפריט
+$bigItems = [];
+for ($i = 0; $i < 400; $i++) $bigItems[] = ['pid' => "big$i", 'kind' => 'favorite', 'data' => ['t' => $blob]];
+$r = $push('BIG', $bigItems);
+$c = array_count_values($st($r));
+check('תקרה: עד 5MB לקורא — השאר "full"', ($c['full'] ?? 0) > 0 && ($c['new'] ?? 0) > 0, $c);
+$used = (int)sf_val("SELECT SUM(LENGTH(p.data)) FROM personal_items p JOIN readers r ON r.id = p.reader_id WHERE r.email = 'big@example.com'");
+check('תקרה: הנשמר בפועל ≤ 5MB', $used <= SF_SYNC_READER_BYTES, $used);
+check('תקרה: פריט "full" לא נשמר', !sf_val("SELECT 1 FROM personal_items WHERE pid = 'big399'"));
+eq($st($push('BIG', [['pid' => 'big0', 'kind' => 'favorite', 'deleted' => true, 'base' => 1000]])), ['saved'], 'תקרה: מחיקה תמיד עוברת (מפנה מקום)');
+eq($st($push('BIG', [['pid' => 'big399', 'kind' => 'favorite', 'data' => ['t' => 'קטן']]])), ['new'], 'תקרה: אחרי פינוי — אפשר שוב');
+eq($st($push('BIG', [['pid' => 'big1', 'kind' => 'favorite', 'data' => ['t' => 'קטן יותר']]])), ['saved'], 'תקרה: עריכה שמקטינה — עוברת');
+rcall('POST', 'account-register', ['email' => 'rl@example.com', 'password' => 'rl-rl-rl-1'], 'RL');
+$rl = null;
+for ($i = 0; $i < SF_SYNC_PUSH_PER_MIN + 1; $i++) $rl = $push('RL', []);
+eq(code($rl), 'rate', 'קצב: יותר מ-120 שליחות בדקה — 429');
+$GLOBALS['sf_time'] = time() + 61;
+eq($push('RL', [])[0], 200, 'קצב: אחרי דקה — שוב מותר');
+unset($GLOBALS['sf_time']);
+eq($push('A', [])[0], 200, 'קצב: לפי קורא — קורא אחר לא נחסם');
+
 // ── K8: מיזוג אורח — הפריטים נבנים ב-node (sync-core.js) ונשלחים לשרת האמיתי ──
 exec('command -v node 2>/dev/null', $nodeOut, $nodeCode);
 check('node מותקן (נדרש לבדיקת sync-core.js; בשרת עצמו אין צורך)', $nodeCode === 0);

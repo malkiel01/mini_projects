@@ -24,6 +24,8 @@ const SF_SYNC_SEALED = ['note', 'prayer_name'];
 const SF_SYNC_BATCH = 500;
 const SF_SYNC_ITEM_MAX = 32_000;
 const SF_SYNC_READER_MAX = 20_000;
+const SF_SYNC_READER_BYTES = 5_000_000;   // כל המידע של קורא, כפי שנשמר (אחרי הצפנה)
+const SF_SYNC_PUSH_PER_MIN = 120;
 
 /** שורה → מה שיוצא לבעל המידע. */
 function sf_sync_out(array $row): array
@@ -67,7 +69,8 @@ function sf_sync_next_rev(int $readerId): int
 
 /**
  * sync-push: {items: [{pid, kind, ref, data, deleted, base, create_only}]} — עד 500 בבת אחת, בטרנזקציה אחת.
- * מחזיר לכל פריט status (new · saved · same · kept · gone · bad) ואת המצב שלו בשרת אחרי ההחלטה.
+ * מחזיר לכל פריט status (new · saved · same · kept · gone · bad · full) ואת המצב שלו בשרת אחרי ההחלטה.
+ * full — הפריט היה מעביר את הקורא מעל 5MB (מחיקות תמיד עוברות). עד 120 שליחות בדקה לקורא (429).
  */
 function sf_sync_push(array $ra, array $in): array
 {
@@ -76,21 +79,27 @@ function sf_sync_push(array $ra, array $in): array
     if (count($items) > SF_SYNC_BATCH) sf_fail('too_large');
     $rid = (int)$ra['reader']['id'];
     $dev = (int)$ra['session']['device_id'];
+    sf_rate('sync', (string)$ra['reader']['pid'], SF_SYNC_PUSH_PER_MIN, 60);
     return sf_tx(function () use ($items, $rid, $dev) {
         $now = sf_now();
         $out = [];
+        $bytes = (int)sf_val('SELECT COALESCE(SUM(LENGTH(data)), 0) FROM personal_items WHERE reader_id = ?', [$rid]);
         foreach ($items as $raw) {
             $it = sf_sync_in($raw);
             if ($it === null) { $out[] = ['pid' => is_array($raw) && is_string($raw['pid'] ?? null) ? mb_substr($raw['pid'], 0, 120) : null, 'status' => 'bad']; continue; }
             $cur = sf_row('SELECT * FROM personal_items WHERE reader_id = ? AND pid = ?', [$rid, $it['pid']]);
             $sealed = in_array($it['kind'], SF_SYNC_SEALED, true);
             $store = $it['json'] === null ? null : ($sealed ? sf_seal($it['json']) : $it['json']);
+            $grow = strlen((string)$store) - ($cur ? strlen((string)$cur['data']) : 0);
+            $full = $grow > 0 && $bytes + $grow > SF_SYNC_READER_BYTES;
             if (!$cur) {
+                if ($full) { $out[] = ['pid' => $it['pid'], 'status' => 'full']; continue; }
                 if ((int)sf_val('SELECT COUNT(*) FROM personal_items WHERE reader_id = ?', [$rid]) >= SF_SYNC_READER_MAX) sf_fail('too_large', 'הגעתם למספר הפריטים המרבי בחשבון');
                 $rev = sf_sync_next_rev($rid);
                 sf_insert('personal_items', ['pid' => $it['pid'], 'reader_id' => $rid, 'kind' => $it['kind'], 'ref' => $it['ref'], 'data' => $store,
                     'rev' => $rev, 'created_at' => $now, 'updated_at' => $now, 'deleted_at' => $it['deleted'] ? $now : null, 'device_id' => $dev]);
                 $status = 'new';
+                $bytes += $grow;
             } elseif ($cur['kind'] !== $it['kind']) {
                 $status = 'bad';
             } elseif ($it['create_only']) {
@@ -103,11 +112,14 @@ function sf_sync_push(array $ra, array $in): array
                     && ($it['deleted'] || ($curJson !== null && json_decode($curJson, true) === json_decode((string)$it['json'], true)));
                 if ($same) {
                     $status = 'same';
+                } elseif ($full) {
+                    $status = 'full';
                 } else {
                     $rev = sf_sync_next_rev($rid);
                     sf_exec('UPDATE personal_items SET ref = ?, data = ?, rev = ?, updated_at = ?, deleted_at = ?, device_id = ? WHERE id = ?',
                         [$it['ref'], $store, $rev, $now, $it['deleted'] ? $now : null, $dev, $cur['id']]);
                     $status = 'saved';
+                    $bytes += $grow;
                 }
             }
             $row = sf_row('SELECT * FROM personal_items WHERE reader_id = ? AND pid = ?', [$rid, $it['pid']]);

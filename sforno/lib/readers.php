@@ -66,10 +66,14 @@ function sf_unseal(string $sealed): ?string
     return $out === false ? null : $out;
 }
 
-/** hash של ערך להגבלת ניסיונות — HMAC במפתח הסודי, כך שגם המסד לא מגלה אילו מיילים / כתובות ניסו. */
+/**
+ * hash של ערך להגבלת ניסיונות — HMAC, כך שגם המסד לא מגלה אילו מיילים / כתובות ניסו. המפתח נגזר מ-secret.key (KDF),
+ * כך שמפתח ההצפנה עצמו לא משמש לשתי מטרות.
+ */
 function sf_key_hash(string $scope, string $value): string
 {
-    return hash_hmac('sha256', $scope . ':' . $value, sf_secret_key());
+    $k = $GLOBALS['sf_hmac_key'][sf_data_dir()] ??= sodium_crypto_kdf_derive_from_key(32, 1, 'sfhmac01', sf_secret_key());
+    return hash_hmac('sha256', $scope . ':' . $value, $k);
 }
 
 // ── הגבלת ניסיונות ───────────────────────────────────────────
@@ -283,7 +287,7 @@ function sf_verify_mail(array $reader): void
 {
     $link = sf_self_url('index.html#/account/verify/' . sf_reader_token($reader, 'verify', SF_VERIFY_TTL));
     sf_reader_mail($reader['email'], 'ספורנו — אימות כתובת המייל',
-        "שלום {$reader['name']},\n\nכדי לאמת את כתובת המייל בחשבון ספורנו — פתחו את הקישור (בתוקף 24 שעות):\n$link\n\n" .
+        "שלום,\n\nכדי לאמת את כתובת המייל בחשבון ספורנו — פתחו את הקישור (בתוקף 24 שעות):\n$link\n\n" .
         "לא נרשמתם לספורנו? אפשר להתעלם מהמייל הזה.\n");
 }
 
@@ -382,7 +386,7 @@ function sf_account_reset_request(array $in, array $env): array
         if (!$r) return;
         $link = sf_self_url('index.html#/account/reset/' . sf_reader_token($r, 'reset', SF_RESET_TTL));
         sf_reader_mail($r['email'], 'ספורנו — איפוס סיסמה',
-            "שלום {$r['name']},\n\nביקשתם לאפס את הסיסמה בחשבון ספורנו. הקישור בתוקף שעה אחת, לשימוש אחד:\n$link\n\n" .
+            "שלום,\n\nביקשתם לאפס את הסיסמה בחשבון ספורנו. הקישור בתוקף שעה אחת, לשימוש אחד:\n$link\n\n" .
             "לא ביקשתם? אפשר להתעלם — הסיסמה לא תשתנה.\n");
     });
     return ['sent' => true];
@@ -517,7 +521,11 @@ function sf_google_verify(mixed $jwt, string $aud): array
     $sig = sf_b64url($p[2]);
     if (!is_array($head) || !is_array($claims) || $sig === false || ($head['alg'] ?? '') !== 'RS256' || !is_string($head['kid'] ?? null)) sf_fail('google');
     $keys = sf_google_keys();
-    if (!isset($keys[$head['kid']])) $keys = sf_google_keys(true);
+    // kid שלא במטמון — רענון כפוי, לכל היותר פעם בדקה (אחרת kid מומצא = בקשה ל-Google בכל ניסיון)
+    if (!isset($keys[$head['kid']]) && (int)sf_meta('google_jwks_forced_at', '0') < sf_time() - 60) {
+        sf_meta_set('google_jwks_forced_at', (string)sf_time());
+        $keys = sf_google_keys(true);
+    }
     $pem = $keys[$head['kid']] ?? null;
     if ($pem === null || openssl_verify($p[0] . '.' . $p[1], $sig, $pem, OPENSSL_ALGO_SHA256) !== 1) sf_fail('google');
     $now = sf_time();

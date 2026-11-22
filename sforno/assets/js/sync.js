@@ -25,7 +25,7 @@
         await SF.store.setRaw('sync:state', state);
         await SF.store.setRaw('sync:outbox', outbox);
     }
-    const pending = () => Object.keys(outbox || {}).length;
+    const pending = () => Object.values(outbox || {}).filter(o => !o.held).length;
     function setStatus(s) {
         status = s;
         for (const fn of listeners) { try { fn(SF.sync.info()); } catch (e) { /* מאזין של מסך שנסגר */ } }
@@ -72,6 +72,7 @@
                     for (const [k, n] of Object.entries(r.counts)) counts[k] = (counts[k] || 0) + n;
                     await save();
                 }
+                if (counts.full) SF.toast('אין עוד מקום בחשבון — חלק מהשינויים נשמרו רק במכשיר הזה', true);
                 for (let i = 0; i < 100; i++) {
                     const res = await SF.api('sync-pull', { params: { since: String(state.cursor) } });
                     C.applyPull(state, res.items, res.cursor).forEach(k => keys.add(k));
