@@ -54,7 +54,7 @@ $M = [
     ['סטייה 7: ת"ז מושמטת', 'report_build.php', "\\d{9}(?![\\d.,])/', \$text) === 1) return null;", "\\d{9}(?![\\d.,])/', \$text) === 2) return null;"],
     ['סטייה 7: מייל מושמט', 'report_build.php', "[\\w.\\-]+/u', \$text) === 1) return null;", "[\\w.\\-]+/u', \$text) === 2) return null;"],
     ['סטייה 7: שם המבקר נמחק', 'report_build.php', "    foreach (\$pii['staff'] as \$n) {", "    foreach ([] as \$n) {"],
-    ['סטייה 7: הקלט עובר ניקוי', 'report_build.php', "        \$text = apr_report_ai_scrub(\$text, \$pii);\n        if (\$text === null) { \$omitted++; return; }\n", ''],
+    ['סטייה 7: הקלט עובר ניקוי', 'report_build.php', "        \$text = apr_report_ai_scrub(\$text, \$pii);\n        if (\$text === null) { \$omitted++; return false; }\n", ''],
     ['17-D1 src שלא נשלח ← נזרק', 'report_build.php', " || \$src === null || !isset(\$items[\$src])) { \$dropped++; continue; }", " || \$src === null) { \$dropped++; continue; }"],
     ['17-D1 מספר שאינו בנתונים מסומן', 'report_build.php', " + (\$unknown ? ['num_unknown' => \$unknown] : []);", " + [];"],
     ['§6.2 טקסט בינה נכנס "לא נסקר"', 'report.php', "'origin' => 'ai', 'ai_run_id' => \$r['run'], 'ai_reviewed' => 0,", "'origin' => 'ai', 'ai_run_id' => \$r['run'], 'ai_reviewed' => 1,"],

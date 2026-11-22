@@ -276,6 +276,49 @@ eq([in_array('משה לקוח', $pii['parties'], true), in_array('moshe@client.e
         array_fill(0, 3, ['state' => 'failed', 'reason' => 'not_allowed']), ['report_no_ai', 'report_no_ai'], 0, [true, true, true]],
     'סטייה 7: שם / מייל / טלפון / ת"ז של גורם אינם נשלחים למודל — הפריט שמכיל אותם מושמט מהקלט; שם המבקר נמחק מהשורה; נתון רגיל נשאר; פרק שאינו ברשימה הסגורה (purpose, methods, documents): המסד מסרב לסמן לו ai (CHECK), הקוד אינו שולח אותו גם אם סומן, ו"ניסוח עכשיו" נדחה');
 
+// B1 (סבב 2): כל אחת מהצורות האלה, בתוך נתון של פרק מותר, **אינה מגיעה ל-payload שהמתאם מקבל** — והנתון התמים שלידן כן
+call('POST', 'case-party-add', ['case' => $CP, 'name' => 'ישראל ישראלי', 'org' => 'בנק הדוגמה', 'phone' => '054-7654321', 'email' => 'isr@bank.example', 'kind' => 'bank'], $avi);
+$cpRow = apr_row('SELECT * FROM cases WHERE pid = ?', [$CP]) + ['perms' => [], 'my_role' => 'system', 'share' => null];
+$cpSec = ['key' => 'area_desc', 'title' => 'סביבת הנכס ותיאורו', 'ai_allowed' => 1, 'pid' => 'x', 'rev' => 1];
+$useFact = fn() => apr_val("SELECT pid FROM facts WHERE case_id = ? AND attribute_key = 'actual_use' AND deleted_at IS NULL AND state <> 'rejected' ORDER BY id DESC LIMIT 1", [$cpRow['id']]);
+$leaks = [];
+$samples = ['ת"ז השוכר 123456789.' => '123456789', 'ת"ז 123456789, נמסרה' => '123456789', 'ת.ז 01234567-8 של השוכר' => '01234567', 'מספר זהות 12345678 בלבד' => '12345678',
+    'טלפון 054.765.4321 לתיאום' => '4321', 'טלפון +972 54 765 4321' => '4321', 'טלפון +972-(0)54-7654321' => '7654321', 'נייד 052.111.2233' => '2233', 'טל׳ 03-5551234' => '5551234',
+    'נמסר בידי מר ישראלי' => 'ישראלי', 'לדברי ישראל  ישראלי (רווח כפול)' => 'ישראל', 'לדברי ישראל־ישראלי' => 'ישראל', 'לדברי יִשְׂרָאֵל' => 'לדברי', 'נמסר לישראלי בכתב' => 'לישראלי',
+    'מכתב מבנק הדוגמה' => 'הדוגמה', 'אישור של הבנק: הדוגמה' => 'הדוגמה', 'isr [at] bank.example' => 'bank', 'isr(at)bank.example' => 'bank', 'ISR@BANK.example' => 'BANK'];
+$n = 0;
+foreach ($samples as $text => $needle) {
+    if ($post('fact-correct', ['fact' => $useFact(), 'rev' => $frev($useFact()), 'value' => $text, 'correction_note' => 'בדיקה ' . ++$n])[0] !== 200) { $leaks[] = "לא נשמר: $text"; continue; }
+    $fake->calls = [];
+    apr_report_ai_section(null, $cpRow, $cpSec, apr_pc_report_default(), 'rd:b1-test:' . $n);
+    $sent = json_encode($fake->calls, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (count($fake->calls) !== 1 || !str_contains($sent, '90') || str_contains($sent, $needle) || str_contains($sent, 'שימוש בפועל')) $leaks[] = $text;
+}
+$post('fact-correct', ['fact' => $useFact(), 'rev' => $frev($useFact()), 'value' => 'מגורים, בתל אביב', 'correction_note' => 'נקי']);
+$fake->calls = [];
+apr_report_ai_section(null, $cpRow, $cpSec, apr_pc_report_default(), 'rd:b1-test:clean');
+$cleanSent = json_encode($fake->calls, JSON_UNESCAPED_UNICODE);
+// 🟡4: שם של חבר צוות ("אבי") נמחק רק כמילה שלמה; 🟡7: ארגון וטלפון שמור של גורם
+$staff = ['parties' => ['ישראל ישראלי', 'בנק הדוגמה', '054-7654321'], 'staff' => ['אבי', 'טל', 'דנה לוי']];
+eq([$leaks, str_contains($cleanSent, 'מגורים, בתל אביב'),
+    apr_report_ai_scrub('הנכס בתל אביב, ליד רחוב אבידן', $staff), apr_report_ai_scrub('טל׳ המשרד נמסר, והטל ירד', $staff), apr_report_ai_scrub('הביקור נערך בידי אבי.', $staff), apr_report_ai_scrub('נבדק על ידי דנה־לוי ואבי', $staff),
+    apr_report_ai_scrub('אישור מבנק אחר', $staff), apr_report_ai_scrub('חוות דעת של הדוגמה בע"מ', $staff), apr_report_ai_scrub('לתיאום: 0547654321', $staff), apr_report_ai_scrub('לתיאום: 972547654321+', $staff),
+    apr_report_ai_scrub('שטח 85.5 מ"ר, קומה 3 מתוך 12, נבנה בשנת 1998', $staff), apr_report_ai_scrub('מחיר: 2,100,000 ₪ ביום 2026-09-01', $staff)],
+    [[], true, 'הנכס בתל אביב, ליד רחוב אבידן', 'טל׳ המשרד נמסר, והטל ירד', 'הביקור נערך.', 'נבדק על ידי', null, null, null, null,
+        'שטח 85.5 מ"ר, קומה 3 מתוך 12, נבנה בשנת 1998', 'מחיר: 2,100,000 ₪ ביום 2026-09-01'],
+    'B1: ת"ז (9 ספרות לפני נקודה / פסיק, 8 ספרות, עם מקף), טלפון (נקודות, ‎+972, סוגריים), חלק משם של גורם / רווח כפול / מקף / ניקוד / אות שימוש, ארגון, ומייל ב-[at] — אינם ב-payload של המתאם; הנתון התמים נשלח. 🟡4: שם של חבר צוות נמחק כמילה שלמה בלבד ("תל אביב", "טל׳" נשארים)');
+
+// B1, העיקרון: מה שאינו נדרש לניסוח אינו נשלח כלל — שם המבקר, טקסט חופשי של מזהה "אחר", וערך טקסט חופשי בקבוצות הזכויות / השכירות / העסקה. הנתון שלא נשלח נשאר בפרק כהפניה
+$fact($CP, 'rent_term', 'עד סוף 2027, השוכר הוא פלוני אלמוני');
+call('POST', 'case-identifier-add', ['case' => $CP, 'kind' => 'other', 'value_text' => 'הדירה של משפחת פלמוני'], $avi);
+$inA2 = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, $cpSec, apr_pc_report_default());
+$inP2 = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'property', 'title' => 'זיהוי הנכס והזכויות'], apr_pc_report_default());
+$builtP = json_encode(apr_report_resolve(['user' => null, 'office' => null], $cpRow, apr_report_build($cpRow, 'property', apr_pc_report_default())['blocks'], apr_pc_report_default()), JSON_UNESCAPED_UNICODE);
+eq([str_contains($inA2['message'], 'פלוני'), str_contains($inA2['message'], 'תקופת השכירות'), in_array(['type' => 'fact', 'attr' => 'rent_term'], $inA2['kept'], true),
+    str_contains($inP2['message'], 'פלמוני'), str_contains($inP2['message'], '6158'), str_contains($builtP, 'פלמוני')],
+    [false, false, true, false, true, true],
+    'B1: ערך טקסט חופשי בקבוצת השכירות אינו נשלח (ונשאר בפרק כהפניה לנתון); טקסט חופשי של מזהה "אחר" אינו נשלח — אבל נשאר בדוח עצמו; גוש וחלקה נשלחים');
+
 // 17-D1: src שלא נשלח ← הבלוק נזרק; מספר שאינו בנתונים ← ממצא חוסם. מקרה קצה 10: טקסט עם שווי
 $fake->next = fn() => reply(['blocks' => [['text' => 'שטח הדירה 85.5 מ"ר', 'src' => 'd1'], ['text' => 'פסקה עם מקור שלא נשלח', 'src' => 'd99'], ['text' => 'בלי מקור בכלל'],
     ['text' => 'שווי הנכס מוערך ב-2,150,000 ₪, ובדירה 4 חדרים', 'src' => 'd2'], ['text' => 'בשנת 2019 שופצה הדירה', 'src' => 'd1']]]);

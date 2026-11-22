@@ -206,7 +206,7 @@ function apr_report_table(array $ctx, array $c, string $table, array $tpl): arra
             $kinds = ['address' => 'כתובת', 'parcel' => 'גוש / חלקה', 'apartment' => 'דירה', 'building_file' => 'תיק בניין', 'other' => 'אחר'];
             foreach (apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']]) as $i) {
                 $parts = array_filter([$i['street'] !== null ? trim($i['street'] . ' ' . $i['house_no']) : null, $i['apartment_no'] !== null ? 'דירה ' . $i['apartment_no'] : null, $i['locality'],
-                    $i['gush'] !== null ? 'גוש ' . $i['gush'] : null, $i['helka'] !== null ? 'חלקה ' . $i['helka'] : null, $i['tat_helka'] !== null ? 'תת-חלקה ' . $i['tat_helka'] : null, $i['value_text']]);
+                    $i['gush'] !== null ? 'גוש ' . $i['gush'] : null, $i['helka'] !== null ? 'חלקה ' . $i['helka'] : null, $i['tat_helka'] !== null ? 'תת-חלקה ' . $i['tat_helka'] : null, empty($tpl['for_ai']) ? $i['value_text'] : null]);     // טקסט חופשי של מזהה אינו נשלח לבינה
                 $add([$kinds[$i['kind']] ?? $i['kind'], implode(', ', $parts)]);
             }
             break;
@@ -308,7 +308,7 @@ function apr_report_build(array $c, string $key, array $tpl): array
     if ($key === 'visit') {
         $visits = apr_rows("SELECT v.*, u.name AS visitor FROM visits v LEFT JOIN users u ON u.id = v.visitor_user_id WHERE v.case_id = ? AND v.status = 'completed' ORDER BY v.completed_at, v.id", [$c['id']]);
         foreach ($visits as $v) {
-            $blocks[] = ['type' => 'p', 'text' => 'ביקור בנכס נערך ביום ' . substr((string)$v['completed_at'], 0, 10) . ($v['visitor'] ? ', בידי ' . $v['visitor'] : '') . '.', 'src' => ['type' => 'visit', 'pid' => $v['pid']]];
+            $blocks[] = ['type' => 'p', 'text' => 'ביקור בנכס נערך ביום ' . substr((string)$v['completed_at'], 0, 10) . ($v['visitor'] && empty($tpl['for_ai']) ? ', בידי ' . $v['visitor'] : '') . '.', 'src' => ['type' => 'visit', 'pid' => $v['pid']]];
             $sources[] = ['type' => 'visit', 'pid' => $v['pid'], 'label' => 'ביקור ' . (int)$v['seq']];
         }
         if (!$visits) $missing('לא נערך ביקור בנכס');
@@ -468,29 +468,48 @@ function apr_report_numbers(string $text): array
     return array_values(array_unique($out));
 }
 
+/** קבוצות המאפיינים שבהן ערך של טקסט חופשי הוא בדרך כלל שם של אדם (בעלים, שוכר, קונה, מוכר) — ערך כזה אינו נשלח למודל כלל. */
+const APR_REPORT_AI_NO_FREE_TEXT = ['rights', 'rent', 'deal'];
+
 /**
  * מה שנשלח למודל על פרק אחד: הכותרת, והנתונים של **הפרק הזה בלבד** כפריטים ממוספרים (d1, d2 …) — ערכים, יחידות, והמקור של כל אחד.
- * מחזיר ['items' => [id => ['text', 'src' | null]], 'message' => הטקסט שנשלח]. אין כאן מסמכים, פרקים אחרים, שמות או שווי.
+ * מחזיר ['items' => [id => ['text', 'src' | null]], 'message' => הטקסט שנשלח, 'omitted', 'kept' => בלוקי fact שלא נשלחו (נשארים בפרק כהפניה),
+ * 'hash' => מה שמזהה את נתוני הקלט (B3)]. אין כאן מסמכים, פרקים אחרים, שמות או שווי.
+ *
+ * **הסינון (apr_report_ai_scrub) הוא רשת ביטחון, לא המנגנון.** מה שאינו נדרש לניסוח אינו נכנס לקלט מלכתחילה: שם המבקר, הטקסט החופשי
+ * של מזהה "אחר", כיתובי תמונות, וערכי טקסט חופשי בקבוצות הזכויות / השכירות / העסקה (APR_REPORT_AI_NO_FREE_TEXT).
  */
 function apr_report_ai_input(array $ctx, array $c, array $section, array $tpl): array
 {
+    $tpl['for_ai'] = true;
     $built = apr_report_resolve($ctx, $c, apr_report_build($c, $section['key'], $tpl)['blocks'], $tpl);
     $items = [];
+    $kept = [];
     $pii = apr_report_ai_pii($c);
     $omitted = 0;
-    $put = function (string $text, ?array $src) use (&$items, &$omitted, $pii) {
+    $put = function (string $text, ?array $src) use (&$items, &$omitted, $pii): bool {
         $text = apr_report_ai_scrub($text, $pii);
-        if ($text === null) { $omitted++; return; }
+        if ($text === null) { $omitted++; return false; }
         $items['d' . (count($items) + 1)] = ['text' => $text, 'src' => $src];
+        return true;
     };
+    $attrs = null;
     foreach ($built as $b) {
         if ($b['type'] === 'p') $put($b['text'], $b['src'] ?? null);
         if ($b['type'] === 'note_missing') $put('לא ידוע: ' . $b['what'], null);
-        if ($b['type'] === 'fact') $put($b['label'] . ': ' . ($b['value'] === null ? 'לא ידוע' : apr_report_fact_stamp($b['value'])) . ($b['verified'] === false ? ' (לא אומת)' : ''), $b['fact'] === null ? null : ['type' => 'fact', 'pid' => $b['fact']]);
+        if ($b['type'] === 'fact') {
+            $attrs ??= array_column(apr_attrs_all(), null, 'key');
+            $a = $attrs[$b['attr']] ?? null;
+            $free = $a === null || ($a['value_type'] === 'text' && in_array($a['grp'], APR_REPORT_AI_NO_FREE_TEXT, true));
+            $sent = !$free && $put($b['label'] . ': ' . ($b['value'] === null ? 'לא ידוע' : apr_report_fact_stamp($b['value'])) . ($b['verified'] === false ? ' (לא אומת)' : ''), $b['fact'] === null ? null : ['type' => 'fact', 'pid' => $b['fact']]);
+            if ($free) $omitted++;
+            if (!$sent) $kept[] = ['type' => 'fact', 'attr' => $b['attr']];
+        }
         if ($b['type'] === 'data_table') foreach ($b['rows'] as $i => $row) $put($b['label'] . ' — ' . implode(' · ', array_map(fn($col, $x) => "$col: $x", $b['cols'], $row)), $b['refs'][$i]);
     }
     $lines = array_map(fn($id, $it) => "$id. " . $it['text'], array_keys($items), $items);
-    return ['items' => $items, 'omitted' => $omitted, 'message' => "כותרת הפרק: " . (apr_report_ai_scrub($section['title'], $pii) ?? 'פרק בדוח') . "\n\nהנתונים:\n" . implode("\n", $lines)];
+    $message = "כותרת הפרק: " . (apr_report_ai_scrub($section['title'], $pii) ?? 'פרק בדוח') . "\n\nהנתונים:\n" . implode("\n", $lines);
+    return ['items' => $items, 'omitted' => $omitted, 'kept' => $kept, 'message' => $message, 'hash' => apr_report_hash(array_column($items, 'text'))];
 }
 
 /**
@@ -506,24 +525,57 @@ function apr_report_ai_pii(array $c): array
     return ['parties' => $clean($parties), 'staff' => $clean($staff)];
 }
 
+/** טקסט להשוואה: בלי ניקוד וטעמים, מקף / מקף עברי / קו מפריד ← רווח, רווחים מרובים ← אחד, אותיות קטנות. */
+function apr_report_ai_norm(string $text): string
+{
+    $text = (string)preg_replace('/[\x{05BE}\x{2010}-\x{2015}\x{2212}\-_\/]+/u', ' ', $text);
+    $text = (string)preg_replace('/[\x{0591}-\x{05BD}\x{05BF}-\x{05C7}\x{200E}\x{200F}\x{202A}-\x{202E}]+/u', '', $text);
+    return mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', $text)));
+}
+
+/** האסימונים של שם / ארגון: מילים של שתי אותיות לפחות, מנורמלות. */
+function apr_report_ai_tokens(string $name): array
+{
+    preg_match_all('/[\p{L}\p{N}]+(?:["\x{05F4}\'\x{05F3}][\p{L}\p{N}]+)*/u', apr_report_ai_norm($name), $m);
+    return array_values(array_unique(array_filter($m[0], fn($t) => mb_strlen($t) >= 2 && preg_match('/\p{L}/u', $t) === 1)));
+}
+
+/** האם $token מופיע ב-$norm כמילה שלמה. $prefix — גם אחרי אותיות שימוש עבריות ("לישראלי", "ומישראלי"). */
+function apr_report_ai_word(string $norm, string $token, bool $prefix): bool
+{
+    return preg_match('/(?<![\p{L}\p{N}])' . ($prefix ? '[והבלמשכ]{0,2}' : '') . preg_quote($token, '/') . '(?![\p{L}\p{N}"\x{05F4}\'\x{05F3}])/u', $norm) === 1;
+}
+
 /**
- * פריט בדרך למודל: null ← הפריט **מושמט** (מכיל שם / ארגון / מייל / טלפון של גורם בתיק, או משהו שנראה כמו ת"ז, טלפון או מייל);
- * שם של עובד משרד נמחק מהטקסט ("בידי …"), והפריט נשאר. ההשוואה בלי הבדלי רישיות ובלי מקפים ורווחים במספרים.
+ * פריט בדרך למודל: null ← הפריט **מושמט**. מושמט כל פריט שיש בו: **אסימון כלשהו** (מילה שלמה) משם או מארגון של גורם בתיק — גם חלק מהשם,
+ * גם ברווח כפול, במקף או בניקוד; מייל או טלפון שמורים של גורם; משהו שנראה כמו מייל (גם "[at]"), טלפון (גם בנקודות, גם ‎+972) או ת"ז
+ * (8–9 ספרות, גם עם מקף לפני ספרת הביקורת). שם של עובד משרד **נמחק** מהטקסט כמילה שלמה ("תל אביב" אינו נפגע מחבר צוות בשם "אבי"), והפריט נשאר.
+ * המחיר: פריט תמים שחולק מילה עם שם של גורם מושמט גם הוא — ההשמטה נספרת, והנתון נשאר בפרק כהפניה.
  */
 function apr_report_ai_scrub(string $text, array $pii): ?string
 {
-    $digits = (string)preg_replace('/[\s\-()]+/u', '', $text);
+    $norm = apr_report_ai_norm($text);
+    $digits = (string)preg_replace('/[\s.\-()\x{05BE}\x{2010}-\x{2015}]+/u', '', $text);
     foreach ($pii['parties'] as $p) {
-        if (mb_stripos($text, $p) !== false) return null;
-        $pd = (string)preg_replace('/[\s\-()]+/u', '', $p);
-        if (preg_match('/^\+?\d{7,}$/', $pd) === 1 && str_contains($digits, ltrim($pd, '+'))) return null;
+        $pd = (string)preg_replace('/[\s.\-()]+/u', '', $p);
+        if (preg_match('/^\+?\d{7,}$/', $pd) === 1) {                                                     // טלפון שמור: לפי הליבה, בלי קידומת מדינה ובלי 0
+            $core = (string)preg_replace('/^(?:\+?972|0)/', '', ltrim($pd, '+'));
+            if (strlen($core) >= 7 && str_contains($digits, $core)) return null;
+            continue;
+        }
+        if (str_contains($p, '@')) { if (mb_stripos($text, $p) !== false || str_contains($norm, apr_report_ai_norm($p))) return null; continue; }
+        if (str_contains($norm, apr_report_ai_norm($p))) return null;
+        foreach (apr_report_ai_tokens($p) as $t) if (apr_report_ai_word($norm, $t, true)) return null;
     }
-    if (preg_match('/[\w.+\-]+@[\w\-]+\.[\w.\-]+/u', $text) === 1) return null;                         // מייל
-    if (preg_match('/(?<!\d)(?:\+?972[\s\-]?|0)\d{1,2}[\s\-]?\d{3}[\s\-]?\d{4}(?!\d)/', $text) === 1) return null;   // טלפון
-    if (preg_match('/(?<![\d.,])\d{9}(?![\d.,])/', $text) === 1) return null;                              // תשע ספרות רצופות — ת"ז
+    if (preg_match('/@|[\[({]\s*at\s*[\])}]|\s(?:at)\s+[\w\-]+\s*(?:\.|[\[({]\s*dot\s*[\])}])\s*[a-z]{2,}/iu', $text) === 1) return null;   // מייל, גם "[at]" / "(at)"
+    $flat = (string)preg_replace('/[()]/', '', $text);
+    if (preg_match('/(?<!\d)(?:\+?972[\s.\-]*0?|0)\d{1,2}[\s.\-]*\d{3}[\s.\-]*\d{4}(?!\d)/', $flat) === 1) return null;                          // טלפון: רווח, מקף או נקודה
+    if (preg_match('/(?<!\d)\d{8,9}(?!\d)/', $text) === 1 || preg_match('/(?<!\d)\d{7,8}[\-\x{05BE}\x{2010}-\x{2015}]\d(?!\d)/u', $text) === 1) return null;   // ת"ז
     foreach ($pii['staff'] as $n) {
-        $text = (string)preg_replace('/,?\s*בידי\s+' . preg_quote($n, '/') . '/u', '', $text);
-        $text = str_ireplace($n, '', $text);
+        $tokens = apr_report_ai_tokens($n);
+        if (!$tokens) continue;
+        $name = implode('[\s\x{05BE}\-]+', array_map(fn($t) => implode('[\x{0591}-\x{05BD}\x{05BF}-\x{05C7}]*', array_map(fn($ch) => preg_quote($ch, '/'), mb_str_split($t))), $tokens));
+        $text = (string)preg_replace('/,?\s*(?:בידי\s+)?(?<![\p{L}\p{N}])[ול]{0,2}' . $name . '(?![\p{L}\p{N}\p{M}"\x{05F4}\'\x{05F3}])/iu', '', $text);
     }
     $text = trim((string)preg_replace('/\s{2,}/u', ' ', $text));
     return $text === '' ? null : $text;
