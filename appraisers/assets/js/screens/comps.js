@@ -56,7 +56,8 @@ const kWhyNot = (calc, compKind, setKind) => calc.reason === 'area_kind_mismatch
 // ── לשונית "עסקאות" בכרטיס התיק ──
 let kFilter = 'all';
 async function compsTab(pid, reload) {
-    const x = await api('case-comps', { params: { case: pid } });
+    // בראש הלשונית — חלופות השווי (פרוסה 16, assets/js/screens/valuation.js)
+    const [x, w] = await Promise.all([api('case-comps', { params: { case: pid } }), wSection(pid, reload)]);
     const count = st => x.comps.filter(k => k.status === st).length;
     const shown = x.comps.filter(k => kFilter === 'all' || k.status === kFilter);
     const compRow = k => {
@@ -64,8 +65,7 @@ async function compsTab(pid, reload) {
         return `<li class="card" tabindex="0" role="button" data-go="#/cases/${pid}/comps/${k.pid}"><div class="body"><div class="l1"><span dir="auto">${esc(kLabel(v))}</span><span class="t"><b>${esc(kPrice(v))}</b></span></div>
             <div class="l2 wrap">${esc(bits.join(' · ') || K.unknown)}${k.status_reason ? ` · <q dir="auto">${esc(k.status_reason)}</q>` : ''}</div>
             <div class="chips">${kStChip(k.status)}${k.dup_of ? `<span class="chip warn">⚠️ ${esc(K.dup)}</span>` : ''}${k.corrected_fields.length ? `<span class="chip">${esc(K.corrected)}</span>` : ''}${
-                k.missing.length ? `<span class="chip">${esc(K.missingN(k.missing.length))}</span>` : ''}${k.adjustments ? `<span class="chip">${esc(K.adjN(k.adjustments))}</span>` : ''}${
-                k.weight !== null ? `<span class="chip">${esc(K.weight)} ${esc(k.weight)}</span>` : ''}</div></div></li>`;
+                k.missing.length ? `<span class="chip">${esc(K.missingN(k.missing.length))}</span>` : ''}${k.adjustments ? `<span class="chip">${esc(K.adjN(k.adjustments))}</span>` : ''}</div></div></li>`;
     };
     const setRow = g => {
         const s = g.summary, line = s.selected === 0 ? K.noneSelected : s.rounded !== null ? `${K.methods[g.method]}: ${kAgMoney(s.rounded, g.unit_basis)}` : s.result_note ? K.resultNotes[s.result_note] : s.min ? `${K.range}: ${kNis(s.min)} – ${kMoney(s.max, g.unit_basis)}` : '';
@@ -83,7 +83,7 @@ async function compsTab(pid, reload) {
         ${s.import ? `<div class="l2 wrap">📥 ${s.import.file ? `<a href="#/cases/${pid}/file/${s.import.file}">${esc(K.imported(s.import.name, s.import.rows))}</a>` : esc(K.imported(s.import.name, s.import.rows))}</div>` : ''}
         <div class="row-btns wrap">${s.source?.url ? sLink(s.source.url, esc(K.openSource), 'btn ghost sm') : ''}${x.perms.write ? `<button type="button" class="btn ghost sm" data-ks-edit="${s.pid}">${K.editSearch}</button>
             <button type="button" class="btn ghost sm" data-ks-add="${s.pid}">${K.addComp}</button>${s.import ? '' : `<a class="btn ghost sm" href="#/cases/${pid}/compimport/${s.pid}">${K.importBtn}</a>`}` : ''}</div></div></li>`;
-    const html = `${x.perms.write || x.perms.judge ? `<div class="row-btns wrap">${x.perms.write ? `<button type="button" class="btn primary" id="ks-new">${K.newSearch}</button><button type="button" class="btn ghost" id="kc-new">${K.addComp}</button>` : ''}${
+    const html = `${w.html}${x.perms.write || x.perms.judge ? `<div class="row-btns wrap">${x.perms.write ? `<button type="button" class="btn primary" id="ks-new">${K.newSearch}</button><button type="button" class="btn ghost" id="kc-new">${K.addComp}</button>` : ''}${
             x.perms.judge ? `<button type="button" class="btn ghost" id="kg-new">${K.newSet}</button>` : ''}</div>` : ''}
         <h2 class="sec-title">🧮 ${K.sets} <small>${x.sets.length || ''}</small></h2>
         ${x.sets.length ? `<ul class="list">${x.sets.map(setRow).join('')}</ul>` : `<p class="empty">${K.noSets}</p>`}
@@ -93,6 +93,7 @@ async function compsTab(pid, reload) {
         <h2 class="sec-title">🔎 ${K.searches} <small>${x.searches.length || ''}</small></h2>
         ${x.searches.length ? `<ul class="list">${x.searches.map(searchRow).join('')}</ul><p class="hint">${K.openSourceHint}</p>` : `<p class="empty">${K.noSearches}</p>`}`;
     return { html, bind: () => {
+        w.bind();
         $$('[data-kf]').forEach(b => b.addEventListener('click', () => { kFilter = b.dataset.kf; reload(); }));
         $('#ks-new')?.addEventListener('click', () => kSearchSheet(pid, x, null, reload));
         $('#kc-new')?.addEventListener('click', () => kCompSheet(pid, x, null, reload));
@@ -178,6 +179,7 @@ async function viewComp(pid, compPid) {
         const stepLine = s => `<li><span dir="ltr">${sg(s)} ${esc(kNis({ nis: String(s.delta.nis).replace('-', '') }))}</span> <span dir="auto">(${esc(s.label)}${s.kind === 'percent' ? ` · ${esc(fNum(s.value))}% ${esc(s.basis === 'running' ? K.ofRunning : K.ofBase)}` : ''})</span> <small class="muted" dir="ltr">= ${esc(kNis(s.running))}</small></li>`;
         const oneLine = kNis(calc.base) + calc.steps.map(s => ' ' + sg(s) + ' ' + kNis({ nis: String(s.delta.nis).replace('-', '') }) + ' (' + s.label + ')').join('') + ' = ' + kMoney(calc.adjusted, basis);      // טקסט — מוצג דרך esc()
         return `<h3 class="sec-title">${esc(K.formulaFor(c.set.name))} <small class="muted">${esc(K.unitBases[basis])}${c.set.area_kind ? ` · ${esc(kAreaKind(c.set.area_kind))}` : ''}</small></h3>
+            <p class="hint"><a href="#/cases/${pid}/compset/${c.set.pid}">${c.member ? esc(W.inSet + (c.weight !== null ? ' · ' + W.weight + ' ' + c.weight : '')) : esc(W.outOfSet)}</a></p>
             <div class="summary kformula"><div class="line"><span>${esc(K.base)}</span><b dir="ltr">${esc(kMoney(calc.base, basis))}</b></div>
               ${calc.steps.length ? `<ol class="ksteps">${calc.steps.map(stepLine).join('')}</ol>` : `<div class="line muted">${esc(K.noAdj)}</div>`}
               <div class="line"><span>${esc(K.adjusted)}</span><b dir="ltr">${esc(kMoney(calc.adjusted, basis))}</b></div>
@@ -187,14 +189,14 @@ async function viewComp(pid, compPid) {
     const rawRows = k.raw.row || k.raw.entered || {};
     App.main.innerHTML = `<div class="summary"><div class="line"><b class="one" dir="auto">${esc(kLabel(v))}</b></div>
           <div class="line"><b>${esc(kPrice(v))}</b><span class="muted">${v.deal_date ? esc(fmtDate(v.deal_date)) : esc(K.fields.deal_date + ': ' + K.unknown)}</span></div>
-          <div class="chips">${x.perms.judge ? `<button type="button" class="chip info" id="k-status">${esc(K.statuses[k.status])} ▾</button>` : kStChip(k.status)}${k.weight !== null ? `<span class="chip">${esc(K.weight)} ${esc(k.weight)}</span>` : ''}</div>
+          <div class="chips">${x.perms.judge ? `<button type="button" class="chip info" id="k-status">${esc(K.statuses[k.status])} ▾</button>` : kStChip(k.status)}</div>
           ${k.status_reason ? `<div class="line muted wrap"><q dir="auto">${esc(k.status_reason)}</q></div>` : ''}</div>
         ${k.dup_of ? `<p class="banner" role="note">⚠️ ${esc(K.dupOf)} <a class="btn ghost sm" href="#/cases/${pid}/comps/${k.dup_of}">${K.dupSee}</a><br><small>${esc(K.dupNote)}</small></p>` : ''}
         ${k.status !== 'selected' && x.calcs.length ? `<p class="hint">${esc(K.notInSetYet)}</p>` : ''}
         ${x.calcs.length ? x.calcs.map(formula).join('') : `<p class="hint">${esc(K.noSetsForFormula)}</p>`}
         <h2 class="sec-title">${K.adjustments} <small>${x.adjustments.length || ''}</small></h2>
         ${x.adjustments.length ? `<ul class="list">${x.adjustments.map((a, i) => adjRow(a, i, x.adjustments.length)).join('')}</ul>${x.adjustments.length > 1 ? `<p class="hint">${esc(K.orderHint)}</p>` : ''}` : `<p class="empty">${K.noAdj}</p>`}
-        ${x.perms.judge ? `<div class="row-btns wrap"><button type="button" class="btn ghost" id="ka-new"><span aria-hidden="true">+</span> ${K.addAdj}</button><button type="button" class="btn ghost" id="k-weight">${K.weight}</button></div>` : ''}
+        ${x.perms.judge ? `<div class="row-btns wrap"><button type="button" class="btn ghost" id="ka-new"><span aria-hidden="true">+</span> ${K.addAdj}</button></div>` : ''}
         <h2 class="sec-title">${K.similar}</h2>
         ${x.similar.rows.length ? `<ul class="list">${x.similar.rows.map(simRow).join('')}</ul>` : `<p class="empty">${K.similarNone}</p>`}
         ${x.similar.unknown.length ? `<p class="hint">${x.similar.unknown.map(u => `${esc(K.fields[u.field] || u.field)}: <b>${esc(K.unknownSide[u.side])}</b>`).join(' · ')}</p>` : ''}
@@ -217,8 +219,6 @@ async function viewComp(pid, compPid) {
         <p class="hint">${x.lists.statuses.map(st => `<b>${K.statuses[st]}</b> — ${K.statusHint[st]}`).join(' · ')}</p>
         <label class="f"><span>${K.statusReason}</span><textarea name="reason" maxlength="500" rows="2">${esc(k.status_reason || '')}</textarea></label>`,
         async f => { await api('comp-status', { body: { comp: k.pid, rev: k.rev, status: f.status, reason: f.reason } }); reload(); }));
-    $('#k-weight')?.addEventListener('click', () => sheet(K.weight, `<p class="hint">${K.weightHint}</p><label class="f"><span>${K.weight}</span><input name="weight" inputmode="decimal" dir="ltr" value="${esc(k.weight ?? '')}"></label>`,
-        async f => { await api('comp-weight', { body: { comp: k.pid, rev: k.rev, weight: f.weight.trim() === '' ? null : f.weight.trim() } }); reload(); }));
     $('#k-note')?.addEventListener('click', () => sheet(K.note, `<label class="f"><span>${K.note}</span><textarea name="note" maxlength="1000" rows="4">${esc(k.note || '')}</textarea></label>`,
         async f => { await api('comp-note', { body: { comp: k.pid, rev: k.rev, note: f.note } }); reload(); }));
     $('#k-correct')?.addEventListener('click', () => {
@@ -306,7 +306,7 @@ async function viewCompSet(pid, setPid) {
             ${c.ok ? `<td data-l="${K.table.base}" dir="ltr">${esc(kNis(c.base))}</td><td data-l="${K.table.adj}">${delta ? esc(K.adjN(delta)) : '—'}</td>
               <td data-l="${K.table.adjusted}" dir="ltr"><b>${esc(kNis(c.adjusted))}</b>${c.nonpositive ? ' ⚠️' : ''}</td>`
                 : `<td colspan="3" data-l="${basis === 'per_sqm' ? K.notComparable : K.notInCalc}"><span class="chip bad">${esc(kWhyNot(c, v.area_kind, g.area_kind))}</span></td>`}
-            <td data-l="${K.table.weight}">${r.comp.weight === null ? `<span class="muted">${esc(K.noWeight)}</span>` : `${esc(r.comp.weight)}${r.share !== null ? ` <small class="muted">(${esc(K.share(r.share))})</small>` : ''}`}</td></tr>`;
+            <td data-l="${K.table.weight}">${r.weight === null ? `<span class="muted">${esc(K.noWeight)}</span>` : `${esc(r.weight)}${r.share !== null ? ` <small class="muted">(${esc(K.share(r.share))})</small>` : ''}`}</td></tr>`;
     };
     const stat = (label, val, strong = false) => `<div class="line"><span>${esc(label)}</span>${strong ? `<b dir="ltr">${esc(val)}</b>` : `<span dir="ltr">${esc(val)}</span>`}</div>`;
     const sub = x.subject;
@@ -319,7 +319,7 @@ async function viewCompSet(pid, setPid) {
         ${s.selected ? `<div class="summary">${stat(K.comps, K.selectedN(s.selected, s.counted))}
           ${s.skipped.length ? `<div class="line muted wrap">${s.skipped.map(k => { const r = x.rows.find(q => q.comp.pid === k.pid); return esc(`${kLabel(r.comp.values)} — ${kWhyNot(r.calc, r.comp.values.area_kind, g.area_kind)}`); }).join(' · ')}</div>` : ''}
           ${s.min ? stat(K.range, `${kNis(s.min)} – ${kMoney(s.max, basis)}`) : ''}${s.mean ? stat(K.mean, kMoney(s.mean, basis)) : ''}${s.median ? stat(K.median, kMoney(s.median, basis)) : ''}
-          ${s.weighted ? stat(K.weighted, kMoney(s.weighted, basis)) : ''}${s.weights_block && (g.method === 'weighted' || x.rows.some(r => r.comp.weight !== null)) ? `<div class="line muted wrap">${esc(K.weighted)}: ${esc(K.resultNotes[s.weights_block])}</div>` : ''}
+          ${s.weighted ? stat(K.weighted, kMoney(s.weighted, basis)) : ''}${s.weights_block && (g.method === 'weighted' || x.rows.some(r => r.weight !== null)) ? `<div class="line muted wrap">${esc(K.weighted)}: ${esc(K.resultNotes[s.weights_block])}</div>` : ''}
           ${s.rounded !== null ? `${stat(`${K.result} — ${K.methods[g.method]}`, kAgMoney(s.rounded, basis), true)}<div class="line muted">${esc(K.roundings[g.rounding])} · ${esc(K.unrounded(kAgMoney(s.unrounded, basis)))}</div>`
               : s.result_note ? `<p class="banner" role="note">${esc(K.resultNotes[s.result_note] || s.result_note)}</p>` : ''}
           ${s.date_from ? stat(K.dates, s.date_from === s.date_to ? fmtDate(s.date_from) : `${fmtDate(s.date_from)} – ${fmtDate(s.date_to)}`) : ''}</div>
@@ -333,8 +333,10 @@ async function viewCompSet(pid, setPid) {
         ${sub ? `${sub.stale ? `<p class="banner bad" role="alert">⚠️ ${esc(K.staleSubject)}${x.perms.judge ? ` <button type="button" class="btn ghost sm" id="kg-recheck">${K.recheck}</button>` : ''}</p>` : ''}
           ${!sub.usable ? `<p class="banner bad" role="alert">⚠️ ${esc(K.subjectUnusable)}</p>` : `<div class="summary"><div class="line"><span>${esc(K.subjectArea)}</span><b>${esc(fNum(sub.area))} ${esc(K.sqm)} (${esc(kAreaKind(sub.area_kind))})</b></div>
             ${sub.fact ? `<div class="line muted wrap">${fSource(sub.fact, pid)} · ${fStateChip(sub.fact)}</div>` : ''}
-            ${sub.total ? `<div class="line wrap"><span>${esc(K.helper)}</span><span dir="auto">${esc(K.helperLine(kAgMoney(g.conclusion.agorot, basis), fNum(sub.area), kAreaKind(sub.area_kind), kMoney(sub.total, 'total')))}</span></div>` : ''}</div>`}` : ''}`;
+            ${sub.total ? `<div class="line wrap"><span>${esc(K.helper)}</span><span dir="auto">${esc(K.helperLine(kAgMoney(g.conclusion.agorot, basis), fNum(sub.area), kAreaKind(sub.area_kind), kMoney(sub.total, 'total')))}</span></div>` : ''}</div>`}` : ''}
+        ${wMembership(x, pid)}`;
     cOn('tr[data-go]', el => { location.hash = el.dataset.go; });
+    wMembershipBind(x, reload);
     $('#kg-edit')?.addEventListener('click', () => kSetSheet(pid, x, g, reload));
     $('#kg-recheck')?.addEventListener('click', async () => {
         try { await api('comp-set-save', { body: { set: g.pid, rev: g.rev, name: g.name, unit_basis: g.unit_basis, area_kind: g.area_kind, method: g.method, rounding: g.rounding, subject_area_fact: sub.fact?.pid || null, recheck: true } }); reload(); } catch (e) { kToastError(e, reload); }

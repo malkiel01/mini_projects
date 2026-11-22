@@ -101,7 +101,17 @@ const APR_ACCESS = [
     'case-comps' => 'case', 'comp' => 'case', 'comp-set' => 'case', 'comp-search-add' => 'member', 'comp-search-update' => 'member', 'comp-add' => 'member',
     'comp-correct' => 'member', 'comp-status' => 'member', 'comp-weight' => 'member', 'comp-note' => 'member', 'comp-delete' => 'member', 'comp-adj-save' => 'member',
     'comp-adj-delete' => 'member', 'comp-adj-order' => 'member', 'comp-set-save' => 'member', 'comp-set-conclude' => 'member', 'comp-set-delete' => 'member',
-    'comp-import-upload' => 'member', 'comp-import-preview' => 'member', 'comp-import' => 'member',
+    'comp-import-upload' => 'member', 'comp-import-preview' => 'member', 'comp-import' => 'member', 'comp-set-member' => 'member',
+
+    // חלופות שווי וגישות שומה (16): view לצפייה (שותף — רק עם see_internal ו"עסקאות וחישובים" בהיקף: case-valuation ו-sheet בלבד);
+    // edit לפריטי רכישה ושיפוץ ולשורות קלט; edit + שמאי בתיק לחלופות, להנחות, לגישות, לנוסחאות, למשקולות ולמסקנות (lib/valuation.php)
+    'case-valuation' => 'case', 'sheet' => 'case', 'sheet-templates' => 'member',
+    'alt-save' => 'member', 'alt-primary' => 'member', 'alt-delete' => 'member', 'alt-conclude' => 'member', 'alt-recheck' => 'member',
+    'assumption-save' => 'member', 'assumption-delete' => 'member',
+    'approach-save' => 'member', 'approach-result' => 'member', 'approach-delete' => 'member',
+    'sheet-save' => 'member', 'sheet-row-save' => 'member', 'sheet-row-delete' => 'member', 'sheet-row-order' => 'member', 'sheet-delete' => 'member', 'sheet-recheck' => 'member',
+    'sheet-template-save' => 'member', 'sheet-template-use' => 'member', 'sheet-template-delete' => 'member',
+    'renovation-add' => 'member', 'renovation-delete' => 'member',
 
     // בינה (11): הקטלוג, חיבורי המערכת, ההקצאות ומכסות המערכת — מנהל המערכת; המדיניות, החיבור האישי ומכסות הרשות — מנהל המשרד;
     // "הבינה שלי" — כל חבר; "בלי בינה" בתיק — השמאי האחראי (lib/ai_admin.php). אין פעולה ציבורית, ואין פעולה שמפעילה מודל.
@@ -156,7 +166,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['case-shares', 'my-shares', 'sys-support', 'file-ai', 'sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-valuation', 'sheet', 'sheet-templates', 'case-shares', 'my-shares', 'sys-support', 'file-ai', 'sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];

@@ -269,7 +269,7 @@ function apr_comp_out(array $k, bool $full = false, array $names = []): array
     foreach ($corr as &$x) $x['by'] = $names[(int)($x['by'] ?? 0)] ?? null;
     unset($x);
     $out = ['pid' => $k['pid'], 'rev' => (int)$k['rev'], 'origin' => $k['origin'], 'status' => $k['status'], 'status_reason' => $k['status_reason'], 'status_at' => $k['status_at'],
-        'weight' => apr_comp_dec_out($k['weight'], 6), 'note' => $k['note'], 'search' => $k['search_pid'] ?? null, 'dup_of' => $k['dup_pid'] ?? null,
+        'note' => $k['note'], 'search' => $k['search_pid'] ?? null, 'dup_of' => $k['dup_pid'] ?? null,
         'values' => $vals, 'missing' => apr_comp_missing($k), 'corrected' => (object)$corr, 'corrected_fields' => array_keys($corr),
         'created_by' => $k['created_name'] ?? null, 'created_at' => $k['created_at'], 'updated_by' => $k['updated_name'] ?? null, 'updated_at' => $k['updated_at']];
     if ($full) $out += ['raw' => json_decode((string)$k['raw'], true) ?: (object)[], 'extra' => json_decode((string)$k['extra'], true) ?: (object)[]];
@@ -506,26 +506,91 @@ function apr_comp_status(array $ctx, array $in): array
         $k = apr_comp_row($c, $in['comp'] ?? null);
         if ($k['status'] === $to && $k['status_reason'] === $reason) apr_fail('nothing_to_change');
         apr_comp_update($ctx, $c, $k, $rev, ['status' => $to, 'status_reason' => $reason, 'status_by' => (int)$ctx['user']['id'], 'status_at' => apr_now()]);
+        if ($to === 'selected') apr_comp_join_sets($c, (int)$k['id'], (int)$ctx['user']['id']);
         apr_case_audit($c, 'comp.status', 'comp', $k['pid'], ['from' => $k['status'], 'to' => $to], $reason);
         apr_case_touch($c);
         return ['comp' => $k['pid'], 'rev' => $rev + 1];
     });
 }
 
-/** comp-weight {comp, rev, weight | null} — המשקל שהשמאי קבע. אפס מותר לעסקה אחת; משקל שלילי אינו קיים (§10.13). */
+// ── שיוך לקבוצה ומשקל — לכל קבוצה בנפרד (פרוסה 16) ────────────
+
+/** הקבוצות של התיק שמשמשות חלופת "אחרי שיפוץ" (16 §4, 27.4): אליהן עסקה אינה מצטרפת לבד. מחזיר [id של קבוצה => true]. */
+function apr_comp_sets_after_works(int $caseId): array
+{
+    return array_fill_keys(array_column(apr_rows("SELECT DISTINCT p.comp_set_id FROM approaches p JOIN alternatives a ON a.id = p.alternative_id
+        WHERE p.case_id = ? AND p.deleted_at IS NULL AND a.deleted_at IS NULL AND a.state_kind = 'after_works' AND p.comp_set_id IS NOT NULL", [$caseId]), 'comp_set_id'), true);
+}
+
+/**
+ * עסקה שנבחרה מצטרפת לקבוצות של התיק — חוץ מקבוצה של "אחרי שיפוץ" (שם השיוך מפורש, עם נימוק כשמצב העסקה לא ידוע), וחוץ מקבוצה
+ * שהוצאה ממנה במפורש (השורה קיימת, active = 0 — אינה חוזרת לבד). בתוך טרנזקציה.
+ */
+function apr_comp_join_sets(array $c, int $compId, int $uid): void
+{
+    $after = apr_comp_sets_after_works((int)$c['id']);
+    foreach (apr_rows('SELECT id FROM comp_sets WHERE case_id = ? AND deleted_at IS NULL', [$c['id']]) as $g) {
+        if (isset($after[(int)$g['id']])) continue;
+        apr_exec('INSERT OR IGNORE INTO comp_set_members (set_id, comp_id, active, updated_by, updated_at) VALUES (?, ?, 1, ?, ?)', [$g['id'], $compId, $uid, apr_now()]);
+    }
+}
+
+function apr_comp_member(int $setId, int $compId): ?array
+{
+    return apr_row('SELECT * FROM comp_set_members WHERE set_id = ? AND comp_id = ?', [$setId, $compId]);
+}
+
+/**
+ * comp-weight {set, comp, rev, weight | null} — המשקל שהשמאי קבע לעסקה **בקבוצה הזו**. rev הוא של הקבוצה: כל שינוי בשיוך או במשקל
+ * מקדם אותו. אפס מותר לעסקה אחת; משקל שלילי אינו קיים (§10.13).
+ */
 function apr_comp_weight(array $ctx, array $in): array
 {
-    $c = apr_comp_case($ctx, apr_doc_case_pid('comps', $in['comp'] ?? null), 'judge');
+    $c = apr_comp_case($ctx, apr_doc_case_pid('comp_sets', $in['set'] ?? null), 'judge');
     $rev = apr_comp_rev($in['rev'] ?? null);
     $w = apr_comp_dec($in['weight'] ?? null, 6, 6, 'comp_weight');
     return apr_tx(function () use ($ctx, $c, $in, $rev, $w) {
+        $g = apr_comp_set_row($c, $in['set'] ?? null);
         $k = apr_comp_row($c, $in['comp'] ?? null);
-        $old = $k['weight'] === null ? null : (int)$k['weight'];
+        $m = apr_comp_member((int)$g['id'], (int)$k['id']);
+        if (!$m || (int)$m['active'] !== 1) apr_fail('comp_not_member');
+        $old = $m['weight'] === null ? null : (int)$m['weight'];
         if ($old === $w) apr_fail('nothing_to_change');
-        apr_comp_update($ctx, $c, $k, $rev, ['weight' => $w]);
-        apr_case_audit($c, 'comp.weight', 'comp', $k['pid'], ['from' => apr_comp_dec_out($old, 6), 'to' => apr_comp_dec_out($w, 6)]);
+        apr_comp_set_update($ctx, $c, $g, $rev, []);
+        apr_exec('UPDATE comp_set_members SET weight = ?, updated_by = ?, updated_at = ? WHERE set_id = ? AND comp_id = ?', [$w, (int)$ctx['user']['id'], apr_now(), $g['id'], $k['id']]);
+        apr_case_audit($c, 'comp.weight', 'comp', $k['pid'], ['set' => $g['pid'], 'from' => apr_comp_dec_out($old, 6), 'to' => apr_comp_dec_out($w, 6)]);
         apr_case_touch($c);
-        return ['comp' => $k['pid'], 'rev' => $rev + 1];
+        return ['set' => $g['pid'], 'comp' => $k['pid'], 'rev' => $rev + 1];
+    });
+}
+
+/**
+ * comp-set-member {set, comp, rev, member: bool, reason?} — שיוך עסקה שנבחרה לקבוצה, או הוצאה ממנה. בקבוצה שמשמשת חלופת "אחרי
+ * שיפוץ", עסקה שמצבה (condition) לא ידוע נכנסת רק עם נימוק מפורש (16 §4, 27.4). הוצאה אינה מוחקת את העסקה ואינה משנה את מצבה.
+ */
+function apr_comp_set_member(array $ctx, array $in): array
+{
+    $c = apr_comp_case($ctx, apr_doc_case_pid('comp_sets', $in['set'] ?? null), 'judge');
+    $rev = apr_comp_rev($in['rev'] ?? null);
+    if (!is_bool($in['member'] ?? null)) apr_fail('comp_set_field');
+    $on = $in['member'];
+    $reason = apr_clean_text($in['reason'] ?? '', 500);
+    return apr_tx(function () use ($ctx, $c, $in, $rev, $on, $reason) {
+        $g = apr_comp_set_row($c, $in['set'] ?? null);
+        $k = apr_comp_row($c, $in['comp'] ?? null);
+        if ($on && $k['status'] !== 'selected') apr_fail('comp_not_selected');
+        if ($on && $k['condition'] === null && $reason === null && isset(apr_comp_sets_after_works((int)$c['id'])[(int)$g['id']])) apr_fail('comp_condition_unknown');
+        $m = apr_comp_member((int)$g['id'], (int)$k['id']);
+        if (($m !== null && (int)$m['active'] === 1) === $on && ($m['reason'] ?? null) === $reason) apr_fail('nothing_to_change');
+        if (!$m && !$on) apr_fail('nothing_to_change');
+        apr_comp_set_update($ctx, $c, $g, $rev, []);
+        // עסקה שחוזרת לקבוצה אחרי שהוצאה — חוזרת בלי המשקל הישן: השמאי קובע אותו מחדש (ביקורת 16)
+        $back = $m && $on && (int)$m['active'] === 0;
+        if ($m) apr_exec('UPDATE comp_set_members SET active = ?, weight = ?, reason = ?, updated_by = ?, updated_at = ? WHERE set_id = ? AND comp_id = ?', [$on ? 1 : 0, $back ? null : $m['weight'], $reason, (int)$ctx['user']['id'], apr_now(), $g['id'], $k['id']]);
+        else apr_exec('INSERT INTO comp_set_members (set_id, comp_id, active, reason, updated_by, updated_at) VALUES (?, ?, 1, ?, ?, ?)', [$g['id'], $k['id'], $reason, (int)$ctx['user']['id'], apr_now()]);
+        apr_case_audit($c, 'comp.set_member', 'comp_set', $g['pid'], ['comp' => $k['pid'], 'member' => $on] + ($back && $m['weight'] !== null ? ['weight_cleared' => apr_comp_dec_out($m['weight'], 6)] : []), $reason);
+        apr_case_touch($c);
+        return ['set' => $g['pid'], 'comp' => $k['pid'], 'rev' => $rev + 1];
     });
 }
 
@@ -557,7 +622,7 @@ function apr_comp_delete(array $ctx, array $in): array
     return apr_tx(function () use ($ctx, $c, $in, $rev, $reason) {
         $k = apr_comp_row($c, $in['comp'] ?? null);
         // מי שרק מזין מוחק רק את מה שעוד אין בו הכרעה של שמאי: מועמדת, בלי התאמות ובלי משקל. כל השאר — מי שרשאי לבחור (ביקורת 15, 🟡3)
-        $untouched = $k['status'] === 'candidate' && $k['weight'] === null && !apr_comp_adjs((int)$k['id']);
+        $untouched = $k['status'] === 'candidate' && !apr_val('SELECT 1 FROM comp_set_members WHERE comp_id = ? AND weight IS NOT NULL', [$k['id']]) && !apr_comp_adjs((int)$k['id']);
         if (!$untouched && !apr_comp_can_judge($ctx, $c)) apr_fail('forbidden');
         apr_comp_update($ctx, $c, $k, $rev, ['deleted_at' => apr_now(), 'deleted_by' => (int)$ctx['user']['id'], 'delete_reason' => $reason]);
         // מי שסומנה ככפילות של העסקה שנמחקה — החשד יורד
@@ -709,6 +774,9 @@ function apr_comp_set_save(array $ctx, array $in): array
             if ((int)apr_val('SELECT COUNT(*) FROM comp_sets WHERE case_id = ? AND deleted_at IS NULL', [$c['id']]) >= APR_COMP_SET_MAX) apr_fail('comp_set_limit');
             $pid = apr_pid();
             apr_insert('comp_sets', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'created_by' => (int)$ctx['user']['id'], 'updated_by' => (int)$ctx['user']['id'], 'created_at' => $now, 'updated_at' => $now] + $row);
+            // קבוצה חדשה נפתחת עם כל העסקאות שנבחרו עד כה; מכאן השיוך והמשקל הם של הקבוצה (16)
+            apr_exec("INSERT INTO comp_set_members (set_id, comp_id, active, updated_by, updated_at) SELECT g.id, k.id, 1, ?, ? FROM comp_sets g JOIN comps k ON k.case_id = g.case_id
+                WHERE g.pid = ? AND k.deleted_at IS NULL AND k.status = 'selected'", [(int)$ctx['user']['id'], $now, $pid]);
             apr_case_audit($c, 'comp.set_add', 'comp_set', $pid, ['to' => array_diff_key($row, ['subject_area_fact_id' => 1]) + ['subject_area_fact' => $factPid]]);
         } else {
             $g = apr_comp_set_row($c, $in['set']);
@@ -809,14 +877,16 @@ function apr_comp_calc_input(array $k): array
  */
 function apr_comp_set_calc(array $c, array $g, int $smallUnder): array
 {
-    $rows = apr_rows(APR_COMP_SELECT . " WHERE k.case_id = ? AND k.deleted_at IS NULL AND k.status = 'selected' ORDER BY k.deal_date IS NULL, k.deal_date, k.id", [$c['id']]);
+    // **המקום היחיד שבוחר אילו עסקאות נכנסות לקבוצה**: נבחרה, לא נמחקה, ומשויכת לקבוצה הזו (16: שיוך ומשקל לכל קבוצה בנפרד)
+    $rows = apr_rows(str_replace(' FROM comps k ', ' , m.weight AS set_weight, m.reason AS member_reason FROM comps k JOIN comp_set_members m ON m.comp_id = k.id AND m.set_id = ? AND m.active = 1 ', APR_COMP_SELECT)
+        . " WHERE k.case_id = ? AND k.deleted_at IS NULL AND k.status = 'selected' ORDER BY k.deal_date IS NULL, k.deal_date, k.id", [$g['id'], $c['id']]);
     $items = [];
     $out = [];
     foreach ($rows as $k) {
         $calc = apr_calc_comp(apr_comp_calc_input($k), apr_comp_adjs((int)$k['id']), $g);
-        $items[] = ['pid' => $k['pid'], 'calc' => $calc, 'weight' => $k['weight'] === null ? null : (int)$k['weight'], 'deal_date' => $k['deal_date'],
+        $items[] = ['pid' => $k['pid'], 'calc' => $calc, 'weight' => $k['set_weight'] === null ? null : (int)$k['set_weight'], 'deal_date' => $k['deal_date'],
             'missing' => count(apr_comp_missing($k)), 'dup' => $k['dup_of'] !== null];
-        $out[$k['pid']] = ['comp' => apr_comp_out($k), 'calc' => apr_comp_calc_out($calc)];
+        $out[$k['pid']] = ['comp' => apr_comp_out($k), 'calc' => apr_comp_calc_out($calc), 'weight' => apr_comp_dec_out($k['set_weight'], 6), 'member_reason' => $k['member_reason']];
     }
     $s = apr_calc_summary($items, $g, $smallUnder);
     $shares = [];
@@ -870,6 +940,8 @@ function apr_case_comps(array $ctx, array $q): array
     $names = apr_comp_corrector_names($rows);
     $counts = array_column(apr_rows('SELECT search_id, COUNT(*) AS n FROM comps WHERE case_id = ? AND deleted_at IS NULL AND search_id IS NOT NULL GROUP BY search_id', [$c['id']]), 'n', 'search_id');
     $adjN = array_column(apr_rows('SELECT a.comp_id, COUNT(*) AS n FROM comp_adjustments a JOIN comps k ON k.id = a.comp_id WHERE k.case_id = ? AND a.deleted_at IS NULL GROUP BY a.comp_id', [$c['id']]), 'n', 'comp_id');
+    $memberOf = [];
+    foreach (apr_rows('SELECT m.comp_id, g.pid FROM comp_set_members m JOIN comp_sets g ON g.id = m.set_id WHERE g.case_id = ? AND g.deleted_at IS NULL AND m.active = 1 ORDER BY g.id', [$c['id']]) as $m) $memberOf[(int)$m['comp_id']][] = $m['pid'];
     $sets = [];
     foreach (apr_rows('SELECT g.*, ub.name AS updated_name, cb.name AS conclusion_name FROM comp_sets g LEFT JOIN users ub ON ub.id = g.updated_by LEFT JOIN users cb ON cb.id = g.conclusion_by
         WHERE g.case_id = ? AND g.deleted_at IS NULL ORDER BY g.id', [$c['id']]) as $g) {
@@ -884,7 +956,7 @@ function apr_case_comps(array $ctx, array $q): array
         'sources' => array_values(array_map(fn($s) => ['key' => $s['key'], 'name' => $s['name'], 'url' => $s['url']],
             array_filter(apr_sources_all(true), fn($s) => in_array('deals', json_decode((string)$s['info_kinds'], true) ?: [], true)))),
         'searches' => array_map(fn($s) => apr_comp_search_out($ctx, $c, $s, $counts), apr_rows('SELECT * FROM comp_searches WHERE case_id = ? ORDER BY id DESC', [$c['id']])),
-        'comps' => array_map(fn($k) => apr_comp_out($k, false, $names) + ['adjustments' => (int)($adjN[(int)$k['id']] ?? 0)], $rows),
+        'comps' => array_map(fn($k) => apr_comp_out($k, false, $names) + ['adjustments' => (int)($adjN[(int)$k['id']] ?? 0), 'sets' => $k['status'] === 'selected' ? ($memberOf[(int)$k['id']] ?? []) : []], $rows),
         'sets' => $sets,
         'subject_areas' => apr_can($c, 'facts') ? array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), $areaFacts) : []];
 }
@@ -900,7 +972,9 @@ function apr_comp_view(array $ctx, array $q): array
     $adjs = apr_comp_adjs((int)$k['id']);
     $calcs = [];
     foreach (apr_rows('SELECT * FROM comp_sets WHERE case_id = ? AND deleted_at IS NULL ORDER BY id', [$c['id']]) as $g) {
-        $calcs[] = ['set' => ['pid' => $g['pid'], 'name' => $g['name'], 'unit_basis' => $g['unit_basis'], 'area_kind' => $g['area_kind']], 'calc' => apr_comp_calc_out(apr_calc_comp(apr_comp_calc_input($k), $adjs, $g))];
+        $m = apr_comp_member((int)$g['id'], (int)$k['id']);
+        $calcs[] = ['set' => ['pid' => $g['pid'], 'rev' => (int)$g['rev'], 'name' => $g['name'], 'unit_basis' => $g['unit_basis'], 'area_kind' => $g['area_kind']], 'calc' => apr_comp_calc_out(apr_calc_comp(apr_comp_calc_input($k), $adjs, $g)),
+            'member' => $m !== null && (int)$m['active'] === 1 && $k['status'] === 'selected', 'weight' => $m && (int)$m['active'] === 1 ? apr_comp_dec_out($m['weight'], 6) : null, 'member_reason' => $m['reason'] ?? null];
     }
     $search = $k['search_id'] !== null ? apr_row('SELECT * FROM comp_searches WHERE id = ?', [$k['search_id']]) : null;
     return ['case' => apr_comp_case_head($c), 'perms' => apr_comp_perms($ctx, $c), 'comp' => apr_comp_out($k, true, apr_comp_corrector_names([$k])),
@@ -920,6 +994,10 @@ function apr_comp_set_view(array $ctx, array $q): array
     $attr = apr_attr('area');
     return ['case' => apr_comp_case_head($c), 'perms' => apr_comp_perms($ctx, $c), 'set' => apr_comp_set_out($g), 'subject' => apr_comp_set_subject($ctx, $c, $g)]
         + apr_comp_set_calc($c, $g, $def['small_sample_under'])
+        // עסקאות שנבחרו ואינן בקבוצה הזו — אפשר לשייך; after_works: הקבוצה משמשת חלופת "אחרי שיפוץ" (שיוך עסקה שמצבה לא ידוע — רק עם נימוק)
+        + ['others' => array_map(fn($k) => apr_comp_out($k), apr_rows(APR_COMP_SELECT . " WHERE k.case_id = ? AND k.deleted_at IS NULL AND k.status = 'selected'
+                AND k.id NOT IN (SELECT comp_id FROM comp_set_members WHERE set_id = ? AND active = 1) ORDER BY k.id", [$c['id'], $g['id']])),
+            'after_works' => isset(apr_comp_sets_after_works((int)$c['id'])[(int)$g['id']])]
         + ['lists' => ['set_area_kinds' => APR_COMP_SET_AREA_KINDS, 'methods' => APR_COMP_METHODS, 'roundings' => APR_COMP_ROUNDINGS],
             'subject_areas' => !apr_can($c, 'facts') ? [] : array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), array_values(array_filter(
                 apr_rows(APR_FACT_SELECT . " WHERE f.case_id = ? AND f.deleted_at IS NULL AND f.attribute_key = 'area' AND f.state <> 'rejected' ORDER BY f.id", [$c['id']]),

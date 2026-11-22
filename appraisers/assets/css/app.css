@@ -370,3 +370,9 @@ fieldset.f legend { font-weight: 600; font-size: .9rem; padding: 0; margin-botto
 .sec-title .btn.sm { margin-inline-start: var(--s2); font-weight: 400; }
 #aipolicy ul { margin: var(--s2) 0; padding-inline-start: 1.2em; display: grid; gap: 6px; font-size: .9rem; }
 #aipolicy p { font-size: .9rem; margin: 0 0 var(--s2); }
+
+/* חלופות שווי (16): מסקנות החלופות זו לצד זו — כל אחת בכרטיס משלה, עם שמה ועם המועד הקובע שלה */
+.list.wgrid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--s2); background: none; border: 0; overflow: visible; }
+.list.wgrid > li { border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); align-items: flex-start; }
+.list.wgrid > li + li { border-top: 1px solid var(--line); }
+.list.wgrid .l1 { white-space: normal; }
