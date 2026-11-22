@@ -113,6 +113,13 @@ const APR_ACCESS = [
     'sheet-template-save' => 'member', 'sheet-template-use' => 'member', 'sheet-template-delete' => 'member',
     'renovation-add' => 'member', 'renovation-delete' => 'member',
 
+    // דוח (17): צפייה — view (שותף ממשרד אחר: טיוטה רק עם see_draft בהיקף, דרך apr_can($c, 'report'); מאושרת — גם בשיתוף של כל התיק).
+    // כל פעולה משנה סגורה לשותף. עריכה — edit; "נסקר", העברה לבדיקה והחזרה — edit + שמאי בתיק; אישור, גרסה חדשה ומחיקת טיוטה — approve_report
+    'case-report' => 'case', 'report-version' => 'case', 'report-compare' => 'member',
+    'report-draft-create' => 'member', 'report-section-save' => 'member', 'report-section-add' => 'member', 'report-section-delete' => 'member', 'report-rebuild' => 'member',
+    'report-section-ai' => 'member', 'report-section-reviewed' => 'member', 'report-proposal-decide' => 'member', 'report-comment-add' => 'member', 'report-comment-resolve' => 'member',
+    'report-submit' => 'member', 'report-return' => 'member', 'report-approve' => 'member', 'report-version-new' => 'member', 'report-version-delete' => 'member',
+
     // בינה (11): הקטלוג, חיבורי המערכת, ההקצאות ומכסות המערכת — מנהל המערכת; המדיניות, החיבור האישי ומכסות הרשות — מנהל המשרד;
     // "הבינה שלי" — כל חבר; "בלי בינה" בתיק — השמאי האחראי (lib/ai_admin.php). אין פעולה ציבורית, ואין פעולה שמפעילה מודל.
     'sys-ai' => 'sysadmin', 'sys-ai-provider-save' => 'sysadmin', 'sys-ai-model-save' => 'sysadmin', 'sys-ai-fx-set' => 'sysadmin',
@@ -166,7 +173,7 @@ const APR_ACCESS = [
 ];
 
 /** פעולות שרק קוראות — GET. כל השאר: POST עם גוף JSON ועם X-CSRF. */
-const APR_READS = ['case-valuation', 'sheet', 'sheet-templates', 'case-shares', 'my-shares', 'sys-support', 'file-ai', 'sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
+const APR_READS = ['case-report', 'report-version', 'report-compare', 'case-valuation', 'sheet', 'sheet-templates', 'case-shares', 'my-shares', 'sys-support', 'file-ai', 'sys-ai', 'office-ai', 'my-ai', 'case-ai', 'case-comps', 'comp', 'comp-set', 'case-visits', 'visit', 'my-visits', 'visit-photo', 'sources', 'sys-sources', 'case-sources', 'case-source', 'source-check', 'case-planning', 'planning-item', 'case-facts', 'fact', 'case-conflicts', 'conflict', 'file-facts', 'sys-attributes', 'inbox', 'office-channels', 'sys-channels', 'sys-inbox', 'case-requests', 'requests-failed', 'case-docs', 'file', 'file-thumb', 'docs-search', 'docs-pending', 'case-options', 'case-plan', 'case', 'cases', 'case-activity', 'case-profile-diff', 'contacts', 'my-tasks', 'office-cases',
     'profile-lists', 'profiles', 'profile', 'profile-version', 'profile-versions', 'profile-compare', 'profile-draft-info', 'profile-check',
     'profile-shares', 'sys-doc-types', 'health', 'platform_key', 'login-config', 'sso-start', 'sso-callback', 'dev-mail', 'devapi-feed', 'devapi-file', 'me', 'my-invites', 'office', 'office-audit', 'sys-offices', 'sys-office', 'sys-users', 'sys-settings',
     'dev-health', 'dev-audit', 'dev-jobs', 'dev-items', 'dev-file', 'dev-tokens', 'dev-item-log', 'dev-log'];

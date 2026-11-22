@@ -32,7 +32,8 @@ function apr_profile_empty_content(): array
         'contact' => apr_contact_defaults(),
         'sources' => ['items' => [], 'spend_needs_approval' => true],
         'visit' => apr_visit_default_form(),                                // "ביקור" (אפיון 13 §4) — lib/visit_form.php; ברירת המחדל: שש הקבוצות לדוגמה
-        'comps' => apr_pc_comps_default()];                                 // "עסקאות" (אפיון 15 §7) — lib/comps.php: ברירות מחדל למסך, לא כללים
+        'comps' => apr_pc_comps_default(),                                  // "עסקאות" (אפיון 15 §7) — lib/comps.php: ברירות מחדל למסך, לא כללים
+        'report' => apr_pc_report_default()];                               // "דוח" (אפיון 17 §4) — lib/report_build.php
 }
 
 // ── אימות המבנה בשמירה ───────────────────────────────────────
@@ -178,6 +179,7 @@ function apr_profile_content_clean(mixed $c): array
     $out['sources'] = apr_pc_sources($c['sources'] ?? null);
     $out['visit'] = apr_pc_visit($c['visit'] ?? null);
     $out['comps'] = apr_pc_comps($c['comps'] ?? null);
+    $out['report'] = apr_pc_report($c['report'] ?? null);
     return $out;
 }
 
@@ -346,7 +348,9 @@ function apr_profile_diff(array $a, array $b): array
         // "ביקור" (13): קבוצות ושדות ברשימה אחת — מפתח של קבוצה נושא קידומת, כדי שלא יתנגש במפתח של שדה
         'visit' => fn($c) => array_merge(array_map(fn($g) => ['key' => 'group:' . $g['key']] + $g, $c['visit']['groups'] ?? []), array_map(fn($f) => ['title' => $f['label']] + $f, $c['visit']['fields'] ?? [])),
         // "עסקאות" (15): כל הגדרה היא שורה, כדי ששינוי של ברירת מחדל ייראה בהשוואה
-        'comps' => fn($c) => array_map(fn($k, $v) => ['key' => $k, 'title' => $k, 'value' => $v], array_keys($c['comps'] ?? []), array_values($c['comps'] ?? []))];
+        'comps' => fn($c) => array_map(fn($k, $v) => ['key' => $k, 'title' => $k, 'value' => $v], array_keys($c['comps'] ?? []), array_values($c['comps'] ?? [])),
+        // "דוח" (17): הפרקים — שורה לכל פרק; ההגדרות (טריגר, מה נכלל) — שורה לכל אחת
+        'report' => fn($c) => array_merge($c['report']['sections'] ?? [], array_map(fn($k) => ['key' => 'set:' . $k, 'title' => $k, 'value' => $c['report'][$k] ?? null], ['trigger', 'include_excluded_comps', 'include_unverified', 'findings']))];
     $out = [];
     foreach ($sections as $name => $get) {
         $old = array_column($get($a), null, 'key');

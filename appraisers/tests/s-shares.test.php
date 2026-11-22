@@ -742,7 +742,7 @@ eq([$old, [$kept['download'] ?? null, $kept['see_internal'] ?? null, $kept['see_
 $lib = fn(string $f) => (string)file_get_contents(__DIR__ . '/../lib/' . $f);
 $caseRules = array_keys(array_filter(APR_ACCESS, fn($r) => $r === 'case'));
 sort($caseRules);
-$expected = ['case-valuation', 'sheet', 'case', 'case-comps', 'case-docs', 'case-facts', 'case-sources', 'case-source', 'case-visits', 'cases', 'comp', 'comp-set', 'docs-search', 'fact', 'file', 'file-facts', 'file-thumb', 'source-check', 'visit', 'visit-photo'];
+$expected = ['case-report', 'report-version', 'case-valuation', 'sheet', 'case', 'case-comps', 'case-docs', 'case-facts', 'case-sources', 'case-source', 'case-visits', 'cases', 'comp', 'comp-set', 'docs-search', 'fact', 'file', 'file-facts', 'file-thumb', 'source-check', 'visit', 'visit-photo'];
 sort($expected);
 $sharesSql = [];
 foreach (glob(__DIR__ . '/../lib/*.php') as $f) if (preg_match('/\b(FROM|JOIN|INTO|UPDATE)\s+case_shares\b/', (string)file_get_contents($f))) $sharesSql[] = basename($f);
@@ -750,7 +750,7 @@ sort($sharesSql);
 eq([$caseRules, array_values(array_diff($caseRules, APR_READS)), preg_match_all('/apr_share_for\(/', implode('', array_map($lib, array_map('basename', glob(__DIR__ . '/../lib/*.php'))))), $sharesSql,
     preg_match_all('/\bcase_members\b/', $lib('shares.php')) <= 3, apr_share_for(['user' => ['id' => $uid('boaz@example.com'), 'is_sysadmin' => 1]], ['id' => $caseId($C)])],
     [$expected, [], 3, ['access.php', 'documents.php', 'shares.php'], true, null],
-    'המבנה: רק 20 פעולות קריאה פתוחות לשיתוף (הכלל case), כולן GET; apr_share_for נקרא ממקום אחד (apr_case_get); case_shares נקראת רק ב-shares.php, בכלל הגישה ובחיפוש; ובלי פעולה של הנתב — אין שיתוף');
+    'המבנה: רק 22 פעולות קריאה פתוחות לשיתוף (הכלל case), כולן GET; apr_share_for נקרא ממקום אחד (apr_case_get); case_shares נקראת רק ב-shares.php, בכלל הגישה ובחיפוש; ובלי פעולה של הנתב — אין שיתוף');
 // שותף פעיל, וקריאה ל-apr_case_get מפעולה שאינה פתוחה לשיתוף / בלי נתב / עם perm אחר — 404
 $S8 = $share($avi, $C, $toBoaz())[1]['share'];
 $accept($boaz, $S8);

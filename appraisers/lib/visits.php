@@ -678,6 +678,7 @@ function apr_visit_finish(array $ctx, array $in): array
                 'status_note' => $st['missing'] ? $override : $note], ['in_progress']);
             $out = apr_visit_to_facts($ctx, $c, $now, $form, $st);
             $out['tasks'] = apr_visit_finding_tasks($c, $now, $form, $st);
+            apr_report_on_visit($c, $now);              // 17: הטריגר של טיוטת הדוח (לפי הפרופיל של התיק), ורענון טיוטה קיימת
         } else {
             $set = ['status' => $result, 'status_note' => $note] + ($when !== false ? ['scheduled_at' => $when] : []);
             $now = apr_visit_set($c, $v, $rev, $set, $result === 'postponed' ? ['planned', 'in_progress', 'postponed'] : ['planned', 'in_progress']);

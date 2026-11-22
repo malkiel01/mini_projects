@@ -26,6 +26,7 @@ const APR_SENSITIVE = [
     'sys-user-flags'    => ['is_sysadmin', true],       // הענקת מנהל מערכת
     'dev-token-create'  => null,                        // יצירת אסימון DevLoop
     'office-channel-save' => null,                      // חיבור ערוץ של המשרד — נושא סוד (אפיון 08 §9)
+    'report-approve'    => null,                        // אישור דוח — נועל גרסה ומשנה את מצב התיק (אפיון 17 §8.1)
     'sys-channel-save'  => null,                        // חיבור ערוץ של המערכת
     'sys-ai-connection-save' => null,                   // מפתח של ספק בינה — שמירה והחלפה (אפיון 11 §7)
     'office-ai-connection-save' => null,                // החיבור האישי של המשרד
