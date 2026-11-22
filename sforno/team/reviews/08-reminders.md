@@ -19,3 +19,7 @@
 ## ⚪ הערות
 - השתלטות על endpoint ידוע מעוגייה אחרת דורסת `guest_data` — סיכון נמוך (endpoint לא ניחוש); הקשחה: לקבל רק אם `p256dh`/`auth` תואמים.
 - endpoint מזויף נשרף אחרי שליחה אחת (404/410 → gone).
+
+## סבב 2 (PR #1795) — **מאושר**
+הבקרה בעצמה: `SF_REM_MAX` בתכנון גם לקורא, `SF_PUSH_MAX` 10, `sf_ec_pub` ב-subscribe; `sf_rem_guest_cleanup` שעתי; account-delete —
+DELETE ל-push_devices ולמופעים pending/cancelled; השתלטות endpoint רק עם אותם מפתחות. run.php 12/12, check-apps, php -l — ירוקים.
