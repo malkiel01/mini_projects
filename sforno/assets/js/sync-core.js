@@ -29,7 +29,7 @@
     function syncable(key) {
         return key === 'settings' || key === 'customs' || key === 'marks' || key === 'favorites' || key === 'tehillim'
             || /^pos:[a-z0-9]{16}$/.test(key) || /^order:[a-z0-9]{16}$/.test(key) || /^ver:[a-z0-9]{16}$/.test(key)
-            || key === 'siddur:edition' || key === 'tehillim:edition';
+            || key === 'siddur:edition' || key === 'tehillim:edition' || key === 'loc' || key === 'zmethod';
     }
 
     const okId = id => typeof id === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(id);
@@ -41,6 +41,8 @@
         if (key === 'settings') return one('pref:settings', 'pref', null, value);
         if (key === 'customs') return one('custom:perm', 'custom', null, value);
         if (key === 'siddur:edition' || key === 'tehillim:edition') return one('pref:' + key, 'pref', null, value);
+        // 07: המיקום הפעיל והשיטה — פריט אחד כל אחד, שמתעדכן במקום (§19: רק המיקום הפעיל, לא היסטוריה)
+        if (key === 'loc' || key === 'zmethod') return one('pref:' + key, 'pref', null, value);
         let m = /^pos:([a-z0-9]{16})$/.exec(key);
         if (m) return one('position:' + m[1], 'position', m[1], value);
         m = /^order:([a-z0-9]{16})$/.exec(key);
@@ -64,6 +66,7 @@
         if (pid === 'pref:settings') return 'settings';
         if (pid === 'custom:perm') return 'customs';
         if (pid === 'pref:siddur:edition' || pid === 'pref:tehillim:edition') return pid.slice(5);
+        if (pid === 'pref:loc' || pid === 'pref:zmethod') return pid.slice(5);
         let m = /^position:([a-z0-9]{16})$/.exec(pid);
         if (m) return 'pos:' + m[1];
         m = /^order:([a-z0-9]{16})$/.exec(pid);

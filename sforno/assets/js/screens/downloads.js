@@ -5,6 +5,7 @@
  *   "לא הושלמה" — לא "זמין" (§21.6). "מחיקת ההורדה" מוחקת רק את הקבצים מהמכשיר; הסימניות, ההערות וההגדרות נשארות (§4) —
  *   ולכן היא פעולה נפרדת, בשם אחר, מ"מחיקת החשבון" / "מחיקת המידע".
  *   התקנה ≠ הורדה: התקנת האפליקציה שומרת את האפליקציה בלבד.
+ *   זמני היום (07): חבילת חודש — המקום, השיטה וגרסתה, הטווח; "עדכון" ו"מחיקה" — רק בלחיצה (SF.daily).
  */
 'use strict';
 
@@ -73,7 +74,35 @@
         const listBox = h('ul', { class: 'list' });
         const moreBox = h('div');
         const infoBox = h('div', { class: 'dl-info' });
+        const zmBox = h('ul', { class: 'list' });
         let stop = null;
+
+        async function zmanim() {
+            const [pkg, st] = await Promise.all([SF.daily.pkg(), SF.daily.state().catch(() => null)]);
+            const ps = st ? window.SFDailyCore.pkgState(pkg, st.loc, st.method && st.method.pid, st.methods.offline ? null : st.method && st.method.version, window.SFDailyCore.iso(st.today.civil))
+                : { state: pkg ? 'ok' : 'none', text: '' };
+            const get = async () => {
+                try { await SF.daily.download(); SF.toast('הזמנים לחודש הקרוב זמינים עכשיו גם בלי אינטרנט'); } catch (e) { SF.toast(e.message, true); }
+                zmanim();
+            };
+            if (!pkg) {
+                SF.put(zmBox, h('li', { class: 'card' }, h('div', { class: 'body' }, h('div', { class: 'l1' }, h('b', null, '🕰️ זמני היום')),
+                    h('div', { class: 'l2' }, h('span', { class: 'dl-st none' }, '📡 לא זמין בלי אינטרנט'))),
+                    h('button', { class: 'btn sm primary', type: 'button', disabled: SF.isOffline() || !st || !st.place || !st.method, onclick: get }, '⬇️ חודש')));
+                return;
+            }
+            SF.put(zmBox, h('li', { class: 'card dl-card' },
+                h('div', { class: 'body' },
+                    h('div', { class: 'l1' }, h('a', { class: 'one', href: '#/zmanim' }, h('b', null, '🕰️ זמני היום · ' + pkg.place.name))),
+                    h('div', { class: 'l2' }, pkg.method.name + ' · גרסה ' + pkg.method.version + ' · ' + pkg.from + ' – ' + pkg.to),
+                    h('div', { class: 'l2' }, h('span', { class: 'dl-st ' + (ps.state === 'ok' ? 'ready' : 'stale') }, (ps.state === 'ok' ? '✓ ' : '⚠️ ') + ps.text))),
+                h('div', { class: 'dl-acts' },
+                    ps.state !== 'ok' ? h('button', { class: 'btn sm primary', type: 'button', disabled: SF.isOffline(), onclick: get }, 'עדכון') : null,
+                    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'מחיקת הזמנים שהורדו', onclick: async () => {
+                        if (!confirm('למחוק מהמכשיר את הזמנים שהורדו? המיקום והשיטה שבחרתם נשארים.')) return;
+                        await SF.daily.removePkg(); SF.toast('הזמנים שהורדו נמחקו מהמכשיר'); zmanim();
+                    } }, '🗑️'))));
+        }
 
         async function info() {
             const [persist, est] = await Promise.all([SF.offline.persisted(), SF.offline.usage()]);
@@ -118,6 +147,7 @@
                         startDownload(e.pid, await SF.version.get(e.pid));
                     } }, '⬇️ הורדה'))))] : null);
             info();
+            zmanim();
         }
 
         SF.put(main,
@@ -127,6 +157,8 @@
             h('h3', { class: 'sec-title' }, 'במכשיר'),
             listBox,
             moreBox,
+            h('h3', { class: 'sec-title' }, 'זמני היום'),
+            zmBox,
             h('h3', { class: 'sec-title' }, 'התקנה'),
             h('p', { class: 'hint' }, 'התקנה שומרת את האפליקציה במכשיר ופותחת אותה בלי שורת כתובת — אבל לא מורידה ספרים. באייפון: שיתוף ← "הוספה למסך הבית".'),
             installEvt ? h('button', { class: 'btn ghost', type: 'button', onclick: async () => { const e = installEvt; installEvt = null; e.prompt(); await e.userChoice.catch(() => null); SF.render(); } }, '📲 התקנת האפליקציה') : null);

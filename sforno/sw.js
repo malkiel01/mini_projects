@@ -8,11 +8,13 @@
  *   הורדות — המטמון "sforno-content" שייך לדף (offline-core.js). כאן רק מגישים ממנו את התמונות (read-file) כשאין רשת.
  *           **activate מוחק רק מטמונים ישנים של המעטפת** — לא את ההורדות, ולא נוגע ב-IndexedDB (המידע האישי).
  *   API — לא נשמר ולא מוגש מכאן (חוץ מ-read-file מתוך הורדה). data/ ושאר התיקיות שאינן של הדפדפן — לא נוגעים.
+ *   זמני היום (07) — רשימת הערים (assets/data/cities.json) היא חלק מהמעטפת; הזמנים עצמם מחושבים בדף, וחבילת החודש —
+ *           ב-IndexedDB (zdl), לא כאן.
  */
 'use strict';
 
-const VERSION = '0.6';
-const BUILD = 'd1f2abb14981';
+const VERSION = '0.7';
+const BUILD = '8d3c4e0b16db';
 const SHELL_CACHE = 'sforno-shell-' + VERSION + '-' + BUILD;
 const CONTENT_CACHE = 'sforno-content';
 
@@ -39,19 +41,26 @@ const SHELL = [
     'assets/js/sync.js',
     'assets/js/offline-core.js',
     'assets/js/offline.js',
+    'assets/js/calendar-core.js',
+    'assets/js/daily-core.js',
+    'assets/js/daily.js',
     'assets/js/screens/home.js',
     'assets/js/screens/reader.js',
     'assets/js/screens/siddur.js',
     'assets/js/screens/downloads.js',
+    'assets/js/screens/zmanim.js',
+    'assets/js/screens/halacha.js',
     'assets/js/screens/admin.js',
     'assets/js/screens/content.js',
     'assets/js/screens/import.js',
     'assets/js/screens/reader-admin.js',
+    'assets/js/screens/daily-admin.js',
     'assets/js/screens/dev.js',
     'assets/js/screens/account.js',
     'assets/js/app.js',
     'assets/vendor/pdfjs/pdf.min.js',
     'assets/vendor/pdfjs/pdf.worker.min.js',
+    'assets/data/cities.json',
 ];
 
 const scopePath = () => new URL(self.registration.scope).pathname;

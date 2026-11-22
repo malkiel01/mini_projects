@@ -2,7 +2,7 @@
  * הסידור (§2), התהילים (§3) והחיפוש (§4) — בצד הקורא. המידע האישי ב-SF.store; עם חשבון (05) — מסתנכרן (SF.sync).
  *
  *   #/siddur          — רשימת התפילות (הבסיס של המנהל + הסדר האישי, שלא נדרס), קיצורים, מועדפים, מנהגים קבועים
- *   #/tehillim        — פרקים, "של היום" (⏳ עד 07 — לפי חצות מקומית), הקבוצה שלי, שמות והקדשות (רק במכשיר)
+ *   #/tehillim        — פרקים, "של היום" (מתחלף בצאת הכוכבים במיקום ובשיטה — 07; בלעדיהם — בחצות), הקבוצה שלי, שמות והקדשות
  *   #/search[/<ed>]   — חיפוש בכל הספרייה הציבורית, או בספר אחד. בהדרגה (20 בכל פעם)
  */
 'use strict';
@@ -183,11 +183,16 @@
                 chs.length ? h('div', { class: 'th-grid' }, chs.map(chapBtn)) : h('p', { class: 'empty' }, 'במהדורה הזו אין פרקים בטקסט'),
                 h('p', { class: 'hint' }, 'פתיחת פרק אינה מסמנת אותו. "סיימתי" — בקורא: הקשה על שורה, ואז ✓.'));
         }
-        function drawToday() {
-            const t = C.today(new Date(), C.hebDayIntl);
+        async function drawToday() {
+            const ds = await SF.daily.state();
+            const t = C.todayFrom(window.SFDailyCore.tehillimDay(ds.today));
             const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+            const basis = ds.today.approx === 'no_method'
+                ? h('p', { class: 'notice warn' }, h('span', null, '⏳ מתחלף בחצות. כדי שיתחלף בצאת הכוכבים — בחרו מיקום ושיטה.'), h('a', { class: 'btn sm ghost', href: '#/zmanim' }, 'זמני היום'))
+                : ds.today.approx === 'no_tzeit' ? h('p', { class: 'notice warn' }, '⏳ היום אי אפשר לחשב צאת הכוכבים ב' + ds.place.name + ' — מתחלף בחצות.')
+                    : h('p', { class: 'hint' }, SF.daily.todayLine(ds.today) + ' · מתחלף בצאת הכוכבים (' + ds.place.name + ', ' + ds.method.name + ')');
             SF.put(panes.today, 
-                h('p', { class: 'notice warn' }, '⏳ מתחלף בחצות לפי השעון של המכשיר. ההחלפה בצאת הכוכבים — כשיתווספו זמני היום.'),
+                basis,
                 h('h3', { class: 'sec-title' }, 'יום ' + days[t.weekday] + ' — חלוקה לימי השבוע'), list(t.week),
                 h('h3', { class: 'sec-title' }, 'יום ' + heb(t.day) + ' בחודש — חלוקה לימי החודש'), list(t.month),
                 h('details', { class: 'more' }, h('summary', null, 'כל החלוקה לשבוע ולחודש'),
