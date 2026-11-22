@@ -279,6 +279,11 @@ function apr_profile_checks(array $content, array $docTypes): array
     foreach ($ve as [$code, $message, $ref]) $add($err, $code, $message, $ref);
     foreach ($vw as [$code, $message, $ref]) $add($warn, $code, $message, $ref);
     if (!$items && !$tasks) $add($warn, 'empty', 'בפרופיל אין אף דרישה ואף משימה', 'profile');
+    // "דוח" (17 §4): תבנית בלי פרקים, או בלי אף פרק חובה — הטיוטה תיווצר ריקה, והבקרה לא תדרוש דבר
+    $rs = $content['report']['sections'] ?? [];
+    if (!$rs) $add($warn, 'report_no_sections', 'בתבנית הדוח אין אף פרק — הטיוטה תיווצר ריקה', 'report');
+    elseif (!array_filter($rs, fn($s) => !empty($s['mandatory']))) $add($warn, 'report_no_mandatory', 'בתבנית הדוח אין אף פרק חובה', 'report');
+    foreach ($rs as $s) if (trim((string)($s['title'] ?? '')) === '') $add($warn, 'report_section_untitled', 'פרק בדוח בלי כותרת', 'report:' . ($s['key'] ?? ''));
     return ['errors' => $err, 'warnings' => $warn];
 }
 

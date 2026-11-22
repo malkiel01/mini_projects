@@ -12,6 +12,11 @@
 declare(strict_types=1);
 
 const APR_REPORT_NO_AI = ['methods', 'comps', 'assume', 'conclusion'];
+/**
+ * הפרקים שמותר לנסח בבינה — **רשימה סגורה** (הכרעת הבקרה, סטייה 7). `purpose` אינו בה: הוא נושא את שם המזמין, ופרט מזהה של לקוח אינו
+ * נשלח למודל בניסוח הדוח. פרק שאינו ברשימה — גם אם הפרופיל או תבנית ישנה מסמנים ai — אינו נשלח.
+ */
+const APR_REPORT_AI_KEYS = ['property', 'area_desc', 'visit', 'planning'];
 const APR_REPORT_TRIGGERS = ['visit_completed', 'manual'];
 const APR_REPORT_TABLES = ['identifiers', 'documents', 'source_checks', 'comps', 'adjustments', 'alternatives', 'approaches', 'assumptions'];
 const APR_REPORT_SRC_TYPES = ['case', 'fact', 'file', 'source_check', 'visit', 'comp'];
@@ -65,7 +70,7 @@ function apr_pc_report(mixed $v): array
             foreach (['mandatory', 'ai'] as $b) if (array_key_exists($b, $s) && !is_bool($s[$b])) apr_fail('content_invalid');
             $build = apr_pc_enum($s['build'] ?? null, ['data', 'manual'], 'data');
             $sections[$key] = ['key' => $key, 'title' => apr_pc_text($s['title'] ?? null, 120), 'mandatory' => ($s['mandatory'] ?? false) === true, 'build' => $build,
-                'ai' => ($s['ai'] ?? false) === true && $build === 'data' && !in_array($key, APR_REPORT_NO_AI, true)];
+                'ai' => ($s['ai'] ?? false) === true && $build === 'data' && in_array($key, APR_REPORT_AI_KEYS, true)];
         }
     } else {
         $sections = array_column($d['sections'], null, 'key');
@@ -170,16 +175,23 @@ function apr_report_facts(array $c): array
         if (count($keys) !== 1 || apr_fact_norm($active[0], $a)[0] === null) continue;
         $best = array_values(array_filter($active, fn($f) => $f['state'] === 'verified'))[0] ?? $active[0];
         $val = apr_fact_value_out($best['value_num'] === null ? null : (int)$best['value_num'], $best['value_text'], $best['value_date'], $best['unit'], $best['area_kind'], $a);
+        if ($a['value_type'] === 'choice' && $val['text'] !== null) foreach (json_decode((string)($a['choices'] ?? ''), true) ?: [] as $ch) if (($ch['key'] ?? null) === $val['text']) $val['text'] = (string)($ch['label'] ?? $val['text']);
         $val['text'] = $val['bool'] !== null ? ($val['bool'] ? 'כן' : 'לא') : ($val['num'] ?? $val['text'] ?? $val['date']);
         $out[$a['key']] = ['attr' => $a, 'fact' => $best, 'value' => $val, 'verified' => $best['state'] === 'verified'];
     }
     return $out;
 }
 
+/** תוויות ליחידות ולסוגי שטח — הדוח הוא טקסט לקריאה (וגם מה שנשלח לניסוח), לא מפתחות. */
+const APR_REPORT_UNIT_LABELS = ['sqm' => 'מ"ר', 'dunam' => 'דונם', 'cm' => 'ס"מ', 'm' => 'מטר', 'ILS' => '₪', 'USD' => '$', 'EUR' => '€'];
+const APR_REPORT_AREA_KIND_LABELS = ['registered' => 'רשום', 'built' => 'בנוי', 'gross' => 'ברוטו', 'net' => 'נטו', 'primary' => 'עיקרי', 'other' => 'אחר'];
+
 /** מה שמזהה ערך לצורך "הערך השתנה מאז העריכה": הערך, היחידה וסוג השטח — כמחרוזת אחת. */
 function apr_report_fact_stamp(?array $val): ?string
 {
-    return $val === null ? null : implode(' ', array_filter([$val['text'], $val['unit'], $val['area_kind']], fn($x) => $x !== null && $x !== ''));
+    if ($val === null) return null;
+    $kind = $val['area_kind'] === null || $val['area_kind'] === '' ? null : '(' . (APR_REPORT_AREA_KIND_LABELS[$val['area_kind']] ?? $val['area_kind']) . ')';
+    return implode(' ', array_filter([$val['text'], $val['unit'] === null ? null : (APR_REPORT_UNIT_LABELS[$val['unit']] ?? $val['unit']), $kind], fn($x) => $x !== null && $x !== ''));
 }
 
 /** טבלה שנבנית מהתיק: ['cols' => [כותרות], 'rows' => [[מחרוזות]], 'refs' => [מקור לכל שורה | null]]. כל מספר — מחרוזת מהמנוע. */
@@ -406,9 +418,9 @@ function apr_report_findings(array $c, array $version, array $sections): array
             if ($b['type'] === 'note_missing') $add('note_missing', $s['key'] . ':' . substr(apr_report_hash($b['what']), 0, 12), 'לא ידוע: ' . $b['what'], $s['pid']);
             if ($b['type'] === 'fact') {
                 if ($b['value'] === null) $add('note_missing', $s['key'] . ':' . $b['attr'], 'לא ידוע: ' . $b['label'], $s['pid']);
-                elseif ($b['verified'] === false) $add('fact_unverified', $b['attr'], 'נתון בדוח שלא אומת: ' . $b['label'], $s['pid'], ['type' => 'fact', 'pid' => $b['fact']]);
+                elseif ($b['verified'] === false) $add('fact_unverified', $b['attr'], 'נתון בדוח שלא אומת: ' . $b['label'], $s['pid'], ['type' => 'fact', 'pid' => $b['fact'], 'attr' => $b['attr']]);
                 if (!empty($b['changed'])) $add('fact_changed', $s['key'] . ':' . $b['attr'], 'הערך השתנה מאז עריכת הפרק: ' . $b['label'] . ' (היה ' . ($b['was'] ?? 'לא ידוע') . ')', $s['pid']);
-                if ($b['fact'] !== null) $usedFacts[$b['fact']] = $b['label'];
+                if ($b['fact'] !== null) $usedFacts[$b['fact']] = [$b['label'], $b['attr']];
             }
         }
     }
@@ -433,10 +445,10 @@ function apr_report_findings(array $c, array $version, array $sections): array
         if ($a['conclusion_value'] === null) $add('alt_no_conclusion', $a['pid'], 'חלופה בלי מסקנה: ' . $a['name'], null, $link);
     }
     // מסמך שנתון בדוח נשען עליו נמחק, או הוחזר להשלמה
-    foreach ($usedFacts as $factPid => $label) {
+    foreach ($usedFacts as $factPid => [$label, $attrKey]) {
         $f = apr_row("SELECT f.source_file_id, fl.deleted_at AS gone, (SELECT rf.review_state FROM requirement_files rf WHERE rf.file_id = f.source_file_id ORDER BY rf.id DESC LIMIT 1) AS review
             FROM facts f LEFT JOIN files fl ON fl.id = f.source_file_id WHERE f.pid = ?", [$factPid]);
-        if ($f && $f['source_file_id'] !== null && ($f['gone'] !== null || $f['review'] === 'returned')) $add('doc_gone', $factPid, ($f['gone'] !== null ? 'המסמך שהנתון נשען עליו נמחק: ' : 'המסמך שהנתון נשען עליו הוחזר להשלמה: ') . $label, null, ['type' => 'fact', 'pid' => $factPid]);
+        if ($f && $f['source_file_id'] !== null && ($f['gone'] !== null || $f['review'] === 'returned')) $add('doc_gone', $factPid, ($f['gone'] !== null ? 'המסמך שהנתון נשען עליו נמחק: ' : 'המסמך שהנתון נשען עליו הוחזר להשלמה: ') . $label, null, ['type' => 'fact', 'pid' => $factPid, 'attr' => $attrKey]);
     }
     return $out;
 }
@@ -464,7 +476,13 @@ function apr_report_ai_input(array $ctx, array $c, array $section, array $tpl): 
 {
     $built = apr_report_resolve($ctx, $c, apr_report_build($c, $section['key'], $tpl)['blocks'], $tpl);
     $items = [];
-    $put = function (string $text, ?array $src) use (&$items) { $items['d' . (count($items) + 1)] = ['text' => $text, 'src' => $src]; };
+    $pii = apr_report_ai_pii($c);
+    $omitted = 0;
+    $put = function (string $text, ?array $src) use (&$items, &$omitted, $pii) {
+        $text = apr_report_ai_scrub($text, $pii);
+        if ($text === null) { $omitted++; return; }
+        $items['d' . (count($items) + 1)] = ['text' => $text, 'src' => $src];
+    };
     foreach ($built as $b) {
         if ($b['type'] === 'p') $put($b['text'], $b['src'] ?? null);
         if ($b['type'] === 'note_missing') $put('לא ידוע: ' . $b['what'], null);
@@ -472,7 +490,43 @@ function apr_report_ai_input(array $ctx, array $c, array $section, array $tpl): 
         if ($b['type'] === 'data_table') foreach ($b['rows'] as $i => $row) $put($b['label'] . ' — ' . implode(' · ', array_map(fn($col, $x) => "$col: $x", $b['cols'], $row)), $b['refs'][$i]);
     }
     $lines = array_map(fn($id, $it) => "$id. " . $it['text'], array_keys($items), $items);
-    return ['items' => $items, 'message' => "כותרת הפרק: " . $section['title'] . "\n\nהנתונים:\n" . implode("\n", $lines)];
+    return ['items' => $items, 'omitted' => $omitted, 'message' => "כותרת הפרק: " . (apr_report_ai_scrub($section['title'], $pii) ?? 'פרק בדוח') . "\n\nהנתונים:\n" . implode("\n", $lines)];
+}
+
+/**
+ * הפרטים המזהים של אנשים בתיק, שאינם נשלחים למודל: 'parties' — שם, ארגון, מייל וטלפון של כל גורם בתיק (גם מי שהוסר), ושל איש הקשר
+ * של ביקור; 'staff' — שמות המשתתפים והמבקרים (עובדי המשרד).
+ */
+function apr_report_ai_pii(array $c): array
+{
+    $parties = [];
+    foreach (apr_rows('SELECT k.name, k.org, k.email, k.phone FROM case_parties p JOIN contacts k ON k.id = p.contact_id WHERE p.case_id = ?', [$c['id']]) as $k) foreach ($k as $v) $parties[] = $v;
+    $staff = array_column(apr_rows('SELECT u.name FROM users u WHERE u.id IN (SELECT user_id FROM case_members WHERE case_id = ? UNION SELECT visitor_user_id FROM visits WHERE case_id = ?)', [$c['id'], $c['id']]), 'name');
+    $clean = fn(array $a) => array_values(array_unique(array_filter(array_map(fn($v) => trim((string)$v), $a), fn($v) => mb_strlen($v) >= 2)));
+    return ['parties' => $clean($parties), 'staff' => $clean($staff)];
+}
+
+/**
+ * פריט בדרך למודל: null ← הפריט **מושמט** (מכיל שם / ארגון / מייל / טלפון של גורם בתיק, או משהו שנראה כמו ת"ז, טלפון או מייל);
+ * שם של עובד משרד נמחק מהטקסט ("בידי …"), והפריט נשאר. ההשוואה בלי הבדלי רישיות ובלי מקפים ורווחים במספרים.
+ */
+function apr_report_ai_scrub(string $text, array $pii): ?string
+{
+    $digits = (string)preg_replace('/[\s\-()]+/u', '', $text);
+    foreach ($pii['parties'] as $p) {
+        if (mb_stripos($text, $p) !== false) return null;
+        $pd = (string)preg_replace('/[\s\-()]+/u', '', $p);
+        if (preg_match('/^\+?\d{7,}$/', $pd) === 1 && str_contains($digits, ltrim($pd, '+'))) return null;
+    }
+    if (preg_match('/[\w.+\-]+@[\w\-]+\.[\w.\-]+/u', $text) === 1) return null;                         // מייל
+    if (preg_match('/(?<!\d)(?:\+?972[\s\-]?|0)\d{1,2}[\s\-]?\d{3}[\s\-]?\d{4}(?!\d)/', $text) === 1) return null;   // טלפון
+    if (preg_match('/(?<![\d.,])\d{9}(?![\d.,])/', $text) === 1) return null;                              // תשע ספרות רצופות — ת"ז
+    foreach ($pii['staff'] as $n) {
+        $text = (string)preg_replace('/,?\s*בידי\s+' . preg_quote($n, '/') . '/u', '', $text);
+        $text = str_ireplace($n, '', $text);
+    }
+    $text = trim((string)preg_replace('/\s{2,}/u', ' ', $text));
+    return $text === '' ? null : $text;
 }
 
 /**
@@ -510,7 +564,7 @@ function apr_report_ai_parse(string $text, array $items): ?array
  */
 function apr_report_ai_section(?array $ctx, array $c, array $section, array $tpl, string $op): array
 {
-    if ((int)$section['ai_allowed'] !== 1 || in_array($section['key'], APR_REPORT_NO_AI, true)) return ['state' => 'failed', 'reason' => 'not_allowed', 'blocks' => [], 'run' => null, 'dropped' => 0];
+    if ((int)$section['ai_allowed'] !== 1 || in_array($section['key'], APR_REPORT_NO_AI, true) || !in_array($section['key'], APR_REPORT_AI_KEYS, true)) return ['state' => 'failed', 'reason' => 'not_allowed', 'blocks' => [], 'run' => null, 'dropped' => 0];
     $in = apr_report_ai_input($ctx ?? ['user' => null, 'office' => null], $c, $section, $tpl);
     if (!$in['items']) return ['state' => 'failed', 'reason' => 'no_data', 'blocks' => [], 'run' => null, 'dropped' => 0];
     $r = ai_run(($ctx !== null ? ['ctx' => $ctx, 'case' => $c['pid']] : ['ctx' => null, 'office_id' => (int)$c['office_id'], 'case_id' => (int)$c['id']])

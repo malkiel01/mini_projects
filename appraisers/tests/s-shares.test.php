@@ -234,7 +234,7 @@ eq([$pts['file (הורדה)'], $pts['visit-photo (פרטית)'], $pts['case-fact
     '05-A4 בלי download ← ההורדה נדחית; תמונת ביקור פרטית, נתונים, עסקאות, פעילות, בקשות, בינה, הצעות חילוץ, ניהול השיתופים, תכנון, תוכנית העבודה והפרופיל — 404');
 $cv = $g($boaz, 'case', ['case' => $C]);
 eq([array_keys($cv[1]), $cv[1]['me']['role'], array_keys(array_filter($cv[1]['me']['perms'])), $cv[1]['shared']['office'], $cv[1]['shared']['scope'], $leaks($json($cv), $SECRETS)],
-    [['ok', 'case', 'me', 'shared', 'identifiers', 'parties'], 'external', ['view'], 'משרד א', 'all', ['לקוח-סודי']],
+    [['ok', 'case', 'me', 'shared', 'report', 'identifiers', 'parties'], 'external', ['view'], 'משרד א', 'all', ['לקוח-סודי']],
     'כרטיס התיק לשותף: כותרת, של מי התיק, ההיקף, מזהי הנכס ושמות הגורמים — בלי צוות, פרופיל, תוכנית עבודה, משימות, מייל או טלפון של גורם');
 $dv = $g($boaz, 'case-docs', ['case' => $C]);
 eq([count($dv[1]['requirements']), $dv[1]['groups'], $leaks($json($dv), $SECRETS), array_unique(array_column($dv[1]['requirements'], 'explain_internal')), $dv[1]['perms']],

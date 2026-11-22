@@ -87,6 +87,7 @@ async function route() {
     const [, a = '', b = '', c = '', d = ''] = location.hash.split('/').map(decodeURIComponent);
     const me = App.me, o = myOffice(), ok = o && o.status === 'active';
     await peLeave().catch(() => {});   // יוצאים מעורך הפרופיל — מה שממתין נשמר
+    await rRouteLeave().catch(() => {});   // יוצאים מעורך הדוח (17) — כנ"ל
     $('#back').hidden = a === '';
     App.sub = undefined;
     App.main.classList.remove('wide');   // מסך קובץ רחב יותר (screens/docs.js)

@@ -194,7 +194,7 @@ async function shSourcesTab(pid) {
 
 async function viewCaseShared(pid, tab, d) {
     const c = d.case, a = d.shared.areas, support = d.shared.kind === 'support';
-    const tabs = ['overview', ...(a.requirement || a.file ? ['files'] : []), ...(a.visit ? ['visits'] : []), ...(a.source_check ? ['sources'] : []), ...(a.comps ? ['comps'] : []), ...(a.facts ? ['facts'] : [])];
+    const tabs = ['overview', ...(a.requirement || a.file ? ['files'] : []), ...(a.visit ? ['visits'] : []), ...(a.source_check ? ['sources'] : []), ...(a.comps ? ['comps'] : []), ...(a.facts ? ['facts'] : []), ...(d.report ? ['report'] : [])];
     const cur = tabs.includes(tab) ? tab : tab === 'reqs' && tabs.includes('files') ? 'files' : 'overview';
     const href = t => `#/cases/${pid}${t === 'overview' ? '' : '/' + t}`;
     const reload = () => viewCaseShared(pid, cur, d);
@@ -216,6 +216,7 @@ async function viewCaseShared(pid, tab, d) {
     else if (cur === 'sources') part = await shSourcesTab(pid);
     else if (cur === 'comps') part = await compsTab(pid, reload);
     else if (cur === 'facts') part = await factsTab(pid);
+    else if (cur === 'report') part = await reportTab(pid, reload);
     App.main.innerHTML = head + part.html;
     part.bind();
 }

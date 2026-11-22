@@ -109,8 +109,31 @@ function apr_report_section_out(array $ctx, array $c, array $v, array $s, bool $
     $pview = $p ? apr_report_resolve($ctx, $c, json_decode($p['content'], true) ?: [], apr_report_tpl($v)) : null;
     return $o + ['rev' => (int)$s['rev'], 'ai_allowed' => (int)$s['ai_allowed'] === 1, 'ai_wait' => $s['ai_wait'], 'ai_reviewed_by' => $s['reviewed_name'], 'ai_reviewed_at' => $s['ai_reviewed_at'],
         'user_edited' => (int)$s['user_edited'] === 1, 'changed_note' => $s['changed_note'], 'updated_by' => $s['updated_name'], 'updated_at' => $s['updated_at'],
-        'sources' => json_decode($s['sources'], true) ?: [], 'lines' => apr_report_lines($s['view']),
+        'sources' => apr_report_sources_out($c, json_decode($s['sources'], true) ?: []), 'lines' => apr_report_lines($s['view']),
         'proposal' => $p ? ['pid' => $p['pid'], 'origin' => $p['origin'], 'reason' => $p['reason'], 'created_at' => $p['created_at'], 'blocks' => $pview, 'lines' => apr_report_lines($pview)] : null];
+}
+
+/**
+ * מקורות של פרק, להצגה: לכל מקור מסוג נתון — המאפיין שלו, והמסמך והעמוד שהנתון נשען עליהם (17-E1: לחיצה פותחת את המסמך בעמוד).
+ * תוספת לקריאה בלבד — מה ששמור (וגם ה-snapshot) אינו משתנה. מסמך שנמחק אינו מקושר.
+ */
+function apr_report_sources_out(array $c, array $sources): array
+{
+    foreach ($sources as &$s) {
+        if (($s['type'] ?? '') !== 'fact') continue;
+        $f = apr_row('SELECT f.attribute_key, f.source_page, fl.pid AS file_pid FROM facts f LEFT JOIN files fl ON fl.id = f.source_file_id AND fl.deleted_at IS NULL WHERE f.pid = ? AND f.case_id = ?', [$s['pid'] ?? '', $c['id']]);
+        if ($f) $s += ['attr' => $f['attribute_key'], 'file' => $f['file_pid'], 'page' => $f['source_page'] === null ? null : (int)$f['source_page']];
+    }
+    return $sources;
+}
+
+/** מה שכרטיס התיק צריך כדי להציג את הלשונית "דוח וגרסאות": כמה גרסאות המבקש רואה, ומצב האחרונה. null — אין לו מה לראות. */
+function apr_case_report_summary(array $c): ?array
+{
+    if ($c['share'] !== null && !apr_can($c, 'report') && !apr_can($c, 'details')) return null;
+    $rows = array_values(array_filter(apr_rows('SELECT state FROM report_versions WHERE case_id = ? AND deleted_at IS NULL ORDER BY number DESC', [$c['id']]), fn($v) => apr_report_visible($c, $v)));
+    if ($c['share'] !== null && !$rows) return null;
+    return ['versions' => count($rows), 'state' => $rows[0]['state'] ?? null];
 }
 
 function apr_report_version_head(array $v): array
@@ -270,8 +293,15 @@ function apr_case_report(array $ctx, array $q): array
     $rows = array_values(array_filter($rows, fn($v) => apr_report_visible($c, $v)));
     $internal = $c['share'] === null;
     $job = $internal ? apr_row("SELECT status, last_error FROM jobs WHERE dedupe_key = ?", ['report.draft:' . $c['pid']]) : null;
+    // הבקרה בסקירת התיק (§9): כמה חוסמים וכמה אזהרות בגרסה הפתוחה — בלי רענון ובלי כתיבה
+    $check = null;
+    $open = $internal ? (array_values(array_filter($rows, fn($v) => in_array($v['state'], APR_REPORT_OPEN, true)))[0] ?? null) : null;
+    if ($open !== null) {
+        $levels = array_count_values(array_column(apr_report_findings($c, $open, apr_report_sections($ctx, $c, $open)), 'level'));
+        $check = ['version' => $open['pid'], 'number' => (int)$open['number'], 'state' => $open['state'], 'block' => $levels['block'] ?? 0, 'warn' => $levels['warn'] ?? 0];
+    }
     return ['case' => apr_comp_case_head($c), 'perms' => apr_report_perms($ctx, $c), 'versions' => array_map('apr_report_version_head', $rows),
-        'trigger' => $internal ? apr_report_profile($c)['trigger'] : null,
+        'trigger' => $internal ? apr_report_profile($c)['trigger'] : null, 'check' => $check,
         // "יצירת הטיוטה מתעכבת: <סיבה>" (§6.3) — המשימה נכשלה או ממתינה לטיפול
         'draft_job' => $job && !$rows && in_array($job['status'], ['failed', 'needs_action'], true) ? ['status' => $job['status'], 'error' => $job['last_error']] : null,
         'can_create' => $internal && !array_filter($rows, fn($v) => in_array($v['state'], APR_REPORT_OPEN, true)) ? (!$rows ? 'draft' : 'new_version') : null];
@@ -286,7 +316,7 @@ function apr_report_version(array $ctx, array $q): array
     $c = apr_report_case($ctx, apr_doc_case_pid('report_versions', $q['version'] ?? null));
     $v = apr_report_version_row($c, $q['version'] ?? null);
     $internal = $c['share'] === null;
-    $base = ['case' => apr_comp_case_head($c), 'perms' => apr_report_perms($ctx, $c)];
+    $base = ['case' => apr_comp_case_head($c), 'perms' => apr_report_perms($ctx, $c), 'internal' => $internal];
     if (in_array($v['state'], APR_REPORT_FINAL, true)) {
         if ((int)$v['stale_after_approval'] === 0 && $internal && apr_report_live_hash($ctx, $c, $v) !== $v['data_hash']) {
             apr_tx(function () use ($c, $v) {
@@ -296,7 +326,7 @@ function apr_report_version(array $ctx, array $q): array
             $v = apr_report_version_row($c, $v['pid']);
         }
         $snap = json_decode((string)$v['snapshot'], true) ?: [];
-        return $base + ['version' => apr_report_version_head($v), 'frozen' => true, 'sections' => array_map(fn($s) => $internal ? $s : array_diff_key($s, ['sources' => 1]), $snap['sections'] ?? []),
+        return $base + ['version' => apr_report_version_head($v), 'frozen' => true, 'sections' => array_map(fn($s) => $internal ? ['sources' => apr_report_sources_out($c, $s['sources'] ?? [])] + $s : array_diff_key($s, ['sources' => 1]), $snap['sections'] ?? []),
             'findings' => $internal ? ($snap['findings'] ?? []) : [], 'comments' => $internal ? apr_report_comments($v) : [], 'approval' => $internal ? ['by' => $snap['approved_by'] ?? null, 'at' => $v['approved_at']] : null];
     }
     if ($internal && !empty($c['perms']['edit'])) {
@@ -478,7 +508,7 @@ function apr_report_section_ai(array $ctx, array $in): array
     $rev = apr_report_rev($in['rev'] ?? null);
     $s = apr_report_section_row($c, $in['section'] ?? null);
     $v = apr_report_draft($c, apr_val('SELECT pid FROM report_versions WHERE id = ?', [$s['version_id']]));
-    if ((int)$s['ai_allowed'] !== 1 || in_array($s['key'], APR_REPORT_NO_AI, true)) apr_fail('report_no_ai');
+    if ((int)$s['ai_allowed'] !== 1 || in_array($s['key'], APR_REPORT_NO_AI, true) || !in_array($s['key'], APR_REPORT_AI_KEYS, true)) apr_fail('report_no_ai');
     if ((int)$s['rev'] !== $rev) throw new AprVisitError('report_changed', ['by' => null]);
     if (!apr_limit('ai-report:u' . $ctx['user']['id'], ...APR_REPORT_RATE_AI)) apr_fail('ai_rate');
     $tpl = apr_report_tpl($v);

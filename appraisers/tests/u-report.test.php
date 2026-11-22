@@ -232,13 +232,31 @@ $titles = array_column($d['sections'], 'title', 'key');
 $perCall = array_map(fn($t) => array_keys(array_filter($titles, fn($title) => str_contains($t, 'כותרת הפרק: ' . $title))), $sent);
 $areaCall = array_values(array_filter($sent, fn($t) => str_contains($t, $titles['area_desc'])))[0] ?? '';
 $aiSec = $sec($va, 'area_desc');
-eq([$origins($CAI), $perCall, array_filter($sent, fn($t) => str_contains($t, $titles['methods']) || str_contains($t, $titles['comps']) || str_contains($t, $titles['assume']) || str_contains($t, $titles['conclusion']) || (str_contains($t, 'משה לקוח') && !str_contains($t, $titles['purpose']))),
+eq([$origins($CAI), $perCall, array_filter($sent, fn($t) => str_contains($t, $titles['methods']) || str_contains($t, $titles['comps']) || str_contains($t, $titles['assume']) || str_contains($t, $titles['conclusion']) || str_contains($t, $titles['purpose']) || str_contains($t, $titles['documents']) || str_contains($t, 'משה לקוח')),
     [str_contains($areaCall, '85.5'), str_contains($areaCall, 'חדרים: 4'), str_contains($areaCall, '6158'), str_contains($areaCall, 'tools')], [$aiSec['origin'], $aiSec['ai_reviewed'], $aiSec['ai_wait'], $aiSec['user_edited']],
     array_unique(array_map(fn($b) => $b['ai'] ?? false, array_filter($aiSec['blocks'], fn($b) => $b['type'] === 'p'))), $aiSec['blocks'][0]['src'] ?? null,
     in_array('ai_unreviewed', $blocking($VAI), true), (int)apr_val("SELECT COUNT(*) FROM ai_runs WHERE purpose = 'report.draft' AND status = 'done'"), array_column(array_filter($va['sections'], fn($s) => $s['ai_allowed']), 'key')],
-    [['purpose' => 'ai', 'property' => 'ai', 'area_desc' => 'ai', 'visit' => 'ai', 'planning' => 'ai', 'documents' => 'ai', 'methods' => 'auto', 'comps' => 'auto', 'assume' => 'auto', 'conclusion' => 'manual', 'appendix' => 'auto'],
-        [['purpose'], ['property'], ['area_desc'], ['visit'], ['planning'], ['documents']], [], [true, true, false, false], ['ai', false, null, false], [true], ['type' => 'fact', 'pid' => $FA], true, 6, ['purpose', 'property', 'area_desc', 'visit', 'planning', 'documents', 'appendix']],
-    '17-A7 הפרקים methods / comps / assume / conclusion אינם נשלחים למתאם גם כשהפרופיל מבקש בינה לכולם; 17-D2 כל בקשה נושאת את הנתונים של פרק אחד בלבד (בלי מזהי הנכס בפרק התיאור, שם המזמין רק בפרק שמציג אותו, בלי tools); פרק בלי נתונים אינו נשלח; הטקסט מסומן כבינה, לא נסקר, ומקושר לנתון');
+    [['purpose' => 'auto', 'property' => 'ai', 'area_desc' => 'ai', 'visit' => 'ai', 'planning' => 'ai', 'documents' => 'auto', 'methods' => 'auto', 'comps' => 'auto', 'assume' => 'auto', 'conclusion' => 'manual', 'appendix' => 'auto'],
+        [['property'], ['area_desc'], ['visit'], ['planning']], [], [true, true, false, false], ['ai', false, null, false], [true], ['type' => 'fact', 'pid' => $FA], true, 4, ['property', 'area_desc', 'visit', 'planning']],
+    '17-A7 רק ארבעת הפרקים שברשימה הסגורה נשלחים למתאם, גם כשהפרופיל מבקש בינה לכולם — לא methods / comps / assume / conclusion, ולא purpose / documents (שם המזמין אינו נשלח כלל); 17-D2 כל בקשה נושאת את הנתונים של פרק אחד בלבד (בלי מזהי הנכס בפרק התיאור, שם המזמין רק בפרק שמציג אותו, בלי tools); פרק בלי נתונים אינו נשלח; הטקסט מסומן כבינה, לא נסקר, ומקושר לנתון');
+
+// הכרעת הבקרה (סטייה 7): פרט מזהה של גורם בתיק אינו נשלח למודל — גם כשהוא מופיע בתוך נתון של פרק מותר; שם המבקר נמחק מהשורה של הביקור
+$CP = make_case($avi, $PM);
+$fact($CP, 'actual_use', 'מושכר למשה לקוח עד סוף השנה');
+$fact($CP, 'area', '90', ['unit' => 'sqm', 'area_kind' => 'registered']);
+$visit($CP);
+$cpRow = apr_row('SELECT * FROM cases WHERE pid = ?', [$CP]);
+$pii = apr_report_ai_pii($cpRow);
+$inA = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'area_desc', 'title' => 'סביבת הנכס ותיאורו'], apr_pc_report_default());
+$inV = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'visit', 'title' => 'הביקור'], apr_pc_report_default());
+$visitor = apr_val('SELECT u.name FROM visits v JOIN users u ON u.id = v.visitor_user_id WHERE v.case_id = ?', [$cpRow['id']]);
+eq([in_array('משה לקוח', $pii['parties'], true), in_array('moshe@client.example', $pii['parties'], true), str_contains($inA['message'], 'משה'), str_contains($inA['message'], '90'), $inA['omitted'],
+    is_string($visitor) && $visitor !== '', str_contains($inV['message'], (string)$visitor), str_contains($inV['message'], 'בידי'), str_contains($inV['message'], 'ביקור בנכס נערך ביום'),
+    apr_report_ai_scrub('טלפון לתיאום: 050-1234567', $pii), apr_report_ai_scrub('נמסר בטלפון +972 3 555 1234', $pii), apr_report_ai_scrub('ת"ז 123456782', $pii), apr_report_ai_scrub('דוא"ל a.b@c.co.il', $pii),
+    apr_report_ai_scrub('נמסר על ידי MOSHE@client.example', $pii), apr_report_ai_scrub('שטח רשום: 85.5 מ"ר, גוש 6158', $pii), apr_report_ai_scrub('מחיר: 1,500,000', $pii),
+    code($post('report-section-ai', ['section' => apr_val("SELECT s.pid FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.case_id = ? AND s.key = 'purpose'", [$caseId($VAI_CASE = $CAI)]), 'rev' => 1]))],
+    [true, true, false, true, 1, true, false, false, true, null, null, null, null, null, 'שטח רשום: 85.5 מ"ר, גוש 6158', 'מחיר: 1,500,000', 'report_no_ai'],
+    'סטייה 7: שם / מייל / טלפון / ת"ז של גורם אינם נשלחים למודל — הפריט שמכיל אותם מושמט מהקלט; שם המבקר נמחק מהשורה; נתון רגיל נשאר; "ניסוח עכשיו" לפרק purpose נדחה גם כשהפרופיל ביקש לו בינה');
 
 // 17-D1: src שלא נשלח ← הבלוק נזרק; מספר שאינו בנתונים ← ממצא חוסם. מקרה קצה 10: טקסט עם שווי
 $fake->next = fn() => reply(['blocks' => [['text' => 'שטח הדירה 85.5 מ"ר', 'src' => 'd1'], ['text' => 'פסקה עם מקור שלא נשלח', 'src' => 'd99'], ['text' => 'בלי מקור בכלל'],
@@ -289,7 +307,7 @@ eq([code($stale), array_key_exists('by', $stale[1]['error']) ? $stale[1]['error'
 $post('fact-correct', ['fact' => $F1, 'rev' => $frev($F1), 'value' => '90', 'correction_note' => 'מדידה חוזרת']);
 $chg = $S('area_desc');
 $chgFind = array_values(array_filter($ver($VER)[1]['findings'], fn($f) => $f['kind'] === 'fact_changed'));
-eq([$chg['blocks'][1]['value']['text'], $chg['blocks'][1]['changed'], $chg['blocks'][1]['was'], count($chgFind), $chgFind[0]['level'] ?? null, $srow($after['pid'])['content'] === $stored], ['90', true, '85.5 sqm registered', 1, 'warn', true],
+eq([$chg['blocks'][1]['value']['text'], $chg['blocks'][1]['changed'], $chg['blocks'][1]['was'], count($chgFind), $chgFind[0]['level'] ?? null, $srow($after['pid'])['content'] === $stored], ['90', true, '85.5 מ"ר (רשום)', 1, 'warn', true],
     '§7 בלוק fact בפרק שנערך מציג את הערך העדכני, מסומן "הערך השתנה: היה X", ועולה כאזהרה בבקרה — והתוכן השמור אינו משתנה');
 
 // הכרעה בהצעה: דחייה, קבלה ומיזוג — נרשמות; התוכן משתנה רק בקבלה / במיזוג
@@ -495,7 +513,7 @@ $ok2 = $approve($V2, $acksAll($V2));
 $oldAgain = $ver($VK)[1];
 eq([$noReason, $nv[0], $newArea['value']['text'], $newArea['changed'] ?? null, $mid, [$cmpArea['status'], $cmpArea['removed'], $cmpArea['added']], $ok2[0], [$versions($CK)[0]['state'], $versions($CK)[1]['state']],
     array_values(array_filter($sec($oldAgain, 'area_desc')['blocks'], fn($b) => $b['type'] === 'fact'))[0]['value']['text'], $oldAgain['version']['state'], $versions($CK)[0]['content_hash'] === $row['content_hash'], $report($CK)[1]['versions'][0]['number']],
-    ['reason_required', 200, '72', true, ['approved', 'draft', 2, 'from_version', 'השטח תוקן אחרי מדידה', 'report_exists'], ['changed', ['שטח: 70 sqm registered'], ['שטח: 72 sqm registered']], 200, ['superseded', 'approved'], '70', 'superseded', true, 2],
+    ['reason_required', 200, '72', true, ['approved', 'draft', 2, 'from_version', 'השטח תוקן אחרי מדידה', 'report_exists'], ['changed', ['שטח: 70 מ"ר (רשום)'], ['שטח: 72 מ"ר (רשום)']], 200, ['superseded', 'approved'], '70', 'superseded', true, 2],
     '17-C7 "גרסה חדשה" (בנימוק) ← draft במספר הבא עם הערך **החדש**, והקודמת עדיין approved; ההשוואה מציגה מה השתנה; אישור החדשה ← הקודמת superseded, וקריאתה עדיין מחזירה את תוכנה ואת ה-hash שלה');
 
 // ═══ 17-D3: שותף ממשרד אחר — טיוטה רק עם see_draft; קריאה בלבד ═════
@@ -555,6 +573,22 @@ eq([in_array('לא ידוע: לא נערך ביקור בנכס', array_column($v
     (int)apr_val("SELECT COUNT(*) FROM jobs WHERE dedupe_key LIKE 'report.refresh:%' AND status = 'done'") >= 1, apr_report_job(['case' => 'aaaaaaaaaaaaaaaa']), apr_report_job([])],
     [true, 1, 1, 2, true, 'done', 'done'],
     'מקרה קצה 13: תיק בלי ביקור — פרק הביקור מסומן "לא ידוע", והטיוטה נוצרת ידנית; ביקור נוסף כשכבר יש טיוטה ← אין גרסה שנייה: משימת רענון מעדכנת את פרק הביקור (שלא נערך) בשני הביקורים');
+
+// ═══ מה שהמסכים נשענים עליו (§10) ═══════════════════════════════
+$crK = $report($CK)[1];
+$crN = $report($CNV)[1];
+$fN = $ver($VNV)[1]['findings'];
+$cvK = call('GET', 'case', [], $avi, ['case' => $CK])[1];
+$delPh = $post('visit-photo-delete', ['photo' => $PH, 'rev' => (int)apr_val('SELECT rev FROM visit_photos WHERE pid = ?', [$PH])]);
+[$CZ, $VZ] = $ready();
+$share($CZ, []);
+$cvZ = call('GET', 'case', [], $boaz, ['case' => $CZ]);
+eq([$cvK['report']['versions'], $cvK['report']['state'] === $versions($CK)[count($versions($CK)) - 1]['state'], $crK['check'], $crN['check'],
+    $ver($VNV)[1]['internal'], in_array('area', array_column($sec($ver($VAI)[1], 'area_desc')['sources'], 'attr'), true),
+    code($delPh), apr_val('SELECT deleted_at FROM visit_photos WHERE pid = ?', [$PH]), $cvZ[0], $cvZ[1]['report'] ?? 'x', array_key_exists('report', $cvZ[1])],
+    [count($versions($CK)), true, null, ['version' => $VNV, 'number' => 1, 'state' => 'draft', 'block' => count(array_filter($fN, fn($f) => $f['level'] === 'block')), 'warn' => count(array_filter($fN, fn($f) => $f['level'] === 'warn'))],
+        true, true, 'report_photo_locked', null, 200, 'x', true],
+    'למסכים: כרטיס התיק נושא את סיכום הדוח (לשותף בלי see_draft — null); case-report נושא את ספירת הבקרה של הגרסה הפתוחה; מקור מסוג נתון נושא את המאפיין; מקרה קצה 8 — תמונה שגרסה שאושרה מפנה אליה אינה נמחקת');
 
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();

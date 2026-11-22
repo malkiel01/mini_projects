@@ -316,7 +316,10 @@ async function viewFile(pid, fpid) {
             if (!box) return;
             if (DBLOB) URL.revokeObjectURL(DBLOB);
             DBLOB = URL.createObjectURL(new Blob([b], { type: 'application/pdf' }));
-            box.outerHTML = `<iframe src="${DBLOB}" title="${esc(f.name)}"></iframe>`;
+            // מסך הדוח (17-E1) מבקש לפתוח את המסמך בעמוד של המקור: "<קובץ>:<עמוד>", לשימוש חד-פעמי
+            let want = [];
+            try { want = (sessionStorage.getItem('apr-file-page') || '').split(':'); sessionStorage.removeItem('apr-file-page'); } catch { want = []; }
+            box.outerHTML = `<iframe src="${DBLOB}${want[0] === f.pid && /^[0-9]{1,6}$/.test(want[1] || '') ? '#page=' + want[1] : ''}" title="${esc(f.name)}"></iframe>`;
         }).catch(() => { const box = $('#pdfbox'); if (box) $('p', box).textContent = D.noPreview; });
     }
     const act = async fn => { try { await fn(); } catch (e) { e.code === 'already_reviewed' && e.review ? toast(D.alreadyReviewed(e.review.by || '', D.review[e.review.state] || ''), true) : toastError(e); reload(); } };
