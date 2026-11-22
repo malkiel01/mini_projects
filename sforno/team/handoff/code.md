@@ -145,8 +145,10 @@
 1. **`app.json`:** לצאת מהשער (`"gate": false` / רישום כאפליקציה חיצונית כמו `kadisha/`); `"sso": {"return": ["https://sforno.mbe-plus.com/"]}`
    (כתובת הכניסה — `app.js` קולט את `?token=&state=`); `"grant_status": {"key_url": "https://sforno.mbe-plus.com/api.php?action=platform-key"}`.
    **שם הפעולה `platform-key`** (מקף, כמו כל פעולות ספורנו). c-standalone בודק את app.json — לעדכן יחד.
-2. **`data/launch.json` בסאב-דומיין:** `{"detached": true, "platform": "https://<הכלים הדיגיטליים>/", "sso_key": "<sso.php?action=key>",
-   "return": "<כמו ב-sso.return>"}`. לפני המעבר אפשר `"detached": false` כדי ש-`platform-key` יענה והפלטפורמה תקרא את המפתח.
+2. **`data/launch.json` בסאב-דומיין:** `{"detached": true, "platform": "<issuer>", "sso_key": "<key>", "return": "<כמו ב-sso.return>"}` —
+   **`platform` = `issuer` ו-`sso_key` = `key`, שניהם בדיוק כמו בתשובה של `sso.php?action=key`** (`iss` בטוקן נבדק בהתאמה מדויקת;
+   סלאש חסר = כל כניסה נדחית). לפני המעבר אפשר `"detached": false` כדי ש-`platform-key` יענה והפלטפורמה תקרא את המפתח.
 3. **פריסה לסאב-דומיין** + העתקת `data/` (הכרעת בעלים; חוק "ענף פורס אחד").
 4. **הכניסות של הקוראים לפי `config.login`** (11 §1.2) — לא נבנה; לאפיין אם `login.password=false` אמור לחסום גם קוראים (05 הוא עולם נפרד).
-5. **פעולות הקורא** (`reader` / `guest` / `account`) — בסאב-דומיין בלי שער הן פתוחות לכולם ממילא; בתוך mini_projects נשארות מאחורי השער.
+5. **הסרת "מפתח" במצב המנותק** — אין `platform_admin` בטוקן; הנוהל (ביטול הרשאה / CLI) ב-`dev/launch-check.md`. מתג במסך המנהלים — לאפיון.
+6. **פעולות הקורא** (`reader` / `guest` / `account`) — בסאב-דומיין בלי שער הן פתוחות לכולם ממילא; בתוך mini_projects נשארות מאחורי השער.

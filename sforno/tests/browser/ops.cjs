@@ -121,6 +121,13 @@ const check = (name, cond, got) => { n++; if (!cond) { bad++; console.log('  ✗
             await shot('10-320-' + route.replace(/[#/]+/g, '-'));
             await p.setViewportSize({ width: 390, height: 860 });
         }
+        // ── 11 (ביקורת 🟡1): בלי data/launch.json — ?state=&token= אינם שלנו: טעינה רגילה, הכתובת לא משתנה ──
+        const foreign = BASE + '?state=abc&token=xyz&utm=1#/admin';
+        await p.goto(foreign);
+        await p.waitForSelector('a[href="#/admin/ops"]');
+        await p.waitForTimeout(300);
+        check('11 בלי launch.json: כתובת עם state/token — לא נמחקת', p.url() === foreign, p.url());
+        check('11 …ובלי מסך שגיאה', await p.locator('.fail').count() === 0);
         check('בלי שגיאות JS', errors.length === 0, errors.slice(0, 3));
     } finally {
         await browser.close();

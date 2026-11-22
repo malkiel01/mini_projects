@@ -567,3 +567,12 @@ run.php 10/10. בדפדפן: `tests/browser/offline.cjs` 26 (מצב טיסה, נ
 
 **לא שונה:** לוח הבקרה (`ops.php`, ❌ אחרי 15 דקות) ו-`reminders-status` לקוראים (15 דקות) — סף "תקלה", לא "איחור"; וההנחיה
 ב-`docs/spec/01-foundation.md:247` ("כל 5 דקות") — של האפיון.
+
+## 2026-11-22 — 11 תיקון (ביקורת סבב 1, `team/reviews/11-launch.md`, אותו ענף `claude/sforno-11-fix`)
+
+13. **🟡1** `app.js`: חזרה עם `?state=` ו-`token` / `error` — הכתובת נשמרת; `sso-finish` שמחזיר `unknown_action` (אין launch.json) ←
+    הכתובת חוזרת כמו שהייתה וטעינה רגילה, בלי מסך שגיאה. `browser/ops.cjs` +2.
+14. **🟡2** נוהל הסרת "מפתח" במנותקת — `dev/launch-check.md` (ביטול הרשאה / CLI) + handoff.
+15. **⚪3** state — `DELETE … WHERE k = ? AND v >= now` + `rowCount() === 1`: אטומי, שתי בקשות במקביל ← אחת. o-launch +3.
+16. **⚪4** זוג המפתחות — `INSERT` (k מפתח ראשי); התנגשות ← קוראים את מה שנוצר. **⚪5** handoff: `platform` = `issuer` מ-`sso.php?action=key`.
+    **⚪6** הטוקן ב-query — חריג מתועד ב-`launch-check.md`. **⚪7** `sessionStorage` ב-`router.js` — בתוך try.

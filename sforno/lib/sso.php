@@ -78,9 +78,15 @@ function sf_sign_keypair(): array
     $kp = is_string($sealed) ? sf_unseal($sealed) : null;
     if (!is_string($kp) || strlen($kp) !== SODIUM_CRYPTO_SIGN_KEYPAIRBYTES) {
         if (is_string($sealed)) throw new SfError('storage');   // יש מפתח ולא נפתח — לא מחליפים בשקט
+        // אטומי: INSERT (k הוא מפתח ראשי). בקשה מקבילה שכבר יצרה — מנצחת, וקוראים את שלה
         $kp = sodium_crypto_sign_keypair();
-        sf_meta_set('sso_sign_key', sf_seal($kp));
-        sf_audit('sso.key_create', 'meta', null, [], actor: null);
+        try {
+            sf_exec('INSERT INTO meta (k, v) VALUES (?, ?)', ['sso_sign_key', sf_seal($kp)]);
+            sf_audit('sso.key_create', 'meta', null, [], actor: null);
+        } catch (PDOException) {
+            $kp = sf_unseal((string)sf_meta('sso_sign_key'));
+            if (!is_string($kp) || strlen($kp) !== SODIUM_CRYPTO_SIGN_KEYPAIRBYTES) throw new SfError('storage');
+        }
     }
     $pub = sodium_crypto_sign_publickey($kp);
     return [sodium_crypto_sign_secretkey($kp), $pub, substr(hash('sha256', $pub), 0, 12)];
@@ -206,10 +212,11 @@ function sf_sso_finish(array $in, array $env): array
     $cookie = (string)($env['sso_cookie'] ?? '');
     $state = is_string($in['state'] ?? null) ? $in['state'] : '';
     sf_set_sso_cookie('', 0);   // חד-פעמי, מה שלא יקרה
+    // חד-פעמי ואטומי: רק הבקשה שמחקה את השורה (בתוקף) ממשיכה — שתי בקשות במקביל עם אותו state ← אחת בלבד
     $mk = 'sso_state:' . hash('sha256', $cookie);
-    $until = preg_match('/^[a-f0-9]{48}$/', $cookie) === 1 ? (int)sf_meta($mk, '0') : 0;
-    if ($until > 0) sf_exec('DELETE FROM meta WHERE k = ?', [$mk]);
-    if ($until < sf_time() || !hash_equals($cookie, $state)) {
+    $fresh = preg_match('/^[a-f0-9]{48}$/', $cookie) === 1
+        && sf_exec('DELETE FROM meta WHERE k = ? AND v >= ?', [$mk, (string)sf_time()]) === 1;
+    if (!$fresh || !hash_equals($cookie, $state)) {
         sf_audit('staff.sso_fail', 'staff', null, ['why' => 'state'], actor: null);
         sf_fail('sso');
     }

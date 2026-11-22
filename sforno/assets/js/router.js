@@ -73,7 +73,7 @@
         if (ev && ev.currentTarget) ev.currentTarget.disabled = true;
         try {
             const r = await SF.api('sso-start', { body: {} });
-            sessionStorage.setItem('sf_sso_hash', location.hash || '#/admin');
+            try { sessionStorage.setItem('sf_sso_hash', location.hash || '#/admin'); } catch (e2) { /* גלישה פרטית — חוזרים ל-#/admin */ }
             location.assign(r.url);
         } catch (e) {
             SF.toast(e.message, true);
