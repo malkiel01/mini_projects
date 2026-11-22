@@ -334,6 +334,8 @@ jobs:
           max=4
           until rsync -rlptz \
             --exclude='.git' --exclude='.github' --exclude='/devloop/' --exclude='/.claude/teams/' --exclude='/.devloop.json' --exclude='/.claude/skills/devloop/assets/' \
+            --exclude='/sforno/team/' \
+            --include='/sforno/data/.htaccess' --exclude='/sforno/data/*' \
             --exclude='/grave-prices/team/' \
             --include='/grave-prices/data/.htaccess' --exclude='/grave-prices/data/*' \
             --include='/org-budget-proposals/data/.htaccess' --exclude='/org-budget-proposals/data/*' --exclude='/org-budget-proposals/team/' --exclude='/org-budget-proposals/tests/' \
