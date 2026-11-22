@@ -129,6 +129,7 @@ function sf_sync_push(array $ra, array $in): array
         }
         return ['results' => $out, 'cursor' => (int)sf_val('SELECT sync_rev FROM readers WHERE id = ?', [$rid])];
     });
+    if (function_exists('sf_ops_sync')) sf_ops_sync($rid, $res['results']);   // 10: מדד ופעילות לתמיכה — ספירות בלבד
     // 08: תזכורת, מיקום, שיטה או העדפות התזכורות השתנו ← תכנון מחדש מיד (קודם מבטל את המופעים הישנים)
     foreach ($res['results'] as $r) {
         $k = $r['item']['kind'] ?? null;

@@ -26,7 +26,8 @@
             h('nav', { class: 'tiles big', 'aria-label': 'הרכיבים' },
                 SF.PARTS.map(p => h('a', { class: 'tile', href: p.href || '#/soon/' + p.key },
                     h('span', { class: 'tile-ic', 'aria-hidden': 'true' }, p.icon), p.name))),
-            h('a', { class: 'btn ghost home-search', href: '#/search' }, '🔍 חיפוש בספרייה'));
+            h('a', { class: 'btn ghost home-search', href: '#/search' }, '🔍 חיפוש בספרייה'),
+            h('a', { class: 'btn ghost home-search', href: '#/contact' }, '✉️ יצירת קשר'));
         SF.localNotice(main);
         SF.daily.state().then(st => { if (date.isConnected) date.textContent = SF.daily.todayLine(st.today); }).catch(() => null);
         SF.homeHalacha(halacha);

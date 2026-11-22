@@ -1,5 +1,5 @@
 /*
- * הניהול: #/admin — התוכן (02, screens/content.js), הייבוא (03), הקורא (04), ההלכה היומית ושיטות הזמנים (07,
+ * הניהול: #/admin — לוח הבקרה (10, screens/ops.js), התוכן (02, screens/content.js), הייבוא (03), הקורא (04), ההלכה היומית ושיטות הזמנים (07,
  * screens/daily-admin.js), החנות (09, screens/store-admin.js); #/admin/staff — המנהלים (§6).
  * כל המנהלים בהרשאות מלאות. השרת מכריע (lib/access.php); כאן רק מסתירים מה שאין טעם להציג.
  */
@@ -11,6 +11,10 @@
     SF.route('#/admin', main => {
         main.replaceChildren(
             h('ul', { class: 'list' },
+                h('li', null, h('a', { class: 'use-row', href: '#/admin/ops' },
+                    h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '🧭'),
+                    h('span', { class: 'use-tx' }, h('b', null, 'לוח הבקרה'), h('small', null, 'תקלות, דיווחים, מדדים, תמיכה בקורא, מה פורסם')),
+                    h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/content' },
                     h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
                     h('span', { class: 'use-tx' }, h('b', null, 'תוכן'), h('small', null, 'כותרים, מהדורות, עורך, פרסום ושחזור')),

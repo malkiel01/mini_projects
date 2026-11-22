@@ -28,6 +28,8 @@ require_once __DIR__ . '/sync.php';
 require_once __DIR__ . '/daily.php';
 require_once __DIR__ . '/reminders.php';
 require_once __DIR__ . '/store.php';
+require_once __DIR__ . '/ops.php';
+require_once __DIR__ . '/backup.php';
 
 /**
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type; לקוראים — reader_cookie, reader_csrf, ip;
@@ -106,6 +108,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'read-halacha-archive' => sf_read_halacha_archive($get),
         'read-store-catalog'   => sf_store_catalog($get),
         'read-store-product'   => sf_store_product($get),
+        'read-support'         => sf_read_support(),
 
         'account-me'           => sf_account_me($env['_reader']),
         'account-register'     => sf_account_register($in, $env),
@@ -129,6 +132,8 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'reminders-guest-sync' => sf_rem_guest_sync($in, $env),
         'reminders-status'     => sf_rem_status($env),
         'store-out'            => sf_store_out($in, $env),
+        'report-create'        => sf_report_create($in, $env),
+        'metrics-open'         => sf_metrics_open($in, $env),
 
         'me'                   => ['staff' => sf_staff_public($staff, $me), 'csrf' => $session['csrf'], 'version' => sf_version()],
         'logout'               => sf_session_drop((string)($env['cookie'] ?? '')) ?? [],
@@ -186,6 +191,12 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'store-sync-now'       => sf_store_sync_now($in),
         'store-sample'         => sf_store_sample($in),
         'store-link-set'       => sf_store_link_set($in),
+        'ops-dashboard'        => sf_ops_dashboard($get, $staff),
+        'ops-metrics'          => sf_ops_metrics($get),
+        'ops-reader'           => sf_ops_reader($get),
+        'reports-list'         => sf_reports_list($get),
+        'report-get'           => sf_report_get($get),
+        'report-set'           => sf_report_set($in),
 
         'dev-health'           => sf_health(),
         'dev-mail-test'        => sf_mail_test($staff),
@@ -198,6 +209,11 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'dev-reminders'        => sf_rem_dev(),
         'dev-store-set'        => sf_dev_store_set($in),
         'dev-store-test'       => sf_dev_store_test(),
+        'dev-backups'          => sf_dev_backups(),
+        'dev-backup-now'       => sf_dev_backup_now(),
+        'dev-backup-verify'    => sf_dev_backup_verify($in),
+        'dev-backup-download'  => sf_dev_backup_download($get),
+        'dev-ops-set'          => sf_dev_ops_set($in),
 
         'dev-items'            => devloop_task_list(),
         'dev-task-create'      => devloop_task_create($dev, $in),

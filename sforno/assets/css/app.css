@@ -558,3 +558,10 @@ fieldset.group { border: 0; padding: 0; margin: 0 0 var(--s3); }
 .st-map-row select, .st-map-row input { font-size: 16px; min-inline-size: 0; inline-size: 100%; }
 @media (max-width: 420px) { .st-map-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .st-map-row b { grid-column: 1 / -1; } }
 .st-card .st-img:has(.st-noimg) { aspect-ratio: 2 / 1; }
+
+/* 10 — תפעול: טבלת המדדים (גלילה אופקית רק בתוך המסגרת, לא בדף) */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); margin-bottom: var(--s3); }
+.tbl { border-collapse: collapse; font-size: .82rem; min-inline-size: 100%; }
+.tbl th, .tbl td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: start; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tbl thead th { position: sticky; top: 0; background: var(--surface); font-weight: 600; }
+.tbl tbody th { font-weight: 500; color: var(--muted, inherit); }

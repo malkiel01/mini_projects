@@ -1,6 +1,7 @@
 /*
- * מסך המפתח (#/dev, §8) — רק ל-is_developer. חמש לשוניות:
+ * מסך המפתח (#/dev, §8) — רק ל-is_developer. שש לשוניות:
  *   📋 מטלות (DevLoop) · 📜 יומן בקשות ושגיאות (DevLoop) · 🧾 יומן פעולות · 🩺 בדיקות ויכולות השרת · ⚙️ שירותי רקע
+ *   · 💾 גיבויים (10): הרשימה, גיבוי ובדיקת שחזור עכשיו, הורדת הגיבוי (העותק מחוץ לשרת), ודרכי הקשר של התמיכה
  */
 'use strict';
 
@@ -12,6 +13,7 @@
         { key: 'audit', icon: '🧾', label: 'פעולות' },
         { key: 'health', icon: '🩺', label: 'בדיקות' },
         { key: 'jobs', icon: '⚙️', label: 'רקע' },
+        { key: 'backup', icon: '💾', label: 'גיבוי' },
     ];
     const STATE = { ok: ['✅', 'תקין'], warn: ['⚠️', 'אזהרה'], bad: ['❌', 'תקלה'] };
 
@@ -32,7 +34,7 @@
         const arg = (rest || '').replace(/^\//, '');
         if (tab === 'tasks') return DevLoop.show(body, arg);
         if (tab === 'log') return DevLoop.showLog(body, arg);
-        return ({ audit, health, jobs })[tab](body);
+        return ({ audit, health, jobs, backup })[tab](body);
     }, { dev: true, title: 'פיתוח' });
 
     // ── 🧾 יומן פעולות ──────────────────────────────────────
@@ -153,5 +155,45 @@
                 ['failed', 'cancelled'].includes(j.status) ? act('ניסיון חוזר', 'dev-job-retry', j.pid) : null,
                 ['pending', 'failed'].includes(j.status) ? act('ביטול', 'dev-job-cancel', j.pid) : null))
                 : h('li', { class: 'empty' }, 'אין משימות עדיין')));
+    }
+
+    // ── 💾 גיבויים (10) ─────────────────────────────────────
+    async function backup(el) {
+        const d = await SF.api('dev-backups');
+        const mbs = n => (n / 1048576).toFixed(1) + 'MB';
+        const run = (label, cls, fn) => h('button', { class: 'btn ' + cls, type: 'button', onclick: async e => {
+            const b = e.currentTarget;
+            b.disabled = true;
+            try { await fn(); backup(el); } catch (err) { SF.toast(err.message, true); b.disabled = false; }
+        } }, label);
+        const verify = pid => run('בדיקת שחזור', 'sm ghost', async () => {
+            const r = await SF.api('dev-backup-verify', { body: { backup: pid } });
+            SF.toast(r.passed ? 'בדיקת השחזור עברה — ' + r.checks.length + ' בדיקות' : 'נכשלה: ' + r.checks[r.checks.length - 1].text, !r.passed);
+        });
+        const dl = pid => h('a', { class: 'btn sm ghost', href: 'api.php?action=dev-backup-download&backup=' + encodeURIComponent(pid), download: '' }, '⬇️ הורדה');
+        const last = d.backups[0];
+        const email = h('input', { type: 'email', dir: 'ltr', value: d.support ? d.support.email : '', 'aria-label': 'מייל התמיכה', placeholder: 'support@…' });
+        const wa = h('input', { inputmode: 'tel', dir: 'ltr', value: d.support ? d.support.whatsapp : '', 'aria-label': 'וואטסאפ', placeholder: '9725…' });
+        SF.put(el,
+            h('div', { class: 'summary' },
+                h('div', { class: 'line' }, h('b', null, last ? 'גיבוי אחרון ' + SF.when(last.created_at) : 'עוד אין גיבוי'),
+                    last ? h('span', { class: 'muted' }, '· ' + mbs(last.bytes)) : null,
+                    d.last_verify ? h('span', { class: 'chip ' + (d.last_verify.verify_ok ? 'ok' : 'bad') }, 'שחזור ' + (d.last_verify.verify_ok ? 'נבדק' : 'נכשל') + ' ' + SF.when(d.last_verify.verified_at)) : h('span', { class: 'chip warn' }, 'שחזור לא נבדק')),
+                h('div', { class: 'line muted' }, 'כל לילה · שימור ' + d.keep_days + ' יום (האחרון נשמר תמיד) · ' + (d.free_mb === null ? '' : d.free_mb.toLocaleString('he-IL') + 'MB פנויים')),
+                h('div', { class: 'line muted' }, 'בתוך הגיבוי: ', h('bdi', { dir: 'ltr' }, d.includes.join(' · ')))),
+            h('div', { class: 'row-btns wrap' },
+                run('💾 גיבוי עכשיו', 'primary', async () => { const r = await SF.api('dev-backup-now', { body: {} }); SF.toast('נוצר ' + r.backup.file); }),
+                last ? dl(last.pid) : null),
+            h('p', { class: 'hint' }, 'הגיבויים יושבים באותו שרת — הם לא מגינים מפני אובדן השרת. עד שתוכרע מדיניות גיבוי: פעם בחודש להוריד את הגיבוי האחרון ולשמור מחוץ לשרת. השחזור — dev/restore.md.'),
+            h('h3', { class: 'sec-title' }, 'הגיבויים'),
+            h('ul', { class: 'list' }, d.backups.length ? d.backups.map(b => h('li', { class: 'card', style: 'cursor:default' },
+                h('div', { class: 'body' },
+                    h('div', { class: 'l1' }, h('span', null, SF.when(b.created_at) + ' · ' + ({ daily: 'יומי', manual: 'ידני', 'pre-restore': 'לפני שחזור' })[b.kind]), h('span', { class: 't' }, mbs(b.bytes))),
+                    h('div', { class: 'l2' }, b.verified_at ? (b.verify_ok ? '✓ ' : '✗ ') + b.verify_note : Object.values(b.counts || {}).reduce((a, n) => a + n, 0) + ' שורות')),
+                verify(b.pid), dl(b.pid))) : h('li', { class: 'empty' }, 'הגיבוי הראשון נוצר בלילה הראשון שהמתזמן רץ')),
+            h('h3', { class: 'sec-title' }, 'דרכי הקשר של התמיכה (📦)'),
+            h('p', { class: 'hint' }, 'מייל — לשם נשלחת התראה אחת על כל דיווח חדש, והוא מוצג בטופס הקשר. וואטסאפ — מספר בינלאומי, ספרות בלבד. ריק = לא מוצג.'),
+            h('div', { class: 'fields' }, h('label', { class: 'f' }, h('span', null, 'מייל התמיכה'), email), h('label', { class: 'f' }, h('span', null, 'וואטסאפ'), wa)),
+            h('div', { class: 'row-btns' }, run('שמירה', 'ghost', async () => { await SF.api('dev-ops-set', { body: { email: email.value, whatsapp: wa.value } }); SF.toast('נשמר'); })));
     }
 })(window.SF);

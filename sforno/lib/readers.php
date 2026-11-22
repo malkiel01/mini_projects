@@ -252,6 +252,7 @@ function sf_account_me(?array $ra): array
 /** אחרי כניסה: התשובה כמו account-me, עם ה-session החדש. */
 function sf_account_after_login(array $reader, array $session): array
 {
+    if (function_exists('sf_ops_login')) sf_ops_login((int)$reader['id']);   // 10: מדד כניסות ופעילות לתמיכה (ספירה בלבד)
     return sf_account_me(['reader' => sf_row('SELECT * FROM readers WHERE id = ?', [$reader['id']]), 'session' => $session]);
 }
 
@@ -260,9 +261,12 @@ function sf_account_after_login(array $reader, array $session): array
 /** שליחה דרך mail() של השרת. בבדיקות — $GLOBALS['sf_mail_out'][] (to, subject, body), בלי שליחה. */
 function sf_reader_mail(string $to, string $subject, string $body): bool
 {
-    if (isset($GLOBALS['sf_mail_out'])) { $GLOBALS['sf_mail_out'][] = compact('to', 'subject', 'body'); return true; }
-    if (!function_exists('mail')) return false;
-    return @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n");
+    if (isset($GLOBALS['sf_mail_out'])) {
+        $GLOBALS['sf_mail_out'][] = compact('to', 'subject', 'body');
+        $ok = empty($GLOBALS['sf_mail_fail']);   // בבדיקות: $GLOBALS['sf_mail_fail'] = true — mail() "נכשלה"
+    } else $ok = function_exists('mail') && @mail($to, '=?UTF-8?B?' . base64_encode($subject) . '?=', $body, "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n");
+    if (!$ok && function_exists('sf_metric_add')) sf_metric_add('mail_fail');   // 10: לוח הבקרה מתריע
+    return $ok;
 }
 
 /** קישור חד-פעמי: הישנים מאותו סוג מתבטלים, ובמסד רק ה-hash. האסימון עצמו — רק בכתובת שבמייל (אחרי #, לא נשלח לשרת בטעינה). */
@@ -467,6 +471,43 @@ function sf_account_delete(array $ra, array $in): array
     });
     sf_set_reader_cookie('', 0);
     return ['deleted' => true, 'purge_after_days' => 30];
+}
+
+/** 10: מחיקה מלאה של קורא שמחק את החשבון (status deleted) לפני 30 יום — נקרא מ-ops.purge (lib/ops.php). מוחק את כל מה שיש לו; שורת readers נשארת בלי פרט מזהה. */
+function sf_reader_purge(int $rid): void
+{
+    sf_tx(function () use ($rid) {
+        $r = sf_row("SELECT * FROM readers WHERE id = ? AND status = 'deleted'", [$rid]);
+        if (!$r) return;
+        $owner = 'r:' . $rid;
+        sf_exec('DELETE FROM reminder_send_log WHERE occurrence_id IN (SELECT id FROM reminder_occurrences WHERE owner = ?)', [$owner]);
+        sf_exec('DELETE FROM reminder_occurrences WHERE owner = ?', [$owner]);
+        sf_exec('DELETE FROM push_devices WHERE reader_id = ?', [$rid]);
+        sf_exec('DELETE FROM reader_sessions WHERE reader_id = ?', [$rid]);
+        sf_exec('DELETE FROM reader_tokens WHERE reader_id = ?', [$rid]);
+        sf_exec('DELETE FROM personal_items WHERE reader_id = ?', [$rid]);
+        sf_exec('DELETE FROM reader_activity WHERE reader_id = ?', [$rid]);
+        sf_exec('DELETE FROM devices WHERE reader_id = ?', [$rid]);
+        // המייל ייחודי — מוחלף, כדי שאפשר יהיה להירשם שוב באותה כתובת. שם, סיסמה ו-Google — נמחקים
+        sf_exec("UPDATE readers SET status = 'purged', email = ?, name = '', password_hash = NULL, google_sub = NULL, email_verified_at = NULL,
+            locked_until = NULL, failed_logins = 0, updated_at = ? WHERE id = ?", ['purged-' . $r['pid'] . '@invalid', sf_now(), $rid]);
+        sf_audit('reader.purge', 'reader', $r['pid'], [], actor: null, kind: 'system');
+    });
+}
+
+/** 10: לתמיכה — **ספירות בלבד** של המידע האישי (לפי סוג, נפח, עדכון אחרון). אף פריט ואף תוכן לא יוצא מכאן. */
+function sf_reader_items_summary(int $rid): array
+{
+    return ['kinds' => (object)array_map('intval', array_column(sf_rows('SELECT kind, COUNT(*) AS n FROM personal_items WHERE reader_id = ? AND deleted_at IS NULL GROUP BY kind', [$rid]), 'n', 'kind')),
+        'bytes' => (int)sf_val('SELECT COALESCE(SUM(LENGTH(data)), 0) FROM personal_items WHERE reader_id = ?', [$rid]),
+        'last_at' => sf_val('SELECT MAX(updated_at) FROM personal_items WHERE reader_id = ?', [$rid])];
+}
+
+/** 10: בדיקת השחזור — פריט מוצפן אחד (כמו שהוא, מוצפן) מתוך מסד משוחזר, כדי לבדוק שה-secret.key שבגיבוי מפענח. */
+function sf_reader_sealed_sample(PDO $db): ?string
+{
+    $v = $db->query("SELECT data FROM personal_items WHERE kind IN ('note', 'prayer_name') AND data LIKE 's1:%' LIMIT 1")->fetchColumn();
+    return $v === false ? null : (string)$v;
 }
 
 // ── Google ────────────────────────────────────────────────────
