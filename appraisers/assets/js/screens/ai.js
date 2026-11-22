@@ -284,10 +284,12 @@ async function aiCaseSection(pid) {
     let d;
     try { d = await api('case-ai', { params: { case: pid } }); } catch { return; }
     if (!$('#case-ai')) return;
+    const auto = typeof xCaseAuto === 'function' ? xCaseAuto(pid, d) : { html: '', bind: () => {} };     // 12: העיבוד האוטומטי בתיק
     box.innerHTML = `<h2 class="sec-title">🤖 ${AI.caseTitle}</h2>
         <label class="switch"><input type="checkbox" id="ainoai"${d.no_ai ? ' checked' : ''}${d.can_set ? '' : ' disabled'}><span>${AI.noAi}</span></label><p class="hint">${AI.noAiHint}</p>
         ${d.usage ? `<p class="hint">${AI.caseUsage}: ${esc(aiUsageText(d.usage))}</p>` : ''}
-        ${d.quotas.length ? `<ul class="list">${d.quotas.map(q => aiQuotaCard(q, AI.quotaOf.case, false)).join('')}</ul>` : ''}`;
+        ${d.quotas.length ? `<ul class="list">${d.quotas.map(q => aiQuotaCard(q, AI.quotaOf.case, false)).join('')}</ul>` : ''}${auto.html}`;
+    auto.bind();
     $('#ainoai').addEventListener('change', async e => {
         try { await api('case-ai-set', { body: { case: pid, no_ai: e.target.checked } }); toast(T.saved); } catch (x) { e.target.checked = !e.target.checked; toastError(x); }
     });
