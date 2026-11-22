@@ -287,7 +287,9 @@ function apr_fact_out(array $ctx, array $c, array $f, array $attr): array
             'entered_by' => $f['entered_name'], 'entered_at' => $f['entered_at'], 'verified_by' => $f['verified_name'], 'verified_at' => $f['verified_at'],
             'rejected_reason' => $f['rejected_reason'], 'note' => $f['note'], 'rev' => (int)$f['rev'], 'updated_by' => $f['updated_name'], 'updated_at' => $f['updated_at'],
             // הצעת בינה (12): רמת הביטחון של המודל, והאם הציטוט אותר בטקסט העמוד (null — לא נבדק). הציטוט עצמו — ב-source.locator, רק למי שרואה את הקובץ
-            'ai' => $f['source_kind'] === 'ai' ? ['confidence' => $f['ai_confidence'] ?? null, 'quote_found' => ($f['ai_quote_found'] ?? null) === null ? null : (bool)$f['ai_quote_found']] : null];
+            // אחרי שהערך תוקן — רמת הביטחון וה"אותר" היו על הערך של המודל, לא על הערך שמוצג; לכן אינם מוחזרים
+            'ai' => $f['source_kind'] !== 'ai' ? null : ($f['corrected_at'] !== null ? ['confidence' => null, 'quote_found' => null, 'corrected' => true]
+                : ['confidence' => $f['ai_confidence'] ?? null, 'quote_found' => ($f['ai_quote_found'] ?? null) === null ? null : (bool)$f['ai_quote_found'], 'corrected' => false])];
 }
 
 // ── גישה ──────────────────────────────────────────────────────
@@ -531,6 +533,12 @@ function apr_fact_correct_tx(array $ctx, array $c, array $f, array $in): bool
     $attr = apr_attr($f['attribute_key']);
     $rev = apr_fact_rev($in['rev'] ?? null);
     if ($f['state'] === 'rejected') apr_fail('fact_state');
+    if ($f['source_kind'] === 'ai') {
+        // הצעת בינה (12 §9): תיקון הוא הכרעה — רק מי שרשאי לאמת. המקור (קובץ, עמוד, ציטוט) הוא מה שהמודל הצביע עליו, ואינו נערך:
+        // אחרת אפשר היה להדביק ציטוט בדוי להצעה שממשיכה להיראות "הציטוט אותר", או לנתק אותה מהמסמך
+        if (!apr_fact_can_judge($ctx, $c)) apr_fail('forbidden');
+        if (array_key_exists('source', $in)) apr_fail('fact_source');
+    }
     $set = [];
     $touchesValue = array_key_exists('value', $in) || array_key_exists('unit', $in) || array_key_exists('area_kind', $in);
     if ($touchesValue) {
@@ -673,16 +681,16 @@ function apr_facts_on_file_delete(array $c, array $file): void
 }
 
 /**
- * חילוץ חוזר של קובץ (12, מקרה קצה 4): הצעות בינה מאותו קובץ **שאיש לא נגע בהן** מוחלפות — מחיקה רכה, עם סיבה. נתון שאומת,
- * תוקן, נדחה או סומן "דורש בירור" אינו נבחר כאן, ולכן אינו משתנה. בתוך טרנזקציה. מחזיר כמה הוחלפו.
+ * חילוץ חוזר של קובץ (12, מקרה קצה 4): הצעות בינה מאותו קובץ **שאיש לא נגע בהן** (rev = 1 — שום עדכון מאז שנוצרו) מוחלפות —
+ * מחיקה רכה, עם סיבה. נתון שאומת, תוקן, נדחה, סומן "דורש בירור", או שרק ההערה או האומדן שלו עודכנו — אינו נבחר כאן. בתוך טרנזקציה.
  */
 function apr_facts_ai_replace(array $c, int $fileId): int
 {
     $attrs = [];
     $n = 0;
-    foreach (apr_rows("SELECT id, pid, attribute_key FROM facts WHERE case_id = ? AND source_file_id = ? AND source_kind = 'ai' AND state = 'proposed' AND corrected_at IS NULL AND deleted_at IS NULL ORDER BY id",
+    foreach (apr_rows("SELECT id, pid, attribute_key FROM facts WHERE case_id = ? AND source_file_id = ? AND source_kind = 'ai' AND state = 'proposed' AND rev = 1 AND deleted_at IS NULL ORDER BY id",
         [$c['id'], $fileId]) as $f) {
-        if (apr_exec("UPDATE facts SET deleted_at = ?, delete_reason = 'הוחלף בחילוץ חוזר', rev = rev + 1, updated_at = ? WHERE id = ? AND state = 'proposed' AND corrected_at IS NULL AND deleted_at IS NULL",
+        if (apr_exec("UPDATE facts SET deleted_at = ?, delete_reason = 'הוחלף בחילוץ חוזר', rev = rev + 1, updated_at = ? WHERE id = ? AND state = 'proposed' AND rev = 1 AND deleted_at IS NULL",
             [apr_now(), apr_now(), $f['id']]) !== 1) continue;
         $attr = apr_attr($f['attribute_key']);
         apr_case_audit($c, 'fact.ai_replaced', 'fact', $f['pid'], ['attribute' => $attr['key']]);

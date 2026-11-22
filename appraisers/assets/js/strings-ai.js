@@ -66,7 +66,7 @@ Object.assign(T.audit, {
 
 /* הנוסחים של החילוץ והסיווג בבינה (פרוסה 12). */
 T.x = {
-    title: 'הבינה במסמך', aiChip: 'הצעת בינה', conf: { low: 'ביטחון נמוך', medium: 'ביטחון בינוני', high: 'ביטחון גבוה' },
+    title: 'הבינה במסמך', aiChip: 'הצעת בינה', aiCorrected: 'הצעת בינה — הערך תוקן', conf: { low: 'ביטחון נמוך', medium: 'ביטחון בינוני', high: 'ביטחון גבוה' },
     quoteMissing: 'הציטוט לא אותר בטקסט', quoteUnchecked: 'הציטוט לא נבדק מול הטקסט',
     whats: { classify: 'הצעת סיווג', fields: 'חילוץ נתונים', summary: 'סיכום המסמך' },
     states: { none: 'לא הופעל', queued: 'בתור', running: 'רץ…', done: 'הושלם', failed: 'נכשל', blocked: 'נחסם', skipped: 'לא עובד בבינה' },

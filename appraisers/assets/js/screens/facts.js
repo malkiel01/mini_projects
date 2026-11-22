@@ -143,7 +143,8 @@ function factHistorySheet(f, a) {
 
 /** כרטיס של נתון אחד, עם הפעולות שמותרות לי. */
 function factCard(f, a, pid, perms) {
-    const live = f.state !== 'rejected', mayEdit = perms.write && (f.state !== 'verified' || perms.judge);   // נתון מאומת משנה רק מי שרשאי לאמת
+    // נתון מאומת, והצעת בינה (12 §9), מתקן רק מי שרשאי לאמת
+    const live = f.state !== 'rejected', mayEdit = perms.write && ((f.state !== 'verified' && !f.ai) || perms.judge), mayClarify = perms.write && (f.state !== 'verified' || perms.judge);
     const btn = (act, label, cls = '') => `<button type="button" class="btn ghost sm${cls}" data-fact="${f.pid}" data-act="${act}">${label}</button>`;
     return `<li class="card static"><div class="body"><div class="l1"><span>${fVal(f, a)}</span></div>
         <div class="l2 wrap">${fSource(f, pid)}</div><div class="chips">${fChips(f)}</div>
@@ -152,7 +153,7 @@ function factCard(f, a, pid, perms) {
         ${f.note ? `<p class="hint"><b>${F.note}:</b> ${esc(f.note)}</p>` : ''}
         ${f.rejected_reason ? `<p class="hint"><b>${F.rejectedWhy}:</b> ${esc(f.rejected_reason)}</p>` : ''}
         <p class="hint">${esc(f.state === 'verified' && f.verified_by ? F.verifiedBy(f.verified_by, fmtDate(f.verified_at)) : F.enteredBy(f.entered_by || C.system, fmtDate(f.entered_at)))}</p>
-        <div class="row-btns wrap">${mayEdit && live ? btn('correct', F.correct) + (f.state === 'needs_clarification' ? (f.has_value ? btn('manual', F.backToManual) : '') : btn('clarify', F.clarify)) : ''}${
+        <div class="row-btns wrap">${mayEdit && live ? btn('correct', F.correct) : ''}${mayClarify && live ? (f.state === 'needs_clarification' ? (f.has_value ? btn('manual', F.backToManual) : '') : btn('clarify', F.clarify)) : ''}${
             perms.judge && live ? (f.state !== 'verified' && f.has_value ? btn('verify', F.verify) : '') + btn('reject', F.reject, ' danger') : ''}${
             perms.write || perms.judge ? btn('delete', F.del, ' danger') : ''}${btn('history', F.history)}</div></div></li>`;
 }
@@ -277,9 +278,9 @@ async function viewConflict(pid, kpid) {
 
 /** כפתורי הסקירה של נתון במסך הקובץ (12 §8) — אותן פעולות ואותן הרשאות כמו בכרטיס הנתון. אין "אישור הכול". */
 function fileFactBtns(f, perms) {
-    const live = f.state !== 'rejected', mayEdit = perms.write && (f.state !== 'verified' || perms.judge);
+    const live = f.state !== 'rejected', mayEdit = perms.write && ((f.state !== 'verified' && !f.ai) || perms.judge), mayClarify = perms.write && (f.state !== 'verified' || perms.judge);
     const btn = (act, label, cls = '') => `<button type="button" class="btn ghost sm${cls}" data-fact="${f.pid}" data-act="${act}">${label}</button>`;
-    const html = `${perms.judge && live && f.state !== 'verified' && f.has_value ? btn('verify', F.verify) : ''}${mayEdit && live ? btn('correct', F.correct) + (f.state !== 'needs_clarification' ? btn('clarify', F.clarify) : '') : ''}${
+    const html = `${perms.judge && live && f.state !== 'verified' && f.has_value ? btn('verify', F.verify) : ''}${mayEdit && live ? btn('correct', F.correct) : ''}${mayClarify && live && f.state !== 'needs_clarification' ? btn('clarify', F.clarify) : ''}${
         perms.judge && live ? btn('reject', F.reject, ' danger') : ''}`;
     return html ? `<div class="row-btns wrap">${html}</div>` : '';
 }

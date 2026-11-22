@@ -307,20 +307,21 @@ eq([$t2[1]['fact']['state'], $t2[1]['fact']['note'], code($st($tal, $t1, 'clarif
 
 // ── 10-B4: נתון מ-AI אינו מאומת בלי מקור שאפשר לפתוח ──
 $attrRooms = apr_attr('floors_total');
-$aiRow = fn(array $more) => apr_tx(fn() => apr_fact_insert($crow($C), $attrRooms, $more + ['value_num' => 500, 'state' => 'proposed', 'source_kind' => 'ai', 'method' => 'ai']));
-$ai1 = $aiRow([]);
+// מאז 014 (פרוסה 12) המסד אינו מקבל נתון ai בלי קובץ ובלי הפעלה — ולכן "בלי מקור" נבדק כאן כהכנסה שנדחית
+$aiRun = apr_insert('ai_runs', ['pid' => apr_pid(), 'office_id' => $crow($C)['office_id'], 'purpose' => 'test.fact', 'status' => 'done', 'created_at' => apr_now()]);
+$aiRow = fn(array $more) => apr_tx(fn() => apr_fact_insert($crow($C), $attrRooms, $more + ['value_num' => 500, 'state' => 'proposed', 'source_kind' => 'ai', 'method' => 'ai', 'ai_run_id' => $aiRun]));
+try { $aiRow([]); $aiNoFile = 'inserted'; } catch (PDOException) { $aiNoFile = 'refused'; }
 $F3 = up($avi, $C, 'ai-src');
 $ai2 = $aiRow(['source_file_id' => (int)apr_val('SELECT id FROM files WHERE pid = ?', [$F3['file']]), 'source_page' => 1]);
 $ai3 = $aiRow(['source_file_id' => (int)apr_val('SELECT id FROM files WHERE pid = ?', [$F3['file']])]);
-$v1 = $st($avi, ['pid' => $ai1, 'rev' => 1], 'verify');
 $v2 = $st($avi, ['pid' => $ai2, 'rev' => 1], 'verify');
 call('POST', 'file-delete', ['file' => $F3['file'], 'reason' => 'הועלה בטעות'], $avi);
 $v3 = $st($avi, ['pid' => $ai3, 'rev' => 1], 'verify');
 $after2 = call('GET', 'fact', [], $avi, ['fact' => $ai2])[1]['fact'];
-eq([code($v1), $frow($ai1)['state'], $v2[0], $v2[1]['fact']['state'] ?? null, code($v3), $frow($ai3)['state'],
-    $raises("UPDATE facts SET state = 'verified', verified_by = 1, verified_at = 'x', rev = rev + 1 WHERE pid = ?", [$ai1]), $raises("UPDATE facts SET state = 'verified', rev = rev + 1 WHERE pid = ?", [$ai3]),
+eq([$aiNoFile, $count('facts', "source_kind = 'ai' AND source_file_id IS NULL"), $v2[0], $v2[1]['fact']['state'] ?? null, code($v3), $frow($ai3)['state'],
+    $raises("UPDATE facts SET source_file_id = NULL, rev = rev + 1 WHERE pid = ?", [$ai3]), $raises("UPDATE facts SET state = 'verified', rev = rev + 1 WHERE pid = ?", [$ai3]),
     $after2['state'], $after2['source']['doc_state'], $after2['source']['file'], $after2['verified_by'], $count('conflicts', "attribute_key = 'floors_total'")],
-    ['fact_source_required', 'proposed', 200, 'verified', 'fact_source_required', 'proposed', true, true, 'needs_clarification', 'deleted', null, null, 0],
+    ['refused', 0, 200, 'verified', 'fact_source_required', 'proposed', true, true, 'needs_clarification', 'deleted', null, null, 0],
     '10-B4 / מקרה 6: נתון מ-AI בלי מקור (או שהקובץ שלו נמחק) אינו מאומת — גם לא ישירות במסד; "מאומת" הוא תמיד פעולת אדם; קובץ המקור נמחק ← הנתון נשאר, מסומן, וחוזר ל"דורש בירור"');
 
 // ── 10-C1: שינוי נתון מסמן את מי שנשען עליו ──

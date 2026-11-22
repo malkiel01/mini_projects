@@ -15,6 +15,7 @@ const xStateCls = { done: 'ok', failed: 'bad', blocked: 'warn', skipped: '', run
 /** השבבים של הצעת בינה על נתון: "הצעת בינה", רמת הביטחון, והאם הציטוט אותר. */
 function xChips(f) {
     if (!f.ai) return '';
+    if (f.ai.corrected) return `<span class="chip info">🤖 ${esc(X.aiCorrected)}</span>`;      // הביטחון וה"אותר" היו על הערך של המודל, לא על הערך שתוקן
     return `<span class="chip info">🤖 ${esc(X.aiChip)}</span>${f.ai.confidence ? `<span class="chip${f.ai.confidence === 'low' ? ' warn' : ''}">${esc(X.conf[f.ai.confidence] || f.ai.confidence)}</span>` : ''}${
         f.ai.quote_found === false ? `<span class="chip bad">${esc(X.quoteMissing)}</span>` : ''}`;
 }

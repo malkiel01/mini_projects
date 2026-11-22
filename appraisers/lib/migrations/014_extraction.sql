@@ -7,10 +7,16 @@ ALTER TABLE facts ADD COLUMN ai_run_id INTEGER REFERENCES ai_runs (id);
 ALTER TABLE facts ADD COLUMN ai_confidence TEXT CHECK (ai_confidence IS NULL OR ai_confidence IN ('low', 'medium', 'high'));
 ALTER TABLE facts ADD COLUMN ai_quote_found INTEGER CHECK (ai_quote_found IS NULL OR ai_quote_found IN (0, 1));
 
--- נתון ממקור 'ai' נכנס רק כ"הצעה". "מאומת" הוא תמיד פעולת אדם (12-A1) — גם אם קוד עתידי ינסה אחרת
+-- נתון ממקור 'ai' נכנס רק כ"הצעה", ותמיד עם הקובץ שממנו חולץ ועם ההפעלה שיצרה אותו. "מאומת" הוא תמיד פעולת אדם (12-A1) —
+-- גם אם קוד עתידי ינסה אחרת
 CREATE TRIGGER facts_ai_proposed BEFORE INSERT ON facts
-WHEN NEW.source_kind = 'ai' AND NEW.state <> 'proposed'
-BEGIN SELECT RAISE(ABORT, 'facts: ai fact must be proposed'); END;
+WHEN NEW.source_kind = 'ai' AND (NEW.state <> 'proposed' OR NEW.source_file_id IS NULL OR NEW.ai_run_id IS NULL)
+BEGIN SELECT RAISE(ABORT, 'facts: ai fact must be a proposal with a file and a run'); END;
+
+-- הקובץ של הצעת בינה אינו מוחלף ואינו מנותק
+CREATE TRIGGER facts_ai_source BEFORE UPDATE ON facts
+WHEN OLD.source_kind = 'ai' AND (NEW.source_file_id IS NOT OLD.source_file_id OR NEW.source_page IS NOT OLD.source_page OR NEW.source_locator IS NOT OLD.source_locator)
+BEGIN SELECT RAISE(ABORT, 'facts: ai source is immutable'); END;
 
 -- מה שהבינה קבעה על ההצעה אינו נערך אחר כך (האדם משנה את הערך ואת המצב — לא את רמת הביטחון של המודל)
 CREATE TRIGGER facts_ai_frozen BEFORE UPDATE ON facts

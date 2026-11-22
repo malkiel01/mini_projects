@@ -31,7 +31,7 @@ require_once __DIR__ . '/health.php';
 const APR_EXTRACT_PROMPT_VER = 1;            // גרסת ההנחיה — חלק ממזהה הפעולה (מקרה קצה 3)
 /** סוגי ההפעלה: המטרה שנרשמת ב-ai_runs, תקרת הפלט (עם מרווח — פלט שנחתך נזרק כולו), והעמודה ב-file_ai. */
 const APR_EXTRACT_WHATS = [
-    'classify' => ['purpose' => 'extract.classify', 'max_output' => 1500, 'col' => 'classify'],
+    'classify' => ['purpose' => 'extract.classify', 'max_output' => 4000, 'col' => 'classify'],     // התשובה קצרה; המרווח — לחשיבה, שנספרת בפלט
     'fields'   => ['purpose' => 'extract.fields', 'max_output' => 8000, 'col' => 'extract'],
     'summary'  => ['purpose' => 'extract.summary', 'max_output' => 3000, 'col' => 'summary_run'],
 ];
@@ -94,8 +94,9 @@ function apr_pdf_text_pages(string $path): ?array
     $out = tempnam(apr_upload_tmp_dir(), 'tx');
     if ($out === false) return null;
     try {
-        $limit = @is_executable('/usr/bin/timeout') ? '/usr/bin/timeout 30 ' : '';
-        @exec($limit . escapeshellarg($bin) . ' -enc UTF-8 -q ' . escapeshellarg($path) . ' ' . escapeshellarg($out) . ' 2>/dev/null', $o, $code);
+        // בלי מגבלת זמן אין הרצה: PDF זדוני לא יתקע את התהליך. ulimit — תקרת זיכרון (1GB) וגודל קובץ הפלט
+        if (!@is_executable('/usr/bin/timeout')) return null;
+        @exec('ulimit -v 1048576 -f 32768 2>/dev/null; /usr/bin/timeout 30 ' . escapeshellarg($bin) . ' -enc UTF-8 -q ' . escapeshellarg($path) . ' ' . escapeshellarg($out) . ' 2>/dev/null', $o, $code);
         if ($code !== 0 || (int)@filesize($out) > APR_TEXT_MAX) return null;
         $raw = @file_get_contents($out);
         if (!is_string($raw)) return null;
@@ -120,7 +121,8 @@ function apr_file_ai_row(array $f): array
 function apr_file_text_ensure(array $f): string
 {
     $a = apr_file_ai_row($f);
-    if ($a['text_state'] !== 'none') return $a['text_state'];
+    // unavailable אינו סופי: כשל חולף (פסק זמן, אין כלי כרגע) מנוסה שוב בהפעלה הבאה
+    if (!in_array($a['text_state'], ['none', 'unavailable'], true)) return $a['text_state'];
     $pages = null;
     if ($f['mime'] === 'application/pdf' && (int)$f['is_encrypted'] === 0 && $f['scan_state'] !== 'rejected' && $f['deleted_at'] === null) {
         try {
@@ -141,7 +143,7 @@ function apr_file_text_ensure(array $f): string
                 $state = 'done';
             }
         }
-        apr_exec("UPDATE file_ai SET text_state = ?, updated_at = ? WHERE file_id = ? AND text_state = 'none'", [$state, apr_now(), $f['id']]);
+        apr_exec("UPDATE file_ai SET text_state = ?, updated_at = ? WHERE file_id = ? AND text_state IN ('none', 'unavailable')", [$state, apr_now(), $f['id']]);
         return (string)apr_val('SELECT text_state FROM file_ai WHERE file_id = ?', [$f['id']]);
     });
 }
@@ -196,7 +198,8 @@ function apr_extract_task(string $what, array $catalog): string
 function apr_extract_text(mixed $v, bool $lines = false): ?string
 {
     if (!is_string($v) || !mb_check_encoding($v, 'UTF-8')) return null;
-    $s = (string)preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $v);
+    // תווי בקרה, וגם תווי כיווניות ורוחב-אפס: הם אינם נראים, ויכולים להפוך את סדר התצוגה של ערך או להסתיר בו טקסט
+    $s = (string)preg_replace(['/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}\x{FEFF}]/u'], '', $v);
     $s = $lines ? (string)preg_replace(['/[ \t\r]+/u', '/\n{3,}/'], [' ', "\n\n"], $s) : (string)preg_replace('/\s+/u', ' ', $s);
     return trim($s);
 }
@@ -209,24 +212,41 @@ function apr_extract_norm(string $s): string
     return mb_strtolower(trim((string)preg_replace('/\s+/u', ' ', $s)));
 }
 
-/** המילים של טקסט, להשוואה שאינה תלויה בסדר: רצפי אותיות וספרות באורך 2 ומעלה; מפריד אלפים נמחק ("2,150,000" ← "2150000"). */
+/**
+ * המילים של טקסט, להשוואה שאינה תלויה בסדר: כל מספר הוא מילה אחת — גם ספרה בודדת, ועשרוני כולו ("85.5"; מפריד אלפים נמחק:
+ * "2,150,000" ← "2150000") — ורצף אותיות באורך 2 ומעלה. כך "5 חדרים" אינו "מופיע" בעמוד שכתוב בו "3 חדרים".
+ */
 function apr_extract_tokens(string $norm): array
 {
-    $s = (string)preg_replace('/(?<=\d),(?=\d)/', '', $norm);
-    return array_values(array_filter(preg_split('/[^\p{L}\p{N}]+/u', $s) ?: [], fn($t) => mb_strlen($t) >= 2));
+    preg_match_all('/\d+(?:,\d{3})*(?:\.\d+)?|\p{L}{2,}/u', $norm, $m);
+    return array_map(fn($t) => ctype_digit($t[0]) ? str_replace(',', '', $t) : $t, $m[0]);
 }
 
 /**
- * האם הציטוט מופיע בטקסט העמוד (שניהם אחרי apr_extract_norm). קודם כרצף; ואם לא — כל מילות הציטוט נמצאות בעמוד.
- * ההשוואה השנייה נחוצה בעברית: כלי החילוץ מחזיר לעתים מספרים, סימני מטבע ופיסוק בסדר אחר מזה שבמסמך, וציטוט נכון היה
- * מסומן "לא אותר". ציטוט שמילה אחת שלו אינה בעמוד — עדיין "לא אותר".
+ * האם הציטוט מופיע בטקסט העמוד (שניהם אחרי apr_extract_norm). קודם כרצף; ואם לא — כל מילות הציטוט נמצאות **סמוכות זו לזו**
+ * בעמוד, בכל סדר (חלון באורך הציטוט ועוד מילה אחת). ההשוואה השנייה נחוצה בעברית: כלי החילוץ מחזיר לעתים מספרים, סימני מטבע
+ * ופיסוק בסדר אחר מזה שבמסמך, וציטוט נכון היה מסומן "לא אותר". מילה או מספר שאינם באותו מקום בעמוד — "לא אותר".
  */
 function apr_extract_quote_in(string $quote, string $page): bool
 {
     if ($quote === '' || $page === '') return false;
     if (mb_strpos($page, $quote) !== false) return true;
-    $need = apr_extract_tokens($quote);
-    return $need && !array_diff($need, apr_extract_tokens($page));
+    $need = array_count_values(apr_extract_tokens($quote));
+    $n = array_sum($need);
+    if ($n === 0) return false;
+    $toks = apr_extract_tokens($page);
+    $size = $n + 1;
+    $have = [];
+    $missing = $n;                                     // כמה מופעים של מילות הציטוט עוד חסרים בחלון הנוכחי
+    foreach ($toks as $i => $t) {
+        if (isset($need[$t])) { $have[$t] = ($have[$t] ?? 0) + 1; if ($have[$t] <= $need[$t]) $missing--; }
+        if ($i >= $size) {
+            $out = $toks[$i - $size];
+            if (isset($need[$out])) { if ($have[$out] <= $need[$out]) $missing++; $have[$out]--; }
+        }
+        if ($missing === 0) return true;
+    }
+    return false;
 }
 
 function apr_extract_conf(mixed $v): string
@@ -240,7 +260,7 @@ function apr_extract_conf(mixed $v): string
  * ['ok' => true, 'flags', 'doc_type', 'confidence', 'summary', 'fields' => [שורות מוכנות ל-facts], 'not_found', 'dropped' => [סיבה => כמה]].
  * מה שאינו במבנה — אינו נקרא. שום ערך אינו "מתוקן" או מושלם: שדה שאינו תקין נזרק כולו.
  */
-function apr_extract_parse(string $text, string $what, array $file, array $catalog, ?array $texts): array
+function apr_extract_parse(string $text, string $what, array $file, array $catalog, ?array $texts, array $priorFlags = []): array
 {
     $bad = ['ok' => false, 'why' => 'bad_json'];
     if ($text === '' || strlen($text) > APR_EXTRACT_MAX_REPLY) return $bad;
@@ -281,7 +301,8 @@ function apr_extract_parse(string $text, string $what, array $file, array $catal
     if (!is_array($j['fields'] ?? null) || !array_is_list($j['fields'])) return $bad;
     $isPdf = $file['mime'] === 'application/pdf';
     $maxPage = $isPdf ? ($file['pages'] !== null ? (int)$file['pages'] : 100000) : 1;
-    $low = (bool)array_intersect($flags, APR_EXTRACT_LOW);
+    // גם דגלים שהפעלה אחרת על הקובץ כבר שמרה (סיווג שזיהה כתב יד או הוראות מוסתרות) מורידים את הנתונים לביטחון נמוך
+    $low = (bool)array_intersect(array_merge($flags, $priorFlags), APR_EXTRACT_LOW);
     $norm = $texts === null ? null : array_map('apr_extract_norm', $texts);
     $seen = [];
     foreach ($j['fields'] as $i => $fd) {
@@ -343,6 +364,17 @@ function apr_extract_parse(string $text, string $what, array $file, array $catal
     return $out;
 }
 
+/** הדגלים השמורים לקובץ, מכל ההפעלות חוץ מ-$except (ההפעלה שרצה עכשיו מביאה דגלים משלה). */
+function apr_extract_flags(int $fileId, ?string $except = null): array
+{
+    $out = [];
+    foreach (json_decode((string)apr_val('SELECT quality_flags FROM file_ai WHERE file_id = ?', [$fileId]), true) ?: [] as $what => $list) {
+        if ($what === $except) continue;
+        foreach ((array)$list as $fl) if (is_string($fl) && in_array($fl, APR_EXTRACT_FLAGS, true)) $out[$fl] = true;
+    }
+    return array_keys($out);
+}
+
 // ── מה מותר לעבד ──────────────────────────────────────────────
 
 /** מספר העמודים לצורך הספים: ידוע — כפי שנספר; PDF בלי ספירה — עמוד לכל 20KB (כמו האומדן של השער); תמונה — 1. */
@@ -394,6 +426,13 @@ function apr_extract_estimate(array $c, array $f, string $what, ?int $user, arra
         $cost = apr_ai_cost($estIn, $max, $m['price_in'] === null ? null : (int)$m['price_in'], $m['price_out'] === null ? null : (int)$m['price_out'], apr_ai_fx());
     }
     return ['tokens' => $estIn + $max, 'pages' => $pages ?: null, 'cost' => $cost];
+}
+
+/** הגבלת הקצב — **לפני כל קריאה לשער**, גם ניסיון חוזר: למשתמש ולמשרד בהפעלה ידנית; למשרד בעיבוד האוטומטי. false = מעבר לתקרה. */
+function apr_extract_rate(?array $ctx, array $c): bool
+{
+    if ($ctx === null) return apr_limit('ai-auto:o' . $c['office_id'], ...APR_EXTRACT_RATE_AUTO);
+    return apr_limit('ai-extract:u' . $ctx['user']['id'], ...($GLOBALS['apr_extract_rate'] ?? APR_EXTRACT_RATE_USER)) && apr_limit('ai-extract:o' . $c['office_id'], ...APR_EXTRACT_RATE_OFFICE);
 }
 
 // ── ההפעלה ────────────────────────────────────────────────────
@@ -459,6 +498,12 @@ function apr_extract_save(array $c, array $f, array $op, array $res, string $run
             apr_facts_ai_replace($c, (int)$f['id']);
             $runId = apr_val('SELECT id FROM ai_runs WHERE pid = ?', [$runPid]);
             foreach ($res['fields'] as $fd) {
+                // ערך זהה לנתון מאותו קובץ שאדם כבר אימת, דחה או תיקן — אינו מוצע שוב (גם לא הערך המקורי של נתון שתוקן)
+                $v = [$fd['row']['value_num'], $fd['row']['value_text'], $fd['row']['value_date'], $fd['row']['unit'], $fd['row']['area_kind']];
+                if (apr_val("SELECT 1 FROM facts WHERE case_id = ? AND source_file_id = ? AND attribute_key = ? AND source_kind = 'ai' AND deleted_at IS NULL
+                    AND ((value_num IS ? AND value_text IS ? AND value_date IS ? AND unit IS ? AND area_kind IS ?)
+                        OR (corrected_at IS NOT NULL AND original_num IS ? AND original_text IS ? AND original_date IS ? AND original_unit IS ? AND original_area_kind IS ?)) LIMIT 1",
+                    [$c['id'], $f['id'], $fd['attr']['key'], ...$v, ...$v])) continue;
                 apr_fact_insert($c, $fd['attr'], $fd['row'] + ['estimated' => 0, 'state' => 'proposed', 'method' => 'ai', 'source_kind' => 'ai', 'source_file_id' => (int)$f['id'],
                     'ai_run_id' => $runId === false ? null : (int)$runId, 'entered_by' => null, 'updated_by' => null]);
                 $saved++;
@@ -537,16 +582,17 @@ function apr_extract_run(?array $ctx, array $c, array $f, string $what, array $o
         $why = $r['status'] !== 'done' ? ($r['status'] === 'unknown' ? 'unknown' : 'provider')
             : (!is_string($r['text']) || !empty($r['replayed']) ? 'result_lost'
                 : ($r['stop_reason'] === 'refusal' ? 'refusal' : ($r['stop_reason'] === 'max_tokens' ? 'truncated'
-                    : (!in_array($r['stop_reason'], ['end_turn', 'stop_sequence', null], true) ? 'stopped' : ($r['text'] === '' ? 'empty' : null)))));
+                    : (!in_array($r['stop_reason'], ['end_turn', 'stop_sequence'], true) ? 'stopped' : ($r['text'] === '' ? 'empty' : null)))));
         if ($why !== null) {
             apr_tx(fn() => apr_extract_finish($op, 'failed', $why, ['run' => $r['run']]));
             return ['state' => 'failed', 'reason' => $why, 'quota' => null];
         }
         // ── אימות ושמירה — מיד, באותה פעולה: התשובה אינה נשמרת בשום מקום אחר ──
-        $res = apr_extract_parse($r['text'], $what, $f, $catalog, $what === 'fields' ? apr_file_text_local((int)$f['id']) : null);
+        $res = apr_extract_parse($r['text'], $what, $f, $catalog, $what === 'fields' ? apr_file_text_local((int)$f['id']) : null, apr_extract_flags((int)$f['id'], $what));
         if (!$res['ok']) {
             apr_tx(fn() => apr_extract_finish($op, 'failed', $res['why'], ['run' => $r['run']]));
-            if ($attempt === 1) continue;                                   // ניסיון חוזר אחד (§6) — הפעלה חדשה, מזהה חדש
+            // ניסיון חוזר אחד (§6) — הפעלה חדשה, מזהה חדש. גם הוא קריאה לספק, ולכן נספר בהגבלת הקצב לפני שהוא יוצא
+            if ($attempt === 1 && apr_extract_rate($ctx, $c)) continue;
             return ['state' => 'failed', 'reason' => $res['why'], 'quota' => null];
         }
         try {
@@ -601,7 +647,7 @@ function apr_extract_job(array $payload): string
         $skip ??= ($why = apr_extract_unavailable($c, $c['responsible_user_id'] === null ? null : (int)$c['responsible_user_id'])) !== null ? ['skipped', $why] : null;
         $skip ??= apr_extract_pages($f) > APR_EXTRACT_AUTO_PAGES ? ['skipped', 'needs_manual'] : null;         // 12-C7
         // הגבלת קצב לפני השער — גם לעיבוד האוטומטי
-        $skip ??= !apr_limit('ai-auto:o' . $c['office_id'], ...APR_EXTRACT_RATE_AUTO) ? ['skipped', 'rate'] : null;
+        $skip ??= !apr_extract_rate(null, $c) ? ['skipped', 'rate'] : null;
         if ($skip !== null) {
             apr_tx(fn() => apr_extract_set((int)$f['id'], $what, $skip[0], $skip[1]));
             continue;
@@ -634,8 +680,7 @@ function apr_file_ai_run(array $ctx, array $in): array
     $what = is_string($in['what'] ?? null) && isset(APR_EXTRACT_WHATS[$in['what']]) ? $in['what'] : apr_fail('ai_what');
     $key = apr_upload_key($ctx, $in['key'] ?? null);
     // הגבלת קצב **לפני** השער: גם הפעלה שתיחסם (ותירשם ב-ai_runs) נספרת כאן — למשתמש ולמשרד
-    if (!apr_limit('ai-extract:u' . $ctx['user']['id'], ...($GLOBALS['apr_extract_rate'] ?? APR_EXTRACT_RATE_USER))
-        || !apr_limit('ai-extract:o' . $c['office_id'], ...APR_EXTRACT_RATE_OFFICE)) apr_fail('ai_rate');
+    if (!apr_extract_rate($ctx, $c)) apr_fail('ai_rate');
     if (PHP_SAPI !== 'cli') {
         @ignore_user_abort(true);
         @set_time_limit(2 * APR_AI_TIMEOUT + 60);
@@ -677,7 +722,9 @@ function apr_file_ai_out(array $ctx, array $c, array $f): array
             'state' => $a['suggestion_state'], 'requirement' => $req ? ['pid' => $req['pid'], 'title' => $req['title']] : null];
     }
     $est = [];
-    if ($block === null) foreach (array_keys(APR_EXTRACT_WHATS) as $w) $est[$w] = apr_extract_estimate($c, $f, $w, (int)$ctx['user']['id'], $catalog);
+    $mayRun = $open && !empty($c['perms']['documents']);
+    // האומדן (טוקנים ועלות) — רק למי שרשאי להפעיל
+    if ($block === null && $mayRun) foreach (array_keys(APR_EXTRACT_WHATS) as $w) $est[$w] = apr_extract_estimate($c, $f, $w, (int)$ctx['user']['id'], $catalog);
     return ['file' => $f['pid'],
         'ai' => ['available' => $why === null && $block === null, 'unavailable' => $block[1] ?? $why, 'auto' => apr_extract_auto($c),
             'classify' => $state('classify'), 'fields' => $state('fields'), 'summary' => $state('summary'),

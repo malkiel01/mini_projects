@@ -226,7 +226,7 @@ eq([(int)$db("SELECT COUNT(*) FROM facts WHERE attribute_key = 'year_built'"), $
 [, $ff] = api('GET', 'file-facts', [], $dana, ['file' => $F]);
 $out = array_column($ff['facts'], null, 'attribute');
 eq([$out['contract_price']['state'], $out['contract_price']['ai'], $out['contract_price']['source']['locator'], $out['contract_price']['source']['page'], $out['build_state']['ai']['confidence']],
-    ['proposed', ['confidence' => 'high', 'quote_found' => null], 'התמורה בסך 2,150,000 ₪', 3, 'low'], '§8 מסך הקובץ מקבל לכל הצעה: "הצעת בינה", רמת הביטחון, העמוד והציטוט');
+    ['proposed', ['confidence' => 'high', 'quote_found' => null, 'corrected' => false], 'התמורה בסך 2,150,000 ₪', 3, 'low'], '§8 מסך הקובץ מקבל לכל הצעה: "הצעת בינה", רמת הביטחון, העמוד והציטוט');
 // אישור — אחד-אחד, בידי שמאי בתיק בלבד
 eq([code(api('POST', 'fact-state', ['fact' => $by['rooms']['pid'], 'rev' => 1, 'do' => 'verify'], $tal)), api('POST', 'fact-state', ['fact' => $by['rooms']['pid'], 'rev' => 1, 'do' => 'verify'], $dana)[1]['fact']['state'] ?? null,
     $db('SELECT state FROM facts WHERE pid = ?', [$by['contract_price']['pid']])], ['forbidden', 'verified', 'proposed'], '§9 אישור הצעה — רק מי שרשאי לאמת (apr_fact_can_judge); אישור של אחת אינו נוגע באחרות');
@@ -310,11 +310,13 @@ eq([array_map(fn($k) => [$by[$k]['ai_confidence'], $by[$k]['ai_quote_found'] ===
     [[['high', 1], ['low', 0], ['low', 0], ['high', 1], ['high', null]], 'done', 2],
     '12-A4 ציטוט שאינו מופיע בטקסט של אותו עמוד ← הנתון נשמר עם ביטחון low ודגל "הציטוט לא אותר"; ציטוט שאותר — נשאר; עמוד בלי טקסט אינו נשמר');
 [, $ff] = api('GET', 'file-facts', [], $dana, ['file' => $F4]);
-eq(array_column($ff['facts'], 'ai', 'attribute')['rooms'], ['confidence' => 'low', 'quote_found' => false], '12-A4 הדגל מגיע למסך');
+eq(array_column($ff['facts'], 'ai', 'attribute')['rooms'], ['confidence' => 'low', 'quote_found' => false, 'corrected' => false], '12-A4 הדגל מגיע למסך');
 $n = fn(string $t) => apr_extract_norm($t);
 eq([apr_extract_quote_in($n('התמורה בסך 2,150,000 ₪'), $n("\u{202B}התמורה בסך \u{202A} ₪ 2,150,000\u{202C}תשולם במועד\u{202C}")), apr_extract_quote_in($n('ארבעה חדרים, בקומה שלישית'), $n('הדירה בת ארבעה חדרים ,בקומה שלישית.')),
-    apr_extract_quote_in($n('התמורה בסך 2,150,000 ₪'), $n('התמורה בסך 2,510,000 ₪')), apr_extract_quote_in($n('חמישה חדרים'), $n('הדירה בת ארבעה חדרים')), apr_extract_quote_in($n('₪ ״'), $n('100 שקלים')), apr_extract_quote_in('', $n('x'))],
-    [true, true, false, false, false, false], '12-A4 ההשוואה עומדת בסדר שונה של מספר, מטבע ופיסוק (כך מחזיר כלי החילוץ טקסט בעברית) — אבל מספר אחר או מילה שאינה בעמוד ← "לא אותר"');
+    apr_extract_quote_in($n('התמורה בסך 2,150,000 ₪'), $n('התמורה בסך 2,510,000 ₪')), apr_extract_quote_in($n('חמישה חדרים'), $n('הדירה בת ארבעה חדרים')), apr_extract_quote_in($n('₪ ״'), $n('100 שקלים')), apr_extract_quote_in('', $n('x')),
+    apr_extract_quote_in($n('הדירה בת 5 חדרים'), $n('הדירה בת 3 חדרים בקומה 5א בשטח 85.5 מ"ר')), apr_extract_quote_in($n('בשטח 85.7 מ"ר'), $n('הדירה בת 3 חדרים בשטח 85.5 מ"ר, 7 מדרגות')),
+    apr_extract_quote_in($n('בת 3 חדרים בשטח 85.5'), $n("הדירה בת חדרים 3 בשטח \u{202A}85.5\u{202C} מ\"ר")), apr_extract_quote_in($n('ארבעה חדרים'), $n('ארבעה מחסנים, ובקומה השנייה שני חדרים')), apr_extract_tokens('3 חדרים, 85.5 מ"ר, 2,150,000 ₪ ו-1,5')],
+    [true, true, false, false, false, false, false, false, true, false, ['3', 'חדרים', '85.5', '2150000', '1', '5']], '12-A4 ההשוואה עומדת בסדר שונה של מספר, מטבע ופיסוק (כך מחזיר כלי החילוץ טקסט בעברית) — אבל מספר אחר או מילה שאינה בעמוד ← "לא אותר"; ספרה בודדת היא מילה, ומספר עשרוני הוא מילה אחת ("5 חדרים" אינו מופיע בעמוד שכתוב בו "3 חדרים")');
 
 $GLOBALS['apr_pdf_text'] = null;         // מכאן שוב בלי טקסט מקומי — כדי שרמת הביטחון בבדיקות הבאות תיקבע רק ממה שהן בודקות
 
@@ -440,22 +442,34 @@ eq([$cf, apr_row('SELECT * FROM facts WHERE pid = ?', [$fa['pid']]) === $before,
 // ═══ 12-C3 — הפעלה חוזרת ══════════════════════════════════════
 $G2 = up($avi, $C2, 'rerun');
 $fake->next = $fields([$field(['attribute' => 'floor', 'value' => 1, 'quote' => 'q1']), $field(['attribute' => 'floors_total', 'value' => 5, 'quote' => 'q2']), $field(['attribute' => 'year_built', 'value' => 1980, 'quote' => 'q3']),
-    $field(['attribute' => 'build_state', 'value' => 'built', 'quote' => 'q4']), $field(['attribute' => 'upkeep_state', 'value' => 'good', 'quote' => 'q5'])]);
+    $field(['attribute' => 'build_state', 'value' => 'built', 'quote' => 'q4']), $field(['attribute' => 'upkeep_state', 'value' => 'good', 'quote' => 'q5']), $field(['attribute' => 'actual_use', 'value' => 'מגורים', 'quote' => 'q6'])]);
 run($avi, $G2);
 $g = array_column($facts($G2), null, 'attribute_key');
 api('POST', 'fact-state', ['fact' => $g['floor']['pid'], 'rev' => 1, 'do' => 'verify'], $dana);
 api('POST', 'fact-state', ['fact' => $g['floors_total']['pid'], 'rev' => 1, 'do' => 'reject', 'reason' => 'לא נכון'], $dana);
-api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'value' => 1985], $tal);
+// 12 §9: תיקון הצעת בינה — רק מי שרשאי לאמת; המקור שהמודל הצביע עליו אינו נערך ואינו מנותק
+$other = up($avi, $C2, 'other-file');
+eq([code(api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'value' => 1985], $tal)), code(api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'note' => 'הערה'], $tal)),
+    code(api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'source' => ['kind' => 'ai', 'file' => $G2, 'page' => 1, 'locator' => 'ציטוט בדוי']], $dana)),
+    code(api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'source' => ['kind' => 'ai']], $dana)), code(api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'source' => ['kind' => 'ai', 'file' => $other]], $dana)),
+    $raises("UPDATE facts SET source_locator = 'x', rev = rev + 1 WHERE id = " . (int)$g['year_built']['id']), $raises("UPDATE facts SET source_file_id = NULL, rev = rev + 1 WHERE id = " . (int)$g['year_built']['id']),
+    (int)$db('SELECT rev FROM facts WHERE id = ?', [$g['year_built']['id']])],
+    ['forbidden', 'forbidden', 'fact_source', 'fact_source', 'fact_source', true, true, 1],
+    '§9 הצעת בינה: מי שרק מזין אינו מתקן אותה (גם לא הערה); גם שמאי אינו מחליף לה ציטוט, קובץ או מנתק אותה מהמסמך — בקוד ובמסד');
+$fx = api('POST', 'fact-correct', ['fact' => $g['year_built']['pid'], 'rev' => 1, 'value' => 1985], $dana);
+eq([$fx[1]['fact']['ai'] ?? null, $fx[1]['fact']['state'] ?? null], [['confidence' => null, 'quote_found' => null, 'corrected' => true], 'proposed'], '§9 אחרי תיקון ערך: רמת הביטחון וה"אותר" של המודל אינם מוצגים עוד — הם היו על הערך שלו');
+api('POST', 'fact-correct', ['fact' => $g['actual_use']['pid'], 'rev' => 1, 'note' => 'לוודא מול הנסח'], $dana);
 api('POST', 'fact-state', ['fact' => $g['build_state']['pid'], 'rev' => 1, 'do' => 'clarify', 'note' => 'לבדוק'], $tal);
-$keep = apr_rows("SELECT * FROM facts WHERE pid IN (?, ?, ?, ?) ORDER BY id", [$g['floor']['pid'], $g['floors_total']['pid'], $g['year_built']['pid'], $g['build_state']['pid']]);
-$fake->next = $fields([$field(['attribute' => 'upkeep_state', 'value' => 'fair', 'quote' => 'q5b']), $field(['attribute' => 'floor', 'value' => 1, 'quote' => 'q1'])]);
+$keep = apr_rows("SELECT * FROM facts WHERE pid IN (?, ?, ?, ?, ?) ORDER BY id", [$g['floor']['pid'], $g['floors_total']['pid'], $g['year_built']['pid'], $g['build_state']['pid'], $g['actual_use']['pid']]);
+$fake->next = $fields([$field(['attribute' => 'upkeep_state', 'value' => 'fair', 'quote' => 'q5b']), $field(['attribute' => 'floor', 'value' => 1, 'quote' => 'q1']), $field(['attribute' => 'floors_total', 'value' => 5, 'quote' => 'q2']),
+    $field(['attribute' => 'year_built', 'value' => 1980, 'quote' => 'q3'])]);
 run($avi, $G2);
-$after = apr_rows("SELECT * FROM facts WHERE pid IN (?, ?, ?, ?) ORDER BY id", [$g['floor']['pid'], $g['floors_total']['pid'], $g['year_built']['pid'], $g['build_state']['pid']]);
+$after = apr_rows("SELECT * FROM facts WHERE pid IN (?, ?, ?, ?, ?) ORDER BY id", [$g['floor']['pid'], $g['floors_total']['pid'], $g['year_built']['pid'], $g['build_state']['pid'], $g['actual_use']['pid']]);
 $old = apr_row('SELECT * FROM facts WHERE pid = ?', [$g['upkeep_state']['pid']]);
 eq([$after === $keep, array_column($keep, 'state'), $old['deleted_at'] !== null, $old['delete_reason'], array_map(fn($f) => [$f['attribute_key'], $f['value_text'] ?? (int)$f['value_num'], $f['state']], $facts($G2, "state = 'proposed' AND corrected_at IS NULL")),
     (int)$db('SELECT COUNT(*) FROM facts WHERE source_file_id = ?', [$fid($G2)]), (int)$db("SELECT COUNT(*) FROM audit_log WHERE action = 'fact.ai_replaced'")],
-    [true, ['verified', 'rejected', 'proposed', 'needs_clarification'], true, 'הוחלף בחילוץ חוזר', [['upkeep_state', 'fair', 'proposed'], ['floor', 100, 'proposed']], 7, 1],
-    '12-C3 הפעלה חוזרת: ההצעה שאיש לא נגע בה מוחלפת (מחיקה רכה, ביומן); מה שאומת, נדחה, תוקן או סומן לבירור — זהה בית-בבית; ושורה אינה נמחקת מהמסד');
+    [true, ['verified', 'rejected', 'proposed', 'needs_clarification', 'proposed'], true, 'הוחלף בחילוץ חוזר', [['actual_use', 'מגורים', 'proposed'], ['upkeep_state', 'fair', 'proposed']], 7, 1],
+    '12-C3 הפעלה חוזרת: ההצעה שאיש לא נגע בה מוחלפת (מחיקה רכה, ביומן); מה שאומת, נדחה, תוקן, סומן לבירור או שרק ההערה שלו עודכנה — זהה בית-בבית; ערך זהה לנתון שכבר אומת, נדחה או תוקן (גם לערך המקורי שלו) אינו מוצע שוב; ושורה אינה נמחקת מהמסד');
 
 // ═══ 12-C4 — אין אישור מרובה; דחיית כל ההצעות ═════════════════
 $src = file_get_contents(__DIR__ . '/../lib/extract.php');
@@ -552,11 +566,45 @@ $GLOBALS['apr_extract_rate'] = [100000, 600];
 $src = file_get_contents(__DIR__ . '/../lib/extract.php');
 preg_match('/function apr_file_ai_run\(.*?\n}\n/s', $src, $fn);
 preg_match('/function apr_extract_job\(.*?\n}\n/s', $src, $jobFn);
-check('הסדר בקוד: בהפעלה ידנית — הרשאה, ואז apr_limit, ואז apr_extract_run; ובמשימת הרקע — apr_limit לפני apr_extract_run', strpos($fn[0], 'apr_extract_target') < strpos($fn[0], 'apr_limit(')
-    && strpos($fn[0], 'apr_limit(') < strpos($fn[0], 'apr_extract_run(') && strpos($jobFn[0], 'apr_limit(') < strpos($jobFn[0], 'apr_extract_run('));
+check('הסדר בקוד: בהפעלה ידנית — הרשאה, ואז apr_limit, ואז apr_extract_run; ובמשימת הרקע — apr_limit לפני apr_extract_run', strpos($fn[0], 'apr_extract_target') < strpos($fn[0], 'apr_extract_rate(')
+    && strpos($fn[0], 'apr_extract_rate(') < strpos($fn[0], 'apr_extract_run(') && strpos($jobFn[0], 'apr_extract_rate(') < strpos($jobFn[0], 'apr_extract_run(') && substr_count($src, 'apr_limit(') === 3);
 $code = implode('', array_map(fn($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $t[1]) : $t, token_get_all($src)));
 eq([preg_match_all('/(?<![A-Za-z0-9_])ai_run\(/', $code), (bool)preg_match('/apr_ai_adapter\s*\(|->\s*complete\s*\(|apr_ai_key_open\s*\(|curl_|file_get_contents\s*\(\s*[\'"]http|fsockopen|stream_socket/', $code)], [1, false],
     'כל קריאה לבינה במודול החילוץ היא ai_run() — פעם אחת; אין קריאה למתאם, אין פתיחת מפתח, אין cURL ואין רשת');
+
+// ═══ ביקורת סבב 1: דגלים מהפעלה אחרת, stop_reason חסר, תווי כיווניות, ניסיון חוזר בקצב, אומדן ═══
+$PF = up($avi, $C, 'prior-flags');
+$fake->next = fn() => reply(['doc_type' => 'contract', 'doc_type_confidence' => 'high', 'quality_flags' => ['embedded_instructions', 'handwriting']]);
+run($avi, $PF, 'classify');
+$fake->next = $fields([$field(['attribute' => 'rent_term', 'value' => "שנה\u{202E}אחת\u{200B}", 'quote' => "לתקופה\u{202E} של שנה", 'confidence' => 'high'])]);
+run($avi, $PF);
+$pf = $facts($PF)[0];
+eq([$pf['ai_confidence'], $pf['value_text'], $pf['source_locator']], ['low', 'שנהאחת', 'לתקופה של שנה'],
+    'דגל שהסיווג שמר (הוראות מוסתרות, כתב יד) מוריד גם את הנתונים של חילוץ מאוחר שלא החזיר דגל; תווי כיווניות ורוחב-אפס נמחקים מערך ומציטוט');
+$NS = up($avi, $C, 'null-stop');
+$fake->next = fn() => ['text' => json_encode(['quality_flags' => [], 'fields' => [['attribute' => 'rooms', 'value' => 4, 'page' => 1, 'quote' => 'ארבעה']]]), 'in_tokens' => 10, 'out_tokens' => 10, 'stop_reason' => null];
+$ns = run($avi, $NS);
+eq([$ns[1]['run']['reason'], count($facts($NS))], ['stopped', 0], 'תשובה בלי stop_reason אינה "תשובה שלמה" — רק end_turn / stop_sequence נשמרים');
+$GLOBALS['apr_extract_rate'] = [1, 600];
+apr_exec("DELETE FROM login_attempts WHERE key LIKE 'ai-extract:%'");
+$n0 = $calls();
+$fake->next = fn() => reply('{broken');
+$rl = run($avi, $NS);
+$GLOBALS['apr_extract_rate'] = [100000, 600];
+eq([$rl[1]['run']['reason'], $calls() - $n0], ['bad_json', 1], 'הגבלת הקצב סופרת כל קריאה לספק: ניסיון חוזר על JSON שבור אינו יוצא כשהתקרה הושגה');
+eq([(array)api('GET', 'file-ai', [], $ron, ['file' => $NS])[1]['ai']['estimate'], array_keys((array)api('GET', 'file-ai', [], $tal, ['file' => $NS])[1]['ai']['estimate'])], [[], ['classify', 'fields', 'summary']],
+    'האומדן (טוקנים ועלות) מוחזר רק למי שרשאי להפעיל');
+$GLOBALS['apr_pdf_text'] = fn(string $path) => null;
+$TX = up($avi, $C, 'text-retry');
+apr_extract_job(['file' => $TX]);
+$t1 = $db('SELECT text_state FROM file_ai WHERE file_id = ?', [$fid($TX)]);
+$GLOBALS['apr_pdf_text'] = fn(string $path) => [1 => 'עכשיו יש טקסט'];
+apr_file_text_ensure(apr_row('SELECT * FROM files WHERE pid = ?', [$TX]));
+$GLOBALS['apr_pdf_text'] = null;
+eq([$t1, $db('SELECT text_state FROM file_ai WHERE file_id = ?', [$fid($TX)])], ['unavailable', 'done'], 'כשל חולף בחילוץ הטקסט אינו סופי: unavailable מנוסה שוב');
+// ידוע ומתועד: יומן התיקון של נתון (fact.correct, פרוסה 10) רושם את הערך הקודם והחדש — כולל ערך שהמודל הציע
+eq([(int)$db("SELECT COUNT(*) FROM audit_log WHERE action = 'fact.correct' AND meta LIKE '%1980%'"), (int)$db("SELECT COUNT(*) FROM audit_log WHERE action <> 'fact.correct' AND (meta LIKE '%1980%' OR meta LIKE '%מגורים%')")], [1, 0],
+    'המקום היחיד ביומן שבו מופיע ערך שהמודל הציע: שורת fact.correct של תיקון בידי אדם (from / to) — כמו בכל נתון; שום שורה אחרת');
 
 // ═══ מקרי קצה 4, 8: קובץ נמחק / תיק נסגר בזמן העיבוד; הפעלה תקועה ═
 $D = up($avi, $C, 'deleted-mid');
