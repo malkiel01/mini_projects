@@ -23,9 +23,19 @@
         return null;
     }
 
+    /* מסך שצריך לנקות אחריו (מאזינים, מצב רחב) — SF.onLeave(fn); רץ לפני המסך הבא. SF.leaveGuard — שאלה לפני יציאה */
+    let leave = [];
+    SF.onLeave = fn => { leave.push(fn); };
+    SF.leaveGuard = null;
+    let lastHash = location.hash;
+
     SF.go = hash => { if (location.hash === hash) SF.render(); else location.hash = hash; };
 
     SF.render = async function render() {
+        if (SF.leaveGuard && location.hash !== lastHash && !SF.leaveGuard()) { history.replaceState(null, '', lastHash); return; }
+        lastHash = location.hash;
+        SF.leaveGuard = null;
+        for (const fn of leave.splice(0)) { try { fn(); } catch (e) { /* ניקוי בלבד */ } }
         const hash = location.hash && location.hash !== '#' ? location.hash.replace(/\/$/, '') || '#/' : '#/';
         let found = match(hash === '#' ? '#/' : hash);
         if (!found || (found.r.dev && !SF.isDev())) {

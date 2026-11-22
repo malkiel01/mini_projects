@@ -1,5 +1,5 @@
 /*
- * הניהול: #/admin — מקום שמור לתוכן, לייבוא ולהלכה היומית (פרוסות 02, 03, 07); #/admin/staff — המנהלים (§6).
+ * הניהול: #/admin — התוכן (02, screens/content.js), ומקום שמור לייבוא ולהלכה היומית (03, 07); #/admin/staff — המנהלים (§6).
  * כל המנהלים בהרשאות מלאות. השרת מכריע (lib/access.php); כאן רק מסתירים מה שאין טעם להציג.
  */
 'use strict';
@@ -9,8 +9,12 @@
 
     SF.route('#/admin', main => {
         main.replaceChildren(
-            h('p', { class: 'hint' }, 'כאן יופיעו התוכן, הייבוא וההלכה היומית.'),
+            h('p', { class: 'hint' }, 'כאן יופיעו גם הייבוא וההלכה היומית.'),
             h('ul', { class: 'list' },
+                h('li', null, h('a', { class: 'use-row', href: '#/admin/content' },
+                    h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
+                    h('span', { class: 'use-tx' }, h('b', null, 'תוכן'), h('small', null, 'כותרים, מהדורות, עורך, פרסום ושחזור')),
+                    h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/staff' },
                     h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '👥'),
                     h('span', { class: 'use-tx' }, h('b', null, 'מנהלים'), h('small', null, 'מי מנהל את ספורנו, השעיה וביטול השעיה')),
