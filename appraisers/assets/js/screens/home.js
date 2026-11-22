@@ -32,13 +32,13 @@ async function viewHome() {
 
 async function viewWelcome() {
     setHead(T.welcomeTitle, '');
-    const inv = await api('my-invites');
+    const [inv, ms] = await Promise.all([api('my-invites'), api('my-shares')]);   // מי שאין לו משרד רואה כאן גם את התיקים ששותפו איתו (05)
     const invites = inv.invites.length
         ? `<ul class="list">${inv.invites.map(i => `<li class="card static"><span class="use-ic" aria-hidden="true">✉️</span>
             <div class="body"><div class="l1"><span>${esc(i.office_name)}</span></div><div class="l2">${esc(T.inviteRow(T.roles[i.role], i.is_admin))}</div></div>
             <button class="btn primary sm" data-join="${i.pid}">${T.join}</button></li>`).join('')}</ul>`
         : `<p class="hint">${inv.verified ? esc(T.noInvites(inv.email)) : T.noInvitesUnverified}</p>`;
-    App.main.innerHTML = `<p class="hint">${T.welcomeHint}</p>
+    App.main.innerHTML = `${sharedHomeHtml(ms, true)}<p class="hint">${T.welcomeHint}</p>
         <p class="sec-title">✉️ ${T.haveInvite}</p>${invites}
         <p class="sec-title">🏛️ ${T.createOffice}</p>
         ${App.me.can_create_office ? `<form class="panel" id="create" novalidate>
@@ -49,6 +49,7 @@ async function viewWelcome() {
           <button class="btn primary" type="submit">${T.createOfficeDo}</button>
         </form>` : `<p class="hint" id="no-create">${T.selfCreateOff}</p>`}`;
     $$('[data-join]').forEach(b => b.addEventListener('click', () => acceptInvite({ invite: b.dataset.join }, b)));
+    sharedHomeBind(viewWelcome);
     if (!App.me.can_create_office) return;
     const form = $('#create'), op = opId();   // מזהה פעולה אחד לטופס: לחיצה כפולה = משרד אחד
     form.addEventListener('submit', async e => {

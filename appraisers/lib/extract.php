@@ -836,7 +836,7 @@ function apr_extract_search(array $ctx, string $needle, string $like, string $ca
     $cases = [];
     foreach (apr_rows("SELECT t.page, t.text, f.id, f.pid, f.case_id, f.original_name, f.mime, f.received_at, c.pid AS case_pid, c.number, c.title FROM file_texts t JOIN files f ON f.id = t.file_id
         JOIN cases c ON c.id = f.case_id WHERE f.deleted_at IS NULL AND f.id NOT IN (SELECT file_id FROM visit_photos) AND f.case_id IN ($caseSql) AND lower(t.text) LIKE ? ESCAPE '\\'
-        ORDER BY f.id DESC, t.page LIMIT 300", [...$args, $like]) as $r) {
+        ORDER BY f.id DESC, t.page LIMIT 5000", [...$args, $like]) as $r) {
         if (!array_key_exists($r['case_pid'], $cases)) {
             try {
                 $cases[$r['case_pid']] = apr_case_get($ctx, $r['case_pid']);

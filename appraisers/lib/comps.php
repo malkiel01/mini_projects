@@ -51,7 +51,7 @@ const APR_COMP_SELECT = 'SELECT k.*, cb.name AS created_name, ub.name AS updated
  */
 function apr_comp_visible(array $c): bool
 {
-    return ($c['my_role'] ?? '') !== 'external' || !empty($c['perms']['see_internal']);
+    return apr_can($c, 'comps');      // ההכרעה עצמה ב-lib/shares.php: בהיקף השיתוף, ועם see_internal
 }
 
 /** מי רשאי לבחור, להחריג, להתאים, לשקלל ולהסיק: edit בתיק + שמאי במשרד שהוא האחראי או שותף בתיק (§9, 15-C4). */
@@ -838,7 +838,8 @@ function apr_comp_set_subject(array $ctx, array $c, array $g): ?array
     $use = array_values(array_filter(apr_fact_uses_of($c, 'calc', $g['pid']), fn($u) => $u['fact'] === $f['pid']))[0] ?? null;
     $usable = $f['deleted_at'] === null && $f['state'] !== 'rejected' && apr_fact_has_value($f) && $f['area_kind'] === $g['area_kind'];
     $area = $usable ? apr_fact_norm($f, $attr)[1] : null;
-    return ['fact' => $f['deleted_at'] === null ? apr_fact_out($ctx, $c, $f, $attr) : null, 'usable' => $usable, 'stale' => (bool)($use['stale'] ?? false),
+    // מי שאינו רואה את נתוני התיק (שותף בשיתוף פריטים — 05) מקבל את החישוב, לא את רשומת הנתון: ערך, מקור ומי הזין
+    return ['fact' => $f['deleted_at'] === null && apr_can($c, 'facts') ? apr_fact_out($ctx, $c, $f, $attr) : null, 'usable' => $usable, 'stale' => (bool)($use['stale'] ?? false),
         'area' => apr_fact_num_out($area), 'area_kind' => $g['area_kind'],
         'total' => $usable && $g['conclusion_value'] !== null && $g['unit_basis'] === 'per_sqm' ? apr_comp_money(apr_calc_subject_total((int)$g['conclusion_value'], (int)$area)) : null];
 }
@@ -885,7 +886,7 @@ function apr_case_comps(array $ctx, array $q): array
         'searches' => array_map(fn($s) => apr_comp_search_out($ctx, $c, $s, $counts), apr_rows('SELECT * FROM comp_searches WHERE case_id = ? ORDER BY id DESC', [$c['id']])),
         'comps' => array_map(fn($k) => apr_comp_out($k, false, $names) + ['adjustments' => (int)($adjN[(int)$k['id']] ?? 0)], $rows),
         'sets' => $sets,
-        'subject_areas' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), $areaFacts)];
+        'subject_areas' => apr_can($c, 'facts') ? array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), $areaFacts) : []];
 }
 
 /**
@@ -903,7 +904,7 @@ function apr_comp_view(array $ctx, array $q): array
     }
     $search = $k['search_id'] !== null ? apr_row('SELECT * FROM comp_searches WHERE id = ?', [$k['search_id']]) : null;
     return ['case' => apr_comp_case_head($c), 'perms' => apr_comp_perms($ctx, $c), 'comp' => apr_comp_out($k, true, apr_comp_corrector_names([$k])),
-        'search' => $search ? apr_comp_search_out($ctx, $c, $search) : null, 'similar' => apr_comp_similar($k, apr_comp_subject($c)),
+        'search' => $search ? apr_comp_search_out($ctx, $c, $search) : null, 'similar' => apr_can($c, 'facts') ? apr_comp_similar($k, apr_comp_subject($c)) : ['rows' => [], 'unknown' => []],      // ההשוואה לנכס הנישום היא נתוני התיק
         'adjustments' => array_map('apr_comp_adj_out', $adjs), 'calcs' => $calcs, 'defaults' => apr_comp_defaults($c),
         'lists' => ['statuses' => APR_COMP_STATUSES, 'precisions' => APR_COMP_PRECISIONS, 'area_kinds' => APR_AREA_KINDS, 'currencies' => APR_COMP_CURRENCIES],
         'history' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'by' => $r['name'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason']],
@@ -920,7 +921,7 @@ function apr_comp_set_view(array $ctx, array $q): array
     return ['case' => apr_comp_case_head($c), 'perms' => apr_comp_perms($ctx, $c), 'set' => apr_comp_set_out($g), 'subject' => apr_comp_set_subject($ctx, $c, $g)]
         + apr_comp_set_calc($c, $g, $def['small_sample_under'])
         + ['lists' => ['set_area_kinds' => APR_COMP_SET_AREA_KINDS, 'methods' => APR_COMP_METHODS, 'roundings' => APR_COMP_ROUNDINGS],
-            'subject_areas' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), array_values(array_filter(
+            'subject_areas' => !apr_can($c, 'facts') ? [] : array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), array_values(array_filter(
                 apr_rows(APR_FACT_SELECT . " WHERE f.case_id = ? AND f.deleted_at IS NULL AND f.attribute_key = 'area' AND f.state <> 'rejected' ORDER BY f.id", [$c['id']]),
                 fn($f) => apr_fact_has_value($f) && $f['area_kind'] !== null && $f['area_kind'] !== 'unknown' && apr_fact_norm($f, $attr)[0] === 'area')))];
 }

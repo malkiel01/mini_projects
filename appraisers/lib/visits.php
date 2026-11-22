@@ -48,6 +48,7 @@ function apr_visit_get(array $ctx, mixed $pid, string $need = 'view'): array
 {
     $c = apr_case_get($ctx, apr_doc_case_pid('visits', $pid));
     $v = apr_row(APR_VISIT_SELECT . ' WHERE v.pid = ? AND v.case_id = ?', [$pid, $c['id']]) ?? apr_fail('not_found');
+    apr_can_or_404($c, 'visit', $v['pid']);        // שיתוף פריטים: רק ביקור ששותף (05)
     if ($need === 'view') return [$c, $v];
     $plan = !empty($c['perms']['edit']);
     $fill = apr_visit_is_filler($ctx, $c, $v);
@@ -196,6 +197,20 @@ function apr_visit_out(array $v): array
         'done' => $v['status'] === 'completed'];
 }
 
+/**
+ * הביקור כפי ששותף רואה אותו (05): **לעולם** בלי איש הקשר לגישה (שם, טלפון, מזהה) ובלי המזהה של המבקר; הערת הגישה והנוכחים הם
+ * הערות של המשרד — רק עם see_internal. למשתתף פנימי — כמו apr_visit_out.
+ */
+function apr_visit_out_for(array $c, array $v): array
+{
+    $out = apr_visit_out($v);
+    if (($c['share'] ?? null) === null) return $out;
+    $out['access_contact'] = null;
+    $out['visitor'] = ['pid' => null, 'name' => $out['visitor']['name']];
+    if (!apr_can($c, 'internal')) $out = ['access_note' => null, 'attendees' => null, 'status_note' => null] + $out;
+    return $out;
+}
+
 function apr_visit_perms(array $ctx, array $c, ?array $v = null): array
 {
     $open = $c['status'] !== 'closed';
@@ -221,6 +236,18 @@ function apr_case_visits_summary(array $c): array
 function apr_case_visits(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
+    apr_can_or_404($c, 'visit');
+    if ($c['share'] !== null) {
+        // לשותף: הביקורים שבהיקף שלו בלבד — בלי רשימת המבקרים של המשרד, בלי אנשי הקשר, ובלי סיכום שסופר ביקורים שלא שותפו
+        $mine = array_values(array_filter(apr_rows(APR_VISIT_SELECT . ' WHERE v.case_id = ? ORDER BY v.seq DESC', [$c['id']]), fn($v) => apr_can($c, 'visit', $v['pid'])));
+        $n = array_count_values(array_column($mine, 'status'));
+        $done = array_values(array_filter($mine, fn($v) => $v['status'] === 'completed'));
+        return ['case' => apr_src_case_head($c), 'perms' => ['plan' => false, 'fill' => false],
+            'summary' => ['completed' => count($done), 'last_completed_at' => $done ? max(array_column($done, 'completed_at')) : null,
+                'open' => ($n['planned'] ?? 0) + ($n['in_progress'] ?? 0) + ($n['postponed'] ?? 0), 'no_access' => $n['no_access'] ?? 0, 'postponed' => $n['postponed'] ?? 0],
+            'visits' => array_map(fn($v) => apr_visit_out_for($c, $v) + ['can_fill' => false], $mine),
+            'visitors' => [], 'contacts' => []];
+    }
     $visitors = array_values(array_filter(apr_rows('SELECT u.pid, u.name, cm.perms, cm.role FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE cm.case_id = ? AND cm.revoked_at IS NULL ORDER BY u.name', [$c['id']]),
         fn($m) => !empty((json_decode($m['perms'], true) ?: [])['visit'])));
     return ['case' => apr_src_case_head($c), 'perms' => apr_visit_perms($ctx, $c), 'summary' => apr_case_visits_summary($c),
@@ -235,6 +262,7 @@ function apr_case_visits(array $ctx, array $q): array
 function apr_visit_view(array $ctx, array $q): array
 {
     [$c, $v] = apr_visit_get($ctx, $q['visit'] ?? null);
+    apr_share_seen($c, 'visit', $v['pid']);
     $form = apr_visit_form($c, $v);
     $answers = apr_visit_answers((int)$v['id']);
     $st = apr_visit_state($c, $v, $form, $answers);
@@ -242,12 +270,12 @@ function apr_visit_view(array $ctx, array $q): array
     foreach ($answers as $key => $byRow) foreach ($byRow as $a) if (isset($st['types'][$key])) $outA[] = apr_visit_answer_out($a, $st['types'][$key]);
     [$groups, $fields] = apr_visit_form_ordered($form);
     $facts = [];
-    foreach (apr_rows("SELECT f.*, a.label, a.value_type, a.unit_kind, a.has_area_kind, a.choices FROM facts f JOIN attributes a ON a.key = f.attribute_key
+    foreach (!apr_can($c, 'facts') ? [] : apr_rows("SELECT f.*, a.label, a.value_type, a.unit_kind, a.has_area_kind, a.choices FROM facts f JOIN attributes a ON a.key = f.attribute_key
         WHERE f.case_id = ? AND f.deleted_at IS NULL AND f.state <> 'rejected' AND (f.value_num IS NOT NULL OR f.value_text IS NOT NULL OR f.value_date IS NOT NULL) ORDER BY a.sort, f.id LIMIT 80", [$c['id']]) as $f) {
         $facts[] = ['label' => $f['label'], 'state' => $f['state'], 'source' => $f['source_kind']] + apr_fact_value_out($f['value_num'] === null ? null : (int)$f['value_num'], $f['value_text'], $f['value_date'], $f['unit'], $f['area_kind'], $f);
     }
     return ['case' => apr_src_case_head($c) + ['property_type' => $c['property_type'], 'purpose' => $c['purpose']],
-        'visit' => apr_visit_out($v) + ['snapshot' => $v['form_snapshot'] !== null, 'was_completed' => $v['first_completed_at'] !== null],
+        'visit' => apr_visit_out_for($c, $v) + ['snapshot' => $v['form_snapshot'] !== null, 'was_completed' => $v['first_completed_at'] !== null],
         'perms' => apr_visit_perms($ctx, $c, $v),
         'form' => ['groups' => $groups, 'fields' => $fields, 'completion' => $form['completion'], 'example' => !empty($form['example'])],
         'answers' => $outA, 'rows' => (object)apr_visit_rows((int)$v['id']),
@@ -256,8 +284,10 @@ function apr_visit_view(array $ctx, array $q): array
         'units' => ['area' => array_keys(APR_UNITS['area']), 'length' => array_keys(APR_UNITS['length'])], 'area_kinds' => APR_AREA_KINDS, 'obtained' => APR_VISIT_OBTAINED, 'places' => APR_VISIT_PLACES,
         'geo' => (bool)apr_val('SELECT photo_geo FROM office_visit_settings WHERE office_id = ?', [$c['office_id']]),
         'limits' => ['max_size' => apr_file_max(), 'max_side' => 2560],
-        'others' => array_map(fn($o) => ['pid' => $o['pid'], 'seq' => (int)$o['seq'], 'status' => $o['status']], apr_rows('SELECT pid, seq, status FROM visits WHERE case_id = ? AND id <> ? AND form_snapshot IS NOT NULL ORDER BY seq', [$c['id'], $v['id']])),
-        'prepared' => ['files' => apr_visit_prepared_files($ctx, $c), 'identifiers' => array_map('apr_ident_out', apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']])), 'facts' => $facts]];
+        'others' => array_values(array_map(fn($o) => ['pid' => $o['pid'], 'seq' => (int)$o['seq'], 'status' => $o['status']],
+            array_filter(apr_rows('SELECT pid, seq, status FROM visits WHERE case_id = ? AND id <> ? AND form_snapshot IS NOT NULL ORDER BY seq', [$c['id'], $v['id']]), fn($o) => apr_can($c, 'visit', $o['pid'])))),
+        'prepared' => ['files' => apr_visit_prepared_files($ctx, $c),
+            'identifiers' => apr_can($c, 'details') ? array_map('apr_ident_out', apr_rows('SELECT * FROM case_identifiers WHERE case_id = ? AND removed_at IS NULL ORDER BY id', [$c['id']])) : [], 'facts' => $facts]];
 }
 
 /** "מסמכים מותרים" (§6.1): קובצי התיק שמותר לי לראות — לקריאה במסך הביקור. בלי תמונות ביקור. */
