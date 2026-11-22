@@ -7,5 +7,5 @@
 - **רקע:** הריפו הישן `malkiel01/sforno` (פרטי) — קוד, מיגרציות ו-workflows נשארו שם, לא נמחקו. הסאב-דומיין
   `sforno.mbe-plus.com` קיים; המעבר אליו — רק כשהבעלים יאמר.
 - **מכסה:** אזהרה שבועית עד ~27.11. Opus בלבד, מעט סוכני משנה ומעט מיזוגים. עומק השושלת של הבקרה: 6/8.
-- **צוות:** אפיון `session_018g4NYF1YtreoYJt48ZHQ52`, מטלות `session_018g4NYFB9byAhqYVJfEq9nW` (נפתחו 22.11); שעון `trig_01VBKifEEXot2izcpMcFX6Ct` (דקה 51).
+- **צוות:** אפיון `session_018g4NYF1YtreoYJt48ZHQ52`, מטלות `session_018g4NYFB9byAhqYVJfEq9nW` (נפתחו 22.11); קוד 01 `session_018g4NYDDfrw3CiukwgVVE7W` (15:32); שעון `trig_01VBKifEEXot2izcpMcFX6Ct` (דקה 51).
 - **הצעד הבא:** קוד פרוסה 01 (תשתית) — `claude/sforno-01-foundation`. אחריה 02→11 ברצף (הבעלים 22.11: "ברצף עד סיום").

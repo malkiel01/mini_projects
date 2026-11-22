@@ -1,8 +1,9 @@
 {
-  "note": "מתעדכן בידי צ'אט הבקרה. code=null — צ'אט קוד לא נפתח עד אישור הבעלים",
+  "note": "מתעדכן בידי צ'אט הבקרה. צ'אט קוד חדש לכל פרוסה",
   "spec": "session_018g4NYF1YtreoYJt48ZHQ52",
-  "code": null,
+  "code": "session_018g4NYDDfrw3CiukwgVVE7W",
   "control": "session_018g4NYGA2fhgWP6PkcJ8ZCx",
   "tasks": "session_018g4NYFB9byAhqYVJfEq9nW",
-  "control_trigger": "trig_01VBKifEEXot2izcpMcFX6Ct"
+  "control_trigger": "trig_01VBKifEEXot2izcpMcFX6Ct",
+  "code_slice": "01-foundation"
 }
