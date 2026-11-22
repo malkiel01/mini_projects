@@ -451,3 +451,70 @@ run.php 10/10. בדפדפן: `tests/browser/offline.cjs` 26 (מצב טיסה, נ
 - **מטבע מהחנות** — `ILS` קבוע עד שתגיע הגישה (📦); `store_currency` ב-meta מוכן.
 - **סינון לפי מחבר** — רק כשהמחבר מופה.
 - **לוח הבקרה של 10** — המצב בניהול ← חנות ובבדיקת התקינות; הלוח עצמו — 10.
+
+## 2026-11-22 — 10 ניהול תפעולי (ענף `claude/sforno-10-operations`)
+
+נבנה כל §1–§4 של `docs/spec/10-operations.md`, ומה שהועבר ל-10 בביקורות 05, 08, 09. קריטריונים 🤖 1, 2, 3, 4, 6, 7 —
+`tests/n-ops.test.php` (149); 1 גם בדפדפן (`tests/browser/ops.cjs`, 13); 👁 5 — אצל הבעלים (SF-010, `dev/restore.md`).
+
+**⚙️ הכרעות:**
+1. **מיגרציה 009 — רק CREATE:** `reports`, `metrics_daily`, `metrics_seen`, `reader_activity`, `backups`. **אין נתיב נתונים חדש מחוץ
+   ל-`data/`** — הגיבויים ב-`data/backups/`, שכבר מוחרגת (`--exclude='/sforno/data/*'`); לכן לא נדרש `--exclude` חדש.
+   נוסף `sforno/.gitignore` (`data/*`, חוץ מ-`.htaccess`) — data/ לא הייתה מוחרגת מגיט.
+2. **דיווח — רשימת שדות סגורה** (kind, category, edition, revision, sid, text, contact). אין עמודה לקורא / IP / מייל. "לחזרה אליי" —
+   `sf_seal`. 10 לשעה ל-IP (HMAC). `report-create` ו-`metrics-open` — `guest`, POST בלי אסימון (`sf_media_type` + `sf_same_site`),
+   לא ב-public עד 11.
+3. **התראה לתמיכה — אחת לדיווח** (dedupe בתור + `notified_at`), **בלי** הטקסט ו"לחזרה אליי" — רק סוג, מיקום וקישור. בלי מייל
+   מוגדר (📦) — לא נשלח, והדיווח ברשימה.
+4. **מדדים:** `(day, kind, mkey)` — `kind` מרשימה, `mkey` רק `[a-z0-9_]` (pid / pid:sid); אחר — LogicException. אורח: מזהה אקראי
+   שהמכשיר מחליף כל יום (`anon:day`, setRaw), נשמר כ-sha256(יום|מזהה) ליומיים. sid של מקטע נספר רק אם קיים בגרסה שפורסמה.
+5. **"שגיאת סנכרון"** = פריט שנדחה (`bad` / `full`) ב-sync-push; 429/413 לא נספרים (⏳).
+6. **פעילות לתמיכה** — ספירות בלבד, 90 יום. כל גישה של personal_items נשארה ב-readers / sync / reminders (K10):
+   `sf_reader_items_summary`, `sf_reader_purge`, `sf_reader_sealed_sample` ב-`readers.php`. צפייה בקורא — ביומן הפעולות.
+7. **מחיקה מלאה** — `status = purged`, מייל `purged-<pid>@invalid`, בלי שם / סיסמה / Google; שורת readers נשארת (היומן מצביע).
+   נמחקים גם `reminder_send_log` של המופעים שלו.
+8. **מייל שנכשל** — `sf_reader_mail` סופר `mail_fail` (מכסה אימות, איפוס, תזכורות ותמיכה). בבדיקות: `$GLOBALS['sf_mail_fail']`.
+9. **לוח הבקרה** — staff; בדיקות התקינות במטמון 10 דקות (`ops_health_cache`; רענון — רק מפתח). קישורים ל-`#/dev` — רק למפתח.
+10. **גיבוי:** zip (ZipArchive), `VACUUM INTO`, הרשאות 0600, `.htaccess` משלה ל-`data/backups/`. כולל `_dev/` (צרופות DevLoop),
+    בלי `log.sqlite` (30 יום), בלי -wal/-shm, קובץ מעל 300MB — נרשם כ-skipped. **הגיבוי האחרון לא נמחק לעולם**; לפני שחזור — בלי שימור.
+11. **בדיקת שחזור חודשית** — משימה יומית שבודקת אם עברו 30 יום. הפענוח נבדק על פריט מוצפן אמיתי מהמסד המשוחזר.
+12. **שחזור** — CLI בלבד (`tools/backup.php apply --yes`): גיבוי בטיחות, חילוץ ובדיקה, ואז החלפה; מה שהוחלף → `data/.replaced-<זמן>/`
+    (לא נמחק). `SF_DATA_DIR=` — לעבוד על העתק. `tools/` — `.htaccess` + בדיקת CLI.
+13. **הורדת גיבוי** — `dev-backup-download` (dev, raw), `no-store`, ביומן (`backup.download`). העותק מחוץ לשרת — מטלה חודשית לבעלים (📦).
+14. **תוצאת בדיקת שחזור — `passed`, לא `ok`** (הנתב מוסיף `ok: true` לכל תשובה ודורס).
+15. **09 ⚪:** `sf_net_public_ip` — כל הכתובות של המארח ציבוריות (כולל CGNAT, link-local, ULA, IPv4 ממופה), ו-`CURLOPT_RESOLVE` לכתובת
+    שנבדקה; webhook — `sf_rate('store_hook', ip, 300, 60)` לפני קריאת הגוף; `store-out` — `purchasable` ומארח החנות הנוכחי (דוגמה —
+    `store.example`).
+16. `app.json` 0.10; `sw.js` — `ops.js`; מסך המפתח — לשונית 💾; הבית — "✉️ יצירת קשר"; הניהול — "🧭 לוח הבקרה".
+
+**לא נבנה:**
+- **עותק אוטומטי מחוץ לשרת** — ⏳ 📦 מדיניות גיבוי; עד אז הורדה ידנית + מטלה חודשית.
+- **גיבוי ל-MySQL** — הגיבוי האוטומטי רק ל-SQLite (ב-MySQL — cPanel; בדיקת התקינות מתריעה).
+- **מחיקת חשבונות שלא אומתו** — לא באפיון 10.
+- **מדדים בגרף** — טבלה וספירות; גרף — בהזדמנות.
+- **שגיאות סנכרון 429/413** — לא נספרות כ"שגיאה" במדד.
+- **קישורים ותמונות בדף דוגמה של החנות — הצמדה למארח / CDN** (⚪ 09) — לא שונה; תמונות https מכל מארח כמו שהוכרע ב-09.
+- **הפרדת סביבות** — מתועדת (`dev/restore.md`); המימוש — 11.
+
+**בדיקות:** n-ops 149 (חדש); c-standalone — גרסה 0.10; run.php 14/14.
+
+## 2026-11-22 — 10 תיקון (ביקורת סבב 1, ענף `claude/sforno-10-fix`)
+
+🟡1, 🟡2, 🟡3 ו-⚪ IPv6/טווחים מ-`team/reviews/10-operations.md`. n-ops 186 (+37); `tests/browser/ops.cjs` 14.
+
+**⚙️ הכרעות:**
+17. **שחזור — הכול או כלום:** `data/maintenance.json` = מצב תחזוקה — `sf_dispatch` נכשל ב-`upgrading` (503) לכל פעולה, ו-cron.php
+    מחזיר 503 בלי להריץ. `apply`: תחזוקה → המתנה 3 שניות → גיבוי בטיחות → חילוץ ובדיקה → כל rename נבדק; כשל ← ביטול בסדר הפוך
+    וזריקה ("הוחזר המצב הקודם", או רשימת מה שלא חזר). התחזוקה יוצאת תמיד (`finally`). בבדיקות: `$GLOBALS['sf_rename']`, `sf_apply_wait`.
+18. **ההורדה — רק מוצפנת:** POST `{backup, password}` (לא קישור GET — הסיסמה לא בכתובת ולא ביומני גישה). Argon2id
+    (`OPSLIMIT/MEMLIMIT_INTERACTIVE` — 64MB, בתוך memory_limit של שרת משותף) + secretstream XChaCha20-Poly1305 בחלקים של 64KB,
+    TAG_FINAL בסוף (קובץ קטוע נדחה). סיסמה — 12 תווים לפחות; לא נשמרת ולא ביומן. קובץ `.sfbk`. הגיבוי בשרת נשאר zip (כמו שאושר).
+19. **CLI:** `import <sfbk>` (פענוח → בדיקת manifest/sha256 → נרשם כגיבוי `import`) ו-`decrypt <sfbk> <zip>` (בלי מסד). הסיסמה —
+    מהשורה בלי הד, או `SF_BACKUP_PASSWORD`.
+20. **הכתובת הציבורית:** `sf_note_origin()` בכל בקשה של מנהל מחובר (המארח — דרך השער) שומר `meta.public_url` {origin, base} כשהשתנה.
+    `sf_origin_of`: בלי SERVER_NAME / localhost / CLI ← הכתובת השמורה. `sf_self_url` מ-CLI — גם התיקייה השמורה (tools/ אינה הבסיס).
+    מתקן גם את קישורי המייל של התזכורות והאימות כשהם יוצאים מ-cron.
+21. **`sf_net_ip_public`** — IPv6 לפי `inet_pton`: ‎::/96, ‎::ffff:0:0/96, NAT64 ‎64:ff9b::/96 ו-‎64:ff9b:1::/48, 6to4 ‎2002::/16, Teredo
+    ‎2001::/32, תיעוד ‎2001:db8::/32, ULA, link-local, site-local ‎fec0::/10, multicast ‎ff00::/8; IPv4 — גם ‎198.18/15 ו-‎224/4 ומעלה.
+
+**לא נבנה:** העלאת `.sfbk` דרך מסך המפתח (השחזור מקובץ שהורד — דרך Terminal; מנהל הקבצים — רק לגיבויים שעוד בשרת).

@@ -1,12 +1,12 @@
 # מה צ'אט הקוד הבא צריך לדעת
 
-עודכן: 2026-11-22, עם פרוסה 09 (חנות — קטלוג WooCommerce). לפניה — 08 (#1794/#1795), 07 (#1789), 06 (#1786), 05 (#1784/#1785), 04 (#1778),
+עודכן: 2026-11-22, עם פרוסה 10 (ניהול תפעולי). לפניה — 09 (#1798), 08 (#1794/#1795), 07 (#1789), 06 (#1786), 05 (#1784/#1785), 04 (#1778),
 03 (#1775), 02 (#1769), 01 (#1766).
 
 ## מה בנוי
 
 פרוסות 01 (תשתית), 02 (מנוע התוכן), 03 (ייבוא), 04 (הקורא, הסידור והתהילים), 05 (חשבונות קוראים וסנכרון), 06 (הורדות, גרסאות ו-PWA)
-07 (לוח עברי, זמני היום והלכה יומית), 08 (תזכורות) ו-09 (חנות), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
+07 (לוח עברי, זמני היום והלכה יומית), 08 (תזכורות), 09 (חנות) ו-10 (ניהול תפעולי), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
 
 | קובץ | תפקיד |
 | --- | --- |
@@ -48,6 +48,9 @@
 | `assets/data/cities.json` | 160 ערים (GeoNames, CC BY 4.0), במעטפת. עיר חדשה — `id` של GeoNames, אזור זמן IANA (טסט) |
 | `lib/store.php` | **החנות (09)**: `data/woo.json`, `SfWooSource` (`SfWooRest` — GET בלבד / `SfWooSample` — `lib/store-sample.json`), סנכרון בריצות (`store_sync_runs`), webhook, מיפוי, `read-store-*`, `store-*`, `dev-store-*` |
 | `assets/js/screens/store.js`, `store-admin.js` | `#/store`, `#/store/p/<id>`, `#/store/favs`; `#/admin/store` (המפתחות — רק במסך הזה, למפתח) |
+| `lib/ops.php` | **התפעול (10)**: דיווחים (`report-*`), מדדים (`sf_metric_add` — מפתח = מזהה בלבד), פעילות לתמיכה, `ops-dashboard` + `sf_ops_alerts`, `ops.purge`, `ops.rollup` |
+| `lib/backup.php`, `tools/backup.php` | **הגיבוי (10)**: `sf_backup_make` (zip ב-`data/backups/`), `sf_backup_prune`, `sf_backup_verify`, `sf_backup_apply` (CLI); `dev-backup-*` |
+| `assets/js/screens/ops.js` | `#/admin/ops`, `#/admin/reports`, `#/admin/metrics`, `#/admin/support`, `#/contact`; `SF.reportSheet`, `SF.metricsOpen` |
 | `tests/` | `run.php` מריץ כל `*.test.php` בתהליך משלו; `lib.php` (`call`, `ident`, `eq`); `render.mjs` — render.js ב-node עם DOM זעיר; `fixtures/` — snapshots |
 
 ## מלכודות
@@ -75,9 +78,8 @@
   (כמו `reminders` / `remprefs` של 08). מוצפן? — `SF_SYNC_SEALED`.
 - **CSRF בעולם הקוראים** — `sf_same_site` (Sec-Fetch-Site / Origin) וסוג מדיה מדויק. בדיקה עם `rcall` שולחת `same-origin` כברירת מחדל.
 - **sync-push:** תקרה 5MB לקורא (`full` → `held` במכשיר) ו-120 שליחות בדקה. מיילים — בלי טקסט חופשי של משתמש.
-- **`data/secret.key`** — בלעדיו ההערות והשמות לא מתפענחים. לא למחוק, לכלול בגיבוי (10).
-- **מחיקה מלאה (10):** `readers.status = 'deleted'` + `deleted_at` — אחרי 30 יום למחוק `personal_items`, `devices`,
-  `reader_tokens`, ולהחליף את המייל (UNIQUE) — אחרת אי אפשר להירשם שוב באותו מייל.
+- **`data/secret.key`** — בלעדיו ההערות והשמות לא מתפענחים. לא למחוק; בגיבוי (10).
+- **מחיקה מלאה (10, נבנתה):** `ops.purge` → `sf_reader_purge` — `status = purged`. טבלה חדשה עם `reader_id` / `owner r:` — להוסיף שם.
 - **כל שינוי בקובץ מעטפת (JS/CSS/index.html/פונט/אייקון) ← `SF_UPDATE_SW=1 php sforno/tests/run.php`** (מעדכן `BUILD` ו-`VERSION`
   ב-sw.js). בלי זה j-offline נכשל — **והפריסה של כל הריפו נעצרת**. קובץ JS חדש ב-index.html — גם ל-`SHELL` ב-sw.js.
 - **הקורא מציג את הגרסה שנבחרה, לא את הנוכחית:** `SF.textFor(ed)` (מההורדה / מהרשת). פריט אישי חדש שקשור למקום בטקסט — עם
@@ -110,6 +112,13 @@
   `$GLOBALS['sf_woo_http'] = fn($method, $url, $headers) => [status, body, headers]`. שינוי מיפוי ← `sf_store_rederive`.
   "מאומת" — `sf_store_fresh` (24 שעות); מוצר ישן בלי `stock`. 10 צריך: `store_stats` (view / out), מצב הסנכרון (`store-admin`).
 
+- **תפעול (10):** מדד חדש — סוג ב-`SF_METRIC_KINDS`, מפתח **רק מזהה** (טסט N7 סורק את כל הטבלה). דיווח — שדה חדש = עמודה + רשימה
+  סגורה ב-`sf_report_create` + הטסט שסורק את הקריאה ב-ops.js. **אסור** ש-`ops.php` / `backup.php` יכילו `personal_items` (K10) —
+  דרך `readers.php`. קובץ נתונים חדש ב-`data/` — להוסיף ל-`SF_BACKUP_FILES` (אחרת הוא לא בגיבוי). פעולה שמחזירה `ok` — הנתב דורס.
+- **שחזור (10):** `data/maintenance.json` = 503 לכל פעולה ו-cron לא רץ. ההורדה — **רק מוצפנת** (POST עם סיסמה, `.sfbk`);
+  `tools/backup.php import` / `decrypt`. קישור במייל מ-cron — `sf_self_url` (הכתובת נשמרת מבקשות מנהל: `meta.public_url`).
+- **CLI על data/ אמיתי:** `tools/backup.php` בלי `SF_DATA_DIR` עובד על `sforno/data/` — בבדיקות תמיד עם `SF_DATA_DIR=`.
+
 ## מה נשאר
 
 - מ-01: cron ב-cPanel (מטלה לבעלים), `dev/server-report.md`, קריטריונים 👁 17–23.
@@ -118,7 +127,7 @@
   ב-`team/decisions.md` (הבקרה).
 - מ-04: 👁 1, 4, 8, 11 אצל הבעלים (SF-004).
 - מ-05: 📦 מזהה לקוח של Google (מטלה לבעלים) → 🔑 Google במסך המפתח; בדיקת מייל אמיתי (SF-005); 15 ההכרעות ⚙️ ב-
-  `team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה). המחיקה המלאה אחרי 30 יום — 10.
+  `team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה). המחיקה המלאה אחרי 30 יום — נבנתה ב-10.
 - מ-06: 👁 1, 6, 8, 9 בטלפון אמיתי (SF-006 — הצעדים שם); 12 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
   הורדת הזמנים — נבנתה ב-07 (חבילה נפרדת `zdl`, לא דרך `read-package`).
 - מ-07: 👁 8, 9 בטלפון אמיתי (SF-007); 📦 שיטות, פרמטרים וברירת מחדל מהבעלים (§24) — עד אז קוראים לא רואים שעות; גובה המקום
@@ -127,4 +136,6 @@
   מתוזמן ומייל לא נשלחים); 📦 שיטת השתקה לשבת וחג; 15 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
 - מ-09: 📦 הגישה לחנות (§24) — כתובת, גרסה, מפתח Read, ואיפה מחבר / הוצאה / מהדורה / כריכה / תוכן עניינים / דפי דוגמה; ואז
   👁 8 מול החנות האמיתית (SF-009); 18 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
-- הבאה לפי הלוח: 10 (ניהול תפעולי).
+- מ-10: 👁 5 — שחזור ידני לפי `dev/restore.md` בסביבת הבדיקה (SF-010); 📦 מדיניות גיבוי, מייל ווואטסאפ לתמיכה, תקופות שימור;
+  **מטלה חודשית לבעלים** — להוריד את הגיבוי האחרון (💾) ולשמור מחוץ לשרת; 16 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
+- הבאה לפי הלוח: 11 (השקה).

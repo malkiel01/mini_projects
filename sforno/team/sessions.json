@@ -1,11 +1,11 @@
 {
   "note": "מתעדכן בידי צ'אט הבקרה. צ'אט קוד חדש לכל פרוסה",
   "spec": "session_018g4NYF1YtreoYJt48ZHQ52",
-  "code": "session_018g4NYE2kJZPUNra69Ndaac",
-  "control": "session_018g4NYE5chJ7yafGbETDiNn",
+  "code": "session_018g4NYDbzXpfJJokyWCbTxY",
+  "control": "session_018g4NYFaERcGPs7d3j8QKsZ",
   "tasks": "session_018g4NYFB9byAhqYVJfEq9nW",
-  "control_trigger": "trig_01K2CyS2tym5Vs811ugPEx73",
-  "code_slice": "09-store",
+  "control_trigger": "trig_0129DApgnnEgTr2g3BDUXG6M",
+  "code_slice": "10-operations",
   "code_history": [
     {
       "slice": "01-foundation",
@@ -46,6 +46,11 @@
       "slice": "08-reminders",
       "session": "session_018g4NYDRVzkfBSdywoE87s2",
       "pr": 1794
+    },
+    {
+      "slice": "09-store",
+      "session": "session_018g4NYE2kJZPUNra69Ndaac",
+      "pr": 1798
     }
   ],
   "control_history": [
@@ -53,6 +58,11 @@
       "n": 1,
       "session": "session_018g4NYGA2fhgWP6PkcJ8ZCx",
       "until": "2026-11-22T16:53Z"
+    },
+    {
+      "n": 2,
+      "session": "session_018g4NYE5chJ7yafGbETDiNn",
+      "until": "2026-11-22T21:52Z"
     }
   ]
 }

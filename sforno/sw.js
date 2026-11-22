@@ -15,8 +15,8 @@
  */
 'use strict';
 
-const VERSION = '0.9';
-const BUILD = '36e7e94193dc';
+const VERSION = '0.10';
+const BUILD = 'cc222b77ea68';
 const SHELL_CACHE = 'sforno-shell-' + VERSION + '-' + BUILD;
 const CONTENT_CACHE = 'sforno-content';
 
@@ -62,6 +62,7 @@ const SHELL = [
     'assets/js/screens/reader-admin.js',
     'assets/js/screens/daily-admin.js',
     'assets/js/screens/store-admin.js',
+    'assets/js/screens/ops.js',
     'assets/js/screens/dev.js',
     'assets/js/screens/account.js',
     'assets/js/app.js',

@@ -420,6 +420,7 @@
                 btn('📝', note ? 'עריכת ההערה' : 'הערה אישית', () => noteSheet(note), !!note),
                 btn('📋', 'העתקה עם מקור', copyHere),
                 btn('🔗', 'שיתוף קישור לקטע', shareHere),
+                btn('⚠️', 'דיווח על טעות', () => SF.reportSheet({ edition, revision: shown, sid: here, where: sectionOf(here) || data.title.name })),
                 kind === 'siddur' ? btn('⭐', 'למועדפים', favHere) : null,
                 chap ? btn('✓', tehillim.done[chap.sid] ? 'פרק ' + chap.n + ' — סומן שסיימתי' : 'סיימתי את פרק ' + chap.n, () => done(chap), !!tehillim.done[chap.sid]) : null,
                 btn('✕', 'ביטול הסימון', () => mark(null)));
@@ -703,6 +704,15 @@
         if (pm && doc) {
             const el = doc.querySelector('[data-sid="' + pm.sid + '"]');
             if (el) markWords(el, pm.words);
+        }
+        // 10: מונה פתיחות — הכותר והמקטע העליון שבו נפתח (מזהים בלבד; אורח — מזהה שמתחלף כל יום)
+        {
+            const parentOf = {};
+            for (const t of data.toc || []) parentOf[t.sid] = t.parent_sid;
+            let top = sid || (saved && saved.sid) || null;
+            if (top && !(top in parentOf)) top = null;
+            for (let i = 0; top && parentOf[top] && i < 50; i++) top = parentOf[top];
+            if (!SF.isOffline()) SF.metricsOpen(edition, top);
         }
         if (sid && doc) {
             go(sid, true);

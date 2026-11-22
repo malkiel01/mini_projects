@@ -188,6 +188,7 @@ function sf_cron_info(): array
 function sf_cron_handle(mixed $token): array
 {
     if (!is_string($token) || $token === '' || !hash_equals(sf_cron_token(), $token)) return [404, ['ok' => false]];
+    if (function_exists('sf_in_maintenance') && sf_in_maintenance()) return [503, ['ok' => false, 'skipped' => 'maintenance']];   // שחזור רץ (10)
     sf_db();
     return [200, ['ok' => true] + sf_jobs_run()];
 }
