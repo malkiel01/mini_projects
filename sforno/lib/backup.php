@@ -11,7 +11,8 @@
  *   בדיקת שחזור — sf_backup_verify: ה-sha256 של הקובץ ושל כל רכיב, פתיחת המסד המשוחזר בתיקייה זמנית, integrity_check,
  *                 ספירות זהות למה שנרשם בגיבוי, ופענוח פריט מוצפן במפתח שבגיבוי. פעם בחודש (ops.restore_check), ובכל
  *                 רגע מהמסך או מ-CLI (tools/backup.php verify).
- *   עותק בחוץ   — ⏳ 📦 מדיניות גיבוי: עד הכרעה, "הורדת הגיבוי האחרון" למפתח (dev-backup-download) ומטלה חודשית לבעלים.
+ *   עותק בחוץ   — ⏳ 📦 מדיניות גיבוי: עד הכרעה, "הורדת הגיבוי האחרון" למפתח (dev-backup-download) — **מוצפן בסיסמה** — ומטלה
+ *                 חודשית לבעלים. מוצפן ← tools/backup.php import (או decrypt).
  * שחזור ידני — dev/restore.md.
  */
 
@@ -258,35 +259,192 @@ function sf_backup_verify(?string $pid = null, ?string $keep = null): array
     return ['passed' => $ok, 'backup' => sf_backup_out(sf_row('SELECT * FROM backups WHERE id = ?', [$b['id']])), 'checks' => $checks, 'counts' => $counts];
 }
 
+// ── מצב תחזוקה (בזמן שחזור) ──────────────────────────────
+
+/** data/maintenance.json קיים = שחזור רץ: api.php עונה 503 (upgrading) ו-cron.php לא מריץ משימות. */
+function sf_maint_file(): string
+{
+    return sf_data_dir() . '/maintenance.json';
+}
+
+function sf_in_maintenance(): bool
+{
+    return is_file(sf_maint_file());
+}
+
+function sf_backup_rename(string $from, string $to): bool
+{
+    if (isset($GLOBALS['sf_rename'])) return (bool)($GLOBALS['sf_rename'])($from, $to);   // בבדיקות — כשל באמצע
+    return @rename($from, $to);
+}
+
 /**
- * שחזור אמיתי (CLI בלבד — tools/backup.php apply, לפי dev/restore.md): גיבוי בטיחות של המצב הנוכחי, חילוץ לתיקייה זמנית,
- * בדיקה, ואז החלפה. **שום דבר לא נמחק:** מה שהוחלף עובר ל-data/.replaced-<זמן>/.
+ * שחזור אמיתי (CLI בלבד — tools/backup.php apply, לפי dev/restore.md). **הכול או כלום:**
+ *   1. מצב תחזוקה (api.php — 503, cron — לא רץ), והמתנה קצרה לבקשות שבאמצע
+ *   2. גיבוי בטיחות של המצב הנוכחי; חילוץ ובדיקה של הגיבוי לתיקייה זמנית
+ *   3. החלפה: כל rename נבדק; כשל ← כל מה שכבר הוזז חוזר למקומו (בסדר הפוך), וזריקה. שום דבר לא נמחק:
+ *      מה שהוחלף נשמר ב-data/.replaced-<זמן>/
+ *   4. יציאה ממצב תחזוקה — תמיד (גם בכשל)
  */
 function sf_backup_apply(?string $pid = null): array
 {
     if (PHP_SAPI !== 'cli') throw new LogicException('רק מ-CLI');
     [$b] = sf_backup_find($pid);
-    $safety = sf_backup_make('pre-restore');
-    $stamp = gmdate('Ymd-His');
     $root = sf_data_dir();
+    if (sf_in_maintenance()) throw new RuntimeException('שחזור אחר רץ (data/maintenance.json). אם לא — למחוק את הקובץ ולנסות שוב');
+    if (@file_put_contents(sf_maint_file(), json_encode(['since' => gmdate('c'), 'backup' => $b['pid']])) === false) throw new RuntimeException('אי אפשר לכתוב ל-data/');
+    $stamp = gmdate('Ymd-His');
     $stage = "$root/.restore-$stamp";
-    $v = sf_backup_verify($b['pid'], $stage);
-    if (!$v['passed']) { sf_backup_rmdir($stage); throw new RuntimeException('בדיקת הגיבוי נכשלה — לא שוחזר דבר'); }
-    @unlink("$stage/manifest.json");
-    $GLOBALS['sf_pdo'] = null;
-    unset($GLOBALS['sf_pdo']);
     $old = "$root/.replaced-$stamp";
-    mkdir($old, 0700);
-    $moved = [];
-    foreach (array_diff(scandir($stage) ?: [], ['.', '..']) as $name) {
-        $live = $name === 'sforno.sqlite' ? sf_db_path() : "$root/$name";
-        if ($name === 'sforno.sqlite') foreach (['-wal', '-shm'] as $sfx) if (is_file($live . $sfx)) rename($live . $sfx, "$old/$name$sfx");
-        if (file_exists($live)) rename($live, "$old/$name");
-        rename("$stage/$name", $live);
-        $moved[] = $name;
+    $done = [];   // [from, to] — ההזזות שבוצעו, לביטול
+    try {
+        $wait = $GLOBALS['sf_apply_wait'] ?? 3;
+        if ($wait > 0) sleep($wait);   // בקשות שהתחילו לפני מצב התחזוקה — מסיימות
+        $safety = sf_backup_make('pre-restore');
+        $v = sf_backup_verify($b['pid'], $stage);
+        if (!$v['passed']) throw new RuntimeException('בדיקת הגיבוי נכשלה — לא שוחזר דבר');
+        @unlink("$stage/manifest.json");
+        $GLOBALS['sf_pdo'] = null;
+        unset($GLOBALS['sf_pdo']);
+        if (!@mkdir($old, 0700)) throw new RuntimeException('אי אפשר ליצור את ' . basename($old));
+        $move = function (string $from, string $to) use (&$done): void {
+            if (!sf_backup_rename($from, $to)) throw new RuntimeException('ההזזה נכשלה: ' . basename($from));
+            $done[] = [$from, $to];
+        };
+        $names = array_values(array_diff(scandir($stage) ?: [], ['.', '..']));
+        foreach ($names as $name) {
+            $live = $name === 'sforno.sqlite' ? sf_db_path() : "$root/$name";
+            if ($name === 'sforno.sqlite') foreach (['-wal', '-shm'] as $sfx) if (is_file($live . $sfx)) $move($live . $sfx, "$old/$name$sfx");
+            if (file_exists($live)) $move($live, "$old/$name");
+            $move("$stage/$name", $live);
+        }
+        @rmdir($stage);
+        return ['restored' => $b['file'], 'safety_backup' => $safety['file'], 'replaced_dir' => basename($old), 'items' => $names];
+    } catch (Throwable $e) {
+        $GLOBALS['sf_pdo'] = null;
+        unset($GLOBALS['sf_pdo']);
+        $lost = [];
+        foreach (array_reverse($done) as [$from, $to]) {
+            if (!@rename($to, $from)) $lost[] = basename($from);   // הביטול — rename אמיתי, בלי ה-hook של הבדיקות
+        }
+        if (is_dir($stage)) sf_backup_rmdir($stage);
+        @rmdir($old);   // רק אם ריקה
+        throw new RuntimeException($lost
+            ? 'השחזור נכשל באמצע, וגם ההחזרה לא הושלמה: ' . implode(', ', $lost) . ' — הקבצים ב-' . basename($old) . '/. לפי dev/restore.md, "כשל"'
+            : 'השחזור נכשל — הוחזר המצב הקודם, לא שונה דבר (' . $e->getMessage() . ')', 0, $e);
+    } finally {
+        @unlink(sf_maint_file());
     }
-    @rmdir($stage);
-    return ['restored' => $b['file'], 'safety_backup' => $safety['file'], 'replaced_dir' => basename($old), 'items' => $moved];
+}
+
+// ── הגיבוי שיוצא מהשרת: מוצפן בסיסמה ──────────────────────
+
+/**
+ * הגיבוי שיורד מהשרת מכיל את secret.key ליד המסד — ולכן יוצא רק מוצפן: Argon2id (sodium_crypto_pwhash) מהסיסמה, ו-XChaCha20-
+ * Poly1305 secretstream בחלקים של 64KB. **הסיסמה לא נשמרת בשרת** ולא ביומן. בלעדיה — אין שחזור מהעותק הזה.
+ * המבנה: MAGIC · ops (4) · mem (4) · salt (16) · header (24) · [אורך (4) · חלק]… — החלק האחרון עם TAG_FINAL (קובץ קטוע — נדחה).
+ */
+const SF_BACKUP_ENC_MAGIC = "SFORNO-BACKUP-1\n";
+const SF_BACKUP_ENC_CHUNK = 65536;
+const SF_BACKUP_PW_MIN = 12;
+
+function sf_backup_pw(mixed $pw): string
+{
+    if (!is_string($pw) || mb_strlen($pw) < SF_BACKUP_PW_MIN || strlen($pw) > 200) sf_fail('bad_input', 'סיסמה של ' . SF_BACKUP_PW_MIN . ' תווים לפחות');
+    return $pw;
+}
+
+/** מצפין קובץ אל זרם פתוח. */
+function sf_backup_encrypt(string $inPath, $out, string $pw): void
+{
+    $ops = SODIUM_CRYPTO_PWHASH_OPSLIMIT_INTERACTIVE;
+    $mem = SODIUM_CRYPTO_PWHASH_MEMLIMIT_INTERACTIVE;   // 64MB — בתוך memory_limit של שרת משותף
+    $salt = random_bytes(SODIUM_CRYPTO_PWHASH_SALTBYTES);
+    $key = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_KEYBYTES, $pw, $salt, $ops, $mem, SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
+    [$state, $header] = sodium_crypto_secretstream_xchacha20poly1305_init_push($key);
+    sodium_memzero($key);
+    fwrite($out, SF_BACKUP_ENC_MAGIC . pack('NN', $ops, $mem) . $salt . $header);
+    $in = fopen($inPath, 'rb') ?: throw new RuntimeException('הגיבוי לא נפתח');
+    $chunk = (string)fread($in, SF_BACKUP_ENC_CHUNK);
+    while (true) {
+        $next = feof($in) ? '' : (string)fread($in, SF_BACKUP_ENC_CHUNK);
+        $last = $next === '' && feof($in);
+        $c = sodium_crypto_secretstream_xchacha20poly1305_push($state, $chunk, '', $last ? SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_FINAL : SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_MESSAGE);
+        fwrite($out, pack('N', strlen($c)) . $c);
+        if ($last) break;
+        $chunk = $next;
+    }
+    fclose($in);
+}
+
+/** מפענח קובץ מוצפן ל-$outPath (חדש). סיסמה שגויה / קובץ פגום או קטוע — חריגה, ו-$outPath לא נשאר. */
+function sf_backup_decrypt(string $inPath, string $outPath, string $pw): void
+{
+    $in = @fopen($inPath, 'rb') ?: throw new RuntimeException('הקובץ לא נפתח');
+    $out = null;
+    try {
+        $hlen = strlen(SF_BACKUP_ENC_MAGIC) + 8 + SODIUM_CRYPTO_PWHASH_SALTBYTES + SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_HEADERBYTES;
+        $h = (string)fread($in, $hlen);
+        if (strlen($h) !== $hlen || !str_starts_with($h, SF_BACKUP_ENC_MAGIC)) throw new RuntimeException('זה לא גיבוי מוצפן של ספורנו');
+        $p = strlen(SF_BACKUP_ENC_MAGIC);
+        ['o' => $ops, 'm' => $mem] = unpack('No/Nm', substr($h, $p, 8));
+        if ($ops < 1 || $ops > 20 || $mem < 8192 || $mem > (1 << 30)) throw new RuntimeException('כותרת לא תקינה');
+        $salt = substr($h, $p + 8, SODIUM_CRYPTO_PWHASH_SALTBYTES);
+        $header = substr($h, $p + 8 + SODIUM_CRYPTO_PWHASH_SALTBYTES);
+        $key = sodium_crypto_pwhash(SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_KEYBYTES, $pw, $salt, $ops, $mem, SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
+        $state = sodium_crypto_secretstream_xchacha20poly1305_init_pull($header, $key);
+        sodium_memzero($key);
+        $out = @fopen($outPath, 'xb') ?: throw new RuntimeException('אי אפשר לכתוב את ' . basename($outPath));
+        $final = false;
+        while (!$final) {
+            $l = fread($in, 4);
+            if ($l === false || strlen($l) !== 4) throw new RuntimeException('הקובץ קטוע');
+            $n = unpack('N', $l)[1];
+            if ($n < SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_ABYTES || $n > SF_BACKUP_ENC_CHUNK + 64) throw new RuntimeException('הקובץ פגום');
+            $c = (string)fread($in, $n);
+            $r = strlen($c) === $n ? sodium_crypto_secretstream_xchacha20poly1305_pull($state, $c) : false;
+            if ($r === false) throw new RuntimeException('סיסמה שגויה, או שהקובץ פגום');
+            fwrite($out, $r[0]);
+            $final = $r[1] === SODIUM_CRYPTO_SECRETSTREAM_XCHACHA20POLY1305_TAG_FINAL;
+        }
+        if (fread($in, 1) !== '') throw new RuntimeException('יש נתונים אחרי סוף הגיבוי');
+        fclose($out);
+        $out = null;
+        @chmod($outPath, 0600);
+    } catch (Throwable $e) {
+        if ($out) fclose($out);
+        @unlink($outPath);
+        throw $e;
+    } finally {
+        fclose($in);
+    }
+}
+
+/**
+ * import (CLI): גיבוי מוצפן שהורד בעבר → מפוענח (בסיסמה), נבדק (manifest ו-sha256) ונרשם כגיבוי בשרת, ואז אפשר verify / apply.
+ * למקרה שהשרת אבד והגיבויים שבו איתו.
+ */
+function sf_backup_import(string $file, string $pw): array
+{
+    $dir = sf_backup_dir();
+    $pid = sf_pid();
+    $tmp = "$dir/.tmp-$pid.zip";
+    sf_backup_decrypt($file, $tmp, $pw);
+    try {
+        [$zip, $m] = sf_backup_zip($tmp);
+        $zip->close();
+    } catch (Throwable $e) {
+        @unlink($tmp);
+        throw $e;
+    }
+    $name = 'sforno-' . gmdate('Ymd-His', sf_time()) . '-' . substr($pid, 0, 6) . '.zip';
+    if (!@rename($tmp, "$dir/$name")) { @unlink($tmp); throw new RuntimeException('השמירה נכשלה'); }
+    sf_tx(function () use ($pid, $name, $dir, $m) {
+        sf_insert('backups', ['pid' => $pid, 'file' => $name, 'kind' => 'import', 'bytes' => (int)filesize("$dir/$name"), 'sha256' => hash_file('sha256', "$dir/$name"),
+            'counts' => json_encode($m['counts']), 'created_at' => sf_now()]);
+        sf_audit('backup.import', 'backup', $pid, ['from' => (string)($m['created_at'] ?? '')], actor: null, kind: 'system');
+    });
+    return sf_backup_out(sf_row('SELECT * FROM backups WHERE pid = ?', [$pid]));
 }
 
 // ── מסך המפתח ───────────────────────────────────────────────
@@ -311,19 +469,31 @@ function sf_dev_backup_verify(array $in): array
     return sf_backup_verify(is_string($in['backup'] ?? null) ? $in['backup'] : null);
 }
 
-/** dev-backup-download (dev): הקובץ עצמו, כקובץ להורדה. נרשם ביומן הפעולות. לא נשמר במטמון. */
-function sf_dev_backup_download(array $q): array
+/**
+ * dev-backup-download (dev, POST {backup?, password}): הגיבוי **מוצפן בסיסמה** (sf_backup_encrypt), כקובץ להורדה. הסיסמה לא נשמרת
+ * ולא נרשמת; ההורדה נרשמת ביומן הפעולות. בבדיקות ($GLOBALS['sf_send_out']) — לקובץ זמני.
+ */
+function sf_dev_backup_download(array $in): array
 {
-    [$b, $path] = sf_backup_find(is_string($q['backup'] ?? null) && $q['backup'] !== '' ? $q['backup'] : null);
-    sf_audit('backup.download', 'backup', $b['pid'], ['bytes' => (int)$b['bytes']]);
+    $pw = sf_backup_pw($in['password'] ?? null);
+    [$b, $path] = sf_backup_find(is_string($in['backup'] ?? null) && $in['backup'] !== '' ? $in['backup'] : null);
+    $name = preg_replace('/\.zip\z/', '.sfbk', $b['file']);
+    sf_audit('backup.download', 'backup', $b['pid'], ['bytes' => (int)$b['bytes'], 'encrypted' => true]);
     sf_meta_set('backup_downloaded_at', sf_now());
-    if (isset($GLOBALS['sf_send_out'])) return $GLOBALS['sf_send_out'] = ['file' => $path, 'name' => $b['file'], 'bytes' => (int)filesize($path)];   // בבדיקות
-    header('Content-Type: application/zip');
-    header('Content-Length: ' . filesize($path));
+    if (isset($GLOBALS['sf_send_out'])) {
+        $tmp = sf_backup_dir() . '/.tmp-' . sf_pid() . '.sfbk';
+        $o = fopen($tmp, 'xb');
+        sf_backup_encrypt($path, $o, $pw);
+        fclose($o);
+        return $GLOBALS['sf_send_out'] = ['file' => $tmp, 'name' => $name];
+    }
+    header('Content-Type: application/octet-stream');
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
-    header('Content-Disposition: attachment; filename="' . $b['file'] . '"');
-    readfile($path);
+    header('Content-Disposition: attachment; filename="' . $name . '"');
+    $o = fopen('php://output', 'wb');
+    sf_backup_encrypt($path, $o, $pw);
+    fclose($o);
     exit;
 }
 

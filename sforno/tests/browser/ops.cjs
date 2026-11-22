@@ -97,8 +97,15 @@ const check = (name, cond, got) => { n++; if (!cond) { bad++; console.log('  ✗
         await p.waitForSelector('button:has-text("בדיקת שחזור")');
         await Promise.all([p.waitForResponse(r => r.url().includes('dev-backup-verify')), p.locator('button:has-text("בדיקת שחזור")').first().click()]);
         await p.waitForSelector('text=בדיקת השחזור עברה');
-        const [dl] = await Promise.all([p.waitForEvent('download'), p.locator('a:has-text("הורדה")').first().click()]);
-        check('הורדת הגיבוי — zip', /^sforno-\d{8}-\d{6}-[a-z0-9]{6}\.zip$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+        await p.locator('button:has-text("הורדה")').first().click();
+        await p.waitForSelector('dialog[open]');
+        await p.fill('dialog input[aria-label="סיסמה"]', 'סיסמה-ארוכה-בדפדפן-1');
+        await p.fill('dialog input[aria-label="שוב"]', 'סיסמה-ארוכה-בדפדפן-1');
+        await shot('10-backup-password');
+        const [dl] = await Promise.all([p.waitForEvent('download'), p.locator('dialog button:has-text("הורדה")').click()]);
+        check('הורדת הגיבוי — מוצפן (.sfbk)', /^sforno-\d{8}-\d{6}-[a-z0-9]{6}\.sfbk$/.test(dl.suggestedFilename()), dl.suggestedFilename());
+        const head = fs.readFileSync(await dl.path()).subarray(0, 16).toString();
+        check('…והתוכן מוצפן (לא zip)', head === 'SFORNO-BACKUP-1\n', head);
         await shot('10-backup');
         await p.goto(BASE + '#/contact');
         await p.waitForSelector('textarea');

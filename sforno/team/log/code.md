@@ -497,3 +497,24 @@ run.php 10/10. בדפדפן: `tests/browser/offline.cjs` 26 (מצב טיסה, נ
 - **הפרדת סביבות** — מתועדת (`dev/restore.md`); המימוש — 11.
 
 **בדיקות:** n-ops 149 (חדש); c-standalone — גרסה 0.10; run.php 14/14.
+
+## 2026-11-22 — 10 תיקון (ביקורת סבב 1, ענף `claude/sforno-10-fix`)
+
+🟡1, 🟡2, 🟡3 ו-⚪ IPv6/טווחים מ-`team/reviews/10-operations.md`. n-ops 186 (+37); `tests/browser/ops.cjs` 14.
+
+**⚙️ הכרעות:**
+17. **שחזור — הכול או כלום:** `data/maintenance.json` = מצב תחזוקה — `sf_dispatch` נכשל ב-`upgrading` (503) לכל פעולה, ו-cron.php
+    מחזיר 503 בלי להריץ. `apply`: תחזוקה → המתנה 3 שניות → גיבוי בטיחות → חילוץ ובדיקה → כל rename נבדק; כשל ← ביטול בסדר הפוך
+    וזריקה ("הוחזר המצב הקודם", או רשימת מה שלא חזר). התחזוקה יוצאת תמיד (`finally`). בבדיקות: `$GLOBALS['sf_rename']`, `sf_apply_wait`.
+18. **ההורדה — רק מוצפנת:** POST `{backup, password}` (לא קישור GET — הסיסמה לא בכתובת ולא ביומני גישה). Argon2id
+    (`OPSLIMIT/MEMLIMIT_INTERACTIVE` — 64MB, בתוך memory_limit של שרת משותף) + secretstream XChaCha20-Poly1305 בחלקים של 64KB,
+    TAG_FINAL בסוף (קובץ קטוע נדחה). סיסמה — 12 תווים לפחות; לא נשמרת ולא ביומן. קובץ `.sfbk`. הגיבוי בשרת נשאר zip (כמו שאושר).
+19. **CLI:** `import <sfbk>` (פענוח → בדיקת manifest/sha256 → נרשם כגיבוי `import`) ו-`decrypt <sfbk> <zip>` (בלי מסד). הסיסמה —
+    מהשורה בלי הד, או `SF_BACKUP_PASSWORD`.
+20. **הכתובת הציבורית:** `sf_note_origin()` בכל בקשה של מנהל מחובר (המארח — דרך השער) שומר `meta.public_url` {origin, base} כשהשתנה.
+    `sf_origin_of`: בלי SERVER_NAME / localhost / CLI ← הכתובת השמורה. `sf_self_url` מ-CLI — גם התיקייה השמורה (tools/ אינה הבסיס).
+    מתקן גם את קישורי המייל של התזכורות והאימות כשהם יוצאים מ-cron.
+21. **`sf_net_ip_public`** — IPv6 לפי `inet_pton`: ‎::/96, ‎::ffff:0:0/96, NAT64 ‎64:ff9b::/96 ו-‎64:ff9b:1::/48, 6to4 ‎2002::/16, Teredo
+    ‎2001::/32, תיעוד ‎2001:db8::/32, ULA, link-local, site-local ‎fec0::/10, multicast ‎ff00::/8; IPv4 — גם ‎198.18/15 ו-‎224/4 ומעלה.
+
+**לא נבנה:** העלאת `.sfbk` דרך מסך המפתח (השחזור מקובץ שהורד — דרך Terminal; מנהל הקבצים — רק לגיבויים שעוד בשרת).

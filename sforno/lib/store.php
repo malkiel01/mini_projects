@@ -250,8 +250,18 @@ function sf_net_ip_public(string $ip): bool
 {
     if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) return false;
     // מה ש-filter_var לא חוסם בכל הגרסאות: 100.64/10 (CGNAT), 0/8, ‏IPv4 ממופה ב-IPv6, ULA / link-local ב-IPv6
-    if (preg_match('/^(0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|169\.254\.|127\.)/', $ip)) return false;
-    if (str_contains($ip, ':') && preg_match('/^(::|::1|::ffff:|f[cd]|fe[89ab])/i', $ip)) return false;
+    // + 198.18/15 (בדיקות ביצועים), 224/4 multicast ומעלה (240/4 שמור)
+    if (preg_match('/^(0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|169\.254\.|127\.|198\.1[89]\.|22[4-9]\.|2[3-5]\d\.)/', $ip)) return false;
+    if (str_contains($ip, ':')) {
+        $b = inet_pton($ip);
+        if ($b === false || strlen($b) !== 16) return false;
+        $h = bin2hex($b);
+        // ::/96 (כולל ::, ::1, IPv4 תואם), IPv4 ממופה ::ffff:0:0/96, NAT64 64:ff9b::/96 ו-64:ff9b:1::/48, 6to4 2002::/16, Teredo 2001::/32,
+        // ULA fc00::/7, link-local fe80::/10, site-local fec0::/10, multicast ff00::/8, תיעוד 2001:db8::/32
+        if (str_starts_with($h, str_repeat('0', 24)) || str_starts_with($h, str_repeat('0', 20) . 'ffff') || str_starts_with($h, '0064ff9b')
+            || str_starts_with($h, '2002') || str_starts_with($h, '20010000') || str_starts_with($h, '20010db8')
+            || preg_match('/^(f[cd]|fe[89a-f]|ff)/', $h)) return false;
+    }
     return true;
 }
 

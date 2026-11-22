@@ -6,8 +6,11 @@
  *   php sforno/tools/backup.php make                 גיבוי עכשיו (data/backups/)
  *   php sforno/tools/backup.php verify [pid]         בדיקת שחזור: הגיבוי (האחרון) למסד זמני, integrity_check, ספירות, מפתח
  *   php sforno/tools/backup.php restore-to <dir> [pid]   חילוץ ובדיקה לתיקייה (בלי לגעת בנתונים החיים)
- *   php sforno/tools/backup.php apply [pid] --yes    **שחזור אמיתי** — לפי dev/restore.md: גיבוי בטיחות, ואז החלפה;
- *                                                    מה שהוחלף נשמר ב-data/.replaced-<זמן>/ (שום דבר לא נמחק)
+ *   php sforno/tools/backup.php apply [pid] --yes    **שחזור אמיתי** — לפי dev/restore.md: מצב תחזוקה (503), גיבוי בטיחות,
+ *                                                    החלפה — הכול או כלום; מה שהוחלף נשמר ב-data/.replaced-<זמן>/
+ *   php sforno/tools/backup.php import <file.sfbk>   גיבוי מוצפן שהורד (💾) → מפוענח, נבדק ונרשם כגיבוי בשרת (ואז verify / apply)
+ *   php sforno/tools/backup.php decrypt <file.sfbk> <out.zip>   רק פענוח — בכל מחשב עם PHP ו-sodium, בלי מסד
+ * הסיסמה של קובץ מוצפן: נשאלת בשורה (בלי הד), או מ-SF_BACKUP_PASSWORD.
  * יציאה 0 = הצליח, 1 = נכשל. SF_DATA_DIR=<תיקייה> — לעבוד על העתק של data/ (בדיקה), לא על החי.
  */
 
@@ -24,10 +27,20 @@ require_once dirname(__DIR__) . '/lib/app.php';
 $args = array_values(array_filter(array_slice($argv, 1), fn($a) => $a !== '--yes'));
 $yes = in_array('--yes', $argv, true);
 $cmd = $args[0] ?? 'help';
+$password = function (): string {
+    $pw = getenv('SF_BACKUP_PASSWORD');
+    if (is_string($pw) && $pw !== '') return $pw;
+    fwrite(STDERR, 'הסיסמה של הגיבוי: ');
+    $tty = function_exists('posix_isatty') && posix_isatty(STDIN);
+    if ($tty) @shell_exec('stty -echo');
+    $pw = rtrim((string)fgets(STDIN), "\r\n");
+    if ($tty) { @shell_exec('stty echo'); fwrite(STDERR, "\n"); }
+    return $pw;
+};
 $out = function (mixed $v): void { echo json_encode($v, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"; };
 
 try {
-    if (in_array($cmd, ['list', 'make', 'verify', 'restore-to', 'apply'], true)) sf_db();
+    if (in_array($cmd, ['list', 'make', 'verify', 'restore-to', 'apply', 'import'], true)) sf_db();
     switch ($cmd) {
         case 'list':
             $out(array_map(fn($b) => ['pid' => $b['pid'], 'file' => $b['file'], 'kind' => $b['kind'], 'mb' => round($b['bytes'] / 1048576, 2),
@@ -53,8 +66,18 @@ try {
             $out(sf_backup_apply($args[1] ?? null));
             echo "✓ שוחזר. הבא: לפתוח את האפליקציה, 🩺 בדיקות — הכול ירוק (dev/restore.md, שלב 5)\n";
             exit(0);
+        case 'decrypt':
+            if (count($args) < 3 || file_exists($args[2])) { fwrite(STDERR, "decrypt <קובץ.sfbk> <קובץ-חדש.zip>\n"); exit(1); }
+            sf_backup_decrypt($args[1], $args[2], $password());
+            echo "✓ פוענח ל-{$args[2]}\n";
+            exit(0);
+        case 'import':
+            if (count($args) < 2 || !is_file($args[1])) { fwrite(STDERR, "import <קובץ.sfbk>\n"); exit(1); }
+            $b = sf_backup_import($args[1], $password());
+            echo "✓ נרשם כגיבוי {$b['pid']} ({$b['file']}). הבא: verify {$b['pid']} ← apply {$b['pid']} --yes\n";
+            exit(0);
         default:
-            echo "שימוש: list | make | verify [pid] | restore-to <dir> [pid] | apply [pid] --yes\n";
+            echo "שימוש: list | make | verify [pid] | restore-to <dir> [pid] | apply [pid] --yes | import <file.sfbk> | decrypt <file.sfbk> <out.zip>\n";
             exit($cmd === 'help' ? 0 : 1);
     }
 } catch (Throwable $e) {

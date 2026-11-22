@@ -115,6 +115,8 @@
 - **תפעול (10):** מדד חדש — סוג ב-`SF_METRIC_KINDS`, מפתח **רק מזהה** (טסט N7 סורק את כל הטבלה). דיווח — שדה חדש = עמודה + רשימה
   סגורה ב-`sf_report_create` + הטסט שסורק את הקריאה ב-ops.js. **אסור** ש-`ops.php` / `backup.php` יכילו `personal_items` (K10) —
   דרך `readers.php`. קובץ נתונים חדש ב-`data/` — להוסיף ל-`SF_BACKUP_FILES` (אחרת הוא לא בגיבוי). פעולה שמחזירה `ok` — הנתב דורס.
+- **שחזור (10):** `data/maintenance.json` = 503 לכל פעולה ו-cron לא רץ. ההורדה — **רק מוצפנת** (POST עם סיסמה, `.sfbk`);
+  `tools/backup.php import` / `decrypt`. קישור במייל מ-cron — `sf_self_url` (הכתובת נשמרת מבקשות מנהל: `meta.public_url`).
 - **CLI על data/ אמיתי:** `tools/backup.php` בלי `SF_DATA_DIR` עובד על `sforno/data/` — בבדיקות תמיד עם `SF_DATA_DIR=`.
 
 ## מה נשאר
