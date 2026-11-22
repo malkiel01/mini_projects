@@ -95,3 +95,5 @@ customs) · 2 שפת הסימון — `lib/markup.php` (`SF_MK_TAGS`, `SF_MK_STY
    gif — לא (03 §2 מתיר png/jpeg/webp בלבד).
 10. **pdf.js 3.11.174** (`build/`, UMD), נטען רק במסך הייבוא. אין בו `../` ולא `mini_projects`.
 11. `app.json` גרסה 0.3.
+
+**2026-11-22 — 03 מוזגה (PR #1775, דרך #1776).** המסירה עודכנה ב-`team/handoff/code.md`.
