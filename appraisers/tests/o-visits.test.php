@@ -737,11 +737,13 @@ $tables = array_column($v10->query("SELECT name FROM main.sqlite_master WHERE ty
 foreach ($tables as $t) {
     // sources: שורות הקטלוג אינן נמחקות (טריגר של 010) — מעדכנים במקום, לפי המפתח
     try { $v10->exec("DELETE FROM main.\"$t\""); } catch (PDOException) { continue; }
-    $v10->exec("INSERT INTO main.\"$t\" SELECT * FROM live.\"$t\"");
+    $v10->exec("INSERT INTO main.\"$t\" (" . t_cols($v10, $t) . ") SELECT " . t_cols($v10, $t) . " FROM live.\"$t\"");
 }
 $v10->exec('DETACH live');
 $v10->exec('PRAGMA foreign_keys = ON');
-$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT * FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
+// העמודות כפי שהן לפני המיגרציה: מיגרציה מאוחרת שמוסיפה עמודה (014 ל-facts) אינה משנה את מה שהיה בשורה
+$colsBefore = array_combine($tables, array_map(fn($t) => t_cols($v10, $t), $tables));
+$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT {$colsBefore[$t]} FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
 $d10 = $dump($v10);
 $rows10 = array_sum(array_map(fn($t) => (int)$v10->query("SELECT COUNT(*) FROM \"$t\"")->fetchColumn(), $tables));
 $had = [apr_schema_version($v10), in_array('visits', $tables, true), (int)$v10->query('SELECT COUNT(*) FROM facts')->fetchColumn() > 3, (int)$v10->query('SELECT COUNT(*) FROM files')->fetchColumn() > 3];

@@ -666,7 +666,7 @@ foreach (glob(__DIR__ . '/../lib/*.php') as $f) $libs[basename($f)] = implode(''
 foreach (['api.php', 'cron.php'] as $f) $libs[$f] = (string)file_get_contents(__DIR__ . '/../' . $f);
 $who = fn(string $re) => array_keys(array_filter($libs, fn($src, $name) => $name !== 'devloop.php' && preg_match($re, $src) === 1, ARRAY_FILTER_USE_BOTH));
 eq([$who('/apr_ai_adapter\s*\(/'), $who('/->\s*complete\s*\(/'), $who('/->\s*health\s*\(\s*\$key/'), $who('/apr_ai_key_open\s*\(/'), $who('/api\.anthropic\.com|AprAnthropicAdapter/'), $who('/\bai_run\s*\(/'), substr_count($libs['ai.php'], '->complete('), substr_count($libs['ai.php'], '->health(')],
-    [['ai.php', 'ai_adapter.php'], ['ai.php'], ['ai.php'], ['ai.php'], ['ai_adapter.php'], ['ai.php'], 1, 1],
+    [['ai.php', 'ai_adapter.php'], ['ai.php'], ['ai.php'], ['ai.php'], ['ai_adapter.php'], ['ai.php', 'extract.php'], 1, 1],   // extract.php (12) קורא ל-ai_run — ורק לו; המתאם והמפתח נשארים של ai.php בלבד
     '§5 השער: רק lib/ai.php קורא למתאם ופותח מפתח — complete() פעם אחת (בתוך ai_run) ו-health() פעם אחת (בדיקת חיבור); אין קובץ אחר שמגיע לספק');
 eq(preg_match('/function ai_run\(.*?\n}\n/s', $libs['ai.php'], $gate), 1, 'ai_run נמצאה לבדיקה הסטטית');
 $pos = fn(string $s) => strpos($gate[0], $s);
@@ -695,11 +695,13 @@ $v12->exec('ATTACH ' . $v12->quote("$dir/app.sqlite") . ' AS live');
 $old = array_column($v12->query("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'")->fetchAll(), 'name');
 foreach ($old as $t) {
     try { $v12->exec("DELETE FROM main.\"$t\""); } catch (PDOException) { continue; }
-    try { $v12->exec("INSERT INTO main.\"$t\" SELECT * FROM live.\"$t\""); } catch (PDOException) { continue; }
+    try { $v12->exec("INSERT INTO main.\"$t\" (" . t_cols($v12, $t) . ") SELECT " . t_cols($v12, $t) . " FROM live.\"$t\""); } catch (PDOException) { continue; }
 }
 $v12->exec('DETACH live');
 $v12->exec('PRAGMA foreign_keys = ON');
-$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT * FROM \"$t\" ORDER BY 1")->fetchAll()))], $old);
+// העמודות כפי שהן לפני המיגרציה: מיגרציה מאוחרת שמוסיפה עמודה (014 ל-facts) אינה משנה את מה שהיה בשורה
+$colsBefore = array_combine($old, array_map(fn($t) => t_cols($v12, $t), $old));
+$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT {$colsBefore[$t]} FROM \"$t\" ORDER BY 1")->fetchAll()))], $old);
 $d12 = $dump($v12);
 $had = [apr_schema_version($v12), in_array('ai_runs', $old, true), (int)$v12->query('SELECT COUNT(*) FROM audit_log')->fetchColumn() > 50, (int)$v12->query('SELECT COUNT(*) FROM cases')->fetchColumn()];
 apr_migrate($v12);
