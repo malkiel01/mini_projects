@@ -53,6 +53,20 @@
         const account = SF.accountBoot();
         account.then(() => SF.rem.start());   // 08: התזכורות בתוך האפליקציה, ורישום ה-Push לבעלים הנכון (אורח / חשבון)
         let data;
+        // 11: חזרה מהכלים הדיגיטליים במצב מנותק (?token=&state= או ?error=) — הכתובת מתנקה מיד, והשרת בודק (sso-finish)
+        const q = new URLSearchParams(location.search);
+        if (q.has('state') && (q.has('token') || q.has('error'))) {
+            const body = { state: q.get('state'), ...(q.has('error') ? { error: q.get('error') } : { token: q.get('token') }) };
+            let to = '#/admin';
+            try { to = sessionStorage.getItem('sf_sso_hash') || to; sessionStorage.removeItem('sf_sso_hash'); } catch (e) { /* פרטי */ }
+            history.replaceState(null, '', location.pathname + to);
+            try {
+                await SF.api('sso-finish', { body });
+            } catch (e) {
+                menu();
+                return SF.fail(document.getElementById('main'), e);
+            }
+        }
         try {
             data = await SF.api('me');
         } catch (e) {
