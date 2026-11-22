@@ -296,7 +296,7 @@ async function viewFile(pid, fpid) {
           <dl class="cells">${cell(D.receivedAt, esc(fmtDateTime(f.received_at)))}${cell(D.docDate, f.doc_date ? esc(fmtDate(f.doc_date)) : C.unknown)}${cell(D.source, esc(D.channels[f.channel] || f.channel) + (f.source_note ? ' · ' + esc(f.source_note) : ''))}
             ${cell(D.uploader, esc(f.uploader || C.system))}${cell(D.type, esc(D.kinds[f.kind] || f.kind) + ' · ' + esc(f.ext.toUpperCase()))}${cell(D.size, dSize(f.size) + (f.pages ? ' · ' + esc(D.pages(f.pages)) : ''))}</dl>
           ${links.length ? links.map(linkHtml).join('') : `<p class="banner" role="note">📎 ${D.unassignedNote}</p>`}
-          <div id="file-facts"></div></div></div>`;
+          <div id="file-ai"></div><div id="file-facts"></div></div></div>`;
     // 10-D1: לחיצה על נתון מדפדפת את המסמך לעמוד שבו הוא מופיע (מציג ה-PDF של הדפדפן מקבל #page=N)
     const goPage = n => {
         const fr = $('.doc-view iframe');
@@ -304,6 +304,10 @@ async function viewFile(pid, fpid) {
         $('.doc-view')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     fileFactsPanel(pid, fpid, goPage, reload).catch(() => {});
+    // 12: לוח הבינה במסמך. אחרי הפעלה הוא מרענן את עצמו ואת "נתונים מהמסמך"
+    XF.goPage = goPage;
+    XF.reloadFacts = reload;
+    xFilePanel(pid, fpid, reload).catch(() => {});
     if (f.mime === 'application/pdf') {
         // PDF מוצג מתוך blob: התשובה של השרת נושאת sandbox, ודפדפן אינו פותח בה את מציג ה-PDF שלו
         fetch(dUrl(f.pid, true), { credentials: 'same-origin' }).then(r => r.ok ? r.blob() : Promise.reject()).then(b => {
@@ -361,8 +365,8 @@ function pendingDocsHtml(rows) {
 /** תוצאות חיפוש מסמכים ודרישות — לצד תוצאות התיקים. */
 function docResultsHtml(rows) {
     if (!rows.length) return '';
-    return `<h2 class="sec-title">📎 ${D.searchResults} <small>${rows.length}</small></h2><ul class="list">${rows.map(x => `<li class="card" tabindex="0" role="button" data-go="#/cases/${x.case.pid}/${x.type === 'file' ? 'file/' + x.file : 'reqs/' + x.requirement}">
-        <span class="use-ic" aria-hidden="true">${x.type === 'file' ? dIcon(x) : '📄'}</span><div class="body"><div class="l1"><span dir="auto">${esc(x.title)}</span></div>
+    return `<h2 class="sec-title">📎 ${D.searchResults} <small>${rows.length}</small></h2><ul class="list">${rows.map(x => `<li class="card" tabindex="0" role="button" data-go="#/cases/${x.case.pid}/${x.type === 'requirement' ? 'reqs/' + x.requirement : 'file/' + x.file}">
+        <span class="use-ic" aria-hidden="true">${x.type === 'requirement' ? '📄' : dIcon(x)}</span><div class="body"><div class="l1"><span dir="auto">${esc(x.title)}</span></div>
         <div class="l2 wrap"><span dir="ltr">${esc(x.case.number)}</span> ${esc(x.case.title || '')}</div>
-        <div class="chips"><span class="chip">${x.type === 'file' ? D.file : D.requirement}</span>${x.type === 'requirement' ? dStatusChip(x) : ''}</div></div></li>`).join('')}</ul>`;
+        ${x.type === 'text' ? xTextHit(x) : `<div class="chips"><span class="chip">${x.type === 'file' ? D.file : D.requirement}</span>${x.type === 'requirement' ? dStatusChip(x) : ''}</div>`}</div></li>`).join('')}</ul>`;
 }

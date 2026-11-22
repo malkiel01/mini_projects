@@ -61,7 +61,10 @@
  *                  · sys-ai-assign-delete {scope, target} · sys-ai-quota-save {quota? | track, scope, target, office?, period; limit_money?,
  *                  limit_tokens?, hard} · sys-ai-quota-delete {quota} · office-ai · office-ai-policy {enabled?, text_version, providers{},
  *                  prefer_managed?} · office-ai-connection-… (אותם שדות) · office-ai-quota-save / -delete · my-ai · ai-quota-request {quota}
- *                  · case-ai {case} · case-ai-set {case, no_ai}. **אין פעולת API שמפעילה מודל** — רק ai_run() בקוד (lib/ai.php).
+ *                  · case-ai {case} · case-ai-set {case, no_ai}. הפעלת מודל — רק דרך ai_run() בקוד (lib/ai.php).
+ * חילוץ (12):      file-ai {file} · file-ai-run {file, what: classify | fields | summary, key} · file-ai-suggestion {file, do: accept | reject,
+ *                  requirement?, relation?} · file-ai-summary-reviewed {file} · file-ai-reject-all {file, reason} · case-ai-auto-set {case,
+ *                  auto_classify?, auto_extract?}. **אין פעולה שמאשרת כמה הצעות יחד** — אישור נתון הוא fact-state, אחד-אחד.
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -106,6 +109,7 @@ require_once __DIR__ . '/comps.php';
 require_once __DIR__ . '/comp_import.php';
 require_once __DIR__ . '/ai.php';
 require_once __DIR__ . '/ai_admin.php';
+require_once __DIR__ . '/extract.php';
 
 /** פעולות של DevLoop עונות בחוזה של המודול ({error: "…"}), לא בחוזה של האפליקציה. */
 function apr_is_devloop(string $action): bool
@@ -267,6 +271,12 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'case-conflicts' => apr_case_conflicts($ctx, $p),
         'conflict' => apr_conflict_view($ctx, $p),
         'file-facts' => apr_file_facts($ctx, $p),
+        'file-ai' => apr_file_ai_view($ctx, $p),
+        'file-ai-run' => apr_file_ai_run($ctx, $p),
+        'file-ai-suggestion' => apr_file_ai_suggestion($ctx, $p),
+        'file-ai-summary-reviewed' => apr_file_ai_summary_reviewed($ctx, $p),
+        'file-ai-reject-all' => apr_file_ai_reject_all($ctx, $p),
+        'case-ai-auto-set' => apr_case_ai_auto_set($ctx, $p),
         'fact-add' => apr_fact_add($ctx, $p),
         'fact-correct' => apr_fact_correct($ctx, $p),
         'fact-state' => apr_fact_state($ctx, $p),

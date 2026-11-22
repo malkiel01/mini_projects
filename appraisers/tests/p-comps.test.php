@@ -754,11 +754,13 @@ $v11->exec('ATTACH ' . $v11->quote("$dir/app.sqlite") . ' AS live');
 $tables = array_column($v11->query("SELECT name FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'")->fetchAll(), 'name');
 foreach ($tables as $t) {
     try { $v11->exec("DELETE FROM main.\"$t\""); } catch (PDOException) { continue; }      // טבלה ששורותיה אינן נמחקות (sources, visits …) — נשארת כפי שנזרעה
-    try { $v11->exec("INSERT INTO main.\"$t\" SELECT * FROM live.\"$t\""); } catch (PDOException) { continue; }
+    try { $v11->exec("INSERT INTO main.\"$t\" (" . t_cols($v11, $t) . ") SELECT " . t_cols($v11, $t) . " FROM live.\"$t\""); } catch (PDOException) { continue; }
 }
 $v11->exec('DETACH live');
 $v11->exec('PRAGMA foreign_keys = ON');
-$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT * FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
+// העמודות כפי שהן לפני המיגרציה: מיגרציה מאוחרת שמוסיפה עמודה (014 ל-facts) אינה משנה את מה שהיה בשורה
+$colsBefore = array_combine($tables, array_map(fn($t) => t_cols($v11, $t), $tables));
+$dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query("SELECT {$colsBefore[$t]} FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
 $d11 = $dump($v11);
 $rows11 = array_sum(array_map(fn($t) => (int)$v11->query("SELECT COUNT(*) FROM \"$t\"")->fetchColumn(), $tables));
 $had = [apr_schema_version($v11), in_array('comps', $tables, true), (int)$v11->query('SELECT COUNT(*) FROM facts')->fetchColumn() >= 3, (int)$v11->query('SELECT COUNT(*) FROM audit_log')->fetchColumn() > 50];

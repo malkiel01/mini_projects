@@ -532,7 +532,8 @@ function apr_case_ai(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
     $mine = apr_case_ai_can_set($ctx, $c);
-    $out = ['no_ai' => (int)apr_val('SELECT no_ai FROM case_ai WHERE case_id = ?', [$c['id']]) === 1, 'can_set' => $mine && $c['status'] !== 'closed', 'usage' => null, 'quotas' => []];
+    $out = ['no_ai' => (int)apr_val('SELECT no_ai FROM case_ai WHERE case_id = ?', [$c['id']]) === 1, 'can_set' => $mine && $c['status'] !== 'closed', 'usage' => null, 'quotas' => [],
+        'auto' => function_exists('apr_extract_auto') ? apr_extract_auto($c) : null];     // 12: העיבוד האוטומטי בתיק
     if ($mine) {
         $sum = apr_row('SELECT ' . APR_AI_USAGE_SUMS . ' FROM ai_runs r WHERE r.case_id = ?', [$c['id']]);
         $out['usage'] = apr_ai_usage_row($sum + ['runs' => 0]);

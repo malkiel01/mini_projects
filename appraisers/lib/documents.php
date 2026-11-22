@@ -266,6 +266,8 @@ function apr_file_ingest(callable $case, array $who, array $q, array $env): arra
                     'received_at' => apr_now(), 'scan_state' => $scan, 'pages' => $info['pages'], 'is_encrypted' => (int)$info['encrypted'], 'idempotency_key' => $key, 'request_id' => $who['request'] ?? null]);
                 $out = ['file' => $pid];
                 if (isset($who['after'])) ($who['after'])($id, $pid);         // ביקור (13): השורה ב-visit_photos, באותה טרנזקציה
+                // חילוץ (12): שורת מצב ומשימת רקע לקובץ שעבר את הצינור. לא לתמונות ביקור ולא לקובץ ייבוא (ערוץ עם רשימת סוגים משלו)
+                if (!isset($who['mimes']) && function_exists('apr_extract_on_file')) apr_extract_on_file($c, $id, $pid);
                 $meta = ['mime' => $info['mime'], 'size' => $size] + ($recipient ? ['channel' => 'portal'] : []);
                 if ($r) {
                     [$out['link'], $out['version'], $out['relation']] = apr_req_link($c, $r, $id, $relation, $uid);
@@ -348,6 +350,7 @@ function apr_file_delete(array $ctx, array $in): array
         }
         apr_exec("UPDATE case_identifiers SET state = 'needs_check' WHERE case_id = ? AND source_ref = ? AND state = 'verified'", [$c['id'], $f['pid']]);
         apr_facts_on_file_delete($c, $f);                    // נתון מאומת שנשען על הקובץ חוזר ל"דורש בירור" (10, מקרה קצה 6)
+        if (function_exists('apr_extract_on_file_delete')) apr_extract_on_file_delete($f);    // הטקסט שחולץ, הסיכום והצעת הסיווג (12)
         apr_case_audit($c, 'file.delete', 'file', $f['pid'], ['requirements' => $back], $reason);
         apr_case_touch($c);
         return ['requirements' => $back];
@@ -599,7 +602,7 @@ function apr_my_cases_sql(string $perm): string
         WHERE c.office_id = ? AND c.deleted_at IS NULL AND json_extract(cm.perms, '$.view') = 1 AND json_extract(cm.perms, '$.$perm') = 1";
 }
 
-/** חיפוש: שם קובץ, כותרת דרישה, תגית — **רק בתיקים שאני משתתף בהם**. q, ואופציונלי case. */
+/** חיפוש: שם קובץ, כותרת דרישה, תגית, וטקסט שחולץ מהמסמך (12) — **רק בתיקים שאני משתתף בהם**. q, ואופציונלי case. */
 function apr_docs_search(array $ctx, array $q): array
 {
     $office = apr_office_id($ctx);
@@ -622,6 +625,8 @@ function apr_docs_search(array $ctx, array $q): array
         $out[] = ['type' => 'requirement', 'case' => ['pid' => $r['case_pid'], 'number' => $r['number'], 'title' => $r['title']], 'requirement' => $r['pid'], 'title' => $r['rtitle'],
             'status' => $r['status'], 'at' => $r['updated_at']];
     }
+    // טקסט שחולץ ממסמכים (12 §8) — רק מקבצים שמותר לי לראות
+    if (function_exists('apr_extract_search')) array_push($out, ...apr_extract_search($ctx, $needle, $like, $mine . $only, $args));
     return ['results' => $out];
 }
 
