@@ -118,6 +118,7 @@
 
         main.replaceChildren(...[
             editionSwitch('siddur', eds, cur),
+            SF.dlLine(ed.pid),
             pos ? h('ul', { class: 'list' }, row('#/r/' + ed.pid, '▶️', 'להמשיך מהמקום שעצרתי', cur.title.name)) : null,
             shortcuts.length ? h('nav', { class: 'tiles', 'aria-label': 'קיצורים' }, shortcuts.map(s => h('a', { class: 'tile', href: link(s) }, h('span', { class: 'tile-ic', 'aria-hidden': 'true' }, '↪'), s.name))) : null,
             h('div', { class: 'toolbar' }, h('h3', { class: 'sec-title', style: 'flex:1' }, 'תפילות'), editBtn,
@@ -144,8 +145,9 @@
         const { eds, cur } = await pickEdition('tehillim');
         if (!cur) return emptyState(main, 'תהילים');
         const ed = cur.ed;
-        const toc = ed.text ? (await SF.api('read-toc', { params: { edition: ed.pid } })).toc : [];
-        const chs = C.chapters(toc);
+        // הפרקים — מהטקסט של הגרסה שנבחרה (מההורדה, בלי רשת); אין — רשימה ריקה והודעה, לא שגיאה (06)
+        const toc = ed.text ? await SF.textFor(ed.pid).then(t => t.data.toc || [], () => null) : [];
+        const chs = C.chapters(toc || []);
         const byN = {};
         for (const c of chs) byN[c.n] = c;
         let st = Object.assign({}, TEH, await SF.store.get('tehillim', TEH));
@@ -241,6 +243,8 @@
 
         const pos = await SF.store.get('pos:' + ed.pid, null);
         main.replaceChildren(...[editionSwitch('tehillim', eds, cur),
+            SF.dlLine(ed.pid),
+            toc === null ? h('p', { class: 'hint' }, 'הפרקים לא זמינים בלי אינטרנט — התהילים לא הורדו למכשיר.') : null,
             pos ? h('ul', { class: 'list' }, row('#/r/' + ed.pid, '▶️', 'להמשיך מהמקום שעצרתי', cur.title.name)) : null,
             tabs, ...Object.values(panes)].filter(Boolean));
         tab(panes[tabKey] ? tabKey : 'chapters');

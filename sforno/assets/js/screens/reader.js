@@ -1,5 +1,9 @@
 /*
- * הקורא (אפיון 04 §1) — #/r/<edition>[/<sid>]. הטקסט: SFRender על ה-source_html של הגרסה שפורסמה (read-revision).
+ * הקורא (אפיון 04 §1) — #/r/<edition>[/<sid>]. הטקסט: SFRender על ה-source_html של הגרסה (read-revision).
+ *
+ *   הגרסה (06): זו שהקורא בחר (ver:<edition>; לפני 06 — זו שהמקום נשמר עליה). פרסום חדש לא מחליף אותה — גם ברשת — אלא
+ *   פס "יש גרסה חדשה — לעבור?". מעבר: הסימניות / ההדגשות / ההערות / המועדפים לפי sid (SF.version.move); מה שלא נמצא —
+ *   "לא הותאמו" בכלים, עם הטקסט המקורי, ו"חזרה לגרסה הקודמת". הורדה שלמה של הגרסה — נפתחת מהמכשיר, גם בלי רשת.
  *
  *   - שני מצבים, מתג אחד: גלילה רציפה, או מקטע יחיד עם "הבא" / "הקודם". כל שינוי (מצב, גופן, ניקוד, מנהג) — לוכדים את
  *     המקום (sid + היסט יחסי) לפני, ומחזירים אחרי. המקום נשמר במכשיר (pos:<edition>).
@@ -14,6 +18,7 @@
 (function (SF) {
     const { h } = SF;
     const C = window.SFReaderCore;
+    const O = window.SFOfflineCore;
 
     const THEMES = { auto: 'אוטומטי', light: 'בהיר', sepia: 'ספיה', dark: 'כהה', contrast: 'ניגודיות' };
     const FONTS = { text: 'דוד', serif: 'סריף', sans: 'בלי סריף' };
@@ -26,9 +31,51 @@
     SF.readerSettings = async () => Object.assign({}, DEFAULTS, await SF.store.get('settings', {}));
 
     let catalog = null;
+    /** הקטלוג. בלי רשת (06) — האחרון שהתקבל (catalog:last, במכשיר בלבד), עם offline: true. */
     SF.catalog = async fresh => {
-        if (!catalog || fresh) catalog = await SF.api('read-catalog');
+        if (!catalog || fresh || catalog.offline) {
+            try {
+                catalog = await SF.api('read-catalog');
+                SF.store.setRaw('catalog:last', catalog);
+            } catch (e) {
+                const last = e.code === 'network' ? await SF.store.get('catalog:last', null) : null;
+                if (!last) throw e;
+                catalog = Object.assign({}, last, { offline: true });
+            }
+        }
         return catalog;
+    };
+
+    /** הגרסה הנוכחית (שפורסמה) של מהדורה לפי הקטלוג: {pid, n, published_at} או null. */
+    SF.currentRev = (cat, ed) => {
+        for (const t of (cat && cat.titles) || []) for (const e of t.editions) if (e.pid === ed) return e.revision;
+        return null;
+    };
+
+    /**
+     * הטקסט של מהדורה (06): הגרסה שנבחרה — מההורדה אם היא שלמה ושל הגרסה הזו, אחרת מהרשת. בלי רשת ובלי הורדה —
+     * code "offline_missing" ("לא זמין בלי אינטרנט"). → {data, from: 'download' | 'net', rec}
+     */
+    SF.textFor = async function textFor(edition) {
+        const want = await SF.version.get(edition);
+        const pk = await SF.offline.load(edition).catch(() => null);
+        if (pk && (!want || pk.rec.revision === want || !pk.rec.revision)) return { data: pk.data, from: 'download', rec: pk.rec };
+        try {
+            let data;
+            try {
+                data = await SF.api('read-revision', { params: want ? { edition, revision: want } : { edition } });
+            } catch (e) {
+                if (e.code !== 'not_found' || !want) throw e;
+                data = await SF.api('read-revision', { params: { edition } });   // הגרסה שנבחרה כבר לא מוגשת — הנוכחית
+            }
+            return { data, from: 'net', rec: pk ? pk.rec : null };
+        } catch (e) {
+            if (e.code !== 'network') throw e;
+            if (pk) return { data: pk.data, from: 'download', rec: pk.rec };   // ההורדה היא של גרסה אחרת — עדיף מכלום
+            const err = new Error('הכותר הזה לא הורד למכשיר, ולכן לא זמין בלי אינטרנט. כשתחזור הרשת — אפשר להוריד אותו ממסך ההורדות.');
+            err.code = 'offline_missing';
+            throw err;
+        }
     };
 
     /** גיליון (phone-first-design §5) בלי "שמירה" — השינויים חיים. */
@@ -113,7 +160,22 @@
     async function screen(main, { edition, sid }) {
         const back = document.getElementById('back');
         const s = await SF.readerSettings();
-        const [data, cat] = await Promise.all([SF.api('read-revision', { params: { edition } }), SF.catalog().catch(() => ({ customs: [] }))]);
+        let loaded;
+        try {
+            loaded = await SF.textFor(edition);
+        } catch (e) {
+            if (e.code !== 'offline_missing') throw e;
+            main.replaceChildren(h('div', { class: 'fail', role: 'alert' }, h('div', { class: 'ic', 'aria-hidden': 'true' }, '📡'), h('p', null, e.message),
+                h('a', { class: 'btn primary', href: '#/downloads' }, 'למסך ההורדות')));
+            return;
+        }
+        const data = loaded.data;
+        // נפתח מההורדה ויש רשת — קטלוג טרי, כדי לדעת אם פורסמה גרסה חדשה (ברשת — data.revision.current אומר)
+        const cat = await SF.catalog(loaded.from === 'download' && !SF.isOffline()).catch(() => ({ customs: [] }));
+        const shown = data.revision ? data.revision.pid : null;     // הגרסה שמוצגת עכשיו
+        if (shown) await SF.version.pin(edition, shown);            // קורא בפעם הראשונה — נשאר בגרסה הזו עד שיבחר לעבור
+        const cur = SF.currentRev(cat, edition) || (data.revision && data.revision.current ? data.revision : null);
+        const newer = shown && cur && cur.pid !== shown && cur.n > data.revision.n ? cur : null;
         const kind = data.title.kind;
         back.dataset.to = kind === 'siddur' ? '#/siddur' : kind === 'tehillim' ? '#/tehillim' : '#/';
         document.title = data.title.name + ' · ספורנו';
@@ -153,6 +215,7 @@
         const temp = h('div', { class: 'rd-temp', role: 'status', hidden: true });
         const names = h('div', { class: 'rd-names', hidden: true });
         const nav = h('nav', { class: 'rd-nav', 'aria-label': 'מעבר בין מקטעים', hidden: true });
+        const verBar = h('div', { class: 'rd-ver', role: 'status', hidden: true });
         const act = h('div', { class: 'rd-act', role: 'toolbar', 'aria-label': 'פעולות על המקום שסומן', hidden: true });
         const pagesBox = h('div', { class: 'rd-pages', hidden: true });
         const bar = h('div', { class: 'rd-bar', role: 'toolbar', 'aria-label': 'הקורא' },
@@ -163,7 +226,7 @@
             h('a', { class: 'icon-btn', href: '#/search/' + edition, 'aria-label': 'חיפוש בספר' }, '🔍'),
             h('span', { class: 'rd-where one', 'aria-live': 'polite' }),
             toolsBtn);
-        const body = h('div', { class: 'rd-body' }, h('div', { class: 'rd-main' }, names, temp, text, pagesBox), tools);
+        const body = h('div', { class: 'rd-body' }, h('div', { class: 'rd-main' }, verBar, names, temp, text, pagesBox), tools);
         main.replaceChildren(h('div', { class: 'rd' }, bar, body, nav, act));
         document.body.classList.toggle('rd-wide', true);
         const where = bar.querySelector('.rd-where');
@@ -318,13 +381,12 @@
             doc.querySelector('[data-sid="' + sd + '"]').classList.add('rd-here');
             actions();
         }
-        const myMarks = sd => marks.filter(m => m.edition === edition && m.sid === sd);
+        const myMarks = sd => O.visible(marks, edition, shown).filter(m => m.sid === sd);
         async function saveMarks(fn) { marks = await SF.store.update('marks', [], fn); paintMarks(); actions(); SF.put(tools, toolList()); }
         function paintMarks() {
             if (!doc) return;
             for (const x of doc.querySelectorAll('[data-hl], [data-bm], [data-note]')) { delete x.dataset.hl; delete x.dataset.bm; delete x.dataset.note; }
-            for (const m of marks) {
-                if (m.edition !== edition) continue;
+            for (const m of O.visible(marks, edition, shown)) {
                 const el = doc.querySelector('[data-sid="' + m.sid + '"]');
                 if (!el) continue;
                 if (m.type === 'highlight') el.dataset.hl = m.color;
@@ -354,7 +416,7 @@
                 btn('🔖', bm ? 'הסרת סימניה' : 'סימניה', () => (bm ? drop(bm) : add('bookmark')), !!bm),
                 h('span', { class: 'rd-colors', role: 'group', 'aria-label': 'הדגשה' },
                     Object.entries(COLORS).map(([c, n]) => h('button', { class: 'rd-color', type: 'button', dataset: { c }, 'aria-label': 'הדגשה ב' + n, 'aria-pressed': String(!!hl && hl.color === c),
-                        onclick: () => (hl && hl.color === c ? drop(hl) : saveMarks(list => list.filter(x => !(hl && x.id === hl.id)).concat([{ id: SF.store.id(), edition, sid: here, type: 'highlight', color: c, excerpt: excerpt(here), created_at: now(), updated_at: now() }]))) }))),
+                        onclick: () => (hl && hl.color === c ? drop(hl) : saveMarks(list => list.filter(x => !(hl && x.id === hl.id)).concat([{ id: SF.store.id(), edition, rev: shown || undefined, sid: here, type: 'highlight', color: c, excerpt: excerpt(here), created_at: now(), updated_at: now() }]))) }))),
                 btn('📝', note ? 'עריכת ההערה' : 'הערה אישית', () => noteSheet(note), !!note),
                 btn('📋', 'העתקה עם מקור', copyHere),
                 btn('🔗', 'שיתוף קישור לקטע', shareHere),
@@ -371,7 +433,7 @@
                 const now = new Date().toISOString();
                 await saveMarks(list => {
                     const rest = list.filter(x => !(note && x.id === note.id));
-                    return v ? rest.concat([Object.assign({}, note || { id: SF.store.id(), edition, sid: here, type: 'note', created_at: now }, { note: v, excerpt: excerpt(here), updated_at: now })]) : rest;
+                    return v ? rest.concat([Object.assign({}, note || { id: SF.store.id(), edition, rev: shown || undefined, sid: here, type: 'note', created_at: now }, { note: v, excerpt: excerpt(here), updated_at: now })]) : rest;
                 });
                 dlg.close();
             } }, 'שמירה');
@@ -426,7 +488,7 @@
         async function favHere() {
             const name = sectionOf(here) || excerpt(here).slice(0, 40);
             await SF.store.update('favorites', [], list => list.some(f => f.edition === edition && f.sid === here) ? list
-                : list.concat([{ id: SF.store.id(), edition, sid: here, name, created_at: new Date().toISOString() }]));
+                : list.concat([{ id: SF.store.id(), edition, rev: shown || undefined, sid: here, name, created_at: new Date().toISOString() }]));
             SF.toast('נוסף למועדפים');
         }
 
@@ -517,7 +579,8 @@
         // ── כלים (סרגל צד במחשב; נפתח ונסגר בטלפון) ──────────
         function toolList() {
             const sw = (label, on, fn) => h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: on, onchange: e => fn(e.target.checked) }), h('span', null, label));
-            const mine = marks.filter(m => m.edition === edition);
+            const mine = O.visible(marks, edition, shown);
+            const lost = O.unmatched(marks, edition, shown).concat(O.unmatched(favs, edition, shown).map(f => Object.assign({ type: 'favorite', excerpt: f.name }, f)));
             const icon = { bookmark: '🔖', highlight: '🖍️', note: '📝' };
             return [
                 h('h3', { class: 'sec-title' }, 'כלים'),
@@ -529,6 +592,15 @@
                     h('span', { class: 'use-ic', 'aria-hidden': 'true' }, icon[m.type] || '•'),
                     h('span', { class: 'use-tx' }, h('b', { class: 'one' }, m.type === 'note' ? m.note : m.excerpt || '—'), h('small', { class: 'one' }, m.type === 'note' ? m.excerpt : sectionOf(m.sid))))))) :
                     h('p', { class: 'hint' }, 'הקשה קצרה על שורה מסמנת אותה, ואז אפשר להוסיף סימניה, הדגשה או הערה.'),
+                lost.length ? h('h3', { class: 'sec-title' }, 'לא הותאמו לגרסה הזו (' + lost.length + ')') : null,
+                lost.length ? h('p', { class: 'hint' }, 'המקום שלהם לא קיים בגרסה ' + (data.revision ? data.revision.n : '') + '. הם לא נמחקו — הם צמודים לגרסה שבה נוצרו.') : null,
+                lost.length ? h('ul', { class: 'list' }, lost.map(m => h('li', { class: 'card' }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, (icon[m.type] || '⭐')),
+                    h('div', { class: 'body' }, h('div', { class: 'l1' }, h('b', { class: 'one' }, m.type === 'note' ? m.note : m.excerpt || '—')),
+                        h('div', { class: 'l2' }, m.type === 'note' ? m.excerpt : 'הטקסט המקורי'))))) : null,
+                h('h3', { class: 'sec-title' }, 'גרסה'),
+                verBox,
+                h('h3', { class: 'sec-title' }, 'בלי אינטרנט'),
+                SF.dlLine(edition, { rev: shown, full: true }),
             ];
         }
         function onVis() { if (document.visibilityState === 'visible' && s.wake) C.wakeLock(navigator).then(w => { wake = w; }); }
@@ -561,10 +633,61 @@
                 h('div', { class: 'rd-pg-bar' }, b('›', 'העמוד הקודם', () => { n = Math.max(1, n - 1); }), label, b('‹', 'העמוד הבא', () => { n = Math.min(pdf.numPages, n + 1); }),
                     b('−', 'הקטנה', () => { zoom = Math.max(0.5, zoom - 0.25); }), b('+', 'הגדלה', () => { zoom = Math.min(4, zoom + 0.25); })),
                 h('div', { class: 'rd-pg' }, canvas));
-            SF.loadPdfjs().then(lib => lib.getDocument({ url: 'api.php?action=read-pages&edition=' + edition, withCredentials: true, isEvalSupported: false }).promise)
+            const pagesUrl = 'api.php?action=read-pages&edition=' + edition;
+            // מההורדה (06) — כל הקובץ מהמכשיר; אחרת מהרשת
+            SF.loadPdfjs().then(async lib => {
+                const buf = loaded.from === 'download' ? await SF.offline.buffer(pagesUrl) : null;
+                return lib.getDocument(buf ? { data: buf, isEvalSupported: false } : { url: pagesUrl, withCredentials: true, isEvalSupported: false }).promise;
+            })
                 .then(p => { pdf = p; return draw1(); }).catch(e => box.replaceChildren(h('p', { class: 'error' }, e.message)));
             return box;
         }
+
+        // ── הגרסה (06) ────────────────────────────────────────
+        const verBox = h('div', { class: 'rd-verbox' });
+        let ver = await SF.version.raw(edition);
+        const revLabel = r => 'גרסה ' + r.n + (r.published_at ? ' · ' + SF.when(r.published_at).split(',')[0] : '');
+        async function switchTo(to, label) {
+            if (!shown) return;
+            for (const b of document.querySelectorAll('.rd-ver button, .rd-verbox button')) b.disabled = true;
+            try {
+                const nd = await SF.api('read-revision', { params: { edition, revision: to } });
+                if (!nd.revision) throw new Error('לגרסה הזו אין טקסט');
+                savePos();
+                const r = await SF.version.move(edition, shown, nd.revision.pid, O.sidsOf(nd.html));
+                await SF.store.setRaw('verseen:' + edition, shown);
+                const rec = await SF.offline.record(edition);
+                if (rec && SF.offline.supported) {
+                    // ההורדה עוברת יחד עם הגרסה — רק כי הקורא כבר הוריד אותה וביקש לעבור
+                    try { await SF.offline.download(edition, nd.revision.pid); } catch (e) { SF.toast('ההורדה של הגרסה החדשה לא הושלמה — אפשר לנסות שוב במסך ההורדות', true); }
+                }
+                SF.toast(label + ' (' + revLabel(nd.revision) + ')' + (r.kept ? ' · ' + r.kept + ' לא הותאמו — ברשימה בכלים' : ''));
+                SF.render();
+            } catch (e) {
+                SF.toast(e.code === 'network' ? 'אין חיבור — המעבר בין גרסאות דורש אינטרנט' : e.message, true);
+                for (const b of document.querySelectorAll('.rd-ver button, .rd-verbox button')) b.disabled = false;
+            }
+        }
+        function drawVer() {
+            if (!data.revision) { SF.put(verBox, h('p', { class: 'hint' }, 'עמודים בלבד')); return; }
+            const back = ver && ver.prev && ver.prev !== shown ? ver.prev : null;
+            SF.put(verBox,
+                h('p', null, revLabel(data.revision), newer ? h('span', { class: 'chip' }, 'לא האחרונה') : h('span', { class: 'chip ok' }, 'האחרונה')),
+                loaded.from === 'download' ? h('p', { class: 'hint' }, 'נפתח מההורדה שבמכשיר') : null,
+                newer ? h('button', { class: 'btn sm primary', type: 'button', onclick: () => switchTo(newer.pid, 'עברת לגרסה החדשה') }, 'לעבור ל' + revLabel(newer)) : null,
+                back ? h('button', { class: 'btn sm ghost', type: 'button', onclick: () => switchTo(back, 'חזרת לגרסה הקודמת') }, 'חזרה לגרסה הקודמת') : null,
+                h('p', { class: 'hint' }, 'פרסום חדש לא מחליף את הגרסה שלך. הסימניות וההערות עוברות לפי המקום בטקסט.'));
+        }
+        async function verBanner() {
+            if (!newer || (await SF.store.get('verseen:' + edition, null)) === newer.pid) { verBar.hidden = true; return; }
+            SF.put(verBar, h('span', null, 'יש גרסה חדשה של "' + data.title.name + '" — ' + revLabel(newer) + '. לעבור?'),
+                h('button', { class: 'btn sm primary', type: 'button', onclick: () => switchTo(newer.pid, 'עברת לגרסה החדשה') }, 'לעבור'),
+                h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => { await SF.store.setRaw('verseen:' + edition, newer.pid); verBar.hidden = true; } }, 'לא עכשיו'));
+            verBar.hidden = false;
+        }
+        const favs = await SF.store.get('favorites', []);
+        drawVer();
+        verBanner();
 
         // ── התחלה ─────────────────────────────────────────────
         draw();
@@ -596,7 +719,7 @@
         ['wheel', 'touchstart', 'keydown'].forEach(t => window.addEventListener(t, () => { moved = true; }, { once: true, passive: true }));
         window.addEventListener('scroll', onScroll, { passive: true });
         window.addEventListener('pagehide', savePos);
-        SF.reader = { capture, restore, setMode, go, units: () => units.length, unit: () => unit, conds: () => cst, settings: s, step };   // לבדיקות בדפדפן
+        SF.reader = { capture, restore, setMode, go, units: () => units.length, unit: () => unit, conds: () => cst, settings: s, step, shown, from: loaded.from, switchTo };   // לבדיקות בדפדפן
     }
 
     SF.route('#/r/:edition', screen, { title: 'קורא', parent: '#/' });

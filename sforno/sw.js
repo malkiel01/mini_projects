@@ -1,0 +1,96 @@
+/*
+ * ספורנו — ה-service worker (אפיון 06 §2). ה-scope: התיקייה של ספורנו בלבד; לא נוגע בשום כתובת מחוץ לה.
+ *
+ *   מעטפת — הקבצים של האפליקציה (SHELL) נשמרים במטמון "sforno-shell-<VERSION>-<BUILD>" ומוגשים ממנו (גם בלי רשת).
+ *           VERSION = "version" שב-app.json; BUILD = hash של קובצי המעטפת (tests/j-offline בודק ששניהם עדכניים — אחרת
+ *           הפריסה נעצרת; עדכון: SF_UPDATE_SW=1 php sforno/tests/run.php). שינוי בקובץ ← sw.js חדש ← הדפדפן מתקין אותו
+ *           **וממתין**: הפס "עדכון זמין — לרענן" (assets/js/offline.js). מתחלף רק אחרי SKIP_WAITING מהקורא — לא באמצע תפילה.
+ *   הורדות — המטמון "sforno-content" שייך לדף (offline-core.js). כאן רק מגישים ממנו את התמונות (read-file) כשאין רשת.
+ *           **activate מוחק רק מטמונים ישנים של המעטפת** — לא את ההורדות, ולא נוגע ב-IndexedDB (המידע האישי).
+ *   API — לא נשמר ולא מוגש מכאן (חוץ מ-read-file מתוך הורדה). data/ ושאר התיקיות שאינן של הדפדפן — לא נוגעים.
+ */
+'use strict';
+
+const VERSION = '0.6';
+const BUILD = 'd1f2abb14981';
+const SHELL_CACHE = 'sforno-shell-' + VERSION + '-' + BUILD;
+const CONTENT_CACHE = 'sforno-content';
+
+const SHELL = [
+    './',
+    'index.html',
+    'manifest.webmanifest',
+    'assets/icon.svg',
+    'assets/icon-192.png',
+    'assets/icon-512.png',
+    'assets/icon-maskable-512.png',
+    'assets/apple-touch-icon.png',
+    'assets/css/app.css',
+    'assets/css/devloop.css',
+    'assets/fonts/DavidLibre-Regular.ttf',
+    'assets/fonts/DavidLibre-Bold.ttf',
+    'assets/js/devloop.js',
+    'assets/js/api.js',
+    'assets/js/router.js',
+    'assets/js/render.js',
+    'assets/js/reader-core.js',
+    'assets/js/store.js',
+    'assets/js/sync-core.js',
+    'assets/js/sync.js',
+    'assets/js/offline-core.js',
+    'assets/js/offline.js',
+    'assets/js/screens/home.js',
+    'assets/js/screens/reader.js',
+    'assets/js/screens/siddur.js',
+    'assets/js/screens/downloads.js',
+    'assets/js/screens/admin.js',
+    'assets/js/screens/content.js',
+    'assets/js/screens/import.js',
+    'assets/js/screens/reader-admin.js',
+    'assets/js/screens/dev.js',
+    'assets/js/screens/account.js',
+    'assets/js/app.js',
+    'assets/vendor/pdfjs/pdf.min.js',
+    'assets/vendor/pdfjs/pdf.worker.min.js',
+];
+
+const scopePath = () => new URL(self.registration.scope).pathname;
+
+self.addEventListener('install', event => {
+    // בלי skipWaiting: גרסה חדשה ממתינה עד שהקורא בוחר "לרענן"
+    event.waitUntil(caches.open(SHELL_CACHE).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload', credentials: 'same-origin' })))));
+});
+
+self.addEventListener('message', event => {
+    if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+    event.waitUntil(caches.keys()
+        .then(keys => Promise.all(keys.filter(k => k.startsWith('sforno-shell-') && k !== SHELL_CACHE).map(k => caches.delete(k))))
+        .then(() => self.clients.claim()));
+});
+
+self.addEventListener('fetch', event => {
+    const req = event.request;
+    if (req.method !== 'GET') return;
+    const url = new URL(req.url);
+    if (url.origin !== self.location.origin || !url.pathname.startsWith(scopePath())) return;
+    const path = url.pathname.slice(scopePath().length);
+
+    // תמונה / עמוד מתוך הורדה: קודם ההורדה (הקובץ לא משתנה), אחר כך הרשת
+    if (path === 'api.php') {
+        if (url.searchParams.get('action') !== 'read-file') return;
+        event.respondWith(caches.open(CONTENT_CACHE).then(c => c.match(req)).then(hit => hit || fetch(req)));
+        return;
+    }
+    if (/\.php$/.test(path) || /^(data|lib|tests|team|docs|dev)\//.test(path)) return;
+
+    // המעטפת: מהמטמון של הגרסה הזו; דף (ניווט) — תמיד index.html של הגרסה
+    const shellKey = req.mode === 'navigate' && (path === '' || path === 'index.html') ? './' : path;
+    if (!SHELL.includes(shellKey) && !(req.mode === 'navigate' && shellKey === './')) {
+        event.respondWith(fetch(req).catch(() => caches.match(req).then(hit => hit || Response.error())));
+        return;
+    }
+    event.respondWith(caches.open(SHELL_CACHE).then(c => c.match(shellKey)).then(hit => hit || fetch(req)));
+});

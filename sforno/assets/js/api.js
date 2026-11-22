@@ -20,18 +20,24 @@ window.SF = window.SF || {};
         const q = new URLSearchParams({ action, ...(opts.params || {}) });
         const t0 = performance.now();
         let res, data = null;
+        // GET בלי תשובה תוך 20 שניות (רשת "חיה" שלא עונה) — כמו בלי רשת, ולא גלגל טעינה אינסופי (06 §5.8)
+        const ctl = !post && typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctl ? setTimeout(() => ctl.abort(), opts.timeout || 20000) : 0;
         try {
             res = await fetch('api.php?' + q, {
                 method: post ? 'POST' : 'GET',
                 credentials: 'same-origin',
+                signal: ctl ? ctl.signal : undefined,
                 headers: post ? { 'Content-Type': 'application/json', ...SF.headers(), ...(readerCsrf ? { 'X-Reader-CSRF': readerCsrf } : {}) } : { Accept: 'application/json' },
                 body: post ? JSON.stringify(opts.body || {}) : undefined,
             });
         } catch (e) {
+            clearTimeout(timer);
             const err = new Error('אין חיבור לשרת. בדקו את החיבור לרשת ונסו שוב');
             err.code = 'network'; err.status = 0;
             throw err;
         }
+        clearTimeout(timer);
         try { data = await res.json(); } catch (e) { data = null; }
         if (window.DevLoop) DevLoop.noteRequest({ action, method: post ? 'POST' : 'GET', status: res.status, id: res.headers.get('X-Request-Id') || '', ms: Math.round(performance.now() - t0) });
         if (!res.ok || !data || data.ok === false || data.error) {
