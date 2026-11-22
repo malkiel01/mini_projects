@@ -22,3 +22,8 @@ CURLOPT_RESOLVE — נפתר פעם אחת ומוצמד; הגבלת webhook לפ
 - `sf_net_ip_public` מפספס NAT64 (`64:ff9b::/96`), 6to4 (`2002::/16`), `fec0::/10`, multicast (`ff00::/8`, `224.0.0.0/4`), `198.18.0.0/15` — להוסיף (אותו תיקון).
 - הגבלות קצב לפי `REMOTE_ADDR` — נכון כל עוד אין CDN/proxy מלפנים.
 - הגנת `data/backups/` נבדקת על הדיסק בלבד — בדיקה ידנית אחרי הפריסה: בקשה ל-`sforno/data/backups/<name>.zip` ← 403 (מטלה).
+
+## סבב 2 — ✅ (בקרה 3, 22.11 ~22:00 UTC, בלי סוקר)
+#1802 (`claude/sforno-10-fix`): 🟡1 — `maintenance.json` חוסם api/cron, כל rename נבדק, ביטול בסדר הפוך, `finally`, טסט כשל בהזזה הרביעית.
+🟡2 — הורדה רק מוצפנת (Argon2id + secretstream, POST, סיסמה לא נשמרת). 🟡3 — `meta.public_url` לקישורי cron/CLI. ⚪ טווחי IP — נוספו.
+🤖 run.php 14/14 (n-ops 186), check-apps, sync --check, php -l, node --check — ירוקים; מחוץ ל-`sforno/` רק שורת ספורנו ב-`.claude/teams/STATE.md`. למיזוג.
