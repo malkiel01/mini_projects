@@ -197,6 +197,20 @@ function apr_visit_out(array $v): array
         'done' => $v['status'] === 'completed'];
 }
 
+/**
+ * הביקור כפי ששותף רואה אותו (05): **לעולם** בלי איש הקשר לגישה (שם, טלפון, מזהה) ובלי המזהה של המבקר; הערת הגישה והנוכחים הם
+ * הערות של המשרד — רק עם see_internal. למשתתף פנימי — כמו apr_visit_out.
+ */
+function apr_visit_out_for(array $c, array $v): array
+{
+    $out = apr_visit_out($v);
+    if (($c['share'] ?? null) === null) return $out;
+    $out['access_contact'] = null;
+    $out['visitor'] = ['pid' => null, 'name' => $out['visitor']['name']];
+    if (!apr_can($c, 'internal')) $out = ['access_note' => null, 'attendees' => null, 'status_note' => null] + $out;
+    return $out;
+}
+
 function apr_visit_perms(array $ctx, array $c, ?array $v = null): array
 {
     $open = $c['status'] !== 'closed';
@@ -231,7 +245,7 @@ function apr_case_visits(array $ctx, array $q): array
         return ['case' => apr_src_case_head($c), 'perms' => ['plan' => false, 'fill' => false],
             'summary' => ['completed' => count($done), 'last_completed_at' => $done ? max(array_column($done, 'completed_at')) : null,
                 'open' => ($n['planned'] ?? 0) + ($n['in_progress'] ?? 0) + ($n['postponed'] ?? 0), 'no_access' => $n['no_access'] ?? 0, 'postponed' => $n['postponed'] ?? 0],
-            'visits' => array_map(fn($v) => apr_visit_out($v) + ['can_fill' => false], $mine),
+            'visits' => array_map(fn($v) => apr_visit_out_for($c, $v) + ['can_fill' => false], $mine),
             'visitors' => [], 'contacts' => []];
     }
     $visitors = array_values(array_filter(apr_rows('SELECT u.pid, u.name, cm.perms, cm.role FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE cm.case_id = ? AND cm.revoked_at IS NULL ORDER BY u.name', [$c['id']]),
@@ -261,7 +275,7 @@ function apr_visit_view(array $ctx, array $q): array
         $facts[] = ['label' => $f['label'], 'state' => $f['state'], 'source' => $f['source_kind']] + apr_fact_value_out($f['value_num'] === null ? null : (int)$f['value_num'], $f['value_text'], $f['value_date'], $f['unit'], $f['area_kind'], $f);
     }
     return ['case' => apr_src_case_head($c) + ['property_type' => $c['property_type'], 'purpose' => $c['purpose']],
-        'visit' => apr_visit_out($v) + ['snapshot' => $v['form_snapshot'] !== null, 'was_completed' => $v['first_completed_at'] !== null],
+        'visit' => apr_visit_out_for($c, $v) + ['snapshot' => $v['form_snapshot'] !== null, 'was_completed' => $v['first_completed_at'] !== null],
         'perms' => apr_visit_perms($ctx, $c, $v),
         'form' => ['groups' => $groups, 'fields' => $fields, 'completion' => $form['completion'], 'example' => !empty($form['example'])],
         'answers' => $outA, 'rows' => (object)apr_visit_rows((int)$v['id']),

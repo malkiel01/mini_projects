@@ -117,24 +117,25 @@ function apr_share_areas(array $c): array
 /** apr_case_get קורא כאן כשבקשה נשענת על שיתוף. לתמיכה — הבקשה תירשם ביומן של המשרד לפני שהתשובה יוצאת. */
 function apr_share_used(array $c): void
 {
-    if ($c['share']['kind'] === 'support') $GLOBALS['apr_support_case'] ??= $c;
+    if ($c['share']['kind'] === 'support') $GLOBALS['apr_support_case'][(int)$c['id']] ??= $c;
 }
 
 /** צפייה של התמיכה בפריט מסוים — נרשמת מיד, ביומן של המשרד הבעלים. למי שאינו תמיכה: לא עושה דבר. */
 function apr_share_seen(array $c, string $type, string $pid): void
 {
     if (($c['share']['kind'] ?? '') !== 'support') return;
-    $GLOBALS['apr_support_logged'] = true;
+    $GLOBALS['apr_support_logged'][(int)$c['id']] = true;
     apr_case_audit($c, 'support.view', $type, $pid, ['action' => (string)($GLOBALS['apr_action'] ?? '')]);
 }
 
 /** סוף הבקשה (הנתב): בקשת תמיכה שלא נרשמה לפריט מסוים נרשמת על התיק — אין צפייה של התמיכה בלי שורה ביומן. */
 function apr_share_seen_flush(): void
 {
-    $c = $GLOBALS['apr_support_case'] ?? null;
-    $logged = !empty($GLOBALS['apr_support_logged']);
+    $cases = $GLOBALS['apr_support_case'] ?? [];
+    $logged = $GLOBALS['apr_support_logged'] ?? [];
     unset($GLOBALS['apr_support_case'], $GLOBALS['apr_support_logged']);
-    if ($c !== null && !$logged) apr_case_audit($c, 'support.view', 'case', $c['pid'], ['action' => (string)($GLOBALS['apr_action'] ?? '')]);
+    // חיפוש שנגע בכמה תיקים משותפים — שורה לכל תיק, ביומן של המשרד שלו
+    foreach ($cases as $id => $c) if (empty($logged[$id])) apr_case_audit($c, 'support.view', 'case', $c['pid'], ['action' => (string)($GLOBALS['apr_action'] ?? '')]);
 }
 
 // ── קלט: מה משתפים, עם מי, ולכמה זמן ──────────────────────────

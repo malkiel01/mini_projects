@@ -594,6 +594,150 @@ $revoke($avi, $S4);
 $draft = call('POST', 'case-create', ['profile' => $PA], $avi)[1]['case'];
 eq(code(call('POST', 'share-preview', ['case' => $draft] + $toBoaz(), $avi)), 'case_state', 'תיק בטיוטה אינו משותף');
 
+// ══ ביקורת סבב 1: דליפות בתוך התיק המשותף, ותנאים שלא נבדקו ══════
+$GLOBALS['t_share_rate'] = fn() => apr_exec("DELETE FROM login_attempts WHERE key LIKE 'share-lookup:%'");      // הגבלת הקצב של חיפוש נמען נבדקה למעלה
+($GLOBALS['t_share_rate'])();
+$contactPid = (string)apr_val('SELECT ct.pid FROM case_parties cp JOIN contacts ct ON ct.id = cp.contact_id WHERE cp.case_id = ?', [$caseId($C)]);
+apr_exec("UPDATE contacts SET phone = '050-7654321' WHERE pid = ?", [$contactPid]);
+$vu = call('POST', 'visit-update', ['visit' => $V1, 'rev' => (int)apr_val('SELECT rev FROM visits WHERE pid = ?', [$V1]), 'access_contact' => $contactPid, 'access_note' => 'הערת-גישה-סודית'], $avi);
+apr_exec("UPDATE visits SET attendees = 'נוכח-סודי', status_note = 'הערת-מצב-סודית', rev = rev + 1 WHERE pid = ?", [$V1]);
+call('POST', 'visit-start', ['visit' => $V2, 'rev' => (int)apr_val('SELECT rev FROM visits WHERE pid = ?', [$V2])], $avi);
+$VSEC = ['הערת-גישה-סודית', 'נוכח-סודי', 'הערת-מצב-סודית', '050-7654321', $contactPid, $aviPid];
+// B1 — ביקור ששותף כפריט, view בלבד
+$SB = $share($avi, $C, $toBoaz(['scope' => 'items', 'items' => [['type' => 'visit', 'pid' => $V1]]]))[1]['share'];
+$accept($boaz, $SB);
+$lv = $g($boaz, 'case-visits', ['case' => $C]);
+$vw = $g($boaz, 'visit', ['visit' => $V1]);
+$inside = $g($avi, 'visit', ['visit' => $V1])[1];
+eq([$vu[0], $lv[0], $vw[0], $leaks($json($lv) . $json($vw), $VSEC), $vw[1]['visit']['access_contact'], $vw[1]['visit']['visitor'], $lv[1]['visits'][0]['access_contact'], $vw[1]['others'],
+    $inside['visit']['access_contact']['phone'] ?? null, $inside['visit']['access_note'], count($inside['others'])],
+    [200, 200, 200, [], null, ['pid' => null, 'name' => 'אבי'], null, [], '050-7654321', 'הערת-גישה-סודית', 1],
+    '🔴 B1 ביקור משותף: איש הקשר לגישה (שם, טלפון, מזהה), הערת הגישה, הנוכחים, הערת המצב ומזהה המבקר אינם בתשובה — לא ברשימה ולא במסך; ביקור אחר שלא שותף אינו ב-others. משתתף פנימי רואה הכול');
+$share($avi, $C, $toBoaz(['scope' => 'items', 'items' => [['type' => 'visit', 'pid' => $V1]], 'perms' => ['see_internal' => true]]));
+$vw = $g($boaz, 'visit', ['visit' => $V1]);
+eq([$vw[1]['visit']['access_note'], $vw[1]['visit']['attendees'], $vw[1]['visit']['access_contact'], $leaks($json($vw), ['050-7654321', $contactPid, $aviPid])], ['הערת-גישה-סודית', 'נוכח-סודי', null, []],
+    '🔴 B1 עם see_internal: הערת הגישה והנוכחים — כן; איש הקשר, הטלפון והמזהים — לעולם לא');
+
+// B2 — עסקאות כפריט + see_internal: נתוני הנכס אינם יוצאים דרך הקבוצה או דרך "דומה / שונה"
+call('POST', 'fact-add', ['case' => $C, 'attribute' => 'floor', 'value' => '4', 'source' => ['kind' => 'user', 'note' => 'קומה-מהנסח-סודי']], $avi);
+call('POST', 'comp-correct', ['comp' => $K1, 'rev' => (int)apr_val('SELECT rev FROM comps WHERE pid = ?', [$K1]), 'changes' => ['floor' => '2'], 'reason' => 'תיקון'], $avi);
+$gs = call('POST', 'comp-set-save', ['case' => $C, 'unit_basis' => 'per_sqm', 'area_kind' => 'registered', 'method' => 'mean', 'rounding' => 'none', 'subject_area_fact' => $FA], $avi);
+$GS = $gs[1]['set']['pid'] ?? ($gs[1]['set'] ?? null);
+$share($avi, $C, $toBoaz(['scope' => 'items', 'items' => [['type' => 'comps', 'pid' => null]], 'perms' => ['see_internal' => true]]));
+$bs = $g($boaz, 'comp-set', ['set' => $GS]);
+$bk = $g($boaz, 'comp', ['comp' => $K1]);
+$bl = $g($boaz, 'case-comps', ['case' => $C]);
+$as = $g($avi, 'comp-set', ['set' => $GS]);
+$ak = $g($avi, 'comp', ['comp' => $K1]);
+eq([$gs[0], $bs[0], $bk[0], $bs[1]['subject']['fact'], $bs[1]['subject_areas'], $bk[1]['similar'], array_key_exists('fact', $bl[1]['sets'][0]['subject'] ?? []) ? $bl[1]['sets'][0]['subject']['fact'] : 'x', $leaks($json($bs) . $json($bk) . $json($bl), ['מהנסח', 'קומה-מהנסח-סודי', $FA]),
+    ($as[1]['subject']['fact']['pid'] ?? null) === $FA, count($as[1]['subject_areas']) > 0, count($ak[1]['similar']['rows']) + count($ak[1]['similar']['unknown']) > 0],
+    [200, 200, 200, null, [], ['rows' => [], 'unknown' => []], null, [], true, true, true],
+    '🔴 B2 עסקאות כפריט (עם see_internal, בלי נתוני התיק): רשומת הנתון של השטח הנישום, רשימת נתוני השטח ו"דומה / שונה" מול הנכס אינם בתשובה — ב-comp-set, ב-comp וב-case-comps. משתתף פנימי רואה אותם');
+
+// B3 — מי העלה, הערת המקור והערת הבדיקה: גם בקובץ שמשויך לדרישה, וגם לתמיכה
+$linkF1 = (string)apr_val('SELECT rf.pid FROM requirement_files rf JOIN files f ON f.id = rf.file_id WHERE f.pid = ?', [$F1]);
+call('POST', 'file-update', ['file' => $F1, 'source_note' => 'הערת-מקור-סודית'], $avi);
+call('POST', 'file-update', ['file' => $F3, 'source_note' => 'הערת-מקור-סודית'], $avi);
+$rvw = call('POST', 'file-review', ['link' => $linkF1, 'do' => 'approve', 'chk_readable' => true, 'chk_complete' => true, 'chk_matches' => true, 'note' => 'הערת-בדיקה-סודית'], $avi);
+$share($avi, $C, $toBoaz());
+$bd = $g($boaz, 'case-docs', ['case' => $C]);
+$ad = $g($avi, 'case-docs', ['case' => $C]);
+$share($avi, $C, $toSupport(['items' => [['type' => 'file', 'pid' => $F1], ['type' => 'requirement', 'pid' => $R1], ['type' => 'file', 'pid' => $F3]]]));
+$od = $g($owner, 'case-docs', ['case' => $C]);
+$req1 = fn(array $d) => array_values(array_filter($d[1]['requirements'], fn($r) => $r['title'] === 'נסח טאבו'))[0];
+$ISEC = ['הערת-מקור-סודית', 'הערת-בדיקה-סודית', 'אבי'];
+eq([$rvw[0], $leaks($json($bd), $ISEC), $leaks($json($od), $ISEC), $req1($bd)['files'][0]['file']['uploader'], $req1($bd)['files'][0]['reviewed_by'], $req1($bd)['party'], $req1($od)['files'][0]['file']['source_note'], count($od[1]['unassigned']),
+    $leaks($json($ad), $ISEC), $req1($ad)['party'] !== null],
+    [200, [], [], null, null, null, null, 1, $ISEC, true],
+    '🔴 B3 בלי see_internal: מי העלה, הערת המקור, הערת הבדיקה, שם הבודק והגורם של הדרישה אינם בתשובה — בקובץ שמשויך לדרישה ובקובץ שאינו משויך, לשותף ולתמיכה. משתתף פנימי רואה אותם');
+$share($avi, $C, $toBoaz(['perms' => ['see_internal' => true]]));
+eq($leaks($json($g($boaz, 'case-docs', ['case' => $C])), $ISEC), $ISEC, 'עם see_internal — ההערות הפנימיות של הקבצים בתשובה');
+// דרישה ששותפה בלי הקובץ שלה: הקישור לקובץ אינו בתשובה
+$share($avi, $C, $toBoaz(['scope' => 'items', 'items' => [['type' => 'requirement', 'pid' => $R2]]]));
+$bd = $g($boaz, 'case-docs', ['case' => $C]);
+eq([array_column($bd[1]['requirements'], 'title'), $bd[1]['requirements'][0]['files'] ?? 'x', $bd[1]['unassigned'], $leaks($json($bd), ['נסתר', $F2])], [['הסכם מכר'], [], [], []],
+    'דרישה ששותפה בלי הקובץ שלה: הדרישה בתשובה, הקישורים לקבצים שלא שותפו — לא (גם לא שם או מזהה)');
+
+// 🟡4 — סתירות והיסטוריה של נתון אינן לשותף
+call('POST', 'fact-add', ['case' => $C, 'attribute' => 'area', 'value' => '99', 'unit' => 'sqm', 'area_kind' => 'registered', 'source' => ['kind' => 'user', 'note' => 'סותר']], $avi);
+$share($avi, $C, $toBoaz(['perms' => ['see_internal' => true]]));
+$bf = $g($boaz, 'case-facts', ['case' => $C]);
+$b1 = $g($boaz, 'fact', ['fact' => $FA]);
+$af = $g($avi, 'case-facts', ['case' => $C]);
+eq([$bf[0], $bf[1]['conflicts_open'], array_sum(array_map(fn($a) => count($a['conflicts']), $bf[1]['attributes'])), $b1[1]['history'], $b1[1]['conflicts'], $af[1]['conflicts_open'] > 0, count($g($avi, 'fact', ['fact' => $FA])[1]['history']) > 0],
+    [200, 0, 0, [], [], true, true], '🟡4 נתונים לשותף (כל התיק + see_internal): בלי ספירת סתירות, בלי מזהי סתירות ובלי היסטוריית הנתון; משתתף פנימי רואה אותן');
+
+// בדיקת מקור ששותפה: בלי הנתונים, פריטי התכנון והמשימות שנגזרו ממנה
+apr_insert('tasks', ['pid' => apr_pid(), 'office_id' => $officeAId, 'case_id' => $caseId($C), 'kind' => 'system', 'title' => 'משימת-בדיקה-סודית', 'link_type' => 'source_check', 'origin_key' => 'source-x:xplan', 'created_at' => 'x', 'updated_at' => 'x']);
+$pl = call('POST', 'planning-add', ['case' => $C, 'kind' => 'plan', 'title' => 'תוכנית-סודית', 'check' => $CK], $avi);
+$fk = call('POST', 'fact-add', ['case' => $C, 'attribute' => 'floor', 'value' => '7', 'source' => ['kind' => 'source_check', 'ref' => $CK]], $avi);
+$share($avi, $C, $toBoaz(['scope' => 'items', 'items' => [['type' => 'source_check', 'pid' => $CK]], 'perms' => ['see_internal' => true]]));
+$bc = $g($boaz, 'source-check', ['check' => $CK]);
+$ac = $g($avi, 'source-check', ['check' => $CK]);
+eq([$bc[0], $bc[1]['facts'], $bc[1]['items'], $bc[1]['tasks'], $leaks($json($bc), ['משימת-בדיקה-סודית', 'תוכנית-סודית']), count($ac[1]['tasks']), count($ac[1]['items']) === ($pl[0] === 200 ? 1 : 0), count($ac[1]['facts']) === ($fk[0] === 200 ? 1 : 0)],
+    [200, [], [], [], [], 1, true, true], 'בדיקת מקור ששותפה כפריט: הנתונים, פריטי התכנון והמשימות שנגזרו ממנה אינם בתשובה; משתתף פנימי רואה אותם');
+check('ההכנה של בדיקת המקור: לפחות אחד מפריט התכנון והנתון נוצר', $pl[0] === 200 || $fk[0] === 200, [$pl[1], $fk[1]]);
+
+// 🟡1 — חיפוש של התמיכה שנוגע בשני תיקים: שורה לכל תיק
+($GLOBALS['t_share_rate'])();
+apr_exec("INSERT INTO file_texts (file_id, page, text, method, created_at) SELECT id, 1, 'מילת-חיפוש-ייחודית בתיק השני', 'pdf_text', 'x' FROM files WHERE pid = ?", [$G1]);
+$share($dana, $C2, ['kind' => 'support', 'scope' => 'items', 'items' => [['type' => 'file', 'pid' => $G1]], 'perms' => [], 'days' => 7, 'reason' => 'גם התיק השני']);
+$n1 = count($log($C, 'support.view'));
+$n2 = count($log($C2, 'support.view'));
+$hits = $g($owner, 'docs-search', ['q' => 'מילת-חיפוש', 'shared' => '1'])[1]['results'];
+$sup = $g($owner, 'sys-support', [])[1]['shares'];
+eq([array_values(array_unique(array_column(array_column($hits, 'case'), 'pid'))) == [$C2, $C] || array_values(array_unique(array_column(array_column($hits, 'case'), 'pid'))) == [$C, $C2], count($log($C, 'support.view')) - $n1, count($log($C2, 'support.view')) - $n2,
+    count($sup), (int)apr_val("SELECT COUNT(*) FROM case_shares WHERE revoked_at IS NULL AND kind = 'cross_office' AND invite_status = 'active'") >= 1],
+    [true, 1, 1, 2, true], '🟡1 חיפוש של התמיכה שהחזיר תוצאות משני תיקים רושם support.view בכל אחד מהם (ביומן של המשרד שלו); sys-support מציג רק שורות תמיכה — לא שיתופים של שמאים');
+$revoke($avi, (string)apr_val("SELECT pid FROM case_shares WHERE kind = 'support' AND revoked_at IS NULL AND case_id = ?", [$caseId($C)]));
+$revoke($dana, (string)apr_val("SELECT pid FROM case_shares WHERE kind = 'support' AND revoked_at IS NULL AND case_id = ?", [$caseId($C2)]));
+
+// 🟡2 — הרעבת חיפוש: מאות התאמות בקובץ נסתר וחדש יותר אינן דוחקות את ההתאמה הגלויה
+apr_exec("INSERT INTO file_texts (file_id, page, text, method, created_at) WITH RECURSIVE n(i) AS (SELECT 2 UNION ALL SELECT i + 1 FROM n WHERE i < 305) SELECT f.id, n.i, 'מילת-חיפוש-ייחודית בעמוד ' || n.i, 'pdf_text', 'x' FROM files f, n WHERE f.pid = ?", [$F2]);
+for ($i = 0; $i < 210; $i++) apr_insert('requirements', ['pid' => apr_pid(), 'office_id' => $officeAId, 'case_id' => $caseId($C), 'origin' => 'manual', 'doc_type' => 'other', 'title' => "דרישת-הצפה $i", 'created_at' => 'x', 'updated_at' => 'x']);
+call('POST', 'requirement-update', ['requirement' => $R1, 'title' => 'דרישת-הצפה ישנה וגלויה'], $avi);
+$share($avi, $C, $toBoaz(['scope' => 'items', 'items' => [['type' => 'file', 'pid' => $F1], ['type' => 'requirement', 'pid' => $R1]]]));
+$st = $g($boaz, 'docs-search', ['q' => 'מילת-חיפוש', 'shared' => '1'])[1]['results'];
+$sr = $g($boaz, 'docs-search', ['q' => 'דרישת-הצפה', 'shared' => '1'])[1]['results'];
+eq([(int)apr_val('SELECT COUNT(*) FROM file_texts t JOIN files f ON f.id = t.file_id WHERE f.pid = ?', [$F2]), array_values(array_unique(array_column($st, 'file'))), array_column($sr, 'requirement')], [305, [$F1], [$R1]],
+    '🟡2 הרעבת חיפוש: 305 התאמות בטקסט של קובץ נסתר וחדש יותר, ו-210 דרישות נסתרות וחדשות יותר — ההתאמה הגלויה (הישנה) עדיין חוזרת, והנסתרות לא');
+
+// תנאים נוספים ב-apr_share_for וב-share-respond
+($GLOBALS['t_share_rate'])();
+apr_db()->exec('DROP TRIGGER case_shares_perms_upd');
+$sid = (string)apr_val("SELECT pid FROM case_shares WHERE kind = 'cross_office' AND revoked_at IS NULL AND case_id = ?", [$caseId($C)]);
+apr_exec("UPDATE case_shares SET perms = '{\"view\":false,\"download\":true}' WHERE pid = ?", [$sid]);
+$noView = [$sc($g($boaz, 'case', ['case' => $C])), $sc($g($boaz, 'file', ['file' => $F1]))];
+apr_exec("UPDATE case_shares SET perms = '{\"view\":true}' WHERE pid = ?", [$sid]);
+apr_db()->exec((string)preg_replace('/^.*?(CREATE TRIGGER IF NOT EXISTS case_shares_perms_upd.*?END;).*$/s', '$1', (string)file_get_contents(__DIR__ . '/../lib/migrations/015_sharing.sql')));
+$revoke($avi, $sid);
+$SX = $share($avi, $C, $toBoaz(['days' => 30]))[1]['share'];
+$GLOBALS['apr_time'] = $T0 + 30 * 86400;
+$late = [$sc($accept($boaz, $SX)), $g($boaz, 'my-shares', [])[1]['invites']];
+$GLOBALS['apr_time'] = $T0;
+eq([$noView, $late, $accept($boaz, $SX)[0]], [[[404, 'not_found'], [404, 'not_found']], [[404, 'not_found'], []], 200],
+    'שיתוף בלי view — אין גישה לכלום (גם עם download); הזמנה שתוקפה פג לפני שאושרה — אינה מוצגת ואינה מתאשרת');
+$revoke($avi, $SX);
+$cShare = ['id' => 1, 'pid' => 'x', 'perms' => ['view' => true] + array_fill_keys(APR_CASE_PERMS, false), 'my_role' => 'external', 'responsible_user_id' => 0, 'share' => ['kind' => 'cross_office', 'scope' => 'all', 'items' => []]];
+eq([apr_file_visible(['user' => ['id' => 0]], $cShare, ['id' => 0]), apr_file_visible(['user' => ['id' => 0]], $cShare, ['id' => 0, 'pid' => 'ffffffffffffffff'])], [false, true],
+    'apr_file_visible: קובץ בלי מזהה אינו נראה לשותף (אי אפשר להכריע לפריט); עם מזהה, בשיתוף של כל התיק — נראה');
+
+// משתתף פנימי: שורות שלפני 05 (בלי שלוש ההרשאות) — דלוקות; ו-see_internal כבוי מסתיר הערות פנימיות ושורות comp.* ביומן
+$talRow = (int)apr_val('SELECT cm.id FROM case_members cm WHERE cm.case_id = ? AND cm.user_id = ?', [$caseId($C), $uid('tal@example.com')]);
+apr_exec("UPDATE case_members SET perms = '{\"view\":true,\"tasks\":true,\"documents\":true,\"sources\":true,\"contact\":true}' WHERE id = ?", [$talRow]);
+$tp = $g($tal, 'case', ['case' => $C])[1]['me']['perms'];
+$old = [$tp['download'], $tp['see_internal'], $tp['see_draft'], $tp['edit'], $g($tal, 'file', ['file' => $F1])[0], $g($tal, 'case-comps', ['case' => $C])[0]];
+call('POST', 'case-member-update', ['case' => $C, 'user' => $talPid, 'perms' => ['edit' => true]], $avi);
+$kept = json_decode((string)apr_val('SELECT perms FROM case_members WHERE id = ?', [$talRow]), true);
+call('POST', 'case-member-update', ['case' => $C, 'user' => $talPid, 'perms' => ['see_internal' => false]], $avi);
+$tv = $g($tal, 'case', ['case' => $C])[1];
+$ta = array_column($g($tal, 'case-activity', ['case' => $C])[1]['rows'], 'action');
+$aa = array_column($g($avi, 'case-activity', ['case' => $C])[1]['rows'], 'action');
+eq([$old, [$kept['download'] ?? null, $kept['see_internal'] ?? null, $kept['see_draft'] ?? null, $kept['edit'] ?? null], array_values(array_unique(array_column($tv['requirements'], 'explain_internal'))), $tv['comps'],
+    count(array_filter($ta, fn($a) => str_starts_with($a, 'comp.'))), count(array_filter($aa, fn($a) => str_starts_with($a, 'comp.'))) > 0, in_array('הערה-פנימית-סודית', array_column($g($avi, 'case', ['case' => $C])[1]['requirements'], 'explain_internal'), true)],
+    [[true, true, true, false, 200, 200], [true, true, true, true], [''], null, 0, true, true],
+    'משתתף פנימי שנשמר לפני 05 (בלי שלוש ההרשאות): הורדה, פנימי וטיוטה דלוקות, ועדכון של הרשאה אחרת אינו מכבה אותן; עם see_internal כבוי — בלי הערות פנימיות, בלי עסקאות, ובלי שורות comp.* ביומן הפעילות');
+
 // ══ מבנה: נקודת כניסה אחת, וברירת מחדל סגורה ═════════════════════
 $lib = fn(string $f) => (string)file_get_contents(__DIR__ . '/../lib/' . $f);
 $caseRules = array_keys(array_filter(APR_ACCESS, fn($r) => $r === 'case'));

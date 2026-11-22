@@ -806,6 +806,7 @@ function apr_fact_perms(array $ctx, array $c): array
 function apr_case_facts(array $ctx, array $q): array
 {
     $c = apr_fact_case($ctx, $q['case'] ?? null);
+    $seeConf = $c['share'] === null;        // סתירות (ושיקול הדעת שבהן) אינן נחשפות לשותף — גם לא כספירה או כמזהה (05)
     $byAttr = [];
     foreach (apr_rows(APR_FACT_SELECT . ' WHERE f.case_id = ? AND f.deleted_at IS NULL ORDER BY f.id', [$c['id']]) as $f) $byAttr[$f['attribute_key']][] = $f;
     $conf = [];
@@ -825,11 +826,11 @@ function apr_case_facts(array $ctx, array $q): array
                     + ['verified' => $best['state'] === 'verified', 'fact' => $best['pid']];
             }
         }
-        $attrs[] = apr_attr_out($a) + ['known' => (bool)$active, 'value' => $agreed, 'facts' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $a), $rows), 'conflicts' => $conf[$a['key']] ?? []];
+        $attrs[] = apr_attr_out($a) + ['known' => (bool)$active, 'value' => $agreed, 'facts' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $a), $rows), 'conflicts' => $seeConf ? ($conf[$a['key']] ?? []) : []];
     }
     return ['case' => ['pid' => $c['pid'], 'number' => $c['number'], 'status' => $c['status'], 'title' => $c['title']], 'perms' => apr_fact_perms($ctx, $c),
         'groups' => APR_ATTR_GROUPS, 'area_kinds' => APR_AREA_KINDS, 'units' => array_map('array_keys', APR_UNITS), 'sources' => APR_FACT_SOURCES, 'attributes' => $attrs,
-        'conflicts_open' => (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']])];
+        'conflicts_open' => $seeConf ? (int)apr_val("SELECT COUNT(*) FROM conflicts WHERE case_id = ? AND status = 'open'", [$c['id']]) : 0];
 }
 
 /** נתון אחד: הערך, ההיסטוריה המלאה שלו מיומן הפעולות, מי נשען עליו, והסתירות שהוא חלק מהן. */
@@ -840,11 +841,12 @@ function apr_fact_view(array $ctx, array $q): array
     $attr = apr_attr($f['attribute_key']);
     return ['case' => ['pid' => $c['pid'], 'number' => $c['number'], 'status' => $c['status']], 'perms' => apr_fact_perms($ctx, $c), 'attribute' => apr_attr_out($attr),
         'fact' => apr_fact_out($ctx, $c, $f, $attr),
-        'history' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'by' => $r['name'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason']],
+        // ההיסטוריה היא יומן הפעילות של הנתון (ערכים קודמים, נימוקים, מי) — כמו יומן התיק, למשתתפים פנימיים בלבד (05)
+        'history' => $c['share'] !== null ? [] : array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'by' => $r['name'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason']],
             apr_rows("SELECT a.at, a.action, a.meta, a.reason, u.name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.entity_type = 'fact' AND a.entity_pid = ? AND a.case_id = ? ORDER BY a.id", [$f['pid'], $c['id']])),
         'uses' => array_map(fn($u) => ['type' => $u['used_in_type'], 'pid' => $u['used_in_pid'], 'stale' => (bool)$u['stale'], 'stale_at' => $u['stale_at']],
             apr_rows('SELECT * FROM fact_uses WHERE fact_id = ? ORDER BY id', [$f['id']])),
-        'conflicts' => array_map(fn($r) => ['pid' => $r['pid'], 'status' => $r['status'], 'kind' => $r['kind']],
+        'conflicts' => $c['share'] !== null ? [] : array_map(fn($r) => ['pid' => $r['pid'], 'status' => $r['status'], 'kind' => $r['kind']],
             apr_rows('SELECT c.pid, c.status, c.kind FROM conflicts c JOIN conflict_facts cf ON cf.conflict_id = c.id WHERE cf.fact_id = ? ORDER BY c.id', [$f['id']]))];
 }
 

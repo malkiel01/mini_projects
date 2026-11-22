@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS case_shares (
 CREATE UNIQUE INDEX IF NOT EXISTS case_shares_active_user ON case_shares (case_id, user_id) WHERE revoked_at IS NULL AND kind = 'cross_office';
 CREATE UNIQUE INDEX IF NOT EXISTS case_shares_active_support ON case_shares (case_id) WHERE revoked_at IS NULL AND kind = 'support';
 CREATE INDEX IF NOT EXISTS case_shares_user ON case_shares (user_id, revoked_at);
+CREATE INDEX IF NOT EXISTS case_shares_case ON case_shares (case_id, revoked_at);              -- apr_share_for: בכל בקשה של שותף
 
 -- כש-scope = items: מה שותף. item_pid NULL = כל הפריטים מהסוג (גם כאלה שיתווספו אחר כך — §8.6)
 CREATE TABLE IF NOT EXISTS case_share_items (

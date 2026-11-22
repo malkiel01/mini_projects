@@ -230,6 +230,7 @@ function apr_authorize(array $ctx, string $action, array $in = []): void
         case 'case':
             // מי שיש לו שיתוף פעיל (או שהוא מנהל מערכת — אולי שותף איתו תיק) אינו נדרש למשרד פעיל משלו: השיתוף הוא לאדם (05 §8.1).
             // זה עוד לא היתר לשום תיק — apr_case_get מכריע, ובלי שיתוף פעיל לתיק הזה התשובה 404.
+            if (($in['office'] ?? null) !== null && ($in['office'] ?? '') !== '') { apr_office($ctx, $in['office']); return; }    // לשונית שנושאת משרד — נבדקת כמו תמיד
             if ((int)$u['is_sysadmin'] || apr_val("SELECT 1 FROM case_shares WHERE user_id = ? AND kind = 'cross_office' AND revoked_at IS NULL AND invite_status = 'active' LIMIT 1", [$u['id']])) return;
             apr_office($ctx, $in['office'] ?? null);
             return;

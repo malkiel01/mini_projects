@@ -838,7 +838,8 @@ function apr_comp_set_subject(array $ctx, array $c, array $g): ?array
     $use = array_values(array_filter(apr_fact_uses_of($c, 'calc', $g['pid']), fn($u) => $u['fact'] === $f['pid']))[0] ?? null;
     $usable = $f['deleted_at'] === null && $f['state'] !== 'rejected' && apr_fact_has_value($f) && $f['area_kind'] === $g['area_kind'];
     $area = $usable ? apr_fact_norm($f, $attr)[1] : null;
-    return ['fact' => $f['deleted_at'] === null ? apr_fact_out($ctx, $c, $f, $attr) : null, 'usable' => $usable, 'stale' => (bool)($use['stale'] ?? false),
+    // מי שאינו רואה את נתוני התיק (שותף בשיתוף פריטים — 05) מקבל את החישוב, לא את רשומת הנתון: ערך, מקור ומי הזין
+    return ['fact' => $f['deleted_at'] === null && apr_can($c, 'facts') ? apr_fact_out($ctx, $c, $f, $attr) : null, 'usable' => $usable, 'stale' => (bool)($use['stale'] ?? false),
         'area' => apr_fact_num_out($area), 'area_kind' => $g['area_kind'],
         'total' => $usable && $g['conclusion_value'] !== null && $g['unit_basis'] === 'per_sqm' ? apr_comp_money(apr_calc_subject_total((int)$g['conclusion_value'], (int)$area)) : null];
 }
@@ -903,7 +904,7 @@ function apr_comp_view(array $ctx, array $q): array
     }
     $search = $k['search_id'] !== null ? apr_row('SELECT * FROM comp_searches WHERE id = ?', [$k['search_id']]) : null;
     return ['case' => apr_comp_case_head($c), 'perms' => apr_comp_perms($ctx, $c), 'comp' => apr_comp_out($k, true, apr_comp_corrector_names([$k])),
-        'search' => $search ? apr_comp_search_out($ctx, $c, $search) : null, 'similar' => apr_comp_similar($k, apr_comp_subject($c)),
+        'search' => $search ? apr_comp_search_out($ctx, $c, $search) : null, 'similar' => apr_can($c, 'facts') ? apr_comp_similar($k, apr_comp_subject($c)) : ['rows' => [], 'unknown' => []],      // ההשוואה לנכס הנישום היא נתוני התיק
         'adjustments' => array_map('apr_comp_adj_out', $adjs), 'calcs' => $calcs, 'defaults' => apr_comp_defaults($c),
         'lists' => ['statuses' => APR_COMP_STATUSES, 'precisions' => APR_COMP_PRECISIONS, 'area_kinds' => APR_AREA_KINDS, 'currencies' => APR_COMP_CURRENCIES],
         'history' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'by' => $r['name'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason']],

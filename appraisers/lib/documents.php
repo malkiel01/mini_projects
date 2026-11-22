@@ -541,6 +541,8 @@ function apr_case_docs(array $ctx, array $q): array
     $internal = apr_can($c, 'internal');
     $seen = [];
     foreach ($files as $id => $f) if (!apr_file_visible($ctx, $c, $f)) unset($files[$id]);
+    // מי העלה והערת המקור הם הערות של המשרד: בלי see_internal אינם בתשובה — בכל ענף (משויך לדרישה ולא משויך)
+    if (!$internal) foreach ($files as $id => $f) $files[$id] = ['uploader_name' => null, 'source_note' => null] + $f;
     foreach ($links as $rid => $ls) $links[$rid] = array_values(array_filter($ls, fn($l) => isset($files[$l['file_id']])));
     $reqs = [];
     foreach (apr_rows('SELECT r.*, cp.pid AS party_pid, u.name AS status_by_name, sf.pid AS split_from FROM requirements r LEFT JOIN case_parties cp ON cp.id = r.party_id
@@ -570,7 +572,7 @@ function apr_case_docs(array $ctx, array $q): array
         'groups' => $ext ? [] : apr_case_version_content((int)$c['profile_version_id'])['requirements']['groups'],       // הקבוצות הן תוכן של פרופיל המשרד
         'requirements' => $reqs,
         // לשותף: גם קובץ ששותף והדרישה שלו לא — מוצג כאן, בלי הדרישה
-        'unassigned' => array_values(array_map(fn($f) => apr_file_out($internal ? $f : ['uploader_name' => null, 'source_note' => null] + $f, $tags[$f['id']] ?? []),
+        'unassigned' => array_values(array_map(fn($f) => apr_file_out($f, $tags[$f['id']] ?? []),
             array_filter($files, fn($f) => $f['deleted_at'] === null && (!isset($assigned[$f['id']]) || ($ext && !isset($seen[$f['id']]))))))];
 }
 

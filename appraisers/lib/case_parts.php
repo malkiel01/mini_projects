@@ -546,11 +546,12 @@ function apr_case_activity(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
     apr_can_or_404($c, 'activity');                // יומן הפעילות — למשתתפים פנימיים בלבד (05)
+    $seeComps = apr_can($c, 'comps');              // עסקאות וחישובים הם תחשיב פנימי: מי שאינו רואה אותם אינו רואה גם את השורות שלהם ביומן
     // שורה של בדיקת מקור במצב "לא אותר" / "לא זמין" נושאת את נוסח ההסתייגות גם כאן (09-A2: כל תשובה)
     $hidden = apr_visit_hidden_pids($ctx, $c);     // תמונת ביקור שאינני רשאי לראות אינה מופיעה כאן — גם לא המזהה שלה (13-C1)
     return ['rows' => array_map(fn($r) => ['at' => $r['at'], 'action' => $r['action'], 'entity_type' => $r['entity_type'], 'meta' => json_decode($r['meta'], true) ?: (object)[], 'reason' => $r['reason'],
         'actor' => $r['name'], 'actor_kind' => $r['actor_kind'], 'entity' => in_array($r['entity_type'], ['requirement', 'file'], true) ? $r['entity_pid'] : null]
         + ($r['entity_type'] === 'source_check' ? ['disclaimer' => APR_SRC_DISCLAIMERS[(json_decode($r['meta'], true) ?: [])['status'] ?? ''] ?? null] : []),
         array_values(array_filter(apr_rows('SELECT a.*, u.name FROM audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.case_id = ? ORDER BY a.id DESC LIMIT 300', [$c['id']]),
-            fn($r) => !isset($hidden[$r['entity_pid']]))))];
+            fn($r) => !isset($hidden[$r['entity_pid']]) && ($seeComps || !str_starts_with($r['action'], 'comp.')))))];
 }
