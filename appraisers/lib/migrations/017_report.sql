@@ -104,7 +104,7 @@ CREATE TABLE report_sections (
     UNIQUE (version_id, key),
     CHECK (ai_reviewed = 0 OR ai_reviewed_by IS NOT NULL),
     CHECK (origin <> 'ai' OR ai_allowed = 1),
-    CHECK (ai_allowed = 0 OR key NOT IN ('methods', 'comps', 'assume', 'conclusion'))      -- ש-23: ארבעת אלה לעולם אינם מנוסחים בבינה
+    CHECK (ai_allowed = 0 OR key IN ('property', 'area_desc', 'visit', 'planning'))        -- רשימה סגורה (APR_REPORT_AI_KEYS): רק אלה מנוסחים בבינה; ארבעת הפרקים של ש-23 ו-purpose (שם המזמין) — לעולם לא
 );
 CREATE TRIGGER report_sections_no_delete BEFORE DELETE ON report_sections BEGIN SELECT RAISE(ABORT, 'report_sections: no delete'); END;
 CREATE TRIGGER report_sections_rev BEFORE UPDATE ON report_sections

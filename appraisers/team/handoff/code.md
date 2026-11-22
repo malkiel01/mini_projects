@@ -11,31 +11,68 @@
 | 15 עסקאות השוואה ומנוע החישוב | ב-main, גרסה 0.12. ביקורת: `team/reviews/15-comparables.md` (בענף הבקרה; שני סבבים, בלי 🔴) |
 | הבאה | **11 (בינה: ספקים, שני מסלולים, מכסות, שימוש)** — לפי הבקרה. 05, 12, 14, 16 ואילך עוד לא נבנו |
 
-**המיגרציה האחרונה היא 012.** 001–012 נעולות; הבאה = 013. 18 קובצי בדיקה; `p-comps` — 79 בדיקות.
+**המיגרציה האחרונה היא 017** (ר' "מה 17 השאירה"); הטבלה שלמעלה היסטורית — המצב העדכני בלוח של הבקרה.
 
-## 17 — בעבודה (קוד (15), 2026-11-22) — **השרת גמור ונבדק; המסכים לא התחילו**
+## מה 17 השאירה (קוד (15) + (16), 2026-11-22) — ל-18 (יצוא ל-Word ול-PDF) ולכל מי שנוגע בדוח
 
-הענף `claude/appraisers-code`, מעל main שכולל את 16 (0.16 ← **0.17**, מיגרציה **017**). `tests/run.php` — 23/23; `u-report` — 24 בדיקות.
+הענף `claude/appraisers-code`, PR #1760. גרסה **0.17**, מיגרציה **017** (עוד לא ב-main בזמן הכתיבה — אחרי המיזוג היא נעולה; הבאה 018).
+23 קובצי בדיקה; `u-report` — 32 בדיקות; `tests/mutations-17.php` — 73 מוטציות, כולן נתפסות; להריץ אחרי כל שינוי בדוח (כ-8 דקות; **לא לעשות commit בזמן שהיא רצה**).
 
-**מה יש:** `lib/migrations/017_report.sql` · `lib/report_build.php` · `lib/report.php` · 18 פעולות בנתב וב-`APR_ACCESS` (`case-report`,
-`report-version` פתוחות לשותף; `report-approve` ב-`APR_SENSITIVE`) · מקטע `report` בפרופיל (`apr_pc_report`) · הטריגר ב-`apr_visit_finish` ·
-קודי שגיאה `report_*` · README ("הדוח (17)", "17 · סטיות / לא נבנה / לא נבדק").
+**הקבצים:** `lib/report_build.php` (מקטע הפרופיל, בלוקים, בנייה מהנתונים, פתרון ההפניות, ממצאי הבקרה, הבינה והניקוי שלה) · `lib/report.php`
+(18 הפעולות) · `assets/js/screens/report.js` + `strings-report.js` (קידומת `r` / `R` / `RT`) · `lib/migrations/017_report.sql`.
 
-**מה נשאר, לפי הסדר:**
-1. **המסכים** (אפיון §10) — הכול: `assets/js/screens/report.js` + `strings-report.js` (ב-`index.html`, עם `?v=0.17`); לשונית "דוח וגרסאות"
-   בכרטיס התיק (`cases.js:501`, והשרת צריך להחזיר `report` ב-`case` רק למי שרואה — כמו `comps` ב-`case_parts.php:479`); הנתיב
-   `#/cases/<pid>/report/<גרסה>` (`cases.js:83`); לשונית "דוח" בעורך הפרופיל (`profiles.js:347, 362`; `T.p.editTabs`). **המסך אינו מחשב** —
-   כל מספר מגיע כמחרוזת; הודעות השגיאה מהשרת. תשובת `report-version` כבר נושאת הכול: `sections[].blocks` פתורים (`value`, `rows`, `cols`,
-   `state`, `changed` / `was`), `lines`, `proposal.lines`, `sources`, `findings` (עם `section` / `link`), `comments`, `lists`.
-   `report_blocked` / `report_ack_required` מחזירים `error.findings`. תיעוד אירועי היומן (`report.*`) ב-`T.audit`.
-2. `tests/mutations-17.php` (לפי `mutations-16.php`): הרשאת האישור, ששת החוסמים, הנימוקים, `user_edited` ← הצעה, src שלא נשלח, מספר שלא בנתונים,
-   ארבעת הפרקים האסורים, `apr_report_visible`, הטריגרים.
-3. AP-017: צעדי 👁 (17-E1…E5) — רק אחרי שיש מסך. PR טיוטה קיים (ר' הדיווח לבקרה).
+### ל-18: מה גרסה שאושרה מכילה, ואיך יצוא קורא אותה
 
-**מלכודות שנתקלתי בהן:** `apr_job_add` — `dedupe_key` קבוע לתמיד, לכן הרענון נושא את ה-pid וה-rev של הביקור · רענון הפרקים קורה בקריאת
-`report-version` (בבדיקה: לקרוא את הגרסה אחרי שמוסיפים נתון) · `json_encode` של המודל המדומה: מספר בתוך טקסט התשובה ("d1") נספר כמספר לא ידוע ·
-טריגר `report_sections_frozen_*` — כל כתיבה לפרק כשהגרסה אינה `draft` נופלת ב-PDO, לכן כל פעולה קוראת קודם ל-`apr_report_draft()` ·
-`apr_approach_calc` מקבל `$ctx` אבל אינו משתמש בו להכרעה — ברקע מועבר `['user' => null, 'office' => null]`.
+- **יצוא קורא רק דרך `apr_report_version()` (הפעולה `report-version`)** — לא ישירות מהטבלאות. היא כבר מכריעה מי רואה מה (שותף, `see_draft`),
+  מסמנת `stale`, ומחזירה לגרסה שאושרה את ה-`snapshot` ולטיוטה את הערכים של הרגע. `frozen: true` ← מה שחזר הוא ה-snapshot.
+- **`report_versions.snapshot`** (JSON רגיל, לא דחוס), נכתב פעם אחת ב-`apr_report_approve`, והטריגר `report_versions_approved` אוסר לשנותו:
+  `at` · `approved_by` (שם, כמחרוזת — נשאר גם אם המאשר הוחלף) · `template` (מקטע "דוח" של הפרופיל, כפי שהיה) · `findings` (האזהרות שאושרו, כל
+  אחת עם `ack` = הנימוק) · `sections[]` · `data`.
+  - `sections[]`: `pid, key, title, mandatory, build, origin, state, ai_reviewed, blocks, sources`. **`blocks` פתורים** — זה מה שמייצאים:
+    `p {text, src?, ai?}` · `h {text}` · `list {items[]}` · `table {rows[][]}` · `note_missing {what}` ·
+    `fact {attr, label, value {num, bool, text, date, unit, area_kind} | null, verified, fact (pid)}` — להצגה: `apr_report_fact_stamp($value)`
+    (טקסט + תווית היחידה + סוג השטח), `null` ← "לא ידוע", `verified === false` ← "לא אומת" ·
+    `data_table {table, label, cols[], rows[][], refs[]}` — כל תא מחרוזת מוכנה (כסף כבר מעוצב; `—` לחסר) ·
+    `image {photo (pid של visit_photos), caption?, state: ok, file (pid של files)}`.
+  - `data`: `facts` (הערכים המוסכמים: `label, value, verified, fact`) ו-`tables` (כל שמונה הטבלאות של `APR_REPORT_TABLES`, גם אלה שאינן
+    משובצות בפרק) — לנספח או לביקורת; הדוח עצמו הוא `sections`.
+- **`content_hash`** = `sha256` של מחרוזת ה-`snapshot` **כפי שנשמרה** (לא של קידוד מחדש). יצוא שרוצה לאמת: `hash('sha256', $v['snapshot'])`.
+  קובץ מיוצא צריך לשאת את ה-hash (או את 16 התווים הראשונים) ואת מספר הגרסה — כך מזהים מאיזו גרסה הוא.
+- **`data_hash`** — לשימוש פנימי בלבד (זיהוי `stale`); לא לייצא.
+- **טיוטה מיוצאת עם הפס "טיוטה — לא מאושר"** (ו-`in_review`: "בבדיקה — לא מאושר"), מהערכים של הרגע. פסקה עם `ai: true` בפרק ש-`origin = ai`
+  ו-`ai_reviewed = false` חייבת להיות מסומנת גם בקובץ. **אין "חתום" בשום פלט.**
+- **יצוא אינו משנה מצב** (17-C8). `delivered` נקבע רק במסירה: הטריגר מתיר `approved → delivered`, וצריך גם `cases.status = 'delivered'`. גרסה
+  `delivered` נשמרת לתמיד; `superseded` עדיין נקראת ומיוצאת מה-snapshot שלה.
+- **תמונות:** `image.photo` — הקובץ דרך `visit_photos.file_id`. תמונה שגרסה שאושרה מפנה אליה אינה נמחקת (`report_photo_locked`), אבל `usage`
+  שלה עדיין ניתן לשינוי — ביצוא של גרסה שאושרה לקרוא את הקובץ לפי ה-snapshot, לא לפי ה-`usage` של היום (ל-22: לנעול גם את זה).
+- **לנטרל `=+-@` בתחילת תא** (טבלאות, ערכי נתונים) — הטקסט בדוח הוא של משתמשים ושל מסמכים. אין HTML בבלוקים: הכול טקסט נקי.
+- **שותף:** טיוטה — רק עם `apr_can($c, 'report')`; מאושרת — בשיתוף של כל התיק, **פרקים בלבד** (בלי `sources`, `findings`, `comments`, `data`).
+  יצוא לשותף — רק אם האפיון של 18 מתיר, ואז עם `apr_can($c, 'download')`.
+
+### מה נקבע ב-17 (לא לפתוח מחדש)
+
+- **בינה ברשימה סגורה:** `APR_REPORT_AI_KEYS` (`property, area_desc, visit, planning`) — בפרופיל (`apr_pc_report`), ביצירת הפרק, ב-`CHECK` של
+  `report_sections`, ובזמן הניסוח. `purpose` אינו בה. הקלט למודל עובר `apr_report_ai_scrub`: פריט עם שם / ארגון / מייל / טלפון של גורם בתיק, או
+  דפוס של ת"ז / טלפון / מייל — **מושמט**; שם של עובד המשרד נמחק. מי שמוסיף סוג בלוק או טבלה שנכנסים לקלט — עובר דרך `$put`.
+- **הטקסט של ערך:** `apr_report_fact_stamp` — תוויות (`מ"ר (רשום)`), לא מפתחות; הוא גם ה-`was` של "הערך השתנה" וגם מה שנשלח למודל.
+- **`case` מחזיר `report`** (`apr_case_report_summary`: כמה גרסאות המבקש רואה, ומצב האחרונה; `null` למי שאין לו מה לראות) — כך מוצגת הלשונית.
+  `case-report` מחזיר `check` (ספירת חוסמים / אזהרות של הגרסה הפתוחה) — בלי רענון ובלי כתיבה.
+- **מקור מסוג נתון** מועשר בקריאה (`apr_report_sources_out`): `attr`, `file`, `page`. מסך הקובץ קורא עמוד חד-פעמי מ-`sessionStorage['apr-file-page']`
+  (`<קובץ>:<עמוד>`).
+- **העורך:** `R.draft` הוא האמת בזמן עריכה; `rCollect()` קורא את השדות; `rSave()` שולח עם `rev`; `rRouteLeave()` (נקרא מ-`route()`) שומר ביציאה.
+  `report_changed` ← `rConflict`. מיזוג הצעה — אותו עורך, בלי שמירה אוטומטית, דרך `report-proposal-decide`.
+
+### מלכודות
+
+- `apr_job_add` — `dedupe_key` קבוע לתמיד, לכן הרענון נושא את ה-pid וה-rev של הביקור · רענון הפרקים קורה בקריאת `report-version` (בבדיקה:
+  לקרוא את הגרסה אחרי שמוסיפים נתון) · המודל המדומה: מספר בתוך טקסט התשובה ("d1") נספר כמספר לא ידוע · טריגר `report_sections_frozen_*` — כל
+  כתיבה לפרק כשהגרסה אינה `draft` נופלת ב-PDO, לכן כל פעולה קוראת קודם ל-`apr_report_draft()` · `apr_approach_calc` מקבל `$ctx` אבל אינו משתמש
+  בו להכרעה — ברקע מועבר `['user' => null, 'office' => null]`.
+- **`fact-add` בלי `source` נכשל בשקט בתסריט דמו** (`['kind' => 'user', 'note' => '…']`) — כך נראתה טיוטה "ריקה" בדפדפן.
+- **`.rblk:last-of-type` אינו הבלוק האחרון** (אחריו `div.toolbar`) — ב-Playwright: `locator('.rblk textarea').last()`.
+- **תשע לשוניות בכרטיס התיק** — בטלפון הן נשברות לשתי שורות (`.seg-tabs:has(> :nth-child(9))`). לשונית עשירית: לבדוק ב-420px.
+- **מוטציה על `017_report.sql`** עובדת (המסד נבנה מחדש בכל הרצה), אבל אחרי המיזוג הקובץ נעול — המוטציות נשארות, התיקונים עוברים ל-018.
+- **בודק ההרשאות של הסשן חוסם heredoc עם תוכן מורכב** (נראה לו כמו מחיקה) — לכתוב את הסקריפט לקובץ (Write) ולהריץ.
 
 ## מה 16 השאירה (קוד (14) + (15), 2026-11-22)
 

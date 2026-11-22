@@ -180,7 +180,7 @@ function apr_report_create(array $ctx, array $c, ?int $uid, string $origin, ?arr
         foreach ($tpl['sections'] as $t) {
             $built = $t['build'] === 'data' ? apr_report_build($c, $t['key'], $tpl) : ['blocks' => [], 'sources' => []];
             apr_insert('report_sections', ['pid' => apr_pid(), 'version_id' => $vid, 'key' => $t['key'], 'title' => $t['title'], 'sort' => ++$sort, 'mandatory' => $t['mandatory'] ? 1 : 0, 'build' => $t['build'],
-                'ai_allowed' => $t['ai'] && !in_array($t['key'], APR_REPORT_NO_AI, true) ? 1 : 0, 'content' => json_encode($built['blocks'], JSON_UNESCAPED_UNICODE), 'origin' => $t['build'] === 'data' ? 'auto' : 'manual',
+                'ai_allowed' => $t['ai'] && in_array($t['key'], APR_REPORT_AI_KEYS, true) ? 1 : 0, 'content' => json_encode($built['blocks'], JSON_UNESCAPED_UNICODE), 'origin' => $t['build'] === 'data' ? 'auto' : 'manual',
                 'state' => $built['blocks'] ? 'drafted' : 'empty', 'sources' => json_encode($built['sources'], JSON_UNESCAPED_UNICODE),
                 'auto_hash' => $t['build'] === 'data' ? apr_report_hash($built['blocks']) . ':' . apr_report_data_hash($ctx, $c, $built['blocks'], $tpl) : null, 'updated_by' => $uid, 'updated_at' => $now]);
         }

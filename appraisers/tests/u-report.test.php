@@ -123,6 +123,10 @@ $members = function (string $case) use ($avi, $danaPid, $talPid, $noaPid) {
 };
 
 // ═══ מקטע "דוח" בפרופיל (§4) ═══════════════════════════════════
+eq(array_column(apr_pc_report(['sections' => [['key' => 'purpose', 'title' => 'מטרה', 'ai' => true], ['key' => 'documents', 'title' => 'מסמכים', 'ai' => true], ['key' => 'appendix', 'title' => 'נספחים', 'ai' => true],
+    ['key' => 'my_section', 'title' => 'שלי', 'ai' => true], ['key' => 'property', 'title' => 'זיהוי', 'ai' => true], ['key' => 'planning', 'title' => 'תכנון', 'ai' => true, 'build' => 'manual']]])['sections'], 'ai', 'key'),
+    ['purpose' => false, 'documents' => false, 'appendix' => false, 'my_section' => false, 'property' => true, 'planning' => false],
+    'סטייה 7: בפרופיל, "מותר לנסח בבינה" נשמר רק לפרק שברשימה הסגורה ונבנה מהנתונים — לא purpose, documents, appendix או פרק שהמשתמש הוסיף');
 $d = apr_pc_report_default();
 $forced = apr_pc_report(['sections' => [['key' => 'methods', 'title' => 'שיטות', 'ai' => true], ['key' => 'comps', 'title' => 'עסקאות', 'ai' => true], ['key' => 'assume', 'title' => 'הנחות', 'ai' => true],
     ['key' => 'conclusion', 'title' => 'מסקנה', 'ai' => true, 'build' => 'manual'], ['key' => 'free', 'title' => 'חופשי', 'ai' => true, 'build' => 'manual'], ['key' => 'visit', 'title' => 'ביקור', 'ai' => true, 'mandatory' => true]],
@@ -250,13 +254,27 @@ $pii = apr_report_ai_pii($cpRow);
 $inA = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'area_desc', 'title' => 'סביבת הנכס ותיאורו'], apr_pc_report_default());
 $inV = apr_report_ai_input(['user' => null, 'office' => null], $cpRow, ['key' => 'visit', 'title' => 'הביקור'], apr_pc_report_default());
 $visitor = apr_val('SELECT u.name FROM visits v JOIN users u ON u.id = v.visitor_user_id WHERE v.case_id = ?', [$cpRow['id']]);
+// תבנית ישנה (או שורה שנכתבה ישירות) שמסמנת ai לפרק שאינו ברשימה הסגורה: גם אז אינו נשלח — לא ברקע ולא ב"ניסוח עכשיו"
+$forceAi = function (string $key) use ($caseId, $CAI) {
+    $s = apr_row("SELECT s.* FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.case_id = ? AND s.key = ?", [$caseId($CAI), $key]);
+    try { apr_exec('UPDATE report_sections SET ai_allowed = 1, rev = rev + 1 WHERE id = ?', [$s['id']]); $refused = false; } catch (PDOException) { $refused = true; }
+    return ['ai_allowed' => 1, 'refused' => $refused] + $s;       // המסד מסרב (CHECK); השורה שבזיכרון מדמה תבנית ישנה, לבדיקת ההגנה שבקוד
+};
+$sPurpose = $forceAi('purpose');
+$sMethods = $forceAi('methods');
+$sDocs = $forceAi('documents');
+$callsBefore = count($fake->calls);
+$caiRow = apr_row('SELECT * FROM cases WHERE pid = ?', [$CAI]) + ['perms' => [], 'my_role' => 'system', 'share' => null];
+$direct = array_map(fn($s) => array_intersect_key(apr_report_ai_section(null, $caiRow, $s, apr_pc_report_default(), 'rd:test:' . $s['key']), ['state' => 1, 'reason' => 1]), [$sPurpose, $sMethods, $sDocs]);
+$nowAi = array_map(fn($s) => code($post('report-section-ai', ['section' => $s['pid'], 'rev' => (int)$s['rev']])), [$sPurpose, $sMethods]);
 eq([in_array('משה לקוח', $pii['parties'], true), in_array('moshe@client.example', $pii['parties'], true), str_contains($inA['message'], 'משה'), str_contains($inA['message'], '90'), $inA['omitted'],
     is_string($visitor) && $visitor !== '', str_contains($inV['message'], (string)$visitor), str_contains($inV['message'], 'בידי'), str_contains($inV['message'], 'ביקור בנכס נערך ביום'),
     apr_report_ai_scrub('טלפון לתיאום: 050-1234567', $pii), apr_report_ai_scrub('נמסר בטלפון +972 3 555 1234', $pii), apr_report_ai_scrub('ת"ז 123456782', $pii), apr_report_ai_scrub('דוא"ל a.b@c.co.il', $pii),
     apr_report_ai_scrub('נמסר על ידי MOSHE@client.example', $pii), apr_report_ai_scrub('שטח רשום: 85.5 מ"ר, גוש 6158', $pii), apr_report_ai_scrub('מחיר: 1,500,000', $pii),
-    code($post('report-section-ai', ['section' => apr_val("SELECT s.pid FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.case_id = ? AND s.key = 'purpose'", [$caseId($VAI_CASE = $CAI)]), 'rev' => 1]))],
-    [true, true, false, true, 1, true, false, false, true, null, null, null, null, null, 'שטח רשום: 85.5 מ"ר, גוש 6158', 'מחיר: 1,500,000', 'report_no_ai'],
-    'סטייה 7: שם / מייל / טלפון / ת"ז של גורם אינם נשלחים למודל — הפריט שמכיל אותם מושמט מהקלט; שם המבקר נמחק מהשורה; נתון רגיל נשאר; "ניסוח עכשיו" לפרק purpose נדחה גם כשהפרופיל ביקש לו בינה');
+    $direct, $nowAi, count($fake->calls) - $callsBefore, [$sPurpose['refused'], $sMethods['refused'], $sDocs['refused']]],
+    [true, true, false, true, 1, true, false, false, true, null, null, null, null, null, 'שטח רשום: 85.5 מ"ר, גוש 6158', 'מחיר: 1,500,000',
+        array_fill(0, 3, ['state' => 'failed', 'reason' => 'not_allowed']), ['report_no_ai', 'report_no_ai'], 0, [true, true, true]],
+    'סטייה 7: שם / מייל / טלפון / ת"ז של גורם אינם נשלחים למודל — הפריט שמכיל אותם מושמט מהקלט; שם המבקר נמחק מהשורה; נתון רגיל נשאר; פרק שאינו ברשימה הסגורה (purpose, methods, documents): המסד מסרב לסמן לו ai (CHECK), הקוד אינו שולח אותו גם אם סומן, ו"ניסוח עכשיו" נדחה');
 
 // 17-D1: src שלא נשלח ← הבלוק נזרק; מספר שאינו בנתונים ← ממצא חוסם. מקרה קצה 10: טקסט עם שווי
 $fake->next = fn() => reply(['blocks' => [['text' => 'שטח הדירה 85.5 מ"ר', 'src' => 'd1'], ['text' => 'פסקה עם מקור שלא נשלח', 'src' => 'd99'], ['text' => 'בלי מקור בכלל'],
@@ -273,7 +291,31 @@ eq([$again[0], $again[1]['state'] ?? null, array_column($ps, 'text'), array_map(
     [200, 'done', ['שטח הדירה 85.5 מ"ר', 'שווי הנכס מוערך ב-2,150,000 ₪, ובדירה 4 חדרים', 'בשנת 2019 שופצה הדירה'], [null, ['2150000'], ['2019']], 2, ['block'], $sA['pid'], 'report_no_ai', 'not_found', 'report_changed',
         ['2026', '9', '1', '1250000.5', '4', '3'], null, null],
     '17-D1 תשובת בינה: בלוק עם src שלא נשלח (או בלי src) נזרק; מספר שאינו בנתונים שנשלחו ← הבלוק מסומן, וממצא חוסם בבקרה (גם "שווי" — מקרה קצה 10); פרק שאינו מותר לבינה ← report_no_ai; מי שאינו בתיק — 404; rev ישן ← 409');
+// num_unknown נשאר על פסקה שהטקסט שלה לא השתנה, גם בשמירה חוזרת של הפרק בידי אדם — אי אפשר "לנקות" את הממצא בלי לשנות את הטקסט
+$sA3 = $sec($ver($VAI)[1], 'area_desc');
+$resave = $save($sA3['pid'], [...array_map(fn($b) => array_intersect_key($b, ['type' => 1, 'text' => 1, 'ai' => 1, 'src' => 1]), array_values(array_filter($sA3['blocks'], fn($b) => $b['type'] === 'p'))), ['type' => 'p', 'text' => 'תוספת של השמאי']]);
+$psAfter = array_values(array_filter($sec($ver($VAI)[1], 'area_desc')['blocks'], fn($b) => $b['type'] === 'p'));
+eq([$resave[0], array_map(fn($b) => $b['num_unknown'] ?? null, $psAfter), array_map(fn($b) => $b['ai'] ?? false, $psAfter), in_array('ai_number', $blocking($VAI), true)],
+    [200, [null, ['2150000'], ['2019'], null], [true, true, true, false], true],
+    '17-D1 שמירה חוזרת של פרק בינה בלי לשנות את הטקסט: "מספר שלא נמצא בנתונים" וסימון הבינה נשארים, והממצא החוסם נשאר');
 $fake->next = $echo;
+
+// 17-B1 לטקסט בינה: פרק שנוסח בבינה (ולא נערך) + נתון חדש ← התוכן אינו נבנה מחדש מעל הטקסט; נוצרת הצעת עדכון. ועריכה של טקסט הבינה מורידה את הסימון
+$CB = make_case($avi, $P);
+$fact($CB, 'area', '60', ['unit' => 'sqm', 'area_kind' => 'registered']);
+$visit($CB);
+apr_jobs_run(5.0);
+$VB = $versions($CB)[0]['pid'];
+$b0 = $sec($ver($VB)[1], 'area_desc');
+$raw0 = $srow($b0['pid'])['content'];
+$fact($CB, 'rooms', '3');
+$b1 = $sec($ver($VB)[1], 'area_desc');
+$same = $srow($b0['pid'])['content'] === $raw0;
+$rew = $save($b0['pid'], [['type' => 'p', 'text' => 'טקסט שהשמאי כתב מחדש', 'ai' => true]]);
+$b2 = $srow($b0['pid']);
+eq([$b0['origin'], $same, $b1['origin'], $b1['proposal'] !== null, $rew[0], $b2['origin'], array_column(json_decode($b2['content'], true), 'ai')],
+    ['ai', true, 'ai', true, 200, 'manual', []],
+    '17-B1 פרק שנוסח בבינה + נתון חדש ← התוכן זהה בית-בבית, ונוצרה הצעת עדכון (הבינה אינה מופעלת שוב לבד); טקסט ששוכתב אינו נושא עוד סימון בינה, גם אם הלקוח שלח ai');
 
 // ═══ 17-B: עריכה, ואיסור הדריסה השקטה ═══════════════════════════
 // 17-B2: פרק שלא נגעו בו + נתון חדש ← מתעדכן לבד, ואין הצעה
@@ -292,11 +334,12 @@ $mine = [['type' => 'p', 'text' => 'הדירה מרווחת ומוארת, <b>ל�
     ['type' => 'note_missing', 'what' => 'מצב האינסטלציה'], ['type' => 'h', 'text' => 'כותרת משנה'], ['type' => 'data_table', 'table' => 'identifiers']];
 $stale = $save($after['pid'], $mine, null, $before['rev']);
 $sv = $save($after['pid'], $mine, $tal);                              // עובדת משרד עם edit — רשאית לערוך
+check('17-B4 שמירת פרק עם rev ישן ← 409 report_changed', code($stale) === 'report_changed', code($stale));
 $stored = $srow($after['pid'])['content'];
 $fact($C, 'rooms', '4');
 $ed = $S('area_desc');
 $pr = $props($after['pid']);
-eq([code($stale), array_key_exists('by', $stale[1]['error']) ? $stale[1]['error']['by'] : 'x', $sv[0], [(int)$srow($after['pid'])['user_edited'], $srow($after['pid'])['origin'], $srow($after['pid'])['state']], $srow($after['pid'])['content'] === $stored,
+eq([code($stale), array_key_exists('by', $stale[1]['error'] ?? []) ? $stale[1]['error']['by'] : 'x', $sv[0], [(int)$srow($after['pid'])['user_edited'], $srow($after['pid'])['origin'], $srow($after['pid'])['state']], $srow($after['pid'])['content'] === $stored,
     count($pr), [$pr[0]['state'] ?? null, $pr[0]['origin'] ?? null], $ed['proposal'] !== null, array_values(array_filter($ed['proposal']['lines'] ?? [], fn($l) => str_contains($l, 'חדרים'))), $ed['blocks'][0]['text'], $types($ed['blocks']),
     $ed['blocks'][6]['rows'] ?? null, in_array('proposal_pending', $blocking($VER), true), count($props($after['pid'])) === count($pr) && $ver($VER)[0] === 200 && count($props($after['pid'])) === 1],
     ['report_changed', null, 200, [1, 'manual', 'edited'], true, 1, ['pending', 'auto'], true, ['חדרים: 4'], 'הדירה מרווחת ומוארת, <b>לדברי</b> השמאי', ['p', 'fact', 'list', 'table', 'note_missing', 'h', 'data_table'],
@@ -501,6 +544,7 @@ eq([$old['frozen'], $old['version']['state'], $old['version']['stale_after_appro
 
 // 17-C7: "גרסה חדשה" ← טיוטה במספר הבא, עם הערך החדש; הקודמת עדיין approved; אישור החדשה ← הקודמת superseded, ותוכנה נשמר
 $noReason = code($post('report-version-new', ['case' => $CK]));
+check('§8.2 גרסה חדשה בלי נימוק ← reason_required', $noReason === 'reason_required', $noReason);
 $nv = $post('report-version-new', ['case' => $CK, 'reason' => 'השטח תוקן אחרי מדידה']);
 $V2 = $nv[1]['version'] ?? '';
 $new = $ver($V2)[1];
@@ -589,6 +633,28 @@ eq([$cvK['report']['versions'], $cvK['report']['state'] === $versions($CK)[count
     [count($versions($CK)), true, null, ['version' => $VNV, 'number' => 1, 'state' => 'draft', 'block' => count(array_filter($fN, fn($f) => $f['level'] === 'block')), 'warn' => count(array_filter($fN, fn($f) => $f['level'] === 'warn'))],
         true, true, 'report_photo_locked', null, 200, 'x', true],
     'למסכים: כרטיס התיק נושא את סיכום הדוח (לשותף בלי see_draft — null); case-report נושא את ספירת הבקרה של הגרסה הפתוחה; מקור מסוג נתון נושא את המאפיין; מקרה קצה 8 — תמונה שגרסה שאושרה מפנה אליה אינה נמחקת');
+
+// שותף בשיתוף פריטים (לא כל התיק): גם גרסה שאושרה אינה נקראת
+$gil = ident('7', 'גיל', 'gil@example.com');
+office_for($gil, 'משרד ג');
+$pg = ['kind' => 'cross_office', 'email' => 'gil@example.com', 'scope' => 'items', 'items' => [['type' => 'visit', 'pid' => $VKv]], 'perms' => [], 'days' => 0];
+$pvg = call('POST', 'share-preview', ['case' => $CK] + $pg, $avi);
+$mkg = call('POST', 'share-create', ['case' => $CK, 'preview' => $pvg[1]['preview'] ?? ''] + $pg, $avi);
+$accg = call('POST', 'share-respond', ['share' => $mkg[1]['share'] ?? '', 'accept' => true], $gil);
+$approvedK = array_values(array_filter($versions($CK), fn($v) => $v['state'] === 'approved'))[0]['pid'] ?? '';
+// ארבעת הממצאים הנעולים חוסמים גם אם התבנית של הגרסה אומרת אחרת (תבנית ישנה)
+$cnvRow = apr_row('SELECT * FROM cases WHERE pid = ?', [$CNV]) + ['perms' => [], 'my_role' => 'system', 'share' => null];
+$vnvRow = $versions($CNV)[0];
+$vnvRow['template'] = json_encode(['findings' => ['mandatory_empty' => 'warn', 'no_approver' => 'warn', 'note_missing' => 'block']] + apr_pc_report_default(), JSON_UNESCAPED_UNICODE);
+$lvl = array_column(apr_report_findings($cnvRow, $vnvRow, apr_report_sections(['user' => null, 'office' => null], $cnvRow, $vnvRow)), 'level', 'kind');
+// include_unverified = omit: נתון שלא אומת אינו נכנס לפרק
+$cpB = fn(string $mode) => in_array('fact', array_column(apr_report_build($cpRow, 'area_desc', ['include_unverified' => $mode] + apr_pc_report_default())['blocks'], 'type'), true);
+$delMsg = '';
+try { apr_exec('DELETE FROM report_versions WHERE pid = ?', [$VNV]); } catch (PDOException $e) { $delMsg = $e->getMessage(); }
+eq([[$pvg[0], $mkg[0], $accg[0]], call('GET', 'case', [], $gil, ['case' => $CK])[0], $ver($approvedK, $gil)[0], code($report($CK, $gil)), [$lvl['mandatory_empty'] ?? null, $lvl['note_missing'] ?? null],
+    [$cpB('marked'), $cpB('omit')], code($post('report-version-new', ['case' => $CNV, 'reason' => 'אין מה לפתוח'])), str_contains($delMsg, 'report_versions: no delete')],
+    [[200, 200, 200], 200, 404, 'not_found', ['block', 'block'], [true, false], 'report_state', true],
+    'שותף בשיתוף פריטים אינו קורא גם גרסה שאושרה; ממצא נעול חוסם גם כשהתבנית אומרת "אזהרה"; include_unverified = omit; "גרסה חדשה" רק כשיש גרסה שאושרה; גרסה אינה נמחקת מהמסד (טריגר)');
 
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();
