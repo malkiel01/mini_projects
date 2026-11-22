@@ -218,10 +218,15 @@ function sf_woo_http(string $method, string $url, array $headers): array
     if ($method !== 'GET') throw new LogicException('רק GET לחנות');
     if (isset($GLOBALS['sf_woo_http'])) return ($GLOBALS['sf_woo_http'])($method, $url, $headers);
     if (!function_exists('curl_init')) return [0, '', []];
+    // 10: המארח נפתר כאן, רק לכתובת ציבורית — ו-curl מוצמד אליה (CURLOPT_RESOLVE), כך ש-DNS שמשתנה בין הבדיקה לחיבור לא
+    // יפנה לרשת הפנימית של השרת
+    $host = strtolower((string)parse_url($url, PHP_URL_HOST));
+    $ip = sf_net_public_ip($host);
+    if ($ip === null) return [0, '', []];
     $body = '';
     $resp = [];
     $c = curl_init($url);
-    curl_setopt_array($c, [CURLOPT_HTTPGET => true, CURLOPT_RETURNTRANSFER => false, CURLOPT_TIMEOUT => SF_STORE_TIMEOUT, CURLOPT_CONNECTTIMEOUT => 5,
+    curl_setopt_array($c, [CURLOPT_RESOLVE => [$host . ':443:' . (str_contains($ip, ':') ? "[$ip]" : $ip)], CURLOPT_HTTPGET => true, CURLOPT_RETURNTRANSFER => false, CURLOPT_TIMEOUT => SF_STORE_TIMEOUT, CURLOPT_CONNECTTIMEOUT => 5,
         CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
         CURLOPT_HTTPHEADER => array_map(fn($k, $v) => "$k: $v", array_keys($headers), $headers),
         CURLOPT_HEADERFUNCTION => function ($ch, $line) use (&$resp) {
@@ -238,6 +243,35 @@ function sf_woo_http(string $method, string $url, array $headers): array
     curl_close($c);
     if ($ok === false) return [0, '', []];
     return [$st, $body, $resp];
+}
+
+/** כתובת IP ציבורית (לא פרטית, לא שמורה, לא loopback / link-local). */
+function sf_net_ip_public(string $ip): bool
+{
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) return false;
+    // מה ש-filter_var לא חוסם בכל הגרסאות: 100.64/10 (CGNAT), 0/8, ‏IPv4 ממופה ב-IPv6, ULA / link-local ב-IPv6
+    if (preg_match('/^(0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|169\.254\.|127\.)/', $ip)) return false;
+    if (str_contains($ip, ':') && preg_match('/^(::|::1|::ffff:|f[cd]|fe[89ab])/i', $ip)) return false;
+    return true;
+}
+
+/**
+ * פותר את המארח ומחזיר כתובת אחת לחיבור — רק אם **כל** הכתובות שלו ציבוריות (מארח שמצביע גם לפנימית — נחסם כולו).
+ * בבדיקות: $GLOBALS['sf_dns'] = fn(host) => [ip, …].
+ */
+function sf_net_public_ip(string $host): ?string
+{
+    $ips = isset($GLOBALS['sf_dns']) ? ($GLOBALS['sf_dns'])($host) : null;
+    if ($ips === null) {
+        $ips = [];
+        foreach (@dns_get_record($host, DNS_A | DNS_AAAA) ?: [] as $r) $ips[] = $r['ip'] ?? $r['ipv6'] ?? null;
+        if (!$ips) $ips = @gethostbynamel($host) ?: [];
+    }
+    $ips = array_values(array_filter($ips, 'is_string'));
+    if (!$ips) return null;
+    foreach ($ips as $ip) if (!sf_net_ip_public($ip)) return null;
+    $v4 = array_values(array_filter($ips, fn($i) => !str_contains($i, ':')));
+    return $v4[0] ?? $ips[0];
 }
 
 /** נתוני הדוגמה (lib/store-sample.json) — באותה צורה של ה-REST, עם עימוד וסינון בסיסי. לא נוגע ברשת. */
@@ -701,6 +735,8 @@ function sf_store_webhook(array $env): array
     $secret = (string)($c['webhook_secret'] ?? '');
     if ($secret === '') sf_fail('not_found');
     if ((int)($env['content_length'] ?? 0) > SF_STORE_HOOK_MAX) sf_fail('too_large');
+    // 10: הגבלה לכתובת IP **לפני** קריאת הגוף — הצפה לא חתומה נעצרת בלי לקרוא 2MB ובלי לחשב HMAC
+    sf_rate('store_hook', sf_reader_ip($env), SF_STORE_HOOK_PER_MIN, 60);
     $body = array_key_exists('raw_body', $env) ? (string)$env['raw_body'] : (string)file_get_contents('php://input', false, null, 0, SF_STORE_HOOK_MAX + 1);
     if (strlen($body) > SF_STORE_HOOK_MAX) sf_fail('too_large');
     $sig = (string)($env['wc_signature'] ?? '');
@@ -875,8 +911,12 @@ function sf_store_stat(string $kind, int $wid): void
 function sf_store_out(array $in, array $env): array
 {
     $wid = is_int($in['id'] ?? null) ? $in['id'] : 0;
-    $r = $wid > 0 ? sf_row('SELECT woo_id, permalink, purchasable FROM store_products WHERE woo_id = ? AND removed_at IS NULL', [$wid]) : null;
+    $r = $wid > 0 ? sf_row('SELECT woo_id, source, permalink, purchasable FROM store_products WHERE woo_id = ? AND removed_at IS NULL', [$wid]) : null;
     if (!$r || $r['permalink'] === null) sf_fail('not_found');
+    // 10: מוצר שלא ניתן לרכישה — אין מעבר; קישור שנשאר ממארח קודם של החנות (עד הסנכרון המלא) — לא יוצא
+    if (!(int)$r['purchasable']) sf_fail('state', 'המוצר לא זמין לרכישה כרגע');
+    $host = strtolower((string)parse_url((string)$r['permalink'], PHP_URL_HOST));
+    if ($host === '' || $host !== ($r['source'] === 'sample' ? SF_STORE_SAMPLE_HOST : sf_woo_host())) sf_fail('not_found');
     $ip = (string)($env['ip'] ?? '');
     sf_rate('store_out', $ip, SF_STORE_OUT_PER_MIN, 60);
     sf_attempt_add('store_out', $ip);

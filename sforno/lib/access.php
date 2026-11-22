@@ -46,6 +46,8 @@ const SF_ACTIONS = [
     // החנות (09) — הקטלוג מהמטמון (WooCommerce הוא מקור האמת)
     'read-store-catalog'   => ['m' => 'GET',  'who' => 'reader'],
     'read-store-product'   => ['m' => 'GET',  'who' => 'reader'],
+    // 10: דרכי הקשר (מייל / וואטסאפ של התמיכה) וסוגי הדיווח
+    'read-support'         => ['m' => 'GET',  'who' => 'reader'],
 
     // חשבונות הקוראים והסנכרון (05) — עולם נפרד מהמנהלים (lib/readers.php, lib/sync.php)
     'account-me'           => ['m' => 'GET',  'who' => 'guest'],
@@ -72,6 +74,9 @@ const SF_ACTIONS = [
     'reminders-status'     => ['m' => 'GET',  'who' => 'guest'],
     // 09: "לרכישה באתר" נלחץ — נספר (10). guest: POST בלי אסימון — סוג מדיה מדויק + Sec-Fetch-Site / Origin בנתב
     'store-out'            => ['m' => 'POST', 'who' => 'guest', 'max' => 2_000],
+    // 10: דיווח על טעות / טופס קשר, ומונה פתיחות — guest: POST בלי אסימון (סוג מדיה + Sec-Fetch-Site בנתב). **לא מצרפים את הקורא**
+    'report-create'        => ['m' => 'POST', 'who' => 'guest', 'max' => 8_000],
+    'metrics-open'         => ['m' => 'POST', 'who' => 'guest', 'max' => 2_000],
 
     'me'                   => ['m' => 'GET',  'who' => 'staff'],
     'logout'               => ['m' => 'POST', 'who' => 'staff'],
@@ -134,6 +139,13 @@ const SF_ACTIONS = [
     'store-sync-now'       => ['m' => 'POST', 'who' => 'staff'],
     'store-sample'         => ['m' => 'POST', 'who' => 'staff'],
     'store-link-set'       => ['m' => 'POST', 'who' => 'staff'],
+    // 10 — התפעול: לוח הבקרה, מדדים, דיווחים, תמיכה בקורא (ספירות בלבד — בלי תוכן אישי)
+    'ops-dashboard'        => ['m' => 'GET',  'who' => 'staff'],
+    'ops-metrics'          => ['m' => 'GET',  'who' => 'staff'],
+    'ops-reader'           => ['m' => 'GET',  'who' => 'staff'],
+    'reports-list'         => ['m' => 'GET',  'who' => 'staff'],
+    'report-get'           => ['m' => 'GET',  'who' => 'staff'],
+    'report-set'           => ['m' => 'POST', 'who' => 'staff'],
 
     'dev-health'           => ['m' => 'GET',  'who' => 'dev'],
     'dev-mail-test'        => ['m' => 'POST', 'who' => 'dev'],
@@ -147,6 +159,12 @@ const SF_ACTIONS = [
     // 09: החיבור לחנות — המפתחות נכנסים כאן ולא יוצאים לעולם (data/woo.json)
     'dev-store-set'        => ['m' => 'POST', 'who' => 'dev', 'max' => 4_000],
     'dev-store-test'       => ['m' => 'POST', 'who' => 'dev'],
+    // 10: הגיבויים (data/backups/ — לא נגיש מהדפדפן; ההורדה רק כאן, נרשמת ביומן) ודרכי הקשר של התמיכה
+    'dev-backups'          => ['m' => 'GET',  'who' => 'dev'],
+    'dev-backup-now'       => ['m' => 'POST', 'who' => 'dev'],
+    'dev-backup-verify'    => ['m' => 'POST', 'who' => 'dev'],
+    'dev-backup-download'  => ['m' => 'GET',  'who' => 'dev', 'raw' => true],
+    'dev-ops-set'          => ['m' => 'POST', 'who' => 'dev', 'max' => 2_000],
     // DevLoop — אותם שמות כמו בכל אפליקציה (.claude/skills/devloop/references/install.md)
     'dev-items'            => ['m' => 'GET',  'who' => 'dev', 'raw' => true],
     'dev-task-create'      => ['m' => 'POST', 'who' => 'dev', 'raw' => true],
