@@ -11,6 +11,9 @@
  *   staff  — כל מנהל פעיל (§3: הרשאות מלאות)
  *   dev    — is_developer (= platform_admin שבזהות)
  *
+ *   launch — המצב המנותק (11, lib/sso.php): בלי משתמש, וקיימת רק כשיש data/launch.json. **לא** ב-"public" של app.json —
+ *            בסאב-דומיין אין שער; בתוך הכלים הדיגיטליים השער מגביל אותה לצוות, והיא מחזירה unknown_action
+ *
  * 'm' — השיטה היחידה שמותרת. פעולה משנה = POST (וגם CSRF); GET לפעולה משנה → 405.
  * 'raw' — התשובה יוצאת כמו שהיא, בלי עטיפת {"ok": true} (health, DevLoop).
  * 'body' — POST שגופו אינו JSON (קובץ מצורף למטלה): המודול קורא אותו בעצמו.
@@ -27,6 +30,11 @@ const SF_ACTIONS = [
     'devapi-attach'        => ['m' => 'POST', 'who' => 'public', 'raw' => true, 'body' => true],
     // 09: WooCommerce → ספורנו. האימות — HMAC של הגוף (lib/store.php); הגוף נקרא במודול, עד 2MB
     'store-webhook'        => ['m' => 'POST', 'who' => 'public', 'raw' => true, 'body' => true],
+    // 11: המצב המנותק (lib/sso.php) — קיימות רק כשיש data/launch.json; בלעדיו — unknown_action, כמו פעולה שלא קיימת.
+    // sso-*: POST מהדפדפן שלנו (סוג מדיה + Sec-Fetch-Site), state חד-פעמי בעוגיית sf_sso. platform-key — המפתח הציבורי בלבד
+    'sso-start'            => ['m' => 'POST', 'who' => 'launch', 'max' => 2_000],
+    'sso-finish'           => ['m' => 'POST', 'who' => 'launch', 'max' => 8_000],
+    'platform-key'         => ['m' => 'GET',  'who' => 'launch', 'raw' => true],
 
     'read-titles'          => ['m' => 'GET',  'who' => 'reader'],
     'read-edition'         => ['m' => 'GET',  'who' => 'reader'],
@@ -193,7 +201,7 @@ function sf_action_spec(string $method, string $action): array
 }
 
 /** הרמות שלא עוברות דרך זיהוי המנהל. */
-const SF_NOT_STAFF = ['public', 'reader', 'guest', 'account'];
+const SF_NOT_STAFF = ['public', 'reader', 'guest', 'account', 'launch'];
 
 /** ההכרעה: מותר למנהל הזה? (אחרי sf_authenticate — המנהל פעיל.) guest / account — נבדקו בנתב מול עוגיית הקורא. */
 function sf_access(array $spec, ?array $staff): void

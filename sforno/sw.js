@@ -16,7 +16,7 @@
 'use strict';
 
 const VERSION = '0.10';
-const BUILD = 'cc222b77ea68';
+const BUILD = '3ce855a40f33';
 const SHELL_CACHE = 'sforno-shell-' + VERSION + '-' + BUILD;
 const CONTENT_CACHE = 'sforno-content';
 

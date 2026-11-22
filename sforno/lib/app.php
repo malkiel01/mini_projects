@@ -15,6 +15,7 @@ require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/platform.php';
 require_once __DIR__ . '/audit.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/sso.php';
 require_once __DIR__ . '/access.php';
 require_once __DIR__ . '/staff.php';
 require_once __DIR__ . '/jobs.php';
@@ -95,6 +96,9 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'devapi-file'          => devloop_api_auth() && devloop_file_out((int)($get['id'] ?? 0)),
         'devapi-attach'        => devloop_attach('claude', $get + ['_auth' => devloop_api_auth()]),
         'store-webhook'        => sf_store_webhook($env),
+        'sso-start'            => sf_sso_start($env),
+        'sso-finish'           => sf_sso_finish($in, $env),
+        'platform-key'         => sf_platform_key_out(),
 
         'read-titles'          => sf_read_titles(),
         'read-edition'         => sf_read_edition($get),
