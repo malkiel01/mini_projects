@@ -8,6 +8,7 @@
     const { h } = SF;
     let me = null;
     SF.isDev = () => !!(me && me.is_developer);
+    SF.isStaff = () => !!me;
 
     function menu() {
         const ul = document.getElementById('menu');
@@ -15,12 +16,15 @@
         const close = () => { ul.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
         const item = (icon, label, href) => h('li', null, h('a', { href, onclick: close }, h('span', { 'aria-hidden': 'true' }, icon), label));
         ul.replaceChildren(
-            h('li', { class: 'who' }, me.name + (me.email ? ' · ' + me.email : '')),
+            me ? h('li', { class: 'who' }, me.name + (me.email ? ' · ' + me.email : '')) : null,
             item('🏠', 'מסך הבית', '#/'),
-            item('🗂️', 'ניהול', '#/admin'),
-            item('👥', 'מנהלים', '#/admin/staff'),
+            item('📖', 'סידור', '#/siddur'),
+            item('📜', 'תהילים', '#/tehillim'),
+            item('🔍', 'חיפוש', '#/search'),
+            me ? item('🗂️', 'ניהול', '#/admin') : null,
+            me ? item('👥', 'מנהלים', '#/admin/staff') : null,
             SF.isDev() ? item('🛠️', 'פיתוח', '#/dev/tasks') : null,
-            h('li', null, h('button', { type: 'button', onclick: logout }, h('span', { 'aria-hidden': 'true' }, '🚪'), 'יציאה')));
+            me ? h('li', null, h('button', { type: 'button', onclick: logout }, h('span', { 'aria-hidden': 'true' }, '🚪'), 'יציאה')) : null);
         btn.addEventListener('click', () => {
             const open = ul.hidden;
             ul.hidden = !open;
@@ -46,8 +50,13 @@
         try {
             data = await SF.api('me');
         } catch (e) {
-            document.getElementById('menu-btn').hidden = true;
-            return SF.fail(document.getElementById('main'), e);
+            // לא מנהל (או מחוץ לשער, בעתיד): הקורא עובד בלי זיהוי — הסידור, התהילים והחיפוש (04). תקלת רשת — הודעה.
+            if (e.code === 'network' || e.code === 'storage' || e.code === 'upgrading') {
+                document.getElementById('menu-btn').hidden = true;
+                return SF.fail(document.getElementById('main'), e);
+            }
+            menu();
+            return SF.render();
         }
         me = data.staff;
         SF.setCsrf(data.csrf);

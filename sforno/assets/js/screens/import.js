@@ -249,6 +249,10 @@
             const pagesOnly = !im.has_text;
             const isPdf = im.kind === 'pdf' || im.kind === 'pdf_scan';
             const parts = [warnings()];
+            // 04: העמודים של הייבוא הזה — לקוראים (תצוגת "עמודים" בקורא, כשהכותר ציבורי)
+            if (['pdf', 'pdf_scan', 'image'].includes(im.kind)) parts.push(h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked: !!im.reader_pages, onchange: async e => {
+                try { await SF.api('content-pages-set', { body: { edition: im.edition, import: e.target.checked ? pid : null } }); im.reader_pages = e.target.checked; SF.toast(e.target.checked ? 'העמודים יוצגו לקוראים' : 'העמודים הוסרו מהקורא'); } catch (x) { e.target.checked = !e.target.checked; SF.toast(x.message, true); }
+            } }), h('span', null, '📄 להציג את העמודים המקוריים לקוראים')));
             if (pagesOnly) {
                 parts.push(h('p', { class: 'hint' }, 'מקור של עמודים בלבד: אין בו טקסט, אין חיפוש ואין "טקסט מזוהה". העמודים נשמרים כמו שהם.'));
                 parts.push(isPdf ? pdfPages(pid) : im.page_src ? h('figure', { class: 'imp-page' }, h('img', { src: FILES + im.page_src, alt: 'העמוד המקורי' })) : null);

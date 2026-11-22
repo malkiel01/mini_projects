@@ -25,6 +25,13 @@ const SF_ACTIONS = [
 
     'read-titles'          => ['m' => 'GET',  'who' => 'reader'],
     'read-edition'         => ['m' => 'GET',  'who' => 'reader'],
+    // הקורא (04) — קריאה בלבד, בלי עוגייה ובלי מידע אישי (lib/reader.php)
+    'read-catalog'         => ['m' => 'GET',  'who' => 'reader'],
+    'read-toc'             => ['m' => 'GET',  'who' => 'reader'],
+    'read-revision'        => ['m' => 'GET',  'who' => 'reader'],
+    'read-search'          => ['m' => 'GET',  'who' => 'reader'],
+    'read-file'            => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
+    'read-pages'           => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
 
     'me'                   => ['m' => 'GET',  'who' => 'staff'],
     'logout'               => ['m' => 'POST', 'who' => 'staff'],
@@ -60,6 +67,17 @@ const SF_ACTIONS = [
     'import-apply'         => ['m' => 'POST', 'who' => 'staff'],
     'import-text-checked'  => ['m' => 'POST', 'who' => 'staff'],
     'import-source'        => ['m' => 'GET',  'who' => 'staff', 'raw' => true],
+    // הקורא (04) — הניהול: מנהגים, רשימת הסידור, בדיקת שילובים, עמודים לקוראים, תוכן דוגמה
+    'customs-list'         => ['m' => 'GET',  'who' => 'staff'],
+    'custom-save'          => ['m' => 'POST', 'who' => 'staff'],
+    'siddur-items'         => ['m' => 'GET',  'who' => 'staff'],
+    'siddur-item-save'     => ['m' => 'POST', 'who' => 'staff'],
+    'siddur-item-move'     => ['m' => 'POST', 'who' => 'staff'],
+    'siddur-item-available' => ['m' => 'POST', 'who' => 'staff'],
+    'customs-checks'       => ['m' => 'GET',  'who' => 'staff'],
+    'customs-check-approve' => ['m' => 'POST', 'who' => 'staff'],
+    'content-pages-set'    => ['m' => 'POST', 'who' => 'staff'],
+    'content-sample'       => ['m' => 'POST', 'who' => 'staff'],
 
     'dev-health'           => ['m' => 'GET',  'who' => 'dev'],
     'dev-mail-test'        => ['m' => 'POST', 'who' => 'dev'],
