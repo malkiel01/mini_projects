@@ -259,6 +259,7 @@ async function viewRequirement(pid, rpid) {
 /** מסך קובץ: המציג, הפרטים, והבדיקה — לכל דרישה שהקובץ משויך אליה בדיקה משלה. */
 async function viewFile(pid, fpid) {
     const [d, x] = await Promise.all([api('case', { params: { case: pid } }), api('case-docs', { params: { case: pid } })]);
+    if (d.me.role === 'external') { location.replace(`#/cases/${pid}/files`); return; }   // שותף ממשרד אחר: הקבצים — בלשונית של התיק המשותף (screens/shares.js)
     const links = x.requirements.flatMap(r => r.files.filter(l => l.file.pid === fpid).map(l => ({ ...l, req: r })));
     const f = links[0]?.file || x.unassigned.find(u => u.pid === fpid);
     if (!f || f.deleted) { App.main.innerHTML = `<div class="notice"><div class="big" aria-hidden="true">🗑️</div><h2>${D.fileGone}</h2><div><a class="btn ghost" href="#/cases/${pid}/reqs">${C.tabs.reqs}</a></div></div>`; return; }

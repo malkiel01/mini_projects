@@ -11,6 +11,7 @@
  *   #/cases/<pid>/sources[/<מקור>] · #/cases/<pid>/check/<בדיקה> · #/cases/<pid>/planning/<פריט> · #/sources[/<מקור>]   מקורות ותכנון (09)
  *   #/cases/<pid>/visits · #/cases/<pid>/visits/<ביקור>   ביקור בנכס (13)
  *   #/cases/<pid>/comps[/<עסקה>] · #/cases/<pid>/compset/<קבוצה> · #/cases/<pid>/compimport/<חיפוש>   עסקאות השוואה וחישובים (15)
+ *   #/cases/shared   תיקים ששותפו איתי (05)          #/system/support   גישות התמיכה הפעילות (מנהל המערכת)
  *   #/system/ai · #/office/ai · #/my/ai   בינה: ספקים ומכסות (מנהל המערכת) · מדיניות וחיבור (מנהל משרד) · הבינה שלי (11)
  *   #/system · #/system/users · #/system/doc-types · #/system/attributes   ניהול המערכת                #/dev/<לשונית>[/…]   מסך המפתח
  */
@@ -96,7 +97,7 @@ async function route() {
         else if (a === 'office' && b === 'cases' && ok && o.is_admin) await viewOfficeCases();
         else if (a === 'inbox' && ok) await viewInbox();
         else if (a === 'office' && ok) await viewOffice(b);
-        else if (a === 'cases' && ok) await viewCases(b, c, d);
+        else if (a === 'cases' && (ok || b)) await viewCases(b, c, d);   // תיק ששותף איתי נפתח גם בלי משרד פעיל (05) — השרת מכריע
         else if (a === 'tasks' && ok) await viewMyTasks();
         else if (a === 'my' && b === 'ai' && ok) await viewMyAi();
         else if (a === 'contacts' && ok) await viewContacts();

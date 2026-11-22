@@ -639,7 +639,7 @@ function apr_docs_search(array $ctx, array $q): array
     if (mb_strlen($needle) < 2) return ['results' => []];
     $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($needle)) . '%';
     $mine = $shared ? "SELECT c.id FROM cases c JOIN case_shares cs ON cs.case_id = c.id WHERE cs.revoked_at IS NULL AND cs.invite_status = 'active' AND c.deleted_at IS NULL
-        AND ((cs.kind = 'cross_office' AND cs.user_id = ?) OR (cs.kind = 'support' AND ? = 1))" : 'SELECT c.id ' . apr_my_cases_sql('view');
+        AND ((cs.kind = 'cross_office' AND cs.user_id = ?) OR (cs.kind = 'support' AND CAST(? AS INTEGER) = 1))" : 'SELECT c.id ' . apr_my_cases_sql('view');
     $args = $shared ? [$ctx['user']['id'], (int)$ctx['user']['is_sysadmin']] : [$ctx['user']['id'], $office];
     $only = '';
     if (apr_is_pid($q['case'] ?? null)) { $only = ' AND c.pid = ?'; $args[] = $q['case']; }

@@ -42,7 +42,7 @@ function apr_share_for(array $ctx, array $c): ?array
     if ((APR_ACCESS[$GLOBALS['apr_action'] ?? ''] ?? '') !== 'case') return null;
     $s = apr_row("SELECT s.* FROM case_shares s JOIN offices o ON o.id = s.office_id
         WHERE s.case_id = ? AND s.revoked_at IS NULL AND s.invite_status = 'active' AND (s.expires_at IS NULL OR s.expires_at > ?) AND o.status = 'active'
-            AND ((s.kind = 'cross_office' AND s.user_id = ?) OR (s.kind = 'support' AND ? = 1))
+            AND ((s.kind = 'cross_office' AND s.user_id = ?) OR (s.kind = 'support' AND CAST(? AS INTEGER) = 1))
         ORDER BY (s.kind = 'cross_office') DESC LIMIT 1", [$c['id'], apr_now(), $ctx['user']['id'], (int)$ctx['user']['is_sysadmin']]);
     if (!$s) return null;
     $stored = json_decode($s['perms'], true) ?: [];
@@ -493,7 +493,9 @@ function apr_shares_tick(): string
             $expired++;
         });
     }
-    return "התראות: $warned · פגו: $expired";
+    // תצוגות מקדימות שלא אושרו — אין בהן עוד צורך אחרי יום (מה שאושר נשאר: זה התיעוד של מה שהוצג למשתף)
+    $stale = apr_exec('DELETE FROM share_previews WHERE confirmed_at IS NULL AND created_at < ?', [apr_iso(apr_time() - 86400)]);
+    return "התראות: $warned · פגו: $expired · תצוגות מקדימות שנוקו: $stale";
 }
 
 apr_job_register('shares.tick', 'שיתוף: התראה 3 ימים לפני תפוגה, ורישום שיתופים שפגו (החסימה עצמה — בכל בקשה)', fn(): string => apr_shares_tick(), 3600);

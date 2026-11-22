@@ -225,9 +225,13 @@ function apr_case_visits(array $ctx, array $q): array
     apr_can_or_404($c, 'visit');
     if ($c['share'] !== null) {
         // לשותף: הביקורים שבהיקף שלו בלבד — בלי רשימת המבקרים של המשרד, בלי אנשי הקשר, ובלי סיכום שסופר ביקורים שלא שותפו
-        return ['case' => apr_src_case_head($c), 'perms' => ['plan' => false, 'fill' => false], 'summary' => null,
-            'visits' => array_values(array_map(fn($v) => apr_visit_out($v) + ['can_fill' => false],
-                array_filter(apr_rows(APR_VISIT_SELECT . ' WHERE v.case_id = ? ORDER BY v.seq DESC', [$c['id']]), fn($v) => apr_can($c, 'visit', $v['pid'])))),
+        $mine = array_values(array_filter(apr_rows(APR_VISIT_SELECT . ' WHERE v.case_id = ? ORDER BY v.seq DESC', [$c['id']]), fn($v) => apr_can($c, 'visit', $v['pid'])));
+        $n = array_count_values(array_column($mine, 'status'));
+        $done = array_values(array_filter($mine, fn($v) => $v['status'] === 'completed'));
+        return ['case' => apr_src_case_head($c), 'perms' => ['plan' => false, 'fill' => false],
+            'summary' => ['completed' => count($done), 'last_completed_at' => $done ? max(array_column($done, 'completed_at')) : null,
+                'open' => ($n['planned'] ?? 0) + ($n['in_progress'] ?? 0) + ($n['postponed'] ?? 0), 'no_access' => $n['no_access'] ?? 0, 'postponed' => $n['postponed'] ?? 0],
+            'visits' => array_map(fn($v) => apr_visit_out($v) + ['can_fill' => false], $mine),
             'visitors' => [], 'contacts' => []];
     }
     $visitors = array_values(array_filter(apr_rows('SELECT u.pid, u.name, cm.perms, cm.role FROM case_members cm JOIN users u ON u.id = cm.user_id WHERE cm.case_id = ? AND cm.revoked_at IS NULL ORDER BY u.name', [$c['id']]),

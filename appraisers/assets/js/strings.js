@@ -36,7 +36,7 @@ const T = {
     passwordSet: 'נקבעה', passwordNotSet: 'לא נקבעה', logout: 'יציאה',
 
     // אישור חוזר לפעולות רגישות
-    sensitive: { 'sys-office-status': 'השעיית משרד: חברי המשרד לא יוכלו לבצע בו שום פעולה.', 'sys-user-flags': 'הענקת הרשאת מנהל המערכת למשתמש.',
+    sensitive: { 'sys-office-status': 'השעיית משרד: חברי המשרד לא יוכלו לבצע בו שום פעולה.', 'sys-user-flags': 'הענקת הרשאת מנהל המערכת למשתמש.', 'share-create': 'שיתוף פריטים מהתיק עם התמיכה של המערכת.',
         'dev-token-create': 'יצירת אסימון DevLoop: מי שמחזיק בו קורא את המטלות ומגיב עליהן.' },
     confirmWordAsk: (what, word) => `${what}\n\nכדי לאשר, הקלידו: ${word}`,
     confirmCodeAsk: what => `${what}\n\nנשלח אליכם מייל עם קוד בן 6 ספרות. הקלידו אותו כאן:`,
@@ -240,7 +240,8 @@ T.c = {
     name: 'שם *', org: 'ארגון', email: 'מייל', phone: 'טלפון',
     members: 'משתתפים מהמשרד', addMember: 'משתתף', memberRoles: { responsible: 'אחראי', partner: 'שותף', visitor: 'מבקר', staff: 'עובד משרד' }, memberRole: 'תפקיד בתיק', roleDefault: 'לפי התפקיד במשרד',
     perms: { view: 'צפייה בתיק', edit: 'עריכת פרטים, מזהים, מצב', tasks: 'ניהול משימות', documents: 'דרישות וקבצים', review_docs: 'אישור מסמך', sources: 'מקורות ובדיקות', visit: 'ביצוע ביקור',
-        contact: 'שליחת בקשות לגורמים', members: 'ניהול משתתפים והרשאות', approve_report: 'אישור דוח', export: 'יצוא ומסירה' },
+        contact: 'שליחת בקשות לגורמים', members: 'ניהול משתתפים והרשאות', approve_report: 'אישור דוח', export: 'יצוא ומסירה',
+        download: 'הורדת קבצים', see_internal: 'הערות פנימיות ותחשיבים', see_draft: 'טיוטת הדוח' },
     tasksOwn: 'רק המשימות שלו', permsTitle: 'הרשאות בתיק', permsOnlyResponsible: 'תפקיד והרשאות משנה רק השמאי האחראי.', makeResponsible: 'העברת האחריות אליו', makeResponsibleAsk: name => `העברת האחריות לתיק אל ${name}. האחראי הנוכחי יישאר שותף.`,
     removeMemberAsk: name => `להסיר את ${name} מהתיק? משימות פתוחות שלו יישארו בלי אחראי.`, me: 'אני', noMoreMembers: 'כל חברי המשרד כבר בתיק.',
     plan: 'מה ייווצר', planHint: 'אפשר להתאים לפני היצירה. ההתאמה היא לתיק הזה בלבד — הפרופיל לא משתנה.', planEmpty: 'לא הוגדרו דרישות.', noTasks: 'אין משימות.',
@@ -657,3 +658,42 @@ Object.assign(T.audit, {
     'comp.adj_delete': r => `התאמה נמחקה: ${r.meta.from?.label || ''}`, 'comp.adj_order': () => 'סדר ההתאמות שונה', 'comp.set_add': () => 'נוצרה קבוצת השוואה', 'comp.set_update': r => `קבוצת השוואה עודכנה: ${Object.keys(r.meta.to || {}).length} שינויים`,
     'comp.set_conclude': r => `מסקנה: ${r.meta.from ?? '—'} ← ${r.meta.to ?? '—'}`, 'comp.set_delete': () => 'קבוצת השוואה נמחקה', 'comp.set_recheck': r => `השטח הנישום של קבוצת ההשוואה נבדק מחדש (${r.meta.area ?? ''} מ"ר)`,
 });
+
+// ── שיתוף (05): שמאי ממשרד אחר, גישת תמיכה וביטול ──
+T.sh = {
+    title: 'שיתופים', none: 'התיק אינו משותף עם אף אחד מחוץ למשרד.', share: 'שיתוף עם שמאי ממשרד אחר', support: 'שיתוף עם התמיכה', supportRow: 'התמיכה של המערכת',
+    supportHint: 'מנהל המערכת אינו רואה את התיק. כאן אתם פותחים לו גישה לפריטים שתבחרו — לצפייה בלבד, לזמן קצוב, ועם נימוק. כל צפייה שלו נרשמת.',
+    supportNotSys: 'מנהל המערכת אינו פותח גישת תמיכה — רק הלקוח.',
+    email: 'המייל של השמאי (משתמש קיים במערכת)', scope: 'מה משתפים', scopeAll: 'כל התיק', scopeItems: 'פריטים נבחרים', itemsPick: 'בחרו מה לשתף',
+    types: { requirement: 'דרישות', file: 'קבצים', visit: 'ביקורים', source_check: 'בדיקות מקור', comps: 'עסקאות וחישובים', report: 'טיוטת הדוח' },
+    typeAll: { requirement: 'כל הדרישות', file: 'כל הקבצים', visit: 'כל הביקורים', source_check: 'כל בדיקות המקור', comps: 'עסקאות וחישובים (דורש "הערות פנימיות ותחשיבים")', report: 'טיוטת הדוח (דורש "טיוטת הדוח")' },
+    visitN: n => `ביקור ${n}`, deleted: 'פריט שנמחק',
+    permsTitle: 'מה מותר לו', perms: { view: 'צפייה', download: 'הורדת קבצים', see_internal: 'הערות פנימיות ותחשיבים', see_draft: 'טיוטת הדוח' },
+    permsHint: 'שיתוף הוא לצפייה בלבד. עריכה, ניהול משתתפים, אישור דוח וייצוא אינם ניתנים למי שמחוץ למשרד.',
+    days: 'תוקף', dayOpts: { 0: 'ללא הגבלה', 1: 'יום אחד', 7: '7 ימים', 30: '30 ימים', 90: '90 ימים' }, reason: 'נימוק', reasonSupport: 'למה נדרשת התמיכה (חובה)',
+    toPreview: 'תצוגה מקדימה', previewTitle: 'לפני השיתוף — בדקו', confirm: 'אישור ושיתוף', confirmUpdate: 'אישור ועדכון', back: 'חזרה לעריכה',
+    pvTo: 'עם מי', pvOffice: 'המשרד שלו', pvNoOffice: 'אינו חבר במשרד', pvSees: 'מה יראה', pvCan: 'מה יוכל לעשות', pvHidden: 'מה לא ייחשף', pvUntil: 'עד מתי', pvForever: 'ללא הגבלת זמן — עד שתבטלו',
+    pvFuture: 'שימו לב: סוג שלם כולל גם פריטים שיתווספו אחרי השיתוף.', pvAccept: 'ההזמנה תמתין לאישור של השותף. עד שיאשר — אין לו גישה.', pvUpdate: 'כבר קיים שיתוף פעיל — הוא יתעדכן.',
+    pvSupport: 'הגישה תיפתח מיד, ותידרשו לאישור חוזר.',
+    hidden: { other_cases: 'שאר תיקי המשרד', profiles: 'הפרופילים של המשרד', team: 'צוות המשרד ומשתתפי התיק', contacts: 'ספר הכתובות', ai: 'הבינה, השימוש והמכסות', activity: 'יומן הפעילות של התיק', writes: 'כל פעולת עריכה',
+        rest_of_case: 'כל מה שלא נבחר בתיק הזה', internal: 'הערות פנימיות, נתונים ותחשיבים', draft: 'טיוטת הדוח', download: 'הורדת קבצים (תצוגה בלבד)' },
+    status: { pending: 'ממתין לאישור', active: 'פעיל', expired: 'פג', declined: 'נדחה' }, until: d => `בתוקף עד ${d}`, forever: 'ללא הגבלת זמן', addedBy: n => `שיתף: ${n}`,
+    leftOffice: o => `אינו עוד במשרד ${o}`, edit: 'עריכה', revoke: 'ביטול השיתוף', revokeDo: 'ביטול הגישה',
+    revokeWarn: 'הביטול חוסם גישה מעתה. קבצים שכבר הורדו, או מידע שנשמר במכשיר מנותק, אינם נמחקים מרחוק.',
+    viewsTitle: 'צפיות של התמיכה', viewsNone: 'התמיכה עוד לא צפתה בדבר.', viewed: { case: 'צפייה בתיק', file: 'צפייה בקובץ', visit: 'צפייה בביקור', source_check: 'צפייה בבדיקת מקור' },
+    invitesTitle: 'הזמנות לתיקים', inviteLine: (number, office) => `הוזמנת לתיק ${number} ממשרד ${office}`, accept: 'אישור', decline: 'דחייה', declineAsk: 'לדחות את ההזמנה? אפשר יהיה להזמין אתכם שוב.',
+    sharedTitle: 'תיקים ששותפו איתי', sharedTab: 'שותפו איתי', mineTab: 'תיקי המשרד', sharedNone: 'אין תיקים ששותפו איתכם.', fromOffice: o => `ממשרד ${o}`,
+    banner: (office, scope) => `תיק משותף ממשרד ${office} · ${scope} · צפייה בלבד`, bannerSupport: office => `גישת תמיכה לתיק של משרד ${office} · כל צפייה נרשמת אצל הלקוח`,
+    tabs: { overview: 'סקירה', files: 'דרישות וקבצים', visits: 'ביקור', sources: 'מקורות', comps: 'עסקאות', facts: 'נתונים' },
+    nothing: 'אין כאן פריטים שמותר לכם לראות.', open: 'תצוגה', download: 'הורדה', looseFiles: 'קבצים', identifiers: 'מזהי הנכס', parties: 'גורמים',
+    searchShared: 'חיפוש בקבצים ששותפו', sysTab: 'תמיכה', sysNone: 'אין תיקים ששותפו עם התמיכה.', sysHint: 'כאן מופיעים רק תיקים שלקוח שיתף עם התמיכה. אין דרך לבקש או להרחיב גישה מכאן.',
+    itemsN: n => n === 1 ? 'פריט אחד' : `${n} פריטים`, gone: 'השיתוף בוטל או שתוקפו פג.',
+};
+Object.assign(T.audit, {
+    'share.invite': r => `הוזמן שמאי ממשרד אחר (${r.meta.scope === 'all' ? T.sh.scopeAll : T.sh.itemsN(r.meta.items || 0)})`, 'share.update': () => 'שיתוף עודכן', 'share.accept': () => 'השותף אישר את ההזמנה',
+    'share.decline': () => 'השותף דחה את ההזמנה', 'share.revoke': () => 'שיתוף בוטל', 'share.expire': () => 'תוקף השיתוף פג',
+    'support.share': r => `נפתחה גישת תמיכה (${T.sh.itemsN(r.meta.items || 0)}, ${r.meta.days} ימים)`, 'support.update': () => 'גישת התמיכה עודכנה', 'support.revoke': () => 'גישת התמיכה בוטלה',
+    'support.expire': () => 'תוקף גישת התמיכה פג', 'support.view': r => `התמיכה: ${T.sh.viewed[r.entity_type] || 'צפייה'}`,
+});
+T.auditIcon.share = '🤝';
+T.auditIcon.support = '🛟';

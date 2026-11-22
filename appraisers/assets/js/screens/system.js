@@ -11,8 +11,9 @@ function reasonSheet(title, hint, onConfirm) {
 async function viewSystem(tab) {
     setHead(T.sysTitle, null);
     const users = tab === 'users';
-    const tabs = tabsHtml([['#/system', T.tabOffices], ['#/system/users', T.tabUsers], ['#/system/doc-types', T.tabDocTypes], ['#/system/attributes', T.f.catalog], ['#/system/sources', T.s.catalog], ['#/system/channels', T.ch.sysTab], ['#/system/inbox', T.ch.inboxTab], ['#/system/ai', T.ai.sysTab]],
-        ['doc-types', 'attributes', 'sources', 'channels', 'inbox', 'ai'].includes(tab) ? '#/system/' + tab : users ? '#/system/users' : '#/system');
+    const tabs = tabsHtml([['#/system', T.tabOffices], ['#/system/users', T.tabUsers], ['#/system/doc-types', T.tabDocTypes], ['#/system/attributes', T.f.catalog], ['#/system/sources', T.s.catalog], ['#/system/channels', T.ch.sysTab], ['#/system/inbox', T.ch.inboxTab], ['#/system/ai', T.ai.sysTab], ['#/system/support', T.sh.sysTab]],
+        ['doc-types', 'attributes', 'sources', 'channels', 'inbox', 'ai', 'support'].includes(tab) ? '#/system/' + tab : users ? '#/system/users' : '#/system');
+    if (tab === 'support') return viewSysSupport(tabs);
     if (tab === 'channels') return viewSysChannels(tabs);
     if (tab === 'ai') return viewSysAi(tabs);
     if (tab === 'inbox') return viewSysInbox(tabs);
