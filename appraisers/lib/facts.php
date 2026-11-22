@@ -313,6 +313,7 @@ function apr_fact_can_judge(array $ctx, array $c): bool
 function apr_fact_case(array $ctx, mixed $casePid, string $need = 'view'): array
 {
     $c = apr_case_get($ctx, $casePid);
+    apr_can_or_404($c, 'facts');                   // לשותף: רק בשיתוף של כל התיק ועם see_internal (05)
     if ($need === 'view') return $c;
     if ($need === 'write' ? !apr_fact_can_write($c) : !apr_fact_can_judge($ctx, $c)) apr_fail('forbidden');
     apr_case_writable($c);

@@ -51,7 +51,7 @@ const APR_COMP_SELECT = 'SELECT k.*, cb.name AS created_name, ub.name AS updated
  */
 function apr_comp_visible(array $c): bool
 {
-    return ($c['my_role'] ?? '') !== 'external' || !empty($c['perms']['see_internal']);
+    return apr_can($c, 'comps');      // ההכרעה עצמה ב-lib/shares.php: בהיקף השיתוף, ועם see_internal
 }
 
 /** מי רשאי לבחור, להחריג, להתאים, לשקלל ולהסיק: edit בתיק + שמאי במשרד שהוא האחראי או שותף בתיק (§9, 15-C4). */
@@ -885,7 +885,7 @@ function apr_case_comps(array $ctx, array $q): array
         'searches' => array_map(fn($s) => apr_comp_search_out($ctx, $c, $s, $counts), apr_rows('SELECT * FROM comp_searches WHERE case_id = ? ORDER BY id DESC', [$c['id']])),
         'comps' => array_map(fn($k) => apr_comp_out($k, false, $names) + ['adjustments' => (int)($adjN[(int)$k['id']] ?? 0)], $rows),
         'sets' => $sets,
-        'subject_areas' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), $areaFacts)];
+        'subject_areas' => apr_can($c, 'facts') ? array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), $areaFacts) : []];
 }
 
 /**
@@ -920,7 +920,7 @@ function apr_comp_set_view(array $ctx, array $q): array
     return ['case' => apr_comp_case_head($c), 'perms' => apr_comp_perms($ctx, $c), 'set' => apr_comp_set_out($g), 'subject' => apr_comp_set_subject($ctx, $c, $g)]
         + apr_comp_set_calc($c, $g, $def['small_sample_under'])
         + ['lists' => ['set_area_kinds' => APR_COMP_SET_AREA_KINDS, 'methods' => APR_COMP_METHODS, 'roundings' => APR_COMP_ROUNDINGS],
-            'subject_areas' => array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), array_values(array_filter(
+            'subject_areas' => !apr_can($c, 'facts') ? [] : array_map(fn($f) => apr_fact_out($ctx, $c, $f, $attr), array_values(array_filter(
                 apr_rows(APR_FACT_SELECT . " WHERE f.case_id = ? AND f.deleted_at IS NULL AND f.attribute_key = 'area' AND f.state <> 'rejected' ORDER BY f.id", [$c['id']]),
                 fn($f) => apr_fact_has_value($f) && $f['area_kind'] !== null && $f['area_kind'] !== 'unknown' && apr_fact_norm($f, $attr)[0] === 'area')))];
 }

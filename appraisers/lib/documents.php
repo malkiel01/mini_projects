@@ -525,6 +525,7 @@ function apr_file_out(array $f, array $tags = []): array
 function apr_case_docs(array $ctx, array $q): array
 {
     $c = apr_case_get($ctx, $q['case'] ?? null);
+    if (!apr_can($c, 'requirement') && !apr_can($c, 'file')) apr_fail('not_found');
     $files = array_column(apr_rows('SELECT f.*, COALESCE(u.name, ct.name) AS uploader_name FROM files f LEFT JOIN users u ON u.id = f.uploader_id
         LEFT JOIN requests q ON q.id = f.request_id LEFT JOIN case_parties cp ON cp.id = q.party_id LEFT JOIN contacts ct ON ct.id = cp.contact_id WHERE f.case_id = ? AND f.id NOT IN (SELECT file_id FROM visit_photos) ORDER BY f.id', [$c['id']]), null, 'id');   // תמונות ביקור — במסך הביקור בלבד (13)
     $tags = [];
@@ -535,9 +536,25 @@ function apr_case_docs(array $ctx, array $q): array
         $links[$l['requirement_id']][] = $l;
         if ($l['review_state'] !== 'rejected') $assigned[$l['file_id']] = true;
     }
+    // ההכרעה לכל פריט (05 §6): דרישה וקובץ שאינם בהיקף של הצופה אינם בתשובה — גם לא כספירה. הערות פנימיות — רק עם see_internal.
+    $ext = $c['share'] !== null;
+    $internal = apr_can($c, 'internal');
+    $seen = [];
+    foreach ($files as $id => $f) if (!apr_file_visible($ctx, $c, $f)) unset($files[$id]);
+    foreach ($links as $rid => $ls) $links[$rid] = array_values(array_filter($ls, fn($l) => isset($files[$l['file_id']])));
     $reqs = [];
     foreach (apr_rows('SELECT r.*, cp.pid AS party_pid, u.name AS status_by_name, sf.pid AS split_from FROM requirements r LEFT JOIN case_parties cp ON cp.id = r.party_id
         LEFT JOIN users u ON u.id = r.status_by LEFT JOIN requirements sf ON sf.id = r.split_from_id WHERE r.case_id = ? ORDER BY r.sort, r.id', [$c['id']]) as $r) {
+        if (!apr_can($c, 'requirement', $r['pid'])) continue;
+        foreach ($links[$r['id']] ?? [] as $l) $seen[$l['file_id']] = true;
+        if (!$internal) {
+            $r = ['explain_internal' => '', 'status_reason' => null, 'status_by_name' => null] + $r;
+            foreach ($links[$r['id']] ?? [] as $i => $l) $links[$r['id']][$i] = ['review_note' => null, 'reviewer' => null] + $l;
+        }
+        if ($ext) {
+            $r = ['party_pid' => null, 'split_from' => null] + $r;
+            if ($r['split_from_id'] !== null && !apr_can($c, 'requirement', (string)apr_val('SELECT pid FROM requirements WHERE id = ?', [$r['split_from_id']]))) $r['split_from'] = null;
+        }
         $cur = apr_req_current((int)$r['id']);
         $reqs[] = apr_requirement_out($r) + ['status_reason' => $r['status_reason'], 'status_at' => $r['status_at'], 'status_by' => $r['status_by_name'], 'split' => $r['split_at'] !== null,
             'split_from' => $r['split_from'], 'files' => array_map(fn($l) => ['link' => $l['pid'], 'relation' => $l['relation'], 'version' => (int)$l['version_no'],
@@ -550,9 +567,11 @@ function apr_case_docs(array $ctx, array $q): array
         'perms' => ['documents' => !empty($c['perms']['documents']), 'review_docs' => !empty($c['perms']['review_docs'])],
         'limits' => ['max_size' => apr_file_max(), 'types' => array_column(APR_FILE_TYPES, 0), 'scanner' => apr_scanner_bin() !== null || isset($GLOBALS['apr_scanner'])],
         'return_codes' => APR_RETURN_CODES,
-        'groups' => apr_case_version_content((int)$c['profile_version_id'])['requirements']['groups'],
+        'groups' => $ext ? [] : apr_case_version_content((int)$c['profile_version_id'])['requirements']['groups'],       // הקבוצות הן תוכן של פרופיל המשרד
         'requirements' => $reqs,
-        'unassigned' => array_values(array_map(fn($f) => apr_file_out($f, $tags[$f['id']] ?? []), array_filter($files, fn($f) => $f['deleted_at'] === null && !isset($assigned[$f['id']]))))];
+        // לשותף: גם קובץ ששותף והדרישה שלו לא — מוצג כאן, בלי הדרישה
+        'unassigned' => array_values(array_map(fn($f) => apr_file_out($internal ? $f : ['uploader_name' => null, 'source_note' => null] + $f, $tags[$f['id']] ?? []),
+            array_filter($files, fn($f) => $f['deleted_at'] === null && (!isset($assigned[$f['id']]) || ($ext && !isset($seen[$f['id']]))))))];
 }
 
 /**
@@ -565,7 +584,10 @@ function apr_file_visible(array $ctx, array $c, array $f): bool
     // תמונת ביקור (13): לפי הרשאת השימוש שלה — private רק למבקר ולאחראי. גובר על כל דבר אחר.
     if (($photo = apr_visit_file_rule($ctx, $c, $f)) !== null) return $photo;
     if (isset($GLOBALS['apr_file_visible'])) return (bool)$GLOBALS['apr_file_visible']($ctx, $c, $f);
-    return !empty($c['perms']['view']);
+    // שיתוף (05): הקובץ עצמו בהיקף — כל התיק, כל הקבצים, או הקובץ הזה. בלי מזהה אי אפשר להכריע לפריט, ולכן שותף אינו רואה.
+    $pid = is_string($f['pid'] ?? null) ? $f['pid'] : null;
+    if ($pid === null && ($c['share'] ?? null) !== null) return false;
+    return apr_can($c, 'file', $pid);
 }
 
 /** הורדה / תצוגה מקדימה: file, inline=1. הרשאה: view בתיק (שותף חיצוני ותמיכה — פרוסה 05). קובץ שנמחק — לא נמצא. */
@@ -574,7 +596,11 @@ function apr_file_serve(array $ctx, array $q): array
     $c = apr_case_get($ctx, apr_doc_case_pid('files', $q['file'] ?? null));
     $f = apr_file_row($c, $q['file'] ?? null);
     if (!apr_file_visible($ctx, $c, $f)) apr_fail('not_found');
-    return apr_file_response(apr_file_path($f['storage_key']), $f['mime'], apr_file_download_name($f['original_name'], $f['ext']), ($q['inline'] ?? '') === '1');
+    // הורדה (להבדיל מתצוגה בדפדפן של סוג שמוצג) דורשת download (05-A4). הקובץ כבר גלוי למבקש, ולכן 403 ולא 404.
+    $inline = ($q['inline'] ?? '') === '1' && in_array($f['mime'], APR_FILE_PREVIEW, true);
+    if (!$inline && !apr_can($c, 'download')) apr_fail('forbidden');
+    apr_share_seen($c, 'file', $f['pid']);
+    return apr_file_response(apr_file_path($f['storage_key']), $f['mime'], apr_file_download_name($f['original_name'], $f['ext']), $inline);
 }
 
 /** תמונה ממוזערת (JPEG) לתמונה; נוצרת בפעם הראשונה ונשמרת. לסוג אחר, או בלי GD — לא נמצא, והמסך מציג אייקון. */
@@ -583,6 +609,7 @@ function apr_file_thumb(array $ctx, array $q): array
     $c = apr_case_get($ctx, apr_doc_case_pid('files', $q['file'] ?? null));
     $f = apr_file_row($c, $q['file'] ?? null);
     if (!apr_file_visible($ctx, $c, $f)) apr_fail('not_found');
+    apr_share_seen($c, 'file', $f['pid']);
     $t = apr_row('SELECT * FROM file_thumbs WHERE file_id = ?', [$f['id']]);
     if (!$t || !is_file(apr_file_path($t['storage_key'], 'thumbs'))) {
         $made = apr_thumb_make(apr_file_path($f['storage_key']), $f['mime']) ?? apr_fail('not_found');
@@ -605,23 +632,39 @@ function apr_my_cases_sql(string $perm): string
 /** חיפוש: שם קובץ, כותרת דרישה, תגית, וטקסט שחולץ מהמסמך (12) — **רק בתיקים שאני משתתף בהם**. q, ואופציונלי case. */
 function apr_docs_search(array $ctx, array $q): array
 {
-    $office = apr_office_id($ctx);
+    // shared=1 — בתיקים ששותפו איתי (05); אחרת — בתיקי המשרד הפעיל. בשני המצבים כל תוצאה עוברת את ההכרעה לפריט עצמו (apr_can).
+    $shared = ($q['shared'] ?? '') === '1';
+    $office = $shared ? 0 : apr_office_id($ctx);
     $needle = trim(is_string($q['q'] ?? null) ? mb_substr($q['q'], 0, 100) : '');
     if (mb_strlen($needle) < 2) return ['results' => []];
     $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($needle)) . '%';
-    $mine = 'SELECT c.id ' . apr_my_cases_sql('view');
-    $args = [$ctx['user']['id'], $office];
+    $mine = $shared ? "SELECT c.id FROM cases c JOIN case_shares cs ON cs.case_id = c.id WHERE cs.revoked_at IS NULL AND cs.invite_status = 'active' AND c.deleted_at IS NULL
+        AND ((cs.kind = 'cross_office' AND cs.user_id = ?) OR (cs.kind = 'support' AND ? = 1))" : 'SELECT c.id ' . apr_my_cases_sql('view');
+    $args = $shared ? [$ctx['user']['id'], (int)$ctx['user']['is_sysadmin']] : [$ctx['user']['id'], $office];
     $only = '';
     if (apr_is_pid($q['case'] ?? null)) { $only = ' AND c.pid = ?'; $args[] = $q['case']; }
+    // התיק של כל תוצאה נטען דרך apr_case_get — שיתוף שפג או בוטל נופל שם, גם אם השאילתה מצאה אותו
+    $cases = [];
+    $case = function (string $pid) use (&$cases, $ctx): ?array {
+        if (!array_key_exists($pid, $cases)) {
+            try { $cases[$pid] = apr_case_get($ctx, $pid); } catch (AprError) { $cases[$pid] = null; }
+        }
+        return $cases[$pid];
+    };
     $out = [];
-    foreach (apr_rows("SELECT f.pid, f.original_name, f.mime, f.received_at, c.pid AS case_pid, c.number, c.title FROM files f JOIN cases c ON c.id = f.case_id
+    $nReq = 0;
+    foreach (apr_rows("SELECT f.id, f.pid, f.original_name, f.mime, f.received_at, c.pid AS case_pid, c.number, c.title FROM files f JOIN cases c ON c.id = f.case_id
         WHERE f.deleted_at IS NULL AND f.id NOT IN (SELECT file_id FROM visit_photos) AND f.case_id IN ($mine$only) AND (lower(f.original_name) LIKE ? ESCAPE '\\'
-            OR EXISTS (SELECT 1 FROM file_tags t WHERE t.file_id = f.id AND lower(t.tag) LIKE ? ESCAPE '\\')) ORDER BY f.id DESC LIMIT 50", [...$args, $like, $like]) as $f) {
+            OR EXISTS (SELECT 1 FROM file_tags t WHERE t.file_id = f.id AND lower(t.tag) LIKE ? ESCAPE '\\')) ORDER BY f.id DESC LIMIT 200", [...$args, $like, $like]) as $f) {
+        if (!($c = $case($f['case_pid'])) || !apr_file_visible($ctx, $c, ['id' => (int)$f['id'], 'pid' => $f['pid'], 'case_id' => (int)$c['id']])) continue;
+        if (count($out) >= 50) break;
         $out[] = ['type' => 'file', 'case' => ['pid' => $f['case_pid'], 'number' => $f['number'], 'title' => $f['title']], 'file' => $f['pid'], 'title' => $f['original_name'],
             'kind' => APR_FILE_TYPES[$f['mime']][1] ?? 'other', 'at' => $f['received_at']];
     }
     foreach (apr_rows("SELECT r.pid, r.title AS rtitle, r.status, r.updated_at, c.pid AS case_pid, c.number, c.title FROM requirements r JOIN cases c ON c.id = r.case_id
-        WHERE r.split_at IS NULL AND r.case_id IN ($mine$only) AND lower(r.title) LIKE ? ESCAPE '\\' ORDER BY r.id DESC LIMIT 50", [...$args, $like]) as $r) {
+        WHERE r.split_at IS NULL AND r.case_id IN ($mine$only) AND lower(r.title) LIKE ? ESCAPE '\\' ORDER BY r.id DESC LIMIT 200", [...$args, $like]) as $r) {
+        if (!($c = $case($r['case_pid'])) || !apr_can($c, 'requirement', $r['pid'])) continue;
+        if (++$nReq > 50) break;
         $out[] = ['type' => 'requirement', 'case' => ['pid' => $r['case_pid'], 'number' => $r['number'], 'title' => $r['title']], 'requirement' => $r['pid'], 'title' => $r['rtitle'],
             'status' => $r['status'], 'at' => $r['updated_at']];
     }
