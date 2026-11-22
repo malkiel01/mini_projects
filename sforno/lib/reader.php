@@ -138,7 +138,10 @@ function sf_read_revision(array $q): array
     ];
 }
 
-/** תמונה מתוך תוכן שפורסם (files/<pid>/N.ext), או עמוד-תמונה של מהדורה ציבורית. כל השאר — 404, כאילו לא קיים. */
+/**
+ * תמונה מתוך תוכן שפורסם (files/<pid>/N.ext), או עמוד-תמונה של מהדורה ציבורית. כל השאר — 404, כאילו לא קיים.
+ * "שפורסם" = published, או superseded (06): קורא שנשאר בגרסה קודמת (§21.7) רואה גם את התמונות שלה. טיוטה — לעולם לא.
+ */
 function sf_read_file_path(array $q): array
 {
     $p = (string)($q['path'] ?? '');
@@ -146,7 +149,7 @@ function sf_read_file_path(array $q): array
     preg_match('~^files/([a-z0-9]{16})/~', $p, $m);
     $like = '%src="' . $p . '"%';   // $p עבר את הבדיקה של sf_content_file_path: רק [a-z0-9/.-] — אין % ואין _
     $pub = sf_rows("SELECT r.id FROM revisions r JOIN editions e ON e.id = r.edition_id JOIN titles t ON t.id = e.title_id
-        WHERE r.status = 'published' AND " . SF_READER_TITLE . ' AND r.source_html LIKE ?', [$like]);
+        WHERE r.status IN ('published', 'superseded') AND " . SF_READER_TITLE . ' AND r.source_html LIKE ?', [$like]);
     foreach ($pub as $r) if (sf_read_text_ok((int)$r['id'])) return [$f, $mime];
     $pg = sf_val("SELECT 1 FROM imports i JOIN editions e ON e.pages_import_id = i.id JOIN titles t ON t.id = e.title_id
         WHERE i.pid = ? AND i.kind = 'image' AND " . SF_READER_TITLE, [$m[1]]);
@@ -161,6 +164,64 @@ function sf_read_pages_path(array $q): array
     $pg = sf_read_pages_of($e) ?? sf_fail('not_found');
     if ($pg['kind'] !== 'pdf') sf_fail('not_found');
     return sf_import_source_path(['import' => $pg['import']]);
+}
+
+// ── הורדה לקריאה בלי רשת (06) ────────────────────────────────
+
+/**
+ * sha256 של קובץ, עם מטמון ב-meta לפי (נתיב, mtime, גודל) — read-package פתוחה לקוראים, ו-PDF של עמודים יכול להיות גדול:
+ * לא מחשבים אותו מחדש בכל בקשה. קובץ שהשתנה — mtime / גודל אחרים, ולכן hash חדש.
+ */
+function sf_file_sha256(string $f): string
+{
+    $key = 'sha256:' . md5($f);
+    $sig = filemtime($f) . ':' . filesize($f) . ':';
+    $hit = sf_meta($key);
+    if ($hit !== null && str_starts_with($hit, $sig)) return substr($hit, strlen($sig));
+    $h = (string)hash_file('sha256', $f);
+    sf_meta_set($key, $sig . $h);
+    return $h;
+}
+
+/**
+ * read-package: מה צריך להוריד כדי לקרוא מהדורה בלי רשת, בגרסה שהקורא בחר (revision; ברירת מחדל — זו שפורסמה). אותם
+ * תנאים בדיוק כמו read-revision (sf_read_revision): רק כותר ציבורי, רק גרסה שפורסמה. **לא מוריד כלום** — רק הרשימה:
+ *   text  — {sha256, size} של ה-source_html (המכשיר מוריד את read-revision של הגרסה ובודק את ה-html מולו).
+ *           revision = null — מהדורה של עמודים בלבד
+ *   files — [{url, sha256, size, type}]: התמונות שבטקסט (רק אלה שמוגשות לקוראים — sf_read_file_path) והעמודים
+ * ה-hash נבדק במכשיר לכל קובץ; "זמין" רק כשכולם עברו.
+ */
+function sf_read_package(array $q): array
+{
+    $rv = sf_read_revision($q);
+    $e = sf_read_edition_row($q['edition'] ?? null);
+    $files = [];
+    $add = function (string $url, array $fm) use (&$files): void {
+        [$f, $mime] = $fm;
+        $files[$url] ??= ['url' => $url, 'sha256' => sf_file_sha256($f), 'size' => (int)filesize($f), 'type' => $mime];
+    };
+    if ($rv['html'] !== null) {
+        preg_match_all('~\bsrc="(files/[a-z0-9]{16}/[a-z0-9._-]{1,80})"~', $rv['html'], $m);
+        foreach (array_unique($m[1]) as $p) {
+            try { $add('api.php?action=read-file&path=' . $p, sf_read_file_path(['path' => $p])); } catch (SfError) { /* תמונה שלא מוגשת — גם לא נכנסת */ }
+        }
+    }
+    if ($rv['pages']) {
+        if ($rv['pages']['kind'] === 'pdf') $add('api.php?action=read-pages&edition=' . $e['pid'], sf_read_pages_path(['edition' => $e['pid']]));
+        elseif ($rv['pages']['src']) $add('api.php?action=read-file&path=' . $rv['pages']['src'], sf_read_file_path(['path' => $rv['pages']['src']]));
+    }
+    $files = array_values($files);
+    // הטקסט — תמיד (גם במהדורה של עמודים בלבד: הכותרת והעמודים באים מאותה תשובה); בלי טקסט — hash של מחרוזת ריקה
+    $html = (string)($rv['html'] ?? '');
+    $text = ['sha256' => hash('sha256', $html), 'size' => strlen($html)];
+    return [
+        'title' => $rv['title'],
+        'edition' => $rv['edition'],
+        'revision' => $rv['revision'],
+        'text' => $text,
+        'files' => $files,
+        'size' => ($text['size'] ?? 0) + array_sum(array_column($files, 'size')),
+    ];
 }
 
 // ── החיפוש (§4) ──────────────────────────────────────────────

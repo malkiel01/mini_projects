@@ -35,6 +35,8 @@ const SF_ACTIONS = [
     'read-search'          => ['m' => 'GET',  'who' => 'reader'],
     'read-file'            => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
     'read-pages'           => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
+    // הורדה לקריאה בלי רשת (06) — רק הרשימה וה-hash-ים; הקבצים עצמם — read-revision / read-file / read-pages
+    'read-package'         => ['m' => 'GET',  'who' => 'reader'],
 
     // חשבונות הקוראים והסנכרון (05) — עולם נפרד מהמנהלים (lib/readers.php, lib/sync.php)
     'account-me'           => ['m' => 'GET',  'who' => 'guest'],

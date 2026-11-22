@@ -1,10 +1,10 @@
 # מה צ'אט הקוד הבא צריך לדעת
 
-עודכן: 2026-11-22, עם פרוסה 05 (קוראים וסנכרון). לפניה — 04 (#1778), 03 (#1775), 02 (#1769), 01 (#1766).
+עודכן: 2026-11-22, עם פרוסה 06 (הורדות, גרסאות ו-PWA). לפניה — 05 (#1784/#1785), 04 (#1778), 03 (#1775), 02 (#1769), 01 (#1766).
 
 ## מה בנוי
 
-פרוסות 01 (תשתית), 02 (מנוע התוכן), 03 (ייבוא), 04 (הקורא, הסידור והתהילים) ו-05 (חשבונות קוראים וסנכרון), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
+פרוסות 01 (תשתית), 02 (מנוע התוכן), 03 (ייבוא), 04 (הקורא, הסידור והתהילים), 05 (חשבונות קוראים וסנכרון) ו-06 (הורדות, גרסאות ו-PWA), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
 
 | קובץ | תפקיד |
 | --- | --- |
@@ -31,6 +31,11 @@
 | `lib/sync.php` | `sync-push` / `sync-pull`: `rev` לקורא, tombstone, `same` / `kept` / `gone` / `bad`; note + prayer_name מוצפנים |
 | `assets/js/sync-core.js` | הלוגיקה של הסנכרון במכשיר (בלי DOM, נבדקת ב-node): רשומה ↔ פריטים, התור, מיזוג אורח |
 | `assets/js/sync.js`, `screens/account.js` | התור והתזמון, החיווי בכותרת (`#sync-chip`); האזור האישי `#/account` |
+| `sw.js`, `manifest.webmanifest` | **PWA (06)**: מעטפת במטמון `sforno-shell-<VERSION>-<BUILD>`; בלי skipWaiting — פס "עדכון זמין". `SHELL` = כל מה ש-index.html טוען (טסט) |
+| `assets/js/offline-core.js` | **ההורדות והגרסאות (06), בלי DOM** (נבדק ב-node): `download` (hash לכל קובץ), `load`, `gc`, `remove`, `pinned`, `migrate`, `unmatched`, `visible` |
+| `assets/js/offline.js` | הדפדפן: `SF.offline` (Cache API `sforno-content`), `SF.version` (`ver:<ed>` = `{rev, prev}`, `move`), רישום ה-SW ופס העדכון, `#net-chip` |
+| `assets/js/screens/downloads.js` | `#/downloads` ו-`SF.dlLine(ed)` — שורת "בלי אינטרנט" (סידור, תהילים, כלי הקורא) |
+| `lib/reader.php` `sf_read_package` | `read-package`: רשימה + sha256 (טקסט, תמונות, עמודים) — אותם תנאים כמו `read-revision` |
 | `tests/` | `run.php` מריץ כל `*.test.php` בתהליך משלו; `lib.php` (`call`, `ident`, `eq`); `render.mjs` — render.js ב-node עם DOM זעיר; `fixtures/` — snapshots |
 
 ## מלכודות
@@ -61,6 +66,13 @@
 - **`data/secret.key`** — בלעדיו ההערות והשמות לא מתפענחים. לא למחוק, לכלול בגיבוי (10).
 - **מחיקה מלאה (10):** `readers.status = 'deleted'` + `deleted_at` — אחרי 30 יום למחוק `personal_items`, `devices`,
   `reader_tokens`, ולהחליף את המייל (UNIQUE) — אחרת אי אפשר להירשם שוב באותו מייל.
+- **כל שינוי בקובץ מעטפת (JS/CSS/index.html/פונט/אייקון) ← `SF_UPDATE_SW=1 php sforno/tests/run.php`** (מעדכן `BUILD` ו-`VERSION`
+  ב-sw.js). בלי זה j-offline נכשל — **והפריסה של כל הריפו נעצרת**. קובץ JS חדש ב-index.html — גם ל-`SHELL` ב-sw.js.
+- **הקורא מציג את הגרסה שנבחרה, לא את הנוכחית:** `SF.textFor(ed)` (מההורדה / מהרשת). פריט אישי חדש שקשור למקום בטקסט — עם
+  `rev: shown`; תצוגה — `O.visible(list, ed, shown)`. סוג חדש כזה (08?) — להוסיף גם ל-`SF.version.move`.
+- **`dl:*`, `catalog:last`, `verseen:*` — setRaw (לא מסתנכרנים)**; `ver:*` — כן (`sync-core.js`).
+- **שום דבר לא יורד מעצמו** — טסט סופר את הקריאות ל-`SF.offline.download(`; קריאה חדשה = לעדכן את הטסט (ולהצדיק).
+- **בלי רשת `SF.api` זורק `network`** (גם אחרי 20 שניות ב-GET). מסך שתלוי ברשת — להציג הודעה, לא להשאיר "טוען…".
 - `dev/open-items.json`: SF-001…SF-011. לסגור — רק המפתח (✅ ב-DevLoop). ל-SF-002 ו-SF-003 נוספו צעדי בדיקה.
 
 ## מה נשאר
@@ -72,4 +84,6 @@
 - מ-04: 👁 1, 4, 8, 11 אצל הבעלים (SF-004).
 - מ-05: 📦 מזהה לקוח של Google (מטלה לבעלים) → 🔑 Google במסך המפתח; בדיקת מייל אמיתי (SF-005); 15 ההכרעות ⚙️ ב-
   `team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה). המחיקה המלאה אחרי 30 יום — 10.
-- הבאה לפי הלוח: 06 (הורדות וגרסאות — מיקום קריאה בין גרסאות: `position` כבר כולל `rev` של הגרסה).
+- מ-06: 👁 1, 6, 8, 9 בטלפון אמיתי (SF-006 — הצעדים שם); הורדת זמנים — כש-07 ייבנה (להוסיף ל-`read-package` או חבילה נפרדת);
+  12 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
+- הבאה לפי הלוח: 07 (לוח שנה, זמנים והלכה). הזמנים צריכים לעבוד בלי רשת — מסך ההורדות (`SF.dlLine` / `downloads.js`) הוא המקום.

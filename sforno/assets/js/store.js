@@ -12,6 +12,9 @@
  *   tehillim          — {done: {sid: at}, group: [sid…], names: [{id, name, note, created_at, updated_at}]}
  *   seen:local        — ההסבר על שמירה מקומית הוצג
  *   sync:state / sync:outbox / guest:stash — של הסנכרון (05): מה שהשרת אמר, התור, ומידע של אורח ששמרתם "רק במכשיר"
+ *   ver:<edition>     — הגרסה שהקורא בחר {rev, prev} (06; מסתנכרן)
+ *   dl:<edition>      — ההורדה שבמכשיר הזה (06; setRaw — לא מסתנכרן): גרסה, גודל, מצב, הקבצים. הקבצים עצמם — במטמון "sforno-content"
+ *   catalog:last      — הקטלוג האחרון שהתקבל (06; setRaw) — כדי להראות בלי רשת מה זמין ומה לא
  *
  * אין IndexedDB (גלישה פרטית בדפדפנים ישנים) — זיכרון בלבד, והמסך ממשיך לעבוד.
  */
