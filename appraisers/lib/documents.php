@@ -655,14 +655,14 @@ function apr_docs_search(array $ctx, array $q): array
     $nReq = 0;
     foreach (apr_rows("SELECT f.id, f.pid, f.original_name, f.mime, f.received_at, c.pid AS case_pid, c.number, c.title FROM files f JOIN cases c ON c.id = f.case_id
         WHERE f.deleted_at IS NULL AND f.id NOT IN (SELECT file_id FROM visit_photos) AND f.case_id IN ($mine$only) AND (lower(f.original_name) LIKE ? ESCAPE '\\'
-            OR EXISTS (SELECT 1 FROM file_tags t WHERE t.file_id = f.id AND lower(t.tag) LIKE ? ESCAPE '\\')) ORDER BY f.id DESC LIMIT 200", [...$args, $like, $like]) as $f) {
+            OR EXISTS (SELECT 1 FROM file_tags t WHERE t.file_id = f.id AND lower(t.tag) LIKE ? ESCAPE '\\')) ORDER BY f.id DESC LIMIT 5000", [...$args, $like, $like]) as $f) {
         if (!($c = $case($f['case_pid'])) || !apr_file_visible($ctx, $c, ['id' => (int)$f['id'], 'pid' => $f['pid'], 'case_id' => (int)$c['id']])) continue;
         if (count($out) >= 50) break;
         $out[] = ['type' => 'file', 'case' => ['pid' => $f['case_pid'], 'number' => $f['number'], 'title' => $f['title']], 'file' => $f['pid'], 'title' => $f['original_name'],
             'kind' => APR_FILE_TYPES[$f['mime']][1] ?? 'other', 'at' => $f['received_at']];
     }
     foreach (apr_rows("SELECT r.pid, r.title AS rtitle, r.status, r.updated_at, c.pid AS case_pid, c.number, c.title FROM requirements r JOIN cases c ON c.id = r.case_id
-        WHERE r.split_at IS NULL AND r.case_id IN ($mine$only) AND lower(r.title) LIKE ? ESCAPE '\\' ORDER BY r.id DESC LIMIT 200", [...$args, $like]) as $r) {
+        WHERE r.split_at IS NULL AND r.case_id IN ($mine$only) AND lower(r.title) LIKE ? ESCAPE '\\' ORDER BY r.id DESC LIMIT 5000", [...$args, $like]) as $r) {
         if (!($c = $case($r['case_pid'])) || !apr_can($c, 'requirement', $r['pid'])) continue;
         if (++$nReq > 50) break;
         $out[] = ['type' => 'requirement', 'case' => ['pid' => $r['case_pid'], 'number' => $r['number'], 'title' => $r['title']], 'requirement' => $r['pid'], 'title' => $r['rtitle'],

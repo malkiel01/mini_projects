@@ -531,6 +531,7 @@ $revoke($avi, (string)apr_val("SELECT pid FROM case_shares WHERE kind = 'support
 $S7 = $share($avi, $C, $toBoaz(['perms' => ['download' => true, 'see_internal' => true, 'see_draft' => true]]))[1]['share'];
 $accept($boaz, $S7);
 $officeAId = (int)apr_val('SELECT id FROM offices WHERE pid = ?', [$OA]);
+$rate0 = (int)apr_val("SELECT COALESCE(SUM(count), 0) FROM login_attempts WHERE key LIKE 'ai-extract:%'");
 $runs0 = (int)apr_val('SELECT COUNT(*) FROM ai_runs WHERE office_id = ? OR case_id IN (SELECT id FROM cases WHERE office_id = ?)', [$officeAId, $officeAId]);
 $aiTries = [$sc(call('POST', 'file-ai-run', ['file' => $F1, 'what' => 'summary', 'key' => 'k-12345678'], $boaz)), $sc($g($boaz, 'file-ai', ['file' => $F1])), $sc($g($boaz, 'case-ai', ['case' => $C])),
     $sc(call('POST', 'case-ai-set', ['case' => $C, 'no_ai' => true], $boaz)), $sc(call('POST', 'case-ai-auto-set', ['case' => $C, 'auto_extract' => false], $boaz))];
@@ -540,9 +541,10 @@ try { $direct = ai_run(['ctx' => $ctxB, 'case' => $C, 'purpose' => 'extract.fiel
 catch (AprError $e) { $direct = [$e->status, $e->errorCode]; }
 unset($GLOBALS['apr_action']);
 eq([array_values(array_unique(array_map(fn($x) => $x[0] . ' ' . $x[1], $aiTries))), $direct,
-    (int)apr_val('SELECT COUNT(*) FROM ai_runs WHERE office_id = ? OR case_id IN (SELECT id FROM cases WHERE office_id = ?)', [$officeAId, $officeAId]) - $runs0, (int)apr_val("SELECT COUNT(*) FROM ai_runs WHERE status <> 'blocked'")],
-    [['404 not_found'], ['blocked', 'no_assignment'], 0, 0],
-    '11 §12.7 שותף חיצוני (גם עם כל ההרשאות): הפעלת בינה, הצעות, שימוש ומכסה של התיק — 404; וקריאה ישירה ל-ai_run נחסמת (no_assignment) בלי שום הפעלה על חשבון המשרד הבעלים');
+    (int)apr_val('SELECT COUNT(*) FROM ai_runs WHERE office_id = ? OR case_id IN (SELECT id FROM cases WHERE office_id = ?)', [$officeAId, $officeAId]) - $runs0, (int)apr_val("SELECT COUNT(*) FROM ai_runs WHERE status <> 'blocked'"),
+    (int)apr_val("SELECT COALESCE(SUM(count), 0) FROM login_attempts WHERE key LIKE 'ai-extract:%'") - $rate0],
+    [['404 not_found'], ['blocked', 'no_assignment'], 0, 0, 0],
+    '11 §12.7 שותף חיצוני (גם עם כל ההרשאות): הפעלת בינה, הצעות, שימוש ומכסה של התיק — 404; וקריאה ישירה ל-ai_run נחסמת (no_assignment) בלי שום הפעלה על חשבון המשרד הבעלים, ובלי לצרוך מתקרת הקצב שלו (החסימה לפני הספירה)');
 $revoke($avi, $S7);
 
 // ══ §8: מקרי קצה ═════════════════════════════════════════════════
