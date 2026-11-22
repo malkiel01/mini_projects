@@ -19,3 +19,7 @@ json מדויק + same_site + קצב; grant_status טרי בכניסה, 5 דק' 
 5. `iss` מדויק — בהוראות handoff: "`platform` = `issuer` מ-`sso.php?action=key`".
 6. הטוקן ב-query → ביומן הגישה — חריג מתועד ב-`launch-check.md` (חד-פעמי, 2 דק', קשור לעוגייה).
 7. `sessionStorage.setItem` ב-`router.js:76` — לעטוף ב-try.
+
+## סבב 2 — ✅ (בקרה 3, 22.11 ~22:35 UTC, בלי סוקר)
+dcabb65 (`claude/sforno-11-fix`, #1806): 🟡1 — `unknown_action` מחזיר את הכתובת כמו שהייתה וטעינה רגילה (ops.cjs +2); 🟡2 — נוהל ב-launch-check + handoff;
+⚪3 אטומי (o-launch 85, +3), ⚪4–7 — בוצעו. 🤖 run.php 15/15, check-apps, sync --check, php -l, node --check — ירוקים. למיזוג.
