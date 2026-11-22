@@ -1,12 +1,12 @@
 # מה צ'אט הקוד הבא צריך לדעת
 
-עודכן: 2026-11-22, עם פרוסה 08 (תזכורות, ערוצים, ושבת וחג). לפניה — 07 (#1789), 06 (#1786), 05 (#1784/#1785), 04 (#1778),
+עודכן: 2026-11-22, עם פרוסה 09 (חנות — קטלוג WooCommerce). לפניה — 08 (#1794/#1795), 07 (#1789), 06 (#1786), 05 (#1784/#1785), 04 (#1778),
 03 (#1775), 02 (#1769), 01 (#1766).
 
 ## מה בנוי
 
 פרוסות 01 (תשתית), 02 (מנוע התוכן), 03 (ייבוא), 04 (הקורא, הסידור והתהילים), 05 (חשבונות קוראים וסנכרון), 06 (הורדות, גרסאות ו-PWA)
-07 (לוח עברי, זמני היום והלכה יומית) ו-08 (תזכורות), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
+07 (לוח עברי, זמני היום והלכה יומית), 08 (תזכורות) ו-09 (חנות), כולן. הפירוט — `README.md`; ההכרעות ⚙️ — `team/log/code.md`.
 
 | קובץ | תפקיד |
 | --- | --- |
@@ -46,6 +46,8 @@
 | `lib/reminders.php` ↔ `assets/js/reminders-core.js` | **התזכורות (08) — אותו תכנון בשניהם** (l-reminders משווה במילישנייה): `clean`, `prefs`, השתקה (`muteWindows`), `plan`. בשרת גם: מופעים (`sf_rem_schedule`), שליחה (`sf_rem_send_due`), Web Push (VAPID + aes128gcm), `push-*`, `reminders-*` |
 | `assets/js/reminders.js`, `screens/reminders.js` | `SF.rem` (store, Push בדפדפן, אורח ← `reminders-guest-sync`, באנר בתוך האפליקציה, `.ics`); `#/reminders` |
 | `assets/data/cities.json` | 160 ערים (GeoNames, CC BY 4.0), במעטפת. עיר חדשה — `id` של GeoNames, אזור זמן IANA (טסט) |
+| `lib/store.php` | **החנות (09)**: `data/woo.json`, `SfWooSource` (`SfWooRest` — GET בלבד / `SfWooSample` — `lib/store-sample.json`), סנכרון בריצות (`store_sync_runs`), webhook, מיפוי, `read-store-*`, `store-*`, `dev-store-*` |
+| `assets/js/screens/store.js`, `store-admin.js` | `#/store`, `#/store/p/<id>`, `#/store/favs`; `#/admin/store` (המפתחות — רק במסך הזה, למפתח) |
 | `tests/` | `run.php` מריץ כל `*.test.php` בתהליך משלו; `lib.php` (`call`, `ident`, `eq`); `render.mjs` — render.js ב-node עם DOM זעיר; `fixtures/` — snapshots |
 
 ## מלכודות
@@ -103,6 +105,11 @@
 - **`data/vapid.json`** — המפתחות של Push. מחיקה = כל המנויים צריכים להירשם מחדש. לכלול בגיבוי (10), כמו `secret.key`.
 - **שיטת ההשתקה** — קבוע (`MUTE` / `SF_REM_MUTE`, `test: true`) עד 📦; כשתגיע — טבלה + אישור כמו שיטות הזמנים, ואותו שינוי בשני הקבצים.
 
+- **חנות (09):** WooCommerce — **רק GET** (`sf_woo_http` זורק על אחר; טסט סורק). מפתח / סוד — לעולם לא בתשובה, לא ב-audit ולא
+  ב-last_error (M3 סורק את כל `data/`). מחיר — אגורות. טקסט מהחנות — `sf_store_text` (פסקאות), לא HTML. בבדיקות:
+  `$GLOBALS['sf_woo_http'] = fn($method, $url, $headers) => [status, body, headers]`. שינוי מיפוי ← `sf_store_rederive`.
+  "מאומת" — `sf_store_fresh` (24 שעות); מוצר ישן בלי `stock`. 10 צריך: `store_stats` (view / out), מצב הסנכרון (`store-admin`).
+
 ## מה נשאר
 
 - מ-01: cron ב-cPanel (מטלה לבעלים), `dev/server-report.md`, קריטריונים 👁 17–23.
@@ -118,4 +125,6 @@
   בחישוב — אם השיטות ידרשו; 17 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
 - מ-08: 👁 1, 2, 9 במכשירים אמיתיים — `dev/push-report.md` (SF-008, הצעדים שם); **cron כל דקה** (מטלה לבעלים; בלעדיו Push
   מתוזמן ומייל לא נשלחים); 📦 שיטת השתקה לשבת וחג; 15 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
-- הבאה לפי הלוח: 09 (חנות / WooCommerce).
+- מ-09: 📦 הגישה לחנות (§24) — כתובת, גרסה, מפתח Read, ואיפה מחבר / הוצאה / מהדורה / כריכה / תוכן עניינים / דפי דוגמה; ואז
+  👁 8 מול החנות האמיתית (SF-009); 18 ההכרעות ⚙️ ב-`team/log/code.md` — לרישום ב-`team/decisions.md` (הבקרה).
+- הבאה לפי הלוח: 10 (ניהול תפעולי).
