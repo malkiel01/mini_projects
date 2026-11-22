@@ -8,7 +8,8 @@
  *   shareLink    — קישור לקטע: רק מזהי תוכן (§1, §19)
  *   copyText     — העתקה עם מקור
  *   wordHit      — מילה בשאילתה ↔ מילה בטקסט (כמו sf_search_word_hit בשרת)
- *   tehillim     — חלוקה לימי השבוע ולימי החודש, ו"של היום" (⏳ עד 07: לפי חצות מקומית)
+ *   tehillim     — חלוקה לימי השבוע ולימי החודש, ו"של היום" — todayFrom: לפי צאת הכוכבים במיקום ובשיטה (07); today — לפי
+ *                  חצות, כשאין מיקום / שיטה
  *   wakeLock     — מניעת כיבוי מסך: כשל שקט (§5.3)
  */
 'use strict';
@@ -175,6 +176,14 @@
         return { weekday: d.getDay(), day, monthLen, week: weekChapters(d.getDay()), month: monthChapters(day, monthLen) };
     }
 
+    /**
+     * "של היום" מהיום העברי שחושב לפי צאת הכוכבים (07, SFCal.today → SFDailyCore.tehillimDay): {weekday, day, monthLen}.
+     * אחרי צאת הכוכבים — כבר היום הבא, גם ביום בשבוע (§7).
+     */
+    function todayFrom(t) {
+        return { weekday: t.weekday, day: t.day, monthLen: t.monthLen, week: weekChapters(t.weekday), month: monthChapters(t.day, t.monthLen) };
+    }
+
     /** היום בחודש העברי, מ-Intl (לוח עברי). */
     function hebDayIntl(d) {
         const s = new Intl.DateTimeFormat('en-u-ca-hebrew', { day: 'numeric' }).format(d);
@@ -199,5 +208,5 @@
     }
 
     return { mergeOrder, move, permanent, conds, comboKey, pickTop, scrollDelta, shareLink, copyText, sourceLine, wordHit,
-        monthChapters, weekChapters, today, hebDayIntl, chapters, wakeLock, MONTH, WEEK };
+        monthChapters, weekChapters, today, todayFrom, hebDayIntl, chapters, wakeLock, MONTH, WEEK };
 });
