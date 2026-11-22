@@ -456,7 +456,8 @@
                 h('button', { class: 'btn sm ghost', type: 'button', onclick: () => navigator.clipboard.writeText(stashed).then(() => SF.toast('הועתק')) }, '📋 העתקה')) : null,
             tools, propsEl, ed, ta, issuesEl);
         main.replaceChildren(
-            h('p', { class: 'hint' }, data.title.name + ' · ' + data.edition.label),
+            h('div', { class: 'toolbar' }, h('p', { class: 'hint', style: 'flex:1;margin:0' }, data.title.name + ' · ' + data.edition.label),
+                h('a', { class: 'btn sm ghost', href: '#/admin/content/import/' + pid }, '📥 ייבוא קובץ')),
             tabs, panes.edit, pvEl, histEl);
         pvEl.hidden = true;
         histEl.hidden = true;
@@ -469,7 +470,7 @@
 
     /** שני רוחבים: טלפון (360) ומחשב (1024). במסך רחב — זה לצד זה; אחרת — מתג. */
     function previewFrames(html, which, onSwitch) {
-        const settings = { conds: 'all', marks: true };
+        const settings = { conds: 'all', marks: true, filesBase: 'api.php?action=content-file&path=' };
         const frame = (w, label) => {
             const doc = SFRender.render(html, settings);
             SFRender.bind(doc);

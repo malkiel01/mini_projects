@@ -308,3 +308,22 @@ div.sf-st-center, span.sf-st-center { display: block; text-align: center; }
 .sf-marks .sf-cond[data-rule] { display: block; outline: 1px dotted var(--ok); border-radius: 4px; }
 .sf-marks span.sf-cond[data-rule] { display: inline; }
 .sf-marks .sf-cond[data-rule]::before { content: '🔀 ' attr(data-rule); font-family: var(--font); font-size: .7rem; color: var(--ok); }
+
+/* ── ייבוא (03) ── */
+.imp-bar { position: relative; height: 26px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); overflow: hidden; }
+.imp-bar span { position: absolute; inset-block: 0; inset-inline-start: 0; background: var(--brand-soft); transition: width .3s; }
+.imp-bar small { position: relative; display: block; padding: 0 var(--s2); line-height: 24px; font-size: .8rem; }
+.imp-item { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+.imp-item:first-child { border-top: 0; }
+.imp-tx { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.imp-tx small { color: var(--muted); font-size: .8rem; }
+.imp-acts { display: flex; flex: none; gap: 2px; }
+.imp-acts .icon-btn:disabled { opacity: .35; }
+.imp-warn { margin-bottom: var(--s3); }
+.imp-warn summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.imp-pages { display: grid; gap: var(--s3); margin-bottom: var(--s2); }
+.imp-page { margin: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.imp-page canvas, .imp-page img { display: block; width: 100%; height: auto; }
+.imp-page figcaption { padding: 4px var(--s2); font-size: .8rem; color: var(--muted); border-top: 1px solid var(--line); }
+.imp-flow { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: var(--s3); }
+.imp-flow img { max-width: 100%; height: auto; }
