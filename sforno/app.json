@@ -1,0 +1,11 @@
+{
+  "id": "sforno",
+  "name": "ספורנו",
+  "icon": "📚",
+  "description": "קטלוג ספרים יהודיים: ספרים דיגיטליים לקריאה, חנות, ותכנים יומיים. בפיתוח — אפיון בלבד.",
+  "category": "daily",
+  "entry": "index.html",
+  "version": "0.0",
+  "gate": true,
+  "restricted": true
+}
