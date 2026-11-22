@@ -429,6 +429,50 @@ check('אין מפתח VAPID פרטי בקוד', !preg_match('/BEGIN (EC )?PRIVA
 $deploy = (string)@file_get_contents(dirname($root) . '/.github/workflows/deploy.yml');
 check('data/ מוחרגת בפריסה (vapid.json שם)', $deploy === '' || str_contains($deploy, 'sforno/data'));
 
+// ── ביקורת 08 סבב 1: תקרות, ניקוי אורחים, מחיקת חשבון, השתלטות endpoint ──
+$at('2026-11-26T03:00:00Z');
+$many = [];
+for ($i = 0; $i < 150; $i++) $many[] = ['pid' => "rem:m$i", 'kind' => 'reminder', 'data' => ['id' => "m$i", 'name' => '', 'type' => 'fixed', 'time' => '12:00', 'days' => [3], 'active' => true]];
+$ok(rcall('POST', 'sync-push', ['items' => $many], 'B'), '150 תזכורות לקורא');
+eq(count(sf_rem_owner_ctx($OWN)['reminders']), SF_REM_MAX, 'תקרה: קורא עם 150 תזכורות — מתוכננות 100 בלבד');
+$ok(rcall('POST', 'sync-push', ['items' => array_map(fn($x) => ['pid' => $x['pid'], 'kind' => 'reminder', 'deleted' => true, 'base' => 9999], $many)], 'B'), 'ניקוי');
+$bad = $ua();
+$fake = $sub('https://fcm.googleapis.com/fcm/send/not-on-curve', $bad);
+$fake['keys']['p256dh'] = sf_b64u("\x04" . str_repeat("\x01", 64));
+eq(code(rcall('POST', 'push-subscribe', ['sub' => $fake], 'B')), 'bad_input', 'p256dh שאינה נקודה על P-256 — נדחה');
+eq(code(rcall('POST', 'push-subscribe', ['sub' => $sub($EPG, $ua())], 'H')), 'bad_input', 'השתלטות: endpoint רשום עם מפתחות אחרים (עוגייה אחרת) — נדחה');
+eq((int)sf_val('SELECT reader_id FROM push_devices WHERE pid = ?', [$devG]), $rid, '…והמנוי נשאר של בעליו');
+for ($i = 0; $i < 9; $i++) {
+    sf_insert('push_devices', ['pid' => sf_pid(), 'reader_id' => $rid, 'device_id' => (int)sf_val('SELECT device_id FROM push_devices WHERE pid = ?', [$devG]), 'guest_hash' => null,
+        'endpoint_hash' => "cap$i", 'sub' => 's1:x', 'label' => 'x', 'created_at' => sf_now(), 'last_seen_at' => sf_now()]);
+}
+eq(code(rcall('POST', 'push-subscribe', ['sub' => $sub('https://fcm.googleapis.com/fcm/send/eleventh', $ua())], 'B', [], ['ip' => '203.0.113.99'])), 'state', 'תקרה: מכשיר Push פעיל 11 לקורא — נדחה');
+$ok(rcall('POST', 'push-subscribe', ['sub' => $sub($EPG, $uaG)], 'G', [], ['ip' => '203.0.113.99']), 'רישום מחדש של מכשיר קיים — לא נספר פעמיים');
+sf_exec("DELETE FROM push_devices WHERE endpoint_hash LIKE 'cap%'");
+// ניקוי אורחים
+$uaK = $ua();
+$devK = $ok(rcall('POST', 'push-subscribe', ['sub' => $sub('https://fcm.googleapis.com/fcm/send/guest-k', $uaK)], 'K', [], ['ip' => '203.0.113.98']), 'אורח K')['device'];
+$ok(rcall('POST', 'reminders-guest-sync', ['reminders' => [$remG], 'prefs' => ['tz' => 'Asia/Jerusalem'], 'loc' => ['kind' => 'city', 'id' => 281184]], 'K'), 'הגדרות K');
+$kid = (int)sf_val('SELECT id FROM push_devices WHERE pid = ?', [$devK]);
+$devL = $ok(rcall('POST', 'push-subscribe', ['sub' => $sub('https://fcm.googleapis.com/fcm/send/guest-l', $ua())], 'L', [], ['ip' => '203.0.113.98']), 'אורח L')['device'];
+$ok(rcall('POST', 'reminders-guest-sync', ['reminders' => [$remG]], 'L'), 'הגדרות L');
+$lid = (int)sf_val('SELECT id FROM push_devices WHERE pid = ?', [$devL]);
+check('לאורח K יש מופעים', count($occ("g:$kid")) > 0);
+$ok(rcall('POST', 'push-unsubscribe', ['device' => $devK], 'K'), 'K מכבה');
+sf_exec('UPDATE push_devices SET last_seen_at = ? WHERE id = ?', [sf_iso(sf_time() - SF_PUSH_TTL - 86400), $lid]);
+$liveG = (int)sf_val('SELECT COUNT(*) FROM push_devices WHERE reader_id IS NULL AND revoked_at IS NULL AND gone_at IS NULL AND last_seen_at >= ?', [sf_iso(sf_time() - SF_PUSH_TTL)]);
+sf_rem_guest_cleanup();
+eq([(int)sf_val('SELECT COUNT(*) FROM push_devices WHERE id IN (?, ?)', [$kid, $lid]), (int)sf_val('SELECT COUNT(*) FROM reminder_occurrences WHERE owner IN (?, ?)', ["g:$kid", "g:$lid"])], [0, 0],
+    'ניקוי אורחים: שבוטל ושלא נראה מעבר לתוקף — נמחקו עם ההגדרות והמופעים');
+eq((int)sf_val('SELECT COUNT(*) FROM push_devices WHERE reader_id IS NULL'), $liveG, '…ואורח פעיל — נשאר');
+check('הניקוי רץ במשימה השעתית', str_contains((string)file_get_contents("$root/lib/reminders.php"), "    sf_rem_guest_cleanup();\n}, every: 3600);"));
+// מחיקת חשבון
+$at('2026-11-26T03:00:00Z');
+$ok(rcall('POST', 'sync-push', ['items' => [['pid' => 'rem:d1', 'kind' => 'reminder', 'data' => ['id' => 'd1', 'name' => 'd', 'type' => 'fixed', 'time' => '09:00', 'days' => [0, 1, 2, 3, 4, 5, 6], 'active' => true]]]], 'G'), 'תזכורת לפני מחיקה');
+check('לפני המחיקה: מנויים ומופעים ממתינים', count($occ($OWN)) > 0 && (int)sf_val('SELECT COUNT(*) FROM push_devices WHERE reader_id = ?', [$rid]) > 0);
+$ok(rcall('POST', 'account-delete', ['confirm' => true], 'G'), 'מחיקת חשבון');
+eq([(int)sf_val('SELECT COUNT(*) FROM push_devices WHERE reader_id = ?', [$rid]), count($occ($OWN))], [0, 0], 'מחיקת חשבון: מנויי ה-Push והמופעים הממתינים — נמחקו');
+
 // ── node: אותו חישוב במכשיר ───────────────────────────────────
 $fx['clean'] = [];
 foreach ([$rem1, $rem3, $remG, ['id' => 'x', 'type' => 'fixed', 'time' => '25:00', 'days' => [1]], ['id' => 'y', 'type' => 'minyan', 'time' => '05:00', 'days' => [1], 'name' => ' '],

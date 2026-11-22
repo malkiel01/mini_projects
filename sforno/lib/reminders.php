@@ -29,7 +29,8 @@ const SF_REM_HORIZON = 48 * 3600 * 1000;
 const SF_REM_GRACE = 15 * 60;            // מופע שאיחר יותר מזה — missed
 const SF_REM_MUTE = ['test' => true, 'name' => 'שיטת בדיקה: מ-40 דקות לפני השקיעה בערב עד 72 דקות אחרי השקיעה במוצאי היום', 'before' => 40, 'after' => 72, 'depth' => 0.833];
 const SF_REM_EXT_MAX = 180;
-const SF_REM_MAX = 100;                  // תזכורות לאורח
+const SF_REM_MAX = 100;                  // תזכורות לבעלים (אורח וגם קורא) — מעבר לזה לא מתוכננות
+const SF_PUSH_MAX = 10;                  // מכשירי Push פעילים לבעלים
 const SF_REM_GUEST_BYTES = 64_000;
 const SF_PUSH_COOKIE = 'sf_push';
 const SF_PUSH_TTL = 400 * 86400;
@@ -246,7 +247,10 @@ function sf_rem_ctx(array $raw): array
     $place = sf_rem_place($raw['loc'] ?? null);
     $tz = $place['tz'] ?? (sf_cal_valid_tz($prefs['tz']) ? $prefs['tz'] : 'Asia/Jerusalem');
     $rems = [];
-    foreach (is_array($raw['reminders'] ?? null) ? $raw['reminders'] : [] as $r) if ($c = sf_rem_clean($r)) $rems[$c['id']] = $c;
+    foreach (is_array($raw['reminders'] ?? null) ? $raw['reminders'] : [] as $r) {
+        if (count($rems) >= SF_REM_MAX) break;   // תקרה: גם קורא עם אלפי פריטי reminder לא מעמיס על התכנון והתור
+        if ($c = sf_rem_clean($r)) $rems[$c['id']] = $c;
+    }
     return ['reminders' => array_values($rems), 'byId' => $rems, 'prefs' => $prefs, 'tz' => $tz, 'place' => $place,
         'def' => sf_rem_method($raw['zmethod'] ?? null), 'israel' => sf_rem_israel($place, $tz), 'extend' => $prefs['extend']];
 }
@@ -492,7 +496,8 @@ function sf_push_sub_in(mixed $s): array
     if (!is_array($s) || !sf_push_endpoint_ok($s['endpoint'] ?? null)) sf_fail('bad_input', 'כתובת ה-Push אינה של ספק מוכר');
     $p = sf_b64u_dec($s['keys']['p256dh'] ?? null);
     $a = sf_b64u_dec($s['keys']['auth'] ?? null);
-    if ($p === null || strlen($p) !== 65 || $p[0] !== "\x04" || $a === null || strlen($a) !== 16) sf_fail('bad_input', 'מפתחות ה-Push אינם תקינים');
+    // p256dh — נקודה אמיתית על P-256 (openssl דוחה נקודה שאינה על העקום), כדי שלא יישמר מנוי שאי אפשר להצפין אליו
+    if ($p === null || strlen($p) !== 65 || $p[0] !== "\x04" || $a === null || strlen($a) !== 16 || !sf_ec_pub($p)) sf_fail('bad_input', 'מפתחות ה-Push אינם תקינים');
     return ['endpoint' => $s['endpoint'], 'p256dh' => sf_b64u($p), 'auth' => sf_b64u($a)];
 }
 
@@ -679,6 +684,14 @@ function sf_push_subscribe(array $in, array $env): array
         $now = sf_now();
         $cur = sf_row('SELECT * FROM push_devices WHERE endpoint_hash = ?', [$hash]);
         $old = $cur && $cur['revoked_at'] === null ? sf_rem_owner_of($cur) : null;
+        // endpoint שכבר רשום עובר לבעלים אחר רק עם אותם מפתחות (הדפדפן עצמו); endpoint שדלף לא מספיק כדי להשתלט
+        if ($cur && $cur['revoked_at'] === null && $cur['gone_at'] === null) {
+            $was = json_decode((string)sf_unseal((string)$cur['sub']), true);
+            if (!is_array($was) || !hash_equals((string)($was['p256dh'] ?? ''), $sub['p256dh']) || !hash_equals((string)($was['auth'] ?? ''), $sub['auth'])) sf_fail('bad_input', 'מפתחות ה-Push אינם תואמים למנוי הרשום');
+        }
+        // תקרה: עד 10 מכשירי Push פעילים לבעלים
+        $mine = $ra ? (int)sf_val('SELECT COUNT(*) FROM push_devices WHERE reader_id = ? AND revoked_at IS NULL AND gone_at IS NULL AND endpoint_hash <> ?', [(int)$ra['reader']['id'], $hash]) : 0;
+        if ($mine >= SF_PUSH_MAX) sf_fail('state', 'הגעתם למספר המרבי של מכשירים עם התראות (' . SF_PUSH_MAX . '). אפשר לכבות באחד מהם');
         $set = ['sub' => sf_seal(json_encode($sub, JSON_UNESCAPED_SLASHES)), 'label' => $label, 'last_seen_at' => $now, 'revoked_at' => null, 'gone_at' => null];
         $token = null;
         if ($ra) {
@@ -796,7 +809,24 @@ sf_job_register('reminders.plan', 'תכנון מחדש של 48 השעות הבא
     foreach (sf_rem_owners() as $o) sf_rem_schedule($o);
     sf_exec("DELETE FROM reminder_occurrences WHERE status <> 'pending' AND fire_at < ?", [sf_iso(sf_time() - 30 * 86400)]);
     sf_exec('DELETE FROM reminder_send_log WHERE at < ?', [sf_iso(sf_time() - 90 * 86400)]);
+    sf_rem_guest_cleanup();
 }, every: 3600);
+
+/**
+ * ניקוי אורחים: מכשיר אורח שבוטל, שהספק ביטל (gone), או שלא נראה מעבר לתוקף העוגייה — נמחק עם ה-endpoint, ההגדרות (מיקום,
+ * שמות) והמופעים שלו. מחזיר כמה נמחקו.
+ */
+function sf_rem_guest_cleanup(): int
+{
+    $rows = sf_rows('SELECT id FROM push_devices WHERE reader_id IS NULL AND (revoked_at IS NOT NULL OR gone_at IS NOT NULL OR last_seen_at < ?)', [sf_iso(sf_time() - SF_PUSH_TTL)]);
+    foreach ($rows as $r) {
+        sf_tx(function () use ($r) {
+            sf_exec('DELETE FROM reminder_occurrences WHERE owner = ?', ['g:' . (int)$r['id']]);
+            sf_exec('DELETE FROM push_devices WHERE id = ? AND reader_id IS NULL', [(int)$r['id']]);
+        });
+    }
+    return count($rows);
+}
 
 sf_health_register('push', 'התראות (Web Push)', function () {
     if (!sf_push_ready()) return ['bad', 'openssl עם EC ו-aes-128-gcm חסר — Push לא יעבוד (08)'];
