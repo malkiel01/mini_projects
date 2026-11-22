@@ -101,7 +101,7 @@ function profile_report(string $as, string $pid, array $report): void
 $jobs = fn(string $like = 'report.%') => apr_rows('SELECT dedupe_key, status FROM jobs WHERE dedupe_key LIKE ? ORDER BY id', [$like]);
 $frev = fn(string $pid) => (int)apr_val('SELECT rev FROM facts WHERE pid = ?', [$pid]);
 $vvrev = fn(string $pid) => (int)apr_val('SELECT rev FROM report_versions WHERE pid = ?', [$pid]);
-$save = fn(string $section, array $content, string $as = null, ?int $rev = null) => $post('report-section-save', ['section' => $section, 'rev' => $rev ?? (int)apr_val('SELECT rev FROM report_sections WHERE pid = ?', [$section]), 'content' => $content], $as);
+$save = fn(string $section, mixed $content, string $as = null, ?int $rev = null) => $post('report-section-save', ['section' => $section, 'rev' => $rev ?? (int)apr_val('SELECT rev FROM report_sections WHERE pid = ?', [$section]), 'content' => $content], $as);
 $P_TEXT = [['type' => 'p', 'text' => 'טקסט שכתב השמאי']];
 /** ממלא כל פרק שאין בו תוכן של ממש, כדי שלא יישאר "פרק חובה ריק". */
 $fill = function (string $version) use ($ver, $save, $P_TEXT) {
@@ -256,6 +256,98 @@ eq([$again[0], $again[1]['state'] ?? null, array_column($ps, 'text'), array_map(
         ['2026', '9', '1', '1250000.5', '4', '3'], null, null],
     '17-D1 תשובת בינה: בלוק עם src שלא נשלח (או בלי src) נזרק; מספר שאינו בנתונים שנשלחו ← הבלוק מסומן, וממצא חוסם בבקרה (גם "שווי" — מקרה קצה 10); פרק שאינו מותר לבינה ← report_no_ai; מי שאינו בתיק — 404; rev ישן ← 409');
 $fake->next = $echo;
+
+// ═══ 17-B: עריכה, ואיסור הדריסה השקטה ═══════════════════════════
+// 17-B2: פרק שלא נגעו בו + נתון חדש ← מתעדכן לבד, ואין הצעה
+$props = fn(string $section) => apr_rows('SELECT p.* FROM section_proposals p JOIN report_sections s ON s.id = p.section_id WHERE s.pid = ? ORDER BY p.id', [$section]);
+$S = fn(string $key) => $sec($ver($VER)[1], $key);
+$before = $S('area_desc');
+$F1 = $fact($C, 'area', '85.5', ['unit' => 'sqm', 'area_kind' => 'registered'])[1]['fact']['pid'];
+$after = $S('area_desc');
+eq([$types($before['blocks']), $types($after['blocks']), $after['blocks'][1]['value']['text'] ?? null, $after['blocks'][1]['value']['area_kind'] ?? null, $after['blocks'][1]['verified'] ?? null, $after['user_edited'], $after['changed_note'] !== null,
+    $props($after['pid']), $after['rev'] > $before['rev'], array_column($after['sources'], 'pid'), in_array('fact_unverified', array_column($ver($VER)[1]['findings'], 'kind'), true)],
+    [['note_missing'], ['h', 'fact'], '85.5', 'registered', false, false, true, [], true, [$F1], true],
+    '17-B2 פרק עם user_edited = 0 + נתון חדש ← הפרק נבנה מחדש עם הנתון (מסומן "לא אומת"), מציג "עודכן", ואין הצעת עדכון');
+
+// 17-B1: פרק שנערך בידי אדם + נתון חדש ← התוכן זהה בית-בבית, ונוצרת הצעה
+$mine = [['type' => 'p', 'text' => 'הדירה מרווחת ומוארת, <b>לדברי</b> השמאי'], ['type' => 'fact', 'attr' => 'area'], ['type' => 'list', 'items' => ['סלון', 'מטבח']], ['type' => 'table', 'rows' => [['חדר', 'מצב'], ['סלון', 'טוב']]],
+    ['type' => 'note_missing', 'what' => 'מצב האינסטלציה'], ['type' => 'h', 'text' => 'כותרת משנה'], ['type' => 'data_table', 'table' => 'identifiers']];
+$stale = $save($after['pid'], $mine, null, $before['rev']);
+$sv = $save($after['pid'], $mine, $tal);                              // עובדת משרד עם edit — רשאית לערוך
+$stored = $srow($after['pid'])['content'];
+$fact($C, 'rooms', '4');
+$ed = $S('area_desc');
+$pr = $props($after['pid']);
+eq([code($stale), array_key_exists('by', $stale[1]['error']) ? $stale[1]['error']['by'] : 'x', $sv[0], [(int)$srow($after['pid'])['user_edited'], $srow($after['pid'])['origin'], $srow($after['pid'])['state']], $srow($after['pid'])['content'] === $stored,
+    count($pr), [$pr[0]['state'] ?? null, $pr[0]['origin'] ?? null], $ed['proposal'] !== null, array_values(array_filter($ed['proposal']['lines'] ?? [], fn($l) => str_contains($l, 'חדרים'))), $ed['blocks'][0]['text'], $types($ed['blocks']),
+    $ed['blocks'][6]['rows'] ?? null, in_array('proposal_pending', $blocking($VER), true), count($props($after['pid'])) === count($pr) && $ver($VER)[0] === 200 && count($props($after['pid'])) === 1],
+    ['report_changed', null, 200, [1, 'manual', 'edited'], true, 1, ['pending', 'auto'], true, ['חדרים: 4'], 'הדירה מרווחת ומוארת, <b>לדברי</b> השמאי', ['p', 'fact', 'list', 'table', 'note_missing', 'h', 'data_table'],
+        [['גוש / חלקה', 'גוש 6158, חלקה 12']], true, true],
+    '17-B4 שמירה עם rev ישן ← 409; 17-B1 פרק שנערך בידי אדם + נתון חדש ← content זהה בית-בבית, נוצרה section_proposals אחת (גם אחרי קריאות חוזרות), והיא חוסמת אישור; טקסט נשמר כטקסט — תגית אינה HTML; טבלה מהתיק נפתרת בזמן ההצגה');
+
+// "הערך השתנה: היה X" — הפניה לנתון בפרק שנערך ממשיכה להציג ערך עדכני, ומסומנת
+$post('fact-correct', ['fact' => $F1, 'rev' => $frev($F1), 'value' => '90', 'correction_note' => 'מדידה חוזרת']);
+$chg = $S('area_desc');
+$chgFind = array_values(array_filter($ver($VER)[1]['findings'], fn($f) => $f['kind'] === 'fact_changed'));
+eq([$chg['blocks'][1]['value']['text'], $chg['blocks'][1]['changed'], $chg['blocks'][1]['was'], count($chgFind), $chgFind[0]['level'] ?? null, $srow($after['pid'])['content'] === $stored], ['90', true, '85.5 sqm registered', 1, 'warn', true],
+    '§7 בלוק fact בפרק שנערך מציג את הערך העדכני, מסומן "הערך השתנה: היה X", ועולה כאזהרה בבקרה — והתוכן השמור אינו משתנה');
+
+// הכרעה בהצעה: דחייה, קבלה ומיזוג — נרשמות; התוכן משתנה רק בקבלה / במיזוג
+$decide = fn(string $prop, string $decision, array $more = [], string $as = null) => $post('report-proposal-decide', ['proposal' => $prop, 'decision' => $decision] + $more, $as);
+$rj = $decide($pr[0]['pid'], 'reject');
+$afterRj = [$srow($after['pid'])['content'] === $stored, $props($after['pid'])[0]['state'], $S('area_desc')['proposal'], code($decide($pr[0]['pid'], 'accept'))];
+$fact($C, 'floor', '3');
+$ver($VER);                                                         // הרענון קורה בקריאה של הגרסה (או במשימת הרקע)
+$p2 = $props($after['pid'])[1] ?? null;
+$mg = $decide($p2['pid'] ?? '', 'merge', ['content' => [['type' => 'p', 'text' => 'נוסח ממוזג'], ['type' => 'fact', 'attr' => 'floor']]]);
+$afterMg = [$S('area_desc')['blocks'][0]['text'], (int)$srow($after['pid'])['user_edited'], $props($after['pid'])[1]['state']];
+$fact($C, 'year_built', '1995');
+$ver($VER);
+$p3 = $props($after['pid'])[2] ?? null;
+$ac = $decide($p3['pid'] ?? '', 'accept', [], $tal);
+$afterAc = [$types($S('area_desc')['blocks']), (int)$srow($after['pid'])['user_edited'], $srow($after['pid'])['origin'], $props($after['pid'])[2]['state'], (int)$props($after['pid'])[2]['decided_by'] > 0];
+eq([$rj[0], $afterRj, $mg[0], $afterMg, $ac[0], $afterAc, code($decide($p3['pid'] ?? '', 'reject')), code($decide($pr[0]['pid'], 'accept', [], $noa)), code($decide('aaaaaaaaaaaaaaaa', 'accept')),
+    (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action LIKE 'report.proposal_%'")],
+    [200, [true, 'rejected', null, 'nothing_to_change'], 200, ['נוסח ממוזג', 1, 'merged'], 200, [['h', 'fact', 'fact', 'fact', 'fact'], 0, 'auto', 'accepted', true], 'nothing_to_change', 'forbidden', 'not_found', 3],
+    '17-E2 (חלק השרת) הצעת עדכון: דחייה משאירה את התוכן; מיזוג שומר את הנוסח של השמאי; קבלה מחליפה בתוכן המוצע; הצעה שהוכרעה אינה מוכרעת שוב; כל הכרעה ביומן');
+
+// 17-B3: "יצירה מחדש" בברירת המחדל אינה נוגעת בפרקים שנערכו ידנית
+$pu = $S('purpose');
+$save($pu['pid'], [['type' => 'p', 'text' => 'מטרת השומה בניסוח של השמאי']]);
+$keep = $srow($pu['pid'])['content'];
+$rb = $post('report-rebuild', ['version' => $VER]);
+$kept = $srow($pu['pid'])['content'] === $keep;
+$rb2 = $post('report-rebuild', ['version' => $VER, 'sections' => [$pu['pid']], 'include_edited' => true]);
+eq([$rb[0], in_array($pu['pid'], array_column($rb[1]['skipped'], 'pid'), true), $kept, in_array($pu['pid'], $rb[1]['rebuilt'], true), $rb2[1]['rebuilt'], $types($S('purpose')['blocks']), (int)$srow($pu['pid'])['user_edited'], code($post('report-rebuild', ['version' => $VER], $noa))],
+    [200, true, true, false, [$pu['pid']], ['p', 'p', 'p'], 0, 'forbidden'],
+    '17-B3 "יצירה מחדש" בברירת המחדל מדלגת על פרק שנערך ידנית (ומחזירה אותו ברשימה, לאזהרה); רק include_edited מפורש בונה אותו מחדש');
+
+// תוכן שאינו תקין נדחה, ושום דבר לא נשמר
+$CB = make_case($boaz, $PB);
+$post('report-draft-create', ['case' => $CB], $boaz);
+$VB = $versions($CB)[0]['pid'];
+$bSection = $sec($ver($VB, $boaz)[1], 'purpose');
+$bVisitFact = $fact($CB, 'area', '50', ['unit' => 'sqm', 'area_kind' => 'registered'], $boaz)[1]['fact']['pid'];
+$pc = $S('documents');
+$badBlocks = [[['type' => 'script', 'text' => 'x']], [['type' => 'p']], [['type' => 'p', 'text' => str_repeat('א', 5001)]], [['type' => 'fact', 'attr' => 'no_such_attr']], [['type' => 'data_table', 'table' => 'users']],
+    [['type' => 'p', 'text' => 'x', 'src' => ['type' => 'fact', 'pid' => $bVisitFact]]], [['type' => 'image', 'photo' => 'aaaaaaaaaaaaaaaa']], [['type' => 'table', 'rows' => [['a', 'b'], ['c']]]], 'x', array_fill(0, 201, ['type' => 'p', 'text' => 'x'])];
+$codes = array_map(fn($b) => code($save($pc['pid'], $b)), $badBlocks);
+eq([array_values(array_unique($codes)), $srow($pc['pid'])['rev'] == $pc['rev'], code($save($pc['pid'], [['type' => 'p', 'text' => 'ok', 'src' => ['type' => 'fact', 'pid' => $F1]]])), $S('documents')['blocks'][0]['src'] ?? null],
+    [['report_block', 'text_too_long', 'attr_invalid'], true, null, ['type' => 'fact', 'pid' => $F1]],
+    '§5 בלוק לא מוכר, טקסט חסר או ארוך מדי, מאפיין שאינו קיים, טבלה שאינה ברשימה, מקור או תמונה של תיק אחר, טבלה עם שורות לא שוות — נדחים, ודבר לא נשמר; מקור של התיק עצמו נשמר');
+
+// ═══ הרשאות (§11) ═══════════════════════════════════════════════
+$s1 = $S('assume');
+$roleTry = fn(string $as) => [code($save($s1['pid'], $P_TEXT, $as, 999999)), code($post('report-section-reviewed', ['section' => $s1['pid'], 'rev' => 999999], $as)), code($post('report-submit', ['version' => $VER, 'rev' => 999999], $as)),
+    code($post('report-return', ['version' => $VER, 'rev' => 999999], $as)), code($post('report-approve', ['version' => $VER, 'rev' => 999999, 'acks' => [], 'confirm' => 'אישור'], $as)),
+    code($post('report-version-new', ['case' => $C, 'reason' => 'x'], $as)), code($post('report-version-delete', ['version' => $VER, 'rev' => 999999, 'reason' => 'x'], $as)),
+    code($post('report-comment-add', ['version' => $VER, 'text' => 'x' . bin2hex(random_bytes(2))], $as)), code($post('report-section-add', ['version' => $VER], $as)), $ver($VER, $as)[0], $report($C, $as)[0]];
+eq([$roleTry($noa), $roleTry($tal), $roleTry($dana), $roleTry($boaz), $roleTry($owner)],
+    [['forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 200, 200],
+        ['report_changed', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', 'forbidden', null, 'report_block', 200, 200],
+        ['report_changed', 'nothing_to_change', 'report_changed', 'report_state', 'forbidden', 'forbidden', 'forbidden', null, 'report_block', 200, 200],
+        array_merge(array_fill(0, 9, 'not_found'), [404, 404]), array_merge(array_fill(0, 9, 'no_office'), [404, 404])],
+    '§11 צופה — קריאה בלבד; עובדת משרד עם edit — עריכה והערות, לא "נסקר", לא העברה לבדיקה ולא אישור; שמאית שותפה — גם העברה לבדיקה, **לא** אישור, גרסה חדשה או מחיקה (17-C1); משרד אחר — 404 בכל פעולה (17-D3), ומנהל המערכת — נדחה בכל פעולה (אינו חבר משרד)');
 
 // ═══ NEXT ═══
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
