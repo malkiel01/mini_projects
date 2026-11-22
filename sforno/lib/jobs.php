@@ -76,28 +76,57 @@ function sf_jobs_run(float $budget = SF_CRON_BUDGET): array
         while (microtime(true) - $t0 < $budget) {
             $job = sf_row("SELECT * FROM jobs WHERE status = 'pending' AND run_after <= ? ORDER BY run_after, id LIMIT 1", [sf_now()]);
             if (!$job) break;
-            $attempt = (int)$job['attempts'] + 1;
-            sf_exec("UPDATE jobs SET status = 'running', attempts = ?, started_at = ?, finished_at = NULL WHERE id = ?", [$attempt, sf_now(), $job['id']]);
-            try {
-                $kind = sf_job_kinds()[$job['kind']] ?? throw new RuntimeException('סוג משימה לא רשום');
-                ($kind['handler'])(json_decode((string)$job['payload'], true) ?: [], $job);
-                sf_exec("UPDATE jobs SET status = 'done', finished_at = ?, last_error = NULL WHERE id = ?", [sf_now(), $job['id']]);
-                $ran++;
-            } catch (Throwable $e) {
-                $failed++;
-                $final = $attempt >= (int)$job['max_attempts'];
-                $err = mb_substr(get_class($e) . ' ב-' . basename($e->getFile()) . ':' . $e->getLine() . ($e instanceof SfError ? ' (' . $e->errorCode . ')' : ''), 0, 300);
-                sf_exec('UPDATE jobs SET status = ?, run_after = ?, finished_at = ?, last_error = ? WHERE id = ?', [$final ? 'failed' : 'pending',
-                    sf_iso(sf_time() + (SF_JOB_BACKOFF[$attempt - 1] ?? end(SF_JOB_BACKOFF))), $final ? sf_now() : null, $err, $job['id']]);
-                if (function_exists('devloop_log_write')) {
-                    devloop_log_write('error', 'job', 'job.failed', ['message' => $job['kind'] . ': ' . $err, 'data' => ['job' => $job['pid'], 'attempt' => $attempt]]);
-                }
-            }
+            if (sf_job_exec($job)) $ran++; else $failed++;
         }
         $ms = (int)round((microtime(true) - $t0) * 1000);
         sf_meta_set('cron_last_ok_at', sf_now());
         sf_meta_set('cron_last_ms', (string)$ms);
         return ['ran' => $ran, 'failed' => $failed, 'ms' => $ms];
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
+}
+
+/** מריץ משימה אחת (שכבר נשלפה מהתור). true = הצליחה. */
+function sf_job_exec(array $job): bool
+{
+    $attempt = (int)$job['attempts'] + 1;
+    sf_exec("UPDATE jobs SET status = 'running', attempts = ?, started_at = ?, finished_at = NULL WHERE id = ?", [$attempt, sf_now(), $job['id']]);
+    try {
+        $kind = sf_job_kinds()[$job['kind']] ?? throw new RuntimeException('סוג משימה לא רשום');
+        ($kind['handler'])(json_decode((string)$job['payload'], true) ?: [], $job);
+        sf_exec("UPDATE jobs SET status = 'done', finished_at = ?, last_error = NULL WHERE id = ?", [sf_now(), $job['id']]);
+        return true;
+    } catch (Throwable $e) {
+        $final = $attempt >= (int)$job['max_attempts'];
+        $err = mb_substr(get_class($e) . ' ב-' . basename($e->getFile()) . ':' . $e->getLine() . ($e instanceof SfError ? ' (' . $e->errorCode . ')' : ''), 0, 300);
+        sf_exec('UPDATE jobs SET status = ?, run_after = ?, finished_at = ?, last_error = ? WHERE id = ?', [$final ? 'failed' : 'pending',
+            sf_iso(sf_time() + (SF_JOB_BACKOFF[$attempt - 1] ?? end(SF_JOB_BACKOFF))), $final ? sf_now() : null, $err, $job['id']]);
+        if (function_exists('devloop_log_write')) {
+            devloop_log_write('error', 'job', 'job.failed', ['message' => $job['kind'] . ': ' . $err, 'data' => ['job' => $job['pid'], 'attempt' => $attempt]]);
+        }
+        return false;
+    }
+}
+
+/**
+ * הרצה מיידית של משימה אחת שממתינה בתור (ייבוא: המנהל לא מחכה ל-cron). אותה נעילה של sf_jobs_run — אם סבב רץ עכשיו,
+ * חוזר ב-'locked' והמשימה תרוץ בסבב. מחזיר: done · failed · locked · not_pending.
+ */
+function sf_job_run_now(string $pid): string
+{
+    $dir = sf_data_dir();
+    if (!is_dir($dir)) @mkdir($dir, 0700, true);
+    $lock = @fopen($dir . '/cron.lock', 'c');
+    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+        if ($lock) fclose($lock);
+        return 'locked';
+    }
+    try {
+        $job = sf_row("SELECT * FROM jobs WHERE pid = ? AND status = 'pending'", [$pid]);
+        if (!$job) return 'not_pending';
+        return sf_job_exec($job) ? 'done' : 'failed';
     } finally {
         flock($lock, LOCK_UN);
         fclose($lock);

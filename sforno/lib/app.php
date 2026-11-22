@@ -20,6 +20,7 @@ require_once __DIR__ . '/jobs.php';
 require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/devtasks.php';
 require_once __DIR__ . '/content.php';
+require_once __DIR__ . '/import.php';
 
 /**
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type.
@@ -79,6 +80,17 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'content-aliases'      => sf_aliases(),
         'content-alias-add'    => sf_alias_add($in, $me),
         'content-alias-remove' => sf_alias_remove($in),
+        'content-file'         => sf_send_file(sf_content_file_path($get)),
+        'import-list'          => sf_import_list($get),
+        'import-status'        => sf_import_view($get),
+        'import-upload'        => sf_import_upload($get, $env, $me),
+        'import-run'           => sf_import_run($in),
+        'import-retry'         => sf_import_retry($in),
+        'import-pdf-text'      => sf_import_pdf_text($in),
+        'import-map'           => sf_import_map($in),
+        'import-apply'         => sf_import_apply($in, $me),
+        'import-text-checked'  => sf_import_checked($in),
+        'import-source'        => sf_send_file(sf_import_source_path($get)),
 
         'dev-health'           => sf_health(),
         'dev-mail-test'        => sf_mail_test($staff),

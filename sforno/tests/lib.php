@@ -79,7 +79,7 @@ function call(string $method, string $action, array $in = [], ?string $as = null
         unset($GLOBALS['sf_cookie_out']);
         try {
             $body = sf_dispatch($method, $action, $get + ['action' => $action], $in, ['platform_user' => $as, 'cookie' => $jar[$key] ?? '',
-                'csrf' => $csrf, 'ua' => 'test', 'content_type' => $opt['content_type'] ?? 'application/json']);
+                'csrf' => $csrf, 'ua' => 'test', 'content_type' => $opt['content_type'] ?? 'application/json'] + (isset($opt['upload']) ? ['upload' => $opt['upload']] : []));
             $status = 200;
         } catch (Throwable $e) {
             sf_log_exception($e);
