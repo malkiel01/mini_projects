@@ -62,6 +62,16 @@
       "log_url": "https://mbe-plus.com/mini_projects/grave-prices/#/dev/log",
       "items_file": "grave-prices/dev/open-items.json",
       "token_env": "GP_DEVLOOP_TOKEN"
+    },
+    {
+      "name": "ספורנו",
+      "prefix": "SF-",
+      "dir": "sforno",
+      "api": "https://mbe-plus.com/mini_projects/sforno/api.php",
+      "tasks_url": "https://mbe-plus.com/mini_projects/sforno/#/dev/tasks",
+      "log_url": "https://mbe-plus.com/mini_projects/sforno/#/dev/log",
+      "items_file": "sforno/dev/open-items.json",
+      "token_env": "SF_DEVLOOP_TOKEN"
     }
   ],
   "module": {
