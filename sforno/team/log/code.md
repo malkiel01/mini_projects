@@ -146,3 +146,5 @@ customs) · 2 שפת הסימון — `lib/markup.php` (`SF_MK_TAGS`, `SF_MK_STY
 15. **תהילים:** פרק = מקטע עליון לפי הסדר; היום העברי מ-`Intl` (`ca-hebrew`); חודש של 29 יום — בכ"ט גם של ל'; קיט — יום
     כ"ה (א) וכ"ו (ב).
 16. `SF.put` ב-`api.js` — `replaceChildren` בלי null. `app.json` גרסה 0.4.
+
+**2026-11-22 — 04 מוזגה (PR #1780, ביקורת: `team/reviews/04-reader.md`).** המסירה עודכנה ב-`team/handoff/code.md`.
