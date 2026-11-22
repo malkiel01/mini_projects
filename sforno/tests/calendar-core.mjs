@@ -24,13 +24,15 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const F = new Intl.DateTimeFormat('en-u-ca-hebrew', { timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric' });
 const ICU = { Tishri: 7, Heshvan: 8, Kislev: 9, Tevet: 10, Shevat: 11, 'Adar I': 12, 'Adar II': 13, Adar: 13, Nisan: 1, Iyar: 2, Sivan: 3, Tamuz: 4, Av: 5, Elul: 6 };
 let k1 = 0, k1i = 0, k1r = 0;
+// ICU לפני 75 טועה ביום אחד בשנת ה'תתו (5806) — כמו ב-k-calendar.test.php: ב-ICU ישן לא סופרים את השנה הזו
+const ICU_OLD = parseInt(String(process.versions.icu || '0'), 10) < 75;
 fx.dates.forEach(([y, m, d], i) => {
     const h = C.toHebrew(y, m, d);
     const p = fx.php[i];
     if (h.y !== p.y || h.m !== p.m || h.d !== p.d || h.leap !== p.leap || C.hebText(h) !== p.text) k1++;
     const parts = {};
     for (const x of F.formatToParts(new Date(Date.UTC(y, m - 1, d)))) parts[x.type] = x.value;
-    if (+parts.year !== h.y || ICU[parts.month] !== h.m || +parts.day !== h.d) k1i++;
+    if ((+parts.year !== h.y || ICU[parts.month] !== h.m || +parts.day !== h.d) && !(ICU_OLD && h.y === 5806)) k1i++;
     const back = C.fromHebrew(h.y, h.m, h.d);
     if (!back || back.y !== y || back.m !== m || back.d !== d) k1r++;
 });
