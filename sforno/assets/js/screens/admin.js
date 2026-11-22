@@ -1,6 +1,6 @@
 /*
  * הניהול: #/admin — התוכן (02, screens/content.js), הייבוא (03), הקורא (04), ההלכה היומית ושיטות הזמנים (07,
- * screens/daily-admin.js); #/admin/staff — המנהלים (§6).
+ * screens/daily-admin.js), החנות (09, screens/store-admin.js); #/admin/staff — המנהלים (§6).
  * כל המנהלים בהרשאות מלאות. השרת מכריע (lib/access.php); כאן רק מסתירים מה שאין טעם להציג.
  */
 'use strict';
@@ -19,7 +19,8 @@
                     ['#/admin/siddur', '📖', 'רשימת הסידור', 'התפילות והקיצורים שהקורא רואה בפתיחה'],
                     ['#/admin/checks', '✅', 'בדיקת מנהגים', 'כל שילוב מנהגים מול הטקסט — "אושר" עם גרסה ותאריך'],
                     ['#/admin/halacha', '🕯️', 'הלכה יומית', 'לפי תאריך עברי: טיוטה, פרסום, והתאריך הלועזי השנה'],
-                    ['#/admin/zmanim', '🕰️', 'שיטות זמני היום', 'הגדרה, אישור וברירת מחדל — הקורא בוחר רק ממאושרות']].map(([href, ic, b, sm]) =>
+                    ['#/admin/zmanim', '🕰️', 'שיטות זמני היום', 'הגדרה, אישור וברירת מחדל — הקורא בוחר רק ממאושרות'],
+                    ['#/admin/store', '🛒', 'חנות', 'סנכרון מ-WooCommerce, מיפוי שדות, קישור לספר דיגיטלי']].map(([href, ic, b, sm]) =>
                     h('li', null, h('a', { class: 'use-row', href }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, ic),
                         h('span', { class: 'use-tx' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/staff' },

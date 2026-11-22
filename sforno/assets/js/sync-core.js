@@ -30,7 +30,7 @@
         return key === 'settings' || key === 'customs' || key === 'marks' || key === 'favorites' || key === 'tehillim'
             || /^pos:[a-z0-9]{16}$/.test(key) || /^order:[a-z0-9]{16}$/.test(key) || /^ver:[a-z0-9]{16}$/.test(key)
             || key === 'siddur:edition' || key === 'tehillim:edition' || key === 'loc' || key === 'zmethod'
-            || key === 'reminders' || key === 'remprefs';
+            || key === 'reminders' || key === 'remprefs' || key === 'storefavs';
     }
 
     const okId = id => typeof id === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(id);
@@ -58,6 +58,9 @@
             .map(x => ({ pid: 'm:' + x.id, kind: MARK_KIND[x.type] || 'bookmark', ref: typeof x.edition === 'string' ? x.edition : null, data: x }));
         if (key === 'favorites') return (Array.isArray(value) ? value : []).filter(x => x && okId(x.id))
             .map(x => ({ pid: 'f:' + x.id, kind: 'favorite', ref: typeof x.edition === 'string' ? x.edition : null, data: x }));
+        // 09: מועדפי החנות — כל מוצר פריט משלו (המזהה ב-WooCommerce)
+        if (key === 'storefavs') return (Array.isArray(value) ? value : []).filter(x => x && okId(x.id))
+            .map(x => ({ pid: 'sp:' + x.id, kind: 'store_favorite', ref: null, data: x }));
         if (key === 'tehillim') {
             const out = [{ pid: 'tehillim:list', kind: 'tehillim_list', ref: null, data: { done: value.done || {}, group: value.group || [] } }];
             for (const n of Array.isArray(value.names) ? value.names : []) if (n && okId(n.id)) out.push({ pid: 'pn:' + n.id, kind: 'prayer_name', ref: null, data: n });
@@ -81,6 +84,7 @@
         if (m) return 'ver:' + m[1];
         if (pid.startsWith('m:')) return 'marks';
         if (pid.startsWith('f:')) return 'favorites';
+        if (pid.startsWith('sp:')) return 'storefavs';
         if (pid === 'tehillim:list' || pid.startsWith('pn:')) return 'tehillim';
         return null;
     }
@@ -90,7 +94,7 @@
     /** פריטים (pid → data) → הערך של הרשומה במכשיר. undefined = אין (הרשומה נמחקת). */
     function build(key, datas) {
         const pids = Object.keys(datas);
-        if (key === 'marks' || key === 'favorites' || key === 'reminders') return pids.map(p => datas[p]).sort(byCreated);
+        if (key === 'marks' || key === 'favorites' || key === 'reminders' || key === 'storefavs') return pids.map(p => datas[p]).sort(byCreated);
         if (key === 'tehillim') {
             const list = datas['tehillim:list'] || {};
             const names = pids.filter(p => p.startsWith('pn:')).map(p => datas[p]).sort(byCreated);
