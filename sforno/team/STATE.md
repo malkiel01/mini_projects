@@ -18,4 +18,4 @@
 - **רקע:** הריפו הישן `malkiel01/sforno` — קוד ישן כרקע בלבד, לא נמחק. `sforno.mbe-plus.com` קיים.
 - **מכסה:** אזהרה שבועית עד ~27.11. Opus בלבד, מעט סוכני משנה, מעט מיזוגים.
 - **צוות:** בקרה (3) `session_018g4NYFaERcGPs7d3j8QKsZ` (מ-21:52; בקרה 2 `session_018g4NYE5chJ7yafGbETDiNn` — לארכב אחרי שהשעון עבר); בקרה 1 `session_018g4NYGA2fhgWP6PkcJ8ZCx` — לארכב); אפיון `session_018g4NYF1YtreoYJt48ZHQ52` (רדום);
-  מטלות `session_018g4NYFB9byAhqYVJfEq9nW`; קוד 01/02/03 — סיימו; קוד 04 — סיים; קוד 05 — סיים; קוד 06 — סיים; קוד 07 — סיים; קוד 08 — סיים; קוד 09 — סיים; קוד 10 `session_018g4NYDbzXpfJJokyWCbTxY`. שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51, עדיין לבקרה 2 — מנהל הצוותים מעביר); הישן `trig_01VBKifEEXot2izcpMcFX6Ct` כבוי.
+  מטלות `session_018g4NYFB9byAhqYVJfEq9nW`; קוד 01/02/03 — סיימו; קוד 04 — סיים; קוד 05 — סיים; קוד 06 — סיים; קוד 07 — סיים; קוד 08 — סיים; קוד 09 — סיים; קוד 10 `session_018g4NYDbzXpfJJokyWCbTxY`. שעון `trig_0129DApgnnEgTr2g3BDUXG6M` (דקה 51, בקרה 3); `trig_01K2CyS2tym5Vs811ugPEx73` (בקרה 2) ו-`trig_01VBKifEEXot2izcpMcFX6Ct` כבויים. בקרה 2 התארכבה.
