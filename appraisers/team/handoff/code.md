@@ -13,6 +13,39 @@
 
 **המיגרציה האחרונה היא 012.** 001–012 נעולות; הבאה = 013. 18 קובצי בדיקה; `p-comps` — 79 בדיקות.
 
+## 17 — בעבודה (קוד (15), 2026-11-22) — **השרת גמור ונבדק; המסכים לא התחילו**
+
+הענף `claude/appraisers-code`, מעל main שכולל את 16 (0.16 ← **0.17**, מיגרציה **017**). `tests/run.php` — 23/23; `u-report` — 24 בדיקות.
+
+**מה יש:** `lib/migrations/017_report.sql` · `lib/report_build.php` · `lib/report.php` · 18 פעולות בנתב וב-`APR_ACCESS` (`case-report`,
+`report-version` פתוחות לשותף; `report-approve` ב-`APR_SENSITIVE`) · מקטע `report` בפרופיל (`apr_pc_report`) · הטריגר ב-`apr_visit_finish` ·
+קודי שגיאה `report_*` · README ("הדוח (17)", "17 · סטיות / לא נבנה / לא נבדק").
+
+**מה נשאר, לפי הסדר:**
+1. **המסכים** (אפיון §10) — הכול: `assets/js/screens/report.js` + `strings-report.js` (ב-`index.html`, עם `?v=0.17`); לשונית "דוח וגרסאות"
+   בכרטיס התיק (`cases.js:501`, והשרת צריך להחזיר `report` ב-`case` רק למי שרואה — כמו `comps` ב-`case_parts.php:479`); הנתיב
+   `#/cases/<pid>/report/<גרסה>` (`cases.js:83`); לשונית "דוח" בעורך הפרופיל (`profiles.js:347, 362`; `T.p.editTabs`). **המסך אינו מחשב** —
+   כל מספר מגיע כמחרוזת; הודעות השגיאה מהשרת. תשובת `report-version` כבר נושאת הכול: `sections[].blocks` פתורים (`value`, `rows`, `cols`,
+   `state`, `changed` / `was`), `lines`, `proposal.lines`, `sources`, `findings` (עם `section` / `link`), `comments`, `lists`.
+   `report_blocked` / `report_ack_required` מחזירים `error.findings`. תיעוד אירועי היומן (`report.*`) ב-`T.audit`.
+2. `tests/mutations-17.php` (לפי `mutations-16.php`): הרשאת האישור, ששת החוסמים, הנימוקים, `user_edited` ← הצעה, src שלא נשלח, מספר שלא בנתונים,
+   ארבעת הפרקים האסורים, `apr_report_visible`, הטריגרים.
+3. AP-017: צעדי 👁 (17-E1…E5) — רק אחרי שיש מסך. PR טיוטה קיים (ר' הדיווח לבקרה).
+
+**מלכודות שנתקלתי בהן:** `apr_job_add` — `dedupe_key` קבוע לתמיד, לכן הרענון נושא את ה-pid וה-rev של הביקור · רענון הפרקים קורה בקריאת
+`report-version` (בבדיקה: לקרוא את הגרסה אחרי שמוסיפים נתון) · `json_encode` של המודל המדומה: מספר בתוך טקסט התשובה ("d1") נספר כמספר לא ידוע ·
+טריגר `report_sections_frozen_*` — כל כתיבה לפרק כשהגרסה אינה `draft` נופלת ב-PDO, לכן כל פעולה קוראת קודם ל-`apr_report_draft()` ·
+`apr_approach_calc` מקבל `$ctx` אבל אינו משתמש בו להכרעה — ברקע מועבר `['user' => null, 'office' => null]`.
+
+## מה 16 השאירה (קוד (14) + (15), 2026-11-22)
+
+- מנוע הגיליון חסום: 40 צמתים לנוסחה, 80 ספרות, תקציב פעולות לגיליון (`APR_SHEET_BUDGET`) — **לגיליון, לא לבקשה** (`case-valuation` על 30
+  גיליונות שנבנו לרעה ≈ 4 שניות; ל-22).
+- `apr_alts_seed` זורע כל חלופה לעצמה; ראשית שנבחרה בטיוטה נשארת. חבר קבוצה שחוזר — בלי המשקל הישן (`comps.php`, `comp-set-member`).
+- ל-22: `sheet-row-order` שמשנה טווח `sum` בלי אזהרה; דחיית float ארוך ב-`apr_comp_dec` של 15; `11-C2` ב-`q-ai` לא יציבה (נפלה פעם אחת).
+- **18 (ייצוא):** הדוח מיוצא מ-`report-version` — טיוטה מהערכים של הרגע, גרסה שאושרה **מה-`snapshot` בלבד**; יצוא אינו משנה מצב (17-C8);
+  `delivered` נקבע רק שם (הטריגר מתיר `approved → delivered`), וגם `cases.status = delivered`. לנטרל `=+-@` בתחילת תא.
+
 ## מה 15 השאירה
 
 - **המנוע `lib/comp_calc.php` טהור:** אינו טוען קובץ, ואין בו מסד, שעון, רשת או נקודה צפה. `p-comps` בודקת זאת סטטית (`token_get_all`): `/`, `**`,

@@ -217,7 +217,10 @@ function apr_report_ai_all(?array $ctx, array $c, array $v): void
     }
 }
 
-/** כותב לפרק את תוצאת הניסוח: טקסט הבינה (מסומן, לא נסקר) ואחריו הטבלאות והתמונות של הפרק; או "ממתין" עם הסיבה. */
+/**
+ * כותב לפרק את תוצאת הניסוח: טקסט הבינה (מסומן, לא נסקר) ואחריו הטבלאות, התמונות **והחוסרים** של הפרק — ניסוח בבינה אינו מעלים
+ * "לא ידוע" מהבקרה; או "ממתין" עם הסיבה.
+ */
 function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid): void
 {
     $s = apr_row('SELECT * FROM report_sections WHERE id = ?', [$s['id']]);
@@ -225,7 +228,7 @@ function apr_report_ai_apply(array $c, array $s, array $r, array $tpl, ?int $uid
         if ($r['reason'] !== 'no_data' && $r['reason'] !== 'not_allowed') apr_report_update('report_sections', $s, (int)$s['rev'], ['ai_wait' => $r['reason']], $uid);
         return;
     }
-    $keep = array_values(array_filter(apr_report_build($c, $s['key'], $tpl)['blocks'], fn($b) => in_array($b['type'], ['data_table', 'image'], true)));
+    $keep = array_values(array_filter(apr_report_build($c, $s['key'], $tpl)['blocks'], fn($b) => in_array($b['type'], ['data_table', 'image', 'note_missing'], true)));
     apr_report_update('report_sections', $s, (int)$s['rev'], ['content' => json_encode([...$r['blocks'], ...$keep], JSON_UNESCAPED_UNICODE), 'origin' => 'ai', 'ai_run_id' => $r['run'], 'ai_reviewed' => 0,
         'ai_reviewed_by' => null, 'ai_reviewed_at' => null, 'ai_wait' => null, 'state' => 'drafted', 'user_edited' => 0], $uid);
     apr_case_audit($c, 'report.section_ai', 'report_section', $s['pid'], ['key' => $s['key'], 'blocks' => count($r['blocks']), 'dropped' => $r['dropped'] ?? 0,

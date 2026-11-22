@@ -81,6 +81,12 @@
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
+ * דוח (17): case-report {case} · report-version {version} · report-compare {version, with} (קריאה) · report-draft-create {case} ·
+ *   report-section-save {section, rev, content, title?} · report-section-add {version, title} · report-section-delete {section, rev} ·
+ *   report-rebuild {version, sections?, include_edited?} · report-section-ai {section, rev} · report-section-reviewed {section, rev} ·
+ *   report-proposal-decide {proposal, decision, content?} · report-comment-add {version, section?, text} · report-comment-resolve {comment} ·
+ *   report-submit / report-return {version, rev} · report-approve {version, rev, acks} (רגישה) · report-version-new {case, reason} ·
+ *   report-version-delete {version, rev, reason}
  *
  * כל בקשה משנה: POST, גוף JSON, והכותרת X-CSRF עם האסימון מ-me. כל מזהה בבקשה הוא pid; מזהה המשתמש ומזהה המשרד
  * של הבקשה עצמה לא נלקחים מהדפדפן אף פעם. פעולת משרד יכולה לשאת office (pid) — הוא חייב להיות המשרד הפעיל.

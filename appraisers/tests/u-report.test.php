@@ -498,6 +498,63 @@ eq([$noReason, $nv[0], $newArea['value']['text'], $newArea['changed'] ?? null, $
     ['reason_required', 200, '72', true, ['approved', 'draft', 2, 'from_version', 'השטח תוקן אחרי מדידה', 'report_exists'], ['changed', ['שטח: 70 sqm registered'], ['שטח: 72 sqm registered']], 200, ['superseded', 'approved'], '70', 'superseded', true, 2],
     '17-C7 "גרסה חדשה" (בנימוק) ← draft במספר הבא עם הערך **החדש**, והקודמת עדיין approved; ההשוואה מציגה מה השתנה; אישור החדשה ← הקודמת superseded, וקריאתה עדיין מחזירה את תוכנה ואת ה-hash שלה');
 
-// ═══ NEXT ═══
+// ═══ 17-D3: שותף ממשרד אחר — טיוטה רק עם see_draft; קריאה בלבד ═════
+$share = function (string $case, array $perms) use ($avi, $boaz) {
+    $p = ['kind' => 'cross_office', 'email' => 'boaz@example.com', 'scope' => 'all', 'perms' => $perms, 'days' => 0];
+    $pv = call('POST', 'share-preview', ['case' => $case] + $p, $avi);
+    $mk = call('POST', 'share-create', ['case' => $case, 'preview' => $pv[1]['preview'] ?? ''] + $p, $avi);
+    return [$mk[1]['share'] ?? '', call('POST', 'share-respond', ['share' => $mk[1]['share'] ?? '', 'accept' => true], $boaz)[0]];
+};
+[$CS, $VS] = $ready();                                               // טיוטה בלבד
+[, $acc1] = $share($CS, []);
+$noDraft = [$report($CS, $boaz)[0], array_column($report($CS, $boaz)[1]['versions'] ?? [], 'state'), $ver($VS, $boaz)[0]];
+[, $acc2] = $share($CK, []);                                         // לתיק הזה יש גרסה מאושרת, גרסה שהוחלפה — ואין טיוטה
+$finalOnly = [array_column($report($CK, $boaz)[1]['versions'] ?? [], 'state'), $ver($V2, $boaz)[0], $ver($V2, $boaz)[1]['findings'] ?? null, $ver($V2, $boaz)[1]['comments'] ?? null,
+    isset($ver($V2, $boaz)[1]['sections'][0]['sources']), $report($CK, $boaz)[1]['can_create'], $report($CK, $boaz)[1]['perms']];
+[$CS2, $VS2] = $ready();
+[, $acc3] = $share($CS2, ['see_draft' => true]);
+$pd = $ver($VS2, $boaz);
+$s0 = $pd[1]['sections'][0] ?? [];
+$pw = [code($save($s0['pid'] ?? '', $P_TEXT, $boaz, 1)), code($post('report-submit', ['version' => $VS2, 'rev' => 1], $boaz)), code($post('report-approve', ['version' => $VS2, 'rev' => 1, 'acks' => [], 'confirm' => 'אישור'], $boaz)),
+    code($post('report-comment-add', ['version' => $VS2, 'text' => 'x'], $boaz)), code($post('report-draft-create', ['case' => $CS], $boaz)), code(call('GET', 'report-compare', [], $boaz, ['version' => $VS2, 'with' => $VS2]))];
+eq([[$acc1, $acc2, $acc3], $noDraft, $finalOnly, $pd[0], array_column($report($CS2, $boaz)[1]['versions'], 'state'), array_keys($s0), $pd[1]['findings'], $pd[1]['lists'] ?? null, $pw],
+    [[200, 200, 200], [200, [], 404], [['approved', 'superseded'], 200, [], [], false, null, ['edit' => false, 'judge' => false, 'approve' => false]], 200, ['draft'],
+        ['pid', 'key', 'title', 'mandatory', 'build', 'origin', 'state', 'ai_reviewed', 'blocks'], [], null, array_fill(0, 6, 'not_found')],
+    '17-D3 שותף ממשרד אחר: בלי see_draft — הטיוטה אינה ברשימה ואינה נקראת (404), גרסה מאושרת כן (בלי בקרה, הערות ומקורות); עם see_draft — הטיוטה נקראת, הפרקים בלבד; כל פעולה משנה — 404');
+
+// ═══ מקרי קצה ═════════════════════════════════════════════════
+// 11: הסרת פרק חובה מהגרסה — מותרת, ונרשמת. 12: מחיקת טיוטה — רק approve_report, בנימוק, מחיקה רכה. הערות לבודק
+[$CE, $VE] = $ready();
+call('POST', 'case-member-add', ['case' => $CE, 'user' => $danaPid], $avi);
+$m = $sec($ver($VE)[1], 'methods');
+$del = $post('report-section-delete', ['section' => $m['pid'], 'rev' => $m['rev']], $dana);
+$addS = $post('report-section-add', ['version' => $VE, 'title' => 'פרק נוסף של השמאי']);
+$keysAfter = array_column($ver($VE)[1]['sections'], 'title');
+$cm = $post('report-comment-add', ['version' => $VE, 'section' => $sec($ver($VE)[1], 'purpose')['pid'], 'text' => 'לבדוק את המועד הקובע'], $dana);
+$cmBad = code($post('report-comment-add', ['version' => $VE, 'section' => $m['pid'], 'text' => 'x']));
+$rs = $post('report-comment-resolve', ['comment' => $cm[1]['comment'] ?? '']);
+$cview = $ver($VE)[1]['comments'];
+$delTry = [code($post('report-version-delete', ['version' => $VE, 'rev' => $vvrev($VE), 'reason' => 'x'], $dana)), code($post('report-version-delete', ['version' => $VE, 'rev' => $vvrev($VE)])), code($post('report-version-delete', ['version' => $VE, 'rev' => 999, 'reason' => 'x']))];
+$dl = $post('report-version-delete', ['version' => $VE, 'rev' => $vvrev($VE), 'reason' => 'נוצרה בטעות']);
+$gone = [$ver($VE)[0], $report($CE)[1]['versions'], $report($CE)[1]['can_create'], apr_val('SELECT delete_reason FROM report_versions WHERE pid = ?', [$VE])];
+$re = $post('report-draft-create', ['case' => $CE]);
+eq([$del[0], $addS[0], in_array('שיטות השומה', $keysAfter, true), end($keysAfter), apr_val("SELECT json_extract(meta, '$.mandatory') FROM audit_log WHERE action = 'report.section_delete' AND entity_pid = ?", [$m['pid']]),
+    $cm[0], $cmBad, $rs[0], [$cview[0]['text'], $cview[0]['by'], $cview[0]['resolved_by'], $cview[0]['section'] !== null], $delTry, $dl[0], $gone, $re[0], (int)$versions($CE)[0]['number'], code($post('report-comment-resolve', ['comment' => $cm[1]['comment'] ?? '']))],
+    [200, 200, false, 'פרק נוסף של השמאי', 1, 200, 'not_found', 200, ['לבדוק את המועד הקובע', 'דנה', 'אבי', true], ['forbidden', 'reason_required', 'report_changed'], 200, [404, [], 'draft', 'נוצרה בטעות'], 200, 2, 'nothing_to_change'],
+    'מקרה קצה 11: פרק חובה מוסר מהגרסה בידי שמאי בתיק, וההסרה נרשמת; פרק נוסף נכנס בסוף; הערות לבודק — מי כתב, מי סגר; מקרה קצה 12: טיוטה נמחקת רק בידי approve_report ובנימוק (מחיקה רכה), ואחריה אפשר ליצור טיוטה חדשה');
+
+// 13: תיק בלי ביקור — הטריגר לא הופעל, "יצירת טיוטה" זמינה, ופרק הביקור מסומן. ביקור נוסף אחרי שיש טיוטה — רענון והצעות, לא גרסה שנייה
+$CNV = make_case($avi, $PM);
+$post('report-draft-create', ['case' => $CNV]);
+$VNV = $versions($CNV)[0]['pid'];
+$n0 = count($versions($C));
+[$V2nd] = $visit($C);
+apr_jobs_run(5.0);
+$visitSec = $sec(json_decode(json_encode(['sections' => array_map(fn($s) => ['key' => $s['key'], 'blocks' => json_decode($s['content'], true)], apr_rows('SELECT s.key, s.content FROM report_sections s JOIN report_versions v ON v.id = s.version_id WHERE v.pid = ?', [$VER]))]), true), 'visit');
+eq([in_array('לא ידוע: לא נערך ביקור בנכס', array_column($ver($VNV)[1]['findings'], 'text'), true), count($versions($C)), $n0, count(array_filter($visitSec['blocks'], fn($b) => $b['type'] === 'p')),
+    (int)apr_val("SELECT COUNT(*) FROM jobs WHERE dedupe_key LIKE 'report.refresh:%' AND status = 'done'") >= 1, apr_report_job(['case' => 'aaaaaaaaaaaaaaaa']), apr_report_job([])],
+    [true, 1, 1, 2, true, 'done', 'done'],
+    'מקרה קצה 13: תיק בלי ביקור — פרק הביקור מסומן "לא ידוע", והטיוטה נוצרת ידנית; ביקור נוסף כשכבר יש טיוטה ← אין גרסה שנייה: משימת רענון מעדכנת את פרק הביקור (שלא נערך) בשני הביקורים');
+
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();
