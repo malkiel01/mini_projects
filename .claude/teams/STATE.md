@@ -14,7 +14,7 @@
 | `trading-strategies` אסטרטגיות למסחר | פעיל — S1–S7, A1–A3, 21.1–21.3 מוזגו; פיבונאצ'י F-1..F-3 + learn מוזגו (#1700); למידה L1 מוזגה; בדרך: R1 הרשאות (מיגרציה 18), חלונית הסבר T1, למידה L3; עד 5 מטלות במקביל; שעון — דקה 28 (`trig_01AhicpPsrrfEGR4f97H9K4K`, נוצר בידי מנהל הצוותים (5); של בקרה 7 `trig_01FLjvXemEmKVuyfZbh9oGqH` כבוי) | `session_018g4NYDrFHGumG4hGvNK11M` (בקרה 8, עומק 7/8; קודם בקרה 7 `session_018g4NYFqH3tqWT9nYnCRNjr`; בקרה 6 `session_018g4NYEHws3rFjuBNuDFXRb` — רדומה, מחזיקה את ספר פיבונאצ'י) |
 | `org-budget-proposals` הצעות תקציב לארגונים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי. היה: פעיל — B1 מוזג #1635; B1.2 (אזעקות שווא בניצול) #1648; שעון — דקה 38 (`trig_018qY4uvqcdJKapxU9pU8kcu`, נוצר בידי מנהל הצוותים (4); הישן `trig_013qCk9g1qS7xKb8qLpQrDgX` כבוי) | `session_018g4NYDcPb9DQZTqp51x7ys` (בקרה 2; קודם בקרה 1 `session_018g4NYFsGrFQCUGf3CgaSYk`) |
 | `grave-prices` מחירוני קברים | **מושהה עד הודעה של הבעלים (2026-11-16)** — השעון כבוי; פרוסות 01–05 באתר; GP-02 עד GP-05 אצל הבעלים. היה: פעיל — 01, 02 מוזגו; קוד 03 (מחירונים לכל קבוצה) PR #1666 בביקורת; שעון — דקה 53 (`trig_01Ecqo638xYguboqngvZbKWx`, נוצר בידי מנהל הצוותים (4)) | `session_018g4NYFyk327DeLraDWY9Uv` (בקרה 2) |
-| `sforno` ספורנו | פעיל — קוד ברצף עד סיום; 01–06 ב-main (06: #1786); 07 בקוד (`session_018g4NYEei2TM8xj19pgRpTF`); שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51) | `session_018g4NYE5chJ7yafGbETDiNn` (בקרה 2) |
+| `sforno` ספורנו | פעיל — קוד ברצף עד סיום; 01–07 ב-main (07: #1789); 08 בקוד (`session_018g4NYDRVzkfBSdywoE87s2`); שעון `trig_01K2CyS2tym5Vs811ugPEx73` (דקה 51) | `session_018g4NYE5chJ7yafGbETDiNn` (בקרה 2) |
 
 ## ממתין לבעלים
 
