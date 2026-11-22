@@ -154,6 +154,8 @@ function apr_photo_strip(string $path): void
 function apr_visit_photo_visible(array $ctx, array $c, array $p): bool
 {
     if ($p['deleted_at'] !== null || empty($c['perms']['view'])) return false;
+    // שיתוף (05): תמונה פרטית אינה נחשפת לשותף לעולם, ותמונה אחרת — רק כשהביקור שלה בהיקף. בלי מזהה הביקור — לא.
+    if (($c['share'] ?? null) !== null) return $p['usage'] !== 'private' && is_string($p['visit_pid'] ?? null) && apr_can($c, 'visit', $p['visit_pid']);
     if ($p['usage'] !== 'private') return true;
     $me = (int)$ctx['user']['id'];
     return $me === (int)$p['visitor_user_id'] || $me === (int)$c['responsible_user_id'] || $me === (int)($p['created_by'] ?? 0);
@@ -171,7 +173,7 @@ function apr_visit_photo_can_manage(array $ctx, array $c, array $p): bool
 /** לקובץ שהוא תמונת ביקור: האם מותר לי לראות אותו. null — הקובץ אינו תמונת ביקור. נשאל מתוך apr_file_visible(). */
 function apr_visit_file_rule(array $ctx, array $c, array $f): ?bool
 {
-    $p = apr_row('SELECT p.usage, p.deleted_at, p.created_by, v.visitor_user_id FROM visit_photos p JOIN visits v ON v.id = p.visit_id WHERE p.file_id = ?', [$f['id'] ?? 0]);
+    $p = apr_row('SELECT p.usage, p.deleted_at, p.created_by, v.visitor_user_id, v.pid AS visit_pid FROM visit_photos p JOIN visits v ON v.id = p.visit_id WHERE p.file_id = ?', [$f['id'] ?? 0]);
     return $p ? apr_visit_photo_visible($ctx, $c, $p) : null;
 }
 
@@ -185,7 +187,7 @@ function apr_visit_not_photo(array $f): void
 function apr_visit_hidden_pids(array $ctx, array $c): array
 {
     $out = [];
-    foreach (apr_rows('SELECT p.pid, p.usage, p.deleted_at, p.created_by, f.pid AS file_pid, v.visitor_user_id FROM visit_photos p JOIN files f ON f.id = p.file_id JOIN visits v ON v.id = p.visit_id WHERE v.case_id = ?', [$c['id']]) as $p) {
+    foreach (apr_rows('SELECT p.pid, p.usage, p.deleted_at, p.created_by, f.pid AS file_pid, v.visitor_user_id, v.pid AS visit_pid FROM visit_photos p JOIN files f ON f.id = p.file_id JOIN visits v ON v.id = p.visit_id WHERE v.case_id = ?', [$c['id']]) as $p) {
         if (!apr_visit_photo_visible($ctx, $c, ['deleted_at' => null] + $p)) $out[$p['pid']] = $out[$p['file_pid']] = true;
     }
     return $out;

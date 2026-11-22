@@ -65,6 +65,9 @@
  * חילוץ (12):      file-ai {file} · file-ai-run {file, what: classify | fields | summary, key} · file-ai-suggestion {file, do: accept | reject,
  *                  requirement?, relation?} · file-ai-summary-reviewed {file} · file-ai-reject-all {file, reason} · case-ai-auto-set {case,
  *                  auto_classify?, auto_extract?}. **אין פעולה שמאשרת כמה הצעות יחד** — אישור נתון הוא fact-state, אחד-אחד.
+ * שיתוף (05):      case-shares {case} · share-preview {case, kind: cross_office | support, email?, scope: all | items, items[{type, pid?}], perms{download?,
+ *                  see_internal?, see_draft?}, days, reason?} · share-create {…אותו תוכן…, preview} · share-revoke {share, reason?} · my-shares
+ *                  · share-respond {share, accept} · sys-support. לשותף: cases?tab=shared, docs-search?shared=1, וכל פעולה שהכלל שלה 'case'.
  * webhook (08):    inbound-relay?c=<חיבור> — POST, גוף JSON חתום (X-Relay-Signature); ציבורי. הפורמט והסדר: lib/inbound.php
  * אישור חוזר:      פעולה רגישה (lib/confirm.php) נושאת confirm במצב מחוברת; במנותקת — confirm-request ואז
  *                  confirm-verify {code}. עוד למשתמש: logout (מנותקת) · password-set {password}. מנהל: invite-resend {invite}
@@ -186,6 +189,8 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
     devloop_log_user(['id' => (int)$user['id'], 'username' => $user['name']]);
 
     $p = $read ? $get : $in;
+    $GLOBALS['apr_action'] = $action;        // apr_case_get מכיר שיתוף רק בפעולה שהכלל שלה 'case' (lib/shares.php)
+    unset($GLOBALS['apr_support_case'], $GLOBALS['apr_support_logged']);
     apr_authorize($ctx, $action, $p);
     if ($method !== ($read ? 'GET' : 'POST')) apr_fail('method');
     // שגיאת JavaScript מהדפדפן רק נרשמת, ועלולה לקרות לפני ש-me נטען — בלי CSRF
@@ -193,6 +198,15 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
 
     apr_confirm_check($ctx, $action, $p);   // פעולה רגישה בלי אישור חוזר — 403 confirm_required
 
+    $out = apr_route($action, $ctx, $p, $get, $in, $env);
+    apr_share_seen_flush();                  // בקשה של התמיכה בתיק משותף נרשמת ביומן של המשרד לפני שהתשובה יוצאת (05-B5)
+    return $out;
+}
+
+/** הפעולה עצמה — אחרי הזיהוי, ההרשאה, ה-CSRF והאישור החוזר. */
+function apr_route(string $action, array $ctx, array $p, array $get, array $in, array $env): mixed
+{
+    $user = $ctx['user'];
     return match ($action) {
         'me'                 => apr_me($ctx),
         'logout'             => apr_logout($ctx),
@@ -402,6 +416,14 @@ function apr_dispatch(string $method, string $action, array $get, array $in, arr
         'sys-inbox-dismiss' => apr_sys_inbox_dismiss($ctx, $p),
         'sys-inbox-route' => apr_sys_inbox_route($p),
         'sys-inbox-reply' => apr_sys_inbox_reply($p),
+        // שיתוף (05)
+        'case-shares' => apr_case_shares($ctx, $p),
+        'share-preview' => apr_share_preview($ctx, $p),
+        'share-create' => apr_share_create($ctx, $p),
+        'share-revoke' => apr_share_revoke($ctx, $p),
+        'my-shares' => apr_my_shares($ctx),
+        'share-respond' => apr_share_respond($ctx, $p),
+        'sys-support' => apr_sys_support(),
         'office-cases' => apr_office_cases($ctx),
         'office-case-transfer' => apr_office_case_transfer($ctx, $p),
 

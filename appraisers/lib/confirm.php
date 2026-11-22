@@ -29,6 +29,7 @@ const APR_SENSITIVE = [
     'sys-channel-save'  => null,                        // חיבור ערוץ של המערכת
     'sys-ai-connection-save' => null,                   // מפתח של ספק בינה — שמירה והחלפה (אפיון 11 §7)
     'office-ai-connection-save' => null,                // החיבור האישי של המשרד
+    'share-create'      => ['kind', 'support'],         // שיתוף תיק עם התמיכה (אפיון 05 §4)
     'office-ai-policy'  => ['enabled', true],           // הדלקת הבינה למשרד = אישור המדיניות (אפיון 11 §8)
 ];
 

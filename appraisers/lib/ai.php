@@ -504,8 +504,9 @@ function ai_run(#[\SensitiveParameter] array $req): array
             return ['blocked' => apr_row('SELECT * FROM ai_runs WHERE pid = ?', [$pid]), 'quota' => $quota];
         };
 
-        // שותף ממשרד אחר אינו מפעיל בינה על חשבון המשרד הבעלים (מקרה קצה 7; פרוסה 05 תוסיף את ההיתר המפורש)
-        if ($case !== null && (int)$case['office_id'] !== $office) return $block('no_assignment');
+        // שותף ממשרד אחר אינו מפעיל בינה על חשבון המשרד הבעלים (מקרה קצה 7). החסימה נרשמת אצל המשרד שלו — בלי מזהה התיק
+        // של המשרד האחר, כדי שרישום השימוש של משרד אחד לא יצביע על תיק של משרד אחר (05)
+        if ($case !== null && ((int)$case['office_id'] !== $office || ($case['share'] ?? null) !== null)) return $block('no_assignment', ['case_id' => null]);
         // 3 — המדיניות של המשרד
         $policy = apr_ai_policy($office);
         if (!apr_ai_policy_on($policy)) return $block('policy');
