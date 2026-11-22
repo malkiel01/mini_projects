@@ -54,11 +54,14 @@ foreach (['lib', 'tests', 'dev', 'data'] as $d) {
     check("$d/.htaccess חוסם", is_file($ht) && str_contains((string)file_get_contents($ht), 'Require all denied'));
 }
 $app = json_decode((string)file_get_contents("$root/app.json"), true);
-eq([$app['gate'] ?? null, $app['restricted'] ?? null, $app['version'] ?? null], [true, true, '0.1'], 'app.json: gate, restricted, version');
+eq([$app['gate'] ?? null, $app['restricted'] ?? null, $app['version'] ?? null], [true, true, '0.2'], 'app.json: gate, restricted, version');
 eq($app['public'] ?? null, ['cron.php', 'api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach'], 'app.json: public — רק מה ש-§9 מתיר');
 $publicActs = array_keys(array_filter(SF_ACTIONS, fn($s) => $s['who'] === 'public'));
 eq($publicActs, ['health', 'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'], 'הנתב: אותן פעולות ציבוריות כמו ב-app.json');
 foreach (SF_ACTIONS as $a => $s) if (str_starts_with($a, 'dev-')) eq($s['who'], 'dev', "$a — רק למפתח");
+foreach (SF_ACTIONS as $a => $s) if ($s['who'] === 'reader') check("$a (reader) — read-*, GET, ולא ב-public של app.json (השער מגביל לצוות בפיתוח)",
+    str_starts_with($a, 'read-') && $s['m'] === 'GET' && !str_contains(implode(' ', $app['public'] ?? []), $a));
+foreach (SF_ACTIONS as $a => $s) if (str_starts_with($a, 'content-')) eq($s['who'], 'staff', "$a — רק למנהל");
 $items = json_decode((string)file_get_contents("$root/dev/open-items.json"), true);
 eq(array_column($items['items'] ?? [], 'code'), array_map(fn($n) => sprintf('SF-%03d', $n), range(1, 11)), 'dev/open-items.json: מטלה לכל פרוסה, SF-001 עד SF-011');
 $html = (string)file_get_contents("$root/index.html");

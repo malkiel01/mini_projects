@@ -19,8 +19,10 @@ const SF_ERRORS = [
     'last_admin'        => [409, 'חייב להישאר לפחות מנהל פעיל אחד'],
     'self_suspend'      => [409, 'אי אפשר להשעות את עצמך'],
     'state'             => [409, 'הפריט אינו במצב שמאפשר את הפעולה'],
+    'conflict'          => [409, 'מנהל אחר שינה את התוכן בינתיים'],
     'too_large'         => [413, 'הבקשה גדולה מדי'],
     'content_type'      => [415, 'הבקשה חייבת להיות בפורמט JSON'],
+    'invalid'           => [422, 'התוכן לא נשמר: יש בו שגיאות מבנה'],
     'server'            => [500, 'תקלה בשרת. היא נרשמה ביומן, ונטפל בה'],
     'login_unavailable' => [503, 'הכניסה לא זמינה כרגע. נסו שוב בעוד כמה דקות'],
     'storage'           => [503, 'המסד לא זמין כרגע. נסו שוב בעוד כמה דקות'],
@@ -31,6 +33,8 @@ const SF_ERRORS = [
 final class SfError extends RuntimeException
 {
     public readonly string $errorCode;
+    /** פירוט שיוצא ללקוח ב-error.details (רשימת שגיאות תוכן, מי שינה ומתי). רק נתונים שמותר להציג למבצע. */
+    public array $details = [];
 
     public function __construct(string $code, ?string $message = null, ?int $status = null)
     {
@@ -40,9 +44,11 @@ final class SfError extends RuntimeException
     }
 }
 
-function sf_fail(string $code, ?string $message = null): never
+function sf_fail(string $code, ?string $message = null, array $details = []): never
 {
-    throw new SfError($code, $message);
+    $e = new SfError($code, $message);
+    $e->details = $details;
+    throw $e;
 }
 
 /** [status, body] לשגיאה. כל מה שאינו SfError — "server", בלי לחשוף את ההודעה. */
@@ -50,7 +56,7 @@ function sf_error_response(Throwable $e): array
 {
     if ($e instanceof SfError) {
         $status = $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 400;
-        return [$status, ['ok' => false, 'error' => ['code' => $e->errorCode, 'message' => $e->getMessage()]]];
+        return [$status, ['ok' => false, 'error' => ['code' => $e->errorCode, 'message' => $e->getMessage()] + ($e->details ? ['details' => $e->details] : [])]];
     }
     $req = function_exists('devloop_req_id') ? devloop_req_id() : '';
     return [500, ['ok' => false, 'error' => ['code' => 'server', 'message' => SF_ERRORS['server'][1] . ($req !== '' ? " (מזהה: $req)" : '')]]];

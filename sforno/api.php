@@ -27,10 +27,10 @@ function sf_out(array $body, int $status): never
 }
 
 try {
-    // גוף JSON עד 1MB. קובץ שמצורף למטלה (…-attach) מגיע כגוף גולמי — המודול קורא אותו בעצמו, אחרי האימות.
+    // גוף JSON עד 1MB (פעולות התוכן — עד 'max' שלהן). קובץ שמצורף למטלה (…-attach) מגיע כגוף גולמי — המודול קורא אותו בעצמו, אחרי האימות.
     $in = [];
     if ($method === 'POST' && empty(SF_ACTIONS[$action]['body'])) {
-        $max = 1_000_000;
+        $max = (int)(SF_ACTIONS[$action]['max'] ?? 1_000_000);
         if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $max) sf_fail('too_large');
         $raw = (string)file_get_contents('php://input', false, null, 0, $max + 1);
         if (strlen($raw) > $max) sf_fail('too_large');

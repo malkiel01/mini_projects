@@ -19,6 +19,7 @@ require_once __DIR__ . '/staff.php';
 require_once __DIR__ . '/jobs.php';
 require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/devtasks.php';
+require_once __DIR__ . '/content.php';
 
 /**
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type.
@@ -29,7 +30,7 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
     sf_actor(null, true);
     $spec = sf_action_spec($method, $action);
     $staff = $session = null;
-    if ($spec['who'] !== 'public') {
+    if ($spec['who'] !== 'public' && $spec['who'] !== 'reader') {
         ['staff' => $staff, 'session' => $session] = sf_authenticate($env);
         devloop_log_user(['id' => (int)$staff['id'], 'name' => $staff['name']]);
         if ($method === 'POST') {
@@ -54,12 +55,30 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'devapi-file'          => devloop_api_auth() && devloop_file_out((int)($get['id'] ?? 0)),
         'devapi-attach'        => devloop_attach('claude', $get + ['_auth' => devloop_api_auth()]),
 
+        'read-titles'          => sf_read_titles(),
+        'read-edition'         => sf_read_edition($get),
+
         'me'                   => ['staff' => sf_staff_public($staff, $me), 'csrf' => $session['csrf'], 'version' => sf_version()],
         'logout'               => sf_session_drop((string)($env['cookie'] ?? '')) ?? [],
         'staff-list'           => sf_staff_list($me),
         'staff-suspend'        => sf_staff_set_status($in['staff'] ?? null, 'suspended', $me),
         'staff-unsuspend'      => sf_staff_set_status($in['staff'] ?? null, 'active', $me),
         'devloop-client-error' => devloop_log_client($in),
+        'content-titles'       => sf_content_titles(),
+        'content-title'        => sf_title_view($get),
+        'content-title-save'   => sf_title_save($in),
+        'content-title-public' => sf_title_public($in),
+        'content-edition-save' => sf_edition_save($in),
+        'content-edition'      => sf_edition_view($get),
+        'content-revision'     => sf_revision_view($get),
+        'content-check'        => sf_content_check($in),
+        'content-save'         => sf_content_save($in, $me),
+        'content-publish'      => sf_content_publish($in, $me),
+        'content-restore'      => sf_content_restore($in, $me),
+        'content-discard'      => sf_content_discard($in, $me),
+        'content-aliases'      => sf_aliases(),
+        'content-alias-add'    => sf_alias_add($in, $me),
+        'content-alias-remove' => sf_alias_remove($in),
 
         'dev-health'           => sf_health(),
         'dev-mail-test'        => sf_mail_test($staff),

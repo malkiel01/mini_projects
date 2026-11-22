@@ -113,12 +113,12 @@ function sf_driver(?PDO $db = null): string
     return (string)($db ?? sf_db())->getAttribute(PDO::ATTR_DRIVER_NAME);
 }
 
-/** סוגי עמודות ב-DDL, לפי המנוע. 'id' — מפתח רץ; 'key' — טקסט שנכנס לאינדקס ייחודי. */
+/** סוגי עמודות ב-DDL, לפי המנוע. 'id' — מפתח רץ; 'key' — טקסט שנכנס לאינדקס ייחודי; 'long' — טקסט ארוך (ספר שלם). */
 function sf_ddl_types(string $driver): array
 {
     return $driver === 'mysql'
-        ? ['id' => 'BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY', 'ref' => 'BIGINT', 'int' => 'INT', 'key' => 'VARCHAR(191)', 'text' => 'TEXT', 'ts' => 'VARCHAR(20)', 'tail' => ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4']
-        : ['id' => 'INTEGER PRIMARY KEY AUTOINCREMENT', 'ref' => 'INTEGER', 'int' => 'INTEGER', 'key' => 'TEXT', 'text' => 'TEXT', 'ts' => 'TEXT', 'tail' => ''];
+        ? ['id' => 'BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY', 'ref' => 'BIGINT', 'int' => 'INT', 'key' => 'VARCHAR(191)', 'text' => 'TEXT', 'ts' => 'VARCHAR(20)', 'long' => 'LONGTEXT', 'tail' => ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4']
+        : ['id' => 'INTEGER PRIMARY KEY AUTOINCREMENT', 'ref' => 'INTEGER', 'int' => 'INTEGER', 'key' => 'TEXT', 'text' => 'TEXT', 'ts' => 'TEXT', 'long' => 'TEXT', 'tail' => ''];
 }
 
 // ── שאילתות ──────────────────────────────────────────────────
