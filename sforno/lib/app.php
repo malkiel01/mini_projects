@@ -40,6 +40,7 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
 {
     sf_actor(null, true);
     $spec = sf_action_spec($method, $action);
+    if (function_exists('sf_in_maintenance') && sf_in_maintenance()) sf_fail('upgrading');   // 10: שחזור רץ — אף בקשה לא כותבת למסד
     $staff = $session = null;
     if ($spec['who'] === 'guest' || $spec['who'] === 'account') {
         $ra = sf_reader_auth($env);
@@ -54,6 +55,7 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
         $env['_reader'] = $ra;
     } elseif (!in_array($spec['who'], SF_NOT_STAFF, true)) {
         ['staff' => $staff, 'session' => $session] = sf_authenticate($env);
+        sf_note_origin();   // 10: הכתובת הציבורית — לקישורים במיילים שנשלחים מ-cron / CLI
         devloop_log_user(['id' => (int)$staff['id'], 'name' => $staff['name']]);
         if ($method === 'POST') {
             if (!hash_equals((string)$session['csrf'], (string)($env['csrf'] ?? ''))) sf_fail('csrf');
@@ -212,7 +214,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'dev-backups'          => sf_dev_backups(),
         'dev-backup-now'       => sf_dev_backup_now(),
         'dev-backup-verify'    => sf_dev_backup_verify($in),
-        'dev-backup-download'  => sf_dev_backup_download($get),
+        'dev-backup-download'  => sf_dev_backup_download($in),
         'dev-ops-set'          => sf_dev_ops_set($in),
 
         'dev-items'            => devloop_task_list(),

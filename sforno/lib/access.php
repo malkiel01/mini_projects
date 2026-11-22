@@ -163,7 +163,7 @@ const SF_ACTIONS = [
     'dev-backups'          => ['m' => 'GET',  'who' => 'dev'],
     'dev-backup-now'       => ['m' => 'POST', 'who' => 'dev'],
     'dev-backup-verify'    => ['m' => 'POST', 'who' => 'dev'],
-    'dev-backup-download'  => ['m' => 'GET',  'who' => 'dev', 'raw' => true],
+    'dev-backup-download'  => ['m' => 'POST', 'who' => 'dev', 'raw' => true, 'max' => 2_000],   // הגוף: {backup, password} — מוצפן
     'dev-ops-set'          => ['m' => 'POST', 'who' => 'dev', 'max' => 2_000],
     // DevLoop — אותם שמות כמו בכל אפליקציה (.claude/skills/devloop/references/install.md)
     'dev-items'            => ['m' => 'GET',  'who' => 'dev', 'raw' => true],

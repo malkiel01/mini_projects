@@ -25,16 +25,48 @@ function sf_base_path(?array $server = null): string
 function sf_origin(?array $server = null): string
 {
     if (defined('SF_ORIGIN')) return SF_ORIGIN;
-    $server ??= $_SERVER;
-    $host = strtolower((string)($server['SERVER_NAME'] ?? ''));
-    if (!preg_match('/^[a-z0-9]([a-z0-9.\-]{0,251}[a-z0-9])?$/', $host)) $host = 'localhost';
-    return 'https://' . $host;
+    return sf_origin_of($server ?? $_SERVER);
 }
 
-/** הכתובת המלאה של קובץ בתוך ספורנו. */
+/**
+ * מ-SERVER_NAME; כשאין (CLI, cron בלי שם אתר) — הכתובת שנשמרה בבקשה האחרונה של מנהל (sf_note_origin), ורק בלית ברירה localhost.
+ * (10: קישור "https://localhost/…" במייל שנשלח מ-cron.)
+ */
+function sf_origin_of(array $server): string
+{
+    $host = strtolower((string)($server['SERVER_NAME'] ?? ''));
+    if (preg_match('/^[a-z0-9]([a-z0-9.\-]{0,251}[a-z0-9])?$/', $host) && $host !== 'localhost' && PHP_SAPI !== 'cli') return 'https://' . $host;
+    return sf_known_url()['origin'] ?? 'https://' . (preg_match('/^[a-z0-9]([a-z0-9.\-]{0,251}[a-z0-9])?$/', $host) ? $host : 'localhost');
+}
+
+/** הכתובת הציבורית שנשמרה (meta public_url): ['origin', 'base'] או []. */
+function sf_known_url(): array
+{
+    try {
+        $u = json_decode((string)sf_meta('public_url', ''), true);
+    } catch (Throwable) {
+        return [];
+    }
+    return is_array($u) && is_string($u['origin'] ?? null) && preg_match('~^https://[a-z0-9.\-]+\z~', $u['origin'])
+        && is_string($u['base'] ?? null) && preg_match('~^/[A-Za-z0-9._/\-]*/\z~', $u['base']) ? $u : [];
+}
+
+/**
+ * נקרא בכל בקשה של מנהל מחובר (הגיע דרך השער — המארח אמיתי): שומר את המקור והתיקייה, רק כשהשתנו. לא מ-CLI.
+ */
+function sf_note_origin(?array $server = null): void
+{
+    if (PHP_SAPI === 'cli' && !defined('SF_ORIGIN')) return;
+    $u = ['origin' => sf_origin($server), 'base' => sf_base_path($server)];
+    if ($u['origin'] === 'https://localhost' || sf_known_url() === $u) return;
+    sf_meta_set('public_url', json_encode($u, JSON_UNESCAPED_SLASHES));
+}
+
+/** הכתובת המלאה של קובץ בתוך ספורנו. מ-CLI (כלים) — המקור והתיקייה שנשמרו, אם יש. */
 function sf_self_url(string $path = ''): string
 {
-    return sf_origin() . sf_base_path() . ltrim($path, '/');
+    $known = PHP_SAPI === 'cli' && !defined('SF_ORIGIN') ? sf_known_url() : [];
+    return ($known['origin'] ?? sf_origin()) . ($known['base'] ?? sf_base_path()) . ltrim($path, '/');
 }
 
 /** בקשת GET קצרה: [status, body, ms] או null בכישלון. בבדיקות — $GLOBALS['sf_http'] מחליף אותה (אין רשת בבדיקות). */

@@ -34,8 +34,8 @@ $TOP = $rv['toc'][0]['sid'];
 foreach (['ops-dashboard', 'ops-metrics', 'ops-reader', 'reports-list', 'report-get'] as $a) {
     eq(code(call('GET', $a, [], null)), 'login_required', "$a — רק מנהל");
 }
-foreach (['dev-backups', 'dev-backup-download'] as $a) eq(code(call('GET', $a, [], $STAFF)), 'forbidden', "$a — רק מפתח");
-foreach (['dev-backup-now', 'dev-backup-verify', 'dev-ops-set'] as $a) eq(code(call('POST', $a, [], $STAFF)), 'forbidden', "$a — רק מפתח");
+eq(code(call('GET', 'dev-backups', [], $STAFF)), 'forbidden', 'dev-backups — רק מפתח');
+foreach (['dev-backup-download', 'dev-backup-now', 'dev-backup-verify', 'dev-ops-set'] as $a) eq(code(call('POST', $a, [], $STAFF)), 'forbidden', "$a — רק מפתח");
 check('פעולות התפעול לא ב-public של app.json', !preg_match('/report-create|metrics-open|ops-|backup|read-support/', implode(' ', sf_app_json()['public'])));
 
 // ── N1: דיווח מתוך קטע — pid, revision, sid; בלי הערה, שם לתפילה או מייל ──
@@ -228,11 +228,72 @@ eq($codeCli, 0, 'tools/backup.php רץ (CLI)');
 check('…ולא פתח את המסד האמיתי', !is_file("$root/data/sforno.sqlite") || filemtime("$root/data/sforno.sqlite") < time() - 5);
 check('tools/ חסומה מהדפדפן', str_contains((string)file_get_contents("$root/tools/.htaccess"), 'denied'));
 check('dev/restore.md קיים — עם השלבים', str_contains((string)file_get_contents("$root/dev/restore.md"), 'apply'));
-// הורדה — רק למפתח, ביומן
+// ── 🟡2: ההורדה — רק מוצפנת בסיסמה (Argon2id + secretstream); הסיסמה לא נשמרת ──
+eq(code(call('GET', 'dev-backup-download', [], $DEV)), 'method', '🟡2 הורדה ב-GET (קישור) — אין');
 $GLOBALS['sf_send_out'] = [];
-$dl = $ok(call('GET', 'dev-backup-download', [], $DEV), 'dev-backup-download');
-check('ההורדה — הגיבוי האחרון, ונרשמת ביומן', $dl['name'] === $last['file'] && audit_count('backup.download') === 1);
+eq(code(call('POST', 'dev-backup-download', ['password' => 'short'], $DEV)), 'bad_input', '🟡2 בלי סיסמה של 12 תווים — אין הורדה');
+$PW = 'סיסמה-ארוכה-לגיבוי-42';
+$dl = $ok(call('POST', 'dev-backup-download', ['password' => $PW], $DEV), 'dev-backup-download');
+check('🟡2 ההורדה — הגיבוי האחרון (.sfbk), ונרשמת ביומן', $dl['name'] === preg_replace('/\.zip$/', '.sfbk', $last['file']) && audit_count('backup.download') === 1);
+$enc = (string)file_get_contents($dl['file']);
+$key = (string)file_get_contents(SF_DATA_DIR . '/secret.key');
+check('🟡2 הקובץ מוצפן: לא zip, בלי המפתח ובלי המסד בגלוי', str_starts_with($enc, SF_BACKUP_ENC_MAGIC) && !str_contains($enc, 'PK' . "\x03\x04") && !str_contains($enc, $key) && !str_contains($enc, 'SQLite format'));
+$audit = (string)json_encode(sf_rows('SELECT meta FROM audit_log'), JSON_UNESCAPED_UNICODE) . (string)json_encode(sf_rows('SELECT k, v FROM meta'), JSON_UNESCAPED_UNICODE);
+check('🟡2 הסיסמה לא נשמרת (לא במסד, לא ביומן)', !str_contains($audit, $PW));
+$plain = SF_DATA_DIR . '/dec-' . bin2hex(random_bytes(3)) . '.zip';
+$err = null;
+try { sf_backup_decrypt($dl['file'], $plain, 'סיסמה-שגויה-לגמרי'); } catch (RuntimeException $e) { $err = $e->getMessage(); }
+check('🟡2 סיסמה שגויה — לא מפוענח, ולא נשאר קובץ', $err !== null && !is_file($plain), $err);
+sf_backup_decrypt($dl['file'], $plain, $PW);
+eq(hash_file('sha256', $plain), $last['sha256'], '🟡2 בסיסמה הנכונה — בדיוק הגיבוי שבשרת');
+$cut = $dl['file'] . '.cut';
+file_put_contents($cut, substr($enc, 0, -10));
+$err = null;
+try { sf_backup_decrypt($cut, $plain . '2', $PW); } catch (RuntimeException $e) { $err = $e->getMessage(); }
+check('🟡2 קובץ קטוע — נדחה', $err !== null && !is_file($plain . '2'));
+$imp = sf_backup_import($dl['file'], $PW);
+check('🟡2 import — נרשם כגיבוי ועובר בדיקת שחזור', $imp['kind'] === 'import' && sf_backup_verify($imp['pid'])['passed'] === true);
 unset($GLOBALS['sf_send_out']);
+sf_exec("UPDATE backups SET deleted_at = ? WHERE kind = 'import'", [sf_now()]);
+check('🟡2 ה-CLI: import ו-decrypt', str_contains((string)file_get_contents("$root/tools/backup.php"), "case 'import'") && str_contains((string)file_get_contents("$root/tools/backup.php"), "case 'decrypt'"));
+
+// ── 🟡3: קישור במייל שנשלח מ-cron / CLI — הכתובת שנשמרה, לא localhost ──
+$known = sf_known_url();
+eq([$known['origin'] ?? null, $known['base'] ?? null], [SF_ORIGIN, SF_BASE_PATH], '🟡3 בקשה של מנהל שומרת את הכתובת הציבורית');
+eq(sf_origin_of([]), SF_ORIGIN, '🟡3 בלי SERVER_NAME (cron) — הכתובת שנשמרה, לא localhost');
+eq(sf_origin_of(['SERVER_NAME' => 'localhost']), SF_ORIGIN, '🟡3 SERVER_NAME=localhost — גם');
+
+// ── 🟡1: שחזור — הכול או כלום, ומצב תחזוקה ──
+$GLOBALS['sf_apply_wait'] = 0;
+sf_db()->exec('PRAGMA wal_checkpoint(TRUNCATE)');
+$snap = fn() => [hash_file('sha256', SF_DB_PATH) . '/' . (is_file(SF_DB_PATH . '-wal') ? hash_file('sha256', SF_DB_PATH . '-wal') : '-'),
+    hash_file('sha256', SF_DATA_DIR . '/secret.key'), hash_file('sha256', SF_DATA_DIR . '/vapid.json'), is_dir(SF_DATA_DIR . '/sources/abc')];
+$before = null;
+$nRen = 0;
+$GLOBALS['sf_rename'] = function (string $a, string $b) use (&$nRen, &$before, $snap) {
+    if ($nRen === 0) $before = $snap();          // המצב החי ברגע שההחלפה מתחילה
+    if (++$nRen === 4) return false;            // הזזה רביעית נכשלת — באמצע ההחלפה
+    if ($nRen === 2) check('🟡1 בזמן ההחלפה — מצב תחזוקה', sf_in_maintenance());
+    return rename($a, $b);
+};
+$err = null;
+try { sf_backup_apply(); } catch (RuntimeException $e) { $err = $e->getMessage(); }
+unset($GLOBALS['sf_rename']);
+check('🟡1 כשל באמצע — זריקה (לא "✓ שוחזר")', $err !== null && str_contains($err, 'הוחזר המצב הקודם'), $err);
+check('🟡1 ההחלפה התחילה (יש מה להחזיר)', $nRen >= 4);
+eq($snap(), $before, '🟡1 …והכול חזר למקומו: המסד, secret.key, vapid.json, sources/');
+check('🟡1 …ומצב התחזוקה הוסר', !sf_in_maintenance());
+check('🟡1 …בלי תיקיות זמניות', !glob(SF_DATA_DIR . '/.restore-*'));
+$GLOBALS['sf_pdo'] = null;
+unset($GLOBALS['sf_pdo']);
+eq($ok(call('GET', 'dev-backups', [], $DEV), 'אחרי כשל — האפליקציה עובדת')['keep_days'], 30, '🟡1 האפליקציה עונה אחרי הכשל');
+file_put_contents(sf_maint_file(), '{}');
+eq(call('GET', 'me', [], $DEV)[0], 503, '🟡1 במצב תחזוקה — api עונה 503');
+eq(code(rcall('POST', 'report-create', ['kind' => 'contact', 'category' => 'idea', 'text' => 'x'], 'M1')), 'upgrading', '🟡1 …גם לקוראים (בלי כתיבה למסד)');
+eq(sf_cron_handle(sf_cron_token())[0], 503, '🟡1 …ו-cron לא מריץ משימות');
+@unlink(sf_maint_file());
+eq(call('GET', 'me', [], $DEV)[0], 200, '🟡1 אחרי — חזרה לרגיל');
+
 $list = $ok(call('GET', 'dev-backups', [], $DEV), 'dev-backups');
 check('dev-backups — בלי נתיב מלא בשרת', !str_contains(json_encode($list), SF_DATA_DIR));
 
@@ -269,8 +330,10 @@ $p = sf_ops_purge();
 check('"לחזרה אליי" נמחק 90 יום אחרי הסגירה; פעילות ישנה נמחקת', sf_val('SELECT contact FROM reports WHERE pid = ?', [$rep2['report']]) === null && $p['activity'] > 0);
 
 // ── 09 ⚪: הצמדת מארח החנות, webhook לפני הגוף, store-out ─────
-foreach (['10.0.0.5', '192.168.1.2', '127.0.0.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1'] as $ip) check("SSRF: $ip — לא ציבורי", !sf_net_ip_public($ip));
-check('SSRF: כתובת ציבורית', sf_net_ip_public('93.184.216.34') && sf_net_ip_public('2606:4700::6810:84e5'));
+foreach (['10.0.0.5', '192.168.1.2', '127.0.0.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', 'fd00::1', 'fe80::1', '::ffff:10.0.0.1',
+    '198.18.0.1', '198.19.255.255', '224.0.0.1', '239.1.2.3', '255.255.255.255', '64:ff9b::a00:1', '64:ff9b:1::1', '2002:a00:1::', '2001:0:4136::1',
+    'fec0::1', 'ff02::1', '2001:db8::1', '::'] as $ip) check("SSRF: $ip — לא ציבורי", !sf_net_ip_public($ip));
+check('SSRF: כתובת ציבורית', sf_net_ip_public('93.184.216.34') && sf_net_ip_public('2606:4700::6810:84e5') && sf_net_ip_public('198.20.0.1') && sf_net_ip_public('2a00:1450::1'));
 $GLOBALS['sf_dns'] = fn($h) => ['shop.test' => ['93.184.216.34'], 'mixed.test' => ['93.184.216.34', '10.0.0.7'], 'inner.test' => ['192.168.0.10']][$h] ?? [];
 eq([sf_net_public_ip('shop.test'), sf_net_public_ip('mixed.test'), sf_net_public_ip('inner.test'), sf_net_public_ip('none.test')], ['93.184.216.34', null, null, null], 'SSRF: מארח שמצביע (גם) לפנימית — נחסם כולו');
 unset($GLOBALS['sf_woo_http']);
