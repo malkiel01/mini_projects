@@ -1,5 +1,6 @@
 /*
- * הניהול: #/admin — התוכן (02, screens/content.js), ומקום שמור לייבוא ולהלכה היומית (03, 07); #/admin/staff — המנהלים (§6).
+ * הניהול: #/admin — התוכן (02, screens/content.js), הייבוא (03), הקורא (04), ההלכה היומית ושיטות הזמנים (07,
+ * screens/daily-admin.js); #/admin/staff — המנהלים (§6).
  * כל המנהלים בהרשאות מלאות. השרת מכריע (lib/access.php); כאן רק מסתירים מה שאין טעם להציג.
  */
 'use strict';
@@ -9,7 +10,6 @@
 
     SF.route('#/admin', main => {
         main.replaceChildren(
-            h('p', { class: 'hint' }, 'כאן תופיע גם ההלכה היומית.'),
             h('ul', { class: 'list' },
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/content' },
                     h('span', { class: 'use-ic', 'aria-hidden': 'true' }, '📚'),
@@ -17,7 +17,9 @@
                     h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹'))),
                 [['#/admin/customs', '🔀', 'מנהגים', 'הרשימה שהתוכן מצביע עליה: קבוצות, ברירות מחדל, זמין / לא'],
                     ['#/admin/siddur', '📖', 'רשימת הסידור', 'התפילות והקיצורים שהקורא רואה בפתיחה'],
-                    ['#/admin/checks', '✅', 'בדיקת מנהגים', 'כל שילוב מנהגים מול הטקסט — "אושר" עם גרסה ותאריך']].map(([href, ic, b, sm]) =>
+                    ['#/admin/checks', '✅', 'בדיקת מנהגים', 'כל שילוב מנהגים מול הטקסט — "אושר" עם גרסה ותאריך'],
+                    ['#/admin/halacha', '🕯️', 'הלכה יומית', 'לפי תאריך עברי: טיוטה, פרסום, והתאריך הלועזי השנה'],
+                    ['#/admin/zmanim', '🕰️', 'שיטות זמני היום', 'הגדרה, אישור וברירת מחדל — הקורא בוחר רק ממאושרות']].map(([href, ic, b, sm]) =>
                     h('li', null, h('a', { class: 'use-row', href }, h('span', { class: 'use-ic', 'aria-hidden': 'true' }, ic),
                         h('span', { class: 'use-tx' }, h('b', null, b), h('small', null, sm)), h('span', { class: 'use-go', 'aria-hidden': 'true' }, '‹')))),
                 h('li', null, h('a', { class: 'use-row', href: '#/admin/staff' },

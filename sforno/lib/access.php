@@ -37,6 +37,10 @@ const SF_ACTIONS = [
     'read-pages'           => ['m' => 'GET',  'who' => 'reader', 'raw' => true],
     // הורדה לקריאה בלי רשת (06) — רק הרשימה וה-hash-ים; הקבצים עצמם — read-revision / read-file / read-pages
     'read-package'         => ['m' => 'GET',  'who' => 'reader'],
+    // לוח שנה, זמני היום והלכה יומית (07) — השיטות המאושרות וההלכה שהגיעה. החישוב — בדפדפן; המיקום לא מגיע לכאן
+    'read-zmanim-methods'  => ['m' => 'GET',  'who' => 'reader'],
+    'read-halacha'         => ['m' => 'GET',  'who' => 'reader'],
+    'read-halacha-archive' => ['m' => 'GET',  'who' => 'reader'],
 
     // חשבונות הקוראים והסנכרון (05) — עולם נפרד מהמנהלים (lib/readers.php, lib/sync.php)
     'account-me'           => ['m' => 'GET',  'who' => 'guest'],
@@ -100,6 +104,16 @@ const SF_ACTIONS = [
     'customs-check-approve' => ['m' => 'POST', 'who' => 'staff'],
     'content-pages-set'    => ['m' => 'POST', 'who' => 'staff'],
     'content-sample'       => ['m' => 'POST', 'who' => 'staff'],
+    // 07 — הניהול: שיטות הזמנים (כל שמירה = גרסה), ההלכה היומית לפי תאריך עברי
+    'zmanim-method-list'   => ['m' => 'GET',  'who' => 'staff'],
+    'zmanim-method-save'   => ['m' => 'POST', 'who' => 'staff'],
+    'zmanim-method-status' => ['m' => 'POST', 'who' => 'staff'],
+    'zmanim-method-default' => ['m' => 'POST', 'who' => 'staff'],
+    'halacha-list'         => ['m' => 'GET',  'who' => 'staff'],
+    'halacha-get'          => ['m' => 'GET',  'who' => 'staff'],
+    'halacha-save'         => ['m' => 'POST', 'who' => 'staff'],
+    'halacha-publish'      => ['m' => 'POST', 'who' => 'staff'],
+    'halacha-unpublish'    => ['m' => 'POST', 'who' => 'staff'],
 
     'dev-health'           => ['m' => 'GET',  'who' => 'dev'],
     'dev-mail-test'        => ['m' => 'POST', 'who' => 'dev'],

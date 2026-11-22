@@ -25,6 +25,7 @@ require_once __DIR__ . '/import.php';
 require_once __DIR__ . '/reader.php';
 require_once __DIR__ . '/readers.php';
 require_once __DIR__ . '/sync.php';
+require_once __DIR__ . '/daily.php';
 
 /**
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type; לקוראים — reader_cookie, reader_csrf, ip.
@@ -96,6 +97,9 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'read-file'            => sf_send_file(sf_read_file_path($get)),
         'read-pages'           => sf_send_file(sf_read_pages_path($get)),
         'read-package'         => sf_read_package($get),
+        'read-zmanim-methods'  => sf_zm_methods_public(),
+        'read-halacha'         => sf_read_halacha($get),
+        'read-halacha-archive' => sf_read_halacha_archive($get),
 
         'account-me'           => sf_account_me($env['_reader']),
         'account-register'     => sf_account_register($in, $env),
@@ -155,6 +159,15 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'customs-check-approve' => sf_customs_check_approve($in, $me),
         'content-pages-set'    => sf_content_pages_set($in),
         'content-sample'       => sf_content_sample($me),
+        'zmanim-method-list'   => sf_zm_methods_admin(),
+        'zmanim-method-save'   => sf_zm_method_save($in, $me),
+        'zmanim-method-status' => sf_zm_method_status($in),
+        'zmanim-method-default' => sf_zm_method_default($in),
+        'halacha-list'         => sf_halacha_admin_list(),
+        'halacha-get'          => sf_halacha_get($get),
+        'halacha-save'         => sf_halacha_save($in, $me),
+        'halacha-publish'      => sf_halacha_publish($in, $me),
+        'halacha-unpublish'    => sf_halacha_unpublish($in),
 
         'dev-health'           => sf_health(),
         'dev-mail-test'        => sf_mail_test($staff),

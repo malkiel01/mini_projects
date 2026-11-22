@@ -466,3 +466,40 @@ fieldset.group { border: 0; padding: 0; margin: 0 0 var(--s3); }
 .sw-update span { flex: 1; }
 .sw-update .icon-btn { color: inherit; }
 @media (min-width: 720px) { .sw-update { inset-inline: auto var(--s4); max-width: 420px; } }
+
+/* ── 07: זמני היום והלכה יומית ─────────────────────────────── */
+.summary .line .btn { margin-inline-start: auto; }
+.summary .line .one { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zm-list { margin-bottom: var(--s3); }
+.zm-row { display: flex; align-items: baseline; gap: var(--s2); min-height: 44px; padding: var(--s2) var(--s3); border-top: 1px solid var(--line); }
+.zm-row:first-child { border-top: 0; }
+.zm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zm-time { flex: none; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.zm-none { flex: none; color: var(--muted); font-size: .85rem; }
+.zm-row.none .zm-name { color: var(--muted); }
+.zm-nav { display: flex; align-items: center; justify-content: center; gap: var(--s2); margin-bottom: var(--s2); }
+.zm-need { display: grid; justify-items: center; gap: var(--s2); padding: var(--s4) var(--s2); text-align: center; }
+.loc-sheet { display: grid; gap: var(--s2); }
+.loc-sheet input[type="search"] { width: 100%; }
+.loc-list { max-height: 50dvh; overflow-y: auto; }
+.wide-btn { width: 100%; }
+.zm-edit { display: grid; gap: var(--s2); margin-bottom: var(--s2); }
+.zm-edit-row { display: grid; gap: var(--s2); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.zm-edit-row .row-btns { justify-content: flex-end; }
+.hl-slot:empty { display: none; }
+.hl-home { margin-bottom: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden; }
+.hl-home-head { display: flex; align-items: center; gap: var(--s2); min-height: 44px; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); color: inherit; text-decoration: none; }
+.hl-home-head .muted { margin-inline-start: auto; font-size: .85rem; }
+.hl-home-body { padding: var(--s2) var(--s3); max-height: 9.5em; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent); mask-image: linear-gradient(to bottom, #000 70%, transparent); }
+.hl-item { margin-bottom: var(--s3); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.hl-preview { padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); min-height: 4em; }
+.hl-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: var(--s2) 0 var(--s3); }
+.hl-day { display: grid; justify-items: center; align-content: center; min-height: 48px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--surface); color: inherit; text-decoration: none; }
+.hl-day small { font-size: .7rem; color: var(--muted); }
+.hl-day.published { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.hl-day.draft, .hl-day.changed { background: color-mix(in srgb, var(--star) 14%, var(--surface)); border-color: color-mix(in srgb, var(--star) 40%, transparent); }
+.hl-day.today { outline: 2px solid var(--brand); outline-offset: -2px; }
+.hl-day.off { opacity: .45; }
+@media (min-width: 560px) { .hl-grid { grid-template-columns: repeat(10, minmax(0, 1fr)); } }
