@@ -1,13 +1,38 @@
 <!doctype html>
 <html lang="he" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ספורנו</title>
-<link rel="stylesheet" href="assets/css/app.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#2d4a8a">
+  <meta name="referrer" content="no-referrer">
+  <title>ספורנו</title>
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/app.css">
+  <link rel="stylesheet" href="assets/css/devloop.css">
+  <style>
+    @font-face { font-family: 'David Libre'; src: url('assets/fonts/DavidLibre-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+    @font-face { font-family: 'David Libre'; src: url('assets/fonts/DavidLibre-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
+  </style>
 </head>
 <body>
-<main><h1>ספורנו</h1><p>האפליקציה בפיתוח.</p></main>
-<script src="assets/js/app.js"></script>
+  <a class="skip" href="#main">דילוג לתוכן</a>
+  <header class="top">
+    <button class="icon-btn" id="back" type="button" aria-label="חזרה" hidden>→</button>
+    <div class="titles"><h1>ספורנו</h1><div class="sub" id="who"></div></div>
+    <div class="menu-wrap">
+      <button class="icon-btn" id="menu-btn" type="button" aria-label="תפריט" aria-haspopup="true" aria-expanded="false" aria-controls="menu">☰</button>
+      <ul class="menu" id="menu" hidden></ul>
+    </div>
+  </header>
+  <main id="main" tabindex="-1"><p class="loading">טוען…</p></main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="assets/js/devloop.js"></script>
+  <script src="assets/js/api.js"></script>
+  <script src="assets/js/router.js"></script>
+  <script src="assets/js/screens/home.js"></script>
+  <script src="assets/js/screens/admin.js"></script>
+  <script src="assets/js/screens/dev.js"></script>
+  <script src="assets/js/app.js"></script>
 </body>
 </html>

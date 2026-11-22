@@ -2,10 +2,14 @@
   "id": "sforno",
   "name": "ספורנו",
   "icon": "📚",
-  "description": "קטלוג ספרים יהודיים: ספרים דיגיטליים לקריאה, חנות, ותכנים יומיים. בפיתוח — אפיון בלבד.",
+  "description": "קטלוג ספרים יהודיים: סידור, תהילים, הלכה יומית, זמני היום וחנות. בפיתוח — תשתית.",
   "category": "daily",
   "entry": "index.html",
-  "version": "0.0",
+  "version": "0.1",
   "gate": true,
-  "restricted": true
+  "restricted": true,
+  "public": [
+    "cron.php",
+    "api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach"
+  ]
 }

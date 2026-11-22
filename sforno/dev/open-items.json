@@ -1,0 +1,146 @@
+{
+  "updated": "2026-11-22T18:00:00Z",
+  "note": "מפת הדרכים של ספורנו — מטלה לכל פרוסה (docs/spec/00-overview.md §5). 🟡 פתוח = טרם התחיל; 🧪 ממתין לאימות = נפרס, לבדוק ולאשר.",
+  "repo": "malkiel01/mini_projects",
+  "items": [
+    {
+      "code": "SF-001",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "high",
+      "area": "תשתית",
+      "opened": "2026-11-22",
+      "title": "🧱 פרוסה 01 — תשתית: מסד, כניסת מנהלים, יומן פעולות, מסך המפתח, בדיקת השרת",
+      "detail": "האפיון: docs/spec/01-foundation.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/01-foundation.md.",
+      "steps": [
+        "להיכנס מהכלים הדיגיטליים — בלי מסך נוסף; מסך הבית עם חמשת הכפתורים ו-🐞 בכותרת",
+        "תפריט ← פיתוח: חמש לשוניות (מטלות, יומן, פעולות, בדיקות, רקע)",
+        "🩺 בדיקות ← הרצה: כל שורות §24 מלאות",
+        "⚙️ רקע: להעתיק את פקודת ה-cron ל-cPanel (כל 5 דקות), ואחרי 10 דקות — בדיקת המתזמן ✅",
+        "בטלפון (360px): הכותרת, מסך הבית ורשימת המנהלים — בלי גלילה אופקית"
+      ]
+    },
+    {
+      "code": "SF-002",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "high",
+      "area": "תוכן",
+      "opened": "2026-11-22",
+      "title": "📝 פרוסה 02 — מנוע התוכן: כותרים ומהדורות, מקטעים, תגיות, עורך, פרסום ושחזור",
+      "detail": "האפיון: docs/spec/02-content-engine.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/02-content-engine.md."
+    },
+    {
+      "code": "SF-003",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "ייבוא",
+      "opened": "2026-11-22",
+      "title": "📥 פרוסה 03 — ייבוא: HTML, Word, EPUB, PDF, סריקות — לטיוטה",
+      "detail": "האפיון: docs/spec/03-import.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/03-import.md."
+    },
+    {
+      "code": "SF-004",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "high",
+      "area": "קורא",
+      "opened": "2026-11-22",
+      "title": "📖 פרוסה 04 — הקורא, הסידור והתהילים",
+      "detail": "האפיון: docs/spec/04-reader-siddur-tehillim.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/04-reader-siddur-tehillim.md."
+    },
+    {
+      "code": "SF-005",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "משתמשים",
+      "opened": "2026-11-22",
+      "title": "👤 פרוסה 05 — משתמשים רשומים, מידע אישי וסנכרון",
+      "detail": "האפיון: docs/spec/05-readers-sync.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/05-readers-sync.md."
+    },
+    {
+      "code": "SF-006",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "הורדות",
+      "opened": "2026-11-22",
+      "title": "⬇️ פרוסה 06 — הורדות וגרסאות",
+      "detail": "האפיון: docs/spec/06-downloads-versions.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/06-downloads-versions.md."
+    },
+    {
+      "code": "SF-007",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "זמנים",
+      "opened": "2026-11-22",
+      "title": "🕯️ פרוסה 07 — לוח עברי, זמני היום והלכה יומית",
+      "detail": "האפיון: docs/spec/07-calendar-zmanim-halacha.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/07-calendar-zmanim-halacha.md."
+    },
+    {
+      "code": "SF-008",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "תזכורות",
+      "opened": "2026-11-22",
+      "title": "⏰ פרוסה 08 — תזכורות",
+      "detail": "האפיון: docs/spec/08-reminders.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/08-reminders.md."
+    },
+    {
+      "code": "SF-009",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "חנות",
+      "opened": "2026-11-22",
+      "title": "🛒 פרוסה 09 — חנות: קטלוג WooCommerce",
+      "detail": "האפיון: docs/spec/09-store-woocommerce.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/09-store-woocommerce.md."
+    },
+    {
+      "code": "SF-010",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "תפעול",
+      "opened": "2026-11-22",
+      "title": "🧰 פרוסה 10 — ניהול תפעולי: דיווחים, מדדים, גיבויים",
+      "detail": "האפיון: docs/spec/10-operations.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/10-operations.md."
+    },
+    {
+      "code": "SF-011",
+      "status": "open",
+      "status_at": "2026-11-22T18:00:00Z",
+      "kind": "feature",
+      "priority": "normal",
+      "area": "השקה",
+      "opened": "2026-11-22",
+      "title": "🚀 פרוסה 11 — השקה: סאב-דומיין, מצב מנותק, בדיקות",
+      "detail": "האפיון: docs/spec/11-launch.md. הסדר — docs/spec/00-overview.md §5.",
+      "acceptance": "קריטריוני הקבלה בסעיף האחרון של docs/spec/11-launch.md."
+    }
+  ]
+}
