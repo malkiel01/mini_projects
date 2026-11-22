@@ -48,6 +48,18 @@ const SF_ACTIONS = [
     'content-aliases'      => ['m' => 'GET',  'who' => 'staff'],
     'content-alias-add'    => ['m' => 'POST', 'who' => 'staff'],
     'content-alias-remove' => ['m' => 'POST', 'who' => 'staff'],
+    'content-file'         => ['m' => 'GET',  'who' => 'staff', 'raw' => true],
+    // ייבוא (03) — כל המנהלים. import-upload: הגוף הוא הקובץ עצמו (לא JSON)
+    'import-list'          => ['m' => 'GET',  'who' => 'staff'],
+    'import-status'        => ['m' => 'GET',  'who' => 'staff'],
+    'import-upload'        => ['m' => 'POST', 'who' => 'staff', 'body' => true],
+    'import-run'           => ['m' => 'POST', 'who' => 'staff'],
+    'import-retry'         => ['m' => 'POST', 'who' => 'staff'],
+    'import-pdf-text'      => ['m' => 'POST', 'who' => 'staff', 'max' => 8_000_000],
+    'import-map'           => ['m' => 'POST', 'who' => 'staff'],
+    'import-apply'         => ['m' => 'POST', 'who' => 'staff'],
+    'import-text-checked'  => ['m' => 'POST', 'who' => 'staff'],
+    'import-source'        => ['m' => 'GET',  'who' => 'staff', 'raw' => true],
 
     'dev-health'           => ['m' => 'GET',  'who' => 'dev'],
     'dev-mail-test'        => ['m' => 'POST', 'who' => 'dev'],
