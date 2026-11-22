@@ -1,7 +1,7 @@
 <?php
 /**
  * שירותי רקע (אפיון 01 §8.5, 00 §3.1). אין דמון ואין "רענון עמודים": טבלת jobs + cron.php שהמתזמן של cPanel קורא
- * לו כל 5 דקות. אם המתזמן לא רץ — בדיקת התקינות מתריעה (§18: תזכורות לא יסתמכו על רענון עמודים).
+ * לו כל דקה (08: Push מתוזמן ומייל — עד דקה איחור). אם המתזמן לא רץ — בדיקת התקינות מתריעה (§18: תזכורות לא יסתמכו על רענון עמודים).
  *
  * שירות חדש: sf_job_register('kind', 'מה הוא עושה', handler, כל כמה זמן או null). ה-handler מקבל payload; חריגה =
  * ניסיון שנכשל. last_error — הודעה טכנית (סוג ומיקום), בלי תוכן.
@@ -180,7 +180,7 @@ function sf_cron_url(): string
 function sf_cron_info(): array
 {
     $url = sf_cron_url();
-    return ['url' => $url, 'command' => 'curl -s "' . $url . '" > /dev/null', 'every' => '*/5 * * * *',
+    return ['url' => $url, 'command' => 'curl -s "' . $url . '" > /dev/null', 'every' => '* * * * *',
         'last_run_at' => sf_meta('cron_last_run_at'), 'last_ok_at' => sf_meta('cron_last_ok_at'), 'last_ms' => (int)sf_meta('cron_last_ms', '0')];
 }
 

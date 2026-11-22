@@ -152,6 +152,24 @@ unset($GLOBALS['sf_time']);
 eq((int)sf_val('SELECT COUNT(*) FROM staff'), $n, 'K2 אף ניסיון שנדחה לא פתח מנהל');
 eq($GLOBALS['t_posts'], [], 'K2 זהות שנדחתה — אין בקשה ל-grant_status');
 
+// ביקורת ⚪3: אותו state בשתי בקשות (שני חלונות עם אותה עוגייה) — רק אחת עוברת, והשורה נמחקת אטומית
+[, $r] = $req('POST', 'sso-start', [], 'R1');
+parse_str((string)parse_url($r['url'], PHP_URL_QUERY), $q);
+$jars['R2'] = $jars['R1'];
+$tk = $token(['sub' => '502', 'email' => 'race@example.test', 'state' => $q['state']]);
+$r1 = $req('POST', 'sso-finish', ['token' => $tk, 'state' => $q['state']], 'R1');
+$r2 = $req('POST', 'sso-finish', ['token' => $tk, 'state' => $q['state']], 'R2');
+eq([$r1[0], $r2[0], code($r2)], [200, 401, 'sso'], 'K2 אותו state פעמיים — רק הראשונה');
+eq((int)sf_val("SELECT COUNT(*) FROM meta WHERE k LIKE 'sso_state:%' AND k = ?", ['sso_state:' . hash('sha256', $q['state'])]), 0, 'K2 ה-state נמחק');
+sf_exec("DELETE FROM staff_sessions WHERE staff_id = (SELECT id FROM staff WHERE platform_sub = '502')");
+sf_exec("DELETE FROM staff WHERE platform_sub = '502'");
+$GLOBALS['t_posts'] = [];
+// ⚪3: שורה שפג תוקפה — לא נמחקת בבקשה (DELETE … v >= now), ונדחית
+[, $r] = $req('POST', 'sso-start', [], 'A');
+parse_str((string)parse_url($r['url'], PHP_URL_QUERY), $q);
+sf_meta_set('sso_state:' . hash('sha256', $q['state']), (string)(sf_time() - 1));
+eq(code($req('POST', 'sso-finish', ['token' => $token(['state' => $q['state']]), 'state' => $q['state']], 'A')), 'sso', 'K2 state שפג (בשורה) — נדחה');
+
 // הכניסה התקינה
 $r = $login('A');
 eq($r[0], 200, 'K2 כניסה תקינה');
@@ -160,7 +178,7 @@ eq([$s['status'] ?? null, $s['email'] ?? null, $s['name'] ?? null], ['active', '
 eq((int)$s['is_developer'], 0, 'K2 מנהל חדש מ-sso — לא מפתח');
 check('K2 עוגיית מנהל', preg_match('/^[a-f0-9]{64}$/', (string)($jars['A']['staff'] ?? '')) === 1);
 eq($jars['A']['sso'] ?? null, '', 'K2 עוגיית ה-state נמחקה');
-eq(audit_count('staff.sso_login'), 1, 'K2 ביומן: staff.sso_login');
+eq(audit_count('staff.sso_login'), 2, 'K2 ביומן: staff.sso_login (גם של בדיקת ה-state הכפול)');
 [$st, $me] = $req('GET', 'me', [], 'A');
 eq([$st, $me['staff']['pid'] ?? null], [200, $s['pid']], 'K2 me עם העוגייה');
 eq($req('POST', 'logout', [], 'A')[0], 200, 'K2 POST עם CSRF של ה-session');

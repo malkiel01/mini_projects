@@ -128,7 +128,7 @@
                 h('div', { class: 'line' }, ['pending', 'running', 'done', 'failed', 'cancelled'].map(s =>
                     h('span', { class: 'chip' + (s === 'failed' && counts[s] ? ' bad' : '') }, ({ pending: 'ממתינות', running: 'רצות', done: 'הסתיימו', failed: 'נכשלו', cancelled: 'בוטלו' })[s] + ' ' + (counts[s] || 0))))),
             h('h3', { class: 'sec-title' }, 'הגדרה ב-cPanel'),
-            h('p', { class: 'hint' }, 'ב-cPanel ← Cron Jobs ← כל 5 דקות (', h('bdi', { dir: 'ltr' }, d.cron.every), '), עם הפקודה הזו. בלי מתזמן אין שירותי רקע, ובדיקת "המתזמן" מתריעה.'),
+            h('p', { class: 'hint' }, 'ב-cPanel ← Cron Jobs ← כל דקה (', h('bdi', { dir: 'ltr' }, d.cron.every), '), עם הפקודה הזו. בלי מתזמן אין שירותי רקע, ובדיקת "המתזמן" מתריעה.'),
             h('div', { class: 'copy-row' }, h('div', { class: 'code' }, d.cron.command), copy(d.cron.command)),
             h('div', { class: 'toolbar', style: 'margin-top:8px' }, h('button', { class: 'btn ghost danger', type: 'button', onclick: async () => {
                 if (!confirm('אסימון חדש? הפקודה הישנה ב-cPanel תפסיק לעבוד, וצריך להחליף אותה.')) return;

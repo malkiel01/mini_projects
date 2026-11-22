@@ -161,10 +161,11 @@ sf_health_register('disk', 'נפח', function () {
 
 sf_health_register('cron', 'המתזמן', function () {
     $ok = sf_meta('cron_last_ok_at');
-    $how = 'להגדיר ב-cPanel → Cron Jobs, כל 5 דקות, את הפקודה שבלשונית "⚙️ שירותי רקע".';
+    $how = 'להגדיר ב-cPanel → Cron Jobs, כל דקה (* * * * *), את הפקודה שבלשונית "⚙️ שירותי רקע".';
     if ($ok === null) return ['warn', 'עוד לא רץ. ' . $how];
     $age = sf_time() - (int)strtotime($ok);
-    return $age > 900 ? ['warn', 'הצליח לאחרונה לפני ' . intdiv($age, 60) . ' דקות. ' . $how] : ['ok', 'הצליח לפני ' . max(0, intdiv($age, 60)) . ' דקות'];
+    // כל דקה: 5 דקות בלי ריצה מוצלחת = המתזמן לא רץ כמו שצריך (תזכורות יאחרו)
+    return $age > 300 ? ['warn', 'הצליח לאחרונה לפני ' . intdiv($age, 60) . ' דקות. ' . $how] : ['ok', 'הצליח לפני ' . max(0, intdiv($age, 60)) . ' דקות'];
 }, true);
 
 sf_health_register('queue', 'תור הרקע', function () {

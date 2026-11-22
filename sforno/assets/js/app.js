@@ -57,14 +57,20 @@
         const q = new URLSearchParams(location.search);
         if (q.has('state') && (q.has('token') || q.has('error'))) {
             const body = { state: q.get('state'), ...(q.has('error') ? { error: q.get('error') } : { token: q.get('token') }) };
+            const was = location.pathname + location.search + location.hash;
             let to = '#/admin';
-            try { to = sessionStorage.getItem('sf_sso_hash') || to; sessionStorage.removeItem('sf_sso_hash'); } catch (e) { /* פרטי */ }
+            try { to = sessionStorage.getItem('sf_sso_hash') || to; } catch (e) { /* פרטי */ }
             history.replaceState(null, '', location.pathname + to);
             try {
                 await SF.api('sso-finish', { body });
+                try { sessionStorage.removeItem('sf_sso_hash'); } catch (e) { /* פרטי */ }
             } catch (e) {
-                menu();
-                return SF.fail(document.getElementById('main'), e);
+                // לא מנותקת (אין data/launch.json) — הפרמטרים אינם שלנו: מחזירים את הכתובת כמו שהייתה, וטעינה רגילה
+                if (e.code === 'unknown_action') history.replaceState(null, '', was);
+                else {
+                    menu();
+                    return SF.fail(document.getElementById('main'), e);
+                }
             }
         }
         try {
