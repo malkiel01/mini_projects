@@ -227,7 +227,13 @@ foreach ($evil as $i => $in) {
     }
 }
 $c = sf_mk_clean('<sf-section title="&quot;&gt;&lt;script&gt;">x</sf-section>');
-check('תכונה עם מרכאות נשמרת כטקסט, מקודדת', str_contains((string)$c['html'], "title='\"&gt;&lt;script&gt;'"), $c['html']);
+// הסריאליזציה של libxml משתנה בין גרסאות (מרכאות בודדות מול &quot;) — בודקים את התכונה הבטיחותית, לא את המחרוזת.
+$cd = new DOMDocument();
+@$cd->loadHTML('<?xml encoding="utf-8"?><div>' . (string)$c['html'] . '</div>', LIBXML_NONET);
+$cs = $cd->getElementsByTagName('sf-section')->item(0);
+check('תכונה עם מרכאות נשמרת כטקסט, מקודדת',
+    $cs !== null && $cs->getAttribute('title') === '"><script>' && !str_contains((string)$c['html'], '<script')
+    && $cd->getElementsByTagName('script')->length === 0, $c['html']);
 $c = sf_mk_clean('<p dir="rtl" lang="he">ok</p>');
 check('dir ו-lang תקינים נשמרים', str_contains((string)$c['html'], 'dir="rtl" lang="he"'), $c['html']);
 $c = sf_mk_clean('<img src="files/pic.png" alt="תמונה">');
