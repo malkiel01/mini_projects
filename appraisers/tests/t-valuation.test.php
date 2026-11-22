@@ -188,6 +188,18 @@ $firstLong = array_search('too_long', $cr, true);
 check('B1 תקציב פעולות לגיליון: שורות כבדות מחושבות עד שהתקציב נגמר, ומשם — too_long לכל השאר (בלי "חורים"); פחות משנייה; ריצה שנייה נותנת בדיוק אותה תוצאה',
     $msC < 1000 && $cr[0] === 'ok' && $firstLong !== false && $firstLong >= 1 && array_unique(array_slice($cr, $firstLong)) === ['too_long'] && array_unique(array_slice($cr, 0, $firstLong)) === ['ok'] && $cv === apr_sheet_eval($rowsC),
     [$msC, $firstLong, array_count_values($cr)]);
+// גם צמתים זולים נספרים: 40 שורות של 13 טווחי סכום על 60 שורות — בלי צמצום מלא אחד — מגיעות לתקרת התקציב
+$rowsE = array_map(fn($i) => $in("r$i", (string)$i), range(1, 60));
+$eAbove = array_map(fn($i) => "r$i", range(1, 60));
+for ($i = 61; $i <= 100; $i++) $rowsE[] = $calc("r$i", ['op' => 'add', 'args' => array_fill(0, 13, ['op' => 'sum', 'args' => ['r1', 'r60']])], $eAbove);
+$ev = apr_sheet_eval($rowsE);
+$er = array_count_values(array_map(fn($i) => $ev["r$i"]['reason'] ?? 'ok', range(61, 100)));
+// הצמצום המלא: (P/Q) × (Q/P) — מכפלה של 144 ספרות על 144 שמצטמצמת ל-1; בלי צמצום מלא הייתה נדחית כ"ארוכה מדי"
+$rowsF = array_slice($big, 0, 61);
+$rowsF[] = $calc('r62', ['op' => 'mul', 'args' => ['r61', ['op' => 'div', 'args' => [['op' => 'mul', 'args' => ['r7', 'r8', 'r9', 'r10', 'r11', 'r12']], ['op' => 'mul', 'args' => ['r1', 'r2', 'r3', 'r4', 'r5', 'r6']]]]]], array_slice($bAbove, 0, 61));
+$fv = apr_sheet_eval($rowsF);
+eq([$dec($ev['r61']['value']), ($er['ok'] ?? 0) >= 10, ($er['too_long'] ?? 0) >= 5, $fv['r62']['value'], $fv['r62']['reason']], [(string)(13 * 1830), true, true, ['1', '1'], null],
+    'B1 התקציב סופר גם צמתים זולים (טווחי סכום חוזרים) — מספיק לעשרות שורות, ואז too_long; שבר ארוך מצומצם עד הסוף: (P/Q) × (Q/P) = 1 בדיוק, לא "ארוך מדי"');
 // גיליון רגיל ומלא (100 שורות: קלטים, אחוזים, מכפלות וסכומי טווח) רחוק מאוד מהתקציב
 $rowsD = [];
 $dAbove = [];
@@ -866,13 +878,16 @@ $kSel = $v15->query("SELECT id FROM comps WHERE status = 'selected' AND deleted_
 $kCand = $v15->query("SELECT id FROM comps WHERE status = 'candidate' AND deleted_at IS NULL ORDER BY id LIMIT 1")->fetchColumn();
 $v15->exec('UPDATE comps SET weight = 2500000, rev = rev + 1 WHERE id = ' . (int)$kSel[0]['id']);
 $v15->exec('UPDATE comps SET weight = 1000000, rev = rev + 1 WHERE id = ' . (int)$kCand);
+// ביקורת 16, סבב 2: תיק פתוח שה-flags שלו אינו JSON תקין (אין CHECK על העמודה) — המיגרציה אינה נופלת עליו
+$badFlags = (int)$v15->query("SELECT id FROM cases WHERE deleted_at IS NULL AND status <> 'draft' AND json_extract(flags, '$.renovation_planned') = 1 ORDER BY id DESC LIMIT 1")->fetchColumn();
+$v15->exec("UPDATE cases SET flags = '{oops' WHERE id = $badFlags");
 $v15->exec('PRAGMA foreign_keys = ON');
 $dump = fn(PDO $d) => array_map(fn($t) => [$t, hash('sha256', json_encode($d->query('SELECT ' . t_cols($d, $t) . " FROM \"$t\" ORDER BY 1")->fetchAll()))], $tables);
 $d15 = $dump($v15);
 $rows15 = array_sum(array_map(fn($t) => (int)$v15->query("SELECT COUNT(*) FROM \"$t\"")->fetchColumn(), $tables));
 $had = [apr_schema_version($v15), in_array('alternatives', $tables, true), in_array('comp_sets', $tables, true), (int)$v15->query('SELECT COUNT(*) FROM audit_log')->fetchColumn() > 50];
 $started = (int)$v15->query("SELECT COUNT(*) FROM cases WHERE deleted_at IS NULL AND status <> 'draft'")->fetchColumn();
-$withFlag = (int)$v15->query("SELECT COUNT(*) FROM cases WHERE deleted_at IS NULL AND status <> 'draft' AND json_extract(flags, '$.renovation_planned') = 1")->fetchColumn();
+$withFlag = (int)$v15->query("SELECT COUNT(*) FROM cases WHERE deleted_at IS NULL AND status <> 'draft' AND json_valid(flags) AND json_extract(flags, '$.renovation_planned') = 1")->fetchColumn();
 $selPairs = (int)$v15->query("SELECT COUNT(*) FROM comp_sets g JOIN comps k ON k.case_id = g.case_id WHERE g.deleted_at IS NULL AND k.deleted_at IS NULL AND (k.status = 'selected' OR k.weight IS NOT NULL)")->fetchColumn();
 apr_migrate($v15);
 $fresh = new PDO('sqlite::memory:', null, null, $pdoOpt);
@@ -881,6 +896,8 @@ $shape = fn(PDO $d) => json_encode($d->query("SELECT type, name, sql FROM sqlite
 $alts16 = $v15->query('SELECT case_id, name, state_kind, is_primary, key_date, pid FROM alternatives ORDER BY case_id, sort')->fetchAll();
 $newCount = fn() => array_map(fn($t) => (int)$v15->query("SELECT COUNT(*) FROM $t")->fetchColumn(), ['alternatives', 'comp_set_members', 'assumptions', 'approaches', 'sheets', 'sheet_rows', 'sheet_templates', 'renovation_items']);
 $n16 = $newCount();
+eq([$badFlags > 0, apr_schema_version($v15) >= 16, array_map(fn($a) => [$a['name'], (int)$a['is_primary']], array_values(array_filter($alts16, fn($a) => (int)$a['case_id'] === $badFlags)))], [true, true, [['מצב קיים', 1]]],
+    'מיגרציה 016 על תיק פתוח שה-flags שלו אינו JSON תקין: המיגרציה עוברת, והתיק מקבל "מצב קיים" בלבד');
 apr_migrate($v15);                                                                                       // הרצה חוזרת: כבר בגרסה — דבר אינו משתנה
 $again = $newCount() === $n16 && $dump($v15) === $d15;
 $memW = $v15->query('SELECT comp_id, weight, active FROM comp_set_members WHERE comp_id IN (' . (int)$kSel[0]['id'] . ', ' . (int)$kCand . ') ORDER BY comp_id, set_id')->fetchAll();
@@ -986,6 +1003,37 @@ $GLOBALS['apr_file_visible'] = fn($ctx, $c, $f) => $f['pid'] !== $FP;
 $pickHidden = [array_column($val($avi, $CA)[1]['pick']['files'], 'pid'), array_column($sheetView($post('sheet-save', ['case' => $CA, 'title' => 'לבחירה', 'rounding' => 'none'])[1]['sheet'])[1]['pick']['files'], 'pid')];
 unset($GLOBALS['apr_file_visible']);
 eq([in_array($FP, $pickAll, true), in_array($FP, $pickHidden[0], true), in_array($FP, $pickHidden[1], true)], [true, false, false], '🟡3 רשימות הבחירה (בחלופות ובגיליון) מציגות רק קבצים שגלויים למבקש — ההכרעה ב-apr_file_visible');
+
+// ⚪ טקסט הנוסחה: אופרנד שמוצג מעוגל מסומן ≈; מספר שלילי שאינו ראשון — בסוגריים
+$tRows = [$in('r1', '10'), $in('r2', '3'), $calc('r3', ['op' => 'div', 'args' => ['r1', 'r2']], ['r1', 'r2']), $in('r4', '-2000000')];
+$tVals = apr_sheet_eval($tRows);
+$tLab = ['r1' => 'א', 'r2' => 'ב', 'r3' => 'מנה', 'r4' => 'הפחתה'];
+eq([apr_sheet_formula_text(['op' => 'add', 'args' => ['r3', 'r4', '-5']], $tLab, $tVals), apr_sheet_formula_text(['op' => 'mul', 'args' => ['r4', 'r1']], $tLab, $tVals)['numbers'], apr_sheet_formula_text(['op' => 'sum', 'args' => ['r1', 'r4']], $tLab, $tVals)['numbers']],
+    [['words' => 'מנה + הפחתה + (-5)', 'numbers' => '≈3.333333 + (-2,000,000) + (-5)'], '-2,000,000 × 10', '10 + 3 + ≈3.333333 + (-2,000,000)'],
+    '⚪ טקסט הנוסחה: ערך שמוצג מעוגל מסומן ≈ (גם בטווח סכום); מספר שלילי שאינו ראשון מוקף בסוגריים — "x + (-2,000,000)"');
+
+// ⚪ עסקה שחוזרת לקבוצה אחרי שהוצאה — בלי המשקל הישן; ⚪ "העבודות השתנו" רושם מי שינה
+$KB = $add($CA, ['price' => '1500000', 'deal_date' => '2026-01-10', 'area' => '70', 'area_kind' => 'registered', 'condition' => 'טוב']);
+$status($KB, 'selected');
+$GB = $post('comp-set-save', ['case' => $CA, 'name' => 'קבוצת חזרה', 'unit_basis' => 'total', 'method' => 'weighted', 'rounding' => 'none'])[1]['set'];
+$member($GB, $KB, true);
+$wB = $wSet($GB, $KB, '40');
+$mw = fn() => apr_val('SELECT m.weight FROM comp_set_members m JOIN comp_sets g ON g.id = m.set_id JOIN comps k ON k.id = m.comp_id WHERE g.pid = ? AND k.pid = ?', [$GB, $KB]);
+$w0 = $mw();
+$member($GB, $KB, false, 'לא מתאימה');
+$wOut = $mw();
+$backR = $member($GB, $KB, true, 'בכל זאת');
+$backAudit = $audit('comp.set_member', $GB);
+eq([$wB[0], $w0 === null ? null : (int)$w0, $wOut === null ? null : (int)$wOut, $backR[0], $mw(), end($backAudit)['meta']['weight_cleared'] ?? null], [200, 40000000, 40000000, 200, null, '40'],
+    '⚪ עסקה שהוצאה מקבוצה וחזרה אליה — חוזרת בלי משקל (השמאי קובע מחדש), והמשקל שנוקה נרשם ביומן');
+$CW = make_case($avi, $P, true);
+call('POST', 'case-member-add', ['case' => $CW, 'user' => $danaPid], $avi);
+$aw = array_values(array_filter($val($avi, $CW)[1]['alternatives'], fn($a) => $a['state_kind'] === 'after_works'))[0]['pid'];
+$awBy = fn() => (int)apr_val('SELECT updated_by FROM alternatives WHERE pid = ?', [$aw]);
+$by0 = $awBy();
+$flagOff = call('POST', 'case-update', ['case' => $CW, 'flags' => ['renovation_planned' => false]], $dana);
+eq([$by0 === $awBy(), $flagOff[0], (int)apr_val('SELECT stale FROM alternatives WHERE pid = ?', [$aw]), $awBy() === (int)apr_val("SELECT id FROM users WHERE email = 'dana@example.com'")], [false, 200, 1, true],
+    '⚪ שינוי בדגל השיפוץ מסמן את חלופת after_works כ-stale — ורושם בה מי שינה (updated_by), לא רק rev');
 
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();

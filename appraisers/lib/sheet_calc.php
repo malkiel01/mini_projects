@@ -178,8 +178,8 @@ function apr_sheet_eval(array $rows): array
 /** צומת אחד בנוסחה ← [שבר | null, סיבה | null, מפתח | null]. */
 function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array &$warn, int &$budget): array
 {
-    $budget -= APR_SHEET_NODE_COST;
-    if ($budget < 0) return [null, 'too_long', null];
+    // הבדיקה היחידה של התקציב: לפני כל צומת (גם כל שורה בטווח סכום היא צומת) — חריגה אפשרית היא צעד חשבון אחד לכל היותר
+    if (($budget -= APR_SHEET_NODE_COST) < 0) return [null, 'too_long', null];
     if (is_string($f)) {
         if (!apr_sheet_is_key($f)) return [apr_sheet_const_q($f), null, null];
         if (!isset($vals[$f])) return [null, 'broken_ref', $f];
@@ -232,7 +232,7 @@ function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array 
         };
         if ($acc === null) return [null, 'broken_ref', null];
         $acc = apr_sheet_q($acc, $budget);
-        if ($acc === null || $budget < 0) return [null, 'too_long', null];
+        if ($acc === null) return [null, 'too_long', null];
     }
     return [$acc, null, null];
 }
@@ -240,7 +240,7 @@ function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array 
 function apr_sheet_done(array $q, int &$budget): array
 {
     $q = apr_sheet_q($q, $budget);
-    return $q === null || $budget < 0 ? [null, 'too_long', null] : [$q, null, null];
+    return $q === null ? [null, 'too_long', null] : [$q, null, null];
 }
 
 /**

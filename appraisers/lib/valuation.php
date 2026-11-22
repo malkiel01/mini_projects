@@ -197,12 +197,12 @@ function apr_alts_seed(array $c, array $flags, ?int $uid): void
  * העבודות השתנו (§7): הצעת מחיר חדשה שמחליפה קודמת, או שינוי בדגל השיפוץ. כל חלופת after_works מסומנת stale, ולכל אחת נוצרת משימת
  * סקירה מחדש לאחראי על התיק — אחת פתוחה לכל חלופה (16-C2). **שום ערך אינו משתנה**: לא מסקנה, לא תוצאה ולא הנחה.
  */
-function apr_alt_works_changed(array $c, string $why): int
+function apr_alt_works_changed(array $c, string $why, ?int $uid = null): int
 {
     $n = 0;
     $now = apr_now();
     foreach (apr_rows("SELECT * FROM alternatives WHERE case_id = ? AND deleted_at IS NULL AND state_kind = 'after_works' ORDER BY id", [$c['id']]) as $a) {
-        apr_exec('UPDATE alternatives SET stale = 1, stale_at = ?, stale_why = ?, rev = rev + 1 WHERE id = ?', [$now, $why, $a['id']]);
+        apr_exec('UPDATE alternatives SET stale = 1, stale_at = ?, stale_why = ?, rev = rev + 1, updated_by = COALESCE(?, updated_by), updated_at = ? WHERE id = ?', [$now, $why, $uid, $now, $a['id']]);
         $key = 'alt-review:' . $a['pid'];
         if (!apr_val("SELECT 1 FROM tasks WHERE case_id = ? AND origin_key = ? AND status IN ('open', 'in_progress')", [$c['id'], $key])) {
             $assignee = apr_val('SELECT c.responsible_user_id FROM cases c JOIN case_members m ON m.case_id = c.id AND m.user_id = c.responsible_user_id AND m.revoked_at IS NULL WHERE c.id = ?', [$c['id']]);
@@ -222,7 +222,7 @@ function apr_alts_on_flags(array $c, array $before, array $after, ?int $uid): vo
     $was = ($before['renovation_planned'] ?? false) === true;
     $is = ($after['renovation_planned'] ?? false) === true;
     if ($was === $is || $c['status'] === 'draft') return;
-    apr_alt_works_changed($c, 'flag_changed');
+    apr_alt_works_changed($c, 'flag_changed', $uid);
     if ($is && !apr_val("SELECT 1 FROM alternatives WHERE case_id = ? AND deleted_at IS NULL AND state_kind = 'after_works'", [$c['id']])
         && !apr_val('SELECT 1 FROM alternatives WHERE case_id = ? AND deleted_at IS NULL AND name_key = ?', [$c['id'], apr_alt_name_key(APR_ALT_NAME_AFTER)])) {
         $has = (bool)apr_val('SELECT 1 FROM alternatives WHERE case_id = ? AND deleted_at IS NULL', [$c['id']]);
@@ -456,13 +456,11 @@ function apr_sheet_rows(int $sheetId): array
 }
 
 /** מספר JSON שהגיע כנקודה צפה ← מחרוזת עשרונית (הייצוג הקצר שלו), בכל עומק — המנוע אינו רואה נקודה צפה לעולם. */
-function apr_sheet_formula_in(mixed $f, int $depth = 0, int &$seen = 0): mixed
+function apr_sheet_formula_in(mixed $f, int $depth = 0): mixed
 {
     if ($depth > 8) apr_fail('sheet_formula');
-    // נוסחה ענקית נעצרת כאן, לפני שמישהו עובר על כולה (כל צומת קנוני הוא לכל היותר שלושה איברים בקלט: האובייקט, op ו-args)
-    if (++$seen > 4 * APR_SHEET_MAX_NODES) apr_fail('sheet_formula_long');
     if (is_float($f)) return apr_val_float_str($f, 'sheet_formula');
-    if (is_array($f)) foreach ($f as $k => $v) $f[$k] = apr_sheet_formula_in($v, $depth + 1, $seen);
+    if (is_array($f)) foreach ($f as $k => $v) $f[$k] = apr_sheet_formula_in($v, $depth + 1);
     return $f;
 }
 
@@ -481,12 +479,27 @@ function apr_sheet_compute(array $sheet): array
 }
 
 /** הנוסחה במילים ובמספרים (16-D2): ['words' => "דמי שכירות × 12", 'numbers' => "8,500 × 12"]. $top — בלי סוגריים חיצוניים. */
+/** אופרנד בטקסט הנוסחה: הערך של השורה לתצוגה; "≈" כשהוא מוצג מעוגל (החישוב עצמו ממשיך בערך המדויק). */
+function apr_sheet_operand_text(?array $q): string
+{
+    if ($q === null) return '—';
+    $d = apr_sheet_dec($q);
+    return ($d['exact'] ? '' : '≈') . apr_val_fmt($d['dec']);
+}
+
+/** מספר שלילי שאינו הראשון בפעולה מוקף בסוגריים: "x + (-2,000,000)", לא "x + -2,000,000". */
+function apr_sheet_signed(array $parts): array
+{
+    foreach ($parts as $i => $p) if ($i > 0 && preg_match('/^≈?-/u', $p) === 1) $parts[$i] = "($p)";
+    return $parts;
+}
+
 function apr_sheet_formula_text(mixed $f, array $labels, array $vals, bool $top = true): array
 {
     if (is_string($f)) {
         if (!apr_sheet_is_key($f)) return ['words' => apr_val_fmt($f), 'numbers' => apr_val_fmt($f)];
         $v = $vals[$f]['value'] ?? null;
-        return ['words' => $labels[$f] ?? 'שורה שנמחקה', 'numbers' => $v === null ? '—' : apr_val_fmt(apr_sheet_dec($v)['dec'])];
+        return ['words' => $labels[$f] ?? 'שורה שנמחקה', 'numbers' => apr_sheet_operand_text($v)];
     }
     if (isset($f['pct'])) {
         $x = apr_sheet_formula_text($f['pct'], $labels, $vals, false);
@@ -497,15 +510,15 @@ function apr_sheet_formula_text(mixed $f, array $labels, array $vals, bool $top 
         $from = array_search($f['args'][0], $keys, true);
         $to = array_search($f['args'][1], $keys, true);
         $range = $from === false || $to === false ? [] : array_values(array_filter(array_slice($keys, min($from, $to), abs($to - $from) + 1), fn($k) => isset($vals[$k])));
-        $nums = array_map(fn($k) => $vals[$k]['value'] === null ? '—' : apr_val_fmt(apr_sheet_dec($vals[$k]['value'])['dec']), $range);
+        $nums = apr_sheet_signed(array_map(fn($k) => apr_sheet_operand_text($vals[$k]['value']), $range));
         $w = 'סכום השורות מ"' . ($labels[$f['args'][0]] ?? 'שורה שנמחקה') . '" עד "' . ($labels[$f['args'][1]] ?? 'שורה שנמחקה') . '"';
         $n = $nums ? implode(' + ', $nums) : '—';
         return ['words' => $w, 'numbers' => $top || count($nums) < 2 ? $n : "($n)"];
     }
     $sym = ['add' => ' + ', 'sub' => ' − ', 'mul' => ' × ', 'div' => ' ÷ '][$f['op'] ?? ''] ?? ' ? ';
     $parts = array_map(fn($a) => apr_sheet_formula_text($a, $labels, $vals, false), $f['args'] ?? []);
-    $w = implode($sym, array_column($parts, 'words'));
-    $n = implode($sym, array_column($parts, 'numbers'));
+    $w = implode($sym, apr_sheet_signed(array_column($parts, 'words')));
+    $n = implode($sym, apr_sheet_signed(array_column($parts, 'numbers')));
     return $top ? ['words' => $w, 'numbers' => $n] : ['words' => "($w)", 'numbers' => "($n)"];
 }
 
@@ -998,7 +1011,7 @@ function apr_renovation_add(array $ctx, array $in): array
         apr_insert('renovation_items', ['pid' => $pid, 'office_id' => $c['office_id'], 'case_id' => $c['id'], 'version_no' => $prev ? (int)$prev['version_no'] + 1 : 1, 'supersedes_id' => $prev['id'] ?? null,
             'entered_by' => (int)$ctx['user']['id'], 'created_at' => apr_now()] + $row);
         apr_case_audit($c, 'renovation.add', 'renovation_item', $pid, ['kind' => $kind, 'amount' => apr_comp_dec_out($row['amount'], 2), 'version' => $prev ? (int)$prev['version_no'] + 1 : 1, 'supersedes' => $prev['pid'] ?? null]);
-        $review = $prev ? apr_alt_works_changed($c, 'quote_replaced') : 0;
+        $review = $prev ? apr_alt_works_changed($c, 'quote_replaced', (int)$ctx['user']['id']) : 0;
         apr_case_touch($c);
         return ['item' => $pid, 'version' => $prev ? (int)$prev['version_no'] + 1 : 1, 'review' => $review];
     });

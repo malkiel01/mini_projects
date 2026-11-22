@@ -79,7 +79,7 @@ FROM cases c WHERE c.deleted_at IS NULL AND c.status <> 'draft';
 INSERT INTO alternatives (pid, office_id, case_id, name, name_key, sort, key_date, state_kind, is_primary, created_at, updated_at)
 SELECT lower(hex(randomblob(8))), c.office_id, c.id, 'בהנחת השלמת השיפוץ', 'בהנחת השלמת השיפוץ', 2, c.key_date, 'after_works', 0,
     strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-FROM cases c WHERE c.deleted_at IS NULL AND c.status <> 'draft' AND json_extract(c.flags, '$.renovation_planned') = 1;
+FROM cases c WHERE c.deleted_at IS NULL AND c.status <> 'draft' AND CASE WHEN json_valid(c.flags) THEN json_extract(c.flags, '$.renovation_planned') END = 1;   -- flags פגום (אין CHECK על העמודה) אינו מפיל את המיגרציה: התיק מקבל "מצב קיים" בלבד
 
 -- ── הנחות: של חלופה, או של התיק כולו ──────────────────────────
 CREATE TABLE assumptions (

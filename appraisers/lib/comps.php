@@ -584,9 +584,11 @@ function apr_comp_set_member(array $ctx, array $in): array
         if (($m !== null && (int)$m['active'] === 1) === $on && ($m['reason'] ?? null) === $reason) apr_fail('nothing_to_change');
         if (!$m && !$on) apr_fail('nothing_to_change');
         apr_comp_set_update($ctx, $c, $g, $rev, []);
-        if ($m) apr_exec('UPDATE comp_set_members SET active = ?, reason = ?, updated_by = ?, updated_at = ? WHERE set_id = ? AND comp_id = ?', [$on ? 1 : 0, $reason, (int)$ctx['user']['id'], apr_now(), $g['id'], $k['id']]);
+        // עסקה שחוזרת לקבוצה אחרי שהוצאה — חוזרת בלי המשקל הישן: השמאי קובע אותו מחדש (ביקורת 16)
+        $back = $m && $on && (int)$m['active'] === 0;
+        if ($m) apr_exec('UPDATE comp_set_members SET active = ?, weight = ?, reason = ?, updated_by = ?, updated_at = ? WHERE set_id = ? AND comp_id = ?', [$on ? 1 : 0, $back ? null : $m['weight'], $reason, (int)$ctx['user']['id'], apr_now(), $g['id'], $k['id']]);
         else apr_exec('INSERT INTO comp_set_members (set_id, comp_id, active, reason, updated_by, updated_at) VALUES (?, ?, 1, ?, ?, ?)', [$g['id'], $k['id'], $reason, (int)$ctx['user']['id'], apr_now()]);
-        apr_case_audit($c, 'comp.set_member', 'comp_set', $g['pid'], ['comp' => $k['pid'], 'member' => $on], $reason);
+        apr_case_audit($c, 'comp.set_member', 'comp_set', $g['pid'], ['comp' => $k['pid'], 'member' => $on] + ($back && $m['weight'] !== null ? ['weight_cleared' => apr_comp_dec_out($m['weight'], 6)] : []), $reason);
         apr_case_touch($c);
         return ['set' => $g['pid'], 'comp' => $k['pid'], 'rev' => $rev + 1];
     });
