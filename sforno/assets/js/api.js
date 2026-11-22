@@ -35,6 +35,7 @@ window.SF = window.SF || {};
             const e = data && data.error;
             const err = new Error((e && (e.message || (typeof e === 'string' ? e : ''))) || 'תקלה בשרת. נסו שוב');
             err.code = (e && e.code) || 'server'; err.status = res.status;
+            if (e && e.details) err.details = e.details;
             throw err;
         }
         return data;
