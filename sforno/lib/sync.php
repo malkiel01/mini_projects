@@ -26,6 +26,8 @@ const SF_SYNC_ITEM_MAX = 32_000;
 const SF_SYNC_READER_MAX = 20_000;
 const SF_SYNC_READER_BYTES = 5_000_000;   // כל המידע של קורא, כפי שנשמר (אחרי הצפנה)
 const SF_SYNC_PUSH_PER_MIN = 120;
+/** פריטים שהתזכורות בשרת תלויות בהם (08) */
+const SF_SYNC_REPLAN = ['pref:loc', 'pref:zmethod', 'pref:remprefs'];
 
 /** שורה → מה שיוצא לבעל המידע. */
 function sf_sync_out(array $row): array
@@ -80,7 +82,7 @@ function sf_sync_push(array $ra, array $in): array
     $rid = (int)$ra['reader']['id'];
     $dev = (int)$ra['session']['device_id'];
     sf_rate('sync', (string)$ra['reader']['pid'], SF_SYNC_PUSH_PER_MIN, 60);
-    return sf_tx(function () use ($items, $rid, $dev) {
+    $res = sf_tx(function () use ($items, $rid, $dev) {
         $now = sf_now();
         $out = [];
         $bytes = (int)sf_val('SELECT COALESCE(SUM(LENGTH(data)), 0) FROM personal_items WHERE reader_id = ?', [$rid]);
@@ -127,6 +129,15 @@ function sf_sync_push(array $ra, array $in): array
         }
         return ['results' => $out, 'cursor' => (int)sf_val('SELECT sync_rev FROM readers WHERE id = ?', [$rid])];
     });
+    // 08: תזכורת, מיקום, שיטה או העדפות התזכורות השתנו ← תכנון מחדש מיד (קודם מבטל את המופעים הישנים)
+    foreach ($res['results'] as $r) {
+        $k = $r['item']['kind'] ?? null;
+        if (in_array($r['status'], ['new', 'saved'], true) && ($k === 'reminder' || in_array($r['pid'], SF_SYNC_REPLAN, true))) {
+            if (function_exists('sf_rem_schedule')) sf_rem_schedule('r:' . $rid);
+            break;
+        }
+    }
+    return $res;
 }
 
 /** sync-pull?since=N — כל מה שהשתנה אחרי N (כולל tombstones), לפי rev, עד 500. more — יש עוד; cursor — ה-rev האחרון שהוחזר. */

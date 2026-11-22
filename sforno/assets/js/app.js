@@ -23,6 +23,7 @@
             item('📜', 'תהילים', '#/tehillim'),
             item('🔍', 'חיפוש', '#/search'),
             item('⬇️', 'הורדות', '#/downloads'),
+            item('⏰', 'תזכורות', '#/reminders'),
             item('👤', 'החשבון שלי', '#/account'),
             me ? item('🗂️', 'ניהול', '#/admin') : null,
             me ? item('👥', 'מנהלים', '#/admin/staff') : null,
@@ -50,6 +51,7 @@
     async function boot() {
         document.getElementById('back').addEventListener('click', e => SF.go(e.currentTarget.dataset.to || '#/'));
         const account = SF.accountBoot();
+        account.then(() => SF.rem.start());   // 08: התזכורות בתוך האפליקציה, ורישום ה-Push לבעלים הנכון (אורח / חשבון)
         let data;
         try {
             data = await SF.api('me');

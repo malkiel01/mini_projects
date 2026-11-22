@@ -105,14 +105,17 @@ function call(string $method, string $action, array $in = [], ?string $as = null
 function rcall(string $method, string $action, array $in = [], string $device = 'A', array $get = [], array $opt = []): array
 {
     static $rjar = [];
+    static $pjar = [];   // 08: עוגיית sf_push (מכשיר Push של אורח) לכל "מכשיר"
     if (array_key_exists('reader_cookie', $opt)) $rjar[$device] = $opt['reader_cookie'];
-    $run = function (string $method, string $action, array $in, array $get, string $csrf) use (&$rjar, $device, $opt): array {
-        unset($GLOBALS['sf_reader_cookie_out'], $GLOBALS['sf_cookie_out']);
+    if (array_key_exists('push_cookie', $opt)) $pjar[$device] = $opt['push_cookie'];
+    $run = function (string $method, string $action, array $in, array $get, string $csrf) use (&$rjar, &$pjar, $device, $opt): array {
+        unset($GLOBALS['sf_reader_cookie_out'], $GLOBALS['sf_cookie_out'], $GLOBALS['sf_push_cookie_out']);
         try {
             $body = sf_dispatch($method, $action, $get + ['action' => $action], $in, ['platform_user' => $opt['platform_user'] ?? null,
                 'cookie' => $opt['cookie'] ?? '', 'csrf' => $opt['staff_csrf'] ?? '', 'ua' => $opt['ua'] ?? 'Mozilla/5.0 (Linux; Android 14) Chrome/130.0',
                 'content_type' => $opt['content_type'] ?? 'application/json', 'reader_cookie' => $rjar[$device] ?? '', 'reader_csrf' => $csrf,
-                'ip' => $opt['ip'] ?? '203.0.113.7', 'sec_fetch_site' => $opt['sec_fetch_site'] ?? 'same-origin', 'origin' => $opt['origin'] ?? '']);
+                'ip' => $opt['ip'] ?? '203.0.113.7', 'sec_fetch_site' => $opt['sec_fetch_site'] ?? 'same-origin', 'origin' => $opt['origin'] ?? '',
+                'push_cookie' => $pjar[$device] ?? '']);
             $status = 200;
         } catch (Throwable $e) {
             sf_log_exception($e);
@@ -120,12 +123,14 @@ function rcall(string $method, string $action, array $in = [], string $device = 
             if ($status === 500) $GLOBALS['t_last_500'] = get_class($e) . ': ' . $e->getMessage() . ' @' . basename($e->getFile()) . ':' . $e->getLine();
         }
         if (isset($GLOBALS['sf_reader_cookie_out'])) $rjar[$device] = $GLOBALS['sf_reader_cookie_out'];
+        if (isset($GLOBALS['sf_push_cookie_out'])) $pjar[$device] = $GLOBALS['sf_push_cookie_out'];
         return [$status, $body];
     };
     $csrf = $opt['csrf'] ?? null;
-    if ($method === 'POST' && $csrf === null && (SF_ACTIONS[$action]['who'] ?? '') === 'account') {
+    $who = SF_ACTIONS[$action]['who'] ?? '';
+    if ($method === 'POST' && $csrf === null && ($who === 'account' || ($who === 'guest' && !empty(SF_ACTIONS[$action]['rcsrf'])))) {
         [$st, $me] = $run('GET', 'account-me', [], [], '');
-        $csrf = $st === 200 ? (string)$me['csrf'] : '';
+        $csrf = $st === 200 ? (string)($me['csrf'] ?? '') : '';
     }
     $res = $run($method, $action, $in, $get, $csrf ?? '');
     $GLOBALS['t_rjar'] = $rjar;

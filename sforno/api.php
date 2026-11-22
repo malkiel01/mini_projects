@@ -46,6 +46,8 @@ try {
         // הקוראים (05): עוגייה ו-CSRF משלהם; ה-IP — רק להגבלת ניסיונות (נשמר כ-HMAC)
         'reader_cookie' => is_string($_COOKIE[SF_READER_COOKIE] ?? null) ? $_COOKIE[SF_READER_COOKIE] : '',
         'reader_csrf' => (string)($_SERVER['HTTP_X_READER_CSRF'] ?? ''),
+        // מכשיר Push של אורח (08) — אסימון אקראי, בלי פרט אישי
+        'push_cookie' => is_string($_COOKIE[SF_PUSH_COOKIE] ?? null) ? $_COOKIE[SF_PUSH_COOKIE] : '',
         'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
         'sec_fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
         'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),

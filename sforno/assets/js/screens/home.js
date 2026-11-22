@@ -13,6 +13,7 @@
         { key: 'tehillim', icon: '📜', name: 'תהילים', slice: '04', href: '#/tehillim' },
         { key: 'halacha', icon: '🕯️', name: 'הלכה יומית', slice: '07', href: '#/halacha' },
         { key: 'zmanim', icon: '🕰️', name: 'זמני היום', slice: '07', href: '#/zmanim' },
+        { key: 'reminders', icon: '⏰', name: 'תזכורות', slice: '08', href: '#/reminders' },
         { key: 'store', icon: '🛒', name: 'חנות', slice: '09' },
     ];
 

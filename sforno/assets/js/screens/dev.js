@@ -112,7 +112,7 @@
 
     // ── ⚙️ שירותי רקע ────────────────────────────────────────
     async function jobs(el) {
-        const d = await SF.api('dev-jobs');
+        const [d, rm] = await Promise.all([SF.api('dev-jobs'), SF.api('dev-reminders').catch(() => null)]);
         const copy = text => h('button', { class: 'icon-btn ghost', type: 'button', 'aria-label': 'העתקה', onclick: async () => {
             try { await navigator.clipboard.writeText(text); SF.toast('הועתק'); } catch (e) { SF.toast('ההעתקה נכשלה — לסמן ולהעתיק ידנית', true); }
         } }, '📋');
@@ -120,7 +120,7 @@
         const act = (label, action, pid) => h('button', { class: 'btn sm ghost', type: 'button', onclick: async () => {
             try { await SF.api(action, { body: { job: pid } }); SF.toast('בוצע'); jobs(el); } catch (e) { SF.toast(e.message, true); }
         } }, label);
-        el.replaceChildren(
+        SF.put(el,
             h('div', { class: 'summary' },
                 h('div', { class: 'line' }, h('b', null, 'המתזמן'), h('span', { class: 'muted' }, '· רץ לאחרונה ' + SF.when(d.cron.last_run_at) + ' · הצליח ' + SF.when(d.cron.last_ok_at))),
                 h('div', { class: 'line' }, ['pending', 'running', 'done', 'failed', 'cancelled'].map(s =>
@@ -134,8 +134,16 @@
             } }, '🔑 אסימון חדש')),
             h('h3', { class: 'sec-title' }, 'השירותים'),
             h('ul', { class: 'list' }, d.kinds.map(k => h('li', { class: 'card', style: 'cursor:default' }, h('div', { class: 'body' },
-                h('div', { class: 'l1' }, h('span', null, k.kind), h('span', { class: 't' }, k.daily ? 'פעם ביום' : '')),
+                h('div', { class: 'l1' }, h('span', null, k.kind), h('span', { class: 't' }, k.daily ? 'פעם ביום' : k.every === 60 ? 'כל דקה' : k.every ? 'כל ' + Math.round(k.every / 60) + ' דקות' : '')),
                 h('div', { class: 'l2' }, k.label + ' · הצליחה לאחרונה ' + SF.when(k.last_done_at)))))),
+            rm ? [h('h3', { class: 'sec-title' }, '⏰ תזכורות (08)'),
+                h('p', { class: 'hint' }, 'Push: ' + (rm.push ? 'openssl מוכן' : 'לא זמין') + ' · מפתחות VAPID ' + (rm.vapid ? 'ב-data/' : 'ייווצרו ברישום הראשון') + ' · מכשירים: '
+                    + rm.devices.reader + ' של קוראים, ' + rm.devices.guest + ' של אורחים' + (rm.devices.gone ? ', ' + rm.devices.gone + ' שהספק ביטל' : '') + ' · השתקה: ' + rm.mute.name + (rm.mute.test ? ' (לבדיקה)' : '')),
+                h('div', { class: 'line' }, rm.counts.map(c => h('span', { class: 'chip' }, c.channel + ' · ' + c.status + ' ' + c.n))),
+                h('p', { class: 'hint' }, 'לוג השליחה — מזהה מופע, ערוץ, תוצאה וקוד בלבד (בלי שם ובלי תוכן). "sent" = הספק קיבל, לא "המשתמש ראה".'),
+                h('ul', { class: 'list' }, rm.log.length ? rm.log.map(l => h('li', { class: 'card', style: 'cursor:default' }, h('div', { class: 'body' },
+                    h('div', { class: 'l1' }, h('span', null, '#' + l.occurrence_id + ' · ' + l.channel), h('span', { class: 't' }, SF.when(l.at))),
+                    h('div', { class: 'l2' }, l.result + (l.http ? ' · HTTP ' + l.http : ''))))) : h('li', { class: 'empty' }, 'עוד לא נשלח דבר'))] : null,
             h('h3', { class: 'sec-title' }, 'המשימות האחרונות'),
             h('ul', { class: 'list' }, d.jobs.length ? d.jobs.map(j => h('li', { class: 'card', style: 'cursor:default' },
                 h('div', { class: 'body' },

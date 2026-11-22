@@ -16,10 +16,13 @@ const SF_JOB_BACKOFF = [60, 300, 1800];    // דקה, 5, 30
 const SF_JOB_STUCK = 600;                  // running מעל 10 דקות — נהרגה באמצע
 const SF_CRON_BUDGET = 25.0;
 
-/** $daily — המשימה נכנסת לתור פעם ביום לבד (dedupe_key לפי התאריך, UTC). */
-function sf_job_register(string $kind, string $label, callable $handler, bool $daily = false): void
+/**
+ * $daily — המשימה נכנסת לתור פעם ביום לבד (dedupe_key לפי התאריך, UTC). $every — כל N שניות (08: שליחת תזכורות כל דקה):
+ * dedupe_key "<kind>@<מספר החלון>", ניסיון אחד (החלון הבא הוא הניסיון החוזר).
+ */
+function sf_job_register(string $kind, string $label, callable $handler, bool $daily = false, int $every = 0): void
 {
-    $GLOBALS['sf_job_kinds'][$kind] = ['label' => $label, 'handler' => $handler, 'daily' => $daily];
+    $GLOBALS['sf_job_kinds'][$kind] = ['label' => $label, 'handler' => $handler, 'daily' => $daily, 'every' => $every];
 }
 
 function sf_job_kinds(): array
@@ -48,6 +51,7 @@ function sf_jobs_schedule(): void
 {
     foreach (sf_job_kinds() as $kind => $k) {
         if ($k['daily']) sf_job_add($kind, [], $kind . ':' . gmdate('Y-m-d', sf_time()));
+        if (($k['every'] ?? 0) > 0) sf_job_add($kind, [], $kind . '@' . intdiv(sf_time(), $k['every']), 0, 1);
     }
 }
 
@@ -195,7 +199,7 @@ function sf_jobs_view(): array
     $counts = array_map('intval', array_column(sf_rows('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status'), 'n', 'status'));
     $kinds = [];
     foreach (sf_job_kinds() as $kind => $k) {
-        $kinds[] = ['kind' => $kind, 'label' => $k['label'], 'daily' => $k['daily'],
+        $kinds[] = ['kind' => $kind, 'label' => $k['label'], 'daily' => $k['daily'], 'every' => $k['every'] ?? 0,
             'last_done_at' => sf_val("SELECT MAX(finished_at) FROM jobs WHERE kind = ? AND status = 'done'", [$kind])];
     }
     return [
@@ -236,4 +240,6 @@ function sf_job_cancel(mixed $pid): array
 sf_job_register('maintenance.cleanup', 'ניקוי יומי: sessions שפגו, ומשימות שהסתיימו לפני יותר מ-30 יום', function (): void {
     sf_exec('DELETE FROM staff_sessions WHERE expires_at <= ?', [sf_now()]);
     sf_exec("DELETE FROM jobs WHERE status IN ('done', 'cancelled') AND finished_at < ?", [sf_iso(sf_time() - 30 * 86400)]);
+    // משימות מחזוריות (כל דקה / שעה, 08) — יומיים מספיקים
+    sf_exec("DELETE FROM jobs WHERE status IN ('done', 'cancelled') AND dedupe_key LIKE '%@%' AND finished_at < ?", [sf_iso(sf_time() - 2 * 86400)]);
 }, daily: true);
