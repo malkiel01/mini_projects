@@ -28,7 +28,8 @@
     /** האם הרשומה במכשיר מסתנכרנת. seen:local, tehillim:tab וכו' — תלויי מכשיר (§14: גם ערוצי התראות והרשאות). */
     function syncable(key) {
         return key === 'settings' || key === 'customs' || key === 'marks' || key === 'favorites' || key === 'tehillim'
-            || /^pos:[a-z0-9]{16}$/.test(key) || /^order:[a-z0-9]{16}$/.test(key) || key === 'siddur:edition' || key === 'tehillim:edition';
+            || /^pos:[a-z0-9]{16}$/.test(key) || /^order:[a-z0-9]{16}$/.test(key) || /^ver:[a-z0-9]{16}$/.test(key)
+            || key === 'siddur:edition' || key === 'tehillim:edition';
     }
 
     const okId = id => typeof id === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(id);
@@ -44,6 +45,8 @@
         if (m) return one('position:' + m[1], 'position', m[1], value);
         m = /^order:([a-z0-9]{16})$/.exec(key);
         if (m) return one('order:' + m[1], 'pref', m[1], value);
+        m = /^ver:([a-z0-9]{16})$/.exec(key);   // הגרסה שהקורא בחר למהדורה (06)
+        if (m) return one('ver:' + m[1], 'pref', m[1], value);
         if (key === 'marks') return (Array.isArray(value) ? value : []).filter(x => x && okId(x.id))
             .map(x => ({ pid: 'm:' + x.id, kind: MARK_KIND[x.type] || 'bookmark', ref: typeof x.edition === 'string' ? x.edition : null, data: x }));
         if (key === 'favorites') return (Array.isArray(value) ? value : []).filter(x => x && okId(x.id))
@@ -65,6 +68,8 @@
         if (m) return 'pos:' + m[1];
         m = /^order:([a-z0-9]{16})$/.exec(pid);
         if (m) return 'order:' + m[1];
+        m = /^ver:([a-z0-9]{16})$/.exec(pid);
+        if (m) return 'ver:' + m[1];
         if (pid.startsWith('m:')) return 'marks';
         if (pid.startsWith('f:')) return 'favorites';
         if (pid === 'tehillim:list' || pid.startsWith('pn:')) return 'tehillim';

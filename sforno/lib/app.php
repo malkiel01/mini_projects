@@ -95,6 +95,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'read-search'          => sf_read_search($get),
         'read-file'            => sf_send_file(sf_read_file_path($get)),
         'read-pages'           => sf_send_file(sf_read_pages_path($get)),
+        'read-package'         => sf_read_package($get),
 
         'account-me'           => sf_account_me($env['_reader']),
         'account-register'     => sf_account_register($in, $env),

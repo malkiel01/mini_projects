@@ -22,6 +22,7 @@
             item('📖', 'סידור', '#/siddur'),
             item('📜', 'תהילים', '#/tehillim'),
             item('🔍', 'חיפוש', '#/search'),
+            item('⬇️', 'הורדות', '#/downloads'),
             item('👤', 'החשבון שלי', '#/account'),
             me ? item('🗂️', 'ניהול', '#/admin') : null,
             me ? item('👥', 'מנהלים', '#/admin/staff') : null,
@@ -53,8 +54,9 @@
         try {
             data = await SF.api('me');
         } catch (e) {
-            // לא מנהל (או מחוץ לשער, בעתיד): הקורא עובד בלי זיהוי — הסידור, התהילים והחיפוש (04). תקלת רשת — הודעה.
-            if (e.code === 'network' || e.code === 'storage' || e.code === 'upgrading') {
+            // לא מנהל (או מחוץ לשער, בעתיד): הקורא עובד בלי זיהוי — הסידור, התהילים והחיפוש (04).
+            // בלי רשת (06): ממשיכים כקורא — מה שהורד נפתח מהמכשיר, והשאר מסומן "לא זמין בלי אינטרנט". תקלת שרת — הודעה.
+            if (e.code === 'storage' || e.code === 'upgrading') {
                 document.getElementById('menu-btn').hidden = true;
                 return SF.fail(document.getElementById('main'), e);
             }

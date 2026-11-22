@@ -442,3 +442,27 @@ fieldset.group { border: 0; padding: 0; margin: 0 0 var(--s3); }
 .google-box { display: flex; justify-content: center; min-block-size: 44px; }
 .wide-btn { inline-size: 100%; margin-top: var(--s4); }
 .btn.wide { justify-self: stretch; }
+
+/* ===== הורדות, גרסאות ו-PWA (06) ===== */
+.net-chip { flex: none; align-self: center; padding: 2px var(--s2); border-radius: 99px; font-size: .8rem; text-decoration: none;
+    color: var(--danger); background: var(--danger-soft); }
+.dl-line { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin: var(--s2) 0; font-size: .9rem; }
+.dl-line progress, .dl-card progress { flex: 1 1 120px; width: 100%; height: 8px; accent-color: var(--brand); }
+.dl-st { color: var(--muted); }
+.dl-st.ready { color: var(--ok); }
+.dl-st.partial, .dl-st.stale { color: var(--danger); }
+.dl-card .l2 { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+.dl-acts { display: flex; gap: var(--s1); align-items: center; flex: none; }
+.dl-info:empty { display: none; }
+/* "יש גרסה חדשה" — נדבק מתחת לסרגל הקורא, כדי שייראה גם כשהקורא חוזר לאמצע הטקסט */
+.rd-ver { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding: var(--s2) var(--s3); margin-bottom: var(--s3);
+    position: sticky; top: calc(var(--head) + 46px); z-index: 4; font-size: .9rem;
+    border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent); border-radius: var(--r); background: var(--brand-soft); }
+.rd-ver span { flex: 1 1 200px; }
+.rd-verbox { display: grid; gap: var(--s2); justify-items: start; }
+.rd-verbox .chip { margin-inline-start: var(--s2); }
+.sw-update { position: fixed; inset-inline: var(--s3); bottom: calc(var(--s3) + env(safe-area-inset-bottom)); z-index: 60; display: flex; align-items: center;
+    gap: var(--s2); padding: var(--s2) var(--s3); border-radius: var(--r); background: var(--ink); color: var(--surface); box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+.sw-update span { flex: 1; }
+.sw-update .icon-btn { color: inherit; }
+@media (min-width: 720px) { .sw-update { inset-inline: auto var(--s4); max-width: 420px; } }
