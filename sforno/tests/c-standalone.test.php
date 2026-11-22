@@ -54,7 +54,7 @@ foreach (['lib', 'tests', 'dev', 'data'] as $d) {
     check("$d/.htaccess חוסם", is_file($ht) && str_contains((string)file_get_contents($ht), 'Require all denied'));
 }
 $app = json_decode((string)file_get_contents("$root/app.json"), true);
-eq([$app['gate'] ?? null, $app['restricted'] ?? null, $app['version'] ?? null], [true, true, '0.4'], 'app.json: gate, restricted, version');
+eq([$app['gate'] ?? null, $app['restricted'] ?? null, $app['version'] ?? null], [true, true, '0.5'], 'app.json: gate, restricted, version');
 eq($app['public'] ?? null, ['cron.php', 'api.php?action=health|devapi-feed|devapi-comment|devapi-file|devapi-attach'], 'app.json: public — רק מה ש-§9 מתיר');
 $publicActs = array_keys(array_filter(SF_ACTIONS, fn($s) => $s['who'] === 'public'));
 eq($publicActs, ['health', 'devapi-feed', 'devapi-comment', 'devapi-file', 'devapi-attach'], 'הנתב: אותן פעולות ציבוריות כמו ב-app.json');

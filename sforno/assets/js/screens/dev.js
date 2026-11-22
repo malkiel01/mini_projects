@@ -85,9 +85,29 @@
                 h('button', { class: 'btn primary', type: 'button', onclick: () => run().catch(e => SF.toast(e.message, true)) }, '▶ הרצה'),
                 h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
                     try { const r = await SF.api('dev-mail-test', { body: {} }); SF.toast(r.sent ? 'נשלח ל-' + r.to : 'mail() נכשלה', !r.sent); } catch (e) { SF.toast(e.message, true); }
-                } }, '✉️ שליחת ניסיון')),
+                } }, '✉️ שליחת ניסיון'),
+                h('button', { class: 'btn ghost', type: 'button', onclick: googleSheet }, '🔑 Google')),
             sum, list);
         await run();
+    }
+
+    /** כניסת קוראים עם Google (05): מזהה הלקוח מ-Google Cloud Console. לא סוד — הוא גלוי בדף הכניסה. */
+    async function googleSheet() {
+        let cur = '';
+        try { cur = (await SF.api('account-me')).google_client_id || ''; } catch (e) { /* מציגים ריק */ }
+        const input = h('input', { dir: 'ltr', value: cur, placeholder: '…apps.googleusercontent.com', 'aria-label': 'מזהה הלקוח' });
+        const save = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+            try {
+                const r = await SF.api('dev-google-set', { body: { client_id: input.value } });
+                SF.toast(r.client_id ? 'נשמר — כפתור Google מוצג במסך הכניסה' : 'הכניסה עם Google כובתה');
+                dlg.close();
+            } catch (e) { SF.toast(e.message, true); }
+        } }, 'שמירה');
+        const dlg = SF.sheet('כניסה עם Google', h('div', { class: 'fields' },
+            h('label', { class: 'f wide' }, h('span', null, 'מזהה הלקוח (Client ID)'), input),
+            h('p', { class: 'hint wide' }, 'נוצר ב-Google Cloud Console (OAuth, Web application), עם הכתובת של ספורנו ב-Authorized JavaScript origins. ריק = כיבוי.')),
+            { action: save });
+        input.focus();
     }
 
     // ── ⚙️ שירותי רקע ────────────────────────────────────────

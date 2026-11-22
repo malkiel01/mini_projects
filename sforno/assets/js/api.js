@@ -1,6 +1,6 @@
 /*
  * ספורנו — הקריאה לשרת. כל הפעולות דרך api.php (נתיב יחסי — עובד בכל תיקייה ובכל דומיין).
- * GET כשאין גוף; POST עם JSON ו-X-CSRF (מגיע מ-me). שגיאה → Error עם code, status ו-message בעברית.
+ * GET כשאין גוף; POST עם JSON, X-CSRF (מגיע מ-me) ו-X-Reader-CSRF (מגיע מ-account-me). שגיאה → Error עם code, status ו-message בעברית.
  */
 'use strict';
 
@@ -8,8 +8,11 @@ window.SF = window.SF || {};
 
 (function (SF) {
     let csrf = '';
+    let readerCsrf = '';
 
     SF.setCsrf = t => { csrf = t || ''; };
+    /* הקורא (05) — CSRF משלו, בכותרת נפרדת: עולם החשבונות לא נשען על זה של המנהלים */
+    SF.setReaderCsrf = t => { readerCsrf = t || ''; };
     SF.headers = () => (csrf ? { 'X-CSRF': csrf } : {});
 
     SF.api = async function api(action, opts = {}) {
@@ -21,7 +24,7 @@ window.SF = window.SF || {};
             res = await fetch('api.php?' + q, {
                 method: post ? 'POST' : 'GET',
                 credentials: 'same-origin',
-                headers: post ? { 'Content-Type': 'application/json', ...SF.headers() } : { Accept: 'application/json' },
+                headers: post ? { 'Content-Type': 'application/json', ...SF.headers(), ...(readerCsrf ? { 'X-Reader-CSRF': readerCsrf } : {}) } : { Accept: 'application/json' },
                 body: post ? JSON.stringify(opts.body || {}) : undefined,
             });
         } catch (e) {

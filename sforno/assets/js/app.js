@@ -1,6 +1,7 @@
 /*
  * ספורנו — ההפעלה: מי המנהל (me), הכותרת והתפריט, DevLoop (🐞 למפתח בלבד), והמסך הראשון.
- * הכניסה עצמה — מהכלים הדיגיטליים (השער); אין כאן מסך כניסה. כשלון → הודעה אחידה עם "נסו שוב".
+ * כניסת מנהלים — מהכלים הדיגיטליים (השער); אין כאן מסך כניסה למנהלים. כשלון → הודעה אחידה עם "נסו שוב".
+ * חשבון הקורא (05) — עולם נפרד: account-me, במקביל, ו"החשבון שלי" בתפריט (screens/account.js).
  */
 'use strict';
 
@@ -21,6 +22,7 @@
             item('📖', 'סידור', '#/siddur'),
             item('📜', 'תהילים', '#/tehillim'),
             item('🔍', 'חיפוש', '#/search'),
+            item('👤', 'החשבון שלי', '#/account'),
             me ? item('🗂️', 'ניהול', '#/admin') : null,
             me ? item('👥', 'מנהלים', '#/admin/staff') : null,
             SF.isDev() ? item('🛠️', 'פיתוח', '#/dev/tasks') : null,
@@ -46,6 +48,7 @@
 
     async function boot() {
         document.getElementById('back').addEventListener('click', e => SF.go(e.currentTarget.dataset.to || '#/'));
+        const account = SF.accountBoot();
         let data;
         try {
             data = await SF.api('me');
@@ -56,6 +59,7 @@
                 return SF.fail(document.getElementById('main'), e);
             }
             menu();
+            await account;
             return SF.render();
         }
         me = data.staff;
@@ -68,6 +72,7 @@
             version: () => data.version, lang: () => 'he', builtinLog: true,
         });
         DevLoop.mount();
+        await account;
         SF.render();
     }
 

@@ -3,7 +3,8 @@
  * הנתב של ספורנו — כל הפעולות, בלי HTTP (api.php הוא המעטפת הדקה; הבדיקות קוראות לכאן ישירות).
  *
  * סדר כל בקשה: שם ושיטה (404 / 405) → זיהוי המנהל (§5.2: 401 / 403 / 503) → CSRF וגוף JSON בכל POST (403 / 415)
- * → ההרשאה (lib/access.php) → הפעולה. כל קובץ שנטען כאן נמצא בתוך lib/ — **אין קריאה לקובץ מחוץ לתיקייה.**
+ * → ההרשאה (lib/access.php) → הפעולה. פעולות הקוראים (guest / account, 05) — זיהוי מעוגיית sf_reader בלבד, CSRF מהכותרת
+ * X-Reader-CSRF; הן לא קוראות את זהות המנהל, ופעולות המנהל לא קוראות את עוגיית הקורא. כל קובץ שנטען כאן נמצא בתוך lib/ — **אין קריאה לקובץ מחוץ לתיקייה.**
  */
 
 declare(strict_types=1);
@@ -22,9 +23,11 @@ require_once __DIR__ . '/devtasks.php';
 require_once __DIR__ . '/content.php';
 require_once __DIR__ . '/import.php';
 require_once __DIR__ . '/reader.php';
+require_once __DIR__ . '/readers.php';
+require_once __DIR__ . '/sync.php';
 
 /**
- * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type.
+ * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type; לקוראים — reader_cookie, reader_csrf, ip.
  * מחזיר את גוף התשובה (200). שגיאה — חריגה; התרגום לתשובה ב-sf_error_response.
  */
 function sf_dispatch(string $method, string $action, array $get, array $in, array $env): array
@@ -32,7 +35,15 @@ function sf_dispatch(string $method, string $action, array $get, array $in, arra
     sf_actor(null, true);
     $spec = sf_action_spec($method, $action);
     $staff = $session = null;
-    if ($spec['who'] !== 'public' && $spec['who'] !== 'reader') {
+    if ($spec['who'] === 'guest' || $spec['who'] === 'account') {
+        $ra = sf_reader_auth($env);
+        if ($spec['who'] === 'account' && $ra === null) sf_fail('reader_login');
+        if ($method === 'POST') {
+            if (empty($spec['body']) && !str_contains(strtolower((string)($env['content_type'] ?? '')), 'application/json')) sf_fail('content_type');
+            if ($spec['who'] === 'account' && !hash_equals((string)$ra['session']['csrf'], (string)($env['reader_csrf'] ?? ''))) sf_fail('csrf');
+        }
+        $env['_reader'] = $ra;
+    } elseif (!in_array($spec['who'], SF_NOT_STAFF, true)) {
         ['staff' => $staff, 'session' => $session] = sf_authenticate($env);
         devloop_log_user(['id' => (int)$staff['id'], 'name' => $staff['name']]);
         if ($method === 'POST') {
@@ -65,6 +76,22 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'read-search'          => sf_read_search($get),
         'read-file'            => sf_send_file(sf_read_file_path($get)),
         'read-pages'           => sf_send_file(sf_read_pages_path($get)),
+
+        'account-me'           => sf_account_me($env['_reader']),
+        'account-register'     => sf_account_register($in, $env),
+        'account-login'        => sf_account_login($in, $env),
+        'account-google'       => sf_account_google($in, $env),
+        'account-verify'       => sf_account_verify($in),
+        'account-reset-request' => sf_account_reset_request($in, $env),
+        'account-reset'        => sf_account_reset($in, $env),
+        'account-verify-resend' => sf_account_verify_resend($env['_reader']),
+        'account-logout'       => sf_account_logout($env['_reader']),
+        'account-devices'      => sf_account_devices($env['_reader']),
+        'account-device-revoke' => sf_account_device_revoke($env['_reader'], $in),
+        'account-export'       => sf_account_export($env['_reader']),
+        'account-delete'       => sf_account_delete($env['_reader'], $in),
+        'sync-push'            => sf_sync_push($env['_reader'], $in),
+        'sync-pull'            => sf_sync_pull($env['_reader'], $get),
 
         'me'                   => ['staff' => sf_staff_public($staff, $me), 'csrf' => $session['csrf'], 'version' => sf_version()],
         'logout'               => sf_session_drop((string)($env['cookie'] ?? '')) ?? [],
@@ -116,6 +143,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'dev-job-retry'        => sf_job_retry($in['job'] ?? null),
         'dev-job-cancel'       => sf_job_cancel($in['job'] ?? null),
         'dev-cron-rotate'      => sf_cron_rotate(),
+        'dev-google-set'       => sf_dev_google_set($in),
 
         'dev-items'            => devloop_task_list(),
         'dev-task-create'      => devloop_task_create($dev, $in),
