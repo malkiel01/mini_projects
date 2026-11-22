@@ -15,8 +15,19 @@ const APR_SHEET_OPS = ['add', 'sub', 'mul', 'div', 'sum', 'pct'];
 const APR_SHEET_MAX_ROWS = 100;
 const APR_SHEET_MAX_ARGS = 20;
 const APR_SHEET_MAX_DEPTH = 4;
+/** צמתים בנוסחה אחת (פעולות + אופרנדים). נוסחה ארוכה מזה מתפצלת לכמה שורות — וכך גם גודל הנוסחה השמורה חסום. */
+const APR_SHEET_MAX_NODES = 40;
 /** מונה או מכנה ארוכים מזה ← "המספר ארוך מדי" במקום חישוב שאינו נגמר. */
-const APR_SHEET_MAX_DIGITS = 400;
+const APR_SHEET_MAX_DIGITS = 80;
+/** עד האורך הזה שבר נשאר כפי שיצא מהמנוע של 15 (צמצום זול בלבד); מעליו — צמצום מלא (אוקלידס על מחרוזות, יקר). */
+const APR_SHEET_REDUCE_OVER = 40;
+/**
+ * תקציב הפעולות של גיליון אחד — מונה, לא שעון (המנוע נשאר טהור ודטרמיניסטי). כל צומת עולה APR_SHEET_NODE_COST; צמצום מלא עולה
+ * (ספרות המונה × ספרות המכנה). כשהתקציב נגמר — השורה וכל מה שאחריה חוזרות too_long, במקום בקשה שאינה נגמרת (ביקורת 16, B1).
+ * גיליון רגיל (מאה שורות של סכומים, מכפלות ואחוזים) צורך אחוזים בודדים ממנו.
+ */
+const APR_SHEET_BUDGET = 600000;
+const APR_SHEET_NODE_COST = 30;
 const APR_SHEET_SCALE = '1000000';      // ערכי הקלט במיליוניות
 
 // ── הנוסחה: בדיקה וצורה קנונית ────────────────────────────────
@@ -38,11 +49,13 @@ function apr_sheet_const(mixed $v): ?string
 
 /**
  * בודק נוסחה ומחזיר אותה בצורה קנונית: [נוסחה | null, קוד שגיאה | null]. $above — מפתחות השורות המספריות (קלט / חישוב) שמעל
- * השורה, לפי הסדר. הפניה לשורה שאינה שם (מתחת, נמחקה, הערה, או לא קיימת) ← sheet_ref; פעולה לא מוכרת ← sheet_op; מבנה אחר ← sheet_formula.
+ * השורה, לפי הסדר. הפניה לשורה שאינה שם (מתחת, נמחקה, הערה, או לא קיימת) ← sheet_ref; פעולה לא מוכרת ← sheet_op; מבנה אחר ← sheet_formula;
+ * יותר מ-APR_SHEET_MAX_NODES צמתים ← sheet_formula_long ($nodes — מונה פנימי של הרקורסיה).
  */
-function apr_sheet_formula(mixed $f, array $above, int $depth = 0): array
+function apr_sheet_formula(mixed $f, array $above, int $depth = 0, int &$nodes = 0): array
 {
     if ($depth > APR_SHEET_MAX_DEPTH) return [null, 'sheet_formula'];
+    if (++$nodes > APR_SHEET_MAX_NODES) return [null, 'sheet_formula_long'];
     if ($depth === 0 && !is_array($f)) return [null, 'sheet_formula'];      // נוסחה היא תמיד פעולה — לא מפתח ולא מספר לבדם
     if (apr_sheet_is_key($f)) return in_array($f, $above, true) ? [$f, null] : [null, 'sheet_ref'];
     if (is_int($f) || is_string($f)) {
@@ -68,11 +81,12 @@ function apr_sheet_formula(mixed $f, array $above, int $depth = 0): array
         // טווח: משורה עד שורה, שתיהן מעל, והראשונה אינה אחרי האחרונה
         foreach ($args as $a) if (!apr_sheet_is_key($a) || !in_array($a, $above, true)) return [null, apr_sheet_is_key($a) || (is_string($a) && preg_match('/^r/i', $a) === 1) ? 'sheet_ref' : 'sheet_formula'];
         if (array_search($args[0], $above, true) > array_search($args[1], $above, true)) return [null, 'sheet_formula'];
+        $nodes += 2;
         return [['op' => 'sum', 'args' => $args], null];
     }
     $out = [];
     foreach ($args as $a) {
-        [$c, $err] = apr_sheet_formula($a, $above, $depth + 1);
+        [$c, $err] = apr_sheet_formula($a, $above, $depth + 1, $nodes);
         if ($err !== null) return [null, $err];
         $out[] = $c;
     }
@@ -91,14 +105,18 @@ function apr_sheet_refs(mixed $f): array
 
 // ── החשבון ────────────────────────────────────────────────────
 
-/** שבר מצומצם עד הסוף (המנוע של 15 מצמצם רק כשזול); null כשהמונה או המכנה ארוכים מדי. */
-function apr_sheet_q(array $x): ?array
+/**
+ * שבר אחרי צעד חשבון: קצר — נשאר כפי שיצא מהמנוע של 15 (שמצמצם כשזול); ארוך מ-APR_SHEET_REDUCE_OVER — מצומצם עד הסוף, והעלות
+ * יורדת מהתקציב. null כשהמונה או המכנה ארוכים מדי גם אחרי הצמצום. שבר שאינו מצומצם שווה בדיוק לשבר המצומצם — ההשוואה, העיגול
+ * והתצוגה אינם תלויים בצורה.
+ */
+function apr_sheet_q(array $x, int &$budget): ?array
 {
     [$n, $d] = $x;
     if ($n === '0') return ['0', '1'];
     $un = apr_n_abs($n);
-    if (strlen($un) > 3 * APR_SHEET_MAX_DIGITS || strlen($d) > 3 * APR_SHEET_MAX_DIGITS) return null;
-    if ($d !== '1') {
+    if ($d !== '1' && (strlen($un) > APR_SHEET_REDUCE_OVER || strlen($d) > APR_SHEET_REDUCE_OVER)) {
+        $budget -= strlen($un) * strlen($d);
         $g = apr_nu_gcd($un, $d);
         if ($g !== '1') [$un, $d] = [apr_nu_divmod($un, $g)[0], apr_nu_divmod($d, $g)[0]];
     }
@@ -120,6 +138,7 @@ function apr_sheet_const_q(string $s): array
  * מחזיר [key => ['value' => שבר | null, 'reason' => קוד | null, 'ref' => המפתח של השורה שבגללה אין תוצאה | null, 'warnings' => [קודים]]]
  * לשורות קלט וחישוב. הסיבות: empty (קלט ריק) · missing (תלויה בקלט ריק) · div_zero · broken_ref (מפנה לשורה שאינה קיימת מעליה) ·
  * blocked (תלויה בשורה שאין לה תוצאה) · too_long. **קלט ריק אינו אפס** — כל מה שתלוי בו נשאר בלי תוצאה (16-B2).
+ * too_long — גם כשתקציב הפעולות של הגיליון נגמר (APR_SHEET_BUDGET): השורה שבה נגמר וכל שורות החישוב שאחריה.
  * אזהרות (לא חוסמות): pct_over_100 · time_units (חודש ושנה באותו חיבור / חיסור) · pct_unwrapped (שורת % בכפל או בחילוק בלי pct).
  */
 function apr_sheet_eval(array $rows): array
@@ -127,6 +146,7 @@ function apr_sheet_eval(array $rows): array
     $out = [];
     $meta = [];
     $order = [];
+    $budget = APR_SHEET_BUDGET;
     foreach ($rows as $r) {
         $key = (string)$r['key'];
         if ($r['kind'] === 'note') continue;
@@ -137,7 +157,7 @@ function apr_sheet_eval(array $rows): array
             } else {
                 $v = apr_q(apr_n((int)$r['value']), APR_SHEET_SCALE);
                 $over = $meta[$key]['unit'] === '%' && apr_q_cmp($v, apr_q(100)) > 0;
-                $out[$key] = ['value' => apr_sheet_q($v), 'reason' => null, 'ref' => null, 'warnings' => $over ? ['pct_over_100'] : []];
+                $out[$key] = ['value' => $v, 'reason' => null, 'ref' => null, 'warnings' => $over ? ['pct_over_100'] : []];
             }
         } else {
             $warn = [];
@@ -147,7 +167,7 @@ function apr_sheet_eval(array $rows): array
                 if (!isset($out[$k])) { $brokenAt = $k; break; }
                 if ($out[$k]['reason'] === 'broken_ref') { $brokenAt = $out[$k]['ref']; break; }
             }
-            [$v, $reason, $ref] = $brokenAt !== null ? [null, 'broken_ref', $brokenAt] : apr_sheet_node($r['formula'], $out, $meta, $order, $warn);
+            [$v, $reason, $ref] = $brokenAt !== null ? [null, 'broken_ref', $brokenAt] : apr_sheet_node($r['formula'], $out, $meta, $order, $warn, $budget);
             $out[$key] = ['value' => $v, 'reason' => $reason, 'ref' => $ref, 'warnings' => array_values(array_unique($warn))];
         }
         $order[] = $key;
@@ -156,8 +176,10 @@ function apr_sheet_eval(array $rows): array
 }
 
 /** צומת אחד בנוסחה ← [שבר | null, סיבה | null, מפתח | null]. */
-function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array &$warn): array
+function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array &$warn, int &$budget): array
 {
+    $budget -= APR_SHEET_NODE_COST;
+    if ($budget < 0) return [null, 'too_long', null];
     if (is_string($f)) {
         if (!apr_sheet_is_key($f)) return [apr_sheet_const_q($f), null, null];
         if (!isset($vals[$f])) return [null, 'broken_ref', $f];
@@ -172,9 +194,9 @@ function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array 
     }
     if (!is_array($f)) return [null, 'broken_ref', null];
     if (isset($f['pct'])) {
-        [$v, $reason, $ref] = apr_sheet_node($f['pct'], $vals, $meta, $order, $warn);
+        [$v, $reason, $ref] = apr_sheet_node($f['pct'], $vals, $meta, $order, $warn, $budget);
         if ($v === null) return [null, $reason, $ref];
-        return apr_sheet_done(apr_q_div($v, apr_q(100)));
+        return apr_sheet_done(apr_q_div($v, apr_q(100)), $budget);
     }
     $op = $f['op'] ?? '';
     $args = $f['args'] ?? [];
@@ -197,7 +219,7 @@ function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array 
     }
     $acc = null;
     foreach ($args as $i => $a) {
-        [$v, $reason, $ref] = apr_sheet_node($a, $vals, $meta, $order, $warn);
+        [$v, $reason, $ref] = apr_sheet_node($a, $vals, $meta, $order, $warn, $budget);
         if ($v === null) return [null, $reason, $ref];
         if ($i === 0) { $acc = $v; continue; }
         if ($op === 'div' && $v[0] === '0') return [null, 'div_zero', apr_sheet_is_key($a) ? $a : null];
@@ -209,16 +231,16 @@ function apr_sheet_node(mixed $f, array $vals, array $meta, array $order, array 
             default => null,
         };
         if ($acc === null) return [null, 'broken_ref', null];
-        $acc = apr_sheet_q($acc);
-        if ($acc === null) return [null, 'too_long', null];
+        $acc = apr_sheet_q($acc, $budget);
+        if ($acc === null || $budget < 0) return [null, 'too_long', null];
     }
-    return apr_sheet_done($acc);
+    return [$acc, null, null];
 }
 
-function apr_sheet_done(?array $q): array
+function apr_sheet_done(array $q, int &$budget): array
 {
-    $q = $q === null ? null : apr_sheet_q($q);
-    return $q === null ? [null, 'too_long', null] : [$q, null, null];
+    $q = apr_sheet_q($q, $budget);
+    return $q === null || $budget < 0 ? [null, 'too_long', null] : [$q, null, null];
 }
 
 /**

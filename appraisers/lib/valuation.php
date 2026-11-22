@@ -438,12 +438,20 @@ function apr_sheet_rows(int $sheetId): array
 }
 
 /** מספר JSON שהגיע כנקודה צפה ← מחרוזת עשרונית (הייצוג הקצר שלו), בכל עומק — המנוע אינו רואה נקודה צפה לעולם. */
-function apr_sheet_formula_in(mixed $f, int $depth = 0): mixed
+function apr_sheet_formula_in(mixed $f, int $depth = 0, int &$seen = 0): mixed
 {
     if ($depth > 8) apr_fail('sheet_formula');
+    // נוסחה ענקית נעצרת כאן, לפני שמישהו עובר על כולה (כל צומת קנוני הוא לכל היותר שלושה איברים בקלט: האובייקט, op ו-args)
+    if (++$seen > 4 * APR_SHEET_MAX_NODES) apr_fail('sheet_formula_long');
     if (is_float($f)) return is_finite($f) ? (string)json_encode($f) : apr_fail('sheet_formula');
-    if (is_array($f)) foreach ($f as $k => $v) $f[$k] = apr_sheet_formula_in($v, $depth + 1);
+    if (is_array($f)) foreach ($f as $k => $v) $f[$k] = apr_sheet_formula_in($v, $depth + 1, $seen);
     return $f;
+}
+
+/** נוסחה ביומן הביקורת: עד 600 בתים; ארוכה מזה — ההתחלה בלבד (הנוסחה המלאה שמורה בשורה עצמה). */
+function apr_sheet_formula_audit(?string $json): ?string
+{
+    return $json === null || strlen($json) <= 600 ? $json : mb_strcut($json, 0, 600, 'UTF-8') . '…';
 }
 
 /** הגיליון מחושב: [שורות, ערכים, תוצאה]. מחושב מחדש בכל קריאה — אין תוצאה שמורה שיכולה להתיישן. */
@@ -613,7 +621,7 @@ function apr_sheet_row_save(array $ctx, array $in): array
             $key = 'r' . (int)$s['next_key'];
             apr_val_update($ctx, 'sheets', $s, $rev, ['next_key' => (int)$s['next_key'] + 1]);
             apr_insert('sheet_rows', ['sheet_id' => $s['id'], 'sort' => count($rows) ? (int)end($rows)['sort'] + 1 : 1, 'key' => $key, 'kind' => $kind, 'updated_by' => (int)$ctx['user']['id'], 'updated_at' => $now] + $row);
-            apr_case_audit($c, 'sheet.row_add', 'sheet', $s['pid'], ['key' => $key, 'kind' => $kind, 'label' => $row['label'], 'value' => apr_comp_dec_out($row['value'], 6), 'origin' => $row['origin'], 'formula' => $row['formula']]);
+            apr_case_audit($c, 'sheet.row_add', 'sheet', $s['pid'], ['key' => $key, 'kind' => $kind, 'label' => $row['label'], 'value' => apr_comp_dec_out($row['value'], 6), 'origin' => $row['origin'], 'formula' => apr_sheet_formula_audit($row['formula'])]);
         } else {
             $key = $cur['key'];
             $old = ['formula' => $cur['formula'] === null ? null : json_encode($cur['formula'], JSON_UNESCAPED_UNICODE)] + $cur;
@@ -623,7 +631,7 @@ function apr_sheet_row_save(array $ctx, array $in): array
             apr_exec('UPDATE sheet_rows SET ' . implode(', ', array_map(fn($f) => "$f = ?", array_keys($row))) . ', updated_by = ?, updated_at = ? WHERE id = ?', [...array_values($row), (int)$ctx['user']['id'], $now, $cur['id']]);
             apr_case_audit($c, 'sheet.row_update', 'sheet', $s['pid'], ['key' => $key, 'fields' => $changed]
                 + (in_array('value', $changed, true) ? ['from' => apr_comp_dec_out($cur['value'], 6), 'to' => apr_comp_dec_out($row['value'], 6)] : [])
-                + (in_array('formula', $changed, true) ? ['formula_from' => $old['formula'], 'formula_to' => $row['formula']] : []));
+                + (in_array('formula', $changed, true) ? ['formula_from' => apr_sheet_formula_audit($old['formula']), 'formula_to' => apr_sheet_formula_audit($row['formula'])] : []));
         }
         apr_val_fact_sync($c, 'calc', $s['pid'], apr_sheet_fact_ids((int)$s['id']));
         apr_case_touch($c);
@@ -642,7 +650,7 @@ function apr_sheet_row_delete(array $ctx, array $in): array
         apr_val_update($ctx, 'sheets', $s, $rev, []);
         apr_exec('DELETE FROM sheet_rows WHERE id = ?', [$r['id']]);
         apr_val_fact_sync($c, 'calc', $s['pid'], apr_sheet_fact_ids((int)$s['id']));
-        apr_case_audit($c, 'sheet.row_delete', 'sheet', $s['pid'], ['key' => $r['key'], 'kind' => $r['kind'], 'label' => $r['label'], 'value' => apr_comp_dec_out($r['value'], 6), 'formula' => $r['formula']]);
+        apr_case_audit($c, 'sheet.row_delete', 'sheet', $s['pid'], ['key' => $r['key'], 'kind' => $r['kind'], 'label' => $r['label'], 'value' => apr_comp_dec_out($r['value'], 6), 'formula' => apr_sheet_formula_audit($r['formula'])]);
         apr_case_touch($c);
         return ['sheet' => $s['pid'], 'rev' => $rev + 1];
     });

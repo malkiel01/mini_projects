@@ -137,12 +137,74 @@ $pv = apr_sheet_eval($rows);
 $ms = intdiv(hrtime(true) - $t0, 1000000);
 $sq = [$in('r1', '999999999999.999999')];
 for ($i = 2; $i <= 12; $i++) $sq[] = $calc("r$i", ['op' => 'mul', 'args' => ['r' . ($i - 1), 'r' . ($i - 1)]], ['r' . ($i - 1)]);
+$maxLen = max(array_map(fn($x) => $x['value'] === null ? 0 : max(strlen($x['value'][0]), strlen($x['value'][1])), $pv));
 $t0 = hrtime(true);
 $sqv = apr_sheet_eval($sq);
 $ms2 = intdiv(hrtime(true) - $t0, 1000000);
 $reasons = array_count_values(array_map(fn($x) => $x['reason'] ?? 'ok', $pv));
-check('ביצועים: 100 שורות של חילוקים וחיבורים מקוננים, וריבוע חוזר 11 פעמים — פחות משתי שניות; מספר שעבר 400 ספרות ← too_long, לא חישוב שאינו נגמר',
-    $ms < 2000 && $ms2 < 2000 && $sqv['r12']['reason'] !== null && $sqv['r6']['reason'] === 'too_long' && $sqv['r5']['value'] !== null && strlen($sqv['r5']['value'][0]) <= 400 && ($reasons['ok'] ?? 0) >= 10, [$ms, $ms2, $reasons, $sqv['r12']['reason']]);
+check('ביצועים: 100 שורות של חילוקים וחיבורים מקוננים, וריבוע חוזר 11 פעמים — פחות משנייה; מספר שעבר 80 ספרות ← too_long, לא חישוב שאינו נגמר',
+    $ms < 1000 && $ms2 < 1000 && $sqv['r12']['reason'] !== null && $sqv['r4']['reason'] === 'too_long' && $sqv['r3']['value'] !== null && strlen($sqv['r3']['value'][0]) === 72 && ($reasons['ok'] ?? 0) >= 10
+    && $maxLen > APR_SHEET_REDUCE_OVER && $maxLen <= APR_SHEET_MAX_DIGITS, [$ms, $ms2, $reasons, $sqv['r4']['reason'], $maxLen]);
+
+// ביקורת 16, B1 — התרחיש של הסוקר: 60 קלטים "ראשוניים" בני 12 ספרות, מכפלות ומנות ארוכות, ושורה מקוננת ענקית. חוזר מהר, או too_long.
+$big = [];
+$bAbove = [];
+for ($i = 1; $i <= 60; $i++) { $big[] = $in("r$i", (string)(999999999989 - 2 * $i * ($i + 30))); $bAbove[] = "r$i"; }
+// חמש שורות של מנת מכפלות: 6 קלטים במונה, 6 במכנה — כ-72 ספרות בכל צד, בלי גורם משותף (מתחת לתקרה, ולכן יש להן תוצאה)
+for ($i = 61; $i <= 65; $i++) {
+    $o = ($i - 61) * 12;
+    $big[] = $calc("r$i", ['op' => 'div', 'args' => [['op' => 'mul', 'args' => array_map(fn($k) => 'r' . ($o + $k), range(1, 6))], ['op' => 'mul', 'args' => array_map(fn($k) => 'r' . ($o + $k), range(7, 12))]]], $bAbove);
+    $bAbove[] = "r$i";
+}
+// השורה של הסוקר (2.6KB): חיסור של שני סכומים של 20 מכפלות של 19 גורמים — נשמרה לפני שהייתה תקרת צמתים, ולכן נבנית כאן ישירות
+$prod = ['op' => 'mul', 'args' => array_merge(['r65'], array_fill(0, 18, 'r64'))];
+$monster = ['op' => 'sub', 'args' => [['op' => 'add', 'args' => array_fill(0, 20, $prod)], ['op' => 'add', 'args' => array_fill(0, 19, $prod)]]];
+$raw = fn(string $key, array $f) => ['key' => $key, 'kind' => 'calc', 'value' => null, 'unit' => '', 'time_unit' => 'none', 'formula' => $f];
+// שורה חוקית גם היום (39 צמתים): 13 מכפלות / מנות של השברים הארוכים — כל צעד בה מצריך צמצום מלא
+$heavy = ['op' => 'add', 'args' => array_map(fn($k) => ['op' => $k % 2 ? 'mul' : 'div', 'args' => ['r' . (61 + $k % 5), 'r' . (61 + ($k + 1) % 5)]], range(1, 13))];
+$rowsB = $big;
+$rowsB[] = $raw('r66', $monster);
+for ($i = 67; $i <= 100; $i++) $rowsB[] = $raw("r$i", $heavy);
+$t0 = hrtime(true);
+$bv = apr_sheet_eval($rowsB);
+$msB = intdiv(hrtime(true) - $t0, 1000000);
+$bReasons = array_count_values(array_map(fn($x) => $x['reason'] ?? 'ok', $bv));
+check('B1 התרחיש של הסוקר (60 קלטים בני 12 ספרות, מנות של מכפלות, שורה מקוננת של 2.6KB ועוד 34 שורות כבדות) — חוזר בפחות משנייה: לכל שורה תוצאה או too_long',
+    $msB < 1000 && $bv['r61']['value'] !== null && strlen($bv['r61']['value'][0]) > 60 && $bv['r66']['reason'] === 'too_long' && array_keys($bReasons) == ['ok', 'too_long'] && $bReasons['ok'] >= 65, [$msB, $bReasons]);
+// תקציב הפעולות: גיליון של 35 שורות חוקיות וכבדות — הראשונות מחושבות, ומהשורה שבה התקציב נגמר הכול too_long. מונה, לא שעון: אותה תוצאה בכל ריצה
+$rowsC = array_slice($big, 0, 60);
+$cAbove = array_slice($bAbove, 0, 60);
+$rowsC[] = $calc('r61', ['op' => 'div', 'args' => [['op' => 'mul', 'args' => ['r1', 'r2', 'r3', 'r4', 'r5']], ['op' => 'mul', 'args' => ['r7', 'r8', 'r9', 'r10', 'r11']]]], $cAbove);
+$rowsC[] = $calc('r62', ['op' => 'add', 'args' => ['r61', 0]], [...$cAbove, 'r61']);
+$cAbove = [...$cAbove, 'r61', 'r62'];
+// 39 צמתים: סכום של 13 מכפלות של שבר בן 60 ספרות בקלט בן 12 — אותו מכנה, ולכן הסכום נשאר מתחת לתקרת הספרות; כל צעד מצריך צמצום מלא
+$heavyC = ['op' => 'add', 'args' => array_map(fn($k) => ['op' => 'mul', 'args' => ['r61', 'r' . (20 + $k)]], range(1, 13))];
+for ($i = 66; $i <= 100; $i++) $rowsC[] = $calc("r$i", $heavyC, $cAbove);
+$t0 = hrtime(true);
+$cv = apr_sheet_eval($rowsC);
+$msC = intdiv(hrtime(true) - $t0, 1000000);
+$cr = array_map(fn($i) => $cv["r$i"]['reason'] ?? 'ok', range(66, 100));
+$firstLong = array_search('too_long', $cr, true);
+check('B1 תקציב פעולות לגיליון: שורות כבדות מחושבות עד שהתקציב נגמר, ומשם — too_long לכל השאר (בלי "חורים"); פחות משנייה; ריצה שנייה נותנת בדיוק אותה תוצאה',
+    $msC < 1000 && $cr[0] === 'ok' && $firstLong !== false && $firstLong >= 1 && array_unique(array_slice($cr, $firstLong)) === ['too_long'] && array_unique(array_slice($cr, 0, $firstLong)) === ['ok'] && $cv === apr_sheet_eval($rowsC),
+    [$msC, $firstLong, array_count_values($cr)]);
+// גיליון רגיל ומלא (100 שורות: קלטים, אחוזים, מכפלות וסכומי טווח) רחוק מאוד מהתקציב
+$rowsD = [];
+$dAbove = [];
+for ($i = 1; $i <= 50; $i++) { $rowsD[] = $in("r$i", (string)(1000000 + $i * 1234) . '.5'); $dAbove[] = "r$i"; }
+for ($i = 51; $i <= 100; $i++) {
+    $rowsD[] = $calc("r$i", $i % 2 ? ['op' => 'sum', 'args' => ['r1', 'r' . ($i - 1)]] : ['op' => 'div', 'args' => [['op' => 'mul', 'args' => ['r' . ($i - 50), ['pct' => '7.5'], 12]], ['pct' => '6.25']]], $dAbove);
+    $dAbove[] = "r$i";
+}
+$dv = apr_sheet_eval($rowsD);
+check('B1 גיליון רגיל ומלא (100 שורות, סכומי טווח על כל מה שמעל, היוון) — כל השורות מחושבות; התקציב אינו נוגע בעבודה אמיתית', !array_filter($dv, fn($x) => $x['value'] === null), array_count_values(array_map(fn($x) => $x['reason'] ?? 'ok', $dv)));
+// תקרת הצמתים: 40 עוברים, 41 נדחים; טווח סכום נספר כשלושה
+$n40 = ['op' => 'add', 'args' => array_merge(array_fill(0, 18, 'r1'), [['op' => 'mul', 'args' => array_fill(0, 10, 'r2')], ['op' => 'mul', 'args' => array_fill(0, 9, 'r2')]])];
+$n41 = ['op' => 'add', 'args' => array_merge(array_fill(0, 18, 'r1'), [['op' => 'mul', 'args' => array_fill(0, 10, 'r2')], ['op' => 'mul', 'args' => array_fill(0, 10, 'r2')]])];
+$s40 = ['op' => 'add', 'args' => array_merge(array_fill(0, 12, ['op' => 'sum', 'args' => ['r1', 'r2']]), ['r1', 'r1', 'r2'])];
+$s41 = ['op' => 'add', 'args' => array_merge(array_fill(0, 12, ['op' => 'sum', 'args' => ['r1', 'r2']]), ['r1', 'r1', 'r2', 'r2'])];
+eq([$f($n40)[1], $f($n41)[1], $f($s40)[1], $f($s41)[1], $f($monster, ['r64', 'r65'])[1], strlen((string)json_encode($f($n40)[0])) < 600], [null, 'sheet_formula_long', null, 'sheet_formula_long', 'sheet_formula_long', true],
+    'B1 תקרת צמתים לנוסחה: 40 צמתים נשמרים, 41 ← sheet_formula_long (גם כשהם טווחי סכום); הנוסחה של הסוקר נדחית בשמירה; נוסחה מרבית קצרה מ-600 בתים');
 
 // 300 נוסחאות אקראיות מול חישוב ייחוס בלתי תלוי (שברים של שלמים רגילים, עם gcd)
 mt_srand(16);
