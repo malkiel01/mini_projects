@@ -349,6 +349,155 @@ eq([$roleTry($noa), $roleTry($tal), $roleTry($dana), $roleTry($boaz), $roleTry($
         array_merge(array_fill(0, 9, 'not_found'), [404, 404]), array_merge(array_fill(0, 9, 'no_office'), [404, 404])],
     '§11 צופה — קריאה בלבד; עובדת משרד עם edit — עריכה והערות, לא "נסקר", לא העברה לבדיקה ולא אישור; שמאית שותפה — גם העברה לבדיקה, **לא** אישור, גרסה חדשה או מחיקה (17-C1); משרד אחר — 404 בכל פעולה (17-D3), ומנהל המערכת — נדחה בכל פעולה (אינו חבר משרד)');
 
+// ═══ 17-C: בקרה, אישור וגרסאות ═══════════════════════════════════
+$errKinds = fn(array $r) => array_values(array_unique(array_column($r[1]['error']['findings'] ?? [], 'kind')));
+/** תיק מוכן: טיוטה ידנית, כל הפרקים מלאים, בבדיקה. מחזיר [תיק, גרסה]. */
+$ready = function () use ($avi, $PM, $post, $versions, $fill) {
+    $c = make_case($avi, $PM);
+    $post('case-ai-set', ['case' => $c, 'no_ai' => true]);            // הטיוטה נבנית מהנתונים בלבד; הבינה נדלקת בבדיקה שצריכה אותה
+    $post('report-draft-create', ['case' => $c]);
+    $post('case-ai-set', ['case' => $c, 'no_ai' => false]);
+    $v = $versions($c)[0]['pid'];
+    $fill($v);
+    return [$c, $v];
+};
+$submit = fn(string $version, string $as = null) => $post('report-submit', ['version' => $version, 'rev' => $vvrev($version)], $as);
+$tryApprove = function (string $v) use ($submit, $approve, $acksAll, $post, $vvrev) {
+    $submit($v);
+    $r = $approve($v, $acksAll($v));
+    if ($r[0] !== 200) $post('report-return', ['version' => $v, 'rev' => $vvrev($v)]);
+    return $r;
+};
+// 17-C2: כל אחד מששת הממצאים החוסמים — כשהוא קיים, האישור נדחה
+$blocked = [];
+[$CK, $VK] = $ready();
+$empty = $sec($ver($VK)[1], 'conclusion');
+$save($empty['pid'], []);
+$r = $tryApprove($VK); $blocked['mandatory_empty'] = [code($r), $errKinds($r)];
+$save($empty['pid'], $P_TEXT);
+$submit($VK);
+apr_exec("UPDATE memberships SET role = 'staff' WHERE user_id = (SELECT id FROM users WHERE email = 'avi@example.com')");     // האחראי כבר אינו שמאי במשרד
+$r = $approve($VK, $acksAll($VK)); $blocked['no_approver'] = [code($r), $errKinds($r)];
+apr_exec("UPDATE memberships SET role = 'appraiser' WHERE user_id = (SELECT id FROM users WHERE email = 'avi@example.com')");
+$post('report-return', ['version' => $VK, 'rev' => $vvrev($VK)]);
+$aiS = $sec($ver($VK)[1], 'visit');
+$fake->next = fn() => reply(['blocks' => [['text' => 'לא נערך ביקור בנכס', 'src' => 'd1']]]);
+$post('report-section-ai', ['section' => $aiS['pid'], 'rev' => $aiS['rev']]);
+$r = $tryApprove($VK); $blocked['ai_unreviewed'] = [code($r), $errKinds($r)];
+$aiS = $sec($ver($VK)[1], 'visit');
+$rvw = $post('report-section-reviewed', ['section' => $aiS['pid'], 'rev' => $aiS['rev']]);
+$fake->next = fn() => reply(['blocks' => [['text' => 'בנכס נערכו 7 ביקורים', 'src' => 'd1']]]);
+$pl = $sec($ver($VK)[1], 'planning');
+$post('report-rebuild', ['version' => $VK, 'sections' => [$pl['pid']], 'include_edited' => true]);
+$pl = $sec($ver($VK)[1], 'planning');
+$post('report-section-ai', ['section' => $pl['pid'], 'rev' => $pl['rev']]);
+$pl = $sec($ver($VK)[1], 'planning');
+$post('report-section-reviewed', ['section' => $pl['pid'], 'rev' => $pl['rev']]);
+$r = $tryApprove($VK); $blocked['ai_number'] = [code($r), $errKinds($r)];
+$pl = $sec($ver($VK)[1], 'planning');
+$save($pl['pid'], $P_TEXT);
+// הצעה שלא הוכרעה: פרק שנערך, ואז נתון חדש
+$ad = $sec($ver($VK)[1], 'area_desc');
+$fact($CK, 'rooms', '3');
+$r = $tryApprove($VK); $blocked['proposal_pending'] = [code($r), $errKinds($r)];
+$rejectAll = function (string $v) use ($ver, $post) { foreach ($ver($v)[1]['sections'] as $x) if ($x['proposal']) $post('report-proposal-decide', ['proposal' => $x['proposal']['pid'], 'decision' => 'reject']); };
+$rejectAll($VK);
+// תמונה בדוח בלי הרשאת שימוש "דוח"
+[$VKv] = $visit($CK);
+apr_jobs_run(5.0);
+$rejectAll($VK);
+$fid = apr_insert('files', ['pid' => apr_pid(), 'office_id' => apr_val('SELECT office_id FROM cases WHERE pid = ?', [$CK]), 'case_id' => $caseId($CK), 'sha256' => hash('sha256', 'x'), 'size' => 1, 'mime' => 'image/jpeg', 'ext' => 'jpg',
+    'original_name' => 'a.jpg', 'storage_key' => 'k' . bin2hex(random_bytes(4)), 'uploader_kind' => 'user', 'uploader_id' => 1, 'channel' => 'internal', 'received_at' => apr_now(), 'scan_state' => 'clean']);
+$PH = apr_pid();
+apr_insert('visit_photos', ['pid' => $PH, 'visit_id' => apr_val('SELECT id FROM visits WHERE pid = ?', [$VKv]), 'file_id' => $fid, 'field_key' => 'x', 'row_no' => 0, 'sort' => 1, 'usage' => 'case', 'created_by' => 1, 'created_at' => apr_now(), 'updated_at' => apr_now()]);
+$vs0 = $sec($ver($VK)[1], 'visit');
+$svImg = $save($vs0['pid'], [['type' => 'p', 'text' => 'תיאור הביקור'], ['type' => 'image', 'photo' => $PH, 'caption' => 'חזית']]);
+$r = $tryApprove($VK); $blocked['image_not_report'] = [code($r), $errKinds($r)];
+$imgState = $sec($ver($VK)[1], 'visit')['blocks'][1]['state'] ?? null;
+apr_exec("UPDATE visit_photos SET usage = 'report', rights_by = 1, rights_at = ?, rev = rev + 1 WHERE pid = ?", [apr_now(), $PH]);
+eq([$blocked, $rvw[0], $svImg[0], $imgState, $sec($ver($VK)[1], 'visit')['blocks'][1]['state'] ?? null, $blocking($VK), $versions($CK)[0]['state'], $versions($CK)[0]['approved_at']],
+    [['mandatory_empty' => ['report_blocked', ['mandatory_empty']], 'no_approver' => ['report_blocked', ['no_approver']], 'ai_unreviewed' => ['report_blocked', ['ai_unreviewed']], 'ai_number' => ['report_blocked', ['ai_number']],
+        'proposal_pending' => ['report_blocked', ['proposal_pending']], 'image_not_report' => ['report_blocked', ['image_not_report']]], 200, 200, 'not_report', 'ok', [], 'draft', null],
+    '17-C2 כל אחד מששת הממצאים החוסמים — פרק חובה ריק, אין שמאי מורשה, טקסט בינה שלא נסקר, מספר שלא נמצא בנתונים, הצעה שלא הוכרעה, תמונה בלי הרשאת "דוח" — דוחה את האישור, והתשובה נושאת את הממצא; כשכולם תוקנו — אין חוסם');
+$fake->next = $echo;
+
+// 17-C3: אזהרה בלי נימוק ← נדחה; נימוק לכל אזהרה ← מאושר, והנימוקים שמורים. 17-C1: מי שאינו מורשה
+$F2 = $fact($CK, 'area', '70', ['unit' => 'sqm', 'area_kind' => 'registered'])[1]['fact']['pid'];
+$adS = $sec($ver($VK)[1], 'area_desc');
+$save($adS['pid'], [['type' => 'p', 'text' => 'תיאור'], ['type' => 'fact', 'attr' => 'area'], ['type' => 'data_table', 'table' => 'identifiers']]);
+$ver($VK);
+$rejectAll($VK);
+$notReview = code($approve($VK, []));
+$submit($VK);
+$frozenEdit = code($save($adS['pid'], $P_TEXT));
+$acks = $acksAll($VK);
+$some = array_slice($acks, 0, max(1, count($acks) - 1), true);
+$noAck = $approve($VK, $some);
+$blank = $approve($VK, array_fill_keys(array_keys($acks), '   '));
+call('POST', 'case-member-add', ['case' => $CK, 'user' => $danaPid], $avi);
+$CD = make_case($dana, $PM);                                         // האחראית: דנה. אבי — מנהל המשרד — משתתף בלי approve_report
+call('POST', 'case-member-add', ['case' => $CD, 'user' => $userPid('avi@example.com')], $dana);
+$post('report-draft-create', ['case' => $CD], $dana);
+$VD = $versions($CD)[0]['pid'];
+$denied = [code($approve($VK, $acks, $dana)), code($approve($VK, $acks, $owner)), code($approve($VD, [], $avi)), code($post('report-approve', ['version' => $VK, 'rev' => $vvrev($VK), 'acks' => $acks]))];
+$stateBefore = $versions($CK)[0]['state'];
+$ok = $approve($VK, $acks);
+$twice = code($approve($VK, $acks));
+$row = $versions($CK)[0];
+$snap = json_decode((string)$row['snapshot'], true);
+eq([$notReview, $frozenEdit, count($acks) >= 3, code($noAck), count($noAck[1]['error']['findings'] ?? []), code($blank), $denied, $stateBefore, $ok[0], $twice, [$row['state'], (int)$row['approved_by'] > 0, $row['content_hash'] === hash('sha256', $row['snapshot']), $ok[1]['content_hash'] ?? null],
+    json_decode($row['approval_notes'], true) == $acks, (int)apr_val('SELECT COUNT(*) FROM report_findings_ack WHERE version_id = ?', [$row['id']]) === count($acks), apr_val('SELECT status FROM cases WHERE pid = ?', [$CK]),
+    array_keys($snap), array_keys($snap['data']['tables']), $snap['data']['facts']['area']['value']['text'] ?? null, (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'report.approve' AND entity_pid = ?", [$VK])],
+    ['report_state', 'report_state', true, 'report_ack_required', 1, 'report_ack_required', ['forbidden', 'no_office', 'forbidden', 'confirm_required'], 'in_review', 200, 'report_approved', ['approved', true, true, $row['content_hash']], true, true, 'approved',
+        ['at', 'approved_by', 'template', 'findings', 'sections', 'data'], APR_REPORT_TABLES, '70', 1],
+    '17-C3 אזהרה בלי נימוק (או בנימוק ריק) ← נדחה; נימוק לכל אזהרה ← מאושר, והנימוקים שמורים עם הגרסה; 17-C1 שמאית בלי approve_report, מנהל משרד שאינו האחראי ומנהל המערכת — נדחים; בלי אימות של פעולה רגישה — נדחה; טיוטה אינה מאושרת בלי "בבדיקה"; אישור שני ← "הגרסה כבר אושרה"; מצב התיק ← approved; ה-snapshot מלא');
+
+// 17-C5: אחרי האישור — כל פעולת עדכון על הגרסה, על פרקיה ועל ה-snapshot נדחית; ה-hash אינו משתנה
+$raises = function (string $sql, array $args = []): bool { try { apr_exec($sql, $args); return false; } catch (PDOException) { return true; } };
+$anyS = $sec($ver($VK)[1], 'area_desc');
+$sp = $snap['sections'][2]['pid'];
+$after = [code($save($sp, $P_TEXT)), code($post('report-section-add', ['version' => $VK, 'title' => 'x'])), code($post('report-section-delete', ['section' => $sp, 'rev' => 1])), code($post('report-rebuild', ['version' => $VK, 'include_edited' => true])),
+    code($post('report-section-ai', ['section' => $sp, 'rev' => 1])), code($post('report-section-reviewed', ['section' => $sp, 'rev' => 1])), code($submit($VK)), code($post('report-return', ['version' => $VK, 'rev' => $vvrev($VK)])),
+    code($post('report-version-delete', ['version' => $VK, 'rev' => $vvrev($VK), 'reason' => 'x'])), code($post('report-comment-add', ['version' => $VK, 'text' => 'x'])), code($post('report-draft-create', ['case' => $CK]))];
+$sql = [$raises("UPDATE report_versions SET snapshot = '{}', rev = rev + 1 WHERE pid = ?", [$VK]), $raises("UPDATE report_versions SET content_hash = 'x', rev = rev + 1 WHERE pid = ?", [$VK]), $raises("UPDATE report_versions SET state = 'draft', rev = rev + 1 WHERE pid = ?", [$VK]),
+    $raises("UPDATE report_versions SET approved_by = NULL, rev = rev + 1 WHERE pid = ?", [$VK]), $raises("UPDATE report_versions SET deleted_at = 'now', delete_reason = 'x', rev = rev + 1 WHERE pid = ?", [$VK]),
+    $raises("UPDATE report_sections SET content = '[]', rev = rev + 1 WHERE pid = ?", [$sp]), $raises('DELETE FROM report_sections WHERE pid = ?', [$sp]), $raises('DELETE FROM report_versions WHERE pid = ?', [$VK]),
+    $raises("INSERT INTO report_sections (pid, version_id, key, title, sort, updated_at) VALUES ('zzzzzzzzzzzzzzzz', ?, 'zz', 'x', 99, 'now')", [$row['id']]), $raises('UPDATE report_findings_ack SET reason = ? WHERE version_id = ?', ['x', $row['id']]),
+    $raises("INSERT INTO report_versions (pid, report_id, office_id, case_id, number, state, origin, template, created_at, approved_at, approved_by, snapshot, content_hash) VALUES ('yyyyyyyyyyyyyyyy', ?, ?, ?, 9, 'approved', 'manual', '{}', 'now', 'now', 1, '{}', 'x')", [$row['report_id'], $row['office_id'], $row['case_id']]),
+    $raises("UPDATE report_versions SET state = 'approved', approved_at = 'now', approved_by = 1, snapshot = '{}', content_hash = 'x', rev = rev + 1 WHERE pid = ?", [$VD])];
+$libs = array_map(fn($f) => (string)file_get_contents($f), glob(__DIR__ . '/../lib/*.php'));
+eq([$after, $sql, $versions($CK)[0]['content_hash'] === $row['content_hash'], $versions($CK)[0]['snapshot'] === $row['snapshot'], count(array_filter($libs, fn($t) => preg_match("/'state' => 'approved'|SET state = 'approved'/", $t) === 1))],
+    [['report_state', 'report_state', 'report_state', 'report_state', 'report_state', 'report_state', 'report_state', 'report_state', 'report_state', 'report_state', 'report_exists'], array_fill(0, 12, true), true, true, 1],
+    '17-C5 אחרי האישור כל פעולת API על הגרסה ועל פרקיה נדחית, וגם עדכון ישיר במסד (snapshot, hash, מצב, מאשר, פרק, מחיקה, נימוק); 17-C8 אין דרך ליצור גרסה approved שלא דרך האישור — לא בהוספה ולא בדילוג על "בבדיקה"; רק קובץ אחד בקוד כותב approved');
+
+// 17-C6: נתון משתנה אחרי האישור ← stale_after_approval; הקריאה מחזירה את הערך הישן, מה-snapshot. מקרה קצה 7: האחראי הוחלף — האישור נשאר על שם המאשר
+$staleSet = (int)$versions($CK)[0]['stale_after_approval'];
+$post('fact-correct', ['fact' => $F2, 'rev' => $frev($F2), 'value' => '72', 'correction_note' => 'תיקון']);
+$old = $ver($VK)[1];
+$oldArea = array_values(array_filter($sec($old, 'area_desc')['blocks'], fn($b) => $b['type'] === 'fact'))[0];
+eq([$old['frozen'], $old['version']['state'], $old['version']['stale_after_approval'], $oldArea['value']['text'], $old['version']['approved_by'], $versions($CK)[0]['content_hash'] === $row['content_hash'], count($old['findings']) === count($acks), $old['findings'][0]['ack'] ?? null,
+    (int)apr_val("SELECT COUNT(*) FROM audit_log WHERE action = 'report.stale' AND entity_pid = ?", [$VK]), $report($CK)[1]['can_create'], $staleSet, $ver($VK)[1]['version']['stale_after_approval'],
+    $raises('UPDATE report_versions SET stale_after_approval = 0, rev = rev + 1 WHERE pid = ?', [$VK])],
+    [true, 'approved', true, '70', 'אבי', true, true, 'נבדק ואושר בידי השמאי', 1, 'new_version', 0, true, true],
+    '17-C6 אחרי אישור, שינוי נתון שבדוח ← stale_after_approval = 1 (פעם אחת, ביומן); הגרסה מחזירה את **הערך הישן** מה-snapshot, עם הנימוקים, וה-hash אינו משתנה');
+
+// 17-C7: "גרסה חדשה" ← טיוטה במספר הבא, עם הערך החדש; הקודמת עדיין approved; אישור החדשה ← הקודמת superseded, ותוכנה נשמר
+$noReason = code($post('report-version-new', ['case' => $CK]));
+$nv = $post('report-version-new', ['case' => $CK, 'reason' => 'השטח תוקן אחרי מדידה']);
+$V2 = $nv[1]['version'] ?? '';
+$new = $ver($V2)[1];
+$newArea = array_values(array_filter($sec($new, 'area_desc')['blocks'], fn($b) => $b['type'] === 'fact'))[0];
+$cmp = call('GET', 'report-compare', [], $avi, ['version' => $V2, 'with' => $VK])[1];
+$cmpArea = array_column($cmp['sections'], null, 'key')['area_desc'];
+$mid = [$versions($CK)[0]['state'], $versions($CK)[1]['state'], (int)$versions($CK)[1]['number'], $versions($CK)[1]['origin'], $versions($CK)[1]['reopen_reason'], code($post('report-version-new', ['case' => $CK, 'reason' => 'x']))];
+$submit($V2);
+$ok2 = $approve($V2, $acksAll($V2));
+$oldAgain = $ver($VK)[1];
+eq([$noReason, $nv[0], $newArea['value']['text'], $newArea['changed'] ?? null, $mid, [$cmpArea['status'], $cmpArea['removed'], $cmpArea['added']], $ok2[0], [$versions($CK)[0]['state'], $versions($CK)[1]['state']],
+    array_values(array_filter($sec($oldAgain, 'area_desc')['blocks'], fn($b) => $b['type'] === 'fact'))[0]['value']['text'], $oldAgain['version']['state'], $versions($CK)[0]['content_hash'] === $row['content_hash'], $report($CK)[1]['versions'][0]['number']],
+    ['reason_required', 200, '72', true, ['approved', 'draft', 2, 'from_version', 'השטח תוקן אחרי מדידה', 'report_exists'], ['changed', ['שטח: 70 sqm registered'], ['שטח: 72 sqm registered']], 200, ['superseded', 'approved'], '70', 'superseded', true, 2],
+    '17-C7 "גרסה חדשה" (בנימוק) ← draft במספר הבא עם הערך **החדש**, והקודמת עדיין approved; ההשוואה מציגה מה השתנה; אישור החדשה ← הקודמת superseded, וקריאתה עדיין מחזירה את תוכנה ואת ה-hash שלה');
+
 // ═══ NEXT ═══
 eq($warnings, [], 'אין אזהרות PHP לאורך כל הבדיקות');
 done();
