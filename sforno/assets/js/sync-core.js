@@ -29,7 +29,8 @@
     function syncable(key) {
         return key === 'settings' || key === 'customs' || key === 'marks' || key === 'favorites' || key === 'tehillim'
             || /^pos:[a-z0-9]{16}$/.test(key) || /^order:[a-z0-9]{16}$/.test(key) || /^ver:[a-z0-9]{16}$/.test(key)
-            || key === 'siddur:edition' || key === 'tehillim:edition' || key === 'loc' || key === 'zmethod';
+            || key === 'siddur:edition' || key === 'tehillim:edition' || key === 'loc' || key === 'zmethod'
+            || key === 'reminders' || key === 'remprefs';
     }
 
     const okId = id => typeof id === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(id);
@@ -43,6 +44,10 @@
         if (key === 'siddur:edition' || key === 'tehillim:edition') return one('pref:' + key, 'pref', null, value);
         // 07: המיקום הפעיל והשיטה — פריט אחד כל אחד, שמתעדכן במקום (§19: רק המיקום הפעיל, לא היסטוריה)
         if (key === 'loc' || key === 'zmethod') return one('pref:' + key, 'pref', null, value);
+        // 08: כל תזכורת — פריט משלה (השרת מתכנן ממנה); ההעדפות הכלליות — פריט אחד
+        if (key === 'remprefs') return one('pref:remprefs', 'pref', null, value);
+        if (key === 'reminders') return (Array.isArray(value) ? value : []).filter(x => x && okId(x.id))
+            .map(x => ({ pid: 'rem:' + x.id, kind: 'reminder', ref: null, data: x }));
         let m = /^pos:([a-z0-9]{16})$/.exec(key);
         if (m) return one('position:' + m[1], 'position', m[1], value);
         m = /^order:([a-z0-9]{16})$/.exec(key);
@@ -61,12 +66,13 @@
         return [];
     }
 
-    /** פריט → הרשומה במכשיר שהוא שייך לה (null — סוג שהמכשיר הזה עוד לא מכיר, למשל תזכורות של 08). */
+    /** פריט → הרשומה במכשיר שהוא שייך לה (null — סוג שהמכשיר הזה עוד לא מכיר). */
     function keyOf(pid) {
         if (pid === 'pref:settings') return 'settings';
         if (pid === 'custom:perm') return 'customs';
         if (pid === 'pref:siddur:edition' || pid === 'pref:tehillim:edition') return pid.slice(5);
-        if (pid === 'pref:loc' || pid === 'pref:zmethod') return pid.slice(5);
+        if (pid === 'pref:loc' || pid === 'pref:zmethod' || pid === 'pref:remprefs') return pid.slice(5);
+        if (pid.startsWith('rem:')) return 'reminders';
         let m = /^position:([a-z0-9]{16})$/.exec(pid);
         if (m) return 'pos:' + m[1];
         m = /^order:([a-z0-9]{16})$/.exec(pid);
@@ -84,7 +90,7 @@
     /** פריטים (pid → data) → הערך של הרשומה במכשיר. undefined = אין (הרשומה נמחקת). */
     function build(key, datas) {
         const pids = Object.keys(datas);
-        if (key === 'marks' || key === 'favorites') return pids.map(p => datas[p]).sort(byCreated);
+        if (key === 'marks' || key === 'favorites' || key === 'reminders') return pids.map(p => datas[p]).sort(byCreated);
         if (key === 'tehillim') {
             const list = datas['tehillim:list'] || {};
             const names = pids.filter(p => p.startsWith('pn:')).map(p => datas[p]).sort(byCreated);

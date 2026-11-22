@@ -245,8 +245,9 @@ foreach (SF_ACTIONS as $a => $s) {
     if (str_contains($out, $SECRET_NOTE) || str_contains($out, $SECRET_NAME)) $leak[] = $a;
 }
 eq($leak, [], 'K10 אף מסך ניהול / מפתח (כל פעולות ה-GET) לא מציג הערה או שם לתפילה');
+// 08: reminders.php קורא את התזכורות של הקורא — רק לתכנון ולשליחה אליו עצמו (l-reminders בודק שאין שם תוכן ב-dev-reminders)
 check('K10 אין פעולת ניהול שקוראת את personal_items', !preg_match('/personal_items/', implode("\n", array_map(fn($f) => (string)file_get_contents($f),
-    array_diff(glob(dirname(__DIR__) . '/lib/*.php'), [dirname(__DIR__) . '/lib/sync.php', dirname(__DIR__) . '/lib/readers.php'])))));
+    array_diff(glob(dirname(__DIR__) . '/lib/*.php'), [dirname(__DIR__) . '/lib/sync.php', dirname(__DIR__) . '/lib/readers.php', dirname(__DIR__) . '/lib/reminders.php'])))));
 
 // ── K12: ייצוא, ובקשת מחיקה ───────────────────────────────────
 $ex = rcall('GET', 'account-export', [], 'D1')[1]['export'] ?? [];

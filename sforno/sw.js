@@ -10,11 +10,13 @@
  *   API — לא נשמר ולא מוגש מכאן (חוץ מ-read-file מתוך הורדה). data/ ושאר התיקיות שאינן של הדפדפן — לא נוגעים.
  *   זמני היום (07) — רשימת הערים (assets/data/cities.json) היא חלק מהמעטפת; הזמנים עצמם מחושבים בדף, וחבילת החודש —
  *           ב-IndexedDB (zdl), לא כאן.
+ *   תזכורות (08) — push: התוכן מוצפן מהשרת (aes128gcm) ומפוענח בדפדפן; כאן רק מציגים {t, b, u, tag}. לחיצה ← הכתובת u
+ *           (התפילה המקושרת בסידור), **רק בתוך ה-scope** — כתובת אחרת לא נפתחת. אין כאן שום שמירה ושום רשת.
  */
 'use strict';
 
-const VERSION = '0.7';
-const BUILD = '8d3c4e0b16db';
+const VERSION = '0.8';
+const BUILD = 'd522b6436ef5';
 const SHELL_CACHE = 'sforno-shell-' + VERSION + '-' + BUILD;
 const CONTENT_CACHE = 'sforno-content';
 
@@ -44,12 +46,15 @@ const SHELL = [
     'assets/js/calendar-core.js',
     'assets/js/daily-core.js',
     'assets/js/daily.js',
+    'assets/js/reminders-core.js',
+    'assets/js/reminders.js',
     'assets/js/screens/home.js',
     'assets/js/screens/reader.js',
     'assets/js/screens/siddur.js',
     'assets/js/screens/downloads.js',
     'assets/js/screens/zmanim.js',
     'assets/js/screens/halacha.js',
+    'assets/js/screens/reminders.js',
     'assets/js/screens/admin.js',
     'assets/js/screens/content.js',
     'assets/js/screens/import.js',
@@ -102,4 +107,27 @@ self.addEventListener('fetch', event => {
         return;
     }
     event.respondWith(caches.open(SHELL_CACHE).then(c => c.match(shellKey)).then(hit => hit || fetch(req)));
+});
+
+// ── התראות (08) ─────────────────────────────────────────────
+self.addEventListener('push', event => {
+    let m = {};
+    try { m = event.data ? event.data.json() : {}; } catch (e) { m = {}; }
+    const u = typeof m.u === 'string' && /^#\/[A-Za-z0-9/_-]*$/.test(m.u) ? m.u : '#/reminders';
+    event.waitUntil(self.registration.showNotification(typeof m.t === 'string' && m.t ? m.t.slice(0, 80) : 'ספורנו', {
+        body: typeof m.b === 'string' ? m.b.slice(0, 160) : '', tag: typeof m.tag === 'string' ? m.tag.slice(0, 40) : undefined,
+        icon: 'assets/icon-192.png', badge: 'assets/icon-192.png', lang: 'he', dir: 'rtl', data: { u },
+    }));
+});
+
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+    const u = (event.notification.data && event.notification.data.u) || '#/reminders';
+    const target = new URL('index.html' + u, self.registration.scope).href;
+    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        for (const c of list) {
+            if (new URL(c.url).pathname.startsWith(scopePath()) && 'focus' in c) return c.navigate(target).then(w => (w || c).focus()).catch(() => c.focus());
+        }
+        return self.clients.openWindow(target);
+    }));
 });
