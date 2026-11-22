@@ -76,6 +76,8 @@ const kvAll = {
         { id: 'r2', name: '', type: 'relative', base: 'sunset', offset: -20, days: [5], active: true, created_at: '2026-11-22T06:01:00Z' }],
     remprefs: { channels: { push: true, inapp: true, email: false }, extend: { before: 0, after: 30 }, tz: 'Asia/Jerusalem' },
     'push:dev': 'abcdefghijklmnop',
+    // 09: מועדפי החנות — פריט לכל מוצר
+    storefavs: [{ id: '101', name: 'סידור', created_at: '2026-11-22T05:00:00Z' }, { id: '108', name: 'מסילת ישרים', created_at: '2026-11-22T05:01:00Z' }],
 };
 for (const [k, v] of Object.entries(kvAll)) {
     const its = C.itemsFor(k, v);
@@ -87,6 +89,7 @@ ok('סוגים: הערה = note, הדגשה = highlight, סימניה = bookmark
 ok('שם לתפילה = prayer_name (מוצפן בשרת)', kinds['pn:n1'] === 'prayer_name');
 ok('מיקום קריאה = position, עם ref המהדורה', C.itemsFor('pos:' + ED, kvAll['pos:' + ED])[0].ref === ED && kinds['position:' + ED] === 'position');
 ok('pid של פריט שלא מוכר במכשיר — מתעלמים', C.keyOf('reminder:x') === null);
+ok('09: מועדף בחנות = פריט store_favorite, pid sp:<מזהה המוצר>', kinds['sp:101'] === 'store_favorite' && kinds['sp:108'] === 'store_favorite');
 ok('08: תזכורת = פריט reminder, pid rem:<id>', kinds['rem:r1'] === 'reminder' && kinds['rem:r2'] === 'reminder' && kinds['pref:remprefs'] === 'pref');
 
 // ── K6: אותו שינוי פעמיים ← פריט אחד ─────────────────────────

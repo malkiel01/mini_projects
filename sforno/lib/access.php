@@ -25,6 +25,8 @@ const SF_ACTIONS = [
     'devapi-comment'       => ['m' => 'POST', 'who' => 'public', 'raw' => true],
     'devapi-file'          => ['m' => 'GET',  'who' => 'public', 'raw' => true],
     'devapi-attach'        => ['m' => 'POST', 'who' => 'public', 'raw' => true, 'body' => true],
+    // 09: WooCommerce → ספורנו. האימות — HMAC של הגוף (lib/store.php); הגוף נקרא במודול, עד 2MB
+    'store-webhook'        => ['m' => 'POST', 'who' => 'public', 'raw' => true, 'body' => true],
 
     'read-titles'          => ['m' => 'GET',  'who' => 'reader'],
     'read-edition'         => ['m' => 'GET',  'who' => 'reader'],
@@ -41,6 +43,9 @@ const SF_ACTIONS = [
     'read-zmanim-methods'  => ['m' => 'GET',  'who' => 'reader'],
     'read-halacha'         => ['m' => 'GET',  'who' => 'reader'],
     'read-halacha-archive' => ['m' => 'GET',  'who' => 'reader'],
+    // החנות (09) — הקטלוג מהמטמון (WooCommerce הוא מקור האמת)
+    'read-store-catalog'   => ['m' => 'GET',  'who' => 'reader'],
+    'read-store-product'   => ['m' => 'GET',  'who' => 'reader'],
 
     // חשבונות הקוראים והסנכרון (05) — עולם נפרד מהמנהלים (lib/readers.php, lib/sync.php)
     'account-me'           => ['m' => 'GET',  'who' => 'guest'],
@@ -65,6 +70,8 @@ const SF_ACTIONS = [
     'push-test'            => ['m' => 'POST', 'who' => 'guest', 'rcsrf' => true, 'max' => 2_000],
     'reminders-guest-sync' => ['m' => 'POST', 'who' => 'guest', 'max' => 80_000],
     'reminders-status'     => ['m' => 'GET',  'who' => 'guest'],
+    // 09: "לרכישה באתר" נלחץ — נספר (10). guest: POST בלי אסימון — סוג מדיה מדויק + Sec-Fetch-Site / Origin בנתב
+    'store-out'            => ['m' => 'POST', 'who' => 'guest', 'max' => 2_000],
 
     'me'                   => ['m' => 'GET',  'who' => 'staff'],
     'logout'               => ['m' => 'POST', 'who' => 'staff'],
@@ -121,6 +128,12 @@ const SF_ACTIONS = [
     'halacha-save'         => ['m' => 'POST', 'who' => 'staff'],
     'halacha-publish'      => ['m' => 'POST', 'who' => 'staff'],
     'halacha-unpublish'    => ['m' => 'POST', 'who' => 'staff'],
+    // 09 — הניהול: מצב הסנכרון, המיפוי, סנכרון עכשיו, נתוני דוגמה, קישור כותר ↔ מוצר
+    'store-admin'          => ['m' => 'GET',  'who' => 'staff'],
+    'store-map-save'       => ['m' => 'POST', 'who' => 'staff'],
+    'store-sync-now'       => ['m' => 'POST', 'who' => 'staff'],
+    'store-sample'         => ['m' => 'POST', 'who' => 'staff'],
+    'store-link-set'       => ['m' => 'POST', 'who' => 'staff'],
 
     'dev-health'           => ['m' => 'GET',  'who' => 'dev'],
     'dev-mail-test'        => ['m' => 'POST', 'who' => 'dev'],
@@ -131,6 +144,9 @@ const SF_ACTIONS = [
     'dev-cron-rotate'      => ['m' => 'POST', 'who' => 'dev'],
     'dev-google-set'       => ['m' => 'POST', 'who' => 'dev'],
     'dev-reminders'        => ['m' => 'GET',  'who' => 'dev'],
+    // 09: החיבור לחנות — המפתחות נכנסים כאן ולא יוצאים לעולם (data/woo.json)
+    'dev-store-set'        => ['m' => 'POST', 'who' => 'dev', 'max' => 4_000],
+    'dev-store-test'       => ['m' => 'POST', 'who' => 'dev'],
     // DevLoop — אותם שמות כמו בכל אפליקציה (.claude/skills/devloop/references/install.md)
     'dev-items'            => ['m' => 'GET',  'who' => 'dev', 'raw' => true],
     'dev-task-create'      => ['m' => 'POST', 'who' => 'dev', 'raw' => true],

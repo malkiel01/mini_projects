@@ -19,7 +19,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/readers.php';
 
-const SF_SYNC_KINDS = ['pref', 'custom', 'bookmark', 'position', 'highlight', 'note', 'favorite', 'tehillim_list', 'prayer_name', 'reminder'];
+const SF_SYNC_KINDS = ['pref', 'custom', 'bookmark', 'position', 'highlight', 'note', 'favorite', 'tehillim_list', 'prayer_name', 'reminder', 'store_favorite'];
 const SF_SYNC_SEALED = ['note', 'prayer_name'];
 const SF_SYNC_BATCH = 500;
 const SF_SYNC_ITEM_MAX = 32_000;

@@ -1,0 +1,1068 @@
+{
+ "_note": "נתוני דוגמה בצורה של WooCommerce REST v3 (products, products/categories, products/reviews). לא אמיתיים; הכתובות ב-store.example. map — המיפוי שנטען עם הדוגמה כשאין מיפוי.",
+ "map": {
+  "author": {
+   "type": "attribute",
+   "key": "מחבר"
+  },
+  "publisher": {
+   "type": "attribute",
+   "key": "הוצאה"
+  },
+  "edition": {
+   "type": "attribute",
+   "key": "מהדורה"
+  },
+  "binding": {
+   "type": "attribute",
+   "key": "כריכה"
+  },
+  "toc": {
+   "type": "meta",
+   "key": "sforno_toc"
+  },
+  "samples": {
+   "type": "meta",
+   "key": "sforno_samples"
+  }
+ },
+ "categories": [
+  {
+   "id": 11,
+   "name": "סידורים",
+   "slug": "siddurim",
+   "parent": 0,
+   "count": 4
+  },
+  {
+   "id": 12,
+   "name": "הלכה",
+   "slug": "halacha",
+   "parent": 0,
+   "count": 4
+  },
+  {
+   "id": 13,
+   "name": "מחשבה ומוסר",
+   "slug": "machshava",
+   "parent": 0,
+   "count": 3
+  },
+  {
+   "id": 14,
+   "name": "ספרי ילדים",
+   "slug": "kids",
+   "parent": 0,
+   "count": 1
+  },
+  {
+   "id": 15,
+   "name": "סידורי כיס",
+   "slug": "pocket",
+   "parent": 11,
+   "count": 1
+  }
+ ],
+ "products": [
+  {
+   "id": 101,
+   "name": "סידור ספורנו — עדות המזרח",
+   "slug": "p101",
+   "permalink": "https://store.example/product/p101/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-03T10:00:00",
+   "sku": "SF-101",
+   "price": "89.00",
+   "regular_price": "89.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "4.67",
+   "rating_count": 3,
+   "description": "<p>סידור מלא לימות החול, שבת ומועדים, בנוסח עדות המזרח.</p><p>אותיות מאירות עיניים &amp; הוראות ברורות.</p><script>alert(1)</script>",
+   "short_description": "<p>סידור מלא בנוסח עדות המזרח</p>",
+   "images": [],
+   "categories": [
+    {
+     "id": 11,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו הוצאה לאור"
+     ]
+    },
+    {
+     "id": 0,
+     "name": "מהדורה",
+     "position": 2,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "מהדורה שנייה, תשפ״ו"
+     ]
+    },
+    {
+     "id": 3,
+     "name": "כריכה",
+     "slug": "pa_binding",
+     "position": 3,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "קשה"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1001,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 901,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    },
+    {
+     "id": 801,
+     "key": "sforno_toc",
+     "value": "שחרית\nמנחה\nערבית\nקריאת שמע על המיטה"
+    },
+    {
+     "id": 701,
+     "key": "sforno_samples",
+     "value": "https://store.example/samples/s101-1.jpg https://store.example/samples/s101-2.jpg"
+    }
+   ],
+   "related_ids": [
+    102,
+    103
+   ],
+   "upsell_ids": []
+  },
+  {
+   "id": 102,
+   "name": "סידור כיס — עדות המזרח",
+   "slug": "p102",
+   "permalink": "https://store.example/product/p102/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-04T10:00:00",
+   "sku": "SF-102",
+   "price": "39.00",
+   "regular_price": "49.00",
+   "sale_price": "39.00",
+   "on_sale": true,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "5.00",
+   "rating_count": 1,
+   "description": "",
+   "short_description": "<p>במהדורת כיס, נוח לדרך</p>",
+   "images": [],
+   "categories": [
+    {
+     "id": 11,
+     "name": "",
+     "slug": ""
+    },
+    {
+     "id": 15,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו הוצאה לאור"
+     ]
+    },
+    {
+     "id": 3,
+     "name": "כריכה",
+     "slug": "pa_binding",
+     "position": 3,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "רכה"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1002,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 902,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [
+    101
+   ],
+   "upsell_ids": []
+  },
+  {
+   "id": 103,
+   "name": "תהילים מבואר",
+   "slug": "p103",
+   "permalink": "https://store.example/product/p103/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-05T10:00:00",
+   "sku": "SF-103",
+   "price": "59.00",
+   "regular_price": "59.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "<ul><li>פירוש מילים</li><li>ביאור קצר</li></ul>",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 11,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "הרב משה כהן"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "מכון אור"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1003,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 903,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [
+    101
+   ],
+   "upsell_ids": []
+  },
+  {
+   "id": 104,
+   "name": "משנה ברורה — סט מלא",
+   "slug": "p104",
+   "permalink": "https://store.example/product/p104/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-06T10:00:00",
+   "sku": "SF-104",
+   "price": "720.00",
+   "regular_price": "720.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "onbackorder",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 12,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "החפץ חיים"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "מכון אור"
+     ]
+    },
+    {
+     "id": 0,
+     "name": "מהדורה",
+     "position": 2,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "מהדורה מפוארת"
+     ]
+    },
+    {
+     "id": 3,
+     "name": "כריכה",
+     "slug": "pa_binding",
+     "position": 3,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "קשה"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1004,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 904,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 105,
+   "name": "הלכה יומית — כרך א",
+   "slug": "p105",
+   "permalink": "https://store.example/product/p105/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-07T10:00:00",
+   "sku": "SF-105",
+   "price": "74.90",
+   "regular_price": "74.90",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "outofstock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 12,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "הרב יוסף לוי"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו הוצאה לאור"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1005,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 905,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 106,
+   "name": "הלכה יומית — כרך ב",
+   "slug": "p106",
+   "permalink": "https://store.example/product/p106/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-08T10:00:00",
+   "sku": "SF-106",
+   "price": "74.90",
+   "regular_price": "74.90",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 12,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "הרב יוסף לוי"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו הוצאה לאור"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1006,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 906,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 107,
+   "name": "קיצור שולחן ערוך",
+   "slug": "p107",
+   "permalink": "https://store.example/product/p107/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-09T10:00:00",
+   "sku": "SF-107",
+   "price": "45.00",
+   "regular_price": "45.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 12,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [
+    {
+     "id": 50,
+     "name": "מבצע חורף",
+     "slug": "t"
+    }
+   ],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "הרב שלמה גאנצפריד"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1007,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 907,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 108,
+   "name": "מסילת ישרים",
+   "slug": "p108",
+   "permalink": "https://store.example/product/p108/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-01T10:00:00",
+   "sku": "SF-108",
+   "price": "32.50",
+   "regular_price": "32.50",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "4.00",
+   "rating_count": 1,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 13,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "הרמח\"ל"
+     ]
+    },
+    {
+     "id": 2,
+     "name": "הוצאה",
+     "slug": "pa_publisher",
+     "position": 1,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "מכון אור"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1008,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 908,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 109,
+   "name": "חובות הלבבות",
+   "slug": "p109",
+   "permalink": "https://store.example/product/p109/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-02T10:00:00",
+   "sku": "SF-109",
+   "price": "55.00",
+   "regular_price": "55.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 13,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "רבנו בחיי"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1009,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 909,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 110,
+   "name": "אורות התשובה",
+   "slug": "p110",
+   "permalink": "https://store.example/product/p110/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-03T10:00:00",
+   "sku": "SF-110",
+   "price": "48.00",
+   "regular_price": "48.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 13,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "הרב קוק"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1010,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 910,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 111,
+   "name": "סיפורי צדיקים לילדים",
+   "slug": "p111",
+   "permalink": "https://store.example/product/p111/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-04T10:00:00",
+   "sku": "SF-111",
+   "price": "42.00",
+   "regular_price": "42.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "<p>סיפורים מאוירים</p>",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 14,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [],
+   "meta_data": [
+    {
+     "id": 1011,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 911,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 112,
+   "name": "סידור משפחתי — כריכה לבחירה",
+   "slug": "p112",
+   "permalink": "https://store.example/product/p112/",
+   "type": "variable",
+   "status": "publish",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-05T10:00:00",
+   "sku": "SF-112",
+   "price": "65.00",
+   "regular_price": "",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 11,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [
+    {
+     "id": 1,
+     "name": "מחבר",
+     "slug": "pa_author",
+     "position": 0,
+     "visible": true,
+     "variation": false,
+     "options": [
+      "ספורנו"
+     ]
+    },
+    {
+     "id": 3,
+     "name": "כריכה",
+     "slug": "pa_binding",
+     "position": 3,
+     "visible": true,
+     "variation": true,
+     "options": [
+      "רכה",
+      "קשה"
+     ]
+    }
+   ],
+   "meta_data": [
+    {
+     "id": 1012,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 912,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 113,
+   "name": "טיוטה — לא מוצג",
+   "slug": "p113",
+   "permalink": "https://store.example/product/p113/",
+   "type": "simple",
+   "status": "draft",
+   "catalog_visibility": "visible",
+   "date_modified_gmt": "2026-11-06T10:00:00",
+   "sku": "SF-113",
+   "price": "10.00",
+   "regular_price": "10.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 11,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [],
+   "meta_data": [
+    {
+     "id": 1013,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 913,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  },
+  {
+   "id": 114,
+   "name": "מוסתר — לא מוצג",
+   "slug": "p114",
+   "permalink": "https://store.example/product/p114/",
+   "type": "simple",
+   "status": "publish",
+   "catalog_visibility": "hidden",
+   "date_modified_gmt": "2026-11-07T10:00:00",
+   "sku": "SF-114",
+   "price": "10.00",
+   "regular_price": "10.00",
+   "sale_price": "",
+   "on_sale": false,
+   "purchasable": true,
+   "stock_status": "instock",
+   "average_rating": "0.00",
+   "rating_count": 0,
+   "description": "",
+   "short_description": "",
+   "images": [],
+   "categories": [
+    {
+     "id": 11,
+     "name": "",
+     "slug": ""
+    }
+   ],
+   "tags": [],
+   "attributes": [],
+   "meta_data": [
+    {
+     "id": 1014,
+     "key": "_wc_private_cost",
+     "value": "12.00"
+    },
+    {
+     "id": 914,
+     "key": "_edit_lock",
+     "value": "1700000000:1"
+    }
+   ],
+   "related_ids": [],
+   "upsell_ids": []
+  }
+ ],
+ "reviews": [
+  {
+   "id": 501,
+   "product_id": 101,
+   "status": "approved",
+   "reviewer": "דוד",
+   "reviewer_email": "david@example.com",
+   "review": "<p>סידור מצוין, אותיות ברורות</p>",
+   "rating": 5,
+   "verified": true,
+   "date_created_gmt": "2026-10-01T08:00:00"
+  },
+  {
+   "id": 502,
+   "product_id": 101,
+   "status": "approved",
+   "reviewer": "שרה",
+   "reviewer_email": "sara@example.com",
+   "review": "<p>כריכה איכותית.</p><p>ממליצה</p>",
+   "rating": 4,
+   "verified": false,
+   "date_created_gmt": "2026-10-05T08:00:00"
+  },
+  {
+   "id": 503,
+   "product_id": 101,
+   "status": "approved",
+   "reviewer": "יוסי",
+   "reviewer_email": "yossi@example.com",
+   "review": "מאוד אהבתי",
+   "rating": 5,
+   "verified": true,
+   "date_created_gmt": "2026-10-07T08:00:00"
+  },
+  {
+   "id": 504,
+   "product_id": 102,
+   "status": "approved",
+   "reviewer": "רחל",
+   "reviewer_email": "r@example.com",
+   "review": "קטן ונוח",
+   "rating": 5,
+   "verified": true,
+   "date_created_gmt": "2026-10-09T08:00:00"
+  },
+  {
+   "id": 505,
+   "product_id": 108,
+   "status": "approved",
+   "reviewer": "אבי",
+   "reviewer_email": "a@example.com",
+   "review": "קלאסיקה",
+   "rating": 4,
+   "verified": false,
+   "date_created_gmt": "2026-10-10T08:00:00"
+  },
+  {
+   "id": 506,
+   "product_id": 101,
+   "status": "hold",
+   "reviewer": "ספאם",
+   "reviewer_email": "s@example.com",
+   "review": "קנו עכשיו",
+   "rating": 1,
+   "verified": false,
+   "date_created_gmt": "2026-10-11T08:00:00"
+  }
+ ]
+}

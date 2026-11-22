@@ -15,8 +15,8 @@
  */
 'use strict';
 
-const VERSION = '0.8';
-const BUILD = 'd522b6436ef5';
+const VERSION = '0.9';
+const BUILD = '36e7e94193dc';
 const SHELL_CACHE = 'sforno-shell-' + VERSION + '-' + BUILD;
 const CONTENT_CACHE = 'sforno-content';
 
@@ -55,11 +55,13 @@ const SHELL = [
     'assets/js/screens/zmanim.js',
     'assets/js/screens/halacha.js',
     'assets/js/screens/reminders.js',
+    'assets/js/screens/store.js',
     'assets/js/screens/admin.js',
     'assets/js/screens/content.js',
     'assets/js/screens/import.js',
     'assets/js/screens/reader-admin.js',
     'assets/js/screens/daily-admin.js',
+    'assets/js/screens/store-admin.js',
     'assets/js/screens/dev.js',
     'assets/js/screens/account.js',
     'assets/js/app.js',

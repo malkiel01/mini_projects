@@ -27,6 +27,7 @@ require_once __DIR__ . '/readers.php';
 require_once __DIR__ . '/sync.php';
 require_once __DIR__ . '/daily.php';
 require_once __DIR__ . '/reminders.php';
+require_once __DIR__ . '/store.php';
 
 /**
  * $env: platform_user (ה-JSON מהשער או null), cookie, csrf, ua, content_type; לקוראים — reader_cookie, reader_csrf, ip;
@@ -89,6 +90,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'devapi-comment'       => devloop_api_comment(devloop_api_auth(), $in),
         'devapi-file'          => devloop_api_auth() && devloop_file_out((int)($get['id'] ?? 0)),
         'devapi-attach'        => devloop_attach('claude', $get + ['_auth' => devloop_api_auth()]),
+        'store-webhook'        => sf_store_webhook($env),
 
         'read-titles'          => sf_read_titles(),
         'read-edition'         => sf_read_edition($get),
@@ -102,6 +104,8 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'read-zmanim-methods'  => sf_zm_methods_public(),
         'read-halacha'         => sf_read_halacha($get),
         'read-halacha-archive' => sf_read_halacha_archive($get),
+        'read-store-catalog'   => sf_store_catalog($get),
+        'read-store-product'   => sf_store_product($get),
 
         'account-me'           => sf_account_me($env['_reader']),
         'account-register'     => sf_account_register($in, $env),
@@ -124,6 +128,7 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'push-test'            => sf_push_test($in, $env),
         'reminders-guest-sync' => sf_rem_guest_sync($in, $env),
         'reminders-status'     => sf_rem_status($env),
+        'store-out'            => sf_store_out($in, $env),
 
         'me'                   => ['staff' => sf_staff_public($staff, $me), 'csrf' => $session['csrf'], 'version' => sf_version()],
         'logout'               => sf_session_drop((string)($env['cookie'] ?? '')) ?? [],
@@ -176,6 +181,11 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'halacha-save'         => sf_halacha_save($in, $me),
         'halacha-publish'      => sf_halacha_publish($in, $me),
         'halacha-unpublish'    => sf_halacha_unpublish($in),
+        'store-admin'          => sf_store_admin(),
+        'store-map-save'       => sf_store_map_save($in),
+        'store-sync-now'       => sf_store_sync_now($in),
+        'store-sample'         => sf_store_sample($in),
+        'store-link-set'       => sf_store_link_set($in),
 
         'dev-health'           => sf_health(),
         'dev-mail-test'        => sf_mail_test($staff),
@@ -186,6 +196,8 @@ function sf_run(string $action, array $get, array $in, ?array $staff, ?array $se
         'dev-cron-rotate'      => sf_cron_rotate(),
         'dev-google-set'       => sf_dev_google_set($in),
         'dev-reminders'        => sf_rem_dev(),
+        'dev-store-set'        => sf_dev_store_set($in),
+        'dev-store-test'       => sf_dev_store_test(),
 
         'dev-items'            => devloop_task_list(),
         'dev-task-create'      => devloop_task_create($dev, $in),

@@ -51,6 +51,11 @@ try {
         'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
         'sec_fetch_site' => (string)($_SERVER['HTTP_SEC_FETCH_SITE'] ?? ''),
         'origin' => (string)($_SERVER['HTTP_ORIGIN'] ?? ''),
+        // webhook של WooCommerce (09): החתימה, מזהה המשלוח (idempotency) והנושא. הגוף — נקרא ב-lib/store.php
+        'content_length' => (int)($_SERVER['CONTENT_LENGTH'] ?? 0),
+        'wc_signature' => (string)($_SERVER['HTTP_X_WC_WEBHOOK_SIGNATURE'] ?? ''),
+        'wc_delivery' => (string)($_SERVER['HTTP_X_WC_WEBHOOK_DELIVERY_ID'] ?? ''),
+        'wc_topic' => (string)($_SERVER['HTTP_X_WC_WEBHOOK_TOPIC'] ?? ''),
     ]);
     sf_out($out, 200);
 } catch (Throwable $e) {
