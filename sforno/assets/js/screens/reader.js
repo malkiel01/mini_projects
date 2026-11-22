@@ -375,7 +375,7 @@
                 });
                 dlg.close();
             } }, 'שמירה');
-            const dlg = SF.sheet('הערה אישית', h('div', { class: 'fields' }, h('p', { class: 'hint wide' }, 'נשמרת רק במכשיר הזה.'), h('label', { class: 'f wide' }, ta)), { action: save });
+            const dlg = SF.sheet('הערה אישית', h('div', { class: 'fields' }, h('p', { class: 'hint wide' }, SF.sync && SF.sync.active() ? 'נשמרת בחשבון שלך, מוצפנת, ומסתנכרנת בין המכשירים.' : 'נשמרת רק במכשיר הזה.'), h('label', { class: 'f wide' }, ta)), { action: save });
             ta.focus();
         }
 

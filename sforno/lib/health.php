@@ -122,7 +122,7 @@ sf_health_register('php', 'PHP', function () {
 
 sf_health_register('ext', 'הרחבות לפרוסות הבאות', function () {
     $want = ['intl' => 'לוח עברי (07)', 'dom' => 'ניקוי HTML (02)', 'libxml' => 'ניקוי HTML (02)', 'zip' => 'Word / EPUB (03)',
-        'gd|imagick' => 'תמונות (03)', 'pdo_mysql' => 'אם ש2 תשתנה', 'openssl' => 'Web Push (08)'];
+        'gd|imagick' => 'תמונות (03)', 'pdo_mysql' => 'אם ש2 תשתנה', 'openssl' => 'כניסה עם Google (05), Web Push (08)'];
     $have = $miss = [];
     foreach ($want as $ext => $for) {
         $any = array_filter(explode('|', $ext), 'extension_loaded');
