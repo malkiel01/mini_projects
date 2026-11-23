@@ -7,6 +7,7 @@ window.CA = window.CA || {};
 (function () {
   const { esc, STATUS, chip, measures, row, emptyLine, fmtDate } = CA.ui;
   const GAP = ['gap_identified', 'reassessment_required'];
+  const EVKIND = { command_output: 'פלט פקודה', lab_report: 'דוח מעבדה', quiz: 'בוחן', oral_explanation: 'הסבר בעל פה', code: 'קוד', other: 'אחר' };
 
   // הודעות שגיאה לפי code יציב מהשרת (api/progress.php). לא מציגים נתיב, תוכן או פרטי שרת.
   const LEARN_ERR = {
@@ -105,10 +106,20 @@ window.CA = window.CA || {};
       ? `<p class="hint">שני מדדים נפרדים, מתוך המיומנויות שאומתו בלבד.</p>${measures({ learned: p.learned, proven: p.proven, total: verifiedN })}`
       : `<div class="nocontract">📭 <b>אין עדיין נלמד או הוכח במעשה</b> — המדדים מופיעים רק אחרי הערכה מאומתת.</div>`;
 
-    const verifiedList = verifiedN
-      ? `<ul class="list">${verified.map(([id, s]) => row({ icon: '🎯', title: esc(name(id)), sub: 'הערכה מאושרת', meta: chip(s.status) })).join('')}</ul>
-         <div class="nocontract" style="margin-top:8px">פירוט ההערכות והראיות המאושרות — מי הערך, מתי ואיזו ראיה — יוצג כאן בהמשך.</div>`
-      : emptyLine('עדיין אין הערכות מאומתות.');
+    const assessments = (p && p.assessments) || [];
+    const evidence = (p && p.evidence) || [];
+    const assessHtml = assessments.length
+      ? `<ul class="list">${assessments.map((a) => row({ icon: '📝',
+          title: esc(a.skillIds.map(name).join(', ') || 'הערכה'),
+          sub: esc('הוערך ' + fmtDate(a.at) + ' · אושר ' + fmtDate(a.approvedAt)),
+          meta: Object.values(a.result).map((st) => chip(st)).join('') })).join('')}</ul>`
+      : emptyLine(verifiedN ? 'אין פירוט הערכות בתצוגה הזו.' : 'עדיין אין הערכות מאומתות.');
+    const evHtml = evidence.length
+      ? `<ul class="list">${evidence.map((e) => row({ icon: '🧾', title: esc(EVKIND[e.kind] || e.kind), sub: esc('נוצר ' + fmtDate(e.createdAt)) })).join('')}</ul>`
+      : emptyLine('אין ראיות מאושרות.');
+    const verifiedList = `${assessHtml}
+      <h2 class="sec-title">ראיות מאושרות${evidence.length ? ` (${evidence.length})` : ''}</h2>
+      ${evHtml}`;
 
     const gaps = gapRows.length
       ? `<ul class="list">${gapRows.map(([id, s]) => row({ icon: '🩹', title: esc(name(id)), sub: 'הערכה מאושרת · נדרש טיפול', meta: chip(s.status) })).join('')}</ul>`
@@ -142,7 +153,7 @@ window.CA = window.CA || {};
       ${categories}
       <h2 class="sec-title">נלמד ו"הוכח במעשה"</h2>
       ${measure}
-      <h2 class="sec-title">הערכות וראיות מאושרות</h2>
+      <h2 class="sec-title">הערכות מאושרות${assessments.length ? ` (${assessments.length})` : ''}</h2>
       ${verifiedList}
       <h2 class="sec-title">פערי ידע</h2>
       ${gaps}

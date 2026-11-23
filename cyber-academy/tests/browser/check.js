@@ -155,15 +155,17 @@ const STATES = {
     await v2('github-excerpt', SCREENS.concat(['module/01.01']), () => ({ sample: false, real: true, state: 'real-empty', noNumbers: true, has: ['אין עדיין סילבוס מאושר'] }));
 
     // 2ג. ההתקדמות שלי — נתוני בדיקה סינתטיים בלבד ("לומד דוגמה"), מוזרקים ב-page.route. מזהים מתוך synthetic-full.
-    const lv = (skills, done, counts, learned, proven) => ({ ok: true, learnerId: 'lrn-demo', progress: {
-      learnerId: 'lrn-demo', updatedAt: '2026-11-23T12:00:00Z', counts, learned, proven, skills, lessonsCompleted: done } });
+    const lv = (skills, done, counts, learned, proven, assessments = [], evidence = []) => ({ ok: true, learnerId: 'lrn-demo', progress: {
+      learnerId: 'lrn-demo', updatedAt: '2026-11-23T12:00:00Z', counts, learned, proven, skills, lessonsCompleted: done, assessments, evidence } });
     const LEARNER = {
       empty: { status: 200, body: { ok: true, learnerId: null, progress: null } },
       verified: { status: 200, body: lv({
         'sk-1': { category: 'verified', status: 'theory_demonstrated', pendingReports: 0, updatedAt: '2026-11-23T11:00:00Z' },
         'sk-2': { category: 'verified', status: 'gap_identified', pendingReports: 0, updatedAt: '2026-11-23T11:30:00Z' },
         'sk-3': { category: 'reported', status: 'not_assessed', pendingReports: 1, updatedAt: null },
-      }, ['l-1'], { verified: 2, reported: 1, notAssessed: 0 }, 1, 0) },
+      }, ['l-1'], { verified: 2, reported: 1, notAssessed: 0 }, 1, 0,
+        [{ id: 'as-1', skillIds: ['sk-1'], at: '2026-11-23T11:00:00Z', result: { 'sk-1': 'theory_demonstrated' }, approvedAt: '2026-11-23T11:20:00Z' }],
+        [{ id: 'ev-1', kind: 'lab_report', createdAt: '2026-11-23T10:50:00Z' }]) },
       reported: { status: 200, body: lv({
         'sk-3': { category: 'reported', status: 'not_assessed', pendingReports: 1, updatedAt: null },
       }, [], { verified: 0, reported: 1, notAssessed: 2 }, 0, 0) },
@@ -172,7 +174,7 @@ const STATES = {
     };
     const LEARNER_EXPECT = {
       empty: { measures: 0, has: ['עדיין אין הערכות מאומתות', 'אין עדיין רישום התקדמות עבורך', 'עדיין אין שיעור שהושלם', 'אין עדיין נלמד או הוכח במעשה'] },
-      verified: { measures: 2, has: ['מאומת', 'ממתין לאימות', 'לא הוערך', 'נלמד', 'הוכח במעשה', 'פערי ידע', 'fixture · skill 2', 'הערכה מחדש: fixture · skill 2', 'נגזר', 'הושלם', 'fixture · lesson 1'] },
+      verified: { measures: 2, has: ['מאומת', 'ממתין לאימות', 'לא הוערך', 'נלמד', 'הוכח במעשה', 'פערי ידע', 'fixture · skill 2', 'הערכה מחדש: fixture · skill 2', 'נגזר', 'הושלם', 'fixture · lesson 1', 'הערכות מאושרות', 'fixture · skill 1', 'דוח מעבדה', 'ראיות מאושרות'] },
       reported: { measures: 0, has: ['עדיין אין הערכות מאומתות', 'ממתין לאימות', 'אין עדיין נלמד או הוכח במעשה', 'אין מיומנות שסומנה'] },
       forbidden: { measures: 0, has: ['אין הרשאה לראות את ההתקדמות'] },
       unavailable: { measures: 0, has: ['ההתקדמות עדיין לא זמינה'] },
