@@ -448,6 +448,15 @@ check('referenceId: ראיה קיימת → מתקבל (כל kind)', academy_val
 check('referenceId: משימה ב-kind task → מתקבל', academy_validate_v2($tl($full2['tasks'][0]['id'], 'task')) === []);
 check('referenceId: מסלול ב-kind curriculum → מתקבל', academy_validate_v2($tl('tr-1', 'curriculum')) === []);
 check('referenceId: null → מתקבל', academy_validate_v2($tl(null)) === []);
+// רגרסיה: ישות שאליה הצביע referenceId נמחקה מה-snapshot → נדחה ב-422, והמודל לא נבנה
+foreach ([['evidence', 'decision'], ['tasks', 'task']] as [$coll, $kind]) {
+    $id = $full2[$coll][0]['id'];
+    $x = $tl($id, $kind);
+    $x[$coll] = array_values(array_filter($x[$coll], fn($e) => $e['id'] !== $id));
+    check("referenceId: ישות שנמחקה ($coll) → נדחה", (bool) preg_grep('/timeline\[1\]\.referenceId/', academy_validate_v2($x)));
+    [$st, $body] = academy_api_snapshot($def, [], new FixedSource($x));
+    check("referenceId: ישות שנמחקה ($coll) → snapshot 422 בלי מודל", $st === 422 && $body['code'] === 'contract_invalid' && !isset($body['model']));
+}
 [$st, $body] = academy_api_snapshot($def, [], new FixedSource($tl('../x')));
 check('referenceId: נתיב → snapshot 422', $st === 422 && $body['code'] === 'contract_invalid');
 [$st, $body] = academy_api_snapshot($def, [], new FixedSource($tl('as-1')));
@@ -1145,6 +1154,9 @@ foreach (glob("$root/assets/js/*.js") as $f) {
 }
 $idx = (string) file_get_contents("$root/index.html");
 check('אין קישור חזרה לכלים', !preg_match('~href="\.\./|\.\./index\.html~', $idx));
+
+// ---------- דיווחי מורים (פורמט v1.0.0) ----------
+require __DIR__ . '/report-checks.php';
 
 array_map('unlink', glob("$tmp/cache/*") ?: []); @rmdir("$tmp/cache");
 array_map('unlink', glob("$tmp/*") ?: []); @rmdir($tmp);
