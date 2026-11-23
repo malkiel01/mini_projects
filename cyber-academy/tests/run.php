@@ -418,6 +418,43 @@ $badRef = $full2; $badRef['evidence'][0]['reference'] = '/etc/passwd';
 check('reference: הולידציה עדיין דוחה הפניה לא בטוחה', academy_validate_v2($badRef) !== []);
 $badRef['evidence'][0]['reference'] = 'evidence/../x.md';
 check('reference: הולידציה עדיין דוחה ..', academy_validate_v2($badRef) !== []);
+
+// סריקת נתיבים: אף מחרוזת בפלט (מפתח או ערך) אינה נראית כנתיב קובץ
+$pathLike = function ($v) use (&$pathLike): array {
+    $hits = [];
+    foreach ((array) $v as $k => $x) {
+        foreach (is_array($x) ? $pathLike($x) : [] as $h) $hits[] = $h;
+        foreach (array_filter([is_string($k) ? $k : null, is_string($x) ? $x : null]) as $str)
+            if (preg_match('#(^|[\s"\'(])(/[\w.-]+|\.\.?/|~/)|[\w-]/[\w.-]+\.\w{1,5}\b|[A-Za-z]:\\\\|\.\.[/\\\\]#u', $str)) $hits[] = $str;
+    }
+    return $hits;
+};
+check('נתיבים: הסורק מזהה נתיב', $pathLike(['a' => ['b' => 'evidence/x.md'], 'c' => '/etc/passwd', 'd' => '../x']) === ['evidence/x.md', '/etc/passwd', '../x']);
+check('נתיבים: הסורק לא מתריע על TCP/IP ותאריכים', $pathLike(['TCP/IP', '2026-11-19T09:00:00Z', 'https://x.org']) === []);
+[$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($refFx))));
+check('נתיבים: curriculum.php — אין מחרוזת דמוית נתיב', $st === 200 && $pathLike($body) === [], implode(' | ', $pathLike($body)));
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($refFx));
+check('נתיבים: snapshot v2 — אין מחרוזת דמוית נתיב', $st === 200 && $pathLike($body) === [], implode(' | ', $pathLike($body)));
+
+// timeline.referenceId — מזהה בלבד, ורק לישות קיימת
+$tl = fn($rid, $kind = 'assessment') => (function () use ($full2, $rid, $kind) {
+    $x = $full2; $x['timeline'][1]['referenceId'] = $rid; $x['timeline'][1]['kind'] = $kind; return $x; })();
+foreach (['evidence/x.md', '../x', '/etc/passwd', '.hidden', 'a..b', 'C:\\x', '~/x', ''] as $bad)
+    check("referenceId: נתיב/לא-מזהה \"$bad\" → נדחה", (bool) preg_grep('/timeline\[1\]\.referenceId/', academy_validate_v2($tl($bad))));
+check('referenceId: מזהה לא קיים → נדחה', (bool) preg_grep('/timeline\[1\]\.referenceId: אין מזהה "as-nope"/', academy_validate_v2($tl('as-nope'))));
+check('referenceId: מזהה של רשימה אחרת (task ב-kind assessment) → נדחה', (bool) preg_grep('/referenceId/', academy_validate_v2($tl($full2['tasks'][0]['id']))));
+check('referenceId: הערכה קיימת → מתקבל', academy_validate_v2($tl('as-1')) === []);
+check('referenceId: ראיה קיימת → מתקבל (כל kind)', academy_validate_v2($tl($full2['evidence'][0]['id'], 'decision')) === []);
+check('referenceId: משימה ב-kind task → מתקבל', academy_validate_v2($tl($full2['tasks'][0]['id'], 'task')) === []);
+check('referenceId: מסלול ב-kind curriculum → מתקבל', academy_validate_v2($tl('tr-1', 'curriculum')) === []);
+check('referenceId: null → מתקבל', academy_validate_v2($tl(null)) === []);
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($tl('../x')));
+check('referenceId: נתיב → snapshot 422', $st === 422 && $body['code'] === 'contract_invalid');
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($tl('as-1')));
+$rids = array_column($body['model']['timeline'], 'referenceId');
+check('referenceId: בתשובת הצופה — רק מזהה תקין', $st === 200 && in_array('as-1', $rids, true)
+    && !array_filter($rids, fn($r) => $r !== null && !preg_match(ACADEMY_V2_ID, $r)));
+check('referenceId: המודל מסנן נתיב גם בלי ולידציה', !in_array('evidence/x.md', array_column(academy_model_v2($tl('evidence/x.md'))['timeline'], 'referenceId'), true));
 [$st, $body] = academy_api_curriculum('GET', $cfg, new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($valid))));
 check('curriculum: snapshot v1 → contract_version', $st === 422 && $body['code'] === 'contract_version');
 foreach ([401, 403, 404, 429, 500] as $code) {
