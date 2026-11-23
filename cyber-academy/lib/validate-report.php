@@ -124,6 +124,31 @@ function academy_validate_report(mixed $r, ?array $catalog = null, array $httpsH
     return array_values(array_unique($err));
 }
 
+/**
+ * בונה את גוף הבקשה ל-progress-write.php action=report (ראו docs/reports/teacher-report-format.md, "מיפוי").
+ * הדיווח חייב לעבור academy_validate_report קודם; אחרת נזרקת חריגה. הפונקציה לא שולחת כלום.
+ * evidenceRefs לא נכנסים לגוף הזה — הם עוברים בנפרד דרך apply ב-evidence[].
+ *
+ * @return array{action: string, learnerId: string, report: array<string, mixed>}
+ */
+function academy_report_to_progress_payload(array $r, string $learnerId): array {
+    if (academy_validate_report($r) !== []) throw new InvalidArgumentException('דיווח לא תקין — לא נבנה גוף לשרת');
+    $lines = ['ממצאים:', ...$r['findings'], 'מגבלות ראיות:', ...$r['evidenceLimits'], 'המלצה:', $r['recommendation']];
+    return [
+        'action' => 'report',
+        'learnerId' => $learnerId,
+        'report' => [
+            'id' => $r['taskId'] . '-T' . $r['teacherId'],
+            'at' => $r['date'] . 'T00:00:00Z',
+            'reporter' => $r['teacherId'],
+            'skillIds' => $r['skillIds'],
+            'lessonIds' => $r['lessonIds'],
+            'assistanceLevel' => $r['assistanceLevel'],
+            'summary' => implode("\n", $lines),
+        ],
+    ];
+}
+
 /** מחזיר סיבה אם המחרוזת נראית כמו סוד, אחרת ''. */
 function report_secret_hit(string $s): string {
     if (preg_match('/(gh[pousr]_[A-Za-z0-9]{8,}|github_pat_|sk-[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{12,})/', $s)) return 'מפתח או אסימון';

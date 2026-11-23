@@ -63,6 +63,26 @@ check('https עם פרטי התחברות בכתובת נדחה גם אם המא
     academy_validate_report($httpsRef('https://user:pw@example.com/x'), null, ['example.com']) !== []);
 check('נתיב יחסי לא מושפע מהרשימה', academy_validate_report($goodReport, null, []) === []);
 
+// ---------- מיפוי לשרת (action=report) ----------
+$payload = academy_report_to_progress_payload($goodReport, 'lrn-demo-01');
+check('גוף הבקשה: action=report ו-learnerId מהקריאה', $payload['action'] === 'report' && $payload['learnerId'] === 'lrn-demo-01');
+check('מזהה הדיווח: taskId-Tמורה', $payload['report']['id'] === 'ACA-DEMO-001-T02', $payload['report']['id']);
+check('at = תאריך-שעה RFC 3339 מהתאריך של הדיווח', $payload['report']['at'] === '2026-11-10T00:00:00Z', $payload['report']['at']);
+check('reporter = teacherId', $payload['report']['reporter'] === '02');
+check('lessonIds נשמרים בדיווח', $payload['report']['lessonIds'] === $goodReport['lessonIds']);
+check('assistanceLevel נשמר בדיווח בשם האחיד hint', $payload['report']['assistanceLevel'] === 'hint');
+check('evidenceRefs לא נכנסים לגוף של action=report', !array_key_exists('evidenceRefs', $payload['report']) && !str_contains(json_encode($payload), 'output-01'));
+check('summary כולל כל ממצא, מגבלה והמלצה',
+    str_contains($payload['report']['summary'], $goodReport['findings'][1])
+    && str_contains($payload['report']['summary'], $goodReport['evidenceLimits'][0])
+    && str_contains($payload['report']['summary'], $goodReport['recommendation']));
+check('סדר השדות בדיווח בשרת: id,at,reporter,skillIds,lessonIds,assistanceLevel,summary',
+    array_keys($payload['report']) === ['id', 'at', 'reporter', 'skillIds', 'lessonIds', 'assistanceLevel', 'summary']);
+$threw = false;
+try { academy_report_to_progress_payload($reportFixture('broken/has-status.json'), 'lrn-demo-01'); }
+catch (InvalidArgumentException) { $threw = true; }
+check('דיווח לא תקין לא נבנה לגוף לשרת', $threw);
+
 check('הפניית ראיה עם טקסט מוטמע (לא נתיב) נדחית כשהיא מכילה ?token=',
     academy_validate_report(array_merge($goodReport, ['evidenceRefs' => ['https://example.com/x?token=demo']])) !== []);
 check('תאריך 29 בפברואר בשנה לא מעוברת נדחה', !report_is_date('2026-02-29'));
