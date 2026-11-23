@@ -21,7 +21,9 @@ const ACADEMY_PROGRESS_SCHEMA = 'progress-1';
 const ACADEMY_PROGRESS_STATUSES = ACADEMY_COMPETENCY_STATUSES;
 // סטטוס שמעיד על הערכה — דורש הערכה evaluated מאושרת על המיומנות
 const ACADEMY_PROGRESS_ASSESSED = ['gap_identified', 'theory_demonstrated', 'practice_demonstrated', 'reassessment_required', 'mastered'];
-const ACADEMY_PROGRESS_ASSISTANCE = ['none', 'hints', 'guided', 'full'];
+const ACADEMY_PROGRESS_ASSISTANCE = ['none', 'hint', 'guided', 'full'];
+// רמת הסיוע בדיווח מורה — כולל unknown ("לא ידוע"), שלעולם לא נספר כ-none
+const ACADEMY_PROGRESS_REPORT_ASSISTANCE = ['none', 'hint', 'guided', 'full', 'unknown'];
 
 final class AcademyProgressError extends RuntimeException {
     public function __construct(string $m, public readonly int $http = 422, public readonly string $errorCode = 'progress_invalid',
@@ -113,8 +115,10 @@ function academy_progress_validate(mixed $p): array {
         'assessments' => ['id' => [1, 'id'], 'skillIds' => [1, 'ids'], 'status' => [1, 'enum:planned|in_progress|evaluated'],
             'assistance' => [1, 'enum:' . implode('|', ACADEMY_PROGRESS_ASSISTANCE)], 'assessor' => [1, 'str1'],
             'assessedAt' => [1, 'dt?'], 'evidenceIds' => [1, 'ids'], 'approvedBy' => [0, 'str?'], 'approvedAt' => [0, 'dt?']],
-        // דיווח מורה: אין בו status — הוא לא משנה מצב, רק נוסף למעקב
-        'reports' => ['id' => [1, 'id'], 'at' => [1, 'dt'], 'reporter' => [1, 'str1'], 'skillIds' => [1, 'ids'], 'summary' => [1, 'str']],
+        // דיווח מורה: אין בו status — הוא לא משנה מצב ולא מאפשר mastered, רק נוסף למעקב (גם עם assistanceLevel none)
+        'reports' => ['id' => [1, 'id'], 'at' => [1, 'dt'], 'reporter' => [1, 'str1'], 'skillIds' => [1, 'ids'],
+            'lessonIds' => [0, 'ids'], 'assistanceLevel' => [1, 'enum:' . implode('|', ACADEMY_PROGRESS_REPORT_ASSISTANCE)],
+            'summary' => [1, 'str']],
     ];
     $ids = [];
     foreach ($lists as $list => $spec) {
@@ -189,7 +193,10 @@ function academy_progress_validate(mixed $p): array {
 /** קטגוריה לכל מיומנות: verified / reported / not_assessed — לא מתמזגות. */
 function academy_progress_view(array $p, array $skillIds = []): array {
     $reported = [];
-    foreach ($p['reports'] as $r) foreach ($r['skillIds'] as $sid) $reported[$sid][] = ['id' => $r['id'], 'at' => $r['at']];
+    foreach ($p['reports'] as $r) foreach ($r['skillIds'] as $sid) $reported[$sid][] = ['id' => $r['id'], 'at' => $r['at'], 'assistanceLevel' => $r['assistanceLevel']];
+    // רמת הסיוע בדיווחים — כל ערך בנפרד; unknown לעולם לא מצטרף ל-none
+    $assist = array_fill_keys(ACADEMY_PROGRESS_REPORT_ASSISTANCE, 0);
+    foreach ($p['reports'] as $r) $assist[$r['assistanceLevel']]++;
     $all = array_values(array_unique(array_merge($skillIds, array_keys($p['skills']), array_keys($reported))));
     $skills = [];
     foreach ($all as $sid) {
@@ -200,6 +207,7 @@ function academy_progress_view(array $p, array $skillIds = []): array {
             // סטטוס רשמי — רק ממה שאומת. דיווח מורה לא משנה אותו.
             'status' => $s['status'] ?? 'not_assessed',
             'pendingReports' => count($reported[$sid] ?? []),
+            'reportAssistance' => array_values(array_unique(array_column($reported[$sid] ?? [], 'assistanceLevel'))),
             'updatedAt' => $s['updatedAt'] ?? null,
         ];
     }
@@ -213,6 +221,39 @@ function academy_progress_view(array $p, array $skillIds = []): array {
         'learned' => $by(['theory_demonstrated']), 'proven' => $by(['practice_demonstrated', 'mastered']),
         'skills' => $skills,
         'lessonsCompleted' => array_keys(array_filter($p['lessons'], fn($l) => $l['completed'] === true)),
+        // דיווחי מורה לפי רמת סיוע — מידע למעקב בלבד, לא שליטה
+        'reportsByAssistance' => $assist,
+    ];
+}
+
+/**
+ * התצוגה של הלומד עצמו — מצומצמת: רק מה שאומת, בלי נתיבים ובלי מעריכים, ובלי שום שדה מדיווחי המורים.
+ *  - assessments: רק evaluated + assessedAt + approvedBy + approvedAt → {id, skillIds, at, result, approvedAt}.
+ *    result = הסטטוס המאומת של כל מיומנות שמפנה להערכה הזו ({skillId: status}); אין שדה result בהערכה עצמה.
+ *  - evidence: רק מאומתת (approvedBy + approvedAt + הפניה בטוחה) → {id, kind, createdAt}. **בלי reference.**
+ *  - skills: category + status + updatedAt בלבד (בלי pendingReports / reportAssistance). אין reportsByAssistance.
+ */
+function academy_progress_learner_view(array $p): array {
+    $full = academy_progress_view($p);
+    $skills = array_map(fn($s) => ['category' => $s['category'], 'status' => $s['status'], 'updatedAt' => $s['updatedAt']], $full['skills']);
+    $assessments = [];
+    foreach ($p['assessments'] as $a) {
+        if ($a['status'] !== 'evaluated' || empty($a['assessedAt']) || empty($a['approvedBy']) || empty($a['approvedAt'])) continue;
+        $result = [];
+        foreach ($p['skills'] as $sid => $s) {
+            if (in_array($a['id'], $s['assessmentIds'], true) && in_array((string) $sid, $a['skillIds'], true)) $result[(string) $sid] = $s['status'];
+        }
+        $assessments[] = ['id' => $a['id'], 'skillIds' => $a['skillIds'], 'at' => $a['assessedAt'], 'result' => $result, 'approvedAt' => $a['approvedAt']];
+    }
+    $evidence = [];
+    foreach ($p['evidence'] as $e) {
+        if (empty($e['approvedBy']) || empty($e['approvedAt']) || academy_v2_unsafe_reference((string) $e['reference']) !== '') continue;
+        $evidence[] = ['id' => $e['id'], 'kind' => $e['kind'], 'createdAt' => $e['createdAt']];
+    }
+    return [
+        'learnerId' => $full['learnerId'], 'updatedAt' => $full['updatedAt'], 'counts' => $full['counts'],
+        'learned' => $full['learned'], 'proven' => $full['proven'], 'skills' => $skills,
+        'lessonsCompleted' => $full['lessonsCompleted'], 'assessments' => $assessments, 'evidence' => $evidence,
     ];
 }
 

@@ -39,9 +39,9 @@
   "skills":  { "<skillId>": { "status": "<7 הסטטוסים>", "updatedAt": "…|null", "assessmentIds": [], "evidenceIds": [] } },
   "lessons": { "<lessonId>": { "completed": false, "evidenceIds": [], "approvedBy": null, "approvedAt": null } },
   "assessments": [ { "id", "skillIds": [], "status": "planned|in_progress|evaluated",
-                     "assistance": "none|hints|guided|full", "assessor", "assessedAt", "evidenceIds": [], "approvedBy", "approvedAt" } ],
+                     "assistance": "none|hint|guided|full", "assessor", "assessedAt", "evidenceIds": [], "approvedBy", "approvedAt" } ],
   "evidence":    [ { "id", "kind", "reference", "assessor", "createdAt", "approvedBy", "approvedAt" } ],
-  "reports":     [ { "id", "at", "reporter", "skillIds": [], "summary" } ]
+  "reports":     [ { "id", "at", "reporter", "skillIds": [], "lessonIds": [], "assistanceLevel": "none|hint|guided|full|unknown", "summary" } ]
 }
 ```
 
@@ -64,7 +64,7 @@
   `evaluated` על אותה מיומנות, עם `assessedAt` + `approvedBy` + `approvedAt`.
 - `mastered` — בנוסף: הערכה **עצמאית** (`assistance: "none"`) **וגם** ראיה מאומתת.
 - שיעור `completed: true` — רק עם ראיה מאומתת + `approvedBy` + `approvedAt`. לעולם לא אוטומטית.
-- דיווח מורה (`reports`) — **אין בו `status`**. הוא לא משנה סטטוס, רק נוסף למעקב.
+- דיווח מורה (`reports`) — **אין בו `status`**. הוא לא משנה סטטוס, רק נוסף למעקב. `assistanceLevel` חובה; `unknown` נשמר כ"לא ידוע" ולעולם לא נספר כ-`none`. גם דיווח עם `none` **לא** מאפשר `mastered` — רק הערכה מאושרת עם `assistance: "none"`.
 - כל כתיבה בודקת את הקובץ **כולו** אחרי השינוי. כשל → 422 עם השגיאות, והקובץ לא משתנה.
 
 ## גישה
@@ -79,6 +79,17 @@
 - `{"action":"register","learnerId","sub"}` — מיפוי משתמש פלטפורמה ללומד.
 - `{"action":"report","learnerId","report":{…}}` — דיווח מורה.
 - `{"action":"apply","learnerId","evidence":[…],"assessments":[…],"skills":{…},"lessons":{…}}` — שינוי, כפוף לכל הכללים.
+
+## מה הלומד רואה (`academy_progress_learner_view`)
+
+רק מה שאומת, בלי נתיבים, מעריכים או דיווחים:
+- `skills` — `category`, `status`, `updatedAt` לכל מיומנות. `counts`, `learned`, `proven`, `lessonsCompleted`.
+- `assessments` — רק `evaluated` עם `assessedAt` + `approvedBy` + `approvedAt`: `{id, skillIds, at, result, approvedAt}`.
+  `result` = הסטטוס המאומת של כל מיומנות שמפנה להערכה (`{skillId: status}`) — אין שדה `result` בהערכה עצמה.
+- `evidence` — רק מאומתת: `{id, kind, createdAt}`. **בלי `reference`.**
+- **אין** `reports`, `assistanceLevel`, `pendingReports`, `reportsByAssistance`, `assessor`, `assistance`, `approvedBy`.
+
+המנהל (`progress.read.all`) מקבל את התצוגה המלאה, כולל דיווחי המורים לפי רמת סיוע.
 
 ## יומן ביקורת
 
