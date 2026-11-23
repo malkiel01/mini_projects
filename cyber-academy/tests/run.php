@@ -186,9 +186,9 @@ check('github מבוקש, כבוי, עם fallback → דוגמה מסומנת', 
 check('local: אין קומיט ב-sourceInfo', $body['sourceInfo']['commit'] === null);
 
 // ---------- קודי כשל של החוזה ----------
-$v2 = $valid; $v2['schemaVersion'] = '2.0.0';
+$v2 = $valid; $v2['schemaVersion'] = '3.0.0';
 [$st, $body] = academy_api_snapshot($def, [], new FixedSource($v2));
-check('גרסת חוזה אחרת → contract_version (לא contract_invalid)', $st === 422 && $body['code'] === 'contract_version' && $body['receivedVersion'] === '2.0.0');
+check('גרסת חוזה אחרת → contract_version (לא contract_invalid)', $st === 422 && $body['code'] === 'contract_version' && $body['receivedVersion'] === '3.0.0');
 [$st, $body] = academy_api_snapshot($def, [], new FixedSource(fixture('broken/unknown-track-ref.json')));
 check('הפניה שבורה → contract_invalid', $st === 422 && $body['code'] === 'contract_invalid' && $body['errorCount'] === 1);
 [$st, $body] = academy_api_snapshot($def, [], new FixedSource(null));
@@ -254,6 +254,94 @@ foreach (['updatedAt null' => null, 'updatedAt תאריך' => '2026-11-23T12:00:
 }
 check('דוגמה ריקה: גם בלי מדד', academy_api_snapshot($def, ['demo' => 'empty'])[1]['model']['measure'] === null);
 check('דוגמה מלאה: יש מדד', is_array(academy_api_snapshot($def)[1]['model']['measure']));
+
+// ---------- חוזה v2 ----------
+$fx2 = fn(string $n) => json_decode((string) file_get_contents(__DIR__ . "/fixtures/v2/$n.json"), true);
+$ex2 = $fx2('excerpt-49f4b2d');
+$full2 = $fx2('synthetic-full');
+check('v2: קטע 49f4b2d עובר', academy_validate_v2($ex2) === [], implode(' | ', academy_validate_v2($ex2)));
+check('v2: fixture מלא עובר', academy_validate_v2($full2) === [], implode(' | ', academy_validate_v2($full2)));
+$b2 = glob(__DIR__ . '/fixtures/v2/broken/*.json');
+check('v2: יש fixtures שבורים לכל כלל', count(glob(__DIR__ . '/fixtures/v2/broken/schema--*.json')) >= 20 && count(glob(__DIR__ . '/fixtures/v2/broken/rule--*.json')) >= 30);
+foreach ($b2 as $f) {
+    $errs = academy_validate_v2(json_decode((string) file_get_contents($f), true));
+    check('v2 שבור נכשל: ' . basename($f), $errs !== []);
+    foreach ($errs as $e) check('v2: נתיב JSON בהודעה: ' . basename($f), str_starts_with($e, '$'), $e);
+}
+// כל כלל נכשל מהסיבה הנכונה
+$why = [
+    'rule--task-dependsOn-cycle' => 'מחזור בתלויות', 'rule--task-dependsOn-self' => 'בעצמה', 'rule--prerequisite-cycle' => 'מעגל בדרישות',
+    'rule--curriculum-approved-no-approvedBy' => 'approvedAt ו-approvedBy', 'rule--curriculum-proposed-with-approval' => 'יהיו null',
+    'rule--mastered-no-evidence' => 'ראיה תקינה', 'rule--mastered-assessment-not-approved' => 'הערכה מתועדת',
+    'rule--module-lessonIds-other-module' => 'שייך למודול אחר', 'rule--stage-trackIds-other-stage' => 'שייך ל-stage אחר',
+    'rule--evidence-reference-token' => 'הפניה לא בטוחה', 'rule--evidence-reference-absolute' => 'נתיב מוחלט',
+    'rule--duplicate-track-id' => 'ייחודי', 'schema--track-extra-property' => 'אינו קיים בחוזה v2', 'schema--bad-id-pattern' => 'מזהה לא תקין',
+    'schema--ids-not-unique' => 'כפול', 'schema--lesson-no-objectives' => 'פריט אחד לפחות',
+];
+foreach ($why as $n => $word) {
+    $errs = academy_validate_v2($fx2("broken/$n"));
+    check("v2 $n: הסיבה \"$word\"", (bool) array_filter($errs, fn($e) => str_contains($e, $word)), implode(' | ', $errs));
+}
+check('v2: הפניה יחסית ו-https מותרות', academy_v2_unsafe_reference('evidence/a.md') === '' && academy_v2_unsafe_reference('https://x.org/a') === '');
+
+// API: ניתוב לפי גרסה
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($full2));
+check('API v2: 200 + מודל v2', $st === 200 && $body['model']['version'] === 2 && $body['contract']['schemaVersion'] === '2.0.0');
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($fx2('broken/rule--task-dependsOn-cycle')));
+check('API v2: שבור → contract_invalid', $st === 422 && $body['code'] === 'contract_invalid' && str_contains($body['error'], 'v2'));
+[$st, $body] = academy_api_snapshot($def, [], new FixedSource($fx2('broken/schema--wrong-schema-version')));
+check('API: 2.1.0 → contract_version', $st === 422 && $body['code'] === 'contract_version' && $body['receivedVersion'] === '2.1.0');
+check('API: v1 עדיין עובד', academy_api_snapshot($def)[1]['model']['schemaVersion'] === '1.0.0');
+
+// מודל v2
+$m2 = academy_model_v2($full2);
+check('מודל v2: stage → track → module → lesson', array_column($m2['stages'], 'id') === ['st-a', 'st-b']
+    && $m2['stages'][0]['trackIds'] === ['tr-1', 'tr-2'] && array_column($m2['modules'][0]['lessons'], 'id') === ['l-1', 'l-2']);
+check('מודל v2: topics ו-skills תחת המודול', array_column($m2['modules'][0]['topics'], 'id') === ['tp-1'] && array_column($m2['modules'][0]['skills'], 'id') === ['sk-1']);
+check('מודל v2: נלמד ≠ הוכח, ספירות', $m2['measure']['learned'] === 1 && $m2['measure']['proven'] === 1 && $m2['measure']['total'] === 3);
+check('מודל v2: אין אחוזים', !preg_match('/percent|pct|ratio|weighted/i', json_encode($m2)));
+check('מודל v2: מסלול מוצע לא "approved" גם כשהסילבוס מאושר', array_column($m2['tracks'], 'curriculumStatus', 'id') === ['tr-1' => 'approved', 'tr-2' => 'proposed', 'tr-3' => 'approved']);
+$prop = $full2; $prop['curriculum'] = ['status' => 'proposed', 'version' => 'x', 'approvedAt' => null, 'approvedBy' => null];
+check('מודל v2: סילבוס מוצע → כל המסלולים "proposed"', !array_filter(academy_model_v2($prop)['tracks'], fn($t) => $t['curriculumStatus'] !== 'proposed'));
+$mex = academy_model_v2($ex2);
+check('מודל v2 (49f4b2d): אין הערכות → measure null, לא 0', $mex['measure'] === null && $mex['assessmentsRecorded'] === 0
+    && $mex['tracks'][0]['measure'] === null && $mex['modules'][0]['measure'] === null);
+check('מודל v2 (49f4b2d): שיעור lab עם authorizedLabRequired', $mex['modules'][0]['lessons'][2]['kind'] === 'lab' && $mex['modules'][0]['lessons'][2]['authorizedLabRequired'] === true);
+check('מודל v2: משימה ממתינה לתלות', array_column(array_column($m2['tasks'], 'waitingOn', 'id')['tk-3'], 'id') === ['tk-2']);
+
+// github v2: רק סילבוס מאושר, בלי נתוני לומד
+$co = academy_v2_curriculum_only($full2);
+check('github v2: רק מסלולים מאושרים', array_column($co['tracks'], 'id') === ['tr-1', 'tr-3']);
+check('github v2: בלי נתוני לומד', $co['competencies'] === [] && $co['tasks'] === [] && $co['assessments'] === [] && $co['evidence'] === [] && $co['timeline'] === []);
+check('github v2: המסונן עדיין תקין', academy_validate_v2($co) === [], implode(' | ', academy_validate_v2($co)));
+check('github v2: מודול של מסלול מוצע נשמט', !in_array('m-3', array_column($co['modules'], 'id'), true) && !in_array('tp-2', array_column($co['topics'], 'id'), true));
+check('github v2: 49f4b2d (הכול מוצע) → 0 מסלולים', academy_v2_curriculum_only($ex2)['tracks'] === [] && academy_v2_curriculum_only($ex2)['lessons'] === []);
+$src = new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($full2)));
+[$st, $body] = academy_api_snapshot($cfg, [], $src);
+check('API github v2: מסונן, בלי מדד ובלי לומד', $st === 200 && $body['filter'] === 'approved_curriculum_only' && $body['isSample'] === false
+    && $body['model']['measure'] === null && $body['model']['tasks'] === [] && $body['model']['competencies'] === []
+    && !str_contains(json_encode($body), 'evidence/tr-1'));
+$src = new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, json_encode($ex2)));
+[$st, $body] = academy_api_snapshot($cfg, [], $src);
+check('API github v2 (49f4b2d): 0 מסלולים → ריק', $st === 200 && $body['model']['empty'] === true && $body['model']['counts']['tracks'] === 0);
+// v2_path: ריק = fail-closed; דגלים כבויים = source_disabled
+$ghV2 = ['source' => 'github', 'github_enabled' => true, 'privacy_confirmed' => true, 'contract' => 'v2'] + $def;
+try { academy_source($ghV2, '', true); check('v2_path ריק → source_disabled', false); }
+catch (AcademySourceError $e) { check('v2_path ריק → source_disabled', $e->errorCode === 'source_disabled'); }
+$ghV2['github'] = ['v2_path' => 'some/path.json'] + $def['github'];
+check('v2_path מוגדר (מעבר למנעול) → github', academy_source($ghV2, '', true) instanceof GithubAcademySource);
+[$st, $body] = academy_api_snapshot(['contract' => 'v2', 'fallback_to_sample' => false] + $ghV2);
+check('v2: המנעול בקוד סגור → source_disabled', $st === 503 && $body['code'] === 'source_disabled');
+check('ברירת מחדל: contract v1, v2_path ריק', $def['contract'] === 'v1' && $def['github']['v2_path'] === '');
+foreach ([401, 403, 404, 429, 500] as $code) {
+    $src = new GithubAcademySource(['path' => 'x/v2.json'] + $gh, "$tmp/cache", 0, gh_stub($code, '{"message":"' . $token . '"}'));
+    $out = json_encode(academy_api_snapshot($cfg, [], $src), JSON_UNESCAPED_UNICODE);
+    check("github v2 $code: בלי אסימון", !str_contains($out, $token) && str_contains($out, '"code":"source_'));
+}
+$src = new GithubAcademySource($gh, "$tmp/cache", 0, gh_stub(200, '{"schemaVersion":"2.0.0",' . $token));
+$out = json_encode(academy_api_snapshot($cfg, [], $src), JSON_UNESCAPED_UNICODE);
+check('github v2 JSON שבור: contract_invalid בלי אסימון', str_contains($out, 'contract_invalid') && !str_contains($out, $token));
+check('אין endpoint ל-issues', !glob(__DIR__ . '/../api/*issue*') && !preg_match('/\/issues/', (string) file_get_contents(__DIR__ . '/../lib/academy-source.php')));
 
 // ---------- הרשאות ----------
 check('viewer קורא', academy_can('snapshot.read', 'viewer'));

@@ -14,6 +14,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/academy-source.php';
 require_once __DIR__ . '/validate.php';
 require_once __DIR__ . '/model.php';
+require_once __DIR__ . '/validate-v2.php';
+require_once __DIR__ . '/model-v2.php';
 require_once __DIR__ . '/access.php';
 
 const ACADEMY_SOURCE_HTTP = [
@@ -60,17 +62,26 @@ function academy_api_snapshot(array $config, array $query = [], ?AcademySource $
     }
     $meta['sourceInfo'] = $source->info();
 
-    // גרסת חוזה אחרת — מסך משלה, לפני שאר השגיאות (שהן תוצאה שלה)
-    if (is_array($data) && array_key_exists('schemaVersion', $data) && $data['schemaVersion'] !== ACADEMY_SCHEMA_VERSION) {
-        $got = is_scalar($data['schemaVersion']) ? (string) $data['schemaVersion'] : json_encode($data['schemaVersion']);
-        return $fail(422, 'contract_version', "גרסת החוזה \"$got\" אינה נתמכת — הדשבורד קורא רק " . ACADEMY_SCHEMA_VERSION,
+    // גרסת חוזה לא נתמכת — מסך משלה, לפני שאר השגיאות (שהן תוצאה שלה)
+    $supported = [ACADEMY_SCHEMA_VERSION, ACADEMY_SCHEMA_V2];
+    $version = is_array($data) ? ($data['schemaVersion'] ?? ACADEMY_SCHEMA_VERSION) : ACADEMY_SCHEMA_VERSION;
+    if (!in_array($version, $supported, true)) {
+        $got = is_scalar($version) ? (string) $version : json_encode($version);
+        return $fail(422, 'contract_version', "גרסת החוזה \"$got\" אינה נתמכת — הדשבורד קורא רק " . implode(' או ', $supported),
             $meta, ['receivedVersion' => academy_redact(mb_substr($got, 0, 40), $token)]);
     }
-    $errors = academy_validate($data);
-    if ($errors) {
-        return $fail(422, 'contract_invalid', 'ה-snapshot אינו תואם לחוזה v1 — לא מוצג', $meta, [
-            'errors' => array_slice(array_map(fn($e) => academy_redact($e, $token), $errors), 0, 50),
-            'errorCount' => count($errors)]);
+    $v2 = $version === ACADEMY_SCHEMA_V2;
+    $invalid = fn(array $errors) => $fail(422, 'contract_invalid', 'ה-snapshot אינו תואם לחוזה ' . ($v2 ? 'v2' : 'v1') . ' — לא מוצג', $meta, [
+        'errors' => array_slice(array_map(fn($e) => academy_redact($e, $token), $errors), 0, 50), 'errorCount' => count($errors)]);
+    $errors = $v2 ? academy_validate_v2($data) : academy_validate($data);
+    if ($errors) return $invalid($errors);
+    $meta['contract'] = $v2 ? ['schemaVersion' => ACADEMY_SCHEMA_V2, 'commit' => null, 'proposal' => true] : $contract;
+    if ($v2 && $source->name() === 'github') {
+        // החלטת מנהל 00: מתחילים מסילבוס בלבד, ורק מאושר. בלי נתוני לומד.
+        $data = academy_v2_curriculum_only($data);
+        $errors = academy_validate_v2($data);
+        if ($errors) return $invalid($errors);
+        $meta['filter'] = 'approved_curriculum_only';
     }
-    return [200, ['ok' => true] + $meta + ['model' => academy_model($data)]];
+    return [200, ['ok' => true] + $meta + ['model' => $v2 ? academy_model_v2($data) : academy_model($data)]];
 }

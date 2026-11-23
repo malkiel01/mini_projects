@@ -7,7 +7,9 @@
     "repo": "offensive-cyber-academy",
     "ref": "main",
     "path": "dashboard/data/snapshot.json",
+    "v2_path": "",
     "token": ""
   },
-  "cache_ttl": 120
+  "cache_ttl": 120,
+  "contract": "v1"
 }

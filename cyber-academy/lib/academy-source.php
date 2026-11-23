@@ -49,11 +49,14 @@ function academy_default_config(): array {
         'privacy_confirmed'  => false,
         // מקור github שאינו מותר: true = מציגים דוגמה (מסומנת), false = מסך "המקור כבוי"
         'fallback_to_sample' => true,
+        // איזה חוזה לקרוא ממאגר האקדמיה: v1 (github.path) או v2 (github.v2_path — ריק = כבוי, fail-closed)
+        'contract'           => 'v1',
         'github'             => [
             'owner' => 'malkiel01',
             'repo'  => 'offensive-cyber-academy',
             'ref'   => 'main',
             'path'  => 'dashboard/data/snapshot.json',
+            'v2_path' => '',
             'token' => '',
         ],
         'cache_ttl' => 120,
@@ -91,7 +94,13 @@ function academy_github_allowed(array $config, bool $phase = ACADEMY_GITHUB_PHAS
 function academy_source(array $config, string $demo = '', bool $phase = ACADEMY_GITHUB_PHASE_ALLOWED): AcademySource {
     if (($config['source'] ?? 'local') === 'github') {
         if (academy_github_allowed($config, $phase)) {
-            return new GithubAcademySource($config['github'], ACADEMY_DIR . '/data/cache', (int) ($config['cache_ttl'] ?? 120));
+            $gh = $config['github'];
+            if (($config['contract'] ?? 'v1') === 'v2') {
+                // נתיב v2 לא ידוע עדיין — לא מנחשים. ריק = לא קוראים.
+                if (trim((string) ($gh['v2_path'] ?? '')) === '') throw new AcademySourceError('נתיב קובץ v2 במאגר האקדמיה לא הוגדר', 'source_disabled');
+                $gh['path'] = $gh['v2_path'];
+            }
+            return new GithubAcademySource($gh, ACADEMY_DIR . '/data/cache', (int) ($config['cache_ttl'] ?? 120));
         }
         if (($config['fallback_to_sample'] ?? true) !== true) {
             throw new AcademySourceError('החיבור למאגר האקדמיה כבוי', 'source_disabled');

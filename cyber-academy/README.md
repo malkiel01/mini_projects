@@ -11,13 +11,16 @@
 | שכבות, מסכים, מקורות, קודי כשל | `docs/spec/00-overview.md` |
 | מה חסר בחוזה v1, והצעה ל-v2 | `docs/schema-gaps.md` |
 | כללי הצוות | `team/PROTOCOL.md` |
-| אינטגרציה / נתונים / הרשאות | `lib/academy-source.php` · `lib/validate.php`, `lib/model.php` · `lib/access.php` |
+| אינטגרציה / נתונים / הרשאות | `lib/academy-source.php` · `lib/validate.php`, `lib/model.php` (v1), `lib/validate-v2.php`, `lib/model-v2.php` (v2 — הצעה) · `lib/access.php` |
 | ה-API (GET בלבד) | `api/snapshot.php` |
 | נתוני דוגמה | `samples/demo-snapshot.json` (11 מסלולים לפי ה-roadmap, כל כותרת "דוגמה · …"), `samples/empty-snapshot.json` |
 | בדיקות | `php cyber-academy/tests/run.php` · דפדפן: `node cyber-academy/tests/browser/check.js` (מקומי) |
 | נתוני ריצה בשרת | `data/` — מוחרגת מהפריסה וחסומה מהדפדפן (`config.json`, `cache/`) |
 
 ## החוזה
+
+v1 פעיל. v2 (הצעה, עם שיעורים) נתמך בקריאה — ראו `docs/spec/00-overview.md`.
+
 
 `dashboard/data/schema/v1/academy.schema.json`, קומיט **`cc85ac1`**, `schemaVersion 1.0.0`. snapshot שאינו תואם —
 נדחה עם רשימת שגיאות, לא מוצג.
