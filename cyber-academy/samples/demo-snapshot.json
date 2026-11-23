@@ -1,0 +1,372 @@
+{
+    "schemaVersion": "1.0.0",
+    "updatedAt": "2026-11-20T12:00:00Z",
+    "tracks": [
+        {
+            "id": "sample-foundations",
+            "title": "דוגמה · יסודות מחשוב",
+            "order": 1
+        },
+        {
+            "id": "sample-networks",
+            "title": "דוגמה · רשתות",
+            "order": 2,
+            "prerequisites": [
+                "sample-foundations"
+            ]
+        },
+        {
+            "id": "sample-programming",
+            "title": "דוגמה · תכנות ואוטומציה",
+            "order": 3,
+            "prerequisites": [
+                "sample-foundations"
+            ]
+        },
+        {
+            "id": "sample-web-basics",
+            "title": "דוגמה · יסודות Web ו-API",
+            "order": 4,
+            "prerequisites": [
+                "sample-networks",
+                "sample-programming"
+            ]
+        },
+        {
+            "id": "sample-security-basics",
+            "title": "דוגמה · יסודות אבטחה",
+            "order": 5,
+            "prerequisites": [
+                "sample-networks"
+            ]
+        },
+        {
+            "id": "sample-web-security",
+            "title": "דוגמה · אבטחת Web ו-API",
+            "order": 6,
+            "prerequisites": [
+                "sample-web-basics",
+                "sample-security-basics"
+            ]
+        },
+        {
+            "id": "sample-host-security",
+            "title": "דוגמה · אבטחת מערכות הפעלה",
+            "order": 7,
+            "prerequisites": [
+                "sample-security-basics"
+            ]
+        },
+        {
+            "id": "sample-pentest-workflow",
+            "title": "דוגמה · תהליך מבדק חדירה",
+            "order": 8,
+            "prerequisites": [
+                "sample-web-security",
+                "sample-host-security"
+            ]
+        },
+        {
+            "id": "sample-enterprise",
+            "title": "דוגמה · סביבות ארגוניות וענן",
+            "order": 9,
+            "prerequisites": [
+                "sample-pentest-workflow"
+            ]
+        },
+        {
+            "id": "sample-research",
+            "title": "דוגמה · מחקר אבטחה מתקדם",
+            "order": 10,
+            "prerequisites": [
+                "sample-host-security",
+                "sample-programming"
+            ]
+        },
+        {
+            "id": "sample-professional",
+            "title": "דוגמה · פרקטיקה מקצועית",
+            "order": 11,
+            "prerequisites": [
+                "sample-pentest-workflow"
+            ]
+        }
+    ],
+    "competencies": [
+        {
+            "id": "sample-foundations-os",
+            "trackId": "sample-foundations",
+            "title": "דוגמה · מערכות הפעלה וקבצים",
+            "status": "mastered",
+            "lastAssessedAt": "2026-10-02T09:00:00Z",
+            "evidenceRefs": [
+                "sample://evidence/foundations-os-lab",
+                "sample://evidence/foundations-os-exam"
+            ]
+        },
+        {
+            "id": "sample-foundations-shell",
+            "trackId": "sample-foundations",
+            "title": "דוגמה · עבודה ב-Shell",
+            "status": "practice_demonstrated",
+            "lastAssessedAt": "2026-10-09T17:30:00Z",
+            "evidenceRefs": [
+                "sample://evidence/foundations-shell-lab"
+            ]
+        },
+        {
+            "id": "sample-foundations-perm",
+            "trackId": "sample-foundations",
+            "title": "דוגמה · הרשאות קבצים",
+            "status": "mastered",
+            "lastAssessedAt": "2026-10-16T11:15:00Z",
+            "evidenceRefs": [
+                "sample://evidence/foundations-perm-lab",
+                "sample://evidence/foundations-perm-exam"
+            ]
+        },
+        {
+            "id": "sample-networks-tcpip",
+            "trackId": "sample-networks",
+            "title": "דוגמה · מודל TCP/IP",
+            "status": "practice_demonstrated",
+            "lastAssessedAt": "2026-10-23T08:45:00Z",
+            "evidenceRefs": [
+                "sample://evidence/networks-tcpip-lab"
+            ]
+        },
+        {
+            "id": "sample-networks-subnet",
+            "trackId": "sample-networks",
+            "title": "דוגמה · כתובות ותתי-רשתות",
+            "status": "theory_demonstrated",
+            "lastAssessedAt": "2026-10-30T19:00:00Z"
+        },
+        {
+            "id": "sample-networks-dns",
+            "trackId": "sample-networks",
+            "title": "דוגמה · DNS",
+            "status": "reassessment_required",
+            "lastAssessedAt": "2026-11-06T10:20:00Z",
+            "evidenceRefs": [
+                "sample://evidence/networks-dns-lab"
+            ]
+        },
+        {
+            "id": "sample-networks-pcap",
+            "trackId": "sample-networks",
+            "title": "דוגמה · ניתוח תעבורה",
+            "status": "learning",
+            "lastAssessedAt": "2026-11-13T14:00:00Z"
+        },
+        {
+            "id": "sample-programming-python",
+            "trackId": "sample-programming",
+            "title": "דוגמה · Python",
+            "status": "practice_demonstrated",
+            "lastAssessedAt": "2026-11-18T16:40:00Z",
+            "evidenceRefs": [
+                "sample://evidence/programming-python-lab"
+            ]
+        },
+        {
+            "id": "sample-programming-bash",
+            "trackId": "sample-programming",
+            "title": "דוגמה · סקריפטים ב-Bash",
+            "status": "theory_demonstrated",
+            "lastAssessedAt": "2026-10-02T09:00:00Z"
+        },
+        {
+            "id": "sample-programming-git",
+            "trackId": "sample-programming",
+            "title": "דוגמה · Git",
+            "status": "mastered",
+            "lastAssessedAt": "2026-10-09T17:30:00Z",
+            "evidenceRefs": [
+                "sample://evidence/programming-git-lab",
+                "sample://evidence/programming-git-exam"
+            ]
+        },
+        {
+            "id": "sample-web-basics-http",
+            "trackId": "sample-web-basics",
+            "title": "דוגמה · HTTP וסשנים",
+            "status": "learning",
+            "lastAssessedAt": "2026-10-16T11:15:00Z"
+        },
+        {
+            "id": "sample-web-basics-sql",
+            "trackId": "sample-web-basics",
+            "title": "דוגמה · מסדי נתונים ו-SQL",
+            "status": "gap_identified",
+            "lastAssessedAt": "2026-10-23T08:45:00Z"
+        },
+        {
+            "id": "sample-web-basics-auth",
+            "trackId": "sample-web-basics",
+            "title": "דוגמה · אימות והרשאה",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "sample-security-basics-threat",
+            "trackId": "sample-security-basics",
+            "title": "דוגמה · מידול איומים",
+            "status": "theory_demonstrated",
+            "lastAssessedAt": "2026-10-30T19:00:00Z"
+        },
+        {
+            "id": "sample-security-basics-crypto",
+            "trackId": "sample-security-basics",
+            "title": "דוגמה · יסודות קריפטוגרפיה",
+            "status": "learning",
+            "lastAssessedAt": "2026-11-06T10:20:00Z"
+        },
+        {
+            "id": "sample-security-basics-ethics",
+            "trackId": "sample-security-basics",
+            "title": "דוגמה · אתיקה והגדרת היקף",
+            "status": "practice_demonstrated",
+            "lastAssessedAt": "2026-11-13T14:00:00Z",
+            "evidenceRefs": [
+                "sample://evidence/security-basics-ethics-lab"
+            ]
+        },
+        {
+            "id": "sample-web-security-inj",
+            "trackId": "sample-web-security",
+            "title": "דוגמה · הזרקות במעבדה",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "sample-web-security-xss",
+            "trackId": "sample-web-security",
+            "title": "דוגמה · XSS במעבדה",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "sample-host-security-linux-int",
+            "trackId": "sample-host-security",
+            "title": "דוגמה · פנימיות Linux",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "sample-pentest-workflow-scope",
+            "trackId": "sample-pentest-workflow",
+            "title": "דוגמה · היקף ותיעוד",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "sample-enterprise-ad",
+            "trackId": "sample-enterprise",
+            "title": "דוגמה · זהות ארגונית",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "sample-research-asm",
+            "trackId": "sample-research",
+            "title": "דוגמה · אסמבלי ומבנה מחשב",
+            "status": "not_assessed",
+            "lastAssessedAt": null
+        }
+    ],
+    "tasks": [
+        {
+            "id": "sample-task-lab-shell",
+            "title": "דוגמה · מעבדת Shell והרשאות",
+            "status": "completed",
+            "mode": "computer",
+            "competencyIds": [
+                "sample-foundations-shell",
+                "sample-foundations-perm"
+            ]
+        },
+        {
+            "id": "sample-task-quiz-tcpip",
+            "title": "דוגמה · חזרה קולית על TCP/IP",
+            "status": "completed",
+            "mode": "mobile_or_voice",
+            "competencyIds": [
+                "sample-networks-tcpip"
+            ]
+        },
+        {
+            "id": "sample-task-lab-dns",
+            "title": "דוגמה · מעבדת DNS — הערכה חוזרת",
+            "status": "active",
+            "mode": "computer",
+            "competencyIds": [
+                "sample-networks-dns"
+            ]
+        },
+        {
+            "id": "sample-task-read-subnet",
+            "title": "דוגמה · תרגול תתי-רשתות",
+            "status": "active",
+            "mode": "either",
+            "competencyIds": [
+                "sample-networks-subnet"
+            ]
+        },
+        {
+            "id": "sample-task-lab-pcap",
+            "title": "דוגמה · ניתוח הקלטת תעבורה",
+            "status": "planned",
+            "mode": "computer",
+            "competencyIds": [
+                "sample-networks-pcap"
+            ]
+        },
+        {
+            "id": "sample-task-sql-basics",
+            "title": "דוגמה · שאילתות SQL בסיסיות",
+            "status": "blocked",
+            "mode": "computer",
+            "competencyIds": [
+                "sample-web-basics-sql"
+            ]
+        },
+        {
+            "id": "sample-task-http-sessions",
+            "title": "דוגמה · סשנים ועוגיות",
+            "status": "active",
+            "mode": "either",
+            "competencyIds": [
+                "sample-web-basics-http"
+            ]
+        },
+        {
+            "id": "sample-task-crypto-cards",
+            "title": "דוגמה · כרטיסיות קריפטוגרפיה",
+            "status": "planned",
+            "mode": "mobile_or_voice",
+            "competencyIds": [
+                "sample-security-basics-crypto"
+            ]
+        },
+        {
+            "id": "sample-task-threat-model",
+            "title": "דוגמה · מידול איומים לאפליקציה לדוגמה",
+            "status": "planned",
+            "mode": "computer",
+            "competencyIds": [
+                "sample-security-basics-threat"
+            ]
+        },
+        {
+            "id": "sample-task-web-lab-env",
+            "title": "דוגמה · הקמת מעבדת Web מבודדת",
+            "status": "blocked",
+            "mode": "computer",
+            "competencyIds": [
+                "sample-web-security-inj",
+                "sample-web-security-xss"
+            ]
+        }
+    ]
+}

@@ -1,11 +1,11 @@
 {
   "id": "cyber-academy",
   "name": "אקדמיית סייבר התקפי",
-  "icon": "🧰",
-  "description": "בפיתוח.",
+  "icon": "🛡️",
+  "description": "דשבורד לקריאה בלבד של האקדמיה: סילבוס, התקדמות — נלמד מול הוכח במעשה, משימות, ראיות, פערים וציר זמן. בשלב הזה נתוני דוגמה בלבד.",
   "category": "dev",
   "entry": "index.html",
-  "version": "0.0",
+  "version": "0.1",
   "gate": true,
   "restricted": true
 }

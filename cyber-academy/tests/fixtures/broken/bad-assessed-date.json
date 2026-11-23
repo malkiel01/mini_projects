@@ -1,0 +1,109 @@
+{
+    "schemaVersion": "1.0.0",
+    "updatedAt": "2026-11-01T10:00:00Z",
+    "tracks": [
+        {
+            "id": "t-a",
+            "title": "fixture · track A",
+            "order": 1
+        },
+        {
+            "id": "t-b",
+            "title": "fixture · track B",
+            "order": 2,
+            "prerequisites": [
+                "t-a"
+            ]
+        },
+        {
+            "id": "t-c",
+            "title": "fixture · track C",
+            "order": 0,
+            "prerequisites": []
+        }
+    ],
+    "competencies": [
+        {
+            "id": "c-1",
+            "trackId": "t-a",
+            "title": "fixture · c1",
+            "status": "mastered",
+            "evidenceRefs": [
+                "ref-1"
+            ],
+            "lastAssessedAt": "yesterday"
+        },
+        {
+            "id": "c-2",
+            "trackId": "t-a",
+            "title": "fixture · c2",
+            "status": "theory_demonstrated",
+            "lastAssessedAt": null
+        },
+        {
+            "id": "c-3",
+            "trackId": "t-b",
+            "title": "fixture · c3",
+            "status": "gap_identified"
+        },
+        {
+            "id": "c-4",
+            "trackId": "t-b",
+            "title": "fixture · c4",
+            "status": "learning"
+        },
+        {
+            "id": "c-5",
+            "trackId": "t-c",
+            "title": "fixture · c5",
+            "status": "reassessment_required",
+            "evidenceRefs": []
+        },
+        {
+            "id": "c-6",
+            "trackId": "t-c",
+            "title": "fixture · c6",
+            "status": "practice_demonstrated"
+        },
+        {
+            "id": "c-7",
+            "trackId": "t-c",
+            "title": "fixture · c7",
+            "status": "not_assessed"
+        }
+    ],
+    "tasks": [
+        {
+            "id": "k-1",
+            "title": "fixture · k1",
+            "status": "planned",
+            "mode": "computer"
+        },
+        {
+            "id": "k-2",
+            "title": "fixture · k2",
+            "status": "active",
+            "mode": "mobile_or_voice",
+            "competencyIds": [
+                "c-3"
+            ]
+        },
+        {
+            "id": "k-3",
+            "title": "fixture · k3",
+            "status": "blocked",
+            "mode": "either",
+            "competencyIds": [
+                "c-1",
+                "c-4"
+            ]
+        },
+        {
+            "id": "k-4",
+            "title": "fixture · k4",
+            "status": "completed",
+            "mode": "computer",
+            "competencyIds": []
+        }
+    ]
+}
