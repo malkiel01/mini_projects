@@ -191,3 +191,9 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
   - מיומנויות — `{category, status, updatedAt}`.
 - **מנהל** — התצוגה המלאה, כמו קודם.
 - **בדיקות:** run.php 829 → 838. כוללות סריקת מפתחות רקורסיבית, בדיקה שאין נתיב או שם מעריך בשום ערך, ובדיקה שרק המאומת מופיע.
+
+## 2026-11-23 · #1811 — `reports[].at`: תאריך בלבד או תאריך-שעה (מנהל 00)
+
+- **סוג חדש `date_or_dt` ב-`_av2_type`:** `YYYY-MM-DD` תקין (checkdate), או RFC 3339 עם אזור זמן. הערך נשמר כמו שנשלח.
+- **רק ב-`reports[].at`.** `createdAt`, `assessedAt`, `approvedAt` ו-`updatedAt` נשארים `dt`/`dt?`.
+- **בדיקות:** run.php 838 → 854.

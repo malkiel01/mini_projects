@@ -233,6 +233,11 @@ function _av2_type(mixed $v, string $type, string $p, array &$err): void {
             }
             break;
         case 'dt':   if (!is_string($v) || !academy_is_datetime($v)) $err[] = "$p: חייב להיות תאריך-שעה RFC 3339"; break;
+        // תאריך בלבד (YYYY-MM-DD, כשהשעה לא ידועה — בלי חצות מומצאת) או תאריך-שעה RFC 3339. נשמר כמו שנשלח.
+        case 'date_or_dt':
+            $okDate = is_string($v) && preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m) && checkdate((int) $m[2], (int) $m[3], (int) $m[1]);
+            if (!$okDate && (!is_string($v) || !academy_is_datetime($v))) $err[] = "$p: חייב להיות תאריך YYYY-MM-DD או תאריך-שעה RFC 3339";
+            break;
         case 'dt?':  if ($v !== null && (!is_string($v) || !academy_is_datetime($v))) $err[] = "$p: חייב להיות תאריך-שעה RFC 3339 או null"; break;
     }
 }

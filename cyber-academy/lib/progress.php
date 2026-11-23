@@ -116,7 +116,8 @@ function academy_progress_validate(mixed $p): array {
             'assistance' => [1, 'enum:' . implode('|', ACADEMY_PROGRESS_ASSISTANCE)], 'assessor' => [1, 'str1'],
             'assessedAt' => [1, 'dt?'], 'evidenceIds' => [1, 'ids'], 'approvedBy' => [0, 'str?'], 'approvedAt' => [0, 'dt?']],
         // דיווח מורה: אין בו status — הוא לא משנה מצב ולא מאפשר mastered, רק נוסף למעקב (גם עם assistanceLevel none)
-        'reports' => ['id' => [1, 'id'], 'at' => [1, 'dt'], 'reporter' => [1, 'str1'], 'skillIds' => [1, 'ids'],
+        // at — תאריך בלבד או תאריך-שעה (הכרעת מנהל 00: לא ממציאים שעה). רק כאן; שאר שדות הזמן נשארים dt.
+        'reports' => ['id' => [1, 'id'], 'at' => [1, 'date_or_dt'], 'reporter' => [1, 'str1'], 'skillIds' => [1, 'ids'],
             'lessonIds' => [0, 'ids'], 'assistanceLevel' => [1, 'enum:' . implode('|', ACADEMY_PROGRESS_REPORT_ASSISTANCE)],
             'summary' => [1, 'str']],
     ];

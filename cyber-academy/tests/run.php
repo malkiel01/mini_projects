@@ -721,6 +721,20 @@ foreach (['hints' => 'hints', 'בלי assistanceLevel' => null, 'lessonIds לא 
     else $bad['assistanceLevel'] = $val;
     check("דיווח $lbl → 422", $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => $bad])[0] === 422);
 }
+// reports[].at — תאריך בלבד או תאריך-שעה, נשמר כמו שנשלח, ולא משפיע על סטטוס
+foreach (['2026-11-20' => 'rp-d1', '2026-11-20T00:00:00Z' => 'rp-d2', '2026-11-20T09:30:00+02:00' => 'rp-d3'] as $at => $rid) {
+    [$st, $body] = $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => ['id' => $rid, 'at' => $at] + $rep2]);
+    $stored = array_values(array_filter(json_decode((string) file_get_contents("$pdir/learner-lrn-a.json"), true)['reports'], fn($r) => $r['id'] === $rid));
+    check("reports.at \"$at\" מתקבל ונשמר כמו שנשלח", $st === 200 && ($stored[0]['at'] ?? null) === $at);
+    check("reports.at \"$at\" לא משנה סטטוס", $body['progress']['skills']['sk-2']['status'] === 'not_assessed');
+}
+foreach (['2026-13-45', '2026-02-30', 'יום שלישי', '20.11.2026', '2026-11-20T09:30:00', 20261120, null] as $bad) {
+    check('reports.at ' . json_encode($bad, JSON_UNESCAPED_UNICODE) . ' → 422', $W(['action' => 'report', 'learnerId' => 'lrn-a', 'report' => ['id' => 'rp-bad', 'at' => $bad] + $rep2])[0] === 422);
+}
+check('date_or_dt רק ב-reports.at: שדות זמן אחרים נשארו dt', substr_count((string) file_get_contents(__DIR__ . '/../lib/progress.php'), "'date_or_dt'") === 1);
+$asmDate = ['id' => 'as-d', 'skillIds' => ['sk-3'], 'status' => 'planned', 'assistance' => 'hint', 'assessor' => 'x', 'assessedAt' => '2026-11-20', 'evidenceIds' => []];
+check('assessedAt עם תאריך בלבד → עדיין 422 (dt)', $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'assessments' => [$asmDate]])[0] === 422);
+check('evidence.createdAt עם תאריך בלבד → עדיין 422 (dt)', $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'evidence' => [['id' => 'ev-d', 'kind' => 'code', 'reference' => 'evidence/x.md', 'assessor' => 'x', 'createdAt' => '2026-11-20']]])[0] === 422);
 check('enum ההערכה: hint (לא hints)', ACADEMY_PROGRESS_ASSISTANCE === ['none', 'hint', 'guided', 'full']);
 $asmHints = ['id' => 'as-h', 'skillIds' => ['sk-3'], 'status' => 'planned', 'assistance' => 'hints', 'assessor' => 'x', 'assessedAt' => null, 'evidenceIds' => []];
 check('הערכה עם hints → 422', $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'assessments' => [$asmHints]])[0] === 422);
