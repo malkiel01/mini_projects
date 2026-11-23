@@ -227,3 +227,14 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
   - F11: ב-litespeed בלי `granted` אין תפקיד. cli-server מתעלם מ-`PLATFORM_USER` — מתועד, ולא שונה.
 - **מקביליות — הבדיקה הוכחה:** כשהורדתי זמנית את `flock`, הבדיקה נכשלה (54/60 — 6 עדכונים אבדו). עם הנעילה — 60/60.
 - **בדיקות:** run.php 906 → 923.
+
+## 2026-11-23 · #1811 — יומן חלקי, tx פתוח, F11 צומצם
+
+- **יומן חלקי:** בכתיבה חלקית `academy_progress_audit` מקצץ לגודל שלפני וזורק חריגה, ולכן 500 ובלי שמירה. `$opts['auditWrite']` משמש להזרקה.
+- **סיכון שנותר — מתועד:** אחרי rename מוצלח נרשמת שורת `commit` עם ה-tx. `academy_progress_scan_open_tx` רץ בכל כתיבה ומסמן בלוג tx פתוחים, בלי לשנות נתונים ובלי מזהה לומד.
+- **F11:** רק `cli` מקבל viewer בלי זהות. `cli-server` דורש `PLATFORM_USER.granted`. נוסף `tests/browser/dev-identity.php` לבדיקת הדפדפן המקומית.
+- **בדיקות שעודכנו בכוונה:**
+  - "CLI ו-php -S → viewer" → `cli-server` בלי זהות מחזיר null.
+  - "tx בשורה האחרונה" → שתי השורות האחרונות: השינוי, ואחריו commit.
+  - "F11: cli-server → viewer גם עם PLATFORM_USER" → שלוש בדיקות חדשות.
+- **בדיקות:** run.php 923 → 936. check.js ✓ (עם dev-identity).

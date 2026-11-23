@@ -409,7 +409,7 @@ check('שרת: בלי PLATFORM_USER → אין תפקיד', academy_role([], 'li
 check('שרת: PLATFORM_USER בלי הרשאה → אין תפקיד', academy_role(['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => false])], 'litespeed') === null);
 check('שרת: PLATFORM_USER פגום → אין תפקיד', academy_role(['PLATFORM_USER' => '{bad'], 'litespeed') === null);
 check('שרת: מחובר ומורשה → viewer', academy_role(['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => true])], 'litespeed') === 'viewer');
-check('CLI ו-php -S → viewer (פיתוח)', academy_role([], 'cli') === 'viewer' && academy_role([], 'cli-server') === 'viewer');
+check('CLI → viewer (בדיקות); php -S בלי זהות → אין תפקיד (F11)', academy_role([], 'cli') === 'viewer' && academy_role([], 'cli-server') === null);
 check('viewer קורא תוכנית', academy_can('curriculum.read', 'viewer') && !academy_can('curriculum.read', 'nobody'));
 foreach ([401, 403, 404, 429, 500] as $code) {
     $src = new GithubAcademySource(['path' => 'x/v2.json'] + $gh, "$tmp/cache", 0, gh_stub($code, '{"message":"' . $token . '"}'));
@@ -922,8 +922,35 @@ foreach (['report' => ['action' => 'report', 'learnerId' => 'lrn-1', 'report' =>
     check("יומן/rename נכשל ($act) → אין קובץ זמני", glob("$sdir/*.tmp-*") === []);
 }
 [$st] = $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-tx')]);
-$lastLine = json_decode(array_slice(file("$sdir/audit.log"), -1)[0], true);
-check('יומן: שורה של שינוי מוצלח נושאת tx', $st === 200 && $lastLine['reportId'] === 'rp-tx' && preg_match('/^[0-9a-f]{16}$/', (string) ($lastLine['tx'] ?? '')));
+[$chgLine, $commitLine] = array_map(fn($l) => json_decode($l, true), array_slice(file("$sdir/audit.log"), -2));
+check('יומן: שורה של שינוי מוצלח נושאת tx', $st === 200 && $chgLine['reportId'] === 'rp-tx' && preg_match('/^[0-9a-f]{16}$/', (string) ($chgLine['tx'] ?? '')));
+check('יומן: אחריה שורת commit עם אותו tx', $commitLine['action'] === 'commit' && $commitLine['tx'] === $chgLine['tx'] && !isset($commitLine['learnerId']));
+check('יומן: אין tx פתוח אחרי כתיבות תקינות', academy_progress_scan_open_tx($sdir) === []);
+// כתיבה חלקית של היומן — השורה השבורה מקוצצת
+$half = fn(string $f, string $lines) => file_put_contents($f, substr($lines, 0, intdiv(strlen($lines), 2)), FILE_APPEND);
+$logBefore = file_get_contents("$sdir/audit.log");
+$dataBefore = file_get_contents("$sdir/learner-lrn-1.json");
+[$st] = academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-half')]),
+    ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] + $SAME, 'sapi' => 'litespeed', 'auditWrite' => $half]);
+check('יומן חלקי → 500', $st === 500);
+check('יומן חלקי → היומן זהה בייט-לבייט (בלי שורה שבורה)', file_get_contents("$sdir/audit.log") === $logBefore);
+check('יומן חלקי → הקובץ לא השתנה, ואין זמני', file_get_contents("$sdir/learner-lrn-1.json") === $dataBefore && glob("$sdir/*.tmp-*") === []);
+$threw = false;
+try { academy_progress_audit($sdir, [['at' => 'x', 'action' => 'register']], fn($f, $l) => file_put_contents($f, substr($l, 0, 3), FILE_APPEND)); }
+catch (AcademyProgressError $e) { $threw = true; }
+check('יומן חלקי (ישירות) → חריגה ויומן זהה', $threw && file_get_contents("$sdir/audit.log") === $logBefore);
+// סיכון שנותר: tx בלי commit (תהליך שנהרג) — מסומן בלוג, הנתונים לא משתנים
+file_put_contents("$sdir/audit.log", json_encode(['at' => '2026-11-23T12:00:00Z', 'action' => 'report', 'learnerId' => 'lrn-1', 'tx' => 'deadbeefdeadbeef']) . "\n", FILE_APPEND);
+check('tx בלי commit מזוהה', academy_progress_scan_open_tx($sdir) === ['deadbeefdeadbeef']);
+$elog2 = "$sdir/scan-error.log";
+$oldLog2 = ini_set('error_log', $elog2);
+$dataBefore = file_get_contents("$sdir/learner-lrn-1.json");
+[$st] = $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-after-open')]);
+ini_set('error_log', (string) $oldLog2);
+$scanLog = (string) @file_get_contents($elog2);
+check('כתיבה הבאה: tx פתוח מסומן בלוג, בלי מזהה לומד', $st === 200 && str_contains($scanLog, 'tx בלי commit') && !str_contains($scanLog, 'lrn-1') && !str_contains($scanLog, 'deadbeef'));
+check('tx פתוח לא שינה נתונים: רק הדיווח החדש נוסף', count(academy_progress_load($sdir, 'lrn-1')['reports']) === count(json_decode($dataBefore, true)['reports']) + 1);
+@unlink($elog2);
 // force — רק למנהל
 foreach (['u-1' => 'לומד', 'mgr-x' => 'משתמש מורשה שאינו מנהל'] as $who => $lbl) {
     [$st] = academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'register', 'learnerId' => 'lrn-1', 'sub' => 'u-2', 'force' => true]),
@@ -933,7 +960,11 @@ foreach (['u-1' => 'לומד', 'mgr-x' => 'משתמש מורשה שאינו מנ
 // F11 — cli-server: מקוצר לפיתוח בלבד. בשרת (SAPI אחר) PLATFORM_USER קובע.
 $gu = fn(bool $g) => ['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => $g])];
 check('F11: בשרת (litespeed) PLATFORM_USER בלי granted → אין תפקיד', academy_role($gu(false), 'litespeed') === null && academy_role([], 'litespeed') === null);
-check('F11: cli-server → viewer גם עם PLATFORM_USER (התנהגות קיימת, לפיתוח בלבד; לא שונתה)', academy_role($gu(false), 'cli-server') === 'viewer');
+check('F11: cli-server בלי PLATFORM_USER → אין תפקיד', academy_role([], 'cli-server') === null);
+check('F11: cli-server עם granted:false → אין תפקיד', academy_role($gu(false), 'cli-server') === null);
+check('F11: cli-server עם granted:true → viewer', academy_role($gu(true), 'cli-server') === 'viewer');
+check('F11: progress.php ב-cli-server בלי זהות → 403', academy_api_progress_read('GET', $scfg, [], ['server' => [], 'sapi' => 'cli-server'])[0] === 403);
+check('F11: רק cli מקבל viewer בלי זהות', academy_role([], 'cli') === 'viewer' && academy_role([], 'litespeed') === null && academy_role([], 'fpm-fcgi') === null);
 
 // F5 — רק same-origin
 $noHdr = fn(array $hdr, string $sapi = 'litespeed') => academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-o')]),

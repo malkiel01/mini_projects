@@ -143,7 +143,9 @@ function academy_progress_write_atomic(string $f, string $content): void {
  *      שורה על השינוי; אם גם הקיצוץ נכשל — נרשמת שורת rollback עם אותו tx, כדי שהשינוי לא ייראה כמוצלח.
  * הכול רץ בתוך academy_progress_locked, ולכן אף כותב אחר לא נכנס בין השלבים. $rename — להזרקה בבדיקות.
  */
-function academy_progress_commit(string $dir, string $file, string $content, array $entries, ?callable $rename = null): void {
+function academy_progress_commit(string $dir, string $file, string $content, array $entries, array $hooks = []): void {
+    $rename = $hooks['rename'] ?? null;
+    academy_progress_scan_open_tx($dir);
     $tmp = $file . '.tmp-' . bin2hex(random_bytes(6));
     $old = umask(0027);
     $staged = @file_put_contents($tmp, $content) === strlen($content) && @chmod($tmp, 0640);
@@ -157,7 +159,7 @@ function academy_progress_commit(string $dir, string $file, string $content, arr
     clearstatcache(true, $log);
     $sizeBefore = is_file($log) ? (int) filesize($log) : 0;
     try {
-        academy_progress_audit($dir, array_map(fn($e) => $e + ['tx' => $tx], $entries));
+        academy_progress_audit($dir, array_map(fn($e) => $e + ['tx' => $tx], $entries), $hooks['auditWrite'] ?? null);
     } catch (AcademyProgressError $e) {
         @unlink($tmp);
         throw $e;
@@ -173,20 +175,57 @@ function academy_progress_commit(string $dir, string $file, string $content, arr
         }
         throw new AcademyProgressError('שמירת ההתקדמות נכשלה', 500, 'internal');
     }
+    // השינוי נשמר. שורת commit מסמנת את ה-tx כגמור; כשל כאן לא מבטל שינוי שכבר נשמר — רק נרשם בלוג.
+    if ($entries) {
+        try { academy_progress_audit($dir, [['at' => gmdate('Y-m-d\TH:i:s\Z'), 'action' => 'commit', 'tx' => $tx]]); }
+        catch (AcademyProgressError) { error_log('cyber-academy progress: שורת commit ליומן נכשלה'); }
+    }
+}
+
+/**
+ * סיכון שנותר (מתועד, לא מתוקן — הכרעת הבקרה): תהליך שנהרג בין רישום היומן ל-rename משאיר ביומן tx בלי commit/rollback.
+ * בכל כתיבה סורקים את סוף היומן ומסמנים בלוג השרת tx פתוח — **בלי לשנות נתונים** ובלי מזהה לומד.
+ * @return list<string> מזהי tx פתוחים (לבדיקות)
+ */
+function academy_progress_scan_open_tx(string $dir, int $tail = 500): array {
+    $log = "$dir/audit.log";
+    if (!is_file($log)) return [];
+    $lines = @file($log, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    $open = [];
+    foreach (array_slice($lines, -$tail) as $l) {
+        $e = json_decode($l, true);
+        if (!is_array($e) || !isset($e['tx'])) continue;
+        if (in_array($e['action'] ?? '', ['commit', 'rollback'], true)) unset($open[$e['tx']]);
+        else $open[$e['tx']] = true;
+    }
+    if ($open) error_log('cyber-academy progress: ביומן ' . count($open) . ' tx בלי commit/rollback (ייתכן שתהליך נקטע) — לבדיקה ידנית');
+    return array_keys($open);
 }
 
 /** יומן ביקורת — שורה לכל שינוי, דרך academy_progress_commit בלבד. בלי reference ובלי תוכן ראיה. כשל → חריגה. */
-function academy_progress_audit(string $dir, array $entries): void {
+function academy_progress_audit(string $dir, array $entries, ?callable $write = null): void {
     $keys = array_flip(['at', 'by', 'learnerId', 'action', 'target', 'from', 'to', 'fromSub', 'assessmentId', 'evidenceIds', 'reportId', 'tx']);
     $lines = '';
     foreach ($entries as $e) $lines .= academy_progress_encode(array_intersect_key($e, $keys), JSON_UNESCAPED_UNICODE) . "\n";
     if ($lines === '') return;
     $f = "$dir/audit.log";
+    clearstatcache(true, $f);
+    $sizeBefore = is_file($f) ? (int) filesize($f) : 0;
     $old = umask(0027);                                    // נוצר כבר 0640, בלי חלון של הרשאות ברירת מחדל (F10)
-    $ok = file_put_contents($f, $lines, FILE_APPEND | LOCK_EX) === strlen($lines);   // בלי @ (F3): כשל נרשם בלוג השרת
+    // בלי @ (F3): כשל נרשם בלוג השרת. $write — להזרקת כתיבה חלקית בבדיקות.
+    $written = $write ? $write($f, $lines) : file_put_contents($f, $lines, FILE_APPEND | LOCK_EX);
     umask($old);
-    // כשל ביומן אינו נבלע (F3): הקורא מבטל את השמירה
-    if (!$ok) throw new AcademyProgressError('רישום יומן הביקורת נכשל', 500, 'internal');
+    if ($written !== strlen($lines)) {
+        // כתיבה חלקית: שורה שבורה לא נשארת — מקצצים לגודל שלפני
+        clearstatcache(true, $f);
+        if (is_file($f) && (int) filesize($f) !== $sizeBefore) {
+            $h = @fopen($f, 'r+');
+            if (!$h || !ftruncate($h, $sizeBefore)) error_log('cyber-academy progress: קיצוץ יומן אחרי כתיבה חלקית נכשל');
+            if ($h) fclose($h);
+        }
+        // כשל ביומן אינו נבלע (F3): הקורא מבטל את השמירה
+        throw new AcademyProgressError('רישום יומן הביקורת נכשל', 500, 'internal');
+    }
     @chmod($f, 0640);
 }
 

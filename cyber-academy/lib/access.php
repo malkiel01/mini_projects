@@ -25,12 +25,13 @@ const ACADEMY_ROLES = [
  *
  * בשרת: רק משתמש **מחובר ומורשה** — השער (platform/gate-prepend.php) קובע את $_SERVER['PLATFORM_USER'] רק למי שיש לו
  * הרשאה לאפליקציה (granted). בלעדיו (שער לא רץ, אפליקציה מנותקת, תקלה בזיהוי) — אין תפקיד: fail-closed.
- * CLI ושרת הפיתוח של PHP (php -S, SAPI "cli-server") — בלי שער, ולכן viewer של סביבת פיתוח. בשרת האמיתי (LiteSpeed) לא
+ * CLI בלבד (בדיקות) — viewer בלי זהות. שרת הפיתוח של PHP (php -S, "cli-server") **מכבד PLATFORM_USER כמו השרת** (הכרעת
+ * הבקרה, F11): בלי זהות מורשית → אין תפקיד. לבדיקת דפדפן מקומית: tests/browser/dev-identity.php. בשרת האמיתי (LiteSpeed) לא
  * רץ אף אחד מהם.
  * לא נשמר ולא מוחזר שום פרט מזהה — רק "יש משתמש מורשה".
  */
 function academy_role(?array $server = null, string $sapi = PHP_SAPI): ?string {
-    if ($sapi === 'cli' || $sapi === 'cli-server') return 'viewer';
+    if ($sapi === 'cli') return 'viewer';
     $server ??= $_SERVER;
     $u = json_decode((string) ($server['PLATFORM_USER'] ?? ''), true);
     if (!is_array($u) || ($u['granted'] ?? null) !== true) return null;
