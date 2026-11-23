@@ -6,7 +6,7 @@
 
 | שכבה | קבצים | מה היא עושה | מה אסור לה |
 | --- | --- | --- | --- |
-| **אינטגרציה** | `lib/academy-source.php` | ממשק `AcademySource` (`name`, `isSample`, `fetch`). `local` — `samples/demo-snapshot.json` (פעיל). `github` — Contents API, GET בלבד, אסימון מ-`data/config.json`, מטמון 120 שניות ב-`data/cache/` | לכתוב למאגר האקדמיה; להוציא אסימון |
+| **אינטגרציה** | `lib/academy-source.php` | ממשק `AcademySource` (`name`, `isSample`, `fetch`). `local` — `samples/demo-snapshot.json` (פעיל). `github` — Contents API, GET בלבד, אסימון **רק** מקובץ `github.token_file` מחוץ לעץ האתר (ראו למטה), מטמון 120 שניות ב-`data/cache/` | לכתוב למאגר האקדמיה; להוציא אסימון |
 | **נתונים** | `lib/validate.php`, `lib/model.php`, `lib/api.php`, `api/snapshot.php` | אימות מול חוזה v1 (`cc85ac1`) — snapshot לא תואם נדחה ב-422 עם רשימת שגיאות. המודל מחשב את כל המדדים, הפערים, ההמלצות (מסומנות `derived`) וציר הזמן. התשובה כוללת `source`, `isSample`, `contract` | endpoint כותב; "לנחש" נתון חסר |
 | **UI** | `index.html`, `assets/js/{api,render,screens,router,app}.js`, `assets/css/app.css` | קורא רק את `api/snapshot.php`, מציג. ניווט לפי hash | לפנות ל-GitHub; לחשב מדד |
 
@@ -83,3 +83,33 @@
 - בכל מסך: מסך "עדיין אין נתוני לימוד" (`CA.realEmpty`) — בלי מדדים, מונים, לשוניות או ספרות.
 - הפס: "מאגר האקדמיה מחובר · ה-snapshot ריק — עדיין אין נתוני לימוד · קומיט X" (במקום "נתוני אמת").
 - דוגמה ריקה (`?demo=empty`) — כמו קודם, עם פס הדוגמה.
+
+## חוזה v2 (הצעה) — תשתית, כבויה
+
+- **ניתוב לפי `schemaVersion`:** `1.0.0` → `validate.php` / `model.php` / `screens.js`; `2.0.0` → `validate-v2.php` /
+  `model-v2.php` / `screens-v2.js`; כל ערך אחר → `contract_version`.
+- **אימות v2:** מקבילה ל-schema (כולל `unevaluatedProperties`, pattern של id, uniqueItems), ובנוסף כללי מסמך המעבר:
+  הפניות, `dependsOn` בלי עצמה ובלי מחזור, approved⇔approvedAt+approvedBy, `mastered`⇔ראיה + הערכה `evaluated`
+  מאושרת, ו-`evidence.reference` בטוח (יחסי או https, בלי `..`, בלי נתיב מוחלט, בלי תבניות סוד).
+- **מסכים:** שלב ← מסלול ← מודול (`#/module/<id>`: מטרות, שיעורים עם סוג / אופן הערכה / 🔐 מעבדה מורשית, נושאים,
+  מיומנויות). מסלול "מאושר" רק כשגם הסילבוס מאושר. בלי הערכות — "אין הערכות מתועדות", לא 0.
+- **GitHub + v2:** `contract: "v2"` ו-`github.curriculum_path` (ברירת מחדל `dashboard/data/curriculum-v2-approved.json`; ריק = `source_disabled`). v1: `github.snapshot_path`. `github.contract_v2_path` — לעיון בלבד. מהמאגר עוברים **רק** מסלולים מאושרים
+  בסילבוס מאושר, עם המודולים/שיעורים/נושאים/מיומנויות שלהם — **בלי** כשירויות, משימות, הערכות, ראיות או ציר זמן
+  (`academy_v2_curriculum_only`). אין endpoint ל-issues. היום (כל המסלולים מוצעים) → 0 מסלולים, ומסך "אין עדיין סילבוס
+  מאושר".
+
+## api/curriculum.php — תוכנית האקדמיה בלבד (Issue #6, משימה 4)
+
+GET בלבד, למשתמש **מחובר ומורשה**: בשרת האמיתי `lib/access.php` דורש `$_SERVER['PLATFORM_USER']` עם `granted: true`
+(נקבע רק על ידי השער); בלעדיו → 403 `forbidden`. רק ממאגר האקדמיה (v2, `curriculum_path`), רק סילבוס מאושר, ובלי
+measure, כשירויות, משימות, הערכות, ראיות, ציר זמן או issues. מקור כבוי → 503 `source_disabled` (אין דוגמה).
+
+## האסימון — קובץ מחוץ לאתר (הכרעת מנהל 00)
+
+`data/` נמצאת בתוך public_html, ולכן **אין אסימון בקונפיג**. `academy_github_token()` (ב-`lib/academy-source.php`):
+- רק `github.token_file`: נתיב **מוחלט**, מחוץ לשורש mini_projects, ל-DOCUMENT_ROOT ולכל `public_html`/`www`/`htdocs`.
+  נבדק גם הנתיב האמיתי (realpath), כדי שקישור סימבולי לא יעקוף. אחרת `source_disabled` / `secret_in_webroot`.
+- קריא לאחרים (o+r) → `secret_insecure_perms`. ערך שאחרי trim קצר מ-20 תווים או מכיל רווח → `source_unauthorized` / `token_invalid`.
+- מפתח `token` בקונפיג (גם ריק) → `source_disabled` / `token_in_config`, והקובץ לא נפתח.
+- הקובץ נפתח **רק** כשכל שלושת המנעולים פתוחים (`github_enabled`, `privacy_confirmed`, `ACADEMY_GITHUB_PHASE_ALLOWED`).
+- הודעות השגיאה בלי נתיב ובלי ערך. `.gitignore` של האפליקציה: `data/config.json`, `data/cache/`, `*.token`.

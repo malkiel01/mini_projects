@@ -1,0 +1,312 @@
+{
+ "schemaVersion": "2.0.0",
+ "updatedAt": "2026-11-20T10:00:00Z",
+ "curriculum": {
+  "status": "approved",
+  "version": "fixture-1",
+  "approvedAt": "2026-11-19T09:00:00Z",
+  "approvedBy": "role-manager"
+ },
+ "stages": [
+  {
+   "id": "st-a",
+   "title": "fixture · stage A",
+   "order": 0,
+   "trackIds": [
+    "tr-1",
+    "tr-2"
+   ],
+   "description": "fixture"
+  },
+  {
+   "id": "st-b",
+   "title": "fixture · stage B",
+   "order": 1,
+   "trackIds": [
+    "tr-3"
+   ]
+  }
+ ],
+ "tracks": [
+  {
+   "id": "tr-1",
+   "title": "fixture · track 1",
+   "order": 1,
+   "stageId": "st-a",
+   "approvalStatus": "approved",
+   "instructorId": null
+  },
+  {
+   "id": "tr-2",
+   "title": "fixture · track 2",
+   "order": 2,
+   "stageId": "st-a",
+   "approvalStatus": "proposed",
+   "prerequisites": [
+    "tr-1"
+   ]
+  },
+  {
+   "id": "tr-3",
+   "title": "fixture · track 3",
+   "order": 3,
+   "stageId": "st-b",
+   "approvalStatus": "approved",
+   "prerequisites": [
+    "tr-1"
+   ]
+  }
+ ],
+ "modules": [
+  {
+   "id": "m-1",
+   "title": "fixture · module 1",
+   "order": 1,
+   "trackId": "tr-1",
+   "learningObjectives": [
+    "o1"
+   ],
+   "labRequired": false,
+   "lessonIds": [
+    "l-1",
+    "l-2"
+   ]
+  },
+  {
+   "id": "m-2",
+   "title": "fixture · module 2",
+   "order": 2,
+   "trackId": "tr-1",
+   "learningObjectives": [],
+   "labRequired": true,
+   "prerequisites": [
+    "m-1"
+   ],
+   "lessonIds": [
+    "l-3"
+   ]
+  },
+  {
+   "id": "m-3",
+   "title": "fixture · module 3",
+   "order": 1,
+   "trackId": "tr-2",
+   "learningObjectives": [
+    "o3"
+   ],
+   "labRequired": false
+  },
+  {
+   "id": "m-4",
+   "title": "fixture · module 4",
+   "order": 1,
+   "trackId": "tr-3",
+   "learningObjectives": [
+    "o4"
+   ],
+   "labRequired": false,
+   "lessonIds": [
+    "l-4"
+   ]
+  }
+ ],
+ "topics": [
+  {
+   "id": "tp-1",
+   "title": "fixture · topic 1",
+   "order": 1,
+   "moduleId": "m-1"
+  },
+  {
+   "id": "tp-2",
+   "title": "fixture · topic 2",
+   "order": 1,
+   "moduleId": "m-3"
+  }
+ ],
+ "skills": [
+  {
+   "id": "sk-1",
+   "title": "fixture · skill 1",
+   "order": 1,
+   "moduleId": "m-1",
+   "assessmentCriteria": [
+    "c1"
+   ]
+  },
+  {
+   "id": "sk-2",
+   "title": "fixture · skill 2",
+   "order": 2,
+   "moduleId": "m-2",
+   "assessmentCriteria": []
+  },
+  {
+   "id": "sk-3",
+   "title": "fixture · skill 3",
+   "order": 1,
+   "moduleId": "m-3",
+   "assessmentCriteria": [
+    "c3"
+   ]
+  }
+ ],
+ "competencies": [
+  {
+   "id": "cp-1",
+   "skillId": "sk-1",
+   "status": "mastered",
+   "evidenceRefs": [
+    "ev-1"
+   ],
+   "lastAssessedAt": "2026-11-18T12:00:00Z"
+  },
+  {
+   "id": "cp-2",
+   "skillId": "sk-2",
+   "status": "theory_demonstrated",
+   "evidenceRefs": [],
+   "lastAssessedAt": null
+  },
+  {
+   "id": "cp-3",
+   "skillId": "sk-3",
+   "status": "gap_identified",
+   "evidenceRefs": [],
+   "lastAssessedAt": "2026-11-17T12:00:00Z"
+  }
+ ],
+ "tasks": [
+  {
+   "id": "tk-1",
+   "title": "fixture · task 1",
+   "status": "completed",
+   "mode": "computer",
+   "skillIds": [
+    "sk-1"
+   ],
+   "dependsOn": []
+  },
+  {
+   "id": "tk-2",
+   "title": "fixture · task 2",
+   "status": "active",
+   "mode": "either",
+   "skillIds": [
+    "sk-2"
+   ],
+   "dependsOn": [
+    "tk-1"
+   ],
+   "authorizedLab": true
+  },
+  {
+   "id": "tk-3",
+   "title": "fixture · task 3",
+   "status": "blocked",
+   "mode": "mobile_or_voice",
+   "skillIds": [],
+   "dependsOn": [
+    "tk-2"
+   ]
+  }
+ ],
+ "assessments": [
+  {
+   "id": "as-1",
+   "skillIds": [
+    "sk-1"
+   ],
+   "status": "evaluated",
+   "rubric": [
+    "r1"
+   ],
+   "evidenceRefs": [
+    "ev-1"
+   ],
+   "assessedAt": "2026-11-18T12:00:00Z",
+   "approvedBy": "role-manager"
+  },
+  {
+   "id": "as-2",
+   "skillIds": [
+    "sk-2"
+   ],
+   "status": "planned",
+   "rubric": [],
+   "evidenceRefs": []
+  }
+ ],
+ "evidence": [
+  {
+   "id": "ev-1",
+   "kind": "lab_report",
+   "reference": "evidence/../../etc/x",
+   "createdAt": "2026-11-18T11:00:00Z",
+   "visibility": "restricted"
+  }
+ ],
+ "timeline": [
+  {
+   "id": "ev-t1",
+   "kind": "curriculum",
+   "at": "2026-11-19T09:00:00Z",
+   "title": "fixture · curriculum approved",
+   "referenceId": null
+  },
+  {
+   "id": "ev-t2",
+   "kind": "assessment",
+   "at": "2026-11-18T12:00:00Z",
+   "title": "fixture · assessment",
+   "referenceId": "as-1"
+  }
+ ],
+ "lessons": [
+  {
+   "id": "l-1",
+   "moduleId": "m-1",
+   "title": "fixture · lesson 1",
+   "kind": "theory",
+   "order": 1,
+   "learningObjectives": [
+    "lo1"
+   ],
+   "assessmentMode": "mobile_or_voice"
+  },
+  {
+   "id": "l-2",
+   "moduleId": "m-1",
+   "title": "fixture · lesson 2",
+   "kind": "lab",
+   "order": 2,
+   "learningObjectives": [
+    "lo2"
+   ],
+   "assessmentMode": "computer",
+   "authorizedLabRequired": true
+  },
+  {
+   "id": "l-3",
+   "moduleId": "m-2",
+   "title": "fixture · lesson 3",
+   "kind": "analysis",
+   "order": 1,
+   "learningObjectives": [
+    "lo3"
+   ],
+   "assessmentMode": "either"
+  },
+  {
+   "id": "l-4",
+   "moduleId": "m-4",
+   "title": "fixture · lesson 4",
+   "kind": "theory",
+   "order": 1,
+   "learningObjectives": [
+    "lo4"
+   ],
+   "assessmentMode": "either"
+  }
+ ]
+}

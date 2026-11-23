@@ -11,7 +11,7 @@
 | שכבות, מסכים, מקורות, קודי כשל | `docs/spec/00-overview.md` |
 | מה חסר בחוזה v1, והצעה ל-v2 | `docs/schema-gaps.md` |
 | כללי הצוות | `team/PROTOCOL.md` |
-| אינטגרציה / נתונים / הרשאות | `lib/academy-source.php` · `lib/validate.php`, `lib/model.php` · `lib/access.php` |
+| אינטגרציה / נתונים / הרשאות | `lib/academy-source.php` · `lib/validate.php`, `lib/model.php` (v1), `lib/validate-v2.php`, `lib/model-v2.php` (v2 — הצעה) · `lib/access.php` |
 | ה-API (GET בלבד) | `api/snapshot.php` |
 | נתוני דוגמה | `samples/demo-snapshot.json` (11 מסלולים לפי ה-roadmap, כל כותרת "דוגמה · …"), `samples/empty-snapshot.json` |
 | בדיקות | `php cyber-academy/tests/run.php` · דפדפן: `node cyber-academy/tests/browser/check.js` (מקומי) |
@@ -19,13 +19,17 @@
 
 ## החוזה
 
+v1 פעיל. v2 (הצעה, עם שיעורים) נתמך בקריאה — ראו `docs/spec/00-overview.md`.
+
+
 `dashboard/data/schema/v1/academy.schema.json`, קומיט **`cc85ac1`**, `schemaVersion 1.0.0`. snapshot שאינו תואם —
 נדחה עם רשימת שגיאות, לא מוצג.
 
 ## מקור GitHub — כבוי
 
 `data/config.json` (תבנית: `samples/config.example.json`). נדלק רק עם `github_enabled` + `privacy_confirmed` **וגם**
-`ACADEMY_GITHUB_PHASE_ALLOWED` בקוד — היום `false`. האסימון (fine-grained, `Contents: Read`, מאגר אחד) נשאר בשרת.
+`ACADEMY_GITHUB_PHASE_ALLOWED` בקוד — היום `false`. האסימון (fine-grained, `Contents: Read`, מאגר אחד) — **רק בקובץ
+`github.token_file` מחוץ ל-public_html**, chmod 600; לא בקונפיג ולא בגיט. פירוט: `docs/spec/00-overview.md`.
 
 ## מה טרם הוכרע
 

@@ -10,6 +10,9 @@
 const { chromium } = require('playwright');
 const path = require('path');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
+// תשובות v2 — מאותו קוד שרת, מה-fixtures (tests/browser/v2-bodies.php)
+const V2 = JSON.parse(execFileSync('php', [path.join(__dirname, 'v2-bodies.php')]).toString());
 
 const BASE = process.env.CA_BASE || 'http://127.0.0.1:8765/cyber-academy/';
 const OUT = process.argv[2] || null;
@@ -81,8 +84,17 @@ const STATES = {
         measures: document.querySelectorAll('.measure, .dist, .seg-tabs, .tiles, .track').length,
       }));
       if (n.digits.length) problems.push(`${label}: ספרות בדף (${n.digits.join('')})`);
-      if (!n.barEmpty || !/ה-snapshot ריק/.test(n.bar) || /נתוני אמת/.test(n.bar)) problems.push(`${label}: פס לא נכון: ${n.bar}`);
+      if (!n.barEmpty || !/ה-snapshot ריק|אין עדיין סילבוס מאושר/.test(n.bar) || /נתוני אמת/.test(n.bar)) problems.push(`${label}: פס לא נכון: ${n.bar}`);
       if (n.measures) problems.push(`${label}: ${n.measures} רכיבי מדד/מונה`);
+    }
+    if (expect.title) {
+      const t = await p.textContent('#title');
+      if (t !== expect.title) problems.push(`${label}: כותרת "${t}", צפוי "${expect.title}"`);
+    }
+    if (expect.has || expect.lacks) {
+      const txt = await p.evaluate(() => document.getElementById('main').innerText);
+      for (const h of expect.has || []) if (!txt.includes(h)) problems.push(`${label}: חסר "${h}"`);
+      for (const l of expect.lacks || []) if (txt.includes(l)) problems.push(`${label}: לא אמור להופיע "${l}"`);
     }
     if (OUT) { await p.screenshot({ path: path.join(OUT, label.replace(/[^\w.-]+/g, '_') + '.png'), fullPage: true }); shots++; }
   }
@@ -120,6 +132,27 @@ const STATES = {
       await verify(pz, `${w}-real-empty-${s || 'home'}`, { sample: false, real: true, state: 'real-empty', noNumbers: true });
     }
     await pz.close();
+
+    // 2ב. חוזה v2 — מוזרק
+    const v2 = async (key, routes, expectFor) => {
+      const pv = await page(w, h);
+      await pv.route('**/api/snapshot.php*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(V2[key]) }));
+      for (const s of routes) { await pv.goto(BASE + '#/' + s); await verify(pv, `${w}-v2-${key}-${s.replace(/\//g, '_') || 'home'}`, expectFor(s)); }
+      await pv.close();
+    };
+    const NO_PCT = ['%', '0 מתוך'];
+    await v2('excerpt', ['', 'syllabus', 'track/01', 'module/01.01', 'progress', 'tasks', 'evidence', 'gaps', 'timeline'], (s) => ({
+      sample: true, real: false, state: null, lacks: [...NO_PCT, 'סילבוס מאושר'],
+      has: s === '' || s === 'progress' || s === 'evidence' ? ['אין הערכות מתועדות']
+        : s === 'syllabus' || s === 'track/01' ? ['מוצע · לא אושר'] : s === 'module/01.01' ? ['מעבדה מורשית בלבד', 'מעבדה', 'ניתוח', 'תאוריה'] : [] }));
+    await v2('full', ['', 'syllabus', 'track/tr-1', 'track/tr-2', 'module/m-1', 'progress', 'tasks/blocked', 'evidence', 'gaps', 'timeline'], (s) => ({
+      sample: true, real: false, state: null, lacks: ['%'], has: s === 'track/tr-2' ? ['מוצע · לא אושר'] : s === 'tasks/blocked' ? ['ממתינה ל'] : [] }));
+    await v2('github-full', ['', 'syllabus', 'track/tr-1', 'module/m-1', 'tasks', 'evidence'], (s) => ({
+      sample: false, real: true, state: null, lacks: ['%', 'fixture · track 2', 'evidence/tr-1'] }));
+    await v2('github-approved', ['', 'syllabus', 'track/01', 'module/01.01', 'progress', 'evidence'], (s) => ({
+      sample: false, real: true, state: null, lacks: ['%', '0 מתוך', 'מוצע · לא אושר'],
+      has: s === '' || s === 'progress' || s === 'evidence' ? ['אין הערכות מתועדות'] : s === 'syllabus' ? ['סילבוס מאושר'] : [], title: s === 'syllabus' ? 'תוכנית האקדמיה' : undefined }));
+    await v2('github-excerpt', SCREENS.concat(['module/01.01']), () => ({ sample: false, real: true, state: 'real-empty', noNumbers: true, has: ['אין עדיין סילבוס מאושר'] }));
 
     // 3. מצבי שגיאה
     for (const [name, st] of Object.entries(STATES)) {

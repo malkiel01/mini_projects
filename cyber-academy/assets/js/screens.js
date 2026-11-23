@@ -42,16 +42,24 @@ window.CA = window.CA || {};
   });
 
   // שם המסך במצב "מאגר מחובר, snapshot ריק"
-  const SCREEN_NAME = { home: 'תמונת מצב', syllabus: 'סילבוס', track: 'מסלול', progress: 'התקדמות', tasks: 'משימות',
+  const SCREEN_NAME = { home: 'תמונת מצב', syllabus: 'סילבוס', track: 'מסלול', module: 'מודול', progress: 'התקדמות', tasks: 'משימות',
     evidence: 'מבחנים וראיות', gaps: 'פערים והמלצות', timeline: 'ציר זמן' };
 
   /**
    * מקור אמת (isSample=false) עם snapshot ריק — הנחיית מנהל האקדמיה: לא להציג אותו כהתקדמות או כסילבוס.
    * בלי מדדים, מונים, לשוניות או ספרות; רק הסבר על המסך הזה.
    */
-  const realEmpty = (name) => {
+  const realEmpty = (name, filter) => {
     const title = SCREEN_NAME[name] || SCREEN_NAME.home;
-    return { title, back: name === 'track' ? '#/syllabus' : null, html: `
+    // v2 ממאגר האקדמיה: מגיע רק סילבוס מאושר — והיום אין כזה
+    if (filter === 'approved_curriculum_only') return { title, back: name === 'track' || name === 'module' ? '#/syllabus' : null, html: `
+      <div class="state" data-state="real-empty">
+        <div class="state-ic" aria-hidden="true">🗂️</div>
+        <h2>${esc(title)}: אין עדיין סילבוס מאושר</h2>
+        <p>מאגר האקדמיה מחובר. הדשבורד מציג ממנו רק מסלולים שאושרו — וכרגע כל המסלולים במצב "מוצע".</p>
+        <p class="state-todo">זה <b>לא</b> מצב התקדמות. מסלול יופיע כאן אחרי שיאושר במאגר האקדמיה.</p>
+      </div>` };
+    return { title, back: name === 'track' || name === 'module' ? '#/syllabus' : null, html: `
       <div class="state" data-state="real-empty">
         <div class="state-ic" aria-hidden="true">🗂️</div>
         <h2>${esc(title)}: עדיין אין נתוני לימוד</h2>

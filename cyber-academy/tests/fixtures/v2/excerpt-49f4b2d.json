@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "2.0.0",
+  "updatedAt": null,
+  "curriculum": {
+    "status": "proposed",
+    "version": "0.1.0",
+    "approvedAt": null,
+    "approvedBy": null
+  },
+  "stages": [
+    {
+      "id": "stage-foundations",
+      "title": "fixture · stage foundations",
+      "order": 0,
+      "trackIds": [
+        "01"
+      ]
+    }
+  ],
+  "tracks": [
+    {
+      "id": "01",
+      "title": "fixture · track 01",
+      "order": 1,
+      "stageId": "stage-foundations",
+      "approvalStatus": "proposed"
+    }
+  ],
+  "modules": [
+    {
+      "id": "01.01",
+      "title": "fixture · module 01.01",
+      "order": 1,
+      "trackId": "01",
+      "learningObjectives": [
+        "fixture objective"
+      ],
+      "labRequired": true,
+      "lessonIds": [
+        "01.01.A",
+        "01.01.B",
+        "01.01.C"
+      ]
+    }
+  ],
+  "topics": [],
+  "skills": [],
+  "competencies": [],
+  "tasks": [],
+  "assessments": [],
+  "evidence": [],
+  "timeline": [],
+  "lessons": [
+    {
+      "id": "01.01.A",
+      "moduleId": "01.01",
+      "title": "fixture · lesson A",
+      "kind": "theory",
+      "order": 1,
+      "learningObjectives": [
+        "fixture objective A"
+      ],
+      "assessmentMode": "mobile_or_voice"
+    },
+    {
+      "id": "01.01.B",
+      "moduleId": "01.01",
+      "title": "fixture · lesson B",
+      "kind": "analysis",
+      "order": 2,
+      "learningObjectives": [
+        "fixture objective B"
+      ],
+      "assessmentMode": "either"
+    },
+    {
+      "id": "01.01.C",
+      "moduleId": "01.01",
+      "title": "fixture · lesson C",
+      "kind": "lab",
+      "order": 3,
+      "learningObjectives": [
+        "fixture objective C"
+      ],
+      "assessmentMode": "computer",
+      "authorizedLabRequired": true
+    }
+  ]
+}

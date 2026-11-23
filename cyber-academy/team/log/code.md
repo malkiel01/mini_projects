@@ -44,3 +44,78 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - fixture `tests/fixtures/academy-snapshot-c4e7a8d.json` הוא שחזור לפי תיאור (README). הבדיקה מכסה את שני המקרים של `updatedAt`: null ותאריך.
 - `samples/config.example.json`: הנתיב `dashboard/data/snapshot.json` — אומת. המנעולים לא שונו.
 - run.php: 265 → 281. check.js: 80 → 113 צילומים (11 מסכים × 3 רוחבים של אמת-ריק). וידאתי שהבדיקה נכשלת בלי התיקון: 51 בעיות, כולל מונים בלשוניות המשימות.
+
+## 2026-11-23 · v2 — שלב א: פערים בין הדשבורד (v1) לחוזה v2
+
+מקור: התוכן שהבקרה העבירה מהמאגר (schema v2, migration-and-validation-proposal, החלטת מנהל 00, CURRICULUM-REVIEW, ותיאור
+ה-fixture 49f4b2d). לא נקרא ישירות — `add_repo` נדחה בסשן הקוד. Issue #6 לא נגיש, ותוכנו לא הונח.
+
+**מקרא:** ✅ קיים · ➕ חסר — לבנות · ⛔ חוסם / לא ניתן להכריע מהקוד.
+
+| ישות | קיים (v1: model / validate / screens) | חסר ל-v2 | חוסם |
+| --- | --- | --- | --- |
+| **curriculum** | ✅ `curriculumStatus: proposed` קבוע (`not_in_contract_v1`) | ➕ לקרוא `status`/`version`/`approvedAt`/`approvedBy`; כלל approved⇔שניהם מלאים, proposed⇔שניהם null | — |
+| **stages** | אין — רק "אין בחוזה" | ➕ ישות, `trackIds`, סדר, קיבוץ מסלולים לפי שלב | ⛔ לא הוכרע אם stage הוא שלב התקדמות או קבוצת נושא (שאלה פתוחה במסמך המעבר). הדשבורד יציג "קבוצת מסלולים" |
+| **tracks** | ✅ id/title/order/prerequisites | ➕ `stageId`, `approvalStatus` לכל מסלול, `instructorId`, `description`; מסלול מאושר רק כשגם `curriculum.status=approved` | — |
+| **modules** | אין | ➕ ישות, `learningObjectives`, `labRequired`, `lessonIds`, prerequisites | — |
+| **lessons** | אין | ➕ ישות: `kind` theory/analysis/lab, `assessmentMode`, `authorizedLabRequired` (כתג), `learningObjectives` (≥1) | ⚪ במסמך המעבר כתוב "module.lessonIds בלי מערך lessons — פער". ב-schema שהועבר יש `lessons` — הפער נסגר בגרסה הזו |
+| **topics** | אין | ➕ ישות תחת module | — |
+| **skills** | אין | ➕ ישות תחת module, `assessmentCriteria` | — |
+| **competencies** | ✅ status (7), evidenceRefs, lastAssessedAt | ➕ `skillId` במקום `trackId` (המסלול נגזר: skill→module→track); **אין `title`** — מוצג לפי ה-skill; כל השדות חובה (אין "לא דווח") | ⚪ `mastered` דורש הערכה עצמאית + ראיות + אישור — נאכף כהפניה להערכה `evaluated` עם `approvedBy` |
+| **tasks** | ✅ status (4), mode, competencyIds | ➕ `skillIds` במקום `competencyIds`; `dependsOn` (בלי עצמה, בלי מחזור); `authorizedLab` | ⚪ סיבת חסימה — עדיין אין |
+| **assessments** | אין (רק "אין בחוזה") | ➕ ישות: status planned/in_progress/evaluated, `rubric`, `skillIds`, `evidenceRefs`, `assessedAt`, `approvedBy`. אין הערכות → "אין הערכות מתועדות", לא 0% | ⛔ rubric לכל מיומנות ומדדי עצמאות — לא מאופיינים (שאלה פתוחה) |
+| **evidence** | רק `evidenceRefs` כמחרוזות | ➕ ישות: `kind`, `reference` (מסונן — בלי מפתחות, סיסמאות או נתיבים רגישים), `createdAt`, `visibility` | ⚪ "הפניה מאושרת" לא מוגדרת — הסינון שמרני: יחסית או https, בלי `..` ובלי תבניות סוד |
+| **timeline** | נגזר מ-updatedAt + lastAssessedAt | ➕ אירועים אמיתיים: kind curriculum/task/assessment/decision, `referenceId` | ⚪ לא מוגדר לאיזו ישות `referenceId` מצביע — לא נאכף |
+
+**רוחבי:**
+- `validate.php` מכיר רק `1.0.0`. ➕ ניתוב לפי `schemaVersion`: 1.0.0 / 2.0.0, וכל השאר → `contract_version`.
+- `model.php` שטוח (track → competency). ➕ מודל v2: stage → track → module → lesson, ו-topics/skills תחת module. "נלמד" ו"הוכח" עדיין שני מדדים, דרך skill→module→track. אין אחוזים.
+- `screens.js` בנוי ל-v1. ➕ מסכי v2 (שלב, מסלול, מודול עם שיעורים). מסכי v1 נשארים ל-snapshot v1.
+- מקור github: ➕ `v2_path` (ברירת מחדל ריקה → fail-closed), וסינון "סילבוס מאושר בלבד": רק כש-`curriculum.status=approved`, ורק tracks מאושרים עם הישויות שתחתם. **בלי** competencies/tasks/assessments/evidence/timeline (מידע לימודי/אישי).
+- ⛔ **הנתיב של v2 במאגר לא ידוע.** `dashboard/data/snapshot.json` נשאר v1 (לפי מסמך המעבר). לכן אין חיבור v2 בלי הכרעה.
+- ⛔ **החוזה עצמו "PROPOSED ONLY"** — v2 לא מאושר לייצור. הדשבורד יקרא אותו, אבל המקור כבוי.
+- היום ב-fixture: כל המסלולים `proposed` → סינון "מאושר בלבד" יחזיר **0 מסלולים**. זה צפוי.
+
+## 2026-11-23 · v2 — שלבים ב–ד: תמיכה בחוזה v2, GitHub מסלולים מאושרים בלבד (כבוי), בדיקות
+
+- **ענף:** `claude/cyber-academy-dashboard`, אחרי fast-forward ל-`origin/main` (2dd682d). PR טיוטה חדש. לא `claude/cyber-academy-v2` (אין לי הרשאה לענף הזה).
+- **קבצים חדשים:**
+  - `lib/validate-v2.php`, `lib/model-v2.php`
+  - `assets/js/screens-v2.js`
+  - `tests/fixtures/v2/` (קטע 49f4b2d, fixture סינתטי מלא, 64 שבורים, README)
+  - `tests/browser/v2-bodies.php`
+- **קבצים ששונו:** `lib/api.php` (ניתוב 1.0.0/2.0.0, סינון github), `lib/academy-source.php` (`contract`, `github.v2_path`), `assets/js/app.js`, `screens.js` (realEmpty עם `filter`), `index.html`, `samples/config.example.json`, `tests/run.php`, `tests/browser/check.js`, המסמכים.
+- **בדיקה מול מנוע אמיתי:** jsonschema 4.26 (Draft 2020-12), ה-schema שהועבר נשמר רק ב-scratchpad:
+  - הקטע וה-fixture המלא — 0 שגיאות.
+  - כל `schema--*` נכשל, כל `rule--*` עובר את ה-schema.
+- **שינוי בבדיקה קיימת:** "גרסת חוזה אחרת → contract_version" השתמשה ב-2.0.0, ש**נתמך עכשיו**. הוחלף ל-3.0.0.
+- **בדיקות:** run.php 281 → 564. check.js 113 → 224 צילומים, 536 שמות שאינם נחתכים.
+- **לא נבדק:** חסימת שער אנונימית ו-`data/` בשרת (צריך פריסה); GitHub אמיתי (אין גישה); Issue #6 (403); ה-fixture המלא של 49f4b2d (204 שיעורים) — לא הגיע אליי.
+
+## 2026-11-23 · v2 — עדכון לפי הודעות הבקרה (Issue #6, הכרעות מנהל 00, הסילבוס המאושר 419417a)
+
+ההודעות נשלחו לפני ה-PR, אבל הגיעו אליי אחריו. מה ששונה:
+- **קונפיג:** `github.snapshot_path` (v1), `github.curriculum_path` = `dashboard/data/curriculum-v2-approved.json`, `github.contract_v2_path` (לעיון בלבד).
+  - זה מחליף את `path`/`v2_path`. שתי בדיקות v2 שלי עודכנו לשמות החדשים.
+  - נתיב ריק → `source_disabled`. המנעולים לא שונו.
+- **"מאושר" רק מהקובץ:** הסילבוס מאושר רק כש-`status=approved` וגם `approvedAt`/`approvedBy` מלאים. מסלול מאושר רק כשגם הוא `approved`.
+  - לא הוספתי את השורה "אושרה מקצועית — נתוני האישור טרם עודכנו". הודעה 4 החליפה אותה: הקובץ המאושר קיים, והסטטוס מגיע ממנו.
+- **`api/curriculum.php`** — חדש (Issue #6, משימה 4): תוכנית מאושרת בלבד, למשתמש מחובר ומורשה, בלי נתוני לומד.
+- **`lib/access.php`:** בשרת אמיתי דורש `PLATFORM_USER.granted === true` (fail-closed). CLI ו-`php -S` → viewer של פיתוח. **שינוי התנהגות גם ל-`api/snapshot.php`.**
+- **"secrets" בטקסט הסילבוס:** הסינון חל רק על `evidence.reference`. נוספה בדיקה ש-"least privilege ו-secrets" עובר.
+- **timeout:** stub → `source_unavailable`.
+- **תצוגה:** מסך הסילבוס ב-v2 נקרא "תוכנית האקדמיה". נוסף מצב "מאושר" לבדיקת הדפדפן.
+- **בדיקות:** run.php 564 → 596. check.js 224 → 242 צילומים.
+
+## 2026-11-23 · v2 — תיקון אבטחה: האסימון רק מקובץ מחוץ לאתר (חוסם מיזוג של #1809, מנהל 00)
+
+- `github.token_file`, נתיב מוחלט. מפתח `token` הוסר מהקונפיג ומהתבנית. אם הוא קיים, גם ריק → `source_disabled`/`token_in_config`, והקובץ לא נפתח.
+- **בתוך עץ האתר → `secret_in_webroot`.** נבדקים: שורש mini_projects, cyber-academy, DOCUMENT_ROOT, וכל `public_html`/`www`/`htdocs`, לפי הנתיב המבוקש וגם לפי realpath (לחסימת קישור סימבולי).
+  - שיניתי מהבקשה: הבקרה הציעה `ACADEMY_DIR/../..`. זה תיקייה אחת מעל השורש, וזה עלול לחסום נתיב תקין בבית המשתמש. במקומו — השורש עצמו ועוד הכללים למעלה.
+- **הרשאות:** o+r → `secret_insecure_perms`.
+- **תוכן:** אחרי trim, ערך קצר מ-20 או עם רווח → `source_unauthorized`/`token_invalid`.
+- **מתי נפתח:** רק כשכל המנעולים פתוחים. נבדק עם reader שרושם קריאות.
+- **`.gitignore`:** של האפליקציה (`cyber-academy/.gitignore`), לא השורשי — הוא משותף לכל האפליקציות, ומחוץ לתחום שלי. מכסה `data/config.json`, `data/cache/`, `*.token`.
+- **בדיקה שעודכנה:** "config.example: אסימון ריק" → "אין אסימון", בכוונה.
+- **בדיקות:** run.php 596 → 623.
+- **לבקרה:** `docs/owner-brief.md` סעיף 2 עדיין אומר "אסימון … ב-`data/config.json`". הקובץ שלכם — לא שיניתי.

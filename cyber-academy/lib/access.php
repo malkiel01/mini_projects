@@ -14,14 +14,24 @@ declare(strict_types=1);
 
 /** תפקיד → הרשאות. קריאה בלבד בשלב הזה: אין שום הרשאת כתיבה. */
 const ACADEMY_ROLES = [
-    'viewer' => ['snapshot.read'],
+    'viewer' => ['snapshot.read', 'curriculum.read'],
     // עתיד (לא פעיל): 'instructor' => ['snapshot.read', 'assessment.read'], 'admin' => [...]
 ];
 
-/** התפקיד של הבקשה הנוכחית, או null. */
-function academy_role(): ?string {
-    // השער עוצר לפני הקוד הזה כל מי שאין לו הרשאה; בקשה שהגיעה לכאן — עברה אותו.
-    // (בהרצה מקומית/CLI אין שער — שם זה viewer של סביבת פיתוח.)
+/**
+ * התפקיד של הבקשה הנוכחית, או null.
+ *
+ * בשרת: רק משתמש **מחובר ומורשה** — השער (platform/gate-prepend.php) קובע את $_SERVER['PLATFORM_USER'] רק למי שיש לו
+ * הרשאה לאפליקציה (granted). בלעדיו (שער לא רץ, אפליקציה מנותקת, תקלה בזיהוי) — אין תפקיד: fail-closed.
+ * CLI ושרת הפיתוח של PHP (php -S, SAPI "cli-server") — בלי שער, ולכן viewer של סביבת פיתוח. בשרת האמיתי (LiteSpeed) לא
+ * רץ אף אחד מהם.
+ * לא נשמר ולא מוחזר שום פרט מזהה — רק "יש משתמש מורשה".
+ */
+function academy_role(?array $server = null, string $sapi = PHP_SAPI): ?string {
+    if ($sapi === 'cli' || $sapi === 'cli-server') return 'viewer';
+    $server ??= $_SERVER;
+    $u = json_decode((string) ($server['PLATFORM_USER'] ?? ''), true);
+    if (!is_array($u) || ($u['granted'] ?? null) !== true) return null;
     return 'viewer';
 }
 
