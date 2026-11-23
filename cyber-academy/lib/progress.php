@@ -226,6 +226,37 @@ function academy_progress_view(array $p, array $skillIds = []): array {
     ];
 }
 
+/**
+ * התצוגה של הלומד עצמו — מצומצמת: רק מה שאומת, בלי נתיבים ובלי מעריכים, ובלי שום שדה מדיווחי המורים.
+ *  - assessments: רק evaluated + assessedAt + approvedBy + approvedAt → {id, skillIds, at, result, approvedAt}.
+ *    result = הסטטוס המאומת של כל מיומנות שמפנה להערכה הזו ({skillId: status}); אין שדה result בהערכה עצמה.
+ *  - evidence: רק מאומתת (approvedBy + approvedAt + הפניה בטוחה) → {id, kind, createdAt}. **בלי reference.**
+ *  - skills: category + status + updatedAt בלבד (בלי pendingReports / reportAssistance). אין reportsByAssistance.
+ */
+function academy_progress_learner_view(array $p): array {
+    $full = academy_progress_view($p);
+    $skills = array_map(fn($s) => ['category' => $s['category'], 'status' => $s['status'], 'updatedAt' => $s['updatedAt']], $full['skills']);
+    $assessments = [];
+    foreach ($p['assessments'] as $a) {
+        if ($a['status'] !== 'evaluated' || empty($a['assessedAt']) || empty($a['approvedBy']) || empty($a['approvedAt'])) continue;
+        $result = [];
+        foreach ($p['skills'] as $sid => $s) {
+            if (in_array($a['id'], $s['assessmentIds'], true) && in_array((string) $sid, $a['skillIds'], true)) $result[(string) $sid] = $s['status'];
+        }
+        $assessments[] = ['id' => $a['id'], 'skillIds' => $a['skillIds'], 'at' => $a['assessedAt'], 'result' => $result, 'approvedAt' => $a['approvedAt']];
+    }
+    $evidence = [];
+    foreach ($p['evidence'] as $e) {
+        if (empty($e['approvedBy']) || empty($e['approvedAt']) || academy_v2_unsafe_reference((string) $e['reference']) !== '') continue;
+        $evidence[] = ['id' => $e['id'], 'kind' => $e['kind'], 'createdAt' => $e['createdAt']];
+    }
+    return [
+        'learnerId' => $full['learnerId'], 'updatedAt' => $full['updatedAt'], 'counts' => $full['counts'],
+        'learned' => $full['learned'], 'proven' => $full['proven'], 'skills' => $skills,
+        'lessonsCompleted' => $full['lessonsCompleted'], 'assessments' => $assessments, 'evidence' => $evidence,
+    ];
+}
+
 // ---------------------------------------------------------------- הרשאות
 
 /**

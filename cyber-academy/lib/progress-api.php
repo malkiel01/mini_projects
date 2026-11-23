@@ -39,7 +39,9 @@ function academy_api_progress_read(string $method, array $config, array $query =
         return _ap_fail(422, 'progress_invalid', 'נתוני ההתקדמות אינם תקינים — לא מוצגים',
             academy_can('progress.write', $actor['role']) ? ['errors' => array_slice($errors, 0, 50)] : []);
     }
-    return [200, ['ok' => true, 'learnerId' => $id, 'progress' => academy_progress_view($p)]];
+    // מנהל — התצוגה המלאה (כולל דיווחים); כל אחד אחר — רק המאומת, בלי נתיבים, מעריכים או דיווחים
+    $view = academy_can('progress.read.all', $actor['role']) ? academy_progress_view($p) : academy_progress_learner_view($p);
+    return [200, ['ok' => true, 'learnerId' => $id, 'progress' => $view]];
 }
 
 /**

@@ -80,6 +80,17 @@
 - `{"action":"report","learnerId","report":{…}}` — דיווח מורה.
 - `{"action":"apply","learnerId","evidence":[…],"assessments":[…],"skills":{…},"lessons":{…}}` — שינוי, כפוף לכל הכללים.
 
+## מה הלומד רואה (`academy_progress_learner_view`)
+
+רק מה שאומת, בלי נתיבים, מעריכים או דיווחים:
+- `skills` — `category`, `status`, `updatedAt` לכל מיומנות. `counts`, `learned`, `proven`, `lessonsCompleted`.
+- `assessments` — רק `evaluated` עם `assessedAt` + `approvedBy` + `approvedAt`: `{id, skillIds, at, result, approvedAt}`.
+  `result` = הסטטוס המאומת של כל מיומנות שמפנה להערכה (`{skillId: status}`) — אין שדה `result` בהערכה עצמה.
+- `evidence` — רק מאומתת: `{id, kind, createdAt}`. **בלי `reference`.**
+- **אין** `reports`, `assistanceLevel`, `pendingReports`, `reportsByAssistance`, `assessor`, `assistance`, `approvedBy`.
+
+המנהל (`progress.read.all`) מקבל את התצוגה המלאה, כולל דיווחי המורים לפי רמת סיוע.
+
 ## יומן ביקורת
 
 `audit.log` — שורה לכל: `register`, `report`, `skill_status` (`from` → `to`), `lesson_completed`, `evidence_added`. בכל שורה:

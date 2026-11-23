@@ -182,3 +182,12 @@ UI `index.html` + `assets/js/*`), `lib/access.php` (viewer), נתוני דוגמ
 - **ספירות בתצוגה:** `reportsByAssistance` ו-`reportAssistance` לכל מיומנות. `unknown` נספר בנפרד, לעולם לא כ-`none`.
 - **mastered:** דיווח (גם עם `none`) לא משנה סטטוס ולא מאפשר mastered. נבדק.
 - **בדיקות:** run.php 819 → 829.
+
+## 2026-11-23 · #1811 — התצוגה של הלומד: רק מאומת, בלי נתיב, מעריך או דיווחים
+
+- **`academy_progress_learner_view`:**
+  - הערכות מאומתות — `{id, skillIds, at, result, approvedAt}`. `result` = `{skillId: status}` מהמיומנויות שמפנות להערכה, כי אין שדה result בחוזה.
+  - ראיות מאומתות — `{id, kind, createdAt}`.
+  - מיומנויות — `{category, status, updatedAt}`.
+- **מנהל** — התצוגה המלאה, כמו קודם.
+- **בדיקות:** run.php 829 → 838. כוללות סריקת מפתחות רקורסיבית, בדיקה שאין נתיב או שם מעריך בשום ערך, ובדיקה שרק המאומת מופיע.

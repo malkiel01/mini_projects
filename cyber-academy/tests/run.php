@@ -752,6 +752,29 @@ check('progress: שיעור לא מסומן "הושלם" בלי אישור', $W(
     'skills' => ['sk-1' => ['evidenceIds' => ['ev-1']] + $master['sk-1']]]);
 check('progress: mastered תקין → 200, verified', $st === 200 && $body['progress']['skills']['sk-1']['category'] === 'verified'
     && $body['progress']['skills']['sk-1']['status'] === 'mastered', json_encode($body, JSON_UNESCAPED_UNICODE));
+// התצוגה של הלומד: רק מאומת, בלי נתיב / מעריך / דיווחים
+$evUnverified = ['id' => 'ev-2', 'kind' => 'code', 'reference' => 'evidence/lrn-a/draft.md', 'assessor' => 'מורה דוגמה', 'createdAt' => '2026-11-22T13:00:00Z'];
+$asPlanned = ['id' => 'as-p', 'skillIds' => ['sk-3'], 'status' => 'planned', 'assistance' => 'hint', 'assessor' => 'מורה דוגמה', 'assessedAt' => null, 'evidenceIds' => []];
+check('הוספת ראיה לא מאומתת והערכה מתוכננת', $W(['action' => 'apply', 'learnerId' => 'lrn-a', 'evidence' => [$evUnverified], 'assessments' => [$asPlanned]])[0] === 200);
+[$st, $body] = $R('u-1');
+$lv = $body['progress'];
+$allKeys = [];
+$walkK = function ($a) use (&$walkK, &$allKeys) { foreach ($a as $k => $v) { $allKeys[] = (string) $k; if (is_array($v)) $walkK($v); } };
+$walkK($body);
+$forbidden = ['reference', 'assessor', 'reports', 'assistanceLevel', 'reportAssistance', 'reportsByAssistance', 'pendingReports',
+    'assistance', 'approvedBy', 'reporter', 'summary', 'evidenceIds', 'assessmentIds'];
+check('לומד: אין מפתח אסור (רקורסיבי)', $st === 200 && !array_intersect($forbidden, $allKeys), implode(',', array_intersect($forbidden, $allKeys)));
+$lvJson = json_encode($body, JSON_UNESCAPED_UNICODE);
+check('לומד: אין נתיב ראיה ואין שם מעריך בשום ערך', !str_contains($lvJson, 'evidence/lrn-a') && !str_contains($lvJson, 'מורה דוגמה'));
+check('לומד: רק הערכות מאומתות', array_column($lv['assessments'], 'id') === ['as-1']);
+check('לומד: הערכה = id, skillIds, at, result, approvedAt', array_keys($lv['assessments'][0]) === ['id', 'skillIds', 'at', 'result', 'approvedAt']
+    && $lv['assessments'][0]['result'] === ['sk-1' => 'mastered'] && $lv['assessments'][0]['at'] === '2026-11-22T11:00:00Z');
+check('לומד: רק ראיות מאומתות', array_column($lv['evidence'], 'id') === ['ev-1']);
+check('לומד: ראיה = id, kind, createdAt', array_keys($lv['evidence'][0]) === ['id', 'kind', 'createdAt']);
+check('לומד: מיומנות = category, status, updatedAt', array_keys($lv['skills']['sk-1']) === ['category', 'status', 'updatedAt']);
+[$st, $body] = $R('mgr-1', ['learner' => 'lrn-a']);
+check('מנהל: התצוגה המלאה נשארה (כולל דיווחים)', $st === 200 && isset($body['progress']['reportsByAssistance']) && isset($body['progress']['skills']['sk-1']['pendingReports']));
+
 // יומן ביקורת
 $log = array_map(fn($l) => json_decode($l, true), array_filter(explode("\n", (string) file_get_contents("$pdir/audit.log"))));
 $chg = array_values(array_filter($log, fn($e) => $e['action'] === 'skill_status'));
