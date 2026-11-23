@@ -63,6 +63,16 @@ check('https עם פרטי התחברות בכתובת נדחה גם אם המא
     academy_validate_report($httpsRef('https://user:pw@example.com/x'), null, ['example.com']) !== []);
 check('נתיב יחסי לא מושפע מהרשימה', academy_validate_report($goodReport, null, []) === []);
 
+// ---------- ערך הסיוע unknown (הכרעת הבקרה) ----------
+$withLevel = fn(mixed $v) => array_merge($goodReport, ['assistanceLevel' => $v]);
+check('assistanceLevel=unknown מתקבל', academy_validate_report($withLevel('unknown')) === [],
+    implode(' | ', academy_validate_report($withLevel('unknown'))));
+foreach (['UNKNOWN', 'hints', 'partial', '', null, 0] as $bad) {
+    check('assistanceLevel לא חוקי נדחה: ' . json_encode($bad), academy_validate_report($withLevel($bad)) !== []);
+}
+check('unknown לא מומר ל-none במיפוי לשרת',
+    academy_report_to_progress_payload($withLevel('unknown'), 'lrn-demo-01')['report']['assistanceLevel'] === 'unknown');
+
 // ---------- מיפוי לשרת (action=report) ----------
 $payload = academy_report_to_progress_payload($goodReport, 'lrn-demo-01');
 check('גוף הבקשה: action=report ו-learnerId מהקריאה', $payload['action'] === 'report' && $payload['learnerId'] === 'lrn-demo-01');

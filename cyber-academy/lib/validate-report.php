@@ -14,7 +14,7 @@ require_once __DIR__ . '/validate-v2.php';
 
 const REPORT_VERSION = '1.0.0';
 const REPORT_TEACHERS = ['01', '02', '03', '04'];
-const REPORT_ASSISTANCE = ['none', 'hint', 'guided', 'full'];
+const REPORT_ASSISTANCE = ['none', 'hint', 'guided', 'full', 'unknown'];
 const REPORT_TASK_ID = '/^ACA-[A-Z0-9][A-Z0-9-]{1,39}$/';
 const REPORT_FIELDS = ['reportVersion', 'taskId', 'teacherId', 'date', 'lessonIds', 'skillIds', 'assistanceLevel',
     'findings', 'evidenceRefs', 'evidenceLimits', 'recommendation'];
@@ -54,7 +54,7 @@ function academy_validate_report(mixed $r, ?array $catalog = null, array $httpsH
         $err[] = '$.date: תאריך בצורת YYYY-MM-DD שקיים בלוח';
     }
     if (array_key_exists('assistanceLevel', $r) && !(is_string($r['assistanceLevel']) && in_array($r['assistanceLevel'], REPORT_ASSISTANCE, true))) {
-        $err[] = '$.assistanceLevel: חייב להיות none | hint | guided | full';
+        $err[] = '$.assistanceLevel: חייב להיות none | hint | guided | full | unknown';
     }
 
     foreach (['lessonIds' => 'lessonIds', 'skillIds' => 'skillIds'] as $field => $catKey) {
