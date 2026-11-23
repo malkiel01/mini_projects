@@ -16,4 +16,17 @@ CA.api = {
     try { body = await res.json(); } catch (e) { body = { ok: false, error: 'תשובה לא צפויה מהשרת (' + res.status + ')' }; }
     return { status: res.status, body };
   },
+
+  /** ההתקדמות של הלומד המחובר בלבד (api/progress.php). השרת קובע את הזהות — הלקוח לא שולח מזהה. */
+  async progress() {
+    let res;
+    try {
+      res = await fetch('api/progress.php', { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
+    } catch (e) {
+      return { status: 0, body: { ok: false, code: 'offline', error: 'אין חיבור לשרת' } };
+    }
+    let body;
+    try { body = await res.json(); } catch (e) { body = { ok: false, error: 'תשובה לא צפויה מהשרת (' + res.status + ')' }; }
+    return { status: res.status, body };
+  },
 };

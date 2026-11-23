@@ -206,6 +206,9 @@ window.CA = window.CA || {};
     },
   };
 
+  // ההתקדמות שלי — רק בחוזה v2 (שמות השיעורים והמיומנויות). ב-v1 אין שמות מלאים, ולכן לא מציגים.
+  screens.learner = () => ({ title: 'ההתקדמות שלי', back: '#/progress', html: `<div class="nocontract">📭 <b>ההתקדמות שלי</b> — מוצגת רק בחוזה v2, עם שמות השיעורים והמיומנויות.</div>` });
+
   CA.screens = screens;
   CA.realEmpty = realEmpty;
 })();

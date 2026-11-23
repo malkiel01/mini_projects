@@ -104,6 +104,7 @@ window.CA = window.CA || {};
 
     progress(m) {
       return { title: 'התקדמות', html: `
+        <ul class="list" style="margin-bottom:12px">${row({ href: '#/learner', icon: '📈', title: 'ההתקדמות שלי', sub: 'נלמד והוכח במעשה — של הלומד המחובר' })}</ul>
         <p class="hint">בכל רמה — נלמד והוכח בנפרד, וכשאין הערכות: "אין הערכות מתועדות". בלי אחוזים.</p>
         <h2 class="sec-title">האקדמיה כולה</h2>
         ${measureOrNone(m.measure)}
@@ -112,6 +113,10 @@ window.CA = window.CA || {};
           <span class="use-tx"><b>${esc(t.title)}</b><small>${t.measure ? t.measure.total + ' כשירויות' : 'אין הערכות מתועדות'}</small><span class="row-meta">${currTag(t.curriculumStatus)}</span></span>
           ${t.measure ? measures(t.measure, true) : ''}</a></li>`).join('') || '<li>' + emptyLine('אין מסלולים.') + '</li>'}</ul>
       ` };
+    },
+
+    learner(m) {
+      return CA.learner.screen(m);
     },
 
     tasks(m, which) {

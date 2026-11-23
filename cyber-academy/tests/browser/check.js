@@ -18,7 +18,7 @@ const BASE = process.env.CA_BASE || 'http://127.0.0.1:8765/cyber-academy/';
 const OUT = process.argv[2] || null;
 if (OUT) fs.mkdirSync(OUT, { recursive: true });
 const WIDTHS = [[320, 700], [390, 860], [1280, 900]];
-const SCREENS = ['', 'syllabus', 'track/sample-networks', 'progress', 'tasks/planned', 'tasks/active', 'tasks/blocked', 'tasks/completed', 'evidence', 'gaps', 'timeline'];
+const SCREENS = ['', 'syllabus', 'track/sample-networks', 'progress', 'learner', 'tasks/planned', 'tasks/active', 'tasks/blocked', 'tasks/completed', 'evidence', 'gaps', 'timeline'];
 const contract = { schemaVersion: '1.0.0', commit: 'cc85ac1' };
 const err = (status, code, extra = {}) => ({ status, body: { ok: false, code, error: 'הודעת בדיקה', source: 'github', isSample: false, contract, ...extra } });
 const STATES = {
@@ -61,7 +61,7 @@ const STATES = {
       sample: !document.getElementById('sample-bar').hidden,
       real: !document.getElementById('real-bar').hidden,
       state: (document.querySelector('[data-state]') || {}).dataset?.state || null,
-      retry: !!document.querySelector('[data-retry]'),
+      retry: !!document.querySelector('[data-retry], [data-learner-retry]'),
       // שם בשורת רשימה — לא נחתך (phone-first: השם הוא העיקר)
       cut: [...document.querySelectorAll('.use-tx > b')].filter((b) =>
         b.scrollWidth > b.clientWidth + 1 || getComputedStyle(b).textOverflow === 'ellipsis').map((b) => b.textContent.slice(0, 40)),
@@ -153,6 +153,42 @@ const STATES = {
       sample: false, real: true, state: null, lacks: ['%', '0 מתוך', 'מוצע · לא אושר'],
       has: s === '' || s === 'progress' || s === 'evidence' ? ['אין הערכות מתועדות'] : s === 'syllabus' ? ['סילבוס מאושר'] : [], title: s === 'syllabus' ? 'תוכנית האקדמיה' : undefined }));
     await v2('github-excerpt', SCREENS.concat(['module/01.01']), () => ({ sample: false, real: true, state: 'real-empty', noNumbers: true, has: ['אין עדיין סילבוס מאושר'] }));
+
+    // 2ג. ההתקדמות שלי — נתוני בדיקה סינתטיים בלבד ("לומד דוגמה"), מוזרקים ב-page.route. מזהים מתוך synthetic-full.
+    const lv = (skills, done, counts, learned, proven) => ({ ok: true, learnerId: 'lrn-demo', progress: {
+      learnerId: 'lrn-demo', updatedAt: '2026-11-23T12:00:00Z', counts, learned, proven, skills, lessonsCompleted: done } });
+    const LEARNER = {
+      empty: { status: 200, body: { ok: true, learnerId: null, progress: null } },
+      verified: { status: 200, body: lv({
+        'sk-1': { category: 'verified', status: 'theory_demonstrated', pendingReports: 0, updatedAt: '2026-11-23T11:00:00Z' },
+        'sk-2': { category: 'verified', status: 'gap_identified', pendingReports: 0, updatedAt: '2026-11-23T11:30:00Z' },
+        'sk-3': { category: 'reported', status: 'not_assessed', pendingReports: 1, updatedAt: null },
+      }, ['l-1'], { verified: 2, reported: 1, notAssessed: 0 }, 1, 0) },
+      reported: { status: 200, body: lv({
+        'sk-3': { category: 'reported', status: 'not_assessed', pendingReports: 1, updatedAt: null },
+      }, [], { verified: 0, reported: 1, notAssessed: 2 }, 0, 0) },
+      forbidden: { status: 403, body: { ok: false, code: 'forbidden', error: 'אין הרשאה' } },
+      unavailable: { status: 503, body: { ok: false, code: 'progress_unavailable', error: 'נתוני ההתקדמות אינם זמינים', reason: 'progress_dir_missing' } },
+    };
+    const LEARNER_EXPECT = {
+      empty: { measures: 0, has: ['עדיין אין הערכות מאומתות', 'אין עדיין רישום התקדמות עבורך', 'עדיין אין שיעור שהושלם', 'אין עדיין נלמד או הוכח במעשה'] },
+      verified: { measures: 2, has: ['מאומת', 'ממתין לאימות', 'לא הוערך', 'נלמד', 'הוכח במעשה', 'פערי ידע', 'fixture · skill 2', 'הערכה מחדש: fixture · skill 2', 'נגזר', 'הושלם', 'fixture · lesson 1'] },
+      reported: { measures: 0, has: ['עדיין אין הערכות מאומתות', 'ממתין לאימות', 'אין עדיין נלמד או הוכח במעשה', 'אין מיומנות שסומנה'] },
+      forbidden: { measures: 0, has: ['אין הרשאה לראות את ההתקדמות'] },
+      unavailable: { measures: 0, has: ['ההתקדמות עדיין לא זמינה'] },
+    };
+    for (const [key, res] of Object.entries(LEARNER)) {
+      const pl2 = await page(w, h);
+      await pl2.route('**/api/snapshot.php*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(V2.full) }));
+      await pl2.route('**/api/progress.php*', (r) => r.fulfill({ status: res.status, contentType: 'application/json', body: JSON.stringify(res.body) }));
+      await pl2.goto(BASE + '#/learner');
+      await pl2.waitForFunction(() => !document.querySelector('.skel'), null, { timeout: 5000 }).catch(() => problems.push(`${w}-learner-${key}: לא נטען`));
+      const ex = LEARNER_EXPECT[key];
+      await verify(pl2, `${w}-learner-${key}`, { sample: true, real: false, state: res.status === 200 ? null : 'learner-' + res.body.code, has: [...ex.has], lacks: ['%', 'NaN', 'undefined'] });
+      const nm = await pl2.evaluate(() => document.querySelectorAll('[data-learner-root] .measure').length);
+      if (nm !== ex.measures) problems.push(`${w}-learner-${key}: ${nm} מדדים, צפוי ${ex.measures}`);
+      await pl2.close();
+    }
 
     // 3. מצבי שגיאה
     for (const [name, st] of Object.entries(STATES)) {

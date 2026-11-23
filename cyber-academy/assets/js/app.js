@@ -61,6 +61,7 @@
     back.hidden = !view.back;
     if (view.back) back.setAttribute('href', view.back);
     main.innerHTML = view.html;
+    if (view.after) view.after(main); // מסך שטוען נתונים משלו (ההתקדמות שלי)
     const active = document.querySelector('#tabs a[aria-current="page"]');
     if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }

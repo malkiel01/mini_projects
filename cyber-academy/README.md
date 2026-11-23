@@ -15,6 +15,7 @@
 | ה-API (GET בלבד) | `api/snapshot.php` |
 | נתוני דוגמה | `samples/demo-snapshot.json` (11 מסלולים לפי ה-roadmap, כל כותרת "דוגמה · …"), `samples/empty-snapshot.json` |
 | בדיקות | `php cyber-academy/tests/run.php` · דפדפן: `node cyber-academy/tests/browser/check.js` (מקומי) |
+| ההתקדמות שלי (לומד) | `assets/js/learner.js` · `docs/spec/student-progress.md` (ממשק) |
 | נתוני ריצה בשרת | `data/` — מוחרגת מהפריסה וחסומה מהדפדפן (`config.json`, `cache/`) |
 
 ## החוזה
