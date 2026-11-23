@@ -135,9 +135,49 @@ function academy_progress_write_atomic(string $f, string $content): void {
     }
 }
 
-/** יומן ביקורת — שורה לכל שינוי, נכתב **לפני** השמירה. בלי reference ובלי תוכן ראיה. כשל → חריגה. */
+/**
+ * שמירה עם יומן — היומן לעולם לא מתעד שינוי שלא נשמר:
+ *   1. הקובץ החדש נכתב לקובץ זמני (כשל → כלום לא השתנה, ואין שורה ביומן).
+ *   2. שורות היומן נכתבות (כשל → הזמני נמחק, הקובץ הקודם בתוקף, ואין שורה).
+ *   3. rename של הזמני לקובץ הסופי — נקודת ההתחייבות. כשל → היומן מקוצץ חזרה לגודלו שלפני (ftruncate), כך שאין בו
+ *      שורה על השינוי; אם גם הקיצוץ נכשל — נרשמת שורת rollback עם אותו tx, כדי שהשינוי לא ייראה כמוצלח.
+ * הכול רץ בתוך academy_progress_locked, ולכן אף כותב אחר לא נכנס בין השלבים. $rename — להזרקה בבדיקות.
+ */
+function academy_progress_commit(string $dir, string $file, string $content, array $entries, ?callable $rename = null): void {
+    $tmp = $file . '.tmp-' . bin2hex(random_bytes(6));
+    $old = umask(0027);
+    $staged = @file_put_contents($tmp, $content) === strlen($content) && @chmod($tmp, 0640);
+    umask($old);
+    if (!$staged) {
+        if (is_file($tmp)) @unlink($tmp);
+        throw new AcademyProgressError('שמירת ההתקדמות נכשלה', 500, 'internal');
+    }
+    $tx = bin2hex(random_bytes(8));
+    $log = "$dir/audit.log";
+    clearstatcache(true, $log);
+    $sizeBefore = is_file($log) ? (int) filesize($log) : 0;
+    try {
+        academy_progress_audit($dir, array_map(fn($e) => $e + ['tx' => $tx], $entries));
+    } catch (AcademyProgressError $e) {
+        @unlink($tmp);
+        throw $e;
+    }
+    if (!($rename ?? 'rename')($tmp, $file)) {
+        @unlink($tmp);
+        $h = @fopen($log, 'r+');
+        $undone = $h && ftruncate($h, $sizeBefore);
+        if ($h) fclose($h);
+        if (!$undone) {
+            try { academy_progress_audit($dir, [['at' => gmdate('Y-m-d\TH:i:s\Z'), 'action' => 'rollback', 'tx' => $tx]]); }
+            catch (AcademyProgressError) { error_log('cyber-academy progress: rollback של היומן נכשל'); }
+        }
+        throw new AcademyProgressError('שמירת ההתקדמות נכשלה', 500, 'internal');
+    }
+}
+
+/** יומן ביקורת — שורה לכל שינוי, דרך academy_progress_commit בלבד. בלי reference ובלי תוכן ראיה. כשל → חריגה. */
 function academy_progress_audit(string $dir, array $entries): void {
-    $keys = array_flip(['at', 'by', 'learnerId', 'action', 'target', 'from', 'to', 'fromSub', 'assessmentId', 'evidenceIds', 'reportId']);
+    $keys = array_flip(['at', 'by', 'learnerId', 'action', 'target', 'from', 'to', 'fromSub', 'assessmentId', 'evidenceIds', 'reportId', 'tx']);
     $lines = '';
     foreach ($entries as $e) $lines .= academy_progress_encode(array_intersect_key($e, $keys), JSON_UNESCAPED_UNICODE) . "\n";
     if ($lines === '') return;

@@ -903,6 +903,38 @@ check('F4: force: true → המיפוי הוחלף, והמיפוי הישן של
 $regLog = array_values(array_filter(array_map(fn($l) => json_decode($l, true), file("$sdir/audit.log")), fn($e) => $e['action'] === 'register' && $e['to'] === 'lrn-2' && $e['target'] === 'u-1'));
 check('F4: היומן מתעד את המקור (from, fromSub)', count($regLog) === 1 && $regLog[0]['from'] === 'lrn-1' && $regLog[0]['fromSub'] === 'u-2');
 
+// יומן לעולם לא מתעד שינוי שלא נשמר: כשל בנקודת ההתחייבות (rename) אחרי שהיומן נכתב
+$failRename = fn() => false;
+$W2f = fn(array $body) => academy_api_progress_write('POST', $scfg, 'application/json', json_encode($body, JSON_UNESCAPED_UNICODE),
+    ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] + $SAME, 'sapi' => 'litespeed', 'now' => '2026-11-23T12:00:00Z', 'rename' => $failRename]);
+$asmC = ['id' => 'as-c', 'skillIds' => ['sk-3'], 'status' => 'evaluated', 'assistance' => 'hint', 'assessor' => 'x', 'assessedAt' => '2026-11-22T11:00:00Z',
+    'evidenceIds' => [], 'approvedBy' => 'role-manager', 'approvedAt' => '2026-11-22T12:00:00Z'];
+foreach (['report' => ['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-rf')],
+          'apply' => ['action' => 'apply', 'learnerId' => 'lrn-1', 'assessments' => [$asmC], 'skills' => ['sk-3' => ['status' => 'theory_demonstrated', 'updatedAt' => null, 'assessmentIds' => ['as-c'], 'evidenceIds' => []]]],
+          'register' => ['action' => 'register', 'learnerId' => 'lrn-7', 'sub' => 'u-7']] as $act => $body) {
+    $dataFile = $act === 'register' ? "$sdir/learners.json" : "$sdir/learner-lrn-1.json";
+    $dataBefore = file_get_contents($dataFile);
+    $logBefore = file_get_contents("$sdir/audit.log");
+    [$st] = $W2f($body);
+    check("יומן/rename נכשל ($act) → 500", $st === 500);
+    check("יומן/rename נכשל ($act) → הקובץ הקודם זהה", file_get_contents($dataFile) === $dataBefore);
+    check("יומן/rename נכשל ($act) → היומן זהה, בלי שורה על השינוי", file_get_contents("$sdir/audit.log") === $logBefore);
+    check("יומן/rename נכשל ($act) → אין קובץ זמני", glob("$sdir/*.tmp-*") === []);
+}
+[$st] = $W2(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-tx')]);
+$lastLine = json_decode(array_slice(file("$sdir/audit.log"), -1)[0], true);
+check('יומן: שורה של שינוי מוצלח נושאת tx', $st === 200 && $lastLine['reportId'] === 'rp-tx' && preg_match('/^[0-9a-f]{16}$/', (string) ($lastLine['tx'] ?? '')));
+// force — רק למנהל
+foreach (['u-1' => 'לומד', 'mgr-x' => 'משתמש מורשה שאינו מנהל'] as $who => $lbl) {
+    [$st] = academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'register', 'learnerId' => 'lrn-1', 'sub' => 'u-2', 'force' => true]),
+        ['server' => ['PLATFORM_USER' => json_encode(['sub' => $who, 'granted' => true])] + $SAME, 'sapi' => 'litespeed']);
+    check("force: $lbl → 403", $st === 403);
+}
+// F11 — cli-server: מקוצר לפיתוח בלבד. בשרת (SAPI אחר) PLATFORM_USER קובע.
+$gu = fn(bool $g) => ['PLATFORM_USER' => json_encode(['sub' => '1', 'granted' => $g])];
+check('F11: בשרת (litespeed) PLATFORM_USER בלי granted → אין תפקיד', academy_role($gu(false), 'litespeed') === null && academy_role([], 'litespeed') === null);
+check('F11: cli-server → viewer גם עם PLATFORM_USER (התנהגות קיימת, לפיתוח בלבד; לא שונתה)', academy_role($gu(false), 'cli-server') === 'viewer');
+
 // F5 — רק same-origin
 $noHdr = fn(array $hdr, string $sapi = 'litespeed') => academy_api_progress_write('POST', $scfg, 'application/json', json_encode(['action' => 'report', 'learnerId' => 'lrn-1', 'report' => $repN('rp-o')]),
     ['server' => ['PLATFORM_USER' => json_encode(['sub' => 'mgr-1', 'granted' => true])] + $hdr, 'sapi' => $sapi]);

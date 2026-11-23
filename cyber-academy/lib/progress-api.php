@@ -1,7 +1,7 @@
 <?php
 /**
  * api/progress.php (GET) ו-api/progress-write.php (POST, מנהל בלבד) — הלוגיקה כפונקציות שאפשר לבדוק.
- * $opts — לבדיקות בלבד: server / sapi (זהות וכותרות), now (זמן). התיקייה — רק מהקונפיג, ותמיד דרך academy_progress_dir.
+ * $opts — לבדיקות בלבד: server / sapi (זהות וכותרות), now (זמן), rename (הזרקת כשל בנקודת ההתחייבות). התיקייה — רק מהקונפיג, ותמיד דרך academy_progress_dir.
  *
  * תיקוני ביקורת צוות 1 (docs/audit/progress-audit-2026-11-23.md):
  *  F1 קובץ פגום → 503, לא "ריק" ולא נדרס · F2 נעילה על כל מחזור כתיבה · F3 יומן לפני שמירה, כשל → בלי שמירה ·
@@ -99,7 +99,7 @@ function academy_api_progress_write(string $method, array $config, string $conte
     $audit = ['at' => $now, 'by' => $actor['sub'], 'learnerId' => $id];
     try {
         $dir = academy_progress_dir($config);
-        return academy_progress_locked($dir, fn() => _ap_write_action($b, $dir, $id, $now, $audit));
+        return academy_progress_locked($dir, fn() => _ap_write_action($b, $dir, $id, $now, $audit, $opts['rename'] ?? null));
     } catch (AcademyProgressError $e) {
         if ($e->errorCode === 'progress_unavailable') return _ap_unavailable($e, $actor);
         return _ap_fail(500, 'internal', 'שמירת ההתקדמות נכשלה');   // בלי נתיב ובלי תוכן
@@ -107,7 +107,7 @@ function academy_api_progress_write(string $method, array $config, string $conte
 }
 
 /** בתוך הנעילה. כל קריאה פגומה זורקת (F1) — ולכן שום דבר לא נכתב מעל קובץ פגום. */
-function _ap_write_action(array $b, string $dir, string $id, string $now, array $audit): array {
+function _ap_write_action(array $b, string $dir, string $id, string $now, array $audit, ?callable $rename = null): array {
     switch ($b['action'] ?? '') {
         case 'register':
             $sub = (string) ($b['sub'] ?? '');
@@ -123,8 +123,8 @@ function _ap_write_action(array $b, string $dir, string $id, string $now, array 
             }
             if ($prevSub !== null) unset($idx[$prevSub]);
             $idx[$sub] = $id;
-            academy_progress_audit($dir, [$audit + ['action' => 'register', 'target' => $sub, 'from' => $prevId, 'to' => $id, 'fromSub' => $prevSub]]);
-            academy_progress_write_atomic("$dir/learners.json", academy_progress_encode($idx, JSON_UNESCAPED_UNICODE));
+            academy_progress_commit($dir, "$dir/learners.json", academy_progress_encode($idx, JSON_UNESCAPED_UNICODE),
+                [$audit + ['action' => 'register', 'target' => $sub, 'from' => $prevId, 'to' => $id, 'fromSub' => $prevSub]], $rename);
             return [200, ['ok' => true, 'learnerId' => $id]];
 
         case 'report':
@@ -134,8 +134,8 @@ function _ap_write_action(array $b, string $dir, string $id, string $now, array 
             $p['updatedAt'] = $now;
             if ($e = academy_progress_validate($p)) return _ap_fail(422, 'progress_invalid', 'הדיווח נדחה', ['errors' => $e]);
             if ($p['skills'] !== $before) return _ap_fail(500, 'internal', 'דיווח לא אמור לשנות סטטוס'); // הגנה כפולה
-            academy_progress_audit($dir, [$audit + ['action' => 'report', 'reportId' => $b['report']['id'], 'target' => $b['report']['skillIds']]]);
-            academy_progress_save($dir, $p);
+            academy_progress_commit($dir, "$dir/learner-$id.json", academy_progress_encode($p),
+                [$audit + ['action' => 'report', 'reportId' => $b['report']['id'], 'target' => $b['report']['skillIds']]], $rename);
             return [200, ['ok' => true, 'learnerId' => $id, 'progress' => academy_progress_view($p)]];
 
         case 'apply':
@@ -166,8 +166,7 @@ function _ap_write_action(array $b, string $dir, string $id, string $now, array 
             }
             $newEv = array_diff(array_column($p['evidence'], 'id'), array_column($old['evidence'], 'id'));
             if ($newEv) $entries[] = $audit + ['action' => 'evidence_added', 'evidenceIds' => array_values($newEv)];
-            academy_progress_audit($dir, $entries);     // קודם היומן (F3)
-            academy_progress_save($dir, $p);
+            academy_progress_commit($dir, "$dir/learner-$id.json", academy_progress_encode($p), $entries, $rename);
             return [200, ['ok' => true, 'learnerId' => $id, 'progress' => academy_progress_view($p)]];
     }
     return _ap_fail(400, 'bad_request', 'פעולה לא מוכרת');
